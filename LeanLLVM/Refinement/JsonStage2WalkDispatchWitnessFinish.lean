@@ -649,6 +649,13 @@ abbrev TailCarry₃ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (ev : EventRe
     evlen := C.evlen + ev.encodedSize
     events := C.events ++ [ev] }
 
+/-- The tail's carry at the scan's entry: `if.then447.i`'s target with `ei < cd`. -/
+abbrev TailCarryScan {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G)
+    (ev : EventRecord) : WalkCarry G :=
+  { TailCarry₃ C ev with
+    block := "land.rhs457.i"
+    stMap := walkAfterValueMap (TailCarry₃ C ev) }
+
 /-- The tail's carry at the merge. -/
 abbrev TailCarry₄ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (ev : EventRecord) :
     WalkCarry G :=
@@ -724,12 +731,119 @@ def ConsumerTailSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     lookupName s.env "%ee.1.i" = some (.int 64 (BitVec.ofNat 64 ei)) →
     lookupName s.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 cd)) →
     cd - ei ≤ C.inner → ei < cd → cd < 2 ^ 64 →
-    lookupName s.env "%t352.i" = some (.ptr (TailCarry₃ C ev).stage.tok) →
     ∃ (Cd : WalkCarry G) (sd : State) (n : Nat),
       WalkSegment (stage2Calls stage2SubCalls) G C s Cd sd n ∧
-      Cd = TailCarry₄ C ev ∧ Cd.block = "cleanup478.i" ∧ n = 4
+      Cd.block = "land.rhs457.i" ∧ n = 3
 
 
+
+/-- **The tail segment, filled.**  Three links — the value-position call, the scalar call's
+emit arm, and the copy call — from `if.then413.i`'s entry to the scan's entry
+`land.rhs457.i`, composed at their count.
+
+Two sentences, each measured by a failed fill:
+
+* **a junction's premises are stated at the state the previous link left** — its carry, its
+  cursor, its memory, and every answer it produced;
+* **a state a proof must compare or peel has to be a module-level name, not a local `let`**,
+  because a local definition is not reducible on demand through a `with`-nest, and a module
+  `abbrev` is.
+
+The tail ends at the *scan*, not at the merge: `if.then447.i`'s link takes `ei < cd` as a
+premise, so `%cmp451.i` is one and the successor is `land.rhs457.i`; the merge is reached
+only after the scan traverses its remaining bytes, which is `walkScanRounds`' induction and
+a separate statement. -/
+theorem consumer_tail_seg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (r₁ r₂ r₃ : CallOutcome) (ev : EventRecord) (ei cd : Nat) :
+    ConsumerTailSeg G C s r₁ r₂ r₃ ev ei cd := by
+  intro hInv hblock p reg c op rdv x hpre hinc hop hkind hrd hread hpre' hcall₁ hret₁
+    hbit0 hzreadJ hc ht ho hcall₂ happ₂ hret₂ hev64 hevlen64 hlt hpre447 hcall₃ hei hcd
+    hinner hlt2 hcd64
+  -- 1. the value-position call
+  have hx413 : ∀ r, stage2Calls stage2SubCalls "s2_value_pos"
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
+       .ptr C.stage.ctype, .ptr C.stage.cst]
+      (writeBytes s.mem (C.stage.tok + 16) (natToBytes c.toNat 4)) s.next = some r →
+      r.ret = .int 32 x := by
+    intro r hr
+    have h : r = r₁ := Option.some.inj (hr.symm.trans hcall₁)
+    rw [h]; exact hret₁
+  obtain ⟨r₁', s₁', hcall₁', hl₁, hs₁'⟩ := walkIfThen413_at (G := G) (C := C) (s := s)
+    (p := p) (reg := reg) (x := x) (op := op) hInv hblock hpre hinc hop hkind hrd hread hpre'
+    hx413
+  have hr₁ : r₁' = r₁ := Option.some.inj (hcall₁'.symm.trans hcall₁)
+  rw [hr₁] at hs₁'
+  have hs₁ : s₁' = TailS₁ s r₁ c rdv x := hs₁'
+  rw [hs₁] at hl₁
+  rw [show { C with block := (if evalICmp .eq x (BitVec.ofNat 32 0) = 1
+      then "if.then418.i" else "if.then425.i") } = TailCarry₂ C from by rw [hbit0]; rfl] at hl₁
+  -- 2. the scalar call's emit arm
+  obtain ⟨s₂', hl₂, hs₂'⟩ := walkIfThen425_emit_at (G := G) (C := TailCarry₂ C)
+    (s := TailS₁ s r₁ c rdv x) hl₁.inv' rfl
+    (by simpa only [TailS₁, stateAt, cells, State.bind,
+      lookupName_cons_ne (k := "%tobool417.not.i") (n := "%c.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%call416.i") (n := "%c.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%38") (n := "%c.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%.sink372") (n := "%c.i") _ _ (by decide)] using hc)
+    (by simpa only [TailS₁, stateAt, cells, State.bind,
+      lookupName_cons_ne (k := "%tobool417.not.i") (n := "%t352.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%call416.i") (n := "%t352.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%38") (n := "%t352.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%.sink372") (n := "%t352.i") _ _ (by decide)] using ht)
+    (by simpa only [TailS₁, stateAt, cells, State.bind,
+      lookupName_cons_ne (k := "%tobool417.not.i") (n := "%z") _ _ (by decide),
+      lookupName_cons_ne (k := "%call416.i") (n := "%z") _ _ (by decide),
+      lookupName_cons_ne (k := "%38") (n := "%z") _ _ (by decide),
+      lookupName_cons_ne (k := "%.sink372") (n := "%z") _ _ (by decide)] using ho)
+    (by simpa only [TailS₁, stateAt] using hzreadJ)
+    (by simpa only [TailS₁, stateAt] using hcall₂) happ₂ hret₂ hev64 hevlen64 hlt
+  have hs₂ : s₂' = TailS₂ (TailS₁ s r₁ c rdv x) r₂ := hs₂'
+  rw [hs₂] at hl₂
+  -- 3. the copy call, at the scan's entry
+  obtain ⟨r₃', s₃', hcall₃', hl₃, hs₃'⟩ := walkIfThen447_at (G := G) (C := TailCarry₃ C ev)
+    (s := TailS₂ (TailS₁ s r₁ c rdv x) r₂) hl₂.inv' rfl
+    (by simpa only [TailS₂, TailS₁, stateAt, cells, State.bind,
+      lookupName_cons_ne (k := "%tobool428.not.i") (n := "%root_done.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%call427.i") (n := "%root_done.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%tobool417.not.i") (n := "%root_done.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%call416.i") (n := "%root_done.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%38") (n := "%root_done.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%.sink372") (n := "%root_done.i") _ _ (by decide)] using hrd)
+    (by simpa only [TailS₂, TailS₁, stateAt] using hpre447)
+    (by simpa only [TailS₂, TailS₁, stateAt, cells, State.bind,
+      lookupName_cons_ne (k := "%tobool428.not.i") (n := "%ee.1.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%call427.i") (n := "%ee.1.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%tobool417.not.i") (n := "%ee.1.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%call416.i") (n := "%ee.1.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%38") (n := "%ee.1.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%.sink372") (n := "%ee.1.i") _ _ (by decide)] using hei)
+    (by simpa only [TailS₂, TailS₁, stateAt, cells, State.bind,
+      lookupName_cons_ne (k := "%tobool428.not.i") (n := "%cond350.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%call427.i") (n := "%cond350.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%tobool417.not.i") (n := "%cond350.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%call416.i") (n := "%cond350.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%38") (n := "%cond350.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%.sink372") (n := "%cond350.i") _ _ (by decide)] using hcd)
+    hinner hlt2 hcd64
+  have hr₃ : r₃' = r₃ := Option.some.inj (hcall₃'.symm.trans hcall₃)
+  rw [hr₃] at hs₃'
+  have hbit1 : evalICmp .ult (BitVec.ofNat 64 ei) (BitVec.ofNat 64 cd) = (1 : BitVec 1) := by
+    have h1 : (BitVec.ofNat 64 ei).toNat < (BitVec.ofNat 64 cd).toNat := by
+      rw [BitVec.toNat_ofNat, BitVec.toNat_ofNat,
+        Nat.mod_eq_of_lt (by omega), Nat.mod_eq_of_lt (by omega)]
+      omega
+    rw [show evalICmp .ult (BitVec.ofNat 64 ei) (BitVec.ofNat 64 cd)
+        = BitVec.ofBool (BitVec.ult (BitVec.ofNat 64 ei) (BitVec.ofNat 64 cd)) from rfl,
+      show BitVec.ult (BitVec.ofNat 64 ei) (BitVec.ofNat 64 cd) = true from
+        (BitVec.ult_iff_toNat_lt).2 h1]
+    rfl
+  rw [show (if evalICmp .ult (BitVec.ofNat 64 ei) (BitVec.ofNat 64 cd) = 1
+      then "land.rhs457.i" else "if.end473.i") = "land.rhs457.i" from by rw [hbit1]; rfl] at hl₃
+  have hs₃ : s₃' = TailS₃ (TailS₂ (TailS₁ s r₁ c rdv x) r₂) r₃ ei cd := hs₃'
+  rw [hs₃] at hl₃
+  subst hs₃
+  refine ⟨TailCarryScan C ev, TailS₃ (TailS₂ (TailS₁ s r₁ c rdv x) r₂) r₃ ei cd, 3, ?_, rfl, rfl⟩
+  exact Seg.measure (Seg.tail hl₁ (Seg.tail hl₂ (Seg.tail hl₃ (Seg.nil hl₃.inv'))))
 
 /-! ### The instrument -/
 
