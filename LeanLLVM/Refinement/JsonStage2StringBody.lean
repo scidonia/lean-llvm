@@ -3292,6 +3292,39 @@ theorem s2StringBodyMemory_cursor {mem0 : Mem} {xj c : Nat} {e : State}
     writeBytes mem0 xj (wordBytes 8 c) = e.mem := h.symm
 
 
+/-! ### The callee arms' join
+
+Both callee arms end with two eight-byte writes whose *order* differs from the
+model's, and the join needs exactly two facts:
+
+* **the slot write absorbs the arm's clear** — proved below
+  (`s2StringBodySlot_absorb`): the body stores `0` at its slot before the call and
+  the callee stores the arm's word there, so the second write is the memory;
+* **two in-place writes over disjoint regions commute** — *owed*.  Stated at the
+  shape the join uses:
+
+      readBytes A a X.length ≠ none → readBytes A b Y.length ≠ none →
+      (a + X.length ≤ b ∨ b + Y.length ≤ a) →
+      writeBytes (writeBytes A a X) b Y = writeBytes (writeBytes A b Y) a X
+
+  It is not `writeBytes_absent_comm_witness`'s claim (that one is false, and the
+  witness is why): both regions must be **present**, which is what makes each write
+  a replacement in place, and only then is the append order irrelevant.  The
+  presence of the two regions is the staging's, and it is the last thing
+  `s2StringBodyPre` would need if the join is to be closed inside the row rather
+  than at the walk's staging.  -/
+
+/-- **The slot write absorbs the arm's clear.**  The body writes `0` at the slot
+before the call and the callee writes the arm's word there; the second write is the
+memory, because the first one made the region present and both are eight bytes. -/
+theorem s2StringBodySlot_absorb (a : Mem) (ei : Nat) (w : BitVec 64) :
+    writeBytes (writeBytes a ei (natToBytes (0#64).toNat 8)) ei
+        (natToBytes w.toNat 8) =
+      writeBytes a ei (natToBytes w.toNat 8) :=
+  writeBytes_writeBytes_same a ei (natToBytes (0#64).toNat 8) (natToBytes w.toNat 8)
+    (by simp [natToBytes_length])
+
+
 /-! ### Axiom footprints
 
 The runs and the loop's shape print their footprints with `#guard_msgs`, so the
