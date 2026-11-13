@@ -3247,6 +3247,51 @@ theorem s2StringBodyExit_decoded {e : State} {sub len conv : BitVec 64}
     hpc hsub hlen hconv hbit7 hp hdst hei hxp hxj hnxp hexp hbit9 houtn
 
 
+/-! ### The memory term
+
+The post's memory is `r.mem = writeBytes m next slot`, with `m` the model's memory and
+`slot` the bytes at the body's own `alloca`.  Reading it per arm shows the three
+cases are not alike at all:
+
+* **the body-itself arm writes no slot** — the model's `slot` is `[]` there, so
+  `writeBytes m next [] = m` and the term is the identity on the model's memory;
+* **the body-itself arm's memory is the model's by definition** — the arm writes
+  `natToBytes len 8` at `outn` and the model writes `wordBytes 8 len`, and
+  `wordBytes` *is* `natToBytes`, so the two memories are the same term;
+* **the two callee arms are not** — the callee writes `dst`, `xj` and the slot `ei`
+  in its own order, the model writes `dst`/`xj`/`outn` over `mem` and then the slot
+  at `next`; joining those is where the write-order primitives are spent
+  (`writeBytes_writeBytes_same` for a region written twice,
+  `writeBytes_of_readBytes_self` for one already present), and it is the last
+  substantial obligation of the row.
+
+So this section states the two facts that make the first two bullets true and names
+the third's shape.  Neither is a `rfl`-convenience: the first says the model's slot
+parameter must be a *variable* (it is `[]` on one arm and eight bytes on the others,
+and a consumer reading `writeBytes m next slot` must not assume it is populated), and
+the second says the arm's memory needs no rewriting at all. -/
+
+/-- The body-itself arm writes no slot: the model's slot is empty, so its slot write
+is the identity on the memory.  This is why `slot` has to be a parameter of the
+memory term and not a fixed eight-byte region. -/
+theorem s2StringBodySlot_of_bodyItself (m : Mem) (next : Nat) :
+    writeBytes m next ([] : List UInt8) = m := rfl
+
+/-- The body-itself arm's memory **is** the model's, as one term: the arm writes the
+extent's bytes at `outn` and the model writes `wordBytes 8 len`, which is those
+bytes. -/
+theorem s2StringBodyMemory_of_bodyItself (mem : Mem) (xj outn j1 len : Nat) :
+    writeBytes (writeBytes mem xj (wordBytes 8 j1)) outn (natToBytes len 8) =
+      writeBytes (writeBytes mem xj (wordBytes 8 j1)) outn (wordBytes 8 len) := rfl
+
+/-- The cursor word the scan leaves is the model's `j1`: the exit word's counter,
+written at the caller's cursor, is the memory the model's `j1` names.  This is where
+`ExitWord`'s `∃ c` is consumed — at the memory term, not at the exits. -/
+theorem s2StringBodyMemory_cursor {mem0 : Mem} {xj c : Nat} {e : State}
+    (h : e.mem = writeBytes mem0 xj (wordBytes 8 c)) :
+    writeBytes mem0 xj (wordBytes 8 c) = e.mem := h.symm
+
+
 /-! ### Axiom footprints
 
 The runs and the loop's shape print their footprints with `#guard_msgs`, so the
