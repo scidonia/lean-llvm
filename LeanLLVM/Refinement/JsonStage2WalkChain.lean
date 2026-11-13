@@ -18,6 +18,12 @@ names to prove anything, but a named equality has to be *written*, and a wrong n
 be written down and checked.  So the five levels are not only how the layers compose; they
 are how a wrong block is found before it is believed.
 
+The *count* is the mechanism, not only the philosophy.  An environment named once is peeled
+a fixed number of cells, so the count is a claim about that environment: when a peel went
+one cell too far, the proof's own `decide` refused `"%ee.0.i238" ≠ "%ee.0.i238"` — the proof
+saying "one cell too far".  A `simp` over the same nest could neither make nor check that
+claim, because it has no count to be wrong about.
+
 The walk's dispatch chain: the finite pieces of a revolution.
 
 `WalkDispatch`'s interior is not one path.  A revolution is a finite path from the
