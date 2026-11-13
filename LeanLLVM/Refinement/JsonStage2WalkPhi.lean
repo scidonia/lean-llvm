@@ -863,13 +863,11 @@ theorem walkFor_body_i_i_find :
     stage2Body.findBlock "for.body.i.i" = some walkFor_body_i_i := by
   simp [stage2Body, Function.findBlock, findBlockList, walkFor_body_i_i]
 
-/-- **`for.body.i.i` as a link.**  The `for.inc.i.i` edge is the measure's guard: its
-local fact is read off the invariant's disjunctive landing fact — the latch's
-increment on the back edge, the entry's zero on the other — and the `phi`'s
-selection is which of the two the counter carries. -/
-theorem WalkLink.for_body_i_i {calls : Calls} {m0 : Mem}
-    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
-    (hblock : C.block = "for.body.i.i")
+/-- **`for.body.i.i`'s run.**  The counter's phi, the two `gep`/`load` pairs at the
+literal's byte and the document's, and their `icmp eq` — the state both arms' `WalkLocal`s
+are read at.  It is stated on its own so the counted form of the link (`_at`, where a step
+helper that imports this module can see it) reads the run rather than repeating it. -/
+theorem denoteCode_for_body_i_i {calls : Calls} (s : State)
     {p : String} {op : Operand} {iv : BitVec 64} {da dl : Nat} {b1 b2 : UInt8}
     (hpre : s.pre = some p)
     (hin : phiIncoming p [("for.inc.i.i", (Operand.reg "%inc.i.i")),
@@ -880,9 +878,14 @@ theorem WalkLink.for_body_i_i {calls : Calls} {m0 : Mem}
     (hpos : (iv.signExtend 64).toNat < 2 ^ 63)
     (hread1 : readBytes s.mem (da + (iv.signExtend 64).toNat) 1 = some [b1])
     (hread2 : readBytes s.mem (dl + (iv.signExtend 64).toNat) 1 = some [b2]) :
-    ∃ s', WalkLink calls G C s
-      { C with block := (if evalICmp .eq (BitVec.ofNat 8 b1.toNat)
-          (BitVec.ofNat 8 b2.toNat) = 1 then "for.inc.i.i" else "if.then57.i") } s' := by
+    denoteCode calls walkFor_body_i_i.instrs s =
+      some (stateAt (("%cmp8.not.i.i", .int 1 (evalICmp .eq
+            (BitVec.ofNat 8 b1.toNat) (BitVec.ofNat 8 b2.toNat))) ::
+        ("%45", .int 8 (BitVec.ofNat 8 b2.toNat)) ::
+        ("%arrayidx6.i.i", .ptr (dl + (iv.signExtend 64).toNat)) ::
+        ("%44", .int 8 (BitVec.ofNat 8 b1.toNat)) ::
+        ("%arrayidx.i.i", .ptr (da + (iv.signExtend 64).toNat)) ::
+        ("%i.029.i.i", .int 64 iv) :: s.env) s) := by
   have hspecs : walkFor_body_i_i.instrs =
       ([{ dst := "%i.029.i.i", ty := Ty.int 64,
           incoming := [("for.inc.i.i", (Operand.reg "%inc.i.i")),
@@ -963,6 +966,29 @@ theorem WalkLink.for_body_i_i {calls : Calls} {m0 : Mem}
               ("%i.029.i.i", .int 64 iv) :: s.env))
       (by exact walkLookup_cons_self "%45" (.int 8 (BitVec.ofNat 8 b2.toNat)) (("%arrayidx6.i.i", .ptr (dl + (iv.signExtend 64).toNat)) :: ("%44", .int 8 (BitVec.ofNat 8 b1.toNat)) :: ("%arrayidx.i.i", .ptr (da + (iv.signExtend 64).toNat)) :: ("%i.029.i.i", .int 64 iv) :: s.env))]
     rfl
+  exact hden
+
+/-- **`for.body.i.i` as a link.**  The `for.inc.i.i` edge is the measure's guard: its
+local fact is read off the invariant's disjunctive landing fact — the latch's
+increment on the back edge, the entry's zero on the other — and the `phi`'s
+selection is which of the two the counter carries. -/
+theorem WalkLink.for_body_i_i {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "for.body.i.i")
+    {p : String} {op : Operand} {iv : BitVec 64} {da dl : Nat} {b1 b2 : UInt8}
+    (hpre : s.pre = some p)
+    (hin : phiIncoming p [("for.inc.i.i", (Operand.reg "%inc.i.i")),
+      ("if.end48.i", (Operand.imm (.int 64 (BitVec.ofNat 64 0))))] = some op)
+    (hv : evalOperand s op = some (.int 64 iv))
+    (hdoc : lookupName s.env "%arrayidx10.i" = some (.ptr da))
+    (hlit : lookupName s.env "%lit.0.i" = some (.ptr dl))
+    (hpos : (iv.signExtend 64).toNat < 2 ^ 63)
+    (hread1 : readBytes s.mem (da + (iv.signExtend 64).toNat) 1 = some [b1])
+    (hread2 : readBytes s.mem (dl + (iv.signExtend 64).toNat) 1 = some [b2]) :
+    ∃ s', WalkLink calls G C s
+      { C with block := (if evalICmp .eq (BitVec.ofNat 8 b1.toNat)
+          (BitVec.ofNat 8 b2.toNat) = 1 then "for.inc.i.i" else "if.then57.i") } s' := by
+  have hden := denoteCode_for_body_i_i (calls := calls) s hpre hin hv hdoc hlit hpos hread1 hread2
   refine WalkLink.pureCore (G := G) (C := C) (s := s) hInv
     (B := walkFor_body_i_i) (by rw [hblock]; exact walkFor_body_i_i_find) hden
     (by unfold walkCarried; decide) rfl rfl rfl
