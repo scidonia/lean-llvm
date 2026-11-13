@@ -1485,6 +1485,14 @@ theorem walkEntry_inv {mem : Mem} (G : WalkGeom mem) {C : WalkCarry G} {s : Stat
   frame := hframe
   blockLocal := hlocal
 
+/-- **The frame, at the initial state.**  `UnchangedOutside` says every byte outside the
+regions reads the same in the two memories; when they are the same memory the statement is
+`rfl`-true and needs no region list.  This is the seating's cheapest field: the staging starts
+in `m0`, so the walk's frame over `walkWide G C` is immediate, and every later step composes
+onto it rather than re-establishing it. -/
+theorem walkInvSeat_frame {m0 : Mem} (G : WalkGeom m0) (regions : List (Nat × Nat)) :
+    UnchangedOutside m0 m0 regions := fun _ _ => rfl
+
 /-- **The flush block's step.**  `if.then492.i`'s root-done test, then the refusal copy: at
 the `%e`/`%4` cells the entry's own environment carries, the jump's destination is `if.then`. -/
 theorem walkFlush492_at {calls : Calls} {s : State} {e v : Nat}
