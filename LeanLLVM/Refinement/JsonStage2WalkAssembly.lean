@@ -2074,8 +2074,9 @@ theorem walkFlush492_at {calls : Calls} {s : State} {e v : Nat}
     (hv64 : v < 2 ^ 64) :
     ∃ s' : State, LeanLLVM.step calls stage2Body s = .jump s' ∧ s'.pc = "if.then" ∧
       s'.env = ("%off1.i.i117", .ptr (e + 8)) :: s.env ∧
-      s'.mem = writeBytes s.mem (e + 8) (wordBytes 8 v) :=
-  ⟨_, walkIfThen492Step s hpc he h4 hv64, rfl, rfl, rfl⟩
+      s'.mem = writeBytes s.mem (e + 8) (wordBytes 8 v) ∧
+      s'.pre = some s.pc :=
+  ⟨_, walkIfThen492Step s hpc he h4 hv64, rfl, rfl, rfl, rfl⟩
 
 /-- **The entry run's outgoing memory at a staging**, named because more than one statement
 mentions it. -/
@@ -2130,8 +2131,8 @@ theorem walkFlushSteps12 {mem : Mem} (G : WalkGeom mem) (S : WalkStage G) {d : N
     have h := G.maxDoc
     simp only [stage2MaxDocument] at h
     omega
-  obtain ⟨s₂, h2, hpc2, henv2, hmem2⟩ := walkFlush492_at (calls := stage2Calls stage2SubCalls)
-    hpc1 he h4 hn64
+  obtain ⟨s₂, h2, hpc2, henv2, hmem2, _⟩ := walkFlush492_at
+    (calls := stage2Calls stage2SubCalls) hpc1 he h4 hn64
   have hmem1' : s₁.mem = walkEntryMemAt G S := hmem1
   have hmem2' : s₂.mem = writeBytes (walkEntryMemAt G S) (S.e + 8) (wordBytes 8 G.n) := by
     rw [hmem2, hmem1']
@@ -2156,8 +2157,8 @@ theorem walkRefusalCopy_at {sub : Calls} {s : State} {s₁ : State}
     (hden : denoteCode (stage2Calls sub) walkIfThenBlock.instrs s = some s₁)
     (hpc₁ : s₁.pc = s.pc) :
     ∃ s' : State, LeanLLVM.step (stage2Calls sub) stage2Body s = .jump s' ∧ s'.pc = "if.end" ∧
-      s'.env = s₁.env :=
-  ⟨_, walkIfThen_step s hpc hden hpc₁, rfl, rfl⟩
+      s'.env = s₁.env ∧ s'.pre = some s.pc :=
+  ⟨_, walkIfThen_step s hpc hden hpc₁, rfl, rfl, rfl⟩
 
 /-- **The refusal arm's verdict is the literal zero.**  `if.end`'s `phi` takes `0` on the
 `if.then` edge and `1` on `s2_walk.exit`'s, so the empty entry stream returns `some (.int 64
