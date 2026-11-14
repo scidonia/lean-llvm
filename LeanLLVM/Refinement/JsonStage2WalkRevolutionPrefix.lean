@@ -711,5 +711,10 @@ theorem hcontPrefixSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
       hloc96 hlatch
   exact ⟨s₁₃, hs₁₃, (Seg.measure hseg12).trans ((Seg.measure hC).trans (hTail.trans hscan))⟩
 
+/-! ### The instrument -/
+
+#print axioms LeanLLVM.Refinement.WalkScope.hcontPrefixSeg
+#print axioms LeanLLVM.Refinement.WalkScope.WalkLink.cond_true345_i_at
+
 end WalkScope
 end LeanLLVM.Refinement
