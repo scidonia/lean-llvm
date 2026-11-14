@@ -1285,6 +1285,78 @@ theorem WalkLink.if_then447_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
     (by simp [WalkLocal])
 
 
+/-- **`if.then447.i` with an empty extra-token span.**  The same step as
+`WalkLink.if_then447_i` on the arm whose `%ee.1.i` *is* `%cond350.i`: the terminator's test
+is `ult (ofNat 64 cd) (ofNat 64 cd) = 0`, so the walk leaves for `if.end473.i` and the scan
+is never entered.  `hinner`/`hlt` are replaced by `hempty : ei = cd`, and the argument that
+was `hinner`/`hlt`'s `ScanEntered` witness is now `ScanEmpty`'s — because `callQuietBr`
+requires the local fact at **both** arms, and the arm not taken is `land.rhs457.i`, whose
+local at this state is exactly the empty-scan disjunct (`WalkLocal.extraTokenLanded`).  The
+target's own local is `True`.
+
+This is the step the scan-free class takes, and it is cheaper than the run class's: two
+hypotheses removed, none added beyond the equality the arm's own value gives. -/
+theorem WalkLink.if_then447_i_empty {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (hInv : WalkInv G C s) (hblock : C.block = "if.then447.i")
+    (hrd : lookupName s.env "%root_done.i" = some (.ptr (G.next0 + 8)))
+    (hpre : s2AfterValuePre
+      [.int 32 (BitVec.ofNat 32 C.sp), .ptr (G.next0 + 8),
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
+    {ei cd : Nat}
+    (hei : lookupName s.env "%ee.1.i" = some (.int 64 (BitVec.ofNat 64 ei)))
+    (hcd : lookupName s.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 cd)))
+    (hempty : ei = cd)
+    (hcd64 : cd < 2 ^ 64) :
+    ∃ s', WalkLink (stage2Calls stage2SubCalls) G C s { C with
+      block := (if evalICmp .ult (BitVec.ofNat 64 ei) (BitVec.ofNat 64 cd) = 1
+          then "land.rhs457.i" else "if.end473.i"),
+      stMap := walkAfterValueMap C } s' := by
+  obtain ⟨r, hcall, hpost, hfr⟩ :=
+    s2AfterValueContract.resolves (next := s.next) hpre
+  obtain ⟨m, hm, -, hmem, -⟩ := hpost
+  have hfr' : UnchangedOutside s.mem m
+      (s2AfterValueFoot [.int 32 (BitVec.ofNat 32 C.sp), .ptr (G.next0 + 8),
+        .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next) := by
+    rw [hmem] at hfr; exact hfr
+  obtain ⟨hframe, howned, hlog, hev⟩ :=
+    walkAfterValue_facts (G := G) (C := C) (s := s) hInv hm hfr'
+  have hstTy : WalkStackBytes r.mem C.stage.ctype C.tyMap C.wlen := by
+    rw [hmem]
+    exact walkAfterValue_tyBytesAt (G := G) (C := C) (s := s) hInv
+      (sp := C.sp) hInv.depth_cap (walkAfterValue_sp hInv ▸ hm)
+  have hstSt : WalkStackBytes r.mem C.stage.cst (walkAfterValueMap C) C.wlen := by
+    rw [hmem]
+    have hspw : C.sp = 0 ∨ C.sp - 1 < C.wlen := by
+      by_cases h0 : C.sp = 0
+      · exact Or.inl h0
+      · exact Or.inr (by have := hInv.sp_le_wlen; omega)
+    exact walkAfterValue_stBytesAt (G := G) (C := C) (s := s) hInv
+      (sp := C.sp) hInv.depth_cap hspw (walkAfterValue_sp hInv ▸ hm)
+  refine WalkLink.callQuietBr (G := G) (C := C) (s := s) hInv
+    (TM := C.tyMap) (SM := walkAfterValueMap C) (hstTy := hstTy) (hstSt := hstSt)
+    (B := walkIfThen447I) (by rw [hblock]; exact walkIfThen447I_find)
+    (s₁ := stateAt (cells [("%cmp451.i", .int 1 (evalICmp .ult
+        (BitVec.ofNat 64 ei) (BitVec.ofNat 64 cd)))] s.env)
+      { s with mem := r.mem, next := r.next })
+    (walkIfThen447I_denote (sub := stage2SubCalls) (env := s.env) (s := s)
+      (sp := BitVec.ofNat 32 C.sp) (rd := G.next0 + 8)
+      (ct := C.stage.ctype) (cs := C.stage.cst) (r := r) (ei := ei) (cd := cd)
+      hInv.depth_reg hrd (hInv.ptrs.2.2.2.1) (hInv.ptrs.2.2.2.2.1) hcall hei hcd)
+    (by unfold walkCarried; decide) rfl
+    (by dsimp only [stateAt]; rw [hmem]; exact hframe)
+    (by dsimp only [stateAt]; rw [hmem]; exact howned)
+    (by dsimp only [stateAt]; rw [hmem]; exact hlog)
+    (by dsimp only [stateAt]; rw [hmem]; exact hev)
+    rfl (by simp [cells, stateAt, lookupName_cons_self])
+    (by
+      right
+      right
+      exact ⟨cd, hcd64,
+        by simpa [stateAt, cells, lookupName] using (by rw [hempty] at hei; exact hei),
+        by simpa [stateAt, cells, lookupName] using hcd⟩)
+    (by simp [WalkLocal])
+
+
 /-- **`if.then447.i`'s target, with the helper's answer named.**  The copy block's consumer:
 `s2_after_value`'s contract resolves at the staging, and the link's target is the state the
 block's `denoteCode` leaves — the test's cell at the answer's memory.  The carry changes
@@ -3523,6 +3595,7 @@ class transfer) and one instance of each shape, measured rather than asserted. -
 #print axioms LeanLLVM.Refinement.WalkScope.walkDenoteCode_call
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_then_i
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_else334_i
+#print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_then447_i_empty
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_then447_i
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.cleanup474_i
 #print axioms LeanLLVM.Refinement.WalkScope.walkZArenaReserveExit_find
