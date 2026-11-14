@@ -356,23 +356,29 @@ a clause here — the read already says the bytes are present.  The spacing clau
 is the only memory clause that had to be stated, because it is the one the
 decoded-length bound cannot be derived from a read.
 
-**The five regions, present and pairwise separated — and why presence is not a
+**Four regions, present and pairwise separated — and why presence is not a
 convenience.**  `writeByte` appends absent addresses, so write order is
-observable — with `ei`, `dst`, `outn` and the record's `e` absent, the body's
+observable — with `dst`, `outn` and the record's `e` absent, the body's
 order (clear, `dst`, `xj`, slot, `outn`) and the model's (`dst`, `xj`, `outn`,
 slot) are different lists, and `r.mem = writeBytes m next slot` fails.  The
 two-byte witness is `JsonStage2StringBody.writeBytes_absent_comm_witness`.  So the
 clause is the fact that makes the memory equality true, not a strengthening that
 eases a proof: the model's write order and the body's meet only where every
-region either writes is already present.
+region a crossing moves *into* is already present.
 
 The five are the five `s2StringBodyFoot` names, in its order — the cursor word,
 the decoded-length word, the decoded window at `dst`, the body's own `%ei` slot at
 `next`, and the error record the cursor's second word points at — and the body
-writes no other bytes on any arm.  The slot is the caller's staging here for the
-reason the joins need it at this memory: the body's `alloca` advances the cursor
-and does not populate bytes, so its later clear is the *second* write to the
-region rather than the first. -/
+writes no other bytes on any arm.  **The slot is the one region whose presence is
+not required**, and the sentence above says why: every crossing moves a write to
+the slot, so what it spends is the presence of the region it moves into.  The
+body's `alloca` advances the cursor and does not populate bytes, so an arm's clear
+at `next` does append; but the callee's own slot write erases that clear before any
+reader sees the memory, and whether the erased write appended makes no difference to
+the list that remains.  `JsonStage2StringBody.writeBytes_absorb_one` is that
+statement at the two presences the crossings spend, `dst`'s and `xj`'s; the slot is
+the caller's staging here in no stronger sense than that its address is the one the
+body's `alloca` returns. -/
 def s2StringBodyPre (args : List Value) (mem : Mem) (next : Nat) : Prop :=
   ∃ (c p : Nat) (len : BitVec 64) (dst outn xp xj : Nat) (nxp : BitVec 64)
     (base j0 : Nat) (ps : List Nat) (body : List UInt8) (e : Nat),
@@ -393,7 +399,6 @@ def s2StringBodyPre (args : List Value) (mem : Mem) (next : Nat) : Prop :=
     len.toNat + 1 < 2 ^ 64 ∧
     j0 < 2 ^ 63 ∧
     nxp.toNat < 2 ^ 63 ∧
-    readBytes mem next 8 ≠ none ∧
     readBytes mem outn 8 ≠ none ∧
     readBytes mem dst len.toNat ≠ none ∧
     readBytes mem e stage2ErrorExtent ≠ none ∧

@@ -1881,12 +1881,14 @@ theorem exists_readBytes_of_ne {A : Mem} {a n : Nat} (h : readBytes A a n ≠ no
   | some bs => exact ⟨bs, rfl⟩
 
 /-- **The absorption**: an earlier write to a region, crossed by two writes disjoint
-from it, is erased by a later write to that same region.  Three presences, and they
-are exactly the regions the proof crosses; the crossing itself is two commutations
-and then `writeBytes_writeBytes_same`, because the two writes to the erased region
-end up adjacent. -/
+from it, is erased by a later write to that same region.  Two presences, and they are
+the regions the crossings move into — not the erased region's, which no crossing
+reads: a write that moves needs only the region it meets to be a replacement in
+place, and the erased write is overwritten by the last one before any reader could
+observe whether it appended.  The crossing itself is two commutations and then
+`writeBytes_writeBytes_same`, because the two writes to the erased region end up
+adjacent. -/
 theorem writeBytes_absorb_one (B : Mem) {ei dst xj : Nat} {X out Wj Z : List UInt8}
-    (hei : readBytes B ei X.length ≠ none)
     (hdst : readBytes B dst out.length ≠ none)
     (hxj : readBytes B xj Wj.length ≠ none)
     (hlen : X.length ≤ Z.length)
@@ -1895,44 +1897,35 @@ theorem writeBytes_absorb_one (B : Mem) {ei dst xj : Nat} {X out Wj Z : List UIn
     (hd_xj : dst + out.length ≤ xj ∨ xj + Wj.length ≤ dst) :
     writeBytes (writeBytes (writeBytes (writeBytes B ei X) dst out) xj Wj) ei Z
       = writeBytes (writeBytes (writeBytes B dst out) xj Wj) ei Z := by
-  obtain ⟨X₀, hX₀⟩ := exists_readBytes_of_ne hei
   obtain ⟨O₀, hO₀⟩ := exists_readBytes_of_ne hdst
-  obtain ⟨W₀, hW₀⟩ := exists_readBytes_of_ne hxj
-  -- 1. the clear crosses `dst`
-  rw [writeBytes_comm_of_present B ei X dst out ⟨X₀, hX₀⟩ ⟨O₀, hO₀⟩ hd_ei]
-  -- 2. and then `xj`: the `ei` region is still present after `dst`'s write
-  have hei' : readBytes (writeBytes B dst out) ei X.length ≠ none := by
-    rcases hd_ei with h | h
-    · rw [readBytes_writeBytes_below B out X.length ei dst h]
-      exact hei
-    · rw [s2StringBodyReadBytes_above B out X.length ei dst h]
-      exact hei
+  -- 1. the clear crosses `dst`, spending the presence of the region it moves into
+  rw [writeBytes_comm_of_present_right B ei X dst out ⟨O₀, hO₀⟩ hd_ei]
+  -- 2. and then `xj`: the `xj` region is still present after `dst`'s write
   have hxj' : readBytes (writeBytes B dst out) xj Wj.length ≠ none := by
     rcases hd_xj with h | h
     · rw [s2StringBodyReadBytes_above B out Wj.length xj dst h]
       exact hxj
     · rw [readBytes_writeBytes_below B out Wj.length xj dst h]
       exact hxj
-  obtain ⟨X₁, hX₁⟩ := exists_readBytes_of_ne hei'
   obtain ⟨W₁, hW₁⟩ := exists_readBytes_of_ne hxj'
-  rw [writeBytes_comm_of_present (writeBytes B dst out) ei X xj Wj ⟨X₁, hX₁⟩ ⟨W₁, hW₁⟩ hx_ei]
+  rw [writeBytes_comm_of_present_right (writeBytes B dst out) ei X xj Wj ⟨W₁, hW₁⟩ hx_ei]
   -- 3. the two writes to `ei` are adjacent, and the second one is the memory
   exact writeBytes_writeBytes_same (writeBytes (writeBytes B dst out) xj Wj) ei X Z hlen
 
 /-- **One intermediate write is enough for the absorption.**  The first write is
-commuted past the crossing — both regions present, so neither is appended — and the
-later write to the same region erases it, which is
-`writeBytes_writeBytes_same` once the two are adjacent.  The scan's cursor write
-needs this form: the callee's own write to the cursor word follows one crossing,
-not two. -/
+commuted past the crossing — the region it moves into is present, so that write is a
+replacement in place — and the later write to the same region erases it, which is
+`writeBytes_writeBytes_same` once the two are adjacent.  The moved write's own region
+need not be present, only the one it crosses; the scan's cursor write needs this
+form: the callee's own write to the cursor word follows one crossing, not two, and
+the write the crossing moves is the caller's stack slot. -/
 theorem writeBytes_absorb_single (A : Mem) {a : Nat} {X : List UInt8} {b : Nat}
     {Y Z : List UInt8}
-    (ha : readBytes A a X.length ≠ none) (hb : readBytes A b Y.length ≠ none)
+    (ha : readBytes A a X.length ≠ none)
     (hlen : X.length ≤ Z.length) (hd : a + X.length ≤ b ∨ b + Y.length ≤ a) :
     writeBytes (writeBytes (writeBytes A a X) b Y) a Z =
       writeBytes (writeBytes A b Y) a Z := by
-  rw [writeBytes_comm_of_present A a X b Y (exists_readBytes_of_ne ha)
-    (exists_readBytes_of_ne hb) hd]
+  rw [writeBytes_comm_of_present_left A a X b Y (exists_readBytes_of_ne ha) hd]
   exact writeBytes_writeBytes_same (writeBytes A b Y) a X Z hlen
 
 /-- **A word read is the byte read the body's blocks make**: a successful
@@ -3741,11 +3734,11 @@ theorem s2StringBodyMemory_of_bodyItself (mem : Mem) (xj outn j1 len : Nat) :
 
 /-- **The decoded arm's memory join**: the body's memory is the model's plus the slot
 at the call's allocator.  Two moves: the arm's clear is absorbed by the callee's own
-slot write, which spends the slot's presence, and then the slot's write crosses
-`outn`'s, which spends only `outn`'s. -/
+slot write, which spends `dst`'s and `xj`'s presences — the regions the crossings
+move into, not the slot's — and then the slot's write crosses `outn`'s, which spends
+`outn`'s. -/
 theorem s2StringBodyMemory_decoded (mem : Mem) {ei dst xj outn j1 k : Nat}
     {out : List UInt8}
-    (hei : readBytes mem ei 8 ≠ none)
     (hdst : readBytes mem dst out.length ≠ none)
     (hxj : readBytes mem xj 8 ≠ none)
     (houtn : readBytes mem outn 8 ≠ none)
@@ -3777,7 +3770,7 @@ theorem s2StringBodyMemory_decoded (mem : Mem) {ei dst xj outn j1 k : Nat}
     = writeBytes (writeBytes (writeBytes (writeBytes mem dst out) xj (wordBytes 8 (j1 + k)))
         outn (wordBytes 8 out.length)) ei (wordBytes 8 out.length)
   -- 1. the arm's clear is absorbed
-  rw [writeBytes_absorb_one mem hei hdst hxj
+  rw [writeBytes_absorb_one mem hdst hxj
     (by simp [wordBytes, natToBytes_length]) hd_ei hx_ei hd_xj]
   -- 2. the slot's write crosses `outn`, spending the presence of the region it
   --    crosses into — not of its own
@@ -4825,7 +4818,6 @@ def s2StringBodyDecodedMem (mem : Mem) (dst xj outn ei : Nat) (outj out : List U
 here, so the arm's statement and proof match on identifiers. -/
 theorem s2StringBodyMemory_decoded_named (mem : Mem) {ei dst xj outn j1 k : Nat}
     {out : List UInt8}
-    (hei : readBytes mem ei 8 ≠ none)
     (hdst : readBytes mem dst out.length ≠ none)
     (hxj : readBytes mem xj 8 ≠ none)
     (houtn : readBytes mem outn 8 ≠ none)
@@ -4839,7 +4831,7 @@ theorem s2StringBodyMemory_decoded_named (mem : Mem) {ei dst xj outn j1 k : Nat}
         outn (natToBytes out.length 8)
       = s2StringBodyDecodedMem mem dst xj outn ei (wordBytes 8 (j1 + k)) out := by
   simp only [s2StringBodyExpandMem, s2StringBodyDecodedMem]
-  exact s2StringBodyMemory_decoded mem hei hdst hxj houtn hd_ei hx_ei hd_xj ho_ei ho_d ho_x
+  exact s2StringBodyMemory_decoded mem hdst hxj houtn hd_ei hx_ei hd_xj ho_ei ho_d ho_x
 
 set_option maxHeartbeats 2000000 in
 /-- **The decoded terminal at the named memory.**  The laminate `s2StringBodyExit_decoded`
@@ -5009,14 +5001,16 @@ carries information its bytes do not.
 
 **The absorption itself survives duplicates**, because both of its sides replace the
 *same* first occurrences — which is why the direct induction over the memory is the
-route, not a map lemma.  But it needs presence of **every** region it names, not only
-the one it erases: an absent region is *appended*, and the two sides append in
-different orders (`clear, dst, xj` against `dst, xj, slot`), so a single absent
-region makes the lists differ while every read agrees.  That is the same wall for the
-third time, now quantitative — presence is what makes each write in place, and the
-absorption needs it on all three regions it crosses.  The join has it: `dst` and `xj`
-are staged (the writing caller's buffers) and `ei` is the caller's own stack slot, so
-none of the three is appended by these writes.
+route, not a map lemma.  It needs the presence of the regions its crossings move
+**into** — `dst` and `xj` — because an absent region is *appended*, and the two sides
+of a crossing then append in different orders, so the lists differ while every read
+agrees.  The erased region's own presence is not among them: its write is overwritten
+by the last write to the same place before any reader observes the memory, so whether
+it appended is invisible in the surviving list.  That is the same wall for the third
+time, now quantitative — presence is what makes the crossed write a replacement in
+place, and the absorption needs it on the two regions it crosses into.  The join has
+it: `dst` and `xj` are staged (the writing caller's buffers), and the third region,
+`ei`, is the caller's own stack slot, whose presence the staging does not state.
 
 The lemma is proved above (`writeBytes_absorb_one`), and **it is not a walk**: the
 earlier clear crosses `dst`, then `xj`, and the two writes to the erased region end
@@ -5025,10 +5019,10 @@ and one absorption — which is the four-move count, vindicated: the retraction 
 rounds ago (that commutations cannot remove a write) was wrong because adjacency plus
 `writeBytes_writeBytes_same` *is* the removal.
 
-Its hypotheses are six, and instrument eleven counts them exactly: **three presences**
-(the erased region and both regions it crosses) and **three pairwise disjointnesses**
-(one per pair).  Each crossing spends its presence and its disjointness, which is why
-the conclusion's one region needed six facts in the statement.
+Its hypotheses are five: **two presences** (the two regions the crossings move into,
+not the erased one) and **three pairwise disjointnesses** (one per pair).  Each
+crossing spends a presence and a disjointness, which is why the conclusion's one
+region needed five facts in the statement.
 
 **The refused arm's chain, written out.**  Its body writes six times:
 `clear(ei)`, the callee's `offset(ei)`, `scan(xj)`, then the record's three words at
@@ -5170,7 +5164,6 @@ structure s2StringBodyDecodedFacts (e : State) (p dst ei outn xp xj : Nat)
   hextra : extra = s2StringBodyExpandMem e.mem ei dst xj out outj
   hcall : call = BitVec.ofNat 64 out.length
   hlenOut : out.length < 2 ^ 64
-  hei_p : readBytes e.mem ei 8 ≠ none
   hdst_p : readBytes e.mem dst out.length ≠ none
   hxj_p : readBytes e.mem xj 8 ≠ none
   houtn_p : readBytes e.mem outn 8 ≠ none
@@ -5230,8 +5223,11 @@ below is the one the parts were written for —
   join — no join at all on the body-itself form, the absorbed cursor write and the
   decoded join on `2`, the record's reconciliation and the refused join on `0`.
 
-Every join is applied at the staging's five present, pairwise separated regions,
-which is why `s2StringBodyPre` states them. -/
+Every join is applied at the staging's pairwise separated regions, and each takes
+the presence of the ones its crossings move into — `dst`, `xj`, `outn` and the
+record's `e`, which is why `s2StringBodyPre` states those four.  The fifth region,
+the body's own slot, is crossed against and never replaced in: its own presence buys
+nothing, and the staging does not state it. -/
 
 /-- A word the staging reads is below `256 ^ w`, so an eight-byte word is below
 `2 ^ 64` — the bound the entry's `ptrtoint` and the scan's `i64` arithmetic need. -/
@@ -5711,7 +5707,6 @@ theorem s2StringBodyRefusedRun_erase (mem : Mem) {ei xj c1 e' : Nat}
     {Woff Wj R0 R1 R2 : List UInt8}
     (hWoff : Woff.length = 8)
     (hxj : readBytes mem xj (wordBytes 8 c1).length ≠ none)
-    (hei : readBytes mem ei Woff.length ≠ none)
     (hlen : (wordBytes 8 c1).length ≤ Wj.length)
     (hdis : xj + (wordBytes 8 c1).length ≤ ei ∨ ei + Woff.length ≤ xj) :
     s2StringBodyRefusedRun mem ei xj c1 e' Woff Wj R0 R1 R2 =
@@ -5725,9 +5720,11 @@ theorem s2StringBodyRefusedRun_erase (mem : Mem) {ei xj c1 e' : Nat}
   exact congrArg (fun m =>
       writeBytes (writeBytes (writeBytes m e' R0) (e' + (8#64).toNat) R1)
         (e' + (16#64).toNat) R2)
-    (writeBytes_absorb_single mem hxj hei hlen hdis)
+    (writeBytes_absorb_single mem hxj hlen hdis)
 
-/-- **The erased chain is the model's**: the join at the five present regions. -/
+/-- **The erased chain is the model's**: the join at the four regions it takes
+present, `xj` and the record's three words.  The slot's write is the one every
+crossing moves, so its own presence is never read. -/
 theorem s2StringBodyRefusedErased_join (mem : Mem) {ei xj e' : Nat}
     {Woff Wj R0 R1 R2 : List UInt8}
     (hWoff : Woff.length = 8)
@@ -5823,7 +5820,6 @@ callee's offset adjacent to the scan's write, and one crossing then carries the
 callee's cursor write past it. -/
 theorem s2StringBodyRefusedC3_erase (mem : Mem) {ei xj c1 offN k : Nat}
     (hxj : readBytes mem xj (wordBytes 8 c1).length ≠ none)
-    (hei : readBytes mem ei (wordBytes 8 offN).length ≠ none)
     (hlen : (wordBytes 8 c1).length ≤ (wordBytes 8 (c1 + k)).length)
     (hdis : xj + (wordBytes 8 c1).length ≤ ei ∨
       ei + (wordBytes 8 offN).length ≤ xj) :
@@ -5831,7 +5827,7 @@ theorem s2StringBodyRefusedC3_erase (mem : Mem) {ei xj c1 offN k : Nat}
       = writeBytes (writeBytes mem ei (wordBytes 8 offN)) xj
           (wordBytes 8 (c1 + k)) := by
   rw [s2StringBodyRefusedC3, s2StringBodyRefusedC2_collapse, s2StringBodyRefusedC0]
-  exact writeBytes_absorb_single mem hxj hei hlen hdis
+  exact writeBytes_absorb_single mem hxj hlen hdis
 
 /-- **The staged memory is the model's.**  The erase puts the scan's write out of
 the chain and the collapse puts the callee's offset beside it; restoring the slot's
@@ -5839,7 +5835,6 @@ clear makes the chain the erased form the join is stated at, and the join then g
 the model's order. -/
 theorem s2StringBodyRefusedC6_join (mem : Mem) {ei xj c1 e' offN k p base : Nat}
     (hxj : readBytes mem xj (wordBytes 8 c1).length ≠ none)
-    (hei : readBytes mem ei (wordBytes 8 offN).length ≠ none)
     (hlen : (wordBytes 8 c1).length ≤ (wordBytes 8 (c1 + k)).length)
     (hdis : xj + (wordBytes 8 c1).length ≤ ei ∨
       ei + (wordBytes 8 offN).length ≤ xj)
@@ -5885,7 +5880,7 @@ theorem s2StringBodyRefusedC6_join (mem : Mem) {ei xj c1 e' offN k p base : Nat}
           (natToBytes ((BitVec.ofNat 64 offN) + (BitVec.ofNat 64 (p - base))).toNat 8)
           (natToBytes (0#64).toNat 8) := by
   rw [s2StringBodyRefusedC6, s2StringBodyRefusedC5, s2StringBodyRefusedC4,
-    s2StringBodyRefusedC3_erase mem hxj hei hlen hdis]
+    s2StringBodyRefusedC3_erase mem hxj hlen hdis]
   rw [← writeBytes_writeBytes_same mem ei (natToBytes (0#64).toNat 8)
     (wordBytes 8 offN) (by simp [natToBytes_length, wordBytes])]
   exact s2StringBodyRefusedErased_join mem hWoff hxj' he0 he1 he2 h1 h2 h3 h4
@@ -6197,7 +6192,6 @@ theorem s2StringBodyExpand_decoded_named {mem xmem : Mem} {p dst xp xj : Nat}
 
 theorem s2StringBodyMemory_decoded_cursor (mem : Mem) {ei dst xj outn c1 k : Nat}
     {out : List UInt8}
-    (hei : readBytes mem ei 8 ≠ none)
     (hdst : readBytes mem dst out.length ≠ none)
     (hxj : readBytes mem xj 8 ≠ none)
     (houtn : readBytes mem outn 8 ≠ none)
@@ -6247,7 +6241,7 @@ theorem s2StringBodyMemory_decoded_cursor (mem : Mem) {ei dst xj outn c1 k : Nat
   rw [writeBytes_writeBytes_same (writeBytes (writeBytes mem ei (natToBytes (0#64).toNat 8))
     dst out) xj (wordBytes 8 c1) (wordBytes 8 (c1 + k)) (by rw [hc1l, hWl])]
   -- 4. the join, at its named memories
-  exact s2StringBodyMemory_decoded_named mem hei hdst hxj houtn hd_ei hx_ei hd_xj
+  exact s2StringBodyMemory_decoded_named mem hdst hxj houtn hd_ei hx_ei hd_xj
     ho_ei ho_d ho_x
 
 
@@ -6367,8 +6361,7 @@ theorem s2StringBodyArm_scan_refused {mem extra : Mem} {x : State}
     (hm10 : e' + (8#64).toNat +
         (natToBytes ((BitVec.ofNat 64 offN) + (BitVec.ofNat 64 (p - base))).toNat 8).length
         ≤ e' + (16#64).toNat ∨
-      e' + (16#64).toNat + (natToBytes (0#64).toNat 8).length ≤ e' + (8#64).toNat)
-    (hhei : readBytes mem ei (wordBytes 8 offN).length ≠ none) :
+      e' + (16#64).toNat + (natToBytes (0#64).toNat 8).length ≤ e' + (8#64).toNat) :
     s2StringBodyConcludes
       [.ptr ch, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj,
         .int 64 nxp] mem next 5 x := by
@@ -6383,7 +6376,7 @@ theorem s2StringBodyArm_scan_refused {mem extra : Mem} {x : State}
     rw [show (wordBytes 8 c1).length = 8 from natToBytes_length _ _] at h
     rw [readBytes_of_stage2ReadWord hj0] at h
     cases h
-  have hC6join := s2StringBodyRefusedC6_join mem hxj8 hhei
+  have hC6join := s2StringBodyRefusedC6_join mem hxj8
     (by rw [wordBytes, natToBytes_length, wordBytes, natToBytes_length])
     (by rcases heixj with h | h
         · exact Or.inr (by rw [show (wordBytes 8 offN).length = 8 from natToBytes_length _ _]; exact h)
@@ -6430,9 +6423,11 @@ set_option maxHeartbeats 12000000 in
 set_option maxHeartbeats 12000000 in
 /-- **The scan's accepting exit finishes form `2`** at the staging's argument list:
 the callee's decoded answer, the model's decoded memory, and the arm's chain joined
-by the cursor write's absorption.  The memory's hypotheses are the model's five
-regions, pairwise separated and present in the staging — the same facts the
-refusing arm spends, at the shorter distance the accepting answer writes. -/
+by the cursor write's absorption.  The memory's hypotheses are the three regions the
+join takes present — `dst`, `xj`, `outn` — pairwise separated, the same facts the
+refusing arm spends, at the shorter distance the accepting answer writes.  The
+fourth region the chain writes, the slot, is never replaced in: every crossing moves
+that write, so its own presence is not a hypothesis. -/
 theorem s2StringBodyArm_scan_decoded {mem : Mem} {x : State}
     {ch p dst outn xp xj : Nat} {len nxp : BitVec 64}
     {base c1 ei next lane k e' : Nat} {ps : List Nat} {body out : List UInt8}
@@ -6468,7 +6463,6 @@ theorem s2StringBodyArm_scan_decoded {mem : Mem} {x : State}
         (wordBytes 8 (c1 + k))) outn (wordBytes 8 out.length), 2,
         wordBytes 8 out.length))
     (hlenOutLen : out.length ≤ len.toNat)
-    (hei_p : readBytes mem ei 8 ≠ none)
     (hdst_p : readBytes mem dst out.length ≠ none)
     (hxj_p : readBytes mem xj 8 ≠ none)
     (houtn_p : readBytes mem outn 8 ≠ none)
@@ -6486,7 +6480,7 @@ theorem s2StringBodyArm_scan_decoded {mem : Mem} {x : State}
         (natToBytes out.length 8)
       = s2StringBodyDecodedMem mem dst xj outn ei outj out := by
     rw [hmem, hWj]
-    exact s2StringBodyMemory_decoded_cursor mem hei_p hdst_p hxj_p houtn_p
+    exact s2StringBodyMemory_decoded_cursor mem hdst_p hxj_p houtn_p
       hd_ei hx_ei hd_xj ho_ei ho_d ho_x
   refine ⟨⟨.int 32 (BitVec.ofNat 32 2),
       s2StringBodyDecodedMem mem dst xj outn ei outj out, next + 8⟩, ?_, ?_, ?_⟩
@@ -6526,7 +6520,7 @@ theorem s2StringBodyBody_contract {args : List Value} {mem : Mem} {next : Nat}
       s2StringBodyPost args mem next o ∧
       UnchangedOutside mem o.mem (s2StringBodyFoot args mem next) := by
   obtain ⟨c, p, len, dst, outn, xp, xj, nxp, base, j0, ps, body, e, rfl, hbase, hj0,
-    hps, hbody, he, hspace, hp64, hble, hpw, hlen1, hj063, hN63, hnextp, houtnp, hdstp,
+    hps, hbody, he, hspace, hp64, hble, hpw, hlen1, hj063, hN63, houtnp, hdstp,
     hep,
     hxjn, hxjo, hxjd, hxje, hnou, hnod, hnoe, hode, hoee, hde, hxjp, hxje2, hnpe,
     hne2, hdpe, hdpe2, houpe, houpe2, hepe, hepe2, hdis, hdisnext⟩ := hpre
@@ -6617,7 +6611,6 @@ theorem s2StringBodyBody_contract {args : List Value} {mem : Mem} {next : Nat}
       have hxj_p : readBytes mem xj 8 ≠ none := by
         rw [readBytes_of_stage2ReadWord hj0]; simp
       have houtn_p : readBytes mem outn 8 ≠ none := houtnp
-      have hei_p : readBytes mem st.next 8 ≠ none := by rw [hE]; exact hnextp
       have hdst_p : readBytes mem dst len.toNat ≠ none := hdstp
       by_cases hpast : p - base + len.toNat ≤ lane
       · obtain ⟨o, hrun, hpost, hfoot⟩ :=
@@ -6729,7 +6722,7 @@ theorem s2StringBodyBody_contract {args : List Value} {mem : Mem} {next : Nat}
               (hdst := hdstE) (hei := heix) (hxp := hxpx) (hxj := hxjx)
               (hnxp := by rw [← hnxpWord]; exact hnxpx) (houtn := houtnE) (hbit9 := hbit9)
               (hlenOut := hlenOut) (hnext := hE) (hrec := he) (hmodel := hmodel)
-              (hlenOutLen := hlenOutLen) (hei_p := hei_p) (hdst_p := hdst_some)
+              (hlenOutLen := hlenOutLen) (hdst_p := hdst_some)
               (hxj_p := hxj_p) (houtn_p := houtn_p)
               (hd_ei := by
                 rw [hE]
@@ -6878,9 +6871,6 @@ theorem s2StringBodyBody_contract {args : List Value} {mem : Mem} {next : Nat}
                   show (16#64).toNat = 16 from by decide,
                   show (natToBytes (0#64).toNat 8).length = 8 from natToBytes_length _ _]
                 exact Or.inl (by omega))
-              (hhei := by
-                rw [show (wordBytes 8 offN).length = 8 from natToBytes_length _ _, hE]
-                exact hnextp)
           refine ⟨o, ?_, hpost, hfoot⟩
           have hS : runFuel s2StringBodyCalls (1 + (jx + 5)) s2StringBodyBody st =
               some (.ret (some o.ret) o.mem) := by
