@@ -68,6 +68,17 @@ visits, the latch's exit and the merge, plus the `2` the credit's statement adds
 is `27 + 8·ΔA ≤ 32 + 8·ΔA`, so the fixed part grows from the last entry's `22` to `27` and
 still fits the entry allowance: the bound is not widened.
 
+## The arm's boundary: this bundle's scan is entered only when a whitespace stops the token
+
+The seam's `%ee.1.i` `phi` selects `%cond350.i` on the three leaf edges, so on this path
+the token's end is the entry's end and the scan's index is that same word: `contEntry_ee`
+is the peel, and `contEntry_scan_empty` proves `¬ (ei < v.toNat)` from it.  `if.then447.i`'s
+target tests exactly `ult ei %cond350.i`, so on this path the walk does not enter the scan —
+it goes to `if.end473.i` and straight to the merge.  **The bundle that carries `heicd`
+therefore describes the whitespace arm only** (the byte before the entry's end is `9`,
+`10`, `13` or `32`, the skip runs to the first whitespace byte `k`, and the scan runs
+`[k, v.toNat)`); the no-whitespace classes need a scan-free sibling, which is cheaper.
+
 ## The classes still to write, and what they cost
 
 `%35` — the byte before the entry's end — has six classes, and this prefix is the one with
@@ -442,6 +453,62 @@ theorem contP35S_cond {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
     cells, State.bind]
   repeat rw [lookupName_cons_ne _ _ (by decide)]
   exact lookupName_cons_self _ _ _
+
+/-- `%ee.1.i` at the scan's entry is the token's end the seam stored: the phi selects it on
+`if.then447.i`'s edge and nothing between the seam and the tail's end rebinds it. -/
+theorem contEntry_ee {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
+    (b35 : UInt8) (b8 x1 : BitVec 8) (r₁ r₂ r₃ : CallOutcome) (ei : Nat)
+    (cA rdv xA : BitVec 32) :
+    lookupName (contEntry C s x inc nep ep v ix b35 b8 x1 r₁ r₂ r₃ ei cA rdv xA).env
+      "%ee.1.i" = some (.int 64 (BitVec.ofNat 64 v.toNat)) := by
+  simp only [contEntry, ScanEntry, TailS₃, TailS₂, TailS₁, contTailStart, HeadS413, HeadS405,
+    HeadS58, HeadS60, HeadS62, contSeamS, seamS, seamFin, stateAt, cells, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+  exact lookupName_cons_self _ _ _
+
+/-- **The extra-token scan is entered at the token's end, so this arm's span is empty.**
+The scan's counter phi selects `%ee.1.i` on `if.then447.i`'s edge, and that cell is the
+seam's stored end — `ofNat 64 v.toNat` — so the bundle's scan index `ei` is that word and
+"the span is non-empty" (`heicd`) is `v.toNat < v.toNat`.
+
+This is the arm's own arithmetic, not a hypothesis: the guard the scan is entered on is
+`ult ei %cond350.i`, and on the no-whitespace arm the token's end *is* the entry's end.
+The walk therefore skips the scan and reaches `if.end473.i` directly. -/
+theorem contEntry_scan_empty {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
+    (b35 : UInt8) (b8 x1 : BitVec 8) (r₁ r₂ r₃ : CallOutcome) (ei : Nat)
+    (cA rdv xA : BitVec 32)
+    (hop : evalOperand (stateAt
+      (contEntry C s x inc nep ep v ix b35 b8 x1 r₁ r₂ r₃ ei cA rdv xA).env
+      (contEntry C s x inc nep ep v ix b35 b8 x1 r₁ r₂ r₃ ei cA rdv xA)) (.reg "%ee.1.i") =
+      some (.int 64 (BitVec.ofNat 64 ei))) :
+    ¬ ei < v.toNat := by
+  have hcell := contEntry_ee C s x inc nep ep v ix b35 b8 x1 r₁ r₂ r₃ ei cA rdv xA
+  have hlook : lookupName
+      (stateAt (contEntry C s x inc nep ep v ix b35 b8 x1 r₁ r₂ r₃ ei cA rdv xA).env
+        (contEntry C s x inc nep ep v ix b35 b8 x1 r₁ r₂ r₃ ei cA rdv xA)).env "%ee.1.i" =
+      some (Value.int 64 (BitVec.ofNat 64 v.toNat)) := by
+    simpa only [stateAt] using hcell
+  have hbit : BitVec.ofNat 64 ei = BitVec.ofNat 64 v.toNat := by
+    have h2 : some (Value.int 64 (BitVec.ofNat 64 ei)) =
+        some (Value.int 64 (BitVec.ofNat 64 v.toNat)) := by
+      simpa only [evalOperand, hlook] using hop.symm
+    have h3 := Option.some.inj h2
+    simp only [Value.int.injEq] at h3
+    exact eq_of_heq h3.2
+  intro hlt
+  have hmod : ei % 2 ^ 64 = v.toNat := by
+    have h4 := congrArg BitVec.toNat hbit
+    simp only [BitVec.toNat_ofNat] at h4
+    have hv64 : v.toNat % 2 ^ 64 = v.toNat :=
+      Nat.mod_eq_of_lt (by have := v.isLt; omega)
+    rw [hv64] at h4
+    exact h4
+  have hv : v.toNat < 2 ^ 32 := v.isLt
+  have hei : ei < 2 ^ 64 := by omega
+  rw [Nat.mod_eq_of_lt hei] at hmod
+  omega
 
 /-! ### The prefix -/
 

@@ -65,6 +65,28 @@ is invariant-carried:
 From those two `v < 2 ^ 64` and `v ≤ 2 ^ 63` are arithmetic (`entryPos_lt`, `maxDoc`), so
 they are not premises.
 
+## The arm this bundle describes, and the arm it cannot
+
+The `hnext`/`hk` contradiction is gone, and there is a second boundary behind it, found the
+same way — by a field against the path's own arithmetic.  `if.end372.i`'s `%ee.1.i` `phi`
+selects `%cond350.i` on the three leaf edges, and on this path `%cond350.i` is the lane's
+word, so the token's end is `v.toNat`; `if.then447.i`'s target then tests
+`ult ei %cond350.i` and, with `ei` the scan's index, the cell is the same word:
+
+* `contEntry_ee` — `%ee.1.i` at the scan's entry is `ofNat 64 v.toNat`;
+* `contEntry_scan_empty` — therefore **`¬ (ei < v.toNat)`**.
+
+So this bundle's own `heicd` (`ei < v.toNat`) is uninhabited on the arm where the byte
+before the entry's end is **not** whitespace.  That is not a defect in the segment — the
+walk really does take that path — it is the bundle naming the wrong *continuation*: with an
+empty extra-token span the walk leaves the copy call for `if.end473.i` and never enters the
+scan, so that arm's segment is shorter and ends at the merge.  The bundle therefore
+describes **the whitespace arm**: the byte before the entry's end is `9`, `10`, `13` or
+`32`, the whitespace skip runs, the token ends at the first whitespace byte `k < v.toNat`,
+and the extra-token scan runs `[k, v.toNat)`.  The other three classes' arms need their own
+bundle (no scan group) or a disjunction over the two; which of those is the planner's call,
+and the price favours either — the scan-free arm is the cheaper one.
+
 ## `%cond350.i` is one number, not two
 
 The bound the scan reads is the entry's end, and that is the word `cond.true345.i`
@@ -264,7 +286,18 @@ structure HcontFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) 
   cA : BitVec 32
   rdv : BitVec 32
   xA : BitVec 32
-  /-- The scan's first index, and the entry's non-emptiness at it. -/
+  /-- The scan's first index, and the entry's span at it: `if.then447.i`'s target tests
+  `ult ei %cond350.i`, so `ei < v.toNat` is what puts the walk on the scan rather than
+  straight on `if.end473.i`.
+
+  **This bundle describes the entries whose last byte is whitespace, and only those.**
+  The seam's `%ee.1.i` `phi` selects `%cond350.i` when the whitespace check sent the walk
+  there, so on this path the token's end *is* `v.toNat`, the scan's index is that same
+  word (`contEntry_ee`), and the guard is `v.toNat < v.toNat`:
+  `contEntry_scan_empty` (`JsonStage2WalkRevolutionPrefix`) proves this bundle's own
+  `heicd` false on the arm where the byte before the entry's end is *not* whitespace.
+  That arm's walk skips the scan — `if.then447.i`'s target takes `if.end473.i` — so its
+  segment is a sibling bundle's, not this one's. -/
   ei : Nat
   hTail : WalkSegment (stage2Calls stage2SubCalls) G (ContTailStartC C)
     (contTailStart C s x inc nep ep v ix b35 b8 x1)
