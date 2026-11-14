@@ -1098,6 +1098,26 @@ iteration closed at the loop head.  `WalkInv.log_len` already gives the event
 cursor's word as an equality, so the two slot copies are the same fact on the two
 sides and only the arena's needs stating.
 
+**The post's index conjunct was `Cend.k = G.nep`, and that form is false.**  The merge
+`cleanup478.i` binds `%k.2.i` and `%sp.i.1` and leaves `%k.0.i249` alone
+(`cleanup478Block`), and `WalkInv.blockIndex` reads the carry's index off `%k.0.i249`,
+which only the header `while.body.i` binds.  So a carry at `cleanup478.i` satisfies
+`WalkInv` at the *header's* index, and the merge's target carry has `Cend.k = C.k`;
+beside the premise `C.k + 1 = G.nep` the old conjunct contradicted `WalkInv` and read as
+a walk that stopped one entry early.  The conjunct is `Cend.k + 1 = G.nep` — the last
+entry's own `hlastK` — which is what the merge's state supports and what the run
+establishes.  Nothing downstream read the old form: `walkLoopStep_of_dispatch_exit`
+discards `Cend` and `sEnd`.
+
+**The two registers `if.end` reads are premises here too.**  `%z` and `%s` point at the
+log and the report record, and the exit's return reads them; no `WalkInv` field binds
+them (`WalkPtrs` has the six the dispatch reads, `walkStaticRegs` the twenty-four static
+addresses, and neither names these two).  They are read only by the terminal block, so
+they belong to the terminal statement rather than to the invariant, which is asserted at
+every mid-loop state — the argument `hinner` gets at the loop head.  A producer reaches
+them at `cleanup478.i`, not at the head; the bridge between the two is the head path's
+register tracking, which no `WalkSegment` exposes.
+
 What the post owes beyond this premise is *not* a `writeBytes` identity.
 Disjointness does not make two writes commute as memories: `writeByte` replaces a
 present cell in place but appends an absent one, so a difference in order survives
@@ -1119,8 +1139,16 @@ def WalkExit (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (v : Value) : Prop :=
     -- supplies it from the dispatch's evidence.  The exit's path stores nothing at `z + 48`,
     -- so the word travels through it unchanged.
     readBytes s.mem (C.stage.z + 48) 8 = some (wordBytes 8 C.alen) →
+    -- **The record's two pointers, read only by the terminal block.**  `if.end`'s return
+    -- reads `%z` and `%s`; neither `WalkPtrs` nor `walkStaticRegs` binds them, so they are
+    -- not invariant-carried and the exit's statement names them, as `hinner` is named at the
+    -- loop head.  A producer reads them at `cleanup478.i`, where the tail consumes them; the
+    -- head path's register tracking is what would carry them from here to there, and it is
+    -- the same head-path slice the arena word below needs.
+    lookupName s.env "%z" = some (.ptr C.stage.z) →
+    lookupName s.env "%s" = some (.ptr C.stage.s) →
     ∃ (Cend : WalkCarry G) (sEnd : State), WalkInv G Cend sEnd ∧
-      Cend.block = "cleanup478.i" ∧ Cend.k = G.nep ∧
+      Cend.block = "cleanup478.i" ∧ Cend.k + 1 = G.nep ∧
       -- **The arena word is the cursor at the merge.**  The carry advances with
       -- each append (`arenaAppend`'s `alen' = alen + on`) and the block that
       -- writes `%z + 48` stores the same decoded length, so the lag
@@ -2452,13 +2480,18 @@ takes over. -/
 theorem walkLoopStep_of_dispatch_exit {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
     {v : Value} (hdisp : WalkDispatch calls G) (hexit : WalkExit calls G v)
     (hword : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
-      readBytes s.mem (C.stage.z + 48) 8 = some (wordBytes 8 C.alen)) :
+      readBytes s.mem (C.stage.z + 48) 8 = some (wordBytes 8 C.alen))
+    (hz : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
+      lookupName s.env "%z" = some (.ptr C.stage.z))
+    (hs : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
+      lookupName s.env "%s" = some (.ptr C.stage.s)) :
     WalkLoopStep calls G v 27 := by
   intro C s hInv hhead hk
   by_cases hcase : C.k + 1 < G.nep
   · exact Or.inl (hdisp.revolution C s hInv hhead hcase)
   · obtain ⟨Cend, sEnd, -, -, -, -, q₁, q₂, s1, s2, sret, hseg1, hq, hseg2,
       hstep1, hret⟩ := hexit C s hInv hhead (by omega) (hword C s hInv hhead)
+      (hz C s hInv hhead) (hs C s hInv hhead)
     refine Or.inr ⟨q₁ + q₂, s1, s2, sret, ?_, ?_, hstep1, hret⟩
     · omega
     · exact runFuel_prefix_trans hseg1 hseg2
