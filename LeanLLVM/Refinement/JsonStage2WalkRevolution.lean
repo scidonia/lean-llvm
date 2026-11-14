@@ -159,6 +159,60 @@ latch is `cond.end349.i`'s own cell; the exit's local fact holds because `if.end
 not one of `WalkLocal`'s scan blocks; and the inner budget at the last visit is the
 invariant's local clause read at the counts the traversal reports (`ScanCount.same`).
 
+## A′: two bundles, a `Sum`, and what is planned rather than landed
+
+The partition is not a set of unrelated producers.  This bundle describes **one of two
+continuations** of a continuing entry, and the plan is two structures with a `Sum` at the
+`∀`:
+
+* **`HcontFacts` — the whitespace arm, which is what this module's bundle is.**  The byte
+  before the entry's end is `9`, `10`, `13` or `32`, the whitespace skip runs, the token
+  ends at the first whitespace byte `k`, and the extra-token scan runs `[k, v.toNat)`.
+* **`HcontCleanupFacts` — the scan-free arm, not yet in the tree.**  The token ends at the
+  entry's end, so `if.then447.i`'s target tests `ult v v` and leaves for `if.end473.i`: the
+  segment goes straight to the merge.  It carries **no** `%ee.1.i` stopper, **no** landing
+  group, **no** traversal premises and **no price conjunct with a byte term**
+  (`p + 2 ≤ 32·Δk`, `p = 20` or `21`).  Its closing step is
+  `WalkLink.if_then447_i_empty` and the layer's share of it — `ScanEmpty` in `WalkLocal` —
+  is landed.
+* `WalkContinueFacts` returns `Sum (HcontFacts G C s) (HcontCleanupFacts G C s)` and the
+  consumer splits once.  **A `Sum` asks the class question once, where the class is known**;
+  a conditional inside a `Type`-valued structure would make every field a question.
+
+**The run's refinement (planned).**  The whitespace arm's seam is not class-indexed: the run
+stops at the first whitespace byte, so its last visit leaves through `LeafBlock43`, `46` or
+`48`, whose states differ in the cells each bounded.  So the endpoint is **data**:
+
+* `sl : State` and `hRun : WalkSegment … (contLandS … b35) (ContAC₄ C) sl (ContAC₇ C) n`,
+  with the target carry **named** — `WalkSegment` records its target's invariant, so
+  `sl.pc = "if.end372.i"` is `inv'.pc_eq` and the seam link's `findBlock` unfolds.  The run
+  class's states and `contWsEntry_ee` are landed; `contWsRun` is not.
+* `hopS` is then **produced** (the seam stores `ofNat 64 k`, and the scan's phi selects
+  `%ee.1.i` on `if.then447.i`'s edge), which removes both of the producer's supplied
+  regressions.
+* The class survives in one `Prop` field, `hslPre` — which of the three leaves `sl` came
+  from.  The exit set `{43, 46, 48}` is the complement of the entry leaves
+  `{33, 35, 37}`, and that complement check is what caught an arm list's error in a draft.
+* `contWsRun`'s shape is settled: the endpoint is an **input** (a `∨` conclusion cannot fill
+  a `Type` field), `≤ 5` per visit — three dispatch links plus the latch's own step — exit
+  at `k`, with the per-index document group as the traversal's premise in the form `hbyte`
+  already has.
+
+**The price, and why the byte budget is not double-spent.**  The run is `≤ 5·(k - i)` and
+the scan's visits are `cd - 1 - k`, so `5(k-i) + 8(cd-1-k) ≤ 8(cd-1-i) ≤ 8·ΔA`: the prefix
+is `28 + 5(k - i)` and the total `30 + 8·ΔA ≤ 32·Δk + 8·ΔA`, two steps spare.  **The budget
+is not double-spent precisely because the scan's start *is* the run's stop**; a prefix that
+ran the skip and still started the scan at `i` would charge `8·ΔA` twice and the bound would
+fail.  (The fuller derivation, with the per-visit link count and the layer's share, is in
+`JsonStage2WalkRevolutionPrefix`'s header.)
+
+**And the finding that outlives the plan:** `hge`, `hugt` and `heicd` each named a
+continuation no state reaches, and the build was green through all three.  The method step
+is **trace the path, then name the fields** — with the checks these three turns added: every
+name a field type mentions must be a field; a `Type` field needs a `Prop`-free term; an arm
+list is a set with a complement, so state the complement; and a `condbr` link owes the local
+at *both* arms, including the one it does not take.
+
 ## Two of the merge's cells are candidate invariant clauses
 
 `WalkMergeCells` (`JsonStage2WalkPremisesOfStaging`) states `%inc.i = ofNat 64 (C.k + 1)`
