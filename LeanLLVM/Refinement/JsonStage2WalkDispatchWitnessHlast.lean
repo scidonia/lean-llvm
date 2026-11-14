@@ -157,6 +157,11 @@ invariant-carried"*.  That is too strong, and the invariant's register clauses s
 
 > The bundle has **three sources** — the invariant's clauses, the document's content, and
 > the staging's addresses — and the class bits on the head's byte are the second.
+>
+> **Of the bundle's sixteen field groups, eight are produced** from those three sources
+> by the producer below; five are premises the model provably cannot supply, two are
+> reduced to a named premise, and one is open in both directions.  The per-group map is
+> with the producer; this figure is the walk's honest strength.
 
 | invariant clause | what it gives the bundle |
 |---|---|
@@ -708,8 +713,8 @@ literal has to be given, and the answer separates the fields into three kinds.
 free witnesses: at the loop's last entry they are `C.k + 1` and `G.nep`, and the bundle
 is produced at those.
 
-**The map, per group.**  Produced · reduced to a named premise · resisting, with the
-reason:
+**The map, per group.**  Produced · reduced to a named premise · premised correctly
+(the model cannot supply it) · not shown either way, with the reason:
 
 | group | status |
 |---|---|
@@ -723,10 +728,12 @@ reason:
 | the latch's local (`hlatch`) | **reduced**: `WalkLocal` at `while.body462.i` *is* the `ScanCount` the latch's own state writes |
 | the latch's exit test (`hq`, `hcwL`, `hqc`, `hcw64`, `hexit`, `htokL`) | **reduced**: `%q.0.i246` and `%cond350.i` are cells the scan's own states write; `hexit` is the exit's local at the latch |
 | the head's byte | **produced by the invariant**: `h8` is `hInv.iter.reg8`, and the witness is the name `hlastByte G C = ofNat 8 (entryByte G C.k).toNat` |
-| the four class bits | **premises, correctly: the document's**, not the staging's.  They are the four switch decisions on `entryByte G C.k`, i.e. properties of the document's byte, which the staging fixes addresses for but not values |
-| the default arm's and the seam's cells | **resisting: the entry stream's.**  `%4`'s lane, `%idxprom.i`, the token's end and its gap are the entry's own values (`hpre5` is a closed `phi` lookup and could be produced by fixing `reg`) |
+| the eight class bits on the head's byte | **premises, correctly: the document's**, not the staging's.  The four pivot decisions, `if.end372.i`'s byte test and the three class tests are all properties of `entryByte G C.k` — and the seam's four are about the *same* byte, because `%8` is not rebound: `hlastEndS_env8` peels it from the token's end to the loop head, so `b8 = hlastByte G C` and `h8end` is `hInv.iter.reg8`.  What the staging fixes is addresses, not values |
+| the default arm's and the seam's cells (`reg`, `c`, `p`, `op`, `e`, `b8`, and the ten facts about them) | **produced**: `hlast_pre5` and `hlast_phi6` are closed `phi` computations; `%4` and `%gap.i` peel from the default arm to `s` (`hlastAS5_envFour`, `hlastAS5_envGap`) and `%8`/`%end.i` from the token's end (`hlastEndS_env8`, `hlastEndS_envEnd`), so `c = ofNat 64 v` (the staging's `h4L`), `%end.i` is `regs`'s, and `pre` is the state's own predecessor (`hlast_pre6`); `e = ix` and the `%idxprom.i`/`%t352.i` lookups follow from `hidxS`/`htokS`, stated at the loop head |
+| the seeded registers `%idxprom.i` and `%t352.i` | **not shown derivable and not shown underivable.**  The producer takes them at the loop head (`hidxS`, `htokS`) so no field is stated at a state the caller would have to compute.  No `WalkInv` clause names either — `walkStaticRegs`'s twenty-four names and `WalkPtrs`'s six do not contain them — so the invariant as it stands has no route to them.  The producer they would need is the seed's: `walkSeed`'s environment binds `%t352.i` to the token and `%idxprom.i` is loaded per entry.  Neither a derivation nor an impossibility is claimed here |
+| `hugt` | **premises, correctly: the document's.**  The token's position against the entry's index is a relation between `%4`'s word and the entry stream, and neither the invariant nor the staging fixes it |
 | the second byte's class (`h8c`) | **produced**: `if.end372.i` binds five cells and none is `%8`, so `hlastSeam_env8` peels the seam to the token's end and `h8c` *is* `h8end`.  The three class bits stay premises about that byte |
-| the merge's `%e` and `%4` *values* | **resisting: the staging's** — peeled to `s`, and there they are the entry's error slot and its fourth argument |
+| the merge's `%e` and `%4` *values* | **premises, correctly: the staging's.**  No `WalkInv` clause names either — `walkStaticRegs`'s twenty-four names exclude both, and `WalkPtrs`'s six do not contain them — so the values can only be the caller's `heL`/`h4L`.  The producer peels the two cells from the merge to `s`, so the caller states them at the loop head rather than at a computed state |
 
 **A lemma whose conclusion has no landing site contributes its premises, not its
 conclusion.**  `walkScanLinks457` concludes a segment from the landing to the latch, and
@@ -736,12 +743,13 @@ through a lemma whose conclusion has nowhere to land.  That is the composition-h
 read backwards — the home is chosen by where the term is *stated*, so a composition
 whose target is not a field supplies evidence, not a segment.
 
-**The map's final shape, per row:** 7 produced, 2 reduced to a named premise, 3 premises
-held correctly (the document's byte, the document's class bits, and the record the
-callee does not name), 2 resisting (the entry stream's cells and the staging's `%e`/`%4`
-values).  That split — seven of fourteen rows derived, and of the remaining seven, five
-premised for a stated reason and only two resisting — is what this bundle's producer
-actually establishes.
+**The map's final shape, per row: 8 produced, 2 reduced to a named premise, 5 premises
+held correctly, 1 not shown either way** — sixteen rows in all, so **8 of 16 produced.**
+The five correctly-premised are the document's byte read, the document's eight class
+bits, its position relation (`hugt`), the record the callee does not name, and the
+staging's `%e`/`%4` values; each names the clause, list or contract that *cannot* supply
+it.  The one open row is the pair of seeded registers, and it is open in both directions
+on purpose.  No row is left ambiguous about which of the two it is.
 
 Nothing above is a field weakened to make a proof go through: the derived witnesses
 and the produced fields are consequences, and the two shape changes (`hTail` a
@@ -1075,6 +1083,108 @@ theorem hlastTail_of_calls {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : S
     hcT htT hoT hcall₂ happ₂ hret₂ hev64 hevlen64 hltT hpre₃ hcall₃ heiT hcdT
     hinnerT hlt2T hcd64T)
 
+/-- The tail's start state, at the head's own values: `c` is `%4`'s word, the seam's
+token end is the entry index, and the byte is the head's. -/
+abbrev hlastTailAt {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (v : Nat) (ix : BitVec 64) : State :=
+  hlastTailS C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C)
+
+/-! ### The default arm's and the seam's cells, from the invariant
+
+`cond.end349.i`'s `phi` selects `%4` on its arm, and the head chain from `while.body.i`
+to the token's end binds five pivot bits and nothing else — so `%4`, `%idxprom.i`,
+`%t352.i` and `%8` are the loop head's own cells.  The first of those is the staging's
+(`h4L`), the second and third are the seed's, and `%8` is the invariant's. -/
+
+/-- `%gap.i` at the default arm is the loop head's: the head chain binds no static
+register. -/
+theorem hlastAS5_envGap {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64)
+    (h : lookupName s.env "%gap.i" = some (.ptr (C.stage.tok + 20))) :
+    lookupName (headAS₅ s x inc nep).env "%gap.i" = some (.ptr (C.stage.tok + 20)) := by
+  simp only [headAS₅, headAS₄, headAS₃, headAS₂, headAS₁, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+  exact h
+
+/-- `%4` at the default arm is the loop head's word. -/
+theorem hlastAS5_envFour (s : State) (x : BitVec 8) (inc nep w : BitVec 64)
+    (h : lookupName s.env "%4" = some (.int 64 w)) :
+    lookupName (headAS₅ s x inc nep).env "%4" = some (.int 64 w) := by
+  simp only [headAS₅, headAS₄, headAS₃, headAS₂, headAS₁, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+  exact h
+
+/-- `%idxprom.i` at the default arm is the loop head's. -/
+theorem hlastAS5_envIdx (s : State) (x : BitVec 8) (inc nep : BitVec 64) (ix : BitVec 64)
+    (h : lookupName s.env "%idxprom.i" = some (.int 64 ix)) :
+    lookupName (headAS₅ s x inc nep).env "%idxprom.i" = some (.int 64 ix) := by
+  simp only [headAS₅, headAS₄, headAS₃, headAS₂, headAS₁, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+  exact h
+
+/-- `%t352.i` at the default arm is the loop head's token pointer. -/
+theorem hlastAS5_envTok {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64)
+    (h : lookupName s.env "%t352.i" = some (.ptr C.stage.tok)) :
+    lookupName (headAS₅ s x inc nep).env "%t352.i" = some (.ptr C.stage.tok) := by
+  simp only [headAS₅, headAS₄, headAS₃, headAS₂, headAS₁, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+  exact h
+
+/-- `%8` at the token's end is the loop head's register: neither the head chain nor
+`cond.end349.i`'s two cells rebinds it. -/
+theorem hlastEndS_env8 {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep c ix : BitVec 64) :
+    lookupName (headEndS C s x inc nep c ix).env "%8" = lookupName s.env "%8" := by
+  simp only [headEndS, condEnd349OutAt, headAS₅, headAS₄, headAS₃, headAS₂, headAS₁,
+    State.bind, cells]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+
+/-- `%end.i` at the token's end is the loop head's. -/
+theorem hlastEndS_envEnd {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep c ix : BitVec 64) :
+    lookupName (headEndS C s x inc nep c ix).env "%end.i" = lookupName s.env "%end.i" := by
+  simp only [headEndS, condEnd349OutAt, headAS₅, headAS₄, headAS₃, headAS₂, headAS₁,
+    State.bind, cells]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+
+/-- `%idxprom.i` at the token's end is the loop head's. -/
+theorem hlastEndS_envIdx {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep c ix : BitVec 64) :
+    lookupName (headEndS C s x inc nep c ix).env "%idxprom.i" =
+      lookupName s.env "%idxprom.i" := by
+  simp only [headEndS, condEnd349OutAt, headAS₅, headAS₄, headAS₃, headAS₂, headAS₁,
+    State.bind, cells]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+
+/-- The default arm's `phi` selects `%4`: its two incoming entries, the second of which
+`sw.default.i` names. -/
+theorem hlast_pre5 :
+    phiIncoming "sw.default.i"
+      [("cond.true345.i", Operand.reg "%conv347.i"),
+       ("sw.default.i", Operand.reg "%4")] = some (.reg "%4") := by
+  decide
+
+/-- The token's end is entered from `cond.end349.i`: the state's own predecessor. -/
+theorem hlast_pre6 {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep c ix : BitVec 64) :
+    (headEndS C s x inc nep c ix).pre = some "cond.end349.i" := by
+  simp only [headEndS, condEnd349OutAt, headAS₅, headAS₄, headAS₃, headAS₂, headAS₁,
+    State.bind]
+
+/-- The token's end's `phi` selects `%idxprom.i` on that edge. -/
+theorem hlast_phi6 :
+    phiIncoming "cond.end349.i"
+      [("cond.end349.i", (Operand.reg "%idxprom.i")),
+       ("while.body370.i", (Operand.reg "%cond350.i")),
+       ("LeafBlock43", (Operand.reg "%ee.0.i238")),
+       ("LeafBlock46", (Operand.reg "%ee.0.i238")),
+       ("LeafBlock48", (Operand.reg "%ee.0.i238")),
+       ("LeafBlock33", (Operand.reg "%cond350.i")),
+       ("LeafBlock35", (Operand.reg "%cond350.i")),
+       ("LeafBlock37", (Operand.reg "%cond350.i"))] = some (.reg "%idxprom.i") := by
+  decide
+
 /-- **The bundle, from the entry's evidence.**  The two counts and the merge's index
 are the loop's own values; `hge`, `hterm`, `hk2nep` and `hcw0` follow from them; the tail
 is the three calls' contracts composed at their staged argument lists, and the scan's
@@ -1088,79 +1198,61 @@ def hlastFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
     (hne125 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 125) = 0)
     (hinc : evalOperand (headAS₄ s (hlastByte G C)) (.reg "%inc.i") = some (.int 64 (hlastIncV C)))
     (hnep : evalOperand (headAS₄ s (hlastByte G C)) (.reg "%nep") = some (.int 64 (hlastNepV G)))
-    {reg : String} {c ix : BitVec 64}
-    (hpre5 : phiIncoming "sw.default.i"
-      [("cond.true345.i", Operand.reg "%conv347.i"),
-       ("sw.default.i", Operand.reg "%4")] = some (.reg reg))
-    (hav5 : lookupName (headAS₅ s (hlastByte G C) (hlastIncV C) (hlastNepV G)).env reg = some (.int 64 c))
-    (hidx5 : lookupName (headAS₅ s (hlastByte G C) (hlastIncV C) (hlastNepV G)).env "%idxprom.i" =
-      some (.int 64 ix))
-    (htok5 : lookupName (headAS₅ s (hlastByte G C) (hlastIncV C) (hlastNepV G)).env "%t352.i" =
-      some (.ptr C.stage.tok))
-    (hgap5 : lookupName (headAS₅ s (hlastByte G C) (hlastIncV C) (hlastNepV G)).env "%gap.i" =
-      some (.ptr (C.stage.tok + 20)))
-    (hugt : evalICmp .ugt c ix = 0)
-    {p : String} {op : Operand} {e : BitVec 64} {b8 : BitVec 8}
-    (hpre6 : (headEndS C s (hlastByte G C) (hlastIncV C) (hlastNepV G) c ix).pre = some p)
-    (hin6 : phiIncoming p
-      [("cond.end349.i", (Operand.reg "%idxprom.i")),
-       ("while.body370.i", (Operand.reg "%cond350.i")),
-       ("LeafBlock43", (Operand.reg "%ee.0.i238")),
-       ("LeafBlock46", (Operand.reg "%ee.0.i238")),
-       ("LeafBlock48", (Operand.reg "%ee.0.i238")),
-       ("LeafBlock33", (Operand.reg "%cond350.i")),
-       ("LeafBlock35", (Operand.reg "%cond350.i")),
-       ("LeafBlock37", (Operand.reg "%cond350.i"))] = some op)
-    (hv6 : evalOperand (headEndS C s (hlastByte G C) (hlastIncV C) (hlastNepV G) c ix) op = some (.int 64 e))
-    (hend6 : lookupName (headEndS C s (hlastByte G C) (hlastIncV C) (hlastNepV G) c ix).env "%end.i" =
-      some (.ptr (C.stage.tok + 8)))
-    (h8end : lookupName (headEndS C s (hlastByte G C) (hlastIncV C) (hlastNepV G) c ix).env "%8" =
-      some (.int 8 b8))
-    (hbit6 : (evalICmp .eq b8 (BitVec.ofNat 8 45) |||
-      evalICmp .ult (b8 + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
-    (hc110 : evalICmp .slt b8 (BitVec.ofNat 8 110) = 0)
-    (hc116 : evalICmp .slt b8 (BitVec.ofNat 8 116) = 0)
-    (hceq116 : evalICmp .eq b8 (BitVec.ofNat 8 116) = 0)
+    {v : Nat}
+    (hincL : lookupName s.env "%inc.i" = some (.int 64 (BitVec.ofNat 64 (C.k + 1))))
+    (hnepL : lookupName s.env "%nep" = some (.int 64 (hlastNepV G)))
+    (h4L : lookupName s.env "%4" = some (.int 64 (BitVec.ofNat 64 v)))
+    (heL : lookupName s.env "%e" = some (.ptr C.stage.e))
+    (hv64 : v < 2 ^ 64)
+    {ix : BitVec 64}
+    (hidxS : lookupName s.env "%idxprom.i" = some (.int 64 ix))
+    (htokS : lookupName s.env "%t352.i" = some (.ptr C.stage.tok))
+    (hugt : evalICmp .ugt (BitVec.ofNat 64 v) ix = 0)
+    (hbit6 : (evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 45) |||
+      evalICmp .ult (hlastByte G C + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
+    (hc110 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 110) = 0)
+    (hc116 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 116) = 0)
+    (hceq116 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 116) = 0)
     (r₁ r₂ r₃ : CallOutcome) (ev : EventRecord) {cA rdv : BitVec 32} {xA : BitVec 32}
     (ei cd : Nat)
-    (hInvT : WalkInv G (TailStartC C) (hlastTailS C s (hlastByte G C) c ix e b8))
+    (hInvT : WalkInv G (TailStartC C) (hlastTailAt C s v ix))
     {pT : String} {opT : Operand} {regT : String}
-    (hpreT : (hlastTailS C s (hlastByte G C) c ix e b8).pre = some pT)
+    (hpreT : (hlastTailAt C s v ix).pre = some pT)
     (hincT : phiIncoming pT
       [("if.else405.i", .imm (.int 32 (BitVec.ofNat 32 0))),
        ("if.then403.i", .imm (.int 32 (BitVec.ofNat 32 10))),
        ("if.then397.i", .imm (.int 32 (BitVec.ofNat 32 9))),
        ("if.end372.i", .imm (.int 32 (BitVec.ofNat 32 7))),
        ("LeafBlock58", .imm (.int 32 (BitVec.ofNat 32 8)))] = some opT)
-    (hopT : evalOperand (stateAt (hlastTailS C s (hlastByte G C) c ix e b8).env
-      (hlastTailS C s (hlastByte G C) c ix e b8)) opT = some (.int 32 cA))
-    (hkindT : lookupName (hlastTailS C s (hlastByte G C) c ix e b8).env "%kind404.i" =
+    (hopT : evalOperand (stateAt (hlastTailAt C s v ix).env
+      (hlastTailAt C s v ix)) opT = some (.int 32 cA))
+    (hkindT : lookupName (hlastTailAt C s v ix).env "%kind404.i" =
       some (.ptr (C.stage.tok + 16)))
-    (hrdT : lookupName (hlastTailS C s (hlastByte G C) c ix e b8).env "%root_done.i" =
+    (hrdT : lookupName (hlastTailAt C s v ix).env "%root_done.i" =
       some (.ptr (G.next0 + 8)))
     (hreadT : readBytes
-      (writeBytes (hlastTailS C s (hlastByte G C) c ix e b8).mem (C.stage.tok + 16)
+      (writeBytes (hlastTailAt C s v ix).mem (C.stage.tok + 16)
         (natToBytes cA.toNat 4)) (G.next0 + 8) 4 = some (natToBytes rdv.toNat 4))
     (hpre₁ : s2ValuePosPre
       [.int 32 (BitVec.ofNat 32 (TailStartC C).sp), .int 32 rdv,
        .ptr (TailStartC C).stage.ctype, .ptr (TailStartC C).stage.cst]
-      (writeBytes (hlastTailS C s (hlastByte G C) c ix e b8).mem (C.stage.tok + 16)
-        (natToBytes cA.toNat 4)) (hlastTailS C s (hlastByte G C) c ix e b8).next)
+      (writeBytes (hlastTailAt C s v ix).mem (C.stage.tok + 16)
+        (natToBytes cA.toNat 4)) (hlastTailAt C s v ix).next)
     (hcall₁ : stage2Calls stage2SubCalls "s2_value_pos"
       [.int 32 (BitVec.ofNat 32 (TailStartC C).sp), .int 32 rdv,
        .ptr (TailStartC C).stage.ctype, .ptr (TailStartC C).stage.cst]
-      (writeBytes (hlastTailS C s (hlastByte G C) c ix e b8).mem (C.stage.tok + 16)
-        (natToBytes cA.toNat 4)) (hlastTailS C s (hlastByte G C) c ix e b8).next = some r₁)
+      (writeBytes (hlastTailAt C s v ix).mem (C.stage.tok + 16)
+        (natToBytes cA.toNat 4)) (hlastTailAt C s v ix).next = some r₁)
     (hret₁ : r₁.ret = .int 32 xA)
     (hbit0T : evalICmp .eq xA (BitVec.ofNat 32 0) = 0)
     (hzread : readBytes
-      (writeBytes (hlastTailS C s (hlastByte G C) c ix e b8).mem (C.stage.tok + 16)
+      (writeBytes (hlastTailAt C s v ix).mem (C.stage.tok + 16)
         (natToBytes cA.toNat 4)) C.stage.z 8 = some (wordBytes 8 G.ev))
-    (hcT : lookupName (hlastTailS C s (hlastByte G C) c ix e b8).env "%c.i" =
+    (hcT : lookupName (hlastTailAt C s v ix).env "%c.i" =
       some (.ptr (TailCarry₂ (TailStartC C)).stage.c))
-    (htT : lookupName (hlastTailS C s (hlastByte G C) c ix e b8).env "%t352.i" =
+    (htT : lookupName (hlastTailAt C s v ix).env "%t352.i" =
       some (.ptr (TailCarry₂ (TailStartC C)).stage.tok))
-    (hoT : lookupName (hlastTailS C s (hlastByte G C) c ix e b8).env "%z" =
+    (hoT : lookupName (hlastTailAt C s v ix).env "%z" =
       some (.ptr (TailCarry₂ (TailStartC C)).stage.z))
     (hpre₂ : s2ScalarValuePre
       [.ptr (TailCarry₂ (TailStartC C)).stage.c, .ptr (TailCarry₂ (TailStartC C)).stage.tok,
@@ -1181,29 +1273,29 @@ def hlastFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
       [.int 32 (BitVec.ofNat 32 (TailStartC C).sp), .ptr (G.next0 + 8),
        .ptr (TailCarry₃ (TailStartC C) ev).stage.ctype,
        .ptr (TailCarry₃ (TailStartC C) ev).stage.cst] r₂.mem r₂.next = some r₃)
-    (heiT : lookupName (hlastTailS C s (hlastByte G C) c ix e b8).env "%ee.1.i" =
+    (heiT : lookupName (hlastTailAt C s v ix).env "%ee.1.i" =
       some (.int 64 (BitVec.ofNat 64 ei)))
-    (hcdT : lookupName (hlastTailS C s (hlastByte G C) c ix e b8).env "%cond350.i" =
+    (hcdT : lookupName (hlastTailAt C s v ix).env "%cond350.i" =
       some (.int 64 (BitVec.ofNat 64 cd)))
     (hinnerT : cd - ei ≤ (TailStartC C).inner) (hlt2T : ei < cd) (hcd64T : cd < 2 ^ 64)
     {bs : List UInt8}
     (hpos : ((BitVec.ofNat 64 ei).signExtend 64).toNat < 2 ^ 63)
     (hreadS : readBytes
-      (hlastEntryAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA).mem
+      (hlastEntryAt C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA).mem
       (G.b + ((BitVec.ofNat 64 ei).signExtend 64).toNat) 1 = some bs)
     (hbit47 : evalICmp .slt (BitVec.ofNat 8 (bytesToNat bs)) (BitVec.ofNat 8 13) = 1)
     (hws47 : evalICmp .ule (BitVec.ofNat 8 (bytesToNat bs) + BitVec.ofNat 8 247)
       (BitVec.ofNat 8 1) = 1)
     (hlatch : WalkLocal { TailCarryScan (TailStartC C) ev with block := "while.body462.i" }
-      (hlastLatchAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA
+      (hlastLatchAt C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA
         (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs))))
     {qi cw tok : Nat}
     (hq : lookupName
-      (hlastLatchAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA
+      (hlastLatchAt C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA
         (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs))).env
       "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 qi)))
     (hcwL : lookupName
-      (hlastLatchAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA
+      (hlastLatchAt C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA
         (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs))).env
       "%cond350.i" = some (.int 64 (BitVec.ofNat 64 cw)))
     (hqc : qi + 1 = cw)
@@ -1214,15 +1306,10 @@ def hlastFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
       lookupName e.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 cw)) →
       WalkLocal (G := G) (ScanCMerge (ScanLatchC C ev)) e)
     (htokL : lookupName
-      (hlastScanOutAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA
+      (hlastScanOutAt C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA
         (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw).env
       "%t352.i" = some (.ptr tok))
-    {v : Nat}
-    (hincL : lookupName s.env "%inc.i" = some (.int 64 (BitVec.ofNat 64 (C.k + 1))))
-    (hnepL : lookupName s.env "%nep" = some (.int 64 (hlastNepV G)))
-    (heL : lookupName s.env "%e" = some (.ptr C.stage.e))
-    (h4L : lookupName s.env "%4" = some (.int 64 (BitVec.ofNat 64 v)))
-    (hv64 : v < 2 ^ 64) :
+    :
     HlastFacts G C s :=
   { x := hlastByte G C
     h8 := by
@@ -1241,32 +1328,44 @@ def hlastFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
       show evalICmp .ult (BitVec.ofNat 64 (C.k + 1)) (BitVec.ofNat 64 G.nep) = 0
       rw [hk]
       exact hlast_ult_self _
-    reg := reg
-    c := c
+    reg := "%4"
+    c := BitVec.ofNat 64 v
     ix := ix
-    hpre5 := hpre5
-    hav5 := hav5
-    hidx5 := hidx5
-    htok5 := htok5
-    hgap5 := hgap5
+    hpre5 := hlast_pre5
+    hav5 := hlastAS5_envFour s (hlastByte G C) (hlastIncV C) (hlastNepV G)
+      (BitVec.ofNat 64 v) h4L
+    hidx5 := hlastAS5_envIdx s (hlastByte G C) (hlastIncV C) (hlastNepV G) ix hidxS
+    htok5 := hlastAS5_envTok C s (hlastByte G C) (hlastIncV C) (hlastNepV G) htokS
+    hgap5 := hlastAS5_envGap C s (hlastByte G C) (hlastIncV C) (hlastNepV G)
+      (hInv.regs ("%gap.i", .ptr (C.stage.tok + 20)) (by simp [walkStaticRegs]))
     hugt := hugt
-    p := p
-    op := op
-    e := e
-    b8 := b8
-    hpre6 := hpre6
-    hin6 := hin6
-    hv6 := hv6
-    hend6 := hend6
-    h8end := h8end
-    hbit6 := hbit6
-    x1 := b8
-    h8c := by
-      show evalOperand (seamAt C s (hlastByte G C) (hlastIncV C) (hlastNepV G) c ix e b8) (.reg "%8") =
-        some (.int 8 b8)
+    p := "cond.end349.i"
+    op := .reg "%idxprom.i"
+    e := ix
+    b8 := hlastByte G C
+    hpre6 := hlast_pre6 C s (hlastByte G C) (hlastIncV C) (hlastNepV G)
+      (BitVec.ofNat 64 v) ix
+    hin6 := hlast_phi6
+    hv6 := by
       simp only [evalOperand]
-      rw [hlastSeam_env8 C s (hlastByte G C) c ix e b8]
-      exact h8end
+      rw [hlastEndS_envIdx C s (hlastByte G C) (hlastIncV C) (hlastNepV G)
+        (BitVec.ofNat 64 v) ix]
+      exact hidxS
+    hend6 := by
+      rw [hlastEndS_envEnd C s (hlastByte G C) (hlastIncV C) (hlastNepV G)
+        (BitVec.ofNat 64 v) ix]
+      exact hInv.regs ("%end.i", .ptr (C.stage.tok + 8)) (by simp [walkStaticRegs])
+    h8end := by
+      rw [hlastEndS_env8 C s (hlastByte G C) (hlastIncV C) (hlastNepV G)
+        (BitVec.ofNat 64 v) ix]
+      exact hInv.iter.reg8
+    hbit6 := hbit6
+    x1 := hlastByte G C
+    h8c := by
+      simp only [evalOperand]
+      rw [hlastSeam_env8 C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C),
+        hlastEndS_env8 C s (hlastByte G C) (hlastIncV C) (hlastNepV G) (BitVec.ofNat 64 v) ix]
+      exact hInv.iter.reg8
     hc110 := hc110
     hc116 := hc116
     hceq116 := hceq116
@@ -1279,7 +1378,7 @@ def hlastFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
     xA := xA
     ei := ei
     cd := cd
-    hTail := hlastTail_of_calls G C s (hlastByte G C) c ix e b8 r₁ r₂ r₃ ev ei cd
+    hTail := hlastTail_of_calls G C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) r₁ r₂ r₃ ev ei cd
       hInvT rfl (pT := pT) (opT := opT) (regT := regT) hpreT hincT hopT hkindT hrdT
       hreadT hpre₁ hcall₁ hret₁ hbit0T hzread hcT htT hoT hpre₂ hcall₂ happ₂ hret₂
       hev64 hevlen64 hltT hpre₃ hcall₃ heiT hcdT hinnerT hlt2T hcd64T
@@ -1289,30 +1388,30 @@ def hlastFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
     bs := bs
     src := "if.then447.i"
     sel := .reg "%ee.1.i"
-    hpreS := hlastEntry_pre C s (hlastByte G C) c ix e b8 r₁ r₂ r₃ ei cd cA rdv xA
+    hpreS := hlastEntry_pre C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA
     hincS := hlastEntry_phiSel
     hopS := by
       show evalOperand (stateAt
-        (hlastEntryAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA).env
-        (hlastEntryAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA))
+        (hlastEntryAt C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA).env
+        (hlastEntryAt C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA))
         (.reg "%ee.1.i") = some (.int 64 (BitVec.ofNat 64 ei))
       simp only [evalOperand, stateAt]
-      rw [hlastEntry_envEe C s (hlastByte G C) c ix e b8 r₁ r₂ r₃ ei cd cA rdv xA]
+      rw [hlastEntry_envEe C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA]
       exact heiT
-    h3S := hlastEntry_env3 C s (hlastByte G C) c ix e b8 r₁ r₂ r₃ ei cd cA rdv xA hInvT
+    h3S := hlastEntry_env3 C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA hInvT
     hpos := hpos
     hreadS := hreadS
     hbsS := rfl
     hloc105 := hlastLoc105 (TailStartC C) ev
-      (hlastEntryAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA)
+      (hlastEntryAt C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA)
       (BitVec.ofNat 64 ei) G.b (bytesToNat bs)
     x47 := BitVec.ofNat 8 (bytesToNat bs)
-    h47 := landRhs457OutAt_env47 C s (hlastByte G C) c ix e b8 r₁ r₂ r₃ ei cd cA rdv xA
+    h47 := landRhs457OutAt_env47 C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA
       (BitVec.ofNat 64 ei) G.b (bytesToNat bs)
     hbit47 := hbit47
     hws47 := hws47
     hloc96 := hlastLoc96 (TailStartC C) ev
-      (hlastEntryAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA)
+      (hlastEntryAt C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA)
       (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs))
     hlatch := hlatch
     qi := qi
@@ -1334,14 +1433,14 @@ def hlastFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
     spv := C.sp
     v := v
     hk2 := by
-      show evalOperand (hlastMergeAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw) (.reg "%inc.i") =
+      show evalOperand (hlastMergeAt C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw) (.reg "%inc.i") =
         some (.int 64 (BitVec.ofNat 64 (C.k + 1)))
       simp only [evalOperand]
-      rw [hlastMerge_envInc C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw]
+      rw [hlastMerge_envInc C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw]
       exact hincL
     hnepM := by
-      show lookupName (hlastMergeAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw).env "%nep" = some (.int 64 (hlastNepV G))
-      rw [hlastMerge_envNep C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw]
+      show lookupName (hlastMergeAt C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw).env "%nep" = some (.int 64 (hlastNepV G))
+      rw [hlastMerge_envNep C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw]
       exact hnepL
     hterm := by
       show C.k + 1 = (hlastNepV G).toNat
@@ -1349,18 +1448,18 @@ def hlastFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
       exact (hlast_nep_toNat G).symm
     hk2nep := hk
     hspvM := by
-      show evalOperand (hlastMergeAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw) (.reg "%sp.i.0248") =
+      show evalOperand (hlastMergeAt C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw) (.reg "%sp.i.0248") =
         some (.int 32 (BitVec.ofNat 32 C.sp))
       simp only [evalOperand]
-      rw [hlastMerge_envSp C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw]
+      rw [hlastMerge_envSp C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw]
       exact hInv.depth_reg
     heM := by
-      show lookupName (hlastMergeAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw).env "%e" = some (.ptr C.stage.e)
-      rw [hlastMerge_envE C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw]
+      show lookupName (hlastMergeAt C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw).env "%e" = some (.ptr C.stage.e)
+      rw [hlastMerge_envE C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw]
       exact heL
     h4M := by
-      show lookupName (hlastMergeAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw).env "%4" = some (.int 64 (BitVec.ofNat 64 v))
-      rw [hlastMerge_envFour C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw]
+      show lookupName (hlastMergeAt C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw).env "%4" = some (.int 64 (BitVec.ofNat 64 v))
+      rw [hlastMerge_envFour C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw]
       exact h4L
     hv64 := hv64
     hlastK := hk }
