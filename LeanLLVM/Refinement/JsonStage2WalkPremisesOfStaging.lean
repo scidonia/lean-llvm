@@ -263,7 +263,14 @@ the six the dispatch reads and `walkStaticRegs` the twenty-four addresses, and `
 
 The facts are the entry environment's (`walkEntryState_env`); what is missing is a
 carrier, not the fact: a `WalkSegment` records a run and an invariant, not the blocks
-it passed, so no lemma carries a register from the entry to the head. -/
+it passed, so no lemma carries a register from the entry to the head.
+
+**A `WalkInv` carrier for them does not exist, and `regs` is not one.**  `WalkPtrs`
+holds the six registers the dispatch reads, and `walkStaticRegs`' twenty-four names are
+`%s`'s fields (`%nsp`, `%xp1`, `%n2.i`, …), the log's six addresses, the token's three,
+the cursor's five and the four allocas.  `%z` and `%s` themselves appear in neither
+list, so the pair is the input's, supplied at the same place the head's byte and its
+class bits are. -/
 abbrev WalkHeadPtrs {m0 : Mem} (G : WalkGeom m0) : Prop :=
   ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     lookupName s.env "%z" = some (.ptr C.stage.z) ∧
@@ -290,10 +297,13 @@ theorem walkSetMem_pc (s : State) (m : Mem) : (walkSetMem s m).pc = s.pc := rfl
 /-- Naming a state at an environment leaves the block. -/
 theorem stateAt_pc (env : Env) (s : State) : (stateAt env s).pc = s.pc := rfl
 
-/-- **The refusal copy's state is at its input's block.**  Stated with the state and
-its memory as variables: `walkIfThenBlockState`'s own term is a three-deep nest of
-`writeBytes`, and a `rfl` at a named state's unfolds it, while the lemma's statement
-does not. -/
+/-- **The refusal copy's state is at its input's block.**  The lemma is stated at the
+general shape — the state and its memory as variables — because that shape is free and
+the instance is not: the copy's state is a three-deep nest of `writeBytes`, and a `rfl`
+at a *named* state's `.pc` exceeds 200 000 heartbeats deterministically (a `whnf`
+timeout), while the same fact with the memory a variable is instant.  At a term whose
+head is a variable the projection needs one unfold of each layer; at a named one it
+unfolds the three writes and their byte lists at every position. -/
 theorem walkIfThenBlockState_pc (env : Env) (nd nv err e : Nat) (A L E : BitVec 64)
     (s : State) : (walkIfThenBlockState env nd nv err e A L E s).pc = s.pc := by
   simp only [walkIfThenBlockState, stateAt_pc, walkSetMem_pc]
@@ -606,6 +616,69 @@ theorem walkPremises_of_staging {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
     · -- the loop's step, at the exit's own value
       obtain ⟨v, hendv⟩ := hend G
       exact ⟨v, walkLoopStep_of_staging (G := G) (hcont G) (hmerge G) (hptr G) hendv⟩
+
+/-! ### The completion and the walk's obligation
+
+`stage2WalkCompletes_of_premises` and `stage2WalkObligation_of_premises` were stated and
+never applied; these are their applications at the premises above.  Nothing new is
+proved: the two conditionals' own statements are read at `walkPremises_of_staging`.
+
+The obligation's second argument is the record's post rule, which
+`stage2WalkObligation_of_premises` names and this layer does not read: it is the run's
+region claim at the outcome, and `stage2Post_of_run` is what produces it from a
+`Stage2Run` and a completion.  It is a hypothesis here for the same reason it is one
+there — the state's post is not the walk's statement.
+-/
+
+/-- **The completion, from the four premises.**  `stage2WalkCompletes_of_premises` at
+`walkPremises_of_staging`: the body's run reaches an outcome inside the record's budget
+whenever the record's pre and the adapter's staging hold. -/
+theorem stage2WalkCompletes_of_staging {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
+    (hcont : ∀ {m0 : Mem} (G : WalkGeom m0), WalkContinueFacts G)
+    (hmerge : ∀ {m0 : Mem} (G : WalkGeom m0), WalkMergeCells G)
+    (hptr : ∀ {m0 : Mem} (G : WalkGeom m0), WalkHeadPtrs G)
+    (hend : ∀ {m0 : Mem} (G : WalkGeom m0), Σ' v : Value, WalkLoopEnd G v) :
+    Stage2WalkCompletes d c ctype cst tok s z e nkSlot nxpSlot stage2SubCalls :=
+  stage2WalkCompletes_of_premises (walkPremises_of_staging hcont hmerge hptr hend)
+
+/-- **The walk's obligation, from the four premises and the record's post.**  This is
+the milestone the layer was built for: `Stage2WalkObligation` is `Satisfies` at
+`Γ_stage2at`, and its completion half is `stage2WalkCompletes_of_staging`; its post
+half is the record's own, named. -/
+theorem stage2WalkObligation_of_staging {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
+    (hcont : ∀ {m0 : Mem} (G : WalkGeom m0), WalkContinueFacts G)
+    (hmerge : ∀ {m0 : Mem} (G : WalkGeom m0), WalkMergeCells G)
+    (hptr : ∀ {m0 : Mem} (G : WalkGeom m0), WalkHeadPtrs G)
+    (hend : ∀ {m0 : Mem} (G : WalkGeom m0), Σ' v : Value, WalkLoopEnd G v)
+    (hpost : ∀ args mem next,
+      (Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot).pre args mem next →
+      ∀ o, BehFromState (stage2Calls stage2SubCalls) stage2Body
+          (EntryState stage2Body args mem next) o →
+        (Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot).post args mem next o) :
+    Stage2WalkObligation d c ctype cst tok s z e nkSlot nxpSlot :=
+  stage2WalkObligation_of_premises (walkPremises_of_staging hcont hmerge hptr hend) hpost
+
+/-! ### The four premises, and what each one owes
+
+The composition is complete; what remains is one premise per obstruction, and this is
+the map.  None of the four is a gap in the composition — each is either a fact about
+the input or a named missing preservation lemma.
+
+| premise | status |
+|---|---|
+| `WalkContinueFacts` | **no producer, and the same discipline as `HlastFacts`.**  Its producer would be `hlastFacts_of_staging`'s twin: the bundle's fields are the head's byte and its four class bits, the entry counts and the default arm's cells, the seam's cells, the scan's landing — all facts about the staged document — beside `htok`, which asserts a register is preserved across the scan and needs *the extra-token scan preserves a register it does not bind*, a statement a `WalkSegment` cannot carry because the traversal returns its final state existentially. |
+| `WalkMergeCells` | **structural, and no producer can exist in this vocabulary.**  `WalkSegment` records a run and an invariant, and neither names the blocks the run passed or the registers they bound; no lemma in the layer carries a register across a segment, so `%inc.i`, `%nep` and the header's index at the merge cannot be read off the segment that reaches it.  A producer needs a segment-level register-preservation statement, which the vocabulary does not have. |
+| `WalkHeadPtrs` | **the input's, like the class bits.**  `%z` and `%s` are bound by the entry block (`walkEntryState_env`) and by nothing else; no `WalkInv` clause names them (`WalkPtrs` has the dispatch's six, `walkStaticRegs` the twenty-four addresses), so the pair is supplied at the point a caller knows the staging. |
+| `WalkLoopEnd` | **supplied, with its first half's producer already in the tree.**  `facts` is `HlastFacts`, whose producer is `hlastFacts_of_staging` (which itself takes a bundle of supplied facts — the head's byte and class bits, the register cells and the calls' outcomes — so its own supply is the same discipline); `tail` is `ExitTail`, which `walkExit_at_stage2Calls` takes from the caller as the three calls' contracts composed at their staged argument lists. |
+
+Of the four, `WalkMergeCells` is the one with no producer of any shape: the other three
+are supplies a caller makes from the input, and this one is a statement the layer has
+no vocabulary to state. -/
+
+/-! ### Axiom footprints beyond the five -/
+
+#print axioms LeanLLVM.Refinement.WalkScope.stage2WalkCompletes_of_staging
+#print axioms LeanLLVM.Refinement.WalkScope.stage2WalkObligation_of_staging
 
 /-! ### Axiom footprints -/
 
