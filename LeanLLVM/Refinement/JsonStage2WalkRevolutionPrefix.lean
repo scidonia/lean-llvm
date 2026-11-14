@@ -571,18 +571,15 @@ theorem contEntry_scan_empty {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s :
 
 /-! ### The prefix -/
 
-/-- **A continuing entry's path to the extra-token scan, counted at twenty-three.**  The
-four high-byte pivots and `sw.default.i`, the count test's *succeeding* arm
-(`cond.true345.i`), the bound's `phi` (`cond.end349.i`), the whitespace check at the
-entry's end (`land.lhs.true357.i` and the byte's three pivots), the token's end
-(`if.end372.i`), the class-C span, the tail's three calls and the scan's three links.
+/-- **The head path to the whitespace check, counted at eight.**  The four high-byte
+pivots, `sw.default.i`'s *succeeding* arm, `cond.true345.i`, the bound's `phi` and the
+whitespace check itself — `hcontPrefixSeg`'s own first eight links as a segment, cut out so
+that a consumer of the *run* class has the invariant at the check as `inv'` instead of as a
+supplied row: a segment records its endpoints' invariants and not its interior's.
 
-The hypotheses are the path's inputs, grouped as the references read them: the head's byte
-and its four pivot bits, the counts and the test's value, the next entry's lane (pointer,
-word and read), the bound's position against the entry's index, the byte before the end
-and its three class bits, the seam's byte and cells, the second byte's class, the tail's
-counted segment at `3`, and the scan's landing. -/
-theorem hcontPrefixSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+`b35` is a parameter here rather than a fact: it is the byte the check reads, so it names
+`contLandS`'s state, and the run's own step is what branches on its class. -/
+theorem contPrefixLand {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead)
     {x : BitVec 8} (h8 : evalOperand s (.reg "%8") = some (.int 8 x))
     (hlt91 : evalICmp .slt x (BitVec.ofNat 8 91) = 0)
@@ -605,63 +602,9 @@ theorem hcontPrefixSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
     (hugt : evalICmp .ugt (BitVec.ofNat 64 v.toNat) ix = 1)
     {b35 : UInt8}
     (hread35 : readBytes (contEndS C s x inc nep ep v ix).mem ((G.b - 1) + v.toNat) 1 =
-      some [b35])
-    (hb13 : evalICmp .slt (cont35 b35) (BitVec.ofNat 8 13) = 0)
-    (hb32 : evalICmp .slt (cont35 b35) (BitVec.ofNat 8 32) = 1)
-    (hbne13 : evalICmp .eq (cont35 b35) (BitVec.ofNat 8 13) = 0)
-    {b8 : BitVec 8}
-    (hend : lookupName (contP35S C s x inc nep ep v ix b35).env "%end.i" =
-      some (.ptr (C.stage.tok + 8)))
-    (h8end : lookupName (contP35S C s x inc nep ep v ix b35).env "%8" = some (.int 8 b8))
-    (hbit : (evalICmp .eq b8 (BitVec.ofNat 8 45) |||
-      evalICmp .ult (b8 + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
-    {x1 : BitVec 8}
-    (h8c : evalOperand (contSeamS C s x inc nep ep v ix b35 b8) (.reg "%8") =
-      some (.int 8 x1))
-    (hc110 : evalICmp .slt x1 (BitVec.ofNat 8 110) = 0)
-    (hc116 : evalICmp .slt x1 (BitVec.ofNat 8 116) = 0)
-    (hceq116 : evalICmp .eq x1 (BitVec.ofNat 8 116) = 0)
-    (r₁ r₂ r₃ : CallOutcome) (ev : EventRecord)
-    {cA rdv : BitVec 32} {xA : BitVec 32} {ei : Nat}
-    (hTail : WalkSegment (stage2Calls stage2SubCalls) G (ContTailStartC C)
-      (contTailStart C s x inc nep ep v ix b35 b8 x1)
-      (TailCarryScan (ContTailStartC C) ev)
-      (contEntry C s x inc nep ep v ix b35 b8 x1 r₁ r₂ r₃ ei cA rdv xA) 3)
-    {a q : Nat} {bs : List UInt8} {src : String} {sel : Operand}
-    (hpreS : (contEntry C s x inc nep ep v ix b35 b8 x1 r₁ r₂ r₃ ei cA rdv xA).pre = some src)
-    (hincS : phiIncoming src
-      [("while.body462.i", (Operand.reg "%inc463.i")),
-       ("if.then447.i", (Operand.reg "%ee.1.i"))] = some sel)
-    (hopS : evalOperand (stateAt
-      (contEntry C s x inc nep ep v ix b35 b8 x1 r₁ r₂ r₃ ei cA rdv xA).env
-      (contEntry C s x inc nep ep v ix b35 b8 x1 r₁ r₂ r₃ ei cA rdv xA)) sel =
-      some (.int 64 (BitVec.ofNat 64 ei)))
-    (h3S : lookupName (contEntry C s x inc nep ep v ix b35 b8 x1 r₁ r₂ r₃ ei cA rdv xA).env
-      "%3" = some (.ptr a))
-    (hpos : ((BitVec.ofNat 64 ei).signExtend 64).toNat < 2 ^ 63)
-    (hreadS : readBytes
-      (contEntry C s x inc nep ep v ix b35 b8 x1 r₁ r₂ r₃ ei cA rdv xA).mem
-      (a + ((BitVec.ofNat 64 ei).signExtend 64).toNat) 1 = some bs)
-    (hbsS : bytesToNat bs = q)
-    (hloc105 : WalkLocal (ScanC₁₀₅ (TailCarryScan (ContTailStartC C) ev))
-      (landRhs457OutAt (contEntry C s x inc nep ep v ix b35 b8 x1 r₁ r₂ r₃ ei cA rdv xA)
-        (BitVec.ofNat 64 ei) a q))
-    {x47 : BitVec 8}
-    (h47 : evalOperand
-      (landRhs457OutAt (contEntry C s x inc nep ep v ix b35 b8 x1 r₁ r₂ r₃ ei cA rdv xA)
-        (BitVec.ofNat 64 ei) a q) (.reg "%47") = some (.int 8 x47))
-    (hbit47 : evalICmp .slt x47 (BitVec.ofNat 8 13) = 1)
-    (hws47 : evalICmp .ule (x47 + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 1)
-    (hloc96 : WalkLocal (ScanC₉₆ (TailCarryScan (ContTailStartC C) ev))
-      (ScanS₉₆ (contEntry C s x inc nep ep v ix b35 b8 x1 r₁ r₂ r₃ ei cA rdv xA)
-        (BitVec.ofNat 64 ei) a q x47))
-    (hlatch : WalkLocal { TailCarryScan (ContTailStartC C) ev with block := "while.body462.i" }
-      (contLatch C s x inc nep ep v ix b35 b8 x1 r₁ r₂ r₃ ei cA rdv xA
-        (BitVec.ofNat 64 ei) a q x47)) :
-    ∃ (s' : State),
-      s' = contLatch C s x inc nep ep v ix b35 b8 x1 r₁ r₂ r₃ ei cA rdv xA
-        (BitVec.ofNat 64 ei) a q x47 ∧
-      WalkSegment (stage2Calls stage2SubCalls) G C s (ContLatchC C ev) s' 23 := by
+      some [b35]) :
+    WalkSegment (stage2Calls stage2SubCalls) G C s (ContAC₄ C)
+      (contLandS C s x inc nep ep v ix b35) 8 := by
   -- the arms, resolved by the class's bits
   have hres₁ : (if evalICmp .slt x (BitVec.ofNat 8 91) = 1 then
       "NodeBlock5" else "NodeBlock19") = "NodeBlock19" := by
@@ -798,6 +741,104 @@ theorem hcontPrefixSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
       (contLandS C s x inc nep ep v ix b35) := by
     rw [hs₈] at hl₈
     exact hl₈
+  exact Seg.measure (Seg.tail hl₁' (Seg.tail hl₂' (Seg.tail hl₃' (Seg.tail hl₄' (Seg.tail hl₅' (Seg.tail hl₆' (Seg.tail hl₇' (Seg.tail hl₈' (Seg.nil hl₈'.inv')))))))))
+
+/-- **A continuing entry's path to the extra-token scan, counted at twenty-three.**  The
+four high-byte pivots and `sw.default.i`, the count test's *succeeding* arm
+(`cond.true345.i`), the bound's `phi` (`cond.end349.i`), the whitespace check at the
+entry's end (`land.lhs.true357.i` and the byte's three pivots), the token's end
+(`if.end372.i`), the class-C span, the tail's three calls and the scan's three links.
+
+The hypotheses are the path's inputs, grouped as the references read them: the head's byte
+and its four pivot bits, the counts and the test's value, the next entry's lane (pointer,
+word and read), the bound's position against the entry's index, the byte before the end
+and its three class bits, the seam's byte and cells, the second byte's class, the tail's
+counted segment at `3`, and the scan's landing. -/
+theorem hcontPrefixSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead)
+    {x : BitVec 8} (h8 : evalOperand s (.reg "%8") = some (.int 8 x))
+    (hlt91 : evalICmp .slt x (BitVec.ofNat 8 91) = 0)
+    (hlt123 : evalICmp .slt x (BitVec.ofNat 8 123) = 0)
+    (hlt125 : evalICmp .slt x (BitVec.ofNat 8 125) = 0)
+    (hne125 : evalICmp .eq x (BitVec.ofNat 8 125) = 0)
+    {inc nep : BitVec 64} {ep : Nat} {v : BitVec 32}
+    (hinc : evalOperand (headAS₄ s x) (.reg "%inc.i") = some (.int 64 inc))
+    (hnep : evalOperand (headAS₄ s x) (.reg "%nep") = some (.int 64 nep))
+    (hnext : evalICmp .ult inc nep = 1)
+    (h5 : lookupName (contAS₅ s x inc nep).env "%5" = some (.ptr ep))
+    (hi63 : inc.toNat < 2 ^ 63)
+    (hread : readBytes (contAS₅ s x inc nep).mem (ep + inc.toNat * 4) 4 =
+      some (natToBytes v.toNat 4))
+    {ix : BitVec 64}
+    (hidx5 : lookupName (contAS₅ s x inc nep).env "%idxprom.i" = some (.int 64 ix))
+    (htok5 : lookupName (contAS₅ s x inc nep).env "%t352.i" = some (.ptr C.stage.tok))
+    (hgap5 : lookupName (contAS₅ s x inc nep).env "%gap.i" =
+      some (.ptr (C.stage.tok + 20)))
+    (hugt : evalICmp .ugt (BitVec.ofNat 64 v.toNat) ix = 1)
+    {b35 : UInt8}
+    (hread35 : readBytes (contEndS C s x inc nep ep v ix).mem ((G.b - 1) + v.toNat) 1 =
+      some [b35])
+    (hb13 : evalICmp .slt (cont35 b35) (BitVec.ofNat 8 13) = 0)
+    (hb32 : evalICmp .slt (cont35 b35) (BitVec.ofNat 8 32) = 1)
+    (hbne13 : evalICmp .eq (cont35 b35) (BitVec.ofNat 8 13) = 0)
+    {b8 : BitVec 8}
+    (hend : lookupName (contP35S C s x inc nep ep v ix b35).env "%end.i" =
+      some (.ptr (C.stage.tok + 8)))
+    (h8end : lookupName (contP35S C s x inc nep ep v ix b35).env "%8" = some (.int 8 b8))
+    (hbit : (evalICmp .eq b8 (BitVec.ofNat 8 45) |||
+      evalICmp .ult (b8 + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
+    {x1 : BitVec 8}
+    (h8c : evalOperand (contSeamS C s x inc nep ep v ix b35 b8) (.reg "%8") =
+      some (.int 8 x1))
+    (hc110 : evalICmp .slt x1 (BitVec.ofNat 8 110) = 0)
+    (hc116 : evalICmp .slt x1 (BitVec.ofNat 8 116) = 0)
+    (hceq116 : evalICmp .eq x1 (BitVec.ofNat 8 116) = 0)
+    (r₁ r₂ r₃ : CallOutcome) (ev : EventRecord)
+    {cA rdv : BitVec 32} {xA : BitVec 32} {ei : Nat}
+    (hTail : WalkSegment (stage2Calls stage2SubCalls) G (ContTailStartC C)
+      (contTailStart C s x inc nep ep v ix b35 b8 x1)
+      (TailCarryScan (ContTailStartC C) ev)
+      (contEntry C s x inc nep ep v ix b35 b8 x1 r₁ r₂ r₃ ei cA rdv xA) 3)
+    {a q : Nat} {bs : List UInt8} {src : String} {sel : Operand}
+    (hpreS : (contEntry C s x inc nep ep v ix b35 b8 x1 r₁ r₂ r₃ ei cA rdv xA).pre = some src)
+    (hincS : phiIncoming src
+      [("while.body462.i", (Operand.reg "%inc463.i")),
+       ("if.then447.i", (Operand.reg "%ee.1.i"))] = some sel)
+    (hopS : evalOperand (stateAt
+      (contEntry C s x inc nep ep v ix b35 b8 x1 r₁ r₂ r₃ ei cA rdv xA).env
+      (contEntry C s x inc nep ep v ix b35 b8 x1 r₁ r₂ r₃ ei cA rdv xA)) sel =
+      some (.int 64 (BitVec.ofNat 64 ei)))
+    (h3S : lookupName (contEntry C s x inc nep ep v ix b35 b8 x1 r₁ r₂ r₃ ei cA rdv xA).env
+      "%3" = some (.ptr a))
+    (hpos : ((BitVec.ofNat 64 ei).signExtend 64).toNat < 2 ^ 63)
+    (hreadS : readBytes
+      (contEntry C s x inc nep ep v ix b35 b8 x1 r₁ r₂ r₃ ei cA rdv xA).mem
+      (a + ((BitVec.ofNat 64 ei).signExtend 64).toNat) 1 = some bs)
+    (hbsS : bytesToNat bs = q)
+    (hloc105 : WalkLocal (ScanC₁₀₅ (TailCarryScan (ContTailStartC C) ev))
+      (landRhs457OutAt (contEntry C s x inc nep ep v ix b35 b8 x1 r₁ r₂ r₃ ei cA rdv xA)
+        (BitVec.ofNat 64 ei) a q))
+    {x47 : BitVec 8}
+    (h47 : evalOperand
+      (landRhs457OutAt (contEntry C s x inc nep ep v ix b35 b8 x1 r₁ r₂ r₃ ei cA rdv xA)
+        (BitVec.ofNat 64 ei) a q) (.reg "%47") = some (.int 8 x47))
+    (hbit47 : evalICmp .slt x47 (BitVec.ofNat 8 13) = 1)
+    (hws47 : evalICmp .ule (x47 + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 1)
+    (hloc96 : WalkLocal (ScanC₉₆ (TailCarryScan (ContTailStartC C) ev))
+      (ScanS₉₆ (contEntry C s x inc nep ep v ix b35 b8 x1 r₁ r₂ r₃ ei cA rdv xA)
+        (BitVec.ofNat 64 ei) a q x47))
+    (hlatch : WalkLocal { TailCarryScan (ContTailStartC C) ev with block := "while.body462.i" }
+      (contLatch C s x inc nep ep v ix b35 b8 x1 r₁ r₂ r₃ ei cA rdv xA
+        (BitVec.ofNat 64 ei) a q x47)) :
+    ∃ (s' : State),
+      s' = contLatch C s x inc nep ep v ix b35 b8 x1 r₁ r₂ r₃ ei cA rdv xA
+        (BitVec.ofNat 64 ei) a q x47 ∧
+      WalkSegment (stage2Calls stage2SubCalls) G C s (ContLatchC C ev) s' 23 := by
+  -- the head path to the whitespace check: `contPrefixLand`'s eight links
+  have hseg8 : WalkSegment (stage2Calls stage2SubCalls) G C s (ContAC₄ C)
+      (contLandS C s x inc nep ep v ix b35) 8 :=
+    contPrefixLand (G := G) (C := C) (s := s) hInv hblock h8 hlt91 hlt123 hlt125 hne125
+      hinc hnep hnext h5 hi63 hread hidx5 htok5 hgap5 hugt hread35
   -- 9. the byte's first pivot
   have h35a : evalOperand (contLandS C s x inc nep ep v ix b35) (.reg "%35") =
       some (.int 8 (cont35 b35)) := by
@@ -805,7 +846,7 @@ theorem hcontPrefixSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
     exact contLandS_35 C s x inc nep ep v ix b35
   obtain ⟨s₉, hl₉, hs₉⟩ :=
     WalkLink.NodeBlock41_at (calls := stage2Calls stage2SubCalls) G (ContAC₄ C)
-      (contLandS C s x inc nep ep v ix b35) hl₈'.inv' rfl h35a
+      (contLandS C s x inc nep ep v ix b35) hseg8.inv' rfl h35a
   have hl₉' : WalkLink (stage2Calls stage2SubCalls) G (ContAC₄ C)
       (contLandS C s x inc nep ep v ix b35) (ContAC₅ C)
       (contP41S C s x inc nep ep v ix b35) := by
@@ -866,10 +907,14 @@ theorem hcontPrefixSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
       (contSeamS C s x inc nep ep v ix b35 b8) := by
     rw [hs₁₂] at hl₁₂
     exact hl₁₂
-  -- the head part, counted at twelve
-  have hseg12 : Seg (stage2Calls stage2SubCalls) G C s (ContSeamC C)
+  -- the four links past the cut, and the head part counted at twelve
+  have hseg4 : Seg (stage2Calls stage2SubCalls) G (ContAC₄ C)
+      (contLandS C s x inc nep ep v ix b35) (ContSeamC C)
+      (contSeamS C s x inc nep ep v ix b35 b8) 4 :=
+    Seg.tail hl₉' (Seg.tail hl₁₀' (Seg.tail hl₁₁' (Seg.tail hl₁₂' (Seg.nil hl₁₂'.inv'))))
+  have hseg12 : WalkSegment (stage2Calls stage2SubCalls) G C s (ContSeamC C)
       (contSeamS C s x inc nep ep v ix b35 b8) 12 :=
-    Seg.tail hl₁' (Seg.tail hl₂' (Seg.tail hl₃' (Seg.tail hl₄' (Seg.tail hl₅' (Seg.tail hl₆' (Seg.tail hl₇' (Seg.tail hl₈' (Seg.tail hl₉' (Seg.tail hl₁₀' (Seg.tail hl₁₁' (Seg.tail hl₁₂' (Seg.nil hl₁₂'.inv'))))))))))))
+    hseg8.trans (Seg.measure hseg4)
   -- the class-C span
   have hC : Seg (stage2Calls stage2SubCalls) G (ContSeamC C)
       (contSeamS C s x inc nep ep v ix b35 b8) (ContTailStartC C)
@@ -883,10 +928,11 @@ theorem hcontPrefixSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
       (s := contEntry C s x inc nep ep v ix b35 b8 x1 r₁ r₂ r₃ ei cA rdv xA)
       hTail.inv' rfl hpreS hincS hopS h3S hpos hreadS hbsS hloc105 h47 hbit47 hws47
       hloc96 hlatch
-  exact ⟨s₁₃, hs₁₃, (Seg.measure hseg12).trans ((Seg.measure hC).trans (hTail.trans hscan))⟩
+  exact ⟨s₁₃, hs₁₃, hseg12.trans ((Seg.measure hC).trans (hTail.trans hscan))⟩
 
 /-! ### The instrument -/
 
+#print axioms LeanLLVM.Refinement.WalkScope.contPrefixLand
 #print axioms LeanLLVM.Refinement.WalkScope.hcontPrefixSeg
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.cond_true345_i_at
 
