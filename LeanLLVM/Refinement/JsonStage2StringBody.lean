@@ -1,7 +1,7 @@
 /-
 `s2_string_body`'s emitted body: the AST it parses to, its ten blocks pinned and
-run, and the expander's clause at the call's own arguments.  **The contract is not
-yet proved of it.**
+run, the expander's clause at the call's own arguments, and the contract proved of
+the body — `s2StringBodyBody_contract`, at `s2StringBodyBudget`'s fuel.
 
 `JsonStage2HelperIR` pins `s2_string_body`'s text only as far as its parse.  This
 module takes the same step the sibling rows' bodies took, and has taken it this
@@ -15,13 +15,23 @@ too: writing a region twice is the second write, a region the memory holds is
 written back in place, and two in-place writes over disjoint regions commute once
 the commutation lemma's two swaps are in.
 
-What is **owed** is exactly the contract: the memory term's two callee arms (the
-commutation lemma and its instantiations, where the body's write order meets the
-model's) and the assembly that composes seat, run and memory into
-`s2StringBodyPost` and `s2StringBodyFoot`'s frame -- `s2StringBodyBody_contract`,
-which does not exist yet.  Individual block runs are useful progress, but they do
-not establish the whole helper's totality or postcondition, and nothing in this
-module claims they do: no row moves on their strength.
+**The closing** composes them: `s2StringBodyBody_contract` seats the scan at the
+head the entry leaves, runs it from the budget it was seated with, and dispatches
+over the four arms the exit admits — the body-itself form, the inside test's
+decoded answer and its refusal record, and the scan's own straight exit — each
+ending at a terminal run whose memory is the callee's own arm.  The post and the
+frame therefore come from the arm, and the fuel from `s2StringBodyBudget`.
+
+**The closing's one statement-level finding, and the only one here that was false
+rather than under-specified**: `if.end` compares the expander's return against the
+sentinel `0xffffffffffffffff` and takes the refusal path when it matches, while the
+model's `stage2StringBody` has no sentinel branch.  At a decoded answer of exactly
+`2 ^ 64 - 1` bytes the body answers form 0 and the model form 2, so no
+postcondition holds at that input; `s2StringBodyPre`'s `len.toNat + 1 < 2 ^ 64`
+excludes that one document length — sixteen exabytes — and the staging's own
+docstring states why.  One more fact of the chain's shape belongs to the closing:
+`BoundLoop.cost` is a structure projection, so a bound the loop hands back mentions
+it opaquely and `omega` needs it stated at the numeral.
 
 **The file's order is the dependency's**: the fixtures and the pinned AST, then
 the block pins (`findBlock`, instruction lists), then the one-instruction steps,
@@ -4895,11 +4905,11 @@ window there is empty, and `land.lhs.true` is the inside test, whose own bit the
 Stating it this way is why stage 2 was three steps: it is the *entry's* `%cmp3` arm, a
 different way into the same form. -/
 
-/- **The assembly's remaining content, and it is the control flow, not the memory.**
-The memory is done: both arms' joins, the record reconciliation, the `takeWhile`
-bridge.  What the contract still needs is the correspondence between the model's
-three-way split and the body's four branch bits, each derived from the model's own
-data:
+/- **The assembly's content, and it is the control flow, not the memory.**  The
+memory was done: both arms' joins, the record reconciliation, the `takeWhile`
+bridge.  What the contract needed besides it was the correspondence between the
+model's three-way split and the body's four branch bits, each derived from the
+model's own data:
 
 * `%cmp3` (entry) is `j0 < nxp.toNat` — the pre's `j0 < 2^63` and the model's
   `readLanes32` give it;
@@ -4914,8 +4924,10 @@ data:
 So the assembly is **four bit derivations and a composition**, and the composition is
 the part the module already has: entry prefix, seat, `s2StringBodyScan_run`, the
 `Exited` split, and the arm-correct join.  It is the control flow's correspondence
-that is new, and it is the same kind of work as the bridge: a semantic link between
-the model's `Nat` data and the body's `i1` tests. -/
+that was new, and it is the same kind of work as the bridge: a semantic link between
+the model's `Nat` data and the body's `i1` tests.  The closing at the end of this
+module is that composition, and the four derivations are its `hbit1`, the arms' own
+branch bits, `hbit7` and `hbit9`. -/
 
 /- **The contract's prerequisite, now proved.**  The planning estimate was that
 `s2StringBodyBody_contract` would assemble seat, run, split and joins — "no crossings,
@@ -6502,14 +6514,417 @@ theorem s2StringBodyArm_scan_decoded {mem : Mem} {x : State}
       (le_of_eq hsl)).write_le (a := ei) (w := 8) ⟨(next, 8), by simp, by omega,
       by omega⟩ (le_of_eq hsl)
 
+-- The closing composes four terminal runs; each arm's *proof* is not re-elaborated
+-- here, so the cost is the four applications and the scan's induction.  The
+-- ceiling is the arms' own, which is headroom rather than a measurement: the
+-- closing lands inside a quarter of it.
+set_option maxHeartbeats 12000000 in
+/-- **`s2_string_body`'s contract, proved of the emitted body.** -/
+theorem s2StringBodyBody_contract {args : List Value} {mem : Mem} {next : Nat}
+    (hpre : s2StringBodyPre args mem next) :
+    ∃ o : CallOutcome,
+      runFuel s2StringBodyCalls (s2StringBodyBudget args) s2StringBodyBody
+        (stagedState s2StringBodyBody args mem next) = some (.ret (some o.ret) o.mem) ∧
+      s2StringBodyPost args mem next o ∧
+      UnchangedOutside mem o.mem (s2StringBodyFoot args mem next) := by
+  obtain ⟨c, p, len, dst, outn, xp, xj, nxp, base, j0, ps, body, e, rfl, hbase, hj0,
+    hps, hbody, he, hspace, hp64, hble, hpw, hlen1, hj063, hN63, hnextp, houtnp, hdstp,
+    hep,
+    hxjn, hxjo, hxjd, hxje, hnou, hnod, hnoe, hode, hoee, hde, hxjp, hxje2, hnpe,
+    hne2, hdpe, hdpe2, houpe, houpe2, hepe, hepe2, hdis, hdisnext⟩ := hpre
+  generalize hst : stagedState s2StringBodyBody
+    [.ptr c, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj, .int 64 nxp]
+    mem next = st
+  obtain ⟨hpcS, hcS, hpS, hlenS, hdstS, houtnS, hxpS, hxjS, hnxpS, hmemS, hnextS⟩ :=
+    s2StringBodyStaged_entry mem next
+  have hpcS' : st.pc = "entry" := by simpa only [← hst] using hpcS
+  have hcS' : lookupName st.env "%c" = some (.ptr c) := by simpa only [← hst] using hcS
+  have hpS' : lookupName st.env "%p" = some (.ptr p) := by simpa only [← hst] using hpS
+  have hlenS' : lookupName st.env "%len" = some (.int 64 len) := by
+    simpa only [← hst] using hlenS
+  have hdstS' : lookupName st.env "%dst" = some (.ptr dst) := by simpa only [← hst] using hdstS
+  have houtnS' : lookupName st.env "%outn" = some (.ptr outn) := by
+    simpa only [← hst] using houtnS
+  have hxpS' : lookupName st.env "%xp" = some (.ptr xp) := by simpa only [← hst] using hxpS
+  have hxjS' : lookupName st.env "%xj" = some (.ptr xj) := by simpa only [← hst] using hxjS
+  have hnxpS' : lookupName st.env "%nxp" = some (.int 64 nxp) := by
+    simpa only [← hst] using hnxpS
+  have hmemS' : st.mem = mem := by simpa only [← hst] using hmemS
+  have hnextS' : st.next = next := by simpa only [← hst] using hnextS
+  have hb64 : base < 2 ^ 64 := stage2ReadWord_lt_64 hbase
+  have hj64 : j0 < 2 ^ 64 := by omega
+  have hbaseR : readBytes st.mem c 8 = some (wordBytes 8 base) := by
+    rw [hmemS']; exact readBytes_of_stage2ReadWord hbase
+  have hj0R : readBytes st.mem xj 8 = some (wordBytes 8 j0) := by
+    rw [hmemS']; exact readBytes_of_stage2ReadWord hj0
+  have hpsR : readLanes32 st.mem xp nxp.toNat = some ps := by rw [hmemS']; exact hps
+  have hwordR : stage2ReadWord st.mem xj 8 = some j0 := by rw [hmemS']; exact hj0
+  by_cases hj0N : j0 < nxp.toNat
+  · have hbit1 : evalICmp .ult (BitVec.ofNat 64 j0) nxp = 1#1 :=
+      s2StringBodyBit_cmp3_one hj063 hN63 hj0N
+    have hstAt : stateAt st.env st = st := rfl
+    have hstep : ∀ k, runFuel s2StringBodyCalls (1 + k) s2StringBodyBody st =
+        runFuel s2StringBodyCalls k s2StringBodyBody
+          (stateAt (s2StringBodyEntryOut st.env st.next base p j0 nxp)
+            { st with next := st.next + (Ty.int 64).sizeBytes, pc := "land.rhs", pre := some st.pc }) := by
+      intro k
+      have h := s2StringBodyEntry_prefix_landRhs (env := st.env) (s := st) hpcS' hcS' hpS'
+        hxjS' hnxpS' hbaseR hb64 hp64 hj0R hj64 hbit1 k
+      simpa only [hstAt] using h
+    have hinvP : s2StringBodyScanInvP mem xj (p - base) xp nxp.toNat j0 ps st.env
+        st.next (nxp.toNat - j0)
+        (stateAt (s2StringBodyEntryOut st.env st.next base p j0 nxp)
+          { st with next := st.next + (Ty.int 64).sizeBytes, pc := "land.rhs", pre := some st.pc }) j0 := by
+      rw [← hmemS']
+      exact s2StringBodyScanInvP_seat st.env st base p xj xp j0 ps nxp hpcS' hble hp64
+        hwordR hpsR hj0N hxpS' hxjS' hnxpS'
+    -- the seated invariant carries the scan's *remaining* budget, `nxp.toNat - j0`,
+    -- while `s2StringBodyScan_reaches_exitP` states its own hypothesis at the whole
+    -- bound; the loop is entered at the remaining budget instead — the same run, and
+    -- the arms' arithmetic is unchanged
+    obtain ⟨ex, jx, hjle, hexited, hexword, hscan⟩ :=
+      (s2StringBodyScanLoopP mem xj (p - base) xp nxp.toNat j0 ps st.env st.next
+        hps hdis hN63 (by omega)).run_from (nxp.toNat - j0) _ j0 hinvP
+    have hexword' := hexword
+    obtain ⟨c1, hmemx, hfix, hshape, heix, hsubx, hxpx, hxjx, hnxpx, hif, hland⟩ := hexword'
+    -- `cost` is a structure projection, so the bound the loop hands back mentions it
+    -- opaquely and `omega` cannot read it as `2`; stated at the numeral, the three
+    -- arms' budget steps close
+    have hjle2 : jx ≤ (nxp.toNat - j0 + 1) * 2 := hjle
+    have hlenE : lookupName ex.env "%len" = some (.int 64 len) :=
+      s2StringBodyScan_lookup_env0 hshape (by decide) hlenS'
+    have houtnE : lookupName ex.env "%outn" = some (.ptr outn) :=
+      s2StringBodyScan_lookup_env0 hshape (by decide) houtnS'
+    have hcE : lookupName ex.env "%c" = some (.ptr c) :=
+      s2StringBodyScan_lookup_env0 hshape (by decide) hcS'
+    have hpE : lookupName ex.env "%p" = some (.ptr p) :=
+      s2StringBodyScan_lookup_env0 hshape (by decide) hpS'
+    have hdstE : lookupName ex.env "%dst" = some (.ptr dst) :=
+      s2StringBodyScan_lookup_env0 hshape (by decide) hdstS'
+    have hlen_ps : ps.length = nxp.toNat := (readLanes32_lane hps).1
+    -- the exit word's `%nxp` cell carries `BitVec.ofNat 64 nxp.toNat`; the arms state
+    -- it at `nxp`, and this is the one rewrite that reconciles them
+    have hnxpWord : BitVec.ofNat 64 nxp.toNat = nxp := by
+      apply BitVec.eq_of_toNat_eq
+      rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt nxp.isLt]
+    have hE : st.next = next := hnextS'
+    rcases hexited with hpcx | hpcx
+    · obtain ⟨lane, conv, hqlane, hqge, hconvx, hconvq⟩ := hland hpcx
+      have hc1lt : c1 < 2 ^ 64 := by
+        have hcl : c1 < ps.length := by
+          by_contra h
+          rw [List.getElem?_eq_none (by omega)] at hqlane
+          cases hqlane
+        omega
+      have hxj_p : readBytes mem xj 8 ≠ none := by
+        rw [readBytes_of_stage2ReadWord hj0]; simp
+      have houtn_p : readBytes mem outn 8 ≠ none := houtnp
+      have hei_p : readBytes mem st.next 8 ≠ none := by rw [hE]; exact hnextp
+      have hdst_p : readBytes mem dst len.toNat ≠ none := hdstp
+      by_cases hpast : p - base + len.toNat ≤ lane
+      · obtain ⟨o, hrun, hpost, hfoot⟩ :=
+          s2StringBodyArm_scan_landLhsTrue (mem := mem) (next := next) (c1 := c1)
+            (lane := lane) (conv := conv) (env0 := ex.env) (ei := st.next) (ch := c) hbase hj0 hps hpcx hmemx hfix hqlane hqge
+            hconvx hconvq hsubx hpast (by omega) hpw hlenE houtnE
+        refine ⟨o, ?_, hpost, hfoot⟩
+        have hS : runFuel s2StringBodyCalls (1 + (jx + 3)) s2StringBodyBody st =
+            some (.ret (some o.ret) o.mem) := by
+          rw [hstep (jx + 3), hscan 3]
+          exact hrun
+        have hle : 1 + (jx + 3) ≤ s2StringBodyBudget
+            [.ptr c, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj,
+              .int 64 nxp] := by
+          simp only [s2StringBodyBudget]; omega
+        exact runFuel_mono_le hle hS
+      · have hltlane : lane < p - base + len.toNat := by omega
+        have hne : ((ps.drop c1).takeWhile
+            (fun q => decide (q < p - base + len.toNat))).isEmpty = false :=
+          s2StringBodyWindow_cons_of_lane hqlane hltlane
+        have hj1 : c1 = j0 + ((ps.drop j0).takeWhile
+            (fun q => decide (q < p - base))).length :=
+          s2StringBodyScanExit_j1 hfix (Or.inr ⟨lane, hqlane, hqge⟩) hlen_ps
+        -- the two `Nat.mod_eq_of_lt`s are separated: written as one `rw` list the
+        -- second instantiates on the outer `% 2 ^ 64` and leaves `p - base`
+        -- unreduced
+        have hsum : ((BitVec.ofNat 64 (p - base)) + len).toNat = p - base + len.toNat := by
+          rw [BitVec.toNat_add, BitVec.toNat_ofNat]
+          rw [show (p - base) % 2 ^ 64 = p - base from Nat.mod_eq_of_lt (by omega)]
+          exact Nat.mod_eq_of_lt hpw
+        have hbit7 : evalICmpNat .ugt 64 ((BitVec.ofNat 64 (p - base)) + len).toNat
+            conv.toNat = 1#1 := by
+          rw [hsum, hconvq]
+          exact evalICmpNat_ugt_one hpw (by omega) hltlane
+        have heip : RegionsApart st.next 8 p len.toNat := by rw [hE]; exact hnpe
+        have heixj : st.next + 8 ≤ xj ∨ xj + 8 ≤ st.next := by
+          rw [hE]; exact hxjn.symm
+        have heilan : ∀ j, j < nxp.toNat →
+            xp + 4 * j + 4 ≤ st.next ∨ st.next + 8 ≤ xp + 4 * j := by
+          intro j hj
+          have := hdisnext j hj
+          rw [hE]
+          exact this
+        cases hdecg : escapeDecodeGo body 0 0
+          (((ps.drop c1).takeWhile (fun q => decide (q < p - base + len.toNat))).map
+            (fun q => q - (p - base))) [] with
+        | decoded out k =>
+          -- `hspace` states the spacing at `j0 + takeWhile …`; `hj1` is the
+          -- direction that turns it into the statement at `c1`, and applied to the
+          -- goal it would have no occurrence to fire on
+          have hsp : Spaced body 0
+              (((ps.drop c1).takeWhile (fun q => decide (q < p - base + len.toNat))).map
+                (fun q => q - (p - base))) := by
+            have h := hspace base j0 ps body hbase hj0 hps hbody
+            rw [show j0 + ((ps.drop j0).takeWhile (fun q => decide (q < p - base))).length
+              = c1 from hj1.symm] at h
+            exact h
+          have hblen : body.length = len.toNat := readBytes_length_some hbody
+          have hlenOutLen : out.length ≤ len.toNat := by
+            have h := escapeDecodeGo_length_le body hsp 0 [] out k hdecg
+            simp only [List.length_nil, Nat.sub_zero] at h
+            omega
+          -- `hbit9`'s bound comes from the decoded length's own bound: `len` is a
+          -- bit vector and `out` a list, so `hlenOut` is derived, not read off
+          have hlen64 : len.toNat < 2 ^ 64 := len.isLt
+          have hlenOut : out.length < 2 ^ 64 := by omega
+          have hlenCap : out.length < 2 ^ 64 - 1 := by omega
+          have hbit9 : evalICmp .eq (BitVec.ofNat 64 out.length)
+              0xffffffffffffffff#64 = 0#1 :=
+            (evalICmp_eq_zero_iff _ _).2 (by
+              intro hcon
+              have h2 : (BitVec.ofNat 64 out.length).toNat
+                  = (0xffffffffffffffff#64).toNat := by rw [hcon]
+              rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hlenOut] at h2
+              have h3 : (0xffffffffffffffff#64).toNat = 2 ^ 64 - 1 := by decide
+              have h4 : out.length = 2 ^ 64 - 1 := by rw [h2, h3]
+              omega)
+          have hmodel : stage2StringBody mem c p len.toNat dst outn xp xj nxp.toNat =
+              some (writeBytes (writeBytes (writeBytes mem dst out) xj
+                (wordBytes 8 (c1 + k))) outn (wordBytes 8 out.length), 2,
+                wordBytes 8 out.length) :=
+            s2StringBodyModel_decoded (k := k) hbase hj0 hps hbody hj1 hne hdecg
+          have hexp := s2StringBodyExpand_decoded_named (xmem := ex.mem)
+            (Woff := wordBytes 8 out.length) (Wj := wordBytes 8 (c1 + k))
+            (ei := st.next) (next := ex.next) (dst := dst)
+            hmemx hps hbody hqlane hqge (by omega) hc1lt rfl rfl hxjp heip heixj heilan
+            hdis hdecg
+          -- `readBytes … ≠ none` is not an inductive type, so this splits the staged
+          -- read at `out.length` instead of introducing a witness
+          have hdst_some : readBytes mem dst out.length ≠ none := by
+            intro hnone
+            obtain ⟨bsd, hbsd⟩ := exists_readBytes_of_ne hdstp
+            have h24 : readBytes mem dst (out.length + (len.toNat - out.length)) = some bsd := by
+              rw [show out.length + (len.toNat - out.length) = len.toNat from by omega]
+              exact hbsd
+            rw [(readBytes_split mem dst out.length (len.toNat - out.length) h24).1] at hnone
+            cases hnone
+          obtain ⟨o, hrun, hpost, hfoot⟩ :=
+            -- every implicit is named: left to inference, one becomes a metavariable
+            -- inside the arm's own hypothesis goals, which `omega` and the interval
+            -- proofs cannot read
+            s2StringBodyArm_scan_decoded (mem := mem) (x := ex) (ch := c) (dst := dst)
+              (outn := outn) (xp := xp) (xj := xj) (len := len)
+              (base := base) (c1 := c1) (ei := st.next) (next := next) (lane := lane)
+              (k := k) (e' := e) (ps := ps) (body := body) (out := out)
+              (conv := conv) (outj := wordBytes 8 (c1 + k))
+              (hpc := hpcx) (hmem := hmemx) (hexp := hexp) (hWj := rfl) (hsub := hsubx)
+              (hlen := hlenE) (hconv := hconvx) (hbit7 := hbit7) (hp := hpE)
+              (hdst := hdstE) (hei := heix) (hxp := hxpx) (hxj := hxjx)
+              (hnxp := by rw [← hnxpWord]; exact hnxpx) (houtn := houtnE) (hbit9 := hbit9)
+              (hlenOut := hlenOut) (hnext := hE) (hrec := he) (hmodel := hmodel)
+              (hlenOutLen := hlenOutLen) (hei_p := hei_p) (hdst_p := hdst_some)
+              (hxj_p := hxj_p) (houtn_p := houtn_p)
+              (hd_ei := by
+                rw [hE]
+                rcases hnod with h | h
+                · exact Or.inl h
+                · exact Or.inr (by omega))
+              (hx_ei := heixj) (hd_xj := by
+                rcases hxjd with h | h
+                · exact Or.inr h
+                · exact Or.inl (by omega))
+              (ho_ei := by
+                rw [hE]; exact hnou)
+              (ho_d := by
+                rcases hode with h | h
+                · exact Or.inl h
+                · exact Or.inr (by omega))
+              (ho_x := hxjo.symm)
+          refine ⟨o, ?_, hpost, hfoot⟩
+          have hS : runFuel s2StringBodyCalls (1 + (jx + 5)) s2StringBodyBody st =
+              some (.ret (some o.ret) o.mem) := by
+            rw [hstep (jx + 5), hscan 5]
+            exact hrun
+          have hle : 1 + (jx + 5) ≤ s2StringBodyBudget
+              [.ptr c, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj,
+                .int 64 nxp] := by
+            simp only [s2StringBodyBudget]; omega
+          exact runFuel_mono_le hle hS
+        | refused offN k =>
+          have h24 : stage2ErrorExtent = 24 := rfl
+          rw [h24] at hnoe hxje
+          have hblen : body.length = len.toNat := readBytes_length_some hbody
+          -- the offset is below the body's length, which is the document's extent
+          have hoffL : offN < len.toNat :=
+            (escapeDecodeGo_refused_lt body _ _ _ _ offN k hdecg).trans_le (le_of_eq hblen)
+          have hoffN : offN < 2 ^ 64 := by omega
+          have hsumW : offN + (p - base) < 2 ^ 64 :=
+            calc offN + (p - base) < len.toNat + (p - base) := Nat.add_lt_add_right hoffL _
+              _ = p - base + len.toNat := Nat.add_comm _ _
+              _ < 2 ^ 64 := hpw
+          have hC0 : s2StringBodyRefusedC0 mem xj c1 = writeBytes mem xj (wordBytes 8 c1) :=
+            rfl
+          have hexpR := s2StringBodyExpand_refused_named (xmem :=
+              s2StringBodyRefusedC0 mem xj c1)
+            (Woff := wordBytes 8 offN) (Wj := wordBytes 8 (c1 + k))
+            (next := ex.next) (dst := dst) hC0 hps hbody hqlane hqge (by omega) hc1lt
+            rfl rfl hxjp heip heixj heilan hdis hdecg
+          have hmodel : stage2StringBody mem c p len.toNat dst outn xp xj nxp.toNat =
+              some (writeBytes (stage2ErrSetMsg mem e (p - base + offN) 0) xj
+                (wordBytes 8 (c1 + k)), 0, wordBytes 8 offN) :=
+            s2StringBodyModel_refused (k := k) (off := offN) (e' := e)
+              hbase hj0 hps hbody he hj1 hne hdecg
+          obtain ⟨bs, hbs⟩ := exists_readBytes_of_ne hep
+          obtain ⟨o, hrun, hpost, hfoot⟩ :=
+            s2StringBodyArm_scan_refused (mem := mem) (x := ex) (ch := c) (dst := dst)
+              (outn := outn) (xp := xp) (xj := xj) (len := len) (base := base)
+              (j0 := j0) (c1 := c1) (ei := st.next) (next := next) (lane := lane)
+              (offN := offN) (k := k) (e' := e) (ps := ps) (body := body)
+              (conv := conv) (Woff := wordBytes 8 offN) (Wj := wordBytes 8 (c1 + k))
+              (bs := bs)
+              (hpc := hpcx) (hmem := hmemx) (hC0 := hC0) (hexpMem := rfl)
+              (hWoff := rfl) (hWj := rfl) (hlane := hqlane) (hge := hqge)
+              (hlt := hltlane) (hconv := hconvx) (hconvq := hconvq) (hc := hcE)
+              (hsub := hsubx) (hlen := hlenE) (hp := hpE) (hdst := hdstE) (hei := heix)
+              (hxp := hxpx) (hxj := hxjx) (hnxp := by rw [← hnxpWord]; exact hnxpx)
+              (hps := hps) (hbody := hbody)
+              (hrec := he) (hj0 := hj0) (hp0 := by omega) (hpw := hpw) (hc1 := hc1lt)
+              (hoffN := hoffN) (hxjp := hxjp) (heip := heip) (heixj := heixj)
+              (heilan := heilan) (hjlan := hdis) (hc1k := rfl)
+              (hxje := hxje2) (heie := by rw [hE]; exact hne2)
+              (hoff := by
+                rw [readBytes_writeBytes_apart (ws := wordBytes 8 (c1 + k)) (by
+                  rw [show (wordBytes 8 (c1 + k)).length = 8 from natToBytes_length _ _]
+                  rw [hE]
+                  exact hxjn)]
+                exact readBytes_wordBytes_same)
+              (hr := hdecg) (hnext := hE)
+              (hrec_bs := hbs) (hsumW := hsumW)
+              (hmodel := hmodel)
+              (hm1 := by
+                rw [show (wordBytes 8 offN).length = 8 from by rw [wordBytes, natToBytes_length],
+                  show (wordBytes 8 (c1 + k)).length = 8 from by rw [wordBytes, natToBytes_length],
+                  hE]
+                rcases hxjn with h | h
+                · exact Or.inr h
+                · exact Or.inl h)
+              (hm2 := by
+                rw [hE,
+                  show (wordBytes 8 offN).length = 8 from by rw [wordBytes, natToBytes_length],
+                  show (natToBytes (0#32).toNat 4).length = 4 from natToBytes_length _ _]
+                rcases hnoe with h | h
+                · exact Or.inl h
+                · exact Or.inr (by omega))
+              (hm3 := by
+                rw [hE,
+                  show (wordBytes 8 offN).length = 8 from by rw [wordBytes, natToBytes_length],
+                  show (8#64).toNat = 8 from by decide,
+                  show (natToBytes ((BitVec.ofNat 64 offN) + (BitVec.ofNat 64 (p - base))).toNat 8).length = 8
+                    from natToBytes_length _ _]
+                rcases hnoe with h | h
+                · exact Or.inl (by omega)
+                · exact Or.inr (by omega))
+              (hm4 := by
+                rw [hE,
+                  show (wordBytes 8 offN).length = 8 from by rw [wordBytes, natToBytes_length],
+                  show (16#64).toNat = 16 from by decide,
+                  show (natToBytes (0#64).toNat 8).length = 8 from natToBytes_length _ _]
+                rcases hnoe with h | h
+                · exact Or.inl (by omega)
+                · exact Or.inr (by omega))
+              (hm5 := by
+                rw [show (wordBytes 8 (c1 + k)).length = 8 from by rw [wordBytes, natToBytes_length],
+                  show (natToBytes (0#32).toNat 4).length = 4 from natToBytes_length _ _]
+                rcases hxje with h | h
+                · exact Or.inl h
+                · exact Or.inr (by omega))
+              (hm6 := by
+                rw [show (wordBytes 8 (c1 + k)).length = 8 from by rw [wordBytes, natToBytes_length],
+                  show (8#64).toNat = 8 from by decide,
+                  show (natToBytes ((BitVec.ofNat 64 offN) + (BitVec.ofNat 64 (p - base))).toNat 8).length = 8
+                    from natToBytes_length _ _]
+                rcases hxje with h | h
+                · exact Or.inl (by omega)
+                · exact Or.inr (by omega))
+              (hm7 := by
+                rw [show (wordBytes 8 (c1 + k)).length = 8 from by rw [wordBytes, natToBytes_length],
+                  show (16#64).toNat = 16 from by decide,
+                  show (natToBytes (0#64).toNat 8).length = 8 from natToBytes_length _ _]
+                rcases hxje with h | h
+                · exact Or.inl (by omega)
+                · exact Or.inr (by omega))
+              (hm8 := by
+                rw [show (natToBytes (0#32).toNat 4).length = 4 from natToBytes_length _ _,
+                  show (8#64).toNat = 8 from by decide,
+                  show (natToBytes ((BitVec.ofNat 64 offN) + (BitVec.ofNat 64 (p - base))).toNat 8).length = 8
+                    from natToBytes_length _ _]
+                exact Or.inl (by omega))
+              (hm9 := by
+                rw [show (natToBytes (0#32).toNat 4).length = 4 from natToBytes_length _ _,
+                  show (16#64).toNat = 16 from by decide,
+                  show (natToBytes (0#64).toNat 8).length = 8 from natToBytes_length _ _]
+                exact Or.inl (by omega))
+              (hm10 := by
+                rw [show (8#64).toNat = 8 from by decide,
+                  show (natToBytes ((BitVec.ofNat 64 offN) + (BitVec.ofNat 64 (p - base))).toNat 8).length = 8
+                    from natToBytes_length _ _,
+                  show (16#64).toNat = 16 from by decide,
+                  show (natToBytes (0#64).toNat 8).length = 8 from natToBytes_length _ _]
+                exact Or.inl (by omega))
+              (hhei := by
+                rw [show (wordBytes 8 offN).length = 8 from natToBytes_length _ _, hE]
+                exact hnextp)
+          refine ⟨o, ?_, hpost, hfoot⟩
+          have hS : runFuel s2StringBodyCalls (1 + (jx + 5)) s2StringBodyBody st =
+              some (.ret (some o.ret) o.mem) := by
+            rw [hstep (jx + 5), hscan 5]
+            exact hrun
+          have hle : 1 + (jx + 5) ≤ s2StringBodyBudget
+              [.ptr c, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj,
+                .int 64 nxp] := by
+            simp only [s2StringBodyBudget]; omega
+          exact runFuel_mono_le hle hS
+    · obtain ⟨o, hrun, hpost, hfoot⟩ :=
+        s2StringBodyArm_scan_ifThen (mem := mem) (next := next) hbase hj0 hps hpcx
+          hexword hlenE houtnE
+      refine ⟨o, ?_, hpost, hfoot⟩
+      have hS : runFuel s2StringBodyCalls (1 + (jx + 2)) s2StringBodyBody st =
+          some (.ret (some o.ret) o.mem) := by
+        rw [hstep (jx + 2), hscan 2]
+        exact hrun
+      have hle : 1 + (jx + 2) ≤ s2StringBodyBudget
+          [.ptr c, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj,
+            .int 64 nxp] := by
+        simp only [s2StringBodyBudget]; omega
+      exact runFuel_mono_le hle hS
+  · obtain ⟨o, hrun, hpost, hfoot⟩ :=
+      s2StringBodyArm_entry_ifThen (mem := mem) (next := next) (body := body)
+        hbase hj0 hps he hp64
+        hble hj063 hN63 (by omega)
+    refine ⟨o, ?_, hpost, hfoot⟩
+    rw [← hst]
+    refine runFuel_mono_le ?_ hrun
+    simp only [s2StringBodyBudget]
+    omega
+
 /-! ### Axiom footprints
 
-The runs and the loop's shape print their footprints with `#guard_msgs`, so the
-build checks them rather than printing them.  `Classical.choice` appears exactly
-where a `getelementptr`'s sign-extension enters (`s2StringBody_landRhs_denote`, and
-the loop that composes it), which is the `gep` step's core lemma and not a choice
-any proof here makes; the blocks with no `getelementptr` carry the frame lemmas'
-`[propext, Quot.sound]`. -/
+The runs, the loop's shape and the contract print their footprints with
+`#guard_msgs`, so the build checks them rather than printing them.
+`Classical.choice` appears exactly where a `getelementptr`'s sign-extension enters
+(`s2StringBody_landRhs_denote`, and the loop that composes it), which is the `gep`
+step's core lemma and not a choice any proof here makes; the blocks with no
+`getelementptr` carry the frame lemmas' `[propext, Quot.sound]`.  The closing
+carries it for the same reason: it composes the loop. -/
 /-- info: 'LeanLLVM.Refinement.sb_step_lifetime' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms sb_step_lifetime
@@ -6533,5 +6948,9 @@ any proof here makes; the blocks with no `getelementptr` carry the frame lemmas'
 /-- info: 'LeanLLVM.Refinement.s2StringBodyScan_run_at' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms s2StringBodyScan_run_at
+
+/-- info: 'LeanLLVM.Refinement.s2StringBodyBody_contract' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms s2StringBodyBody_contract
 
 end LeanLLVM.Refinement

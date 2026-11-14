@@ -337,6 +337,17 @@ scan's `getelementptr i32` sign-extends its index, which is the forward branch
 only below `2 ^ 63`; the scan is entered exactly when the cursor is below the
 count, so `j0` and the count are both bounded there.
 
+**One of those arithmetic facts is the sentinel's, and it is a domain
+restriction, not arithmetic convenience.**  `if.end` compares the expander's
+return against `0xffffffffffffffff` and takes the refusal path when it matches,
+while the model's `stage2StringBody` has no sentinel branch: a decoded answer of
+exactly `2 ^ 64 - 1` bytes would be form 2 in the model and form 0 in the body,
+so at that one input the body and the model disagree and no postcondition can
+hold.  `len.toNat + 1 < 2 ^ 64` closes the corner, and what it costs is the
+single document length that cannot be staged — sixteen exabytes.  It is a clause
+here rather than a remark in the closing for the reason every staging fact is:
+without it a reader finds the goal unprovable and narrows something else.
+
 **The staging's memory facts are reads, and that is enough.**  A body proof that
 writes one of these words back needs the write to be a no-op, which is a lemma
 composed at the use (`JsonStage2StringBody.stage2ReadWord_writeBytes_self`: a
@@ -376,6 +387,10 @@ def s2StringBodyPre (args : List Value) (mem : Mem) (next : Nat) : Prop :=
     p < 2 ^ 64 ∧
     base ≤ p ∧
     p - base + len.toNat < 2 ^ 64 ∧
+    -- the expander's failure sentinel is `0xffffffffffffffff`, which is also a
+    -- length: the body's `if.end` cannot tell a `2 ^ 64 - 1`-byte decode from a
+    -- refusal, so that one document length is outside this staging
+    len.toNat + 1 < 2 ^ 64 ∧
     j0 < 2 ^ 63 ∧
     nxp.toNat < 2 ^ 63 ∧
     readBytes mem next 8 ≠ none ∧
