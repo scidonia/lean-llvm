@@ -1,9 +1,8 @@
 # Handoff: the walk's remaining gaps
 
-**Tree at `f3d2164`.** `lake build LeanLLVMTest` green: **967 jobs**, `LeanLLVMTest`
-included, no `sorry`/`admit`/`native_decide`, nothing unpushed.  The default target
-(`leanllvm`, `ITree`, `LeanLLVMTest`) has not been re-measured since these commits; run
-it before quoting a job count for it.
+**Tree at `a82619f`.** Default target green: **1915 jobs**, `leanllvm` executable,
+`ITree` and `LeanLLVMTest` included; no `sorry`/`admit`/`native_decide`; nothing
+unpushed.  `LAKE_EXIT=0` captured at the command, not through a pipe.
 
 **Verify before trusting any claim below** — this session's own record is that
 *every* statement-level defect was found by something trying to *use* or *supply* a
@@ -33,7 +32,9 @@ its end costs a full ~10-minute re-elaboration, so edit it in one pass.
 **the continue case** | `walkRevolution_seg` — a priced segment to `cleanup478.i` on the count test's *succeeding* arm |
 **the dispatch, at its outcomes** | `WalkDispatchResult` + `WalkDispatchThree.ofResult` + `walkLoopStepThree_of_dispatchResult` |
 **the flush arm** | `walkFlushAt_of_staging` (the run), `stage2Boundary_of_flush` (the six facts), `stage2Post_of_staging_flush` (the `nep = 0` post) |
-**the emitted string body** | `s2StringBodyBody_contract` (`JsonStage2StringBody:6521`), axiom pin passing |
+**the emitted string body** | `s2StringBodyBody_contract` (`JsonStage2StringBody:6521`), axiom pin passing — and its precondition no longer asks the caller for the body's own slot (Gap 2) |
+**the two-entry token** | `HstringFacts` + `WalkDispatchResult.ofStringMerge` (`JsonStage2WalkDispatchWitnessString`), the arm at `C.k + 2`; `HcontCase` is the class the continuing premise now names. Its segment is supplied — see Gap 1 |
+**the loop's exit, at its memories** | `JsonStage2WalkTargetPost`: the 25 conjuncts of `stage2Boundary` at the returned memory for all three terminal routes, and the accept route's run. The two refusal routes' runs are unwritten |
 **the top level** | `stage2WalkObligation_of_staging` — **still takes `hpost`** |
 **the credit** | `walkPotential` reads through `boundary`: `32·(nep − k) + 8·(n − boundary k)` |
 
@@ -156,6 +157,18 @@ reason `JsonStage2WalkFlushPost:38-50` records.
 outcome already carries — not the `finish`/`refuse` classification — so Gap 3 does not
 depend on Gap 1.  After it, the top level still takes `hcont`, `hmerge`, `hend` and the
 root-word fact; `hpost` is gone.
+
+**What of it has landed.**  `JsonStage2WalkTargetPost` (imported at the end of
+`LeanLLVM.lean`) proves the boundary — all 25 conjuncts of `stage2Boundary` — at the
+returned memory for each of the three routes, with every memory lemma stated at a
+variable `m : Mem`, plus the accept route's terminal run (`walkFinishPost_accept`).  It
+takes four supplied facts and names each producer: `%4 = n` (derivable if `%4` joins
+`walkStaticNames`), the log's arena word equal to the carry's cursor, the finalisation's
+eight carrier registers, and R0's refusal word.  **Still missing**: the terminal runs for
+R2/R3 and R0 (`walkFinishPost_refuse`, `_refuse488`, `_copy`) and the pins.  The
+divergence that stopped them is an occurs-check on an abstract base memory — a step lemma
+stated at a concrete state's memory — not a heartbeat wall; stating the step lemmas at a
+memory parameter is the repair.
 
 ---
 
