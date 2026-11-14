@@ -32,6 +32,25 @@ existential.
 (`walkIfEnd_refusal_phi`, by `rfl`), so the returned word is `(0 : BitVec 64)`
 and not a `Value` whose shape is guessed.  `walkFlushRun_of_staging` states the
 run at that word and at `walkFlushMemAt`.
+
+## The boundary, and the route it takes
+
+`stage2Boundary_of_parts` is **not** applicable to this arm, and the reason is a
+statement-level one rather than a missing lemma: its `walkFrame` is
+`Stage2Run`'s, whose list omits the three record slots (`%ndst`, `%nev`, `%err`)
+because the emitted loop never writes them — the wrapper's four statements do.
+The flattening this layer runs puts those stores in the finalisation blocks, so
+the flush arm's own run writes all three, and `stage2Boundary_of_parts`'s
+`herrWalk` (the walk left the refusal slot as the caller staged it) is *false* of
+it.  The arm therefore reaches the boundary the other way `stage2Boundary`
+admits: the six facts at the returned memory (`stage2Boundary_of_flush`), not an
+equality with `stage2Report`.  No equality holds either — the flush block's store
+at `%e + 8` is a write `stage2Report` never performs, and the entry run's writes
+to the log and the cursor record stay in memory — so the returned memory is
+genuinely not `stage2Report m0 …`, and that is a fact about the record rather
+than about this proof.  What the record *does* constrain is the report: the
+cursor words, the refusal word's boundedness, the frame and presence.  Those are
+what this module proves, and they are what `stage2Boundary` reads.
 -/
 
 import LeanLLVM.Refinement.JsonStage2WalkPremisesOfStaging
@@ -634,6 +653,54 @@ theorem walkFlushMemAt_present {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) :
   exact present_of_hasBytes (walkFlushMemAt_present_staged G S r hr) hlo
     (Nat.lt_of_lt_of_le hhi (Nat.le_refl _))
 
+/-! ### The boundary at the returned memory
+
+`stage2Boundary`'s existential, packed at this arm: the returned word is `0`, the
+two cursor words report the staged cursors, the two prefixes read back, the
+refusal word is the document's length, and the frame, presence and separation are
+the lemmas above.  This is the route `stage2Boundary_of_parts` cannot take for
+this arm — its `Stage2Run.walkFrame` omits the three slots the arm writes — so the
+six facts are supplied at the returned memory directly.
+-/
+
+/-- **The flush arm's boundary.**  `stage2Boundary` at `walkFlushMemAt`: the
+verdict `0`, `ndst0` at the arena's slot, `nev0` at the event stream's, `G.n` at
+the refusal slot (which `≤ n` by `le_rfl`), the two prefixes as the caller staged
+them, presence and the frame at the record's lists, and the staging's
+separation. -/
+theorem stage2Boundary_of_flush {args : List Value} {mem : Mem} {next : Nat}
+    (G : WalkGeom mem) (S : WalkStage G) (hnext : G.next0 = next)
+    (hargs : args = [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
+      .int 64 (BitVec.ofNat 64 G.nep), .ptr G.xp, .int 64 (BitVec.ofNat 64 G.nxp),
+      .ptr G.dst, .int 64 (BitVec.ofNat 64 G.dstcap), .ptr G.ndst, .ptr G.ev,
+      .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err]) :
+    stage2Boundary args mem next (walkFlushMemAt G S) (.int 64 0) := by
+  have hArena : Refinement.HasBytes (walkFlushMemAt G S) G.dst G.ndst0 :=
+    walkFlushMemAt_hasBytes G S (walkHasBytes_short G.arenaCap (by have h := G.arenaRoom; omega))
+  have hEv : Refinement.HasBytes (walkFlushMemAt G S) G.ev G.nev0 :=
+    walkFlushMemAt_hasBytes G S (walkHasBytes_short G.evCap (by have h := G.evRoom; omega))
+  obtain ⟨arena, hArenaRead⟩ :=
+    readBytes_of_hasBytes (walkFlushMemAt G S) G.dst G.ndst0 ((hasBytes_iff _ _ _).mp hArena)
+  obtain ⟨evs, hEvRead⟩ :=
+    readBytes_of_hasBytes (walkFlushMemAt G S) G.ev G.nev0 ((hasBytes_iff _ _ _).mp hEv)
+  have hnev0cap : G.nev0 ≤ G.evcap := by
+    have h := G.evRoom
+    omega
+  have hnep64 : G.nep < 2 ^ 64 := by
+    have hle := G.nep_le
+    have hdoc := G.maxDoc
+    simp only [stage2MaxDocument] at hdoc
+    omega
+  refine ⟨G.b, G.n, G.ep, G.nep, G.xp, G.nxp, G.dst, G.dstcap, G.ndst, G.ev, G.evcap,
+    G.nev, G.err, 0, G.ndst0, G.nev0, G.ndst0, G.nev0, arena, evs, S.c, S.ctype, S.cst,
+    S.tok, S.s, S.z, S.e, S.d, S.nkSlot, S.nxpSlot, hargs, rfl, Or.inl rfl, G.ndstRead,
+    G.nevRead, walkFlushMemAt_ndst G S, walkFlushMemAt_nev G S,
+    Nat.le_refl G.ndst0, by omega, Nat.le_refl G.nev0, by omega, G.dstcapLt, G.evcapLt,
+    hnev0cap, hnep64, G.nxpLt, by have h := G.arenaRoom; omega, hArenaRead, hEvRead,
+    (fun _ => ⟨G.n, Nat.le_refl _, walkFlushMemAt_err G S⟩),
+    (by intro h; exact absurd h (by decide)), walkFlushMemAt_present G S,
+    (by rw [← hnext]; exact walkFlushMemAt_frame G S), S.separate, S.dSep⟩
+
 
 /-! ### Axiom footprints -/
 
@@ -643,6 +710,7 @@ theorem walkFlushMemAt_present {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) :
 #print axioms LeanLLVM.Refinement.WalkScope.walkFlushMemAt_nev
 #print axioms LeanLLVM.Refinement.WalkScope.walkFlushMemAt_frame
 #print axioms LeanLLVM.Refinement.WalkScope.walkFlushMemAt_present
+#print axioms LeanLLVM.Refinement.WalkScope.stage2Boundary_of_flush
 
 end WalkScope
 end LeanLLVM.Refinement
