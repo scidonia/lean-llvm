@@ -1,19 +1,24 @@
 # Handoff: the walk's remaining gaps
 
-**Tree at `fa0d89d`.** Default target green: **1913 jobs**, `LeanLLVMTest` included,
-no `sorry`/`admit`/`native_decide`, nothing unpushed.
+**Tree at `f3d2164`.** `lake build LeanLLVMTest` green: **967 jobs**, `LeanLLVMTest`
+included, no `sorry`/`admit`/`native_decide`, nothing unpushed.  The default target
+(`leanllvm`, `ITree`, `LeanLLVMTest`) has not been re-measured since these commits; run
+it before quoting a job count for it.
 
 **Verify before trusting any claim below** — this session's own record is that
 *every* statement-level defect was found by something trying to *use* or *supply* a
-claim, never by an audit:
+claim, never by an audit.  Capture the status where the command runs: a build piped to
+`tail` reports `tail`'s exit code.
 
 ```bash
 systemd-run --user --scope -p MemoryMax=6G -p MemorySwapMax=1G --quiet \
-  nix develop -c lake build
+  nix develop -c bash probes/install/lake-locked.sh build
 ```
 
 A full build is ~4 min warm. **`JsonStage2WalkScope` is the 21 MB module** — a
 doc-only edit to it costs a 20-minute rebuild, so batch any edit there.
+**`JsonStage2StringBody` is 7k lines with two 12M-heartbeat arms** — a failed proof at
+its end costs a full ~10-minute re-elaboration, so edit it in one pass.
 
 ---
 
@@ -38,44 +43,58 @@ price and why `entryPos` cannot serve as a price index.
 
 ---
 
-## What remains — three gaps, in order
+## What remains — two gaps, in order
 
-### Gap 1 — the two-entry token's bundle (blocks B2)
+### Gap 1 — the two-entry token's bundle — **stated, its segment supplied**
 
-**The sharpest open item.** A standalone string consumes **opener and closer**; its
-merge index is `C.k + 2` via `%inc208.i` (`WalkLink.if_end207_i`,
-`JsonStage2WalkStore:1596`). **No bundle in the tree describes that token**:
+`HstringFacts` and `WalkDispatchResult.ofStringMerge`
+(`JsonStage2WalkDispatchWitnessString`) name the standalone string and give it an arm,
+and `WalkContinueFacts` (`JsonStage2WalkPremisesOfStaging`) is now a *class*:
+`HcontCase.ws` (`HcontFacts`) or `HcontCase.twoEntry` (`HstringFacts`).  A standalone
+string consumes **opener and closer**, and its merge index is `C.k + 2` via `%inc208.i`
+(`WalkLink.if_end207_i`, `JsonStage2WalkStore:1596`).  So at `C.k = 0`, `G.nep = 2` —
+where the head's test `0 + 1 < 2` sends the walk into the continuing branch — the branch
+is `twoEntry` and no longer vacuous: it is a premise with a producer target, and the arm
+that consumes it is `WalkDispatchResult.ofStringMerge` (footprint
+`[propext, Quot.sound]`).
 
-- `HcontFacts` describes a token that ends *inside* its entry, at `C.k + 1`;
-- `HlastFacts` is stated under `hlastK : C.k + 1 = G.nep` and is **uninhabited
-  away from the stream's last entry**.
+**What the arm owes, and the finding that stops the composition.**
 
-**So `walkLoopStep_of_staging` remains vacuous at `C.k = 0`, `nep = 2` on the
-continuing branch.** The *classification* can now express the case
-(`standaloneString_finish` proves it is a `finish` with no hypothesis on
-`C.k + 1`); the *premise chain* does not cover it.
+- `WalkLink.z_arena_reserve_exit` (`JsonStage2WalkCall:1831`) is **unsatisfiable as
+  written**.  Its `hxj` puts `%xj.i` at `G.next0 + 16`; `walkStaticRegs`
+  (`JsonStage2WalkScope:1013`) fixes `%xj.i` at `G.next0 + 12`; and at `+ 16` the string
+  body's own `RegionsApart xj 8 outn 8` fails against `%outn.i = G.next0 + 20`
+  (`16 + 8 > 20`).  No state satisfies `WalkInv` and that hypothesis together, so the
+  ninth of the fifteen blocks cannot be linked.  The repair is `+16 → +12` at four sites
+  in `JsonStage2WalkCall`, and it belongs in its own change because it re-elaborates the
+  walk layer.  The census row at `JsonStage2WalkScope:5662` still calls the link proved.
+- the allocator-cursor pin `C.alen ≤ G.ndst0 + ix.toNat` is not a `WalkInv` clause:
+  `pending = none` at a loop head, so `if_end256_i`'s `hcur` has no carrier.
+- `s2StringBodyPre`'s producer at the call site does not exist yet — now *possible*,
+  because Gap 2 removed the one clause a caller cannot supply.
 
-**Read first**: `walkLoopStep_of_staging`'s docstring, section *"The premise that is
-still open"* — the scope is stated there.
+The module's header records exactly this, group by group; the arm reads only the
+segment, its endpoint and the two merge cells, and the remaining groups are stated
+because they are what the producer must target.
 
-### Gap 2 — F3, commit 2 (the string pre's private-slot presence)
+### Gap 2 — F3, commit 2 (the string pre's private-slot presence) — **closed**
 
-**Commit 1 landed** (`7d4c2b1`): one-sided commutation lemmas beside the two-sided
-one, four joins switched, `hei` dropped. **The clause itself is still in
-`s2StringBodyPre`** (`JsonStage2Helpers:396`, `readBytes mem next 8 ≠ none`).
+`s2StringBodyPre` (`JsonStage2Helpers:376`) no longer carries
+`readBytes mem next 8 ≠ none`.  The clause was sufficient and not necessary, and what
+makes it unnecessary is a commutation rather than an argument: the body's clear at `next`
+is a write every crossing **moves**, so each crossing spends the presence of the region it
+moves *into*.  `writeBytes_comm_of_present_right` is that move, `writeBytes_absorb_one`
+now takes two presences where it took three, and `writeBytes_absorb_single` one where it
+took two.  Eleven declarations lost a hypothesis and none gained one;
+`s2StringBodyBody_contract`'s footprint is unchanged at
+`[propext, Classical.choice, Quot.sound]`.
 
-**It is sufficient but not necessary** — proved by a scope pass:
-- `alloca` is `some { s with env := …, next := … }` with **`mem` untouched**
-  (`Semantics:578-579`), and `Mem` is a partial association list, so unwritten is
-  unreadable;
-- the presence the joins consume is the **earlier-written** region's (`xj`), which
-  every site already has;
-- **route 2 is impossible**: an initialisation store exists in neither the helper's
-  body nor the caller's IR.
-
-**Commit 2**: drop the conjunct, drop `hei_p` (`:6473`, used `:6491`) and `hhei`
-(`:6373`) from the two arms, re-prove `s2StringBodyBody_contract`, re-pin. **Step 4
-is the cost**: two arm declarations at 12M heartbeats each.
+**The trap for the next reader.**  Which side the one-sided lemma spends:
+`writeBytes_comm_of_present_left` spends the **first** write's region, `_right` the
+**second's**.  `absorb_one` moves the first write (`ei`) across `dst`, so it needs
+`_right`; `absorb_single` moves the second, so it needs `_left`.  `_right` in
+`absorb_single` still compiles if the slot's presence is assumed — it silently restores
+the clause.
 
 ### Gap 3 — the loop arm's `hpost`
 
@@ -104,7 +123,7 @@ post remains**, so `stage2WalkObligation_of_staging` still takes `hpost`
 
 ---
 
-## The findings — seventeen, and all of one family
+## The findings — eighteen, and all of one family
 
 *A statement that looks true because an unstated fact is load-bearing.* Each is
 recorded where the next reader meets it, not in a report.
@@ -127,9 +146,10 @@ recorded where the next reader meets it, not in a report.
 14 | `stage2Boundary_of_parts` at the flush | `herrWalk` is false of that arm; no honest `Stage2Run` |
 15 | the potential's byte term | `entryPos` totalises to **0** past the stream; the terminal charge vanished |
 16 | `walkPotential_spend`'s `hmono` | **unstatable** at the terminal step; three hypotheses removed |
-17 | "the whole string contract is absent" (the review) | it was proved an hour later — *reports decay* |
+| 17 | "the whole string contract is absent" (the review) | it was proved an hour later — *reports decay* |
+| 18 | `WalkLink.z_arena_reserve_exit`'s `%xj.i` | **uninhabited**: it states `G.next0 + 16` where `walkStaticRegs` states `+ 12`, and the string body's `RegionsApart xj 8 outn 8` is false at `+ 16` against `%outn.i = G.next0 + 20` |
 
-**Trend worth keeping**: 4, 5, 6, 8, 9, 10 and 12 were found by a *producer trying to
+**Trend worth keeping**: 4, 5, 6, 8, 9, 10, 12 and 18 were found by a *producer trying to
 inhabit a bundle*. **Building a producer is the instrument, not checking the proof.**
 
 ---
@@ -161,6 +181,10 @@ inhabit a bundle*. **Building a producer is the instrument, not checking the pro
 
 ## Process rules this repository now needs
 
+- **A build piped to `tail` exits `0`.** `nix develop -c … lake-locked.sh build | tail`
+  reports `tail`'s status, and the failure scrolls past. Capture the status where the
+  command runs — `{ lake …; echo "LAKE_EXIT=$?"; } > log 2>&1` — and read the log; a
+  red build was mistaken for a green one in this session for exactly this reason.
 - **The manifest is the claim.** `LeanLLVM.lean` must import every module whose
   theorems you would cite; a module no target imports is a module whose green means
   nothing. (`WalkCredit`, `WalkFinishPath`, `HeadChainA/C/Scan`, `PrefixCount`,
@@ -188,7 +212,11 @@ inhabit a bundle*. **Building a producer is the instrument, not checking the pro
 2. Full build (above). **If `Scope.olean` is missing, build
    `LeanLLVM.Refinement.JsonStage2WalkScope` first** — everything below it fails on
    "No such file or directory" and the message does not say why.
-3. **Gap 1** — the two-entry token's bundle. It is the largest, it blocks B2, and its
-   scope is already written down.
-4. **Gap 2** — F3 commit 2, which is diagnosed step by step.
+3. **The `z_arena_reserve_exit` repair** — `+16 → +12` at four sites in
+   `JsonStage2WalkCall.lean` (finding 18). It is the cheapest unblocking move: without it
+   the two-entry segment cannot be composed at all, and the census row that calls the
+   link proved is wrong until it lands.
+4. **Gap 1's remaining sub-items** — the allocator-cursor pin and the `s2StringBodyPre`
+   producer at the call site, then the segment's fifteen links (all present) become a
+   composition.
 5. **Gap 3** — the loop arm's post, which is what removes `hpost` from the top level.
