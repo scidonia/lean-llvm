@@ -6152,7 +6152,7 @@ refusal's offset is bounded by the body's length, because the walk refuses only 
 position it has just found below it — which is what makes the offset's `Nat` and its
 64-bit spelling the same number at the record. -/
 
-theorem test_s2StringBodyExpand_decoded_named {mem xmem : Mem} {p dst xp xj : Nat}
+theorem s2StringBodyExpand_decoded_named {mem xmem : Mem} {p dst xp xj : Nat}
     {len nxp : BitVec 64} {base c1 ei next lane k : Nat} {ps : List Nat}
     {body out : List UInt8} {Woff Wj : List UInt8}
     (hmem : xmem = writeBytes mem xj (wordBytes 8 c1))
@@ -6185,7 +6185,7 @@ theorem test_s2StringBodyExpand_decoded_named {mem xmem : Mem} {p dst xp xj : Na
     (heilan := heilan) (hjlan := hjlan) (hmem := hmem) (hdec := hdec)
 
 
-theorem test_s2StringBodyMemory_decoded_cursor (mem : Mem) {ei dst xj outn c1 k : Nat}
+theorem s2StringBodyMemory_decoded_cursor (mem : Mem) {ei dst xj outn c1 k : Nat}
     {out : List UInt8}
     (hei : readBytes mem ei 8 ≠ none)
     (hdst : readBytes mem dst out.length ≠ none)
@@ -6241,7 +6241,7 @@ theorem test_s2StringBodyMemory_decoded_cursor (mem : Mem) {ei dst xj outn c1 k 
     ho_ei ho_d ho_x
 
 
-theorem test_escapeDecodeGo_refused_lt (bs : List UInt8) :
+theorem escapeDecodeGo_refused_lt (bs : List UInt8) :
     ∀ (ps : List Nat) (i k : Nat) (out : List UInt8) (off ks : Nat),
       escapeDecodeGo bs i k ps out = .refused off ks → off < bs.length := by
   have key : ∀ (n : Nat) (ps : List Nat), ps.length ≤ n →
@@ -6281,7 +6281,7 @@ theorem test_escapeDecodeGo_refused_lt (bs : List UInt8) :
 
 
 set_option maxHeartbeats 12000000 in
-theorem test_s2StringBodyArm_scan_refused {mem extra : Mem} {x : State}
+theorem s2StringBodyArm_scan_refused {mem extra : Mem} {x : State}
     {ch p dst outn xp xj : Nat} {len nxp : BitVec 64}
     {base j0 c1 ei next lane offN k e' : Nat} {ps : List Nat} {body : List UInt8}
     {conv : BitVec 64} {Woff Wj : List UInt8} {bs : List UInt8}
@@ -6476,7 +6476,7 @@ theorem s2StringBodyArm_scan_decoded {mem : Mem} {x : State}
         (natToBytes out.length 8)
       = s2StringBodyDecodedMem mem dst xj outn ei outj out := by
     rw [hmem, hWj]
-    exact test_s2StringBodyMemory_decoded_cursor mem hei_p hdst_p hxj_p houtn_p
+    exact s2StringBodyMemory_decoded_cursor mem hei_p hdst_p hxj_p houtn_p
       hd_ei hx_ei hd_xj ho_ei ho_d ho_x
   refine ⟨⟨.int 32 (BitVec.ofNat 32 2),
       s2StringBodyDecodedMem mem dst xj outn ei outj out, next + 8⟩, ?_, ?_, ?_⟩
