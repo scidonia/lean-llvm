@@ -10,29 +10,29 @@ its caller.
 
 ## What the producer concludes
 
-`walkExit_ofLastFacts` has `WalkExit`'s shape with one conjunct corrected and one fact
-added.  Both are recorded here rather than assumed:
+`walkExit_ofLastFacts` is the composition, and `walkExit_at_stage2Calls` states it as
+`WalkExit (stage2Calls stage2SubCalls) G v` at the segment-calls the layer uses.  Two
+points about `WalkExit`'s statement are recorded here as well as in its own docstring:
 
-* **`WalkExit`'s `Cend.k = G.nep` conjunct is false of the model.**  The merge
-  `cleanup478.i` binds `%k.2.i` and `%sp.i.1` and leaves `%k.0.i249` alone
-  (`cleanup478Block`), and `WalkInv.blockIndex` reads the carry's index off
-  `%k.0.i249`; that register is bound by the header `while.body.i` and by nothing else
-  (`JsonStage2IR`).  So a carry at `cleanup478.i` satisfies `WalkInv` only at the
-  *header's* index: `hlast_toMerge`'s target carry (`hlastMergeCF`) has `C.k`, and at the
-  last entry `C.k + 1 = G.nep`, so `Cend.k = G.nep` and `WalkInv` cannot both hold.  The
-  conjunct the run does support is `Cend.k + 1 = G.nep` — the last entry's own
-  `HlastFacts.hlastK` — and that is what the producer states.  `WalkExit`'s only consumer
-  (`walkLoopStep_of_dispatch_exit`) discards `Cend` and `sEnd` entirely, so nothing reads
-  the conjunct.
+* **The index conjunct.**  `WalkExit` originally concluded `Cend.k = G.nep`, and that
+  form is false of the model: the merge `cleanup478.i` binds `%k.2.i` and `%sp.i.1` and
+  leaves `%k.0.i249` alone (`cleanup478Block`), while `WalkInv.blockIndex` reads the
+  carry's index off `%k.0.i249`, which only the header `while.body.i` binds
+  (`JsonStage2IR`).  So `hlast_toMerge`'s target carry has `Cend.k = C.k`, and beside the
+  premise `C.k + 1 = G.nep` the old conjunct contradicted `WalkInv`.  The statement now
+  reads `Cend.k + 1 = G.nep` — the last entry's own `hlastK` — which is what the run
+  establishes.  `WalkExit`'s only consumer (`walkLoopStep_of_dispatch_exit`) discards
+  `Cend` and `sEnd`, so nothing read the old form.
 
 * **The arena word at the merge is the dispatch's, and the producer takes it.**  The head
   premise of `WalkExit` is the word at the *head*; the post needs it at `cleanup478.i`,
   where the exit's slot copy reads it (`walkExitBlock_denote`'s `%alen` read).  Between
   the two lies the head path, and a `WalkSegment` records a run and an invariant, not the
-  writes along it — so the equality at the merge is a premise here
-  (`harenaMerge`), named at the bundle's own merge state.  Producing it is a separate
-  obligation: it needs the per-block write evidence on the head path, which
-  `stage2Body_arena_writers` identifies by writer but a segment does not expose.
+  writes along it — so the equality at the merge is a premise here (`harenaMerge`), named
+  at the bundle's own merge state.  **The arena word at the merge needs the head path
+  re-run with write tracking: ~23 steps plus three call contracts**
+  (`stage2Body_arena_writers` names the two writers — `entry` and `if.else285.i` — but a
+  segment exposes neither the run's blocks nor their stores).
 
 ## What the producer leaves to its caller
 
@@ -43,6 +43,15 @@ pointer registers `%z` and `%s` that no `WalkInv` field binds.  The three router
 take the route's own premises and pass everything `WalkInv` and the bundle do supply —
 `%nep`, `%inc.i`, `%sp.i.0248`, `%root_done.i`, `%e`, `%4`, and the composite states'
 lookups — through, so a caller sees only the facts it holds.
+
+`%z` and `%s` are the one place where `WalkExit`'s shape and this producer's disagree.
+`WalkExit` names them at the loop head, where its `∀` binds the state, because a premise
+that only the terminal block reads belongs to the terminal statement rather than to
+`WalkInv` (the argument `hinner` gets).  The producer reads them at `cleanup478.i`, the
+state the tails consume them at, and `walkExit_at_stage2Calls` therefore takes them from
+the caller's merge-state supplier and drops the head-level pair: carrying a register along
+the head path is the same head-path re-run the arena word needs, so it is the same
+obligation and not a second one.
 
 ## The price
 
@@ -445,9 +454,23 @@ theorem walkExit_ofLastFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
   · rw [hlastMergeCount]
     exact walkExitPrice hlast hq
 
-end WalkScope
-
-end LeanLLVM.Refinement
+/-- **`WalkExit` at the segment calls**: the producer's composition, stated in the
+assembly's own shape.  The last entry's bundle, the merge's arena word and the tail's run
+are the caller's, at the merge state each is read at; the head-level `%z`/`%s` premises
+`WalkExit` carries are dropped here, because the producer reads the two registers at the
+merge and the head path's register tracking is the same obligation as the arena word. -/
+theorem walkExit_at_stage2Calls {m0 : Mem} (G : WalkGeom m0) {v : Value}
+    (hf : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
+      C.k + 1 = G.nep → HlastFacts G C s)
+    (harenaMerge : ∀ (C : WalkCarry G) (s : State) (f : HlastFacts G C s),
+      readBytes (hlastMergeF f).mem ((hlastMergeCF f).stage.z + 48) 8
+        = some (wordBytes 8 (hlastMergeCF f).alen))
+    (htail : ∀ (C : WalkCarry G) (s : State) (f : HlastFacts G C s),
+      ExitTail (stage2Calls stage2SubCalls) (hlastMergeF f) v) :
+    WalkExit (stage2Calls stage2SubCalls) G v := by
+  intro C s hInv hhead hlast _harenaHead _hz _hs
+  exact walkExit_ofLastFacts G C s hInv hhead hlast (hf C s hInv hhead hlast)
+    (harenaMerge C s (hf C s hInv hhead hlast)) (htail C s (hf C s hInv hhead hlast))
 
 /-! ### Axiom footprints -/
 
@@ -459,3 +482,8 @@ end LeanLLVM.Refinement
 #print axioms LeanLLVM.Refinement.WalkScope.walkExitTailRun_refuse
 #print axioms LeanLLVM.Refinement.WalkScope.walkExitTailRun_refuse488
 #print axioms LeanLLVM.Refinement.WalkScope.walkExit_ofLastFacts
+#print axioms LeanLLVM.Refinement.WalkScope.walkExit_at_stage2Calls
+
+end WalkScope
+
+end LeanLLVM.Refinement
