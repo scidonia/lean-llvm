@@ -1029,14 +1029,13 @@ whose `j` is the counter's own bound, which is why the price is stated per byte
 inside the bytes between its position and the next entry's.
 
 **What this statement does not carry: memory.**  `WalkSegment` records a run and an
-invariant, not the writes along it, so the arena word a loop head holds is not here.
-It is the fact that the last append stored the cursor — `%alen` is written by
-`if.else285.i` (`IR:697`) and by the entry block (`IR:196`) — and it is a
-*cross-iteration* fact, true at the head only after the append's store, which is why
-`WalkInv` carries the inequality (`log_alen`) rather than the equality.  So a
-producer of this predicate does not discharge it: the head's word is a separate
-statement beside this one, composed through the revolutions, and `WalkLoopStep`'s
-producer takes it as its third argument. -/
+invariant, not the writes along it, so no fact about the log's bytes is here.  That is
+enough for the loop: `WalkInv` carries the arena cursor as the inequality `log_alen` —
+*some* `a` at or below the carry is stored at `%z + 48` — which is what the arena
+reserve reads, and the equality at the slot is false at a loop head whenever a body's
+decoded length is shorter than its document extent (`JsonStage2WalkArenaWord`).  The
+exit's statement used to carry that equality as a premise, and it was deleted as inert:
+both of its ends discard it, and `log_alen` is what remains. -/
 def WalkDispatch (calls : Calls) {m0 : Mem} (G : WalkGeom m0) : Prop :=
   ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     C.k + 1 < G.nep →
@@ -1092,11 +1091,21 @@ seed's three steps and the two terminal ones (`walkExitFits`).
 
 The run is stated in two pieces and its merge is named, because the post reads it
 there: `Cend`/`sEnd` are the carry and state the last dispatch leaves at
-`cleanup478.i`, the tail runs from `sEnd`, and the arena word at `sEnd` is
-`Cend.alen` — the equality the exit's slot copy needs, and the lag inside an
-iteration closed at the loop head.  `WalkInv.log_len` already gives the event
-cursor's word as an equality, so the two slot copies are the same fact on the two
-sides and only the arena's needs stating.
+`cleanup478.i`, and the tail runs from `sEnd`.
+
+**This statement used to carry the arena word, and that clause is deleted because it was
+inert.**  It appeared twice — a premise (`readBytes s.mem (C.stage.z + 48) 8 =
+some (wordBytes 8 C.alen)`) and the same equality as a post clause at `sEnd` — and both
+ends discarded it: the producer `walkExit_at_stage2Calls` takes it and never reads it, and
+the only consumer (`walkLoopStep_of_dispatch_exit`) destructured the post's word clause as
+`-`.  The equality also does not hold at a loop head: `z_arena_reserve.exit` advances the
+carry by the token's *document* extent, while `if.else285.i` stores the *decoded* length,
+so a body that escapes leaves the slot below `C.alen`, and nothing lowers `alen` again
+(`JsonStage2WalkArenaWord` is the census and the write-back's `iff`).  A premise that is
+inert and unsatisfiable is weight rather than hypothesis, so it is gone rather than
+restated: what survives is `WalkInv.log_alen`'s existential — *some* `a` at or below the
+carry — which `WalkInv G Cend sEnd` already carries, so an `a`-form clause here would
+duplicate the invariant.
 
 **The post's index conjunct was `Cend.k = G.nep`, and that form is false.**  The merge
 `cleanup478.i` binds `%k.2.i` and `%sp.i.1` and leaves `%k.0.i249` alone
@@ -1126,36 +1135,23 @@ counterexample (`JsonStage2StringBody`).  The order facts that do hold are the
 pointwise one (a read outside both regions is unchanged) and the present one (a
 write of the bytes already there is the identity), and the post needs neither in
 its commuting form: every clause of `stage2Boundary` is a *read* at a named address
-or a region claim, so the boundary can be proved at `sret.mem` directly — the two
-copied words are `Cend.alen` (this premise) and `Cend.evlen` (`WalkInv.log_len`),
-and the refusal offset is existential there (`∃ e, e ≤ n ∧ …`), so the memory's own
-word serves rather than the carry's `eoff`. -/
+or a region claim, so the boundary can be proved at `sret.mem` directly — the words
+the copy moves are the log's arena slot and `Cend.evlen` (`WalkInv.log_len`), and the
+refusal offset is existential there (`∃ e, e ≤ n ∧ …`), so the memory's own word
+serves rather than the carry's `eoff`.  What the arena slot *holds* is the copy's to
+read and no clause of this statement's to claim; that is the deletion recorded above. -/
 def WalkExit (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (v : Value) : Prop :=
   ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     C.k + 1 = G.nep →
-    -- **The arena word, produced by the dispatch.**  `WalkInv.log_alen` is the inequality (the
-    -- carry is ahead of the memory between the append and the write-back), so the equality is a
-    -- fact about the run rather than the state: it is a hypothesis here, and the traverse
-    -- supplies it from the dispatch's evidence.  The exit's path stores nothing at `z + 48`,
-    -- so the word travels through it unchanged.
-    readBytes s.mem (C.stage.z + 48) 8 = some (wordBytes 8 C.alen) →
     -- **The record's two pointers, read only by the terminal block.**  `if.end`'s return
     -- reads `%z` and `%s`; neither `WalkPtrs` nor `walkStaticRegs` binds them, so they are
     -- not invariant-carried and the exit's statement names them, as `hinner` is named at the
     -- loop head.  A producer reads them at `cleanup478.i`, where the tail consumes them; the
-    -- head path's register tracking is what would carry them from here to there, and it is
-    -- the same head-path slice the arena word below needs.
+    -- head path's register tracking is what would carry them from here to there.
     lookupName s.env "%z" = some (.ptr C.stage.z) →
     lookupName s.env "%s" = some (.ptr C.stage.s) →
     ∃ (Cend : WalkCarry G) (sEnd : State), WalkInv G Cend sEnd ∧
       Cend.block = "cleanup478.i" ∧ Cend.k + 1 = G.nep ∧
-      -- **The arena word is the cursor at the merge.**  The carry advances with
-      -- each append (`arenaAppend`'s `alen' = alen + on`) and the block that
-      -- writes `%z + 48` stores the same decoded length, so the lag
-      -- `WalkInv.log_alen` allows is closed at the loop head.  The exit's slot
-      -- copy reads this word, which is what identifies the run's final memory
-      -- with the record's report.
-      readBytes sEnd.mem (Cend.stage.z + 48) 8 = some (wordBytes 8 Cend.alen) ∧
       ∃ (q₁ q₂ : Nat) (s1 s2 sret : State),
         (∀ n, runFuel calls (q₁ + n) stage2Body s = runFuel calls n stage2Body sEnd) ∧
         q₁ + q₂ ≤ walkPotential G C + 27 ∧
@@ -2479,8 +2475,6 @@ merge's test is clear, and at the last entry the test fails and the exit's tail
 takes over. -/
 theorem walkLoopStep_of_dispatch_exit {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
     {v : Value} (hdisp : WalkDispatch calls G) (hexit : WalkExit calls G v)
-    (hword : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
-      readBytes s.mem (C.stage.z + 48) 8 = some (wordBytes 8 C.alen))
     (hz : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
       lookupName s.env "%z" = some (.ptr C.stage.z))
     (hs : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
@@ -2489,8 +2483,8 @@ theorem walkLoopStep_of_dispatch_exit {calls : Calls} {m0 : Mem} {G : WalkGeom m
   intro C s hInv hhead hk
   by_cases hcase : C.k + 1 < G.nep
   · exact Or.inl (hdisp.revolution C s hInv hhead hcase)
-  · obtain ⟨Cend, sEnd, -, -, -, -, q₁, q₂, s1, s2, sret, hseg1, hq, hseg2,
-      hstep1, hret⟩ := hexit C s hInv hhead (by omega) (hword C s hInv hhead)
+  · obtain ⟨Cend, sEnd, -, -, -, q₁, q₂, s1, s2, sret, hseg1, hq, hseg2,
+      hstep1, hret⟩ := hexit C s hInv hhead (by omega)
       (hz C s hInv hhead) (hs C s hInv hhead)
     refine Or.inr ⟨q₁ + q₂, s1, s2, sret, ?_, ?_, hstep1, hret⟩
     · omega
@@ -3296,11 +3290,17 @@ syntax rather than mathematics — which is why the record names them together:
 between the append and the write-back**: a block that advances `alen` without storing breaks the
 equality, so sharpening the clause to `a = C.alen` would assert something false on that path.
 
-The docstring's *"the dispatch's to produce"* describes the dispatch producing the equality **at
-a moment** (its alen store), not holding it always.  So the arena word is a fact about the
-exit's **run**, and `WalkExit` takes it as a hypothesis — the traverse supplies it from the
-dispatch's evidence — rather than the invariant carrying it.  **An equality that holds after a
-store is not an invariant; the invariant is the inequality.**
+The equality is not merely un-invariant, it is not a fact of the loop head at all: the reserve
+(`z_arena_reserve.exit`) advances the carry by the token's *document* extent, the write-back
+(`if.else285.i`) stores the *decoded* length, and nothing lowers `alen`, so a body that escapes
+leaves the slot short of the carry for the rest of the run.  `JsonStage2WalkArenaWord` is that
+census and the write-back's `iff`.
+
+`WalkExit` used to take the equality as a hypothesis and assert it again at its merge.  Both
+ends discarded it — the exit's producer never read the premise and the loop step destructured
+the post clause as `-` — so the two clauses were deleted rather than repaired: an inert,
+unsatisfiable premise is weight.  **An equality that holds after a store is not an invariant;
+the invariant is the inequality, and the inequality is what the exit's state carries.**
 
 ### A named existential is a parameter
 

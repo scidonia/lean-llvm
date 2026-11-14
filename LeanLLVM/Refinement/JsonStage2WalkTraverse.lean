@@ -397,13 +397,14 @@ that dispatches it and then finalises is bounded by the credit it consumes plus 
 finalisation allowance.
 
 **What a producer of this takes, and what the two branches do not imply.**  Its
-assembly is three arguments, not two: the dispatch (`WalkDispatch`), the exit
-(`WalkExit`), and the arena word at the head
-(`readBytes s.mem (C.stage.z + 48) 8 = some (wordBytes 8 C.alen)`) — the exit's
-statement only *takes* that word as a hypothesis, so the other two do not imply it.
-The word is a run fact: `%alen` is stored at `if.else285.i` (the arena append) and
-at the entry block, and the invariant carries the inequality rather than the
-equality, so it is owed by its own producer beside the dispatch. -/
+assembly is the dispatch (`WalkDispatch`), the exit (`WalkExit`), and the two
+registers `%z` and `%s` the exit's return reads
+(`JsonStage2WalkAssembly`), which no `WalkInv` field binds — so the other two do not
+imply them.  The arena word at the head is *not* among them: it was the third
+argument once, and it was deleted as inert — neither the exit's producer nor this
+step's consumer read it, and a slot holding `C.alen` is not a fact of the loop head
+at all, since the reserve advances the carry by a token's document extent while the
+write-back stores the decoded length (`JsonStage2WalkArenaWord`). -/
 def WalkLoopStep (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (v : Value) (F : Nat) : Prop :=
   ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead → C.k < G.nep →
     (∃ (C' : WalkCarry G) (s' : State) (p : Nat),

@@ -12,7 +12,8 @@ its caller.
 
 `walkExit_ofLastFacts` is the composition, and `walkExit_at_stage2Calls` states it as
 `WalkExit (stage2Calls stage2SubCalls) G v` at the segment-calls the layer uses.  Two
-points about `WalkExit`'s statement are recorded here as well as in its own docstring:
+points about `WalkExit`'s statement are recorded here as well as in its own docstring —
+one a correction, one a deletion:
 
 * **The index conjunct.**  `WalkExit` originally concluded `Cend.k = G.nep`, and that
   form is false of the model: the merge `cleanup478.i` binds `%k.2.i` and `%sp.i.1` and
@@ -24,15 +25,15 @@ points about `WalkExit`'s statement are recorded here as well as in its own docs
   establishes.  `WalkExit`'s only consumer (`walkLoopStep_of_dispatch_exit`) discards
   `Cend` and `sEnd`, so nothing read the old form.
 
-* **The arena word at the merge is the dispatch's, and the producer takes it.**  The head
-  premise of `WalkExit` is the word at the *head*; the post needs it at `cleanup478.i`,
-  where the exit's slot copy reads it (`walkExitBlock_denote`'s `%alen` read).  Between
-  the two lies the head path, and a `WalkSegment` records a run and an invariant, not the
-  writes along it — so the equality at the merge is a premise here (`harenaMerge`), named
-  at the bundle's own merge state.  **The arena word at the merge needs the head path
-  re-run with write tracking: ~23 steps plus three call contracts**
-  (`stage2Body_arena_writers` names the two writers — `entry` and `if.else285.i` — but a
-  segment exposes neither the run's blocks nor their stores).
+* **The arena word was deleted, because it was inert.**  `WalkExit` used to take the word
+  at the head as a premise and assert the same equality at `cleanup478.i`, and this
+  producer carried both: the premise was never read, and the post clause existed only to
+  be discarded.  The word is also not a fact of the loop head — the reserve advances the
+  carry by a token's document extent while the write-back stores the decoded length, so a
+  body that escapes leaves the slot below `C.alen` and nothing lowers `alen` again
+  (`JsonStage2WalkArenaWord`).  Both clauses are gone; `WalkInv.log_alen`'s existential —
+  *some* `a` at or below the carry — is what `WalkInv G Cend sEnd` already carries, so
+  restating it here would duplicate the invariant.
 
 ## What the producer leaves to its caller
 
@@ -50,8 +51,8 @@ that only the terminal block reads belongs to the terminal statement rather than
 `WalkInv` (the argument `hinner` gets).  The producer reads them at `cleanup478.i`, the
 state the tails consume them at, and `walkExit_at_stage2Calls` therefore takes them from
 the caller's merge-state supplier and drops the head-level pair: carrying a register along
-the head path is the same head-path re-run the arena word needs, so it is the same
-obligation and not a second one.
+the head path is the one head-path obligation this layer does not discharge, since a
+`WalkSegment` exposes neither the run's blocks nor their stores.
 
 ## The price
 
@@ -424,19 +425,15 @@ theorem walkExitTailRun_refuse488 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
 
 /-! ### The producer -/
 
-/-- **The exit, from the last entry's facts and the tail's run.**  `WalkExit`'s body with
-the merge's index conjunct corrected to `Cend.k + 1 = G.nep` and the merge's arena word a
-premise; see this module's page for why both differ. -/
+/-- **The exit, from the last entry's facts and the tail's run.**  `WalkExit`'s body, with
+the merge's index conjunct as the last entry's own `hlastK` states it. -/
 theorem walkExit_ofLastFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     (hInv : WalkInv G C s) (hhead : C.block = walkLoopHead) (hlast : C.k + 1 = G.nep)
     (f : HlastFacts G C s)
-    (harenaMerge : readBytes (hlastMergeF f).mem ((hlastMergeCF f).stage.z + 48) 8
-      = some (wordBytes 8 (hlastMergeCF f).alen))
     {v : Value}
     (htail : ExitTail (stage2Calls stage2SubCalls) (hlastMergeF f) v) :
     ∃ (Cend : WalkCarry G) (sEnd : State), WalkInv G Cend sEnd ∧
       Cend.block = "cleanup478.i" ∧ Cend.k + 1 = G.nep ∧
-      readBytes sEnd.mem (Cend.stage.z + 48) 8 = some (wordBytes 8 Cend.alen) ∧
       ∃ (q₁ q₂ : Nat) (s1 s2 sret : State),
         (∀ n, runFuel (stage2Calls stage2SubCalls) (q₁ + n) stage2Body s
           = runFuel (stage2Calls stage2SubCalls) n stage2Body sEnd) ∧
@@ -447,7 +444,7 @@ theorem walkExit_ofLastFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
         step (stage2Calls stage2SubCalls) stage2Body s2 = .ret (some v) sret := by
   obtain ⟨hseg, hinv⟩ := hlast_toMerge G C s hInv hhead f
   obtain ⟨q, s1, s2, sret, hrun, hq, hjump, hret⟩ := htail
-  refine ⟨hlastMergeCF f, hlastMergeF f, hinv, rfl, ?_, harenaMerge,
+  refine ⟨hlastMergeCF f, hlastMergeF f, hinv, rfl, ?_,
     ((((((6 + 1) + 5) + 3) + 3) + 1) + 1), q, s1, s2, sret, hseg.run, ?_, hrun, hjump, hret⟩
   · show C.k + 1 = G.nep
     exact hlast
@@ -455,22 +452,19 @@ theorem walkExit_ofLastFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
     exact walkExitPrice hlast hq
 
 /-- **`WalkExit` at the segment calls**: the producer's composition, stated in the
-assembly's own shape.  The last entry's bundle, the merge's arena word and the tail's run
-are the caller's, at the merge state each is read at; the head-level `%z`/`%s` premises
-`WalkExit` carries are dropped here, because the producer reads the two registers at the
-merge and the head path's register tracking is the same obligation as the arena word. -/
+assembly's own shape.  The last entry's bundle and the tail's run are the caller's, at the
+merge state each is read at; the head-level `%z`/`%s` premises `WalkExit` carries are
+dropped here, because the producer reads the two registers at the merge and the head
+path's register tracking is a separate obligation. -/
 theorem walkExit_at_stage2Calls {m0 : Mem} (G : WalkGeom m0) {v : Value}
     (hf : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
       C.k + 1 = G.nep → HlastFacts G C s)
-    (harenaMerge : ∀ (C : WalkCarry G) (s : State) (f : HlastFacts G C s),
-      readBytes (hlastMergeF f).mem ((hlastMergeCF f).stage.z + 48) 8
-        = some (wordBytes 8 (hlastMergeCF f).alen))
     (htail : ∀ (C : WalkCarry G) (s : State) (f : HlastFacts G C s),
       ExitTail (stage2Calls stage2SubCalls) (hlastMergeF f) v) :
     WalkExit (stage2Calls stage2SubCalls) G v := by
-  intro C s hInv hhead hlast _harenaHead _hz _hs
+  intro C s hInv hhead hlast _hz _hs
   exact walkExit_ofLastFacts G C s hInv hhead hlast (hf C s hInv hhead hlast)
-    (harenaMerge C s (hf C s hInv hhead hlast)) (htail C s (hf C s hInv hhead hlast))
+    (htail C s (hf C s hInv hhead hlast))
 
 /-! ### Axiom footprints -/
 
