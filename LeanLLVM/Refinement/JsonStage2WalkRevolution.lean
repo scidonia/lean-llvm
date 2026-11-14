@@ -143,6 +143,19 @@ Two witnesses are fixed rather than carried, and for the same reason: they are
   path from `if.then447.i`), and its last visit is `cd - 1`.  `HlastFacts` carried both
   because the last entry's scan visits exactly one byte; here the traversal's own
   parameter is the bound.
+
+**Two of the cells this bundle's consumer states at the merge are candidate invariant
+clauses.**  `WalkMergeCells` (`JsonStage2WalkPremisesOfStaging`) states
+`%inc.i = ofNat 64 (C.k + 1)` and `%nep = ofNat 64 G.nep` at `cleanup478.i` as supplied
+facts, and both follow from clauses `WalkInv` does not have: `%inc.i` is bound once, in
+the header, as `%k.0.i249 + 1`, so the clause holds wherever `blockIndex` holds, and
+`%nep` is a parameter no block rebinds.  Adding them is a vocabulary change — a scoping
+pass measured 39 `WalkInv` construction sites in 10 modules, `whileBody_step` (the only
+block that rebinds `%inc.i`) and two new disequalities in `WalkPtrs.bind`/`WalkRegs.bind`
+— and it retires two of that premise's three conjuncts and not the premise: the third,
+`Cd.k = C.k`, relates two carries, while `WalkInv G C s` is indexed by one state and one
+carry.  This note is the record that half of the merge's supply is a future clause, and
+which half is the wall.
 -/
 structure HcontFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : Type where
   /-- The head's byte. -/

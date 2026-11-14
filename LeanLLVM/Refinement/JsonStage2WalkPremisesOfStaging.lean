@@ -182,7 +182,26 @@ head state with an entry left.
 
 The three facts are the model's: the scan's rounds and the latch's exit bind their own
 cells, the merge binds `%k.2.i` and `%sp.i.1` rather than `%sp.i.0248`, and `%nep` is
-an argument the walk never writes.  What is missing is the lemma, not the fact. -/
+an argument the walk never writes.  What is missing is the lemma, not the fact.
+
+**Three conjuncts, and why none of them is a `WalkInv` field.**  Two are derivable from
+invariant clauses that do not exist yet: `%inc.i = ofNat 64 (C.k + 1)` follows from the
+header's one binding of `%inc.i` (`%k.0.i249 + 1`), so it holds wherever `blockIndex`
+holds, and `%nep = ofNat 64 G.nep` from `%nep`'s being a parameter no block rebinds; at
+`cleanup478.i` the merge binds only `%sp.i.1`, `%k.2.i` and `%cmp.i`, so a state-level
+clause would read exactly these two cells.
+
+The third — `Cd.k = C.k` — is *not* a state-level fact.  `WalkInv G C s` is indexed by
+one state and one carry, so no field of it can relate two carries, and the equation is
+lost inside `HcontFacts.hround`, whose target is existential (`∃ C'' s'', …`): the carry
+`walkRevolution_at` reaches is that existential's, so `Cd.k` is opaque with it.
+
+Adding the two clauses is a vocabulary change, and a scoping pass measured it: 39
+`WalkInv` construction sites in 10 modules, `whileBody_step` (the only block that rebinds
+`%inc.i`) and two new disequalities in `WalkPtrs.bind`/`WalkRegs.bind`.  It would retire
+two fields of this premise and not the premise: the third conjunct survives it, because
+it is a relation between carries rather than a fact about one.  So the three are
+supplied together, and this is the reason. -/
 abbrev WalkMergeCells {m0 : Mem} (G : WalkGeom m0) : Prop :=
   ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     C.k + 1 < G.nep →
@@ -666,7 +685,7 @@ the input or a named missing preservation lemma.
 
 | premise | status |
 |---|---|
-| `WalkContinueFacts` | **no producer, and the same discipline as `HlastFacts`.**  Its producer would be `hlastFacts_of_staging`'s twin: the bundle's fields are the head's byte and its four class bits, the entry counts and the default arm's cells, the seam's cells, the scan's landing — all facts about the staged document — beside `htok`, which asserts a register is preserved across the scan and needs *the extra-token scan preserves a register it does not bind*, a statement a `WalkSegment` cannot carry because the traversal returns its final state existentially. |
+| `WalkContinueFacts` | **`HcontFacts`' own supply, in `HlastFacts`' discipline.**  Its producer is `hlastFacts_of_staging`'s twin — the same three sources (the invariant's clauses, the document's content, the staging's addresses) read at the same states — and the bundle's fields are the head's byte and its four class bits, the entry counts and the default arm's cells, the seam's cells and the scan's landing.  Two groups it cannot produce: the traversal's three hypotheses (`hround`, `hguard`, `hbyte`, supplied unweakened) and `htok`, which needs *the extra-token scan preserves a register it does not bind* — a statement a `WalkSegment` cannot carry, because the traversal returns its final state existentially. |
 | `WalkMergeCells` | **structural, and no producer can exist in this vocabulary.**  `WalkSegment` records a run and an invariant, and neither names the blocks the run passed or the registers they bound; no lemma in the layer carries a register across a segment, so `%inc.i`, `%nep` and the header's index at the merge cannot be read off the segment that reaches it.  A producer needs a segment-level register-preservation statement, which the vocabulary does not have. |
 | `WalkHeadPtrs` | **the input's, like the class bits.**  `%z` and `%s` are bound by the entry block (`walkEntryState_env`) and by nothing else; no `WalkInv` clause names them (`WalkPtrs` has the dispatch's six, `walkStaticRegs` the twenty-four addresses), so the pair is supplied at the point a caller knows the staging. |
 | `WalkLoopEnd` | **supplied, with its first half's producer already in the tree.**  `facts` is `HlastFacts`, whose producer is `hlastFacts_of_staging` (which itself takes a bundle of supplied facts — the head's byte and class bits, the register cells and the calls' outcomes — so its own supply is the same discipline); `tail` is `ExitTail`, which `walkExit_at_stage2Calls` takes from the caller as the three calls' contracts composed at their staged argument lists. |

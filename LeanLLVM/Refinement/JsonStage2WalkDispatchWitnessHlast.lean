@@ -242,7 +242,19 @@ def hlastMerge {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State) (x : B
 
 /-- **The input's facts, bundled.**  The statement that needs them is the last entry's
 two outcomes; this is the single argument it takes, and each group is a subject the
-prefix or the finish reads. -/
+prefix or the finish reads.
+
+**Two of its cells are candidate invariant clauses** — `%inc.i` (`hinc` at the head,
+`hk2` at the merge) and `%nep` (`hnep` at the head, `hnepM` at the merge).
+`hlastFacts_of_staging` takes them as `hincL` and `hnepL`, and that supply is what a
+clause would retire: `%inc.i` is bound once, in the header, as `%k.0.i249 + 1`, so
+`%inc.i = ofNat 64 (C.k + 1)` holds wherever `blockIndex` holds, and `%nep` is a
+parameter no block rebinds.  Adding the two to `WalkInv` is a vocabulary change — a
+scoping pass measured 39 construction sites in 10 modules, `whileBody_step` (the only
+block that rebinds `%inc.i`) and two new disequalities in `WalkPtrs.bind`/`WalkRegs.bind`
+— and it is not the whole of `WalkMergeCells` (`JsonStage2WalkPremisesOfStaging`), whose
+third conjunct relates two carries and so cannot be a field of an invariant indexed by
+one. -/
 structure HlastFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : Type where
   /-- The head's byte. -/
   x : BitVec 8
