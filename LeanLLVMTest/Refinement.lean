@@ -11,6 +11,7 @@ import LeanLLVM.Refinement.JsonB8Steps
 import LeanLLVM.Refinement.JsonUnitContracts
 import LeanLLVM.Refinement.JsonEscapeSpec
 import LeanLLVM.Refinement.JsonEscapeSteps
+import LeanLLVM.Refinement.JsonStage2WalkCredit
 
 open LeanLLVM.Refinement
 
@@ -10547,3 +10548,92 @@ contiguous to the end of this file. -/
 /-- info: 'LeanLLVM.Refinement.pipeline_satisfies_at_stage2' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.pipeline_satisfies_at_stage2
+
+/-! #### The stage-two walk's credit boundary: the price index and the terminal charge
+
+`boundary` is a price index, not a stream read: it agrees with `entryPos` below the
+stream and reads the document's length at it, so the terminal price charges the
+entry's remaining span instead of the totalisation's zero.  The pins record the
+footprint of every lemma the change rests on, including the boundary potential the
+layer charges against and the terminal spend that pays a revolution at the last
+entry. -/
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.boundary_eq_entryPos' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.boundary_eq_entryPos
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.boundary_le' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.boundary_le
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.boundary_mono' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.boundary_mono
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.boundary_nep_ge_prev' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.boundary_nep_ge_prev
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.boundary_nep_gt_prev' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.boundary_nep_gt_prev
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.boundary_ge_entryPos' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.boundary_ge_entryPos
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.entryPos_eq_zero_of_nep_le' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.entryPos_eq_zero_of_nep_le
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.price_eq_of_lt' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.price_eq_of_lt
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.terminalPrice_boundary' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.terminalPrice_boundary
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.terminalPrice_terminal_byteTerm' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.terminalPrice_terminal_byteTerm
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.entryPosPrice_noByteAllowance' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.entryPosPrice_noByteAllowance
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.terminalPrice_of_scan' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.terminalPrice_of_scan
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.terminalScan_charge_control' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.terminalScan_charge_control
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkPotential_boundary_eq_of_lt' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkPotential_boundary_eq_of_lt
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkPotential_boundary_le' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkPotential_boundary_le
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkPotential_boundary_zero_of_nep_le' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkPotential_boundary_zero_of_nep_le
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkPotential_boundary_spend' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkPotential_boundary_spend
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.terminalCharge_boundary' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.terminalCharge_boundary
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkPotential_boundary_seed' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkPotential_boundary_seed
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.hlast_finish_boundary' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.hlast_finish_boundary
