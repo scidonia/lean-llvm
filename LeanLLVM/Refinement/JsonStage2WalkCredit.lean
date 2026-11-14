@@ -56,12 +56,33 @@ held only at `b = 0` (`terminalScan_charge_control`).
 `hlast_finish`'s existential with its conjunct replaced, so the callers of the
 terminal finish path can read the boundary directly.
 
+## The potential: the word the layer charges against
+
+A price alone charges nothing.  The charge is `walkPotential`'s byte term, and while
+that term reads `entryPos` the terminal byte credit is the totalisation: at
+`C.k = G.nep` the potential is `8 · G.n` — the whole document still counted as
+unreached — while the price at that index spends zero.  `walkPotential_boundary` is
+that potential with its byte term read through the boundary, and it is the version
+the layer must charge against:
+
+* below the stream it is `walkPotential` word for word
+  (`walkPotential_boundary_eq_of_lt`), so no head-state statement changes value;
+* at and past the stream it is `0` (`walkPotential_boundary_zero_of_nep_le`) — the
+  credit is spent, which is what the terminal index means;
+* `walkPotential_boundary_spend` is `walkPotential_spend` with the boundary: `C.k ≤
+  C'.k` is the only index hypothesis, because `boundary_mono` is unconditional and
+  `boundary_le` bounds both ends inside the document.  `walkPotential_spend` needed
+  `entryPos G C.k ≤ entryPos G C'.k` from its caller, which `entryPos_mono` supplies
+  only under `C'.k < G.nep` — so the terminal step was *unstatable* in that form;
+* `terminalCharge_boundary` is the terminal step: the restated terminal conjunct
+  spends its price and leaves the potential at zero.
+
 ## What is not here
 
-`boundary` is a price index and no theorem here reads it as a stream position.  The
-potential's byte term is `walkPotential`'s and is not redefined; what this module
-supplies is the index that term must be read through at the terminal index, and the
-terminal price stated at it.
+`JsonStage2WalkTraverse` owns `walkPotential` and its two laws, so the definitions
+above are the statement to transplant rather than the re-pointing itself.  What this
+module fixes is the index, the price stated at it, and the potential stated at it;
+`boundary` is a price index and no theorem here reads it as a stream position.
 -/
 
 import LeanLLVM.Refinement.JsonStage2WalkDispatchWitnessHlast
@@ -83,9 +104,14 @@ at the same index, because the credit at `nep` is the document the walk has left
 reach.  Two quantities, two definitions. -/
 
 /-- **The credit boundary at an index**: the entry stream's position below the
-stream, and the document's length at and past it.  A price index — the terminal
-index has no entry position, so its boundary is the document's end rather than the
-stream read's totalisation. -/
+stream, and the document's length at and past it.
+
+`entryPos` is a stream read and totalises to zero past the stream; `boundary` is a
+price index and totalises to the document's length.  Two quantities that agree below
+the terminal index and must not agree at it: the terminal index has no entry
+position, and the credit there is the document the walk has left to reach.  That is
+why `price_eq_of_lt` is an equality rather than an implication, and why re-pointing
+a price at this index cannot alter a non-terminal price. -/
 def boundary {m0 : Mem} (G : WalkGeom m0) (k : Nat) : Nat :=
   if k < G.nep then entryPos G k else G.n
 
@@ -237,6 +263,100 @@ not.  The rows are `walkCreditRows`' long-string width at the terminal entry. -/
 theorem terminalScan_charge_control :
     (22 + 6 * 100) + 2 ≤ 32 + 8 * 100 ∧ ¬ ((22 + 6 * 100) + 2 ≤ 32 + 0) := by
   decide
+
+/-! ### The potential at the boundary
+
+The word the layer charges against is the potential's byte term, not the price.  The
+definitions here are `walkPotential`'s with that term read through `boundary`, so
+`JsonStage2WalkTraverse` has the statement to transplant: below the stream nothing
+changes, at the terminal index the credit is the entry's remaining span, and the
+spend that pays a revolution becomes unconditional in the index. -/
+
+/-- **The walk's remaining credit at the boundary**: `walkPotential`'s two terms with
+the byte term read through `boundary`.  Below the stream the two are the same
+number; at `G.nep` this is zero where `walkPotential` still counts `8 · G.n`. -/
+def walkPotential_boundary {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) : Nat :=
+  stage2EntryAllowance * (G.nep - C.k) + stage2ByteAllowance * (G.n - boundary G C.k)
+
+/-- **Below the stream the credit is `walkPotential`'s, word for word** — the
+agreement that keeps every head-state statement's value: `WalkExit`, `WalkLoopStep`'s
+two branches and the completions are all taken at `C.k < G.nep`. -/
+theorem walkPotential_boundary_eq_of_lt {m0 : Mem} (G : WalkGeom m0) {C : WalkCarry G}
+    (hk : C.k < G.nep) : walkPotential_boundary G C = walkPotential G C := by
+  simp only [walkPotential_boundary, walkPotential, boundary_eq_entryPos G hk]
+
+/-- **The credit is inside the record's entry and byte terms.**  `walkPotential_le`
+with the boundary: the entry term saturates, and the byte term is inside the document
+because `boundary_le` is unconditional — so this version needs no invariant. -/
+theorem walkPotential_boundary_le {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) :
+    walkPotential_boundary G C ≤
+      stage2EntryAllowance * G.nep + stage2ByteAllowance * G.n := by
+  have h1 : stage2EntryAllowance * (G.nep - C.k) ≤ stage2EntryAllowance * G.nep :=
+    Nat.mul_le_mul_left _ (Nat.sub_le _ _)
+  have h2 : stage2ByteAllowance * (G.n - boundary G C.k) ≤
+      stage2ByteAllowance * G.n :=
+    Nat.mul_le_mul_left _ (Nat.sub_le _ _)
+  simp only [walkPotential_boundary, stage2EntryAllowance, stage2ByteAllowance] at h1 h2 ⊢
+  omega
+
+/-- **At and past the stream the credit is exhausted**: no entry left and no document
+byte left to reach.  This is the terminal index's reading, and it is what the
+`entryPos` form cannot state — there the potential is `8 · G.n` past the stream. -/
+theorem walkPotential_boundary_zero_of_nep_le {m0 : Mem} (G : WalkGeom m0)
+    {C : WalkCarry G} (hk : G.nep ≤ C.k) : walkPotential_boundary G C = 0 := by
+  have h1 : G.nep - C.k = 0 := by omega
+  have h2 : boundary G C.k = G.n := by
+    simp only [boundary, ite_eq_right (by omega : ¬ C.k < G.nep)]
+  simp only [walkPotential_boundary, h1, h2, Nat.sub_self, Nat.mul_zero, Nat.add_zero]
+
+/-- **A revolution's price, in the credit it consumes, at the boundary.**  As
+`walkPotential_spend`, and with one hypothesis: the index does not fall.  The three
+that `walkPotential_spend` takes beside it — the two positions inside the document
+and their monotonicity — are `boundary_le` and `boundary_mono` here, and neither
+carries a `k2 < nep` side condition.  That is what admits `C'.k = G.nep`, the step
+the terminal dispatch takes and the step the `entryPos` form could not state. -/
+theorem walkPotential_boundary_spend {m0 : Mem} (G : WalkGeom m0) {C C' : WalkCarry G}
+    {p : Nat} (hk : C.k ≤ C'.k) (hk' : C'.k ≤ G.nep)
+    (hall : p ≤ stage2EntryAllowance * (C'.k - C.k) +
+      stage2ByteAllowance * (boundary G C'.k - boundary G C.k)) :
+    p + walkPotential_boundary G C' ≤ walkPotential_boundary G C := by
+  have h1 : G.nep - C.k = (G.nep - C'.k) + (C'.k - C.k) := by omega
+  have hmono : boundary G C.k ≤ boundary G C'.k := boundary_mono G hk
+  have hb : boundary G C.k ≤ G.n := boundary_le G C.k
+  have hb' : boundary G C'.k ≤ G.n := boundary_le G C'.k
+  have h2 : G.n - boundary G C.k =
+      (G.n - boundary G C'.k) + (boundary G C'.k - boundary G C.k) := by omega
+  simp only [walkPotential_boundary, stage2EntryAllowance, stage2ByteAllowance] at hall ⊢
+  rw [h1, h2, Nat.mul_add, Nat.mul_add]
+  omega
+
+/-- **The terminal dispatch pays into the credit.**  The restated terminal conjunct as
+the potential's spend: `p + 2` steps carry the loop from `C.k` to the terminal index,
+the price is the entry's remaining span, and the potential at the terminal index is
+zero.  This is the sentence the `entryPos` accounting could not state — its
+`walkPotential_spend` needs `entryPos G C.k ≤ entryPos G G.nep`, which is false
+whenever the entry has a position. -/
+theorem terminalCharge_boundary {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) {p : Nat}
+    (hk : C.k < G.nep)
+    (h : p + 2 ≤ stage2EntryAllowance * (G.nep - C.k) +
+      stage2ByteAllowance * (G.n - entryPos G C.k)) :
+    (p + 2) + walkPotential_boundary G { C with k := G.nep } ≤ walkPotential_boundary G C := by
+  have hz : walkPotential_boundary G { C with k := G.nep } = 0 :=
+    walkPotential_boundary_zero_of_nep_le G (le_of_eq rfl)
+  rw [hz, Nat.add_zero, walkPotential_boundary, boundary_eq_entryPos G hk]
+  exact h
+
+/-- **The seed's credit is `walkPotential_seed`'s**, given an entry to dispatch:
+`walkSeed`'s index is zero, so the boundary agrees with the stream's position there.
+The hypothesis is not decoration — at `G.nep = 0` the boundary reads the document's
+length at index zero, the seed's credit is zero, and the loop exits before any
+dispatch; `walkCompletes_of_seed_loop` already carries `0 < G.nep`. -/
+theorem walkPotential_boundary_seed {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G)
+    (hn : 0 < G.nep) :
+    walkPotential_boundary G (walkSeed G S) =
+      stage2EntryAllowance * G.nep + stage2ByteAllowance * (G.n - entryPos G 0) := by
+  have hk : (walkSeed G S).k = 0 := rfl
+  simp only [walkPotential_boundary, hk, boundary_eq_entryPos G hn, Nat.sub_zero]
 
 /-- **The last entry's finish disjunct at the restated price.**  `hlast_finish`'s
 existential with its terminal conjunct read on the boundary: the same segment, the
