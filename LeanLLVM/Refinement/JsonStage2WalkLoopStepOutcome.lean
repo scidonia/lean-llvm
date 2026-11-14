@@ -30,6 +30,29 @@ outcomes instead.
   this predicate (`WalkTargetRun.ofExitTail`).  So the terminal branch carries the
   result each state reaches, and no uniformity across states is assumed here.
 
+**What this rule supersedes, and why that is a retirement rather than a tidy-up.**  The
+loop's endpoint used to take `WalkExit` (`JsonStage2WalkAssembly`), whose producer
+composes the last entry's head path with one of three tails
+(`walkExit_ofLastFacts`/`walkExit_at_stage2Calls`, `JsonStage2WalkExitProducer`).
+`WalkExit` fixes one verdict `v` for *every* last-entry head state, and the three tails
+it consumes do not agree: from `cleanup478.i` the accepted route returns `1`
+(`walkExitTailRun_exit`) and the two refusal routes return `0` (`walkExitTailRun_refuse`,
+`walkExitTailRun_refuse488`), all three proved from states built at that block under the
+same invariant.  So the old premise is over-strong at states the body has — one verdict
+cannot cover them — and the route is retired rather than tidied.
+
+The switch, in the order it is done: the loop's step becomes `WalkLoopStepThree`
+(`JsonStage2WalkTraverse`, whose `walkLoopFinishesThree`, `walkCompletes_of_loop` and
+`walkCompletes_of_loop_budget` keep their conclusions); `walkLoopStep_of_staging`'s
+premise becomes this rule, with `WalkLoopEnd`'s single tail restated as the per-state
+`WalkTargetRun` at the finalisation's two entry blocks and the merge's `%nep` bound
+(`JsonStage2WalkPremisesOfStaging`); `WalkHeadPtrs` goes, because the copy's pointer
+registers are the terminal states' own; and `walkLoopStep_of_dispatch_exit` is deleted
+with the statement it produced.  What remains of the old route is the exit predicate
+and its two producers (`WalkExit`, `walkExit_ofLastFacts`, `walkExit_at_stage2Calls`),
+which nothing consumes now.  `ExitTail` survives that deletion: it is this predicate's
+merge-side supply (`WalkTargetRun.ofExitTail`).
+
 `WalkDispatchOutcome.cont`'s fields are `WalkDispatch`'s, field for field, so the
 revolution's composition is `WalkDispatch.revolution`'s, repeated here because that
 lemma takes a `WalkDispatch` — a statement about *every* head state — and one state's
