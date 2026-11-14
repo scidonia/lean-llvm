@@ -83,9 +83,38 @@ empty extra-token span the walk leaves the copy call for `if.end473.i` and never
 scan, so that arm's segment is shorter and ends at the merge.  The bundle therefore
 describes **the whitespace arm**: the byte before the entry's end is `9`, `10`, `13` or
 `32`, the whitespace skip runs, the token ends at the first whitespace byte `k < v.toNat`,
-and the extra-token scan runs `[k, v.toNat)`.  The other three classes' arms need their own
-bundle (no scan group) or a disjunction over the two; which of those is the planner's call,
-and the price favours either — the scan-free arm is the cheaper one.
+and the extra-token scan runs `[k, v.toNat)`.
+
+**The other three classes' arm is a layer boundary, not a missing bundle.**  It is the
+cheaper path — seam, class-C span, tail, then `if.end473.i` and the merge, no scan — but it
+cannot be taken as a `WalkLink`: `WalkLocal` at `land.rhs457.i` is
+`ScanLanded … ∨ ScanEntered …`, and both conjuncts are `∃ i c, c - i ≤ inner ∧ i < c ∧ …`.
+On this path `ei` *is* the bound, so the landing sibling's local is uninhabited there and
+`WalkLink.if_then447_i`'s `hlt : ei < cd` cannot hold.  A scan-free bundle stated against
+that step would be the fourth bundle naming a continuation no state reaches.  The arm needs
+a zero-length case in `WalkLocal` at `land.rhs457.i` — `ScanEntered` relaxed to `i ≤ c`, or
+a `ScanEmpty` disjunct — which is a vocabulary change of the same kind and size as the
+`%inc.i`/`%nep` clause above, and it is a decision about the layer rather than a proof.
+
+## The third of its kind, and the method step it names
+
+Three bundles in this chain named a continuation that no state reaches, and each was found
+by the same instrument — reading the field against the path's own arithmetic:
+
+| field | the value it named | the arithmetic that refutes it |
+|---|---|---|
+| `hge = 0` | the count test's *failing* arm | `%inc.i = C.k + 1`, `%nep = G.nep`, so it is `¬ (C.k + 1 < G.nep)`; the consumer carries `C.k + 1 < G.nep` |
+| `hugt = 0` | the byte test's *failing* arm | a continuing entry's `%cond350.i` is the next entry's position, above its own index, so the test is `1` |
+| `heicd : ei < v.toNat` | the scan's *non-empty* span | on this arm `%ee.1.i` is `%cond350.i`, so `ei = v.toNat` and the field is `v.toNat < v.toNat` |
+
+That is not three mistakes.  It is one missing step in the method: **trace the path, then
+name the fields.**  Each bundle was written by reading a *similar* path's fields and
+adjusting the ones the new case was thought to change; the field that was wrong in each case
+was one whose value is fixed by an arm three blocks away, and no field's type reads another
+field's path.  A bundle author who traces the arm to its end — including the two guards on
+it, the count test and the byte test, and the span the scan is entered on — before writing a
+field, cannot make this class of error; and a reviewer now has the instrument that finds it:
+substitute the arm's own values into every field that names a test, a bound or a span.
 
 ## `%cond350.i` is one number, not two
 
