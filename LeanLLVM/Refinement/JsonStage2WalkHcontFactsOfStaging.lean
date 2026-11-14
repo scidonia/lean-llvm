@@ -37,6 +37,32 @@ bundles' statements rather than a choice made here:
   span; they arrive as premises and the last group is the one obstruction no staging
   evidence closes.
 
+## What producing the bundle found
+
+The producer's one obstruction is not a missing lemma.  It is a contradiction between two of
+the bundle's own field groups, and it is recorded at the structure (`HcontFacts`' doc
+comment, `JsonStage2WalkRevolution`) as well as here:
+
+> `hge` is `¬ (C.k + 1 < G.nep)` at a real head state, because `%inc.i = C.k + 1` and
+> `%nep = G.nep` there; the consumer's `hk` is `C.k + 1 < G.nep`; so the bundle is
+> uninhabited at every continuing entry — `walkRevolution_seg` is vacuous, and the prefix it
+> composes (`hlastPrefixSeg`, the `cond.end349.i` arm) is the wrong arm for a continuing
+> entry, which runs through `cond.true345.i`.
+
+It was invisible until now because **the bundle was constructed before any consumer existed,
+and the contradiction is between two of its own fields** — `hge` against `hinc`/`hnep` — not
+between a field and the walk: each field is true of the path it was read from, and nothing in
+the bundle's own module reads the two groups against each other or against a consumer's
+hypothesis.  A producer reads them together, which is what this file does, and that is why
+the obstruction surfaces here as a supplied premise rather than as a failed proof.
+
+So the map below describes the bundle as stated, and its figure is the honest strength of
+that statement — not of the revolution, which the finding above leaves vacuous.  Two
+premises the last entry's producer carries are absent here, and each is one both ends
+discard: no `hk`, because no field reads `C.k + 1 < G.nep`, and no `hblock`, because the
+block was read only for the refill the missing `hinner` field needed.  *A premise both ends
+discard is not a premise*, so neither is carried.
+
 ## The map, per group
 
 Produced · reduced to a named premise · premised correctly (the model cannot supply it).
@@ -49,7 +75,7 @@ read against each other.
 | the four pivot bits (`hlt91`, `hlt123`, `hlt125`, `hne125`) and the seam's byte test (`hbit6`) | **premised correctly: the document's.**  Five of the eight class bits on the head's byte are decisions about `entryByte G C.k` |
 | the second byte's three class bits (`hc110`, `hc116`, `hceq116`) | **premised correctly: the document's**, the other three of the eight; `%8` is not rebound between the head and the seam, so all eight are one byte |
 | the entry counts' witnesses and their head facts (`inc`, `nep`, `hinc`, `hnep`) | **produced**: the witnesses are the loop's values (`hlastIncV C`, `hlastNepV G`) and the two cells are the staging's loop-head registers (`hincL`, `hnepL`) peeled from `s` down to `headAS₄` (`headAS4_envInc`, `headAS4_envNep`) |
-| the count test's resolution (`hge`) | **premised correctly: the stream's** — and this is the row that resisted.  `sw.default.i`'s test is `ult (%inc.i, %nep)`, so `hge` says the head path leaves on the failing arm; with the counts pinned to the loop's values it is `¬ (C.k + 1 < G.nep)`, the last entry's equation, which is exactly the one fact `HcontFacts`' consumer does *not* imply (`C.k + 1 < G.nep` is its hypothesis).  **The bundle therefore carries the count test's value as the caller's**: it is a property of the entry stream (`%nep` against `%inc.i`), not of the invariant, and the only route the layer has to a *value* of that test is `hlast_ult_self` at `inc = nep`.  Producing it at a continuing entry needs the head path through `cond.true345.i`, which `hlastPrefixSeg` does not state; that arm is new work in the prefix, not a residue here |
+| the count test's resolution (`hge`) | **premised correctly: the stream's** — the row that resisted, and the one the finding above is about.  `sw.default.i`'s test is `ult (%inc.i, %nep)`, so `hge` says the head path leaves on the failing arm; with the counts pinned to the loop's values it is `¬ (C.k + 1 < G.nep)`, the last entry's equation, which is exactly the one fact `HcontFacts`' consumer does *not* imply (`C.k + 1 < G.nep` is its hypothesis).  **The bundle therefore carries the count test's value as the caller's**: it is a property of the entry stream (`%nep` against `%inc.i`), not of the invariant, and the only route the layer has to a *value* of that test is `hlast_ult_self` at `inc = nep`.  Producing it at a continuing entry needs the head path through `cond.true345.i`, which `hlastPrefixSeg` does not state; that arm is new work in the prefix, not a residue here |
 | the default arm's cells (`reg`, `c`, `ix`, `hpre5`, `hav5`, `hidx5`, `htok5`, `hgap5`) | **produced**: `hlast_pre5` is a closed `phi` computation; `%4` and `%gap.i` peel from the default arm to `s` (`hlastAS5_envFour`, `hlastAS5_envGap`) and `%idxprom.i`/`%t352.i` are the staging's at the head (`hlastAS5_envIdx`, `hlastAS5_envTok`), so `c = ofNat 64 v` is the staging's `h4L` |
 | the token position's relation (`hugt`) | **premised correctly: the document's.**  The token's position against the entry's index relates `%4`'s word to the entry stream, and neither the invariant nor the staging fixes it |
 | the seam's cells (`p`, `op`, `e`, `b8`, `hpre6`, `hin6`, `hv6`, `hend6`, `h8end`) | **produced**: `hlast_pre6` is the state's own predecessor and `hlast_phi6` a closed `phi`; `%8`/`%end.i`/`%idxprom.i` peel from the token's end to the loop head (`hlastEndS_env8`, `hlastEndS_envEnd`, `hlastEndS_envIdx`), so `e = ix`, `%end.i` is `regs`'s and `pre` is `cond.end349.i`'s |
