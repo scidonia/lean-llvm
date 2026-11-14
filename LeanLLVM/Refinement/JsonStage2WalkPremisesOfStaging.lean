@@ -25,29 +25,24 @@ step — are composed here from the steps the layer already states.
   constructed pair.  `WalkPremises` states both at the record's numbers while those two
   lemmas read `WalkStage`'s fields, so the staging is built by
   `walkStage_at_pre_fields` — `walkStage_at_pre`'s construction with the fields named.
-* **The loop's step** is `walkLoopStep_of_staging`: `walkLoopStep_of_dispatch_exit` at a
-  `WalkDispatch` and a `WalkExit`.  The exit is `walkExit_at_stage2Calls`, and the
-  dispatch's continuing case is `walkRevolution_seg`, whose conclusion names the
-  endpoint's invariant and predecessor; `WalkDispatch` reads both, so the dispatch is
-  that lemma's conclusion read at the merge's own cells (`walkDispatch_of_continue`).
+* **The loop's step** is `walkLoopStep_of_staging`: `walkLoopStepThree_of_dispatchThree`
+  (`JsonStage2WalkLoopStepOutcome`) at the dispatch's three outcomes and the
+  finalisation's two terminal runs.  The outcomes are `walkDispatchThree_ofLastFacts`,
+  whose continuing case is `walkRevolution_seg` read at the merge's own cells
+  (`walkDispatch_of_continue`), and the runs are `WalkLoopEnd`'s.
 
-Four groups are premises, one per obstruction, and each is a bundle rather than a field
+Three groups are premises, one per obstruction, and each is a bundle rather than a field
 per fact:
 
 | premise | what it is | why it is not derived |
 |---|---|---|
 | `WalkContinueFacts` | `HcontFacts` at every head state with an entry left | `walkRevolution_seg`'s own bundle, unweakened |
 | `WalkMergeCells` | the merge's two register cells (`%inc.i`, `%nep`) and the header's index at the merge | `WalkSegment` records a run and an invariant, not the blocks it passed, so no lemma carries a register from the head to the merge; none of the three is a `WalkInv` clause |
-| `WalkHeadPtrs` | `%z` and `%s` at the head | `WalkPtrs` names the six the dispatch reads and `walkStaticRegs` the twenty-four static addresses, and neither names these two; `WalkExit`'s own docstring records the same gap |
-| `WalkLoopEnd` | `HlastFacts` and the exit's tail `ExitTail` at every last-entry head state | `walkExit_at_stage2Calls`' two arguments, at the states they are consumed |
+| `WalkLoopEnd` | the last entry's bundle and depth bit, the two terminal runs, and the merge's `%nep` value | the bundle is supplied at the last-entry head states (`HlastFacts`), the runs at the states the dispatch reaches (each at its own verdict), and `%nep` is not a `WalkInv` clause |
 
-`WalkInv.regs` does not close the pointer group either: the twenty-four names are `%s`'s
-*fields* (`%nsp`, `%xp1`, `%n2.i`, …), the log's six addresses, the token's three, the
-cursor's five and the four allocas; `%z` and `%s` themselves are not among them.
-
-The bundle that produces the dispatch reads the pointer group at the same head states
-the loop step does, which is why the two are supplied together
-(`walkLoopStep_of_staging`).
+The terminal runs are read at the states the dispatch's outcomes reach rather than at the
+loop head, so the head-level `%z`/`%s` group this module used to carry is gone with the
+route that needed it: the copy's two pointer registers are the terminal states' own.
 
 ## When this module's claims are checked
 
@@ -62,6 +57,7 @@ imported at the end of `LeanLLVM.lean` for that reason.
 -/
 
 import LeanLLVM.Refinement.JsonStage2WalkExitProducer
+import LeanLLVM.Refinement.JsonStage2WalkLoopStepOutcome
 import LeanLLVM.Refinement.JsonStage2WalkRevolution
 import LeanLLVM.Refinement.JsonStage2WalkSeedAtEntry
 
@@ -180,60 +176,59 @@ theorem walkDispatch_of_continue {m0 : Mem} {G : WalkGeom m0}
   · omega
   · simpa only [Nat.add_sub_cancel] using hprice
 
-/-! ### The exit, the pointer registers and the loop's step -/
+/-! ### The finalisation's terminal runs and the loop's step -/
 
-/-- **The last entry's facts and the exit's tail**, at every head state the merge's
-test sends to the exit.  This is `walkExit_at_stage2Calls`' two arguments, stated as
-one premise: the bundle `HlastFacts` at the head, and the tail from the merge state the
-bundle names. -/
-structure WalkLoopEnd {m0 : Mem} (G : WalkGeom m0) (v : Value) : Type where
+/-- **The last entry's facts, the finalisation's terminal runs and the merge's count**,
+at every state each is read at.  `facts` is the last entry's bundle, `depth` is the bit
+that sends it to the refusal arm, and the two runs are the terminal states' own.
+
+The runs carry a count and a value each rather than fixing either: at `cleanup478.i` the
+merge's false edge returns `1` on the accepted route and `0` on the two refusal routes
+(`JsonStage2WalkExitProducer`'s three tails), so one verdict across states is not a
+statement the body supports.  The merge's `%nep` value is the last field — no `WalkInv`
+clause names that register, so its value is supplied at the states it is read at, as the
+last entry's bundle supplies it (`HlastFacts.hnepM`, at `BitVec.ofNat 64 G.nep`). -/
+structure WalkLoopEnd {m0 : Mem} (G : WalkGeom m0) : Type where
   /-- The last entry's facts, at every head state the merge's test sends to the exit. -/
   facts : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
-    C.k + 1 = G.nep → HlastFacts G C s
-  /-- The tail, from the merge state the bundle names. -/
-  tail : ∀ (C : WalkCarry G) (s : State) (f : HlastFacts G C s),
-    ExitTail (stage2Calls stage2SubCalls) (hlastMergeF f) v
+    ¬ (C.k + 1 < G.nep) → HlastFacts G C s
+  /-- **The depth's polarity**: the last entry leaves the stack non-empty, which is the
+  arm the merge's test selects. -/
+  depth : ∀ (C : WalkCarry G) (s : State) (f : HlastFacts G C s),
+    evalICmp .eq (BitVec.ofNat 32 f.spv) (BitVec.ofNat 32 0) = 0
+  /-- **The merge's terminal run**, at every state a dispatch's last entry reaches at
+  `cleanup478.i`, at that state's own count and verdict. -/
+  merge : ∀ (Cd : WalkCarry G) (sd : State), WalkInv G Cd sd → Cd.block = "cleanup478.i" →
+    WalkTargetRun (stage2Calls stage2SubCalls) sd
+  /-- **The refusal copy's terminal run**, at every state a refusal reaches at
+  `if.then`: the copy's own two blocks, at the verdict `0`. -/
+  refuse : ∀ (Cd : WalkCarry G) (sd : State), WalkInv G Cd sd → Cd.block = "if.then" →
+    WalkTargetRun (stage2Calls stage2SubCalls) sd
+  /-- **The merge's `%nep` value is inside the stream**: the last entry's price is stated
+  against the credit its index consumed, and this is what makes that credit the
+  potential's. -/
+  nepBound : ∀ (Cd : WalkCarry G) (sd : State) (nepv : BitVec 64),
+    WalkInv G Cd sd → Cd.block = "cleanup478.i" →
+    lookupName sd.env "%nep" = some (.int 64 nepv) → nepv.toNat ≤ G.nep
 
-/-- **The exit from the last entry's bundle.**  `walkExit_at_stage2Calls`' statement is
-`WalkExit` at the record's selection, and its two arguments are `WalkLoopEnd`'s two
-fields. -/
-theorem walkExit_of_loopEnd {m0 : Mem} {G : WalkGeom m0} {v : Value}
-    (h : WalkLoopEnd G v) : WalkExit (stage2Calls stage2SubCalls) G v :=
-  walkExit_at_stage2Calls G h.facts h.tail
-
-/-- **The two pointer registers the terminal block reads, at the head.**  `%z` and
-`%s` are the log's and the staging record's addresses; the entry block binds them and
-no block of the walk rebinds them, but neither is a `WalkInv` clause — `WalkPtrs` names
-the six the dispatch reads and `walkStaticRegs` the twenty-four addresses, and `%z` and
-`%s` are not among either — so the exit's statement names them and this is that group.
-
-The facts are the entry environment's (`walkEntryState_env`); what is missing is a
-carrier, not the fact: a `WalkSegment` records a run and an invariant, not the blocks
-it passed, so no lemma carries a register from the entry to the head.
-
-**A `WalkInv` carrier for them does not exist, and `regs` is not one.**  `WalkPtrs`
-holds the six registers the dispatch reads, and `walkStaticRegs`' twenty-four names are
-`%s`'s fields (`%nsp`, `%xp1`, `%n2.i`, …), the log's six addresses, the token's three,
-the cursor's five and the four allocas.  `%z` and `%s` themselves appear in neither
-list, so the pair is the input's, supplied at the same place the head's byte and its
-class bits are. -/
-abbrev WalkHeadPtrs {m0 : Mem} (G : WalkGeom m0) : Prop :=
-  ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
-    lookupName s.env "%z" = some (.ptr C.stage.z) ∧
-    lookupName s.env "%s" = some (.ptr C.stage.s)
-
-/-- **The loop's step, from the three bundles.**  `walkLoopStep_of_dispatch_exit`
-asks for a dispatch, an exit and the two pointer registers; the dispatch is
-`walkDispatch_of_continue`, the exit is `walkExit_of_loopEnd`, and the pair is
-`WalkHeadPtrs` read at the head state the step is taken from. -/
-theorem walkLoopStep_of_staging {m0 : Mem} {G : WalkGeom m0} {v : Value}
-    (hcont : WalkContinueFacts G) (hmerge : WalkMergeCells G)
-    (hptr : WalkHeadPtrs G) (hend : WalkLoopEnd G v) :
-    WalkLoopStep (stage2Calls stage2SubCalls) G v 27 :=
-  walkLoopStep_of_dispatch_exit (walkDispatch_of_continue hcont hmerge)
-    (walkExit_of_loopEnd hend)
-    (fun C s hInv hhead => (hptr C s hInv hhead).1)
-    (fun C s hInv hhead => (hptr C s hInv hhead).2)
+/-- **The loop's step, from the three bundles.**  `walkLoopStepThree_of_dispatchThree`
+(`JsonStage2WalkLoopStepOutcome`) asks for the dispatch's three outcomes, the
+finalisation's two terminal runs and the merge's count: the outcomes are
+`walkDispatchThree_ofLastFacts` at the continuing bundle, the merge's cells, the last
+entry's facts and the depth's polarity, and the rest is `WalkLoopEnd`'s fields. -/
+theorem walkLoopStep_of_staging {m0 : Mem} {G : WalkGeom m0}
+    (hcont : WalkContinueFacts G) (hmerge : WalkMergeCells G) (hend : WalkLoopEnd G) :
+    WalkLoopStepThree (stage2Calls stage2SubCalls) G 27 :=
+  walkLoopStepThree_of_dispatchThree (Nat.le_refl 27)
+    (walkDispatchThree_ofLastFacts G
+      (fun C s hInv hhead hk =>
+        WalkDispatchOutcome.ofDispatch (walkDispatch_of_continue hcont hmerge) hInv hhead hk)
+      (fun C s hInv hhead hk => hend.facts C s hInv hhead hk) hend.depth)
+    (fun Cd sd hInv hblk => by
+      cases hblk with
+      | inl h => exact hend.merge Cd sd hInv h
+      | inr h => exact hend.refuse Cd sd hInv h)
+    hend.nepBound
 
 /-! ### The empty entry stream's flush, from the staging -/
 
@@ -531,8 +526,7 @@ exit's tail. -/
 theorem walkPremises_of_staging {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
     (hcont : ∀ {m0 : Mem} (G : WalkGeom m0), WalkContinueFacts G)
     (hmerge : ∀ {m0 : Mem} (G : WalkGeom m0), WalkMergeCells G)
-    (hptr : ∀ {m0 : Mem} (G : WalkGeom m0), WalkHeadPtrs G)
-    (hend : ∀ {m0 : Mem} (G : WalkGeom m0), Σ' v : Value, WalkLoopEnd G v) :
+    (hend : ∀ {m0 : Mem} (G : WalkGeom m0), WalkLoopEnd G) :
     WalkPremises d c ctype cst tok s z e nkSlot nxpSlot := by
   intro a13 mem next hpre hst
   obtain ⟨G, S, hnext, hSc, hSct, hScs, hStok, hSs, hSz, hSe, hSd, hargs⟩ :=
@@ -559,9 +553,8 @@ theorem walkPremises_of_staging {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
       · rw [hargs, walkEntryState_env, hScs]
         simp [lookupName]
       · exact hnext.symm
-    · -- the loop's step, at the exit's own value
-      obtain ⟨v, hendv⟩ := hend G
-      exact ⟨v, walkLoopStep_of_staging (G := G) (hcont G) (hmerge G) (hptr G) hendv⟩
+    · -- the loop's step, from the three bundles
+      exact walkLoopStep_of_staging (G := G) (hcont G) (hmerge G) (hend G)
 
 /-! ### The completion and the walk's obligation
 
@@ -582,10 +575,9 @@ whenever the record's pre and the adapter's staging hold. -/
 theorem stage2WalkCompletes_of_staging {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
     (hcont : ∀ {m0 : Mem} (G : WalkGeom m0), WalkContinueFacts G)
     (hmerge : ∀ {m0 : Mem} (G : WalkGeom m0), WalkMergeCells G)
-    (hptr : ∀ {m0 : Mem} (G : WalkGeom m0), WalkHeadPtrs G)
-    (hend : ∀ {m0 : Mem} (G : WalkGeom m0), Σ' v : Value, WalkLoopEnd G v) :
+    (hend : ∀ {m0 : Mem} (G : WalkGeom m0), WalkLoopEnd G) :
     Stage2WalkCompletes d c ctype cst tok s z e nkSlot nxpSlot stage2SubCalls :=
-  stage2WalkCompletes_of_premises (walkPremises_of_staging hcont hmerge hptr hend)
+  stage2WalkCompletes_of_premises (walkPremises_of_staging hcont hmerge hend)
 
 /-- **The walk's obligation, from the four premises and the record's post.**  This is
 the milestone the layer was built for: `Stage2WalkObligation` is `Satisfies` at
@@ -594,15 +586,14 @@ half is the record's own, named. -/
 theorem stage2WalkObligation_of_staging {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
     (hcont : ∀ {m0 : Mem} (G : WalkGeom m0), WalkContinueFacts G)
     (hmerge : ∀ {m0 : Mem} (G : WalkGeom m0), WalkMergeCells G)
-    (hptr : ∀ {m0 : Mem} (G : WalkGeom m0), WalkHeadPtrs G)
-    (hend : ∀ {m0 : Mem} (G : WalkGeom m0), Σ' v : Value, WalkLoopEnd G v)
+    (hend : ∀ {m0 : Mem} (G : WalkGeom m0), WalkLoopEnd G)
     (hpost : ∀ args mem next,
       (Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot).pre args mem next →
       ∀ o, BehFromState (stage2Calls stage2SubCalls) stage2Body
           (EntryState stage2Body args mem next) o →
         (Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot).post args mem next o) :
     Stage2WalkObligation d c ctype cst tok s z e nkSlot nxpSlot :=
-  stage2WalkObligation_of_premises (walkPremises_of_staging hcont hmerge hptr hend) hpost
+  stage2WalkObligation_of_premises (walkPremises_of_staging hcont hmerge hend) hpost
 
 /-! ### The four premises, and what each one owes
 
@@ -614,10 +605,9 @@ the input or a named missing preservation lemma.
 |---|---|
 | `WalkContinueFacts` | **`HcontFacts`' own supply, in `HlastFacts`' discipline.**  Its producer is `hlastFacts_of_staging`'s twin — the same three sources (the invariant's clauses, the document's content, the staging's addresses) read at the same states — and the bundle's fields are the head's byte and its four class bits, the entry counts and the default arm's cells, the seam's cells and the scan's landing.  That twin is `hcontFacts_of_staging` (`JsonStage2WalkHcontFactsOfStaging`), and what it still takes from its caller is the count test's value (`hnext : evalICmp .ult inc nep = 1`, the entry stream's own), the traversal's three hypotheses (`hround`, `hguard`, `hbyte`, supplied unweakened) and `htok`, which needs *the extra-token scan preserves a register it does not bind* — a statement a `WalkSegment` cannot carry, because the traversal returns its final state existentially.  **The count test's value is `1` here and `0` in `HlastFacts`, and both are right**: the fields are arm-specific — a continuing entry has one after it, so the scan's bound is above its index, while the last entry's is the stream's end.  A docstring that gives either value without its arm reads as a contradiction in the other.  **`hnext` is a candidate `WalkInv` clause beside the merge's two**: it follows from `C.k + 1 < G.nep` with the two counts pinned to `%k.0.i249 + 1` and `G.nep`, so it belongs with `%inc.i`/`%nep` in the future-supply paragraph rather than being derived now. |
 | `WalkMergeCells` | **structural, and no producer can exist in this vocabulary.**  `WalkSegment` records a run and an invariant, and neither names the blocks the run passed or the registers they bound; no lemma in the layer carries a register across a segment, so `%inc.i`, `%nep` and the header's index at the merge cannot be read off the segment that reaches it.  A producer needs a segment-level register-preservation statement, which the vocabulary does not have. |
-| `WalkHeadPtrs` | **the input's, like the class bits.**  `%z` and `%s` are bound by the entry block (`walkEntryState_env`) and by nothing else; no `WalkInv` clause names them (`WalkPtrs` has the dispatch's six, `walkStaticRegs` the twenty-four addresses), so the pair is supplied at the point a caller knows the staging. |
-| `WalkLoopEnd` | **supplied, with its first half's producer already in the tree.**  `facts` is `HlastFacts`, whose producer is `hlastFacts_of_staging` (which itself takes a bundle of supplied facts — the head's byte and class bits, the register cells and the calls' outcomes — so its own supply is the same discipline); `tail` is `ExitTail`, which `walkExit_at_stage2Calls` takes from the caller as the three calls' contracts composed at their staged argument lists. |
+| `WalkLoopEnd` | **supplied, with its first two runs' producers already in the tree.**  `facts` is `HlastFacts`, whose producer is `hlastFacts_of_staging` (which itself takes a bundle of supplied facts — the head's byte and class bits, the register cells and the calls' outcomes — so its own supply is the same discipline); `depth` is the merge's depth test; `merge` and `refuse` are the terminal runs, which `ExitTail` supplies through `WalkTargetRun.ofExitTail` (the three tails' own verdicts) and `WalkTargetRun.ifThen` proves at the refusal copy; `nepBound` is the merge's `%nep` value, which the bundle names. |
 
-Of the four, `WalkMergeCells` is the one with no producer of any shape: the other three
+Of the three, `WalkMergeCells` is the one with no producer of any shape: the other two
 are supplies a caller makes from the input, and this one is a statement the layer has
 no vocabulary to state. -/
 

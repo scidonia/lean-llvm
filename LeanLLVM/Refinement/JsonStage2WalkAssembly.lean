@@ -3,9 +3,9 @@ The stage-2 walk's assembly: the loop step composed out of its edges, and the
 completion at the ABI's own arguments.
 
 `JsonStage2WalkTraverse` reads the loop as an induction on the entry index and
-leaves one premise, `WalkLoopStep`, whose left branch is a whole revolution of the
-dispatch and whose right branch is the exit.  This module takes the revolution
-apart:
+leaves one premise, `WalkLoopStepThree`, whose left branch is a whole revolution of
+the dispatch and whose right branch is its terminal run.  This module takes the
+revolution apart:
 
 * **the back edge's target state is exposed.**  `walkBack_step` states the merge's
   step, the invariant at the target and the run, but the target is existential, so
@@ -17,12 +17,13 @@ apart:
   segment, the merge's step and the header's pass, in that order;
 * **the revolution is one segment**, priced by the dispatch's own segment and
   spent against the potential (`WalkDispatch.revolution`), and the loop step is
-  then a case split on the entry index (`walkLoopStep_of_dispatch_exit`): while
-  `k + 1 < nep` the dispatch runs and the merge's test is clear, and at `k + 1 = nep`
-  the test fails and the exit's tail runs.  The split is not decoration — the
+  then the dispatch's three outcomes (`walkLoopStepThree_of_dispatchThree`,
+  `JsonStage2WalkLoopStepOutcome`): `cont` takes the revolution, and `finish` and
+  `refuse` take the terminal branch with the dispatch's own segment in front of it.
+  The split is on what the dispatch reached rather than on the entry index — the
   merge's guard is `k2 < nep`, so a dispatch premise asserted at every head state
-  would be false at the last one, and `WalkLoopStep`'s exit branch is available
-  exactly where the revolution is not;
+  would be false at the last one, and a standalone string consumes two entries, so
+  `k + 1 < nep` does not name the case that continues;
 * **the two loop premises are named**, `WalkDispatch` (the dispatch's chain from
   the head to `cleanup478.i`, with the ten predecessors' `phi` facts at the merge,
   the index's strict advance and the potential's spending) and `WalkExit` (the
@@ -1000,10 +1001,10 @@ theorem walkBack_step_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkC
 
 /-! ### The loop's two premises
 
-`WalkLoopStep`'s left branch is the revolution; its right branch the exit.  Stated
-separately, they are the census's remaining two rows: the dispatch's trace through
-the 157 links and the ten predecessors' `phi` facts at `cleanup478.i`, and the
-false edge's tail to the return. -/
+`WalkLoopStepThree`'s left branch is the revolution; its right branch the terminal
+run.  Stated separately, they are the census's remaining two rows: the dispatch's
+trace through the 157 links and the ten predecessors' `phi` facts at `cleanup478.i`,
+and the false edge's tail to the return. -/
 
 /-- **The dispatch's chain, and the merge it reaches.**  At the head, with an
 unconsumed entry left *after* this iteration (`C.k + 1 < G.nep`, which is the
@@ -2469,27 +2470,6 @@ theorem WalkDispatch.revolution {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
     exact hklt
   · exact hpot'
 
-/-- **The loop's step, from the dispatch and the exit.**  The case split is the
-entry index: while an entry is left after this one the dispatch runs and the
-merge's test is clear, and at the last entry the test fails and the exit's tail
-takes over. -/
-theorem walkLoopStep_of_dispatch_exit {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
-    {v : Value} (hdisp : WalkDispatch calls G) (hexit : WalkExit calls G v)
-    (hz : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
-      lookupName s.env "%z" = some (.ptr C.stage.z))
-    (hs : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
-      lookupName s.env "%s" = some (.ptr C.stage.s)) :
-    WalkLoopStep calls G v 27 := by
-  intro C s hInv hhead hk
-  by_cases hcase : C.k + 1 < G.nep
-  · exact Or.inl (hdisp.revolution C s hInv hhead hcase)
-  · obtain ⟨Cend, sEnd, -, -, -, q₁, q₂, s1, s2, sret, hseg1, hq, hseg2,
-      hstep1, hret⟩ := hexit C s hInv hhead (by omega)
-      (hz C s hInv hhead) (hs C s hInv hhead)
-    refine Or.inr ⟨q₁ + q₂, s1, s2, sret, ?_, ?_, hstep1, hret⟩
-    · omega
-    · exact runFuel_prefix_trans hseg1 hseg2
-
 /-- **`F ≤ 27` is the finalisation allowance** at the seed's three steps: the
 record's constant less the seed's prefix and the exit's own jump. -/
 theorem walkExitFits (F : Nat) (hF : F ≤ 27) :
@@ -2858,7 +2838,7 @@ def WalkPremises (d c ctype cst tok s z e nkSlot nxpSlot : Nat) : Prop :=
           (walkSeedFinalState G S
             (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next)
             (entryPos G 0) (entryByte G 0)) ∧
-        (∃ v : Value, WalkLoopStep (stage2Calls stage2SubCalls) G v 27)))
+        WalkLoopStepThree (stage2Calls stage2SubCalls) G 27))
 
 /-- **What a dispatch supplies, at the geometry and the stage the record gives.**
 A proof of `WalkPremises` no longer has to invent a geometry and a staging: the two
@@ -2891,7 +2871,7 @@ theorem walkPremises_of_parts {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
           (walkSeedFinalState G S
             (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next)
             (entryPos G 0) (entryByte G 0)) ∧
-        (∃ v : Value, WalkLoopStep (stage2Calls stage2SubCalls) G v 27)))) :
+        WalkLoopStepThree (stage2Calls stage2SubCalls) G 27))) :
     WalkPremises d c ctype cst tok s z e nkSlot nxpSlot := by
   intro a13 mem next hpre hst
   obtain ⟨G, S, hnext, hargs⟩ := walkStage_at_pre hpre hst
@@ -2933,7 +2913,6 @@ theorem stage2WalkCompletes_of_premises {d c ctype cst tok s z e nkSlot nxpSlot 
     rw [hargs] at hrun ⊢
     exact runFuel_mono_le (le_trans hq walkBudget_ge_finalisation) hrun
   · -- entries left: the seed, the invariant and the loop's step
-    obtain ⟨v, hloopv⟩ := hloop
     obtain ⟨v', m, hrun⟩ :=
       walkCompletes_at_stage2Budget (calls := stage2Calls stage2SubCalls) (G := G)
         (C := walkSeed G S)
@@ -2941,11 +2920,11 @@ theorem stage2WalkCompletes_of_premises {d c ctype cst tok s z e nkSlot nxpSlot 
           (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next)
           (entryPos G 0) (entryByte G 0))
         (sEntry := EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next)
-        (v := v) (j := 3) (F := 27) (b := G.b) (ep := G.ep) (xp := G.xp) (dst := G.dst)
+        (j := 3) (F := 27) (b := G.b) (ep := G.ep) (xp := G.xp) (dst := G.dst)
         (dstcap := G.dstcap) (ndst := G.ndst) (ev := G.ev) (evcap := G.evcap)
         (nev := G.nev) (err := G.err) (nxp := G.nxp)
         hseed hInv (walkSeed_block G S)
-        (by simp only [walkSeed]; exact hn) hloopv (walkExitFits 27 (Nat.le_refl 27))
+        (by simp only [walkSeed]; exact hn) hloop (walkExitFits 27 (Nat.le_refl 27))
         (WalkGeom.n_lt G) (WalkGeom.nep_lt G)
     refine ⟨v', m, ?_⟩
     rw [hargs] at hrun ⊢
@@ -3237,7 +3216,6 @@ theorem walkCredit_long_string :
 #print axioms LeanLLVM.Refinement.WalkScope.cleanup478Out_sp
 #print axioms LeanLLVM.Refinement.WalkScope.walkBack_step_at
 #print axioms LeanLLVM.Refinement.WalkScope.WalkDispatch.revolution
-#print axioms LeanLLVM.Refinement.WalkScope.walkLoopStep_of_dispatch_exit
 #print axioms LeanLLVM.Refinement.WalkScope.walkExitFits
 #print axioms LeanLLVM.Refinement.WalkScope.walkGeom_at_pre
 #print axioms LeanLLVM.Refinement.WalkScope.wordBytes8_mod_eq

@@ -39,11 +39,13 @@ premise's exit branch, and reads the chain as the run it is:
   price even at `p = 0`.  The rows the change is stated at, the negative control
   on that form, and the dispatch's first pivots stepped on the pinned body are
   `tests/stage2-walk-credit.lean`;
-* **the loop is an induction on the entry index.**  `WalkLoopStep` is the one
+* **the loop is an induction on the entry index.**  `WalkLoopStepThree` is the one
   premise this module leaves: at a loop-head state with the invariant and an
   unconsumed entry, either one revolution back to the head with the index
-  advanced (`C.k < C'.k < nep`) and the potential spent, or the loop's exit —
-  `F` steps to a state whose step returns.  `walkLoopFinishes` is the
+  advanced (`C.k < C'.k < nep`) and the potential spent, or the loop's terminal
+  run — `F` steps to a state whose step returns, at the verdict that state
+  reaches (existentially, because the finalisation returns `1` on the accepted
+  route and `0` on the refusal ones).  `walkLoopFinishesThree` is the
   well-founded completion: strong recursion on `nep - C.k`, which the
   revolution's strict advance makes finite, and whose count the measure
   dominates; the price telescopes to `walkPotential` at the head plus `F`.
@@ -55,7 +57,7 @@ premise's exit branch, and reads the chain as the run it is:
   (`walkSeedPrefix_runFuel`'s `3`, `walkSeedInvariant_geometry`'s invariant,
   `walkSeed`'s own empty carry so the potential is `32 * nep`).
 
-What remains is `WalkLoopStep`, one premise per geometry, and the two premises
+What remains is `WalkLoopStepThree`, one premise per geometry, and the two premises
 that supply it (the seed's run and entry, and the finalisation allowance's
 arithmetic).  Named exactly:
 
@@ -607,48 +609,67 @@ target is the head again with the index strictly advanced — the header's pass
 reads the phi the previous merge left, and `whileBody_step`'s guard is
 `C.k < k < nep`, so the advance is not assumed to be one. -/
 
-/-- **The loop's next step**: at the head, a revolution (potential spent) or the
-exit.  The exit's bound is the potential *beside* `F`, not `F` alone: the last
-entry's dispatch is byte-dependent work like any other revolution's, so the branch
-that dispatches it and then finalises is bounded by the credit it consumes plus the
-finalisation allowance.
+/-- **A segment followed by a counted run is one at the sum's count.**  A step whose
+dispatch consumes its last entry is a segment to the state the dispatch reaches and
+then that state's own run, and this is the prefix arithmetic the two compose by. -/
+theorem WalkSegment.andRun {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
+    {C : WalkCarry G} {s s₁ : State} {Cd : WalkCarry G} {sd : State} {p q : Nat}
+    (hseg : WalkSegment calls G C s Cd sd p)
+    (hrun : ∀ n, runFuel calls (q + n) stage2Body sd = runFuel calls n stage2Body s₁) :
+    ∀ n, runFuel calls (p + q + n) stage2Body s = runFuel calls n stage2Body s₁ := by
+  intro n
+  rw [show p + q + n = p + (q + n) from by omega, hseg.run (q + n), hrun n]
 
-**What a producer of this takes, and what the two branches do not imply.**  Its
-assembly is the dispatch (`WalkDispatch`), the exit (`WalkExit`), and the two
-registers `%z` and `%s` the exit's return reads
-(`JsonStage2WalkAssembly`), which no `WalkInv` field binds — so the other two do not
-imply them.  The arena word at the head is *not* among them: it was the third
-argument once, and it was deleted as inert — neither the exit's producer nor this
-step's consumer read it, and a slot holding `C.alen` is not a fact of the loop head
-at all, since the reserve advances the carry by a token's document extent while the
-write-back stores the decoded length (`JsonStage2WalkArenaWord`). -/
-def WalkLoopStep (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (v : Value) (F : Nat) : Prop :=
+/-- **The loop's next step**: at the head, a revolution (potential spent) or the
+loop's terminal run at the verdict the terminal state reaches.  The terminal bound is
+the potential *beside* `F`, not `F` alone: the last entry's dispatch is byte-dependent
+work like any other revolution's, so the branch that dispatches it and then finalises
+is bounded by the credit it consumes plus the finalisation allowance.
+
+**The verdict is existential, because no single one covers every state.**  At
+`cleanup478.i` the accepted route returns `1` and the two refusal routes return `0`
+(the three tails in `JsonStage2WalkExitProducer`), so a `v` fixed here would speak
+about states the body does not have — and entry-stream exhaustion is not acceptance:
+the terminal index at the merge says no entry is left, while the finalisation that
+follows still decides.
+
+**What a producer of this takes.**  `walkLoopStepThree_of_dispatchThree`
+(`JsonStage2WalkLoopStepOutcome`) is the rule, and its hypotheses are the dispatch's
+three outcomes, a terminal run at each of the finalisation's two entry blocks
+(`cleanup478.i` and `if.then`), and the merge's `%nep` value bounded by the stream.
+The arena word at the head is *not* among them: it was the third argument once, and it
+was deleted as inert — neither the exit's producer nor this step's consumer read it,
+and a slot holding `C.alen` is not a fact of the loop head at all, since the reserve
+advances the carry by a token's document extent while the write-back stores the
+decoded length (`JsonStage2WalkArenaWord`). -/
+def WalkLoopStepThree (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (F : Nat) : Prop :=
   ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead → C.k < G.nep →
     (∃ (C' : WalkCarry G) (s' : State) (p : Nat),
         WalkSegment calls G C s C' s' p ∧ C'.block = walkLoopHead ∧
         C.k < C'.k ∧ C'.k < G.nep ∧ p + walkPotential G C' ≤ walkPotential G C)
-    ∨ (∃ (q : Nat) (s1 s2 sret : State),
+    ∨ (∃ (q : Nat) (v : Value) (s1 s2 sret : State),
         q ≤ walkPotential G C + F ∧
         (∀ n, runFuel calls (q + n) stage2Body s = runFuel calls n stage2Body s1) ∧
         step calls stage2Body s1 = .jump s2 ∧
-        step calls stage2Body s2 = .ret v sret)
+        step calls stage2Body s2 = .ret (some v) sret)
 
 /-- **The loop finishes, and its run is inside the potential.**  Strong recursion
-on the remaining entries: the revolution's advance shortens it, and the exit's
+on the remaining entries: the revolution's advance shortens it, and the terminal
 bound is the potential at the state it is taken from plus `F` — the same credit,
-because the last entry's dispatch is that state's remaining potential. -/
-theorem walkLoopFinishes {calls : Calls} {m0 : Mem} {G : WalkGeom m0} {v : Value} {F : Nat}
-    (hstep : WalkLoopStep calls G v F) (C : WalkCarry G) (s : State)
+because the last entry's dispatch is that state's remaining potential.  The verdict
+is the terminal state's, carried out of the recursion rather than fixed in advance. -/
+theorem walkLoopFinishesThree {calls : Calls} {m0 : Mem} {G : WalkGeom m0} {F : Nat}
+    (hstep : WalkLoopStepThree calls G F) (C : WalkCarry G) (s : State)
     (hInv : WalkInv G C s) (hhead : C.block = walkLoopHead) (hk : C.k < G.nep) :
-    ∃ (q : Nat) (s1 s2 sret : State),
+    ∃ (q : Nat) (v : Value) (s1 s2 sret : State),
       (∀ n, runFuel calls (q + n) stage2Body s = runFuel calls n stage2Body s1) ∧
-      step calls stage2Body s1 = .jump s2 ∧ step calls stage2Body s2 = .ret v sret ∧
+      step calls stage2Body s1 = .jump s2 ∧ step calls stage2Body s2 = .ret (some v) sret ∧
       q ≤ walkPotential G C + F := by
   have key : ∀ (m : Nat), ∀ (C : WalkCarry G) (s : State), G.nep - C.k = m →
       WalkInv G C s → C.block = walkLoopHead → C.k < G.nep →
-      ∃ (q : Nat) (s1 s2 sret : State),
+      ∃ (q : Nat) (v : Value) (s1 s2 sret : State),
         (∀ n, runFuel calls (q + n) stage2Body s = runFuel calls n stage2Body s1) ∧
-        step calls stage2Body s1 = .jump s2 ∧ step calls stage2Body s2 = .ret v sret ∧
+        step calls stage2Body s1 = .jump s2 ∧ step calls stage2Body s2 = .ret (some v) sret ∧
         q ≤ walkPotential G C + F := by
     intro m
     induction m using Nat.strongRecOn with
@@ -656,44 +677,43 @@ theorem walkLoopFinishes {calls : Calls} {m0 : Mem} {G : WalkGeom m0} {v : Value
         intro C s hm hInv hhead hk
         rcases hstep C s hInv hhead hk with
           ⟨C', s', p, hseg, hhead', hklt, hklt', hpot⟩ |
-          ⟨q, s1, s2, sret, hq, hrun, hstep1, hret⟩
-        · obtain ⟨q, t1, t2, tret, hrun', hs1, hs2, hq'⟩ :=
+          ⟨q, v, s1, s2, sret, hq, hrun, hstep1, hret⟩
+        · obtain ⟨q, v, t1, t2, tret, hrun', hs1, hs2, hq'⟩ :=
             ih (G.nep - C'.k) (by omega) C' s' rfl hseg.inv' hhead' hklt'
-          refine ⟨p + q, t1, t2, tret, ?_, hs1, hs2, ?_⟩
-          · intro n
-            rw [show p + q + n = p + (q + n) from by omega, hseg.run (q + n), hrun' n]
-          · omega
-        · exact ⟨q, s1, s2, sret, hrun, hstep1, hret, by omega⟩
+          exact ⟨p + q, v, t1, t2, tret, hseg.andRun hrun', hs1, hs2, by omega⟩
+        · exact ⟨q, v, s1, s2, sret, hrun, hstep1, hret, by omega⟩
   exact key (G.nep - C.k) C s rfl hInv hhead hk
 
 /-- **The completion at the potential's budget.**  The seed's `j` steps, the
 loop's run and the returning step fit `walkPotential + the finalisation
 allowance`, which is `j + F + 2 ≤ 32`'s content. -/
 theorem walkCompletes_of_loop {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
-    {C : WalkCarry G} {s sEntry : State} {v : Value} {j F : Nat}
+    {C : WalkCarry G} {s sEntry : State} {j F : Nat}
     (hseed : ∀ n, runFuel calls (j + n) stage2Body sEntry = runFuel calls n stage2Body s)
     (hInv : WalkInv G C s) (hhead : C.block = walkLoopHead) (hk : C.k < G.nep)
-    (hstep : WalkLoopStep calls G v F) (hF : j + F + 2 ≤ stage2FinalisationAllowance) :
+    (hstep : WalkLoopStepThree calls G F) (hF : j + F + 2 ≤ stage2FinalisationAllowance) :
     ∃ v' m, runFuel calls (walkPotential G C + stage2FinalisationAllowance) stage2Body sEntry
       = some (.ret v' m) := by
-  obtain ⟨q, s1, s2, sret, hrun, hstep1, hret, hq⟩ := walkLoopFinishes hstep C s hInv hhead hk
-  have hfin : runFuel calls (q + 2) stage2Body s = some (.ret v sret.mem) := by
+  obtain ⟨q, v, s1, s2, sret, hrun, hstep1, hret, hq⟩ :=
+    walkLoopFinishesThree hstep C s hInv hhead hk
+  have hfin : runFuel calls (q + 2) stage2Body s = some (.ret (some v) sret.mem) := by
     rw [hrun 2]
     simp only [runFuel, hstep1, hret]
-  have htotal : runFuel calls (j + (q + 2)) stage2Body sEntry = some (.ret v sret.mem) := by
+  have htotal : runFuel calls (j + (q + 2)) stage2Body sEntry =
+      some (.ret (some v) sret.mem) := by
     rw [hseed (q + 2)]
     exact hfin
   have hle : j + (q + 2) ≤ walkPotential G C + stage2FinalisationAllowance := by omega
-  exact ⟨v, sret.mem, runFuel_mono_le hle htotal⟩
+  exact ⟨some v, sret.mem, runFuel_mono_le hle htotal⟩
 
 /-- **The completion at the record's two counted terms.**  The potential is
 inside `32 * nep + 8 * n` at the invariant, so the walk completes at that plus
 the finalisation allowance — `stage2Budget` without the escape-position term. -/
 theorem walkCompletes_of_loop_budget {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
-    {C : WalkCarry G} {s sEntry : State} {v : Value} {j F : Nat}
+    {C : WalkCarry G} {s sEntry : State} {j F : Nat}
     (hseed : ∀ n, runFuel calls (j + n) stage2Body sEntry = runFuel calls n stage2Body s)
     (hInv : WalkInv G C s) (hhead : C.block = walkLoopHead) (hk : C.k < G.nep)
-    (hstep : WalkLoopStep calls G v F) (hF : j + F + 2 ≤ stage2FinalisationAllowance) :
+    (hstep : WalkLoopStepThree calls G F) (hF : j + F + 2 ≤ stage2FinalisationAllowance) :
     ∃ v' m, runFuel calls (32 * G.nep + 8 * G.n + 32) stage2Body sEntry =
       some (.ret v' m) := by
   obtain ⟨v', m, hrun⟩ :=
@@ -735,11 +755,11 @@ theorem walkBudget_le_stage2Budget {mem : Mem}
 two width facts — the completion conjunct of `Stage2WalkObligation` at the
 geometry's numbers rather than at the potential's. -/
 theorem walkCompletes_at_stage2Budget {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
-    {C : WalkCarry G} {s sEntry : State} {v : Value} {j F : Nat}
+    {C : WalkCarry G} {s sEntry : State} {j F : Nat}
     {b ep xp dst dstcap ndst ev evcap nev err nxp : Nat}
     (hseed : ∀ n, runFuel calls (j + n) stage2Body sEntry = runFuel calls n stage2Body s)
     (hInv : WalkInv G C s) (hhead : C.block = walkLoopHead) (hk : C.k < G.nep)
-    (hstep : WalkLoopStep calls G v F) (hF : j + F + 2 ≤ stage2FinalisationAllowance)
+    (hstep : WalkLoopStepThree calls G F) (hF : j + F + 2 ≤ stage2FinalisationAllowance)
     (hn : G.n < 2 ^ 64) (hnep : G.nep < 2 ^ 64) :
     ∃ v' m, runFuel calls
         (stage2Budget [.ptr b, .int 64 (BitVec.ofNat 64 G.n), .ptr ep,
@@ -772,11 +792,11 @@ allowance**, from the seed's prefix (`walkSeedPrefix_runFuel`'s `3`), the
 invariant at the loop head (`walkSeedInvariant_geometry`), and the loop's step
 with an exit inside twenty-seven steps. -/
 theorem walkCompletes_of_seed_loop {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
-    (S : WalkStage G) {s sEntry : State} {v : Value} {F : Nat}
+    (S : WalkStage G) {s sEntry : State} {F : Nat}
     (hn : 0 < G.nep)
     (hseed : ∀ n, runFuel calls (3 + n) stage2Body sEntry = runFuel calls n stage2Body s)
     (hInv : WalkInv G (walkSeed G S) s) (_hpc : s.pc = walkLoopHead)
-    (hstep : WalkLoopStep calls G v F) (hF : F ≤ 27) :
+    (hstep : WalkLoopStepThree calls G F) (hF : F ≤ 27) :
     ∃ v' m, runFuel calls
         (stage2EntryAllowance * G.nep +
           stage2ByteAllowance * (G.n - entryPos G 0) + stage2FinalisationAllowance)
@@ -801,6 +821,7 @@ theorem walkCompletes_of_seed_loop {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
 #print axioms LeanLLVM.Refinement.WalkScope.WalkChain.inv_last
 #print axioms LeanLLVM.Refinement.WalkScope.WalkSegment.of_chain
 #print axioms LeanLLVM.Refinement.WalkScope.WalkSegment.ret
+#print axioms LeanLLVM.Refinement.WalkScope.WalkSegment.andRun
 #print axioms LeanLLVM.Refinement.WalkScope.walkSpans_sum_le
 #print axioms LeanLLVM.Refinement.WalkScope.walkPotential_le
 #print axioms LeanLLVM.Refinement.WalkScope.walkPotential_spend
@@ -810,7 +831,7 @@ theorem walkCompletes_of_seed_loop {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
 #print axioms LeanLLVM.Refinement.WalkScope.walkIterations_le_measure
 #print axioms LeanLLVM.Refinement.WalkScope.walkMeasure_ge
 #print axioms LeanLLVM.Refinement.WalkScope.walkMeasure_exceeds_budget_at_100
-#print axioms LeanLLVM.Refinement.WalkScope.walkLoopFinishes
+#print axioms LeanLLVM.Refinement.WalkScope.walkLoopFinishesThree
 #print axioms LeanLLVM.Refinement.WalkScope.walkCompletes_of_loop
 #print axioms LeanLLVM.Refinement.WalkScope.walkCompletes_of_loop_budget
 #print axioms LeanLLVM.Refinement.WalkScope.walkBudget_le_stage2Budget
