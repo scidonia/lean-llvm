@@ -70,6 +70,12 @@ Two fields are not premises of a single lemma:
   `walkFinishMerge_at` have their premises at exactly those terms, and a fact stated
   at a term needs no peeling at its use.
 
+**The invariant's clause is an upper bound** (`WalkInv.inner_cap`), and it must stay one:
+`WalkInv` is asserted at mid-scan states, where `inner` is being spent down, so a
+positivity field would make it unprovable at most of the layer.  A lower bound that is
+only true at the loop head belongs to the refill's lemma (`walkLoopHead_inner_pos`), not
+to the invariant.
+
 The depth's polarity is **not** a bundle field.  The exit tail's test is
 `%sp.i.1 = 0`, so the last entry's outcome is `finish` at depth zero and the refusal
 otherwise: a field `≠ 0` in the bundle would make the bundle uninhabited exactly at the
@@ -328,8 +334,10 @@ structure HlastFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) 
   cannot move into `WalkInv`: the invariant is asserted at states *inside* an iteration,
   where the scans have spent `inner` down to zero, so `1 ≤ C.inner` is false there.  It
   belongs where it is — with the scan's own premise (`scanExitSeg`'s `c - i ≤ C.inner`)
-  — and the lower bound a producer would need is the loop head's refill
-  (`walkInnerCap G ≥ 6`), which is a fact about the seed, not about the invariant. -/
+  — and the lower bound a producer needs is the loop head's refill, which
+  `walkLoopHead_inner_pos` supplies from `C.inner = walkInnerCap G`.  **So this field is
+  now derivable** from `hqc` and the refill's equality; it stays a field until a producer
+  uses that lemma, because the equality is not an invariant clause. -/
   hinner : cw - qi ≤ C.inner
   hexit : ∀ (e : State), e.pre = some "while.body462.i" →
     lookupName e.env "%inc463.i" = some (.int 64 (BitVec.ofNat 64 (qi + 1))) →
@@ -398,6 +406,39 @@ abbrev hlastMergeF {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     (f : HlastFacts G C s) : State :=
   hlastMerge C s f.x f.inc f.nep f.c f.ix f.e f.b8 f.x1 f.r₁ f.r₂ f.r₃ f.ei f.cd f.cA
     f.rdv f.xA f.idx f.a f.q f.x47 f.qi f.cw
+
+/-! ### The refill at the loop head
+
+`WalkInv.inner_cap` bounds the inner component **above** (`C.inner ≤ walkInnerCap G`),
+and that is all the invariant may say: `WalkInv` is asserted at mid-scan states, where
+`inner` is being spent down, so a positivity field would make it unprovable at most of
+the layer.  **A lower bound that is only true at the loop head belongs to the refill's
+lemma, not to the invariant.**
+
+The refill is the merge's reset (`walkBack_step_at`'s carry sets `inner := walkInnerCap G`)
+and the seed's carry sets the same (`walkSeed`), so a head carry reached from either has
+`inner = walkInnerCap G` by construction.  The two lemmas below are the arithmetic and the
+shape that consumes it.
+-/
+
+/-- **The cap is at least one.**  `walkInnerCap G = 4 * G.n + 5`. -/
+theorem walkInnerCap_pos {m0 : Mem} (G : WalkGeom m0) : 1 ≤ walkInnerCap G := by
+  simp only [walkInnerCap]
+  omega
+
+/-- **A refilled carry's inner budget is not empty.**  The reset the merge performs
+(`{ C with inner := walkInnerCap G }`) and the seed's own carry are both of this shape. -/
+theorem walkInnerReset_pos {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) :
+    1 ≤ { C with inner := walkInnerCap G }.inner := walkInnerCap_pos G
+
+/-- **The inner budget at the loop head is not empty.**  The equality is the refill's —
+`walkBack_step_at`'s carry and `walkSeed` both set `inner := walkInnerCap G` — and it is
+this lemma's hypothesis because it is not an invariant clause.  This is the lemma
+`HlastFacts.hinner` needs: with the scan's last visit (`qi + 1 = cw`) it gives `1 ≤
+C.inner`, which is `cw - qi ≤ C.inner`. -/
+theorem walkLoopHead_inner_pos {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    (_hblock : C.block = walkLoopHead) (hrefill : C.inner = walkInnerCap G) :
+    1 ≤ C.inner := hrefill ▸ walkInnerCap_pos G
 
 /-- The entry stream's position past its last entry: the totalisation's own value, which
 is what makes the finish's byte term vanish. -/

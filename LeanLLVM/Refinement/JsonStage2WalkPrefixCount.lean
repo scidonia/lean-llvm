@@ -12,7 +12,14 @@ the same: a counted twin, not a derivation.
 |---|---|---|
 | `walkScanRounds457` | the scan's round | `hround` returns a segment |
 | `walkHeadChainToScan` | the last entry's price | `hprice` became a bundle field |
-| this module | the price, again | three counted twins and a `Nat` |
+| `consumer_tail_seg` | the tail's count, to compose it | the count existed — `3` — and a **name** did not |
+| this module | the price, again | counted twins and a `Nat` |
+
+The third row is the fact one layer further in: **a count without a name is not a
+composable count.**  `consumer_tail_seg` returns a segment at `3` already; its target
+state is existential, and `WalkSegment.trans` needs the next piece's source state to be
+the same *term*, so the count was there and unusable.  `consumerTailSegAt` is the same
+proof at `ScanEntry s r₁ r₂ r₃ ei cd c rdv x`.
 
 ## The prefix, piece by piece
 
