@@ -18,15 +18,14 @@ blocks; the credit the scan actually spent appears nowhere.
 
 The position at an index and the credit boundary at an index are two quantities, and
 only the first is a stream read.  `boundary`, its bounds and monotonicity, the
-agreement with `entryPos` below the stream, and the potential read through it live in
-`JsonStage2WalkTraverse`, beside `walkPotential`'s definition.  **They cannot live
-here**: this module is downstream of that one
+agreement with `entryPos` below the stream, and the potential — whose byte term is
+read at the boundary — live in `JsonStage2WalkTraverse`, beside `walkPotential`'s
+definition.  **They cannot live here**: this module is downstream of that one
 (`JsonStage2WalkCredit → JsonStage2WalkDispatchWitnessHlast → JsonStage2WalkFinishPath
 → JsonStage2WalkAssembly → JsonStage2WalkTraverse`), so a definition written here is
-invisible to the potential it restates — a module above a definition cannot re-point
-it.  That is why the repair is split: the index and the potential are stated where
-the potential is defined, and the terminal *price* is restated here, where the
-terminal conjunct is stated and `Hlast`'s facts are in scope.
+invisible to the potential it restates.  The index and the potential are therefore
+stated where the potential is defined, and the terminal *price* is restated here,
+where the terminal conjunct is stated and `Hlast`'s facts are in scope.
 
 Below the stream the boundary and the stream's position are the same number
 (`boundary_eq_entryPos` in `JsonStage2WalkTraverse`), so every price the walk states
@@ -58,11 +57,13 @@ terminal finish path can read the boundary directly.
 
 ## What is not here
 
-The boundary, its laws and the boundary potential — `boundary`,
-`boundary_eq_entryPos`, `boundary_le`, `boundary_mono`, `price_eq_of_lt`,
-`entryPosPrice_noByteAllowance`, `terminalScan_charge_control`,
-`walkPotential_boundary` and its lemmas — are in `JsonStage2WalkTraverse`.  This
-module states prices at the index, not the credit that is charged at it.
+The boundary, its laws and the potential — `boundary`, `boundary_eq_entryPos`,
+`boundary_le`, `boundary_mono`, `price_eq_of_lt`, `entryPosPrice_noByteAllowance`,
+`terminalScan_charge_control`, and `walkPotential` itself, whose byte term is read at
+the boundary, with `walkPotential_spend`, `walkPotential_le`, `walkPotential_seed`
+and the terminal reading `walkPotential_zero_of_nep_le` beside it — are in
+`JsonStage2WalkTraverse`.  This module states prices at the index, not the credit
+that is charged at it.
 -/
 
 import LeanLLVM.Refinement.JsonStage2WalkDispatchWitnessHlast
