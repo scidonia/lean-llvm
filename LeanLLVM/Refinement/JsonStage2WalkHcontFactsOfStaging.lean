@@ -111,6 +111,12 @@ This was invisible for the reason the earlier bundle's defect was invisible: the
 each checked against the path they were read from, and nothing in the bundle's own module
 reads two of them against each other.  A producer reads them together.
 
+**The systemic statement, because it is the second time in one bundle.**  `HcontFacts` is the
+second bundle of this shape whose fields contradict each other while no consumer can see
+it — a bundle is green when a producer inhabits it, not when it elaborates.  An
+elaborating structure literal and an inhabited bundle are different claims, and only the
+second one is what a refinement statement consumes; the build checks the first.
+
 ## Which lemmas this file reuses
 
 `hlastEntry_phiSel` (a closed `phi` fact, the same list), `hlastLoc105` and `hlastLoc96`
