@@ -716,8 +716,10 @@ reason:
 | the entry counts (`inc`, `nep`, `hge`) | **produced**: the witnesses are the loop's values, and `hge` is `ult (C.k+1) G.nep` at `C.k + 1 = G.nep`, a word compared with itself |
 | the merge's five cells (`%inc.i`, `%nep`, `%sp.i.0248`, `%e`, `%4`) | **produced**: `%sp.i.0248` is `WalkInv.depth_reg` itself (so `spv := C.sp`, no premise), and the other four from premises at the loop head: `hlastMerge_envInc`/`…Nep`/`…Sp`/`…E`/`…Four` peel `lookupName` from the merge down to `s`, so no field is stated at a state the caller would have to compute |
 | `hterm`, `hk2nep`, `hcw0`, `hinner` | **produced**: `G.nep` below `2^64`, the loop's equation, the scan's last visit, and the refill's `1 ≤ C.inner` (`walkLoopHead_inner_pos`, from `C.inner = walkInnerCap G`) |
-| the tail | **reduced to a named premise**: `consumerTailSegAt` — a segment at `3` from the three call contracts |
-| the scan's landing | **reduced to a named premise**: `walkScanLinks457`'s, byte read included |
+| the tail (`r₁`, `r₂`, `r₃`, `ev`, `hTail`) | **produced**: the three calls' contracts applied at their three staged argument lists (`s2ValuePosContract`, `s2ScalarValueContract`, `s2AfterValueContract`), composed by `consumerTailSegAt` in `hlastTail_of_calls`.  Contract 1's post hands the caller's memory back, so the stream read is stated at the staging and re-expressed at `r₁.mem`; contract 3's post names the copy call's answer and memory.  Contract 2's post is existential in the record (`s2ScalarValueAppend`), and the bundle's `ev` is the *trace's* record, so `happ₂` — the appended record *is* `ev`'s — stays a premise |
+| the scan's landing (`idx`, `a`, `src`, `sel`, `x47`, `hpreS`, `hincS`, `hopS`, `h3S`, `h47`, `hloc105`, `hloc96`) | **produced**: `hlastEntry_pre` and `hlastEntry_phiSel` are the entry's own construction; `%ee.1.i` and `%3` peel to the tail's start (`hlastEntry_envEe`, `hlastEntry_env3`), so `idx = ofNat 64 ei` and `a = G.b`; `%47` is `landRhs457OutAt`'s own cell (`x47 = ofNat 8 q`), and `q` is the byte read's value (`q = bytesToNat bs`, so `hbsS` is `rfl`); `hloc105`/`hloc96` hold because neither `NodeBlock105` nor `LeafBlock96` is a `WalkLocal` scan block (`hlastLoc105`, `hlastLoc96`) |
+| the scan's byte read and its class (`hpos`, `hreadS`, `hbit47`, `hws47`, and `bs`) | **premises, correctly: the document's.**  The byte at `G.b + idx`, the bound its extraction needs, and the two tests on it are properties of `G.bs`; `walkScanLinks457` takes them, and neither the invariant nor the staging fixes a document byte's value |
+| the latch's local (`hlatch`) | **reduced**: `WalkLocal` at `while.body462.i` *is* the `ScanCount` the latch's own state writes |
 | the latch's exit test (`hq`, `hcwL`, `hqc`, `hcw64`, `hexit`, `htokL`) | **reduced**: `%q.0.i246` and `%cond350.i` are cells the scan's own states write; `hexit` is the exit's local at the latch |
 | the head's byte | **produced by the invariant**: `h8` is `hInv.iter.reg8`, and the witness is the name `hlastByte G C = ofNat 8 (entryByte G C.k).toNat` |
 | the four class bits | **premises, correctly: the document's**, not the staging's.  They are the four switch decisions on `entryByte G C.k`, i.e. properties of the document's byte, which the staging fixes addresses for but not values |
@@ -725,8 +727,8 @@ reason:
 | the second byte's class (`h8c`) | **produced**: `if.end372.i` binds five cells and none is `%8`, so `hlastSeam_env8` peels the seam to the token's end and `h8c` *is* `h8end`.  The three class bits stay premises about that byte |
 | the merge's `%e` and `%4` *values* | **resisting: the staging's** — peeled to `s`, and there they are the entry's error slot and its fourth argument |
 
-Nothing above is a field weakened to make a proof go through: the four derived witnesses
-and the ten produced fields are consequences, and the two shape changes (`hTail` a
+Nothing above is a field weakened to make a proof go through: the derived witnesses
+and the produced fields are consequences, and the two shape changes (`hTail` a
 segment, the refill an equality) stay.
 -/
 
@@ -878,10 +880,190 @@ theorem hlastSeam_env8 {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State
 abbrev hlastByte {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) : BitVec 8 :=
   BitVec.ofNat 8 (entryByte G C.k).toNat
 
+/-- The tail's start state, at the bundle's terms: `if.then413.i`'s entry. -/
+abbrev hlastTailS {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (c ix : BitVec 64) (e : BitVec 64) (b8 : BitVec 8) : State :=
+  TailStart C s x (hlastIncV C) (hlastNepV G) c ix e b8 b8
+
+/-- **The scan's entry's `pre` is `if.then447.i`** — the copy call's block, by
+construction: `ScanEntry` ends in `TailS₃`, whose `pre` is its predecessor's `pc`. -/
+theorem hlastEntry_pre {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (c ix : BitVec 64) (e : BitVec 64) (b8 : BitVec 8)
+    (r₁ r₂ r₃ : CallOutcome) (ei cd : Nat) (cA rdv xA : BitVec 32) :
+    (hlastEntryAt C s x c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA).pre = some "if.then447.i" := by
+  simp only [hlastEntryAt, hlastEntry, ScanEntry, TailS₃, stateAt]
+
+/-- **The scan's entry selects `%ee.1.i`** on the edge the copy call took: the `phi`'s
+two arms, the second of which `if.then447.i` names. -/
+theorem hlastEntry_phiSel :
+    phiIncoming "if.then447.i"
+      [("while.body462.i", (Operand.reg "%inc463.i")),
+       ("if.then447.i", (Operand.reg "%ee.1.i"))] = some (.reg "%ee.1.i") := by
+  decide
+
+/-- `%ee.1.i` at the scan's entry is `%ee.1.i` at the tail's start: the three tail
+states bind seven cells and none of them is `%ee.1.i`. -/
+theorem hlastEntry_envEe {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (c ix : BitVec 64) (e : BitVec 64) (b8 : BitVec 8)
+    (r₁ r₂ r₃ : CallOutcome) (ei cd : Nat) (cA rdv xA : BitVec 32) :
+    lookupName (hlastEntryAt C s x c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA).env "%ee.1.i" =
+      lookupName (hlastTailS C s x c ix e b8).env "%ee.1.i" := by
+  simp only [hlastEntryAt, hlastEntry, hlastTailS, ScanEntry, TailS₃, stateAt, cells]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+
+/-- `%3` at the scan's entry is the document's base: the tail binds none of the six
+pointer registers, so the invariant's carried binding is the entry's own. -/
+theorem hlastEntry_env3 {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (c ix : BitVec 64) (e : BitVec 64) (b8 : BitVec 8)
+    (r₁ r₂ r₃ : CallOutcome) (ei cd : Nat) (cA rdv xA : BitVec 32)
+    (hInvT : WalkInv G (TailStartC C) (hlastTailS C s x c ix e b8)) :
+    lookupName (hlastEntryAt C s x c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA).env "%3" =
+      some (.ptr G.b) := by
+  simp only [hlastEntryAt, hlastEntry, ScanEntry, TailS₃, stateAt, cells]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+  exact hInvT.ptrs.1
+
+/-- **`%47` at the landing is the scanned byte**: `landRhs457OutAt` binds it to
+`ofNat 8 q`, so the landing's `%47` cell is the load's own value. -/
+theorem landRhs457OutAt_env47 {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (c ix : BitVec 64) (e : BitVec 64) (b8 : BitVec 8)
+    (r₁ r₂ r₃ : CallOutcome) (ei cd : Nat) (cA rdv xA : BitVec 32)
+    (idx : BitVec 64) (a q : Nat) :
+    evalOperand (landRhs457OutAt
+      (hlastEntryAt C s x c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA) idx a q)
+      (.reg "%47") = some (.int 8 (BitVec.ofNat 8 q)) := by
+  simp only [landRhs457OutAt, stateAt, cells, evalOperand]
+  rw [lookupName_cons_self]
+
+/-- **The dispatch's entry has no local clause.**  `WalkLocal`'s scan arms cover
+`while.body462.i` and `land.rhs457.i`; `NodeBlock105` is not among them, so the
+landing's local fact is `True` at its own carry. -/
+theorem hlastLoc105 {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (ev : EventRecord)
+    (s : State) (idx : BitVec 64) (a q : Nat) :
+    WalkLocal (ScanC₁₀₅ (TailCarryScan C ev)) (landRhs457OutAt s idx a q) := by
+  simp only [WalkLocal]
+  repeat rw [ite_eq_right (by decide)]
+  trivial
+
+/-- **The range leaf has no local clause either.**  `LeafBlock96` is not one of
+`WalkLocal`'s scan blocks, so the leaf's local fact is `True` at its own carry. -/
+theorem hlastLoc96 {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (ev : EventRecord)
+    (s : State) (idx : BitVec 64) (a q : Nat) (x47 : BitVec 8) :
+    WalkLocal (ScanC₉₆ (TailCarryScan C ev)) (ScanS₉₆ s idx a q x47) := by
+  simp only [WalkLocal]
+  repeat rw [ite_eq_right (by decide)]
+  trivial
+
+/-- **The tail, produced from the three calls' contracts.**  The value-position call,
+the scalar call's emit arm and the copy call, each applied at its own staged argument
+list and at the caller's own state, then composed by `consumerTailSegAt` at their count.
+
+Contract 1's post hands back the caller's memory (`s2ValuePosPost`), so the stream read
+is stated at the staged memory and re-expressed at `r₁.mem`; contract 3's post names the
+copy call's memory; contract 2's post is the one conclusion the consumer cannot take
+whole — `s2ScalarValueAppend` is existential in the record, and the bundle's `ev` is the
+*trace's* record — so the trace's naming of the emitted record stays a premise. -/
+theorem hlastTail_of_calls {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (c ix : BitVec 64) (e : BitVec 64) (b8 : BitVec 8)
+    (r₁ r₂ r₃ : CallOutcome) (ev : EventRecord) {cA rdv xA : BitVec 32} (ei cd : Nat)
+    (hInvT : WalkInv G (TailStartC C) (hlastTailS C s x c ix e b8))
+    (hblockT : (TailStartC C).block = "if.then413.i")
+    {pT : String} {opT : Operand} {regT : String}
+    (hpreT : (hlastTailS C s x c ix e b8).pre = some pT)
+    (hincT : phiIncoming pT
+      [("if.else405.i", .imm (.int 32 (BitVec.ofNat 32 0))),
+       ("if.then403.i", .imm (.int 32 (BitVec.ofNat 32 10))),
+       ("if.then397.i", .imm (.int 32 (BitVec.ofNat 32 9))),
+       ("if.end372.i", .imm (.int 32 (BitVec.ofNat 32 7))),
+       ("LeafBlock58", .imm (.int 32 (BitVec.ofNat 32 8)))] = some opT)
+    (hopT : evalOperand (stateAt (hlastTailS C s x c ix e b8).env
+      (hlastTailS C s x c ix e b8)) opT = some (.int 32 cA))
+    (hkindT : lookupName (hlastTailS C s x c ix e b8).env "%kind404.i" =
+      some (.ptr (C.stage.tok + 16)))
+    (hrdT : lookupName (hlastTailS C s x c ix e b8).env "%root_done.i" =
+      some (.ptr (G.next0 + 8)))
+    (hreadT : readBytes
+      (writeBytes (hlastTailS C s x c ix e b8).mem (C.stage.tok + 16)
+        (natToBytes cA.toNat 4)) (G.next0 + 8) 4 = some (natToBytes rdv.toNat 4))
+    (hpre₁ : s2ValuePosPre
+      [.int 32 (BitVec.ofNat 32 (TailStartC C).sp), .int 32 rdv,
+       .ptr (TailStartC C).stage.ctype, .ptr (TailStartC C).stage.cst]
+      (writeBytes (hlastTailS C s x c ix e b8).mem (C.stage.tok + 16)
+        (natToBytes cA.toNat 4)) (hlastTailS C s x c ix e b8).next)
+    (hcall₁ : stage2Calls stage2SubCalls "s2_value_pos"
+      [.int 32 (BitVec.ofNat 32 (TailStartC C).sp), .int 32 rdv,
+       .ptr (TailStartC C).stage.ctype, .ptr (TailStartC C).stage.cst]
+      (writeBytes (hlastTailS C s x c ix e b8).mem (C.stage.tok + 16)
+        (natToBytes cA.toNat 4)) (hlastTailS C s x c ix e b8).next = some r₁)
+    (hret₁ : r₁.ret = .int 32 xA)
+    (hbit0T : evalICmp .eq xA (BitVec.ofNat 32 0) = 0)
+    (hzread : readBytes
+      (writeBytes (hlastTailS C s x c ix e b8).mem (C.stage.tok + 16)
+        (natToBytes cA.toNat 4)) C.stage.z 8 = some (wordBytes 8 G.ev))
+    (hcT : lookupName (hlastTailS C s x c ix e b8).env "%c.i" =
+      some (.ptr (TailCarry₂ (TailStartC C)).stage.c))
+    (htT : lookupName (hlastTailS C s x c ix e b8).env "%t352.i" =
+      some (.ptr (TailCarry₂ (TailStartC C)).stage.tok))
+    (hoT : lookupName (hlastTailS C s x c ix e b8).env "%z" =
+      some (.ptr (TailCarry₂ (TailStartC C)).stage.z))
+    (hpre₂ : s2ScalarValuePre
+      [.ptr (TailCarry₂ (TailStartC C)).stage.c, .ptr (TailCarry₂ (TailStartC C)).stage.tok,
+       .ptr (TailCarry₂ (TailStartC C)).stage.z] r₁.mem r₁.next)
+    (hcall₂ : stage2Calls stage2SubCalls "od_scalar_value"
+      [.ptr (TailCarry₂ (TailStartC C)).stage.c, .ptr (TailCarry₂ (TailStartC C)).stage.tok,
+       .ptr (TailCarry₂ (TailStartC C)).stage.z] r₁.mem r₁.next = some r₂)
+    (happ₂ : s2ScalarValueAppend r₁.mem r₂.mem
+      (TailCarry₂ (TailStartC C)).stage.z ev.encodedBytes)
+    (hret₂ : r₂.ret = .int 32 (BitVec.ofNat 32 1))
+    (hev64 : G.ev < 2 ^ 64) (hevlen64 : C.evlen < 2 ^ 64)
+    (hltT : C.events.length < C.k)
+    (hpre₃ : s2AfterValuePre
+      [.int 32 (BitVec.ofNat 32 (TailStartC C).sp), .ptr (G.next0 + 8),
+       .ptr (TailCarry₃ (TailStartC C) ev).stage.ctype,
+       .ptr (TailCarry₃ (TailStartC C) ev).stage.cst] r₂.mem r₂.next)
+    (hcall₃ : stage2Calls stage2SubCalls "s2_after_value"
+      [.int 32 (BitVec.ofNat 32 (TailStartC C).sp), .ptr (G.next0 + 8),
+       .ptr (TailCarry₃ (TailStartC C) ev).stage.ctype,
+       .ptr (TailCarry₃ (TailStartC C) ev).stage.cst] r₂.mem r₂.next = some r₃)
+    (heiT : lookupName (hlastTailS C s x c ix e b8).env "%ee.1.i" =
+      some (.int 64 (BitVec.ofNat 64 ei)))
+    (hcdT : lookupName (hlastTailS C s x c ix e b8).env "%cond350.i" =
+      some (.int 64 (BitVec.ofNat 64 cd)))
+    (hinnerT : cd - ei ≤ (TailStartC C).inner) (hlt2T : ei < cd) (hcd64T : cd < 2 ^ 64) :
+    WalkSegment (stage2Calls stage2SubCalls) G (TailStartC C) (hlastTailS C s x c ix e b8)
+      (TailCarryScan (TailStartC C) ev)
+      (hlastEntryAt C s x c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA) 3 := by
+  -- 1. the value-position call's contract: the caller's memory comes back unchanged
+  obtain ⟨r₁', hcall₁', hpost₁, _⟩ :=
+    s2ValuePosContract.resolves (next := (hlastTailS C s x c ix e b8).next) hpre₁
+  obtain ⟨v₁, _, _, hmemV₁, _⟩ := hpost₁
+  have hr₁ : r₁' = r₁ := Option.some.inj (hcall₁'.symm.trans hcall₁)
+  rw [hr₁] at hmemV₁
+  have hzreadJ : readBytes r₁.mem C.stage.z 8 = some (wordBytes 8 G.ev) := by
+    rw [hmemV₁]; exact hzread
+  -- 2. the scalar call's contract: its answer's memory shape
+  obtain ⟨r₂', hcall₂', hpost₂, _⟩ :=
+    s2ScalarValueContract.resolves (next := r₁.next) hpre₂
+  have hr₂ : r₂' = r₂ := Option.some.inj (hcall₂'.symm.trans hcall₂)
+  rw [hr₂] at hpost₂
+  obtain ⟨⟨_, _, _, _, _, _⟩, _⟩ := hpost₂
+  -- 3. the copy call's contract: the answer and the memory it leaves
+  obtain ⟨r₃', hcall₃', hpost₃, _⟩ :=
+    s2AfterValueContract.resolves (next := r₂.next) hpre₃
+  have hr₃ : r₃' = r₃ := Option.some.inj (hcall₃'.symm.trans hcall₃)
+  rw [hr₃] at hpost₃
+  obtain ⟨_, _, _, _, _⟩ := hpost₃
+  exact Seg.measure (consumerTailSegAt (G := G) (C := TailStartC C)
+    (s := hlastTailS C s x c ix e b8) r₁ r₂ r₃ ev ei cd hInvT hblockT pT regT cA opT
+    rdv xA hpreT hincT hopT hkindT hrdT hreadT hpre₁ hcall₁ hret₁ hbit0T hzreadJ
+    hcT htT hoT hcall₂ happ₂ hret₂ hev64 hevlen64 hltT hpre₃ hcall₃ heiT hcdT
+    hinnerT hlt2T hcd64T)
+
 /-- **The bundle, from the entry's evidence.**  The two counts and the merge's index
-are the loop's own values; `hge`, `hterm`, `hk2nep` and `hcw0` follow from them; every
-other field is the input's evidence at the state the path names.  See the section
-above for which fields cannot be produced from the committed layer. -/
+are the loop's own values; `hge`, `hterm`, `hk2nep` and `hcw0` follow from them; the tail
+is the three calls' contracts composed at their staged argument lists, and the scan's
+landing is read off the tail's end state.  See the section above for which fields cannot
+be produced from the committed layer. -/
 def hlastFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead) (hk : C.k + 1 = G.nep)
     (hlt91 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 91) = 0)
@@ -925,42 +1107,88 @@ def hlastFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
     (hceq116 : evalICmp .eq b8 (BitVec.ofNat 8 116) = 0)
     (r₁ r₂ r₃ : CallOutcome) (ev : EventRecord) {cA rdv : BitVec 32} {xA : BitVec 32}
     (ei cd : Nat)
-    (hTail : WalkSegment (stage2Calls stage2SubCalls) G (TailStartC C)
-      (TailStart C s (hlastByte G C) (hlastIncV C) (hlastNepV G) c ix e b8 b8)
-      (TailCarryScan (TailStartC C) ev)
-      (hlastEntryAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA) 3)
-    {idx : BitVec 64} {a q : Nat} {bs : List UInt8} {src : String} {sel : Operand}
-    (hpreS : (hlastEntryAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA).pre = some src)
-    (hincS : phiIncoming src
-      [("while.body462.i", (Operand.reg "%inc463.i")),
-       ("if.then447.i", (Operand.reg "%ee.1.i"))] = some sel)
-    (hopS : evalOperand (stateAt
-      (hlastEntryAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA).env
-      (hlastEntryAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA)) sel = some (.int 64 idx))
-    (h3S : lookupName (hlastEntryAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA).env "%3" =
-      some (.ptr a))
-    (hpos : (idx.signExtend 64).toNat < 2 ^ 63)
-    (hreadS : readBytes (hlastEntryAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA).mem
-      (a + (idx.signExtend 64).toNat) 1 = some bs)
-    (hbsS : bytesToNat bs = q)
-    (hloc105 : WalkLocal (ScanC₁₀₅ (TailCarryScan (TailStartC C) ev))
-      (landRhs457OutAt (hlastEntryAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA) idx a q))
-    {x47 : BitVec 8}
-    (h47 : evalOperand
-      (landRhs457OutAt (hlastEntryAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA) idx a q)
-      (.reg "%47") = some (.int 8 x47))
-    (hbit47 : evalICmp .slt x47 (BitVec.ofNat 8 13) = 1)
-    (hws47 : evalICmp .ule (x47 + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 1)
-    (hloc96 : WalkLocal (ScanC₉₆ (TailCarryScan (TailStartC C) ev))
-      (ScanS₉₆ (hlastEntryAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA) idx a q x47))
+    (hInvT : WalkInv G (TailStartC C) (hlastTailS C s (hlastByte G C) c ix e b8))
+    {pT : String} {opT : Operand} {regT : String}
+    (hpreT : (hlastTailS C s (hlastByte G C) c ix e b8).pre = some pT)
+    (hincT : phiIncoming pT
+      [("if.else405.i", .imm (.int 32 (BitVec.ofNat 32 0))),
+       ("if.then403.i", .imm (.int 32 (BitVec.ofNat 32 10))),
+       ("if.then397.i", .imm (.int 32 (BitVec.ofNat 32 9))),
+       ("if.end372.i", .imm (.int 32 (BitVec.ofNat 32 7))),
+       ("LeafBlock58", .imm (.int 32 (BitVec.ofNat 32 8)))] = some opT)
+    (hopT : evalOperand (stateAt (hlastTailS C s (hlastByte G C) c ix e b8).env
+      (hlastTailS C s (hlastByte G C) c ix e b8)) opT = some (.int 32 cA))
+    (hkindT : lookupName (hlastTailS C s (hlastByte G C) c ix e b8).env "%kind404.i" =
+      some (.ptr (C.stage.tok + 16)))
+    (hrdT : lookupName (hlastTailS C s (hlastByte G C) c ix e b8).env "%root_done.i" =
+      some (.ptr (G.next0 + 8)))
+    (hreadT : readBytes
+      (writeBytes (hlastTailS C s (hlastByte G C) c ix e b8).mem (C.stage.tok + 16)
+        (natToBytes cA.toNat 4)) (G.next0 + 8) 4 = some (natToBytes rdv.toNat 4))
+    (hpre₁ : s2ValuePosPre
+      [.int 32 (BitVec.ofNat 32 (TailStartC C).sp), .int 32 rdv,
+       .ptr (TailStartC C).stage.ctype, .ptr (TailStartC C).stage.cst]
+      (writeBytes (hlastTailS C s (hlastByte G C) c ix e b8).mem (C.stage.tok + 16)
+        (natToBytes cA.toNat 4)) (hlastTailS C s (hlastByte G C) c ix e b8).next)
+    (hcall₁ : stage2Calls stage2SubCalls "s2_value_pos"
+      [.int 32 (BitVec.ofNat 32 (TailStartC C).sp), .int 32 rdv,
+       .ptr (TailStartC C).stage.ctype, .ptr (TailStartC C).stage.cst]
+      (writeBytes (hlastTailS C s (hlastByte G C) c ix e b8).mem (C.stage.tok + 16)
+        (natToBytes cA.toNat 4)) (hlastTailS C s (hlastByte G C) c ix e b8).next = some r₁)
+    (hret₁ : r₁.ret = .int 32 xA)
+    (hbit0T : evalICmp .eq xA (BitVec.ofNat 32 0) = 0)
+    (hzread : readBytes
+      (writeBytes (hlastTailS C s (hlastByte G C) c ix e b8).mem (C.stage.tok + 16)
+        (natToBytes cA.toNat 4)) C.stage.z 8 = some (wordBytes 8 G.ev))
+    (hcT : lookupName (hlastTailS C s (hlastByte G C) c ix e b8).env "%c.i" =
+      some (.ptr (TailCarry₂ (TailStartC C)).stage.c))
+    (htT : lookupName (hlastTailS C s (hlastByte G C) c ix e b8).env "%t352.i" =
+      some (.ptr (TailCarry₂ (TailStartC C)).stage.tok))
+    (hoT : lookupName (hlastTailS C s (hlastByte G C) c ix e b8).env "%z" =
+      some (.ptr (TailCarry₂ (TailStartC C)).stage.z))
+    (hpre₂ : s2ScalarValuePre
+      [.ptr (TailCarry₂ (TailStartC C)).stage.c, .ptr (TailCarry₂ (TailStartC C)).stage.tok,
+       .ptr (TailCarry₂ (TailStartC C)).stage.z] r₁.mem r₁.next)
+    (hcall₂ : stage2Calls stage2SubCalls "od_scalar_value"
+      [.ptr (TailCarry₂ (TailStartC C)).stage.c, .ptr (TailCarry₂ (TailStartC C)).stage.tok,
+       .ptr (TailCarry₂ (TailStartC C)).stage.z] r₁.mem r₁.next = some r₂)
+    (happ₂ : s2ScalarValueAppend r₁.mem r₂.mem
+      (TailCarry₂ (TailStartC C)).stage.z ev.encodedBytes)
+    (hret₂ : r₂.ret = .int 32 (BitVec.ofNat 32 1))
+    (hev64 : G.ev < 2 ^ 64) (hevlen64 : C.evlen < 2 ^ 64)
+    (hltT : C.events.length < C.k)
+    (hpre₃ : s2AfterValuePre
+      [.int 32 (BitVec.ofNat 32 (TailStartC C).sp), .ptr (G.next0 + 8),
+       .ptr (TailCarry₃ (TailStartC C) ev).stage.ctype,
+       .ptr (TailCarry₃ (TailStartC C) ev).stage.cst] r₂.mem r₂.next)
+    (hcall₃ : stage2Calls stage2SubCalls "s2_after_value"
+      [.int 32 (BitVec.ofNat 32 (TailStartC C).sp), .ptr (G.next0 + 8),
+       .ptr (TailCarry₃ (TailStartC C) ev).stage.ctype,
+       .ptr (TailCarry₃ (TailStartC C) ev).stage.cst] r₂.mem r₂.next = some r₃)
+    (heiT : lookupName (hlastTailS C s (hlastByte G C) c ix e b8).env "%ee.1.i" =
+      some (.int 64 (BitVec.ofNat 64 ei)))
+    (hcdT : lookupName (hlastTailS C s (hlastByte G C) c ix e b8).env "%cond350.i" =
+      some (.int 64 (BitVec.ofNat 64 cd)))
+    (hinnerT : cd - ei ≤ (TailStartC C).inner) (hlt2T : ei < cd) (hcd64T : cd < 2 ^ 64)
+    {bs : List UInt8}
+    (hpos : ((BitVec.ofNat 64 ei).signExtend 64).toNat < 2 ^ 63)
+    (hreadS : readBytes
+      (hlastEntryAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA).mem
+      (G.b + ((BitVec.ofNat 64 ei).signExtend 64).toNat) 1 = some bs)
+    (hbit47 : evalICmp .slt (BitVec.ofNat 8 (bytesToNat bs)) (BitVec.ofNat 8 13) = 1)
+    (hws47 : evalICmp .ule (BitVec.ofNat 8 (bytesToNat bs) + BitVec.ofNat 8 247)
+      (BitVec.ofNat 8 1) = 1)
     (hlatch : WalkLocal { TailCarryScan (TailStartC C) ev with block := "while.body462.i" }
-      (hlastLatchAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47))
+      (hlastLatchAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA
+        (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs))))
     {qi cw tok : Nat}
     (hq : lookupName
-      (hlastLatchAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47).env
+      (hlastLatchAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA
+        (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs))).env
       "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 qi)))
     (hcwL : lookupName
-      (hlastLatchAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47).env
+      (hlastLatchAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA
+        (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs))).env
       "%cond350.i" = some (.int 64 (BitVec.ofNat 64 cw)))
     (hqc : qi + 1 = cw)
     (hcw64 : cw < 2 ^ 64)
@@ -970,7 +1198,8 @@ def hlastFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
       lookupName e.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 cw)) →
       WalkLocal (G := G) (ScanCMerge (ScanLatchC C ev)) e)
     (htokL : lookupName
-      (hlastScanOutAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw).env
+      (hlastScanOutAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA
+        (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw).env
       "%t352.i" = some (.ptr tok))
     {v : Nat}
     (hincL : lookupName s.env "%inc.i" = some (.int 64 (BitVec.ofNat 64 (C.k + 1))))
@@ -1034,26 +1263,41 @@ def hlastFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
     xA := xA
     ei := ei
     cd := cd
-    hTail := hTail
-    idx := idx
-    a := a
-    q := q
+    hTail := hlastTail_of_calls G C s (hlastByte G C) c ix e b8 r₁ r₂ r₃ ev ei cd
+      hInvT rfl (pT := pT) (opT := opT) (regT := regT) hpreT hincT hopT hkindT hrdT
+      hreadT hpre₁ hcall₁ hret₁ hbit0T hzread hcT htT hoT hpre₂ hcall₂ happ₂ hret₂
+      hev64 hevlen64 hltT hpre₃ hcall₃ heiT hcdT hinnerT hlt2T hcd64T
+    idx := BitVec.ofNat 64 ei
+    a := G.b
+    q := bytesToNat bs
     bs := bs
-    src := src
-    sel := sel
-    hpreS := hpreS
-    hincS := hincS
-    hopS := hopS
-    h3S := h3S
+    src := "if.then447.i"
+    sel := .reg "%ee.1.i"
+    hpreS := hlastEntry_pre C s (hlastByte G C) c ix e b8 r₁ r₂ r₃ ei cd cA rdv xA
+    hincS := hlastEntry_phiSel
+    hopS := by
+      show evalOperand (stateAt
+        (hlastEntryAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA).env
+        (hlastEntryAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA))
+        (.reg "%ee.1.i") = some (.int 64 (BitVec.ofNat 64 ei))
+      simp only [evalOperand, stateAt]
+      rw [hlastEntry_envEe C s (hlastByte G C) c ix e b8 r₁ r₂ r₃ ei cd cA rdv xA]
+      exact heiT
+    h3S := hlastEntry_env3 C s (hlastByte G C) c ix e b8 r₁ r₂ r₃ ei cd cA rdv xA hInvT
     hpos := hpos
     hreadS := hreadS
-    hbsS := hbsS
-    hloc105 := hloc105
-    x47 := x47
-    h47 := h47
+    hbsS := rfl
+    hloc105 := hlastLoc105 (TailStartC C) ev
+      (hlastEntryAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA)
+      (BitVec.ofNat 64 ei) G.b (bytesToNat bs)
+    x47 := BitVec.ofNat 8 (bytesToNat bs)
+    h47 := landRhs457OutAt_env47 C s (hlastByte G C) c ix e b8 r₁ r₂ r₃ ei cd cA rdv xA
+      (BitVec.ofNat 64 ei) G.b (bytesToNat bs)
     hbit47 := hbit47
     hws47 := hws47
-    hloc96 := hloc96
+    hloc96 := hlastLoc96 (TailStartC C) ev
+      (hlastEntryAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA)
+      (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs))
     hlatch := hlatch
     qi := qi
     cw := cw
@@ -1074,14 +1318,14 @@ def hlastFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
     spv := C.sp
     v := v
     hk2 := by
-      show evalOperand (hlastMergeAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw) (.reg "%inc.i") =
+      show evalOperand (hlastMergeAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw) (.reg "%inc.i") =
         some (.int 64 (BitVec.ofNat 64 (C.k + 1)))
       simp only [evalOperand]
-      rw [hlastMerge_envInc C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw]
+      rw [hlastMerge_envInc C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw]
       exact hincL
     hnepM := by
-      show lookupName (hlastMergeAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw).env "%nep" = some (.int 64 (hlastNepV G))
-      rw [hlastMerge_envNep C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw]
+      show lookupName (hlastMergeAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw).env "%nep" = some (.int 64 (hlastNepV G))
+      rw [hlastMerge_envNep C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw]
       exact hnepL
     hterm := by
       show C.k + 1 = (hlastNepV G).toNat
@@ -1089,21 +1333,22 @@ def hlastFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
       exact (hlast_nep_toNat G).symm
     hk2nep := hk
     hspvM := by
-      show evalOperand (hlastMergeAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw) (.reg "%sp.i.0248") =
+      show evalOperand (hlastMergeAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw) (.reg "%sp.i.0248") =
         some (.int 32 (BitVec.ofNat 32 C.sp))
       simp only [evalOperand]
-      rw [hlastMerge_envSp C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw]
+      rw [hlastMerge_envSp C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw]
       exact hInv.depth_reg
     heM := by
-      show lookupName (hlastMergeAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw).env "%e" = some (.ptr C.stage.e)
-      rw [hlastMerge_envE C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw]
+      show lookupName (hlastMergeAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw).env "%e" = some (.ptr C.stage.e)
+      rw [hlastMerge_envE C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw]
       exact heL
     h4M := by
-      show lookupName (hlastMergeAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw).env "%4" = some (.int 64 (BitVec.ofNat 64 v))
-      rw [hlastMerge_envFour C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw]
+      show lookupName (hlastMergeAt C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw).env "%4" = some (.int 64 (BitVec.ofNat 64 v))
+      rw [hlastMerge_envFour C s (hlastByte G C) c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw]
       exact h4L
     hv64 := hv64
     hlastK := hk }
+
 
 /-! ### The instrument -/
 
