@@ -40,6 +40,17 @@ span, the tail, the scan and their counted forms (`walkHeadChainCSeg`, `consumer
 `walkScanLinks457`) are reused at the new names, because they are stated at their entry
 state and not at the head.
 
+**"The same shape" is true of the links and false of the states.**  A plan that says a new
+path "is the rest of `hlastPrefixSeg`'s shape, and its links exist" is right about the
+links and wrong about the composition: a `Segment`'s carries and states are **indices**,
+and an index is unified syntactically, so a state that differs only in the `phi` arm its
+predecessor took is a different index.  Here the count test's arm changes `%cond350.i` at
+`cond.end349.i`, and that single change re-states the token's end, the seam, the tail's
+start, the scan's entry and the latch — five states and the whole carry nest — while every
+link below stays the one `hlastPrefixSeg` already uses.  The lesson is about plans rather
+than proofs: "the same shape" is a statement about the *links*, and a segment is stitched
+at its *states*.
+
 ## The count
 
 | piece | links |
@@ -56,6 +67,43 @@ visits, the latch's exit and the merge, plus the `2` the credit's statement adds
 `(23 + n + 1 + 1) + 2 = 27 + n`, against `32·Δk + 8·ΔA` at `Δk = 1`.  With `n ≤ 8·ΔA` that
 is `27 + 8·ΔA ≤ 32 + 8·ΔA`, so the fixed part grows from the last entry's `22` to `27` and
 still fits the entry allowance: the bound is not widened.
+
+## The classes still to write, and what they cost
+
+`%35` — the byte before the entry's end — has six classes, and this prefix is the one with
+no whitespace run: `13 ≤ %35 < 32` and `%35 ≠ 13`, so `NodeBlock41 → NodeBlock39 →
+LeafBlock35 → if.end372.i`.  The other five are the same three pivots' other arms, and the
+three of them whose byte *is* whitespace (`9`, `10`, `13`, `32`) enter
+`land.rhs.i.preheader` and the skip `while.body370.i`.
+
+**The run does not break `32·Δk`, and the reason is that it and the token scan split the
+entry's span.**  Write `i` for `%idxprom.i` and `k` for the index the run stops at — the
+first whitespace byte, which is the token's end `%ee.1.i`, so the token scan starts at `k`
+and its visits are `cd - 1 - k`.  A continuing visit is at most five steps (`land.rhs.i`,
+`NodeBlock52`, the leaf, and the latch's own step `while.body370.i → land.rhs.i`; a byte
+below `13` reaches its leaf in one fewer), and the exit visit is at most four, so the run
+costs `≤ 5·(k - i) + 4`.  The prefix is then `≤ 12 + (5·(k - i) + 4) + 12` — the head, the
+three pivots and the preheader before the run, and the seam, the class-C span, the tail and
+the scan after it — and the price is `p + 2 ≤ 30 + 5(k - i) + n` with `n ≤ 8(cd - 1 - k)`.
+Since `5(k - i) + 8(cd - 1 - k) ≤ 8(k - i) + 8(cd - 1 - k) = 8(cd - 1 - i)` and
+`cd - 1 - i < entryPos (C.k + 1) - entryPos C.k = ΔA`, that is `p + 2 ≤ 30 + 8·ΔA`:
+inside `32·Δk + 8·ΔA`, with two steps to spare.  **The byte budget is not double-spent
+precisely because the scan's start is the run's stop**; a prefix that let the scan start at
+`i` while the run also ran would charge `8·ΔA` twice and the bound would fail.
+
+**What the run costs to prove, and the layer gap it exposes.**  `WalkScanInduction.step`
+(`JsonStage2WalkChain`) is the *latch's* step — `while.body370.i`'s increment and its
+counter-versus-bound test, ending at `land.rhs.i` — not a visit: the dispatch
+(`land.rhs.i → NodeBlock52 → leaf → while.body370.i`) is outside it, and its `exitStep` is
+the counter reaching the bound, which the run never does (the byte at `cd - 1` is
+whitespace by the guard, so the leaf exits first).  A run therefore needs, per visit, the
+three dispatch links (`WalkLink.land_rhs_i_at`, `WalkLink.NodeBlock52_at`, the leaf's
+`_at`) *and* `scanLatch_visit_at`, and each visit must rebuild the `WalkLocal` at
+`while.body370.i` — the `ScanCount`/`ScanLanded` witness the induction's `step` body
+constructs — from the document's byte at that index and its class.  The document's facts
+are per-index, so the whitespace bundle carries them as a `∀` over the run's range (the
+byte and the two pivot bits at each index), exactly as the class bits are carried for the
+single byte here.
 
 ## `%cond350.i` is one number, not two
 
