@@ -283,6 +283,65 @@ def contLatch {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State) (x : Bi
     (idx : BitVec 64) (a q : Nat) (x47 : BitVec 8) : State :=
   Latch462S (contEntry C s x inc nep ep v ix b35 b8 x1 r₁ r₂ r₃ ei cA rdv xA) idx a q x47
 
+/-! ### The run class's states
+
+The whitespace class's seam is not a class-indexed definition.  The run stops at the first
+whitespace byte `k`, so the last visit leaves through *one of three* leaves
+(`LeafBlock43`/`46`/`48`), and their states differ in the cells each leaf bounded — a
+`Segment` threads states by name, so three arms here would mean three nests and three
+`hTail`s.  Instead the leaf's target is carried as **data** (`sl`), exactly as the bundle
+carries `x`, `inc` and `v`, and the seam is stated at it: `seamS sl (ofNat 64 k) b8 tok` is
+one term, and the token's end phi selects `%ee.0.i238` there, whose value is `k`.  The
+class survives in one `Prop` field of the bundle — which of the three leaves `sl` came
+from, i.e. `sl.pre` — and is split once at the seam step.
+
+The run's *source* is the same shape: the pivots that reach `land.rhs.i.preheader` are also
+class-dependent, so the whole stretch from `land.lhs.true357.i`'s target to `sl` is one
+segment premise (`hRun`), stated at the uniform carries `ContAC₄` and `ContAC₇`.  Naming
+the target carry is not cosmetic: `WalkSegment` records its target's invariant, so
+`sl.pc = "if.end372.i"` is `hRun.inv'.pc_eq` and the seam link's `findBlock` unfolds — an
+existential endpoint would leave `sl.pc` unnamed and the seam step stuck, the
+`htok`-lesson one layer up. -/
+
+/-- The run class's seam: `if.end372.i` entered from the leaf the run's last byte stopped
+at. -/
+def contWsSeamS {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (sl : State) (k : Nat)
+    (b8 : BitVec 8) : State :=
+  seamS sl (BitVec.ofNat 64 k) b8 C.stage.tok
+
+/-- The run class's class-C span target. -/
+def contWsTailStart {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (sl : State) (k : Nat)
+    (b8 x1 : BitVec 8) : State :=
+  HeadS413 (contWsSeamS C sl k b8) x1
+
+/-- The run class's scan entry: the tail's end state at `land.rhs457.i`, its first index
+the run's stop `k` and its bound the lane's word. -/
+def contWsEntry {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (sl : State) (k : Nat)
+    (b8 x1 : BitVec 8) (r₁ r₂ r₃ : CallOutcome) (ei : Nat) (v : BitVec 32)
+    (cA rdv xA : BitVec 32) : State :=
+  ScanEntry (contWsTailStart C sl k b8 x1) r₁ r₂ r₃ ei v.toNat cA rdv xA
+
+/-- The run class's latch. -/
+def contWsLatch {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (sl : State) (k : Nat)
+    (b8 x1 : BitVec 8) (r₁ r₂ r₃ : CallOutcome) (ei : Nat) (v : BitVec 32)
+    (cA rdv xA : BitVec 32) (idx : BitVec 64) (a q : Nat) (x47 : BitVec 8) : State :=
+  Latch462S (contWsEntry C sl k b8 x1 r₁ r₂ r₃ ei v cA rdv xA) idx a q x47
+
+/-- **The run class's token end is the run's stop.**  The seam binds `%ee.1.i` to its own
+argument (`ofNat 64 k`), and `if.then447.i`'s edge selects that cell, so the scan's index is
+`k` — which is what makes the extra-token span `[k, v.toNat)` non-empty and the bundle
+inhabited, against the no-run class's `v.toNat < v.toNat`. -/
+theorem contWsEntry_ee {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (sl : State) (k : Nat)
+    (b8 x1 : BitVec 8) (r₁ r₂ r₃ : CallOutcome) (ei : Nat) (v : BitVec 32)
+    (cA rdv xA : BitVec 32) :
+    lookupName (contWsEntry C sl k b8 x1 r₁ r₂ r₃ ei v cA rdv xA).env "%ee.1.i" =
+      some (.int 64 (BitVec.ofNat 64 k)) := by
+  simp only [contWsEntry, ScanEntry, TailS₃, TailS₂, TailS₁, contWsTailStart, HeadS413,
+    HeadS405, HeadS58, HeadS60, HeadS62, contWsSeamS, seamS, seamFin, stateAt, cells,
+    State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+  exact lookupName_cons_self _ _ _
+
 /-! ### The cells the path's own states carry
 
 `%cond350.i` is bound once — at `cond.end349.i` — and no block from there to the latch
