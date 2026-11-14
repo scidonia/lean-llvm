@@ -64,7 +64,12 @@ Two fields are not premises of a single lemma:
   `∀ j` price field, because a `WalkChain`'s count is not projectable; the counted
   prefix retired it.
 * `hTail` is a **segment at count `3`**, not a chain, for the same reason: the tail is
-  a piece of a priced path.
+  a piece of a priced path.  The caveat is worth stating: an old supplier holding
+  `hTail : WalkChain` **cannot** feed this bundle, because a chain does not imply a
+  segment at a count.  No evidence was lost, only re-shaped — `consumerTailSegAt`
+  builds that segment from the same three call contracts
+  (`s2_value_pos`, `od_scalar_value`, `s2_after_value`) that `consumer_tail_chain`
+  consumes.
 * `hlatch`-group fields are stated **at the states named above** (`hlastLatch`,
   `hlastScanOut`, `hlastMerge`): the callers of `walkScanToMerge` and of
   `walkFinishMerge_at` have their premises at exactly those terms, and a fact stated
@@ -680,42 +685,27 @@ literal has to be given, and the answer separates the fields into three kinds.
 
 **Fixed by the loop's own values.**  The entry's index and the stream's count are not
 free witnesses: at the loop's last entry they are `C.k + 1` and `G.nep`, and the bundle
-is produced at those.  Three fields are then *consequences* rather than premises —
+is produced at those.
 
-* `hge` is `ult (C.k + 1) G.nep = 0` at `C.k + 1 = G.nep`, i.e. a comparison of a word
-  with itself;
-* `hterm` is `C.k + 1 = (ofNat 64 G.nep).toNat`, which is `G.nep` below `2 ^ 64`;
-* `hk2nep` is `hk` itself;
+**The map, per group.**  Produced · reduced to a named premise · resisting, with the
+reason:
 
-and a fourth, `hcw0`, is `1 ≤ cw` from the scan's last visit `qi + 1 = cw`.
+| group | status |
+|---|---|
+| the entry counts (`inc`, `nep`, `hge`) | **produced**: the witnesses are the loop's values, and `hge` is `ult (C.k+1) G.nep` at `C.k + 1 = G.nep`, a word compared with itself |
+| the merge's five cells (`%inc.i`, `%nep`, `%sp.i.0248`, `%e`, `%4`) | **produced**, from premises at the loop head: `hlastMerge_envInc`/`…Nep`/`…Sp`/`…E`/`…Four` peel `lookupName` from the merge down to `s`, so no field is stated at a state the caller would have to compute |
+| `hterm`, `hk2nep`, `hcw0`, `hinner` | **produced**: `G.nep` below `2^64`, the loop's equation, the scan's last visit, and the refill's `1 ≤ C.inner` (`walkLoopHead_inner_pos`, from `C.inner = walkInnerCap G`) |
+| the tail | **reduced to a named premise**: `consumerTailSegAt` — a segment at `3` from the three call contracts |
+| the scan's landing | **reduced to a named premise**: `walkScanLinks457`'s, byte read included |
+| the latch's exit test (`hq`, `hcwL`, `hqc`, `hcw64`, `hexit`, `htokL`) | **reduced**: `%q.0.i246` and `%cond350.i` are cells the scan's own states write; `hexit` is the exit's local at the latch |
+| the head's byte and its four class bits | **resisting: the entry stream's.**  `%8` is `entryByte G C.k`; the four bits are four switch decisions on that byte, and nothing in `WalkInv` reads the stream |
+| the default arm's and the seam's cells | **resisting: the entry stream's.**  `%4`'s lane, `%idxprom.i`, the token's end and its gap are the entry's own values (`hpre5` is a closed `phi` lookup and could be produced by fixing `reg`) |
+| the second byte's class (`h8c` and its three bits) | **resisting: memory.**  `if.end372.i` stores the byte at `%end.i` and `h8c` reads the store back |
+| the merge's `%e` and `%4` *values* | **resisting: the staging's** — peeled to `s`, and there they are the entry's error slot and its fourth argument |
 
-**The evidence.**  Everything else is a proposition about the input at the state the
-path names, and the producer takes it as a hypothesis.  This is not a proof that the
-bundle is inhabited: it is the *exact boundary* of what the composition consumes, and
-the three fields it derives are the ones that were never free.
-
-**What resists, and where.**
-* the entry's evidence (`x`, the four class bits, the two counts' reads, the seam's six
-  cells, the second byte's class) is a fact about the entry stream — `%8` is the byte
-  at `entryPos G C.k` (`entryByte`) and the seam's word the stored `%end.i` — and its
-  producer is the entry's staging, not the invariant.
-* the tail's counted segment is `consumerTailSegAt`'s conclusion (this module's
-  `JsonStage2WalkPrefixCount`), whose premises are the three call contracts
-  (`s2_value_pos`, `od_scalar_value`, `s2_after_value`) at the staged arguments — the
-  Finish module's header's "two call consumers".  It is a segment, not a chain, because
-  the path is priced: `consumer_tail_seg` already counts it at `3`, but its target's
-  *state* is existential and a counted piece whose state cannot be named cannot be
-  composed.
-* the scan's landing and the latch's last visit are the extra-token scan's traversal:
-  its byte read, its counter's exit, and the `WalkLocal` side conditions at the three
-  named states.
-* the merge's five cells are facts about the environment at `hlastMerge`, which is a
-  term built from `s` by the path's binds.  They are **peelable**: `lookupName` through
-  them reduces to `lookupName s.env`, since no block on the path binds `%nep`, `%inc.i`,
-  `%e`, `%4` or `%sp.i.0248` — measured, not assumed: `simp` over the state definitions
-  walks the scan's six cells and the tail's seven and then stops in the entry-side nest
-  (`seamFin`/`headAS*`/`HeadS*`), so the peel closes with those definitions added; it is
-  not closed here.  Until it is, those five are stated at the merge.
+Nothing above is a field weakened to make a proof go through: the four derived witnesses
+and the ten produced fields are consequences, and the two shape changes (`hTail` a
+segment, the refill an equality) stay.
 -/
 
 /-- `%inc.i`'s value at the last entry, as the bundle's `inc`. -/
@@ -756,6 +746,76 @@ abbrev hlastMergeAt {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
   hlastMerge C s x (hlastIncV C) (hlastNepV G) c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA
     idx a q x47 qi cw
 
+/-- `%inc.i` at the merge is `%inc.i` at the loop head: no block on the path binds it. -/
+theorem hlastMerge_envInc {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (c ix : BitVec 64) (e : BitVec 64) (b8 : BitVec 8) (x1 : BitVec 8)
+    (r₁ r₂ r₃ : CallOutcome) (ei cd : Nat) (cA rdv xA : BitVec 32)
+    (idx : BitVec 64) (a q : Nat) (x47 : BitVec 8) (qi cw : Nat) :
+    lookupName
+        (hlastMergeAt C s x c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw).env
+        "%inc.i" = lookupName s.env "%inc.i" := by
+  simp only [hlastMerge, hlastScanOut, hlastLatch, hlastEntry, ScanEntry, TailStart,
+    TailS₃, seamAt, seamS, seamFin, headEndS, condEnd349OutAt, headAS₁, headAS₂, headAS₃,
+    headAS₄, headAS₅, HeadS413, HeadS405, HeadS58, HeadS60, HeadS62, landRhs457OutAt,
+    Latch462S, scanLatchOut, stateAt, cells, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+
+/-- `%nep` at the merge is `%nep` at the loop head: no block on the path binds it. -/
+theorem hlastMerge_envNep {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (c ix : BitVec 64) (e : BitVec 64) (b8 : BitVec 8) (x1 : BitVec 8)
+    (r₁ r₂ r₃ : CallOutcome) (ei cd : Nat) (cA rdv xA : BitVec 32)
+    (idx : BitVec 64) (a q : Nat) (x47 : BitVec 8) (qi cw : Nat) :
+    lookupName
+        (hlastMergeAt C s x c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw).env
+        "%nep" = lookupName s.env "%nep" := by
+  simp only [hlastMerge, hlastScanOut, hlastLatch, hlastEntry, ScanEntry, TailStart,
+    TailS₃, seamAt, seamS, seamFin, headEndS, condEnd349OutAt, headAS₁, headAS₂, headAS₃,
+    headAS₄, headAS₅, HeadS413, HeadS405, HeadS58, HeadS60, HeadS62, landRhs457OutAt,
+    Latch462S, scanLatchOut, stateAt, cells, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+
+/-- `%e` at the merge is `%e` at the loop head: no block on the path binds it. -/
+theorem hlastMerge_envE {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (c ix : BitVec 64) (e : BitVec 64) (b8 : BitVec 8) (x1 : BitVec 8)
+    (r₁ r₂ r₃ : CallOutcome) (ei cd : Nat) (cA rdv xA : BitVec 32)
+    (idx : BitVec 64) (a q : Nat) (x47 : BitVec 8) (qi cw : Nat) :
+    lookupName
+        (hlastMergeAt C s x c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw).env
+        "%e" = lookupName s.env "%e" := by
+  simp only [hlastMerge, hlastScanOut, hlastLatch, hlastEntry, ScanEntry, TailStart,
+    TailS₃, seamAt, seamS, seamFin, headEndS, condEnd349OutAt, headAS₁, headAS₂, headAS₃,
+    headAS₄, headAS₅, HeadS413, HeadS405, HeadS58, HeadS60, HeadS62, landRhs457OutAt,
+    Latch462S, scanLatchOut, stateAt, cells, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+
+/-- `%4` at the merge is `%4` at the loop head: no block on the path binds it. -/
+theorem hlastMerge_envFour {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (c ix : BitVec 64) (e : BitVec 64) (b8 : BitVec 8) (x1 : BitVec 8)
+    (r₁ r₂ r₃ : CallOutcome) (ei cd : Nat) (cA rdv xA : BitVec 32)
+    (idx : BitVec 64) (a q : Nat) (x47 : BitVec 8) (qi cw : Nat) :
+    lookupName
+        (hlastMergeAt C s x c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw).env
+        "%4" = lookupName s.env "%4" := by
+  simp only [hlastMerge, hlastScanOut, hlastLatch, hlastEntry, ScanEntry, TailStart,
+    TailS₃, seamAt, seamS, seamFin, headEndS, condEnd349OutAt, headAS₁, headAS₂, headAS₃,
+    headAS₄, headAS₅, HeadS413, HeadS405, HeadS58, HeadS60, HeadS62, landRhs457OutAt,
+    Latch462S, scanLatchOut, stateAt, cells, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+
+/-- `%sp.i.0248` at the merge is `%sp.i.0248` at the loop head: no block on the path binds it. -/
+theorem hlastMerge_envSp {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (c ix : BitVec 64) (e : BitVec 64) (b8 : BitVec 8) (x1 : BitVec 8)
+    (r₁ r₂ r₃ : CallOutcome) (ei cd : Nat) (cA rdv xA : BitVec 32)
+    (idx : BitVec 64) (a q : Nat) (x47 : BitVec 8) (qi cw : Nat) :
+    lookupName
+        (hlastMergeAt C s x c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw).env
+        "%sp.i.0248" = lookupName s.env "%sp.i.0248" := by
+  simp only [hlastMerge, hlastScanOut, hlastLatch, hlastEntry, ScanEntry, TailStart,
+    TailS₃, seamAt, seamS, seamFin, headEndS, condEnd349OutAt, headAS₁, headAS₂, headAS₃,
+    headAS₄, headAS₅, HeadS413, HeadS405, HeadS58, HeadS60, HeadS62, landRhs457OutAt,
+    Latch462S, scanLatchOut, stateAt, cells, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+
 /-- An unsigned comparison of a word with itself is zero. -/
 theorem hlast_ult_self {w : Nat} (a : BitVec w) : evalICmp .ult a a = 0 := by
   simp only [evalICmp, BitVec.ult_eq_decide, lt_self_iff_false]
@@ -775,7 +835,7 @@ are the loop's own values; `hge`, `hterm`, `hk2nep` and `hcw0` follow from them;
 other field is the input's evidence at the state the path names.  See the section
 above for which fields cannot be produced from the committed layer. -/
 def hlastFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
-    (_hInv : WalkInv G C s) (_hblock : C.block = walkLoopHead) (hk : C.k + 1 = G.nep)
+    (_hInv : WalkInv G C s) (hblock : C.block = walkLoopHead) (hk : C.k + 1 = G.nep)
     {x : BitVec 8} (h8 : evalOperand s (.reg "%8") = some (.int 8 x))
     (hlt91 : evalICmp .slt x (BitVec.ofNat 8 91) = 0)
     (hlt123 : evalICmp .slt x (BitVec.ofNat 8 123) = 0)
@@ -860,7 +920,7 @@ def hlastFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
       "%cond350.i" = some (.int 64 (BitVec.ofNat 64 cw)))
     (hqc : qi + 1 = cw)
     (hcw64 : cw < 2 ^ 64)
-    (hinner : cw - qi ≤ C.inner)
+    (hrefill : C.inner = walkInnerCap G)
     (hexit : ∀ (e : State), e.pre = some "while.body462.i" →
       lookupName e.env "%inc463.i" = some (.int 64 (BitVec.ofNat 64 (qi + 1))) →
       lookupName e.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 cw)) →
@@ -869,21 +929,11 @@ def hlastFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
       (hlastScanOutAt C s x c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw).env
       "%t352.i" = some (.ptr tok))
     {spv v : Nat}
-    (hk2 : evalOperand
-      (hlastMergeAt C s x c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw)
-      (.reg "%inc.i") = some (.int 64 (BitVec.ofNat 64 (C.k + 1))))
-    (hnepM : lookupName
-      (hlastMergeAt C s x c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw).env
-      "%nep" = some (.int 64 (hlastNepV G)))
-    (hspvM : evalOperand
-      (hlastMergeAt C s x c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw)
-      (.reg "%sp.i.0248") = some (.int 32 (BitVec.ofNat 32 spv)))
-    (heM : lookupName
-      (hlastMergeAt C s x c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw).env
-      "%e" = some (.ptr C.stage.e))
-    (h4M : lookupName
-      (hlastMergeAt C s x c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw).env
-      "%4" = some (.int 64 (BitVec.ofNat 64 v)))
+    (hincL : lookupName s.env "%inc.i" = some (.int 64 (BitVec.ofNat 64 (C.k + 1))))
+    (hnepL : lookupName s.env "%nep" = some (.int 64 (hlastNepV G)))
+    (hspvL : lookupName s.env "%sp.i.0248" = some (.int 32 (BitVec.ofNat 32 spv)))
+    (heL : lookupName s.env "%e" = some (.ptr C.stage.e))
+    (h4L : lookupName s.env "%4" = some (.int 64 (BitVec.ofNat 64 v)))
     (hv64 : v < 2 ^ 64) :
     HlastFacts G C s :=
   { x := x
@@ -962,23 +1012,45 @@ def hlastFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
     hqc := hqc
     hcw0 := by omega
     hcw64 := hcw64
-    hinner := hinner
+    hinner := by
+      have h1 : cw - qi = 1 := by omega
+      have h2 : 1 ≤ C.inner := walkLoopHead_inner_pos hblock hrefill
+      omega
     hexit := hexit
     htokL := htokL
     k2 := C.k + 1
     nepv := hlastNepV G
     spv := spv
     v := v
-    hk2 := hk2
-    hnepM := hnepM
+    hk2 := by
+      show evalOperand (hlastMergeAt C s x c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw) (.reg "%inc.i") =
+        some (.int 64 (BitVec.ofNat 64 (C.k + 1)))
+      simp only [evalOperand]
+      rw [hlastMerge_envInc C s x c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw]
+      exact hincL
+    hnepM := by
+      show lookupName (hlastMergeAt C s x c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw).env "%nep" = some (.int 64 (hlastNepV G))
+      rw [hlastMerge_envNep C s x c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw]
+      exact hnepL
     hterm := by
       show C.k + 1 = (hlastNepV G).toNat
       rw [hk]
       exact (hlast_nep_toNat G).symm
     hk2nep := hk
-    hspvM := hspvM
-    heM := heM
-    h4M := h4M
+    hspvM := by
+      show evalOperand (hlastMergeAt C s x c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw) (.reg "%sp.i.0248") =
+        some (.int 32 (BitVec.ofNat 32 spv))
+      simp only [evalOperand]
+      rw [hlastMerge_envSp C s x c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw]
+      exact hspvL
+    heM := by
+      show lookupName (hlastMergeAt C s x c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw).env "%e" = some (.ptr C.stage.e)
+      rw [hlastMerge_envE C s x c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw]
+      exact heL
+    h4M := by
+      show lookupName (hlastMergeAt C s x c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw).env "%4" = some (.int 64 (BitVec.ofNat 64 v))
+      rw [hlastMerge_envFour C s x c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw]
+      exact h4L
     hv64 := hv64
     hlastK := hk }
 
