@@ -1278,6 +1278,7 @@ theorem WalkLink.if_then447_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
     rfl (by simp [cells, stateAt, lookupName_cons_self])
     (by
       right
+      left
       exact ⟨ei, cd, hinner, hlt, hcd64, by rw [hInv.pc_eq, hblock],
         by simpa [stateAt, cells, lookupName] using hei,
         by simpa [stateAt, cells, lookupName] using hcd⟩)

@@ -799,6 +799,25 @@ def ScanEntered (s : State) (src counter cond : String) (inner : Nat) : Prop :=
     lookupName s.env counter = some (.int 64 (BitVec.ofNat 64 i)) ∧
     lookupName s.env cond = some (.int 64 (BitVec.ofNat 64 c))
 
+/-- **A scan's landing block where the scan has no bytes: the counter and the bound
+are the same word.**  Both arms above require `i < c`, so a scan the walk's guard does
+not enter has no local fact at its landing block — and the walk reaches
+`land.rhs457.i` with `%ee.1.i = %cond350.i`: on the arm whose last entry byte is not
+whitespace, the token's end *is* the entry's end, so the copy call's target tests
+`ult %ee.1.i %cond350.i` false and jumps to `if.end473.i`, leaving `land.rhs457.i` as
+the sibling it never visits.
+
+**A vocabulary that has no fact for a state the model reaches is a defect in the
+vocabulary**, so the local fact gains this third disjunct rather than a relaxation of
+`ScanEntered`: relaxing `i < c` to `i ≤ c` would weaken every existing consumer's
+conclusion, while a new disjunct is additive and each consumer discharges the new case
+from its own `i < c`.  The budget condition is omitted for the same reason it is
+vacuous here — no work remains, so `c - c = 0` covers it. -/
+def ScanEmpty (s : State) (counter cond : String) : Prop :=
+  ∃ c : Nat, c < 2 ^ 64 ∧
+    lookupName s.env counter = some (.int 64 (BitVec.ofNat 64 c)) ∧
+    lookupName s.env cond = some (.int 64 (BitVec.ofNat 64 c))
+
 /-- The block-local half of the invariant: the remaining budget's coverage of the
 work still to do, and the registers it is read from, at the ten blocks the five
 proved arms reach — the literal comparison's two and each of the four scans'
@@ -808,7 +827,14 @@ edge and `ScanEntered` on the edge that first enters the scan, and the literal
 comparison's landing block is the same pair (the latch's `%inc.i.i` or
 `if.end48.i`'s zero).  At every other block it is `True`; pinning it there is the
 remaining arm's work (the entry loop's), and the module docstring says so rather
-than claiming a bound it does not have. -/
+than claiming a bound it does not have.
+
+**The extra-token scan's landing has a third disjunct.**  `land.rhs457.i` is reachable
+with `%ee.1.i = %cond350.i` — the arm whose byte before the entry's end is not
+whitespace reaches it with the token ending exactly at the entry's end — and there the
+scan is not entered at all, so neither `ScanLanded` nor `ScanEntered` holds.  That state
+is why `ScanEmpty` exists; the other landings have not been shown to need it, and adding
+it only where a reachable state requires it keeps the change additive. -/
 def WalkLocal {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State) : Prop :=
   if C.block = "for.inc.i.i" then
     ∃ i c : Nat, c - i ≤ C.inner ∧ i < c ∧ c < 2 ^ 64 ∧
@@ -841,7 +867,8 @@ def WalkLocal {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State) : Prop 
     ScanCount s "%q.0.i246" "%cond350.i" C.inner
   else if C.block = "land.rhs457.i" then
     (ScanLanded s "while.body462.i" "%inc463.i" "%cond350.i" C.inner ∨
-      ScanEntered s "if.then447.i" "%ee.1.i" "%cond350.i" C.inner)
+      ScanEntered s "if.then447.i" "%ee.1.i" "%cond350.i" C.inner ∨
+      ScanEmpty s "%ee.1.i" "%cond350.i")
   else True
 
 /-- **The pointer registers the dispatch's blocks read**, in one place.
@@ -2137,11 +2164,14 @@ theorem WalkLocal.extraToken {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s :
     WalkLocal C s = ScanCount s "%q.0.i246" "%cond350.i" C.inner := by
   simp [WalkLocal, h]
 
-/-- `WalkLocal` at the extra-token scan's landing block. -/
+/-- `WalkLocal` at the extra-token scan's landing block.  The third disjunct is
+`ScanEmpty`: `land.rhs457.i` is reachable with `%ee.1.i = %cond350.i`, where the scan has
+no bytes — see the definition's docstring. -/
 theorem WalkLocal.extraTokenLanded {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     {s : State} (h : C.block = "land.rhs457.i") :
     WalkLocal C s = (ScanLanded s "while.body462.i" "%inc463.i" "%cond350.i" C.inner ∨
-      ScanEntered s "if.then447.i" "%ee.1.i" "%cond350.i" C.inner) := by
+      ScanEntered s "if.then447.i" "%ee.1.i" "%cond350.i" C.inner ∨
+      ScanEmpty s "%ee.1.i" "%cond350.i") := by
   simp [WalkLocal, h]
 
 /-- The whitespace skip's register facts, out of the invariant. -/
