@@ -716,9 +716,10 @@ reason:
 | the entry counts (`inc`, `nep`, `hge`) | **produced**: the witnesses are the loop's values, and `hge` is `ult (C.k+1) G.nep` at `C.k + 1 = G.nep`, a word compared with itself |
 | the merge's five cells (`%inc.i`, `%nep`, `%sp.i.0248`, `%e`, `%4`) | **produced**: `%sp.i.0248` is `WalkInv.depth_reg` itself (so `spv := C.sp`, no premise), and the other four from premises at the loop head: `hlastMerge_envInc`/`…Nep`/`…Sp`/`…E`/`…Four` peel `lookupName` from the merge down to `s`, so no field is stated at a state the caller would have to compute |
 | `hterm`, `hk2nep`, `hcw0`, `hinner` | **produced**: `G.nep` below `2^64`, the loop's equation, the scan's last visit, and the refill's `1 ≤ C.inner` (`walkLoopHead_inner_pos`, from `C.inner = walkInnerCap G`) |
-| the tail (`r₁`, `r₂`, `r₃`, `ev`, `hTail`) | **produced**: the three calls' contracts applied at their three staged argument lists (`s2ValuePosContract`, `s2ScalarValueContract`, `s2AfterValueContract`), composed by `consumerTailSegAt` in `hlastTail_of_calls`.  Contract 1's post hands the caller's memory back, so the stream read is stated at the staging and re-expressed at `r₁.mem`; contract 3's post names the copy call's answer and memory.  Contract 2's post is existential in the record (`s2ScalarValueAppend`), and the bundle's `ev` is the *trace's* record, so `happ₂` — the appended record *is* `ev`'s — stays a premise |
+| the tail (`r₁`, `r₂`, `r₃`, `ev`, `hTail`) | **produced**: the three calls' contracts applied at their three staged argument lists (`s2ValuePosContract`, `s2ScalarValueContract`, `s2AfterValueContract`), composed by `consumerTailSegAt` in `hlastTail_of_calls`.  Contract 1's post hands the caller's memory back, so the stream read is stated at the staging and re-expressed at `r₁.mem`; contract 3's post names the copy call's answer and memory.  Contract 2's post is existential in the record, so the trace's naming of the appended record (`happ₂`) stays a premise — see the row for it below |
 | the scan's landing (`idx`, `a`, `src`, `sel`, `x47`, `hpreS`, `hincS`, `hopS`, `h3S`, `h47`, `hloc105`, `hloc96`) | **produced**: `hlastEntry_pre` and `hlastEntry_phiSel` are the entry's own construction; `%ee.1.i` and `%3` peel to the tail's start (`hlastEntry_envEe`, `hlastEntry_env3`), so `idx = ofNat 64 ei` and `a = G.b`; `%47` is `landRhs457OutAt`'s own cell (`x47 = ofNat 8 q`), and `q` is the byte read's value (`q = bytesToNat bs`, so `hbsS` is `rfl`); `hloc105`/`hloc96` hold because neither `NodeBlock105` nor `LeafBlock96` is a `WalkLocal` scan block (`hlastLoc105`, `hlastLoc96`) |
-| the scan's byte read and its class (`hpos`, `hreadS`, `hbit47`, `hws47`, and `bs`) | **premises, correctly: the document's.**  The byte at `G.b + idx`, the bound its extraction needs, and the two tests on it are properties of `G.bs`; `walkScanLinks457` takes them, and neither the invariant nor the staging fixes a document byte's value |
+| the scan's byte read and its class (`hpos`, `hreadS`, `hbit47`, `hws47`, and `bs`) | **premises, correctly: the document's.**  The byte at `G.b + idx`, the bound its extraction needs, and the two tests on it are properties of `G.bs`; neither the invariant nor the staging fixes a document byte's value.  `hreadS` stays at `r₃.mem`, and the reconciliation that would move it to the third call's entry memory is **not available**: it needs the callee's write region (`s2AfterValueFoot`) disjoint from `G.b + idx`, and the model carries stack/token/log separation but **no document-versus-staging separation** — the invariant *cannot* state it |
+| the appended record's identity (`happ₂`) | **premise — a witness the producer does not expose, not a missing fact.**  `s2ScalarValuePost` concludes the append existentially in the record, while the bundle's `ev` is the *trace's* record and the tail's carry advances the trace by it; naming the record is the emission's step, not the callee's.  This is the count-without-a-name shape one level out.  **For the contract slice's owner:** if `s2ScalarValuePost` exposed the appended record, `happ₂` would become derivable for every consumer, not only this one |
 | the latch's local (`hlatch`) | **reduced**: `WalkLocal` at `while.body462.i` *is* the `ScanCount` the latch's own state writes |
 | the latch's exit test (`hq`, `hcwL`, `hqc`, `hcw64`, `hexit`, `htokL`) | **reduced**: `%q.0.i246` and `%cond350.i` are cells the scan's own states write; `hexit` is the exit's local at the latch |
 | the head's byte | **produced by the invariant**: `h8` is `hInv.iter.reg8`, and the witness is the name `hlastByte G C = ofNat 8 (entryByte G C.k).toNat` |
@@ -726,6 +727,21 @@ reason:
 | the default arm's and the seam's cells | **resisting: the entry stream's.**  `%4`'s lane, `%idxprom.i`, the token's end and its gap are the entry's own values (`hpre5` is a closed `phi` lookup and could be produced by fixing `reg`) |
 | the second byte's class (`h8c`) | **produced**: `if.end372.i` binds five cells and none is `%8`, so `hlastSeam_env8` peels the seam to the token's end and `h8c` *is* `h8end`.  The three class bits stay premises about that byte |
 | the merge's `%e` and `%4` *values* | **resisting: the staging's** — peeled to `s`, and there they are the entry's error slot and its fourth argument |
+
+**A lemma whose conclusion has no landing site contributes its premises, not its
+conclusion.**  `walkScanLinks457` concludes a segment from the landing to the latch, and
+the bundle carries no field of that shape: what it carries at the landing is that
+lemma's premise set, so the producible part of it is produced directly rather than
+through a lemma whose conclusion has nowhere to land.  That is the composition-home rule
+read backwards — the home is chosen by where the term is *stated*, so a composition
+whose target is not a field supplies evidence, not a segment.
+
+**The map's final shape, per row:** 7 produced, 2 reduced to a named premise, 3 premises
+held correctly (the document's byte, the document's class bits, and the record the
+callee does not name), 2 resisting (the entry stream's cells and the staging's `%e`/`%4`
+values).  That split — seven of fourteen rows derived, and of the remaining seven, five
+premised for a stated reason and only two resisting — is what this bundle's producer
+actually establishes.
 
 Nothing above is a field weakened to make a proof go through: the derived witnesses
 and the produced fields are consequences, and the two shape changes (`hTail` a
