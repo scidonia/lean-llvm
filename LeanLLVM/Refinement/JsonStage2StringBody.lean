@@ -6416,6 +6416,92 @@ theorem test_s2StringBodyArm_scan_refused {mem extra : Mem} {x : State}
       ⟨(next, 8), by simp, le_rfl, le_rfl⟩ (by rw [wordBytes, natToBytes_length])
 
 
+set_option maxHeartbeats 12000000 in
+set_option maxHeartbeats 12000000 in
+/-- **The scan's accepting exit finishes form `2`** at the staging's argument list:
+the callee's decoded answer, the model's decoded memory, and the arm's chain joined
+by the cursor write's absorption.  The memory's hypotheses are the model's five
+regions, pairwise separated and present in the staging — the same facts the
+refusing arm spends, at the shorter distance the accepting answer writes. -/
+theorem s2StringBodyArm_scan_decoded {mem : Mem} {x : State}
+    {ch p dst outn xp xj : Nat} {len nxp : BitVec 64}
+    {base c1 ei next lane k e' : Nat} {ps : List Nat} {body out : List UInt8}
+    {conv : BitVec 64} {outj : List UInt8}
+    (hpc : x.pc = "land.lhs.true")
+    (hmem : x.mem = writeBytes mem xj (wordBytes 8 c1))
+    (hexp : s2StringBodyCalls "leanllvm_json_escape_expand"
+      [.ptr p, .int 64 len, .ptr dst, .ptr ei, .ptr xp, .ptr xj, .int 64 nxp,
+       .int 64 (BitVec.ofNat 64 (p - base))]
+      (writeBytes x.mem ei (natToBytes (0#64).toNat 8)) x.next =
+      some { ret := .int 64 (BitVec.ofNat 64 out.length),
+             mem := s2StringBodyExpandMem x.mem ei dst xj out outj, next := x.next })
+    (hWj : outj = wordBytes 8 (c1 + k))
+    (hsub : lookupName x.env "%sub.ptr.sub" =
+      some (.int 64 (BitVec.ofNat 64 (p - base))))
+    (hlen : lookupName x.env "%len" = some (.int 64 len))
+    (hconv : lookupName x.env "%conv" = some (.int 64 conv))
+    (hbit7 : evalICmpNat .ugt 64
+      ((BitVec.ofNat 64 (p - base)) + len).toNat conv.toNat = 1#1)
+    (hp : lookupName x.env "%p" = some (.ptr p))
+    (hdst : lookupName x.env "%dst" = some (.ptr dst))
+    (hei : lookupName x.env "%ei" = some (.ptr ei))
+    (hxp : lookupName x.env "%xp" = some (.ptr xp))
+    (hxj : lookupName x.env "%xj" = some (.ptr xj))
+    (hnxp : lookupName x.env "%nxp" = some (.int 64 nxp))
+    (houtn : lookupName x.env "%outn" = some (.ptr outn))
+    (hbit9 : evalICmp .eq (BitVec.ofNat 64 out.length) 0xffffffffffffffff#64 = 0#1)
+    (hlenOut : out.length < 2 ^ 64)
+    (hnext : ei = next)
+    (hrec : stage2ReadWord mem (ch + 1112) 8 = some e')
+    (hmodel : stage2StringBody mem ch p len.toNat dst outn xp xj nxp.toNat =
+      some (writeBytes (writeBytes (writeBytes mem dst out) xj
+        (wordBytes 8 (c1 + k))) outn (wordBytes 8 out.length), 2,
+        wordBytes 8 out.length))
+    (hlenOutLen : out.length ≤ len.toNat)
+    (hei_p : readBytes mem ei 8 ≠ none)
+    (hdst_p : readBytes mem dst out.length ≠ none)
+    (hxj_p : readBytes mem xj 8 ≠ none)
+    (houtn_p : readBytes mem outn 8 ≠ none)
+    (hd_ei : ei + 8 ≤ dst ∨ dst + out.length ≤ ei)
+    (hx_ei : ei + 8 ≤ xj ∨ xj + 8 ≤ ei)
+    (hd_xj : dst + out.length ≤ xj ∨ xj + 8 ≤ dst)
+    (ho_ei : ei + 8 ≤ outn ∨ outn + 8 ≤ ei)
+    (ho_d : outn + 8 ≤ dst ∨ dst + out.length ≤ outn)
+    (ho_x : outn + 8 ≤ xj ∨ xj + 8 ≤ outn) :
+    s2StringBodyConcludes
+      [.ptr ch, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj,
+        .int 64 nxp] mem next 5 x := by
+  have hmemEq : writeBytes
+        (s2StringBodyExpandMem x.mem ei dst xj out outj) outn
+        (natToBytes out.length 8)
+      = s2StringBodyDecodedMem mem dst xj outn ei outj out := by
+    rw [hmem, hWj]
+    exact test_s2StringBodyMemory_decoded_cursor mem hei_p hdst_p hxj_p houtn_p
+      hd_ei hx_ei hd_xj ho_ei ho_d ho_x
+  refine ⟨⟨.int 32 (BitVec.ofNat 32 2),
+      s2StringBodyDecodedMem mem dst xj outn ei outj out, next + 8⟩, ?_, ?_, ?_⟩
+  · have hrun := s2StringBodyExit_decoded_named (e := x) (extra :=
+      s2StringBodyExpandMem x.mem ei dst xj out outj) (nx := x.next)
+      (call := BitVec.ofNat 64 out.length) (outj := outj) (out := out)
+      hpc hsub hlen hconv hbit7 hp hdst hei hxp hxj hnxp hexp hbit9 houtn rfl rfl
+      hlenOut
+    rw [hmemEq] at hrun
+    exact hrun
+  · refine ⟨writeBytes (writeBytes (writeBytes mem dst out) xj
+        (wordBytes 8 (c1 + k))) outn (wordBytes 8 out.length), 2,
+      wordBytes 8 out.length, hmodel, rfl, ?_, rfl⟩
+    rw [← hnext, hWj]
+    rfl
+  · simp only [s2StringBodyFoot, hrec]
+    have hWjl : outj.length = 8 := by rw [hWj, wordBytes, natToBytes_length]
+    have hsl : (wordBytes 8 out.length).length = 8 := natToBytes_length _ _
+    refine ((((UnchangedOutside.refl' mem _).write_le (a := dst) (w := out.length)
+      ⟨(dst, len.toNat), by simp, le_rfl, by omega⟩ le_rfl).write_le (a := xj)
+      (w := outj.length) ⟨(xj, 8), by simp, le_rfl, by omega⟩ le_rfl).write_le
+      (a := outn) (w := 8) ⟨(outn, 8), by simp, le_rfl, le_rfl⟩
+      (le_of_eq hsl)).write_le (a := ei) (w := 8) ⟨(next, 8), by simp, by omega,
+      by omega⟩ (le_of_eq hsl)
+
 /-! ### Axiom footprints
 
 The runs and the loop's shape print their footprints with `#guard_msgs`, so the
