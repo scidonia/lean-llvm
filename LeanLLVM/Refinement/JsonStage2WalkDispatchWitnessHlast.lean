@@ -281,6 +281,12 @@ structure HlastFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) 
   hidx5 : lookupName (headAS₅ s x inc nep).env "%idxprom.i" = some (.int 64 ix)
   htok5 : lookupName (headAS₅ s x inc nep).env "%t352.i" = some (.ptr C.stage.tok)
   hgap5 : lookupName (headAS₅ s x inc nep).env "%gap.i" = some (.ptr (C.stage.tok + 20))
+  /-- **The last entry's arm.**  `= 0`, because the last entry's `%cond350.i` is `%4` and
+  its position is the stream's end, so the token's end is not above the index.  The
+  continuing bundle's `hugt` (`HcontFacts`, `JsonStage2WalkRevolution`) is `= 1`: a
+  continuing entry is non-empty and its bound is above its index.  Two bundles share the
+  field name and correctly carry opposite values, so a reader must read the arm with the
+  value. -/
   hugt : evalICmp .ugt c ix = 0
   /-- The seam's cells: the token's end `phi`, the stored word and the byte it tests. -/
   p : String
@@ -743,7 +749,7 @@ is produced at those.
 | the eight class bits on the head's byte | **premises, correctly: the document's**, not the staging's.  The four pivot decisions, `if.end372.i`'s byte test and the three class tests are all properties of `entryByte G C.k` — and the seam's four are about the *same* byte, because `%8` is not rebound: `hlastEndS_env8` peels it from the token's end to the loop head, so `b8 = hlastByte G C` and `h8end` is `hInv.iter.reg8`.  What the staging fixes is addresses, not values |
 | the default arm's and the seam's cells (`reg`, `c`, `p`, `op`, `e`, `b8`, and the ten facts about them) | **produced**: `hlast_pre5` and `hlast_phi6` are closed `phi` computations; `%4` and `%gap.i` peel from the default arm to `s` (`hlastAS5_envFour`, `hlastAS5_envGap`) and `%8`/`%end.i` from the token's end (`hlastEndS_env8`, `hlastEndS_envEnd`), so `c = ofNat 64 v` (the staging's `h4L`), `%end.i` is `regs`'s, and `pre` is the state's own predecessor (`hlast_pre6`); `e = ix` and the `%idxprom.i`/`%t352.i` lookups follow from `hidxS`/`htokS`, stated at the loop head |
 | the seeded registers `%idxprom.i` and `%t352.i` | **not shown derivable and not shown underivable.**  The producer takes them at the loop head (`hidxS`, `htokS`) so no field is stated at a state the caller would have to compute.  No `WalkInv` clause names either — `walkStaticRegs`'s twenty-four names and `WalkPtrs`'s six do not contain them — so the invariant as it stands has no route to them.  The producer they would need is the seed's: `walkSeed`'s environment binds `%t352.i` to the token and `%idxprom.i` is loaded per entry.  Neither a derivation nor an impossibility is claimed here |
-| `hugt` | **premises, correctly: the document's.**  The token's position against the entry's index is a relation between `%4`'s word and the entry stream, and neither the invariant nor the staging fixes it |
+| `hugt` | **premises, correctly: the document's, and it is the last entry's arm.**  The token's position against the entry's index is a relation between `%4`'s word and the entry stream, and neither the invariant nor the staging fixes it; its value `= 0` is the last entry's (`%cond350.i` is `%4`, the stream's end), where the continuing bundle's is `= 1` — the two differ by arm rather than by a mistake |
 | the second byte's class (`h8c`) | **produced**: `if.end372.i` binds five cells and none is `%8`, so `hlastSeam_env8` peels the seam to the token's end and `h8c` *is* `h8end`.  The three class bits stay premises about that byte |
 | the merge's `%e` and `%4` *values* | **premises, correctly: the staging's.**  No `WalkInv` clause names either — `walkStaticRegs`'s twenty-four names exclude both, and `WalkPtrs`'s six do not contain them — so the values can only be the caller's `heL`/`h4L`.  The producer peels the two cells from the merge to `s`, so the caller states them at the loop head rather than at a computed state |
 

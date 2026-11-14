@@ -97,3 +97,19 @@ import LeanLLVM.StrtodTier3
 import LeanLLVM.StrtodReader
 import LeanLLVM.Refinement.JsonStage2WalkDispatchWitness
 import LeanLLVM.Refinement.JsonStage2WalkDispatchWitnessState
+
+-- The walk's chain, in dependency order: the head's chains and the last entry's
+-- facts, the revolution and its price, the continuing entry's bundle, the exit and
+-- the flush, and the premise that ends the chain.
+import LeanLLVM.Refinement.JsonStage2WalkHeadChainA
+import LeanLLVM.Refinement.JsonStage2WalkHeadChainC
+import LeanLLVM.Refinement.JsonStage2WalkFinishPath
+import LeanLLVM.Refinement.JsonStage2WalkHeadChainScan
+import LeanLLVM.Refinement.JsonStage2WalkPrefixCount
+import LeanLLVM.Refinement.JsonStage2WalkDispatchWitnessHlast
+import LeanLLVM.Refinement.JsonStage2WalkRevolutionPrefix
+import LeanLLVM.Refinement.JsonStage2WalkRevolution
+import LeanLLVM.Refinement.JsonStage2WalkHcontFactsOfStaging
+import LeanLLVM.Refinement.JsonStage2WalkExitProducer
+import LeanLLVM.Refinement.JsonStage2WalkArenaWord
+import LeanLLVM.Refinement.JsonStage2WalkPremisesOfStaging

@@ -27,9 +27,9 @@ step — are composed here from the steps the layer already states.
   `walkStage_at_pre_fields` — `walkStage_at_pre`'s construction with the fields named.
 * **The loop's step** is `walkLoopStep_of_staging`: `walkLoopStep_of_dispatch_exit` at a
   `WalkDispatch` and a `WalkExit`.  The exit is `walkExit_at_stage2Calls`, and the
-  dispatch's continuing case is `walkRevolution_seg`'s composition restated with the
-  merge's predecessor named (`walkRevolution_at`), because `WalkDispatch` states the
-  predecessor and a segment's endpoint does not.
+  dispatch's continuing case is `walkRevolution_seg`, whose conclusion names the
+  endpoint's invariant and predecessor; `WalkDispatch` reads both, so the dispatch is
+  that lemma's conclusion read at the merge's own cells (`walkDispatch_of_continue`).
 
 Four groups are premises, one per obstruction, and each is a bundle rather than a field
 per fact:
@@ -48,6 +48,17 @@ cursor's five and the four allocas; `%z` and `%s` themselves are not among them.
 The bundle that produces the dispatch reads the pointer group at the same head states
 the loop step does, which is why the two are supplied together
 (`walkLoopStep_of_staging`).
+
+## When this module's claims are checked
+
+`LeanLLVM.lean` is the default target's manifest, and a module it does not import is
+compiled by no default build — its own `lake build` succeeds on a module nothing consumes.
+The chain's last modules sat outside that manifest while they were being written, so a
+green there was the green of never having been built.  **A theorem is green when the
+default target compiles it, not when its own module does.**  This module and the eleven
+below it (`HeadChainA`/`C`/`Scan`, `FinishPath`, `PrefixCount`, `DispatchWitnessHlast`,
+`RevolutionPrefix`, `Revolution`, `HcontFactsOfStaging`, `ExitProducer`, `ArenaWord`) are
+imported at the end of `LeanLLVM.lean` for that reason.
 -/
 
 import LeanLLVM.Refinement.JsonStage2WalkExitProducer
@@ -62,106 +73,6 @@ open LeanLLVM.Refinement.BlockEval
 open LeanLLVM.Refinement.JsonStage2IR
 
 namespace WalkScope
-
-/-! ### The continuing entry's dispatch, with the merge's predecessor named -/
-
-/-- **One continuing entry's dispatch to the merge**, at the terms `WalkDispatch` reads
-them: the segment, the target block, the carry's index, the target's predecessor and
-the price.  `walkRevolution_seg` states the segment and the price and leaves the
-endpoint existential, which is all a completion needs; `WalkDispatch` also reads the
-merge's `phi` selection, and that needs the predecessor the endpoint was entered from,
-so the endpoint is named here.
-
-The composition is `walkRevolution_seg`'s piece for piece — the head's counted `18`,
-the scan's visits, the latch's exit and the merge's one step — and its price,
-`18 + n + 2` against `32 + 8·ΔA`, is that lemma's arithmetic. -/
-theorem walkRevolution_at {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
-    (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)
-    (f : HcontFacts G C s) :
-    ∃ (Cd : WalkCarry G) (sd : State) (p : Nat),
-      WalkSegment (stage2Calls stage2SubCalls) G C s Cd sd p ∧
-      Cd.block = "cleanup478.i" ∧
-      WalkInv G Cd sd ∧
-      sd.pre = some "if.end473.i" ∧
-      p + 2 ≤ stage2EntryAllowance * (C.k + 1 - C.k) +
-        stage2ByteAllowance * (entryPos G (C.k + 1) - entryPos G C.k) := by
-  obtain ⟨s₀, hs₀, hsegP⟩ :=
-    hlastPrefixSeg (G := G) (C := C) (s := s) hInv hblock f.h8 f.hlt91 f.hlt123 f.hlt125
-      f.hne125 f.hinc f.hnep f.hge f.hpre5 f.hav5 f.hidx5 f.htok5 f.hgap5 f.hugt f.hpre6
-      f.hin6 f.hv6 f.hend6 f.h8end f.hbit6 f.h8c f.hc110 f.hc116 f.hceq116 f.r₁ f.r₂
-      f.r₃ f.ev f.hTail f.hpreS f.hincS f.hopS f.h3S f.hpos f.hreadS f.hbsS f.hloc105
-      f.h47 f.hbit47 f.hws47 f.hloc96 f.hlatch
-  have hsegP' : WalkSegment (stage2Calls stage2SubCalls) G C s (ScanLatchC C f.ev)
-      (contLatchF f) ((((6 + 1) + 5) + 3) + 3) := by
-    rw [hs₀] at hsegP
-    exact hsegP
-  have hcounter : lookupName (contLatchF f).env "%q.0.i246" =
-      some (.int 64 (BitVec.ofNat 64 f.ei)) :=
-    latch_counter (contEntryF f) (BitVec.ofNat 64 f.ei) f.a f.q f.x47
-  have hbound : lookupName (contLatchF f).env "%cond350.i" =
-      some (.int 64 (BitVec.ofNat 64 f.cd)) := f.hcwL
-  have hcdLt : f.cd < G.n := lt_of_le_of_lt f.hspan (entryPos_lt G hk)
-  have hmax : G.n ≤ 2 ^ 32 := by
-    have := G.maxDoc
-    simpa only [stage2MaxDocument] using this
-  have hc64 : f.cd < 2 ^ 64 := by omega
-  have hc63 : f.cd ≤ 2 ^ 63 := by omega
-  have heicd := f.heicd
-  have hcd1 : 1 ≤ f.cd := by omega
-  obtain ⟨Cm, sm, n, hsegR, hInvR, hbR, hiR, hcR, hnR⟩ :=
-    contScanRounds G C s f hsegP'.inv' rfl hcounter hbound hc63 f.heicd
-  have hlocal : ScanCount sm "%q.0.i246" "%cond350.i" Cm.inner := by
-    have h := hInvR.blockLocal
-    rwa [WalkLocal.extraToken hbR] at h
-  have hinner : f.cd - (f.cd - 1) ≤ Cm.inner :=
-    ScanCount.same hlocal hiR hcR hc64 (by omega)
-  have hie : (f.cd - 1) + 1 = f.cd := by omega
-  obtain ⟨s₁, hseg₁, -, hs₁, hInv₁⟩ :=
-    scanExitSeg (calls := stage2Calls stage2SubCalls) (G := G) (C := Cm) (s := sm)
-      hInvR hbR hiR hcR hinner hie hc64 (by intro e _ _ _; simp [WalkLocal])
-  obtain ⟨tok, htok⟩ := f.htok Cm sm hInvR hbR
-  have htok₁ : lookupName s₁.env "%t352.i" = some (.ptr tok) := by
-    rw [hs₁]
-    exact scanExit_tok sm (f.cd - 1) f.cd htok
-  obtain ⟨s₂, hl₂, hs₂⟩ :=
-    walkIfEnd473_at (sub := stage2SubCalls) (G := G) (C := ScanCMerge Cm) (s := s₁)
-      hInv₁ rfl htok₁
-  have hpc₁ : s₁.pc = "if.end473.i" := by
-    rw [hInv₁.pc_eq]
-  have hpre₂ : s₂.pre = some "if.end473.i" := by
-    rw [hs₂]
-    show some s₁.pc = some "if.end473.i"
-    rw [hpc₁]
-  have hseg : WalkSegment (stage2Calls stage2SubCalls) G C s
-      { ScanCMerge Cm with block := "cleanup478.i" } s₂ (((18 + n) + 1) + 1) :=
-    ((hsegP'.trans hsegR).trans hseg₁).trans (WalkSegment.of_link hl₂)
-  refine ⟨{ ScanCMerge Cm with block := "cleanup478.i" }, s₂, ((18 + n) + 1) + 1,
-    hseg, rfl, hseg.inv', hpre₂, ?_⟩
-  have hd : f.cd - 1 - f.ei ≤ entryPos G (C.k + 1) - entryPos G C.k := by
-    have h1 : f.cd - 1 ≤ entryPos G (C.k + 1) - 1 := Nat.sub_le_sub_right f.hspan 1
-    have h2 : f.cd - 1 - f.ei ≤ (entryPos G (C.k + 1) - 1) - f.ei :=
-      Nat.sub_le_sub_right h1 f.ei
-    have h3 : (entryPos G (C.k + 1) - 1) - f.ei ≤
-        (entryPos G (C.k + 1) - 1) - entryPos G C.k :=
-      Nat.sub_le_sub_left f.hstart (entryPos G (C.k + 1) - 1)
-    have h4 : (entryPos G (C.k + 1) - 1) - entryPos G C.k ≤
-        entryPos G (C.k + 1) - entryPos G C.k :=
-      Nat.sub_le_sub_right (Nat.sub_le (entryPos G (C.k + 1)) 1) (entryPos G C.k)
-    exact le_trans h2 (le_trans h3 h4)
-  have hn2 : n ≤ 8 * (entryPos G (C.k + 1) - entryPos G C.k) :=
-    le_trans hnR (Nat.mul_le_mul_left 8 hd)
-  have hΔ : C.k + 1 - C.k = 1 := by omega
-  simp only [stage2EntryAllowance, stage2ByteAllowance, hΔ, Nat.mul_one]
-  have hl : 18 + n + 1 + 1 + 2 = n + 22 := by omega
-  rw [hl]
-  have h8 : n + 22 ≤ 8 * (entryPos G (C.k + 1) - entryPos G C.k) + 22 :=
-    Nat.add_le_add_right hn2 22
-  have h22 : 8 * (entryPos G (C.k + 1) - entryPos G C.k) + 22 ≤
-      32 + 8 * (entryPos G (C.k + 1) - entryPos G C.k) := by
-    have hstep := Nat.add_le_add_left (by decide : (22 : Nat) ≤ 32)
-      (8 * (entryPos G (C.k + 1) - entryPos G C.k))
-    simpa only [Nat.add_comm] using hstep
-  exact le_trans h8 h22
 
 /-! ### The continuing entry's bundle, and the merge's cells -/
 
@@ -232,7 +143,7 @@ theorem walkDispatch_of_continue {m0 : Mem} {G : WalkGeom m0}
     WalkDispatch (stage2Calls stage2SubCalls) G := by
   intro C s hInv hhead hk
   obtain ⟨Cd, sd, p, hseg, hblock, hInvD, hpre, hprice⟩ :=
-    walkRevolution_at G C s hInv hhead hk (hcont C s hInv hhead hk)
+    walkRevolution_seg G C s hInv hhead hk (hcont C s hInv hhead hk)
   obtain ⟨hkC, hinc, hnep⟩ := hmerge C s hInv hhead hk Cd sd p hseg hblock
   have hdepth : evalOperand sd (Operand.reg "%sp.i.0248") =
       some (.int 32 (BitVec.ofNat 32 Cd.sp)) := hInvD.depth_reg
@@ -685,7 +596,7 @@ the input or a named missing preservation lemma.
 
 | premise | status |
 |---|---|
-| `WalkContinueFacts` | **`HcontFacts`' own supply, in `HlastFacts`' discipline.**  Its producer is `hlastFacts_of_staging`'s twin — the same three sources (the invariant's clauses, the document's content, the staging's addresses) read at the same states — and the bundle's fields are the head's byte and its four class bits, the entry counts and the default arm's cells, the seam's cells and the scan's landing.  That twin is `hcontFacts_of_staging` (`JsonStage2WalkHcontFactsOfStaging`), and what it still takes from its caller is the count test's value (`hge`, the entry stream's, `%inc.i` against `%nep`), the traversal's three hypotheses (`hround`, `hguard`, `hbyte`, supplied unweakened) and `htok`, which needs *the extra-token scan preserves a register it does not bind* — a statement a `WalkSegment` cannot carry, because the traversal returns its final state existentially. |
+| `WalkContinueFacts` | **`HcontFacts`' own supply, in `HlastFacts`' discipline.**  Its producer is `hlastFacts_of_staging`'s twin — the same three sources (the invariant's clauses, the document's content, the staging's addresses) read at the same states — and the bundle's fields are the head's byte and its four class bits, the entry counts and the default arm's cells, the seam's cells and the scan's landing.  That twin is `hcontFacts_of_staging` (`JsonStage2WalkHcontFactsOfStaging`), and what it still takes from its caller is the count test's value (`hnext : evalICmp .ult inc nep = 1`, the entry stream's own), the traversal's three hypotheses (`hround`, `hguard`, `hbyte`, supplied unweakened) and `htok`, which needs *the extra-token scan preserves a register it does not bind* — a statement a `WalkSegment` cannot carry, because the traversal returns its final state existentially.  **The count test's value is `1` here and `0` in `HlastFacts`, and both are right**: the fields are arm-specific — a continuing entry has one after it, so the scan's bound is above its index, while the last entry's is the stream's end.  A docstring that gives either value without its arm reads as a contradiction in the other.  **`hnext` is a candidate `WalkInv` clause beside the merge's two**: it follows from `C.k + 1 < G.nep` with the two counts pinned to `%k.0.i249 + 1` and `G.nep`, so it belongs with `%inc.i`/`%nep` in the future-supply paragraph rather than being derived now. |
 | `WalkMergeCells` | **structural, and no producer can exist in this vocabulary.**  `WalkSegment` records a run and an invariant, and neither names the blocks the run passed or the registers they bound; no lemma in the layer carries a register across a segment, so `%inc.i`, `%nep` and the header's index at the merge cannot be read off the segment that reaches it.  A producer needs a segment-level register-preservation statement, which the vocabulary does not have. |
 | `WalkHeadPtrs` | **the input's, like the class bits.**  `%z` and `%s` are bound by the entry block (`walkEntryState_env`) and by nothing else; no `WalkInv` clause names them (`WalkPtrs` has the dispatch's six, `walkStaticRegs` the twenty-four addresses), so the pair is supplied at the point a caller knows the staging. |
 | `WalkLoopEnd` | **supplied, with its first half's producer already in the tree.**  `facts` is `HlastFacts`, whose producer is `hlastFacts_of_staging` (which itself takes a bundle of supplied facts — the head's byte and class bits, the register cells and the calls' outcomes — so its own supply is the same discipline); `tail` is `ExitTail`, which `walkExit_at_stage2Calls` takes from the caller as the three calls' contracts composed at their staged argument lists. |
@@ -701,7 +612,6 @@ no vocabulary to state. -/
 
 /-! ### Axiom footprints -/
 
-#print axioms LeanLLVM.Refinement.WalkScope.walkRevolution_at
 #print axioms LeanLLVM.Refinement.WalkScope.walkDispatch_of_continue
 #print axioms LeanLLVM.Refinement.WalkScope.walkLoopStep_of_staging
 #print axioms LeanLLVM.Refinement.WalkScope.walkFlushAt_of_staging
