@@ -1,19 +1,30 @@
 /-
-# The arena cursor word: the exit's `hword`, and the size of producing it
+# The arena cursor word: a predicate the exit no longer states
 
-`WalkLoopStep`'s producer (`walkLoopStep_of_dispatch_exit`, `JsonStage2WalkAssembly`) takes
-three arguments, and the third is not implied by the other two:
+This module began as the cost of `WalkLoopStep`'s producer, whose third argument was the
+arena word at the loop head:
 
 ```lean
-hword : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
-  readBytes s.mem (C.stage.z + 48) 8 = some (wordBytes 8 C.alen)
+readBytes s.mem (C.stage.z + 48) 8 = some (wordBytes 8 C.alen)
 ```
 
-`WalkExit` only *takes* that word; `WalkDispatch` concludes `WalkInv` at the merge, whose
-arena clause is the inequality `log_alen`.  So the word is its own producer.  This module
-states what that producer is a statement about, lands the end it can land, and costs the
-rest: the two blocks that write the slot, the number of times a run can revise it, and the
-one arithmetic coincidence the exit's equality needs and the layer does not have.
+The obligation is gone: deleted in `3ea399e`, because it was both unsatisfiable and inert —
+the sections below are the evidence, and `WalkExit`'s own docstring now records the deletion.
+What remains here is what made the deletion decidable and what outlives it: the predicate
+named (`WalkArenaWord`), its relation to `WalkInv.log_alen`, the seed's end, the write-back's
+arithmetic (`arenaWord_writeBack_iff`, `not_arenaWord_of_lt`), and the census of the slot's
+two writers.
+
+**The rule this is worth remembering for:** the obligation survived as long as it did
+because the predicate was *stated* and its two *ends* — the exit's premise, and the same
+equality as a post clause — were two separate declarations, and nothing compared them.  A
+premise that one end supplies and the other discards is invisible until both ends are held
+in one hand, and a named predicate is what makes that comparison cheap.
+
+**What it looked like and what it was.**  A producer of the equality would have meant naming
+every successor along the dispatch; the equality's own falsity made the obligation six
+statement lines of deletion instead, and a producer would have hidden that — a producer of a
+falsehood reads as progress until someone asks what the premise is worth at both ends.
 
 ## Why `log_alen`'s inequality is not the equality the exit needs
 
@@ -62,31 +73,32 @@ state: the predicate is **false** there, not merely unproved.  `arenaWord_writeB
 the same statement at the store: the equality holds at the write-back's target iff the
 decoded prefix filled the reservation.
 
-**Consequence, and the reason this module stops where it does.**  `WalkExit`'s `hword`
-(`readBytes s.mem (C.stage.z + 48) 8 = some (wordBytes 8 C.alen)`) is therefore
-**unsatisfiable at any input whose decoded length is shorter than the extent it reserved**,
-and `WalkExit`'s post asserts the same equality at `sEnd`.  Both belong at `log_alen`'s
-witness `a`, not at `C.alen`: the exit's slot copy *reads* `z + 48`, so the value it carries
-is the slot's own, which `WalkInv.log_alen` already names (`a ≤ C.alen`), and the exit's path
-stores nothing at that address (the census again), so the clause at `a` is the invariant
-transported rather than a new fact.  A producer of the equality at `C.alen` would be a
-producer of a falsehood; that is why no route through the dispatch is worth taking.
+**Consequence.**  The equality was therefore **unsatisfiable at any input whose decoded
+length is shorter than the extent it reserved**, and `WalkExit` asserted it twice — a premise
+at the head and the same equality as a post clause at `sEnd`.  Its correct home is
+`log_alen`'s witness `a`, not `C.alen`: the exit's slot copy *reads* `z + 48`, so the value it
+carries is the slot's own, which `WalkInv.log_alen` already names (`a ≤ C.alen`), and the
+exit's path stores nothing at that address (the census again).  Restating the clause at `a`
+would have duplicated an invariant — `WalkInv G Cend sEnd` already carries that existential —
+so the clause was deleted instead (`3ea399e`), and a producer of the equality at `C.alen`
+would have been a producer of a falsehood.
 
-**The premise is also inert.**  Both of its ends discard it: the only producer of `WalkExit`
-takes the head's word as `_harenaHead` and never reads it
-(`walkExit_at_stage2Calls`, `JsonStage2WalkExitProducer`), and the only consumer of
-`WalkExit` destructures the post's word clause as `-`
-(`walkLoopStep_of_dispatch_exit`).  So the third argument of the loop step's producer is
-passed and never used, and the arena obligation the exit actually carries is
-`harenaMerge` — the same equality one state later, at `cleanup478.i`, where the slot has not
-been rewritten either and `log_alen` gives `a ≤ C.alen` just as at the head.  The repair is
-therefore a deletion rather than a producer: the head word from `WalkExit`'s premise, the
-word clause from its post (its `WalkInv` already carries `log_alen`), and `harenaMerge` from
-the producer — no proof step anywhere depends on them.
+**Why it was deleted rather than produced.**  Both ends discarded it: the only producer of
+`WalkExit` took the head's word as an unused binder and never read it, and the only consumer
+(`walkLoopStep_of_dispatch_exit`) destructured the post's word clause as `-`.  Nor was the
+exit the whole story — the producer's live arena premise was the same equality one state
+later, at `cleanup478.i`, where the slot has not been rewritten either and `log_alen` gives
+`a ≤ C.alen` just as at the head.  So the repair was a deletion: the head word from the
+premise, the word clause from the post, the merge's word from the producer.  `3ea399e`
+performs it, and the tree confirms no proof step depended on them — the producer and all four
+importers of `WalkExit` build, and the tracked test compiles.
 
-The search that establishes "nothing forces it": the only occurrences of `wordBytes 8 C.alen`
-in the development are `WalkExit`'s premise and its post (`JsonStage2WalkAssembly`), i.e. the
-statements this section finds unsatisfiable; `WalkInv.logArena_le` reads the slot as `≤`, and
+**The search, after the deletion.**  `wordBytes 8 C.alen` appears in no statement of the
+development: `grep -rn "wordBytes 8 C.alen" LeanLLVM/` now returns this module's own
+predicate and the record of the deletion in `WalkExit`'s docstring, and nothing else — no
+premise, no post, no lemma.  Before the deletion the same grep returned exactly the two
+`WalkExit` clauses this section finds unsatisfiable, which is the whole argument: no third
+statement ever mentioned the equality.  `WalkInv.logArena_le` reads the slot as `≤`, and
 `spans_inside`/`spans_end` bound extents by the document and by the cursor.
 
 ## The two writers, and the number of revisions
@@ -98,17 +110,18 @@ for `z + 48`.  So a run revises the slot **at most once per consumed entry**: `e
 then one write-back per append, so at most `G.nep + 1` revisions in a run, and no revision
 between one write-back and the next reserve.
 
-That is the producer's size, and it is why the statement is head-to-head rather than
-per-path: the obligation is *one* predicate, preserved across each revolution — not a
-memory trace of the dispatch's ~15 blocks per token class times the scan's visits.  The
-two ends are `WalkSeedState`'s slot clause (the seed, `walkSeed_arenaWord` below) and
-`if.else285.i`'s store; there is no third place to look, and between them the predicate can
-only be *revised*, never silently rewritten.
+That was the obligation's size, and it is why the statement would have been head-to-head
+rather than per-path: *one* predicate, preserved across each revolution — not a memory trace
+of the dispatch's ~15 blocks per token class times the scan's visits.  The two ends are
+`WalkSeedState`'s slot clause (the seed, `walkSeed_arenaWord` below) and `if.else285.i`'s
+store; there is no third place to look, and between them the slot can only be *revised*,
+never silently rewritten.
 
-## What this module does not do, and why
+## Why no producer was built, and what its absence shows about the vocabulary
 
-It does **not** prove the head-to-head preservation, and the reason is structural rather
-than a missing arithmetic lemma.  The walk's step vocabulary carries no memory clause:
+This module does **not** prove the head-to-head preservation, and the reason is structural
+rather than a missing arithmetic lemma — which is why the obligation was deleted rather than
+produced.  The walk's step vocabulary carries no memory clause:
 `WalkLink` is `{inv, step, inv', mono}` and `WalkSegment` is `{run, inv'}` — the segment's
 own docstring says a general memory clause "would have to be a write trace, composed by
 `trans`".  So the only memory-carrying statement that crosses a step or a segment is
@@ -122,7 +135,8 @@ dispatch's composites — `hlastPrefixSeg`, `contScanRounds`, `walkScanToMerge` 
 revolution's two closing steps (`walkBack_step_at`, `whileBody_step`) name no memory, so
 the predicate cannot be transported across them.
 
-So a producer of `hword` must do one of two things, and neither is assembly:
+So a producer of the equality would have had to do one of two things, and neither is
+assembly:
 
 * **name every successor** along the dispatch — a second pass over the path at memory
   level, sized like the exit producer — with the write-back's `a + l = C.alen` as the one
@@ -131,9 +145,15 @@ So a producer of `hword` must do one of two things, and neither is assembly:
   composition rule — which is a change to `JsonStage2WalkScope`'s `WalkLink` and
   `JsonStage2WalkTraverse`'s `WalkSegment`, and therefore to every producer that builds one.
 
-What this module settles is the part that does not need either: the predicate's shape, its
-compatibility with `log_alen`, the seed's base case, the two writer blocks, the revision
-count, and the exact arithmetic the write-back's equality costs.
+Neither was needed, because the equality is not true.  The structural fact stands on its own
+and is the constraint any future memory-level obligation meets: **a memory fact does not
+cross a step or a segment unless some lemma names the successor**, the layer's composites
+name their targets existentially, and the only memory-carrying clause that crosses them is
+`WalkInv.log_alen`.
+
+What this module settles — independently of the obligation it was written for — is the
+predicate's shape, its compatibility with `log_alen`, the seed's base case, the two writer
+blocks, the revision count, and the exact arithmetic the write-back's equality costs.
 -/
 
 import LeanLLVM.Refinement.JsonStage2WalkScope
@@ -147,19 +167,20 @@ open LeanLLVM.Refinement.JsonStage2IR
 
 namespace WalkScope
 
-/-! ### The predicate, in `hword`'s shape -/
+/-! ### The predicate, in the shape the exit used to require -/
 
 /-- **The arena cursor word at its slot.**  `%alen` addresses `z + 48`; the log's index is
-the value the word holds.  This is `hword`'s statement, named so the producer and its two
-ends can be talked about: the seed's clause (`walkSeed_arenaWord`), the write-back's store
-(`arenaWord_writeBack_iff`), and the exit's hypothesis are all this predicate. -/
+the value the word holds.  This is the shape the exit used to require, named because the
+comparison that decided against it needs a name: the seed's clause (`walkSeed_arenaWord`),
+the write-back's store (`arenaWord_writeBack_iff`), and the two deleted `WalkExit` clauses
+are all this predicate. -/
 def WalkArenaWord {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : Prop :=
   readBytes s.mem (C.stage.z + 48) 8 = some (wordBytes 8 C.alen)
 
-/-- **The equality is the invariant's arena clause at its tight point.**  A head carrying
-the word still satisfies `WalkInv`'s `log_alen` — with `a := C.alen` — so the producer is a
-*strengthening* at the head, not a competing clause: nothing has to be removed from the
-invariant to carry both. -/
+/-- **The equality is the invariant's arena clause at its tight point.**  A state carrying
+the word still satisfies `WalkInv`'s `log_alen` — with `a := C.alen` — so the equality was a
+*strengthening*, not a competing clause: asserting it needed nothing removed from the
+invariant, which is why its deletion takes nothing away either. -/
 theorem WalkArenaWord.log_alen {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     (h : WalkArenaWord G C s) (hInv : WalkInv G C s) :
     ∃ a, G.ndst0 ≤ a ∧ a ≤ C.alen ∧
