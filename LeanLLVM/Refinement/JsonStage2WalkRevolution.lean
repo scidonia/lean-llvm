@@ -464,6 +464,11 @@ counted `23`, the scan's visits at `walkScanRounds457`'s bound, the latch's exit
 merge: a segment to `cleanup478.i` priced at `23 + n + 2` against the entry's own credit
 `32·1 + 8·ΔA`.
 
+The endpoint's invariant and its predecessor are part of the conclusion because
+`WalkDispatch` reads the merge's `phi` selection, and a selection is stated at the edge the
+endpoint was entered by.  A consumer that only prices can ignore both; a consumer that
+states `WalkDispatch` cannot re-derive them from an existential endpoint.
+
 `ΔA` is the entry's span and `n` the scan's visits: `ci = v - 1 - ei ≤ ΔA` is
 `hspan`/`hstart`, so the byte term pays the visits and the entry term pays the fixed part
 — `hcontPrefixSeg`'s `23`, `scanExitSeg`'s `1` and `walkIfEnd473_at`'s `1` — with the two
@@ -475,6 +480,8 @@ theorem walkRevolution_seg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : S
     ∃ (Cd : WalkCarry G) (sd : State) (p : Nat),
       WalkSegment (stage2Calls stage2SubCalls) G C s Cd sd p ∧
       Cd.block = "cleanup478.i" ∧
+      WalkInv G Cd sd ∧
+      sd.pre = some "if.end473.i" ∧
       p + 2 ≤ stage2EntryAllowance * (C.k + 1 - C.k) +
         stage2ByteAllowance * (entryPos G (C.k + 1) - entryPos G C.k) := by
   -- the head path, counted: twenty-three steps to the scan's latch
@@ -520,7 +527,7 @@ theorem walkRevolution_seg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : S
   have hinner : f.v.toNat - (f.v.toNat - 1) ≤ Cm.inner :=
     ScanCount.same hlocal hiR hcR hc64 (by omega)
   have hie : (f.v.toNat - 1) + 1 = f.v.toNat := by omega
-  obtain ⟨s₁, hseg₁, -, hs₁, hInv₁⟩ :=
+  obtain ⟨s₁, hseg₁, hpc₁, hs₁, hInv₁⟩ :=
     scanExitSeg (calls := stage2Calls stage2SubCalls) (G := G) (C := Cm) (s := sm)
       hInvR hbR hiR hcR hinner hie hc64 (by intro e _ _ _; simp [WalkLocal])
   -- the merge, one step, from the token record's register
@@ -528,12 +535,15 @@ theorem walkRevolution_seg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : S
   have htok₁ : lookupName s₁.env "%t352.i" = some (.ptr tok) := by
     rw [hs₁]
     exact scanExit_tok sm (f.v.toNat - 1) f.v.toNat htok
-  obtain ⟨s₂, hl₂, -⟩ :=
+  obtain ⟨s₂, hl₂, hs₂⟩ :=
     walkIfEnd473_at (sub := stage2SubCalls) (G := G) (C := ScanCMerge Cm) (s := s₁)
       hInv₁ rfl htok₁
   refine ⟨{ ScanCMerge Cm with block := "cleanup478.i" }, s₂, ((23 + n) + 1) + 1,
-    ?_, rfl, ?_⟩
+    ?_, rfl, hl₂.inv', ?_, ?_⟩
   · exact ((hsegP'.trans hsegR).trans hseg₁).trans (WalkSegment.of_link hl₂)
+  · rw [hs₂]
+    show some s₁.pc = some "if.end473.i"
+    rw [hpc₁]
   · -- the price: the visits are the entry's span
     have hd : f.v.toNat - 1 - f.ei ≤ entryPos G (C.k + 1) - entryPos G C.k := by
       have h1 : f.v.toNat - 1 ≤ entryPos G (C.k + 1) - 1 := Nat.sub_le_sub_right hspan 1
