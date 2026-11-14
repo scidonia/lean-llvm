@@ -1,0 +1,228 @@
+/-
+The dispatch's three outcomes, from the dispatch's own result.
+
+`WalkDispatchThree` (`JsonStage2WalkAssembly`) says a dispatch from the loop head is one
+of three outcomes.  The producer in that module, `ofContinueAndLast`, decides which by
+testing `C.k + 1 < G.nep` **before the dispatch runs**.  That test is not the dispatch's
+branch, and on one case it is the wrong one.
+
+**The case.**  A standalone string — `C.k = 0`, `G.nep = 2` — consumes two entries: the
+opener and the closer.  The merge at `cleanup478.i` selects `%k.2.i = %inc208.i =
+%k.0.i249 + 2 = 2`.  The head's test at `C.k = 0` is `0 + 1 < 2` and it is *true*, so
+`ofContinueAndLast` takes its first branch and asks `hcont` for an outcome at
+`C.k + 1 < G.nep`.  The only thing `hcont` may return there without further evidence is
+the continue outcome, and `WalkDispatchOutcome.cont` demands `k2 < G.nep` — `2 < 2`,
+which is false.  The dispatch is a `finish` and the split cannot say so.
+
+**What this module does instead.**  It takes the dispatch's *actual result*: a segment
+from the head whose endpoint names the block it reached — `cleanup478.i` or `if.then` —
+with that endpoint's own facts.  The merge arm deliberately does **not** carry
+`k2 < nepv.toNat`, `k2 < G.nep` or `k2 = nepv.toNat`; it carries the one fact the merge
+supplies about its index, that the index is inside the stream (`k2 ≤ nepv.toNat`),
+because the merge's test is `%k.2.i < %nep` and a walk's index never passes the count.
+The classification is then a split on the *result's* index against the count, which is
+the merge's own test, and the standalone string falls out as `finish` with no hypothesis
+about `C.k + 1`.
+
+**What a `finish` asserts.**  Entry-stream exhaustion at the merge and nothing more: the
+index has reached the end of the entry stream, so the loop does not run again.  The
+finalisation that follows still decides between acceptance and refusal — an unclosed
+container or an unfinished root is refused there (`if.then485.i`'s three arms) — which is
+why the consumer's terminal branch states its verdict existentially (`WalkTargetRun`)
+and is never `v = 1` here.
+
+**Which outcomes come from what.**
+
+| outcome | evidence |
+|---|---|
+| `cont` | the merge arm with `k2 < nepv.toNat`, the merge's `%nep ≤ G.nep`, and the arm's own price |
+| `finish` | the merge arm with `¬ (k2 < nepv.toNat)`; with `k2 ≤ nepv.toNat` that is `k2 = nepv.toNat` |
+| `refuse` | the refusal arm: the segment ends at `if.then` with the error offset inside the document |
+
+`ofContinueAndLast` stays in the tree: it is the assembly's own producer and other
+modules read it, and this module's producer is a second route to the same predicate, not
+a replacement of that module's statement.
+
+**A note on `%nep`.**  `WalkInv` does not carry the register, so the producer takes the
+fact the loop's step already takes beside `WalkDispatchThree`
+(`walkLoopStepThree_of_dispatchThree`'s `hnepBound`): the merge's `%nep` is no larger
+than the stream.  It is what makes the continue arm's `k2 < G.nep` follow from the
+merge's own test.
+-/
+import LeanLLVM.Refinement.JsonStage2WalkLoopStepOutcome
+
+set_option autoImplicit false
+
+namespace LeanLLVM.Refinement
+open LeanLLVM
+open LeanLLVM.Refinement.BlockEval
+open LeanLLVM.Refinement.JsonStage2IR
+
+namespace WalkScope
+
+/-! ### The dispatch's result, at the block it reached -/
+
+/-- **What the dispatch actually did.**  A counted segment from the loop head whose
+endpoint is classified by the block it reached and the facts that block leaves, and not
+by any test on the index before the dispatch runs.
+
+The merge arm's index `k2` is `cleanup478.i`'s `%k.2.i` and `nepv` its `%nep`; the arm
+says the index advanced and stayed inside the stream (`C.k < k2 ≤ nepv.toNat`) and
+carries the price, and it says nothing else about `k2`.  In particular it does not say
+`k2 < nepv.toNat` — that is the merge's test, which this predicate lets the caller read
+— and it does not say `k2 < G.nep`, which is what the old producer's split demanded.
+
+The refusal arm is the same segment ending at the refusal copy with the error offset
+inside the document. -/
+inductive WalkDispatchResult (calls : Calls) {m0 : Mem} (G : WalkGeom m0)
+    (C : WalkCarry G) (s : State) : Prop
+  /-- **The dispatch reached the merge.**  `cleanup478.i`'s two `phi` selections, the
+  register `%nep`, an index strictly advanced and no larger than the entry count, the
+  merge's depth inside the stacks, and the price.  Whether the merge then goes back to
+  the head or leaves the loop is its test's own reading of `k2` against `nepv`. -/
+  | merge (Cd : WalkCarry G) (sd : State) (p spv k2 : Nat) (prev : String)
+      (spOp kOp : Operand) (nepv : BitVec 64)
+      (seg : WalkSegment calls G C s Cd sd p)
+      (hblock : Cd.block = "cleanup478.i") (hk : Cd.k = C.k)
+      (hpre : sd.pre = some prev)
+      (hsp : phiIncoming prev cleanupSpIncoming = some spOp)
+      (hspv : evalOperand sd spOp = some (.int 32 (BitVec.ofNat 32 spv)))
+      (hkOp : phiIncoming prev cleanupKIncoming = some kOp)
+      (hk2 : evalOperand sd kOp = some (.int 64 (BitVec.ofNat 64 k2)))
+      (hnepv : lookupName sd.env "%nep" = some (.int 64 nepv))
+      (hadvance : C.k < k2) (hcap : k2 ≤ nepv.toNat)
+      (hspcap : spv ≤ stage2StackExtent) (hspw : spv ≤ Cd.wlen)
+      (hprice : p + 2 ≤ stage2EntryAllowance * (k2 - C.k) +
+        stage2ByteAllowance * (entryPos G k2 - entryPos G C.k))
+  /-- **The dispatch reached the refusal copy.**  The token was rejected before the merge
+  at any index, so the segment ends at `if.then` with the error offset inside the
+  document and the price inside the remaining entries' and bytes' credit. -/
+  | refuse (Cd : WalkCarry G) (sd : State) (p : Nat)
+      (seg : WalkSegment calls G C s Cd sd p)
+      (hblock : Cd.block = "if.then")
+      (herr : Cd.eoff ≤ G.n)
+      (hprice : p + 2 ≤ stage2EntryAllowance * (G.nep - C.k) +
+        stage2ByteAllowance * (G.n - entryPos G C.k))
+
+/-- **A result is one of the three outcomes.**  The split is on the merge's own test,
+`%k.2.i < %nep`, which is `k2` against `nepv` — the dispatch's *result* index against
+the count — and never on `C.k + 1`.
+
+`hcap` closes the exit arm into an equation: the index is inside the stream and not below
+it, so it *is* the stream's end, which is `finish`'s `hterm`.  `hnepBound` supplies the
+continue arm's `k2 < G.nep` from `k2 < nepv.toNat` and the count's own bound; that is a
+fact about `%nep` at the merge, and it is the same one the loop's step takes beside the
+three outcomes. -/
+theorem WalkDispatchResult.toOutcome {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
+    {C : WalkCarry G} {s : State} (r : WalkDispatchResult calls G C s)
+    (hnepBound : ∀ (nepv : BitVec 64), ∀ (Cd : WalkCarry G) (sd : State),
+      WalkInv G Cd sd → Cd.block = "cleanup478.i" →
+      lookupName sd.env "%nep" = some (.int 64 nepv) → nepv.toNat ≤ G.nep) :
+    WalkDispatchOutcome calls G C s := by
+  cases r with
+  | merge Cd sd p spv k2 prev spOp kOp nepv seg hblock hk hpre hsp hspv hkOp hk2 hnepv
+      hadvance hcap hspcap hspw hprice =>
+    by_cases hbelow : k2 < nepv.toNat
+    · exact WalkDispatchOutcome.cont Cd sd p spv k2 prev spOp kOp nepv seg hblock hk hpre
+        hsp hspv hkOp hk2 hnepv hbelow
+        (by have := hnepBound nepv Cd sd seg.inv' hblock hnepv; omega)
+        hadvance hspcap hspw hprice
+    · exact WalkDispatchOutcome.finish Cd sd p k2 prev kOp nepv seg hblock hpre hkOp hk2
+        hnepv (by omega) hprice
+  | refuse Cd sd p seg hblock herr hprice =>
+    exact WalkDispatchOutcome.refuse Cd sd p seg hblock herr hprice
+
+/-! ### The producer -/
+
+/-- **`WalkDispatchThree`, from the dispatch's result.**  No hypothesis on
+`C.k + 1 < G.nep`: the outcome is the one the dispatch's own endpoint supports, and each
+head state supplies its own. -/
+theorem WalkDispatchThree.ofResult {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
+    (hres : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
+      WalkDispatchResult calls G C s)
+    (hnepBound : ∀ (nepv : BitVec 64), ∀ (Cd : WalkCarry G) (sd : State),
+      WalkInv G Cd sd → Cd.block = "cleanup478.i" →
+      lookupName sd.env "%nep" = some (.int 64 nepv) → nepv.toNat ≤ G.nep) :
+    WalkDispatchThree calls G := by
+  intro C s hInv hhead
+  exact (hres C s hInv hhead).toOutcome hnepBound
+
+/-- **The loop's step, straight from the dispatch's result.**  The same composition as
+`walkLoopStepThree_of_dispatchThree`, with the outcome premise produced at each head
+state from that state's own result rather than from a split on its index. -/
+theorem walkLoopStepThree_of_dispatchResult {calls : Calls} {m0 : Mem}
+    {G : WalkGeom m0} {F : Nat} (hF : 27 ≤ F)
+    (hres : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
+      WalkDispatchResult calls G C s)
+    (htail : ∀ (Cd : WalkCarry G) (sd : State), WalkInv G Cd sd →
+      (Cd.block = "cleanup478.i" ∨ Cd.block = "if.then") → WalkTargetRun calls sd)
+    (hnepBound : ∀ (nepv : BitVec 64), ∀ (Cd : WalkCarry G) (sd : State),
+      WalkInv G Cd sd → Cd.block = "cleanup478.i" →
+      lookupName sd.env "%nep" = some (.int 64 nepv) → nepv.toNat ≤ G.nep) :
+    WalkLoopStepThree calls G F :=
+  walkLoopStepThree_of_dispatchThree hF
+    (WalkDispatchThree.ofResult hres (fun nepv Cd sd hInv hblk hnep => hnepBound nepv Cd sd hInv hblk hnep))
+    htail
+    (fun Cd sd nepv hInv hblk hnep => hnepBound nepv Cd sd hInv hblk hnep)
+
+/-! ### The standalone string
+
+`C.k = 0` and `G.nep = 2`: the head's test is `0 + 1 < 2`, true, and the merge's index is
+`2`, the stream's end.  The old producer's split takes the continue branch there and
+demands `2 < 2`.  This is the same result stated as an outcome, with no such demand: the
+merge's index is the count, and the outcome is `finish`. -/
+
+/-- **The standalone string is a `finish`.**  The merge reached `cleanup478.i` with
+`%k.2.i = 2` and `%nep = 2`, so the entry stream is exhausted at the merge and the loop
+does not run again.  The price is the dispatch's own, at `Δk = 2 - C.k` and the byte span
+between the head's position and `entryPos G 2`; at `C.k = 0` that is two entry
+allowances, which is what a standalone string consumes.
+
+Nothing here asserts acceptance: the finalisation that follows decides, and an unclosed
+string is refused there. -/
+theorem standaloneString_finish {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
+    {C : WalkCarry G} {s : State} {Cd : WalkCarry G} {sd : State} {p : Nat}
+    {prev : String} {kOp : Operand}
+    (seg : WalkSegment calls G C s Cd sd p) (hblock : Cd.block = "cleanup478.i")
+    (hpre : sd.pre = some prev)
+    (hkOp : phiIncoming prev cleanupKIncoming = some kOp)
+    (hk2 : evalOperand sd kOp = some (.int 64 (BitVec.ofNat 64 2)))
+    (hnepv : lookupName sd.env "%nep" = some (.int 64 (BitVec.ofNat 64 2)))
+    (hprice : p + 2 ≤ stage2EntryAllowance * (2 - C.k) +
+      stage2ByteAllowance * (entryPos G 2 - entryPos G C.k)) :
+    WalkDispatchOutcome calls G C s :=
+  WalkDispatchOutcome.finish Cd sd p 2 prev kOp (BitVec.ofNat 64 2) seg hblock hpre hkOp
+    hk2 hnepv (by decide) hprice
+
+/-- **The standalone string's dispatch is a result, at the values the merge leaves.**  The
+merge arm at `k2 = 2` and `nepv = 2`: the index advanced past the head's `0` and stayed
+inside the stream, which is exactly `0 < 2 ≤ 2`.  With `standaloneString_finish` this is
+the case `ofContinueAndLast`'s split cannot express, and it needs no `k2 < G.nep`. -/
+theorem standaloneString_result {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
+    {C : WalkCarry G} {s : State} {Cd : WalkCarry G} {sd : State} {p spv : Nat}
+    {prev : String} {spOp kOp : Operand}
+    (seg : WalkSegment calls G C s Cd sd p) (hblock : Cd.block = "cleanup478.i")
+    (hk : Cd.k = C.k) (hpre : sd.pre = some prev)
+    (hsp : phiIncoming prev cleanupSpIncoming = some spOp)
+    (hspv : evalOperand sd spOp = some (.int 32 (BitVec.ofNat 32 spv)))
+    (hkOp : phiIncoming prev cleanupKIncoming = some kOp)
+    (hk2 : evalOperand sd kOp = some (.int 64 (BitVec.ofNat 64 2)))
+    (hnepv : lookupName sd.env "%nep" = some (.int 64 (BitVec.ofNat 64 2)))
+    (hk0 : C.k = 0) (hspcap : spv ≤ stage2StackExtent) (hspw : spv ≤ Cd.wlen)
+    (hprice : p + 2 ≤ stage2EntryAllowance * (2 - C.k) +
+      stage2ByteAllowance * (entryPos G 2 - entryPos G C.k)) :
+    WalkDispatchResult calls G C s :=
+  WalkDispatchResult.merge Cd sd p spv 2 prev spOp kOp (BitVec.ofNat 64 2) seg hblock hk
+    hpre hsp hspv hkOp hk2 hnepv (by omega) (by decide) hspcap hspw hprice
+
+/-! ### Axiom footprints -/
+
+#print axioms LeanLLVM.Refinement.WalkScope.WalkDispatchResult.toOutcome
+#print axioms LeanLLVM.Refinement.WalkScope.WalkDispatchThree.ofResult
+#print axioms LeanLLVM.Refinement.WalkScope.walkLoopStepThree_of_dispatchResult
+#print axioms LeanLLVM.Refinement.WalkScope.standaloneString_finish
+#print axioms LeanLLVM.Refinement.WalkScope.standaloneString_result
+
+end WalkScope
+
+end LeanLLVM.Refinement
