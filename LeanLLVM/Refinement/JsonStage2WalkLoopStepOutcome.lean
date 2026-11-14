@@ -170,12 +170,13 @@ theorem walkFinishCredit_le {m0 : Mem} (G : WalkGeom m0) {C : WalkCarry G} {k2 :
   · have hmono := entryPos_mono G hkm hlt
     have hA : entryPos G C.k ≤ G.n := le_of_lt (entryPos_lt G hk)
     have hA2 : entryPos G k2 ≤ G.n := le_of_lt (entryPos_lt G hlt)
-    simp only [walkPotential, stage2EntryAllowance, stage2ByteAllowance]
+    simp only [walkPotential, boundary_eq_entryPos G hk, stage2EntryAllowance,
+      stage2ByteAllowance]
     omega
   · subst heq
     rw [walkEntryPos_at_nep G]
-    simp only [Nat.zero_sub, Nat.mul_zero, walkPotential, stage2EntryAllowance,
-      stage2ByteAllowance]
+    simp only [Nat.zero_sub, Nat.mul_zero, walkPotential, boundary_eq_entryPos G hk,
+      stage2EntryAllowance, stage2ByteAllowance]
     omega
 
 /-! ### A revolution, from the `cont` outcome's own fields
@@ -227,12 +228,12 @@ theorem walkContRevolution {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
     exact hadvance
   · show k2 < G.nep
     exact hnep
-  · have hmono : entryPos G C.k ≤ entryPos G k2 :=
-      entryPos_mono G (le_of_lt hadvance) hnep
-    have hp : entryPos G C.k ≤ G.n := le_of_lt (entryPos_lt G (by omega))
-    have hp' : entryPos G k2 ≤ G.n := le_of_lt (entryPos_lt G hnep)
+  · have hpriceB : p + 2 ≤ stage2EntryAllowance * (k2 - C.k) +
+        stage2ByteAllowance * (boundary G k2 - boundary G C.k) := by
+      rw [price_eq_of_lt G (by omega) hnep]
+      exact hprice
     have hspend := walkPotential_spend (G := G) (C := C) (C' := C') (p := p + 2)
-      (le_of_lt hadvance) (le_of_lt hnep) hp hp' hmono hprice
+      (le_of_lt hadvance) (le_of_lt hnep) hpriceB
     simpa using hspend
 
 /-! ### The step, from the three-outcome premise -/
@@ -291,12 +292,14 @@ theorem walkLoopStepThree_of_dispatchThree {calls : Calls} {m0 : Mem} {G : WalkG
           have hmono : entryPos G k2 ≤ entryPos G C.k := entryPos_mono G (by omega) hk
           simp only [stage2EntryAllowance, stage2ByteAllowance] at hprice
           omega
-      simp only [walkPotential, stage2EntryAllowance, stage2ByteAllowance] at hcredit hprice ⊢
+      simp only [walkPotential, boundary_eq_entryPos G hk, stage2EntryAllowance,
+        stage2ByteAllowance] at hcredit hprice ⊢
       omega
   · obtain ⟨q₂, v, s1, s2, sret, hrun₂, hq₂, hjump, hret⟩ :=
       htail Cd sd hseg.inv' (Or.inr hblock)
     refine Or.inr ⟨p + q₂, v, s1, s2, sret, ?_, hseg.andRun hrun₂, hjump, hret⟩
-    · simp only [walkPotential, stage2EntryAllowance, stage2ByteAllowance] at hprice hq₂ ⊢
+    · simp only [walkPotential, boundary_eq_entryPos G hk, stage2EntryAllowance,
+        stage2ByteAllowance] at hprice hq₂ ⊢
       omega
 
 /-! ### Axiom footprints -/

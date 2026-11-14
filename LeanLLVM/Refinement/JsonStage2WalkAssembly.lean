@@ -2394,12 +2394,12 @@ theorem WalkDispatch.revolution {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
           hseg.run (1 + (1 + n)), hrunB (1 + n), hrunH n]
       inv' := hInvH }
   have hpot' : (p + 1 + 1) + walkPotential G C' ≤ walkPotential G C := by
-    have hmono : entryPos G C.k ≤ entryPos G k2 :=
-      entryPos_mono G (le_of_lt hstrict) hklt
-    have hp : entryPos G C.k ≤ G.n := le_of_lt (entryPos_lt G (by omega))
-    have hp' : entryPos G k2 ≤ G.n := le_of_lt (entryPos_lt G hklt)
+    have hpotB : p + 2 ≤ stage2EntryAllowance * (k2 - C.k) +
+        stage2ByteAllowance * (boundary G k2 - boundary G C.k) := by
+      rw [price_eq_of_lt G (by omega) hklt]
+      exact hpot
     have hspend := walkPotential_spend (G := G) (C := C) (C' := C') (p := p + 2)
-      (le_of_lt hstrict) (le_of_lt hklt) hp hp' hmono hpot
+      (le_of_lt hstrict) (le_of_lt hklt) hpotB
     simpa using hspend
   refine ⟨C', s', p + 1 + 1, hseg', rfl, ?_, ?_, ?_⟩
   · show C.k < k2
