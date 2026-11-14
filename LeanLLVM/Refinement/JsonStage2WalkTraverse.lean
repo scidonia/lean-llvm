@@ -61,13 +61,13 @@ What remains is `WalkLoopStepThree`, one premise per geometry, and the two premi
 that supply it (the seed's run and entry, and the finalisation allowance's
 arithmetic).  Named exactly:
 
-1. **`WalkLoopStep`** — its left branch is one revolution from `NodeBlock21` back
+1. **`WalkLoopStepThree`** — its left branch is one revolution from `NodeBlock21` back
    to it: the dispatch's pass to `cleanup478.i` (built from the census's class
    links, and the three steps it counts), the back edge (`walkBack_step`), the
    header's pass (`whileBody_step`) and the two `phi` runs, with `walkMeasure`'s
    strict decrease where `walkMeasure_step` states it and the traps excluded before
    their arms (`walkEventReserve_clear`, `walkArenaReserve_clear` are theorems of
-   the invariant).  Its right branch is the exit: the test's false edge and the
+   the invariant).  Its right branch is the terminal run: the test's false edge and the
    tail through `s2_walk.exit` to `if.end`'s return, inside `F ≤ 27` — the
    finalisation allowance less the seed's three steps and the two terminal ones
    (the exit's jump and `if.end`'s return).  Both
@@ -97,14 +97,14 @@ Where this stops, `JsonStage2WalkAssembly` picks up.  The revolution's compositi
 was blocked by `walkBack_step`'s existential target, and `walkBack_step_at` names it
 (`cleanup478Out`) with the two `phi` values the header's pass reads, so one revolution
 is the dispatch's segment, the merge's step and the header's pass
-(`WalkDispatch.revolution`) and the loop's step is a case split on the entry index
-(`walkLoopStep_of_dispatch_exit`): while an entry is left after this one the dispatch
-runs, and at the last entry the merge's test fails.  Premise 1 is therefore **two**
-premises — `WalkDispatch`, the dispatch's chain to `cleanup478.i` with the ten
-predecessors' `phi` facts, and `WalkExit`, the false edge's tail inside the
-finalisation allowance — and premise 3 is `walkExitFits`.  Premise 4 is a
-construction on both halves: `walkGeom_at_pre` is `stage2Pre`'s witnesses as a
-`WalkGeom` with the argument list the geometry's own numbers, and `walkStage_at_pre`
+(`WalkDispatch.revolution`), and the loop's step is the dispatch's three outcomes
+(`walkLoopStepThree_of_dispatchThree`, `JsonStage2WalkLoopStepOutcome`): `cont` takes
+the revolution, and `finish` and `refuse` take the terminal branch.  Premise 1 is
+therefore `WalkDispatch`, the dispatch's chain to `cleanup478.i` with the ten
+predecessors' `phi` facts, beside the terminal run `WalkTargetRun` at the state the
+dispatch reaches, inside the finalisation allowance; premise 3 is `walkExitFits`.
+Premise 4 is a construction on both halves: `walkGeom_at_pre` is `stage2Pre`'s
+witnesses as a `WalkGeom` with the argument list the geometry's own numbers, and `walkStage_at_pre`
 is the adapter's staging as a `WalkStage`.  The second is the separation transports
 (`walkDisjoint_drop_member`, `walkDisjoint_before`) after the two predicates' number
 clauses make the columns agree — the widths `Γ_stage2.pre` states (`nxp`, `dstcap`,
@@ -494,8 +494,8 @@ def walkPotential_boundary {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) : Nat 
   stage2EntryAllowance * (G.nep - C.k) + stage2ByteAllowance * (G.n - boundary G C.k)
 
 /-- **Below the stream the credit is `walkPotential`'s, word for word** — the
-agreement that keeps every head-state statement's value: `WalkExit`, `WalkLoopStep`'s
-two branches and the completions are all taken at `C.k < G.nep`. -/
+agreement that keeps every head-state statement's value: `WalkLoopStepThree`'s two
+branches and the completions are all taken at `C.k < G.nep`. -/
 theorem walkPotential_boundary_eq_of_lt {m0 : Mem} (G : WalkGeom m0) {C : WalkCarry G}
     (hk : C.k < G.nep) : walkPotential_boundary G C = walkPotential G C := by
   simp only [walkPotential_boundary, walkPotential, boundary_eq_entryPos G hk]
@@ -841,9 +841,10 @@ has to be applied in is fixed by the definitions:
    `C.k < G.nep` where `boundary_eq_entryPos` applies: `WalkLoopStepThree`,
    `walkLoopFinishesThree`, `walkCompletes_of_loop`, `walkCompletes_of_loop_budget`
    (its `32 * G.nep + 8 * G.n + 32` does not move) and `walkCompletes_at_stage2Budget`
-   in this module; `WalkExit` in `JsonStage2WalkAssembly`, whose `C.k + 1 = G.nep`
-   implies `C.k < G.nep`; `walkExitPrice` and `walkExit_ofLastFacts` in
-   `JsonStage2WalkExitProducer`, the first by one `boundary_eq_entryPos` rewrite.
+   in this module.  The two exit sites this list used to name — `WalkExit` in
+   `JsonStage2WalkAssembly` and `walkExitPrice`/`walkExit_ofLastFacts` in
+   `JsonStage2WalkExitProducer` — are gone with the fixed-verdict route, so there is
+   nothing there to re-point.
 6. **`WalkDispatch.revolution` takes one extra step the others do not.**
    `WalkDispatch`'s price is stated in `entryPos`, so the fact it hands to
    `walkPotential_spend` converts first: both `C.k` and `k2` are below `G.nep`, so

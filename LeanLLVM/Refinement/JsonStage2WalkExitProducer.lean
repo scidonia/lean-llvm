@@ -1,41 +1,34 @@
 /-
-The walk's exit, produced from the last entry's facts.
+The walk's exit tails, and the retired exit statement they used to supply.
 
-`WalkExit` (`JsonStage2WalkAssembly`) asks for a run from the loop head to a return:
-the last entry's dispatch to `cleanup478.i`, then the merge's false edge and one of the
-exit's three tails.  This module composes it from the pieces that are already proved —
-`hlast_toMerge` for the head path, `walkExitTailExit` / `walkExitTailRefuse` /
-`walkExitTailRefuse488` for the tails — and states exactly what the composition leaves to
-its caller.
+This module was the producer of `WalkExit` (`JsonStage2WalkAssembly`): it composed the
+last entry's head path (`hlast_toMerge`) with one of the exit's three tails —
+`walkExitTailExit`, `walkExitTailRefuse`, `walkExitTailRefuse488` — and stated the
+composition twice, as `walkExit_ofLastFacts` and as `walkExit_at_stage2Calls` at the
+segment calls the layer uses.
 
-## What the producer concludes
+**`WalkExit` is gone, and its producer with it.**  The predicate fixed one verdict `v`
+for every last-entry head state, and the three tails it consumed do not agree: from
+`cleanup478.i` the accepted route returns `1` (`walkExitTailRun_exit`) and the two
+refusal routes return `0` (`walkExitTailRun_refuse`, `walkExitTailRun_refuse488`), all
+three proved from states `hlastMergeF` builds at that block under the same invariant.
+So the statement is false of the body's states, not merely stronger than the loop needs.
+Its only consumer `walkLoopStep_of_dispatch_exit` is gone too — the loop's step is
+`WalkLoopStepThree`, whose terminal branch is existential — so nothing read the
+predicate, and a statement that is false and unread is deleted rather than retained.
+The head-path price went with it: `walkExitPrice` and `hlastMergeCount` bounded the
+twenty-step head path against `walkPotential G C + 27` only to state that predicate.
 
-`walkExit_ofLastFacts` is the composition, and `walkExit_at_stage2Calls` states it as
-`WalkExit (stage2Calls stage2SubCalls) G v` at the segment-calls the layer uses.  Two
-points about `WalkExit`'s statement are recorded here as well as in its own docstring —
-one a correction, one a deletion:
+## What remains
 
-* **The index conjunct.**  `WalkExit` originally concluded `Cend.k = G.nep`, and that
-  form is false of the model: the merge `cleanup478.i` binds `%k.2.i` and `%sp.i.1` and
-  leaves `%k.0.i249` alone (`cleanup478Block`), while `WalkInv.blockIndex` reads the
-  carry's index off `%k.0.i249`, which only the header `while.body.i` binds
-  (`JsonStage2IR`).  So `hlast_toMerge`'s target carry has `Cend.k = C.k`, and beside the
-  premise `C.k + 1 = G.nep` the old conjunct contradicted `WalkInv`.  The statement now
-  reads `Cend.k + 1 = G.nep` — the last entry's own `hlastK` — which is what the run
-  establishes.  `WalkExit`'s only consumer (`walkLoopStep_of_dispatch_exit`) discards
-  `Cend` and `sEnd`, so nothing read the old form.
+`ExitTail` is the tail's run with the verdict as a parameter: a count, three states and
+the two terminal steps, inside the finalisation allowance.  It survives because it is
+the merge-side supply of `WalkTargetRun` (`WalkTargetRun.ofExitTail`), the terminal run
+the loop's step takes at the state a dispatch reaches — and because its three producers
+are the record that one verdict cannot cover the last-entry states.  They are stated at
+`hlastMergeF f`, the merge state the last entry's bundle builds.
 
-* **The arena word was deleted, because it was inert.**  `WalkExit` used to take the word
-  at the head as a premise and assert the same equality at `cleanup478.i`, and this
-  producer carried both: the premise was never read, and the post clause existed only to
-  be discarded.  The word is also not a fact of the loop head — the reserve advances the
-  carry by a token's document extent while the write-back stores the decoded length, so a
-  body that escapes leaves the slot below `C.alen` and nothing lowers `alen` again
-  (`JsonStage2WalkArenaWord`).  Both clauses are gone; `WalkInv.log_alen`'s existential —
-  *some* `a` at or below the carry — is what `WalkInv G Cend sEnd` already carries, so
-  restating it here would duplicate the invariant.
-
-## What the producer leaves to its caller
+## What the tails leave to their caller
 
 The tails' premises are the caller's, as `JsonStage2WalkAssembly` records: the copy
 blocks' `denoteCode` equations (four configurations time out at 1M and 4M heartbeats),
@@ -45,26 +38,13 @@ take the route's own premises and pass everything `WalkInv` and the bundle do su
 `%nep`, `%inc.i`, `%sp.i.0248`, `%root_done.i`, `%e`, `%4`, and the composite states'
 lookups — through, so a caller sees only the facts it holds.
 
-`%z` and `%s` are the one place where `WalkExit`'s shape and this producer's disagree.
-`WalkExit` names them at the loop head, where its `∀` binds the state, because a premise
-that only the terminal block reads belongs to the terminal statement rather than to
-`WalkInv` (the argument `hinner` gets).  The producer reads them at `cleanup478.i`, the
-state the tails consume them at, and `walkExit_at_stage2Calls` therefore takes them from
-the caller's merge-state supplier and drops the head-level pair: carrying a register along
-the head path is the one head-path obligation this layer does not discharge, since a
-`WalkSegment` exposes neither the run's blocks nor their stores.
-
-## The price
-
-`walkExitPrice`: the head path's twenty steps (`hlast_toMerge`'s count) plus the tail's,
-against `walkPotential G C + 27`.  At the last entry `G.nep - C.k = 1`, so the potential
-is at least one entry allowance and the tail's `q ≤ 25` fits beside it.  The exit does
-*not* charge against the document bytes it has left to reach: `walkPotential`'s byte term
-is `8 · (G.n - entryPos G C.k)`, and the head path's price at the last entry is
-`entryPos G G.nep = 0` (`entryPos_nep`), so the byte credit the dispatch spent is not
-recovered here.  Whether the exit should charge against the remaining document bytes is a
-statement-shape question for the layer that owns `WalkPotential`, and it is not decided
-here.
+`%z` and `%s` are read at `cleanup478.i`, the state the tails consume them at, because a
+premise that only the terminal block reads belongs to the terminal statement rather than
+to `WalkInv` (the argument `hinner` gets).  Carrying a register along the head path is
+the one head-path obligation this layer does not discharge, since a `WalkSegment`
+exposes neither the run's blocks nor their stores; the retired `WalkExit` named the two
+registers at the loop head and left that transport unproved, which is why the tails take
+them at the merge state instead.
 -/
 
 import LeanLLVM.Refinement.JsonStage2WalkDispatchWitnessHlast
@@ -82,30 +62,14 @@ namespace WalkScope
 /-! ### The tail's run, named -/
 
 /-- **The exit tail's run**: the count, the three states, and the two terminal steps, at
-the shape `WalkExit` states its tail. -/
+the shape `WalkTargetRun` reads — the verdict a parameter, since the three tails disagree
+about it. -/
 def ExitTail (calls : Calls) (s : State) (v : Value) : Prop :=
   ∃ (q : Nat) (s1 s2 sret : State),
     (∀ n, runFuel calls (q + n) stage2Body s = runFuel calls n stage2Body s1) ∧
     q + 2 ≤ 27 ∧
     step calls stage2Body s1 = .jump s2 ∧
     step calls stage2Body s2 = .ret (some v) sret
-
-/-! ### The head path's count
-
-`hlast_toMerge` states it as a literal; the price needs the number. -/
-
-/-- The head path's count: the six-block fall-through, the seam, the class-C span, the
-tail's three links, the scan's three, the latch's exit and the merge. -/
-theorem hlastMergeCount : ((((((6 + 1) + 5) + 3) + 3) + 1) + 1) = 20 := by decide
-
-/-- **The exit's price.**  Twenty steps to the merge and the tail's own count inside the
-potential the last entry still holds plus the finalisation allowance. -/
-theorem walkExitPrice {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {q : Nat}
-    (hlast : C.k + 1 = G.nep) (hq : q + 2 ≤ 27) :
-    20 + q ≤ walkPotential G C + 27 := by
-  have hk : G.nep - C.k = 1 := by omega
-  simp only [walkPotential, stage2EntryAllowance, stage2ByteAllowance]
-  omega
 
 /-! ### The exit's states do not bind the registers the tails read
 
@@ -423,60 +387,13 @@ theorem walkExitTailRun_refuse488 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
       he₂ h4₂ f.hv64 hden hpc₂ he' hz' hs' (by decide) (by decide)
   exact ⟨q, s1, s₂', sret, hrun, hq, hjump, hret⟩
 
-/-! ### The producer -/
-
-/-- **The exit, from the last entry's facts and the tail's run.**  `WalkExit`'s body, with
-the merge's index conjunct as the last entry's own `hlastK` states it. -/
-theorem walkExit_ofLastFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
-    (hInv : WalkInv G C s) (hhead : C.block = walkLoopHead) (hlast : C.k + 1 = G.nep)
-    (f : HlastFacts G C s)
-    {v : Value}
-    (htail : ExitTail (stage2Calls stage2SubCalls) (hlastMergeF f) v) :
-    ∃ (Cend : WalkCarry G) (sEnd : State), WalkInv G Cend sEnd ∧
-      Cend.block = "cleanup478.i" ∧ Cend.k + 1 = G.nep ∧
-      ∃ (q₁ q₂ : Nat) (s1 s2 sret : State),
-        (∀ n, runFuel (stage2Calls stage2SubCalls) (q₁ + n) stage2Body s
-          = runFuel (stage2Calls stage2SubCalls) n stage2Body sEnd) ∧
-        q₁ + q₂ ≤ walkPotential G C + 27 ∧
-        (∀ n, runFuel (stage2Calls stage2SubCalls) (q₂ + n) stage2Body sEnd
-          = runFuel (stage2Calls stage2SubCalls) n stage2Body s1) ∧
-        step (stage2Calls stage2SubCalls) stage2Body s1 = .jump s2 ∧
-        step (stage2Calls stage2SubCalls) stage2Body s2 = .ret (some v) sret := by
-  obtain ⟨hseg, hinv⟩ := hlast_toMerge G C s hInv hhead f
-  obtain ⟨q, s1, s2, sret, hrun, hq, hjump, hret⟩ := htail
-  refine ⟨hlastMergeCF f, hlastMergeF f, hinv, rfl, ?_,
-    ((((((6 + 1) + 5) + 3) + 3) + 1) + 1), q, s1, s2, sret, hseg.run, ?_, hrun, hjump, hret⟩
-  · show C.k + 1 = G.nep
-    exact hlast
-  · rw [hlastMergeCount]
-    exact walkExitPrice hlast hq
-
-/-- **`WalkExit` at the segment calls**: the producer's composition, stated in the
-assembly's own shape.  The last entry's bundle and the tail's run are the caller's, at the
-merge state each is read at; the head-level `%z`/`%s` premises `WalkExit` carries are
-dropped here, because the producer reads the two registers at the merge and the head
-path's register tracking is a separate obligation. -/
-theorem walkExit_at_stage2Calls {m0 : Mem} (G : WalkGeom m0) {v : Value}
-    (hf : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
-      C.k + 1 = G.nep → HlastFacts G C s)
-    (htail : ∀ (C : WalkCarry G) (s : State) (f : HlastFacts G C s),
-      ExitTail (stage2Calls stage2SubCalls) (hlastMergeF f) v) :
-    WalkExit (stage2Calls stage2SubCalls) G v := by
-  intro C s hInv hhead hlast _hz _hs
-  exact walkExit_ofLastFacts G C s hInv hhead hlast (hf C s hInv hhead hlast)
-    (htail C s (hf C s hInv hhead hlast))
-
 /-! ### Axiom footprints -/
 
-#print axioms LeanLLVM.Refinement.WalkScope.hlastMergeCount
-#print axioms LeanLLVM.Refinement.WalkScope.walkExitPrice
 #print axioms LeanLLVM.Refinement.WalkScope.walkExitBlock_keeps
 #print axioms LeanLLVM.Refinement.WalkScope.walkIfThenBlock_keeps
 #print axioms LeanLLVM.Refinement.WalkScope.walkExitTailRun_exit
 #print axioms LeanLLVM.Refinement.WalkScope.walkExitTailRun_refuse
 #print axioms LeanLLVM.Refinement.WalkScope.walkExitTailRun_refuse488
-#print axioms LeanLLVM.Refinement.WalkScope.walkExit_ofLastFacts
-#print axioms LeanLLVM.Refinement.WalkScope.walkExit_at_stage2Calls
 
 end WalkScope
 

@@ -24,11 +24,12 @@ revolution apart:
   merge's guard is `k2 < nep`, so a dispatch premise asserted at every head state
   would be false at the last one, and a standalone string consumes two entries, so
   `k + 1 < nep` does not name the case that continues;
-* **the two loop premises are named**, `WalkDispatch` (the dispatch's chain from
+* **the loop's premises are named**, `WalkDispatch` (the dispatch's chain from
   the head to `cleanup478.i`, with the ten predecessors' `phi` facts at the merge,
-  the index's strict advance and the potential's spending) and `WalkExit` (the
-  false edge, the tail through `s2_walk.exit` and `if.end`'s return, inside the
-  finalisation allowance);
+  the index's strict advance and the potential's spending) and, for the terminal
+  branch, `WalkTargetRun` at the state the dispatch reaches — supplied at the merge
+  by `ExitTail`, the tail through `s2_walk.exit` and `if.end`'s return inside the
+  finalisation allowance;
 * **the finalisation allowance is arithmetic** (`walkExitFits`): `F ≤ 27` at the
   seed's three steps is `3 + F + 2 ≤ stage2FinalisationAllowance`, by the record's
   own constant;
@@ -135,7 +136,7 @@ the word's: `nep ≤ k2` decides it only when `k2` is a word.
 
 The test is `%k.2.i < %nep` (`cleanup478Block`'s `icmp ult`), so the clear case is
 `nep ≤ k2` — at the exit the merge selects the entry count itself, which is why
-`WalkExit` states its guard as `C.k + 1 = G.nep`. -/
+the exit's statement is read at `C.k + 1 = G.nep`. -/
 theorem walkBackFalse_step {calls : Calls} (s : State) {p : String}
     {spv k2 : Nat} {spOp kOp : Operand} {nepv : BitVec 64}
     (hpc : s.pc = "cleanup478.i") (hpre : s.pre = some p)
@@ -1035,8 +1036,8 @@ enough for the loop: `WalkInv` carries the arena cursor as the inequality `log_a
 *some* `a` at or below the carry is stored at `%z + 48` — which is what the arena
 reserve reads, and the equality at the slot is false at a loop head whenever a body's
 decoded length is shorter than its document extent (`JsonStage2WalkArenaWord`).  The
-exit's statement used to carry that equality as a premise, and it was deleted as inert:
-both of its ends discard it, and `log_alen` is what remains. -/
+retired exit statement used to carry that equality as a premise, and it was deleted as
+inert: both of its ends discarded it, and `log_alen` is what remains. -/
 def WalkDispatch (calls : Calls) {m0 : Mem} (G : WalkGeom m0) : Prop :=
   ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     C.k + 1 < G.nep →
@@ -1084,81 +1085,16 @@ theorem stage2Body_arena_writers :
 
 end
 
-/-- **The exit**: at the head whose merge fails its test (`C.k + 1 = G.nep`, so
-`%inc.i` is the entry count), `27` steps reach a state whose jump is followed by a
-return — *beside* the potential the state still holds, because that state's own
-dispatch is the last entry's.  The `27` is the finalisation allowance less the
-seed's three steps and the two terminal ones (`walkExitFits`).
+/-! ### The retired exit statement
 
-The run is stated in two pieces and its merge is named, because the post reads it
-there: `Cend`/`sEnd` are the carry and state the last dispatch leaves at
-`cleanup478.i`, and the tail runs from `sEnd`.
-
-**This statement used to carry the arena word, and that clause is deleted because it was
-inert.**  It appeared twice — a premise (`readBytes s.mem (C.stage.z + 48) 8 =
-some (wordBytes 8 C.alen)`) and the same equality as a post clause at `sEnd` — and both
-ends discarded it: the producer `walkExit_at_stage2Calls` takes it and never reads it, and
-the only consumer (`walkLoopStep_of_dispatch_exit`) destructured the post's word clause as
-`-`.  The equality also does not hold at a loop head: `z_arena_reserve.exit` advances the
-carry by the token's *document* extent, while `if.else285.i` stores the *decoded* length,
-so a body that escapes leaves the slot below `C.alen`, and nothing lowers `alen` again
-(`JsonStage2WalkArenaWord` is the census and the write-back's `iff`).  A premise that is
-inert and unsatisfiable is weight rather than hypothesis, so it is gone rather than
-restated: what survives is `WalkInv.log_alen`'s existential — *some* `a` at or below the
-carry — which `WalkInv G Cend sEnd` already carries, so an `a`-form clause here would
-duplicate the invariant.
-
-**The post's index conjunct was `Cend.k = G.nep`, and that form is false.**  The merge
-`cleanup478.i` binds `%k.2.i` and `%sp.i.1` and leaves `%k.0.i249` alone
-(`cleanup478Block`), and `WalkInv.blockIndex` reads the carry's index off `%k.0.i249`,
-which only the header `while.body.i` binds.  So a carry at `cleanup478.i` satisfies
-`WalkInv` at the *header's* index, and the merge's target carry has `Cend.k = C.k`;
-beside the premise `C.k + 1 = G.nep` the old conjunct contradicted `WalkInv` and read as
-a walk that stopped one entry early.  The conjunct is `Cend.k + 1 = G.nep` — the last
-entry's own `hlastK` — which is what the merge's state supports and what the run
-establishes.  Nothing downstream read the old form: `walkLoopStep_of_dispatch_exit`
-discards `Cend` and `sEnd`.
-
-**The two registers `if.end` reads are premises here too.**  `%z` and `%s` point at the
-log and the report record, and the exit's return reads them; no `WalkInv` field binds
-them (`WalkPtrs` has the six the dispatch reads, `walkStaticRegs` the twenty-four static
-addresses, and neither names these two).  They are read only by the terminal block, so
-they belong to the terminal statement rather than to the invariant, which is asserted at
-every mid-loop state — the argument `hinner` gets at the loop head.  A producer reaches
-them at `cleanup478.i`, not at the head; the bridge between the two is the head path's
-register tracking, which no `WalkSegment` exposes.
-
-What the post owes beyond this premise is *not* a `writeBytes` identity.
-Disjointness does not make two writes commute as memories: `writeByte` replaces a
-present cell in place but appends an absent one, so a difference in order survives
-as a difference in the list — `writeBytes_absent_comm_witness` is the two-write
-counterexample (`JsonStage2StringBody`).  The order facts that do hold are the
-pointwise one (a read outside both regions is unchanged) and the present one (a
-write of the bytes already there is the identity), and the post needs neither in
-its commuting form: every clause of `stage2Boundary` is a *read* at a named address
-or a region claim, so the boundary can be proved at `sret.mem` directly — the words
-the copy moves are the log's arena slot and `Cend.evlen` (`WalkInv.log_len`), and the
-refusal offset is existential there (`∃ e, e ≤ n ∧ …`), so the memory's own word
-serves rather than the carry's `eoff`.  What the arena slot *holds* is the copy's to
-read and no clause of this statement's to claim; that is the deletion recorded above. -/
-def WalkExit (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (v : Value) : Prop :=
-  ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
-    C.k + 1 = G.nep →
-    -- **The record's two pointers, read only by the terminal block.**  `if.end`'s return
-    -- reads `%z` and `%s`; neither `WalkPtrs` nor `walkStaticRegs` binds them, so they are
-    -- not invariant-carried and the exit's statement names them, as `hinner` is named at the
-    -- loop head.  A producer reads them at `cleanup478.i`, where the tail consumes them; the
-    -- head path's register tracking is what would carry them from here to there.
-    lookupName s.env "%z" = some (.ptr C.stage.z) →
-    lookupName s.env "%s" = some (.ptr C.stage.s) →
-    ∃ (Cend : WalkCarry G) (sEnd : State), WalkInv G Cend sEnd ∧
-      Cend.block = "cleanup478.i" ∧ Cend.k + 1 = G.nep ∧
-      ∃ (q₁ q₂ : Nat) (s1 s2 sret : State),
-        (∀ n, runFuel calls (q₁ + n) stage2Body s = runFuel calls n stage2Body sEnd) ∧
-        q₁ + q₂ ≤ walkPotential G C + 27 ∧
-        (∀ n, runFuel calls (q₂ + n) stage2Body sEnd = runFuel calls n stage2Body s1) ∧
-        step calls stage2Body s1 = .jump s2 ∧
-        step calls stage2Body s2 = .ret v sret
+`WalkExit` stood here: at the head whose merge fails its test, one verdict `v` and a run
+to the return, produced from the last entry's facts by
+`walkExit_ofLastFacts`/`walkExit_at_stage2Calls`.  It is deleted, with its producer,
+because the three tails from `cleanup478.i` return `1`, `0` and `0` under the same
+invariant, so no single verdict is true of the states the body has.  The loop's terminal
+branch is `WalkTargetRun` (`JsonStage2WalkLoopStepOutcome`), existential in the verdict,
+and the merge supplies it through `ExitTail` (`JsonStage2WalkExitProducer`, which carries
+the three tails and the record of the statement's two inert clauses). -/
 
 /-- **The empty entry stream's flush, at the memory and cursor it is used at.**  The arm was
 first stated with `mem` and `next` quantified *universally*, and that form is **false of the
@@ -2324,7 +2260,7 @@ scoped flush and the exit are *for*.  The endpoint they serve is
 
   `Stage2WalkCompletes … stage2SubCalls`, then the complete `Stage2WalkObligation`,
 
-with **no** assumed `WalkPremises`, `WalkDispatch`, `WalkExit`, `WalkFlushAt` or an
+with **no** assumed `WalkPremises`, `WalkLoopStepThree`, `WalkFlushAt` or an
 equivalent completed-run witness, and with the boundary derived from the *actual* final
 memory — its reads, its extents and its frame, pointwise — rather than from an equality
 between two differently ordered write lists, which disjointness does not give.
@@ -2416,9 +2352,10 @@ return in three or four blocks and on every path:
 blocks of those paths.  Every block on them now has a step — `walkBackFalse_step`
 for the merge's false edge, `walkIfThen485Step`, `walkIfEnd490Step`,
 `walkIfThen492Step`, `walkIfThen488Step` for the rest — so what remains is the
-composition, not a run.  `WalkExit` is stated at the head because the last entry's
-dispatch runs inside the exit branch's credit (`walkPotential G C + 27`), so it is
-the dispatch's run followed by this tail. -/
+composition, not a run.  The terminal run is stated at the state the dispatch
+reaches because the last entry's dispatch runs inside the exit branch's credit
+(`walkPotential G C + 27`): the run is the dispatch's own segment followed by this
+tail. -/
 
 /-! ### The revolution, composed
 
@@ -2805,7 +2742,7 @@ admits: a geometry whose numbers are the argument list's and a staging of the
 walk's own objects — both now constructed (`walkGeom_at_pre`, `walkStage_at_pre`,
 and `walkPremises_of_parts` reads this definition at the pair they give) — the
 seed's three-step prefix to the loop head, the invariant there, and the loop's step
-at the value the exit returns (`WalkDispatch` beside `WalkExit`).
+(`WalkLoopStepThree`, from `WalkDispatchThree` beside `WalkLoopEnd`).
 
 The seed conjunct is stated at `stage2Calls sub`, and the entry block's `s2_init`
 call is the one place the selection enters it, and the premise names the selection
@@ -3274,11 +3211,12 @@ The equality is not merely un-invariant, it is not a fact of the loop head at al
 leaves the slot short of the carry for the rest of the run.  `JsonStage2WalkArenaWord` is that
 census and the write-back's `iff`.
 
-`WalkExit` used to take the equality as a hypothesis and assert it again at its merge.  Both
-ends discarded it — the exit's producer never read the premise and the loop step destructured
-the post clause as `-` — so the two clauses were deleted rather than repaired: an inert,
-unsatisfiable premise is weight.  **An equality that holds after a store is not an invariant;
-the invariant is the inequality, and the inequality is what the exit's state carries.**
+The retired exit statement took the equality as a hypothesis and asserted it again at its
+merge.  Both ends discarded it — its producer never read the premise and its only consumer
+destructured the post clause as `-` — so the two clauses were deleted rather than repaired:
+an inert, unsatisfiable premise is weight.  **An equality that holds after a store is not an
+invariant; the invariant is the inequality, and the inequality is what the exit's state
+carries.**
 
 ### A named existential is a parameter
 
@@ -3487,7 +3425,7 @@ theorem exitS₂_rd {s : State} {spv : Nat} :
   simp only [exitS₂, State.bind]
   rw [lookupName_cons_ne (k := "%48") (n := "%root_done.i") (h := by decide)]
 
-/-- **The exit tail's `s2_walk.exit` route, as `WalkExit` states its run.**  The merge's false
+/-- **The exit tail's `s2_walk.exit` route, as `ExitTail` states its run.**  The merge's false
 arm, `if.then485.i` with the stack empty, `if.end490.i` with the root slot clear, then the exit
 block's copy and `if.end`'s return: three steps to the exit block, a jump, and a return — the
 constraint `q + 2 ≤ 27` reads as the finalisation allowance's own.

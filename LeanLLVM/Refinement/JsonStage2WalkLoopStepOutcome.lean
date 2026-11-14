@@ -48,10 +48,12 @@ premise becomes this rule, with `WalkLoopEnd`'s single tail restated as the per-
 `WalkTargetRun` at the finalisation's two entry blocks and the merge's `%nep` bound
 (`JsonStage2WalkPremisesOfStaging`); `WalkHeadPtrs` goes, because the copy's pointer
 registers are the terminal states' own; and `walkLoopStep_of_dispatch_exit` is deleted
-with the statement it produced.  What remains of the old route is the exit predicate
-and its two producers (`WalkExit`, `walkExit_ofLastFacts`, `walkExit_at_stage2Calls`),
-which nothing consumes now.  `ExitTail` survives that deletion: it is this predicate's
-merge-side supply (`WalkTargetRun.ofExitTail`).
+with the statement it produced.  The exit predicate and its two producers
+(`WalkExit`, `walkExit_ofLastFacts`, `walkExit_at_stage2Calls`) were the old route's
+last pieces; they are deleted too, since nothing consumed them.  `ExitTail` survives
+that deletion: it is this predicate's merge-side supply (`WalkTargetRun.ofExitTail`),
+and its three producers are the record that one verdict cannot cover the last-entry
+states.
 
 `WalkDispatchOutcome.cont`'s fields are `WalkDispatch`'s, field for field, so the
 revolution's composition is `WalkDispatch.revolution`'s, repeated here because that
@@ -250,7 +252,7 @@ asserts acceptance, and neither fixes the verdict: the `finish` branch's price u
 `hnepBound` because `WalkInv` does not carry `%nep`, and states nothing else about
 what the finalisation decides.
 
-`htail` is weaker than the `WalkExit` the index split consumed, in three ways: its
+`htail` is weaker than the fixed-verdict exit the index split consumed, in three ways: its
 verdict is the state's rather than one shared by every last-entry head state, its run
 is read at the dispatch's target rather than through the head path, and it asks
 nothing of `%z`/`%s` at the head (the two registers the copy reads are the terminal
