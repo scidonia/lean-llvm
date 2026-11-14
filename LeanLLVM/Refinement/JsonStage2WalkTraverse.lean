@@ -814,6 +814,46 @@ theorem walkCompletes_of_seed_loop {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
   simpa only [stage2EntryAllowance, stage2ByteAllowance, stage2FinalisationAllowance]
     using hrun
 
+/-! ### The potential's boundary form: what remains
+
+`walkPotential`'s byte term is `G.n - entryPos G C.k`, and the price the terminal
+dispatch states is read at the same index.  The boundary section above is the
+statement of the change; the consumer re-point is not applied yet, and the order it
+has to be applied in is fixed by the definitions:
+
+1. **`boundary` must precede `walkPotential`.**  `def boundary` needs only `entryPos`,
+   and it is defined below the potential here, so it moves above the potential's
+   section before `walkPotential`'s body can name it.
+2. **The potential's byte term becomes `G.n - boundary G C.k`.**  Below the stream
+   that is `walkPotential_boundary_eq_of_lt`'s equality, so no head-state statement
+   changes value; at and past `G.nep` it is the spent credit.
+3. **`walkPotential_spend` moves below the boundary lemmas**, whose `boundary_mono`
+   and `boundary_le` its new statement consumes.  `walkPotential_le` does not move:
+   its second step is `G.n - boundary G C.k ≤ G.n` by `Nat.sub_le`, so it needs no
+   boundary lemma.
+4. **Exactly two statements change shape.**  `walkPotential_spend` loses `hp`, `hp'`
+   and `hmono` — the index conditions become `C.k ≤ C'.k` and `C'.k ≤ G.nep`, and
+   `hall`'s byte term becomes `boundary G C'.k - boundary G C.k`.
+   `walkPotential_seed` gains `(hn : 0 < G.nep)`: at `G.nep = 0` the seed's boundary is
+   the document's length at index zero, where the old claim's right-hand side is
+   `8 · G.n` and its left-hand side is `0`.
+5. **Every other site is textual and value-preserving**, because each is taken at
+   `C.k < G.nep` where `boundary_eq_entryPos` applies: `WalkLoopStepThree`,
+   `walkLoopFinishesThree`, `walkCompletes_of_loop`, `walkCompletes_of_loop_budget`
+   (its `32 * G.nep + 8 * G.n + 32` does not move) and `walkCompletes_at_stage2Budget`
+   in this module; `WalkExit` in `JsonStage2WalkAssembly`, whose `C.k + 1 = G.nep`
+   implies `C.k < G.nep`; `walkExitPrice` and `walkExit_ofLastFacts` in
+   `JsonStage2WalkExitProducer`, the first by one `boundary_eq_entryPos` rewrite.
+6. **`WalkDispatch.revolution` takes one extra step the others do not.**
+   `WalkDispatch`'s price is stated in `entryPos`, so the fact it hands to
+   `walkPotential_spend` converts first: both `C.k` and `k2` are below `G.nep`, so
+   `price_eq_of_lt` rewrites `hpot` to the boundary difference.  Its three local
+   lines (`hmono`, `hp`, `hp'`) and the three arguments it passes disappear.
+
+A site that needs a value at `C.k ≥ G.nep` which the `entryPos` form supplied would
+be a genuine statement change and does not exist in the list above; each of them is
+an upper bound, which the boundary only tightens. -/
+
 /-! ### The instrument -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.WalkSegment.trans
