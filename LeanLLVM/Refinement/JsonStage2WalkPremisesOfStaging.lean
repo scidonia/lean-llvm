@@ -105,7 +105,7 @@ clause would read exactly these two cells.
 The third — `Cd.k = C.k` — is *not* a state-level fact.  `WalkInv G C s` is indexed by
 one state and one carry, so no field of it can relate two carries, and the equation is
 lost inside `HcontFacts.hround`, whose target is existential (`∃ C'' s'', …`): the carry
-`walkRevolution_at` reaches is that existential's, so `Cd.k` is opaque with it.
+the revolution reaches is that existential's, so `Cd.k` is opaque with it.
 
 Adding the two clauses is a vocabulary change, and a scoping pass measured it: 39
 `WalkInv` construction sites in 10 modules, `whileBody_step` (the only block that rebinds
