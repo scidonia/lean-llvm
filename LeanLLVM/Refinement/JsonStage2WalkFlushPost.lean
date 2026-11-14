@@ -642,6 +642,18 @@ theorem walkFlushMemAt_present_staged {m0 : Mem} (G : WalkGeom m0) (S : WalkStag
       · exact eE
     · exact eD
 
+/-- **Presence is monotone through the arm.**  A byte present at the staging is
+present at the returned memory, at whatever address: a store replaces a cell or
+adds one, so the arm never removes a byte. -/
+theorem walkFlushMemAt_present_mono {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G)
+    {a : Nat} (h : present m0 a) : present (walkFlushMemAt G S) a := by
+  have h1 : Refinement.HasBytes m0 a 1 :=
+    (hasBytes_iff m0 a 1).mpr (fun k hk => by
+      have hk0 : k = 0 := by omega
+      subst hk0
+      simpa using h)
+  exact present_of_hasBytes (walkFlushMemAt_hasBytes G S h1) (Nat.le_refl _) (by omega)
+
 /-- **Presence at the returned memory, pointwise.**  A byte inside one of the
 record's present extents is present: the extent's bytes were staged and the arm
 only writes. -/
@@ -774,6 +786,7 @@ theorem stage2Post_of_staging_flush {d c ctype cst tok s z e nkSlot nxpSlot : Na
 #print axioms LeanLLVM.Refinement.WalkScope.walkFlushMemAt_nev
 #print axioms LeanLLVM.Refinement.WalkScope.walkFlushMemAt_frame
 #print axioms LeanLLVM.Refinement.WalkScope.walkFlushMemAt_present
+#print axioms LeanLLVM.Refinement.WalkScope.walkFlushMemAt_present_mono
 #print axioms LeanLLVM.Refinement.WalkScope.stage2Boundary_of_flush
 #print axioms LeanLLVM.Refinement.WalkScope.stage2Post_of_flush
 #print axioms LeanLLVM.Refinement.WalkScope.stage2Post_of_staging_flush
