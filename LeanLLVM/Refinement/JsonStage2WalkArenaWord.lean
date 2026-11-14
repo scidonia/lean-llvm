@@ -40,6 +40,55 @@ those two numbers only by `≤` (`hale`, and `WalkInv.logArena_le` on the read s
 equality is supplied by whatever knows the decoder's output length equals the entry's
 extent, and it is not a consequence of `WalkInv`.
 
+## The predicate is a fact about a full reservation, not an invariant of the loop head
+
+**Nothing in the layer forces the slot to hold `C.alen`.**  The two numbers are not the same
+number, and they are not even functions of one another:
+
+* `z_arena_reserve.exit` advances the carry by the token's **document extent** — the same
+  `ext` it passes to the callee as the input length
+  (`WalkLink.z_arena_reserve_exit`'s call arguments, `len = ext`);
+* `if.else285.i` stores `%z.val36 + %outn.i`, and `%outn` is what the decoder wrote there:
+  the body's extent on the copy arm, or the expander's **returned decoded length** on the
+  escape arm (`JsonStage2StringBody`: `%call` → `%outn`).  `s2StringBodyPost`
+  (`JsonStage2Helpers`) leaves the decoded length free of the input length.
+* nothing lowers `alen` again: `stage2Body_arena_writers` bounds the writers to `entry` and
+  `if.else285.i`, and no carry construction in the walk writes `alen` except the reserve
+  exit's `C.alen + ext` (the seed's `G.ndst0` and `WalkDispatch`'s identity are the others).
+
+So a body whose decoded length is shorter than its document extent — any escaping string —
+leaves `slot < C.alen` at every subsequent loop head, and `not_arenaWord_of_lt` is that
+state: the predicate is **false** there, not merely unproved.  `arenaWord_writeBack_iff` is
+the same statement at the store: the equality holds at the write-back's target iff the
+decoded prefix filled the reservation.
+
+**Consequence, and the reason this module stops where it does.**  `WalkExit`'s `hword`
+(`readBytes s.mem (C.stage.z + 48) 8 = some (wordBytes 8 C.alen)`) is therefore
+**unsatisfiable at any input whose decoded length is shorter than the extent it reserved**,
+and `WalkExit`'s post asserts the same equality at `sEnd`.  Both belong at `log_alen`'s
+witness `a`, not at `C.alen`: the exit's slot copy *reads* `z + 48`, so the value it carries
+is the slot's own, which `WalkInv.log_alen` already names (`a ≤ C.alen`), and the exit's path
+stores nothing at that address (the census again), so the clause at `a` is the invariant
+transported rather than a new fact.  A producer of the equality at `C.alen` would be a
+producer of a falsehood; that is why no route through the dispatch is worth taking.
+
+**The premise is also inert.**  Both of its ends discard it: the only producer of `WalkExit`
+takes the head's word as `_harenaHead` and never reads it
+(`walkExit_at_stage2Calls`, `JsonStage2WalkExitProducer`), and the only consumer of
+`WalkExit` destructures the post's word clause as `-`
+(`walkLoopStep_of_dispatch_exit`).  So the third argument of the loop step's producer is
+passed and never used, and the arena obligation the exit actually carries is
+`harenaMerge` — the same equality one state later, at `cleanup478.i`, where the slot has not
+been rewritten either and `log_alen` gives `a ≤ C.alen` just as at the head.  The repair is
+therefore a deletion rather than a producer: the head word from `WalkExit`'s premise, the
+word clause from its post (its `WalkInv` already carries `log_alen`), and `harenaMerge` from
+the producer — no proof step anywhere depends on them.
+
+The search that establishes "nothing forces it": the only occurrences of `wordBytes 8 C.alen`
+in the development are `WalkExit`'s premise and its post (`JsonStage2WalkAssembly`), i.e. the
+statements this section finds unsatisfiable; `WalkInv.logArena_le` reads the slot as `≤`, and
+`spans_inside`/`spans_end` bound extents by the document and by the cursor.
+
 ## The two writers, and the number of revisions
 
 `stage2Body_arena_writers` (`JsonStage2WalkAssembly`) decides it: of the body's 165 blocks,
