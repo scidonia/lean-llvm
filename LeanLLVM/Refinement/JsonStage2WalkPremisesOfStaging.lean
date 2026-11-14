@@ -78,7 +78,23 @@ namespace WalkScope
 
 /-- **The continuing entry's facts at every head state with an entry left.**
 `walkRevolution_seg`'s own bundle (`HcontFacts`), as a `∀`-producer: the statement a
-dispatch needs is stated per head state, and this is the function that hands it one. -/
+dispatch needs is stated per head state, and this is the function that hands it one.
+
+**What this `∀` can and cannot be met at, in the layer as it stands.**  `HcontFacts`
+describes the path whose byte before the entry's end is **whitespace**: the skip runs, the
+token ends at the first whitespace byte `k`, and the extra-token scan runs `[k, v)` with
+`k < v`, which is the `heicd` the bundle carries.  On the arm whose byte is *not*
+whitespace the token ends at the entry's end, so `%ee.1.i` *is* `%cond350.i` and the scan's
+guard `ult %ee.1.i %cond350.i` is `v < v` — the walk leaves for `if.end473.i` and never
+enters the scan (`contEntry_scan_empty`, `JsonStage2WalkRevolutionPrefix`).  So this premise
+is satisfiable only for continuing entries of the whitespace class: **not** because the walk
+lacks a path — it takes the scan-free one — but because the bundle and the segment it feeds
+describe one of the two continuations.  The scan-free class needs its sibling bundle, whose
+segment reaches the merge without the scan and whose price has no byte term.
+
+The layer's share of that exclusion is now closed: `WalkLocal` at `land.rhs457.i` has a
+`ScanEmpty` disjunct (`JsonStage2WalkScope`), so the scan-free arm's step at
+`if.then447.i` is takeable; what remains is the sibling bundle, not a vocabulary gap. -/
 abbrev WalkContinueFacts {m0 : Mem} (G : WalkGeom m0) : Type :=
   ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     C.k + 1 < G.nep → HcontFacts G C s
