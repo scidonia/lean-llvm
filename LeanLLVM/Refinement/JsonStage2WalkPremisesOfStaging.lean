@@ -25,11 +25,12 @@ step — are composed here from the steps the layer already states.
   constructed pair.  `WalkPremises` states both at the record's numbers while those two
   lemmas read `WalkStage`'s fields, so the staging is built by
   `walkStage_at_pre_fields` — `walkStage_at_pre`'s construction with the fields named.
-* **The loop's step** is `walkLoopStep_of_staging`: `walkLoopStepThree_of_dispatchThree`
-  (`JsonStage2WalkLoopStepOutcome`) at the dispatch's three outcomes and the
-  finalisation's two terminal runs.  The outcomes are `walkDispatchThree_ofLastFacts`,
-  whose continuing case is `walkRevolution_seg` read at the merge's own cells
-  (`walkDispatch_of_continue`), and the runs are `WalkLoopEnd`'s.
+* **The loop's step** is `walkLoopStep_of_staging`: `walkLoopStepThree_of_dispatchResult`
+  (`JsonStage2WalkDispatchThreeOfRun`) at the dispatch's result and the finalisation's two
+  terminal runs.  The result is the `merge` arm, built from the continuing premise's own
+  evidence where an entry is left (`walkDispatch_of_continue`) and from the last entry's
+  bundle where it is not (`WalkDispatchResult.ofHlastMerge`), and the runs are
+  `WalkLoopEnd`'s.
 
 Three groups are premises, one per obstruction, and each is a bundle rather than a field
 per fact:
@@ -38,7 +39,7 @@ per fact:
 |---|---|---|
 | `WalkContinueFacts` | `HcontFacts` at every head state with an entry left | `walkRevolution_seg`'s own bundle, unweakened |
 | `WalkMergeCells` | the merge's two register cells (`%inc.i`, `%nep`) and the header's index at the merge | `WalkSegment` records a run and an invariant, not the blocks it passed, so no lemma carries a register from the head to the merge; none of the three is a `WalkInv` clause |
-| `WalkLoopEnd` | the last entry's bundle and depth bit, the two terminal runs, and the merge's `%nep` value | the bundle is supplied at the last-entry head states (`HlastFacts`), the runs at the states the dispatch reaches (each at its own verdict), and `%nep` is not a `WalkInv` clause |
+| `WalkLoopEnd` | the last entry's bundle, the two terminal runs, and the merge's `%nep` value | the bundle is supplied at the last-entry head states (`HlastFacts`), the runs at the states the dispatch reaches (each at its own verdict), and `%nep` is not a `WalkInv` clause |
 
 The terminal runs are read at the states the dispatch's outcomes reach rather than at the
 loop head, so the head-level `%z`/`%s` group this module used to carry is gone with the
@@ -58,6 +59,7 @@ imported at the end of `LeanLLVM.lean` for that reason.
 
 import LeanLLVM.Refinement.JsonStage2WalkExitProducer
 import LeanLLVM.Refinement.JsonStage2WalkLoopStepOutcome
+import LeanLLVM.Refinement.JsonStage2WalkDispatchThreeOfRun
 import LeanLLVM.Refinement.JsonStage2WalkRevolution
 import LeanLLVM.Refinement.JsonStage2WalkSeedAtEntry
 
@@ -192,10 +194,6 @@ structure WalkLoopEnd {m0 : Mem} (G : WalkGeom m0) : Type where
   /-- The last entry's facts, at every head state the merge's test sends to the exit. -/
   facts : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     ¬ (C.k + 1 < G.nep) → HlastFacts G C s
-  /-- **The depth's polarity**: the last entry leaves the stack non-empty, which is the
-  arm the merge's test selects. -/
-  depth : ∀ (C : WalkCarry G) (s : State) (f : HlastFacts G C s),
-    evalICmp .eq (BitVec.ofNat 32 f.spv) (BitVec.ofNat 32 0) = 0
   /-- **The merge's terminal run**, at every state a dispatch's last entry reaches at
   `cleanup478.i`, at that state's own count and verdict. -/
   merge : ∀ (Cd : WalkCarry G) (sd : State), WalkInv G Cd sd → Cd.block = "cleanup478.i" →
@@ -211,24 +209,47 @@ structure WalkLoopEnd {m0 : Mem} (G : WalkGeom m0) : Type where
     WalkInv G Cd sd → Cd.block = "cleanup478.i" →
     lookupName sd.env "%nep" = some (.int 64 nepv) → nepv.toNat ≤ G.nep
 
-/-- **The loop's step, from the three bundles.**  `walkLoopStepThree_of_dispatchThree`
-(`JsonStage2WalkLoopStepOutcome`) asks for the dispatch's three outcomes, the
-finalisation's two terminal runs and the merge's count: the outcomes are
-`walkDispatchThree_ofLastFacts` at the continuing bundle, the merge's cells, the last
-entry's facts and the depth's polarity, and the rest is `WalkLoopEnd`'s fields. -/
+/-- **The loop's step, from the three bundles.**  `walkLoopStepThree_of_dispatchResult`
+(`JsonStage2WalkDispatchThreeOfRun`) asks for the dispatch's result at every head state,
+the finalisation's two terminal runs and the merge's count.  The result is the `merge` arm
+in both branches: from the continuing premise's own evidence
+(`walkDispatch_of_continue`, whose index and depth are its fields) where an entry is left,
+and from the last entry's bundle (`WalkDispatchResult.ofHlastMerge`) where it is not.  The
+runs and the count are `WalkLoopEnd`'s.
+
+**What the branch on `C.k + 1 < G.nep` now is, and what it is not.**  It selects *which
+bundle describes the head state* — the continuing entry's or the last entry's — because
+the two bundles are the input's facts about those two states and `HlastFacts` is
+uninhabited elsewhere.  It no longer decides the dispatch's outcome: both branches build
+the same `merge` arm, and `WalkDispatchResult.toOutcome` classifies it by the merge's index
+against `%nep`.  So the `finish` outcome is reachable from either branch, and the
+standalone string's `finish` is what `standaloneString_finish` states.
+
+**The premise that is still open.**  The continuing bundle describes a token that ends
+inside its entry and whose merge index is `C.k + 1`.  A standalone string consumes two
+entries (the opener and the closer) and its index is `C.k + 2`, so at `C.k = 0`,
+`G.nep = 2` the continuing bundle is uninhabited and that branch is vacuous.  The
+two-entry token's own bundle — its scan and the `%inc208.i + 2` the merge selects — is not
+stated in this layer, so the case the producer can now express is not yet supplied at this
+call site.  That is a premise still owed, not a defect of the classification. -/
 theorem walkLoopStep_of_staging {m0 : Mem} {G : WalkGeom m0}
     (hcont : WalkContinueFacts G) (hmerge : WalkMergeCells G) (hend : WalkLoopEnd G) :
     WalkLoopStepThree (stage2Calls stage2SubCalls) G 27 :=
-  walkLoopStepThree_of_dispatchThree (Nat.le_refl 27)
-    (walkDispatchThree_ofLastFacts G
-      (fun C s hInv hhead hk =>
-        WalkDispatchOutcome.ofDispatch (walkDispatch_of_continue hcont hmerge) hInv hhead hk)
-      (fun C s hInv hhead hk => hend.facts C s hInv hhead hk) hend.depth)
+  walkLoopStepThree_of_dispatchResult (Nat.le_refl 27)
+    (fun C s hInv hhead => by
+      by_cases hk : C.k + 1 < G.nep
+      · obtain ⟨Cd, sd, p, spv, k2, prev, spOp, kOp, nepv, seg, hblk, hkC, hpre, hsp,
+          hspv, hkOp, hk2, hnepv, hbelow, _hnep, hadvance, hspcap, hspw, hprice⟩ :=
+          walkDispatch_of_continue hcont hmerge C s hInv hhead hk
+        exact WalkDispatchResult.merge Cd sd p spv k2 prev spOp kOp nepv seg hblk hkC hpre
+          hsp hspv hkOp hk2 hnepv hadvance (le_of_lt hbelow) hspcap hspw hprice
+      · exact WalkDispatchResult.ofHlastMerge G C s hInv hhead
+          (hend.facts C s hInv hhead hk))
     (fun Cd sd hInv hblk => by
       cases hblk with
       | inl h => exact hend.merge Cd sd hInv h
       | inr h => exact hend.refuse Cd sd hInv h)
-    hend.nepBound
+    (fun nepv Cd sd hInv hblk hnep => hend.nepBound Cd sd nepv hInv hblk hnep)
 
 /-! ### The empty entry stream's flush, from the staging -/
 

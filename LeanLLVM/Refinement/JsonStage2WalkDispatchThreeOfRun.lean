@@ -50,6 +50,7 @@ than the stream.  It is what makes the continue arm's `k2 < G.nep` follow from t
 merge's own test.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkLoopStepOutcome
+import LeanLLVM.Refinement.JsonStage2WalkDispatchWitnessHlast
 
 set_option autoImplicit false
 
@@ -165,6 +166,56 @@ theorem walkLoopStepThree_of_dispatchResult {calls : Calls} {m0 : Mem}
     htail
     (fun Cd sd nepv hInv hblk hnep => hnepBound nepv Cd sd hInv hblk hnep)
 
+/-! ### The last entry's bundle, as a result
+
+`HlastFacts` is the input's facts at the last entry, and the two paths from it —
+`hlast_toMerge`'s counted segment to `cleanup478.i` and `hlast_refuse`'s to the refusal
+copy — are the two arms.  Neither needs `¬ (C.k + 1 < G.nep)`: the guard is what selects
+*which bundle describes a head state*, and it does not classify the dispatch, so it does
+not appear here.
+
+The merge arm's evidence is `hlast_finish`'s, read at the endpoint that lemma names
+(`hlastMergeCF f`, `hlastMergeF f`) rather than through its existential: the arm has to
+carry the endpoint's own carry (its index is `C.k`, which is what the revolution's price
+is stated against) and that carry is opaque inside an existential.  The price is the same
+arithmetic: the terminal index is the stream's end, so the byte term is zero and
+`G.nep - C.k = 1` pays for the path. -/
+
+/-- **The `merge` arm from the last entry's bundle.**  The dispatch reaches
+`cleanup478.i` at `%k.2.i = %nep`, so its index is the stream's end and its outcome is
+`finish`; the depth is the merge's `%sp.i.0248` and the two bounds are the invariant's.
+The premise is `HlastFacts` and nothing else — no test on the head's index. -/
+theorem WalkDispatchResult.ofHlastMerge {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead)
+    (f : HlastFacts G C s) :
+    WalkDispatchResult (stage2Calls stage2SubCalls) G C s := by
+  obtain ⟨seg, hinv⟩ := hlast_toMerge G C s hInv hblock f
+  refine WalkDispatchResult.merge (hlastMergeCF f) (hlastMergeF f)
+    ((((((6 + 1) + 5) + 3) + 3) + 1) + 1) (hlastMergeCF f).sp f.k2 "if.end473.i"
+    (Operand.reg "%sp.i.0248") (Operand.reg "%inc.i") f.nepv seg rfl rfl rfl (by decide)
+    hinv.depth_reg (by decide) f.hk2 f.hnepM ?_ ?_ hinv.depth_cap hinv.sp_le_wlen ?_
+  · have h1 := f.hlastK
+    have h2 := f.hk2nep
+    show C.k < f.k2
+    omega
+  · show f.k2 ≤ f.nepv.toNat
+    rw [f.hterm]
+  · rw [f.hk2nep, walkEntryPos_at_nep G]
+    have hΔ : G.nep - C.k = 1 := by rw [← f.hlastK]; omega
+    simp only [Nat.zero_sub, Nat.mul_zero, Nat.add_zero, stage2EntryAllowance, hΔ]
+    omega
+
+/-- **The `refuse` arm from the last entry's bundle.**  `hlast_refuse` under the depth's
+polarity: the segment ends at the refusal copy with the error offset inside the document
+and the price inside the entries and bytes the loop has left. -/
+theorem WalkDispatchResult.ofHlastRefuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead)
+    (f : HlastFacts G C s)
+    (hbit : evalICmp .eq (BitVec.ofNat 32 f.spv) (BitVec.ofNat 32 0) = 0) :
+    WalkDispatchResult (stage2Calls stage2SubCalls) G C s := by
+  obtain ⟨Cd, sd, p, seg, hblk, herr, hprice⟩ := hlast_refuse G C s hInv hblock f hbit
+  exact WalkDispatchResult.refuse Cd sd p seg hblk herr hprice
+
 /-! ### The standalone string
 
 `C.k = 0` and `G.nep = 2`: the head's test is `0 + 1 < 2`, true, and the merge's index is
@@ -220,6 +271,8 @@ theorem standaloneString_result {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
 #print axioms LeanLLVM.Refinement.WalkScope.WalkDispatchResult.toOutcome
 #print axioms LeanLLVM.Refinement.WalkScope.WalkDispatchThree.ofResult
 #print axioms LeanLLVM.Refinement.WalkScope.walkLoopStepThree_of_dispatchResult
+#print axioms LeanLLVM.Refinement.WalkScope.WalkDispatchResult.ofHlastMerge
+#print axioms LeanLLVM.Refinement.WalkScope.WalkDispatchResult.ofHlastRefuse
 #print axioms LeanLLVM.Refinement.WalkScope.standaloneString_finish
 #print axioms LeanLLVM.Refinement.WalkScope.standaloneString_result
 

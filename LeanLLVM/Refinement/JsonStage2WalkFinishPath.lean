@@ -546,7 +546,7 @@ the invariant at the target.
 The copy that follows is not part of the segment, and not because its `denoteCode` is hard to
 supply: `if.then` writes the record's three ABI slots, whose bytes are outside `walkWide`
 (`walkFinish_not_frame_of`), so the target's frame clause is false.  The two-step segment is
-what `WalkDispatchThree.ofContinueAndLast`'s last branch names — a carry whose block is
+what `hlast_refuse`'s segment names — a carry whose block is
 `if.then` and whose refusal offset is inside the document. -/
 theorem walkFinishPath3 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s0 : State)
     (hInv : WalkInv G C s0) (hblock : C.block = "if.then485.i") {spv v : Nat}

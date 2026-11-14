@@ -3,10 +3,9 @@ import LeanLLVM.Refinement.JsonStage2WalkInduce
 
 /-! # The `refuse` witness, run block by block
 
-`WalkDispatchThree.ofContinueAndLast` (`JsonStage2WalkAssembly`) takes the last
-entry's two cases as an obligation: at `¬ (C.k + 1 < G.nep)` the dispatch either
-finishes at the terminal index or refuses before the merge, and the `refuse`
-alternative is
+`hlast_refuse` (`JsonStage2WalkDispatchWitnessHlast`) states the last entry's refusal:
+the dispatch refuses before the merge at `if.then`, and the `refuse` alternative of
+`WalkDispatchResult` is
 
   `∃ Cd sd p, WalkSegment calls G C s Cd sd p ∧ Cd.block = "if.then" ∧
     Cd.eoff ≤ G.n ∧ p + 2 ≤ stage2EntryAllowance * (G.nep - C.k) +
@@ -29,7 +28,7 @@ the run carries.
   if.then56.i → if.then` — six blocks, the offset being the entry's own position;
 * a string opener with no entries left: `NodeBlock21 → NodeBlock5 → LeafBlock →
   sw.bb202.i → if.then205.i → if.then` — five blocks, the offset being the
-  document's length.  This is the branch `hlast`'s own hypothesis selects, since
+  document's length.  This is the branch the last entry's guard selects, since
   `¬ (C.k + 1 < G.nep)` at `%inc.i = C.k + 1` is `sw.bb202.i`'s negated test.
 
 Both prices are one bound (`refusePrice_of_le`): a refusal path is at most thirty
@@ -53,7 +52,7 @@ where it should be.
 `four` trap blocks (`walkTrap_noStep`), plus the `finish` alternative.  Each is the
 same shape: named per-block runs from `walkLoopHead`, which is why they are stated
 as branches of one `WalkRefuseAt` rather than as one theorem over the token.  The
-general `hlast` obligation is the case split over `%8` that selects among them, and
+general refusal obligation is the case split over `%8` that selects among them, and
 this module does not state it. -/
 
 namespace LeanLLVM.Refinement
@@ -67,7 +66,7 @@ set_option autoImplicit false
 
 /-! ### The alternative, as a predicate
 
-`WalkDispatchThree.ofContinueAndLast`'s `hlast` writes the two terminal outcomes as
+`hlast_finish` and `hlast_refuse` write the two terminal outcomes as
 anonymous existentials.  Naming the refusal one gives each branch a single goal
 shape, so a branch theorem says what it is: a segment from the head to the refusal
 copy, with the offset inside the document and the price inside the entry's credit. -/
@@ -305,7 +304,7 @@ theorem bracketRefuse_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkC
     (Seg.tail L₅ (Seg.tail L₆ (Seg.nil L₆.inv')))))))
 
 /-- **The `refuse` witness at a depth-zero closing bracket**, in the exact shape
-`WalkDispatchThree.ofContinueAndLast`'s `hlast` states its second disjunct.  Six
+`hlast_refuse`'s conclusion states.  Six
 blocks from the head to the refusal copy, the offset the store wrote, and the price
 inside one entry's allowance and the document's remaining bytes.
 
@@ -330,7 +329,7 @@ theorem walkRefuseWitness_bracket {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
 The second refusal branch the dispatch note names: `%8 = 34` takes the switch's
 `LeafBlock → sw.bb202.i` arm, and `sw.bb202.i` tests `%inc.i < %nep` — a string opener
 needs a closing entry, so with none left the block stores the document's length in
-`%e + 8` and jumps to the refusal copy.  Its condition is `hlast`'s own
+`%e + 8` and jumps to the refusal copy.  Its condition is the last entry's guard
 (`¬ (C.k + 1 < G.nep)`, at `%inc.i = C.k + 1`), not a bound the caller adds.
 
 Every state is written at its own input, so each `_at` instance's `pre := some s.pc`
@@ -519,11 +518,11 @@ theorem quoteRefuse_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
     (Seg.tail L₅ (Seg.nil L₅.inv'))))))
 
 /-- **The `refuse` witness at a string opener with no entries left**, in the exact
-shape `WalkDispatchThree.ofContinueAndLast`'s `hlast` states its second disjunct.
+shape `hlast_refuse`'s conclusion states.
 Five blocks from the head to the refusal copy, the document's length as the offset,
 and the price inside one entry's allowance.
 
-This is the branch `hlast`'s own hypothesis selects: `¬ (C.k + 1 < G.nep)` at
+This is the branch the last entry's guard selects: `¬ (C.k + 1 < G.nep)` at
 `%inc.i = C.k + 1` is exactly `sw.bb202.i`'s negated test, so the run is the dispatch
 refusing on the terminal entry rather than a caller-supplied bound. -/
 theorem walkRefuseWitness_quote {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
@@ -720,7 +719,7 @@ theorem colonRefuse_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
     (Seg.tail L₅ (Seg.tail L₆ (Seg.nil L₆.inv')))))))
 
 /-- **The `refuse` witness at a depth-zero colon**, in the exact shape
-`WalkDispatchThree.ofContinueAndLast`'s `hlast` states its second disjunct.  Six
+`hlast_refuse`'s conclusion states.  Six
 blocks from the head to the refusal copy, the entry's position as the offset, and the
 price inside one entry's allowance — a refusal with entries still remaining. -/
 theorem walkRefuseWitness_colon {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
@@ -921,7 +920,7 @@ theorem commaRefuse_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
     (Seg.tail L₅ (Seg.tail L₆ (Seg.nil L₆.inv')))))))
 
 /-- **The `refuse` witness at a depth-zero comma**, in the exact shape
-`WalkDispatchThree.ofContinueAndLast`'s `hlast` states its second disjunct. -/
+`hlast_refuse`'s conclusion states. -/
 theorem walkRefuseWitness_comma {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
     (C : WalkCarry G) (s : State) (hInv : WalkInv G C s) (hhead : C.block = walkLoopHead)
     (h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 44)))
@@ -1216,7 +1215,7 @@ theorem stackMarkerRefuse_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : W
     (Seg.tail L₅ (Seg.tail L₆ (Seg.tail L₇ (Seg.nil L₇.inv'))))))))
 
 /-- **The `refuse` witness at a colon whose enclosing marker is not the brace**, in the
-exact shape `WalkDispatchThree.ofContinueAndLast`'s `hlast` states its second disjunct. -/
+exact shape `hlast_refuse`'s conclusion states. -/
 theorem walkRefuseWitness_stackMarker {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
     (C : WalkCarry G) (s : State) (hInv : WalkInv G C s) (hhead : C.block = walkLoopHead)
     (h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 58)))
@@ -1540,7 +1539,7 @@ theorem mismatchedRefuse_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : Wa
     (Seg.tail L₅ (Seg.tail L₆ (Seg.tail L₇ (Seg.nil L₇.inv'))))))))
 
 /-- **The `refuse` witness at a mismatched bracket**, in the exact shape
-`WalkDispatchThree.ofContinueAndLast`'s `hlast` states its second disjunct: a closing
+`hlast_refuse`'s conclusion states: a closing
 bracket inside a container whose marker it does not match, refused at the nesting check,
 with the entry's position as the offset. -/
 theorem walkRefuseWitness_mismatched {calls : Calls} {m0 : Mem} (G : WalkGeom m0)

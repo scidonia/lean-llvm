@@ -55,6 +55,14 @@ that deletion: it is this predicate's merge-side supply (`WalkTargetRun.ofExitTa
 and its three producers are the record that one verdict cannot cover the last-entry
 states.
 
+**Its producer.**  `WalkDispatchThree` cannot be produced by testing `C.k + 1 < G.nep`:
+that test is true at a standalone string (`C.k = 0`, `G.nep = 2`) while the merge's index
+is `2`, the stream's end, so the outcome there is `finish` and an index split has no route
+to it.  `WalkDispatchResult` (`JsonStage2WalkDispatchThreeOfRun`) states the dispatch's
+actual result — a counted segment classified by the block it reached — and
+`WalkDispatchThree.ofResult` produces this predicate from it, with
+`walkLoopStepThree_of_dispatchResult` as the composition straight to the loop's step.
+
 `WalkDispatchOutcome.cont`'s fields are `WalkDispatch`'s, field for field, so the
 revolution's composition is `WalkDispatch.revolution`'s, repeated here because that
 lemma takes a `WalkDispatch` — a statement about *every* head state — and one state's

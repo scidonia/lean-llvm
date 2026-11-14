@@ -1190,57 +1190,27 @@ theorem WalkDispatchOutcome.ofDispatch {calls : Calls} {m0 : Mem} {G : WalkGeom 
   exact WalkDispatchOutcome.cont Cd sd p spv k2 prev spOp kOp nepv seg hblock hkC hpre hsp
     hspv hkOp hk2 hnepv hbelow hnep hadvance hspcap hspw hprice
 
-/-- **`WalkDispatchThree` from two named obligations.**  A dispatch either continues — which
-is `WalkDispatch`'s premise, taken into `cont` by `ofDispatch` — or it does not, and then it
-either finishes at the terminal index or refuses before the merge.
+/-! ### The retired split
 
-**What this split cannot do.**  `¬ (C.k + 1 < G.nep)` is an index test taken *before* the
-dispatch runs, and it is not the dispatch's branch.  A standalone string — `C.k = 0`,
-`G.nep = 2`, the opener and the closer — consumes two entries, so the merge at
-`cleanup478.i` selects `%k.2.i = 2`.  The test `0 + 1 < 2` is **true**, so the first branch
-is taken, and the only outcome that branch produces without further evidence is `cont`,
-whose `hbelow` demands `k2 < nepv.toNat` — `2 < 2`, which is false.  The outcome there is
-`finish`, at the stream's end, and this split has no route to it.
+`WalkDispatchThree.ofContinueAndLast` stood here: the three-outcome premise produced by
+testing `C.k + 1 < G.nep` **before** the dispatch runs.  It is deleted, with the last
+entry's disjunction wrapper and the five-line split that repeated it
+(`JsonStage2WalkDispatchWitnessHlast`), because the test is not the dispatch's branch.
 
-So the case split is not on the dispatch's branch, and the three-outcome premise it
-produces agrees with the index test rather than with the dispatch.  It is not a false
-statement: each hypothesis is satisfiable, and the branches it does reach are the ones the
-dispatch takes.  What fails is the claim that the split *classifies* the dispatch: at the
-standalone string the two hypotheses are jointly unsatisfiable, because the first asks
-`cont` for an index below the stream while the dispatch's index is the stream's end.
-`WalkDispatchResult` (`JsonStage2WalkDispatchThreeOfRun`) is the producer that reads the
-dispatch's own endpoint — the block it reached and the index the merge selected — instead
-of testing the head's index in advance. -/
-theorem WalkDispatchThree.ofContinueAndLast {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
-    -- The continue case only: the revolution is consumed in that branch alone, so the premise
-    -- names what it uses rather than the whole loop.  (Discharging it still needs the
-    -- revolution's evidence, which is why this narrows the premise without retiring it.)
-    (hcont : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
-      C.k + 1 < G.nep → WalkDispatchOutcome calls G C s)
-    (hlast : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
-      ¬ (C.k + 1 < G.nep) →
-      (∃ (Cd : WalkCarry G) (sd : State) (p k2 : Nat) (prev : String)
-          (kOp : Operand) (nepv : BitVec 64),
-        WalkSegment calls G C s Cd sd p ∧ Cd.block = "cleanup478.i" ∧
-        sd.pre = some prev ∧ phiIncoming prev cleanupKIncoming = some kOp ∧
-        evalOperand sd kOp = some (.int 64 (BitVec.ofNat 64 k2)) ∧
-        lookupName sd.env "%nep" = some (.int 64 nepv) ∧ k2 = nepv.toNat ∧
-        p + 2 ≤ stage2EntryAllowance * (k2 - C.k) +
-          stage2ByteAllowance * (entryPos G k2 - entryPos G C.k)) ∨
-      (∃ (Cd : WalkCarry G) (sd : State) (p : Nat),
-        WalkSegment calls G C s Cd sd p ∧ Cd.block = "if.then" ∧ Cd.eoff ≤ G.n ∧
-        p + 2 ≤ stage2EntryAllowance * (G.nep - C.k) +
-          stage2ByteAllowance * (G.n - entryPos G C.k))) :
-    WalkDispatchThree calls G := by
-  intro C s hInv hhead
-  by_cases hk : C.k + 1 < G.nep
-  · exact hcont C s hInv hhead hk
-  · rcases hlast C s hInv hhead hk with
-      ⟨Cd, sd, p, k2, prev, kOp, nepv, seg, hblock, hpre, hkOp, hk2, hnepv, hterm, hprice⟩ |
-      ⟨Cd, sd, p, seg, hblock, herr, hprice⟩
-    · exact WalkDispatchOutcome.finish Cd sd p k2 prev kOp nepv seg hblock hpre hkOp hk2
-        hnepv hterm hprice
-    · exact WalkDispatchOutcome.refuse Cd sd p seg hblock herr hprice
+A standalone string — `C.k = 0`, `G.nep = 2`, the opener and the closer — consumes two
+entries, so the merge at `cleanup478.i` selects `%k.2.i = 2`.  The test `0 + 1 < 2` is
+*true*, so the first branch was taken, and the only outcome it produced without further
+evidence is `cont`, whose `hbelow` demands `k2 < nepv.toNat` — `2 < 2`, false.  The
+outcome there is `finish`, at the stream's end.  So the two hypotheses were jointly
+unsatisfiable at the case the review names, and the split agreed with the index test
+rather than with the dispatch.
+
+`WalkDispatchResult` (`JsonStage2WalkDispatchThreeOfRun`) replaces it: a counted segment
+from the head classified by the block it reached and the index the merge selected, with
+`WalkDispatchThree.ofResult` producing the same premise from it and
+`walkLoopStepThree_of_dispatchResult` feeding the loop's step.  `WalkDispatchOutcome` and
+its `ofDispatch` bridge are unchanged: the `cont` alternative is still every dispatch the
+continuing premise supplies. -/
 
 /-- **The entry block's zero arm.**  `walkEntry_step` branches on the entry count's own
 test, so the zero arm is that lemma plus the target's `pc`: at `nep = 0` the jump's

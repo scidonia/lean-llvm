@@ -273,7 +273,7 @@ theorem stateStackRefuse_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : Wa
     refusePrice_of_le G C (by omega) hk⟩
 
 /-- **The `refuse` witness at the state stack's byte**, in the exact shape
-`WalkDispatchThree.ofContinueAndLast`'s `hlast` states its second disjunct: a closing
+`hlast_refuse`'s conclusion states: a closing
 bracket that matches the type stack's marker, refused because the state stack's own byte
 is at least `2`. -/
 theorem walkRefuseWitness_stateStack {calls : Calls} {m0 : Mem} (G : WalkGeom m0)

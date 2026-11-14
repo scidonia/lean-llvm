@@ -4,7 +4,7 @@ import LeanLLVM.Refinement.JsonStage2WalkInduce
 
 /-! # The `finish` alternative
 
-`WalkDispatchThree.ofContinueAndLast`'s other terminal outcome: the dispatch consumed the
+`hlast_finish`'s terminal outcome: the dispatch consumed the
 last entry and the merge at `cleanup478.i` selects the *terminal* index, `%k.2.i = %nep`.
 The dispatch note's longest path is the twenty-two blocks from `while.body.i` to the merge,
 and the refusal module's three instruments carry over unchanged — a named prefix per state,
@@ -36,7 +36,7 @@ was for `if.end59.i`'s nesting check; and two are *call* consumers, whose step i
 with the helper's contract named as its hypothesis — `s2_value_pos`, `od_scalar_value` and
 `s2_after_value`, in the handoff's own names.
 
-That is why this file is sized rather than finished: the refusal side of `hlast` is closed by
+That is why this file is sized rather than finished: the refusal side is closed by
 the witness modules, and `finish`'s remaining work is these seven blocks, four of which are
 contract consumers rather than block arithmetic.-/
 
