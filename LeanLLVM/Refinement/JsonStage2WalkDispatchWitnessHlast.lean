@@ -45,8 +45,9 @@ it is the one field of the input's bundle that a hypothesis about the entry can 
 ## The bundle
 
 `HlastFacts` is that bundle, grouped by subject: the head's byte, the entry counts, the
-default arm's cells, the seam's cells, the second byte's class, the tail's own chain,
-the scan's landing, the latch's exit test, the merge's cells, and the prefix's price.
+default arm's cells, the seam's cells, the second byte's class, the tail's counted
+segment, the scan's landing, the latch's exit test, the merge's cells, and the entry
+being the stream's last.
 It is a `Type` rather than a `Prop` because its first member of each group is a
 *witness* — the byte, the two counts, the selected operand — that the later groups'
 statements are stated at; a `Prop`-valued structure cannot carry data
@@ -56,12 +57,14 @@ passed beside the bundle — is the 34-binder statement this bundle exists to av
 
 Two fields are not premises of a single lemma:
 
-* `hprice` is the prefix's **price**, and it is the input's for the same reason the
-  prefix's premises are: the chain's count is what its scans visit, which is the bytes
-  it reads.  The count is existential in `WalkChain.steps` and no committed lemma
-  exposes a bound, so the obligation is stated as one — `j + 7 ≤ 32·Δk` at whichever
-  segment the head path is counted as, `7` being the refusal's remaining steps
-  (`2` scan-to-merge, `1` merge, `2` path 3, `2` the disjunct's own slack).
+* `hlastK : C.k + 1 = G.nep` is the entry being the stream's last.  It is what the
+  prefix's **price** becomes: the path's count is a `Nat` (`hlastPrefixSeg` counts it at
+  `(((6 + 1) + 5) + 3) + 3 = 18`), so the price is `18 + 4 ≤ 32 · Δk` and `Δk = 1`
+  follows from this equation — arithmetic, not a hypothesis.  Earlier this was a
+  `∀ j` price field, because a `WalkChain`'s count is not projectable; the counted
+  prefix retired it.
+* `hTail` is a **segment at count `3`**, not a chain, for the same reason: the tail is
+  a piece of a priced path.
 * `hlatch`-group fields are stated **at the states named above** (`hlastLatch`,
   `hlastScanOut`, `hlastMerge`): the callers of `walkScanToMerge` and of
   `walkFinishMerge_at` have their premises at exactly those terms, and a fact stated
@@ -147,6 +150,7 @@ them.
 import LeanLLVM.Refinement.JsonStage2WalkHeadChainScan
 import LeanLLVM.Refinement.JsonStage2WalkFinishPath
 import LeanLLVM.Refinement.JsonStage2WalkDispatchWitnessFinish
+import LeanLLVM.Refinement.JsonStage2WalkPrefixCount
 
 set_option autoImplicit false
 
@@ -266,10 +270,10 @@ structure HlastFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) 
   xA : BitVec 32
   ei : Nat
   cd : Nat
-  hTail : WalkChain (stage2Calls stage2SubCalls) G (TailStartC C)
+  hTail : WalkSegment (stage2Calls stage2SubCalls) G (TailStartC C)
     (TailStart C s x inc nep c ix e b8 x1)
     (TailCarryScan (TailStartC C) ev)
-    (hlastEntry C s x inc nep c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA)
+    (hlastEntry C s x inc nep c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA) 3
   /-- The scan's landing: the counter's selection, the byte's address and the byte. -/
   idx : BitVec 64
   a : Nat
@@ -318,6 +322,14 @@ structure HlastFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) 
   hqc : qi + 1 = cw
   hcw0 : 1 ≤ cw
   hcw64 : cw < 2 ^ 64
+  /-- **The scan's last visit is affordable — and that is a restriction on the input.**
+  With `hqc` this reads `1 ≤ C.inner`: a head state whose inner budget is zero satisfies
+  `WalkInv` and admits no `HlastFacts`, so the bundle is uninhabited there.  The bound
+  cannot move into `WalkInv`: the invariant is asserted at states *inside* an iteration,
+  where the scans have spent `inner` down to zero, so `1 ≤ C.inner` is false there.  It
+  belongs where it is — with the scan's own premise (`scanExitSeg`'s `c - i ≤ C.inner`)
+  — and the lower bound a producer would need is the loop head's refill
+  (`walkInnerCap G ≥ 6`), which is a fact about the seed, not about the invariant. -/
   hinner : cw - qi ≤ C.inner
   hexit : ∀ (e : State), e.pre = some "while.body462.i" →
     lookupName e.env "%inc463.i" = some (.int 64 (BitVec.ofNat 64 (qi + 1))) →
@@ -350,12 +362,11 @@ structure HlastFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) 
     (hlastMerge C s x inc nep c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw).env
     "%4" = some (.int 64 (BitVec.ofNat 64 v))
   hv64 : v < 2 ^ 64
-  /-- **The prefix's price.**  The head path's own count, whichever segment the chain
-  is read as, plus the refusal's seven remaining steps, inside the entries the entry
-  consumes.  The count is the input's: the chain's scans visit bytes. -/
-  hprice : ∀ (j : Nat) (s' : State),
-    WalkSegment (stage2Calls stage2SubCalls) G C s (ScanLatchC C ev) s' j →
-    j + 7 ≤ stage2EntryAllowance * (G.nep - C.k)
+  /-- **The entry is the stream's last.**  The carry's index plus one is the count, which
+  is what makes the path's count — `18 + 4` steps — fit the entry's credit
+  (`stage2EntryAllowance = 32`).  Stated rather than assumed at the price: the path's
+  count is now a `Nat` (`hlastPrefixSeg`), so the price is arithmetic on this. -/
+  hlastK : C.k + 1 = G.nep
 
 /-! ### The bundle's states, at their own argument lists
 
@@ -425,107 +436,54 @@ abbrev hlastThenC {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     (f : HlastFacts G C s) : WalkCarry G :=
   { hlastMergeCF f with block := "if.then485.i" }
 
-/-- **The last entry's path to the merge.**  The head path's chain (the six-block
-fall-through, the seam, the class-C span, the tail's own chain and the scan's three
-links), as one segment at its own count plus the two the latch's exit and the merge
-cost; the price it carries is the bundle's, read at the chain's own count.
+/-- **The last entry's path to the merge.**  The head path (the six-block
+fall-through, the seam, the class-C span, the tail's three links and the scan's three),
+as one segment at its own count plus the two the latch's exit and the merge cost.  The
+count is a literal — `hlastPrefixSeg` composes it from counted pieces — which is what
+lets the callers price the path by `omega`.
 
 The scan's three links are `walkScanChain457_ws`'s, re-stated at their `_at` forms: that
 lemma leaves the latch existential, and the latch is where the exit test's premises are
 read.  The three named targets are `landRhs457OutAt`, `ScanS₉₆` and `hlastLatch`. -/
 theorem hlast_toMerge {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead) (f : HlastFacts G C s) :
-    ∃ (j : Nat),
-      WalkSegment (stage2Calls stage2SubCalls) G C s (hlastMergeCF f) (hlastMergeF f)
-        ((j + 1) + 1) ∧
-      WalkInv G (hlastMergeCF f) (hlastMergeF f) ∧
-      j + 7 ≤ stage2EntryAllowance * (G.nep - C.k) := by
-  -- the head's fall-through, to the token's end
-  have hA : WalkChain (stage2Calls stage2SubCalls) G C s (HeadAC₆ C)
-      (headEndS C s f.x f.inc f.nep f.c f.ix) :=
-    walkHeadChainA (G := G) (C := C) (s := s) hInv hblock f.h8 f.hlt91 f.hlt123 f.hlt125
+    WalkSegment (stage2Calls stage2SubCalls) G C s (hlastMergeCF f) (hlastMergeF f)
+        ((((((6 + 1) + 5) + 3) + 3) + 1) + 1) ∧
+      WalkInv G (hlastMergeCF f) (hlastMergeF f) := by
+  -- the head path, counted: `hlastPrefixSeg`'s eighteen steps
+  obtain ⟨s₀, hs₀, hsegP⟩ :=
+    hlastPrefixSeg (G := G) (C := C) (s := s) hInv hblock f.h8 f.hlt91 f.hlt123 f.hlt125
       f.hne125 f.hinc f.hnep f.hge f.hpre5 f.hav5 f.hidx5 f.htok5 f.hgap5 f.hugt
-  -- the seam, at its named target
-  obtain ⟨s₁, hl₁, hs₁⟩ :=
-    WalkLink.if_end372_i_at (calls := stage2Calls stage2SubCalls) (G := G) (C := HeadAC₆ C)
-      (s := headEndS C s f.x f.inc f.nep f.c f.ix) (WalkChain.inv_last hA) rfl
-      (hpre := f.hpre6) (hin := f.hin6) (hv := f.hv6) (hend := f.hend6) (h8 := f.h8end)
-      (hbit := f.hbit6)
-  have hAB : WalkChain (stage2Calls stage2SubCalls) G C s (HeadSeamC C)
-      (seamAt C s f.x f.inc f.nep f.c f.ix f.e f.b8) := by
-    rw [hs₁] at hl₁
-    exact hA.append (WalkChain.tail hl₁ (WalkChain.nil hl₁.inv'))
-  -- the class-C span
-  have hC : WalkChain (stage2Calls stage2SubCalls) G (HeadSeamC C)
-      (seamAt C s f.x f.inc f.nep f.c f.ix f.e f.b8) (TailStartC C)
-      (TailStart C s f.x f.inc f.nep f.c f.ix f.e f.b8 f.x1) :=
-    walkHeadChainC (G := G) (C := HeadSeamC C)
-      (s := seamAt C s f.x f.inc f.nep f.c f.ix f.e f.b8) (WalkChain.inv_last hAB) rfl
-      f.h8c f.hc110 f.hc116 f.hceq116
-  -- the tail's links
-  have hCT : WalkChain (stage2Calls stage2SubCalls) G C s (TailCarryScan (TailStartC C) f.ev)
-      (hlastEntryF f) := (hAB.append hC).append f.hTail
-  -- the scan's landing, its pivot and its range leaf, each at the named state
-  obtain ⟨s₂, hl₂, hs₂⟩ :=
-    WalkLink.landRhs457_at (calls := stage2Calls stage2SubCalls) (G := G)
-      (C := TailCarryScan (TailStartC C) f.ev) (s := hlastEntryF f)
-      (WalkChain.inv_last hCT) rfl (hpre := f.hpreS) (hinc := f.hincS) (hop := f.hopS)
-      (h3 := f.h3S) (hpos := f.hpos) (hread := f.hreadS) (hbs := f.hbsS)
-      (hloc := f.hloc105)
-  have hs₂' : s₂ = landRhs457OutAt (hlastEntryF f) f.idx f.a f.q := hs₂
-  rw [hs₂'] at hl₂
-  obtain ⟨s₃, hl₃, hs₃⟩ :=
-    WalkLink.NodeBlock105_at (calls := stage2Calls stage2SubCalls) (G := G)
-      (C := ScanC₁₀₅ (TailCarryScan (TailStartC C) f.ev))
-      (s := landRhs457OutAt (hlastEntryF f) f.idx f.a f.q) hl₂.inv' rfl f.h47
-  have hs₃' : s₃ = ScanS₉₆ (hlastEntryF f) f.idx f.a f.q f.x47 := by
-    rw [hs₃, ite_eq_left f.hbit47]; rfl
-  rw [hs₃'] at hl₃
-  rw [ite_eq_left f.hbit47] at hl₃
-  obtain ⟨s₄, hl₄, hs₄⟩ :=
-    WalkLink.LeafBlock96_at (calls := stage2Calls stage2SubCalls) (G := G)
-      (C := ScanC₉₆ (TailCarryScan (TailStartC C) f.ev))
-      (s := ScanS₉₆ (hlastEntryF f) f.idx f.a f.q f.x47) hl₃.inv' rfl
-      (by
-        simpa only [ScanS₉₆, stateAt, evalOperand,
-          lookupName_cons_ne (k := "%Pivot106") (n := "%47") _ _ (by decide)] using f.h47)
-      f.hlatch
-  -- each link's target, named
-  have hs₄' : s₄ = hlastLatchF f := by
-    rw [hs₄, ite_eq_left f.hws47]; rfl
-  rw [hs₄'] at hl₄
-  rw [ite_eq_left f.hws47] at hl₄
-  -- the chain, and its segment
-  have hscan : WalkChain (stage2Calls stage2SubCalls) G (TailCarryScan (TailStartC C) f.ev)
-      (hlastEntryF f) (ScanLatchC C f.ev) (hlastLatchF f) :=
-    WalkChain.tail hl₂ (WalkChain.tail hl₃ (WalkChain.tail hl₄ (WalkChain.nil hl₄.inv')))
-  have hTotal : WalkChain (stage2Calls stage2SubCalls) G C s (ScanLatchC C f.ev)
-      (hlastLatchF f) := hCT.append hscan
-  obtain ⟨j, hsegP⟩ := WalkSegment.of_chain hTotal
+      f.hpre6 f.hin6 f.hv6 f.hend6 f.h8end f.hbit6 f.h8c f.hc110 f.hc116 f.hceq116
+      f.r₁ f.r₂ f.r₃ f.ev f.hTail f.hpreS f.hincS f.hopS
+      f.h3S f.hpos f.hreadS f.hbsS f.hloc105 f.h47 f.hbit47 f.hws47 f.hloc96 f.hlatch
+  have hsegL : WalkSegment (stage2Calls stage2SubCalls) G C s (ScanLatchC C f.ev)
+      (hlastLatchF f) ((((6 + 1) + 5) + 3) + 3) := by
+    rw [hs₀] at hsegP
+    exact hsegP
   -- the latch's exit, one step
   obtain ⟨s₅, hseg₅, -, hs₅, -⟩ :=
     scanExitSeg (calls := stage2Calls stage2SubCalls) (G := G) (C := ScanLatchC C f.ev)
-      (s := hlastLatchF f) (WalkChain.inv_last hTotal) rfl f.hq f.hcwL f.hinner f.hqc
-      f.hcw64 f.hexit
+      (s := hlastLatchF f) hsegL.inv' rfl f.hq f.hcwL f.hinner f.hqc f.hcw64 f.hexit
   rw [hs₅] at hseg₅
   -- the merge, one step
   obtain ⟨s₆, hl₆, hs₆⟩ :=
     walkIfEnd473_at (sub := stage2SubCalls) (G := G) (C := ScanCMerge (ScanLatchC C f.ev))
-      (s := hlastScanOutF f) (hseg₅.inv') rfl f.htokL
+      (s := hlastScanOutF f) hseg₅.inv' rfl f.htokL
   rw [hs₆] at hl₆
   have hl₆' : WalkLink (stage2Calls stage2SubCalls) G (ScanCMerge (ScanLatchC C f.ev))
       (hlastScanOutF f) (hlastMergeCF f) (hlastMergeF f) := hl₆
   have hseg₆ : WalkSegment (stage2Calls stage2SubCalls) G (ScanCMerge (ScanLatchC C f.ev))
       (hlastScanOutF f) (hlastMergeCF f) (hlastMergeF f) 1 := WalkSegment.of_link hl₆'
-  exact ⟨j, (hsegP.trans hseg₅).trans hseg₆, hl₆'.inv', f.hprice j (hlastLatchF f) hsegP⟩
+  exact ⟨(hsegL.trans hseg₅).trans hseg₆, hl₆'.inv'⟩
 
 /-! ### The two outcomes -/
 
 /-- **The finish disjunct.**  The last entry's path reaches `cleanup478.i` at the
 terminal index: the segment is `hlast_toMerge`'s, the merge's index is the `phi`'s
-selection `%inc.i`, and the entry count is the state's `%nep`.  The price is the
-bundle's, at the prefix's own count — the disjunct's `+ 2` is the two steps the merge
-and the latch's exit take out of it. -/
+selection `%inc.i`, and the entry count is the state's `%nep`.  The price is arithmetic:
+`hlastPrefixSeg` counts the head path at `18`, the latch's exit and the merge add `2`,
+and `hlastK` makes `Δk = 1`, so `22 ≤ 32`. -/
 theorem hlast_finish {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead) (f : HlastFacts G C s) :
     ∃ (Cd : WalkCarry G) (sd : State) (p k2 : Nat) (prev : String) (kOp : Operand)
@@ -536,11 +494,13 @@ theorem hlast_finish {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
       lookupName sd.env "%nep" = some (.int 64 nepv) ∧ k2 = nepv.toNat ∧
       p + 2 ≤ stage2EntryAllowance * (k2 - C.k) +
         stage2ByteAllowance * (entryPos G k2 - entryPos G C.k) := by
-  obtain ⟨j, hseg, -, hprice⟩ := hlast_toMerge G C s hInv hblock f
-  refine ⟨hlastMergeCF f, hlastMergeF f, (j + 1) + 1, f.k2, "if.end473.i", .reg "%inc.i",
-    f.nepv, hseg, rfl, rfl, by decide, f.hk2, f.hnepM, f.hterm, ?_⟩
+  obtain ⟨hseg, -⟩ := hlast_toMerge G C s hInv hblock f
+  refine ⟨hlastMergeCF f, hlastMergeF f, (((((6 + 1) + 5) + 3) + 3) + 1) + 1,
+    f.k2, "if.end473.i", .reg "%inc.i", f.nepv, hseg, rfl, rfl, by decide, f.hk2,
+    f.hnepM, f.hterm, ?_⟩
   rw [f.hk2nep, entryPos_nep]
-  simp only [Nat.zero_sub, Nat.mul_zero, Nat.add_zero]
+  have hΔ : G.nep - C.k = 1 := by rw [← f.hlastK]; omega
+  simp only [Nat.zero_sub, Nat.mul_zero, Nat.add_zero, stage2EntryAllowance, hΔ]
   omega
 
 /-- **The refusal disjunct.**  The same segment, the merge's step and the exit tail's
@@ -548,7 +508,7 @@ first two blocks: the target is `if.then` with the merge's `phi` cells in place,
 carry's refusal offset is the invariant's (`WalkInv.eoff_le`), unchanged through the
 three carries.  The price fits the entries the loop has left and the document bytes it
 has not reached, which is the refusal's own accounting (`walkPotential_spend`'s
-direction).
+direction) — `23 ≤ 32` at `Δk = 1` and the byte term is left as the credit it is.
 
 `hbit` is the exit tail's test at the merge's depth: `%sp.i.1 = 0` is *false*, so the
 merge's false arm takes `if.then488.i` and the refusal copy rather than `if.then490.i`
@@ -562,7 +522,7 @@ theorem hlast_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
       Cd.eoff ≤ G.n ∧
       p + 2 ≤ stage2EntryAllowance * (G.nep - C.k) +
         stage2ByteAllowance * (G.n - entryPos G C.k) := by
-  obtain ⟨j, hseg, hinv, hprice⟩ := hlast_toMerge G C s hInv hblock f
+  obtain ⟨hseg, hinv⟩ := hlast_toMerge G C s hInv hblock f
   -- the merge's step, at the terminal index
   obtain ⟨e, hstep, hInvE, he⟩ :=
     walkFinishMerge_at (calls := stage2Calls stage2SubCalls) (G := G) (C := hlastMergeCF f)
@@ -598,8 +558,10 @@ theorem hlast_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
   obtain ⟨s₇, hseg₇, -, -, -⟩ :=
     walkFinishPath3 (G := G) (C := hlastThenC f) (s0 := hlastThenF f) hInvE rfl hspT
       hbit heT h4T f.hv64
-  refine ⟨FinishCThen (hlastThenC f), s₇, (((j + 1) + 1) + 1) + 2,
-    (hseg.trans hsegM).trans hseg₇, rfl, hInv.eoff_le, ?_⟩
+  refine ⟨FinishCThen (hlastThenC f), s₇, ((((((6 + 1) + 5) + 3) + 3) + 1) + 1) + 1 + 2,
+    ((hseg.trans hsegM).trans hseg₇), rfl, hInv.eoff_le, ?_⟩
+  have hΔ : G.nep - C.k = 1 := by rw [← f.hlastK]; omega
+  simp only [stage2EntryAllowance, hΔ]
   omega
 
 /-- **The last entry's two outcomes.**  The bundle is the input's, and `hbit` — the
@@ -692,20 +654,17 @@ bundle is inhabited: it is the *exact boundary* of what the composition consumes
 the three fields it derives are the ones that were never free.
 
 **What resists, and where.**
-* `hprice` cannot be produced from the committed layer at all: the prefix's count is
-  existential in `WalkChain.steps` (`WalkChain` is a `Prop`, so the count is not
-  projectable) and the three chain-shaped pieces of the head path — `walkHeadChainA`,
-  `walkHeadChainC`, the tail's `consumer_tail_chain` — have no counted form.  A
-  counted re-statement of those three, composed by `WalkSegment.of_link` and
-  `WalkSegment.trans` (both of which carry counts), would make the price `omega` from
-  `hk`; nothing else will.
 * the entry's evidence (`x`, the four class bits, the two counts' reads, the seam's six
   cells, the second byte's class) is a fact about the entry stream — `%8` is the byte
   at `entryPos G C.k` (`entryByte`) and the seam's word the stored `%end.i` — and its
   producer is the entry's staging, not the invariant.
-* the tail's chain is `consumer_tail_chain`'s conclusion, whose premises are the three
-  call contracts (`s2_value_pos`, `od_scalar_value`, `s2_after_value`) at the staged
-  arguments; that is the Finish module's header's "two call consumers".
+* the tail's counted segment is `consumerTailSegAt`'s conclusion (this module's
+  `JsonStage2WalkPrefixCount`), whose premises are the three call contracts
+  (`s2_value_pos`, `od_scalar_value`, `s2_after_value`) at the staged arguments — the
+  Finish module's header's "two call consumers".  It is a segment, not a chain, because
+  the path is priced: `consumer_tail_seg` already counts it at `3`, but its target's
+  *state* is existential and a counted piece whose state cannot be named cannot be
+  composed.
 * the scan's landing and the latch's last visit are the extra-token scan's traversal:
   its byte read, its counter's exit, and the `WalkLocal` side conditions at the three
   named states.
@@ -821,10 +780,10 @@ def hlastFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
     (hceq116 : evalICmp .eq x1 (BitVec.ofNat 8 116) = 0)
     (r₁ r₂ r₃ : CallOutcome) (ev : EventRecord) {cA rdv : BitVec 32} {xA : BitVec 32}
     (ei cd : Nat)
-    (hTail : WalkChain (stage2Calls stage2SubCalls) G (TailStartC C)
+    (hTail : WalkSegment (stage2Calls stage2SubCalls) G (TailStartC C)
       (TailStart C s x (hlastIncV C) (hlastNepV G) c ix e b8 x1)
       (TailCarryScan (TailStartC C) ev)
-      (hlastEntryAt C s x c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA))
+      (hlastEntryAt C s x c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA) 3)
     {idx : BitVec 64} {a q : Nat} {bs : List UInt8} {src : String} {sel : Operand}
     (hpreS : (hlastEntryAt C s x c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA).pre = some src)
     (hincS : phiIncoming src
@@ -884,10 +843,7 @@ def hlastFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
     (h4M : lookupName
       (hlastMergeAt C s x c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw).env
       "%4" = some (.int 64 (BitVec.ofNat 64 v)))
-    (hv64 : v < 2 ^ 64)
-    (hprice : ∀ (j : Nat) (s' : State),
-      WalkSegment (stage2Calls stage2SubCalls) G C s (ScanLatchC C ev) s' j →
-      j + 7 ≤ stage2EntryAllowance * (G.nep - C.k)) :
+    (hv64 : v < 2 ^ 64) :
     HlastFacts G C s :=
   { x := x
     h8 := h8
@@ -983,7 +939,7 @@ def hlastFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
     heM := heM
     h4M := h4M
     hv64 := hv64
-    hprice := hprice }
+    hlastK := hk }
 
 /-! ### The instrument -/
 
