@@ -67,6 +67,13 @@ Two fields are not premises of a single lemma:
   `walkFinishMerge_at` have their premises at exactly those terms, and a fact stated
   at a term needs no peeling at its use.
 
+The depth's polarity is **not** a bundle field.  The exit tail's test is
+`%sp.i.1 = 0`, so the last entry's outcome is `finish` at depth zero and the refusal
+otherwise: a field `≠ 0` in the bundle would make the bundle uninhabited exactly at the
+depth-zero inputs, where `hlast_finish`'s alternative is the true one.  It is a fact
+about the input like the rest, so it is an argument of the two lemmas that read it
+(`hlast_refuse`, `hlast`), and `HlastFacts` stays free of it.
+
 The scan's three links are re-stated rather than taken from `walkScanChain457_ws`,
 because that lemma's conclusion leaves the latch *existential* (`∃ s', WalkChain …`)
 and every fact the exit test reads is stated at the latch.  `WalkLink.landRhs457_at`,
@@ -85,33 +92,48 @@ rest of the file reads is that name.
    step, and `walkFinishPath3`'s two, at `if.then` with the carry's refusal offset;
 5. `hlast` — the pair, as the disjunction.
 
-## What the assembly still needs
+## The assembly's premise, and why this file states the bridge
 
-`ofContinueAndLast`'s second hypothesis must gain the bundle.  The old statement
-(`JsonStage2WalkAssembly.lean:1244–1257`):
+`ofContinueAndLast`'s second hypothesis is a statement about the last entry whose
+facts are the input's, and the bundle belongs to the caller.  **The premise cannot name
+`HlastFacts` from `JsonStage2WalkAssembly`**: that module is the walk layer's *base*
+(`JsonStage2WalkSteps` and `JsonStage2WalkStepsPath` import it, and every witness module
+above them does too), while the bundle's field types name states defined above it —
+`headAS₄`/`headAS₅`/`headEndS` (`JsonStage2WalkHeadChainA`),
+`seamAt`/`TailStart`/`TailStartC`/`ScanEntry` (`JsonStage2WalkHeadChainScan`),
+`ScanC₁₀₅`/`ScanS₉₆`/`ScanCMerge`/`landRhs457OutAt` (`JsonStage2WalkStepsPath`) and
+`scanLatchOut`/`Latch462S` (`JsonStage2WalkInduce`).  Importing this module into the
+assembly therefore closes a cycle through `JsonStage2WalkSteps`, which the build rejects.
+
+So the premise keeps its shape, and the composition that consumes the bundle is stated
+here, where it is above both: `walkDispatchThree_ofLastFacts` re-derives
+`ofContinueAndLast`'s case split at `calls := stage2Calls stage2SubCalls` (the split is
+five lines: the revolution from `hcont`, and the last entry's two arms from `hlast` with
+the depth's polarity), with the bundle threaded at the point the input supplies it.  That
+is the assembly's use site.
+
+Making the *assembly's own premise* name the bundle would first require the states above
+to move down into `JsonStage2WalkScope` — `headAS₄`, `headAS₅`, `headEndS`, `seamAt`,
+`TailStart`, `TailStartC`, `ScanEntry`, `ScanC₁₀₅`, `ScanS₉₆`, `ScanCMerge`,
+`landRhs457OutAt`, `scanLatchOut`, `Latch462S` — which is a change to modules this file
+does not own.  Until then, the premise's shape in the assembly is unchanged and its
+producer is the theorem below.
+
+The old and the new shapes of the premise, for whichever of those two routes is taken:
 
 ```lean
+-- old (JsonStage2WalkAssembly.lean:1244–1257)
 (hlast : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
-  ¬ (C.k + 1 < G.nep) →
-  (∃ (Cd : WalkCarry G) (sd : State) (p k2 : Nat) (prev : String)
-      (kOp : Operand) (nepv : BitVec 64), … ) ∨
-  (∃ (Cd : WalkCarry G) (sd : State) (p : Nat), …))
-```
+  ¬ (C.k + 1 < G.nep) → (∃ … p + 2 ≤ …) ∨ (∃ … p + 2 ≤ …))
 
-and the new one:
-
-```lean
+-- with the bundle (this file's route: the bundle enters at the use site)
 (hlast : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
-  ¬ (C.k + 1 < G.nep) → HlastFacts G C s →
-  (∃ (Cd : WalkCarry G) (sd : State) (p k2 : Nat) (prev : String)
-      (kOp : Operand) (nepv : BitVec 64), … ) ∨
-  (∃ (Cd : WalkCarry G) (sd : State) (p : Nat), …))
+  ¬ (C.k + 1 < G.nep) → HlastFacts G C s → (∃ …) ∨ (∃ …))
 ```
 
 The segments in both disjuncts are at `stage2Calls stage2SubCalls` — a segment's
-`calls` is the program's, not a variable — so the use site instantiates
-`ofContinueAndLast (calls := stage2Calls stage2SubCalls)`, which is the calls every
-dispatch in this layer is stated at.
+`calls` is the program's, not a variable — which is why the bridge below is stated at
+those calls and not at a generic `calls`.
 
 ## Why this module exists
 
@@ -328,7 +350,6 @@ structure HlastFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) 
     (hlastMerge C s x inc nep c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw).env
     "%4" = some (.int 64 (BitVec.ofNat 64 v))
   hv64 : v < 2 ^ 64
-  hspv0 : evalICmp .eq (BitVec.ofNat 32 spv) (BitVec.ofNat 32 0) = 0
   /-- **The prefix's price.**  The head path's own count, whichever segment the chain
   is read as, plus the refusal's seven remaining steps, inside the entries the entry
   consumes.  The count is the input's: the chain's scans visit bytes. -/
@@ -527,9 +548,15 @@ first two blocks: the target is `if.then` with the merge's `phi` cells in place,
 carry's refusal offset is the invariant's (`WalkInv.eoff_le`), unchanged through the
 three carries.  The price fits the entries the loop has left and the document bytes it
 has not reached, which is the refusal's own accounting (`walkPotential_spend`'s
-direction). -/
+direction).
+
+`hbit` is the exit tail's test at the merge's depth: `%sp.i.1 = 0` is *false*, so the
+merge's false arm takes `if.then488.i` and the refusal copy rather than `if.then490.i`
+and the normal exit.  It is the one field of the last entry's facts that says which of
+the two outcomes this is, which is why it is an argument rather than a bundle field. -/
 theorem hlast_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
-    (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead) (f : HlastFacts G C s) :
+    (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead) (f : HlastFacts G C s)
+    (hbit : evalICmp .eq (BitVec.ofNat 32 f.spv) (BitVec.ofNat 32 0) = 0) :
     ∃ (Cd : WalkCarry G) (sd : State) (p : Nat),
       WalkSegment (stage2Calls stage2SubCalls) G C s Cd sd p ∧ Cd.block = "if.then" ∧
       Cd.eoff ≤ G.n ∧
@@ -570,16 +597,21 @@ theorem hlast_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     exact f.h4M
   obtain ⟨s₇, hseg₇, -, -, -⟩ :=
     walkFinishPath3 (G := G) (C := hlastThenC f) (s0 := hlastThenF f) hInvE rfl hspT
-      f.hspv0 heT h4T f.hv64
+      hbit heT h4T f.hv64
   refine ⟨FinishCThen (hlastThenC f), s₇, (((j + 1) + 1) + 1) + 2,
     (hseg.trans hsegM).trans hseg₇, rfl, hInv.eoff_le, ?_⟩
   omega
 
-/-- **The last entry's two outcomes.**  The bundle is the input's, and it selects the
-refusal: the depth the merge's `%sp.i.0248` reads is non-zero (`hspv0`), which is the
-exit tail's own test.  `hlast_finish` states the other alternative at the same facts —
-the two are not exclusive, because both are statements about what the segment reaches
-and only the depth's polarity says which one the walk takes.
+/-- **The last entry's two outcomes.**  The bundle is the input's, and `hbit` — the
+exit tail's test at the merge's depth, `%sp.i.1 ≠ 0` — selects the refusal, which is
+the branch the walk takes whenever the last token leaves the stack non-empty.
+`hlast_finish` states the other alternative at the same facts and needs no polarity:
+it says what the segment reaches, and the merge is reached on both arms.
+
+The two alternatives are not rivals: `hlast_refuse`'s segment is `hlast_finish`'s
+`trans` three more steps (`(hseg.trans hsegM).trans hseg₇`), so the merge state is
+reached on the refusal's own run at `j + 2` fuel and `if.then` at `j + 5`.  A segment
+is a run prefix, not a terminal claim, so one run carries both.
 
 `¬ (C.k + 1 < G.nep)` is carried because the assembly's premise has it and it names the
 last entry, but nothing below reads it: the fact it states — that the entry's
@@ -588,7 +620,8 @@ those are the forms the prefix and the merge consume.  A premise that is subsume
 reads as unused here rather than being dropped from the disjunction's shape. -/
 theorem hlast {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead) (_hk : ¬ (C.k + 1 < G.nep))
-    (f : HlastFacts G C s) :
+    (f : HlastFacts G C s)
+    (hbit : evalICmp .eq (BitVec.ofNat 32 f.spv) (BitVec.ofNat 32 0) = 0) :
     (∃ (Cd : WalkCarry G) (sd : State) (p k2 : Nat) (prev : String) (kOp : Operand)
       (nepv : BitVec 64),
       WalkSegment (stage2Calls stage2SubCalls) G C s Cd sd p ∧ Cd.block = "cleanup478.i" ∧
@@ -602,7 +635,39 @@ theorem hlast {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
       Cd.eoff ≤ G.n ∧
       p + 2 ≤ stage2EntryAllowance * (G.nep - C.k) +
         stage2ByteAllowance * (G.n - entryPos G C.k)) :=
-  Or.inr (hlast_refuse G C s hInv hblock f)
+  Or.inr (hlast_refuse G C s hInv hblock f hbit)
+
+/-! ### The assembly's use site
+
+The last entry's premise, supplied at the calls every dispatch in this layer is stated
+at.  `ofContinueAndLast` takes the bundle as the last entry's own facts, and this is the
+theorem that hands it over: `hcont` stays the revolution's premise, and the last entry's
+two cases come from `hlast` with the depth's polarity.
+-/
+
+/-- **`WalkDispatchThree` from the last entry's facts.**  `ofContinueAndLast`'s case
+split at `stage2Calls stage2SubCalls`, with the last entry's premise discharged by
+`hlast`: `hcont` is the revolution's premise unchanged, and the bundle enters where the
+input supplies it.  This is the assembly's use site while the bundle cannot be named in
+`JsonStage2WalkAssembly` itself. -/
+theorem walkDispatchThree_ofLastFacts {m0 : Mem} (G : WalkGeom m0)
+    (hcont : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
+      C.k + 1 < G.nep → WalkDispatchOutcome (stage2Calls stage2SubCalls) G C s)
+    (hf : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
+      ¬ (C.k + 1 < G.nep) → HlastFacts G C s)
+    (hb : ∀ (C : WalkCarry G) (s : State) (f : HlastFacts G C s),
+      evalICmp .eq (BitVec.ofNat 32 f.spv) (BitVec.ofNat 32 0) = 0) :
+    WalkDispatchThree (stage2Calls stage2SubCalls) G := by
+  intro C s hInv hhead
+  by_cases hk : C.k + 1 < G.nep
+  · exact hcont C s hInv hhead hk
+  · let f := hf C s hInv hhead hk
+    rcases hlast G C s hInv hhead hk f (hb C s f) with
+      ⟨Cd, sd, p, k2, prev, kOp, nepv, seg, hblock, hpre, hkOp, hk2, hnepv, hterm, hprice⟩ |
+      ⟨Cd, sd, p, seg, hblock, herr, hprice⟩
+    · exact WalkDispatchOutcome.finish Cd sd p k2 prev kOp nepv seg hblock hpre hkOp hk2
+        hnepv hterm hprice
+    · exact WalkDispatchOutcome.refuse Cd sd p seg hblock herr hprice
 
 /-! ### The instrument -/
 
@@ -610,6 +675,7 @@ theorem hlast {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
 #print axioms LeanLLVM.Refinement.WalkScope.hlast_finish
 #print axioms LeanLLVM.Refinement.WalkScope.hlast_refuse
 #print axioms LeanLLVM.Refinement.WalkScope.hlast
+#print axioms LeanLLVM.Refinement.WalkScope.walkDispatchThree_ofLastFacts
 
 end WalkScope
 end LeanLLVM.Refinement
