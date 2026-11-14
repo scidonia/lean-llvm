@@ -701,6 +701,70 @@ theorem stage2Boundary_of_flush {args : List Value} {mem : Mem} {next : Nat}
     (by intro h; exact absurd h (by decide)), walkFlushMemAt_present G S,
     (by rw [← hnext]; exact walkFlushMemAt_frame G S), S.separate, S.dSep⟩
 
+/-! ### The post, for the empty entry stream
+
+The completion and the boundary together are the record's post at the arm's
+outcome: `stage2Post_of_completion` carries the boundary from the one outcome the
+run produces to every behaviour, and the run's other outcomes are excluded by the
+fuel's uniqueness.
+-/
+
+/-- **Every behaviour of the empty-stream run satisfies the record's post.**  The
+completion is `walkFlushRun_of_staging` at the returned word and memory, and the
+boundary at that outcome is `stage2Boundary_of_flush`; `stage2Post` is a match on
+the outcome, so the two are the whole post. -/
+theorem stage2Post_of_flush {a13 : List Value} {mem : Mem} {next : Nat}
+    {d : Nat} (G : WalkGeom mem) (S : WalkStage G)
+    (hargs : a13 = [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
+      .int 64 (BitVec.ofNat 64 G.nep), .ptr G.xp, .int 64 (BitVec.ofNat 64 G.nxp),
+      .ptr G.dst, .int 64 (BitVec.ofNat 64 G.dstcap), .ptr G.ndst, .ptr G.ev,
+      .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err])
+    (hnext : G.next0 = next) (hzero : G.nep = 0) :
+    ∀ o, BehFromState (stage2Calls stage2SubCalls) stage2Body
+        (EntryState stage2Body (stage2Args a13 d S.c S.ctype S.cst S.tok S.s S.z S.e)
+          mem next) o → stage2Post a13 mem next o := by
+  obtain ⟨q, -, hrun⟩ := walkFlushRun_of_staging (d := d) G S hzero
+  have hentry : EntryState stage2Body
+      (stage2Args [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
+        .int 64 (BitVec.ofNat 64 G.nep), .ptr G.xp, .int 64 (BitVec.ofNat 64 G.nxp),
+        .ptr G.dst, .int 64 (BitVec.ofNat 64 G.dstcap), .ptr G.ndst, .ptr G.ev,
+        .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err]
+      d S.c S.ctype S.cst S.tok S.s S.z S.e) mem G.next0 =
+      EntryState stage2Body (stage2Args a13 d S.c S.ctype S.cst S.tok S.s S.z S.e)
+        mem next := by
+    rw [hargs, hnext]
+  refine stage2Post_of_completion (B := q)
+    (oGood := .ret (some (.int 64 0)) (walkFlushMemAt G S))
+    (sE := EntryState stage2Body (stage2Args a13 d S.c S.ctype S.cst S.tok S.s S.z S.e)
+      mem next) ?_ (stage2Boundary_of_flush G S hnext hargs)
+  rwa [← hentry]
+
+/-- **The all-whitespace case of the post, at the record's numbers.**  The arm's
+post at a13: every behaviour of the run at the record's entry state satisfies
+`Γ_stage2at`'s post, which is `stage2Post` at the thirteen arguments.  The
+staging's fields are the record's (`hSc`…`hSe`), so the entry state the run was
+stated at is the record's own. -/
+theorem stage2Post_of_staging_flush {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
+    {a13 : List Value} {mem : Mem} {next : Nat} {G : WalkGeom mem} {S : WalkStage G}
+    (hSc : S.c = c) (hSct : S.ctype = ctype) (hScs : S.cst = cst) (hStok : S.tok = tok)
+    (hSs : S.s = s) (hSz : S.z = z) (hSe : S.e = e)
+    (hargs : a13 = [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
+      .int 64 (BitVec.ofNat 64 G.nep), .ptr G.xp, .int 64 (BitVec.ofNat 64 G.nxp),
+      .ptr G.dst, .int 64 (BitVec.ofNat 64 G.dstcap), .ptr G.ndst, .ptr G.ev,
+      .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err])
+    (hnext : G.next0 = next) (hzero : G.nep = 0) :
+    ∀ o, BehFromState (stage2Calls stage2SubCalls) stage2Body
+        (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next) o →
+      (Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot).post
+        (stage2Args a13 d c ctype cst tok s z e) mem next o := by
+  have h := stage2Post_of_flush (d := d) G S hargs hnext hzero
+  have hlen : a13.length = 13 := by rw [hargs]; rfl
+  intro o hb
+  show stage2Post ((stage2Args a13 d c ctype cst tok s z e).take 13) mem next o
+  rw [stage2Args_take13 a13 hlen]
+  refine h o ?_
+  rw [hSc, hSct, hScs, hStok, hSs, hSz, hSe]
+  exact hb
 
 /-! ### Axiom footprints -/
 
@@ -711,6 +775,8 @@ theorem stage2Boundary_of_flush {args : List Value} {mem : Mem} {next : Nat}
 #print axioms LeanLLVM.Refinement.WalkScope.walkFlushMemAt_frame
 #print axioms LeanLLVM.Refinement.WalkScope.walkFlushMemAt_present
 #print axioms LeanLLVM.Refinement.WalkScope.stage2Boundary_of_flush
+#print axioms LeanLLVM.Refinement.WalkScope.stage2Post_of_flush
+#print axioms LeanLLVM.Refinement.WalkScope.stage2Post_of_staging_flush
 
 end WalkScope
 end LeanLLVM.Refinement
