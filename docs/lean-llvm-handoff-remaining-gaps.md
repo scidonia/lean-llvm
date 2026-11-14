@@ -100,22 +100,79 @@ the clause.
 
 B1's post is proved for `nep = 0` (`stage2Post_of_staging_flush`). **The loop arm's
 post remains**, so `stage2WalkObligation_of_staging` still takes `hpost`
-(`JsonStage2WalkPremisesOfStaging:586`).
+(`JsonStage2WalkPremisesOfStaging:607`).
+
+**Why it is not a matter of applying what is there.** `stage2Boundary`
+(`JsonStage2Contract:1004`, 25 conjuncts) is the post at the *returned* memory, and the
+terminal vocabulary names a verdict, not a memory: `WalkTargetRun`
+(`JsonStage2WalkLoopStepOutcome:105`) is existential in `m`, and `stage2Run_boundary`
+wants the memory to be literally `stage2Report m0 …`.  So the first thing to build is an
+output-side strengthening — the terminal run carrying its returned memory — and only
+then the boundary.
+
+**The three routes, from the merge and from the copy.**  All at a variable `sd.mem`:
+
+| route | path | writes over `sd.mem` | verdict |
+|---|---|---|---|
+| R1 accept | `cleanup478.i → if.then485.i → if.end490.i → s2_walk.exit → if.end` | 2 (`%alen` at `%ndst`, `%len` at `%nev`) | `1` |
+| R2/R3 refuse | `cleanup478.i → if.then485.i → (if.then488.i \| if.end490.i → if.then492.i) → if.then → if.end` | 4 (`%4` at `%e + 8`, then the record's three) | `0` |
+| R0 refuse, already at the copy | `if.then → if.end` | 3 (the record's) | `0` |
+
+The word copied to `%ndst` is the log's arena word `a` with `ndst0 ≤ a ≤ Cd.alen`
+(`WalkInv.log_alen`), **not** `Cd.alen`; `%nev` is exactly `Cd.evlen`
+(`WalkInv.log_len`).  The rest of the 25 are `WalkInv`'s clauses — `alen_le`,
+`evlen_le`, `evlen_eq`, `owned`, `frame`, `depth_reg`, `depth_cap`, `sp_le_wlen` — plus
+the geometry's two capacity widths.
+
+**The three facts no clause carries**, each of which can be an argument at the terminal
+producer before it is a `WalkInv` clause:
+
+- `%4 = ofNat 64 G.n`.  `%4` is loaded once in `entry` from `%s + 8` (`JsonStage2IR:206`)
+  and never rebound, so the fact is *derivable* if `%4` joins `walkStaticRegs`
+  (`JsonStage2WalkScope:1013`) — a `∀`-over-list predicate, so the transports are
+  unchanged — but that edit is in the 21 MB module.  Until then it is a supplied
+  argument on the refusal routes.
+- the refusal word at a direct copy entry (R0): `readBytes sd.mem (Cd.stage.e + 8) 8 =
+  some (wordBytes 8 Cd.eoff)`.  `WalkLink.refusalStore` (`JsonStage2WalkScope:6147`)
+  stores it and sets `eoff`, but its target is existential and `WalkSegment` keeps no
+  memory, so the fact does not survive the segment.  `hlast_refuse`'s proof already
+  names its target state, so this arm's instance is one `readBytes_writeBytes_len`.
+- the merge's root-done word, `readBytes sd.mem (G.next0 + 8) 4 = some …`: it decides
+  R1 against R2/R3 at `if.end490.i`, `WalkInv.owned` deliberately omits the four
+  `alloca` slots, and `HlastFacts` is at the head rather than the merge.
+
+**The composition.**  `WalkLoopStepThree`'s terminal disjunct (`JsonStage2WalkTraverse:604`)
+must carry the boundary, which means a predicate below `Traverse` — it needs only
+`stage2Boundary`, so a small module above `WalkScope` is enough.  Then `WalkLoopEnd`'s
+`merge`/`refuse` take the outcome's own cells plus the facts above and conclude that
+predicate, and `stage2Post_of_staging_loop` mirrors `stage2Post_of_staging_flush`
+argument for argument; `stage2WalkObligation_of_staging` loses `hpost`.  The flush
+arm's producer donates `stage2Post_of_completion` unchanged and the packing shape of
+`stage2Boundary_of_flush`; it does *not* donate `stage2Run_boundary`/
+`stage2Boundary_of_parts`, whose `herrWalk`/`frameSlots` are false on these arms for the
+reason `JsonStage2WalkFlushPost:38-50` records.
+
+**Non-vacuity, and the coupling.**  The post needs the terminal *block*, which the
+outcome already carries — not the `finish`/`refuse` classification — so Gap 3 does not
+depend on Gap 1.  After it, the top level still takes `hcont`, `hmerge`, `hend` and the
+root-word fact; `hpost` is gone.
 
 ---
 
 ## The review's remaining phases
 
-- **B2** — a standalone string consumed in the walk: **blocked on Gap 1**. Seven
-  sub-items are enumerated in `agent://PhaseBScope`'s report (a `s2StringBodyPre`
-  producer at the call site, an allocator-cursor pin absent from `WalkInv`, a
-  consumer theorem, the string arm's dispatch segment, a two-entry `finish`
-  producer, its count, the boundary post).
+- **B2** — a standalone string consumed in the walk: **the bundle and the arm are in
+  place; the segment is not.** What it owes now, in order: the `z_arena_reserve_exit`
+  `%xj.i` repair (finding 18), an allocator-cursor pin absent from `WalkInv`, and the
+  `s2StringBodyPre` producer at the call site — now possible, because the pre no longer
+  asks a caller for the body's own slot. With those, the fifteen links compose and
+  `HstringFacts.seg` stops being supplied.
 - **C** — every dispatch branch and its counted scan. **A′ is the first branch**: two
-  bundles (`HcontFacts` whitespace, `HcontCleanupFacts` scan-free), a `Sum` at
-  `WalkContinueFacts`, the `hRun`/`sl`-as-data refinement, `contWsRun`. **The plan is
-  committed in `JsonStage2WalkRevolution`'s header** (`6792f9f`), including the
-  finding that `hge`/`hugt`/`heicd` each named a continuation no state reaches.
+  bundles (`HcontFacts` whitespace, `HcontCleanupFacts` scan-free), the third arm at
+  `HcontCase` (`JsonStage2WalkDispatchWitnessString`), the `hRun`/`sl`-as-data
+  refinement, `contWsRun`. **The plan is committed in `JsonStage2WalkRevolution`'s
+  header** (`6792f9f`), including the finding that `hge`/`hugt`/`heicd` each named a
+  continuation no state reaches.
 - **D** — `WalkPremises` from the ABI preconditions; `Stage2WalkObligation` without
   `hpost`.
 - **E** — the native route: helper bodies, parser correspondence, artifact binding.
