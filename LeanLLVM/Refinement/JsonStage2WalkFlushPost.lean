@@ -339,10 +339,73 @@ theorem walkFlushRun_of_staging {mem : Mem} (G : WalkGeom mem) (S : WalkStage G)
   simp only [runFuel, h1, h2, hstep₃, hstep₄]
   rw [hmem₄]
 
+/-! ### The record's three slots, at the returned memory
+
+The copy's three stores are the last three writes, and the three slots are
+pairwise separate by the staging, so each word reads back at its own slot.  The
+refusal word is the document's length: the flush block stored it and the copy
+copied it, so the arm's offset (`eoff`) is `G.n`. -/
+
+/-- **The refusal word is the document's length.**  `%err`'s eight bytes at the
+returned memory are `wordBytes 8 G.n`: the flush block's store of `%4`, loaded
+and copied by the refusal arm.  This is the arm's `eoff`, and it is `≤ n` by
+`le_rfl`. -/
+theorem walkFlushMemAt_err {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) :
+    readBytes (walkFlushMemAt G S) G.err 8 = some (wordBytes 8 G.n) := by
+  rw [walkFlushMemAt]
+  exact readBytes_writeBytes_len (bs := wordBytes 8 G.n) (n := 8)
+    (by simp [wordBytes, natToBytes_length])
+
+/-- **The event cursor's slot reports `nev0`.**  The arena's slot is separate from
+it, and the refusal slot from both (`stage2Regions_slots`), so the two later
+stores pass it. -/
+theorem walkFlushMemAt_nev {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) :
+    readBytes (walkFlushMemAt G S) G.nev 8 = some (wordBytes 8 G.nev0) := by
+  obtain ⟨-, -, hslot3⟩ :=
+    stage2Regions_slots (disjointRegions_staged_prefix S.separate)
+  rw [walkFlushMemAt]
+  rw [walkReadBytes_writeBytes_outside (m := writeBytes
+      (writeBytes (writeBytes (walkEntryMemAt G S) (S.e + 8) (wordBytes 8 G.n))
+        G.ndst (wordBytes 8 G.ndst0)) G.nev (wordBytes 8 G.nev0))
+    (v := wordBytes 8 G.n) (start := G.err) (addr := G.nev) (n := 8) (by
+      rcases hslot3 with h | h
+      · exact Or.inl h
+      · exact Or.inr (by simpa [wordBytes, natToBytes_length] using h))]
+  exact readBytes_writeBytes_len (bs := wordBytes 8 G.nev0) (n := 8)
+    (by simp [wordBytes, natToBytes_length])
+
+/-- **The arena cursor's slot reports `ndst0`.**  The latest write at it is the
+copy's own, and the two later stores miss it. -/
+theorem walkFlushMemAt_ndst {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) :
+    readBytes (walkFlushMemAt G S) G.ndst 8 = some (wordBytes 8 G.ndst0) := by
+  obtain ⟨hslot1, hslot2, -⟩ :=
+    stage2Regions_slots (disjointRegions_staged_prefix S.separate)
+  rw [walkFlushMemAt]
+  rw [walkReadBytes_writeBytes_outside (m := writeBytes
+      (writeBytes (writeBytes (walkEntryMemAt G S) (S.e + 8) (wordBytes 8 G.n))
+        G.ndst (wordBytes 8 G.ndst0)) G.nev (wordBytes 8 G.nev0))
+    (v := wordBytes 8 G.n) (start := G.err) (addr := G.ndst) (n := 8) (by
+      rcases hslot2 with h | h
+      · exact Or.inl h
+      · exact Or.inr (by simpa [wordBytes, natToBytes_length] using h))]
+  rw [walkReadBytes_writeBytes_outside (m := writeBytes
+      (writeBytes (walkEntryMemAt G S) (S.e + 8) (wordBytes 8 G.n))
+      G.ndst (wordBytes 8 G.ndst0))
+    (v := wordBytes 8 G.nev0) (start := G.nev) (addr := G.ndst) (n := 8) (by
+      rcases hslot1 with h | h
+      · exact Or.inl h
+      · exact Or.inr (by simpa [wordBytes, natToBytes_length] using h))]
+  exact readBytes_writeBytes_len (bs := wordBytes 8 G.ndst0) (n := 8)
+    (by simp [wordBytes, natToBytes_length])
+
+
 
 /-! ### Axiom footprints -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.walkFlushRun_of_staging
+#print axioms LeanLLVM.Refinement.WalkScope.walkFlushMemAt_err
+#print axioms LeanLLVM.Refinement.WalkScope.walkFlushMemAt_ndst
+#print axioms LeanLLVM.Refinement.WalkScope.walkFlushMemAt_nev
 
 end WalkScope
 end LeanLLVM.Refinement
