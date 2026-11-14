@@ -1192,11 +1192,25 @@ theorem WalkDispatchOutcome.ofDispatch {calls : Calls} {m0 : Mem} {G : WalkGeom 
 
 /-- **`WalkDispatchThree` from two named obligations.**  A dispatch either continues — which
 is `WalkDispatch`'s premise, taken into `cont` by `ofDispatch` — or it does not, and then it
-either finishes at the terminal index or refuses before the merge.  So the three-outcome
-premise follows from the old one plus the last entry's two cases, and the case split it
-performs is on the *dispatch's* branch rather than on `C.k + 1` alone: the hypothesis
-`¬ (C.k + 1 < G.nep)` is what selects the last entry, and which of `finish`/`refuse` it is
-is the disjunction's own. -/
+either finishes at the terminal index or refuses before the merge.
+
+**What this split cannot do.**  `¬ (C.k + 1 < G.nep)` is an index test taken *before* the
+dispatch runs, and it is not the dispatch's branch.  A standalone string — `C.k = 0`,
+`G.nep = 2`, the opener and the closer — consumes two entries, so the merge at
+`cleanup478.i` selects `%k.2.i = 2`.  The test `0 + 1 < 2` is **true**, so the first branch
+is taken, and the only outcome that branch produces without further evidence is `cont`,
+whose `hbelow` demands `k2 < nepv.toNat` — `2 < 2`, which is false.  The outcome there is
+`finish`, at the stream's end, and this split has no route to it.
+
+So the case split is not on the dispatch's branch, and the three-outcome premise it
+produces agrees with the index test rather than with the dispatch.  It is not a false
+statement: each hypothesis is satisfiable, and the branches it does reach are the ones the
+dispatch takes.  What fails is the claim that the split *classifies* the dispatch: at the
+standalone string the two hypotheses are jointly unsatisfiable, because the first asks
+`cont` for an index below the stream while the dispatch's index is the stream's end.
+`WalkDispatchResult` (`JsonStage2WalkDispatchThreeOfRun`) is the producer that reads the
+dispatch's own endpoint — the block it reached and the index the merge selected — instead
+of testing the head's index in advance. -/
 theorem WalkDispatchThree.ofContinueAndLast {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
     -- The continue case only: the revolution is consumed in that branch alone, so the premise
     -- names what it uses rather than the whole loop.  (Discharging it still needs the
