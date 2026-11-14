@@ -964,3 +964,14 @@ theorem walkFinishPost_accept {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
 
 end WalkScope
 end LeanLLVM.Refinement
+
+/-! ### Axiom footprints
+
+Printed rather than pinned: the module is not stable while the two refusal routes'
+terminal runs are unwritten, and a `#guard_msgs` pin would have to be revisited by the
+very change that adds them.  `AGENTS.md` asks for a pin once a theorem is stable. -/
+
+#print axioms LeanLLVM.Refinement.WalkScope.stage2Boundary_of_accept
+#print axioms LeanLLVM.Refinement.WalkScope.stage2Boundary_of_refuse
+#print axioms LeanLLVM.Refinement.WalkScope.stage2Boundary_of_refuse_offset
+#print axioms LeanLLVM.Refinement.WalkScope.walkFinishPost_accept
