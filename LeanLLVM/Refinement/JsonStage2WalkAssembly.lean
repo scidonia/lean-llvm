@@ -1094,7 +1094,8 @@ because the three tails from `cleanup478.i` return `1`, `0` and `0` under the sa
 invariant, so no single verdict is true of the states the body has.  The loop's terminal
 branch is `WalkTargetRun` (`JsonStage2WalkLoopStepOutcome`), existential in the verdict,
 and the merge supplies it through `ExitTail` (`JsonStage2WalkExitProducer`, which carries
-the three tails and the record of the statement's two inert clauses). -/
+the three tails).  `JsonStage2WalkArenaWord` is the census of the arena clause the
+statement used to carry. -/
 
 /-- **The empty entry stream's flush, at the memory and cursor it is used at.**  The arm was
 first stated with `mem` and `next` quantified *universally*, and that form is **false of the

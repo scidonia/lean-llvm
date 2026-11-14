@@ -2931,8 +2931,10 @@ one of the three the lead named** — the nesting and the two reserves are all
    `whileBody_step` its two `phi` values and its predecessor by definition, and one
    revolution is a single segment (`WalkDispatch.revolution`).  The links between
    the arms are stated there as `WalkDispatch` — the chain from the head to
-   `cleanup478.i` with the index's strict advance and the iteration's price — and
-   the exit's tail as `WalkExit`.
+   `cleanup478.i` with the index's strict advance and the iteration's price — with
+   `WalkDispatchThree`'s three outcomes choosing the revolution or the terminal
+   branch, whose run is `WalkTargetRun` (supplied at the merge by `ExitTail`,
+   `JsonStage2WalkExitProducer`).
 3. **The six sub-unit contracts.**  `s2_init`, `s2_value_pos`, `s2_after_value`,
    `s2_string_body`, `od_scalar_value` and `num_fast_el1` all fall through
    `stage2Calls` to the parameter `sub`, and the `#guard` in `JsonStage2IR` pins
@@ -5705,8 +5707,9 @@ it.
 
 The completion is not inhabited: the loop's own pass is not a proof.  It is
 *assembled*, though, and the assembly is `JsonStage2WalkTraverse`, which turns the
-loop into an induction on the entry index (`walkLoopFinishes`) and leaves one
-premise, `WalkLoopStep` — the revolution or the exit at a loop-head state.  Read as
+loop into an induction on the entry index (`walkLoopFinishesThree`) and leaves one
+premise, `WalkLoopStepThree` — the revolution or the terminal run at a loop-head
+state.  Read as
 a proof obligation the completion is four pieces, in order:
 
 1. **the five rows** — `entry` (item 2) and the four `unreachable` arms (whose
@@ -5743,7 +5746,7 @@ a proof obligation the completion is four pieces, in order:
    (`walkMeasure_exceeds_budget_at_100`) — so spending the measure against the
    budget would not have been a proof of anything.
 
-`WalkLoopStep`'s two branches are therefore the one premise the completion still
+`WalkLoopStepThree`'s two branches are therefore the one premise the completion still
 owes: the left is the revolution — the dispatch's pass from `NodeBlock21` to
 `cleanup478.i` (the census's class links), the back edge (`walkBack_step`), the
 header's pass (`whileBody_step`) and the two `phi` runs — with its price, and the
@@ -5837,7 +5840,7 @@ the pinned AST: the dispatch's longest path is 22 blocks against
 `stage2EntryAllowance` 32, and the widest scan step is six blocks against
 `stage2ByteAllowance` 8.  `JsonStage2WalkTraverse` turns that into the comparison
 `p + walkPotential C' ≤ walkPotential C` and the induction that spends it
-(`walkLoopFinishes`), so what remains open is the revolution's price — that the
+(`walkLoopFinishesThree`), so what remains open is the revolution's price — that the
 pass, the back edge and the header's pass cost what the potential's fall allows —
 and not the count against the budget.
 
@@ -5850,7 +5853,7 @@ preservation lemmas are `WalkRegs.of_run` and `WalkIter.of_run`, both by
 the assembly — the seed's prefix run, the dispatch chain, the chain's step count,
 the return, and the budget comparison — as five named premises, with no `sorry`
 and no claim of the obligation; its count, its induction and its potential are
-`JsonStage2WalkTraverse`'s (`walkLoopFinishes`, `walkCompletes_of_loop_budget`).
+`JsonStage2WalkTraverse`'s (`walkLoopFinishesThree`, `walkCompletes_of_loop_budget`).
 
 The census's carriers, with their costs named:
 

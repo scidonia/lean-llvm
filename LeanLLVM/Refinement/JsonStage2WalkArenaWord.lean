@@ -1,7 +1,7 @@
 /-
 # The arena cursor word: a predicate the exit no longer states
 
-This module began as the cost of `WalkLoopStep`'s producer, whose third argument was the
+This module began as the cost of the loop step's producer, whose third argument was the
 arena word at the loop head:
 
 ```lean
@@ -9,7 +9,8 @@ readBytes s.mem (C.stage.z + 48) 8 = some (wordBytes 8 C.alen)
 ```
 
 The obligation is gone: deleted in `3ea399e`, because it was both unsatisfiable and inert —
-the sections below are the evidence, and `WalkExit`'s own docstring now records the deletion.
+the sections below are the evidence, and the note at the statement's old site
+(`JsonStage2WalkAssembly`) records the deletion with the statement's retirement.
 What remains here is what made the deletion decidable and what outlives it: the predicate
 named (`WalkArenaWord`), its relation to `WalkInv.log_alen`, the seed's end, the write-back's
 arithmetic (`arenaWord_writeBack_iff`, `not_arenaWord_of_lt`), and the census of the slot's
@@ -74,8 +75,8 @@ the same statement at the store: the equality holds at the write-back's target i
 decoded prefix filled the reservation.
 
 **Consequence.**  The equality was therefore **unsatisfiable at any input whose decoded
-length is shorter than the extent it reserved**, and `WalkExit` asserted it twice — a premise
-at the head and the same equality as a post clause at `sEnd`.  Its correct home is
+length is shorter than the extent it reserved**, and the exit statement asserted it twice — a
+premise at the head and the same equality as a post clause at `sEnd`.  Its correct home is
 `log_alen`'s witness `a`, not `C.alen`: the exit's slot copy *reads* `z + 48`, so the value it
 carries is the slot's own, which `WalkInv.log_alen` already names (`a ≤ C.alen`), and the
 exit's path stores nothing at that address (the census again).  Restating the clause at `a`
@@ -83,21 +84,21 @@ would have duplicated an invariant — `WalkInv G Cend sEnd` already carries tha
 so the clause was deleted instead (`3ea399e`), and a producer of the equality at `C.alen`
 would have been a producer of a falsehood.
 
-**Why it was deleted rather than produced.**  Both ends discarded it: the only producer of
-`WalkExit` took the head's word as an unused binder and never read it, and the only consumer
-(`walkLoopStep_of_dispatch_exit`) destructured the post's word clause as `-`.  Nor was the
-exit the whole story — the producer's live arena premise was the same equality one state
-later, at `cleanup478.i`, where the slot has not been rewritten either and `log_alen` gives
-`a ≤ C.alen` just as at the head.  So the repair was a deletion: the head word from the
-premise, the word clause from the post, the merge's word from the producer.  `3ea399e`
-performs it, and the tree confirms no proof step depended on them — the producer and all four
-importers of `WalkExit` build, and the tracked test compiles.
+**Why it was deleted rather than produced.**  Both ends discarded it: the exit statement's
+only producer took the head's word as an unused binder and never read it, and the statement's
+only consumer (`walkLoopStep_of_dispatch_exit`) destructured the post's word clause as `-`.
+Nor was the exit the whole story — the producer's live arena premise was the same equality
+one state later, at `cleanup478.i`, where the slot has not been rewritten either and
+`log_alen` gives `a ≤ C.alen` just as at the head.  So the repair was a deletion: the head
+word from the premise, the word clause from the post, the merge's word from the producer.
+`3ea399e` performs it, and the tree confirms no proof step depended on them — the producer
+and all four importers of the statement build, and the tracked test compiles.
 
 **The search, after the deletion.**  `wordBytes 8 C.alen` appears in no statement of the
 development: `grep -rn "wordBytes 8 C.alen" LeanLLVM/` now returns this module's own
-predicate and the record of the deletion in `WalkExit`'s docstring, and nothing else — no
+predicate and the record of the deletion at the statement's old site, and nothing else — no
 premise, no post, no lemma.  Before the deletion the same grep returned exactly the two
-`WalkExit` clauses this section finds unsatisfiable, which is the whole argument: no third
+exit clauses this section finds unsatisfiable, which is the whole argument: no third
 statement ever mentioned the equality.  `WalkInv.logArena_le` reads the slot as `≤`, and
 `spans_inside`/`spans_end` bound extents by the document and by the cursor.
 
@@ -130,8 +131,8 @@ own docstring says a general memory clause "would have to be a write trace, comp
 A memory equation is available for a step **only where a block's lemma names its
 successor**: `walkIfEnd473_at` concludes `s' = { s with pc := …, pre := … }`, so its
 successor's memory is the source's, and that is the idiom the exit producer uses for its
-own blocks (`JsonStage2WalkExitProducer`, 489 lines for the last entry's tail).  The
-dispatch's composites — `hlastPrefixSeg`, `contScanRounds`, `walkScanToMerge` — and the
+own blocks (`JsonStage2WalkExitProducer`, whose three tails are that route for the last
+entry).  The dispatch's composites — `hlastPrefixSeg`, `contScanRounds`, `walkScanToMerge` — and the
 revolution's two closing steps (`walkBack_step_at`, `whileBody_step`) name no memory, so
 the predicate cannot be transported across them.
 
@@ -172,7 +173,7 @@ namespace WalkScope
 /-- **The arena cursor word at its slot.**  `%alen` addresses `z + 48`; the log's index is
 the value the word holds.  This is the shape the exit used to require, named because the
 comparison that decided against it needs a name: the seed's clause (`walkSeed_arenaWord`),
-the write-back's store (`arenaWord_writeBack_iff`), and the two deleted `WalkExit` clauses
+the write-back's store (`arenaWord_writeBack_iff`), and the two deleted exit clauses
 are all this predicate. -/
 def WalkArenaWord {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : Prop :=
   readBytes s.mem (C.stage.z + 48) 8 = some (wordBytes 8 C.alen)
