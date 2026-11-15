@@ -685,7 +685,12 @@ theorem WalkLink.if_then281_i {calls : Calls} {m0 : Mem}
     (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
     (hblock : C.block = "if.then281.i")
     {x7 : BitVec 32} (h7 : lookupName s.env "%7" = some (.int 32 x7))
-    : ∃ s', WalkLink calls G C s { C with block := "if.end290.i" } s' := by
+    : ∃ s', WalkLink calls G C s { C with block := "if.end290.i" } s' ∧
+        s' = { stateAt (cells [("%or.i", .int 64 (BitVec.ofNat 64
+            (x7 + BitVec.ofNat 32 1).toNat ||| BitVec.ofNat 64 9223372036854775808)),
+          ("%conv284.i", .int 64 (BitVec.ofNat 64 (x7 + BitVec.ofNat 32 1).toNat)),
+          ("%add283.i", .int 32 (x7 + BitVec.ofNat 32 1))] s.env) s with
+          pc := "if.end290.i", pre := some s.pc } := by
   have hden : denoteCode calls walkIf_then281_i.instrs s =
       some (stateAt (cells [("%or.i", .int 64 (BitVec.ofNat 64
           (x7 + BitVec.ofNat 32 1).toNat ||| BitVec.ofNat 64 9223372036854775808)),
@@ -707,9 +712,15 @@ theorem WalkLink.if_then281_i {calls : Calls} {m0 : Mem}
       (c := BitVec.ofNat 64 9223372036854775808)
       (by simp only [stateAt, evalOperand, lookupName_cons_self])]
     rfl
-  exact WalkLink.pureJumpCore (G := G) (C := C) (s := s) hInv
+  obtain ⟨s', hl⟩ := WalkLink.pureJumpCore (G := G) (C := C) (s := s) hInv
     (B := walkIf_then281_i) (by rw [hblock]; exact walkIf_then281_i_find) hden
     (by unfold walkCarried; decide) rfl rfl rfl (by simp [WalkLocal])
+  have hterm : walkIf_then281_i.term = Term.br "if.end290.i" := rfl
+  have hfind : stage2Body.findBlock s.pc = some walkIf_then281_i := by
+    rw [hInv.pc_eq, hblock]; exact walkIf_then281_i_find
+  refine ⟨s', hl, Ctrl.jump.inj ((WalkLink.step hl).symm.trans ?_)⟩
+  simp only [LeanLLVM.step, hfind, hden, hterm, execTerm]
+  rfl
 
 
 /-! ### The carried-bit and jump shapes

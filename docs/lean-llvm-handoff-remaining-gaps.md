@@ -46,7 +46,7 @@ price and why `entryPos` cannot serve as a price index.
 
 ## What remains — two gaps, in order
 
-### Gap 1 — the two-entry token's bundle — **stated, its segment supplied**
+### Gap 1 — the two-entry token's bundle — **stated, its segment supplied; the frame repair's pin is settled**
 
 `HstringFacts` and `WalkDispatchResult.ofStringMerge`
 (`JsonStage2WalkDispatchWitnessString`) name the standalone string and give it an arm,
@@ -82,11 +82,138 @@ that consumes it is `WalkDispatchResult.ofStringMerge` (footprint
   a second call's is `+36`, outside.  So `s2StringBodyFoot ⊆ walkWide` holds only at
   the first call, `WalkInv` carries no `s.next` clause to say which call it is, and
   the frame bridge is `s2StringBodyFoot_frame_walkWide` with that placement as a
-  hypothesis.  The repair is a cursor-parameterised stack region — `WalkCarry` gains
-  the bytes its calls have allocated, `walkWide` names `[(G.next0, that)]` — and it
-  reaches `stage2AllocaWrites`, which 69 sites in 14 files name, the pipeline
-  contract and discharge layer among them.  Until it lands, the two-entry arm is
-  provable per call but not across a document with a second allocating call.
+  hypothesis.  Until it lands, the two-entry arm is provable per call but not across
+  a document with a second allocating call.
+
+  **The repair is settled, and it is one clause plus one definition.**  Design (b):
+  the region is the state's cursor, so no `WalkCarry` field is needed.  The pin is
+  `stage2BootstrapExtent : Nat := 28` — the end of `entry`'s four `alloca`s
+  (`%ei.i` 8, `%root_done.i` 4, `%xj.i` 8, `%outn.i` 8), i.e. the cursor the loop is
+  entered at — and the clause is
+
+      next_ge : G.next0 + stage2BootstrapExtent ≤ s.next
+
+  with the frame stated at `walkWideAt G C (s.next - G.next0) :=
+  walkPresent G C ++ [(G.next0, s.next - G.next0)]`.
+
+  The **inequality rather than the equality** is what makes the clause uniform: the
+  equality `s.next = G.next0 + C.nb` would need `nb` carried in `WalkCarry` *and* a
+  second clause `stage2BootstrapExtent ≤ C.nb` beside it — the equality alone gives
+  no lower bound, because `WalkCarry` is a plain structure and nothing forbids
+  `nb = 0` — and at the two allocating links (`z_arena_reserve_exit`, whose callee
+  returns `next + 8`, and `if_then19_i`, `+936`) it needs arithmetic on both sides.
+  The inequality needs `hInv.next_ge` at every non-allocating step and one `omega` at
+  each allocating one, because every step either leaves `s.next` or advances it.
+
+  **What landing it costs, measured — the site half is cheap and was verified.**
+  The clause was landed in `JsonStage2WalkScope` and the module built green at it:
+  39 construction sites in ten modules (`Scope` 10, `Store` 6, `Call` 5, `Final` 4,
+  `Phi` 3, `Rest` 3, `DispatchWitnessFinish` 3, `Assembly` 2, `Induce` 2,
+  `FinishPath` 1), and each takes one line — `next_ge := hInv.next_ge` where the
+  target state is built from the site's own `s`, and
+  `next_ge := by dsimp only; exact hInv.next_ge` where it is a `let` or a
+  `{s with …}` update.  The seed supplies it from `WalkSeedState`, which gains the
+  bound as a conjunct of the initialisation's obligation.  That half is a
+  half-hour's work and it is *verified*, not estimated.
+
+  **The half that is not cheap is the six helper transfers whose target state is a
+  parameter `s₁`.**  `pureCore`, `pureJumpCore`, `pureCoreCarried`, `callQuiet`,
+  `callQuietBr` and `callQuietBrPending` build the record at `{s₁ with pc, pre}`, so
+  the clause at the target needs a fact about `s₁.next` that the helper does not
+  have; each must take `hnext : G.next0 + stage2BootstrapExtent ≤ s₁.next` and every
+  call site must pass it.  Measured call sites: `pureCore` 31 in eight modules
+  (`Pure` 9, `Rest` 7, `Phi` 5, `Call` 3, `Entry` 2, `Induce` 2, `Scope` 2,
+  `Assembly` 1), `pureJumpCore` 19 in seven, `pureCoreCarried` 5 in three,
+  `callQuiet`/`callQuietBr` 6 each, `callQuietBrPending` 3 — **70 sites in nine
+  modules, four of them inside `Scope`**, i.e. two more 20-minute `Scope`
+  elaborations and a full cascade.  At the sites the argument is one line
+  (`by simpa [stateAt] using hInv.next_ge` for a pure block, whose `s₁.next` is
+  `s.next` definitionally, and `by rw [<the post's `r.next = next`>]; exact
+  hInv.next_ge` or `by omega` for the call transfers), so the change is mechanical —
+  but it must land *with* the clause in one pass, because a helper that cannot prove
+  the clause makes all 70 of its instances red, and the 20-minute `Scope`
+  elaboration makes partial passes expensive.
+
+  **Status of the clause, stated where it is not:** `next_ge` is *verified at the
+  clause and at `Scope`'s ten sites* — that module built green with it
+  (`LAKE_EXIT=0`, one 20-minute elaboration) — and it is **not landed**, because the
+  helper half below is a one-pass change and the session could not carry it.  A
+  reader must not re-derive that: the statements, both halves' costs, and the
+  rejected variant are all here.
+
+  One consequence worth writing down before it is attempted: `pureCore` and its
+  siblings are stated at an *arbitrary* `calls : Calls`, so their `s₁.next` cannot be
+  bounded from the callee models inside the helper; the bound has to come in as the
+  hypothesis above.  A cheaper variant that was considered and rejected: extend
+  `walkCarried` with a `no-alloca` conjunct and prove `denoteCode`'s `next` monotone
+  — rejected because `evalInstr`'s call case returns an arbitrary `CallOutcome`, so
+  monotonicity is a fact about `stage2Calls stage2SubCalls` and not about `calls`,
+  and the helpers are polymorphic in it.
+
+  **The record-level consequence is authorised and is a correction, not a
+  relaxation** (finding 21): `stage2ReportFrame`'s stack part is
+  `stage2AllocaWrites next` — the same five bootstrap slots — so
+  `Stage2Run.walkFrame` and the post's frame conjunct in `stage2Boundary` are
+  **false** from a second allocating call, not merely unproved.  `Stage2Run.ofInv`
+  (`JsonStage2WalkAssembly`) reads the record's frame off `WalkInv.frame`, so the two
+  layers move together.
+
+  Two shapes are available for the record level, and the choice is what a consumer
+  reads: (i) `Stage2Run` gains the cursor the run left (`nextEnd`) and the post's
+  stack region becomes `[(next, nextEnd - next)]`; (ii) the stack region becomes a
+  *bound* the record already names, `[(next, stage2BootstrapExtent + nep * 944)]`
+  (one `s2_string_body` call or one `num_fast_el1` call per entry, 8 or 936 bytes),
+  which needs an invariant clause `s.next ≤ next0 + 28 + C.k * 944` to prove and
+  leaves the post's signature alone.  (ii) touches `stage2ReportFrame` and the
+  `walkFrame_reportFrame_coverage` lemma; (i) touches `stage2Boundary`'s 25-conjunct
+  signature and therefore `JsonStage2WalkTargetPost`'s already-proved boundary and
+  the flush path.  The five bootstrap slots must stay re-derivable either way — the
+  lemma to state is `stage2AllocaWrites a ⊆ [(a, stage2BootstrapExtent + …)]`, so
+  every consumer that read the old list still gets it.
+
+**The eight links the composition has to work at, and each one's obstacle.**  The
+other seven are consumed as they stand: `NodeBlock21_at`, `NodeBlock5_at`,
+`LeafBlock_at` and `sw_bb202_i_at` need only `%8` (`WalkInv.iter`) and the two
+counts, `_at`-shaped and already stating their targets; `if_else334_i` needs the
+static carrier and a depth-zero `s2AfterValuePre`; `NodeBlock31_at` and
+`LeafBlock29_at` need `%call272.i = y`, which is the call's answer.
+
+| # | link | hypothesis the layer cannot supply | smallest honest fallback |
+|---|---|---|---|
+| 5 | `if_end207_i` | none — `%4`, `%inc.i`, `hb` and the lane read are the head's fields and the four preceding links write no memory | its target state, now exposed |
+| 6 | `if_then219_i` | `hread`, the root slot's four bytes at the *call's* memory: `WalkInv` binds the log's five words and the trace but not `%root_done.i`'s | a `readBytes`-outside-a-write crossing for `if.end207.i`'s cursor-record store (one lemma, ~15 lines, disjointness from `WalkStage.sevenEnd`); `hx` then follows from `s2ValuePos_sound` at `sp = 0`, whose post returns the caller's memory and cursor |
+| 7 | `if_end245_i` | none — `s.pre` is the step's, the phi is `if_end245_key_then219`, the operand is an `imm`, `%call222.i` is the previous target's binding | exposed target |
+| 8 | `if_end256_i` | none — `hreadA`/`hC` are `log_alen`/`log_acap`, `hcur` is the bundle's, `hiv`/`hnext`/`hpl` its `G6`/`hwin` | exposed target (mechanical: its `s₁` is already an explicit `cells` list) |
+| 9 | `z_arena_reserve_exit` | **six**: `hframe`, `howned`, `hlog`, `hev`, `hstTy`, `hstSt` at the callee's returned memory — the `s2StringBodyFoot → walkWide` bridge (a frame bridge, a presence bridge, five log-word crossings, the trace's, and the two stack maps') | **one** named field, stated at the link's own witness: `∀ r, stage2Calls … "s2_string_body" <args> s₉.mem s₉.next = some r → (those six at `r.mem` and the target carry)`.  Producers: `s2StringBodyFoot_frame_walkWide` (`JsonStage2StringStageFacts`) plus the four `walkReadBytes_*` crossings that `walkAfterValue_facts` already has at `s2_after_value`.  This is the field Step 1 retires |
+| 10–11 | `NodeBlock31_at`, `LeafBlock29_at` | `%call272.i = y` at their states | the exposed `z_arena_reserve_exit` target plus the bundle's `hy` |
+| 12 | `if_then281_i` / `if_else285_i_at` | the branch is on `y = 1`, so **both arms must be cased**; the `if.else285.i` arm's `hale : a + l ≤ C.alen` needs the decoded length to fit the reserved window, which `s2StringBodyPost` deliberately leaves free | a bundle field `l ≤ ext` at the arm, produced by `s2StringBody_outn_le` |
+| 13 | `if_end290_i` | none — the two phis are the arm's own state, the two words are `log_len`/`log_cap`, and the branch `evlen + 13 ≤ evcap` is `walkEventReserve_clear` | exposed target |
+| 14 | `if_then328_i` | **two**: `readBytes s.mem C.stage.z 8 = some (wordBytes 8 G.ev)` (the log's *base* word — no `WalkInv` clause binds it, and the staging gives presence, not the value) and `C.events.length < C.k` (strict; `events_le` gives `≤`) | two head fields, producers: the adapter's staging for the first, and the "one record per emitting entry" count of `if.then425.i` for the second |
+
+**The residue of the composition: four fields, each with a producer and a
+retirement.**  Everything else the fifteen links need is derivable from the head
+bundle's fields, `WalkInv`'s clauses, the step's own `pre`, or the exposures above.
+These four are what a composed segment must be handed, and each one's producer and
+retirement is named rather than left to prose.
+
+| id | field | statement | producer | retires when |
+|---|---|---|---|---|
+| R1 | `z_arena_reserve_exit`'s witness | `∀ r, stage2Calls stage2SubCalls "s2_string_body" [.ptr C.stage.c, .ptr (G.b + p + 1), .int 64 ext, .ptr (G.dst + A.toNat), .ptr (G.next0 + 20), .ptr G.xp, .ptr (G.next0 + 12), .int 64 G.nxp] s₉.mem s₉.next = some r → UnchangedOutside m0 r.mem (walkWide G C₉) ∧ (∀ q ∈ walkStaged G C₉, HasBytes r.mem q.1 q.2) ∧ (∀ off w, off + w ≤ stage2LogExtent → readBytes r.mem (C.stage.z + off) w = readBytes s₉.mem (C.stage.z + off) w) ∧ (the trace reads across) ∧ (both stack maps at `r.mem`)` | `s2StringBodyFoot_frame_walkWide` (`JsonStage2StringStageFacts`) for the frame and the presence, the four `walkReadBytes_*` crossings `walkAfterValue_facts` already has for the log, the trace and the two maps | the cursor-parameterised frame lands, i.e. the helper half of `next_ge` is landed with it |
+| R2 | `houtn_le` | `l ≤ ext` at `if.else285.i`'s state: the decoded length fits the window `if.end256.i` reserved | `s2StringBody_outn_le` (`JsonStage2WalkArenaWord`'s neighbourhood) | a clause on `s2StringBodyPost` relating the decoded length to `len` |
+| R3 | `hlogBase` | `readBytes s.mem C.stage.z 8 = some (wordBytes 8 G.ev)`, the log's base word, at the head | the initialisation's store at `%z + 0` — a `WalkSeedState` fact the record does not carry either — **plus** a `WalkInv` clause, because the seed alone does not give the fact at the state that reads it: `%z + 0` lies inside the walk's write extent, so no crossing of the frame reaches it | that clause (a clause addition, so the same 70-site cost `next_ge` measured) |
+| R4 | `hltEvents` | `C.events.length < C.k` at the head — strict, where `events_le` gives `≤` | `if.then425.i`'s one-record-per-emitting-entry count | a clause relating the trace's length to the entries consumed |
+
+R3 is *not* a lemma from `WalkInv.frame` and the staging, and the reason is worth
+keeping: `%z`'s first eight bytes lie **inside** the walk's write extent
+(`walkPresent` carries the whole `(z, stage2LogExtent)` object), so the frame — which
+is silence *outside* that extent — says nothing about them, and the staging's
+clauses give presence over the object (`WalkInv.owned`) rather than the value it
+holds.  `JsonStage2WalkStringPath`'s header records the same negative finding at the
+place a reader would try to derive it.
+
+`hinc208`/`hnepM` are not in the residue: they are restated at the segment's own
+endpoint (`HstringFacts.hmergeCells`, finding 19's shape), because `WalkInv` binds
+neither register.
 
 The module's header records exactly this, group by group; the arm reads the segment, its
 endpoint's block, index and predecessor, its two endpoint cells and G2's count test, and
@@ -241,6 +368,7 @@ recorded where the next reader meets it, not in a report.
 | 18 | `WalkLink.z_arena_reserve_exit`'s `%xj.i` | **uninhabited**: it stated `G.next0 + 16` where `walkStaticRegs` states `+ 12`, and the string body's `RegionsApart xj 8 outn 8` is false at `+ 16` against `%outn.i = G.next0 + 20`.  **Repaired** — the link now states the staging's `+ 12` |
 | 20 | `walkWide`'s stack list | **static where the allocator is monotone**: `stage2AllocaWrites G.next0`'s five slots cover the first allocating call only, and `WalkInv` carries no `s.next`, so the frame is false from a second call onward — the invariant would be uninhabited there, which is why nothing notices |
 | 19 | `HstringFacts.hmergeCells` | **uninhabited**: a `∀` over every `WalkInv` state at `cleanup478.i` fixed `%inc208.i` and `%nep`, which the invariant binds nowhere, so the field was false at every other reachable endpoint.  **Repaired** — two fields at the bundle's own endpoint |
+| 21 | `Stage2Run.walkFrame` and `stage2Boundary`'s frame conjunct | **false, one level above 20**: both name `stage2ReportFrame … next`, whose stack part is `stage2AllocaWrites next` — the five bootstrap slots.  A run with a second allocating call writes at `next + 36`, outside that list, so the delivered frame is not a weak claim but an incorrect one, and `Stage2Run.ofInv`'s `walkFrame` cannot be inhabited at a loop end whose cursor passed `next0 + 36`.  The repair restates the contract's stack region at the cursor and keeps the five slots as a stated consequence (Gap 1) |
 
 **Trend worth keeping**: 4, 5, 6, 8, 9, 10, 12, 18, 19 and 20 were found by a *producer trying
 to inhabit a bundle* — and 19 by a *reviewer* asking what inhabits one; the two

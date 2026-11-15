@@ -460,7 +460,14 @@ theorem WalkLink.if_end245_i {calls : Calls} {m0 : Mem}
     (hcall : lookupName s.env "%call222.i" = some (.int 32 x)) :
     ∃ s', WalkLink calls G C s
       { C with block := (if (if k = 1 then (1 : BitVec 1)
-          else evalICmp .ne x (BitVec.ofNat 32 0)) = 1 then "if.end256.i" else "if.then249.i") } s' := by
+          else evalICmp .ne x (BitVec.ofNat 32 0)) = 1 then "if.end256.i" else "if.then249.i") } s' ∧
+      s' = { stateAt (("%or.cond523.i", .int 1 (if k = 1 then BitVec.ofNat 1 1
+            else evalICmp .ne x (BitVec.ofNat 32 0))) ::
+          ("%tobool248.i", .int 1 (evalICmp .ne x (BitVec.ofNat 32 0))) ::
+          ("%key.1.i", .int 1 k) :: s.env) s with
+        pc := (if (if k = 1 then (1 : BitVec 1)
+          else evalICmp .ne x (BitVec.ofNat 32 0)) = 1 then "if.end256.i" else "if.then249.i"),
+        pre := some s.pc } := by
   have hspecs : walkIf_end245_i.instrs =
       ([{ dst := "%key.1.i", ty := Ty.int 1,
           incoming := [("if.then231.i", (Operand.reg "%or.cond.i")),
@@ -502,11 +509,21 @@ theorem WalkLink.if_end245_i {calls : Calls} {m0 : Mem}
           exact walkLookup_cons_self "%key.1.i" (.int 1 k) s.env)
       (by exact walkLookup_cons_self "%tobool248.i" (.int 1 (evalICmp .ne x (BitVec.ofNat 32 0))) (("%key.1.i", .int 1 k) :: s.env))]
     rfl
-  exact WalkLink.pureCore (G := G) (C := C) (s := s) hInv
+  obtain ⟨s', hl⟩ := WalkLink.pureCore (G := G) (C := C) (s := s) hInv
     (B := walkIf_end245_i) (by rw [hblock]; exact walkIf_end245_i_find) hden
     (by unfold walkCarried; decide) rfl rfl rfl
     (bit := if k = 1 then BitVec.ofNat 1 1 else evalICmp .ne x (BitVec.ofNat 32 0))
     (by simp [stateAt]) (by simp [WalkLocal]) (by simp [WalkLocal])
+  have hterm : walkIf_end245_i.term =
+      Term.condbr (.reg "%or.cond523.i") "if.end256.i" "if.then249.i" := rfl
+  have hfind : stage2Body.findBlock s.pc = some walkIf_end245_i := by
+    rw [hInv.pc_eq, hblock]; exact walkIf_end245_i_find
+  refine ⟨s', hl, Ctrl.jump.inj ((WalkLink.step hl).symm.trans ?_)⟩
+  simp only [LeanLLVM.step, hfind, hden, hterm]
+  rw [walkExecTerm_condbr (d := "%or.cond523.i") (tl := "if.end256.i") (fl := "if.then249.i")
+    (bit := if k = 1 then BitVec.ofNat 1 1 else evalICmp .ne x (BitVec.ofNat 32 0))
+    (by simp [stateAt])]
+  rfl
 
 /-- `while.end.i`: the string scan's landing `phi` and its exit test. -/
 def walkWhile_end_i : Block :=
@@ -754,7 +771,15 @@ theorem WalkLink.if_end290_i {calls : Calls} {m0 : Mem}
     (hreadC : readBytes s.mem (C.stage.z + 16) 8 = some (natToBytes nc.toNat 8)) :
     ∃ s', WalkLink calls G C s
       { C with block := (if evalICmp .ugt (nl + BitVec.ofNat 64 13) nc = 1
-          then "if.end.i86" else "if.then328.i") } s' := by
+          then "if.end.i86" else "if.then328.i") } s' ∧
+      s' = { stateAt (("%cmp.not.i85", .int 1 (evalICmp .ugt
+            (nl + BitVec.ofNat 64 13) nc)) ::
+          ("%add.i84", .int 64 (nl + BitVec.ofNat 64 13)) ::
+          ("%z.val33", .int 64 nc) :: ("%z.val", .int 64 nl) ::
+          ("%.sink", .int 64 e2) :: ("%conv286.i.sink.in", .int 64 e1) :: s.env) s with
+        pc := (if evalICmp .ugt (nl + BitVec.ofNat 64 13) nc = 1
+          then "if.end.i86" else "if.then328.i"),
+        pre := some s.pc } := by
   have hspecs : walkIf_end290_i.instrs =
       ([{ dst := "%conv286.i.sink.in", ty := Ty.int 64,
           incoming := [("if.then281.i", (Operand.reg "%sub260.i")),
@@ -823,11 +848,20 @@ theorem WalkLink.if_end290_i {calls : Calls} {m0 : Mem}
             (("%z.val", .int 64 nl) :: ("%.sink", .int 64 e2) ::
               ("%conv286.i.sink.in", .int 64 e1) :: s.env))]
     rfl
-  exact WalkLink.pureCore (G := G) (C := C) (s := s) hInv
+  obtain ⟨s', hl⟩ := WalkLink.pureCore (G := G) (C := C) (s := s) hInv
     (B := walkIf_end290_i) (by rw [hblock]; exact walkIf_end290_i_find) hden
     (by unfold walkCarried; decide) rfl rfl rfl
     (bit := evalICmp .ugt (nl + BitVec.ofNat 64 13) nc)
     (by simp [stateAt]) (by simp [WalkLocal]) (by simp [WalkLocal])
+  have hterm : walkIf_end290_i.term =
+      Term.condbr (.reg "%cmp.not.i85") "if.end.i86" "if.then328.i" := rfl
+  have hfind : stage2Body.findBlock s.pc = some walkIf_end290_i := by
+    rw [hInv.pc_eq, hblock]; exact walkIf_end290_i_find
+  refine ⟨s', hl, Ctrl.jump.inj ((WalkLink.step hl).symm.trans ?_)⟩
+  simp only [LeanLLVM.step, hfind, hden, hterm]
+  rw [walkExecTerm_condbr (d := "%cmp.not.i85") (tl := "if.end.i86") (fl := "if.then328.i")
+    (bit := evalICmp .ugt (nl + BitVec.ofNat 64 13) nc) (by simp [stateAt])]
+  rfl
 
 /-- `WalkLocal` at the literal comparison's entry block. -/
 theorem walkLocal_forBody_i_i {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}

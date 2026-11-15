@@ -872,28 +872,57 @@ theorem WalkLink.if_then219_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
        .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r → r.ret = .int 32 x) :
     ∃ s', WalkLink (stage2Calls stage2SubCalls) G C s
       { C with block := (if evalICmp .eq (BitVec.ofNat 32 C.sp) (BitVec.ofNat 32 0) = 1
-          then "if.end245.i" else "land.lhs.true.i") } s' := by
+          then "if.end245.i" else "land.lhs.true.i") } s' ∧
+      s' = { stateAt (cells [("%cmp223.not.i",
+          .int 1 (evalICmp .eq (BitVec.ofNat 32 C.sp) (BitVec.ofNat 32 0))),
+          ("%call222.i", .int 32 x), ("%26", .int 32 rd)] s.env) s with
+        pc := (if evalICmp .eq (BitVec.ofNat 32 C.sp) (BitVec.ofNat 32 0) = 1
+          then "if.end245.i" else "land.lhs.true.i"),
+        pre := some s.pc } := by
   obtain ⟨r, hcall, hpost, -⟩ :=
     s2ValuePosContract.resolves (next := s.next) hpre
-  obtain ⟨v, -, hret, hmem, -⟩ := hpost
+  obtain ⟨v, -, hret, hmem, hnext⟩ := hpost
   have hret' : r.ret = .int 32 x := hx r hcall
   have hcall' : stage2Calls stage2SubCalls "s2_value_pos"
       [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rd,
        .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r := hcall
-  refine WalkLink.pureCore (G := G) (C := C) (s := s) hInv
-    (B := walkIfThen219I) (by rw [hblock]; exact walkIfThen219I_find)
-    (s₁ := stateAt (cells [("%cmp223.not.i",
+  -- the callee hands the caller's memory and cursor back, so the target is the
+  -- run's own state and not the call's outcome
+  have hbase : ({ s with mem := r.mem, next := r.next } : State) = s := by
+    rw [hmem, hnext]
+  have hden : denoteCode (stage2Calls stage2SubCalls) walkIfThen219I.instrs s =
+      some (stateAt (cells [("%cmp223.not.i",
         .int 1 (evalICmp .eq (BitVec.ofNat 32 C.sp) (BitVec.ofNat 32 0))),
-      ("%call222.i", .int 32 x), ("%26", .int 32 rd)] s.env)
-      { s with mem := r.mem, next := r.next })
-    (walkIfThen219I_denote (sub := stage2SubCalls) (env := s.env) (s := s)
+      ("%call222.i", .int 32 x), ("%26", .int 32 rd)] s.env) s) := by
+    have h := walkIfThen219I_denote (sub := stage2SubCalls) (env := s.env)
+      (s := s)
       (root := root) (rd := rd) (sp := BitVec.ofNat 32 C.sp)
       (ct := C.stage.ctype) (cs := C.stage.cst)
       (r := r) (x := x) hroot hread hInv.depth_reg
-      (hInv.ptrs.2.2.2.1) (hInv.ptrs.2.2.2.2.1) hcall' hret')
-    (by unfold walkCarried; decide) (by simpa [stateAt] using hmem) rfl rfl
+      (hInv.ptrs.2.2.2.1) (hInv.ptrs.2.2.2.2.1) hcall' hret'
+    rw [hbase] at h
+    exact h
+  obtain ⟨s', hl⟩ := WalkLink.pureCore (G := G) (C := C) (s := s) hInv
+    (B := walkIfThen219I) (by rw [hblock]; exact walkIfThen219I_find)
+    (s₁ := stateAt (cells [("%cmp223.not.i",
+        .int 1 (evalICmp .eq (BitVec.ofNat 32 C.sp) (BitVec.ofNat 32 0))),
+      ("%call222.i", .int 32 x), ("%26", .int 32 rd)] s.env) s)
+    hden
+    (by unfold walkCarried; decide) rfl rfl rfl
+    (bit := evalICmp .eq (BitVec.ofNat 32 C.sp) (BitVec.ofNat 32 0))
     (by simp [cells, stateAt, lookupName_cons_self])
     (by simp [WalkLocal]) (by simp [WalkLocal])
+  have hterm : walkIfThen219I.term =
+      Term.condbr (.reg "%cmp223.not.i") "if.end245.i" "land.lhs.true.i" := rfl
+  have hfind : stage2Body.findBlock s.pc = some walkIfThen219I := by
+    rw [hInv.pc_eq, hblock]; exact walkIfThen219I_find
+  refine ⟨s', hl, Ctrl.jump.inj ((WalkLink.step hl).symm.trans ?_)⟩
+  simp only [LeanLLVM.step, hfind, hden, hterm]
+  rw [walkExecTerm_condbr (d := "%cmp223.not.i") (tl := "if.end245.i")
+    (fl := "land.lhs.true.i")
+    (bit := evalICmp .eq (BitVec.ofNat 32 C.sp) (BitVec.ofNat 32 0))
+    (by simp [cells, stateAt, lookupName_cons_self])]
+  rfl
 
 /-! ## `s2_after_value`: one flag or one stack byte
 

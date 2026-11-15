@@ -62,7 +62,59 @@ What is supplied is the **segment** inside the bundle, not the case, not the arm
 and not its classification: `WalkDispatchResult.toOutcome` still decides
 `cont`/`finish` from the merge's own test on the index the segment reached.
 
-**The fifteen-block segment is a supplied field of this bundle, not a
+**The intermediate states are now nameable.**  A composition threads each link's
+*target* state into the next link's hypotheses, and until recently five of the
+fifteen links concluded `∃ s', WalkLink … s'` without saying which state `s'` is,
+so no `def` could name them and no bundle field could be stated at them.  Those
+conclusions now carry the equality: `WalkLink.if_then281_i`
+(`JsonStage2WalkRest`), `WalkLink.if_end207_i` (`JsonStage2WalkStore`),
+`WalkLink.if_end245_i` and `WalkLink.if_end290_i` (`JsonStage2WalkPhi`), and
+`WalkLink.if_then219_i` (`JsonStage2WalkCall`) each conclude
+`∃ s', WalkLink … s' ∧ s' = <the state the run reaches>`, the shape seven of the
+fifteen links already had (`NodeBlock21_at`, `NodeBlock5_at`, `LeafBlock_at`,
+`sw_bb202_i_at`, `NodeBlock31_at`, `LeafBlock29_at`, `if_else285_i_at`).  Three
+remain: `if_end256_i` and `if_then328_i` take an explicit `s₁` and can be exposed
+the same way, and `z_arena_reserve_exit`'s target depends on the callee's
+`CallOutcome`, so its exposure needs that outcome as a named parameter.
+
+**The residue: four fields, not eight links.**  With the states nameable, every
+link's hypotheses are the head bundle's fields, `WalkInv`'s clauses, the step's own
+predecessor, or a `def`'d state's cells — except for four facts, each of which is
+named here with the producer that will retire it:
+
+* **`z_arena_reserve_exit`'s witness** — one field, not six:
+  `∀ r, stage2Calls … "s2_string_body" ⟨the eight arguments⟩ s₉.mem s₉.next = some r
+  → hframe ∧ howned ∧ hlog ∧ hev ∧ hstTy ∧ hstSt`, all at `r.mem` and the target
+  carry.  Producer: `s2StringBodyFoot_frame_walkWide`
+  (`JsonStage2StringStageFacts`) plus the four `walkReadBytes_*` crossings that
+  `walkAfterValue_facts` already carries for `s2_after_value`.  Retired by the
+  cursor-parameterised frame.
+* **`l ≤ ext`** at `if.else285.i`'s state — the decoded length fits the window
+  `if.end256.i` reserved.  Producer: `s2StringBody_outn_le`.
+* **the log's base word**, `readBytes s.mem C.stage.z 8 = some (wordBytes 8 G.ev)`.
+  Not a lemma: `%z`'s first eight bytes are *inside* the walk's write extent, so
+  `WalkInv.frame` (silence outside it) cannot reach them and the staging gives
+  presence, not the value.  Producer: the initialisation's store at `%z + 0` — a
+  `WalkSeedState` fact the record does not yet carry — **plus** a `WalkInv` clause
+  for the log's base word, because the seed alone does not give the fact at the
+  state that reads it.  The retirement is that clause.
+* **`C.events.length < C.k`** (strict; `events_le` gives `≤`).  Producer:
+  `if.then425.i`'s one-record-per-emitting-entry count.
+
+`hinc208`/`hnepM` stay as fields of a `∀` over the endpoint the segment reaches —
+finding 19's shape — because `WalkInv` binds neither register.
+
+**The invariant's cursor pin is settled but not landed.**
+`next_ge : G.next0 + stage2BootstrapExtent ≤ s.next` (`stage2BootstrapExtent := 28`,
+the end of `entry`'s four `alloca`s) with the frame at
+`walkPresent G C ++ [(G.next0, s.next - G.next0)]`.  It is *verified at the clause
+and at `JsonStage2WalkScope`'s ten construction sites* — that module built green with
+it — and unlanded because the six helper transfers whose target state is a parameter
+`s₁` (`pureCore`, `pureJumpCore`, `pureCoreCarried`, `callQuiet`, `callQuietBr`,
+`callQuietBrPending`) need a new hypothesis each and 70 call sites to pass it, in one
+pass.  The handoff's Gap 1 has the measurements; do not re-derive them.
+
+**The fifteen-block segment is still a supplied field of this bundle, not a
 composition.**  The link that blocks the composition is
 `WalkLink.z_arena_reserve_exit` (position 9): its hypotheses include register
 bindings that neither `WalkInv` carries nor any block of the chain binds

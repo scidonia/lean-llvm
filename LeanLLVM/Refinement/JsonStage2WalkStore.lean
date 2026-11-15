@@ -1604,7 +1604,16 @@ theorem WalkLink.if_end207_i {calls : Calls} {m0 : Mem}
     (hbs : bytesToNat bs = q)
     (hk64 : C.k + 2 < 2 ^ 64) :
     ∃ s', WalkLink calls G C s
-      { C with block := (if evalICmp .ugt x (BitVec.ofNat 64 q) = 1 then "if.then219.i" else "if.then214.i") } s' := by
+      { C with block := (if evalICmp .ugt x (BitVec.ofNat 64 q) = 1 then "if.then219.i" else "if.then214.i") } s' ∧
+      s' = { stateAt (cells [
+          ("%cmp212.not.i", .int 1 (evalICmp .ugt x (BitVec.ofNat 64 q))),
+          ("%conv211.i", .int 64 (BitVec.ofNat 64 q)),
+          ("%25", .int 32 (BitVec.ofNat 32 q)),
+          ("%arrayidx209.i", .ptr (G.ep + (C.k + 1) * 4)),
+          ("%inc208.i", .int 64 (BitVec.ofNat 64 (C.k + 2)))] s.env)
+        { s with mem := writeBytes s.mem (C.stage.c + 32) (wordBytes 8 (C.k + 2)) } with
+        pc := (if evalICmp .ugt x (BitVec.ofNat 64 q) = 1 then "if.then219.i" else "if.then214.i"),
+        pre := some s.pc } := by
   have hpc : s.pc = C.block := hInv.pc_eq
   have hq32 : q < 2 ^ 32 := by
     rw [← hbs]
@@ -1700,7 +1709,7 @@ theorem WalkLink.if_end207_i {calls : Calls} {m0 : Mem}
   have hcz := cursor_log_sep hInv
   have hcev := walkCursor_ev_sep hInv
   have hwlen : (wordBytes 8 (C.k + 2)).length = 8 := natToBytes_length _ _
-  refine ⟨s', ⟨hInv, hstep, ?_, ?_⟩⟩
+  refine ⟨s', ⟨hInv, hstep, ?_, ?_⟩, ?_⟩
   · refine
       { pc_eq := rfl
         blockIndex := ?_
@@ -1811,6 +1820,7 @@ theorem WalkLink.if_end207_i {calls : Calls} {m0 : Mem}
     · simp only [WalkLocal]
       split <;> simp
   · rfl
+  · dsimp only [s', out, cs, m', bit]
 
 end WalkScope
 end LeanLLVM.Refinement
