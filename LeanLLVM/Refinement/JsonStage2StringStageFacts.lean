@@ -11,7 +11,16 @@ and an abstract staging so the walk layer can instantiate them:
   call's memory holds, the document's spacing fact and the staging's address
   facts (`s2StringBodyPre_of_staging`).  Its hypothesis list is the producer's
   target: each argument is one of those three, or one of the caller's arithmetic
-  side conditions, and the docstring names which for every one.
+  side conditions, and the docstring names which for every one;
+* **the producer of that precondition at the walk's call**,
+  `s2StringBodyPre_at_string_call`: all eight arguments at the block's own
+  registers (`%c.i`, `%arrayidx10.i`, `%sub260.i`, `%xp`, `%nxp`, and the two
+  `alloca` slots `walkStaticRegs` fixes), the memory the invariant carries and the
+  cursor the call is made at.  Thirty of the assembler's thirty-seven hypotheses
+  are derived there — the document's window, the escape list's lanes, the two
+  presence clauses and every separation — and seven are named, each with the
+  producer that would make it derivable.  It is the shape a consumer substitutes
+  for `HstringFacts.hpreS` and for the link's `hpreS`.
 * **the callee's footprint inside the walk's frame**: the frame the callee proves
   over `s2StringBodyFoot` is one over the walk's `walkWide` at the carry the link
   builds (`s2StringBodyFoot_frame_walkWide`), and the caller's presence over
@@ -344,9 +353,520 @@ theorem s2StringBodyFoot_presence_walkStaged {m0 : Mem} {G : WalkGeom m0}
   rw [hrmem]
   exact hasBytes_writeBytes (stage2StringBody_hasBytes hm (hmem q hq'))
 
+/-! ### The producer at the walk's string-body call
+
+`HstringFacts.hpreS` (`JsonStage2WalkDispatchWitnessString`) and
+`WalkLink.z_arena_reserve_exit` (`JsonStage2WalkCall`) both take the string body's
+precondition as a supplied premise.  This section is its producer: the same
+predicate, at the call's own argument list, read off `WalkInv`'s clauses, the
+geometry, the staging and the call's registers.
+
+The assembler above states the target with every witness and every conjunct named.
+Here each conjunct is either derived or named, and the named ones carry the
+producer that would make them derivable:
+
+* **derived (30 of the 37).**  The document's body window (`hbody`) is a subrange
+  of `G.b .. G.b + n + stage2ReadTail` — `WalkGeom.doc` for the document and
+  `WalkGeom.tail` for the read-past bytes — transported to the walk's memory by
+  `WalkInv.frame`.  The escape list's lanes (`hps`) are `WalkGeom.esc` plus the
+  same transport.  The destination window's presence (`hdst`) is the arena's
+  `walkStaged` entry, with the reservation's word bounded by the carried cursor
+  (`logArena_le`) and the window placed inside it by `pending_cursor` and
+  `pending_len`.  The error record's presence (`herr`) is the seven's `(e, 24)`
+  entry.  The twenty `RegionsApart` facts and the two lane exclusions are the
+  staging's separation (`WalkGeom.separate`, `WalkStage.separate`,
+  `WalkStage.dSep`) read at the call's addresses, with the watermark placing every
+  staged object at or below `G.next0` and the four `alloca` slots at or above it.
+  Four of the six bounds (`p < 2 ^ 64`, `base ≤ p`, the window's non-wrapping and
+  the sentinel exclusion) follow from `G.maxDoc`, the record in flight and `hfit`.
+* **named (7 of the 37).**  The cursor record's base and error words, the `%xj.i`
+  slot's word, the `%outn.i` slot's presence, the escape list's spacing, the scan
+  index's sign bound and the escape count's sign bound.  Each is a fact the walk's
+  vocabulary does not carry; the docstring names the producer for every one, and
+  none is added to `WalkInv` (which the frame repair owns).
+
+**The reservation's document room is not a hypothesis.**  The body's window runs
+`G.b + p + 1 .. G.b + p + 1 + ext`, and `pending_len` gives `p + ext ≤ G.n`, so the
+window ends at `G.b + G.n + 1` at the widest: its last byte is the document's first
+read-past byte, which `WalkGeom.tail` stages and the document's region
+(`(b, n + stage2ReadTail)`) covers.  So the producer reads the window out of
+`G.doc` and `G.tail` concatenated, and nothing stronger than `pending_len` is
+needed.  (The link's `hwin`, `C.alen + ext ≤ G.n`, is a different statement — it is
+the appended span's room — and `pending_cursor`/`pending_len` give only
+`C.alen + ext ≤ G.ndst0 + G.n`; it stays supplied there.)
+
+Two hypotheses are not pre conjuncts: the document's address width (`hfit`, which
+the body's `ptrtoint` needs) and the allocator cursor's placement (`hge`, finding
+20: the invariant carries no `s.next`).
+
+The nine named facts are all true at the loop's first string-body call, so the
+statement is not vacuous there: `%c.i`'s base and error words are the `entry`
+block's stores (`JsonStage2IR:213`, `220-221`), `%xj.i` and `%outn.i` its and
+`if.end207.i`'s zeros (`227`, `655`), the cursor is `G.next0 + 28`, and the rest are
+properties of the document and the caller's escape list.  What is missing is not a
+state at which they hold but a `WalkInv` clause that carries them past the blocks
+between the store and the call.  The register hypotheses (`%c.i`, `%xp`,
+`%nxp`, `%arrayidx10.i`, `%sub260.i`) are the link's own and are carried rather than
+consumed — the statement is the call's, so the numbers are named there; they are
+spelled `_hc` and so on because the producer reads the *values*, not the bindings,
+and dropping them would drop the call's vocabulary from its own producer. -/
+
+/-- **A read outside the run's region list is the staging's read.**  The per-byte
+form of `UnchangedOutside`, at a range the list misses. -/
+theorem readBytes_of_frame {m0 m : Mem} {R : List (Nat × Nat)} {a N : Nat}
+    (h : UnchangedOutside m0 m R)
+    (hsep : ∀ r ∈ R, r.1 + r.2 ≤ a ∨ a + N ≤ r.1) :
+    readBytes m a N = readBytes m0 a N := by
+  induction N generalizing a with
+  | zero => rfl
+  | succ N ih =>
+      have hb : readByte m a = readByte m0 a :=
+        h a (fun r hr hlt => by rcases hsep r hr with h' | h' <;> omega)
+      have ht : readBytes m (a + 1) N = readBytes m0 (a + 1) N :=
+        ih (a := a + 1) (fun r hr => by rcases hsep r hr with h' | h' <;> omega)
+      simp only [readBytes, hb, ht]
+
+/-- **The lane reader through a run that wrote outside the list.** -/
+theorem readLanes32_of_frame {m0 m : Mem} {R : List (Nat × Nat)} {a k : Nat}
+    (h : UnchangedOutside m0 m R)
+    (hsep : ∀ r ∈ R, r.1 + r.2 ≤ a ∨ a + 4 * k ≤ r.1) :
+    readLanes32 m a k = readLanes32 m0 a k := by
+  refine JsonEntrySteps.readLanes32_congr_bytes (m := m0) (m' := m) ?_
+  intro j _hj
+  exact h (a + j) (fun r hr hlt => by rcases hsep r hr with h' | h' <;> omega)
+
+/-- **A flat read supplies the lanes.**  `readLanes32` is the four-byte grouping of
+the same range, so a range read back whole is read back as lanes.  This is what
+turns the staging's `HasBytes` over the escape list into the `readLanes32` the
+precondition names. -/
+theorem readLanes32_of_readBytes {m : Mem} (a k : Nat) :
+    ∀ {bs : List UInt8}, readBytes m a (4 * k) = some bs →
+      ∃ ps, readLanes32 m a k = some ps := by
+  induction k generalizing a with
+  | zero => intro _bs _; exact ⟨[], rfl⟩
+  | succ k ih =>
+      intro bs h
+      have h4 : readBytes m a (4 + 4 * k) = some bs := by
+        rwa [show 4 * (k + 1) = 4 + 4 * k from by omega] at h
+      obtain ⟨hfirst, hrest⟩ := readBytes_split m a 4 (4 * k) h4
+      obtain ⟨tl, htl⟩ := ih (a := a + 4) hrest
+      refine ⟨bytesToNat (bs.take 4) :: tl, ?_⟩
+      show (readBytes m a 4).bind (fun b4 => (readLanes32 m (a + 4) k).map
+        (fun rest => bytesToNat b4 :: rest)) = some (bytesToNat (bs.take 4) :: tl)
+      rw [hfirst, htl]
+      rfl
+
+/-- **An ABI object against the walk's seven appended objects.**  The adapter's
+separation, read in the orientation a frame wants: the object ends before the
+appended one starts, or the appended one ends before the object starts. -/
+theorem walkWrites_against_abi {m0 : Mem} {G : WalkGeom m0} (S : WalkStage G)
+    {a n : Nat}
+    (ha : (a, n) ∈ stage2Regions G.b G.n G.ep G.nep G.xp G.nxp G.dst G.ndst0 G.ev
+      G.evcap G.ndst G.nev G.err) :
+    ∀ r ∈ stage2StagedWrites S.c S.ctype S.cst S.tok S.s S.z S.e,
+      r.1 + r.2 ≤ a ∨ a + n ≤ r.1 := by
+  have h : DisjointRegions (stage2Regions G.b G.n G.ep G.nep G.xp G.nxp G.dst
+      G.ndst0 G.ev G.evcap G.ndst G.nev G.err ++
+      stage2StagedWrites S.c S.ctype S.cst S.tok S.s S.z S.e) := by
+    simpa only [stage2WalkRegions] using S.walk_separate
+  exact disjointRegions_against h ha
+
+/-- **A staged region the walk never writes, against its whole write list.**  The
+list's two prefixes are inside their staged extents (`alen` and `evlen` grow inside
+them), the seven and `%d.i` are separated from the region by the adapter's
+staging (`WalkStage.separate`, `WalkStage.dSep`), and the four `alloca` slots start
+at the cursor — so a region staged entirely below `G.next0`, and separated from the
+arena's and the event stream's staged extents, is outside every entry.
+
+The two extents are hypotheses rather than `WalkInv`'s projections so the lemma is
+about the addresses: `WalkInv.alen_le` and `WalkInv.evlen_le` introduce them. -/
+theorem walkWide_abi_sep {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {a n : Nat}
+    (ha : (a, n) ∈ stage2Regions G.b G.n G.ep G.nep G.xp G.nxp G.dst G.ndst0 G.ev
+      G.evcap G.ndst G.nev G.err)
+    (harena : G.dst + (G.ndst0 + G.n + stage2ArenaReserve) ≤ a ∨ a + n ≤ G.dst)
+    (hevent : G.ev + G.evcap ≤ a ∨ a + n ≤ G.ev)
+    (hale : C.alen ≤ G.ndst0 + G.n)
+    (hevcap : C.evlen ≤ G.evcap)
+    (hwater : a + n ≤ G.next0) :
+    ∀ q ∈ walkWide G C, q.1 + q.2 ≤ a ∨ a + n ≤ q.1 := by
+  intro q hq
+  simp only [walkWide, walkPresent] at hq
+  rcases List.mem_append.mp hq with hq | hq
+  · rcases List.mem_append.mp hq with hq | hq
+    · rcases List.mem_cons.mp hq with rfl | hq
+      · rcases harena with h | h
+        · left; show G.dst + C.alen ≤ a; omega
+        · right; show a + n ≤ G.dst; exact h
+      · rcases List.mem_cons.mp hq with rfl | hq
+        · rcases hevent with h | h
+          · left; show G.ev + C.evlen ≤ a; omega
+          · right; show a + n ≤ G.ev; exact h
+        · exact absurd hq (by simp)
+    · simp only [stage2ReportScratch] at hq
+      rcases List.mem_append.mp hq with hq | hq
+      · exact walkWrites_against_abi C.stage ha q hq
+      · rcases List.mem_cons.mp hq with rfl | hq
+        · rcases C.stage.dSep (a, n) (by
+            simp only [stage2WalkRegions]; exact List.mem_append_left _ ha) with h | h
+          · right; show a + n ≤ C.stage.d; exact h
+          · left; show C.stage.d + 8 ≤ a; exact h
+        · exact absurd hq (by simp)
+  · have hstart := stage2AllocaWrites_start hq
+    right; omega
+
+/-- **The producer of the string body's precondition at the walk's call.**  The
+witnesses are the staging's — `c = C.stage.c`, `xj = G.next0 + 12`,
+`outn = G.next0 + 20` — and the argument list is the block's
+(`JsonStage2WalkCall`'s `%add.ptr271.i` is `G.b + p + 1`, `%add.ptr.i` is
+`G.dst + A.toNat`), with `p`, `off` and `ext` the record in flight's
+(`C.pending`).
+
+**Derived.**  `hbody` and `hps` are the staging's reads at the staging's memory,
+transported across the walk by the frame (`WalkInv.frame`), because the document's
+window and the escape list end at or below `G.next0` and the walk's write list
+starts there or is separated from them.  `hdst` is the arena's `walkStaged` entry
+(`WalkInv.owned`) narrowed to the reserved window, where `logArena_le` bounds
+`A.toNat` by the carried cursor and `pending_cursor`/`pending_len` place
+`A.toNat + ext` inside the staged extent.  `herr` is the seven's `(e, 24)` entry.
+The twenty separations and the two lane exclusions are read off
+`WalkGeom.separate`, `WalkStage.separate` and `WalkStage.dSep` at the call's
+addresses.  The bounds follow from `G.maxDoc`, `G.bLt`, `G.nxpLt` and the geometry's
+watermark.
+
+**Named, with the producer that would make each derivable.**
+
+* **`hbase`** — the cursor record's base word holds the document's base.  Producer:
+  `entry`'s store of `%3` at `%c.i` (`JsonStage2IR:213`), which no block of the walk
+  rewrites.  It is not a `WalkInv` clause, and `%c.i` lies inside `walkWide`, so
+  the frame says nothing about it (the clause would be a value, not a silence).
+* **`he`** — the cursor record's error pointer is the staging's `%e`.  Producer:
+  `entry`'s store at `%c.i + 1112` (`JsonStage2IR:220-221`).  Same gap and same
+  reason as `hbase`; the error record's *presence* is derived, its address is not.
+* **`hj0`**, **`hj0_lt`** — the scan cursor's slot at `%xj.i`, and its sign bound.
+  Producer: `entry`'s zero store (`JsonStage2IR:227`) and each body's write-back,
+  with the index below the escape count.  `WalkInv` carries neither the four
+  `alloca` slots' contents nor `s.next`, and a body's write-back leaves the slot
+  free (`s2StringBodyPost`), so no clause can carry it.
+* **`houtn`** — the decoded-length slot's presence.  Producer: `if.end207.i`'s zero
+  store at `%outn.i` (`JsonStage2IR:655`).  `WalkInv.owned` deliberately omits the
+  four `alloca` slots (`walkStaged`), so presence of that byte is not carried.
+* **`hspaced`** — the escape list's spacing over the body's document range.  It is
+  a property of the document's positions, not of the staging: `WalkGeom` states no
+  `BodyPositionsSpaced` at all, and it cannot be transported from `m0` because two
+  of the four reads it is about (`c`, `xj`) lie inside `walkWide`.
+* **`hnxp_lt`** — the escape count's sign bound.  Producer: the escape list's
+  staged extent (`4 * nxp` bytes exist, so the count is below the memory's size) or
+  the caller's `%nxpSlot` word; no lemma in the tree converts `HasBytes` into a size
+  bound, and `WalkGeom.nxpLt` stops at `2 ^ 64`.
+
+**Two hypotheses that are not pre conjuncts.**
+
+* **`hfit`** — `G.b + G.n + stage2ReadTail ≤ 2 ^ 64`: the document's window inside
+  the 64-bit address space, which the body's `ptrtoint` needs.  Producer: the ABI's
+  own address width (`stage2.h`), and the pipeline's staging, which reads the
+  document out of a `Mem` a caller handed over; `WalkGeom` states `G.b < 2 ^ 64`
+  and the document's length separately and never their sum.
+* **`hge`** — `G.next0 + 28 ≤ s.next`: the allocator cursor's placement.  This is
+  finding 20's missing clause: the seed's `walkSeedFinalState` leaves the cursor at
+  `G.next0 + 28` and the allocator only advances, but `WalkInv` carries no `s.next`,
+  so the facts that place the body's private `%ei` slot below every other object
+  are the caller's.  **Producer: the walk's cursor pin** — the clause the frame
+  repair is adding to `WalkInv` (either `s.next = G.next0 + C.nb` or this lower
+  bound, whichever is uniform at the construction sites).  Until it lands the fact
+  is the caller's.
+
+**`hge` is one side of one fact, and the frame needs the other.**  This producer
+uses only the lower bound: every object staged at or below `G.next0` must end
+before the callee's private `%ei` slot, which sits at `s.next`.  The frame side
+(`s2StringBodyFoot_frame_walkWide`) needs the upper one: the slot's eight bytes lie
+inside the carried stack extent, `s.next + 8 ≤ G.next0 + allocated`.  A future
+reader looking for the missing clause should look for **one equality**
+(`s.next = G.next0 + nb`, with `nb` the carry's allocated stack bytes), not for two
+clauses: it gives both bounds at once, and two separate inequalities would let the
+cursor drift out of the extent the frame names. -/
+theorem s2StringBodyPre_at_string_call {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {s : State} (hInv : WalkInv G C s)
+    {p off ext : Nat} (hpend : C.pending = some (p, off, ext))
+    {A : BitVec 64}
+    (hreadA : readBytes s.mem (C.stage.z + 48) 8 = some (natToBytes A.toNat 8))
+    (_hc : lookupName s.env "%c.i" = some (.ptr C.stage.c))
+    (_hxp : lookupName s.env "%xp" = some (.ptr G.xp))
+    (_hnxp : lookupName s.env "%nxp" = some (.int 64 (BitVec.ofNat 64 G.nxp)))
+    (_haj : lookupName s.env "%arrayidx10.i" = some (.ptr (G.b + p)))
+    (_hsub : lookupName s.env "%sub260.i" = some (.int 64 (BitVec.ofNat 64 ext)))
+    (hfit : G.b + G.n + stage2ReadTail ≤ 2 ^ 64)
+    (hge : G.next0 + 28 ≤ s.next)
+    {j0 : Nat} (hj0 : stage2ReadWord s.mem (G.next0 + 12) 8 = some j0)
+    (hj0_lt : j0 < 2 ^ 63)
+    (hbase : stage2ReadWord s.mem C.stage.c 8 = some G.b)
+    (he : stage2ReadWord s.mem (C.stage.c + 1112) 8 = some C.stage.e)
+    (houtnP : readBytes s.mem (G.next0 + 20) 8 ≠ none)
+    (hnxp_lt : G.nxp < 2 ^ 63)
+    (hspaced : BodyPositionsSpaced s.mem C.stage.c (G.next0 + 12) G.xp G.nxp
+      (G.b + p + 1) ext) :
+    s2StringBodyPre
+      [.ptr C.stage.c, .ptr (G.b + p + 1), .int 64 (BitVec.ofNat 64 ext),
+       .ptr (G.dst + A.toNat), .ptr (G.next0 + 20), .ptr G.xp, .ptr (G.next0 + 12),
+       .int 64 (BitVec.ofNat 64 G.nxp)] s.mem s.next := by
+  -- the staging's numbers, at the record in flight
+  have hplen : p + ext ≤ G.n := hInv.pending_len p off ext hpend
+  have hcur : C.alen ≤ G.ndst0 + p := hInv.pending_cursor p off ext hpend
+  have hAle : A.toNat ≤ C.alen := hInv.logArena_le hreadA
+  have hale : C.alen ≤ G.ndst0 + G.n := hInv.alen_le
+  have hevle : C.evlen ≤ G.nev0 + stage2RecordBytes * G.n := hInv.evlen_le
+  have hevcap : C.evlen ≤ G.evcap := by
+    have := G.evRoom
+    omega
+  have hhub : A.toNat + ext ≤ G.ndst0 + G.n := by omega
+  have hn32 : G.n < 2 ^ 64 := by
+    have h := G.maxDoc
+    simp only [stage2MaxDocument] at h
+    omega
+  have hextext : ext < 2 ^ 64 := by omega
+  -- the watermark, at the regions this producer reads
+  have hwDoc : G.b + (G.n + stage2ReadTail) ≤ G.next0 :=
+    G.watermark (G.b, G.n + stage2ReadTail) (by simp [stage2Regions])
+  have hwArena : G.dst + (G.ndst0 + G.n + stage2ArenaReserve) ≤ G.next0 :=
+    G.watermark (G.dst, G.ndst0 + G.n + stage2ArenaReserve) (by simp [stage2Regions])
+  have hwXp : G.xp + 4 * G.nxp ≤ G.next0 :=
+    G.watermark (G.xp, 4 * G.nxp) (by simp [stage2Regions])
+  have hwC : C.stage.c + stage2CursorExtent ≤ G.next0 :=
+    C.stage.sevenEnd (C.stage.c, stage2CursorExtent) (by simp [stage2StagedWrites])
+  have hwE : C.stage.e + stage2ErrorExtent ≤ G.next0 :=
+    C.stage.sevenEnd (C.stage.e, stage2ErrorExtent) (by simp [stage2StagedWrites])
+  -- the same four at their numerals: `stage2ReadTail` and `stage2CursorExtent` are
+  -- compared against literal offsets below (the window's `+ 1`, the record's
+  -- `+ 1112`), and `omega` reads a constant only as a numeral.
+  have hfitNum : G.b + G.n + 32 ≤ 2 ^ 64 := by simpa only [stage2ReadTail] using hfit
+  have hwDocNum : G.b + (G.n + 32) ≤ G.next0 := by simpa only [stage2ReadTail] using hwDoc
+  have hwCNum : C.stage.c + 1192 ≤ G.next0 := by simpa only [stage2CursorExtent] using hwC
+  -- the document, split into its window and the decoder's read-past tail
+  obtain ⟨tailbs, htail⟩ := G.tail
+  have hfull : readBytes m0 G.b (G.n + stage2ReadTail) = some (G.bs ++ tailbs) :=
+    JsonEntrySteps.readBytes_append m0 G.n G.b G.bs stage2ReadTail tailbs G.doc htail
+  have hlext : p + 1 + ext ≤ G.n + stage2ReadTail := by
+    have := hplen
+    simp only [stage2ReadTail]
+    omega
+  have htake := readBytes_take_prefix hlext hfull
+  obtain ⟨-, hwindow⟩ := readBytes_split m0 G.b (p + 1) ext htake
+  have hbodyM0 : readBytes m0 (G.b + p + 1) ext =
+      some (((G.bs ++ tailbs).take (p + 1 + ext)).drop (p + 1)) := by
+    rw [show G.b + p + 1 = G.b + (p + 1) from by omega]; exact hwindow
+  -- the document's whole staged region, against every entry of the walk's list
+  have hsplitDoc : DisjointRegions ([(G.b, G.n + stage2ReadTail)] ++
+      [(G.ep, 4 * G.nep), (G.xp, 4 * G.nxp),
+       (G.dst, G.ndst0 + G.n + stage2ArenaReserve), (G.ev, G.evcap),
+       (G.ndst, 8), (G.nev, 8), (G.err, 8)]) := by
+    simpa only [stage2Regions, List.cons_append, List.nil_append] using G.separate
+  have hDocTail := disjointRegions_against hsplitDoc (a := G.b)
+    (n := G.n + stage2ReadTail) (by simp)
+  have hsepDoc : ∀ q ∈ walkWide G C,
+      q.1 + q.2 ≤ G.b + p + 1 ∨ G.b + p + 1 + ext ≤ q.1 := by
+    intro q hq
+    have h := walkWide_abi_sep (C := C) (a := G.b) (n := G.n + stage2ReadTail)
+      (by simp [stage2Regions])
+      (hDocTail (G.dst, G.ndst0 + G.n + stage2ArenaReserve) (by simp))
+      (hDocTail (G.ev, G.evcap) (by simp)) hale hevcap hwDoc q hq
+    rcases h with h | h
+    · left; omega
+    · right
+      have h' : G.b + (G.n + 32) ≤ q.1 := by simpa only [stage2ReadTail] using h
+      omega
+  have hbody : readBytes s.mem (G.b + p + 1) ext =
+      some (((G.bs ++ tailbs).take (p + 1 + ext)).drop (p + 1)) := by
+    rw [readBytes_of_frame hInv.frame hsepDoc, hbodyM0]
+  -- the escape list, whose region lies below the cursor too
+  have hsplitXp : DisjointRegions ([(G.b, G.n + stage2ReadTail), (G.ep, 4 * G.nep),
+      (G.xp, 4 * G.nxp)] ++
+      [(G.dst, G.ndst0 + G.n + stage2ArenaReserve), (G.ev, G.evcap),
+       (G.ndst, 8), (G.nev, 8), (G.err, 8)]) := by
+    simpa only [stage2Regions, List.cons_append, List.nil_append] using G.separate
+  have hXpTail := disjointRegions_against hsplitXp (a := G.xp) (n := 4 * G.nxp) (by simp)
+  have hsepXp : ∀ q ∈ walkWide G C, q.1 + q.2 ≤ G.xp ∨ G.xp + 4 * G.nxp ≤ q.1 :=
+    walkWide_abi_sep (C := C) (a := G.xp) (n := 4 * G.nxp) (by simp [stage2Regions])
+      (hXpTail (G.dst, G.ndst0 + G.n + stage2ArenaReserve) (by simp))
+      (hXpTail (G.ev, G.evcap) (by simp)) hale hevcap hwXp
+  obtain ⟨bs0, hbs0⟩ := G.esc
+  obtain ⟨ps, hpsM0⟩ := readLanes32_of_readBytes (m := m0) G.xp G.nxp hbs0
+  have hps : readLanes32 s.mem G.xp G.nxp = some ps := by
+    rw [readLanes32_of_frame hInv.frame hsepXp, hpsM0]
+  -- the arena's window, and the error record, from the staging's presence
+  have hdst : readBytes s.mem (G.dst + A.toNat) ext ≠ none := by
+    obtain ⟨w, hw⟩ := hInv.owned (G.dst, G.ndst0 + G.n + stage2ArenaReserve)
+      (by simp [walkStaged])
+    have hargA : A.toNat + (G.ndst0 + G.n + stage2ArenaReserve - A.toNat) =
+        G.ndst0 + G.n + stage2ArenaReserve := by omega
+    obtain ⟨-, hrest⟩ := readBytes_split s.mem G.dst A.toNat
+      (G.ndst0 + G.n + stage2ArenaReserve - A.toNat) (by rw [hargA]; exact hw)
+    have hle : ext ≤ G.ndst0 + G.n + stage2ArenaReserve - A.toNat := by omega
+    have hread := readBytes_take_prefix hle hrest
+    intro h
+    rw [hread] at h
+    cases h
+  have herr : readBytes s.mem C.stage.e stage2ErrorExtent ≠ none := by
+    obtain ⟨w, hw⟩ := hInv.owned (C.stage.e, stage2ErrorExtent)
+      (by simp [walkStaged, stage2ReportScratch, stage2StagedWrites])
+    intro h
+    rw [hw] at h
+    cases h
+  -- the separations the twenty `RegionsApart` facts read, between the objects
+  have hWritesDoc := walkWrites_against_abi C.stage (a := G.b)
+    (n := G.n + stage2ReadTail) (by simp [stage2Regions])
+  have hWritesDst := walkWrites_against_abi C.stage (a := G.dst)
+    (n := G.ndst0 + G.n + stage2ArenaReserve) (by simp [stage2Regions])
+  have hsplitW : DisjointRegions ([(C.stage.c, stage2CursorExtent)] ++
+      [(C.stage.ctype, stage2StackExtent), (C.stage.cst, stage2StackExtent),
+       (C.stage.tok, stage2TokenExtent), (C.stage.s, stage2StateExtent),
+       (C.stage.z, stage2LogExtent), (C.stage.e, stage2ErrorExtent)]) := by
+    simpa only [stage2StagedWrites, List.cons_append, List.nil_append] using
+      C.stage.writes_separate
+  have hWritesCE := disjointRegions_against hsplitW (a := C.stage.c)
+    (n := stage2CursorExtent) (by simp)
+  have hED := hWritesDoc (C.stage.e, stage2ErrorExtent) (by simp [stage2StagedWrites])
+  have hAE := hWritesDst (C.stage.e, stage2ErrorExtent) (by simp [stage2StagedWrites])
+  have hAC := hWritesDst (C.stage.c, stage2CursorExtent) (by simp [stage2StagedWrites])
+  have hEC := hWritesCE (C.stage.e, stage2ErrorExtent) (by simp)
+  have hAD := hDocTail (G.dst, G.ndst0 + G.n + stage2ArenaReserve) (by simp)
+  have hADn : G.b + (G.n + 32) ≤ G.dst ∨ G.dst + (G.ndst0 + G.n + stage2ArenaReserve) ≤ G.b := by
+    rcases hAD with h | h
+    · exact Or.inr h
+    · exact Or.inl (by simpa only [stage2ReadTail] using h)
+  have hEDn : C.stage.e + stage2ErrorExtent ≤ G.b ∨ G.b + (G.n + 32) ≤ C.stage.e := by
+    rcases hED with h | h
+    · exact Or.inl h
+    · exact Or.inr (by simpa only [stage2ReadTail] using h)
+  have hACn : C.stage.c + 1192 ≤ G.dst ∨
+      G.dst + (G.ndst0 + G.n + stage2ArenaReserve) ≤ C.stage.c := by
+    rcases hAC with h | h
+    · exact Or.inl (by simpa only [stage2CursorExtent] using h)
+    · exact Or.inr h
+  have hECn : C.stage.e + stage2ErrorExtent ≤ C.stage.c ∨ C.stage.c + 1192 ≤ C.stage.e := by
+    rcases hEC with h | h
+    · exact Or.inl h
+    · exact Or.inr (by simpa only [stage2CursorExtent] using h)
+  -- the six bounds
+  have hnxpv : (BitVec.ofNat 64 G.nxp).toNat = G.nxp := by
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt G.nxpLt]
+  have hlenv : (BitVec.ofNat 64 ext).toNat = ext := by
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hextext]
+  have hp_lt : G.b + p + 1 < 2 ^ 64 := by omega
+  have hbase_le : G.b ≤ G.b + p + 1 := by omega
+  have hwrap : G.b + p + 1 - G.b + (BitVec.ofNat 64 ext).toNat < 2 ^ 64 := by
+    rw [hlenv]; omega
+  have hlen_lt : (BitVec.ofNat 64 ext).toNat + 1 < 2 ^ 64 := by
+    rw [hlenv]; omega
+  -- the twenty separations, at the staging's addresses
+  have hxj_next : RegionsApart (G.next0 + 12) 8 s.next 8 := by
+    unfold RegionsApart; left; omega
+  have hxj_outn : RegionsApart (G.next0 + 12) 8 (G.next0 + 20) 8 := by
+    unfold RegionsApart; left; omega
+  have hxj_dst : RegionsApart (G.next0 + 12) 8 (G.dst + A.toNat) ext := by
+    unfold RegionsApart; right; omega
+  have hxj_err : RegionsApart (G.next0 + 12) 8 C.stage.e stage2ErrorExtent := by
+    unfold RegionsApart; right; omega
+  have hnext_outn : RegionsApart s.next 8 (G.next0 + 20) 8 := by
+    unfold RegionsApart; right; omega
+  have hnext_dst : RegionsApart s.next 8 (G.dst + A.toNat) ext := by
+    unfold RegionsApart; right; omega
+  have hnext_err : RegionsApart s.next 8 C.stage.e stage2ErrorExtent := by
+    unfold RegionsApart; right; omega
+  have houtn_dst : RegionsApart (G.next0 + 20) 8 (G.dst + A.toNat) ext := by
+    unfold RegionsApart; right; omega
+  have houtn_err : RegionsApart (G.next0 + 20) 8 C.stage.e stage2ErrorExtent := by
+    unfold RegionsApart; right; omega
+  have hdst_err : RegionsApart (G.dst + A.toNat) ext C.stage.e stage2ErrorExtent := by
+    unfold RegionsApart
+    rcases hAE with h | h
+    · right; omega
+    · left; omega
+  have hxj_p : RegionsApart (G.next0 + 12) 8 (G.b + p + 1) ext := by
+    unfold RegionsApart; right; omega
+  have hxj_c : RegionsApart (G.next0 + 12) 8 (C.stage.c + 1112) 8 := by
+    unfold RegionsApart; right; omega
+  have hnext_p : RegionsApart s.next 8 (G.b + p + 1) ext := by
+    unfold RegionsApart; right; omega
+  have hnext_c : RegionsApart s.next 8 (C.stage.c + 1112) 8 := by
+    unfold RegionsApart; right; omega
+  have hdst_p : RegionsApart (G.dst + A.toNat) ext (G.b + p + 1) ext := by
+    unfold RegionsApart
+    rcases hADn with h | h
+    · right; omega
+    · left; omega
+  have hdst_c : RegionsApart (G.dst + A.toNat) ext (C.stage.c + 1112) 8 := by
+    unfold RegionsApart
+    rcases hACn with h | h
+    · right; omega
+    · left; omega
+  have houtn_p : RegionsApart (G.next0 + 20) 8 (G.b + p + 1) ext := by
+    unfold RegionsApart; right; omega
+  have houtn_c : RegionsApart (G.next0 + 20) 8 (C.stage.c + 1112) 8 := by
+    unfold RegionsApart; right; omega
+  have herr_p : RegionsApart C.stage.e stage2ErrorExtent (G.b + p + 1) ext := by
+    unfold RegionsApart
+    rcases hEDn with h | h
+    · left; omega
+    · right; omega
+  have herr_c : RegionsApart C.stage.e stage2ErrorExtent (C.stage.c + 1112) 8 := by
+    unfold RegionsApart
+    rcases hECn with h | h
+    · left; omega
+    · right; omega
+  -- the two lane exclusions: the list ends below the cursor
+  have hxj_scan : ∀ k, k < G.nxp →
+      G.xp + 4 * k + 4 ≤ G.next0 + 12 ∨ G.next0 + 12 + 8 ≤ G.xp + 4 * k := by
+    intro k hk
+    left; omega
+  have hnext_scan : ∀ k, k < G.nxp →
+      G.xp + 4 * k + 4 ≤ s.next ∨ s.next + 8 ≤ G.xp + 4 * k := by
+    intro k hk
+    left; omega
+  refine ⟨C.stage.c, G.b + p + 1, BitVec.ofNat 64 ext, G.dst + A.toNat,
+    G.next0 + 20, G.xp, G.next0 + 12, BitVec.ofNat 64 G.nxp, G.b, j0, ps,
+    ((G.bs ++ tailbs).take (p + 1 + ext)).drop (p + 1), C.stage.e, rfl, hbase, hj0,
+    by simpa only [hnxpv] using hps,
+    by simpa only [hlenv] using hbody,
+    he,
+    by simpa only [hnxpv, hlenv] using hspaced,
+    hp_lt, hbase_le,
+    by simpa only [hlenv] using hwrap,
+    by simpa only [hlenv] using hlen_lt,
+    hj0_lt,
+    by simpa only [hnxpv] using hnxp_lt,
+    houtnP,
+    by simpa only [hlenv] using hdst,
+    herr,
+    hxj_next, hxj_outn,
+    by simpa only [hlenv] using hxj_dst,
+    hxj_err, hnext_outn,
+    by simpa only [hlenv] using hnext_dst,
+    hnext_err,
+    by simpa only [hlenv] using houtn_dst,
+    houtn_err,
+    by simpa only [hlenv] using hdst_err,
+    by simpa only [hlenv] using hxj_p,
+    hxj_c,
+    by simpa only [hlenv] using hnext_p,
+    hnext_c,
+    by simpa only [hlenv] using hdst_p,
+    by simpa only [hlenv] using hdst_c,
+    by simpa only [hlenv] using houtn_p,
+    houtn_c,
+    by simpa only [hlenv] using herr_p,
+    herr_c,
+    by simpa only [hnxpv] using hxj_scan,
+    by simpa only [hnxpv] using hnext_scan⟩
+
 end LeanLLVM.Refinement
 
 #print axioms LeanLLVM.Refinement.s2StringBodyPre_of_staging
 #print axioms LeanLLVM.Refinement.s2StringBodyFoot_frame_walkWide
 #print axioms LeanLLVM.Refinement.stage2StringBody_hasBytes
 #print axioms LeanLLVM.Refinement.s2StringBodyFoot_presence_walkStaged
+#print axioms LeanLLVM.Refinement.readBytes_of_frame
+#print axioms LeanLLVM.Refinement.readLanes32_of_frame
+#print axioms LeanLLVM.Refinement.readLanes32_of_readBytes
+#print axioms LeanLLVM.Refinement.walkWrites_against_abi
+#print axioms LeanLLVM.Refinement.walkWide_abi_sep
+#print axioms LeanLLVM.Refinement.s2StringBodyPre_at_string_call
