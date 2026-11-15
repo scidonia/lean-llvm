@@ -363,6 +363,41 @@ memory parameter is the repair.
 
 ---
 
+## The whitespace skip's run (`contWsRun`): where it stands
+
+`HcontFacts.hRun`/`hnRun` are still supplied.  The definition layer and four of the six
+visit segments are proved and kept as an instrument in
+`probes/stage2/ws-run-draft.lean` (not imported, not built): `wsByte`/`wsX`/`wsLandS`,
+`wsLeafS` (the three leaves as one `def`), `wsStopS`, `scanB_ofNat`, `wsContinue43/46/48`
+and `wsVisit43Exit` — the **exit visit is not a wall**, it is the back-edge proof with
+`if_pos` on the leaf's test and `pc` moved.
+
+Five measured corrections to the plan:
+
+1. **The count is a bound, not an equality.** `LeafBlock43`'s class costs 4 links per
+   continuing byte, `46`/`48` cost 5, so the exact count is `9 + Σ c_p` and `5(k−i)+9` is
+   attained only when every byte crosses the second pivot.  The run must state
+   `∃ n, n ≤ 5(k−i) + 9 ∧ WalkSegment … n`, which is what `hnRun` consumes.
+2. **The source is class-indexed too**: `%35 ∈ {9,10} → NodeBlock41 → LeafBlock33 →
+   preheader` (3), `13` and `32` take 4.  Sourcing `hRun` at `contLandS` needs a second
+   three-way dispatch, which the plan named only for the endpoint.
+3. **Premises the header omits**: `i ≤ k` (the measure `k−i` otherwise underflows) and
+   `%35`'s class bits.  `entryPos G (C.k+1) ≤ G.n` is *not* new — it follows from `hk`,
+   `G.inside` and `readLanes32_length`, but needs a small `entryPos_lt_n`.
+4. **The price closes with the bound, and `+5` is load-bearing**: `8(v−1−k) = 8(v−i) −
+   8(k−i) − 8`, so the left side is `≤ 8(v−i) + 1 − 3(k−i) ≤ 8·ΔA + 5` from exactly
+   `entryPos C.k ≤ i` and `hspan`.
+5. **Machinery**: nested record updates are `rfl`, but a lemma's `scanCarry*` target needs
+   `scanCarryLatchOf`/`scanCarryLeafBlock46`/`_48`/`scanCarryNodeBlock50` in the `simpa`
+   set; `.env` of `stateAt` does not reduce under `simp`/`dsimp`, so cell peels need the
+   `show … (cells […]) …` or `…_env` idiom.
+
+Order the evidence supports: (a) `wsVisit46Exit`/`wsVisit48Exit` — mechanical copies of
+the 43 case; (b) `wsExit43/46/48`; (c) `wsLatchAt`/`wsStopAt` and the induction; (d) the
+entry dispatch with `ScanEntered` and `v − i ≤ C.inner`; (e) the seam at `wsStopS` and
+`contWsStop_cond`, then delete `hRun`/`hnRun`/`hcond_sl`/`sl` and rewire the two
+consumers.  ~500–700 lines, with (c), (d), (e) and the bundle rewrite the hard parts.
+
 ## The findings — twenty-three, and all of one family
 
 *A statement that looks true because an unstated fact is load-bearing.* Each is
