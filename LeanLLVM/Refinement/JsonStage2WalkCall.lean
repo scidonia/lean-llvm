@@ -1613,6 +1613,28 @@ theorem walkIfEnd256_denote {sub : Calls} (env : Env) (s : State)
     (y := C) (by simp [evalOperand, stateAt, lookupName]) (by simp [evalOperand, stateAt, lookupName])]
   rfl
 
+/-- **The state `if.end256.i` leaves.**  The token's extent (`%sub260.i`), the
+`%outn.i` slot's zero, the two log words and the check's bit — the seven cells the
+block bound, at the memory after its one store, on the edge the check selects.  A
+consumer reads `%z.val36`'s word and `%sub260.i`'s extent off it; the edge is
+`walkIfEnd256Next` itself, so the name does not decide the arm. -/
+def walkIfEnd256OutAt {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (A Cc cv ix : BitVec 64) : State :=
+  { stateAt (cells [
+      ("%cmp.not.i", .int 1 (evalICmp .ugt
+        (cv + (ix ^^^ BitVec.ofNat 64 18446744073709551615)
+          + BitVec.ofNat 64 64 + A) Cc)),
+      ("%add.i82", .int 64 (cv + (ix ^^^ BitVec.ofNat 64 18446744073709551615)
+        + BitVec.ofNat 64 64 + A)),
+      ("%z.val37", .int 64 Cc),
+      ("%z.val36", .int 64 A),
+      ("%add.i", .int 64 (cv + (ix ^^^ BitVec.ofNat 64 18446744073709551615)
+        + BitVec.ofNat 64 64)),
+      ("%sub260.i", .int 64 (cv + (ix ^^^ BitVec.ofNat 64 18446744073709551615))),
+      ("%30", .int 64 (ix ^^^ BitVec.ofNat 64 18446744073709551615))] s.env)
+      { s with mem := writeBytes s.mem (G.next0 + 20) (natToBytes (BitVec.ofNat 64 0).toNat 8) } with
+    pc := walkIfEnd256Next A Cc cv ix, pre := some s.pc }
+
 /-- **`if.end256.i` is a link.**  The one store is `%outn.i`'s zero, inside the
 four stack objects; the two log words are the invariant's; and the edge is the
 bit the run computed, so the trap's arm is taken only when
@@ -1631,7 +1653,8 @@ theorem WalkLink.if_end256_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
     (hnext : cv.toNat = ix.toNat + ext + 1) (hpl : ix.toNat + ext ≤ G.n)
     (hcur : C.alen ≤ G.ndst0 + ix.toNat) :
     ∃ s', WalkLink (stage2Calls stage2SubCalls) G C s
-      { C with block := walkIfEnd256Next A Cc cv ix, pending := some (ix.toNat, C.alen, ext) } s' := by
+      { C with block := walkIfEnd256Next A Cc cv ix, pending := some (ix.toNat, C.alen, ext) } s' ∧
+      s' = walkIfEnd256OutAt G C s A Cc cv ix := by
   have hz64 : C.stage.z + 64 ≤ G.next0 := by
     have h := C.stage.sevenEnd (C.stage.z, stage2LogExtent) (by simp [stage2StagedWrites])
     simp only [stage2LogExtent] at h
@@ -1658,7 +1681,7 @@ theorem WalkLink.if_end256_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
     have hse := (stack_alloca_sep (G := G) (C := C) (s := s) hInv
       (a := G.next0 + 20) (by omega)).2
     omega
-  refine WalkLink.callQuietBrPending (G := G) (C := C) (s := s) hInv
+  obtain ⟨s', hl⟩ := WalkLink.callQuietBrPending (G := G) (C := C) (s := s) hInv
     (TM := C.tyMap) (SM := C.stMap) (hstTy := hstTy) (hstSt := hstSt)
     (p := ix.toNat) (off := C.alen) (ext := ext)
     (B := walkIfEnd256) (by rw [hblock]; exact walkIfEnd256_find)
@@ -1715,9 +1738,33 @@ theorem WalkLink.if_end256_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
       rw [natToBytes_length]; left
       rw [hlen]; omega)
     rfl
+    (bit := evalICmp .ugt (cv + (ix ^^^ BitVec.ofNat 64 18446744073709551615)
+      + BitVec.ofNat 64 64 + A) Cc)
     (by simp [cells, stateAt, lookupName_cons_self])
     (by simp [WalkLocal]) (by simp [WalkLocal])
     (Nat.le_refl _) hiv hcur hpl
+  refine ⟨s', hl, ?_⟩
+  -- the target is the helper's own `{ s₁ with pc, pre }`, and the equality names it:
+  -- the helper's step equation and the block's run at the same state decide it
+  have hpc : s.pc = C.block := hInv.pc_eq
+  have hfind : stage2Body.findBlock C.block = some walkIfEnd256 := by
+    rw [hblock]; exact walkIfEnd256_find
+  have hden' := hden
+  rw [show stateAt s.env s = s from rfl] at hden'
+  have hstep : LeanLLVM.step (stage2Calls stage2SubCalls) stage2Body s =
+      Ctrl.jump (walkIfEnd256OutAt G C s A Cc cv ix) := by
+    have hterm : walkIfEnd256.term =
+        Term.condbr (.reg "%cmp.not.i") "if.end.i83" "z_arena_reserve.exit" := rfl
+    simp only [LeanLLVM.step, hpc, hfind, hden', hterm]
+    rw [walkExecTerm_condbr (d := "%cmp.not.i") (tl := "if.end.i83")
+      (fl := "z_arena_reserve.exit")
+      (bit := evalICmp .ugt (cv + (ix ^^^ BitVec.ofNat 64 18446744073709551615)
+        + BitVec.ofNat 64 64 + A) Cc)
+      (by dsimp only [stateAt]; simp [cells, lookupName_cons_self])]
+    dsimp only [walkIfEnd256OutAt, stateAt]
+    rw [hpc]
+    rfl
+  exact Ctrl.jump.inj (hl.step.symm.trans hstep)
 
 /-! ### The reservation's completion block
 
@@ -1842,6 +1889,19 @@ theorem walkZArenaReserveExit_denote {sub : Calls} (env : Env) (s : State)
     hcall]
   simp only [denoteCode_nil, stateAt]
 
+/-- **The state `z_arena_reserve.exit` leaves.**  The callee's returned memory and
+allocator cursor, the four cells the block bound — the answer `%call272.i`, the two
+`gep`s and the arena's base — and the edge into `NodeBlock31`.  The call's outcome
+is a parameter rather than a witness: the target's memory is the callee's and its
+`%call272.i` is the callee's answer, so a composition names both. -/
+def walkZArenaReserveExitOutAt {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (p : Nat) (A : BitVec 64) (r : CallOutcome) : State :=
+  { stateAt (("%call272.i", r.ret) ::
+      ("%add.ptr271.i", .ptr (G.b + p + 1)) ::
+      ("%add.ptr.i", .ptr (G.dst + (A.signExtend 64).toNat)) ::
+      ("%31", .ptr G.dst) :: s.env) { s with mem := r.mem, next := r.next } with
+    pc := "NodeBlock31", pre := some s.pc }
+
 /-- **`z_arena_reserve.exit` is a link.**  The reservation `if.end256.i` recorded
 is *spent*: the carry's arena cursor advances by the token's document extent, the
 window's extent is appended to the spans at the cursor the reservation was made
@@ -1865,6 +1925,7 @@ away from `%outn.i` at `G.next0 + 20`, which `+ 12` satisfies and `+ 16` does no
 An earlier statement of this link placed `%xj.i` at `+ 16`, where that separation
 is false and the precondition's `RegionsApart xj 8 outn 8` cannot hold — so the
 link was uninhabitable and its hypotheses said nothing about any state. -/
+
 theorem WalkLink.z_arena_reserve_exit {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
     (s : State) (hInv : WalkInv G C s) (hblock : C.block = "z_arena_reserve.exit")
     {p off ext : Nat} (hpend : C.pending = some (p, off, ext))
@@ -1897,7 +1958,8 @@ theorem WalkLink.z_arena_reserve_exit {m0 : Mem} (G : WalkGeom m0) (C : WalkCarr
         (C.events.map EventRecord.encodedBytes).flatten.length)
     (hstTy : WalkStackBytes r.mem C.stage.ctype C.tyMap C.wlen)
     (hstSt : WalkStackBytes r.mem C.stage.cst C.stMap C.wlen) :
-    ∃ s', WalkLink (stage2Calls stage2SubCalls) G C s { C with block := "NodeBlock31", alen := C.alen + ext, spans := C.spans ++ [(C.alen, ext)], pending := none } s' := by
+    ∃ s', WalkLink (stage2Calls stage2SubCalls) G C s { C with block := "NodeBlock31", alen := C.alen + ext, spans := C.spans ++ [(C.alen, ext)], pending := none } s' ∧
+      s' = walkZArenaReserveExitOutAt G C s p A r := by
   have hAle : A.toNat ≤ C.alen := hInv.logArena_le hreadA
   have hse : (A.signExtend 64).toNat = A.toNat := by simp
   have hcall' : stage2Calls stage2SubCalls "s2_string_body"
@@ -1933,7 +1995,7 @@ theorem WalkLink.z_arena_reserve_exit {m0 : Mem} (G : WalkGeom m0) (C : WalkCarr
     have hterm : walkZArenaReserveExit.term = Term.br "NodeBlock31" := rfl
     simp only [LeanLLVM.step, hpc, hfind, hden, hterm, execTerm]
     dsimp only [s', s₁, stateAt]
-  refine ⟨s', ⟨hInv, hstep, ?_, le_of_eq rfl⟩⟩
+  refine ⟨s', ⟨hInv, hstep, ?_, le_of_eq rfl⟩, rfl⟩
   refine
     { pc_eq := rfl
       blockIndex := ?_
@@ -2184,6 +2246,33 @@ theorem walkIfThen328_denote {sub : Calls} (env : Env) (s : State)
   dsimp only [walkSetMem, denoteCode]
   rfl
 
+/-- **The state `if.then328.i` leaves.**  The record's three stores at the event
+stream's cursor, the log's length word, the `lifetime.end` marker, and the six
+cells the block bound — named so that a consumer reads the record's type byte and
+the advanced cursor off a state the link reaches rather than off a restatement of
+the run.  The `let`s are the block's own: the two literal offsets, the tag's
+selection on the key bit, and the four writes in the order the body makes them. -/
+def walkIfThen328OutAt {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (sinkIn : BitVec 64) (keyBit : BitVec 1) (span : BitVec 64) : State :=
+  let o1 : Nat := (BitVec.signExtend 64 (BitVec.ofNat 64 1)).toNat
+  let o5 : Nat := (BitVec.signExtend 64 (BitVec.ofNat 64 5)).toNat
+  let tagv : BitVec 8 := if keyBit = 1 then BitVec.ofNat 8 5 else BitVec.ofNat 8 6
+  let m1 : Mem := writeBytes s.mem (G.ev + C.evlen) (natToBytes tagv.toNat 1)
+  let m2 : Mem := writeBytes m1 (G.ev + C.evlen + o1)
+    (natToBytes (BitVec.ofNat 32 (sinkIn.toNat % 2 ^ 32)).toNat 4)
+  let m3 : Mem := writeBytes m2 (G.ev + C.evlen + o5) (natToBytes span.toNat 8)
+  let m4 : Mem := writeBytes m3 (C.stage.z + 8) (wordBytes 8 (C.evlen + 13))
+  let envF : Env := cells [
+    ("%add.ptr304.i", .ptr (G.ev + C.evlen + o5)),
+    ("%add.ptr302.i", .ptr (G.ev + C.evlen + o1)),
+    ("%conv300.i", .int 8 tagv),
+    ("%add.ptr297.i", .ptr (G.ev + C.evlen)),
+    ("%33", .ptr G.ev),
+    ("%conv286.i.sink", .int 32 (BitVec.ofNat 32 (sinkIn.toNat % 2 ^ 32)))] s.env
+  { stateAt envF (walkSetMem s m4) with
+    pc := (if keyBit = 1 then "if.then330.i" else "if.else334.i"),
+    pre := some s.pc }
+
 /-- **`if.then328.i` is a link**: the thirteen-byte key/string record at the
 event stream's cursor, the cursor's advance, and the termination marker. -/
 theorem WalkLink.if_then328_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
@@ -2205,7 +2294,8 @@ theorem WalkLink.if_then328_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
     ∃ s', WalkLink (stage2Calls stage2SubCalls) G C s
       { C with block := (if keyBit = 1 then "if.then330.i" else "if.else334.i"),
                evlen := C.evlen + 13,
-               events := C.events ++ [EventRecord.str (keyBit = 1) (sinkIn.toNat % 2 ^ 32) span.toNat] } s' := by
+               events := C.events ++ [EventRecord.str (keyBit = 1) (sinkIn.toNat % 2 ^ 32) span.toNat] } s' ∧
+      s' = walkIfThen328OutAt G C s sinkIn keyBit span := by
   let o1 : Nat := (BitVec.signExtend 64 (BitVec.ofNat 64 1)).toNat
   let o5 : Nat := (BitVec.signExtend 64 (BitVec.ofNat 64 5)).toNat
   let tagv : BitVec 8 := if keyBit = 1 then BitVec.ofNat 8 5 else BitVec.ofNat 8 6
@@ -2260,7 +2350,7 @@ theorem WalkLink.if_then328_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
       (fl := "if.else334.i") (bit := keyBit)
       (by dsimp only [s₁, envF]; simpa [stateAt, walkSetMem, cells, lookupName] using hkey)]
     dsimp only [s', s₁, envF, walkSetMem, stateAt]
-  refine ⟨s', ⟨hInv, hstep, ?_, le_of_eq rfl⟩⟩
+  refine ⟨s', ⟨hInv, hstep, ?_, le_of_eq rfl⟩, rfl⟩
   -- the invariant at the target
   have hEvLen : (C.events.map EventRecord.encodedBytes).flatten.length =
       (C.events.map EventRecord.encodedSize).sum := by
@@ -2525,6 +2615,7 @@ theorem WalkLink.if_then328_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
       · show (C.stage.z, stage2LogExtent) ∈ walkWide G C'
         simp [walkWide, walkPresent, stage2ReportScratch, stage2StagedWrites, C']
       · simp only [wordBytes, natToBytes_length, stage2LogExtent, C']; omega
+
 /-- The token and the log are separate regions of the staging. -/
 theorem tok_z_sep {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     (_h : WalkInv G C s) :

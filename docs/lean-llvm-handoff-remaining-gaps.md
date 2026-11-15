@@ -306,6 +306,40 @@ longer the loop's route; the line is left because the file is reserved for the f
 repair (finding 20), which rewrites its neighbourhood anyway, and a doc-only edit there
 costs a full rebuild.  A reader of Scope should trust this document over that line.
 
+**The composition's state.**  Links 1–5 are proved as one `WalkSegment`
+(`strPath5`, `NodeBlock21 → if.then219.i`, pinned at
+`[propext, Classical.choice, Quot.sound]`), the carries `strC₁`–`strC₁₅` and states
+`strS₁`–`strS₅` are named, and three more targets are exposed (`if_end256_i`,
+`if_then328_i`, `z_arena_reserve_exit`, the last with the callee's `CallOutcome` as a
+parameter).  `if_else334_i` is the one link the census missed: its target is
+`callQuiet`'s existential and needs the `walkIfThen447_at` exposure pattern; its state
+is `{ stateAt s.env { s with mem := r.mem, next := r.next } with pc := "cleanup478.i",
+pre := some s.pc }`.
+
+**The stop point, and the unblock.**  Link 6 (`if_then219_i`) needs
+`walkReadBytes_rootSlot_at`, which lives in `JsonStage2WalkStringPath` — a module that
+imports the bundle, so it cannot be used inside it.  Move the three crossing lemmas
+into the bundle module (or a module below it): they name only `WalkStage`, `State` and
+`readBytes`.  Link 6 then needs `hx` transported (at depth zero `s2_value_pos` is
+memory-independent); link 7 needs only `if_end245_key_then219` and the `%call222.i`
+cell.
+
+**The residue is eight fields, not four** — measured from the links' own statements:
+
+|#|field|why neither `WalkInv` nor the bundle supplies it|
+|---|---|---|
+|R1|the body's answer at the call site|the call is at link 8's target memory; `hpreS` is head-stated, so a pre transport across the two writes is owed, or the pre at that memory|
+|R2|`l ≤ ext` **and** `readBytes r.mem (G.next0+20) 8 = some (wordBytes 8 l)`|`s2StringBody_outn_le` states the read at the model's memory; the crossing needs the pre's `RegionsApart next 8 outn 8`|
+|R3|`readBytes s.mem C.stage.z 8 = some (wordBytes 8 G.ev)`|inside the write extent the frame is silent outside of|
+|R4|`C.events.length < C.k`|`events_le` gives `≤`|
+|R5|`readBytes s.mem (C.stage.z + 40) 8 = some (wordBytes 8 G.dst)`|no clause binds `z+40` (only +8/+16/+32/+48/+56)|
+|R6|`G.dst < 2 ^ 64`|`WalkGeom` bounds `dstcap`, never `dst`|
+|R7|`C.evlen < 2 ^ 63`|`evlen_le` gives `< 2^64`|
+|R8|`evalICmp .slt f.y (ofNat 32 1) = 0`|`NodeBlock31`'s edge; it also yields `form ≠ 0`, which R2's producer needs|
+
+`stringPath_seg` must stay existential in the callee's `r` and the write-back arm's
+`l`, since the states after link 9 carry them.
+
 **What of it has landed.**  `JsonStage2WalkTargetPost` (imported at the end of
 `LeanLLVM.lean`) proves the boundary — all 25 conjuncts of `stage2Boundary` — at the
 returned memory for each of the three routes, with every memory lemma stated at a

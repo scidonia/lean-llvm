@@ -548,6 +548,363 @@ inductive HcontCase {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) :
   `C.k + 2`, and `HstringFacts` at the head state. -/
   | twoEntry : HstringFacts G C s → HcontCase G C s
 
+/-! ### The fifteen links, composed
+
+`HstringFacts.seg` is the last piece of the two-entry token that is *supplied*
+rather than proved, and this section is the composition that retires it.  The
+fifteen links are the module header's table; what a composition owes beside them is
+the *states* they reach — a link's target state must be nameable before the next
+link's hypotheses can be stated at it — and the handful of facts no clause of
+`WalkInv` carries at the state that reads them.
+
+**The states are `def`s.**  `strSₙ` is the state the `n`-th link reaches, written
+from the previous link's state rather than restated: `strS₅` is `if.end207.i`'s
+target at `strS₄`'s state.  The alternative — spelling each link's target term at
+each use — is the defect `HlastFacts`' producer records: a state that is not named
+cannot be read at, and a fact stated at a name the run never occupies is vacant.
+
+**The carries are named too.**  The path changes the carry at four points only
+(`if.end256.i` sets the record in flight, `z_arena_reserve.exit` spends it,
+`if.then328.i` appends the record, `if.else334.i` advances the state map), so
+`strCₙ` is the carry the `n`-th link reaches and the four changes are visible
+there rather than in a chain of anonymous updates.
+-/
+
+/-! #### The carries -/
+
+/-- The carry after `NodeBlock21`. -/
+abbrev strC₁ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) : WalkCarry G :=
+  { C with block := "NodeBlock5" }
+
+/-- The carry after `NodeBlock5`. -/
+abbrev strC₂ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) : WalkCarry G :=
+  { strC₁ C with block := "LeafBlock" }
+
+/-- The carry after `LeafBlock`. -/
+abbrev strC₃ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) : WalkCarry G :=
+  { strC₂ C with block := "sw.bb202.i" }
+
+/-- The carry after `sw.bb202.i`. -/
+abbrev strC₄ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) : WalkCarry G :=
+  { strC₃ C with block := "if.end207.i" }
+
+/-- The carry after `if.end207.i`. -/
+abbrev strC₅ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) : WalkCarry G :=
+  { strC₄ C with block := "if.then219.i" }
+
+/-- The carry after `if.then219.i`. -/
+abbrev strC₆ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) : WalkCarry G :=
+  { strC₅ C with block := "if.end245.i" }
+
+/-- The carry after `if.end245.i`. -/
+abbrev strC₇ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) : WalkCarry G :=
+  { strC₆ C with block := "if.end256.i" }
+
+/-- **The carry after `if.end256.i`**: the record in flight is the triple the
+check reads — the token's position, the arena's cursor and its extent. -/
+abbrev strC₈ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (ix : BitVec 64)
+    (ext : Nat) : WalkCarry G :=
+  { (strC₇ C) with
+    block := "z_arena_reserve.exit",
+    pending := some (ix.toNat, C.alen, ext) }
+
+/-- **The carry after `z_arena_reserve.exit`**: the cursor spends the reservation
+and the window joins the spans, which is where the carry parts company with the
+memory's `%alen` word. -/
+abbrev strC₉ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (ix : BitVec 64)
+    (ext : Nat) : WalkCarry G :=
+  { (strC₈ C ix ext) with
+    block := "NodeBlock31",
+    alen := C.alen + ext,
+    spans := C.spans ++ [(C.alen, ext)],
+    pending := none }
+
+/-- The carry after `NodeBlock31`. -/
+abbrev strC₁₀ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (ix : BitVec 64)
+    (ext : Nat) : WalkCarry G :=
+  { (strC₉ C ix ext) with block := "LeafBlock29" }
+
+/-- The carry after `LeafBlock29`: the arm is the answer's own test, so the two
+continuations are one carry name and the case is taken at the link. -/
+abbrev strC₁₁ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (ix : BitVec 64)
+    (ext : Nat) (y : BitVec 32) : WalkCarry G :=
+  { (strC₁₀ C ix ext) with
+    block := (if evalICmp .eq y (BitVec.ofNat 32 1) = 1 then "if.then281.i"
+      else "if.else285.i") }
+
+/-- The carry after `if.then281.i` or `if.else285.i` — the arms converge on one
+merge, so this is one name for both. -/
+abbrev strC₁₂ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (ix : BitVec 64)
+    (ext : Nat) (y : BitVec 32) : WalkCarry G :=
+  { (strC₁₁ C ix ext y) with block := "if.end290.i" }
+
+/-- The carry after `if.end290.i`: the reserve test is the edge, so the block is
+the test's own value. -/
+abbrev strC₁₃ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (ix : BitVec 64)
+    (ext : Nat) (y : BitVec 32) (nl nc : BitVec 64) : WalkCarry G :=
+  { (strC₁₂ C ix ext y) with
+    block := (if evalICmp .ugt (nl + BitVec.ofNat 64 13) nc = 1 then "if.end.i86"
+      else "if.then328.i") }
+
+/-- **The carry after `if.then328.i`**: the record joins the trace and the event
+cursor advances by its width. -/
+abbrev strC₁₄ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (ix : BitVec 64)
+    (ext : Nat) (y : BitVec 32) (nl nc : BitVec 64) (keyBit : BitVec 1)
+    (sinkIn span : BitVec 64) : WalkCarry G :=
+  { (strC₁₃ C ix ext y nl nc) with
+    block := (if keyBit = 1 then "if.then330.i" else "if.else334.i"),
+    evlen := C.evlen + 13,
+    events := C.events ++
+      [EventRecord.str (keyBit = 1) (sinkIn.toNat % 2 ^ 32) span.toNat] }
+
+/-- **The carry after `if.else334.i`**: the container's state map advances and the
+run is at the merge. -/
+abbrev strC₁₅ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (ix : BitVec 64)
+    (ext : Nat) (y : BitVec 32) (nl nc : BitVec 64) (keyBit : BitVec 1)
+    (sinkIn span : BitVec 64) : WalkCarry G :=
+  { (strC₁₄ C ix ext y nl nc keyBit sinkIn span) with
+    block := "cleanup478.i",
+    stMap := walkAfterValueMap C }
+
+/-! #### The states -/
+
+/-- The state `NodeBlock21` reaches: `%Pivot22` and the edge to `NodeBlock5`. -/
+def strS₁ (s : State) : State :=
+  { (s.bind "%Pivot22" (.int 1 1)) with pc := "NodeBlock5", pre := some s.pc }
+
+/-- The state `NodeBlock5` reaches. -/
+def strS₂ (s : State) : State :=
+  { ((strS₁ s).bind "%Pivot6" (.int 1 1)) with pc := "LeafBlock", pre := some (strS₁ s).pc }
+
+/-- The state `LeafBlock` reaches: the byte is `"`, so the edge is the string arm. -/
+def strS₃ (s : State) : State :=
+  { ((strS₂ s).bind "%SwitchLeaf" (.int 1 1)) with
+    pc := "sw.bb202.i",
+    pre := some (strS₂ s).pc }
+
+/-- The state `sw.bb202.i` reaches: the count test is the header's one-entry
+advance, so its answer is `1` and the edge is `if.end207.i`. -/
+def strS₄ (s : State) : State :=
+  { ((strS₃ s).bind "%cmp203.not.i" (.int 1 1)) with
+    pc := "if.end207.i",
+    pre := some (strS₃ s).pc }
+
+/-- The memory `if.end207.i` writes: the cursor record's `k` field, eight bytes at
+`%k11.i = C.stage.c + 32`. -/
+def strSetK₅ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (t : State) : State :=
+  { t with mem := writeBytes t.mem (C.stage.c + 32) (wordBytes 8 (C.k + 2)) }
+
+/-- **The state `if.end207.i` reaches.**  The two-entry advance writes the cursor
+record's `k` field at `%k11.i = C.stage.c + 32`, loads the *next* lane and tests
+the bound; `q` is the lane it read. -/
+def strS₅ {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (q : Nat) (s : State) : State :=
+  { stateAt (cells [
+      ("%cmp212.not.i", .int 1 1),
+      ("%conv211.i", .int 64 (BitVec.ofNat 64 q)),
+      ("%25", .int 32 (BitVec.ofNat 32 q)),
+      ("%arrayidx209.i", .ptr (G.ep + (C.k + 1) * 4)),
+      ("%inc208.i", .int 64 (BitVec.ofNat 64 (C.k + 2)))] (strS₄ s).env)
+      (strSetK₅ C (strS₄ s)) with
+    pc := "if.then219.i",
+    pre := some (strS₄ s).pc }
+
+/-! #### The first five links
+
+The four class-A blocks and the two-entry advance: no hypothesis here is beside the
+head bundle's fields and `WalkInv`'s clauses, and the one memory write is
+`if.end207.i`'s own cursor-record store, which the next link reads across. -/
+
+/-- **`ult` is 1 exactly at the unsigned order**, read like `walkEvalICmp_ult_one_iff`. -/
+theorem walkEvalICmp_ugt_one_iff {w : Nat} (x y : BitVec w) :
+    evalICmp .ugt x y = (1 : BitVec 1) ↔ y.toNat < x.toNat := by
+  have h := walkEvalICmp_ult_one_iff (x := y) (y := x)
+  simpa only [evalICmp] using h
+
+/-- **`evalICmp .ugt` at two staged words**: `1` exactly when the right word's
+`toNat` is below the left's, which below `2 ^ 64` is the words' own order. -/
+theorem walkEvalICmp_ugt_ofNat {a b : Nat} (ha : a < 2 ^ 64) (hb : b < 2 ^ 64)
+    (h : b < a) :
+    evalICmp .ugt (BitVec.ofNat 64 a) (BitVec.ofNat 64 b) = 1 := by
+  refine (walkEvalICmp_ugt_one_iff _ _).2 ?_
+  rw [BitVec.toNat_ofNat, BitVec.toNat_ofNat,
+    Nat.mod_eq_of_lt ha, Nat.mod_eq_of_lt hb]
+  exact h
+
+/-- **The two-entry advance's lane is past the entry's own index** — the fact
+`if.end207.i`'s bound test reads, from the stream's order and the position's
+inside-ness. -/
+theorem strLane_lt {m0 : Mem} (G : WalkGeom m0) {k : Nat} (hk : k + 1 < G.nep) :
+    entryPos G k < entryPos G (k + 1) := by
+  have hlen : G.ent.length = G.nep := by
+    rw [← readLanes32_length m0 G.ep G.nep G.ent G.entries]
+  have h1 : k < G.ent.length := by omega
+  have h2 : k + 1 < G.ent.length := by omega
+  have := List.pairwise_iff_getElem.mp G.order k (k + 1) h1 h2 (by omega)
+  simpa only [entryPos, List.getD_eq_getElem?_getD, List.getElem?_eq_getElem h1,
+    List.getElem?_eq_getElem h2, Option.getD_some] using this
+
+/-- **The first five links compose.**  From the head to `if.then219.i`: the four
+class-A branches, whose bytes and counts are the bundle's fields, and the two-entry
+advance, whose lane read is the bundle's `hreadLane` and whose store is the cursor
+record's own field. -/
+theorem strPath5 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (hhead : C.block = "NodeBlock21") (hInv : WalkInv G C s) (f : HstringFacts G C s) :
+    ∃ s', WalkSegment (stage2Calls stage2SubCalls) G C s (strC₅ C) s' 5 ∧
+      s' = strS₅ G C f.q s := by
+  -- the header's count test: `C.k + 1 < G.nep`, which `if.end207.i`'s lane needs
+  have hk64 : C.k + 1 < 2 ^ 64 := by
+    have h1 := hInv.k_le; have h2 := G.nep_le; have h3 := G.maxDoc
+    simp only [stage2MaxDocument] at h3
+    omega
+  have hincv : (BitVec.ofNat 64 (C.k + 1)).toNat = C.k + 1 := by
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hk64]
+  have hnepv : (BitVec.ofNat 64 G.nep).toNat = G.nep := by
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt]
+    have h1 := G.nep_le
+    have h2 := G.maxDoc
+    simp only [stage2MaxDocument] at h2
+    omega
+  have hk1 : C.k + 1 < G.nep := by
+    have h := (walkEvalICmp_ult_one_iff _ _).1 f.hcount
+    rw [hincv, hnepv] at h
+    exact h
+  have hn64 : G.n < 2 ^ 64 := by
+    have h := G.maxDoc
+    simp only [stage2MaxDocument] at h
+    omega
+  -- 1. `NodeBlock21`
+  obtain ⟨s1, hl1, hs1⟩ :=
+    WalkLink.NodeBlock21_at (calls := stage2Calls stage2SubCalls) G C s hInv hhead f.h8
+  have hs1' : s1 = strS₁ s := by
+    rw [hs1, f.hlt91, if_pos rfl]
+    dsimp only [strS₁, State.bind]
+  have hcarry1 : ({ C with
+      block := (if evalICmp .slt f.x (BitVec.ofNat 8 91) = 1 then "NodeBlock5"
+        else "NodeBlock19") } : WalkCarry G) = strC₁ C := by
+    rw [f.hlt91, if_pos rfl]
+  subst hs1'
+  have hl1' : WalkLink (stage2Calls stage2SubCalls) G C s (strC₁ C) (strS₁ s) := by
+    rw [← hcarry1]; exact hl1
+  -- 2. `NodeBlock5`: the byte is the head's (`%8` is not rebound)
+  have h8₂ : evalOperand (strS₁ s) (.reg "%8") = some (.int 8 f.x) := by
+    simp only [strS₁, State.bind, evalOperand,
+      lookupName_cons_ne (k := "%Pivot22") (n := "%8") _ _ (by decide)]
+    exact f.h8
+  obtain ⟨s2, hl2, hs2⟩ :=
+    WalkLink.NodeBlock5_at (calls := stage2Calls stage2SubCalls) G (strC₁ C) (strS₁ s)
+      hl1'.inv' rfl h8₂
+  have hs2' : s2 = strS₂ s := by
+    rw [hs2, f.hlt44, if_pos rfl]
+    dsimp only [strS₂, strS₁, State.bind]
+  have hcarry2 : ({ strC₁ C with
+      block := (if evalICmp .slt f.x (BitVec.ofNat 8 44) = 1 then "LeafBlock"
+        else "NodeBlock") } : WalkCarry G) = strC₂ C := by
+    rw [f.hlt44, if_pos rfl]
+  subst hs2'
+  have hl2' : WalkLink (stage2Calls stage2SubCalls) G (strC₁ C) (strS₁ s)
+      (strC₂ C) (strS₂ s) := by
+    rw [← hcarry2]; exact hl2
+  -- 3. `LeafBlock`: the byte is `"`, so the edge is the string arm
+  have h8₃ : evalOperand (strS₂ s) (.reg "%8") = some (.int 8 f.x) := by
+    simp only [strS₂, strS₁, State.bind, evalOperand,
+      lookupName_cons_ne (k := "%Pivot6") (n := "%8") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot22") (n := "%8") _ _ (by decide)]
+    exact f.h8
+  obtain ⟨s3, hl3, hs3⟩ :=
+    WalkLink.LeafBlock_at (calls := stage2Calls stage2SubCalls) G (strC₂ C) (strS₂ s)
+      hl2'.inv' rfl h8₃
+  have hs3' : s3 = strS₃ s := by
+    rw [hs3, f.heq34, if_pos rfl]
+    dsimp only [strS₃, strS₂, strS₁, State.bind]
+  have hcarry3 : ({ strC₂ C with
+      block := (if evalICmp .eq f.x (BitVec.ofNat 8 34) = 1 then "sw.bb202.i"
+        else "sw.default.i") } : WalkCarry G) = strC₃ C := by
+    rw [f.heq34, if_pos rfl]
+  subst hs3'
+  have hl3' : WalkLink (stage2Calls stage2SubCalls) G (strC₂ C) (strS₂ s)
+      (strC₃ C) (strS₃ s) := by
+    rw [← hcarry3]; exact hl3
+  -- 4. `sw.bb202.i`: the count test is the header's one-entry advance
+  have hinc₄ : evalOperand (strS₃ s) (.reg "%inc.i") =
+      some (.int 64 (BitVec.ofNat 64 (C.k + 1))) := by
+    simp only [strS₃, strS₂, strS₁, State.bind, evalOperand,
+      lookupName_cons_ne (k := "%SwitchLeaf") (n := "%inc.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot6") (n := "%inc.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot22") (n := "%inc.i") _ _ (by decide)]
+    exact f.hinc
+  have hnep₄ : evalOperand (strS₃ s) (.reg "%nep") =
+      some (.int 64 (BitVec.ofNat 64 G.nep)) := by
+    simp only [strS₃, strS₂, strS₁, State.bind, evalOperand,
+      lookupName_cons_ne (k := "%SwitchLeaf") (n := "%nep") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot6") (n := "%nep") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot22") (n := "%nep") _ _ (by decide)]
+    exact f.hnep
+  obtain ⟨s4, hl4, hs4⟩ :=
+    WalkLink.sw_bb202_i_at (calls := stage2Calls stage2SubCalls) G (strC₃ C) (strS₃ s)
+      hl3'.inv' rfl hinc₄ hnep₄
+  have hs4' : s4 = strS₄ s := by
+    rw [hs4, f.hcount, if_pos rfl]
+    dsimp only [strS₄, strS₃, strS₂, strS₁, State.bind]
+  have hcarry4 : ({ strC₃ C with
+      block := (if evalICmp .ult (BitVec.ofNat 64 (C.k + 1)) (BitVec.ofNat 64 G.nep) = 1
+        then "if.end207.i" else "if.then205.i") } : WalkCarry G) = strC₄ C := by
+    rw [f.hcount, if_pos rfl]
+  subst hs4'
+  have hl4' : WalkLink (stage2Calls stage2SubCalls) G (strC₃ C) (strS₃ s)
+      (strC₄ C) (strS₄ s) := by
+    rw [← hcarry4]; exact hl4
+  -- 5. `if.end207.i`: the advance, the lane read and the cursor-record store
+  have hep : f.ep = G.ep := by
+    have h5 : some (Value.ptr f.ep) = some (Value.ptr G.ep) :=
+      f.h5.symm.trans hInv.ptrs.2.1
+    exact Value.ptr.inj (Option.some.inj h5)
+  have hinc₅ : lookupName (strS₄ s).env "%inc.i" =
+      some (.int 64 (BitVec.ofNat 64 (C.k + 1))) := by
+    simp only [strS₄, strS₃, strS₂, strS₁, State.bind,
+      lookupName_cons_ne (k := "%cmp203.not.i") (n := "%inc.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%SwitchLeaf") (n := "%inc.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot6") (n := "%inc.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot22") (n := "%inc.i") _ _ (by decide)]
+    exact f.hinc
+  have h4₅ : lookupName (strS₄ s).env "%4" =
+      some (.int 64 (BitVec.ofNat 64 G.n)) := by
+    simp only [strS₄, strS₃, strS₂, strS₁, State.bind,
+      lookupName_cons_ne (k := "%cmp203.not.i") (n := "%4") _ _ (by decide),
+      lookupName_cons_ne (k := "%SwitchLeaf") (n := "%4") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot6") (n := "%4") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot22") (n := "%4") _ _ (by decide)]
+    exact f.h4
+  have hread₅ : readBytes (strS₄ s).mem (G.ep + (C.k + 1) * 4) 4 = some f.bs := by
+    have := f.hreadLane
+    rw [hep] at this
+    simpa only [strS₄, strS₃, strS₂, strS₁, State.bind] using this
+  have hqlt : f.q < G.n := by
+    rw [f.hq]
+    exact entryPos_lt G (by omega)
+  have hbit₅ : evalICmp .ugt (BitVec.ofNat 64 G.n) (BitVec.ofNat 64 f.q) = 1 :=
+    walkEvalICmp_ugt_ofNat hn64 (by omega) hqlt
+  obtain ⟨s5, hl5, hs5⟩ :=
+    WalkLink.if_end207_i (calls := stage2Calls stage2SubCalls) G (strC₄ C) (strS₄ s)
+      hl4'.inv' rfl f.hk63 hinc₅ h4₅ hread₅ f.hbs f.hk64
+  have hs5' : s5 = strS₅ G C f.q s := by
+    rw [hs5, hbit₅, if_pos rfl]
+    dsimp only [strS₅, strSetK₅, strS₄, strS₃, strS₂, strS₁, State.bind, stateAt, cells]
+  have hcarry5 : ({ strC₄ C with
+      block := (if evalICmp .ugt (BitVec.ofNat 64 G.n) (BitVec.ofNat 64 f.q) = 1
+        then "if.then219.i" else "if.then214.i") } : WalkCarry G) = strC₅ C := by
+    rw [hbit₅, if_pos rfl]
+  subst hs5'
+  have hl5' : WalkLink (stage2Calls stage2SubCalls) G (strC₄ C) (strS₄ s)
+      (strC₅ C) (strS₅ G C f.q s) := by
+    rw [← hcarry5]; exact hl5
+  exact ⟨_, ((((WalkSegment.of_link hl1').trans (WalkSegment.of_link hl2')).trans
+    (WalkSegment.of_link hl3')).trans (WalkSegment.of_link hl4')).trans
+    (WalkSegment.of_link hl5'), rfl⟩
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.strPath5' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms strPath5
+
 /-! ### Axiom footprints
 
 Each pin states the footprint the lemma actually has.  The segment's projection
