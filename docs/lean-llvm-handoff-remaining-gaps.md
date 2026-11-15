@@ -46,7 +46,7 @@ price and why `entryPos` cannot serve as a price index.
 
 ## What remains — two gaps, in order
 
-### Gap 1 — the two-entry token's bundle — **stated, its segment supplied; the frame repair's pin is settled**
+### Gap 1 — the two-entry token's bundle — **ten of its fifteen links composed; the frame repair's pin is settled**
 
 `HstringFacts` and `WalkDispatchResult.ofStringMerge`
 (`JsonStage2WalkDispatchWitnessString`) name the standalone string and give it an arm,
@@ -208,8 +208,10 @@ keeping: `%z`'s first eight bytes lie **inside** the walk's write extent
 (`walkPresent` carries the whole `(z, stage2LogExtent)` object), so the frame — which
 is silence *outside* that extent — says nothing about them, and the staging's
 clauses give presence over the object (`WalkInv.owned`) rather than the value it
-holds.  `JsonStage2WalkStringPath`'s header records the same negative finding at the
-place a reader would try to derive it.
+holds.  The bundle's `The root slot and the log across the cursor-record store`
+section records the same negative finding at the place a reader would try to
+derive it, and `JsonStage2WalkStringPath` — now a pointer to the lemmas that moved
+down into the bundle — repeats it.
 
 `hinc208`/`hnepM` are not in the residue: they are restated at the segment's own
 endpoint (`HstringFacts.hmergeCells`, finding 19's shape), because `WalkInv` binds
@@ -306,23 +308,45 @@ longer the loop's route; the line is left because the file is reserved for the f
 repair (finding 20), which rewrites its neighbourhood anyway, and a doc-only edit there
 costs a full rebuild.  A reader of Scope should trust this document over that line.
 
-**The composition's state.**  Links 1–5 are proved as one `WalkSegment`
-(`strPath5`, `NodeBlock21 → if.then219.i`, pinned at
-`[propext, Classical.choice, Quot.sound]`), the carries `strC₁`–`strC₁₅` and states
-`strS₁`–`strS₅` are named, and three more targets are exposed (`if_end256_i`,
-`if_then328_i`, `z_arena_reserve_exit`, the last with the callee's `CallOutcome` as a
-parameter).  `if_else334_i` is the one link the census missed: its target is
-`callQuiet`'s existential and needs the `walkIfThen447_at` exposure pattern; its state
-is `{ stateAt s.env { s with mem := r.mem, next := r.next } with pc := "cleanup478.i",
-pre := some s.pc }`.
+**The composition's state.**  Ten links are proved as a `WalkSegment`: `strPath5`
+(`NodeBlock21 → if.then219.i`, links 1–5), `strPath8` (`→ if.end256.i`, links 6–8)
+and `strPath10` (`→ LeafBlock29`'s state, links 9–10), each pinned at
+`[propext, Classical.choice, Quot.sound]`.  The carries `strC₁`–`strC₁₅` are
+named, as are the states `strS₁`–`strS₁₀`; `if_end256_i` and
+`z_arena_reserve_exit` name their targets (`walkIfEnd256OutAt`,
+`walkZArenaReserveExitOutAt`, the second with the callee's `CallOutcome` as a
+parameter).  `if_then328_i` is the one target the write-back links still need
+exposed.  `if_else334_i` is the one link the census missed: its target is
+`callQuiet`'s existential and needs the `walkIfThen447_at` exposure pattern; its
+state is `{ stateAt s.env { s with mem := r.mem, next := r.next } with
+pc := "cleanup478.i", pre := some s.pc }`.
 
-**The stop point, and the unblock.**  Link 6 (`if_then219_i`) needs
-`walkReadBytes_rootSlot_at`, which lives in `JsonStage2WalkStringPath` — a module that
-imports the bundle, so it cannot be used inside it.  Move the three crossing lemmas
-into the bundle module (or a module below it): they name only `WalkStage`, `State` and
-`readBytes`.  Link 6 then needs `hx` transported (at depth zero `s2_value_pos` is
-memory-independent); link 7 needs only `if_end245_key_then219` and the `%call222.i`
-cell.
+**What each of links 6–10 takes.**  Links 6–8 take nothing beside the bundle and
+the invariant: the two crossings are lemmas now (`walkReadBytes_rootSlot_at`,
+`walkReadBytes_log_of_cursorK` — moved *down* into the bundle, beside
+`walkCursorRecord_end`, because a module that imports the bundle cannot supply
+it); `%idxprom.i` and `%conv211.i` are read out of the states' own environments;
+the depth-zero reply is memory-independent (`s2ValuePosCall_ret_at_zero`); and
+the arena check clears at `walkArenaReserve_clear`'s arithmetic plus the
+`ugt`-at-zero reading (`walkEvalICmp_ugt_ofNat_zero`), with `%sub260.i`'s cell
+reduced to the extent by `walkSub260_eq`.  Link 9 takes `harr`
+(`%arrayidx10.i`), `hcreg`, `hxpreg`, `hnxpreg` (`%c.i`, `%xp`, `%nxp`), the
+callee's `r` with its call and its answer's word, R1 as one premise (the six
+memory clauses), R5 (`hreadAr`) and R6 (`hGdst`).  Link 10 takes R8.  The four
+registers are a premise of the composition rather than of the bundle: they are
+bound by the header and `entry` and no `WalkInv` clause names them.
+
+**The stop point.**  Link 6's blocker was `walkReadBytes_rootSlot_at`, which
+lived in `JsonStage2WalkStringPath` — a module that imports the bundle, so it
+could not be used inside it.  The three crossing lemmas moved down into the
+bundle (they name only `WalkStage`, `State` and `readBytes`), and
+`JsonStage2WalkStringPath` now only pins their footprints.  With them, link 6
+needed `hx` transported (at depth zero `s2_value_pos` is memory-independent,
+`s2ValuePosCall_ret_at_zero`); link 7 needed only `if_end245_key_then219` and the
+`%call222.i` cell; link 8 the cursor-record crossing of the log's `%z + 48` word
+and the check's arithmetic; link 9 the parameters above; and link 10 R8.  The
+next stop is link 11: the write-back arms (`if.then281.i`/`if.else285.i`) take the
+decoded length `l` (R2), and `if_end290.i` takes the log's two words and R7.
 
 **The residue is eight fields, not four** — measured from the links' own statements:
 
@@ -339,6 +363,13 @@ cell.
 
 `stringPath_seg` must stay existential in the callee's `r` and the write-back arm's
 `l`, since the states after link 9 carry them.
+
+**Landed and still owed, by residue.**  R1 (as `strPath10`'s `hbodyR`, with the
+callee's `r`, its call and its answer's word beside it), R5, R6 and R8 are
+parameters of `strPath10`; R2, R3, R4 and R7 are owed by links 11–15, together
+with the four uncarried registers (`%arrayidx10.i`, `%c.i`, `%xp`, `%nxp`), which
+the table does not list because they are premises of the composition rather than
+of the bundle.
 
 **What of it has landed.**  `JsonStage2WalkTargetPost` (imported at the end of
 `LeanLLVM.lean`) proves the boundary — all 25 conjuncts of `stage2Boundary` — at the
@@ -357,11 +388,12 @@ memory parameter is the repair.
 ## The review's remaining phases
 
 - **B2** — a standalone string consumed in the walk: **the bundle and the arm are in
-  place; the segment is not.** What it owes now, in order: the `z_arena_reserve_exit`
-  `%xj.i` repair (finding 18), an allocator-cursor pin absent from `WalkInv`, and the
-  `s2StringBodyPre` producer at the call site — now possible, because the pre no longer
-  asks a caller for the body's own slot. With those, the fifteen links compose and
-  `HstringFacts.seg` stops being supplied.
+  place, and ten of the fifteen links are composed** (`strPath5`, `strPath8`,
+  `strPath10`). What remains: the write-back links
+  (`if.then281.i`/`if.else285.i`, `if.end290.i`, `if.then328.i`/`if.else334.i`)
+  with R2/R4/R7 and the `if_then328_i` exposure, the allocator-cursor pin absent
+  from `WalkInv`, and the producer of R1's six memory clauses. With those, the
+  fifteen links compose and `HstringFacts.seg` stops being supplied.
 - **C** — every dispatch branch and its counted scan. **A′ is the first branch**: two
   bundles (`HcontFacts` whitespace, `HcontCleanupFacts` scan-free), the third arm at
   `HcontCase` (`JsonStage2WalkDispatchWitnessString`), the `hRun`/`sl`-as-data
