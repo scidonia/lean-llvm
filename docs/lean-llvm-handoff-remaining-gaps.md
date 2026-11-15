@@ -73,7 +73,20 @@ that consumes it is `WalkDispatchResult.ofStringMerge` (footprint
 - the allocator-cursor pin `C.alen ≤ G.ndst0 + ix.toNat` is not a `WalkInv` clause:
   `pending = none` at a loop head, so `if_end256_i`'s `hcur` has no carrier.
 - `s2StringBodyPre`'s producer at the call site does not exist yet — now *possible*,
-  because Gap 2 removed the one clause a caller cannot supply.
+  because Gap 2 removed the one clause a caller cannot supply; the assembler is
+  `s2StringBodyPre_of_staging` (`JsonStage2StringStageFacts`), 37 named hypotheses.
+- **the frame is sound only up to the first allocating call** (finding 20).  The
+  callee allocates its `%ei` slot at the cursor it is called with, and the model's
+  `alloca` always advances (`Semantics`, `.alloca`); `walkWide`'s stack list is the
+  fixed five bootstrap slots.  The first call's slot is `G.next0 + 28`, inside them;
+  a second call's is `+36`, outside.  So `s2StringBodyFoot ⊆ walkWide` holds only at
+  the first call, `WalkInv` carries no `s.next` clause to say which call it is, and
+  the frame bridge is `s2StringBodyFoot_frame_walkWide` with that placement as a
+  hypothesis.  The repair is a cursor-parameterised stack region — `WalkCarry` gains
+  the bytes its calls have allocated, `walkWide` names `[(G.next0, that)]` — and it
+  reaches `stage2AllocaWrites`, which 69 sites in 14 files name, the pipeline
+  contract and discharge layer among them.  Until it lands, the two-entry arm is
+  provable per call but not across a document with a second allocating call.
 
 The module's header records exactly this, group by group; the arm reads the segment, its
 endpoint's block, index and predecessor, its two endpoint cells and G2's count test, and
@@ -195,7 +208,7 @@ memory parameter is the repair.
 
 ---
 
-## The findings — nineteen, and all of one family
+## The findings — twenty, and all of one family
 
 *A statement that looks true because an unstated fact is load-bearing.* Each is
 recorded where the next reader meets it, not in a report.
@@ -220,9 +233,10 @@ recorded where the next reader meets it, not in a report.
 16 | `walkPotential_spend`'s `hmono` | **unstatable** at the terminal step; three hypotheses removed |
 | 17 | "the whole string contract is absent" (the review) | it was proved an hour later — *reports decay* |
 | 18 | `WalkLink.z_arena_reserve_exit`'s `%xj.i` | **uninhabited**: it stated `G.next0 + 16` where `walkStaticRegs` states `+ 12`, and the string body's `RegionsApart xj 8 outn 8` is false at `+ 16` against `%outn.i = G.next0 + 20`.  **Repaired** — the link now states the staging's `+ 12` |
+| 20 | `walkWide`'s stack list | **static where the allocator is monotone**: `stage2AllocaWrites G.next0`'s five slots cover the first allocating call only, and `WalkInv` carries no `s.next`, so the frame is false from a second call onward — the invariant would be uninhabited there, which is why nothing notices |
 | 19 | `HstringFacts.hmergeCells` | **uninhabited**: a `∀` over every `WalkInv` state at `cleanup478.i` fixed `%inc208.i` and `%nep`, which the invariant binds nowhere, so the field was false at every other reachable endpoint.  **Repaired** — two fields at the bundle's own endpoint |
 
-**Trend worth keeping**: 4, 5, 6, 8, 9, 10, 12, 18 and 19 were found by a *producer trying
+**Trend worth keeping**: 4, 5, 6, 8, 9, 10, 12, 18, 19 and 20 were found by a *producer trying
 to inhabit a bundle* — and 19 by a *reviewer* asking what inhabits one; the two
 instruments agree, and both are cheap relative to the proof they check.
 
