@@ -356,8 +356,12 @@ a clause here — the read already says the bytes are present.  The spacing clau
 is the only memory clause that had to be stated, because it is the one the
 decoded-length bound cannot be derived from a read.
 
-**Four regions, present and pairwise separated — and why presence is not a
-convenience.**  `writeByte` appends absent addresses, so write order is
+**Four regions present, five pairwise separated — and why presence is not a
+convenience.**  The present four are `dst`, `outn`, the record's `e` and `xj`; each
+is a `readBytes … ≠ none` clause except `xj`, whose presence is the read above
+(`stage2ReadWord mem xj 8 = some j0`) rather than a clause of its own.  The
+separation facts name five regions, the body's own slot included, because a write
+the joins move still has to be known to be disjoint from the slot it crosses.  `writeByte` appends absent addresses, so write order is
 observable — with `dst`, `outn` and the record's `e` absent, the body's
 order (clear, `dst`, `xj`, slot, `outn`) and the model's (`dst`, `xj`, `outn`,
 slot) are different lists, and `r.mem = writeBytes m next slot` fails.  The

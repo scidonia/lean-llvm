@@ -175,9 +175,14 @@ continuations** of a continuing entry, and the plan is two structures with a `Su
   (`p + 2 ≤ 32·Δk`, `p = 20` or `21`).  Its closing step is
   `WalkLink.if_then447_i_empty` and the layer's share of it — `ScanEmpty` in `WalkLocal` —
   is landed.
-* `WalkContinueFacts` returns `Sum (HcontFacts G C s) (HcontCleanupFacts G C s)` and the
-  consumer splits once.  **A `Sum` asks the class question once, where the class is known**;
-  a conditional inside a `Type`-valued structure would make every field a question.
+* `WalkContinueFacts` is a **class, not a `Sum`**: `HcontCase`
+  (`JsonStage2WalkDispatchWitnessString`) has `ws` (`HcontFacts`) and `twoEntry`
+  (`HstringFacts`, the standalone string whose merge index is `C.k + 2`), and the
+  consumer splits once.  The third arm planned here, `cleanup`, is added to that
+  inductive when it lands — an inductive rather than a nested `Sum` because a `Sum` of
+  three would re-shape every consumer twice, and the class question is still asked once,
+  where the class is known.  A conditional inside a `Type`-valued structure would make
+  every field a question.
 
 **The run's refinement (planned).**  The whitespace arm's seam is not class-indexed: the run
 stops at the first whitespace byte, so its last visit leaves through `LeafBlock43`, `46` or
@@ -279,8 +284,8 @@ theorem scanExit_tok (s : State) (i c : Nat) {tok : Nat}
 
 /-! ### The continuing entry's facts, bundled
 
-The bundle is `WalkContinueFacts`' payload (`JsonStage2WalkPremisesOfStaging`): one
-argument per head state with an entry left.  Its groups are `hcontPrefixSeg`'s argument
+The whitespace arm's bundle is `HcontCase.ws`'s payload (`JsonStage2WalkPremisesOfStaging`):
+one argument per head state with an entry left.  Its groups are `hcontPrefixSeg`'s argument
 list, in the same order, so the producer's whole job is to supply each group at the path's
 states.
 

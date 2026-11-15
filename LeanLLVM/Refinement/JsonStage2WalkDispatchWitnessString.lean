@@ -70,20 +70,22 @@ bindings that neither `WalkInv` carries nor any block of the chain binds
 which is where the loop's own `%idxprom.i` is read, and the rest are the
 program's parameters and the token record's pointer), and six memory-class
 hypotheses (`hframe`, `howned`, `hlog`, `hev`, `hstTy`, `hstSt`) whose bridge
-from `s2StringBodyFoot` to `walkWide` is not a lemma of this layer.  That link's
-own `hxj` is moreover stated at `%xj.i = G.next0 + 16` while `walkStaticRegs`
-fixes `%xj.i` at `G.next0 + 12`; see the note on `hpreS` below.  Composing the
+from `s2StringBodyFoot` to `walkWide` is not a lemma of this layer.  Its `%xj.i`
+is the staging's address, `G.next0 + 12`; an earlier statement of the link had
+`+ 16`, where the string body's spacing clause is false, and that is repaired at
+the link.  Composing the
 other fourteen links would still leave a link at the seam, so the bundle takes
 the segment whole, at its count, with the endpoint's block, index and
 predecessor as fields.
 
-**What the arm reads.**  `WalkDispatchResult.ofStringMerge` reads five of the
-bundle's fields: the segment, its endpoint's block, index and predecessor, and
-G9's two merge cells.  G1–G8 are **not** read by the arm.  They are the premise
-set a composition needs — the fifteen links' hypotheses, grouped and stated at the
-head where they are true of the run — so they are the target of the producer that
-would retire the supplied segment, and a refactor that finds them unread and
-deletes them would delete that target.
+**What the arm reads.**  `WalkDispatchResult.ofStringMerge` reads six of the
+bundle's fields: the segment, its endpoint's block, index and predecessor, G9's two
+endpoint cells, and G2's count test (`hcount`, without which there is no
+`k2 ≤ nepv.toNat` for the merge's `hcap`).  G1 and G3–G8 are **not** read by the
+arm.  They are the premise set a composition needs — the fifteen links' hypotheses,
+grouped and stated at the head where they are true of the run — so they are the
+target of the producer that would retire the supplied segment, and a refactor that
+finds them unread and deletes them would delete that target.
 
 **The blockers, named.**  The link at position 9 needs four things this layer does
 not carry: a producer of `s2StringBodyPre` at the call site (no staging theorem for
@@ -126,28 +128,35 @@ missing, and the header says so rather than implying otherwise.
 | G6 | the arena reservation | **supplied**: `%idxprom.i`'s value and `%sub260.i`'s extent are the header's/`if.end207.i`'s cells, so the two tying equations and the cursor pin are the caller's; the log's arena word read and the capacity word are **produced** by `WalkInv.log_alen`/`log_acap` (as an inequality and a staged word) |
 | G7 | the string body's call | **supplied**: the string body's staging — `s2StringBodyPre` at this argument list — has no producer in the tree, and `C.alen + ext ≤ G.n` is the reservation's document room |
 | G8 | the verdict and the record | **supplied**: the callee's return word, `%outn.i`'s word (the decoded length, which `s2StringBodyPost` leaves free of the input length — `JsonStage2WalkArenaWord`); **produced** by the invariant for `%7` (`iter.reg7`) and the two log words (`log_len`, `log_cap`) |
-| G9 | the merge's cells | **supplied** — `WalkSegment` records a run and an invariant, not the blocks it passed, so no lemma carries `%inc208.i` from `if.end207.i` to the merge; `%nep` is no `WalkInv` clause either |
+| G9 | the segment and the merge's cells | **supplied** — `WalkSegment` records a run and an invariant, not the blocks it passed, so no lemma carries `%inc208.i` from `if.end207.i` to the merge; `%nep` is no `WalkInv` clause either.  Both are fields at the bundle's own endpoint `sd`; a `∀` over the states at `cleanup478.i` was the first shape and had no inhabitant |
 
 Two of the supplied groups are supplied for a reason that is not a missing
-lemma but a vocabulary gap, and the header keeps them distinct: G9's two `∀`s
-are the same gap `WalkMergeCells` (`JsonStage2WalkPremisesOfStaging`) records
+lemma but a vocabulary gap, and the header keeps them distinct: G9's two cells are
+the same gap `WalkMergeCells` (`JsonStage2WalkPremisesOfStaging`) records
 (a segment carries no register-preservation step), and G4/G7's call preconditions
 are the helper contracts' own staging, which is what a producer of
 `s2ValuePosPre`/`s2StringBodyPre` supplies.  Nothing above is weakened to make a
 proof go through: every field is either the invariant's clause read at `s`, a
 property of the document, or a named supplied premise.
 
-### Why the fields are stated at the head
-
-G1–G8's fields are stated at the head state `s` (and at `s.mem`/`s.next` for the
+**Why the fields are stated at the head.** G1–G8's fields are stated at the head state `s` (and at `s.mem`/`s.next` for the
 memory and the allocator cursor), which is where they are true of the run: the
 intervening blocks read those cells rather than rebind them (`%8`, `%inc.i`,
 `%nep`, `%4`, `%root_done.i`, `%idxprom.i`, `%7`, the log's words), and the
-run's writes are separated from the log's cursor slot and the document.  The
-reconciliation to each consuming link's *own* state — the `if.end207.i` store at
-`%z.val`'s record, the two calls' memories and allocator cursors — is what the
-supplied segment carries, and it is the reason these are stated as facts about
-the input rather than as a chain of environment nests.
+run's writes are separated from the log's cursor slot and the document.
+
+**The reconciliation to each consuming link's own state is *not* carried by the
+supplied segment, and cannot be.**  `WalkSegment` (`JsonStage2WalkTraverse`) is a
+`run : ∀ n, runFuel … = runFuel …` and an `inv' : WalkInv G C' s'` — no memory, no
+allocator cursor, no intermediate state.  So `hpreS` (the string body's
+precondition at `s.mem`/`s.next`), `hreadA` (the log's arena word), `houtn` and
+the log's two words are statements about the **head's** memory, and a composition
+would have to transport each to the block that reads it: the cursor's advance
+through the value-position call, the record's store at `%z.val`, and the two
+calls' memories and allocator cursors.  That transport is a piece of work in its
+own right — it is why the group's sources are named individually — and stating the
+fields at the head is what keeps it visible instead of hiding it behind a segment
+that does not carry it.
 
 -/
 
@@ -212,7 +221,12 @@ theorem stringCleanupKIncoming_at :
 /-- `if.end245.i`'s `%key.1.i` phi takes `imm 0` on the `if.then219.i` edge — the
 depth-zero entry's key bit.  It is why the path reaches `if.else334.i`
 (`if.then328.i`'s `keyBit = 0` arm) and not `if.then330.i`, and it is the fact a
-composition of the fifteen links reads at position 7. -/
+composition of the fifteen links reads at position 7.
+
+The incoming list is the IR's own (`JsonStage2IR`'s `if.end245.i`), and nothing calls
+this yet: the composition's key-zero branch is what will read it.  A change to that
+block's `phi` would leave this stating a phantom of the literal it `decide`s, so a
+composition should read it against the pinned AST rather than trust the list. -/
 theorem if_end245_key_then219 :
     phiIncoming "if.then219.i"
       [("if.then231.i", (Operand.reg "%or.cond.i")),
@@ -352,20 +366,23 @@ structure HstringFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
   (the module header names the blocking link), and with it the endpoint's block,
   index and predecessor.  The two cells are the merge's on the `if.else334.i`
   edge, where `cleanupKIncoming` selects `%inc208.i` and `%nep` is the register
-  the merge tests.  They are a `∀` over the states the invariant pins at
-  `cleanup478.i` because no lemma carries a register across a segment:
-  `WalkSegment` records a run and an invariant, not the blocks it passed, which
-  is the gap `WalkMergeCells` records for the other arm. -/
+  the merge tests.
+
+  **They are fields at this bundle's own endpoint** (`sd`), not a `∀` over the
+  states the invariant pins at `cleanup478.i`.  A `∀` was the first shape here and
+  it had no inhabitant: `WalkInv` binds neither `%inc208.i` nor `%nep`
+  (`walkStaticNames` names neither), so at any other state at that block with that
+  predecessor either register is free, and a field that fixes them all is false.
+  Stating them at `sd` costs nothing — the endpoint is a field — and it is the same
+  shape `HlastFacts` uses for its two cells. -/
   Cd : WalkCarry G
   sd : State
   seg : WalkSegment (stage2Calls stage2SubCalls) G C s Cd sd 15
   hsegBlock : Cd.block = "cleanup478.i"
   hsegK : Cd.k = C.k
   hsegPre : sd.pre = some "if.else334.i"
-  hmergeCells : ∀ (Cd' : WalkCarry G) (sd' : State), WalkInv G Cd' sd' →
-    Cd'.block = "cleanup478.i" → sd'.pre = some "if.else334.i" →
-    lookupName sd'.env "%inc208.i" = some (.int 64 (BitVec.ofNat 64 (C.k + 2))) ∧
-    lookupName sd'.env "%nep" = some (.int 64 (BitVec.ofNat 64 G.nep))
+  hinc208 : lookupName sd.env "%inc208.i" = some (.int 64 (BitVec.ofNat 64 (C.k + 2)))
+  hnepM : lookupName sd.env "%nep" = some (.int 64 (BitVec.ofNat 64 G.nep))
 
 /-! ### The segment, as the bundle names it
 
@@ -427,11 +444,9 @@ theorem WalkDispatchResult.ofStringMerge {m0 : Mem} (G : WalkGeom m0) (C : WalkC
     rw [hincv, hnepv] at h
     exact h
   have hk2cap : C.k + 2 ≤ G.nep := by omega
-  obtain ⟨hinc208, hnepEnd⟩ :=
-    f.hmergeCells f.Cd f.sd f.seg.inv' f.hsegBlock f.hsegPre
   refine WalkDispatchResult.merge f.Cd f.sd 15 f.Cd.sp (C.k + 2) "if.else334.i"
     (Operand.reg "%sp.i.0248") (Operand.reg "%inc208.i") (BitVec.ofNat 64 G.nep)
-    f.seg f.hsegBlock f.hsegK f.hsegPre ?_ ?_ ?_ ?_ hnepEnd ?_ ?_ ?_ ?_ ?_
+    f.seg f.hsegBlock f.hsegK f.hsegPre ?_ ?_ ?_ ?_ f.hnepM ?_ ?_ ?_ ?_ ?_
   · -- the merge's depth `phi` takes `%sp.i.0248` on the `if.else334.i` edge
     exact stringCleanupSpIncoming_at
   · -- and that register is the depth the endpoint's invariant carries
@@ -439,7 +454,7 @@ theorem WalkDispatchResult.ofStringMerge {m0 : Mem} (G : WalkGeom m0) (C : WalkC
   · -- the merge's index `phi` takes `%inc208.i` on the same edge
     exact stringCleanupKIncoming_at
   · -- the two-entry advance, at the word `if.end207.i` wrote
-    exact hinc208
+    exact f.hinc208
   · -- the index advanced
     omega
   · rw [hnepv]
@@ -466,7 +481,13 @@ case is the whitespace scan's (`HcontFacts`); the two-entry case is the
 standalone string's, whose merge index overshoots the head's test.  Both arms
 produce a `WalkDispatchResult` — the first through the revolution's segment, the
 second through `WalkDispatchResult.ofStringMerge` — so the case is named here
-rather than decided by the head's index. -/
+rather than decided by the head's index.
+
+**The arms are disjoint at a state**, which is what makes this a class rather than a
+fan-out: `HcontFacts.hlt91` says the head's byte is *not* below `91`, and
+`HstringFacts.heq34` says it *is* `34`; no state satisfies both, so a producer that
+reads the head's byte answers with one arm and the consumer's two branches never
+overlap. -/
 inductive HcontCase {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : Type
   /-- The continuing entry ends inside its entry and the merge index is
   `C.k + 1`: `HcontFacts` at the head state. -/

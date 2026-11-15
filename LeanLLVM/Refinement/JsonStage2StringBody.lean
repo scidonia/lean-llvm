@@ -1912,13 +1912,15 @@ theorem writeBytes_absorb_one (B : Mem) {ei dst xj : Nat} {X out Wj Z : List UIn
   -- 3. the two writes to `ei` are adjacent, and the second one is the memory
   exact writeBytes_writeBytes_same (writeBytes (writeBytes B dst out) xj Wj) ei X Z hlen
 
-/-- **One intermediate write is enough for the absorption.**  The first write is
-commuted past the crossing — the region it moves into is present, so that write is a
-replacement in place — and the later write to the same region erases it, which is
-`writeBytes_writeBytes_same` once the two are adjacent.  The moved write's own region
-need not be present, only the one it crosses; the scan's cursor write needs this
-form: the callee's own write to the cursor word follows one crossing, not two, and
-the write the crossing moves is the caller's stack slot. -/
+/-- **One intermediate write is enough for the absorption.**  The pair is commuted so
+that the write at `a` lands beside the later `Z`, which erases it by
+`writeBytes_writeBytes_same`.  **The presence this form spends is the region at `a`
+— the write `Z` erases — and not the region at `b` it is commuted past**, which is
+the opposite spending from `writeBytes_absorb_one` (there the erased write's region
+is the absent one and the two it crosses are present).  The refused chain needs this
+form because the write it erases at `a` is `xj`'s — the staged escape list, whose
+presence the staging states — and the region it crosses at `b` is the caller's own
+stack slot, whose presence the staging does not state. -/
 theorem writeBytes_absorb_single (A : Mem) {a : Nat} {X : List UInt8} {b : Nat}
     {Y Z : List UInt8}
     (ha : readBytes A a X.length ≠ none)
