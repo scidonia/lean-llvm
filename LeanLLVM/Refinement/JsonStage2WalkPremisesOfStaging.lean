@@ -26,12 +26,16 @@ step — are composed here from the steps the layer already states.
   lemmas read `WalkStage`'s fields, so the staging is built by
   `walkStage_at_pre_fields` — `walkStage_at_pre`'s construction with the fields named.
 * **The loop's step** is `walkLoopStep_of_staging`: `walkLoopStepThree_of_dispatchResult`
-  (`JsonStage2WalkDispatchThreeOfRun`) at the dispatch's result and the finalisation's two
-  terminal runs.  The result is the `merge` arm in both branches: where an entry is left,
-  from whichever class the continuing premise names — `walkDispatch_at_continue` for the
-  whitespace bundle, `WalkDispatchResult.ofStringMerge` for the two-entry one; and from the
-  last entry's bundle where it is not (`WalkDispatchResult.ofHlastMerge`).  The runs are
-  `WalkLoopEnd`'s.
+  (`JsonStage2WalkDispatchThreeOfRun`) at the dispatch's result, the finalisation's two
+  terminal *posts* and the merge's count.  The result is the `merge` arm in both branches:
+  where an entry is left, from whichever class the continuing premise names —
+  `walkDispatch_at_continue` for the whitespace bundle, `WalkDispatchResult.ofStringMerge`
+  for the two-entry one; and from the last entry's bundle where it is not
+  (`WalkDispatchResult.ofHlastMerge`).  The posts are `WalkLoopEnd.merge`/`.refuse`'s,
+  which produce `WalkTargetPost` from the word bundles and the state's own cells.
+* **The loop's post** is `stage2Post_of_staging_loop`: the seed's prefix, the invariant
+  and `walkLoopFinishesThree`'s triple, which names the returned verdict and memory, and
+  the boundary at that memory is the post.
 
 Three groups are premises, one per obstruction, and each is a bundle rather than a field
 per fact:
@@ -40,7 +44,7 @@ per fact:
 |---|---|---|
 | `WalkContinueFacts` | the **class** of the continuing entry at every head state with an entry left (`HcontCase`: `ws` = `HcontFacts`, `twoEntry` = `HstringFacts`) | each class's bundle is a fact about the token (`walkRevolution_seg`'s own for `ws`), and the class is the head byte's; the split is a value so the question is asked once |
 | `WalkMergeCells` | the merge's two register cells (`%inc.i`, `%nep`) and the header's index at the merge | `WalkSegment` records a run and an invariant, not the blocks it passed, so no lemma carries a register from the head to the merge; none of the three is a `WalkInv` clause |
-| `WalkLoopEnd` | the last entry's bundle, the two terminal runs, and the merge's `%nep` value | the bundle is supplied at the last-entry head states (`HlastFacts`), the runs at the states the dispatch reaches (each at its own verdict), and `%nep` is not a `WalkInv` clause |
+| `WalkLoopEnd` | the last entry's bundle, the two terminal blocks' *words*, and the merge's `%nep` value | the bundle is supplied at the last-entry head states (`HlastFacts`), the words at the states the dispatch reaches (`WalkMergeWords`, `WalkRefuseWords`), and `%nep` is not a `WalkInv` clause.  The *runs* are proved, not supplied: `WalkLoopEnd.merge`/`.refuse` compose them from `JsonStage2WalkTargetPost`'s four routes |
 
 The terminal runs are read at the states the dispatch's outcomes reach rather than at the
 loop head, so the head-level `%z`/`%s` group this module used to carry is gone with the
@@ -55,7 +59,9 @@ green there was the green of never having been built.  **A theorem is green when
 default target compiles it, not when its own module does.**  This module and the twelve
 below it (`HeadChainA`/`C`/`Scan`, `FinishPath`, `PrefixCount`, `DispatchWitnessHlast`,
 `DispatchWitnessString`, `RevolutionPrefix`, `Revolution`, `HcontFactsOfStaging`,
-`ExitProducer`, `ArenaWord`) are imported at the end of `LeanLLVM.lean` for that reason.
+`ExitProducer`, `ArenaWord`, `TargetPost`, `FlushPost`) are imported at the end of
+`LeanLLVM.lean` for that reason; `TargetPost` is also this module's own import, because
+the terminal posts it proves are what `WalkLoopEnd.merge`/`.refuse` compose.
 -/
 
 import LeanLLVM.Refinement.JsonStage2WalkExitProducer
@@ -821,7 +827,7 @@ the input or a named missing preservation lemma.
 | `WalkContinueFacts` | **a class, one arm supplied and one proven.**  The whitespace arm is `HcontFacts`' own supply, in `HlastFacts`' discipline: its producer is `hlastFacts_of_staging`'s twin — the same three sources (the invariant's clauses, the document's content, the staging's addresses) read at the same states — and the bundle's fields are the head's byte and its four class bits, the entry counts and the default arm's cells, the seam's cells and the scan's landing.  That twin is `hcontFacts_of_staging` (`JsonStage2WalkHcontFactsOfStaging`), and what it still takes from its caller is the count test's value (`hnext : evalICmp .ult inc nep = 1`, the entry stream's own), the traversal's three hypotheses (`hround`, `hguard`, `hbyte`, supplied unweakened) and `htok`, which needs *the extra-token scan preserves a register it does not bind* — a statement a `WalkSegment` cannot carry, because the traversal returns its final state existentially.  **The count test's value is `1` here and `0` in `HlastFacts`, and both are right**: the fields are arm-specific — a continuing entry has one after it, so the scan's bound is above its index, while the last entry's is the stream's end.  A docstring that gives either value without its arm reads as a contradiction in the other.  **`hnext` is a candidate `WalkInv` clause beside the merge's two**: it follows from `C.k + 1 < G.nep` with the two counts pinned to `%k.0.i249 + 1` and `G.nep`, so it belongs with `%inc.i`/`%nep` in the future-supply paragraph rather than being derived now.  The two-entry arm is `HstringFacts` (`JsonStage2WalkDispatchWitnessString`), whose fifteen-block segment is **supplied rather than composed**: `WalkLink.z_arena_reserve_exit`'s address is now the staging's (it had stated `%xj.i` at `G.next0 + 16`, where the string body's `RegionsApart xj 8 outn 8` is false against `%outn.i = G.next0 + 20`; it is `+ 12` now), but the link still needs the register carriers `walkStaticRegs` omits and the two `s2StringBodyFoot`→`walkWide` frame lemmas, and the string body's call site has no `s2StringBodyPre` producer.  Its other groups come from the same three sources, and its two merge cells are fields at its own endpoint for the same reason `WalkMergeCells` is a premise. |
 | `WalkContinueWsFacts` | **the whitespace class's `∀`-form, stated for `WalkDispatch`'s sake; nothing produces it and nothing calls it.**  Its content is `HcontFacts` at every head state with an entry left.  `hcontFacts_of_staging` produces `HcontFacts` at *one* state, not this `∀` (a `∀` would have to inhabit `HcontFacts` at states whose class is another arm's, and that is uninhabited), which is why the loop's step calls the per-state `walkDispatch_at_continue` instead.  The pair `WalkContinueWsFacts`/`walkDispatch_of_continue` is kept so `WalkDispatch` keeps its only producer — `WalkDispatchOutcome.ofDispatch` and `WalkDispatch.revolution` consume that predicate — and `walkDispatch_of_continue` is a two-line wrapper over the per-state theorem, so the two cannot drift. |
 | `WalkMergeCells` | **structural, and no producer can exist in this vocabulary.**  `WalkSegment` records a run and an invariant, and neither names the blocks the run passed or the registers they bound; no lemma in the layer carries a register across a segment, so `%inc.i`, `%nep` and the header's index at the merge cannot be read off the segment that reaches it.  A producer needs a segment-level register-preservation statement, which the vocabulary does not have. |
-| `WalkLoopEnd` | **supplied, with its first two runs' producers already in the tree.**  `facts` is `HlastFacts`, whose producer is `hlastFacts_of_staging` (which itself takes a bundle of supplied facts — the head's byte and class bits, the register cells and the calls' outcomes — so its own supply is the same discipline); `depth` is the merge's depth test; `merge` and `refuse` are the terminal runs, which `ExitTail` supplies through `WalkTargetRun.ofExitTail` (the three tails' own verdicts) and `WalkTargetRun.ifThen` proves at the refusal copy; `nepBound` is the merge's `%nep` value, which the bundle names. |
+| `WalkLoopEnd` | **supplied: four fields, each a fact about the input, and three of them named here for the first time.**  `facts` is `HlastFacts`, whose producer is `hlastFacts_of_staging` (itself a bundle of supplied facts — the head's byte and class bits, the register cells and the calls' outcomes); `mergeWords` is `WalkMergeWords` at every state at `cleanup478.i`, and `refuseWords` is `WalkRefuseWords` at every state at `if.then`; `nepBound` is the merge's `%nep` value, which the dispatch's outcome names.  The *runs* are no longer supplied: `WalkLoopEnd.merge` and `WalkLoopEnd.refuse` produce `WalkTargetPost` from the words and the state's own cells, and their proofs are the four terminal runs of `JsonStage2WalkTargetPost` — so what a caller still owes is the words, and each word names its producer: `%4`'s value the seed's register carrier (`walkSeedFinalEnv_regs`, unless `"%4"` joins `walkStaticNames`), the log's arena word the write-back block `if.else285.i`'s link (`WalkInv.log_alen` is only the bound), the finalisation's seven registers the seed's environment (`walkEntryState_env`), the merge's root-done word a presence clause on `WalkInv`, and R0's refusal word a memory-carrying refusal segment — the last two are not clauses for the reasons their docstrings give (`walkWide` omits the four `alloca` slots, and a `WalkSegment` keeps no memory). |
 
 Of the three, `WalkMergeCells` is the one with no producer of any shape: the other two
 are supplies a caller makes from the input, and this one is a statement the layer has
@@ -830,7 +836,11 @@ no vocabulary to state. -/
 /-! ### Axiom footprints beyond the five -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.stage2WalkCompletes_of_staging
-#print axioms LeanLLVM.Refinement.WalkScope.stage2WalkObligation_of_staging
+/-- info: 'LeanLLVM.Refinement.WalkScope.stage2Post_of_staging_loop' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.stage2Post_of_staging_loop
+#print axioms LeanLLVM.Refinement.WalkScope.WalkLoopEnd.merge
+#print axioms LeanLLVM.Refinement.WalkScope.WalkLoopEnd.refuse
 
 /-! ### Axiom footprints -/
 

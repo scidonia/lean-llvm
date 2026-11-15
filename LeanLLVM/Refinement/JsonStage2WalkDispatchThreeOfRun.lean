@@ -28,8 +28,8 @@ about `C.k + 1`.
 index has reached the end of the entry stream, so the loop does not run again.  The
 finalisation that follows still decides between acceptance and refusal — an unclosed
 container or an unfinished root is refused there (`if.then485.i`'s three arms) — which is
-why the consumer's terminal branch states its verdict existentially (`WalkTargetRun`)
-and is never `v = 1` here.
+why the consumer's terminal branch states both its verdict and its memory existentially
+(`WalkTargetPost`) and is never `v = 1` here.
 
 **Which outcomes come from what.**
 
@@ -43,11 +43,11 @@ and is never `v = 1` here.
 modules read it, and this module's producer is a second route to the same predicate, not
 a replacement of that module's statement.
 
-**A note on `%nep`.**  `WalkInv` does not carry the register, so the producer takes the
-fact the loop's step already takes beside `WalkDispatchThree`
-(`walkLoopStepThree_of_dispatchThree`'s `hnepBound`): the merge's `%nep` is no larger
-than the stream.  It is what makes the continue arm's `k2 < G.nep` follow from the
-merge's own test.
+**A note on `%nep`.**  `WalkInv` does not carry the register, so the producers take the
+fact the loop's step already takes (`walkLoopStepThree_of_dispatchResult`'s `hnepBound`):
+the merge's `%nep` is no larger than the stream.  It is what makes the continue arm's
+`k2 < G.nep` follow from the merge's own test, and it is the same bound the terminal
+post's merge wrapper reads (`WalkLoopEnd.nepBound`).
 -/
 import LeanLLVM.Refinement.JsonStage2WalkLoopStepOutcome
 import LeanLLVM.Refinement.JsonStage2WalkDispatchWitnessHlast

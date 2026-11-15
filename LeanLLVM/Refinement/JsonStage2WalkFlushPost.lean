@@ -816,6 +816,7 @@ theorem stage2WalkObligation_of_staging {d c ctype cst tok s z e nkSlot nxpSlot 
 #print axioms LeanLLVM.Refinement.WalkScope.stage2Boundary_of_flush
 #print axioms LeanLLVM.Refinement.WalkScope.stage2Post_of_flush
 #print axioms LeanLLVM.Refinement.WalkScope.stage2Post_of_staging_flush
+#print axioms LeanLLVM.Refinement.WalkScope.stage2WalkObligation_of_staging
 
 end WalkScope
 end LeanLLVM.Refinement
