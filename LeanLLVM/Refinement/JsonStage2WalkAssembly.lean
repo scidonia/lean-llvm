@@ -27,9 +27,10 @@ revolution apart:
 * **the loop's premises are named**, `WalkDispatch` (the dispatch's chain from
   the head to `cleanup478.i`, with the ten predecessors' `phi` facts at the merge,
   the index's strict advance and the potential's spending) and, for the terminal
-  branch, `WalkTargetRun` at the state the dispatch reaches — supplied at the merge
-  by `ExitTail`, the tail through `s2_walk.exit` and `if.end`'s return inside the
-  finalisation allowance;
+  branch, `WalkTargetPost` at the state the dispatch reaches — the run, its verdict,
+  the *memory it returns* and `stage2Boundary` there, proved by
+  `JsonStage2WalkTargetPost`'s four routes from the words `WalkLoopEnd` supplies
+  (`WalkMergeWords`, `WalkRefuseWords`) inside the finalisation allowance;
 * **the finalisation allowance is arithmetic** (`walkExitFits`): `F ≤ 27` at the
   seed's three steps is `3 + F + 2 ≤ stage2FinalisationAllowance`, by the record's
   own constant;
@@ -1207,8 +1208,9 @@ rather than with the dispatch.
 
 `WalkDispatchResult` (`JsonStage2WalkDispatchThreeOfRun`) replaces it: a counted segment
 from the head classified by the block it reached and the index the merge selected, with
-`WalkDispatchThree.ofResult` producing the same premise from it and
-`walkLoopStepThree_of_dispatchResult` feeding the loop's step.  `WalkDispatchOutcome` and
+`walkLoopStepThree_of_dispatchResult` feeding the loop's step directly from it — the
+result-level rule, whose `merge` arm carries the `phi` cells the terminal posts take, so
+`WalkDispatchThree.ofResult` is no longer on that path.  `WalkDispatchOutcome` and
 its `ofDispatch` bridge are unchanged: the `cont` alternative is still every dispatch the
 continuing premise supplies. -/
 

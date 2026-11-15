@@ -22,11 +22,17 @@ twenty-step head path against `walkPotential G C + 27` only to state that predic
 ## What remains
 
 `ExitTail` is the tail's run with the verdict as a parameter: a count, three states and
-the two terminal steps, inside the finalisation allowance.  It survives because it is
-the merge-side supply of `WalkTargetRun` (`WalkTargetRun.ofExitTail`), the terminal run
-the loop's step takes at the state a dispatch reaches — and because its three producers
-are the record that one verdict cannot cover the last-entry states.  They are stated at
-`hlastMergeF f`, the merge state the last entry's bundle builds.
+the two terminal steps, inside the finalisation allowance.  It survives as the record
+that one verdict cannot cover the last-entry states — its three producers are stated at
+`hlastMergeF f`, the merge state the last entry's bundle builds — and as the tail
+`WalkTargetRun.ofExitTail` reads.
+
+**It is not the loop's route.**  `WalkLoopStepThree`'s terminal disjunct is
+`WalkTargetPost` (`JsonStage2WalkTraverse`), which carries the *returned memory* and
+`stage2Boundary` there; `WalkTargetRun` is existential in the memory, so it cannot state
+the record's post.  The runs those two vocabularies name are the same three tails, and
+the memory-naming forms are the four terminal routes of `JsonStage2WalkTargetPost`
+(`walkFinishPost_accept`, `_refuse`, `_refuse488`, `_copy`).
 
 ## What the tails leave to their caller
 
