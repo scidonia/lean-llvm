@@ -411,6 +411,25 @@ plan were wrong and are corrected here:
   the review's F5 asks for (`WalkInv.k_le` gives only `≤`).  That is the gap between
   "the bundle is inhabited" and "the step can use it".
 
+## P0, ahead of everything below: the pipeline watermark is impossible
+
+`Stage2Watermark` (`PipelineDischarge:1399`) quantifies `∀ S` **independently of the exit
+witness**: `pipelineLoopExit mem args e → ∀ r ∈ stage2ExitRegions S, end(r) ≤ e.next`.
+For any admitted `e`, choose `S.ndst = e.next`; `stage2ExitRegions S` contains
+`(S.ndst, 8)`, so the premise demands `e.next + 8 ≤ e.next`.  It is therefore
+incompatible with an inhabited exit predicate, and the conditional pipeline result has an
+unusable premise on the executions it means to cover.
+
+This outranks the remaining stage-2 bundles: it is a **false premise at the pipeline
+boundary**, where the bundles are unproduced but true.  The repair, per the review, is to
+index the exit predicate by its carried state and state the watermark for that same state
+(or carry the allocator bound in the invariant and return it with the witness); the
+initial bound must come from staging and be preserved by the steps and calls.  A free `S`
+replaced by another global preservation hypothesis leaves the problem open.
+
+`Stage2SlotKeeps` has the same shape and must be audited in the same change.  The
+regression to prove: the retired watermark together with an admitted exit implies `False`.
+
 ## The findings — twenty-three, and all of one family
 
 *A statement that looks true because an unstated fact is load-bearing.* Each is
