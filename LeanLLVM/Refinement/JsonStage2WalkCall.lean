@@ -1827,7 +1827,15 @@ The four memory clauses are class F's own, as they are for `WalkLink.callQuiet`
 and `WalkLink.if_then425_i_emit`: the callee's answer (`s2StringBodyPost`) names
 the memory, and the frame read off `s2StringBody_framed` at
 `s2StringBodyFoot` — widened to `walkWide` at the new cursor — is the caller's,
-with the presence, log and event-read facts beside it. -/
+with the presence, log and event-read facts beside it.
+
+**The token record's address is the staging's, and it is part of this statement.**
+`%xj.i` is `G.next0 + 12` (`walkStaticRegs`, `JsonStage2WalkScope`), and the call
+hands the string body that pointer; the body's precondition keeps the escape list
+away from `%outn.i` at `G.next0 + 20`, which `+ 12` satisfies and `+ 16` does not.
+An earlier statement of this link placed `%xj.i` at `+ 16`, where that separation
+is false and the precondition's `RegionsApart xj 8 outn 8` cannot hold — so the
+link was uninhabitable and its hypotheses said nothing about any state. -/
 theorem WalkLink.z_arena_reserve_exit {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
     (s : State) (hInv : WalkInv G C s) (hblock : C.block = "z_arena_reserve.exit")
     {p off ext : Nat} (hpend : C.pending = some (p, off, ext))
@@ -1842,13 +1850,13 @@ theorem WalkLink.z_arena_reserve_exit {m0 : Mem} (G : WalkGeom m0) (C : WalkCarr
     (hc : lookupName s.env "%c.i" = some (.ptr C.stage.c))
     (houtn : lookupName s.env "%outn.i" = some (.ptr (G.next0 + 20)))
     (hxp : lookupName s.env "%xp" = some (.ptr G.xp))
-    (hxj : lookupName s.env "%xj.i" = some (.ptr (G.next0 + 16)))
+    (hxj : lookupName s.env "%xj.i" = some (.ptr (G.next0 + 12)))
     (hnxp : lookupName s.env "%nxp" = some (.int 64 (BitVec.ofNat 64 G.nxp)))
     (hwin : C.alen + ext ≤ G.n)
     {r : CallOutcome}
     (hcall : stage2Calls stage2SubCalls "s2_string_body"
       [.ptr C.stage.c, .ptr (G.b + p + 1), .int 64 (BitVec.ofNat 64 ext),
-        .ptr (G.dst + A.toNat), .ptr (G.next0 + 20), .ptr G.xp, .ptr (G.next0 + 16),
+        .ptr (G.dst + A.toNat), .ptr (G.next0 + 20), .ptr G.xp, .ptr (G.next0 + 12),
         .int 64 (BitVec.ofNat 64 G.nxp)] s.mem s.next = some r)
     (hframe : UnchangedOutside m0 r.mem (walkWide G { C with block := "NodeBlock31", alen := C.alen + ext, spans := C.spans ++ [(C.alen, ext)], pending := none }))
     (howned : ∀ q ∈ walkStaged G { C with block := "NodeBlock31", alen := C.alen + ext, spans := C.spans ++ [(C.alen, ext)], pending := none }, HasBytes r.mem q.1 q.2)
@@ -1866,7 +1874,7 @@ theorem WalkLink.z_arena_reserve_exit {m0 : Mem} (G : WalkGeom m0) (C : WalkCarr
   have hcall' : stage2Calls stage2SubCalls "s2_string_body"
       [.ptr C.stage.c, .ptr (G.b + p + 1), .int 64 (BitVec.ofNat 64 ext),
         .ptr (G.dst + (A.signExtend 64).toNat), .ptr (G.next0 + 20), .ptr G.xp,
-        .ptr (G.next0 + 16), .int 64 (BitVec.ofNat 64 G.nxp)] s.mem s.next = some r := by
+        .ptr (G.next0 + 12), .int 64 (BitVec.ofNat 64 G.nxp)] s.mem s.next = some r := by
     rw [hse]; exact hcall
   let s₁ : State := stateAt (("%call272.i", r.ret) ::
     ("%add.ptr271.i", .ptr (G.b + p + 1)) ::
@@ -1877,7 +1885,7 @@ theorem WalkLink.z_arena_reserve_exit {m0 : Mem} (G : WalkGeom m0) (C : WalkCarr
     dsimp only [s₁]
     exact walkZArenaReserveExit_denote (sub := stage2SubCalls) (env := s.env) (s := s)
       (ar := C.stage.z + 40) (c := C.stage.c) (dq := G.dst) (pn := G.b + p)
-      (on := G.next0 + 20) (xp := G.xp) (xj := G.next0 + 16) (A := A)
+      (on := G.next0 + 20) (xp := G.xp) (xj := G.next0 + 12) (A := A)
       (ext := ext) (nxp := G.nxp) (r := r)
       har hreadAr hGdst hz36 hpos haj hsub hc houtn hxp hxj hnxp hcall'
   have hpc : s.pc = C.block := hInv.pc_eq
