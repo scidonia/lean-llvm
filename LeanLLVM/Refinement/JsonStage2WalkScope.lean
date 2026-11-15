@@ -1164,15 +1164,18 @@ def walkStaticNames : List String :=
   ["%nsp", "%xp1", "%nxp2", "%n2.i", "%ep3.i", "%len", "%cap", "%0",
    "%h1.i.i.i51", "%ar", "%alen", "%acap", "%gap.i", "%end.i", "%kind404.i",
    "%n6.i", "%ix.i", "%nix.i", "%e7.i", "%invariant.gep", "%ei.i",
-   "%root_done.i", "%xj.i", "%outn.i", "%nep", "%c.i", "%z", "%xp", "%nxp"]
+   "%root_done.i", "%xj.i", "%outn.i", "%nep", "%c.i", "%z", "%xp", "%nxp",
+   "%4", "%t352.i", "%e"]
 
 /-- The static address registers the dispatch reads, beside `WalkPtrs`' six: the
 `%s` record's fields, the log's six addresses the reserves and the merges read,
 the token's three, the cursor record's five, the document base's predecessor, the
 four stack objects at the call's cursor, and the four parameters the string
 path's links read directly — the two staging records `%c.i` and `%z`, and the
-escape list `%xp` with its count `%nxp`.  Every one is bound before the loop and
-no block of the dispatch rebinds it. -/
+escape list `%xp` with its count `%nxp`.  `%4` is the stream's end — the document
+length word the caller staged — and `%t352.i` and `%e` are the token record's and
+the refusal record's addresses, which the last entry's merge and its tails read.
+Every one is bound before the loop and no block of the dispatch rebinds it. -/
 def walkStaticRegs {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) : List (String × Value) :=
   [("%nsp", .ptr (C.stage.s + 56)), ("%xp1", .ptr (C.stage.s + 72)),
    ("%nxp2", .ptr (C.stage.s + 80)), ("%n2.i", .ptr (C.stage.s + 8)),
@@ -1190,20 +1193,24 @@ def walkStaticRegs {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) : List (String
    ("%xj.i", .ptr (G.next0 + 12)), ("%outn.i", .ptr (G.next0 + 20)),
    ("%nep", .int 64 (BitVec.ofNat 64 G.nep)),
    ("%c.i", .ptr C.stage.c), ("%z", .ptr C.stage.z),
-   ("%xp", .ptr G.xp), ("%nxp", .int 64 (BitVec.ofNat 64 G.nxp))]
+   ("%xp", .ptr G.xp), ("%nxp", .int 64 (BitVec.ofNat 64 G.nxp)),
+   ("%4", .int 64 (BitVec.ofNat 64 G.n)), ("%t352.i", .ptr C.stage.tok),
+   ("%e", .ptr C.stage.e)]
 
 /-- The names a run must avoid to keep both carriers.  `%inc.i` is here as well as
 the three per-iteration registers: its cell is `WalkInv.inc_reg`'s, keyed on `C.k`,
-and a run that binds it must be the header's own pass. -/
+and a run that binds it must be the header's own pass.  `%idxprom.i` is here for
+the same reason — its cell is `WalkInv.idx_reg`'s, also keyed on `C.k`. -/
 def walkCarriedNames : List String :=
-  "%inc.i" :: "%7" :: "%8" :: "%arrayidx10.i" :: walkStaticNames
+  "%inc.i" :: "%7" :: "%8" :: "%arrayidx10.i" :: "%idxprom.i" :: walkStaticNames
 
 /-- **A bind destination fresh from the register carriers.**  A block whose run
 binds none of these keeps `WalkRegs` (the static list), `WalkInv.inc_reg`
-(`%inc.i`, whose cell is keyed on `C.k`) and `WalkIter.regarr` (`%arrayidx10.i`,
-whose cell is keyed on the carried index too). -/
+(`%inc.i`, whose cell is keyed on `C.k`), `WalkInv.idx_reg` (`%idxprom.i`, keyed
+on it too) and `WalkIter.regarr` (`%arrayidx10.i`, whose cell is keyed on the
+carried index as well). -/
 abbrev walkFreshName (d : String) : Prop :=
-  d ∉ walkStaticNames ∧ d ≠ "%inc.i" ∧ d ≠ "%arrayidx10.i"
+  d ∉ walkStaticNames ∧ d ≠ "%inc.i" ∧ d ≠ "%arrayidx10.i" ∧ d ≠ "%idxprom.i"
 
 /-- The per-iteration registers a bind must avoid to keep `WalkIter`'s three
 clauses. -/
@@ -1350,6 +1357,7 @@ theorem preheaderRegs {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (env : Env)
   rw [walkStaticRegs] at hp
   simp only [List.mem_cons, List.not_mem_nil, or_false] at hp
   rcases hp with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
+    ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
     ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
     ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
     ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
@@ -1587,6 +1595,17 @@ structure WalkInv {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : P
   `C.k = %k.2.i`, against `walkBack_step`'s carry and `whileBody_step`'s
   `hkge : C.k < %k.2.i`. -/
   inc_reg : lookupName s.env "%inc.i" = some (.int 64 (BitVec.ofNat 64 (C.k + 1)))
+  /-- **The entry's index at the carried index.**  `%idxprom.i` is `%7`'s zero
+  extension (`while.body.i`'s second instruction), so its word is this entry's
+  position in the entry stream, `entryPos G C.k`.  Only the header binds it — every
+  other read of the name is a store of its value — so the clause is `inc_reg`'s
+  shape: produced by the header's own pass from the lane it just read (`reg7`),
+  preserved by every other block, and keyed on the carried index because the lane
+  is.  `WalkIter.regarr` carries the token's *address* `G.b + entryPos G C.k`, not
+  the index word, which is what makes this a clause beside it rather than a
+  consequence of it. -/
+  idx_reg : lookupName s.env "%idxprom.i" =
+    some (.int 64 (BitVec.ofNat 64 (entryPos G C.k)))
   /-- The index has not passed the stream. -/
   k_le : C.k ≤ G.nep
   /-- At most one record per entry consumed. -/
@@ -1704,11 +1723,12 @@ structure WalkInv {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : P
   bindings before its edge can be a step, and the invariant names them at the
   addresses the staging fixed (`WalkPtrs`). -/
   ptrs : WalkPtrs G C s.env
-  /-- **The static carrier.**  The twenty-nine registers `walkStaticRegs` names
+  /-- **The static carrier.**  The thirty-two registers `walkStaticRegs` names
   hold the values the staging fixes for them; the seed produces them and every
   dispatch block's run leaves them alone (`WalkRegs.cons`, `WalkRegs.cells_of`).
   `%nep`, `%c.i`, `%z`, `%xp` and `%nxp` are among them: the entry binds the five
-  and no block of the walk rebinds any. -/
+  and no block of the walk rebinds any, and so are `%4`, `%t352.i` and `%e`, the
+  three the last entry's merge and tails read. -/
   regs : WalkRegs G C s.env
   /-- **The per-iteration carrier.**  `%7`, `%8` and `%arrayidx10.i` are the lane,
   the document byte and the token's position address at the carried index; the
@@ -1947,7 +1967,9 @@ as the caller staged them, and the log's four fields as the staging fixed them
 The four parameters the string path's links read — the two staging records
 `%c.i` and `%z`, and `%xp` with `%nxp` — are the entry's, and no layer of the
 run rebinds them, so they are clauses here beside `WalkRegs`, whose list names
-them. -/
+them.  The last clause is the header's own zero extension: the seed's state is
+the header's *first pass*, so `%idxprom.i` already holds the first entry's
+position, which is `WalkInv.idx_reg`'s clause at index zero. -/
 def WalkSeedState {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State) : Prop :=
   s.pc = "NodeBlock21" ∧
     lookupName s.env "%k.0.i249" = some (.int 64 (BitVec.ofNat 64 0)) ∧
@@ -1967,7 +1989,8 @@ def WalkSeedState {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State) : P
     readBytes s.mem (S.z + 8) 8 = some (wordBytes 8 G.nev0) ∧
     readBytes s.mem (S.z + 16) 8 = some (wordBytes 8 G.evcap) ∧
     readBytes s.mem (S.z + 48) 8 = some (wordBytes 8 G.ndst0) ∧
-    readBytes s.mem (S.z + 56) 8 = some (wordBytes 8 G.dstcap)
+    readBytes s.mem (S.z + 56) 8 = some (wordBytes 8 G.dstcap) ∧
+    lookupName s.env "%idxprom.i" = some (.int 64 (BitVec.ofNat 64 (entryPos G 0)))
 
 /-- **The cap at the seed is the allowance itself**, so the clause that the outer
 arm's strictness reads is satisfied by construction rather than by a register
@@ -1989,11 +2012,12 @@ facts and nothing else. -/
 theorem walkSeed_invariant {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) {s : State}
     (h : WalkSeedState G S s) : WalkInv G (walkSeed G S) s := by
   obtain ⟨hpc, hk, hsp, hinc0, hptrs, hregs, hiter, -, -, -, -, hhash, hown, hge, hframe, hlen,
-    hcap, halen, hacap⟩ := h
+    hcap, halen, hacap, hidx0⟩ := h
   refine
     { pc_eq := hpc
       blockIndex := hk
       inc_reg := hinc0
+      idx_reg := hidx0
       k_le := Nat.zero_le _
       events_le := Nat.zero_le _
       evlen_eq := by simp [walkSeed]
@@ -2239,6 +2263,10 @@ theorem forInc_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
           dsimp only [e, State.bind]
           rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
           exact hInv.inc_reg
+        idx_reg := by
+          dsimp only [e, State.bind]
+          rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
+          exact hInv.idx_reg
         blockLocal := ?_ }
     dsimp only [WalkLocal, C']
     rw [if_neg (by decide), if_pos rfl]
@@ -2600,7 +2628,7 @@ theorem scan_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
           dsimp only [e, State.bind]
           exact hInv.iter.bind_pair (a := inc) (b := test)
             (va := .int 64 (BitVec.ofNat 64 (i + 1))) (vb := .int 1 (0 : BitVec 1))
-            ⟨hincI7, hincI8, hincS.2.2⟩ ⟨htestI7, htestI8, htestS.2.2⟩
+            ⟨hincI7, hincI8, hincS.2.2.1⟩ ⟨htestI7, htestI8, htestS.2.2.1⟩
         log_hash := by dsimp only [e]; exact hInv.log_hash
         log_len := hInv.log_len
         log_cap := hInv.log_cap
@@ -2613,6 +2641,11 @@ theorem scan_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
           dsimp only [e, State.bind]
           rw [lookupName_cons_ne _ _ htestS.2.1, lookupName_cons_ne _ _ hincS.2.1]
           exact hInv.inc_reg
+        idx_reg := by
+          dsimp only [e, State.bind]
+          rw [lookupName_cons_ne (k := test) (n := "%idxprom.i") _ _ htestS.2.2.2,
+            lookupName_cons_ne (k := inc) (n := "%idxprom.i") _ _ hincS.2.2.2]
+          exact hInv.idx_reg
         blockLocal := ?_ }
     · rw [hk]; exact hInv.blockIndex
     · dsimp only [e]; exact hInv.frame
@@ -3427,6 +3460,11 @@ theorem walkBack_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarr
           rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
             lookupName_cons_ne _ _ (by decide)]
           exact hInv.inc_reg
+        idx_reg := by
+          dsimp only [e, State.bind]
+          rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+            lookupName_cons_ne _ _ (by decide)]
+          exact hInv.idx_reg
         blockLocal := by simp [WalkLocal] }
     dsimp only [e, State.bind]
     rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
@@ -4822,6 +4860,11 @@ theorem whileBody_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
           rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
             lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
             lookupName_cons_ne _ _ (by decide), lookupName_cons_self]
+        idx_reg := by
+          have hpos : entryPos G k = q := by simp [entryPos, hqmem]
+          dsimp only [e, stateAt, whileBodyOut, cells]
+          rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+            lookupName_cons_self, hpos]
         blockLocal := ?_ }
     · dsimp only [e, stateAt, whileBodyOut, cells]
       rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
@@ -5421,6 +5464,19 @@ theorem ifEnd24_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
           dsimp only [e, stateAt]
           exact walkLookup_cells_ne _ "%inc.i"
             (walkLookup_cells_ne s.env "%inc.i" hInv.inc_reg _
+              (by
+                intro c hc
+                simp only [ifEnd24HeadCells, List.mem_cons, List.not_mem_nil, or_false] at hc
+                rcases hc with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> simp))
+            _
+            (by
+              intro c hc
+              simp only [ifEnd24TailCells, List.mem_cons, List.not_mem_nil, or_false] at hc
+              rcases hc with rfl | rfl <;> simp)
+        idx_reg := by
+          dsimp only [e, stateAt]
+          exact walkLookup_cells_ne _ "%idxprom.i"
+            (walkLookup_cells_ne s.env "%idxprom.i" hInv.idx_reg _
               (by
                 intro c hc
                 simp only [ifEnd24HeadCells, List.mem_cons, List.not_mem_nil, or_false] at hc
@@ -6305,6 +6361,10 @@ theorem WalkLink.icmpBr {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
           dsimp only [s', stateAt]
           rw [lookupName_cons_ne _ _ hS.2.1]
           exact hInv.inc_reg
+        idx_reg := by
+          dsimp only [s', stateAt]
+          rw [lookupName_cons_ne (k := d) (n := "%idxprom.i") _ _ hS.2.2.2]
+          exact hInv.idx_reg
         blockLocal := ?_ }
     · dsimp only [s', stateAt]
       rw [lookupName_cons_ne _ _ hk]
@@ -6319,7 +6379,7 @@ theorem WalkLink.icmpBr {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
     · dsimp only [s', stateAt]
       exact hInv.regs.bind hS.1
     · dsimp only [s', stateAt]
-      exact hInv.iter.bind (v := .int 1 (evalICmp p x y)) ⟨hI7, hI8, hS.2.2⟩
+      exact hInv.iter.bind (v := .int 1 (evalICmp p x y)) ⟨hI7, hI8, hS.2.2.1⟩
     · dsimp only [s']
       by_cases ht : evalICmp p x y = 1
       · rw [ite_eq_left ht]; exact hl
@@ -6535,6 +6595,10 @@ theorem WalkLink.refusalStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
           dsimp only [s', stateAt, m']
           rw [lookupName_cons_ne _ _ hS.2.1]
           exact hInv.inc_reg
+        idx_reg := by
+          dsimp only [s', stateAt, m']
+          rw [lookupName_cons_ne (k := d) (n := "%idxprom.i") _ _ hS.2.2.2]
+          exact hInv.idx_reg
         blockLocal := hloc }
     · dsimp only [s', stateAt, m']
       rw [lookupName_cons_ne _ _ hd]
@@ -6563,7 +6627,7 @@ theorem WalkLink.refusalStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
     · dsimp only [s', stateAt, m']
       exact hInv.regs.bind hS.1
     · dsimp only [s', stateAt, m']
-      exact hInv.iter.bind (v := .ptr (C.stage.e + 8)) ⟨hI7, hI8, hS.2.2⟩
+      exact hInv.iter.bind (v := .ptr (C.stage.e + 8)) ⟨hI7, hI8, hS.2.2.1⟩
     · dsimp only [s', stateAt, m']
       rw [walkReadBytes_log_of_eoff_write (e := C.stage.e) (z := C.stage.z) (off := 32)
         (j := j) (N := 4) (e_z_sep hInv) (by decide)]
@@ -7070,6 +7134,7 @@ theorem WalkLink.condBr {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
         next_ge := hInv.next_ge
         frame := hInv.frame
         inc_reg := hInv.inc_reg
+        idx_reg := hInv.idx_reg
         blockLocal := ?_ }
     · dsimp only [s']
       by_cases ht : bit = 1
@@ -7147,6 +7212,7 @@ theorem WalkLink.br {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
         next_ge := hInv.next_ge
         frame := hInv.frame
         inc_reg := hInv.inc_reg
+        idx_reg := hInv.idx_reg
         blockLocal := hloc }
   · rfl
 

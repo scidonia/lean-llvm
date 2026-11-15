@@ -285,6 +285,7 @@ theorem WalkLink.store8Stack {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
         next_ge := by dsimp only [s']; exact hInv.next_ge
         frame := ?_
         inc_reg := hInv.inc_reg
+        idx_reg := hInv.idx_reg
         blockLocal := ?_ }
     · dsimp only [s', stateAt, m']
       rw [readBytes_ev_of_stack_write (base := C.stage.cst)
@@ -580,6 +581,12 @@ theorem WalkLink.hashStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
           exact walkLookup_cells_ne s.env "%inc.i" hInv.inc_reg cs
             (fun c hc heq => (hne c.1 (hmem c hc)).2.2.2.2.2.2.2.2
               (by rw [heq]; simp [walkCarriedNames]))
+        idx_reg := by
+          rw [henv']
+          dsimp only [out]
+          exact walkLookup_cells_ne s.env "%idxprom.i" hInv.idx_reg cs
+            (fun c hc heq => (hne c.1 (hmem c hc)).2.2.2.2.2.2.2.2
+              (by rw [heq]; simp [walkCarriedNames]))
         blockLocal := ?_ }
     · rw [henv']
       dsimp only [out]
@@ -605,7 +612,7 @@ theorem WalkLink.hashStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
       dsimp only [out]
       exact hInv.regs.cells_of cs
         (fun n hn hin => (hne n (mem_names_of_cells hmem n hn)).2.2.2.2.2.2.2.2
-          (by simp only [walkCarriedNames, List.mem_cons]; exact Or.inr (Or.inr (Or.inr (Or.inr hin)))))
+          (by simp only [walkCarriedNames, List.mem_cons]; exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr hin))))))
     · rw [henv']
       dsimp only [out]
       exact hInv.iter.cells_of cs
@@ -923,6 +930,12 @@ theorem WalkLink.outReserveStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
           exact walkLookup_cells_ne s.env "%inc.i" hInv.inc_reg cs
             (fun c hc heq => (hne c.1 (hmem c hc)).2.2.2.2.2.2.2.2
               (by rw [heq]; simp [walkCarriedNames]))
+        idx_reg := by
+          rw [henv']
+          dsimp only [out]
+          exact walkLookup_cells_ne s.env "%idxprom.i" hInv.idx_reg cs
+            (fun c hc heq => (hne c.1 (hmem c hc)).2.2.2.2.2.2.2.2
+              (by rw [heq]; simp [walkCarriedNames]))
         blockLocal := ?_ }
     · rw [henv']
       dsimp only [out]
@@ -970,7 +983,7 @@ theorem WalkLink.outReserveStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
       dsimp only [out]
       exact hInv.regs.cells_of cs
         (fun n hn hin => (hne n (mem_names_of_cells hmem n hn)).2.2.2.2.2.2.2.2
-          (by simp only [walkCarriedNames, List.mem_cons]; exact Or.inr (Or.inr (Or.inr (Or.inr hin)))))
+          (by simp only [walkCarriedNames, List.mem_cons]; exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr hin))))))
     · rw [henv']
       dsimp only [out]
       exact hInv.iter.cells_of cs
@@ -1265,6 +1278,13 @@ theorem WalkLink.if_else285_i {calls : Calls} {m0 : Mem}
           (by intro c hc
               simp only [cs, List.mem_cons, List.not_mem_nil, or_false] at hc
               rcases hc with rfl | rfl <;> simp)
+      idx_reg := by
+        rw [henv']
+        dsimp only [out]
+        exact walkLookup_cells_ne s.env "%idxprom.i" hInv.idx_reg cs
+          (by intro c hc
+              simp only [cs, List.mem_cons, List.not_mem_nil, or_false] at hc
+              rcases hc with rfl | rfl <;> simp)
       blockLocal := by simp [WalkLocal] }
   · rw [henv']
     dsimp only [out]
@@ -1530,6 +1550,13 @@ theorem WalkLink.if_then330_i {calls : Calls} {m0 : Mem}
           rw [henv']
           dsimp only [out]
           exact walkLookup_cells_ne s.env "%inc.i" hInv.inc_reg cs
+            (by intro c hc
+                simp only [cs, List.mem_cons, List.not_mem_nil, or_false] at hc
+                rcases hc with rfl | rfl | rfl <;> simp)
+        idx_reg := by
+          rw [henv']
+          dsimp only [out]
+          exact walkLookup_cells_ne s.env "%idxprom.i" hInv.idx_reg cs
             (by intro c hc
                 simp only [cs, List.mem_cons, List.not_mem_nil, or_false] at hc
                 rcases hc with rfl | rfl | rfl <;> simp)
@@ -1806,6 +1833,13 @@ theorem WalkLink.if_end207_i {calls : Calls} {m0 : Mem}
           rw [henv']
           dsimp only [out]
           exact walkLookup_cells_ne s.env "%inc.i" hInv.inc_reg cs
+            (by intro c hc
+                simp only [cs, List.mem_cons, List.not_mem_nil, or_false] at hc
+                rcases hc with rfl | rfl | rfl | rfl | rfl <;> simp)
+        idx_reg := by
+          rw [henv']
+          dsimp only [out]
+          exact walkLookup_cells_ne s.env "%idxprom.i" hInv.idx_reg cs
             (by intro c hc
                 simp only [cs, List.mem_cons, List.not_mem_nil, or_false] at hc
                 rcases hc with rfl | rfl | rfl | rfl | rfl <;> simp)

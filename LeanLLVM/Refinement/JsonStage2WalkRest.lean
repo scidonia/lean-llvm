@@ -156,8 +156,8 @@ namespace WalkScope
 
 /-! ### The carried names a pure run leaves alone
 
-`WalkPtrs` names six registers, and `WalkInv` two more (`%k.0.i249`,
-`%sp.i.0248`).  A block that binds none of them keeps all of them by
+`WalkPtrs` names six registers, and `WalkInv` three more (`%k.0.i249`,
+`%sp.i.0248`, `%idxprom.i`).  A block that binds none of them keeps all of them by
 `denoteCode_lookupName`, so its link needs no per-block environment reasoning:
 the freshness is one `decide` over the block's own instruction list. -/
 def walkCarried (is : List Instr) : Prop :=
@@ -167,7 +167,8 @@ def walkCarried (is : List Instr) : Prop :=
     i.dst? ≠ some "%hash1.i.i" ∧
     (∀ n ∈ walkStaticNames, i.dst? ≠ some n) ∧
     i.dst? ≠ some "%7" ∧ i.dst? ≠ some "%8" ∧
-    i.dst? ≠ some "%inc.i" ∧ i.dst? ≠ some "%arrayidx10.i"
+    i.dst? ≠ some "%inc.i" ∧ i.dst? ≠ some "%arrayidx10.i" ∧
+    i.dst? ≠ some "%idxprom.i"
 
 /-- **A run that binds none of the carried names keeps the static carrier.**  One
 `denoteCode_lookupName` per name, and no memory reasoning. -/
@@ -195,7 +196,7 @@ theorem WalkIter.of_run {calls : Calls} {m0 : Mem} {G : WalkGeom m0} {k : Nat}
       (fun i hi => (hfree i hi).2.2.2.2.2.2.2.2.2.2.1) s s₁ hden]
     exact h.reg8
   · rw [denoteCode_lookupName calls is "%arrayidx10.i"
-      (fun i hi => (hfree i hi).2.2.2.2.2.2.2.2.2.2.2.2) s s₁ hden]
+      (fun i hi => (hfree i hi).2.2.2.2.2.2.2.2.2.2.2.2.1) s s₁ hden]
     exact h.regarr
 
 theorem WalkPtrs.of_run {calls : Calls} {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
@@ -277,6 +278,11 @@ theorem WalkLink.pureCore {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : Walk
           rw [denoteCode_lookupName calls B.instrs "%inc.i"
             (fun i hi => (hfree i hi).2.2.2.2.2.2.2.2.2.2.2.1) s s₁ hden]
           exact hInv.inc_reg
+        idx_reg := by
+          dsimp only [s']
+          rw [denoteCode_lookupName calls B.instrs "%idxprom.i"
+            (fun i hi => (hfree i hi).2.2.2.2.2.2.2.2.2.2.2.2.2) s s₁ hden]
+          exact hInv.idx_reg
         blockLocal := ?_ }
     · rw [denoteCode_lookupName calls B.instrs "%k.0.i249"
         (fun i hi => (hfree i hi).1) s s₁ hden]
@@ -363,6 +369,11 @@ theorem WalkLink.pureJumpCore {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : 
           rw [denoteCode_lookupName calls B.instrs "%inc.i"
             (fun i hi => (hfree i hi).2.2.2.2.2.2.2.2.2.2.2.1) s s₁ hden]
           exact hInv.inc_reg
+        idx_reg := by
+          dsimp only [s']
+          rw [denoteCode_lookupName calls B.instrs "%idxprom.i"
+            (fun i hi => (hfree i hi).2.2.2.2.2.2.2.2.2.2.2.2.2) s s₁ hden]
+          exact hInv.idx_reg
         blockLocal := hloc }
     · rw [denoteCode_lookupName calls B.instrs "%k.0.i249"
         (fun i hi => (hfree i hi).1) s s₁ hden]
@@ -569,7 +580,8 @@ def walkCarriedNoK11 (is : List Instr) : Prop :=
   ∀ i ∈ is, i.dst? ≠ some "%k.0.i249" ∧ i.dst? ≠ some "%sp.i.0248" ∧
     i.dst? ≠ some "%3" ∧ i.dst? ≠ some "%5" ∧
     i.dst? ≠ some "%ctype.i" ∧ i.dst? ≠ some "%cst.i" ∧
-    i.dst? ≠ some "%hash1.i.i" ∧ i.dst? ≠ some "%inc.i"
+    i.dst? ≠ some "%hash1.i.i" ∧ i.dst? ≠ some "%inc.i" ∧
+    i.dst? ≠ some "%idxprom.i"
 
 theorem WalkPtrs.of_run_noK11 {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
     {C : WalkCarry G} {s s₁ : State} {is : List Instr} (h : WalkPtrs G C s.env)
@@ -643,8 +655,13 @@ theorem WalkLink.pureJumpK11 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : W
         inc_reg := by
           dsimp only [s']
           rw [denoteCode_lookupName calls B.instrs "%inc.i"
-            (fun i hi => (hfree i hi).2.2.2.2.2.2.2) s s₁ hden]
+            (fun i hi => (hfree i hi).2.2.2.2.2.2.2.1) s s₁ hden]
           exact hInv.inc_reg
+        idx_reg := by
+          dsimp only [s']
+          rw [denoteCode_lookupName calls B.instrs "%idxprom.i"
+            (fun i hi => (hfree i hi).2.2.2.2.2.2.2.2) s s₁ hden]
+          exact hInv.idx_reg
         blockLocal := hloc }
     · rw [denoteCode_lookupName calls B.instrs "%k.0.i249"
         (fun i hi => (hfree i hi).1) s s₁ hden]

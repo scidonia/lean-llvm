@@ -247,7 +247,7 @@ theorem scan_step_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
           dsimp only [e, scanLatchAt, scanLatchOut, cells, stateAt, State.bind]
           exact hInv.iter.bind_pair (a := inc) (b := test)
             (va := .int 64 (BitVec.ofNat 64 (i + 1))) (vb := .int 1 (0 : BitVec 1))
-            ⟨hincI7, hincI8, hincS.2.2⟩ ⟨htestI7, htestI8, htestS.2.2⟩
+            ⟨hincI7, hincI8, hincS.2.2.1⟩ ⟨htestI7, htestI8, htestS.2.2.1⟩
         log_hash := by dsimp only [e, scanLatchAt, scanLatchOut, cells, stateAt, State.bind]; exact hInv.log_hash
         log_len := hInv.log_len
         log_cap := hInv.log_cap
@@ -260,6 +260,11 @@ theorem scan_step_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
           dsimp only [e, scanLatchAt, scanLatchOut, cells, stateAt, State.bind]
           rw [lookupName_cons_ne _ _ htestS.2.1, lookupName_cons_ne _ _ hincS.2.1]
           exact hInv.inc_reg
+        idx_reg := by
+          dsimp only [e, scanLatchAt, scanLatchOut, cells, stateAt, State.bind]
+          rw [lookupName_cons_ne (k := test) (n := "%idxprom.i") _ _ htestS.2.2.2,
+            lookupName_cons_ne (k := inc) (n := "%idxprom.i") _ _ hincS.2.2.2]
+          exact hInv.idx_reg
         blockLocal := ?_ }
     · rw [hk]; exact hInv.blockIndex
     · dsimp only [e, scanLatchAt, scanLatchOut, cells, stateAt, State.bind]; exact hInv.frame
@@ -366,7 +371,7 @@ theorem scanStepAt_exit {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
         exact hInv.iter.bind_pair (a := inc) (b := test)
           (va := .int 64 (BitVec.ofNat 64 (i + 1)))
           (vb := .int 1 (evalICmp .eq (BitVec.ofNat 64 (i + 1)) (BitVec.ofNat 64 c)))
-          ⟨hincI7, hincI8, hincS.2.2⟩ ⟨htestI7, htestI8, htestS.2.2⟩
+          ⟨hincI7, hincI8, hincS.2.2.1⟩ ⟨htestI7, htestI8, htestS.2.2.1⟩
       log_hash := by dsimp only [s']; exact hInv.log_hash
       log_len := hInv.log_len
       log_cap := hInv.log_cap
@@ -379,6 +384,11 @@ theorem scanStepAt_exit {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
         dsimp only [s', scanLatchOut, cells, stateAt, State.bind]
         rw [lookupName_cons_ne _ _ htestS.2.1, lookupName_cons_ne _ _ hincS.2.1]
         exact hInv.inc_reg
+      idx_reg := by
+        dsimp only [s', scanLatchOut, cells, stateAt, State.bind]
+        rw [lookupName_cons_ne (k := test) (n := "%idxprom.i") _ _ htestS.2.2.2,
+          lookupName_cons_ne (k := inc) (n := "%idxprom.i") _ _ hincS.2.2.2]
+        exact hInv.idx_reg
       blockLocal := ?_ }
   · rw [hk]; exact hInv.blockIndex
   · dsimp only [s']; exact hInv.frame

@@ -218,6 +218,7 @@ theorem WalkInv.reblock {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : Stat
   next_ge := h.next_ge
   frame := h.frame
   inc_reg := h.inc_reg
+  idx_reg := h.idx_reg
   blockLocal := hloc
 
 /-- **A block change is free at a non-scan block**: `WalkLocal` there is `True`, so the
@@ -274,7 +275,7 @@ theorem WalkInv.bind {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
   stBytes := h.stBytes
   ptrs := h.ptrs.bind h3 h5 hk11 hct hcs hhash
   regs := h.regs.bind hst.1
-  iter := h.iter.bind ⟨h7, h8, hst.2.2⟩
+  iter := h.iter.bind ⟨h7, h8, hst.2.2.1⟩
   log_hash := h.log_hash
   log_len := h.log_len
   log_cap := h.log_cap
@@ -286,6 +287,9 @@ theorem WalkInv.bind {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
   inc_reg := by
     simp only [State.bind, lookupName_cons_ne _ _ hst.2.1]
     exact h.inc_reg
+  idx_reg := by
+    simp only [State.bind, lookupName_cons_ne _ _ hst.2.2.2]
+    exact h.idx_reg
   blockLocal := hloc
 
 /-- **The invariant transports across a cell list and a block change at once.**  The state
@@ -340,7 +344,7 @@ theorem WalkInv.bindAt {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State
   regs := h.regs.cells_of cs (fun n hn => by
     have hc : n ∉ walkCarriedNames := hfree n hn
     simp only [walkCarriedNames, List.mem_cons, not_or] at hc
-    exact hc.2.2.2.2)
+    exact hc.2.2.2.2.2)
   iter := by
     have hgo : ∀ (l : List (String × Value)),
         (∀ n ∈ l.map (·.1), n ∉ walkCarriedNames) → WalkIter G C.k (cells l s.env) := by
@@ -358,6 +362,10 @@ theorem WalkInv.bindAt {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State
     rw [lookupName_cells_of_notin cs "%inc.i" s.env
       (fun hin => hfree "%inc.i" hin (by simp [walkCarriedNames]))]
     exact h.inc_reg
+  idx_reg := by
+    rw [lookupName_cells_of_notin cs "%idxprom.i" s.env
+      (fun hin => hfree "%idxprom.i" hin (by simp [walkCarriedNames]))]
+    exact h.idx_reg
   log_hash := h.log_hash
   log_len := h.log_len
   log_cap := h.log_cap

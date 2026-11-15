@@ -248,12 +248,16 @@ theorem walkFinishInvAt {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : Stat
   regs := h.regs.cells_of cs (fun n hn => by
     have hc := hfree n hn
     simp only [walkCarriedNames, List.mem_cons, not_or] at hc
-    exact hc.2.2.2.2)
+    exact hc.2.2.2.2.2)
   iter := h.iter.cells_of cs hfree
   inc_reg := by
     rw [lookupName_cells_of_notin cs "%inc.i" s.env
       (fun hin => hfree "%inc.i" hin (by simp [walkCarriedNames]))]
     exact h.inc_reg
+  idx_reg := by
+    rw [lookupName_cells_of_notin cs "%idxprom.i" s.env
+      (fun hin => hfree "%idxprom.i" hin (by simp [walkCarriedNames]))]
+    exact h.idx_reg
   log_hash := hlogHash
   log_len := hlogLen
   log_cap := hlogCap

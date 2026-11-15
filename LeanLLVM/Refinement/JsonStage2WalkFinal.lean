@@ -353,6 +353,14 @@ theorem WalkLink.if_then425_i_emit {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
             simp only [walkIfThen425, List.mem_cons, List.not_mem_nil, or_false] at hi
             rcases hi with rfl | rfl <;> decide) s s₁ hden]
         exact hInv.inc_reg
+      idx_reg := by
+        rw [show s'.env = s₁.env from rfl]
+        rw [denoteCode_lookupName (stage2Calls stage2SubCalls) walkIfThen425.instrs
+          "%idxprom.i" (by
+            intro i hi
+            simp only [walkIfThen425, List.mem_cons, List.not_mem_nil, or_false] at hi
+            rcases hi with rfl | rfl <;> decide) s s₁ hden]
+        exact hInv.idx_reg
       blockLocal := by simp [WalkLocal] }
   · rw [show s'.env = s₁.env from rfl]
     rw [denoteCode_lookupName (stage2Calls stage2SubCalls) walkIfThen425.instrs
@@ -702,6 +710,14 @@ theorem WalkLink.if_then425_i_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
             simp only [walkIfThen425, List.mem_cons, List.not_mem_nil, or_false] at hi
             rcases hi with rfl | rfl <;> decide) s s₁ hden]
         exact hInv.inc_reg
+      idx_reg := by
+        rw [show s'.env = s₁.env from rfl]
+        rw [denoteCode_lookupName (stage2Calls stage2SubCalls) walkIfThen425.instrs
+          "%idxprom.i" (by
+            intro i hi
+            simp only [walkIfThen425, List.mem_cons, List.not_mem_nil, or_false] at hi
+            rcases hi with rfl | rfl <;> decide) s s₁ hden]
+        exact hInv.idx_reg
       blockLocal := by simp [WalkLocal] }
   · rw [show s'.env = s₁.env from rfl]
     rw [denoteCode_lookupName (stage2Calls stage2SubCalls) walkIfThen425.instrs
@@ -1164,6 +1180,15 @@ theorem WalkLink.if_then109_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
               List.not_mem_nil, or_false] at hi
             rcases hi with rfl | rfl | rfl | rfl <;> decide) s s₁ hden]
         exact hInv.inc_reg
+      idx_reg := by
+        rw [show s'.env = s₁.env from rfl]
+        rw [denoteCode_lookupName (stage2Calls stage2SubCalls) walkIfThen109.instrs
+          "%idxprom.i" (by
+            intro i hi
+            simp only [walkIfThen109, walkIfThen109Incoming, List.mem_cons,
+              List.not_mem_nil, or_false] at hi
+            rcases hi with rfl | rfl | rfl | rfl <;> decide) s s₁ hden]
+        exact hInv.idx_reg
       blockLocal := by simp [WalkLocal] }
   · rw [show s'.env = s₁.env from rfl]
     rw [denoteCode_lookupName (stage2Calls stage2SubCalls) walkIfThen109.instrs
@@ -1485,6 +1510,14 @@ theorem WalkLink.if_then19_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
             simp only [walkIfThen19, List.mem_cons, List.not_mem_nil, or_false] at hi
             rcases hi with rfl | rfl | rfl | rfl | rfl <;> decide) s s₁ hden]
         exact hInv.inc_reg
+      idx_reg := by
+        rw [show s'.env = s₁.env from rfl]
+        rw [denoteCode_lookupName (stage2Calls stage2SubCalls) walkIfThen19.instrs
+          "%idxprom.i" (by
+            intro i hi
+            simp only [walkIfThen19, List.mem_cons, List.not_mem_nil, or_false] at hi
+            rcases hi with rfl | rfl | rfl | rfl | rfl <;> decide) s s₁ hden]
+        exact hInv.idx_reg
       blockLocal := by
         by_cases hb : bit = 1
         · rw [ite_eq_left hb]; simp [WalkLocal]

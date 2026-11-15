@@ -1431,6 +1431,8 @@ theorem walkEntry_inv {mem : Mem} (G : WalkGeom mem) {C : WalkCarry G} {s : Stat
     (hk : lookupName s'.env "%k.0.i249" = some (.int 64 (BitVec.ofNat 64 C.k)))
     (hsp : lookupName s'.env "%sp.i.0248" = some (.int 32 (BitVec.ofNat 32 C.sp)))
     (hinc : lookupName s'.env "%inc.i" = some (.int 64 (BitVec.ofNat 64 (C.k + 1))))
+    (hidx : lookupName s'.env "%idxprom.i" =
+      some (.int 64 (BitVec.ofNat 64 (entryPos G C.k))))
     (hEv : readBytes s'.mem (G.ev + G.nev0)
         (C.events.map EventRecord.encodedBytes).flatten.length =
       some (C.events.map EventRecord.encodedBytes).flatten)
@@ -1452,6 +1454,7 @@ theorem walkEntry_inv {mem : Mem} (G : WalkGeom mem) {C : WalkCarry G} {s : Stat
   pc_eq := hpc
   blockIndex := hk
   inc_reg := hinc
+  idx_reg := hidx
   k_le := hInv.k_le
   events_le := hInv.events_le
   evlen_eq := hInv.evlen_eq
@@ -1614,6 +1617,8 @@ theorem walkInvSeat {m0 : Mem} (G : WalkGeom m0) (stage : WalkStage G) {s : Stat
     (hiter : WalkIter G 0 s.env)
     (hsp : lookupName s.env "%sp.i.0248" = some (.int 32 (BitVec.ofNat 32 0)))
     (hinc : lookupName s.env "%inc.i" = some (.int 64 (BitVec.ofNat 64 (0 + 1))))
+    (hidx : lookupName s.env "%idxprom.i" =
+      some (.int 64 (BitVec.ofNat 64 (entryPos G 0))))
     (hlogHash : readBytes s.mem (stage.z + 32) 4 = some (natToBytes 0 4))
     (hlogLen : readBytes s.mem (stage.z + 8) 8 = some (wordBytes 8 G.nev0))
     (hlogCap : readBytes s.mem (stage.z + 16) 8 = some (wordBytes 8 G.evcap))
@@ -1635,6 +1640,7 @@ theorem walkInvSeat {m0 : Mem} (G : WalkGeom m0) (stage : WalkStage G) {s : Stat
     { pc_eq := hpc
       blockIndex := hk
       inc_reg := hinc
+      idx_reg := hidx
       k_le := hk_le
       events_le := hev_le
       evlen_eq := by simp [walkCarryZero]
@@ -1686,10 +1692,11 @@ theorem walkEntryInv_at_regs {mem : Mem} (G : WalkGeom mem) {C : WalkCarry G} {s
   · rw [hk.1]; exact hInv.blockIndex
   · rw [hk.2]; exact hInv.depth_reg
 
-/-- **The successor's static registers.**  `walkStaticRegs`' twenty-nine pairs split by the
-classification rule: twenty-one are cells of the entry's own layers with exactly the values
-the list names, and eight are bound by no layer — the preheader's four and the four entry
-parameters `%c.i`, `%z`, `%xp` and `%nxp` — so they pass through to the base environment.
+/-- **The successor's static registers.**  `walkStaticRegs`' thirty-two pairs split by the
+classification rule: twenty-two are cells of the entry's own layers with exactly the values
+the list names, and ten are bound by no layer — the preheader's four, the four entry
+parameters `%c.i`, `%z`, `%xp` and `%nxp`, and the two staged records `%t352.i` and `%e` —
+so they pass through to the base environment.
 
 The values name the *stage's* addresses, while the layers are built from the entry's
 parameters, so the lemma takes the identifications as premises — at the seating they hold by
@@ -1699,12 +1706,14 @@ consumer holds.** -/
 theorem walkEntryEnv_regs {m0 : Mem} (G : WalkGeom m0) (stage : WalkStage G) (env : Env)
     (n b ep nep xp nxp dst v1 v2 ev sAddr zAddr cAddr c : Nat)
     (hs : sAddr = stage.s) (hz : zAddr = stage.z) (hc : cAddr = stage.c)
-    (hcn : c = G.next0) (hb : b = G.b) (hep : ep = G.ep)
+    (hcn : c = G.next0) (hb : b = G.b) (hep : ep = G.ep) (hn4 : n = G.n)
     (hnep : lookupName env "%nep" = some (.int 64 (BitVec.ofNat 64 G.nep)))
     (hcreg : lookupName env "%c.i" = some (.ptr stage.c))
     (hzreg : lookupName env "%z" = some (.ptr stage.z))
     (hxp : lookupName env "%xp" = some (.ptr G.xp))
     (hnxp : lookupName env "%nxp" = some (.int 64 (BitVec.ofNat 64 G.nxp)))
+    (htok : lookupName env "%t352.i" = some (.ptr stage.tok))
+    (he : lookupName env "%e" = some (.ptr stage.e))
     (hbase : lookupName env "%h1.i.i.i51" = some (.ptr (stage.z + 24)) ∧
       lookupName env "%gap.i" = some (.ptr (stage.tok + 20)) ∧
       lookupName env "%end.i" = some (.ptr (stage.tok + 8)) ∧
@@ -1713,10 +1722,10 @@ theorem walkEntryEnv_regs {m0 : Mem} (G : WalkGeom m0) (stage : WalkStage G) (en
       (walkEntryEnv4 (walkEntryEnv3 (walkEntryEnv2 (walkEntryEnv1 env c n)
         sAddr zAddr ep xp nxp dst v1 v2 ev) b n ep sAddr cAddr) b nep) := by
   obtain ⟨hb1, hb2, hb3, hb4⟩ := hbase
-  subst hs hz hc hcn hb hep
+  subst hs hz hc hcn hb hep hn4
   simp [WalkRegs, walkStaticRegs, walkCarryZero, walkEntryEnv4, walkEntryEnv3,
     walkEntryEnv2, walkEntryEnv1, cells, lookupName_cons_ne, woff, hb1, hb2, hb3, hb4, hnep,
-    hcreg, hzreg, hxp, hnxp]
+    hcreg, hzreg, hxp, hnxp, htok, he]
 
 /-- **The successor's per-iteration carrier.**  `%7`, `%8` and `%arrayidx10.i` are
 bound by no entry layer, so the lane, the byte and the position address the
@@ -1961,6 +1970,8 @@ theorem walkEntry_inv_at {m0 : Mem} (G : WalkGeom m0) {C : WalkCarry G} {s : Sta
     (hk : lookupName s'.env "%k.0.i249" = some (.int 64 (BitVec.ofNat 64 C.k)))
     (hsp : lookupName s'.env "%sp.i.0248" = some (.int 32 (BitVec.ofNat 32 C.sp)))
     (hinc : lookupName s'.env "%inc.i" = some (.int 64 (BitVec.ofNat 64 (C.k + 1))))
+    (hidx : lookupName s'.env "%idxprom.i" =
+      some (.int 64 (BitVec.ofNat 64 (entryPos G C.k))))
     (hptr : WalkPtrs G C s'.env) (hreg : WalkRegs G C s'.env)
     (hiter : WalkIter G C.k s'.env)
     (hsepTy : ∀ i, i < C.wlen → ∀ q ∈ R,
@@ -1995,8 +2006,8 @@ theorem walkEntry_inv_at {m0 : Mem} (G : WalkGeom m0) {C : WalkCarry G} {s : Sta
       some (C.events.map EventRecord.encodedBytes).flatten := by
     rw [hmem, readBytes_frame hm hsepEv]
     exact hInv.evBytes
-  refine walkEntry_inv (G := G) (C := C) (s := s) hInv hpc hk hsp hinc hEv hTy hSt hptr hreg
-    hiter ?_ ?_ ?_ ?_ ?_ hown hnextGE hframe hlocal
+  refine walkEntry_inv (G := G) (C := C) (s := s) hInv hpc hk hsp hinc hidx hEv hTy hSt hptr
+    hreg hiter ?_ ?_ ?_ ?_ ?_ hown hnextGE hframe hlocal
   · rw [hmem, readBytes_frame hm hsepH]
     exact hInv.log_hash
   · rw [hmem, readBytes_frame hm hsepL]

@@ -670,6 +670,14 @@ theorem walkSeedFinalEnv_inc {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (env
       some (.int 64 (BitVec.ofNat 64 (0 + 1))) := by
   walk_final_lk
 
+/-- **The seed's `%idxprom.i`.**  The header's second instruction zero-extends the
+lane it just loaded, so the register holds the first entry's position. -/
+theorem walkSeedFinalEnv_idx {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (env : Env)
+    (s : State) (q : Nat) (bt : UInt8) :
+    lookupName (walkSeedFinalEnv G S env s q bt) "%idxprom.i" =
+      some (.int 64 (BitVec.ofNat 64 q)) := by
+  walk_final_lk
+
 theorem walkSeedFinalEnv_ptrs {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (env : Env)
     (s : State) (q : Nat) (bt : UInt8)
     (hct : lookupName env "%ctype.i" = some (.ptr S.ctype))
@@ -695,7 +703,9 @@ theorem walkSeedFinalEnv_regs {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (en
     (hc : lookupName env "%c.i" = some (.ptr S.c))
     (hz : lookupName env "%z" = some (.ptr S.z))
     (hxp : lookupName env "%xp" = some (.ptr G.xp))
-    (hnxp : lookupName env "%nxp" = some (.int 64 (BitVec.ofNat 64 G.nxp))) :
+    (hnxp : lookupName env "%nxp" = some (.int 64 (BitVec.ofNat 64 G.nxp)))
+    (htok : lookupName env "%t352.i" = some (.ptr S.tok))
+    (he : lookupName env "%e" = some (.ptr S.e)) :
     WalkRegs G (walkSeed G S) (walkSeedFinalEnv G S env s q bt) := by
   intro p hp
   simp only [walkStaticRegs, List.mem_cons, List.not_mem_nil, or_false] at hp
@@ -703,13 +713,22 @@ theorem walkSeedFinalEnv_regs {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (en
     ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
     ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
     ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
-    ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+    ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
+    ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
   all_goals first
     | walk_final_lk
     | (simp only [walkSeedFinalEnv, whileBodyOut, walkEntryEnv4, walkEntryEnv3,
         walkEntryEnv2, walkEntryEnv1, cells, State.bind]
        repeat rw [lookupName_cons_ne _ _ (by decide)]
        rw [lookupName_cons_self, hnext])
+    | (simp only [walkSeedFinalEnv, whileBodyOut, walkEntryEnv4, walkEntryEnv3,
+        walkEntryEnv2, walkEntryEnv1, cells]
+       repeat rw [lookupName_cons_ne _ _ (by decide)]
+       exact htok)
+    | (simp only [walkSeedFinalEnv, whileBodyOut, walkEntryEnv4, walkEntryEnv3,
+        walkEntryEnv2, walkEntryEnv1, cells]
+       repeat rw [lookupName_cons_ne _ _ (by decide)]
+       exact he)
     | exact hnep
     | exact hc
     | exact hz
@@ -1304,6 +1323,8 @@ theorem walkSeedState {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
     (hz : lookupName s.env "%z" = some (.ptr S.z))
     (hxp : lookupName s.env "%xp" = some (.ptr G.xp))
     (hnxp : lookupName s.env "%nxp" = some (.int 64 (BitVec.ofNat 64 G.nxp)))
+    (htok : lookupName s.env "%t352.i" = some (.ptr S.tok))
+    (he : lookupName s.env "%e" = some (.ptr S.e))
     (hnext : s.next = G.next0)
     (hnepe : lookupName s.env "%nep" = some (.int 64 (BitVec.ofNat 64 G.nep)))
     (hread : readBytes (walkEntryMem G S) G.ep 4 = some bs)
@@ -1312,7 +1333,7 @@ theorem walkSeedState {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
   have hq := walkSeed_lane G S hn hread
   have hbt := walkSeed_docByte G S hn hread hdoc
   refine ⟨walkSeedFinalState_pc G S s (bytesToNat bs) bt, ?_, ?_, ?_, ?_, ?_, ?_,
-    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · rw [walkSeedFinalState_env]
     exact walkSeedFinalEnv_k (G := G) (S := S) (env := s.env) (s := s)
       (q := bytesToNat bs) (bt := bt)
@@ -1327,7 +1348,7 @@ theorem walkSeedState {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
       (q := bytesToNat bs) (bt := bt) hct hcs
   · rw [walkSeedFinalState_env]
     exact walkSeedFinalEnv_regs (G := G) (S := S) (env := s.env) (s := s)
-      (q := bytesToNat bs) (bt := bt) hnext hnepe hc hz hxp hnxp
+      (q := bytesToNat bs) (bt := bt) hnext hnepe hc hz hxp hnxp htok he
   · rw [walkSeedFinalState_env]
     exact walkSeedFinalEnv_iter (G := G) (S := S) (env := s.env) (s := s) hq hbt
   · rw [walkSeedFinalState_env]; exact hc
@@ -1360,6 +1381,9 @@ theorem walkSeedState {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
     exact walkEntryMem_alen G S
   · rw [walkSeedFinalState_mem]
     exact walkEntryMem_acap G S
+  · rw [walkSeedFinalState_env, ← hq]
+    exact walkSeedFinalEnv_idx (G := G) (S := S) (env := s.env) (s := s)
+      (q := bytesToNat bs) (bt := bt)
 
 
 
@@ -1376,6 +1400,8 @@ theorem walkSeedState_geometry {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s
     (hz : lookupName s.env "%z" = some (.ptr S.z))
     (hxp : lookupName s.env "%xp" = some (.ptr G.xp))
     (hnxp : lookupName s.env "%nxp" = some (.int 64 (BitVec.ofNat 64 G.nxp)))
+    (htok : lookupName s.env "%t352.i" = some (.ptr S.tok))
+    (he : lookupName s.env "%e" = some (.ptr S.e))
     (hnext : s.next = G.next0)
     (hnepe : lookupName s.env "%nep" = some (.int 64 (BitVec.ofNat 64 G.nep))) :
     WalkSeedState G S (walkSeedFinalState G S s (entryPos G 0) (entryByte G 0)) := by
@@ -1411,7 +1437,7 @@ theorem walkSeedState_geometry {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s
     exact hbyte
   have hbt0 : G.bs.getD (entryPos G 0) 0 = entryByte G 0 := rfl
   have hseed := walkSeedState (G := G) (S := S) (s := s) (bs := bs0)
-    (bt := G.bs.getD (entryPos G 0) 0) hn hct hcs hc hz hxp hnxp hnext hnepe hread hdoc
+    (bt := G.bs.getD (entryPos G 0) 0) hn hct hcs hc hz hxp hnxp htok he hnext hnepe hread hdoc
   rw [hq, hbt0] at hseed
   exact hseed
 
@@ -1453,12 +1479,14 @@ theorem walkSeedInvariant_geometry {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G
     (hz : lookupName s.env "%z" = some (.ptr S.z))
     (hxp : lookupName s.env "%xp" = some (.ptr G.xp))
     (hnxp : lookupName s.env "%nxp" = some (.int 64 (BitVec.ofNat 64 G.nxp)))
+    (htok : lookupName s.env "%t352.i" = some (.ptr S.tok))
+    (he : lookupName s.env "%e" = some (.ptr S.e))
     (hnext : s.next = G.next0)
     (hnepe : lookupName s.env "%nep" = some (.int 64 (BitVec.ofNat 64 G.nep))) :
     WalkInv G (walkSeed G S)
       (walkSeedFinalState G S s (entryPos G 0) (entryByte G 0)) :=
   walkSeed_invariant G S
-    (walkSeedState_geometry G S s hn hct hcs hc hz hxp hnxp hnext hnepe)
+    (walkSeedState_geometry G S s hn hct hcs hc hz hxp hnxp htok he hnext hnepe)
 
 /-! ### Axiom footprints for the seed's last rows -/
 

@@ -625,7 +625,7 @@ theorem walkPremises_of_staging {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
     · -- the invariant at the loop head
       refine walkSeedInvariant_geometry G S
         (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next)
-        hpos ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
+        hpos ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
       · rw [hargs, walkEntryState_env, hSct]
         simp [lookupName]
       · rw [hargs, walkEntryState_env, hScs]
@@ -637,6 +637,10 @@ theorem walkPremises_of_staging {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
       · rw [hargs, walkEntryState_env]
         simp [lookupName]
       · rw [hargs, walkEntryState_env]
+        simp [lookupName]
+      · rw [hargs, walkEntryState_env, hStok]
+        simp [lookupName]
+      · rw [hargs, walkEntryState_env, hSe]
         simp [lookupName]
       · exact hnext.symm
       · rw [hargs, walkEntryState_env]
@@ -691,7 +695,7 @@ theorem stage2Post_of_staging_loop {d c ctype cst tok s z e nkSlot nxpSlot : Nat
           mem next) (entryPos G 0) (entryByte G 0)) := by
     refine walkSeedInvariant_geometry G S
       (EntryState stage2Body (stage2Args a13 d S.c S.ctype S.cst S.tok S.s S.z S.e)
-        mem next) hpos ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
+        mem next) hpos ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
     · rw [hargs, walkEntryState_env, hSct]
       simp [lookupName]
     · rw [hargs, walkEntryState_env, hScs]
@@ -703,6 +707,10 @@ theorem stage2Post_of_staging_loop {d c ctype cst tok s z e nkSlot nxpSlot : Nat
     · rw [hargs, walkEntryState_env]
       simp [lookupName]
     · rw [hargs, walkEntryState_env]
+      simp [lookupName]
+    · rw [hargs, walkEntryState_env, hStok]
+      simp [lookupName]
+    · rw [hargs, walkEntryState_env, hSe]
       simp [lookupName]
     · exact hnext.symm
     · rw [hargs, walkEntryState_env]

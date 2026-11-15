@@ -392,6 +392,11 @@ theorem WalkLink.callQuiet {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : S
         rw [denoteCode_lookupName (stage2Calls stage2SubCalls) B.instrs "%inc.i"
           (fun i hi => (hfree i hi).2.2.2.2.2.2.2.2.2.2.2.1) s s₁ hden]
         exact hInv.inc_reg
+      idx_reg := by
+        dsimp only [s'']
+        rw [denoteCode_lookupName (stage2Calls stage2SubCalls) B.instrs "%idxprom.i"
+          (fun i hi => (hfree i hi).2.2.2.2.2.2.2.2.2.2.2.2.2) s s₁ hden]
+        exact hInv.idx_reg
       blockLocal := by dsimp only [s'']; exact hloc }
   · rw [denoteCode_lookupName (stage2Calls stage2SubCalls) B.instrs "%k.0.i249"
       (fun i hi => (hfree i hi).1) s s₁ hden]
@@ -496,6 +501,11 @@ theorem WalkLink.callQuietBr {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
         rw [denoteCode_lookupName (stage2Calls stage2SubCalls) B.instrs "%inc.i"
           (fun i hi => (hfree i hi).2.2.2.2.2.2.2.2.2.2.2.1) s s₁ hden]
         exact hInv.inc_reg
+      idx_reg := by
+        dsimp only [s'']
+        rw [denoteCode_lookupName (stage2Calls stage2SubCalls) B.instrs "%idxprom.i"
+          (fun i hi => (hfree i hi).2.2.2.2.2.2.2.2.2.2.2.2.2) s s₁ hden]
+        exact hInv.idx_reg
       blockLocal := ?_ }
   · rw [denoteCode_lookupName (stage2Calls stage2SubCalls) B.instrs "%k.0.i249"
       (fun i hi => (hfree i hi).1) s s₁ hden]
@@ -612,6 +622,11 @@ theorem WalkLink.callQuietBrPending {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
         rw [denoteCode_lookupName (stage2Calls stage2SubCalls) B.instrs "%inc.i"
           (fun i hi => (hfree i hi).2.2.2.2.2.2.2.2.2.2.2.1) s s₁ hden]
         exact hInv.inc_reg
+      idx_reg := by
+        dsimp only [s'']
+        rw [denoteCode_lookupName (stage2Calls stage2SubCalls) B.instrs "%idxprom.i"
+          (fun i hi => (hfree i hi).2.2.2.2.2.2.2.2.2.2.2.2.2) s s₁ hden]
+        exact hInv.idx_reg
       blockLocal := ?_ }
   · rw [denoteCode_lookupName (stage2Calls stage2SubCalls) B.instrs "%k.0.i249"
       (fun i hi => (hfree i hi).1) s s₁ hden]
@@ -2165,6 +2180,12 @@ theorem WalkLink.z_arena_reserve_exit {m0 : Mem} (G : WalkGeom m0) (C : WalkCarr
         rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
           lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
         exact hInv.inc_reg
+      idx_reg := by
+        rw [show s'.env = s₁.env from rfl]
+        dsimp only [s₁, stateAt]
+        rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+          lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
+        exact hInv.idx_reg
       blockLocal := by simp [WalkLocal] }
   · rw [show s'.env = s₁.env from rfl]
     rw [denoteCode_lookupName (stage2Calls stage2SubCalls) walkZArenaReserveExit.instrs
@@ -2642,6 +2663,9 @@ theorem WalkLink.if_then328_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
       inc_reg := by
         dsimp only [s', s₁, envF, walkSetMem, stateAt]
         simpa [cells, lookupName] using hInv.inc_reg
+      idx_reg := by
+        dsimp only [s', s₁, envF, walkSetMem, stateAt]
+        simpa [cells, lookupName] using hInv.idx_reg
       blockLocal := by
         dsimp only [s']
         by_cases hk : keyBit = 1

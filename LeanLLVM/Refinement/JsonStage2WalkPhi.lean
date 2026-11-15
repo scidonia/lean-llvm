@@ -1309,6 +1309,11 @@ theorem WalkLink.if_end372_i {calls : Calls} {m0 : Mem}
         rw [denoteCode_lookupName calls walkIf_end372_i.instrs "%inc.i"
           (fun i hi => (hfree i hi).2.2.2.2.2.2.2.2.2.2.2.1) s sFin hden]
         exact hInv.inc_reg
+      idx_reg := by
+        dsimp only [s', sFin]
+        rw [denoteCode_lookupName calls walkIf_end372_i.instrs "%idxprom.i"
+          (fun i hi => (hfree i hi).2.2.2.2.2.2.2.2.2.2.2.2.2) s sFin hden]
+        exact hInv.idx_reg
       blockLocal := by split <;> simp [WalkLocal] }
   · dsimp only [s', sFin]
     rw [denoteCode_lookupName calls walkIf_end372_i.instrs "%k.0.i249"
@@ -1518,6 +1523,11 @@ theorem WalkLink.if_then57_i {calls : Calls} {m0 : Mem}
         rw [denoteCode_lookupName calls walkIf_then57_i.instrs "%inc.i"
           (fun i hi => (hfree i hi).2.2.2.2.2.2.2.2.2.2.2.1) s sFin hden]
         exact hInv.inc_reg
+      idx_reg := by
+        dsimp only [s', sFin]
+        rw [denoteCode_lookupName calls walkIf_then57_i.instrs "%idxprom.i"
+          (fun i hi => (hfree i hi).2.2.2.2.2.2.2.2.2.2.2.2.2) s sFin hden]
+        exact hInv.idx_reg
       blockLocal := by simp [WalkLocal] }
   · dsimp only [s', sFin]
     rw [denoteCode_lookupName calls walkIf_then57_i.instrs "%k.0.i249"
@@ -1721,6 +1731,11 @@ theorem WalkLink.while_end78_i {calls : Calls} {m0 : Mem}
         rw [denoteCode_lookupName calls walkWhile_end78_i.instrs "%inc.i"
           (fun i hi => (hfree i hi).2.2.2.2.2.2.2.2.2.2.2.1) s sFin hden]
         exact hInv.inc_reg
+      idx_reg := by
+        dsimp only [s', sFin]
+        rw [denoteCode_lookupName calls walkWhile_end78_i.instrs "%idxprom.i"
+          (fun i hi => (hfree i hi).2.2.2.2.2.2.2.2.2.2.2.2.2) s sFin hden]
+        exact hInv.idx_reg
       blockLocal := by simp [WalkLocal] }
   · dsimp only [s', sFin]
     rw [denoteCode_lookupName calls walkWhile_end78_i.instrs "%k.0.i249"
