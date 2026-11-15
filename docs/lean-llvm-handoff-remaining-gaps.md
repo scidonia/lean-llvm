@@ -28,7 +28,7 @@ its end costs a full ~10-minute re-elaboration, so edit it in one pass.
 **the walk, loop head → scan latch** | `walkHeadChainToScan` (`JsonStage2WalkHeadChainScan`) |
 **the scan** | `walkScanArrival457` (latch → last visit), `scanExitSeg`, `walkScanToMerge` (→ `cleanup478.i`) |
 **the finish paths** | `walkFinishPath1`/`2`/`3`, `walkFinishRun`, and `walkFinish_not_frame_of` (why none is a `WalkSegment` at `if.end`) |
-**the last entry** | `hlast_toMerge`, `hlast_finish`, `hlast_refuse`; `HlastFacts` **6 of 14 rows produced**, the scan-free arm's fields all read off `%4`'s word, and the bundle inhabited at a real last entry — `hlastPrefixSeg` is 19 links (`hlast_toMerge` 20), so the price is `20 + 2 ≤ 32·1 + 8·0`
+**the last entry** | `hlast_toMerge`, `hlast_finish`, `hlast_refuse`; `HlastFacts` **10 of 14 rows produced**, the scan-free arm's fields all read off `%4`'s word, and the bundle inhabited at a real last entry — `hlastPrefixSeg` is 19 links (`hlast_toMerge` 20), so the price is `20 + 2 ≤ 32·1 + 8·0`
 **the continue case** | `walkRevolution_seg` — a priced segment to `cleanup478.i` on the count test's *succeeding* arm |
 **the dispatch, at its outcomes** | `WalkDispatchResult` + `WalkDispatchThree.ofResult` + `walkLoopStepThree_of_dispatchResult` |
 **the flush arm** | `walkFlushAt_of_staging` (the run), `stage2Boundary_of_flush` (the six facts), `stage2Post_of_staging_flush` (the `nep = 0` post) |
@@ -397,6 +397,19 @@ the 43 case; (b) `wsExit43/46/48`; (c) `wsLatchAt`/`wsStopAt` and the induction;
 entry dispatch with `ScanEntered` and `v − i ≤ C.inner`; (e) the seam at `wsStopS` and
 `contWsStop_cond`, then delete `hRun`/`hnRun`/`hcond_sl`/`sl` and rewire the two
 consumers.  ~500–700 lines, with (c), (d), (e) and the bundle rewrite the hard parts.
+
+
+**The last-entry producer, after its second pass.**  Ten of `HlastFacts`' fourteen rows
+are produced and the producer's supplied arguments fell 46 → 35.  Two premises of the
+plan were wrong and are corrected here:
+
+* the head byte's eight class bits are **not** all `WalkGeom.doc` consequences: six
+  follow from two (`hlt125`/`hne125`, which pin the byte), and those two are the
+  document's *content* — `WalkGeom.doc` fixes the byte's term, not its value;
+* `WalkLoopEnd.facts` cannot yet call the producer: the producer needs
+  `C.k < G.nep` as well as the head guard's negation, which is the loop-head predicate
+  the review's F5 asks for (`WalkInv.k_le` gives only `≤`).  That is the gap between
+  "the bundle is inhabited" and "the step can use it".
 
 ## The findings — twenty-three, and all of one family
 
