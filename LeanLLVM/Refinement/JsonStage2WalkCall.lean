@@ -1163,18 +1163,29 @@ theorem walkAfterValue_facts {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s :
       · exact Or.inr (by omega)
   exact ⟨hframe, howned, hlog, hev⟩
 
-/-- **`if.else334.i` is a link**: the container's state advances and the walk
-returns to the loop head. -/
-theorem WalkLink.if_else334_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
-    (hInv : WalkInv G C s) (hblock : C.block = "if.else334.i")
+/-- **`if.else334.i`'s target, named**: the same link with the helper's answer a
+parameter, so the state the block's call leaves is a term a consumer can name.  The
+target is `s1 = stateAt s.env {s with mem := r.mem, next := r.next}` — the memory the
+callee answered at — with the edge's `cleanup478.i` and the step's predecessor.  The
+carry changes `stMap` (`walkAfterValueMap`), which the conclusion names. -/
+theorem WalkLink.if_else334_i_at {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hblock : C.block = "if.else334.i")
     (hrd : lookupName s.env "%root_done.i" = some (.ptr (G.next0 + 8)))
     (hpre : s2AfterValuePre
       [.int 32 (BitVec.ofNat 32 C.sp), .ptr (G.next0 + 8),
-       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next) :
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
+    (r : CallOutcome)
+    (hcall : stage2Calls stage2SubCalls "s2_after_value"
+      [.int 32 (BitVec.ofNat 32 C.sp), .ptr (G.next0 + 8),
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r) :
     ∃ s', WalkLink (stage2Calls stage2SubCalls) G C s { C with
-      block := "cleanup478.i", stMap := walkAfterValueMap C } s' := by
-  obtain ⟨r, hcall, hpost, hfr⟩ :=
+      block := "cleanup478.i", stMap := walkAfterValueMap C } s' ∧
+      s' = { stateAt s.env { s with mem := r.mem, next := r.next } with
+        pc := "cleanup478.i", pre := some s.pc } := by
+  obtain ⟨r₀, hcall₀, hpost, hfr⟩ :=
     s2AfterValueContract.resolves (next := s.next) hpre
+  have hr : r = r₀ := Option.some.inj (hcall.symm.trans hcall₀)
+  subst hr
   obtain ⟨m, hm, -, hmem, -⟩ := hpost
   have hfr' : UnchangedOutside s.mem m
       (s2AfterValueFoot [.int 32 (BitVec.ofNat 32 C.sp), .ptr (G.next0 + 8),
@@ -1194,7 +1205,8 @@ theorem WalkLink.if_else334_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
       · exact Or.inr (by have := hInv.sp_le_wlen; omega)
     exact walkAfterValue_stBytesAt (G := G) (C := C) (s := s) hInv
       (sp := C.sp) hInv.depth_cap hspw (walkAfterValue_sp hInv ▸ hm)
-  refine WalkLink.callQuiet (G := G) (C := C) (s := s) hInv
+  obtain ⟨s', hl⟩ :=
+    WalkLink.callQuiet (G := G) (C := C) (s := s) hInv
     (TM := C.tyMap) (SM := walkAfterValueMap C) (hstTy := hstTy) (hstSt := hstSt)
     (B := walkIfElse334) (by rw [hblock]; exact walkIfElse334_find)
     (s₁ := stateAt s.env { s with mem := r.mem, next := r.next })
@@ -1208,6 +1220,41 @@ theorem WalkLink.if_else334_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
     (by dsimp only [stateAt]; rw [hmem]; exact hlog)
     (by dsimp only [stateAt]; rw [hmem]; exact hev)
     rfl (by simp [WalkLocal])
+  refine ⟨s', hl, ?_⟩
+  have hpc : s.pc = C.block := hInv.pc_eq
+  have hden : denoteCode (stage2Calls stage2SubCalls) walkIfElse334.instrs s =
+      some (stateAt s.env { s with mem := r.mem, next := r.next }) :=
+    walkIfElse334_denote (sub := stage2SubCalls) (env := s.env) (s := s)
+      (sp := BitVec.ofNat 32 C.sp) (rd := G.next0 + 8)
+      (ct := C.stage.ctype) (cs := C.stage.cst) (r := r)
+      hInv.depth_reg hrd (hInv.ptrs.2.2.2.1) (hInv.ptrs.2.2.2.2.1) hcall
+  have hfind : stage2Body.findBlock C.block = some walkIfElse334 := by
+    rw [hblock]; exact walkIfElse334_find
+  have hterm : walkIfElse334.term = Term.br "cleanup478.i" := rfl
+  have hstep : LeanLLVM.step (stage2Calls stage2SubCalls) stage2Body s = Ctrl.jump
+      { stateAt s.env { s with mem := r.mem, next := r.next } with
+        pc := "cleanup478.i", pre := some s.pc } := by
+    simp only [LeanLLVM.step, hpc, hfind, hden, hterm, execTerm]
+    rfl
+  exact Ctrl.jump.inj ((WalkLink.step hl).symm.trans hstep)
+
+/-- **`if.else334.i` is a link**: the container's state advances and the walk
+returns to the loop head.  This is `WalkLink.if_else334_i_at` at the contract's own
+answer, so the exposure's parameter is the `s2AfterValueContract.resolves`'s. -/
+theorem WalkLink.if_else334_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (hInv : WalkInv G C s) (hblock : C.block = "if.else334.i")
+    (hrd : lookupName s.env "%root_done.i" = some (.ptr (G.next0 + 8)))
+    (hpre : s2AfterValuePre
+      [.int 32 (BitVec.ofNat 32 C.sp), .ptr (G.next0 + 8),
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next) :
+    ∃ s', WalkLink (stage2Calls stage2SubCalls) G C s { C with
+      block := "cleanup478.i", stMap := walkAfterValueMap C } s' := by
+  obtain ⟨r, hcall, -, -⟩ :=
+    s2AfterValueContract.resolves (next := s.next) hpre
+  obtain ⟨s', hl, -⟩ :=
+    WalkLink.if_else334_i_at (G := G) (C := C) (s := s) hInv hblock hrd hpre r hcall
+  exact ⟨s', hl⟩
+
 /-- `if.then447.i`: the string record is appended and the escape scan is entered
 when the scan's counter is short of the bound. -/
 def walkIfThen447I : Block :=
@@ -3723,6 +3770,7 @@ class transfer) and one instance of each shape, measured rather than asserted. -
 #print axioms LeanLLVM.Refinement.WalkScope.walkDenoteCode_call
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_then_i
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_else334_i
+#print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_else334_i_at
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_then447_i_empty
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_then447_i
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.cleanup474_i

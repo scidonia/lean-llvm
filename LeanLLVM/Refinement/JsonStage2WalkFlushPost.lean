@@ -775,7 +775,7 @@ theorem stage2Post_of_staging_flush {d c ctype cst tok s z e nkSlot nxpSlot : Na
   rw [hSc, hSct, hScs, hStok, hSs, hSz, hSe]
   exact hb
 
-/-- **The walk's obligation, from the three premises.**  This is the milestone the layer
+/-- **The walk's obligation, from the four premises.**  This is the milestone the layer
 was built for: `Stage2WalkObligation` is `Satisfies` at `Γ_stage2at`, and its two
 conjuncts are the completion (`stage2WalkCompletes_of_staging`) and the post at every
 behaviour of the run.  The post's two arms are the record's empty entry stream
@@ -791,9 +791,10 @@ supplies, named in the census at the end of `JsonStage2WalkPremisesOfStaging`. -
 theorem stage2WalkObligation_of_staging {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
     (hcont : ∀ {m0 : Mem} (G : WalkGeom m0), WalkContinueFacts G)
     (hmerge : ∀ {m0 : Mem} (G : WalkGeom m0), WalkMergeCells G)
-    (hend : ∀ {m0 : Mem} (G : WalkGeom m0), WalkLoopEnd G) :
+    (hend : ∀ {m0 : Mem} (G : WalkGeom m0), WalkLoopEnd G)
+    (hres : ∀ {m0 : Mem} (G : WalkGeom m0), WalkStringResidue G) :
     Stage2WalkObligation d c ctype cst tok s z e nkSlot nxpSlot := by
-  refine stage2WalkObligation_of_premises (walkPremises_of_staging hcont hmerge hend) ?_
+  refine stage2WalkObligation_of_premises (walkPremises_of_staging hcont hmerge hend hres) ?_
   intro args mem next hpre o hb
   obtain ⟨a13, rfl, hpre13, hstaged⟩ := hpre
   obtain ⟨G, S, hnext, hSc, hSct, hScs, hStok, hSs, hSz, hSe, _hSd, hargs⟩ :=
@@ -802,7 +803,7 @@ theorem stage2WalkObligation_of_staging {d c ctype cst tok s z e nkSlot nxpSlot 
   · exact stage2Post_of_staging_flush hSc hSct hScs hStok hSs hSz hSe hargs hnext hzero o hb
   · refine stage2Post_of_staging_loop (F := 27) hSc hSct hScs hStok hSs hSz hSe hargs hnext
       (Nat.pos_of_ne_zero hzero)
-      (walkLoopStep_of_staging (G := G) (hcont G) (hmerge G) (hend G)) o hb
+      (walkLoopStep_of_staging (G := G) (hcont G) (hmerge G) (hend G) (hres := hres)) o hb
 
 /-! ### Axiom footprints -/
 
