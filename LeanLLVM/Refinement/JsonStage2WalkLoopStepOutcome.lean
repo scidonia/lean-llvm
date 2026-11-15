@@ -15,20 +15,36 @@ outcomes instead.
   completion live).  The mapping is `cont` → the revolution (a segment back to the
   head, the index advanced, the potential spent) and `finish`/`refuse` → the terminal
   branch (the dispatch's own segment, then the terminal run from the state it
-  reaches).  `finish` is *entry-stream exhaustion at the merge*, not parser
+  reaches, with the record's boundary at the memory it returns).  `finish` is
+  *entry-stream exhaustion at the merge*, not parser
   acceptance: the merge's index reaching the stream's end says no entry is left, and
   the finalisation that follows still decides between acceptance and refusal — an
   unclosed container or an unfinished root is refused there.  So the terminal branch
   states `∃ v` and never `v = 1`.
-* **`WalkTargetRun`** is the terminal run at the dispatch's target: the state's own
-  count, its own verdict, and the two terminal steps.  A single fixed verdict is not
-  merely stronger than what the body supports, it is false of it.  At `cleanup478.i`
+* **`WalkTargetPost`** (`JsonStage2WalkTraverse`) is the terminal vocabulary the
+  branch carries: a count, the verdict, the *returned memory*, and `stage2Boundary`
+  there.  `WalkTargetRun` is the same run without the memory, and it is retained
+  rather than consumed: `WalkLoopStepThree`'s terminal disjunct is the post, because
+  the record's post is stated at the memory the run returns and `WalkTargetRun` is
+  existential in it.  What `WalkTargetRun` still states is the one fact that decided
+  the vocabulary's shape — a single fixed verdict is not merely stronger than what the
+  body supports, it is false of it.  At `cleanup478.i`
   the accepted route returns `1` (`walkExitTailRun_exit`) and the two refusal routes
   return `0` (`walkExitTailRun_refuse`, `walkExitTailRun_refuse488`), and all three
   are proved from states `hlastMergeF f` builds at that block under the same
   invariant — which is exactly what `ExitTail` records, and why `ExitTail` supplies
-  this predicate (`WalkTargetRun.ofExitTail`).  So the terminal branch carries the
-  result each state reaches, and no uniformity across states is assumed here.
+  this predicate (`WalkTargetRun.ofExitTail`).  So the verdict is existential here
+  too, and no uniformity across states is assumed.
+
+**Its producer, and what its premise can carry.**  `walkLoopStepThree_of_dispatchResult`
+(`JsonStage2WalkDispatchThreeOfRun`) is the rule the layer applies; it is stated
+directly on `WalkDispatchResult`, because the `finish` outcome's data is what the
+merge's `phi` cells are and `WalkDispatchOutcome.finish` does not carry the depth
+operand's value, which decides the accept/refuse split at `if.then485.i`.  This rule's
+own `htail` is the per-state form, so it is the *statement* of the terminal branch and
+not the layer's supply: a per-state post at `cleanup478.i` is not derivable from
+`WalkInv` alone (the merge's `phi` cells are the state's `pre` and its registers), which
+is why `WalkDispatchResult`'s arm is where the composition happens.
 
 **What this rule supersedes, and why that is a retirement rather than a tidy-up.**  The
 loop's endpoint used to take `WalkExit` (`JsonStage2WalkAssembly`), whose producer
@@ -44,9 +60,10 @@ cannot cover them — and the route is retired rather than tidied.
 The switch, in the order it is done: the loop's step becomes `WalkLoopStepThree`
 (`JsonStage2WalkTraverse`, whose `walkLoopFinishesThree`, `walkCompletes_of_loop` and
 `walkCompletes_of_loop_budget` keep their conclusions); `walkLoopStep_of_staging`'s
-premise becomes this rule, with `WalkLoopEnd`'s single tail restated as the per-state
-`WalkTargetRun` at the finalisation's two entry blocks and the merge's `%nep` bound
-(`JsonStage2WalkPremisesOfStaging`); `WalkHeadPtrs` goes, because the copy's pointer
+premise becomes this rule, with `WalkLoopEnd`'s single tail restated as the two terminal
+blocks' *words* (`WalkMergeWords`, `WalkRefuseWords`) beside the merge's `%nep` bound
+(`JsonStage2WalkPremisesOfStaging`), from which `WalkLoopEnd.merge`/`.refuse` produce the
+post; `WalkHeadPtrs` goes, because the copy's pointer
 registers are the terminal states' own; and `walkLoopStep_of_dispatch_exit` is deleted
 with the statement it produced.  The exit predicate and its two producers
 (`WalkExit`, `walkExit_ofLastFacts`, `walkExit_at_stage2Calls`) were the old route's
@@ -101,7 +118,14 @@ rather than a parameter. -/
 /-- **A terminal run from a state**: `q` steps reach a pre-return state, and the two
 terminal steps follow — one jump and the return, at the state's own verdict.  The
 count is inside the finalisation allowance less the seed's three steps and the two
-terminal ones (`walkExitFits`), which is the `27` `ExitTail` states its tails at. -/
+terminal ones (`walkExitFits`), which is the `27` `ExitTail` states its tails at.
+
+**It is not the loop's terminal route any more.**  `WalkLoopStepThree`'s terminal
+disjunct is `WalkTargetPost`, which carries the *returned memory* beside the run — the
+record's post is `stage2Boundary` there, and this predicate is existential in the
+memory.  What remains here is the vocabulary `JsonStage2WalkExitProducer`'s three tails
+are stated at (`ExitTail`) and the bridge from it (`WalkTargetRun.ofExitTail`), and the
+fact the vocabulary records: one verdict cannot cover the finalisation's routes. -/
 def WalkTargetRun (calls : Calls) (s : State) : Prop :=
   ∃ (q : Nat) (v : Value) (s1 s2 sret : State),
     (∀ n, runFuel calls (q + n) stage2Body s = runFuel calls n stage2Body s1) ∧
@@ -113,9 +137,9 @@ def WalkTargetRun (calls : Calls) (s : State) : Prop :=
 refusal copy reaches a return in the two terminal steps alone (`q = 0`): the copy's own
 step jumps to `if.end` (`walkIfThen_step`) and `if.end` returns
 (`walkIfEnd_step`) at this arm's `phi` value, the literal zero
-(`walkIfEnd_refusal_phi`).  So the refusal premise of
-`walkLoopStepThree_of_dispatchThree` is a fact about `if.then`'s two blocks and
-nothing about the dispatch. -/
+(`walkIfEnd_refusal_phi`).  So this is a fact about `if.then`'s two blocks and
+nothing about the dispatch.  (The loop's post names the same two steps at the returned
+memory: `walkFinishPost_copy`, `JsonStage2WalkTargetPost`.) -/
 theorem WalkTargetRun.ifThen {sub : Calls} {s s₁ : State} {pe pz ps : Nat} {v : BitVec 64}
     (hpc : s.pc = "if.then")
     (hden : denoteCode (stage2Calls sub) walkIfThenBlock.instrs s = some s₁)
@@ -136,13 +160,13 @@ theorem WalkTargetRun.ifThen {sub : Calls} {s s₁ : State} {pe pz ps : Nat} {v 
   · exact walkIfEnd_step { s₁ with pc := "if.end", pre := some s.pc } rfl he hz hs rfl
       (by rw [hpc]; exact walkIfEnd_refusal_phi) hv.symm
 
-/-- **The merge target's terminal run is `ExitTail`.**  `ExitTail` states the same
-counted run at the same allowance, with the verdict as a parameter rather than an
-existential; its three producers (`walkExitTailRun_exit`, `walkExitTailRun_refuse`,
+/-- **The merge target's terminal run is `ExitTail`.**  `ExitTail` states a counted run
+at the same allowance, with the verdict as a parameter rather than an existential; its
+three producers (`walkExitTailRun_exit`, `walkExitTailRun_refuse`,
 `walkExitTailRun_refuse488`) are the accepted route's and the two refusal routes' tails
-from `cleanup478.i`.  So the merge premise of
-`walkLoopStepThree_of_dispatchThree` is the statement the layer's tails already prove,
-read at one state instead of at every last-entry head. -/
+from `cleanup478.i`.  This is the bridge between the two terminal vocabularies, kept
+because it is what states that the tails are terminal runs; the loop's branch reads
+`WalkTargetPost` instead, which is this run's memory named. -/
 theorem WalkTargetRun.ofExitTail {calls : Calls} {s : State} {v : Value}
     (h : ExitTail calls s v) : WalkTargetRun calls s := by
   obtain ⟨q, s1, s2, sret, hrun, hq, hjump, hret⟩ := h
@@ -261,18 +285,29 @@ asserts acceptance, and neither fixes the verdict: the `finish` branch's price u
 `hnepBound` because `WalkInv` does not carry `%nep`, and states nothing else about
 what the finalisation decides.
 
-`htail` is weaker than the fixed-verdict exit the index split consumed, in three ways: its
-verdict is the state's rather than one shared by every last-entry head state, its run
-is read at the dispatch's target rather than through the head path, and it asks
+`htail` is the terminal post at the finalisation's two entry blocks, and it is weaker
+than the fixed-verdict exit the index split consumed, in three ways: its
+verdict is the run's rather than one shared by every last-entry head state, it carries
+the returned memory and the boundary there rather than a bare run, and it asks
 nothing of `%z`/`%s` at the head (the two registers the copy reads are the terminal
 states' own).  `refuse`'s error bound (`Cd.eoff ≤ G.n`) is not read either: its price
 is stated against the entry's whole remaining credit, so the position it stored is
-not what bounds the tail. -/
+not what bounds the tail.
+
+**What this statement is, and what it is not.**  It is the composition of the three
+outcomes into the loop's step, and it is *sound*: a per-state post at `cleanup478.i`
+implies the branch's disjunct, with the segment's count added to the terminal run's.
+It is not the layer's supply.  A post at a state at `cleanup478.i` is not derivable
+from `WalkInv` alone — the merge's `phi` cells are the state's predecessor and its
+registers, and `WalkDispatchOutcome.finish` does not carry the depth operand's value,
+which decides the accept/refuse split at `if.then485.i`.  So the layer's rule is
+`walkLoopStepThree_of_dispatchResult` (`JsonStage2WalkDispatchThreeOfRun`), stated on
+`WalkDispatchResult`, whose `merge` arm carries the cells the post producers take. -/
 theorem walkLoopStepThree_of_dispatchThree {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
     {F : Nat} (hF : 27 ≤ F)
     (hthree : WalkDispatchThree calls G)
     (htail : ∀ (Cd : WalkCarry G) (sd : State), WalkInv G Cd sd →
-      (Cd.block = "cleanup478.i" ∨ Cd.block = "if.then") → WalkTargetRun calls sd)
+      (Cd.block = "cleanup478.i" ∨ Cd.block = "if.then") → WalkTargetPost calls G Cd sd)
     (hnepBound : ∀ (Cd : WalkCarry G) (sd : State) (nepv : BitVec 64),
       WalkInv G Cd sd → Cd.block = "cleanup478.i" →
       lookupName sd.env "%nep" = some (.int 64 nepv) → nepv.toNat ≤ G.nep) :
@@ -286,9 +321,8 @@ theorem walkLoopStepThree_of_dispatchThree {calls : Calls} {m0 : Mem} {G : WalkG
     ⟨Cd, sd, p, hseg, hblock, _herr, hprice⟩
   · exact Or.inl (walkContRevolution hseg hblock hkc hpre hsp hspv hkOp hk2 hnepv
       hbelow hnep hadvance hspcap hspw hprice)
-  · obtain ⟨q₂, v, s1, s2, sret, hrun₂, hq₂, hjump, hret⟩ :=
-      htail Cd sd hseg.inv' (Or.inl hblock)
-    refine Or.inr ⟨p + q₂, v, s1, s2, sret, ?_, hseg.andRun hrun₂, hjump, hret⟩
+  · obtain ⟨q, v, m, hq, hrun, hb⟩ := htail Cd sd hseg.inv' (Or.inl hblock)
+    refine Or.inr ⟨p + q, v, m, ?_, ?_, hb⟩
     · have hk2nep : k2 ≤ G.nep := by
         have := hnepBound Cd sd nepv hseg.inv' hblock hnepv
         omega
@@ -301,14 +335,17 @@ theorem walkLoopStepThree_of_dispatchThree {calls : Calls} {m0 : Mem} {G : WalkG
           simp only [stage2EntryAllowance, stage2ByteAllowance] at hprice
           omega
       simp only [walkPotential, boundary_eq_entryPos G hk, stage2EntryAllowance,
-        stage2ByteAllowance] at hcredit hprice ⊢
+        stage2ByteAllowance] at hcredit hprice hq ⊢
       omega
-  · obtain ⟨q₂, v, s1, s2, sret, hrun₂, hq₂, hjump, hret⟩ :=
-      htail Cd sd hseg.inv' (Or.inr hblock)
-    refine Or.inr ⟨p + q₂, v, s1, s2, sret, ?_, hseg.andRun hrun₂, hjump, hret⟩
+    · rw [show p + q + 2 = p + (q + 2) from by omega, hseg.run (q + 2)]
+      exact hrun
+  · obtain ⟨q, v, m, hq, hrun, hb⟩ := htail Cd sd hseg.inv' (Or.inr hblock)
+    refine Or.inr ⟨p + q, v, m, ?_, ?_, hb⟩
     · simp only [walkPotential, boundary_eq_entryPos G hk, stage2EntryAllowance,
-        stage2ByteAllowance] at hprice hq₂ ⊢
+        stage2ByteAllowance] at hprice hq ⊢
       omega
+    · rw [show p + q + 2 = p + (q + 2) from by omega, hseg.run (q + 2)]
+      exact hrun
 
 /-! ### Axiom footprints -/
 

@@ -148,23 +148,67 @@ theorem WalkDispatchThree.ofResult {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
   intro C s hInv hhead
   exact (hres C s hInv hhead).toOutcome hnepBound
 
-/-- **The loop's step, straight from the dispatch's result.**  The same composition as
-`walkLoopStepThree_of_dispatchThree`, with the outcome premise produced at each head
-state from that state's own result rather than from a split on its index. -/
+/-- **The loop's step, straight from the dispatch's result.**  Each head state's own
+result decides the branch, and the two terminal arms read the post producers at the
+data the result carries: the merge's `phi` operands and their values, the carry's
+index, the merge's `%nep` and its `hterm`, and — on the refusal arm — the endpoint's
+own block.  So this is the rule the layer applies, and the reason it is stated on
+`WalkDispatchResult` rather than on `WalkDispatchOutcome`: the `finish` outcome does not
+carry the depth operand's value, which decides the accept/refuse split at
+`if.then485.i` (`walkFinishPost_merge`'s case), and the merge arm does.
+
+The two terminal branches spend the dispatch's own price (`hprice`) and the terminal
+post's own count (`q + 2 ≤ 27`), and both fit `p + q ≤ walkPotential G C + F` at
+`F ≥ 27`.  Neither asserts acceptance, and neither fixes the verdict. -/
 theorem walkLoopStepThree_of_dispatchResult {calls : Calls} {m0 : Mem}
     {G : WalkGeom m0} {F : Nat} (hF : 27 ≤ F)
     (hres : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
       WalkDispatchResult calls G C s)
-    (htail : ∀ (Cd : WalkCarry G) (sd : State), WalkInv G Cd sd →
-      (Cd.block = "cleanup478.i" ∨ Cd.block = "if.then") → WalkTargetRun calls sd)
+    (hmerge : ∀ (Cd : WalkCarry G) (sd : State) (p spv k2 : Nat) (prev : String)
+      (spOp kOp : Operand) (nepv : BitVec 64),
+      WalkInv G Cd sd → Cd.block = "cleanup478.i" → sd.pre = some prev →
+      phiIncoming prev cleanupSpIncoming = some spOp →
+      evalOperand sd spOp = some (.int 32 (BitVec.ofNat 32 spv)) →
+      phiIncoming prev cleanupKIncoming = some kOp →
+      evalOperand sd kOp = some (.int 64 (BitVec.ofNat 64 k2)) →
+      lookupName sd.env "%nep" = some (.int 64 nepv) → k2 = nepv.toNat →
+      WalkTargetPost calls G Cd sd)
+    (hrefuse : ∀ (Cd : WalkCarry G) (sd : State), WalkInv G Cd sd →
+      Cd.block = "if.then" → WalkTargetPost calls G Cd sd)
     (hnepBound : ∀ (nepv : BitVec 64), ∀ (Cd : WalkCarry G) (sd : State),
       WalkInv G Cd sd → Cd.block = "cleanup478.i" →
       lookupName sd.env "%nep" = some (.int 64 nepv) → nepv.toNat ≤ G.nep) :
-    WalkLoopStepThree calls G F :=
-  walkLoopStepThree_of_dispatchThree hF
-    (WalkDispatchThree.ofResult hres (fun nepv Cd sd hInv hblk hnep => hnepBound nepv Cd sd hInv hblk hnep))
-    htail
-    (fun Cd sd nepv hInv hblk hnep => hnepBound nepv Cd sd hInv hblk hnep)
+    WalkLoopStepThree calls G F := by
+  intro C s hInv hhead hk
+  rcases hres C s hInv hhead with
+    ⟨Cd, sd, p, spv, k2, prev, spOp, kOp, nepv, seg, hblock, hkc, hpre, hsp, hspv,
+      hkOp, hk2, hnepv, hadvance, hcap, hspcap, hspw, hprice⟩ |
+    ⟨Cd, sd, p, seg, hblock, _herr, hprice⟩
+  · by_cases hbelow : k2 < nepv.toNat
+    · exact Or.inl (walkContRevolution seg hblock hkc hpre hsp hspv hkOp hk2 hnepv
+        hbelow (by have := hnepBound nepv Cd sd seg.inv' hblock hnepv; omega)
+        hadvance hspcap hspw hprice)
+    · have hterm : k2 = nepv.toNat := by omega
+      obtain ⟨q, v, m, hq, hrun, hb⟩ :=
+        hmerge Cd sd p spv k2 prev spOp kOp nepv seg.inv' hblock hpre hsp hspv hkOp hk2
+          hnepv hterm
+      refine Or.inr ⟨p + q, v, m, ?_, ?_, hb⟩
+      · have hk2nep : k2 ≤ G.nep := by
+          have := hnepBound nepv Cd sd seg.inv' hblock hnepv
+          omega
+        have hcredit := walkFinishCredit_le (G := G) (C := C) hk (by omega) hk2nep
+        simp only [walkPotential, boundary_eq_entryPos G hk, stage2EntryAllowance,
+          stage2ByteAllowance] at hcredit hprice hq ⊢
+        omega
+      · rw [show p + q + 2 = p + (q + 2) from by omega, seg.run (q + 2)]
+        exact hrun
+  · obtain ⟨q, v, m, hq, hrun, hb⟩ := hrefuse Cd sd seg.inv' hblock
+    refine Or.inr ⟨p + q, v, m, ?_, ?_, hb⟩
+    · simp only [walkPotential, boundary_eq_entryPos G hk, stage2EntryAllowance,
+        stage2ByteAllowance] at hprice hq ⊢
+      omega
+    · rw [show p + q + 2 = p + (q + 2) from by omega, seg.run (q + 2)]
+      exact hrun
 
 /-! ### The last entry's bundle, as a result
 

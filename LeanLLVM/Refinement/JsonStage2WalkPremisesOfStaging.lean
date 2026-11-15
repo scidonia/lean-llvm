@@ -64,6 +64,7 @@ import LeanLLVM.Refinement.JsonStage2WalkDispatchThreeOfRun
 import LeanLLVM.Refinement.JsonStage2WalkDispatchWitnessString
 import LeanLLVM.Refinement.JsonStage2WalkRevolution
 import LeanLLVM.Refinement.JsonStage2WalkSeedAtEntry
+import LeanLLVM.Refinement.JsonStage2WalkTargetPost
 
 set_option autoImplicit false
 
@@ -251,34 +252,78 @@ theorem walkDispatch_of_continue {m0 : Mem} {G : WalkGeom m0}
 
 /-! ### The finalisation's terminal runs and the loop's step -/
 
-/-- **The last entry's facts, the finalisation's terminal runs and the merge's count**,
-at every state each is read at.  `facts` is the last entry's bundle, `depth` is the bit
-that sends it to the refusal arm, and the two runs are the terminal states' own.
+/-- **The last entry's facts, the finalisation's words, and the merge's count**, at
+every state each is read at.  `facts` is the last entry's bundle; `mergeWords` and
+`refuseWords` are the three facts no clause carries, one bundle per terminal entry
+block; and `nepBound` is the merge's `%nep` value, inside the stream.
 
-The runs carry a count and a value each rather than fixing either: at `cleanup478.i` the
-merge's false edge returns `1` on the accepted route and `0` on the two refusal routes
-(`JsonStage2WalkExitProducer`'s three tails), so one verdict across states is not a
-statement the body supports.  The merge's `%nep` value is the last field — no `WalkInv`
-clause names that register, so its value is supplied at the states it is read at, as the
-last entry's bundle supplies it (`HlastFacts.hnepM`, at `BitVec.ofNat 64 G.nep`). -/
+The terminal post is not a field: `WalkLoopEnd.merge` and `WalkLoopEnd.refuse` produce it
+from the bundles and the state's own cells, and their proofs are the four terminal runs
+of `JsonStage2WalkTargetPost`.  So what this structure *supplies* is the words, and what
+the layer *proves* is the run and the boundary at its memory.
+
+The three facts, and why they are not clauses:
+
+* `%4 = n`.  `%4` is loaded once by `entry` from `%n2.i = %s + 8` and no block rebinds
+  it, but it is not in `walkStaticNames`, so no `WalkInv` clause names it.  Its producer
+  is the seed's register carrier (`walkSeedFinalEnv_regs`); adding `"%4"` to
+  `walkStaticNames` would make it derivable, and that edit is in the
+  twenty-one-megabyte `JsonStage2WalkScope`.
+* the merge's root-done word.  `WalkInv.owned` deliberately omits the four `alloca`
+  slots, so the root slot's presence is in no clause; its producer is a presence clause
+  on `WalkInv` transported link by link.
+* R0's refusal word at `if.then`.  `WalkInv.eoff_le` bounds the carry's `eoff` but the
+  bytes at `%e + 8` are the *previous* link's store, and `WalkSegment` keeps no memory;
+  a memory-carrying refusal segment would produce it.
+
+The log's arena word and the finalisation's eight carrier registers are the fourth and
+fifth supplied facts (`WalkMergeWords.log`, `WalkMergeWords.env`), with the write-back
+block and the seed's environment as their producers. -/
 structure WalkLoopEnd {m0 : Mem} (G : WalkGeom m0) : Type where
   /-- The last entry's facts, at every head state the merge's test sends to the exit. -/
   facts : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     ¬ (C.k + 1 < G.nep) → HlastFacts G C s
-  /-- **The merge's terminal run**, at every state a dispatch's last entry reaches at
-  `cleanup478.i`, at that state's own count and verdict. -/
-  merge : ∀ (Cd : WalkCarry G) (sd : State), WalkInv G Cd sd → Cd.block = "cleanup478.i" →
-    WalkTargetRun (stage2Calls stage2SubCalls) sd
-  /-- **The refusal copy's terminal run**, at every state a refusal reaches at
-  `if.then`: the copy's own two blocks, at the verdict `0`. -/
-  refuse : ∀ (Cd : WalkCarry G) (sd : State), WalkInv G Cd sd → Cd.block = "if.then" →
-    WalkTargetRun (stage2Calls stage2SubCalls) sd
+  /-- **The merge's words**, at every state a dispatch reaches at `cleanup478.i`. -/
+  mergeWords : ∀ (Cd : WalkCarry G) (sd : State), WalkInv G Cd sd →
+    Cd.block = "cleanup478.i" → WalkMergeWords G Cd sd
+  /-- **The refusal copy's words**, at every state a refusal reaches at `if.then`. -/
+  refuseWords : ∀ (Cd : WalkCarry G) (sd : State), WalkInv G Cd sd →
+    Cd.block = "if.then" → WalkRefuseWords G Cd sd
   /-- **The merge's `%nep` value is inside the stream**: the last entry's price is stated
   against the credit its index consumed, and this is what makes that credit the
   potential's. -/
   nepBound : ∀ (Cd : WalkCarry G) (sd : State) (nepv : BitVec 64),
     WalkInv G Cd sd → Cd.block = "cleanup478.i" →
     lookupName sd.env "%nep" = some (.int 64 nepv) → nepv.toNat ≤ G.nep
+
+/-- **The merge's terminal post, from the merge's words and its cells.**  The depth's
+zero test and the root-done test select the finalisation's route, and the route's run is
+`JsonStage2WalkTargetPost`'s.  `%nep`'s value is the outcome's (`hnep`) and the staging's
+(`WalkFinalEnv`'s last field); the two agree because the staging fixes the parameter, and
+that agreement is what turns the outcome's `hterm` into the merge's. -/
+theorem WalkLoopEnd.merge {m0 : Mem} {G : WalkGeom m0} (h : WalkLoopEnd G)
+    (Cd : WalkCarry G) (sd : State) (p spv k2 : Nat) (prev : String)
+    (spOp kOp : Operand) (nepv : BitVec 64)
+    (hInv : WalkInv G Cd sd) (hblk : Cd.block = "cleanup478.i")
+    (hpre : sd.pre = some prev)
+    (hsp : phiIncoming prev cleanupSpIncoming = some spOp)
+    (hspv : evalOperand sd spOp = some (.int 32 (BitVec.ofNat 32 spv)))
+    (hk : phiIncoming prev cleanupKIncoming = some kOp)
+    (hkv : evalOperand sd kOp = some (.int 64 (BitVec.ofNat 64 k2)))
+    (hnep : lookupName sd.env "%nep" = some (.int 64 nepv)) (hterm : k2 = nepv.toNat) :
+    WalkTargetPost (stage2Calls stage2SubCalls) G Cd sd := by
+  obtain ⟨hwenv, hwlog, hw4, hwroot⟩ := h.mergeWords Cd sd hInv hblk
+  exact walkFinishPost_merge G Cd sd hInv hblk hpre hsp hspv hk hkv hnep hterm
+    ⟨hwenv, hwlog, hw4, hwroot⟩
+
+/-- **The refusal copy's terminal post, from the copy's words.**  R0: the state is at
+`if.then` already, so the post is the copy's two steps at the word the previous link
+stored. -/
+theorem WalkLoopEnd.refuse {m0 : Mem} {G : WalkGeom m0} (h : WalkLoopEnd G)
+    (Cd : WalkCarry G) (sd : State) (hInv : WalkInv G Cd sd)
+    (hblk : Cd.block = "if.then") :
+    WalkTargetPost (stage2Calls stage2SubCalls) G Cd sd :=
+  walkFinishPost_refuseOfWords G Cd sd hInv hblk (h.refuseWords Cd sd hInv hblk)
 
 /-- **The loop's step, from the three bundles.**  `walkLoopStepThree_of_dispatchResult`
 (`JsonStage2WalkDispatchThreeOfRun`) asks for the dispatch's result at every head state,
@@ -322,10 +367,10 @@ theorem walkLoopStep_of_staging {m0 : Mem} {G : WalkGeom m0}
         · exact WalkDispatchResult.ofStringMerge G C s hInv hstr
       · exact WalkDispatchResult.ofHlastMerge G C s hInv hhead
           (hend.facts C s hInv hhead hk))
-    (fun Cd sd hInv hblk => by
-      cases hblk with
-      | inl h => exact hend.merge Cd sd hInv h
-      | inr h => exact hend.refuse Cd sd hInv h)
+    (fun Cd sd p spv k2 prev spOp kOp nepv hInv hblk hpre hsp hspv hkOp hk2 hnepv hterm =>
+      hend.merge Cd sd p spv k2 prev spOp kOp nepv hInv hblk hpre hsp hspv hkOp hk2 hnepv
+        hterm)
+    (fun Cd sd hInv hblk => hend.refuse Cd sd hInv hblk)
     (fun nepv Cd sd hInv hblk hnep => hend.nepBound Cd sd nepv hInv hblk hnep)
 
 /-! ### The empty entry stream's flush, from the staging -/
@@ -654,6 +699,86 @@ theorem walkPremises_of_staging {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
     · -- the loop's step, from the three bundles
       exact walkLoopStep_of_staging (G := G) (hcont G) (hmerge G) (hend G)
 
+/-! ### The loop's post, from the staging
+
+The `nep > 0` arm owes the record's post, and the post is `stage2Boundary` at the memory
+the run returns.  The three facts that produce it are the seed's prefix, the invariant at
+the loop head and the loop's step; `walkLoopFinishesThree` turns them into a run with its
+verdict, its memory and the boundary there, and `stage2Post_of_completion` carries that
+one outcome to every behaviour of the run.
+
+The verdict is the run's and not the arm's: the finalisation decides between `1` and `0`
+at the merge's and the copy's tests, and the boundary is read at the memory each route
+returns (`JsonStage2WalkTargetPost`).  This is why the post cannot be a fixed verdict at
+a fixed memory, and why the terminal vocabulary had to carry both. -/
+
+/-- **The loop's post, at the staging.**  At `nep > 0` the entry block's test sends the
+run into the loop; the seed's three steps (`walkSeedPrefix_entry_geometry`), the invariant
+at the loop head (`walkSeedInvariant_geometry`), the loop's step and its completion
+(`walkLoopFinishesThree` at `F ≤ 27`) give the returned verdict and memory, and the
+boundary at that memory is the post. -/
+theorem stage2Post_of_staging_loop {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
+    {a13 : List Value} {mem : Mem} {next : Nat} {G : WalkGeom mem} {S : WalkStage G}
+    (hSc : S.c = c) (hSct : S.ctype = ctype) (hScs : S.cst = cst) (hStok : S.tok = tok)
+    (hSs : S.s = s) (hSz : S.z = z) (hSe : S.e = e)
+    (hargs : a13 = [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
+      .int 64 (BitVec.ofNat 64 G.nep), .ptr G.xp, .int 64 (BitVec.ofNat 64 G.nxp),
+      .ptr G.dst, .int 64 (BitVec.ofNat 64 G.dstcap), .ptr G.ndst, .ptr G.ev,
+      .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err])
+    (hnext : G.next0 = next) (hpos : 0 < G.nep) {F : Nat}
+    (hloop : WalkLoopStepThree (stage2Calls stage2SubCalls) G F) :
+    ∀ o, BehFromState (stage2Calls stage2SubCalls) stage2Body
+        (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next) o →
+      (Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot).post
+        (stage2Args a13 d c ctype cst tok s z e) mem next o := by
+  -- the seed's three steps, and the invariant at the loop head
+  have hseed : ∀ k, runFuel (stage2Calls stage2SubCalls) (3 + k) stage2Body
+      (EntryState stage2Body (stage2Args a13 d S.c S.ctype S.cst S.tok S.s S.z S.e)
+        mem next) =
+      runFuel (stage2Calls stage2SubCalls) k stage2Body
+        (walkSeedFinalState G S
+          (EntryState stage2Body (stage2Args a13 d S.c S.ctype S.cst S.tok S.s S.z S.e)
+            mem next) (entryPos G 0) (entryByte G 0)) :=
+    fun k => walkSeedPrefix_entry_geometry G S hargs hnext.symm hpos k
+  have hInv : WalkInv G (walkSeed G S)
+      (walkSeedFinalState G S
+        (EntryState stage2Body (stage2Args a13 d S.c S.ctype S.cst S.tok S.s S.z S.e)
+          mem next) (entryPos G 0) (entryByte G 0)) := by
+    refine walkSeedInvariant_geometry G S
+      (EntryState stage2Body (stage2Args a13 d S.c S.ctype S.cst S.tok S.s S.z S.e)
+        mem next) hpos ?_ ?_ hnext.symm
+    · rw [hargs, walkEntryState_env, hSct]
+      simp [lookupName]
+    · rw [hargs, walkEntryState_env, hScs]
+      simp [lookupName]
+  have hk : (walkSeed G S).k < G.nep := by
+    show 0 < G.nep
+    exact hpos
+  obtain ⟨q, v, m, -, hrun, hb⟩ :=
+    walkLoopFinishesThree hloop (walkSeed G S)
+      (walkSeedFinalState G S
+        (EntryState stage2Body (stage2Args a13 d S.c S.ctype S.cst S.tok S.s S.z S.e)
+          mem next) (entryPos G 0) (entryByte G 0))
+      hInv (walkSeed_block G S) hk
+  -- the seed's state is the record's entry state
+  have hstate : EntryState stage2Body
+      (stage2Args a13 d S.c S.ctype S.cst S.tok S.s S.z S.e) mem next =
+      EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next := by
+    rw [hSc, hSct, hScs, hStok, hSs, hSz, hSe]
+  have hcom : runFuel (stage2Calls stage2SubCalls) (3 + (q + 2)) stage2Body
+      (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next) =
+      some (.ret (some (.int 64 v)) m) := by
+    rw [← hstate, hseed (q + 2)]
+    exact hrun
+  have hgood : stage2Post a13 mem next (.ret (some (.int 64 v)) m) := by
+    show stage2Boundary a13 mem next m (.int 64 v)
+    rw [hargs, ← hnext]
+    exact hb
+  intro o hb'
+  show stage2Post ((stage2Args a13 d c ctype cst tok s z e).take 13) mem next o
+  rw [stage2Args_take13 a13 (by rw [hargs]; rfl)]
+  exact stage2Post_of_completion hcom hgood o hb'
+
 /-! ### The completion and the walk's obligation
 
 `stage2WalkCompletes_of_premises` and `stage2WalkObligation_of_premises` were stated and
@@ -677,21 +802,13 @@ theorem stage2WalkCompletes_of_staging {d c ctype cst tok s z e nkSlot nxpSlot :
     Stage2WalkCompletes d c ctype cst tok s z e nkSlot nxpSlot stage2SubCalls :=
   stage2WalkCompletes_of_premises (walkPremises_of_staging hcont hmerge hend)
 
-/-- **The walk's obligation, from the four premises and the record's post.**  This is
-the milestone the layer was built for: `Stage2WalkObligation` is `Satisfies` at
-`Γ_stage2at`, and its completion half is `stage2WalkCompletes_of_staging`; its post
-half is the record's own, named. -/
-theorem stage2WalkObligation_of_staging {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
-    (hcont : ∀ {m0 : Mem} (G : WalkGeom m0), WalkContinueFacts G)
-    (hmerge : ∀ {m0 : Mem} (G : WalkGeom m0), WalkMergeCells G)
-    (hend : ∀ {m0 : Mem} (G : WalkGeom m0), WalkLoopEnd G)
-    (hpost : ∀ args mem next,
-      (Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot).pre args mem next →
-      ∀ o, BehFromState (stage2Calls stage2SubCalls) stage2Body
-          (EntryState stage2Body args mem next) o →
-        (Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot).post args mem next o) :
-    Stage2WalkObligation d c ctype cst tok s z e nkSlot nxpSlot :=
-  stage2WalkObligation_of_premises (walkPremises_of_staging hcont hmerge hend) hpost
+ /-! **The walk's obligation: the completion half here, the post half one module up.**
+`Stage2WalkObligation` is `Satisfies` at `Γ_stage2at`, and its two conjuncts are the
+completion (`stage2WalkCompletes_of_staging`, above) and the post at every behaviour of
+the run.  The post's two arms are the empty entry stream's (`stage2Post_of_staging_flush`,
+`JsonStage2WalkFlushPost`) and the loop's (`stage2Post_of_staging_loop`, above), and the
+first of those lives above this module: `JsonStage2WalkFlushPost` imports this one, so
+the record's obligation is stated there, where both arms are in scope. -/
 
 /-! ### The four premises, and what each one owes
 

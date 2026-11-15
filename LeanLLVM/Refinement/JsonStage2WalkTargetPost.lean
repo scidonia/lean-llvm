@@ -13,33 +13,38 @@ The three routes, from the merge (`cleanup478.i`) and from the copy's entry (`if
   verdict `1`.  `walkFinishPost_accept`.
 * **R2/R3, refuse from the merge** — `cleanup478.i → if.then485.i → (if.then492.i |
   if.then488.i) → if.then → if.end`, four writes (`%4` at `%e + 8`, then the record's
-  three slots), and the verdict `0`.  Boundary only: `stage2Boundary_of_refuse` and
-  `stage2Boundary_of_refuse_offset`.
+  three slots), and the verdict `0`.  `walkFinishPost_refuse` (through `if.then492.i`) and
+  `walkFinishPost_refuse488` (through `if.then488.i`).
 * **R0, a segment already at the copy** — `if.then → if.end`, three writes (the copy's),
-  and the verdict `0`.  Boundary only; `stage2Boundary_of_refuse` is its packing.
+  and the verdict `0`.  `walkFinishPost_copy`.
 
-Each concludes `stage2Boundary` directly (no intermediate predicate: the layer's
-`WalkTargetPost` lives in the loop's own module), at the memory the route actually
-returns: `walkFinishMemAccept` for R1, `walkFinishMemRefuse` for the refuse routes.
+Each concludes `stage2Boundary` at the memory the route actually returns
+(`walkFinishMemAccept` for R1, `walkFinishMemRefuse` for the refusal routes), and each
+concludes the run that reaches it: `walkFinishCopyTail` is the refusal arm's two steps,
+shared by R2, R3 and R0, so a refusal route owes only the reaches of `if.then` and the
+three words the copy reads.
 
-## What is proved here, and what is not
+## What is proved here
 
-**Proved**: the boundary at the returned memory for all three routes — the 25 conjuncts
-of `stage2Boundary`, at a variable base memory, from `WalkInv` plus the four supplied
-facts below — and the accept route's terminal run with its memory named
-(`walkFinishPost_accept`).  That is the output-side statement the loop arm's post needs:
-the boundary is the post, and the only thing a post producer still lacks is the run that
-reaches it on the two refusal routes.
+**Proved**: the boundary at the returned memory for all three routes — the 25 conjuncts of
+`stage2Boundary`, at a variable base memory, from `WalkInv` plus the supplied facts below
+— and each route's terminal run with its memory named.  That is the output-side statement
+the loop arm's post needs, and it is exactly `WalkTargetPost` (`JsonStage2WalkTraverse`):
+the loop's terminal disjunct carries the returned memory and the boundary there.
 
-**Not yet written**: `walkFinishPost_refuse`, `walkFinishPost_refuse488` and
-`walkFinishPost_copy` — the terminal *runs* for R2/R3 and R0, which compose
-`walkFinishMerge_at`/`walkIfThen492Step`/`walkIfThen_step`/`walkIfEnd_step` at the
-memories the boundary lemmas here already name.  Their absence is why the module is not
-imported into the loop's step yet; `stage2WalkObligation_of_staging` still takes `hpost`.
-The divergence that stopped the first of them is recorded where it bites: the composition
-unifies an abstract base memory against a concrete state's, which is an occurs-check
-failure rather than a heartbeat one, and the repair is to state the step lemmas at a
-memory parameter rather than to raise a budget.
+**Composed, not assumed.**  `walkFinishPost_merge` is the merge's three routes as one
+statement — the depth's zero test and the root-done test select among R1, R2 and R3 — and
+`WalkMergeWords`/`WalkRefuseWords` are the word bundles a caller supplies.  So what
+remains outside the proofs is the words, not the routes:
+`JsonStage2WalkPremisesOfStaging`'s `WalkLoopEnd` names each word's producer.
+
+**The measurements that shaped it.**  The copy's steps are stated at *named* states
+(`walkFinishCopyState`) rather than at inline record updates: a record update written
+inline inside three step equations is re-elaborated at every place it is printed, and the
+memory under it is a three-deep write, which times out at `whnf`.  And the refusal
+routes' base memory is the offset store (`walkFinishMemOffset`), so every read the copy
+takes is one `walkReadBytes_writeBytes_outside` across it — the log's two words by
+`walkFinish_log_sep`, the refusal word by its own read-back.
 
 ## Why every memory lemma is stated at an abstract memory
 
@@ -56,7 +61,10 @@ measurement for the empty-stream arm.
 
 `WalkInv` bounds but does not fix the words the finalisation reads, and it does not
 carry the finalisation blocks' address registers at all.  The route theorems therefore
-take the facts below as *arguments*, named where the repository would produce them:
+take the facts below as *arguments*, one bundle per entry block
+(`WalkMergeWords`, `WalkRefuseWords`), and each named where the repository would produce
+it.  `%nep` is not among them: the dispatch's outcome carries its value at every state
+the merge is read at, so `hnp`/`hterm` are the outcome's own data.
 
 * `%4 = n` (`h4`).  `%4` is loaded once by `entry` from `%n2.i = %s + 8`, where `s2_init`
   stores `n`, and no block rebinds it; but `%4` is not in `walkStaticNames`
@@ -69,11 +77,13 @@ take the facts below as *arguments*, named where the repository would produce th
   equality, which its own docstring calls "the dispatch's to produce".  Its producer is
   the write-back block `if.else285.i`'s link.
 * the finalisation blocks' registers (`WalkFinalEnv`): `%e`, `%z`, `%s`, `%c.i`,
-  `%ndst`, `%nev`, `%err` and `%nep`.  The carriers give six more (`%alen`, `%len`,
+  `%ndst`, `%nev` and `%err`.  The carriers give six more (`%alen`, `%len`,
   `%xj.i`, `%root_done.i` from `walkStaticRegs`, `%ctype.i`/`%cst.i` from `WalkPtrs`), and
   these are *not* in the list because the routes transport the carriers themselves; the
-  eight here are the ones `WalkInv` has no clause for.  A producer is the seed's
-  environment (`walkEntryState_env`), for the same reason as `%4`.
+  seven here are the ones `WalkInv` has no clause for.  A producer is the seed's
+  environment (`walkEntryState_env`), for the same reason as `%4`.  `%nep` is the
+  eighth finalisation register and is *not* supplied here: the dispatch's outcome carries
+  it (`hnepv`), so each merge route takes `hnp`/`hterm` from there.
 * R0's refusal word (`hword`): `readBytes s.mem (C.stage.e + 8) 8 = some (wordBytes 8
   C.eoff)`.  The copy reads the word the *previous* link stored, and neither `WalkInv`
   nor `WalkSegment` can say so (`WalkSegment` is a `Prop` holding the run and the
@@ -140,6 +150,73 @@ theorem walkExitBlockState_env (env : Env) (nd nv : Nat) (A L : BitVec 64) (s : 
     (walkExitBlockState env nd nv A L s).env = cells [("%50", .int 64 L),
       ("%49", .int 64 A)] env := rfl
 
+/-- **The copy's state at `if.end`**: `walkIfThenBlockState` with the copy's block and
+its predecessor.  Named so the tail's second step and its returned memory are stated at
+one term — a record update written inline inside a step's conclusion is re-elaborated at
+every place it is printed, and the memory underneath it is a three-deep write. -/
+def walkFinishCopyState (env : Env) (nd nv err e : Nat) (A L E : BitVec 64)
+    (p : String) (s : State) : State :=
+  { walkIfThenBlockState env nd nv err e A L E s with pc := "if.end", pre := some p }
+
+/-- The copy state's memory is the copy's. -/
+theorem walkFinishCopyState_mem (env : Env) (nd nv err e : Nat) (A L E : BitVec 64)
+    (p : String) (s : State) :
+    (walkFinishCopyState env nd nv err e A L E p s).mem =
+      (walkIfThenBlockState env nd nv err e A L E s).mem := by
+  simp only [walkFinishCopyState]
+
+/-- **The copy's state is at the block it was entered at.**  The twin of
+`walkExitBlockState_pc`, for the refusal arm's `walkIfThenBlockState`. -/
+theorem walkFinishCopy_pc (env : Env) (nd nv err e : Nat) (A L E : BitVec 64)
+    (s : State) : (walkIfThenBlockState env nd nv err e A L E s).pc = s.pc := by
+  simp only [walkIfThenBlockState, stateAt, walkSetMem]
+
+/-- **The copy's state returns the block's three writes.**  Stated by rewriting the
+named state's three layers rather than by `rfl`: at a term whose memory is the
+three-deep write, `rfl` unfolds the writes at every position. -/
+theorem walkFinishCopy_mem (env : Env) (nd nv err e : Nat) (A L E : BitVec 64)
+    (s : State) :
+    (walkIfThenBlockState env nd nv err e A L E s).mem =
+      writeBytes
+        (writeBytes (writeBytes s.mem nd (wordBytes 8 A.toNat)) nv
+          (wordBytes 8 L.toNat))
+        err (wordBytes 8 E.toNat) := by
+  rw [walkIfThenBlockState, stateAt_mem, walkSetMem_mem]
+
+/-- **The copy's four cells leave `%e`, `%z` and `%s` alone.**  `if.end`'s three
+markers read them, and the copy binds `%51`, `%52`, `%off` and `%53` instead. -/
+theorem walkFinishCopy_cells (env : Env) (nd nv err e : Nat) (A L E : BitVec 64)
+    (s : State) :
+    lookupName (walkIfThenBlockState env nd nv err e A L E s).env "%e"
+        = lookupName env "%e" ∧
+    lookupName (walkIfThenBlockState env nd nv err e A L E s).env "%z"
+        = lookupName env "%z" ∧
+    lookupName (walkIfThenBlockState env nd nv err e A L E s).env "%s"
+        = lookupName env "%s" := by
+  refine ⟨?_, ?_, ?_⟩ <;>
+    simp [walkIfThenBlockState, stateAt, cells, lookupName_cons_ne]
+
+/-- **The log is separate from the error record.**  The two offsets the copy's reads
+have to pass the refusal offset's store at: `%z`'s forty-eight- and eight-byte
+windows against `%e`'s twenty-four bytes.  Both are `staged_pair`'s instance at the
+two objects' extents. -/
+theorem walkFinish_log_sep {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) :
+    (C.stage.z + 48 + 8 ≤ C.stage.e + 8 ∨ C.stage.e + 8 + 8 ≤ C.stage.z + 48) ∧
+    (C.stage.z + 8 + 8 ≤ C.stage.e + 8 ∨ C.stage.e + 8 + 8 ≤ C.stage.z + 8) := by
+  have h := staged_pair (b := G.b) (n := G.n) (ep := G.ep) (nep := G.nep)
+    (xp := G.xp) (nxp := G.nxp) (dst := G.dst) (ndst0 := G.ndst0) (ev := G.ev)
+    (evcap := G.evcap) (ndst := G.ndst) (nev := G.nev) (err := G.err)
+    (c := C.stage.c) (ctype := C.stage.ctype) (cst := C.stage.cst) (tok := C.stage.tok)
+    (sv := C.stage.s) (z := C.stage.z) (e := C.stage.e) C.stage.separate
+    (r := (C.stage.z, stage2LogExtent)) (by simp [stage2WalkRegions, stage2StagedWrites])
+    (q := (C.stage.e, stage2ErrorExtent)) (by simp [stage2WalkRegions, stage2StagedWrites])
+    (by
+      intro hh
+      have h2' : stage2LogExtent = stage2ErrorExtent := congrArg Prod.snd hh
+      exact absurd h2' (by decide))
+  simp only [stage2LogExtent, stage2ErrorExtent] at h
+  exact ⟨by omega, by omega⟩
+
 /-! ### Reading the words back
 
 Each slot is written last by the route's own copy, so a read at it returns the word; the
@@ -152,6 +229,14 @@ theorem walkFinishReadBytes_writeBytes_len {m : Mem} {bs : List UInt8} {a n : Na
     (h : n = bs.length) : readBytes (writeBytes m a bs) a n = some bs := by
   subst h
   exact readBytes_writeBytes_same m bs
+
+/-- **The offset store reads back at its own address.**  `if.then492.i` and
+`if.then488.i` each write `wordBytes 8 v` at `%e + 8`, and the copy's `%off` load
+reads exactly that. -/
+theorem walkFinishMemOffset_read {m : Mem} {e v : Nat} :
+    readBytes (walkFinishMemOffset e v m) (e + 8) 8 = some (wordBytes 8 v) := by
+  rw [walkFinishMemOffset]
+  exact walkFinishReadBytes_writeBytes_len (by rw [wordBytes, natToBytes_length])
 
 /-- A shorter present range is present. -/
 theorem walkFinishHasBytes_short {m : Mem} {a n n' : Nat}
@@ -229,18 +314,22 @@ theorem walkFinishMemAccept_err {m0 : Mem} (G : WalkGeom m0) {m : Mem} {a l : Na
 
 /-! ### The finalisation blocks' registers
 
-The eight register lookups no `WalkInv` clause carries.  One predicate, so the routes
+The seven register lookups no `WalkInv` clause carries.  One predicate, so the routes
 take one hypothesis, and one transport lemma, so each step's `cells` list is discharged
-by a literal comparison. -/
+by a literal comparison.
+
+`%nep` is deliberately absent: it *is* carried by the dispatch's outcome (`hnepv`) at
+every state the merge is read at, so a route takes it from there rather than from a
+second supply that would then have to be proved equal to the first. -/
 
 /-- The names `WalkFinalEnv` binds, as the list its transport lemmas decide on. -/
 def walkFinalNames : List String :=
-  ["%e", "%z", "%s", "%c.i", "%ndst", "%nev", "%err", "%nep"]
+  ["%e", "%z", "%s", "%c.i", "%ndst", "%nev", "%err"]
 
 /-- **The finalisation blocks' registers.**  `s2_walk.exit`, `if.then` and `if.end` read
 `%alen`, `%len`, `%xj.i`, `%root_done.i`, `%ctype.i` and `%cst.i` — all in the two
-carriers — and these eight, which no clause of `WalkInv` names: the three record slots,
-the two finalisation records, the cursor record and the entry count.  They are fixed by
+carriers — and these seven, which no clause of `WalkInv` names: the three record slots,
+the two finalisation records and the cursor record.  They are fixed by
 the staging's own stores at `entry`, so they are a seed fact rather than a walk fact. -/
 def WalkFinalEnv {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (env : Env) : Prop :=
   lookupName env "%e" = some (.ptr C.stage.e) ∧
@@ -249,17 +338,16 @@ def WalkFinalEnv {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (env : Env) : Pr
     lookupName env "%c.i" = some (.ptr C.stage.c) ∧
     lookupName env "%ndst" = some (.ptr G.ndst) ∧
     lookupName env "%nev" = some (.ptr G.nev) ∧
-    lookupName env "%err" = some (.ptr G.err) ∧
-    lookupName env "%nep" = some (.int 64 (BitVec.ofNat 64 G.nep))
+    lookupName env "%err" = some (.ptr G.err)
 
 /-- A cell list whose names miss `walkFinalNames` leaves the predicate alone. -/
 theorem WalkFinalEnv.cells_of {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {env : Env}
     (h : WalkFinalEnv G C env) (cs : List (String × Value))
     (hne : ∀ n ∈ cs.map (·.1), n ∉ walkFinalNames) : WalkFinalEnv G C (cells cs env) := by
-  obtain ⟨he, hz, hs, hc, hnd, hnv, her, hnp⟩ := h
+  obtain ⟨he, hz, hs, hc, hnd, hnv, her⟩ := h
   have hmiss : ∀ n : String, n ∈ walkFinalNames → n ∉ cs.map (·.1) :=
     fun n hn hc => hne n hc hn
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · rw [lookupName_cells_of_notin cs "%e" env (hmiss "%e" (by simp [walkFinalNames]))]
     exact he
   · rw [lookupName_cells_of_notin cs "%z" env (hmiss "%z" (by simp [walkFinalNames]))]
@@ -274,16 +362,14 @@ theorem WalkFinalEnv.cells_of {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {en
     exact hnv
   · rw [lookupName_cells_of_notin cs "%err" env (hmiss "%err" (by simp [walkFinalNames]))]
     exact her
-  · rw [lookupName_cells_of_notin cs "%nep" env (hmiss "%nep" (by simp [walkFinalNames]))]
-    exact hnp
 
 /-- A bind at a name outside the list leaves the predicate alone. -/
 theorem WalkFinalEnv.bind {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {env : Env}
     (h : WalkFinalEnv G C env) {d : String} {v : Value} (hd : d ∉ walkFinalNames) :
     WalkFinalEnv G C ((d, v) :: env) := by
-  obtain ⟨he, hz, hs, hc, hnd, hnv, her, hnp⟩ := h
+  obtain ⟨he, hz, hs, hc, hnd, hnv, her⟩ := h
   have hne : ∀ n, n ∈ walkFinalNames → d ≠ n := fun n hn hdn => hd (hdn ▸ hn)
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · rw [lookupName_cons_ne (k := d) (n := "%e") v env
       (hne "%e" (by simp [walkFinalNames]))]
     exact he
@@ -305,9 +391,6 @@ theorem WalkFinalEnv.bind {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {env : 
   · rw [lookupName_cons_ne (k := d) (n := "%err") v env
       (hne "%err" (by simp [walkFinalNames]))]
     exact her
-  · rw [lookupName_cons_ne (k := d) (n := "%nep") v env
-      (hne "%nep" (by simp [walkFinalNames]))]
-    exact hnp
 
 /-! ### The staged separation the finalisation reads
 
@@ -788,8 +871,9 @@ the merge state to a return of `1` at `walkFinishMemAccept`.  The copy's `denote
 `walkExitBlock_denote` at the state the three preceding steps leave, so the returned
 memory is the named term rather than an existential's.
 
-The merge's own premises are its `phi`s and `%nep`; `%nep` is `WalkFinalEnv`'s last
-field, and the root word is the caller's (see the module header). -/
+The merge's own premises are its `phi`s, its `%nep` cell and the index it selects
+(`hterm`); the root word and the finalisation's words are the caller's (see the module
+header). -/
 
 /-- **R1, accept: the merge's finish.**  From the terminal merge state the run takes the
 exit's `1` arm: the two cursor words at `%ndst`/`%nev`, the verdict `1`, and the record's
@@ -805,7 +889,8 @@ theorem walkFinishPost_accept {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
     (hspv : evalOperand s spOp = some (.int 32 (BitVec.ofNat 32 spv)))
     (hk : phiIncoming p cleanupKIncoming = some kOp)
     (hkv : evalOperand s kOp = some (.int 64 (BitVec.ofNat 64 k2)))
-    (hterm : k2 = (BitVec.ofNat 64 G.nep).toNat)
+    {nepv : BitVec 64} (hnp : lookupName s.env "%nep" = some (.int 64 nepv))
+    (hterm : k2 = nepv.toNat)
     (hsp0 : evalICmp .eq (BitVec.ofNat 32 spv) (BitVec.ofNat 32 0) = 1)
     {rv : BitVec 32} (hrootRead : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes rv.toNat 4))
     (hroot0 : evalICmp .eq rv (BitVec.ofNat 32 0) = 0) :
@@ -814,12 +899,12 @@ theorem walkFinishPost_accept {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
         some (.ret (some (.int 64 v)) m) ∧
       stage2Boundary (walkFinishArgs G) m0 G.next0 m (.int 64 v) := by
   have henv0 : WalkFinalEnv G C s.env := henv
-  obtain ⟨he, hz, hs, hc, hnd, hnv, her, hnp⟩ := henv0
+  obtain ⟨he, hz, hs, hc, hnd, hnv, her⟩ := henv0
   -- the merge's step
   obtain ⟨s₁, hstep₁, -, hs₁⟩ :=
     walkFinishMerge_at (calls := stage2Calls stage2SubCalls) (G := G) (C := C) (s := s)
       hInv hblk (p := p) (spv := spv) (k2 := k2) (spOp := spOp) (kOp := kOp)
-      (nepv := BitVec.ofNat 64 G.nep) hpre hsp hspv hk hkv hnp hterm
+      (nepv := nepv) hpre hsp hspv hk hkv hnp hterm
   have hsp₁ : lookupName s₁.env "%sp.i.1" = some (.int 32 (BitVec.ofNat 32 spv)) := by
     rw [hs₁]
     simp only [cells]
@@ -919,7 +1004,7 @@ theorem walkFinishPost_accept {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
     rw [hLtoNat, hsm₃]
     exact hInv.log_len
   have henv₃' : WalkFinalEnv G C s₃.env := henv₃
-  obtain ⟨-, -, -, hc', hnd', hnv', -, -⟩ := henv₃'
+  obtain ⟨-, -, -, hc', hnd', hnv', -⟩ := henv₃'
   have hden : denoteCode (stage2Calls stage2SubCalls) walkExitBlock.instrs s₃ =
       some (walkExitBlockState s₃.env G.ndst G.nev A L s₃) := by
     have h := walkExitBlock_denote (sub := stage2SubCalls) s₃.env s₃
@@ -962,16 +1047,604 @@ theorem walkFinishPost_accept {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
   rw [show (1 + 0 : Nat) = 1 from by omega]
   simp only [runFuel, hstep₅, hmem₅]
 
+/-! ### The refusal copy's tail, and R2's route
+
+The refusal arm's last two steps are common to all three refusal routes: the copy
+writes the record's three slots and jumps to `if.end`, which returns the refusal φ's
+literal zero.  `walkFinishCopyTail` states them at any state at `if.then`, so a route
+owes only the reaches of that state — and the three words the copy reads.
+
+`walkFinishPost_refuse` is R2, the merge's empty-stack route through `if.then492.i`:
+the root-done test's refusing arm stores the offset and the copy follows.  Its
+returned memory is `walkFinishMemRefuse` at `walkFinishMemOffset`, which is what
+`stage2Boundary_of_refuse_offset` is proved at. -/
+
+/-- **The refusal copy and the return, from a state at `if.then`.**  The copy's
+premise set at the state's own memory, its jump to `if.end`, and the refusal φ's
+literal zero: two steps to a return at `walkFinishMemRefuse` over the state's
+memory.  `%alen`'s word is the argument (`hlog`), because `WalkInv.log_alen` is an
+existential; `%len`'s is `hlogL`, its equality; and `%err`'s is the offset the
+route's own store wrote (`hE`). -/
+theorem walkFinishCopyTail {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (hpc : s.pc = "if.then")
+    (hregs : WalkRegs G C s.env) (hptrs : WalkPtrs G C s.env)
+    (henv : WalkFinalEnv G C s.env)
+    (hlog : readBytes s.mem (C.stage.z + 48) 8 = some (wordBytes 8 C.alen))
+    (hlogL : readBytes s.mem (C.stage.z + 8) 8 = some (wordBytes 8 C.evlen))
+    (halen64 : C.alen < 2 ^ 64) (hevlen64 : C.evlen < 2 ^ 64)
+    {E : BitVec 64} (hE : readBytes s.mem (C.stage.e + 8) 8 = some (natToBytes E.toNat 8)) :
+    runFuel (stage2Calls stage2SubCalls) 2 stage2Body s =
+      some (.ret (some (.int 64 0))
+        (walkFinishMemRefuse G s.mem C.alen C.evlen E.toNat)) := by
+  obtain ⟨he, hz, hs, hc, hnd, hnv, her⟩ := henv
+  have hxj : lookupName s.env "%xj.i" = some (.ptr (G.next0 + 12)) :=
+    hregs ("%xj.i", .ptr (G.next0 + 12)) (by simp [walkStaticRegs])
+  have hrd : lookupName s.env "%root_done.i" = some (.ptr (G.next0 + 8)) :=
+    hregs ("%root_done.i", .ptr (G.next0 + 8)) (by simp [walkStaticRegs])
+  have halen : lookupName s.env "%alen" = some (.ptr (C.stage.z + 48)) :=
+    hregs ("%alen", .ptr (C.stage.z + 48)) (by simp [walkStaticRegs])
+  have hlen : lookupName s.env "%len" = some (.ptr (C.stage.z + 8)) :=
+    hregs ("%len", .ptr (C.stage.z + 8)) (by simp [walkStaticRegs])
+  obtain ⟨-, -, -, hsep, hsepE1, hsepE2⟩ := walkFinish_sep G C
+  let A : BitVec 64 := BitVec.ofNat 64 C.alen
+  let L : BitVec 64 := BitVec.ofNat 64 C.evlen
+  have hAtoNat : A.toNat = C.alen := by
+    dsimp only [A]
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt halen64]
+  have hLtoNat : L.toNat = C.evlen := by
+    dsimp only [L]
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hevlen64]
+  have hA : readBytes s.mem (C.stage.z + 48) 8 = some (natToBytes A.toNat 8) := by
+    rw [hAtoNat]; exact hlog
+  have hL : readBytes s.mem (C.stage.z + 8) 8 = some (natToBytes L.toNat 8) := by
+    rw [hLtoNat]; exact hlogL
+  have hden : denoteCode (stage2Calls stage2SubCalls) walkIfThenBlock.instrs s =
+      some (walkIfThenBlockState s.env G.ndst G.nev G.err C.stage.e A L E s) := by
+    have h := walkIfThenBlock_denote_named (sub := stage2SubCalls) (env := s.env) (s := s)
+      hxj hrd hptrs.2.2.2.2.1 hptrs.2.2.2.1 hc halen hnd hlen hnv he her
+      hA hL hE hsep hsepE1 hsepE2
+    rwa [stateAt_self] at h
+  -- the copy's state at `if.end`, named
+  have hpc₁ : (walkIfThenBlockState s.env G.ndst G.nev G.err C.stage.e A L E s).pc = s.pc :=
+    walkFinishCopy_pc _ _ _ _ _ _ _ _ _
+  have hstep₁ : step (stage2Calls stage2SubCalls) stage2Body s =
+      .jump (walkFinishCopyState s.env G.ndst G.nev G.err C.stage.e A L E s.pc s) :=
+    walkIfThen_step (sub := stage2SubCalls) s hpc hden hpc₁
+  have hcells : lookupName (walkFinishCopyState s.env G.ndst G.nev G.err C.stage.e A L E s.pc s).env
+        "%e" = lookupName s.env "%e" ∧
+      lookupName (walkFinishCopyState s.env G.ndst G.nev G.err C.stage.e A L E s.pc s).env
+        "%z" = lookupName s.env "%z" ∧
+      lookupName (walkFinishCopyState s.env G.ndst G.nev G.err C.stage.e A L E s.pc s).env
+        "%s" = lookupName s.env "%s" :=
+    walkFinishCopy_cells s.env G.ndst G.nev G.err C.stage.e A L E s
+  have hstep₂ : step (stage2Calls stage2SubCalls) stage2Body
+      (walkFinishCopyState s.env G.ndst G.nev G.err C.stage.e A L E s.pc s) =
+      .ret (some (.int 64 0))
+        (stateAt (("%tobool.not151", .int 64 0) ::
+          (walkFinishCopyState s.env G.ndst G.nev G.err C.stage.e A L E s.pc s).env)
+          (walkFinishCopyState s.env G.ndst G.nev G.err C.stage.e A L E s.pc s)) :=
+    walkIfEnd_step (p := s.pc) (v := 0) (bit := 0) (pe := C.stage.e) (pz := C.stage.z)
+      (ps := C.stage.s) (walkFinishCopyState s.env G.ndst G.nev G.err C.stage.e A L E s.pc s)
+      rfl (hcells.1.trans he) (hcells.2.1.trans hz) (hcells.2.2.trans hs) rfl
+      (by rw [hpc]; exact walkIfEnd_refusal_phi) rfl
+  have hmem : (stateAt (("%tobool.not151", .int 64 0) ::
+        (walkFinishCopyState s.env G.ndst G.nev G.err C.stage.e A L E s.pc s).env)
+        (walkFinishCopyState s.env G.ndst G.nev G.err C.stage.e A L E s.pc s)).mem =
+      walkFinishMemRefuse G s.mem C.alen C.evlen E.toNat := by
+    rw [stateAt_mem, walkFinishCopyState_mem, walkFinishCopy_mem, hAtoNat, hLtoNat]
+    rfl
+  simp only [runFuel, hstep₁, hstep₂, hmem]
+
+/-- **R2: the refusal from the merge through `if.then492.i`.**  The merge's empty-stack
+arm, the root-done test's refusing arm, the offset's store, the copy and the return:
+four steps to `if.then` and the copy's two.  The returned memory is
+`walkFinishMemRefuse` at `walkFinishMemOffset`, and the boundary is
+`stage2Boundary_of_refuse_offset` there.
+
+The three words the copy reads are the route's own: the log's arena cursor is the
+argument `hlog`, its event cursor `WalkInv.log_len`'s, and the offset the store just
+wrote.  `%4` is an argument for the reason the module header gives. -/
+theorem walkFinishPost_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (hInv : WalkInv G C s) (hblk : C.block = "cleanup478.i")
+    (henv : WalkFinalEnv G C s.env)
+    (hlog : readBytes s.mem (C.stage.z + 48) 8 = some (wordBytes 8 C.alen))
+    {p : String} {spv k2 : Nat} {spOp kOp : Operand}
+    (hpre : s.pre = some p)
+    (hsp : phiIncoming p cleanupSpIncoming = some spOp)
+    (hspv : evalOperand s spOp = some (.int 32 (BitVec.ofNat 32 spv)))
+    (hk : phiIncoming p cleanupKIncoming = some kOp)
+    (hkv : evalOperand s kOp = some (.int 64 (BitVec.ofNat 64 k2)))
+    {nepv : BitVec 64} (hnp : lookupName s.env "%nep" = some (.int 64 nepv))
+    (hterm : k2 = nepv.toNat)
+    (hsp0 : evalICmp .eq (BitVec.ofNat 32 spv) (BitVec.ofNat 32 0) = 1)
+    {rv : BitVec 32} (hrootRead : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes rv.toNat 4))
+    (hroot0 : evalICmp .eq rv (BitVec.ofNat 32 0) = 1)
+    (h4 : lookupName s.env "%4" = some (.int 64 (BitVec.ofNat 64 G.n))) :
+    ∃ (q : Nat) (v : BitVec 64) (m : Mem), q + 2 ≤ 27 ∧
+      runFuel (stage2Calls stage2SubCalls) (q + 2) stage2Body s =
+        some (.ret (some (.int 64 v)) m) ∧
+      stage2Boundary (walkFinishArgs G) m0 G.next0 m (.int 64 v) := by
+  have hn64 : G.n < 2 ^ 64 := by
+    have h := G.maxDoc
+    simp only [stage2MaxDocument] at h
+    omega
+  have henv0 : WalkFinalEnv G C s.env := henv
+  obtain ⟨he, hz, hs, hc, hnd, hnv, her⟩ := henv0
+  -- the merge's step
+  obtain ⟨s₁, hstep₁, -, hs₁⟩ :=
+    walkFinishMerge_at (calls := stage2Calls stage2SubCalls) (G := G) (C := C) (s := s)
+      hInv hblk (p := p) (spv := spv) (k2 := k2) (spOp := spOp) (kOp := kOp)
+      (nepv := nepv) hpre hsp hspv hk hkv hnp hterm
+  have hsp₁ : lookupName s₁.env "%sp.i.1" = some (.int 32 (BitVec.ofNat 32 spv)) := by
+    rw [hs₁]
+    simp only [cells]
+    rw [lookupName_cons_ne (k := "%cmp.i") (n := "%sp.i.1") _ _ (by decide),
+      lookupName_cons_ne (k := "%k.2.i") (n := "%sp.i.1") _ _ (by decide)]
+    exact lookupName_cons_self _ _ _
+  have hmem₁ : s₁.mem = s.mem := by rw [hs₁]
+  -- the carriers at the merge's target
+  have hregs₁ : WalkRegs G C s₁.env := by
+    rw [hs₁]
+    exact hInv.regs.cells_of _ (by
+      intro n hn
+      simp only [List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil,
+        or_false] at hn
+      rcases hn with rfl | rfl | rfl <;> decide)
+  have hptrs₁ : WalkPtrs G C s₁.env := by
+    rw [hs₁]
+    simp only [cells]
+    exact (((hInv.ptrs.bind (by decide) (by decide) (by decide) (by decide) (by decide)
+      (by decide)).bind (by decide) (by decide) (by decide) (by decide) (by decide)
+      (by decide)).bind (by decide) (by decide) (by decide) (by decide) (by decide)
+      (by decide))
+  have henv₁ : WalkFinalEnv G C s₁.env := by
+    rw [hs₁]
+    exact WalkFinalEnv.cells_of henv _ (by
+      intro n hn
+      simp only [List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil,
+        or_false] at hn
+      rcases hn with rfl | rfl | rfl <;> simp [walkFinalNames])
+  -- the depth's zero test, on its empty-stack arm
+  let s₂ : State := exitS₂ s₁ spv
+  have hstep₂ : step (stage2Calls stage2SubCalls) stage2Body s₁ = .jump s₂ := by
+    rw [walkIfThen485Step (calls := stage2Calls stage2SubCalls) s₁ (by rw [hs₁])
+      (spv := spv) hsp₁]
+    simp only [s₂, exitS₂]
+    rw [show (if evalICmp .eq (BitVec.ofNat 32 spv) (BitVec.ofNat 32 0) = 1
+      then "if.end490.i" else "if.then488.i") = "if.end490.i" from ite_eq_left hsp0]
+  have hmem₂ : s₂.mem = s.mem := by
+    dsimp only [s₂, exitS₂, State.bind]
+    rw [hmem₁]
+  -- the carriers at the depth's test
+  have hregs₂ : WalkRegs G C s₂.env := by
+    dsimp only [s₂, exitS₂]
+    exact hregs₁.bind (by decide)
+  have hptrs₂ : WalkPtrs G C s₂.env := by
+    dsimp only [s₂, exitS₂]
+    exact hptrs₁.bind (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+  have henv₂ : WalkFinalEnv G C s₂.env := by
+    dsimp only [s₂, exitS₂]
+    exact henv₁.bind (by simp [walkFinalNames])
+  -- the root-done test, on its refusing arm
+  let s₃ : State := exitS₃r s₂ rv
+  have hstep₃ : step (stage2Calls stage2SubCalls) stage2Body s₂ = .jump s₃ := by
+    rw [walkIfEnd490Step (calls := stage2Calls stage2SubCalls) s₂ rfl (v := rv)
+      ((exitS₂_rd (s := s₁) (spv := spv)).trans
+        (hregs₁ ("%root_done.i", .ptr (G.next0 + 8)) (by simp [walkStaticRegs])))
+      (by rw [hmem₂]; exact hrootRead)]
+    simp only [s₃, exitS₃r]
+    rw [show (if evalICmp .eq rv (BitVec.ofNat 32 0) = 1 then "if.then492.i"
+      else "s2_walk.exit") = "if.then492.i" from ite_eq_left hroot0]
+  have hmem₃ : s₃.mem = s.mem := by
+    dsimp only [s₃, exitS₃r, State.bind]
+    rw [hmem₂]
+  have hregs₃ : WalkRegs G C s₃.env := by
+    dsimp only [s₃, exitS₃r, State.bind]
+    exact (hregs₂.bind (by decide)).bind (by decide)
+  have hptrs₃ : WalkPtrs G C s₃.env := by
+    dsimp only [s₃, exitS₃r, State.bind]
+    exact (hptrs₂.bind (by decide) (by decide) (by decide) (by decide) (by decide)
+      (by decide)).bind (by decide) (by decide) (by decide) (by decide) (by decide)
+      (by decide)
+  have henv₃ : WalkFinalEnv G C s₃.env := by
+    dsimp only [s₃, exitS₃r, State.bind]
+    exact (henv₂.bind (by simp [walkFinalNames])).bind (by simp [walkFinalNames])
+  -- the offset's store
+  let s₄ : State := exitS₅ s₃ C.stage.e G.n
+  have he₁ : lookupName s₁.env "%e" = some (.ptr C.stage.e) := henv₁.1
+  have h4₁ : lookupName s₁.env "%4" = some (.int 64 (BitVec.ofNat 64 G.n)) := by
+    rw [hs₁]
+    simp only [cells]
+    rw [lookupName_cons_ne (k := "%cmp.i") (n := "%4") _ _ (by decide),
+      lookupName_cons_ne (k := "%k.2.i") (n := "%4") _ _ (by decide),
+      lookupName_cons_ne (k := "%sp.i.1") (n := "%4") _ _ (by decide)]
+    exact h4
+  have he₃ : lookupName s₃.env "%e" = some (.ptr C.stage.e) :=
+    (exitS₃r_env' (n := "%e") (by decide) (by decide)).trans
+      ((exitS₂_env' (n := "%e") (by decide)).trans he₁)
+  have h4₃ : lookupName s₃.env "%4" = some (.int 64 (BitVec.ofNat 64 G.n)) :=
+    (exitS₃r_env' (n := "%4") (by decide) (by decide)).trans
+      ((exitS₂_env' (n := "%4") (by decide)).trans h4₁)
+  have hstep₄ : step (stage2Calls stage2SubCalls) stage2Body s₃ = .jump s₄ :=
+    walkIfThen492Step (calls := stage2Calls stage2SubCalls) s₃ rfl he₃ h4₃ hn64
+  have hmem₄ : s₄.mem = walkFinishMemOffset C.stage.e G.n s.mem := by
+    dsimp only [s₄, exitS₅, walkFinishMemOffset]
+    rw [hmem₃]
+  have hregs₄ : WalkRegs G C s₄.env := by
+    dsimp only [s₄, exitS₅]
+    exact hregs₃.bind (by decide)
+  have hptrs₄ : WalkPtrs G C s₄.env := by
+    dsimp only [s₄, exitS₅]
+    exact hptrs₃.bind (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+  have henv₄ : WalkFinalEnv G C s₄.env := by
+    dsimp only [s₄, exitS₅]
+    exact henv₃.bind (by simp [walkFinalNames])
+  -- the copy's three words, at the offset store's memory
+  have hlogA₄ : readBytes s₄.mem (C.stage.z + 48) 8 = some (wordBytes 8 C.alen) := by
+    rw [hmem₄, walkFinishMemOffset]
+    rw [walkReadBytes_writeBytes_outside (m := s.mem) (v := wordBytes 8 G.n)
+      (start := C.stage.e + 8) (addr := C.stage.z + 48) (n := 8) (by
+        rw [wordBytes, natToBytes_length]
+        exact (walkFinish_log_sep G C).1)]
+    exact hlog
+  have hlogL₄ : readBytes s₄.mem (C.stage.z + 8) 8 = some (wordBytes 8 C.evlen) := by
+    rw [hmem₄, walkFinishMemOffset]
+    rw [walkReadBytes_writeBytes_outside (m := s.mem) (v := wordBytes 8 G.n)
+      (start := C.stage.e + 8) (addr := C.stage.z + 8) (n := 8) (by
+        rw [wordBytes, natToBytes_length]
+        exact (walkFinish_log_sep G C).2)]
+    exact hInv.log_len
+  have hE₄ : readBytes s₄.mem (C.stage.e + 8) 8 =
+      some (natToBytes (BitVec.ofNat 64 G.n).toNat 8) := by
+    rw [hmem₄, walkFinishMemOffset_read]
+    rw [show (BitVec.ofNat 64 G.n).toNat = G.n from by
+      rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hn64]]
+    rfl
+  refine ⟨4, 0, walkFinishMemRefuse G s₄.mem C.alen C.evlen (BitVec.ofNat 64 G.n).toNat,
+    by omega, ?_, ?_⟩
+  · rw [show (4 + 2 : Nat) = 1 + (1 + (1 + (1 + 2))) from by omega]
+    rw [runFuel_jump_prefix (f := stage2Body) hstep₁ (1 + (1 + (1 + 2)))]
+    rw [runFuel_jump_prefix (f := stage2Body) hstep₂ (1 + (1 + 2))]
+    rw [runFuel_jump_prefix (f := stage2Body) hstep₃ (1 + 2)]
+    rw [runFuel_jump_prefix (f := stage2Body) hstep₄ 2]
+    exact walkFinishCopyTail G C s₄ rfl hregs₄ hptrs₄ henv₄ hlogA₄ hlogL₄
+      (by
+        have h := G.arenaRoom
+        have hcap := G.dstcapLt
+        have hle := hInv.alen_le
+        omega)
+      (by
+        have h := G.evRoom
+        have hcap := G.evcapLt
+        have hle : C.evlen ≤ G.evcap := le_trans hInv.evlen_le G.evRoom
+        omega)
+      hE₄
+  · rw [hmem₄]
+    rw [show (BitVec.ofNat 64 G.n).toNat = G.n from by
+      rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hn64]]
+    exact stage2Boundary_of_refuse_offset G C hInv (Nat.le_refl G.n)
+
+/-- **R3: the refusal from the merge through `if.then488.i`.**  The depth's non-zero arm
+takes the refusal copy without the root-done test, so the route is one step shorter than
+R2's: the merge, the depth's test, the offset's store and the copy's two.  The returned
+memory is the same shape — `walkFinishMemRefuse` at the offset store — and the boundary
+is again `stage2Boundary_of_refuse_offset`'s.
+
+The offset's store is at the same address on both routes (`%e + 8`), which is why the
+copy's three reads are this route's in the same form as R2's: only the register the
+block names (`%off1.i.i115` against `%off1.i.i117`) differs. -/
+theorem walkFinishPost_refuse488 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (hInv : WalkInv G C s) (hblk : C.block = "cleanup478.i")
+    (henv : WalkFinalEnv G C s.env)
+    (hlog : readBytes s.mem (C.stage.z + 48) 8 = some (wordBytes 8 C.alen))
+    {p : String} {spv k2 : Nat} {spOp kOp : Operand}
+    (hpre : s.pre = some p)
+    (hsp : phiIncoming p cleanupSpIncoming = some spOp)
+    (hspv : evalOperand s spOp = some (.int 32 (BitVec.ofNat 32 spv)))
+    (hk : phiIncoming p cleanupKIncoming = some kOp)
+    (hkv : evalOperand s kOp = some (.int 64 (BitVec.ofNat 64 k2)))
+    {nepv : BitVec 64} (hnp : lookupName s.env "%nep" = some (.int 64 nepv))
+    (hterm : k2 = nepv.toNat)
+    (hspn : evalICmp .eq (BitVec.ofNat 32 spv) (BitVec.ofNat 32 0) = 0)
+    (h4 : lookupName s.env "%4" = some (.int 64 (BitVec.ofNat 64 G.n))) :
+    ∃ (q : Nat) (v : BitVec 64) (m : Mem), q + 2 ≤ 27 ∧
+      runFuel (stage2Calls stage2SubCalls) (q + 2) stage2Body s =
+        some (.ret (some (.int 64 v)) m) ∧
+      stage2Boundary (walkFinishArgs G) m0 G.next0 m (.int 64 v) := by
+  have hn64 : G.n < 2 ^ 64 := by
+    have h := G.maxDoc
+    simp only [stage2MaxDocument] at h
+    omega
+  have henv0 : WalkFinalEnv G C s.env := henv
+  obtain ⟨he, hz, hs, hc, hnd, hnv, her⟩ := henv0
+  -- the merge's step
+  obtain ⟨s₁, hstep₁, -, hs₁⟩ :=
+    walkFinishMerge_at (calls := stage2Calls stage2SubCalls) (G := G) (C := C) (s := s)
+      hInv hblk (p := p) (spv := spv) (k2 := k2) (spOp := spOp) (kOp := kOp)
+      (nepv := nepv) hpre hsp hspv hk hkv hnp hterm
+  have hsp₁ : lookupName s₁.env "%sp.i.1" = some (.int 32 (BitVec.ofNat 32 spv)) := by
+    rw [hs₁]
+    simp only [cells]
+    rw [lookupName_cons_ne (k := "%cmp.i") (n := "%sp.i.1") _ _ (by decide),
+      lookupName_cons_ne (k := "%k.2.i") (n := "%sp.i.1") _ _ (by decide)]
+    exact lookupName_cons_self _ _ _
+  have hmem₁ : s₁.mem = s.mem := by rw [hs₁]
+  have hregs₁ : WalkRegs G C s₁.env := by
+    rw [hs₁]
+    exact hInv.regs.cells_of _ (by
+      intro n hn
+      simp only [List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil,
+        or_false] at hn
+      rcases hn with rfl | rfl | rfl <;> decide)
+  have hptrs₁ : WalkPtrs G C s₁.env := by
+    rw [hs₁]
+    simp only [cells]
+    exact (((hInv.ptrs.bind (by decide) (by decide) (by decide) (by decide) (by decide)
+      (by decide)).bind (by decide) (by decide) (by decide) (by decide) (by decide)
+      (by decide)).bind (by decide) (by decide) (by decide) (by decide) (by decide)
+      (by decide))
+  have henv₁ : WalkFinalEnv G C s₁.env := by
+    rw [hs₁]
+    exact WalkFinalEnv.cells_of henv _ (by
+      intro n hn
+      simp only [List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil,
+        or_false] at hn
+      rcases hn with rfl | rfl | rfl <;> simp [walkFinalNames])
+  have h4₁ : lookupName s₁.env "%4" = some (.int 64 (BitVec.ofNat 64 G.n)) := by
+    rw [hs₁]
+    simp only [cells]
+    rw [lookupName_cons_ne (k := "%cmp.i") (n := "%4") _ _ (by decide),
+      lookupName_cons_ne (k := "%k.2.i") (n := "%4") _ _ (by decide),
+      lookupName_cons_ne (k := "%sp.i.1") (n := "%4") _ _ (by decide)]
+    exact h4
+  -- the depth's zero test, on its non-empty-stack arm
+  let s₂ : State := exitS₂r s₁ spv
+  have hstep₂ : step (stage2Calls stage2SubCalls) stage2Body s₁ = .jump s₂ := by
+    rw [walkIfThen485Step (calls := stage2Calls stage2SubCalls) s₁ (by rw [hs₁])
+      (spv := spv) hsp₁]
+    simp only [s₂, exitS₂r]
+    rw [show (if evalICmp .eq (BitVec.ofNat 32 spv) (BitVec.ofNat 32 0) = 1
+      then "if.end490.i" else "if.then488.i") = "if.then488.i" from
+        ite_eq_right (by rw [hspn]; decide)]
+  have hmem₂ : s₂.mem = s.mem := by
+    dsimp only [s₂, exitS₂r, State.bind]
+    rw [hmem₁]
+  have hregs₂ : WalkRegs G C s₂.env := by
+    dsimp only [s₂, exitS₂r]
+    exact hregs₁.bind (by decide)
+  have hptrs₂ : WalkPtrs G C s₂.env := by
+    dsimp only [s₂, exitS₂r]
+    exact hptrs₁.bind (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+  have henv₂ : WalkFinalEnv G C s₂.env := by
+    dsimp only [s₂, exitS₂r]
+    exact henv₁.bind (by simp [walkFinalNames])
+  -- the offset's store
+  let s₃ : State := exitS₅r s₂ C.stage.e G.n
+  have he₂ : lookupName s₂.env "%e" = some (.ptr C.stage.e) :=
+    (exitS₂r_env' (n := "%e") (by decide)).trans henv₁.1
+  have h4₂ : lookupName s₂.env "%4" = some (.int 64 (BitVec.ofNat 64 G.n)) :=
+    (exitS₂r_env' (n := "%4") (by decide)).trans h4₁
+  have hstep₃ : step (stage2Calls stage2SubCalls) stage2Body s₂ = .jump s₃ :=
+    walkIfThen488Step (calls := stage2Calls stage2SubCalls) s₂ rfl he₂ h4₂ hn64
+  have hmem₃ : s₃.mem = walkFinishMemOffset C.stage.e G.n s.mem := by
+    dsimp only [s₃, exitS₅r, walkFinishMemOffset]
+    rw [hmem₂]
+  have hregs₃ : WalkRegs G C s₃.env := by
+    dsimp only [s₃, exitS₅r]
+    exact hregs₂.bind (by decide)
+  have hptrs₃ : WalkPtrs G C s₃.env := by
+    dsimp only [s₃, exitS₅r]
+    exact hptrs₂.bind (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+  have henv₃ : WalkFinalEnv G C s₃.env := by
+    dsimp only [s₃, exitS₅r]
+    exact henv₂.bind (by simp [walkFinalNames])
+  -- the copy's three words, at the offset store's memory
+  have hlogA₃ : readBytes s₃.mem (C.stage.z + 48) 8 = some (wordBytes 8 C.alen) := by
+    rw [hmem₃, walkFinishMemOffset]
+    rw [walkReadBytes_writeBytes_outside (m := s.mem) (v := wordBytes 8 G.n)
+      (start := C.stage.e + 8) (addr := C.stage.z + 48) (n := 8) (by
+        rw [wordBytes, natToBytes_length]
+        exact (walkFinish_log_sep G C).1)]
+    exact hlog
+  have hlogL₃ : readBytes s₃.mem (C.stage.z + 8) 8 = some (wordBytes 8 C.evlen) := by
+    rw [hmem₃, walkFinishMemOffset]
+    rw [walkReadBytes_writeBytes_outside (m := s.mem) (v := wordBytes 8 G.n)
+      (start := C.stage.e + 8) (addr := C.stage.z + 8) (n := 8) (by
+        rw [wordBytes, natToBytes_length]
+        exact (walkFinish_log_sep G C).2)]
+    exact hInv.log_len
+  have hE₃ : readBytes s₃.mem (C.stage.e + 8) 8 =
+      some (natToBytes (BitVec.ofNat 64 G.n).toNat 8) := by
+    rw [hmem₃, walkFinishMemOffset_read]
+    rw [show (BitVec.ofNat 64 G.n).toNat = G.n from by
+      rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hn64]]
+    rfl
+  refine ⟨3, 0, walkFinishMemRefuse G s₃.mem C.alen C.evlen (BitVec.ofNat 64 G.n).toNat,
+    by omega, ?_, ?_⟩
+  · rw [show (3 + 2 : Nat) = 1 + (1 + (1 + 2)) from by omega]
+    rw [runFuel_jump_prefix (f := stage2Body) hstep₁ (1 + (1 + 2))]
+    rw [runFuel_jump_prefix (f := stage2Body) hstep₂ (1 + 2)]
+    rw [runFuel_jump_prefix (f := stage2Body) hstep₃ 2]
+    exact walkFinishCopyTail G C s₃ rfl hregs₃ hptrs₃ henv₃ hlogA₃ hlogL₃
+      (by
+        have h := G.arenaRoom
+        have hcap := G.dstcapLt
+        have hle := hInv.alen_le
+        omega)
+      (by
+        have h := G.evRoom
+        have hcap := G.evcapLt
+        have hle : C.evlen ≤ G.evcap := le_trans hInv.evlen_le G.evRoom
+        omega)
+      hE₃
+  · rw [hmem₃]
+    rw [show (BitVec.ofNat 64 G.n).toNat = G.n from by
+      rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hn64]]
+    exact stage2Boundary_of_refuse_offset G C hInv (Nat.le_refl G.n)
+
+/-- **R0: the refusal already at the copy.**  A segment that ended at `if.then` — the
+dispatch's refusal outcome — leaves the state the copy starts from, so the route is the
+copy's two steps alone (`q = 0`).  The refusal word is the *previous* link's store, which
+no clause carries: `WalkInv` names the offset the carry holds (`eoff_le`) but not the
+bytes at `%e + 8`, and `WalkSegment` keeps no memory.  So `hword` is an argument, and its
+producer is a memory-carrying refusal segment. -/
+theorem walkFinishPost_copy {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (hInv : WalkInv G C s) (hblk : C.block = "if.then")
+    (henv : WalkFinalEnv G C s.env)
+    (hlog : readBytes s.mem (C.stage.z + 48) 8 = some (wordBytes 8 C.alen))
+    (hword : readBytes s.mem (C.stage.e + 8) 8 = some (wordBytes 8 C.eoff)) :
+    ∃ (q : Nat) (v : BitVec 64) (m : Mem), q + 2 ≤ 27 ∧
+      runFuel (stage2Calls stage2SubCalls) (q + 2) stage2Body s =
+        some (.ret (some (.int 64 v)) m) ∧
+      stage2Boundary (walkFinishArgs G) m0 G.next0 m (.int 64 v) := by
+  have hn64 : G.n < 2 ^ 64 := by
+    have h := G.maxDoc
+    simp only [stage2MaxDocument] at h
+    omega
+  have heoff64 : C.eoff < 2 ^ 64 := by
+    have h := hInv.eoff_le
+    omega
+  have hEtoNat : (BitVec.ofNat 64 C.eoff).toNat = C.eoff := by
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt heoff64]
+  have hE : readBytes s.mem (C.stage.e + 8) 8 =
+      some (natToBytes (BitVec.ofNat 64 C.eoff).toNat 8) := by
+    rw [hEtoNat]
+    exact hword
+  refine ⟨0, 0, walkFinishMemRefuse G s.mem C.alen C.evlen C.eoff, by omega, ?_,
+    stage2Boundary_of_refuse G C hInv hInv.eoff_le⟩
+  have h := walkFinishCopyTail G C s (hpc := hInv.pc_eq.trans hblk) hInv.regs hInv.ptrs henv hlog
+    hInv.log_len
+    (by
+      have h := G.arenaRoom
+      have hcap := G.dstcapLt
+      have hle := hInv.alen_le
+      omega)
+    (by
+      have h := G.evRoom
+      have hcap := G.evcapLt
+      have hle : C.evlen ≤ G.evcap := le_trans hInv.evlen_le G.evRoom
+      omega)
+    hE
+  simpa only [Nat.zero_add, hEtoNat] using h
+
+/-! ### The words the routes are supplied
+
+`WalkInv` bounds the finalisation's reads but does not fix them, and it carries none of
+the finalisation blocks' address registers.  Each bundle below is one route's supply, and
+each field names its producer in the census (`JsonStage2WalkPremisesOfStaging`): the log's
+arena word is the write-back block's, `%4` the seed's, the root-done word and the refusal
+word the segments that stored them. -/
+
+/-- **The merge's words.**  `WalkFinalEnv`'s seven registers, the log's arena word as the
+carry's cursor, `%4`'s value and the root-done word.  One bundle, so a route takes one
+hypothesis and the three routes that share the merge's state share its supply. -/
+structure WalkMergeWords {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : Prop where
+  /-- The finalisation's seven carrier registers. -/
+  env : WalkFinalEnv G C s.env
+  /-- The log's arena word is the carry's cursor. -/
+  log : readBytes s.mem (C.stage.z + 48) 8 = some (wordBytes 8 C.alen)
+  /-- `%4`'s value is the entry count. -/
+  h4 : lookupName s.env "%4" = some (.int 64 (BitVec.ofNat 64 G.n))
+  /-- The root-done word is present, at its four bytes. -/
+  root : ∃ rv : BitVec 32, readBytes s.mem (G.next0 + 8) 4 = some (natToBytes rv.toNat 4)
+
+/-- **The refusal copy's words.**  `WalkFinalEnv`'s seven registers, the log's arena word
+as the carry's cursor, and the refusal word the copy's `%off` load reads.  The last is
+R0's own: on the merge's refusal routes the word is the store the route makes, and the
+carry's `eoff` is not what the memory holds (`WalkInv.eoff_le` is only the bound). -/
+structure WalkRefuseWords {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : Prop where
+  /-- The finalisation's seven carrier registers. -/
+  env : WalkFinalEnv G C s.env
+  /-- The log's arena word is the carry's cursor. -/
+  log : readBytes s.mem (C.stage.z + 48) 8 = some (wordBytes 8 C.alen)
+  /-- The refusal word at `%e + 8`. -/
+  word : readBytes s.mem (C.stage.e + 8) 8 = some (wordBytes 8 C.eoff)
+
+/-- **The merge's post: one of the three routes, decided by the merge's own tests.**
+The depth's zero test selects the exit's two tails and the root-done test selects the
+refusal's, so the merge's three routes are one statement — `WalkTargetPost` — and the
+case split is here rather than in the loop's step.  Nothing else about the finalisation
+is assumed: the three runs are the routes' own. -/
+theorem walkFinishPost_merge {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (hInv : WalkInv G C s) (hblk : C.block = "cleanup478.i")
+    {p : String} {spv k2 : Nat} {spOp kOp : Operand}
+    (hpre : s.pre = some p)
+    (hsp : phiIncoming p cleanupSpIncoming = some spOp)
+    (hspv : evalOperand s spOp = some (.int 32 (BitVec.ofNat 32 spv)))
+    (hk : phiIncoming p cleanupKIncoming = some kOp)
+    (hkv : evalOperand s kOp = some (.int 64 (BitVec.ofNat 64 k2)))
+    {nepv : BitVec 64} (hnp : lookupName s.env "%nep" = some (.int 64 nepv))
+    (hterm : k2 = nepv.toNat)
+    (hw : WalkMergeWords G C s) :
+    WalkTargetPost (stage2Calls stage2SubCalls) G C s := by
+  by_cases hsp0 : evalICmp .eq (BitVec.ofNat 32 spv) (BitVec.ofNat 32 0) = 1
+  · obtain ⟨rv, hroot⟩ := hw.root
+    by_cases hroot0 : evalICmp .eq rv (BitVec.ofNat 32 0) = 0
+    · exact walkFinishPost_accept G C s hInv hblk hInv.regs hInv.ptrs hw.env hw.log hpre
+        hsp hspv hk hkv hnp hterm hsp0 hroot hroot0
+    · exact walkFinishPost_refuse G C s hInv hblk hw.env hw.log hpre hsp hspv hk hkv
+        hnp hterm hsp0 hroot (by
+          rcases walkBitVec1_zero_or_one (evalICmp .eq rv (BitVec.ofNat 32 0)) with h | h
+          · exact absurd h hroot0
+          · exact h) hw.h4
+  · exact walkFinishPost_refuse488 G C s hInv hblk hw.env hw.log hpre hsp hspv hk hkv
+      hnp hterm (by
+        rcases walkBitVec1_zero_or_one
+          (evalICmp .eq (BitVec.ofNat 32 spv) (BitVec.ofNat 32 0)) with h | h
+        · exact h
+        · exact absurd h hsp0) hw.h4
+
+/-- **The refusal copy's post, from the words.**  `WalkRefuseWords` at a state at
+`if.then`, which is the refusal outcome's endpoint; `WalkLoopEnd.refuse`
+(`JsonStage2WalkPremisesOfStaging`) is its consumer, at every state the dispatch's
+refusal arm reaches. -/
+theorem walkFinishPost_refuseOfWords {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hblk : C.block = "if.then")
+    (hw : WalkRefuseWords G C s) :
+    WalkTargetPost (stage2Calls stage2SubCalls) G C s :=
+  walkFinishPost_copy G C s hInv hblk hw.env hw.log hw.word
+
 end WalkScope
 end LeanLLVM.Refinement
 
-/-! ### Axiom footprints
+/-! ### Axiom footprints -/
 
-Printed rather than pinned: the module is not stable while the two refusal routes'
-terminal runs are unwritten, and a `#guard_msgs` pin would have to be revisited by the
-very change that adds them.  `AGENTS.md` asks for a pin once a theorem is stable. -/
-
+/-- info: 'LeanLLVM.Refinement.WalkScope.stage2Boundary_of_accept' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
 #print axioms LeanLLVM.Refinement.WalkScope.stage2Boundary_of_accept
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.stage2Boundary_of_refuse' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
 #print axioms LeanLLVM.Refinement.WalkScope.stage2Boundary_of_refuse
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.stage2Boundary_of_refuse_offset' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
 #print axioms LeanLLVM.Refinement.WalkScope.stage2Boundary_of_refuse_offset
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkFinishCopyTail' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkFinishCopyTail
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkFinishPost_accept' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
 #print axioms LeanLLVM.Refinement.WalkScope.walkFinishPost_accept
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkFinishPost_refuse' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkFinishPost_refuse
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkFinishPost_refuse488' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkFinishPost_refuse488
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkFinishPost_copy' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkFinishPost_copy
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkFinishPost_merge' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkFinishPost_merge
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkFinishPost_refuseOfWords' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkFinishPost_refuseOfWords

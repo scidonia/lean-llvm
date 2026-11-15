@@ -82,9 +82,6 @@ def walkFlushMemAt {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) : Mem :=
       G.nev (wordBytes 8 G.nev0))
     G.err (wordBytes 8 G.n)
 
-/-- A named state's memory is the one it was given. -/
-theorem walkSetMem_mem (s : State) (m : Mem) : (walkSetMem s m).mem = m := rfl
-
 /-- **The state the refusal copy's block leaves**: `if.then`'s jump target, the
 copy's state with the block and its predecessor.  Named so the arm's last two
 steps, and the memory the return carries, can be stated at one term. -/
@@ -777,6 +774,35 @@ theorem stage2Post_of_staging_flush {d c ctype cst tok s z e nkSlot nxpSlot : Na
   refine h o ?_
   rw [hSc, hSct, hScs, hStok, hSs, hSz, hSe]
   exact hb
+
+/-- **The walk's obligation, from the three premises.**  This is the milestone the layer
+was built for: `Stage2WalkObligation` is `Satisfies` at `Γ_stage2at`, and its two
+conjuncts are the completion (`stage2WalkCompletes_of_staging`) and the post at every
+behaviour of the run.  The post's two arms are the record's empty entry stream
+(`stage2Post_of_staging_flush`, above) and its loop (`stage2Post_of_staging_loop`,
+`JsonStage2WalkPremisesOfStaging`), and the split is the entry block's own test on the
+entry count.
+
+The obligation is stated here rather than beside the completion because the two arms
+live on either side of this module's import: the flush's post reads the returned memory
+this module names (`walkFlushMemAt`), and the staging construction is the one below.  No
+hypothesis of the post remains: what the two arms rest on is the words `WalkLoopEnd`
+supplies, named in the census at the end of `JsonStage2WalkPremisesOfStaging`. -/
+theorem stage2WalkObligation_of_staging {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
+    (hcont : ∀ {m0 : Mem} (G : WalkGeom m0), WalkContinueFacts G)
+    (hmerge : ∀ {m0 : Mem} (G : WalkGeom m0), WalkMergeCells G)
+    (hend : ∀ {m0 : Mem} (G : WalkGeom m0), WalkLoopEnd G) :
+    Stage2WalkObligation d c ctype cst tok s z e nkSlot nxpSlot := by
+  refine stage2WalkObligation_of_premises (walkPremises_of_staging hcont hmerge hend) ?_
+  intro args mem next hpre o hb
+  obtain ⟨a13, rfl, hpre13, hstaged⟩ := hpre
+  obtain ⟨G, S, hnext, hSc, hSct, hScs, hStok, hSs, hSz, hSe, _hSd, hargs⟩ :=
+    walkStage_at_pre_fields hpre13 hstaged
+  by_cases hzero : G.nep = 0
+  · exact stage2Post_of_staging_flush hSc hSct hScs hStok hSs hSz hSe hargs hnext hzero o hb
+  · refine stage2Post_of_staging_loop (F := 27) hSc hSct hScs hStok hSs hSz hSe hargs hnext
+      (Nat.pos_of_ne_zero hzero)
+      (walkLoopStep_of_staging (G := G) (hcont G) (hmerge G) (hend G)) o hb
 
 /-! ### Axiom footprints -/
 
