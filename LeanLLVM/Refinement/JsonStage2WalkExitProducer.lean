@@ -318,7 +318,7 @@ theorem walkExitTailRun_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s
       (nepv := f.nepv) (rd := G.next0 + 8) (rv := rv) (s₂ := s₂) (e := C.stage.e)
       (v := f.v) (w := BitVec.ofNat 64 0) (bit := BitVec.ofNat 64 0)
       rfl rfl (by decide) f.hspvM (by decide) f.hk2 f.hnepM hk2' hguard' hsp0 hroot hrv hrv1
-      he₃ h4₃ f.hv64 hden hpc₂ he' hz' hs' (by decide) (by decide)
+      he₃ h4₃ (by have := f.hv63; omega) hden hpc₂ he' hz' hs' (by decide) (by decide)
   exact ⟨q, s1, s₂', sret, hrun, hq, hjump, hret⟩
 
 /-- **The refusal through `if.then488.i`**: the stack non-empty, so the merge's false arm
@@ -390,7 +390,7 @@ theorem walkExitTailRun_refuse488 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
       (nepv := f.nepv) (s₂ := s₂) (e := C.stage.e) (v := f.v)
       (w := BitVec.ofNat 64 0) (bit := BitVec.ofNat 64 0)
       rfl rfl (by decide) f.hspvM (by decide) f.hk2 f.hnepM hk2' hguard' hspn
-      he₂ h4₂ f.hv64 hden hpc₂ he' hz' hs' (by decide) (by decide)
+      he₂ h4₂ (by have := f.hv63; omega) hden hpc₂ he' hz' hs' (by decide) (by decide)
   exact ⟨q, s1, s₂', sret, hrun, hq, hjump, hret⟩
 
 /-! ### Axiom footprints -/

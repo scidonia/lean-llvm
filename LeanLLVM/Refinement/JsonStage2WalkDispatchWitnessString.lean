@@ -65,10 +65,10 @@ decides `cont`/`finish` from the merge's own test on the index the segment reach
 
 **The fifteen links, and where each is composed.**  `strPath5` composes links 1–5
 (the four class-A branches and the two-entry advance), `strPath8` links 6–8 (the
-value-position call, the key-zero merge and the arena reservation), `strPath10`
-links 9–10 (the string body's call and `NodeBlock31`'s edge), and `stringPath_seg`
-links 11–15 (the answer's own test, its two arms, the arena merge and the record,
-and the container's advance).  Every intermediate state is a `def`
+value-position call, the key-zero merge and the arena reservation), `strPath9`
+link 9 (the string body's call), `strPath10` link 10 (`NodeBlock31`'s edge), and
+`stringPath_seg` links 11–15 (the answer's own test, its two arms, the arena merge
+and the record, and the container's advance).  Every intermediate state is a `def`
 (`strS₁`–`strS₁₅`), every carry is the named `strC₁`–`strC₁₅`, and each link's
 target is its own `def`, byte for byte — which is why the casts are the links and
 the header's table is the composition.
@@ -85,30 +85,66 @@ link's *target* state into the next link's hypotheses, so no link may conclude
 `WalkLink.if_else334_i_at`, which takes the helper's answer as a parameter and
 concludes the target state.
 
-**The residue: nineteen parameters, not a bundle field.**  With the states
+**The residue: thirteen parameters, not a bundle field.**  With the states
 nameable, every link's hypotheses are the head bundle's fields, `WalkInv`'s
 clauses, the step's own predecessor, or a `def`'d state's cells — except for
 `HstringResidue`'s fields, each of which names its producer where it is stated:
 
 | id | field | statement | producer | retired by |
 |---|---|---|---|---|
-| R1's registers | `harr`, `hcreg`, `hxpreg`, `hnxpreg` | `%arrayidx10.i`, `%c.i`, `%xp`, `%nxp` at the state link 8 leaves | the seed's environment; `walkStaticRegs` omits them | adding them to the carrier (the 39-site `WalkInv`-vocabulary change) |
 | R5 | `hreadAr` | `readBytes … (z + 40) 8 = some (wordBytes 8 G.dst)` | the initialisation's store at `%z + 40` plus a `WalkInv` clause for the arena's base | that clause |
-| R6 | `hGdst`, `hGev` | `G.dst < 2^64`, `G.ev < 2^64` | the ABI staging's address width (`stage2Regions`' `HasBytes`) | a `WalkGeom` clause |
+| R6 | `hGdst`, `hGev` | `G.dst < 2^64`, `G.ev < 2^64` | the ABI staging's address width; `stage2Pre` states it for `b`, `ep`, `nxp`, `dstcap` and `evcap` only, so these two are the caller's | a staging clause at the two addresses |
 | R1's answer | `r`, `hcallR`, `hretR` | the callee's outcome, its call at the state link 8 leaves, and its word | `s2StringBodyPre_at_string_call` and `s2StringBody_sound`'s form (= the bundle's `y`) | the string body's staging at this call site |
-| R1's memory | `hbodyR` | the frame, the presence, the log's and the trace's reads, the two stack maps | `s2StringBodyFoot_frame_walkWide` and the four `walkReadBytes_*` crossings | the cursor-parameterised frame |
 | R8 | `hR8` | `evalICmp .slt y 1 = 0` | the callee's post: the form is `1` or `2` on the accepting arms | the post stating the form |
-| `%z` | `hzreg` | `%z = .ptr C.stage.z` at the head | the seed's environment | adding `%z` to the carrier |
 | R2 | `l`, `hreadOutn`, `hlext` | the decoded length at the callee's memory, and `l ≤ ext` | `s2StringBodyPost`'s `%outn` word and `s2StringBody_outn_le` | a `s2StringBodyPost` clause relating the length to `len` |
 | R3 | `hlogBase` | `readBytes r.mem C.stage.z 8 = some (wordBytes 8 G.ev)` | the initialisation's store at `%z + 0` plus a `WalkInv` clause for the log's base | that clause |
 | R4 | `hltEvents` | `C.events.length < C.k` (strict) | `if.then425.i`'s one-record-per-emitting-entry count | a clause relating the trace's length to the entries consumed |
 | — | `hev63` | `C.evlen < 2^63` | the staging's cursor word (`stage2Pre`'s `%nev`) | a staging clause |
 
-None of these is a fact a clause of `WalkInv` already carries, and the header says
-which clause would retire each rather than leaving the list to prose.  Two are
-*supplied* for a reason that is a vocabulary gap rather than a missing lemma — the
-four registers and `%z` — and the rest are the helper contracts' outputs and the
-document's own counts.
+Every field is a statement no clause of `WalkInv`, no field of `HstringFacts`,
+the staging or the callee's contract produces, and the table says which clause
+would retire each rather than leaving the list to prose.  Each is a helper
+contract's output or the document's own count.  `%c.i`, `%z`, `%xp` and `%nxp`
+used to be four more on that list; the static carrier now names them, and
+`%arrayidx10.i` is `WalkIter.regarr`'s — the header's `%3 + %idxprom.i` bind,
+which `whileBody_step` produces and `strArr_of_iter` reads at the call's state —
+so the five register fields are gone.
+
+**The body's six memory clauses are produced, not supplied.**  `strPath9` derives
+them from the head bundle in four steps, all of which are lemmas of
+`JsonStage2StringStageFacts` now:
+
+* **the precondition's transport to the call's memory.**
+  `s2StringBodyPre_of_reads` moves the whole precondition across the two stores
+  link 8 makes — `%c.i + 32` (`if.end207.i`'s `%k` word) and `%outn.i`'s zero
+  (`if.end256.i`) — given agreement at the five reads it names
+  (`stage2ReadWord` at `%c.i`, at `%c.i + 1112` and at `%xj.i`, `readLanes32` at
+  `%xp`, `readBytes` at the body's window) and presence monotonicity.  Each
+  agreement is `walkReadBytes_two_writes`, which needs only the regions'
+  separation: the document's and the escape list's from the cursor record
+  (`walkWrites_against_abi`), and every staged object's from the cursor's
+  interval (`WalkStage.sevenEnd`, `WalkGeom.watermark`).  The bundle's `hpreS` is
+  the input, and `s2StringBody_sound` at the transported precondition is the
+  callee's answer (R1's `hpost`);
+* **the accepting arm's form.**  R8's word is not zero, so the model's form is not
+  zero (`hform0`), which is the hypothesis the arm's frame needs;
+* **the four write entries.**  `s2StringBody_frame_of_form` gives the frame over
+  the four entries an accepting arm writes, and
+  `s2StringBodyFrame_walkWideAt` widens it to the run's `walkWideAt` at the carry
+  and cursor the call leaves;
+* **the four crossings.**  `s2StringBodyFrame_facts` reads the log's and the
+  trace's read equalities out of that silence (`readBytes_of_frame`), carries the
+  presence over `walkStaged` by monotonicity, and transports the two stack maps —
+  the silence is the *callee's* four entries, not the run's list, because
+  `walkWideAt` contains the log and the stream as entries and a frame over it says
+  nothing about either;
+* **the frame's composition.**  The run's own silence is `WalkInv.frame` extended
+  by the two stores (`UnchangedOutside.write_inside`), grown to the call's carry
+  and cursor (`walkWideAt_grow`), and composed with the callee's frame
+  (`UnchangedOutside.trans'`).
+
+That is why `HstringResidue` no longer has a memory field: what was owed there was
+a lemma, and the lemma is the composition above, not a premise.
 
 **What the arm reads.**  `WalkDispatchResult.ofStringMerge` reads the segment,
 its endpoint's block, index and predecessor, the endpoint's two cells and G2's
@@ -116,15 +152,12 @@ count test (`hcount`, without which there is no `k2 ≤ nepv.toNat` for the merg
 `hcap`).  The other groups are the premise set the composition consumes, which is
 why the bundle keeps them.
 
-**The invariant's cursor pin is settled but not landed.**
-`next_ge : G.next0 + stage2BootstrapExtent ≤ s.next` (`stage2BootstrapExtent := 28`,
-the end of `entry`'s four `alloca`s) with the frame at
-`walkPresent G C ++ [(G.next0, s.next - G.next0)]`.  It is *verified at the clause
-and at `JsonStage2WalkScope`'s ten construction sites* — that module built green with
-it — and unlanded because the six helper transfers whose target state is a parameter
-`s₁` (`pureCore`, `pureJumpCore`, `pureCoreCarried`, `callQuiet`, `callQuietBr`,
-`callQuietBrPending`) need a new hypothesis each and 70 call sites to pass it, in one
-pass.  The handoff's Gap 1 has the measurements; do not re-derive them.
+**The cursor pin is landed.**  `next_ge : G.next0 + stage2BootstrapExtent ≤
+s.next` (`stage2BootstrapExtent := 28`, the end of `entry`'s four `alloca`s) is a
+`WalkInv` clause, and the frame is the cursor's interval
+(`walkPresent G C ++ [(G.next0, s.next - G.next0)]`).  The clause is preserved by
+every dispatch step and produced at the seed; the composition below reads it at the
+call's state, which is what makes the callee's private slot inside the interval.
 
 **Why `WalkSegment` is not a bundle field.**  A field that *is* the merge arm's
 segment would make the bundle a restatement of the arm it produces, so the bundle
@@ -154,10 +187,10 @@ The repair is at the link, and the composition uses the repaired statement.
 Two of the supplied groups are supplied for a reason that is not a missing
 lemma but a vocabulary gap, and the header keeps them distinct: G4/G7's call
 preconditions are the helper contracts' own staging, which is what a producer of
-`s2ValuePosPre`/`s2StringBodyPre` supplies, and the four registers and `%z` are
-registers no carrier names.  Nothing above is weakened to make a proof go
-through: every field is either the invariant's clause read at `s`, a property of
-the document, or a named supplied premise.
+`s2ValuePosPre`/`s2StringBodyPre` supplies, and `%arrayidx10.i` is the register the
+header rebinds every iteration, so no static carrier can name it.  Nothing above
+is weakened to make a proof go through: every field is either the invariant's
+clause read at `s`, a property of the document, or a named supplied premise.
 
 **Why the fields are stated at the head.** G1–G8's fields are stated at the head state `s` (and at `s.mem`/`s.next` for the
 memory and the allocator cursor), which is where they are true of the run: the
@@ -186,6 +219,7 @@ import LeanLLVM.Refinement.JsonStage2WalkSteps
 import LeanLLVM.Refinement.JsonStage2WalkStore
 import LeanLLVM.Refinement.JsonStage2WalkDispatchThreeOfRun
 import LeanLLVM.Refinement.JsonStage2WalkRevolution
+import LeanLLVM.Refinement.JsonStage2StringStageFacts
 
 set_option autoImplicit false
 
@@ -193,6 +227,7 @@ namespace LeanLLVM.Refinement
 open LeanLLVM
 open LeanLLVM.Refinement.BlockEval
 open LeanLLVM.Refinement.JsonStage2IR
+open LeanLLVM.Refinement.JsonEntryIR (readLanes32)
 
 namespace WalkScope
 
@@ -385,30 +420,40 @@ structure HstringFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
   hnl : readBytes s.mem (C.stage.z + 8) 8 = some (wordBytes 8 C.evlen)
   hnc : readBytes s.mem (C.stage.z + 16) 8 = some (wordBytes 8 G.evcap)
 
-/-! ### The continuing branch's two cases
+/-! ### The continuing branch's three cases
 
 `walkLoopStep_of_staging`'s continuing branch needs the bundle that describes the
-state.  There are two: the one-entry token's (`HcontFacts`, indexed at
-`C.k + 1`) and the two-entry token's (`HstringFacts`, at `C.k + 2`).  This is
-their disjunction, so the `rcases` at the call site is one line and the
-classification stays the merge's. -/
+state.  There are three: the whitespace token's (`HcontFacts`, indexed at `C.k + 1`),
+the scan-free token's (`HcontCleanupFacts`, also at `C.k + 1`), and the two-entry
+token's (`HstringFacts`, at `C.k + 2`).  This is their disjunction, so the `rcases` at
+the call site is one line and the classification stays the merge's. -/
 
-/-- **The continuing branch's bundle is one of the two tokens'.**  The one-entry
-case is the whitespace scan's (`HcontFacts`); the two-entry case is the
-standalone string's, whose merge index overshoots the head's test.  Both arms
-produce a `WalkDispatchResult` — the first through the revolution's segment, the
-second through `WalkDispatchResult.ofStringMerge` — so the case is named here
-rather than decided by the head's index.
+/-- **The continuing branch's bundle is one of the three tokens'.**  The one-entry
+cases are the whitespace scan's (`HcontFacts`) and the scan-free continuation's
+(`HcontCleanupFacts`, whose token ends at the entry's end so the extra-token scan is
+empty); the two-entry case is the standalone string's, whose merge index overshoots the
+head's test.  Every arm produces a `WalkDispatchResult` — the first through
+`walkRevolutionMergeSegWs`, the second through `walkRevolutionMergeSeg`, the third
+through `WalkDispatchResult.ofStringMerge` — so the case is named here rather than
+decided by the head's index.
 
 **The arms are disjoint at a state**, which is what makes this a class rather than a
 fan-out: `HcontFacts.hlt91` says the head's byte is *not* below `91`, and
-`HstringFacts.heq34` says it *is* `34`; no state satisfies both, so a producer that
-reads the head's byte answers with one arm and the consumer's two branches never
-overlap. -/
+`HstringFacts.heq34` says it *is* `34`; no state satisfies both.  The two one-entry arms
+are separated by the byte before the entry's end: `HcontFacts` carries the run
+(`hRun`, whose seam stores the run's stop `k < v.toNat`), while `HcontCleanupFacts`
+carries that byte's three *no-whitespace* pivots, so the seam stores the entry's end and
+`heicd`'s reading of that class is `v.toNat < v.toNat` — refuted.  A producer that reads
+the document's byte at `%cond350.i - 1` answers with one arm, and the consumer's branches
+never overlap. -/
 inductive HcontCase {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : Type
-  /-- The continuing entry ends inside its entry and the merge index is
-  `C.k + 1`: `HcontFacts` at the head state. -/
+  /-- The whitespace token: the skip runs to `k`, the token ends inside its entry, and the
+  extra-token scan runs `[k, %cond350.i)`.  `HcontFacts` at the head state. -/
   | ws : HcontFacts G C s → HcontCase G C s
+  /-- The scan-free continuation: the token ends at the entry's end, so `if.then447.i`'s
+  target tests `ult v v` and the walk reaches `if.end473.i` without a scan.
+  `HcontCleanupFacts` at the head state. -/
+  | cleanup : HcontCleanupFacts G C s → HcontCase G C s
   /-- The token is a standalone string: two entries consumed, merge index
   `C.k + 2`, and `HstringFacts` at the head state. -/
   | twoEntry : HstringFacts G C s → HcontCase G C s
@@ -625,6 +670,28 @@ def strS₁₀ {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (q : Nat)
   { ((strS₉ G C q rd x A Cc ix ext r s).bind "%Pivot32" (.int 1 0)) with
     pc := "LeafBlock29",
     pre := some (strS₉ G C q rd x A Cc ix ext r s).pc }
+
+/-- **Two listed regions are separated in the list's order.**  `DisjointRegions` is a
+`Pairwise` fact, so an entry of the left block is separated from an entry of the
+right block without either pair having to be shown distinct.  This is the form the
+staging's two ABI objects need: `%dst`'s window and the event stream are both
+`stage2Regions` entries, and their separation is the list's order. -/
+theorem DisjointRegions.left_of_right {rs ms : List (Nat × Nat)}
+    (h : DisjointRegions (rs ++ ms)) {p q : Nat × Nat} (hp : p ∈ rs)
+    (hq : q ∈ ms) : p.1 + p.2 ≤ q.1 ∨ q.1 + q.2 ≤ p.1 := by
+  unfold DisjointRegions at h
+  rw [List.pairwise_append] at h
+  obtain ⟨-, -, hcross⟩ := h
+  exact hcross p hp q hq
+
+/-- **The lane reader through a store it misses.**  `readLanes32` groups four
+bytes per lane, so a store outside the whole lane range leaves it alone.  The
+region form of `readLanes32_congr_bytes`, beside `walkReadBytes_writeBytes_outside`. -/
+theorem walkReadLanes32_writeBytes_outside {m : Mem} {start : Nat} {v : List UInt8}
+    {addr k : Nat} (h : addr + 4 * k ≤ start ∨ start + v.length ≤ addr) :
+    readLanes32 (writeBytes m start v) addr k = readLanes32 m addr k := by
+  refine JsonEntrySteps.readLanes32_congr_bytes (fun j _hj => ?_)
+  exact readByte_writeBytes_outside m v (by rcases h with h | h <;> omega)
 
 /-! #### The root slot and the log across the cursor-record store
 
@@ -1222,60 +1289,74 @@ theorem strPath8 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
 /-! ### Links 9 and 10
 
 The reservation's completion and `NodeBlock31`'s edge.  The call at
-`z_arena_reserve.exit` is the one place the composition cannot read its own
-hypotheses: the callee's answer `r` and its memory facts are the string body's,
-and the layer states no producer of that contract's staging *at the call's own
-memory* — `s2StringBodyPre_at_string_call` produces the precondition, not the
-answer's frame.  So the answer is a parameter, and its six memory clauses are
-**one** premise (residue R1) whose producer the docstring names.  The decoded
+`z_arena_reserve.exit` is the string body's, so its answer `r` is a parameter;
+its six memory clauses are not a premise but the composition `strPath9` proves
+below.  Their producer's two
+halves are in `JsonStage2StringStageFacts` — the accepting arm's frame
+(`s2StringBody_frame_of_form`) and the cursor widening
+(`s2StringBodyFoot_frame_walkWideAt`) — and the transports are the
+precondition's move to the memory the call is made at plus the four crossings
+at that frame.  The decoded
 length `%sub260.i` and the token's extent are the same number
 (`walkSub260_eq`), which is what makes the link's `hsub` read off the state. -/
 
-/-- **Links 9 and 10 compose.**  From `if.end256.i`'s state to `LeafBlock29`'s:
-the reservation's completion — the callee's answer, the log's base word and the
-cursor record's `%sub260.i`, all at the state the previous link left — and
-`NodeBlock31`'s edge, whose `%call272.i` is the callee's answer and whose bit is
-R8's.
+-- A measured ceiling, not an inherited one.  The five read transports that carry
+-- the callee's precondition across link 8's two stores exceed the default budget:
+-- this declaration times out at `whnf` at 200 000, 250 000, 300 000 and 315 000
+-- heartbeats, and at the last of those the counter trips inside `hbodyA`'s case
+-- split on the staging's separation.  The transports are separately cheap and
+-- their cost is cumulative — which is why none of them is the term to restate —
+-- but they sum past the budget, so the declaration keeps a raise.  325 000
+-- heartbeats suffice; the option keeps 400 000 for headroom.  The composition
+-- boundaries around the work are already declarations of their own (`strPath8`
+-- before, `strPath10` after), and the state and register facts ahead of the
+-- transports do fit the default, so a further split would leave the remaining
+-- ladder at the default's edge rather than under it.
+set_option maxHeartbeats 400000 in
+/-- **Links 1 to 9 compose.**  `strPath8`'s eight links, then the string body's
+call at `z_arena_reserve.exit`: the callee's answer, the log's base word and the
+cursor record's `%sub260.i`, all at the state the previous link left.  The
+endpoint is named (`strS₉`), so `strPath10` reads the invariant there and takes
+`NodeBlock31`'s edge on its own.
 
 **The parameters, and what produces each.**
 
 * `harr` — `%arrayidx10.i` at the header's cell, `%3 + %idxprom.i` at `%3 = G.b`
-  and the bundle's `%idxprom.i`; no block of the chain rebinds the register, but
-  `walkStaticRegs` does not name it, so the composition carries it.  `hcreg`,
-  `hxpreg` and `hnxpreg` are the same shape for `%c.i`, `%xp` and `%nxp`: `entry`
-  binds them from the program's parameters, no block rebinds them, and the
-  carrier omits them — which is the 39-site `WalkInv`-vocabulary change the header
-  measures, not a lemma of this layer.
+  and the bundle's `%idxprom.i`.  It is not a residue field: `WalkInv.iter.regarr`
+  carries the head's cell and `strArr_of_iter` reads it at the state link 8
+  leaves, so the composition supplies this parameter from the invariant.
+  `%c.i`, `%xp` and `%nxp` are not parameters here either:
+  they are entry parameters, `walkStaticRegs` names them, and `hInv8.regs` reads
+  all three at the state link 8 leaves.
 * `hreadAr` — residue **R5**, the log's arena-base word at `%z + 40`.  Producer:
   the initialisation's store at `%z + 40` plus a `WalkInv` clause for the
   arena's base; `WalkInv.owned` gives the object's presence only, and the clause
   set binds `+8`, `+16`, `+32`, `+48` and `+56`.
 * `hGdst` — residue **R6**, the arena's staged address width.  `WalkGeom` bounds
-  `dstcap`, never `dst`; producer: the ABI staging's address width
-  (`stage2Regions`' `HasBytes` at `%dst`).
+  `dstcap`, never `dst`, and the staging's `HasBytes` at `%dst` bounds no
+  address; the field is the caller's, as its own docstring states.
 * `r`, `hcallR` — the callee's `CallOutcome`, which the states after link 9
   carry; its producer is the string body's contract at the staging assembled by
   `s2StringBodyPre_at_string_call`.
 * `hretR` — the answer's word, `%call272.i`.  Producer: `s2StringBodyPost`'s
   `form` at that call (`s2StringBody_sound`), which is the bundle's `y` on the
   accepting arm.
-* `hbodyR` — residue **R1**: the six memory clauses, one premise.  Producer:
-  `s2StringBodyFoot_frame_walkWide` for the frame and the four crossings
-  (`readBytes_of_frame` at the log and the event stream,
-  `WalkStackBytes.write_outside` at the two stacks).
 * `hR8` — residue **R8**, `NodeBlock31`'s edge.  Producer: the callee's post —
   the form is `1` or `2` on the accepting arms, and neither is `< 1` signed;
-  its `form ≠ 0` is also what the write-back's `l ≤ ext` producer needs. -/
-theorem strPath10 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+  its `form ≠ 0` is also what the write-back's `l ≤ ext` producer needs.
+
+**The six memory clauses are not parameters.**  They are the composition the
+residue used to carry as one field: the transported precondition
+(`s2StringBodyPre_of_reads` over link 8's two stores), the callee's answer
+(`s2StringBody_sound`), the accepting arm's four-entry frame
+(`s2StringBody_frame_of_form`), the crossings (`s2StringBodyFrame_facts`), the
+walk's own frame across the two stores and its growth (`write_inside`,
+`walkWideAt_grow`), and the frame's composition (`trans'`).  The argument is in the
+module header; the proof below is `R1's memory, produced`. -/
+theorem strPath9 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     (hhead : C.block = "NodeBlock21") (hInv : WalkInv G C s) (f : HstringFacts G C s)
     (harr : lookupName (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).env "%arrayidx10.i"
       = some (.ptr (G.b + f.ix.toNat)))
-    (hcreg : lookupName (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).env "%c.i"
-      = some (.ptr C.stage.c))
-    (hxpreg : lookupName (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).env "%xp"
-      = some (.ptr G.xp))
-    (hnxpreg : lookupName (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).env "%nxp"
-      = some (.int 64 (BitVec.ofNat 64 G.nxp)))
     (hreadAr : readBytes (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).mem
       (C.stage.z + 40) 8 = some (wordBytes 8 G.dst))
     (hGdst : G.dst < 2 ^ 64)
@@ -1287,29 +1368,15 @@ theorem strPath10 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
       (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).mem
       (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).next = some r)
     (hretR : r.ret = .int 32 f.y)
-    (hbodyR :
-      UnchangedOutside m0 r.mem (walkWide G (strC₉ C f.ix f.ext)) ∧
-      (∀ x ∈ walkStaged G (strC₉ C f.ix f.ext), HasBytes r.mem x.1 x.2) ∧
-      (∀ off w, off + w ≤ stage2LogExtent →
-        readBytes r.mem (C.stage.z + off) w =
-          readBytes (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).mem
-            (C.stage.z + off) w) ∧
-      (readBytes r.mem (G.ev + G.nev0)
-          (C.events.map EventRecord.encodedBytes).flatten.length =
-        readBytes (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).mem (G.ev + G.nev0)
-          (C.events.map EventRecord.encodedBytes).flatten.length) ∧
-      WalkStackBytes r.mem C.stage.ctype C.tyMap C.wlen ∧
-      WalkStackBytes r.mem C.stage.cst C.stMap C.wlen)
     (hR8 : evalICmp .slt f.y (BitVec.ofNat 32 1) = 0) :
-    ∃ s', WalkSegment (stage2Calls stage2SubCalls) G C s (strC₁₀ C f.ix f.ext) s' 10 ∧
-      s' = strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s := by
+    ∃ s', WalkSegment (stage2Calls stage2SubCalls) G C s (strC₉ C f.ix f.ext) s' 9 ∧
+      s' = strS₉ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s := by
   obtain ⟨s8, hseg8, hs8⟩ := strPath8 G C s hhead hInv f
   subst hs8
   have hInv8 : WalkInv G (strC₈ C f.ix f.ext)
       (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s) := hseg8.inv'
   have hregs8 : WalkRegs G C (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).env :=
     hInv8.regs
-  obtain ⟨hframeR, hownedR, hlogR, hevR, hstTyR, hstStR⟩ := hbodyR
   -- ---- link 9: `z_arena_reserve.exit`
   have hpend8 : (strC₈ C f.ix f.ext).pending = some (f.ix.toNat, C.alen, f.ext) := rfl
   have hz36 : lookupName (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).env "%z.val36"
@@ -1351,17 +1418,249 @@ theorem strPath10 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
       = some (.ptr (C.stage.z + 40)) :=
     hregs8 ⟨"%ar", .ptr (C.stage.z + 40)⟩ (by simp [walkStaticRegs])
   have hc8 : lookupName (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).env "%c.i"
-      = some (.ptr C.stage.c) := hcreg
+      = some (.ptr C.stage.c) :=
+    hregs8 ⟨"%c.i", .ptr C.stage.c⟩ (by simp [walkStaticRegs])
   have houtn8 : lookupName (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).env "%outn.i"
       = some (.ptr (G.next0 + 20)) :=
     hregs8 ⟨"%outn.i", .ptr (G.next0 + 20)⟩ (by simp [walkStaticRegs])
   have hxp8 : lookupName (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).env "%xp"
-      = some (.ptr G.xp) := hxpreg
+      = some (.ptr G.xp) :=
+    hregs8 ⟨"%xp", .ptr G.xp⟩ (by simp [walkStaticRegs])
   have hxj8 : lookupName (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).env "%xj.i"
       = some (.ptr (G.next0 + 12)) :=
     hregs8 ⟨"%xj.i", .ptr (G.next0 + 12)⟩ (by simp [walkStaticRegs])
   have hnxp8 : lookupName (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).env "%nxp"
-      = some (.int 64 (BitVec.ofNat 64 G.nxp)) := hnxpreg
+      = some (.int 64 (BitVec.ofNat 64 G.nxp)) :=
+    hregs8 ⟨"%nxp", .int 64 (BitVec.ofNat 64 G.nxp)⟩ (by simp [walkStaticRegs])
+  -- ---- R1's memory, produced: the callee's answer and the four crossings
+  --
+  -- Link 8 writes twice — the cursor record's `%k` word at `%c.i + 32`
+  -- (`if.end207.i`) and `%outn.i`'s zero (`if.end256.i`).
+  have hmem8 : (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).mem
+      = writeBytes
+          (writeBytes s.mem (C.stage.c + 32) (wordBytes 8 (C.k + 2)))
+          (G.next0 + 20) (natToBytes (BitVec.ofNat 64 0).toNat 8) := rfl
+  have hlen8 : (wordBytes 8 (C.k + 2)).length = 8 := by
+    simp [wordBytes, natToBytes_length]
+  have hzero8 : (natToBytes (BitVec.ofNat 64 0).toNat 8).length = 8 :=
+    natToBytes_length _ 8
+  have hwC8 : C.stage.c + 1192 ≤ G.next0 := by
+    have h := C.stage.sevenEnd (C.stage.c, stage2CursorExtent)
+      (by simp [stage2StagedWrites])
+    simpa only [stage2CursorExtent] using h
+  have hwDoc8 : G.b + (G.n + 32) ≤ G.next0 := by
+    have h := G.watermark (G.b, G.n + stage2ReadTail) (by simp [stage2Regions])
+    simpa only [stage2ReadTail] using h
+  have hwXp8 : G.xp + 4 * G.nxp ≤ G.next0 :=
+    G.watermark (G.xp, 4 * G.nxp) (by simp [stage2Regions])
+  have hdocC : C.stage.c + 1192 ≤ G.b ∨ G.b + (G.n + 32) ≤ C.stage.c := by
+    have h := walkWrites_against_abi C.stage (a := G.b) (n := G.n + stage2ReadTail)
+      (by simp [stage2Regions]) (C.stage.c, stage2CursorExtent)
+      (by simp [stage2StagedWrites])
+    simpa only [stage2CursorExtent, stage2ReadTail] using h
+  have hxpC : C.stage.c + 1192 ≤ G.xp ∨ G.xp + 4 * G.nxp ≤ C.stage.c := by
+    have h := walkWrites_against_abi C.stage (a := G.xp) (n := 4 * G.nxp)
+      (by simp [stage2Regions]) (C.stage.c, stage2CursorExtent)
+      (by simp [stage2StagedWrites])
+    simpa only [stage2CursorExtent] using h
+  -- the body's document window ends inside the document
+  have hixExt : f.ix.toNat + f.ext ≤ G.n := by
+    have hk1 : C.k + 1 < G.nep := strCount_test G C s hInv f
+    have h1 : entryPos G (C.k + 1) < G.n := entryPos_lt G hk1
+    have h2 : f.ix.toNat ≤ entryPos G (C.k + 1) := by
+      rw [f.hixPos]; exact entryPos_mono G (by omega) hk1
+    have h3 : f.ext = entryPos G (C.k + 1) - f.ix.toNat - 1 := f.hext
+    omega
+  -- the five reads, across the two stores
+  have hbaseA : stage2ReadWord (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).mem
+        C.stage.c 8 = stage2ReadWord s.mem C.stage.c 8 := by
+    rw [hmem8]; unfold stage2ReadWord
+    rw [walkReadBytes_two_writes (v := wordBytes 8 (C.k + 2))
+      (w := natToBytes (BitVec.ofNat 64 0).toNat 8) (c := C.stage.c) (nt := G.next0)
+      (addr := C.stage.c) (n := 8) (Or.inl (by omega)) (Or.inl (by omega))]
+  have hxjA : stage2ReadWord (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).mem
+        (G.next0 + 12) 8 = stage2ReadWord s.mem (G.next0 + 12) 8 := by
+    rw [hmem8]; unfold stage2ReadWord
+    rw [walkReadBytes_two_writes (v := wordBytes 8 (C.k + 2))
+      (w := natToBytes (BitVec.ofNat 64 0).toNat 8) (c := C.stage.c) (nt := G.next0)
+      (addr := G.next0 + 12) (n := 8)
+      (Or.inr (by rw [hlen8]; omega)) (Or.inl (by omega))]
+  have heA : stage2ReadWord (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).mem
+        (C.stage.c + 1112) 8 = stage2ReadWord s.mem (C.stage.c + 1112) 8 := by
+    rw [hmem8]; unfold stage2ReadWord
+    rw [walkReadBytes_two_writes (v := wordBytes 8 (C.k + 2))
+      (w := natToBytes (BitVec.ofNat 64 0).toNat 8) (c := C.stage.c) (nt := G.next0)
+      (addr := C.stage.c + 1112) (n := 8)
+      (Or.inr (by rw [hlen8]; omega)) (Or.inl (by omega))]
+  have hbodyA : readBytes (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).mem
+        (G.b + f.ix.toNat + 1) (BitVec.ofNat 64 f.ext).toNat =
+      readBytes s.mem (G.b + f.ix.toNat + 1) (BitVec.ofNat 64 f.ext).toNat := by
+    have hLenN : (BitVec.ofNat 64 f.ext).toNat = f.ext := by
+      rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt]
+      have h1 := f.hwin
+      have h2 := G.maxDoc
+      simp only [stage2MaxDocument] at h2
+      omega
+    rw [hLenN, hmem8]
+    refine walkReadBytes_two_writes (v := wordBytes 8 (C.k + 2))
+      (w := natToBytes (BitVec.ofNat 64 0).toNat 8) (c := C.stage.c) (nt := G.next0)
+      (addr := G.b + f.ix.toNat + 1) (n := f.ext) ?_ (Or.inl (by omega))
+    rcases hdocC with h | h
+    · right; rw [hlen8]; omega
+    · left; omega
+  have hNxpN : (BitVec.ofNat 64 G.nxp).toNat = G.nxp := by
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt G.nxpLt]
+  have hpsA : readLanes32 (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).mem G.xp
+        (BitVec.ofNat 64 G.nxp).toNat =
+      readLanes32 s.mem G.xp (BitVec.ofNat 64 G.nxp).toNat := by
+    rw [hNxpN, hmem8]
+    rw [walkReadLanes32_writeBytes_outside
+        (m := writeBytes s.mem (C.stage.c + 32) (wordBytes 8 (C.k + 2)))
+        (start := G.next0 + 20) (v := natToBytes (BitVec.ofNat 64 0).toNat 8)
+        (addr := G.xp) (k := G.nxp) (Or.inl (by omega)),
+      walkReadLanes32_writeBytes_outside (m := s.mem) (start := C.stage.c + 32)
+        (v := wordBytes 8 (C.k + 2)) (addr := G.xp) (k := G.nxp) ?_]
+    rcases hxpC with h | h
+    · right; rw [hlen8]; omega
+    · left; omega
+  -- presence is monotone through the two stores
+  have hpres : ∀ a n, readBytes s.mem a n ≠ none →
+      readBytes (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).mem a n ≠ none := by
+    intro a n h
+    rw [hmem8]
+    have hb : HasBytes s.mem a n := by
+      unfold HasBytes
+      cases hr : readBytes s.mem a n with
+      | none => exact absurd hr h
+      | some vs => exact ⟨vs, rfl⟩
+    obtain h1 := hasBytes_writeBytes (m := s.mem) hb
+      (start := C.stage.c + 32) (bs := wordBytes 8 (C.k + 2))
+    obtain ⟨vs2, h2⟩ := hasBytes_writeBytes
+      (m := writeBytes s.mem (C.stage.c + 32) (wordBytes 8 (C.k + 2))) h1
+      (start := G.next0 + 20) (bs := natToBytes (BitVec.ofNat 64 0).toNat 8)
+    intro hcon
+    rw [h2] at hcon
+    exact absurd hcon (by simp)
+  have hpre8 : s2StringBodyPre
+      [.ptr C.stage.c, .ptr (G.b + f.ix.toNat + 1), .int 64 (BitVec.ofNat 64 f.ext),
+       .ptr (G.dst + f.A.toNat), .ptr (G.next0 + 20), .ptr G.xp,
+       .ptr (G.next0 + 12), .int 64 (BitVec.ofNat 64 G.nxp)]
+      (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).mem
+      (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).next :=
+    s2StringBodyPre_of_reads hbaseA hxjA heA hpsA hbodyA hpres f.hpreS
+  -- the callee's answer
+  have hpost8 : s2StringBodyPost
+      [.ptr C.stage.c, .ptr (G.b + f.ix.toNat + 1), .int 64 (BitVec.ofNat 64 f.ext),
+       .ptr (G.dst + f.A.toNat), .ptr (G.next0 + 20), .ptr G.xp,
+       .ptr (G.next0 + 12), .int 64 (BitVec.ofNat 64 G.nxp)]
+      (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).mem
+      (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).next r :=
+    s2StringBody_sound hpre8 hcallR
+  have hp8 := hpost8
+  obtain ⟨m8, form8, slot8, hm8, hret8, hrmem8, hrnext8⟩ := hp8
+  have hLenN : (BitVec.ofNat 64 f.ext).toNat = f.ext := by
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt]
+    have h1 := f.hwin
+    have h2 := G.maxDoc
+    simp only [stage2MaxDocument] at h2
+    omega
+  -- the accepting arm: the answer's word is not zero, so the form is not
+  have hyForm : f.y = BitVec.ofNat 32 form8 := by
+    have h : Value.int 32 (BitVec.ofNat 32 form8) = Value.int 32 f.y :=
+      hret8.symm.trans hretR
+    exact eq_of_heq (Value.int.inj h).2.symm
+  have hform0 : form8 ≠ 0 := by
+    intro h0
+    have hR8' : evalICmp .slt (BitVec.ofNat 32 form8) (BitVec.ofNat 32 1) = 0 := by
+      rw [← hyForm]; exact hR8
+    rw [h0] at hR8'
+    exact absurd hR8' (by decide)
+  -- the arm's four write entries, from the callee's model
+  obtain ⟨⟨base8, hbase8⟩, ⟨j0_8, hj0_8⟩, ⟨ps8, hps8⟩, ⟨body8, hbody8⟩, ⟨e8, he8⟩,
+    hsp8⟩ := s2StringBodyPre_components hpre8
+  have hm8' : stage2StringBody (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).mem
+      C.stage.c (G.b + f.ix.toNat + 1) f.ext (G.dst + f.A.toNat) (G.next0 + 20)
+      G.xp (G.next0 + 12) G.nxp = some (m8, form8, slot8) := by
+    simpa only [hLenN, hNxpN] using hm8
+  have hps8' : readLanes32 (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).mem G.xp G.nxp
+      = some ps8 := by
+    simpa only [hNxpN] using hps8
+  have hsp8' : BodyPositionsSpaced (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).mem
+      C.stage.c (G.next0 + 12) G.xp G.nxp (G.b + f.ix.toNat + 1) f.ext := by
+    simpa only [hNxpN, hLenN] using hsp8
+  have hfr4 : UnchangedOutside (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).mem r.mem
+      [(G.next0 + 12, 8), (G.next0 + 20, 8), (G.dst + f.A.toNat, f.ext),
+        (s.next, 8)] := by
+    rw [hrmem8]
+    exact s2StringBody_frame_of_form (mem := (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).mem)
+      (c := C.stage.c) (p := G.b + f.ix.toNat + 1) (len := f.ext)
+      (dst := G.dst + f.A.toNat) (outn := G.next0 + 20) (xp := G.xp)
+      (xj := G.next0 + 12) (nxp := G.nxp)
+      (next := (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).next)
+      hbase8 hj0_8 hps8' hsp8' hm8' hform0
+  -- the crossings at that frame
+  have hAwin8 : f.A.toNat + f.ext ≤ G.ndst0 + G.n + stage2ArenaReserve := by
+    have h1 := hInv8.alen_le
+    have h2 := f.hwin
+    omega
+  obtain ⟨hownedR, hlogR, hevR, hstTyR, hstStR⟩ :=
+    s2StringBodyFrame_facts (G := G) (C := strC₈ C f.ix f.ext)
+      (s := strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s) hInv8
+      (p := f.ix.toNat) (A := f.A.toNat) (ext := f.ext) (len := f.ext) (r := r)
+      hpost8 hfr4 hAwin8
+  -- the run's own silence across the two stores, grown to the call's cursors
+  have hfw1 : UnchangedOutside m0
+      (writeBytes s.mem (C.stage.c + 32) (wordBytes 8 (C.k + 2)))
+      (walkWideAt G C (s.next - G.next0)) := by
+    refine hInv.frame.write_inside ?_
+    intro k hk
+    have hk8 : k < 8 := by rw [hlen8] at hk; exact hk
+    exact walkWideAt_of_seven
+      ⟨(C.stage.c, stage2CursorExtent), by simp [stage2StagedWrites],
+        by show C.stage.c ≤ C.stage.c + 32 + k; omega,
+        by show C.stage.c + 32 + k < C.stage.c + stage2CursorExtent
+           simp only [stage2CursorExtent]; omega⟩
+  have hfw2 : UnchangedOutside m0
+      (writeBytes (writeBytes s.mem (C.stage.c + 32) (wordBytes 8 (C.k + 2)))
+        (G.next0 + 20) (natToBytes (BitVec.ofNat 64 0).toNat 8))
+      (walkWideAt G C (s.next - G.next0)) := by
+    refine hfw1.write_inside ?_
+    intro k hk
+    have hk8 : k < 8 := by rw [hzero8] at hk; exact hk
+    refine walkWideAt_alloca (C := C) (n := s.next - G.next0) ?_ ?_
+    · show G.next0 ≤ G.next0 + 20 + k; omega
+    · show G.next0 + 20 + k < G.next0 + (s.next - G.next0)
+      have hge := hInv.next_ge
+      simp only [stage2BootstrapExtent] at hge
+      omega
+  have hgrowW : UnchangedOutside m0
+      (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).mem
+      (walkWideAt G (strC₉ C f.ix f.ext) (r.next - G.next0)) := by
+    refine UnchangedOutside.of_covered
+      (mem := m0) (m := (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).mem)
+      (R := walkWideAt G C (s.next - G.next0))
+      (R' := walkWideAt G (strC₉ C f.ix f.ext) (r.next - G.next0)) ?_ ?_
+    · rw [hmem8]; exact hfw2
+    · have hala : C.alen ≤ (strC₉ C f.ix f.ext).alen := by
+        show C.alen ≤ C.alen + f.ext; omega
+      have hevl : C.evlen ≤ (strC₉ C f.ix f.ext).evlen := le_rfl
+      have hstage : (strC₉ C f.ix f.ext).stage = C.stage := rfl
+      have hn : s.next - G.next0 ≤ r.next - G.next0 := by
+        have hnext : r.next = s.next + 8 := by rw [hrnext8]; rfl
+        omega
+      exact walkWideAt_grow hala hevl hstage hn
+  have hframeR : UnchangedOutside m0 r.mem
+      (walkWideAt G (strC₉ C f.ix f.ext) (r.next - G.next0)) := by
+    refine hgrowW.trans' ?_
+    have hnext8 : G.next0 + stage2BootstrapExtent
+        ≤ (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).next := hInv8.next_ge
+    have hm8c : (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).next + 8
+        ≤ G.next0 + (r.next - G.next0) := by omega
+    exact s2StringBodyFrame_walkWideAt (C := strC₈ C f.ix f.ext)
+      (mem := (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).mem)
+      (next := (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).next)
+      (m := r.next - G.next0) (r := r) (A := f.A.toNat) (ext := f.ext)
+      (len := f.ext) hAle8 le_rfl hnext8 hm8c hfr4
   obtain ⟨s9, hl9, hs9⟩ :=
     WalkLink.z_arena_reserve_exit (G := G) (C := strC₈ C f.ix f.ext)
       (s := strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s) hInv8 rfl
@@ -1374,9 +1673,35 @@ theorem strPath10 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
       (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s) (strC₉ C f.ix f.ext)
       (strS₉ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s) := by
     simpa only [strC₉] using hl9
+  exact ⟨_, hseg8.trans (WalkSegment.of_link hl9'), rfl⟩
+
+/-- **Links 1 to 10 compose: `NodeBlock31`'s edge.**  `strPath9`'s endpoint, then
+the block's own test — `%call272.i` is the callee's answer and its bit is R8's, so
+the edge is `LeafBlock29` and the target is `strS₁₀`. -/
+theorem strPath10 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (hhead : C.block = "NodeBlock21") (hInv : WalkInv G C s) (f : HstringFacts G C s)
+    (harr : lookupName (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).env "%arrayidx10.i"
+      = some (.ptr (G.b + f.ix.toNat)))
+    (hreadAr : readBytes (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).mem
+      (C.stage.z + 40) 8 = some (wordBytes 8 G.dst))
+    (hGdst : G.dst < 2 ^ 64)
+    (r : CallOutcome)
+    (hcallR : stage2Calls stage2SubCalls "s2_string_body"
+      [.ptr C.stage.c, .ptr (G.b + f.ix.toNat + 1), .int 64 (BitVec.ofNat 64 f.ext),
+        .ptr (G.dst + f.A.toNat), .ptr (G.next0 + 20), .ptr G.xp, .ptr (G.next0 + 12),
+        .int 64 (BitVec.ofNat 64 G.nxp)]
+      (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).mem
+      (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).next = some r)
+    (hretR : r.ret = .int 32 f.y)
+    (hR8 : evalICmp .slt f.y (BitVec.ofNat 32 1) = 0) :
+    ∃ s', WalkSegment (stage2Calls stage2SubCalls) G C s (strC₁₀ C f.ix f.ext) s' 10 ∧
+      s' = strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s := by
+  obtain ⟨s9, hseg9, hs9⟩ :=
+    strPath9 G C s hhead hInv f harr hreadAr hGdst r hcallR hretR hR8
+  subst hs9
   -- ---- link 10: `NodeBlock31`
   have hInv9 : WalkInv G (strC₉ C f.ix f.ext)
-      (strS₉ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s) := hl9'.inv'
+      (strS₉ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s) := hseg9.inv'
   have h1_10 : evalOperand (strS₉ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s)
       (.reg "%call272.i") = some (.int 32 f.y) := by
     simp [strS₉, walkZArenaReserveExitOutAt, stateAt, evalOperand, lookupName, hretR]
@@ -1396,8 +1721,7 @@ theorem strPath10 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
       (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s) := by
     rw [hleaf] at hl10
     simpa only [strC₁₀] using hl10
-  exact ⟨_, (hseg8.trans (WalkSegment.of_link hl9')).trans
-    (WalkSegment.of_link hl10'), rfl⟩
+  exact ⟨_, hseg9.trans (WalkSegment.of_link hl10'), rfl⟩
 
 /-! ### Links 11 to 15: the residue, and the segment's proof
 
@@ -1412,8 +1736,8 @@ container's advance.  Four of them already name their targets
 or the previous link's target, except `HstringResidue`'s fields.  Each names its
 producer there, and the four groups are:
 
-* **R1** — the string body's answer, its call, its word and its six memory
-  clauses, which `strPath10` already takes;
+* **R1** — the string body's answer, its call and its word.  The body's six
+  memory clauses are not fields: `strPath9` produces them from the head bundle;
 * **R2** — the decoded length `l` at the write-back's memory and its bound
   `l ≤ ext`.  `s2StringBodyPost` leaves the length free of the input's, so the
   read is supplied rather than derived, and `s2StringBody_outn_le` is what produces
@@ -1425,17 +1749,44 @@ producer there, and the four groups are:
 * **R4** — `C.events.length < C.k`, strict where `events_le` gives `≤`.  Producer:
   `if.then425.i`'s one-record-per-emitting-entry count.
 
-The rest of the structure is the register and width vocabulary the layer does not
-carry: `%arrayidx10.i`, `%c.i`, `%xp`, `%nxp` (`walkStaticRegs` omits them), the
-log's arena-base word R5, `%z`'s pointer, the arena's and the event stream's
-staged widths, and the event cursor's signed bound.  The composition is a proof
-from these; nothing here is weakened to make one go through.
+The rest of the structure is the vocabulary the layer does not carry: the
+per-iteration register `%arrayidx10.i`, the log's arena-base word R5, the arena's
+and the event stream's staged widths, the strict event count, and the event
+cursor's signed bound.  `%c.i`, `%z`, `%xp` and `%nxp` are no longer among them —
+the static carrier names all four — so each of the five links reads them through
+`WalkInv.regs` at its own state.  The composition is a proof from these; nothing
+here is weakened to make one go through.
 
 **The states mirror their links.**  Each `strSₙ` below is written to be the
 *state the link concludes*, byte for byte, so the cast `hlₙ' : WalkLink …` is the
 link itself and a reader sees which arm a `def` fixes.  The two `if`s — the
 answer's own test and the reserve's — stay in the states and in the carries; only
 a consumer that needs the *name* rewrites them (`hblock` and the predecessor). -/
+
+/-- **`%arrayidx10.i` at the state link 8 leaves is the header's register, read at
+the carried index.**  `while.body.i` binds the name on every pass
+(`%arrayidx10.i = %3 + %idxprom.i`), so it is a per-iteration carrier rather than a
+static one: its value moves with `C.k` and `walkStaticRegs` can never hold it.  The
+clause that carries it is `WalkIter.regarr` — `%7` and `%8` are the header's two
+*reads*, and this is the address the header *forms* from them, so the clause
+`lookupName env "%arrayidx10.i" = some (.ptr (G.b + entryPos G k))` is produced by
+`whileBody_step`'s `getelementptr` over `%3 = G.b` (`WalkPtrs`) and `%7`'s lane
+(`WalkIter.reg7`), and preserved by `WalkIter.bind`/`WalkIter.cells_of` exactly as
+`%7` is.
+
+This theorem is that clause read at `strS₈`'s environment.  None of the path's
+eight links binds `%arrayidx10.i`, so nothing but `stateAt`'s and `bind`'s
+pass-through separates the head's cell from the one the call reads, and the
+composition reads the head's clause from `WalkInv.iter.regarr`. -/
+theorem strArr_of_iter {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    {f : HstringFacts G C s} {q : Nat} {rd x : BitVec 32} {A Cc ix : BitVec 64}
+    (h : lookupName s.env "%arrayidx10.i" = some (.ptr (G.b + entryPos G C.k))) :
+    lookupName (strS₈ G C q rd x A Cc ix s).env "%arrayidx10.i"
+      = some (.ptr (G.b + f.ix.toNat)) := by
+  rw [f.hixPos]
+  simp only [strS₁, strS₂, strS₃, strS₄, strS₅, strS₆, strS₇, strS₈,
+    walkIfEnd256OutAt, stateAt, State.bind]
+  block_lk
 
 /-- **The two-entry token's path's residue.**  The facts the fifteen links need
 beside `WalkInv`'s clauses and the head bundle's fields, at the head state the
@@ -1446,28 +1797,19 @@ the state the string body's answer and the write-back's length put the run in, s
 a `Prop` would leave the composition with nothing to name. -/
 structure HstringResidue {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     (f : HstringFacts G C s) : Type where
-  /-- **R1's four registers**, at the state link 8 leaves: `%arrayidx10.i` is
-  `%3 + %idxprom.i` and `%c.i`, `%xp`, `%nxp` are the program's arguments.  No
-  block of the chain rebinds any of them, so the carrier would hold them if
-  `walkStaticRegs` named them; it does not, which is the 39-site
-  `WalkInv`-vocabulary change the module header measures. -/
-  harr : lookupName (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).env "%arrayidx10.i"
-    = some (.ptr (G.b + f.ix.toNat))
-  hcreg : lookupName (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).env "%c.i"
-    = some (.ptr C.stage.c)
-  hxpreg : lookupName (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).env "%xp"
-    = some (.ptr G.xp)
-  hnxpreg : lookupName (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).env "%nxp"
-    = some (.int 64 (BitVec.ofNat 64 G.nxp))
   /-- **R5 — the log's arena-base word** at `%z + 40`, which `if.end256.i`'s
   `%sub260.i` is added to.  Producer: the initialisation's store at `%z + 40` plus
   a `WalkInv` clause for the arena's base; `WalkInv.owned` gives the object's
   presence, and the clause set binds `+8`, `+16`, `+32`, `+48` and `+56`. -/
   hreadAr : readBytes (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).mem
     (C.stage.z + 40) 8 = some (wordBytes 8 G.dst)
-  /-- **R6 — the arena's staged address is a word.**  `WalkGeom` bounds `dstcap`,
-  never `dst`; producer: the ABI staging's address width (`stage2Regions`'
-  `HasBytes` at `%dst`). -/
+  /-- **R6 — the arena's staged address is a word.**  `WalkGeom` bounds `dstcap`
+  and never `dst`, and `stage2Pre` states an address width for `b` and `ep` and a
+  count width for `nxp`, `dstcap` and `evcap` — not for `%dst`.  Neither
+  `HasBytes m0 dst dstcap` nor the region separation bounds the address itself, so
+  the field is the caller's: its producer is the ABI's address width (`stage2.h`),
+  which the record does not state, and a `stage2Pre`/`WalkGeom` clause at `%dst`
+  would retire it. -/
   hGdst : G.dst < 2 ^ 64
   /-- **R1 — the string body's answer.**  Its producer is `s2StringBodyPre` at the
   argument list (`s2StringBodyPre_at_string_call`). -/
@@ -1484,32 +1826,9 @@ structure HstringResidue {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : Sta
   *head's* memory and cursor, and the call is made at the state link 8 leaves,
   whose memory the reservation's zero has already written. -/
   hretR : r.ret = .int 32 f.y
-  /-- **R1's six memory clauses**, one premise: the frame, the presence, the log's
-  and the event stream's reads, and the two stack maps at the callee's returned
-  memory.  Producer: `s2StringBodyFoot_frame_walkWide`
-  (`JsonStage2StringStageFacts`) for the frame and the presence, and the four
-  `walkReadBytes_*` crossings `walkAfterValue_facts` already carries for the log,
-  the trace and the two maps. -/
-  hbodyR :
-    UnchangedOutside m0 r.mem (walkWide G (strC₉ C f.ix f.ext)) ∧
-    (∀ x ∈ walkStaged G (strC₉ C f.ix f.ext), HasBytes r.mem x.1 x.2) ∧
-    (∀ off w, off + w ≤ stage2LogExtent →
-      readBytes r.mem (C.stage.z + off) w =
-        readBytes (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).mem
-          (C.stage.z + off) w) ∧
-    (readBytes r.mem (G.ev + G.nev0)
-        (C.events.map EventRecord.encodedBytes).flatten.length =
-      readBytes (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).mem (G.ev + G.nev0)
-        (C.events.map EventRecord.encodedBytes).flatten.length) ∧
-    WalkStackBytes r.mem C.stage.ctype C.tyMap C.wlen ∧
-    WalkStackBytes r.mem C.stage.cst C.stMap C.wlen
   /-- **R8 — `NodeBlock31`'s edge.**  Producer: the callee's post — the form is
   `1` or `2` on the accepting arms, and neither is `< 1` signed. -/
   hR8 : evalICmp .slt f.y (BitVec.ofNat 32 1) = 0
-  /-- **`%z`'s pointer.**  The entry block's argument; no block of the chain
-  rebinds it, and `walkStaticRegs` omits it (the same vocabulary gap as R1's four
-  registers).  Producer: the seed's environment. -/
-  hzreg : lookupName s.env "%z" = some (.ptr C.stage.z)
   /-- **R2 — the decoded length at the write-back.**  The slot is `%outn.i`,
   which the body fills; the read is at the callee's returned memory because that
   is where it is filled, and the producer is `s2StringBodyPost`'s `%outn` word. -/
@@ -1526,14 +1845,19 @@ structure HstringResidue {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : Sta
   hlogBase : readBytes r.mem C.stage.z 8 = some (wordBytes 8 G.ev)
   /-- **R4 — the trace is short of the entries consumed.**  Producer:
   `if.then425.i`'s one-record-per-emitting-entry count; `events_le` gives only
-  `≤`. -/
+  `≤`, and no clause of `WalkInv` states the strict form. -/
   hltEvents : C.events.length < C.k
-  /-- **R6's event-stream half**: the stream's staged address is a word. -/
+  /-- **R6's event-stream half**: the stream's staged address is a word.  The twin
+  of `hGdst`, with the same gap: `stage2Pre` bounds `evcap` and the staged bytes,
+  never `%ev` itself. -/
   hGev : G.ev < 2 ^ 64
   /-- **The event cursor's signed bound**, which `if.then328.i`'s `getelementptr`
-  index needs: the cursor's word is the ABI's and the staging bounds it by the
-  capacity, not by `2 ^ 63`.  Producer: the staging's cursor word
-  (`stage2Pre`'s `%nev`), the twin of R6. -/
+  index needs.  Producer: the staging's cursor word (`stage2Pre`'s `%nev`), which
+  bounds the cursor by the event stream's capacity (`evRoom`, `evcapLt`) and so
+  gives `C.evlen < 2 ^ 64` — `evlen_le`'s arithmetic — and not `2 ^ 63`.  The
+  `2 ^ 63` half is the caller's until the staging states the signed bound; the
+  sign extension is what the block's index needs it for, so the field is not a
+  restatement of a clause. -/
   hev63 : C.evlen < 2 ^ 63
 
 /-- **The residue at every head state**, as the premise a producer supplies: one
@@ -1612,7 +1936,6 @@ theorem strMergePhiElse₂ :
        ("if.else285.i", (Operand.reg "%z.val36"))] = some (.reg "%z.val36") := by
   decide
 
-set_option maxHeartbeats 1600000 in
 /-- **The two-entry token's path to the merge.**  The fifteen links composed: the
 segment's endpoint is the merge's state at the callee's answer and the write-back's
 length, and its two register cells are the merge's own.
@@ -1638,8 +1961,9 @@ theorem stringPath_seg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
       lookupName sd.env "%inc208.i" = some (.int 64 (BitVec.ofNat 64 (C.k + 2))) ∧
       lookupName sd.env "%nep" = some (.int 64 (BitVec.ofNat 64 G.nep)) := by
   obtain ⟨s10, hseg10, hs10⟩ :=
-    strPath10 G C s hhead hInv f R.harr R.hcreg R.hxpreg R.hnxpreg R.hreadAr R.hGdst
-      R.r R.hcallR R.hretR R.hbodyR R.hR8
+    strPath10 G C s hhead hInv f
+      (strArr_of_iter (f := f) hInv.iter.regarr) R.hreadAr R.hGdst
+      R.r R.hcallR R.hretR R.hR8
   subst hs10
   have hInv10 : WalkInv G (strC₁₀ C f.ix f.ext)
       (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s) := hseg10.inv'
@@ -1819,7 +2143,7 @@ theorem stringPath_seg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
         "%z" = some (.ptr C.stage.z) := by
       simpa [strS₁₃, strS₁₂t, strS₁₁, State.bind, strS₁₀, strS₉,
         walkZArenaReserveExitOutAt, strS₈, walkIfEnd256OutAt, strS₇, strS₆, strS₅,
-        strS₄, strS₃, strS₂, strS₁, strSetK₅, stateAt, cells, lookupName] using R.hzreg
+        strS₄, strS₃, strS₂, strS₁, strSetK₅, stateAt, cells, lookupName] using hInv.regs ⟨"%z", .ptr C.stage.z⟩ (by simp [walkStaticRegs])
     have hzread13 : readBytes (strS₁₃ (BitVec.ofNat 64 f.ext)
         (strOr (BitVec.ofNat 32 (entryPos G C.k))) (BitVec.ofNat 64 C.evlen)
         (BitVec.ofNat 64 G.evcap)
@@ -2152,7 +2476,7 @@ theorem stringPath_seg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
           C.stage.z f.A.toNat R.l)).env "%z" = some (.ptr C.stage.z) := by
       simpa [strS₁₃, ifElse285OutAt, strS₁₁, State.bind, strS₁₀, strS₉,
         walkZArenaReserveExitOutAt, strS₈, walkIfEnd256OutAt, strS₇, strS₆, strS₅,
-        strS₄, strS₃, strS₂, strS₁, strSetK₅, stateAt, cells, lookupName] using R.hzreg
+        strS₄, strS₃, strS₂, strS₁, strSetK₅, stateAt, cells, lookupName] using hInv.regs ⟨"%z", .ptr C.stage.z⟩ (by simp [walkStaticRegs])
     have hzread13 : readBytes (strS₁₃ (BitVec.ofNat 64 R.l)
         (BitVec.ofNat 64 f.A.toNat) (BitVec.ofNat 64 C.evlen)
         (BitVec.ofNat 64 G.evcap) (ifElse285OutAt (strS₁₁ f.y

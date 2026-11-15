@@ -227,7 +227,7 @@ theorem WalkLink.landRhs457_at {calls : Calls} {m0 : Mem}
     (B := walkLandRhs457) (by rw [hblock]; exact walkLandRhs457_find)
     (walkLandRhs457Step (calls := calls) (s := s) (idx := idx) (a := a) (q := q) (bs := bs)
       hpre hinc hop h3 hpos hread hbs)
-    (by unfold walkCarried; decide) rfl rfl rfl hloc
+    (by unfold walkCarried; decide) rfl rfl rfl rfl hloc
   refine ⟨s', hlink, ?_⟩
   have hstep := walkLandRhs457Jump (calls := calls) (s := s) (idx := idx) (a := a) (q := q)
     (bs := bs) (by rw [hInv.pc_eq, hblock]) hpre hinc hop h3 hpos hread hbs

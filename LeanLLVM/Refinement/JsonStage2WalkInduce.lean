@@ -176,7 +176,7 @@ theorem scan_step_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
       ∧ ¬ inc = "%cst.i" ∧ ¬ inc = "%hash1.i.i")
     (htestN : ¬ test = "%3" ∧ ¬ test = "%5" ∧ ¬ test = "%k11.i" ∧ ¬ test = "%ctype.i"
       ∧ ¬ test = "%cst.i" ∧ ¬ test = "%hash1.i.i")
-    (hincS : inc ∉ walkStaticNames) (htestS : test ∉ walkStaticNames)
+    (hincS : walkFreshName inc) (htestS : walkFreshName test)
     (hincI7 : inc ≠ "%7") (hincI8 : inc ≠ "%8")
     (htestI7 : test ≠ "%7") (htestI8 : test ≠ "%8")
     (hi : lookupName s.env phi = some (.int 64 (BitVec.ofNat 64 i)))
@@ -242,19 +242,24 @@ theorem scan_step_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
           exact hInv.ptrs.bind_pair (a := inc) (b := test) hincN htestN
         regs := by
           dsimp only [e, scanLatchAt, scanLatchOut, cells, stateAt, State.bind]
-          exact hInv.regs.bind_pair (a := inc) (b := test) hincS htestS
+          exact hInv.regs.bind_pair (a := inc) (b := test) hincS.1 htestS.1
         iter := by
           dsimp only [e, scanLatchAt, scanLatchOut, cells, stateAt, State.bind]
           exact hInv.iter.bind_pair (a := inc) (b := test)
             (va := .int 64 (BitVec.ofNat 64 (i + 1))) (vb := .int 1 (0 : BitVec 1))
-            hincI7 hincI8 htestI7 htestI8
+            ⟨hincI7, hincI8, hincS.2.2⟩ ⟨htestI7, htestI8, htestS.2.2⟩
         log_hash := by dsimp only [e, scanLatchAt, scanLatchOut, cells, stateAt, State.bind]; exact hInv.log_hash
         log_len := hInv.log_len
         log_cap := hInv.log_cap
         log_alen := hInv.log_alen
         log_acap := hInv.log_acap
         owned := by dsimp only [e, scanLatchAt, scanLatchOut, cells, stateAt, State.bind]; exact hInv.owned
+        next_ge := by dsimp only [e, scanLatchAt, scanLatchOut, cells, stateAt, State.bind]; exact hInv.next_ge
         frame := ?_
+        inc_reg := by
+          dsimp only [e, scanLatchAt, scanLatchOut, cells, stateAt, State.bind]
+          rw [lookupName_cons_ne _ _ htestS.2.1, lookupName_cons_ne _ _ hincS.2.1]
+          exact hInv.inc_reg
         blockLocal := ?_ }
     · rw [hk]; exact hInv.blockIndex
     · dsimp only [e, scanLatchAt, scanLatchOut, cells, stateAt, State.bind]; exact hInv.frame
@@ -290,7 +295,7 @@ theorem scanStepAt_exit {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
       ∧ ¬ inc = "%cst.i" ∧ ¬ inc = "%hash1.i.i")
     (htestN : ¬ test = "%3" ∧ ¬ test = "%5" ∧ ¬ test = "%k11.i" ∧ ¬ test = "%ctype.i"
       ∧ ¬ test = "%cst.i" ∧ ¬ test = "%hash1.i.i")
-    (hincS : inc ∉ walkStaticNames) (htestS : test ∉ walkStaticNames)
+    (hincS : walkFreshName inc) (htestS : walkFreshName test)
     (hincI7 : inc ≠ "%7") (hincI8 : inc ≠ "%8")
     (htestI7 : test ≠ "%7") (htestI8 : test ≠ "%8")
     (hi : lookupName s.env phi = some (.int 64 (BitVec.ofNat 64 i)))
@@ -355,20 +360,25 @@ theorem scanStepAt_exit {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
         exact hInv.ptrs.bind_pair (a := inc) (b := test) hincN htestN
       regs := by
         dsimp only [s', scanLatchOut, cells, stateAt, State.bind]
-        exact hInv.regs.bind_pair (a := inc) (b := test) hincS htestS
+        exact hInv.regs.bind_pair (a := inc) (b := test) hincS.1 htestS.1
       iter := by
         dsimp only [s', scanLatchOut, cells, stateAt, State.bind]
         exact hInv.iter.bind_pair (a := inc) (b := test)
           (va := .int 64 (BitVec.ofNat 64 (i + 1)))
           (vb := .int 1 (evalICmp .eq (BitVec.ofNat 64 (i + 1)) (BitVec.ofNat 64 c)))
-          hincI7 hincI8 htestI7 htestI8
+          ⟨hincI7, hincI8, hincS.2.2⟩ ⟨htestI7, htestI8, htestS.2.2⟩
       log_hash := by dsimp only [s']; exact hInv.log_hash
       log_len := hInv.log_len
       log_cap := hInv.log_cap
       log_alen := hInv.log_alen
       log_acap := hInv.log_acap
       owned := by dsimp only [s']; exact hInv.owned
+      next_ge := by dsimp only [s']; exact hInv.next_ge
       frame := ?_
+      inc_reg := by
+        dsimp only [s', scanLatchOut, cells, stateAt, State.bind]
+        rw [lookupName_cons_ne _ _ htestS.2.1, lookupName_cons_ne _ _ hincS.2.1]
+        exact hInv.inc_reg
       blockLocal := ?_ }
   · rw [hk]; exact hInv.blockIndex
   · dsimp only [s']; exact hInv.frame
@@ -414,7 +424,7 @@ theorem scanLatch_link {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
     (s₁ := stateAt (cells
       [(test, .int 1 (evalICmp .eq (BitVec.ofNat 64 (i + 1)) (BitVec.ofNat 64 c))),
        (inc, .int 64 (BitVec.ofNat 64 (i + 1)))] s.env) s)
-    hden hfree rfl rfl ht
+    hden hfree rfl rfl rfl ht
     (bit := evalICmp .eq (BitVec.ofNat 64 (i + 1)) (BitVec.ofNat 64 c))
     (hbit := by
       show lookupName (cells

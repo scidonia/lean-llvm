@@ -284,18 +284,19 @@ seed's version (`walkSeedWide_outside`) is stated at `walkSeed G S`, whose curso
 the staging's; a chain's carries have advanced, so the bounds are the *carry's*
 (`C.alen`, `C.evlen`) and the proof is the seed's with the cursor names substituted.
 
-This is what a scan link's loaded-byte derivation runs on: `walkWide` never covers the
-document, so a document byte reads as the caller's — `G.doc`'s own. -/
-theorem walkWide_outside {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) {a m : Nat}
+This is what a scan link's loaded-byte derivation runs on: the cursor's frame
+(`walkWideAt`) never covers the document — its interval starts at the watermark and
+the document ends there — so a document byte reads as the caller's — `G.doc`'s own. -/
+theorem walkWide_outside {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) {a m n : Nat}
     (hArena : a + m ≤ G.dst ∨ G.dst + C.alen ≤ a)
     (hEv : a + m ≤ G.ev ∨ G.ev + C.evlen ≤ a)
     (hSeven : ∀ r ∈ stage2StagedWrites C.stage.c C.stage.ctype C.stage.cst C.stage.tok
       C.stage.s C.stage.z C.stage.e, r.1 + r.2 ≤ a ∨ a + m ≤ r.1)
     (hD : C.stage.d + 8 ≤ a ∨ a + m ≤ C.stage.d)
     (hwm : a + m ≤ G.next0) {e : Nat} (ha : a ≤ e) (he : e < a + m) :
-    ¬ inRegions (walkWide G C) e := by
+    ¬ inRegions (walkWideAt G C n) e := by
   rintro ⟨r, hr, hlo, hhi⟩
-  simp only [walkWide, walkPresent, stage2ReportScratch] at hr
+  simp only [walkWideAt, walkPresent, stage2ReportScratch] at hr
   rcases List.mem_append.mp hr with hr | hr
   · rcases List.mem_append.mp hr with hr | hr
     · rcases List.mem_cons.mp hr with rfl | hr'
@@ -308,7 +309,9 @@ theorem walkWide_outside {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) {a m : N
       · rcases List.mem_cons.mp hr with rfl | hnil
         · rcases hD with h' | h' <;> omega
         · exact absurd hnil (by simp)
-  · exact not_walkAlloca_of_lt (by omega) ⟨r, hr, hlo, hhi⟩
+  · rcases List.mem_cons.mp hr with rfl | hnil
+    · omega
+    · exact absurd hnil (by simp)
 
 /-- **The document's bytes are outside the run's frame, at any carry.**  The seed's
 version (`walkSeed_doc_out`) is stated at `walkSeed G S`; a chain's carry has advanced,
@@ -318,11 +321,11 @@ those clauses read at the carry's cursors and not a search.
 
 The carry's two bounds are the invariant's: `C.alen ≤ ndst0 + n + reserve` is
 `alen_le` plus the reserve, and `C.evlen ≤ G.evcap` is `evlen_le` through `evRoom`. -/
-theorem walkWide_doc_out {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+theorem walkWide_doc_out {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) {n : Nat}
     (halen : C.alen ≤ G.ndst0 + G.n + stage2ArenaReserve)
     (hevlen : C.evlen ≤ G.evcap)
     {e : Nat} (ha : G.b ≤ e) (he : e < G.b + G.n) :
-    ¬ inRegions (walkWide G C) e := by
+    ¬ inRegions (walkWideAt G C n) e := by
   have hsep := disjointRegions_staged_prefix C.stage.separate
   have h03 := stage2Regions_sep hsep (i := 0) (j := 3)
     (by simp [stage2Regions]) (by simp [stage2Regions]) (by decide)
@@ -1427,6 +1430,7 @@ theorem walkEntry_inv {mem : Mem} (G : WalkGeom mem) {C : WalkCarry G} {s : Stat
     (hpc : s'.pc = "if.then492.i")
     (hk : lookupName s'.env "%k.0.i249" = some (.int 64 (BitVec.ofNat 64 C.k)))
     (hsp : lookupName s'.env "%sp.i.0248" = some (.int 32 (BitVec.ofNat 32 C.sp)))
+    (hinc : lookupName s'.env "%inc.i" = some (.int 64 (BitVec.ofNat 64 (C.k + 1))))
     (hEv : readBytes s'.mem (G.ev + G.nev0)
         (C.events.map EventRecord.encodedBytes).flatten.length =
       some (C.events.map EventRecord.encodedBytes).flatten)
@@ -1441,11 +1445,13 @@ theorem walkEntry_inv {mem : Mem} (G : WalkGeom mem) {C : WalkCarry G} {s : Stat
       readBytes s'.mem (C.stage.z + 48) 8 = some (wordBytes 8 a))
     (hlogAcap : readBytes s'.mem (C.stage.z + 56) 8 = some (wordBytes 8 G.dstcap))
     (hown : ∀ r ∈ walkStaged G C, HasBytes s'.mem r.1 r.2)
-    (hframe : UnchangedOutside mem s'.mem (walkWide G C))
+    (hnextGE : G.next0 + stage2BootstrapExtent ≤ s'.next)
+    (hframe : UnchangedOutside mem s'.mem (walkWideAt G C (s'.next - G.next0)))
     (hlocal : WalkLocal { C with block := "if.then492.i" } s') :
     WalkInv G { C with block := "if.then492.i" } s' where
   pc_eq := hpc
   blockIndex := hk
+  inc_reg := hinc
   k_le := hInv.k_le
   events_le := hInv.events_le
   evlen_eq := hInv.evlen_eq
@@ -1475,6 +1481,7 @@ theorem walkEntry_inv {mem : Mem} (G : WalkGeom mem) {C : WalkCarry G} {s : Stat
   log_alen := hlogA
   log_acap := hlogAcap
   owned := hown
+  next_ge := hnextGE
   frame := hframe
   blockLocal := hlocal
 
@@ -1606,6 +1613,7 @@ theorem walkInvSeat {m0 : Mem} (G : WalkGeom m0) (stage : WalkStage G) {s : Stat
     (hreg : WalkRegs G (walkCarryZero G stage) s.env)
     (hiter : WalkIter G 0 s.env)
     (hsp : lookupName s.env "%sp.i.0248" = some (.int 32 (BitVec.ofNat 32 0)))
+    (hinc : lookupName s.env "%inc.i" = some (.int 64 (BitVec.ofNat 64 (0 + 1))))
     (hlogHash : readBytes s.mem (stage.z + 32) 4 = some (natToBytes 0 4))
     (hlogLen : readBytes s.mem (stage.z + 8) 8 = some (wordBytes 8 G.nev0))
     (hlogCap : readBytes s.mem (stage.z + 16) 8 = some (wordBytes 8 G.evcap))
@@ -1613,7 +1621,9 @@ theorem walkInvSeat {m0 : Mem} (G : WalkGeom m0) (stage : WalkStage G) {s : Stat
       readBytes s.mem (stage.z + 48) 8 = some (wordBytes 8 a))
     (hlogAcap : readBytes s.mem (stage.z + 56) 8 = some (wordBytes 8 G.dstcap))
     (hown : ∀ r ∈ walkStaged G (walkCarryZero G stage), HasBytes s.mem r.1 r.2)
-    (hframe : UnchangedOutside m0 s.mem (walkWide G (walkCarryZero G stage)))
+    (hnextGE : G.next0 + stage2BootstrapExtent ≤ s.next)
+    (hframe : UnchangedOutside m0 s.mem
+      (walkWideAt G (walkCarryZero G stage) (s.next - G.next0)))
     (hty : WalkStackBytes s.mem stage.ctype (fun _ => 0) 0)
     (hst : WalkStackBytes s.mem stage.cst (fun _ => 0) 0)
     (hEv : readBytes s.mem (G.ev + G.nev0) 0 = some [])
@@ -1624,6 +1634,7 @@ theorem walkInvSeat {m0 : Mem} (G : WalkGeom m0) (stage : WalkStage G) {s : Stat
   exact
     { pc_eq := hpc
       blockIndex := hk
+      inc_reg := hinc
       k_le := hk_le
       events_le := hev_le
       evlen_eq := by simp [walkCarryZero]
@@ -1653,6 +1664,7 @@ theorem walkInvSeat {m0 : Mem} (G : WalkGeom m0) (stage : WalkStage G) {s : Stat
       log_alen := hlogA
       log_acap := hlogAcap
       owned := hown
+      next_ge := hnextGE
       frame := hframe
       blockLocal := hlocal }
 
@@ -1674,9 +1686,10 @@ theorem walkEntryInv_at_regs {mem : Mem} (G : WalkGeom mem) {C : WalkCarry G} {s
   · rw [hk.1]; exact hInv.blockIndex
   · rw [hk.2]; exact hInv.depth_reg
 
-/-- **The successor's static registers.**  `walkStaticRegs`' twenty-four pairs split by the
-classification rule: twenty are cells of the entry's own layers with exactly the values the
-list names, and four are bound by no layer, so they pass through to the base environment.
+/-- **The successor's static registers.**  `walkStaticRegs`' twenty-nine pairs split by the
+classification rule: twenty-one are cells of the entry's own layers with exactly the values
+the list names, and eight are bound by no layer — the preheader's four and the four entry
+parameters `%c.i`, `%z`, `%xp` and `%nxp` — so they pass through to the base environment.
 
 The values name the *stage's* addresses, while the layers are built from the entry's
 parameters, so the lemma takes the identifications as premises — at the seating they hold by
@@ -1687,6 +1700,11 @@ theorem walkEntryEnv_regs {m0 : Mem} (G : WalkGeom m0) (stage : WalkStage G) (en
     (n b ep nep xp nxp dst v1 v2 ev sAddr zAddr cAddr c : Nat)
     (hs : sAddr = stage.s) (hz : zAddr = stage.z) (hc : cAddr = stage.c)
     (hcn : c = G.next0) (hb : b = G.b) (hep : ep = G.ep)
+    (hnep : lookupName env "%nep" = some (.int 64 (BitVec.ofNat 64 G.nep)))
+    (hcreg : lookupName env "%c.i" = some (.ptr stage.c))
+    (hzreg : lookupName env "%z" = some (.ptr stage.z))
+    (hxp : lookupName env "%xp" = some (.ptr G.xp))
+    (hnxp : lookupName env "%nxp" = some (.int 64 (BitVec.ofNat 64 G.nxp)))
     (hbase : lookupName env "%h1.i.i.i51" = some (.ptr (stage.z + 24)) ∧
       lookupName env "%gap.i" = some (.ptr (stage.tok + 20)) ∧
       lookupName env "%end.i" = some (.ptr (stage.tok + 8)) ∧
@@ -1697,18 +1715,20 @@ theorem walkEntryEnv_regs {m0 : Mem} (G : WalkGeom m0) (stage : WalkStage G) (en
   obtain ⟨hb1, hb2, hb3, hb4⟩ := hbase
   subst hs hz hc hcn hb hep
   simp [WalkRegs, walkStaticRegs, walkCarryZero, walkEntryEnv4, walkEntryEnv3,
-    walkEntryEnv2, walkEntryEnv1, cells, lookupName_cons_ne, woff, hb1, hb2, hb3, hb4]
+    walkEntryEnv2, walkEntryEnv1, cells, lookupName_cons_ne, woff, hb1, hb2, hb3, hb4, hnep,
+    hcreg, hzreg, hxp, hnxp]
 
-/-- **The successor's per-iteration carrier.**  `%7` and `%8` are bound by no entry layer, so
-the lane and the byte the invariant names at index zero are the staging's — the carrier is
-passed, and the entry leaves it alone for the first iteration to overwrite. -/
+/-- **The successor's per-iteration carrier.**  `%7`, `%8` and `%arrayidx10.i` are
+bound by no entry layer, so the lane, the byte and the position address the
+invariant names at index zero are the staging's — the carrier is passed, and the
+entry leaves it alone for the first iteration to overwrite. -/
 theorem walkEntryEnv_iter {m0 : Mem} (G : WalkGeom m0) (env : Env)
     (c n b ep nep sAddr zAddr xp nxp dst v1 v2 ev : Nat)
     (hiter : WalkIter G 0 env) :
     WalkIter G 0 (walkEntryEnv4 (walkEntryEnv3 (walkEntryEnv2 (walkEntryEnv1 env c n)
       sAddr zAddr ep xp nxp dst v1 v2 ev) b n ep sAddr c) b nep) := by
-  obtain ⟨h7, h8⟩ := hiter
-  refine ⟨?_, ?_⟩
+  obtain ⟨h7, h8, harr⟩ := hiter
+  refine ⟨?_, ?_, ?_⟩
   · rw [show lookupName (walkEntryEnv4 (walkEntryEnv3 (walkEntryEnv2 (walkEntryEnv1 env c n)
         sAddr zAddr ep xp nxp dst v1 v2 ev) b n ep sAddr c) b nep) "%7"
         = lookupName env "%7" from by
@@ -1721,6 +1741,12 @@ theorem walkEntryEnv_iter {m0 : Mem} (G : WalkGeom m0) (env : Env)
       simp [walkEntryEnv4, walkEntryEnv3, walkEntryEnv2, walkEntryEnv1, cells,
         lookupName_cons_ne]]
     exact h8
+  · rw [show lookupName (walkEntryEnv4 (walkEntryEnv3 (walkEntryEnv2 (walkEntryEnv1 env c n)
+        sAddr zAddr ep xp nxp dst v1 v2 ev) b n ep sAddr c) b nep) "%arrayidx10.i"
+        = lookupName env "%arrayidx10.i" from by
+      simp [walkEntryEnv4, walkEntryEnv3, walkEntryEnv2, walkEntryEnv1, cells,
+        lookupName_cons_ne]]
+    exact harr
 
 /-- **A stack copy survives writes outside it.**  `WalkStackBytes` is a pointwise read over
 `[base, base + n)`, so an unchanged-outside fact over a region list that avoids every point of
@@ -1934,6 +1960,7 @@ theorem walkEntry_inv_at {m0 : Mem} (G : WalkGeom m0) {C : WalkCarry G} {s : Sta
     (hpc : s'.pc = "if.then492.i")
     (hk : lookupName s'.env "%k.0.i249" = some (.int 64 (BitVec.ofNat 64 C.k)))
     (hsp : lookupName s'.env "%sp.i.0248" = some (.int 32 (BitVec.ofNat 32 C.sp)))
+    (hinc : lookupName s'.env "%inc.i" = some (.int 64 (BitVec.ofNat 64 (C.k + 1))))
     (hptr : WalkPtrs G C s'.env) (hreg : WalkRegs G C s'.env)
     (hiter : WalkIter G C.k s'.env)
     (hsepTy : ∀ i, i < C.wlen → ∀ q ∈ R,
@@ -1953,7 +1980,8 @@ theorem walkEntry_inv_at {m0 : Mem} (G : WalkGeom m0) {C : WalkCarry G} {s : Sta
     (hsepEv : ∀ i, i < (C.events.map EventRecord.encodedBytes).flatten.length → ∀ q ∈ R,
       ¬ (q.1 ≤ G.ev + G.nev0 + i ∧ G.ev + G.nev0 + i < q.1 + q.2))
     (hown : ∀ r ∈ walkStaged G C, HasBytes s'.mem r.1 r.2)
-    (hframe : UnchangedOutside m0 s'.mem (walkWide G C))
+    (hnextGE : G.next0 + stage2BootstrapExtent ≤ s'.next)
+    (hframe : UnchangedOutside m0 s'.mem (walkWideAt G C (s'.next - G.next0)))
     (hlocal : WalkLocal { C with block := "if.then492.i" } s') :
     WalkInv G { C with block := "if.then492.i" } s' := by
   have hTy : WalkStackBytes s'.mem C.stage.ctype C.tyMap C.wlen := by
@@ -1967,8 +1995,8 @@ theorem walkEntry_inv_at {m0 : Mem} (G : WalkGeom m0) {C : WalkCarry G} {s : Sta
       some (C.events.map EventRecord.encodedBytes).flatten := by
     rw [hmem, readBytes_frame hm hsepEv]
     exact hInv.evBytes
-  refine walkEntry_inv (G := G) (C := C) (s := s) hInv hpc hk hsp hEv hTy hSt hptr hreg
-    hiter ?_ ?_ ?_ ?_ ?_ hown hframe hlocal
+  refine walkEntry_inv (G := G) (C := C) (s := s) hInv hpc hk hsp hinc hEv hTy hSt hptr hreg
+    hiter ?_ ?_ ?_ ?_ ?_ hown hnextGE hframe hlocal
   · rw [hmem, readBytes_frame hm hsepH]
     exact hInv.log_hash
   · rw [hmem, readBytes_frame hm hsepL]
@@ -2871,11 +2899,17 @@ cursors as the walk left them, the refusal bit and its offset, and the two regio
 claims.  Every one of those is a clause of `WalkInv` at the loop's end — the
 geometry's fields are `WalkGeom`'s, the cursors and the refusal are the carry's,
 and the two region clauses are the invariant's `frame` and, through its `owned`
-extents, the presence half.  So the report is a projection and not a premise: a
-caller holding the invariant at a state holds the run.
+extents, the presence half.  So the report is a projection: a caller holding the
+invariant at a state holds the run.
 
-The frames agree by definition: `Stage2Run.walkFrame`'s list is `walkWide`, which is
-where `WalkInv.frame` is stated.  Presence needs one step — the carry's own list is
+The frames agree because the record's stack region is the same interval.
+`WalkInv.frame` is the cursor's interval, `walkWideAt G C (s.next - G.next0)`; the
+record's end is `stage2StackEnd G.next0 s.next` — the five bootstrap slots when
+the walk has not passed them, the walk's cursor otherwise — and the record's
+region is that interval widened to the end, so the transfer is `walkWideAt_le`.
+The five slots stay a consequence of the end (`Stage2Run.nextEnd_static`), not the
+region itself: a second allocating call writes above them, so a region that stopped
+there would be false of the run.  Presence needs one step — the carry's own list is
 `[(dst, alen), (ev, evlen)]` and the extents it claims are the staging's — so each
 of its entries lies inside a staged extent (`(dst, ndst0 + n + reserve)` covers the
 arena's prefix at `alen ≤ ndst0 + n`, and `(ev, evcap)` covers the event stream's
@@ -2940,6 +2974,8 @@ def Stage2Run.ofInv {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
   evLe := h.evlen_le
   reserve := (Nat.add_le_add_right h.alen_le stage2ArenaReserve).trans G.arenaRoom
   next0 := G.next0
+  nextEnd := stage2StackEnd G.next0 s.next
+  nextEnd_static := stage2StackEnd_static G.next0 s.next
   watermark := G.watermark
   walkPresent := by
     intro a ha
@@ -2961,7 +2997,13 @@ def Stage2Run.ofInv {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
     · refine present_of_hasBytes (h.owned r ?_) hlo hhi
       simp only [walkStaged, stage2ReportScratch]
       exact List.mem_append_right _ hr
-  walkFrame := by simpa only [walkWide, walkPresent] using h.frame
+  walkFrame := by
+    simpa only [walkWideAt, walkPresent] using
+      walkWideAt_le (C := C) (n := s.next - G.next0)
+        (n' := stage2StackEnd G.next0 s.next - G.next0) (by
+          have hge := h.next_ge
+          have hmax := le_stage2StackEnd G.next0 s.next
+          omega) h.frame
   dSep := C.stage.dSep
   offLe := fun _ => h.eoff_le
   dstcapLt := G.dstcapLt

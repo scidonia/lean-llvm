@@ -282,7 +282,9 @@ theorem WalkLink.store8Stack {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
         log_alen := ?_
         log_acap := ?_
         owned := walkStaged_write rfl hInv.owned
+        next_ge := by dsimp only [s']; exact hInv.next_ge
         frame := ?_
+        inc_reg := hInv.inc_reg
         blockLocal := ?_ }
     · dsimp only [s', stateAt, m']
       rw [readBytes_ev_of_stack_write (base := C.stage.cst)
@@ -315,7 +317,7 @@ theorem WalkLink.store8Stack {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
       intro k hk
       have hk0 : k = 0 := by omega
       subst hk0
-      refine walkWide_of_seven ?_
+      refine walkWideAt_of_seven ?_
       refine ⟨(C.stage.cst, stage2StackExtent), by simp [stage2StagedWrites], by omega, ?_⟩
       simp only [stage2StackExtent] at hq ⊢
       omega
@@ -570,7 +572,14 @@ theorem WalkLink.hashStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
         log_alen := ?_
         log_acap := ?_
         owned := walkStaged_write rfl hInv.owned
+        next_ge := by dsimp only [s']; exact hInv.next_ge
         frame := ?_
+        inc_reg := by
+          rw [henv']
+          dsimp only [out]
+          exact walkLookup_cells_ne s.env "%inc.i" hInv.inc_reg cs
+            (fun c hc heq => (hne c.1 (hmem c hc)).2.2.2.2.2.2.2.2
+              (by rw [heq]; simp [walkCarriedNames]))
         blockLocal := ?_ }
     · rw [henv']
       dsimp only [out]
@@ -596,7 +605,7 @@ theorem WalkLink.hashStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
       dsimp only [out]
       exact hInv.regs.cells_of cs
         (fun n hn hin => (hne n (mem_names_of_cells hmem n hn)).2.2.2.2.2.2.2.2
-          (by simp only [walkCarriedNames, List.mem_cons]; exact Or.inr (Or.inr hin)))
+          (by simp only [walkCarriedNames, List.mem_cons]; exact Or.inr (Or.inr (Or.inr (Or.inr hin)))))
     · rw [henv']
       dsimp only [out]
       exact hInv.iter.cells_of cs
@@ -630,7 +639,7 @@ theorem WalkLink.hashStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
       dsimp only [m']
       refine walkFrame_write_inside hInv.frame ?_
       intro k hk
-      refine walkWide_of_seven ?_
+      refine walkWideAt_of_seven ?_
       refine ⟨(C.stage.z, stage2LogExtent), by simp [stage2StagedWrites], by omega, ?_⟩
       simp only [stage2LogExtent] at ⊢
       omega
@@ -825,13 +834,25 @@ theorem WalkLink.outReserveStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
   -- the frame grown by the new event byte
   have hframeEv : UnchangedOutside m0
       (writeBytes s.mem (G.ev + C.evlen) (natToBytes b.toNat 1))
-      (walkWide G ({ C with
+      (walkWideAt G ({ C with
         block := "cleanup478.i", evlen := C.evlen + 1,
-        events := C.events ++ [EventRecord.tag b.toNat] })) := by
+        events := C.events ++ [EventRecord.tag b.toNat] }) (s.next - G.next0)) := by
     refine UnchangedOutside.write_grow hInv.frame
-      (walkWide_grow (show C.alen ≤ C.alen from Nat.le_refl _)
-        (show C.evlen ≤ C.evlen + 1 from by omega) rfl) ?_
-    exact ⟨(G.ev, C.evlen + 1), by simp [walkWide, walkPresent], by omega,
+      (walkWideAt_grow (C' := { C with
+        block := "cleanup478.i", evlen := C.evlen + 1,
+        events := C.events ++ [EventRecord.tag b.toNat] })
+        (n := s.next - G.next0) (n' := s.next - G.next0)
+        (show C.alen ≤ C.alen from Nat.le_refl _)
+        (show C.evlen ≤ C.evlen + 1 from by omega) rfl le_rfl) ?_
+    have hm : (G.ev, C.evlen + 1) ∈ walkPresent G ({ C with
+        block := "cleanup478.i", evlen := C.evlen + 1,
+        events := C.events ++ [EventRecord.tag b.toNat] }) := by
+      change (G.ev, C.evlen + 1) ∈
+        [(G.dst, C.alen), (G.ev, C.evlen + 1)] ++
+          stage2ReportScratch C.stage.c C.stage.ctype C.stage.cst C.stage.tok
+            C.stage.s C.stage.z C.stage.e C.stage.d
+      exact List.mem_append_left _ (List.mem_cons_of_mem _ (List.mem_cons_self ..))
+    exact ⟨(G.ev, C.evlen + 1), mem_walkWideAt_present hm, by omega,
       by rw [htaglen]; omega⟩
   refine ⟨s', ⟨hInv, hstep, ?_, ?_⟩⟩
   · refine
@@ -894,7 +915,14 @@ theorem WalkLink.outReserveStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
         log_alen := ?_
         log_acap := ?_
         owned := walkStaged_write rfl (walkStaged_write rfl hInv.owned)
+        next_ge := by dsimp only [s']; exact hInv.next_ge
         frame := ?_
+        inc_reg := by
+          rw [henv']
+          dsimp only [out]
+          exact walkLookup_cells_ne s.env "%inc.i" hInv.inc_reg cs
+            (fun c hc heq => (hne c.1 (hmem c hc)).2.2.2.2.2.2.2.2
+              (by rw [heq]; simp [walkCarriedNames]))
         blockLocal := ?_ }
     · rw [henv']
       dsimp only [out]
@@ -942,7 +970,7 @@ theorem WalkLink.outReserveStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
       dsimp only [out]
       exact hInv.regs.cells_of cs
         (fun n hn hin => (hne n (mem_names_of_cells hmem n hn)).2.2.2.2.2.2.2.2
-          (by simp only [walkCarriedNames, List.mem_cons]; exact Or.inr (Or.inr hin)))
+          (by simp only [walkCarriedNames, List.mem_cons]; exact Or.inr (Or.inr (Or.inr (Or.inr hin)))))
     · rw [henv']
       dsimp only [out]
       exact hInv.iter.cells_of cs
@@ -998,7 +1026,7 @@ theorem WalkLink.outReserveStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
       refine walkFrame_write_inside hframeEv ?_
       intro k hk
       rw [show (wordBytes 8 (C.evlen + 1)).length = 8 from natToBytes_length _ _] at hk
-      exact walkWide_of_seven
+      exact walkWideAt_of_seven
         ⟨(C.stage.z, stage2LogExtent), by simp [stage2StagedWrites], by omega,
           by simp only [stage2LogExtent]; omega⟩
     · simp [WalkLocal]
@@ -1228,7 +1256,15 @@ theorem WalkLink.if_else285_i {calls : Calls} {m0 : Mem}
       log_alen := ?_
       log_acap := ?_
       owned := walkStaged_write rfl hInv.owned
+      next_ge := by dsimp only [s']; exact hInv.next_ge
       frame := ?_
+      inc_reg := by
+        rw [henv']
+        dsimp only [out]
+        exact walkLookup_cells_ne s.env "%inc.i" hInv.inc_reg cs
+          (by intro c hc
+              simp only [cs, List.mem_cons, List.not_mem_nil, or_false] at hc
+              rcases hc with rfl | rfl <;> simp)
       blockLocal := by simp [WalkLocal] }
   · rw [henv']
     dsimp only [out]
@@ -1290,7 +1326,7 @@ theorem WalkLink.if_else285_i {calls : Calls} {m0 : Mem}
     refine walkFrame_write_inside hInv.frame ?_
     intro k hk
     rw [hmlen] at hk
-    exact walkWide_of_seven
+    exact walkWideAt_of_seven
       ⟨(C.stage.z, stage2LogExtent), by simp [stage2StagedWrites], by omega,
         by simp only [stage2LogExtent]; omega⟩
 
@@ -1488,7 +1524,15 @@ theorem WalkLink.if_then330_i {calls : Calls} {m0 : Mem}
         log_alen := ?_
         log_acap := ?_
         owned := walkStaged_write rfl hInv.owned
+        next_ge := by dsimp only [s']; exact hInv.next_ge
         frame := ?_
+        inc_reg := by
+          rw [henv']
+          dsimp only [out]
+          exact walkLookup_cells_ne s.env "%inc.i" hInv.inc_reg cs
+            (by intro c hc
+                simp only [cs, List.mem_cons, List.not_mem_nil, or_false] at hc
+                rcases hc with rfl | rfl | rfl <;> simp)
         blockLocal := ?_ }
     · rw [henv']
       dsimp only [out]
@@ -1558,7 +1602,7 @@ theorem WalkLink.if_then330_i {calls : Calls} {m0 : Mem}
       intro k hk
       have hk0 : k = 0 := by omega
       subst hk0
-      refine walkWide_of_seven ?_
+      refine walkWideAt_of_seven ?_
       refine ⟨(C.stage.cst, stage2StackExtent), by simp [stage2StagedWrites], by omega, ?_⟩
       simp only [stage2StackExtent] at hpred_ext ⊢
       omega
@@ -1756,7 +1800,15 @@ theorem WalkLink.if_end207_i {calls : Calls} {m0 : Mem}
         log_alen := ?_
         log_acap := ?_
         owned := walkStaged_write rfl hInv.owned
+        next_ge := by dsimp only [s']; exact hInv.next_ge
         frame := ?_
+        inc_reg := by
+          rw [henv']
+          dsimp only [out]
+          exact walkLookup_cells_ne s.env "%inc.i" hInv.inc_reg cs
+            (by intro c hc
+                simp only [cs, List.mem_cons, List.not_mem_nil, or_false] at hc
+                rcases hc with rfl | rfl | rfl | rfl | rfl <;> simp)
         blockLocal := ?_ }
     · rw [henv']
       dsimp only [out]

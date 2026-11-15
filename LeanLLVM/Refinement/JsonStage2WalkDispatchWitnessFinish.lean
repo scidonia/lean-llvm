@@ -215,7 +215,9 @@ theorem WalkInv.reblock {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : Stat
   log_alen := h.log_alen
   log_acap := h.log_acap
   owned := h.owned
+  next_ge := h.next_ge
   frame := h.frame
+  inc_reg := h.inc_reg
   blockLocal := hloc
 
 /-- **A block change is free at a non-scan block**: `WalkLocal` there is `True`, so the
@@ -239,7 +241,7 @@ carrier lemmas plus a field copy — which is what `pureCore` assembles inline a
 first and block second. -/
 theorem WalkInv.bind {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     {d : String} {v : Value} (h : WalkInv G C s)
-    (hst : d ∉ walkStaticNames) (hki : d ≠ "%k.0.i249") (hspp : d ≠ "%sp.i.0248")
+    (hst : walkFreshName d) (hki : d ≠ "%k.0.i249") (hspp : d ≠ "%sp.i.0248")
     (h3 : d ≠ "%3") (h5 : d ≠ "%5") (hk11 : d ≠ "%k11.i") (hct : d ≠ "%ctype.i")
     (hcs : d ≠ "%cst.i") (hhash : d ≠ "%hash1.i.i") (h7 : d ≠ "%7") (h8 : d ≠ "%8")
     (hloc : WalkLocal C (s.bind d v)) :
@@ -271,15 +273,19 @@ theorem WalkInv.bind {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
   tyBytes := h.tyBytes
   stBytes := h.stBytes
   ptrs := h.ptrs.bind h3 h5 hk11 hct hcs hhash
-  regs := h.regs.bind hst
-  iter := h.iter.bind h7 h8
+  regs := h.regs.bind hst.1
+  iter := h.iter.bind ⟨h7, h8, hst.2.2⟩
   log_hash := h.log_hash
   log_len := h.log_len
   log_cap := h.log_cap
   log_alen := h.log_alen
   log_acap := h.log_acap
   owned := h.owned
+  next_ge := h.next_ge
   frame := h.frame
+  inc_reg := by
+    simp only [State.bind, lookupName_cons_ne _ _ hst.2.1]
+    exact h.inc_reg
   blockLocal := hloc
 
 /-- **The invariant transports across a cell list and a block change at once.**  The state
@@ -334,7 +340,7 @@ theorem WalkInv.bindAt {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State
   regs := h.regs.cells_of cs (fun n hn => by
     have hc : n ∉ walkCarriedNames := hfree n hn
     simp only [walkCarriedNames, List.mem_cons, not_or] at hc
-    exact hc.2.2)
+    exact hc.2.2.2.2)
   iter := by
     have hgo : ∀ (l : List (String × Value)),
         (∀ n ∈ l.map (·.1), n ∉ walkCarriedNames) → WalkIter G C.k (cells l s.env) := by
@@ -346,14 +352,19 @@ theorem WalkInv.bindAt {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State
           have hc : c.1 ∉ walkCarriedNames := hcl c.1 (by simp)
           simp only [walkCarriedNames, List.mem_cons, not_or] at hc
           exact WalkIter.bind
-            (ih (fun n hn => hcl n (by simp [hn]))) hc.1 hc.2.1
+            (ih (fun n hn => hcl n (by simp [hn]))) ⟨hc.2.1, hc.2.2.1, hc.2.2.2.1⟩
     exact hgo cs hfree
+  inc_reg := by
+    rw [lookupName_cells_of_notin cs "%inc.i" s.env
+      (fun hin => hfree "%inc.i" hin (by simp [walkCarriedNames]))]
+    exact h.inc_reg
   log_hash := h.log_hash
   log_len := h.log_len
   log_cap := h.log_cap
   log_alen := h.log_alen
   log_acap := h.log_acap
   owned := h.owned
+  next_ge := h.next_ge
   frame := h.frame
   blockLocal := hloc
 
@@ -473,7 +484,7 @@ theorem walkIfEnd473_at {sub : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarr
   have hfind : stage2Body.findBlock C.block = some walkIf_end473_i := by
     rw [hblock]; exact walkIf_end473_i_find
   obtain ⟨s', hl⟩ := WalkLink.pureJumpCore (calls := stage2Calls sub) G C s hInv hfind hden
-    (by unfold walkCarried; decide) rfl rfl (t := "cleanup478.i") rfl (by simp [WalkLocal])
+    (by unfold walkCarried; decide) rfl rfl rfl (t := "cleanup478.i") rfl (by simp [WalkLocal])
   refine ⟨s', hl, ?_⟩
   have hstep : step (stage2Calls sub) stage2Body s =
       Ctrl.jump { s with pc := "cleanup478.i", pre := some s.pc } := by
@@ -549,7 +560,7 @@ theorem walkCondTrue345_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : Wal
   have hfind : stage2Body.findBlock C.block = some walkCond_true345_i := by
     rw [hblock]; exact walkCond_true345_i_find
   obtain ⟨s', hl⟩ := WalkLink.pureJumpCore (calls := calls) G C s hInv hfind hden
-    (by unfold walkCarried; decide) rfl rfl (t := "cond.end349.i") rfl
+    (by unfold walkCarried; decide) rfl rfl rfl (t := "cond.end349.i") rfl
     (by simp [WalkLocal])
   let e : State :=
     { s with

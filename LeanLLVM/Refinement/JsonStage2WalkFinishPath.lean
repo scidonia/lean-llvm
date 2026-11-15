@@ -210,7 +210,8 @@ theorem walkFinishInvAt {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : Stat
       readBytes m' (C.stage.z + 48) 8 = some (wordBytes 8 a))
     (hlogAcap : readBytes m' (C.stage.z + 56) 8 = some (wordBytes 8 G.dstcap))
     (hown : ∀ r ∈ walkStaged G C, HasBytes m' r.1 r.2)
-    (hframe : UnchangedOutside m0 m' (walkWide G C))
+    (hnextGE : G.next0 + stage2BootstrapExtent ≤ s.next)
+    (hframe : UnchangedOutside m0 m' (walkWideAt G C (s.next - G.next0)))
     (hloc : WalkLocal { C with block := b }
       { s with env := cells cs s.env, mem := m', pc := b, pre := pr }) :
     WalkInv G { C with block := b }
@@ -247,14 +248,19 @@ theorem walkFinishInvAt {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : Stat
   regs := h.regs.cells_of cs (fun n hn => by
     have hc := hfree n hn
     simp only [walkCarriedNames, List.mem_cons, not_or] at hc
-    exact hc.2.2)
+    exact hc.2.2.2.2)
   iter := h.iter.cells_of cs hfree
+  inc_reg := by
+    rw [lookupName_cells_of_notin cs "%inc.i" s.env
+      (fun hin => hfree "%inc.i" hin (by simp [walkCarriedNames]))]
+    exact h.inc_reg
   log_hash := hlogHash
   log_len := hlogLen
   log_cap := hlogCap
   log_alen := hlogA
   log_acap := hlogAcap
   owned := hown
+  next_ge := hnextGE
   frame := hframe
   blockLocal := hloc
 
@@ -305,7 +311,7 @@ theorem walkFinish485Inv {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : Sta
         rcases hn with rfl
         exact ⟨by decide, by decide, by decide, by decide, by decide, by decide⟩)
     hInv.evBytes hInv.tyBytes hInv.stBytes hInv.log_hash hInv.log_len hInv.log_cap
-    hInv.log_alen hInv.log_acap hInv.owned hInv.frame
+    hInv.log_alen hInv.log_acap hInv.owned hInv.next_ge hInv.frame
     (by simp [WalkLocal])
   simpa only [finishS₄₈₈, cells] using hstep
 
@@ -387,12 +393,13 @@ theorem walkFinish488Inv {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : Sta
     (by
       exact walkStaged_write (m := s.mem) (a := C.stage.e + 8) (bs := wordBytes 8 v)
         rfl hInv.owned)
+    hInv.next_ge
     (by
       refine walkFrame_write_inside hInv.frame ?_
       intro k hk
       rw [show (wordBytes 8 v).length = 8 from by
         simp [wordBytes, natToBytes_length]] at hk
-      exact walkWide_of_seven (eoff_inside (k := k) (by omega)))
+      exact walkWideAt_of_seven (eoff_inside (k := k) (by omega)))
     (by simp [WalkLocal])
   simpa only [finishSThen, cells] using hstep
 
@@ -423,11 +430,11 @@ theorem walkFinishRegions_sep {b n ep nep xp nxp dst ndst0 ev evcap ndst nev err
 
 /-- **A byte of one of the three record slots is outside the run's frame.**  The slots are
 the thirteen ABI objects' own, so the arena's prefix, the event stream's prefix, the seven
-appended objects and the body's four allocations all miss them.  The hypotheses are the four
+appended objects and the cursor's interval all miss them.  The hypotheses are the four
 separations and the watermark, so the caller names the slot's position once and the frame
 follows.  This is `err_not_in_walkFrame`'s argument at the invariant's own carries. -/
 theorem walkFinish_not_frame_of {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
-    (hInv : WalkInv G C s) {a k : Nat}
+    (hInv : WalkInv G C s) {a k : Nat} {n : Nat}
     (hdst : G.dst + (G.ndst0 + G.n + stage2ArenaReserve) ≤ a ∨ a + 8 ≤ G.dst)
     (hev : G.ev + G.evcap ≤ a ∨ a + 8 ≤ G.ev)
     (hseven : ∀ r ∈ stage2StagedWrites C.stage.c C.stage.ctype C.stage.cst C.stage.tok
@@ -435,13 +442,13 @@ theorem walkFinish_not_frame_of {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {
     (hd : C.stage.d + 8 ≤ a ∨ a + 8 ≤ C.stage.d)
     (hwm : a + 8 ≤ G.next0)
     (hk : k < 8) :
-    ¬ inRegions (walkWide G C) (a + k) := by
+    ¬ inRegions (walkWideAt G C n) (a + k) := by
   intro hin
   have halen := hInv.alen_le
   have hevlen : C.evlen ≤ G.evcap := le_trans hInv.evlen_le G.evRoom
   have har : stage2ArenaReserve = 64 := rfl
   obtain ⟨r, hr, hlo, hhi⟩ := hin
-  simp only [walkWide, walkPresent, stage2ReportScratch] at hr
+  simp only [walkWideAt, walkPresent, stage2ReportScratch] at hr
   rcases List.mem_append.mp hr with hr | hr
   · rcases List.mem_append.mp hr with hr | hr
     · rcases List.mem_cons.mp hr with rfl | hr
@@ -454,8 +461,9 @@ theorem walkFinish_not_frame_of {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {
       · rcases List.mem_cons.mp hr with rfl | hnil
         · rcases hd with h' | h' <;> omega
         · exact absurd hnil (by simp)
-  · exact not_inRegions_allocaWrites (a := G.next0) (x := a + k) (by omega)
-      ⟨r, hr, hlo, hhi⟩
+  · rcases List.mem_cons.mp hr with rfl | hnil
+    · omega
+    · exact absurd hnil (by simp)
 
 /-! ### The path -/
 

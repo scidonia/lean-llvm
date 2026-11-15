@@ -272,7 +272,7 @@ theorem WalkLink.scanLanding {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
       (by exact walkLookup_cons_self g (.ptr (G.b + (e.signExtend 64).toNat)) ((d, .int 64 e) :: s.env)) hread]
     rfl
   exact WalkLink.pureJumpCore (G := G) (C := C) (s := s) hInv
-    (B := B) hfind hden hfree rfl rfl hterm hloc
+    (B := B) hfind hden hfree rfl rfl rfl hterm hloc
 
 /-- `land.rhs.i`: the whitespace skip's counter and the byte at it. -/
 def walkLand_rhs_i : Block :=
@@ -511,7 +511,7 @@ theorem WalkLink.if_end245_i {calls : Calls} {m0 : Mem}
     rfl
   obtain ⟨s', hl⟩ := WalkLink.pureCore (G := G) (C := C) (s := s) hInv
     (B := walkIf_end245_i) (by rw [hblock]; exact walkIf_end245_i_find) hden
-    (by unfold walkCarried; decide) rfl rfl rfl
+    (by unfold walkCarried; decide) rfl rfl rfl rfl
     (bit := if k = 1 then BitVec.ofNat 1 1 else evalICmp .ne x (BitVec.ofNat 32 0))
     (by simp [stateAt]) (by simp [WalkLocal]) (by simp [WalkLocal])
   have hterm : walkIf_end245_i.term =
@@ -587,7 +587,7 @@ theorem WalkLink.while_end_i {calls : Calls} {m0 : Mem}
     rfl
   exact WalkLink.pureCore (G := G) (C := C) (s := s) hInv
     (B := walkWhile_end_i) (by rw [hblock]; exact walkWhile_end_i_find) hden
-    (by unfold walkCarried; decide) rfl rfl rfl
+    (by unfold walkCarried; decide) rfl rfl rfl rfl
     (bit := evalICmp .eq e c)
     (by simp [stateAt]) (by simp [WalkLocal]) (by simp [WalkLocal])
 
@@ -725,7 +725,7 @@ theorem WalkLink.cleanup478_i {calls : Calls} {m0 : Mem}
     rfl
   exact WalkLink.pureCore (G := G) (C := C) (s := s) hInv
     (B := walkCleanup478_i) (by rw [hblock]; exact walkCleanup478_i_find) hden
-    (by unfold walkCarried; decide) rfl rfl rfl
+    (by unfold walkCarried; decide) rfl rfl rfl rfl
     (bit := evalICmp .ult kv nv)
     (by simp [stateAt]) (by simp [WalkLocal]) (by simp [WalkLocal])
 
@@ -850,7 +850,7 @@ theorem WalkLink.if_end290_i {calls : Calls} {m0 : Mem}
     rfl
   obtain ⟨s', hl⟩ := WalkLink.pureCore (G := G) (C := C) (s := s) hInv
     (B := walkIf_end290_i) (by rw [hblock]; exact walkIf_end290_i_find) hden
-    (by unfold walkCarried; decide) rfl rfl rfl
+    (by unfold walkCarried; decide) rfl rfl rfl rfl
     (bit := evalICmp .ugt (nl + BitVec.ofNat 64 13) nc)
     (by simp [stateAt]) (by simp [WalkLocal]) (by simp [WalkLocal])
   have hterm : walkIf_end290_i.term =
@@ -1025,7 +1025,7 @@ theorem WalkLink.for_body_i_i {calls : Calls} {m0 : Mem}
   have hden := denoteCode_for_body_i_i (calls := calls) s hpre hin hv hdoc hlit hpos hread1 hread2
   refine WalkLink.pureCore (G := G) (C := C) (s := s) hInv
     (B := walkFor_body_i_i) (by rw [hblock]; exact walkFor_body_i_i_find) hden
-    (by unfold walkCarried; decide) rfl rfl rfl
+    (by unfold walkCarried; decide) rfl rfl rfl rfl
     (bit := evalICmp .eq (BitVec.ofNat 8 b1.toNat) (BitVec.ofNat 8 b2.toNat))
     (by simp [stateAt]) ?_ (by simp [WalkLocal])
   -- the `for.inc.i.i` edge: the measure's guard, from the invariant's landing fact
@@ -1302,7 +1302,13 @@ theorem WalkLink.if_end372_i {calls : Calls} {m0 : Mem}
       log_alen := ?_
       log_acap := ?_
       owned := walkStaged_write rfl hInv.owned
+      next_ge := by dsimp only [s', sFin, m', stateAt]; exact hInv.next_ge
       frame := ?_
+      inc_reg := by
+        dsimp only [s', sFin]
+        rw [denoteCode_lookupName calls walkIf_end372_i.instrs "%inc.i"
+          (fun i hi => (hfree i hi).2.2.2.2.2.2.2.2.2.2.2.1) s sFin hden]
+        exact hInv.inc_reg
       blockLocal := by split <;> simp [WalkLocal] }
   · dsimp only [s', sFin]
     rw [denoteCode_lookupName calls walkIf_end372_i.instrs "%k.0.i249"
@@ -1357,7 +1363,7 @@ theorem WalkLink.if_end372_i {calls : Calls} {m0 : Mem}
   · dsimp only [s', sFin, m', stateAt]
     refine walkFrame_write_inside hInv.frame ?_
     intro k hk
-    refine walkWide_of_seven ?_
+    refine walkWideAt_of_seven ?_
     exact walkTok_inside (by
       have hk' : k < (natToBytes e.toNat 8).length := hk
       rw [natToBytes_length] at hk'
@@ -1505,7 +1511,13 @@ theorem WalkLink.if_then57_i {calls : Calls} {m0 : Mem}
       log_alen := ?_
       log_acap := ?_
       owned := walkStaged_write rfl hInv.owned
+      next_ge := by dsimp only [s', sFin, m', stateAt]; exact hInv.next_ge
       frame := ?_
+      inc_reg := by
+        dsimp only [s', sFin]
+        rw [denoteCode_lookupName calls walkIf_then57_i.instrs "%inc.i"
+          (fun i hi => (hfree i hi).2.2.2.2.2.2.2.2.2.2.2.1) s sFin hden]
+        exact hInv.inc_reg
       blockLocal := by simp [WalkLocal] }
   · dsimp only [s', sFin]
     rw [denoteCode_lookupName calls walkIf_then57_i.instrs "%k.0.i249"
@@ -1561,7 +1573,7 @@ theorem WalkLink.if_then57_i {calls : Calls} {m0 : Mem}
     refine walkFrame_write_inside hInv.frame ?_
     intro k hk
     rw [natToBytes_length] at hk
-    exact walkWide_of_seven (eoff_inside hk)
+    exact walkWideAt_of_seven (eoff_inside hk)
   · simp [walkMeasure]
 
 /-- `while.end78.i`: the escape scan's refusal store. -/
@@ -1702,7 +1714,13 @@ theorem WalkLink.while_end78_i {calls : Calls} {m0 : Mem}
       log_alen := ?_
       log_acap := ?_
       owned := walkStaged_write rfl hInv.owned
+      next_ge := by dsimp only [s', sFin, m', stateAt]; exact hInv.next_ge
       frame := ?_
+      inc_reg := by
+        dsimp only [s', sFin]
+        rw [denoteCode_lookupName calls walkWhile_end78_i.instrs "%inc.i"
+          (fun i hi => (hfree i hi).2.2.2.2.2.2.2.2.2.2.2.1) s sFin hden]
+        exact hInv.inc_reg
       blockLocal := by simp [WalkLocal] }
   · dsimp only [s', sFin]
     rw [denoteCode_lookupName calls walkWhile_end78_i.instrs "%k.0.i249"
@@ -1758,7 +1776,7 @@ theorem WalkLink.while_end78_i {calls : Calls} {m0 : Mem}
     refine walkFrame_write_inside hInv.frame ?_
     intro k hk
     rw [natToBytes_length] at hk
-    exact walkWide_of_seven (eoff_inside hk)
+    exact walkWideAt_of_seven (eoff_inside hk)
   · simp [walkMeasure]
 
 

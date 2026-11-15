@@ -1564,6 +1564,8 @@ theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}
       hndst0Read₂, hnev0Read₂, hndstSlot₂, hnevSlot₂, -, -, -, -, hdstcapLt₂,
       hevcapLt₂, hevle₂, hnepLt₂, hnxpLt₂, hreserve₂, hArena₂, hEvs₂, hzero₂, hone₂,
       hpresent₂, hframe₂, hstaged₂, hdSep₂⟩ := hpost2
+    -- stage two's frame names its own stack end, which the run reports
+    obtain ⟨nend₂, hnend₂, hframe₂⟩ := hframe₂
     -- the arguments identify stage two's witnesses with the caller's slots
     have hdst₂ : dst₂ = S.dst := by
       have h := congrArg (fun l : List Value => l[6]?) hargs₂
@@ -1616,13 +1618,14 @@ theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}
       hpc hpre (phiIncoming_cleanupPhi S.arm) hsel hnk hbC hnC harmC hxpC hnxpC hepC
       hdstC hdcap hndstC hevC hecap hnevC herrC hcall30' hld hcall2
     -- stage two's frame, at the run's whole extent: the five ABI write regions,
-    -- the seven appended objects, `%d.i`'s slot and the four stack slots at the
-    -- callee's cursor (`n30`, the `next` its post is stated at)
+    -- the seven appended objects, `%d.i`'s slot and the stack interval from the
+    -- callee's cursor (`n30`, the `next` its post is stated at) to the end the
+    -- run reports
     have hframeStage : UnchangedOutside
         (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8)) m35
         (([(S.dst, alen + stage2ArenaReserve), (S.ndst, 8), (S.ev, evlen), (S.nev, 8), (S.err, 8)] ++
           stage2ReportScratch c₂ ctype₂ cst₂ tok₂ s₂ z₂ e₂ d₂) ++
-          stage2AllocaWrites n30) := by
+          [(n30, nend₂ - n30)]) := by
       rw [← hdst₂, ← hev₂, ← hndst₂, ← hnev₂, ← herr₂]
       simpa [stage2ReportFrame, stage2ReportPresent, stage2Writes] using hframe₂
     -- the arguments identify stage two's counts with the words the call carried
@@ -1737,13 +1740,13 @@ theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}
         (N := 4 * S.xn) (W := 4 * (nxp0 + 64 * pipelineBlocks S.n.toNat + 8))
         (by omega) sep8_11 sep8_13 sep8_12 sep8_14 sep8_15 hdstCapW hevCapW hsevenXp
     -- the same separations at the callee's whole frame: the five and the seven
-    -- are `stage2WalkWrites`, `%d.i` is the record's `dSep`, and the four stack
-    -- objects lie above the exiting cursor (the watermark) and hence above both
-    -- streams' extents
+    -- are `stage2WalkWrites`, `%d.i` is the record's `dSep`, and the stack
+    -- interval starts above the exiting cursor (the watermark) and hence above
+    -- both streams' extents
     have hsepEpW : ∀ r ∈ (([(S.dst, alen + stage2ArenaReserve), (S.ndst, 8),
         (S.ev, evlen), (S.nev, 8), (S.err, 8)] ++
         stage2ReportScratch c₂ ctype₂ cst₂ tok₂ s₂ z₂ e₂ d₂) ++
-        stage2AllocaWrites n30), r.1 + r.2 ≤ S.ep ∨ S.ep + 4 * S.k ≤ r.1 := by
+        [(n30, nend₂ - n30)]), r.1 + r.2 ≤ S.ep ∨ S.ep + 4 * S.k ≤ r.1 := by
       intro r hr
       rcases List.mem_append.mp hr with hr | hr
       · rcases List.mem_append.mp hr with hr | hr
@@ -1754,14 +1757,14 @@ theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}
           · rcases List.mem_cons.mp hr with rfl | hnil
             · exact Or.comm.mp hdEp
             · exact absurd hnil (by simp)
-      · have hstart := stage2AllocaWrites_start hr
+      · simp only [List.mem_singleton] at hr
+        subst hr
         exact Or.inr (Nat.le_trans
-          (hwm S e heKeep (S.ep, 4 * S.k) (by simp [stage2ExitRegions]))
-          (Nat.le_trans hnext30 hstart))
+          (hwm S e heKeep (S.ep, 4 * S.k) (by simp [stage2ExitRegions])) hnext30)
     have hsepXpW : ∀ r ∈ (([(S.dst, alen + stage2ArenaReserve), (S.ndst, 8),
         (S.ev, evlen), (S.nev, 8), (S.err, 8)] ++
         stage2ReportScratch c₂ ctype₂ cst₂ tok₂ s₂ z₂ e₂ d₂) ++
-        stage2AllocaWrites n30), r.1 + r.2 ≤ S.xp ∨ S.xp + 4 * S.xn ≤ r.1 := by
+        [(n30, nend₂ - n30)]), r.1 + r.2 ≤ S.xp ∨ S.xp + 4 * S.xn ≤ r.1 := by
       intro r hr
       rcases List.mem_append.mp hr with hr | hr
       · rcases List.mem_append.mp hr with hr | hr
@@ -1772,10 +1775,10 @@ theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}
           · rcases List.mem_cons.mp hr with rfl | hnil
             · exact Or.comm.mp hdXp
             · exact absurd hnil (by simp)
-      · have hstart := stage2AllocaWrites_start hr
+      · simp only [List.mem_singleton] at hr
+        subst hr
         exact Or.inr (Nat.le_trans
-          (hwm S e heKeep (S.xp, 4 * S.xn) (by simp [stage2ExitRegions]))
-          (Nat.le_trans hnext30 hstart))
+          (hwm S e heKeep (S.xp, 4 * S.xn) (by simp [stage2ExitRegions])) hnext30)
     -- the four reads at the memory stage two returns
     have hnkM : readBytes m35 S.nk 8 = some (wordBytes 8 S.k) := by
       have hb : readBytes m35 S.nk 8 =
@@ -1818,7 +1821,7 @@ theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}
         (pipelineLoopWrites S ++
           (([(S.dst, alen + stage2ArenaReserve), (S.ndst, 8), (S.ev, evlen), (S.nev, 8), (S.err, 8)] ++
             stage2ReportScratch c₂ ctype₂ cst₂ tok₂ s₂ z₂ e₂ d₂) ++
-            stage2AllocaWrites n30)) := by
+            [(n30, nend₂ - n30)])) := by
       have hcount' : UnchangedOutside e.mem
           (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8)) [(S.nk, 8)] :=
         unchangedOutside_writeBytes_own e.mem S.nk _
@@ -1826,7 +1829,7 @@ theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}
           (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8)) m35
           (([(S.dst, alen + stage2ArenaReserve), (S.ndst, 8), (S.ev, evlen), (S.nev, 8), (S.err, 8)] ++
             stage2ReportScratch c₂ ctype₂ cst₂ tok₂ s₂ z₂ e₂ d₂) ++
-            stage2AllocaWrites n30) := by
+            [(n30, nend₂ - n30)]) := by
         simpa [stage2WalkWrites, stage2Writes, stage2ArenaReserve] using hframeStage
       refine ((hframe.widen_to ?_).trans (hcount'.widen_to ?_)).trans
         (hstage'.widen_to ?_)
@@ -1840,8 +1843,8 @@ theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}
     · simpa [hveq₂] using hrun
     · simp only [Γ_pipeline_units, pipelineUnitsPost]
       refine ⟨hvr₂, S.k, S.xn, alen, evlen, S.ent, ps, arena, evs,
-        c₂, ctype₂, cst₂, tok₂, s₂, z₂, e₂, d₂, n30,
-        ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+        c₂, ctype₂, cst₂, tok₂, s₂, z₂, e₂, d₂, n30, nend₂,
+        ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
       · refine ⟨halenLt, hevlenLt, ?_, ?_⟩
         · simpa [hndst₂] using hndstSlot₂
         · simpa [hnev₂] using hnevSlot₂
@@ -1863,6 +1866,7 @@ theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}
           exact Or.comm.mp (by
             simpa using disjointRegions_pair _ 7 15 (by decide) _ _ rfl rfl hdisj)
         exact (hone₂ hone).trans herrM30
+      · exact hnend₂
       · simpa [pipelineLoopWrites, List.append_assoc, stage2ArenaReserve] using hU
   · -- **refusal**: the exit block stores the document's length and returns zero
     subst h1
@@ -2027,7 +2031,7 @@ theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}
         (([(S.sc, 24), (S.maskSlot, 48), (S.entw, 8), (S.ep, 4 * (S.k + 8)), (S.nk, 8),
            (S.xp, 4 * (S.xn + batchReserve)), (S.nxp, 8), (S.xcarry, 16),
            (S.dst, ndst0 + 64), (S.ndst, 8), (S.ev, nev0), (S.nev, 8), (S.err, 8)] ++
-           stage2ReportScratch 0 0 0 0 0 0 0 0) ++ stage2AllocaWrites 0) := by
+           stage2ReportScratch 0 0 0 0 0 0 0 0) ++ [(0, 0)]) := by
       refine hU12.widen_to ?_
       intro r hr
       exact List.mem_append_left _ (List.mem_append_left _ hr)
@@ -2035,7 +2039,7 @@ theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}
       S.err (natToBytes S.n.toNat 8), hrun, ?_⟩
     simp only [Γ_pipeline_units, pipelineUnitsPost]
     refine ⟨Or.inl trivial, S.k, S.xn, ndst0, nev0, S.ent, ps, out, evs,
-      0, 0, 0, 0, 0, 0, 0, 0, 0, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · refine ⟨hndst0Lt, hnev0Lt, ?_, ?_⟩
       · exact hndstF
       · exact hnevF
@@ -2049,6 +2053,7 @@ theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}
       exact ⟨S.n.toNat, herrF⟩
     · intro hone
       exact absurd hone (by decide)
+    · exact Nat.le_refl 0
     · simpa [pipelineLoopWrites, List.append_assoc] using hUpost
 
 /-! ### The bundle, from the four fields and the tail -/

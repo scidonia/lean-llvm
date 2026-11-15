@@ -109,6 +109,7 @@ import LeanLLVM.Refinement.JsonStage2WalkPrefixCount
 import LeanLLVM.Refinement.JsonStage2WalkDispatchWitnessHlast
 import LeanLLVM.Refinement.JsonStage2WalkRevolutionPrefix
 import LeanLLVM.Refinement.JsonStage2WalkRevolution
+import LeanLLVM.Refinement.JsonStage2WalkRevolutionSeg
 import LeanLLVM.Refinement.JsonStage2WalkHcontFactsOfStaging
 import LeanLLVM.Refinement.JsonStage2WalkExitProducer
 import LeanLLVM.Refinement.JsonStage2WalkArenaWord

@@ -143,7 +143,7 @@ theorem WalkLink.if_end_i_i {calls : Calls} {m0 : Mem}
     rfl
   exact WalkLink.pureCore (G := G) (C := C) (s := s) hInv
     (B := walkIf_end_i_i) (by rw [hblock]; exact walkIf_end_i_i_find) hden
-    (by unfold walkCarried; decide) rfl rfl rfl
+    (by unfold walkCarried; decide) rfl rfl rfl rfl
     (bit := evalICmp .ugt (nl + BitVec.ofNat 64 1) nc)
     (by simp [stateAt, cells]) (by simp [WalkLocal]) (by simp [WalkLocal])
 
@@ -200,7 +200,7 @@ theorem WalkLink.if_end_i_i55 {calls : Calls} {m0 : Mem}
     rfl
   exact WalkLink.pureCore (G := G) (C := C) (s := s) hInv
     (B := walkIf_end_i_i55) (by rw [hblock]; exact walkIf_end_i_i55_find) hden
-    (by unfold walkCarried; decide) rfl rfl rfl
+    (by unfold walkCarried; decide) rfl rfl rfl rfl
     (bit := evalICmp .ugt (nl + BitVec.ofNat 64 1) nc)
     (by simp [stateAt, cells]) (by simp [WalkLocal]) (by simp [WalkLocal])
 
@@ -271,7 +271,7 @@ theorem WalkLink.if_end74_i {calls : Calls} {m0 : Mem}
     rfl
   exact WalkLink.pureCoreCarried (G := G) (C := C) (s := s) hInv
     (B := walkIf_end74_i) (by rw [hblock]; exact walkIf_end74_i_find) hden
-    (by unfold walkCarried; decide) rfl rfl rfl (bit := bit) hbit
+    (by unfold walkCarried; decide) rfl rfl rfl rfl (bit := bit) hbit
     (by unfold walkSkips; decide)
     (by simp [WalkLocal]) (by simp [WalkLocal])
 
@@ -357,7 +357,7 @@ theorem WalkLink.lor_lhs_false_i {calls : Calls} {m0 : Mem}
     rfl
   exact WalkLink.pureCore (G := G) (C := C) (s := s) hInv
     (B := walkLor_lhs_false_i) (by rw [hblock]; exact walkLor_lhs_false_i_find) hden
-    (by unfold walkCarried; decide) rfl rfl rfl
+    (by unfold walkCarried; decide) rfl rfl rfl rfl
     (bit := evalICmp .eq (BitVec.ofNat 8 b.toNat) (BitVec.ofNat 8 1))
     (by simp [stateAt, cells]) (by simp [WalkLocal]) (by simp [WalkLocal])
 
@@ -431,7 +431,7 @@ theorem WalkLink.if_then231_i {calls : Calls} {m0 : Mem}
     rfl
   exact WalkLink.pureJumpCore (G := G) (C := C) (s := s) hInv
     (B := walkIf_then231_i) (by rw [hblock]; exact walkIf_then231_i_find) hden
-    (by unfold walkCarried; decide) rfl rfl rfl (by simp [WalkLocal])
+    (by unfold walkCarried; decide) rfl rfl rfl rfl (by simp [WalkLocal])
 
 /-- `cond.true345.i`: the next entry's stream lane, zero-extended. -/
 def walkCond_true345_i : Block :=
@@ -476,7 +476,7 @@ theorem WalkLink.cond_true345_i {calls : Calls} {m0 : Mem}
     rfl
   exact WalkLink.pureJumpCore (G := G) (C := C) (s := s) hInv
     (B := walkCond_true345_i) (by rw [hblock]; exact walkCond_true345_i_find) hden
-    (by unfold walkCarried; decide) rfl rfl rfl (by simp [WalkLocal])
+    (by unfold walkCarried; decide) rfl rfl rfl rfl (by simp [WalkLocal])
 
 /-- `cond.true.i106`: the string scan's bound lane, zero-extended. -/
 def walkCond_true_i106 : Block :=
@@ -521,7 +521,7 @@ theorem WalkLink.cond_true_i106 {calls : Calls} {m0 : Mem}
     rfl
   exact WalkLink.pureJumpCore (G := G) (C := C) (s := s) hInv
     (B := walkCond_true_i106) (by rw [hblock]; exact walkCond_true_i106_find) hden
-    (by unfold walkCarried; decide) rfl rfl rfl (by simp [WalkLocal])
+    (by unfold walkCarried; decide) rfl rfl rfl rfl (by simp [WalkLocal])
 
 /-- `land.lhs.true357.i`: the document byte at the scan's bound. -/
 def walkLand_lhs_true357_i : Block :=
@@ -561,7 +561,7 @@ theorem WalkLink.land_lhs_true357_i {calls : Calls} {m0 : Mem}
     rfl
   exact WalkLink.pureJumpCore (G := G) (C := C) (s := s) hInv
     (B := walkLand_lhs_true357_i) (by rw [hblock]; exact walkLand_lhs_true357_i_find) hden
-    (by unfold walkCarried; decide) rfl rfl rfl (by simp [WalkLocal])
+    (by unfold walkCarried; decide) rfl rfl rfl rfl (by simp [WalkLocal])
 
 /-- `if.end.i97`: the byte after the string scan's end, tested against `-` and the
 digit range. -/
@@ -638,7 +638,7 @@ theorem WalkLink.if_end_i97 {calls : Calls} {m0 : Mem}
     rfl
   exact WalkLink.pureCore (G := G) (C := C) (s := s) hInv
     (B := walkIf_end_i97) (by rw [hblock]; exact walkIf_end_i97_find) hden
-    (by unfold walkCarried; decide) rfl rfl rfl
+    (by unfold walkCarried; decide) rfl rfl rfl rfl
     (bit := evalICmp .eq (BitVec.ofNat 8 b.toNat) (BitVec.ofNat 8 45) |||
       evalICmp .ult (BitVec.ofNat 8 b.toNat + BitVec.ofNat 8 208) (BitVec.ofNat 8 10))
     (by simp [stateAt, cells]) (by simp [WalkLocal]) (by simp [WalkLocal])
@@ -680,7 +680,7 @@ theorem WalkLink.if_end490_i {calls : Calls} {m0 : Mem}
     rfl
   exact WalkLink.pureCore (G := G) (C := C) (s := s) hInv
     (B := walkIf_end490_i) (by rw [hblock]; exact walkIf_end490_i_find) hden
-    (by unfold walkCarried; decide) rfl rfl rfl
+    (by unfold walkCarried; decide) rfl rfl rfl rfl
     (bit := evalICmp .eq v (BitVec.ofNat 32 0))
     (by simp [stateAt, cells]) (by simp [WalkLocal]) (by simp [WalkLocal])
 
@@ -963,7 +963,7 @@ theorem WalkLink.stackMarkerBr {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
       (s := s) (d := d) (a := ld) (w := 8) (x := BitVec.ofNat 8 q) (c := one)
       (by simp [lookupName])]
     rfl
-  exact WalkLink.pureCore (G := G) (C := C) (s := s) hInv hfind hden hfree rfl rfl hterm
+  exact WalkLink.pureCore (G := G) (C := C) (s := s) hInv hfind hden hfree rfl rfl rfl hterm
     (by simp only [stateAt, walkMarkerEnv, cells, lookupName_cons_self]) hl hf
 
 /-- **`if.end179.i` as a link.** -/
@@ -1089,7 +1089,7 @@ theorem WalkLink.stackPairBr {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
       (bs := bs2) (by simp [lookupName]) hread2 rfl]
     rw [henv]
     rfl
-  exact WalkLink.pureCore (G := G) (C := C) (s := s) hInv hfind hden hfree rfl rfl hterm
+  exact WalkLink.pureCore (G := G) (C := C) (s := s) hInv hfind hden hfree rfl rfl rfl hterm
     (by
       rw [henv]
       simp only [stateAt, walkPairEnv, cells]
@@ -1178,7 +1178,7 @@ theorem WalkLink.stackSelectBr {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
         hpos hread hbsn hcvtSel hldvSel hapxSel hzxSel (rest := [])]
     rw [henv]
     rfl
-  exact WalkLink.pureCore (G := G) (C := C) (s := s) hInv hfind hden hfree rfl rfl hterm
+  exact WalkLink.pureCore (G := G) (C := C) (s := s) hInv hfind hden hfree rfl rfl rfl hterm
     (by
       rw [henv]
       simp only [stateAt, walkSelectEnv, cells]

@@ -175,9 +175,10 @@ else:
   staged;
 * **presence and the frame, as two region claims** — presence over
   `stage2ReportPresent` (the five ABI write regions, the seven appended objects
-  and `%d.i`'s slot), and silence outside `stage2ReportFrame` (those plus the four
-  stack objects the body allocates at the call's cursor).  They are two claims
-  because they are not two readings of one region: presence over the four stack
+  and `%d.i`'s slot), and silence outside `stage2ReportFrame` (those plus the
+  stack the body's allocating calls write, from the call's cursor to the cursor
+  the run reached).  They are two claims
+  because they are not two readings of one region: presence over the stack
   bytes is false at the loop head, and silence outside the seven alone is false of
   every helper that stores through an `alloca`, so a single `Owns` cannot state
   both.  An extent narrower than the writes is refuted at the byte the run wrote
@@ -187,8 +188,10 @@ else:
   writes** — the cursor record, both container stacks, the token, `%s`, `%z` and
   `%e` — which the thirteen-argument ABI does not name and which the pre stages at
   the adapter (`stage2StagedPre`), **`%d.i`'s slot** the number path stores
-  through, and **the four `alloca`s** at `next`.  A frame that stopped at the five
-  would be false of the pinned text at `%c.i + 32`.  The post carries the staging
+  through, and **the stack** the body's allocating calls write, from `next` to the
+  run's end.  A frame that stopped at the five would be false of the pinned text at
+  `%c.i + 32`, and one that stopped at the five bootstrap slots would be false from
+  the second allocating call onward.  The post carries the staging
   too (`DisjointRegions (stage2StagedRegions …)`), because that is what separates
   the seven from the caller's objects and from each other.  `b`, `ep`, `xp` and
   the two count slots are absent from both lists, which is the statement that
@@ -352,8 +355,8 @@ This is the ABI prefix of the walk's frame, not the frame itself.
 emitted body writes — and `stage2Boundary`'s `Owns` is stated at *it*, because an
 `Owns` at these five does not survive the loop's first store (`%c.i + 32`).
 `stage2Writes_subset_walkWrites` records the containment, and the post's frame is
-`stage2ReportFrame`, the walk's write list extended by `%d.i` and the four
-`alloca`s.  The five are kept as a named region because they are what the
+`stage2ReportFrame`, the walk's write list extended by `%d.i` and the stack
+interval from the call's cursor to the run's own end.  The five are kept as a named region because they are what the
 *wrapper* stores, and a reader asking "what does the ABI-level unit write at its
 own boundary" should see that list rather than the body's scratch. -/
 def stage2Frame (dst ndst' ev nev' ndst nev err : Nat) : Nat → Prop :=
@@ -380,10 +383,10 @@ survives the loop's first store — `while.body.i`'s write of its advanced index
 `%c.i + 32`.  `stage2WalkFrame` is the predicate that names them; `stage2Frame` is
 its ABI prefix.  The record's post is not a single `Owns` at either: presence is
 claimed at `stage2ReportPresent` and silence at `stage2ReportFrame`, because the
-run makes the seven and `%d.i` present while the four stack objects are the
-allocator's.  `%d.i`'s slot and the four are named beside the seven
-(`stage2ReportScratch`, `stage2AllocaWrites`), so this predicate is the narrower
-statement, not the record's frame.
+run makes the seven and `%d.i` present while the stack is the allocator's.
+`%d.i`'s slot and the stack interval are named beside the seven
+(`stage2ReportScratch`, and the interval from the call's cursor to the run's end),
+so this predicate is the narrower statement, not the record's frame.
 -/
 
 /- The seven extents and their write list live upstream (`JsonStage2Scratch`),
@@ -454,10 +457,34 @@ theorem not_inRegions_allocaWrites {a x : Nat} (hx : x < a) :
   have := stage2AllocaWrites_start hr
   omega
 
+/-- **The run's stack end.**  The allocator is monotone, so a run's stack writes
+end at a cursor of its own, not at the fixed window the initialisation's four
+`alloca`s and the first allocating call occupy.  This is that end, at the cursor
+the run was called with and the cursor the walk actually reached: the five
+bootstrap slots when they are enough (the walk has not passed them), the walk's
+cursor otherwise.  The `max` is the clause in one term — the fixed window is
+always inside the region, and so is every byte the walk allocated.
+
+`stage2AllocaWrites`'s five slots end at `next + 36` (`stage2BootstrapExtent + 8`),
+which is why the first arm names that sum: an end below it would be a stack region
+that omits slots the run wrote. -/
+def stage2StackEnd (next nextWalk : Nat) : Nat :=
+  max (next + (stage2BootstrapExtent + 8)) nextWalk
+
+/-- The five bootstrap slots are inside the stack region. -/
+theorem stage2StackEnd_static (next nextWalk : Nat) :
+    next + (stage2BootstrapExtent + 8) ≤ stage2StackEnd next nextWalk :=
+  Nat.le_max_left _ _
+
+/-- A walk's cursor is inside the stack region. -/
+theorem le_stage2StackEnd (next nextWalk : Nat) :
+    nextWalk ≤ stage2StackEnd next nextWalk :=
+  Nat.le_max_right _ _
+
 
 /-- **The walk's write predicate at the five ABI regions and the seven appended
 objects.**  This is a *narrower* statement than the record's frame: `%d.i`'s slot
-and the four stack objects at the call's cursor are outside it, so the run's
+and the stack the body's allocating calls write are outside it, so the run's
 touched extent is `stage2ReportFrame`, and a claim silent only outside this list
 is false of the helpers that store through an `alloca`.  It is kept because it is
 the projection at the extent the ABI itself names.  `stage2Frame` is its prefix
@@ -799,15 +826,42 @@ def stage2ReportPresent (dst ndst' ev nev' ndst nev err c ctype cst tok s z e d 
     List (Nat × Nat) :=
   stage2Writes dst ndst' ev nev' ndst nev err ++ stage2ReportScratch c ctype cst tok s z e d
 
-/-- **The run's whole touched extent**: everything it makes present, and the four
-stack objects the body allocates at the cursor `next`.  This is the list the
-record's frame is stated at, and the walk's frame transfers to it
-(`UnchangedOutside.of_covered`): the stack objects are written by the helper calls
-the walk makes, so a claim silent outside the seven alone is false of the body. -/
-def stage2ReportFrame (dst ndst' ev nev' ndst nev err c ctype cst tok s z e d next : Nat) :
-    List (Nat × Nat) :=
+/-- **The run's whole touched extent**: everything it makes present, and the
+stack the body's allocating calls write, from the cursor it was called at, `next`,
+to the cursor the run reached, `nextEnd`.  This is the list the record's frame is
+stated at, and the walk's frame transfers to it (`UnchangedOutside.of_covered`):
+the helpers store through the allocator's slots, so a claim silent outside the
+seven alone is false of the body.
+
+The stack is one interval rather than a fixed list because the allocator is
+monotone: a second allocating call writes past the five bootstrap slots the
+initialisation and the first call take, so a list ending at `next + 36` is false
+of such a run, not merely narrower.  The five slots stay a consequence —
+`stage2AllocaWrites_reportFrame` — for the consumers that name them. -/
+def stage2ReportFrame (dst ndst' ev nev' ndst nev err c ctype cst tok s z e d
+    next nextEnd : Nat) : List (Nat × Nat) :=
   stage2ReportPresent dst ndst' ev nev' ndst nev err c ctype cst tok s z e d ++
-    stage2AllocaWrites next
+    [(next, nextEnd - next)]
+
+/-- **The five bootstrap slots lie inside the report's stack region.**  The old
+static list is not kept beside the interval; it is a stated consequence of it, and
+this is the statement: once the end covers the five slots' window, a byte of any
+of them is a byte of the interval. -/
+theorem stage2AllocaWrites_reportFrame {dst ndst' ev nev' ndst nev err
+    c ctype cst tok s z e d next nextEnd : Nat}
+    (h : next + (stage2BootstrapExtent + 8) ≤ nextEnd) {a : Nat}
+    (ha : inRegions (stage2AllocaWrites next) a) :
+    inRegions (stage2ReportFrame dst ndst' ev nev' ndst nev err c ctype cst tok s z e d
+      next nextEnd) a := by
+  simp only [stage2BootstrapExtent] at h
+  obtain ⟨r, hr, hlo, hhi⟩ := ha
+  have hend := stage2AllocaWrites_end hr
+  have hle : next ≤ nextEnd := by omega
+  have heq : next + (nextEnd - next) = nextEnd := Nat.add_sub_of_le hle
+  exact ⟨(next, nextEnd - next),
+    List.mem_append_right _ (List.mem_cons_self ..), by
+      exact Nat.le_trans (stage2AllocaWrites_start hr) hlo, by
+      rw [heq]; omega⟩
 
 /-- A listed extent is present under the region claim.  This is the only
 projection a region claim admits: presence is monotone in the region, so a listed
@@ -1072,17 +1126,23 @@ def stage2Boundary (args : List Value) (mem : Mem) (next : Nat) (m : Mem)
       (stage2ReportPresent dst ndst' ev nev' ndst nev err c ctype cst tok s z e d) a →
         present m a) ∧
     -- Silence outside the run's whole touched extent — the extents above *and*
-    -- the four stack objects the body allocates at its entry, which the helpers
-    -- store through.  They are the four slots `stage2AllocaWrites next` names, at
-    -- the cursor this call was made at: their addresses are the allocator's, not
-    -- the caller's, so the post names them through `next`, and it is
-    -- `stage2Pre`'s watermark that places them above every staged object.  A
-    -- frame that stopped at the seven asserted silence over bytes `s2_init`,
+    -- the stack the body's allocating calls write, from the cursor this call was
+    -- made at to the cursor the run reached.  The end is a witness of this post
+    -- because the allocator is the callee's: the initialisation's four `alloca`s
+    -- and the first allocating call occupy the five slots `stage2AllocaWrites
+    -- next` names, and every later call writes above them.  `next ≤ nextEnd`
+    -- places the cursor the caller named inside the region the run kept, and the
+    -- five slots are the stated consequence `stage2AllocaWrites_reportFrame`.
+    --
+    -- A frame that stopped at the seven asserted silence over bytes `s2_init`,
     -- `s2_string_body` and `num_fast_el1` do write (`s2AfterValueFoot`'s
     -- `(outn, 8)`, `s2StringBodyFoot`'s `(xj, 8)`, `s2NumFastFoot`'s
-    -- `(out, 8)`).
-    UnchangedOutside mem m
-      (stage2ReportFrame dst ndst' ev nev' ndst nev err c ctype cst tok s z e d next) ∧
+    -- `(out, 8)`), and a frame that stopped at `next + 36` asserted it over every
+    -- byte a second allocating call writes.
+    (∃ nextEnd : Nat, next ≤ nextEnd ∧
+      UnchangedOutside mem m
+        (stage2ReportFrame dst ndst' ev nev' ndst nev err c ctype cst tok s z e d
+          next nextEnd)) ∧
     -- and the seventeen staged objects are pairwise separate, at their staged
     -- extents.  This is the pre's staging (`stage2StagedPre`) carried through the
     -- run, and it is what a consumer reads the report's frame against: the seven

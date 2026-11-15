@@ -168,35 +168,38 @@ continuations** of a continuing entry, and the plan is two structures with a `Su
 * **`HcontFacts` — the whitespace arm, which is what this module's bundle is.**  The byte
   before the entry's end is `9`, `10`, `13` or `32`, the whitespace skip runs, the token
   ends at the first whitespace byte `k`, and the extra-token scan runs `[k, v.toNat)`.
-* **`HcontCleanupFacts` — the scan-free arm, not yet in the tree.**  The token ends at the
+* **`HcontCleanupFacts` — the scan-free arm, landed beside it.**  The token ends at the
   entry's end, so `if.then447.i`'s target tests `ult v v` and leaves for `if.end473.i`: the
   segment goes straight to the merge.  It carries **no** `%ee.1.i` stopper, **no** landing
   group, **no** traversal premises and **no price conjunct with a byte term**
-  (`p + 2 ≤ 32·Δk`, `p = 20` or `21`).  Its closing step is
-  `WalkLink.if_then447_i_empty` and the layer's share of it — `ScanEmpty` in `WalkLocal` —
-  is landed.
+  (`p + 2 ≤ 32·Δk`, `p = 21`).  Its tail is `consumerTailSegEmptyAt`'s three links and its
+  closing step is `WalkLink.if_then447_i_empty`.
 * `WalkContinueFacts` is a **class, not a `Sum`**: `HcontCase`
-  (`JsonStage2WalkDispatchWitnessString`) has `ws` (`HcontFacts`) and `twoEntry`
-  (`HstringFacts`, the standalone string whose merge index is `C.k + 2`), and the
-  consumer splits once.  The third arm planned here, `cleanup`, is added to that
-  inductive when it lands — an inductive rather than a nested `Sum` because a `Sum` of
-  three would re-shape every consumer twice, and the class question is still asked once,
-  where the class is known.  A conditional inside a `Type`-valued structure would make
-  every field a question.
+  (`JsonStage2WalkDispatchWitnessString`) has `ws` (`HcontFacts`), `cleanup`
+  (`HcontCleanupFacts`) and `twoEntry` (`HstringFacts`, the standalone string whose merge
+  index is `C.k + 2`), and the consumer splits once.  An inductive rather than a nested
+  `Sum` because a `Sum` of three would re-shape every consumer twice, and the class
+  question is still asked once, where the class is known.  A conditional inside a
+  `Type`-valued structure would make every field a question.
 
-**The run's refinement (planned).**  The whitespace arm's seam is not class-indexed: the run
-stops at the first whitespace byte, so its last visit leaves through `LeafBlock43`, `46` or
-`48`, whose states differ in the cells each bounded.  So the endpoint is **data**:
+**The run's refinement, landed as far as `contWsRun` is.**  The whitespace arm's seam is not
+class-indexed: the run stops at the first whitespace byte, so its last visit leaves through
+`LeafBlock43`, `46` or `48`, whose states differ in the cells each bounded.  So the endpoint
+is **data**:
 
-* `sl : State` and `hRun : WalkSegment … (contLandS … b35) (ContAC₄ C) sl (ContAC₇ C) n`,
-  with the target carry **named** — `WalkSegment` records its target's invariant, so
-  `sl.pc = "if.end372.i"` is `inv'.pc_eq` and the seam link's `findBlock` unfolds.  The run
-  class's states and `contWsEntry_ee` are landed; `contWsRun` is not.
-* `hopS` is then **produced** (the seam stores `ofNat 64 k`, and the scan's phi selects
-  `%ee.1.i` on `if.then447.i`'s edge), which removes both of the producer's supplied
-  regressions.
-* The class survives in one `Prop` field, `hslPre` — which of the three leaves `sl` came
-  from.  The exit set `{43, 46, 48}` is the complement of the entry leaves
+* `sl : State` and `hRun : WalkSegment … (contLandS … b35) (ContAC₄ C) (contWsSeamS C sl k b8)
+  (ContSeamC C) n`, with the target carry **named** — `WalkSegment` records its target's
+  invariant, so the span's first link reads `inv'` rather than a premise.  The run class's
+  states are landed and so is `contWsEntry_ee`; **`contWsRun` is not**, so the run and its
+  own seam step enter the bundle as one supplied segment.  Its docstring names the
+  producer and its cost: five links a continuing byte and four at the exit, the per-index
+  document `∀` as the traversal's premise.
+* `hopS` is **produced** (`contWsEntry_hopS`: the seam stores `ofNat 64 k`, and the scan's
+  phi selects `%ee.1.i` on `if.then447.i`'s edge), so the bundle carries no landing index
+  and the contradiction with `heicd` is gone.
+* The class survives in the run's own field: which of the three leaves `sl` came from is
+  the run's business, not a bundle field, because the run is a segment whose endpoint the
+  bundle already names.  The exit set `{43, 46, 48}` is the complement of the entry leaves
   `{33, 35, 37}`, and that complement check is what caught an arm list's error in a draft.
 * `contWsRun`'s shape is settled: the endpoint is an **input** (a `∨` conclusion cannot fill
   a `Type` field), `≤ 5` per visit — three dispatch links plus the latch's own step — exit
@@ -218,18 +221,18 @@ name a field type mentions must be a field; a `Type` field needs a `Prop`-free t
 list is a set with a complement, so state the complement; and a `condbr` link owes the local
 at *both* arms, including the one it does not take.
 
-## Two of the merge's cells are candidate invariant clauses
+## Two of the merge's cells are invariant clauses
 
-`WalkMergeCells` (`JsonStage2WalkPremisesOfStaging`) states `%inc.i = ofNat 64 (C.k + 1)`
-and `%nep = ofNat 64 G.nep` at `cleanup478.i` as supplied facts, and both follow from
-clauses `WalkInv` does not have: `%inc.i` is bound once, in the header, as
-`%k.0.i249 + 1`, so the clause holds wherever `blockIndex` holds, and `%nep` is a parameter
-no block rebinds.  Adding them is a vocabulary change — a scoping pass measured 39
+The merge's cells state `%inc.i = ofNat 64 (C.k + 1)` and `%nep = ofNat 64 G.nep` at
+`cleanup478.i`, and both now follow from `WalkInv` clauses: `%inc.i` is bound once, in the
+header, as `%k.0.i249 + 1`, so `WalkInv.inc_reg` holds wherever `blockIndex` holds, and
+`%nep` is a parameter no block rebinds, so it is one of `walkStaticRegs`' pairs and
+`WalkInv.regs` reads it.  Adding them was a vocabulary change — a scoping pass measured 39
 `WalkInv` construction sites in 10 modules, `whileBody_step` (the only block that rebinds
-`%inc.i`) and two new disequalities in `WalkPtrs.bind`/`WalkRegs.bind` — and it retires two
-of that premise's three conjuncts and not the premise: the third, `Cd.k = C.k`, relates two
-carries, while `WalkInv G C s` is indexed by one state and one carry.  This note is the
-record that half of the merge's supply is a future clause, and which half is the wall.
+`%inc.i`) and two new disequalities in `WalkPtrs.bind`/`WalkRegs.bind` — and it retired two
+of the merge's three conjuncts and not the third: `Cd.k = C.k` relates two carries, while
+`WalkInv G C s` is indexed by one state and one carry.  This note records that half of the
+merge's supply became a clause, and which half remains the wall.
 -/
 
 import LeanLLVM.Refinement.JsonStage2WalkDispatchWitnessHlast
@@ -282,18 +285,92 @@ theorem scanExit_tok (s : State) (i c : Nat) {tok : Nat}
   repeat rw [lookupName_cons_ne _ _ (by decide)]
   exact h
 
+/-- **The seam binds five cells and neither of the run's registers.**  Its `phi`, the
+store's cell and the three literal tests are its own; the rest of the environment is the
+state it was entered from. -/
+theorem seamS_env_inc (s : State) (e : BitVec 64) (b8 : BitVec 8) (tok : Nat) :
+    lookupName (seamS s e b8 tok).env "%inc.i" = lookupName s.env "%inc.i" := by
+  simp only [seamS, seamFin, stateAt]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+
+/-- `%nep` at the seam is its source's, for the same reason. -/
+theorem seamS_env_nep (s : State) (e : BitVec 64) (b8 : BitVec 8) (tok : Nat) :
+    lookupName (seamS s e b8 tok).env "%nep" = lookupName s.env "%nep" := by
+  simp only [seamS, seamFin, stateAt]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+
+/-- **The run's registers are the invariant's, read at the seam.**  `%inc.i` is
+`WalkInv.inc_reg` and `%nep` is one of `walkStaticRegs`' pairs, and the seam binds neither —
+so the segment's target invariant gives the endpoint `sl`'s cells, and they are not bundle
+fields.  The run's *bound* is not a clause of the invariant, which is why it stays one. -/
+theorem contWsSeamS_inc {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (sl : State)
+    (k : Nat) (b8 : BitVec 8)
+    (h : WalkInv G (ContSeamC C) (contWsSeamS C sl k b8)) :
+    lookupName sl.env "%inc.i" = some (.int 64 (BitVec.ofNat 64 (C.k + 1))) := by
+  rw [← seamS_env_inc sl (BitVec.ofNat 64 k) b8 C.stage.tok]
+  exact h.inc_reg
+
+/-- `%nep` at the run's endpoint, from the same invariant. -/
+theorem contWsSeamS_nep {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (sl : State)
+    (k : Nat) (b8 : BitVec 8)
+    (h : WalkInv G (ContSeamC C) (contWsSeamS C sl k b8)) :
+    lookupName sl.env "%nep" = some (.int 64 (BitVec.ofNat 64 G.nep)) := by
+  rw [← seamS_env_nep sl (BitVec.ofNat 64 k) b8 C.stage.tok]
+  exact h.regs ("%nep", .int 64 (BitVec.ofNat 64 G.nep)) (by simp [walkStaticRegs])
+
 /-! ### The continuing entry's facts, bundled
 
-The whitespace arm's bundle is `HcontCase.ws`'s payload (`JsonStage2WalkPremisesOfStaging`):
-one argument per head state with an entry left.  Its groups are `hcontPrefixSeg`'s argument
-list, in the same order, so the producer's whole job is to supply each group at the path's
-states.
+`HcontCase.ws`'s payload: one argument per head state with an entry left.  This bundle is
+the **whitespace** class — the byte before the entry's end is `9`, `10`, `13` or `32` — and
+its path is the one the run class's states name: `land.lhs.true357.i`'s target goes through
+the three pivots to a leaf, the skip `while.body370.i` runs back over the whitespace, and
+`if.end372.i`'s token-end `phi` selects the run's stop `%ee.0.i238`, whose value is `k`.
+So the token ends at `k < %cond350.i`, the extra-token scan runs `[k, v.toNat)`, and the
+bundle's stopper is `heicd : k < v.toNat`.
+
+**The states are the run class's, and that is the repair.**  The bundle used to be stated at
+`contSeamS`/`contEntry`, whose seam stores `%cond350.i = ofNat 64 v.toNat`; `hopS` then
+asserted `ei = v.toNat` while `heicd` asserted `ei < v.toNat`, so the bundle was
+**uninhabited** wherever a producer could reach it — the same defect `HlastFacts` carried
+before its repair, and found by the same instrument (substitute the arm's own values into
+every field that names a test, a bound or a span).  At the run class's states
+(`contWsSeamS`, `contWsTailStart`, `contWsEntry`, `contWsLatch`, which exist and whose
+`%ee.1.i` is `ofNat 64 k` by construction — `contWsEntry_ee`) the two fields agree:
+`hopS` follows from the cell, so it is **produced** rather than carried, and `heicd` says
+`k < v.toNat`, which is exactly the span the scan visits.  Which class a head state belongs
+to is not this bundle's business; the byte before the entry's end decides it, and the
+scan-free class is `HcontCleanupFacts`.
+
+**The run is supplied, and named as the supply.**  `hRun` is the skip's segment from the
+whitespace check's target to the seam's entry, at the run class's two carries.  Its producer
+is `contWsRun`: per visit the dispatch's three links plus `scanLatch_visit_at`, five links per
+continuing byte and four at the exit, with each visit's `WalkLocal` rebuilt from the document's
+byte and its class — the per-index `∀` the whitespace class carries.
+
+**Why it is a field and not yet a theorem, stated precisely.**  The per-visit pieces exist
+(`walkWhiteScanVisitSeg3_43`, `walkWhiteScanVisitSeg4_46`, `walkWhiteScanVisitSeg4_48`,
+`scanLatch_visit_at`), and the entry segments and the seam are `WalkLink` applications.  What
+is missing is a *term* for the endpoint: the skip's last visit leaves through one of
+`LeafBlock43`, `46`, `48`, whose states differ in the cells each leaf bounded, and a segment is
+stitched at its states — so `sl` cannot be an arbitrary state, and the run's recursion has to
+carry the class of each index.  That is a `def` computed from the document (`wsLeafIn`,
+`wsVisit`, `wsNext`, `wsRunE` in the shape the `scanT*`/`scanPreT*` states have) plus an
+induction on `k - i` whose step is the three-class branch, not a missing lemma.  Its count is
+`4 + 5·(k - i) + 4 + 1 = 5·(k - i) + 9`, at `i = %idxprom.i`'s value, and the field's own price
+`n + 8·(v - 1 - k) ≤ 8·ΔA + 5` follows from `8ΔA ≥ 8(v - i) = 8(v - 1 - k) + 8(k - i) + 8`:
+the left side is short of the right by `3·(k - i) + 4`.  **The price needs one premise the bundle
+does not yet state:** `entryPos C.k ≤ i` for the run's start (`hstart` is about the *stop* `k`),
+which is the entry stream's own fact about `%idxprom.i`, in the same supply as `hspan`/`hstart`;
+and the traversal's `ScanEntered`/`ScanCount` facts need `v - i ≤ C.inner`, the entry's inner
+budget, which no clause of `WalkInv` fixes at the run's start — the same supply as `hTail`'s.
+
+Two steps spare against the entry allowance, which the price below spends.
 
 Three witnesses are *consequences* rather than free data, and the bundle writes the
 consequence instead of a witness plus an equation:
 
-* the landing's index — the scan's entry `phi` selects `%ee.1.i`, so the index is
-  `ofNat 64 ei`, and `latch_counter` reads the latch's cell at that value;
+* the landing's index — the scan's entry `phi` selects `%ee.1.i`, whose cell the seam fixed
+  at `ofNat 64 k`, so the index is `k` and `latch_counter` reads the latch's cell there;
 * the scan's bound — `%cond350.i` is `cond.end349.i`'s own cell and no block from there to
   the latch rebinds it, so the bundle carries the lane's word `v` and writes `v.toNat`
   wherever the bound appears; `contLatch_cond` is the peel that says the latch's cell is
@@ -301,7 +378,15 @@ consequence instead of a witness plus an equation:
 * the `phi`'s selection at `cond.end349.i` — the predecessor is `cond.true345.i`, so the
   selection is `%conv347.i` by a closed `phi` computation (`contPhi6`), and the cell it
   selects is the link's own (`cte345OutAt_conv`).
--/
+
+**One cell at the run's endpoint is a field and two are not.**  `%inc.i` and `%nep` are
+`WalkInv`'s own — `inc_reg` and one of `walkStaticRegs`' rows — and the seam binds neither, so
+the segment's target invariant reads them at the endpoint (`contWsSeamS_inc`,
+`contWsSeamS_nep`).  `%cond350.i` is not a clause of the invariant: it is bound once at
+`cond.end349.i` and no block of the skip rebinds it, but a `WalkSegment` records a run and its
+target's invariant rather than the blocks the run passed, so `hcond_sl` stays a field.  The
+lemma that would close it is *the whitespace skip preserves the bound it does not bind* — the
+`htok` gap's twin, one segment out. -/
 structure HcontFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : Type where
   /-- The head's byte. -/
   x : BitVec 8
@@ -339,34 +424,44 @@ structure HcontFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) 
   `%cond350.i` is `%4` and the last entry ends the stream.  Two bundles can share a field
   name and correctly carry opposite values. -/
   hugt : evalICmp .ugt (BitVec.ofNat 64 v.toNat) ix = 1
-  /-- **The byte before the entry's end and its class.**  `land.lhs.true357.i` reads the
-  document at `%cond350.i - 1`; the three pivots test it against `13`, `32` and `13`
-  again, and this bundle takes the class the price's longest path names
-  (`NodeBlock41 → NodeBlock39 → LeafBlock35`, no whitespace run). -/
+  /-- **The byte before the entry's end**, which the whitespace check reads: its address is
+  `%cond350.i - 1` and the document supplies the byte.  Its *class* is not a field: on this
+  arm the three pivots' arms and the run they enter are what `hRun` carries. -/
   b35 : UInt8
   hread35 : readBytes (contEndS C s x inc nep ep v ix).mem ((G.b - 1) + v.toNat) 1 =
     some [b35]
-  hb13 : evalICmp .slt (cont35 b35) (BitVec.ofNat 8 13) = 0
-  hb32 : evalICmp .slt (cont35 b35) (BitVec.ofNat 8 32) = 1
-  hbne13 : evalICmp .eq (cont35 b35) (BitVec.ofNat 8 13) = 0
-  /-- The seam's cells: the stored end, the byte and its two literal tests.  The stored
-  end is `%cond350.i` — the entry's end — because the whitespace check is what sent the
-  walk to `if.end372.i`. -/
+  /-- **The whitespace skip's endpoint, its stop and its count.**  `sl` is the state at
+  `if.end372.i`'s entry that the run's last leaf reaches, `k` the run's stop (which the
+  token-end `phi` selects), and `hRun` the segment from the whitespace check's target to
+  the seam's entry at the run class's carries.
+
+  **Supplied, with its producer named:** `contWsRun` (`JsonStage2WalkRevolutionPrefix`'s
+  header), five links per continuing byte and four at the exit.  `hnRun` is that run's
+  price, `5·(k - i) + 5` — one link a continuing byte and the seam's own step inside the
+  count. -/
+  sl : State
+  k : Nat
+  n : Nat
   b8 : BitVec 8
-  hend : lookupName (contP35S C s x inc nep ep v ix b35).env "%end.i" =
-    some (.ptr (C.stage.tok + 8))
-  h8end : lookupName (contP35S C s x inc nep ep v ix b35).env "%8" = some (.int 8 b8)
-  hbit : (evalICmp .eq b8 (BitVec.ofNat 8 45) |||
-    evalICmp .ult (b8 + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0
+  hRun : WalkSegment (stage2Calls stage2SubCalls) G (ContAC₄ C)
+    (contLandS C s x inc nep ep v ix b35) (ContSeamC C) (contWsSeamS C sl k b8) n
+  hnRun : n + stage2ByteAllowance * (v.toNat - 1 - k) ≤
+    stage2ByteAllowance * (entryPos G (C.k + 1) - entryPos G C.k) + 5
+  /-- The run's stop is inside the entry, which is what makes the extra-token span
+  `[k, v.toNat)` non-empty.  **This is the field the other class cannot carry**: on the
+  scan-free arm the token's end is the entry's end, so `k` would be `v.toNat`. -/
+  heicd : k < v.toNat
   /-- The entry's first byte's class, read at the seam's name. -/
   x1 : BitVec 8
-  h8c : evalOperand (contSeamS C s x inc nep ep v ix b35 b8) (.reg "%8") =
-    some (.int 8 x1)
+  h8c : evalOperand (contWsSeamS C sl k b8) (.reg "%8") = some (.int 8 x1)
   hc110 : evalICmp .slt x1 (BitVec.ofNat 8 110) = 0
   hc116 : evalICmp .slt x1 (BitVec.ofNat 8 116) = 0
   hceq116 : evalICmp .eq x1 (BitVec.ofNat 8 116) = 0
   /-- The tail's own: its three call outcomes, the event it emits, the seed's words and
-  its segment at `ScanEntry`'s state — `consumerTailSegAt` at count `3`. -/
+  its segment from the class-C span's target to `contWsEntry` — `consumerTailSegAt` at
+  count `3`, its first index the run's stop `k` and its bound the lane's word.  The scan's
+  entry `phi` is `%ee.1.i` on `if.then447.i`'s edge, and the seam fixed that cell at
+  `ofNat 64 k` (`contWsEntry_ee`), which is why `hopS` is a theorem here and not a field. -/
   r₁ : CallOutcome
   r₂ : CallOutcome
   r₃ : CallOutcome
@@ -374,66 +469,52 @@ structure HcontFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) 
   cA : BitVec 32
   rdv : BitVec 32
   xA : BitVec 32
-  /-- The scan's first index, and the entry's span at it: `if.then447.i`'s target tests
-  `ult ei %cond350.i`, so `ei < v.toNat` is what puts the walk on the scan rather than
-  straight on `if.end473.i`.
-
-  **This bundle describes the entries whose last byte is whitespace, and only those.**
-  The seam's `%ee.1.i` `phi` selects `%cond350.i` when the whitespace check sent the walk
-  there, so on this path the token's end *is* `v.toNat`, the scan's index is that same
-  word (`contEntry_ee`), and the guard is `v.toNat < v.toNat`:
-  `contEntry_scan_empty` (`JsonStage2WalkRevolutionPrefix`) proves this bundle's own
-  `heicd` false on the arm where the byte before the entry's end is *not* whitespace.
-  That arm's walk skips the scan — `if.then447.i`'s target takes `if.end473.i` — so its
-  segment is a sibling bundle's, not this one's. -/
-  ei : Nat
   hTail : WalkSegment (stage2Calls stage2SubCalls) G (ContTailStartC C)
-    (contTailStart C s x inc nep ep v ix b35 b8 x1)
+    (contWsTailStart C sl k b8 x1)
     (TailCarryScan (ContTailStartC C) ev)
-    (contEntry C s x inc nep ep v ix b35 b8 x1 r₁ r₂ r₃ ei cA rdv xA) 3
-  heicd : ei < v.toNat
-  /-- The scan's landing: the byte's address and the byte. -/
+    (contWsEntry C sl k b8 x1 r₁ r₂ r₃ k v cA rdv xA) 3
+  /-- The scan's landing: the byte's address and the byte.  The index is `k` — the seam's
+  stored end — everywhere the landing's states name it. -/
   a : Nat
   q : Nat
   bs : List UInt8
-  src : String
-  sel : Operand
-  hpreS : (contEntry C s x inc nep ep v ix b35 b8 x1 r₁ r₂ r₃ ei cA rdv xA).pre = some src
-  hincS : phiIncoming src
-    [("while.body462.i", (Operand.reg "%inc463.i")),
-     ("if.then447.i", (Operand.reg "%ee.1.i"))] = some sel
-  hopS : evalOperand (stateAt
-    (contEntry C s x inc nep ep v ix b35 b8 x1 r₁ r₂ r₃ ei cA rdv xA).env
-    (contEntry C s x inc nep ep v ix b35 b8 x1 r₁ r₂ r₃ ei cA rdv xA)) sel =
-    some (.int 64 (BitVec.ofNat 64 ei))
-  h3S : lookupName (contEntry C s x inc nep ep v ix b35 b8 x1 r₁ r₂ r₃ ei cA rdv xA).env
+  h3S : lookupName (contWsEntry C sl k b8 x1 r₁ r₂ r₃ k v cA rdv xA).env
     "%3" = some (.ptr a)
-  hpos : ((BitVec.ofNat 64 ei).signExtend 64).toNat < 2 ^ 63
+  hpos : ((BitVec.ofNat 64 k).signExtend 64).toNat < 2 ^ 63
   hreadS : readBytes
-    (contEntry C s x inc nep ep v ix b35 b8 x1 r₁ r₂ r₃ ei cA rdv xA).mem
-    (a + ((BitVec.ofNat 64 ei).signExtend 64).toNat) 1 = some bs
+    (contWsEntry C sl k b8 x1 r₁ r₂ r₃ k v cA rdv xA).mem
+    (a + ((BitVec.ofNat 64 k).signExtend 64).toNat) 1 = some bs
   hbsS : bytesToNat bs = q
   hloc105 : WalkLocal (ScanC₁₀₅ (TailCarryScan (ContTailStartC C) ev))
-    (landRhs457OutAt (contEntry C s x inc nep ep v ix b35 b8 x1 r₁ r₂ r₃ ei cA rdv xA)
-      (BitVec.ofNat 64 ei) a q)
+    (landRhs457OutAt (contWsEntry C sl k b8 x1 r₁ r₂ r₃ k v cA rdv xA)
+      (BitVec.ofNat 64 k) a q)
   x47 : BitVec 8
   h47 : evalOperand
-    (landRhs457OutAt (contEntry C s x inc nep ep v ix b35 b8 x1 r₁ r₂ r₃ ei cA rdv xA)
-      (BitVec.ofNat 64 ei) a q)
+    (landRhs457OutAt (contWsEntry C sl k b8 x1 r₁ r₂ r₃ k v cA rdv xA)
+      (BitVec.ofNat 64 k) a q)
     (.reg "%47") = some (.int 8 x47)
   hbit47 : evalICmp .slt x47 (BitVec.ofNat 8 13) = 1
   hws47 : evalICmp .ule (x47 + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 1
   hloc96 : WalkLocal (ScanC₉₆ (TailCarryScan (ContTailStartC C) ev))
-    (ScanS₉₆ (contEntry C s x inc nep ep v ix b35 b8 x1 r₁ r₂ r₃ ei cA rdv xA)
-      (BitVec.ofNat 64 ei) a q x47)
+    (ScanS₉₆ (contWsEntry C sl k b8 x1 r₁ r₂ r₃ k v cA rdv xA)
+      (BitVec.ofNat 64 k) a q x47)
   hlatch : WalkLocal { TailCarryScan (ContTailStartC C) ev with block := "while.body462.i" }
-    (contLatch C s x inc nep ep v ix b35 b8 x1 r₁ r₂ r₃ ei cA rdv xA
-      (BitVec.ofNat 64 ei) a q x47)
+    (contWsLatch C sl k b8 x1 r₁ r₂ r₃ k v cA rdv xA
+      (BitVec.ofNat 64 k) a q x47)
   /-- **The scan runs inside the entry's span.**  Its bound is at or before the next
-  entry's position, and its first index at or after this one's — the two facts that make
-  the visits no more than the span, and the price's byte term. -/
+  entry's position, and the run's stop at or after this one's — the two facts that make
+  the visits and the run no more than the span, and the price's byte term. -/
   hspan : v.toNat ≤ entryPos G (C.k + 1)
-  hstart : entryPos G C.k ≤ ei
+  hstart : entryPos G C.k ≤ k
+  /-- **The run's bound at the run's endpoint, and the one cell the invariant does not
+  carry.**  `%cond350.i` is `cond.end349.i`'s cell, and no block of the whitespace check or
+  the skip rebinds it, but a `WalkSegment` does not name the blocks it passed — so the cell
+  at `sl` is followed rather than peeled, and it is the `htok` gap's shape one segment out.
+
+  **The run's two registers are not beside it.**  `%inc.i` is `WalkInv.inc_reg` and `%nep` is
+  one of `walkStaticRegs`' pairs, and the seam binds neither, so the segment's *target*
+  invariant reads both at `sl` (`contWsSeamS_inc`, `contWsSeamS_nep`). -/
+  hcond_sl : lookupName sl.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 v.toNat))
   /-- **The traversal's round**: `walkScanRounds457`'s `hround`, unweakened — a visit at
   the byte the landing loads, at the counter's own index and the lane's bound. -/
   hround : ∀ (C' : WalkCarry G) (s' : State) (p a : Nat) (bs : List UInt8) (q : Nat)
@@ -506,17 +587,116 @@ structure HcontFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) 
 
 /-- The scan's entry, at the bundle's own terms.  Named for the same reason
 `hlastEntryF` is: the bundle's fields are the `def`s' arguments in order, so a lemma's
-statement at `contEntryF f` is the one its field types spell out. -/
-abbrev contEntryF {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+statement at `contWsEntryF f` is the one its field types spell out. -/
+abbrev contWsEntryF {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     (f : HcontFacts G C s) : State :=
-  contEntry C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.b8 f.x1 f.r₁ f.r₂ f.r₃ f.ei
-    f.cA f.rdv f.xA
+  contWsEntry C f.sl f.k f.b8 f.x1 f.r₁ f.r₂ f.r₃ f.k f.v f.cA f.rdv f.xA
 
 /-- The scan's latch, at the bundle's own terms. -/
-abbrev contLatchF {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+abbrev contWsLatchF {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     (f : HcontFacts G C s) : State :=
-  contLatch C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.b8 f.x1 f.r₁ f.r₂ f.r₃ f.ei
-    f.cA f.rdv f.xA (BitVec.ofNat 64 f.ei) f.a f.q f.x47
+  contWsLatch C f.sl f.k f.b8 f.x1 f.r₁ f.r₂ f.r₃ f.k f.v f.cA f.rdv f.xA
+    (BitVec.ofNat 64 f.k) f.a f.q f.x47
+
+/-! ### The scan-free class's bundle
+
+`HcontFacts` describes the token that ends *inside* its entry, so the extra-token scan runs
+over `[ei, v.toNat)` and the walk enters it.  A continuing entry whose token ends at the
+entry's end is the other class: `%ee.1.i` *is* `%cond350.i`, `if.then447.i`'s target tests
+`ult v v`, and the walk reaches `if.end473.i` — the merge's entry — without a scan.  That is
+`HcontCleanupFacts`, the sibling this module's header plans, and it is a bundle of its own
+rather than a mode of `HcontFacts`: the fields it does not have are the reason.
+
+**What the split removes.**  No scan index (`ei`), no stopper (`heicd`), no landing group
+(`a`, `q`, `bs`, `src`, `sel`, `hpreS`, `hincS`, `hopS`, `h3S`, `hpos`, `hreadS`, `hbsS`,
+`hloc105`, `x47`, `h47`, `hbit47`, `hws47`, `hloc96`, `hlatch`), no span (`hspan`,
+`hstart`), no traversal (`hround`, `hguard`, `hbyte`) and no token register across the scan
+(`htok`).  What it keeps is the span to the tail's start (`hcontToSpan`'s inputs), the tail's
+three calls on their empty arm, and the no-whitespace class of the byte before the entry's
+end — the class whose seam stores the entry's own end.
+
+**Why the price has no byte term.**  The bundle's segment is the twenty links
+`hcontPrefixCleanupSeg` composes plus the merge's one; nothing in it consumes a document
+byte beyond the two the whitespace check reads, so the entry allowance pays it whole:
+`21 + 2 ≤ 32·Δk` at `Δk = 1`.  The whitespace class is the one whose price needs
+`8·ΔA` — its scan's visits — and that is the arm `HcontFacts` describes. -/
+structure HcontCleanupFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) :
+    Type where
+  /-- The head's byte and its four pivot bits. -/
+  x : BitVec 8
+  h8 : evalOperand s (.reg "%8") = some (.int 8 x)
+  hlt91 : evalICmp .slt x (BitVec.ofNat 8 91) = 0
+  hlt123 : evalICmp .slt x (BitVec.ofNat 8 123) = 0
+  hlt125 : evalICmp .slt x (BitVec.ofNat 8 125) = 0
+  hne125 : evalICmp .eq x (BitVec.ofNat 8 125) = 0
+  /-- The counts and the count test's value: `1`, a continuing entry has one after it. -/
+  inc : BitVec 64
+  nep : BitVec 64
+  hinc : evalOperand (headAS₄ s x) (.reg "%inc.i") = some (.int 64 inc)
+  hnep : evalOperand (headAS₄ s x) (.reg "%nep") = some (.int 64 nep)
+  hnext : evalICmp .ult inc nep = 1
+  /-- The next entry's position lane: the table's pointer, the load's word and the read. -/
+  ep : Nat
+  v : BitVec 32
+  h5 : lookupName (contAS₅ s x inc nep).env "%5" = some (.ptr ep)
+  hi63 : inc.toNat < 2 ^ 63
+  hread : readBytes (contAS₅ s x inc nep).mem (ep + inc.toNat * 4) 4 =
+    some (natToBytes v.toNat 4)
+  /-- The default arm's remaining cells. -/
+  ix : BitVec 64
+  hidx5 : lookupName (contAS₅ s x inc nep).env "%idxprom.i" = some (.int 64 ix)
+  htok5 : lookupName (contAS₅ s x inc nep).env "%t352.i" = some (.ptr C.stage.tok)
+  hgap5 : lookupName (contAS₅ s x inc nep).env "%gap.i" = some (.ptr (C.stage.tok + 20))
+  /-- The entry is not empty, so the whitespace check reads the byte before its end. -/
+  hugt : evalICmp .ugt (BitVec.ofNat 64 v.toNat) ix = 1
+  /-- **The byte before the entry's end and its class: no whitespace run.**  The three
+  pivots take `NodeBlock41 → NodeBlock39 → LeafBlock35 → if.end372.i`, which is what makes
+  the seam's stored end the entry's own end. -/
+  b35 : UInt8
+  hread35 : readBytes (contEndS C s x inc nep ep v ix).mem ((G.b - 1) + v.toNat) 1 =
+    some [b35]
+  hb13 : evalICmp .slt (cont35 b35) (BitVec.ofNat 8 13) = 0
+  hb32 : evalICmp .slt (cont35 b35) (BitVec.ofNat 8 32) = 1
+  hbne13 : evalICmp .eq (cont35 b35) (BitVec.ofNat 8 13) = 0
+  /-- The seam's cells: the stored end at `%end.i`, the byte and its two literal tests. -/
+  b8 : BitVec 8
+  hend : lookupName (contP35S C s x inc nep ep v ix b35).env "%end.i" =
+    some (.ptr (C.stage.tok + 8))
+  h8end : lookupName (contP35S C s x inc nep ep v ix b35).env "%8" = some (.int 8 b8)
+  hbit : (evalICmp .eq b8 (BitVec.ofNat 8 45) |||
+    evalICmp .ult (b8 + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0
+  /-- The entry's first byte's class, read at the seam's name. -/
+  x1 : BitVec 8
+  h8c : evalOperand (contSeamS C s x inc nep ep v ix b35 b8) (.reg "%8") =
+    some (.int 8 x1)
+  hc110 : evalICmp .slt x1 (BitVec.ofNat 8 110) = 0
+  hc116 : evalICmp .slt x1 (BitVec.ofNat 8 116) = 0
+  hceq116 : evalICmp .eq x1 (BitVec.ofNat 8 116) = 0
+  /-- The tail's three calls, its event and the seed's words: its segment on the empty arm,
+  reaching `if.end473.i` with `TailCarryEnd`'s carry. -/
+  r₁ : CallOutcome
+  r₂ : CallOutcome
+  r₃ : CallOutcome
+  ev : EventRecord
+  cA : BitVec 32
+  rdv : BitVec 32
+  xA : BitVec 32
+  hTail : WalkSegment (stage2Calls stage2SubCalls) G (ContTailStartC C)
+    (contTailStart C s x inc nep ep v ix b35 b8 x1)
+    (TailCarryEnd (ContTailStartC C) ev)
+    (contCleanupEnd C s x inc nep ep v ix b35 b8 x1 r₁ r₂ r₃ cA rdv xA) 3
+
+/-- The scan-free tail's end, at the bundle's own terms. -/
+abbrev contCleanupEndF {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (f : HcontCleanupFacts G C s) : State :=
+  contCleanupEnd C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.b8 f.x1 f.r₁ f.r₂ f.r₃
+    f.cA f.rdv f.xA
+
+/-- The tail's start, at the bundle's own terms: the segment's source, where the body of
+the merge's composition reads its cells. -/
+abbrev contTailStartF {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (f : HcontCleanupFacts G C s) : State :=
+  contTailStart C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.b8 f.x1
 
 /-- **The scan's visits, counted with the registers kept.**  `walkScanRounds457` counts
 the visits but keeps only the counter at its target; the exit test reads the bound too, so
@@ -578,124 +758,29 @@ theorem contScanRounds {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
         omega
   exact go (f.v.toNat - 1 - i) i C' s' rfl hInv hblock (f.hguard C' s' hInv hblock) hi hb hic
 
-/-! ### The producer -/
+/-! ### The two arms' compositions, and where they are
 
-/-- **A continuing entry's dispatch, from the head to the merge.**  The head path at its
-counted `23`, the scan's visits at `walkScanRounds457`'s bound, the latch's exit and the
-merge: a segment to `cleanup478.i` priced at `23 + n + 2` against the entry's own credit
-`32·1 + 8·ΔA`.
+Neither arm's composition lives here.  The whitespace arm's goes through the run
+(`HcontFacts.hRun`), the seam, the class-C span, the tail and the scan's visits, and it
+records the merge's three cells; the scan-free arm's is `hcontPrefixCleanupSeg` plus the
+merge's step.  Both are `JsonStage2WalkRevolutionSeg`'s (`walkRevolutionMergeSegWs` and
+`walkRevolutionMergeSeg`), because the cells are read at the endpoint's named state and the
+traversal that carries the registers is that module's.
 
-The endpoint's invariant and its predecessor are part of the conclusion because
-`WalkDispatch` reads the merge's `phi` selection, and a selection is stated at the edge the
-endpoint was entered by.  A consumer that only prices can ignore both; a consumer that
-states `WalkDispatch` cannot re-derive them from an existential endpoint.
-
-`ΔA` is the entry's span and `n` the scan's visits: `ci = v - 1 - ei ≤ ΔA` is
-`hspan`/`hstart`, so the byte term pays the visits and the entry term pays the fixed part
-— `hcontPrefixSeg`'s `23`, `scanExitSeg`'s `1` and `walkIfEnd473_at`'s `1` — with the two
-steps the price's `+ 2` names (`cleanup478.i`'s `condbr` and `while.body.i`'s header) left
-to it. -/
-theorem walkRevolution_seg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
-    (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)
-    (f : HcontFacts G C s) :
-    ∃ (Cd : WalkCarry G) (sd : State) (p : Nat),
-      WalkSegment (stage2Calls stage2SubCalls) G C s Cd sd p ∧
-      Cd.block = "cleanup478.i" ∧
-      WalkInv G Cd sd ∧
-      sd.pre = some "if.end473.i" ∧
-      p + 2 ≤ stage2EntryAllowance * (C.k + 1 - C.k) +
-        stage2ByteAllowance * (entryPos G (C.k + 1) - entryPos G C.k) := by
-  -- the head path, counted: twenty-three steps to the scan's latch
-  obtain ⟨s₀, hs₀, hsegP⟩ :=
-    hcontPrefixSeg (G := G) (C := C) (s := s) hInv hblock f.h8 f.hlt91 f.hlt123 f.hlt125
-      f.hne125 f.hinc f.hnep f.hnext f.h5 f.hi63 f.hread f.hidx5 f.htok5 f.hgap5 f.hugt
-      f.hread35 f.hb13 f.hb32 f.hbne13 f.hend f.h8end f.hbit f.h8c f.hc110 f.hc116
-      f.hceq116 f.r₁ f.r₂ f.r₃ f.ev f.hTail f.hpreS f.hincS f.hopS f.h3S f.hpos f.hreadS
-      f.hbsS f.hloc105 f.h47 f.hbit47 f.hws47 f.hloc96 f.hlatch
-  have hsegP' : WalkSegment (stage2Calls stage2SubCalls) G C s (ContLatchC C f.ev)
-      (contLatchF f) 23 := by
-    rw [hs₀] at hsegP
-    exact hsegP
-  -- the latch's two registers: its own construction's cells
-  have hcounter : lookupName (contLatchF f).env "%q.0.i246" =
-      some (.int 64 (BitVec.ofNat 64 f.ei)) :=
-    latch_counter (contEntryF f) (BitVec.ofNat 64 f.ei) f.a f.q f.x47
-  have hbound : lookupName (contLatchF f).env "%cond350.i" =
-      some (.int 64 (BitVec.ofNat 64 f.v.toNat)) :=
-    contLatch_cond C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.b8 f.x1 f.r₁ f.r₂ f.r₃ f.ei
-      f.cA f.rdv f.xA (BitVec.ofNat 64 f.ei) f.a f.q f.x47
-  -- the bound's width, from the span
-  have hcdLt : f.v.toNat < G.n := lt_of_le_of_lt f.hspan (entryPos_lt G hk)
-  have hmax : G.n ≤ 2 ^ 32 := by
-    have := G.maxDoc
-    simpa only [stage2MaxDocument] using this
-  have hc64 : f.v.toNat < 2 ^ 64 := by
-    have := f.v.isLt; omega
-  have hc63 : f.v.toNat ≤ 2 ^ 63 := by
-    have := f.v.isLt; omega
-  -- the bundle's three arithmetic premises, at the terms `omega` reads
-  have hspan := f.hspan
-  have hstart := f.hstart
-  have heicd := f.heicd
-  have hcd1 : 1 ≤ f.v.toNat := by omega
-  -- the visits, with the scan's counter and bound at the last one
-  obtain ⟨Cm, sm, n, hsegR, hInvR, hbR, hiR, hcR, hnR⟩ :=
-    contScanRounds G C s f hsegP'.inv' rfl hcounter hbound hc63 f.heicd
-  -- the exit, one step: the inner budget is the invariant's local clause at the counts
-  have hlocal : ScanCount sm "%q.0.i246" "%cond350.i" Cm.inner := by
-    have h := hInvR.blockLocal
-    rwa [WalkLocal.extraToken hbR] at h
-  have hinner : f.v.toNat - (f.v.toNat - 1) ≤ Cm.inner :=
-    ScanCount.same hlocal hiR hcR hc64 (by omega)
-  have hie : (f.v.toNat - 1) + 1 = f.v.toNat := by omega
-  obtain ⟨s₁, hseg₁, hpc₁, hs₁, hInv₁⟩ :=
-    scanExitSeg (calls := stage2Calls stage2SubCalls) (G := G) (C := Cm) (s := sm)
-      hInvR hbR hiR hcR hinner hie hc64 (by intro e _ _ _; simp [WalkLocal])
-  -- the merge, one step, from the token record's register
-  obtain ⟨tok, htok⟩ := f.htok Cm sm hInvR hbR
-  have htok₁ : lookupName s₁.env "%t352.i" = some (.ptr tok) := by
-    rw [hs₁]
-    exact scanExit_tok sm (f.v.toNat - 1) f.v.toNat htok
-  obtain ⟨s₂, hl₂, hs₂⟩ :=
-    walkIfEnd473_at (sub := stage2SubCalls) (G := G) (C := ScanCMerge Cm) (s := s₁)
-      hInv₁ rfl htok₁
-  refine ⟨{ ScanCMerge Cm with block := "cleanup478.i" }, s₂, ((23 + n) + 1) + 1,
-    ?_, rfl, hl₂.inv', ?_, ?_⟩
-  · exact ((hsegP'.trans hsegR).trans hseg₁).trans (WalkSegment.of_link hl₂)
-  · rw [hs₂]
-    show some s₁.pc = some "if.end473.i"
-    rw [hpc₁]
-  · -- the price: the visits are the entry's span
-    have hd : f.v.toNat - 1 - f.ei ≤ entryPos G (C.k + 1) - entryPos G C.k := by
-      have h1 : f.v.toNat - 1 ≤ entryPos G (C.k + 1) - 1 := Nat.sub_le_sub_right hspan 1
-      have h2 : f.v.toNat - 1 - f.ei ≤ (entryPos G (C.k + 1) - 1) - f.ei :=
-        Nat.sub_le_sub_right h1 f.ei
-      have h3 : (entryPos G (C.k + 1) - 1) - f.ei ≤
-          (entryPos G (C.k + 1) - 1) - entryPos G C.k :=
-        Nat.sub_le_sub_left hstart (entryPos G (C.k + 1) - 1)
-      have h4 : (entryPos G (C.k + 1) - 1) - entryPos G C.k ≤
-          entryPos G (C.k + 1) - entryPos G C.k :=
-        Nat.sub_le_sub_right (Nat.sub_le (entryPos G (C.k + 1)) 1) (entryPos G C.k)
-      exact le_trans h2 (le_trans h3 h4)
-    have hn2 : n ≤ 8 * (entryPos G (C.k + 1) - entryPos G C.k) :=
-      le_trans hnR (Nat.mul_le_mul_left 8 hd)
-    have hΔ : C.k + 1 - C.k = 1 := by omega
-    simp only [stage2EntryAllowance, stage2ByteAllowance, hΔ, Nat.mul_one]
-    have hl : 23 + n + 1 + 1 + 2 = n + 27 := by omega
-    rw [hl]
-    have h8 : n + 27 ≤ 8 * (entryPos G (C.k + 1) - entryPos G C.k) + 27 :=
-      Nat.add_le_add_right hn2 27
-    have h27 : 8 * (entryPos G (C.k + 1) - entryPos G C.k) + 27 ≤
-        32 + 8 * (entryPos G (C.k + 1) - entryPos G C.k) := by
-      have hstep := Nat.add_le_add_left (by decide : (27 : Nat) ≤ 32)
-        (8 * (entryPos G (C.k + 1) - entryPos G C.k))
-      simpa only [Nat.add_comm] using hstep
-    exact le_trans h8 h27
+The composition this file used to state (`walkRevolution_seg`) is gone rather than kept
+beside them: its premise was the bundle at the *scan-free* states, so it named a path the
+walk does not take from a state the walk does reach — the vacuity this module's header
+records.  What survives here is the bundle, and the traversal lemma (`contScanRounds`) both
+arms' compositions share. -/
 
 /-! ### The instrument -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.contScanRounds
-#print axioms LeanLLVM.Refinement.WalkScope.walkRevolution_seg
+#print axioms LeanLLVM.Refinement.WalkScope.contWsEntry_ee
+#print axioms LeanLLVM.Refinement.WalkScope.seamS_env_inc
+#print axioms LeanLLVM.Refinement.WalkScope.seamS_env_nep
+#print axioms LeanLLVM.Refinement.WalkScope.contWsSeamS_inc
+#print axioms LeanLLVM.Refinement.WalkScope.contWsSeamS_nep
 
 end WalkScope
 end LeanLLVM.Refinement

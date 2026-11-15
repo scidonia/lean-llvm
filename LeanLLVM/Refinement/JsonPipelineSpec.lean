@@ -330,11 +330,11 @@ stage-2 callee declared for itself (`CallsFootprint.CallerView`).
 
 The callee's list is the run's whole scratch: the seven appended objects (the
 cursor record, the two container stacks, the token, the decoder state, the log and
-the refusal record), the number path's output slot `%d.i`, and the four `alloca`s
-the body's `entry` block takes.  Their addresses are not functions of anything the
+the refusal record), the number path's output slot `%d.i`, and the stack the
+body's allocating calls write.  Their addresses are not functions of anything the
 caller holds: the seven and `%d.i` are appended parameters of the flattened body
-and the four are the allocator's, and the pipeline's call carries the thirteen ABI
-slots only (`PipelineBodyStep.stage2Args`), so the clause binds all twelve
+and the stack's two ends are the allocator's, and the pipeline's call carries the
+thirteen ABI slots only (`PipelineBodyStep.stage2Args`), so the clause binds them
 existentially — the same witnesses, at the same extents, that
 `pipelineUnitsPost` carries.  Reading the footprint off the callee's parameters
 would require them to name addresses those parameters do not carry; they enter an
@@ -358,13 +358,14 @@ def SigmaFrame (args : List Value) (o : Outcome) (mem : Mem) : Prop :=
      .ptr nk, .ptr xp, .int 64 _, .ptr nxp, .ptr xcarry, .ptr dst, .int 64 _,
      .ptr ndst, .ptr ev, .int 64 _, .ptr nev, .ptr err, .int 64 _],
     .ret (some (.int 64 _)) m =>
-      ∃ (nk' nxp' ndst' nev' : Nat) (c ctype cst tok s z e d alloc : Nat),
+      ∃ (nk' nxp' ndst' nev' : Nat) (c ctype cst tok s z e d alloc allocEnd : Nat),
         pipelineOutputExtents args o ndst' nev' ∧
+        alloc ≤ allocEnd ∧
         CallerView
           [(sc, 24), (mk, 48), (entw, 8), (ep, 4 * (nk' + 8)), (nk, 8),
            (xp, 4 * (nxp' + batchReserve)), (nxp, 8), (xcarry, 16),
            (dst, ndst' + 64), (ndst, 8), (ev, nev'), (nev, 8), (err, 8)]
-          (stage2ReportScratch c ctype cst tok s z e d ++ stage2AllocaWrites alloc) mem m
+          (stage2ReportScratch c ctype cst tok s z e d ++ [(alloc, allocEnd - alloc)]) mem m
   | _, _ => True
 
 /-- The reference parser's predicate, at `LeanLLVM.JSON.Limits.default`.

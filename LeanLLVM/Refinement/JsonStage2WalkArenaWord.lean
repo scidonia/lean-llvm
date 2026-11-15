@@ -194,7 +194,7 @@ any head-to-head producer starts from, and the reason `entry` needs no separate 
 its store is the seed's value. -/
 theorem walkSeed_arenaWord {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) {s : State}
     (h : WalkSeedState G S s) : WalkArenaWord G (walkSeed G S) s := by
-  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, halen, -⟩ := h
+  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, halen, -⟩ := h
   show readBytes s.mem (S.z + 48) 8 = some (wordBytes 8 (walkSeed G S).alen)
   rw [show (walkSeed G S).alen = G.ndst0 from rfl]
   exact halen

@@ -138,15 +138,15 @@ theorem WalkLink.while_body_i_lr_ph {calls : Calls} {m0 : Mem}
     rfl
   refine WalkLink.pureJumpK11 (G := G) (C := C) (s := s) hInv
     (B := walkWhileBodyLrPh) (by rw [hblock]; exact walkWhileBodyLrPh_find) hden
-    (by unfold walkCarriedNoK11; decide) rfl rfl ?_ ?_ ?_ rfl (by simp [WalkLocal])
+    (by unfold walkCarriedNoK11; decide) rfl rfl rfl ?_ ?_ ?_ rfl (by simp [WalkLocal])
   · dsimp only [State.bind]
     exact preheaderRegs G C s.env hInv.regs
   · dsimp only [State.bind]
-    exact ((((hInv.iter.bind (d := "%k11.i") (by decide) (by decide)).bind
-      (d := "%h1.i.i.i51") (by decide) (by decide)).bind
-      (d := "%gap.i") (by decide) (by decide)).bind
-      (d := "%end.i") (by decide) (by decide)).bind
-      (d := "%kind404.i") (by decide) (by decide)
+    exact ((((hInv.iter.bind (d := "%k11.i") (by decide)).bind
+      (d := "%h1.i.i.i51") (by decide)).bind
+      (d := "%gap.i") (by decide)).bind
+      (d := "%end.i") (by decide)).bind
+      (d := "%kind404.i") (by decide)
   · simp only [State.bind]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
     rfl
@@ -250,7 +250,7 @@ theorem WalkLink.cond_end_i96 {calls : Calls} {m0 : Mem}
     rfl
   refine WalkLink.pureCore (G := G) (C := C) (s := s) hInv
     (B := walkCond_end_i96) (by rw [hblock]; exact walkCond_end_i96_find) hden
-    (by unfold walkCarried; decide) rfl rfl rfl
+    (by unfold walkCarried; decide) rfl rfl rfl rfl
     (bit := evalICmp .ugt cvv ivv)
     (by simp [stateAt, lookupName]) ?_ (by simp [WalkLocal])
   rw [WalkLocal.stringScanLanded rfl]
@@ -390,7 +390,7 @@ theorem WalkLink.if_end48_i {calls : Calls} {m0 : Mem}
     rfl
   refine WalkLink.pureCore (G := G) (C := C) (s := s) hInv
     (B := walkIf_end48_i) (by rw [hblock]; exact walkIf_end48_i_find) hden
-    (by unfold walkCarried; decide) rfl rfl rfl
+    (by unfold walkCarried; decide) rfl rfl rfl rfl
     (bit := evalICmp .eq ee idx)
     (by simp [stateAt, lookupName]) (by simp [WalkLocal]) ?_
   simp only [WalkLocal]

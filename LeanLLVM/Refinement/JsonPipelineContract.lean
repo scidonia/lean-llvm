@@ -602,17 +602,22 @@ callee's scratch is the callee's, and this record's arguments are the caller's.
 **The frame names the callee's scratch too, and its stack slots.**  The stage-2
 selection writes seven objects the stage-2 ABI does not carry (`%c.i`, both
 container stacks, the token, `%s`, `%z`, `%e`), the number path's output slot
-`%d.i`, and the four `alloca`s its `entry` block takes (`%ei.i`, `%root_done.i`,
-`%xj.i`, `%outn.i`), so a frame that stopped at the five ABI write regions would be
-false of the composite run.  All twelve therefore appear as witnesses of this
-post's existential and their extents are appended to the `UnchangedOutside` list:
-the seven and `%d.i` through `stage2ReportScratch`, the four through
-`stage2AllocaWrites alloc`.
+`%d.i`, and the stack its allocating calls write — the four `alloca`s its `entry`
+block takes (`%ei.i`, `%root_done.i`, `%xj.i`, `%outn.i`) and every slot a later
+allocating call takes above them — so a frame that stopped at the five ABI write
+regions would be false of the composite run.  All of them therefore appear as
+witnesses of this post's existential and their extents are appended to the
+`UnchangedOutside` list:
+the seven and `%d.i` through `stage2ReportScratch`, and the stack through the
+interval from `alloc` to `allocEnd` — the same shape the stage-2 record's own frame
+names, since the callee's allocator is monotone and a fixed five-slot window is
+false of a run that has allocated past it.
 
-The four are the *callee's* cursor, so the caller cannot name them: they enter as
-a witness, exactly as the seven do.  A witness is not a licence — moving `alloc`
-up only adds bytes the frame demands silence over — and the value the run supplies
-is the cursor its stage-2 call was made at, which the tail knows
+The stack's two ends are the *callee's*, so the caller cannot name them: they
+enter as witnesses, exactly as the seven do.  A witness is not a licence — moving
+either end changes the bytes the frame demands silence over — and the values the
+run supplies are the cursor its stage-2 call was made at and the cursor that call
+reached, which the tail reads off the stage-2 post it consumes
 (`PipelineDischarge.pipelineTailTarget`).  `_next` stays unused: the callee's
 cursor is `≥` the pipeline's, and the model carries no monotonicity to transport
 it, so the number is the callee's business as the callee's scratch is. -/
@@ -627,7 +632,7 @@ def pipelineUnitsPost (args : List Value) (mem : Mem) (_next : Nat)
          .ptr ndst, .ptr ev, .int 64 _, .ptr nev, .ptr err, .int 64 _] =>
           (verdict = 0 ∨ verdict = 1) ∧
           ∃ (nk' nxp' ndst' nev' : Nat) (ent : List Nat) (ps : List Nat)
-            (out evs : List UInt8) (c ctype cst tok s z e d alloc : Nat),
+            (out evs : List UInt8) (c ctype cst tok s z e d alloc allocEnd : Nat),
             pipelineOutputExtents args o ndst' nev' ∧
             readBytes m nk 8 = some (wordBytes 8 nk') ∧
             readBytes m nxp 8 = some (wordBytes 8 nxp') ∧
@@ -638,12 +643,13 @@ def pipelineUnitsPost (args : List Value) (mem : Mem) (_next : Nat)
             (verdict = 0 →
               ∃ e : Nat, readBytes m err 8 = some (wordBytes 8 e)) ∧
             (verdict = 1 → readBytes m err 8 = readBytes mem err 8) ∧
+            alloc ≤ allocEnd ∧
             UnchangedOutside mem m
               (([(sc, 24), (mk, 48), (entw, 8), (ep, 4 * (nk' + 8)), (nk, 8),
                  (xp, 4 * (nxp' + batchReserve)), (nxp, 8), (xcarry, 16),
                  (dst, ndst' + 64), (ndst, 8), (ev, nev'), (nev, 8), (err, 8)] ++
                 stage2ReportScratch c ctype cst tok s z e d) ++
-                stage2AllocaWrites alloc)
+                [(alloc, allocEnd - alloc)])
       | _ => False
   | _ => False
 

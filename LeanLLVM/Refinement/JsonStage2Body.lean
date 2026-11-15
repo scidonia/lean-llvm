@@ -66,9 +66,9 @@ Proved below:
   vocabulary, the emitted wrapper's stores make `Γ_stage2`'s post true — the
   verdict, both cursors with their growth bounds, the arena and event prefixes,
   the refusal word's two sides, the frame over the walk's whole touched extent
-  (the five ABI regions, the seven appended objects, `%d.i`'s slot and the four
-  stack objects at the call's cursor), and the seventeen-object staging that
-  frame is drawn from;
+  (the five ABI regions, the seven appended objects, `%d.i`'s slot and the stack
+  interval from the call's cursor to the run's end), and the seventeen-object
+  staging that frame is drawn from;
 * the report's clauses, and the two walk facts they are read from: the reserve's
   slack (`Stage2Run.reserve_of_arenaLe`), presence and frame at the extent the
   post names (`Stage2Run.walkPresent_of_written`, `Stage2Run.walkFrame_of_written`,
@@ -809,10 +809,25 @@ structure Stage2Run (args : List Value) (mem m0 : Mem) where
   /-- **The cursor the run was called at**: the watermark the staging promised,
   which is where the body's four stack objects land (`stage2AllocaWrites`). -/
   next0 : Nat
+  /-- **The cursor the run's stack writes reached.**  The allocator is monotone,
+  so the body's stack region runs from `next0` to this end and not to a fixed
+  window: the initialisation's four `alloca`s and the first allocating call occupy
+  the five bootstrap slots, and a later allocating call writes above them.  The
+  end is the run's to report because the allocator is the callee's, and a caller
+  cannot name it. -/
+  nextEnd : Nat
+  /-- **The stack end covers the five bootstrap slots.**  The staging's five
+  slots are the part of the stack a caller can name — `stage2AllocaWrites next0`,
+  ending at `next0 + 36` — so the end is at or above them; a run that has not
+  passed the window reports its end, and the region is the same interval.  This
+  is the clause tying `nextEnd` to the staging; its other arm, the walk's cursor,
+  is `walkFrame`'s interval, which is why the two are one region and not an
+  intersection. -/
+  nextEnd_static : next0 + (stage2BootstrapExtent + 8) ≤ nextEnd
   /-- **The watermark's content**, `stage2Pre`'s clause at the run's numbers:
-  every staged object ends at or below the cursor.  It is what makes the four
-  stack objects fresh, so the frame below can name them without claiming silence
-  over the caller's buffers. -/
+  every staged object ends at or below the cursor.  It is what makes the stack
+  region fresh, so the frame below can name it without claiming silence over the
+  caller's buffers. -/
   watermark : ∀ r ∈ stage2Regions b n ep nep xp nxp dst ndst0 ev evcap ndst nev err,
     r.1 + r.2 ≤ next0
   /-- **Presence over the extents the run wrote.**  The five ABI write regions,
@@ -827,17 +842,21 @@ structure Stage2Run (args : List Value) (mem m0 : Mem) where
     inRegions (([(dst, alen), (ev, evlen)] ++
       stage2ReportScratch c ctype cst tok s z e d)) a → present m0 a
   /-- **The frame: silence outside the run's whole touched extent.**  The write
-  extents above and the four stack objects the body allocates at `next0`.
+  extents above and the stack interval from `next0` to `nextEnd`.
 
   The list is a *wider* region than the presence half's; a wider region is a
-  weaker silence claim, which is what a run that stores into the four stack
-  objects needs.  A frame that stopped at the seven was false of the body —
-  `s2_init`, `s2_string_body` and `num_fast_el1` store through the pointers their
-  calls pass (`s2AfterValueFoot`'s `(outn, 8)`, `s2StringBodyFoot`'s `(xj, 8)`,
-  `s2NumFastFoot`'s `(out, 8)`), and none of those slots is staged. -/
+  weaker silence claim, which is what a run that stores into the stack needs.  A
+  frame that stopped at the seven was false of the body — `s2_init`,
+  `s2_string_body` and `num_fast_el1` store through the pointers their calls pass
+  (`s2AfterValueFoot`'s `(outn, 8)`, `s2StringBodyFoot`'s `(xj, 8)`,
+  `s2NumFastFoot`'s `(out, 8)`), and none of those slots is staged.  A frame that
+  stopped at `stage2AllocaWrites next0` was false from the second allocating call
+  onward, which is why the region is the interval: the walk's own frame is the
+  same interval at its cursor (`walkWideAt`), and `Stage2Run.ofInv` widens it to
+  this end. -/
   walkFrame : UnchangedOutside mem m0
     (([(dst, alen), (ev, evlen)] ++
-      stage2ReportScratch c ctype cst tok s z e d) ++ stage2AllocaWrites next0)
+      stage2ReportScratch c ctype cst tok s z e d) ++ [(next0, nextEnd - next0)])
   /-- **`%d.i` is separate from every object the walk's staging names.**  The
   adapter's staging separates its own slot from the seventeen
   (`stage2StagedPre_dSep`), and this is that clause in the orientation the two
@@ -980,11 +999,11 @@ at exactly one entry: the walk's silence is claimed at the arena's cursor
 (`(dst, alen + 64)`), which is the wider extent.  Every other entry is shared, so
 a byte of the walk's list lies inside an entry of the post's. -/
 theorem walkFrame_reportFrame_coverage {dst alen ev evlen ndst nev err
-    c ctype cst tok s z e d next : Nat} :
+    c ctype cst tok s z e d next nextEnd : Nat} :
     ∀ r ∈ (([(dst, alen), (ev, evlen)] ++
-      stage2ReportScratch c ctype cst tok s z e d) ++ stage2AllocaWrites next),
+      stage2ReportScratch c ctype cst tok s z e d) ++ [(next, nextEnd - next)]),
       ∃ t ∈ stage2ReportFrame dst alen ev evlen ndst nev err
-        c ctype cst tok s z e d next, t.1 ≤ r.1 ∧ r.1 + r.2 ≤ t.1 + t.2 := by
+        c ctype cst tok s z e d next nextEnd, t.1 ≤ r.1 ∧ r.1 + r.2 ≤ t.1 + t.2 := by
   intro r hr
   rcases List.mem_append.mp hr with hr | hr
   · rcases List.mem_append.mp hr with hr | hr
@@ -1004,26 +1023,25 @@ theorem walkFrame_reportFrame_coverage {dst alen ev evlen ndst nev err
         · exact ⟨(d, 8), by simp [stage2ReportFrame, stage2ReportPresent, stage2Writes,
             stage2ReportScratch], le_rfl, le_rfl⟩
         · exact absurd hnil (by simp)
-  · exact ⟨r, by simp [stage2ReportFrame, stage2ReportPresent, stage2Writes,
-      stage2ReportScratch, hr], le_rfl, le_rfl⟩
+  · exact ⟨r, List.mem_append_right _ hr, le_rfl, le_rfl⟩
 
 /-- A byte of the walk's write extent is a byte of the post's touched extent. -/
 theorem inRegions_walkFrame_reportFrame {dst alen ev evlen ndst nev err
-    c ctype cst tok s z e d next : Nat} {a : Nat}
+    c ctype cst tok s z e d next nextEnd : Nat} {a : Nat}
     (h : inRegions (([(dst, alen), (ev, evlen)] ++
-      stage2ReportScratch c ctype cst tok s z e d) ++ stage2AllocaWrites next) a) :
+      stage2ReportScratch c ctype cst tok s z e d) ++ [(next, nextEnd - next)]) a) :
     inRegions (stage2ReportFrame dst alen ev evlen ndst nev err
-      c ctype cst tok s z e d next) a := by
+      c ctype cst tok s z e d next nextEnd) a := by
   obtain ⟨r, hr, hlo, hhi⟩ := h
   obtain ⟨t, ht, h1, h2⟩ := walkFrame_reportFrame_coverage r hr
   exact ⟨t, ht, le_trans h1 hlo, lt_of_lt_of_le hhi h2⟩
 
 /-- The wrapper's three slots are entries of the post's touched extent. -/
 theorem slots_subset_reportFrame {dst alen ev evlen ndst nev err
-    c ctype cst tok s z e d next : Nat} :
+    c ctype cst tok s z e d next nextEnd : Nat} :
     ∀ r ∈ [(ndst, 8), (nev, 8), (err, 8)],
       r ∈ stage2ReportFrame dst alen ev evlen ndst nev err
-        c ctype cst tok s z e d next := by
+        c ctype cst tok s z e d next nextEnd := by
   intro r hr
   simp only [List.mem_cons, List.not_mem_nil, or_false] at hr
   rcases hr with rfl | rfl | rfl <;>
@@ -1031,13 +1049,13 @@ theorem slots_subset_reportFrame {dst alen ev evlen ndst nev err
 
 /-- **The refusal slot is outside the walk's write extent.**  The staging
 separates it from the arena's staged window, the event stream and the seven; the
-record's `dSep` separates it from `%d.i`; and the watermark puts it below the four
-stack objects.  `k < 8` is the slot's own width. -/
+record's `dSep` separates it from `%d.i`; and the watermark puts it below the
+stack region.  `k < 8` is the slot's own width. -/
 theorem err_not_in_walkFrame {args : List Value} {mem m0 : Mem}
     (h : Stage2Run args mem m0) {k : Nat} (hk : k < 8) :
     ¬ inRegions (([(h.dst, h.alen), (h.ev, h.evlen)] ++
       stage2ReportScratch h.c h.ctype h.cst h.tok h.s h.z h.e h.d) ++
-      stage2AllocaWrites h.next0) (h.err + k) := by
+      [(h.next0, h.nextEnd - h.next0)]) (h.err + k) := by
   intro hc
   obtain ⟨r, hr, hlo, hhi⟩ := hc
   have hstaged := stage2StagedWrites_against h.staged
@@ -1060,7 +1078,8 @@ theorem err_not_in_walkFrame {args : List Value} {mem m0 : Mem}
         · rcases h.dSep (h.err, 8) (by simp [stage2WalkRegions, stage2Regions]) with h' | h'
           <;> omega
         · exact absurd hnil (by simp)
-  · have hs := stage2AllocaWrites_start hr
+  · simp only [List.mem_singleton] at hr
+    subst hr
     omega
 
 /-- **The two extents the walk owns are separated**, read off the record's own
@@ -1177,7 +1196,7 @@ theorem walkPresent_of_written (h : Stage2Run args mem m0)
     (hf : UnchangedOutside mem m0
       (([(h.dst, h.alen), (h.ev, h.evlen)] ++
         stage2ReportScratch h.c h.ctype h.cst h.tok h.s h.z h.e h.d) ++
-        stage2AllocaWrites h.next0))
+        [(h.next0, h.nextEnd - h.next0)]))
     (hle : h.alen ≤ h.ndst0 + h.n) :
     ∀ a, inRegions (([(h.dst, h.alen + stage2ArenaReserve), (h.ev, h.evlen)] ++
       stage2ReportScratch h.c h.ctype h.cst h.tok h.s h.z h.e h.d)) a →
@@ -1190,11 +1209,13 @@ theorem walkPresent_of_written (h : Stage2Run args mem m0)
     have hs := stage2Regions_arena_ev h.separate
     rcases hs with hs | hs <;> omega
   have halloca :
-      ∀ r ∈ stage2AllocaWrites h.next0, h.dst + (h.alen + stage2ArenaReserve) ≤ r.1 := by
+      ∀ r ∈ [(h.next0, h.nextEnd - h.next0)],
+        h.dst + (h.alen + stage2ArenaReserve) ≤ r.1 := by
     intro r hr
+    simp only [List.mem_singleton] at hr
+    subst hr
     have hw := h.watermark (h.dst, h.ndst0 + h.n + stage2ArenaReserve)
       (by simp [stage2Regions])
-    have := stage2AllocaWrites_start hr
     omega
   refine walkPresent_reserve hw hf h.arenaCap hres hsep ?_ halloca
   intro r hr
@@ -1208,19 +1229,19 @@ theorem walkPresent_of_written (h : Stage2Run args mem m0)
     · exact absurd hnil (by simp)
 
 /-- **The report's frame, from the walk's own frame.**  The post's list is the
-walk's write extents plus `%d.i` and the four stack objects, and the walk's own
-frame is that list with the cursor's prefix in place of the reserved window —
-wider at the arena and identical elsewhere, so the transfer is
-`walkFrame_reserve` read at the scratch and the stack slots. -/
+walk's write extents plus `%d.i` and the stack interval, and the walk's own frame
+is that list with the cursor's prefix in place of the reserved window — wider at
+the arena and identical elsewhere, so the transfer is `walkFrame_reserve` read at
+the scratch and the stack interval. -/
 theorem walkFrame_of_written (h : Stage2Run args mem m0)
     (hf : UnchangedOutside mem m0
       (([(h.dst, h.alen), (h.ev, h.evlen)] ++
         stage2ReportScratch h.c h.ctype h.cst h.tok h.s h.z h.e h.d) ++
-        stage2AllocaWrites h.next0)) :
+        [(h.next0, h.nextEnd - h.next0)])) :
     UnchangedOutside mem m0
       (([(h.dst, h.alen + stage2ArenaReserve), (h.ev, h.evlen)] ++
         stage2ReportScratch h.c h.ctype h.cst h.tok h.s h.z h.e h.d) ++
-        stage2AllocaWrites h.next0) :=
+        [(h.next0, h.nextEnd - h.next0)]) :=
   walkFrame_reserve hf
 
 end Stage2Run
@@ -1265,23 +1286,27 @@ theorem stage2Boundary_of_parts {args : List Value} {mem m0 m : Mem}
   -- the frame: the walk's own list, widened to the post's — the wrapper's three
   -- stores are inside the post's list, so the transfers are one coverage and one
   -- slot exclusion
-  have hframe : UnchangedOutside mem m
+  have hframe : ∃ nextEnd : Nat, h.next0 ≤ nextEnd ∧ UnchangedOutside mem m
       (stage2ReportFrame h.dst h.alen h.ev h.evlen h.ndst h.nev
-        h.err h.c h.ctype h.cst h.tok h.s h.z h.e h.d h.next0) := by
-    have hwalk : UnchangedOutside mem m0
-        (([(h.dst, h.alen), (h.ev, h.evlen)] ++
-          stage2ReportScratch h.c h.ctype h.cst h.tok h.s h.z h.e h.d) ++
-          stage2AllocaWrites h.next0) := h.walkFrame
-    have hwalkWide : UnchangedOutside mem m0
-        (stage2ReportFrame h.dst h.alen h.ev h.evlen h.ndst h.nev h.err
-          h.c h.ctype h.cst h.tok h.s h.z h.e h.d h.next0) :=
-      UnchangedOutside.of_covered hwalk walkFrame_reportFrame_coverage
-    intro a ha
-    have houtSlots : ¬ inRegions [(h.ndst, 8), (h.nev, 8), (h.err, 8)] a := by
-      rintro ⟨r, hr, hc⟩
-      obtain ⟨t, ht, h1, h2⟩ := inRegions_mono slots_subset_reportFrame ⟨r, hr, hc⟩
-      exact ha t ht ⟨h1, h2⟩
-    exact (frameSlots a houtSlots).trans (hwalkWide a ha)
+        h.err h.c h.ctype h.cst h.tok h.s h.z h.e h.d h.next0 nextEnd) := by
+    refine ⟨h.nextEnd, ?_, ?_⟩
+    · have hge := h.nextEnd_static
+      simp only [stage2BootstrapExtent] at hge ⊢
+      omega
+    · have hwalk : UnchangedOutside mem m0
+          (([(h.dst, h.alen), (h.ev, h.evlen)] ++
+            stage2ReportScratch h.c h.ctype h.cst h.tok h.s h.z h.e h.d) ++
+            [(h.next0, h.nextEnd - h.next0)]) := h.walkFrame
+      have hwalkWide : UnchangedOutside mem m0
+          (stage2ReportFrame h.dst h.alen h.ev h.evlen h.ndst h.nev h.err
+            h.c h.ctype h.cst h.tok h.s h.z h.e h.d h.next0 h.nextEnd) :=
+        UnchangedOutside.of_covered hwalk walkFrame_reportFrame_coverage
+      intro a ha
+      have houtSlots : ¬ inRegions [(h.ndst, 8), (h.nev, 8), (h.err, 8)] a := by
+        rintro ⟨r, hr, hc⟩
+        obtain ⟨t, ht, h1, h2⟩ := inRegions_mono slots_subset_reportFrame ⟨r, hr, hc⟩
+        exact ha t ht ⟨h1, h2⟩
+      exact (frameSlots a houtSlots).trans (hwalkWide a ha)
   -- presence of every byte of the post's presence list, the slots included
   have hpresent : ∀ a,
       inRegions (stage2ReportPresent h.dst h.alen h.ev h.evlen
@@ -1397,10 +1422,10 @@ that a loop owes its own trace and the arithmetic only:
   two region clauses, not one `Owns`: presence at the extents the run writes —
   the two prefixes, the seven appended objects and `%d.i`'s slot — because the
   caller staged every byte of them, and silence outside the extent it *may* write
-  — those plus the four stack objects at the call's cursor.  The sixty-four bytes
-  past the cursor were staged by the caller and the walk does not write them
-  (`Stage2Run.walkPresent_of_written`); the four stack objects are the allocator's
-  and the watermark places them above every staged object
+  — those plus the stack interval from the call's cursor to the run's end.  The
+  sixty-four bytes past the cursor were staged by the caller and the walk does not
+  write them (`Stage2Run.walkPresent_of_written`); the stack belongs to the
+  allocator and the watermark places its start above every staged object
   (`Stage2Run.walkFrame_of_written`);
 * **the refusal bit** (clause 5) and **`eoff ≤ n`** (clause 6) are where the
   vocabulary stops, and the reason is the evaluator's shape rather than the

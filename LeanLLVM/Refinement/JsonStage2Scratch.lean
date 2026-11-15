@@ -67,6 +67,22 @@ post read it from there rather than assuming it. -/
 def stage2AllocaWrites (a : Nat) : List (Nat × Nat) :=
   [(a, 8), (a + 8, 4), (a + 12, 8), (a + 20, 8), (a + 28, 8)]
 
+/-- **The cursor the initialisation leaves**: the end of `entry`'s four `alloca`s,
+`8 + 4 + 8 + 8`.  The allocator is monotone — `Semantics`'s `.alloca` always
+advances — so a run that has called a helper once sits above this cursor and one
+that has called none sits at it.  A region claim that names the run's stack
+writes therefore has to name the cursor it is stated at, and this is the lower
+bound every such cursor satisfies: the four slots lie below it.
+
+`stage2AllocaWrites` is the *fixed* list of the four slots plus the `%ei` slot the
+first allocating call takes at `a + 28`.  At the cursor `next0` it covers
+`[next0, next0 + 36)`; at a later cursor, the run's stack writes continue past
+`next0 + 36` and the fixed list stops describing them.  So the list is useful as
+a *bound on the first allocation* (`stage2BootstrapExtent` names the four slots,
+the fifth entry the first call's), and the cursor-parameterised region a run
+actually keeps is the interval from `next0` to its own cursor. -/
+def stage2BootstrapExtent : Nat := 28
+
 /-- **The run's staged scratch, as the record's own numbers name it**: the seven
 appended objects, the number path's output slot `%d.i`, and — beside it — nothing.
 The four stack objects are not scratch: their addresses are the allocator's, and

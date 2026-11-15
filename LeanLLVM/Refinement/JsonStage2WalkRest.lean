@@ -11,8 +11,8 @@ transfers the pure classes share.
 
 A block whose run is straight-line needs three things of it: its `denoteCode`
 equation, the names it does not bind, and the edge its terminator takes.
-`walkCarried` names the eight registers `WalkInv` and `WalkPtrs` carry, and
-`denoteCode_lookupName` turns "the run binds none of them" into the eight carried
+`walkCarried` names the registers `WalkInv` and `WalkPtrs` carry, and
+`denoteCode_lookupName` turns "the run binds none of them" into the carried
 facts, so a pure run's link needs no per-block environment reasoning beyond its
 own `denoteCode`.  `WalkLink.pureCore` is that transfer with a `condbr` on a
 computed or carried bit, `WalkLink.pureJumpCore` the same with a `br`, and
@@ -157,7 +157,7 @@ namespace WalkScope
 /-! ### The carried names a pure run leaves alone
 
 `WalkPtrs` names six registers, and `WalkInv` two more (`%k.0.i249`,
-`%sp.i.0248`).  A block that binds none of them keeps all eight facts by
+`%sp.i.0248`).  A block that binds none of them keeps all of them by
 `denoteCode_lookupName`, so its link needs no per-block environment reasoning:
 the freshness is one `decide` over the block's own instruction list. -/
 def walkCarried (is : List Instr) : Prop :=
@@ -166,7 +166,8 @@ def walkCarried (is : List Instr) : Prop :=
     i.dst? ≠ some "%ctype.i" ∧ i.dst? ≠ some "%cst.i" ∧
     i.dst? ≠ some "%hash1.i.i" ∧
     (∀ n ∈ walkStaticNames, i.dst? ≠ some n) ∧
-    i.dst? ≠ some "%7" ∧ i.dst? ≠ some "%8"
+    i.dst? ≠ some "%7" ∧ i.dst? ≠ some "%8" ∧
+    i.dst? ≠ some "%inc.i" ∧ i.dst? ≠ some "%arrayidx10.i"
 
 /-- **A run that binds none of the carried names keeps the static carrier.**  One
 `denoteCode_lookupName` per name, and no memory reasoning. -/
@@ -181,18 +182,21 @@ theorem WalkRegs.of_run {calls : Calls} {m0 : Mem} {G : WalkGeom m0} {C : WalkCa
       exact List.mem_map_of_mem hp)) s s₁ hden]
   exact h p hp
 
-/-- **A run that binds neither `%7` nor `%8` keeps the per-iteration carrier.** -/
+/-- **A run that binds no per-iteration register keeps the carrier.** -/
 theorem WalkIter.of_run {calls : Calls} {m0 : Mem} {G : WalkGeom m0} {k : Nat}
     {s s₁ : State} {is : List Instr} (h : WalkIter G k s.env)
     (hfree : walkCarried is) (hden : denoteCode calls is s = some s₁) :
     WalkIter G k s₁.env := by
-  refine ⟨?_, ?_⟩
+  refine ⟨?_, ?_, ?_⟩
   · rw [denoteCode_lookupName calls is "%7"
       (fun i hi => (hfree i hi).2.2.2.2.2.2.2.2.2.1) s s₁ hden]
     exact h.reg7
   · rw [denoteCode_lookupName calls is "%8"
-      (fun i hi => (hfree i hi).2.2.2.2.2.2.2.2.2.2) s s₁ hden]
+      (fun i hi => (hfree i hi).2.2.2.2.2.2.2.2.2.2.1) s s₁ hden]
     exact h.reg8
+  · rw [denoteCode_lookupName calls is "%arrayidx10.i"
+      (fun i hi => (hfree i hi).2.2.2.2.2.2.2.2.2.2.2.2) s s₁ hden]
+    exact h.regarr
 
 theorem WalkPtrs.of_run {calls : Calls} {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     {s s₁ : State} {is : List Instr} (h : WalkPtrs G C s.env)
@@ -219,6 +223,7 @@ theorem WalkLink.pureCore {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : Walk
     {B : Block} (hfind : stage2Body.findBlock C.block = some B)
     {s₁ : State} (hden : denoteCode calls B.instrs s = some s₁)
     (hfree : walkCarried B.instrs) (hmem : s₁.mem = s.mem) (hpc₁ : s₁.pc = s.pc)
+    (hnext₁ : s₁.next = s.next)
     {d tl fl : String} (hterm : B.term = Term.condbr (.reg d) tl fl)
     {bit : BitVec 1} (hbit : lookupName s₁.env d = some (.int 1 bit))
     (hl : WalkLocal { C with block := tl } { s₁ with pc := tl, pre := some s.pc })
@@ -265,7 +270,13 @@ theorem WalkLink.pureCore {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : Walk
         log_alen := ?_
         log_acap := ?_
         owned := by dsimp only [s']; rw [hmem]; exact hInv.owned
+        next_ge := by dsimp only [s']; rw [hnext₁]; exact hInv.next_ge
         frame := ?_
+        inc_reg := by
+          dsimp only [s']
+          rw [denoteCode_lookupName calls B.instrs "%inc.i"
+            (fun i hi => (hfree i hi).2.2.2.2.2.2.2.2.2.2.2.1) s s₁ hden]
+          exact hInv.inc_reg
         blockLocal := ?_ }
     · rw [denoteCode_lookupName calls B.instrs "%k.0.i249"
         (fun i hi => (hfree i hi).1) s s₁ hden]
@@ -288,7 +299,7 @@ theorem WalkLink.pureCore {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : Walk
     · dsimp only [s']
       rw [hmem]; exact hInv.log_acap
     · dsimp only [s']
-      rw [hmem]; exact hInv.frame
+      rw [hmem, hnext₁]; exact hInv.frame
     · dsimp only [s']
       by_cases ht : bit = 1
       · rw [ite_eq_left ht]; exact hl
@@ -302,6 +313,7 @@ theorem WalkLink.pureJumpCore {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : 
     {B : Block} (hfind : stage2Body.findBlock C.block = some B)
     {s₁ : State} (hden : denoteCode calls B.instrs s = some s₁)
     (hfree : walkCarried B.instrs) (hmem : s₁.mem = s.mem) (hpc₁ : s₁.pc = s.pc)
+    (hnext₁ : s₁.next = s.next)
     {t : String} (hterm : B.term = Term.br t)
     (hloc : WalkLocal { C with block := t } { s₁ with pc := t, pre := some s.pc }) :
     ∃ s', WalkLink calls G C s { C with block := t } s' := by
@@ -344,7 +356,13 @@ theorem WalkLink.pureJumpCore {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : 
         log_alen := ?_
         log_acap := ?_
         owned := by dsimp only [s']; rw [hmem]; exact hInv.owned
+        next_ge := by dsimp only [s']; rw [hnext₁]; exact hInv.next_ge
         frame := ?_
+        inc_reg := by
+          dsimp only [s']
+          rw [denoteCode_lookupName calls B.instrs "%inc.i"
+            (fun i hi => (hfree i hi).2.2.2.2.2.2.2.2.2.2.2.1) s s₁ hden]
+          exact hInv.inc_reg
         blockLocal := hloc }
     · rw [denoteCode_lookupName calls B.instrs "%k.0.i249"
         (fun i hi => (hfree i hi).1) s s₁ hden]
@@ -367,7 +385,7 @@ theorem WalkLink.pureJumpCore {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : 
     · dsimp only [s']
       rw [hmem]; exact hInv.log_acap
     · dsimp only [s']
-      rw [hmem]; exact hInv.frame
+      rw [hmem, hnext₁]; exact hInv.frame
   · rfl
 
 
@@ -410,7 +428,7 @@ theorem WalkLink.addImmBr {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : Walk
       (by simp only [stateAt, evalOperand, lookupName_cons_self])
       (by exact evalOperand_lit_of _ _ _) []]
     rfl
-  exact WalkLink.pureCore (G := G) (C := C) (s := s) hInv hfind hden hfree rfl rfl hterm
+  exact WalkLink.pureCore (G := G) (C := C) (s := s) hInv hfind hden hfree rfl rfl rfl hterm
     (by simp only [stateAt, cells, lookupName_cons_self]) hl hf
 
 /-- `LeafBlock33`: the whitespace skip's leaf, `%35`'s range. -/
@@ -551,7 +569,7 @@ def walkCarriedNoK11 (is : List Instr) : Prop :=
   ∀ i ∈ is, i.dst? ≠ some "%k.0.i249" ∧ i.dst? ≠ some "%sp.i.0248" ∧
     i.dst? ≠ some "%3" ∧ i.dst? ≠ some "%5" ∧
     i.dst? ≠ some "%ctype.i" ∧ i.dst? ≠ some "%cst.i" ∧
-    i.dst? ≠ some "%hash1.i.i"
+    i.dst? ≠ some "%hash1.i.i" ∧ i.dst? ≠ some "%inc.i"
 
 theorem WalkPtrs.of_run_noK11 {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
     {C : WalkCarry G} {s s₁ : State} {is : List Instr} (h : WalkPtrs G C s.env)
@@ -566,7 +584,7 @@ theorem WalkPtrs.of_run_noK11 {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
     exact hc
   · rw [denoteCode_lookupName _ is "%cst.i" (fun i hi => (hfree i hi).2.2.2.2.2.1) s s₁ hden]
     exact hs
-  · rw [denoteCode_lookupName _ is "%hash1.i.i" (fun i hi => (hfree i hi).2.2.2.2.2.2) s s₁ hden]
+  · rw [denoteCode_lookupName _ is "%hash1.i.i" (fun i hi => (hfree i hi).2.2.2.2.2.2.1) s s₁ hden]
     exact hh
 
 /-- **A run that binds `%k11.i` to the staging's cursor slot, and jumps.** -/
@@ -575,6 +593,7 @@ theorem WalkLink.pureJumpK11 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : W
     {B : Block} (hfind : stage2Body.findBlock C.block = some B)
     {s₁ : State} (hden : denoteCode calls B.instrs s = some s₁)
     (hfree : walkCarriedNoK11 B.instrs) (hmem : s₁.mem = s.mem) (hpc₁ : s₁.pc = s.pc)
+    (hnext₁ : s₁.next = s.next)
     (hregs : WalkRegs G C s₁.env) (hiter : WalkIter G C.k s₁.env)
     (hk11 : lookupName s₁.env "%k11.i" = some (.ptr (C.stage.c + 32)))
     {t : String} (hterm : B.term = Term.br t)
@@ -619,7 +638,13 @@ theorem WalkLink.pureJumpK11 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : W
         log_alen := ?_
         log_acap := ?_
         owned := by dsimp only [s']; rw [hmem]; exact hInv.owned
+        next_ge := by dsimp only [s']; rw [hnext₁]; exact hInv.next_ge
         frame := ?_
+        inc_reg := by
+          dsimp only [s']
+          rw [denoteCode_lookupName calls B.instrs "%inc.i"
+            (fun i hi => (hfree i hi).2.2.2.2.2.2.2) s s₁ hden]
+          exact hInv.inc_reg
         blockLocal := hloc }
     · rw [denoteCode_lookupName calls B.instrs "%k.0.i249"
         (fun i hi => (hfree i hi).1) s s₁ hden]
@@ -642,7 +667,7 @@ theorem WalkLink.pureJumpK11 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : W
     · dsimp only [s']
       rw [hmem]; exact hInv.log_acap
     · dsimp only [s']
-      rw [hmem]; exact hInv.frame
+      rw [hmem, hnext₁]; exact hInv.frame
   · rfl
 
 /-! ### Class H2: the entry loop's five addresses, and the literal's `or` -/
@@ -714,7 +739,7 @@ theorem WalkLink.if_then281_i {calls : Calls} {m0 : Mem}
     rfl
   obtain ⟨s', hl⟩ := WalkLink.pureJumpCore (G := G) (C := C) (s := s) hInv
     (B := walkIf_then281_i) (by rw [hblock]; exact walkIf_then281_i_find) hden
-    (by unfold walkCarried; decide) rfl rfl rfl (by simp [WalkLocal])
+    (by unfold walkCarried; decide) rfl rfl rfl rfl (by simp [WalkLocal])
   have hterm : walkIf_then281_i.term = Term.br "if.end290.i" := rfl
   have hfind : stage2Body.findBlock s.pc = some walkIf_then281_i := by
     rw [hInv.pc_eq, hblock]; exact walkIf_then281_i_find
@@ -738,6 +763,7 @@ theorem WalkLink.pureCoreCarried {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
     {B : Block} (hfind : stage2Body.findBlock C.block = some B)
     {s₁ : State} (hden : denoteCode calls B.instrs s = some s₁)
     (hfree : walkCarried B.instrs) (hmem : s₁.mem = s.mem) (hpc₁ : s₁.pc = s.pc)
+    (hnext₁ : s₁.next = s.next)
     {d tl fl : String} (hterm : B.term = Term.condbr (.reg d) tl fl)
     {bit : BitVec 1} (hbit : lookupName s.env d = some (.int 1 bit))
     (hneD : walkSkips d B.instrs)
@@ -745,7 +771,8 @@ theorem WalkLink.pureCoreCarried {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
     (hf : WalkLocal { C with block := fl } { s₁ with pc := fl, pre := some s.pc }) :
     ∃ s', WalkLink calls G C s
       { C with block := (if bit = 1 then tl else fl) } s' := by
-  refine WalkLink.pureCore (G := G) (C := C) (s := s) hInv hfind hden hfree hmem hpc₁ hterm ?_ hl hf
+  refine WalkLink.pureCore (G := G) (C := C) (s := s) hInv hfind hden hfree hmem hpc₁
+    hnext₁ hterm ?_ hl hf
   rw [denoteCode_lookupName calls B.instrs d hneD s s₁ hden]
   exact hbit
 

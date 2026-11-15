@@ -1,43 +1,51 @@
 /-
 # The continuing entry's facts, from the staging
 
-`WalkContinueFacts` (`JsonStage2WalkPremisesOfStaging`) is the continuing entry's
-obstruction: `HcontFacts` at every head state with an entry left.  `HcontFacts`
-(`JsonStage2WalkRevolution`) is the bundle `walkRevolution_seg` consumes, field for field;
-the path it describes is `hcontPrefixSeg`'s (`JsonStage2WalkRevolutionPrefix`) — the four
-high-byte pivots, `sw.default.i`'s *succeeding* arm, the bound's `phi`, the whitespace
-check at the entry's end and the token's end — and this module is the twin of
+`WalkContinueFacts` (`JsonStage2WalkPremisesOfStaging`) is the continuing entry's premise:
+one bundle per class at every head state with an entry left.  This module produces the
+**whitespace** class's — `HcontFacts` (`JsonStage2WalkRevolution`), the bundle
+`walkRevolutionMergeSegWs` consumes field for field.  The path it describes is the run
+class's: the four high-byte pivots, `sw.default.i`'s *succeeding* arm, the bound's `phi`,
+the whitespace check at the entry's end, the skip to the run's stop `k`, the token's end
+`if.end372.i`, the class-C span, the tail and the scan — and the module is the twin of
 `hlastFacts_of_staging`: the same three sources (the invariant's clauses, the document's
 content and the staging's addresses) producing the continuing bundle instead of the last
 entry's.
+
+The scan-free class's bundle is `HcontCleanupFacts`, and its producer is not here: its
+segment needs no scan, no tail budget and no traversal, so it is `walkRevolutionMergeSeg`'s
+evidence assembled at the staging's own states.
 
 ## The twin's shape
 
 `hlastFacts_of_staging` is a `def`, because the bundle is a `Type`: its first member of
 each group is a *witness* the later fields are stated at.  This is a `def` for the same
-reason, and it takes the evidence the recomposed prefix takes.  Three differences, each a
+reason, and it takes the evidence the run class's states take.  Three differences, each a
 consequence of the bundles' statements rather than a choice made here:
 
-* **There is no `hblock`.**  The last entry's producer read the block once, for the
-  refill's `walkLoopHead_inner_pos` — the `1 ≤ C.inner` its `hinner` field needed.  The
-  continuing bundle carries no inner budget, so no field of it reads the block, and the
-  premise is dropped rather than bound and discarded.
+* **There is no `hblock`.**  Neither producer reads the block: neither bundle carries an
+  inner budget at the head state, so no field reads the block, and the last entry's path
+  enters no scan at all, so it needs no refill lemma either.  The premise is dropped rather
+  than bound and discarded in both.
 * **`hk` is taken, and it is load-bearing.**  `C.k + 1 < G.nep` is what makes `hnext`
   provable (see below) and what bounds the lane's index (`hi63`).  It is *not* a premise
   the bundle's fields discard: two of them read it.
-* **The scan's traversal is not part of the prefix group.**  `HcontFacts` states
+* **The scan's traversal is not part of the run group.**  `HcontFacts` states
   `walkScanRounds457`'s three hypotheses (`hround`, `hguard`, `hbyte`) and the token's
   register at its exit (`htok`) instead, because the continuing entry's scan runs over the
   entry's span; they arrive as premises, and `htok` is the one obstruction no staging
-  evidence closes.
+  evidence closes.  The run's own segment (`hRun`) is supplied for the same structural
+  reason, one segment out; its bound (`hcond_sl`) is the one cell of its endpoint the
+  invariant does not carry, while `%inc.i` and `%nep` are read off the segment's target
+  invariant (`contWsSeamS_inc`, `contWsSeamS_nep`).
 
 ## `hnext` is the first field of this bundle that is derived, not supplied
 
 The field used to be `hge : evalICmp .ult inc nep = 0`, and it was the old bundle's one
 obstruction: at a real head state `%inc.i = C.k + 1` and `%nep = G.nep`
 (`WalkInv.blockIndex` and the header's store), so `= 0` is `¬ (C.k + 1 < G.nep)` while the
-consumer's hypothesis is that inequality — the bundle was uninhabited and
-`walkRevolution_seg` vacuous.  The recomposition states the field at the value a continuing
+consumer's hypothesis is that inequality — the bundle was uninhabited and every consumer at
+that class vacuous.  The recomposition states the field at the value a continuing
 entry has, `= 1`, and that value is **arithmetic on the consumer's own hypothesis**:
 `hinc`/`hnep` pin the counts to `ofNat 64 (C.k + 1)` and `ofNat 64 G.nep`, and `hk` says
 the first is below the second, so the test's word is `1` (`cont_ult_one`).  The old
@@ -54,7 +62,7 @@ supplied as a named premise.
 |---|---|
 | the head's byte (`x`, `h8`) | **produced**: `hInv.iter.reg8` is the field, and the witness is `hlastByte G C` |
 | the four pivot bits (`hlt91`, `hlt123`, `hlt125`, `hne125`) | **premised correctly: the document's.**  Four of the eight class bits on the head's byte |
-| the entry counts' witnesses and their head facts (`inc`, `nep`, `hinc`, `hnep`) | **produced**: the witnesses are the loop's values (`hlastIncV C`, `hlastNepV G`) and the cells are the loop head's own, peeled down to `headAS₄` (`headAS4_envInc`, `headAS4_envNep`) |
+| the entry counts' witnesses and their head facts (`inc`, `nep`, `hinc`, `hnep`) | **produced, from no supplied fact**: the witnesses are the loop's values (`hlastIncV C`, `hlastNepV G`) and the cells are the invariant's own — `WalkInv.inc_reg` and `%nep`'s `walkStaticRegs` row — peeled down to `headAS₄` (`headAS4_envInc`, `headAS4_envNep`) |
 | the count test's value (`hnext`) | **produced**: `cont_ult_one` from `hk` — the first derived-not-supplied field of this bundle; see the section above |
 | the next entry's lane (`ep`, `v`, `hread`) | **premised correctly: the document's.**  The positions table's address is the invariant's (`%5` is `WalkPtrs`'s `some (.ptr G.ep)`), but the word at the next entry's index and the read that fetches it are the document's |
 | the lane index's width (`hi63`) | **produced**: `cont_hi63`, arithmetic on `hk` and `G.nep_le`'s `G.nep ≤ 2 ^ 32` |
@@ -66,66 +74,69 @@ supplied as a named premise.
 | the seam's byte test (`hbit`) | **premised correctly: the document's** — the fifth of the eight class bits on the head's byte on this path |
 | the second byte's class (`x1`, `h8c`) | **produced**: `if.end372.i`'s else arm binds five cells and none is `%8`, so `contSeamS_env8` peels the seam to the token's end and `h8c` *is* `h8end` |
 | the second byte's three class bits (`hc110`, `hc116`, `hceq116`) | **premised correctly: the document's** — the remaining three of the eight; `%8` is not rebound, so all eight are one byte |
-| the tail's counted segment (`hTail`, `ei`, `cA`, `rdv`, `xA`) and its start state's invariant (`hInvT`) | **supplied: a named premise, and the reason is the finding below.**  `consumerTailSegAt` composes the segment from the three calls' contracts, but its `hei` cell is `%ee.1.i`'s value at the tail's start, and on the class `contSeamS` builds that value is `ofNat 64 v.toNat` (the seam stores `%cond350.i` on the `LeafBlock35` edge).  A segment at `ei` therefore needs `ei = v.toNat`, which the bundle's `heicd` forbids.  The start state's invariant rides with it: `WalkSegment` records only its target's, so a producer cannot read the source's |
-| the scan's landing (`a`, `q`, `bs`, `src`, `sel`, `hpreS`, `hincS`, `h3S`, `hbsS`, `hloc105`, `x47`, `h47`, `hloc96`) | **produced**: `contEntry_pre` is the entry's own construction and `hlastEntry_phiSel` a closed `phi`; `%3` peels to the tail's start and is `ptrs`'s document base (`contEntry_env3`), so `a = G.b`; `%47` is `landRhs457OutAt`'s own cell (`contEntry_env47`), `q` is the byte read's value (`hbsS` is `rfl`), and `hloc105`/`hloc96` hold because neither block is a `WalkLocal` scan block |
-| the landing's selection (`hopS`) | **supplied: a named premise.**  The operand `hincS` selects is `%ee.1.i`, and its value at `contTailStart` is `ofNat 64 v.toNat` (`contTailStart_ee`), so the field asserts `ei = v.toNat` — the same cell the tail's segment needs.  It is supplied for the same reason and is the second half of the finding below |
-| the landing's byte read and its two tests (`hpos`, `hreadS`, `hbit47`, `hws47`) | **premised correctly: the document's.**  The byte at `G.b + ei`, the bound its extraction needs and the two tests on it are properties of `G.bs` at the entry's own index |
-| the latch's local (`hlatch`) | **reduced to a named premise**: `WalkLocal` at `while.body462.i` *is* the `ScanCount` the latch's own state writes.  The latch's bound is *not* a field: `%cond350.i` is `cond.end349.i`'s `phi` cell, and `contLatch_cond` is the peel that reads it as the lane's word |
-| the span's two numbers and the scan's non-emptiness (`hspan`, `hstart`, `heicd`) | **premised correctly: the document's.**  `v.toNat` is at or before the next entry's position, `ei` this entry's or after it, and `ei < v.toNat` the scan's non-emptiness — the entry stream's numbers, which the staging does not fix |
+| the tail's counted segment (`hTail`, `cA`, `rdv`, `xA`) | **supplied: a named premise.**  `consumerTailSegAt` composes the segment from the three calls' contracts, but the third link needs the copy's span bound (`v.toNat - k ≤ C.inner`), which is the entry's inner budget — a value no clause of `WalkInv` fixes at the tail's start.  The scan-free arm's twin needs no budget (`consumerTailSegEmptyAt`), because its two cells are the same word |
+| the whitespace run (`sl`, `k`, `n`, `b8`, `hRun`, `hnRun`) | **supplied: a named premise, and its producer is named.**  `contWsRun` (`JsonStage2WalkRevolutionPrefix`'s header): the skip's per-visit dispatch (three links) and the latch's own step, five links a continuing byte and four at the exit, with the per-index document `∀` as the traversal's premise.  The segment's endpoint is its own term, so the bundle reads `hRun.inv'` for the span; `hnRun` is the run's price, `n + 8·(v - 1 - k) ≤ 8·ΔA + 5` |
+| the scan's landing (`a`, `q`, `bs`, `h3S`, `hpos`, `hreadS`, `hbsS`, `hloc105`, `x47`, `h47`, `hloc96`) | **premised correctly: the document's and the staging's.**  `%3` is the staging's document base and the byte at `G.b + k` is the input's; the two locals hold because neither block is a `WalkLocal` scan block.  `src`/`sel`/`hpreS`/`hincS` are *not* fields any more: they are closed (`contWsEntry_pre`, `hlastEntry_phiSel`) |
+| the landing's selection (`hopS`) | **produced** (`contWsEntry_hopS`): the operand is `%ee.1.i` and the seam stored the run's stop `k` in it (`contWsEntry_ee`), so the landing's index *is* the run's stop.  This is the field that used to be supplied and that contradicted the stopper — the finding below |
+| the run endpoint's two registers (`hinc_sl`, `hnep_sl`) | **retired: proved, not supplied.**  `%inc.i` is `WalkInv.inc_reg` and `%nep` is one of `walkStaticRegs`' pairs, and the seam binds neither (`seamS_env_inc`, `seamS_env_nep`), so the segment's target invariant reads both at `sl` (`contWsSeamS_inc`, `contWsSeamS_nep`).  A `WalkSegment` carries the invariant at its target, and the run's target is the seam's source |
+| the run endpoint's bound (`hcond_sl`) | **supplied: a named premise.**  No `WalkInv` clause names `%cond350.i` at an arbitrary state, and a `WalkSegment` records a run and its target's invariant, not the blocks the run passed.  The lemma that would close it is *the whitespace skip preserves the bound it does not bind* |
+| the span's two numbers and the run's stop (`hspan`, `hstart`, `heicd`) | **premised correctly: the document's.**  `v.toNat` is at or before the next entry's position, the run's stop at or after this entry's, and `k < v.toNat` the scan's non-emptiness — the entry stream's numbers, which the staging does not fix |
 | the traversal's three hypotheses (`hround`, `hguard`, `hbyte`) | **supplied: a named premise.**  `walkScanRounds457`'s own, unweakened — the round at a byte, the latch's guard, and the input's totality at every index the scan visits.  A `WalkSegment` cannot carry them: the segment records a run and an invariant, not the per-visit obligations an induction consumes |
 | the token's register at the scan's exit (`htok`) | **supplied: a named premise, and it is not derivable.**  A traversal whose final state is existential has no named term to state a register at, and the layer has no preservation lemma for registers.  The lemma that would close it is *the extra-token scan preserves a register it does not bind* |
 
-**The map's counted shape, per row: 8 produced, 1 reduced to a named premise, 9 premised
-correctly, 4 supplied as named premises** — twenty-two rows in all, so **8 of 22
-produced.**  Against the pre-recomposition bundle's `8 of 18`, the produced *count* is
-unchanged while the bundle grew by four groups, and the movement inside it is the trade the
-finding forced: `hnext` moved from supplied to **produced** (its value is now the one a
-continuing entry has, so `hk` gives it), while the tail's segment and `hopS` moved from
-produced to **supplied** (the seam cell both need is `ofNat 64 v.toNat` on this class).
+**The map's shape.**  *Produced* from the invariant and the staging: the head's byte
+(`hlastByte G C`), the two counts and their cells, the count test's value, the default
+arm's four cells, the run's arithmetic (`hi63`) and `hnext`.  *Produced from another
+field's cell*: `hopS` (`contWsEntry_hopS`).  *Named premises*, each with its producer or
+its reason: the document's bytes and classes, the whitespace run (`contWsRun`, planned), the
+tail's segment (the inner budget), the landing's byte and locals, the traversal's three
+hypotheses, the token register at the scan's exit, and the run endpoint's bound.  No row is a
+field weakened to make a proof close, and the two that were supplied *because* the seam's cell
+contradicted the stopper — `hopS` and the tail — are now either produced or supplied for a
+reason that survives the class split.
 
 ## What producing the bundle found
 
-**`hopS` and `heicd` cannot both hold in the class the recomposed prefix supplies**, and
-this is a contradiction between two of the bundle's own fields — the same defect class the
-pre-recomposition bundle carried, in the same place.  The arithmetic:
+**`hopS` and `heicd` could not both hold at the states the older prefix supplied**, and
+this is the defect the split repairs.  The arithmetic, kept because it is the instrument:
 
-* `contSeamS` stores `%cond350.i` in the seam (`seamFin`'s `%ee.1.i` cell), and on this
+* `contSeamS` stores `%cond350.i` in the seam (`seamFin`'s `%ee.1.i` cell), and on that
   class `%cond350.i` is the lane's word, so at `contTailStart`
-  `%ee.1.i = ofNat 64 v.toNat` — `contTailStart_ee` below is that peel, and the fixture's
-  `%ee.1.i` `phi` says the same (`[%cond350.i, LeafBlock35]`);
+  `%ee.1.i = ofNat 64 v.toNat` — `contTailStart_ee` is that peel;
 * `hopS` asserts the landing's selection is `ofNat 64 ei`, and `hincS` selects `%ee.1.i`
   on the `if.then447.i` edge — so `hopS` says `ei = v.toNat`;
 * `heicd` says `ei < v.toNat`.
 
-The consumer reads `heicd` (`walkRevolution_seg` hands it to `contScanRounds`), so the
-bundle is uninhabited at this class, and so is `walkRevolution_seg` at it.  **The prefix's
-class is the no-whitespace-run one, where the extra-token scan is empty** — the run classes,
-whose `%ee.1.i` is the run's stop `%ee.0.i238`, are the ones `heicd` describes and the
-prefix module's header names as still to write.  So the repair is not a field of this
-bundle: either the bundle is stated for a run class (a prefix whose seam carries the run's
-stop), or `heicd` becomes the emptiness this class actually has.  Producing `hopS` or
-`hTail` here would require *choosing* `ei = v.toNat`, which `heicd` forbids, so both are
-supplied and the contradiction is reported rather than papered over.
+A consumer reads both (`contScanRounds` takes the stopper, the landing takes the index), so
+the bundle *was* uninhabited at that class.  **The prefix's class is the no-whitespace-run
+one, where the extra-token scan is empty** — the run class, whose `%ee.1.i` is the run's
+stop `%ee.0.i238`, is the one `heicd` describes.
 
-This was invisible for the reason the earlier bundle's defect was invisible: the fields were
-each checked against the path they were read from, and nothing in the bundle's own module
-reads two of them against each other.  A producer reads them together.
+**The repair is the split, and it is in the tree.**  `HcontFacts` is now the whitespace
+arm, stated at the run class's states (`contWsSeamS`, `contWsTailStart`, `contWsEntry`,
+`contWsLatch`): its seam stores the run's stop `k`, `hopS` is *produced*
+(`contWsEntry_hopS`, from `contWsEntry_ee`), and `heicd` says `k < v.toNat`, which is the
+scan's actual span.  The no-whitespace class's bundle is `HcontCleanupFacts`
+(`JsonStage2WalkRevolution`), whose seam stores the entry's end and whose walk reaches
+`if.end473.i` without a scan — so the class that made the fields contradict carries
+neither of them.  `HcontCase` (`JsonStage2WalkDispatchWitnessString`) has one arm per class,
+and the loop's step takes each arm's own composition.
 
-**The systemic statement, because it is the second time in one bundle.**  `HcontFacts` is the
-second bundle of this shape whose fields contradict each other while no consumer can see
-it — a bundle is green when a producer inhabits it, not when it elaborates.  An
-elaborating structure literal and an inhabited bundle are different claims, and only the
-second one is what a refinement statement consumes; the build checks the first.
+**The method step this file's earlier version named is what found it**: the fields were each
+checked against the path they were read from, and nothing in the bundle's own module reads
+two of them against each other — a producer reads them together.  An elaborating structure
+literal and an inhabited bundle are different claims, and only the second is what a
+refinement statement consumes.
 
 ## Which lemmas this file reuses
 
 `hlastEntry_phiSel` (a closed `phi` fact, the same list), `hlastLoc105` and `hlastLoc96`
 (generic in the scan's states), `hlast_nep_toNat`, and the invariant's own clauses
-(`WalkInv.iter.reg8`, `WalkInv.regs`, `WalkInv.ptrs`).  The peels are new because the
-recomposed prefix's states are new: `headAS4_envInc`/`headAS4_envNep`, the four at
-`contAS₅`, `contP35S_env8`/`contP35S_envEnd`, `contSeamS_env8`, `contEntry_pre`,
-`contEntry_env3`, `contEntry_env47`, `contTailStart_ee`, and the two arithmetic lemmas
-`cont_ult_one`/`cont_hi63`.
+(`WalkInv.iter.reg8`, `WalkInv.regs`, `WalkInv.ptrs`).  `headAS4_envInc`/`headAS4_envNep`
+are the other module's (the two carries' shared head peel), and the rest are new because
+the states are new: the four at `contAS₅`, `contP35S_env8`/`contP35S_envEnd`,
+`contSeamS_env8`, `contEntry_pre`, `contEntry_env3`, `contEntry_env47`,
+`contTailStart_ee`, and the two arithmetic lemmas `cont_ult_one`/`cont_hi63`.
 -/
 
 import LeanLLVM.Refinement.JsonStage2WalkRevolution
@@ -143,18 +154,6 @@ namespace WalkScope
 
 Each is a peel: the blocks between the state and the loop head bind their own cells, and
 none of them rebinds the name the lemma is about. -/
-
-/-- `%inc.i` at `sw.default.i`'s entry is `%inc.i` at the loop head. -/
-theorem headAS4_envInc (s : State) (x : BitVec 8) :
-    lookupName (headAS₄ s x).env "%inc.i" = lookupName s.env "%inc.i" := by
-  simp only [headAS₄, headAS₃, headAS₂, headAS₁, State.bind]
-  repeat rw [lookupName_cons_ne _ _ (by decide)]
-
-/-- `%nep` at `sw.default.i`'s entry is `%nep` at the loop head: no block writes it. -/
-theorem headAS4_envNep (s : State) (x : BitVec 8) :
-    lookupName (headAS₄ s x).env "%nep" = lookupName s.env "%nep" := by
-  simp only [headAS₄, headAS₃, headAS₂, headAS₁, State.bind]
-  repeat rw [lookupName_cons_ne _ _ (by decide)]
 
 /-- `%5` at the succeeding arm is the invariant's positions table: `WalkPtrs`'s second
 pointer, and the head chain rebinds no pointer register. -/
@@ -312,27 +311,32 @@ theorem cont_hi63 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
 
 /-! ### The producer
 
-`HcontFacts` from the entry's evidence: the prefix's inputs, the scan's traversal supplied,
-and the two fields the seam's `%ee.1.i` cell makes unproducible at this class supplied with
-the reason recorded above.
+`HcontFacts` from the entry's evidence.  The groups the invariant and the staging fix are
+*derived* — the head's byte, the two counts and their cells, the count test's value, the
+default arm's four cells — and the rest is supplied, each with the reason the layer cannot
+produce it: the document's bytes and their classes, the whitespace run's segment (its
+producer is `contWsRun`, planned), the tail's three calls, the scan's landing and its
+traversal's three hypotheses, the token record at the scan's exit, the run endpoint's two
+registers and the scan's bound at it.
 -/
 
-/-- **The bundle, from the entry's evidence.**  The prefix group is `hcontPrefixSeg`'s
-input list — the head's byte and its class bits, the counts and the test's value, the next
-entry's lane, the bound's relation, the byte before the end and its class, the seam's byte,
-the tail's segment and the scan's landing — plus the span's two numbers, the traversal's
-three hypotheses and the token's register.
+/-- **The bundle, from the entry's evidence.**  Produced at the loop's own values: the head's
+byte is `hlastByte G C`, the counts are `hlastIncV C`/`hlastNepV G`, the position table is
+`G.ep`, and the classes are read on `hlastByte G C`.  `hnext` is derived from `hk`
+(`cont_ult_one`), `hi63` from `hk` and the stream's size (`cont_hi63`), and the default
+arm's four cells are the invariant's peels at `contAS₅` — so only the document's facts, the
+run, the tail, the traversal and the run endpoint's bound enter as premises.
 
-`hnext` is derived from `hk`; `hTail` and `hopS` are supplied, because the seam's
-`%ee.1.i` cell is `ofNat 64 v.toNat` on this class and both fields assert `ofNat 64 ei`. -/
+`hopS` is **not** a premise any more: at `contWsEntry` the seam stored the run's stop
+(`contWsEntry_ee`), so the landing's index follows from the cell rather than being asserted
+against a stopper.  That is the repair this producer's earlier shape recorded as impossible
+— see this module's header. -/
 def hcontFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     (hInv : WalkInv G C s) (hk : C.k + 1 < G.nep)
     (hlt91 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 91) = 0)
     (hlt123 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 123) = 0)
     (hlt125 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 125) = 0)
     (hne125 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 125) = 0)
-    (hincL : lookupName s.env "%inc.i" = some (.int 64 (BitVec.ofNat 64 (C.k + 1))))
-    (hnepL : lookupName s.env "%nep" = some (.int 64 (hlastNepV G)))
     {v : BitVec 32}
     (hread : readBytes (contAS₅ s (hlastByte G C) (hlastIncV C) (hlastNepV G)).mem
       (G.ep + (hlastIncV C).toNat * 4) 4 = some (natToBytes v.toNat 4))
@@ -344,47 +348,48 @@ def hcontFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
     (hread35 : readBytes
       (contEndS C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep v ix).mem
       ((G.b - 1) + v.toNat) 1 = some [b35])
-    (hb13 : evalICmp .slt (cont35 b35) (BitVec.ofNat 8 13) = 0)
-    (hb32 : evalICmp .slt (cont35 b35) (BitVec.ofNat 8 32) = 1)
-    (hbne13 : evalICmp .eq (cont35 b35) (BitVec.ofNat 8 13) = 0)
-    (hbit : (evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 45) |||
-      evalICmp .ult (hlastByte G C + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
+    {sl : State} {k n : Nat} {b8 : BitVec 8}
+    (hRun : WalkSegment (stage2Calls stage2SubCalls) G (ContAC₄ C)
+      (contLandS C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep v ix b35)
+      (ContSeamC C) (contWsSeamS C sl k b8) n)
+    (hnRun : n + stage2ByteAllowance * (v.toNat - 1 - k) ≤
+      stage2ByteAllowance * (entryPos G (C.k + 1) - entryPos G C.k) + 5)
+    (heicd : k < v.toNat)
+    (h8c : evalOperand (contWsSeamS C sl k b8) (.reg "%8") =
+      some (.int 8 (hlastByte G C)))
     (hc110 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 110) = 0)
     (hc116 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 116) = 0)
     (hceq116 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 116) = 0)
-    (r₁ r₂ r₃ : CallOutcome) (ev : EventRecord) {cA rdv : BitVec 32} {xA : BitVec 32}
-    {ei : Nat}
-    (hInvT : WalkInv G (ContTailStartC C)
-      (contTailStart C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep v ix b35
-        (hlastByte G C) (hlastByte G C)))
+    (r₁ r₂ r₃ : CallOutcome) (ev : EventRecord) {cA rdv xA : BitVec 32}
     (hTail : WalkSegment (stage2Calls stage2SubCalls) G (ContTailStartC C)
-      (contTailStart C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep v ix b35
-        (hlastByte G C) (hlastByte G C))
+      (contWsTailStart C sl k b8 (hlastByte G C))
       (TailCarryScan (ContTailStartC C) ev)
-      (contEntry C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep v ix b35
-        (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cA rdv xA) 3)
-    (hopS : evalOperand (stateAt
-      (contEntry C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep v ix b35
-        (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cA rdv xA).env
-      (contEntry C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep v ix b35
-        (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cA rdv xA)) (.reg "%ee.1.i") =
-      some (.int 64 (BitVec.ofNat 64 ei)))
-    {bs : List UInt8}
-    (hpos : ((BitVec.ofNat 64 ei).signExtend 64).toNat < 2 ^ 63)
+      (contWsEntry C sl k b8 (hlastByte G C) r₁ r₂ r₃ k v cA rdv xA) 3)
+    {a q : Nat} {bs : List UInt8} {x47 : BitVec 8}
+    (h3S : lookupName (contWsEntry C sl k b8 (hlastByte G C) r₁ r₂ r₃ k v cA rdv xA).env
+      "%3" = some (.ptr a))
+    (hpos : ((BitVec.ofNat 64 k).signExtend 64).toNat < 2 ^ 63)
     (hreadS : readBytes
-      (contEntry C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep v ix b35
-        (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cA rdv xA).mem
-      (G.b + ((BitVec.ofNat 64 ei).signExtend 64).toNat) 1 = some bs)
-    (hbit47 : evalICmp .slt (BitVec.ofNat 8 (bytesToNat bs)) (BitVec.ofNat 8 13) = 1)
-    (hws47 : evalICmp .ule (BitVec.ofNat 8 (bytesToNat bs) + BitVec.ofNat 8 247)
-      (BitVec.ofNat 8 1) = 1)
+      (contWsEntry C sl k b8 (hlastByte G C) r₁ r₂ r₃ k v cA rdv xA).mem
+      (a + ((BitVec.ofNat 64 k).signExtend 64).toNat) 1 = some bs)
+    (hbsS : bytesToNat bs = q)
+    (hloc105 : WalkLocal (ScanC₁₀₅ (TailCarryScan (ContTailStartC C) ev))
+      (landRhs457OutAt (contWsEntry C sl k b8 (hlastByte G C) r₁ r₂ r₃ k v cA rdv xA)
+        (BitVec.ofNat 64 k) a q))
+    (h47 : evalOperand
+      (landRhs457OutAt (contWsEntry C sl k b8 (hlastByte G C) r₁ r₂ r₃ k v cA rdv xA)
+        (BitVec.ofNat 64 k) a q) (.reg "%47") = some (.int 8 x47))
+    (hbit47 : evalICmp .slt x47 (BitVec.ofNat 8 13) = 1)
+    (hws47 : evalICmp .ule (x47 + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 1)
+    (hloc96 : WalkLocal (ScanC₉₆ (TailCarryScan (ContTailStartC C) ev))
+      (ScanS₉₆ (contWsEntry C sl k b8 (hlastByte G C) r₁ r₂ r₃ k v cA rdv xA)
+        (BitVec.ofNat 64 k) a q x47))
     (hlatch : WalkLocal { TailCarryScan (ContTailStartC C) ev with block := "while.body462.i" }
-      (contLatch C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep v ix b35
-        (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cA rdv xA
-        (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs))))
+      (contWsLatch C sl k b8 (hlastByte G C) r₁ r₂ r₃ k v cA rdv xA
+        (BitVec.ofNat 64 k) a q x47))
     (hspan : v.toNat ≤ entryPos G (C.k + 1))
-    (hstart : entryPos G C.k ≤ ei)
-    (heicd : ei < v.toNat)
+    (hstart : entryPos G C.k ≤ k)
+    (hcond_sl : lookupName sl.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 v.toNat)))
     (hround : ∀ (C' : WalkCarry G) (s' : State) (p a : Nat) (bs : List UInt8) (q : Nat)
       (x : BitVec 8), WalkInv G C' s' → C'.block = "while.body462.i" →
       lookupName s'.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 p)) →
@@ -454,13 +459,13 @@ def hcontFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
         some (.int 64 (hlastIncV C))
       simp only [evalOperand]
       rw [headAS4_envInc s (hlastByte G C)]
-      exact hincL
+      exact hInv.inc_reg
     hnep := by
       show evalOperand (headAS₄ s (hlastByte G C)) (.reg "%nep") =
         some (.int 64 (hlastNepV G))
       simp only [evalOperand]
       rw [headAS4_envNep s (hlastByte G C)]
-      exact hnepL
+      exact hInv.regs ("%nep", .int 64 (BitVec.ofNat 64 G.nep)) (by simp [walkStaticRegs])
     hnext := cont_ult_one G C hk
     ep := G.ep
     v := v
@@ -475,24 +480,15 @@ def hcontFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
     hugt := hugt
     b35 := b35
     hread35 := hread35
-    hb13 := hb13
-    hb32 := hb32
-    hbne13 := hbne13
-    b8 := hlastByte G C
-    hend := by
-      rw [contP35S_envEnd C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep v ix b35]
-      exact hInv.regs ("%end.i", .ptr (C.stage.tok + 8)) (by simp [walkStaticRegs])
-    h8end := by
-      rw [contP35S_env8 C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep v ix b35]
-      exact hInv.iter.reg8
-    hbit := hbit
+    sl := sl
+    k := k
+    n := n
+    b8 := b8
+    hRun := hRun
+    hnRun := hnRun
+    heicd := heicd
     x1 := hlastByte G C
-    h8c := by
-      simp only [evalOperand]
-      rw [contSeamS_env8 C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep v ix b35
-          (hlastByte G C),
-        contP35S_env8 C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep v ix b35]
-      exact hInv.iter.reg8
+    h8c := h8c
     hc110 := hc110
     hc116 := hc116
     hceq116 := hceq116
@@ -503,40 +499,24 @@ def hcontFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
     cA := cA
     rdv := rdv
     xA := xA
-    ei := ei
     hTail := hTail
-    heicd := heicd
-    a := G.b
-    q := bytesToNat bs
+    a := a
+    q := q
     bs := bs
-    src := "if.then447.i"
-    sel := .reg "%ee.1.i"
-    hpreS := contEntry_pre C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep v ix b35
-      (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cA rdv xA
-    hincS := hlastEntry_phiSel
-    hopS := hopS
-    h3S := contEntry_env3 C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep v ix b35
-      (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cA rdv xA hInvT
+    h3S := h3S
     hpos := hpos
     hreadS := hreadS
-    hbsS := rfl
-    hloc105 := hlastLoc105 (ContTailStartC C) ev
-      (contEntry C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep v ix b35
-        (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cA rdv xA)
-      (BitVec.ofNat 64 ei) G.b (bytesToNat bs)
-    x47 := BitVec.ofNat 8 (bytesToNat bs)
-    h47 := contEntry_env47 C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep v ix b35
-      (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cA rdv xA (BitVec.ofNat 64 ei) G.b
-      (bytesToNat bs)
+    hbsS := hbsS
+    hloc105 := hloc105
+    x47 := x47
+    h47 := h47
     hbit47 := hbit47
     hws47 := hws47
-    hloc96 := hlastLoc96 (ContTailStartC C) ev
-      (contEntry C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep v ix b35
-        (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cA rdv xA)
-      (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs))
+    hloc96 := hloc96
     hlatch := hlatch
     hspan := hspan
     hstart := hstart
+    hcond_sl := hcond_sl
     hround := hround
     hguard := hguard
     hbyte := hbyte

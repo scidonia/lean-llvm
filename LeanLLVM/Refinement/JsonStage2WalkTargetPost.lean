@@ -431,10 +431,10 @@ must not have written the caller's refusal slot.  The walk's frame already says 
 
 /-- **The refusal slot is outside the walk's write extent.**  `walkFinish_not_frame_of` at
 the staging's own separations: the two streams, the seven appended objects, `%d.i` and the
-four stack slots all miss `%err`'s eight bytes. -/
+cursor's interval all miss `%err`'s eight bytes. -/
 theorem walkInv_err_not_frame {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
-    (hInv : WalkInv G C s) {k : Nat} (hk : k < 8) :
-    ¬ inRegions (walkWide G C) (G.err + k) := by
+    (hInv : WalkInv G C s) {k : Nat} {n : Nat} (hk : k < 8) :
+    ¬ inRegions (walkWideAt G C n) (G.err + k) := by
   have hdst := (stage2Regions_err_outside G.separate).1
   have hev := (stage2Regions_err_outside G.separate).2
   refine walkFinish_not_frame_of (G := G) (C := C) (s := s) hInv hdst hev ?_ ?_ ?_ hk
@@ -448,7 +448,7 @@ it byte by byte, and `readBytes_eq_of_UnchangedOn` lifts the eight bytes to the 
 theorem walkInv_err_at_entry {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     (hInv : WalkInv G C s) :
     readBytes s.mem G.err 8 = readBytes m0 G.err 8 := by
-  have hOn : UnchangedOn (inRegions (walkWide G C)) m0 s.mem :=
+  have hOn : UnchangedOn (inRegions (walkWideAt G C (s.next - G.next0))) m0 s.mem :=
     fun a ha => hInv.frame a (fun r hr hi => ha ⟨r, hr, hi⟩)
   refine readBytes_eq_of_UnchangedOn hOn ?_
   intro k hk
@@ -456,10 +456,11 @@ theorem walkInv_err_at_entry {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s :
 
 /-! ### The frame at the reported extents
 
-`WalkInv.frame` is silence outside the walk's write extent, whose arena entry is the
-carried cursor; the record's frame is stated at the reported cursor, which is the log's
-word.  `walkFrame_reportFrame_coverage` is the containment, and the two cursor stores are
-inside the report's own list. -/
+`WalkInv.frame` is silence outside the cursor's interval and the carried prefixes; the
+record's frame is stated at the reported cursor, which is the log's word, and its stack
+part is the interval from that cursor to the run's own end, `stage2StackEnd G.next0
+s.next`.  The two are the same interval at two ends, so the derivation is one widening
+and carries no hypothesis on the cursor. -/
 
 /-- **The frame at the record's list, from the walk's.** -/
 theorem walkFinishMem_base_frame {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
@@ -467,10 +468,9 @@ theorem walkFinishMem_base_frame {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) 
     UnchangedOutside m0 s.mem
       (stage2ReportFrame G.dst C.alen G.ev C.evlen G.ndst G.nev G.err C.stage.c
         C.stage.ctype C.stage.cst C.stage.tok C.stage.s C.stage.z C.stage.e C.stage.d
-        G.next0) := by
-  refine UnchangedOutside.of_covered hInv.frame ?_
-  intro r hr
-  exact walkFrame_reportFrame_coverage r (by simpa only [walkWide, walkPresent] using hr)
+        G.next0 (stage2StackEnd G.next0 s.next)) := by
+  obtain ⟨-, -, -, -, -, -, -, hfr⟩ := WalkInv.report hInv
+  exact hfr
 
 /-- **The refusal slot at an accept route's memory is the caller's.** -/
 theorem walkFinishMemAccept_err_entry {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
@@ -485,14 +485,15 @@ the error record's twenty-four bytes, which the record's list names as scratch, 
 at the base memory survives it.  This is what the merge's refusal routes need: they store
 the offset *before* the copy, so their returned memory's base is not the state's. -/
 theorem walkFinishMemOffset_frame {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) {m : Mem}
+    {nextEnd : Nat}
     (h : UnchangedOutside m0 m
       (stage2ReportFrame G.dst C.alen G.ev C.evlen G.ndst G.nev G.err C.stage.c
         C.stage.ctype C.stage.cst C.stage.tok C.stage.s C.stage.z C.stage.e C.stage.d
-        G.next0)) {v : Nat} :
+        G.next0 nextEnd)) {v : Nat} :
     UnchangedOutside m0 (walkFinishMemOffset C.stage.e v m)
       (stage2ReportFrame G.dst C.alen G.ev C.evlen G.ndst G.nev G.err C.stage.c
         C.stage.ctype C.stage.cst C.stage.tok C.stage.s C.stage.z C.stage.e C.stage.d
-        G.next0) :=
+        G.next0 nextEnd) :=
   UnchangedOutside.write_le (a := C.stage.e + 8) (w := 8) (bs := wordBytes 8 v) h
     ⟨(C.stage.e, stage2ErrorExtent), by
       simp [stage2ReportFrame, stage2ReportPresent, stage2ReportScratch,
@@ -503,19 +504,20 @@ theorem walkFinishMemOffset_frame {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
 /-- **The accept route's frame, from a frame at the base memory.**  The two cursor stores,
 each inside its own entry of the record's list. -/
 theorem walkFinishMemAccept_frame_of {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) {m : Mem}
+    {nextEnd : Nat}
     (h : UnchangedOutside m0 m
       (stage2ReportFrame G.dst C.alen G.ev C.evlen G.ndst G.nev G.err C.stage.c
         C.stage.ctype C.stage.cst C.stage.tok C.stage.s C.stage.z C.stage.e C.stage.d
-        G.next0)) :
+        G.next0 nextEnd)) :
     UnchangedOutside m0 (walkFinishMemAccept G m C.alen C.evlen)
       (stage2ReportFrame G.dst C.alen G.ev C.evlen G.ndst G.nev G.err C.stage.c
         C.stage.ctype C.stage.cst C.stage.tok C.stage.s C.stage.z C.stage.e C.stage.d
-        G.next0) := by
+        G.next0 nextEnd) := by
   have h1 : UnchangedOutside m0
       (writeBytes m G.ndst (wordBytes 8 C.alen))
       (stage2ReportFrame G.dst C.alen G.ev C.evlen G.ndst G.nev G.err C.stage.c
         C.stage.ctype C.stage.cst C.stage.tok C.stage.s C.stage.z C.stage.e C.stage.d
-        G.next0) :=
+        G.next0 nextEnd) :=
     UnchangedOutside.write_le (a := G.ndst) (w := 8) (bs := wordBytes 8 C.alen) h
       ⟨(G.ndst, 8), by
         simp [stage2ReportFrame, stage2ReportPresent, stage2Writes], by omega, by omega⟩
@@ -533,19 +535,20 @@ theorem walkFinishMemAccept_frame {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
     UnchangedOutside m0 (walkFinishMemAccept G s.mem C.alen C.evlen)
       (stage2ReportFrame G.dst C.alen G.ev C.evlen G.ndst G.nev G.err C.stage.c
         C.stage.ctype C.stage.cst C.stage.tok C.stage.s C.stage.z C.stage.e C.stage.d
-        G.next0) :=
+        G.next0 (stage2StackEnd G.next0 s.next)) :=
   walkFinishMemAccept_frame_of G C (walkFinishMem_base_frame G C s hInv)
 
 /-- **The refusal routes' frame, from a frame at the base memory.** -/
 theorem walkFinishMemRefuse_frame_of {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) {m : Mem}
+    {nextEnd : Nat}
     (h : UnchangedOutside m0 m
       (stage2ReportFrame G.dst C.alen G.ev C.evlen G.ndst G.nev G.err C.stage.c
         C.stage.ctype C.stage.cst C.stage.tok C.stage.s C.stage.z C.stage.e C.stage.d
-        G.next0)) {e : Nat} :
+        G.next0 nextEnd)) {e : Nat} :
     UnchangedOutside m0 (walkFinishMemRefuse G m C.alen C.evlen e)
       (stage2ReportFrame G.dst C.alen G.ev C.evlen G.ndst G.nev G.err C.stage.c
         C.stage.ctype C.stage.cst C.stage.tok C.stage.s C.stage.z C.stage.e C.stage.d
-        G.next0) :=
+        G.next0 nextEnd) :=
   UnchangedOutside.write_le (a := G.err) (w := 8) (bs := wordBytes 8 e)
     (walkFinishMemAccept_frame_of G C h)
     ⟨(G.err, 8), by
@@ -558,7 +561,7 @@ theorem walkFinishMemRefuse_frame {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
     UnchangedOutside m0 (walkFinishMemRefuse G s.mem C.alen C.evlen e)
       (stage2ReportFrame G.dst C.alen G.ev C.evlen G.ndst G.nev G.err C.stage.c
         C.stage.ctype C.stage.cst C.stage.tok C.stage.s C.stage.z C.stage.e C.stage.d
-        G.next0) :=
+        G.next0 (stage2StackEnd G.next0 s.next)) :=
   walkFinishMemRefuse_frame_of G C (walkFinishMem_base_frame G C s hInv)
 
 /-! ### Presence at the reported extents
@@ -715,11 +718,15 @@ theorem stage2Boundary_of_accept {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) 
   have hAccept1 : (1 : BitVec 64) = 1 →
       readBytes (walkFinishMemAccept G s.mem C.alen C.evlen) G.err 8 = readBytes m0 G.err 8 :=
     fun _ => walkFinishMemAccept_err_entry G C hInv hnderr hnverr
-  have hframeT : UnchangedOutside m0 (walkFinishMemAccept G s.mem C.alen C.evlen)
-      (stage2ReportFrame G.dst C.alen G.ev C.evlen G.ndst G.nev G.err C.stage.c
-        C.stage.ctype C.stage.cst C.stage.tok C.stage.s C.stage.z C.stage.e C.stage.d
-        G.next0) :=
-    walkFinishMemAccept_frame G C s hInv
+  have hframeT : ∃ nextEnd : Nat, G.next0 ≤ nextEnd ∧
+      UnchangedOutside m0 (walkFinishMemAccept G s.mem C.alen C.evlen)
+        (stage2ReportFrame G.dst C.alen G.ev C.evlen G.ndst G.nev G.err C.stage.c
+          C.stage.ctype C.stage.cst C.stage.tok C.stage.s C.stage.z C.stage.e C.stage.d
+          G.next0 nextEnd) :=
+    ⟨stage2StackEnd G.next0 s.next, by
+      have hmax := stage2StackEnd_static G.next0 s.next
+      simp only [stage2BootstrapExtent] at hmax
+      omega, walkFinishMemAccept_frame G C s hInv⟩
   have hpresentT : ∀ x, inRegions (stage2ReportPresent G.dst C.alen G.ev C.evlen G.ndst
       G.nev G.err C.stage.c C.stage.ctype C.stage.cst C.stage.tok C.stage.s C.stage.z
       C.stage.e C.stage.d) x → present (walkFinishMemAccept G s.mem C.alen C.evlen) x :=
@@ -762,11 +769,15 @@ theorem stage2Boundary_of_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) 
     omega
   obtain ⟨⟨arena, hArenaRead⟩, ⟨evs, hEvRead⟩⟩ :=
     walkFinish_prefixes G C hInv (fun h => walkFinishMemRefuse_hasBytes G h)
-  have hframeT : UnchangedOutside m0 (walkFinishMemRefuse G s.mem C.alen C.evlen e)
-      (stage2ReportFrame G.dst C.alen G.ev C.evlen G.ndst G.nev G.err C.stage.c
-        C.stage.ctype C.stage.cst C.stage.tok C.stage.s C.stage.z C.stage.e C.stage.d
-        G.next0) :=
-    walkFinishMemRefuse_frame G C s hInv
+  have hframeT : ∃ nextEnd : Nat, G.next0 ≤ nextEnd ∧
+      UnchangedOutside m0 (walkFinishMemRefuse G s.mem C.alen C.evlen e)
+        (stage2ReportFrame G.dst C.alen G.ev C.evlen G.ndst G.nev G.err C.stage.c
+          C.stage.ctype C.stage.cst C.stage.tok C.stage.s C.stage.z C.stage.e C.stage.d
+          G.next0 nextEnd) :=
+    ⟨stage2StackEnd G.next0 s.next, by
+      have hmax := stage2StackEnd_static G.next0 s.next
+      simp only [stage2BootstrapExtent] at hmax
+      omega, walkFinishMemRefuse_frame G C s hInv⟩
   have hpresentT : ∀ x, inRegions (stage2ReportPresent G.dst C.alen G.ev C.evlen G.ndst
       G.nev G.err C.stage.c C.stage.ctype C.stage.cst C.stage.tok C.stage.s C.stage.z
       C.stage.e C.stage.d) x → present (walkFinishMemRefuse G s.mem C.alen C.evlen e) x :=
@@ -822,13 +833,18 @@ theorem stage2Boundary_of_refuse_offset {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
   obtain ⟨⟨arena, hArenaRead⟩, ⟨evs, hEvRead⟩⟩ :=
     walkFinish_prefixes G C hInv (fun h => walkFinishMemRefuse_hasBytes G
       (hasBytes_writeBytes (m := s.mem) (start := C.stage.e + 8) (bs := wordBytes 8 v) h))
-  have hframeT : UnchangedOutside m0
-      (walkFinishMemRefuse G (walkFinishMemOffset C.stage.e v s.mem) C.alen C.evlen e)
-      (stage2ReportFrame G.dst C.alen G.ev C.evlen G.ndst G.nev G.err C.stage.c
-        C.stage.ctype C.stage.cst C.stage.tok C.stage.s C.stage.z C.stage.e C.stage.d
-        G.next0) :=
-    walkFinishMemRefuse_frame_of G C (walkFinishMemOffset_frame G C
-      (walkFinishMem_base_frame G C s hInv))
+  have hframeT : ∃ nextEnd : Nat, G.next0 ≤ nextEnd ∧
+      UnchangedOutside m0
+        (walkFinishMemRefuse G (walkFinishMemOffset C.stage.e v s.mem) C.alen C.evlen e)
+        (stage2ReportFrame G.dst C.alen G.ev C.evlen G.ndst G.nev G.err C.stage.c
+          C.stage.ctype C.stage.cst C.stage.tok C.stage.s C.stage.z C.stage.e C.stage.d
+          G.next0 nextEnd) :=
+    ⟨stage2StackEnd G.next0 s.next, by
+      have hmax := stage2StackEnd_static G.next0 s.next
+      simp only [stage2BootstrapExtent] at hmax
+      omega,
+      walkFinishMemRefuse_frame_of G C (walkFinishMemOffset_frame G C
+        (walkFinishMem_base_frame G C s hInv))⟩
   have hpresentT : ∀ x, inRegions (stage2ReportPresent G.dst C.alen G.ev C.evlen G.ndst
       G.nev G.err C.stage.c C.stage.ctype C.stage.cst C.stage.tok C.stage.s C.stage.z
       C.stage.e C.stage.d) x →
@@ -879,7 +895,8 @@ header). -/
 exit's `1` arm: the two cursor words at `%ndst`/`%nev`, the verdict `1`, and the record's
 boundary at that memory. -/
 theorem walkFinishPost_accept {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
-    (hInv : WalkInv G C s) (hblk : C.block = "cleanup478.i")
+    (hInv : WalkInv G C s)
+    (hblk : C.block = "cleanup478.i")
     (hregs : WalkRegs G C s.env) (hptrs : WalkPtrs G C s.env)
     (henv : WalkFinalEnv G C s.env)
     (hlog : readBytes s.mem (C.stage.z + 48) 8 = some (wordBytes 8 C.alen))
@@ -1145,7 +1162,8 @@ The three words the copy reads are the route's own: the log's arena cursor is th
 argument `hlog`, its event cursor `WalkInv.log_len`'s, and the offset the store just
 wrote.  `%4` is an argument for the reason the module header gives. -/
 theorem walkFinishPost_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
-    (hInv : WalkInv G C s) (hblk : C.block = "cleanup478.i")
+    (hInv : WalkInv G C s)
+    (hblk : C.block = "cleanup478.i")
     (henv : WalkFinalEnv G C s.env)
     (hlog : readBytes s.mem (C.stage.z + 48) 8 = some (wordBytes 8 C.alen))
     {p : String} {spv k2 : Nat} {spOp kOp : Operand}
@@ -1334,7 +1352,8 @@ The offset's store is at the same address on both routes (`%e + 8`), which is wh
 copy's three reads are this route's in the same form as R2's: only the register the
 block names (`%off1.i.i115` against `%off1.i.i117`) differs. -/
 theorem walkFinishPost_refuse488 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
-    (hInv : WalkInv G C s) (hblk : C.block = "cleanup478.i")
+    (hInv : WalkInv G C s)
+    (hblk : C.block = "cleanup478.i")
     (henv : WalkFinalEnv G C s.env)
     (hlog : readBytes s.mem (C.stage.z + 48) 8 = some (wordBytes 8 C.alen))
     {p : String} {spv k2 : Nat} {spOp kOp : Operand}
@@ -1489,7 +1508,8 @@ no clause carries: `WalkInv` names the offset the carry holds (`eoff_le`) but no
 bytes at `%e + 8`, and `WalkSegment` keeps no memory.  So `hword` is an argument, and its
 producer is a memory-carrying refusal segment. -/
 theorem walkFinishPost_copy {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
-    (hInv : WalkInv G C s) (hblk : C.block = "if.then")
+    (hInv : WalkInv G C s)
+    (hblk : C.block = "if.then")
     (henv : WalkFinalEnv G C s.env)
     (hlog : readBytes s.mem (C.stage.z + 48) 8 = some (wordBytes 8 C.alen))
     (hword : readBytes s.mem (C.stage.e + 8) 8 = some (wordBytes 8 C.eoff)) :
@@ -1566,7 +1586,8 @@ refusal's, so the merge's three routes are one statement — `WalkTargetPost` �
 case split is here rather than in the loop's step.  Nothing else about the finalisation
 is assumed: the three runs are the routes' own. -/
 theorem walkFinishPost_merge {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
-    (hInv : WalkInv G C s) (hblk : C.block = "cleanup478.i")
+    (hInv : WalkInv G C s)
+    (hblk : C.block = "cleanup478.i")
     {p : String} {spv k2 : Nat} {spOp kOp : Operand}
     (hpre : s.pre = some p)
     (hsp : phiIncoming p cleanupSpIncoming = some spOp)
@@ -1599,7 +1620,8 @@ theorem walkFinishPost_merge {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
 (`JsonStage2WalkPremisesOfStaging`) is its consumer, at every state the dispatch's
 refusal arm reaches. -/
 theorem walkFinishPost_refuseOfWords {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
-    (s : State) (hInv : WalkInv G C s) (hblk : C.block = "if.then")
+    (s : State) (hInv : WalkInv G C s)
+    (hblk : C.block = "if.then")
     (hw : WalkRefuseWords G C s) :
     WalkTargetPost (stage2Calls stage2SubCalls) G C s :=
   walkFinishPost_copy G C s hInv hblk hw.env hw.log hw.word

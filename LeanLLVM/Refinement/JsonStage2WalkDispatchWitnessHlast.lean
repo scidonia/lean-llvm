@@ -1,163 +1,101 @@
 /-
-The walk's last entry: the counted segment to the merge, and the refusal arm.
+The walk's last entry: the scan-free segment to the merge, and the refusal arm.
 
 ## The premise both ends read
 
 The bundle's guard and the head prefix's premise are the **same fact** — the last
-entry's `%inc ≥ %nep`, which `walkHeadChainToScan` takes as `hge` and the bundle's
-producer takes as `¬ (C.k + 1 < G.nep)` (`WalkLoopEnd.facts`,
-`JsonStage2WalkPremisesOfStaging`).  That is why the composition is not four applications
-over unrelated lemmas: it is **one premise, read at both ends**.  The last entry cannot
-continue because its increments have reached the entry count, and the prefix cannot run
-down the continuing arm for the same reason.
+entry's `%inc ≥ %nep`, which the prefix takes as `hge` and the bundle's producer takes as
+`¬ (C.k + 1 < G.nep)` (`WalkLoopEnd.facts`, `JsonStage2WalkPremisesOfStaging`).  That is
+why the composition is not four applications over unrelated lemmas: it is **one premise,
+read at both ends**.  The last entry cannot continue because its increments have reached
+the entry count, and the prefix cannot run down the continuing arm for the same reason.
+
+## The path: the byte test's `1` arm, and a scan that does not run
+
+`%inc.i` has reached the count, so `sw.default.i` sends the walk to `cond.end349.i`
+without reading a next entry's lane, and the bound's `phi` takes `%4`'s word.  At a last
+entry that word is the **stream's end**, above the entry's own index, so `cond.end349.i`
+takes `land.lhs.true357.i`: the walk reads the document at `%cond350.i - 1`, takes the
+class with no whitespace run (`NodeBlock41 → NodeBlock39 → LeafBlock35`), and reaches
+`if.end372.i` with `%ee.1.i = %cond350.i`.
+
+Two consequences, and they are the whole reason this file was re-stated:
+
+* the token's end *is* the entry's end, so `if.then447.i`'s target tests
+  `ult (%ee.1.i) (%cond350.i)` on two cells that are the same word — `0`.  The walk
+  leaves for `if.end473.i` and **the extra-token scan is never entered**;
+* so the bundle's tail is the scan-free one (`WalkLink.if_then447_i_empty`,
+  `consumerTailSegEmptyAt`): no `%ee.1.i` stopper, no landing, no latch, no traversal
+  premises, and no inner budget.  There is no visit to afford.
+
+The path is the assembly's own longest one — 20 links from `NodeBlock21` to
+`cleanup478.i` — and its price is `20 + 2 ≤ 32 · Δk + 8 · Δbytes`, which at `Δk = 1` and
+`entryPos G G.nep = 0` is `22 ≤ 32`: the byte term is zero because the last entry's
+token ends where the stream does.
 
 ## The inventory
 
 | piece | lemma | span |
 |---|---|---|
-| prefix | `walkHeadChainToScan` | `NodeBlock21 → while.body462.i` |
-| scan → merge | `walkScanToMerge` | `while.body462.i → cleanup478.i` |
-| merge step | `walkFinishMerge_at` | `cleanup478.i → if.then485.i` |
-| path 3 | `walkFinishPath3` | `→ if.then` |
-| continuation | `walkFinishRun` | `→ if.end` |
-| flush | `WalkFlushAt.ofRun` | the refusal copy's four named steps |
+| prefix | `hlastPrefixSeg` | `NodeBlock21 → if.end473.i` (19) |
+| merge step | `walkIfEnd473_at` | `if.end473.i → cleanup478.i` (1) |
+| finish | `walkFinishMerge_at`, `walkFinishRun` | the merge and the accept run |
+| refusal | `walkFinishPath3` | the refusal copy's blocks |
 
-The prefix is a `WalkChain` because its links are existential; the rest are segments,
-and `WalkSegment.of_chain` is the direction between them — which is why the two live
-in different shapes.
+## The earlier statement, and why it was wrong
 
+The prefix this file composed was `walkHeadChainToScan`'s — the **last** entry's head with
+the byte test on its *failing* arm (`hugt = 0`, the direct edge `cond.end349.i →
+if.end372.i`) and the extra-token scan entered from it.  Both halves named a continuation
+no last entry reaches, and they refuted each other:
 
-## The hypothesis that stood here
+* `hugt = 0` says `%cond350.i ≤ %idxprom.i`, i.e. the direct seam edge, which makes
+  `%ee.1.i` the `%idxprom.i` word;
+* the scan's entry (`hlt2T` with `hcdT`/`h4L`/`heiT`) says `%idxprom.i < %cond350.i`.
 
-`ofContinueAndLast`'s second hypothesis was a disjunction of two anonymous existentials
-under `¬ (C.k + 1 < G.nep)`, and it was not provable as stated: it is a statement about
-**the last entry**, and the segments it asks for are statements about **the input**.  The
-prefix `walkHeadChainToScan` reads `%8`'s byte, four class bits on it, `%inc` and `%nep`'s
-values, and the twelve facts the entry established — and **none of them is
-invariant-carried**, which is what the bundle below is for.  `¬ (C.k + 1 < G.nep)`
-supplies exactly one of them: the prefix's `hge`.  That is why the hypothesis looked
-sufficient: it is the one field of the input's bundle that a hypothesis about the entry
-can imply.
-
-Both the hypothesis and the wrapper that took it are gone.  The two paths it named are
-`hlast_finish` and `hlast_refuse`, and their consumer is `WalkDispatchResult`
-(`JsonStage2WalkDispatchThreeOfRun`), whose `merge` and `refuse` constructors receive them
-through `WalkDispatchResult.ofHlastMerge` and `.ofHlastRefuse`.
+So `HlastFacts` was **uninhabited at a real last entry**, and `WalkLoopEnd.facts` — the
+only consumer — was vacuous.  The two halves are now the path the model takes: the head is
+the `1` arm (with `%cond350.i` the `%4` word, so the entry's end is the stream's) and the
+tail is the scan-free segment.  Nothing was weakened to get there; two wrong fields were
+replaced by the arm's own values.
 
 ## The bundle
 
-`HlastFacts` is that bundle, grouped by subject: the head's byte, the entry counts, the
-default arm's cells, the seam's cells, the second byte's class, the tail's counted
-segment, the scan's landing, the latch's exit test, the merge's cells, and the entry
-being the stream's last.
-It is a `Type` rather than a `Prop` because its first member of each group is a
-*witness* — the byte, the two counts, the selected operand — that the later groups'
-statements are stated at; a `Prop`-valued structure cannot carry data
-(`structure … : Prop` admits proof fields only), and the alternative — every witness
-passed beside the bundle — is the 34-binder statement this bundle exists to avoid.
+`HlastFacts` is the input's facts at the last entry, grouped by subject.  It is a `Type`
+rather than a `Prop` because its first member of each group is a *witness* — the byte, the
+counts, `%4`'s word, the last byte before the end — that the later fields' statements are
+stated at; a `Prop`-valued structure admits proof fields only, and the alternative — every
+witness passed beside the bundle — is the 34-binder statement this bundle exists to avoid.
 `WalkGeom` and `WalkStage` are the same shape for the same reason.
 
-Two fields are not premises of a single lemma:
+Three decisions worth keeping:
 
-* `hlastK : C.k + 1 = G.nep` is the entry being the stream's last.  It is what the
-  prefix's **price** becomes: the path's count is a `Nat` (`hlastPrefixSeg` counts it at
-  `(((6 + 1) + 5) + 3) + 3 = 18`), so the price is `18 + 4 ≤ 32 · Δk` and `Δk = 1`
-  follows from this equation — arithmetic, not a hypothesis.  Earlier this was a
-  `∀ j` price field, because a `WalkChain`'s count is not projectable; the counted
-  prefix retired it.
-* `hTail` is a **segment at count `3`**, not a chain, for the same reason: the tail is
-  a piece of a priced path.  The caveat is worth stating: an old supplier holding
-  `hTail : WalkChain` **cannot** feed this bundle, because a chain does not imply a
-  segment at a count.  No evidence was lost, only re-shaped — `consumerTailSegAt`
-  builds that segment from the same three call contracts
-  (`s2_value_pos`, `od_scalar_value`, `s2_after_value`) that `consumer_tail_chain`
-  consumes.
-* `hlatch`-group fields are stated **at the states named above** (`hlastLatch`,
-  `hlastScanOut`, `hlastMerge`): the callers of `walkScanToMerge` and of
-  `walkFinishMerge_at` have their premises at exactly those terms, and a fact stated
-  at a term needs no peeling at its use.
-
-**The invariant's clause is an upper bound** (`WalkInv.inner_cap`), and it must stay one:
-`WalkInv` is asserted at mid-scan states, where `inner` is being spent down, so a
-positivity field would make it unprovable at most of the layer.  A lower bound that is
-only true at the loop head belongs to the refill's lemma (`walkLoopHead_inner_pos`), not
-to the invariant.
-
-The depth's polarity is **not** a bundle field.  The exit tail's test is
-`%sp.i.1 = 0`, so the last entry's outcome is `finish` at depth zero and the refusal
-otherwise: a field `≠ 0` in the bundle would make the bundle uninhabited exactly at the
-depth-zero inputs, where `hlast_finish`'s alternative is the true one.  It is a fact
-about the input like the rest, so it is an argument of the two lemmas that read it
-(`hlast_refuse`, `hlast`), and `HlastFacts` stays free of it.
-
-The scan's three links are re-stated rather than taken from `walkScanChain457_ws`,
-because that lemma's conclusion leaves the latch *existential* (`∃ s', WalkChain …`)
-and every fact the exit test reads is stated at the latch.  `WalkLink.landRhs457_at`,
-`WalkLink.NodeBlock105_at` and `WalkLink.LeafBlock96_at` name their targets, so the
-composition below is the same three links with the last one named — and the latch the
-rest of the file reads is that name.
-
-## The repair, in order
-
-1. the bundle above;
-2. `hlast_toMerge` — the prefix chain, its segment, the latch's exit and the merge,
-   as one segment at the prefix's count plus two, with the merge's invariant;
-3. `hlast_finish` — the finish arm: that segment, `cleanup478.i`'s block, and the
-   merge's `phi` selection, its index and the entry count;
-4. `hlast_refuse` — the refusal arm: the same segment, `walkFinishMerge_at`'s
-   step, and `walkFinishPath3`'s two, at `if.then` with the carry's refusal offset.
+* **`%cond350.i` is one number, not two.**  On this arm the bound's `phi` takes `%4`'s
+  word, so the bundle carries that word (`v`) and writes it wherever the bound appears —
+  the head's byte test, the whitespace check's address, the seam's stored end, the tail's
+  two cells.  A separate witness for the end would be the same fact written twice, and the
+  scan-free test `ult v v` would then need an equation to be `0` instead of being one.
+* **`x` is one byte, not three.**  `%8` is not rebound between the loop head and the
+  class-C span, so the seam's own test and the span's three pivots are premises about the
+  *head's* byte; the bundle carries one witness and states all eight class bits on it.
+* **The depth's polarity is not a field.**  The exit tail's test is `%sp.i.1 = 0`, so the
+  last entry's outcome is `finish` at depth zero and the refusal otherwise: a field `≠ 0`
+  would make the bundle uninhabited exactly at the depth-zero inputs, where `hlast_finish`
+  is the true outcome.  It is an argument of the two lemmas that read it (`hlast_refuse`,
+  `hlast`), not a bundle field.
 
 ## Why the bundle cannot be named in the assembly
 
 `HlastFacts`' field types name states defined above `JsonStage2WalkAssembly` —
-`headAS₄`/`headAS₅`/`headEndS` (`JsonStage2WalkHeadChainA`),
-`seamAt`/`TailStart`/`TailStartC`/`ScanEntry` (`JsonStage2WalkHeadChainScan`),
-`ScanC₁₀₅`/`ScanS₉₆`/`ScanCMerge`/`landRhs457OutAt` (`JsonStage2WalkStepsPath`) and
-`scanLatchOut`/`Latch462S` (`JsonStage2WalkInduce`) — while the assembly is the walk
-layer's *base*: `JsonStage2WalkSteps` and `JsonStage2WalkStepsPath` import it, and every
-witness module above them does too.  Importing this module into the assembly would close a
-cycle through `JsonStage2WalkSteps`, which the build rejects.
+`headAS₄`/`headAS₅` (`JsonStage2WalkHeadChainA`), `headEndS` (`JsonStage2WalkHeadChainScan`)
+and the whitespace-check and tail states (`JsonStage2WalkPrefixCount`) — while the assembly
+is the walk layer's *base*: `JsonStage2WalkSteps` and `JsonStage2WalkStepsPath` import it.
+Importing this module into the assembly would close a cycle, which the build rejects.
 
-So the bundle is named outside the assembly and enters at the consumer.  Nothing in the
-assembly mentions `HlastFacts`, and nothing there has to: `WalkDispatchOutcome` and
-`WalkDispatchThree` are stated at the dispatch's own evidence, and
+So the bundle is named outside the assembly and enters at the consumer.
 `walkLoopStep_of_staging` (`JsonStage2WalkPremisesOfStaging`) is where the input's bundle
-becomes a `WalkDispatchResult`.  Both arms are stated at `stage2Calls stage2SubCalls` — a
+becomes a `WalkDispatchResult`; both arms are stated at `stage2Calls stage2SubCalls` — a
 segment's `calls` is the program's, not a variable.
-
-## A correction to this file's own rationale
-
-The stub that commissioned this module said the prefix's facts are *"none of them
-invariant-carried"*.  That is too strong, and the invariant's register clauses show where —
-**read the two together, or the wrong conclusion returns**:
-
-> The bundle has **three sources** — the invariant's clauses, the document's content, and
-> the staging's addresses — and the class bits on the head's byte are the second.
->
-> **Of the bundle's sixteen field groups, eight are produced** from those three sources
-> by the producer below; five are premises the model provably cannot supply, two are
-> reduced to a named premise, and one is open in both directions.  The per-group map is
-> with the producer; this figure is the walk's honest strength.
-
-| invariant clause | what it gives the bundle |
-|---|---|
-| `WalkInv.iter.reg8` — `%8 = ofNat 8 (entryByte G C.k).toNat` | the head's byte (`h8` is produced from it; `x` is `hlastByte G C`) |
-| `WalkInv.depth_reg` — `%sp.i.0248 = ofNat 32 C.sp` | the merge's depth cell (`spv := C.sp`) |
-| `WalkInv.regs` — the twenty-four static registers | `%gap.i`, `%end.i`, `%kind404.i`, `%root_done.i` and the rest |
-
-What is *not* invariant-carried is the **document's content**: the four class bits are
-properties of `G.bs` at `entryPos G C.k`, and the staging fixes addresses, extents and
-presence, not values.  So the bundle is not "the input's facts against the invariant" as
-the stub assumed: it is the invariant's clauses, the document's bytes, and the staging's
-addresses, and only the third is what a staging proof supplies.
-
-## Why this module exists
-
-A composition's home is above every module its pieces live in, so this one imports the
-three that hold the prefix, the scan and the finish paths.  What it holds is the pair of
-segments `hlast` asks for, the bundle the input supplies, and the arithmetic between
-them.
-
 -/
 
 import LeanLLVM.Refinement.JsonStage2WalkHeadChainScan
@@ -174,63 +112,71 @@ open LeanLLVM.Refinement.JsonStage2IR
 
 namespace WalkScope
 
-/-! ### The states the last entry's path names
+/-- `%inc.i`'s value at the last entry, as the bundle's `inc`. -/
+abbrev hlastIncV {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) : BitVec 64 :=
+  BitVec.ofNat 64 (C.k + 1)
 
-Every state from the scan's entry on is a name, because each is where a lemma's
-premises are stated and where the next lemma's hypotheses are read: `walkIfEnd473_at`
-and `scanExitSeg` name their own targets, so the refusal's `phi` facts have a term to
-be stated at rather than a peeling chain to be carried.
--/
+/-- `%nep`'s value, as the bundle's `nep`. -/
+abbrev hlastNepV {m0 : Mem} (G : WalkGeom m0) : BitVec 64 :=
+  BitVec.ofNat 64 G.nep
 
-/-- The extra-token scan's entry, at the bundle's terms: the tail's end state. -/
-def hlastEntry {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State) (x : BitVec 8)
-    (inc nep c ix : BitVec 64) (e : BitVec 64) (b8 : BitVec 8) (x1 : BitVec 8)
-    (r₁ r₂ r₃ : CallOutcome) (ei cd : Nat) (cA rdv xA : BitVec 32) : State :=
-  ScanEntry (TailStart C s x inc nep c ix e b8 x1) r₁ r₂ r₃ ei cd cA rdv xA
+/-- The head's byte, as the invariant names it: `WalkInv.iter.reg8` is this term. -/
+abbrev hlastByte {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) : BitVec 8 :=
+  BitVec.ofNat 8 (entryByte G C.k).toNat
 
-/-- The scan's latch, at the bundle's terms: the range leaf's target. -/
-def hlastLatch {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State) (x : BitVec 8)
-    (inc nep c ix : BitVec 64) (e : BitVec 64) (b8 : BitVec 8) (x1 : BitVec 8)
-    (r₁ r₂ r₃ : CallOutcome) (ei cd : Nat) (cA rdv xA : BitVec 32)
-    (idx : BitVec 64) (a q : Nat) (x47 : BitVec 8) : State :=
-  Latch462S (hlastEntry C s x inc nep c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA) idx a q x47
+/-- The entry stream's position past its last entry: the totalisation's own value, which
+is what makes the finish's byte term vanish. -/
+theorem entryPos_nep {m0 : Mem} (G : WalkGeom m0) : entryPos G G.nep = 0 := by
+  have hlen : G.ent.length = G.nep := by
+    rw [← readLanes32_length m0 G.ep G.nep G.ent G.entries]
+  simp only [entryPos, List.getD_eq_getElem?_getD]
+  rw [List.getElem?_eq_none (by omega)]
+  rfl
 
-/-- The latch's exit: `scanExitSeg`'s target, the merge's entry state. -/
-def hlastScanOut {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State) (x : BitVec 8)
-    (inc nep c ix : BitVec 64) (e : BitVec 64) (b8 : BitVec 8) (x1 : BitVec 8)
-    (r₁ r₂ r₃ : CallOutcome) (ei cd : Nat) (cA rdv xA : BitVec 32)
-    (idx : BitVec 64) (a q : Nat) (x47 : BitVec 8) (qi cw : Nat) : State :=
-  scanLatchOut (hlastLatch C s x inc nep c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47)
-    "%inc463.i" "%exitcond298.not" qi cw "if.end473.i"
+/-- `%inc.i` at `sw.default.i`'s entry is `%inc.i` at the loop head: the four pivots bind
+their own cells and none of them is the header's increment. -/
+theorem headAS4_envInc (s : State) (x : BitVec 8) :
+    lookupName (headAS₄ s x).env "%inc.i" = lookupName s.env "%inc.i" := by
+  simp only [headAS₄, headAS₃, headAS₂, headAS₁, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
 
-/-- The merge's carry: `if.end473.i`'s `br` target. -/
-abbrev hlastMergeC {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (ev : EventRecord) :
-    WalkCarry G :=
-  { ScanLatchC C ev with block := "cleanup478.i" }
+/-- `%nep` at `sw.default.i`'s entry is `%nep` at the loop head: no block of the head path
+binds the entry count. -/
+theorem headAS4_envNep (s : State) (x : BitVec 8) :
+    lookupName (headAS₄ s x).env "%nep" = lookupName s.env "%nep" := by
+  simp only [headAS₄, headAS₃, headAS₂, headAS₁, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
 
-/-- The merge's state: `walkIfEnd473_at`'s target, at the merge's own block. -/
-def hlastMerge {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State) (x : BitVec 8)
-    (inc nep c ix : BitVec 64) (e : BitVec 64) (b8 : BitVec 8) (x1 : BitVec 8)
-    (r₁ r₂ r₃ : CallOutcome) (ei cd : Nat) (cA rdv xA : BitVec 32)
-    (idx : BitVec 64) (a q : Nat) (x47 : BitVec 8) (qi cw : Nat) : State :=
-  { hlastScanOut C s x inc nep c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw with
-    pc := "cleanup478.i", pre := some "if.end473.i" }
+/-- `%t352.i` at `sw.default.i`'s entry is the loop head's: the four pivots bind their own
+cells and none of them is the token record's register. -/
+theorem headAS5_envTokEq (s : State) (x : BitVec 8) (inc nep : BitVec 64) :
+    lookupName (headAS₅ s x inc nep).env "%t352.i" = lookupName s.env "%t352.i" := by
+  simp only [headAS₅, headAS₄, headAS₃, headAS₂, headAS₁, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
 
-/-- **The input's facts, bundled.**  The statement that needs them is the last entry's
-two outcomes; this is the single argument it takes, and each group is a subject the
-prefix or the finish reads.
+/-! ### The bundle
 
-**Two of its cells are candidate invariant clauses** — `%inc.i` (`hinc` at the head,
-`hk2` at the merge) and `%nep` (`hnep` at the head, `hnepM` at the merge).
-`hlastFacts_of_staging` takes them as `hincL` and `hnepL`, and that supply is what a
-clause would retire: `%inc.i` is bound once, in the header, as `%k.0.i249 + 1`, so
-`%inc.i = ofNat 64 (C.k + 1)` holds wherever `blockIndex` holds, and `%nep` is a
-parameter no block rebinds.  Adding the two to `WalkInv` is a vocabulary change — a
-scoping pass measured 39 construction sites in 10 modules, `whileBody_step` (the only
-block that rebinds `%inc.i`) and two new disequalities in `WalkPtrs.bind`/`WalkRegs.bind`
-— and it is not the whole of `WalkMergeCells` (`JsonStage2WalkPremisesOfStaging`), whose
-third conjunct relates two carries and so cannot be a field of an invariant indexed by
-one. -/
+`hlastEntry` is `TailS₃` built with the same Nat at both cells, so its `if` is the else
+arm and its block is the merge's entry; `hlastMerge` is `walkIfEnd473_at`'s target at it.
+The three `abbrev`s take the structure so a lemma's statement stays the length of the
+field types rather than of the argument lists. -/
+
+/-- The bundle's witnesses, at the tail's start. -/
+abbrev hlastTailAt {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State) (v : Nat)
+    (ix : BitVec 64) (b35 : UInt8) : State :=
+  hlastTail C s (hlastByte G C) (hlastIncV C) (hlastNepV G) v ix b35
+
+/-! ### The structure -/
+
+/-- **The input's facts, bundled.**  The statement that needs them is the last entry's two
+outcomes; this is the single argument it takes, and each group is a subject the prefix or
+the merge reads.
+
+The head group is the arm the path takes: `hge = 0` (the count test fails at a last entry)
+and `hugt = 1` (the stream's end is above the entry's index), so the walk reads the byte
+before the end and the token's end is that end.  The fields the old bundle carried for the
+scan — its entry, its landing, its latch and the inner budget its last visit cost — are
+gone with the scan: `if.then447.i`'s target tests two cells that are the same word. -/
 structure HlastFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : Type where
   /-- The head's byte. -/
   x : BitVec 8
@@ -246,52 +192,54 @@ structure HlastFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) 
   hinc : evalOperand (headAS₄ s x) (.reg "%inc.i") = some (.int 64 inc)
   hnep : evalOperand (headAS₄ s x) (.reg "%nep") = some (.int 64 nep)
   hge : evalICmp .ult inc nep = 0
-  /-- The default arm's cells: the token's position against the entry's index. -/
-  reg : String
-  c : BitVec 64
+  /-- **`%4`'s word — the stream's end — and the entry's index.**  The bound's `phi`
+  selects `%4` on the arm the count test's failure takes, so this word *is*
+  `%cond350.i`: the token's end, the whitespace check's address and the tail's two cells
+  are all stated at it. -/
+  v : Nat
+  hav5 : lookupName (headAS₅ s x inc nep).env "%4" = some (.int 64 (BitVec.ofNat 64 v))
   ix : BitVec 64
-  hpre5 : phiIncoming "sw.default.i"
-    [("cond.true345.i", Operand.reg "%conv347.i"),
-     ("sw.default.i", Operand.reg "%4")] = some (.reg reg)
-  hav5 : lookupName (headAS₅ s x inc nep).env reg = some (.int 64 c)
   hidx5 : lookupName (headAS₅ s x inc nep).env "%idxprom.i" = some (.int 64 ix)
   htok5 : lookupName (headAS₅ s x inc nep).env "%t352.i" = some (.ptr C.stage.tok)
   hgap5 : lookupName (headAS₅ s x inc nep).env "%gap.i" = some (.ptr (C.stage.tok + 20))
-  /-- **The last entry's arm.**  `= 0`, because the last entry's `%cond350.i` is `%4` and
-  its position is the stream's end, so the token's end is not above the index.  The
-  continuing bundle's `hugt` (`HcontFacts`, `JsonStage2WalkRevolution`) is `= 1`: a
-  continuing entry is non-empty and its bound is above its index.  Two bundles share the
-  field name and correctly carry opposite values, so a reader must read the arm with the
-  value. -/
-  hugt : evalICmp .ugt c ix = 0
-  /-- The seam's cells: the token's end `phi`, the stored word and the byte it tests. -/
-  p : String
-  op : Operand
-  e : BitVec 64
-  b8 : BitVec 8
-  hpre6 : (headEndS C s x inc nep c ix).pre = some p
-  hin6 : phiIncoming p
-    [("cond.end349.i", (Operand.reg "%idxprom.i")),
-     ("while.body370.i", (Operand.reg "%cond350.i")),
-     ("LeafBlock43", (Operand.reg "%ee.0.i238")),
-     ("LeafBlock46", (Operand.reg "%ee.0.i238")),
-     ("LeafBlock48", (Operand.reg "%ee.0.i238")),
-     ("LeafBlock33", (Operand.reg "%cond350.i")),
-     ("LeafBlock35", (Operand.reg "%cond350.i")),
-     ("LeafBlock37", (Operand.reg "%cond350.i"))] = some op
-  hv6 : evalOperand (headEndS C s x inc nep c ix) op = some (.int 64 e)
-  hend6 : lookupName (headEndS C s x inc nep c ix).env "%end.i" = some (.ptr (C.stage.tok + 8))
-  h8end : lookupName (headEndS C s x inc nep c ix).env "%8" = some (.int 8 b8)
-  hbit6 : (evalICmp .eq b8 (BitVec.ofNat 8 45) |||
-    evalICmp .ult (b8 + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0
-  /-- The second byte's class, read at the seam's name. -/
-  x1 : BitVec 8
-  h8c : evalOperand (seamAt C s x inc nep c ix e b8) (.reg "%8") = some (.int 8 x1)
-  hc110 : evalICmp .slt x1 (BitVec.ofNat 8 110) = 0
-  hc116 : evalICmp .slt x1 (BitVec.ofNat 8 116) = 0
-  hceq116 : evalICmp .eq x1 (BitVec.ofNat 8 116) = 0
+  /-- **The byte test's value — the arm a last entry takes.**  `%cond350.i` is the
+  stream's end and `%idxprom.i` this entry's position, so `ugt` is `1`:
+  `cond.end349.i` goes to `land.lhs.true357.i`, and the walk reads the byte before the
+  token's end.  The continuing bundle's `hugt` (`HcontFacts`) is `= 1` on the *lane's*
+  word instead; the two agree on the arm and differ in what the word is. -/
+  hugt : evalICmp .ugt (BitVec.ofNat 64 v) ix = 1
+  /-- The byte before the token's end, its width and the read.  `land.lhs.true357.i` reads
+  the document at `%cond350.i - 1`; the staging fixes the address, the document the byte. -/
+  b35 : UInt8
+  hread35 : readBytes (headEndS C s x inc nep (BitVec.ofNat 64 v) ix).mem
+    ((G.b - 1) + v) 1 = some [b35]
+  /-- **The bound's width, and why the bundle states it.**  `land.lhs.true357.i`'s `gep`
+  sign-extends the bound (`(idx.signExtend 64).toNat`), so the step needs it *below*
+  `2 ^ 63` — `v < 2 ^ 64` does not give that, which is why the field is not the weaker
+  bound.
+
+  **It is inhabitable**, and that matters for a field that strengthens a hypothesis: the
+  word is the document's length in the geometry the staging describes, and
+  `WalkGeom.maxDoc` gives `G.n ≤ stage2MaxDocument = 2 ^ 32 < 2 ^ 63`.  It is a premise
+  rather than a derived fact because neither `WalkInv` nor `h4L` alone fixes the word's
+  value: the staging fixes the address and the register, not the number. -/
+  hv63 : v < 2 ^ 63
+  /-- That byte's class: the no-whitespace arm, `14 ≤ %35 < 32` (or 13 excluded), so
+  `NodeBlock41 → NodeBlock39 → LeafBlock35 → if.end372.i` and no run. -/
+  hb13 : evalICmp .slt (head35 b35) (BitVec.ofNat 8 13) = 0
+  hb32 : evalICmp .slt (head35 b35) (BitVec.ofNat 8 32) = 1
+  hbne13 : evalICmp .eq (head35 b35) (BitVec.ofNat 8 13) = 0
+  /-- The seam's own byte test on `%8` — the entry's first byte, which the walk leaves the
+  token's end's `phi` on. -/
+  hbit6 : (evalICmp .eq x (BitVec.ofNat 8 45) |||
+    evalICmp .ult (x + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0
+  /-- The class-C span's three pivots, on the same byte: `%8` is not rebound between the
+  loop head and the span. -/
+  hc110 : evalICmp .slt x (BitVec.ofNat 8 110) = 0
+  hc116 : evalICmp .slt x (BitVec.ofNat 8 116) = 0
+  hceq116 : evalICmp .eq x (BitVec.ofNat 8 116) = 0
   /-- The tail's own: its three call outcomes, the event it emits, the seed's words and
-  its chain from `TailStartC`'s state. -/
+  its **scan-free** segment — `if.then447.i`'s target on its `ult v v` arm. -/
   r₁ : CallOutcome
   r₂ : CallOutcome
   r₃ : CallOutcome
@@ -299,257 +247,146 @@ structure HlastFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) 
   cA : BitVec 32
   rdv : BitVec 32
   xA : BitVec 32
-  ei : Nat
-  cd : Nat
   hTail : WalkSegment (stage2Calls stage2SubCalls) G (TailStartC C)
-    (TailStart C s x inc nep c ix e b8 x1)
-    (TailCarryScan (TailStartC C) ev)
-    (hlastEntry C s x inc nep c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA) 3
-  /-- The scan's landing: the counter's selection, the byte's address and the byte. -/
-  idx : BitVec 64
-  a : Nat
-  q : Nat
-  bs : List UInt8
-  src : String
-  sel : Operand
-  hpreS : (hlastEntry C s x inc nep c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA).pre = some src
-  hincS : phiIncoming src
-    [("while.body462.i", (Operand.reg "%inc463.i")),
-     ("if.then447.i", (Operand.reg "%ee.1.i"))] = some sel
-  hopS : evalOperand (stateAt
-    (hlastEntry C s x inc nep c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA).env
-    (hlastEntry C s x inc nep c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA)) sel =
-    some (.int 64 idx)
-  h3S : lookupName (hlastEntry C s x inc nep c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA).env "%3" =
-    some (.ptr a)
-  hpos : (idx.signExtend 64).toNat < 2 ^ 63
-  hreadS : readBytes
-    (hlastEntry C s x inc nep c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA).mem
-    (a + (idx.signExtend 64).toNat) 1 = some bs
-  hbsS : bytesToNat bs = q
-  hloc105 : WalkLocal (ScanC₁₀₅ (TailCarryScan (TailStartC C) ev))
-    (landRhs457OutAt (hlastEntry C s x inc nep c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA) idx a q)
-  x47 : BitVec 8
-  h47 : evalOperand
-    (landRhs457OutAt (hlastEntry C s x inc nep c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA) idx a q)
-    (.reg "%47") = some (.int 8 x47)
-  hbit47 : evalICmp .slt x47 (BitVec.ofNat 8 13) = 1
-  hws47 : evalICmp .ule (x47 + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 1
-  hloc96 : WalkLocal (ScanC₉₆ (TailCarryScan (TailStartC C) ev))
-    (ScanS₉₆ (hlastEntry C s x inc nep c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA) idx a q x47)
-  hlatch : WalkLocal { TailCarryScan (TailStartC C) ev with block := "while.body462.i" }
-    (hlastLatch C s x inc nep c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47)
-  /-- The latch's exit test: the scan's counter and bound, the token record's pointer,
-  and the exit's own local. -/
-  qi : Nat
-  cw : Nat
-  tok : Nat
-  hq : lookupName
-    (hlastLatch C s x inc nep c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47).env
-    "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 qi))
-  hcwL : lookupName
-    (hlastLatch C s x inc nep c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47).env
-    "%cond350.i" = some (.int 64 (BitVec.ofNat 64 cw))
-  hqc : qi + 1 = cw
-  hcw0 : 1 ≤ cw
-  hcw64 : cw < 2 ^ 64
-  /-- **The scan's last visit is affordable — and that is a restriction on the input.**
-  With `hqc` this reads `1 ≤ C.inner`: a head state whose inner budget is zero satisfies
-  `WalkInv` and admits no `HlastFacts`, so the bundle is uninhabited there.  The bound
-  cannot move into `WalkInv`: the invariant is asserted at states *inside* an iteration,
-  where the scans have spent `inner` down to zero, so `1 ≤ C.inner` is false there.  It
-  belongs where it is — with the scan's own premise (`scanExitSeg`'s `c - i ≤ C.inner`)
-  — and the lower bound a producer needs is the loop head's refill, which
-  `walkLoopHead_inner_pos` supplies from `C.inner = walkInnerCap G`.  **So this field is
-  now derivable** from `hqc` and the refill's equality; it stays a field until a producer
-  uses that lemma, because the equality is not an invariant clause. -/
-  hinner : cw - qi ≤ C.inner
-  hexit : ∀ (e : State), e.pre = some "while.body462.i" →
-    lookupName e.env "%inc463.i" = some (.int 64 (BitVec.ofNat 64 (qi + 1))) →
-    lookupName e.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 cw)) →
-    WalkLocal (G := G) (ScanCMerge (ScanLatchC C ev)) e
-  htokL : lookupName
-    (hlastScanOut C s x inc nep c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw).env
-    "%t352.i" = some (.ptr tok)
+    (hlastTail C s x inc nep v ix b35)
+    (TailCarryEnd (TailStartC C) ev)
+    (hlastEntry C s x inc nep v ix b35 r₁ r₂ r₃ cA rdv xA) 3
   /-- The merge's cells: the index `%inc.i` the `phi` selects, the entry count `%nep`,
-  and the depth `%sp.i.0248` the exit tail's test reads. -/
+  the depth `%sp.i.0248` the exit tail's test reads, and the two staging words. -/
   k2 : Nat
   nepv : BitVec 64
   spv : Nat
-  v : Nat
-  hk2 : evalOperand
-    (hlastMerge C s x inc nep c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw)
-    (.reg "%inc.i") = some (.int 64 (BitVec.ofNat 64 k2))
-  hnepM : lookupName
-    (hlastMerge C s x inc nep c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw).env
-    "%nep" = some (.int 64 nepv)
+  hk2 : evalOperand (hlastMerge C s x inc nep v ix b35 r₁ r₂ r₃ cA rdv xA) (.reg "%inc.i") =
+    some (.int 64 (BitVec.ofNat 64 k2))
+  hnepM : lookupName (hlastMerge C s x inc nep v ix b35 r₁ r₂ r₃ cA rdv xA).env "%nep" =
+    some (.int 64 nepv)
   hterm : k2 = nepv.toNat
   hk2nep : k2 = G.nep
-  hspvM : evalOperand
-    (hlastMerge C s x inc nep c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw)
-    (.reg "%sp.i.0248") = some (.int 32 (BitVec.ofNat 32 spv))
-  heM : lookupName
-    (hlastMerge C s x inc nep c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw).env
-    "%e" = some (.ptr C.stage.e)
-  h4M : lookupName
-    (hlastMerge C s x inc nep c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw).env
-    "%4" = some (.int 64 (BitVec.ofNat 64 v))
-  hv64 : v < 2 ^ 64
+  hspvM : evalOperand (hlastMerge C s x inc nep v ix b35 r₁ r₂ r₃ cA rdv xA) (.reg "%sp.i.0248") =
+    some (.int 32 (BitVec.ofNat 32 spv))
+  heM : lookupName (hlastMerge C s x inc nep v ix b35 r₁ r₂ r₃ cA rdv xA).env "%e" =
+    some (.ptr C.stage.e)
+  h4M : lookupName (hlastMerge C s x inc nep v ix b35 r₁ r₂ r₃ cA rdv xA).env "%4" =
+    some (.int 64 (BitVec.ofNat 64 v))
   /-- **The entry is the stream's last.**  The carry's index plus one is the count, which
-  is what makes the path's count — `18 + 4` steps — fit the entry's credit
-  (`stage2EntryAllowance = 32`).  Stated rather than assumed at the price: the path's
-  count is now a `Nat` (`hlastPrefixSeg`), so the price is arithmetic on this. -/
+  is what makes the path's count — `19 + 1` steps — fit the entry's credit
+  (`stage2EntryAllowance = 32`).  The path's count is a `Nat` (`hlastPrefixSeg`), so the
+  price is arithmetic on this. -/
   hlastK : C.k + 1 = G.nep
 
 /-! ### The bundle's states, at their own argument lists
 
-An `abbrev` taking the structure keeps the lemmas' statements short: the fields are
-the `def`s' arguments in order, so a lemma's `hlastMerge f` is the same term the
-bundle's field types spell out.
--/
+An `abbrev` taking the structure keeps the lemmas' statements short: the fields are the
+`def`s' arguments in order, so a lemma's `hlastMergeF f` is the same term the bundle's
+field types spell out. -/
 
 abbrev hlastEntryF {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     (f : HlastFacts G C s) : State :=
-  hlastEntry C s f.x f.inc f.nep f.c f.ix f.e f.b8 f.x1 f.r₁ f.r₂ f.r₃ f.ei f.cd f.cA
-    f.rdv f.xA
+  hlastEntry C s f.x f.inc f.nep f.v f.ix f.b35 f.r₁ f.r₂ f.r₃ f.cA f.rdv f.xA
 
-abbrev hlastLatchF {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
-    (f : HlastFacts G C s) : State :=
-  hlastLatch C s f.x f.inc f.nep f.c f.ix f.e f.b8 f.x1 f.r₁ f.r₂ f.r₃ f.ei f.cd f.cA
-    f.rdv f.xA f.idx f.a f.q f.x47
-
-abbrev hlastScanOutF {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
-    (f : HlastFacts G C s) : State :=
-  hlastScanOut C s f.x f.inc f.nep f.c f.ix f.e f.b8 f.x1 f.r₁ f.r₂ f.r₃ f.ei f.cd f.cA
-    f.rdv f.xA f.idx f.a f.q f.x47 f.qi f.cw
+/-- The merge's carry: the scan-free tail's target carry, at the merge's own block. -/
+abbrev hlastMergeC {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (ev : EventRecord) :
+    WalkCarry G :=
+  { TailCarryEnd (TailStartC C) ev with block := "cleanup478.i" }
 
 abbrev hlastMergeCF {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     (f : HlastFacts G C s) : WalkCarry G :=
   hlastMergeC C f.ev
 
+abbrev hlastMergeAt {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State) (v : Nat)
+    (ix : BitVec 64) (b35 : UInt8) (r₁ r₂ r₃ : CallOutcome) (cA rdv xA : BitVec 32) : State :=
+  hlastMerge C s (hlastByte G C) (hlastIncV C) (hlastNepV G) v ix b35 r₁ r₂ r₃ cA rdv xA
+
 abbrev hlastMergeF {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     (f : HlastFacts G C s) : State :=
-  hlastMerge C s f.x f.inc f.nep f.c f.ix f.e f.b8 f.x1 f.r₁ f.r₂ f.r₃ f.ei f.cd f.cA
-    f.rdv f.xA f.idx f.a f.q f.x47 f.qi f.cw
-
-/-! ### The refill at the loop head
-
-`WalkInv.inner_cap` bounds the inner component **above** (`C.inner ≤ walkInnerCap G`),
-and that is all the invariant may say: `WalkInv` is asserted at mid-scan states, where
-`inner` is being spent down, so a positivity field would make it unprovable at most of
-the layer.  **A lower bound that is only true at the loop head belongs to the refill's
-lemma, not to the invariant.**
-
-The refill is the merge's reset (`walkBack_step_at`'s carry sets `inner := walkInnerCap G`)
-and the seed's carry sets the same (`walkSeed`), so a head carry reached from either has
-`inner = walkInnerCap G` by construction.  The two lemmas below are the arithmetic and the
-shape that consumes it.
--/
-
-/-- **The cap is at least one.**  `walkInnerCap G = 4 * G.n + 5`. -/
-theorem walkInnerCap_pos {m0 : Mem} (G : WalkGeom m0) : 1 ≤ walkInnerCap G := by
-  simp only [walkInnerCap]
-  omega
-
-/-- **A refilled carry's inner budget is not empty.**  The reset the merge performs
-(`{ C with inner := walkInnerCap G }`) and the seed's own carry are both of this shape. -/
-theorem walkInnerReset_pos {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) :
-    1 ≤ { C with inner := walkInnerCap G }.inner := walkInnerCap_pos G
-
-/-- **The inner budget at the loop head is not empty.**  The equality is the refill's —
-`walkBack_step_at`'s carry and `walkSeed` both set `inner := walkInnerCap G` — and it is
-this lemma's hypothesis because it is not an invariant clause.  This is the lemma
-`HlastFacts.hinner` needs: with the scan's last visit (`qi + 1 = cw`) it gives `1 ≤
-C.inner`, which is `cw - qi ≤ C.inner`. -/
-theorem walkLoopHead_inner_pos {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
-    (_hblock : C.block = walkLoopHead) (hrefill : C.inner = walkInnerCap G) :
-    1 ≤ C.inner := hrefill ▸ walkInnerCap_pos G
-
-/-- The entry stream's position past its last entry: the totalisation's own value, which
-is what makes the finish's byte term vanish. -/
-theorem entryPos_nep {m0 : Mem} (G : WalkGeom m0) : entryPos G G.nep = 0 := by
-  have hlen : G.ent.length = G.nep := by
-    rw [← readLanes32_length m0 G.ep G.nep G.ent G.entries]
-  simp only [entryPos, List.getD_eq_getElem?_getD]
-  rw [List.getElem?_eq_none (by omega)]
-  rfl
-
-/-! ### The merge's step target
-
-`walkFinishMerge_at` names its target as an update of the merge's state; the exit tail's
-premises are read there, so it gets a name too: the three `phi` cells of the merge, at
-`if.then485.i`. -/
+  hlastMerge C s f.x f.inc f.nep f.v f.ix f.b35 f.r₁ f.r₂ f.r₃ f.cA f.rdv f.xA
 
 /-- The merge's target: `%cmp.i`, `%k.2.i` and `%sp.i.1`, at the exit tail's first block. -/
 def hlastThen {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State) (x : BitVec 8)
-    (inc nep c ix : BitVec 64) (e : BitVec 64) (b8 : BitVec 8) (x1 : BitVec 8)
-    (r₁ r₂ r₃ : CallOutcome) (ei cd : Nat) (cA rdv xA : BitVec 32)
-    (idx : BitVec 64) (a q : Nat) (x47 : BitVec 8) (qi cw k2 spv : Nat) : State :=
-  { hlastMerge C s x inc nep c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw with
+    (inc nep : BitVec 64) (v : Nat) (ix : BitVec 64) (b35 : UInt8)
+    (r₁ r₂ r₃ : CallOutcome) (cA rdv xA : BitVec 32) (k2 spv : Nat) : State :=
+  { hlastMerge C s x inc nep v ix b35 r₁ r₂ r₃ cA rdv xA with
     env := cells [("%cmp.i", .int 1 (0 : BitVec 1)),
       ("%k.2.i", .int 64 (BitVec.ofNat 64 k2)),
       ("%sp.i.1", .int 32 (BitVec.ofNat 32 spv))]
-      (hlastMerge C s x inc nep c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw).env
+      (hlastMerge C s x inc nep v ix b35 r₁ r₂ r₃ cA rdv xA).env
     pc := "if.then485.i", pre := some "cleanup478.i" }
 
 abbrev hlastThenF {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     (f : HlastFacts G C s) : State :=
-  hlastThen C s f.x f.inc f.nep f.c f.ix f.e f.b8 f.x1 f.r₁ f.r₂ f.r₃ f.ei f.cd f.cA
-    f.rdv f.xA f.idx f.a f.q f.x47 f.qi f.cw f.k2 f.spv
+  hlastThen C s f.x f.inc f.nep f.v f.ix f.b35 f.r₁ f.r₂ f.r₃ f.cA f.rdv f.xA f.k2 f.spv
 
 /-- The exit tail's carry: `if.then485.i`'s block, over the merge's. -/
 abbrev hlastThenC {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     (f : HlastFacts G C s) : WalkCarry G :=
   { hlastMergeCF f with block := "if.then485.i" }
 
-/-- **The last entry's path to the merge.**  The head path (the six-block
-fall-through, the seam, the class-C span, the tail's three links and the scan's three),
-as one segment at its own count plus the two the latch's exit and the merge cost.  The
-count is a literal — `hlastPrefixSeg` composes it from counted pieces — which is what
-lets the callers price the path by `omega`.
+/-! ### The last entry's path to the merge
 
-The scan's three links are `walkScanChain457_ws`'s, re-stated at their `_at` forms: that
-lemma leaves the latch existential, and the latch is where the exit test's premises are
-read.  The three named targets are `landRhs457OutAt`, `ScanS₉₆` and `hlastLatch`. -/
+`hlastPrefixSeg` is the nineteen-link segment to the merge's entry; the merge's own step
+(`walkIfEnd473_at`, one link) makes twenty.  The merge's target state is `hlastMerge`,
+whose `pre` is the block it left — that is the literal the merge's `phi` reads, and it is
+the tail's target's own `pc` only because `TailS₃`'s `if` is the else arm
+(`hlastEntry_pc`); the link leaves `some s.pc`, so the equation is rewritten into the
+segment's endpoint before it is composed. -/
+
+/-! ### The scan-free target's block
+
+The machine-checked statement that a last entry leaves for the merge and not for the
+scan: both cells of `if.then447.i`'s test are `%4`'s word, so the test is `ult v v` and
+`TailS₃`'s `if` is its else arm. -/
+
+/-- **The tail's target is the merge's entry, not the scan's landing.** -/
+theorem hlastEntry_pc {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (v : Nat) (ix : BitVec 64) (b35 : UInt8)
+    (r₁ r₂ r₃ : CallOutcome) (cA rdv xA : BitVec 32) :
+    (hlastEntry C s x inc nep v ix b35 r₁ r₂ r₃ cA rdv xA).pc = "if.end473.i" := by
+  show (if evalICmp .ult (BitVec.ofNat 64 v) (BitVec.ofNat 64 v) = 1 then
+    "land.rhs457.i" else "if.end473.i") = "if.end473.i"
+  rw [hlast_ult_self (BitVec.ofNat 64 v)]
+  rfl
+
+/-- **The last entry's path to the merge.**  The prefix (the head, the whitespace check,
+the token's end, the class-C span and the scan-free tail) as one segment at its own count,
+then the merge's step, with the merge's invariant. -/
 theorem hlast_toMerge {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead) (f : HlastFacts G C s) :
     WalkSegment (stage2Calls stage2SubCalls) G C s (hlastMergeCF f) (hlastMergeF f)
-        ((((((6 + 1) + 5) + 3) + 3) + 1) + 1) ∧
+        ((((((6 + 4) + 1) + 5) + 3) + 1)) ∧
       WalkInv G (hlastMergeCF f) (hlastMergeF f) := by
-  -- the head path, counted: `hlastPrefixSeg`'s eighteen steps
-  obtain ⟨s₀, hs₀, hsegP⟩ :=
+  -- the prefix: nineteen links to the merge's entry
+  have hpre : WalkSegment (stage2Calls stage2SubCalls) G C s
+      (TailCarryEnd (TailStartC C) f.ev) (hlastEntryF f) 19 :=
     hlastPrefixSeg (G := G) (C := C) (s := s) hInv hblock f.h8 f.hlt91 f.hlt123 f.hlt125
-      f.hne125 f.hinc f.hnep f.hge f.hpre5 f.hav5 f.hidx5 f.htok5 f.hgap5 f.hugt
-      f.hpre6 f.hin6 f.hv6 f.hend6 f.h8end f.hbit6 f.h8c f.hc110 f.hc116 f.hceq116
-      f.r₁ f.r₂ f.r₃ f.ev f.hTail f.hpreS f.hincS f.hopS
-      f.h3S f.hpos f.hreadS f.hbsS f.hloc105 f.h47 f.hbit47 f.hws47 f.hloc96 f.hlatch
-  have hsegL : WalkSegment (stage2Calls stage2SubCalls) G C s (ScanLatchC C f.ev)
-      (hlastLatchF f) ((((6 + 1) + 5) + 3) + 3) := by
-    rw [hs₀] at hsegP
-    exact hsegP
-  -- the latch's exit, one step
-  obtain ⟨s₅, hseg₅, -, hs₅, -⟩ :=
-    scanExitSeg (calls := stage2Calls stage2SubCalls) (G := G) (C := ScanLatchC C f.ev)
-      (s := hlastLatchF f) hsegL.inv' rfl f.hq f.hcwL f.hinner f.hqc f.hcw64 f.hexit
-  rw [hs₅] at hseg₅
-  -- the merge, one step
+      f.hne125 f.hinc f.hnep f.hge f.hav5 f.hidx5 f.htok5 f.hgap5 f.hugt f.hread35
+      f.hv63 f.hb13 f.hb32 f.hbne13 f.hbit6 f.hc110 f.hc116 f.hceq116 f.r₁ f.r₂ f.r₃
+      f.ev f.hTail
+  -- `%t352.i` at the merge's entry is the loop head's token record
+  have htokE : lookupName (hlastEntryF f).env "%t352.i" = some (.ptr C.stage.tok) := by
+    rw [hlastEntry_envTok C s f.x f.inc f.nep f.v f.ix f.b35 f.r₁ f.r₂ f.r₃ f.cA f.rdv f.xA,
+      hlastEndS_envTok C s f.x f.inc f.nep (BitVec.ofNat 64 f.v) f.ix]
+    exact (headAS5_envTokEq s f.x f.inc f.nep).symm
+      |>.trans f.htok5
+  -- the merge's step, one link
   obtain ⟨s₆, hl₆, hs₆⟩ :=
-    walkIfEnd473_at (sub := stage2SubCalls) (G := G) (C := ScanCMerge (ScanLatchC C f.ev))
-      (s := hlastScanOutF f) hseg₅.inv' rfl f.htokL
+    walkIfEnd473_at (sub := stage2SubCalls) (G := G) (C := TailCarryEnd (TailStartC C) f.ev)
+      (s := hlastEntryF f) hpre.inv' rfl (tok := C.stage.tok) htokE
+  -- the tail's `if` is the else arm, so the block it leaves is the merge's entry
+  have hpc : (hlastEntryF f).pc = "if.end473.i" :=
+    hlastEntry_pc C s f.x f.inc f.nep f.v f.ix f.b35 f.r₁ f.r₂ f.r₃ f.cA f.rdv f.xA
+  rw [hpc] at hs₆
   rw [hs₆] at hl₆
-  have hl₆' : WalkLink (stage2Calls stage2SubCalls) G (ScanCMerge (ScanLatchC C f.ev))
-      (hlastScanOutF f) (hlastMergeCF f) (hlastMergeF f) := hl₆
-  have hseg₆ : WalkSegment (stage2Calls stage2SubCalls) G (ScanCMerge (ScanLatchC C f.ev))
-      (hlastScanOutF f) (hlastMergeCF f) (hlastMergeF f) 1 := WalkSegment.of_link hl₆'
-  exact ⟨(hsegL.trans hseg₅).trans hseg₆, hl₆'.inv'⟩
+  have hlink : WalkLink (stage2Calls stage2SubCalls) G (TailCarryEnd (TailStartC C) f.ev)
+      (hlastEntryF f) (hlastMergeCF f) (hlastMergeF f) := hl₆
+  exact ⟨hpre.trans (WalkSegment.of_link hlink), hlink.inv'⟩
 
 /-! ### The two outcomes -/
 
-/-- **The finish disjunct.**  The last entry's path reaches `cleanup478.i` at the
-terminal index: the segment is `hlast_toMerge`'s, the merge's index is the `phi`'s
-selection `%inc.i`, and the entry count is the state's `%nep`.  The price is arithmetic:
-`hlastPrefixSeg` counts the head path at `18`, the latch's exit and the merge add `2`,
-and `hlastK` makes `Δk = 1`, so `22 ≤ 32`. -/
+/-- **The finish disjunct.**  The last entry's path reaches `cleanup478.i` at the terminal
+index: the segment is `hlast_toMerge`'s, the merge's index is the `phi`'s selection
+`%inc.i`, and the entry count is the state's `%nep`.  The price is arithmetic: the path is
+`20` links, `hlastK` makes `Δk = 1`, and `entryPos G G.nep = 0` kills the byte term, so
+`22 ≤ 32`. -/
 theorem hlast_finish {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead) (f : HlastFacts G C s) :
     ∃ (Cd : WalkCarry G) (sd : State) (p k2 : Nat) (prev : String) (kOp : Operand)
@@ -561,7 +398,7 @@ theorem hlast_finish {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
       p + 2 ≤ stage2EntryAllowance * (k2 - C.k) +
         stage2ByteAllowance * (entryPos G k2 - entryPos G C.k) := by
   obtain ⟨hseg, -⟩ := hlast_toMerge G C s hInv hblock f
-  refine ⟨hlastMergeCF f, hlastMergeF f, (((((6 + 1) + 5) + 3) + 3) + 1) + 1,
+  refine ⟨hlastMergeCF f, hlastMergeF f, ((((((6 + 4) + 1) + 5) + 3) + 1)),
     f.k2, "if.end473.i", .reg "%inc.i", f.nepv, hseg, rfl, rfl, by decide, f.hk2,
     f.hnepM, f.hterm, ?_⟩
   rw [f.hk2nep, entryPos_nep]
@@ -571,15 +408,15 @@ theorem hlast_finish {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
 
 /-- **The refusal disjunct.**  The same segment, the merge's step and the exit tail's
 first two blocks: the target is `if.then` with the merge's `phi` cells in place, and the
-carry's refusal offset is the invariant's (`WalkInv.eoff_le`), unchanged through the
-three carries.  The price fits the entries the loop has left and the document bytes it
-has not reached, which is the refusal's own accounting (`walkPotential_spend`'s
-direction) — `23 ≤ 32` at `Δk = 1` and the byte term is left as the credit it is.
+carry's refusal offset is the invariant's (`WalkInv.eoff_le`), unchanged through the two
+carries.  The price fits the entries the loop has left and the document bytes it has not
+reached, which is the refusal's own accounting (`walkPotential_spend`'s direction) —
+`20 + 3 ≤ 32` at `Δk = 1`, and the byte term is left as the credit it is.
 
 `hbit` is the exit tail's test at the merge's depth: `%sp.i.1 = 0` is *false*, so the
 merge's false arm takes `if.then488.i` and the refusal copy rather than `if.then490.i`
-and the normal exit.  It is the one field of the last entry's facts that says which of
-the two outcomes this is, which is why it is an argument rather than a bundle field. -/
+and the normal exit.  It is the one fact of the last entry's that says which of the two
+outcomes this is, which is why it is an argument rather than a bundle field. -/
 theorem hlast_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead) (f : HlastFacts G C s)
     (hbit : evalICmp .eq (BitVec.ofNat 32 f.spv) (BitVec.ofNat 32 0) = 0) :
@@ -623,8 +460,8 @@ theorem hlast_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     exact f.h4M
   obtain ⟨s₇, hseg₇, -, -, -⟩ :=
     walkFinishPath3 (G := G) (C := hlastThenC f) (s0 := hlastThenF f) hInvE rfl hspT
-      hbit heT h4T f.hv64
-  refine ⟨FinishCThen (hlastThenC f), s₇, ((((((6 + 1) + 5) + 3) + 3) + 1) + 1) + 1 + 2,
+      hbit heT h4T (by have := f.hv63; omega)
+  refine ⟨FinishCThen (hlastThenC f), s₇, ((((((6 + 4) + 1) + 5) + 3) + 1)) + 1 + 2,
     ((hseg.trans hsegM).trans hseg₇), rfl, hInv.eoff_le, ?_⟩
   have hΔ : G.nep - C.k = 1 := by rw [← f.hlastK]; omega
   simp only [stage2EntryAllowance, hΔ]
@@ -632,200 +469,62 @@ theorem hlast_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
 
 /-! ### The last entry's two paths, as the dispatch's result
 
-The two arms `hlast_finish`
-and `hlast_refuse` prove are the `merge` and `refuse` alternatives of
-`WalkDispatchResult` (`JsonStage2WalkDispatchThreeOfRun`), which is where a dispatch
-takes them: `WalkDispatchResult.ofHlastMerge` and `.ofHlastRefuse`.
+The two arms `hlast_finish` and `hlast_refuse` prove are the `merge` and `refuse`
+alternatives of `WalkDispatchResult` (`JsonStage2WalkDispatchThreeOfRun`), which is where a
+dispatch takes them: `WalkDispatchResult.ofHlastMerge` and `.ofHlastRefuse`.
 
-The disjunction that stood here — `∨` of the two anonymous existentials, selected by the
-exit tail's depth bit as `Or.inr` — is gone with the assembly's index split.  A
-disjunction of segments is not what the dispatch's classification consumes: the result is
-one endpoint with that endpoint's facts, and the classification is the merge's own test on
-the index it selected.  The depth bit does not choose between the two paths either — the
-merge is reached on both, so the bundle supports the `merge` arm whether or not the exit
-refuses — and that is why nothing here branches on it. -/
+A disjunction of segments is not what the dispatch's classification consumes: the result
+is one endpoint with that endpoint's facts, and the classification is the merge's own test
+on the index it selected.  The depth bit does not choose between the two paths either —
+the merge is reached on both — and that is why nothing here branches on it.
 
-/-! ### The use site
-
-`walkDispatchThree_ofLastFacts` stood here: the assembly's index split re-derived at
-`stage2Calls stage2SubCalls`, with the last entry's premise supplied by `hlast`.  It is
-deleted with the split it repeated.  The obstacle it carried is the same one the split
-carries: a standalone string satisfies `C.k + 1 < G.nep` (at `C.k = 0`, `G.nep = 2` the
-test is `0 + 1 < 2`), so the state takes the continuing branch, while its merge index is
-`2`, the stream's end.  Nothing in the bundle about the last entry is wrong; what was
-wrong is deciding the branch from the head's index.
-
-The use site is now `walkLoopStep_of_staging` (`JsonStage2WalkPremisesOfStaging`), which
+The use site is `walkLoopStep_of_staging` (`JsonStage2WalkPremisesOfStaging`), which
 builds a `WalkDispatchResult` at each head state — the `merge` arm from the continuing
 premise's own evidence, or `WalkDispatchResult.ofHlastMerge` from the last entry's bundle
 — and feeds `walkLoopStepThree_of_dispatchResult`.  The bundle stays where it is: it is
 the input's facts, and `HlastFacts.hlastK` says which states it describes. -/
-
 
 /-! ### The bundle's producer
 
 `HlastFacts` as a `Type` is inhabited by a structure literal; the question is what the
 literal has to be given, and the answer separates the fields into three kinds.
 
-**Fixed by the loop's own values.**  The entry's index and the stream's count are not
-free witnesses: at the loop's last entry they are `C.k + 1` and `G.nep`, and the bundle
-is produced at those.
+**Fixed by the loop's own values.**  The entry's index and the stream's count are not free
+witnesses: at the loop's last entry they are `C.k + 1` and `G.nep`, and the bundle is
+produced at those.  `%4`'s word and the entry's index are the staging's two registers, and
+the bundle is produced at the staging's values for them.
 
-**The map, per group.**  Produced · reduced to a named premise · premised correctly
-(the model cannot supply it) · not shown either way, with the reason:
+**The map, per group.**  Produced · premised correctly (the model cannot supply it) ·
+supplied as a named premise:
 
 | group | status |
 |---|---|
-| the entry counts (`inc`, `nep`, `hge`) | **produced**: the witnesses are the loop's values, and `hge` is `ult (C.k+1) G.nep` at `C.k + 1 = G.nep`, a word compared with itself |
-| the merge's five cells (`%inc.i`, `%nep`, `%sp.i.0248`, `%e`, `%4`) | **produced**: `%sp.i.0248` is `WalkInv.depth_reg` itself (so `spv := C.sp`, no premise), and the other four from premises at the loop head: `hlastMerge_envInc`/`…Nep`/`…Sp`/`…E`/`…Four` peel `lookupName` from the merge down to `s`, so no field is stated at a state the caller would have to compute |
-| `hterm`, `hk2nep`, `hcw0`, `hinner` | **produced**: `G.nep` below `2^64`, the loop's equation, the scan's last visit, and the refill's `1 ≤ C.inner` (`walkLoopHead_inner_pos`, from `C.inner = walkInnerCap G`) |
-| the tail (`r₁`, `r₂`, `r₃`, `ev`, `hTail`) | **produced**: the three calls' contracts applied at their three staged argument lists (`s2ValuePosContract`, `s2ScalarValueContract`, `s2AfterValueContract`), composed by `consumerTailSegAt` in `hlastTail_of_calls`.  Contract 1's post hands the caller's memory back, so the stream read is stated at the staging and re-expressed at `r₁.mem`; contract 3's post names the copy call's answer and memory.  Contract 2's post is existential in the record, so the trace's naming of the appended record (`happ₂`) stays a premise — see the row for it below |
-| the scan's landing (`idx`, `a`, `src`, `sel`, `x47`, `hpreS`, `hincS`, `hopS`, `h3S`, `h47`, `hloc105`, `hloc96`) | **produced**: `hlastEntry_pre` and `hlastEntry_phiSel` are the entry's own construction; `%ee.1.i` and `%3` peel to the tail's start (`hlastEntry_envEe`, `hlastEntry_env3`), so `idx = ofNat 64 ei` and `a = G.b`; `%47` is `landRhs457OutAt`'s own cell (`x47 = ofNat 8 q`), and `q` is the byte read's value (`q = bytesToNat bs`, so `hbsS` is `rfl`); `hloc105`/`hloc96` hold because neither `NodeBlock105` nor `LeafBlock96` is a `WalkLocal` scan block (`hlastLoc105`, `hlastLoc96`) |
-| the scan's byte read and its class (`hpos`, `hreadS`, `hbit47`, `hws47`, and `bs`) | **premises, correctly: the document's.**  The byte at `G.b + idx`, the bound its extraction needs, and the two tests on it are properties of `G.bs`; neither the invariant nor the staging fixes a document byte's value.  `hreadS` stays at `r₃.mem`, and the reconciliation that would move it to the third call's entry memory is **not available**: it needs the callee's write region (`s2AfterValueFoot`) disjoint from `G.b + idx`, and the model carries stack/token/log separation but **no document-versus-staging separation** — the invariant *cannot* state it |
-| the appended record's identity (`happ₂`) | **premise — a witness the producer does not expose, not a missing fact.**  `s2ScalarValuePost` concludes the append existentially in the record, while the bundle's `ev` is the *trace's* record and the tail's carry advances the trace by it; naming the record is the emission's step, not the callee's.  This is the count-without-a-name shape one level out.  **For the contract slice's owner:** if `s2ScalarValuePost` exposed the appended record, `happ₂` would become derivable for every consumer, not only this one |
-| the latch's local (`hlatch`) | **reduced**: `WalkLocal` at `while.body462.i` *is* the `ScanCount` the latch's own state writes |
-| the latch's exit test (`hq`, `hcwL`, `hqc`, `hcw64`, `hexit`, `htokL`) | **reduced**: `%q.0.i246` and `%cond350.i` are cells the scan's own states write; `hexit` is the exit's local at the latch |
-| the head's byte | **produced by the invariant**: `h8` is `hInv.iter.reg8`, and the witness is the name `hlastByte G C = ofNat 8 (entryByte G C.k).toNat` |
-| the eight class bits on the head's byte | **premises, correctly: the document's**, not the staging's.  The four pivot decisions, `if.end372.i`'s byte test and the three class tests are all properties of `entryByte G C.k` — and the seam's four are about the *same* byte, because `%8` is not rebound: `hlastEndS_env8` peels it from the token's end to the loop head, so `b8 = hlastByte G C` and `h8end` is `hInv.iter.reg8`.  What the staging fixes is addresses, not values |
-| the default arm's and the seam's cells (`reg`, `c`, `p`, `op`, `e`, `b8`, and the ten facts about them) | **produced**: `hlast_pre5` and `hlast_phi6` are closed `phi` computations; `%4` and `%gap.i` peel from the default arm to `s` (`hlastAS5_envFour`, `hlastAS5_envGap`) and `%8`/`%end.i` from the token's end (`hlastEndS_env8`, `hlastEndS_envEnd`), so `c = ofNat 64 v` (the staging's `h4L`), `%end.i` is `regs`'s, and `pre` is the state's own predecessor (`hlast_pre6`); `e = ix` and the `%idxprom.i`/`%t352.i` lookups follow from `hidxS`/`htokS`, stated at the loop head |
-| the seeded registers `%idxprom.i` and `%t352.i` | **not shown derivable and not shown underivable.**  The producer takes them at the loop head (`hidxS`, `htokS`) so no field is stated at a state the caller would have to compute.  No `WalkInv` clause names either — `walkStaticRegs`'s twenty-four names and `WalkPtrs`'s six do not contain them — so the invariant as it stands has no route to them.  The producer they would need is the seed's: `walkSeed`'s environment binds `%t352.i` to the token and `%idxprom.i` is loaded per entry.  Neither a derivation nor an impossibility is claimed here |
-| `hugt` | **premises, correctly: the document's, and it is the last entry's arm.**  The token's position against the entry's index is a relation between `%4`'s word and the entry stream, and neither the invariant nor the staging fixes it; its value `= 0` is the last entry's (`%cond350.i` is `%4`, the stream's end), where the continuing bundle's is `= 1` — the two differ by arm rather than by a mistake |
-| the second byte's class (`h8c`) | **produced**: `if.end372.i` binds five cells and none is `%8`, so `hlastSeam_env8` peels the seam to the token's end and `h8c` *is* `h8end`.  The three class bits stay premises about that byte |
-| the merge's `%e` and `%4` *values* | **premises, correctly: the staging's.**  No `WalkInv` clause names either — `walkStaticRegs`'s twenty-four names exclude both, and `WalkPtrs`'s six do not contain them — so the values can only be the caller's `heL`/`h4L`.  The producer peels the two cells from the merge to `s`, so the caller states them at the loop head rather than at a computed state |
+| the head's byte (`x`, `h8`) | **produced**: `hInv.iter.reg8` is the field, and the witness is `hlastByte G C` |
+| its four pivot bits (`hlt91`, `hlt123`, `hlt125`, `hne125`) | **premised correctly: the document's.**  Which byte the document holds at the entry's position is not the walk's |
+| the entry counts (`inc`, `nep`, `hinc`, `hnep`, `hge`) | **produced, from no supplied fact**: the witnesses are the loop's values (`hlastIncV C`, `hlastNepV G`), `hge` is `ult (C.k+1) G.nep` at `C.k + 1 = G.nep` — a word compared with itself — and the two cells are `WalkInv.inc_reg` and `%nep`'s `walkStaticRegs` row, peeled to `sw.default.i`'s entry (`headAS4_envInc`, `headAS4_envNep`) |
+| the default arm's cells (`v`, `hav5`, `ix`, `hidx5`, `htok5`, `hgap5`) | **produced**: `%4` is the staging's (`h4L`), `%idxprom.i` and `%t352.i` are the staging's at the loop head (`hidxS`, `htokS`), `%gap.i` is `regs`'s, and each is peeled to `headAS₅` (`hlastAS5_envFour`/`…Idx`/`…Tok`/`…Gap`) |
+| the byte test's value (`hugt`) | **premised correctly: the document's.**  The stream's end against this entry's index is a relation between `%4`'s word and the entry stream, and neither the invariant nor the staging fixes it.  Its value `= 1` is the last entry's arm |
+| the byte before the end (`b35`, `hread35`, `hv63`) | **premised correctly: the document's and the staging's.**  The address is `%cond350.i - 1`, which `%4`'s word fixes; the byte at it and its width are the document's |
+| that byte's three class bits (`hb13`, `hb32`, `hbne13`) | **premised correctly: the document's**, and they are the class the price's longest path names: no whitespace run |
+| the seam's byte test (`hbit6`) | **premised correctly: the document's** — a property of `%8`, the entry's first byte, which no block on the path rebinds |
+| the class-C span's three bits (`hc110`, `hc116`, `hceq116`) | **premised correctly: the document's** — three more on the same byte |
+| the tail's counted segment (`hTail`, `r₁`, `r₂`, `r₃`, `ev`, `cA`, `rdv`, `xA`) | **produced**: the three calls' contracts applied at their three staged argument lists, composed by `consumerTailSegEmptyAt` in `hlastTail_of_calls`.  The scan's entry's two cells are *peeled* — `%ee.1.i` is the seam's stored end and `%cond350.i` the same word (`hlastTail_ee`, `hlastTail_cond`) — so the empty arm's equation is `rfl` and no budget is asked for |
+| the appended record's identity (`happ₂`) | **premise — a witness the producer does not expose, not a missing fact.**  `s2ScalarValuePost` concludes the append existentially in the record, while the bundle's `ev` is the *trace's* record and the tail's carry advances the trace by it; naming the record is the emission's step, not the callee's.  **For the contract slice's owner:** if `s2ScalarValuePost` exposed the appended record, `happ₂` would become derivable for every consumer, not only this one |
+| the merge's cells (`k2`, `nepv`, `spv`, and their five lookups) | **produced**: `%sp.i.0248` is `WalkInv.depth_reg`, `%inc.i` is `inc_reg` and `%nep` is `regs`'s — three invariant cells, so `spv := C.sp`, `k2 := C.k + 1` and `nepv := hlastNepV G` — and `%e`/`%4` are the caller's two staging words (`heL`, `h4L`); the five `hlastMerge_env*` peels read `lookupName` down to `s`, so no field is stated at a state the caller would have to compute |
+| `hterm`, `hk2nep` | **produced**: `G.nep` below `2^64` and the loop's equation |
+| the entry being the stream's last (`hlastK`) | **supplied: the loop's own index, and the premise the consumer also holds** (`¬ (C.k + 1 < G.nep)`).  It is what makes the price `Δk = 1` and the byte term zero |
 
-**A lemma whose conclusion has no landing site contributes its premises, not its
-conclusion.**  `walkScanLinks457` concludes a segment from the landing to the latch, and
-the bundle carries no field of that shape: what it carries at the landing is that
-lemma's premise set, so the producible part of it is produced directly rather than
-through a lemma whose conclusion has nowhere to land.  That is the composition-home rule
-read backwards — the home is chosen by where the term is *stated*, so a composition
-whose target is not a field supplies evidence, not a segment.
+**The map's counted shape, per row: 6 produced, 7 premised correctly, 1 supplied as a
+named premise** — fourteen rows in all, so **6 of 14 produced**.  Against the pre-repair
+bundle's `9 of 16`, the count fell because four of its rows were the scan's — its entry,
+its landing, its latch and its budget — and the path has none of them.  What the smaller
+bundle buys is the property the larger one lacked: **it is inhabited at a real last
+entry**, so `WalkLoopEnd.facts` is no longer vacuous.
 
-**The map's final shape, per row: 8 produced, 2 reduced to a named premise, 5 premises
-held correctly, 1 not shown either way** — sixteen rows in all, so **8 of 16 produced.**
-The five correctly-premised are the document's byte read, the document's eight class
-bits, its position relation (`hugt`), the record the callee does not name, and the
-staging's `%e`/`%4` values; each names the clause, list or contract that *cannot* supply
-it.  The one open row is the pair of seeded registers, and it is open in both directions
-on purpose.  No row is left ambiguous about which of the two it is.
-
-Nothing above is a field weakened to make a proof go through: the derived witnesses
-and the produced fields are consequences, and the two shape changes (`hTail` a
-segment, the refill an equality) stay.
+Nothing above is a field weakened to make a proof go through: every produced witness is a
+consequence of the invariant, the staging's addresses or the model's own values, and the
+premises name the clause, list or contract that *cannot* supply them.
 -/
-
-/-- `%inc.i`'s value at the last entry, as the bundle's `inc`. -/
-abbrev hlastIncV {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) : BitVec 64 :=
-  BitVec.ofNat 64 (C.k + 1)
-
-/-- `%nep`'s value, as the bundle's `nep`. -/
-abbrev hlastNepV {m0 : Mem} (G : WalkGeom m0) : BitVec 64 :=
-  BitVec.ofNat 64 G.nep
-
-/-- The scan's entry at the last entry's counts. -/
-abbrev hlastEntryAt {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (x : BitVec 8) (c ix : BitVec 64) (e : BitVec 64) (b8 : BitVec 8) (x1 : BitVec 8)
-    (r₁ r₂ r₃ : CallOutcome) (ei cd : Nat) (cA rdv xA : BitVec 32) : State :=
-  hlastEntry C s x (hlastIncV C) (hlastNepV G) c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA
-
-/-- The latch at the last entry's counts. -/
-abbrev hlastLatchAt {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (x : BitVec 8) (c ix : BitVec 64) (e : BitVec 64) (b8 : BitVec 8) (x1 : BitVec 8)
-    (r₁ r₂ r₃ : CallOutcome) (ei cd : Nat) (cA rdv xA : BitVec 32)
-    (idx : BitVec 64) (a q : Nat) (x47 : BitVec 8) : State :=
-  hlastLatch C s x (hlastIncV C) (hlastNepV G) c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA
-    idx a q x47
-
-/-- The latch's exit at the last entry's counts. -/
-abbrev hlastScanOutAt {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (x : BitVec 8) (c ix : BitVec 64) (e : BitVec 64) (b8 : BitVec 8) (x1 : BitVec 8)
-    (r₁ r₂ r₃ : CallOutcome) (ei cd : Nat) (cA rdv xA : BitVec 32)
-    (idx : BitVec 64) (a q : Nat) (x47 : BitVec 8) (qi cw : Nat) : State :=
-  hlastScanOut C s x (hlastIncV C) (hlastNepV G) c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA
-    idx a q x47 qi cw
-
-/-- The merge at the last entry's counts. -/
-abbrev hlastMergeAt {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (x : BitVec 8) (c ix : BitVec 64) (e : BitVec 64) (b8 : BitVec 8) (x1 : BitVec 8)
-    (r₁ r₂ r₃ : CallOutcome) (ei cd : Nat) (cA rdv xA : BitVec 32)
-    (idx : BitVec 64) (a q : Nat) (x47 : BitVec 8) (qi cw : Nat) : State :=
-  hlastMerge C s x (hlastIncV C) (hlastNepV G) c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA
-    idx a q x47 qi cw
-
-/-- `%inc.i` at the merge is `%inc.i` at the loop head: no block on the path binds it. -/
-theorem hlastMerge_envInc {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (x : BitVec 8) (c ix : BitVec 64) (e : BitVec 64) (b8 : BitVec 8) (x1 : BitVec 8)
-    (r₁ r₂ r₃ : CallOutcome) (ei cd : Nat) (cA rdv xA : BitVec 32)
-    (idx : BitVec 64) (a q : Nat) (x47 : BitVec 8) (qi cw : Nat) :
-    lookupName
-        (hlastMergeAt C s x c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw).env
-        "%inc.i" = lookupName s.env "%inc.i" := by
-  simp only [hlastMerge, hlastScanOut, hlastLatch, hlastEntry, ScanEntry, TailStart,
-    TailS₃, seamAt, seamS, seamFin, headEndS, condEnd349OutAt, headAS₁, headAS₂, headAS₃,
-    headAS₄, headAS₅, HeadS413, HeadS405, HeadS58, HeadS60, HeadS62, landRhs457OutAt,
-    Latch462S, scanLatchOut, stateAt, cells, State.bind]
-  repeat rw [lookupName_cons_ne _ _ (by decide)]
-
-/-- `%nep` at the merge is `%nep` at the loop head: no block on the path binds it. -/
-theorem hlastMerge_envNep {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (x : BitVec 8) (c ix : BitVec 64) (e : BitVec 64) (b8 : BitVec 8) (x1 : BitVec 8)
-    (r₁ r₂ r₃ : CallOutcome) (ei cd : Nat) (cA rdv xA : BitVec 32)
-    (idx : BitVec 64) (a q : Nat) (x47 : BitVec 8) (qi cw : Nat) :
-    lookupName
-        (hlastMergeAt C s x c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw).env
-        "%nep" = lookupName s.env "%nep" := by
-  simp only [hlastMerge, hlastScanOut, hlastLatch, hlastEntry, ScanEntry, TailStart,
-    TailS₃, seamAt, seamS, seamFin, headEndS, condEnd349OutAt, headAS₁, headAS₂, headAS₃,
-    headAS₄, headAS₅, HeadS413, HeadS405, HeadS58, HeadS60, HeadS62, landRhs457OutAt,
-    Latch462S, scanLatchOut, stateAt, cells, State.bind]
-  repeat rw [lookupName_cons_ne _ _ (by decide)]
-
-/-- `%e` at the merge is `%e` at the loop head: no block on the path binds it. -/
-theorem hlastMerge_envE {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (x : BitVec 8) (c ix : BitVec 64) (e : BitVec 64) (b8 : BitVec 8) (x1 : BitVec 8)
-    (r₁ r₂ r₃ : CallOutcome) (ei cd : Nat) (cA rdv xA : BitVec 32)
-    (idx : BitVec 64) (a q : Nat) (x47 : BitVec 8) (qi cw : Nat) :
-    lookupName
-        (hlastMergeAt C s x c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw).env
-        "%e" = lookupName s.env "%e" := by
-  simp only [hlastMerge, hlastScanOut, hlastLatch, hlastEntry, ScanEntry, TailStart,
-    TailS₃, seamAt, seamS, seamFin, headEndS, condEnd349OutAt, headAS₁, headAS₂, headAS₃,
-    headAS₄, headAS₅, HeadS413, HeadS405, HeadS58, HeadS60, HeadS62, landRhs457OutAt,
-    Latch462S, scanLatchOut, stateAt, cells, State.bind]
-  repeat rw [lookupName_cons_ne _ _ (by decide)]
-
-/-- `%4` at the merge is `%4` at the loop head: no block on the path binds it. -/
-theorem hlastMerge_envFour {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (x : BitVec 8) (c ix : BitVec 64) (e : BitVec 64) (b8 : BitVec 8) (x1 : BitVec 8)
-    (r₁ r₂ r₃ : CallOutcome) (ei cd : Nat) (cA rdv xA : BitVec 32)
-    (idx : BitVec 64) (a q : Nat) (x47 : BitVec 8) (qi cw : Nat) :
-    lookupName
-        (hlastMergeAt C s x c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw).env
-        "%4" = lookupName s.env "%4" := by
-  simp only [hlastMerge, hlastScanOut, hlastLatch, hlastEntry, ScanEntry, TailStart,
-    TailS₃, seamAt, seamS, seamFin, headEndS, condEnd349OutAt, headAS₁, headAS₂, headAS₃,
-    headAS₄, headAS₅, HeadS413, HeadS405, HeadS58, HeadS60, HeadS62, landRhs457OutAt,
-    Latch462S, scanLatchOut, stateAt, cells, State.bind]
-  repeat rw [lookupName_cons_ne _ _ (by decide)]
-
-/-- `%sp.i.0248` at the merge is `%sp.i.0248` at the loop head: no block on the path binds it. -/
-theorem hlastMerge_envSp {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (x : BitVec 8) (c ix : BitVec 64) (e : BitVec 64) (b8 : BitVec 8) (x1 : BitVec 8)
-    (r₁ r₂ r₃ : CallOutcome) (ei cd : Nat) (cA rdv xA : BitVec 32)
-    (idx : BitVec 64) (a q : Nat) (x47 : BitVec 8) (qi cw : Nat) :
-    lookupName
-        (hlastMergeAt C s x c ix e b8 x1 r₁ r₂ r₃ ei cd cA rdv xA idx a q x47 qi cw).env
-        "%sp.i.0248" = lookupName s.env "%sp.i.0248" := by
-  simp only [hlastMerge, hlastScanOut, hlastLatch, hlastEntry, ScanEntry, TailStart,
-    TailS₃, seamAt, seamS, seamFin, headEndS, condEnd349OutAt, headAS₁, headAS₂, headAS₃,
-    headAS₄, headAS₅, HeadS413, HeadS405, HeadS58, HeadS60, HeadS62, landRhs457OutAt,
-    Latch462S, scanLatchOut, stateAt, cells, State.bind]
-  repeat rw [lookupName_cons_ne _ _ (by decide)]
-
-/-- An unsigned comparison of a word with itself is zero. -/
-theorem hlast_ult_self {w : Nat} (a : BitVec w) : evalICmp .ult a a = 0 := by
-  simp only [evalICmp, BitVec.ult_eq_decide, lt_self_iff_false]
-  rfl
 
 /-- The entry count's word reads back as itself: it is below `2 ^ 64`. -/
 theorem hlast_nep_toNat {m0 : Mem} (G : WalkGeom m0) : (hlastNepV G).toNat = G.nep := by
@@ -836,223 +535,97 @@ theorem hlast_nep_toNat {m0 : Mem} (G : WalkGeom m0) : (hlastNepV G).toNat = G.n
     omega
   simp only [hlastNepV, BitVec.toNat_ofNat, Nat.mod_eq_of_lt h]
 
-/-- **The refill at the seed**, by construction: `walkSeed`'s carry is the cap. -/
-theorem walkSeed_inner_eq {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) :
-    (walkSeed G S).inner = walkInnerCap G := rfl
+/-! ### The refill at the loop head
 
-/-- **The refill at a revolution's head carry**, by construction: the shape
-`WalkDispatch.revolution` builds. -/
-theorem walkHeadCarry_inner_eq {m0 : Mem} {G : WalkGeom m0} (Cd : WalkCarry G)
-    (k2 spv : Nat) :
-    ({ { Cd with block := "while.body.i", inner := walkInnerCap G } with
-        block := walkLoopHead, k := k2, sp := spv } : WalkCarry G).inner = walkInnerCap G :=
-  rfl
+`WalkInv.inner_cap` bounds the inner component **above** (`C.inner ≤ walkInnerCap G`), and
+that is all the invariant may say: `WalkInv` is asserted at mid-scan states, where `inner`
+is being spent down.  **A lower bound that is only true at the loop head belongs to the
+refill's lemma, not to the invariant** — and the last entry's bundle no longer needs one at
+all, because its path enters no scan.  The lemma stays for the continuing arm's producer
+(`hcontFacts_of_staging`), which reads it for the whitespace bundle's `hinner`.
+-/
 
-/-- **`%8` at the seam is `%8` at the token's end.**  `if.end372.i` binds five cells and
-none of them is `%8`, so the second byte's class is read at a byte the entry established —
-not at a store. -/
-theorem hlastSeam_env8 {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (x : BitVec 8) (c ix : BitVec 64) (e : BitVec 64) (b8 : BitVec 8) :
-    lookupName (seamAt C s x (hlastIncV C) (hlastNepV G) c ix e b8).env "%8" =
-      lookupName (headEndS C s x (hlastIncV C) (hlastNepV G) c ix).env "%8" := by
-  simp only [seamAt, seamS, seamFin, stateAt]
+/-- **The cap is at least one.**  `walkInnerCap G = 4 * G.n + 5`. -/
+theorem walkInnerCap_pos {m0 : Mem} (G : WalkGeom m0) : 1 ≤ walkInnerCap G := by
+  simp only [walkInnerCap]
+  omega
+
+/-- **The inner budget at the loop head is not empty.**  The equality is the refill's —
+`walkBack_step_at`'s carry and `walkSeed` both set `inner := walkInnerCap G` — and it is
+this lemma's hypothesis because it is not an invariant clause. -/
+theorem walkLoopHead_inner_pos {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    (_hblock : C.block = walkLoopHead) (hrefill : C.inner = walkInnerCap G) :
+    1 ≤ C.inner := hrefill ▸ walkInnerCap_pos G
+
+/-! ### The cells the merge carries, peeled to where their evidence is
+
+Five of the bundle's merge group are closed computations of the states it names: `%inc.i`,
+`%nep`, `%sp.i.0248`, `%e` and `%4`.  The peels below are the steps between the merge and
+the loop head — each says that no block on the path binds the name. -/
+
+/-- `%inc.i` at the merge is `%inc.i` at the loop head: no block on the path binds it. -/
+theorem hlastMerge_envInc {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (v : Nat) (ix : BitVec 64) (b35 : UInt8)
+    (r₁ r₂ r₃ : CallOutcome) (cA rdv xA : BitVec 32) :
+    lookupName (hlastMerge C s x inc nep v ix b35 r₁ r₂ r₃ cA rdv xA).env "%inc.i" =
+      lookupName s.env "%inc.i" := by
+  simp only [hlastMerge, hlastEntry, ScanEntry, TailS₃, hlastTail, HeadS413, HeadS405,
+    HeadS58, HeadS60, HeadS62, hlastSeam, seamS, seamFin, hlastP35, hlastP39, hlastP41,
+    hlastLand, headEndS, condEnd349OutAt, headAS₅, headAS₄, headAS₃, headAS₂, headAS₁,
+    stateAt, cells, State.bind]
   repeat rw [lookupName_cons_ne _ _ (by decide)]
 
-/-- The head's byte, as the invariant names it: `WalkInv.iter.reg8` is this term. -/
-abbrev hlastByte {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) : BitVec 8 :=
-  BitVec.ofNat 8 (entryByte G C.k).toNat
-
-/-- The tail's start state, at the bundle's terms: `if.then413.i`'s entry. -/
-abbrev hlastTailS {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (x : BitVec 8) (c ix : BitVec 64) (e : BitVec 64) (b8 : BitVec 8) : State :=
-  TailStart C s x (hlastIncV C) (hlastNepV G) c ix e b8 b8
-
-/-- **The scan's entry's `pre` is `if.then447.i`** — the copy call's block, by
-construction: `ScanEntry` ends in `TailS₃`, whose `pre` is its predecessor's `pc`. -/
-theorem hlastEntry_pre {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (x : BitVec 8) (c ix : BitVec 64) (e : BitVec 64) (b8 : BitVec 8)
-    (r₁ r₂ r₃ : CallOutcome) (ei cd : Nat) (cA rdv xA : BitVec 32) :
-    (hlastEntryAt C s x c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA).pre = some "if.then447.i" := by
-  simp only [hlastEntryAt, hlastEntry, ScanEntry, TailS₃, stateAt]
-
-/-- **The scan's entry selects `%ee.1.i`** on the edge the copy call took: the `phi`'s
-two arms, the second of which `if.then447.i` names. -/
-theorem hlastEntry_phiSel :
-    phiIncoming "if.then447.i"
-      [("while.body462.i", (Operand.reg "%inc463.i")),
-       ("if.then447.i", (Operand.reg "%ee.1.i"))] = some (.reg "%ee.1.i") := by
-  decide
-
-/-- `%ee.1.i` at the scan's entry is `%ee.1.i` at the tail's start: the three tail
-states bind seven cells and none of them is `%ee.1.i`. -/
-theorem hlastEntry_envEe {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (x : BitVec 8) (c ix : BitVec 64) (e : BitVec 64) (b8 : BitVec 8)
-    (r₁ r₂ r₃ : CallOutcome) (ei cd : Nat) (cA rdv xA : BitVec 32) :
-    lookupName (hlastEntryAt C s x c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA).env "%ee.1.i" =
-      lookupName (hlastTailS C s x c ix e b8).env "%ee.1.i" := by
-  simp only [hlastEntryAt, hlastEntry, hlastTailS, ScanEntry, TailS₃, stateAt, cells]
+/-- `%nep` at the merge is `%nep` at the loop head: no block on the path binds it. -/
+theorem hlastMerge_envNep {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (v : Nat) (ix : BitVec 64) (b35 : UInt8)
+    (r₁ r₂ r₃ : CallOutcome) (cA rdv xA : BitVec 32) :
+    lookupName (hlastMerge C s x inc nep v ix b35 r₁ r₂ r₃ cA rdv xA).env "%nep" =
+      lookupName s.env "%nep" := by
+  simp only [hlastMerge, hlastEntry, ScanEntry, TailS₃, hlastTail, HeadS413, HeadS405,
+    HeadS58, HeadS60, HeadS62, hlastSeam, seamS, seamFin, hlastP35, hlastP39, hlastP41,
+    hlastLand, headEndS, condEnd349OutAt, headAS₅, headAS₄, headAS₃, headAS₂, headAS₁,
+    stateAt, cells, State.bind]
   repeat rw [lookupName_cons_ne _ _ (by decide)]
 
-/-- `%3` at the scan's entry is the document's base: the tail binds none of the six
-pointer registers, so the invariant's carried binding is the entry's own. -/
-theorem hlastEntry_env3 {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (x : BitVec 8) (c ix : BitVec 64) (e : BitVec 64) (b8 : BitVec 8)
-    (r₁ r₂ r₃ : CallOutcome) (ei cd : Nat) (cA rdv xA : BitVec 32)
-    (hInvT : WalkInv G (TailStartC C) (hlastTailS C s x c ix e b8)) :
-    lookupName (hlastEntryAt C s x c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA).env "%3" =
-      some (.ptr G.b) := by
-  simp only [hlastEntryAt, hlastEntry, ScanEntry, TailS₃, stateAt, cells]
+/-- `%e` at the merge is `%e` at the loop head: no block on the path binds it. -/
+theorem hlastMerge_envE {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (v : Nat) (ix : BitVec 64) (b35 : UInt8)
+    (r₁ r₂ r₃ : CallOutcome) (cA rdv xA : BitVec 32) :
+    lookupName (hlastMerge C s x inc nep v ix b35 r₁ r₂ r₃ cA rdv xA).env "%e" =
+      lookupName s.env "%e" := by
+  simp only [hlastMerge, hlastEntry, ScanEntry, TailS₃, hlastTail, HeadS413, HeadS405,
+    HeadS58, HeadS60, HeadS62, hlastSeam, seamS, seamFin, hlastP35, hlastP39, hlastP41,
+    hlastLand, headEndS, condEnd349OutAt, headAS₅, headAS₄, headAS₃, headAS₂, headAS₁,
+    stateAt, cells, State.bind]
   repeat rw [lookupName_cons_ne _ _ (by decide)]
-  exact hInvT.ptrs.1
 
-/-- **`%47` at the landing is the scanned byte**: `landRhs457OutAt` binds it to
-`ofNat 8 q`, so the landing's `%47` cell is the load's own value. -/
-theorem landRhs457OutAt_env47 {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (x : BitVec 8) (c ix : BitVec 64) (e : BitVec 64) (b8 : BitVec 8)
-    (r₁ r₂ r₃ : CallOutcome) (ei cd : Nat) (cA rdv xA : BitVec 32)
-    (idx : BitVec 64) (a q : Nat) :
-    evalOperand (landRhs457OutAt
-      (hlastEntryAt C s x c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA) idx a q)
-      (.reg "%47") = some (.int 8 (BitVec.ofNat 8 q)) := by
-  simp only [landRhs457OutAt, stateAt, cells, evalOperand]
-  rw [lookupName_cons_self]
+/-- `%4` at the merge is `%4` at the loop head: no block on the path binds it. -/
+theorem hlastMerge_envFour {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (v : Nat) (ix : BitVec 64) (b35 : UInt8)
+    (r₁ r₂ r₃ : CallOutcome) (cA rdv xA : BitVec 32) :
+    lookupName (hlastMerge C s x inc nep v ix b35 r₁ r₂ r₃ cA rdv xA).env "%4" =
+      lookupName s.env "%4" := by
+  simp only [hlastMerge, hlastEntry, ScanEntry, TailS₃, hlastTail, HeadS413, HeadS405,
+    HeadS58, HeadS60, HeadS62, hlastSeam, seamS, seamFin, hlastP35, hlastP39, hlastP41,
+    hlastLand, headEndS, condEnd349OutAt, headAS₅, headAS₄, headAS₃, headAS₂, headAS₁,
+    stateAt, cells, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
 
-/-- **The dispatch's entry has no local clause.**  `WalkLocal`'s scan arms cover
-`while.body462.i` and `land.rhs457.i`; `NodeBlock105` is not among them, so the
-landing's local fact is `True` at its own carry. -/
-theorem hlastLoc105 {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (ev : EventRecord)
-    (s : State) (idx : BitVec 64) (a q : Nat) :
-    WalkLocal (ScanC₁₀₅ (TailCarryScan C ev)) (landRhs457OutAt s idx a q) := by
-  simp only [WalkLocal]
-  repeat rw [ite_eq_right (by decide)]
-  trivial
+/-- `%sp.i.0248` at the merge is `%sp.i.0248` at the loop head: no block binds it. -/
+theorem hlastMerge_envSp {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (v : Nat) (ix : BitVec 64) (b35 : UInt8)
+    (r₁ r₂ r₃ : CallOutcome) (cA rdv xA : BitVec 32) :
+    lookupName (hlastMerge C s x inc nep v ix b35 r₁ r₂ r₃ cA rdv xA).env "%sp.i.0248" =
+      lookupName s.env "%sp.i.0248" := by
+  simp only [hlastMerge, hlastEntry, ScanEntry, TailS₃, hlastTail, HeadS413, HeadS405,
+    HeadS58, HeadS60, HeadS62, hlastSeam, seamS, seamFin, hlastP35, hlastP39, hlastP41,
+    hlastLand, headEndS, condEnd349OutAt, headAS₅, headAS₄, headAS₃, headAS₂, headAS₁,
+    stateAt, cells, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
 
-/-- **The range leaf has no local clause either.**  `LeafBlock96` is not one of
-`WalkLocal`'s scan blocks, so the leaf's local fact is `True` at its own carry. -/
-theorem hlastLoc96 {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (ev : EventRecord)
-    (s : State) (idx : BitVec 64) (a q : Nat) (x47 : BitVec 8) :
-    WalkLocal (ScanC₉₆ (TailCarryScan C ev)) (ScanS₉₆ s idx a q x47) := by
-  simp only [WalkLocal]
-  repeat rw [ite_eq_right (by decide)]
-  trivial
+/-! ### The default arm's remaining cells
 
-/-- **The tail, produced from the three calls' contracts.**  The value-position call,
-the scalar call's emit arm and the copy call, each applied at its own staged argument
-list and at the caller's own state, then composed by `consumerTailSegAt` at their count.
-
-Contract 1's post hands back the caller's memory (`s2ValuePosPost`), so the stream read
-is stated at the staged memory and re-expressed at `r₁.mem`; contract 3's post names the
-copy call's memory; contract 2's post is the one conclusion the consumer cannot take
-whole — `s2ScalarValueAppend` is existential in the record, and the bundle's `ev` is the
-*trace's* record — so the trace's naming of the emitted record stays a premise. -/
-theorem hlastTail_of_calls {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
-    (x : BitVec 8) (c ix : BitVec 64) (e : BitVec 64) (b8 : BitVec 8)
-    (r₁ r₂ r₃ : CallOutcome) (ev : EventRecord) {cA rdv xA : BitVec 32} (ei cd : Nat)
-    (hInvT : WalkInv G (TailStartC C) (hlastTailS C s x c ix e b8))
-    (hblockT : (TailStartC C).block = "if.then413.i")
-    {pT : String} {opT : Operand} {regT : String}
-    (hpreT : (hlastTailS C s x c ix e b8).pre = some pT)
-    (hincT : phiIncoming pT
-      [("if.else405.i", .imm (.int 32 (BitVec.ofNat 32 0))),
-       ("if.then403.i", .imm (.int 32 (BitVec.ofNat 32 10))),
-       ("if.then397.i", .imm (.int 32 (BitVec.ofNat 32 9))),
-       ("if.end372.i", .imm (.int 32 (BitVec.ofNat 32 7))),
-       ("LeafBlock58", .imm (.int 32 (BitVec.ofNat 32 8)))] = some opT)
-    (hopT : evalOperand (stateAt (hlastTailS C s x c ix e b8).env
-      (hlastTailS C s x c ix e b8)) opT = some (.int 32 cA))
-    (hkindT : lookupName (hlastTailS C s x c ix e b8).env "%kind404.i" =
-      some (.ptr (C.stage.tok + 16)))
-    (hrdT : lookupName (hlastTailS C s x c ix e b8).env "%root_done.i" =
-      some (.ptr (G.next0 + 8)))
-    (hreadT : readBytes
-      (writeBytes (hlastTailS C s x c ix e b8).mem (C.stage.tok + 16)
-        (natToBytes cA.toNat 4)) (G.next0 + 8) 4 = some (natToBytes rdv.toNat 4))
-    (hpre₁ : s2ValuePosPre
-      [.int 32 (BitVec.ofNat 32 (TailStartC C).sp), .int 32 rdv,
-       .ptr (TailStartC C).stage.ctype, .ptr (TailStartC C).stage.cst]
-      (writeBytes (hlastTailS C s x c ix e b8).mem (C.stage.tok + 16)
-        (natToBytes cA.toNat 4)) (hlastTailS C s x c ix e b8).next)
-    (hcall₁ : stage2Calls stage2SubCalls "s2_value_pos"
-      [.int 32 (BitVec.ofNat 32 (TailStartC C).sp), .int 32 rdv,
-       .ptr (TailStartC C).stage.ctype, .ptr (TailStartC C).stage.cst]
-      (writeBytes (hlastTailS C s x c ix e b8).mem (C.stage.tok + 16)
-        (natToBytes cA.toNat 4)) (hlastTailS C s x c ix e b8).next = some r₁)
-    (hret₁ : r₁.ret = .int 32 xA)
-    (hbit0T : evalICmp .eq xA (BitVec.ofNat 32 0) = 0)
-    (hzread : readBytes
-      (writeBytes (hlastTailS C s x c ix e b8).mem (C.stage.tok + 16)
-        (natToBytes cA.toNat 4)) C.stage.z 8 = some (wordBytes 8 G.ev))
-    (hcT : lookupName (hlastTailS C s x c ix e b8).env "%c.i" =
-      some (.ptr (TailCarry₂ (TailStartC C)).stage.c))
-    (htT : lookupName (hlastTailS C s x c ix e b8).env "%t352.i" =
-      some (.ptr (TailCarry₂ (TailStartC C)).stage.tok))
-    (hoT : lookupName (hlastTailS C s x c ix e b8).env "%z" =
-      some (.ptr (TailCarry₂ (TailStartC C)).stage.z))
-    (hpre₂ : s2ScalarValuePre
-      [.ptr (TailCarry₂ (TailStartC C)).stage.c, .ptr (TailCarry₂ (TailStartC C)).stage.tok,
-       .ptr (TailCarry₂ (TailStartC C)).stage.z] r₁.mem r₁.next)
-    (hcall₂ : stage2Calls stage2SubCalls "od_scalar_value"
-      [.ptr (TailCarry₂ (TailStartC C)).stage.c, .ptr (TailCarry₂ (TailStartC C)).stage.tok,
-       .ptr (TailCarry₂ (TailStartC C)).stage.z] r₁.mem r₁.next = some r₂)
-    (happ₂ : s2ScalarValueAppend r₁.mem r₂.mem
-      (TailCarry₂ (TailStartC C)).stage.z ev.encodedBytes)
-    (hret₂ : r₂.ret = .int 32 (BitVec.ofNat 32 1))
-    (hev64 : G.ev < 2 ^ 64) (hevlen64 : C.evlen < 2 ^ 64)
-    (hltT : C.events.length < C.k)
-    (hpre₃ : s2AfterValuePre
-      [.int 32 (BitVec.ofNat 32 (TailStartC C).sp), .ptr (G.next0 + 8),
-       .ptr (TailCarry₃ (TailStartC C) ev).stage.ctype,
-       .ptr (TailCarry₃ (TailStartC C) ev).stage.cst] r₂.mem r₂.next)
-    (hcall₃ : stage2Calls stage2SubCalls "s2_after_value"
-      [.int 32 (BitVec.ofNat 32 (TailStartC C).sp), .ptr (G.next0 + 8),
-       .ptr (TailCarry₃ (TailStartC C) ev).stage.ctype,
-       .ptr (TailCarry₃ (TailStartC C) ev).stage.cst] r₂.mem r₂.next = some r₃)
-    (heiT : lookupName (hlastTailS C s x c ix e b8).env "%ee.1.i" =
-      some (.int 64 (BitVec.ofNat 64 ei)))
-    (hcdT : lookupName (hlastTailS C s x c ix e b8).env "%cond350.i" =
-      some (.int 64 (BitVec.ofNat 64 cd)))
-    (hinnerT : cd - ei ≤ (TailStartC C).inner) (hlt2T : ei < cd) (hcd64T : cd < 2 ^ 64) :
-    WalkSegment (stage2Calls stage2SubCalls) G (TailStartC C) (hlastTailS C s x c ix e b8)
-      (TailCarryScan (TailStartC C) ev)
-      (hlastEntryAt C s x c ix e b8 b8 r₁ r₂ r₃ ei cd cA rdv xA) 3 := by
-  -- 1. the value-position call's contract: the caller's memory comes back unchanged
-  obtain ⟨r₁', hcall₁', hpost₁, _⟩ :=
-    s2ValuePosContract.resolves (next := (hlastTailS C s x c ix e b8).next) hpre₁
-  obtain ⟨v₁, _, _, hmemV₁, _⟩ := hpost₁
-  have hr₁ : r₁' = r₁ := Option.some.inj (hcall₁'.symm.trans hcall₁)
-  rw [hr₁] at hmemV₁
-  have hzreadJ : readBytes r₁.mem C.stage.z 8 = some (wordBytes 8 G.ev) := by
-    rw [hmemV₁]; exact hzread
-  -- 2. the scalar call's contract: its answer's memory shape
-  obtain ⟨r₂', hcall₂', hpost₂, _⟩ :=
-    s2ScalarValueContract.resolves (next := r₁.next) hpre₂
-  have hr₂ : r₂' = r₂ := Option.some.inj (hcall₂'.symm.trans hcall₂)
-  rw [hr₂] at hpost₂
-  obtain ⟨⟨_, _, _, _, _, _⟩, _⟩ := hpost₂
-  -- 3. the copy call's contract: the answer and the memory it leaves
-  obtain ⟨r₃', hcall₃', hpost₃, _⟩ :=
-    s2AfterValueContract.resolves (next := r₂.next) hpre₃
-  have hr₃ : r₃' = r₃ := Option.some.inj (hcall₃'.symm.trans hcall₃)
-  rw [hr₃] at hpost₃
-  obtain ⟨_, _, _, _, _⟩ := hpost₃
-  exact Seg.measure (consumerTailSegAt (G := G) (C := TailStartC C)
-    (s := hlastTailS C s x c ix e b8) r₁ r₂ r₃ ev ei cd hInvT hblockT pT regT cA opT
-    rdv xA hpreT hincT hopT hkindT hrdT hreadT hpre₁ hcall₁ hret₁ hbit0T hzreadJ
-    hcT htT hoT hcall₂ happ₂ hret₂ hev64 hevlen64 hltT hpre₃ hcall₃ heiT hcdT
-    hinnerT hlt2T hcd64T)
-
-/-- The tail's start state, at the head's own values: `c` is `%4`'s word, the seam's
-token end is the entry index, and the byte is the head's. -/
-abbrev hlastTailAt {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (v : Nat) (ix : BitVec 64) : State :=
-  hlastTailS C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C)
-
-/-! ### The default arm's and the seam's cells, from the invariant
-
-`cond.end349.i`'s `phi` selects `%4` on its arm, and the head chain from `while.body.i`
-to the token's end binds five pivot bits and nothing else — so `%4`, `%idxprom.i`,
-`%t352.i` and `%8` are the loop head's own cells.  The first of those is the staging's
-(`h4L`), the second and third are the seed's, and `%8` is the invariant's. -/
+Each is a peel from `sw.default.i`'s entry to the loop head. -/
 
 /-- `%gap.i` at the default arm is the loop head's: the head chain binds no static
 register. -/
@@ -1089,128 +662,192 @@ theorem hlastAS5_envTok {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : Stat
   repeat rw [lookupName_cons_ne _ _ (by decide)]
   exact h
 
-/-- `%8` at the token's end is the loop head's register: neither the head chain nor
-`cond.end349.i`'s two cells rebinds it. -/
-theorem hlastEndS_env8 {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (x : BitVec 8) (inc nep c ix : BitVec 64) :
-    lookupName (headEndS C s x inc nep c ix).env "%8" = lookupName s.env "%8" := by
-  simp only [headEndS, condEnd349OutAt, headAS₅, headAS₄, headAS₃, headAS₂, headAS₁,
-    State.bind, cells]
+/-! ### The tail's start's cells and its segment's target
+
+The tail's start is `HeadS413 (hlastSeam …) x`: the class-C span's target at the
+value-position call.  Six of the cells the three call links read are the loop head's —
+none of the head path's blocks binds a static register — and the two the empty arm's test
+reads are the seam's stored end, which is `%4`'s word. -/
+
+/-- `%kind404.i` at the tail's start is the loop head's: it is one of `walkStaticRegs`'s
+twenty-five and no block of the head path binds it. -/
+theorem hlastTail_envKind {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (v : Nat) (ix : BitVec 64) (b35 : UInt8) :
+    lookupName (hlastTail C s x inc nep v ix b35).env "%kind404.i" =
+      lookupName s.env "%kind404.i" := by
+  simp only [hlastTail, hlastSeam, HeadS413, HeadS405, HeadS58, HeadS60, HeadS62, seamS,
+    seamFin, hlastP35, hlastP39, hlastP41, hlastLand, headEndS, condEnd349OutAt, headAS₅,
+    headAS₄, headAS₃, headAS₂, headAS₁, stateAt, cells, State.bind]
   repeat rw [lookupName_cons_ne _ _ (by decide)]
 
-/-- `%end.i` at the token's end is the loop head's. -/
-theorem hlastEndS_envEnd {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (x : BitVec 8) (inc nep c ix : BitVec 64) :
-    lookupName (headEndS C s x inc nep c ix).env "%end.i" = lookupName s.env "%end.i" := by
-  simp only [headEndS, condEnd349OutAt, headAS₅, headAS₄, headAS₃, headAS₂, headAS₁,
-    State.bind, cells]
+/-- `%root_done.i` at the tail's start is the loop head's: the second of the body's four
+alloca slots and not a name any head-path block binds. -/
+theorem hlastTail_envRootDone {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (v : Nat) (ix : BitVec 64) (b35 : UInt8) :
+    lookupName (hlastTail C s x inc nep v ix b35).env "%root_done.i" =
+      lookupName s.env "%root_done.i" := by
+  simp only [hlastTail, hlastSeam, HeadS413, HeadS405, HeadS58, HeadS60, HeadS62, seamS,
+    seamFin, hlastP35, hlastP39, hlastP41, hlastLand, headEndS, condEnd349OutAt, headAS₅,
+    headAS₄, headAS₃, headAS₂, headAS₁, stateAt, cells, State.bind]
   repeat rw [lookupName_cons_ne _ _ (by decide)]
 
-/-- `%idxprom.i` at the token's end is the loop head's. -/
-theorem hlastEndS_envIdx {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (x : BitVec 8) (inc nep c ix : BitVec 64) :
-    lookupName (headEndS C s x inc nep c ix).env "%idxprom.i" =
-      lookupName s.env "%idxprom.i" := by
-  simp only [headEndS, condEnd349OutAt, headAS₅, headAS₄, headAS₃, headAS₂, headAS₁,
-    State.bind, cells]
+/-- `%t352.i` at the tail's start is the loop head's token record: the head path binds no
+register of that name, and the tail's own blocks write *through* it, not to it. -/
+theorem hlastTail_envTok {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (v : Nat) (ix : BitVec 64) (b35 : UInt8) :
+    lookupName (hlastTail C s x inc nep v ix b35).env "%t352.i" =
+      lookupName s.env "%t352.i" := by
+  simp only [hlastTail, hlastSeam, HeadS413, HeadS405, HeadS58, HeadS60, HeadS62, seamS,
+    seamFin, hlastP35, hlastP39, hlastP41, hlastLand, headEndS, condEnd349OutAt, headAS₅,
+    headAS₄, headAS₃, headAS₂, headAS₁, stateAt, cells, State.bind]
   repeat rw [lookupName_cons_ne _ _ (by decide)]
 
-/-- The default arm's `phi` selects `%4`: its two incoming entries, the second of which
-`sw.default.i` names. -/
-theorem hlast_pre5 :
-    phiIncoming "sw.default.i"
-      [("cond.true345.i", Operand.reg "%conv347.i"),
-       ("sw.default.i", Operand.reg "%4")] = some (.reg "%4") := by
+/-- `%c.i` at the tail's start is the loop head's cursor record. -/
+theorem hlastTail_envC {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (v : Nat) (ix : BitVec 64) (b35 : UInt8) :
+    lookupName (hlastTail C s x inc nep v ix b35).env "%c.i" =
+      lookupName s.env "%c.i" := by
+  simp only [hlastTail, hlastSeam, HeadS413, HeadS405, HeadS58, HeadS60, HeadS62, seamS,
+    seamFin, hlastP35, hlastP39, hlastP41, hlastLand, headEndS, condEnd349OutAt, headAS₅,
+    headAS₄, headAS₃, headAS₂, headAS₁, stateAt, cells, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+
+/-- `%z` at the tail's start is the loop head's log. -/
+theorem hlastTail_envZ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (v : Nat) (ix : BitVec 64) (b35 : UInt8) :
+    lookupName (hlastTail C s x inc nep v ix b35).env "%z" =
+      lookupName s.env "%z" := by
+  simp only [hlastTail, hlastSeam, HeadS413, HeadS405, HeadS58, HeadS60, HeadS62, seamS,
+    seamFin, hlastP35, hlastP39, hlastP41, hlastLand, headEndS, condEnd349OutAt, headAS₅,
+    headAS₄, headAS₃, headAS₂, headAS₁, stateAt, cells, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+
+/-- **The tail's start is entered from `if.else405.i`**: the class-C span's last empty
+body, by the states' own `pre` fields. -/
+theorem hlastTail_pre {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (v : Nat) (ix : BitVec 64) (b35 : UInt8) :
+    (hlastTail C s x inc nep v ix b35).pre = some "if.else405.i" := rfl
+
+/-- **`if.then413.i`'s `phi` on the empty-body edge selects zero.**  The class-C span's
+last edge is `if.else405.i`'s, and the `phi` reads `0` there — the literal's kind, which is
+what the tail's `valuePos` call receives. -/
+theorem hlastTail_phi :
+    phiIncoming "if.else405.i"
+      [("if.else405.i", .imm (.int 32 (BitVec.ofNat 32 0))),
+       ("if.then403.i", .imm (.int 32 (BitVec.ofNat 32 10))),
+       ("if.then397.i", .imm (.int 32 (BitVec.ofNat 32 9))),
+       ("if.end372.i", .imm (.int 32 (BitVec.ofNat 32 7))),
+       ("LeafBlock58", .imm (.int 32 (BitVec.ofNat 32 8)))] =
+      some (.imm (.int 32 (BitVec.ofNat 32 0))) := by
   decide
 
-/-- The token's end is entered from `cond.end349.i`: the state's own predecessor. -/
-theorem hlast_pre6 {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (x : BitVec 8) (inc nep c ix : BitVec 64) :
-    (headEndS C s x inc nep c ix).pre = some "cond.end349.i" := by
-  simp only [headEndS, condEnd349OutAt, headAS₅, headAS₄, headAS₃, headAS₂, headAS₁,
-    State.bind]
+/-- **The tail's `%ee.1.i` is `%4`'s word**: the seam stored `%cond350.i` there and no
+block of the class-C span or the tail rebinds it.  This is the cell the empty arm's test
+reads, and it is why the test is `ult v v`. -/
+theorem hlastTail_ee {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (v : Nat) (ix : BitVec 64) (b35 : UInt8) :
+    lookupName (hlastTail C s x inc nep v ix b35).env "%ee.1.i" =
+      some (.int 64 (BitVec.ofNat 64 v)) := by
+  simp only [hlastTail, hlastSeam, HeadS413, HeadS405, HeadS58, HeadS60, HeadS62, seamS,
+    seamFin, stateAt, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+  exact lookupName_cons_self _ _ _
 
-/-- The token's end's `phi` selects `%idxprom.i` on that edge. -/
-theorem hlast_phi6 :
-    phiIncoming "cond.end349.i"
-      [("cond.end349.i", (Operand.reg "%idxprom.i")),
-       ("while.body370.i", (Operand.reg "%cond350.i")),
-       ("LeafBlock43", (Operand.reg "%ee.0.i238")),
-       ("LeafBlock46", (Operand.reg "%ee.0.i238")),
-       ("LeafBlock48", (Operand.reg "%ee.0.i238")),
-       ("LeafBlock33", (Operand.reg "%cond350.i")),
-       ("LeafBlock35", (Operand.reg "%cond350.i")),
-       ("LeafBlock37", (Operand.reg "%cond350.i"))] = some (.reg "%idxprom.i") := by
+/-- **The tail's `%cond350.i` is the same word**: `cond.end349.i` bound it once, and the
+whitespace check's pivots and the seam rebind other names. -/
+theorem hlastTail_cond {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (v : Nat) (ix : BitVec 64) (b35 : UInt8) :
+    lookupName (hlastTail C s x inc nep v ix b35).env "%cond350.i" =
+      some (.int 64 (BitVec.ofNat 64 v)) := by
+  simp only [hlastTail, hlastSeam, HeadS413, HeadS405, HeadS58, HeadS60, HeadS62, seamS,
+    seamFin, hlastP35, hlastP39, hlastP41, hlastLand, stateAt, cells, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+  exact hlastEndS_cond C s x inc nep v ix
+
+/-- **The dispatch's entry has no local clause.**  `WalkLocal`'s scan arms cover
+`while.body462.i` and `land.rhs457.i`; `NodeBlock105` is not among them, so the landing's
+local fact is `True` at its own carry. -/
+theorem hlastLoc105 {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (ev : EventRecord)
+    (s : State) (idx : BitVec 64) (a q : Nat) :
+    WalkLocal (ScanC₁₀₅ (TailCarryScan C ev)) (landRhs457OutAt s idx a q) := by
+  simp only [WalkLocal]
+  repeat rw [ite_eq_right (by decide)]
+  trivial
+
+/-- **The range leaf has no local clause either.**  `LeafBlock96` is not one of
+`WalkLocal`'s scan blocks, so the leaf's local fact is `True` at its own carry. -/
+theorem hlastLoc96 {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (ev : EventRecord)
+    (s : State) (idx : BitVec 64) (a q : Nat) (x47 : BitVec 8) :
+    WalkLocal (ScanC₉₆ (TailCarryScan C ev)) (ScanS₉₆ s idx a q x47) := by
+  simp only [WalkLocal]
+  repeat rw [ite_eq_right (by decide)]
+  trivial
+
+/-- **The scan's entry selects `%ee.1.i`** on the edge the copy call took: the `phi`'s two
+arms, the second of which `if.then447.i` names.  The continuing arm's bundle reads it. -/
+theorem hlastEntry_phiSel :
+    phiIncoming "if.then447.i"
+      [("while.body462.i", (Operand.reg "%inc463.i")),
+       ("if.then447.i", (Operand.reg "%ee.1.i"))] = some (.reg "%ee.1.i") := by
   decide
 
-/-- **The bundle, from the entry's evidence.**  The two counts and the merge's index
-are the loop's own values; `hge`, `hterm`, `hk2nep` and `hcw0` follow from them; the tail
-is the three calls' contracts composed at their staged argument lists, and the scan's
-landing is read off the tail's end state.  See the section above for which fields cannot
-be produced from the committed layer. -/
-def hlastFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
-    (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead) (hk : C.k + 1 = G.nep)
-    (hlt91 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 91) = 0)
-    (hlt123 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 123) = 0)
-    (hlt125 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 125) = 0)
-    (hne125 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 125) = 0)
-    (hinc : evalOperand (headAS₄ s (hlastByte G C)) (.reg "%inc.i") = some (.int 64 (hlastIncV C)))
-    (hnep : evalOperand (headAS₄ s (hlastByte G C)) (.reg "%nep") = some (.int 64 (hlastNepV G)))
-    {v : Nat}
-    (hincL : lookupName s.env "%inc.i" = some (.int 64 (BitVec.ofNat 64 (C.k + 1))))
-    (hnepL : lookupName s.env "%nep" = some (.int 64 (hlastNepV G)))
-    (h4L : lookupName s.env "%4" = some (.int 64 (BitVec.ofNat 64 v)))
-    (heL : lookupName s.env "%e" = some (.ptr C.stage.e))
-    (hv64 : v < 2 ^ 64)
-    {ix : BitVec 64}
-    (hidxS : lookupName s.env "%idxprom.i" = some (.int 64 ix))
-    (htokS : lookupName s.env "%t352.i" = some (.ptr C.stage.tok))
-    (hugt : evalICmp .ugt (BitVec.ofNat 64 v) ix = 0)
-    (hbit6 : (evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 45) |||
-      evalICmp .ult (hlastByte G C + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
-    (hc110 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 110) = 0)
-    (hc116 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 116) = 0)
-    (hceq116 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 116) = 0)
-    (r₁ r₂ r₃ : CallOutcome) (ev : EventRecord) {cA rdv : BitVec 32} {xA : BitVec 32}
-    (ei cd : Nat)
-    (hInvT : WalkInv G (TailStartC C) (hlastTailAt C s v ix))
+/-! ### The tail, produced from the three calls' contracts, on the scan-free arm
+
+The value-position call, the scalar call's emit arm and the copy call, each applied at its
+own staged argument list and at the caller's own state, then composed by
+`consumerTailSegEmptyAt` at their count.
+
+Contract 1's post hands back the caller's memory (`s2ValuePosPost`), so the stream read is
+stated at the staged memory and re-expressed at `r₁.mem`; contract 3's post names the copy
+call's memory; contract 2's post is the one conclusion the consumer cannot take whole —
+`s2ScalarValueAppend` is existential in the record, and the bundle's `ev` is the *trace's*
+record — so the trace's naming of the emitted record stays a premise.
+
+The two cells the empty arm's test reads are **not** premises: `%ee.1.i` is the seam's
+stored end and `%cond350.i` the same word (`hlastTail_ee`, `hlastTail_cond`), so the
+equation `ei = cd` is `rfl` and the arm needs no span and no budget. -/
+theorem hlastTail_of_calls {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (v : Nat) (ix : BitVec 64) (b35 : UInt8)
+    (r₁ r₂ r₃ : CallOutcome) (ev : EventRecord) {cA rdv xA : BitVec 32}
+    (hInvT : WalkInv G (TailStartC C) (hlastTail C s x inc nep v ix b35))
+    (hblockT : (TailStartC C).block = "if.then413.i")
     {pT : String} {opT : Operand} {regT : String}
-    (hpreT : (hlastTailAt C s v ix).pre = some pT)
+    (hpreT : (hlastTail C s x inc nep v ix b35).pre = some pT)
     (hincT : phiIncoming pT
       [("if.else405.i", .imm (.int 32 (BitVec.ofNat 32 0))),
        ("if.then403.i", .imm (.int 32 (BitVec.ofNat 32 10))),
        ("if.then397.i", .imm (.int 32 (BitVec.ofNat 32 9))),
        ("if.end372.i", .imm (.int 32 (BitVec.ofNat 32 7))),
        ("LeafBlock58", .imm (.int 32 (BitVec.ofNat 32 8)))] = some opT)
-    (hopT : evalOperand (stateAt (hlastTailAt C s v ix).env
-      (hlastTailAt C s v ix)) opT = some (.int 32 cA))
-    (hkindT : lookupName (hlastTailAt C s v ix).env "%kind404.i" =
+    (hopT : evalOperand (stateAt (hlastTail C s x inc nep v ix b35).env
+      (hlastTail C s x inc nep v ix b35)) opT = some (.int 32 cA))
+    (hkindT : lookupName (hlastTail C s x inc nep v ix b35).env "%kind404.i" =
       some (.ptr (C.stage.tok + 16)))
-    (hrdT : lookupName (hlastTailAt C s v ix).env "%root_done.i" =
+    (hrdT : lookupName (hlastTail C s x inc nep v ix b35).env "%root_done.i" =
       some (.ptr (G.next0 + 8)))
     (hreadT : readBytes
-      (writeBytes (hlastTailAt C s v ix).mem (C.stage.tok + 16)
+      (writeBytes (hlastTail C s x inc nep v ix b35).mem (C.stage.tok + 16)
         (natToBytes cA.toNat 4)) (G.next0 + 8) 4 = some (natToBytes rdv.toNat 4))
     (hpre₁ : s2ValuePosPre
       [.int 32 (BitVec.ofNat 32 (TailStartC C).sp), .int 32 rdv,
        .ptr (TailStartC C).stage.ctype, .ptr (TailStartC C).stage.cst]
-      (writeBytes (hlastTailAt C s v ix).mem (C.stage.tok + 16)
-        (natToBytes cA.toNat 4)) (hlastTailAt C s v ix).next)
+      (writeBytes (hlastTail C s x inc nep v ix b35).mem (C.stage.tok + 16)
+        (natToBytes cA.toNat 4)) (hlastTail C s x inc nep v ix b35).next)
     (hcall₁ : stage2Calls stage2SubCalls "s2_value_pos"
       [.int 32 (BitVec.ofNat 32 (TailStartC C).sp), .int 32 rdv,
        .ptr (TailStartC C).stage.ctype, .ptr (TailStartC C).stage.cst]
-      (writeBytes (hlastTailAt C s v ix).mem (C.stage.tok + 16)
-        (natToBytes cA.toNat 4)) (hlastTailAt C s v ix).next = some r₁)
+      (writeBytes (hlastTail C s x inc nep v ix b35).mem (C.stage.tok + 16)
+        (natToBytes cA.toNat 4)) (hlastTail C s x inc nep v ix b35).next = some r₁)
     (hret₁ : r₁.ret = .int 32 xA)
     (hbit0T : evalICmp .eq xA (BitVec.ofNat 32 0) = 0)
     (hzread : readBytes
-      (writeBytes (hlastTailAt C s v ix).mem (C.stage.tok + 16)
+      (writeBytes (hlastTail C s x inc nep v ix b35).mem (C.stage.tok + 16)
         (natToBytes cA.toNat 4)) C.stage.z 8 = some (wordBytes 8 G.ev))
-    (hcT : lookupName (hlastTailAt C s v ix).env "%c.i" =
+    (hcT : lookupName (hlastTail C s x inc nep v ix b35).env "%c.i" =
       some (.ptr (TailCarry₂ (TailStartC C)).stage.c))
-    (htT : lookupName (hlastTailAt C s v ix).env "%t352.i" =
+    (htT : lookupName (hlastTail C s x inc nep v ix b35).env "%t352.i" =
       some (.ptr (TailCarry₂ (TailStartC C)).stage.tok))
-    (hoT : lookupName (hlastTailAt C s v ix).env "%z" =
+    (hoT : lookupName (hlastTail C s x inc nep v ix b35).env "%z" =
       some (.ptr (TailCarry₂ (TailStartC C)).stage.z))
     (hpre₂ : s2ScalarValuePre
       [.ptr (TailCarry₂ (TailStartC C)).stage.c, .ptr (TailCarry₂ (TailStartC C)).stage.tok,
@@ -1231,43 +868,116 @@ def hlastFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
       [.int 32 (BitVec.ofNat 32 (TailStartC C).sp), .ptr (G.next0 + 8),
        .ptr (TailCarry₃ (TailStartC C) ev).stage.ctype,
        .ptr (TailCarry₃ (TailStartC C) ev).stage.cst] r₂.mem r₂.next = some r₃)
-    (heiT : lookupName (hlastTailAt C s v ix).env "%ee.1.i" =
-      some (.int 64 (BitVec.ofNat 64 ei)))
-    (hcdT : lookupName (hlastTailAt C s v ix).env "%cond350.i" =
-      some (.int 64 (BitVec.ofNat 64 cd)))
-    (hinnerT : cd - ei ≤ (TailStartC C).inner) (hlt2T : ei < cd) (hcd64T : cd < 2 ^ 64)
-    {bs : List UInt8}
-    (hpos : ((BitVec.ofNat 64 ei).signExtend 64).toNat < 2 ^ 63)
-    (hreadS : readBytes
-      (hlastEntryAt C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA).mem
-      (G.b + ((BitVec.ofNat 64 ei).signExtend 64).toNat) 1 = some bs)
-    (hbit47 : evalICmp .slt (BitVec.ofNat 8 (bytesToNat bs)) (BitVec.ofNat 8 13) = 1)
-    (hws47 : evalICmp .ule (BitVec.ofNat 8 (bytesToNat bs) + BitVec.ofNat 8 247)
-      (BitVec.ofNat 8 1) = 1)
-    (hlatch : WalkLocal { TailCarryScan (TailStartC C) ev with block := "while.body462.i" }
-      (hlastLatchAt C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA
-        (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs))))
-    {qi cw tok : Nat}
-    (hq : lookupName
-      (hlastLatchAt C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA
-        (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs))).env
-      "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 qi)))
-    (hcwL : lookupName
-      (hlastLatchAt C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA
-        (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs))).env
-      "%cond350.i" = some (.int 64 (BitVec.ofNat 64 cw)))
-    (hqc : qi + 1 = cw)
-    (hcw64 : cw < 2 ^ 64)
-    (hrefill : C.inner = walkInnerCap G)
-    (hexit : ∀ (e : State), e.pre = some "while.body462.i" →
-      lookupName e.env "%inc463.i" = some (.int 64 (BitVec.ofNat 64 (qi + 1))) →
-      lookupName e.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 cw)) →
-      WalkLocal (G := G) (ScanCMerge (ScanLatchC C ev)) e)
-    (htokL : lookupName
-      (hlastScanOutAt C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA
-        (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw).env
-      "%t352.i" = some (.ptr tok))
-    :
+    (hvT : v < 2 ^ 64) :
+    WalkSegment (stage2Calls stage2SubCalls) G (TailStartC C)
+      (hlastTail C s x inc nep v ix b35)
+      (TailCarryEnd (TailStartC C) ev)
+      (hlastEntry C s x inc nep v ix b35 r₁ r₂ r₃ cA rdv xA) 3 := by
+  -- 1. the value-position call's contract: the caller's memory comes back unchanged
+  obtain ⟨r₁', hcall₁', hpost₁, _⟩ :=
+    s2ValuePosContract.resolves (next := (hlastTail C s x inc nep v ix b35).next) hpre₁
+  obtain ⟨v₁, _, _, hmemV₁, _⟩ := hpost₁
+  have hr₁ : r₁' = r₁ := Option.some.inj (hcall₁'.symm.trans hcall₁)
+  rw [hr₁] at hmemV₁
+  have hzreadJ : readBytes r₁.mem C.stage.z 8 = some (wordBytes 8 G.ev) := by
+    rw [hmemV₁]; exact hzread
+  -- 2. the scalar call's contract: its answer's memory shape
+  obtain ⟨r₂', hcall₂', hpost₂, _⟩ :=
+    s2ScalarValueContract.resolves (next := r₁.next) hpre₂
+  have hr₂ : r₂' = r₂ := Option.some.inj (hcall₂'.symm.trans hcall₂)
+  rw [hr₂] at hpost₂
+  obtain ⟨⟨_, _, _, _, _, _⟩, _⟩ := hpost₂
+  -- 3. the copy call's contract: the answer and the memory it leaves
+  obtain ⟨r₃', hcall₃', hpost₃, _⟩ :=
+    s2AfterValueContract.resolves (next := r₂.next) hpre₃
+  have hr₃ : r₃' = r₃ := Option.some.inj (hcall₃'.symm.trans hcall₃)
+  rw [hr₃] at hpost₃
+  obtain ⟨_, _, _, _, _⟩ := hpost₃
+  exact Seg.measure (consumerTailSegEmptyAt (G := G) (C := TailStartC C)
+    (s := hlastTail C s x inc nep v ix b35) r₁ r₂ r₃ ev v hInvT hblockT pT regT cA opT
+    rdv xA hpreT hincT hopT hkindT hrdT hreadT hpre₁ hcall₁ hret₁ hbit0T hzreadJ
+    hcT htT hoT hcall₂ happ₂ hret₂ hev64 hevlen64 hltT hpre₃ hcall₃
+    (hlastTail_ee C s x inc nep v ix b35) (hlastTail_cond C s x inc nep v ix b35) hvT)
+
+/-! ### The bundle, from the entry's evidence
+
+The two counts and the merge's index are the loop's own values, read from the invariant
+(`inc_reg`, `regs`, `depth_reg`); `hge`, `hterm`, `hk2nep` follow from them; the tail is
+the three calls' contracts composed at their staged argument lists on the scan-free arm,
+and the merge's cells are read off the tail's target by five peels.  What the producer
+cannot supply is the document's content (`G.bs` at the entry's position and before its
+end), the position relation `%4`'s word has to the entry stream, the two staging words,
+the record the scalar call appends existentially, and the invariant at the tail's start —
+which is not an input either: it is `hlastTailSeg`'s endpoint (`inv'`), the sixteen links
+from the loop head to `hlastTail`.  Each of the rest is a premise, and the map above says
+which producer owns it. -/
+def hlastFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (hInv : WalkInv G C s) (hk : C.k + 1 = G.nep)
+    (hlt91 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 91) = 0)
+    (hlt123 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 123) = 0)
+    (hlt125 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 125) = 0)
+    (hne125 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 125) = 0)
+    {v : Nat}
+    (h4L : lookupName s.env "%4" = some (.int 64 (BitVec.ofNat 64 v)))
+    (hv63 : v < 2 ^ 63)
+    (heL : lookupName s.env "%e" = some (.ptr C.stage.e))
+    {ix : BitVec 64}
+    (hidxS : lookupName s.env "%idxprom.i" = some (.int 64 ix))
+    (htokS : lookupName s.env "%t352.i" = some (.ptr C.stage.tok))
+    (hugt : evalICmp .ugt (BitVec.ofNat 64 v) ix = 1)
+    {b35 : UInt8}
+    (hread35 : readBytes (headEndS C s (hlastByte G C) (hlastIncV C) (hlastNepV G)
+      (BitVec.ofNat 64 v) ix).mem ((G.b - 1) + v) 1 = some [b35])
+    (hb13 : evalICmp .slt (head35 b35) (BitVec.ofNat 8 13) = 0)
+    (hb32 : evalICmp .slt (head35 b35) (BitVec.ofNat 8 32) = 1)
+    (hbne13 : evalICmp .eq (head35 b35) (BitVec.ofNat 8 13) = 0)
+    (hbit6 : (evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 45) |||
+      evalICmp .ult (hlastByte G C + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
+    (hc110 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 110) = 0)
+    (hc116 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 116) = 0)
+    (hceq116 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 116) = 0)
+    (r₁ r₂ r₃ : CallOutcome) (ev : EventRecord) {cA rdv : BitVec 32} {xA : BitVec 32}
+    (hInvT : WalkInv G (TailStartC C) (hlastTailAt C s v ix b35))
+    (hopT : evalOperand (stateAt (hlastTailAt C s v ix b35).env
+      (hlastTailAt C s v ix b35)) (.imm (.int 32 (BitVec.ofNat 32 0))) =
+      some (.int 32 cA))
+    (hreadT : readBytes
+      (writeBytes (hlastTailAt C s v ix b35).mem (C.stage.tok + 16)
+        (natToBytes cA.toNat 4)) (G.next0 + 8) 4 = some (natToBytes rdv.toNat 4))
+    (hpre₁ : s2ValuePosPre
+      [.int 32 (BitVec.ofNat 32 (TailStartC C).sp), .int 32 rdv,
+       .ptr (TailStartC C).stage.ctype, .ptr (TailStartC C).stage.cst]
+      (writeBytes (hlastTailAt C s v ix b35).mem (C.stage.tok + 16)
+        (natToBytes cA.toNat 4)) (hlastTailAt C s v ix b35).next)
+    (hcall₁ : stage2Calls stage2SubCalls "s2_value_pos"
+      [.int 32 (BitVec.ofNat 32 (TailStartC C).sp), .int 32 rdv,
+       .ptr (TailStartC C).stage.ctype, .ptr (TailStartC C).stage.cst]
+      (writeBytes (hlastTailAt C s v ix b35).mem (C.stage.tok + 16)
+        (natToBytes cA.toNat 4)) (hlastTailAt C s v ix b35).next = some r₁)
+    (hret₁ : r₁.ret = .int 32 xA)
+    (hbit0T : evalICmp .eq xA (BitVec.ofNat 32 0) = 0)
+    (hzread : readBytes
+      (writeBytes (hlastTailAt C s v ix b35).mem (C.stage.tok + 16)
+        (natToBytes cA.toNat 4)) C.stage.z 8 = some (wordBytes 8 G.ev))
+    (hpre₂ : s2ScalarValuePre
+      [.ptr (TailCarry₂ (TailStartC C)).stage.c, .ptr (TailCarry₂ (TailStartC C)).stage.tok,
+       .ptr (TailCarry₂ (TailStartC C)).stage.z] r₁.mem r₁.next)
+    (hcall₂ : stage2Calls stage2SubCalls "od_scalar_value"
+      [.ptr (TailCarry₂ (TailStartC C)).stage.c, .ptr (TailCarry₂ (TailStartC C)).stage.tok,
+       .ptr (TailCarry₂ (TailStartC C)).stage.z] r₁.mem r₁.next = some r₂)
+    (happ₂ : s2ScalarValueAppend r₁.mem r₂.mem
+      (TailCarry₂ (TailStartC C)).stage.z ev.encodedBytes)
+    (hret₂ : r₂.ret = .int 32 (BitVec.ofNat 32 1))
+    (hev64 : G.ev < 2 ^ 64) (hevlen64 : C.evlen < 2 ^ 64)
+    (hltT : C.events.length < C.k)
+    (hpre₃ : s2AfterValuePre
+      [.int 32 (BitVec.ofNat 32 (TailStartC C).sp), .ptr (G.next0 + 8),
+       .ptr (TailCarry₃ (TailStartC C) ev).stage.ctype,
+       .ptr (TailCarry₃ (TailStartC C) ev).stage.cst] r₂.mem r₂.next)
+    (hcall₃ : stage2Calls stage2SubCalls "s2_after_value"
+      [.int 32 (BitVec.ofNat 32 (TailStartC C).sp), .ptr (G.next0 + 8),
+       .ptr (TailCarry₃ (TailStartC C) ev).stage.ctype,
+       .ptr (TailCarry₃ (TailStartC C) ev).stage.cst] r₂.mem r₂.next = some r₃) :
     HlastFacts G C s :=
   { x := hlastByte G C
     h8 := by
@@ -1280,50 +990,38 @@ def hlastFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
     hne125 := hne125
     inc := hlastIncV C
     nep := hlastNepV G
-    hinc := hinc
-    hnep := hnep
+    hinc := by
+      show evalOperand (headAS₄ s (hlastByte G C)) (.reg "%inc.i") =
+        some (.int 64 (hlastIncV C))
+      simp only [evalOperand]
+      rw [headAS4_envInc s (hlastByte G C)]
+      exact hInv.inc_reg
+    hnep := by
+      show evalOperand (headAS₄ s (hlastByte G C)) (.reg "%nep") =
+        some (.int 64 (hlastNepV G))
+      simp only [evalOperand]
+      rw [headAS4_envNep s (hlastByte G C)]
+      exact hInv.regs ("%nep", .int 64 (BitVec.ofNat 64 G.nep)) (by simp [walkStaticRegs])
     hge := by
       show evalICmp .ult (BitVec.ofNat 64 (C.k + 1)) (BitVec.ofNat 64 G.nep) = 0
       rw [hk]
       exact hlast_ult_self _
-    reg := "%4"
-    c := BitVec.ofNat 64 v
-    ix := ix
-    hpre5 := hlast_pre5
+    v := v
     hav5 := hlastAS5_envFour s (hlastByte G C) (hlastIncV C) (hlastNepV G)
       (BitVec.ofNat 64 v) h4L
+    ix := ix
     hidx5 := hlastAS5_envIdx s (hlastByte G C) (hlastIncV C) (hlastNepV G) ix hidxS
     htok5 := hlastAS5_envTok C s (hlastByte G C) (hlastIncV C) (hlastNepV G) htokS
     hgap5 := hlastAS5_envGap C s (hlastByte G C) (hlastIncV C) (hlastNepV G)
       (hInv.regs ("%gap.i", .ptr (C.stage.tok + 20)) (by simp [walkStaticRegs]))
     hugt := hugt
-    p := "cond.end349.i"
-    op := .reg "%idxprom.i"
-    e := ix
-    b8 := hlastByte G C
-    hpre6 := hlast_pre6 C s (hlastByte G C) (hlastIncV C) (hlastNepV G)
-      (BitVec.ofNat 64 v) ix
-    hin6 := hlast_phi6
-    hv6 := by
-      simp only [evalOperand]
-      rw [hlastEndS_envIdx C s (hlastByte G C) (hlastIncV C) (hlastNepV G)
-        (BitVec.ofNat 64 v) ix]
-      exact hidxS
-    hend6 := by
-      rw [hlastEndS_envEnd C s (hlastByte G C) (hlastIncV C) (hlastNepV G)
-        (BitVec.ofNat 64 v) ix]
-      exact hInv.regs ("%end.i", .ptr (C.stage.tok + 8)) (by simp [walkStaticRegs])
-    h8end := by
-      rw [hlastEndS_env8 C s (hlastByte G C) (hlastIncV C) (hlastNepV G)
-        (BitVec.ofNat 64 v) ix]
-      exact hInv.iter.reg8
+    b35 := b35
+    hread35 := hread35
+    hv63 := hv63
+    hb13 := hb13
+    hb32 := hb32
+    hbne13 := hbne13
     hbit6 := hbit6
-    x1 := hlastByte G C
-    h8c := by
-      simp only [evalOperand]
-      rw [hlastSeam_env8 C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C),
-        hlastEndS_env8 C s (hlastByte G C) (hlastIncV C) (hlastNepV G) (BitVec.ofNat 64 v) ix]
-      exact hInv.iter.reg8
     hc110 := hc110
     hc116 := hc116
     hceq116 := hceq116
@@ -1334,100 +1032,78 @@ def hlastFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
     cA := cA
     rdv := rdv
     xA := xA
-    ei := ei
-    cd := cd
-    hTail := hlastTail_of_calls G C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) r₁ r₂ r₃ ev ei cd
-      hInvT rfl (pT := pT) (opT := opT) (regT := regT) hpreT hincT hopT hkindT hrdT
-      hreadT hpre₁ hcall₁ hret₁ hbit0T hzread hcT htT hoT hpre₂ hcall₂ happ₂ hret₂
-      hev64 hevlen64 hltT hpre₃ hcall₃ heiT hcdT hinnerT hlt2T hcd64T
-    idx := BitVec.ofNat 64 ei
-    a := G.b
-    q := bytesToNat bs
-    bs := bs
-    src := "if.then447.i"
-    sel := .reg "%ee.1.i"
-    hpreS := hlastEntry_pre C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA
-    hincS := hlastEntry_phiSel
-    hopS := by
-      show evalOperand (stateAt
-        (hlastEntryAt C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA).env
-        (hlastEntryAt C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA))
-        (.reg "%ee.1.i") = some (.int 64 (BitVec.ofNat 64 ei))
-      simp only [evalOperand, stateAt]
-      rw [hlastEntry_envEe C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA]
-      exact heiT
-    h3S := hlastEntry_env3 C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA hInvT
-    hpos := hpos
-    hreadS := hreadS
-    hbsS := rfl
-    hloc105 := hlastLoc105 (TailStartC C) ev
-      (hlastEntryAt C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA)
-      (BitVec.ofNat 64 ei) G.b (bytesToNat bs)
-    x47 := BitVec.ofNat 8 (bytesToNat bs)
-    h47 := landRhs457OutAt_env47 C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA
-      (BitVec.ofNat 64 ei) G.b (bytesToNat bs)
-    hbit47 := hbit47
-    hws47 := hws47
-    hloc96 := hlastLoc96 (TailStartC C) ev
-      (hlastEntryAt C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA)
-      (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs))
-    hlatch := hlatch
-    qi := qi
-    cw := cw
-    tok := tok
-    hq := hq
-    hcwL := hcwL
-    hqc := hqc
-    hcw0 := by omega
-    hcw64 := hcw64
-    hinner := by
-      have h1 : cw - qi = 1 := by omega
-      have h2 : 1 ≤ C.inner := walkLoopHead_inner_pos hblock hrefill
-      omega
-    hexit := hexit
-    htokL := htokL
+    hTail := hlastTail_of_calls G C s (hlastByte G C) (hlastIncV C) (hlastNepV G) v ix b35
+      r₁ r₂ r₃ ev hInvT rfl (pT := "if.else405.i") (opT := .imm (.int 32 (BitVec.ofNat 32 0)))
+      (regT := "%4")
+      (hpreT := hlastTail_pre C s (hlastByte G C) (hlastIncV C) (hlastNepV G) v ix b35)
+      (hincT := hlastTail_phi) hopT
+      (hkindT := by
+        rw [hlastTail_envKind C s (hlastByte G C) (hlastIncV C) (hlastNepV G) v ix b35]
+        exact hInv.regs ("%kind404.i", .ptr (C.stage.tok + 16)) (by simp [walkStaticRegs]))
+      (hrdT := by
+        rw [hlastTail_envRootDone C s (hlastByte G C) (hlastIncV C) (hlastNepV G) v ix b35]
+        exact hInv.regs ("%root_done.i", .ptr (G.next0 + 8)) (by simp [walkStaticRegs]))
+      hreadT hpre₁ hcall₁ hret₁ hbit0T hzread
+      (hcT := by
+        rw [hlastTail_envC C s (hlastByte G C) (hlastIncV C) (hlastNepV G) v ix b35]
+        exact hInv.regs ("%c.i", .ptr C.stage.c) (by simp [walkStaticRegs]))
+      (htT := by
+        rw [hlastTail_envTok C s (hlastByte G C) (hlastIncV C) (hlastNepV G) v ix b35]
+        exact htokS)
+      (hoT := by
+        rw [hlastTail_envZ C s (hlastByte G C) (hlastIncV C) (hlastNepV G) v ix b35]
+        exact hInv.regs ("%z", .ptr C.stage.z) (by simp [walkStaticRegs]))
+      hpre₂ hcall₂ happ₂ hret₂
+      hev64 hevlen64 hltT hpre₃ hcall₃ (by omega)
     k2 := C.k + 1
     nepv := hlastNepV G
     spv := C.sp
-    v := v
     hk2 := by
-      show evalOperand (hlastMergeAt C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw) (.reg "%inc.i") =
+      show evalOperand (hlastMergeAt C s v ix b35 r₁ r₂ r₃ cA rdv xA) (.reg "%inc.i") =
         some (.int 64 (BitVec.ofNat 64 (C.k + 1)))
       simp only [evalOperand]
-      rw [hlastMerge_envInc C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw]
-      exact hincL
+      rw [hlastMerge_envInc C s (hlastByte G C) (hlastIncV C) (hlastNepV G) v ix b35
+        r₁ r₂ r₃ cA rdv xA]
+      exact hInv.inc_reg
     hnepM := by
-      show lookupName (hlastMergeAt C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw).env "%nep" = some (.int 64 (hlastNepV G))
-      rw [hlastMerge_envNep C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw]
-      exact hnepL
+      show lookupName (hlastMergeAt C s v ix b35 r₁ r₂ r₃ cA rdv xA).env "%nep" =
+        some (.int 64 (hlastNepV G))
+      rw [hlastMerge_envNep C s (hlastByte G C) (hlastIncV C) (hlastNepV G) v ix b35
+        r₁ r₂ r₃ cA rdv xA]
+      exact hInv.regs ("%nep", .int 64 (BitVec.ofNat 64 G.nep)) (by simp [walkStaticRegs])
     hterm := by
       show C.k + 1 = (hlastNepV G).toNat
       rw [hk]
       exact (hlast_nep_toNat G).symm
     hk2nep := hk
     hspvM := by
-      show evalOperand (hlastMergeAt C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw) (.reg "%sp.i.0248") =
+      show evalOperand (hlastMergeAt C s v ix b35 r₁ r₂ r₃ cA rdv xA) (.reg "%sp.i.0248") =
         some (.int 32 (BitVec.ofNat 32 C.sp))
       simp only [evalOperand]
-      rw [hlastMerge_envSp C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw]
+      rw [hlastMerge_envSp C s (hlastByte G C) (hlastIncV C) (hlastNepV G) v ix b35
+        r₁ r₂ r₃ cA rdv xA]
       exact hInv.depth_reg
     heM := by
-      show lookupName (hlastMergeAt C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw).env "%e" = some (.ptr C.stage.e)
-      rw [hlastMerge_envE C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw]
+      show lookupName (hlastMergeAt C s v ix b35 r₁ r₂ r₃ cA rdv xA).env "%e" =
+        some (.ptr C.stage.e)
+      rw [hlastMerge_envE C s (hlastByte G C) (hlastIncV C) (hlastNepV G) v ix b35
+        r₁ r₂ r₃ cA rdv xA]
       exact heL
     h4M := by
-      show lookupName (hlastMergeAt C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw).env "%4" = some (.int 64 (BitVec.ofNat 64 v))
-      rw [hlastMerge_envFour C s (hlastByte G C) (BitVec.ofNat 64 v) ix ix (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ ei cd cA rdv xA (BitVec.ofNat 64 ei) G.b (bytesToNat bs) (BitVec.ofNat 8 (bytesToNat bs)) qi cw]
+      show lookupName (hlastMergeAt C s v ix b35 r₁ r₂ r₃ cA rdv xA).env "%4" =
+        some (.int 64 (BitVec.ofNat 64 v))
+      rw [hlastMerge_envFour C s (hlastByte G C) (hlastIncV C) (hlastNepV G) v ix b35
+        r₁ r₂ r₃ cA rdv xA]
       exact h4L
-    hv64 := hv64
     hlastK := hk }
-
 
 /-! ### The instrument -/
 
+#print axioms LeanLLVM.Refinement.WalkScope.hlastEntry_pc
 #print axioms LeanLLVM.Refinement.WalkScope.hlast_toMerge
 #print axioms LeanLLVM.Refinement.WalkScope.hlast_finish
 #print axioms LeanLLVM.Refinement.WalkScope.hlast_refuse
+#print axioms LeanLLVM.Refinement.WalkScope.hlastTail_of_calls
 #print axioms LeanLLVM.Refinement.WalkScope.hlastFacts_of_staging
 
 end WalkScope

@@ -432,7 +432,14 @@ The premises are each link's own.  The three at the seam are the ones a `denoteC
 statement would otherwise hide — the `phi`'s selection, the stored word and the byte —
 and `h8c` is the class-C span's byte read at the seam's *name*, which is what the seam
 lemma makes expressible.  The tail arrives as its own chain (`consumer_tail_chain` at the
-same terms): a segment carries no links, so the composition cannot cross one. -/
+same terms): a segment carries no links, so the composition cannot cross one.
+
+**This is not the last entry's path** (`hugt = 0` is the direct edge
+`cond.end349.i → if.end372.i`, and a last entry's `%cond350.i` is the stream's end, above
+its own index).  It is the `hugt = 0` arm's conditional statement; the refinement's last
+entry takes the `1` arm and reaches the merge with no scan at all, which is
+`hlastPrefixSeg`'s path (`JsonStage2WalkPrefixCount`) and `HlastFacts`'
+(`JsonStage2WalkDispatchWitnessHlast`).  Nothing consumes this chain now. -/
 theorem walkHeadChainToScan {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     (hInv : WalkInv G C s) (hblock : C.block = "NodeBlock21")
     {x : BitVec 8} (h8 : evalOperand s (.reg "%8") = some (.int 8 x))

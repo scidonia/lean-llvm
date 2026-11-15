@@ -214,12 +214,13 @@ run's cursors), and the two forward stores that used to contradict it are
 `WalkInv.frame_stack` (`if.end24.i`'s two stack writes), both at the invariant.
 What remains is the dispatch's own trace, and its register half is carried by
 three fields: `WalkPtrs` binds `%3`, `%5`, `%k11.i`, `%ctype.i`, `%cst.i` and
-`%hash1.i.i`; `WalkRegs` binds the twenty-four static addresses `entry` and the
-preheader fix; and `WalkIter` binds the header's per-iteration pair `%7`/`%8` at
-`entryPos C.k` and `entryByte C.k`.  The static carrier is preserved by
+`hash1.i.i`; `WalkRegs` binds the twenty-nine static values `entry` and the
+preheader fix (`%nep`, the stream's count, among them); and `WalkIter` binds the
+header's per-iteration registers `%7`, `%8` and `%arrayidx10.i` at
+`entryPos C.k`, `entryByte C.k` and `G.b + entryPos C.k`.  The static carrier is preserved by
 `WalkRegs.bind`/`WalkRegs.cells_of` and, for a whole run, `WalkRegs.of_run` —
-one `denoteCode_lookupName` per name and no memory reasoning; the pair's
-production is `whileBody_step`'s own two loads and its preservation is
+one `denoteCode_lookupName` per name and no memory reasoning; the per-iteration
+registers' production is `whileBody_step`'s own three binds and its preservation is
 `WalkIter.bind`/`WalkIter.cells_of`/`WalkIter.of_run`.  `WalkInv.log_hash`
 carries the zeroed hash word `if.end24.i` branches on.  With them the dispatch's
 two named blocks are steps.  `whileBody_step` runs
@@ -255,7 +256,7 @@ well-foundedness over the whole control flow is not established, and
 
 **The open rows, named.**  Three remain, and none is claimed here.  The *entry
 run* is no longer one: `JsonStage2WalkSeedRun`'s `walkSeedState` produces
-`WalkSeedState` at the state the entry run leaves — its thirteen clauses, the
+`WalkSeedState` at the state the entry run leaves — its nineteen clauses, the
 three carriers and the frame and presence rows included — and
 `walkSeedState_geometry` derives the run's two loads from the staging itself, so
 `walkSeed_invariant`'s hypothesis is now a conclusion of the seed module.  What
@@ -654,6 +655,23 @@ body's four stack slots. -/
 def walkWide {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) : List (Nat × Nat) :=
   walkPresent G C ++ stage2AllocaWrites G.next0
 
+/-- **The frame's list at the run's own cursor.**  `walkWide` names the five stack
+slots the body writes *before its first allocating call*; the allocator is
+monotone (`Semantics`, `.alloca`), so a run that has called a helper once writes
+above them and the fixed list stops describing it.  The region a run at cursor
+`next` has touched is `walkPresent` together with the interval from `G.next0` to
+`next`, and `n` is that interval's extent, `next - G.next0`.
+
+The interval is one entry rather than five: `WalkInv.next_ge` says a cursor is at
+least at the end of the initialisation's four `alloca`s, and a single entry makes
+the cursor's growth a one-line arithmetic step rather than a membership search.
+The fixed list is the first call's bound; the record's region is this interval at
+the run's own end (`stage2StackEnd`), so nothing here needs the cursor to stay
+inside the five slots. -/
+def walkWideAt {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (n : Nat) :
+    List (Nat × Nat) :=
+  walkPresent G C ++ [(G.next0, n)]
+
 /-- **The frame's list grows with the cursors.**  Every entry of the list at one
 carry lies inside an entry of the list at another, when the arena's and the event
 stream's cursors only advance and the staging is the same.  This is the coverage a
@@ -700,6 +718,161 @@ theorem walkWide_of_seven {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {a : Na
     inRegions (walkWide G C) a :=
   walkWide_of_staged (inRegions_mono (fun r hr => List.mem_append_left _ hr) h)
 
+/-- A byte inside the staged objects is inside the cursor frame's list. -/
+theorem walkWideAt_of_staged {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {n a : Nat}
+    (h : inRegions (stage2ReportScratch C.stage.c C.stage.ctype C.stage.cst
+      C.stage.tok C.stage.s C.stage.z C.stage.e C.stage.d) a) :
+    inRegions (walkWideAt G C n) a := by
+  obtain ⟨r, hr, hi⟩ := h
+  exact ⟨r, List.mem_append_left _ (List.mem_append_right _ hr), hi⟩
+
+/-- A byte inside the two staged prefixes is inside the cursor frame's list. -/
+theorem walkWideAt_of_prefix {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {n a : Nat}
+    (h : inRegions [(G.dst, C.alen), (G.ev, C.evlen)] a) :
+    inRegions (walkWideAt G C n) a := by
+  obtain ⟨r, hr, hi⟩ := h
+  exact ⟨r, List.mem_append_left _ (List.mem_append_left _ hr), hi⟩
+
+/-- A byte inside the seven appended objects is inside the cursor frame's list. -/
+theorem walkWideAt_of_seven {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {n a : Nat}
+    (h : inRegions (stage2StagedWrites C.stage.c C.stage.ctype C.stage.cst
+      C.stage.tok C.stage.s C.stage.z C.stage.e) a) :
+    inRegions (walkWideAt G C n) a :=
+  walkWideAt_of_staged (inRegions_mono (fun r hr => List.mem_append_left _ hr) h)
+
+/-- **A byte of the cursor's interval is inside the cursor frame's list.**  The
+interval's entry starts at the staging's cursor, so its bytes are the ones above
+`G.next0` and below `G.next0 + n`. -/
+theorem walkWideAt_alloca {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {n a : Nat}
+    (hlo : G.next0 ≤ a) (hhi : a < G.next0 + n) :
+    inRegions (walkWideAt G C n) a :=
+  ⟨(G.next0, n), List.mem_append_right _ (List.mem_cons_self), hlo, hhi⟩
+
+/-- **The region grows with the carry and the cursor.**  Every entry of the list at
+one carry and cursor lies inside an entry at a later carry and cursor, when the
+arena and the event stream only advance, the staging is the same and the cursor
+only moves forward.  This is the coverage a step that moves a cursor reads
+(`UnchangedOutside.write_grow`). -/
+theorem walkWideAt_grow {m0 : Mem} {G : WalkGeom m0} {C C' : WalkCarry G}
+    {n n' : Nat} (hala : C.alen ≤ C'.alen) (hevl : C.evlen ≤ C'.evlen)
+    (hstage : C'.stage = C.stage) (hn : n ≤ n') :
+    ∀ r ∈ walkWideAt G C n, ∃ s ∈ walkWideAt G C' n',
+      s.1 ≤ r.1 ∧ r.1 + r.2 ≤ s.1 + s.2 := by
+  intro r hr
+  simp only [walkWideAt, walkPresent, stage2ReportScratch] at hr
+  rcases List.mem_append.mp hr with hr | hr
+  · rcases List.mem_append.mp hr with hr | hr
+    · rcases List.mem_cons.mp hr with rfl | hr1
+      · exact ⟨(G.dst, C'.alen), by simp [walkWideAt, walkPresent], le_rfl, by omega⟩
+      · rcases List.mem_cons.mp hr1 with rfl | hnil
+        · exact ⟨(G.ev, C'.evlen), by simp [walkWideAt, walkPresent], le_rfl, by omega⟩
+        · exact absurd hnil (by simp)
+    · exact ⟨r, by
+        simp only [walkWideAt, walkPresent]
+        refine List.mem_append_left _ (List.mem_append_right _ ?_)
+        rw [hstage]
+        exact hr, le_rfl, le_rfl⟩
+  · rcases List.mem_cons.mp hr with rfl | hnil
+    · exact ⟨(G.next0, n'), by
+        change (G.next0, n') ∈ walkPresent G C' ++ [(G.next0, n')]
+        exact List.mem_append_right _ (List.mem_cons_self ..), le_rfl, by omega⟩
+    · exact absurd hnil (by simp)
+
+/-- **A later cursor makes a weaker claim**, so the earlier cursor's frame implies
+it: every entry at `n` lies inside the interval at `n'` when `n ≤ n'`. -/
+theorem walkWideAt_le {m0 m : Mem} {G : WalkGeom m0} {C : WalkCarry G} {n n' : Nat}
+    (hn : n ≤ n') (h : UnchangedOutside m0 m (walkWideAt G C n)) :
+    UnchangedOutside m0 m (walkWideAt G C n') := by
+  refine UnchangedOutside.of_covered h ?_
+  intro r hr
+  change r ∈ walkPresent G C ++ [(G.next0, n)] at hr
+  rcases List.mem_append.mp hr with hr | hr
+  · exact ⟨r, by
+      change r ∈ walkPresent G C ++ [(G.next0, n')]
+      exact List.mem_append_left _ hr, le_rfl, le_rfl⟩
+  · rcases List.mem_cons.mp hr with rfl | hnil
+    · exact ⟨(G.next0, n'), by
+        change (G.next0, n') ∈ walkPresent G C ++ [(G.next0, n')]
+        exact List.mem_append_right _ (List.mem_cons_self ..), le_rfl, by omega⟩
+    · exact absurd hnil (by simp)
+
+/-- The interval's own entry is in the cursor's list. -/
+theorem mem_walkWideAt_interval {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {n : Nat} :
+    (G.next0, n) ∈ walkWideAt G C n := by
+  change (G.next0, n) ∈ walkPresent G C ++ [(G.next0, n)]
+  exact List.mem_append_right _ (List.mem_cons_self ..)
+
+/-- A present entry is in the cursor's list. -/
+theorem mem_walkWideAt_present {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {n : Nat}
+    {r : Nat × Nat} (h : r ∈ walkPresent G C) : r ∈ walkWideAt G C n := by
+  change r ∈ walkPresent G C ++ [(G.next0, n)]
+  exact List.mem_append_left _ h
+
+/-- **The four allocated slots and the first call's `%ei`, as members.**  The
+memberships are stated once here rather than proved by `simp` at each of the five
+cases: the list is a literal and the constructors are the whole proof. -/
+theorem mem_allocaWrites_0 (a : Nat) : (a, 8) ∈ stage2AllocaWrites a := by
+  unfold stage2AllocaWrites
+  exact List.mem_cons_self ..
+
+theorem mem_allocaWrites_8 (a : Nat) : (a + 8, 4) ∈ stage2AllocaWrites a := by
+  unfold stage2AllocaWrites
+  exact List.mem_cons_of_mem _ (List.mem_cons_self ..)
+
+theorem mem_allocaWrites_12 (a : Nat) : (a + 12, 8) ∈ stage2AllocaWrites a := by
+  unfold stage2AllocaWrites
+  exact List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_self ..))
+
+theorem mem_allocaWrites_20 (a : Nat) : (a + 20, 8) ∈ stage2AllocaWrites a := by
+  unfold stage2AllocaWrites
+  exact List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _
+    (List.mem_cons_self ..)))
+
+theorem mem_allocaWrites_28 (a : Nat) : (a + 28, 8) ∈ stage2AllocaWrites a := by
+  unfold stage2AllocaWrites
+  exact List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _
+    (List.mem_cons_of_mem _ (List.mem_cons_self ..))))
+
+/-- **The five slots cover their whole window.**  They are contiguous — `8 + 4 + 8 +
+8 + 8 = 36 = stage2BootstrapExtent + 8` — so a byte at or above the cursor and
+below the window's end is inside one of them.  This is what makes the five slots a
+consequence of a stack region that covers their window, rather than a region
+stated separately from it. -/
+theorem allocaWrites_cover {a x : Nat} (hlo : a ≤ x)
+    (hhi : x < a + (stage2BootstrapExtent + 8)) :
+    inRegions (stage2AllocaWrites a) x := by
+  have h36 : a + (stage2BootstrapExtent + 8) = a + 36 := by
+    simp [stage2BootstrapExtent]
+  rw [h36] at hhi
+  rcases Nat.lt_or_ge x (a + 8) with h1 | h1
+  · exact ⟨(a, 8), mem_allocaWrites_0 a, by omega, by omega⟩
+  rcases Nat.lt_or_ge x (a + 12) with h2 | h2
+  · exact ⟨(a + 8, 4), mem_allocaWrites_8 a, by omega, by omega⟩
+  rcases Nat.lt_or_ge x (a + 20) with h3 | h3
+  · exact ⟨(a + 12, 8), mem_allocaWrites_12 a, by omega, by omega⟩
+  rcases Nat.lt_or_ge x (a + 28) with h4 | h4
+  · exact ⟨(a + 20, 8), mem_allocaWrites_20 a, by omega, by omega⟩
+  · exact ⟨(a + 28, 8), mem_allocaWrites_28 a, by omega, by omega⟩
+
+/-- info: 'LeanLLVM.Refinement.allocaWrites_cover' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.allocaWrites_cover
+
+/-- info: 'LeanLLVM.Refinement.walkWideAt_le' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.walkWideAt_le
+
+/-- **A byte below the cursor is outside the cursor's interval**, which is the
+half of the frame's list the `next_ge` interval contributes: the interval starts at
+`G.next0`, so a byte the staging placed below it is not in it. -/
+theorem not_interval_of_lt {m0 : Mem} {G : WalkGeom m0} {n a : Nat}
+    (h : a < G.next0) :
+    ¬ inRegions [(G.next0, n)] a := by
+  rintro ⟨r, hr, hlo, hhi⟩
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at hr
+  subst hr
+  omega
+
 /-- A byte below the watermark is outside the four stack slots. -/
 theorem not_walkAlloca_of_lt {m0 : Mem} {G : WalkGeom m0} {a : Nat}
     (h : a < G.next0) :
@@ -716,24 +889,25 @@ theorem staged_lt_watermark {m0 : Mem} {G : WalkGeom m0} {r : Nat × Nat} {a : N
     (ha : a < r.1 + r.2) : a < G.next0 :=
   Nat.lt_of_lt_of_le ha (G.watermark r hr)
 
-/-- A write at a byte the frame's list covers leaves the frame. -/
+/-- A write at a byte the frame's list covers leaves the frame.  The list is the
+cursor's (`walkWideAt`), so the cursor is implicit in the caller's frame. -/
 theorem walkFrame_write_inside {m0 m : Mem} {G : WalkGeom m0} {C : WalkCarry G}
-    {a : Nat} {bs : List UInt8}
-    (h : UnchangedOutside m0 m (walkWide G C))
-    (hw : ∀ k, k < bs.length → inRegions (walkWide G C) (a + k)) :
-    UnchangedOutside m0 (writeBytes m a bs) (walkWide G C) :=
+    {n a : Nat} {bs : List UInt8}
+    (h : UnchangedOutside m0 m (walkWideAt G C n))
+    (hw : ∀ k, k < bs.length → inRegions (walkWideAt G C n) (a + k)) :
+    UnchangedOutside m0 (writeBytes m a bs) (walkWideAt G C n) :=
   h.write_inside hw
 
 /-- A store at a byte inside one of the walk's staged extents preserves the frame
 (the common shape: the cursor record's field, the two stacks, the log's fields). -/
 theorem walkFrame_write_staged {m0 m : Mem} {G : WalkGeom m0} {C : WalkCarry G}
-    {a : Nat} {bs : List UInt8}
-    (h : UnchangedOutside m0 m (walkWide G C))
+    {n a : Nat} {bs : List UInt8}
+    (h : UnchangedOutside m0 m (walkWideAt G C n))
     (hw : ∀ k, k < bs.length →
       inRegions (stage2ReportScratch C.stage.c C.stage.ctype C.stage.cst
         C.stage.tok C.stage.s C.stage.z C.stage.e C.stage.d) (a + k)) :
-    UnchangedOutside m0 (writeBytes m a bs) (walkWide G C) :=
-  h.write_inside (fun k hk => walkWide_of_staged (hw k hk))
+    UnchangedOutside m0 (writeBytes m a bs) (walkWideAt G C n) :=
+  h.write_inside (fun k hk => walkWideAt_of_staged (hw k hk))
 
 /-- Presence is monotone under a write.  The target memory is named so that a
 caller states the memory the run left rather than having the write inferred from
@@ -934,12 +1108,13 @@ are different kinds:
   the call's cursor — so `WalkRegs` is a lookup per name, and a run that binds
   none of them keeps every one by `denoteCode_lookupName`.
 * **per-iteration** registers, rebound by the header on every pass: `%7` is the
-  entry stream's lane at the carried index and `%8` the document byte that lane
-  selects.  Their values are functions of the carry's `k`, so `WalkIter` states
-  them at `entryPos G C.k` and `entryByte G C.k` rather than at constants, and
-  the header's step (`whileBody_step`) is what produces it.
+  entry stream's lane at the carried index, `%8` the document byte that lane
+  selects, and `%arrayidx10.i` the token's position address (`%3 + %idxprom.i` at
+  `%3 = G.b`).  Their values are functions of the carry's `k`, so `WalkIter` states
+  them at `entryPos G C.k`, `entryByte G C.k` and `G.b + entryPos G C.k` rather
+  than at constants, and the header's step (`whileBody_step`) is what produces them.
 
-`WalkIter` is a clause at every loop state because the header binds both before
+`WalkIter` is a clause at every loop state because the header binds all three before
 the dispatch runs, and every block between it and the next header leaves them
 alone.  The paths that never pass the header — the preheader and `entry` itself
 — are not loop states, so the carrier is not a claim about them; the seed is the
@@ -989,13 +1164,15 @@ def walkStaticNames : List String :=
   ["%nsp", "%xp1", "%nxp2", "%n2.i", "%ep3.i", "%len", "%cap", "%0",
    "%h1.i.i.i51", "%ar", "%alen", "%acap", "%gap.i", "%end.i", "%kind404.i",
    "%n6.i", "%ix.i", "%nix.i", "%e7.i", "%invariant.gep", "%ei.i",
-   "%root_done.i", "%xj.i", "%outn.i"]
+   "%root_done.i", "%xj.i", "%outn.i", "%nep", "%c.i", "%z", "%xp", "%nxp"]
 
 /-- The static address registers the dispatch reads, beside `WalkPtrs`' six: the
 `%s` record's fields, the log's six addresses the reserves and the merges read,
-the token's three, the cursor record's five, the document base's predecessor, and
-the four stack objects at the call's cursor.  Every one is bound before the loop
-and no block of the dispatch rebinds it. -/
+the token's three, the cursor record's five, the document base's predecessor, the
+four stack objects at the call's cursor, and the four parameters the string
+path's links read directly — the two staging records `%c.i` and `%z`, and the
+escape list `%xp` with its count `%nxp`.  Every one is bound before the loop and
+no block of the dispatch rebinds it. -/
 def walkStaticRegs {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) : List (String × Value) :=
   [("%nsp", .ptr (C.stage.s + 56)), ("%xp1", .ptr (C.stage.s + 72)),
    ("%nxp2", .ptr (C.stage.s + 80)), ("%n2.i", .ptr (C.stage.s + 8)),
@@ -1010,10 +1187,28 @@ def walkStaticRegs {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) : List (String
    ("%nix.i", .ptr (C.stage.c + 24)), ("%e7.i", .ptr (C.stage.c + 1112)),
    ("%invariant.gep", .ptr (G.b - 1)),
    ("%ei.i", .ptr G.next0), ("%root_done.i", .ptr (G.next0 + 8)),
-   ("%xj.i", .ptr (G.next0 + 12)), ("%outn.i", .ptr (G.next0 + 20))]
+   ("%xj.i", .ptr (G.next0 + 12)), ("%outn.i", .ptr (G.next0 + 20)),
+   ("%nep", .int 64 (BitVec.ofNat 64 G.nep)),
+   ("%c.i", .ptr C.stage.c), ("%z", .ptr C.stage.z),
+   ("%xp", .ptr G.xp), ("%nxp", .int 64 (BitVec.ofNat 64 G.nxp))]
 
-/-- The names a run must avoid to keep both carriers. -/
-def walkCarriedNames : List String := "%7" :: "%8" :: walkStaticNames
+/-- The names a run must avoid to keep both carriers.  `%inc.i` is here as well as
+the three per-iteration registers: its cell is `WalkInv.inc_reg`'s, keyed on `C.k`,
+and a run that binds it must be the header's own pass. -/
+def walkCarriedNames : List String :=
+  "%inc.i" :: "%7" :: "%8" :: "%arrayidx10.i" :: walkStaticNames
+
+/-- **A bind destination fresh from the register carriers.**  A block whose run
+binds none of these keeps `WalkRegs` (the static list), `WalkInv.inc_reg`
+(`%inc.i`, whose cell is keyed on `C.k`) and `WalkIter.regarr` (`%arrayidx10.i`,
+whose cell is keyed on the carried index too). -/
+abbrev walkFreshName (d : String) : Prop :=
+  d ∉ walkStaticNames ∧ d ≠ "%inc.i" ∧ d ≠ "%arrayidx10.i"
+
+/-- The per-iteration registers a bind must avoid to keep `WalkIter`'s three
+clauses. -/
+abbrev walkIterFresh (d : String) : Prop :=
+  d ≠ "%7" ∧ d ≠ "%8" ∧ d ≠ "%arrayidx10.i"
 
 /-- The key list and the register list name the same names. -/
 theorem walkStaticRegs_names {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) :
@@ -1026,14 +1221,18 @@ def WalkRegs {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (env : Env) : Prop :
   ∀ p ∈ walkStaticRegs G C, lookupName env p.1 = some p.2
 
 /-- **The per-iteration carrier**: `%7` is the entry stream's lane at the carried
-index, and `%8` is the document byte that lane selects.  Both are rebound by
-`while.body.i`, so the clause is a function of `C.k`, not a constant; the header's
-step produces it and every other block's run leaves it alone. -/
+index, `%8` is the document byte that lane selects, and `%arrayidx10.i` is the
+token's position address — the header's `%3 + %idxprom.i` at `%3 = G.b`.  All
+three are rebound by `while.body.i`, so the clause is a function of `C.k`, not a
+constant; the header's step produces it and every other block's run leaves it
+alone. -/
 structure WalkIter {m0 : Mem} (G : WalkGeom m0) (k : Nat) (env : Env) : Prop where
   /-- `%7` holds the lane at the carried index. -/
   reg7 : lookupName env "%7" = some (.int 32 (BitVec.ofNat 32 (entryPos G k)))
   /-- `%8` holds the document byte the lane selects. -/
   reg8 : lookupName env "%8" = some (.int 8 (BitVec.ofNat 8 (entryByte G k).toNat))
+  /-- `%arrayidx10.i` holds the token's position address, `G.b + entryPos G k`. -/
+  regarr : lookupName env "%arrayidx10.i" = some (.ptr (G.b + entryPos G k))
 
 /-- A name the builder does not bind reads through to the incoming environment. -/
 theorem lookupName_cells_of_notin :
@@ -1095,33 +1294,37 @@ theorem WalkRegs.bind_pair {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {env :
     WalkRegs G C ((b, vb) :: (a, va) :: env) :=
   (h.bind ha).bind hb
 
-/-- A bind at a name outside the pair leaves the per-iteration carrier alone. -/
+/-- A bind at a name outside the carrier leaves the per-iteration carrier alone. -/
 theorem WalkIter.bind {m0 : Mem} {G : WalkGeom m0} {k : Nat} {env : Env}
     (h : WalkIter G k env) {d : String} {v : Value}
-    (h7 : d ≠ "%7") (h8 : d ≠ "%8") : WalkIter G k ((d, v) :: env) := by
-  refine ⟨?_, ?_⟩
-  · rw [lookupName_cons_ne v env h7]; exact h.reg7
-  · rw [lookupName_cons_ne v env h8]; exact h.reg8
+    (hfr : walkIterFresh d) : WalkIter G k ((d, v) :: env) := by
+  refine ⟨?_, ?_, ?_⟩
+  · rw [lookupName_cons_ne v env hfr.1]; exact h.reg7
+  · rw [lookupName_cons_ne v env hfr.2.1]; exact h.reg8
+  · rw [lookupName_cons_ne v env hfr.2.2]; exact h.regarr
 
-/-- Two binds at names outside the pair leave the per-iteration carrier alone. -/
+/-- Two binds at names outside the carrier leave the per-iteration carrier alone. -/
 theorem WalkIter.bind_pair {m0 : Mem} {G : WalkGeom m0} {k : Nat} {env : Env}
     (h : WalkIter G k env) {a b : String} {va vb : Value}
-    (ha7 : a ≠ "%7") (ha8 : a ≠ "%8") (hb7 : b ≠ "%7") (hb8 : b ≠ "%8") :
+    (ha : walkIterFresh a) (hb : walkIterFresh b) :
     WalkIter G k ((b, vb) :: (a, va) :: env) :=
-  (h.bind ha7 ha8).bind hb7 hb8
+  (h.bind ha).bind hb
 
-/-- A cell list that names neither `%7` nor `%8` leaves the pair alone. -/
+/-- A cell list that names none of `walkCarriedNames` leaves the carrier alone. -/
 theorem WalkIter.cells_of {m0 : Mem} {G : WalkGeom m0} {k : Nat} {env : Env}
     (h : WalkIter G k env) (cs : List (String × Value))
     (hne : ∀ n ∈ cs.map (·.1), n ∉ walkCarriedNames) :
     WalkIter G k (cells cs env) := by
-  refine ⟨?_, ?_⟩
+  refine ⟨?_, ?_, ?_⟩
   · rw [lookupName_cells_of_notin cs "%7" env
       (fun hin => hne "%7" hin (by simp [walkCarriedNames]))]
     exact h.reg7
   · rw [lookupName_cells_of_notin cs "%8" env
       (fun hin => hne "%8" hin (by simp [walkCarriedNames]))]
     exact h.reg8
+  · rw [lookupName_cells_of_notin cs "%arrayidx10.i" env
+      (fun hin => hne "%arrayidx10.i" hin (by simp [walkCarriedNames]))]
+    exact h.regarr
 
 -- The bridge for the per-iteration carrier, after `cells_of`.
 /-- The per-iteration carrier through a cell list whose keys are a literal list. -/
@@ -1150,7 +1353,7 @@ theorem preheaderRegs {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (env : Env)
     ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
     ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
     ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
-    ⟨rfl, rfl⟩
+    ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
   all_goals try (rw [lookupName_cells_of_notin _ _ _ (by decide)])
   all_goals first
     | exact h _ (by simp [walkStaticRegs])
@@ -1371,6 +1574,19 @@ structure WalkInv {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : P
   pc_eq : s.pc = C.block
   /-- The entry index is the phi the outer loop reads. -/
   blockIndex : lookupName s.env "%k.0.i249" = some (.int 64 (BitVec.ofNat 64 C.k))
+  /-- **The header's increment at the carried index.**  `%inc.i` is `%k.0.i249 + 1`
+  (the header's first instruction), read at `blockIndex`'s value.  Nothing else
+  rebinds it, and the back edge (`walkBack_step`) advances neither `C.k` nor
+  `%inc.i`, so `%inc.i = C.k + 1` holds at every block — `while.body.i` included —
+  and needs no side condition on `C.block`.  The one rebind is the header's own pass
+  (`whileBody_step`), which moves the register and the carry together (`%k.2.i`
+  becomes the carry and `%inc.i` its successor), so the clause is produced there
+  and preserved everywhere else.  A block-keyed alternative — `ofNat C.k` at
+  `while.body.i` — is refuted: the back edge leaves the carry unadvanced while the
+  register already holds `C.k + 1`, so such a clause would demand
+  `C.k = %k.2.i`, against `walkBack_step`'s carry and `whileBody_step`'s
+  `hkge : C.k < %k.2.i`. -/
+  inc_reg : lookupName s.env "%inc.i" = some (.int 64 (BitVec.ofNat 64 (C.k + 1)))
   /-- The index has not passed the stream. -/
   k_le : C.k ≤ G.nep
   /-- At most one record per entry consumed. -/
@@ -1488,14 +1704,16 @@ structure WalkInv {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : P
   bindings before its edge can be a step, and the invariant names them at the
   addresses the staging fixed (`WalkPtrs`). -/
   ptrs : WalkPtrs G C s.env
-  /-- **The static carrier.**  The twenty-four registers `walkStaticRegs` names
+  /-- **The static carrier.**  The twenty-nine registers `walkStaticRegs` names
   hold the values the staging fixes for them; the seed produces them and every
-  dispatch block's run leaves them alone (`WalkRegs.cons`, `WalkRegs.cells_of`). -/
+  dispatch block's run leaves them alone (`WalkRegs.cons`, `WalkRegs.cells_of`).
+  `%nep`, `%c.i`, `%z`, `%xp` and `%nxp` are among them: the entry binds the five
+  and no block of the walk rebinds any. -/
   regs : WalkRegs G C s.env
-  /-- **The per-iteration carrier.**  `%7` and `%8` are the lane and the document
-  byte at the carried index; the header's step is what produces them
-  (`whileBody_step`), and every other block's run leaves them alone
-  (`WalkIter.cons`, `WalkIter.cells_of`). -/
+  /-- **The per-iteration carrier.**  `%7`, `%8` and `%arrayidx10.i` are the lane,
+  the document byte and the token's position address at the carried index; the
+  header's step is what produces them (`whileBody_step`), and every other block's
+  run leaves them alone (`WalkIter.bind`, `WalkIter.cells_of`). -/
   iter : WalkIter G C.k s.env
   /-- **The log's hash word is the initialisation's zero.**  `if.end24.i` reads
   the four bytes at `%z + 32` (`%10 = load i32, ptr %hash1.i.i`) and branches on
@@ -1556,28 +1774,36 @@ structure WalkInv {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : P
   over them is false at the loop head — which is exactly why the claim below is
   silence and not ownership. -/
   owned : ∀ r ∈ walkStaged G C, HasBytes s.mem r.1 r.2
-  /-- **Silence outside the region the walk writes** (`walkWide`): the arena's
-  decoded prefix and the event stream's prefix at the carried cursors, the seven
-  appended objects, `%d.i`, and the body's four stack slots at `G.next0`.
+  /-- **The allocator cursor has passed the initialisation's four slots.**  `entry`
+  allocates `%ei.i`, `%root_done.i`, `%xj.i` and `%outn.i` at `G.next0`, advancing
+  the cursor by `8 + 4 + 8 + 8`.  The model's allocator is monotone (`Semantics`,
+  `.alloca` always advances), so every later cursor is at least there.  The clause
+  is what makes the cursor's interval (`walkWideAt`'s second entry) contain the
+  four slots, and it is why a frame at that interval is a claim about the run's
+  own stack writes rather than about an empty interval.
 
-  The list is the run's whole touched extent, and it grows with the cursors: a
-  store into the arena or the event stream at the new cursor is inside it.  The
-  stack slots are in it because the helpers store through them — a claim that
-  stopped at the seven was false of `s2_init`, `s2_string_body` and
-  `num_fast_el1` — and they are *fresh* by `G.watermark`, which is what lets the
-  document's and the entry stream's reads below conclude a byte outside this
-  whole list.
+  It is an inequality rather than the equality `s.next = G.next0 + 28`, because a
+  helper call moves the cursor past it: the equality would need the run's whole
+  call accounting, and the inequality is what the interval's coverage reads. -/
+  next_ge : G.next0 + stage2BootstrapExtent ≤ s.next
+  /-- **Silence outside the region the walk writes, at its own cursor**
+  (`walkWideAt`): the arena's decoded prefix and the event stream's prefix at the
+  carried cursors, the seven appended objects, `%d.i`, and the interval from
+  `G.next0` to the run's cursor `s.next`.
 
-  The slots are `stage2AllocaWrites`: the body's four allocations at `G.next0`
-  plus `(G.next0 + 28, 8)`, the `%ei` `s2_string_body` allocates at the helper's
-  cursor.  `num_fast_el1` is the census's open row: its body allocates 936 bytes
-  (`[768 x i8]` and a `%struct.Stk`) at the same cursor, so row f adds an entry
-  there rather than extending the four, and every frame proof that reads this
-  list re-elaborates with it.
+  The list is the run's whole touched extent and it grows with the cursors: a
+  store into the arena or the event stream at the new cursor is inside it, and a
+  helper call's allocation extends the interval.  The stack part is the *interval*
+  rather than the fixed five slots for the reason `stage2BootstrapExtent` records:
+  the allocator advances, so a second allocating call writes above
+  `G.next0 + 36`, where the fixed list stops.  At the seed the interval is the
+  four slots (`next_ge`), and its bytes are the ones the initialisation's own
+  stores leave inside it.
 
-  This is the half the report's frame reads (`stage2ReportFrame`), and the half
-  the two prefix reads read; nothing else consumes it. -/
-  frame : UnchangedOutside m0 s.mem (walkWide G C)
+  The bytes below `G.next0` are the staged objects' and `walkPresent`'s; the
+  document's and the entry stream's reads (`doc_outside`, `entry_outside`) use the
+  watermark to place them below the interval. -/
+  frame : UnchangedOutside m0 s.mem (walkWideAt G C (s.next - G.next0))
   /-- The block-local facts the measure is read from. -/
   blockLocal : WalkLocal C s
 
@@ -1717,17 +1943,27 @@ def walkSeed {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) : WalkCarry G where
 /-- The state the initialisation hands the loop: the header's block after its two
 `phi`s selected the first entry position and the empty nesting, the two cursors
 as the caller staged them, and the log's four fields as the staging fixed them
-(the initialisation's `entry` stores `z->ev.b/len/cap` and `z->ar/alen/acap`). -/
+(the initialisation's `entry` stores `z->ev.b/len/cap` and `z->ar/alen/acap`).
+The four parameters the string path's links read — the two staging records
+`%c.i` and `%z`, and `%xp` with `%nxp` — are the entry's, and no layer of the
+run rebinds them, so they are clauses here beside `WalkRegs`, whose list names
+them. -/
 def WalkSeedState {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State) : Prop :=
   s.pc = "NodeBlock21" ∧
     lookupName s.env "%k.0.i249" = some (.int 64 (BitVec.ofNat 64 0)) ∧
     lookupName s.env "%sp.i.0248" = some (.int 32 (BitVec.ofNat 32 0)) ∧
+    lookupName s.env "%inc.i" = some (.int 64 (BitVec.ofNat 64 (0 + 1))) ∧
     WalkPtrs G (walkSeed G S) s.env ∧
     WalkRegs G (walkSeed G S) s.env ∧
     WalkIter G (walkSeed G S).k s.env ∧
+    lookupName s.env "%c.i" = some (.ptr S.c) ∧
+    lookupName s.env "%z" = some (.ptr S.z) ∧
+    lookupName s.env "%xp" = some (.ptr G.xp) ∧
+    lookupName s.env "%nxp" = some (.int 64 (BitVec.ofNat 64 G.nxp)) ∧
     readBytes s.mem (S.z + 32) 4 = some (natToBytes 0 4) ∧
     (∀ r ∈ walkStaged G (walkSeed G S), HasBytes s.mem r.1 r.2) ∧
-    UnchangedOutside m0 s.mem (walkWide G (walkSeed G S)) ∧
+    G.next0 + stage2BootstrapExtent ≤ s.next ∧
+    UnchangedOutside m0 s.mem (walkWideAt G (walkSeed G S) (s.next - G.next0)) ∧
     readBytes s.mem (S.z + 8) 8 = some (wordBytes 8 G.nev0) ∧
     readBytes s.mem (S.z + 16) 8 = some (wordBytes 8 G.evcap) ∧
     readBytes s.mem (S.z + 48) 8 = some (wordBytes 8 G.ndst0) ∧
@@ -1752,11 +1988,12 @@ theorem walkSeed_depth_cap {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) :
 facts and nothing else. -/
 theorem walkSeed_invariant {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) {s : State}
     (h : WalkSeedState G S s) : WalkInv G (walkSeed G S) s := by
-  obtain ⟨hpc, hk, hsp, hptrs, hregs, hiter, hhash, hown, hframe, hlen, hcap, halen,
-    hacap⟩ := h
+  obtain ⟨hpc, hk, hsp, hinc0, hptrs, hregs, hiter, -, -, -, -, hhash, hown, hge, hframe, hlen,
+    hcap, halen, hacap⟩ := h
   refine
     { pc_eq := hpc
       blockIndex := hk
+      inc_reg := hinc0
       k_le := Nat.zero_le _
       events_le := Nat.zero_le _
       evlen_eq := by simp [walkSeed]
@@ -1786,6 +2023,7 @@ theorem walkSeed_invariant {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) {s : S
       log_alen := ⟨G.ndst0, Nat.le_refl _, Nat.le_refl _, halen⟩
       log_acap := hacap
       owned := hown
+      next_ge := hge
       frame := hframe
       blockLocal := ?_ }
   · intro p off len hp
@@ -1988,14 +2226,19 @@ theorem forInc_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
           exact hInv.iter.bind_pair
             (a := "%inc.i.i") (b := "%exitcond.not.i.i")
             (va := .int 64 (BitVec.ofNat 64 (i + 1))) (vb := .int 1 (0 : BitVec 1))
-            (by decide) (by decide) (by decide) (by decide)
+            (by decide) (by decide)
         log_hash := by dsimp only [e]; exact hInv.log_hash
         log_len := hInv.log_len
         log_cap := hInv.log_cap
         log_alen := hInv.log_alen
         log_acap := hInv.log_acap
         owned := hInv.owned
+        next_ge := hInv.next_ge
         frame := hInv.frame
+        inc_reg := by
+          dsimp only [e, State.bind]
+          rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
+          exact hInv.inc_reg
         blockLocal := ?_ }
     dsimp only [WalkLocal, C']
     rw [if_neg (by decide), if_pos rfl]
@@ -2284,7 +2527,7 @@ theorem scan_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
       ∧ ¬ inc = "%cst.i" ∧ ¬ inc = "%hash1.i.i")
     (htestN : ¬ test = "%3" ∧ ¬ test = "%5" ∧ ¬ test = "%k11.i" ∧ ¬ test = "%ctype.i"
       ∧ ¬ test = "%cst.i" ∧ ¬ test = "%hash1.i.i")
-    (hincS : inc ∉ walkStaticNames) (htestS : test ∉ walkStaticNames)
+    (hincS : walkFreshName inc) (htestS : walkFreshName test)
     (hincI7 : inc ≠ "%7") (hincI8 : inc ≠ "%8")
     (htestI7 : test ≠ "%7") (htestI8 : test ≠ "%8")
     (hi : lookupName s.env phi = some (.int 64 (BitVec.ofNat 64 i)))
@@ -2352,19 +2595,24 @@ theorem scan_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
           exact hInv.ptrs.bind_pair (a := inc) (b := test) hincN htestN
         regs := by
           dsimp only [e, State.bind]
-          exact hInv.regs.bind_pair (a := inc) (b := test) hincS htestS
+          exact hInv.regs.bind_pair (a := inc) (b := test) hincS.1 htestS.1
         iter := by
           dsimp only [e, State.bind]
           exact hInv.iter.bind_pair (a := inc) (b := test)
             (va := .int 64 (BitVec.ofNat 64 (i + 1))) (vb := .int 1 (0 : BitVec 1))
-            hincI7 hincI8 htestI7 htestI8
+            ⟨hincI7, hincI8, hincS.2.2⟩ ⟨htestI7, htestI8, htestS.2.2⟩
         log_hash := by dsimp only [e]; exact hInv.log_hash
         log_len := hInv.log_len
         log_cap := hInv.log_cap
         log_alen := hInv.log_alen
         log_acap := hInv.log_acap
         owned := by dsimp only [e]; exact hInv.owned
+        next_ge := hInv.next_ge
         frame := ?_
+        inc_reg := by
+          dsimp only [e, State.bind]
+          rw [lookupName_cons_ne _ _ htestS.2.1, lookupName_cons_ne _ _ hincS.2.1]
+          exact hInv.inc_reg
         blockLocal := ?_ }
     · rw [hk]; exact hInv.blockIndex
     · dsimp only [e]; exact hInv.frame
@@ -2522,13 +2770,18 @@ theorem present_of_hasBytes {m : Mem} {a n x : Nat} (h : HasBytes m a n)
 two halves of the memory claim `Stage2Run` records from `arenaGe` onwards: both
 cursors and their two-sided growth bounds, the last reserve's slack, the refusal
 offset, presence at `stage2ReportPresent` (the extents the run leaves written), and
-silence outside `stage2ReportFrame` (those extents plus the four stack objects).
+silence outside `stage2ReportFrame` (those extents plus the stack interval).
 
 Presence comes from `WalkInv.owned` by coverage: the staged extents the run
 carries are the geometry's, and `alen ≤ ndst0 + n`, `evlen ≤ evcap` put the
-report's two prefixes inside them.  Silence comes from `WalkInv.frame` by
-`UnchangedOutside.of_covered`: every entry of the walk's list lies inside an entry
-of the report's, which is the loosening a wider frame is. -/
+report's two prefixes inside them.
+
+Silence is the invariant's frame at the same interval shape.  The report's stack
+region ends at `stage2StackEnd G.next0 s.next` — the five bootstrap slots when
+the walk has not passed them, the walk's cursor otherwise — and the invariant's
+frame is the cursor's interval (`walkWideAt`).  The two are the same entry at two
+ends, so the record's frame follows by widening the interval to that end
+(`walkWideAt_le`), with no hypothesis on the cursor: the end carries it. -/
 theorem WalkInv.report {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     (h : WalkInv G C s) :
     G.ndst0 ≤ C.alen ∧
@@ -2543,7 +2796,7 @@ theorem WalkInv.report {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State
       UnchangedOutside m0 s.mem
         (stage2ReportFrame G.dst C.alen G.ev C.evlen G.ndst
           G.nev G.err C.stage.c C.stage.ctype C.stage.cst C.stage.tok C.stage.s
-          C.stage.z C.stage.e C.stage.d G.next0) := by
+          C.stage.z C.stage.e C.stage.d G.next0 (stage2StackEnd G.next0 s.next)) := by
   have hle : C.alen ≤ G.ndst0 + G.n := h.alen_le
   have hev : C.evlen ≤ G.nev0 + stage2RecordBytes * G.n := h.evlen_le
   have hevcap : C.evlen ≤ G.evcap := le_trans hev G.evRoom
@@ -2572,9 +2825,14 @@ theorem WalkInv.report {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State
       · exact ⟨r, by simp [walkStaged, stage2ReportScratch, hr], hlo, hhi⟩
     obtain ⟨q, hq, hqlo, hqhi⟩ := hcov
     exact present_of_hasBytes (hstage q hq) hqlo hqhi
-  · refine UnchangedOutside.of_covered h.frame ?_
+  · refine UnchangedOutside.of_covered
+      (walkWideAt_le (C := C) (n := s.next - G.next0)
+        (n' := stage2StackEnd G.next0 s.next - G.next0) (by
+          have hge := h.next_ge
+          have hmax := le_stage2StackEnd G.next0 s.next
+          omega) h.frame) ?_
     intro r hr
-    simp only [walkWide, stage2ReportFrame, stage2ReportPresent, stage2Writes,
+    simp only [walkWideAt, stage2ReportFrame, stage2ReportPresent, stage2Writes,
       stage2ReportScratch] at hr
     rcases List.mem_append.mp hr with hr | hr
     · rcases List.mem_append.mp hr with hr | hr
@@ -2588,7 +2846,13 @@ theorem WalkInv.report {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State
               le_rfl, le_rfl⟩
           · exact absurd hnil (by simp)
       · exact ⟨r, List.mem_append_left _ (List.mem_append_right _ hr), le_rfl, le_rfl⟩
-    · exact ⟨r, List.mem_append_right _ hr, le_rfl, le_rfl⟩
+    · rcases List.mem_cons.mp hr with rfl | hnil
+      · exact ⟨(G.next0, stage2StackEnd G.next0 s.next - G.next0),
+          List.mem_append_right _ (List.mem_cons_self ..), le_rfl, by
+            have hge := h.next_ge
+            have hmax := le_stage2StackEnd G.next0 s.next
+            omega⟩
+      · exact absurd hnil (by simp)
 
 /-! ### The loop's forward stores, and the region they need
 
@@ -2819,38 +3083,40 @@ theorem cst_inside {c ctype cst tok s z e sp : Nat} (h : NestGuard sp) :
 /-- **The loop head's store preserves the walk's frame.**  `while.body.i` writes
 eight bytes at `%c.i + 32`; every written byte is inside the cursor record's
 extent, which is one of the seven staged objects the frame's list names. -/
-theorem walkFrame_cursorK {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {m : Mem}
-    {v : List UInt8} (hv : v.length ≤ 8) (h : UnchangedOutside m0 m (walkWide G C)) :
-    UnchangedOutside m0 (writeBytes m (C.stage.c + 32) v) (walkWide G C) :=
-  h.write_inside (fun k hk => walkWide_of_seven
+theorem walkFrame_cursorK {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {n : Nat}
+    {m : Mem} {v : List UInt8} (hv : v.length ≤ 8)
+    (h : UnchangedOutside m0 m (walkWideAt G C n)) :
+    UnchangedOutside m0 (writeBytes m (C.stage.c + 32) v) (walkWideAt G C n) :=
+  h.write_inside (fun k hk => walkWideAt_of_seven
     (cursorK_inside (j := k) (by omega)))
 
 /-- **The nesting arm's type-stack store preserves the frame.** -/
-theorem walkFrame_ctype {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {m : Mem}
-    {v : List UInt8} (hv : v.length ≤ 1) (hsp : NestGuard C.sp)
-    (h : UnchangedOutside m0 m (walkWide G C)) :
-    UnchangedOutside m0 (writeBytes m (C.stage.ctype + C.sp) v) (walkWide G C) :=
+theorem walkFrame_ctype {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {n : Nat}
+    {m : Mem} {v : List UInt8} (hv : v.length ≤ 1) (hsp : NestGuard C.sp)
+    (h : UnchangedOutside m0 m (walkWideAt G C n)) :
+    UnchangedOutside m0 (writeBytes m (C.stage.ctype + C.sp) v) (walkWideAt G C n) :=
   h.write_inside (fun k hk => by
     have hk0 : k = 0 := by omega
     subst hk0
-    exact walkWide_of_seven (ctype_inside hsp))
+    exact walkWideAt_of_seven (ctype_inside hsp))
 
 /-- **The nesting arm's state-stack store preserves the frame.** -/
-theorem walkFrame_cst {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {m : Mem}
-    {v : List UInt8} (hv : v.length ≤ 1) (hsp : NestGuard C.sp)
-    (h : UnchangedOutside m0 m (walkWide G C)) :
-    UnchangedOutside m0 (writeBytes m (C.stage.cst + C.sp) v) (walkWide G C) :=
+theorem walkFrame_cst {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {n : Nat}
+    {m : Mem} {v : List UInt8} (hv : v.length ≤ 1) (hsp : NestGuard C.sp)
+    (h : UnchangedOutside m0 m (walkWideAt G C n)) :
+    UnchangedOutside m0 (writeBytes m (C.stage.cst + C.sp) v) (walkWideAt G C n) :=
   h.write_inside (fun k hk => by
     have hk0 : k = 0 := by omega
     subst hk0
-    exact walkWide_of_seven (cst_inside hsp))
+    exact walkWideAt_of_seven (cst_inside hsp))
 
 /-- **The loop head's store, at the invariant.**  `while.body.i` writes the
 advanced index to `%c.i + 32`; the store is inside the cursor record's extent, so
 the invariant's own frame survives it. -/
 theorem WalkInv.frame_cursorK {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     {s : State} (h : WalkInv G C s) {v : List UInt8} (hv : v.length ≤ 8) :
-    UnchangedOutside m0 (writeBytes s.mem (C.stage.c + 32) v) (walkWide G C) :=
+    UnchangedOutside m0 (writeBytes s.mem (C.stage.c + 32) v)
+      (walkWideAt G C (s.next - G.next0)) :=
   walkFrame_cursorK hv h.frame
 
 /-- **The nesting arm's two stack stores, at the invariant.**  `if.end24.i` writes
@@ -2862,7 +3128,7 @@ theorem WalkInv.frame_stack {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     (hcv : cv.length ≤ 1) (hsv : sv.length ≤ 1) (hsp : NestGuard C.sp) :
     UnchangedOutside m0
       (writeBytes (writeBytes s.mem (C.stage.ctype + C.sp) cv)
-        (C.stage.cst + C.sp) sv) (walkWide G C) :=
+        (C.stage.cst + C.sp) sv) (walkWideAt G C (s.next - G.next0)) :=
   walkFrame_cst hsv hsp (walkFrame_ctype hcv hsp h.frame)
 
 -- The three store families' provenance, off the pinned body: the cursor field's
@@ -3146,15 +3412,21 @@ theorem walkBack_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarr
           dsimp only [e, State.bind]
           exact ((hInv.iter.bind_pair (a := "%sp.i.1") (b := "%k.2.i")
             (va := .int 32 (BitVec.ofNat 32 spv)) (vb := .int 64 (BitVec.ofNat 64 k2))
-            (by decide) (by decide) (by decide) (by decide)).bind (d := "%cmp.i")
-            (v := .int 1 (1 : BitVec 1)) (by decide) (by decide))
+            (by decide) (by decide)).bind (d := "%cmp.i")
+            (v := .int 1 (1 : BitVec 1)) (by decide))
         log_hash := by dsimp only [e]; exact hInv.log_hash
         log_len := hInv.log_len
         log_cap := hInv.log_cap
         log_alen := hInv.log_alen
         log_acap := hInv.log_acap
         owned := by dsimp only [e, State.bind]; exact hInv.owned
+        next_ge := by dsimp only [e, State.bind]; exact hInv.next_ge
         frame := by dsimp only [e, State.bind]; exact hInv.frame
+        inc_reg := by
+          dsimp only [e, State.bind]
+          rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+            lookupName_cons_ne _ _ (by decide)]
+          exact hInv.inc_reg
         blockLocal := by simp [WalkLocal] }
     dsimp only [e, State.bind]
     rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
@@ -4072,35 +4344,37 @@ theorem WalkInv.doc_present_outside {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry 
     · exact Or.inl (by omega)
 
 /-- **The entry stream's bytes are outside the walk's whole frame.**  The write
-extents are excluded above; the four stack slots by the watermark, since the byte
+extents are excluded above; the cursor's interval by the watermark, since the byte
 is inside an entry that ends at or below the cursor. -/
 theorem WalkInv.entry_outside {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     {s : State} (h : WalkInv G C s) {e : Nat}
     (ha : G.ep ≤ e) (he : e < G.ep + 4 * G.nep) :
-    ¬ inRegions (walkWide G C) e := by
+    ¬ inRegions (walkWideAt G C (s.next - G.next0)) e := by
   have hp := h.entry_present_outside ha he
   have hlt : e < G.next0 :=
     Nat.lt_of_lt_of_le he (G.watermark (G.ep, 4 * G.nep) (by simp [stage2Regions]))
   intro hw
   obtain ⟨r, hr, hlo, hhi⟩ := hw
+  simp only [walkWideAt] at hr
   rcases List.mem_append.mp hr with hr | hr
   · exact hp ⟨r, hr, hlo, hhi⟩
-  · exact not_walkAlloca_of_lt hlt ⟨r, hr, hlo, hhi⟩
+  · exact not_interval_of_lt hlt ⟨r, hr, hlo, hhi⟩
 
 /-- **The document's bytes are outside the walk's whole frame.** -/
 theorem WalkInv.doc_outside {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     {s : State} (h : WalkInv G C s) {e : Nat}
     (ha : G.b ≤ e) (he : e < G.b + G.n) :
-    ¬ inRegions (walkWide G C) e := by
+    ¬ inRegions (walkWideAt G C (s.next - G.next0)) e := by
   have hp := h.doc_present_outside ha he
   have hlt : e < G.next0 :=
     Nat.lt_of_lt_of_le (by omega)
       (G.watermark (G.b, G.n + stage2ReadTail) (by simp [stage2Regions]))
   intro hw
   obtain ⟨r, hr, hlo, hhi⟩ := hw
+  simp only [walkWideAt] at hr
   rcases List.mem_append.mp hr with hr | hr
   · exact hp ⟨r, hr, hlo, hhi⟩
-  · exact not_walkAlloca_of_lt hlt ⟨r, hr, hlo, hhi⟩
+  · exact not_interval_of_lt hlt ⟨r, hr, hlo, hhi⟩
 
 /-- **A write into the cursor record leaves the event stream's trace alone.** -/
 theorem readBytes_ev_of_cursor_write {m : Mem} {c ev nev0 evcap N : Nat} {v : List UInt8}
@@ -4533,14 +4807,21 @@ theorem whileBody_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
             "%arrayidx.i", "%inc.i", "%sp.i.0248", "%k.0.i249"] rfl (by decide)
         iter :=
           { reg7 := ?_
-            reg8 := ?_ }
+            reg8 := ?_
+            regarr := ?_ }
         log_hash := ?_
         log_len := ?_
         log_cap := ?_
         log_alen := ?_
         log_acap := ?_
         owned := walkStaged_write rfl hInv.owned
+        next_ge := hInv.next_ge
         frame := ?_
+        inc_reg := by
+          dsimp only [e, stateAt, whileBodyOut, cells]
+          rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+            lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+            lookupName_cons_ne _ _ (by decide), lookupName_cons_self]
         blockLocal := ?_ }
     · dsimp only [e, stateAt, whileBodyOut, cells]
       rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
@@ -4570,6 +4851,9 @@ theorem whileBody_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
       have hbyte : entryByte G k = G.bs.getD q 0 := by simp [entryByte, hpos]
       dsimp only [e, stateAt, whileBodyOut, cells]
       rw [lookupName_cons_self, hbyte]
+    · have hpos : entryPos G k = q := by simp [entryPos, hqmem]
+      dsimp only [e, stateAt, whileBodyOut, cells]
+      rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_self, hpos]
     · dsimp only [e, stateAt]
       rw [readBytes_log_of_cursor_write (c := C.stage.c) (z := C.stage.z) hcz
         (by simp [wordBytes, natToBytes_length]) (off := 32) (len := 4) (by decide)]
@@ -5131,7 +5415,21 @@ theorem ifEnd24_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
         log_alen := ?_
         log_acap := ?_
         owned := walkStaged_write rfl (walkStaged_write rfl hInv.owned)
+        next_ge := hInv.next_ge
         frame := ?_
+        inc_reg := by
+          dsimp only [e, stateAt]
+          exact walkLookup_cells_ne _ "%inc.i"
+            (walkLookup_cells_ne s.env "%inc.i" hInv.inc_reg _
+              (by
+                intro c hc
+                simp only [ifEnd24HeadCells, List.mem_cons, List.not_mem_nil, or_false] at hc
+                rcases hc with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> simp))
+            _
+            (by
+              intro c hc
+              simp only [ifEnd24TailCells, List.mem_cons, List.not_mem_nil, or_false] at hc
+              rcases hc with rfl | rfl <;> simp)
         blockLocal := ?_ }
     · dsimp only [e, stateAt]
       exact walkLookup_cells_ne _ "%k.0.i249"
@@ -5847,7 +6145,8 @@ and not the count against the budget.
 **The register carriers, and what is still open.**  `JsonStage2WalkSeed` now
 states the two predicates the traversal's successor hypotheses need: `WalkRegs`,
 the 24 static addresses bound by `entry`/`while.body.i.lr.ph` and never rebound,
-and `WalkIter`, `%7` and `%8` at `entryPos G C.k`/`entryByte G C.k`.  Their
+and `WalkIter`, `%7`, `%8` and `%arrayidx10.i` at
+`entryPos G C.k`/`entryByte G C.k`/`G.b + entryPos G C.k`.  Their
 preservation lemmas are `WalkRegs.of_run` and `WalkIter.of_run`, both by
 `denoteCode_lookupName` and nothing else.  `walkCompletes_of_prefix_chain` states
 the assembly — the seed's prefix run, the dispatch chain, the chain's step count,
@@ -5858,8 +6157,8 @@ and no claim of the obligation; its count, its induction and its potential are
 The census's carriers, with their costs named:
 
 * the two register carriers **are** `WalkInv` fields, and their production is
-  stated: the static carrier by the seed's bindings and the per-iteration pair by
-  `whileBody_step`'s own two loads;
+  stated: the static carrier by the seed's bindings and the per-iteration
+  registers by `whileBody_step`'s own three binds;
 * the container stacks' bytes read at `ctype/cst + (C.sp - 1)` are carried as a
   map at a written mark, not as a per-depth byte: the byte at a popped depth was
   written at an earlier index.  `WalkCarry` carries `wlen` and the two maps,
@@ -5948,7 +6247,7 @@ theorem WalkLink.icmpBr {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
     (hk : d ≠ "%k.0.i249") (hsp : d ≠ "%sp.i.0248")
     (h3 : d ≠ "%3") (h5 : d ≠ "%5") (hkk : d ≠ "%k11.i")
     (hc : d ≠ "%ctype.i") (hs : d ≠ "%cst.i") (hh : d ≠ "%hash1.i.i")
-    (hS : d ∉ walkStaticNames) (hI7 : d ≠ "%7") (hI8 : d ≠ "%8")
+    (hS : walkFreshName d) (hI7 : d ≠ "%7") (hI8 : d ≠ "%8")
     (hl : WalkLocal { C with block := tl }
       { stateAt ((d, .int 1 (evalICmp p x y)) :: s.env) s with pc := tl, pre := some s.pc })
     (hf : WalkLocal { C with block := fl }
@@ -6000,7 +6299,12 @@ theorem WalkLink.icmpBr {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
         log_alen := hInv.log_alen
         log_acap := hInv.log_acap
         owned := hInv.owned
+        next_ge := hInv.next_ge
         frame := hInv.frame
+        inc_reg := by
+          dsimp only [s', stateAt]
+          rw [lookupName_cons_ne _ _ hS.2.1]
+          exact hInv.inc_reg
         blockLocal := ?_ }
     · dsimp only [s', stateAt]
       rw [lookupName_cons_ne _ _ hk]
@@ -6013,9 +6317,9 @@ theorem WalkLink.icmpBr {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
     · dsimp only [s', stateAt]
       exact hInv.ptrs.bind h3 h5 hkk hc hs hh
     · dsimp only [s', stateAt]
-      exact hInv.regs.bind hS
+      exact hInv.regs.bind hS.1
     · dsimp only [s', stateAt]
-      exact hInv.iter.bind (v := .int 1 (evalICmp p x y)) hI7 hI8
+      exact hInv.iter.bind (v := .int 1 (evalICmp p x y)) ⟨hI7, hI8, hS.2.2⟩
     · dsimp only [s']
       by_cases ht : evalICmp p x y = 1
       · rw [ite_eq_left ht]; exact hl
@@ -6159,7 +6463,7 @@ theorem WalkLink.refusalStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
     (hd : d ≠ "%k.0.i249") (hds : d ≠ "%sp.i.0248")
     (h3 : d ≠ "%3") (h5 : d ≠ "%5") (hkk : d ≠ "%k11.i")
     (hc : d ≠ "%ctype.i") (hs : d ≠ "%cst.i") (hh : d ≠ "%hash1.i.i")
-    (hS : d ∉ walkStaticNames) (hI7 : d ≠ "%7") (hI8 : d ≠ "%8")
+    (hS : walkFreshName d) (hI7 : d ≠ "%7") (hI8 : d ≠ "%8")
     (hloc : WalkLocal { C with block := t, eoff := j, refusal := true }
       { stateAt ((d, .ptr (C.stage.e + 8)) :: s.env)
           { s with mem := writeBytes s.mem (C.stage.e + 8) (wordBytes 8 j) } with
@@ -6225,7 +6529,12 @@ theorem WalkLink.refusalStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
         log_alen := ?_
         log_acap := ?_
         owned := by dsimp only [s', stateAt, m']; exact walkStaged_write rfl hInv.owned
+        next_ge := hInv.next_ge
         frame := ?_
+        inc_reg := by
+          dsimp only [s', stateAt, m']
+          rw [lookupName_cons_ne _ _ hS.2.1]
+          exact hInv.inc_reg
         blockLocal := hloc }
     · dsimp only [s', stateAt, m']
       rw [lookupName_cons_ne _ _ hd]
@@ -6252,9 +6561,9 @@ theorem WalkLink.refusalStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
     · dsimp only [s', stateAt, m']
       exact hInv.ptrs.bind h3 h5 hkk hc hs hh
     · dsimp only [s', stateAt, m']
-      exact hInv.regs.bind hS
+      exact hInv.regs.bind hS.1
     · dsimp only [s', stateAt, m']
-      exact hInv.iter.bind (v := .ptr (C.stage.e + 8)) hI7 hI8
+      exact hInv.iter.bind (v := .ptr (C.stage.e + 8)) ⟨hI7, hI8, hS.2.2⟩
     · dsimp only [s', stateAt, m']
       rw [walkReadBytes_log_of_eoff_write (e := C.stage.e) (z := C.stage.z) (off := 32)
         (j := j) (N := 4) (e_z_sep hInv) (by decide)]
@@ -6279,7 +6588,7 @@ theorem WalkLink.refusalStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
       refine walkFrame_write_inside hInv.frame ?_
       intro k hk
       have hw : (wordBytes 8 j).length = 8 := by simp [wordBytes, natToBytes_length]
-      exact walkWide_of_seven
+      exact walkWideAt_of_seven
         (eoff_inside (c := C.stage.c) (ctype := C.stage.ctype) (cst := C.stage.cst)
           (tok := C.stage.tok) (s := C.stage.s) (z := C.stage.z) (e := C.stage.e)
           (k := k) (by omega))
@@ -6758,7 +7067,9 @@ theorem WalkLink.condBr {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
         log_alen := hInv.log_alen
         log_acap := hInv.log_acap
         owned := hInv.owned
+        next_ge := hInv.next_ge
         frame := hInv.frame
+        inc_reg := hInv.inc_reg
         blockLocal := ?_ }
     · dsimp only [s']
       by_cases ht : bit = 1
@@ -6833,7 +7144,9 @@ theorem WalkLink.br {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
         log_alen := hInv.log_alen
         log_acap := hInv.log_acap
         owned := hInv.owned
+        next_ge := hInv.next_ge
         frame := hInv.frame
+        inc_reg := hInv.inc_reg
         blockLocal := hloc }
   · rfl
 

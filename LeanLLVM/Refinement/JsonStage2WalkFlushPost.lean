@@ -440,14 +440,14 @@ theorem walkEntryMemAt_frame {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) :
 
 /-- **The seed's frame covers the report's list.**  `walkWide` at the seed is the
 arena's staged cursor, the event stream's, the seven appended objects, `%d.i` and
-the four stack slots; `stage2ReportFrame` is `stage2Writes` — the arena's cursor
-plus the decoder's reserve, the event prefix, and the three slots — beside the
-same scratch and the same four slots.  So the walk's silence transfers to the
-record's wider list. -/
+the five bootstrap slots; `stage2ReportFrame` is `stage2Writes` — the arena's
+cursor plus the decoder's reserve, the event prefix, and the three slots — beside
+the same scratch and a stack interval that covers the slots' window.  So the walk's
+silence transfers to the record's wider list. -/
 theorem walkSeedWide_covered {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) :
     ∀ r ∈ walkWide G (walkSeed G S),
       ∃ q ∈ stage2ReportFrame G.dst G.ndst0 G.ev G.nev0 G.ndst G.nev G.err S.c
-        S.ctype S.cst S.tok S.s S.z S.e S.d G.next0,
+        S.ctype S.cst S.tok S.s S.z S.e S.d G.next0 (G.next0 + (stage2BootstrapExtent + 8)),
         q.1 ≤ r.1 ∧ r.1 + r.2 ≤ q.1 + q.2 := by
   intro r hr
   have hal : (walkSeed G S).alen = G.ndst0 := rfl
@@ -465,15 +465,19 @@ theorem walkSeedWide_covered {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) :
     · exact ⟨r, by
         simp only [stage2ReportFrame, stage2ReportPresent]
         exact List.mem_append_left _ (List.mem_append_right _ hr), le_rfl, le_rfl⟩
-  · exact ⟨r, by
-      simp only [stage2ReportFrame, stage2ReportPresent]
-      exact List.mem_append_right _ hr, le_rfl, le_rfl⟩
+  · refine ⟨(G.next0, (G.next0 + (stage2BootstrapExtent + 8)) - G.next0), ?_, ?_, ?_⟩
+    · simp only [stage2ReportFrame, stage2ReportPresent]
+      exact List.mem_append_right _ (List.mem_cons_self ..)
+    · exact stage2AllocaWrites_start hr
+    · have h36 := stage2AllocaWrites_end hr
+      simp only [stage2BootstrapExtent] at h36 ⊢
+      omega
 
 /-- **The entry run's frame at the record's list.** -/
 theorem walkEntryMemAt_frame_report {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) :
     UnchangedOutside m0 (walkEntryMemAt G S)
       (stage2ReportFrame G.dst G.ndst0 G.ev G.nev0 G.ndst G.nev G.err S.c S.ctype
-        S.cst S.tok S.s S.z S.e S.d G.next0) :=
+        S.cst S.tok S.s S.z S.e S.d G.next0 (G.next0 + (stage2BootstrapExtent + 8))) :=
   UnchangedOutside.of_covered (walkEntryMemAt_frame G S) (walkSeedWide_covered G S)
 
 /-- **The arm's frame.**  The entry run's silence, then the arm's four stores: the
@@ -484,11 +488,11 @@ reports — `ndst0` and `nev0`, because the arm appends to neither buffer. -/
 theorem walkFlushMemAt_frame {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) :
     UnchangedOutside m0 (walkFlushMemAt G S)
       (stage2ReportFrame G.dst G.ndst0 G.ev G.nev0 G.ndst G.nev G.err S.c S.ctype
-        S.cst S.tok S.s S.z S.e S.d G.next0) := by
+        S.cst S.tok S.s S.z S.e S.d G.next0 (G.next0 + (stage2BootstrapExtent + 8))) := by
   have h1 : UnchangedOutside m0
       (writeBytes (walkEntryMemAt G S) (S.e + 8) (wordBytes 8 G.n))
       (stage2ReportFrame G.dst G.ndst0 G.ev G.nev0 G.ndst G.nev G.err S.c S.ctype
-        S.cst S.tok S.s S.z S.e S.d G.next0) :=
+        S.cst S.tok S.s S.z S.e S.d G.next0 (G.next0 + (stage2BootstrapExtent + 8))) :=
     UnchangedOutside.write_le (walkEntryMemAt_frame_report G S)
       ⟨(S.e, stage2ErrorExtent),
         by simp [stage2ReportFrame, stage2ReportPresent, stage2ReportScratch,
@@ -498,7 +502,7 @@ theorem walkFlushMemAt_frame {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) :
       (writeBytes (writeBytes (walkEntryMemAt G S) (S.e + 8) (wordBytes 8 G.n))
         G.ndst (wordBytes 8 G.ndst0))
       (stage2ReportFrame G.dst G.ndst0 G.ev G.nev0 G.ndst G.nev G.err S.c S.ctype
-        S.cst S.tok S.s S.z S.e S.d G.next0) :=
+        S.cst S.tok S.s S.z S.e S.d G.next0 (G.next0 + (stage2BootstrapExtent + 8))) :=
     UnchangedOutside.write_le h1
       ⟨(G.ndst, 8), by simp [stage2ReportFrame, stage2ReportPresent, stage2Writes],
         by omega, by omega⟩
@@ -507,7 +511,7 @@ theorem walkFlushMemAt_frame {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) :
       (writeBytes (writeBytes (writeBytes (walkEntryMemAt G S) (S.e + 8)
         (wordBytes 8 G.n)) G.ndst (wordBytes 8 G.ndst0)) G.nev (wordBytes 8 G.nev0))
       (stage2ReportFrame G.dst G.ndst0 G.ev G.nev0 G.ndst G.nev G.err S.c S.ctype
-        S.cst S.tok S.s S.z S.e S.d G.next0) :=
+        S.cst S.tok S.s S.z S.e S.d G.next0 (G.next0 + (stage2BootstrapExtent + 8))) :=
     UnchangedOutside.write_le h2
       ⟨(G.nev, 8), by simp [stage2ReportFrame, stage2ReportPresent, stage2Writes],
         by omega, by omega⟩
@@ -517,7 +521,7 @@ theorem walkFlushMemAt_frame {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) :
         (wordBytes 8 G.n)) G.ndst (wordBytes 8 G.ndst0)) G.nev (wordBytes 8 G.nev0))
         G.err (wordBytes 8 G.n))
       (stage2ReportFrame G.dst G.ndst0 G.ev G.nev0 G.ndst G.nev G.err S.c S.ctype
-        S.cst S.tok S.s S.z S.e S.d G.next0) :=
+        S.cst S.tok S.s S.z S.e S.d G.next0 (G.next0 + (stage2BootstrapExtent + 8))) :=
     UnchangedOutside.write_le h3
       ⟨(G.err, 8), by simp [stage2ReportFrame, stage2ReportPresent, stage2Writes],
         by omega, by omega⟩
@@ -666,10 +670,12 @@ theorem walkFlushMemAt_present {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) :
 
 `stage2Boundary`'s existential, packed at this arm: the returned word is `0`, the
 two cursor words report the staged cursors, the two prefixes read back, the
-refusal word is the document's length, and the frame, presence and separation are
+the refusal word is the document's length, and the frame, presence and separation are
 the lemmas above.  This is the route `stage2Boundary_of_parts` cannot take for
 this arm — its `Stage2Run.walkFrame` omits the three slots the arm writes — so the
-six facts are supplied at the returned memory directly.
+six facts are supplied at the returned memory directly.  The stack end is the
+bootstrap window: no helper ran, so the five slots the initialisation's four
+`alloca`s and the entry's own objects occupy are the whole stack.
 -/
 
 /-- **The flush arm's boundary.**  `stage2Boundary` at `walkFlushMemAt`: the
@@ -708,7 +714,10 @@ theorem stage2Boundary_of_flush {args : List Value} {mem : Mem} {next : Nat}
     hnev0cap, hnep64, G.nxpLt, by have h := G.arenaRoom; omega, hArenaRead, hEvRead,
     (fun _ => ⟨G.n, Nat.le_refl _, walkFlushMemAt_err G S⟩),
     (by intro h; exact absurd h (by decide)), walkFlushMemAt_present G S,
-    (by rw [← hnext]; exact walkFlushMemAt_frame G S), S.separate, S.dSep⟩
+    (by
+      refine ⟨next + (stage2BootstrapExtent + 8), by omega, ?_⟩
+      rw [← hnext]
+      exact walkFlushMemAt_frame G S), S.separate, S.dSep⟩
 
 /-! ### The post, for the empty entry stream
 
@@ -775,7 +784,7 @@ theorem stage2Post_of_staging_flush {d c ctype cst tok s z e nkSlot nxpSlot : Na
   rw [hSc, hSct, hScs, hStok, hSs, hSz, hSe]
   exact hb
 
-/-- **The walk's obligation, from the four premises.**  This is the milestone the layer
+/-- **The walk's obligation, from the three premises.**  This is the milestone the layer
 was built for: `Stage2WalkObligation` is `Satisfies` at `Γ_stage2at`, and its two
 conjuncts are the completion (`stage2WalkCompletes_of_staging`) and the post at every
 behaviour of the run.  The post's two arms are the record's empty entry stream
@@ -787,14 +796,14 @@ The obligation is stated here rather than beside the completion because the two 
 live on either side of this module's import: the flush's post reads the returned memory
 this module names (`walkFlushMemAt`), and the staging construction is the one below.  No
 hypothesis of the post remains: what the two arms rest on is the words `WalkLoopEnd`
-supplies, named in the census at the end of `JsonStage2WalkPremisesOfStaging`. -/
+supplies, and the head state's two register cells are `WalkInv` clauses read by
+`mergeHeadCells` (`JsonStage2WalkRevolutionSeg`), so they are not among the premises. -/
 theorem stage2WalkObligation_of_staging {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
     (hcont : ∀ {m0 : Mem} (G : WalkGeom m0), WalkContinueFacts G)
-    (hmerge : ∀ {m0 : Mem} (G : WalkGeom m0), WalkMergeCells G)
     (hend : ∀ {m0 : Mem} (G : WalkGeom m0), WalkLoopEnd G)
     (hres : ∀ {m0 : Mem} (G : WalkGeom m0), WalkStringResidue G) :
     Stage2WalkObligation d c ctype cst tok s z e nkSlot nxpSlot := by
-  refine stage2WalkObligation_of_premises (walkPremises_of_staging hcont hmerge hend hres) ?_
+  refine stage2WalkObligation_of_premises (walkPremises_of_staging hcont hend hres) ?_
   intro args mem next hpre o hb
   obtain ⟨a13, rfl, hpre13, hstaged⟩ := hpre
   obtain ⟨G, S, hnext, hSc, hSct, hScs, hStok, hSs, hSz, hSe, _hSd, hargs⟩ :=
@@ -803,7 +812,7 @@ theorem stage2WalkObligation_of_staging {d c ctype cst tok s z e nkSlot nxpSlot 
   · exact stage2Post_of_staging_flush hSc hSct hScs hStok hSs hSz hSe hargs hnext hzero o hb
   · refine stage2Post_of_staging_loop (F := 27) hSc hSct hScs hStok hSs hSz hSe hargs hnext
       (Nat.pos_of_ne_zero hzero)
-      (walkLoopStep_of_staging (G := G) (hcont G) (hmerge G) (hend G) (hres := hres)) o hb
+      (walkLoopStep_of_staging (G := G) (hcont G) (hend G) (hres := hres)) o hb
 
 /-! ### Axiom footprints -/
 

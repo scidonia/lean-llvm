@@ -81,6 +81,61 @@ theorem walkIfThen425_denote {sub : Calls} (env : Env) (s : State)
   simp only [cells, stateAt, hretv]
   rfl
 
+/-! ### The helpers' cursors
+
+`od_scalar_value`, `s2_after_value` and `num_fast_el1` answer at the cursor they
+were called with: each returns `next` unchanged, because the only slots they write
+are the caller's (the stream's cursor word, the root slot, the two `%d.i`/`%ei.i`
+slots), never one of their own.  So a block that calls one leaves `next` where it
+found it, and the frame's interval (`walkWideAt`) is the same region before and
+after the call. -/
+
+theorem s2ScalarValue_next {mem : Mem} {next : Nat} {args : List Value} {r : CallOutcome}
+    (h : stage2Calls stage2SubCalls "od_scalar_value" args mem next = some r) :
+    r.next = next := by
+  rw [stage2Calls_od_scalar_value] at h
+  unfold stage2ScalarValueCall at h
+  split at h
+  · simp only [stage2ScalarValue] at h
+    repeat' split at h
+    all_goals first
+      | exact congrArg CallOutcome.next (Option.some.inj h).symm
+      | cases h
+  · cases h
+
+theorem s2AfterValue_next {mem : Mem} {next : Nat} {args : List Value} {r : CallOutcome}
+    (h : stage2Calls stage2SubCalls "s2_after_value" args mem next = some r) :
+    r.next = next := by
+  rw [stage2Calls_s2_after_value] at h
+  unfold stage2AfterValueCall at h
+  split at h
+  · simp only [Option.map] at h
+    repeat' split at h
+    all_goals first
+      | exact congrArg CallOutcome.next (Option.some.inj h).symm
+      | cases h
+  · cases h
+
+theorem s2NumFast_next {mem : Mem} {next : Nat} {args : List Value} {r : CallOutcome}
+    (h : stage2Calls stage2SubCalls "num_fast_el1" args mem next = some r) :
+    r.next = next := by
+  rw [stage2Calls_num_fast_el1] at h
+  unfold stage2NumFast at h
+  split at h
+  · rename_i p n out err
+    cases hb : readBytes mem p n.toNat with
+    | none => rw [hb] at h; cases h
+    | some lex =>
+      rw [hb] at h
+      cases hc : (numLexScan lex).2 with
+      | false =>
+        simp only [hc, Bool.false_eq_true, decide_false] at h
+        exact congrArg CallOutcome.next (Option.some.inj h).symm
+      | true =>
+        simp only [hc, decide_true] at h
+        exact congrArg CallOutcome.next (Option.some.inj h).symm
+  · cases h
+
 /-- **`if.then425.i` on the emitting arm**: `od_scalar_value` appended the token's
 record, the answer is `1`, and the branch takes the escape scan's entry with the
 carry's trace advanced by the record. -/
@@ -160,6 +215,7 @@ theorem WalkLink.if_then425_i_emit {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
     omega
   have hmem : r.mem = writeBytes (writeBytes s.mem (G.ev + C.evlen) ev.encodedBytes)
       (C.stage.z + 8) (wordBytes 8 (C.evlen + ev.encodedBytes.length)) := hmeq
+  have hrnext : r.next = s.next := s2ScalarValue_next hcall
   have hzev := walkLog_ev_sep hInv
   simp only [stage2LogExtent] at hzev
   -- the event trace's read after the two writes
@@ -285,7 +341,18 @@ theorem WalkLink.if_then425_i_emit {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
       log_alen := ?_
       log_acap := ?_
       owned := ?_
+      next_ge := by
+        show G.next0 + stage2BootstrapExtent ≤ r.next
+        rw [hrnext]; exact hInv.next_ge
       frame := ?_
+      inc_reg := by
+        rw [show s'.env = s₁.env from rfl]
+        rw [denoteCode_lookupName (stage2Calls stage2SubCalls) walkIfThen425.instrs
+          "%inc.i" (by
+            intro i hi
+            simp only [walkIfThen425, List.mem_cons, List.not_mem_nil, or_false] at hi
+            rcases hi with rfl | rfl <;> decide) s s₁ hden]
+        exact hInv.inc_reg
       blockLocal := by simp [WalkLocal] }
   · rw [show s'.env = s₁.env from rfl]
     rw [denoteCode_lookupName (stage2Calls stage2SubCalls) walkIfThen425.instrs
@@ -321,22 +388,24 @@ theorem WalkLink.if_then425_i_emit {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
     rw [hmem]
     exact walkStaged_write rfl (walkStaged_write rfl hInv.owned)
   · -- the frame at the wider cursor
-    have h0 : UnchangedOutside m0 s.mem (walkWide G
+    have hnext' : s'.next = s.next := hrnext
+    rw [hnext']
+    have h0 : UnchangedOutside m0 s.mem (walkWideAt G
         { C with block := "if.then447.i", evlen := C.evlen + ev.encodedSize,
-                 events := C.events ++ [ev] }) :=
+                 events := C.events ++ [ev] } (s.next - G.next0)) :=
       hInv.frame.of_covered
-        (walkWide_grow (Nat.le_refl _) (by simp only [hrecLen]; omega) rfl)
-    have hmRec : (G.ev, C.evlen + ev.encodedBytes.length) ∈ walkWide G
+        (walkWideAt_grow (Nat.le_refl _) (by simp only [hrecLen]; omega) rfl (Nat.le_refl _))
+    have hmRec : (G.ev, C.evlen + ev.encodedBytes.length) ∈ walkWideAt G
         { C with block := "if.then447.i", evlen := C.evlen + ev.encodedSize,
-                 events := C.events ++ [ev] } := by
-      simp [walkWide, walkPresent, hrecLen]
-    have hmLog : (C.stage.z, stage2LogExtent) ∈ walkWide G
+                 events := C.events ++ [ev] } (s.next - G.next0) :=
+      mem_walkWideAt_present (by simp [walkPresent, hrecLen])
+    have hmLog : (C.stage.z, stage2LogExtent) ∈ walkWideAt G
         { C with block := "if.then447.i", evlen := C.evlen + ev.encodedSize,
-                 events := C.events ++ [ev] } := by
-      simp [walkWide, walkPresent, stage2ReportScratch, stage2StagedWrites]
-    have h1 : UnchangedOutside s.mem r.mem (walkWide G
+                 events := C.events ++ [ev] } (s.next - G.next0) :=
+      mem_walkWideAt_present (by simp [walkPresent, stage2ReportScratch, stage2StagedWrites])
+    have h1 : UnchangedOutside s.mem r.mem (walkWideAt G
         { C with block := "if.then447.i", evlen := C.evlen + ev.encodedSize,
-                 events := C.events ++ [ev] }) := by
+                 events := C.events ++ [ev] } (s.next - G.next0)) := by
       rw [hmem]
       refine UnchangedOutside.write_le
         (a := C.stage.z + 8) (w := 8)
@@ -453,6 +522,7 @@ theorem WalkLink.if_then425_i_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
     dsimp only [s', s₁, cells, stateAt]
     simp only [hbit]
     rfl
+  have hrnext : r.next = s.next := s2ScalarValue_next hcall
   have hez := e_z_sep hInv
   have heev := e_ev_sep hInv
   simp only [stage2ErrorExtent, stage2LogExtent] at hez heev
@@ -620,7 +690,18 @@ theorem WalkLink.if_then425_i_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
       log_alen := ?_
       log_acap := ?_
       owned := ?_
+      next_ge := by
+        show G.next0 + stage2BootstrapExtent ≤ r.next
+        rw [hrnext]; exact hInv.next_ge
       frame := ?_
+      inc_reg := by
+        rw [show s'.env = s₁.env from rfl]
+        rw [denoteCode_lookupName (stage2Calls stage2SubCalls) walkIfThen425.instrs
+          "%inc.i" (by
+            intro i hi
+            simp only [walkIfThen425, List.mem_cons, List.not_mem_nil, or_false] at hi
+            rcases hi with rfl | rfl <;> decide) s s₁ hden]
+        exact hInv.inc_reg
       blockLocal := by simp [WalkLocal] }
   · rw [show s'.env = s₁.env from rfl]
     rw [denoteCode_lookupName (stage2Calls stage2SubCalls) walkIfThen425.instrs
@@ -670,21 +751,25 @@ theorem WalkLink.if_then425_i_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
     rw [hrefuse]
     unfold stage2ErrSetMsg stage2ErrSet
     exact walkStaged_write rfl (walkStaged_write rfl (walkStaged_write rfl hInv.owned))
-  · show UnchangedOutside m0 r.mem (walkWide G C)
+  · have hnext' : s'.next = s.next := hrnext
+    rw [hnext']
+    show UnchangedOutside m0 r.mem (walkWideAt G C (s.next - G.next0))
     rw [hrefuse]
     unfold stage2ErrSetMsg stage2ErrSet
-    have hregion : (C.stage.e, stage2ErrorExtent) ∈ walkWide G C := by
-      simp [walkWide, walkPresent, stage2ReportScratch, stage2StagedWrites]
+    have hregion : (C.stage.e, stage2ErrorExtent) ∈ walkPresent G C := by
+      simp [walkPresent, stage2ReportScratch, stage2StagedWrites]
+    have hregion' : (C.stage.e, stage2ErrorExtent) ∈ walkWideAt G C (s.next - G.next0) :=
+      mem_walkWideAt_present hregion
     refine UnchangedOutside.write_le (a := C.stage.e + 16) (w := 8)
       (UnchangedOutside.write_le (a := C.stage.e + 8) (w := 8)
         (UnchangedOutside.write_le (a := C.stage.e) (w := 4) hInv.frame
-          ⟨(C.stage.e, stage2ErrorExtent), hregion, by omega,
+          ⟨(C.stage.e, stage2ErrorExtent), hregion', by omega,
             by simp only [stage2ErrorExtent]; omega⟩
           (bs := wordBytes 4 0) (by simp [wordBytes, natToBytes_length]))
-        ⟨(C.stage.e, stage2ErrorExtent), hregion, by simp only [stage2ErrorExtent]; omega,
+        ⟨(C.stage.e, stage2ErrorExtent), hregion', by simp only [stage2ErrorExtent]; omega,
           by simp only [stage2ErrorExtent]; omega⟩
         (bs := wordBytes 8 pos) (by simp [wordBytes, natToBytes_length]))
-      ⟨(C.stage.e, stage2ErrorExtent), hregion, by simp only [stage2ErrorExtent]; omega,
+      ⟨(C.stage.e, stage2ErrorExtent), hregion', by simp only [stage2ErrorExtent]; omega,
         by simp only [stage2ErrorExtent]; omega⟩
       (bs := wordBytes 8 0) (by simp [wordBytes, natToBytes_length])
 
@@ -792,7 +877,7 @@ theorem walkAfterValue_facts_at {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {
     (hfr : UnchangedOutside s.mem m
       (s2AfterValueFoot [.int 32 spz, .ptr (G.next0 + 8),
         .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)) :
-    UnchangedOutside m0 m (walkWide G C) ∧
+    UnchangedOutside m0 m (walkWideAt G C (s.next - G.next0)) ∧
       (∀ q ∈ walkStaged G C, HasBytes m q.1 q.2) ∧
       (∀ off w, off + w ≤ stage2LogExtent →
         readBytes m (C.stage.z + off) w = readBytes s.mem (C.stage.z + off) w) ∧
@@ -800,6 +885,10 @@ theorem walkAfterValue_facts_at {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {
           (C.events.map EventRecord.encodedBytes).flatten.length =
         readBytes s.mem (G.ev + G.nev0)
           (C.events.map EventRecord.encodedBytes).flatten.length := by
+  have hn12 : 12 ≤ s.next - G.next0 := by
+    have hge := hInv.next_ge
+    simp only [stage2BootstrapExtent] at hge
+    omega
   have hroot : G.next0 + 8 + 4 ≤ C.stage.z ∨ C.stage.z + stage2LogExtent ≤ G.next0 + 8 :=
     C.stage.rootSlot_log
   have hrootev : G.next0 + 8 + 4 ≤ G.ev + G.nev0 ∨ G.ev + G.evcap ≤ G.next0 + 8 :=
@@ -815,18 +904,18 @@ theorem walkAfterValue_facts_at {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {
     simp [s2AfterValueFoot]
   have hsub : ∀ q ∈ s2AfterValueFoot [.int 32 spz, .ptr (G.next0 + 8),
       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next,
-      ∃ w ∈ walkWide G C, w.1 ≤ q.1 ∧ q.1 + q.2 ≤ w.1 + w.2 := by
+      ∃ w ∈ walkWideAt G C (s.next - G.next0), w.1 ≤ q.1 ∧ q.1 + q.2 ≤ w.1 + w.2 := by
     intro q hq
     rw [hfoot] at hq
     by_cases h0 : spz.toNat = 0
     · rw [ite_eq_left h0] at hq
       simp only [List.mem_singleton] at hq
       subst hq
-      exact walkWide_rootSlot
+      exact walkWideAt_rootSlot hn12
     · rw [ite_eq_right h0] at hq
       simp only [List.mem_singleton] at hq
       subst hq
-      exact walkWide_cst_byte (q := spz.toNat - 1) hbyte
+      exact walkWideAt_cst_byte (q := spz.toNat - 1) hbyte
   have hevcap : G.nev0 + (C.events.map EventRecord.encodedBytes).flatten.length ≤ G.evcap := by
     have hsum := EventRecord.sum_encodedSize_le C.events
     simp only [stage2RecordBytes] at hsum
@@ -840,7 +929,7 @@ theorem walkAfterValue_facts_at {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {
     have h2 := hInv.k_le
     have h3 := G.nep_le
     omega
-  have hframe : UnchangedOutside m0 m (walkWide G C) :=
+  have hframe : UnchangedOutside m0 m (walkWideAt G C (s.next - G.next0)) :=
     hInv.frame.trans' (UnchangedOutside.of_subset hfr hsub)
   have howned : ∀ q ∈ walkStaged G C, HasBytes m q.1 q.2 := by
     obtain h1 | ⟨b, h1⟩ := stage2AfterValue_form hm
@@ -976,7 +1065,7 @@ theorem WalkLink.if_then109_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
     ∃ s', WalkLink (stage2Calls stage2SubCalls) G C s { C with
       block := "if.end.i.i55", stMap := walkAfterValueMapAt C spz.toNat } s' := by
   obtain ⟨r, hcall, hpost, hfr⟩ := s2AfterValueContract.resolves (next := s.next) hpreA
-  obtain ⟨m, hm, -, hmem, -⟩ := hpost
+  obtain ⟨m, hm, -, hmem, hrn⟩ := hpost
   have hfr' : UnchangedOutside s.mem m
       (s2AfterValueFoot [.int 32 spz, .ptr (G.next0 + 8),
         .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next) := by
@@ -1062,7 +1151,19 @@ theorem WalkLink.if_then109_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
       log_alen := ?_
       log_acap := ?_
       owned := ?_
+      next_ge := by
+        show G.next0 + stage2BootstrapExtent ≤ r.next
+        rw [hrn]; exact hInv.next_ge
       frame := ?_
+      inc_reg := by
+        rw [show s'.env = s₁.env from rfl]
+        rw [denoteCode_lookupName (stage2Calls stage2SubCalls) walkIfThen109.instrs
+          "%inc.i" (by
+            intro i hi
+            simp only [walkIfThen109, walkIfThen109Incoming, List.mem_cons,
+              List.not_mem_nil, or_false] at hi
+            rcases hi with rfl | rfl | rfl | rfl <;> decide) s s₁ hden]
+        exact hInv.inc_reg
       blockLocal := by simp [WalkLocal] }
   · rw [show s'.env = s₁.env from rfl]
     rw [denoteCode_lookupName (stage2Calls stage2SubCalls) walkIfThen109.instrs
@@ -1101,7 +1202,8 @@ theorem WalkLink.if_then109_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
   · rw [show s'.mem = m from hmem]
     simpa [walkStaged] using howned
   · rw [show s'.mem = m from hmem]
-    simpa [walkWide, walkPresent] using hframe
+    have hnext' : s'.next = s.next := hrn
+    simpa only [walkWideAt, walkPresent, hnext'] using hframe
 
 
 /-- **`num_fast_el1`'s four memory facts**: the callee writes one of its two
@@ -1116,7 +1218,7 @@ theorem walkNumFast_facts {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : St
           m = writeBytes s.mem G.next0 (wordBytes 8 w'))
     (hdlog : C.stage.d + 8 ≤ C.stage.z ∨ C.stage.z + stage2LogExtent ≤ C.stage.d)
     (hdev : C.stage.d + 8 ≤ G.ev ∨ G.ev + G.evcap ≤ C.stage.d) :
-    UnchangedOutside m0 m (walkWide G C) ∧
+    UnchangedOutside m0 m (walkWideAt G C (s.next - G.next0)) ∧
       (∀ q ∈ walkStaged G C, HasBytes m q.1 q.2) ∧
       (∀ off w'', off + w'' ≤ stage2LogExtent →
         readBytes m (C.stage.z + off) w'' = readBytes s.mem (C.stage.z + off) w'') ∧
@@ -1124,23 +1226,26 @@ theorem walkNumFast_facts {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : St
           (C.events.map EventRecord.encodedBytes).flatten.length =
         readBytes s.mem (G.ev + G.nev0)
           (C.events.map EventRecord.encodedBytes).flatten.length := by
+  have hn8 : 8 ≤ s.next - G.next0 := by
+    have hge := hInv.next_ge
+    simp only [stage2BootstrapExtent] at hge
+    omega
   have hz0 : C.stage.z + stage2LogExtent ≤ G.next0 :=
     C.stage.sevenEnd (C.stage.z, stage2LogExtent) (by simp [stage2StagedWrites])
   have hev0 : G.ev + G.evcap ≤ G.next0 :=
     G.watermark (G.ev, G.evcap) (by simp [stage2Regions])
-  have hdmem : (C.stage.d, 8) ∈ walkWide G C := by
-    simp [walkWide, walkPresent, stage2ReportScratch]
-  have hnext : (G.next0, 8) ∈ walkWide G C := by
-    simp [walkWide, walkPresent, stage2AllocaWrites]
+  have hdmem : (C.stage.d, 8) ∈ walkWideAt G C (s.next - G.next0) :=
+    mem_walkWideAt_present (by simp [walkPresent, stage2ReportScratch])
   have hlen : (wordBytes 8 w).length = 8 := by simp [wordBytes, natToBytes_length]
   have hlen' : (wordBytes 8 w').length = 8 := by simp [wordBytes, natToBytes_length]
-  have hframe : UnchangedOutside m0 m (walkWide G C) := by
+  have hframe : UnchangedOutside m0 m (walkWideAt G C (s.next - G.next0)) := by
     rcases hm with hm | hm
     · rw [hm]
       exact (hInv.frame).write_le (w := 8) ⟨(C.stage.d, 8), hdmem, Nat.le_refl _, by omega⟩
         (Nat.le_of_eq hlen)
     · rw [hm]
-      exact (hInv.frame).write_le (w := 8) ⟨(G.next0, 8), hnext, Nat.le_refl _, by omega⟩
+      exact (hInv.frame).write_le (w := 8)
+        ⟨(G.next0, s.next - G.next0), mem_walkWideAt_interval, Nat.le_refl _, by omega⟩
         (Nat.le_of_eq hlen')
   have howned : ∀ q ∈ walkStaged G C, HasBytes m q.1 q.2 := by
     rcases hm with hm | hm
@@ -1280,6 +1385,7 @@ theorem WalkLink.if_then19_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
           then "if.then25.i" else "if.end67.critedge.i") } s' := by
   obtain ⟨hframe, howned, hlog, hev⟩ :=
     walkNumFast_facts (G := G) (C := C) (s := s) hInv (m := r.mem) hm hdlog hdev
+  have hrnext : r.next = s.next := s2NumFast_next hcall
   let s₁ : State := stateAt (cells [
     ("%tobool24.not.not.i", .int 1 (evalICmp .eq xout (BitVec.ofNat 32 0))),
     ("%call23.i", r.ret),
@@ -1367,7 +1473,18 @@ theorem WalkLink.if_then19_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
       log_alen := ?_
       log_acap := ?_
       owned := ?_
+      next_ge := by
+        show G.next0 + stage2BootstrapExtent ≤ r.next
+        rw [hrnext]; exact hInv.next_ge
       frame := ?_
+      inc_reg := by
+        rw [show s'.env = s₁.env from rfl]
+        rw [denoteCode_lookupName (stage2Calls stage2SubCalls) walkIfThen19.instrs
+          "%inc.i" (by
+            intro i hi
+            simp only [walkIfThen19, List.mem_cons, List.not_mem_nil, or_false] at hi
+            rcases hi with rfl | rfl | rfl | rfl | rfl <;> decide) s s₁ hden]
+        exact hInv.inc_reg
       blockLocal := by
         by_cases hb : bit = 1
         · rw [ite_eq_left hb]; simp [WalkLocal]
@@ -1403,7 +1520,9 @@ theorem WalkLink.if_then19_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
   · show ∀ q ∈ walkStaged G C, HasBytes r.mem q.1 q.2
     exact howned
   · rw [show s'.mem = r.mem from rfl]
-    exact hframe
+    have hnext' : s'.next = s.next := hrnext
+    rw [hnext']
+    simpa only [walkWideAt, walkPresent] using hframe
 
 /-! ### The instrument -/
 
@@ -1427,7 +1546,7 @@ theorem WalkLink.if_then19_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_then109_i
 
-/-- info: 'LeanLLVM.Refinement.WalkScope.walkAfterValue_facts_at' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkAfterValue_facts_at' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.WalkScope.walkAfterValue_facts_at
 
@@ -1439,7 +1558,7 @@ theorem WalkLink.if_then19_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.if_then19_i
 
-/-- info: 'LeanLLVM.Refinement.WalkScope.walkNumFast_facts' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkNumFast_facts' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.WalkScope.walkNumFast_facts
 
