@@ -182,29 +182,26 @@ continuations** of a continuing entry, and the plan is two structures with a `Su
   question is still asked once, where the class is known.  A conditional inside a
   `Type`-valued structure would make every field a question.
 
-**The run's refinement, landed as far as `contWsRun` is.**  The whitespace arm's seam is not
+**The run's refinement, landed.**  The whitespace arm's seam is not
 class-indexed: the run stops at the first whitespace byte, so its last visit leaves through
 `LeafBlock43`, `46` or `48`, whose states differ in the cells each bounded.  So the endpoint
-is **data**:
+is **data**, and it is no longer the bundle's to carry:
 
-* `sl : State` and `hRun : WalkSegment … (contLandS … b35) (ContAC₄ C) (contWsSeamS C sl k b8)
-  (ContSeamC C) n`, with the target carry **named** — `WalkSegment` records its target's
-  invariant, so the span's first link reads `inv'` rather than a premise.  The run class's
-  states are landed and so is `contWsEntry_ee`; **`contWsRun` is not**, so the run and its
-  own seam step enter the bundle as one supplied segment.  Its docstring names the
-  producer and its cost: five links a continuing byte and four at the exit, the per-index
-  document `∀` as the traversal's premise.
+* the class is one field, `hClass`, and the run is derived from it: `contWsRunF` takes the
+  class and the whitespace check's own invariant, and returns the segment from
+  `contLandS`'s target to the seam as `∃ N, N ≤ 5·(k - i) + 10 ∧ WalkSegment … N` with the
+  stop's `%cond350.i` cell beside it — the count existential because the three leaves differ
+  in cost.  Its source and its endpoint are the total functions `wsPreS` and `wsSlS`, so the
+  bundle's other fields state their states without carrying a state.
 * `hopS` is **produced** (`contWsEntry_hopS`: the seam stores `ofNat 64 k`, and the scan's
   phi selects `%ee.1.i` on `if.then447.i`'s edge), so the bundle carries no landing index
   and the contradiction with `heicd` is gone.
-* The class survives in the run's own field: which of the three leaves `sl` came from is
-  the run's business, not a bundle field, because the run is a segment whose endpoint the
-  bundle already names.  The exit set `{43, 46, 48}` is the complement of the entry leaves
-  `{33, 35, 37}`, and that complement check is what caught an arm list's error in a draft.
-* `contWsRun`'s shape is settled: the endpoint is an **input** (a `∨` conclusion cannot fill
-  a `Type` field), `≤ 5` per visit — three dispatch links plus the latch's own step — exit
-  at `k`, with the per-index document group as the traversal's premise in the form `hbyte`
-  already has.
+* The class is a field rather than the run's business: a `Type` has to be inhabited at every
+  head state with an entry left, and the run exists only where `%35` enters the skip.  The
+  exit set `{43, 46, 48}` is the complement of the entry leaves `{33, 35, 37}`, and that
+  complement check is what caught an arm list's error in a draft.
+* The seam's `%end.i` cell is the head state's static register, transported to the endpoint
+  by `wsSlS_envEnd` and read off `WalkInv.regs` — so the seam's link needs no supply either.
 
 **The price, and why the byte budget is not double-spent.**  The run is `≤ 5·(k - i)` and
 the scan's visits are `cd - 1 - k`, so `5(k-i) + 8(cd-1-k) ≤ 8(cd-1-i) ≤ 8·ΔA`: the prefix
@@ -302,7 +299,8 @@ theorem seamS_env_nep (s : State) (e : BitVec 64) (b8 : BitVec 8) (tok : Nat) :
 /-- **The run's registers are the invariant's, read at the seam.**  `%inc.i` is
 `WalkInv.inc_reg` and `%nep` is one of `walkStaticRegs`' pairs, and the seam binds neither —
 so the segment's target invariant gives the endpoint `sl`'s cells, and they are not bundle
-fields.  The run's *bound* is not a clause of the invariant, which is why it stays one. -/
+fields.  The run's *bound* is not a clause of the invariant either, so the run's producer
+returns it beside the segment (`contWsRunF`). -/
 theorem contWsSeamS_inc {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (sl : State)
     (k : Nat) (b8 : BitVec 8)
     (h : WalkInv G (ContSeamC C) (contWsSeamS C sl k b8)) :
@@ -2098,6 +2096,64 @@ theorem wsEntry37 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
   exact ((WalkSegment.of_link hl₁).trans (WalkSegment.of_link hl₂)).trans
     (WalkSegment.of_link hl₃)
 
+/-! ### The total source and stop terms
+
+The run's source and its stop are named as total functions of the bundle's own values, so
+the bundle's fields that read the seam state can state it without carrying a state. -/
+
+/-- **The preheader state `%35`'s class selects, as a total function.**  The run's source is
+the entry dispatch's target, and the branches on the byte's pivot bits are its three arms;
+under the class premise the branch taken *is* the arm's state (`wsPreS_33/35/37`). -/
+def wsPreS {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) (x : BitVec 8)
+    (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
+    (b35 : UInt8) : State :=
+  if evalICmp .slt (cont35 b35) (BitVec.ofNat 8 13) = 1 then
+    leafBlock33OutAt (nodeBlock41OutAt (contLandS C s x inc nep ep v ix b35) (cont35 b35))
+      (cont35 b35)
+  else if evalICmp .slt (cont35 b35) (BitVec.ofNat 8 32) = 1 then
+    leafBlock35OutAt (contP39S C s x inc nep ep v ix b35) (cont35 b35)
+  else
+    leafBlock37OutAt (contP37S C s x inc nep ep v ix b35) (cont35 b35)
+
+/-- **The stop state the skip reaches from that source**, as a total function of the
+bundle's own values.  Under the class premise it is the arm's endpoint, so the fields the
+run's endpoint names (`h8c`, `hTail`, the landing) are stated at it. -/
+def wsSlS {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) (x : BitVec 8)
+    (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64) (b35 : UInt8)
+    (k : Nat) : State :=
+  wsStopAt G (wsLeafS G (landRhsPreheaderOutAt (wsPreS G C s x inc nep ep v ix b35))
+    ix.toNat) ix.toNat v.toNat k
+
+/-- `wsPreS` at `LeafBlock33`'s class is that arm's preheader state. -/
+theorem wsPreS_33 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
+    (b35 : UInt8)
+    (hb13 : evalICmp .slt (cont35 b35) (BitVec.ofNat 8 13) = 1) :
+    wsPreS G C s x inc nep ep v ix b35 =
+      leafBlock33OutAt (nodeBlock41OutAt (contLandS C s x inc nep ep v ix b35) (cont35 b35))
+        (cont35 b35) := by
+  rw [wsPreS, if_pos hb13]
+
+/-- `wsPreS` at `LeafBlock35`'s class is that arm's preheader state. -/
+theorem wsPreS_35 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
+    (b35 : UInt8)
+    (hb13 : evalICmp .slt (cont35 b35) (BitVec.ofNat 8 13) = 0)
+    (hb32 : evalICmp .slt (cont35 b35) (BitVec.ofNat 8 32) = 1) :
+    wsPreS G C s x inc nep ep v ix b35 =
+      leafBlock35OutAt (contP39S C s x inc nep ep v ix b35) (cont35 b35) := by
+  rw [wsPreS, if_neg (by rw [hb13]; decide), if_pos hb32]
+
+/-- `wsPreS` at `LeafBlock37`'s class is that arm's preheader state. -/
+theorem wsPreS_37 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
+    (b35 : UInt8)
+    (hb13 : evalICmp .slt (cont35 b35) (BitVec.ofNat 8 13) = 0)
+    (hb32 : evalICmp .slt (cont35 b35) (BitVec.ofNat 8 32) = 0) :
+    wsPreS G C s x inc nep ep v ix b35 =
+      leafBlock37OutAt (contP37S C s x inc nep ep v ix b35) (cont35 b35) := by
+  rw [wsPreS, if_neg (by rw [hb13]; decide), if_neg (by rw [hb32]; decide)]
+
 /-! ### The continuing entry's facts, bundled
 
 `HcontCase.ws`'s payload: one argument per head state with an entry left.  This bundle is
@@ -2121,13 +2177,18 @@ every field that names a test, a bound or a span).  At the run class's states
 to is not this bundle's business; the byte before the entry's end decides it, and the
 scan-free class is `HcontCleanupFacts`.
 
-**The run is supplied, and named as the supply.**  `hRun` is the skip's segment from the
-whitespace check's target to the seam's entry, at the run class's two carries.  Its producer
-is `contWsRun`: the latch's own step plus the dispatch and the leaf, which is four links a
-continuing byte at `LeafBlock43`'s class and five at `46`/`48`'s, and four or five at the
-exit — the landed per-visit lemmas are this module's `wsContinue43`/`46`/`48` and
-`wsExit43`/`46`/`48` — with each visit's `WalkLocal` rebuilt from the document's byte and
-its class, the per-index `∀` the whitespace class carries.
+**The run, the stop and the price are derived.**  `contWsRunF` takes the class premise
+(`hClass`) and `%35`'s dispatch's invariant, and returns the skip's segment from the
+whitespace check's target to the seam's entry as the existential count `N`, its bound
+`N ≤ 5·(k - ix.toNat) + 10`, and the stop's `%cond350.i` cell — the one cell of the run's
+endpoint the invariant does not carry; `contWsPriceF` derives the price from that count and
+the span's two ends.  The class premise is what makes this total: the three arm wrappers
+(`contWsRun33/35/37`) consume the class's own disjunct, and the segment's source is the
+total function `wsPreS` at the class the disjunct selects.  The count is measured rather
+than estimated: the entry dispatch at most `4`, the first visit `5` at most (four links at
+`LeafBlock43`'s class, five at `46`/`48`'s), the latch visits `≤ 5·(k - i)` (`wsRun`'s own
+bound), the seam `1` — so `N ≤ 5·(k - i) + 10`, which is the arm wrappers' statement, and
+independent of which leaf stopped the skip.
 
 **What is landed, and what is not.**  The run's *interior* is a theorem: `wsLatchAt` and
 `wsStopAt` name the latch at counter `i + n` and the stop at `k`; `wsCont`/`wsStop` are the
@@ -2144,28 +2205,25 @@ visit at `%idxprom.i`'s own byte `i` (`wsFirstSeg43/46/48`; `wsRun` starts at th
 first read is `i + 1`), the seam (`wsSeamSeg`), the price (`wsPrice`), and their join
 (`contWsAfterPre`, `contWsRun33/35/37`).
 
-Its count is now measured rather than estimated: the entry dispatch at most `4`, the first
-visit `5` at most (four links at `LeafBlock43`'s class, five at `46`/`48`'s), the latch
-visits `≤ 5·(k - i)` (`wsRun`'s own bound), the seam `1` — so `n ≤ 5·(k - i) + 10`, which is
-the arm wrappers' statement, and independent of which leaf stopped the skip.  The field's
-price `n + 8·(v - 1 - k) ≤ 8·ΔA + 5` absorbs it (`wsPrice`), because `8(v - 1 - i) ≤ 8·ΔA - 8`
-from `hspan` and `entryPos C.k ≤ i`, so the left side is at most `8·ΔA - 3·(k - i) + 2`.
-**The price needs one premise the bundle does not yet state:** `entryPos C.k ≤ i` for the
-run's start (`hstart` is about the *stop* `k`), which is the entry stream's own fact about
-`%idxprom.i`, in the same supply as `hspan`/`hstart`; the traversal's
-`ScanEntered`/`ScanCount` facts need `v - i ≤ C.inner`, the entry's inner budget, which no
-clause of `WalkInv` fixes at the run's start — the same supply as `hTail`'s; and the
-per-index class `∀` has to reach `i` itself, because the first visit reads the entry's own
-first byte.
+Its price `N + 8·(v - 1 - k) ≤ 8·ΔA + 5` absorbs the count (`wsPrice`, `contWsPriceF`),
+because `8(v - 1 - i) ≤ 8·ΔA - 8` from `hspan` and `entryPos C.k ≤ i`, so the left side is
+at most `8·ΔA - 3·(k - i) + 2`.  The two premises that price and the traversal need beside
+the count are `hClass`'s last two conjuncts: `entryPos C.k ≤ ix.toNat` for the run's start
+(`hstart` is about the *stop* `k`), and `v.toNat - ix.toNat ≤ C.inner`, the entry's inner
+budget, which no clause of `WalkInv` fixes at the run's start and which the first visit's
+`ScanEntered` and the exit's `ScanCount` consume.  The per-index class `∀` reaches
+`ix.toNat` itself, because the first visit reads the entry's own first byte.
 
-**The bundle still supplies the run, and the reason is totality.**  `HcontFacts` is a `Type`
-produced at every head state with an entry left, while the run's derivation is conditional
-on `%35`'s class: the three arm wrappers take that class as a disjunction, and the seam takes
-the token record's `%end.i` address.  A `def` cannot inhabit the bundle at a class that does
-not enter the skip, so deleting `sl`/`hRun`/`hnRun`/`hcond_sl` from the structure would have
-to add at least one supplied field in their place — the class, and probably `%end.i`.  The
-field count is therefore unchanged, and the composition is a producer with a class premise
-rather than a bundle-derived field.
+**The class is a field, and the run is not.**  `HcontFacts` is a `Type` produced at every
+head state with an entry left, while the run's derivation is conditional on `%35`'s class:
+the three arm wrappers take that class as a disjunction.  A `def` cannot inhabit the bundle
+at a class that does not enter the skip without that premise, so the class enters as
+`hClass` and the run leaves the bundle.  The count follows: the committed bundle is 64
+fields; this one retires `sl`, `b8`, `hRun`, `hnRun`, `hcond_sl` and the count `n`, and adds
+`hClass` — 64 − 6 + 1 = 59.  `b8` is `x1` (the seam's byte, which the retired `hRun` pinned
+to the run's endpoint), `sl` is the term `wsSlS`, `hcond_sl` is `contWsRunF`'s third
+conjunct, `hRun` and `hnRun` are `contWsRunF` and `contWsPriceF`, and `n` is the count
+`contWsRunF` returns existentially and no field reads.
 
 Two steps spare against the entry allowance, which the price below spends.
 
@@ -2182,14 +2240,14 @@ consequence instead of a witness plus an equation:
   selection is `%conv347.i` by a closed `phi` computation (`contPhi6`), and the cell it
   selects is the link's own (`cte345OutAt_conv`).
 
-**One cell at the run's endpoint is a field and two are not.**  `%inc.i` and `%nep` are
-`WalkInv`'s own — `inc_reg` and one of `walkStaticRegs`' rows — and the seam binds neither, so
-the segment's target invariant reads them at the endpoint (`contWsSeamS_inc`,
+**One cell at the run's endpoint is derived and two are the invariant's.**  `%inc.i` and
+`%nep` are `WalkInv`'s own — `inc_reg` and one of `walkStaticRegs`' rows — and the seam binds
+neither, so the segment's target invariant reads them at the endpoint (`contWsSeamS_inc`,
 `contWsSeamS_nep`).  `%cond350.i` is not a clause of the invariant: it is bound once at
-`cond.end349.i` and no block of the skip rebinds it, but a `WalkSegment` records a run and its
-target's invariant rather than the blocks the run passed, so `hcond_sl` stays a field.  The
-lemma that would close it is *the whitespace skip preserves the bound it does not bind* — the
-`htok` gap's twin, one segment out. -/
+`cond.end349.i` and no block of the skip rebinds it, and a `WalkSegment` records a run and its
+target's invariant rather than the blocks the run passed — so the run's producer returns the
+cell as its third conjunct (`contWsRunF`), carried through the arms' latch induction beside
+the segment, and no field states it. -/
 structure HcontFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : Type where
   /-- The head's byte. -/
   x : BitVec 8
@@ -2228,41 +2286,49 @@ structure HcontFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) 
   name and correctly carry opposite values. -/
   hugt : evalICmp .ugt (BitVec.ofNat 64 v.toNat) ix = 1
   /-- **The byte before the entry's end**, which the whitespace check reads: its address is
-  `%cond350.i - 1` and the document supplies the byte.  Its *class* is not a field: on this
-  arm the three pivots' arms and the run they enter are what `hRun` carries. -/
+  `%cond350.i - 1` and the document supplies the byte.  Its class is `hClass`'s first
+  conjunct, stated on `cont35 b35`. -/
   b35 : UInt8
   hread35 : readBytes (contEndS C s x inc nep ep v ix).mem ((G.b - 1) + v.toNat) 1 =
     some [b35]
-  /-- **The whitespace skip's endpoint, its stop and its count.**  `sl` is the state at
-  `if.end372.i`'s entry that the run's last leaf reaches, `k` the run's stop (which the
-  token-end `phi` selects), and `hRun` the segment from the whitespace check's target to
-  the seam's entry at the run class's carries.
+  /-- **The whitespace skip's stop, its byte and its document group.**  `k` is the run's
+  stop (which the token-end `phi` selects) and `x1` the head's byte at the seam.
 
-  **Supplied, with its producer landed:** `contWsRun33/35/37`, the three arms of `%35`'s
-  class, each applying its entry dispatch (`wsEntry33/35/37`) and handing the preheader to
-  `contWsAfterPre`.  The join is `wsRun`'s interior (`wsRun` covers the latch at `i` to the
-  stop at `k` in `≤ 5·(k - i)` links), the first visit at byte `i` (`wsFirstSeg43/46/48`)
-  and the seam (`wsSeamSeg`), so the count is **at most** `5·(k - i) + 10` — the arm
-  wrappers' statement.  A count, not an equality: the classes differ in cost, so the
-  producer is existential.  `hnRun` is the price this bundle states for that run, not a
-  count of it, and `wsPrice` derives it from the count and the span's two ends.  The field
-  stays supplied because the arms need `%35`'s class, which a total `def` cannot guarantee:
-  see this module's header. -/
-  sl : State
+  `hClass` is **the one supplied field that makes the run's segment total at this state**:
+  `%35` is one of the four whitespace bytes, so the leaf the three pivots reach takes its
+  *true* arm and the walk enters the skip; every byte the skip reads continues the token
+  until `k`, which stops it.  Without it a total producer could not build the segment at
+  the other classes — this bundle would be inhabited only by the whitespace arm.  The run
+  itself is not a field: `contWsRunF` derives it from this class and the composition
+  (`contWsRun33/35/37`), at a count of at most `5·(k - ix.toNat) + 10`, with the stop's
+  `%cond350.i` cell beside it, and `contWsPriceF` derives the price from that count and the
+  span's two ends.
+
+  The group is stated in the bundle's own vocabulary: the class bits are on `cont35 b35`;
+  the skip's are on `wsX G` at the index the latch carries (`ix.toNat`), and they reach
+  `ix.toNat` itself because the first visit reads the entry's own first byte; `k` is the
+  stop.  The group's last conjuncts are the inner budget the first visit's `ScanEntered`
+  witness needs and the `entryPos` fact the price's `+5` rests on. -/
   k : Nat
-  n : Nat
-  b8 : BitVec 8
-  hRun : WalkSegment (stage2Calls stage2SubCalls) G (ContAC₄ C)
-    (contLandS C s x inc nep ep v ix b35) (ContSeamC C) (contWsSeamS C sl k b8) n
-  hnRun : n + stage2ByteAllowance * (v.toNat - 1 - k) ≤
-    stage2ByteAllowance * (entryPos G (C.k + 1) - entryPos G C.k) + 5
+  x1 : BitVec 8
+  hClass :
+    ((evalICmp .slt (cont35 b35) (BitVec.ofNat 8 13) = 1 ∧
+        evalICmp .ule (cont35 b35 + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 1) ∨
+      (evalICmp .slt (cont35 b35) (BitVec.ofNat 8 13) = 0 ∧
+        evalICmp .slt (cont35 b35) (BitVec.ofNat 8 32) = 1 ∧
+        evalICmp .eq (cont35 b35) (BitVec.ofNat 8 13) = 1) ∨
+      (evalICmp .slt (cont35 b35) (BitVec.ofNat 8 13) = 0 ∧
+        evalICmp .slt (cont35 b35) (BitVec.ofNat 8 32) = 0 ∧
+        evalICmp .eq (cont35 b35) (BitVec.ofNat 8 32) = 1)) ∧
+    (∀ q, ix.toNat ≤ q → q < k → wsCont G q) ∧ wsStop G k ∧ ix.toNat < k ∧
+    v.toNat - ix.toNat ≤ C.inner ∧ entryPos G C.k ≤ ix.toNat
   /-- The run's stop is inside the entry, which is what makes the extra-token span
   `[k, v.toNat)` non-empty.  **This is the field the other class cannot carry**: on the
   scan-free arm the token's end is the entry's end, so `k` would be `v.toNat`. -/
   heicd : k < v.toNat
   /-- The entry's first byte's class, read at the seam's name. -/
-  x1 : BitVec 8
-  h8c : evalOperand (contWsSeamS C sl k b8) (.reg "%8") = some (.int 8 x1)
+  h8c : evalOperand (contWsSeamS C (wsSlS G C s x inc nep ep v ix b35 k) k x1)
+    (.reg "%8") = some (.int 8 x1)
   hc110 : evalICmp .slt x1 (BitVec.ofNat 8 110) = 0
   hc116 : evalICmp .slt x1 (BitVec.ofNat 8 116) = 0
   hceq116 : evalICmp .eq x1 (BitVec.ofNat 8 116) = 0
@@ -2279,51 +2345,42 @@ structure HcontFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) 
   rdv : BitVec 32
   xA : BitVec 32
   hTail : WalkSegment (stage2Calls stage2SubCalls) G (ContTailStartC C)
-    (contWsTailStart C sl k b8 x1)
+    (contWsTailStart C (wsSlS G C s x inc nep ep v ix b35 k) k x1 x1)
     (TailCarryScan (ContTailStartC C) ev)
-    (contWsEntry C sl k b8 x1 r₁ r₂ r₃ k v cA rdv xA) 3
+    (contWsEntry C (wsSlS G C s x inc nep ep v ix b35 k) k x1 x1 r₁ r₂ r₃ k v cA rdv xA) 3
   /-- The scan's landing: the byte's address and the byte.  The index is `k` — the seam's
   stored end — everywhere the landing's states name it. -/
   a : Nat
   q : Nat
   bs : List UInt8
-  h3S : lookupName (contWsEntry C sl k b8 x1 r₁ r₂ r₃ k v cA rdv xA).env
-    "%3" = some (.ptr a)
+  h3S : lookupName (contWsEntry C (wsSlS G C s x inc nep ep v ix b35 k) k x1 x1 r₁ r₂ r₃ k v
+    cA rdv xA).env "%3" = some (.ptr a)
   hpos : ((BitVec.ofNat 64 k).signExtend 64).toNat < 2 ^ 63
   hreadS : readBytes
-    (contWsEntry C sl k b8 x1 r₁ r₂ r₃ k v cA rdv xA).mem
+    (contWsEntry C (wsSlS G C s x inc nep ep v ix b35 k) k x1 x1 r₁ r₂ r₃ k v cA rdv xA).mem
     (a + ((BitVec.ofNat 64 k).signExtend 64).toNat) 1 = some bs
   hbsS : bytesToNat bs = q
   hloc105 : WalkLocal (ScanC₁₀₅ (TailCarryScan (ContTailStartC C) ev))
-    (landRhs457OutAt (contWsEntry C sl k b8 x1 r₁ r₂ r₃ k v cA rdv xA)
-      (BitVec.ofNat 64 k) a q)
+    (landRhs457OutAt (contWsEntry C (wsSlS G C s x inc nep ep v ix b35 k) k x1 x1 r₁ r₂ r₃ k v
+      cA rdv xA) (BitVec.ofNat 64 k) a q)
   x47 : BitVec 8
   h47 : evalOperand
-    (landRhs457OutAt (contWsEntry C sl k b8 x1 r₁ r₂ r₃ k v cA rdv xA)
-      (BitVec.ofNat 64 k) a q)
+    (landRhs457OutAt (contWsEntry C (wsSlS G C s x inc nep ep v ix b35 k) k x1 x1 r₁ r₂ r₃ k v
+      cA rdv xA) (BitVec.ofNat 64 k) a q)
     (.reg "%47") = some (.int 8 x47)
   hbit47 : evalICmp .slt x47 (BitVec.ofNat 8 13) = 1
   hws47 : evalICmp .ule (x47 + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 1
   hloc96 : WalkLocal (ScanC₉₆ (TailCarryScan (ContTailStartC C) ev))
-    (ScanS₉₆ (contWsEntry C sl k b8 x1 r₁ r₂ r₃ k v cA rdv xA)
+    (ScanS₉₆ (contWsEntry C (wsSlS G C s x inc nep ep v ix b35 k) k x1 x1 r₁ r₂ r₃ k v cA rdv xA)
       (BitVec.ofNat 64 k) a q x47)
   hlatch : WalkLocal { TailCarryScan (ContTailStartC C) ev with block := "while.body462.i" }
-    (contWsLatch C sl k b8 x1 r₁ r₂ r₃ k v cA rdv xA
+    (contWsLatch C (wsSlS G C s x inc nep ep v ix b35 k) k x1 x1 r₁ r₂ r₃ k v cA rdv xA
       (BitVec.ofNat 64 k) a q x47)
   /-- **The scan runs inside the entry's span.**  Its bound is at or before the next
   entry's position, and the run's stop at or after this one's — the two facts that make
   the visits and the run no more than the span, and the price's byte term. -/
   hspan : v.toNat ≤ entryPos G (C.k + 1)
   hstart : entryPos G C.k ≤ k
-  /-- **The run's bound at the run's endpoint, and the one cell the invariant does not
-  carry.**  `%cond350.i` is `cond.end349.i`'s cell, and no block of the whitespace check or
-  the skip rebinds it, but a `WalkSegment` does not name the blocks it passed — so the cell
-  at `sl` is followed rather than peeled, and it is the `htok` gap's shape one segment out.
-
-  **The run's two registers are not beside it.**  `%inc.i` is `WalkInv.inc_reg` and `%nep` is
-  one of `walkStaticRegs`' pairs, and the seam binds neither, so the segment's *target*
-  invariant reads both at `sl` (`contWsSeamS_inc`, `contWsSeamS_nep`). -/
-  hcond_sl : lookupName sl.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 v.toNat))
   /-- **The traversal's round**: `walkScanRounds457`'s `hround`, unweakened — a visit at
   the byte the landing loads, at the counter's own index and the lane's bound. -/
   hround : ∀ (C' : WalkCarry G) (s' : State) (p a : Nat) (bs : List UInt8) (q : Nat)
@@ -2394,18 +2451,231 @@ structure HcontFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) 
   htok : ∀ (C' : WalkCarry G) (s' : State), WalkInv G C' s' →
     C'.block = "while.body462.i" → ∃ tok : Nat, lookupName s'.env "%t352.i" = some (.ptr tok)
 
+/-! ### The preheader cells at each arm, and the seam's byte
+
+The three arms' preheader states bind their own cells; these are the two cells the run's
+producer reads at them, and the seam's `%8` peel. -/
+
+theorem wsPreS_idx33 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
+    (b35 : UInt8)
+    (h : lookupName (contAS₅ s x inc nep).env "%idxprom.i" = some (.int 64 ix)) :
+    lookupName (leafBlock33OutAt
+      (nodeBlock41OutAt (contLandS C s x inc nep ep v ix b35) (cont35 b35))
+      (cont35 b35)).env "%idxprom.i" = some (.int 64 ix) := by
+  simp only [leafBlock33OutAt, nodeBlock41OutAt, contLandS, contEndS, condEnd349OutAt,
+    cte345OutAt, stateAt, cells, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+  exact h
+
+theorem wsPreS_idx35 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
+    (b35 : UInt8)
+    (h : lookupName (contAS₅ s x inc nep).env "%idxprom.i" = some (.int 64 ix)) :
+    lookupName (leafBlock35OutAt (contP39S C s x inc nep ep v ix b35) (cont35 b35)).env
+      "%idxprom.i" = some (.int 64 ix) := by
+  simp only [leafBlock35OutAt, contP39S, contP41S, contLandS, contEndS, condEnd349OutAt,
+    cte345OutAt, stateAt, cells, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+  exact h
+
+theorem wsPreS_idx37 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
+    (b35 : UInt8)
+    (h : lookupName (contAS₅ s x inc nep).env "%idxprom.i" = some (.int 64 ix)) :
+    lookupName (leafBlock37OutAt (contP37S C s x inc nep ep v ix b35) (cont35 b35)).env
+      "%idxprom.i" = some (.int 64 ix) := by
+  simp only [leafBlock37OutAt, contP37S, contP41S, contLandS, contEndS, condEnd349OutAt,
+    cte345OutAt, stateAt, cells, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+  exact h
+
+theorem wsPreS_cond33 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
+    (b35 : UInt8) :
+    lookupName (leafBlock33OutAt
+      (nodeBlock41OutAt (contLandS C s x inc nep ep v ix b35) (cont35 b35))
+      (cont35 b35)).env "%cond350.i" =
+      some (.int 64 (BitVec.ofNat 64 v.toNat)) := by
+  simp only [leafBlock33OutAt, nodeBlock41OutAt, contLandS, stateAt, cells, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+  exact contEndS_cond C s x inc nep ep v ix
+
+theorem wsPreS_cond35 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
+    (b35 : UInt8) :
+    lookupName (leafBlock35OutAt (contP39S C s x inc nep ep v ix b35) (cont35 b35)).env
+      "%cond350.i" = some (.int 64 (BitVec.ofNat 64 v.toNat)) := by
+  simp only [leafBlock35OutAt, contP39S, contP41S, contLandS, stateAt, cells, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+  exact contEndS_cond C s x inc nep ep v ix
+
+theorem wsPreS_cond37 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
+    (b35 : UInt8) :
+    lookupName (leafBlock37OutAt (contP37S C s x inc nep ep v ix b35) (cont35 b35)).env
+      "%cond350.i" = some (.int 64 (BitVec.ofNat 64 v.toNat)) := by
+  simp only [leafBlock37OutAt, contP37S, contP41S, contLandS, stateAt, cells, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+  exact contEndS_cond C s x inc nep ep v ix
+
+/-- `%8` at the seam is the byte the seam tests: the seam binds five cells none of which is
+`%8`, so the cell is the state's. -/
+theorem wsSlS_8 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
+    (b35 : UInt8) (k : Nat) (x1 : BitVec 8)
+    (h : evalOperand (contWsSeamS C (wsSlS G C s x inc nep ep v ix b35 k) k x1)
+      (.reg "%8") = some (.int 8 x1)) :
+    lookupName (wsSlS G C s x inc nep ep v ix b35 k).env "%8" =
+      some (.int 8 x1) := by
+  simp only [contWsSeamS, seamS, seamFin, stateAt, evalOperand] at h
+  repeat rw [lookupName_cons_ne _ _ (by decide)] at h
+  exact h
+
+/-- `%8`'s test at the seam is clear when the byte is at or above `110`: the `45` branch and
+the `[48, 58)` window are both below it.  `slt` on bytes is signed, and the hypothesis rules
+out the `[128, 256)` half, so the byte is in `[110, 128)` — below `256`, and its `+ 208`
+wraps to `x - 48`, which is at least `62`. -/
+theorem wsBit45 {x : BitVec 8}
+    (h : evalICmp .slt x (BitVec.ofNat 8 110) = 0) :
+    (evalICmp .eq x (BitVec.ofNat 8 45) ||| evalICmp .ult (x + BitVec.ofNat 8 208)
+      (BitVec.ofNat 8 10)) = 0 := by
+  -- the signed test is the byte's `toInt`, so the byte is at or above `110`
+  have hslt : ¬ (x.toInt < ((BitVec.ofNat 8 110) : BitVec 8).toInt) := by
+    rw [show evalICmp .slt x (BitVec.ofNat 8 110) =
+      BitVec.ofBool (decide (x.toInt < (BitVec.ofNat 8 110).toInt)) from rfl] at h
+    cases hd : decide (x.toInt < (BitVec.ofNat 8 110).toInt) with
+    | false => exact of_decide_eq_false hd
+    | true => rw [hd] at h; exact absurd h (by decide)
+  have h110 : ((BitVec.ofNat 8 110) : BitVec 8).toInt = (110 : Int) := by decide
+  rw [h110] at hslt
+  have hx110 : 110 ≤ x.toNat := by
+    unfold BitVec.toInt at hslt
+    split at hslt <;> omega
+  have hx256 : x.toNat < 256 := x.isLt
+  -- `45` is one of the bytes below `110`
+  have heq : evalICmp .eq x (BitVec.ofNat 8 45) = 0 := by
+    rw [show evalICmp .eq x (BitVec.ofNat 8 45) =
+      BitVec.ofBool (decide (x = BitVec.ofNat 8 45)) from rfl]
+    have h45 : ((BitVec.ofNat 8 45) : BitVec 8).toNat = 45 := by
+      rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by decide : 45 < 2 ^ 8)]
+    have hne : x ≠ BitVec.ofNat 8 45 := by
+      intro he
+      rw [he, h45] at hx110
+      omega
+    rw [decide_eq_false hne]
+    rfl
+  -- `x + 208` wraps to `x - 48`, which is at least `62`
+  have hult : evalICmp .ult (x + BitVec.ofNat 8 208) (BitVec.ofNat 8 10) = 0 := by
+    rw [show evalICmp .ult (x + BitVec.ofNat 8 208) (BitVec.ofNat 8 10) =
+      BitVec.ofBool ((x + BitVec.ofNat 8 208).ult (BitVec.ofNat 8 10)) from rfl]
+    have h208 : ((BitVec.ofNat 8 208) : BitVec 8).toNat = 208 := by
+      rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by decide : 208 < 2 ^ 8)]
+    have hsum : (x + BitVec.ofNat 8 208).toNat = x.toNat - 48 := by
+      rw [BitVec.toNat_add, h208]
+      have hrew : x.toNat + 208 = (x.toNat - 48) + 256 * 1 := by omega
+      rw [hrew, show (2 : Nat) ^ 8 = 256 from rfl, Nat.add_mul_mod_self_left,
+        Nat.mod_eq_of_lt (by omega)]
+    have h10 : ((BitVec.ofNat 8 10) : BitVec 8).toNat = 10 := by
+      rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by decide : 10 < 2 ^ 8)]
+    have hnlt : ¬ (x + BitVec.ofNat 8 208).ult (BitVec.ofNat 8 10) := by
+      rw [BitVec.ult_iff_toNat_lt, hsum, h10]
+      omega
+    cases hb : (x + BitVec.ofNat 8 208).ult (BitVec.ofNat 8 10) with
+    | false => rfl
+    | true => exact absurd hb hnlt
+  rw [heq, hult]
+  decide
+
+/-- The skip rebinds no static register: every state it passes is the previous state's
+environment with its own cells in front, and `%end.i` is none of them.  The seam's step
+stores that cell, so the run's producer reads it off the head state's invariant
+(`WalkInv.regs`). -/
+theorem scanLatchOut_envEnd (s : State) (i c : Nat) (t : String) :
+    lookupName (scanLatchOut s "%inc371.i" "%exitcond.not" i c t).env "%end.i" =
+      lookupName s.env "%end.i" := by
+  simp only [stateAt, cells]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+
+/-- `wsLeafS` at either class keeps the static register: its three arms bind the pivots,
+the switch leaf and the landing's three cells, none of which is `%end.i`. -/
+theorem wsLeafS_envEnd {m0 : Mem} (G : WalkGeom m0) (s : State) (p : Nat) :
+    lookupName (wsLeafS G s p).env "%end.i" = lookupName s.env "%end.i" := by
+  simp only [wsLeafS]
+  split
+  · simp only [leafBlock43OutAt, nodeBlock52OutAt, wsLandS, landRhsIOutAt, stateAt, cells,
+      State.bind, State.bindAll]
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+  · split
+    · simp only [scanNodeBlock50In, wsLandS, landRhsIOutAt, stateAt, cells, State.bind,
+        State.bindAll]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+    · simp only [scanNodeBlock50In, wsLandS, landRhsIOutAt, stateAt, cells, State.bind,
+        State.bindAll]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+
+/-- The latch at `n` visits keeps the static register. -/
+theorem wsLatchAt_envEnd {m0 : Mem} (G : WalkGeom m0) (l : State) (i v : Nat) :
+    ∀ n, lookupName (wsLatchAt G l i v n).env "%end.i" = lookupName l.env "%end.i"
+  | 0 => rfl
+  | n + 1 => by
+    simp only [wsLatchAt]
+    rw [wsLeafS_envEnd, scanLatchOut_envEnd, wsLatchAt_envEnd G l i v n]
+
+/-- The stop state keeps the static register, whichever leaf stopped the skip. -/
+theorem wsStopAt_envEnd {m0 : Mem} (G : WalkGeom m0) (l : State) (i v k : Nat) :
+    lookupName (wsStopAt G l i v k).env "%end.i" = lookupName l.env "%end.i" := by
+  unfold wsStopAt
+  split
+  · rfl
+  · simp only [wsStopS]
+    rw [wsLeafS_envEnd, scanLatchOut_envEnd, wsLatchAt_envEnd]
+
+/-- The entry dispatch keeps the static register: its four nodes and three leaves bind
+the pivots and the lane's cells, and `contLandS`'s two are the byte's. -/
+theorem wsPreS_envEnd {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
+    (b35 : UInt8) :
+    lookupName (wsPreS G C s x inc nep ep v ix b35).env "%end.i" =
+      lookupName (contLandS C s x inc nep ep v ix b35).env "%end.i" := by
+  simp only [wsPreS]
+  split
+  · simp only [leafBlock33OutAt, nodeBlock41OutAt, contLandS, contEndS, condEnd349OutAt,
+      cte345OutAt, contAS₅, headAS₄, headAS₃, headAS₂, headAS₁, stateAt, cells, State.bind]
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+  · split
+    · simp only [leafBlock35OutAt, contP39S, contP41S, contLandS, contEndS,
+        condEnd349OutAt, cte345OutAt, contAS₅, headAS₄, headAS₃, headAS₂, headAS₁, stateAt,
+        cells, State.bind]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+    · simp only [leafBlock37OutAt, contP37S, contP41S, contLandS, contEndS,
+        condEnd349OutAt, cte345OutAt, contAS₅, headAS₄, headAS₃, headAS₂, headAS₁, stateAt,
+        cells, State.bind]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+
+/-- **The run's endpoint keeps `%end.i`**, so the seam's stored end is the head state's
+cell. -/
+theorem wsSlS_envEnd {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
+    (b35 : UInt8) (k : Nat) :
+    lookupName (wsSlS G C s x inc nep ep v ix b35 k).env "%end.i" =
+      lookupName (contLandS C s x inc nep ep v ix b35).env "%end.i" := by
+  simp only [wsSlS, landRhsPreheaderOutAt]
+  rw [wsStopAt_envEnd, wsLeafS_envEnd, wsPreS_envEnd]
+
 /-- The scan's entry, at the bundle's own terms.  Named for the same reason
 `hlastEntryF` is: the bundle's fields are the `def`s' arguments in order, so a lemma's
 statement at `contWsEntryF f` is the one its field types spell out. -/
 abbrev contWsEntryF {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     (f : HcontFacts G C s) : State :=
-  contWsEntry C f.sl f.k f.b8 f.x1 f.r₁ f.r₂ f.r₃ f.k f.v f.cA f.rdv f.xA
+  contWsEntry C (wsSlS G C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.k) f.k f.x1 f.x1
+    f.r₁ f.r₂ f.r₃ f.k f.v f.cA f.rdv f.xA
 
 /-- The scan's latch, at the bundle's own terms. -/
 abbrev contWsLatchF {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     (f : HcontFacts G C s) : State :=
-  contWsLatch C f.sl f.k f.b8 f.x1 f.r₁ f.r₂ f.r₃ f.k f.v f.cA f.rdv f.xA
-    (BitVec.ofNat 64 f.k) f.a f.q f.x47
+  contWsLatch C (wsSlS G C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.k) f.k f.x1 f.x1
+    f.r₁ f.r₂ f.r₃ f.k f.v f.cA f.rdv f.xA (BitVec.ofNat 64 f.k) f.a f.q f.x47
 
 /-! ### The scan-free class's bundle
 
@@ -2570,7 +2840,7 @@ theorem contScanRounds {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
 /-! ### The two arms' compositions, and where they are
 
 Neither arm's composition lives here.  The whitespace arm's goes through the run
-(`HcontFacts.hRun`), the seam, the class-C span, the tail and the scan's visits, and it
+(`contWsRunF`), the seam, the class-C span, the tail and the scan's visits, and it
 records the merge's three cells; the scan-free arm's is `hcontPrefixCleanupSeg` plus the
 merge's step.  Both are `JsonStage2WalkRevolutionSeg`'s (`walkRevolutionMergeSegWs` and
 `walkRevolutionMergeSeg`), because the cells are read at the endpoint's named state and the
@@ -2909,6 +3179,125 @@ theorem contWsRun37 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
     rfl hidx hcond hiv hvsub hcw hi63 hgn hik hkv hcontI hcls hstop hpos hqn halen hevlen
     h8sl hendsl hbitsl
 
+/-- **The run's segment, from the bundle's class field.**  The three arms of `%35`'s class
+give the source; `contWsRun33/35/37` gives the segment, its count bound and the stop's
+`%cond350.i` cell. -/
+theorem contWsRunF {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (f : HcontFacts G C s)
+    (hInv₈ : WalkInv G (ContAC₄ C) (contLandS C s f.x f.inc f.nep f.ep f.v f.ix f.b35))
+    (hk : C.k + 1 < G.nep) :
+    ∃ N, N ≤ 5 * (f.k - f.ix.toNat) + 10 ∧
+      WalkSegment (stage2Calls stage2SubCalls) G (ContAC₄ C)
+        (contLandS C s f.x f.inc f.nep f.ep f.v f.ix f.b35) (ContSeamC C)
+        (contWsSeamS C (wsSlS G C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.k) f.k f.x1) N ∧
+      lookupName (wsSlS G C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.k).env "%cond350.i" =
+        some (.int 64 (BitVec.ofNat 64 f.v.toNat)) := by
+  obtain ⟨hcase, hcls, hstop, hik, hvsub, -⟩ := f.hClass
+  have hiv : f.ix.toNat < f.v.toNat := by
+    have h := (evalICmp_ugt_one_iff_toNat (BitVec.ofNat 64 f.v.toNat) f.ix).1 f.hugt
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by have := f.v.isLt; omega)] at h
+    exact h
+  have hcw : f.v.toNat < 2 ^ 64 := by have := f.v.isLt; omega
+  have hposE : entryPos G (C.k + 1) < G.n := entryPos_lt G hk
+  have hgn : f.ix.toNat < G.n := by have := f.hspan; omega
+  have hi63 : f.ix.toNat < 2 ^ 63 := by
+    have h1 := G.maxDoc
+    simp only [stage2MaxDocument] at h1
+    omega
+  have hpos : ∀ q, f.ix.toNat < q → q ≤ f.k → q < 2 ^ 63 := by
+    intro q h1 h2
+    have h1' := G.maxDoc
+    simp only [stage2MaxDocument] at h1'
+    have h4 : f.k < f.v.toNat := f.heicd
+    have h5 : f.v.toNat ≤ entryPos G (C.k + 1) := f.hspan
+    have h6 := hposE
+    have h7 : q < G.n := by omega
+    omega
+  have hqn : ∀ q, f.ix.toNat < q → q ≤ f.k → q < G.n := by
+    intro q h1 h2
+    have h4 : f.k < f.v.toNat := f.heicd
+    have h5 : f.v.toNat ≤ entryPos G (C.k + 1) := f.hspan
+    omega
+  have halen : C.alen ≤ G.ndst0 + G.n + stage2ArenaReserve := by
+    have h := hInv₈.alen_le
+    change C.alen ≤ G.ndst0 + G.n at h
+    omega
+  have hevlen : C.evlen ≤ G.evcap := by
+    have h1 := hInv₈.evlen_le
+    change C.evlen ≤ G.nev0 + stage2RecordBytes * G.n at h1
+    have h2 := G.evRoom
+    omega
+  have hcontI : wsCont G f.ix.toNat := hcls f.ix.toNat le_rfl hik
+  have hcls' : ∀ q, f.ix.toNat < q → q < f.k → wsCont G q :=
+    fun q h1 h2 => hcls q (by omega) h2
+  have hbitsl : (evalICmp .eq f.x1 (BitVec.ofNat 8 45) |||
+      evalICmp .ult (f.x1 + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0 :=
+    wsBit45 f.hc110
+  have h8sl : lookupName (wsSlS G C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.k).env "%8" =
+      some (.int 8 f.x1) :=
+    wsSlS_8 G C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.k f.x1 f.h8c
+  -- the seam's stored end is the head state's static register
+  have hendsl : lookupName (wsSlS G C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.k).env
+      "%end.i" = some (.ptr (C.stage.tok + 8)) := by
+    rw [wsSlS_envEnd]
+    exact hInv₈.regs ("%end.i", .ptr (C.stage.tok + 8)) (by simp [walkStaticRegs])
+  rcases hcase with ⟨hb13, hws⟩ | ⟨hb13, hb32, hbq13⟩ | ⟨hb13, hb32, hbq32⟩
+  · have hpre := wsPreS_33 G C s f.x f.inc f.nep f.ep f.v f.ix f.b35 hb13
+    have hidx := wsPreS_idx33 G C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.hidx5
+    have hcond := wsPreS_cond33 G C s f.x f.inc f.nep f.ep f.v f.ix f.b35
+    have h8sl' : lookupName (wsStopAt G (wsLeafS G (landRhsPreheaderOutAt (leafBlock33OutAt
+        (nodeBlock41OutAt (contLandS C s f.x f.inc f.nep f.ep f.v f.ix f.b35) (cont35 f.b35))
+        (cont35 f.b35))) f.ix.toNat) f.ix.toNat f.v.toNat f.k).env "%8" =
+        some (.int 8 f.x1) := by
+      simpa only [wsSlS, hpre] using h8sl
+    have hendsl' : lookupName (wsStopAt G (wsLeafS G (landRhsPreheaderOutAt (leafBlock33OutAt
+        (nodeBlock41OutAt (contLandS C s f.x f.inc f.nep f.ep f.v f.ix f.b35) (cont35 f.b35))
+        (cont35 f.b35))) f.ix.toNat) f.ix.toNat f.v.toNat f.k).env "%end.i" =
+        some (.ptr (C.stage.tok + 8)) := by
+      simpa only [wsSlS, hpre] using hendsl
+    simpa only [wsSlS, hpre] using
+      (contWsRun33 (calls := stage2Calls stage2SubCalls) G C s f.x f.inc f.nep f.ep f.v f.ix
+        f.b35 hInv₈ hb13 hws hidx hcond hiv hvsub hcw hi63 hgn hik f.heicd hcontI hcls'
+        hstop hpos hqn halen hevlen h8sl' hendsl' hbitsl)
+  · have hpre := wsPreS_35 G C s f.x f.inc f.nep f.ep f.v f.ix f.b35 hb13 hb32
+    have hidx := wsPreS_idx35 G C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.hidx5
+    have hcond := wsPreS_cond35 G C s f.x f.inc f.nep f.ep f.v f.ix f.b35
+    have h8sl' : lookupName (wsStopAt G (wsLeafS G (landRhsPreheaderOutAt (leafBlock35OutAt
+        (contP39S C s f.x f.inc f.nep f.ep f.v f.ix f.b35) (cont35 f.b35))) f.ix.toNat)
+        f.ix.toNat f.v.toNat f.k).env "%8" = some (.int 8 f.x1) := by
+      simpa only [wsSlS, hpre] using h8sl
+    have hendsl' : lookupName (wsStopAt G (wsLeafS G (landRhsPreheaderOutAt (leafBlock35OutAt
+        (contP39S C s f.x f.inc f.nep f.ep f.v f.ix f.b35) (cont35 f.b35))) f.ix.toNat)
+        f.ix.toNat f.v.toNat f.k).env "%end.i" = some (.ptr (C.stage.tok + 8)) := by
+      simpa only [wsSlS, hpre] using hendsl
+    simpa only [wsSlS, hpre] using
+      (contWsRun35 (calls := stage2Calls stage2SubCalls) G C s f.x f.inc f.nep f.ep f.v f.ix
+        f.b35 hInv₈ hb13 hb32 hbq13 hidx hcond hiv hvsub hcw hi63 hgn hik f.heicd hcontI hcls'
+        hstop hpos hqn halen hevlen h8sl' hendsl' hbitsl)
+  · have hpre := wsPreS_37 G C s f.x f.inc f.nep f.ep f.v f.ix f.b35 hb13 hb32
+    have hidx := wsPreS_idx37 G C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.hidx5
+    have hcond := wsPreS_cond37 G C s f.x f.inc f.nep f.ep f.v f.ix f.b35
+    have h8sl' : lookupName (wsStopAt G (wsLeafS G (landRhsPreheaderOutAt (leafBlock37OutAt
+        (contP37S C s f.x f.inc f.nep f.ep f.v f.ix f.b35) (cont35 f.b35))) f.ix.toNat)
+        f.ix.toNat f.v.toNat f.k).env "%8" = some (.int 8 f.x1) := by
+      simpa only [wsSlS, hpre] using h8sl
+    have hendsl' : lookupName (wsStopAt G (wsLeafS G (landRhsPreheaderOutAt (leafBlock37OutAt
+        (contP37S C s f.x f.inc f.nep f.ep f.v f.ix f.b35) (cont35 f.b35))) f.ix.toNat)
+        f.ix.toNat f.v.toNat f.k).env "%end.i" = some (.ptr (C.stage.tok + 8)) := by
+      simpa only [wsSlS, hpre] using hendsl
+    simpa only [wsSlS, hpre] using
+      (contWsRun37 (calls := stage2Calls stage2SubCalls) G C s f.x f.inc f.nep f.ep f.v f.ix
+        f.b35 hInv₈ hb13 hb32 hbq32 hidx hcond hiv hvsub hcw hi63 hgn hik f.heicd hcontI hcls'
+        hstop hpos hqn halen hevlen h8sl' hendsl' hbitsl)
+
+/-- **The run's price, from the bundle.**  `wsPrice` at the class field's start fact and the
+span's end. -/
+theorem contWsPriceF {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (f : HcontFacts G C s) {N : Nat} (hN : N ≤ 5 * (f.k - f.ix.toNat) + 10) :
+    N + stage2ByteAllowance * (f.v.toNat - 1 - f.k) ≤
+      stage2ByteAllowance * (entryPos G (C.k + 1) - entryPos G C.k) + 5 :=
+  wsPrice hN f.hClass.2.2.2.1 f.heicd f.hClass.2.2.2.2.2 f.hspan
+
 /-! ### The instrument -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.scanB_ofNat
@@ -2957,6 +3346,20 @@ theorem contWsRun37 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
 #print axioms LeanLLVM.Refinement.WalkScope.contWsRun33
 #print axioms LeanLLVM.Refinement.WalkScope.contWsRun35
 #print axioms LeanLLVM.Refinement.WalkScope.contWsRun37
+#print axioms LeanLLVM.Refinement.WalkScope.wsPreS_33
+#print axioms LeanLLVM.Refinement.WalkScope.wsPreS_35
+#print axioms LeanLLVM.Refinement.WalkScope.wsPreS_37
+#print axioms LeanLLVM.Refinement.WalkScope.wsPreS_idx33
+#print axioms LeanLLVM.Refinement.WalkScope.wsPreS_idx35
+#print axioms LeanLLVM.Refinement.WalkScope.wsPreS_idx37
+#print axioms LeanLLVM.Refinement.WalkScope.wsPreS_cond33
+#print axioms LeanLLVM.Refinement.WalkScope.wsPreS_cond35
+#print axioms LeanLLVM.Refinement.WalkScope.wsPreS_cond37
+#print axioms LeanLLVM.Refinement.WalkScope.wsSlS_8
+#print axioms LeanLLVM.Refinement.WalkScope.wsSlS_envEnd
+#print axioms LeanLLVM.Refinement.WalkScope.wsBit45
+#print axioms LeanLLVM.Refinement.WalkScope.contWsRunF
+#print axioms LeanLLVM.Refinement.WalkScope.contWsPriceF
 
 end WalkScope
 end LeanLLVM.Refinement

@@ -440,8 +440,9 @@ decided by the head's index.
 **The arms are disjoint at a state**, which is what makes this a class rather than a
 fan-out: `HcontFacts.hlt91` says the head's byte is *not* below `91`, and
 `HstringFacts.heq34` says it *is* `34`; no state satisfies both.  The two one-entry arms
-are separated by the byte before the entry's end: `HcontFacts` carries the run
-(`hRun`, whose seam stores the run's stop `k < v.toNat`), while `HcontCleanupFacts`
+are separated by the byte before the entry's end: `HcontFacts` carries that byte's class
+and the skip's run is derived from it (`contWsRunF`, whose seam stores the run's stop
+`k < v.toNat`), while `HcontCleanupFacts`
 carries that byte's three *no-whitespace* pivots, so the seam stores the entry's end and
 `heicd`'s reading of that class is `v.toNat < v.toNat` — refuted.  A producer that reads
 the document's byte at `%cond350.i - 1` answers with one arm, and the consumer's branches

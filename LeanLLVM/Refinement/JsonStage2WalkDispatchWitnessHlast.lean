@@ -542,7 +542,7 @@ that is all the invariant may say: `WalkInv` is asserted at mid-scan states, whe
 is being spent down.  **A lower bound that is only true at the loop head belongs to the
 refill's lemma, not to the invariant** — and the last entry's bundle no longer needs one at
 all, because its path enters no scan.  The lemma stays for the continuing arm's producer
-(`hcontFacts_of_staging`), which reads it for the whitespace bundle's `hinner`.
+(`hcontFacts_of_staging`), whose class field is what the whitespace run is derived from; the bundle has no `hinner` field.
 -/
 
 /-- **The cap is at least one.**  `walkInnerCap G = 4 * G.n + 5`. -/

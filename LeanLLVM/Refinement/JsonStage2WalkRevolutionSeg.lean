@@ -59,7 +59,7 @@ and `contCleanupEndF_nep`: the seam, the span and the tail rebind neither regist
 | piece | lemma | links |
 |---|---|---|
 | the head path to the whitespace check | `contPrefixLand` | `8` |
-| the skip and the seam | the bundle's `hRun` (supplied) | `n` |
+| the skip and the seam | `contWsRunF` derives it from the class field | `N` |
 | the class-C span | `walkHeadChainCSeg` | `5` |
 | the tail's three calls | the bundle's `hTail` | `3` |
 | the scan's landing | `walkScanLinks457`, `hopS` produced | `3` |
@@ -67,11 +67,11 @@ and `contCleanupEndF_nep`: the seam, the span and the tail rebind neither regist
 | the latch's exit | `scanExitSeg` | `1` |
 | the merge | `walkIfEnd473_at` | `1` |
 
-at `(((8 + n) + 5) + 3 + 3) + nSc + 1 + 1`, to `revMergeS sm f.v.toNat` at `revMergeC Cm`.
-Its price is `p + 2 ≤ 32·Δk + 8·ΔA`, and the byte term is the arm's own: `hnRun` states that
-the run and the scan's *whole* span share the entry's, `n + 8·(v - 1 - k) ≤ 8·ΔA + 5`, which
-is the budget-not-double-spent argument in one inequality — the scan's start **is** the run's
-stop.
+at `(((8 + N) + 5) + 3 + 3) + nSc + 1 + 1`, to `revMergeS sm f.v.toNat` at `revMergeC Cm`.
+Its price is `p + 2 ≤ 32·Δk + 8·ΔA`, and the byte term is the arm's own: `contWsPriceF`
+states that the run and the scan's *whole* span share the entry's, `N + 8·(v - 1 - k) ≤
+8·ΔA + 5`, which is the budget-not-double-spent argument in one inequality — the scan's start
+**is** the run's stop.
 
 Both conclusions state the three cells **beside** the segment, at the segment's own
 endpoints: the carry's index, the `%inc.i` cell and the `%nep` cell.  Nothing is quantified
@@ -81,7 +81,7 @@ over a state the run does not reach, which is what makes them readable.
 per-visit step stated existentially (`∃ C'' s'', …`), and `scanWsRounds` proves each visit
 from `scanRoundSeg4` instead — which is what the register cells require.  So the whitespace
 composition's demands on the bundle are `hbyte` and `hguard` (and the run's, through
-`hRun`): `hround` is left unused rather than re-stated.
+`contWsRunF`): `hround` is left unused rather than re-stated.
 
 ## The head state's two cells, and where they come from
 
@@ -116,9 +116,10 @@ left and that arm's bundle — concluding the segment, its endpoint and the thre
 `WalkInv` clause pair rather than a bundle.
 
 **Which arm a bundle describes is that module's question, and these producers add no
-premise to it.**  `HcontFacts` is the whitespace class (its `hRun` decides the seam's stored
-end) and `HcontCleanupFacts` is the class whose byte before the entry's end is not
-whitespace; each composition reads only its own bundle's fields, at its own states.
+premise to it.**  `HcontFacts` is the whitespace class (its class field decides the seam's
+stored end, and `contWsRunF` derives the run from it) and `HcontCleanupFacts` is the class
+whose byte before the entry's end is not whitespace; each composition reads only its own
+bundle's fields, at its own states.
 
 `walkDispatch_at_continue_cells_ws` and `walkDispatch_at_continue_cells` are the per-state
 dispatch bodies for the two arms, and `walkDispatch_of_continue_cells` is the scan-free
@@ -548,7 +549,8 @@ calls theirs, and the scan's landing and latch the lattice's eight — none of t
 header's increment. -/
 theorem contWsLatch_inc {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     (f : HcontFacts G C s) :
-    lookupName (contWsLatchF f).env "%inc.i" = lookupName f.sl.env "%inc.i" := by
+    lookupName (contWsLatchF f).env "%inc.i" =
+      lookupName (wsSlS G C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.k).env "%inc.i" := by
   simp only [contWsLatchF, contWsLatch, Latch462S, ScanS₉₆, landRhs457OutAt, scanLatchOut,
     contWsEntry, ScanEntry, TailS₃, TailS₂, TailS₁, contWsTailStart, HeadS413, HeadS405,
     HeadS58, HeadS60, HeadS62, contWsSeamS, seamS, seamFin, stateAt, cells, State.bind]
@@ -557,7 +559,8 @@ theorem contWsLatch_inc {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : Stat
 /-- `%nep` at the whitespace arm's latch is the run's endpoint's, for the same reason. -/
 theorem contWsLatch_nep {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     (f : HcontFacts G C s) :
-    lookupName (contWsLatchF f).env "%nep" = lookupName f.sl.env "%nep" := by
+    lookupName (contWsLatchF f).env "%nep" =
+      lookupName (wsSlS G C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.k).env "%nep" := by
   simp only [contWsLatchF, contWsLatch, Latch462S, ScanS₉₆, landRhs457OutAt, scanLatchOut,
     contWsEntry, ScanEntry, TailS₃, TailS₂, TailS₁, contWsTailStart, HeadS413, HeadS405,
     HeadS58, HeadS60, HeadS62, contWsSeamS, seamS, seamFin, stateAt, cells, State.bind]
@@ -565,16 +568,18 @@ theorem contWsLatch_nep {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : Stat
 
 /-- `%cond350.i` at the whitespace arm's latch is the lane's word: the seam, the span, the
 tail, the landing and the latch rebind names, but none of them rebinds the scan's bound, so
-the cell the run's endpoint carries is the latch's. -/
+the cell the run's producer returns at its endpoint is the latch's. -/
 theorem contWsLatch_cond {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
-    (f : HcontFacts G C s) :
+    (f : HcontFacts G C s)
+    (hcond : lookupName (wsSlS G C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.k).env
+      "%cond350.i" = some (.int 64 (BitVec.ofNat 64 f.v.toNat))) :
     lookupName (contWsLatchF f).env "%cond350.i" =
       some (.int 64 (BitVec.ofNat 64 f.v.toNat)) := by
   simp only [contWsLatchF, contWsLatch, Latch462S, ScanS₉₆, landRhs457OutAt, scanLatchOut,
     contWsEntry, ScanEntry, TailS₃, TailS₂, TailS₁, contWsTailStart, HeadS413, HeadS405,
     HeadS58, HeadS60, HeadS62, contWsSeamS, seamS, seamFin, stateAt, cells, State.bind]
   repeat rw [lookupName_cons_ne _ _ (by decide)]
-  exact f.hcond_sl
+  exact hcond
 
 /-- The scan's entry's predecessor on the whitespace arm is the copy call's block: the
 seam's stored end travels through the span and the tail's three calls, none of which
@@ -594,7 +599,8 @@ theorem contWsEntry_hopS {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : Sta
     evalOperand (stateAt (contWsEntryF f).env (contWsEntryF f)) (.reg "%ee.1.i") =
       some (.int 64 (BitVec.ofNat 64 f.k)) := by
   simp only [evalOperand, stateAt]
-  exact contWsEntry_ee C f.sl f.k f.b8 f.x1 f.r₁ f.r₂ f.r₃ f.k f.v f.cA f.rdv f.xA
+  exact contWsEntry_ee C (wsSlS G C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.k) f.k f.x1 f.x1
+    f.r₁ f.r₂ f.r₃ f.k f.v f.cA f.rdv f.xA
 
 /-! ### The composition
 
@@ -673,10 +679,10 @@ conclusion groups them the way the premise does, so that a consumer can see the 
 facts in the same order.
 
 **This form is the scan-free arm's.**  The whitespace arm's cells are the same three facts
-read at its latch-and-scan endpoint; its composition is the one the run class supplies
-(`HcontFacts.hRun`) and is not stated here, because the whitespace arm's dispatch is not
-this module's composition to prove.  Keeping one form over the arm whose segment this module
-builds is what stops the two arm's cells being read at each other's endpoints. -/
+read at its latch-and-scan endpoint; its composition is `walkRevolutionMergeSegWs`, which
+derives the run with `contWsRunF` and is stated below, because the whitespace arm's dispatch
+is not this module's composition to prove.  Keeping one form over the arm whose segment this
+module builds is what stops the two arm's cells being read at each other's endpoints. -/
 
 /-- **The scan-free continuing entry's merge cells, at every head state with a bundle.**
 The endpoint is the composition's own `clnMergeS`, so nothing is quantified over states the
@@ -776,20 +782,21 @@ theorem walkDispatch_of_continue_cells {m0 : Mem} {G : WalkGeom m0}
 
 /-! ### The whitespace arm's composition
 
-The other arm: the head's eight links, the run and the seam (`HcontFacts.hRun`), the
+The other arm: the head's eight links, the run and the seam (the run by `contWsRunF`), the
 class-C span, the tail, the scan's three links, the visits, the exit and the merge.  Its
-count is `(((8 + n) + 5) + 3 + 3) + nSc + 1 + 1` and its price
-`p + 2 ≤ 32·Δk + 8·ΔA` — the byte term is the arm's own, because the scan's visits are paid
-by the entry's span (`hnRun`, `scanWsRounds`).  `hopS` is *produced* here
+count is `(((8 + N) + 5) + 3 + 3) + nSc + 1 + 1`, where `N` is the run's own count, and its
+price `p + 2 ≤ 32·Δk + 8·ΔA` — the byte term is the arm's own, because the scan's visits
+are paid by the entry's span (`contWsPriceF`, `scanWsRounds`).  `hopS` is *produced* here
 (`contWsEntry_hopS`), so the bundle carries no landing index.
 
 The endpoint is `revMergeS sm v.toNat` at `revMergeC Cm`: the scan's exit's state at the
 merge's block, which is where the three cells are read. -/
 theorem walkRevolutionMergeSegWs {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
-    (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead) (f : HcontFacts G C s) :
-    ∃ (Cm : WalkCarry G) (sm : State) (nSc : Nat),
+    (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)
+    (f : HcontFacts G C s) :
+    ∃ (Cm : WalkCarry G) (sm : State) (N nSc : Nat),
       WalkSegment (stage2Calls stage2SubCalls) G C s (revMergeC Cm)
-        (revMergeS sm f.v.toNat) ((((8 + f.n) + 5) + 3 + 3) + nSc + 1 + 1) ∧
+        (revMergeS sm f.v.toNat) ((((8 + N) + 5) + 3 + 3) + nSc + 1 + 1) ∧
       WalkInv G (revMergeC Cm) (revMergeS sm f.v.toNat) ∧
       (revMergeC Cm).block = "cleanup478.i" ∧
       (revMergeS sm f.v.toNat).pre = some "if.end473.i" ∧
@@ -799,7 +806,7 @@ theorem walkRevolutionMergeSegWs {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) 
       lookupName (revMergeS sm f.v.toNat).env "%nep" =
         some (.int 64 (BitVec.ofNat 64 G.nep)) ∧
       nSc ≤ 4 * (f.v.toNat - 1 - f.k) ∧
-      ((((8 + f.n) + 5) + 3 + 3) + nSc + 1 + 1) + 2 ≤
+      ((((8 + N) + 5) + 3 + 3) + nSc + 1 + 1) + 2 ≤
         stage2EntryAllowance * (C.k + 1 - C.k) +
           stage2ByteAllowance * (entryPos G (C.k + 1) - entryPos G C.k) := by
   -- 1. the head path to the whitespace check: eight links
@@ -808,20 +815,22 @@ theorem walkRevolutionMergeSegWs {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) 
     contPrefixLand (G := G) (C := C) (s := s) hInv hblock f.h8 f.hlt91 f.hlt123 f.hlt125
       f.hne125 f.hinc f.hnep f.hnext f.h5 f.hi63 f.hread f.hidx5 f.htok5 f.hgap5 f.hugt
       f.hread35
-  -- 2. the run and the seam, supplied: from the whitespace check's target to the seam
-  have hsegRun : WalkSegment (stage2Calls stage2SubCalls) G (ContAC₄ C)
-      (contLandS C s f.x f.inc f.nep f.ep f.v f.ix f.b35) (ContSeamC C)
-      (contWsSeamS C f.sl f.k f.b8) f.n := f.hRun
+  -- 2. the run and the seam, derived from the bundle's class: from the whitespace check's
+  -- target to the seam, at the count and the stop's own cell the producer returns
+  obtain ⟨N, hN, hsegRun, hcond⟩ := contWsRunF G C s f hseg8.inv' hk
   -- 3. the class-C span
   have hsegC : Seg (stage2Calls stage2SubCalls) G (ContSeamC C)
-      (contWsSeamS C f.sl f.k f.b8) (ContTailStartC C)
-      (contWsTailStart C f.sl f.k f.b8 f.x1) 5 :=
-    walkHeadChainCSeg (G := G) (C := ContSeamC C) (s := contWsSeamS C f.sl f.k f.b8)
-      f.hRun.inv' rfl f.h8c f.hc110 f.hc116 f.hceq116
+      (contWsSeamS C (wsSlS G C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.k) f.k f.x1)
+      (ContTailStartC C)
+      (contWsTailStart C (wsSlS G C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.k) f.k f.x1 f.x1)
+      5 :=
+    walkHeadChainCSeg (G := G) (C := ContSeamC C)
+      (s := contWsSeamS C (wsSlS G C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.k) f.k f.x1)
+      hsegRun.inv' rfl f.h8c f.hc110 f.hc116 f.hceq116
   -- 4. the tail's three calls
   have hsegT : WalkSegment (stage2Calls stage2SubCalls) G (ContTailStartC C)
-      (contWsTailStart C f.sl f.k f.b8 f.x1) (TailCarryScan (ContTailStartC C) f.ev)
-      (contWsEntryF f) 3 := f.hTail
+      (contWsTailStart C (wsSlS G C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.k) f.k f.x1 f.x1)
+      (TailCarryScan (ContTailStartC C) f.ev) (contWsEntryF f) 3 := f.hTail
   -- 5. the scan's three links, from the produced selection
   have hsegL : WalkSegment (stage2Calls stage2SubCalls) G
       (TailCarryScan (ContTailStartC C) f.ev) (contWsEntryF f) (ContLatchC C f.ev)
@@ -834,22 +843,24 @@ theorem walkRevolutionMergeSegWs {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) 
     rw [hs'] at hseg
     exact hseg
   have hsegP : WalkSegment (stage2Calls stage2SubCalls) G C s (ContLatchC C f.ev)
-      (contWsLatchF f) (((8 + f.n) + 5) + 3 + 3) :=
+      (contWsLatchF f) (((8 + N) + 5) + 3 + 3) :=
     (((hseg8.trans hsegRun).trans (Seg.measure hsegC)).trans hsegT).trans hsegL
   -- 6. the latch's cells, and the visits with the merge's registers at the last one
   have hcounter : lookupName (contWsLatchF f).env "%q.0.i246" =
       some (.int 64 (BitVec.ofNat 64 f.k)) :=
     latch_counter (contWsEntryF f) (BitVec.ofNat 64 f.k) f.a f.q f.x47
   have hbound : lookupName (contWsLatchF f).env "%cond350.i" =
-      some (.int 64 (BitVec.ofNat 64 f.v.toNat)) := contWsLatch_cond f
+      some (.int 64 (BitVec.ofNat 64 f.v.toNat)) := contWsLatch_cond f hcond
   have hinc0 : lookupName (contWsLatchF f).env "%inc.i" =
       some (.int 64 (BitVec.ofNat 64 (C.k + 1))) := by
     rw [contWsLatch_inc]
-    exact contWsSeamS_inc C f.sl f.k f.b8 f.hRun.inv'
+    exact contWsSeamS_inc C (wsSlS G C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.k) f.k f.x1
+      hsegRun.inv'
   have hnep0 : lookupName (contWsLatchF f).env "%nep" =
       some (.int 64 (BitVec.ofNat 64 G.nep)) := by
     rw [contWsLatch_nep]
-    exact contWsSeamS_nep C f.sl f.k f.b8 f.hRun.inv'
+    exact contWsSeamS_nep C (wsSlS G C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.k) f.k f.x1
+      hsegRun.inv'
   have hk0 : (ContLatchC C f.ev).k = C.k := rfl
   obtain ⟨Cm, sm, nSc, hsegS, hInvR, hbR, hkR, hiR, hcR, hincR, hnepR, hnR⟩ :=
     scanWsRounds (G := G) (C := C) (s := s) f hsegP.inv' rfl hcounter hbound hinc0 hnep0
@@ -888,13 +899,12 @@ theorem walkRevolutionMergeSegWs {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) 
     rw [revMergeC_k]; rw [hkR]
   have hpreM : (revMergeS sm f.v.toNat).pre = some "if.end473.i" := by
     simp only [revMergeS, hpc₁]
-  refine ⟨Cm, sm, nSc, ?_, hl₂.inv', rfl, hpreM, hkM, hincM, hnepM, hnR, ?_⟩
+  refine ⟨Cm, sm, N, nSc, ?_, hl₂.inv', rfl, hpreM, hkM, hincM, hnepM, hnR, ?_⟩
   · exact (((hsegP.trans hsegS).trans hseg₁).trans (WalkSegment.of_link hl₂))
-  · -- the price: the run and the scan split the entry's span
-    have hnRun := f.hnRun
-    simp only [stage2ByteAllowance] at hnRun
+  · -- the price: the run's own bound and the scan's visits against the entry's span
+    have hp := contWsPriceF G C s f hN
     have hΔ : C.k + 1 - C.k = 1 := by omega
-    simp only [stage2EntryAllowance, stage2ByteAllowance, hΔ, Nat.mul_one]
+    simp only [stage2EntryAllowance, stage2ByteAllowance, hΔ, Nat.mul_one] at hp ⊢
     omega
 
 /-- **`WalkDispatch`'s body on the whitespace arm.**  `walkRevolutionMergeSegWs`'s endpoint
@@ -922,8 +932,8 @@ theorem walkDispatch_at_continue_cells_ws {m0 : Mem} {G : WalkGeom m0} (C : Walk
       spv ≤ Cd.wlen ∧
       p + 2 ≤ stage2EntryAllowance * (k2 - C.k) +
         stage2ByteAllowance * (entryPos G k2 - entryPos G C.k) := by
-  obtain ⟨Cm, sm, nSc, hseg, hInvD, hblock, hpre, hkC, hinc, hnep, -, hprice⟩ :=
-    walkRevolutionMergeSegWs G C s hInv hhead hcont
+  obtain ⟨Cm, sm, N, nSc, hseg, hInvD, hblock, hpre, hkC, hinc, hnep, -, hprice⟩ :=
+    walkRevolutionMergeSegWs G C s hInv hhead hk hcont
   have hdepth : evalOperand (revMergeS sm hcont.v.toNat) (Operand.reg "%sp.i.0248") =
       some (.int 32 (BitVec.ofNat 32 (revMergeC Cm).sp)) := hInvD.depth_reg
   have hincv : evalOperand (revMergeS sm hcont.v.toNat) (Operand.reg "%inc.i") =
@@ -935,7 +945,7 @@ theorem walkDispatch_at_continue_cells_ws {m0 : Mem} {G : WalkGeom m0} (C : Walk
     omega
   have hnepv : (BitVec.ofNat 64 G.nep).toNat = G.nep := by
     rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hnep64]
-  refine ⟨revMergeC Cm, revMergeS sm hcont.v.toNat, (((8 + hcont.n) + 5) + 3 + 3) + nSc + 1 + 1,
+  refine ⟨revMergeC Cm, revMergeS sm hcont.v.toNat, (((8 + N) + 5) + 3 + 3) + nSc + 1 + 1,
     (revMergeC Cm).sp, C.k + 1, "if.end473.i", Operand.reg "%sp.i.0248",
     Operand.reg "%inc.i", BitVec.ofNat 64 G.nep, hseg, hblock, hkC, hpre, (by decide),
     hdepth, (by decide), hincv, hnep, ?_, hk, ?_, hInvD.depth_cap, hInvD.sp_le_wlen,
@@ -943,12 +953,13 @@ theorem walkDispatch_at_continue_cells_ws {m0 : Mem} {G : WalkGeom m0} (C : Walk
   · rw [hnepv]; exact hk
   · omega
 
-/-- **The whitespace arm's merge cells, at every head state with a bundle.**  The
-`∀`-form the loop's step reads for the `ws` arm, with the endpoint the composition's own
-term. -/
+/-- **The whitespace arm's merge cells, at every head state with an entry left and a
+bundle.**  The `∀`-form the loop's step reads for the `ws` arm, with the endpoint the
+composition's own term.  The count premise is the bundle's own class field's supply: the
+run is derived only where the stream continues past this entry. -/
 theorem walkMergeCells_ws {m0 : Mem} (G : WalkGeom m0) :
     ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
-      (f : HcontFacts G C s) →
+      C.k + 1 < G.nep → (f : HcontFacts G C s) →
       ∃ (Cd : WalkCarry G) (sd : State) (p : Nat),
         WalkSegment (stage2Calls stage2SubCalls) G C s Cd sd p ∧
         Cd.block = "cleanup478.i" ∧ WalkInv G Cd sd ∧ sd.pre = some "if.end473.i" ∧
@@ -957,10 +968,10 @@ theorem walkMergeCells_ws {m0 : Mem} (G : WalkGeom m0) :
           lookupName sd.env "%nep" = some (.int 64 (BitVec.ofNat 64 G.nep))) ∧
         p + 2 ≤ stage2EntryAllowance * (C.k + 1 - C.k) +
           stage2ByteAllowance * (entryPos G (C.k + 1) - entryPos G C.k) := by
-  intro C s hInv hblock f
-  obtain ⟨Cm, sm, nSc, hseg, hInvD, hblockD, hpre, hkC, hinc, hnep, -, hprice⟩ :=
-    walkRevolutionMergeSegWs G C s hInv hblock f
-  exact ⟨revMergeC Cm, revMergeS sm f.v.toNat, (((8 + f.n) + 5) + 3 + 3) + nSc + 1 + 1,
+  intro C s hInv hblock hk f
+  obtain ⟨Cm, sm, N, nSc, hseg, hInvD, hblockD, hpre, hkC, hinc, hnep, -, hprice⟩ :=
+    walkRevolutionMergeSegWs G C s hInv hblock hk f
+  exact ⟨revMergeC Cm, revMergeS sm f.v.toNat, (((8 + N) + 5) + 3 + 3) + nSc + 1 + 1,
     hseg, hblockD, hInvD, hpre, ⟨hkC, hinc, hnep⟩, hprice⟩
 
 /-! ### The one conjunct the two clauses would not buy
