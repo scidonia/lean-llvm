@@ -61,21 +61,23 @@ that consumes it is `WalkDispatchResult.ofStringMerge` (footprint
 
 **What the arm owes, and the finding that stops the composition.**
 
-- `WalkLink.z_arena_reserve_exit` (`JsonStage2WalkCall:1831`) is **unsatisfiable as
-  written**.  Its `hxj` puts `%xj.i` at `G.next0 + 16`; `walkStaticRegs`
+- `WalkLink.z_arena_reserve_exit` (`JsonStage2WalkCall:1839`) **was unsatisfiable as
+  written** and is repaired.  Its `hxj` put `%xj.i` at `G.next0 + 16`; `walkStaticRegs`
   (`JsonStage2WalkScope:1013`) fixes `%xj.i` at `G.next0 + 12`; and at `+ 16` the string
   body's own `RegionsApart xj 8 outn 8` fails against `%outn.i = G.next0 + 20`
-  (`16 + 8 > 20`).  No state satisfies `WalkInv` and that hypothesis together, so the
-  ninth of the fifteen blocks cannot be linked.  The repair is `+16 → +12` at four sites
-  in `JsonStage2WalkCall`, and it belongs in its own change because it re-elaborates the
-  walk layer.  The census row at `JsonStage2WalkScope:5662` still calls the link proved.
+  (`16 + 8 > 20`).  No state satisfied `WalkInv` and that hypothesis together, so the
+  ninth of the fifteen blocks could not be linked and the census row that calls it
+  *proved* recorded a proof of a statement with no inhabitant.  The link now states the
+  staging's address, and its docstring records why the address is part of the link
+  rather than the caller's.
 - the allocator-cursor pin `C.alen ≤ G.ndst0 + ix.toNat` is not a `WalkInv` clause:
   `pending = none` at a loop head, so `if_end256_i`'s `hcur` has no carrier.
 - `s2StringBodyPre`'s producer at the call site does not exist yet — now *possible*,
   because Gap 2 removed the one clause a caller cannot supply.
 
-The module's header records exactly this, group by group; the arm reads only the
-segment, its endpoint and the two merge cells, and the remaining groups are stated
+The module's header records exactly this, group by group; the arm reads the segment, its
+endpoint's block, index and predecessor, its two endpoint cells and G2's count test, and
+the remaining groups are stated
 because they are what the producer must target.
 
 ### Gap 2 — F3, commit 2 (the string pre's private-slot presence) — **closed**
@@ -193,7 +195,7 @@ memory parameter is the repair.
 
 ---
 
-## The findings — eighteen, and all of one family
+## The findings — nineteen, and all of one family
 
 *A statement that looks true because an unstated fact is load-bearing.* Each is
 recorded where the next reader meets it, not in a report.
@@ -217,10 +219,15 @@ recorded where the next reader meets it, not in a report.
 15 | the potential's byte term | `entryPos` totalises to **0** past the stream; the terminal charge vanished |
 16 | `walkPotential_spend`'s `hmono` | **unstatable** at the terminal step; three hypotheses removed |
 | 17 | "the whole string contract is absent" (the review) | it was proved an hour later — *reports decay* |
-| 18 | `WalkLink.z_arena_reserve_exit`'s `%xj.i` | **uninhabited**: it states `G.next0 + 16` where `walkStaticRegs` states `+ 12`, and the string body's `RegionsApart xj 8 outn 8` is false at `+ 16` against `%outn.i = G.next0 + 20` |
+| 18 | `WalkLink.z_arena_reserve_exit`'s `%xj.i` | **uninhabited**: it stated `G.next0 + 16` where `walkStaticRegs` states `+ 12`, and the string body's `RegionsApart xj 8 outn 8` is false at `+ 16` against `%outn.i = G.next0 + 20`.  **Repaired** — the link now states the staging's `+ 12` |
+| 19 | `HstringFacts.hmergeCells` | **uninhabited**: a `∀` over every `WalkInv` state at `cleanup478.i` fixed `%inc208.i` and `%nep`, which the invariant binds nowhere, so the field was false at every other reachable endpoint.  **Repaired** — two fields at the bundle's own endpoint |
 
-**Trend worth keeping**: 4, 5, 6, 8, 9, 10, 12 and 18 were found by a *producer trying to
-inhabit a bundle*. **Building a producer is the instrument, not checking the proof.**
+**Trend worth keeping**: 4, 5, 6, 8, 9, 10, 12, 18 and 19 were found by a *producer trying
+to inhabit a bundle* — and 19 by a *reviewer* asking what inhabits one; the two
+instruments agree, and both are cheap relative to the proof they check.
+
+**Building a producer is the instrument, not checking the proof** — and a field
+that quantifies over states nobody occupies is the failure mode both find.
 
 ---
 
@@ -282,11 +289,13 @@ inhabit a bundle*. **Building a producer is the instrument, not checking the pro
 2. Full build (above). **If `Scope.olean` is missing, build
    `LeanLLVM.Refinement.JsonStage2WalkScope` first** — everything below it fails on
    "No such file or directory" and the message does not say why.
-3. **The `z_arena_reserve_exit` repair** — `+16 → +12` at four sites in
-   `JsonStage2WalkCall.lean` (finding 18). It is the cheapest unblocking move: without it
-   the two-entry segment cannot be composed at all, and the census row that calls the
-   link proved is wrong until it lands.
-4. **Gap 1's remaining sub-items** — the allocator-cursor pin and the `s2StringBodyPre`
-   producer at the call site, then the segment's fifteen links (all present) become a
-   composition.
-5. **Gap 3** — the loop arm's post, which is what removes `hpost` from the top level.
+3. **Gap 1's remaining sub-items**, in the order the module header gives them: the
+   register carriers `walkStaticRegs` omits (`%c.i`, `%xp`, `%nxp`, `%arrayidx10.i`), the
+   two frame lemmas that would carry `s2StringBodyFoot` to `walkWide`, the
+   allocator-cursor pin, and the `s2StringBodyPre` producer at the call site.  With those
+   the fifteen links (all present) become a composition and `HstringFacts.seg` stops being
+   a field.  The `%xj.i` repair (finding 18) is done; it was never the whole blocker.
+4. **Gap 3's two refusal terminal runs** (`walkFinishPost_refuse`, `_refuse488`,
+   `_copy`) and the composition through `WalkLoopStepThree`, which is what removes
+   `hpost` from the top level.  The boundary itself — all 25 conjuncts at the three
+   returned memories — is proved (`JsonStage2WalkTargetPost`).
