@@ -173,6 +173,12 @@ outcome already carries — not the `finish`/`refuse` classification — so Gap 
 depend on Gap 1.  After it, the top level still takes `hcont`, `hmerge`, `hend` and the
 root-word fact; `hpost` is gone.
 
+**Stale claim left in place, deliberately.**  `JsonStage2WalkScope.lean:2936` still calls the
+terminal branch's run `WalkTargetRun` (supplied at the merge by `ExitTail`).  That is no
+longer the loop's route; the line is left because the file is reserved for the frame
+repair (finding 20), which rewrites its neighbourhood anyway, and a doc-only edit there
+costs a full rebuild.  A reader of Scope should trust this document over that line.
+
 **What of it has landed.**  `JsonStage2WalkTargetPost` (imported at the end of
 `LeanLLVM.lean`) proves the boundary — all 25 conjuncts of `stage2Boundary` — at the
 returned memory for each of the three routes, with every memory lemma stated at a

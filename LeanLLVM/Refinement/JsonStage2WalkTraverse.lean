@@ -104,9 +104,10 @@ is the dispatch's segment, the merge's step and the header's pass
 (`WalkDispatch.revolution`), and the loop's step is the dispatch's three outcomes
 (`walkLoopStepThree_of_dispatchThree`, `JsonStage2WalkLoopStepOutcome`): `cont` takes
 the revolution, and `finish` and `refuse` take the terminal branch.  Premise 1 is
-therefore `WalkDispatch`, the dispatch's chain to `cleanup478.i` with the ten
-predecessors' `phi` facts, beside the terminal run `WalkTargetRun` at the state the
-dispatch reaches, inside the finalisation allowance; premise 3 is `walkExitFits`.
+therefore the dispatch's *result* — the segment to `cleanup478.i` with the merge's `phi`
+facts, or the segment to `if.then` — beside the terminal post at the state it reaches
+(`WalkTargetPost`, whose producers are `JsonStage2WalkTargetPost`'s four routes);
+premise 3 is `walkExitFits`.
 Premise 4 is a construction on both halves: `walkGeom_at_pre` is `stage2Pre`'s
 witnesses as a `WalkGeom` with the argument list the geometry's own numbers, and `walkStage_at_pre`
 is the adapter's staging as a `WalkStage`.  The second is the separation transports
