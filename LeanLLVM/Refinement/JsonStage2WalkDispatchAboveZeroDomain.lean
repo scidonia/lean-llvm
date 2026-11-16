@@ -26,9 +26,12 @@ replacement for the rows above.
 
 The two stack bytes the arm reads are the opener's push, `ifEnd24TyByte` on the type
 stack and `ifEnd24StByte` (zero) on the state stack, as `openC₉` defines the merge carry.
-`containerOpen_depth_one` does not expose the reached carry's two maps, so the
-regression carries them as the arm's own premises: the hypotheses are the push's values,
-not free parameters.
+`containerOpen_depth_one` does not expose the reached carry's two maps, so a wrapper that
+took the arm's fields one by one had to carry them as premises.  The continuing comma's arm
+is produced from the state instead (`hcontArm_commaAboveZero_of_staging`,
+`JsonStage2WalkDispatchAboveZeroOfStaging`), which reads the two maps off the carry by
+witness, so `[,0`'s regression supplies nothing about the stacks; the colon's still carries
+them, because no producer states the colon's continuing arm yet.
 
 The routes these documents reach are the refusals: the push leaves the state stack at
 zero (`ifEnd24StByte_zero`), and every merge route tests it against `1` (bracket) or `3`
@@ -42,7 +45,7 @@ finds `44` and `58` there, so the byte premise holds, but the depth is the seed'
 and the arms' `C.sp ≠ 0` premise is refuted.  The affirmative control for that depth
 detector is the producer's `C'.sp = 1`, read off each reachability theorem below.
 -/
-import LeanLLVM.Refinement.JsonStage2WalkDispatchHcontArms
+import LeanLLVM.Refinement.JsonStage2WalkDispatchAboveZeroOfStaging
 import LeanLLVM.Refinement.JsonStage2WalkDispatchOpenersDomain
 
 set_option autoImplicit false
@@ -292,7 +295,9 @@ theorem depthOne_cont_reachable {args : List Value} {m0 : Mem} {next : Nat}
 Each wrapper inhabits its constructor at the head the document reaches and applies
 `LastEntryArm.dispatch` or `HcontArm.dispatch`.  The stack facts are the arm's own: the
 opener's push writes `ifEnd24TyByte c` on the type stack and `ifEnd24StByte` on the state
-stack, and those two are what the merge carry holds.
+stack, and those two are what the merge carry holds.  Where a producer reads them off the
+carry — the continuing comma's does — the wrapper takes only the class and the depth, and
+the document-level regression's two stack premises disappear with it.
 -/
 
 /-- **The comma arm at a last entry.** -/
@@ -316,16 +321,6 @@ theorem colonAboveZero_last_dispatch {m0 : Mem} {G : WalkGeom m0} {C' : WalkCarr
     WalkDispatchResult (stage2Calls stage2SubCalls) G C' s' :=
   LastEntryArm.dispatch hInv hblock hnot
     (.colonAboveZero b1 b2 h8 hsp hmark hstate)
-
-/-- **The comma arm at a continuing entry.** -/
-theorem commaAboveZero_cont_dispatch {m0 : Mem} {G : WalkGeom m0} {C' : WalkCarry G}
-    {s' : State} (hInv : WalkInv G C' s') (hblock : C'.block = walkLoopHead)
-    (hk : C'.k + 1 < G.nep) (hsp : C'.sp ≠ 0)
-    (h8 : evalOperand s' (.reg "%8") = some (.int 8 (BitVec.ofNat 8 44)))
-    {b1 b2 : UInt8} (hmark : C'.tyMap (C'.sp - 1) = b1)
-    (hstate : C'.stMap (C'.sp - 1) = b2) :
-    WalkDispatchResult (stage2Calls stage2SubCalls) G C' s' :=
-  HcontArm.dispatch hInv hblock hk (.commaAboveZero b1 b2 h8 hsp hmark hstate)
 
 /-- **The colon arm at a continuing entry.** -/
 theorem colonAboveZero_cont_dispatch {m0 : Mem} {G : WalkGeom m0} {C' : WalkCarry G}
@@ -409,7 +404,10 @@ theorem colonAboveZero_last_at_document {args : List Value} {m0 : Mem} {next : N
   exact colonAboveZero_last_dispatch hInv' hblock' (by rw [hsp1]; decide) hnot h8
     hmark hstate
 
-/-- **`[,0` reaches the comma's arm above depth zero on the continuing head.** -/
+/-- **`[,0` reaches the comma's arm above depth zero on the continuing head.**  The two
+stack bytes are the carry's, which `hcontArm_commaAboveZero_of_staging` reads by witness at
+the reached head, and the class is the document's: `d = 44` is the arm's byte, so the
+regression supplies the document and the opener's call and nothing about the state. -/
 theorem commaAboveZero_cont_at_document {args : List Value} {m0 : Mem} {next : Nat}
     {G : WalkGeom m0} {S : WalkStage G} {c e : UInt8}
     (hargs : args = [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
@@ -432,15 +430,15 @@ theorem commaAboveZero_cont_at_document {args : List Value} {m0 : Mem} {next : N
     (hret : r.ret = .int 32 (BitVec.ofNat 32 1)) :
     ∃ (C' : WalkCarry G) (s' : State),
       WalkInv G C' s' ∧ C'.block = walkLoopHead ∧ C'.sp = 1 ∧ C'.k = 1 ∧
-      (C'.tyMap (C'.sp - 1) = ifEnd24TyByte (BitVec.ofNat 8 c.toNat) →
-        C'.stMap (C'.sp - 1) = ifEnd24StByte →
-        WalkDispatchResult (stage2Calls stage2SubCalls) G C' s') := by
-  obtain ⟨C', s', hInv', hblock', hsp1, hk1, hk, h8⟩ :=
+      WalkDispatchResult (stage2Calls stage2SubCalls) G C' s' := by
+  obtain ⟨C', s', hInv', hblock', hsp1, hk1, hk, _h8⟩ :=
     depthOne_cont_reachable hargs hnext h hc hrd hpreV r hcall hret
   refine ⟨C', s', hInv', hblock', hsp1, hk1, ?_⟩
-  intro hmark hstate
-  exact commaAboveZero_cont_dispatch hInv' hblock' hk (by rw [hsp1]; decide) h8
-    hmark hstate
+  have hclass : evalICmp .eq (hlastByte G C') (BitVec.ofNat 8 44) = 1 := by
+    simp only [hlastByte, hk1, h.entryByte_one, show ((44 : UInt8)).toNat = 44 from rfl]
+    exact walkEvalICmp_eq_self _
+  exact walkDispatch_at_commaAboveZero_of_staging hInv' hblock' hk hclass
+    (by rw [hsp1]; decide)
 
 /-- **`[:0` reaches the colon's arm above depth zero on the continuing head.** -/
 theorem colonAboveZero_cont_at_document {args : List Value} {m0 : Mem} {next : Nat}
