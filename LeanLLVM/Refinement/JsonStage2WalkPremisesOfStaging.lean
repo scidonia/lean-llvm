@@ -137,8 +137,19 @@ premise of another's:
   nine links to the merge (`containerOpenMerge_at`), priced at `9 + 2`;
 * the **closing delimiter with a container open**, `HcontArm.closeWithOpen`: `]` and `}`
   through `if.then53.i`, the nesting check's four sub-routes (`closeWithOpen_at`);
+* the **default arm's letter and high-byte route on the scan-free class**,
+  `HcontArm.letters`: `lettersSpan`'s four links below `if.else387.i`, with the head's chain
+  to the seam and the tail's three calls as their own counted segments — twenty links,
+  `lettersCleanupMerge_at`, dispatched at the staged documents `"a0"` and `\xC8 0`
+  (`JsonStage2WalkDispatchLettersDomain`);
 * the arms whose segments are the remaining obligation, `HcontArm.supplied`: the default
-  arm's letter and high-byte routes, each carrying its own counted segment and endpoint.
+  arm's **run** class (the extra-token scan's induction), the class-C span's bytes other
+  than `126`/`127`, and the byte `102`, each carrying its own counted segment and endpoint.
+
+**The high-byte route is proved, not supplied.**  `126` and `127` are the class
+`HcontArm.ws`/`.cleanup` carry (`HcontFacts`, `HcontCleanupFacts`), with the counted
+segments `walkRevolutionMergeSegWs` and `walkRevolutionMergeSeg`; an earlier revision of
+this row named that route as owed, and that was stale.
 
 The case is a value and not a second conjoined premise.  Two premises would be jointly
 uninhabited at exactly the input the walk handles: at `C.k = 0`, `G.nep = 2` the head's
