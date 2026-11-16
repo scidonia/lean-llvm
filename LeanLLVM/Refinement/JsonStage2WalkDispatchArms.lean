@@ -40,6 +40,16 @@ turns it into the actual `WalkDispatchResult`:
   `if.then127.i → if.then130.i` and `if.then173.i → if.then176.i` store the entry's
   position and reach the copy (`commaRefuse_at`'s and `colonRefuse_at`'s six links).
   These are the arms the documents `,` and `:` take.
+* `.commaAboveZero` — the comma with an entry left and a container open: the container
+  pair's four sub-routes (`commaBraceMerge_at`, `commaBraceRefuse_at`,
+  `commaBracketMerge_at`, `commaBracketRefuse_at`), eight links each.  The type stack's
+  byte at `%sp - 1` selects the brace route or the bracket one, and the state stack's
+  byte at the same index selects the merge or the refusal.
+* `.colonAboveZero` — the colon with an entry left and a container open: the marker's
+  three sub-routes, the brace pair at eight links (`colonBraceMerge_at`,
+  `colonBraceRefuse_at`) and the marker's own refusal at seven (`colonMarkerRefuse_at`).
+  A brace marker reads the state stack's byte (`1` merges, anything else refuses); any
+  other marker refuses on its own byte.
 * `.containerOpen` — `[` and `{`, both of which enter `if.then.i`: the four head links
   (`NodeBlock21 → NodeBlock19 → NodeBlock11 → LeafBlock7` at `91`, `NodeBlock21 →
   NodeBlock19 → NodeBlock17 → LeafBlock13` at `123`) and the tail's five — the
@@ -49,15 +59,6 @@ turns it into the actual `WalkDispatchResult`:
   named by the three `step` theorems, so the composition is a chain of named states.
 * `.supplied` — the arms whose segments are the remaining obligation, in the order the
   closure handoff names them:
-  * **the comma and the colon above depth zero** (four sub-routes each: two merge routes
-    and two refusals, e.g. `if.end150.i`/`if.end162.i` into `cleanup478.i` and
-    `if.then147.i`/`if.then159.i` into `if.then`).  Their links are present as well
-    (`WalkLink.if_end133_i`, `if_then141_i_at`, `if_end150_i`, `if_else153_i_at`,
-    `if_end162_i`; `stackMarkerRefuse_at` for the marker's own refusal), and they are
-    *blocked on their witness*: every one of them is at `C.sp ≠ 0`, while the layer's only
-    depth-zero seed is `walkSeed` (`sp = 0`).  The depth-one state a document reaches is
-    `containerOpen_depth_one`'s product (`JsonStage2WalkDispatchOpeners`), and these routes
-    have yet to be stated at it, so an arm landed here would have no regression.
   * **the closing delimiter with an open container** — the same depth-one state to be
     stated at, plus `stateStackRefuse_at`'s state-stack byte for its refusal sub-route.
   * **the default arm's letter routes** (the tag test's clear arm: `if.else387.i → NodeBlock62 →
@@ -84,6 +85,8 @@ questions are answered by different facts, and this module keeps them apart.
 import LeanLLVM.Refinement.JsonStage2WalkDispatchScalar
 import LeanLLVM.Refinement.JsonStage2WalkDispatchOpeners
 import LeanLLVM.Refinement.JsonStage2WalkDispatchThreeOfRun
+import LeanLLVM.Refinement.JsonStage2WalkDispatchCommaArms
+import LeanLLVM.Refinement.JsonStage2WalkDispatchColonArms
 
 set_option autoImplicit false
 
@@ -104,6 +107,16 @@ theorem bitZeroOfNeOne {b : BitVec 1} (h : ¬ b = 1) : b = 0 := by
     exact h (BitVec.eq_of_toNat_eq (by rw [hh]; rfl))
   have h0 : b.toNat = 0 := by omega
   exact BitVec.eq_of_toNat_eq (by rw [h0]; rfl)
+
+/-- **A marker byte whose brace bit is set is the brace's own marker.**  The brace bit
+is the equality test on the byte, so a set bit is `b1 = 1` and the type-stack read is the
+literal the brace routes take. -/
+theorem uint8_eq_one_of_colonBit {b : UInt8} (h : colonBit b = 1) : b = 1 := by
+  have hb : BitVec.ofNat 8 b.toNat = BitVec.ofNat 8 1 :=
+    (evalICmp_eq_one_iff _ _).1 h
+  refine (UInt8.toNat_inj (a := b) (b := 1)).1 ?_
+  have := congrArg BitVec.toNat hb
+  simpa using this
 
 /-- **The head switch's arms**, as the pinned IR emits them: one constructor per leaf the
 comparison tree reaches, with the tests that select it.  `HeadArm.complete` says every
@@ -332,6 +345,25 @@ inductive LastEntryArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
       (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
       (he : lookupName s.env "%e" = some (.ptr C.stage.e))
       (hj : j ≤ G.n) (hj64 : j < 2 ^ 64) : LastEntryArm calls G C s
+  /-- **The comma above depth zero**: the container pair's four sub-routes.  The type
+  stack's byte at `%sp - 1` is the brace's marker (`1`) or another container; the state
+  stack's byte at the same index is `1` (merge, eight links) or not (refusal, eight
+  links).  The merge keeps the depth and advances the index by one; the refusal stores
+  the entry's position at `%e + 8`. -/
+  | commaAboveZero (b1 b2 : UInt8)
+      (h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 44)))
+      (hsp : C.sp ≠ 0)
+      (hmark : C.tyMap (C.sp - 1) = b1)
+      (hstate : C.stMap (C.sp - 1) = b2) : LastEntryArm calls G C s
+  /-- **The colon above depth zero**: the marker's three sub-routes.  A brace marker
+  (`1`) reads the state stack's byte at `%sp - 1`: `1` merges (eight links, depth kept,
+  index advanced) and anything else refuses; any other marker refuses on its own byte
+  (`colonMarkerRefuse_at`, seven links). -/
+  | colonAboveZero (b1 b2 : UInt8)
+      (h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 58)))
+      (hsp : C.sp ≠ 0)
+      (hmark : C.tyMap (C.sp - 1) = b1)
+      (hstate : C.stMap (C.sp - 1) = b2) : LastEntryArm calls G C s
   /-- **The container openers `[` and `{` at the last entry**: both enter `if.then.i`,
   and the four head links beside the tail's five reach the merge — nine links
   (`containerOpenMerge_at`).  The byte class is the arm's, the depth's `519`-guard and the
@@ -350,10 +382,11 @@ inductive LastEntryArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
         [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
          .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r)
       (hret : r.ret = .int 32 (BitVec.ofNat 32 1)) : LastEntryArm calls G C s
-  /-- **The arms whose segment is the remaining obligation**: the comma and colon above
-  depth zero, the closing delimiter with an open container, and the default arm's letter
-  routes.  The field is that arm's own result — the endpoint it reaches with the count and
-  the price — and no other arm's class is a premise of it. -/
+  /-- **The arms whose segment is the remaining obligation**: the closing delimiter with
+  an open container, and the default arm's letter routes.  The letters' segment is the
+  token scan's induction (`walkScanToMerge`), which is what retires it.  The field is that
+  arm's own result — the endpoint it reaches with the count and the price — and no other
+  arm's class is a premise of it. -/
   | supplied (r : WalkDispatchResult (stage2Calls stage2SubCalls) G C s) :
       LastEntryArm calls G C s
 
@@ -392,6 +425,27 @@ theorem LastEntryArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
   | .colonZero h8 hsp hv he hj hj64 =>
     WalkDispatchResult.ofRefuseAt (colonRefuse_at G C s hInv hblock h8 hsp hv he hj hj64
       (WalkInv.head_lt hInv (by simpa only [walkLoopHead] using hblock)))
+  | .commaAboveZero b1 b2 h8 hsp hmark hstate => by
+    by_cases hb1 : colonBit b1 = 1
+    · have hmark1 : C.tyMap (C.sp - 1) = 1 := by
+        rw [hmark]; exact uint8_eq_one_of_colonBit hb1
+      by_cases hb2 : evalICmp .eq (BitVec.ofNat 8 b2.toNat) (BitVec.ofNat 8 3) = 1
+      · exact commaBraceMerge_at G C s hInv hblock h8 hsp hmark1 hstate hb2
+      · exact commaBraceRefuse_at G C s hInv hblock h8 hsp hmark1 hstate
+          (bitZeroOfNeOne hb2)
+    · have hbit : pairBit (BitVec.ofNat 8 b1.toNat) = 0 := by
+        simpa only [pairBit, colonBit] using bitZeroOfNeOne hb1
+      by_cases hb2 : colonBit b2 = 1
+      · exact commaBracketMerge_at G C s hInv hblock h8 hsp hmark hstate hbit hb2
+      · exact commaBracketRefuse_at G C s hInv hblock h8 hsp hmark hstate hbit
+          (bitZeroOfNeOne hb2)
+  | .colonAboveZero b1 b2 h8 hsp hmark hstate => by
+    by_cases hb1 : colonBit b1 = 1
+    · by_cases hb2 : colonBit b2 = 1
+      · exact colonBraceMerge_at G C s hInv hblock h8 hsp hmark hstate hb1 hb2
+      · exact colonBraceRefuse_at G C s hInv hblock h8 hsp hmark hstate hb1
+          (bitZeroOfNeOne hb2)
+    · exact colonMarkerRefuse_at G C s hInv hblock h8 hsp hmark (bitZeroOfNeOne hb1)
   | .containerOpen h8 hopen hsp519 hrd hpreV r hcall hret =>
     containerOpenMerge_at G C s hInv hblock h8 hopen hsp519 hrd hpreV r hcall hret
   | .supplied r => r
