@@ -21,14 +21,16 @@ Run Lean and Lake under a **memory ceiling**, so a runaway elaboration dies
 inside its own cgroup instead of taking the session or the machine with it:
 
 ```bash
-systemd-run --user --scope -p MemoryMax=6G -p MemorySwapMax=1G --quiet \
+systemd-run --user --scope -p MemoryMax=12G -p MemorySwapMax=4G --quiet \
   nix develop -c lake build
 ```
 
 The ceiling is per invocation and inherited by everything the shell starts.
 A build killed by it is a signal that the file it was elaborating needs
 splitting or its `maxHeartbeats` raising — not a reason to run the same
-command without the ceiling.
+command without the ceiling.  The figure is a headroom decision, not a target:
+a single module's elaboration on this host has been measured above 6 GB, so
+the ceiling sits at 12 GB rather than at the smallest value that works.
 
 The default targets are the `leanllvm` executable, the `ITree` library and the
 `LeanLLVMTest` library, so `lake build` covers `LeanLLVM` (through the
