@@ -72,6 +72,7 @@ set_option autoImplicit false
 namespace LeanLLVM.Refinement
 
 open LeanLLVM
+open LeanLLVM.Refinement.JsonStage2IR (stage2Calls)
 open LeanLLVM.Refinement.JsonEntryIR (readLanes32)
 
 /-! ### The staging's precondition at the call's argument list
@@ -426,6 +427,86 @@ theorem s2StringBodyPre_components {mem : Mem} {next : Nat} {c p dst outn xp xj 
   subst hc; subst hpE; subst hdstE; subst houtnE; subst hxpE; subst hxjE
   subst hlenE; subst hnxpEE
   exact ⟨⟨base, hb⟩, ⟨j0, hj⟩, ⟨ps, hp⟩, ⟨body, hbd⟩, ⟨e, he⟩, hsp⟩
+
+/-- **The body's form is a function of the five words it reads.**  `stage2StringBody`
+matches on the cursor record's base word, the escape cursor, the position list, the
+document's window and — on the refusal arm — the record's error word, and every arm is
+computed from those.  Two memories that agree at the five take the same arm, so their
+answers carry the same form; what differs between them is the memory the arm writes
+into, which is why the statement is the form and not the whole result.
+
+This is what retires the answer word from the string path's residue.  The head bundle's
+call is made at the head's memory and link 8's call at that memory with its two stores
+applied, and `s2StringBodyPre_of_reads` already spends exactly these five agreements, so
+the form `s2StringBody_sound` reports at the call is the form the head's `hy` names. -/
+theorem stage2StringBody_form_congr {mem mem' : Mem} {c p dst outn xp xj len nxp : Nat}
+    (hbase : stage2ReadWord mem' c 8 = stage2ReadWord mem c 8)
+    (hj0 : stage2ReadWord mem' xj 8 = stage2ReadWord mem xj 8)
+    (he : stage2ReadWord mem' (c + 1112) 8 = stage2ReadWord mem (c + 1112) 8)
+    (hps : readLanes32 mem' xp nxp = readLanes32 mem xp nxp)
+    (hbody : readBytes mem' p len = readBytes mem p len)
+    {m m' : Mem} {form form' : Nat} {slot slot' : List UInt8}
+    (hm : stage2StringBody mem c p len dst outn xp xj nxp = some (m, form, slot))
+    (hm' : stage2StringBody mem' c p len dst outn xp xj nxp = some (m', form', slot')) :
+    form' = form := by
+  unfold stage2StringBody at hm hm'
+  rw [hbase, hj0, hps, hbody, he] at hm'
+  split at hm
+  · rename_i base j0 ps hb hj hp
+    dsimp only at hm
+    simp only [hb, hj, hp] at hm'
+    split at hm
+    · -- the body itself: both answer form `1`
+      split at hm' <;> simp_all
+    · split at hm
+      · simp at hm
+      · rename_i body hbd
+        simp only [hbd] at hm'
+        split at hm
+        · -- the escaped form: both answer form `2`
+          split at hm' <;> simp_all
+        · rename_i off k href
+          simp only [href] at hm'
+          split at hm
+          · -- the refusal: both answer form `0`
+            split at hm' <;> simp_all
+          · simp at hm
+  · simp at hm
+
+/-- **The bundle's word is the model's form.**  A bundle states a call's answer at the
+head's memory and cursor; the string path's call is made at link 8's memory, where two
+stores have landed.  The five words the model reads agree at the two memories
+(`stage2StringBody_form_congr`), so the form the model takes at the call is the form the
+head bundle's answer names.
+
+Stated as its own declaration because it is the expensive half of that composition: it
+runs `s2StringBody_sound` at the head's own memory, on the full argument list, and keeps
+`strPath9`'s budget for the segment. -/
+theorem stage2StringBody_head_form {mem mem' : Mem} {c p dst outn xp xj : Nat}
+    {len nxp : BitVec 64}
+    (hbase : stage2ReadWord mem' c 8 = stage2ReadWord mem c 8)
+    (hj0 : stage2ReadWord mem' xj 8 = stage2ReadWord mem xj 8)
+    (he : stage2ReadWord mem' (c + 1112) 8 = stage2ReadWord mem (c + 1112) 8)
+    (hps : readLanes32 mem' xp nxp.toNat = readLanes32 mem xp nxp.toNat)
+    (hbody : readBytes mem' p len.toNat = readBytes mem p len.toNat)
+    {next : Nat} {y : BitVec 32}
+    (hpre : s2StringBodyPre
+      [.ptr c, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj, .int 64 nxp]
+      mem next)
+    (hy : ∀ r, stage2Calls stage2SubCalls "s2_string_body"
+      [.ptr c, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj, .int 64 nxp]
+      mem next = some r → r.ret = .int 32 y)
+    {m' : Mem} {form' : Nat} {slot' : List UInt8}
+    (hm' : stage2StringBody mem' c p len.toNat dst outn xp xj nxp.toNat =
+      some (m', form', slot')) :
+    y = BitVec.ofNat 32 form' := by
+  obtain ⟨r0, hcall0⟩ := s2StringBody_answers hpre
+  obtain ⟨m, form, slot, hm, hret, -, -⟩ := s2StringBody_sound hpre hcall0
+  have hy0 : y = BitVec.ofNat 32 form := by
+    have h : Value.int 32 y = Value.int 32 (BitVec.ofNat 32 form) :=
+      (hy r0 hcall0).symm.trans hret
+    exact eq_of_heq (Value.int.inj h).2
+  rw [hy0, stage2StringBody_form_congr hbase hj0 he hps hbody hm hm']
 
 /-- The eight-byte word's length, as the bound the frame's chaining wants. -/
 theorem wordBytes_length_eight (k : Nat) : (wordBytes 8 k).length ≤ 8 :=

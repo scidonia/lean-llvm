@@ -48,19 +48,21 @@ Two groups are premises, and each is a bundle rather than a field per fact:
 | `WalkLoopEnd` | the last entry's **arm** (one constructor per head-switch arm class), the two terminal blocks' *words*, and the merge's `%nep` value | the arm is supplied at the last-entry head states (`LastEntryArm`), the words at the states the dispatch reaches (`WalkMergeWords`, `WalkRefuseWords`), and `%nep` is not a `WalkInv` clause.  The *dispatch* is proved from the arm (`WalkLoopEnd.dispatch`), and the *runs* are proved, not supplied: `WalkLoopEnd.merge`/`.refuse` compose them from `JsonStage2WalkTargetPost`'s four routes |
 
 The two-entry token's residue is now an **arm field** rather than a third premise:
-`HcontArm.twoEntry` carries the state's `HstringResidue` beside its `HstringFacts`, so the
-loop's step and the obligation no longer take `WalkStringResidue` externally.  Its four
-fields (the log's arena-base word, the answer's word, the accepting-arm selector and the
-log's base word) are each a helper contract's output or a fact about the input, and the
-module that composes the path names each one's producer at the field.  The rest of what
-the fifteen links read is *derived*: the answer and its call (`s2StringBody_answers`), the
-decoded length and its word (`s2StringBody_outn_le`, `s2StringBody_outn_at_call`), the
+`HcontArm.twoEntry` carries the state's `HstringResidue` beside its `HstringFacts` and the
+arm's own accepting selector, so the loop's step and the obligation no longer take
+`WalkStringResidue` externally.  Its two fields are the log's arena-base word and the
+log's base word, each stated at the head's memory as the `WalkInv` clause that should
+carry it, and the module that composes the path names each one's producer at the field.
+The rest of what the fifteen links read is *derived*: the answer and its call
+(`s2StringBody_answers`), its word (`stage2StringBody_head_form`, on
+`stage2StringBody_form_congr`), the decoded length and its word
+(`s2StringBody_outn_le`, `s2StringBody_outn_at_call`), the
 log's base word at the answer's memory (`strPath9`'s carry), the two staged addresses with
 the cursor's signed bound (`stage2Pre`'s clauses, at `WalkGeom`), and the event count
 (`WalkInv.events_le_of_tight` at the head, with the head's guard).  `stringPath_seg` is
-the theorem from the four.  The static carrier names `%c.i`, `%z`, `%xp` and `%nxp` and
-`WalkIter` names `%arrayidx10.i`, so the residue carries no register and no memory clause
-of the body.
+the theorem from the two fields and the arm's selector.  The static carrier names `%c.i`,
+`%z`, `%xp` and `%nxp` and `WalkIter` names `%arrayidx10.i`, so the residue carries no
+register and no memory clause of the body.
 
 The terminal runs are read at the states the dispatch's outcomes reach rather than at the
 loop head, so the head-level `%z`/`%s` group this module used to carry is gone with the

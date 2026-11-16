@@ -36,9 +36,12 @@ supplies, and `.dispatch` turns it into the actual `WalkDispatchResult`:
   through `walkDispatch_at_continue_cells_ws` (the high-byte route).
 * `.cleanup` — `HcontCleanupFacts`, the same route's no-run class, through
   `walkDispatch_at_continue_cells`.
-* `.twoEntry` — `HstringFacts` beside its `HstringResidue`, the standalone string, through
-  `WalkDispatchResult.ofStringMerge`.  The residue is the state's, so the loop's step no
-  longer takes `WalkStringResidue` beside the continuing premise: it is an arm's field.
+* `.twoEntry` — `HstringFacts` beside its `HstringResidue` and the arm's own
+  selector, the standalone string, through `WalkDispatchResult.ofStringMerge`.  The
+  residue is the state's, so the loop's step no longer takes `WalkStringResidue` beside
+  the continuing premise: it is an arm's field.  The selector is the arm's rather than
+  the residue's because the same call can refuse: a refusing body leaves `NodeBlock31`
+  at `cleanup339.critedge.i`, which is not this merge.
 * `.scalar` — **`HcontScalarFacts`**, the plain-value class on the numeral route: the
   head's four scalar pivots, the count test's succeeding arm, the no-run byte class and
   the tag test's true arm, composed through `walkRevolutionMergeSegScalar`
@@ -212,8 +215,13 @@ inductive HcontArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
   | ws (f : HcontFacts G C s) : HcontArm calls G C s
   /-- The scan-free token on the high-byte route (`HcontCleanupFacts`). -/
   | cleanup (f : HcontCleanupFacts G C s) : HcontArm calls G C s
-  /-- The standalone string, with its residue at this state. -/
-  | twoEntry (f : HstringFacts G C s) (R : HstringResidue G C s f) : HcontArm calls G C s
+  /-- **The standalone string, with its residue and its accepting-arm selector.**
+  `R` is the two words the walk layer does not carry, and `hR8` is `NodeBlock31`'s
+  test: the model's form is `1` or `2` on the accepting arms, and neither is `< 1`
+  signed.  A refusing answer is a legal answer to the same call, so this is the
+  arm's premise rather than the state's. -/
+  | twoEntry (f : HstringFacts G C s) (R : HstringResidue G C s f)
+      (hR8 : evalICmp .slt f.y (BitVec.ofNat 32 1) = 0) : HcontArm calls G C s
   /-- **The plain-value token on the numeral route** (`HcontScalarFacts`): the class the
   old split excluded. -/
   | scalar (f : HcontScalarFacts G C s) : HcontArm calls G C s
@@ -252,7 +260,7 @@ theorem HcontArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
       WalkDispatchResult.merge Cd sd p spv k2 prev spOp kOp nepv seg hblk hkC hpre hsp hspv
         hkOp hk2 hnepv hadvance (le_of_lt hbelow) hspcap hspw hprice)
       (walkDispatch_at_continue_cells C s hInv hblock hk f)
-  | .twoEntry f R => WalkDispatchResult.ofStringMerge G C s hblock hInv f R
+  | .twoEntry f R hR8 => WalkDispatchResult.ofStringMerge G C s hblock hInv f R hR8
   | .scalar f =>
     (fun ⟨Cd, sd, p, spv, k2, prev, spOp, kOp, nepv, seg, hblk, hkC, hpre, hsp, hspv,
         hkOp, hk2, hnepv, hbelow, _hnep, hadvance, hspcap, hspw, hprice⟩ =>
