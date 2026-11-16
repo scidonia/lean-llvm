@@ -36,11 +36,41 @@ turns it into the actual `WalkDispatchResult`:
   (`quoteRefuse_at`'s five links).
 * `.closingZero` — `if.then53.i` at depth zero: `]` with nothing open is refused
   (`bracketRefuse_at`'s six links).
-* `.supplied` — the arms whose segments are the remaining obligation: the container
-  openers, the comma and colon, the closing delimiter with an open container, and the
-  default arm's letter routes.  The field is that arm's own counted segment to the
-  endpoint it reaches, with the endpoint's facts — *not* a bundle about the last
-  entry, and no class premise on any other arm.
+* `.commaZero`, `.colonZero` — the comma's and the colon's depth-zero refusal:
+  `if.then127.i → if.then130.i` and `if.then173.i → if.then176.i` store the entry's
+  position and reach the copy (`commaRefuse_at`'s and `colonRefuse_at`'s six links).
+  These are the arms the documents `,` and `:` take.
+* `.supplied` — the arms whose segments are the remaining obligation, in the order the
+  closure handoff names them:
+  * **the container openers** (`[`, `{`, both of which enter `if.then.i`).  Every link of
+    the route is present — `WalkLink.if_then_i` (with the callee's `s2ValuePosPre` and its
+    answer), `WalkLink.if_end_i_at`, `WalkLink.ifEnd24` (the push, whose carry is
+    `wlen`/`tyMap`/`stMap` and whose target state `ifEnd24_step` leaves as a `let`),
+    `WalkLink.if_end_i_i`, `WalkLink.out_reserve_exit_i_i` — so what is owed is the
+    segment's *composition*: the chain's target states are `let`-bound inside the links'
+    own proofs (`ifEnd24_step`'s `e`, the reserves' `m'`), and a segment's index must be a
+    term the next link's source unifies with, so each has to be named at module level
+    first — the reason `HeadS62`…`HeadS413` and `consumerTailSegAt` exist.
+  * **the comma and the colon above depth zero** (four sub-routes each: two merge routes
+    and two refusals, e.g. `if.end150.i`/`if.end162.i` into `cleanup478.i` and
+    `if.then147.i`/`if.then159.i` into `if.then`).  Their links are present as well
+    (`WalkLink.if_end133_i`, `if_then141_i_at`, `if_end150_i`, `if_else153_i_at`,
+    `if_end162_i`; `stackMarkerRefuse_at` for the marker's own refusal), and they are
+    *blocked on their witness*: every one of them is at `C.sp ≠ 0`, while the layer's only
+    invariant producers are `walkSeed` (`sp = 0`) and the step lemmas — the loop's own run
+    is the premise `WalkLoopStepThree`, not a produced state.  So there is no depth-one
+    `WalkInv` to state a regression at, and an arm landed here would have none.
+  * **the closing delimiter with an open container** — the same depth-one obstruction, plus
+    `stateStackRefuse_at`'s state-stack byte for its refusal sub-route.
+  * **the default arm's letter routes** (the tag test's clear arm: `if.else387.i → NodeBlock62 →
+    LeafBlock54 → if.then413.i`).  Reachable at the seed (byte `a`), and the pieces exist —
+    `walkHeadChainASeg`'s six links, the whitespace check, `consumer_tail_seg` — but the
+    token's own scan (`walkScanToMerge`) sits between them, so the segment is the scan's
+    induction rather than a handful of links.
+
+  The field is that arm's own counted segment to the endpoint it reaches, with the
+  endpoint's facts — *not* a bundle about the last entry, and no class premise on any
+  other arm.
 
 Every constructor's endpoint is either the merge or the refusal copy, and every one
 carries its count; the price is the dispatch's own (`WalkDispatchResult`'s), so
@@ -188,6 +218,17 @@ theorem HeadArm.complete (x : BitVec 8) : HeadArm x := by
 
 /-! ### The dispatch's evidence, by arm -/
 
+/-- **A refusal is the dispatch's `refuse` alternative.**  A counted run from the head to
+the refusal copy, with the word the copy loads and a price inside the remaining credit,
+*is* that alternative: the segment, its endpoint's block and word, and the endpoint's
+offset bound are the fields, field for field.  So an arm whose run is a refusal builds
+its result from the witness without restating any of it. -/
+theorem WalkDispatchResult.ofRefuseAt {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
+    {C : WalkCarry G} {s : State} (h : WalkRefuseAt calls G C s) :
+    WalkDispatchResult calls G C s := by
+  obtain ⟨Cd, sd, p, hseg, herr, hprice⟩ := h
+  exact WalkDispatchResult.refuse Cd sd p hseg.seg hseg.block hseg.word herr hprice
+
 /-- **The last entry's terminal dispatch, as the arm it took.**  One constructor per arm
 class the layer proves or preserves; `.dispatch` is the function into
 `WalkDispatchResult`.
@@ -275,10 +316,27 @@ inductive LastEntryArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
       (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
       (he : lookupName s.env "%e" = some (.ptr C.stage.e))
       (hj : j ≤ G.n) (hj64 : j < 2 ^ 64) : LastEntryArm calls G C s
+  /-- **A comma at depth zero**: nothing is open for it to separate, so the run leaves
+  `if.then127.i` for `if.then130.i`, stores the entry's position at `%e + 8` and reaches
+  the refusal copy — six links (`commaRefuse_at`). -/
+  | commaZero {j : Nat}
+      (h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 44)))
+      (hsp : C.sp = 0)
+      (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
+      (he : lookupName s.env "%e" = some (.ptr C.stage.e))
+      (hj : j ≤ G.n) (hj64 : j < 2 ^ 64) : LastEntryArm calls G C s
+  /-- **A colon at depth zero**: the same refusal at `if.then173.i → if.then176.i`, six
+  links (`colonRefuse_at`). -/
+  | colonZero {j : Nat}
+      (h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 58)))
+      (hsp : C.sp = 0)
+      (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
+      (he : lookupName s.env "%e" = some (.ptr C.stage.e))
+      (hj : j ≤ G.n) (hj64 : j < 2 ^ 64) : LastEntryArm calls G C s
   /-- **The arms whose segment is the remaining obligation**: the container openers, the
-  comma and colon, the closing delimiter with an open container, and the default arm's
-  letter routes.  The field is that arm's own result — the endpoint it reaches with the
-  count and the price — and no other arm's class is a premise of it. -/
+  comma and colon above depth zero, the closing delimiter with an open container, and the
+  default arm's letter routes.  The field is that arm's own result — the endpoint it
+  reaches with the count and the price — and no other arm's class is a premise of it. -/
   | supplied (r : WalkDispatchResult (stage2Calls stage2SubCalls) G C s) :
       LastEntryArm calls G C s
 
@@ -311,6 +369,12 @@ theorem LastEntryArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
       WalkDispatchResult.refuse Cd sd p hseg.seg hseg.block hseg.word herr hprice)
       (bracketRefuse_at G C s hInv hblock h8 hsp hv he hj hj64
         (WalkInv.head_lt hInv (by simpa only [walkLoopHead] using hblock)))
+  | .commaZero h8 hsp hv he hj hj64 =>
+    WalkDispatchResult.ofRefuseAt (commaRefuse_at G C s hInv hblock h8 hsp hv he hj hj64
+      (WalkInv.head_lt hInv (by simpa only [walkLoopHead] using hblock)))
+  | .colonZero h8 hsp hv he hj hj64 =>
+    WalkDispatchResult.ofRefuseAt (colonRefuse_at G C s hInv hblock h8 hsp hv he hj hj64
+      (WalkInv.head_lt hInv (by simpa only [walkLoopHead] using hblock)))
   | .supplied r => r
 
 /-! ### The instrument -/

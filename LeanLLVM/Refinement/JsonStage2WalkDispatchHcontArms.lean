@@ -51,11 +51,17 @@ supplies, and `.dispatch` turns it into the actual `WalkDispatchResult`:
   nothing open is refused (`bracketRefuse_at`'s chain; its only count premise is the head's
   guard, which a continuing entry has).  This is the one refusal arm the continuing side
   shares with the last entry's, and it is proved rather than supplied.
-* `.supplied` — the arms whose segments are the remaining obligation: the comma, the
-  colon, the container openers, the closing brace and the close bracket with a container
-  open, and the default arm's letter and high-byte routes.  The field is that arm's own
-  counted segment to the endpoint it reaches, with the endpoint's facts — not a bundle
-  about another class.
+* `.commaZero`, `.colonZero` — the comma's and the colon's depth-zero refusal on the
+  continuing head: six links each (`commaRefuse_at`, `colonRefuse_at`), the same two the
+  last entry has.  The documents `,0` and `:0` take them.
+* `.supplied` — the arms whose segments are the remaining obligation: the comma and colon
+  above depth zero, the container openers, the closing delimiters with a container open,
+  and the default arm's letter and high-byte routes.  What blocks each is stated at
+  `LastEntryArm.supplied` (`JsonStage2WalkDispatchArms`) and is the same at this level:
+  the openers and the letter route owe a composition through `let`-bound target states and
+  the scan, and every `C.sp ≠ 0` route owes a reachable depth-one state, which the layer
+  does not produce — so it has no regression.  The field is that arm's own counted segment
+  to the endpoint it reaches, with the endpoint's facts — not a bundle about another class.
 
 Each constructor carries only its own arm's premises, and the price is the dispatch's own
 (`WalkDispatchResult`'s), so no class's byte restriction is a premise of another's.
@@ -234,10 +240,28 @@ inductive HcontArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
       (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
       (he : lookupName s.env "%e" = some (.ptr C.stage.e))
       (hj : j ≤ G.n) (hj64 : j < 2 ^ 64) : HcontArm calls G C s
-  /-- The arms whose segment is the remaining obligation: the comma, the colon, the
-  container openers, the closing delimiters and the default arm's letter and high-byte
-  routes.  The field is that arm's own result — the endpoint it reaches with the count and
-  the price — and no other arm's class is a premise of it. -/
+  /-- **A comma at depth zero**, on the continuing head: nothing is open for it to
+  separate, so `if.then127.i` sends the run to `if.then130.i`'s offset store and the
+  refusal copy — six links (`commaRefuse_at`).  The only count premise is the head's
+  guard, which a continuing entry has. -/
+  | commaZero {j : Nat}
+      (h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 44)))
+      (hsp : C.sp = 0)
+      (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
+      (he : lookupName s.env "%e" = some (.ptr C.stage.e))
+      (hj : j ≤ G.n) (hj64 : j < 2 ^ 64) : HcontArm calls G C s
+  /-- **A colon at depth zero**, on the continuing head: the same refusal at
+  `if.then173.i → if.then176.i`, six links (`colonRefuse_at`). -/
+  | colonZero {j : Nat}
+      (h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 58)))
+      (hsp : C.sp = 0)
+      (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
+      (he : lookupName s.env "%e" = some (.ptr C.stage.e))
+      (hj : j ≤ G.n) (hj64 : j < 2 ^ 64) : HcontArm calls G C s
+  /-- The arms whose segment is the remaining obligation: the comma and colon above depth
+  zero, the container openers, the closing delimiters and the default arm's letter and
+  high-byte routes.  The field is that arm's own result — the endpoint it reaches with
+  the count and the price — and no other arm's class is a premise of it. -/
   | supplied (r : WalkDispatchResult calls G C s) : HcontArm calls G C s
 
 /-- **The dispatch, from the arm.**  Each proved arm runs its own theorem; the standalone
@@ -272,6 +296,12 @@ theorem HcontArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
       WalkDispatchResult.refuse Cd sd p hseg.seg hseg.block hseg.word herr hprice)
       (bracketRefuse_at G C s hInv hblock h8 hsp hv he hj hj64
         (WalkInv.head_lt hInv (by simpa only [walkLoopHead] using hblock)))
+  | .commaZero h8 hsp hv he hj hj64 =>
+    WalkDispatchResult.ofRefuseAt (commaRefuse_at G C s hInv hblock h8 hsp hv he hj hj64
+      (WalkInv.head_lt hInv (by simpa only [walkLoopHead] using hblock)))
+  | .colonZero h8 hsp hv he hj hj64 =>
+    WalkDispatchResult.ofRefuseAt (colonRefuse_at G C s hInv hblock h8 hsp hv he hj hj64
+      (WalkInv.head_lt hInv (by simpa only [walkLoopHead] using hblock)))
   | .supplied r => r
 
 /-! ### The instrument -/

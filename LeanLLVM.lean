@@ -123,6 +123,7 @@ import LeanLLVM.Refinement.JsonStage2StringStageFacts
 import LeanLLVM.Refinement.JsonStage2WalkDispatchScalarPrefix
 import LeanLLVM.Refinement.JsonStage2WalkDispatchScalar
 import LeanLLVM.Refinement.JsonStage2WalkDispatchArms
+import LeanLLVM.Refinement.JsonStage2WalkDispatchArmsDomain
 import LeanLLVM.Refinement.JsonStage2WalkHlastDomain
 import LeanLLVM.Refinement.JsonStage2WalkHcontDomain
 import LeanLLVM.Refinement.JsonStage2WalkHcontScalar
