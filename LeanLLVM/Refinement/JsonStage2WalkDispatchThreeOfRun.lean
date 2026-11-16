@@ -37,7 +37,7 @@ why the consumer's terminal branch states both its verdict and its memory existe
 |---|---|
 | `cont` | the merge arm with `k2 < nepv.toNat`, the merge's `%nep ≤ G.nep`, and the arm's own price |
 | `finish` | the merge arm with `¬ (k2 < nepv.toNat)`; with `k2 ≤ nepv.toNat` that is `k2 = nepv.toNat` |
-| `refuse` | the refusal arm: the segment ends at `if.then` with the error offset inside the document |
+| `refuse` | the refusal arm: the segment ends at `if.then` with the word the copy loads inside the document |
 
 `ofContinueAndLast` stays in the tree: it is the assembly's own producer and other
 modules read it, and this module's producer is a second route to the same predicate, not
@@ -96,11 +96,18 @@ inductive WalkDispatchResult (calls : Calls) {m0 : Mem} (G : WalkGeom m0)
       (hprice : p + 2 ≤ stage2EntryAllowance * (k2 - C.k) +
         stage2ByteAllowance * (entryPos G k2 - entryPos G C.k))
   /-- **The dispatch reached the refusal copy.**  The token was rejected before the merge
-  at any index, so the segment ends at `if.then` with the error offset inside the
-  document and the price inside the remaining entries' and bytes' credit. -/
+  at any index, so the segment ends at `if.then` with the word the copy's `%off` load
+  reads — a stored word inside the document — and the price inside the remaining
+  entries' and bytes' credit.
+
+  The word is the refusal's own store, read at the endpoint's memory: each arm that
+  reaches `if.then` writes `wordBytes 8 k` at `%e + 8` and the copy loads it
+  (`WalkRefuseSegment`, `JsonStage2WalkTraverse`).  It is not the carry's `eoff`:
+  `WalkInv.eoff_le` bounds that word, and the copy reports the one it loaded. -/
   | refuse (Cd : WalkCarry G) (sd : State) (p : Nat)
       (seg : WalkSegment calls G C s Cd sd p)
       (hblock : Cd.block = "if.then")
+      (hrw : ∃ k, k ≤ G.n ∧ readBytes sd.mem (Cd.stage.e + 8) 8 = some (wordBytes 8 k))
       (herr : Cd.eoff ≤ G.n)
       (hprice : p + 2 ≤ stage2EntryAllowance * (G.nep - C.k) +
         stage2ByteAllowance * (G.n - entryPos G C.k))
@@ -130,7 +137,7 @@ theorem WalkDispatchResult.toOutcome {calls : Calls} {m0 : Mem} {G : WalkGeom m0
         hadvance hspcap hspw hprice
     · exact WalkDispatchOutcome.finish Cd sd p k2 prev kOp nepv seg hblock hpre hkOp hk2
         hnepv (by omega) hprice
-  | refuse Cd sd p seg hblock herr hprice =>
+  | refuse Cd sd p seg hblock _hrw herr hprice =>
     exact WalkDispatchOutcome.refuse Cd sd p seg hblock herr hprice
 
 /-! ### The producer -/
@@ -174,7 +181,9 @@ theorem walkLoopStepThree_of_dispatchResult {calls : Calls} {m0 : Mem}
       lookupName sd.env "%nep" = some (.int 64 nepv) → k2 = nepv.toNat →
       WalkTargetPost calls G Cd sd)
     (hrefuse : ∀ (Cd : WalkCarry G) (sd : State), WalkInv G Cd sd →
-      Cd.block = "if.then" → WalkTargetPost calls G Cd sd)
+      Cd.block = "if.then" →
+      (∃ k, k ≤ G.n ∧ readBytes sd.mem (Cd.stage.e + 8) 8 = some (wordBytes 8 k)) →
+      WalkTargetPost calls G Cd sd)
     (hnepBound : ∀ (nepv : BitVec 64), ∀ (Cd : WalkCarry G) (sd : State),
       WalkInv G Cd sd → Cd.block = "cleanup478.i" →
       lookupName sd.env "%nep" = some (.int 64 nepv) → nepv.toNat ≤ G.nep) :
@@ -183,7 +192,7 @@ theorem walkLoopStepThree_of_dispatchResult {calls : Calls} {m0 : Mem}
   rcases hres C s hInv hhead with
     ⟨Cd, sd, p, spv, k2, prev, spOp, kOp, nepv, seg, hblock, hkc, hpre, hsp, hspv,
       hkOp, hk2, hnepv, hadvance, hcap, hspcap, hspw, hprice⟩ |
-    ⟨Cd, sd, p, seg, hblock, _herr, hprice⟩
+    ⟨Cd, sd, p, seg, hblock, hrw, _herr, hprice⟩
   · by_cases hbelow : k2 < nepv.toNat
     · exact Or.inl (walkContRevolution seg hblock hkc hpre hsp hspv hkOp hk2 hnepv
         hbelow (by have := hnepBound nepv Cd sd seg.inv' hblock hnepv; omega)
@@ -202,7 +211,7 @@ theorem walkLoopStepThree_of_dispatchResult {calls : Calls} {m0 : Mem}
         omega
       · rw [show p + q + 2 = p + (q + 2) from by omega, seg.run (q + 2)]
         exact hrun
-  · obtain ⟨q, v, m, hq, hrun, hb⟩ := hrefuse Cd sd seg.inv' hblock
+  · obtain ⟨q, v, m, hq, hrun, hb⟩ := hrefuse Cd sd seg.inv' hblock hrw
     refine Or.inr ⟨p + q, v, m, ?_, ?_, hb⟩
     · simp only [walkPotential, boundary_eq_entryPos G hk, stage2EntryAllowance,
         stage2ByteAllowance] at hprice hq ⊢
@@ -212,11 +221,15 @@ theorem walkLoopStepThree_of_dispatchResult {calls : Calls} {m0 : Mem}
 
 /-! ### The last entry's bundle, as a result
 
-`HlastFacts` is the input's facts at the last entry, and the two paths from it —
-`hlast_toMerge`'s counted segment to `cleanup478.i` and `hlast_refuse`'s to the refusal
-copy — are the two arms.  Neither needs `¬ (C.k + 1 < G.nep)`: the guard is what selects
-*which bundle describes a head state*, and it does not classify the dispatch, so it does
-not appear here.
+`HlastFacts` is the input's facts at the last entry, and its merge path —
+`hlast_toMerge`'s counted segment to `cleanup478.i` — is the arm here.  It needs no
+`¬ (C.k + 1 < G.nep)`: the guard is what selects *which bundle describes a head
+state*, and it does not classify the dispatch, so it does not appear here.
+
+The refusal path (`hlast_refuse`) reaches the copy at `if.then` with `%4`'s word at
+`%e + 8`, not the carry's `eoff`, so it is not the `refuse` arm's word: that arm
+carries the segment's own store (`WalkRefuseSegment`), and the last entry's refusal is
+supplied through `LastEntryArm.supplied` rather than forced through this bundle.
 
 The merge arm's evidence is `hlast_finish`'s, read at the endpoint that lemma names
 (`hlastMergeCF f`, `hlastMergeF f`) rather than through its existential: the arm has to
@@ -248,17 +261,6 @@ theorem WalkDispatchResult.ofHlastMerge {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
     have hΔ : G.nep - C.k = 1 := by rw [← f.hlastK]; omega
     simp only [Nat.zero_sub, Nat.mul_zero, Nat.add_zero, stage2EntryAllowance, hΔ]
     omega
-
-/-- **The `refuse` arm from the last entry's bundle.**  `hlast_refuse` under the depth's
-polarity: the segment ends at the refusal copy with the error offset inside the document
-and the price inside the entries and bytes the loop has left. -/
-theorem WalkDispatchResult.ofHlastRefuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
-    (s : State) (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead)
-    (f : HlastFacts G C s)
-    (hbit : evalICmp .eq (BitVec.ofNat 32 f.spv) (BitVec.ofNat 32 0) = 0) :
-    WalkDispatchResult (stage2Calls stage2SubCalls) G C s := by
-  obtain ⟨Cd, sd, p, seg, hblk, herr, hprice⟩ := hlast_refuse G C s hInv hblock f hbit
-  exact WalkDispatchResult.refuse Cd sd p seg hblk herr hprice
 
 /-! ### The standalone string
 
@@ -316,7 +318,6 @@ theorem standaloneString_result {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
 #print axioms LeanLLVM.Refinement.WalkScope.WalkDispatchThree.ofResult
 #print axioms LeanLLVM.Refinement.WalkScope.walkLoopStepThree_of_dispatchResult
 #print axioms LeanLLVM.Refinement.WalkScope.WalkDispatchResult.ofHlastMerge
-#print axioms LeanLLVM.Refinement.WalkScope.WalkDispatchResult.ofHlastRefuse
 #print axioms LeanLLVM.Refinement.WalkScope.standaloneString_finish
 #print axioms LeanLLVM.Refinement.WalkScope.standaloneString_result
 

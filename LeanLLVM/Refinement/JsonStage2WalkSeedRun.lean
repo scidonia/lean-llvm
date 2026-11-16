@@ -1391,6 +1391,28 @@ theorem walkSeedFinalState_pc {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G)
     (walkSeedFinalState G S s q bt).pc = "NodeBlock21" := by
   simp only [walkSeedFinalState]
 
+/-- **The root-done slot is present at the seed.**  Segment 4's first store writes
+it — `entry`'s zero at `%root_done.i` — and the two later writes miss it: `%xj.i`
+starts four bytes above the slot, and the header's cursor store is inside `%c.i`'s
+record, which the adapter staged at or below the call's cursor. -/
+theorem walkEntryMem_root {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) :
+    HasBytes (walkEntryMem G S) (G.next0 + 8) 4 := by
+  have hc : S.c + stage2CursorExtent ≤ G.next0 :=
+    S.sevenEnd (S.c, stage2CursorExtent) (by simp [stage2StagedWrites])
+  refine ⟨natToBytes 0 4, ?_⟩
+  rw [walkEntryMem]
+  rw [walkReadBytes_writeBytes_outside (start := S.c + 32) (v := wordBytes 8 1)
+    (addr := G.next0 + 8) (n := 4) (Or.inr ?_)]
+  · show readBytes (walkSeg4PostMem (G.next0 + 8) (G.next0 + 12) _) (G.next0 + 8) 4 =
+      some (natToBytes 0 4)
+    rw [walkSeg4PostMem]
+    rw [walkReadBytes_writeBytes_outside (start := G.next0 + 12) (v := natToBytes 0 8)
+      (addr := G.next0 + 8) (n := 4) (Or.inl (by omega))]
+    simpa only [natToBytes_length] using
+      readBytes_writeBytes_same _ (natToBytes 0 4) (addr := G.next0 + 8)
+  · simp only [wordBytes, natToBytes_length, stage2CursorExtent] at hc ⊢
+    omega
+
 /-- **The seed's producer.**  The state the entry run leaves at `NodeBlock21` is a
 `WalkSeedState`: its block, its two loop-head `phi`s, the three register carriers,
 the seven log clauses, the staged objects' presence and the frame.  The two read
@@ -1419,7 +1441,7 @@ theorem walkSeedState {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
   have hq := walkSeed_lane G S hn hread
   have hbt := walkSeed_docByte G S hn hread hdoc
   refine ⟨walkSeedFinalState_pc G S s (bytesToNat bs) bt, ?_, ?_, ?_, ?_, ?_, ?_,
-    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · rw [walkSeedFinalState_env]
     exact walkSeedFinalEnv_k (G := G) (S := S) (env := s.env) (s := s)
       (q := bytesToNat bs) (bt := bt)
@@ -1445,6 +1467,8 @@ theorem walkSeedState {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
     exact walkEntryMem_hash G S
   · rw [walkSeedFinalState_mem]
     exact walkSeed_staged G S
+  · rw [walkSeedFinalState_mem]
+    exact walkEntryMem_root G S
   · -- the cursor is the initialisation's: the four `alloca`s' twenty-eight
     show G.next0 + stage2BootstrapExtent ≤
       (walkSeedFinalState G S s (bytesToNat bs) bt).next

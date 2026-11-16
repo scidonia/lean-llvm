@@ -7,11 +7,13 @@ import LeanLLVM.Refinement.JsonStage2WalkInduce
 the dispatch refuses before the merge at `if.then`, and the `refuse` alternative of
 `WalkDispatchResult` is
 
-  `∃ Cd sd p, WalkSegment calls G C s Cd sd p ∧ Cd.block = "if.then" ∧
+  `∃ Cd sd p, WalkRefuseSegment calls G C s Cd sd p ∧
     Cd.eoff ≤ G.n ∧ p + 2 ≤ stage2EntryAllowance * (G.nep - C.k) +
-      stage2ByteAllowance * (G.n - entryPos G C.k)`.
+      stage2ByteAllowance * (G.n - entryPos G C.k)`,
 
-This module proves that alternative at two branches that produce it.  The
+where the segment carries the word the copy loads (`JsonStage2WalkTraverse`).
+
+This module proves that alternative at the branches that produce it.  The
 dispatch's proof is not a chain of `WalkLink`s: a link's target is existential, so
 a chain leaves the state at the refusal copy unnamed and the price says nothing
 (that module's own note, "What a dispatch proof still owes").  A dispatch proof is
@@ -29,7 +31,18 @@ the run carries.
 * a string opener with no entries left: `NodeBlock21 → NodeBlock5 → LeafBlock →
   sw.bb202.i → if.then205.i → if.then` — five blocks, the offset being the
   document's length.  This is the branch the last entry's guard selects, since
-  `¬ (C.k + 1 < G.nep)` at `%inc.i = C.k + 1` is `sw.bb202.i`'s negated test.
+  `¬ (C.k + 1 < G.nep)` at `%inc.i = C.k + 1` is `sw.bb202.i`'s negated test;
+* a depth-zero colon or comma (`if.then173.i`/`if.then176.i`,
+  `if.then127.i`/`if.then130.i`), refused at the depth register;
+* a colon whose enclosing marker is not the brace
+  (`if.then173.i`/`if.then192.i`), refused on the type stack's own byte;
+* a closing bracket whose marker the enclosing container does not match
+  (`if.then53.i`/`if.then71.i`), refused at the nesting check;
+* the state stack's byte (`cond.end.i → cleanup104.i → if.then`), refused when the
+  stack's marker byte is at least `2` (`JsonStage2WalkDispatchWitnessState`).
+
+Every refusal loads its word from the store its own block made, so the `word` field
+is the store's read-back (`refuseSegment_word_of_store`).
 
 Both prices are one bound (`refusePrice_of_le`): a refusal path is at most thirty
 steps, so with one entry unconsumed the entry term alone pays for it.
@@ -47,13 +60,11 @@ in the invariant's scope, and on which credit boundary it is charged, is a desig
 question about the terminal price — it is not settled here, and a witness file is not
 where it should be.
 
-**What is not here.**  The remaining refusal branches — `if.then71.i`,
-`cleanup104.i`, `if.then13.i`/`if.then176.i`, the mismatched literals' — and the
-`four` trap blocks (`walkTrap_noStep`), plus the `finish` alternative.  Each is the
-same shape: named per-block runs from `walkLoopHead`, which is why they are stated
-as branches of one `WalkRefuseAt` rather than as one theorem over the token.  The
-general refusal obligation is the case split over `%8` that selects among them, and
-this module does not state it. -/
+**What is not here.**  The `four` trap blocks (`walkTrap_noStep`) and the `finish`
+alternative.  Each branch above is the same shape — a named per-block run from
+`walkLoopHead` — which is why they are stated as branches of one `WalkRefuseAt` rather
+than as one theorem over the token.  The general refusal obligation is the case split
+over `%8` that selects among them, and this module does not state it. -/
 
 namespace LeanLLVM.Refinement
 namespace WalkScope
@@ -72,15 +83,28 @@ shape, so a branch theorem says what it is: a segment from the head to the refus
 copy, with the offset inside the document and the price inside the entry's credit. -/
 
 /-- **The `refuse` alternative.**  A counted segment from the head to `if.then` —
-the refusal copy — at an offset inside the document, and a price inside the
-remaining entries' and bytes' credit.  `WalkSegment.ret` and the exit's tail take it
-from there; this module supplies it at one branch. -/
+the refusal copy — carrying the word the copy loads, at an offset inside the document,
+and a price inside the remaining entries' and bytes' credit.  `WalkSegment.ret` and the
+exit's tail take it from there; this module supplies it at each branch.
+
+The word is `WalkRefuseSegment`'s, not a fourth conjunct: the copy's `%off` load is a
+fact about the segment's *target memory*, and the segment keeps none, so the producer
+carries it (`JsonStage2WalkTraverse`). -/
 def WalkRefuseAt (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
     (s : State) : Prop :=
   ∃ (Cd : WalkCarry G) (sd : State) (p : Nat),
-    WalkSegment calls G C s Cd sd p ∧ Cd.block = "if.then" ∧ Cd.eoff ≤ G.n ∧
+    WalkRefuseSegment calls G C s Cd sd p ∧ Cd.eoff ≤ G.n ∧
     p + 2 ≤ stage2EntryAllowance * (G.nep - C.k) +
       stage2ByteAllowance * (G.n - entryPos G C.k)
+
+/-- **A refusal's store reads back at the copy's load.**  The three refusal blocks that
+reach `if.then` write `wordBytes 8 k` at `%e + 8` (`refuseS₆`, `refuseStore205Out`,
+`clS₉`), so the word the copy loads is the one the producer wrote.  Stated at the writing
+shape, because the endpoint states are that write under a record update. -/
+theorem refuseSegment_word_of_store {m : Mem} {e v : Nat} :
+    readBytes (writeBytes m (e + 8) (wordBytes 8 v)) (e + 8) 8 = some (wordBytes 8 v) := by
+  have h := readBytes_writeBytes_same m (addr := e + 8) (wordBytes 8 v)
+  rwa [show (wordBytes 8 v).length = 8 from by rw [wordBytes, natToBytes_length]] at h
 
 /-- **A refusal path shorter than the entry's credit.**  The price a refusal must fit
 is `32·Δk + 8·ΔA`; with one entry still unconsumed the entry term alone is `32`, so
@@ -298,13 +322,14 @@ theorem bracketRefuse_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkC
     refuseStep₆ G { C with block := "if.then56.i" }
       (refuseS₅ (refuseS₄ (refuseS₃ (refuseS₂ (refuseS₁ s))))) L₅.inv' rfl hv₅ he₅ hj hj64
   refine ⟨{ C with block := "if.then", eoff := j, refusal := true },
-    refuseS₆ C j (refuseS₅ (refuseS₄ (refuseS₃ (refuseS₂ (refuseS₁ s))))), 6, ?_, rfl,
+    refuseS₆ C j (refuseS₅ (refuseS₄ (refuseS₃ (refuseS₂ (refuseS₁ s))))), 6, ?_,
     L₆.inv'.eoff_le, refusePrice_of_le G C (by omega) hk⟩
-  exact Seg.measure (Seg.tail L₁ (Seg.tail L₂ (Seg.tail L₃ (Seg.tail L₄
-    (Seg.tail L₅ (Seg.tail L₆ (Seg.nil L₆.inv')))))))
+  refine ⟨?_, rfl, j, hj, ?_⟩
+  · exact Seg.measure (Seg.tail L₁ (Seg.tail L₂ (Seg.tail L₃ (Seg.tail L₄
+      (Seg.tail L₅ (Seg.tail L₆ (Seg.nil L₆.inv')))))))
+  · simpa only [refuseS₆] using refuseSegment_word_of_store (m := _) (e := C.stage.e) (v := j)
 
-/-- **The `refuse` witness at a depth-zero closing bracket**, in the exact shape
-`hlast_refuse`'s conclusion states.  Six
+/-- **The `refuse` witness at a depth-zero closing bracket**, in the shape `WalkRefuseAt` states.  Six
 blocks from the head to the refusal copy, the offset the store wrote, and the price
 inside one entry's allowance and the document's remaining bytes.
 
@@ -319,7 +344,7 @@ theorem walkRefuseWitness_bracket {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
     (he : lookupName s.env "%e" = some (.ptr C.stage.e))
     (hj : j ≤ G.n) (hj64 : j < 2 ^ 64) (hk : C.k < G.nep) :
     ∃ (Cd : WalkCarry G) (sd : State) (p : Nat),
-      WalkSegment calls G C s Cd sd p ∧ Cd.block = "if.then" ∧ Cd.eoff ≤ G.n ∧
+      WalkRefuseSegment calls G C s Cd sd p ∧ Cd.eoff ≤ G.n ∧
       p + 2 ≤ stage2EntryAllowance * (G.nep - C.k) +
         stage2ByteAllowance * (G.n - entryPos G C.k) :=
   bracketRefuse_at G C s hInv hhead h8 hsp hv he hj hj64 hk
@@ -512,13 +537,16 @@ theorem quoteRefuse_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
       (quoteS₄ (quoteS₃ (quoteS₂ (quoteS₁ s))) inc nep) L₄.inv' rfl hv₅ he₅
       (WalkGeom.n_lt G)
   refine ⟨{ C with block := "if.then", eoff := G.n, refusal := true },
-    refuseStore205Out C G.n (quoteS₄ (quoteS₃ (quoteS₂ (quoteS₁ s))) inc nep), 5, ?_, rfl,
+    refuseStore205Out C G.n (quoteS₄ (quoteS₃ (quoteS₂ (quoteS₁ s))) inc nep), 5, ?_,
     L₅.inv'.eoff_le, refusePrice_of_le G C (by omega) hk⟩
-  exact Seg.measure (Seg.tail L₁ (Seg.tail L₂ (Seg.tail L₃ (Seg.tail L₄
-    (Seg.tail L₅ (Seg.nil L₅.inv'))))))
+  refine ⟨?_, rfl, G.n, le_refl G.n, ?_⟩
+  · exact Seg.measure (Seg.tail L₁ (Seg.tail L₂ (Seg.tail L₃ (Seg.tail L₄
+      (Seg.tail L₅ (Seg.nil L₅.inv'))))))
+  · simpa only [refuseStore205Out] using
+      refuseSegment_word_of_store (m := _) (e := C.stage.e) (v := G.n)
 
-/-- **The `refuse` witness at a string opener with no entries left**, in the exact
-shape `hlast_refuse`'s conclusion states.
+/-- **The `refuse` witness at a string opener with no entries left**, in the
+shape `WalkRefuseAt` states.
 Five blocks from the head to the refusal copy, the document's length as the offset,
 and the price inside one entry's allowance.
 
@@ -535,7 +563,7 @@ theorem walkRefuseWitness_quote {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
     (hv : evalOperand s (.reg "%4") = some (.int 64 (BitVec.ofNat 64 G.n)))
     (he : lookupName s.env "%e" = some (.ptr C.stage.e)) (hk : C.k < G.nep) :
     ∃ (Cd : WalkCarry G) (sd : State) (p : Nat),
-      WalkSegment calls G C s Cd sd p ∧ Cd.block = "if.then" ∧ Cd.eoff ≤ G.n ∧
+      WalkRefuseSegment calls G C s Cd sd p ∧ Cd.eoff ≤ G.n ∧
       p + 2 ≤ stage2EntryAllowance * (G.nep - C.k) +
         stage2ByteAllowance * (G.n - entryPos G C.k) :=
   quoteRefuse_at G C s hInv hhead h8 hinc hnep hge hv he hk
@@ -713,13 +741,14 @@ theorem colonRefuse_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
     colStep₆ G { C with block := "if.then176.i" }
       (colS₅ (colS₄ (colS₃ (colS₂ (colS₁ s))))) L₅.inv' rfl hv₆ he₆ hj hj64
   refine ⟨{ C with block := "if.then", eoff := j, refusal := true },
-    colS₆ C j (colS₅ (colS₄ (colS₃ (colS₂ (colS₁ s))))), 6, ?_, rfl,
+    colS₆ C j (colS₅ (colS₄ (colS₃ (colS₂ (colS₁ s))))), 6, ?_,
     L₆.inv'.eoff_le, refusePrice_of_le G C (by omega) hk⟩
-  exact Seg.measure (Seg.tail L₁ (Seg.tail L₂ (Seg.tail L₃ (Seg.tail L₄
-    (Seg.tail L₅ (Seg.tail L₆ (Seg.nil L₆.inv')))))))
+  refine ⟨?_, rfl, j, hj, ?_⟩
+  · exact Seg.measure (Seg.tail L₁ (Seg.tail L₂ (Seg.tail L₃ (Seg.tail L₄
+      (Seg.tail L₅ (Seg.tail L₆ (Seg.nil L₆.inv')))))))
+  · simpa only [colS₆] using refuseSegment_word_of_store (m := _) (e := C.stage.e) (v := j)
 
-/-- **The `refuse` witness at a depth-zero colon**, in the exact shape
-`hlast_refuse`'s conclusion states.  Six
+/-- **The `refuse` witness at a depth-zero colon**, in the shape `WalkRefuseAt` states.  Six
 blocks from the head to the refusal copy, the entry's position as the offset, and the
 price inside one entry's allowance — a refusal with entries still remaining. -/
 theorem walkRefuseWitness_colon {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
@@ -730,7 +759,7 @@ theorem walkRefuseWitness_colon {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
     (he : lookupName s.env "%e" = some (.ptr C.stage.e))
     (hj : j ≤ G.n) (hj64 : j < 2 ^ 64) (hk : C.k < G.nep) :
     ∃ (Cd : WalkCarry G) (sd : State) (p : Nat),
-      WalkSegment calls G C s Cd sd p ∧ Cd.block = "if.then" ∧ Cd.eoff ≤ G.n ∧
+      WalkRefuseSegment calls G C s Cd sd p ∧ Cd.eoff ≤ G.n ∧
       p + 2 ≤ stage2EntryAllowance * (G.nep - C.k) +
         stage2ByteAllowance * (G.n - entryPos G C.k) :=
   colonRefuse_at G C s hInv hhead h8 hsp hv he hj hj64 hk
@@ -914,13 +943,14 @@ theorem commaRefuse_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
     comStep₆ G { C with block := "if.then130.i" }
       (comS₅ (comS₄ (comS₃ (comS₂ (comS₁ s))))) L₅.inv' rfl hv₆ he₆ hj hj64
   refine ⟨{ C with block := "if.then", eoff := j, refusal := true },
-    comS₆ C j (comS₅ (comS₄ (comS₃ (comS₂ (comS₁ s))))), 6, ?_, rfl,
+    comS₆ C j (comS₅ (comS₄ (comS₃ (comS₂ (comS₁ s))))), 6, ?_,
     L₆.inv'.eoff_le, refusePrice_of_le G C (by omega) hk⟩
-  exact Seg.measure (Seg.tail L₁ (Seg.tail L₂ (Seg.tail L₃ (Seg.tail L₄
-    (Seg.tail L₅ (Seg.tail L₆ (Seg.nil L₆.inv')))))))
+  refine ⟨?_, rfl, j, hj, ?_⟩
+  · exact Seg.measure (Seg.tail L₁ (Seg.tail L₂ (Seg.tail L₃ (Seg.tail L₄
+      (Seg.tail L₅ (Seg.tail L₆ (Seg.nil L₆.inv')))))))
+  · simpa only [comS₆] using refuseSegment_word_of_store (m := _) (e := C.stage.e) (v := j)
 
-/-- **The `refuse` witness at a depth-zero comma**, in the exact shape
-`hlast_refuse`'s conclusion states. -/
+/-- **The `refuse` witness at a depth-zero comma**, in the shape `WalkRefuseAt` states. -/
 theorem walkRefuseWitness_comma {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
     (C : WalkCarry G) (s : State) (hInv : WalkInv G C s) (hhead : C.block = walkLoopHead)
     (h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 44)))
@@ -929,7 +959,7 @@ theorem walkRefuseWitness_comma {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
     (he : lookupName s.env "%e" = some (.ptr C.stage.e))
     (hj : j ≤ G.n) (hj64 : j < 2 ^ 64) (hk : C.k < G.nep) :
     ∃ (Cd : WalkCarry G) (sd : State) (p : Nat),
-      WalkSegment calls G C s Cd sd p ∧ Cd.block = "if.then" ∧ Cd.eoff ≤ G.n ∧
+      WalkRefuseSegment calls G C s Cd sd p ∧ Cd.eoff ≤ G.n ∧
       p + 2 ≤ stage2EntryAllowance * (G.nep - C.k) +
         stage2ByteAllowance * (G.n - entryPos G C.k) :=
   commaRefuse_at G C s hInv hhead h8 hsp hv he hj hj64 hk
@@ -1209,13 +1239,15 @@ theorem stackMarkerRefuse_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : W
       L₆.inv' rfl hv₇ he₇ hj hj64
   refine ⟨{ C with block := "if.then", eoff := j, refusal := true },
     smS₇ C j (smS₆ (smS₅ (colS₄ (colS₃ (colS₂ (colS₁ s))))) C.sp C.stage.ctype
-      (C.tyMap (C.sp - 1))), 7, ?_, rfl, L₇.inv'.eoff_le,
-    refusePrice_of_le G C (by omega) hk⟩
-  exact Seg.measure (Seg.tail L₁ (Seg.tail L₂ (Seg.tail L₃ (Seg.tail L₄
-    (Seg.tail L₅ (Seg.tail L₆ (Seg.tail L₇ (Seg.nil L₇.inv'))))))))
+      (C.tyMap (C.sp - 1))), 7, ?_,
+    L₇.inv'.eoff_le, refusePrice_of_le G C (by omega) hk⟩
+  refine ⟨?_, rfl, j, hj, ?_⟩
+  · exact Seg.measure (Seg.tail L₁ (Seg.tail L₂ (Seg.tail L₃ (Seg.tail L₄
+      (Seg.tail L₅ (Seg.tail L₆ (Seg.tail L₇ (Seg.nil L₇.inv'))))))))
+  · simpa only [smS₇] using refuseSegment_word_of_store (m := _) (e := C.stage.e) (v := j)
 
 /-- **The `refuse` witness at a colon whose enclosing marker is not the brace**, in the
-exact shape `hlast_refuse`'s conclusion states. -/
+shape `WalkRefuseAt` states. -/
 theorem walkRefuseWitness_stackMarker {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
     (C : WalkCarry G) (s : State) (hInv : WalkInv G C s) (hhead : C.block = walkLoopHead)
     (h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 58)))
@@ -1224,7 +1256,7 @@ theorem walkRefuseWitness_stackMarker {calls : Calls} {m0 : Mem} (G : WalkGeom m
     (he : lookupName s.env "%e" = some (.ptr C.stage.e))
     (hj : j ≤ G.n) (hj64 : j < 2 ^ 64) (hk : C.k < G.nep) :
     ∃ (Cd : WalkCarry G) (sd : State) (p : Nat),
-      WalkSegment calls G C s Cd sd p ∧ Cd.block = "if.then" ∧ Cd.eoff ≤ G.n ∧
+      WalkRefuseSegment calls G C s Cd sd p ∧ Cd.eoff ≤ G.n ∧
       p + 2 ≤ stage2EntryAllowance * (G.nep - C.k) +
         stage2ByteAllowance * (G.n - entryPos G C.k) :=
   stackMarkerRefuse_at G C s hInv hhead h8 hsp hq1 hv he hj hj64 hk
@@ -1533,13 +1565,14 @@ theorem mismatchedRefuse_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : Wa
   refine ⟨{ C with block := "if.then", eoff := j, refusal := true },
     mlS₇ C j (stackSelOut (mlS₅ (refuseS₄ (refuseS₃ (refuseS₂ (refuseS₁ s))))) C.sp
       C.stage.ctype (BitVec.ofNat 8 93) (C.tyMap (C.sp - 1))
-      (stackSelBit (BitVec.ofNat 8 93) (C.tyMap (C.sp - 1)))), 7, ?_, rfl,
+      (stackSelBit (BitVec.ofNat 8 93) (C.tyMap (C.sp - 1)))), 7, ?_,
     L₇.inv'.eoff_le, refusePrice_of_le G C (by omega) hk⟩
-  exact Seg.measure (Seg.tail L₁ (Seg.tail L₂ (Seg.tail L₃ (Seg.tail L₄
-    (Seg.tail L₅ (Seg.tail L₆ (Seg.tail L₇ (Seg.nil L₇.inv'))))))))
+  refine ⟨?_, rfl, j, hj, ?_⟩
+  · exact Seg.measure (Seg.tail L₁ (Seg.tail L₂ (Seg.tail L₃ (Seg.tail L₄
+      (Seg.tail L₅ (Seg.tail L₆ (Seg.tail L₇ (Seg.nil L₇.inv'))))))))
+  · simpa only [mlS₇] using refuseSegment_word_of_store (m := _) (e := C.stage.e) (v := j)
 
-/-- **The `refuse` witness at a mismatched bracket**, in the exact shape
-`hlast_refuse`'s conclusion states: a closing
+/-- **The `refuse` witness at a mismatched bracket**, in the shape `WalkRefuseAt` states: a closing
 bracket inside a container whose marker it does not match, refused at the nesting check,
 with the entry's position as the offset. -/
 theorem walkRefuseWitness_mismatched {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
@@ -1550,7 +1583,7 @@ theorem walkRefuseWitness_mismatched {calls : Calls} {m0 : Mem} (G : WalkGeom m0
     (he : lookupName s.env "%e" = some (.ptr C.stage.e))
     (hj : j ≤ G.n) (hj64 : j < 2 ^ 64) (hk : C.k < G.nep) :
     ∃ (Cd : WalkCarry G) (sd : State) (p : Nat),
-      WalkSegment calls G C s Cd sd p ∧ Cd.block = "if.then" ∧ Cd.eoff ≤ G.n ∧
+      WalkRefuseSegment calls G C s Cd sd p ∧ Cd.eoff ≤ G.n ∧
       p + 2 ≤ stage2EntryAllowance * (G.nep - C.k) +
         stage2ByteAllowance * (G.n - entryPos G C.k) :=
   mismatchedRefuse_at G C s hInv hhead h8 hsp hq hv he hj hj64 hk

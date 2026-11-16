@@ -212,6 +212,7 @@ theorem walkFinishInvAt {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : Stat
     (hlogBase : readBytes m' C.stage.z 8 = some (wordBytes 8 G.ev))
     (hlogDst : readBytes m' (C.stage.z + 40) 8 = some (wordBytes 8 G.dst))
     (hown : ∀ r ∈ walkStaged G C, HasBytes m' r.1 r.2)
+    (hroot : HasBytes m' (G.next0 + 8) 4)
     (hnextGE : G.next0 + stage2BootstrapExtent ≤ s.next)
     (hframe : UnchangedOutside m0 m' (walkWideAt G C (s.next - G.next0)))
     (hphase : walkEmitC C.block ≤ walkEmitC b)
@@ -273,6 +274,7 @@ theorem walkFinishInvAt {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : Stat
   log_base := hlogBase
   log_dst := hlogDst
   owned := hown
+  root_slot := hroot
   next_ge := hnextGE
   frame := hframe
   blockLocal := hloc
@@ -323,7 +325,8 @@ theorem walkFinish485Inv {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : Sta
         rcases hn with rfl
         exact ⟨by decide, by decide, by decide, by decide, by decide, by decide⟩)
     hInv.evBytes hInv.tyBytes hInv.stBytes hInv.log_hash hInv.log_len hInv.log_cap
-    hInv.log_alen hInv.log_acap hInv.log_base hInv.log_dst hInv.owned hInv.next_ge hInv.frame
+    hInv.log_alen hInv.log_acap hInv.log_base hInv.log_dst hInv.owned hInv.root_slot
+    hInv.next_ge hInv.frame
     (by simp [WalkLocal])
     (hphase := by
       have hone := walkEmitC_le_one C.block
@@ -417,6 +420,8 @@ theorem walkFinish488Inv {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : Sta
     (by
       exact walkStaged_write (m := s.mem) (a := C.stage.e + 8) (bs := wordBytes 8 v)
         rfl hInv.owned)
+    (by
+      exact hasBytes_writeBytes hInv.root_slot)
     hInv.next_ge
     (by
       refine walkFrame_write_inside hInv.frame ?_

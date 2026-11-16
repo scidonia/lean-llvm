@@ -348,6 +348,7 @@ theorem WalkLink.if_then425_i_emit {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
       log_base := ?_
       log_dst := ?_
       owned := ?_
+      root_slot := ?_
       next_ge := by
         show G.next0 + stage2BootstrapExtent ≤ r.next
         rw [hrnext]; exact hInv.next_ge
@@ -406,6 +407,9 @@ theorem WalkLink.if_then425_i_emit {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
   · show ∀ q ∈ walkStaged G C, HasBytes r.mem q.1 q.2
     rw [hmem]
     exact walkStaged_write rfl (walkStaged_write rfl hInv.owned)
+  · show HasBytes r.mem (G.next0 + 8) 4
+    rw [hmem]
+    exact hasBytes_writeBytes (hasBytes_writeBytes hInv.root_slot)
   · -- the frame at the wider cursor
     have hnext' : s'.next = s.next := hrnext
     rw [hnext']
@@ -718,6 +722,7 @@ theorem WalkLink.if_then425_i_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
       log_base := ?_
       log_dst := ?_
       owned := ?_
+      root_slot := ?_
       next_ge := by
         show G.next0 + stage2BootstrapExtent ≤ r.next
         rw [hrnext]; exact hInv.next_ge
@@ -795,6 +800,10 @@ theorem WalkLink.if_then425_i_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
     rw [hrefuse]
     unfold stage2ErrSetMsg stage2ErrSet
     exact walkStaged_write rfl (walkStaged_write rfl (walkStaged_write rfl hInv.owned))
+  · show HasBytes r.mem (G.next0 + 8) 4
+    rw [hrefuse]
+    unfold stage2ErrSetMsg stage2ErrSet
+    exact hasBytes_writeBytes (hasBytes_writeBytes (hasBytes_writeBytes hInv.root_slot))
   · have hnext' : s'.next = s.next := hrnext
     rw [hnext']
     show UnchangedOutside m0 r.mem (walkWideAt G C (s.next - G.next0))
@@ -923,6 +932,7 @@ theorem walkAfterValue_facts_at {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {
         .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)) :
     UnchangedOutside m0 m (walkWideAt G C (s.next - G.next0)) ∧
       (∀ q ∈ walkStaged G C, HasBytes m q.1 q.2) ∧
+      HasBytes m (G.next0 + 8) 4 ∧
       (∀ off w, off + w ≤ stage2LogExtent →
         readBytes m (C.stage.z + off) w = readBytes s.mem (C.stage.z + off) w) ∧
       readBytes m (G.ev + G.nev0)
@@ -1003,7 +1013,11 @@ theorem walkAfterValue_facts_at {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {
       rcases walkCstByte_ev_sep hInv hbyte with h | h
       · exact Or.inl (by omega)
       · exact Or.inr (by omega)
-  exact ⟨hframe, howned, hlog, hev⟩
+  have hrootSl : HasBytes m (G.next0 + 8) 4 := by
+    obtain h1 | ⟨b, h1⟩ := stage2AfterValue_form hm
+    · rw [h1]; exact hasBytes_writeBytes hInv.root_slot
+    · rw [h1]; exact hasBytes_writeBytes hInv.root_slot
+  exact ⟨hframe, howned, hrootSl, hlog, hev⟩
 
 /-- The `%conv115.i` `phi`: the kind byte the token's arm selected. -/
 def walkIfThen109Incoming : List (String × Operand) :=
@@ -1113,7 +1127,7 @@ theorem WalkLink.if_then109_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
       (s2AfterValueFoot [.int 32 spz, .ptr (G.next0 + 8),
         .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next) := by
     rw [hmem] at hfr; exact hfr
-  obtain ⟨hframe, howned, hlog, hev⟩ :=
+  obtain ⟨hframe, howned, hroot, hlog, hev⟩ :=
     walkAfterValue_facts_at (G := G) (C := C) (s := s) hInv hspz hm hfr'
   have hread : readBytes r.mem (C.stage.z + 32) 4 = some (natToBytes 0 4) := by
     rw [hmem, hlog 32 4 (by decide)]
@@ -1203,6 +1217,7 @@ theorem WalkLink.if_then109_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
       log_base := ?_
       log_dst := ?_
       owned := ?_
+      root_slot := ?_
       next_ge := by
         show G.next0 + stage2BootstrapExtent ≤ r.next
         rw [hrn]; exact hInv.next_ge
@@ -1271,6 +1286,8 @@ theorem WalkLink.if_then109_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
   · rw [show s'.mem = m from hmem]
     simpa [walkStaged] using howned
   · rw [show s'.mem = m from hmem]
+    exact hroot
+  · rw [show s'.mem = m from hmem]
     have hnext' : s'.next = s.next := hrn
     simpa only [walkWideAt, walkPresent, hnext'] using hframe
 
@@ -1289,6 +1306,7 @@ theorem walkNumFast_facts {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : St
     (hdev : C.stage.d + 8 ≤ G.ev ∨ G.ev + G.evcap ≤ C.stage.d) :
     UnchangedOutside m0 m (walkWideAt G C (s.next - G.next0)) ∧
       (∀ q ∈ walkStaged G C, HasBytes m q.1 q.2) ∧
+      HasBytes m (G.next0 + 8) 4 ∧
       (∀ off w'', off + w'' ≤ stage2LogExtent →
         readBytes m (C.stage.z + off) w'' = readBytes s.mem (C.stage.z + off) w'') ∧
       readBytes m (G.ev + G.nev0)
@@ -1352,7 +1370,11 @@ theorem walkNumFast_facts {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : St
     · rw [hm]
       refine walkReadBytes_ev_of_write (w := 8) (Nat.le_of_eq hlen') ?_
       exact Or.inr (by omega)
-  exact ⟨hframe, howned, hlog, hev⟩
+  have hrootSl : HasBytes m (G.next0 + 8) 4 := by
+    rcases hm with hm | hm
+    · rw [hm]; exact hasBytes_writeBytes hInv.root_slot
+    · rw [hm]; exact hasBytes_writeBytes hInv.root_slot
+  exact ⟨hframe, howned, hrootSl, hlog, hev⟩
 
 /-- `if.then19.i`: the number path's two markers, the lexeme's extent and the
 call. -/
@@ -1452,7 +1474,7 @@ theorem WalkLink.if_then19_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
     ∃ s', WalkLink (stage2Calls stage2SubCalls) G C s
       { C with block := (if evalICmp .eq xout (BitVec.ofNat 32 0) = 1
           then "if.then25.i" else "if.end67.critedge.i") } s' := by
-  obtain ⟨hframe, howned, hlog, hev⟩ :=
+  obtain ⟨hframe, howned, hroot, hlog, hev⟩ :=
     walkNumFast_facts (G := G) (C := C) (s := s) hInv (m := r.mem) hm hdlog hdev
   have hrnext : r.next = s.next := s2NumFast_next hcall
   let s₁ : State := stateAt (cells [
@@ -1554,6 +1576,7 @@ theorem WalkLink.if_then19_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
       log_base := ?_
       log_dst := ?_
       owned := ?_
+      root_slot := ?_
       next_ge := by
         show G.next0 + stage2BootstrapExtent ≤ r.next
         rw [hrnext]; exact hInv.next_ge
@@ -1614,6 +1637,8 @@ theorem WalkLink.if_then19_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
     exact hInv.log_dst
   · show ∀ q ∈ walkStaged G C, HasBytes r.mem q.1 q.2
     exact howned
+  · show HasBytes r.mem (G.next0 + 8) 4
+    exact hroot
   · rw [show s'.mem = r.mem from rfl]
     have hnext' : s'.next = s.next := hrnext
     rw [hnext']

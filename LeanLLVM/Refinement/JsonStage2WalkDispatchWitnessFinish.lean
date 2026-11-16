@@ -222,6 +222,7 @@ theorem WalkInv.reblock {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : Stat
   log_base := h.log_base
   log_dst := h.log_dst
   owned := h.owned
+  root_slot := h.root_slot
   next_ge := h.next_ge
   frame := h.frame
   inc_reg := h.inc_reg
@@ -293,6 +294,7 @@ theorem WalkInv.bind {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
   log_base := h.log_base
   log_dst := h.log_dst
   owned := h.owned
+  root_slot := h.root_slot
   next_ge := h.next_ge
   frame := h.frame
   inc_reg := by
@@ -390,6 +392,7 @@ theorem WalkInv.bindAt {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State
   log_base := h.log_base
   log_dst := h.log_dst
   owned := h.owned
+  root_slot := h.root_slot
   next_ge := h.next_ge
   frame := h.frame
   blockLocal := hloc

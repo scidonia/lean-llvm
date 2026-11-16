@@ -186,6 +186,26 @@ theorem WalkSegment.trans {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
     rw [show j + k + n = j + (k + n) from by omega, h₁.run (k + n), h₂.run n]
   inv' := h₂.inv'
 
+/-- **A segment that ended at the refusal copy, with the word the copy loads.**  The
+refusal's offset store is the last write before `if.then` — `if.then56.i`,
+`if.then205.i` and `if.then488.i` each write `wordBytes 8 k` at `%e + 8` — and the copy's
+`%off` load reads exactly that word.  A bare `WalkSegment` carries the run and the
+invariant and no memory, so the word is a field *beside* it: the producer states it at its
+own store, and the word then travels with the segment to the copy.
+
+`k` is not a projection of the carry: the arms that refuse write a position
+(`if.then56.i`'s `%idxprom.i`) or the document's length (`if.then205.i`'s `%4`), so the
+carry's `eoff` may differ from the word the copy will load, and `WalkInv.eoff_le` is only
+a bound.  What the boundary needs of the word is `k ≤ G.n`, which is the field. -/
+structure WalkRefuseSegment (calls : Calls) {m0 : Mem} (G : WalkGeom m0)
+    (C : WalkCarry G) (s : State) (Cd : WalkCarry G) (sd : State) (p : Nat) : Prop where
+  /-- The run from the head to the refusal copy. -/
+  seg : WalkSegment calls G C s Cd sd p
+  /-- The endpoint is the copy's own block. -/
+  block : Cd.block = "if.then"
+  /-- The copy's `%off` load: a word inside the document, at `%e + 8`. -/
+  word : ∃ k, k ≤ G.n ∧ readBytes sd.mem (Cd.stage.e + 8) 8 = some (wordBytes 8 k)
+
 /-- **A chain's tail carries the invariant.**  The chain's constructors state it
 at the head (`nil`) and at every link's target (`WalkLink.inv'`), so the last
 state's invariant is the induction's, and it is what makes a chain usable as a

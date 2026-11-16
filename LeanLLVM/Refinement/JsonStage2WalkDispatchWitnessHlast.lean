@@ -484,7 +484,10 @@ theorem hlast_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
 
 The two arms `hlast_finish` and `hlast_refuse` prove are the `merge` and `refuse`
 alternatives of `WalkDispatchResult` (`JsonStage2WalkDispatchThreeOfRun`), which is where a
-dispatch takes them: `WalkDispatchResult.ofHlastMerge` and `.ofHlastRefuse`.
+dispatch takes them: `WalkDispatchResult.ofHlastMerge` builds the `merge` arm from
+`hlast_finish`, and the `refuse` arm carries the word its refusing block stored
+(`WalkRefuseSegment`), which `hlast_refuse` does not state — its endpoint's word is `%4`'s
+rather than the store's own.
 
 A disjunction of segments is not what the dispatch's classification consumes: the result
 is one endpoint with that endpoint's facts, and the classification is the merge's own test

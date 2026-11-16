@@ -269,11 +269,16 @@ theorem stateStackRefuse_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : Wa
   have h₁ := stateStackSeg₁ (calls := calls) G C s hInv hhead h8 hsp
   have h₂ := stateStackSeg₂a (calls := calls) G C s h₁.inv' h8 hsp hmark
   have h₃ := stateStackSeg₂b (calls := calls) G C s h₂.inv' hst hv he hj hj64
-  exact ⟨_, ssDone C j s, 9, h₁.trans (h₂.trans h₃), rfl, h₃.inv'.eoff_le,
+  have hw : ∃ k, k ≤ G.n ∧ readBytes (ssDone C j s).mem (C.stage.e + 8) 8 =
+      some (wordBytes 8 k) :=
+    ⟨j, hj, by
+      simpa only [ssDone, clS₉] using
+        refuseSegment_word_of_store (m := _) (e := C.stage.e) (v := j)⟩
+  exact ⟨_, ssDone C j s, 9, ⟨h₁.trans (h₂.trans h₃), rfl, hw⟩, h₃.inv'.eoff_le,
     refusePrice_of_le G C (by omega) hk⟩
 
-/-- **The `refuse` witness at the state stack's byte**, in the exact shape
-`hlast_refuse`'s conclusion states: a closing
+/-- **The `refuse` witness at the state stack's byte**, in the shape
+`WalkRefuseAt` states: a closing
 bracket that matches the type stack's marker, refused because the state stack's own byte
 is at least `2`. -/
 theorem walkRefuseWitness_stateStack {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
@@ -285,7 +290,7 @@ theorem walkRefuseWitness_stateStack {calls : Calls} {m0 : Mem} (G : WalkGeom m0
     (he : lookupName s.env "%e" = some (.ptr C.stage.e))
     (hj : j ≤ G.n) (hj64 : j < 2 ^ 64) (hk : C.k < G.nep) :
     ∃ (Cd : WalkCarry G) (sd : State) (p : Nat),
-      WalkSegment calls G C s Cd sd p ∧ Cd.block = "if.then" ∧ Cd.eoff ≤ G.n ∧
+      WalkRefuseSegment calls G C s Cd sd p ∧ Cd.eoff ≤ G.n ∧
       p + 2 ≤ stage2EntryAllowance * (G.nep - C.k) +
         stage2ByteAllowance * (G.n - entryPos G C.k) :=
   stateStackRefuse_at G C s hInv hhead h8 hsp hmark hst hv he hj hj64 hk

@@ -1992,6 +1992,18 @@ structure WalkInv {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : P
   over them is false at the loop head — which is exactly why the claim below is
   silence and not ownership. -/
   owned : ∀ r ∈ walkStaged G C, HasBytes s.mem r.1 r.2
+  /-- **The root-done slot is present.**  `entry` allocates `%root_done.i` at
+  `G.next0 + 8` and its second store writes the slot's four bytes, so the slot is
+  present from the seed on; the only later writes through it are the depth-zero
+  arm of `s2_after_value`, which stores a four-byte flag inside the same slot, and
+  no block of the walk writes it.
+
+  It is a clause of its own because `owned` deliberately omits the four `alloca`
+  slots: `%ei.i`, `%xj.i` and `%outn.i` are not present at the loop head, so a
+  presence claim over the four would be false there.  The root slot is the one
+  that is present, and the finalisation's root-done test (`if.end490.i`) reads it,
+  so its presence is what makes that read a word rather than an unreadable cell. -/
+  root_slot : HasBytes s.mem (G.next0 + 8) 4
   /-- **The allocator cursor has passed the initialisation's four slots.**  `entry`
   allocates `%ei.i`, `%root_done.i`, `%xj.i` and `%outn.i` at `G.next0`, advancing
   the cursor by `8 + 4 + 8 + 8`.  The model's allocator is monotone (`Semantics`,
@@ -2212,6 +2224,7 @@ def WalkSeedState {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State) : P
     lookupName s.env "%nxp" = some (.int 64 (BitVec.ofNat 64 G.nxp)) ∧
     readBytes s.mem (S.z + 32) 4 = some (natToBytes 0 4) ∧
     (∀ r ∈ walkStaged G (walkSeed G S), HasBytes s.mem r.1 r.2) ∧
+    HasBytes s.mem (G.next0 + 8) 4 ∧
     G.next0 + stage2BootstrapExtent ≤ s.next ∧
     UnchangedOutside m0 s.mem (walkWideAt G (walkSeed G S) (s.next - G.next0)) ∧
     readBytes s.mem (S.z + 8) 8 = some (wordBytes 8 G.nev0) ∧
@@ -2241,8 +2254,8 @@ theorem walkSeed_depth_cap {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) :
 facts and nothing else. -/
 theorem walkSeed_invariant {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) {s : State}
     (h : WalkSeedState G S s) (hpos : 0 < G.nep) : WalkInv G (walkSeed G S) s := by
-  obtain ⟨hpc, hk, hsp, hinc0, hptrs, hregs, hiter, -, -, -, -, hhash, hown, hge, hframe, hlen,
-    hcap, halen, hacap, hbase, hdst, hidx0⟩ := h
+  obtain ⟨hpc, hk, hsp, hinc0, hptrs, hregs, hiter, -, -, -, -, hhash, hown, hroot,
+    hge, hframe, hlen, hcap, halen, hacap, hbase, hdst, hidx0⟩ := h
   refine
     { pc_eq := hpc
       blockIndex := hk
@@ -2283,6 +2296,7 @@ theorem walkSeed_invariant {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) {s : S
       log_base := hbase
       log_dst := hdst
       owned := hown
+      root_slot := hroot
       next_ge := hge
       frame := hframe
       blockLocal := ?_ }
@@ -2503,6 +2517,7 @@ theorem forInc_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
         log_base := hInv.log_base
         log_dst := hInv.log_dst
         owned := hInv.owned
+        root_slot := hInv.root_slot
         next_ge := hInv.next_ge
         frame := hInv.frame
         inc_reg := by
@@ -2892,6 +2907,7 @@ theorem scan_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
         log_base := hInv.log_base
         log_dst := hInv.log_dst
         owned := by dsimp only [e]; exact hInv.owned
+        root_slot := by dsimp only [e]; exact hInv.root_slot
         next_ge := hInv.next_ge
         frame := ?_
         inc_reg := by
@@ -3719,6 +3735,7 @@ theorem walkBack_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarr
         log_base := hInv.log_base
         log_dst := hInv.log_dst
         owned := by dsimp only [e, State.bind]; exact hInv.owned
+        root_slot := by dsimp only [e, State.bind]; exact hInv.root_slot
         next_ge := by dsimp only [e, State.bind]; exact hInv.next_ge
         frame := by dsimp only [e, State.bind]; exact hInv.frame
         inc_reg := by
@@ -5154,6 +5171,7 @@ theorem whileBody_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
         log_base := ?_
         log_dst := ?_
         owned := walkStaged_write rfl hInv.owned
+        root_slot := by dsimp only [e]; exact hasBytes_writeBytes hInv.root_slot
         next_ge := hInv.next_ge
         frame := ?_
         inc_reg := by
@@ -5776,6 +5794,9 @@ theorem ifEnd24_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
         log_base := ?_
         log_dst := ?_
         owned := walkStaged_write rfl (walkStaged_write rfl hInv.owned)
+        root_slot := by
+          dsimp only [e]
+          exact hasBytes_writeBytes (hasBytes_writeBytes hInv.root_slot)
         next_ge := hInv.next_ge
         frame := ?_
         inc_reg := by
@@ -6701,6 +6722,7 @@ theorem WalkLink.icmpBr {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
         log_base := hInv.log_base
         log_dst := hInv.log_dst
         owned := hInv.owned
+        root_slot := hInv.root_slot
         next_ge := hInv.next_ge
         frame := hInv.frame
         inc_reg := by
@@ -6954,6 +6976,9 @@ theorem WalkLink.refusalStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
         log_base := ?_
         log_dst := ?_
         owned := by dsimp only [s', stateAt, m']; exact walkStaged_write rfl hInv.owned
+        root_slot := by
+          dsimp only [s', stateAt, m']
+          exact hasBytes_writeBytes hInv.root_slot
         next_ge := hInv.next_ge
         frame := ?_
         inc_reg := by
@@ -7534,6 +7559,7 @@ theorem WalkLink.condBr {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
         log_base := hInv.log_base
         log_dst := hInv.log_dst
         owned := hInv.owned
+        root_slot := hInv.root_slot
         next_ge := hInv.next_ge
         frame := hInv.frame
         inc_reg := hInv.inc_reg
@@ -7628,6 +7654,7 @@ theorem WalkLink.br {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
         log_base := hInv.log_base
         log_dst := hInv.log_dst
         owned := hInv.owned
+        root_slot := hInv.root_slot
         next_ge := hInv.next_ge
         frame := hInv.frame
         inc_reg := hInv.inc_reg

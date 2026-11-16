@@ -333,6 +333,7 @@ theorem WalkLink.callQuiet {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : S
     (hnext : G.next0 + stage2BootstrapExtent ≤ s₁.next)
     (hframe : UnchangedOutside m0 s₁.mem (walkWideAt G C (s₁.next - G.next0)))
     (howned : ∀ r ∈ walkStaged G C, HasBytes s₁.mem r.1 r.2)
+    (hroot : HasBytes s₁.mem (G.next0 + 8) 4)
     (hlog : ∀ off w, off + w ≤ stage2LogExtent →
       readBytes s₁.mem (C.stage.z + off) w = readBytes s.mem (C.stage.z + off) w)
     (hev : readBytes s₁.mem (G.ev + G.nev0)
@@ -396,6 +397,7 @@ theorem WalkLink.callQuiet {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : S
       log_base := ?_
       log_dst := ?_
       owned := howned
+      root_slot := hroot
       next_ge := by dsimp only [s'']; exact hnext
       frame := by dsimp only [s'']; exact hframe
       inc_reg := by
@@ -457,6 +459,7 @@ theorem WalkLink.callQuietBr {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
     (hnext : G.next0 + stage2BootstrapExtent ≤ s₁.next)
     (hframe : UnchangedOutside m0 s₁.mem (walkWideAt G C (s₁.next - G.next0)))
     (howned : ∀ r ∈ walkStaged G C, HasBytes s₁.mem r.1 r.2)
+    (hroot : HasBytes s₁.mem (G.next0 + 8) 4)
     (hlog : ∀ off w, off + w ≤ stage2LogExtent →
       readBytes s₁.mem (C.stage.z + off) w = readBytes s.mem (C.stage.z + off) w)
     (hev : readBytes s₁.mem (G.ev + G.nev0)
@@ -525,6 +528,7 @@ theorem WalkLink.callQuietBr {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
       log_base := ?_
       log_dst := ?_
       owned := howned
+      root_slot := hroot
       next_ge := by dsimp only [s'']; exact hnext
       frame := by dsimp only [s'']; exact hframe
       inc_reg := by
@@ -595,6 +599,7 @@ theorem WalkLink.callQuietBrPending {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
     (hnext : G.next0 + stage2BootstrapExtent ≤ s₁.next)
     (hframe : UnchangedOutside m0 s₁.mem (walkWideAt G C (s₁.next - G.next0)))
     (howned : ∀ r ∈ walkStaged G C, HasBytes s₁.mem r.1 r.2)
+    (hroot : HasBytes s₁.mem (G.next0 + 8) 4)
     (hlog : ∀ off w, off + w ≤ stage2LogExtent →
       readBytes s₁.mem (C.stage.z + off) w = readBytes s.mem (C.stage.z + off) w)
     (hev : readBytes s₁.mem (G.ev + G.nev0)
@@ -666,6 +671,7 @@ theorem WalkLink.callQuietBrPending {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
       log_base := ?_
       log_dst := ?_
       owned := howned
+      root_slot := hroot
       next_ge := by dsimp only [s'']; exact hnext
       frame := by dsimp only [s'']; exact hframe
       inc_reg := by
@@ -1217,6 +1223,7 @@ theorem walkAfterValue_facts {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s :
         .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)) :
     UnchangedOutside m0 m (walkWideAt G C (s.next - G.next0)) ∧
       (∀ q ∈ walkStaged G C, HasBytes m q.1 q.2) ∧
+      HasBytes m (G.next0 + 8) 4 ∧
       (∀ off w, off + w ≤ stage2LogExtent →
         readBytes m (C.stage.z + off) w = readBytes s.mem (C.stage.z + off) w) ∧
       readBytes m (G.ev + G.nev0)
@@ -1297,7 +1304,11 @@ theorem walkAfterValue_facts {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s :
       rcases cstByte_ev_sep hInv with h | h
       · exact Or.inl (by omega)
       · exact Or.inr (by omega)
-  exact ⟨hframe, howned, hlog, hev⟩
+  have hrootSl : HasBytes m (G.next0 + 8) 4 := by
+    obtain h1 | ⟨b, h1⟩ := stage2AfterValue_form hm
+    · rw [h1]; exact hasBytes_writeBytes hInv.root_slot
+    · rw [h1]; exact hasBytes_writeBytes hInv.root_slot
+  exact ⟨hframe, howned, hrootSl, hlog, hev⟩
 
 /-- **`if.else334.i`'s target, named**: the same link with the helper's answer a
 parameter, so the state the block's call leaves is a term a consumer can name.  The
@@ -1327,7 +1338,7 @@ theorem WalkLink.if_else334_i_at {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
       (s2AfterValueFoot [.int 32 (BitVec.ofNat 32 C.sp), .ptr (G.next0 + 8),
         .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next) := by
     rw [hmem] at hfr; exact hfr
-  obtain ⟨hframe, howned, hlog, hev⟩ :=
+  obtain ⟨hframe, howned, hroot, hlog, hev⟩ :=
     walkAfterValue_facts (G := G) (C := C) (s := s) hInv hm hfr'
   have hstTy : WalkStackBytes r.mem C.stage.ctype C.tyMap C.wlen := by
     rw [hmem]
@@ -1354,6 +1365,7 @@ theorem WalkLink.if_else334_i_at {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
     (by dsimp only [stateAt]; rw [hrn]; exact hInv.next_ge)
     (by dsimp only [stateAt]; rw [hmem, hrn]; exact hframe)
     (by dsimp only [stateAt]; rw [hmem]; exact howned)
+    (by dsimp only [stateAt]; rw [hmem]; exact hroot)
     (by dsimp only [stateAt]; rw [hmem]; exact hlog)
     (by dsimp only [stateAt]; rw [hmem]; exact hev)
     rfl (by simp [WalkLocal]) (hne := by rw [hblock]; decide)
@@ -1459,7 +1471,7 @@ theorem WalkLink.if_then447_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
       (s2AfterValueFoot [.int 32 (BitVec.ofNat 32 C.sp), .ptr (G.next0 + 8),
         .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next) := by
     rw [hmem] at hfr; exact hfr
-  obtain ⟨hframe, howned, hlog, hev⟩ :=
+  obtain ⟨hframe, howned, hroot, hlog, hev⟩ :=
     walkAfterValue_facts (G := G) (C := C) (s := s) hInv hm hfr'
   have hstTy : WalkStackBytes r.mem C.stage.ctype C.tyMap C.wlen := by
     rw [hmem]
@@ -1487,6 +1499,7 @@ theorem WalkLink.if_then447_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
     (by dsimp only [stateAt]; rw [hrn]; exact hInv.next_ge)
     (by dsimp only [stateAt]; rw [hmem, hrn]; exact hframe)
     (by dsimp only [stateAt]; rw [hmem]; exact howned)
+    (by dsimp only [stateAt]; rw [hmem]; exact hroot)
     (by dsimp only [stateAt]; rw [hmem]; exact hlog)
     (by dsimp only [stateAt]; rw [hmem]; exact hev)
     rfl (by simp [cells, stateAt, lookupName_cons_self])
@@ -1532,7 +1545,7 @@ theorem WalkLink.if_then447_i_empty {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
       (s2AfterValueFoot [.int 32 (BitVec.ofNat 32 C.sp), .ptr (G.next0 + 8),
         .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next) := by
     rw [hmem] at hfr; exact hfr
-  obtain ⟨hframe, howned, hlog, hev⟩ :=
+  obtain ⟨hframe, howned, hroot, hlog, hev⟩ :=
     walkAfterValue_facts (G := G) (C := C) (s := s) hInv hm hfr'
   have hstTy : WalkStackBytes r.mem C.stage.ctype C.tyMap C.wlen := by
     rw [hmem]
@@ -1560,6 +1573,7 @@ theorem WalkLink.if_then447_i_empty {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
     (by dsimp only [stateAt]; rw [hrn]; exact hInv.next_ge)
     (by dsimp only [stateAt]; rw [hmem, hrn]; exact hframe)
     (by dsimp only [stateAt]; rw [hmem]; exact howned)
+    (by dsimp only [stateAt]; rw [hmem]; exact hroot)
     (by dsimp only [stateAt]; rw [hmem]; exact hlog)
     (by dsimp only [stateAt]; rw [hmem]; exact hev)
     rfl (by simp [cells, stateAt, lookupName_cons_self])
@@ -1896,6 +1910,7 @@ theorem WalkLink.if_end256_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
       rw [natToBytes_length] at hk
       exact walkWideAt_alloca (by omega) (by omega))
     (by dsimp only [stateAt]; exact walkStaged_write rfl hInv.owned)
+    (by dsimp only [stateAt]; exact hasBytes_writeBytes hInv.root_slot)
     (by
       dsimp only [stateAt]
       intro off w hw
@@ -2139,6 +2154,7 @@ theorem WalkLink.z_arena_reserve_exit {m0 : Mem} (G : WalkGeom m0) (C : WalkCarr
         .int 64 (BitVec.ofNat 64 G.nxp)] s.mem s.next = some r)
     (hframe : UnchangedOutside m0 r.mem (walkWideAt G { C with block := "NodeBlock31", alen := C.alen + ext, spans := C.spans ++ [(C.alen, ext)], pending := none } (r.next - G.next0)))
     (howned : ∀ q ∈ walkStaged G { C with block := "NodeBlock31", alen := C.alen + ext, spans := C.spans ++ [(C.alen, ext)], pending := none }, HasBytes r.mem q.1 q.2)
+    (hroot : HasBytes r.mem (G.next0 + 8) 4)
     (hlog : ∀ off w, off + w ≤ stage2LogExtent →
       readBytes r.mem (C.stage.z + off) w = readBytes s.mem (C.stage.z + off) w)
     (hev : readBytes r.mem (G.ev + G.nev0)
@@ -2243,6 +2259,7 @@ theorem WalkLink.z_arena_reserve_exit {m0 : Mem} (G : WalkGeom m0) (C : WalkCarr
       log_base := ?_
       log_dst := ?_
       owned := howned
+      root_slot := hroot
       next_ge := by
         dsimp only [s', s₁, stateAt]
         rw [hrnext]
@@ -2743,6 +2760,10 @@ theorem WalkLink.if_then328_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
       log_base := ?_
       log_dst := ?_
       owned := ?_
+      root_slot := by
+        dsimp only [s', s₁, envF, walkSetMem, stateAt]
+        exact hasBytes_writeBytes (hasBytes_writeBytes (hasBytes_writeBytes
+          (hasBytes_writeBytes hInv.root_slot)))
       next_ge := by
         dsimp only [s', s₁, envF, walkSetMem, stateAt]
         exact hInv.next_ge
@@ -3263,6 +3284,9 @@ theorem WalkLink.if_then25_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
         (bs := natToBytes (v + ix).toNat 8) rfl hInv.owned)
     (by
       dsimp only [stateAt]
+      exact hasBytes_writeBytes hInv.root_slot)
+    (by
+      dsimp only [stateAt]
       intro off w hw
       have hoff : off + w ≤ stage2LogExtent := hw
       rw [show natToBytes (v + ix).toNat 8 = wordBytes 8 (v + ix).toNat from rfl]
@@ -3454,6 +3478,9 @@ theorem WalkLink.if_then413_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
       dsimp only [stateAt]; rw [hmem]
       exact walkStaged_write (m := s.mem) (a := C.stage.tok + 16)
         (bs := natToBytes c.toNat 4) rfl hInv.owned)
+    (by
+      dsimp only [stateAt]; rw [hmem]
+      exact hasBytes_writeBytes hInv.root_slot)
     (by
       dsimp only [stateAt]; rw [hmem]
       intro off w hw
@@ -3744,6 +3771,7 @@ theorem WalkLink.cond_end349_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s
             ⟨(C.stage.tok, stage2TokenExtent), by simp [stage2StagedWrites, hsep24],
               by omega, by omega⟩)))
     (by dsimp only [stateAt]; exact walkStaged_write rfl (walkStaged_write rfl hInv.owned))
+    (by dsimp only [stateAt]; exact hasBytes_writeBytes (hasBytes_writeBytes hInv.root_slot))
     (by
       dsimp only [stateAt]
       intro off w hw

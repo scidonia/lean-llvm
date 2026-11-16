@@ -45,7 +45,7 @@ Two groups are premises, and each is a bundle rather than a field per fact:
 | premise | what it is | why it is not derived |
 |---|---|---|
 | `WalkContinueFacts` | the **class** of the continuing entry at every head state with an entry left (`HcontArm`: `ws` = `HcontFacts`, `cleanup` = `HcontCleanupFacts`, `twoEntry` = `HstringFacts` beside its residue, `scalar` = `HcontScalarFacts`, and the `supplied` arms) | each class's bundle is a fact about the token (`walkRevolutionMergeSegWs`'s own for `ws`, `walkRevolutionMergeSeg`'s for `cleanup`, `walkRevolutionMergeSegScalar`'s for `scalar`), and the class is the head switch's arm and the tag test; the census over those (`HcontClass.complete`) is exhaustive by theorem, so the split is a value and the question is asked once |
-| `WalkLoopEnd` | the last entry's **arm** (one constructor per head-switch arm class) and the two terminal blocks' *words* | the arm is supplied at the last-entry head states (`LastEntryArm`) and the words at the states the dispatch reaches (`WalkMergeWords`, `WalkRefuseWords`).  The rest of what the runs read is derived and deleted from the bundles: the seven finalisation registers and `%4` are `walkStaticRegs` entries (`walkFinalEnv_of_regs`, `walkMerge4_of_regs`), and the merge's `%nep` value is `WalkLoopEnd.nepBound`.  The *dispatch* is proved from the arm (`WalkLoopEnd.dispatch`), and the *runs* are proved, not supplied: `WalkLoopEnd.merge`/`.refuse` compose them from `JsonStage2WalkTargetPost`'s four routes |
+| `WalkLoopEnd` | the last entry's **arm** (one constructor per head-switch arm class) and the two terminal blocks' *log words* | the arm is supplied at the last-entry head states (`LastEntryArm`) and the log's arena word at the states the dispatch reaches (`WalkMergeWords`, `WalkRefuseWords`).  The rest of what the runs read is derived and deleted from the bundles: the seven finalisation registers and `%4` are `walkStaticRegs` entries (`walkFinalEnv_of_regs`, `walkMerge4_of_regs`), the merge's `%nep` value is `WalkLoopEnd.nepBound`, the root-done word is `WalkInv.root_slot` read as four bytes (`walkRootWord_of_hasBytes`), and the copy's `%off` word is the refusal segment's own store (`WalkRefuseSegment`), carried by the dispatch's `refuse` arm.  The *dispatch* is proved from the arm (`WalkLoopEnd.dispatch`), and the *runs* are proved, not supplied: `WalkLoopEnd.merge`/`.refuse` compose them from `JsonStage2WalkTargetPost`'s four routes |
 
 The two-entry token's residue is now an **arm field** rather than a third premise:
 `HcontArm.twoEntry` carries the state's `HstringResidue` beside its `HstringFacts` and the
@@ -183,18 +183,18 @@ theorem walkDispatch_of_continue {m0 : Mem} {G : WalkGeom m0}
 
 /-! ### The finalisation's terminal runs and the loop's step -/
 
-/-- **The last entry's arm and the terminal blocks' words**, at every state each is read
-at.  `hlast` is the last entry's **arm** — one constructor per control-flow arm of the
+/-- **The last entry's arm and the terminal blocks' log word**, at every state each is
+read at.  `hlast` is the last entry's **arm** — one constructor per control-flow arm of the
 pinned head switch (`LastEntryArm`, `JsonStage2WalkDispatchArms`) — and
 `WalkLoopEnd.dispatch` applies the arm's own producer to it, so what is supplied is
 per-arm evidence and not a bundle whose class is another arm's; `mergeWords` and
-`refuseWords` are the words no clause carries, one bundle per terminal entry block.
+`refuseWords` are that block's log word, which no clause carries.
 
 The terminal post is not a field: `WalkLoopEnd.merge` and `WalkLoopEnd.refuse` produce it
-from the bundles and the state's own cells, and their proofs are the four terminal runs
-of `JsonStage2WalkTargetPost`.  So what this structure *supplies* is the arm and the
-words, and what the layer *proves* is the dispatch's result, the run and the boundary at
-its memory.
+from the bundle, the state's own cells and the word the dispatch's refusal arm carries,
+and their proofs are the four terminal runs of `JsonStage2WalkTargetPost`.  So what this
+structure *supplies* is the arm and the log's word, and what the layer *proves* is the
+dispatch's result, the run and the boundary at its memory.
 
 **What is supplied, and what is derived.**
 
@@ -205,19 +205,20 @@ its memory.
 * derived: the merge's `%nep` value, `WalkLoopEnd.nepBound` below — the same carrier
   names `%nep` as `BitVec.ofNat 64 G.nep`, and the document's width makes the word its
   own number;
-* supplied: the log's arena word at the merge's state (`WalkMergeWords.log`,
-  `WalkRefuseWords.log`).  This one is *not* a `WalkInv` clause and cannot become one:
-  `log_alen` is an inequality, the slot lags the carry between a reserve and its
-  write-back, and `JsonStage2WalkArenaWord` shows the equality is false at any state
-  whose decoded prefix is shorter than the extent it reserved.  Its producer is the
-  write-back block at the state the merge is read at;
-* supplied: the merge's root-done word (`WalkMergeWords.root`).  `WalkInv.owned`
-  deliberately omits the four `alloca` slots, so the root slot's presence is in no
-  clause; its producer is a presence clause on `WalkInv` transported link by link;
-* supplied: R0's refusal word at `if.then` (`WalkRefuseWords.word`).  `WalkInv.eoff_le`
-  bounds the carry's `eoff` but the bytes at `%e + 8` are the *previous* link's store,
-  and `WalkSegment` keeps no memory; a memory-carrying refusal segment would produce
-  it. -/
+* derived: the merge's root-done word.  `WalkInv.root_slot` is presence over
+  `G.next0 + 8`'s four bytes and the test reads an `i32`, so
+  `walkRootWord_of_hasBytes` names the word (`JsonStage2WalkTargetPost`);
+* derived: the refusal copy's `%off` word.  The refusing block's store is the last write
+  before `if.then`, and `WalkRefuseSegment` (`JsonStage2WalkTraverse`) carries it from
+  the branch that made it, so it arrives with the dispatch's `refuse` arm;
+* supplied: the log's arena word at the merge's state and at the copy's
+  (`WalkMergeWords.log`, `WalkRefuseWords.log`).  This one is *not* a `WalkInv` clause and
+  cannot become one: `log_alen` is an inequality, the slot lags the carry between a
+  reserve and its write-back, and `JsonStage2WalkArenaWord` shows the equality is **false
+  at an escaping input** — the write-back stores the decoder's output length, which is
+  shorter than the document extent the reserve charged.  No proof produces it; the fix is
+  a design change to what the post reports (the carry's `C.alen` or the slot's own word),
+  and `WalkMergeWords`' note records it. -/
 structure WalkLoopEnd {m0 : Mem} (G : WalkGeom m0) : Type where
   /-- **The last entry's arm**, at every head state the merge's test sends to the exit.
   It is the dispatch's evidence, not its conclusion: `WalkLoopEnd.dispatch` applies
@@ -225,10 +226,13 @@ structure WalkLoopEnd {m0 : Mem} (G : WalkGeom m0) : Type where
   and no arm's class is a premise of another's. -/
   hlast : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     ¬ (C.k + 1 < G.nep) → LastEntryArm (stage2Calls stage2SubCalls) G C s
-  /-- **The merge's words**, at every state a dispatch reaches at `cleanup478.i`. -/
+  /-- **The merge's log word**, at every state a dispatch reaches at `cleanup478.i`. -/
   mergeWords : ∀ (Cd : WalkCarry G) (sd : State), WalkInv G Cd sd →
     Cd.block = "cleanup478.i" → WalkMergeWords G Cd sd
-  /-- **The refusal copy's words**, at every state a refusal reaches at `if.then`. -/
+  /-- **The refusal copy's log word**, at every state a refusal reaches at `if.then`.
+  The copy's `%off` word is not supplied here: it is the refusal segment's own
+  (`WalkRefuseSegment`'s `word`), carried from the store by the dispatch's `refuse`
+  arm and passed to `WalkLoopEnd.refuse`. -/
   refuseWords : ∀ (Cd : WalkCarry G) (sd : State), WalkInv G Cd sd →
     Cd.block = "if.then" → WalkRefuseWords G Cd sd
 
@@ -281,20 +285,20 @@ theorem WalkLoopEnd.merge {m0 : Mem} {G : WalkGeom m0} (h : WalkLoopEnd G)
     (hkv : evalOperand sd kOp = some (.int 64 (BitVec.ofNat 64 k2)))
     (hnep : lookupName sd.env "%nep" = some (.int 64 nepv)) (hterm : k2 = nepv.toNat) :
     WalkTargetPost (stage2Calls stage2SubCalls) G Cd sd := by
-  obtain ⟨hwlog, hwroot⟩ := h.mergeWords Cd sd hInv hblk
   exact walkFinishPost_merge G Cd sd hInv
     hblk hpre hsp hspv hk hkv hnep hterm
-    ⟨hwlog, hwroot⟩
+    (h.mergeWords Cd sd hInv hblk)
 
-/-- **The refusal copy's terminal post, from the copy's words.**  R0: the state is at
+/-- **The refusal copy's terminal post, from the copy's word.**  R0: the state is at
 `if.then` already, so the post is the copy's two steps at the word the previous link
-stored. -/
+stored — carried to the copy as the refusal segment's own field. -/
 theorem WalkLoopEnd.refuse {m0 : Mem} {G : WalkGeom m0} (h : WalkLoopEnd G)
     (Cd : WalkCarry G) (sd : State) (hInv : WalkInv G Cd sd)
-    (hblk : Cd.block = "if.then") :
+    (hblk : Cd.block = "if.then")
+    (hword : ∃ k, k ≤ G.n ∧ readBytes sd.mem (Cd.stage.e + 8) 8 = some (wordBytes 8 k)) :
     WalkTargetPost (stage2Calls stage2SubCalls) G Cd sd :=
   walkFinishPost_refuseOfWords G Cd sd hInv hblk
-    (h.refuseWords Cd sd hInv hblk)
+    (h.refuseWords Cd sd hInv hblk) hword
 
 /-- **The loop's step, from the continuing arm and the last entry's arm.**
 `walkLoopStepThree_of_dispatchResult` (`JsonStage2WalkDispatchThreeOfRun`) asks for the
@@ -336,7 +340,7 @@ theorem walkLoopStep_of_staging {m0 : Mem} {G : WalkGeom m0}
     (fun Cd sd p spv k2 prev spOp kOp nepv hInv hblk hpre hsp hspv hkOp hk2 hnepv hterm =>
       hend.merge Cd sd p spv k2 prev spOp kOp nepv hInv hblk hpre hsp hspv hkOp hk2 hnepv
         hterm)
-    (fun Cd sd hInv hblk => hend.refuse Cd sd hInv hblk)
+    (fun Cd sd hInv hblk hword => hend.refuse Cd sd hInv hblk hword)
     (fun nepv Cd sd hInv hblk hnep => WalkLoopEnd.nepBound Cd sd nepv hInv hblk hnep)
 
 /-! ### The empty entry stream's flush, from the staging -/
@@ -832,7 +836,7 @@ top-level premise: it is `HcontArm.twoEntry`'s field.
 | `WalkContinueFacts` | **the continuing census's arms, each with its own evidence.**  The census is `HcontClass` (`JsonStage2WalkDispatchHcontArms`): the head switch's arms beside the tag test, exhaustive by `HcontClass.complete`.  The whitespace arm is `HcontFacts`' supply, in `HlastFacts`' discipline: its producer is `hlastFacts_of_staging`'s twin — the same three sources (the invariant's clauses, the document's content, the staging's addresses) read at the run class's states — and the bundle's fields are the head's byte and its four pivot bits, the entry counts and the default arm's cells, the whitespace class with its stop `k`, the seam's byte, the tail's segment and the scan's landing.  The run is derived rather than carried: `contWsRunF` composes it from the class field and `contWsPriceF` prices it.  That twin is `hcontFacts_of_staging` (`JsonStage2WalkHcontFactsOfStaging`), and what it takes from its caller is the document's bytes and their classes, the whitespace class, the tail's segment, the scan's landing and its traversal's three hypotheses (`hround`, `hguard`, `hbyte`, supplied unweakened), `htok`, which needs *the extra-token scan preserves a register it does not bind* — a statement a `WalkSegment` cannot carry, because the traversal returns its final state existentially.  The run's endpoint cells are not premises: `contWsRunF` returns the stop's `%cond350.i`, `wsSlS_envEnd` the seam's `%end.i`, and `%inc.i`/`%nep` are `WalkInv` clauses.  **The count test's value is `1` here and `0` in `HlastFacts`, and both are right**: the fields are arm-specific — a continuing entry has one after it, so the scan's bound is above its index, while the last entry's is the stream's end.  A docstring that gives either value without its arm reads as a contradiction in the other.  **`hnext` is derived, not supplied**: it follows from `C.k + 1 < G.nep` with the two counts pinned to `%k.0.i249 + 1` and `G.nep` (`cont_ult_one`), and `%inc.i`/`%nep` are clauses (`WalkInv.inc_reg`, `WalkInv.regs`) — so the group is closed.  The scan-free arm is `HcontCleanupFacts` (`JsonStage2WalkRevolution`), whose segment needs no scan, no tail budget and no traversal and whose price has no byte term.  **The plain-value arm is `HcontScalarFacts` (`JsonStage2WalkHcontScalar`)**, composed on the numeral route at sixteen links; it is the class the document `"01"` takes and the old split excluded, and `JsonStage2WalkHcontDomain` is the refutation at that head.  The two-entry arm is `HstringFacts` (`JsonStage2WalkDispatchWitnessString`) beside its `HstringResidue` — the residue is the arm's field now, so the loop's step and the obligation take no `WalkStringResidue` externally — and the fifteen-block segment there is **supplied rather than composed**: `WalkLink.z_arena_reserve_exit`'s address is now the staging's (it had stated `%xj.i` at `G.next0 + 16`, where the string body's `RegionsApart xj 8 outn 8` is false against `%outn.i = G.next0 + 20`; it is `+ 12` now), but the link still needs the register carriers `walkStaticRegs` omits and the two `s2StringBodyFoot`→`walkWide` frame lemmas, and the string body's call site has no `s2StringBodyPre` producer.  Its other groups come from the same three sources, and its two merge cells are fields at its own endpoint rather than `WalkInv` clauses. |
 | `WalkContinueWsFacts` | **the whitespace class's `∀`-form; `walkDispatch_of_continue` reads it.**  Its content is `HcontFacts` at every head state with an entry left, and the dispatch bridge proves `WalkDispatch` from it with `walkDispatch_at_continue_cells_ws` (`JsonStage2WalkRevolutionSeg`), the whitespace arm's own composition.  `hcontFacts_of_staging` produces `HcontFacts` at *one* state, not this `∀` (a `∀` would have to inhabit `HcontFacts` at states whose class is another arm's, which is what the class split exists to avoid), which is why the loop's step calls the per-state dispatch instead.  The scan-free arm's `∀`-form is spelled in `walkDispatch_of_continue_cells` (`JsonStage2WalkRevolutionSeg`), which reads `HcontCleanupFacts` and is the same bridge for that arm.  The pair is kept so `WalkDispatch` keeps its only producer — `WalkDispatchOutcome.ofDispatch` and `WalkDispatch.revolution` consume that predicate — and the bridge is a two-line wrapper over the per-state dispatch, so the two cannot drift. |
 | `WalkHeadCells` | **retired: proved, not supplied.**  `mergeHeadCells` (`JsonStage2WalkRevolutionSeg`) produces `MergeHeadCells` from `WalkInv` alone — `%inc.i` is `WalkInv.inc_reg` and `%nep` is one of `walkStaticRegs`' pairs — and `walkHeadCells` is its `∀`-form, which is what the loop's step and `walkDispatch_of_continue` read.  The clause is uniform (`ofNat 64 (C.k + 1)` at every block): the back edge (`walkBack_step`) advances neither `C.k` nor the register, and `whileBody_step` moves both together, so the block-keyed form this row used to propose (`ofNat C.k` at `while.body.i`) is refuted by `hkge : C.k < %k.2.i` |
-| `WalkLoopEnd` | **supplied: the last entry's arm and the two terminal blocks' words; everything else is derived.**  `hlast` is `LastEntryArm` — one constructor per control-flow arm of the head switch (`JsonStage2WalkDispatchArms`), each carrying its own arm's premises and nothing of another arm's class — and `WalkLoopEnd.dispatch` is the `def` that applies `LastEntryArm.dispatch` to it, so the reader cannot drift from the producers; `mergeWords` is `WalkMergeWords` at every state at `cleanup478.i`, and `refuseWords` is `WalkRefuseWords` at every state at `if.then`.  The *runs* are not supplied: `WalkLoopEnd.merge` and `WalkLoopEnd.refuse` produce `WalkTargetPost` from the words and the state's own cells, and their proofs are the four terminal runs of `JsonStage2WalkTargetPost`.  So the supplied list is exactly `hlast`, `WalkMergeWords`'s `log` and `root`, and `WalkRefuseWords`'s `log` and `word`.  The rest is derived and no longer in the bundles: `%4`'s value and the finalisation's seven registers are `walkStaticRegs` entries, read by `walkMerge4_of_regs` and `walkFinalEnv_of_regs`, and the merge's `%nep` value is `WalkLoopEnd.nepBound`.  Each remaining supply names its producer: the scalar arm's premises are the byte's class and the tail's three calls (`scalarMerge_at`), the high-byte arm's is `HlastResidue`, the log's arena word the write-back block `if.else285.i` (`WalkInv.log_alen` is only the bound, and the equality is false at any state whose decoded prefix is shorter than its reservation — `JsonStage2WalkArenaWord`), the merge's root-done word a presence clause on `WalkInv`, and R0's refusal word a memory-carrying refusal segment (`walkWide` omits the four `alloca` slots, and a `WalkSegment` keeps no memory). |
+| `WalkLoopEnd` | **supplied: the last entry's arm and the terminal blocks' log word; everything else is derived.**  `hlast` is `LastEntryArm` — one constructor per control-flow arm of the head switch (`JsonStage2WalkDispatchArms`), each carrying its own arm's premises and nothing of another arm's class — and `WalkLoopEnd.dispatch` is the `def` that applies `LastEntryArm.dispatch` to it, so the reader cannot drift from the producers; `mergeWords` is `WalkMergeWords` at every state at `cleanup478.i`, and `refuseWords` is `WalkRefuseWords` at every state at `if.then`.  The *runs* are not supplied: `WalkLoopEnd.merge` and `WalkLoopEnd.refuse` produce `WalkTargetPost` from the words and the state's own cells, and their proofs are the four terminal runs of `JsonStage2WalkTargetPost`.  So the supplied list is exactly `hlast` and the log's arena word, in `WalkMergeWords` and `WalkRefuseWords` (`log` in both).  The root-done word and the copy's `%off` word are no longer bundles: the first is `WalkInv.root_slot` read as four bytes (`walkRootWord_of_hasBytes`), the second is the refusal segment's own store (`WalkRefuseSegment`'s `word`), carried by the dispatch's `refuse` arm to `WalkLoopEnd.refuse`.  The rest is derived and no longer in the bundles: `%4`'s value and the finalisation's seven registers are `walkStaticRegs` entries, read by `walkMerge4_of_regs` and `walkFinalEnv_of_regs`, and the merge's `%nep` value is `WalkLoopEnd.nepBound`.  Each remaining supply names its producer: the scalar arm's premises are the byte's class and the tail's three calls (`scalarMerge_at`), the high-byte arm's is `HlastResidue`, and the log's arena word has **no producer** — the write-back block `if.else285.i` stores the decoder's output length while `WalkInv.log_alen` relates the slot to the carry only by `≤`, so the equality is false at an escaping input (`JsonStage2WalkArenaWord`) and the fix is a design change to what the post reports (`WalkMergeWords`' note). |
 
 Of these, `WalkHeadCells` is the one that was *vocabulary* rather than an
 input, and it is no longer a premise: the two clauses are `WalkInv` fields now, and

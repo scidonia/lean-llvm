@@ -281,6 +281,7 @@ theorem WalkLink.pureCore {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : Walk
         log_base := ?_
         log_dst := ?_
         owned := by dsimp only [s']; rw [hmem]; exact hInv.owned
+        root_slot := by dsimp only [s']; rw [hmem]; exact hInv.root_slot
         next_ge := by dsimp only [s']; rw [hnext₁]; exact hInv.next_ge
         frame := ?_
         inc_reg := by
@@ -385,6 +386,7 @@ theorem WalkLink.pureJumpCore {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : 
         log_base := ?_
         log_dst := ?_
         owned := by dsimp only [s']; rw [hmem]; exact hInv.owned
+        root_slot := by dsimp only [s']; rw [hmem]; exact hInv.root_slot
         next_ge := by dsimp only [s']; rw [hnext₁]; exact hInv.next_ge
         frame := ?_
         inc_reg := by
@@ -685,6 +687,7 @@ theorem WalkLink.pureJumpK11 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : W
         log_base := ?_
         log_dst := ?_
         owned := by dsimp only [s']; rw [hmem]; exact hInv.owned
+        root_slot := by dsimp only [s']; rw [hmem]; exact hInv.root_slot
         next_ge := by dsimp only [s']; rw [hnext₁]; exact hInv.next_ge
         frame := ?_
         inc_reg := by

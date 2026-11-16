@@ -1723,12 +1723,34 @@ theorem strPath9 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
       (next := (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).next)
       (m := r.next - G.next0) (r := r) (A := f.A.toNat) (ext := f.ext)
       (len := f.ext) hAle8 le_rfl hnext8 hm8c hfr4
+  -- the root slot is outside the crossed footprint, so its presence is the
+  -- head's: the frame re-reads it at the callee's memory
+  have hrootR : HasBytes r.mem (G.next0 + 8) 4 := by
+    obtain ⟨vs, hvs⟩ := hInv8.root_slot
+    refine ⟨vs, ?_⟩
+    rw [readBytes_frame hfr4 ?_]
+    · exact hvs
+    · intro i hi q hq
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at hq
+      rcases hq with rfl | rfl | rfl | rfl
+      · intro hcon; omega
+      · intro hcon; omega
+      · intro hcon
+        have hroom := G.arenaRoom
+        have hwm : G.dst + (G.ndst0 + G.n + stage2ArenaReserve) ≤ G.next0 :=
+          G.watermark (G.dst, G.ndst0 + G.n + stage2ArenaReserve)
+            (by simp [stage2Regions])
+        omega
+      · intro hcon
+        have hge := hInv.next_ge
+        simp only [stage2BootstrapExtent] at hge
+        omega
   obtain ⟨s9, hl9, hs9⟩ :=
     WalkLink.z_arena_reserve_exit (G := G) (C := strC₈ C f.ix f.ext)
       (s := strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s) hInv8 rfl
       (p := f.ix.toNat) (off := C.alen) (ext := f.ext) hpend8 (A := f.A)
       hz36 hpos hreadA8 har8 G.dstLt hreadAr8 harr hsub8 hc8 houtn8 hxp8 hxj8 hnxp8
-      f.hwin (r := r) hcallR hframeR hownedR hlogR hevR hstTyR hstStR
+      f.hwin (r := r) hcallR hframeR hownedR hrootR hlogR hevR hstTyR hstStR
   have hs9' : s9 = strS₉ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s := hs9
   subst hs9'
   have hl9' : WalkLink (stage2Calls stage2SubCalls) G (strC₈ C f.ix f.ext)

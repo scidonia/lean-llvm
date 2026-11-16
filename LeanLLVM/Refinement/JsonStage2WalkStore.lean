@@ -298,6 +298,7 @@ theorem WalkLink.store8Stack {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
         log_base := ?_
         log_dst := ?_
         owned := walkStaged_write rfl hInv.owned
+        root_slot := hasBytes_writeBytes hInv.root_slot
         next_ge := by dsimp only [s']; exact hInv.next_ge
         frame := ?_
         inc_reg := hInv.inc_reg
@@ -606,6 +607,7 @@ theorem WalkLink.hashStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
         log_base := ?_
         log_dst := ?_
         owned := walkStaged_write rfl hInv.owned
+        root_slot := hasBytes_writeBytes hInv.root_slot
         next_ge := by dsimp only [s']; exact hInv.next_ge
         frame := ?_
         inc_reg := by
@@ -971,6 +973,7 @@ theorem WalkLink.outReserveStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
         log_base := ?_
         log_dst := ?_
         owned := walkStaged_write rfl (walkStaged_write rfl hInv.owned)
+        root_slot := hasBytes_writeBytes (hasBytes_writeBytes hInv.root_slot)
         next_ge := by dsimp only [s']; exact hInv.next_ge
         frame := ?_
         inc_reg := by
@@ -1346,6 +1349,7 @@ theorem WalkLink.if_else285_i {calls : Calls} {m0 : Mem}
       log_base := ?_
       log_dst := ?_
       owned := walkStaged_write rfl hInv.owned
+      root_slot := hasBytes_writeBytes hInv.root_slot
       next_ge := by dsimp only [s']; exact hInv.next_ge
       frame := ?_
       inc_reg := by
@@ -1640,6 +1644,7 @@ theorem WalkLink.if_then330_i {calls : Calls} {m0 : Mem}
         log_base := ?_
         log_dst := ?_
         owned := walkStaged_write rfl hInv.owned
+        root_slot := hasBytes_writeBytes hInv.root_slot
         next_ge := by dsimp only [s']; exact hInv.next_ge
         frame := ?_
         inc_reg := by
@@ -1947,6 +1952,7 @@ theorem WalkLink.if_end207_i {calls : Calls} {m0 : Mem}
         log_base := ?_
         log_dst := ?_
         owned := walkStaged_write rfl hInv.owned
+        root_slot := hasBytes_writeBytes hInv.root_slot
         next_ge := by dsimp only [s']; exact hInv.next_ge
         frame := ?_
         inc_reg := by

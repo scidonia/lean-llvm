@@ -268,8 +268,8 @@ theorem HcontArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
         hkOp hk2 hnepv hadvance (le_of_lt hbelow) hspcap hspw hprice)
       (walkDispatch_at_continue_scalar C s hInv hblock hk f)
   | .closeBracketZero h8 hsp hv he hj hj64 =>
-    (fun ⟨Cd, sd, p, seg, hb, herr, hprice⟩ =>
-      WalkDispatchResult.refuse Cd sd p seg hb herr hprice)
+    (fun ⟨Cd, sd, p, hseg, herr, hprice⟩ =>
+      WalkDispatchResult.refuse Cd sd p hseg.seg hseg.block hseg.word herr hprice)
       (bracketRefuse_at G C s hInv hblock h8 hsp hv he hj hj64
         (WalkInv.head_lt hInv (by simpa only [walkLoopHead] using hblock)))
   | .supplied r => r

@@ -30,8 +30,9 @@ revolution apart:
   branch, `WalkTargetPost` at the state the dispatch reaches — the run, its verdict,
   the *memory it returns* and `stage2Boundary` there, proved by
   `JsonStage2WalkTargetPost`'s four routes from the words `WalkLoopEnd` supplies
-  (`WalkMergeWords`'s and `WalkRefuseWords`'s log and slot words — the registers and
-  `%4` are the carrier's) inside the finalisation allowance;
+  (`WalkMergeWords`'s and `WalkRefuseWords`'s log word — the registers, `%4`, the
+  root-done slot and the refusal's own store are the carrier's and the segment's)
+  inside the finalisation allowance;
 * **the finalisation allowance is arithmetic** (`walkExitFits`): `F ≤ 27` at the
   seed's three steps is `3 + F + 2 ≤ stage2FinalisationAllowance`, by the record's
   own constant;
@@ -1450,6 +1451,7 @@ theorem walkEntry_inv {mem : Mem} (G : WalkGeom mem) {C : WalkCarry G} {s : Stat
     (hlogBase : readBytes s'.mem C.stage.z 8 = some (wordBytes 8 G.ev))
     (hlogDst : readBytes s'.mem (C.stage.z + 40) 8 = some (wordBytes 8 G.dst))
     (hown : ∀ r ∈ walkStaged G C, HasBytes s'.mem r.1 r.2)
+    (hroot : HasBytes s'.mem (G.next0 + 8) 4)
     (hnextGE : G.next0 + stage2BootstrapExtent ≤ s'.next)
     (hframe : UnchangedOutside mem s'.mem (walkWideAt G C (s'.next - G.next0)))
     (hlocal : WalkLocal { C with block := "if.then492.i" } s') :
@@ -1495,6 +1497,7 @@ theorem walkEntry_inv {mem : Mem} (G : WalkGeom mem) {C : WalkCarry G} {s : Stat
   log_base := hlogBase
   log_dst := hlogDst
   owned := hown
+  root_slot := hroot
   next_ge := hnextGE
   frame := hframe
   blockLocal := hlocal
@@ -1639,6 +1642,7 @@ theorem walkInvSeat {m0 : Mem} (G : WalkGeom m0) (stage : WalkStage G) {s : Stat
     (hlogBase : readBytes s.mem stage.z 8 = some (wordBytes 8 G.ev))
     (hlogDst : readBytes s.mem (stage.z + 40) 8 = some (wordBytes 8 G.dst))
     (hown : ∀ r ∈ walkStaged G (walkCarryZero G stage), HasBytes s.mem r.1 r.2)
+    (hroot : HasBytes s.mem (G.next0 + 8) 4)
     (hnextGE : G.next0 + stage2BootstrapExtent ≤ s.next)
     (hframe : UnchangedOutside m0 s.mem
       (walkWideAt G (walkCarryZero G stage) (s.next - G.next0)))
@@ -1692,6 +1696,7 @@ theorem walkInvSeat {m0 : Mem} (G : WalkGeom m0) (stage : WalkStage G) {s : Stat
       log_base := hlogBase
       log_dst := hlogDst
       owned := hown
+      root_slot := hroot
       next_ge := hnextGE
       frame := hframe
       blockLocal := hlocal }
@@ -2022,6 +2027,7 @@ theorem walkEntry_inv_at {m0 : Mem} (G : WalkGeom m0) {C : WalkCarry G} {s : Sta
     (hsepEv : ∀ i, i < (C.events.map EventRecord.encodedBytes).flatten.length → ∀ q ∈ R,
       ¬ (q.1 ≤ G.ev + G.nev0 + i ∧ G.ev + G.nev0 + i < q.1 + q.2))
     (hown : ∀ r ∈ walkStaged G C, HasBytes s'.mem r.1 r.2)
+    (hroot : HasBytes s'.mem (G.next0 + 8) 4)
     (hnextGE : G.next0 + stage2BootstrapExtent ≤ s'.next)
     (hframe : UnchangedOutside m0 s'.mem (walkWideAt G C (s'.next - G.next0)))
     (hlocal : WalkLocal { C with block := "if.then492.i" } s') :
@@ -2038,7 +2044,7 @@ theorem walkEntry_inv_at {m0 : Mem} (G : WalkGeom m0) {C : WalkCarry G} {s : Sta
     rw [hmem, readBytes_frame hm hsepEv]
     exact hInv.evBytes
   refine walkEntry_inv (G := G) (C := C) (s := s) hInv hpc hk hsp hinc hidx hEv hTy hSt hptr
-    hreg hiter ?_ ?_ ?_ ?_ ?_ ?_ ?_ hown hnextGE hframe hlocal
+    hreg hiter ?_ ?_ ?_ ?_ ?_ ?_ ?_ hown hroot hnextGE hframe hlocal
   · rw [hmem, readBytes_frame hm hsepH]
     exact hInv.log_hash
   · rw [hmem, readBytes_frame hm hsepL]

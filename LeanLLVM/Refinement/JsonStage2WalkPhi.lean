@@ -1329,6 +1329,7 @@ theorem WalkLink.if_end372_i {calls : Calls} {m0 : Mem}
       log_base := ?_
       log_dst := ?_
       owned := walkStaged_write rfl hInv.owned
+      root_slot := hasBytes_writeBytes hInv.root_slot
       next_ge := by dsimp only [s', sFin, m', stateAt]; exact hInv.next_ge
       frame := ?_
       inc_reg := by
@@ -1558,6 +1559,7 @@ theorem WalkLink.if_then57_i {calls : Calls} {m0 : Mem}
       log_base := ?_
       log_dst := ?_
       owned := walkStaged_write rfl hInv.owned
+      root_slot := hasBytes_writeBytes hInv.root_slot
       next_ge := by dsimp only [s', sFin, m', stateAt]; exact hInv.next_ge
       frame := ?_
       inc_reg := by
@@ -1781,6 +1783,7 @@ theorem WalkLink.while_end78_i {calls : Calls} {m0 : Mem}
       log_base := ?_
       log_dst := ?_
       owned := walkStaged_write rfl hInv.owned
+      root_slot := hasBytes_writeBytes hInv.root_slot
       next_ge := by dsimp only [s', sFin, m', stateAt]; exact hInv.next_ge
       frame := ?_
       inc_reg := by

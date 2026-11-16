@@ -302,13 +302,13 @@ theorem LastEntryArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
         r.hreadT r.hpre₁ r.hcall₁ r.hret₁ r.hbit0T r.hzread
         r.hpre₂ r.hcall₂ r.hret₂ r.hev64 r.hpre₃ r.hcall₃)
   | .stringOpener h8 hinc hnep hge hv he =>
-    (fun ⟨Cd, sd, p, seg, hb, herr, hprice⟩ =>
-      WalkDispatchResult.refuse Cd sd p seg hb herr hprice)
+    (fun ⟨Cd, sd, p, hseg, herr, hprice⟩ =>
+      WalkDispatchResult.refuse Cd sd p hseg.seg hseg.block hseg.word herr hprice)
       (quoteRefuse_at G C s hInv hblock h8 hinc hnep hge hv he
         (WalkInv.head_lt hInv (by simpa only [walkLoopHead] using hblock)))
   | .closingZero h8 hsp hv he hj hj64 =>
-    (fun ⟨Cd, sd, p, seg, hb, herr, hprice⟩ =>
-      WalkDispatchResult.refuse Cd sd p seg hb herr hprice)
+    (fun ⟨Cd, sd, p, hseg, herr, hprice⟩ =>
+      WalkDispatchResult.refuse Cd sd p hseg.seg hseg.block hseg.word herr hprice)
       (bracketRefuse_at G C s hInv hblock h8 hsp hv he hj hj64
         (WalkInv.head_lt hInv (by simpa only [walkLoopHead] using hblock)))
   | .supplied r => r
