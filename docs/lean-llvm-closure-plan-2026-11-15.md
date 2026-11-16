@@ -18,38 +18,49 @@ Nothing below inflates the first into the second, and the second does not includ
 third. When this document says "closed" it means the first.
 
 
-## Session state at `77e68f9` (read this first after a context break)
+## Session state at `5456e63` (read this first after a context break)
 
-**Green:** default target 1943 jobs, `LAKE_EXIT=0`, no `sorryAx`, no `bv_decide`.
+**Green:** default target 1981 jobs, `LAKE_EXIT=0`, no `sorryAx`, no `bv_decide`.
 Everything below is committed and pushed; `HEAD` = `origin/main`.
 
-**The obligation's premises now:** `stage2WalkObligation_of_staging` takes `hcont` and
-`hend` only.  The string residue is **empty** (zero fields); `hres` is gone from the top
-level entirely, folded into the continuing arm's `.twoEntry` constructor.  `hend`'s
-supplied list is `hlast`, `mergeWords`, `refuseWords` — and of those, only three facts
-remain genuinely the input's: the log's arena word (false at an escaping input; a
-boundary design decision, not a proof), and nothing else — the root-done and refusal
-words are retired.
+**The dispatch census is exhaustive in the proved sense.**  `LastEntryArm` 14
+constructors, `HcontArm` 15, and **neither has a `supplied` constructor**: every class of
+the byte alphabet has a counted segment, a price, a staged document that dispatches through
+the real arm, and a control.  The provenance: scalar and high-byte were already proved;
+this session added string opener, closing-at-zero, comma and colon at zero, container
+openers, comma and colon above zero, close-with-open, letters, `f`, class C, and the run at
+both levels.  Two classes turned out never to have been owed at all (the high-byte route,
+already carried by `ws`/`cleanup`) — stale prose, not a gap.
 
-**The dispatch census:** `LastEntryArm` 8 constructors, `HcontArm` 9.  Proved segments:
-scalar, high-byte (126/127), string opener, closing-at-zero, comma-at-zero,
-colon-at-zero, container opener.  Regressions live in three `…Domain` modules, each at
-staged documents, each with a negative control.  `.supplied` retains **one class per
-level: the letters route**, whose segment is the scan's induction.
+**The obligation still takes two bundles, and they are not yet theorems.**
+`stage2WalkObligation_of_staging` takes `hcont : WalkContinueFacts` and
+`hend : WalkLoopEnd`.  Phase D was expected to derive them by composition; it found they
+cannot be derived at this layer, with the measurement recorded in
+`JsonStage2WalkTerminalPrice`'s docstring §2: of the twenty-nine arm members, **two** have
+bundle producers (`.ws`, `.highByte`).  The class bits, segments and registers demote
+generically, but the remaining rows need per-document data the invariant does not fix — the
+next lane's word, the byte before the entry's end, the root and log words' values, the depth
+split — plus the callee preconditions at each tail's argument list and the traversal's
+round/guard/byte facts.
 
-**What is left, in order:** (1) the depth-positive refusal arms — comma and colon above
-depth zero, close-with-open — in flight, against `containerOpen_depth_one`; (2) the
-letters route's scan induction; (3) phase D, the obligation composed from the ABI.
+**So the remaining work is a producer tier, not a composition**, and the enumeration classifies
+each residual row **D** (a function of the class byte, `WalkInv`'s registers and the geometry —
+with the definition to unfold) or **F** (genuinely free document/state data).  The conclusion it
+supports: not one general class-demotion lemma per level — the F rows need per-class producers,
+and the callee/traversal rows need the tier first.
 
-**Two things not to re-derive:** `JsonStage2WalkArenaWord` proves the merge's log word
-equal to the carry's cursor is *false* at an escaping input, so its producer is a
-boundary change (report it, do not weaken it); and the event-count clause is block-keyed
-(`walkEmitC`) because the append re-establishes it at an unchanged index.
+**Three boundary facts, stated rather than proved, each with its witness:**
+`WalkLoopEnd`'s log arena word is *false* at an escaping input (`JsonStage2WalkArenaWord`; a
+reported-cursor decision, not a proof); `RunLastFacts.hbudget` is the terminal run's entry-only
+price, and `JsonStage2WalkTerminalPrice` exhibits computed documents outside it and inside the
+credit the potential pays; and the event-count clause is block-keyed (`walkEmitC`) because the
+append re-establishes it at an unchanged index.
 
-**The two process rules that made the last ten rounds safe:** one compilation at a time
-under `probes/install/lake-locked.sh` plus a `pgrep` check (the `/tmp` token does not
-survive a forked shell), and no two workers whose cones share a module — `PremisesOfStaging`
-imports every bundle, so that is most pairs.
+**The two process rules that made these rounds safe:** one compilation at a time under
+`probes/install/lake-locked.sh` plus a `pgrep` check, and no two workers whose cones share a
+module — `PremisesOfStaging` imports every bundle, so that is most pairs.  Use `edit`, and
+`edit` with `replace_all: true` for bulk renames: five rounds reached for `sed`/`python3` on
+exactly those and each recorded it as a deviation.
 
 ## The order, with each item's statement and its acceptance
 
