@@ -64,14 +64,17 @@ supplies, and `.dispatch` turns it into the actual `WalkDispatchResult`:
 * `.containerOpen` — `[` and `{` on the continuing head: both enter `if.then.i`, and the
   four head links beside the tail's five reach the merge — nine links
   (`containerOpenMerge_at`).  The documents `[0]` and `{"a":1}` take it.
-* `.supplied` — the arms whose segments are the remaining obligation: the closing
-  delimiters with a container open, and the default arm's letter and high-byte routes.
-  What blocks each is stated at `LastEntryArm.supplied` (`JsonStage2WalkDispatchArms`)
-  and is the same at this level: the letter route owes a composition through `let`-bound
-  target states and the scan, and the `C.sp ≠ 0` closing route owes a reachable
-  depth-one state, which the opener now produces (`containerOpen_depth_one`) but which
-  that route has yet to be stated at.  The field is that arm's own counted segment to
-  the endpoint it reaches, with the endpoint's facts — not a bundle about another class.
+* `.closeWithOpen` — `]` and `}` with a container open, at the continuing head: both enter
+  `if.then53.i`, and the nesting check's two stack bytes select the merge or a refusal —
+  `closeWithOpen_at`'s four sub-routes.  The continuing guard is the loop's, not the arm's:
+  the merge keeps the depth and advances the index by one, so the entry after the
+  delimiter is the next iteration's.
+* `.supplied` — the arm whose segment is the remaining obligation: the default arm's
+  letter and high-byte routes.  What blocks each is stated at `LastEntryArm.supplied`
+  (`JsonStage2WalkDispatchArms`) and is the same at this level: the letter route owes a
+  composition through `let`-bound target states and the scan.  The field is that arm's
+  own counted segment to the endpoint it reaches, with the endpoint's facts — not a
+  bundle about another class.
 
 Each constructor carries only its own arm's premises, and the price is the dispatch's own
 (`WalkDispatchResult`'s), so no class's byte restriction is a premise of another's.
@@ -305,11 +308,28 @@ inductive HcontArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
         [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
          .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r)
       (hret : r.ret = .int 32 (BitVec.ofNat 32 1)) : HcontArm calls G C s
-  /-- The arms whose segment is the remaining obligation: the closing delimiters and the
-  default arm's letter and high-byte routes.  The letters' segment is the token scan's
-  induction (`walkScanToMerge`), which is what retires it.  The field is that arm's own
-  result — the endpoint it reaches with the count and the price — and no other arm's
-  class is a premise of it. -/
+  /-- **The closing delimiter with a container open**, at the continuing head: `]` and `}`
+  at a positive depth, the nesting check's two stack bytes selecting the merge or a
+  refusal — `closeWithOpen_at`'s four sub-routes.  The merge keeps the depth and advances
+  the index by one; the refusals store the entry's position at `%e + 8`. -/
+  | closeWithOpen {v : BitVec 8}
+      (h8 : evalOperand s (.reg "%8") = some (.int 8 v))
+      (hv : v = BitVec.ofNat 8 93 ∨ v = BitVec.ofNat 8 125)
+      (hsp : C.sp ≠ 0)
+      {b1 b2 : UInt8} (hmark : C.tyMap (C.sp - 1) = b1)
+      (hstate : C.stMap (C.sp - 1) = b2)
+      (hpreA : s2AfterValuePre
+        [.int 32 (BitVec.ofNat 32 C.sp + BitVec.ofNat 32 4294967295), .ptr (G.next0 + 8),
+         .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
+      {j : Nat}
+      (hvj : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
+      (he : lookupName s.env "%e" = some (.ptr C.stage.e))
+      (hj : j ≤ G.n) (hj64 : j < 2 ^ 64) : HcontArm calls G C s
+  /-- The arm whose segment is the remaining obligation: the default arm's letter and
+  high-byte routes.  The letters' segment is the token scan's induction
+  (`walkScanToMerge`), which is what retires it.  The field is that arm's own result —
+  the endpoint it reaches with the count and the price — and no other arm's class is a
+  premise of it. -/
   | supplied (r : WalkDispatchResult calls G C s) : HcontArm calls G C s
 
 /-- **The dispatch, from the arm.**  Each proved arm runs its own theorem; the standalone
@@ -373,6 +393,8 @@ theorem HcontArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     · exact colonMarkerRefuse_at G C s hInv hblock h8 hsp hmark (bitZeroOfNeOne hb1)
   | .containerOpen h8 hopen hsp519 hrd hpreV r hcall hret =>
     containerOpenMerge_at G C s hInv hblock h8 hopen hsp519 hrd hpreV r hcall hret
+  | .closeWithOpen h8 hv hsp hmark hstate hpreA hvj he hj hj64 =>
+    closeWithOpen_at G C s hInv hblock h8 hv hsp hmark hstate hpreA hvj he hj hj64
   | .supplied r => r
 
 /-! ### The instrument -/

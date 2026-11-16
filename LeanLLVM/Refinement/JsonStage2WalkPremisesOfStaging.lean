@@ -45,7 +45,7 @@ Two groups are premises, and each is a bundle rather than a field per fact:
 
 | premise | what it is | why it is not derived |
 |---|---|---|
-| `WalkContinueFacts` | the **class** of the continuing entry at every head state with an entry left (`HcontArm`: `ws` = `HcontFacts`, `cleanup` = `HcontCleanupFacts`, `twoEntry` = `HstringFacts` beside its residue, `scalar` = `HcontScalarFacts`, `closeBracketZero`/`commaZero`/`colonZero` = the depth-zero refusals' own cells, `containerOpen` = the openers' nine-link merge, and the `supplied` arms) | each class's bundle is a fact about the token (`walkRevolutionMergeSegWs`'s own for `ws`, `walkRevolutionMergeSeg`'s for `cleanup`, `walkRevolutionMergeSegScalar`'s for `scalar`), and the class is the head switch's arm and the tag test; the census over those (`HcontClass.complete`) is exhaustive by theorem, so the split is a value and the question is asked once |
+| `WalkContinueFacts` | the **class** of the continuing entry at every head state with an entry left (`HcontArm`: `ws` = `HcontFacts`, `cleanup` = `HcontCleanupFacts`, `twoEntry` = `HstringFacts` beside its residue, `scalar` = `HcontScalarFacts`, `closeBracketZero`/`commaZero`/`colonZero` = the depth-zero refusals' own cells, `containerOpen` = the openers' nine-link merge, `closeWithOpen` = the closing delimiters' nesting check, and the `supplied` arms) | each class's bundle is a fact about the token (`walkRevolutionMergeSegWs`'s own for `ws`, `walkRevolutionMergeSeg`'s for `cleanup`, `walkRevolutionMergeSegScalar`'s for `scalar`), and the class is the head switch's arm and the tag test; the census over those (`HcontClass.complete`) is exhaustive by theorem, so the split is a value and the question is asked once |
 | `WalkLoopEnd` | the last entry's **arm** (one constructor per head-switch arm class) and the two terminal blocks' *log words* | the arm is supplied at the last-entry head states (`LastEntryArm`) and the log's arena word at the states the dispatch reaches (`WalkMergeWords`, `WalkRefuseWords`).  The rest of what the runs read is derived and deleted from the bundles: the seven finalisation registers and `%4` are `walkStaticRegs` entries (`walkFinalEnv_of_regs`, `walkMerge4_of_regs`), the merge's `%nep` value is `WalkLoopEnd.nepBound`, the root-done word is `WalkInv.root_slot` read as four bytes (`walkRootWord_of_hasBytes`), and the copy's `%off` word is the refusal segment's own store (`WalkRefuseSegment`), carried by the dispatch's `refuse` arm.  The *dispatch* is proved from the arm (`WalkLoopEnd.dispatch`), and the *runs* are proved, not supplied: `WalkLoopEnd.merge`/`.refuse` compose them from `JsonStage2WalkTargetPost`'s four routes |
 
 The two-entry token's residue is now an **arm field** rather than a third premise:
@@ -135,9 +135,10 @@ premise of another's:
   `HstringResidue`, whose merge index is `C.k + 2`;
 * the **container openers**, `HcontArm.containerOpen`: `[` and `{` through `if.then.i`,
   nine links to the merge (`containerOpenMerge_at`), priced at `9 + 2`;
-* the arms whose segments are the remaining obligation, `HcontArm.supplied`: the comma, the
-  colon, the closing delimiters and the default arm's letter and high-byte routes, each
-  carrying its own counted segment and endpoint.
+* the **closing delimiter with a container open**, `HcontArm.closeWithOpen`: `]` and `}`
+  through `if.then53.i`, the nesting check's four sub-routes (`closeWithOpen_at`);
+* the arms whose segments are the remaining obligation, `HcontArm.supplied`: the default
+  arm's letter and high-byte routes, each carrying its own counted segment and endpoint.
 
 The case is a value and not a second conjoined premise.  Two premises would be jointly
 uninhabited at exactly the input the walk handles: at `C.k = 0`, `G.nep = 2` the head's

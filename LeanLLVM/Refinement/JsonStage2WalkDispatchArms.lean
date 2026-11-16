@@ -57,15 +57,21 @@ turns it into the actual `WalkDispatchResult`:
   (`containerOpenMerge_at`, nine links).  The head's target states are the operands'
   literals, the tail's are `openS₅`…`openS₉`, and the block's own `let`-bound states are
   named by the three `step` theorems, so the composition is a chain of named states.
-* `.supplied` — the arms whose segments are the remaining obligation, in the order the
-  closure handoff names them:
-  * **the closing delimiter with an open container** — the same depth-one state to be
-    stated at, plus `stateStackRefuse_at`'s state-stack byte for its refusal sub-route.
-  * **the default arm's letter routes** (the tag test's clear arm: `if.else387.i → NodeBlock62 →
-    LeafBlock54 → if.then413.i`).  Reachable at the seed (byte `a`), and the pieces exist —
-    `walkHeadChainASeg`'s six links, the whitespace check, `consumer_tail_seg` — but the
-    token's own scan (`walkScanToMerge`) sits between them, so the segment is the scan's
-    induction rather than a handful of links.
+* `.closeWithOpen` — `]` and `}` with a container open: both enter `if.then53.i`, and at a
+  positive depth the nesting check compares the type stack's byte with the byte's own
+  marker.  Agreement reads the state stack's byte at the same index: `]` merges at `0`
+  and `1` (eleven links, `closeBracketMerge_at`), `}` at `0` and `3` (thirteen links,
+  `closeBraceMerge_at`); a marker disagreement is `mismatchedRefuse_at`'s refusal (seven
+  links, `closeMarkerBracket_at` / `closeMarkerBrace_at`), and a state byte outside the
+  merge's set is the state stack's refusal (nine and eleven links,
+  `closeStateBracket_at` / `closeStateBrace_at`).  `closeWithOpen_at` is the four
+  sub-routes under the region's depth and byte premises.
+* `.supplied` — the arm whose segment is the remaining obligation: the default arm's letter
+  routes (the tag test's clear arm: `if.else387.i → NodeBlock62 → LeafBlock54 →
+  if.then413.i`).  Reachable at the seed (byte `a`), and the pieces exist —
+  `walkHeadChainASeg`'s six links, the whitespace check, `consumer_tail_seg` — but the
+  token's own scan (`walkScanToMerge`) sits between them, so the segment is the scan's
+  induction rather than a handful of links.
 
   The field is that arm's own counted segment to the endpoint it reaches, with the
   endpoint's facts — *not* a bundle about the last entry, and no class premise on any
@@ -87,6 +93,8 @@ import LeanLLVM.Refinement.JsonStage2WalkDispatchOpeners
 import LeanLLVM.Refinement.JsonStage2WalkDispatchThreeOfRun
 import LeanLLVM.Refinement.JsonStage2WalkDispatchCommaArms
 import LeanLLVM.Refinement.JsonStage2WalkDispatchColonArms
+import LeanLLVM.Refinement.JsonStage2WalkDispatchBase
+import LeanLLVM.Refinement.JsonStage2WalkDispatchClosers
 
 set_option autoImplicit false
 
@@ -98,15 +106,6 @@ open LeanLLVM.Refinement.JsonStage2IR
 namespace WalkScope
 
 /-! ### The head switch's census -/
-
-/-- A one-bit value that is not `1` is `0`. -/
-theorem bitZeroOfNeOne {b : BitVec 1} (h : ¬ b = 1) : b = 0 := by
-  have h2 : b.toNat < 2 := b.isLt
-  have h1 : b.toNat ≠ 1 := by
-    intro hh
-    exact h (BitVec.eq_of_toNat_eq (by rw [hh]; rfl))
-  have h0 : b.toNat = 0 := by omega
-  exact BitVec.eq_of_toNat_eq (by rw [h0]; rfl)
 
 /-- **A marker byte whose brace bit is set is the brace's own marker.**  The brace bit
 is the equality test on the byte, so a set bit is `b1 = 1` and the type-stack read is the
@@ -229,17 +228,6 @@ theorem HeadArm.complete (x : BitVec 8) : HeadArm x := by
         · exact .defaultValueHigh h91' h123' h125' (bitZeroOfNeOne h125e)
 
 /-! ### The dispatch's evidence, by arm -/
-
-/-- **A refusal is the dispatch's `refuse` alternative.**  A counted run from the head to
-the refusal copy, with the word the copy loads and a price inside the remaining credit,
-*is* that alternative: the segment, its endpoint's block and word, and the endpoint's
-offset bound are the fields, field for field.  So an arm whose run is a refusal builds
-its result from the witness without restating any of it. -/
-theorem WalkDispatchResult.ofRefuseAt {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
-    {C : WalkCarry G} {s : State} (h : WalkRefuseAt calls G C s) :
-    WalkDispatchResult calls G C s := by
-  obtain ⟨Cd, sd, p, hseg, herr, hprice⟩ := h
-  exact WalkDispatchResult.refuse Cd sd p hseg.seg hseg.block hseg.word herr hprice
 
 /-- **The last entry's terminal dispatch, as the arm it took.**  One constructor per arm
 class the layer proves or preserves; `.dispatch` is the function into
@@ -382,11 +370,28 @@ inductive LastEntryArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
         [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
          .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r)
       (hret : r.ret = .int 32 (BitVec.ofNat 32 1)) : LastEntryArm calls G C s
-  /-- **The arms whose segment is the remaining obligation**: the closing delimiter with
-  an open container, and the default arm's letter routes.  The letters' segment is the
-  token scan's induction (`walkScanToMerge`), which is what retires it.  The field is that
-  arm's own result — the endpoint it reaches with the count and the price — and no other
-  arm's class is a premise of it. -/
+  /-- **The closing delimiter with a container open**: `]` and `}` at a positive depth.
+  Both bytes enter `if.then53.i`, and the nesting check's two stack bytes select the
+  merge or a refusal — `closeWithOpen_at`'s four sub-routes.  The depth's index is the
+  carry's, the marker and the state byte are the stacks' at it, and the offset store's
+  three cells are the refusal sub-routes' own. -/
+  | closeWithOpen {v : BitVec 8}
+      (h8 : evalOperand s (.reg "%8") = some (.int 8 v))
+      (hv : v = BitVec.ofNat 8 93 ∨ v = BitVec.ofNat 8 125)
+      (hsp : C.sp ≠ 0)
+      {b1 b2 : UInt8} (hmark : C.tyMap (C.sp - 1) = b1)
+      (hstate : C.stMap (C.sp - 1) = b2)
+      (hpreA : s2AfterValuePre
+        [.int 32 (BitVec.ofNat 32 C.sp + BitVec.ofNat 32 4294967295), .ptr (G.next0 + 8),
+         .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
+      {j : Nat}
+      (hvj : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
+      (he : lookupName s.env "%e" = some (.ptr C.stage.e))
+      (hj : j ≤ G.n) (hj64 : j < 2 ^ 64) : LastEntryArm calls G C s
+  /-- **The arm whose segment is the remaining obligation**: the default arm's letter
+  routes.  The letters' segment is the token scan's induction (`walkScanToMerge`), which
+  is what retires it.  The field is that arm's own result — the endpoint it reaches with
+  the count and the price — and no other arm's class is a premise of it. -/
   | supplied (r : WalkDispatchResult (stage2Calls stage2SubCalls) G C s) :
       LastEntryArm calls G C s
 
@@ -448,6 +453,8 @@ theorem LastEntryArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     · exact colonMarkerRefuse_at G C s hInv hblock h8 hsp hmark (bitZeroOfNeOne hb1)
   | .containerOpen h8 hopen hsp519 hrd hpreV r hcall hret =>
     containerOpenMerge_at G C s hInv hblock h8 hopen hsp519 hrd hpreV r hcall hret
+  | .closeWithOpen h8 hv hsp hmark hstate hpreA hvj he hj hj64 =>
+    closeWithOpen_at G C s hInv hblock h8 hv hsp hmark hstate hpreA hvj he hj hj64
   | .supplied r => r
 
 /-! ### The instrument -/

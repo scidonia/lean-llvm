@@ -128,6 +128,8 @@ import LeanLLVM.Refinement.JsonStage2WalkDispatchDepthStores
 import LeanLLVM.Refinement.JsonStage2WalkDispatchPair
 import LeanLLVM.Refinement.JsonStage2WalkDispatchCommaArms
 import LeanLLVM.Refinement.JsonStage2WalkDispatchColonArms
+import LeanLLVM.Refinement.JsonStage2WalkDispatchBase
+import LeanLLVM.Refinement.JsonStage2WalkDispatchClosers
 import LeanLLVM.Refinement.JsonStage2WalkDispatchArms
 import LeanLLVM.Refinement.JsonStage2WalkDispatchArmsDomain
 import LeanLLVM.Refinement.JsonStage2WalkDispatchOpenersDomain
@@ -136,3 +138,4 @@ import LeanLLVM.Refinement.JsonStage2WalkHcontDomain
 import LeanLLVM.Refinement.JsonStage2WalkHcontScalar
 import LeanLLVM.Refinement.JsonStage2WalkDispatchHcontArms
 import LeanLLVM.Refinement.JsonStage2WalkDispatchAboveZeroDomain
+import LeanLLVM.Refinement.JsonStage2WalkDispatchClosersDomain
