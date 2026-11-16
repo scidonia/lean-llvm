@@ -393,6 +393,8 @@ theorem WalkLink.callQuiet {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : S
       log_cap := ?_
       log_alen := ?_
       log_acap := ?_
+      log_base := ?_
+      log_dst := ?_
       owned := howned
       next_ge := by dsimp only [s'']; exact hnext
       frame := by dsimp only [s'']; exact hframe
@@ -437,6 +439,13 @@ theorem WalkLink.callQuiet {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : S
   · dsimp only [s'']
     rw [hlog 56 8 (by decide)]
     exact hInv.log_acap
+  · dsimp only [s'']
+    show readBytes s''.mem (C.stage.z + 0) 8 = some (wordBytes 8 G.ev)
+    rw [hlog 0 8 (by decide)]
+    exact hInv.log_base
+  · dsimp only [s'']
+    rw [hlog 40 8 (by decide)]
+    exact hInv.log_dst
 
 /-- **A call's link, `condbr` shape**: the branch is on a bit the run bound (the
 callee's answer, usually) or on a carried register. -/
@@ -513,6 +522,8 @@ theorem WalkLink.callQuietBr {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
       log_cap := ?_
       log_alen := ?_
       log_acap := ?_
+      log_base := ?_
+      log_dst := ?_
       owned := howned
       next_ge := by dsimp only [s'']; exact hnext
       frame := by dsimp only [s'']; exact hframe
@@ -557,6 +568,13 @@ theorem WalkLink.callQuietBr {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
   · dsimp only [s'']
     rw [hlog 56 8 (by decide)]
     exact hInv.log_acap
+  · dsimp only [s'']
+    show readBytes s''.mem (C.stage.z + 0) 8 = some (wordBytes 8 G.ev)
+    rw [hlog 0 8 (by decide)]
+    exact hInv.log_base
+  · dsimp only [s'']
+    rw [hlog 40 8 (by decide)]
+    exact hInv.log_dst
   · dsimp only [s'']
     by_cases ht : bit = 1
     · rw [ite_eq_left ht]; exact hl
@@ -645,6 +663,8 @@ theorem WalkLink.callQuietBrPending {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
       log_cap := ?_
       log_alen := ?_
       log_acap := ?_
+      log_base := ?_
+      log_dst := ?_
       owned := howned
       next_ge := by dsimp only [s'']; exact hnext
       frame := by dsimp only [s'']; exact hframe
@@ -701,6 +721,13 @@ theorem WalkLink.callQuietBrPending {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
   · dsimp only [s'']
     rw [hlog 56 8 (by decide)]
     exact hInv.log_acap
+  · dsimp only [s'']
+    show readBytes s''.mem (C.stage.z + 0) 8 = some (wordBytes 8 G.ev)
+    rw [hlog 0 8 (by decide)]
+    exact hInv.log_base
+  · dsimp only [s'']
+    rw [hlog 40 8 (by decide)]
+    exact hInv.log_dst
   · dsimp only [s'']
     by_cases ht : bit = 1
     · rw [ite_eq_left ht]; exact hl
@@ -1122,6 +1149,14 @@ theorem walkReadBytes_log_of_write {m : Mem} {z a w off w' : Nat} {bs : List UIn
   rcases hsep with h | h
   · right; omega
   · left; omega
+
+/-- **A write outside the log leaves its base word alone.**  `walkReadBytes_log_of_write` at
+offset zero, where the clause's address is `%z` itself rather than `%z + off`. -/
+theorem walkReadBytes_log_base_of_write {m : Mem} {z a w : Nat} {bs : List UInt8}
+    (hlen : bs.length ≤ w) (hsep : a + w ≤ z ∨ z + stage2LogExtent ≤ a) :
+    readBytes (writeBytes m a bs) z 8 = readBytes m z 8 := by
+  simpa using walkReadBytes_log_of_write (m := m) (z := z) (a := a) (w := w) (off := 0)
+    (w' := 8) (bs := bs) hlen hsep (by decide)
 
 /-- A write separated from the event stream leaves a read of its written prefix
 alone. -/
@@ -2205,6 +2240,8 @@ theorem WalkLink.z_arena_reserve_exit {m0 : Mem} (G : WalkGeom m0) (C : WalkCarr
       log_cap := ?_
       log_alen := ?_
       log_acap := ?_
+      log_base := ?_
+      log_dst := ?_
       owned := howned
       next_ge := by
         dsimp only [s', s₁, stateAt]
@@ -2295,6 +2332,13 @@ theorem WalkLink.z_arena_reserve_exit {m0 : Mem} (G : WalkGeom m0) (C : WalkCarr
   · dsimp only [s', s₁, stateAt]
     rw [hlog 56 8 (by decide)]
     exact hInv.log_acap
+  · dsimp only [s', s₁, stateAt]
+    show readBytes r.mem (C.stage.z + 0) 8 = some (wordBytes 8 G.ev)
+    rw [hlog 0 8 (by decide)]
+    exact hInv.log_base
+  · dsimp only [s', s₁, stateAt]
+    rw [hlog 40 8 (by decide)]
+    exact hInv.log_dst
 
 /-! ## The event record's emission
 
@@ -2696,6 +2740,8 @@ theorem WalkLink.if_then328_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
       log_cap := ?_
       log_alen := ?_
       log_acap := ?_
+      log_base := ?_
+      log_dst := ?_
       owned := ?_
       next_ge := by
         dsimp only [s', s₁, envF, walkSetMem, stateAt]
@@ -2798,6 +2844,23 @@ theorem WalkLink.if_then328_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
       (a := G.ev + C.evlen) (w := recBytes.length) (off := 56) (w' := 8)
       (bs := recBytes) (by rw [hrecLen]) hsepRec (by decide)]
     exact hInv.log_acap
+  · dsimp only [s', s₁, envF, walkSetMem, stateAt]
+    rw [hmemEq]
+    rw [walkReadBytes_log_base_of_log_write (z := C.stage.z) (off := 8)
+      (v := wordBytes 8 (C.evlen + 13)) (by left; omega)]
+    rw [walkReadBytes_log_base_of_write (z := C.stage.z) (a := G.ev + C.evlen)
+      (w := recBytes.length) (bs := recBytes) (by rw [hrecLen]) hsepRec]
+    exact hInv.log_base
+  · dsimp only [s', s₁, envF, walkSetMem, stateAt]
+    rw [hmemEq]
+    rw [walkReadBytes_log_of_log_write (m := writeBytes s.mem (G.ev + C.evlen) recBytes)
+      (z := C.stage.z) (off := 8) (off' := 40) (N := 8)
+      (v := wordBytes 8 (C.evlen + 13))
+      (by right; simp only [wordBytes, natToBytes_length]; omega)]
+    rw [walkReadBytes_log_of_write (m := s.mem) (z := C.stage.z)
+      (a := G.ev + C.evlen) (w := recBytes.length) (off := 40) (w' := 8)
+      (bs := recBytes) (by rw [hrecLen]) hsepRec (by decide)]
+    exact hInv.log_dst
   · dsimp only [s', s₁, envF, walkSetMem, stateAt]
     exact walkStaged_write (m' := m4) (m := m3) (a := C.stage.z + 8)
       (bs := wordBytes 8 (C.evlen + 13)) rfl

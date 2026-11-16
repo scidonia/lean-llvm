@@ -26,12 +26,15 @@ composes with the block equalities the rest of the tree proves.  `runFuel` forms
 fuel unit per step, which is the shape a prefix is composed in.
 
 The state's *memory* at `NodeBlock21` is `walkEntryMem`: the entry run's named
-folds plus the header's cursor word.  Its five log clauses are proved at it
-(`walkEntryMem_hash`, `_len`, `_cap`, `_alen`, `_acap`), read through the folds
+folds plus the header's cursor word.  Its seven log clauses are proved at it
+(`walkEntryMem_hash`, `_len`, `_cap`, `_alen`, `_acap`, `_base`, `_dst`), read
+through the folds
 by their extents.  The environment's clauses are `walkSeedFinalEnv`: the two
 `phi` values (zero, zero), `WalkPtrs`' six addresses and `WalkRegs`'
-twenty-nine, all lookups the run's own cells answer (`%nep`, `%c.i`, `%z`, `%xp`
-and `%nxp` are the entry's arguments, carried in the base environment).  The three rows that
+thirty-six, all lookups the run's own cells answer (`%nep`, `%c.i`, `%z`, `%xp`
+and `%nxp` are the entry's arguments, carried in the base environment, and `%s`,
+`%ndst`, `%nev` and `%err` are the caller's record and base pointers, which no
+layer rebinds).  The three rows that
 complete `WalkSeedState` are landed here, each with its own proof:
 
 * the frame — `walkEntryMem_frame`: every extent the run writes
@@ -523,6 +526,44 @@ theorem walkSeg2PostMem_hash {m : Mem}
        omega)
 
 
+/-- **The log's arena-base word survives the second segment.**  The initialisation
+stores the staging's `%dst` at `z + 40`, and the later stores of the run begin at
+`z + 48`. -/
+theorem walkSeg2PostMem_dst {m : Mem}
+    {sAddr b ep zAddr nep xp nxp dst v1 dstcap ev v2 evcap : Nat} {n nb : BitVec 64} :
+    readBytes (walkSeg2PostMem sAddr zAddr nep xp nxp dst v1 dstcap ev v2 evcap
+        (walkSeg2InitMem sAddr b ep n nb m)) (zAddr + woff 40) 8 = some (wordBytes 8 dst) := by
+  refine walkSeg2PostMem_read_at (pre := [(sAddr + woff 56, wordBytes 8 nep),
+      (sAddr + woff 72, natToBytes xp 8), (sAddr + woff 80, wordBytes 8 nxp),
+      (zAddr + woff 24, List.replicate (BitVec.ofNat 64 16).toNat 0)])
+    (post := walkSeg2Ws2 zAddr v1 dstcap ev ++ walkSeg2Ws3 zAddr v2 evcap)
+    (a := zAddr + woff 40) (bs := natToBytes dst 8) ?_ (by simp [natToBytes]) ?_
+  · simp [walkSeg2Stores, walkSeg2Ws1]
+  · intro st hst
+    simp only [List.mem_append, walkSeg2Ws2, walkSeg2Ws3, List.mem_cons, List.not_mem_nil,
+      or_false] at hst
+    rcases hst with (rfl | rfl | rfl) | (rfl | rfl)
+    all_goals
+      (simp only [natToBytes_length, wordBytes, woff_8, woff_16, woff_40, woff_48, woff_56]
+       omega)
+
+/-- **The log's base word survives the second segment.**  The staging's `%ev` is
+stored at `z` last, and the stores that follow it begin at `z + 8`. -/
+theorem walkSeg2PostMem_base {m : Mem}
+    {sAddr b ep zAddr nep xp nxp dst v1 dstcap ev v2 evcap : Nat} {n nb : BitVec 64} :
+    readBytes (walkSeg2PostMem sAddr zAddr nep xp nxp dst v1 dstcap ev v2 evcap
+        (walkSeg2InitMem sAddr b ep n nb m)) zAddr 8 = some (wordBytes 8 ev) := by
+  refine walkSeg2PostMem_read_at (pre := walkSeg2Ws1 sAddr zAddr nep xp nxp dst ++
+      [(zAddr + woff 48, wordBytes 8 v1), (zAddr + woff 56, wordBytes 8 dstcap)])
+    (post := walkSeg2Ws3 zAddr v2 evcap) (a := zAddr) (bs := natToBytes ev 8)
+    ?_ (by simp [natToBytes]) ?_
+  · simp [walkSeg2Stores, walkSeg2Ws2, List.append_assoc]
+  · intro st hst
+    simp only [walkSeg2Ws3, List.mem_cons, List.not_mem_nil, or_false] at hst
+    rcases hst with rfl | rfl
+    all_goals
+      (simp only [natToBytes_length, wordBytes, woff_8, woff_16] ; omega)
+
 /-- **The seed's memory clauses, read at the entry run's own fold.** -/
 theorem walkEntryMem_len {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) :
     readBytes (walkEntryMem G S) (S.z + 8) 8 = some (wordBytes 8 G.nev0) := by
@@ -558,6 +599,22 @@ theorem walkEntryMem_hash {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) :
   rw [show S.z + 32 = S.z + woff 32 from by rw [woff_32]]
   rw [walkEntryMem_read_out G S (a := S.z + woff 32) (len := 4) (by omega) (by omega)]
   exact walkSeg2PostMem_hash
+
+/-- **The log's base word at the seed's memory**: the initialisation's `%z ← %ev`
+store, `walkSeg2PostMem_base` at the run's own fold. -/
+theorem walkEntryMem_base {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) :
+    readBytes (walkEntryMem G S) S.z 8 = some (wordBytes 8 G.ev) := by
+  rw [walkEntryMem_read_out G S (a := S.z) (len := 8) (by omega) (by omega)]
+  exact walkSeg2PostMem_base
+
+/-- **The log's arena-base word at the seed's memory**: the initialisation's
+`%ar ← %dst` store, `walkSeg2PostMem_dst` at the run's own fold. -/
+theorem walkEntryMem_dst {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) :
+    readBytes (walkEntryMem G S) (S.z + 40) 8 = some (wordBytes 8 G.dst) := by
+  have hw : woff 40 = 40 := woff_40
+  rw [show S.z + 40 = S.z + woff 40 from by rw [woff_40]]
+  rw [walkEntryMem_read_out G S (a := S.z + woff 40) (len := 8) (by omega) (by omega)]
+  exact walkSeg2PostMem_dst
 
 /-- info: 'LeanLLVM.Refinement.WalkScope.stage2WriteStores_split' does not depend on any axioms -/
 #guard_msgs in
@@ -603,6 +660,22 @@ theorem walkEntryMem_hash {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) :
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.WalkScope.walkEntryMem_hash
 
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkSeg2PostMem_base' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkSeg2PostMem_base
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkSeg2PostMem_dst' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkSeg2PostMem_dst
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkEntryMem_base' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkEntryMem_base
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkEntryMem_dst' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkEntryMem_dst
+
 /-! ### The seed's register clauses
 
 `walkSeedFinalEnv` is the environment at `NodeBlock21` after the three runs: the
@@ -615,8 +688,8 @@ entry run's own cells, and the two `phi` registers.
 
 The proof is a peel to the binding and an exact match: the environment is a cons
 chain once the builders are unfolded, so `walk_final_lk` walks it and closes at
-the cell.  `WalkRegs`' list is a literal (`walkStaticRegs`), so its twenty-nine
-members are its twenty-nine cells; the three stack objects are at the call's
+the cell.  `WalkRegs`' list is a literal (`walkStaticRegs`), so its thirty-six
+members are its thirty-six cells; the three stack objects are at the call's
 cursor, which the caller states as `s.next = G.next0`, and the five parameters
 no layer rebinds — `%nep`, `%c.i`, `%z`, `%xp` and `%nxp` — are the entry
 environment's, which the caller states as its own lookups.
@@ -705,7 +778,11 @@ theorem walkSeedFinalEnv_regs {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (en
     (hxp : lookupName env "%xp" = some (.ptr G.xp))
     (hnxp : lookupName env "%nxp" = some (.int 64 (BitVec.ofNat 64 G.nxp)))
     (htok : lookupName env "%t352.i" = some (.ptr S.tok))
-    (he : lookupName env "%e" = some (.ptr S.e)) :
+    (he : lookupName env "%e" = some (.ptr S.e))
+    (hs : lookupName env "%s" = some (.ptr S.s))
+    (hnd : lookupName env "%ndst" = some (.ptr G.ndst))
+    (hnv : lookupName env "%nev" = some (.ptr G.nev))
+    (her : lookupName env "%err" = some (.ptr G.err)) :
     WalkRegs G (walkSeed G S) (walkSeedFinalEnv G S env s q bt) := by
   intro p hp
   simp only [walkStaticRegs, List.mem_cons, List.not_mem_nil, or_false] at hp
@@ -714,7 +791,8 @@ theorem walkSeedFinalEnv_regs {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (en
     ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
     ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
     ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
-    ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+    ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
+    ⟨rfl, rfl⟩
   all_goals first
     | walk_final_lk
     | (simp only [walkSeedFinalEnv, whileBodyOut, walkEntryEnv4, walkEntryEnv3,
@@ -734,6 +812,10 @@ theorem walkSeedFinalEnv_regs {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (en
     | exact hz
     | exact hxp
     | exact hnxp
+    | exact hs
+    | exact hnd
+    | exact hnv
+    | exact her
 
 /-- info: 'LeanLLVM.Refinement.WalkScope.walkSeedFinalEnv_k' depends on axioms: [propext] -/
 #guard_msgs in
@@ -1311,7 +1393,7 @@ theorem walkSeedFinalState_pc {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G)
 
 /-- **The seed's producer.**  The state the entry run leaves at `NodeBlock21` is a
 `WalkSeedState`: its block, its two loop-head `phi`s, the three register carriers,
-the five log clauses, the staged objects' presence and the frame.  The two read
+the seven log clauses, the staged objects' presence and the frame.  The two read
 facts are the header's own loads — the entry stream's lane at `G.ep` and the
 document's byte at that lane — read at the run's memory; `walkSeed_lane` and
 `walkSeed_docByte` turn them into the carrier's values. -/
@@ -1325,6 +1407,10 @@ theorem walkSeedState {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
     (hnxp : lookupName s.env "%nxp" = some (.int 64 (BitVec.ofNat 64 G.nxp)))
     (htok : lookupName s.env "%t352.i" = some (.ptr S.tok))
     (he : lookupName s.env "%e" = some (.ptr S.e))
+    (hs : lookupName s.env "%s" = some (.ptr S.s))
+    (hnd : lookupName s.env "%ndst" = some (.ptr G.ndst))
+    (hnv : lookupName s.env "%nev" = some (.ptr G.nev))
+    (her : lookupName s.env "%err" = some (.ptr G.err))
     (hnext : s.next = G.next0)
     (hnepe : lookupName s.env "%nep" = some (.int 64 (BitVec.ofNat 64 G.nep)))
     (hread : readBytes (walkEntryMem G S) G.ep 4 = some bs)
@@ -1333,7 +1419,7 @@ theorem walkSeedState {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
   have hq := walkSeed_lane G S hn hread
   have hbt := walkSeed_docByte G S hn hread hdoc
   refine ⟨walkSeedFinalState_pc G S s (bytesToNat bs) bt, ?_, ?_, ?_, ?_, ?_, ?_,
-    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · rw [walkSeedFinalState_env]
     exact walkSeedFinalEnv_k (G := G) (S := S) (env := s.env) (s := s)
       (q := bytesToNat bs) (bt := bt)
@@ -1348,7 +1434,7 @@ theorem walkSeedState {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
       (q := bytesToNat bs) (bt := bt) hct hcs
   · rw [walkSeedFinalState_env]
     exact walkSeedFinalEnv_regs (G := G) (S := S) (env := s.env) (s := s)
-      (q := bytesToNat bs) (bt := bt) hnext hnepe hc hz hxp hnxp htok he
+      (q := bytesToNat bs) (bt := bt) hnext hnepe hc hz hxp hnxp htok he hs hnd hnv her
   · rw [walkSeedFinalState_env]
     exact walkSeedFinalEnv_iter (G := G) (S := S) (env := s.env) (s := s) hq hbt
   · rw [walkSeedFinalState_env]; exact hc
@@ -1381,6 +1467,10 @@ theorem walkSeedState {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
     exact walkEntryMem_alen G S
   · rw [walkSeedFinalState_mem]
     exact walkEntryMem_acap G S
+  · rw [walkSeedFinalState_mem]
+    exact walkEntryMem_base G S
+  · rw [walkSeedFinalState_mem]
+    exact walkEntryMem_dst G S
   · rw [walkSeedFinalState_env, ← hq]
     exact walkSeedFinalEnv_idx (G := G) (S := S) (env := s.env) (s := s)
       (q := bytesToNat bs) (bt := bt)
@@ -1402,6 +1492,10 @@ theorem walkSeedState_geometry {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s
     (hnxp : lookupName s.env "%nxp" = some (.int 64 (BitVec.ofNat 64 G.nxp)))
     (htok : lookupName s.env "%t352.i" = some (.ptr S.tok))
     (he : lookupName s.env "%e" = some (.ptr S.e))
+    (hs : lookupName s.env "%s" = some (.ptr S.s))
+    (hnd : lookupName s.env "%ndst" = some (.ptr G.ndst))
+    (hnv : lookupName s.env "%nev" = some (.ptr G.nev))
+    (her : lookupName s.env "%err" = some (.ptr G.err))
     (hnext : s.next = G.next0)
     (hnepe : lookupName s.env "%nep" = some (.int 64 (BitVec.ofNat 64 G.nep))) :
     WalkSeedState G S (walkSeedFinalState G S s (entryPos G 0) (entryByte G 0)) := by
@@ -1437,7 +1531,8 @@ theorem walkSeedState_geometry {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s
     exact hbyte
   have hbt0 : G.bs.getD (entryPos G 0) 0 = entryByte G 0 := rfl
   have hseed := walkSeedState (G := G) (S := S) (s := s) (bs := bs0)
-    (bt := G.bs.getD (entryPos G 0) 0) hn hct hcs hc hz hxp hnxp htok he hnext hnepe hread hdoc
+    (bt := G.bs.getD (entryPos G 0) 0) hn hct hcs hc hz hxp hnxp htok he hs hnd hnv her
+    hnext hnepe hread hdoc
   rw [hq, hbt0] at hseed
   exact hseed
 
@@ -1481,12 +1576,17 @@ theorem walkSeedInvariant_geometry {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G
     (hnxp : lookupName s.env "%nxp" = some (.int 64 (BitVec.ofNat 64 G.nxp)))
     (htok : lookupName s.env "%t352.i" = some (.ptr S.tok))
     (he : lookupName s.env "%e" = some (.ptr S.e))
+    (hs : lookupName s.env "%s" = some (.ptr S.s))
+    (hnd : lookupName s.env "%ndst" = some (.ptr G.ndst))
+    (hnv : lookupName s.env "%nev" = some (.ptr G.nev))
+    (her : lookupName s.env "%err" = some (.ptr G.err))
     (hnext : s.next = G.next0)
     (hnepe : lookupName s.env "%nep" = some (.int 64 (BitVec.ofNat 64 G.nep))) :
     WalkInv G (walkSeed G S)
       (walkSeedFinalState G S s (entryPos G 0) (entryByte G 0)) :=
   walkSeed_invariant G S
-    (walkSeedState_geometry G S s hn hct hcs hc hz hxp hnxp htok he hnext hnepe) hn
+    (walkSeedState_geometry G S s hn hct hcs hc hz hxp hnxp htok he hs hnd hnv her hnext
+      hnepe) hn
 
 /-! ### Axiom footprints for the seed's last rows -/
 

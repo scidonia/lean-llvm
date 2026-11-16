@@ -278,6 +278,8 @@ theorem WalkLink.pureCore {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : Walk
         log_cap := ?_
         log_alen := ?_
         log_acap := ?_
+        log_base := ?_
+        log_dst := ?_
         owned := by dsimp only [s']; rw [hmem]; exact hInv.owned
         next_ge := by dsimp only [s']; rw [hnext₁]; exact hInv.next_ge
         frame := ?_
@@ -312,6 +314,10 @@ theorem WalkLink.pureCore {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : Walk
       rw [hmem]; exact hInv.log_alen
     · dsimp only [s']
       rw [hmem]; exact hInv.log_acap
+    · dsimp only [s']
+      rw [hmem]; exact hInv.log_base
+    · dsimp only [s']
+      rw [hmem]; exact hInv.log_dst
     · dsimp only [s']
       rw [hmem, hnext₁]; exact hInv.frame
     · dsimp only [s']
@@ -376,6 +382,8 @@ theorem WalkLink.pureJumpCore {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : 
         log_cap := ?_
         log_alen := ?_
         log_acap := ?_
+        log_base := ?_
+        log_dst := ?_
         owned := by dsimp only [s']; rw [hmem]; exact hInv.owned
         next_ge := by dsimp only [s']; rw [hnext₁]; exact hInv.next_ge
         frame := ?_
@@ -410,6 +418,10 @@ theorem WalkLink.pureJumpCore {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : 
       rw [hmem]; exact hInv.log_alen
     · dsimp only [s']
       rw [hmem]; exact hInv.log_acap
+    · dsimp only [s']
+      rw [hmem]; exact hInv.log_base
+    · dsimp only [s']
+      rw [hmem]; exact hInv.log_dst
     · dsimp only [s']
       rw [hmem, hnext₁]; exact hInv.frame
   · rfl
@@ -670,6 +682,8 @@ theorem WalkLink.pureJumpK11 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : W
         log_cap := ?_
         log_alen := ?_
         log_acap := ?_
+        log_base := ?_
+        log_dst := ?_
         owned := by dsimp only [s']; rw [hmem]; exact hInv.owned
         next_ge := by dsimp only [s']; rw [hnext₁]; exact hInv.next_ge
         frame := ?_
@@ -704,6 +718,10 @@ theorem WalkLink.pureJumpK11 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : W
       rw [hmem]; exact hInv.log_alen
     · dsimp only [s']
       rw [hmem]; exact hInv.log_acap
+    · dsimp only [s']
+      rw [hmem]; exact hInv.log_base
+    · dsimp only [s']
+      rw [hmem]; exact hInv.log_dst
     · dsimp only [s']
       rw [hmem, hnext₁]; exact hInv.frame
   · rfl

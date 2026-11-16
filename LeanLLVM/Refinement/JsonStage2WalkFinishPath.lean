@@ -209,6 +209,8 @@ theorem walkFinishInvAt {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : Stat
     (hlogA : ∃ a, G.ndst0 ≤ a ∧ a ≤ C.alen ∧
       readBytes m' (C.stage.z + 48) 8 = some (wordBytes 8 a))
     (hlogAcap : readBytes m' (C.stage.z + 56) 8 = some (wordBytes 8 G.dstcap))
+    (hlogBase : readBytes m' C.stage.z 8 = some (wordBytes 8 G.ev))
+    (hlogDst : readBytes m' (C.stage.z + 40) 8 = some (wordBytes 8 G.dst))
     (hown : ∀ r ∈ walkStaged G C, HasBytes m' r.1 r.2)
     (hnextGE : G.next0 + stage2BootstrapExtent ≤ s.next)
     (hframe : UnchangedOutside m0 m' (walkWideAt G C (s.next - G.next0)))
@@ -268,6 +270,8 @@ theorem walkFinishInvAt {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : Stat
   log_cap := hlogCap
   log_alen := hlogA
   log_acap := hlogAcap
+  log_base := hlogBase
+  log_dst := hlogDst
   owned := hown
   next_ge := hnextGE
   frame := hframe
@@ -319,7 +323,7 @@ theorem walkFinish485Inv {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : Sta
         rcases hn with rfl
         exact ⟨by decide, by decide, by decide, by decide, by decide, by decide⟩)
     hInv.evBytes hInv.tyBytes hInv.stBytes hInv.log_hash hInv.log_len hInv.log_cap
-    hInv.log_alen hInv.log_acap hInv.owned hInv.next_ge hInv.frame
+    hInv.log_alen hInv.log_acap hInv.log_base hInv.log_dst hInv.owned hInv.next_ge hInv.frame
     (by simp [WalkLocal])
     (hphase := by
       have hone := walkEmitC_le_one C.block
@@ -402,6 +406,14 @@ theorem walkFinish488Inv {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : Sta
       rw [walkReadBytes_log_of_eoff_write (e := C.stage.e) (z := C.stage.z) (off := 56)
         (j := v) (N := 8) (e_z_sep hInv) (by decide)]
       exact hInv.log_acap)
+    (by
+      rw [walkReadBytes_log_base_of_eoff_write (e := C.stage.e) (z := C.stage.z)
+        (j := v) (e_z_sep hInv)]
+      exact hInv.log_base)
+    (by
+      rw [walkReadBytes_log_of_eoff_write (e := C.stage.e) (z := C.stage.z) (off := 40)
+        (j := v) (N := 8) (e_z_sep hInv) (by decide)]
+      exact hInv.log_dst)
     (by
       exact walkStaged_write (m := s.mem) (a := C.stage.e + 8) (bs := wordBytes 8 v)
         rfl hInv.owned)

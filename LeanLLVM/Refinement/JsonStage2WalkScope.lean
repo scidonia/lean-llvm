@@ -214,7 +214,7 @@ run's cursors), and the two forward stores that used to contradict it are
 `WalkInv.frame_stack` (`if.end24.i`'s two stack writes), both at the invariant.
 What remains is the dispatch's own trace, and its register half is carried by
 three fields: `WalkPtrs` binds `%3`, `%5`, `%k11.i`, `%ctype.i`, `%cst.i` and
-`hash1.i.i`; `WalkRegs` binds the twenty-nine static values `entry` and the
+`hash1.i.i`; `WalkRegs` binds the thirty-six static values `entry` and the
 preheader fix (`%nep`, the stream's count, among them); and `WalkIter` binds the
 header's per-iteration registers `%7`, `%8` and `%arrayidx10.i` at
 `entryPos C.k`, `entryByte C.k` and `G.b + entryPos C.k`.  The static carrier is preserved by
@@ -256,7 +256,7 @@ well-foundedness over the whole control flow is not established, and
 
 **The open rows, named.**  Three remain, and none is claimed here.  The *entry
 run* is no longer one: `JsonStage2WalkSeedRun`'s `walkSeedState` produces
-`WalkSeedState` at the state the entry run leaves — its nineteen clauses, the
+`WalkSeedState` at the state the entry run leaves — its twenty-one clauses, the
 three carriers and the frame and presence rows included — and
 `walkSeedState_geometry` derives the run's two loads from the staging itself, so
 `walkSeed_invariant`'s hypothesis is now a conclusion of the seed module.  What
@@ -1191,7 +1191,7 @@ def walkStaticNames : List String :=
    "%h1.i.i.i51", "%ar", "%alen", "%acap", "%gap.i", "%end.i", "%kind404.i",
    "%n6.i", "%ix.i", "%nix.i", "%e7.i", "%invariant.gep", "%ei.i",
    "%root_done.i", "%xj.i", "%outn.i", "%nep", "%c.i", "%z", "%xp", "%nxp",
-   "%4", "%t352.i", "%e"]
+   "%4", "%t352.i", "%e", "%s", "%ndst", "%nev", "%err"]
 
 /-- The static address registers the dispatch reads, beside `WalkPtrs`' six: the
 `%s` record's fields, the log's six addresses the reserves and the merges read,
@@ -1201,7 +1201,11 @@ path's links read directly — the two staging records `%c.i` and `%z`, and the
 escape list `%xp` with its count `%nxp`.  `%4` is the stream's end — the document
 length word the caller staged — and `%t352.i` and `%e` are the token record's and
 the refusal record's addresses, which the last entry's merge and its tails read.
-Every one is bound before the loop and no block of the dispatch rebinds it. -/
+`%s`, `%ndst`, `%nev` and `%err` are the record and the three ABI bases the
+finalisation's two copies read: the four are staging parameters the caller binds
+once, which is why `WalkFinalEnv` is a reading of this carrier at the merge rather
+than a supply.  Every one is bound before the loop and no block of the dispatch
+rebinds it. -/
 def walkStaticRegs {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) : List (String × Value) :=
   [("%nsp", .ptr (C.stage.s + 56)), ("%xp1", .ptr (C.stage.s + 72)),
    ("%nxp2", .ptr (C.stage.s + 80)), ("%n2.i", .ptr (C.stage.s + 8)),
@@ -1221,7 +1225,8 @@ def walkStaticRegs {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) : List (String
    ("%c.i", .ptr C.stage.c), ("%z", .ptr C.stage.z),
    ("%xp", .ptr G.xp), ("%nxp", .int 64 (BitVec.ofNat 64 G.nxp)),
    ("%4", .int 64 (BitVec.ofNat 64 G.n)), ("%t352.i", .ptr C.stage.tok),
-   ("%e", .ptr C.stage.e)]
+   ("%e", .ptr C.stage.e), ("%s", .ptr C.stage.s), ("%ndst", .ptr G.ndst),
+   ("%nev", .ptr G.nev), ("%err", .ptr G.err)]
 
 /-- The names a run must avoid to keep both carriers.  `%inc.i` is here as well as
 the three per-iteration registers: its cell is `WalkInv.inc_reg`'s, keyed on `C.k`,
@@ -1387,7 +1392,8 @@ theorem preheaderRegs {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (env : Env)
     ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
     ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
     ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
-    ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+    ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
+    ⟨rfl, rfl⟩
   all_goals try (rw [lookupName_cells_of_notin _ _ _ (by decide)])
   all_goals first
     | exact h _ (by simp [walkStaticRegs])
@@ -1893,12 +1899,13 @@ structure WalkInv {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : P
   bindings before its edge can be a step, and the invariant names them at the
   addresses the staging fixed (`WalkPtrs`). -/
   ptrs : WalkPtrs G C s.env
-  /-- **The static carrier.**  The thirty-two registers `walkStaticRegs` names
+  /-- **The static carrier.**  The thirty-six registers `walkStaticRegs` names
   hold the values the staging fixes for them; the seed produces them and every
   dispatch block's run leaves them alone (`WalkRegs.cons`, `WalkRegs.cells_of`).
   `%nep`, `%c.i`, `%z`, `%xp` and `%nxp` are among them: the entry binds the five
   and no block of the walk rebinds any, and so are `%4`, `%t352.i` and `%e`, the
-  three the last entry's merge and tails read. -/
+  three the last entry's merge and tails read, and `%s`, `%ndst`, `%nev` and
+  `%err`, whose values `WalkFinalEnv` reads off this clause. -/
   regs : WalkRegs G C s.env
   /-- **The per-iteration carrier.**  `%7`, `%8` and `%arrayidx10.i` are the lane,
   the document byte and the token's position address at the carried index; the
@@ -1953,6 +1960,27 @@ structure WalkInv {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : P
   `%acap`).  With `log_alen` this is the clause `if.end256.i` needs: the word the
   reserve compares against is `dstcap`, not an unconstrained memory cell. -/
   log_acap : readBytes s.mem (C.stage.z + 56) 8 = some (wordBytes 8 G.dstcap)
+  /-- **The log's base word is the event stream's base.**  The word at `%z + 0` is
+  `%ev`: the initialisation stores the staging's `%ev` there (`entry`'s `%z ← %ev`
+  in `JsonStage2IR`), and no block of the walk writes it — the dispatched blocks
+  write `%z + 8`, the sixteen-byte `memset` at `%z + 24` and `%z + 48` only.
+  `if.then328.i` loads it as `%33` and `if.end256.i` adds it to the arena's offset,
+  so it is the word an event record is written through.
+
+  It is a clause rather than a frame lemma for `log_hash`'s reason: `%z`'s first
+  eight bytes lie *inside* `walkWideAt`'s log entry, where the frame is silent, and
+  `WalkInv.owned` gives the object's presence rather than the value it holds. -/
+  log_base : readBytes s.mem C.stage.z 8 = some (wordBytes 8 G.ev)
+  /-- **The log's arena-base word is the arena's base.**  The word at `%z + 40` is
+  `%ar`, which `z_arena_reserve.exit` reads and `if.end256.i`'s `%sub260.i`
+  subtracts from the cursor: the initialisation stores the staging's `%dst` there
+  (`entry`'s `%ar ← %dst` in `JsonStage2IR`) and no block of the walk writes it, so
+  the word names the arena the offsets are measured in.
+
+  A clause for `log_base`'s reason: the bytes at `%z + 40` are inside the log
+  entry's extent (`stage2LogExtent` is sixty-four), so `WalkInv.frame` says nothing
+  about them. -/
+  log_dst : readBytes s.mem (C.stage.z + 40) 8 = some (wordBytes 8 G.dst)
   /-- **Presence over the objects the caller staged**, at the extents it staged
   them (`walkStaged`): the arena's window, the two cursor slots, the refusal slot,
   the seven appended objects and `%d.i`'s slot.  Every extent is a constant of the
@@ -2161,8 +2189,9 @@ def walkSeed {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) : WalkCarry G where
 
 /-- The state the initialisation hands the loop: the header's block after its two
 `phi`s selected the first entry position and the empty nesting, the two cursors
-as the caller staged them, and the log's four fields as the staging fixed them
-(the initialisation's `entry` stores `z->ev.b/len/cap` and `z->ar/alen/acap`).
+as the caller staged them, and the log's seven fields as the staging fixed them
+(the initialisation's `entry` stores `z->ev.b`, `z->len`, `z->cap`, the zeroed
+hash state, and `z->ar`, `z->alen`, `z->acap`).
 The four parameters the string path's links read — the two staging records
 `%c.i` and `%z`, and `%xp` with `%nxp` — are the entry's, and no layer of the
 run rebinds them, so they are clauses here beside `WalkRegs`, whose list names
@@ -2189,6 +2218,8 @@ def WalkSeedState {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State) : P
     readBytes s.mem (S.z + 16) 8 = some (wordBytes 8 G.evcap) ∧
     readBytes s.mem (S.z + 48) 8 = some (wordBytes 8 G.ndst0) ∧
     readBytes s.mem (S.z + 56) 8 = some (wordBytes 8 G.dstcap) ∧
+    readBytes s.mem S.z 8 = some (wordBytes 8 G.ev) ∧
+    readBytes s.mem (S.z + 40) 8 = some (wordBytes 8 G.dst) ∧
     lookupName s.env "%idxprom.i" = some (.int 64 (BitVec.ofNat 64 (entryPos G 0)))
 
 /-- **The cap at the seed is the allowance itself**, so the clause that the outer
@@ -2211,7 +2242,7 @@ facts and nothing else. -/
 theorem walkSeed_invariant {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) {s : State}
     (h : WalkSeedState G S s) (hpos : 0 < G.nep) : WalkInv G (walkSeed G S) s := by
   obtain ⟨hpc, hk, hsp, hinc0, hptrs, hregs, hiter, -, -, -, -, hhash, hown, hge, hframe, hlen,
-    hcap, halen, hacap, hidx0⟩ := h
+    hcap, halen, hacap, hbase, hdst, hidx0⟩ := h
   refine
     { pc_eq := hpc
       blockIndex := hk
@@ -2249,6 +2280,8 @@ theorem walkSeed_invariant {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) {s : S
       log_cap := hcap
       log_alen := ⟨G.ndst0, Nat.le_refl _, Nat.le_refl _, halen⟩
       log_acap := hacap
+      log_base := hbase
+      log_dst := hdst
       owned := hown
       next_ge := hge
       frame := hframe
@@ -2467,6 +2500,8 @@ theorem forInc_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
         log_cap := hInv.log_cap
         log_alen := hInv.log_alen
         log_acap := hInv.log_acap
+        log_base := hInv.log_base
+        log_dst := hInv.log_dst
         owned := hInv.owned
         next_ge := hInv.next_ge
         frame := hInv.frame
@@ -2854,6 +2889,8 @@ theorem scan_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
         log_cap := hInv.log_cap
         log_alen := hInv.log_alen
         log_acap := hInv.log_acap
+        log_base := hInv.log_base
+        log_dst := hInv.log_dst
         owned := by dsimp only [e]; exact hInv.owned
         next_ge := hInv.next_ge
         frame := ?_
@@ -3679,6 +3716,8 @@ theorem walkBack_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarr
         log_cap := hInv.log_cap
         log_alen := hInv.log_alen
         log_acap := hInv.log_acap
+        log_base := hInv.log_base
+        log_dst := hInv.log_dst
         owned := by dsimp only [e, State.bind]; exact hInv.owned
         next_ge := by dsimp only [e, State.bind]; exact hInv.next_ge
         frame := by dsimp only [e, State.bind]; exact hInv.frame
@@ -4509,6 +4548,24 @@ theorem readBytes_log_of_stack_write {m : Mem} {base z : Nat} {v : List UInt8} {
     simp only [stage2StackExtent, stage2LogExtent] at *
     omega
 
+/-- **A write into the cursor record leaves the log's base word alone.**  The clause's
+address is `%z` itself rather than `%z + off`, so this is
+`readBytes_log_of_cursor_write` at offset zero with the sum reduced. -/
+theorem readBytes_log_base_of_cursor_write {m : Mem} {c z : Nat} {v : List UInt8}
+    (hcz : c + stage2CursorExtent ≤ z ∨ z + stage2LogExtent ≤ c) (hv : v.length ≤ 8) :
+    readBytes (writeBytes m (c + 32) v) z 8 = readBytes m z 8 := by
+  simpa using readBytes_log_of_cursor_write (m := m) (c := c) (z := z) (v := v) hcz hv
+    (off := 0) (len := 8) (by decide)
+
+/-- **A write into a container stack leaves the log's base word alone.**
+`readBytes_log_of_stack_write` at offset zero. -/
+theorem readBytes_log_base_of_stack_write {m : Mem} {base z : Nat} {v : List UInt8} {sp : Nat}
+    (hbz : base + stage2StackExtent ≤ z ∨ z + stage2LogExtent ≤ base)
+    (hsp : sp < stage2StackExtent) (hv : v.length ≤ 1) :
+    readBytes (writeBytes m (base + sp) v) z 8 = readBytes m z 8 := by
+  simpa using readBytes_log_of_stack_write (m := m) (base := base) (z := z) (v := v)
+    (sp := sp) hbz hsp hv (off := 0) (len := 8) (by decide)
+
 end LeanLLVM.Refinement
 
 namespace LeanLLVM.Refinement
@@ -5094,6 +5151,8 @@ theorem whileBody_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
         log_cap := ?_
         log_alen := ?_
         log_acap := ?_
+        log_base := ?_
+        log_dst := ?_
         owned := walkStaged_write rfl hInv.owned
         next_ge := hInv.next_ge
         frame := ?_
@@ -5159,6 +5218,14 @@ theorem whileBody_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
       rw [readBytes_log_of_cursor_write (c := C.stage.c) (z := C.stage.z) hcz
         (by simp [wordBytes, natToBytes_length]) (off := 56) (len := 8) (by decide)]
       exact hInv.log_acap
+    · dsimp only [e, stateAt]
+      rw [readBytes_log_base_of_cursor_write (c := C.stage.c) (z := C.stage.z) hcz
+        (by simp [wordBytes, natToBytes_length])]
+      exact hInv.log_base
+    · dsimp only [e, stateAt]
+      rw [readBytes_log_of_cursor_write (c := C.stage.c) (z := C.stage.z) hcz
+        (by simp [wordBytes, natToBytes_length]) (off := 40) (len := 8) (by decide)]
+      exact hInv.log_dst
     · dsimp only [e]
       exact walkFrame_cursorK (G := G) (C := C)
         (v := wordBytes 8 (k + 1)) (by simp [wordBytes, natToBytes_length]) hInv.frame
@@ -5706,6 +5773,8 @@ theorem ifEnd24_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
         log_cap := ?_
         log_alen := ?_
         log_acap := ?_
+        log_base := ?_
+        log_dst := ?_
         owned := walkStaged_write rfl (walkStaged_write rfl hInv.owned)
         next_ge := hInv.next_ge
         frame := ?_
@@ -5817,6 +5886,20 @@ theorem ifEnd24_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
         (v := natToBytes (ifEnd24Ty b).toNat 1) hcz (sp := C.sp) hspExt
         (by simp [natToBytes]) (off := 56) (len := 8) (by decide)]
       exact hInv.log_acap
+    · dsimp only [e, stateAt]
+      rw [readBytes_log_base_of_stack_write (base := C.stage.cst) (v := natToBytes 0 1) hsz
+        (sp := C.sp) hspExt (by simp [natToBytes])]
+      rw [readBytes_log_base_of_stack_write (base := C.stage.ctype)
+        (v := natToBytes (ifEnd24Ty b).toNat 1) hcz (sp := C.sp) hspExt
+        (by simp [natToBytes])]
+      exact hInv.log_base
+    · dsimp only [e, stateAt]
+      rw [readBytes_log_of_stack_write (base := C.stage.cst) (v := natToBytes 0 1) hsz
+        (sp := C.sp) hspExt (by simp [natToBytes]) (off := 40) (len := 8) (by decide)]
+      rw [readBytes_log_of_stack_write (base := C.stage.ctype)
+        (v := natToBytes (ifEnd24Ty b).toNat 1) hcz (sp := C.sp) hspExt
+        (by simp [natToBytes]) (off := 40) (len := 8) (by decide)]
+      exact hInv.log_dst
     · dsimp only [e, stateAt]
       exact walkFrame_cst (G := G) (C := C) (v := natToBytes 0 1)
         (by simp [natToBytes]) hguard
@@ -6615,6 +6698,8 @@ theorem WalkLink.icmpBr {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
         log_cap := hInv.log_cap
         log_alen := hInv.log_alen
         log_acap := hInv.log_acap
+        log_base := hInv.log_base
+        log_dst := hInv.log_dst
         owned := hInv.owned
         next_ge := hInv.next_ge
         frame := hInv.frame
@@ -6726,6 +6811,14 @@ theorem walkReadBytes_log_of_eoff_write {m : Mem} {e z off j N : Nat}
     have h1 := hez
     simp only [stage2LogExtent] at h1
     omega
+
+/-- **A write to the refusal's offset leaves the log's base word alone.**
+`walkReadBytes_log_of_eoff_write` at offset zero. -/
+theorem walkReadBytes_log_base_of_eoff_write {m : Mem} {e z j : Nat}
+    (hez : e + stage2ErrorExtent ≤ z ∨ z + stage2LogExtent ≤ e) :
+    readBytes (writeBytes m (e + 8) (wordBytes 8 j)) z 8 = readBytes m z 8 := by
+  simpa using walkReadBytes_log_of_eoff_write (m := m) (e := e) (z := z) (off := 0) (j := j)
+    (N := 8) hez (by decide)
 
 /-- **A write to the refusal's offset leaves the event stream alone.** -/
 theorem walkReadBytes_ev_of_eoff_write {m : Mem} {e ev evcap nev0 j N : Nat}
@@ -6858,6 +6951,8 @@ theorem WalkLink.refusalStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
         log_cap := ?_
         log_alen := ?_
         log_acap := ?_
+        log_base := ?_
+        log_dst := ?_
         owned := by dsimp only [s', stateAt, m']; exact walkStaged_write rfl hInv.owned
         next_ge := hInv.next_ge
         frame := ?_
@@ -6917,6 +7012,14 @@ theorem WalkLink.refusalStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
       rw [walkReadBytes_log_of_eoff_write (e := C.stage.e) (z := C.stage.z) (off := 56)
         (j := j) (N := 8) (e_z_sep hInv) (by decide)]
       exact hInv.log_acap
+    · dsimp only [s', stateAt, m']
+      rw [walkReadBytes_log_base_of_eoff_write (e := C.stage.e) (z := C.stage.z)
+        (j := j) (e_z_sep hInv)]
+      exact hInv.log_base
+    · dsimp only [s', stateAt, m']
+      rw [walkReadBytes_log_of_eoff_write (e := C.stage.e) (z := C.stage.z) (off := 40)
+        (j := j) (N := 8) (e_z_sep hInv) (by decide)]
+      exact hInv.log_dst
     · dsimp only [s', stateAt, m']
       refine walkFrame_write_inside hInv.frame ?_
       intro k hk
@@ -7428,6 +7531,8 @@ theorem WalkLink.condBr {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
         log_cap := hInv.log_cap
         log_alen := hInv.log_alen
         log_acap := hInv.log_acap
+        log_base := hInv.log_base
+        log_dst := hInv.log_dst
         owned := hInv.owned
         next_ge := hInv.next_ge
         frame := hInv.frame
@@ -7520,6 +7625,8 @@ theorem WalkLink.br {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
         log_cap := hInv.log_cap
         log_alen := hInv.log_alen
         log_acap := hInv.log_acap
+        log_base := hInv.log_base
+        log_dst := hInv.log_dst
         owned := hInv.owned
         next_ge := hInv.next_ge
         frame := hInv.frame

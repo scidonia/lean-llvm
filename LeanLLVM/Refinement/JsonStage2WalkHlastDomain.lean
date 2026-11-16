@@ -157,7 +157,15 @@ theorem zeroDocument_seededInv {args : List Value} {m0 : Mem} {next : Nat}
   refine walkSeedInvariant_geometry G S
     (EntryState stage2Body
       (stage2Args args S.d S.c S.ctype S.cst S.tok S.s S.z S.e) m0 next) hn
-    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
+  · rw [hargs, walkEntryState_env]
+    simp [lookupName]
+  · rw [hargs, walkEntryState_env]
+    simp [lookupName]
+  · rw [hargs, walkEntryState_env]
+    simp [lookupName]
+  · rw [hargs, walkEntryState_env]
+    simp [lookupName]
   · rw [hargs, walkEntryState_env]
     simp [lookupName]
   · rw [hargs, walkEntryState_env]

@@ -138,6 +138,14 @@ theorem walkReadBytes_log_of_log_write {m : Mem} {z off off' N : Nat} {v : List 
   · left; omega
   · right; omega
 
+/-- **A write inside the log leaves its base word alone.**  `walkReadBytes_log_of_log_write`
+at offset zero, where the clause's address is `%z` itself rather than `%z + off`. -/
+theorem walkReadBytes_log_base_of_log_write {m : Mem} {z off : Nat} {v : List UInt8}
+    (hlo : 8 ≤ off ∨ off + v.length ≤ 0) :
+    readBytes (writeBytes m (z + off) v) z 8 = readBytes m z 8 := by
+  simpa using walkReadBytes_log_of_log_write (m := m) (z := z) (off := off) (off' := 0)
+    (N := 8) (v := v) hlo
+
 /-- `%d = %a - 1` at `i32`, as the emitted body's `add i32 %sp, 4294967295`. -/
 theorem walkOfNat32_add_pred {q : Nat} (hq : 1 ≤ q) (hq32 : q < 2 ^ 32) :
     BitVec.ofNat 32 q + BitVec.ofNat 32 4294967295 = BitVec.ofNat 32 (q - 1) := by
@@ -287,6 +295,8 @@ theorem WalkLink.store8Stack {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
         log_cap := ?_
         log_alen := ?_
         log_acap := ?_
+        log_base := ?_
+        log_dst := ?_
         owned := walkStaged_write rfl hInv.owned
         next_ge := by dsimp only [s']; exact hInv.next_ge
         frame := ?_
@@ -319,6 +329,14 @@ theorem WalkLink.store8Stack {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
       rw [readBytes_log_of_stack_write (base := C.stage.cst)
         (v := natToBytes x.toNat 1) hsz (sp := q) hq hv (off := 56) (len := 8) (by decide)]
       exact hInv.log_acap
+    · dsimp only [s', stateAt, m']
+      rw [readBytes_log_base_of_stack_write (base := C.stage.cst)
+        (v := natToBytes x.toNat 1) hsz (sp := q) hq hv]
+      exact hInv.log_base
+    · dsimp only [s', stateAt, m']
+      rw [readBytes_log_of_stack_write (base := C.stage.cst)
+        (v := natToBytes x.toNat 1) hsz (sp := q) hq hv (off := 40) (len := 8) (by decide)]
+      exact hInv.log_dst
     · dsimp only [s', stateAt, m']
       refine walkFrame_write_inside hInv.frame ?_
       intro k hk
@@ -585,6 +603,8 @@ theorem WalkLink.hashStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
         log_cap := ?_
         log_alen := ?_
         log_acap := ?_
+        log_base := ?_
+        log_dst := ?_
         owned := walkStaged_write rfl hInv.owned
         next_ge := by dsimp only [s']; exact hInv.next_ge
         frame := ?_
@@ -655,6 +675,14 @@ theorem WalkLink.hashStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
       rw [walkReadBytes_log_of_log_write (z := C.stage.z) (off := 24)
         (off' := 56) (N := 8) (v := natToBytes _ 8) (by rw [hmlen]; omega)]
       exact hInv.log_acap
+    · dsimp only [s', stateAt, m']
+      rw [walkReadBytes_log_base_of_log_write (z := C.stage.z) (off := 24)
+        (v := natToBytes _ 8) (by rw [hmlen]; omega)]
+      exact hInv.log_base
+    · dsimp only [s', stateAt, m']
+      rw [walkReadBytes_log_of_log_write (z := C.stage.z) (off := 24)
+        (off' := 40) (N := 8) (v := natToBytes _ 8) (by rw [hmlen]; omega)]
+      exact hInv.log_dst
     · rw [hmem']
       dsimp only [m']
       refine walkFrame_write_inside hInv.frame ?_
@@ -940,6 +968,8 @@ theorem WalkLink.outReserveStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
         log_cap := ?_
         log_alen := ?_
         log_acap := ?_
+        log_base := ?_
+        log_dst := ?_
         owned := walkStaged_write rfl (walkStaged_write rfl hInv.owned)
         next_ge := by dsimp only [s']; exact hInv.next_ge
         frame := ?_
@@ -1048,6 +1078,26 @@ theorem WalkLink.outReserveStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
       rw [walkReadBytes_writeBytes_outside (start := G.ev + C.evlen) (addr := C.stage.z + 56)
         (n := 8) ?_]
       · exact hInv.log_acap
+      · rcases hzev with h | h
+        · left; simp only [stage2LogExtent] at *; omega
+        · right; rw [htaglen]; omega
+    · rw [hmem']
+      dsimp only [m']
+      rw [walkReadBytes_writeBytes_outside (start := C.stage.z + 8) (addr := C.stage.z)
+        (n := 8) (v := wordBytes 8 (C.evlen + 1)) (by simp only [wordBytes, natToBytes_length]; omega)]
+      rw [walkReadBytes_writeBytes_outside (start := G.ev + C.evlen) (addr := C.stage.z)
+        (n := 8) ?_]
+      · exact hInv.log_base
+      · rcases hzev with h | h
+        · left; simp only [stage2LogExtent] at *; omega
+        · right; rw [htaglen]; omega
+    · rw [hmem']
+      dsimp only [m']
+      rw [walkReadBytes_writeBytes_outside (start := C.stage.z + 8) (addr := C.stage.z + 40)
+        (n := 8) (v := wordBytes 8 (C.evlen + 1)) (by simp only [wordBytes, natToBytes_length]; omega)]
+      rw [walkReadBytes_writeBytes_outside (start := G.ev + C.evlen) (addr := C.stage.z + 40)
+        (n := 8) ?_]
+      · exact hInv.log_dst
       · rcases hzev with h | h
         · left; simp only [stage2LogExtent] at *; omega
         · right; rw [htaglen]; omega
@@ -1293,6 +1343,8 @@ theorem WalkLink.if_else285_i {calls : Calls} {m0 : Mem}
       log_cap := ?_
       log_alen := ?_
       log_acap := ?_
+      log_base := ?_
+      log_dst := ?_
       owned := walkStaged_write rfl hInv.owned
       next_ge := by dsimp only [s']; exact hInv.next_ge
       frame := ?_
@@ -1366,6 +1418,16 @@ theorem WalkLink.if_else285_i {calls : Calls} {m0 : Mem}
     rw [walkReadBytes_log_of_log_write (z := C.stage.z) (off := 48)
       (off' := 56) (N := 8) (v := wordBytes 8 (a + l)) (by rw [hmlen]; omega)]
     exact hInv.log_acap
+  · rw [hmem']
+    dsimp only [m']
+    rw [walkReadBytes_log_base_of_log_write (z := C.stage.z) (off := 48)
+      (v := wordBytes 8 (a + l)) (by rw [hmlen]; omega)]
+    exact hInv.log_base
+  · rw [hmem']
+    dsimp only [m']
+    rw [walkReadBytes_log_of_log_write (z := C.stage.z) (off := 48)
+      (off' := 40) (N := 8) (v := wordBytes 8 (a + l)) (by rw [hmlen]; omega)]
+    exact hInv.log_dst
   · rw [hmem']
     dsimp only [m']
     refine walkFrame_write_inside hInv.frame ?_
@@ -1575,6 +1637,8 @@ theorem WalkLink.if_then330_i {calls : Calls} {m0 : Mem}
         log_cap := ?_
         log_alen := ?_
         log_acap := ?_
+        log_base := ?_
+        log_dst := ?_
         owned := walkStaged_write rfl hInv.owned
         next_ge := by dsimp only [s']; exact hInv.next_ge
         frame := ?_
@@ -1655,6 +1719,16 @@ theorem WalkLink.if_then330_i {calls : Calls} {m0 : Mem}
         (v := natToBytes (BitVec.ofNat 8 1).toNat 1) hsz
         (sp := C.sp - 1) hpred_ext (by simp [natToBytes]) (off := 56) (len := 8) (by decide)]
       exact hInv.log_acap
+    · dsimp only [s', stateAt, m']
+      rw [readBytes_log_base_of_stack_write (base := C.stage.cst)
+        (v := natToBytes (BitVec.ofNat 8 1).toNat 1) hsz
+        (sp := C.sp - 1) hpred_ext (by simp [natToBytes])]
+      exact hInv.log_base
+    · dsimp only [s', stateAt, m']
+      rw [readBytes_log_of_stack_write (base := C.stage.cst)
+        (v := natToBytes (BitVec.ofNat 8 1).toNat 1) hsz
+        (sp := C.sp - 1) hpred_ext (by simp [natToBytes]) (off := 40) (len := 8) (by decide)]
+      exact hInv.log_dst
     · rw [hmem']
       dsimp only [m']
       refine walkFrame_write_inside hInv.frame ?_
@@ -1870,6 +1944,8 @@ theorem WalkLink.if_end207_i {calls : Calls} {m0 : Mem}
         log_cap := ?_
         log_alen := ?_
         log_acap := ?_
+        log_base := ?_
+        log_dst := ?_
         owned := walkStaged_write rfl hInv.owned
         next_ge := by dsimp only [s']; exact hInv.next_ge
         frame := ?_
@@ -1944,6 +2020,14 @@ theorem WalkLink.if_end207_i {calls : Calls} {m0 : Mem}
       rw [readBytes_log_of_cursor_write (c := C.stage.c) (z := C.stage.z) hcz
         (by rw [hwlen]) (off := 56) (len := 8) (by decide)]
       exact hInv.log_acap
+    · dsimp only [s', stateAt, m']
+      rw [readBytes_log_base_of_cursor_write (c := C.stage.c) (z := C.stage.z) hcz
+        (by rw [hwlen])]
+      exact hInv.log_base
+    · dsimp only [s', stateAt, m']
+      rw [readBytes_log_of_cursor_write (c := C.stage.c) (z := C.stage.z) hcz
+        (by rw [hwlen]) (off := 40) (len := 8) (by decide)]
+      exact hInv.log_dst
     · rw [hmem']
       dsimp only [m']
       exact hInv.frame_cursorK (v := wordBytes 8 (C.k + 2)) (by rw [hwlen])

@@ -180,6 +180,13 @@ theorem walkReadBytes_log_of_tok_write {m : Mem} {tok z off N : Nat} {x : BitVec
   · refine Or.inl ?_
     omega
 
+/-- A write at the token's end slot leaves the log's base word alone. -/
+theorem walkReadBytes_log_base_of_tok_write {m : Mem} {tok z : Nat} {x : BitVec 64}
+    (htz : tok + stage2TokenExtent ≤ z ∨ z + stage2LogExtent ≤ tok) :
+    readBytes (writeBytes m (tok + 8) (natToBytes x.toNat 8)) z 8 = readBytes m z 8 := by
+  simpa using walkReadBytes_log_of_tok_write (m := m) (tok := tok) (z := z) (off := 0)
+    (N := 8) (x := x) htz (by decide)
+
 /-- A refusal store of a computed word leaves the log alone. -/
 theorem walkReadBytes_log_of_refusal_write {m : Mem} {e z off N : Nat} {x : BitVec 64}
     (hez : e + stage2ErrorExtent ≤ z ∨ z + stage2LogExtent ≤ e)
@@ -189,6 +196,13 @@ theorem walkReadBytes_log_of_refusal_write {m : Mem} {e z off N : Nat} {x : BitV
   simpa [wordBytes] using
     walkReadBytes_log_of_eoff_write (m := m) (e := e) (z := z) (off := off)
       (j := x.toNat) (N := N) hez hoff
+
+/-- A refusal store of a computed word leaves the log's base word alone. -/
+theorem walkReadBytes_log_base_of_refusal_write {m : Mem} {e z : Nat} {x : BitVec 64}
+    (hez : e + stage2ErrorExtent ≤ z ∨ z + stage2LogExtent ≤ e) :
+    readBytes (writeBytes m (e + 8) (natToBytes x.toNat 8)) z 8 = readBytes m z 8 := by
+  simpa using walkReadBytes_log_of_refusal_write (m := m) (e := e) (z := z) (off := 0)
+    (N := 8) (x := x) hez (by decide)
 
 /-- A refusal store of a computed word leaves the event stream's prefix alone. -/
 theorem walkReadBytes_ev_of_refusal_write {m : Mem} {e ev evcap nev0 N : Nat}
@@ -1312,6 +1326,8 @@ theorem WalkLink.if_end372_i {calls : Calls} {m0 : Mem}
       log_cap := ?_
       log_alen := ?_
       log_acap := ?_
+      log_base := ?_
+      log_dst := ?_
       owned := walkStaged_write rfl hInv.owned
       next_ge := by dsimp only [s', sFin, m', stateAt]; exact hInv.next_ge
       frame := ?_
@@ -1375,6 +1391,14 @@ theorem WalkLink.if_end372_i {calls : Calls} {m0 : Mem}
     rw [walkReadBytes_log_of_tok_write (tok := C.stage.tok) (z := C.stage.z) (off := 56)
       (N := 8) (x := e) (walkTok_z_sep hInv) (by decide)]
     exact hInv.log_acap
+  · dsimp only [s', sFin, m', stateAt]
+    rw [walkReadBytes_log_base_of_tok_write (tok := C.stage.tok) (z := C.stage.z)
+      (x := e) (walkTok_z_sep hInv)]
+    exact hInv.log_base
+  · dsimp only [s', sFin, m', stateAt]
+    rw [walkReadBytes_log_of_tok_write (tok := C.stage.tok) (z := C.stage.z) (off := 40)
+      (N := 8) (x := e) (walkTok_z_sep hInv) (by decide)]
+    exact hInv.log_dst
   · dsimp only [s', sFin, m', stateAt]
     refine walkFrame_write_inside hInv.frame ?_
     intro k hk
@@ -1531,6 +1555,8 @@ theorem WalkLink.if_then57_i {calls : Calls} {m0 : Mem}
       log_cap := ?_
       log_alen := ?_
       log_acap := ?_
+      log_base := ?_
+      log_dst := ?_
       owned := walkStaged_write rfl hInv.owned
       next_ge := by dsimp only [s', sFin, m', stateAt]; exact hInv.next_ge
       frame := ?_
@@ -1594,6 +1620,14 @@ theorem WalkLink.if_then57_i {calls : Calls} {m0 : Mem}
     rw [walkReadBytes_log_of_refusal_write (e := C.stage.e) (z := C.stage.z) (off := 56)
       (x := x + ix) (N := 8) (e_z_sep hInv) (by decide)]
     exact hInv.log_acap
+  · dsimp only [s', sFin, m', stateAt]
+    rw [walkReadBytes_log_base_of_refusal_write (e := C.stage.e) (z := C.stage.z)
+      (x := x + ix) (e_z_sep hInv)]
+    exact hInv.log_base
+  · dsimp only [s', sFin, m', stateAt]
+    rw [walkReadBytes_log_of_refusal_write (e := C.stage.e) (z := C.stage.z) (off := 40)
+      (x := x + ix) (N := 8) (e_z_sep hInv) (by decide)]
+    exact hInv.log_dst
   · dsimp only [s', sFin, m', stateAt]
     refine walkFrame_write_inside hInv.frame ?_
     intro k hk
@@ -1744,6 +1778,8 @@ theorem WalkLink.while_end78_i {calls : Calls} {m0 : Mem}
       log_cap := ?_
       log_alen := ?_
       log_acap := ?_
+      log_base := ?_
+      log_dst := ?_
       owned := walkStaged_write rfl hInv.owned
       next_ge := by dsimp only [s', sFin, m', stateAt]; exact hInv.next_ge
       frame := ?_
@@ -1807,6 +1843,14 @@ theorem WalkLink.while_end78_i {calls : Calls} {m0 : Mem}
     rw [walkReadBytes_log_of_refusal_write (e := C.stage.e) (z := C.stage.z) (off := 56)
       (x := x) (N := 8) (e_z_sep hInv) (by decide)]
     exact hInv.log_acap
+  · dsimp only [s', sFin, m', stateAt]
+    rw [walkReadBytes_log_base_of_refusal_write (e := C.stage.e) (z := C.stage.z)
+      (x := x) (e_z_sep hInv)]
+    exact hInv.log_base
+  · dsimp only [s', sFin, m', stateAt]
+    rw [walkReadBytes_log_of_refusal_write (e := C.stage.e) (z := C.stage.z) (off := 40)
+      (x := x) (N := 8) (e_z_sep hInv) (by decide)]
+    exact hInv.log_dst
   · dsimp only [s', sFin, m', stateAt]
     refine walkFrame_write_inside hInv.frame ?_
     intro k hk

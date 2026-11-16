@@ -34,7 +34,9 @@ the loop's terminal disjunct carries the returned memory and the boundary there.
 
 **Composed, not assumed.**  `walkFinishPost_merge` is the merge's three routes as one
 statement — the depth's zero test and the root-done test select among R1, R2 and R3 — and
-`WalkMergeWords`/`WalkRefuseWords` are the word bundles a caller supplies.  So what
+`WalkMergeWords`/`WalkRefuseWords` are the word bundles a caller supplies — two words each,
+the log's arena cursor and the block's own slot; the registers, `%4` and `%nep` are the
+carrier's.  So what
 remains outside the proofs is the words, not the routes:
 `JsonStage2WalkPremisesOfStaging`'s `WalkLoopEnd` names each word's producer.
 
@@ -59,36 +61,37 @@ measurement for the empty-stream arm.
 
 ## The three routes' supplied facts
 
-`WalkInv` bounds but does not fix the words the finalisation reads, and it does not
-carry the finalisation blocks' address registers at all.  The route theorems therefore
-take the facts below as *arguments*, one bundle per entry block
-(`WalkMergeWords`, `WalkRefuseWords`), and each named where the repository would produce
-it.  `%nep` is not among them: the dispatch's outcome carries its value at every state
-the merge is read at, so `hnp`/`hterm` are the outcome's own data.
+`WalkInv` bounds but does not fix the words the finalisation reads.  The route theorems
+therefore take the words below as *arguments*, one bundle per entry block
+(`WalkMergeWords`, `WalkRefuseWords`), and each names where the repository would produce
+it.  The registers the routes read are not among them: all seven names of `WalkFinalEnv`
+and `%4` are `walkStaticRegs` entries, so `hInv.regs` answers them
+(`walkFinalEnv_of_regs`, `walkMerge4_of_regs`).  `%nep` is not among them either: the
+dispatch's outcome carries its value at every state the merge is read at, so
+`hnp`/`hterm` are the outcome's own data, and `WalkLoopEnd.nepBound` bounds it from the
+carrier.
 
-* `%4 = n` (`h4`).  `%4` is loaded once by `entry` from `%n2.i = %s + 8`, where `s2_init`
-  stores `n`, and no block rebinds it; but `%4` is not in `walkStaticNames`
-  (`JsonStage2WalkScope.lean:988`), so no `WalkInv` clause names it.  Its producer is the
-  seed's register carrier (`walkSeedFinalEnv_regs`, `JsonStage2WalkSeedRun.lean`), and
-  adding `"%4"` to `walkStaticNames` would make it derivable — that edit is in the
-  twenty-one-megabyte `JsonStage2WalkScope`, outside this module.
-* the log's arena word equal to the carry's cursor (`hlog`).  `WalkInv.log_alen` gives
-  only `∃ a, ndst0 ≤ a ∧ a ≤ C.alen`; the frame at the *reported* cursor needs the
-  equality, which its own docstring calls "the dispatch's to produce".  Its producer is
-  the write-back block `if.else285.i`'s link.
-* the finalisation blocks' registers (`WalkFinalEnv`): `%e`, `%z`, `%s`, `%c.i`,
-  `%ndst`, `%nev` and `%err`.  The carriers give six more (`%alen`, `%len`,
-  `%xj.i`, `%root_done.i` from `walkStaticRegs`, `%ctype.i`/`%cst.i` from `WalkPtrs`), and
-  these are *not* in the list because the routes transport the carriers themselves; the
-  seven here are the ones `WalkInv` has no clause for.  A producer is the seed's
-  environment (`walkEntryState_env`), for the same reason as `%4`.  `%nep` is the
-  eighth finalisation register and is *not* supplied here: the dispatch's outcome carries
-  it (`hnepv`), so each merge route takes `hnp`/`hterm` from there.
-* R0's refusal word (`hword`): `readBytes s.mem (C.stage.e + 8) 8 = some (wordBytes 8
+* `%4 = n`: **derived.**  `%4` is an entry of `walkStaticRegs` (`("%4", .int 64
+  (BitVec.ofNat 64 G.n))`), so `WalkInv.regs` names its cell and the routes read it
+  through `walkMerge4_of_regs`; the bundle no longer carries it.
+* the log's arena word equal to the carry's cursor (`log`).  `WalkInv.log_alen` gives
+  only `∃ a, ndst0 ≤ a ∧ a ≤ C.alen`, and the equality is *false* at any state whose
+  decoded prefix is shorter than the extent it reserved (`JsonStage2WalkArenaWord`'s
+  `not_arenaWord_of_lt`), so it can be neither a clause nor a lemma: it is supplied at
+  the merge's own state, and its producer is the write-back block `if.else285.i`'s link.
+* the finalisation blocks' registers (`WalkFinalEnv`): **derived.**  `%e`, `%z`, `%s`,
+  `%c.i`, `%ndst`, `%nev` and `%err` are all entries of `walkStaticRegs`, so
+  `walkFinalEnv_of_regs` reads the whole predicate off `WalkInv.regs`.  The carriers give
+  six more (`%alen`, `%len`, `%xj.i`, `%root_done.i` from `walkStaticRegs`,
+  `%ctype.i`/`%cst.i` from `WalkPtrs`).  `%nep` is the eighth finalisation register and is
+  not supplied here either: the dispatch's outcome carries it (`hnepv`), so each merge
+  route takes `hnp`/`hterm` from there, and `WalkLoopEnd.nepBound` bounds it at the
+  carrier's value.
+* R0's refusal word (`word`): `readBytes s.mem (C.stage.e + 8) 8 = some (wordBytes 8
   C.eoff)`.  The copy reads the word the *previous* link stored, and neither `WalkInv`
   nor `WalkSegment` can say so (`WalkSegment` is a `Prop` holding the run and the
   invariant, not the target memory); a memory-carrying refusal segment would produce it.
-* the merge's root-done word (`hroot`): `∃ rv, readBytes s.mem (G.next0 + 8) 4 = some
+* the merge's root-done word (`root`): `∃ rv, readBytes s.mem (G.next0 + 8) 4 = some
   (natToBytes rv.toNat 4)`.  `WalkInv.owned` deliberately omits the four `alloca` slots,
   so the root slot's presence is in no clause; its producer is a presence clause on
   `WalkInv` transported link by link.
@@ -1555,30 +1558,54 @@ each field names its producer in the census (`JsonStage2WalkPremisesOfStaging`):
 arena word is the write-back block's, `%4` the seed's, the root-done word and the refusal
 word the segments that stored them. -/
 
-/-- **The merge's words.**  `WalkFinalEnv`'s seven registers, the log's arena word as the
-carry's cursor, `%4`'s value and the root-done word.  One bundle, so a route takes one
-hypothesis and the three routes that share the merge's state share its supply. -/
+/-- **The merge's words.**  The log's arena word as the carry's cursor and the root-done
+word.  One bundle, so a route takes one hypothesis and the three routes that share the
+merge's state share its supply.
+
+The rest of what the routes read is the invariant's, not this bundle's: the seven
+finalisation registers are `WalkFinalEnv` at `hInv.regs` (`walkFinalEnv_of_regs`, all seven
+names are `walkStaticRegs` entries) and `%4` is `hInv.regs`' cell.  The log's word is the
+one fact no `WalkInv` clause carries — `log_alen` is an inequality, and the slot lags the
+carry between a reserve and its write-back — so it is supplied here at the merge's state. -/
 structure WalkMergeWords {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : Prop where
-  /-- The finalisation's seven carrier registers. -/
-  env : WalkFinalEnv G C s.env
   /-- The log's arena word is the carry's cursor. -/
   log : readBytes s.mem (C.stage.z + 48) 8 = some (wordBytes 8 C.alen)
-  /-- `%4`'s value is the entry count. -/
-  h4 : lookupName s.env "%4" = some (.int 64 (BitVec.ofNat 64 G.n))
   /-- The root-done word is present, at its four bytes. -/
   root : ∃ rv : BitVec 32, readBytes s.mem (G.next0 + 8) 4 = some (natToBytes rv.toNat 4)
 
-/-- **The refusal copy's words.**  `WalkFinalEnv`'s seven registers, the log's arena word
-as the carry's cursor, and the refusal word the copy's `%off` load reads.  The last is
-R0's own: on the merge's refusal routes the word is the store the route makes, and the
-carry's `eoff` is not what the memory holds (`WalkInv.eoff_le` is only the bound). -/
+/-- **The refusal copy's words.**  The log's arena word as the carry's cursor and the
+refusal word the copy's `%off` load reads.  The registers are `WalkFinalEnv` at
+`hInv.regs`, as in the merge's bundle.
+
+The refusal word is R0's own: on the merge's refusal routes the word is the store the
+route makes, and the carry's `eoff` is not what the memory holds (`WalkInv.eoff_le` is
+only the bound). -/
 structure WalkRefuseWords {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : Prop where
-  /-- The finalisation's seven carrier registers. -/
-  env : WalkFinalEnv G C s.env
   /-- The log's arena word is the carry's cursor. -/
   log : readBytes s.mem (C.stage.z + 48) 8 = some (wordBytes 8 C.alen)
   /-- The refusal word at `%e + 8`. -/
   word : readBytes s.mem (C.stage.e + 8) 8 = some (wordBytes 8 C.eoff)
+
+/-- **The finalisation's registers are the static carrier's.**  Each of the seven names
+`WalkFinalEnv` binds is an entry of `walkStaticRegs`, so `WalkInv.regs` answers all seven
+and no route needs a separate supply. -/
+theorem walkFinalEnv_of_regs {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {env : Env}
+    (h : WalkRegs G C env) : WalkFinalEnv G C env :=
+  ⟨h ("%e", .ptr C.stage.e) (by simp [walkStaticRegs]),
+   h ("%z", .ptr C.stage.z) (by simp [walkStaticRegs]),
+   h ("%s", .ptr C.stage.s) (by simp [walkStaticRegs]),
+   h ("%c.i", .ptr C.stage.c) (by simp [walkStaticRegs]),
+   h ("%ndst", .ptr G.ndst) (by simp [walkStaticRegs]),
+   h ("%nev", .ptr G.nev) (by simp [walkStaticRegs]),
+   h ("%err", .ptr G.err) (by simp [walkStaticRegs])⟩
+
+/-- **`%4`'s cell is the carrier's.**  The entry count's word is an entry of
+`walkStaticRegs` (`%4`, `BitVec.ofNat 64 G.n`), so the merge's routes read it from the
+invariant rather than from the bundle. -/
+theorem walkMerge4_of_regs {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {env : Env}
+    (h : WalkRegs G C env) :
+    lookupName env "%4" = some (.int 64 (BitVec.ofNat 64 G.n)) :=
+  h ("%4", .int 64 (BitVec.ofNat 64 G.n)) (by simp [walkStaticRegs])
 
 /-- **The merge's post: one of the three routes, decided by the merge's own tests.**
 The depth's zero test selects the exit's two tails and the root-done test selects the
@@ -1601,19 +1628,22 @@ theorem walkFinishPost_merge {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
   by_cases hsp0 : evalICmp .eq (BitVec.ofNat 32 spv) (BitVec.ofNat 32 0) = 1
   · obtain ⟨rv, hroot⟩ := hw.root
     by_cases hroot0 : evalICmp .eq rv (BitVec.ofNat 32 0) = 0
-    · exact walkFinishPost_accept G C s hInv hblk hInv.regs hInv.ptrs hw.env hw.log hpre
+    · exact walkFinishPost_accept G C s hInv hblk hInv.regs hInv.ptrs
+        (walkFinalEnv_of_regs hInv.regs) hw.log hpre
         hsp hspv hk hkv hnp hterm hsp0 hroot hroot0
-    · exact walkFinishPost_refuse G C s hInv hblk hw.env hw.log hpre hsp hspv hk hkv
+    · exact walkFinishPost_refuse G C s hInv hblk (walkFinalEnv_of_regs hInv.regs) hw.log hpre
+        hsp hspv hk hkv
         hnp hterm hsp0 hroot (by
           rcases walkBitVec1_zero_or_one (evalICmp .eq rv (BitVec.ofNat 32 0)) with h | h
           · exact absurd h hroot0
-          · exact h) hw.h4
-  · exact walkFinishPost_refuse488 G C s hInv hblk hw.env hw.log hpre hsp hspv hk hkv
+          · exact h) (walkMerge4_of_regs hInv.regs)
+  · exact walkFinishPost_refuse488 G C s hInv hblk (walkFinalEnv_of_regs hInv.regs) hw.log
+      hpre hsp hspv hk hkv
       hnp hterm (by
         rcases walkBitVec1_zero_or_one
           (evalICmp .eq (BitVec.ofNat 32 spv) (BitVec.ofNat 32 0)) with h | h
         · exact h
-        · exact absurd h hsp0) hw.h4
+        · exact absurd h hsp0) (walkMerge4_of_regs hInv.regs)
 
 /-- **The refusal copy's post, from the words.**  `WalkRefuseWords` at a state at
 `if.then`, which is the refusal outcome's endpoint; `WalkLoopEnd.refuse`
@@ -1624,7 +1654,7 @@ theorem walkFinishPost_refuseOfWords {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
     (hblk : C.block = "if.then")
     (hw : WalkRefuseWords G C s) :
     WalkTargetPost (stage2Calls stage2SubCalls) G C s :=
-  walkFinishPost_copy G C s hInv hblk hw.env hw.log hw.word
+  walkFinishPost_copy G C s hInv hblk (walkFinalEnv_of_regs hInv.regs) hw.log hw.word
 
 end WalkScope
 end LeanLLVM.Refinement
@@ -1670,3 +1700,11 @@ end LeanLLVM.Refinement
 /-- info: 'LeanLLVM.Refinement.WalkScope.walkFinishPost_refuseOfWords' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.WalkScope.walkFinishPost_refuseOfWords
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkFinalEnv_of_regs' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkFinalEnv_of_regs
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.walkMerge4_of_regs' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkScope.walkMerge4_of_regs

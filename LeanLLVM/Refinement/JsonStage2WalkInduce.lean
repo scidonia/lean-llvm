@@ -262,6 +262,8 @@ theorem scan_step_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
         log_cap := hInv.log_cap
         log_alen := hInv.log_alen
         log_acap := hInv.log_acap
+        log_base := hInv.log_base
+        log_dst := hInv.log_dst
         owned := by dsimp only [e, scanLatchAt, scanLatchOut, cells, stateAt, State.bind]; exact hInv.owned
         next_ge := by dsimp only [e, scanLatchAt, scanLatchOut, cells, stateAt, State.bind]; exact hInv.next_ge
         frame := ?_
@@ -395,6 +397,8 @@ theorem scanStepAt_exit {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
       log_cap := hInv.log_cap
       log_alen := hInv.log_alen
       log_acap := hInv.log_acap
+      log_base := hInv.log_base
+      log_dst := hInv.log_dst
       owned := by dsimp only [s']; exact hInv.owned
       next_ge := by dsimp only [s']; exact hInv.next_ge
       frame := ?_

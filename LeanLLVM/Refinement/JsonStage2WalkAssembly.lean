@@ -30,7 +30,8 @@ revolution apart:
   branch, `WalkTargetPost` at the state the dispatch reaches — the run, its verdict,
   the *memory it returns* and `stage2Boundary` there, proved by
   `JsonStage2WalkTargetPost`'s four routes from the words `WalkLoopEnd` supplies
-  (`WalkMergeWords`, `WalkRefuseWords`) inside the finalisation allowance;
+  (`WalkMergeWords`'s and `WalkRefuseWords`'s log and slot words — the registers and
+  `%4` are the carrier's) inside the finalisation allowance;
 * **the finalisation allowance is arithmetic** (`walkExitFits`): `F ≤ 27` at the
   seed's three steps is `3 + F + 2 ≤ stage2FinalisationAllowance`, by the record's
   own constant;
@@ -1446,6 +1447,8 @@ theorem walkEntry_inv {mem : Mem} (G : WalkGeom mem) {C : WalkCarry G} {s : Stat
     (hlogA : ∃ a, G.ndst0 ≤ a ∧ a ≤ C.alen ∧
       readBytes s'.mem (C.stage.z + 48) 8 = some (wordBytes 8 a))
     (hlogAcap : readBytes s'.mem (C.stage.z + 56) 8 = some (wordBytes 8 G.dstcap))
+    (hlogBase : readBytes s'.mem C.stage.z 8 = some (wordBytes 8 G.ev))
+    (hlogDst : readBytes s'.mem (C.stage.z + 40) 8 = some (wordBytes 8 G.dst))
     (hown : ∀ r ∈ walkStaged G C, HasBytes s'.mem r.1 r.2)
     (hnextGE : G.next0 + stage2BootstrapExtent ≤ s'.next)
     (hframe : UnchangedOutside mem s'.mem (walkWideAt G C (s'.next - G.next0)))
@@ -1489,6 +1492,8 @@ theorem walkEntry_inv {mem : Mem} (G : WalkGeom mem) {C : WalkCarry G} {s : Stat
   log_cap := hlogCap
   log_alen := hlogA
   log_acap := hlogAcap
+  log_base := hlogBase
+  log_dst := hlogDst
   owned := hown
   next_ge := hnextGE
   frame := hframe
@@ -1631,6 +1636,8 @@ theorem walkInvSeat {m0 : Mem} (G : WalkGeom m0) (stage : WalkStage G) {s : Stat
     (hlogA : ∃ a, G.ndst0 ≤ a ∧ a ≤ G.ndst0 ∧
       readBytes s.mem (stage.z + 48) 8 = some (wordBytes 8 a))
     (hlogAcap : readBytes s.mem (stage.z + 56) 8 = some (wordBytes 8 G.dstcap))
+    (hlogBase : readBytes s.mem stage.z 8 = some (wordBytes 8 G.ev))
+    (hlogDst : readBytes s.mem (stage.z + 40) 8 = some (wordBytes 8 G.dst))
     (hown : ∀ r ∈ walkStaged G (walkCarryZero G stage), HasBytes s.mem r.1 r.2)
     (hnextGE : G.next0 + stage2BootstrapExtent ≤ s.next)
     (hframe : UnchangedOutside m0 s.mem
@@ -1682,6 +1689,8 @@ theorem walkInvSeat {m0 : Mem} (G : WalkGeom m0) (stage : WalkStage G) {s : Stat
       log_cap := hlogCap
       log_alen := hlogA
       log_acap := hlogAcap
+      log_base := hlogBase
+      log_dst := hlogDst
       owned := hown
       next_ge := hnextGE
       frame := hframe
@@ -1705,11 +1714,12 @@ theorem walkEntryInv_at_regs {mem : Mem} (G : WalkGeom mem) {C : WalkCarry G} {s
   · rw [hk.1]; exact hInv.blockIndex
   · rw [hk.2]; exact hInv.depth_reg
 
-/-- **The successor's static registers.**  `walkStaticRegs`' thirty-two pairs split by the
+/-- **The successor's static registers.**  `walkStaticRegs`' thirty-six pairs split by the
 classification rule: twenty-two are cells of the entry's own layers with exactly the values
-the list names, and ten are bound by no layer — the preheader's four, the four entry
-parameters `%c.i`, `%z`, `%xp` and `%nxp`, and the two staged records `%t352.i` and `%e` —
-so they pass through to the base environment.
+the list names, and fourteen are bound by no layer — the preheader's four, the four entry
+parameters `%c.i`, `%z`, `%xp` and `%nxp`, the two staged records `%t352.i` and `%e`, and
+the record and ABI bases `%s`, `%ndst`, `%nev` and `%err` — so they pass through to the
+base environment.
 
 The values name the *stage's* addresses, while the layers are built from the entry's
 parameters, so the lemma takes the identifications as premises — at the seating they hold by
@@ -1727,6 +1737,10 @@ theorem walkEntryEnv_regs {m0 : Mem} (G : WalkGeom m0) (stage : WalkStage G) (en
     (hnxp : lookupName env "%nxp" = some (.int 64 (BitVec.ofNat 64 G.nxp)))
     (htok : lookupName env "%t352.i" = some (.ptr stage.tok))
     (he : lookupName env "%e" = some (.ptr stage.e))
+    (hsReg : lookupName env "%s" = some (.ptr stage.s))
+    (hndstReg : lookupName env "%ndst" = some (.ptr G.ndst))
+    (hnevReg : lookupName env "%nev" = some (.ptr G.nev))
+    (herrReg : lookupName env "%err" = some (.ptr G.err))
     (hbase : lookupName env "%h1.i.i.i51" = some (.ptr (stage.z + 24)) ∧
       lookupName env "%gap.i" = some (.ptr (stage.tok + 20)) ∧
       lookupName env "%end.i" = some (.ptr (stage.tok + 8)) ∧
@@ -1738,7 +1752,7 @@ theorem walkEntryEnv_regs {m0 : Mem} (G : WalkGeom m0) (stage : WalkStage G) (en
   subst hs hz hc hcn hb hep hn4
   simp [WalkRegs, walkStaticRegs, walkCarryZero, walkEntryEnv4, walkEntryEnv3,
     walkEntryEnv2, walkEntryEnv1, cells, lookupName_cons_ne, woff, hb1, hb2, hb3, hb4, hnep,
-    hcreg, hzreg, hxp, hnxp, htok, he]
+    hcreg, hzreg, hxp, hnxp, htok, he, hsReg, hndstReg, hnevReg, herrReg]
 
 /-- **The successor's per-iteration carrier.**  `%7`, `%8` and `%arrayidx10.i` are
 bound by no entry layer, so the lane, the byte and the position address the
@@ -1997,6 +2011,10 @@ theorem walkEntry_inv_at {m0 : Mem} (G : WalkGeom m0) {C : WalkCarry G} {s : Sta
       ¬ (q.1 ≤ C.stage.z + 8 + i ∧ C.stage.z + 8 + i < q.1 + q.2))
     (hsepC : ∀ i, i < 8 → ∀ q ∈ R,
       ¬ (q.1 ≤ C.stage.z + 16 + i ∧ C.stage.z + 16 + i < q.1 + q.2))
+    (hsepB : ∀ i, i < 8 → ∀ q ∈ R,
+      ¬ (q.1 ≤ C.stage.z + i ∧ C.stage.z + i < q.1 + q.2))
+    (hsepD : ∀ i, i < 8 → ∀ q ∈ R,
+      ¬ (q.1 ≤ C.stage.z + 40 + i ∧ C.stage.z + 40 + i < q.1 + q.2))
     (hsepAc : ∀ i, i < 8 → ∀ q ∈ R,
       ¬ (q.1 ≤ C.stage.z + 56 + i ∧ C.stage.z + 56 + i < q.1 + q.2))
     (hsepA : ∀ i, i < 8 → ∀ q ∈ R,
@@ -2020,7 +2038,7 @@ theorem walkEntry_inv_at {m0 : Mem} (G : WalkGeom m0) {C : WalkCarry G} {s : Sta
     rw [hmem, readBytes_frame hm hsepEv]
     exact hInv.evBytes
   refine walkEntry_inv (G := G) (C := C) (s := s) hInv hpc hk hsp hinc hidx hEv hTy hSt hptr
-    hreg hiter ?_ ?_ ?_ ?_ ?_ hown hnextGE hframe hlocal
+    hreg hiter ?_ ?_ ?_ ?_ ?_ ?_ ?_ hown hnextGE hframe hlocal
   · rw [hmem, readBytes_frame hm hsepH]
     exact hInv.log_hash
   · rw [hmem, readBytes_frame hm hsepL]
@@ -2033,6 +2051,10 @@ theorem walkEntry_inv_at {m0 : Mem} (G : WalkGeom m0) {C : WalkCarry G} {s : Sta
     exact ha3
   · rw [hmem, readBytes_frame hm hsepAc]
     exact hInv.log_acap
+  · rw [hmem, readBytes_frame hm hsepB]
+    exact hInv.log_base
+  · rw [hmem, readBytes_frame hm hsepD]
+    exact hInv.log_dst
 
 /-- **The flush block's two cells at the entry's successor.**  `%4` is `walkEntryEnv3`'s bound
 value — the entry count, as a word — and `%e` is the base environment's pointer, which no layer

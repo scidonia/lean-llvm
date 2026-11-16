@@ -241,8 +241,8 @@ theorem WalkLink.if_then425_i_emit {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
         (C.events.map EventRecord.encodedBytes).flatten.length from by rw [hEvNew]; omega]
     exact walkReadBytes_writeBytes_append (m := s.mem) (a := G.ev + G.nev0)
       (N := (C.events.map EventRecord.encodedBytes).flatten.length) hInv.evBytes
-  -- the log's four other fields across the two writes
-  have hlogRead : ∀ off w, 16 ≤ off → off + w ≤ stage2LogExtent →
+  -- the log's fields across the two writes, at the offsets the writes miss
+  have hlogRead : ∀ off w, (off + w ≤ 8 ∨ 16 ≤ off) → off + w ≤ stage2LogExtent →
       readBytes r.mem (C.stage.z + off) w = readBytes s.mem (C.stage.z + off) w := by
     intro off w hoff hw
     rw [hmem]
@@ -250,7 +250,9 @@ theorem WalkLink.if_then425_i_emit {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
       (off := 8) (off' := off) (N := w) (v := wordBytes 8 (C.evlen + ev.encodedBytes.length))
       (by
         rw [wordBytes, natToBytes_length]
-        right; omega)]
+        rcases hoff with h | h16
+        · left; omega
+        · right; omega)]
     have hlenv : C.evlen + ev.encodedBytes.length ≤ G.evcap := by
       rw [hEvNew]; omega
     refine walkReadBytes_log_of_write (m := s.mem) (z := C.stage.z)
@@ -343,6 +345,8 @@ theorem WalkLink.if_then425_i_emit {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
       log_cap := ?_
       log_alen := ?_
       log_acap := ?_
+      log_base := ?_
+      log_dst := ?_
       owned := ?_
       next_ge := by
         show G.next0 + stage2BootstrapExtent ≤ r.next
@@ -395,6 +399,10 @@ theorem WalkLink.if_then425_i_emit {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
     exact ⟨a, h0, ha, Eq.trans (hlogRead 48 8 (by decide) (by decide)) hr⟩
   · show readBytes r.mem (C.stage.z + 56) 8 = some (wordBytes 8 G.dstcap)
     rw [hlogRead 56 8 (by decide) (by decide)]; exact hInv.log_acap
+  · show readBytes r.mem (C.stage.z + 0) 8 = some (wordBytes 8 G.ev)
+    rw [hlogRead 0 8 (by decide) (by decide)]; exact hInv.log_base
+  · show readBytes r.mem (C.stage.z + 40) 8 = some (wordBytes 8 G.dst)
+    rw [hlogRead 40 8 (by decide) (by decide)]; exact hInv.log_dst
   · show ∀ q ∈ walkStaged G C, HasBytes r.mem q.1 q.2
     rw [hmem]
     exact walkStaged_write rfl (walkStaged_write rfl hInv.owned)
@@ -707,6 +715,8 @@ theorem WalkLink.if_then425_i_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
       log_cap := ?_
       log_alen := ?_
       log_acap := ?_
+      log_base := ?_
+      log_dst := ?_
       owned := ?_
       next_ge := by
         show G.next0 + stage2BootstrapExtent ≤ r.next
@@ -773,6 +783,14 @@ theorem WalkLink.if_then425_i_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
     rw [hrefuse, stage2ErrSetMsg, stage2ErrSet]
     rw [herr8Log 56 8 (by decide)]
     exact hInv.log_acap
+  · show readBytes r.mem (C.stage.z + 0) 8 = some (wordBytes 8 G.ev)
+    rw [hrefuse, stage2ErrSetMsg, stage2ErrSet]
+    rw [herr8Log 0 8 (by decide)]
+    exact hInv.log_base
+  · show readBytes r.mem (C.stage.z + 40) 8 = some (wordBytes 8 G.dst)
+    rw [hrefuse, stage2ErrSetMsg, stage2ErrSet]
+    rw [herr8Log 40 8 (by decide)]
+    exact hInv.log_dst
   · show ∀ q ∈ walkStaged G C, HasBytes r.mem q.1 q.2
     rw [hrefuse]
     unfold stage2ErrSetMsg stage2ErrSet
@@ -1182,6 +1200,8 @@ theorem WalkLink.if_then109_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
       log_cap := ?_
       log_alen := ?_
       log_acap := ?_
+      log_base := ?_
+      log_dst := ?_
       owned := ?_
       next_ge := by
         show G.next0 + stage2BootstrapExtent ≤ r.next
@@ -1240,6 +1260,14 @@ theorem WalkLink.if_then109_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
   · rw [show s'.mem = m from hmem]
     rw [hlog 56 8 (by decide)]
     exact hInv.log_acap
+  · show readBytes s'.mem (C.stage.z + 0) 8 = some (wordBytes 8 G.ev)
+    rw [show s'.mem = m from hmem]
+    rw [hlog 0 8 (by decide)]
+    exact hInv.log_base
+  · show readBytes s'.mem (C.stage.z + 40) 8 = some (wordBytes 8 G.dst)
+    rw [show s'.mem = m from hmem]
+    rw [hlog 40 8 (by decide)]
+    exact hInv.log_dst
   · rw [show s'.mem = m from hmem]
     simpa [walkStaged] using howned
   · rw [show s'.mem = m from hmem]
@@ -1523,6 +1551,8 @@ theorem WalkLink.if_then19_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
       log_cap := ?_
       log_alen := ?_
       log_acap := ?_
+      log_base := ?_
+      log_dst := ?_
       owned := ?_
       next_ge := by
         show G.next0 + stage2BootstrapExtent ≤ r.next
@@ -1576,6 +1606,12 @@ theorem WalkLink.if_then19_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
     exact hInv.log_alen
   · rw [show s'.mem = r.mem from rfl, hlog 56 8 (by decide)]
     exact hInv.log_acap
+  · show readBytes s'.mem (C.stage.z + 0) 8 = some (wordBytes 8 G.ev)
+    rw [show s'.mem = r.mem from rfl, hlog 0 8 (by decide)]
+    exact hInv.log_base
+  · show readBytes s'.mem (C.stage.z + 40) 8 = some (wordBytes 8 G.dst)
+    rw [show s'.mem = r.mem from rfl, hlog 40 8 (by decide)]
+    exact hInv.log_dst
   · show ∀ q ∈ walkStaged G C, HasBytes r.mem q.1 q.2
     exact howned
   · rw [show s'.mem = r.mem from rfl]
