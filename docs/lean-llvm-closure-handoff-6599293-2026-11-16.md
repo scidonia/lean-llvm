@@ -74,11 +74,9 @@ equal(headByte, 125) = false
 
 These conditions restrict the byte to 126 or 127. The source documents that restriction. This is one dispatch class, not a property of every final entry.
 
-[`WalkLoopEnd.hlast`](https://github.com/scidonia/lean-llvm/blob/6599293bb6bacac498237072f94170770a62b94b/LeanLLVM/Refinement/JsonStage2WalkPremisesOfStaging.lean#L208), however, supplies `HlastResidue` at every invariant head with no next entry. The residue includes those same class restrictions. `WalkLoopEnd.facts` then calls the branch-specific producer.
+[`WalkLoopEnd.hlast`](https://github.com/scidonia/lean-llvm/blob/6599293bb6bacac498237072f94170770a62b94b/LeanLLVM/Refinement/JsonStage2WalkPremisesOfStaging.lean#L208), however, supplied `HlastResidue` at every invariant head with no next entry. The residue includes those same class restrictions. `WalkLoopEnd.facts` then called the branch-specific producer.
 
-First construct the actual seeded head for an admitted one-entry document `0`. Prove that its head byte is 48 and that the current residue's class conditions cannot hold there. Use the seed and staging theorems to establish reachability; an arbitrary hand-built state would not demonstrate the intended coverage failure.
-
-This regression should identify the scope error precisely: the branch-specific theorem may remain correct, while the universal bundle needed to apply it generally is not available.
+**Landed (`JsonStage2WalkHlastDomain`).** The regression is at the document `0`, not at a hand-built state: `ZeroDocument` is the staging's own two reads (`readBytes` for the byte `0x30`, `readLanes32` for the single lane `0`) and the two counts, `hlastByte_zero` derives the head byte from `WalkGeom.doc`/`entries` through `entryPos`/`entryByte`, `zeroDocument_class_false` shows the bundle's `slt 125` bit is `1` there, and `zeroDocument_residue_false`/`zeroDocument_highByteArm_empty` render `HlastResidue G (walkSeed G S) s` empty. Reachability is `walkSeedInvariant_geometry`'s (`zeroDocument_seededInv`), with the guard from `walkSeed_block` and `walkSeed_guard`. `zeroDocument_domain` states the positive half at the same head: the switch's default-arm pivots and the tag test hold, i.e. the scalar arm is the one this input takes.
 
 ### A2. Introduce a complete terminal-dispatch result
 
@@ -98,6 +96,18 @@ Give each emitted control-flow branch its own premises. Preserve the existing lo
 
 Build a dispatch census from the pinned IR. Every head branch must lead to a proved successor result or a justified refusal. Include scalar/literal, string, container and closing-delimiter paths as the emitted code actually handles them. Do not assume that the entry stream alone makes all unproved byte classes unreachable.
 
+**Landed (`JsonStage2WalkDispatchArms`).** `HeadArm` is the census as a value (string opener, comma, colon, open bracket, close bracket, open brace, close brace, and the default arm split by its seven sub-routes), and `HeadArm.complete` proves every byte has exactly one — the classification is exhaustive by theorem. `LastEntryArm` is the dispatch's evidence, one constructor per arm class, and `LastEntryArm.dispatch` turns it into the actual `WalkDispatchResult`:
+
+| arm | producer | count |
+|---|---|---|
+| `.scalar` (default arm, tag test true) | `scalarMerge_at` | 11 + 3 + 1 = 15 |
+| `.highByte` (bytes 126/127, the preserved long default path) | `hlastFacts_of_staging` → `ofHlastMerge` | 20 |
+| `.stringOpener` (bare opener, no entry left) | `quoteRefuse_at` | 5 |
+| `.closingZero` (`]` at depth zero) | `bracketRefuse_at` | 6 |
+| `.supplied` (container openers, comma, colon, closing with a container open, the default arm's letter routes) | the arm's own result | the arm's |
+
+`.highByte` is where the byte-class restriction now lives: it is one constructor, documented as the 126/127 arm, and it is not the last entry's shape.
+
 ### A3. Preserve prices and returned-state evidence
 
 Each branch must return:
@@ -111,13 +121,17 @@ Each branch must return:
 
 The loop-head guard now helps derive the last-index equality. Preserve that improvement, but keep entry-count exhaustion separate from byte-class selection: being the last entry does not choose the character-dispatch branch.
 
+**Landed.** The scalar arm's fifteen links are stated at named states (`ScalarC₁`…`ScalarC₁₁`, `scalarS₁`…`scalarSeam`), its merge cells are `WalkInv.inc_reg`/`depth_reg`/`regs` at the endpoint the segment reaches, and its price is `17 ≤ 32` computed from the merge's own test on `%k.2.i` against `%nep` — never `C.k + 1` as a synonym for the price. The refusal arms' prices are `refusePrice_of_le`'s, and the high-byte arm's is `ofHlastMerge`'s. Entry-count exhaustion is derived once (`WalkInv.head_lt` with the guard) and byte selection once (`HeadArm`).
+
 ### A4. Acceptance criteria
 
-- A regression refutes the old universal residue on the actual `0` seed.
-- Terminal dispatch is exhaustive over the claimed input domain and malformed inputs that the precondition permits.
-- No ordinary scalar, string or closing-delimiter case is required to prove that its byte is 126 or 127.
-- The loop consumer invokes the complete dispatch producer.
-- Every branch has an endpoint and a price, including refusal branches.
+- A regression refutes the old universal residue on the actual `0` seed. **Landed**: `zeroDocument_residue_false`, `zeroDocument_highByteArm_empty`, `zeroDocument_domain`.
+- Terminal dispatch is exhaustive over the claimed input domain and malformed inputs that the precondition permits. **Interface and census landed**; the container, comma, colon, closing-with-container and letter arms are `.supplied` — their segments are the remaining work, and no other arm's class is a premise of them.
+- No ordinary scalar, string or closing-delimiter case is required to prove that its byte is 126 or 127. **Landed**: the scalar arm's class is `91`/`44`/`58`/`44 ≠` plus the tag bit; the string and closing arms are refusals with their own bytes.
+- The loop consumer invokes the complete dispatch producer. **Landed**: `walkLoopStep_of_staging`'s last branch is `hend.dispatch C s hInv hhead hk`.
+- Every branch has an endpoint and a price, including refusal branches. **Landed for the proved arms**; `.supplied` carries the endpoint and the price it claims.
+
+Build evidence at this landing: the default target is green at `1931` jobs (`LAKE_EXIT=0`), the two source-boundary checks pass, and the new declarations' footprints are `propext`, `Classical.choice`, `Quot.sound` (no `sorryAx`); `stage2WalkObligation_of_staging`'s is unchanged at `[propext, Classical.choice, Quot.sound]`.
 
 ## 5. Task B: produce continuing-entry facts
 

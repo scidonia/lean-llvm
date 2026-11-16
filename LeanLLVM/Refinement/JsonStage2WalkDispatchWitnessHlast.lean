@@ -5,7 +5,8 @@ The walk's last entry: the scan-free segment to the merge, and the refusal arm.
 
 The bundle's guard and the head prefix's premise are the **same fact** — the last
 entry's `%inc ≥ %nep`, which the prefix takes as `hge` and the bundle's producer takes as
-`¬ (C.k + 1 < G.nep)` (`WalkLoopEnd.facts`, `JsonStage2WalkPremisesOfStaging`).  That is
+`¬ (C.k + 1 < G.nep)` (`hlastFacts_of_staging`'s `hnot`, and the dispatch's own
+`WalkLoopEnd.dispatch`).  That is
 why the composition is not four applications over unrelated lemmas: it is **one premise,
 read at both ends**.  The last entry cannot continue because its increments have reached
 the entry count, and the prefix cannot run down the continuing arm for the same reason.
@@ -53,8 +54,9 @@ no last entry reaches, and they refuted each other:
   `%ee.1.i` the `%idxprom.i` word;
 * the scan's entry (`hlt2T` with `hcdT`/`h4L`/`heiT`) says `%idxprom.i < %cond350.i`.
 
-So `HlastFacts` was **uninhabited at a real last entry**, and `WalkLoopEnd.facts` — the
-only consumer — was vacuous.  The two halves are now the path the model takes: the head is
+So `HlastFacts` was **uninhabited at a real last entry**, and the consumer that took it
+universally (`WalkLoopEnd.hlast`) was vacuous.  The two halves are now the path the model
+takes: the head is
 the `1` arm (with `%cond350.i` the `%4` word, so the entry's end is the stream's) and the
 tail is the scan-free segment.  Nothing was weakened to get there; two wrong fields were
 replaced by the arm's own values.
@@ -491,9 +493,10 @@ the merge is reached on both — and that is why nothing here branches on it.
 
 The use site is `walkLoopStep_of_staging` (`JsonStage2WalkPremisesOfStaging`), which
 builds a `WalkDispatchResult` at each head state — the `merge` arm from the continuing
-premise's own evidence, or `WalkDispatchResult.ofHlastMerge` from the last entry's bundle
-— and feeds `walkLoopStepThree_of_dispatchResult`.  The bundle stays where it is: it is
-the input's facts, and `HlastFacts.hlastK` says which states it describes. -/
+premise's own evidence, or the last entry's arm (`WalkLoopEnd.dispatch`) — and feeds
+`walkLoopStepThree_of_dispatchResult`.  The bundle is now one *arm* of that dispatch
+(`LastEntryArm.highByte`), so `HlastFacts.hlastK` says which states it describes and the
+dispatch, not the bundle, is the last entry's shape. -/
 
 /-! ### The bundle's producer
 
@@ -528,9 +531,9 @@ supplied as a named premise:
 
 **The map's counted shape, per row: 13 produced, 1 premised correctly** — fourteen rows
 in all, so **13 of 14 produced** (12 of 14 before this round, 9 of 16 before the repair).
-What the count buys is unchanged: **the bundle is inhabited at a real last entry**, and
-`WalkLoopEnd.facts` is now *produced* from the bundle's residual evidence rather than
-supplied (below).
+What the count buys is unchanged: **the bundle is inhabited at a real last entry**, and it
+is now reached through the dispatch's `.highByte` arm (`LastEntryArm.highByte`,
+`JsonStage2WalkDispatchArms`) rather than as the last entry's universal shape.
 
 Nothing above is a field weakened to make a proof go through: every produced witness is a
 consequence of the invariant, the staging's addresses or the model's own values, and the
@@ -1398,9 +1401,9 @@ stages, the log's base word and the event stream's width.  It
 is a `Type` because `rdv` and `xA` are witnesses the later fields are stated at,
 exactly as the bundle is.
 
-The structure exists so that `WalkLoopEnd` can carry *evidence* rather than the
-producer's conclusion: `WalkLoopEnd.facts` is the theorem that applies the
-producer to this supply, and the field it replaced was the conclusion itself. -/
+The structure exists so that the dispatch can carry *evidence* rather than the producer's
+conclusion: `LastEntryArm.highByte` carries this supply, `LastEntryArm.dispatch` applies
+the producer to it, and the field it replaced was the conclusion itself. -/
 structure HlastResidue {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : Type where
   /-- The head byte's class: the two pivots that name it. -/
   hlt125 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 125) = 0

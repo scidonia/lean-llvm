@@ -120,3 +120,7 @@ import LeanLLVM.Refinement.JsonStage2WalkPremisesOfStaging
 import LeanLLVM.Refinement.JsonStage2WalkFlushPost
 import LeanLLVM.Refinement.JsonStage2WalkTargetPost
 import LeanLLVM.Refinement.JsonStage2StringStageFacts
+import LeanLLVM.Refinement.JsonStage2WalkDispatchScalarPrefix
+import LeanLLVM.Refinement.JsonStage2WalkDispatchScalar
+import LeanLLVM.Refinement.JsonStage2WalkDispatchArms
+import LeanLLVM.Refinement.JsonStage2WalkHlastDomain
