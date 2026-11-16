@@ -73,19 +73,25 @@ left**
 class at both levels (`hcontScalarFacts_of_staging`/`hcontArm_scalar_of_staging` and
 `lastEntryArm_scalar_of_staging`, `JsonStage2WalkDispatchScalarOfStaging`), and the
 standalone string (`hstringFacts_of_staging`/`hcontArm_twoEntry_of_staging`,
-`JsonStage2WalkDispatchStringOfStaging`).  **Thirty-four producers cover twenty-seven
-arms**, each at every state that carries `WalkInv`; beyond its class's byte test, each takes
-only its own arm's residual — the depth split, the `519` boundary and the root word, the
-entry lane and its order, the byte class of the byte the whitespace check reads, the level's
-count, the log words' values and the decoded length, the callee's staging, and, for the
-default arm's spans, the head's counted chain and the tail's staging, which are the class's
-own.
+`JsonStage2WalkDispatchStringOfStaging`).  **This change adds the tier's last two** — the
+run continuation at both levels (`runFacts_of_staging`/`hcontArm_run_of_staging` and
+`runLastFacts_of_staging`/`lastEntryArm_run_of_staging`,
+`JsonStage2WalkDispatchRunOfStaging`).  **Thirty-eight producers cover twenty-nine arms and
+no arm is without one**, each at every state that carries `WalkInv`; beyond its class's byte
+test, each takes only its own arm's residual — the depth split, the `519` boundary and the
+root word, the entry lane and its order, the byte class of the byte the whitespace check
+reads, the level's count, the log words' values and the decoded length, the callee's
+staging, and, for the default arm's spans, the head's counted chain and the tail's staging,
+which are the class's own.
 
-The two arms without a producer are `HcontArm.run` and `LastEntryArm.run`: their bundles are
-`RunFacts` and `RunLastFacts`, whose rows are the scan's traversal (`hbyte`), the seam's
-bound and the budget, and `JsonStage2WalkDispatchRunDomain` /
-`JsonStage2WalkDispatchRunLastDomain` instantiate them at one staged document each.  That
-is the measurement this section records, and it is what decides the remaining tier.
+The run arm's residual is the input's, and it is the largest left: the scan's traversal
+(`hbyte`), the head's counted chain to the seam with the run's count inside it, the byte's
+span, the tail's three calls on their scan arm, the landing, the scan's counter and its
+bound's cell with the copy test's value, and — the one row stated at a document number
+rather than at a cell — the lane's order at the continuing entry and the price at the last.
+Everything the walk's own blocks bind is derived there: the head byte and its cell, the head
+chain's endpoint cell, the landing's two registers, the bound's width, and the budget
+(see the two `run` rows below).
 
 Kind labels: **(i)** per-document class data; **(ii)** callee preconditions/answers;
 **(iii)** the scan traversal's round/guard/byte facts.  For (i) the decision is
@@ -124,7 +130,7 @@ unfolds is named.  Shared `D` items, named once:
 | `letters` | **F** the byte (`hlastByte G C` is the document's byte at the entry's position — `WalkInv.iter.reg8` names the cell, not the value); **D** the tests given it (`hbit`/`h110`/`hne102` are functions of that byte) and `h8` once it is named; **D** `hm`/`hmk`/`h8m`/`ht`/`htk`/`htok`; **D** `hHead` (the head's twelve links are class-independent, so a function of the class and the document — currently a field) | `hTail` | — |
 | `fLetter` | as `letters`, with its `h102` test **D** given the same byte | `hTail` | — |
 | `classC` | **F** the byte; **D** `h110`/`h125` given it, hence `h8`; **D** `hHead`, `hnS`, `htok`; **D** `hSpan` (the byte's own leaf: `c56TrueSpan`, `c56ElseSpan`, `c58TrueSpan`, `c58ElseSpan`) | `hTail` | — |
-| `run` (`RunFacts`) | **D** `N` (= `k - ix`, `wsScanStop`); **D** `hHead`, `hnH`, `hSpan`, `hnS`, `hLatch`, `ht/htk/hl/hk`; **D** `i`/`c` given the stop and the lane (`hcounter`/`hbound`/`hic`/`hcw`); **D-in-principle** `hbudget` (the bundle's note: implied by `contWsPriceF`); **F** `hspanStart` (the lane) | `hTail` | `hbyte` |
+| `run` (producer `runFacts_of_staging`/`hcontArm_run_of_staging`) | **D** `N` (= `k - ix`, `wsScanStop`); **D, derived by the producer** `x`/`h8` (`WalkInv.iter.reg8`), `h8m` (the head chain's endpoint `WalkIter`, at `hmk` — the row the spans' arms carry as an arm field), `hinc`/`hnep` (the landing's endpoint invariant), `hcw` (`entryPos_lt` at the guard), `hbudget` (the byte allowance's eight per visit implies the field's four — `runBudget_of_bytePrice`, whose premise is `contWsPriceF`'s form carried by `runBudget_of_wsPrice`); **D-in-principle** the segments `hHead`, `hSpan`, `hLatch` and their endpoints (the class's own; no class-independent composition exists, since the pivots take different blocks per byte); **F** `hbit` (the tag test at the document's head byte), `i`/`c` and `hic` (`WalkInv` names neither cell), `hspanStart` (the lane), `hstart` (the run's start) | `hTail` | `hbyte` |
 
 ### `LastEntryArm` — 14 constructors
 
@@ -143,7 +149,7 @@ unfolds is named.  Shared `D` items, named once:
 | `letters` | **F** the byte; **D** its class bits given it and `h8` once it is named; **D** `hHead` (eleven links, class-independent), endpoint cells, `htok` | `hTail` | — |
 | `fLetter` | as `letters`, with its `h102` test **D** given the same byte | `hTail` | — |
 | `classC` | **F** the byte; **D** `h110`/`h125` given it, hence `h8`; **D** `hHead`/`hSpan`/`hnS`/`htok` | `hTail` | — |
-| `run` (`RunLastFacts`) | **D** class bits, `N`, the segments `hHead`/`hSpan`/`hLatch`; **D** `i`/`c` given the stop and `%4` (`hcounter`/`hbound`/`hic`/`hcw`/`hspanDoc`); **boundary** `hbudget` (section 1) | `hTail` | `hbyte` |
+| `run` (producer `runLastFacts_of_staging`/`lastEntryArm_run_of_staging`) | **F** `hbit` (the tag test at the document's head byte); **D, derived by the producer** `x`/`h8`, `h8m`, `hinc`/`hnep`, `hcw` (`G.maxDoc` at the bound), `hspanDoc` (`hc`, the bound being `%4`, at `le_of_eq`), and `hbudget` — the **boundary** row of section 1 is now derived from the document's price: `terminalPriceFits` at `entryPos G C.k`, with the stop, the run's count and `%4`'s value supplied (`runLastBudget_of_price`, the bundle-free half of `runLastFacts_budget_iff_price`); **D-in-principle** the segments `hHead`/`hSpan`/`hLatch` and their endpoints; **F** `i`/`c` and `hic`, and the document's three numbers | `hTail` | `hbyte` |
 
 **What the enumeration decides.**  The **F** rows are the document's content (the entry
 stream's lanes, the bytes the paths read, the root word, the log word's value) and the
@@ -159,18 +165,20 @@ be produced at an arbitrary document.
 
 **The obligation's two bundles are still supplied**, with these named obstructions:
 
-* `WalkContinueFacts` — 15 arms; fourteen have a producer (`.ws` through
+* `WalkContinueFacts` — 15 arms, all with a producer (`.ws` through
   `hcontFacts_of_staging`, the depth-zero refusals, the above-depth comma and colon, the
   openers, the closing delimiters, the default arm's three spans in
   `JsonStage2WalkDispatchSpansOfStaging`, and this round's scan-free high-byte class
   (`hcontCleanupFacts_of_staging`, `JsonStage2WalkDispatchCleanupOfStaging`), plain-value
-  class (`hcontScalarFacts_of_staging`, `JsonStage2WalkDispatchScalarOfStaging`) and
+  class (`hcontScalarFacts_of_staging`, `JsonStage2WalkDispatchScalarOfStaging`),
   standalone string (`hstringFacts_of_staging`,
-  `JsonStage2WalkDispatchStringOfStaging`)), and each keeps its own (ii) calls, its (iii)
-  traversal rows where the class has a scan, and the **F** document rows above.  The one
-  without a producer is `.run`: its obstruction is the scan's traversal (`hbyte`), the
-  seam's bound and the budget, not a class demotion — the refusal, opener and token classes
-  are produced, so a class-demotion lemma is not what closes it.
+  `JsonStage2WalkDispatchStringOfStaging`) and run continuation (`runFacts_of_staging`,
+  `JsonStage2WalkDispatchRunOfStaging`)), and each keeps its own (ii) calls, its (iii)
+  traversal rows where the class has a scan, and the **F** document rows above.  `.run`'s
+  residual is the traversal (`hbyte`), the head chain and span, the tail's scan arm, the
+  landing, the scan's two cells and the lane's order — none of them a class demotion: the
+  refusal, opener and token classes are produced, and the run bundle's every
+  invariant-side row is derived, so a class-demotion lemma is not what the residual needs.
 * `WalkLoopEnd` — 14 arms plus the two log words.  **`.highByte` carries its producer's
   supply, not its conclusion**: the arm's payload is `HlastResidue` — the head byte's two
   naming bits, the last byte's three class bits, the root word, the three calls' staged
@@ -184,14 +192,18 @@ be produced at an arbitrary document.
   class's bits — including the log's base word, which the high-byte residue still supplies
   and this arm's producer reads off `WalkInv.log_base` across the kind store — so its arm
   keeps the class bits, the last byte's class, the root word and the three calls.
-  `hlast`'s other arms are as `WalkContinueFacts`'s, with `.run`'s budget the priced
-  boundary of section 1; `mergeWords`/`refuseWords` are the log word, which is **false** at
-  an escaping input (`JsonStage2WalkArenaWord`) and is a statement change, not a proof.
+  `hlast`'s other arms are as `WalkContinueFacts`'s, with `.run` now produced by
+  `runLastFacts_of_staging`/`lastEntryArm_run_of_staging` — its bundle keeps the segments,
+  the tail's calls and the traversal, and derives its budget from section 1's price rather
+  than taking it (§2's `run` rows); `mergeWords`/`refuseWords` are the log word, which is
+  **false** at an escaping input (`JsonStage2WalkArenaWord`) and is a statement change, not
+  a proof.
 
 Nothing about the walk's statements is retracted by that.  What is retracted is the
-brief's claim that **composition alone** would produce the two bundles: the work between
-here and Gate A is the plan's producer tier — the callee contracts at the tail's argument
-lists, the traversal lemmas, and the per-class **F** rows — not a new composition.
+brief's claim that **composition alone** would produce the two bundles: with every arm
+produced, what stands between here and Gate A is the arms' residuals — the callee contracts
+at the tails' argument lists, the traversal hypotheses (`hround`, `hguard`, `hbyte`), the
+classes' head chains and spans, and the document rows — not a new composition.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkDispatchRun
 import LeanLLVM.Refinement.JsonStage2WalkRevolution
