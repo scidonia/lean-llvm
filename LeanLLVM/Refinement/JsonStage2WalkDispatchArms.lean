@@ -40,28 +40,26 @@ turns it into the actual `WalkDispatchResult`:
   `if.then127.i → if.then130.i` and `if.then173.i → if.then176.i` store the entry's
   position and reach the copy (`commaRefuse_at`'s and `colonRefuse_at`'s six links).
   These are the arms the documents `,` and `:` take.
+* `.containerOpen` — `[` and `{`, both of which enter `if.then.i`: the four head links
+  (`NodeBlock21 → NodeBlock19 → NodeBlock11 → LeafBlock7` at `91`, `NodeBlock21 →
+  NodeBlock19 → NodeBlock17 → LeafBlock13` at `123`) and the tail's five — the
+  value-position call, `if.end.i`'s depth guard, the push, the event reserve and the tag
+  (`containerOpenMerge_at`, nine links).  The head's target states are the operands'
+  literals, the tail's are `openS₅`…`openS₉`, and the block's own `let`-bound states are
+  named by the three `step` theorems, so the composition is a chain of named states.
 * `.supplied` — the arms whose segments are the remaining obligation, in the order the
   closure handoff names them:
-  * **the container openers** (`[`, `{`, both of which enter `if.then.i`).  Every link of
-    the route is present — `WalkLink.if_then_i` (with the callee's `s2ValuePosPre` and its
-    answer), `WalkLink.if_end_i_at`, `WalkLink.ifEnd24` (the push, whose carry is
-    `wlen`/`tyMap`/`stMap` and whose target state `ifEnd24_step` leaves as a `let`),
-    `WalkLink.if_end_i_i`, `WalkLink.out_reserve_exit_i_i` — so what is owed is the
-    segment's *composition*: the chain's target states are `let`-bound inside the links'
-    own proofs (`ifEnd24_step`'s `e`, the reserves' `m'`), and a segment's index must be a
-    term the next link's source unifies with, so each has to be named at module level
-    first — the reason `HeadS62`…`HeadS413` and `consumerTailSegAt` exist.
   * **the comma and the colon above depth zero** (four sub-routes each: two merge routes
     and two refusals, e.g. `if.end150.i`/`if.end162.i` into `cleanup478.i` and
     `if.then147.i`/`if.then159.i` into `if.then`).  Their links are present as well
     (`WalkLink.if_end133_i`, `if_then141_i_at`, `if_end150_i`, `if_else153_i_at`,
     `if_end162_i`; `stackMarkerRefuse_at` for the marker's own refusal), and they are
     *blocked on their witness*: every one of them is at `C.sp ≠ 0`, while the layer's only
-    invariant producers are `walkSeed` (`sp = 0`) and the step lemmas — the loop's own run
-    is the premise `WalkLoopStepThree`, not a produced state.  So there is no depth-one
-    `WalkInv` to state a regression at, and an arm landed here would have none.
-  * **the closing delimiter with an open container** — the same depth-one obstruction, plus
-    `stateStackRefuse_at`'s state-stack byte for its refusal sub-route.
+    depth-zero seed is `walkSeed` (`sp = 0`).  The depth-one state a document reaches is
+    `containerOpen_depth_one`'s product (`JsonStage2WalkDispatchOpeners`), and these routes
+    have yet to be stated at it, so an arm landed here would have no regression.
+  * **the closing delimiter with an open container** — the same depth-one state to be
+    stated at, plus `stateStackRefuse_at`'s state-stack byte for its refusal sub-route.
   * **the default arm's letter routes** (the tag test's clear arm: `if.else387.i → NodeBlock62 →
     LeafBlock54 → if.then413.i`).  Reachable at the seed (byte `a`), and the pieces exist —
     `walkHeadChainASeg`'s six links, the whitespace check, `consumer_tail_seg` — but the
@@ -84,6 +82,7 @@ which character the entry starts with: that is `%8`, and `HeadArm` classifies it
 questions are answered by different facts, and this module keeps them apart.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkDispatchScalar
+import LeanLLVM.Refinement.JsonStage2WalkDispatchOpeners
 import LeanLLVM.Refinement.JsonStage2WalkDispatchThreeOfRun
 
 set_option autoImplicit false
@@ -333,10 +332,28 @@ inductive LastEntryArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
       (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
       (he : lookupName s.env "%e" = some (.ptr C.stage.e))
       (hj : j ≤ G.n) (hj64 : j < 2 ^ 64) : LastEntryArm calls G C s
-  /-- **The arms whose segment is the remaining obligation**: the container openers, the
-  comma and colon above depth zero, the closing delimiter with an open container, and the
-  default arm's letter routes.  The field is that arm's own result — the endpoint it
-  reaches with the count and the price — and no other arm's class is a premise of it. -/
+  /-- **The container openers `[` and `{` at the last entry**: both enter `if.then.i`,
+  and the four head links beside the tail's five reach the merge — nine links
+  (`containerOpenMerge_at`).  The byte class is the arm's, the depth's `519`-guard and the
+  root slot's zero word are the block's, and the callee's staging and answer are the
+  call's, exactly as the scalar arm carries its own three calls. -/
+  | containerOpen {b : BitVec 8}
+      (h8 : evalOperand s (.reg "%8") = some (.int 8 b))
+      (hopen : b = BitVec.ofNat 8 91 ∨ b = BitVec.ofNat 8 123)
+      (hsp519 : C.sp ≤ 519)
+      (hrd : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes 0 4))
+      (hpreV : s2ValuePosPre
+        [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+         .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
+      (r : CallOutcome)
+      (hcall : stage2Calls stage2SubCalls "s2_value_pos"
+        [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+         .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r)
+      (hret : r.ret = .int 32 (BitVec.ofNat 32 1)) : LastEntryArm calls G C s
+  /-- **The arms whose segment is the remaining obligation**: the comma and colon above
+  depth zero, the closing delimiter with an open container, and the default arm's letter
+  routes.  The field is that arm's own result — the endpoint it reaches with the count and
+  the price — and no other arm's class is a premise of it. -/
   | supplied (r : WalkDispatchResult (stage2Calls stage2SubCalls) G C s) :
       LastEntryArm calls G C s
 
@@ -375,6 +392,8 @@ theorem LastEntryArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
   | .colonZero h8 hsp hv he hj hj64 =>
     WalkDispatchResult.ofRefuseAt (colonRefuse_at G C s hInv hblock h8 hsp hv he hj hj64
       (WalkInv.head_lt hInv (by simpa only [walkLoopHead] using hblock)))
+  | .containerOpen h8 hopen hsp519 hrd hpreV r hcall hret =>
+    containerOpenMerge_at G C s hInv hblock h8 hopen hsp519 hrd hpreV r hcall hret
   | .supplied r => r
 
 /-! ### The instrument -/

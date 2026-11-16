@@ -108,6 +108,12 @@ Build a dispatch census from the pinned IR. Every head branch must lead to a pro
 
 `.highByte` is where the byte-class restriction now lives: it is one constructor, documented as the 126/127 arm, and it is not the last entry's shape.
 
+The container openers' nine-link composition has since landed: `containerOpenMerge_at`
+(`JsonStage2WalkDispatchOpeners`) is the producer behind `LastEntryArm.containerOpen` and
+`HcontArm.containerOpen`, so the `.supplied` row above no longer covers them, and the
+documents `[0]`, `{"a":1}` and `[` inhabit the two arms
+(`JsonStage2WalkDispatchOpenersDomain`).
+
 ### A3. Preserve prices and returned-state evidence
 
 Each branch must return:
@@ -126,7 +132,7 @@ The loop-head guard now helps derive the last-index equality. Preserve that impr
 ### A4. Acceptance criteria
 
 - A regression refutes the old universal residue on the actual `0` seed. **Landed**: `zeroDocument_residue_false`, `zeroDocument_highByteArm_empty`, `zeroDocument_domain`.
-- Terminal dispatch is exhaustive over the claimed input domain and malformed inputs that the precondition permits. **Interface and census landed**; the container, comma, colon, closing-with-container and letter arms are `.supplied` — their segments are the remaining work, and no other arm's class is a premise of them.
+- Terminal dispatch is exhaustive over the claimed input domain and malformed inputs that the precondition permits. **Interface and census landed**; the container, comma, colon, closing-with-container and letter arms are `.supplied` — their segments are the remaining work, and no other arm's class is a premise of them.  The container class has since landed (`containerOpenMerge_at`, both enums' `.containerOpen`); the comma, colon, closing-with-container and letter arms remain `.supplied`.
 - No ordinary scalar, string or closing-delimiter case is required to prove that its byte is 126 or 127. **Landed**: the scalar arm's class is `91`/`44`/`58`/`44 ≠` plus the tag bit; the string and closing arms are refusals with their own bytes.
 - The loop consumer invokes the complete dispatch producer. **Landed**: `walkLoopStep_of_staging`'s last branch is `hend.dispatch C s hInv hhead hk`.
 - Every branch has an endpoint and a price, including refusal branches. **Landed for the proved arms**; `.supplied` carries the endpoint and the price it claims.
