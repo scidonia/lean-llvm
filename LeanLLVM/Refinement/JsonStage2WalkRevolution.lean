@@ -178,9 +178,11 @@ continuations** of a continuing entry, and the plan is two structures with a `Su
   (`JsonStage2WalkDispatchHcontArms`), one constructor per class of the emitted head
   switch — the plain-value numeral route (`HcontScalarFacts`), the high-byte route's
   `ws` (`HcontFacts`) and `cleanup` (`HcontCleanupFacts`), the standalone string
-  (`HstringFacts`, whose merge index is `C.k + 2`) beside its residue, and the supplied
-  arms — and the consumer splits once.  An inductive rather than a nested `Sum` because a
-  `Sum` of the arms would re-shape every consumer twice, and the class question is still
+  (`HstringFacts`, whose merge index is `C.k + 2`) beside its residue, and the arms for
+  the delimiter and token classes (comma, colon, container opener, closer, letters,
+  class C, `f` and the run) — and the consumer splits once.  An inductive rather than a
+  nested `Sum` because a `Sum` of the arms would re-shape every consumer twice, and the
+  class question is still
   asked once, where the class is known.  A conditional inside a `Type`-valued structure
   would make every field a question.
 
