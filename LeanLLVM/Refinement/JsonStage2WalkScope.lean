@@ -1008,7 +1008,16 @@ with `%ee.1.i = %cond350.i` — the arm whose byte before the entry's end is not
 whitespace reaches it with the token ending exactly at the entry's end — and there the
 scan is not entered at all, so neither `ScanLanded` nor `ScanEntered` holds.  That state
 is why `ScanEmpty` exists; the other landings have not been shown to need it, and adding
-it only where a reachable state requires it keeps the change additive. -/
+it only where a reachable state requires it keeps the change additive.
+
+**The loop head carries its own guard.**  `NodeBlock21` is entered only with an entry
+left — `%k.0.i249 < %nep` is the test that sends the walk into the body — so the head's
+clause is `C.k < G.nep`.  It is the one clause stated on the carry's index and not on a
+register, and it is what `WalkLoopEnd.facts`' producer reads to know the last entry's
+index: `WalkInv.k_le` bounds the index by the count, and with the head's guard the
+consumer's `¬ (C.k + 1 < G.nep)` makes `C.k + 1 = G.nep` follow.  The seed supplies it
+(`walkSeed_invariant`, at `0 < G.nep`) and the header's pass preserves it
+(`whileBody_step`, whose guard `k < G.nep` is the target's). -/
 def WalkLocal {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State) : Prop :=
   if C.block = "for.inc.i.i" then
     ∃ i c : Nat, c - i ≤ C.inner ∧ i < c ∧ c < 2 ^ 64 ∧
@@ -1043,6 +1052,7 @@ def WalkLocal {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State) : Prop 
     (ScanLanded s "while.body462.i" "%inc463.i" "%cond350.i" C.inner ∨
       ScanEntered s "if.then447.i" "%ee.1.i" "%cond350.i" C.inner ∨
       ScanEmpty s "%ee.1.i" "%cond350.i")
+  else if C.block = "NodeBlock21" then C.k < G.nep
   else True
 
 /-- **The pointer registers the dispatch's blocks read**, in one place.
@@ -1831,6 +1841,18 @@ namespace WalkInv
 
 variable {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
 
+/-- **The loop head's guard, read off the block-local clause.**  `WalkLocal` states
+`C.k < G.nep` at `NodeBlock21`, so a state at the loop head has an entry left.  This is
+the clause `WalkInv.k_le` does not give (it bounds the index by the count, not below it),
+and it is what turns the consumer's `¬ (C.k + 1 < G.nep)` into the last entry's index
+`C.k + 1 = G.nep`. -/
+theorem head_lt (h : WalkInv G C s) (hhead : C.block = "NodeBlock21") : C.k < G.nep := by
+  have hb : WalkLocal C s := h.blockLocal
+  unfold WalkLocal at hb
+  rw [hhead] at hb
+  repeat rw [ite_eq_right (by decide)] at hb
+  exact hb
+
 /-- The arena's bound, from the carried extents: this is
 `Stage2SpansInside`'s content and `arenaLe_of_spans`'s conclusion, so the report's
 `alen ≤ ndst0 + n` is downstream of the carry rather than assumed. -/
@@ -2010,7 +2032,7 @@ theorem walkSeed_depth_cap {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) :
 `WalkInv` at a `WalkSeedState`, so the seed's production is the initialisation's
 facts and nothing else. -/
 theorem walkSeed_invariant {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) {s : State}
-    (h : WalkSeedState G S s) : WalkInv G (walkSeed G S) s := by
+    (h : WalkSeedState G S s) (hpos : 0 < G.nep) : WalkInv G (walkSeed G S) s := by
   obtain ⟨hpc, hk, hsp, hinc0, hptrs, hregs, hiter, -, -, -, -, hhash, hown, hge, hframe, hlen,
     hcap, halen, hacap, hidx0⟩ := h
   refine
@@ -2057,6 +2079,7 @@ theorem walkSeed_invariant {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) {s : S
   · intro p off len hp
     simp [walkSeed] at hp
   · simp [WalkLocal, walkSeed]
+    exact hpos
 
 /-! ### The measure -/
 
@@ -3520,6 +3543,10 @@ theorem walkIter_measure {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (k2 : Na
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.WalkGeom.nonempty
 
+/-- info: 'LeanLLVM.Refinement.WalkInv.head_lt' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkInv.head_lt
+
 /-- info: 'LeanLLVM.Refinement.WalkInv.alen_le' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.WalkInv.alen_le
@@ -4921,8 +4948,7 @@ theorem whileBody_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
       exact walkFrame_cursorK (G := G) (C := C)
         (v := wordBytes 8 (k + 1)) (by simp [wordBytes, natToBytes_length]) hInv.frame
     · dsimp only [e]
-      unfold WalkLocal
-      simp
+      simpa [WalkLocal] using hklt
   · exact walkMeasure_step G C _ hkge (le_of_lt hklt) hInv.inner_cap
   · intro n
     rw [show 1 + n = n + 1 from by omega]

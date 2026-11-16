@@ -1903,8 +1903,14 @@ theorem WalkLink.if_end207_i {calls : Calls} {m0 : Mem}
     · rw [hmem']
       dsimp only [m']
       exact hInv.frame_cursorK (v := wordBytes 8 (C.k + 2)) (by rw [hwlen])
-    · simp only [WalkLocal]
-      split <;> simp
+    · have hb : (if evalICmp .ugt x (BitVec.ofNat 64 q) = 1 then "if.then219.i"
+            else "if.then214.i") = "if.then219.i" ∨
+          (if evalICmp .ugt x (BitVec.ofNat 64 q) = 1 then "if.then219.i"
+            else "if.then214.i") = "if.then214.i" := by
+        split <;> simp
+      rcases hb with h | h
+      · rw [h]; simp [WalkLocal]
+      · rw [h]; simp [WalkLocal]
   · rfl
   · dsimp only [s', out, cs, m', bit]
 

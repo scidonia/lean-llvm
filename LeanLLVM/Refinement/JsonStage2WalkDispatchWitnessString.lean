@@ -98,7 +98,7 @@ clauses, the step's own predecessor, or a `def`'d state's cells — except for
 | R8 | `hR8` | `evalICmp .slt y 1 = 0` | the callee's post: the form is `1` or `2` on the accepting arms | the post stating the form |
 | R2 | `l`, `hreadOutn`, `hlext` | the decoded length at the callee's memory, and `l ≤ ext` | `s2StringBodyPost`'s `%outn` word and `s2StringBody_outn_le` | a `s2StringBodyPost` clause relating the length to `len` |
 | R3 | `hlogBase` | `readBytes r.mem C.stage.z 8 = some (wordBytes 8 G.ev)` | the initialisation's store at `%z + 0` plus a `WalkInv` clause for the log's base | that clause |
-| R4 | `hltEvents` | `C.events.length < C.k` (strict) | `if.then425.i`'s one-record-per-emitting-entry count | a clause relating the trace's length to the entries consumed |
+| R4 | `hltEvents` | `C.events.length < C.k` (strict) | `if.then425.i`'s one-record-per-emitting-entry count | a clause relating the trace's length to the entries consumed; **the strict form is itself too strong** — at `C.k = 0` it is `0 < 0`, so this field (and the last entry's producer argument of the same statement, `HlastResidue.hltT`) makes its bundle uninhabited for a single-entry document.  The provable form is `C.events.length + 1 ≤ G.nep`, which `WalkInv.events_le` and the head's guard give, and the emit lemma's hypothesis is where it has to land (see `JsonStage2WalkDispatchWitnessHlast`'s survivors table for the five modules that read it) |
 | — | `hev63` | `C.evlen < 2^63` | the staging's cursor word (`stage2Pre`'s `%nev`) | a staging clause |
 
 Every field is a statement no clause of `WalkInv`, no field of `HstringFacts`,

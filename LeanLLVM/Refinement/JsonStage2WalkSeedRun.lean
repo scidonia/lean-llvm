@@ -1486,7 +1486,7 @@ theorem walkSeedInvariant_geometry {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G
     WalkInv G (walkSeed G S)
       (walkSeedFinalState G S s (entryPos G 0) (entryByte G 0)) :=
   walkSeed_invariant G S
-    (walkSeedState_geometry G S s hn hct hcs hc hz hxp hnxp htok he hnext hnepe)
+    (walkSeedState_geometry G S s hn hct hcs hc hz hxp hnxp htok he hnext hnepe) hn
 
 /-! ### Axiom footprints for the seed's last rows -/
 

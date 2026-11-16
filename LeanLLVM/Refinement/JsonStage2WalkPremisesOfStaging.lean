@@ -178,15 +178,18 @@ theorem walkDispatch_of_continue {m0 : Mem} {G : WalkGeom m0}
 
 /-! ### The finalisation's terminal runs and the loop's step -/
 
-/-- **The last entry's facts, the finalisation's words, and the merge's count**, at
-every state each is read at.  `facts` is the last entry's bundle; `mergeWords` and
-`refuseWords` are the three facts no clause carries, one bundle per terminal entry
-block; and `nepBound` is the merge's `%nep` value, inside the stream.
+/-- **The last entry's evidence, the finalisation's words, and the merge's count**, at
+every state each is read at.  `hlast` is the last entry's *residual* evidence — the
+arguments its bundle's producer still takes — and `WalkLoopEnd.facts` applies
+`hlastFacts_of_staging` to it, so the bundle is derived here rather than supplied;
+`mergeWords` and `refuseWords` are the words no clause carries, one bundle per terminal
+entry block; and `nepBound` is the merge's `%nep` value, inside the stream.
 
 The terminal post is not a field: `WalkLoopEnd.merge` and `WalkLoopEnd.refuse` produce it
 from the bundles and the state's own cells, and their proofs are the four terminal runs
-of `JsonStage2WalkTargetPost`.  So what this structure *supplies* is the words, and what
-the layer *proves* is the run and the boundary at its memory.
+of `JsonStage2WalkTargetPost`.  So what this structure *supplies* is the evidence and the
+words, and what the layer *proves* is the last entry's bundle, the run and the boundary at
+its memory.
 
 The three facts, and why they are not clauses:
 
@@ -206,9 +209,11 @@ The log's arena word and the finalisation's eight carrier registers are the four
 fifth supplied facts (`WalkMergeWords.log`, `WalkMergeWords.env`), with the write-back
 block and the seed's environment as their producers. -/
 structure WalkLoopEnd {m0 : Mem} (G : WalkGeom m0) : Type where
-  /-- The last entry's facts, at every head state the merge's test sends to the exit. -/
-  facts : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
-    ¬ (C.k + 1 < G.nep) → HlastFacts G C s
+  /-- **The last entry's residual evidence**, at every head state the merge's test sends
+  to the exit.  It is the supply, not the conclusion: `WalkLoopEnd.facts` applies
+  `hlastFacts_of_staging` to it. -/
+  hlast : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
+    ¬ (C.k + 1 < G.nep) → HlastResidue G C s
   /-- **The merge's words**, at every state a dispatch reaches at `cleanup478.i`. -/
   mergeWords : ∀ (Cd : WalkCarry G) (sd : State), WalkInv G Cd sd →
     Cd.block = "cleanup478.i" → WalkMergeWords G Cd sd
@@ -221,6 +226,27 @@ structure WalkLoopEnd {m0 : Mem} (G : WalkGeom m0) : Type where
   nepBound : ∀ (Cd : WalkCarry G) (sd : State) (nepv : BitVec 64),
     WalkInv G Cd sd → Cd.block = "cleanup478.i" →
     lookupName sd.env "%nep" = some (.int 64 nepv) → nepv.toNat ≤ G.nep
+
+/-- **The last entry's bundle, produced from its residual evidence.**  This is
+`hlastFacts_of_staging` at the state the field is read at: the invariant supplies the
+head's byte, the entry's index, `%4`'s word, the token record's address and the merge's
+cells; the loop's guard supplies the last index (`WalkInv.head_lt` with the consumer's
+`¬ (C.k + 1 < G.nep)`); the geometry supplies the merge's two width facts; and the
+residue supplies the document's class, the three calls and the log's word.
+
+The structure carried the *conclusion* before this theorem existed, so the supply and
+the proof were the same object.  Now the supply is `WalkLoopEnd.hlast`'s residue and the
+conclusion is derived here — the field reader and the producer cannot drift apart,
+because there is only one producer. -/
+noncomputable def WalkLoopEnd.facts {m0 : Mem} {G : WalkGeom m0} (h : WalkLoopEnd G) :
+    ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
+      ¬ (C.k + 1 < G.nep) → HlastFacts G C s :=
+  fun C s hInv hhead hnot =>
+    let r := h.hlast C s hInv hhead hnot
+    hlastFacts_of_staging (rdv := r.rdv) (xA := r.xA) G C s hInv hhead hnot
+      r.hlt125 r.hne125 r.hb13 r.hb32 r.hbne13 r.r₁ r.r₂ r.r₃
+      r.hreadT r.hpre₁ r.hcall₁ r.hret₁ r.hbit0T r.hzread
+      r.hpre₂ r.hcall₂ r.hret₂ r.hev64 r.hltT r.hpre₃ r.hcall₃
 
 /-- **The merge's terminal post, from the merge's words and its cells.**  The depth's
 zero test and the root-done test select the finalisation's route, and the route's run is
@@ -785,7 +811,7 @@ the input or a named missing preservation lemma.
 | `WalkContinueFacts` | **a class of three arms, each with its own evidence.**  The whitespace arm is `HcontFacts`' supply, in `HlastFacts`' discipline: its producer is `hlastFacts_of_staging`'s twin — the same three sources (the invariant's clauses, the document's content, the staging's addresses) read at the run class's states — and the bundle's fields are the head's byte and its four pivot bits, the entry counts and the default arm's cells, the whitespace class with its stop `k`, the seam's byte, the tail's segment and the scan's landing.  The run is derived rather than carried: `contWsRunF` composes it from the class field and `contWsPriceF` prices it.  That twin is `hcontFacts_of_staging` (`JsonStage2WalkHcontFactsOfStaging`), and what it takes from its caller is the document's bytes and their classes, the whitespace class, the tail's segment, the scan's landing and its traversal's three hypotheses (`hround`, `hguard`, `hbyte`, supplied unweakened), `htok`, which needs *the extra-token scan preserves a register it does not bind* — a statement a `WalkSegment` cannot carry, because the traversal returns its final state existentially.  The run's endpoint cells are not premises: `contWsRunF` returns the stop's `%cond350.i`, `wsSlS_envEnd` the seam's `%end.i`, and `%inc.i`/`%nep` are `WalkInv` clauses.  **The count test's value is `1` here and `0` in `HlastFacts`, and both are right**: the fields are arm-specific — a continuing entry has one after it, so the scan's bound is above its index, while the last entry's is the stream's end.  A docstring that gives either value without its arm reads as a contradiction in the other.  **`hnext` is derived, not supplied**: it follows from `C.k + 1 < G.nep` with the two counts pinned to `%k.0.i249 + 1` and `G.nep` (`cont_ult_one`), and `%inc.i`/`%nep` are clauses (`WalkInv.inc_reg`, `WalkInv.regs`) — so the group is closed.  The scan-free arm is `HcontCleanupFacts` (`JsonStage2WalkRevolution`), whose segment needs no scan, no tail budget and no traversal and whose price has no byte term.  The two-entry arm is `HstringFacts` (`JsonStage2WalkDispatchWitnessString`), whose fifteen-block segment is **supplied rather than composed**: `WalkLink.z_arena_reserve_exit`'s address is now the staging's (it had stated `%xj.i` at `G.next0 + 16`, where the string body's `RegionsApart xj 8 outn 8` is false against `%outn.i = G.next0 + 20`; it is `+ 12` now), but the link still needs the register carriers `walkStaticRegs` omits and the two `s2StringBodyFoot`→`walkWide` frame lemmas, and the string body's call site has no `s2StringBodyPre` producer.  Its other groups come from the same three sources, and its two merge cells are fields at its own endpoint rather than `WalkInv` clauses. |
 | `WalkContinueWsFacts` | **the whitespace class's `∀`-form; `walkDispatch_of_continue` reads it.**  Its content is `HcontFacts` at every head state with an entry left, and the dispatch bridge proves `WalkDispatch` from it with `walkDispatch_at_continue_cells_ws` (`JsonStage2WalkRevolutionSeg`), the whitespace arm's own composition.  `hcontFacts_of_staging` produces `HcontFacts` at *one* state, not this `∀` (a `∀` would have to inhabit `HcontFacts` at states whose class is another arm's, which is what the class split exists to avoid), which is why the loop's step calls the per-state dispatch instead.  The scan-free arm's `∀`-form is spelled in `walkDispatch_of_continue_cells` (`JsonStage2WalkRevolutionSeg`), which reads `HcontCleanupFacts` and is the same bridge for that arm.  The pair is kept so `WalkDispatch` keeps its only producer — `WalkDispatchOutcome.ofDispatch` and `WalkDispatch.revolution` consume that predicate — and the bridge is a two-line wrapper over the per-state dispatch, so the two cannot drift. |
 | `WalkHeadCells` | **retired: proved, not supplied.**  `mergeHeadCells` (`JsonStage2WalkRevolutionSeg`) produces `MergeHeadCells` from `WalkInv` alone — `%inc.i` is `WalkInv.inc_reg` and `%nep` is one of `walkStaticRegs`' pairs — and `walkHeadCells` is its `∀`-form, which is what the loop's step and `walkDispatch_of_continue` read.  The clause is uniform (`ofNat 64 (C.k + 1)` at every block): the back edge (`walkBack_step`) advances neither `C.k` nor the register, and `whileBody_step` moves both together, so the block-keyed form this row used to propose (`ofNat C.k` at `while.body.i`) is refuted by `hkge : C.k < %k.2.i` |
-| `WalkLoopEnd` | **supplied: four fields, each a fact about the input, and three of them named here for the first time.**  `facts` is `HlastFacts`, whose producer is `hlastFacts_of_staging` (itself a bundle of supplied facts — the head's byte and class bits, the register cells and the calls' outcomes); `mergeWords` is `WalkMergeWords` at every state at `cleanup478.i`, and `refuseWords` is `WalkRefuseWords` at every state at `if.then`; `nepBound` is the merge's `%nep` value, which the dispatch's outcome names.  The *runs* are no longer supplied: `WalkLoopEnd.merge` and `WalkLoopEnd.refuse` produce `WalkTargetPost` from the words and the state's own cells, and their proofs are the four terminal runs of `JsonStage2WalkTargetPost` — so what a caller still owes is the words, and each word names its producer: `%4`'s value the seed's register carrier (`walkSeedFinalEnv_regs`, unless `"%4"` joins `walkStaticNames`), the log's arena word the write-back block `if.else285.i`'s link (`WalkInv.log_alen` is only the bound), the finalisation's seven registers the seed's environment (`walkEntryState_env`), the merge's root-done word a presence clause on `WalkInv`, and R0's refusal word a memory-carrying refusal segment — the last two are not clauses for the reasons their docstrings give (`walkWide` omits the four `alloca` slots, and a `WalkSegment` keeps no memory). |
+| `WalkLoopEnd` | **supplied: the last entry's residual evidence and three word bundles; the bundle itself is derived.**  `hlast` is `HlastResidue` — the producer's remaining arguments at a head state (the document's byte class, the three calls and their facts, the log's base word, the trace's count) — and `WalkLoopEnd.facts` is the `def` that applies `hlastFacts_of_staging` to it, so `HlastFacts` is no longer a field and the reader cannot drift from the producer; `mergeWords` is `WalkMergeWords` at every state at `cleanup478.i`, and `refuseWords` is `WalkRefuseWords` at every state at `if.then`; `nepBound` is the merge's `%nep` value, which the dispatch's outcome names.  The *runs* are no longer supplied: `WalkLoopEnd.merge` and `WalkLoopEnd.refuse` produce `WalkTargetPost` from the words and the state's own cells, and their proofs are the four terminal runs of `JsonStage2WalkTargetPost` — so what a caller still owes is the residue and the words, and each names its producer: `%4`'s value the seed's register carrier (`walkSeedFinalEnv_regs`, unless `"%4"` joins `walkStaticNames`), the log's arena word the write-back block `if.else285.i`'s link (`WalkInv.log_alen` is only the bound), the finalisation's seven registers the seed's environment (`walkEntryState_env`), the merge's root-done word a presence clause on `WalkInv`, and R0's refusal word a memory-carrying refusal segment — the last two are not clauses for the reasons their docstrings give (`walkWide` omits the four `alloca` slots, and a `WalkSegment` keeps no memory). |
 
 Of the four, `WalkHeadCells` is the one that was *vocabulary* rather than an
 input, and it is no longer a premise: the two clauses are `WalkInv` fields now, and
@@ -802,6 +828,7 @@ where they are stated, and each one's retirement is named with it. -/
 #print axioms LeanLLVM.Refinement.WalkScope.stage2Post_of_staging_loop
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLoopEnd.merge
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLoopEnd.refuse
+#print axioms LeanLLVM.Refinement.WalkScope.WalkLoopEnd.facts
 
 /-! ### Axiom footprints -/
 
