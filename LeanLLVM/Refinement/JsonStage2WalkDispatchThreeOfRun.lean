@@ -229,7 +229,8 @@ state*, and it does not classify the dispatch, so it does not appear here.
 The refusal path (`hlast_refuse`) reaches the copy at `if.then` with `%4`'s word at
 `%e + 8`, not the carry's `eoff`, so it is not the `refuse` arm's word: that arm
 carries the segment's own store (`WalkRefuseSegment`), and the last entry's refusal is
-supplied through `LastEntryArm.supplied` rather than forced through this bundle.
+carried by its own arms (`quoteRefuse_at`, `bracketRefuse_at`, `commaRefuse_at`,
+`colonRefuse_at`, `closeWithOpen_at`) rather than forced through this bundle.
 
 The merge arm's evidence is `hlast_finish`'s, read at the endpoint that lemma names
 (`hlastMergeCF f`, `hlastMergeF f`) rather than through its existential: the arm has to

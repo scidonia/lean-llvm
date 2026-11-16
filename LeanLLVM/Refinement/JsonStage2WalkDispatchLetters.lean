@@ -15,9 +15,9 @@ eq  %8, 102 = 0        not 'f', so LeafBlock54's else arm
 if.else387.i → NodeBlock62 → LeafBlock54 → if.else405.i → if.then413.i     (4 links)
 ```
 
-which is `LastEntryArm.supplied`'s named route.  The four links are `this module`'s
-`lettersSpan`, and their target's `%kind404.i` is `0` — `if.else405.i`'s row of
-`if.then413.i`'s `%.sink372` table — which is why the tail that follows is the empty-arm
+which is `LastEntryArm.letters`'s and `HcontArm.letters`'s named route.  The four links are
+`this module`'s `lettersSpan`, and their target's `%kind404.i` is `0` — `if.else405.i`'s row
+of `if.then413.i`'s `%.sink372` table — which is why the tail that follows is the empty-arm
 tail `consumerTailSegAt` composes at kind `0`.
 
 **The two byte classes this route holds, and the one it does not.**  `slt` is signed, so
@@ -26,7 +26,8 @@ It does not hold for `110 … 127`, which is why the bytes `126` and `127` are *
 class — they take the longer `NodeBlock60 → LeafBlock58` span that `walkHeadChainCSeg`
 composes, and are `HcontArm.ws`/`.cleanup`'s.  The byte `102` (`'f'`) satisfies the first
 pivot and takes `LeafBlock54`'s *true* arm (`if.then397.i`, kind `9`); it is the one byte of
-the class this module does not describe, and it is what `.supplied` still carries.
+the class this module does not describe, and it is `JsonStage2WalkDispatchFLetter`'s
+(`LastEntryArm.fLetter`, `HcontArm.fLetter`).
 
 ## What the route's composition is, and what it costs
 

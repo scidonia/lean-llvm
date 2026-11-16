@@ -75,19 +75,29 @@ supplies, and `.dispatch` turns it into the actual `WalkDispatchResult`:
   calls as their own counted segments (twelve and three) and the merge's own step — twenty
   links, `lettersCleanupMerge_at`.  The class premise is explicit (the tag test clear,
   `slt %8 110 = 1`, `%8 ≠ 102`), so the chain the reader must supply is the class's.
-* `.supplied` — the arm whose segment is the remaining obligation: the default arm's **run**
-  class (the extra-token scan's `walkScanToMerge` induction), the byte `102` (`'f'`,
-  `LeafBlock54`'s true arm), and any class whose head chain is not one of the proved ones.
-  The field is that arm's own counted segment to the endpoint it reaches, with the
-  endpoint's facts — not a bundle about another class.
+* `.fLetter` — the byte `102` (`'f'`) on the scan-free class: `LeafBlock54`'s *true* arm,
+  `if.then397.i`'s empty body to `if.then413.i` (kind `9`) rather than the letters route's
+  `if.else405.i`.  `fSpan`'s four links and `fCleanupMerge_at`'s merge — twenty links.
+* `.classC` — the class-C span's leaves on the scan-free class, the bytes `110 … 125`:
+  `110` via `LeafBlock56`'s true arm (`if.then403.i`, kind `10`), `111 … 115` via its else
+  arm, `116` from `LeafBlock58` itself (kind `8`) and `117 … 125` via its else arm.  The
+  span is the byte's own `Seg` (`c56TrueSpan`, `c56ElseSpan`, `c58TrueSpan`,
+  `c58ElseSpan`) at `nS ≤ 5`, and `classCMerge_at` composes the tail and the merge.
+* `.run` — **the default arm's run class**, at every default span: the byte before the
+  entry's end is whitespace, so the token's end is the run's stop and the extra-token scan
+  is entered.  `RunFacts` carries the path's inputs and `runScanMerge_at` composes the
+  segment, the visits by `scanRoundsAt` — the rounds at the seam's own bound, which
+  `JsonStage2WalkRevolutionSeg`'s class-C-only `scanWsRounds` is not.
 
-**The high-byte route is not `.supplied`'s.**  `126` and `127` are `HcontClass.defaultValueHigh`
+**The census is exhaustive in the proved sense.**  The head switch's bytes are
+`HeadArm.complete`'s and the tag test's two values are `HcontClass.complete`'s; each of
+those classes is one of the arms above, with the run/scan-free split carried by the arm's
+own tail — `.letters`/`.fLetter`/`.classC` end at `if.end473.i`, `.run` at
+`land.rhs457.i`, and `.ws`/`.cleanup` are `126`/`127`'s two.  There is no `.supplied`
+constructor left at this level.  `126` and `127` are `HcontClass.defaultValueHigh`
 and `HcontArm.ws`/`.cleanup`'s class: both bundles carry the four bits that leave exactly
 those two bytes, and both arms are proved with their counted segments
-(`walkRevolutionMergeSegWs`, `walkRevolutionMergeSeg`).  `JsonStage2WalkDispatchLettersDomain`
-records the class at its staged documents (`highByteClass_126`, `highByteBits_126`, and the
-`not 126/127` disjointness `highByte_not_letters`).  An earlier revision of this docstring
-listed the high-byte route as owed; that part was stale, not an obligation.
+(`walkRevolutionMergeSegWs`, `walkRevolutionMergeSeg`).
 
 Each constructor carries only its own arm's premises, and the price is the dispatch's own
 (`WalkDispatchResult`'s), so no class's byte restriction is a premise of another's.
@@ -105,6 +115,9 @@ the last entry's guard apart from its head switch.
 import LeanLLVM.Refinement.JsonStage2WalkHcontScalar
 import LeanLLVM.Refinement.JsonStage2WalkDispatchWitnessString
 import LeanLLVM.Refinement.JsonStage2WalkDispatchLetters
+import LeanLLVM.Refinement.JsonStage2WalkDispatchFLetter
+import LeanLLVM.Refinement.JsonStage2WalkDispatchClassC
+import LeanLLVM.Refinement.JsonStage2WalkDispatchRun
 import LeanLLVM.Refinement.JsonStage2WalkDispatchArms
 
 set_option autoImplicit false
@@ -371,23 +384,68 @@ inductive HcontArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
         (LetS413 sm x) Ct st 3)
       (ht : Ct.block = "if.end473.i") (htk : Ct.k = C.k)
       (htok : lookupName st.env "%t352.i" = some (.ptr tok)) : HcontArm calls G C s
-  /-- The arm whose segment is the remaining obligation.  It carries three classes:
+  /-- **The byte `102` (`'f'`) on the scan-free class**, at the continuing head: the
+  letters span's true arm, `LeafBlock54`'s `eq %8, 102` set, so `if.then397.i` (kind `9`)
+  rather than `if.else405.i` (kind `0`).  `fSpan`'s four links, with the head's chain to
+  the seam (twelve links at a continuing entry) and the tail's three calls on their empty
+  arm: `12 + 4 + 3 + 1 = 20`, and the price `20 + 2 = 22 ≤ 32` spends no byte term — the
+  tail's endpoint is `if.end473.i`, the copy call's `ult v v` arm. -/
+  | fLetter {x : BitVec 8} (h8 : evalOperand s (.reg "%8") = some (.int 8 x))
+      (hbit : (evalICmp .eq x (BitVec.ofNat 8 45) |||
+        evalICmp .ult (x + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
+      (h110 : evalICmp .slt x (BitVec.ofNat 8 110) = 1)
+      (h102 : evalICmp .eq x (BitVec.ofNat 8 102) = 1)
+      {Cm : WalkCarry G} {sm : State}
+      (hHead : WalkSegment (stage2Calls stage2SubCalls) G C s Cm sm 12)
+      (hm : Cm.block = "if.else387.i") (hmk : Cm.k = C.k)
+      (h8m : evalOperand sm (.reg "%8") = some (.int 8 x))
+      {Ct : WalkCarry G} {st : State} {tok : Nat}
+      (hTail : WalkSegment (stage2Calls stage2SubCalls) G (FC₄₁₃ Cm)
+        (FS413 sm x) Ct st 3)
+      (ht : Ct.block = "if.end473.i") (htk : Ct.k = C.k)
+      (htok : lookupName st.env "%t352.i" = some (.ptr tok)) : HcontArm calls G C s
+  /-- **The class-C span's leaves on the scan-free class**, at the continuing head: the
+  bytes `110 … 125` in the signed order — `110` via `LeafBlock56`'s true arm (`110`'s own
+  leaf test, kind `10`), `111 … 115` via its else arm, `116` from `LeafBlock58` itself
+  (kind `8`) and `117 … 125` via its else arm.  The span is the byte's own
+  (`c56TrueSpan`, `c56ElseSpan`, `c58TrueSpan`, `c58ElseSpan`) at `nS ≤ 5`; the head's
+  chain to the seam costs twelve links and the tail's three calls end at `if.end473.i` on
+  their empty arm, so `12 + nS + 3 + 1 ≤ 21` and the price `≤ 23 ≤ 32` with no byte term.
+  The class is `126`/`127`'s complement in `[110, 125]`, and `.ws`/`.cleanup` are theirs. -/
+  | classC {x : BitVec 8} (h8 : evalOperand s (.reg "%8") = some (.int 8 x))
+      (h110 : evalICmp .slt x (BitVec.ofNat 8 110) = 0)
+      (h125 : evalICmp .slt x (BitVec.ofNat 8 125) = 1 ∨
+        evalICmp .eq x (BitVec.ofNat 8 125) = 1)
+      {Cm : WalkCarry G} {sm : State}
+      (hHead : WalkSegment (stage2Calls stage2SubCalls) G C s Cm sm 12)
+      (hm : Cm.block = "if.else387.i") (hmk : Cm.k = C.k)
+      (h8m : evalOperand sm (.reg "%8") = some (.int 8 x))
+      {Cs : WalkCarry G} {ss : State} {nS : Nat}
+      (hSpan : Seg (stage2Calls stage2SubCalls) G Cm sm Cs ss nS)
+      (hs : Cs.block = "if.then413.i") (hnS : nS ≤ 5)
+      {Ct : WalkCarry G} {st : State} {tok : Nat}
+      (hTail : WalkSegment (stage2Calls stage2SubCalls) G Cs ss Ct st 3)
+      (ht : Ct.block = "if.end473.i") (htk : Ct.k = C.k)
+      (htok : lookupName st.env "%t352.i" = some (.ptr tok)) : HcontArm calls G C s
+  /-- **The default arm's run class**, at the continuing head: the byte before the
+  entry's end is whitespace, so the whitespace skip runs, the token's end `%ee.1.i` is the
+  run's *stop* `k`, and the copy call's test `ult k v` is true — the extra-token scan is
+  entered and the merge follows its exit.  `RunFacts` carries the path's inputs (the head
+  chain with the run's count `N`, the byte's span at `nS ≤ 5`, the tail's *scan* arm, the
+  landing, the visits' facts and the budget fact) and `runScanMerge_at` composes the
+  segment with the merge's three cells at its endpoint, the visits by `scanRoundsAt` — the
+  rounds at the seam's own bound, which is what the class-C-only `scanWsRounds` is not.
 
-  * the default arm's **run** class — the byte before the entry's end is whitespace, so the
-    token's end is the run's stop and the extra-token scan traverses `[k, v)`; its segment is
-    the scan's induction (`walkScanToMerge`, `walkScanArrival457`);
-  * the bytes `110 … 115` and `117 … 125` — the class-C span's leaves other than `126`/`127`
-    (`LeafBlock56`'s and `LeafBlock58`'s own arms), which no arm proves yet;
-  * the byte `102` (`'f'`), whose leaf arm is `LeafBlock54`'s *true* one (`if.then397.i`,
-    kind `9`), and any class whose head chain is not one of the proved ones.
-
-  The field is that arm's own result — the endpoint it reaches with the count and the price
-  — and no other arm's class is a premise of it. -/
-  | supplied (r : WalkDispatchResult calls G C s) : HcontArm calls G C s
+  **This is the continuing level's class only.**  The last entry's run class is priced
+  differently: `WalkDispatchResult.merge`'s byte credit at the terminal index is
+  `entryPos G G.nep - entryPos G C.k`, and `entryPos G G.nep = 0`, so a run there has no
+  byte credit at all.  That class stays `.supplied` at the last entry rather than being
+  stated with a weakened count. -/
+  | run (f : RunFacts G C s) : HcontArm calls G C s
 
 /-- **The dispatch, from the arm.**  Each proved arm runs its own theorem; the standalone
-string is `ofStringMerge` at the arm's residue; the supplied arm is its own result,
-carried. -/
+string is `ofStringMerge` at the arm's residue.  Every constructor is a proved class, so
+the arm is total over the census `HcontClass.complete` states. -/
 theorem HcontArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     {s : State} (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead)
     (hk : C.k + 1 < G.nep) :
@@ -468,7 +526,66 @@ theorem HcontArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
       (by omega) hcap hseg.inv'.depth_cap hseg.inv'.sp_le_wlen hpriceD
     · -- the merge's index cell is the header's increment, at the entry's successor
       simpa only [evalOperand] using hincD
-  | .supplied r => r
+  | .fLetter h8 hbit h110 h102 hHead hm hmk h8m hTail ht htk htok => by
+    obtain ⟨Cd, sd, p, hseg, hblockD, hkD, hpreD, hincD, hnepD, hpriceD⟩ :=
+      fCleanupMerge_at G C s hInv hblock h8 hbit h110 h102 hHead hm hmk h8m
+        hTail ht htk htok le_rfl (by omega)
+    have hspv : evalOperand sd (Operand.reg "%sp.i.0248") =
+        some (.int 32 (BitVec.ofNat 32 Cd.sp)) := hseg.inv'.depth_reg
+    have hnep64 : G.nep < 2 ^ 64 := by
+      have h := G.nep_le
+      have h2 := G.maxDoc
+      simp only [stage2MaxDocument] at h2
+      omega
+    have hcap : C.k + 1 ≤ (BitVec.ofNat 64 G.nep).toNat := by
+      rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hnep64]
+      omega
+    refine WalkDispatchResult.merge Cd sd p Cd.sp (C.k + 1) "if.end473.i"
+      (Operand.reg "%sp.i.0248") (Operand.reg "%inc.i") (BitVec.ofNat 64 G.nep)
+      hseg hblockD hkD hpreD (by decide) hspv (by decide) ?_ hnepD
+      (by omega) hcap hseg.inv'.depth_cap hseg.inv'.sp_le_wlen hpriceD
+    · -- the merge's index cell is the header's increment, at the entry's successor
+      simpa only [evalOperand] using hincD
+  | .classC h8 h110 h125 hHead hm hmk h8m hSpan hs hnS hTail ht htk htok => by
+    obtain ⟨Cd, sd, p, hseg, hblockD, hkD, hpreD, hincD, hnepD, hpriceD⟩ :=
+      classCMerge_at G C s hInv hblock h8 h110 h125 hHead hm hmk h8m hSpan hs hnS
+        hTail ht htk htok (by omega) (by omega)
+    have hspv : evalOperand sd (Operand.reg "%sp.i.0248") =
+        some (.int 32 (BitVec.ofNat 32 Cd.sp)) := hseg.inv'.depth_reg
+    have hnep64 : G.nep < 2 ^ 64 := by
+      have h := G.nep_le
+      have h2 := G.maxDoc
+      simp only [stage2MaxDocument] at h2
+      omega
+    have hcap : C.k + 1 ≤ (BitVec.ofNat 64 G.nep).toNat := by
+      rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hnep64]
+      omega
+    refine WalkDispatchResult.merge Cd sd p Cd.sp (C.k + 1) "if.end473.i"
+      (Operand.reg "%sp.i.0248") (Operand.reg "%inc.i") (BitVec.ofNat 64 G.nep)
+      hseg hblockD hkD hpreD (by decide) hspv (by decide) ?_ hnepD
+      (by omega) hcap hseg.inv'.depth_cap hseg.inv'.sp_le_wlen hpriceD
+    · -- the merge's index cell is the header's increment, at the entry's successor
+      simpa only [evalOperand] using hincD
+  | .run f => by
+    obtain ⟨Cm, sm, nSc, hseg, hInvD, hblockD, hpreD, hkD, hincD, hnepD, _hnR, hprice⟩ :=
+      runScanMerge_at G C s hInv hblock hk f
+    have hspv : evalOperand (revMergeS sm f.c) (Operand.reg "%sp.i.0248") =
+        some (.int 32 (BitVec.ofNat 32 (revMergeC Cm).sp)) := hInvD.depth_reg
+    have hnep64 : G.nep < 2 ^ 64 := by
+      have h := G.nep_le
+      have h2 := G.maxDoc
+      simp only [stage2MaxDocument] at h2
+      omega
+    have hcap : C.k + 1 ≤ (BitVec.ofNat 64 G.nep).toNat := by
+      rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hnep64]
+      omega
+    refine WalkDispatchResult.merge (revMergeC Cm) (revMergeS sm f.c)
+      (f.nH + f.nS + 8 + nSc) (revMergeC Cm).sp (C.k + 1) "if.end473.i"
+      (Operand.reg "%sp.i.0248") (Operand.reg "%inc.i") (BitVec.ofNat 64 G.nep)
+      hseg hblockD hkD hpreD (by decide) hspv (by decide) ?_ hnepD
+      (by omega) hcap hInvD.depth_cap hInvD.sp_le_wlen hprice
+    · -- the merge's index cell is the header's increment, at the entry's successor
+      simpa only [evalOperand] using hincD
 
 /-! ### The instrument -/
 
