@@ -17,6 +17,40 @@
 Nothing below inflates the first into the second, and the second does not include the
 third. When this document says "closed" it means the first.
 
+
+## Session state at `77e68f9` (read this first after a context break)
+
+**Green:** default target 1943 jobs, `LAKE_EXIT=0`, no `sorryAx`, no `bv_decide`.
+Everything below is committed and pushed; `HEAD` = `origin/main`.
+
+**The obligation's premises now:** `stage2WalkObligation_of_staging` takes `hcont` and
+`hend` only.  The string residue is **empty** (zero fields); `hres` is gone from the top
+level entirely, folded into the continuing arm's `.twoEntry` constructor.  `hend`'s
+supplied list is `hlast`, `mergeWords`, `refuseWords` — and of those, only three facts
+remain genuinely the input's: the log's arena word (false at an escaping input; a
+boundary design decision, not a proof), and nothing else — the root-done and refusal
+words are retired.
+
+**The dispatch census:** `LastEntryArm` 8 constructors, `HcontArm` 9.  Proved segments:
+scalar, high-byte (126/127), string opener, closing-at-zero, comma-at-zero,
+colon-at-zero, container opener.  Regressions live in three `…Domain` modules, each at
+staged documents, each with a negative control.  `.supplied` retains **one class per
+level: the letters route**, whose segment is the scan's induction.
+
+**What is left, in order:** (1) the depth-positive refusal arms — comma and colon above
+depth zero, close-with-open — in flight, against `containerOpen_depth_one`; (2) the
+letters route's scan induction; (3) phase D, the obligation composed from the ABI.
+
+**Two things not to re-derive:** `JsonStage2WalkArenaWord` proves the merge's log word
+equal to the carry's cursor is *false* at an escaping input, so its producer is a
+boundary change (report it, do not weaken it); and the event-count clause is block-keyed
+(`walkEmitC`) because the append re-establishes it at an unchanged index.
+
+**The two process rules that made the last ten rounds safe:** one compilation at a time
+under `probes/install/lake-locked.sh` plus a `pgrep` check (the `/tmp` token does not
+survive a forked shell), and no two workers whose cones share a module — `PremisesOfStaging`
+imports every bundle, so that is most pairs.
+
 ## The order, with each item's statement and its acceptance
 
 ### Item 0 — the pipeline watermark (P0)
