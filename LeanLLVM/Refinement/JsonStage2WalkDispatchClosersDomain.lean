@@ -45,9 +45,19 @@ without unfolding the dispatch, and the result is produced by the real
 `LastEntryArm.dispatch` / `HcontArm.dispatch` at the arm.  The two merge documents also
 have a route theorem whose proof applies the merge theorem itself, which is what names
 them theorem by theorem.
+
+The arm is the producer's (`hcontArm_closeWithOpen93_of_staging`,
+`hcontArm_closeWithOpen125_of_staging`, `lastEntryArm_closeWithOpen93_of_staging` and
+`lastEntryArm_closeWithOpen125_of_staging`, `JsonStage2WalkDispatchClosersOfStaging`),
+which reads the two stack bytes off the reached carry and the position cells off the
+invariant; so the theorems here supply the class, the seed's positive depth and the call's
+pre-state, and nothing about the stacks.  The selectors stay in their statements — they are
+what makes the route the push's, stated rather than assumed — but no proof passes them to
+a dispatch any more.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkDispatchAboveZeroDomain
 import LeanLLVM.Refinement.JsonStage2WalkDispatchClosers
+import LeanLLVM.Refinement.JsonStage2WalkDispatchClosersOfStaging
 
 set_option autoImplicit false
 
@@ -178,58 +188,10 @@ theorem depthOne_stacks_cont_reachable {args : List Value} {m0 : Mem} {next : Na
   · rw [hsub]; exact hty
   · rw [hsub]; exact hst
 
-/-! ### The arm, through the real dispatch
+/-! ### The regressions, at the documents
 
-`hvj`, `he` and the offset bound are the invariant's own (`WalkInv.idx_reg`,
-`WalkInv.regs`, `entryPos_lt`), so the wrapper takes only the call's pre-state bundle
-beside the arm's premises. -/
-
-/-- **The closing delimiter's arm at a last entry.** -/
-theorem closeWithOpen_last_dispatch {m0 : Mem} {G : WalkGeom m0} {C' : WalkCarry G}
-    {s' : State} (hInv : WalkInv G C' s') (hblock : C'.block = walkLoopHead)
-    (hnot : ¬ (C'.k + 1 < G.nep)) {v : BitVec 8}
-    (h8 : evalOperand s' (.reg "%8") = some (.int 8 v))
-    (hv : v = BitVec.ofNat 8 93 ∨ v = BitVec.ofNat 8 125)
-    (hsp : C'.sp ≠ 0) {b1 b2 : UInt8} (hmark : C'.tyMap (C'.sp - 1) = b1)
-    (hstate : C'.stMap (C'.sp - 1) = b2)
-    (hpreA : s2AfterValuePre
-      [.int 32 (BitVec.ofNat 32 C'.sp + BitVec.ofNat 32 4294967295), .ptr (G.next0 + 8),
-       .ptr C'.stage.ctype, .ptr C'.stage.cst] s'.mem s'.next) :
-    WalkDispatchResult (stage2Calls stage2SubCalls) G C' s' := by
-  have hklt : C'.k < G.nep :=
-    WalkInv.head_lt hInv (by simpa only [walkLoopHead] using hblock)
-  have hvj : evalOperand s' (.reg "%idxprom.i") =
-      some (.int 64 (BitVec.ofNat 64 (entryPos G C'.k))) := by
-    simpa only [evalOperand] using hInv.idx_reg
-  have he : lookupName s'.env "%e" = some (.ptr C'.stage.e) :=
-    hInv.regs ("%e", .ptr C'.stage.e) (by simp [walkStaticRegs])
-  exact LastEntryArm.dispatch hInv hblock hnot
-    (.closeWithOpen h8 hv hsp hmark hstate hpreA hvj he
-      (le_of_lt (entryPos_lt G hklt))
-      (by have := entryPos_lt G hklt; have := WalkGeom.n_lt G; omega))
-
-/-- **The closing delimiter's arm at a continuing entry.** -/
-theorem closeWithOpen_cont_dispatch {m0 : Mem} {G : WalkGeom m0} {C' : WalkCarry G}
-    {s' : State} (hInv : WalkInv G C' s') (hblock : C'.block = walkLoopHead)
-    (hk : C'.k + 1 < G.nep) {v : BitVec 8}
-    (h8 : evalOperand s' (.reg "%8") = some (.int 8 v))
-    (hv : v = BitVec.ofNat 8 93 ∨ v = BitVec.ofNat 8 125)
-    (hsp : C'.sp ≠ 0) {b1 b2 : UInt8} (hmark : C'.tyMap (C'.sp - 1) = b1)
-    (hstate : C'.stMap (C'.sp - 1) = b2)
-    (hpreA : s2AfterValuePre
-      [.int 32 (BitVec.ofNat 32 C'.sp + BitVec.ofNat 32 4294967295), .ptr (G.next0 + 8),
-       .ptr C'.stage.ctype, .ptr C'.stage.cst] s'.mem s'.next) :
-    WalkDispatchResult (stage2Calls stage2SubCalls) G C' s' := by
-  have hklt : C'.k < G.nep := by omega
-  have hvj : evalOperand s' (.reg "%idxprom.i") =
-      some (.int 64 (BitVec.ofNat 64 (entryPos G C'.k))) := by
-    simpa only [evalOperand] using hInv.idx_reg
-  have he : lookupName s'.env "%e" = some (.ptr C'.stage.e) :=
-    hInv.regs ("%e", .ptr C'.stage.e) (by simp [walkStaticRegs])
-  exact HcontArm.dispatch hInv hblock hk
-    (.closeWithOpen h8 hv hsp hmark hstate hpreA hvj he
-      (le_of_lt (entryPos_lt G hklt))
-      (by have := entryPos_lt G hklt; have := WalkGeom.n_lt G; omega))
+Each applies the producer's dispatch at the head the document reaches, with the
+selectors the reachability theorem names left in the statement. -/
 
 /-! ### `[]` at the two levels: the merge, through the dispatch
 
@@ -276,8 +238,9 @@ theorem closeBracketMerge_last_at_document {args : List Value} {m0 : Mem} {next 
     rw [hstate']; decide
   refine ⟨C', s', hInv', hblock', hsp1, hk1, h8c, hmark2, hstate0, ?_⟩
   intro hpreA'
-  exact closeWithOpen_last_dispatch hInv' hblock' (by rw [hk1, h.count]; omega) h8c
-    (Or.inl rfl) (by rw [hsp1]; decide) hmark2 hstate0 hpreA'
+  exact walkDispatch_at_closeWithOpen93_last_of_staging hInv' hblock'
+    (by rw [hk1, h.count]; omega) (hclass_of_reg8 hInv' h8c)
+    (by rw [hsp1]; decide) hpreA'
 
 /-- **`[]0` reaches the closing bracket's arm above depth zero, with an entry left.** -/
 theorem closeBracketMerge_cont_at_document {args : List Value} {m0 : Mem} {next : Nat}
@@ -318,8 +281,8 @@ theorem closeBracketMerge_cont_at_document {args : List Value} {m0 : Mem} {next 
     rw [hstate']; decide
   refine ⟨C', s', hInv', hblock', hsp1, hk1, h8c, hmark2, hstate0, ?_⟩
   intro hpreA'
-  exact closeWithOpen_cont_dispatch hInv' hblock' hguard h8c
-    (Or.inl rfl) (by rw [hsp1]; decide) hmark2 hstate0 hpreA'
+  exact walkDispatch_at_closeWithOpen93_of_staging hInv' hblock' hguard
+    (hclass_of_reg8 hInv' h8c) (by rw [hsp1]; decide) hpreA'
 
 /-! ### `{}` at the two levels: the merge, through the dispatch -/
 
@@ -362,8 +325,9 @@ theorem closeBraceMerge_last_at_document {args : List Value} {m0 : Mem} {next : 
     rw [hstate']; decide
   refine ⟨C', s', hInv', hblock', hsp1, hk1, h8c, hmark1, hstate0, ?_⟩
   intro hpreA'
-  exact closeWithOpen_last_dispatch hInv' hblock' (by rw [hk1, h.count]; omega) h8c
-    (Or.inr rfl) (by rw [hsp1]; decide) hmark1 hstate0 hpreA'
+  exact walkDispatch_at_closeWithOpen125_last_of_staging hInv' hblock'
+    (by rw [hk1, h.count]; omega) (hclass_of_reg8 hInv' h8c)
+    (by rw [hsp1]; decide) hpreA'
 
 /-- **`{}0` reaches the closing brace's arm above depth zero, with an entry left.** -/
 theorem closeBraceMerge_cont_at_document {args : List Value} {m0 : Mem} {next : Nat}
@@ -404,8 +368,8 @@ theorem closeBraceMerge_cont_at_document {args : List Value} {m0 : Mem} {next : 
     rw [hstate']; decide
   refine ⟨C', s', hInv', hblock', hsp1, hk1, h8c, hmark1, hstate0, ?_⟩
   intro hpreA'
-  exact closeWithOpen_cont_dispatch hInv' hblock' hguard h8c
-    (Or.inr rfl) (by rw [hsp1]; decide) hmark1 hstate0 hpreA'
+  exact walkDispatch_at_closeWithOpen125_of_staging hInv' hblock' hguard
+    (hclass_of_reg8 hInv' h8c) (by rw [hsp1]; decide) hpreA'
 
 /-! ### `[}` and `{]` at the two levels: the marker's refusal
 
@@ -452,8 +416,9 @@ theorem closeMarkerBrace_last_at_document {args : List Value} {m0 : Mem} {next :
     rw [hstate']; decide
   refine ⟨C', s', hInv', hblock', hsp1, hk1, h8c, hmark2, hstate0, ?_⟩
   intro hpreA'
-  exact closeWithOpen_last_dispatch hInv' hblock' (by rw [hk1, h.count]; omega) h8c
-    (Or.inr rfl) (by rw [hsp1]; decide) hmark2 hstate0 hpreA'
+  exact walkDispatch_at_closeWithOpen125_last_of_staging hInv' hblock'
+    (by rw [hk1, h.count]; omega) (hclass_of_reg8 hInv' h8c)
+    (by rw [hsp1]; decide) hpreA'
 
 /-- **`{]` reaches the closing bracket's marker-mismatch refusal.** -/
 theorem closeMarkerBracket_last_at_document {args : List Value} {m0 : Mem} {next : Nat}
@@ -494,8 +459,9 @@ theorem closeMarkerBracket_last_at_document {args : List Value} {m0 : Mem} {next
     rw [hstate']; decide
   refine ⟨C', s', hInv', hblock', hsp1, hk1, h8c, hmark1, hstate0, ?_⟩
   intro hpreA'
-  exact closeWithOpen_last_dispatch hInv' hblock' (by rw [hk1, h.count]; omega) h8c
-    (Or.inl rfl) (by rw [hsp1]; decide) hmark1 hstate0 hpreA'
+  exact walkDispatch_at_closeWithOpen93_last_of_staging hInv' hblock'
+    (by rw [hk1, h.count]; omega) (hclass_of_reg8 hInv' h8c)
+    (by rw [hsp1]; decide) hpreA'
 
 /-- **`[}0` reaches the closing brace's marker-mismatch refusal, with an entry left.** -/
 theorem closeMarkerBrace_cont_at_document {args : List Value} {m0 : Mem} {next : Nat}
@@ -536,8 +502,8 @@ theorem closeMarkerBrace_cont_at_document {args : List Value} {m0 : Mem} {next :
     rw [hstate']; decide
   refine ⟨C', s', hInv', hblock', hsp1, hk1, h8c, hmark2, hstate0, ?_⟩
   intro hpreA'
-  exact closeWithOpen_cont_dispatch hInv' hblock' hguard h8c
-    (Or.inr rfl) (by rw [hsp1]; decide) hmark2 hstate0 hpreA'
+  exact walkDispatch_at_closeWithOpen125_of_staging hInv' hblock' hguard
+    (hclass_of_reg8 hInv' h8c) (by rw [hsp1]; decide) hpreA'
 
 /-- **`{]0` reaches the closing bracket's marker-mismatch refusal, with an entry left.** -/
 theorem closeMarkerBracket_cont_at_document {args : List Value} {m0 : Mem} {next : Nat}
@@ -578,8 +544,8 @@ theorem closeMarkerBracket_cont_at_document {args : List Value} {m0 : Mem} {next
     rw [hstate']; decide
   refine ⟨C', s', hInv', hblock', hsp1, hk1, h8c, hmark1, hstate0, ?_⟩
   intro hpreA'
-  exact closeWithOpen_cont_dispatch hInv' hblock' hguard h8c
-    (Or.inl rfl) (by rw [hsp1]; decide) hmark1 hstate0 hpreA'
+  exact walkDispatch_at_closeWithOpen93_of_staging hInv' hblock' hguard
+    (hclass_of_reg8 hInv' h8c) (by rw [hsp1]; decide) hpreA'
 
 /-! ### The merge route, named theorem by theorem
 
@@ -812,8 +778,6 @@ theorem depthZero_no_closeBraceAbove {m0 : Mem} (G : WalkGeom m0) (S : WalkStage
 
 #print axioms LeanLLVM.Refinement.WalkScope.depthOne_stacks_last_reachable
 #print axioms LeanLLVM.Refinement.WalkScope.depthOne_stacks_cont_reachable
-#print axioms LeanLLVM.Refinement.WalkScope.closeWithOpen_last_dispatch
-#print axioms LeanLLVM.Refinement.WalkScope.closeWithOpen_cont_dispatch
 #print axioms LeanLLVM.Refinement.WalkScope.closeBracketMerge_last_at_document
 #print axioms LeanLLVM.Refinement.WalkScope.closeBraceMerge_last_at_document
 #print axioms LeanLLVM.Refinement.WalkScope.closeMarkerBrace_last_at_document

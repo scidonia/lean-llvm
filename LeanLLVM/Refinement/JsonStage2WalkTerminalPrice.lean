@@ -48,14 +48,30 @@ about: the document's bytes.
 ## 2. The residual premises, measured per arm
 
 **The producers are these.**  `hcontFacts_of_staging` (`JsonStage2WalkHcontFactsOfStaging`)
-produces `HcontFacts` for `HcontArm.ws`, `hlastFacts_of_staging`
-(`JsonStage2WalkDispatchWitnessHlast`) produces `HlastFacts` for `LastEntryArm.highByte`,
-`hcontArm_commaAboveZero_of_staging` (`JsonStage2WalkDispatchAboveZeroOfStaging`) produces
-`HcontArm.commaAboveZero`, and four producers in `JsonStage2WalkDispatchZeroOfStaging`
-fill `HcontArm.commaZero`/`.colonZero` and
-`LastEntryArm.commaZero`/`.colonZero`.  Every other arm has **no producer**: its
-constructor's fields are the residual, and its `…Domain` module instantiates them at one
-staged document.  That is the measurement this section records, and it is what decides the
+produces `HcontFacts` for `HcontArm.ws`; `hlastFacts_of_staging`
+(`JsonStage2WalkDispatchWitnessHlast`) produces `HlastFacts` for `LastEntryArm.highByte`;
+`JsonStage2WalkDispatchAboveZeroOfStaging` produces the two above-depth classes at both
+levels — `hcontArm_commaAboveZero_of_staging`, and `hcontArm_colonAboveZero_of_staging`
+beside `lastEntryArm_colonAboveZero_of_staging`; four in
+`JsonStage2WalkDispatchZeroOfStaging` fill `HcontArm.commaZero`/`.colonZero` and
+`LastEntryArm.commaZero`/`.colonZero`; three in
+`JsonStage2WalkDispatchRefusalsOfStaging` fill the bare opener at the last entry
+(`lastEntryArm_stringOpener_of_staging`) and the closing bracket at depth zero at both
+levels (`hcontArm_closeBracketZero_of_staging`,
+`lastEntryArm_closeBracketZero_of_staging`); four in
+`JsonStage2WalkDispatchOpenersOfStaging` fill `HcontArm.containerOpen` and
+`LastEntryArm.containerOpen`, one producer per byte (`91`, `123`); and four in
+`JsonStage2WalkDispatchClosersOfStaging` fill `HcontArm.closeWithOpen` and
+`LastEntryArm.closeWithOpen`, one per byte (`93`, `125`).  Twenty producers cover sixteen
+arms, each at every state that carries `WalkInv`; beyond its class's byte test, each takes
+only its own arm's **F** rows — the depth split, the `519` boundary and the root word, the
+level's count, the callee's staging.
+
+The thirteen arms without a producer are `HcontArm.twoEntry`, `.cleanup`, `.scalar`,
+`.letters`, `.fLetter`, `.classC` and `.run`, and `LastEntryArm.scalar`,
+`.commaAboveZero`, `.letters`, `.fLetter`, `.classC` and `.run`: their constructor's
+fields are the residual, and their `…Domain` modules instantiate them at one staged
+document.  That is the measurement this section records, and it is what decides the
 remaining tier.
 
 Kind labels: **(i)** per-document class data; **(ii)** callee preconditions/answers;

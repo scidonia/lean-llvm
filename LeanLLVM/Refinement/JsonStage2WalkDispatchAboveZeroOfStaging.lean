@@ -64,6 +64,18 @@ this paragraph used to list here, are produced beside this one
 (`JsonStage2WalkDispatchZeroOfStaging`): `WalkInv.idx_reg` and `WalkInv.regs` are the two
 cells, and the geometry bounds `entryPos` at every index, so the class and the depth split
 are all a wrapper supplies.
+
+## The colon, at both levels
+
+The comma's twin is the same arm at the marker's own entry (`if.then173.i`), and its
+constructor is the same four statements: the byte, the positive depth and the two stack
+cells.  Its two levels are produced here as the comma's continuing level is —
+`hcontArm_colonAboveZero_of_staging` and `lastEntryArm_colonAboveZero_of_staging` — so the
+document wrappers at `[:`/`{:` and `[:0` no longer name the reached carry's two maps: the
+`…Domain` module's implication premises `C'.tyMap (C'.sp - 1) = … → C'.stMap (C'.sp - 1) =
+… →` are gone with them.  The last entry's producer takes the level's negated count
+(`¬ (C'.k + 1 < G.nep)`) rather than the dispatch's, because the dispatch is where the
+split is decided; the arm itself carries nothing beside the class and the depth.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkDispatchHcontArms
 
@@ -100,6 +112,23 @@ theorem eq_bit_value {x : BitVec 8} {c : Nat}
   rw [h0] at h
   exact absurd h (by decide)
 
+/-- **The class test, from the `%8` cell.**  `cont_reg8`'s inverse direction: a state whose
+`%8` holds the literal `x` has the census's byte test set at `x`, because the head byte
+*is* that literal (`WalkInv.iter.reg8` names it, and the two readings are one value).  A
+producer takes the class as its premise, so this is what a wrapper holding the cell — a
+reachability theorem's own endpoint, or a document's byte — composes it with. -/
+theorem hclass_of_reg8 {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (hInv : WalkInv G C s) {x : BitVec 8}
+    (h8 : evalOperand s (.reg "%8") = some (.int 8 x)) :
+    evalICmp .eq (hlastByte G C) x = 1 := by
+  have hval : hlastByte G C = x := by
+    have h1 : lookupName s.env "%8" = some (.int 8 x) := by
+      simpa only [evalOperand] using h8
+    have h := Option.some.inj (hInv.iter.reg8.symm.trans h1)
+    simpa using h
+  rw [hval]
+  exact walkEvalICmp_eq_self _
+
 /-! ### The arm, and the dispatch it feeds -/
 
 /-- **The comma's continuing arm, from the staging.**  `HcontArm.commaAboveZero` at every
@@ -132,12 +161,72 @@ theorem walkDispatch_at_commaAboveZero_of_staging {m0 : Mem} {G : WalkGeom m0}
     WalkDispatchResult (stage2Calls stage2SubCalls) G C s :=
   HcontArm.dispatch hInv hblock hk (hcontArm_commaAboveZero_of_staging C s hInv hclass hsp)
 
+/-! ### The colon, at both levels
+
+The comma's twin: the same four statements at `if.then173.i`, and the same two projections
+for the stack cells.  The only difference between the two levels is the count the
+dispatch states, so each producer is the comma's with the lane's literal and each
+dispatch is its own level's. -/
+
+/-- **The colon's continuing arm, from the staging.**  `HcontArm.colonAboveZero` at every
+state that carries the invariant, a positive depth and the colon's byte.  The marker's
+three sub-routes (the brace pair and the marker's own refusal) are selected by the two
+stack bytes the witness reads off the carry, so no sub-route's premise is supplied. -/
+def hcontArm_colonAboveZero_of_staging {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s)
+    (hclass : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 58) = 1)
+    (hsp : C.sp ≠ 0) :
+    HcontArm (stage2Calls stage2SubCalls) G C s :=
+  .colonAboveZero (C.tyMap (C.sp - 1)) (C.stMap (C.sp - 1))
+    (by
+      rw [← eq_bit_value hclass]
+      exact cont_reg8 hInv)
+    hsp rfl rfl
+
+/-- **The colon's arm at the last entry, from the staging.**  The same four statements at
+the level whose count is exhausted; which side of the count the state is on is the
+dispatch's hypothesis, so the arm is the continuing one's term. -/
+def lastEntryArm_colonAboveZero_of_staging {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s)
+    (hclass : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 58) = 1)
+    (hsp : C.sp ≠ 0) :
+    LastEntryArm (stage2Calls stage2SubCalls) G C s :=
+  .colonAboveZero (C.tyMap (C.sp - 1)) (C.stMap (C.sp - 1))
+    (by
+      rw [← eq_bit_value hclass]
+      exact cont_reg8 hInv)
+    hsp rfl rfl
+
+/-- **The colon's continuing dispatch, from the staging.** -/
+theorem walkDispatch_at_colonAboveZero_of_staging {m0 : Mem} {G : WalkGeom m0}
+    {C : WalkCarry G} {s : State} (hInv : WalkInv G C s)
+    (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)
+    (hclass : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 58) = 1)
+    (hsp : C.sp ≠ 0) :
+    WalkDispatchResult (stage2Calls stage2SubCalls) G C s :=
+  HcontArm.dispatch hInv hblock hk (hcontArm_colonAboveZero_of_staging C s hInv hclass hsp)
+
+/-- **The colon's last-entry dispatch, from the staging.** -/
+theorem walkDispatch_at_colonAboveZero_last_of_staging {m0 : Mem} {G : WalkGeom m0}
+    {C : WalkCarry G} {s : State} (hInv : WalkInv G C s)
+    (hblock : C.block = walkLoopHead) (hnot : ¬ (C.k + 1 < G.nep))
+    (hclass : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 58) = 1)
+    (hsp : C.sp ≠ 0) :
+    WalkDispatchResult (stage2Calls stage2SubCalls) G C s :=
+  LastEntryArm.dispatch hInv hblock hnot
+    (lastEntryArm_colonAboveZero_of_staging C s hInv hclass hsp)
+
 /-! ### The instrument -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.cont_reg8
 #print axioms LeanLLVM.Refinement.WalkScope.eq_bit_value
+#print axioms LeanLLVM.Refinement.WalkScope.hclass_of_reg8
 #print axioms LeanLLVM.Refinement.WalkScope.hcontArm_commaAboveZero_of_staging
 #print axioms LeanLLVM.Refinement.WalkScope.walkDispatch_at_commaAboveZero_of_staging
+#print axioms LeanLLVM.Refinement.WalkScope.hcontArm_colonAboveZero_of_staging
+#print axioms LeanLLVM.Refinement.WalkScope.lastEntryArm_colonAboveZero_of_staging
+#print axioms LeanLLVM.Refinement.WalkScope.walkDispatch_at_colonAboveZero_of_staging
+#print axioms LeanLLVM.Refinement.WalkScope.walkDispatch_at_colonAboveZero_last_of_staging
 
 end WalkScope
 end LeanLLVM.Refinement

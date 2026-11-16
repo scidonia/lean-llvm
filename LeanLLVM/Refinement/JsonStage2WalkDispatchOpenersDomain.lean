@@ -19,19 +19,28 @@ dispatch theorem then runs the arm through the real `.dispatch` — `HcontArm.di
 the two continuing heads, `LastEntryArm.dispatch` at the last entry — so what is inhabited
 is the arm *and* its result.
 
+Each arm is the producer's now (`hcontArm_containerOpen91_of_staging`,
+`hcontArm_containerOpen123_of_staging`, `lastEntryArm_containerOpen91_of_staging` and
+`lastEntryArm_containerOpen123_of_staging`, `JsonStage2WalkDispatchOpenersOfStaging`), so a
+wrapper supplies the document's class test, the `519` boundary at the seed's zero depth and
+the call's four premises, and nothing else: the byte, the arm's `hopen` disjunction and the
+depth it reads at the route are the producer's.
+
 What the document does not fix is the call's own staging: the root slot's zero word, the
 callee's `s2ValuePosPre`, the call's outcome and its answer are the opener's tail
-premises, and they are hypotheses here exactly as they are fields of the arm.
+premises, and they are hypotheses here because the invariant carries the root slot's
+*presence* and not its value, and names no callee contract.
 
 The negative control is the document `0`: its head byte is `48`, and the arm's own byte
 premise — the read that names `91` or `123` — fails there, so the class that `[0]` and
 `{"a":1}` take is absent at a scalar's head.  The three byte-class facts are stated with
 one detector, so the presence above is a claim about the byte rather than about the
-document being one long.  The arms read the same fact at their byte's literal, because
-that is the form the constructor's fields name.
+document being one long.  The class the producer takes is the census's `eq` test at the
+byte's literal (`bracketHead_class`, `braceHead_class`, `openerDoc_class91`), which is the
+form `HcontClass`'s `.openBracket`/`.openBrace` constructors hold.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkDispatchArmsDomain
-import LeanLLVM.Refinement.JsonStage2WalkDispatchOpeners
+import LeanLLVM.Refinement.JsonStage2WalkDispatchOpenersOfStaging
 
 set_option autoImplicit false
 
@@ -188,8 +197,36 @@ theorem digitHead_not_opener {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s :
 
 /-! ### The arms at the documents -/
 
-/-- **`[0]`'s head takes the continuing entry's opener arm.**  The byte class is the
-document's, the depth is the seed's, and the tail's five links are the arm's own. -/
+/-- **`[0]`'s head byte is the open bracket's class.**  The producer takes the census's
+byte test at `hlastByte`; at the seed the head byte is the document's first, so the test is
+the reflexive one at the literal. -/
+theorem bracketHead_class {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G)
+    (h : BracketHeadDocument G) :
+    evalICmp .eq (hlastByte G (walkSeed G S)) (BitVec.ofNat 8 91) = 1 := by
+  simp only [hlastByte, show (walkSeed G S).k = 0 from rfl, h.entryByte_zero,
+    show ((91 : UInt8)).toNat = 91 from rfl]
+  exact walkEvalICmp_eq_self _
+
+/-- **`{"a":1}`'s head byte is the open brace's class.** -/
+theorem braceHead_class {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G)
+    (h : BraceHeadDocument G) :
+    evalICmp .eq (hlastByte G (walkSeed G S)) (BitVec.ofNat 8 123) = 1 := by
+  simp only [hlastByte, show (walkSeed G S).k = 0 from rfl, h.entryByte_zero,
+    show ((123 : UInt8)).toNat = 123 from rfl]
+  exact walkEvalICmp_eq_self _
+
+/-- **The one-byte document `[`'s head byte is the open bracket's class**, at the seed's
+zero index. -/
+theorem openerDoc_class91 {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G)
+    (h : OneByteDocument G (91 : UInt8)) :
+    evalICmp .eq (hlastByte G (walkSeed G S)) (BitVec.ofNat 8 91) = 1 := by
+  simp only [hlastByte, show (walkSeed G S).k = 0 from rfl, h.entryByte_zero,
+    show ((91 : UInt8)).toNat = 91 from rfl]
+  exact walkEvalICmp_eq_self _
+
+/-- **`[0]`'s head takes the continuing entry's opener arm.**  The producer reads the
+byte off the invariant and fills the arm's disjunction from the class, so the wrapper
+supplies the class, the seed's depth and the call. -/
 def containerOpen_cont_bracket_arm {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
     (h : BracketHeadDocument G) (hInv : WalkInv G (walkSeed G S) s)
     (hrd : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes 0 4))
@@ -201,12 +238,9 @@ def containerOpen_cont_bracket_arm {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G
       [.int 32 (BitVec.ofNat 32 (walkSeed G S).sp), .int 32 (BitVec.ofNat 32 0),
        .ptr (walkSeed G S).stage.ctype, .ptr (walkSeed G S).stage.cst] s.mem s.next = some r)
     (hret : r.ret = .int 32 (BitVec.ofNat 32 1)) :
-    HcontArm (stage2Calls stage2SubCalls) G (walkSeed G S) s := by
-  have hreg := seed_head_byte G S s h.entryByte_zero hInv
-  have ht : ((91 : UInt8)).toNat = 91 := by decide
-  rw [ht] at hreg
-  exact .containerOpen hreg (Or.inl rfl) (by show (0 : Nat) ≤ 519; omega) hrd hpreV r
-    hcall hret
+    HcontArm (stage2Calls stage2SubCalls) G (walkSeed G S) s :=
+  hcontArm_containerOpen91_of_staging (walkSeed G S) s hInv (bracketHead_class G S h)
+    (by show (0 : Nat) ≤ 519; omega) hrd hpreV r hcall hret
 
 /-- **`{"a":1}`'s head takes the continuing entry's opener arm.** -/
 def containerOpen_cont_brace_arm {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
@@ -220,16 +254,13 @@ def containerOpen_cont_brace_arm {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) 
       [.int 32 (BitVec.ofNat 32 (walkSeed G S).sp), .int 32 (BitVec.ofNat 32 0),
        .ptr (walkSeed G S).stage.ctype, .ptr (walkSeed G S).stage.cst] s.mem s.next = some r)
     (hret : r.ret = .int 32 (BitVec.ofNat 32 1)) :
-    HcontArm (stage2Calls stage2SubCalls) G (walkSeed G S) s := by
-  have hreg := seed_head_byte G S s h.entryByte_zero hInv
-  have ht : ((123 : UInt8)).toNat = 123 := by decide
-  rw [ht] at hreg
-  exact .containerOpen hreg (Or.inr rfl) (by show (0 : Nat) ≤ 519; omega) hrd hpreV r
-    hcall hret
+    HcontArm (stage2Calls stage2SubCalls) G (walkSeed G S) s :=
+  hcontArm_containerOpen123_of_staging (walkSeed G S) s hInv (braceHead_class G S h)
+    (by show (0 : Nat) ≤ 519; omega) hrd hpreV r hcall hret
 
-/-- **The one-byte document `[` takes the last entry's opener arm.**  The entry stream
-is exhausted after the opener, so the level is the last entry's — the same byte class and
-the same nine links, at the head that has no successor. -/
+/-- **The one-byte document `[` takes the last entry's opener arm.**  The entry stream is
+exhausted after the opener, so the level is the last entry's — the same byte class and the
+same nine links, at the head that has no successor. -/
 def containerOpen_last_arm {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
     (h : OneByteDocument G (91 : UInt8)) (hInv : WalkInv G (walkSeed G S) s)
     (hrd : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes 0 4))
@@ -241,12 +272,9 @@ def containerOpen_last_arm {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : S
       [.int 32 (BitVec.ofNat 32 (walkSeed G S).sp), .int 32 (BitVec.ofNat 32 0),
        .ptr (walkSeed G S).stage.ctype, .ptr (walkSeed G S).stage.cst] s.mem s.next = some r)
     (hret : r.ret = .int 32 (BitVec.ofNat 32 1)) :
-    LastEntryArm (stage2Calls stage2SubCalls) G (walkSeed G S) s := by
-  have hreg := seed_reg8 G S s h hInv
-  have ht : ((91 : UInt8).toNat = 91) := by decide
-  rw [ht] at hreg
-  exact .containerOpen hreg (Or.inl rfl) (by show (0 : Nat) ≤ 519; omega) hrd hpreV r
-    hcall hret
+    LastEntryArm (stage2Calls stage2SubCalls) G (walkSeed G S) s :=
+  lastEntryArm_containerOpen91_of_staging (walkSeed G S) s hInv (openerDoc_class91 G S h)
+    (by show (0 : Nat) ≤ 519; omega) hrd hpreV r hcall hret
 
 /-! ### The dispatch, through the real `.dispatch` -/
 
@@ -362,6 +390,9 @@ theorem containerOpen_last_dispatch {args : List Value} {m0 : Mem} {next : Nat}
 #print axioms LeanLLVM.Refinement.WalkScope.bracketHead_opener
 #print axioms LeanLLVM.Refinement.WalkScope.braceHead_opener
 #print axioms LeanLLVM.Refinement.WalkScope.digitHead_not_opener
+#print axioms LeanLLVM.Refinement.WalkScope.bracketHead_class
+#print axioms LeanLLVM.Refinement.WalkScope.braceHead_class
+#print axioms LeanLLVM.Refinement.WalkScope.openerDoc_class91
 #print axioms LeanLLVM.Refinement.WalkScope.containerOpen_cont_bracket_arm
 #print axioms LeanLLVM.Refinement.WalkScope.containerOpen_cont_brace_arm
 #print axioms LeanLLVM.Refinement.WalkScope.containerOpen_last_arm
