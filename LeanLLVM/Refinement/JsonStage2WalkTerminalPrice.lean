@@ -66,16 +66,26 @@ levels (`hcontArm_closeBracketZero_of_staging`,
 `JsonStage2WalkDispatchSpansOfStaging` fill the default arm's spans at both levels —
 `.letters`, `.fLetter` and `.classC` — beside the last entry's comma
 (`lastEntryArm_commaAboveZero_of_staging`, at the end of
-`JsonStage2WalkDispatchAboveZeroOfStaging`).  Twenty-seven producers cover twenty-three
-arms, each at every state that carries `WalkInv`; beyond its class's byte test, each takes
+`JsonStage2WalkDispatchAboveZeroOfStaging`).  **This round adds four of the six that were
+left**
+— the scan-free high-byte class (`hcontCleanupFacts_of_staging` and its arm
+`hcontArm_cleanup_of_staging`, `JsonStage2WalkDispatchCleanupOfStaging`), the plain-value
+class at both levels (`hcontScalarFacts_of_staging`/`hcontArm_scalar_of_staging` and
+`lastEntryArm_scalar_of_staging`, `JsonStage2WalkDispatchScalarOfStaging`), and the
+standalone string (`hstringFacts_of_staging`/`hcontArm_twoEntry_of_staging`,
+`JsonStage2WalkDispatchStringOfStaging`).  **Thirty-four producers cover twenty-seven
+arms**, each at every state that carries `WalkInv`; beyond its class's byte test, each takes
 only its own arm's residual — the depth split, the `519` boundary and the root word, the
-level's count, the callee's staging, and, for the default arm's spans, the head's counted
-chain and the tail's staging, which are the class's own.
+entry lane and its order, the byte class of the byte the whitespace check reads, the level's
+count, the log words' values and the decoded length, the callee's staging, and, for the
+default arm's spans, the head's counted chain and the tail's staging, which are the class's
+own.
 
-The six arms without a producer are `HcontArm.twoEntry`, `.cleanup`, `.scalar` and `.run`,
-and `LastEntryArm.scalar` and `.run`: their constructor's fields are the residual, and
-their `…Domain` modules instantiate them at one staged document.  That is the measurement
-this section records, and it is what decides the remaining tier.
+The two arms without a producer are `HcontArm.run` and `LastEntryArm.run`: their bundles are
+`RunFacts` and `RunLastFacts`, whose rows are the scan's traversal (`hbyte`), the seam's
+bound and the budget, and `JsonStage2WalkDispatchRunDomain` /
+`JsonStage2WalkDispatchRunLastDomain` instantiate them at one staged document each.  That
+is the measurement this section records, and it is what decides the remaining tier.
 
 Kind labels: **(i)** per-document class data; **(ii)** callee preconditions/answers;
 **(iii)** the scan traversal's round/guard/byte facts.  For (i) the decision is
@@ -100,10 +110,10 @@ unfolds is named.  Shared `D` items, named once:
 
 | arm | (i) per-document class data | (ii) calls | (iii) traversal |
 |---|---|---|---|
-| `ws` (producer `hcontFacts_of_staging`) | **D** `hlt125`/`hne125` (`HcontClass.defaultValueHigh`); **D** `h8c`; **D** the landing reads/`hlatch` given `k`; **F** `v`/`hread`, `hugt`, `hspan`; **D** the class *predicate* and its stop `k` (`wsScanStop`), **F** `C.inner`'s budget conjunct | `r₁ r₂ r₃`, `hTail` | `hround`, `hguard`, `hbyte` |
-| `cleanup` (no producer) | **D** byte+four bits (`defaultValueHigh`); **D** counts, `%5`/`%idxprom.i`/`%t352.i`/`%gap.i`; **F** `v`/`hread`, `hugt`; **D** `hb13/hb32/hbne13` from `b35` (**F** the byte, **D** the read); **D** `b8`/`hend`/`h8end`/`hbit`/`x1`/`h8c`/`hc110`/`hc116`/`hceq116` | `r₁ r₂ r₃ ev cA rdv xA hTail` | — |
-| `twoEntry` (no producer) | **D** byte+`34` class bits; **D** counts, `%5`/`%4`/`%root_done.i`/widths; **F** the next lane `bs`/`q` (= `entryPos G (C.k+1)`), the root word `rd`, the log words `A`/`Cc`'s values; **F-split** `hsp0 : C.sp = 0`; **F** `hcur` (`pending = none` is not carried); **D** `HstringResidue` (it is a field-less `Prop`) | `hpreV`/`xv`/`hbranch`, the `s2_string_body` pre/answer | — |
-| `scalar` (no producer) | **D** byte+`hbit` (`HcontClass.value`); **D** counts, `%5`/`%idxprom.i`/`%t352.i`/`%gap.i`; **F** `v`/`hread`, `hugt`; **D** `hb13/hb32/hbne32` from `b35` (**F** the byte, **D** the read) | `r₁ r₂ r₃ ev cA rdv xA hTail` | — |
+| `ws` (producer `hcontFacts_of_staging`) | **F** `hlt125`/`hne125` (the document's head byte; `HcontClass.defaultValueHigh`); **D** `h8c` and the other six bits given it; **D** the landing reads/`hlatch` given `k`; **F** `v`/`hread`, `hugt`, `hspan`; **D** the class *predicate* and its stop `k` (`wsScanStop`), **F** `C.inner`'s budget conjunct | `r₁ r₂ r₃`, `hTail` | `hround`, `hguard`, `hbyte` |
+| `cleanup` (producer `hcontCleanupFacts_of_staging`/`hcontArm_cleanup_of_staging`) | **F** `hlt125`/`hne125` (the document's head byte, `HcontClass.defaultValueHigh`); **D** `h8` and `hlt91`/`hlt123`/`b8`/`hend`/`h8end`/`hbit`/`x1`/`h8c`/`hc110`/`hc116`/`hceq116` from it and the cells; **D** counts, `%5`/`%idxprom.i`/`%t352.i`/`%gap.i`; **F** `v`/`hread`, `hspan`, `hugt`; **D** `b35`/`hread35` (the document's byte across the token stores); **F** `hb13/hb32/hbne13` from `b35` | `r₁ r₂ r₃ ev cA rdv xA hTail` | — |
+| `twoEntry` (producer `hstringFacts_of_staging`/`hcontArm_twoEntry_of_staging`) | **F** `%8 = 34` (the document's head byte); **D** `h8`/`hlt91`/`hlt44` from it; **D** counts, `%5`/`%4`/`%root_done.i`/widths, `h7`, `hnl`/`hnc`; **F** the next lane `bs`/`hreadLane`/`q`, the root word `rd`, the log words `A`/`Cc`'s values; **D** `hCc` from the capacity read and `log_acap`; **F-split** `hsp0 : C.sp = 0`; **F** `hcur` (`pending = none` is not carried); **D** `HstringResidue` (it is a field-less `Prop`) | `hpreV`/`xv`/`hbranch`, the `s2_string_body` pre/answer | — |
+| `scalar` (producer `hcontScalarFacts_of_staging`/`hcontArm_scalar_of_staging`) | **F** the class's three bits (`h44`/`h58`/`hne44`) and the tag test `hbit` at the document's byte (`HcontClass.value`); **D** `h8` and `hlt91` from them; **D** counts, `%5`/`%idxprom.i`/`%t352.i`/`%gap.i`; **F** `v`/`hread`, `hspan`, `hugt`; **D** `b35`/`hread35` (the document's byte across the token stores); **F** `hb13/hb32/hbne32` from `b35` | `r₁ r₂ r₃ ev cA rdv xA hTail` | — |
 | `closeBracketZero` | **D** `h8` = 93 (`HeadArm.closeBracket`); **D** `hv`/`he`/`hj`/`hj64`; **F-split** `C.sp = 0` | — | — |
 | `commaZero` | **D** `h8` = 44; **D** the rest; **F-split** `C.sp = 0` | — | — |
 | `colonZero` | **D** `h8` = 58; **D** the rest; **F-split** `C.sp = 0` | — | — |
@@ -111,17 +121,17 @@ unfolds is named.  Shared `D` items, named once:
 | `colonAboveZero` | **D** `h8` = 58; **D** `hmark`/`hstate`; **F-split** `C.sp ≠ 0` | — | — |
 | `containerOpen` | **D** `h8`/`hopen` (91/123); **F-split/boundary** `hsp519`: `depth_cap` gives `C.sp ≤ 520`, and the block's own `ugt %sp.i 519` test takes `if.then21.i` at `C.sp = 520` instead of this route — a depth *selector* the invariant does not settle, and no arm covers that branch here; **F** `hrd` (the root word's zero value) | `hpreV`, `r`, `hcall`, `hret` | — |
 | `closeWithOpen` | **D** `h8`/`hv` (93/125); **D** `hmark`/`hstate`, `hvj`/`he`/`hj`/`hj64`; **F-split** `C.sp ≠ 0` | `hpreA` (`s2_after_value`) | — |
-| `letters` | **D** `h8`/`hbit`/`h110`/`hne102` from `hlastByte`; **D** `hm`/`hmk`/`h8m`/`ht`/`htk`/`htok`; **D** `hHead` (the head's twelve links are class-independent, so a function of the class and the document — currently a field) | `hTail` | — |
-| `fLetter` | as `letters` plus **D** `h102` | `hTail` | — |
-| `classC` | **D** `h8`/`h110`/`h125`; **D** `hHead`, `hnS`, `htok`; **D** `hSpan` (the byte's own leaf: `c56TrueSpan`, `c56ElseSpan`, `c58TrueSpan`, `c58ElseSpan`) | `hTail` | — |
+| `letters` | **F** the byte (`hlastByte G C` is the document's byte at the entry's position — `WalkInv.iter.reg8` names the cell, not the value); **D** the tests given it (`hbit`/`h110`/`hne102` are functions of that byte) and `h8` once it is named; **D** `hm`/`hmk`/`h8m`/`ht`/`htk`/`htok`; **D** `hHead` (the head's twelve links are class-independent, so a function of the class and the document — currently a field) | `hTail` | — |
+| `fLetter` | as `letters`, with its `h102` test **D** given the same byte | `hTail` | — |
+| `classC` | **F** the byte; **D** `h110`/`h125` given it, hence `h8`; **D** `hHead`, `hnS`, `htok`; **D** `hSpan` (the byte's own leaf: `c56TrueSpan`, `c56ElseSpan`, `c58TrueSpan`, `c58ElseSpan`) | `hTail` | — |
 | `run` (`RunFacts`) | **D** `N` (= `k - ix`, `wsScanStop`); **D** `hHead`, `hnH`, `hSpan`, `hnS`, `hLatch`, `ht/htk/hl/hk`; **D** `i`/`c` given the stop and the lane (`hcounter`/`hbound`/`hic`/`hcw`); **D-in-principle** `hbudget` (the bundle's note: implied by `contWsPriceF`); **F** `hspanStart` (the lane) | `hTail` | `hbyte` |
 
 ### `LastEntryArm` — 14 constructors
 
 | arm | (i) per-document class data | (ii) calls | (iii) traversal |
 |---|---|---|---|
-| `scalar` (no producer) | **D** `h8` + `h91`/`h44`/`h58`/`hne44`/`hbit` (`HeadArm.defaultValue`, tag `1`); **F** `hread35`'s byte (**D** the read) with **D** `hb13/hb32/hbne32` from it; **F** `hreadT` (the `%root_done` word at `G.next0+8`); **D** `hzread` (`WalkInv.log_base` + frame over the kind store), `hev64` (`WalkGeom.evLt`) | `hpre₁`/`hcall₁`/`hret₁`/`hbit0T`, `hpre₂`/`hcall₂`/`hret₂`, `hpre₃`/`hcall₃` | — |
-| `highByte` (producer `hlastFacts_of_staging`) | **D** `hlt125`/`hne125` — and this **is** the class: `HeadArm.defaultValueHigh`, bytes 126/127; **D** `hb13`/`hb32`/`hbne13` from `G.bs.getD (G.n-1) 0`; **F** `hreadT`; **D** `hzread`, `hev64` | `hpreᵢ`/`hcallᵢ`/`hretᵢ` (three) | — |
+| `scalar` (producer `lastEntryArm_scalar_of_staging`) | **F** the class's three bits (`h44`/`h58`/`hne44`) and the tag test `hbit` at the document's byte (`HeadArm.defaultValue`, tag `1`); **D** `h8` and `h91` from them; **D** `hread35` (the document's last byte across the prefix's token stores) with the byte `G.bs.getD (G.n-1) 0`; **F** `hb13/hb32/hbne32` from it; **F** `hreadT` (the `%root_done` word at `G.next0+8`); **D** `hzread` (`WalkInv.log_base` across the kind store, the token record and the log being separate staged objects), `hev64` (`WalkGeom.evLt`) | `hpre₁`/`hcall₁`/`hret₁`/`hbit0T`, `hpre₂`/`hcall₂`/`hret₂`, `hpre₃`/`hcall₃` | — |
+| `highByte` (producer `hlastFacts_of_staging`) | **F** `hlt125`/`hne125` — the document's head byte, and the two bits **are** the class: `HeadArm.defaultValueHigh`, bytes 126/127; **D** `hb13`/`hb32`/`hbne13` given the last byte `G.bs.getD (G.n-1) 0`; **F** `hreadT`; **D** `hzread`, `hev64` | `hpreᵢ`/`hcallᵢ`/`hretᵢ` (three) | — |
 | `stringOpener` | **D** `h8` = 34; **D** `hinc`/`hnep`/`hge` (from the consumer's `¬(C.k+1<nep)` and the static cells), `hv` (`%4`), `he`; **F-split** `¬ (C.k + 1 < G.nep)` — the level's own selector, which the constructor does not carry at either level | — | — |
 | `closingZero` | **D** `h8` = 93; **D** `hv`/`he`/`hj`/`hj64`; **F-split** `C.sp = 0` | — | — |
 | `commaZero` | **D** 44; **D** the rest; **F-split** `C.sp = 0` | — | — |
@@ -130,9 +140,9 @@ unfolds is named.  Shared `D` items, named once:
 | `colonAboveZero` | **D** 58; **D** `hmark`/`hstate`; **F-split** `C.sp ≠ 0` | — | — |
 | `containerOpen` | **D** 91/123; **F-split/boundary** `hsp519` (as above); **F** `hrd` | `hpreV`, `r`, `hcall`, `hret` | — |
 | `closeWithOpen` | **D** 93/125; **D** `hmark`/`hstate`, cells; **F-split** `C.sp ≠ 0` | `hpreA` | — |
-| `letters` | **D** the class bits; **D** `hHead` (eleven links, class-independent), endpoint cells, `htok` | `hTail` | — |
-| `fLetter` | as `letters` plus **D** `h102` | `hTail` | — |
-| `classC` | **D** class bits; **D** `hHead`/`hSpan`/`hnS`/`htok` | `hTail` | — |
+| `letters` | **F** the byte; **D** its class bits given it and `h8` once it is named; **D** `hHead` (eleven links, class-independent), endpoint cells, `htok` | `hTail` | — |
+| `fLetter` | as `letters`, with its `h102` test **D** given the same byte | `hTail` | — |
+| `classC` | **F** the byte; **D** `h110`/`h125` given it, hence `h8`; **D** `hHead`/`hSpan`/`hnS`/`htok` | `hTail` | — |
 | `run` (`RunLastFacts`) | **D** class bits, `N`, the segments `hHead`/`hSpan`/`hLatch`; **D** `i`/`c` given the stop and `%4` (`hcounter`/`hbound`/`hic`/`hcw`/`hspanDoc`); **boundary** `hbudget` (section 1) | `hTail` | `hbyte` |
 
 **What the enumeration decides.**  The **F** rows are the document's content (the entry
@@ -149,19 +159,34 @@ be produced at an arbitrary document.
 
 **The obligation's two bundles are still supplied**, with these named obstructions:
 
-* `WalkContinueFacts` — 15 arms; eleven have a producer (`.ws` through
+* `WalkContinueFacts` — 15 arms; fourteen have a producer (`.ws` through
   `hcontFacts_of_staging`, the depth-zero refusals, the above-depth comma and colon, the
-  openers, the closing delimiters, and the default arm's three spans in
-  `JsonStage2WalkDispatchSpansOfStaging`), and each keeps its own (ii) calls, its (iii)
-  traversal rows where the class has a scan, and the **F** document rows above.  The four
-  without a producer are `.twoEntry`, `.cleanup`, `.scalar` and `.run`: their obstructions
-  are the callee contracts and the scan's traversal, not a class demotion — the refusal and
-  opener classes are produced, so a class-demotion lemma is not what closes them.
-* `WalkLoopEnd` — 14 arms plus the two log words.  `.highByte` has a producer and the
-  same (ii) residuals; `hlast`'s other arms are as `WalkContinueFacts`'s, with `.run`'s
-  budget the priced boundary of section 1; `mergeWords`/`refuseWords` are the log word,
-  which is **false** at an escaping input (`JsonStage2WalkArenaWord`) and is a statement
-  change, not a proof.
+  openers, the closing delimiters, the default arm's three spans in
+  `JsonStage2WalkDispatchSpansOfStaging`, and this round's scan-free high-byte class
+  (`hcontCleanupFacts_of_staging`, `JsonStage2WalkDispatchCleanupOfStaging`), plain-value
+  class (`hcontScalarFacts_of_staging`, `JsonStage2WalkDispatchScalarOfStaging`) and
+  standalone string (`hstringFacts_of_staging`,
+  `JsonStage2WalkDispatchStringOfStaging`)), and each keeps its own (ii) calls, its (iii)
+  traversal rows where the class has a scan, and the **F** document rows above.  The one
+  without a producer is `.run`: its obstruction is the scan's traversal (`hbyte`), the
+  seam's bound and the budget, not a class demotion — the refusal, opener and token classes
+  are produced, so a class-demotion lemma is not what closes it.
+* `WalkLoopEnd` — 14 arms plus the two log words.  **`.highByte` carries its producer's
+  supply, not its conclusion**: the arm's payload is `HlastResidue` — the head byte's two
+  naming bits, the last byte's three class bits, the root word, the three calls' staged
+  arguments and answers, and the log's base word — and `LastEntryArm.dispatch` applies
+  `hlastFacts_of_staging` to it, so the rows that producer derives (the `%8` cell and the
+  other six class bits, the last index and its width, the last byte and its read, the tail's
+  segment, the finalisation's registers and the merge's cells) appear nowhere in the arm.
+  The residual is therefore *not* "the same (ii) residuals" the continuing arms keep: it is
+  that supply, which is more.  `.scalar` has this round's producer
+  (`lastEntryArm_scalar_of_staging`), which derives the same rows from the plain-value
+  class's bits — including the log's base word, which the high-byte residue still supplies
+  and this arm's producer reads off `WalkInv.log_base` across the kind store — so its arm
+  keeps the class bits, the last byte's class, the root word and the three calls.
+  `hlast`'s other arms are as `WalkContinueFacts`'s, with `.run`'s budget the priced
+  boundary of section 1; `mergeWords`/`refuseWords` are the log word, which is **false** at
+  an escaping input (`JsonStage2WalkArenaWord`) and is a statement change, not a proof.
 
 Nothing about the walk's statements is retracted by that.  What is retracted is the
 brief's claim that **composition alone** would produce the two bundles: the work between

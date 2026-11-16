@@ -46,7 +46,10 @@ supplies, and `.dispatch` turns it into the actual `WalkDispatchResult`:
   head's four scalar pivots, the count test's succeeding arm, the no-run byte class and
   the tag test's true arm, composed through `walkRevolutionMergeSegScalar`
   (`JsonStage2WalkHcontScalar`).  This is the class the old split excluded, and it is
-  proved — not supplied — so the document `"01"`'s head is a merge arm.
+  proved — not supplied — so the document `"01"`'s head is a merge arm.  Its producer is
+  `hcontArm_scalar_of_staging` (`JsonStage2WalkDispatchScalarOfStaging`), which derives the
+  `%8` cell, `h91`, the counts, the lane's pointer, the entry's index, the token record's
+  cells and the byte before the entry's end with its read.
 * `.closeBracketZero` — `if.then53.i` at depth zero on the **continuing** head: `]` with
   nothing open is refused (`bracketRefuse_at`'s chain; its only count premise is the head's
   guard, which a continuing entry has).  This is the one refusal arm the continuing side

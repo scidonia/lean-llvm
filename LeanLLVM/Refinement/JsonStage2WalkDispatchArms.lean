@@ -268,7 +268,11 @@ arm), the two refusals' own bits and cells, and each default-arm span's own coun
 segments and endpoint facts. -/
 inductive LastEntryArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
     (s : State) : Type
-  /-- **`sw.default.i` with the tag test's true arm**: the plain-value path. -/
+  /-- **`sw.default.i` with the tag test's true arm**: the plain-value path.  Its producer
+  is `lastEntryArm_scalar_of_staging` (`JsonStage2WalkDispatchScalarOfStaging`), which
+  derives the `%8` cell, `h91`, the document's last byte and its read, the log's base word
+  and the stream's width, and leaves the class's three bits, the last byte's class, the
+  root word and the three calls as the arm's supply. -/
   | scalar {x : BitVec 8} (h8 : evalOperand s (.reg "%8") = some (.int 8 x))
       (h91 : evalICmp .slt x (BitVec.ofNat 8 91) = 1)
       (h44 : evalICmp .slt x (BitVec.ofNat 8 44) = 0)
