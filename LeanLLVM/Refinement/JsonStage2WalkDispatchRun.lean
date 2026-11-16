@@ -65,9 +65,11 @@ because the whitespace run is upstream of the seam and inside that segment.
 The bundle's fields are the *input's*: the document's bytes (the landing's and the visits'),
 the head and tail segments (their callees' contracts, which no `WalkInv` clause fixes), and
 the two facts that place the scan inside the entry's span.  The **token record's register**
-at the scan's exit is the one supplied preservation fact, for `HcontFacts`'s reason: the
-traversal returns its final state existentially, and the layer has no lemma that the scan
-preserves a register it does not bind.
+at the scan's exit is *not* a field: `%t352.i` is one of `walkStaticRegs`, so
+`WalkInv.regs` answers it at every state the field once quantified over, and
+`runScanMerge_at` reads that cell instead.  The field was retired for the reason
+`WalkHeadCells` was: a `WalkInv` clause stated at the states a bundle quantifies over is a
+theorem of those states, not a supply.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkDispatchClassC
 import LeanLLVM.Refinement.JsonStage2WalkRevolutionSeg
@@ -256,12 +258,6 @@ structure RunFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : 
       WalkLocal { ScanCLand K' with block := "while.body462.i" }
         (Latch462S (scanLatchOut t' "%inc463.i" "%exitcond298.not" p c "land.rhs457.i")
           (BitVec.ofNat 64 (p + 1)) a q x)
-  /-- **The token record's register at the scan's exit.**  Supplied, for `HcontFacts`'s
-  reason: the traversal returns its final state existentially, so no named term states the
-  cell at, and the layer has no lemma that the scan preserves a register it does not
-  bind.  Stated over the states the traversal's counters pin. -/
-  htok : ∀ (K' : WalkCarry G) (t' : State), WalkInv G K' t' →
-    K'.block = "while.body462.i" → ∃ tok : Nat, lookupName t'.env "%t352.i" = some (.ptr tok)
   /-- **The budget is not double-spent: the run and the visits share the entry's span.**
   The run's count `N` and the scan's visits `4·(c - 1 - i)` are together at most the
   entry's byte credit plus the five the `+5` spares.  This is `contWsPriceF`'s inequality
@@ -349,9 +345,10 @@ theorem runScanMerge_at {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : Stat
       hInvR hbR hiR hcR hinner hie f.hcw (by intro e _ _ _; simp [WalkLocal])
   have hs₁' : s₁ = revExitS sm f.c := hs₁
   subst hs₁'
-  -- 5. the merge, one step, from the token record's register
-  obtain ⟨tok, htok⟩ := f.htok Cm sm hInvR hbR
-  have htok₁ : lookupName (revExitS sm f.c).env "%t352.i" = some (.ptr tok) :=
+  -- 5. the merge, one step, from the token record's register — the invariant's cell
+  have htok : lookupName sm.env "%t352.i" = some (.ptr Cm.stage.tok) :=
+    hInvR.regs ("%t352.i", .ptr Cm.stage.tok) (by simp [walkStaticRegs])
+  have htok₁ : lookupName (revExitS sm f.c).env "%t352.i" = some (.ptr Cm.stage.tok) :=
     scanExit_tok sm (f.c - 1) f.c htok
   obtain ⟨s₂, hl₂, hs₂⟩ :=
     walkIfEnd473_at (sub := stage2SubCalls) (G := G) (C := revExitC Cm)
@@ -414,8 +411,8 @@ class states the budget as a premise of its own, so the arm's coverage is exactl
 `mergeLast` pays for.
 
 **The bundle's fields are the input's**, as `RunFacts`' are: the document's bytes (the
-landing's and the visits'), the head and tail segments with their own counts, the seam's
-bound and the token record's register.  Two of `RunFacts`' fields are absent rather than
+landing's and the visits'), the head and tail segments with their own counts, and the
+seam's bound.  Two of `RunFacts`' fields are absent rather than
 copied: `hspanStart` states the scan inside the *next* entry's span, which the terminal
 index has not got (the budget does that work here), and `hstart` places the run's start in
 the entry — true at the last entry too, but no proof reads it, so carrying it would narrow
@@ -424,8 +421,9 @@ the class for nothing. -/
 /-- **The terminal run class's inputs**, at the last entry: the head's chain through the
 seam (`nH ≤ 11 + N`, the whitespace run's count `N` inside it), the byte's span at
 `nS ≤ 5`, the tail's three calls on their *scan* arm, the landing, the seam's bound and its
-two registers, the visits' totality, the token record's register, and the budget: the run
-and the visits together inside the six links the entry allowance leaves.
+two registers, the visits' totality, and the budget: the run
+and the visits together inside the six links the entry allowance leaves.  The token
+record's register is not among them: `runLastMerge_at` reads it from `WalkInv.regs`.
 
 `hspanDoc` is the terminal analogue of `RunFacts.hspanStart`: at the last entry the scan's
 bound `%cond350.i` is `%4`, the document's length, so the bound is at most `G.n` rather
@@ -500,12 +498,6 @@ structure RunLastFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
       WalkLocal { ScanCLand K' with block := "while.body462.i" }
         (Latch462S (scanLatchOut t' "%inc463.i" "%exitcond298.not" p c "land.rhs457.i")
           (BitVec.ofNat 64 (p + 1)) a q x)
-  /-- **The token record's register at the scan's exit.**  Supplied, for `RunFacts`'s
-  reason: the traversal returns its final state existentially, so no named term states
-  the cell at, and the layer has no lemma that the scan preserves a register it does not
-  bind. -/
-  htok : ∀ (K' : WalkCarry G) (t' : State), WalkInv G K' t' →
-    K'.block = "while.body462.i" → ∃ tok : Nat, lookupName t'.env "%t352.i" = some (.ptr tok)
   /-- **The entry allowance's six remaining links pay for the run and the scan.**  The
   fixed part is twenty-four links and the price's own two are the other twenty-six of the
   thirty-two; `N` is the run's count and `4·(c - 1 - i)` the visits' count
@@ -579,9 +571,10 @@ theorem runLastMerge_at {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : Stat
       hInvR hbR hiR hcR hinner hie f.hcw (by intro e _ _ _; simp [WalkLocal])
   have hs₁' : s₁ = revExitS sm f.c := hs₁
   subst hs₁'
-  -- 5. the merge, one step, from the token record's register
-  obtain ⟨tok, htok⟩ := f.htok Cm sm hInvR hbR
-  have htok₁ : lookupName (revExitS sm f.c).env "%t352.i" = some (.ptr tok) :=
+  -- 5. the merge, one step, from the token record's register — the invariant's cell
+  have htok : lookupName sm.env "%t352.i" = some (.ptr Cm.stage.tok) :=
+    hInvR.regs ("%t352.i", .ptr Cm.stage.tok) (by simp [walkStaticRegs])
+  have htok₁ : lookupName (revExitS sm f.c).env "%t352.i" = some (.ptr Cm.stage.tok) :=
     scanExit_tok sm (f.c - 1) f.c htok
   obtain ⟨s₂, hl₂, hs₂⟩ :=
     walkIfEnd473_at (sub := stage2SubCalls) (G := G) (C := revExitC Cm)
