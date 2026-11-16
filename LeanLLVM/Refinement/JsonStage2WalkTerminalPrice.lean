@@ -47,12 +47,16 @@ about: the document's bytes.
 
 ## 2. The residual premises, measured per arm
 
-**The producers are two.**  `hcontFacts_of_staging` (`JsonStage2WalkHcontFactsOfStaging`)
-produces `HcontFacts` for `HcontArm.ws`, and `hlastFacts_of_staging`
-(`JsonStage2WalkDispatchWitnessHlast`) produces `HlastFacts` for `LastEntryArm.highByte`.
-Every other arm has **no producer**: its constructor's fields are the residual, and its
-`…Domain` module instantiates them at one staged document.  That is the measurement this
-section records, and it is what decides the remaining tier.
+**The producers are these.**  `hcontFacts_of_staging` (`JsonStage2WalkHcontFactsOfStaging`)
+produces `HcontFacts` for `HcontArm.ws`, `hlastFacts_of_staging`
+(`JsonStage2WalkDispatchWitnessHlast`) produces `HlastFacts` for `LastEntryArm.highByte`,
+`hcontArm_commaAboveZero_of_staging` (`JsonStage2WalkDispatchAboveZeroOfStaging`) produces
+`HcontArm.commaAboveZero`, and four producers in `JsonStage2WalkDispatchZeroOfStaging`
+fill `HcontArm.commaZero`/`.colonZero` and
+`LastEntryArm.commaZero`/`.colonZero`.  Every other arm has **no producer**: its
+constructor's fields are the residual, and its `…Domain` module instantiates them at one
+staged document.  That is the measurement this section records, and it is what decides the
+remaining tier.
 
 Kind labels: **(i)** per-document class data; **(ii)** callee preconditions/answers;
 **(iii)** the scan traversal's round/guard/byte facts.  For (i) the decision is

@@ -15,11 +15,12 @@ is inhabited at an input rather than only shaped:
 | `colonZero` | `:0` | `58` | two | continuing |
 
 The byte is read off the staged document (`WalkGeom.doc`, `WalkGeom.entries`,
-`entryByte`/`entryPos`), and the state is the seed's own handoff
-(`walkSeedInvariant_geometry`), so each arm's premises are facts about the input: the
-head byte is the document's, the depth is the seed's, the position is the entry stream's,
-and `%e` is the static carrier's.  The dispatch theorem then runs the arm, which is what
-the regressions below state.
+`entryByte`), and the state is the seed's own handoff (`walkSeedInvariant_geometry`).
+Each arm is produced at the state (`JsonStage2WalkDispatchZeroOfStaging`), so a wrapper
+supplies two premises and no more: the class's byte test at the document's byte, and the
+seed's depth.  The arm's other five cells — `%8`, `%idxprom.i`, `%e` and the two document
+bounds — are the invariant's and the geometry's, so no wrapper supplies the position or a
+bound.  The dispatch theorem then runs the arm, which is what the regressions below state.
 
 The one-entry documents are the last entry's level: `¬ (0 + 1 < 1)`.  The two-entry ones
 have an entry left, which is the continuing level's guard; the *second* byte is not the
@@ -33,6 +34,7 @@ byte rather than about the document being one long.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkPremisesOfStaging
 import LeanLLVM.Refinement.JsonStage2WalkSeedRun
+import LeanLLVM.Refinement.JsonStage2WalkDispatchZeroOfStaging
 
 set_option autoImplicit false
 
@@ -179,12 +181,29 @@ theorem seededInv {args : List Value} {m0 : Mem} {next : Nat}
   · rw [hargs, walkEntryState_env]
     simp [lookupName]
 
-/-! ### The head byte, the depth, the position and `%e`
+/-! ### The head byte's class
 
-The four premises the refusal arms take, read off the seeded head's invariant: the byte is
-the document's (`WalkIter.reg8`), the index word is the entry stream's (`WalkInv.idx_reg`),
-the depth is the seed's (`walkSeed`'s own `sp`), and `%e` is the static carrier's
-(`WalkInv.regs`). -/
+The refusal arms are produced at the state (`JsonStage2WalkDispatchZeroOfStaging`), so a
+document-level wrapper supplies the class's byte test and the seed's depth and nothing
+else.  The class is the census's test at the head byte — `hlastByte`, whose value
+`WalkIter.reg8` names — read off the document: at the seed's index the head byte is the
+document's own, so the test is `walkEvalICmp_eq_self`'s.  `seed_reg8`/`seed_reg8_two` are
+the register readings the other documents' wrappers take by hand. -/
+
+/-- **The seeded head's class at a one-byte document.**  The head byte is the document's
+`c`, so the census's byte test holds at it. -/
+theorem seed_class {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) {c : UInt8}
+    (h : OneByteDocument G c) :
+    evalICmp .eq (hlastByte G (walkSeed G S)) (BitVec.ofNat 8 c.toNat) = 1 := by
+  simp only [hlastByte, show (walkSeed G S).k = 0 from rfl, h.entryByte_zero]
+  exact walkEvalICmp_eq_self _
+
+/-- **The seeded head's class at a two-entry document.** -/
+theorem seed_class_two {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) {c : UInt8}
+    (h : TwoEntryHeadDocument G c) :
+    evalICmp .eq (hlastByte G (walkSeed G S)) (BitVec.ofNat 8 c.toNat) = 1 := by
+  simp only [hlastByte, show (walkSeed G S).k = 0 from rfl, h.entryByte_zero]
+  exact walkEvalICmp_eq_self _
 
 /-- **The seeded head's `%8` is the document's byte at the carried index.**  `WalkIter`'s
 clause, whose index is the seed's zero. -/
@@ -211,22 +230,6 @@ theorem seed_reg8_two {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
   rw [h0] at hiter
   exact hiter
 
-/-- **The seeded head's `%idxprom.i` is the first entry's position, zero.** -/
-theorem seed_idx {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
-    (hInv : WalkInv G (walkSeed G S) s) (hpos : entryPos G 0 = 0) :
-    evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 0)) := by
-  have h := hInv.idx_reg
-  have hk : (walkSeed G S).k = 0 := rfl
-  rw [hk] at h
-  rw [hpos] at h
-  exact h
-
-/-- **The seeded head's `%e` is the refusal record's address.** -/
-theorem seed_e {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
-    (hInv : WalkInv G (walkSeed G S) s) :
-    lookupName s.env "%e" = some (.ptr S.e) :=
-  hInv.regs ("%e", .ptr (walkSeed G S).stage.e) (by simp [walkStaticRegs])
-
 /-! ### The four regressions
 
 Each is the arm's evidence at its document, and the dispatch's result from it.  The
@@ -236,58 +239,26 @@ byte test is clear there — the negative control below. -/
 /-- **The one-byte document `,` takes the last entry's comma-refusal arm.** -/
 def commaZero_last_arm {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
     (h : OneByteDocument G (44 : UInt8)) (hInv : WalkInv G (walkSeed G S) s) :
-    LastEntryArm (stage2Calls stage2SubCalls) G (walkSeed G S) s := by
-  have h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 44)) := by
-    have hreg := seed_reg8 G S s h hInv
-    have htoNat : ((44 : UInt8)).toNat = 44 := by decide
-    rw [htoNat] at hreg
-    exact hreg
-  refine .commaZero (j := 0) h8 rfl (seed_idx G S s hInv h.entryPos_zero) (seed_e G S s hInv) ?_ ?_
-  · rw [h.len]
-    omega
-  · decide
+    LastEntryArm (stage2Calls stage2SubCalls) G (walkSeed G S) s :=
+  lastEntryArm_commaZero_of_staging (walkSeed G S) s hInv (seed_class G S h) rfl
 
 /-- **The one-byte document `:` takes the last entry's colon-refusal arm.** -/
 def colonZero_last_arm {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
     (h : OneByteDocument G (58 : UInt8)) (hInv : WalkInv G (walkSeed G S) s) :
-    LastEntryArm (stage2Calls stage2SubCalls) G (walkSeed G S) s := by
-  have h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 58)) := by
-    have hreg := seed_reg8 G S s h hInv
-    have htoNat : ((58 : UInt8)).toNat = 58 := by decide
-    rw [htoNat] at hreg
-    exact hreg
-  refine .colonZero (j := 0) h8 rfl (seed_idx G S s hInv h.entryPos_zero) (seed_e G S s hInv) ?_ ?_
-  · rw [h.len]
-    omega
-  · decide
+    LastEntryArm (stage2Calls stage2SubCalls) G (walkSeed G S) s :=
+  lastEntryArm_colonZero_of_staging (walkSeed G S) s hInv (seed_class G S h) rfl
 
 /-- **The two-entry document `,0` takes the continuing entry's comma-refusal arm.** -/
 def commaZero_cont_arm {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
     (h : TwoEntryHeadDocument G (44 : UInt8)) (hInv : WalkInv G (walkSeed G S) s) :
-    HcontArm (stage2Calls stage2SubCalls) G (walkSeed G S) s := by
-  have h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 44)) := by
-    have hreg := seed_reg8_two G S s h hInv
-    have htoNat : ((44 : UInt8)).toNat = 44 := by decide
-    rw [htoNat] at hreg
-    exact hreg
-  refine .commaZero (j := 0) h8 rfl (seed_idx G S s hInv h.entryPos_zero) (seed_e G S s hInv) ?_ ?_
-  · rw [h.len]
-    omega
-  · decide
+    HcontArm (stage2Calls stage2SubCalls) G (walkSeed G S) s :=
+  hcontArm_commaZero_of_staging (walkSeed G S) s hInv (seed_class_two G S h) rfl
 
 /-- **The two-entry document `:0` takes the continuing entry's colon-refusal arm.** -/
 def colonZero_cont_arm {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
     (h : TwoEntryHeadDocument G (58 : UInt8)) (hInv : WalkInv G (walkSeed G S) s) :
-    HcontArm (stage2Calls stage2SubCalls) G (walkSeed G S) s := by
-  have h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 58)) := by
-    have hreg := seed_reg8_two G S s h hInv
-    have htoNat : ((58 : UInt8)).toNat = 58 := by decide
-    rw [htoNat] at hreg
-    exact hreg
-  refine .colonZero (j := 0) h8 rfl (seed_idx G S s hInv h.entryPos_zero) (seed_e G S s hInv) ?_ ?_
-  · rw [h.len]
-    omega
-  · decide
+    HcontArm (stage2Calls stage2SubCalls) G (walkSeed G S) s :=
+  hcontArm_colonZero_of_staging (walkSeed G S) s hInv (seed_class_two G S h) rfl
 
 /-- **The dispatch, from the last entry's comma arm.**  The arm's own evidence carries the
 refusal's five fields, so `LastEntryArm.dispatch` returns the `refuse` alternative at the

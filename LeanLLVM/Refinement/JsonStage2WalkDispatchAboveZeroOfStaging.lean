@@ -21,8 +21,9 @@ maps; the producer takes the state's own carry instead, so those premises are go
 enumeration: six binders, of which two are the witnesses for the two stack maps, so four
 statements — the byte, the depth and the two stack cells — of which one is supplied and
 three are derived.  The zero-depth refusals beside it have the same single free premise but
-five derived cells, including the entry's position and its two document bounds.  Producing
-this arm confirms all three marks:
+five derived cells, including the entry's position and its two document bounds; they are
+produced in `JsonStage2WalkDispatchZeroOfStaging`, where `entryPos_le` and `entryPos_lt_64`
+are the two bounds.  Producing this arm confirms all three marks:
 
 | row | mark | how the producer has it |
 |---|---|---|
@@ -54,12 +55,15 @@ class of two bytes, so `HcontFacts` and `HcontCleanupFacts` carry the byte as a 
 and take `hlt125`/`hne125` as premises rather than deriving a value.
 
 So the demotion generalises, and it is not where the remaining arms cost lives: what a
-still-unproduced arm needs beyond it is what its own row names — the zero-depth refusals'
-`entryPos`/`%e` cells and their two document bounds (`hj`, `hj64`), the openers' and the
+still-unproduced arm needs beyond it is what its own row names — the openers' and the
 closing delimiter's callee preconditions and answers, and the default arm's counted head
 chain and three-call tail, which are segments a producer must have before its span can be
 composed.  This module's arm needs none of them, which is why the enumeration marks it
-first.
+first.  The zero-depth refusals' `entryPos`/`%e` cells and their two document bounds, which
+this paragraph used to list here, are produced beside this one
+(`JsonStage2WalkDispatchZeroOfStaging`): `WalkInv.idx_reg` and `WalkInv.regs` are the two
+cells, and the geometry bounds `entryPos` at every index, so the class and the depth split
+are all a wrapper supplies.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkDispatchHcontArms
 
