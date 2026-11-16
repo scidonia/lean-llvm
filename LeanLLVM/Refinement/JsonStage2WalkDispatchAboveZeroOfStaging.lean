@@ -39,6 +39,15 @@ No clause of `WalkInv` is consulted for them, and a producer that took them as p
 would supply data the state already holds.  That is the whole of the arm's residual: the
 class demotion and one depth selector.
 
+## The comma at the last entry
+
+The comma's continuing producer's twin is produced beside the colon's:
+`lastEntryArm_commaAboveZero_of_staging` is the same four statements at the level whose
+count is exhausted, and `walkDispatch_at_commaAboveZero_last_of_staging` applies
+`LastEntryArm.dispatch` to it.  So the document-level wrapper at `[,`/`{,` no longer names
+the reached carry's two maps either: it supplies the document, the opener's call and the
+depth, and reads the two stack bytes off the carry by witness.
+
 ## What the class demotion costs the remaining arms
 
 `eq_bit_value` is stated at an arbitrary byte `x` and an arbitrary byte literal `c`, so
@@ -216,6 +225,38 @@ theorem walkDispatch_at_colonAboveZero_last_of_staging {m0 : Mem} {G : WalkGeom 
   LastEntryArm.dispatch hInv hblock hnot
     (lastEntryArm_colonAboveZero_of_staging C s hInv hclass hsp)
 
+/-! ### The comma, at the last entry
+
+The comma's continuing producer's twin.  The arm is the same four statements, and which
+side of the count the state is on is the dispatch's hypothesis, so the producer is the
+continuing one's term and the dispatch is the last entry's. -/
+
+/-- **The comma's arm at the last entry, from the staging.**  `LastEntryArm.commaAboveZero`
+at every state that carries the invariant, a positive depth and the comma's byte: the two
+stack bytes are the carry's maps at `%sp - 1`, read by witness, so the arm asks nothing
+about the stacks. -/
+def lastEntryArm_commaAboveZero_of_staging {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s)
+    (hclass : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 44) = 1)
+    (hsp : C.sp ≠ 0) :
+    LastEntryArm (stage2Calls stage2SubCalls) G C s :=
+  .commaAboveZero (C.tyMap (C.sp - 1)) (C.stMap (C.sp - 1))
+    (by
+      rw [← eq_bit_value hclass]
+      exact cont_reg8 hInv)
+    hsp rfl rfl
+
+/-- **The comma's last-entry dispatch, from the staging.**  The producer above through
+`LastEntryArm.dispatch`, whose guard is the continuing one's negation. -/
+theorem walkDispatch_at_commaAboveZero_last_of_staging {m0 : Mem} {G : WalkGeom m0}
+    {C : WalkCarry G} {s : State} (hInv : WalkInv G C s)
+    (hblock : C.block = walkLoopHead) (hnot : ¬ (C.k + 1 < G.nep))
+    (hclass : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 44) = 1)
+    (hsp : C.sp ≠ 0) :
+    WalkDispatchResult (stage2Calls stage2SubCalls) G C s :=
+  LastEntryArm.dispatch hInv hblock hnot
+    (lastEntryArm_commaAboveZero_of_staging C s hInv hclass hsp)
+
 /-! ### The instrument -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.cont_reg8
@@ -227,6 +268,8 @@ theorem walkDispatch_at_colonAboveZero_last_of_staging {m0 : Mem} {G : WalkGeom 
 #print axioms LeanLLVM.Refinement.WalkScope.lastEntryArm_colonAboveZero_of_staging
 #print axioms LeanLLVM.Refinement.WalkScope.walkDispatch_at_colonAboveZero_of_staging
 #print axioms LeanLLVM.Refinement.WalkScope.walkDispatch_at_colonAboveZero_last_of_staging
+#print axioms LeanLLVM.Refinement.WalkScope.lastEntryArm_commaAboveZero_of_staging
+#print axioms LeanLLVM.Refinement.WalkScope.walkDispatch_at_commaAboveZero_last_of_staging
 
 end WalkScope
 end LeanLLVM.Refinement

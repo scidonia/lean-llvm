@@ -149,6 +149,7 @@ import LeanLLVM.Refinement.JsonStage2WalkDispatchLettersDomain
 import LeanLLVM.Refinement.JsonStage2WalkDispatchFLetter
 import LeanLLVM.Refinement.JsonStage2WalkDispatchFLetterDomain
 import LeanLLVM.Refinement.JsonStage2WalkDispatchClassC
+import LeanLLVM.Refinement.JsonStage2WalkDispatchSpansOfStaging
 import LeanLLVM.Refinement.JsonStage2WalkDispatchClassCDomain
 import LeanLLVM.Refinement.JsonStage2WalkDispatchRun
 import LeanLLVM.Refinement.JsonStage2WalkDispatchRunDomain

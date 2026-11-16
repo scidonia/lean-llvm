@@ -32,10 +32,10 @@ is produced from the state instead (`hcontArm_commaAboveZero_of_staging`,
 `JsonStage2WalkDispatchAboveZeroOfStaging`), which reads the two maps off the carry by
 witness, so `[,0`'s regression supplies nothing about the stacks.  The colon's two arms are
 produced beside it — `hcontArm_colonAboveZero_of_staging` and
-`lastEntryArm_colonAboveZero_of_staging` in the same module — so `[:`, `{:` and `[:0`
-supply nothing about the stacks either, and their theorems state the dispatch's result
-without the two-map implication the by-hand wrappers needed.  The last entry's comma still
-carries them, because no producer states that arm yet.
+`lastEntryArm_colonAboveZero_of_staging` in the same module — and so is the comma's at the
+last entry (`lastEntryArm_commaAboveZero_of_staging`), so `[:`, `{:` and `[,`/`{,` supply
+nothing about the stacks either, and their theorems state the dispatch's result without the
+two-map implication the by-hand wrappers needed.
 
 The routes these documents reach are the refusals: the push leaves the state stack at
 zero (`ifEnd24StByte_zero`), and every merge route tests it against `1` (bracket) or `3`
@@ -296,35 +296,18 @@ theorem depthOne_cont_reachable {args : List Value} {m0 : Mem} {next : Nat}
 
 /-! ### The arms, through the real dispatch
 
-Each wrapper inhabits its constructor at the head the document reaches and applies
-`LastEntryArm.dispatch` or `HcontArm.dispatch`.  The stack facts are the arm's own: the
-opener's push writes `ifEnd24TyByte c` on the type stack and `ifEnd24StByte` on the state
-stack, and those two are what the merge carry holds.  The producers read them off the
-carry, so the wrappers whose arms are produced take only the document's class and the
-depth, and the document-level regression's two stack premises disappear with them: the
-continuing comma's and both of the colon's.
-
-The last entry's comma is the one arm here with no producer, so its wrapper still carries
-the two maps as an implication premise — `commaAboveZero_last_at_document`'s statement is
-the only one in this module that asks for them.
+Each wrapper inhabits its arm at the head the document reaches — through the class's
+producer — and applies `LastEntryArm.dispatch` or `HcontArm.dispatch`.  No wrapper supplies
+a stack byte: `lastEntryArm_commaAboveZero_of_staging` and the colon's two producers read
+the reached carry's two maps off it by witness, so all four wrappers here state the
+dispatch's result rather than asking their caller for the maps.  The producers' remaining
+premises are the document's class and the depth, which is what the wrapper has.
 -/
 
-/-- **The comma arm at a last entry.** -/
-theorem commaAboveZero_last_dispatch {m0 : Mem} {G : WalkGeom m0} {C' : WalkCarry G}
-    {s' : State} (hInv : WalkInv G C' s') (hblock : C'.block = walkLoopHead)
-    (hsp : C'.sp ≠ 0) (hnot : ¬ (C'.k + 1 < G.nep))
-    (h8 : evalOperand s' (.reg "%8") = some (.int 8 (BitVec.ofNat 8 44)))
-    {b1 b2 : UInt8} (hmark : C'.tyMap (C'.sp - 1) = b1)
-    (hstate : C'.stMap (C'.sp - 1) = b2) :
-    WalkDispatchResult (stage2Calls stage2SubCalls) G C' s' :=
-  LastEntryArm.dispatch hInv hblock hnot
-    (.commaAboveZero b1 b2 h8 hsp hmark hstate)
-
-/-! ### The regressions, at the documents -/
-
 /-- **`[,`/`{,` reaches the comma's arm above depth zero.**  The opener is entry zero;
-the reached head is at entry one and depth one.  The arm's stack bytes are the push's,
-and the dispatch is the real `LastEntryArm.dispatch` at the last entry. -/
+the reached head is at entry one and depth one.  The arm's stack bytes are the carry's,
+which `lastEntryArm_commaAboveZero_of_staging` reads by witness, and the dispatch is the
+real `LastEntryArm.dispatch` at the last entry. -/
 theorem commaAboveZero_last_at_document {args : List Value} {m0 : Mem} {next : Nat}
     {G : WalkGeom m0} {S : WalkStage G} {c : UInt8}
     (hargs : args = [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
@@ -347,16 +330,13 @@ theorem commaAboveZero_last_at_document {args : List Value} {m0 : Mem} {next : N
     (hret : r.ret = .int 32 (BitVec.ofNat 32 1)) :
     ∃ (C' : WalkCarry G) (s' : State),
       WalkInv G C' s' ∧ C'.block = walkLoopHead ∧ C'.sp = 1 ∧ C'.k = 1 ∧
-      (C'.tyMap (C'.sp - 1) = ifEnd24TyByte (BitVec.ofNat 8 c.toNat) →
-        C'.stMap (C'.sp - 1) = ifEnd24StByte →
-        WalkDispatchResult (stage2Calls stage2SubCalls) G C' s') := by
+      WalkDispatchResult (stage2Calls stage2SubCalls) G C' s' := by
   obtain ⟨C', s', hInv', hblock', hsp1, hk1, h8⟩ :=
     depthOne_last_reachable hargs hnext h hc hrd hpreV r hcall hret
   refine ⟨C', s', hInv', hblock', hsp1, hk1, ?_⟩
-  intro hmark hstate
   have hnot : ¬ (C'.k + 1 < G.nep) := by rw [hk1, h.count]; omega
-  exact commaAboveZero_last_dispatch hInv' hblock' (by rw [hsp1]; decide) hnot h8
-    hmark hstate
+  exact walkDispatch_at_commaAboveZero_last_of_staging hInv' hblock' hnot
+    (hclass_of_reg8 hInv' h8) (by rw [hsp1]; decide)
 
 /-- **`[:`/`{:` reaches the colon's arm above depth zero.**  The class is the document's
 own second byte, and the arm reads the reached carry's two stack bytes itself

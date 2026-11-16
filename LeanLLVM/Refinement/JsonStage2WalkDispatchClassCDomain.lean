@@ -34,6 +34,7 @@ Two, at the two ends of the class:
 -/
 import LeanLLVM.Refinement.JsonStage2WalkDispatchOpenersDomain
 import LeanLLVM.Refinement.JsonStage2WalkDispatchArmsDomain
+import LeanLLVM.Refinement.JsonStage2WalkDispatchSpansOfStaging
 import LeanLLVM.Refinement.JsonStage2WalkDispatchClassC
 
 set_option autoImplicit false
@@ -139,7 +140,9 @@ def classC_cont_arm_110 {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : Stat
     (ht : Ct.block = "if.end473.i") (htk : Ct.k = (walkSeed G S).k)
     (htok : lookupName st.env "%t352.i" = some (.ptr tok)) :
     HcontArm (stage2Calls stage2SubCalls) G (walkSeed G S) s :=
-  .classC (cHead_110 G S s h hInv) (by decide) (Or.inl (by decide))
+  hcontArm_classC_of_staging (walkSeed G S) s hInv
+    (hlastByte_of_reg8 hInv (cHead_110 G S s h hInv))
+    (by decide) (Or.inl (by decide))
     hHead hm hmk h8m
     (c56TrueSpan G Cm sm hHead.inv' hm h8m (by decide) (by decide) (by decide))
     rfl (by decide) hTail ht htk htok
@@ -157,7 +160,9 @@ def classC_cont_arm_111 {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : Stat
     (ht : Ct.block = "if.end473.i") (htk : Ct.k = (walkSeed G S).k)
     (htok : lookupName st.env "%t352.i" = some (.ptr tok)) :
     HcontArm (stage2Calls stage2SubCalls) G (walkSeed G S) s :=
-  .classC (cHead_111 G S s h hInv) (by decide) (Or.inl (by decide))
+  hcontArm_classC_of_staging (walkSeed G S) s hInv
+    (hlastByte_of_reg8 hInv (cHead_111 G S s h hInv))
+    (by decide) (Or.inl (by decide))
     hHead hm hmk h8m
     (c56ElseSpan G Cm sm hHead.inv' hm h8m (by decide) (by decide) (by decide))
     rfl (by decide) hTail ht htk htok
@@ -176,7 +181,9 @@ def classC_cont_arm_116 {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : Stat
     (ht : Ct.block = "if.end473.i") (htk : Ct.k = (walkSeed G S).k)
     (htok : lookupName st.env "%t352.i" = some (.ptr tok)) :
     HcontArm (stage2Calls stage2SubCalls) G (walkSeed G S) s :=
-  .classC (cHead_116 G S s h hInv) (by decide) (Or.inl (by decide))
+  hcontArm_classC_of_staging (walkSeed G S) s hInv
+    (hlastByte_of_reg8 hInv (cHead_116 G S s h hInv))
+    (by decide) (Or.inl (by decide))
     hHead hm hmk h8m
     (c58TrueSpan G Cm sm hHead.inv' hm h8m (by decide) (by decide) (by decide))
     rfl (by decide) hTail ht htk htok
@@ -194,7 +201,9 @@ def classC_cont_arm_117 {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : Stat
     (ht : Ct.block = "if.end473.i") (htk : Ct.k = (walkSeed G S).k)
     (htok : lookupName st.env "%t352.i" = some (.ptr tok)) :
     HcontArm (stage2Calls stage2SubCalls) G (walkSeed G S) s :=
-  .classC (cHead_117 G S s h hInv) (by decide) (Or.inl (by decide))
+  hcontArm_classC_of_staging (walkSeed G S) s hInv
+    (hlastByte_of_reg8 hInv (cHead_117 G S s h hInv))
+    (by decide) (Or.inl (by decide))
     hHead hm hmk h8m
     (c58ElseSpan G Cm sm hHead.inv' hm h8m (by decide) (by decide) (by decide))
     rfl (by decide) hTail ht htk htok
@@ -319,7 +328,9 @@ def classC_last_arm_110 {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : Stat
     (ht : Ct.block = "if.end473.i") (htk : Ct.k = (walkSeed G S).k)
     (htok : lookupName st.env "%t352.i" = some (.ptr tok)) :
     LastEntryArm (stage2Calls stage2SubCalls) G (walkSeed G S) s :=
-  .classC (cHead_last_110 G S s h hInv) (by decide) (Or.inl (by decide))
+  lastEntryArm_classC_of_staging (walkSeed G S) s hInv
+    (hlastByte_of_reg8 hInv (cHead_last_110 G S s h hInv))
+    (by decide) (Or.inl (by decide))
     hHead hm hmk h8m
     (c56TrueSpan G Cm sm hHead.inv' hm h8m (by decide) (by decide) (by decide))
     rfl (by decide) hTail ht htk htok
@@ -337,7 +348,9 @@ def classC_last_arm_117 {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : Stat
     (ht : Ct.block = "if.end473.i") (htk : Ct.k = (walkSeed G S).k)
     (htok : lookupName st.env "%t352.i" = some (.ptr tok)) :
     LastEntryArm (stage2Calls stage2SubCalls) G (walkSeed G S) s :=
-  .classC (cHead_last_117 G S s h hInv) (by decide) (Or.inl (by decide))
+  lastEntryArm_classC_of_staging (walkSeed G S) s hInv
+    (hlastByte_of_reg8 hInv (cHead_last_117 G S s h hInv))
+    (by decide) (Or.inl (by decide))
     hHead hm hmk h8m
     (c58ElseSpan G Cm sm hHead.inv' hm h8m (by decide) (by decide) (by decide))
     rfl (by decide) hTail ht htk htok

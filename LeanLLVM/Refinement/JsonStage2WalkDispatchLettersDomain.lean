@@ -41,6 +41,7 @@ and its counted segment exist (`walkRevolutionMergeSegWs`, `walkRevolutionMergeS
 this module adds is the class evidence at a staged document.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkDispatchOpenersDomain
+import LeanLLVM.Refinement.JsonStage2WalkDispatchSpansOfStaging
 import LeanLLVM.Refinement.JsonStage2WalkDispatchLetters
 
 set_option autoImplicit false
@@ -126,8 +127,10 @@ def letters_cont_arm_a {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State
     (ht : Ct.block = "if.end473.i") (htk : Ct.k = (walkSeed G S).k)
     (htok : lookupName st.env "%t352.i" = some (.ptr tok)) :
     HcontArm (stage2Calls stage2SubCalls) G (walkSeed G S) s :=
-  .letters (lettersHead_a G S s h hInv) (lettersPrem_a).1 (lettersPrem_a).2.1
-    (lettersPrem_a).2.2 hHead hm hmk h8m hTail ht htk htok
+  hcontArm_letters_of_staging (walkSeed G S) s hInv
+    (hlastByte_of_reg8 hInv (lettersHead_a G S s h hInv))
+    (lettersPrem_a).1 (lettersPrem_a).2.1 (lettersPrem_a).2.2
+    hHead hm hmk h8m hTail ht htk htok
 
 /-- **`\xC8 0`'s head takes the continuing letters arm**, on the other head class. -/
 def letters_cont_arm_high {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
@@ -142,8 +145,10 @@ def letters_cont_arm_high {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : St
     (ht : Ct.block = "if.end473.i") (htk : Ct.k = (walkSeed G S).k)
     (htok : lookupName st.env "%t352.i" = some (.ptr tok)) :
     HcontArm (stage2Calls stage2SubCalls) G (walkSeed G S) s :=
-  .letters (lettersHead_high G S s h hInv) (lettersPrem_high).1 (lettersPrem_high).2.1
-    (lettersPrem_high).2.2 hHead hm hmk h8m hTail ht htk htok
+  hcontArm_letters_of_staging (walkSeed G S) s hInv
+    (hlastByte_of_reg8 hInv (lettersHead_high G S s h hInv))
+    (lettersPrem_high).1 (lettersPrem_high).2.1 (lettersPrem_high).2.2
+    hHead hm hmk h8m hTail ht htk htok
 
 /-! ### The dispatch, through the real `.dispatch` -/
 
@@ -280,7 +285,8 @@ def letters_last_arm_a {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State
   rw [ht'] at hreg
   have h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 97)) := by
     simpa only [evalOperand] using hreg
-  exact .letters h8 (lettersPrem_a).1 (lettersPrem_a).2.1 (lettersPrem_a).2.2
+  exact lastEntryArm_letters_of_staging (walkSeed G S) s hInv
+    (hlastByte_of_reg8 hInv h8) (lettersPrem_a).1 (lettersPrem_a).2.1 (lettersPrem_a).2.2
     hHead hm hmk h8m hTail ht htk htok
 
 /-- **The high byte's document takes the last entry's letters arm.** -/
@@ -301,8 +307,9 @@ def letters_last_arm_high {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : St
   rw [ht'] at hreg
   have h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 200)) := by
     simpa only [evalOperand] using hreg
-  exact .letters h8 (lettersPrem_high).1 (lettersPrem_high).2.1 (lettersPrem_high).2.2
-    hHead hm hmk h8m hTail ht htk htok
+  exact lastEntryArm_letters_of_staging (walkSeed G S) s hInv
+    (hlastByte_of_reg8 hInv h8) (lettersPrem_high).1 (lettersPrem_high).2.1
+    (lettersPrem_high).2.2 hHead hm hmk h8m hTail ht htk htok
 
 /-- **The dispatch at `"a"`.**  `LastEntryArm.dispatch` at the seeded head: the entry
 stream is exhausted (`¬ (0 + 1 < 1)`), and the letters route's nineteen links still reach

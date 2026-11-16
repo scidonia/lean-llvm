@@ -60,19 +60,22 @@ beside `lastEntryArm_colonAboveZero_of_staging`; four in
 levels (`hcontArm_closeBracketZero_of_staging`,
 `lastEntryArm_closeBracketZero_of_staging`); four in
 `JsonStage2WalkDispatchOpenersOfStaging` fill `HcontArm.containerOpen` and
-`LastEntryArm.containerOpen`, one producer per byte (`91`, `123`); and four in
+`LastEntryArm.containerOpen`, one producer per byte (`91`, `123`); four in
 `JsonStage2WalkDispatchClosersOfStaging` fill `HcontArm.closeWithOpen` and
-`LastEntryArm.closeWithOpen`, one per byte (`93`, `125`).  Twenty producers cover sixteen
+`LastEntryArm.closeWithOpen`, one per byte (`93`, `125`); and seven in
+`JsonStage2WalkDispatchSpansOfStaging` fill the default arm's spans at both levels —
+`.letters`, `.fLetter` and `.classC` — beside the last entry's comma
+(`lastEntryArm_commaAboveZero_of_staging`, at the end of
+`JsonStage2WalkDispatchAboveZeroOfStaging`).  Twenty-seven producers cover twenty-three
 arms, each at every state that carries `WalkInv`; beyond its class's byte test, each takes
-only its own arm's **F** rows — the depth split, the `519` boundary and the root word, the
-level's count, the callee's staging.
+only its own arm's residual — the depth split, the `519` boundary and the root word, the
+level's count, the callee's staging, and, for the default arm's spans, the head's counted
+chain and the tail's staging, which are the class's own.
 
-The thirteen arms without a producer are `HcontArm.twoEntry`, `.cleanup`, `.scalar`,
-`.letters`, `.fLetter`, `.classC` and `.run`, and `LastEntryArm.scalar`,
-`.commaAboveZero`, `.letters`, `.fLetter`, `.classC` and `.run`: their constructor's
-fields are the residual, and their `…Domain` modules instantiate them at one staged
-document.  That is the measurement this section records, and it is what decides the
-remaining tier.
+The six arms without a producer are `HcontArm.twoEntry`, `.cleanup`, `.scalar` and `.run`,
+and `LastEntryArm.scalar` and `.run`: their constructor's fields are the residual, and
+their `…Domain` modules instantiate them at one staged document.  That is the measurement
+this section records, and it is what decides the remaining tier.
 
 Kind labels: **(i)** per-document class data; **(ii)** callee preconditions/answers;
 **(iii)** the scan traversal's round/guard/byte facts.  For (i) the decision is
@@ -119,7 +122,7 @@ unfolds is named.  Shared `D` items, named once:
 |---|---|---|---|
 | `scalar` (no producer) | **D** `h8` + `h91`/`h44`/`h58`/`hne44`/`hbit` (`HeadArm.defaultValue`, tag `1`); **F** `hread35`'s byte (**D** the read) with **D** `hb13/hb32/hbne32` from it; **F** `hreadT` (the `%root_done` word at `G.next0+8`); **D** `hzread` (`WalkInv.log_base` + frame over the kind store), `hev64` (`WalkGeom.evLt`) | `hpre₁`/`hcall₁`/`hret₁`/`hbit0T`, `hpre₂`/`hcall₂`/`hret₂`, `hpre₃`/`hcall₃` | — |
 | `highByte` (producer `hlastFacts_of_staging`) | **D** `hlt125`/`hne125` — and this **is** the class: `HeadArm.defaultValueHigh`, bytes 126/127; **D** `hb13`/`hb32`/`hbne13` from `G.bs.getD (G.n-1) 0`; **F** `hreadT`; **D** `hzread`, `hev64` | `hpreᵢ`/`hcallᵢ`/`hretᵢ` (three) | — |
-| `stringOpener` | **D** `h8` = 34; **D** `hinc`/`hnep`/`hge` (from the consumer's `¬(C.k+1<nep)` and the static cells), `hv` (`%4`), `he` | — | — |
+| `stringOpener` | **D** `h8` = 34; **D** `hinc`/`hnep`/`hge` (from the consumer's `¬(C.k+1<nep)` and the static cells), `hv` (`%4`), `he`; **F-split** `¬ (C.k + 1 < G.nep)` — the level's own selector, which the constructor does not carry at either level | — | — |
 | `closingZero` | **D** `h8` = 93; **D** `hv`/`he`/`hj`/`hj64`; **F-split** `C.sp = 0` | — | — |
 | `commaZero` | **D** 44; **D** the rest; **F-split** `C.sp = 0` | — | — |
 | `colonZero` | **D** 58; **D** the rest; **F-split** `C.sp = 0` | — | — |
@@ -146,11 +149,14 @@ be produced at an arbitrary document.
 
 **The obligation's two bundles are still supplied**, with these named obstructions:
 
-* `WalkContinueFacts` — 15 arms; only `.ws` has a producer, and it keeps (ii) the tail's
-  three callee preconditions/answers and (iii) the traversal's `hround`/`hguard`/`hbyte`,
-  plus the **F** document rows above.  The scan-free, string and scalar bundles have no
-  producer at all; the refusal/open arms are **D**-only and are the ones a class-demotion
-  lemma would close first.
+* `WalkContinueFacts` — 15 arms; eleven have a producer (`.ws` through
+  `hcontFacts_of_staging`, the depth-zero refusals, the above-depth comma and colon, the
+  openers, the closing delimiters, and the default arm's three spans in
+  `JsonStage2WalkDispatchSpansOfStaging`), and each keeps its own (ii) calls, its (iii)
+  traversal rows where the class has a scan, and the **F** document rows above.  The four
+  without a producer are `.twoEntry`, `.cleanup`, `.scalar` and `.run`: their obstructions
+  are the callee contracts and the scan's traversal, not a class demotion — the refusal and
+  opener classes are produced, so a class-demotion lemma is not what closes them.
 * `WalkLoopEnd` — 14 arms plus the two log words.  `.highByte` has a producer and the
   same (ii) residuals; `hlast`'s other arms are as `WalkContinueFacts`'s, with `.run`'s
   budget the priced boundary of section 1; `mergeWords`/`refuseWords` are the log word,

@@ -34,6 +34,7 @@ premise is the one that separates the two leaves.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkDispatchOpenersDomain
 import LeanLLVM.Refinement.JsonStage2WalkDispatchArmsDomain
+import LeanLLVM.Refinement.JsonStage2WalkDispatchSpansOfStaging
 import LeanLLVM.Refinement.JsonStage2WalkDispatchFLetter
 
 set_option autoImplicit false
@@ -98,7 +99,9 @@ def fLetter_cont_arm {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
     (ht : Ct.block = "if.end473.i") (htk : Ct.k = (walkSeed G S).k)
     (htok : lookupName st.env "%t352.i" = some (.ptr tok)) :
     HcontArm (stage2Calls stage2SubCalls) G (walkSeed G S) s :=
-  .fLetter (fHead_cont G S s h hInv) (fPrem_102).1 (fPrem_102).2.1 (fPrem_102).2.2
+  hcontArm_fLetter_of_staging (walkSeed G S) s hInv
+    (hlastByte_of_reg8 hInv (fHead_cont G S s h hInv))
+    (fPrem_102).1 (fPrem_102).2.1 (fPrem_102).2.2
     hHead hm hmk h8m hTail ht htk htok
 
 /-- **`"f"`'s head takes the last entry's `'f'` arm.** -/
@@ -114,7 +117,9 @@ def fLetter_last_arm {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
     (ht : Ct.block = "if.end473.i") (htk : Ct.k = (walkSeed G S).k)
     (htok : lookupName st.env "%t352.i" = some (.ptr tok)) :
     LastEntryArm (stage2Calls stage2SubCalls) G (walkSeed G S) s :=
-  .fLetter (fHead_last G S s h hInv) (fPrem_102).1 (fPrem_102).2.1 (fPrem_102).2.2
+  lastEntryArm_fLetter_of_staging (walkSeed G S) s hInv
+    (hlastByte_of_reg8 hInv (fHead_last G S s h hInv))
+    (fPrem_102).1 (fPrem_102).2.1 (fPrem_102).2.2
     hHead hm hmk h8m hTail ht htk htok
 
 /-! ### The dispatch, through the real `.dispatch` -/
