@@ -746,13 +746,28 @@ theorem stage2Boundary_of_accept {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) 
       G.evcap G.ndst G.nev G.err C.stage.c C.stage.ctype C.stage.cst C.stage.tok
       C.stage.s C.stage.z C.stage.e, r.1 + r.2 ≤ C.stage.d ∨ C.stage.d + 8 ≤ r.1 :=
     C.stage.dSep
-  refine ⟨G.b, G.n, G.ep, G.nep, G.xp, G.nxp, G.dst, G.dstcap, G.ndst, G.ev, G.evcap,
-    G.nev, G.err, 1, G.ndst0, G.nev0, C.alen, C.evlen, arena, evs, C.stage.c,
-    C.stage.ctype, C.stage.cst, C.stage.tok, C.stage.s, C.stage.z, C.stage.e, C.stage.d,
-    C.stage.nkSlot, C.stage.nxpSlot, rfl, rfl, Or.inr rfl, G.ndstRead, G.nevRead,
-    walkFinishMemAccept_ndst G hndnev, walkFinishMemAccept_nev G, hInv.alen_ge, halen,
-    hnev0, hInv.evlen_le, G.dstcapLt, G.evcapLt, hevle, hnep64, G.nxpLt, hres, hArenaRead,
-    hEvRead, hRefuse0, hAccept1, hpresentT, hframeT, hsep24, hsep25⟩
+  obtain ⟨nendT, hnendT, hframeT⟩ := hframeT
+  refine stage2Boundary_of_witness
+    (w :=
+      { b := G.b, n := G.n, ep := G.ep, nep := G.nep, xp := G.xp, nxp := G.nxp,
+        dst := G.dst, dstcap := G.dstcap, ndst := G.ndst, ev := G.ev,
+        evcap := G.evcap, nev := G.nev, err := G.err, verdict := 1,
+        ndst0 := G.ndst0, nev0 := G.nev0, ndst' := C.alen, nev' := C.evlen,
+        arena := arena, evs := evs, c := C.stage.c, ctype := C.stage.ctype,
+        cst := C.stage.cst, tok := C.stage.tok, s := C.stage.s, z := C.stage.z,
+        e := C.stage.e, d := C.stage.d, nkSlot := C.stage.nkSlot,
+        nxpSlot := C.stage.nxpSlot, nextEnd := nendT })
+    (h :=
+      { args_eq := rfl, value_eq := rfl, verdict_range := Or.inr rfl,
+        ndst0_read := G.ndstRead, nev0_read := G.nevRead,
+        ndst_read := walkFinishMemAccept_ndst G hndnev,
+        nev_read := walkFinishMemAccept_nev G, ndst0_le := hInv.alen_ge,
+        ndst_le_n := halen, nev0_le := hnev0, nev_le := hInv.evlen_le,
+        dstcap_lt := G.dstcapLt, evcap_lt := G.evcapLt, nev_le_evcap := hevle,
+        nep_lt := hnep64, nxp_lt := G.nxpLt, reserve := hres,
+        arena_read := hArenaRead, evs_read := hEvRead, refuse_word := hRefuse0,
+        accept_word := hAccept1, present := hpresentT, next_le := hnendT,
+        frame := hframeT, staged := hsep24, dSep := hsep25 })
 
 /-- **The record's boundary at R0's returned memory.**  The copy's three stores over the
 state's own memory: verdict `0`, the two cursors as the log's words, the refusal word `e`
@@ -806,14 +821,28 @@ theorem stage2Boundary_of_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) 
       G.evcap G.ndst G.nev G.err C.stage.c C.stage.ctype C.stage.cst C.stage.tok
       C.stage.s C.stage.z C.stage.e, r.1 + r.2 ≤ C.stage.d ∨ C.stage.d + 8 ≤ r.1 :=
     C.stage.dSep
-  refine ⟨G.b, G.n, G.ep, G.nep, G.xp, G.nxp, G.dst, G.dstcap, G.ndst, G.ev, G.evcap,
-    G.nev, G.err, 0, G.ndst0, G.nev0, C.alen, C.evlen, arena, evs, C.stage.c,
-    C.stage.ctype, C.stage.cst, C.stage.tok, C.stage.s, C.stage.z, C.stage.e, C.stage.d,
-    C.stage.nkSlot, C.stage.nxpSlot, rfl, rfl, Or.inl rfl, G.ndstRead, G.nevRead,
-    walkFinishMemRefuse_ndst G hndnev hnderr, walkFinishMemRefuse_nev G hnverr,
-    hInv.alen_ge, halen, hnev0, hInv.evlen_le, G.dstcapLt, G.evcapLt, hevle, hnep64,
-    G.nxpLt, hres, hArenaRead, hEvRead, hRefuse0, hAccept1, hpresentT, hframeT,
-    hsep24, hsep25⟩
+  obtain ⟨nendT, hnendT, hframeT⟩ := hframeT
+  refine stage2Boundary_of_witness
+    (w :=
+      { b := G.b, n := G.n, ep := G.ep, nep := G.nep, xp := G.xp, nxp := G.nxp,
+        dst := G.dst, dstcap := G.dstcap, ndst := G.ndst, ev := G.ev,
+        evcap := G.evcap, nev := G.nev, err := G.err, verdict := 0,
+        ndst0 := G.ndst0, nev0 := G.nev0, ndst' := C.alen, nev' := C.evlen,
+        arena := arena, evs := evs, c := C.stage.c, ctype := C.stage.ctype,
+        cst := C.stage.cst, tok := C.stage.tok, s := C.stage.s, z := C.stage.z,
+        e := C.stage.e, d := C.stage.d, nkSlot := C.stage.nkSlot,
+        nxpSlot := C.stage.nxpSlot, nextEnd := nendT })
+    (h :=
+      { args_eq := rfl, value_eq := rfl, verdict_range := Or.inl rfl,
+        ndst0_read := G.ndstRead, nev0_read := G.nevRead,
+        ndst_read := walkFinishMemRefuse_ndst G hndnev hnderr,
+        nev_read := walkFinishMemRefuse_nev G hnverr, ndst0_le := hInv.alen_ge,
+        ndst_le_n := halen, nev0_le := hnev0, nev_le := hInv.evlen_le,
+        dstcap_lt := G.dstcapLt, evcap_lt := G.evcapLt, nev_le_evcap := hevle,
+        nep_lt := hnep64, nxp_lt := G.nxpLt, reserve := hres,
+        arena_read := hArenaRead, evs_read := hEvRead, refuse_word := hRefuse0,
+        accept_word := hAccept1, present := hpresentT, next_le := hnendT,
+        frame := hframeT, staged := hsep24, dSep := hsep25 })
 
 /-- **The record's boundary at the merge refusal routes' returned memory.**  The offset
 store at `%e + 8` and then the copy's three: the same 25 conjuncts, at the memory whose
@@ -877,14 +906,28 @@ theorem stage2Boundary_of_refuse_offset {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
       G.evcap G.ndst G.nev G.err C.stage.c C.stage.ctype C.stage.cst C.stage.tok
       C.stage.s C.stage.z C.stage.e, r.1 + r.2 ≤ C.stage.d ∨ C.stage.d + 8 ≤ r.1 :=
     C.stage.dSep
-  refine ⟨G.b, G.n, G.ep, G.nep, G.xp, G.nxp, G.dst, G.dstcap, G.ndst, G.ev, G.evcap,
-    G.nev, G.err, 0, G.ndst0, G.nev0, C.alen, C.evlen, arena, evs, C.stage.c,
-    C.stage.ctype, C.stage.cst, C.stage.tok, C.stage.s, C.stage.z, C.stage.e, C.stage.d,
-    C.stage.nkSlot, C.stage.nxpSlot, rfl, rfl, Or.inl rfl, G.ndstRead, G.nevRead,
-    walkFinishMemRefuse_ndst G hndnev hnderr, walkFinishMemRefuse_nev G hnverr,
-    hInv.alen_ge, halen, hnev0, hInv.evlen_le, G.dstcapLt, G.evcapLt, hevle, hnep64,
-    G.nxpLt, hres, hArenaRead, hEvRead, hRefuse0, hAccept1, hpresentT, hframeT,
-    hsep24, hsep25⟩
+  obtain ⟨nendT, hnendT, hframeT⟩ := hframeT
+  refine stage2Boundary_of_witness
+    (w :=
+      { b := G.b, n := G.n, ep := G.ep, nep := G.nep, xp := G.xp, nxp := G.nxp,
+        dst := G.dst, dstcap := G.dstcap, ndst := G.ndst, ev := G.ev,
+        evcap := G.evcap, nev := G.nev, err := G.err, verdict := 0,
+        ndst0 := G.ndst0, nev0 := G.nev0, ndst' := C.alen, nev' := C.evlen,
+        arena := arena, evs := evs, c := C.stage.c, ctype := C.stage.ctype,
+        cst := C.stage.cst, tok := C.stage.tok, s := C.stage.s, z := C.stage.z,
+        e := C.stage.e, d := C.stage.d, nkSlot := C.stage.nkSlot,
+        nxpSlot := C.stage.nxpSlot, nextEnd := nendT })
+    (h :=
+      { args_eq := rfl, value_eq := rfl, verdict_range := Or.inl rfl,
+        ndst0_read := G.ndstRead, nev0_read := G.nevRead,
+        ndst_read := walkFinishMemRefuse_ndst G hndnev hnderr,
+        nev_read := walkFinishMemRefuse_nev G hnverr, ndst0_le := hInv.alen_ge,
+        ndst_le_n := halen, nev0_le := hnev0, nev_le := hInv.evlen_le,
+        dstcap_lt := G.dstcapLt, evcap_lt := G.evcapLt, nev_le_evcap := hevle,
+        nep_lt := hnep64, nxp_lt := G.nxpLt, reserve := hres,
+        arena_read := hArenaRead, evs_read := hEvRead, refuse_word := hRefuse0,
+        accept_word := hAccept1, present := hpresentT, next_le := hnendT,
+        frame := hframeT, staged := hsep24, dSep := hsep25 })
 
 /-! ### R1: the accept route
 

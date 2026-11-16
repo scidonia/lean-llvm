@@ -1195,6 +1195,175 @@ def stage2Post (args : List Value) (mem : Mem) (next : Nat) (o : Outcome) : Prop
   | .ret (some v) m => stage2Boundary args mem next m v
   | .ret none _ => False
 
+/-! ### The boundary by name
+
+`stage2Boundary` quantifies its witnesses as a flat tuple, so a consumer that
+reads several of them destructures by position: a witness added anywhere in the
+tuple shifts every later one, in every consumer at once, and the misplaced name
+surfaces as a type error or a `whnf` timeout away from the clause that changed.
+The two structures below name the tuple's components, and the three lemmas that
+follow are the only place the positional form is read or written.  A consumer
+projects the witnesses it needs from `Stage2BoundaryWitness` and the conjuncts
+from `Stage2BoundaryFacts`; a new witness is one field in each structure and a
+new clause one field of the facts. -/
+
+/-- **The witnesses of `stage2Boundary`, by name.**  The ABI's thirteen numbers,
+the verdict word, the two cursors as staged and as reported, the two prefixes,
+the walk's own staging, and the stack end the allocator reaches.  `nextEnd` is
+the boundary's thirty-first witness: it is bound inside the frame conjunct in
+`stage2Boundary`, and naming it here is what lets the frame's end be read
+without unpacking an existential. -/
+structure Stage2BoundaryWitness where
+  b : Nat
+  n : Nat
+  ep : Nat
+  nep : Nat
+  xp : Nat
+  nxp : Nat
+  dst : Nat
+  dstcap : Nat
+  ndst : Nat
+  ev : Nat
+  evcap : Nat
+  nev : Nat
+  err : Nat
+  verdict : BitVec 64
+  ndst0 : Nat
+  nev0 : Nat
+  ndst' : Nat
+  nev' : Nat
+  arena : List UInt8
+  evs : List UInt8
+  c : Nat
+  ctype : Nat
+  cst : Nat
+  tok : Nat
+  s : Nat
+  z : Nat
+  e : Nat
+  d : Nat
+  nkSlot : Nat
+  nxpSlot : Nat
+  nextEnd : Nat
+
+/-- **The conjuncts of `stage2Boundary`, at named witnesses.**  Each field is one
+clause of the post, stated at `w`'s components; the frame's `∃ nextEnd` is split
+into the witness `w.nextEnd`, the bound `next_le` and the silence claim `frame`. -/
+structure Stage2BoundaryFacts (w : Stage2BoundaryWitness) (args : List Value)
+    (mem : Mem) (next : Nat) (m : Mem) (v : Value) : Prop where
+  /-- The arguments are the thirteen slots `stage2.h` names. -/
+  args_eq : args = [.ptr w.b, .int 64 (BitVec.ofNat 64 w.n), .ptr w.ep,
+    .int 64 (BitVec.ofNat 64 w.nep), .ptr w.xp, .int 64 (BitVec.ofNat 64 w.nxp),
+    .ptr w.dst, .int 64 (BitVec.ofNat 64 w.dstcap), .ptr w.ndst, .ptr w.ev,
+    .int 64 (BitVec.ofNat 64 w.evcap), .ptr w.nev, .ptr w.err]
+  /-- The return carries the ABI's verdict word and no other value. -/
+  value_eq : v = .int 64 w.verdict
+  /-- The ABI's verdict. -/
+  verdict_range : w.verdict = 0 ∨ w.verdict = 1
+  /-- The arena cursor's slot as the caller staged it. -/
+  ndst0_read : readBytes mem w.ndst 8 = some (wordBytes 8 w.ndst0)
+  /-- The event cursor's slot as the caller staged it. -/
+  nev0_read : readBytes mem w.nev 8 = some (wordBytes 8 w.nev0)
+  /-- The arena cursor's slot as the run reports it back. -/
+  ndst_read : readBytes m w.ndst 8 = some (wordBytes 8 w.ndst')
+  /-- The event cursor's slot as the run reports it back. -/
+  nev_read : readBytes m w.nev 8 = some (wordBytes 8 w.nev')
+  /-- The arena cursor only appends. -/
+  ndst0_le : w.ndst0 ≤ w.ndst'
+  /-- The arena grows by at most the document's own bytes. -/
+  ndst_le_n : w.ndst' ≤ w.ndst0 + w.n
+  /-- The event cursor only appends. -/
+  nev0_le : w.nev0 ≤ w.nev'
+  /-- The event stream grows by at most thirteen bytes per input byte. -/
+  nev_le : w.nev' ≤ w.nev0 + stage2RecordBytes * w.n
+  /-- The arena capacity is a 64-bit number. -/
+  dstcap_lt : w.dstcap < 2 ^ 64
+  /-- The event capacity is a 64-bit number. -/
+  evcap_lt : w.evcap < 2 ^ 64
+  /-- The reported event extent lies inside its capacity. -/
+  nev_le_evcap : w.nev' ≤ w.evcap
+  /-- The entry count is a 64-bit number. -/
+  nep_lt : w.nep < 2 ^ 64
+  /-- The escape count is a 64-bit number. -/
+  nxp_lt : w.nxp < 2 ^ 64
+  /-- The decoder's reserve is still inside the capacity. -/
+  reserve : w.ndst' + stage2ArenaReserve ≤ w.dstcap
+  /-- The arena prefix, read at the reported extent. -/
+  arena_read : readBytes m w.dst w.ndst' = some w.arena
+  /-- The event prefix, read at the reported extent. -/
+  evs_read : readBytes m w.ev w.nev' = some w.evs
+  /-- The refusal word, written exactly on refusal. -/
+  refuse_word : w.verdict = 0 →
+    ∃ e : Nat, e ≤ w.n ∧ readBytes m w.err 8 = some (wordBytes 8 e)
+  /-- The refusal word, unchanged on acceptance. -/
+  accept_word : w.verdict = 1 → readBytes m w.err 8 = readBytes mem w.err 8
+  /-- Presence over the extents the run wrote. -/
+  present : ∀ a, inRegions (stage2ReportPresent w.dst w.ndst' w.ev w.nev' w.ndst
+    w.nev w.err w.c w.ctype w.cst w.tok w.s w.z w.e w.d) a → present m a
+  /-- The caller's cursor lies inside the stack region the run kept. -/
+  next_le : next ≤ w.nextEnd
+  /-- Silence outside the run's whole touched extent. -/
+  frame : UnchangedOutside mem m (stage2ReportFrame w.dst w.ndst' w.ev w.nev'
+    w.ndst w.nev w.err w.c w.ctype w.cst w.tok w.s w.z w.e w.d next w.nextEnd)
+  /-- The seventeen staged objects are pairwise separate. -/
+  staged : DisjointRegions (stage2StagedRegions w.b w.n w.ep w.nep w.xp w.nxp
+    w.dst w.ndst0 w.ev w.evcap w.ndst w.nev w.err w.c w.ctype w.cst w.tok w.s w.z
+    w.e w.nkSlot w.nxpSlot)
+  /-- `%d.i` is separate from the walk's own staged objects. -/
+  dSep : ∀ r ∈ stage2WalkRegions w.b w.n w.ep w.nep w.xp w.nxp w.dst w.ndst0 w.ev
+    w.evcap w.ndst w.nev w.err w.c w.ctype w.cst w.tok w.s w.z w.e,
+    r.1 + r.2 ≤ w.d ∨ w.d + 8 ≤ r.1
+
+/-- **The boundary's witnesses, from the post.**  This is the only place the
+post's existential is unpacked. -/
+theorem stage2Boundary_witness {args : List Value} {mem : Mem} {next : Nat}
+    {m : Mem} {v : Value} (h : stage2Boundary args mem next m v) :
+    ∃ w : Stage2BoundaryWitness, Stage2BoundaryFacts w args mem next m v := by
+  obtain ⟨b, n, ep, nep, xp, nxp, dst, dstcap, ndst, ev, evcap, nev, err, verdict,
+    ndst0, nev0, ndst', nev', arena, evs, c, ctype, cst, tok, s, z, e, d, nkSlot,
+    nxpSlot, hargs, hval, hvr, hndst0, hnev0, hndst, hnev, hndst0le, hndstle,
+    hnev0le, hnevle, hdstcap, hevcap, hnevcap, hnep, hnxp, hreserve, harena, hevs,
+    hrefuse, haccept, hpresent, ⟨nextEnd, hnextle, hframe⟩, hstaged, hdSep⟩ := h
+  let w : Stage2BoundaryWitness :=
+    { b := b, n := n, ep := ep, nep := nep, xp := xp, nxp := nxp, dst := dst,
+      dstcap := dstcap, ndst := ndst, ev := ev, evcap := evcap, nev := nev,
+      err := err, verdict := verdict, ndst0 := ndst0, nev0 := nev0, ndst' := ndst',
+      nev' := nev', arena := arena, evs := evs, c := c, ctype := ctype, cst := cst,
+      tok := tok, s := s, z := z, e := e, d := d, nkSlot := nkSlot,
+      nxpSlot := nxpSlot, nextEnd := nextEnd }
+  refine ⟨w, ?_⟩
+  exact
+    { args_eq := hargs, value_eq := hval, verdict_range := hvr,
+      ndst0_read := hndst0, nev0_read := hnev0, ndst_read := hndst,
+      nev_read := hnev, ndst0_le := hndst0le, ndst_le_n := hndstle,
+      nev0_le := hnev0le, nev_le := hnevle, dstcap_lt := hdstcap,
+      evcap_lt := hevcap, nev_le_evcap := hnevcap, nep_lt := hnep,
+      nxp_lt := hnxp, reserve := hreserve, arena_read := harena,
+      evs_read := hevs, refuse_word := hrefuse, accept_word := haccept,
+      present := hpresent, next_le := hnextle, frame := hframe,
+      staged := hstaged, dSep := hdSep }
+
+/-- **The post, from named witnesses.**  This is the only place the post's
+existential is built from named components. -/
+theorem stage2Boundary_of_witness {args : List Value} {mem : Mem} {next : Nat}
+    {m : Mem} {v : Value} {w : Stage2BoundaryWitness}
+    (h : Stage2BoundaryFacts w args mem next m v) : stage2Boundary args mem next m v := by
+  refine ⟨w.b, w.n, w.ep, w.nep, w.xp, w.nxp, w.dst, w.dstcap, w.ndst, w.ev,
+    w.evcap, w.nev, w.err, w.verdict, w.ndst0, w.nev0, w.ndst', w.nev', w.arena,
+    w.evs, w.c, w.ctype, w.cst, w.tok, w.s, w.z, w.e, w.d, w.nkSlot, w.nxpSlot,
+    h.args_eq, h.value_eq, h.verdict_range, h.ndst0_read, h.nev0_read, h.ndst_read,
+    h.nev_read, h.ndst0_le, h.ndst_le_n, h.nev0_le, h.nev_le, h.dstcap_lt,
+    h.evcap_lt, h.nev_le_evcap, h.nep_lt, h.nxp_lt, h.reserve, h.arena_read,
+    h.evs_read, h.refuse_word, h.accept_word, h.present,
+    ⟨w.nextEnd, h.next_le, h.frame⟩, h.staged, h.dSep⟩
+
+/-- **The post and its named form are the same statement.** -/
+theorem stage2Boundary_iff {args : List Value} {mem : Mem} {next : Nat} {m : Mem}
+    {v : Value} :
+    stage2Boundary args mem next m v ↔
+      ∃ w : Stage2BoundaryWitness, Stage2BoundaryFacts w args mem next m v :=
+  ⟨stage2Boundary_witness, fun ⟨_, h⟩ => stage2Boundary_of_witness h⟩
+
 /-! ### The record -/
 
 /-- **The stage-2 unit's boundary record**, `Γ_stage2`: the staging above, the
@@ -1250,10 +1419,8 @@ theorem stage2_verdict_bounded :
       ∃ k : BitVec 64, v = .int 64 k ∧ (k = 0 ∨ k = 1) := by
   intro args mem next v m h
   simp only [Γ_stage2, stage2Post] at h
-  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, k, _, _, _, _, _, _, _, _, _, _, _,
-    _, _, _, _, _, hargs, hv, hr, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
-    _, _⟩ := h
-  exact ⟨k, hv, hr⟩
+  obtain ⟨w, hw⟩ := stage2Boundary_witness h
+  exact ⟨w.verdict, hw.value_eq, hw.verdict_range⟩
 
 /-! ### Consequences of the pre
 

@@ -1649,15 +1649,59 @@ theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}
     -- the slot-keeps hypothesis is asked at this post, and the destructure below
     -- eliminates it, so a copy survives
     have hpost2Keep := hpost2
-    -- stage two's post, at the extents it reports
-    obtain ⟨b₂, n₂, ep₂, nep₂, xp₂, nxp₂, dst₂, dstcap₂, ndst₂, ev₂, evcap₂, nev₂,
-      err₂, verdict₂, ndst0₂, nev0₂, alen, evlen, arena, evs, c₂, ctype₂, cst₂, tok₂,
-      s₂, z₂, e₂, d₂, nkSlot₂, nxpSlot₂, hargs₂, hveq₂, hvr₂,
-      hndst0Read₂, hnev0Read₂, hndstSlot₂, hnevSlot₂, -, -, -, -, hdstcapLt₂,
-      hevcapLt₂, hevle₂, hnepLt₂, hnxpLt₂, hreserve₂, hArena₂, hEvs₂, hzero₂, hone₂,
-      hpresent₂, hframe₂, hstaged₂, hdSep₂⟩ := hpost2
-    -- stage two's frame names its own stack end, which the run reports
-    obtain ⟨nend₂, hnend₂, hframe₂⟩ := hframe₂
+    -- stage two's post, read by name: the witnesses and the clauses it states
+    obtain ⟨w₂, h₂⟩ := stage2Boundary_witness hpost2
+    let ep₂ := w₂.ep
+    let nep₂ := w₂.nep
+    let xp₂ := w₂.xp
+    let nxp₂ := w₂.nxp
+    let dst₂ := w₂.dst
+    let dstcap₂ := w₂.dstcap
+    let ndst₂ := w₂.ndst
+    let ev₂ := w₂.ev
+    let evcap₂ := w₂.evcap
+    let nev₂ := w₂.nev
+    let err₂ := w₂.err
+    let verdict₂ := w₂.verdict
+    let alen := w₂.ndst'
+    let evlen := w₂.nev'
+    let arena := w₂.arena
+    let evs := w₂.evs
+    let c₂ := w₂.c
+    let ctype₂ := w₂.ctype
+    let cst₂ := w₂.cst
+    let tok₂ := w₂.tok
+    let s₂ := w₂.s
+    let z₂ := w₂.z
+    let e₂ := w₂.e
+    let d₂ := w₂.d
+    let nend₂ := w₂.nextEnd
+    have hargs₂ := h₂.args_eq
+    have hveq₂ := h₂.value_eq
+    have hvr₂ := h₂.verdict_range
+    have hndstSlot₂ : readBytes m35 ndst₂ 8 = some (wordBytes 8 alen) :=
+      h₂.ndst_read
+    have hnevSlot₂ : readBytes m35 nev₂ 8 = some (wordBytes 8 evlen) :=
+      h₂.nev_read
+    have hdstcapLt₂ : dstcap₂ < 2 ^ 64 := h₂.dstcap_lt
+    have hevcapLt₂ : evcap₂ < 2 ^ 64 := h₂.evcap_lt
+    have hevle₂ := h₂.nev_le_evcap
+    have hnepLt₂ : nep₂ < 2 ^ 64 := h₂.nep_lt
+    have hnxpLt₂ : nxp₂ < 2 ^ 64 := h₂.nxp_lt
+    have hreserve₂ := h₂.reserve
+    have hArena₂ : readBytes m35 dst₂ alen = some arena := h₂.arena_read
+    have hEvs₂ : readBytes m35 ev₂ evlen = some evs := h₂.evs_read
+    have hzero₂ : verdict₂ = 0 →
+        ∃ e : Nat, e ≤ w₂.n ∧ readBytes m35 err₂ 8 = some (wordBytes 8 e) :=
+      h₂.refuse_word
+    have hone₂ : verdict₂ = 1 →
+        readBytes m35 err₂ 8 =
+          readBytes (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8)) err₂ 8 :=
+      h₂.accept_word
+    have hnend₂ := h₂.next_le
+    have hframe₂ := h₂.frame
+    have hstaged₂ := h₂.staged
+    have hdSep₂ := h₂.dSep
     -- the arguments identify stage two's witnesses with the caller's slots
     have hdst₂ : dst₂ = S.dst := by
       have h := congrArg (fun l : List Value => l[6]?) hargs₂
@@ -1804,21 +1848,29 @@ theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}
     have hsevenEp : ∀ r ∈ stage2StagedWrites c₂ ctype₂ cst₂ tok₂ s₂ z₂ e₂,
         r.1 + r.2 ≤ S.ep ∨ S.ep + 4 * S.k ≤ r.1 := by
       have h := stage2StagedWrites_against hstaged₂
-        (a := ep₂) (m := 4 * nep₂) (by simp [stage2Regions])
+        (a := ep₂) (m := 4 * nep₂) (by
+          show (w₂.ep, 4 * w₂.nep) ∈ _
+          simp [stage2Regions])
       rw [hep₂, hnep₂] at h
       exact h
     have hsevenXp : ∀ r ∈ stage2StagedWrites c₂ ctype₂ cst₂ tok₂ s₂ z₂ e₂,
         r.1 + r.2 ≤ S.xp ∨ S.xp + 4 * S.xn ≤ r.1 := by
       have h := stage2StagedWrites_against hstaged₂
-        (a := xp₂) (m := 4 * nxp₂) (by simp [stage2Regions])
+        (a := xp₂) (m := 4 * nxp₂) (by
+          show (w₂.xp, 4 * w₂.nxp) ∈ _
+          simp [stage2Regions])
       rw [hxp₂, hnxp₂] at h
       exact h
     have hdEp : S.ep + 4 * S.k ≤ d₂ ∨ d₂ + 8 ≤ S.ep := by
-      have h := hdSep₂ (ep₂, 4 * nep₂) (by simp [stage2WalkRegions, stage2Regions])
+      have h := hdSep₂ (ep₂, 4 * nep₂) (by
+        show (w₂.ep, 4 * w₂.nep) ∈ _
+        simp [stage2WalkRegions, stage2Regions])
       rw [hep₂, hnep₂] at h
       exact h
     have hdXp : S.xp + 4 * S.xn ≤ d₂ ∨ d₂ + 8 ≤ S.xp := by
-      have h := hdSep₂ (xp₂, 4 * nxp₂) (by simp [stage2WalkRegions, stage2Regions])
+      have h := hdSep₂ (xp₂, 4 * nxp₂) (by
+        show (w₂.xp, 4 * w₂.nxp) ∈ _
+        simp [stage2WalkRegions, stage2Regions])
       rw [hxp₂, hnxp₂] at h
       exact h
     have hsepEp : ∀ r ∈ stage2WalkWrites S.dst alen S.ev evlen S.ndst S.nev S.err

@@ -1353,28 +1353,46 @@ theorem stage2Boundary_of_parts {args : List Value} {mem m0 m : Mem}
           have hp := LeanLLVM.readBytes_some_present m h.err 8 vs hvs (a - h.err) hk
           simpa [show h.err + (a - h.err) = a by omega] using hp
     · exact pres a (h.walkPresent a ⟨r, List.mem_append_right _ hr, hlo, hhi⟩)
-  refine ⟨h.b, h.n, h.ep, h.nep, h.xp, h.nxp, h.dst, h.dstcap, h.ndst, h.ev, h.evcap,
-    h.nev, h.err, stage2Verdict h.refusal, h.ndst0, h.nev0, h.alen, h.evlen, arena, evs,
-    h.c, h.ctype, h.cst, h.tok, h.s, h.z, h.e, h.d, h.nkSlot, h.nxpSlot,
-    h.args_eq, rfl, stage2Verdict_range h.refusal, h.ndstRead, h.nevRead, ndstAt, nevAt,
-    h.arenaGe, h.arenaLe, h.evGe, h.evLe, h.dstcapLt, h.evcapLt,
-    le_trans h.evLe h.evRoom, h.nepLt, h.nxpLt,
-    h.reserve, hArena, hEvs, ?_, ?_,
-    hpresent, hframe, h.staged, h.dSep⟩
-  · intro hzero
+  obtain ⟨nend, hnend, hframe⟩ := hframe
+  have hrefuse : stage2Verdict h.refusal = 0 →
+      ∃ e : Nat, e ≤ h.n ∧ readBytes m h.err 8 = some (wordBytes 8 e) := by
+    intro hzero
     cases hb : h.refusal with
     | true => exact ⟨h.eoff, h.offLe hb, errRefuse hb⟩
     | false =>
         have h1 : stage2Verdict h.refusal = (1 : BitVec 64) := by rw [hb]; rfl
         rw [h1] at hzero
         exact absurd hzero (by decide)
-  · intro hone
+  have haccept : stage2Verdict h.refusal = 1 →
+      readBytes m h.err 8 = readBytes mem h.err 8 := by
+    intro hone
     cases hb : h.refusal with
     | false => exact (errAccept hb).trans herrWalk
     | true =>
         have h0 : stage2Verdict h.refusal = (0 : BitVec 64) := by rw [hb]; rfl
         rw [h0] at hone
         exact absurd hone (by decide)
+  refine stage2Boundary_of_witness
+    (w :=
+      { b := h.b, n := h.n, ep := h.ep, nep := h.nep, xp := h.xp, nxp := h.nxp,
+        dst := h.dst, dstcap := h.dstcap, ndst := h.ndst, ev := h.ev,
+        evcap := h.evcap, nev := h.nev, err := h.err,
+        verdict := stage2Verdict h.refusal, ndst0 := h.ndst0, nev0 := h.nev0,
+        ndst' := h.alen, nev' := h.evlen, arena := arena, evs := evs, c := h.c,
+        ctype := h.ctype, cst := h.cst, tok := h.tok, s := h.s, z := h.z,
+        e := h.e, d := h.d, nkSlot := h.nkSlot, nxpSlot := h.nxpSlot,
+        nextEnd := nend })
+    (h :=
+      { args_eq := h.args_eq, value_eq := rfl,
+        verdict_range := stage2Verdict_range h.refusal, ndst0_read := h.ndstRead,
+        nev0_read := h.nevRead, ndst_read := ndstAt, nev_read := nevAt,
+        ndst0_le := h.arenaGe, ndst_le_n := h.arenaLe, nev0_le := h.evGe,
+        nev_le := h.evLe, dstcap_lt := h.dstcapLt, evcap_lt := h.evcapLt,
+        nev_le_evcap := le_trans h.evLe h.evRoom, nep_lt := h.nepLt,
+        nxp_lt := h.nxpLt, reserve := h.reserve, arena_read := hArena,
+        evs_read := hEvs, refuse_word := hrefuse, accept_word := haccept,
+        present := hpresent, next_le := hnend, frame := hframe,
+        staged := h.staged, dSep := h.dSep })
 
 /-- **The wrapper's stores make the record's post true.**  `Γ_stage2`'s post is
 `stage2Boundary` at a non-`ub` outcome, and the boundary's six facts about the

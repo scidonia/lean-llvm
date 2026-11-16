@@ -706,18 +706,45 @@ theorem stage2Boundary_of_flush {args : List Value} {mem : Mem} {next : Nat}
     have hdoc := G.maxDoc
     simp only [stage2MaxDocument] at hdoc
     omega
-  refine ⟨G.b, G.n, G.ep, G.nep, G.xp, G.nxp, G.dst, G.dstcap, G.ndst, G.ev, G.evcap,
-    G.nev, G.err, 0, G.ndst0, G.nev0, G.ndst0, G.nev0, arena, evs, S.c, S.ctype, S.cst,
-    S.tok, S.s, S.z, S.e, S.d, S.nkSlot, S.nxpSlot, hargs, rfl, Or.inl rfl, G.ndstRead,
-    G.nevRead, walkFlushMemAt_ndst G S, walkFlushMemAt_nev G S,
-    Nat.le_refl G.ndst0, by omega, Nat.le_refl G.nev0, by omega, G.dstcapLt, G.evcapLt,
-    hnev0cap, hnep64, G.nxpLt, by have h := G.arenaRoom; omega, hArenaRead, hEvRead,
-    (fun _ => ⟨G.n, Nat.le_refl _, walkFlushMemAt_err G S⟩),
-    (by intro h; exact absurd h (by decide)), walkFlushMemAt_present G S,
-    (by
-      refine ⟨next + (stage2BootstrapExtent + 8), by omega, ?_⟩
-      rw [← hnext]
-      exact walkFlushMemAt_frame G S), S.separate, S.dSep⟩
+  have hnendT : next ≤ next + (stage2BootstrapExtent + 8) := by omega
+  have hframeT : UnchangedOutside mem (walkFlushMemAt G S)
+      (stage2ReportFrame G.dst G.ndst0 G.ev G.nev0 G.ndst G.nev G.err S.c S.ctype
+        S.cst S.tok S.s S.z S.e S.d next (next + (stage2BootstrapExtent + 8))) := by
+    rw [← hnext]
+    exact walkFlushMemAt_frame G S
+  have hndstLe : G.ndst0 ≤ G.ndst0 + G.n := by omega
+  have hnevLe : G.nev0 ≤ G.nev0 + stage2RecordBytes * G.n := by omega
+  have hreserve : G.ndst0 + stage2ArenaReserve ≤ G.dstcap := by
+    have h := G.arenaRoom
+    omega
+  have haccept : (0 : BitVec 64) = 1 →
+      readBytes (walkFlushMemAt G S) G.err 8 = readBytes mem G.err 8 := by
+    intro h
+    exact absurd h (by decide)
+  refine stage2Boundary_of_witness
+    (w :=
+      { b := G.b, n := G.n, ep := G.ep, nep := G.nep, xp := G.xp, nxp := G.nxp,
+        dst := G.dst, dstcap := G.dstcap, ndst := G.ndst, ev := G.ev,
+        evcap := G.evcap, nev := G.nev, err := G.err, verdict := 0,
+        ndst0 := G.ndst0, nev0 := G.nev0, ndst' := G.ndst0, nev' := G.nev0,
+        arena := arena, evs := evs, c := S.c, ctype := S.ctype, cst := S.cst,
+        tok := S.tok, s := S.s, z := S.z, e := S.e, d := S.d,
+        nkSlot := S.nkSlot, nxpSlot := S.nxpSlot,
+        nextEnd := next + (stage2BootstrapExtent + 8) })
+    (h :=
+      { args_eq := hargs, value_eq := rfl, verdict_range := Or.inl rfl,
+        ndst0_read := G.ndstRead, nev0_read := G.nevRead,
+        ndst_read := walkFlushMemAt_ndst G S, nev_read := walkFlushMemAt_nev G S,
+        ndst0_le := Nat.le_refl G.ndst0, ndst_le_n := hndstLe,
+        nev0_le := Nat.le_refl G.nev0, nev_le := hnevLe,
+        dstcap_lt := G.dstcapLt, evcap_lt := G.evcapLt,
+        nev_le_evcap := hnev0cap, nep_lt := hnep64, nxp_lt := G.nxpLt,
+        reserve := hreserve,
+        arena_read := hArenaRead, evs_read := hEvRead,
+        refuse_word := fun _ => ⟨G.n, Nat.le_refl _, walkFlushMemAt_err G S⟩,
+        accept_word := haccept,
+        present := walkFlushMemAt_present G S, next_le := hnendT,
+        frame := hframeT, staged := S.separate, dSep := S.dSep })
 
 /-! ### The post, for the empty entry stream
 
