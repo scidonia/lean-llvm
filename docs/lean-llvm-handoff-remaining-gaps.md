@@ -411,24 +411,85 @@ plan were wrong and are corrected here:
   the review's F5 asks for (`WalkInv.k_le` gives only `≤`).  That is the gap between
   "the bundle is inhabited" and "the step can use it".
 
-## P0, ahead of everything below: the pipeline watermark is impossible
+## P0 — the pipeline watermark — repaired, with its regression proved
 
-`Stage2Watermark` (`PipelineDischarge:1399`) quantifies `∀ S` **independently of the exit
+`Stage2Watermark` (`PipelineDischarge`) quantified `∀ S` **independently of the exit
 witness**: `pipelineLoopExit mem args e → ∀ r ∈ stage2ExitRegions S, end(r) ≤ e.next`.
-For any admitted `e`, choose `S.ndst = e.next`; `stage2ExitRegions S` contains
-`(S.ndst, 8)`, so the premise demands `e.next + 8 ≤ e.next`.  It is therefore
-incompatible with an inhabited exit predicate, and the conditional pipeline result has an
-unusable premise on the executions it means to cover.
+For any admitted `e`, choosing `S.ndst = e.next` put `(S.ndst, 8)` in
+`stage2ExitRegions S`, so the premise demanded `e.next + 8 ≤ e.next`.  It was therefore
+incompatible with an inhabited exit predicate, and the conditional pipeline result had an
+unusable premise on the executions it means to cover — a **false premise at the pipeline
+boundary**, where the remaining stage-2 bundles are unproduced but true.
 
-This outranks the remaining stage-2 bundles: it is a **false premise at the pipeline
-boundary**, where the bundles are unproduced but true.  The repair, per the review, is to
-index the exit predicate by its carried state and state the watermark for that same state
-(or carry the allocator bound in the invariant and return it with the witness); the
-initial bound must come from staging and be preserved by the steps and calls.  A free `S`
-replaced by another global preservation hypothesis leaves the problem open.
+The defect is now a checked statement rather than a paragraph.  `retiredStage2Watermark`
+keeps the old form and `retiredStage2Watermark_false` refutes it at any admitted exit,
+constructively: the quantifier is free in `S`, so the exit's own record with its refusal
+slot moved to the cursor, `S.ndst := e.next`, demands `e.next + 8 ≤ e.next`.
 
-`Stage2SlotKeeps` has the same shape and must be audited in the same change.  The
-regression to prove: the retired watermark together with an admitted exit implies `False`.
+**The repair, landed.**  Both halves the review asked for are in, and the bound is
+*carried* rather than assumed:
+
+* the exit predicate is stated in two layers — `pipelineLoopExitAt mem args S s` is the
+  whole conjunction at *one* carried record, and `pipelineLoopExit mem args s` is
+  `∃ S, pipelineLoopExitAt mem args S s` — so a consumer that must name the record it
+  speaks about can.  `Stage2SlotKeeps` is re-indexed to the `At` form; so is the
+  watermark;
+* the invariant's last conjunct, in both shapes (`pipelineLoopInv`,
+  `pipelineLoopInvSplit`), is `∀ r ∈ stage2StagedCaps S, r.1 + r.2 ≤ s.next`.
+  `stage2StagedCaps` is the **staged** width list — the document at `n + 32`, the entry
+  stream at `4 * (64 * blocks + 9)`, the escape list at `4 * (xn0 + 64 * blocks + 8)`,
+  the arena and event capacities, the three slots — because no successor changes a
+  capacity, whereas the counts `S.k` and `S.xn` grow every block.  `stage2StagedCaps_doc`
+  is the `rfl` that pins the list's literal `32` to `stage2ReadTail`;
+* the initial bound comes from staging, which is the only thing that can supply it:
+  `pipelineSeed` takes `pipelineStagedBelow` and `seedCarried_caps` turns it into the
+  clause at the record the seed builds;
+* every step preserves it: no arm binds an `alloca` (`allocaTypes pipelineBody = []`),
+  each call through `pipelineCalls` returns the cursor it was given
+  (`pipelineCalls_next`), and `stage2StagedCaps_mono` carries the clause from the
+  predecessor's cursor to the successor's.
+
+The projection is the repaired watermark, at the exit's own witness:
+
+    theorem stage2Watermark {mem : Mem} {args : List Value} :
+        ∀ (S : PipelineLoopCarried) (e : State), pipelineLoopExitAt mem args S e →
+          ∀ r ∈ stage2ExitRegions S, r.1 + r.2 ≤ e.next
+
+It reads the invariant's clause at the tail's own list through
+`stage2ExitRegions_le_caps`, whose only inputs are the exit's growth facts: `S.k ≤
+64 * S.i` (from the stream's length and order), `S.i ≤ pipelineBlocks S.n.toNat` and
+`S.xn ≤ S.xn0 + 64 * S.i`.  `stage2Pre_of_exit` still takes its `hwm` at the call's
+`next`; the tail discharges it at the exiting cursor and transports it by the UTF-8
+call's monotonicity.  `hwm` is gone from `pipelineTailTarget`,
+`pipelineBodyFacts_of_exitStage2` and `pipeline_satisfies_at_stage2_of_exitStage2` — the
+exit predicate carries the bound, so the tail reads it.
+
+**The one tightening of the input domain.**  The cursor is a number the caller passes,
+not an address a memory stores, so no clause of a memory predicate can relate it to the
+staged objects.  `Γ_pipeline_units.pre` is therefore
+
+    fun args mem next => pipelineStaging tab base args mem ∧
+      pipelineStagedBelow tab base args mem next
+
+and `pipelineSpecPre` carries the same second conjunct: the specification may claim
+nothing about a caller the record would not admit.  It excludes no caller's memory —
+`exists_stagedBelow` shows every staging is admissible at some cursor (the sum of the
+staged ends), and on the advertised route `JsonCallRoute.routeSpecPre` discharges the
+clause at the wrapper's own cursor `routeNext` through `routeStagedBelow`.  What it
+excludes is a cursor *below* the objects the caller staged, which no execution presents.
+
+The one clause the composite claim still takes at this boundary is `Stage2SlotKeeps`:
+`Γ_stage2`'s post cannot state that the run left the caller's two count slots alone,
+because the stage-2 ABI does not carry them.  That gap is named, not closed, and it is
+the only staging-shape hypothesis the tail takes.
+
+9. **In `∀ x ∈ s, p`, `s` is elaborated with `x` already in scope and its type a
+   metavariable**: an occurrence of `x` inside `s` forces `x`'s type to whatever `s`'s
+   use implies, and the error names `Membership`, not the statement, so it reads as a
+   proof error when the fix is a one-token rename in the *statement*.  Measured at
+   `seedInvSplit`'s `hcap`: `∀ q ∈ stage2StagedCaps (seedCarried … (r + 1) …), …` fails
+   with `q has type Nat` when the binder is `q` and the list mentions it, and passes
+   with a name that does not occur in the list.
 
 ## The findings — twenty-three, and all of one family
 

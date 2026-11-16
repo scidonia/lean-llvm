@@ -772,7 +772,7 @@ theorem pipeline_satisfies_of_units (tab : Nat) (s2 : Calls) (Γ2 : MemContract)
   intro base args mem next hpre
   obtain ⟨loop, hN, hcost, seed, hexit⟩ := hbody base args mem next hpre (units base)
   obtain ⟨e0, j0, hj0, hseed, hrun0⟩ := seed
-  have hbudget := pipelineBudget_of_staging hpre
+  have hbudget := pipelineBudget_of_staging hpre.1
   -- the record's own arithmetic, in the block count the loop carries
   have hbudget4 : pipelineBudget args mem = 4 * loop.N + 16 := by
     rw [hbudget, ← hN]
@@ -1227,7 +1227,7 @@ theorem pipeline_satisfies_of_parser {calls : Calls} {f : Function}
     Satisfies calls f (Γ_pipeline eventRel tab base) := by
   intro args mem next hpre
   have hstage : pipelineStaging tab base args mem := hpre.1
-  obtain ⟨hcom, hpost⟩ := hunits args mem next hstage
+  obtain ⟨hcom, hpost⟩ := hunits args mem next ⟨hstage, hpre.2.1⟩
   refine ⟨hcom, ?_⟩
   intro o ho
   exact pipeline_units_finalisation (eventRel := eventRel) (base := base)

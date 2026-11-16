@@ -46,11 +46,18 @@ match, the entry stream's read, order, document and block bounds, the
 predecessor, the fourteen tail cells, the exiting count, the escape count slot's
 content at the exit's memory, its growth, the document read at the exit's memory,
 the escape stream's presence at the exit's count, the frame at the caller's
-memory, the resumed block index's bound and the caller escape slot's *initial*
-count together with its width bound.  The two escape-count facts and the document
-read are the loop's own (the invariant's escaped slot, count growth, window read
-and emitter writes), and the eight exit-producing steps are where they reach the
-predicate.
+memory, the resumed block index's bound, the caller escape slot's *initial*
+count together with its width bound, and the **staged objects' bound at the exit's
+own cursor**.  The two escape-count facts and the document read are the loop's own
+(the invariant's escaped slot, count growth, window read and emitter writes), and
+the eight exit-producing steps are where they reach the predicate.  The last
+conjunct is the invariant's `stage2StagedCaps` clause, which the seed establishes
+from the caller's precondition and every step carries.
+
+`pipelineLoopExit` is the existential over that conjunction, and
+`pipelineLoopExitAt mem args S s` is the conjunction at one record.  A consumer
+that has to name the record it is speaking about uses the latter;
+`PipelineDischarge.stage2Watermark` and `Stage2SlotKeeps` both do.
 
 `PipelineDischarge.pipelineTailTarget` is the `exit` field's conclusion at that
 predicate: the run's three steps and the record's own post.  It is **proved**, and
@@ -58,6 +65,13 @@ predicate: the run's three steps and the record's own post.  It is **proved**, a
 
 The tail's premises, and what closes them:
 
+* `stage2Watermark` — the bound `Γ_stage2.pre`'s last clause asks for, at the
+  exit's own record: the invariant's `stage2StagedCaps` conjunct read at the exit's
+  counts by `stage2ExitRegions_le_caps`, and transported from the exiting cursor to
+  the call's by the UTF-8 call's `next`-monotonicity.  It is a theorem, not a
+  hypothesis, and it is why the exit predicate is stated at one record: the retired
+  form quantified its own `S` beside the exit and `retiredStage2Watermark_false`
+  refutes it;
 * `stage2Pre_of_exit` — `Γ_stage2.pre` at the exit state's memory with the
   exiting count stored: the document read, its read-past tail, the entry stream
   at the exiting count, the escape list, the arena and event capacities, the two
@@ -681,11 +695,60 @@ theorem readLanes32_writeBytes_disjoint {m : Mem} {start : Nat} {ws : List UInt8
 /-- **The stage-2 call's staged objects at the exit state's numbers**: the eight
 ABI objects the record names, with the arena at the capacity word the call carries
 rather than at the cursor's reached extent.  The coarser arena entry is all the
-watermark needs, and it is the number the caller's staging bounds. -/
+watermark needs, and it is the number the caller's staging bounds.
+
+This is the *current-count* list: the entry stream at `S.k` lanes and the escape
+list at `S.xn`.  The invariant carries the bound at the staged widths
+(`stage2StagedCaps`), which no step grows, so the two lists are related by
+`stage2ExitRegions_le_caps` rather than being the same list. -/
 def stage2ExitRegions (S : PipelineLoopCarried) : List (Nat × Nat) :=
   [(S.b, S.n.toNat + stage2ReadTail), (S.ep, 4 * S.k), (S.xp, 4 * S.xn),
    (S.dst, S.dstcap.toNat), (S.ev, S.evcap.toNat), (S.ndst, 8), (S.nev, 8),
    (S.err, 8)]
+
+/-- **The staged document's width is stage 2's read tail.**  `stage2StagedCaps`
+writes the decoder's read-past tail as the literal `32`, and `stage2ExitRegions`
+writes it as `stage2ReadTail`; the two are the same number, and this pins them at
+the list rather than leaving the reader to unfold the definition. -/
+theorem stage2StagedCaps_doc (S : PipelineLoopCarried) :
+    (stage2StagedCaps S).head? = some (S.b, S.n.toNat + stage2ReadTail) := rfl
+
+/-- **The exit's own regions end where the staged widths do.**  The invariant
+bounds `stage2StagedCaps` — the list no step grows — and the tail needs the same
+bound at the *current* counts `stage2ExitRegions` names.  The six ABI objects are
+entries of both lists verbatim; the two streams' entries are the ones that move,
+and they stay inside their capacity because a count advances one stream word per
+block and the loop runs at most `pipelineBlocks` of them.
+
+So `S.k ≤ 64 * S.i ⊇ 64 * pipelineBlocks` and `S.xn ≤ S.xn0 + 64 * S.i` are the
+only facts the transport needs, and the document's is the pin above. -/
+theorem stage2ExitRegions_le_caps {S : PipelineLoopCarried} {c : Nat}
+    (hkgr : S.k ≤ 64 * S.i) (hib : S.i ≤ pipelineBlocks S.n.toNat)
+    (hxgr : S.xn ≤ S.xn0 + 64 * S.i)
+    (h : ∀ r ∈ stage2StagedCaps S, r.1 + r.2 ≤ c) :
+    ∀ r ∈ stage2ExitRegions S, r.1 + r.2 ≤ c := by
+  intro r hr
+  simp only [stage2ExitRegions, stage2ReadTail, List.mem_cons, List.not_mem_nil,
+    or_false] at hr
+  rcases hr with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
+  · exact h (S.b, S.n.toNat + 32) (by simp [stage2StagedCaps])
+  · have hkb : S.k ≤ 64 * pipelineBlocks S.n.toNat := by
+      have := Nat.mul_le_mul_left 64 hib
+      omega
+    have := h (S.ep, 4 * (64 * pipelineBlocks S.n.toNat + 9))
+      (by simp [stage2StagedCaps])
+    omega
+  · have hxb : S.xn ≤ S.xn0 + 64 * pipelineBlocks S.n.toNat := by
+      have := Nat.mul_le_mul_left 64 hib
+      omega
+    have := h (S.xp, 4 * (S.xn0 + 64 * pipelineBlocks S.n.toNat + 8))
+      (by simp [stage2StagedCaps])
+    omega
+  · exact h (S.dst, S.dstcap.toNat) (by simp [stage2StagedCaps])
+  · exact h (S.ev, S.evcap.toNat) (by simp [stage2StagedCaps])
+  · exact h (S.ndst, 8) (by simp [stage2StagedCaps])
+  · exact h (S.nev, 8) (by simp [stage2StagedCaps])
+  · exact h (S.err, 8) (by simp [stage2StagedCaps])
 
 /-- **Stage 2's `pre` at the loop's exit.**  The document read, its read-past
 tail, the entry stream at the exiting count, the escape list at the escape
@@ -1379,26 +1442,48 @@ theorem stage2WalkWrites_sep {S : PipelineLoopCarried} {alen evlen a N W : Nat}
   · exact hSeven r hr
 
 
-/-- **The caller's staging lies below the allocator cursor**, the second fact the
-model cannot carry and the one `Γ_stage2.pre` asks for.
+/-- **The retired watermark, kept so its refutation has a statement.**  It bounded
+`stage2ExitRegions` at a record the consumer chose, beside an exit whose witness
+is a different record — `∀ S e, pipelineLoopExit mem args e → ∀ r ∈
+stage2ExitRegions S, r.1 + r.2 ≤ e.next`.  `retiredStage2Watermark_false` shows
+an admitted exit refutes it: the quantifier is free in `S`, so the refuser's record
+`S.ndst := e.next` demands `e.next + 8 ≤ e.next`.
 
-`stage2Pre`'s last clause bounds every staged object by the call's `next`, and the
-call's `next` is the allocator cursor the run reaches — a number the pipeline's
-records never name: `PipelineLoop.Inv` is indexed by the caller's memory and
-argument list, not by `next`, so no carried clause can say where the cursor is.
-The fact itself is true of the compiled program — the caller's buffers are
-allocated before the wrapper's stack frame — and it is stated here, at the exit
-state where both the cursor and the caller's objects are nameable, exactly as
-`Stage2SlotKeeps` states the frame `Γ_stage2`'s post cannot.
-
-Its form is the one the call site consumes: for every exit state the predicate
-admits, every staged object ends at or below that state's cursor.  A consumer
-readers it at the exiting state and transports it to the call's `next` by
-`next`-monotonicity of the call it is about to make (`CallSatisfies`'s
-`next ≤ r.next`). -/
-def Stage2Watermark (mem : Mem) (args : List Value) : Prop :=
+It is not used by anything; it is here so the defect the repair removed is a
+checked statement rather than a paragraph. -/
+def retiredStage2Watermark (mem : Mem) (args : List Value) : Prop :=
   ∀ (S : PipelineLoopCarried) (e : State), pipelineLoopExit mem args e →
     ∀ r ∈ stage2ExitRegions S, r.1 + r.2 ≤ e.next
+
+/-- **The retired watermark is false at any admitted exit**, constructively: take
+the exit's own record and move its refusal slot to the cursor itself, which
+`stage2ExitRegions` lists as `(S.ndst, 8)`.  The predicate then demands
+`e.next + 8 ≤ e.next`. -/
+theorem retiredStage2Watermark_false {mem : Mem} {args : List Value} {e : State}
+    (he : pipelineLoopExit mem args e) : ¬ retiredStage2Watermark mem args := by
+  intro h
+  obtain ⟨S, heAt⟩ := he
+  have hb := h { S with ndst := e.next } e ⟨S, heAt⟩ (e.next, 8)
+    (by simp [stage2ExitRegions])
+  omega
+
+/-- **At the exit, the record's own stage-2 regions end below its own cursor.**
+The watermark the tail needs, stated at the record the exit predicate carries
+rather than at one the consumer picks: the invariant's last conjunct bounds
+`stage2StagedCaps S` by `s.next`, and `stage2ExitRegions_le_caps` reads the tail's
+list off it at the exit's own growth facts.
+
+This is why `pipelineLoopExitAt` is a separate predicate: the bound is a clause of
+the exit, so the record it speaks about arrives with the state.  The retired
+`retiredStage2Watermark` quantified its own `S` beside the exit and was false
+(`retiredStage2Watermark_false`). -/
+theorem stage2Watermark {mem : Mem} {args : List Value} :
+    ∀ (S : PipelineLoopCarried) (e : State), pipelineLoopExitAt mem args S e →
+      ∀ r ∈ stage2ExitRegions S, r.1 + r.2 ≤ e.next := by
+  intro S e h
+  obtain ⟨-, -, hstream, hord, hbnd, hbnd64, -, -, -, -, hxgr, -, -, -, hib, -, -,
+    hcaps⟩ := h
+  exact stage2ExitRegions_le_caps (exit_k_le hstream hord hbnd64) hib hxgr hcaps
 
 /-- **The staging gap, named.**  `Γ_stage2`'s post cannot state that the run left
 the caller's two count slots alone: the stage-2 ABI's thirteen arguments do not
@@ -1415,7 +1500,7 @@ the walk's own stack objects, separate from the caller's slots by the compiler's
 allocation — the model has no stack allocation to derive that from. -/
 def Stage2SlotKeeps (mem : Mem) (args : List Value) (e : State) : Prop :=
   ∀ (S : PipelineLoopCarried) (mem' : Mem) (next' : Nat) (v : Value) (m' : Mem),
-    pipelineLoopExit mem args e →
+    pipelineLoopExitAt mem args S e →
     Γ_stage2.post
       (stage2Args S.b S.ep S.xp S.dst S.ndst S.ev S.nev S.err S.n
         S.kw (BitVec.ofNat 64 S.xn) S.dstcap S.evcap) mem' next'
@@ -1429,8 +1514,7 @@ theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}
     {args : List Value} {mem : Mem} {next : Nat}
     (hst : pipelineStaging tab base args mem)
     (units : PipelineUnits tab base s2 Γ_stage2)
-    (hkeep : ∀ e : State, Stage2SlotKeeps mem args e)
-    (hwm : Stage2Watermark mem args) :
+    (hkeep : ∀ e : State, Stage2SlotKeeps mem args e) :
     ∀ e : State, pipelineLoopExit mem args e →
       ∃ (verdict : BitVec 64) (m : Mem),
         runFuel (pipelineCalls tab base s2) 3 pipelineBody e =
@@ -1438,11 +1522,12 @@ theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}
         (Γ_pipeline_units tab base).post args mem next
           (.ret (some (.int 64 verdict)) m) := by
   intro e he
+  obtain ⟨S, heAt⟩ := he
   -- the exit predicate is eliminated below, and the slot-keeps hypothesis is asked
-  -- at it, so a copy survives the `obtain`
-  have heKeep := he
-  obtain ⟨S, hpc, htie, hstream, hord, hbnd, hbnd64, hpre, hcells, hcount, hnxpslot,
-    hxngr, hdocs, hsxp, hframe, hib, hnxp0slot, hxn0lt⟩ := he
+  -- at it, so a copy of the conjunction at its own record survives the `obtain`
+  have heKeep := heAt
+  obtain ⟨hpc, htie, hstream, hord, hbnd, hbnd64, hpre, hcells, hcount, hnxpslot,
+    hxngr, hdocs, hsxp, hframe, hib, hnxp0slot, hxn0lt, hcaps⟩ := heAt
   -- the staging's hypothesis stays available: the two call preconditions and the
   -- frame's projections read it, and destructuring consumes it
   have hstKeep := hst
@@ -1537,11 +1622,14 @@ theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}
         exact Or.comm.mp (by
           simpa using disjointRegions_pair _ 7 9 (by decide) _ _ rfl rfl hdisj)
       · rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hxn64]; rfl
-    -- the watermark at the call's cursor: the caller's staging lies below the
-    -- exiting cursor (`hwm`), and the UTF-8 call returned a cursor at or above it
+    -- the watermark at the call's cursor: the exit's own record ends below the
+    -- exiting cursor (`hcaps`, at the staged widths, read at the exit's counts by
+    -- `stage2ExitRegions_le_caps`), and the UTF-8 call returned a cursor at or
+    -- above it
     have hwmExit : ∀ r ∈ stage2ExitRegions S, r.1 + r.2 ≤ n30 := by
       intro r hr
-      exact Nat.le_trans (hwm S e heKeep r hr) hnext30
+      exact Nat.le_trans
+        (stage2ExitRegions_le_caps hkgr hib hxngr hcaps r hr) hnext30
     have hpre2 : Γ_stage2.pre
         (stage2Args S.b S.ep S.xp S.dst S.ndst S.ev S.nev S.err S.n S.kw
           (BitVec.ofNat 64 S.xn) S.dstcap S.evcap)
@@ -1760,7 +1848,8 @@ theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}
       · simp only [List.mem_singleton] at hr
         subst hr
         exact Or.inr (Nat.le_trans
-          (hwm S e heKeep (S.ep, 4 * S.k) (by simp [stage2ExitRegions])) hnext30)
+          (stage2ExitRegions_le_caps hkgr hib hxngr hcaps (S.ep, 4 * S.k)
+            (by simp [stage2ExitRegions])) hnext30)
     have hsepXpW : ∀ r ∈ (([(S.dst, alen + stage2ArenaReserve), (S.ndst, 8),
         (S.ev, evlen), (S.nev, 8), (S.err, 8)] ++
         stage2ReportScratch c₂ ctype₂ cst₂ tok₂ s₂ z₂ e₂ d₂) ++
@@ -1778,7 +1867,8 @@ theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}
       · simp only [List.mem_singleton] at hr
         subst hr
         exact Or.inr (Nat.le_trans
-          (hwm S e heKeep (S.xp, 4 * S.xn) (by simp [stage2ExitRegions])) hnext30)
+          (stage2ExitRegions_le_caps hkgr hib hxngr hcaps (S.xp, 4 * S.xn)
+            (by simp [stage2ExitRegions])) hnext30)
     -- the four reads at the memory stage two returns
     have hnkM : readBytes m35 S.nk 8 = some (wordBytes 8 S.k) := by
       have hb : readBytes m35 S.nk 8 =
@@ -2059,43 +2149,50 @@ theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}
 /-! ### The bundle, from the four fields and the tail -/
 
 /-- **`PipelineBodyFacts` from the proved fields and the tail's theorem.**  The
-loop, `N_eq`, `cost_le` and the seed are the theorems above; the fifth field is
-`pipelineTailTarget` at the exit predicate the loop produces.  `pipelineLoopExit`
-is the loop's own exit and it carries the caller's argument list, so the target's
-domain is the field's domain, at the caller's addresses. -/
+loop, `N_eq`, `cost_le` and the seed are the theorems above, at the record's own
+precondition: `hst` is its staging half, and `hbelow` is the cursor half the seed
+establishes the invariant's caps clause from, which is what lets the tail read the
+bound at the exit instead of assuming it.  The fifth field is `pipelineTailTarget`
+at the exit predicate the loop produces.  `pipelineLoopExit` is the loop's own
+exit and it carries the caller's argument list, so the target's domain is the
+field's domain, at the caller's addresses. -/
 def pipelineBodyFacts_of_exitStage2 {tab base : Nat} {s2 : Calls}
     {args : List Value} {mem : Mem} {next : Nat}
-    (hst : pipelineStaging tab base args mem) (units : PipelineUnits tab base s2 Γ_stage2)
-    (hkeep : ∀ e : State, Stage2SlotKeeps mem args e)
-    (hwm : Stage2Watermark mem args) :
+    (hst : pipelineStaging tab base args mem)
+    (hbelow : pipelineStagedBelow tab base args mem next)
+    (units : PipelineUnits tab base s2 Γ_stage2)
+    (hkeep : ∀ e : State, Stage2SlotKeeps mem args e) :
     PipelineBodyFacts tab base s2 Γ_stage2 args mem next :=
   { loop := pipelineLoop_of_staging hst s2 Γ_stage2 units
     N_eq := pipelineLoop_of_staging_N hst s2 Γ_stage2 units
     cost_le := pipelineLoop_of_staging_cost_le hst s2 Γ_stage2 units
-    seed := pipelineSeed hst
-    exit := fun e he => pipelineTailTarget hst units hkeep hwm e he }
+    seed := pipelineSeed hst hbelow
+    exit := fun e he => pipelineTailTarget hst units hkeep e he }
 
 /-- **The assembled pipeline satisfies its unit-level record, from the four
 fields and the tail.**  `pipeline_satisfies_at_stage2`'s `hbody` is supplied by
 `pipelineBodyFacts_of_exitStage2`, so the inputs left are the stage-2 selection
-`h2` and the one staging fact the record cannot state (`Stage2SlotKeeps`); the run
+`h2` and the one staging fact the record cannot state (`Stage2SlotKeeps`); the
+record's own precondition supplies the staging and the cursor bound, and the run
 from the exit the loop leaves is `pipelineTailTarget`, proved above. -/
 theorem pipeline_satisfies_at_stage2_of_exitStage2 (tab : Nat) (s2 : Calls)
     (h2 : CallSatisfies s2 Γ_stage2 stage2Sym)
     (hkeep : ∀ (args : List Value) (mem : Mem) (e : State),
-      Stage2SlotKeeps mem args e)
-    (hwm : ∀ (args : List Value) (mem : Mem), Stage2Watermark mem args) :
+      Stage2SlotKeeps mem args e) :
     ∀ base, Satisfies (pipelineCalls tab base s2) pipelineBody
       (Γ_pipeline_units tab base) :=
   pipeline_satisfies_at_stage2 tab s2 h2
-    (fun _ _ _ _ hpre units => pipelineBodyFacts_of_exitStage2 hpre units
-      (fun e => hkeep _ _ e) (hwm _ _))
+    (fun _ _ _ _ hpre units => pipelineBodyFacts_of_exitStage2 hpre.1 hpre.2 units
+      (fun e => hkeep _ _ e))
 
 /-! ### Axiom footprints
 
 The four fields are `PipelineBodyStep`'s instance and two closed comparisons; the
 tail is `pipelineTailTarget`, whose steps are the exit block's traces and the two
-calls' records.  Nothing here adds a carrier.
+calls' records.  Nothing here adds a carrier.  The watermark is the exit
+predicate's own last conjunct read at the tail's list, and the regression against
+its retired form is list membership and one linear inequality
+(`[propext, Quot.sound]`), so neither adds one either.
 -/
 
 /-- info: 'LeanLLVM.Refinement.pipelineBlocks_argLen_cap' depends on axioms: [propext] -/
@@ -2169,6 +2266,26 @@ calls' records.  Nothing here adds a carrier.
 /-- info: 'LeanLLVM.Refinement.readLanes32_writeBytes_disjoint' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms readLanes32_writeBytes_disjoint
+
+/-- info: 'LeanLLVM.Refinement.stage2StagedCaps_doc' does not depend on any axioms -/
+#guard_msgs in
+#print axioms stage2StagedCaps_doc
+
+/-- info: 'LeanLLVM.Refinement.stage2ExitRegions_le_caps' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms stage2ExitRegions_le_caps
+
+/-- info: 'LeanLLVM.Refinement.retiredStage2Watermark' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms retiredStage2Watermark
+
+/-- info: 'LeanLLVM.Refinement.retiredStage2Watermark_false' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms retiredStage2Watermark_false
+
+/-- info: 'LeanLLVM.Refinement.stage2Watermark' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms stage2Watermark
 
 /-- info: 'LeanLLVM.Refinement.stage2Pre_of_exit' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

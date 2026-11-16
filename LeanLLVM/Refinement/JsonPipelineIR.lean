@@ -1261,4 +1261,57 @@ theorem pipelineCalls_masks (tab base : Nat) (stage2Sel : Calls) :
   simp only [pipelineCalls, masksSym, entryPos8Sym, entryB8Sym, escapeListSym,
     utf8Sym, stage2Sym, ite_true]
 
+/-- **A unit selection returns the cursor it was given.**  `envForUnit` runs the
+unit body and reports `next + 0`: the callee's own allocations are the callee's,
+and the caller's cursor is unchanged by the call. -/
+theorem envForUnit_next {sym : String} {Γ : MemContract} {calls : Calls}
+    {f : Function} {callee : String} {args : List Value} {mem : Mem} {next : Nat}
+    {r : CallOutcome} (h : envForUnit sym Γ calls f callee args mem next = some r) :
+    r.next = next := by
+  unfold envForUnit at h
+  split at h
+  · split at h
+    · cases h; rfl
+    · cases h; rfl
+    · cases h
+  · cases h
+
+/-- **Every unit branch of the pipeline's call environment returns its cursor.**
+The stage-2 slot is the one selection whose body is the caller's, so the statement
+excludes it; the loop's arms never call it, and the stage-2 call site's own
+monotonicity is `CallSatisfies`'s (`next ≤ r.next`).
+
+This is what keeps the loop's `next` unchanged across a step: no arm binds an
+`alloca` (`allocaTypes pipelineBody = []`, guarded above), so the only instruction
+that could move the cursor is a call, and each of these fixes it. -/
+theorem pipelineCalls_next {tab base : Nat} {s2 : Calls} {callee : String}
+    {args : List Value} {mem : Mem} {next : Nat} {r : CallOutcome}
+    (hne : callee ≠ stage2Sym)
+    (h : pipelineCalls tab base s2 callee args mem next = some r) : r.next = next := by
+  unfold pipelineCalls at h
+  by_cases h1 : callee = masksSym
+  · rw [if_pos h1] at h
+    exact envForUnit_next h
+  · rw [if_neg h1] at h
+    by_cases h2 : callee = entryPos8Sym
+    · rw [if_pos h2] at h
+      exact envForUnit_next h
+    · rw [if_neg h2] at h
+      by_cases h3 : callee = entryB8Sym
+      · rw [if_pos h3] at h
+        exact envForUnit_next h
+      · rw [if_neg h3] at h
+        by_cases h4 : callee = escapeListSym
+        · rw [if_pos h4] at h
+          exact envForUnit_next h
+        · rw [if_neg h4] at h
+          by_cases h5 : callee = utf8Sym
+          · rw [if_pos h5] at h
+            exact envForUnit_next h
+          · rw [if_neg h5] at h
+            by_cases h6 : callee = stage2Sym
+            · exact absurd h6 hne
+            · rw [if_neg h6] at h
+              cases h
+
 end LeanLLVM.Refinement.JsonPipelineIR

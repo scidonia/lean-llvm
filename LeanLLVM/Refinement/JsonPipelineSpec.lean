@@ -307,10 +307,22 @@ binder below names the same ABI slot and the same slot value, since
 `pipelineEvCapacity`/`pipelineNevSlot` read the `evcap` argument and the `nev`
 cursor slot that the staging binds.  Stating the inequality here as well would be
 a second spelling of one fact, so a proof that needs it reads it off the staging.
--/
+
+**The allocator cursor is named here too.**  The second conjunct is
+`pipelineStagedBelow`, the relation between the staged addresses and the cursor
+the caller passes: the objects end at or below it.  It is the same clause
+`Γ_pipeline_units.pre` carries, and it is here because the specification claims
+nothing about a caller that record would not admit — the bridge
+`pipeline_satisfies_of_parser` consumes the units' precondition, so the
+specification's precondition has to imply it.  A caller that allocated these
+buffers before calling satisfies it, and `pipelineStagedBelow`'s
+`exists_stagedBelow` shows every staging is admissible at some cursor;
+`JsonCallRoute.routeSpecPre` is the wrapper's own discharge of the clause at a
+concrete cursor. -/
 def pipelineSpecPre (tab base : Nat) (args : List Value) (mem : Mem)
-    (_next : Nat) : Prop :=
+    (next : Nat) : Prop :=
   pipelineStaging tab base args mem ∧
+  pipelineStagedBelow tab base args mem next ∧
   ∃ (bs : List UInt8) (nev0 evcap nev : Nat),
     pipelineDocLength args = some bs.length ∧
     pipelineEvCapacity args = some evcap ∧

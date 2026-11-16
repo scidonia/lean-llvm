@@ -794,14 +794,50 @@ theorem stagedDoc_read (l : RouteLayout) (doc : List UInt8)
   rw [hbase, htake] at h'
   exact h'
 
+/-- **The route's cursor.**  A number above every object the wrapper staged: the
+sum of the staged ends.  It is the cursor `routeSpecPre` hands the record, and the
+wrapper's own stand-in for the allocator cursor a C caller would hold. -/
+def routeNext (l : RouteLayout) (doc : List UInt8) : Nat :=
+  stagedExtentSum (pipelineRegions l.base l.tab 0 l.nxp0 (routeArgs l doc))
+
+/-- **The wrapper's staging lies below its cursor.**  The record's cursor clause
+at `routeNext`: the escape count slot holds the one value the wrapper stored, so
+the only number the slot reads as is `l.nxp0`, and every staged object's end is a
+summand of the cursor. -/
+theorem routeStagedBelow (l : RouteLayout) (doc : List UInt8)
+    (h : routePre l doc) :
+    pipelineStagedBelow l.tab l.base (routeArgs l doc) (stagedMem l doc)
+      (routeNext l doc) := by
+  obtain ⟨hadm, hb3, hbLt, hepLt, hep64, hxp64, hdst64, hev64, hepcap, hdst, hev,
+    hroom0, hroomx, h32, harm, hsep⟩ := h
+  obtain ⟨-, hlim, -⟩ := admitted_documentDomain hadm
+  have hdoc64 : doc.length < 2 ^ 64 := by
+    have : doc.length ≤ 1048576 := by simpa [Limits.default] using hlim
+    omega
+  have hnxp0lt : l.nxp0 < 2 ^ 63 :=
+    (cursorRoom_bounds hroomx (i := 0) (nblk := pipelineBlocks doc.length)
+      (by omega) (by decide)).2
+  have hslot : readBytes (stagedMem l doc) l.nxp 8 = some (wordBytes 8 l.nxp0) := by
+    simpa only [stagedMem, wordBytes, natToBytes_length] using
+      store_read_full (m := []) (mem_nxp l doc) hsep
+  intro nxp0 hlt hread
+  have hread' : readBytes (stagedMem l doc) l.nxp 8 = some (wordBytes 8 nxp0) := by
+    simpa only [pipelineNxpSlot, routeArgs] using hread
+  have hEq : nxp0 = l.nxp0 := slotExtent_eq hlt (by omega) hread' hslot
+  subst hEq
+  rw [pipelineRegions_eq_stagedExtents l doc hdoc64 hdst64 hev64]
+  exact fun r hr => le_stagedExtentSum (stagedExtents l doc) r hr
+
 /-- **The wrapper discharges the specification's precondition.**  `routePre`
 establishes `pipelineSpecPre` at the route's arguments: the units staging, the
-document's exact-length read, the ABI projections, the event cursor, and the
-parser's two limit exclusions.  A caller that the check accepts can be handed
-to `Γ_pipeline`'s domain without a further premise. -/
+document's exact-length read, the ABI projections, the event cursor, the parser's
+two limit exclusions, and the cursor above the staged objects (`routeStagedBelow`,
+at `routeNext`).  A caller that the check accepts can be handed to `Γ_pipeline`'s
+domain without a further premise. -/
 theorem routeSpecPre (l : RouteLayout) (doc : List UInt8)
     (h : routePre l doc) :
-    pipelineSpecPre l.tab l.base (routeArgs l doc) (stagedMem l doc) 0 := by
+    pipelineSpecPre l.tab l.base (routeArgs l doc) (stagedMem l doc)
+      (routeNext l doc) := by
   obtain ⟨hadm, hb3, hbLt, hepLt, hep64, hxp64, hdst64, hev64, hepcap, hdst, hev,
     hroom0, hroomx, h32, harm, hsep⟩ := h
   obtain ⟨hpos, hlim, hdom⟩ := admitted_documentDomain hadm
@@ -818,8 +854,11 @@ theorem routeSpecPre (l : RouteLayout) (doc : List UInt8)
         e ≠ .depthExceeded ∧ e ≠ .outOfCapacity :=
     fun e he => ⟨(hdom e he).1, (hdom e he).2.1⟩
   refine ⟨routeStaging l doc ⟨hadm, hb3, hbLt, hepLt, hep64, hxp64, hdst64, hev64,
-    hepcap, hdst, hev, hroom0, hroomx, h32, harm, hsep⟩, doc, l.nev0, l.evcap,
-    l.nev, ?_, ?_, ?_, stagedDoc_read l doc hsep hb3, ?_, hdom'⟩
+    hepcap, hdst, hev, hroom0, hroomx, h32, harm, hsep⟩,
+    routeStagedBelow l doc ⟨hadm, hb3, hbLt, hepLt, hep64, hxp64, hdst64, hev64,
+      hepcap, hdst, hev, hroom0, hroomx, h32, harm, hsep⟩,
+    doc, l.nev0, l.evcap, l.nev, ?_, ?_, ?_, stagedDoc_read l doc hsep hb3, ?_,
+    hdom'⟩
   · simp only [pipelineDocLength, routeArgs, hblocks]
   · simp only [pipelineEvCapacity, routeArgs, hev64']
   · simp only [pipelineNevSlot, routeArgs]

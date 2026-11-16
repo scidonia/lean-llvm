@@ -3329,6 +3329,44 @@ def pipelineLoopWrites (S : PipelineLoopCarried) : List (Nat × Nat) :=
   [(S.sc, 24), (S.maskSlot, 48), (S.entw, 8), (S.ep, 4 * (S.k + 8)), (S.nk, 8),
    (S.xp, 4 * (S.xn + batchReserve)), (S.nxp, 8), (S.xcarry, 16)]
 
+/-- **The staged objects at the widths the caller staged them**, which is what a
+cursor has to clear.
+
+The tail's stage-2 call is judged at a cursor, and stage 2's `pre` bounds the
+objects it reads by that cursor.  The bounds cannot be `stage2ExitRegions`'
+widths: those are the *current* counts `4 * S.k` and `4 * S.xn`, and a step grows
+them, so a clause stated at them would have to be re-established per iteration
+with a widening the counts do not preserve.  They can be the staged widths, which
+are functions of the record alone — the entry stream's capacity, the escape
+list's, the document's window and tail, the arena and event capacities and the
+three slots — because every count stays inside its capacity (`S.k ≤ 64 * S.i`,
+`S.xn ≤ S.xn0 + 64 * S.i`) and no successor changes a capacity.
+
+So this is the list the invariant carries below the cursor; `stage2ExitRegions`
+(the current-count list the stage-2 record reads) is derived from it at the exit
+by `PipelineDischarge.stage2ExitRegions_le_caps`.  The document's read-past tail
+is the literal `32` `JsonStage2Contract.stage2ReadTail` names, and
+`PipelineDischarge.stage2StagedCaps_doc` pins the two together. -/
+def stage2StagedCaps (S : PipelineLoopCarried) : List (Nat × Nat) :=
+  [(S.b, S.n.toNat + 32),
+   (S.ep, 4 * (64 * pipelineBlocks S.n.toNat + 9)),
+   (S.xp, 4 * (S.xn0 + 64 * pipelineBlocks S.n.toNat + 8)),
+   (S.dst, S.dstcap.toNat), (S.ev, S.evcap.toNat), (S.ndst, 8), (S.nev, 8),
+   (S.err, 8)]
+
+/-- **The caps clause follows a successor and a cursor that did not go down.**
+The successors change the counts, the carry state and the environment cells, never
+a staged capacity; and a call through `pipelineCalls` returns the cursor it was
+given.  So a step inherits the clause at its predecessor's cursor and hands it on
+at its successor's. -/
+theorem stage2StagedCaps_mono {S S' : PipelineLoopCarried} {c c' : Nat}
+    (hlist : stage2StagedCaps S' = stage2StagedCaps S) (hc : c ≤ c')
+    (h : ∀ r ∈ stage2StagedCaps S, r.1 + r.2 ≤ c) :
+    ∀ r ∈ stage2StagedCaps S', r.1 + r.2 ≤ c' := by
+  intro r hr
+  rw [hlist] at hr
+  exact Nat.le_trans (h r hr) hc
+
 /-- **The caller's argument list, as the carried record.**  `pipelineStaging` names
 the caller's twenty slots, the loop's `S` names the same objects by its own fields,
 and the post's frame is stated at the caller's addresses.  This predicate is the
@@ -3416,10 +3454,31 @@ being assumed at the tail.
 What it still does *not* carry is the two calls' inputs' *contents* — the UTF-8
 window and stage-2's staged objects — but with the argument list in hand those
 are derivable from `pipelineStaging` at the same `mem`, which is what the
-discharge module does. -/
-def pipelineLoopExit (mem : Mem) (args : List Value) (s : State) : Prop :=
-  ∃ (S : PipelineLoopCarried),
-    s.pc = "for.cond.cleanup" ∧
+discharge module does.
+
+**The carried state is an index, and the cursor bound is the last conjunct.**
+The predicate is stated in two layers: `pipelineLoopExitAt mem args S s` is the
+whole conjunction at *one* carried record, and `pipelineLoopExit mem args s` is
+its existential.  A consumer that wants to say something about the record the
+exit's witness carries — the tail's watermark is the one that matters — names
+`pipelineLoopExitAt`, so the record it speaks about is the record the exit
+produced rather than any record of the consumer's choosing.  Stated as one
+existential over a conjunction, the same consumer would quantify its own `S`
+beside an exit whose witness is a different one, which is exactly how the retired
+`PipelineDischarge.retiredStage2Watermark` demanded `e.next + 8 ≤ e.next`.
+
+The last conjunct is that watermark's content at the exit: every staged object
+ends at or below the exit state's own allocator cursor.  It is not a consequence
+of the other conjuncts — the cursor is a number the state carries and none of them
+reads it — so it arrives with the exit from the loop: the seed establishes it from
+the caller's precondition (`pipelineStagedBelow`, at the `next` it enters at), and
+every step carries it because each call `envForUnit` builds returns the cursor it
+was given and an arm binds no `alloca`.  `PipelineDischarge.stage2Watermark` is
+the projection: at any exit, the record's own stage-2 regions end below its own
+cursor. -/
+abbrev pipelineLoopExitAt (mem : Mem) (args : List Value) (S : PipelineLoopCarried)
+    (s : State) : Prop :=
+  s.pc = "for.cond.cleanup" ∧
     exitArgs S args ∧
     readLanes32 s.mem S.ep S.k = some S.ent ∧
     S.ent.Pairwise (· < ·) ∧
@@ -3435,7 +3494,13 @@ def pipelineLoopExit (mem : Mem) (args : List Value) (s : State) : Prop :=
     UnchangedOutside mem s.mem (pipelineLoopWrites S) ∧
     S.i ≤ pipelineBlocks S.n.toNat ∧
     readBytes mem S.nxp 8 = some (wordBytes 8 S.xn0) ∧
-    S.xn0 < 2 ^ 63
+    S.xn0 < 2 ^ 63 ∧
+    ∀ r ∈ stage2StagedCaps S, r.1 + r.2 ≤ s.next
+
+/-- **The states the loop may leave in**, at the caller's memory and argument
+list: one carried record's whole conjunction. -/
+def pipelineLoopExit (mem : Mem) (args : List Value) (s : State) : Prop :=
+  ∃ S : PipelineLoopCarried, pipelineLoopExitAt mem args S s
 
 /-- info: 'LeanLLVM.Refinement.PipelineBodyArm.countReg' does not depend on any axioms -/
 #guard_msgs in
@@ -3500,7 +3565,7 @@ it: a bundle whose `exit` field quantified over this state would be asked for a
 return no fuel can produce. -/
 theorem gapState_not_exit (mem : Mem) (args : List Value) :
     ¬ pipelineLoopExit mem args gapState := by
-  rintro ⟨S, -, -, -, -, -, -, -, hcells, -, -, -, -, -, -⟩
+  rintro ⟨S, -, -, -, -, -, -, -, hcells, -, -, -, -, -, -, -⟩
   simp only [tailCells] at hcells
   obtain ⟨-, -, -, -, -, -, -, -, -, -, -, hb, -, -⟩ := hcells
   rw [gapState_no_b] at hb
@@ -3840,7 +3905,18 @@ def pipelineLoopInvBack (mem : Mem) (args : List Value) (base tab : Nat) (blocks
         UnchangedOutside mem s.mem (pipelineLoopWrites S) ∧
         exitArgs S args ∧
         readBytes mem S.nxp 8 = some (wordBytes 8 S.xn0) ∧
-        S.xn0 < 2 ^ 63
+        S.xn0 < 2 ^ 63 ∧
+        -- **the cursor clears the staged objects.**  The tail's stage-2 call is
+        -- judged at the exit's own cursor, and stage 2's `pre` bounds the objects
+        -- it reads by it.  The bound is carried rather than derived: the cursor
+        -- is a number the state holds and no read of the memory recovers it, so
+        -- the only producer is the caller's precondition at the loop's entry
+        -- (`pipelineStagedBelow`).  Every successor keeps it because a call
+        -- through `pipelineCalls` returns the cursor it was given and no arm binds
+        -- an `alloca`, and because no successor changes a staged *capacity* —
+        -- which is why the bound is stated at `stage2StagedCaps`, the widths the
+        -- caller staged, and not at the growing counts.
+        ∀ r ∈ stage2StagedCaps S, r.1 + r.2 ≤ s.next
 
 /-- **The loop invariant's split shape.**  The state the loop's *first* iteration
 starts in: the arm's head as the program counter, the split block as the
@@ -3917,7 +3993,18 @@ def pipelineLoopInvSplit (mem : Mem) (args : List Value) (base tab blocks : Nat)
         UnchangedOutside mem s.mem (pipelineLoopWrites S) ∧
         exitArgs S args ∧
         readBytes mem S.nxp 8 = some (wordBytes 8 S.xn0) ∧
-        S.xn0 < 2 ^ 63
+        S.xn0 < 2 ^ 63 ∧
+        -- **the cursor clears the staged objects.**  The tail's stage-2 call is
+        -- judged at the exit's own cursor, and stage 2's `pre` bounds the objects
+        -- it reads by it.  The bound is carried rather than derived: the cursor
+        -- is a number the state holds and no read of the memory recovers it, so
+        -- the only producer is the caller's precondition at the loop's entry
+        -- (`pipelineStagedBelow`).  Every successor keeps it because a call
+        -- through `pipelineCalls` returns the cursor it was given and no arm binds
+        -- an `alloca`, and because no successor changes a staged *capacity* —
+        -- which is why the bound is stated at `stage2StagedCaps`, the widths the
+        -- caller staged, and not at the growing counts.
+        ∀ r ∈ stage2StagedCaps S, r.1 + r.2 ≤ s.next
 
 /-- **The loop invariant.**  With `r + 1` iterations of budget the state is an
 iteration entry in one of the two shapes the loop can be entered in — the split

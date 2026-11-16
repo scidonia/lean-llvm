@@ -169,6 +169,52 @@ objects' sub-extents. -/
 def DisjointRegions (rs : List (Nat × Nat)) : Prop :=
   rs.Pairwise fun r s => r.1 + r.2 ≤ s.1 ∨ s.1 + s.2 ≤ r.1
 
+/-! ### The caller's objects and its allocator cursor
+
+`pipelineStaging` is a predicate of the memory: it says which bytes the caller
+staged and how they are separated, and every clause of it is a read or a
+presence.  The two stage-2 calls the pipeline makes are judged at a *cursor*
+(`MemContract.pre`'s third argument, the callee's `next`), and stage 2's own
+`pre` bounds the objects it reads by that cursor.  Nothing in the staging can say
+where the cursor is, and nothing in a memory can either: the model's `next` is a
+number the caller passes, not an address the memory stores.
+
+So the relation between the two is an input fact, named here once.  It is true of
+every real caller — the caller allocated these objects before it called, so they
+lie below the cursor it passes — and `exists_stagedBelow` shows every staging is
+admissible at *some* cursor: the clause excludes only the pair of a staging and a
+cursor below its objects.
+
+This is the one place the pipeline's input domain is tightened relative to the
+staging alone, and it is stated as its own predicate rather than folded into
+`pipelineStaging` so that the tightening is visible at the record that applies it
+(`Γ_pipeline_units.pre`) instead of changing the meaning of every staging the
+other modules read. -/
+
+/-- The escape count's slot, as the argument list names it: the entry
+`pipelineRegions` reads `nxp0` from.  An unshaped list names address zero, which
+`pipelineRegions`' own empty answer makes inert. -/
+def pipelineNxpSlot (args : List Value) : Nat :=
+  match args with
+  | [_, _, _, _, _, _, _, _, _, _, .ptr nxp, _, _, _, _, _, _, _, _, _] => nxp
+  | _ => 0
+
+/-- **The caller's staged objects lie below the cursor it enters at.**  For every
+value below the word's width that the escape count slot reads as, every region the
+staging names ends at or below `next`.
+
+The quantifier is over the values the slot *can* denote rather than over one
+number: an eight-byte word fixes its value only below `2 ^ 64`
+(`wordBytes_residue`), and above it the same word denotes every congruent number.
+A reader with the staging's own `nxp0` in hand instantiates the clause at it — the
+staging's `cursorRoom` clause puts it below `2 ^ 63` — and reads the bound at the
+regions `pipelineRegions` lists. -/
+def pipelineStagedBelow (tab base : Nat) (args : List Value) (mem : Mem)
+    (next : Nat) : Prop :=
+  ∀ nxp0 : Nat, nxp0 < 2 ^ 64 →
+    readBytes mem (pipelineNxpSlot args) 8 = some (wordBytes 8 nxp0) →
+    ∀ r ∈ pipelineRegions base tab 0 nxp0 args, r.1 + r.2 ≤ next
+
 /-! ### The cursors' room
 
 The two per-block units that advance a cursor — POS8's entry emitter and the
@@ -706,6 +752,67 @@ theorem pipelineOutputExtents_unique {m : Mem} {ndst nev : Nat}
   obtain ⟨hx', hy', hw', hz'⟩ := h'
   exact ⟨slotExtent_eq hx hx' hw hw', slotExtent_eq hy hy' hz hz'⟩
 
+/-! ### A cursor above every staged object exists
+
+`pipelineStagedBelow` is satisfiable at every staging, so the clause it adds to
+the record's precondition excludes no caller's memory: a caller that stages these
+objects has a cursor above them (its own, after the last allocation), and the
+number below is that cursor's existence proof.  The witness is the sum of the
+regions' end addresses, which bounds each of them. -/
+
+/-- The sum of the listed regions' end addresses. -/
+def stagedExtentSum (rs : List (Nat × Nat)) : Nat :=
+  rs.foldr (fun r acc => r.1 + r.2 + acc) 0
+
+/-- **A member's end is inside the sum.** -/
+theorem le_stagedExtentSum : ∀ (rs : List (Nat × Nat)) (r : Nat × Nat),
+    r ∈ rs → r.1 + r.2 ≤ stagedExtentSum rs
+  | [], r, hr => absurd hr (by simp)
+  | s :: ss, r, hr => by
+      simp only [stagedExtentSum, List.foldr_cons]
+      rcases List.mem_cons.mp hr with rfl | hr
+      · omega
+      · have h := le_stagedExtentSum ss r hr
+        simp only [stagedExtentSum] at h
+        omega
+
+/-- **Every staging is admissible at some cursor.**  The staging's own escape
+count is below the word's width (`cursorRoom nxp0 blocks 9`), so the only value
+the count slot reads as is that one, and the sum of the staged ends is above every
+region at it. -/
+theorem exists_stagedBelow {tab base : Nat} {args : List Value} {mem : Mem}
+    (hst : pipelineStaging tab base args mem) :
+    ∃ next, pipelineStagedBelow tab base args mem next := by
+  obtain ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err, nxp0, ndst0,
+    nev0, n, epcap, xpcap, dstcap, evcap, arm, bs, hargs, hn, hlim, hwin, htail, hb3,
+    hzero3, hpos, htab, hsc, hcarry, hnk, hnxp, hepcap, hxp, hdstcap, hdst, hev,
+    hevcap, hndst, hnev, hroomk, hroomxn, hblk, harm, hreads, hdisj, hbLt, hepLt⟩ := hst
+  subst hargs
+  have hnxp0lt : nxp0 < 2 ^ 64 := by
+    have h := hroomxn
+    simp only [cursorRoom] at h
+    omega
+  refine ⟨stagedExtentSum (pipelineRegions base tab 0 nxp0
+    [.ptr base, .int 64 n, .ptr sc, .ptr mk, .ptr entw, .ptr ep, .int 64 epcap,
+     .ptr nk, .ptr xp, .int 64 xpcap, .ptr nxp, .ptr xcarry, .ptr dst,
+     .int 64 dstcap, .ptr ndst, .ptr ev, .int 64 evcap, .ptr nev, .ptr err,
+     .int 64 arm]), ?_⟩
+  intro nxp0' hlt hread
+  have hread' : readBytes mem nxp 8 = some (wordBytes 8 nxp0') := by
+    simpa only [pipelineNxpSlot] using hread
+  have hword : wordBytes 8 nxp0 = wordBytes 8 nxp0' :=
+    Option.some.inj (hnxp.symm.trans hread')
+  have hres : nxp0 = nxp0' := by
+    have h := wordBytes_residue hword
+    rwa [Nat.mod_eq_of_lt hnxp0lt, Nat.mod_eq_of_lt hlt] at h
+  subst hres
+  exact fun r hr =>
+    le_stagedExtentSum (pipelineRegions base tab 0 nxp0
+      [.ptr base, .int 64 n, .ptr sc, .ptr mk, .ptr entw, .ptr ep, .int 64 epcap,
+       .ptr nk, .ptr xp, .int 64 xpcap, .ptr nxp, .ptr xcarry, .ptr dst,
+       .int 64 dstcap, .ptr ndst, .ptr ev, .int 64 evcap, .ptr nev, .ptr err,
+       .int 64 arm]) r hr
+
 /-! ### The record -/
 
 /-- The assembled pipeline's unit-level record: the staging above, the
@@ -716,10 +823,26 @@ specification record; see the module docstring.
 Both the table and the document are parameters because `Satisfies` fixes the
 call environment before it quantifies over arguments: `pipelineCalls tab base`
 chooses the POS8 table and the escape record's base, so the pre must promise the
-table at that `tab`, and the staging now names it. -/
+table at that `tab`, and the staging now names it.
+
+**The precondition names the cursor too, and that is the one tightening of the
+input domain.**  The staging is about the memory; the two stage-2 calls the tail
+makes are judged at a cursor, and stage 2's `pre` bounds the objects it reads by
+that cursor.  The relation between the two cannot be a clause of a memory
+predicate: `next` is the caller's allocator cursor, a number the caller passes.
+So the record's `pre` is the staging *and* `pipelineStagedBelow`, which says the
+staged objects end at or below that cursor.  Every real caller satisfies it — it
+allocated these objects before it called — and `exists_stagedBelow` shows every
+staging is admissible at some cursor, so no staged memory is excluded; what is
+excluded is a cursor *below* the objects the caller staged, which no execution
+presents.  Before this clause the pipeline's post was stated at a cursor the
+records never named, and the two stage-2 calls' watermark had to be assumed at
+the tail instead (`PipelineDischarge.stage2Watermark`, now a projection of the
+exit predicate's own last conjunct). -/
 def Γ_pipeline_units (tab base : Nat) : MemContract where
   budget := pipelineBudget
-  pre := fun args mem _ => pipelineStaging tab base args mem
+  pre := fun args mem next =>
+    pipelineStaging tab base args mem ∧ pipelineStagedBelow tab base args mem next
   post := pipelineUnitsPost
 
 /-! ### Sanity checks on the statement's arithmetic -/

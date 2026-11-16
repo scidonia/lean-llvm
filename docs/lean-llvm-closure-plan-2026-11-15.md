@@ -41,6 +41,17 @@ and the two `False` and boundary statements' `#print axioms` printed.
 
 **Size:** 1–3 rounds.
 
+**Landed** on top of `7bb5c76` (working tree; default target 1923 jobs, `LAKE_EXIT=0`).
+`retiredStage2Watermark` + `retiredStage2Watermark_false` state and refute the retired
+form; `stage2Watermark` states the bound at the exit's own record through
+`stage2ExitRegions_le_caps`; the bound is the invariant's `stage2StagedCaps` conjunct,
+seeded from `pipelineStagedBelow` (`seedCarried_caps`) and carried by `pipelineCalls_next`
+and `stage2StagedCaps_mono`; `Stage2SlotKeeps` is indexed by `pipelineLoopExitAt`; and
+`pipelineTailTarget`, `pipelineBodyFacts_of_exitStage2` and
+`pipeline_satisfies_at_stage2_of_exitStage2` take no watermark.  The instantiated case is
+the tail's own: `pipelineTailTarget` reads the bound at a real exit and transports it to
+the stage-2 call.
+
 ### Item 1 — the continuing arm's `ws` bundle
 
 **Statement.** `HcontFacts` at 59 fields after the 59-field landing; the `ws` arm still
