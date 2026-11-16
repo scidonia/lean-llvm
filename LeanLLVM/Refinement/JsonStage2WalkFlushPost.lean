@@ -784,20 +784,51 @@ theorem stage2Post_of_staging_flush {d c ctype cst tok s z e nkSlot nxpSlot : Na
   rw [hSc, hSct, hScs, hStok, hSs, hSz, hSe]
   exact hb
 
-/-- **The walk's obligation, from the three premises.**  This is the milestone the layer
-was built for: `Stage2WalkObligation` is `Satisfies` at `Γ_stage2at`, and its two
-conjuncts are the completion (`stage2WalkCompletes_of_staging`) and the post at every
-behaviour of the run.  The post's two arms are the record's empty entry stream
-(`stage2Post_of_staging_flush`, above) and its loop (`stage2Post_of_staging_loop`,
-`JsonStage2WalkPremisesOfStaging`), and the split is the entry block's own test on the
-entry count.
+/-- **The walk's obligation at the two bundles — a vacuous form, retained as history.**
 
-The obligation is stated here rather than beside the completion because the two arms
-live on either side of this module's import: the flush's post reads the returned memory
-this module names (`walkFlushMemAt`), and the staging construction is the one below.  No
-hypothesis of the post remains: what the two arms rest on is the words `WalkLoopEnd`
-supplies, and the head state's two register cells are `WalkInv` clauses read by
-`mergeHeadCells` (`JsonStage2WalkRevolutionSeg`), so they are not among the premises. -/
+**Do not quote this as the closure claim.**  `Stage2WalkObligation` is `Satisfies` at
+`Γ_stage2at`, and its two conjuncts are the completion (`stage2WalkCompletes_of_staging`)
+and the post at every behaviour of the run.  The post's two arms are the record's empty
+entry stream (`stage2Post_of_staging_flush`, above) and its loop
+(`stage2Post_of_staging_loop`, `JsonStage2WalkPremisesOfStaging`), and the split is the
+entry block's own test on the entry count.  That composition is real; its *premises* are
+not.
+
+**The bundles are refutable, so the theorem is vacuous.**  `hcont` and `hend` are not
+supplied facts.  `WalkLoopEnd`'s log word is refuted at any geometry that admits a
+`WalkInv` state at `cleanup478.i` whose slot reads below the carry's cursor:
+`WalkMergeWords.not_of_short` and `not_walkLoopEnd_of_short`
+(`JsonStage2WalkPremisesOfStaging`) derive `WalkLoopEnd G → False` there, and
+`walkLoopEnd_universal_unsatisfiable` turns one such state into
+`¬ Nonempty (∀ G, WalkLoopEnd G)`.  The write-back stores the decoder's output length
+against a reserve of the document extent (`arenaWord_writeBack_iff`,
+`not_arenaWord_of_lt`, `JsonStage2WalkArenaWord`), so an escaping input leaves exactly that
+state.  Where the witness exists, this implication therefore yields nothing about any
+document: `hend` cannot be met.  `WalkContinueFacts` is not refuted but is equally no
+theorem — its per-state producers take a tail `WalkSegment` and the scan's traversal
+hypotheses that are not `WalkInv` consequences — so the theorem is not a closure claim even
+where the log word happens to hold.
+
+**The closure claim** is `stage2WalkObligation_of_premises`
+(`JsonStage2WalkAssembly`), whose premises are `WalkPremises` and the record's post rule
+and no bundle.  `walkPremises_of_staging` (`JsonStage2WalkPremisesOfStaging`) is the
+conditional that carries the two bundles into `WalkPremises`, and it inherits their
+vacuity.  The arm-level post theorems read here — `stage2Post_of_staging_flush` above and
+`stage2Post_of_staging_loop` — carry content independently of the log word.
+
+**The lesson, recorded where the statement stands.**  A premise whose refutation exists
+anywhere makes every consumer of the form `∀ G, …` vacuous, and a vacuous theorem looks
+exactly like a proved one in a build log: `#print axioms` reports no `sorryAx`, and the
+conclusion is reached through a hypothesis no input can meet.  That is why the top-level
+statement has to carry its premises in the open — as `WalkPremises` does — rather than
+behind a `∀ G` whose inhabitant is the thing in doubt.
+
+The obligation is stated here rather than beside the completion because the two arms live
+on either side of this module's import: the flush's post reads the returned memory this
+module names (`walkFlushMemAt`), and the staging construction is the one below.  No
+hypothesis of the post remains: the head state's two register cells are `WalkInv` clauses
+read by `mergeHeadCells` (`JsonStage2WalkRevolutionSeg`), so they are not among the
+premises. -/
 theorem stage2WalkObligation_of_staging {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
     (hcont : ∀ {m0 : Mem} (G : WalkGeom m0), WalkContinueFacts G)
     (hend : ∀ {m0 : Mem} (G : WalkGeom m0), WalkLoopEnd G) :

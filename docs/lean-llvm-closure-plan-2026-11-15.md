@@ -2,10 +2,34 @@
 
 **Date:** 15 November 2026. **Base:** `a95f955`. **Default target:** 1923 jobs, `LAKE_EXIT=0`.
 
+> **Correction (16 November 2026, at `d479b2a`).**  Finish line 1 and Item 4 are wrong as
+> written: the obligation cannot lose both bundle arguments.  `hcont`
+> (`WalkContinueFacts`) is class data — the head byte's exhaustive switch arm — but each
+> arm's evidence carries a tail `WalkSegment` and the scan's traversal hypotheses that are
+> per-state supplies, not `WalkInv` consequences, so no `∀ G` producer exists yet.
+> `hend` (`WalkLoopEnd`) is worse than unproved: its `mergeWords`/`refuseWords` demand the
+> log's arena word at `C.alen`, while `WalkInv.log_alen` gives only `∃ a ≤ C.alen`, and the
+> write-back stores the decoder's output length against a reserve of the document extent
+> (`JsonStage2WalkArenaWord`).  At an escaping input the slot is short, and
+> `WalkMergeWords.not_of_short` / `not_walkLoopEnd_of_short`
+> (`JsonStage2WalkPremisesOfStaging`) refute the bundle there, and
+> `walkLoopEnd_universal_unsatisfiable` makes the universal bundle unsatisfiable once that
+> witness exists.  So `∀ G, WalkLoopEnd G` is not a theorem,
+> `stage2WalkObligation_of_staging` is vacuous (its hypothesis cannot be met, so it yields
+> nothing about any document), and the claim to quote as closure is
+> `stage2WalkObligation_of_premises` (`JsonStage2WalkAssembly`) — the obligation from the
+> per-input `WalkPremises` and the record's post rule, with no bundle argument.  The
+> reasoning, the refutation lemmas and the per-premise classification are at
+> `JsonStage2WalkPremisesOfStaging`'s `WalkLoopEnd` note and its closing section.
+
 ## The finish lines, three, in increasing order
 
-1. **Closure:** `stage2WalkObligation_of_staging` takes no bundle arguments — every
-   premise is a theorem from the ABI preconditions.
+1. **Closure:** `stage2WalkObligation_of_premises` — the obligation from the per-input
+   `WalkPremises` and the record's post rule, with no bundle argument.  *(Originally:
+   "`stage2WalkObligation_of_staging` takes no bundle arguments — every premise is a
+   theorem from the ABI preconditions."  That form is vacuous rather than unproved:
+   `hend` is refuted at an escaping input, so its hypothesis cannot be met.  See the
+   correction above; the original phrasing is replaced, not annotated.)*
 2. **The review's milestone** (`lean-llvm-progress-handoff-4ca52e7`): the domain, the
    pinned implementation, the watermark inhabited, the bundles produced, returning
    execution, an output relation, refusal and frame guarantees, the build and a real
@@ -159,12 +183,21 @@ memory, which the transport (`s2StringBodyPre_of_reads`) already reaches.
 
 ### Item 4 — phase D
 
-**Statement.** `stage2WalkObligation_of_staging` takes `hcont`, `hend`, `hres`.  After
-items 1–3, each is produced.
+**Statement (corrected 16 November 2026).**  `stage2WalkObligation_of_premises` takes
+`WalkPremises` and the record's post rule.  The original statement —
+"`stage2WalkObligation_of_staging` takes `hcont`, `hend`, `hres`; after items 1–3, each is
+produced" — is replaced: `hres` is gone (it is `HcontArm.twoEntry`'s field), and the other
+two are not both producible.  `hend : ∀ G, WalkLoopEnd G` is *refutable* at an escaping
+input (`WalkMergeWords.not_of_short`, `not_walkLoopEnd_of_short`,
+`walkLoopEnd_universal_unsatisfiable`), so `stage2WalkObligation_of_staging` is vacuous and
+its premise list cannot become "the record's own pre and staging, nothing else".
 
-**Work.** `walkPremises_of_staging` derives the bundles from the staging: the flush arm
-already has one, and the loop arm's three outcomes are proved.  The top level's premise
-list becomes the record's own pre and staging, nothing else.
+**Work.**  Produce `WalkPremises` from the record's own pre and staging.  The flush arm
+already has a producer (`walkFlushAt_of_staging`); the seed and invariant conjuncts are
+theorems; the loop step is where the per-state producers land.  `hcont` remains a producer
+tier (its arm evidence carries a tail `WalkSegment` and the scan's traversal hypotheses);
+`hend`'s word field is dropped or restated at `log_alen`'s witness rather than produced.
+`walkPremises_of_staging` stays as the conditional transport and inherits the vacuity.
 
 **Files:** `JsonStage2WalkPremisesOfStaging.lean`, `JsonStage2WalkFlushPost.lean`.
 
@@ -225,6 +258,9 @@ session's work, not this plan's.
 
 Not field counts or build success alone: the set of externally supplied execution and
 semantic assumptions remaining at `stage2WalkObligation_of_staging`, and after item 4,
-at the caller-to-return theorem.  Today's reading: three bundles, all true, all with
-named producers; the top level's shape is `hcont, hend, hres`; the watermark is the one
-false premise.
+at the caller-to-return theorem.  **Corrected reading (16 November 2026):** the top level's
+shape is `hcont, hend`; `hres` is an arm field; `hcont` is class data whose per-state
+producers still take the tail and traversal premises; `hend` is *false* at an escaping
+input (its log word), not merely unproved.  The one false premise was the watermark, which
+was retired; the log word is the second, and it is the reason the closure claim is
+`stage2WalkObligation_of_premises`.
