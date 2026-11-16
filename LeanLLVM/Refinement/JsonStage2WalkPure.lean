@@ -432,6 +432,7 @@ theorem WalkLink.if_then231_i {calls : Calls} {m0 : Mem}
   exact WalkLink.pureJumpCore (G := G) (C := C) (s := s) hInv
     (B := walkIf_then231_i) (by rw [hblock]; exact walkIf_then231_i_find) hden
     (by unfold walkCarried; decide) rfl rfl rfl rfl (by simp [WalkLocal])
+    (hne := by rw [hblock]; decide)
 
 /-- `cond.true345.i`: the next entry's stream lane, zero-extended. -/
 def walkCond_true345_i : Block :=
@@ -477,6 +478,7 @@ theorem WalkLink.cond_true345_i {calls : Calls} {m0 : Mem}
   exact WalkLink.pureJumpCore (G := G) (C := C) (s := s) hInv
     (B := walkCond_true345_i) (by rw [hblock]; exact walkCond_true345_i_find) hden
     (by unfold walkCarried; decide) rfl rfl rfl rfl (by simp [WalkLocal])
+    (hne := by rw [hblock]; decide)
 
 /-- `cond.true.i106`: the string scan's bound lane, zero-extended. -/
 def walkCond_true_i106 : Block :=
@@ -522,6 +524,7 @@ theorem WalkLink.cond_true_i106 {calls : Calls} {m0 : Mem}
   exact WalkLink.pureJumpCore (G := G) (C := C) (s := s) hInv
     (B := walkCond_true_i106) (by rw [hblock]; exact walkCond_true_i106_find) hden
     (by unfold walkCarried; decide) rfl rfl rfl rfl (by simp [WalkLocal])
+    (hne := by rw [hblock]; decide)
 
 /-- `land.lhs.true357.i`: the document byte at the scan's bound. -/
 def walkLand_lhs_true357_i : Block :=
@@ -562,6 +565,7 @@ theorem WalkLink.land_lhs_true357_i {calls : Calls} {m0 : Mem}
   exact WalkLink.pureJumpCore (G := G) (C := C) (s := s) hInv
     (B := walkLand_lhs_true357_i) (by rw [hblock]; exact walkLand_lhs_true357_i_find) hden
     (by unfold walkCarried; decide) rfl rfl rfl rfl (by simp [WalkLocal])
+    (hne := by rw [hblock]; decide)
 
 /-- `if.end.i97`: the byte after the string scan's end, tested against `-` and the
 digit range. -/

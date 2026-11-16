@@ -239,11 +239,19 @@ theorem WalkLink.pureCore {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : Walk
     dsimp only [s']
     rw [hpc₁]
   refine ⟨s', ⟨hInv, hstep, ?_, ?_⟩⟩
-  · refine
+  · have hnm : B.name = C.block := findBlockList_name hfind
+    have hle := walkEmitC_condbr_le (findBlockList_mem hfind) hterm
+    have hph : walkEmitC C.block ≤ walkEmitC (if bit = 1 then tl else fl) := by
+      rw [← hnm]
+      by_cases hb : bit = 1
+      · rw [if_pos hb]; exact hle.1
+      · rw [if_neg hb]; exact hle.2
+    refine
       { pc_eq := rfl
         blockIndex := ?_
         k_le := hInv.k_le
-        events_le := hInv.events_le
+        events_le := by dsimp only; have h := hInv.events_le; omega
+        events_nep := hInv.events_nep
         evlen_eq := hInv.evlen_eq
         evBytes := ?_
         alen_le_sum := hInv.alen_le_sum
@@ -313,7 +321,8 @@ theorem WalkLink.pureCore {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : Walk
   · rfl
 
 /-- **A pure run's jump.**  The block binds only fresh names, writes nothing, and
-leaves by `br`. -/
+leaves by `br`.  `hne` says the jump is not the header's pass: that edge leaves the
+trace's stretch (it advances `k`), so no generic link may be it. -/
 theorem WalkLink.pureJumpCore {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
     (s : State) (hInv : WalkInv G C s)
     {B : Block} (hfind : stage2Body.findBlock C.block = some B)
@@ -321,7 +330,8 @@ theorem WalkLink.pureJumpCore {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : 
     (hfree : walkCarried B.instrs) (hmem : s₁.mem = s.mem) (hpc₁ : s₁.pc = s.pc)
     (hnext₁ : s₁.next = s.next)
     {t : String} (hterm : B.term = Term.br t)
-    (hloc : WalkLocal { C with block := t } { s₁ with pc := t, pre := some s.pc }) :
+    (hloc : WalkLocal { C with block := t } { s₁ with pc := t, pre := some s.pc })
+    (hne : C.block ≠ "while.body.i") :
     ∃ s', WalkLink calls G C s { C with block := t } s' := by
   have hpc : s.pc = C.block := hInv.pc_eq
   let s' : State := { s₁ with pc := t, pre := some s.pc }
@@ -329,12 +339,17 @@ theorem WalkLink.pureJumpCore {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : 
     simp only [LeanLLVM.step, hpc, hfind, hden, hterm, execTerm]
     dsimp only [s']
     rw [hpc₁]
+  have hnm : B.name = C.block := findBlockList_name hfind
+  have hph : walkEmitC C.block ≤ walkEmitC t := by
+    rw [← hnm]
+    exact walkEmitC_br_le (findBlockList_mem hfind) (by rw [hnm]; exact hne) hterm
   refine ⟨s', ⟨hInv, hstep, ?_, ?_⟩⟩
   · refine
       { pc_eq := rfl
         blockIndex := ?_
         k_le := hInv.k_le
-        events_le := hInv.events_le
+        events_le := by dsimp only; have h := hInv.events_le; omega
+        events_nep := hInv.events_nep
         evlen_eq := hInv.evlen_eq
         evBytes := ?_
         alen_le_sum := hInv.alen_le_sum
@@ -609,7 +624,8 @@ theorem WalkLink.pureJumpK11 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : W
     (hregs : WalkRegs G C s₁.env) (hiter : WalkIter G C.k s₁.env)
     (hk11 : lookupName s₁.env "%k11.i" = some (.ptr (C.stage.c + 32)))
     {t : String} (hterm : B.term = Term.br t)
-    (hloc : WalkLocal { C with block := t } { s₁ with pc := t, pre := some s.pc }) :
+    (hloc : WalkLocal { C with block := t } { s₁ with pc := t, pre := some s.pc })
+    (hne : C.block ≠ "while.body.i") :
     ∃ s', WalkLink calls G C s { C with block := t } s' := by
   have hpc : s.pc = C.block := hInv.pc_eq
   let s' : State := { s₁ with pc := t, pre := some s.pc }
@@ -617,12 +633,17 @@ theorem WalkLink.pureJumpK11 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : W
     simp only [LeanLLVM.step, hpc, hfind, hden, hterm, execTerm]
     dsimp only [s']
     rw [hpc₁]
+  have hnm : B.name = C.block := findBlockList_name hfind
+  have hph : walkEmitC C.block ≤ walkEmitC t := by
+    rw [← hnm]
+    exact walkEmitC_br_le (findBlockList_mem hfind) (by rw [hnm]; exact hne) hterm
   refine ⟨s', ⟨hInv, hstep, ?_, ?_⟩⟩
   · refine
       { pc_eq := rfl
         blockIndex := ?_
         k_le := hInv.k_le
-        events_le := hInv.events_le
+        events_le := by dsimp only; have h := hInv.events_le; omega
+        events_nep := hInv.events_nep
         evlen_eq := hInv.evlen_eq
         evBytes := ?_
         alen_le_sum := hInv.alen_le_sum
@@ -757,6 +778,7 @@ theorem WalkLink.if_then281_i {calls : Calls} {m0 : Mem}
   obtain ⟨s', hl⟩ := WalkLink.pureJumpCore (G := G) (C := C) (s := s) hInv
     (B := walkIf_then281_i) (by rw [hblock]; exact walkIf_then281_i_find) hden
     (by unfold walkCarried; decide) rfl rfl rfl rfl (by simp [WalkLocal])
+    (hne := by rw [hblock]; decide)
   have hterm : walkIf_then281_i.term = Term.br "if.end290.i" := rfl
   have hfind : stage2Body.findBlock s.pc = some walkIf_then281_i := by
     rw [hInv.pc_eq, hblock]; exact walkIf_then281_i_find
@@ -807,21 +829,24 @@ theorem WalkLink.pureCoreCarried {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
 Two of the four `unreachable` arms guard the event stream's reserves: `if.end.i.i`
 and `if.end.i.i55` test `len + 1 > cap` for the record's tag byte, and `if.end290.i`
 tests `len + 13 > cap` for a whole record.  Both are clear at any state of the loop
-whose entry index is strictly inside the stream: the trace is at most one record per
-entry consumed (`events_le`), so the cursor is at most `nev0 + 13·k`, and
-`k ≤ nep - 1 ≤ n - 1` leaves more than a record's width in `G.evRoom`'s slack.
+whose entry index is strictly inside the stream and whose block is before the
+current entry's append (`hb`): the trace is then at most one record per entry
+consumed (`events_le_of_tight`), so the cursor is at most `nev0 + 13·k`, and
+`k ≤ nep - 1 ≤ n - 1` leaves more than a record's width in `G.evRoom`'s slack.  The
+tight form is what the thirteen-byte test needs: with a record in flight the bound
+would be one entry too wide for the slack.
 
 This is the guard's arithmetic.  It is not the branch bit: that is the block's own
 `denoteCode` (`if.end.i.i`'s four instructions), which is one of the G instances this
 module does not reach. -/
 theorem walkEventReserve_clear {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
-    (hInv : WalkInv G C s) (hkl : C.k < G.nep) :
+    (hInv : WalkInv G C s) (hb : walkEmitC C.block = 0) (hkl : C.k < G.nep) :
     C.evlen + 1 ≤ G.evcap ∧ C.evlen + 13 ≤ G.evcap := by
   have hsum := EventRecord.sum_encodedSize_le C.events
   simp only [stage2RecordBytes] at hsum
   have hlen : C.evlen ≤ G.nev0 + 13 * C.k := by
     rw [hInv.evlen_eq]
-    have := Nat.mul_le_mul_left 13 hInv.events_le
+    have := Nat.mul_le_mul_left 13 (hInv.events_le_of_tight hb)
     omega
   have hroom : G.nev0 + 13 * G.n ≤ G.evcap := G.evRoom
   have hnep : G.nep ≤ G.n := G.nep_le

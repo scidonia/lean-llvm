@@ -85,10 +85,10 @@ link's *target* state into the next link's hypotheses, so no link may conclude
 `WalkLink.if_else334_i_at`, which takes the helper's answer as a parameter and
 concludes the target state.
 
-**The residue: five fields, and the rest derived.**  With the states
+**The residue: four fields, and the rest derived.**  With the states
 nameable, every link's hypotheses are the head bundle's fields, `WalkInv`'s
 clauses, the step's own predecessor, or a `def`'d state's cells — except for
-`HstringResidue`'s five fields.  The structure used to carry thirteen; the eight
+`HstringResidue`'s four fields.  The structure used to carry thirteen; the nine
 retired are named below with where they went:
 
 | id | field | statement | producer | retired by |
@@ -97,9 +97,8 @@ retired are named below with where they went:
 | R1's answer word | `hretR` | `∀ r, the call answers r → r.ret = .int 32 y` | the callee's post gives the form (`s2StringBody_sound`) and the bundle's `y` is that form's word | the post stating that the head's `y` is its form — the two calls read the same words, so a congruence lemma on `stage2StringBody` would retire it |
 | R8 | `hR8` | `evalICmp .slt y 1 = 0` | nothing: it is the *arm selector*.  The callee may refuse, so no clause of the staging or the contract removes the refusing answer | — |
 | R3 | `hlogBase` | `readBytes s.mem C.stage.z 8 = some (wordBytes 8 G.ev)`, at the **head** state's memory | the initialisation's store at `%z + 0` plus a `WalkInv` clause for the log's base | that clause |
-| R4 | `hltEvents` | `C.events.length < C.k` (strict) | `if.then425.i`'s count, as the emit's *preservation* hypothesis | see below: the clause it preserves is the defect, not this field |
 
-The eight retired, with where each is produced:
+The nine retired, with where each is produced:
 
 * **`r` and `hcallR`** — `s2StringBody_answers` at the transported precondition,
   inside `strPath9`.  The answer is no longer carried, so `hretR` is stated over
@@ -117,18 +116,16 @@ The eight retired, with where each is produced:
   `WalkGeom.evLt` and `WalkGeom.ev63` (`stage2Pre`'s clauses), the last through
   `WalkInv.evlen_le`.
 
-**`hltEvents` does not close, and the reason is a defect in `WalkInv`.**  The emit
-must re-establish `WalkInv.events_le` (`C.events.length ≤ C.k`) at its target, and
-the carry's `k` does not advance until the merge — so the target's obligation is
-`(C.events ++ [rec]).length ≤ C.k`, which is exactly this field's strict form.
-`C.events.length + 1 ≤ G.nep` is provable (from `events_le` and the head's guard)
-but does not imply `length + 1 ≤ k`.  Worse, the clause itself is false one link
-later: at `C.k = 0` the head has `0 ≤ 0` and the emit carries `1 ≤ 0`, so
-`WalkInv` is uninhabited at every post-emit state.  The repair is `events_le` as
-`C.events.length ≤ C.k + 1` with the event room
-`nev0 + stage2RecordBytes * (n + 1) ≤ evcap`, and it is its own item: `evlen_le`,
-the refusal and finalisation routes, and the post's `nev' ≤ nev0 + 13 * n` all
-read the old statement.
+**The event count is derived, not supplied.**  `WalkInv.events_le` states
+`C.events.length ≤ C.k + walkEmitC C.block`, whose allowance is zero at every block
+before the current entry's append — the loop head among them — so
+`WalkInv.events_le_of_tight` gives `C.events.length ≤ C.k` there, and the head's
+guard gives `C.k < G.nep`.  Those are exactly the two hypotheses `if.then328.i`
+takes: the tight count is what the emit must re-establish at its target (the carry's
+`k` does not advance until the merge) and the head's guard is the entry the record
+accounts for.  The residue carried the strict form `length < C.k`, which is
+uninhabited at a one-entry document's last entry (`C.k = 0`), and it is now gone
+with the clause it was reading.
 
 **The body's six memory clauses are produced, not supplied.**  `strPath9` derives
 them from the head bundle in four steps, all of which are lemmas of
@@ -1809,7 +1806,7 @@ container's advance.  Four of them already name their targets
 `WalkLink.if_else334_i_at` exposes by taking the helper's answer as a parameter.
 
 **The residue.**  Everything the five links read is the head bundle's, `WalkInv`'s,
-or the previous link's target, except `HstringResidue`'s five fields, each of which
+or the previous link's target, except `HstringResidue`'s four fields, each of which
 names its producer at the field.  The inputs the links used to take separately are
 derived here:
 
@@ -1823,9 +1820,9 @@ derived here:
   without a premise about the callee;
 * **the widths and the cursor's signed bound** — `WalkGeom.dstLt`, `evLt` and
   `ev63` (`stage2Pre`'s clauses), the last through `WalkInv.evlen_le`;
-* **the event count (R4)** — `hltEvents`, whose defect is recorded at its field:
-  the strict form is the emit's *preservation* hypothesis, and the clause it
-  preserves is the one that needs the repair.
+* **the event count** — `WalkInv.events_le_of_tight` at the loop head, where the
+  block-keyed allowance is zero, gives `C.events.length ≤ C.k`; the head's guard
+  gives `C.k < G.nep`.  `if.then328.i` takes the pair.
 
 What remains in the structure is the vocabulary the layer does not carry: the
 per-iteration register `%arrayidx10.i` (produced by `strArr_of_iter`), the log's
@@ -1882,7 +1879,8 @@ derivation names where it happens:
   `l` — which is why the structure is now a `Prop`;
 * the arena's and the event stream's addresses are `WalkGeom.dstLt`/`evLt`
   (`stage2Pre`'s clauses), the event cursor's signed bound is `WalkGeom.ev63` with
-  `WalkInv.evlen_le`, and the event count's provable form is `hltEvents`'s below.
+  `WalkInv.evlen_le`, and the event count is
+  `WalkInv.events_le_of_tight` at the loop head.
 
 The log's base word is stated at the **head state's** memory: it is the
 initialisation's store at `%z + 0`, `%z`'s first eight bytes lie inside the walk's
@@ -1923,24 +1921,6 @@ structure HstringResidue {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : Sta
   the initialisation's store at `%z + 0`, plus a `WalkInv` clause for the log's
   base. -/
   hlogBase : readBytes s.mem C.stage.z 8 = some (wordBytes 8 G.ev)
-  /-- **R4 — the trace is short of the entries consumed.**  Producer:
-  `if.then425.i`'s one-record-per-emitting-entry count.
-
-  **This field does not close, and the reason is a defect in `WalkInv`, recorded
-  rather than deferred.**  `WalkInv.events_le` is `C.events.length ≤ C.k`, and the
-  emit's target state needs `(C.events ++ [rec]).length ≤ C.k` — the strict form
-  here, because the carry's `k` does not advance until the merge.  So the field is
-  the *preservation* hypothesis, not a room bound: `C.events.length + 1 ≤ G.nep`
-  is provable (from `events_le` and the head's guard) but does not imply
-  `length + 1 ≤ k`.  The clause itself is false one link later: at `C.k = 0` the
-  head has `0 ≤ 0` and the emit carries `1 ≤ 0`, so `WalkInv` is uninhabited at
-  every post-emit state and the walk cannot leave one — the two-entry arm at the
-  one- and two-entry documents included.  The repair is `events_le` as
-  `C.events.length ≤ C.k + 1` with the event room `nev0 + 13 * (n + 1) ≤ evcap`,
-  and it is its own item because the counts' users (`evlen_le`, the refusal and
-  finalisation routes, the post's `nev' ≤ nev0 + 13 * n`) all read the old
-  statement. -/
-  hltEvents : C.events.length < C.k
 
 /-- **The residue at every head state**, as the premise a producer supplies: one
 bank of facts per head state, read at the bundle's own state. -/
@@ -2060,8 +2040,15 @@ theorem stringPath_seg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
     simp only [stage2RecordBytes] at h1 h2
     omega
   have hk1 : C.k + 1 < G.nep := strCount_test G C s hInv f
+  -- the head is outside the append stretch, so `events_le`'s allowance is zero here: the
+  -- trace's count is the entries consumed, and the head's entry is still to come
+  have hblockEmit : walkEmitC C.block = 0 := by
+    rw [hhead]
+    exact walkEmitC_of_not_contains (by decide)
+  have htight : C.events.length ≤ C.k := WalkInv.events_le_of_tight hInv hblockEmit
+  have hkltC : C.k < G.nep := by omega
   obtain ⟨-, hclear13⟩ :=
-    walkEventReserve_clear (G := G) (C := C) (s := s) hInv (by omega)
+    walkEventReserve_clear (G := G) (C := C) (s := s) hInv hblockEmit (by omega)
   have hcapLt : G.evcap < 2 ^ 64 := G.evcapLt
   -- the reserve's thirteen-byte test is clear at the carried cursor
   have hres13 : evalICmp .ugt ((BitVec.ofNat 64 C.evlen) + BitVec.ofNat 64 13)
@@ -2251,7 +2238,7 @@ theorem stringPath_seg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
         hzv13 hev63 hkey13 hspan13 hadd13
         (by show C.evlen + 13 < 2 ^ 64; omega) hlen12
         (hInv13.regs ⟨"%outn.i", .ptr (G.next0 + 20)⟩ (by simp [walkStaticRegs]))
-        G.evLt R.hltEvents
+        G.evLt htight hkltC
     have hs14' : s14 = strS₁₄ G (strC₁₃ C f.ix f.ext f.y (BitVec.ofNat 64 C.evlen)
         (BitVec.ofNat 64 G.evcap)) (BitVec.ofNat 64 f.ext)
         (strOr (BitVec.ofNat 32 (entryPos G C.k)))
@@ -2594,7 +2581,7 @@ theorem stringPath_seg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
         hspan13 hadd13 (by show C.evlen + 13 < 2 ^ 64; omega)
         (hInv13.regs ⟨"%len", .ptr (C.stage.z + 8)⟩ (by simp [walkStaticRegs]))
         (hInv13.regs ⟨"%outn.i", .ptr (G.next0 + 20)⟩ (by simp [walkStaticRegs]))
-        G.evLt R.hltEvents
+        G.evLt htight hkltC
     have hs14' : s14 = strS₁₄ G (strC₁₃ C f.ix f.ext f.y (BitVec.ofNat 64 C.evlen)
         (BitVec.ofNat 64 G.evcap)) (BitVec.ofNat 64 l)
         (BitVec.ofNat 64 f.A.toNat)

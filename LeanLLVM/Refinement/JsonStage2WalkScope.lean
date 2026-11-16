@@ -1598,6 +1598,127 @@ theorem WalkStackBytes.storeNatAt {mem : Mem} {base n : Nat} {M : Nat → UInt8}
     exact h i hi
 
 
+/-! ### The record in flight
+
+The walk appends at most one event record per entry, and every append happens
+inside one iteration: `k` moves only at the header's pass (`while.body.i →
+NodeBlock21`), while the three records are written before the merge — the string
+record at `if.then328.i`, the scalar value's at `if.then425.i`, and the tag stores
+that land on `cleanup478.i`.  So between an append and the next pass the trace is
+one record ahead of `C.k`, and after the pass the entries and the records agree
+again.
+
+`WalkInv.events_le` names that difference by the *block* rather than by a second
+counter: `walkEmitC` is one on the stretch from an append's target to the pass and
+zero before the append, and the clause reads `length ≤ k + walkEmitC block`.  The
+stretch is the only place the allowance is one, and the pass is the only edge out
+of it — the one link that moves `k` — which is what makes the clause preserved
+rather than assumed.  It is also why the clause cannot be stated with a uniform
+allowance: the append at `if.then425.i` must re-establish it at the same `k`, and
+a uniform `k + 1` would need `length ≤ k` at the append's own block, which no
+uniform form supplies.
+
+`walkEmitC` is a `Nat` because both bounds it feeds (`events_le` and `evlen_le`)
+are arithmetic; its values are one and zero, and `walkEmitC_le_one` is that fact. -/
+
+/-- The blocks the walk reaches only after the current entry's record is appended:
+the three appends' targets and everything downstream of them until the header's
+pass.  `while.body.i` is in the stretch and `NodeBlock21` — the pass's target —
+is not, because the pass is the step that advances `k`.
+
+The three appends are `if.then328.i`'s string record (landing on `if.then330.i` or
+`if.else334.i`), `if.then425.i`'s scalar value (landing on `if.then447.i`), and the
+tag stores of `if.then.i.i`, `out_reserve.exit.i.i`, `if.then.i.i50` and
+`out_reserve.exit.i.i60` (landing on `cleanup478.i`).  **A new step that appends a
+record and lands outside this set is a defect**: the block-keyed allowance would
+then claim one record fewer than the trace holds, and `events_le` — not this
+definition — is where it would surface, far from the emit.  Conversely a block
+listed here that no append reaches only weakens the clause by one record; the
+check `walkEmitC_condbr_edges`/`walkEmitC_br_edges` holds the set to the body. -/
+def walkEmitBlocks : List String :=
+  ["if.then330.i", "if.else334.i",
+   "if.then447.i", "land.rhs457.i", "NodeBlock105", "NodeBlock103",
+   "LeafBlock96", "LeafBlock99", "LeafBlock101", "while.body462.i",
+   "if.then467.i", "if.end473.i", "cleanup474.i", "cleanup478.i", "while.body.i",
+   "if.then485.i", "if.then488.i", "if.end490.i", "if.then492.i", "s2_walk.exit",
+   "if.then", "if.end"]
+
+/-- One on the stretch above, zero before the current entry's append. -/
+def walkEmitC (b : String) : Nat := if walkEmitBlocks.contains b then 1 else 0
+
+/-- The record in flight is one record. -/
+theorem walkEmitC_le_one (b : String) : walkEmitC b ≤ 1 := by
+  unfold walkEmitC
+  split <;> omega
+
+/-- The allowance at a block inside the stretch. -/
+theorem walkEmitC_of_contains {b : String} (h : walkEmitBlocks.contains b = true) :
+    walkEmitC b = 1 := by
+  unfold walkEmitC
+  rw [h]
+  rfl
+
+/-- The allowance at a block before the current entry's append. -/
+theorem walkEmitC_of_not_contains {b : String} (h : walkEmitBlocks.contains b = false) :
+    walkEmitC b = 0 := by
+  unfold walkEmitC
+  rw [h]
+  rfl
+
+/-- A block found by name carries that name. -/
+theorem findBlockList_name {bs : List Block} {n : String} {b : Block}
+    (h : findBlockList bs n = some b) : b.name = n := by
+  induction bs with
+  | nil => simp [findBlockList] at h
+  | cons b' rest ih =>
+      simp only [findBlockList] at h
+      split at h
+      · cases h; assumption
+      · exact ih h
+
+/-- **The phase never tightens along a branch of the walk's body.**  Every block
+that branches hands both its arms the allowance its own block has: no arm leaves
+the stretch for the append-free region.  Checked over the body's own block list —
+the check is closed, so it is a computation rather than an enumeration by hand. -/
+theorem walkEmitC_condbr_edges :
+    (stage2Body.blocks.all (fun B =>
+      match B.term with
+      | Term.condbr _ tl fl =>
+          walkEmitC B.name ≤ walkEmitC tl ∧ walkEmitC B.name ≤ walkEmitC fl
+      | _ => True)) = true := by decide
+
+/-- **The phase never tightens along a jump either**, with one edge: the header's
+pass `while.body.i → NodeBlock21`.  That edge leaves the stretch because it is the
+step that advances `k` (`whileBody_step`), and it is not one of the links this
+lemma is used by — a link at `while.body.i` takes it as `WalkLink.whileBody`. -/
+theorem walkEmitC_br_edges :
+    ((stage2Body.blocks.filter (fun B => B.name != "while.body.i")).all (fun B =>
+      match B.term with
+      | Term.br t => walkEmitC B.name ≤ walkEmitC t
+      | _ => True)) = true := by decide
+
+/-- The branch case of the phase check, at the block a link's own `findBlock`
+names. -/
+theorem walkEmitC_condbr_le {B : Block} (hB : B ∈ stage2Body.blocks)
+    {d : Operand} {tl fl : String} (hterm : B.term = Term.condbr d tl fl) :
+    walkEmitC B.name ≤ walkEmitC tl ∧ walkEmitC B.name ≤ walkEmitC fl := by
+  have hall := List.all_eq_true.mp walkEmitC_condbr_edges
+  have h := hall B hB
+  rw [hterm] at h
+  exact of_decide_eq_true h
+
+/-- The jump case of the phase check, away from the header's pass. -/
+theorem walkEmitC_br_le {B : Block} (hB : B ∈ stage2Body.blocks)
+    (hne : B.name ≠ "while.body.i") {t : String} (hterm : B.term = Term.br t) :
+    walkEmitC B.name ≤ walkEmitC t := by
+  have hall := List.all_eq_true.mp walkEmitC_br_edges
+  have hmem : B ∈ stage2Body.blocks.filter (fun B => B.name != "while.body.i") := by
+    rw [List.mem_filter]
+    exact ⟨hB, by simpa using hne⟩
+  have h := hall B hmem
+  rw [hterm] at h
+  exact of_decide_eq_true h
+
 /-- **The walk's invariant.**  Everything the loop carries, at the block it is at,
 and the memory it has written.  This is the predicate every one of the six arms
 must preserve; `forInc_step` proves the literal comparison's arm does and
@@ -1634,8 +1755,31 @@ structure WalkInv {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : P
     some (.int 64 (BitVec.ofNat 64 (entryPos G C.k)))
   /-- The index has not passed the stream. -/
   k_le : C.k ≤ G.nep
-  /-- At most one record per entry consumed. -/
-  events_le : C.events.length ≤ C.k
+  /-- **At most one record per entry consumed**, plus the record in flight.  The
+  walk appends one record per emitting entry, before the merge's `phi` advances
+  the index, so the trace is the entries consumed plus the record of the current
+  entry when that record has been appended and `k` has not moved
+  (`walkEmitC`).  The block names which side of the append the state is on; it is
+  not a second counter, because the stretch is a region of the dispatch and the
+  pass out of it is the only step that changes `k`.
+
+  Two facts follow and are what the consumers read: at a block before the append
+  the bound is the entries consumed (`WalkInv.events_le_of_tight`), and the width
+  sum is inside the entry count's room at every state (`WalkInv.evlen_le`, through
+  the trace's bound by the entry count, `events_nep`). -/
+  events_le : C.events.length ≤ C.k + walkEmitC C.block
+  /-- **The trace is at most the entry count.**  One record per entry, and the
+  entry stream has `G.nep` entries, so no state's trace can be longer — the
+  in-flight record included.  This is the clause the room bound reads
+  (`WalkInv.evlen_le`): the width sum is at most thirteen times the trace's length,
+  and `G.nep ≤ G.n`.  It is stated beside `events_le` rather than derived from it
+  because the block-keyed clause's allowance turns `k ≤ nep` into `k + 1 ≤ nep + 1`,
+  which is one record too many.
+
+  Its only production that is not the source's own is the append's, which needs
+  `C.k < G.nep` — an entry still to be accounted for — and that is the same
+  hypothesis the append's room reads. -/
+  events_nep : C.events.length ≤ G.nep
   /-- **The event cursor is the trace's own width sum.**  `out_raw` advances
   `o->len` by the bytes it reserves, and the trace records each write at the width
   its emitter gives it — one, nine or thirteen.  So the cursor is
@@ -1875,15 +2019,32 @@ theorem head_lt (h : WalkInv G C s) (hhead : C.block = "NodeBlock21") : C.k < G.
 theorem alen_le (h : WalkInv G C s) : C.alen ≤ G.ndst0 + G.n :=
   arenaLe_of_spans h.spans_order h.spans_inside h.alen_le_sum
 
+/-- **The trace's bound before the current entry's append.**  `events_le`'s
+allowance is zero at such a block, so the trace is the entries consumed. -/
+theorem events_le_of_tight (h : WalkInv G C s) (hb : walkEmitC C.block = 0) :
+    C.events.length ≤ C.k := by
+  have h' := h.events_le
+  rw [hb] at h'
+  simpa using h'
+
+/-- **The trace's bound inside the stretch**, one record past the entries
+consumed. -/
+theorem events_le_of_emit (h : WalkInv G C s) (hb : walkEmitC C.block = 1) :
+    C.events.length ≤ C.k + 1 := by
+  have h' := h.events_le
+  rw [hb] at h'
+  simpa using h'
+
 /-- The event cursor's bound, from the trace's widths, one record per entry and the
-entry count: the width sum is at most thirteen times the trace's length, and the
-length is at most the entries consumed. -/
-theorem evlen_le (h : WalkInv G C s) : C.evlen ≤ G.nev0 + stage2RecordBytes * G.n := by
+entry count: the width sum is at most thirteen times the trace's length, the length
+is at most the entry count (`events_nep`), and the count is at most the document's
+bytes. -/
+theorem evlen_le (h : WalkInv G C s) :
+    C.evlen ≤ G.nev0 + stage2RecordBytes * G.n := by
   have hsum := EventRecord.sum_encodedSize_le C.events
-  have hlen : C.events.length ≤ G.n :=
-    le_trans h.events_le (le_trans h.k_le G.nep_le)
+  have hEv := h.events_nep
   have hmul : stage2RecordBytes * C.events.length ≤ stage2RecordBytes * G.n :=
-    Nat.mul_le_mul_left _ hlen
+    Nat.mul_le_mul_left _ (le_trans hEv G.nep_le)
   rw [h.evlen_eq]
   omega
 
@@ -2057,7 +2218,11 @@ theorem walkSeed_invariant {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) {s : S
       inc_reg := hinc0
       idx_reg := hidx0
       k_le := Nat.zero_le _
-      events_le := Nat.zero_le _
+      events_le := by
+        show (0 : Nat) ≤ 0 + walkEmitC "NodeBlock21"
+        have h : walkEmitC "NodeBlock21" = 0 := walkEmitC_of_not_contains (by decide)
+        omega
+      events_nep := Nat.zero_le _
       evlen_eq := by simp [walkSeed]
       evBytes := rfl
       alen_le_sum := by simp [walkSeed]
@@ -2252,7 +2417,14 @@ theorem forInc_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
       { pc_eq := rfl
         blockIndex := by rw [hk]; exact hInv.blockIndex
         k_le := hInv.k_le
-        events_le := hInv.events_le
+        events_le := by
+          show C.events.length ≤ C.k + walkEmitC "for.body.i.i"
+          have h := hInv.events_le
+          rw [hblock] at h
+          have h1 : walkEmitC "for.inc.i.i" = 0 := walkEmitC_of_not_contains (by decide)
+          have h2 : walkEmitC "for.body.i.i" = 0 := walkEmitC_of_not_contains (by decide)
+          omega
+        events_nep := hInv.events_nep
         evlen_eq := hInv.evlen_eq
         evBytes := hInv.evBytes
         alen_le_sum := hInv.alen_le_sum
@@ -2635,7 +2807,16 @@ theorem scan_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
       { pc_eq := rfl
         blockIndex := ?_
         k_le := hInv.k_le
-        events_le := hInv.events_le
+        events_le := by
+          show C.events.length ≤ C.k + walkEmitC land
+          have h := hInv.events_le
+          rw [hblock] at h
+          have hle := (walkEmitC_condbr_le
+            (B := scanBlock src inc phi test cond exit land)
+            (findBlockList_mem hfind) rfl).2
+          simp only [scanBlock] at hle
+          omega
+        events_nep := hInv.events_nep
         evlen_eq := hInv.evlen_eq
         evBytes := hInv.evBytes
         alen_le_sum := hInv.alen_le_sum
@@ -3444,7 +3625,14 @@ theorem walkBack_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarr
       { pc_eq := rfl
         blockIndex := ?_
         k_le := hInv.k_le
-        events_le := hInv.events_le
+        events_le := by
+          show C.events.length ≤ C.k + walkEmitC "while.body.i"
+          have h := hInv.events_le
+          rw [hblock] at h
+          have h1 : walkEmitC "cleanup478.i" = 1 := walkEmitC_of_contains (by decide)
+          have h2 : walkEmitC "while.body.i" = 1 := walkEmitC_of_contains (by decide)
+          omega
+        events_nep := hInv.events_nep
         evlen_eq := hInv.evlen_eq
         evBytes := hInv.evBytes
         alen_le_sum := hInv.alen_le_sum
@@ -4831,7 +5019,11 @@ theorem whileBody_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
         (C.events.map EventRecord.encodedSize).sum := by
       simp only [List.length_flatten, List.map_map]
       rfl
-    have h1 := hInv.events_le
+    have h1 : C.events.length ≤ C.k + 1 := by
+      have h := hInv.events_le
+      rw [hblock] at h
+      have hone : walkEmitC "while.body.i" = 1 := walkEmitC_of_contains (by decide)
+      omega
     have h2 := hInv.k_le
     have h3 := G.nep_le
     omega
@@ -4848,7 +5040,14 @@ theorem whileBody_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
       { pc_eq := rfl
         blockIndex := ?_
         k_le := le_of_lt hklt
-        events_le := le_trans hInv.events_le (le_of_lt hkge)
+        events_le := by
+          show C.events.length ≤ k + walkEmitC "NodeBlock21"
+          have h := hInv.events_le
+          rw [hblock] at h
+          have h1 : walkEmitC "while.body.i" = 1 := walkEmitC_of_contains (by decide)
+          have h2 : walkEmitC "NodeBlock21" = 0 := walkEmitC_of_not_contains (by decide)
+          omega
+        events_nep := hInv.events_nep
         evlen_eq := hInv.evlen_eq
         evBytes := ?_
         alen_le_sum := hInv.alen_le_sum
@@ -5441,7 +5640,8 @@ theorem ifEnd24_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
         (C.events.map EventRecord.encodedSize).sum := by
       simp only [List.length_flatten, List.map_map]
       rfl
-    have h1 := hInv.events_le
+    have h1 : C.events.length ≤ C.k := hInv.events_le_of_tight (by
+      rw [hblock]; exact walkEmitC_of_not_contains (by decide))
     have h2 := hInv.k_le
     have h3 := G.nep_le
     omega
@@ -5464,7 +5664,14 @@ theorem ifEnd24_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
       { pc_eq := rfl
         blockIndex := ?_
         k_le := hInv.k_le
-        events_le := hInv.events_le
+        events_le := by
+          show C.events.length ≤ C.k + walkEmitC "if.end.i.i"
+          have h := hInv.events_le
+          rw [hblock] at h
+          have h1 : walkEmitC "if.end24.i" = 0 := walkEmitC_of_not_contains (by decide)
+          have h2 : walkEmitC "if.end.i.i" = 0 := walkEmitC_of_not_contains (by decide)
+          omega
+        events_nep := hInv.events_nep
         evlen_eq := hInv.evlen_eq
         evBytes := ?_
         alen_le_sum := hInv.alen_le_sum
@@ -6365,11 +6572,23 @@ theorem WalkLink.icmpBr {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
     exact walkExecTerm_condbr (d := d) (tl := tl) (fl := fl)
       (bit := evalICmp p x y) (by simp only [stateAt, lookupName_cons_self])
   refine ⟨s', ⟨hInv, hstep, ?_, ?_⟩⟩
-  · refine
+  · have hnm : B.name = C.block := findBlockList_name hfind
+    have hle := walkEmitC_condbr_le (findBlockList_mem hfind) hterm
+    have hph : walkEmitC C.block ≤
+        walkEmitC (if evalICmp p x y = 1 then tl else fl) := by
+      rw [← hnm]
+      by_cases hbit : evalICmp p x y = 1
+      · rw [if_pos hbit]; exact hle.1
+      · rw [if_neg hbit]; exact hle.2
+    refine
       { pc_eq := rfl
         blockIndex := ?_
         k_le := hInv.k_le
-        events_le := hInv.events_le
+        events_le := by
+          dsimp only
+          have h := hInv.events_le
+          omega
+        events_nep := hInv.events_nep
         evlen_eq := hInv.evlen_eq
         evBytes := ?_
         alen_le_sum := hInv.alen_le_sum
@@ -6569,7 +6788,8 @@ theorem WalkLink.refusalStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
     (hloc : WalkLocal { C with block := t, eoff := j, refusal := true }
       { stateAt ((d, .ptr (C.stage.e + 8)) :: s.env)
           { s with mem := writeBytes s.mem (C.stage.e + 8) (wordBytes 8 j) } with
-        pc := t, pre := some s.pc }) :
+        pc := t, pre := some s.pc })
+    (hne : C.block ≠ "while.body.i") :
     ∃ s', WalkLink calls G C s { C with block := t, eoff := j, refusal := true } s' := by
   have hpc : s.pc = C.block := hInv.pc_eq
   let m' : Mem := writeBytes s.mem (C.stage.e + 8) (wordBytes 8 j)
@@ -6588,12 +6808,20 @@ theorem WalkLink.refusalStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
   have hstep : LeanLLVM.step calls stage2Body s = Ctrl.jump s' := by
     simp only [LeanLLVM.step, hfind', hden, hterm, execTerm]
     dsimp only [s', m', stateAt]
+  have hnm : B.name = C.block := findBlockList_name hfind
+  have hph : walkEmitC C.block ≤ walkEmitC t := by
+    rw [← hnm]
+    exact walkEmitC_br_le (findBlockList_mem hfind) (by rw [hnm]; exact hne) hterm
   refine ⟨s', ⟨hInv, hstep, ?_, ?_⟩⟩
   · refine
       { pc_eq := rfl
         blockIndex := ?_
         k_le := hInv.k_le
-        events_le := hInv.events_le
+        events_le := by
+          dsimp only
+          have h := hInv.events_le
+          omega
+        events_nep := hInv.events_nep
         evlen_eq := hInv.evlen_eq
         evBytes := ?_
         alen_le_sum := hInv.alen_le_sum
@@ -6653,8 +6881,7 @@ theorem WalkLink.refusalStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
       have hroom := G.evRoom
       simp only [stage2RecordBytes] at hroom
       have hN : G.nev0 + (C.events.map EventRecord.encodedBytes).flatten.length ≤ G.evcap := by
-        have h1 := hInv.events_le
-        have h2 := hInv.k_le
+        have h1 : C.events.length ≤ G.nep := hInv.events_nep
         have h3 := G.nep_le
         rw [hlen]; omega
       dsimp only [s', stateAt, m']
@@ -6729,6 +6956,7 @@ theorem WalkLink.if_then16_i {calls : Calls} {m0 : Mem}
     (by rw [hblock]; exact walkIf_then16_i_find) rfl rfl he hv hj hj64 (by decide)
     (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
     (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal])
+    (hne := by rw [hblock]; decide)
 
 /-- `if.then21.i`: the refusal's offset store, of `%idxprom.i`. -/
 def walkIf_then21_i : Block :=
@@ -6752,6 +6980,7 @@ theorem WalkLink.if_then21_i {calls : Calls} {m0 : Mem}
     (by rw [hblock]; exact walkIf_then21_i_find) rfl rfl he hv hj hj64 (by decide)
     (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
     (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal])
+    (hne := by rw [hblock]; decide)
 
 /-- `if.then56.i`: the refusal's offset store, of `%idxprom.i`. -/
 def walkIf_then56_i : Block :=
@@ -6775,6 +7004,7 @@ theorem WalkLink.if_then56_i {calls : Calls} {m0 : Mem}
     (by rw [hblock]; exact walkIf_then56_i_find) rfl rfl he hv hj hj64 (by decide)
     (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
     (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal])
+    (hne := by rw [hblock]; decide)
 
 /-- `if.then71.i`: the refusal's offset store, of `%idxprom.i`. -/
 def walkIf_then71_i : Block :=
@@ -6798,6 +7028,7 @@ theorem WalkLink.if_then71_i {calls : Calls} {m0 : Mem}
     (by rw [hblock]; exact walkIf_then71_i_find) rfl rfl he hv hj hj64 (by decide)
     (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
     (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal])
+    (hne := by rw [hblock]; decide)
 
 /-- `cleanup104.i`: the refusal's offset store, of `%idxprom.i`. -/
 def walkCleanup104_i : Block :=
@@ -6821,6 +7052,7 @@ theorem WalkLink.cleanup104_i {calls : Calls} {m0 : Mem}
     (by rw [hblock]; exact walkCleanup104_i_find) rfl rfl he hv hj hj64 (by decide)
     (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
     (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal])
+    (hne := by rw [hblock]; decide)
 
 /-- `if.then130.i`: the refusal's offset store, of `%idxprom.i`. -/
 def walkIf_then130_i : Block :=
@@ -6844,6 +7076,7 @@ theorem WalkLink.if_then130_i {calls : Calls} {m0 : Mem}
     (by rw [hblock]; exact walkIf_then130_i_find) rfl rfl he hv hj hj64 (by decide)
     (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
     (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal])
+    (hne := by rw [hblock]; decide)
 
 /-- `if.then147.i`: the refusal's offset store, of `%idxprom.i`. -/
 def walkIf_then147_i : Block :=
@@ -6867,6 +7100,7 @@ theorem WalkLink.if_then147_i {calls : Calls} {m0 : Mem}
     (by rw [hblock]; exact walkIf_then147_i_find) rfl rfl he hv hj hj64 (by decide)
     (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
     (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal])
+    (hne := by rw [hblock]; decide)
 
 /-- `if.then159.i`: the refusal's offset store, of `%idxprom.i`. -/
 def walkIf_then159_i : Block :=
@@ -6890,6 +7124,7 @@ theorem WalkLink.if_then159_i {calls : Calls} {m0 : Mem}
     (by rw [hblock]; exact walkIf_then159_i_find) rfl rfl he hv hj hj64 (by decide)
     (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
     (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal])
+    (hne := by rw [hblock]; decide)
 
 /-- `if.then176.i`: the refusal's offset store, of `%idxprom.i`. -/
 def walkIf_then176_i : Block :=
@@ -6913,6 +7148,7 @@ theorem WalkLink.if_then176_i {calls : Calls} {m0 : Mem}
     (by rw [hblock]; exact walkIf_then176_i_find) rfl rfl he hv hj hj64 (by decide)
     (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
     (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal])
+    (hne := by rw [hblock]; decide)
 
 /-- `if.then192.i`: the refusal's offset store, of `%idxprom.i`. -/
 def walkIf_then192_i : Block :=
@@ -6936,6 +7172,7 @@ theorem WalkLink.if_then192_i {calls : Calls} {m0 : Mem}
     (by rw [hblock]; exact walkIf_then192_i_find) rfl rfl he hv hj hj64 (by decide)
     (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
     (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal])
+    (hne := by rw [hblock]; decide)
 
 /-- `if.then205.i`: the refusal's offset store, of `%4`. -/
 def walkIf_then205_i : Block :=
@@ -6959,6 +7196,7 @@ theorem WalkLink.if_then205_i {calls : Calls} {m0 : Mem}
     (by rw [hblock]; exact walkIf_then205_i_find) rfl rfl he hv hj hj64 (by decide)
     (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
     (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal])
+    (hne := by rw [hblock]; decide)
 
 /-- `if.then214.i`: the refusal's offset store, of `%4`. -/
 def walkIf_then214_i : Block :=
@@ -6982,6 +7220,7 @@ theorem WalkLink.if_then214_i {calls : Calls} {m0 : Mem}
     (by rw [hblock]; exact walkIf_then214_i_find) rfl rfl he hv hj hj64 (by decide)
     (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
     (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal])
+    (hne := by rw [hblock]; decide)
 
 /-- `if.then249.i`: the refusal's offset store, of `%idxprom.i`. -/
 def walkIf_then249_i : Block :=
@@ -7005,6 +7244,7 @@ theorem WalkLink.if_then249_i {calls : Calls} {m0 : Mem}
     (by rw [hblock]; exact walkIf_then249_i_find) rfl rfl he hv hj hj64 (by decide)
     (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
     (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal])
+    (hne := by rw [hblock]; decide)
 
 /-- `if.then418.i`: the refusal's offset store, of `%idxprom.i`. -/
 def walkIf_then418_i : Block :=
@@ -7028,6 +7268,7 @@ theorem WalkLink.if_then418_i {calls : Calls} {m0 : Mem}
     (by rw [hblock]; exact walkIf_then418_i_find) rfl rfl he hv hj hj64 (by decide)
     (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
     (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal])
+    (hne := by rw [hblock]; decide)
 
 /-- `if.else43.i`: the refusal's offset store, of `%idxprom.i`. -/
 def walkIf_else43_i : Block :=
@@ -7051,6 +7292,7 @@ theorem WalkLink.if_else43_i {calls : Calls} {m0 : Mem}
     (by rw [hblock]; exact walkIf_else43_i_find) rfl rfl he hv hj hj64 (by decide)
     (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
     (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal])
+    (hne := by rw [hblock]; decide)
 
 /-- `if.then467.i`: the refusal's offset store, of `%q.0.i246`. -/
 def walkIf_then467_i : Block :=
@@ -7074,6 +7316,7 @@ theorem WalkLink.if_then467_i {calls : Calls} {m0 : Mem}
     (by rw [hblock]; exact walkIf_then467_i_find) rfl rfl he hv hj hj64 (by decide)
     (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
     (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal])
+    (hne := by rw [hblock]; decide)
 
 /-- `if.then488.i`: the refusal's offset store, of `%4`. -/
 def walkIf_then488_i : Block :=
@@ -7097,6 +7340,7 @@ theorem WalkLink.if_then488_i {calls : Calls} {m0 : Mem}
     (by rw [hblock]; exact walkIf_then488_i_find) rfl rfl he hv hj hj64 (by decide)
     (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
     (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal])
+    (hne := by rw [hblock]; decide)
 
 /-- `if.then492.i`: the refusal's offset store, of `%4`. -/
 def walkIf_then492_i : Block :=
@@ -7120,6 +7364,7 @@ theorem WalkLink.if_then492_i {calls : Calls} {m0 : Mem}
     (by rw [hblock]; exact walkIf_then492_i_find) rfl rfl he hv hj hj64 (by decide)
     (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
     (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal])
+    (hne := by rw [hblock]; decide)
 
 /-- **Class B′: no instructions and a branch on a carried bit.**  The block binds
 nothing; the bit is one the previous block's comparison left behind, and the edge
@@ -7141,11 +7386,22 @@ theorem WalkLink.condBr {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
     simp only [LeanLLVM.step, hpc, hfind, hden, hterm]
     exact walkExecTerm_condbr (bit := bit) hd
   refine ⟨s', ⟨hInv, hstep, ?_, ?_⟩⟩
-  · refine
+  · have hnm : B.name = C.block := findBlockList_name hfind
+    have hle := walkEmitC_condbr_le (findBlockList_mem hfind) hterm
+    have hph : walkEmitC C.block ≤ walkEmitC (if bit = 1 then tl else fl) := by
+      rw [← hnm]
+      by_cases hb : bit = 1
+      · rw [if_pos hb]; exact hle.1
+      · rw [if_neg hb]; exact hle.2
+    refine
       { pc_eq := rfl
         blockIndex := hInv.blockIndex
         k_le := hInv.k_le
-        events_le := hInv.events_le
+        events_le := by
+          dsimp only
+          have h := hInv.events_le
+          omega
+        events_nep := hInv.events_nep
         evlen_eq := hInv.evlen_eq
         evBytes := hInv.evBytes
         alen_le_sum := hInv.alen_le_sum
@@ -7206,24 +7462,38 @@ theorem WalkLink.if_then432_i {calls : Calls} {m0 : Mem}
 
 /-- **Class B: no instructions and a jump.**  The block binds nothing, so every
 clause of the invariant is the one it had and the only change is the block the run
-is at. -/
+is at.
+
+The one edge a generic jump cannot carry is the header's pass
+(`while.body.i → NodeBlock21`): it leaves the trace's stretch because it advances
+`k`, so `walkEmitC` falls by one there and the link's target would need the tight
+form.  That step is `whileBody_step`'s, and `hne` says this link is not it. -/
 theorem WalkLink.br {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
     (s : State) (hInv : WalkInv G C s)
     {B : Block} (hfind : stage2Body.findBlock C.block = some B)
     (hinstrs : B.instrs = []) {t : String} (hterm : B.term = Term.br t)
-    (hloc : WalkLocal { C with block := t } { s with pc := t, pre := some s.pc }) :
+    (hloc : WalkLocal { C with block := t } { s with pc := t, pre := some s.pc })
+    (hne : C.block ≠ "while.body.i") :
     ∃ s', WalkLink calls G C s { C with block := t } s' := by
   have hpc : s.pc = C.block := hInv.pc_eq
   let s' : State := { s with pc := t, pre := some s.pc }
   have hden : denoteCode calls B.instrs s = some s := by rw [hinstrs]; rfl
   have hstep : LeanLLVM.step calls stage2Body s = Ctrl.jump s' := by
     simp only [LeanLLVM.step, hpc, hfind, hden, hterm, execTerm, s']
+  have hnm : B.name = C.block := findBlockList_name hfind
+  have hph : walkEmitC C.block ≤ walkEmitC t := by
+    rw [← hnm]
+    exact walkEmitC_br_le (findBlockList_mem hfind) (by rw [hnm]; exact hne) hterm
   refine ⟨s', ⟨hInv, hstep, ?_, ?_⟩⟩
   · refine
       { pc_eq := rfl
         blockIndex := hInv.blockIndex
         k_le := hInv.k_le
-        events_le := hInv.events_le
+        events_le := by
+          dsimp only
+          have h := hInv.events_le
+          omega
+        events_nep := hInv.events_nep
         evlen_eq := hInv.evlen_eq
         evBytes := hInv.evBytes
         alen_le_sum := hInv.alen_le_sum
@@ -8390,6 +8660,7 @@ theorem WalkLink.cond_true_i {calls : Calls} {m0 : Mem}
     : ∃ s', WalkLink calls G C s { C with block := "NodeBlock27" } s' := by
   exact WalkLink.br (G := G) (C := C) (s := s) hInv
     (by rw [hblock]; exact walkCond_true_i_find) rfl rfl (by simp [WalkLocal])
+    (hne := by rw [hblock]; decide)
 
 /-- `land.rhs.i.preheader`: no instructions, and the edge it takes. -/
 def walkLand_rhs_i_preheader : Block :=
@@ -8405,6 +8676,7 @@ theorem WalkLink.land_rhs_i_preheader {calls : Calls} {m0 : Mem}
     : ∃ s', WalkLink calls G C s { C with block := "land.rhs.i" } s' := by
   exact WalkLink.br (G := G) (C := C) (s := s) hInv
     (by rw [hblock]; exact walkLand_rhs_i_preheader_find) rfl rfl hloc
+    (hne := by rw [hblock]; decide)
 
 /-- `if.else387.i`: no instructions, and the edge it takes. -/
 def walkIf_else387_i : Block :=
@@ -8419,6 +8691,7 @@ theorem WalkLink.if_else387_i {calls : Calls} {m0 : Mem}
     : ∃ s', WalkLink calls G C s { C with block := "NodeBlock62" } s' := by
   exact WalkLink.br (G := G) (C := C) (s := s) hInv
     (by rw [hblock]; exact walkIf_else387_i_find) rfl rfl (by simp [WalkLocal])
+    (hne := by rw [hblock]; decide)
 
 /-- `if.then397.i`: no instructions, and the edge it takes. -/
 def walkIf_then397_i : Block :=
@@ -8433,6 +8706,7 @@ theorem WalkLink.if_then397_i {calls : Calls} {m0 : Mem}
     : ∃ s', WalkLink calls G C s { C with block := "if.then413.i" } s' := by
   exact WalkLink.br (G := G) (C := C) (s := s) hInv
     (by rw [hblock]; exact walkIf_then397_i_find) rfl rfl (by simp [WalkLocal])
+    (hne := by rw [hblock]; decide)
 
 /-- `if.then403.i`: no instructions, and the edge it takes. -/
 def walkIf_then403_i : Block :=
@@ -8447,6 +8721,7 @@ theorem WalkLink.if_then403_i {calls : Calls} {m0 : Mem}
     : ∃ s', WalkLink calls G C s { C with block := "if.then413.i" } s' := by
   exact WalkLink.br (G := G) (C := C) (s := s) hInv
     (by rw [hblock]; exact walkIf_then403_i_find) rfl rfl (by simp [WalkLocal])
+    (hne := by rw [hblock]; decide)
 
 /-- `if.else405.i`: no instructions, and the edge it takes. -/
 def walkIf_else405_i : Block :=
@@ -8461,6 +8736,7 @@ theorem WalkLink.if_else405_i {calls : Calls} {m0 : Mem}
     : ∃ s', WalkLink calls G C s { C with block := "if.then413.i" } s' := by
   exact WalkLink.br (G := G) (C := C) (s := s) hInv
     (by rw [hblock]; exact walkIf_else405_i_find) rfl rfl (by simp [WalkLocal])
+    (hne := by rw [hblock]; decide)
 
 /-- `if.else.i`: no instructions, and the edge it takes. -/
 def walkIf_else_i : Block :=
@@ -8475,6 +8751,7 @@ theorem WalkLink.if_else_i {calls : Calls} {m0 : Mem}
     : ∃ s', WalkLink calls G C s { C with block := "NodeBlock83" } s' := by
   exact WalkLink.br (G := G) (C := C) (s := s) hInv
     (by rw [hblock]; exact walkIf_else_i_find) rfl rfl (by simp [WalkLocal])
+    (hne := by rw [hblock]; decide)
 
 /-- `if.then37.i`: no instructions, and the edge it takes. -/
 def walkIf_then37_i : Block :=
@@ -8489,6 +8766,7 @@ theorem WalkLink.if_then37_i {calls : Calls} {m0 : Mem}
     : ∃ s', WalkLink calls G C s { C with block := "if.end48.i" } s' := by
   exact WalkLink.br (G := G) (C := C) (s := s) hInv
     (by rw [hblock]; exact walkIf_then37_i_find) rfl rfl (by simp [WalkLocal])
+    (hne := by rw [hblock]; decide)
 
 /-- `if.then42.i`: no instructions, and the edge it takes. -/
 def walkIf_then42_i : Block :=
@@ -8503,6 +8781,7 @@ theorem WalkLink.if_then42_i {calls : Calls} {m0 : Mem}
     : ∃ s', WalkLink calls G C s { C with block := "if.end48.i" } s' := by
   exact WalkLink.br (G := G) (C := C) (s := s) hInv
     (by rw [hblock]; exact walkIf_then42_i_find) rfl rfl (by simp [WalkLocal])
+    (hne := by rw [hblock]; decide)
 
 
 /-! ### The budget, counted

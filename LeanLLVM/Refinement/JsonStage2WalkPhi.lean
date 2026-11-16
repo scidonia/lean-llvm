@@ -233,6 +233,7 @@ theorem WalkLink.scanLanding {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
        Instr.gep g (.int 8) (.reg "%3") (.reg d),
        Instr.load ld (.int 8) (.reg g)])
     (hterm : B.term = Term.br t)
+    (hne : C.block ≠ "while.body.i")
     (hfree : walkCarried B.instrs)
     (hd3 : d ≠ "%3")
     {p : String} {op : Operand} {e : BitVec 64} {b : UInt8}
@@ -272,7 +273,7 @@ theorem WalkLink.scanLanding {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
       (by exact walkLookup_cons_self g (.ptr (G.b + (e.signExtend 64).toNat)) ((d, .int 64 e) :: s.env)) hread]
     rfl
   exact WalkLink.pureJumpCore (G := G) (C := C) (s := s) hInv
-    (B := B) hfind hden hfree rfl rfl rfl hterm hloc
+    (B := B) hfind hden hfree rfl rfl rfl hterm hloc (hne := hne)
 
 /-- `land.rhs.i`: the whitespace skip's counter and the byte at it. -/
 def walkLand_rhs_i : Block :=
@@ -306,7 +307,7 @@ theorem WalkLink.land_rhs_i {calls : Calls} {m0 : Mem}
     (d := "%ee.0.i238") (g := "%arrayidx367.i") (ld := "%36") (ty := Ty.int 64)
     (inc := [("while.body370.i", (Operand.reg "%inc371.i")),
       ("land.rhs.i.preheader", (Operand.reg "%idxprom.i"))])
-    ?_ rfl ?_ (by decide) hpre hin hv hpos hread ?_
+    ?_ rfl ?_ (by decide) hpre hin hv hpos hread ?_ (hne := by rw [hblock]; decide)
   · simp [walkLand_rhs_i]
   · unfold walkCarried; decide
   · simp [WalkLocal]
@@ -344,7 +345,7 @@ theorem WalkLink.land_rhs_i103 {calls : Calls} {m0 : Mem}
     (d := "%ee.011.i") (g := "%arrayidx5.i") (ld := "%40") (ty := Ty.int 64)
     (inc := [("while.body.i104", (Operand.reg "%inc.i105")),
       ("cond.end.i96", (Operand.reg "%idxprom.i"))])
-    ?_ rfl ?_ (by decide) hpre hin hv hpos hread ?_
+    ?_ rfl ?_ (by decide) hpre hin hv hpos hread ?_ (hne := by rw [hblock]; decide)
   · simp [walkLand_rhs_i103]
   · unfold walkCarried; decide
   · simp [WalkLocal]
@@ -382,7 +383,7 @@ theorem WalkLink.land_rhs71_i {calls : Calls} {m0 : Mem}
     (d := "%s2.020.i") (g := "%arrayidx72.i") (ld := "%46") (ty := Ty.int 64)
     (inc := [("while.body76.i", (Operand.reg "%inc77.i")),
       ("if.end67.i", (Operand.reg "%ee.0.lcssa.i"))])
-    ?_ rfl ?_ (by decide) hpre hin hv hpos hread ?_
+    ?_ rfl ?_ (by decide) hpre hin hv hpos hread ?_ (hne := by rw [hblock]; decide)
   · simp [walkLand_rhs71_i]
   · unfold walkCarried; decide
   · simp [WalkLocal]
@@ -420,7 +421,7 @@ theorem WalkLink.land_rhs457_i {calls : Calls} {m0 : Mem}
     (d := "%q.0.i246") (g := "%arrayidx458.i") (ld := "%47") (ty := Ty.int 64)
     (inc := [("while.body462.i", (Operand.reg "%inc463.i")),
       ("if.then447.i", (Operand.reg "%ee.1.i"))])
-    ?_ rfl ?_ (by decide) hpre hin hv hpos hread ?_
+    ?_ rfl ?_ (by decide) hpre hin hv hpos hread ?_ (hne := by rw [hblock]; decide)
   · simp [walkLand_rhs457_i]
   · unfold walkCarried; decide
   · simp [WalkLocal]
@@ -1258,7 +1259,17 @@ theorem WalkLink.if_end372_i {calls : Calls} {m0 : Mem}
     { pc_eq := rfl
       blockIndex := ?_
       k_le := hInv.k_le
-      events_le := hInv.events_le
+      events_le := by
+        dsimp only
+        have h := hInv.events_le
+        have hnm : walkIf_end372_i.name = C.block := findBlockList_name hfind
+        have hle := walkEmitC_condbr_le (findBlockList_mem hfind) hterm
+        rw [hnm] at hle
+        by_cases hb : evalICmp .eq b8 (BitVec.ofNat 8 45) ||| evalICmp .ult
+            (b8 + BitVec.ofNat 8 208) (BitVec.ofNat 8 10) = 1
+        · rw [if_pos hb]; omega
+        · rw [if_neg hb]; omega
+      events_nep := hInv.events_nep
       evlen_eq := hInv.evlen_eq
       evBytes := ?_
       alen_le_sum := hInv.alen_le_sum
@@ -1328,8 +1339,7 @@ theorem WalkLink.if_end372_i {calls : Calls} {m0 : Mem}
     have hroom := G.evRoom
     simp only [stage2RecordBytes] at hroom
     have hN : G.nev0 + (C.events.map EventRecord.encodedBytes).flatten.length ≤ G.evcap := by
-      have h1 := hInv.events_le
-      have h2 := hInv.k_le
+      have h1 : C.events.length ≤ G.nep := hInv.events_nep
       have h3 := G.nep_le
       rw [hlen]; omega
     rw [walkReadBytes_ev_of_tok_write (tok := C.stage.tok) (ev := G.ev) (evcap := G.evcap)
@@ -1472,7 +1482,13 @@ theorem WalkLink.if_then57_i {calls : Calls} {m0 : Mem}
     { pc_eq := rfl
       blockIndex := ?_
       k_le := hInv.k_le
-      events_le := hInv.events_le
+      events_le := by
+        dsimp only
+        have h := hInv.events_le
+        have hone := walkEmitC_le_one C.block
+        have hj : walkEmitC "cleanup474.i" = 1 := walkEmitC_of_contains (by decide)
+        omega
+      events_nep := hInv.events_nep
       evlen_eq := hInv.evlen_eq
       evBytes := ?_
       alen_le_sum := hInv.alen_le_sum
@@ -1542,8 +1558,7 @@ theorem WalkLink.if_then57_i {calls : Calls} {m0 : Mem}
     have hroom := G.evRoom
     simp only [stage2RecordBytes] at hroom
     have hN : G.nev0 + (C.events.map EventRecord.encodedBytes).flatten.length ≤ G.evcap := by
-      have h1 := hInv.events_le
-      have h2 := hInv.k_le
+      have h1 : C.events.length ≤ G.nep := hInv.events_nep
       have h3 := G.nep_le
       rw [hlen]; omega
     rw [walkReadBytes_ev_of_refusal_write (e := C.stage.e) (ev := G.ev) (evcap := G.evcap)
@@ -1680,7 +1695,13 @@ theorem WalkLink.while_end78_i {calls : Calls} {m0 : Mem}
     { pc_eq := rfl
       blockIndex := ?_
       k_le := hInv.k_le
-      events_le := hInv.events_le
+      events_le := by
+        dsimp only
+        have h := hInv.events_le
+        have hone := walkEmitC_le_one C.block
+        have hj : walkEmitC "cleanup474.i" = 1 := walkEmitC_of_contains (by decide)
+        omega
+      events_nep := hInv.events_nep
       evlen_eq := hInv.evlen_eq
       evBytes := ?_
       alen_le_sum := hInv.alen_le_sum
@@ -1750,8 +1771,7 @@ theorem WalkLink.while_end78_i {calls : Calls} {m0 : Mem}
     have hroom := G.evRoom
     simp only [stage2RecordBytes] at hroom
     have hN : G.nev0 + (C.events.map EventRecord.encodedBytes).flatten.length ≤ G.evcap := by
-      have h1 := hInv.events_le
-      have h2 := hInv.k_le
+      have h1 : C.events.length ≤ G.nep := hInv.events_nep
       have h3 := G.nep_le
       rw [hlen]; omega
     rw [walkReadBytes_ev_of_refusal_write (e := C.stage.e) (ev := G.ev) (evcap := G.evcap)

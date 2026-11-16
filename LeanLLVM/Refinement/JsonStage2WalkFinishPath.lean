@@ -212,6 +212,7 @@ theorem walkFinishInvAt {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : Stat
     (hown : ∀ r ∈ walkStaged G C, HasBytes m' r.1 r.2)
     (hnextGE : G.next0 + stage2BootstrapExtent ≤ s.next)
     (hframe : UnchangedOutside m0 m' (walkWideAt G C (s.next - G.next0)))
+    (hphase : walkEmitC C.block ≤ walkEmitC b)
     (hloc : WalkLocal { C with block := b }
       { s with env := cells cs s.env, mem := m', pc := b, pre := pr }) :
     WalkInv G { C with block := b }
@@ -222,7 +223,11 @@ theorem walkFinishInvAt {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : Stat
       (fun hin => hki "%k.0.i249" hin rfl)]
     exact h.blockIndex
   k_le := h.k_le
-  events_le := h.events_le
+  events_le := by
+    show C.events.length ≤ C.k + walkEmitC b
+    have hev := h.events_le
+    omega
+  events_nep := h.events_nep
   evlen_eq := h.evlen_eq
   evBytes := hEv
   alen_le_sum := h.alen_le_sum
@@ -281,8 +286,7 @@ theorem walkFinish_evRoom {m0 : Mem} (G : WalkGeom m0) {C : WalkCarry G} {s : St
   simp only [stage2RecordBytes] at hsum
   have hroom := G.evRoom
   simp only [stage2RecordBytes] at hroom
-  have h1 := hInv.events_le
-  have h2 := hInv.k_le
+  have h1 : C.events.length ≤ G.nep := hInv.events_nep
   have h3 := G.nep_le
   rw [hlen]; omega
 
@@ -317,6 +321,10 @@ theorem walkFinish485Inv {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : Sta
     hInv.evBytes hInv.tyBytes hInv.stBytes hInv.log_hash hInv.log_len hInv.log_cap
     hInv.log_alen hInv.log_acap hInv.owned hInv.next_ge hInv.frame
     (by simp [WalkLocal])
+    (hphase := by
+      have hone := walkEmitC_le_one C.block
+      have hj : walkEmitC "if.then488.i" = 1 := walkEmitC_of_contains (by decide)
+      omega)
   simpa only [finishS₄₈₈, cells] using hstep
 
 /-- **`if.then488.i`'s invariant.**  The block stores the refusal offset at `%e + 8`.  The
@@ -405,6 +413,10 @@ theorem walkFinish488Inv {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : Sta
         simp [wordBytes, natToBytes_length]] at hk
       exact walkWideAt_of_seven (eoff_inside (k := k) (by omega)))
     (by simp [WalkLocal])
+    (hphase := by
+      have hone := walkEmitC_le_one C.block
+      have hj : walkEmitC "if.then" = 1 := walkEmitC_of_contains (by decide)
+      omega)
   simpa only [finishSThen, cells] using hstep
 
 /-! ### Why the path stops at `if.then`

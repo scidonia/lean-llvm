@@ -1456,7 +1456,13 @@ theorem walkEntry_inv {mem : Mem} (G : WalkGeom mem) {C : WalkCarry G} {s : Stat
   inc_reg := hinc
   idx_reg := hidx
   k_le := hInv.k_le
-  events_le := hInv.events_le
+  events_le := by
+    have h := hInv.events_le
+    have hone := walkEmitC_le_one C.block
+    have hj : walkEmitC "if.then492.i" = 1 := walkEmitC_of_contains (by decide)
+    show C.events.length ≤ C.k + walkEmitC "if.then492.i"
+    omega
+  events_nep := hInv.events_nep
   evlen_eq := hInv.evlen_eq
   evBytes := hEv
   alen_le_sum := hInv.alen_le_sum
@@ -1642,7 +1648,14 @@ theorem walkInvSeat {m0 : Mem} (G : WalkGeom m0) (stage : WalkStage G) {s : Stat
       inc_reg := hinc
       idx_reg := hidx
       k_le := hk_le
-      events_le := hev_le
+      events_le := by
+        have h := hev_le
+        simp only [walkCarryZero] at h ⊢
+        omega
+      events_nep := by
+        have h := hev_le
+        simp only [walkCarryZero] at h ⊢
+        omega
       evlen_eq := by simp [walkCarryZero]
       evBytes := hEv
       alen_le_sum := halen_le

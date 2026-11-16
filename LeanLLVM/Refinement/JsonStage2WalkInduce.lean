@@ -215,7 +215,16 @@ theorem scan_step_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
       { pc_eq := rfl
         blockIndex := ?_
         k_le := hInv.k_le
-        events_le := hInv.events_le
+        events_le := by
+          show C.events.length ≤ C.k + walkEmitC land
+          have h := hInv.events_le
+          rw [hblock] at h
+          have hle := (walkEmitC_condbr_le
+            (B := scanBlock src inc phi test cond exit land)
+            (findBlockList_mem hfind) rfl).2
+          simp only [scanBlock] at hle
+          omega
+        events_nep := hInv.events_nep
         evlen_eq := hInv.evlen_eq
         evBytes := hInv.evBytes
         alen_le_sum := hInv.alen_le_sum
@@ -341,7 +350,16 @@ theorem scanStepAt_exit {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
     { pc_eq := rfl
       blockIndex := ?_
       k_le := hInv.k_le
-      events_le := hInv.events_le
+      events_le := by
+        show C.events.length ≤ C.k + walkEmitC exit
+        have h := hInv.events_le
+        rw [hblock] at h
+        have hle := (walkEmitC_condbr_le
+          (B := scanBlock src inc phi test cond exit land)
+          (findBlockList_mem hfind) rfl).1
+        simp only [scanBlock] at hle
+        omega
+      events_nep := hInv.events_nep
       evlen_eq := hInv.evlen_eq
       evBytes := hInv.evBytes
       alen_le_sum := hInv.alen_le_sum

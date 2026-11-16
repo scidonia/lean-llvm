@@ -235,7 +235,7 @@ theorem WalkLink.store8Stack {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
         (C.events.map EventRecord.encodedSize).sum := by
       simp only [List.length_flatten, List.map_map]
       rfl
-    have h1 := hInv.events_le
+    have h1 : C.events.length ≤ G.nep := hInv.events_nep
     have h2 := hInv.k_le
     have h3 := G.nep_le
     rw [hlen]; omega
@@ -246,7 +246,13 @@ theorem WalkLink.store8Stack {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
       { pc_eq := rfl
         blockIndex := hInv.blockIndex
         k_le := hInv.k_le
-        events_le := hInv.events_le
+        events_le := by
+          dsimp only
+          have h := hInv.events_le
+          have hone := walkEmitC_le_one C.block
+          have hj : walkEmitC "cleanup478.i" = 1 := walkEmitC_of_contains (by decide)
+          omega
+        events_nep := hInv.events_nep
         evlen_eq := hInv.evlen_eq
         evBytes := ?_
         alen_le_sum := hInv.alen_le_sum
@@ -521,7 +527,8 @@ theorem WalkLink.hashStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
     have hlen : (C.events.map EventRecord.encodedBytes).flatten.length =
         (C.events.map EventRecord.encodedSize).sum := by
       simp only [List.length_flatten, List.map_map]; rfl
-    have h1 := hInv.events_le; have h2 := hInv.k_le; have h3 := G.nep_le
+    have h1 : C.events.length ≤ G.nep := hInv.events_nep
+    have h2 := hInv.k_le; have h3 := G.nep_le
     rw [hlen]; omega
   have hzev := walkLog_ev_sep hInv
   refine ⟨s', ⟨hInv, hstep, ?_, ?_⟩⟩
@@ -529,7 +536,13 @@ theorem WalkLink.hashStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
       { pc_eq := rfl
         blockIndex := ?_
         k_le := hInv.k_le
-        events_le := hInv.events_le
+        events_le := by
+          dsimp only
+          have h := hInv.events_le
+          have hone := walkEmitC_le_one C.block
+          have hj : walkEmitC "cleanup478.i" = 1 := walkEmitC_of_contains (by decide)
+          omega
+        events_nep := hInv.events_nep
         evlen_eq := hInv.evlen_eq
         evBytes := ?_
         alen_le_sum := hInv.alen_le_sum
@@ -763,7 +776,7 @@ theorem WalkLink.outReserveStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
     (hst : lookupName s.env st = some (.int 64 (BitVec.ofNat 64 (C.evlen + 1))))
     (hlen : lookupName s.env "%len" = some (.ptr (C.stage.z + 8)))
     (hev63 : C.evlen < 2 ^ 63) (hev64len : C.evlen + 1 < 2 ^ 64)
-    (hlt : C.events.length < C.k)
+    (htight : C.events.length ≤ C.k) (hklt : C.k < G.nep)
     (hldv : ld ≠ ldv) (hg_src : gp ≠ src) (hl_src : ld ≠ src)
     (hg_st : gp ≠ st) (hl_st : ld ≠ st)
     (hg_len : gp ≠ "%len") (hl_len : ld ≠ "%len")
@@ -824,8 +837,8 @@ theorem WalkLink.outReserveStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
     simp only [stage2RecordBytes] at hsum
     have hroom := G.evRoom
     simp only [stage2RecordBytes] at hroom
-    have h1 := hlt
-    have h2 := hInv.k_le
+    have h1 := htight
+    have h2 := hklt
     have h3 := G.nep_le
     rw [hEvLen]
     omega
@@ -834,7 +847,7 @@ theorem WalkLink.outReserveStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
     simp only [stage2RecordBytes] at hsum
     have hroom := G.evRoom
     simp only [stage2RecordBytes] at hroom
-    have h1 := hlt; have h2 := hInv.k_le; have h3 := G.nep_le
+    have h1 := htight; have h2 := hklt; have h3 := G.nep_le
     rw [hInv.evlen_eq]
     omega
   have hzev := walkLog_ev_sep hInv
@@ -866,7 +879,13 @@ theorem WalkLink.outReserveStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
       { pc_eq := rfl
         blockIndex := ?_
         k_le := hInv.k_le
-        events_le := ?_
+        events_le := by
+          simp only [List.length_append, List.length_singleton]
+          have hj : walkEmitC "cleanup478.i" = 1 := walkEmitC_of_contains (by decide)
+          omega
+        events_nep := by
+          simp only [List.length_append, List.length_singleton]
+          omega
         evlen_eq := ?_
         evBytes := ?_
         alen_le_sum := hInv.alen_le_sum
@@ -941,8 +960,6 @@ theorem WalkLink.outReserveStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
       dsimp only [out]
       exact walkLookup_cells_ne s.env "%k.0.i249" hInv.blockIndex cs
         (fun c hc => (hne c.1 (hmem c hc)).1)
-    · simp only [List.length_append, List.length_cons, List.length_nil]
-      omega
     · rw [hInv.evlen_eq]
       simp only [List.map_append, List.sum_append, EventRecord.encodedSize_tag,
         List.map_cons, List.map_nil, List.sum_cons, List.sum_nil]
@@ -1071,12 +1088,12 @@ theorem WalkLink.out_reserve_exit_i_i {calls : Calls} {m0 : Mem}
     (hst : lookupName s.env "%add.i.i.i" = some (.int 64 (BitVec.ofNat 64 (C.evlen + 1))))
     (hlen : lookupName s.env "%len" = some (.ptr (C.stage.z + 8)))
     (hev63 : C.evlen < 2 ^ 63) (hev64len : C.evlen + 1 < 2 ^ 64)
-    (hlt : C.events.length < C.k) :
+    (htight : C.events.length ≤ C.k) (hklt : C.k < G.nep) :
     ∃ s', WalkLink calls G C s
       { C with block := "cleanup478.i", evlen := C.evlen + 1, events := C.events ++ [EventRecord.tag b.toNat] } s' := by
   exact WalkLink.outReserveStore G C s hInv
     (by rw [hblock]; exact walkOut_reserve_exit_i_i_find) rfl rfl hz hload hev64 hs ho hst hlen
-    hev63 hev64len hlt (by decide) (by decide) (by decide) (by decide) (by decide)
+    hev63 hev64len htight hklt (by decide) (by decide) (by decide) (by decide) (by decide)
     (by decide) (by decide)
     (by intro n hn
         simp only [List.mem_cons, List.not_mem_nil, or_false] at hn
@@ -1110,12 +1127,12 @@ theorem WalkLink.out_reserve_exit_i_i60 {calls : Calls} {m0 : Mem}
     (hst : lookupName s.env "%add.i.i.i58" = some (.int 64 (BitVec.ofNat 64 (C.evlen + 1))))
     (hlen : lookupName s.env "%len" = some (.ptr (C.stage.z + 8)))
     (hev63 : C.evlen < 2 ^ 63) (hev64len : C.evlen + 1 < 2 ^ 64)
-    (hlt : C.events.length < C.k) :
+    (htight : C.events.length ≤ C.k) (hklt : C.k < G.nep) :
     ∃ s', WalkLink calls G C s
       { C with block := "cleanup478.i", evlen := C.evlen + 1, events := C.events ++ [EventRecord.tag b.toNat] } s' := by
   exact WalkLink.outReserveStore G C s hInv
     (by rw [hblock]; exact walkOut_reserve_exit_i_i60_find) rfl rfl hz hload hev64 hs ho hst hlen
-    hev63 hev64len hlt (by decide) (by decide) (by decide) (by decide) (by decide)
+    hev63 hev64len htight hklt (by decide) (by decide) (by decide) (by decide) (by decide)
     (by decide) (by decide)
     (by intro n hn
         simp only [List.mem_cons, List.not_mem_nil, or_false] at hn
@@ -1215,7 +1232,8 @@ theorem WalkLink.if_else285_i {calls : Calls} {m0 : Mem}
     have hlen : (C.events.map EventRecord.encodedBytes).flatten.length =
         (C.events.map EventRecord.encodedSize).sum := by
       simp only [List.length_flatten, List.map_map]; rfl
-    have h1 := hInv.events_le; have h2 := hInv.k_le; have h3 := G.nep_le
+    have h1 : C.events.length ≤ G.nep := hInv.events_nep
+    have h2 := hInv.k_le; have h3 := G.nep_le
     rw [hlen]; omega
   have hzev := walkLog_ev_sep hInv
   refine ⟨s', ⟨hInv, hstep, ?_, le_of_eq rfl⟩⟩
@@ -1223,7 +1241,14 @@ theorem WalkLink.if_else285_i {calls : Calls} {m0 : Mem}
     { pc_eq := rfl
       blockIndex := ?_
       k_le := hInv.k_le
-      events_le := hInv.events_le
+      events_le := by
+        dsimp only
+        have h := hInv.events_le
+        rw [hblock] at h
+        have h1 : walkEmitC "if.end290.i" = 0 := walkEmitC_of_not_contains (by decide)
+        have h2 : walkEmitC "if.else285.i" = 0 := walkEmitC_of_not_contains (by decide)
+        omega
+      events_nep := hInv.events_nep
       evlen_eq := hInv.evlen_eq
       evBytes := ?_
       alen_le_sum := hInv.alen_le_sum
@@ -1497,7 +1522,8 @@ theorem WalkLink.if_then330_i {calls : Calls} {m0 : Mem}
     have hlen' : (C.events.map EventRecord.encodedBytes).flatten.length =
         (C.events.map EventRecord.encodedSize).sum := by
       simp only [List.length_flatten, List.map_map]; rfl
-    have h1 := hInv.events_le; have h2 := hInv.k_le; have h3 := G.nep_le
+    have h1 : C.events.length ≤ G.nep := hInv.events_nep
+    have h2 := hInv.k_le; have h3 := G.nep_le
     rw [hlen']; omega
   have hsz := cst_log_sep hInv
   have hsev := cst_ev_sep hInv
@@ -1506,7 +1532,13 @@ theorem WalkLink.if_then330_i {calls : Calls} {m0 : Mem}
       { pc_eq := rfl
         blockIndex := ?_
         k_le := hInv.k_le
-        events_le := hInv.events_le
+        events_le := by
+          dsimp only
+          have h := hInv.events_le
+          have hone := walkEmitC_le_one C.block
+          have hj : walkEmitC "cleanup478.i" = 1 := walkEmitC_of_contains (by decide)
+          omega
+        events_nep := hInv.events_nep
         evlen_eq := hInv.evlen_eq
         evBytes := ?_
         alen_le_sum := hInv.alen_le_sum
@@ -1775,7 +1807,8 @@ theorem WalkLink.if_end207_i {calls : Calls} {m0 : Mem}
     have hlen : (C.events.map EventRecord.encodedBytes).flatten.length =
         (C.events.map EventRecord.encodedSize).sum := by
       simp only [List.length_flatten, List.map_map]; rfl
-    have h1 := hInv.events_le; have h2 := hInv.k_le; have h3 := G.nep_le
+    have h1 : C.events.length ≤ G.nep := hInv.events_nep
+    have h2 := hInv.k_le; have h3 := G.nep_le
     rw [hlen]; omega
   have hcz := cursor_log_sep hInv
   have hcev := walkCursor_ev_sep hInv
@@ -1785,7 +1818,18 @@ theorem WalkLink.if_end207_i {calls : Calls} {m0 : Mem}
       { pc_eq := rfl
         blockIndex := ?_
         k_le := hInv.k_le
-        events_le := hInv.events_le
+        events_le := by
+          dsimp only
+          have h := hInv.events_le
+          rw [hblock] at h
+          have hnm : walkIf_end207_i.name = C.block := findBlockList_name hfind
+          have hle := walkEmitC_condbr_le (B := walkIf_end207_i)
+            (findBlockList_mem hfind) htermN
+          rw [hnm, hblock] at hle
+          by_cases hb : evalICmp .ugt x (BitVec.ofNat 64 q) = 1
+          · rw [if_pos hb]; omega
+          · rw [if_neg hb]; omega
+        events_nep := hInv.events_nep
         evlen_eq := hInv.evlen_eq
         evBytes := ?_
         alen_le_sum := hInv.alen_le_sum

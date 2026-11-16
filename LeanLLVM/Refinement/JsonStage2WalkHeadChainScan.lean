@@ -266,7 +266,7 @@ def ConsumerTailChain {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
        .ptr (TailCarry₂ C).stage.z] r₁.mem r₁.next = some r₂ →
     s2ScalarValueAppend r₁.mem r₂.mem (TailCarry₂ C).stage.z ev.encodedBytes →
     r₂.ret = .int 32 (BitVec.ofNat 32 1) →
-    G.ev < 2 ^ 64 → C.evlen < 2 ^ 64 → C.events.length < C.k →
+    G.ev < 2 ^ 64 → C.evlen < 2 ^ 64 → C.events.length ≤ C.k → C.k < G.nep →
     s2AfterValuePre
       [.int 32 (BitVec.ofNat 32 C.sp), .ptr (G.next0 + 8),
        .ptr (TailCarry₃ C ev).stage.ctype, .ptr (TailCarry₃ C ev).stage.cst]
@@ -291,7 +291,7 @@ theorem consumer_tail_chain {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : 
     (r₁ r₂ r₃ : CallOutcome) (ev : EventRecord) (ei cd : Nat) :
     ConsumerTailChain G C s r₁ r₂ r₃ ev ei cd := by
   intro hInv hblock p reg c op rdv x hpre hinc hop hkind hrd hread hpre' hcall₁ hret₁
-    hbit0 hzreadJ hc ht ho hcall₂ happ₂ hret₂ hev64 hevlen64 hlt hpre447 hcall₃ hei hcd
+    hbit0 hzreadJ hc ht ho hcall₂ happ₂ hret₂ hev64 hevlen64 htight hklt hpre447 hcall₃ hei hcd
     hinner hlt2 hcd64
   -- 1. the value-position call
   have hx413 : ∀ r, stage2Calls stage2SubCalls "s2_value_pos"
@@ -330,7 +330,7 @@ theorem consumer_tail_chain {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : 
       lookupName_cons_ne (k := "%38") (n := "%z") _ _ (by decide),
       lookupName_cons_ne (k := "%.sink372") (n := "%z") _ _ (by decide)] using ho)
     (by simpa only [TailS₁, stateAt] using hzreadJ)
-    (by simpa only [TailS₁, stateAt] using hcall₂) happ₂ hret₂ hev64 hevlen64 hlt
+    (by simpa only [TailS₁, stateAt] using hcall₂) happ₂ hret₂ hev64 hevlen64 htight hklt
   have hs₂ : s₂' = TailS₂ (TailS₁ s r₁ c rdv x) r₂ := hs₂'
   rw [hs₂] at hl₂
   -- 3. the copy call, at the scan's entry

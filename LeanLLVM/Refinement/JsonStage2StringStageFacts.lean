@@ -877,8 +877,7 @@ theorem s2StringBodyFrame_facts {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {
           (C.events.map EventRecord.encodedSize).sum := by
         simp only [List.length_flatten, List.map_map]
         rfl
-      have h1 := hInv.events_le
-      have h2 := hInv.k_le
+      have h1 : C.events.length ≤ G.nep := hInv.events_nep
       have h3 := G.nep_le
       omega
     refine readBytes_of_frame hframe ?_

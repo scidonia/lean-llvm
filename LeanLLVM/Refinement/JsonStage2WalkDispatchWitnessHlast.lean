@@ -536,15 +536,18 @@ Nothing above is a field weakened to make a proof go through: every produced wit
 consequence of the invariant, the staging's addresses or the model's own values, and the
 premise names the clause or list that *cannot* supply it.
 
-**The premise count, measured.**  The producer's signature names **30 binders** after this
-round, of which **25 are supplied** once the five fixed ones (`m0`, `G`, `C`, `s`, `hInv`)
-are set aside — the same count as before it.  The measurement is a binder-name count over
-the `def`'s signature, with a group such as `(r₁ r₂ r₃ : CallOutcome)` counted as three
-arguments.  What moved this round is a *substitution* rather than a deletion: `hk` (the
-supplied equality `C.k + 1 = G.nep`) became `hnot` (the consumer's own `¬ (C.k + 1 <
-G.nep)`), and the equality is derived from it and the head's guard.  `hevlen64` was
+**The premise count, measured.**  The producer's signature names **29 binders** after this
+round, of which **24 are supplied** once the five fixed ones (`m0`, `G`, `C`, `s`, `hInv`)
+are set aside.  The measurement is a binder-name count over the
+`def`'s signature, with a group such as `(r₁ r₂ r₃ : CallOutcome)` counted as three
+arguments.  What moved in the earlier round was a *substitution* rather than a deletion:
+`hk` (the supplied equality `C.k + 1 = G.nep`) became `hnot` (the consumer's own `¬ (C.k +
+1 < G.nep)`), and the equality is derived from it and the head's guard.  `hevlen64` was
 deleted from `hlastTail_of_calls` and is derived there from `WalkInv.evlen_le` through
-`evRoom` and `evcapLt`.  The event stream's width (`hev64`) was tried as the geometry's
+`evRoom` and `evcapLt`.  This round deleted the trace's count from the signature: the
+head is outside the append stretch, so `WalkInv.events_le_of_tight` states it as
+`C.events.length ≤ C.k` and the head's guard adds `C.k < G.nep`.  The event stream's
+width (`hev64`) was tried as the geometry's
 `evLt` and reverted: `stage2Pre` does not state it, so the clause's supply is a certified-
 domain change in the pipeline's staging (`routePre` → `pipelineStaging` →
 `stage2Pre_of_exit`), not a walk-layer edit — the survivors table records it as the
@@ -553,9 +556,10 @@ caller's, which is where it stands.
 ### The survivors, and what would produce each
 
 Each surviving supplied argument, the fact it states, and the clause or lemma that would
-produce it.  One row from the previous round is closed: the last index, which the head's
-guard now produces.  What remains is the document's content, the event stream's width, the
-log's word, the strict count and the callees' premises.
+produce it.  Two rows from earlier rounds are closed: the last index, which the head's
+guard now produces, and the count, which `WalkInv.events_le_of_tight` produces at the
+head.  What remains is the document's content, the event stream's width, the log's word
+and the callees' premises.
 
 | survivor | the fact it states | producer |
 |---|---|---|
@@ -566,7 +570,7 @@ log's word, the strict count and the callees' premises.
 | `hreadT`, `rdv` (the root-done slot's word) | `readBytes (writeBytes …) (G.next0 + 8) 4 = some (natToBytes rdv.toNat 4)` | **a presence-and-value clause on the root-done slot** (`WalkInv.owned` deliberately omits the four `alloca` slots, and `WalkInv.frame` covers the interval without naming the word inside it) |
 | `hzread` (the log's base word) | `readBytes … C.stage.z 8 = some (wordBytes 8 G.ev)` | **a `WalkInv` clause for the log's base** (`%z + 0`), beside `log_hash`/`log_len`.  It is not a frame consequence: `%z`'s first eight bytes lie *inside* the walk's write extent, and the frame is silence *outside* it.  The clause has to survive every one of the invariant's thirty-nine construction sites, so it is the next row's own piece of work rather than a one-line addition |
 | `hev64` (`G.ev < 2 ^ 64`) | the event stream's base is a word | **landed: `WalkGeom.evLt`**, the shape `bLt`/`epLt` have, supplied from `stage2Pre`'s new `ev < 2 ^ 64` clause through `WalkGeom.nonempty`, `walkGeom_at_pre` and `Stage2Run`, and produced at the pipeline's call site by `routePre` → `pipelineStaging` → `stage2Pre_of_exit`.  The field is therefore `G.evLt` now and can be dropped from this bundle |
-| `hltT` (`C.events.length < C.k`) | one emitted record per emitting entry | **`if.then425.i`'s count — and the clause it preserves is the defect.**  **This row is a defect, recorded rather than deferred:** at a one-entry document the last entry is `C.k = 0`, so `C.events.length < C.k` is `0 < 0` and the bundle — and with it `WalkLoopEnd` — is uninhabited at exactly the input the walk must handle for a single-entry stream.  The strict form is the emit's *preservation* hypothesis, not a room bound: the emit must re-establish `WalkInv.events_le` (`length ≤ k`) at its target, and the carry's `k` does not advance until the merge, so the target's obligation is `(events ++ [rec]).length ≤ k`.  `length + 1 ≤ G.nep` is provable (from `events_le` and the head's guard) but does not imply `length + 1 ≤ k`, so restating the emit lemma's hypothesis, or this bundle's field, in that form does **not** close the defect — measured, not argued: `WalkLink.if_then328_i` with that hypothesis fails at its own `events_le := ?_` field.  The clause itself is false one link later (the head has `0 ≤ 0`, the emit carries `1 ≤ 0`), so `WalkInv` is uninhabited at every post-emit state — the walk cannot leave one, at a one-entry document or at the second record of a two-scalar array.  The repair is `events_le` as `C.events.length ≤ C.k + 1` with the event room `nev0 + stage2RecordBytes * (n + 1) ≤ evcap`, and it is its own item: `evlen_le`, the refusal and finalisation routes, and the post's `nev' ≤ nev0 + 13 * n` all read the old statement.  Until then this field is the emit's preservation hypothesis. |
+| `hltT` (`C.events.length < C.k`) | one emitted record per emitting entry | **retired: `WalkInv.events_le_of_tight` at the loop head.**  The strict form was a defect and the repair landed: `WalkInv.events_le` is `length ≤ k + walkEmitC block`, whose allowance is zero at every block before the append, so the count at the head is `length ≤ C.k` — the tight hypothesis the emit re-establishes at its target, since `k` does not advance until the merge.  `hlastFacts_of_staging` derives it, so the bundle carries no count field |
 | `hblock` (`C.block = walkLoopHead`) | which state the bundle is at | **the consumer's own hypothesis**: the bundle's statement quantifies over `C.block = walkLoopHead`, and it is what `hlastTailSeg` needs to produce `hInvT` |
 | `hpre₁`, `hpre₂`, `hpre₃`, `hret₂`, `hcall₃` | the callee preconditions and the copy call | **the staging**: each is a statement about the memory, cursor and addresses the walk holds, and each has the shape `s2StringBodyPre_of_staging` assembled for the string body.  They are premises because no clause fixes the three staged widths at the callee's own argument list |
 -/
@@ -905,7 +909,7 @@ theorem hlastTail_of_calls {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : S
        .ptr (TailCarry₂ (TailStartC C)).stage.z] r₁.mem r₁.next = some r₂)
     (hret₂ : r₂.ret = .int 32 (BitVec.ofNat 32 1))
     (hev64 : G.ev < 2 ^ 64)
-    (hltT : C.events.length < C.k)
+    (htight : C.events.length ≤ C.k) (hklt : C.k < G.nep)
     (hpre₃ : s2AfterValuePre
       [.int 32 (BitVec.ofNat 32 (TailStartC C).sp), .ptr (G.next0 + 8),
        .ptr (TailStartC C).stage.ctype,
@@ -951,7 +955,7 @@ theorem hlastTail_of_calls {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : S
       have h1 := hInvT.evlen_le
       have h2 := G.evRoom
       have h3 := G.evcapLt
-      omega) hltT hpre₃ hcall₃
+      omega) htight hklt hpre₃ hcall₃
     (hlastTail_ee C s x inc nep v ix b35) (hlastTail_cond C s x inc nep v ix b35) hvT)⟩
 
 /-! ### The head byte's class, from the two bits that name it
@@ -1109,9 +1113,10 @@ and no equality is supplied.  The cursor width is `WalkInv.evlen_le` through `ev
 `evcapLt`, derived in `hlastTail_of_calls`.
 
 What remains supplied is the document's content, the event stream's width, the log's base
-word, the trace's strict count and the three callee preconditions — the survivors table
-above states each one's producer, and records the strict count's defect and why the event
-stream's width is not the walk layer's to add. -/
+word and the three callee preconditions — the survivors table above states each one's
+producer.  The trace's count is not among them: the head's block is outside the append
+stretch, so `WalkInv.events_le_of_tight` gives `C.events.length ≤ C.k` here and
+`WalkInv.head_lt` gives the head's guard, which is the pair `hlastTail_of_calls` takes. -/
 noncomputable def hlastFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
     (s : State)
     (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead)
@@ -1149,7 +1154,6 @@ noncomputable def hlastFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
        .ptr (TailCarry₂ (TailStartC C)).stage.z] r₁.mem r₁.next = some r₂)
     (hret₂ : r₂.ret = .int 32 (BitVec.ofNat 32 1))
     (hev64 : G.ev < 2 ^ 64)
-    (hltT : C.events.length < C.k)
     (hpre₃ : s2AfterValuePre
       [.int 32 (BitVec.ofNat 32 (TailStartC C).sp), .ptr (G.next0 + 8),
        .ptr (TailStartC C).stage.ctype,
@@ -1170,6 +1174,12 @@ noncomputable def hlastFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
   let b35 : UInt8 := G.bs.getD (G.n - 1) 0
   have hklt : C.k < G.nep :=
     WalkInv.head_lt hInv (by rw [hblock]; rfl)
+  -- **the trace's count, tight at the loop head**: `events_le`'s allowance is zero at
+  -- every block before the entry's append, and the head is one of them, so the count is
+  -- the entries consumed — the hypothesis the emit must preserve rather than a supply
+  have htight : C.events.length ≤ C.k :=
+    WalkInv.events_le_of_tight hInv
+      (by rw [hblock]; exact walkEmitC_of_not_contains (by decide))
   -- **the loop's own guard turns the consumer's negation into the last index**: the head
   -- has an entry left and no entry after this one, so the carry's index plus one is the
   -- stream's count.  This is the premise the producer used to take.
@@ -1291,7 +1301,7 @@ noncomputable def hlastFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
       (hoT := by
         rw [hlastTail_envZ C s (hlastByte G C) (hlastIncV C) (hlastNepV G) v ix b35]
         exact hInv.regs ("%z", .ptr C.stage.z) (by simp [walkStaticRegs]))
-      hpre₂ hcall₂ hret₂ hev64 hltT hpre₃ hcall₃ (by omega)
+      hpre₂ hcall₂ hret₂ hev64 htight hklt hpre₃ hcall₃ (by omega)
   let ev : EventRecord := Classical.choose htailExists
   have hTail : WalkSegment (stage2Calls stage2SubCalls) G (TailStartC C)
       (hlastTailAt C s v ix b35)
@@ -1384,7 +1394,7 @@ noncomputable def hlastFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
 clauses, the geometry and the loop's own guard have been read: the document's
 byte class (the two bits that name it and the three the price's longest path
 needs), the three calls' answers and their facts at the argument lists the walk
-stages, the log's base word, the event stream's width and the trace's count.  It
+stages, the log's base word and the event stream's width.  It
 is a `Type` because `rdv` and `xA` are witnesses the later fields are stated at,
 exactly as the bundle is.
 
@@ -1436,8 +1446,6 @@ structure HlastResidue {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
   hret₂ : r₂.ret = .int 32 (BitVec.ofNat 32 1)
   /-- The event stream's base is a word. -/
   hev64 : G.ev < 2 ^ 64
-  /-- The trace's count: strictly below the entries consumed. -/
-  hltT : C.events.length < C.k
   /-- The copy call's precondition and its answer. -/
   hpre₃ : s2AfterValuePre
     [.int 32 (BitVec.ofNat 32 (TailStartC C).sp), .ptr (G.next0 + 8),

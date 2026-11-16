@@ -139,6 +139,7 @@ theorem WalkLink.while_body_i_lr_ph {calls : Calls} {m0 : Mem}
   refine WalkLink.pureJumpK11 (G := G) (C := C) (s := s) hInv
     (B := walkWhileBodyLrPh) (by rw [hblock]; exact walkWhileBodyLrPh_find) hden
     (by unfold walkCarriedNoK11; decide) rfl rfl rfl ?_ ?_ ?_ rfl (by simp [WalkLocal])
+    (hne := by rw [hblock]; decide)
   · dsimp only [State.bind]
     exact preheaderRegs G C s.env hInv.regs
   · dsimp only [State.bind]

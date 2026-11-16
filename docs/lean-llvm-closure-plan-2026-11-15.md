@@ -127,6 +127,14 @@ list becomes the record's own pre and staging, nothing else.
 
 **Size:** 1 round.
 
+**The composition's shape (decided here so the round is not guessed at):** the three
+bundles are produced from the staging at one call — `walkStage_at_pre_fields` supplies
+the staging at the record's numbers, the flush arm is `stage2Post_of_staging_flush`, and
+the loop arm's three outcomes are `WalkDispatchResult.toOutcome` at the result each
+bundle produces.  The obligation's own `by_cases G.nep = 0` selects between them.  No
+new premise may be introduced; a fact that is neither a staging fact nor an invariant
+consequence is a finding, not a parameter.
+
 ### Item 5 — the caller-to-return theorem (the review's milestone)
 
 **Statement.** One theorem for a precisely stated domain: returning execution within the

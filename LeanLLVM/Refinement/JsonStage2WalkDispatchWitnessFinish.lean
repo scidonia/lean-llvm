@@ -182,12 +182,17 @@ position and `blockLocal` the `WalkLocal` at the new block; every other field is
 invariant's own, because none of them reads `C.block`. -/
 theorem WalkInv.reblock {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     {b : String} (h : WalkInv G C s) (hpc : s.pc = b)
+    (hphase : walkEmitC C.block ≤ walkEmitC b)
     (hloc : WalkLocal { C with block := b } s) :
     WalkInv G { C with block := b } s where
   pc_eq := hpc
   blockIndex := h.blockIndex
   k_le := h.k_le
-  events_le := h.events_le
+  events_le := by
+    show C.events.length ≤ C.k + walkEmitC b
+    have hev := h.events_le
+    omega
+  events_nep := h.events_nep
   evlen_eq := h.evlen_eq
   evBytes := h.evBytes
   alen_le_sum := h.alen_le_sum
@@ -225,9 +230,10 @@ theorem WalkInv.reblock {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : Stat
 transport needs only the state's position. -/
 theorem WalkInv.reblock_true {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     {b : String} (h : WalkInv G C s) (hpc : s.pc = b)
+    (hphase : walkEmitC C.block ≤ walkEmitC b)
     (hloc : WalkLocal { C with block := b } s = True) :
     WalkInv G { C with block := b } s :=
-  h.reblock hpc (by rw [hloc]; trivial)
+  h.reblock hpc hphase (by rw [hloc]; trivial)
 
 
 
@@ -253,6 +259,7 @@ theorem WalkInv.bind {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     exact h.blockIndex
   k_le := h.k_le
   events_le := h.events_le
+  events_nep := h.events_nep
   evlen_eq := h.evlen_eq
   evBytes := h.evBytes
   alen_le_sum := h.alen_le_sum
@@ -310,6 +317,7 @@ theorem WalkInv.bindAt {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State
     (hspp : ∀ n ∈ cs.map (·.1), n ≠ "%sp.i.0248")
     (hptr : ∀ c ∈ cs, c.1 ≠ "%3" ∧ c.1 ≠ "%5" ∧ c.1 ≠ "%k11.i" ∧ c.1 ≠ "%ctype.i"
       ∧ c.1 ≠ "%cst.i" ∧ c.1 ≠ "%hash1.i.i")
+    (hphase : walkEmitC C.block ≤ walkEmitC b)
     (hloc : WalkLocal { C with block := b } { s with env := cells cs s.env, pc := b, pre := pr }) :
     WalkInv G { C with block := b } { s with env := cells cs s.env, pc := b, pre := pr } where
   pc_eq := rfl
@@ -318,7 +326,11 @@ theorem WalkInv.bindAt {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State
       (fun hin => hki "%k.0.i249" hin rfl)]
     exact h.blockIndex
   k_le := h.k_le
-  events_le := h.events_le
+  events_le := by
+    show C.events.length ≤ C.k + walkEmitC b
+    have hev := h.events_le
+    omega
+  events_nep := h.events_nep
   evlen_eq := h.evlen_eq
   evBytes := h.evBytes
   alen_le_sum := h.alen_le_sum
@@ -439,6 +451,10 @@ theorem walkFinishMerge_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : Wal
   refine ⟨e, hstep, ?_, rfl⟩
   refine hInv.bindAt (b := "if.then485.i") (cs := cs) (pr := some "cleanup478.i")
     ?_ ?_ ?_ (fun c hc => ?_) ?_
+    (hphase := by
+      have hone := walkEmitC_le_one C.block
+      have hj : walkEmitC "if.then485.i" = 1 := walkEmitC_of_contains (by decide)
+      omega)
   · intro n hn
     simp only [cs, List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil,
       or_false] at hn
@@ -493,6 +509,7 @@ theorem walkIfEnd473_at {sub : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarr
     rw [hblock]; exact walkIf_end473_i_find
   obtain ⟨s', hl⟩ := WalkLink.pureJumpCore (calls := stage2Calls sub) G C s hInv hfind hden
     (by unfold walkCarried; decide) rfl rfl rfl (t := "cleanup478.i") rfl (by simp [WalkLocal])
+    (hne := by rw [hblock]; decide)
   refine ⟨s', hl, ?_⟩
   have hstep : step (stage2Calls sub) stage2Body s =
       Ctrl.jump { s with pc := "cleanup478.i", pre := some s.pc } := by
@@ -569,7 +586,7 @@ theorem walkCondTrue345_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : Wal
     rw [hblock]; exact walkCond_true345_i_find
   obtain ⟨s', hl⟩ := WalkLink.pureJumpCore (calls := calls) G C s hInv hfind hden
     (by unfold walkCarried; decide) rfl rfl rfl (t := "cond.end349.i") rfl
-    (by simp [WalkLocal])
+    (by simp [WalkLocal]) (hne := by rw [hblock]; decide)
   let e : State :=
     { s with
       env := (cells [("%conv347.i", .int 64 (BitVec.ofNat 64 (BitVec.ofNat 32 q).toNat)),
@@ -739,7 +756,7 @@ def ConsumerTailSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
        .ptr (TailCarry₂ C).stage.z] r₁.mem r₁.next = some r₂ →
     s2ScalarValueAppend r₁.mem r₂.mem (TailCarry₂ C).stage.z ev.encodedBytes →
     r₂.ret = .int 32 (BitVec.ofNat 32 1) →
-    G.ev < 2 ^ 64 → C.evlen < 2 ^ 64 → C.events.length < C.k →
+    G.ev < 2 ^ 64 → C.evlen < 2 ^ 64 → C.events.length ≤ C.k → C.k < G.nep →
     s2AfterValuePre
       [.int 32 (BitVec.ofNat 32 C.sp), .ptr (G.next0 + 8),
        .ptr (TailCarry₃ C ev).stage.ctype, .ptr (TailCarry₃ C ev).stage.cst]
@@ -777,7 +794,7 @@ theorem consumer_tail_seg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
     (r₁ r₂ r₃ : CallOutcome) (ev : EventRecord) (ei cd : Nat) :
     ConsumerTailSeg G C s r₁ r₂ r₃ ev ei cd := by
   intro hInv hblock p reg c op rdv x hpre hinc hop hkind hrd hread hpre' hcall₁ hret₁
-    hbit0 hzreadJ hc ht ho hcall₂ happ₂ hret₂ hev64 hevlen64 hlt hpre447 hcall₃ hei hcd
+    hbit0 hzreadJ hc ht ho hcall₂ happ₂ hret₂ hev64 hevlen64 htight hklt hpre447 hcall₃ hei hcd
     hinner hlt2 hcd64
   -- 1. the value-position call
   have hx413 : ∀ r, stage2Calls stage2SubCalls "s2_value_pos"
@@ -816,7 +833,7 @@ theorem consumer_tail_seg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
       lookupName_cons_ne (k := "%38") (n := "%z") _ _ (by decide),
       lookupName_cons_ne (k := "%.sink372") (n := "%z") _ _ (by decide)] using ho)
     (by simpa only [TailS₁, stateAt] using hzreadJ)
-    (by simpa only [TailS₁, stateAt] using hcall₂) happ₂ hret₂ hev64 hevlen64 hlt
+    (by simpa only [TailS₁, stateAt] using hcall₂) happ₂ hret₂ hev64 hevlen64 htight hklt
   have hs₂ : s₂' = TailS₂ (TailS₁ s r₁ c rdv x) r₂ := hs₂'
   rw [hs₂] at hl₂
   -- 3. the copy call, at the scan's entry

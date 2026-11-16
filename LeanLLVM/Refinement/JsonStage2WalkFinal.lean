@@ -151,7 +151,7 @@ theorem WalkLink.if_then425_i_emit {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
     (happ : s2ScalarValueAppend s.mem r.mem C.stage.z ev.encodedBytes)
     (hret : r.ret = .int 32 (BitVec.ofNat 32 1))
     (hev64 : G.ev < 2 ^ 64) (hevlen64 : C.evlen < 2 ^ 64)
-    (hlt : C.events.length < C.k) :
+    (htight : C.events.length ≤ C.k) (hklt : C.k < G.nep) :
     ∃ s', WalkLink (stage2Calls stage2SubCalls) G C s
       { C with block := "if.then447.i",
                evlen := C.evlen + ev.encodedSize,
@@ -208,7 +208,7 @@ theorem WalkLink.if_then425_i_emit {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
     simp only [stage2RecordBytes] at hsum
     have hroom := G.evRoom
     simp only [stage2RecordBytes] at hroom
-    have h1 := hlt; have h2 := hInv.k_le; have h3 := G.nep_le
+    have h1 := htight; have h2 := hklt; have h3 := G.nep_le
     have h4 := EventRecord.encodedSize_le ev
     simp only [stage2RecordBytes] at h4
     rw [hEvLen, hrecLen]
@@ -274,7 +274,10 @@ theorem WalkLink.if_then425_i_emit {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
       blockIndex := ?_
       k_le := hInv.k_le
       events_le := by
-        show (C.events ++ [ev]).length ≤ C.k
+        show (C.events ++ [ev]).length ≤ C.k + walkEmitC "if.then447.i"
+        have hj : walkEmitC "if.then447.i" = 1 := walkEmitC_of_contains (by decide)
+        simp only [List.length_append, List.length_singleton]; omega
+      events_nep := by
         simp only [List.length_append, List.length_singleton]; omega
       evlen_eq := ?_
       evBytes := hevBytes'
@@ -443,7 +446,7 @@ theorem walkIfThen425_emit_at {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
     (happ : s2ScalarValueAppend s.mem r.mem C.stage.z ev.encodedBytes)
     (hret : r.ret = .int 32 (BitVec.ofNat 32 1))
     (hev64 : G.ev < 2 ^ 64) (hevlen64 : C.evlen < 2 ^ 64)
-    (hlt : C.events.length < C.k) :
+    (htight : C.events.length ≤ C.k) (hklt : C.k < G.nep) :
     ∃ (s' : State), WalkLink (stage2Calls stage2SubCalls) G C s
         { C with
           block := "if.then447.i"
@@ -451,7 +454,7 @@ theorem walkIfThen425_emit_at {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
           events := C.events ++ [ev] } s' ∧
       s' = TailS₂ s r := by
   obtain ⟨s', hl⟩ := WalkLink.if_then425_i_emit (G := G) (C := C) (s := s) hInv hblock hc ht
-    ho hzread hcall happ hret hev64 hevlen64 hlt
+    ho hzread hcall happ hret hev64 hevlen64 htight hklt
   refine ⟨s', hl, ?_⟩
   have hden : denoteCode (stage2Calls stage2SubCalls) walkIfThen425.instrs s =
       some (stateAt (cells [
@@ -543,7 +546,7 @@ theorem WalkLink.if_then425_i_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
         (C.events.map EventRecord.encodedSize).sum := by
       simp only [List.length_flatten, List.map_map]; rfl
     rw [hlen]
-    have h1 := hInv.events_le; have h2 := hInv.k_le; have h3 := G.nep_le
+    have h1 : C.events.length ≤ G.nep := hInv.events_nep; have h3 := G.nep_le
     omega
   -- a read of the log across the four-byte error store
   have herr4Log : ∀ off N, off + N ≤ stage2LogExtent →
@@ -638,7 +641,14 @@ theorem WalkLink.if_then425_i_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
     { pc_eq := rfl
       blockIndex := ?_
       k_le := hInv.k_le
-      events_le := hInv.events_le
+      events_le := by
+        dsimp only
+        have h := hInv.events_le
+        rw [hblock] at h
+        have h0 : walkEmitC "if.then425.i" = 0 := walkEmitC_of_not_contains (by decide)
+        have h1 : walkEmitC "if.then432.i" = 0 := walkEmitC_of_not_contains (by decide)
+        omega
+      events_nep := hInv.events_nep
       evlen_eq := hInv.evlen_eq
       evBytes := ?_
       alen_le_sum := hInv.alen_le_sum
@@ -941,8 +951,7 @@ theorem walkAfterValue_facts_at {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {
         (C.events.map EventRecord.encodedSize).sum := by
       simp only [List.length_flatten, List.map_map]
       rfl
-    have h1 := hInv.events_le
-    have h2 := hInv.k_le
+    have h1 : C.events.length ≤ G.nep := hInv.events_nep
     have h3 := G.nep_le
     omega
   have hframe : UnchangedOutside m0 m (walkWideAt G C (s.next - G.next0)) :=
@@ -1131,7 +1140,14 @@ theorem WalkLink.if_then109_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
     { pc_eq := rfl
       blockIndex := ?_
       k_le := hInv.k_le
-      events_le := hInv.events_le
+      events_le := by
+        dsimp only
+        have h := hInv.events_le
+        rw [hblock] at h
+        have h0 : walkEmitC "if.then109.i" = 0 := walkEmitC_of_not_contains (by decide)
+        have h1 : walkEmitC "if.end.i.i55" = 0 := walkEmitC_of_not_contains (by decide)
+        omega
+      events_nep := hInv.events_nep
       evlen_eq := hInv.evlen_eq
       evBytes := ?_
       alen_le_sum := hInv.alen_le_sum
@@ -1293,7 +1309,7 @@ theorem walkNumFast_facts {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : St
     have hlen2 : (C.events.map EventRecord.encodedBytes).flatten.length =
         (C.events.map EventRecord.encodedSize).sum := by
       simp only [List.length_flatten, List.map_map]; rfl
-    have h1 := hInv.events_le; have h2 := hInv.k_le; have h3 := G.nep_le
+    have h1 : C.events.length ≤ G.nep := hInv.events_nep; have h3 := G.nep_le
     rw [hlen2]; omega
   have hev : readBytes m (G.ev + G.nev0)
         (C.events.map EventRecord.encodedBytes).flatten.length =
@@ -1440,7 +1456,17 @@ theorem WalkLink.if_then19_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
     { pc_eq := rfl
       blockIndex := ?_
       k_le := hInv.k_le
-      events_le := hInv.events_le
+      events_le := by
+        dsimp only
+        have h := hInv.events_le
+        rw [hblock] at h
+        have h0 : walkEmitC "if.then19.i" = 0 := walkEmitC_of_not_contains (by decide)
+        have h1 : walkEmitC "if.then25.i" = 0 := walkEmitC_of_not_contains (by decide)
+        have h2 : walkEmitC "if.end67.critedge.i" = 0 := walkEmitC_of_not_contains (by decide)
+        by_cases hb : bit = 1
+        · rw [if_pos hb]; omega
+        · rw [if_neg hb]; omega
+      events_nep := hInv.events_nep
       evlen_eq := hInv.evlen_eq
       evBytes := ?_
       alen_le_sum := hInv.alen_le_sum
