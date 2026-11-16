@@ -174,13 +174,15 @@ continuations** of a continuing entry, and the plan is two structures with a `Su
   group, **no** traversal premises and **no price conjunct with a byte term**
   (`p + 2 ≤ 32·Δk`, `p = 21`).  Its tail is `consumerTailSegEmptyAt`'s three links and its
   closing step is `WalkLink.if_then447_i_empty`.
-* `WalkContinueFacts` is a **class, not a `Sum`**: `HcontCase`
-  (`JsonStage2WalkDispatchWitnessString`) has `ws` (`HcontFacts`), `cleanup`
-  (`HcontCleanupFacts`) and `twoEntry` (`HstringFacts`, the standalone string whose merge
-  index is `C.k + 2`), and the consumer splits once.  An inductive rather than a nested
-  `Sum` because a `Sum` of three would re-shape every consumer twice, and the class
-  question is still asked once, where the class is known.  A conditional inside a
-  `Type`-valued structure would make every field a question.
+* `WalkContinueFacts` is a **class, not a `Sum`**: its evidence is `HcontArm`
+  (`JsonStage2WalkDispatchHcontArms`), one constructor per class of the emitted head
+  switch — the plain-value numeral route (`HcontScalarFacts`), the high-byte route's
+  `ws` (`HcontFacts`) and `cleanup` (`HcontCleanupFacts`), the standalone string
+  (`HstringFacts`, whose merge index is `C.k + 2`) beside its residue, and the supplied
+  arms — and the consumer splits once.  An inductive rather than a nested `Sum` because a
+  `Sum` of the arms would re-shape every consumer twice, and the class question is still
+  asked once, where the class is known.  A conditional inside a `Type`-valued structure
+  would make every field a question.
 
 **The run's refinement, landed.**  The whitespace arm's seam is not
 class-indexed: the run stops at the first whitespace byte, so its last visit leaves through

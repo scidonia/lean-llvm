@@ -800,10 +800,9 @@ supplies, and the head state's two register cells are `WalkInv` clauses read by
 `mergeHeadCells` (`JsonStage2WalkRevolutionSeg`), so they are not among the premises. -/
 theorem stage2WalkObligation_of_staging {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
     (hcont : ∀ {m0 : Mem} (G : WalkGeom m0), WalkContinueFacts G)
-    (hend : ∀ {m0 : Mem} (G : WalkGeom m0), WalkLoopEnd G)
-    (hres : ∀ {m0 : Mem} (G : WalkGeom m0), WalkStringResidue G) :
+    (hend : ∀ {m0 : Mem} (G : WalkGeom m0), WalkLoopEnd G) :
     Stage2WalkObligation d c ctype cst tok s z e nkSlot nxpSlot := by
-  refine stage2WalkObligation_of_premises (walkPremises_of_staging hcont hend hres) ?_
+  refine stage2WalkObligation_of_premises (walkPremises_of_staging hcont hend) ?_
   intro args mem next hpre o hb
   obtain ⟨a13, rfl, hpre13, hstaged⟩ := hpre
   obtain ⟨G, S, hnext, hSc, hSct, hScs, hStok, hSs, hSz, hSe, _hSd, hargs⟩ :=
@@ -812,7 +811,7 @@ theorem stage2WalkObligation_of_staging {d c ctype cst tok s z e nkSlot nxpSlot 
   · exact stage2Post_of_staging_flush hSc hSct hScs hStok hSs hSz hSe hargs hnext hzero o hb
   · refine stage2Post_of_staging_loop (F := 27) hSc hSct hScs hStok hSs hSz hSe hargs hnext
       (Nat.pos_of_ne_zero hzero)
-      (walkLoopStep_of_staging (G := G) (hcont G) (hend G) (hres := hres)) o hb
+      (walkLoopStep_of_staging (G := G) (hcont G) (hend G)) o hb
 
 /-! ### Axiom footprints -/
 

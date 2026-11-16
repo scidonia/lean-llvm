@@ -154,8 +154,17 @@ arm, stated at the run class's states (`contWsSeamS`, `contWsTailStart`, `contWs
 scan's actual span.  The no-whitespace class's bundle is `HcontCleanupFacts`
 (`JsonStage2WalkRevolution`), whose seam stores the entry's end and whose walk reaches
 `if.end473.i` without a scan — so the class that made the fields contradict carries
-neither of them.  `HcontCase` (`JsonStage2WalkDispatchWitnessString`) has one arm per class,
-and the loop's step takes each arm's own composition.
+neither of them.  The continuing premise is `HcontArm` (`JsonStage2WalkDispatchHcontArms`),
+one constructor per head-switch class; `HcontCase` (`JsonStage2WalkDispatchWitnessString`)
+is the sub-union of its three token bundles, and the loop's step takes each arm's own
+composition.
+
+**The class split is now a census, not a pair of bits.**  `HcontFacts`'s head fields still
+clear the two high-byte pivots, because that is the route this bundle's composition proves
+(`contPrefixLand`'s eight links); the plain-value route's class is `HcontScalarFacts`
+(`JsonStage2WalkHcontScalar`), composed at sixteen links, and the old split's failure at an
+ordinary numeral is `JsonStage2WalkHcontDomain`'s regression.  So the high-byte restriction
+here is one arm's, stated on that arm, and not the continuing entry's shape.
 
 **The method step this file's earlier version named is what found it**: the fields were each
 checked against the path they were read from, and nothing in the bundle's own module reads

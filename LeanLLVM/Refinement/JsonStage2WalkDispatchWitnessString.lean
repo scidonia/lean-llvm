@@ -463,7 +463,14 @@ and the skip's run is derived from it (`contWsRunF`, whose seam stores the run's
 carries that byte's three *no-whitespace* pivots, so the seam stores the entry's end and
 `heicd`'s reading of that class is `v.toNat < v.toNat` — refuted.  A producer that reads
 the document's byte at `%cond350.i - 1` answers with one arm, and the consumer's branches
-never overlap. -/
+never overlap.
+
+**This is a sub-union of the continuing premise, not the premise.**  The continuing
+branch's evidence is `HcontArm` (`JsonStage2WalkDispatchHcontArms`), whose census
+(`HcontClass.complete`) also has the plain-value numeral route and the container and
+delimiter arms; `HcontCase` names only the three token bundles, and
+`JsonStage2WalkHcontDomain` uses it as the *superseded* statement its regression refutes at
+the document `"01"`. -/
 inductive HcontCase {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : Type
   /-- The whitespace token: the skip runs to `k`, the token ends inside its entry, and the
   extra-token scan runs `[k, %cond350.i)`.  `HcontFacts` at the head state. -/
