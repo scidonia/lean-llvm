@@ -451,7 +451,17 @@ def pipelineStaging (tab base : Nat) (args : List Value) (mem : Mem) : Prop :=
     -- stage-2 call's `%invariant.gep` is a signed `getelementptr` at `-1` from it,
     -- so `Γ_stage2.pre` asks `0 < b`, and the `3 ≤ base` below is the same
     -- statement for this staging.
-    base < 2 ^ 64 ∧ ep < 2 ^ 64
+    base < 2 ^ 64 ∧ ep < 2 ^ 64 ∧
+    -- **The two staged output addresses are 64-bit words, and the event cursor is
+    -- a signed index.**  `%dst` and `%ev` are the objects stage 2's walk hands its
+    -- sub-calls and appends to, and the log's words naming them are eight-byte
+    -- residues; the stage-2 record states the same three clauses
+    -- (`stage2Pre`), so the tail's call needs them here.  The third is the
+    -- cursor's own bound: `if.then328.i` forms its record pointers from a signed
+    -- index, and `nev0 + 13 * bs.length` is the worst case `evlen` reaches at the
+    -- integers' own count (`evlen = nev0 + sum (map encodedSize)`, each size at
+    -- most thirteen and each record for one input byte).
+    dst < 2 ^ 64 ∧ ev < 2 ^ 64 ∧ nev0 + 13 * bs.length < 2 ^ 63
 
 /-! ### The count slot's witness
 

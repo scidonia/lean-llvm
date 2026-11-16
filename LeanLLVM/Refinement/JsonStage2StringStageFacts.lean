@@ -41,6 +41,15 @@ and an abstract staging so the walk layer can instantiate them:
   call is made after the walk's own stores; `walkReadBytes_two_writes` is the read
   across those two stores, and `walkLog_arena_sep`/`walkArena_ev_sep` are the
   staging separations the crossings read.
+* **the decoded length at the answer's own memory**: the post's memory is the
+  model's with the body's private `%ei` slot written at the call's `next`, and the
+  precondition separates that slot from `%outn.i` (`s2StringBodyPre_next_outn`).
+  So `s2StringBody_outn_le`'s word survives the slot's write
+  (`s2StringBody_outn_at_call`, with the slot's width
+  `stage2StringBody_slot_le`), and the decoded length and its bound are read at
+  the answer's memory without a premise about the callee — which is what retires
+  the walk bundle's length fields.
+
 * **the accepting arm's four write entries and the crossings at them**
   (`s2StringBodyFrame_walkWideAt`, `s2StringBodyFrame_facts`): the arm writes the
   escape cursor, the decoded-length word, the destination window and the private
@@ -509,6 +518,98 @@ theorem s2StringBody_frame_of_form {mem : Mem} {c p len dst outn xp xj nxp next 
             congrArg (fun p : Mem × Nat × List UInt8 => p.2.1) (Option.some.inj hm)
           exact absurd h0.symm hform
         · simp at hm
+
+/-! ### The decoded length at the call's own memory
+
+`s2StringBody_outn_le` states the length at the *model's* memory; the call's memory
+is that memory with the body's private `%ei` slot written at the call's `next`
+(`s2StringBodyPost`'s `r.mem = writeBytes m next slot`).  The pre keeps the slot
+away from `%outn.i` (`RegionsApart next 8 outn 8`), so the word read at `outn` is
+the same in both.  These three lemmas are what a consumer composes: the separation
+projected off the pre, the slot's width, and the read at the call's memory. -/
+
+/-- **The pre's slot/`%outn.i` separation**, read off the precondition at a literal
+argument list. -/
+theorem s2StringBodyPre_next_outn {mem : Mem} {next : Nat} {c p dst outn xp xj : Nat}
+    {len nxp : BitVec 64}
+    (hpre : s2StringBodyPre [.ptr c, .ptr p, .int 64 len, .ptr dst, .ptr outn,
+      .ptr xp, .ptr xj, .int 64 nxp] mem next) :
+    RegionsApart next 8 outn 8 := by
+  obtain ⟨c', p', len', dst', outn', xp', xj', nxp', base, j0, ps, body, e', hargs,
+    hb, hj, hp, hbd, he, hsp, hp_lt, hbase_le, hwrap, hlen_lt, hj0_lt, hnxp_lt,
+    houtn, hdst, herr, hxj_next, hxj_outn, hxj_dst, hxj_err, hnext_outn, -⟩ := hpre
+  simp only [List.cons.injEq, and_true, true_and, Value.ptr.injEq, Value.int.injEq]
+    at hargs
+  obtain ⟨hc, hpE, hlen, hdstE, houtnE, hxpE, hxjE, hnxpE⟩ := hargs
+  obtain hlenE := eq_of_heq hlen
+  obtain hnxpEE := eq_of_heq hnxpE
+  subst hc; subst hpE; subst hdstE; subst houtnE; subst hxpE; subst hxjE
+  subst hlenE; subst hnxpEE
+  exact hnext_outn
+
+/-- **The callee's private slot is at most eight bytes.**  The model's third
+component is `[]` on the body-itself arm and the eight-byte `%ei` word on the
+decoded and refusing ones, so a consumer reading `writeBytes m next slot` needs no
+width beyond the `alloca`'s eight bytes. -/
+theorem stage2StringBody_slot_le {mem : Mem} {c p len dst outn xp xj nxp : Nat}
+    {base j0 : Nat} {ps : List Nat} {m : Mem} {form : Nat} {slot : List UInt8}
+    (hbase : stage2ReadWord mem c 8 = some base)
+    (hj0 : stage2ReadWord mem xj 8 = some j0)
+    (hps : readLanes32 mem xp nxp = some ps)
+    (hm : stage2StringBody mem c p len dst outn xp xj nxp = some (m, form, slot)) :
+    slot.length ≤ 8 := by
+  unfold stage2StringBody at hm
+  simp only [hbase, hj0, hps] at hm
+  split at hm
+  · -- the body-itself arm writes no slot
+    have hinj := Option.some.inj hm
+    simp only [Prod.mk.injEq] at hinj
+    obtain ⟨-, -, rfl⟩ := hinj
+    simp
+  · split at hm
+    · simp at hm
+    · rename_i body hbody
+      split at hm
+      · -- the decoded arm's slot is the decoded length
+        rename_i out k hdec
+        have hinj := Option.some.inj hm
+        simp only [Prod.mk.injEq] at hinj
+        obtain ⟨-, -, rfl⟩ := hinj
+        exact wordBytes_length_eight _
+      · -- the refusing arm's slot is the body-relative offset
+        rename_i off k href
+        split at hm
+        · have hinj := Option.some.inj hm
+          simp only [Prod.mk.injEq] at hinj
+          obtain ⟨-, -, rfl⟩ := hinj
+          exact wordBytes_length_eight _
+        · simp at hm
+
+/-- **The decoded length at the caller's memory.**  `s2StringBody_outn_le`'s word
+survives the private slot's write at `next`, because the pre separates them; so the
+answer's length and its bound are the call's, at `writeBytes m next slot` — which is
+`s2StringBodyPost`'s `r.mem`. -/
+theorem s2StringBody_outn_at_call {mem : Mem} {c p dst outn xp xj : Nat}
+    {len nxp : BitVec 64} {m : Mem} {form : Nat} {slot : List UInt8}
+    {next base j0 : Nat} {ps : List Nat}
+    (hbase : stage2ReadWord mem c 8 = some base)
+    (hj0 : stage2ReadWord mem xj 8 = some j0)
+    (hps : readLanes32 mem xp nxp.toNat = some ps)
+    (hspace : BodyPositionsSpaced mem c xj xp nxp.toNat p len.toNat)
+    (hm : stage2StringBody mem c p len.toNat dst outn xp xj nxp.toNat =
+      some (m, form, slot))
+    (hform : form ≠ 0)
+    (hsep : RegionsApart next 8 outn 8) :
+    ∃ l, readBytes (writeBytes m next slot) outn 8 = some (wordBytes 8 l) ∧
+      l ≤ len.toNat := by
+  obtain ⟨l, hr, hle⟩ := s2StringBody_outn_le hm hspace hform
+  have hslot := stage2StringBody_slot_le hbase hj0 hps hm
+  refine ⟨l, ?_, hle⟩
+  refine (walkReadBytes_writeBytes_outside (m := m) (v := slot) (start := next)
+    (addr := outn) (n := 8) ?_).trans hr
+  rcases hsep with h | h
+  · exact Or.inr (by omega)
+  · exact Or.inl h
 
 /-! ### Presence survives the call
 

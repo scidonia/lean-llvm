@@ -2462,7 +2462,7 @@ theorem walkGeom_at_pre {args : List Value} {m0 : Mem} {next : Nat}
   obtain ⟨b, n, ep, nep, xp, nxp, dst, dstcap, ndst, ev, evcap, nev, err, bs, ent,
     ndst0, nev0, hargs, doc, tail, entries, order, inside, esc, arenaCap, arenaRoom,
     evCap, evRoom, ndstRead, nevRead, errBytes, maxDoc, separate, hwm, hnxp, hdstcap,
-    hevcap, hbpos, hbLt, hepLt⟩ := h'
+    hevcap, hbpos, hbLt, hepLt, hdstLt, hevLt, hev63⟩ := h'
   refine ⟨{
     b := b
     n := n
@@ -2501,6 +2501,9 @@ theorem walkGeom_at_pre {args : List Value} {m0 : Mem} {next : Nat}
     bPos := hbpos
     bLt := hbLt
     epLt := hepLt
+    dstLt := hdstLt
+    evLt := hevLt
+    ev63 := hev63
     separate := separate
     next0 := next
     watermark := hwm }, rfl, hargs⟩
@@ -3028,6 +3031,9 @@ def Stage2Run.ofInv {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
   bPos := G.bPos
   bLt := G.bLt
   epLt := G.epLt
+  dstLt := G.dstLt
+  evLt := G.evLt
+  ev63 := G.ev63
 
 /-- **A behaviour of a completing run is the completion's outcome.**  `BehFromState`
 quantifies over the fuel, and the fuel does not select the result

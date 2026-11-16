@@ -395,6 +395,19 @@ structure WalkGeom (m0 : Mem) where
   /-- **The event stream's capacity is its argument word's value**, `stage2Pre`'s
   clause. -/
   evcapLt : evcap < 2 ^ 64
+  /-- **The arena's staged address is a word**, `stage2Pre`'s clause.  The walk
+  hands its sub-calls `.ptr (G.dst + ...)` and reads the arena's base back through
+  the log's `%ar` word (`wordBytes 8 G.dst`), an eight-byte residue, so an address
+  at or above `2 ^ 64` would name a different object than the word holds. -/
+  dstLt : dst < 2 ^ 64
+  /-- **The event stream's staged address is a word**, `stage2Pre`'s clause: the
+  twin of `dstLt` at `%ev`, whose word `if.then328.i` reads as `%33`. -/
+  evLt : ev < 2 ^ 64
+  /-- **The event cursor's signed bound**, `stage2Pre`'s clause.
+  `if.then328.i` forms its record pointers from a signed index, so the cursor has
+  to stay below `2 ^ 63`; the clause is `nev0 + 13 * n < 2 ^ 63`, and
+  `WalkInv.evlen_le` carries it to `C.evlen < 2 ^ 63` at every state. -/
+  ev63 : nev0 + stage2RecordBytes * n < 2 ^ 63
   /-- The staged objects are separate. -/
   separate : DisjointRegions
     (stage2Regions b n ep nep xp nxp dst ndst0 ev evcap ndst nev err)
@@ -419,7 +432,7 @@ theorem WalkGeom.nonempty {args : List Value} {m0 : Mem} {next : Nat}
   obtain ⟨b, n, ep, nep, xp, nxp, dst, dstcap, ndst, ev, evcap, nev, err, bs, ent,
     ndst0, nev0, -, doc, tail, entries, order, inside, esc, arenaCap, arenaRoom,
     evCap, evRoom, ndstRead, nevRead, errBytes, maxDoc, separate, hwm, hnxp, hdstcap,
-    hevcap, hbpos, hbLt, hepLt⟩ := h'
+    hevcap, hbpos, hbLt, hepLt, hdstLt, hevLt, hev63⟩ := h'
   exact ⟨{
     b := b
     n := n
@@ -458,6 +471,9 @@ theorem WalkGeom.nonempty {args : List Value} {m0 : Mem} {next : Nat}
     bPos := hbpos
     bLt := hbLt
     epLt := hepLt
+    dstLt := hdstLt
+    evLt := hevLt
+    ev63 := hev63
     separate := separate
     next0 := next
     watermark := hwm

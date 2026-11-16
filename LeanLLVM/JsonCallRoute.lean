@@ -418,6 +418,14 @@ def routePre (l : RouteLayout) (doc : List UInt8) : Prop :=
   -- the arena and the event stream: the reached extent and the write room
   l.ndst0 + doc.length + 64 ≤ l.dstcap ∧
   l.nev0 + 13 * doc.length ≤ l.evcap ∧
+  -- **the two staged output addresses are 64-bit words, and the event cursor is
+  -- a signed index.**  `l.dst` and `l.ev` are the objects the record's tail hands
+  -- its sub-calls and appends to, and the log's words naming them are eight-byte
+  -- residues; `if.then328.i` forms its record pointers from a signed index, so
+  -- the cursor's worst case `nev0 + 13 * n` is below `2 ^ 63`.  These are the
+  -- caller's numbers, not the staging's: `HasBytes` at the two objects bounds the
+  -- staged bytes and never the address in them.
+  l.dst < 2 ^ 64 ∧ l.ev < 2 ^ 64 ∧ l.nev0 + 13 * doc.length < 2 ^ 63 ∧
   -- the two growing cursors' room, and the 32-bit document bound
   cursorRoom 0 (pipelineBlocks doc.length) 9 ∧
   cursorRoom l.nxp0 (pipelineBlocks doc.length) 9 ∧
@@ -698,7 +706,7 @@ theorem routeStaging (l : RouteLayout) (doc : List UInt8)
     (h : routePre l doc) :
     pipelineStaging l.tab l.base (routeArgs l doc) (stagedMem l doc) := by
   obtain ⟨hadm, hb3, hbLt, hepLt, hep64, hxp64, hdst64, hev64, hepcap, hdst, hev,
-    hroom0, hroomx, h32, harm, hsep⟩ := h
+    hdstLtR, hevLtR, hnev63R, hroom0, hroomx, h32, harm, hsep⟩ := h
   obtain ⟨hpos, hlim, -⟩ := admitted_documentDomain hadm
   have hdoc64 : doc.length < 2 ^ 64 := by
     have : doc.length ≤ 1048576 := by simpa [Limits.default] using hlim
@@ -775,6 +783,12 @@ theorem routeStaging (l : RouteLayout) (doc : List UInt8)
     exact hsep
   · exact hbLt
   · exact hepLt
+  · -- the arena's staged address is a word
+    exact hdstLtR
+  · -- the event stream's staged address is a word
+    exact hevLtR
+  · -- the event cursor's worst case is a signed index
+    exact hnev63R
 
 /-- The document's exact-length read at the caller's base, which is
 `pipelineSpecPre`'s input relation and not a clause of `pipelineStaging`. -/
@@ -809,7 +823,7 @@ theorem routeStagedBelow (l : RouteLayout) (doc : List UInt8)
     pipelineStagedBelow l.tab l.base (routeArgs l doc) (stagedMem l doc)
       (routeNext l doc) := by
   obtain ⟨hadm, hb3, hbLt, hepLt, hep64, hxp64, hdst64, hev64, hepcap, hdst, hev,
-    hroom0, hroomx, h32, harm, hsep⟩ := h
+    _hdstLtR, _hevLtR, _hnev63R, hroom0, hroomx, h32, harm, hsep⟩ := h
   obtain ⟨-, hlim, -⟩ := admitted_documentDomain hadm
   have hdoc64 : doc.length < 2 ^ 64 := by
     have : doc.length ≤ 1048576 := by simpa [Limits.default] using hlim
@@ -839,7 +853,7 @@ theorem routeSpecPre (l : RouteLayout) (doc : List UInt8)
     pipelineSpecPre l.tab l.base (routeArgs l doc) (stagedMem l doc)
       (routeNext l doc) := by
   obtain ⟨hadm, hb3, hbLt, hepLt, hep64, hxp64, hdst64, hev64, hepcap, hdst, hev,
-    hroom0, hroomx, h32, harm, hsep⟩ := h
+    _hdstLtR, _hevLtR, _hnev63R, hroom0, hroomx, h32, harm, hsep⟩ := h
   obtain ⟨hpos, hlim, hdom⟩ := admitted_documentDomain hadm
   have hdoc64 : doc.length < 2 ^ 64 := by
     have : doc.length ≤ 1048576 := by simpa [Limits.default] using hlim

@@ -85,30 +85,50 @@ link's *target* state into the next link's hypotheses, so no link may conclude
 `WalkLink.if_else334_i_at`, which takes the helper's answer as a parameter and
 concludes the target state.
 
-**The residue: thirteen parameters, not a bundle field.**  With the states
+**The residue: five fields, and the rest derived.**  With the states
 nameable, every link's hypotheses are the head bundle's fields, `WalkInv`'s
 clauses, the step's own predecessor, or a `def`'d state's cells — except for
-`HstringResidue`'s fields, each of which names its producer where it is stated:
+`HstringResidue`'s five fields.  The structure used to carry thirteen; the eight
+retired are named below with where they went:
 
 | id | field | statement | producer | retired by |
 |---|---|---|---|---|
 | R5 | `hreadAr` | `readBytes … (z + 40) 8 = some (wordBytes 8 G.dst)` | the initialisation's store at `%z + 40` plus a `WalkInv` clause for the arena's base | that clause |
-| R6 | `hGdst`, `hGev` | `G.dst < 2^64`, `G.ev < 2^64` | the ABI staging's address width; `stage2Pre` states it for `b`, `ep`, `nxp`, `dstcap` and `evcap` only, so these two are the caller's | a staging clause at the two addresses |
-| R1's answer | `r`, `hcallR`, `hretR` | the callee's outcome, its call at the state link 8 leaves, and its word | `s2StringBodyPre_at_string_call` and `s2StringBody_sound`'s form (= the bundle's `y`) | the string body's staging at this call site |
-| R8 | `hR8` | `evalICmp .slt y 1 = 0` | the callee's post: the form is `1` or `2` on the accepting arms | the post stating the form |
-| R2 | `l`, `hreadOutn`, `hlext` | the decoded length at the callee's memory, and `l ≤ ext` | `s2StringBodyPost`'s `%outn` word and `s2StringBody_outn_le` | a `s2StringBodyPost` clause relating the length to `len` |
-| R3 | `hlogBase` | `readBytes r.mem C.stage.z 8 = some (wordBytes 8 G.ev)` | the initialisation's store at `%z + 0` plus a `WalkInv` clause for the log's base | that clause |
-| R4 | `hltEvents` | `C.events.length < C.k` (strict) | `if.then425.i`'s one-record-per-emitting-entry count | a clause relating the trace's length to the entries consumed; **the strict form is itself too strong** — at `C.k = 0` it is `0 < 0`, so this field (and the last entry's producer argument of the same statement, `HlastResidue.hltT`) makes its bundle uninhabited for a single-entry document.  The provable form is `C.events.length + 1 ≤ G.nep`, which `WalkInv.events_le` and the head's guard give, and the emit lemma's hypothesis is where it has to land (see `JsonStage2WalkDispatchWitnessHlast`'s survivors table for the five modules that read it) |
-| — | `hev63` | `C.evlen < 2^63` | the staging's cursor word (`stage2Pre`'s `%nev`) | a staging clause |
+| R1's answer word | `hretR` | `∀ r, the call answers r → r.ret = .int 32 y` | the callee's post gives the form (`s2StringBody_sound`) and the bundle's `y` is that form's word | the post stating that the head's `y` is its form — the two calls read the same words, so a congruence lemma on `stage2StringBody` would retire it |
+| R8 | `hR8` | `evalICmp .slt y 1 = 0` | nothing: it is the *arm selector*.  The callee may refuse, so no clause of the staging or the contract removes the refusing answer | — |
+| R3 | `hlogBase` | `readBytes s.mem C.stage.z 8 = some (wordBytes 8 G.ev)`, at the **head** state's memory | the initialisation's store at `%z + 0` plus a `WalkInv` clause for the log's base | that clause |
+| R4 | `hltEvents` | `C.events.length < C.k` (strict) | `if.then425.i`'s count, as the emit's *preservation* hypothesis | see below: the clause it preserves is the defect, not this field |
 
-Every field is a statement no clause of `WalkInv`, no field of `HstringFacts`,
-the staging or the callee's contract produces, and the table says which clause
-would retire each rather than leaving the list to prose.  Each is a helper
-contract's output or the document's own count.  `%c.i`, `%z`, `%xp` and `%nxp`
-used to be four more on that list; the static carrier now names them, and
-`%arrayidx10.i` is `WalkIter.regarr`'s — the header's `%3 + %idxprom.i` bind,
-which `whileBody_step` produces and `strArr_of_iter` reads at the call's state —
-so the five register fields are gone.
+The eight retired, with where each is produced:
+
+* **`r` and `hcallR`** — `s2StringBody_answers` at the transported precondition,
+  inside `strPath9`.  The answer is no longer carried, so `hretR` is stated over
+  every answer the call can return and the structure is a `Prop`;
+* **`l`, `hreadOutn` and `hlext`** — `s2StringBody_outn_le` at the callee's model
+  memory, plus `s2StringBody_outn_at_call` (new, in `JsonStage2StringStageFacts`)
+  to carry the word across the private slot's write at the call's `next`: the pre
+  separates the slot from `%outn.i`, so the length and its bound are the call's.
+  `strPath9` returns them with the answer;
+* **the log's base word at the answer's memory** — `strPath9` carries the head's
+  word across link 8's two stores (`walkReadBytes_two_writes`, `R.hlogBase`) and
+  the callee's log-silence (`s2StringBodyFrame_facts`), so the five links read it
+  at `r.mem` without a premise about the callee;
+* **`G.dst < 2^64`, `G.ev < 2^64` and `C.evlen < 2^63`** — `WalkGeom.dstLt`,
+  `WalkGeom.evLt` and `WalkGeom.ev63` (`stage2Pre`'s clauses), the last through
+  `WalkInv.evlen_le`.
+
+**`hltEvents` does not close, and the reason is a defect in `WalkInv`.**  The emit
+must re-establish `WalkInv.events_le` (`C.events.length ≤ C.k`) at its target, and
+the carry's `k` does not advance until the merge — so the target's obligation is
+`(C.events ++ [rec]).length ≤ C.k`, which is exactly this field's strict form.
+`C.events.length + 1 ≤ G.nep` is provable (from `events_le` and the head's guard)
+but does not imply `length + 1 ≤ k`.  Worse, the clause itself is false one link
+later: at `C.k = 0` the head has `0 ≤ 0` and the emit carries `1 ≤ 0`, so
+`WalkInv` is uninhabited at every post-emit state.  The repair is `events_le` as
+`C.events.length ≤ C.k + 1` with the event room
+`nev0 + stage2RecordBytes * (n + 1) ≤ evcap`, and it is its own item: `evlen_le`,
+the refusal and finalisation routes, and the post's `nev' ≤ nev0 + 13 * n` all
+read the old statement.
 
 **The body's six memory clauses are produced, not supplied.**  `strPath9` derives
 them from the head bundle in four steps, all of which are lemmas of
@@ -1333,18 +1353,24 @@ endpoint is named (`strS₉`), so `strPath10` reads the invariant there and take
   the initialisation's store at `%z + 40` plus a `WalkInv` clause for the
   arena's base; `WalkInv.owned` gives the object's presence only, and the clause
   set binds `+8`, `+16`, `+32`, `+48` and `+56`.
-* `hGdst` — residue **R6**, the arena's staged address width.  `WalkGeom` bounds
-  `dstcap`, never `dst`, and the staging's `HasBytes` at `%dst` bounds no
-  address; the field is the caller's, as its own docstring states.
-* `r`, `hcallR` — the callee's `CallOutcome`, which the states after link 9
-  carry; its producer is the string body's contract at the staging assembled by
-  `s2StringBodyPre_at_string_call`.
-* `hretR` — the answer's word, `%call272.i`.  Producer: `s2StringBodyPost`'s
-  `form` at that call (`s2StringBody_sound`), which is the bundle's `y` on the
-  accepting arm.
-* `hR8` — residue **R8**, `NodeBlock31`'s edge.  Producer: the callee's post —
-  the form is `1` or `2` on the accepting arms, and neither is `< 1` signed;
-  its `form ≠ 0` is also what the write-back's `l ≤ ext` producer needs.
+* `hretR` — residue **R1's word**, `%call272.i`, stated over every answer the call
+  can return.  Producer: the callee's post (`s2StringBody_sound`) gives the form,
+  which is the bundle's `y` on the accepting arm.
+* `hR8` — residue **R8**, `NodeBlock31`'s edge.  Nothing produces it: the post
+  allows a refusing answer, so the accepting arm is a premise.  Its `form ≠ 0` is
+  also what the write-back's `l ≤ ext` producer needs.
+* `hlogBase` — residue **R3**, the log's base word at the head state's memory.
+  `strPath9` carries it to the answer's memory, which is where the five links read
+  it.
+
+**What this theorem produces, and why it is not a parameter.**  The callee's
+answer `r` and its call are `s2StringBody_answers` at the transported
+precondition; its word is `hretR`'s instantiation; the decoded length `l`, its
+read at `%outn.i` and its bound are `s2StringBody_outn_le` with
+`s2StringBody_outn_at_call`, which moves the word across the private slot's write;
+and the log's base word at the answer's memory is the head's through link 8's two
+stores and the callee's log-silence.  All five leave this theorem in its
+conclusion, so `strPath10` and `stringPath_seg` read them from one place.
 
 **The six memory clauses are not parameters.**  They are the composition the
 residue used to carry as one field: the transported precondition
@@ -1360,18 +1386,20 @@ theorem strPath9 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
       = some (.ptr (G.b + f.ix.toNat)))
     (hreadAr : readBytes (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).mem
       (C.stage.z + 40) 8 = some (wordBytes 8 G.dst))
-    (hGdst : G.dst < 2 ^ 64)
-    (r : CallOutcome)
-    (hcallR : stage2Calls stage2SubCalls "s2_string_body"
+    (hretR : ∀ r, stage2Calls stage2SubCalls "s2_string_body"
       [.ptr C.stage.c, .ptr (G.b + f.ix.toNat + 1), .int 64 (BitVec.ofNat 64 f.ext),
         .ptr (G.dst + f.A.toNat), .ptr (G.next0 + 20), .ptr G.xp, .ptr (G.next0 + 12),
         .int 64 (BitVec.ofNat 64 G.nxp)]
       (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).mem
-      (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).next = some r)
-    (hretR : r.ret = .int 32 f.y)
-    (hR8 : evalICmp .slt f.y (BitVec.ofNat 32 1) = 0) :
-    ∃ s', WalkSegment (stage2Calls stage2SubCalls) G C s (strC₉ C f.ix f.ext) s' 9 ∧
-      s' = strS₉ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s := by
+      (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).next = some r → r.ret = .int 32 f.y)
+    (hR8 : evalICmp .slt f.y (BitVec.ofNat 32 1) = 0)
+    (hlogBase : readBytes s.mem C.stage.z 8 = some (wordBytes 8 G.ev)) :
+    ∃ (r : CallOutcome) (s' : State),
+      WalkSegment (stage2Calls stage2SubCalls) G C s (strC₉ C f.ix f.ext) s' 9 ∧
+      s' = strS₉ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s ∧
+      r.ret = .int 32 f.y ∧
+      readBytes r.mem C.stage.z 8 = some (wordBytes 8 G.ev) ∧
+      (∃ l, readBytes r.mem (G.next0 + 20) 8 = some (wordBytes 8 l) ∧ l ≤ f.ext) := by
   obtain ⟨s8, hseg8, hs8⟩ := strPath8 G C s hhead hInv f
   subst hs8
   have hInv8 : WalkInv G (strC₈ C f.ix f.ext)
@@ -1549,7 +1577,10 @@ theorem strPath9 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
       (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).mem
       (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).next :=
     s2StringBodyPre_of_reads hbaseA hxjA heA hpsA hbodyA hpres f.hpreS
-  -- the callee's answer
+  -- the callee's answer: `s2StringBody_answers` at the transported precondition,
+  -- and the word `s2StringBody_sound`'s post gives
+  obtain ⟨r, hcallR⟩ := s2StringBody_answers hpre8
+  have hretRr : r.ret = .int 32 f.y := hretR r hcallR
   have hpost8 : s2StringBodyPost
       [.ptr C.stage.c, .ptr (G.b + f.ix.toNat + 1), .int 64 (BitVec.ofNat 64 f.ext),
        .ptr (G.dst + f.A.toNat), .ptr (G.next0 + 20), .ptr G.xp,
@@ -1568,7 +1599,7 @@ theorem strPath9 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
   -- the accepting arm: the answer's word is not zero, so the form is not
   have hyForm : f.y = BitVec.ofNat 32 form8 := by
     have h : Value.int 32 (BitVec.ofNat 32 form8) = Value.int 32 f.y :=
-      hret8.symm.trans hretR
+      hret8.symm.trans hretRr
     exact eq_of_heq (Value.int.inj h).2.symm
   have hform0 : form8 ≠ 0 := by
     intro h0
@@ -1666,7 +1697,7 @@ theorem strPath9 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     WalkLink.z_arena_reserve_exit (G := G) (C := strC₈ C f.ix f.ext)
       (s := strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s) hInv8 rfl
       (p := f.ix.toNat) (off := C.alen) (ext := f.ext) hpend8 (A := f.A)
-      hz36 hpos hreadA8 har8 hGdst hreadAr harr hsub8 hc8 houtn8 hxp8 hxj8 hnxp8
+      hz36 hpos hreadA8 har8 G.dstLt hreadAr harr hsub8 hc8 houtn8 hxp8 hxj8 hnxp8
       f.hwin (r := r) hcallR hframeR hownedR hlogR hevR hstTyR hstStR
   have hs9' : s9 = strS₉ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s := hs9
   subst hs9'
@@ -1674,7 +1705,49 @@ theorem strPath9 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
       (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s) (strC₉ C f.ix f.ext)
       (strS₉ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s) := by
     simpa only [strC₉] using hl9
-  exact ⟨_, hseg8.trans (WalkSegment.of_link hl9'), rfl⟩
+  -- the log's base word at the answer's memory: the head's word carried across
+  -- link 8's two stores and the callee's log-silence
+  have hzBase8 : readBytes (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).mem
+      C.stage.z 8 = readBytes s.mem C.stage.z 8 := by
+    rw [hmem8]
+    refine walkReadBytes_two_writes (v := wordBytes 8 (C.k + 2))
+      (w := natToBytes (BitVec.ofNat 64 0).toNat 8) (c := C.stage.c) (nt := G.next0)
+      (addr := C.stage.z) (n := 8) ?_ ?_
+    · rw [hlen8]
+      rcases walkCursorLog_sep C.stage with h | h
+      · right
+        simp only [stage2CursorExtent, stage2LogExtent] at h ⊢
+        omega
+      · left
+        simp only [stage2CursorExtent, stage2LogExtent] at h ⊢
+        omega
+    · rw [hzero8]
+      left
+      have hz := C.stage.sevenEnd (C.stage.z, stage2LogExtent)
+        (by simp [stage2StagedWrites])
+      simp only [stage2LogExtent] at hz
+      omega
+  have hlogBaseR : readBytes r.mem C.stage.z 8 = some (wordBytes 8 G.ev) := by
+    refine (hlogR 0 8 (by simp only [stage2LogExtent]; omega)).trans ?_
+    exact hzBase8.trans hlogBase
+  -- the decoded length at the answer's memory, through the private slot's write
+  have houtnR : ∃ l, readBytes r.mem (G.next0 + 20) 8 = some (wordBytes 8 l) ∧
+      l ≤ f.ext := by
+    obtain ⟨l, hr, hle⟩ := s2StringBody_outn_le hm8 hsp8 hform0
+    have hsep := s2StringBodyPre_next_outn hpre8
+    have hslot := stage2StringBody_slot_le hbase8 hj0_8 hps8' hm8'
+    have hread : readBytes
+        (writeBytes m8 (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).next slot8)
+        (G.next0 + 20) 8 = some (wordBytes 8 l) := by
+      refine (walkReadBytes_writeBytes_outside (m := m8) (v := slot8)
+        (start := (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).next)
+        (addr := G.next0 + 20) (n := 8) ?_).trans hr
+      rcases hsep with h | h
+      · exact Or.inr (by omega)
+      · exact Or.inl h
+    rw [hrmem8]
+    exact ⟨l, hread, by simpa only [hLenN] using hle⟩
+  exact ⟨r, _, hseg8.trans (WalkSegment.of_link hl9'), rfl, hretRr, hlogBaseR, houtnR⟩
 
 /-- **Links 1 to 10 compose: `NodeBlock31`'s edge.**  `strPath9`'s endpoint, then
 the block's own test — `%call272.i` is the callee's answer and its bit is R8's, so
@@ -1685,20 +1758,22 @@ theorem strPath10 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
       = some (.ptr (G.b + f.ix.toNat)))
     (hreadAr : readBytes (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).mem
       (C.stage.z + 40) 8 = some (wordBytes 8 G.dst))
-    (hGdst : G.dst < 2 ^ 64)
-    (r : CallOutcome)
-    (hcallR : stage2Calls stage2SubCalls "s2_string_body"
+    (hretR0 : ∀ r, stage2Calls stage2SubCalls "s2_string_body"
       [.ptr C.stage.c, .ptr (G.b + f.ix.toNat + 1), .int 64 (BitVec.ofNat 64 f.ext),
         .ptr (G.dst + f.A.toNat), .ptr (G.next0 + 20), .ptr G.xp, .ptr (G.next0 + 12),
         .int 64 (BitVec.ofNat 64 G.nxp)]
       (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).mem
-      (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).next = some r)
-    (hretR : r.ret = .int 32 f.y)
-    (hR8 : evalICmp .slt f.y (BitVec.ofNat 32 1) = 0) :
-    ∃ s', WalkSegment (stage2Calls stage2SubCalls) G C s (strC₁₀ C f.ix f.ext) s' 10 ∧
-      s' = strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s := by
-  obtain ⟨s9, hseg9, hs9⟩ :=
-    strPath9 G C s hhead hInv f harr hreadAr hGdst r hcallR hretR hR8
+      (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).next = some r → r.ret = .int 32 f.y)
+    (hR8 : evalICmp .slt f.y (BitVec.ofNat 32 1) = 0)
+    (hlogBase : readBytes s.mem C.stage.z 8 = some (wordBytes 8 G.ev)) :
+    ∃ (r : CallOutcome) (s' : State),
+      WalkSegment (stage2Calls stage2SubCalls) G C s (strC₁₀ C f.ix f.ext) s' 10 ∧
+      s' = strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s ∧
+      r.ret = .int 32 f.y ∧
+      readBytes r.mem C.stage.z 8 = some (wordBytes 8 G.ev) ∧
+      (∃ l, readBytes r.mem (G.next0 + 20) 8 = some (wordBytes 8 l) ∧ l ≤ f.ext) := by
+  obtain ⟨r, s9, hseg9, hs9, hretR, hlogBaseR, houtnR⟩ :=
+    strPath9 G C s hhead hInv f harr hreadAr hretR0 hR8 hlogBase
   subst hs9
   -- ---- link 10: `NodeBlock31`
   have hInv9 : WalkInv G (strC₉ C f.ix f.ext)
@@ -1722,7 +1797,7 @@ theorem strPath10 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
       (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s) := by
     rw [hleaf] at hl10
     simpa only [strC₁₀] using hl10
-  exact ⟨_, hseg9.trans (WalkSegment.of_link hl10'), rfl⟩
+  exact ⟨r, _, hseg9.trans (WalkSegment.of_link hl10'), rfl, hretR, hlogBaseR, houtnR⟩
 
 /-! ### Links 11 to 15: the residue, and the segment's proof
 
@@ -1734,26 +1809,28 @@ container's advance.  Four of them already name their targets
 `WalkLink.if_else334_i_at` exposes by taking the helper's answer as a parameter.
 
 **The residue.**  Everything the five links read is the head bundle's, `WalkInv`'s,
-or the previous link's target, except `HstringResidue`'s fields.  Each names its
-producer there, and the four groups are:
+or the previous link's target, except `HstringResidue`'s five fields, each of which
+names its producer at the field.  The inputs the links used to take separately are
+derived here:
 
-* **R1** — the string body's answer, its call and its word.  The body's six
-  memory clauses are not fields: `strPath9` produces them from the head bundle;
-* **R2** — the decoded length `l` at the write-back's memory and its bound
-  `l ≤ ext`.  `s2StringBodyPost` leaves the length free of the input's, so the
-  read is supplied rather than derived, and `s2StringBody_outn_le` is what produces
-  the bound;
-* **R3** — the log's base word at `%z`, which no `WalkInv` clause binds: `%z`'s
-  first eight bytes are *inside* the walk's write extent, so the frame — silence
-  outside it — cannot reach them, and the staging gives the object's presence, not
-  the value in it.  Producer: the initialisation's store at `%z + 0`;
-* **R4** — `C.events.length < C.k`, strict where `events_le` gives `≤`.  Producer:
-  `if.then425.i`'s one-record-per-emitting-entry count.
+* **the answer and its word (R1)** — `strPath10` returns the answer, its call and
+  its word: `s2StringBody_answers` and `s2StringBody_sound` at the transported
+  precondition.  The body's six memory clauses are not fields either;
+* **the decoded length (R2)** — `strPath10` returns `l`, its read at `%outn.i` and
+  `l ≤ ext`, from `s2StringBody_outn_le` and `s2StringBody_outn_at_call`;
+* **the log's base word (R3)** — the residue states it at the head's memory, and
+  `strPath9` carries it to the answer's, so this section reads it at `r.mem`
+  without a premise about the callee;
+* **the widths and the cursor's signed bound** — `WalkGeom.dstLt`, `evLt` and
+  `ev63` (`stage2Pre`'s clauses), the last through `WalkInv.evlen_le`;
+* **the event count (R4)** — `hltEvents`, whose defect is recorded at its field:
+  the strict form is the emit's *preservation* hypothesis, and the clause it
+  preserves is the one that needs the repair.
 
-The rest of the structure is the vocabulary the layer does not carry: the
-per-iteration register `%arrayidx10.i`, the log's arena-base word R5, the arena's
-and the event stream's staged widths, the strict event count, and the event
-cursor's signed bound.  `%c.i`, `%z`, `%xp` and `%nxp` are no longer among them —
+What remains in the structure is the vocabulary the layer does not carry: the
+per-iteration register `%arrayidx10.i` (produced by `strArr_of_iter`), the log's
+arena-base word R5, the log's base word R3, the answer's word R1 and the
+accepting-arm selector R8.  `%c.i`, `%z`, `%xp` and `%nxp` are not among them —
 the static carrier names all four — so each of the five links reads them through
 `WalkInv.regs` at its own state.  The composition is a proof from these; nothing
 here is weakened to make one go through.
@@ -1793,77 +1870,81 @@ theorem strArr_of_iter {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State
 beside `WalkInv`'s clauses and the head bundle's fields, at the head state the
 bundle is stated at.
 
-The structure is a `Type` because `r` and `l` are data: the segment's endpoint is
-the state the string body's answer and the write-back's length put the run in, so
-a `Prop` would leave the composition with nothing to name. -/
+**Five fields, and the eight the structure used to carry are derived.**  Each
+derivation names where it happens:
+
+* the callee's answer (`r`), its call and its word (`%call272.i`), the decoded
+  length `l` at the write-back's memory and its bound `l ≤ ext`, and the log's
+  base word at that memory are `strPath9`'s: `s2StringBody_answers` and
+  `s2StringBody_sound` at the transported precondition give the answer, and
+  `s2StringBody_outn_le` with `s2StringBody_outn_at_call` give the length's word
+  at the answer's own memory.  Two of them used to be the residue's data — `r` and
+  `l` — which is why the structure is now a `Prop`;
+* the arena's and the event stream's addresses are `WalkGeom.dstLt`/`evLt`
+  (`stage2Pre`'s clauses), the event cursor's signed bound is `WalkGeom.ev63` with
+  `WalkInv.evlen_le`, and the event count's provable form is `hltEvents`'s below.
+
+The log's base word is stated at the **head state's** memory: it is the
+initialisation's store at `%z + 0`, `%z`'s first eight bytes lie inside the walk's
+write extent, and no `WalkInv` clause binds them, so the walk layer cannot prove it
+and the caller of the invariant supplies it.  `strPath9` carries it across link 8's
+two stores and the callee's frame (`s2StringBodyFrame_facts`' log-silence), which is
+where the answer's memory is known. -/
 structure HstringResidue {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
-    (f : HstringFacts G C s) : Type where
+    (f : HstringFacts G C s) : Prop where
   /-- **R5 — the log's arena-base word** at `%z + 40`, which `if.end256.i`'s
   `%sub260.i` is added to.  Producer: the initialisation's store at `%z + 40` plus
   a `WalkInv` clause for the arena's base; `WalkInv.owned` gives the object's
   presence, and the clause set binds `+8`, `+16`, `+32`, `+48` and `+56`. -/
   hreadAr : readBytes (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).mem
     (C.stage.z + 40) 8 = some (wordBytes 8 G.dst)
-  /-- **R6 — the arena's staged address is a word.**  `WalkGeom` bounds `dstcap`
-  and never `dst`, and `stage2Pre` states an address width for `b` and `ep` and a
-  count width for `nxp`, `dstcap` and `evcap` — not for `%dst`.  Neither
-  `HasBytes m0 dst dstcap` nor the region separation bounds the address itself, so
-  the field is the caller's: its producer is the ABI's address width (`stage2.h`),
-  which the record does not state, and a `stage2Pre`/`WalkGeom` clause at `%dst`
-  would retire it. -/
-  hGdst : G.dst < 2 ^ 64
-  /-- **R1 — the string body's answer.**  Its producer is `s2StringBodyPre` at the
-  argument list (`s2StringBodyPre_at_string_call`). -/
-  r : CallOutcome
-  hcallR : stage2Calls stage2SubCalls "s2_string_body"
+  /-- **R1's answer word** — `%call272.i`, stated over every answer the call can
+  return because the answer itself is now produced rather than carried.  Producer:
+  the callee's post gives the form (`s2StringBody_sound`), and the bundle's `y` is
+  that form's word; it cannot be read off `HstringFacts.hy`, which is stated at the
+  *head's* memory and cursor while the call is made at the state link 8 leaves,
+  whose memory the reservation's zero has already written. -/
+  hretR : ∀ r, stage2Calls stage2SubCalls "s2_string_body"
     [.ptr C.stage.c, .ptr (G.b + f.ix.toNat + 1), .int 64 (BitVec.ofNat 64 f.ext),
       .ptr (G.dst + f.A.toNat), .ptr (G.next0 + 20), .ptr G.xp, .ptr (G.next0 + 12),
       .int 64 (BitVec.ofNat 64 G.nxp)]
     (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).mem
-    (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).next = some r
-  /-- **R1's answer word** — `%call272.i`.  Producer: `s2StringBodyPost`'s `form`
-  at this call (`s2StringBody_sound`), which is the bundle's `y` on the accepting
-  arm.  It cannot be read off `HstringFacts.hy`: that field is stated at the
-  *head's* memory and cursor, and the call is made at the state link 8 leaves,
-  whose memory the reservation's zero has already written. -/
-  hretR : r.ret = .int 32 f.y
+    (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).next = some r → r.ret = .int 32 f.y
   /-- **R8 — `NodeBlock31`'s edge.**  Producer: the callee's post — the form is
-  `1` or `2` on the accepting arms, and neither is `< 1` signed. -/
+  `1` or `2` on the accepting arms, and neither is `< 1` signed.  This is the one
+  field that *selects* an arm rather than reporting one: a refusing answer is a
+  legal answer to the same call, so no clause of the staging or the contract
+  removes it. -/
   hR8 : evalICmp .slt f.y (BitVec.ofNat 32 1) = 0
-  /-- **R2 — the decoded length at the write-back.**  The slot is `%outn.i`,
-  which the body fills; the read is at the callee's returned memory because that
-  is where it is filled, and the producer is `s2StringBodyPost`'s `%outn` word. -/
-  l : Nat
-  hreadOutn : readBytes r.mem (G.next0 + 20) 8 = some (wordBytes 8 l)
-  /-- **R2's bound**: the decoded length fits the window `if.end256.i` reserved.
-  Producer: `s2StringBody_outn_le`. -/
-  hlext : l ≤ f.ext
-  /-- **R3 — the log's base word** at `%z`, which `if.then328.i` loads as `%33`.
-  Not a lemma: `%z`'s first eight bytes lie inside the walk's write extent, so
-  `WalkInv.frame` says nothing about them, and the staging gives the object's
-  presence rather than the value it holds.  Producer: the initialisation's store at
-  `%z + 0`, plus a `WalkInv` clause for the log's base. -/
-  hlogBase : readBytes r.mem C.stage.z 8 = some (wordBytes 8 G.ev)
+  /-- **R3 — the log's base word** at `%z`, which `if.then328.i` loads as `%33`,
+  at the head state's memory.  Not a lemma: `%z`'s first eight bytes lie inside
+  the walk's write extent, so `WalkInv.frame` says nothing about them, and the
+  staging gives the object's presence rather than the value it holds.  Producer:
+  the initialisation's store at `%z + 0`, plus a `WalkInv` clause for the log's
+  base. -/
+  hlogBase : readBytes s.mem C.stage.z 8 = some (wordBytes 8 G.ev)
   /-- **R4 — the trace is short of the entries consumed.**  Producer:
-  `if.then425.i`'s one-record-per-emitting-entry count; `events_le` gives only
-  `≤`, and no clause of `WalkInv` states the strict form. -/
+  `if.then425.i`'s one-record-per-emitting-entry count.
+
+  **This field does not close, and the reason is a defect in `WalkInv`, recorded
+  rather than deferred.**  `WalkInv.events_le` is `C.events.length ≤ C.k`, and the
+  emit's target state needs `(C.events ++ [rec]).length ≤ C.k` — the strict form
+  here, because the carry's `k` does not advance until the merge.  So the field is
+  the *preservation* hypothesis, not a room bound: `C.events.length + 1 ≤ G.nep`
+  is provable (from `events_le` and the head's guard) but does not imply
+  `length + 1 ≤ k`.  The clause itself is false one link later: at `C.k = 0` the
+  head has `0 ≤ 0` and the emit carries `1 ≤ 0`, so `WalkInv` is uninhabited at
+  every post-emit state and the walk cannot leave one — the two-entry arm at the
+  one- and two-entry documents included.  The repair is `events_le` as
+  `C.events.length ≤ C.k + 1` with the event room `nev0 + 13 * (n + 1) ≤ evcap`,
+  and it is its own item because the counts' users (`evlen_le`, the refusal and
+  finalisation routes, the post's `nev' ≤ nev0 + 13 * n`) all read the old
+  statement. -/
   hltEvents : C.events.length < C.k
-  /-- **R6's event-stream half**: the stream's staged address is a word.  The twin
-  of `hGdst`, with the same gap: `stage2Pre` bounds `evcap` and the staged bytes,
-  never `%ev` itself. -/
-  hGev : G.ev < 2 ^ 64
-  /-- **The event cursor's signed bound**, which `if.then328.i`'s `getelementptr`
-  index needs.  Producer: the staging's cursor word (`stage2Pre`'s `%nev`), which
-  bounds the cursor by the event stream's capacity (`evRoom`, `evcapLt`) and so
-  gives `C.evlen < 2 ^ 64` — `evlen_le`'s arithmetic — and not `2 ^ 63`.  The
-  `2 ^ 63` half is the caller's until the staging states the signed bound; the
-  sign extension is what the block's index needs it for, so the field is not a
-  restatement of a clause. -/
-  hev63 : C.evlen < 2 ^ 63
 
 /-- **The residue at every head state**, as the premise a producer supplies: one
 bank of facts per head state, read at the bundle's own state. -/
-abbrev WalkStringResidue {m0 : Mem} (G : WalkGeom m0) : Type :=
+abbrev WalkStringResidue {m0 : Mem} (G : WalkGeom m0) : Prop :=
   ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     C.k + 1 < G.nep → (f : HstringFacts G C s) → HstringResidue G C s f
 
@@ -1961,13 +2042,17 @@ theorem stringPath_seg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
       sd.pre = some "if.else334.i" ∧ WalkInv G Cd sd ∧
       lookupName sd.env "%inc208.i" = some (.int 64 (BitVec.ofNat 64 (C.k + 2))) ∧
       lookupName sd.env "%nep" = some (.int 64 (BitVec.ofNat 64 G.nep)) := by
-  obtain ⟨s10, hseg10, hs10⟩ :=
-    strPath10 G C s hhead hInv f
-      (strArr_of_iter (f := f) hInv.iter.regarr) R.hreadAr R.hGdst
-      R.r R.hcallR R.hretR R.hR8
+  obtain ⟨r, s10, hseg10, hs10, hretR, hlogBaseR, ⟨l, hreadOutn, hlext⟩⟩ :=
+    strPath10 G C s hhead hInv f (strArr_of_iter (f := f) hInv.iter.regarr)
+      R.hreadAr R.hretR R.hR8 R.hlogBase
   subst hs10
+  -- the event cursor's signed bound: the staging's clause, through `evlen_le`
+  have hev63 : C.evlen < 2 ^ 63 := by
+    have h1 := hInv.evlen_le
+    have h2 := G.ev63
+    omega
   have hInv10 : WalkInv G (strC₁₀ C f.ix f.ext)
-      (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s) := hseg10.inv'
+      (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s) := hseg10.inv'
   have hev64 : C.evlen < 2 ^ 64 := by
     have h1 := hInv.evlen_le
     have h2 := G.evRoom
@@ -1986,60 +2071,60 @@ theorem stringPath_seg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
       (by omega) G.evcapLt (by omega)
   have hnotres : ¬ ((0 : BitVec 1) = 1) := by decide
   -- ---- link 11: `LeafBlock29`'s own test
-  have hcall272 : evalOperand (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s)
+  have hcall272 : evalOperand (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s)
       (.reg "%call272.i") = some (.int 32 f.y) := by
     simp [strS₁₀, State.bind, strS₉, walkZArenaReserveExitOutAt, strS₈, stateAt,
-      evalOperand, lookupName, R.hretR]
+      evalOperand, lookupName, hretR]
   obtain ⟨s11, hl11, hs11⟩ :=
     WalkLink.LeafBlock29_at (calls := stage2Calls stage2SubCalls) (G := G)
       (C := strC₁₀ C f.ix f.ext)
-      (s := strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s) hInv10 rfl
+      (s := strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s) hInv10 rfl
       (x1 := f.y) hcall272
   by_cases hy1 : evalICmp .eq f.y (BitVec.ofNat 32 1) = 1
   · -- ===== the literal arm: `if.then281.i` =====
     have hs11' : s11 = strS₁₁ f.y
-        (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s) := hs11
+        (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s) := hs11
     subst hs11'
     have hl11' : WalkLink (stage2Calls stage2SubCalls) G (strC₁₀ C f.ix f.ext)
-        (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s)
+        (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s)
         (strC₁₁ C f.ix f.ext f.y)
-        (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s)) := hl11
+        (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s)) := hl11
     have hInv11 : WalkInv G (strC₁₁ C f.ix f.ext f.y)
-        (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s)) :=
+        (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s)) :=
       hl11'.inv'
     -- `%7`, the literal's operand
     have h7 : lookupName
-        (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s)).env "%7"
+        (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s)).env "%7"
         = some (.int 32 (BitVec.ofNat 32 (entryPos G C.k))) := by
       simpa [strS₁₁, State.bind, strS₁₀, strS₉, walkZArenaReserveExitOutAt, strS₈,
         walkIfEnd256OutAt, strS₇, strS₆, strS₅, strS₄, strS₃, strS₂, strS₁, strSetK₅,
         stateAt, cells, lookupName] using f.h7
     obtain ⟨s12, hl12, hs12⟩ :=
       WalkLink.if_then281_i (G := G) (C := strC₁₁ C f.ix f.ext f.y)
-        (s := strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))
+        (s := strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))
         hInv11
         (by show (if evalICmp .eq f.y (BitVec.ofNat 32 1) = 1 then "if.then281.i" else "if.else285.i") = "if.then281.i"; rw [if_pos hy1])
         (x7 := BitVec.ofNat 32 (entryPos G C.k)) h7
     have hs12' : s12 = strS₁₂t (BitVec.ofNat 32 (entryPos G C.k))
-        (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s)) := hs12
+        (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s)) := hs12
     subst hs12'
     have hl12' : WalkLink (stage2Calls stage2SubCalls) G (strC₁₁ C f.ix f.ext f.y)
-        (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))
+        (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))
         (strC₁₂ C f.ix f.ext f.y)
         (strS₁₂t (BitVec.ofNat 32 (entryPos G C.k))
-          (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))) := hl12
+          (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))) := hl12
     have hInv12 : WalkInv G (strC₁₂ C f.ix f.ext f.y)
         (strS₁₂t (BitVec.ofNat 32 (entryPos G C.k))
-          (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))) :=
+          (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))) :=
       hl12'.inv'
     -- the two `phi`s' operands
     have hpre12 : (strS₁₂t (BitVec.ofNat 32 (entryPos G C.k))
-        (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))).pre
+        (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))).pre
         = some "if.then281.i" := by
       show some (if evalICmp .eq f.y (BitVec.ofNat 32 1) = 1 then "if.then281.i" else "if.else285.i") = some "if.then281.i"
       rw [if_pos hy1]
     have hsub12 : evalOperand (strS₁₂t (BitVec.ofNat 32 (entryPos G C.k))
-        (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s)))
+        (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s)))
         (.reg "%sub260.i") = some (.int 64 (BitVec.ofNat 64 f.ext)) := by
       have hval : (BitVec.ofNat 64 f.q)
           + (f.ix ^^^ BitVec.ofNat 64 18446744073709551615) = BitVec.ofNat 64 f.ext :=
@@ -2048,28 +2133,28 @@ theorem stringPath_seg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
         strS₈, walkIfEnd256OutAt, strS₇, strS₆, strS₅, strS₄, strS₃, strS₂, strS₁,
         strSetK₅, stateAt, cells, lookupName, evalOperand, hval]
     have hor12 : evalOperand (strS₁₂t (BitVec.ofNat 32 (entryPos G C.k))
-        (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s)))
+        (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s)))
         (.reg "%or.i") = some (.int 64 (strOr (BitVec.ofNat 32 (entryPos G C.k)))) := by
       simp [strS₁₂t, stateAt, cells, lookupName, evalOperand]
     -- ---- link 13: `if.end290.i`
     have hlen12 : lookupName (strS₁₂t (BitVec.ofNat 32 (entryPos G C.k))
-        (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))).env "%len"
+        (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))).env "%len"
         = some (.ptr (C.stage.z + 8)) :=
       hInv12.regs ⟨"%len", .ptr (C.stage.z + 8)⟩ (by simp [walkStaticRegs])
     have hreadL12 : readBytes (strS₁₂t (BitVec.ofNat 32 (entryPos G C.k))
-        (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))).mem
+        (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))).mem
         (C.stage.z + 8) 8 = some (natToBytes (BitVec.ofNat 64 C.evlen).toNat 8) := by
       rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hev64]
       exact hInv12.log_len
     have hreadC12 : readBytes (strS₁₂t (BitVec.ofNat 32 (entryPos G C.k))
-        (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))).mem
+        (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))).mem
         (C.stage.z + 16) 8 = some (natToBytes (BitVec.ofNat 64 G.evcap).toNat 8) := by
       rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt G.evcapLt]
       exact hInv12.log_cap
     obtain ⟨s13, hl13, hs13⟩ :=
       WalkLink.if_end290_i (G := G) (C := strC₁₂ C f.ix f.ext f.y)
         (s := strS₁₂t (BitVec.ofNat 32 (entryPos G C.k))
-          (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s)))
+          (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s)))
         hInv12 rfl (p := "if.then281.i") (op₁ := .reg "%sub260.i")
         (op₂ := .reg "%or.i") (e1 := BitVec.ofNat 64 f.ext)
         (e2 := strOr (BitVec.ofNat 32 (entryPos G C.k)))
@@ -2081,57 +2166,57 @@ theorem stringPath_seg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
         (strOr (BitVec.ofNat 32 (entryPos G C.k))) (BitVec.ofNat 64 C.evlen)
         (BitVec.ofNat 64 G.evcap)
         (strS₁₂t (BitVec.ofNat 32 (entryPos G C.k))
-          (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))) := hs13
+          (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))) := hs13
     subst hs13'
     have hl13' : WalkLink (stage2Calls stage2SubCalls) G (strC₁₂ C f.ix f.ext f.y)
         (strS₁₂t (BitVec.ofNat 32 (entryPos G C.k))
-          (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s)))
+          (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s)))
         (strC₁₃ C f.ix f.ext f.y (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap))
         (strS₁₃ (BitVec.ofNat 64 f.ext) (strOr (BitVec.ofNat 32 (entryPos G C.k)))
           (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap)
           (strS₁₂t (BitVec.ofNat 32 (entryPos G C.k))
-            (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s)))) := hl13
+            (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s)))) := hl13
     have hInv13 : WalkInv G (strC₁₃ C f.ix f.ext f.y (BitVec.ofNat 64 C.evlen)
         (BitVec.ofNat 64 G.evcap))
         (strS₁₃ (BitVec.ofNat 64 f.ext) (strOr (BitVec.ofNat 32 (entryPos G C.k)))
           (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap)
           (strS₁₂t (BitVec.ofNat 32 (entryPos G C.k))
-            (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s)))) :=
+            (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s)))) :=
       hl13'.inv'
     -- ---- link 14: `if.then328.i`
     have hsink13 : lookupName (strS₁₃ (BitVec.ofNat 64 f.ext)
         (strOr (BitVec.ofNat 32 (entryPos G C.k))) (BitVec.ofNat 64 C.evlen)
         (BitVec.ofNat 64 G.evcap)
         (strS₁₂t (BitVec.ofNat 32 (entryPos G C.k))
-          (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s)))).env
+          (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s)))).env
         "%conv286.i.sink.in" = some (.int 64 (BitVec.ofNat 64 f.ext)) := by
       simp [strS₁₃, stateAt, cells, lookupName]
     have hspan13 : lookupName (strS₁₃ (BitVec.ofNat 64 f.ext)
         (strOr (BitVec.ofNat 32 (entryPos G C.k))) (BitVec.ofNat 64 C.evlen)
         (BitVec.ofNat 64 G.evcap)
         (strS₁₂t (BitVec.ofNat 32 (entryPos G C.k))
-          (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s)))).env
+          (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s)))).env
         "%.sink" = some (.int 64 (strOr (BitVec.ofNat 32 (entryPos G C.k)))) := by
       simp [strS₁₃, stateAt, cells, lookupName]
     have hzv13 : lookupName (strS₁₃ (BitVec.ofNat 64 f.ext)
         (strOr (BitVec.ofNat 32 (entryPos G C.k))) (BitVec.ofNat 64 C.evlen)
         (BitVec.ofNat 64 G.evcap)
         (strS₁₂t (BitVec.ofNat 32 (entryPos G C.k))
-          (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s)))).env
+          (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s)))).env
         "%z.val" = some (.int 64 (BitVec.ofNat 64 C.evlen)) := by
       simp [strS₁₃, stateAt, cells, lookupName]
     have hadd13 : lookupName (strS₁₃ (BitVec.ofNat 64 f.ext)
         (strOr (BitVec.ofNat 32 (entryPos G C.k))) (BitVec.ofNat 64 C.evlen)
         (BitVec.ofNat 64 G.evcap)
         (strS₁₂t (BitVec.ofNat 32 (entryPos G C.k))
-          (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s)))).env
+          (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s)))).env
         "%add.i84" = some (.int 64 (BitVec.ofNat 64 (C.evlen + 13))) := by
       simp [strS₁₃, stateAt, cells, lookupName, BitVec.ofNat_add]
     have hkey13 : lookupName (strS₁₃ (BitVec.ofNat 64 f.ext)
         (strOr (BitVec.ofNat 32 (entryPos G C.k))) (BitVec.ofNat 64 C.evlen)
         (BitVec.ofNat 64 G.evcap)
         (strS₁₂t (BitVec.ofNat 32 (entryPos G C.k))
-          (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s)))).env
+          (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s)))).env
         "%key.1.i" = some (.int 1 0) := by
       simp [strS₁₃, strS₁₂t, strS₁₁, State.bind, strS₁₀, strS₉,
         walkZArenaReserveExitOutAt, strS₈, walkIfEnd256OutAt, strS₇, strS₆, strS₅,
@@ -2140,7 +2225,7 @@ theorem stringPath_seg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
         (strOr (BitVec.ofNat 32 (entryPos G C.k))) (BitVec.ofNat 64 C.evlen)
         (BitVec.ofNat 64 G.evcap)
         (strS₁₂t (BitVec.ofNat 32 (entryPos G C.k))
-          (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s)))).env
+          (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s)))).env
         "%z" = some (.ptr C.stage.z) := by
       simpa [strS₁₃, strS₁₂t, strS₁₁, State.bind, strS₁₀, strS₉,
         walkZArenaReserveExitOutAt, strS₈, walkIfEnd256OutAt, strS₇, strS₆, strS₅,
@@ -2149,8 +2234,8 @@ theorem stringPath_seg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
         (strOr (BitVec.ofNat 32 (entryPos G C.k))) (BitVec.ofNat 64 C.evlen)
         (BitVec.ofNat 64 G.evcap)
         (strS₁₂t (BitVec.ofNat 32 (entryPos G C.k))
-          (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s)))).mem
-        C.stage.z 8 = some (wordBytes 8 G.ev) := R.hlogBase
+          (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s)))).mem
+        C.stage.z 8 = some (wordBytes 8 G.ev) := hlogBaseR
     obtain ⟨s14, hl14, hs14⟩ :=
       WalkLink.if_then328_i (G := G) (C := strC₁₃ C f.ix f.ext f.y
           (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap))
@@ -2158,29 +2243,29 @@ theorem stringPath_seg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
           (strOr (BitVec.ofNat 32 (entryPos G C.k))) (BitVec.ofNat 64 C.evlen)
           (BitVec.ofNat 64 G.evcap)
           (strS₁₂t (BitVec.ofNat 32 (entryPos G C.k))
-            (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))))
+            (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))))
         hInv13
         (by show (if evalICmp .ugt ((BitVec.ofNat 64 C.evlen) + BitVec.ofNat 64 13) (BitVec.ofNat 64 G.evcap) = 1 then "if.end.i86" else "if.then328.i") = "if.then328.i"; rw [hres13, if_neg hnotres])
         (sinkIn := BitVec.ofNat 64 f.ext) (keyBit := 0)
         (span := strOr (BitVec.ofNat 32 (entryPos G C.k))) hsink13 hz13 hzread13
-        hzv13 R.hev63 hkey13 hspan13 hadd13
+        hzv13 hev63 hkey13 hspan13 hadd13
         (by show C.evlen + 13 < 2 ^ 64; omega) hlen12
         (hInv13.regs ⟨"%outn.i", .ptr (G.next0 + 20)⟩ (by simp [walkStaticRegs]))
-        R.hGev R.hltEvents
+        G.evLt R.hltEvents
     have hs14' : s14 = strS₁₄ G (strC₁₃ C f.ix f.ext f.y (BitVec.ofNat 64 C.evlen)
         (BitVec.ofNat 64 G.evcap)) (BitVec.ofNat 64 f.ext)
         (strOr (BitVec.ofNat 32 (entryPos G C.k)))
         (strS₁₃ (BitVec.ofNat 64 f.ext) (strOr (BitVec.ofNat 32 (entryPos G C.k)))
           (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap)
           (strS₁₂t (BitVec.ofNat 32 (entryPos G C.k))
-            (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s)))) := hs14
+            (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s)))) := hs14
     subst hs14'
     have hl14' : WalkLink (stage2Calls stage2SubCalls) G
         (strC₁₃ C f.ix f.ext f.y (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap))
         (strS₁₃ (BitVec.ofNat 64 f.ext) (strOr (BitVec.ofNat 32 (entryPos G C.k)))
           (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap)
           (strS₁₂t (BitVec.ofNat 32 (entryPos G C.k))
-            (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))))
+            (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))))
         (strC₁₄ C f.ix f.ext f.y (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap) 0
           (BitVec.ofNat 64 f.ext) (strOr (BitVec.ofNat 32 (entryPos G C.k))))
         (strS₁₄ G (strC₁₃ C f.ix f.ext f.y (BitVec.ofNat 64 C.evlen)
@@ -2189,7 +2274,7 @@ theorem stringPath_seg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
           (strS₁₃ (BitVec.ofNat 64 f.ext) (strOr (BitVec.ofNat 32 (entryPos G C.k)))
             (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap)
             (strS₁₂t (BitVec.ofNat 32 (entryPos G C.k))
-              (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))))) := hl14
+              (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))))) := hl14
     have hInv14 : WalkInv G (strC₁₄ C f.ix f.ext f.y (BitVec.ofNat 64 C.evlen)
         (BitVec.ofNat 64 G.evcap) 0 (BitVec.ofNat 64 f.ext)
         (strOr (BitVec.ofNat 32 (entryPos G C.k))))
@@ -2199,7 +2284,7 @@ theorem stringPath_seg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
           (strS₁₃ (BitVec.ofNat 64 f.ext) (strOr (BitVec.ofNat 32 (entryPos G C.k)))
             (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap)
             (strS₁₂t (BitVec.ofNat 32 (entryPos G C.k))
-              (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))))) :=
+              (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))))) :=
       hl14'.inv'
     -- ---- link 15: `if.else334.i`
     have hspv0 : (BitVec.ofNat 32 C.sp).toNat = 0 := by rw [f.hsp0]; decide
@@ -2212,14 +2297,14 @@ theorem stringPath_seg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
           (strS₁₃ (BitVec.ofNat 64 f.ext) (strOr (BitVec.ofNat 32 (entryPos G C.k)))
             (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap)
             (strS₁₂t (BitVec.ofNat 32 (entryPos G C.k))
-              (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))))).mem
+              (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))))).mem
         (strS₁₄ G (strC₁₃ C f.ix f.ext f.y (BitVec.ofNat 64 C.evlen)
           (BitVec.ofNat 64 G.evcap)) (BitVec.ofNat 64 f.ext)
           (strOr (BitVec.ofNat 32 (entryPos G C.k)))
           (strS₁₃ (BitVec.ofNat 64 f.ext) (strOr (BitVec.ofNat 32 (entryPos G C.k)))
             (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap)
             (strS₁₂t (BitVec.ofNat 32 (entryPos G C.k))
-              (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))))).next :=
+              (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))))).next :=
       ⟨BitVec.ofNat 32 C.sp, G.next0 + 8, C.stage.ctype, C.stage.cst, rfl, Or.inl hspv0⟩
     obtain ⟨r₂, hcall₂, -, -⟩ :=
       s2AfterValueContract.resolves (next := (strS₁₄ G (strC₁₃ C f.ix f.ext f.y
@@ -2228,7 +2313,7 @@ theorem stringPath_seg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
         (strS₁₃ (BitVec.ofNat 64 f.ext) (strOr (BitVec.ofNat 32 (entryPos G C.k)))
           (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap)
           (strS₁₂t (BitVec.ofNat 32 (entryPos G C.k))
-            (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))))).next)
+            (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))))).next)
         hpreAV
     obtain ⟨s15, hl15, hs15⟩ :=
       WalkLink.if_else334_i_at (G := G)
@@ -2241,7 +2326,7 @@ theorem stringPath_seg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
           (strS₁₃ (BitVec.ofNat 64 f.ext) (strOr (BitVec.ofNat 32 (entryPos G C.k)))
             (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap)
             (strS₁₂t (BitVec.ofNat 32 (entryPos G C.k))
-              (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s)))))
+              (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s)))))
         hInv14
         (by show (if (0 : BitVec 1) = 1 then "if.then330.i" else "if.else334.i") = "if.else334.i"; rw [if_neg hnotres])
         (hInv14.regs ⟨"%root_done.i", .ptr (G.next0 + 8)⟩ (by simp [walkStaticRegs]))
@@ -2253,7 +2338,7 @@ theorem stringPath_seg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
           (strS₁₃ (BitVec.ofNat 64 f.ext) (strOr (BitVec.ofNat 32 (entryPos G C.k)))
             (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap)
             (strS₁₂t (BitVec.ofNat 32 (entryPos G C.k))
-              (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))))) := hs15
+              (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))))) := hs15
     subst hs15'
     have hl15' : WalkLink (stage2Calls stage2SubCalls) G
         (strC₁₄ C f.ix f.ext f.y (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap) 0
@@ -2264,7 +2349,7 @@ theorem stringPath_seg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
           (strS₁₃ (BitVec.ofNat 64 f.ext) (strOr (BitVec.ofNat 32 (entryPos G C.k)))
             (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap)
             (strS₁₂t (BitVec.ofNat 32 (entryPos G C.k))
-              (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s)))))
+              (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s)))))
         (strC₁₅ C f.ix f.ext f.y (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap) 0
           (BitVec.ofNat 64 f.ext) (strOr (BitVec.ofNat 32 (entryPos G C.k))))
         (strS₁₅ r₂ (strS₁₄ G (strC₁₃ C f.ix f.ext f.y (BitVec.ofNat 64 C.evlen)
@@ -2273,7 +2358,7 @@ theorem stringPath_seg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
           (strS₁₃ (BitVec.ofNat 64 f.ext) (strOr (BitVec.ofNat 32 (entryPos G C.k)))
             (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap)
             (strS₁₂t (BitVec.ofNat 32 (entryPos G C.k))
-              (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s)))))) := hl15
+              (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s)))))) := hl15
     refine ⟨strC₁₅ C f.ix f.ext f.y (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap)
       0 (BitVec.ofNat 64 f.ext) (strOr (BitVec.ofNat 32 (entryPos G C.k))),
       strS₁₅ r₂ (strS₁₄ G (strC₁₃ C f.ix f.ext f.y (BitVec.ofNat 64 C.evlen)
@@ -2282,7 +2367,7 @@ theorem stringPath_seg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
         (strS₁₃ (BitVec.ofNat 64 f.ext) (strOr (BitVec.ofNat 32 (entryPos G C.k)))
           (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap)
           (strS₁₂t (BitVec.ofNat 32 (entryPos G C.k))
-            (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))))),
+            (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))))),
       ((((hseg10.trans (WalkSegment.of_link hl11')).trans
         (WalkSegment.of_link hl12')).trans (WalkSegment.of_link hl13')).trans
         (WalkSegment.of_link hl14')).trans (WalkSegment.of_link hl15'),
@@ -2297,26 +2382,26 @@ theorem stringPath_seg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
         using f.hnep
   · -- ===== the write-back arm: `if.else285.i` =====
     have hs11' : s11 = strS₁₁ f.y
-        (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s) := hs11
+        (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s) := hs11
     subst hs11'
     have hl11' : WalkLink (stage2Calls stage2SubCalls) G (strC₁₀ C f.ix f.ext)
-        (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s)
+        (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s)
         (strC₁₁ C f.ix f.ext f.y)
-        (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s)) := hl11
+        (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s)) := hl11
     have hInv11 : WalkInv G (strC₁₁ C f.ix f.ext f.y)
-        (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s)) :=
+        (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s)) :=
       hl11'.inv'
     -- the write-back's inputs: `%outn.i`'s word at the callee's memory, the arena
     -- word and the cursor
     have houtn11 : lookupName
-        (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s)).env "%outn.i"
+        (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s)).env "%outn.i"
         = some (.ptr (G.next0 + 20)) :=
       hInv11.regs ⟨"%outn.i", .ptr (G.next0 + 20)⟩ (by simp [walkStaticRegs])
     have hread11 : readBytes
-        (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s)).mem
-        (G.next0 + 20) 8 = some (wordBytes 8 R.l) := R.hreadOutn
+        (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s)).mem
+        (G.next0 + 20) 8 = some (wordBytes 8 l) := hreadOutn
     have hz3611 : lookupName
-        (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s)).env "%z.val36"
+        (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s)).env "%z.val36"
         = some (.int 64 (BitVec.ofNat 64 f.A.toNat)) := by
       rw [walkOfNat_toNat]
       simp [strS₁₁, State.bind, strS₁₀, strS₉, walkZArenaReserveExitOutAt, strS₈,
@@ -2338,215 +2423,215 @@ theorem stringPath_seg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
       have h4 : a₀ % 256 ^ 8 = a₀ := by
         rw [show (256 : Nat) ^ 8 = 2 ^ 64 from by decide, Nat.mod_eq_of_lt (by omega)]
       omega
-    have hal6411 : f.A.toNat + R.l < 2 ^ 64 := by
+    have hal6411 : f.A.toNat + l < 2 ^ 64 := by
       have h1 := hInv.alen_le
       have h2 := f.hwin
       have h3 := G.maxDoc
       have h4 := hInv.logArena_le (A := f.A) f.hreadA
-      have h5 := R.hlext
+      have h5 := hlext
       simp only [stage2MaxDocument] at h3
       omega
-    have hale11 : f.A.toNat + R.l ≤ (strC₁₁ C f.ix f.ext f.y).alen := by
+    have hale11 : f.A.toNat + l ≤ (strC₁₁ C f.ix f.ext f.y).alen := by
       have h4 := hInv.logArena_le (A := f.A) f.hreadA
-      have h5 := R.hlext
-      show f.A.toNat + R.l ≤ C.alen + f.ext
+      have h5 := hlext
+      show f.A.toNat + l ≤ C.alen + f.ext
       omega
     obtain ⟨s12, hl12, hs12⟩ :=
       WalkLink.if_else285_i_at (G := G) (C := strC₁₁ C f.ix f.ext f.y)
-        (s := strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s)) hInv11
+        (s := strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s)) hInv11
         (by show (if evalICmp .eq f.y (BitVec.ofNat 32 1) = 1 then "if.then281.i" else "if.else285.i") = "if.else285.i"; rw [if_neg hy1])
-        (l := R.l) (a := f.A.toNat) (ao := G.next0 + 20) houtn11 hread11
+        (l := l) (a := f.A.toNat) (ao := G.next0 + 20) houtn11 hread11
         (by omega) hz3611
         (hInv11.regs ⟨"%alen", .ptr (C.stage.z + 48)⟩ (by simp [walkStaticRegs]))
         hal6411 hge11 hale11
     have hs12' : s12 = ifElse285OutAt
-        (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))
-        C.stage.z f.A.toNat R.l := hs12
+        (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))
+        C.stage.z f.A.toNat l := hs12
     subst hs12'
     have hl12' : WalkLink (stage2Calls stage2SubCalls) G (strC₁₁ C f.ix f.ext f.y)
-        (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))
+        (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))
         (strC₁₂ C f.ix f.ext f.y)
         (ifElse285OutAt (strS₁₁ f.y
-          (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s)) C.stage.z f.A.toNat R.l) := hl12
+          (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s)) C.stage.z f.A.toNat l) := hl12
     have hInv12 : WalkInv G (strC₁₂ C f.ix f.ext f.y)
         (ifElse285OutAt (strS₁₁ f.y
-          (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s)) C.stage.z f.A.toNat R.l) :=
+          (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s)) C.stage.z f.A.toNat l) :=
       hl12'.inv'
     -- the two `phi`s' operands: the decoded length and the arena word
     have hpre12 : (ifElse285OutAt (strS₁₁ f.y
-        (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s)) C.stage.z f.A.toNat R.l).pre
+        (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s)) C.stage.z f.A.toNat l).pre
         = some "if.else285.i" := by
       show some (if evalICmp .eq f.y (BitVec.ofNat 32 1) = 1 then "if.then281.i" else "if.else285.i") = some "if.else285.i"
       rw [if_neg hy1]
     have hsub12 : evalOperand (ifElse285OutAt (strS₁₁ f.y
-        (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s)) C.stage.z f.A.toNat R.l)
-        (.reg "%32") = some (.int 64 (BitVec.ofNat 64 R.l)) := by
+        (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s)) C.stage.z f.A.toNat l)
+        (.reg "%32") = some (.int 64 (BitVec.ofNat 64 l)) := by
       simp [ifElse285OutAt, stateAt, cells, lookupName, evalOperand]
     have hor12 : evalOperand (ifElse285OutAt (strS₁₁ f.y
-        (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s)) C.stage.z f.A.toNat R.l)
+        (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s)) C.stage.z f.A.toNat l)
         (.reg "%z.val36") = some (.int 64 (BitVec.ofNat 64 f.A.toNat)) := by
       rw [walkOfNat_toNat]
       simp [ifElse285OutAt, strS₁₁, State.bind, strS₁₀, strS₉, walkZArenaReserveExitOutAt,
         strS₈, walkIfEnd256OutAt, strS₇, strS₆, strS₅, strS₄, strS₃, strS₂, strS₁,
         strSetK₅, stateAt, cells, lookupName, evalOperand]
     have hreadL12 : readBytes (ifElse285OutAt (strS₁₁ f.y
-        (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s)) C.stage.z f.A.toNat R.l).mem
+        (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s)) C.stage.z f.A.toNat l).mem
         (C.stage.z + 8) 8 = some (natToBytes (BitVec.ofNat 64 C.evlen).toNat 8) := by
       rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hev64]
       exact hInv12.log_len
     have hreadC12 : readBytes (ifElse285OutAt (strS₁₁ f.y
-        (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s)) C.stage.z f.A.toNat R.l).mem
+        (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s)) C.stage.z f.A.toNat l).mem
         (C.stage.z + 16) 8 = some (natToBytes (BitVec.ofNat 64 G.evcap).toNat 8) := by
       rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt G.evcapLt]
       exact hInv12.log_cap
     obtain ⟨s13, hl13, hs13⟩ :=
       WalkLink.if_end290_i (G := G) (C := strC₁₂ C f.ix f.ext f.y)
         (s := ifElse285OutAt (strS₁₁ f.y
-          (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s)) C.stage.z f.A.toNat R.l)
+          (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s)) C.stage.z f.A.toNat l)
         hInv12 rfl (p := "if.else285.i") (op₁ := .reg "%32")
-        (op₂ := .reg "%z.val36") (e1 := BitVec.ofNat 64 R.l)
+        (op₂ := .reg "%z.val36") (e1 := BitVec.ofNat 64 l)
         (e2 := BitVec.ofNat 64 f.A.toNat) (nl := BitVec.ofNat 64 C.evlen)
         (nc := BitVec.ofNat 64 G.evcap)
         hpre12 strMergePhiElse₁ hsub12 strMergePhiElse₂ hor12
         (hInv12.regs ⟨"%len", .ptr (C.stage.z + 8)⟩ (by simp [walkStaticRegs]))
         (hInv12.regs ⟨"%cap", .ptr (C.stage.z + 16)⟩ (by simp [walkStaticRegs]))
         hreadL12 hreadC12
-    have hs13' : s13 = strS₁₃ (BitVec.ofNat 64 R.l) (BitVec.ofNat 64 f.A.toNat)
+    have hs13' : s13 = strS₁₃ (BitVec.ofNat 64 l) (BitVec.ofNat 64 f.A.toNat)
         (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap)
         (ifElse285OutAt (strS₁₁ f.y
-          (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s)) C.stage.z f.A.toNat R.l) := hs13
+          (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s)) C.stage.z f.A.toNat l) := hs13
     subst hs13'
     have hl13' : WalkLink (stage2Calls stage2SubCalls) G (strC₁₂ C f.ix f.ext f.y)
         (ifElse285OutAt (strS₁₁ f.y
-          (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s)) C.stage.z f.A.toNat R.l)
+          (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s)) C.stage.z f.A.toNat l)
         (strC₁₃ C f.ix f.ext f.y (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap))
-        (strS₁₃ (BitVec.ofNat 64 R.l) (BitVec.ofNat 64 f.A.toNat)
+        (strS₁₃ (BitVec.ofNat 64 l) (BitVec.ofNat 64 f.A.toNat)
           (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap)
           (ifElse285OutAt (strS₁₁ f.y
-            (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))
-            C.stage.z f.A.toNat R.l)) := hl13
+            (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))
+            C.stage.z f.A.toNat l)) := hl13
     have hInv13 : WalkInv G (strC₁₃ C f.ix f.ext f.y (BitVec.ofNat 64 C.evlen)
         (BitVec.ofNat 64 G.evcap))
-        (strS₁₃ (BitVec.ofNat 64 R.l) (BitVec.ofNat 64 f.A.toNat)
+        (strS₁₃ (BitVec.ofNat 64 l) (BitVec.ofNat 64 f.A.toNat)
           (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap)
           (ifElse285OutAt (strS₁₁ f.y
-            (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))
-            C.stage.z f.A.toNat R.l)) :=
+            (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))
+            C.stage.z f.A.toNat l)) :=
       hl13'.inv'
     -- ---- link 14: `if.then328.i`
-    have hsink13 : lookupName (strS₁₃ (BitVec.ofNat 64 R.l)
+    have hsink13 : lookupName (strS₁₃ (BitVec.ofNat 64 l)
         (BitVec.ofNat 64 f.A.toNat) (BitVec.ofNat 64 C.evlen)
         (BitVec.ofNat 64 G.evcap) (ifElse285OutAt (strS₁₁ f.y
-          (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))
-          C.stage.z f.A.toNat R.l)).env "%conv286.i.sink.in"
-        = some (.int 64 (BitVec.ofNat 64 R.l)) := by
+          (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))
+          C.stage.z f.A.toNat l)).env "%conv286.i.sink.in"
+        = some (.int 64 (BitVec.ofNat 64 l)) := by
       simp [strS₁₃, stateAt, cells, lookupName]
-    have hspan13 : lookupName (strS₁₃ (BitVec.ofNat 64 R.l)
+    have hspan13 : lookupName (strS₁₃ (BitVec.ofNat 64 l)
         (BitVec.ofNat 64 f.A.toNat) (BitVec.ofNat 64 C.evlen)
         (BitVec.ofNat 64 G.evcap) (ifElse285OutAt (strS₁₁ f.y
-          (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))
-          C.stage.z f.A.toNat R.l)).env "%.sink"
+          (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))
+          C.stage.z f.A.toNat l)).env "%.sink"
         = some (.int 64 (BitVec.ofNat 64 f.A.toNat)) := by
       simp [strS₁₃, stateAt, cells, lookupName]
-    have hzv13 : lookupName (strS₁₃ (BitVec.ofNat 64 R.l)
+    have hzv13 : lookupName (strS₁₃ (BitVec.ofNat 64 l)
         (BitVec.ofNat 64 f.A.toNat) (BitVec.ofNat 64 C.evlen)
         (BitVec.ofNat 64 G.evcap) (ifElse285OutAt (strS₁₁ f.y
-          (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))
-          C.stage.z f.A.toNat R.l)).env "%z.val"
+          (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))
+          C.stage.z f.A.toNat l)).env "%z.val"
         = some (.int 64 (BitVec.ofNat 64 C.evlen)) := by
       simp [strS₁₃, stateAt, cells, lookupName]
-    have hadd13 : lookupName (strS₁₃ (BitVec.ofNat 64 R.l)
+    have hadd13 : lookupName (strS₁₃ (BitVec.ofNat 64 l)
         (BitVec.ofNat 64 f.A.toNat) (BitVec.ofNat 64 C.evlen)
         (BitVec.ofNat 64 G.evcap) (ifElse285OutAt (strS₁₁ f.y
-          (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))
-          C.stage.z f.A.toNat R.l)).env "%add.i84"
+          (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))
+          C.stage.z f.A.toNat l)).env "%add.i84"
         = some (.int 64 (BitVec.ofNat 64 (C.evlen + 13))) := by
       simp [strS₁₃, stateAt, cells, lookupName, BitVec.ofNat_add]
-    have hkey13 : lookupName (strS₁₃ (BitVec.ofNat 64 R.l)
+    have hkey13 : lookupName (strS₁₃ (BitVec.ofNat 64 l)
         (BitVec.ofNat 64 f.A.toNat) (BitVec.ofNat 64 C.evlen)
         (BitVec.ofNat 64 G.evcap) (ifElse285OutAt (strS₁₁ f.y
-          (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))
-          C.stage.z f.A.toNat R.l)).env "%key.1.i" = some (.int 1 0) := by
+          (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))
+          C.stage.z f.A.toNat l)).env "%key.1.i" = some (.int 1 0) := by
       simp [strS₁₃, ifElse285OutAt, strS₁₁, State.bind, strS₁₀, strS₉,
         walkZArenaReserveExitOutAt, strS₈, walkIfEnd256OutAt, strS₇, strS₆, strS₅,
         strS₄, strS₃, strS₂, strS₁, strSetK₅, stateAt, cells, lookupName]
-    have hz13 : lookupName (strS₁₃ (BitVec.ofNat 64 R.l)
+    have hz13 : lookupName (strS₁₃ (BitVec.ofNat 64 l)
         (BitVec.ofNat 64 f.A.toNat) (BitVec.ofNat 64 C.evlen)
         (BitVec.ofNat 64 G.evcap) (ifElse285OutAt (strS₁₁ f.y
-          (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))
-          C.stage.z f.A.toNat R.l)).env "%z" = some (.ptr C.stage.z) := by
+          (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))
+          C.stage.z f.A.toNat l)).env "%z" = some (.ptr C.stage.z) := by
       simpa [strS₁₃, ifElse285OutAt, strS₁₁, State.bind, strS₁₀, strS₉,
         walkZArenaReserveExitOutAt, strS₈, walkIfEnd256OutAt, strS₇, strS₆, strS₅,
         strS₄, strS₃, strS₂, strS₁, strSetK₅, stateAt, cells, lookupName] using hInv.regs ⟨"%z", .ptr C.stage.z⟩ (by simp [walkStaticRegs])
-    have hzread13 : readBytes (strS₁₃ (BitVec.ofNat 64 R.l)
+    have hzread13 : readBytes (strS₁₃ (BitVec.ofNat 64 l)
         (BitVec.ofNat 64 f.A.toNat) (BitVec.ofNat 64 C.evlen)
         (BitVec.ofNat 64 G.evcap) (ifElse285OutAt (strS₁₁ f.y
-          (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))
-          C.stage.z f.A.toNat R.l)).mem C.stage.z 8 = some (wordBytes 8 G.ev) := by
-      have hmem : (strS₁₃ (BitVec.ofNat 64 R.l) (BitVec.ofNat 64 f.A.toNat)
+          (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))
+          C.stage.z f.A.toNat l)).mem C.stage.z 8 = some (wordBytes 8 G.ev) := by
+      have hmem : (strS₁₃ (BitVec.ofNat 64 l) (BitVec.ofNat 64 f.A.toNat)
           (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap)
           (ifElse285OutAt (strS₁₁ f.y
-            (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))
-            C.stage.z f.A.toNat R.l)).mem
-          = writeBytes R.r.mem (C.stage.z + 48) (wordBytes 8 (f.A.toNat + R.l)) := rfl
+            (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))
+            C.stage.z f.A.toNat l)).mem
+          = writeBytes r.mem (C.stage.z + 48) (wordBytes 8 (f.A.toNat + l)) := rfl
       rw [hmem, walkReadBytes_writeBytes_outside (start := C.stage.z + 48)
-        (addr := C.stage.z) (n := 8) (v := wordBytes 8 (f.A.toNat + R.l)) ?_]
-      · exact R.hlogBase
+        (addr := C.stage.z) (n := 8) (v := wordBytes 8 (f.A.toNat + l)) ?_]
+      · exact hlogBaseR
       · left
         omega
     obtain ⟨s14, hl14, hs14⟩ :=
       WalkLink.if_then328_i (G := G) (C := strC₁₃ C f.ix f.ext f.y
           (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap))
-        (s := strS₁₃ (BitVec.ofNat 64 R.l) (BitVec.ofNat 64 f.A.toNat)
+        (s := strS₁₃ (BitVec.ofNat 64 l) (BitVec.ofNat 64 f.A.toNat)
           (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap)
           (ifElse285OutAt (strS₁₁ f.y
-            (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))
-            C.stage.z f.A.toNat R.l))
+            (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))
+            C.stage.z f.A.toNat l))
         hInv13
         (by show (if evalICmp .ugt ((BitVec.ofNat 64 C.evlen) + BitVec.ofNat 64 13) (BitVec.ofNat 64 G.evcap) = 1 then "if.end.i86" else "if.then328.i") = "if.then328.i"; rw [hres13, if_neg hnotres])
-        (sinkIn := BitVec.ofNat 64 R.l) (keyBit := 0)
-        (span := BitVec.ofNat 64 f.A.toNat) hsink13 hz13 hzread13 hzv13 R.hev63 hkey13
+        (sinkIn := BitVec.ofNat 64 l) (keyBit := 0)
+        (span := BitVec.ofNat 64 f.A.toNat) hsink13 hz13 hzread13 hzv13 hev63 hkey13
         hspan13 hadd13 (by show C.evlen + 13 < 2 ^ 64; omega)
         (hInv13.regs ⟨"%len", .ptr (C.stage.z + 8)⟩ (by simp [walkStaticRegs]))
         (hInv13.regs ⟨"%outn.i", .ptr (G.next0 + 20)⟩ (by simp [walkStaticRegs]))
-        R.hGev R.hltEvents
+        G.evLt R.hltEvents
     have hs14' : s14 = strS₁₄ G (strC₁₃ C f.ix f.ext f.y (BitVec.ofNat 64 C.evlen)
-        (BitVec.ofNat 64 G.evcap)) (BitVec.ofNat 64 R.l)
+        (BitVec.ofNat 64 G.evcap)) (BitVec.ofNat 64 l)
         (BitVec.ofNat 64 f.A.toNat)
-        (strS₁₃ (BitVec.ofNat 64 R.l) (BitVec.ofNat 64 f.A.toNat)
+        (strS₁₃ (BitVec.ofNat 64 l) (BitVec.ofNat 64 f.A.toNat)
           (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap)
           (ifElse285OutAt (strS₁₁ f.y
-            (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))
-            C.stage.z f.A.toNat R.l)) := hs14
+            (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))
+            C.stage.z f.A.toNat l)) := hs14
     subst hs14'
     have hl14' : WalkLink (stage2Calls stage2SubCalls) G
         (strC₁₃ C f.ix f.ext f.y (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap))
-        (strS₁₃ (BitVec.ofNat 64 R.l) (BitVec.ofNat 64 f.A.toNat)
+        (strS₁₃ (BitVec.ofNat 64 l) (BitVec.ofNat 64 f.A.toNat)
           (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap)
           (ifElse285OutAt (strS₁₁ f.y
-            (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))
-            C.stage.z f.A.toNat R.l))
+            (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))
+            C.stage.z f.A.toNat l))
         (strC₁₄ C f.ix f.ext f.y (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap) 0
-          (BitVec.ofNat 64 R.l) (BitVec.ofNat 64 f.A.toNat))
+          (BitVec.ofNat 64 l) (BitVec.ofNat 64 f.A.toNat))
         (strS₁₄ G (strC₁₃ C f.ix f.ext f.y (BitVec.ofNat 64 C.evlen)
-          (BitVec.ofNat 64 G.evcap)) (BitVec.ofNat 64 R.l)
+          (BitVec.ofNat 64 G.evcap)) (BitVec.ofNat 64 l)
           (BitVec.ofNat 64 f.A.toNat)
-          (strS₁₃ (BitVec.ofNat 64 R.l) (BitVec.ofNat 64 f.A.toNat)
+          (strS₁₃ (BitVec.ofNat 64 l) (BitVec.ofNat 64 f.A.toNat)
             (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap)
             (ifElse285OutAt (strS₁₁ f.y
-              (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))
-              C.stage.z f.A.toNat R.l))) := hl14
+              (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))
+              C.stage.z f.A.toNat l))) := hl14
     have hInv14 : WalkInv G (strC₁₄ C f.ix f.ext f.y (BitVec.ofNat 64 C.evlen)
-        (BitVec.ofNat 64 G.evcap) 0 (BitVec.ofNat 64 R.l)
+        (BitVec.ofNat 64 G.evcap) 0 (BitVec.ofNat 64 l)
         (BitVec.ofNat 64 f.A.toNat))
         (strS₁₄ G (strC₁₃ C f.ix f.ext f.y (BitVec.ofNat 64 C.evlen)
-          (BitVec.ofNat 64 G.evcap)) (BitVec.ofNat 64 R.l)
+          (BitVec.ofNat 64 G.evcap)) (BitVec.ofNat 64 l)
           (BitVec.ofNat 64 f.A.toNat)
-          (strS₁₃ (BitVec.ofNat 64 R.l) (BitVec.ofNat 64 f.A.toNat)
+          (strS₁₃ (BitVec.ofNat 64 l) (BitVec.ofNat 64 f.A.toNat)
             (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap)
             (ifElse285OutAt (strS₁₁ f.y
-              (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))
-              C.stage.z f.A.toNat R.l))) :=
+              (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))
+              C.stage.z f.A.toNat l))) :=
       hl14'.inv'
     -- ---- link 15: `if.else334.i`
     have hspv0 : (BitVec.ofNat 32 C.sp).toNat = 0 := by rw [f.hsp0]; decide
@@ -2554,89 +2639,89 @@ theorem stringPath_seg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
         [.int 32 (BitVec.ofNat 32 C.sp), .ptr (G.next0 + 8),
          .ptr C.stage.ctype, .ptr C.stage.cst]
         (strS₁₄ G (strC₁₃ C f.ix f.ext f.y (BitVec.ofNat 64 C.evlen)
-          (BitVec.ofNat 64 G.evcap)) (BitVec.ofNat 64 R.l)
+          (BitVec.ofNat 64 G.evcap)) (BitVec.ofNat 64 l)
           (BitVec.ofNat 64 f.A.toNat)
-          (strS₁₃ (BitVec.ofNat 64 R.l) (BitVec.ofNat 64 f.A.toNat)
+          (strS₁₃ (BitVec.ofNat 64 l) (BitVec.ofNat 64 f.A.toNat)
             (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap)
             (ifElse285OutAt (strS₁₁ f.y
-              (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))
-              C.stage.z f.A.toNat R.l))).mem
+              (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))
+              C.stage.z f.A.toNat l))).mem
         (strS₁₄ G (strC₁₃ C f.ix f.ext f.y (BitVec.ofNat 64 C.evlen)
-          (BitVec.ofNat 64 G.evcap)) (BitVec.ofNat 64 R.l)
+          (BitVec.ofNat 64 G.evcap)) (BitVec.ofNat 64 l)
           (BitVec.ofNat 64 f.A.toNat)
-          (strS₁₃ (BitVec.ofNat 64 R.l) (BitVec.ofNat 64 f.A.toNat)
+          (strS₁₃ (BitVec.ofNat 64 l) (BitVec.ofNat 64 f.A.toNat)
             (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap)
             (ifElse285OutAt (strS₁₁ f.y
-              (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))
-              C.stage.z f.A.toNat R.l))).next :=
+              (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))
+              C.stage.z f.A.toNat l))).next :=
       ⟨BitVec.ofNat 32 C.sp, G.next0 + 8, C.stage.ctype, C.stage.cst, rfl, Or.inl hspv0⟩
     obtain ⟨r₂, hcall₂, -, -⟩ :=
       s2AfterValueContract.resolves (next := (strS₁₄ G (strC₁₃ C f.ix f.ext f.y
-        (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap)) (BitVec.ofNat 64 R.l)
+        (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap)) (BitVec.ofNat 64 l)
         (BitVec.ofNat 64 f.A.toNat)
-        (strS₁₃ (BitVec.ofNat 64 R.l) (BitVec.ofNat 64 f.A.toNat)
+        (strS₁₃ (BitVec.ofNat 64 l) (BitVec.ofNat 64 f.A.toNat)
           (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap)
           (ifElse285OutAt (strS₁₁ f.y
-            (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))
-            C.stage.z f.A.toNat R.l))).next) hpreAV
+            (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))
+            C.stage.z f.A.toNat l))).next) hpreAV
     obtain ⟨s15, hl15, hs15⟩ :=
       WalkLink.if_else334_i_at (G := G)
         (C := strC₁₄ C f.ix f.ext f.y (BitVec.ofNat 64 C.evlen)
-          (BitVec.ofNat 64 G.evcap) 0 (BitVec.ofNat 64 R.l)
+          (BitVec.ofNat 64 G.evcap) 0 (BitVec.ofNat 64 l)
           (BitVec.ofNat 64 f.A.toNat))
         (s := strS₁₄ G (strC₁₃ C f.ix f.ext f.y (BitVec.ofNat 64 C.evlen)
-          (BitVec.ofNat 64 G.evcap)) (BitVec.ofNat 64 R.l)
+          (BitVec.ofNat 64 G.evcap)) (BitVec.ofNat 64 l)
           (BitVec.ofNat 64 f.A.toNat)
-          (strS₁₃ (BitVec.ofNat 64 R.l) (BitVec.ofNat 64 f.A.toNat)
+          (strS₁₃ (BitVec.ofNat 64 l) (BitVec.ofNat 64 f.A.toNat)
             (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap)
             (ifElse285OutAt (strS₁₁ f.y
-              (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))
-              C.stage.z f.A.toNat R.l)))
+              (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))
+              C.stage.z f.A.toNat l)))
         hInv14
         (by show (if (0 : BitVec 1) = 1 then "if.then330.i" else "if.else334.i") = "if.else334.i"; rw [if_neg hnotres])
         (hInv14.regs ⟨"%root_done.i", .ptr (G.next0 + 8)⟩ (by simp [walkStaticRegs]))
         hpreAV r₂ hcall₂
     have hs15' : s15 = strS₁₅ r₂
         (strS₁₄ G (strC₁₃ C f.ix f.ext f.y (BitVec.ofNat 64 C.evlen)
-          (BitVec.ofNat 64 G.evcap)) (BitVec.ofNat 64 R.l)
+          (BitVec.ofNat 64 G.evcap)) (BitVec.ofNat 64 l)
           (BitVec.ofNat 64 f.A.toNat)
-          (strS₁₃ (BitVec.ofNat 64 R.l) (BitVec.ofNat 64 f.A.toNat)
+          (strS₁₃ (BitVec.ofNat 64 l) (BitVec.ofNat 64 f.A.toNat)
             (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap)
             (ifElse285OutAt (strS₁₁ f.y
-              (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))
-              C.stage.z f.A.toNat R.l))) := hs15
+              (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))
+              C.stage.z f.A.toNat l))) := hs15
     subst hs15'
     have hl15' : WalkLink (stage2Calls stage2SubCalls) G
         (strC₁₄ C f.ix f.ext f.y (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap) 0
-          (BitVec.ofNat 64 R.l) (BitVec.ofNat 64 f.A.toNat))
+          (BitVec.ofNat 64 l) (BitVec.ofNat 64 f.A.toNat))
         (strS₁₄ G (strC₁₃ C f.ix f.ext f.y (BitVec.ofNat 64 C.evlen)
-          (BitVec.ofNat 64 G.evcap)) (BitVec.ofNat 64 R.l)
+          (BitVec.ofNat 64 G.evcap)) (BitVec.ofNat 64 l)
           (BitVec.ofNat 64 f.A.toNat)
-          (strS₁₃ (BitVec.ofNat 64 R.l) (BitVec.ofNat 64 f.A.toNat)
+          (strS₁₃ (BitVec.ofNat 64 l) (BitVec.ofNat 64 f.A.toNat)
             (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap)
             (ifElse285OutAt (strS₁₁ f.y
-              (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))
-              C.stage.z f.A.toNat R.l)))
+              (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))
+              C.stage.z f.A.toNat l)))
         (strC₁₅ C f.ix f.ext f.y (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap) 0
-          (BitVec.ofNat 64 R.l) (BitVec.ofNat 64 f.A.toNat))
+          (BitVec.ofNat 64 l) (BitVec.ofNat 64 f.A.toNat))
         (strS₁₅ r₂ (strS₁₄ G (strC₁₃ C f.ix f.ext f.y (BitVec.ofNat 64 C.evlen)
-          (BitVec.ofNat 64 G.evcap)) (BitVec.ofNat 64 R.l)
+          (BitVec.ofNat 64 G.evcap)) (BitVec.ofNat 64 l)
           (BitVec.ofNat 64 f.A.toNat)
-          (strS₁₃ (BitVec.ofNat 64 R.l) (BitVec.ofNat 64 f.A.toNat)
+          (strS₁₃ (BitVec.ofNat 64 l) (BitVec.ofNat 64 f.A.toNat)
             (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap)
             (ifElse285OutAt (strS₁₁ f.y
-              (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))
-              C.stage.z f.A.toNat R.l)))) := hl15
+              (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))
+              C.stage.z f.A.toNat l)))) := hl15
     refine ⟨strC₁₅ C f.ix f.ext f.y (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap)
-      0 (BitVec.ofNat 64 R.l) (BitVec.ofNat 64 f.A.toNat),
+      0 (BitVec.ofNat 64 l) (BitVec.ofNat 64 f.A.toNat),
       strS₁₅ r₂ (strS₁₄ G (strC₁₃ C f.ix f.ext f.y (BitVec.ofNat 64 C.evlen)
-        (BitVec.ofNat 64 G.evcap)) (BitVec.ofNat 64 R.l)
+        (BitVec.ofNat 64 G.evcap)) (BitVec.ofNat 64 l)
         (BitVec.ofNat 64 f.A.toNat)
-        (strS₁₃ (BitVec.ofNat 64 R.l) (BitVec.ofNat 64 f.A.toNat)
+        (strS₁₃ (BitVec.ofNat 64 l) (BitVec.ofNat 64 f.A.toNat)
           (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap)
           (ifElse285OutAt (strS₁₁ f.y
-            (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext R.r s))
-            C.stage.z f.A.toNat R.l))),
+            (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))
+            C.stage.z f.A.toNat l))),
       ((((hseg10.trans (WalkSegment.of_link hl11')).trans
         (WalkSegment.of_link hl12')).trans (WalkSegment.of_link hl13')).trans
         (WalkSegment.of_link hl14')).trans (WalkSegment.of_link hl15'),

@@ -1014,7 +1014,27 @@ def stage2Pre (args : List Value) (mem : Mem) (next : Nat) : Prop :=
     -- the reader of those words would see the value modulo the word.  Both facts
     -- hold of every real caller; they are the two addresses' own statement, and
     -- `pipelineStaging` carries the same two widths for the pipeline's staging.
-    0 < b ∧ b < 2 ^ 64 ∧ ep < 2 ^ 64
+    0 < b ∧ b < 2 ^ 64 ∧ ep < 2 ^ 64 ∧
+    -- **The two staged *output* addresses are words too, and the event cursor is
+    -- a signed index.**  `%dst` and `%ev` are the objects the walk hands its
+    -- sub-calls and appends to, and the log's words that name them are eight-byte
+    -- residues: `z_arena_reserve.exit` passes `.ptr (G.dst + %z.val36)` and the
+    -- link reads the arena's base back through `%ar`'s word (`wordBytes 8 G.dst`),
+    -- while `if.then328.i` takes `%33 = %z`'s word as the event stream's base.
+    -- An address at or above `2 ^ 64` is therefore a different object from the
+    -- one the word names, which is why the two widths are the caller's: no clause
+    -- of the staging bounds an address's value, and `HasBytes` at `%dst`/`%ev`
+    -- bounds the staged bytes rather than the number in them.
+    --
+    -- The third clause is the event cursor's own.  `if.then328.i` forms its
+    -- record pointers from a **signed** index (`%add.i84 = %z.val + 13`, and
+    -- `%add.ptr297.i`/`%add.ptr302.i`/`%add.ptr304.i` from it), so the cursor has
+    -- to stay below `2 ^ 63` for the sign extension to be the number itself.  The
+    -- walk's own bound on the cursor is `C.evlen ≤ nev0 + 13 * n`
+    -- (`WalkInv.evlen_le`), so stating the sum here is what makes
+    -- `C.evlen < 2 ^ 63` a consequence of the staging at every head state,
+    -- instead of a promise the walk layer would have to invent.
+    dst < 2 ^ 64 ∧ ev < 2 ^ 64 ∧ nev0 + stage2RecordBytes * n < 2 ^ 63
 
 /-! ### The post -/
 

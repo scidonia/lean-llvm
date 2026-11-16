@@ -899,6 +899,16 @@ structure Stage2Run (args : List Value) (mem m0 : Mem) where
   bLt : b < 2 ^ 64
   /-- **The entry stream's base is a word**, `stage2Pre`'s clause. -/
   epLt : ep < 2 ^ 64
+  /-- **The arena's address is a word**, `stage2Pre`'s clause: the walk hands its
+  sub-calls `.ptr (dst + ...)` and reads the arena's base back through the log's
+  eight-byte word. -/
+  dstLt : dst < 2 ^ 64
+  /-- **The event stream's address is a word**, `stage2Pre`'s clause. -/
+  evLt : ev < 2 ^ 64
+  /-- **The event cursor's signed bound**, `stage2Pre`'s clause at the report's
+  numbers: `nev0 + 13 * n < 2 ^ 63`, which is what makes `C.evlen < 2 ^ 63` a
+  consequence rather than a promise. -/
+  ev63 : nev0 + stage2RecordBytes * n < 2 ^ 63
 
 namespace Stage2Run
 
@@ -920,7 +930,7 @@ theorem pre (h : Stage2Run args mem m0) : Γ_stage2.pre args mem h.next0 :=
     h.err, h.bs, h.ent, h.ndst0, h.nev0, h.args_eq, h.doc, h.tail, h.entries, h.order,
     h.inside, h.esc, h.arenaCap, h.arenaRoom, h.evCap, h.evRoom, h.ndstRead, h.nevRead,
     h.errBytes, h.maxDoc, h.separate, h.watermark, h.nxpLt, h.dstcapLt, h.evcapLt,
-    h.bPos, h.bLt, h.epLt⟩
+    h.bPos, h.bLt, h.epLt, h.dstLt, h.evLt, h.ev63⟩
 
 /-- The arena and event-stream cursors are inside the objects the caller staged:
 the arena's by its reserve, the event stream's by its write room. -/

@@ -787,7 +787,8 @@ theorem stage2Pre_of_exit
   obtain ⟨sc, mk, entw, ep, nk, xp, nxp, xcarry, dst, ndst, ev, nev, err, nxp0, ndst0,
     nev0, n, epcap, xpcap, dstcap, evcap, arm, bs, hargs, hn, hlim, hwin, htail, hb3,
     hzero3, hpos, htab, hsc, hcarry, hcount, hnxp, hepcap, hxp, hdstcap, hdst, hev,
-    hnev, hndst, hnev', hroomk, hroomxn, hblk, harm, hreads, hdisj, hbLtStaging, hepLtStaging⟩ := hst
+    hnev, hndst, hnev', hroomk, hroomxn, hblk, harm, hreads, hdisj, hbLtStaging,
+    hepLtStaging, hdstLtStaging, hevLtStaging, hnev63Staging⟩ := hst
   subst hargs
   simp only [exitArgs] at htie
   obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl,
@@ -1131,7 +1132,7 @@ theorem stage2Pre_of_exit
     S.ndst, S.ev, S.evcap.toNat, S.nev, S.err, bs, S.ent, ndst0, nev0,
     ?_, hdoc_ms, htail_ms, hlanes, hord, hbnd, hesc_ms, hdst_ms, ?_, hev_ms, ?_,
     hndst_ms, hnev_ms, herr_ms, ?_, hx37 ▸ hdisj2, by rw [hx37]; exact hstaged,
-    ?_, ?_, ?_, ?_, ?_, ?_⟩
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · simpa [stage2Args] using hkv
   · simpa [stage2ArenaReserve] using hdstcap
   · simpa [stage2RecordBytes, ← hn] using hnev
@@ -1145,6 +1146,9 @@ theorem stage2Pre_of_exit
     omega
   · exact hbLtStaging
   · exact hepLtStaging
+  · exact hdstLtStaging
+  · exact hevLtStaging
+  · rw [stage2RecordBytes, hn]; exact hnev63Staging
 
 /-! ### Piece 3: the tail's run and post
 
