@@ -83,21 +83,27 @@ turns it into the actual `WalkDispatchResult`:
   arm, `116` from `LeafBlock58` itself (kind `8`) and `117 … 125` via its else arm.  The
   span is the byte's own `Seg` at `nS ≤ 5` (`c56TrueSpan`, `c56ElseSpan`, `c58TrueSpan`,
   `c58ElseSpan`) and `classCMerge_at` composes the tail and the merge — `11 + nS + 4 ≤ 20`.
-* `.supplied` — **the last entry's run class, with its price obstruction.**  The byte
-  before the entry's end is whitespace, so the token's own scan traverses `[k, v)`; at the
-  last entry `v = %4` is the document's length and the merge's byte credit is
-  `entryPos G G.nep - entryPos G C.k = 0`, so the 32-link allowance has to carry the run's
-  visits and the scan's out of five links.  The class is left to the caller rather than
-  bounded; its constructor's docstring states the arithmetic.
+* `.run` — **the last entry's run class**, at the default arm's spans, proved against the
+  terminal price: the byte before the entry's end is whitespace, so the token's own scan
+  traverses `[k, G.n)`.  The path's fixed part is twenty-four links and the price's own two
+  are twenty-six of the thirty-two, so the run's visits `N` and the scan's `4·(c - 1 - i)`
+  share the six that remain — `RunLastFacts.hbudget`, the class's own premise.  The merge's
+  index is the stream's end, so the arm lands against `WalkDispatchResult.mergeLast`: there
+  is no byte span past the last entry to charge, and the price says so rather than charging
+  zero for it.  `runLastMerge_at` is the composition and
+  `JsonStage2WalkDispatchRunLastDomain` dispatches it at a staged document.
 
-  The field is that arm's own counted segment to the endpoint it reaches, with the
-  endpoint's facts — *not* a bundle about the last entry, and no class premise on any
-  other arm.  **No other class remains here:** the letters route is `LastEntryArm.letters`
-  at the scan-free class, the `'f'` leaf's is `.fLetter`, the class-C leaves' is
-  `.classC`, and `HcontArm.letters`/`.fLetter`/`.classC`/`.run` are the continuing twins.
+  **No other class remains here at either level:** the letters route is
+  `LastEntryArm.letters` at the scan-free class, the `'f'` leaf's is `.fLetter`, the
+  class-C leaves' is `.classC`, `.run` is the same spans with the run, and
+  `HcontArm.letters`/`.fLetter`/`.classC`/`.run` are the continuing twins.  The last
+  entry's arm is therefore exhaustive over the head switch's bytes as the continuing arm
+  is — the run/scan-free split is each class's own tail, not a separate constructor's
+  residue.
 
 Every constructor's endpoint is either the merge or the refusal copy, and every one
-carries its count; the price is the dispatch's own (`WalkDispatchResult`'s), so
+carries its count.  The price is the dispatch's own: `merge`'s — entry and byte terms —
+below the stream's end, and `mergeLast`'s — the entry term alone — at it.  So
 `WalkLoopEnd` no longer asks for a residue whose class conditions are the high bytes'.
 
 ## Why the classification is separate from the guard
@@ -117,6 +123,7 @@ import LeanLLVM.Refinement.JsonStage2WalkDispatchClosers
 import LeanLLVM.Refinement.JsonStage2WalkDispatchLetters
 import LeanLLVM.Refinement.JsonStage2WalkDispatchFLetter
 import LeanLLVM.Refinement.JsonStage2WalkDispatchClassC
+import LeanLLVM.Refinement.JsonStage2WalkDispatchRun
 
 set_option autoImplicit false
 
@@ -252,13 +259,13 @@ theorem HeadArm.complete (x : BitVec 8) : HeadArm x := by
 /-! ### The dispatch's evidence, by arm -/
 
 /-- **The last entry's terminal dispatch, as the arm it took.**  One constructor per arm
-class the layer proves or preserves; `.dispatch` is the function into
-`WalkDispatchResult`.
+class of the head switch, exhaustive over its bytes as the continuing census is, and
+`.dispatch` is the function into `WalkDispatchResult`.
 
 Each constructor carries only its own arm's premises: the scalar arm's byte class and
 tail supply, the high-byte arm's residue (the one class-restricted bundle, kept as *one*
-arm), the two refusals' own bits and cells, and — for the arms whose segments are still
-owed — that arm's counted segment and endpoint facts. -/
+arm), the two refusals' own bits and cells, and each default-arm span's own counted
+segments and endpoint facts. -/
 inductive LastEntryArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
     (s : State) : Type
   /-- **`sw.default.i` with the tag test's true arm**: the plain-value path. -/
@@ -421,9 +428,8 @@ inductive LastEntryArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
   The class is the scan-free one, and here the reason is the byte before the entry's end: on
   the no-run class the seam's `%ee.1.i` is the entry's end (`LeafBlock37`'s else arm), so the
   copy call's `ult %ee.1.i %cond350.i` is `ult v v` and the walk leaves for the merge.  On
-  the run class that cell is the run's stop and the scan runs; that class is `.supplied`'s
-  at this level, because the terminal index's byte credit is zero, and `HcontArm.run`'s at
-  the continuing one. -/
+  the run class that cell is the run's stop and the scan runs; that class is `.run`'s at
+  this level, and `HcontArm.run`'s at the continuing one. -/
   | letters {x : BitVec 8} (h8 : evalOperand s (.reg "%8") = some (.int 8 x))
       (hbit : (evalICmp .eq x (BitVec.ofNat 8 45) |||
         evalICmp .ult (x + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
@@ -488,32 +494,32 @@ inductive LastEntryArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
       (hTail : WalkSegment (stage2Calls stage2SubCalls) G Cs ss Ct st 3)
       (ht : Ct.block = "if.end473.i") (htk : Ct.k = C.k)
       (htok : lookupName st.env "%t352.i" = some (.ptr tok)) : LastEntryArm calls G C s
-  /-- **The last entry's run class, and its price obstruction.**  The byte before the
-  entry's end is whitespace, so the whitespace skip runs, the token's end `%ee.1.i` is the
-  run's stop `k < G.n`, and the copy call's test `ult k %cond350.i` is true — the
-  extra-token scan traverses `[k, G.n)` and the merge follows its exit.
+  /-- **The last entry's run class**, priced against the entry allowance alone.  The byte
+  before the entry's end is whitespace, so the whitespace skip runs, the token's end
+  `%ee.1.i` is the run's stop `k < G.n`, and the copy call's test `ult k %cond350.i` is
+  true — the extra-token scan traverses `[k, G.n)` and the merge follows its exit.
 
-  **Why it is not proved here, exactly.**  `WalkDispatchResult.merge`'s price is
-  `p + 2 ≤ 32·Δk + 8·ΔA` with `ΔA = entryPos G k2 - entryPos G C.k` at the merge's own
-  index `k2`, and at the last entry `k2 = C.k + 1 = G.nep`, so
-  `ΔA = entryPos G G.nep - entryPos G C.k = 0` (`walkEntryPos_at_nep`): the byte credit is
-  **zero**.  The path's fixed part is twenty-four links — the head's eleven, the span's at
-  most five, the tail's three, the landing's three, and the exit's and the merge's one each
-  — so with the price's own two, twenty-six of the thirty-two are gone, and the run's
-  whitespace visits *and* the scan's share the six that remain: a run and a scan of more
-  than one visit each exceed it.  The continuing level's `.run` prices the same path
-  because `C.k + 1 < G.nep` gives a positive `ΔA`; that is the only difference between the
-  two levels, and it is a difference in the *price the dispatch states*, not in the walk.
+  **Its price is `mergeLast`'s, and that is what the terminal index needs.**  At the last
+  entry the merge's index is the stream's end, `k2 = C.k + 1 = G.nep`, so `merge`'s byte
+  term `entryPos G k2 - entryPos G C.k` is `entryPos G G.nep - entryPos G C.k = 0`
+  (`walkEntryPos_at_nep`): there is no byte span to charge.  `WalkDispatchResult.mergeLast`
+  states exactly that price, and this arm lands against it — `runLastMerge_at` composes the
+  path and the price, and `.dispatch` builds the result at the merge's cells.
 
-  The class is therefore left to the caller rather than stated with a bound on the run's
-  length, which would exclude documents the walk accepts.  The field is the arm's own
-  result — the endpoint it reaches with the count and the price. -/
-  | supplied (r : WalkDispatchResult (stage2Calls stage2SubCalls) G C s) :
-      LastEntryArm calls G C s
+  **The arithmetic.**  The path's fixed part is twenty-four links — the head's eleven, the
+  span's at most five, the tail's three, the landing's three, and the exit's and the
+  merge's one each — so with the price's own two, twenty-six of the thirty-two are gone and
+  the run's whitespace visits `N` *and* the scan's `4·(c - 1 - i)` share the six that
+  remain.  That is the bundle's `hbudget`, a premise of this class rather than a bound
+  invented here: a document whose terminal run exceeds the six has no arm at this level,
+  because the price for it does not exist.  The continuing level's `.run` prices the same
+  path with `ΔA` positive; the difference is in the price the dispatch states, not in the
+  walk. -/
+  | run (f : RunLastFacts G C s) : LastEntryArm calls G C s
 
 /-- **The dispatch, from the arm.**  Each proved arm runs its own theorem; the preserved
-high-byte arm is `hlastFacts_of_staging` → `ofHlastMerge`; the last entry's run arm is its
-own result, carried. -/
+high-byte arm is `hlastFacts_of_staging` → `ofHlastMerge`; the last entry's run arm is
+`runLastMerge_at`'s composition, at the terminal price. -/
 theorem LastEntryArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     {s : State} (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead)
     (hnot : ¬ (C.k + 1 < G.nep)) :
@@ -637,7 +643,33 @@ theorem LastEntryArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
       (by omega) hcap hseg.inv'.depth_cap hseg.inv'.sp_le_wlen hpriceD
     · -- the merge's index cell is the header's increment, at the entry's successor
       simpa only [evalOperand] using hincD
-  | .supplied r => r
+  | .run f => by
+    obtain ⟨Cm, sm, nSc, hseg, hInvD, hblockD, hpreD, hkD, hincD, hnepD, _hnR, hprice⟩ :=
+      runLastMerge_at G C s hInv hblock f
+    have hspv : evalOperand (revMergeS sm f.c) (Operand.reg "%sp.i.0248") =
+        some (.int 32 (BitVec.ofNat 32 (revMergeC Cm).sp)) := hInvD.depth_reg
+    have hlast : C.k + 1 = G.nep := by
+      -- the head's guard gives `C.k < G.nep`, and `hnot` closes the successor
+      have hlt := WalkInv.head_lt hInv (by simpa only [walkLoopHead] using hblock)
+      omega
+    have hnep64 : G.nep < 2 ^ 64 := by
+      have h := G.nep_le
+      have h2 := G.maxDoc
+      simp only [stage2MaxDocument] at h2
+      omega
+    have hcap : G.nep ≤ (BitVec.ofNat 64 G.nep).toNat := by
+      rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hnep64]
+    refine WalkDispatchResult.mergeLast (revMergeC Cm) (revMergeS sm f.c)
+      (f.nH + f.nS + 8 + nSc) (revMergeC Cm).sp G.nep "if.end473.i"
+      (Operand.reg "%sp.i.0248") (Operand.reg "%inc.i") (BitVec.ofNat 64 G.nep)
+      hseg hblockD hkD hpreD (by decide) hspv (by decide) ?_ hnepD rfl
+      (WalkInv.head_lt hInv (by simpa only [walkLoopHead] using hblock)) hcap
+      hInvD.depth_cap hInvD.sp_le_wlen ?_
+    · -- the merge's index cell is the header's increment, at the stream's end
+      rw [← hlast]
+      simpa only [evalOperand] using hincD
+    · -- the price: the entry allowance at the terminal index, and no byte term
+      exact hprice
 
 /-! ### The instrument -/
 

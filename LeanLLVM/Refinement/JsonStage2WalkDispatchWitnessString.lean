@@ -2770,7 +2770,13 @@ which is empty — both words are the invariant's (`log_dst`, `log_base`) — an
 bundle states the token's facts, not the path's witnesses.  `hR8` is the arm's own
 selector, beside the residue: the same call can refuse, and a refusing answer
 leaves `NodeBlock31` at `cleanup339.critedge.i` instead of reaching this
-merge. -/
+merge.
+
+**Why this arm builds `merge` and not `mergeLast`.**  Its index is `C.k + 2`, so the
+byte span it crossed is the two entries' and the price states it; only at a two-entry
+stream (`C.k = 0`, `G.nep = 2`) does that index reach the stream's end, and the arm does
+not know which of those documents it is at.  `mergeLast` would therefore be unusable
+here, and the full price is the one the two-entry advance pays. -/
 theorem WalkDispatchResult.ofStringMerge {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
     (s : State) (hhead : C.block = "NodeBlock21") (hInv : WalkInv G C s)
     (f : HstringFacts G C s) (R : HstringResidue G C s f)

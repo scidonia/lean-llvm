@@ -436,11 +436,11 @@ inductive HcontArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
   segment with the merge's three cells at its endpoint, the visits by `scanRoundsAt` — the
   rounds at the seam's own bound, which is what the class-C-only `scanWsRounds` is not.
 
-  **This is the continuing level's class only.**  The last entry's run class is priced
-  differently: `WalkDispatchResult.merge`'s byte credit at the terminal index is
-  `entryPos G G.nep - entryPos G C.k`, and `entryPos G G.nep = 0`, so a run there has no
-  byte credit at all.  That class stays `.supplied` at the last entry rather than being
-  stated with a weakened count. -/
+  **This is the continuing level's class.**  The last entry's run class is priced
+  differently: `WalkDispatchResult.mergeLast`'s byte credit past the last entry does not
+  exist (`entryPos G G.nep = 0`), so a run there spends the entry allowance's six
+  remaining links alone.  That class is `LastEntryArm.run` beside `RunLastFacts`
+  (`JsonStage2WalkDispatchRun`, `JsonStage2WalkDispatchArms`). -/
   | run (f : RunFacts G C s) : HcontArm calls G C s
 
 /-- **The dispatch, from the arm.**  Each proved arm runs its own theorem; the standalone
