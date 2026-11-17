@@ -1531,6 +1531,29 @@ from a constructor chain.  Every theorem is pinned at `[propext, Quot.sound]`
 (`TokenBytes.of_input` at `[propext]`), with no `Classical.choice`, `sorry`,
 `admit` or `native_decide`.
 
+### 7.14 The native route's artifact boundaries
+
+The route §7.5's domain describes now runs: `probes/json/route/` builds the Lean
+program, its C adapter, the six kernel units at `-O2` and the proved depth
+counter, and `check.sh` compares its answers with the reference on the corpus.
+What the route installs is not what the proofs read, and
+[the artifact boundaries page](json-route-artifact-boundaries.md) records the
+distance per unit: each fixture's emission line and capture rewrites, the staged
+ABI and the stage-2 helpers' body-versus-model basis, the numeric conversion's
+`NumberArmOwed`, and the trust rows a route number rests on.  Hash and rebuild
+checks there are identity evidence — the object is that fixture's compilation
+under that toolchain — and not compiler-preservation theorems, exactly as row 8
+says.
+
+The caller's side is `LeanLLVM/JsonCallRoute.lean`: `routePre` and
+`checkRoute` are the wrapper's obligations, and `decodeRouteCall`,
+`decodeRecords` and `routeView_decodes` are its reader, stated at
+`Stage2EventRel` and the record-for-record `TokenRecord` correspondence, with
+the arena at the used extent `ndstU` and the event stream at the reported
+cursor.  What neither page claims is a relation between a run of the linked
+object and `pipelineUnitsPost`; that is row 9's step, and the route's evidence
+for it is the observation `check.sh` makes.
+
 ## 8. Out of scope for the first contract
 
 `NaN`/`Infinity` as inputs the first contract's route reasons about, the

@@ -960,6 +960,11 @@ structure Consumed where
   sum : UInt64 := 0
   walked : Bool := false
   values : Nat := 0
+  /-- The run's verdict word: 1 an accepted value, 0 a refusal.  A refusal has
+  no event stream, so its two readings are the empty walk and there is no
+  token count to compare; the mode reports it as a refusal rather than as a
+  reading that did not reach the stream's end. -/
+  verdict : Nat := 0
 deriving Inhabited
 
 /-- The record's width, from the encoding `kernel/json/stage2.h` documents: a
@@ -1006,13 +1011,13 @@ partial def consumeResult (result : ByteArray) (o : Observation)
       Consumed :=
     if k >= o.nev then
       { tokens := tokens, events := k, arena := o.ndst, sum := sum, walked := true,
-        values := acc.size }
+        values := acc.size, verdict := o.verdict }
     else
       let tag := result.get! (headerBytes + o.ndst + k)
       let w := eventWidth tag
       if k + w > o.nev then
         { tokens := tokens, events := k, arena := o.ndst, sum := sum,
-          walked := false, values := acc.size }
+          walked := false, values := acc.size, verdict := o.verdict }
       else
         let base := headerBytes + o.ndst + k
         let len := if w == 13 then indexWord4 result (base + 1) else 0
@@ -1049,6 +1054,7 @@ def runConsume (path : String) (reps : Nat) : IO UInt32 := do
   let mut walked := true
   let mut foldSum : UInt64 := 0
   let mut valuesSum : UInt64 := 0
+  let mut verdict := 0
   for rep in List.range reps do
     let t0 ← IO.monoNanosNow
     let doc ←
@@ -1105,16 +1111,19 @@ def runConsume (path : String) (reps : Nat) : IO UInt32 := do
       walked := folded.walked && built.walked && folded.tokens == built.tokens
       foldSum := folded.sum
       valuesSum := built.sum
+      verdict := folded.verdict
   IO.eprintln s!"row doc={(System.FilePath.fileName path).getD path} size={size} \
     path={kind} reps={reps} read_ns={median reads} \
     admission_ns={stageField adm} staging_ns={stageField staging} \
     route_ns={stageField routeNs} copyout_ns={stageField copyout} \
     consume_fold_ns={stageField fold} consume_values_ns={stageField values} \
-    ndst={ndst} nev={nev} tokens={tokens} values={valuesBuilt} \
+    verdict={verdict} ndst={ndst} nev={nev} tokens={tokens} values={valuesBuilt} \
     walked={if walked then 1 else 0} foldsum={foldSum} valuessum={valuesSum}"
-  -- A consumer whose two readings disagree, or whose walk did not land on the
-  -- stream's end, is a failure of the reading rather than a number to report.
-  if kind == "fast" &&
+  -- An accepted run whose two readings disagree, whose walk did not land on the
+  -- stream's end, or that produced no token at all, is a failure of the reading
+  -- rather than a number to report.  A refused run is not: its verdict word is
+  -- zero, its event stream is empty, and no token count is owed.
+  if kind == "fast" && verdict != 0 &&
       !(walked && valuesBuilt == tokens && tokens > 0 && foldSum == valuesSum) then
     IO.eprintln s!"route: --consume: the readings disagree: tokens={tokens} \
       values={valuesBuilt} walked={walked} fold sum={foldSum} \

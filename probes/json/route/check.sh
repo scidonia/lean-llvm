@@ -38,7 +38,9 @@
 #      are non-empty.
 #   6. the consumer mode reads a five-event fixture at the record widths the
 #      object wrote: 5 tokens, one arena byte, 25 event bytes, both readings
-#      agreeing on the token count and the checksum.
+#      agreeing on the token count and the checksum; and it reports a refused
+#      document (a lone `]`) as a row with verdict 0 and an empty walk rather
+#      than as a reading that missed the stream's end.
 #   7. the two-phase admission agrees with the certified predicate on every row:
 #      `--admit` reports the decision phase one's depth measurement and phase
 #      two's policy scan produce, and the library's `admission`, on the same
@@ -824,6 +826,30 @@ elif [ "$(cf path)" != fast ] || [ "$(cf tokens)" != 5 ] ||
      [ "$(cf foldsum)" != "$(cf valuessum)" ]; then
   printf 'FAIL: --consume read the five-event document as:\n  %s\n' "$crow" >&2
   printf '  expected path=fast tokens=5 values=5 walked=1 ndst=1 nev=25 and equal sums\n' >&2
+  failed=$((failed + 1))
+else
+  consumer_ok=$((consumer_ok + 1))
+fi
+
+# A refusal is the object's answer, not a failed reading.  The fast path ran,
+# the verdict word is zero, the event stream is empty, and the mode reports the
+# row instead of treating the empty walk as a reading that missed the stream's
+# end.  Without the verdict clause the two readings agree at zero tokens and the
+# mode still exited 5, which is the disagreement it reports: this block is that
+# case's control.
+printf ']' >"$work/consume-refused.json"
+"$route" --consume "$work/consume-refused.json" 5 >"$work/out" 2>"$work/err"
+status=$?
+crow=$(grep '^row ' "$work/err")
+if [ "$status" -ne 0 ] || [ -z "$crow" ]; then
+  printf 'FAIL: --consume exited %s on a refused document:\n' "$status" >&2
+  cat "$work/err" >&2
+  failed=$((failed + 1))
+elif [ "$(cf path)" != fast ] || [ "$(cf verdict)" != 0 ] ||
+     [ "$(cf walked)" != 1 ] || [ "$(cf tokens)" != 0 ] ||
+     [ "$(cf foldsum)" != "$(cf valuessum)" ]; then
+  printf 'FAIL: --consume read the refused document as:\n  %s\n' "$crow" >&2
+  printf '  expected path=fast verdict=0 walked=1 tokens=0 and equal sums\n' >&2
   failed=$((failed + 1))
 else
   consumer_ok=$((consumer_ok + 1))

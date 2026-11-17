@@ -951,3 +951,17 @@ unit's tables fold to literal vector operands), and it exits `3` naming the
 missing file while an input is absent.  An invocation with no `--unit` is the
 mask unit's, unchanged.
 
+
+## The route's artifacts
+
+The units in this directory are kernels of the Lean library's *proof* path only
+through their emitted IR: the fixtures under `probes/install/ir/` are the `-O3`
+emissions the refinement theorems parse and pin, and `lake` builds none of this
+directory.  The one artifact that runs the units is the native route
+(`probes/json/route/`), and it installs its own `-O2` objects compiled from
+these files.  The relation between the two — the flags, the capture rewrites,
+the staged ABI, the inlined versus out-of-line helper boundaries, the numeric
+conversion's obligation, and the trust boundary the route's numbers rest on —
+is recorded in [`docs/json-route-artifact-boundaries.md`](../../docs/json-route-artifact-boundaries.md).
+A change to a unit that moves its fixture should be read there before the
+route's numbers or its check are trusted.

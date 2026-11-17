@@ -87,13 +87,17 @@ README and in `docs/json-route-evidence.md`.
 declares it at the ABI's address level.  That declaration is not a route: a
 Lean program cannot obtain the address of a `ByteArray`'s bytes, because the
 only accessor is the runtime's C API (`lean_sarray_cptr`), and no term in
-`Init` or `Std` exposes it.  `nativeAdapterSymbol` names the adapter a Lean
-caller needs — a C shim taking `ByteArray` arguments, extracting their data
-pointers, staging them, and returning the output bytes — and
+`Init` or `Std` exposes it.  `nativeAdapterSymbol` names the adapter the route's Lean caller uses — a C shim
+taking `ByteArray` arguments, extracting their data pointers, staging them, and
+returning the output bytes; `probes/json/route/shim.c` is that adapter, and
 `kernel/json/README.md` states the other half: "`lake` does not build the
 kernel: it is a C unit of the identity, route and bench scripts, not of the
-Lean library."  So the missing pieces are named rather than assumed, in
-`missingBridgePieces`.
+Lean library."  What remains outside the proofs is named rather than assumed, in
+`missingBridgePieces`, and the caller's side of the adapter's bytes is stated:
+`decodeRouteCall` reads the ten-word header, the arena at its used extent and the
+event stream at its reported cursor, `decodeRecords` reads that stream back into
+the trace, and `routeView_decodes` states what a caller gets at the proved
+relation.
 
 The executable route lives in `probes/json/route/` as a probe: a Lean module
 that imports the library's decision and parser (the kernel is outside Lake, so
@@ -109,10 +113,12 @@ probe's decision is the two-phase equivalent: the native phase-one verdict
 the library's `policyRefusal` and `admission` are both retained as the
 suite's oracles, and `check.sh` asserts agreement.  The fallback's answer is
 `parseBytes`'s.  What the probe does not establish is
-the step from the semantics to the object; see `missingBridgePieces` and the
-docstring of `nativePipeline`.
+the step from the semantics to the object; see `missingBridgePieces`, the
+docstring of `nativePipeline`, and the artifact boundary recorded in
+`docs/json-route-artifact-boundaries.md`.
 -/
 import LeanLLVM.Refinement.JsonPipelineSpec
+import LeanLLVM.Refinement.JsonStage2TokenCorrespondence
 import LeanLLVM.JsonKernelCertificate
 
 set_option autoImplicit false
@@ -660,7 +666,7 @@ theorem stagedWindow_read (l : RouteLayout) (doc : List UInt8)
     readBytes (stagedMem l doc) l.base (routeBlocks doc) =
       some (doc ++ List.replicate (routeBlocks doc - doc.length) 0) := by
   have h := readBytes_store_at (m := []) (mem_window l doc) hsep 3 (routeBlocks doc)
-    (by rw [windowBytes_length]; omega)
+    (by rw [windowBytes_length])
   have hbase : l.base - 3 + 3 = l.base := by omega
   have hlen : (doc ++ List.replicate (routeBlocks doc - doc.length) 0).length =
       routeBlocks doc := by
@@ -726,9 +732,9 @@ theorem stagedReads_hasBytes (l : RouteLayout) (doc : List UInt8)
   rcases hr with h1|h1|h1|h1|h1|h1|h1|h1|h1|h1|h1|h1|h1 <;> subst h1
   · simpa only [stagedMem] using
       hasBytes_store_of_mem (mem_window l doc) hsep (3 + routeBlocks doc)
-        (by rw [windowBytes_length]; omega)
+        (by rw [windowBytes_length])
   · simpa only [stagedMem] using
-      hasBytes_store_of_mem (mem_table l doc) hsep 8192 (by rw [pos8Table_extent]; omega)
+      hasBytes_store_of_mem (mem_table l doc) hsep 8192 (by rw [pos8Table_extent])
   · simpa only [stagedMem] using
       hasBytes_store_of_mem (mem_sc l doc) hsep 24
         (by simp [carrySlot, flagBytes, natToBytes_length])
@@ -1457,11 +1463,12 @@ supply an address, because `ByteArray`'s data pointer is the runtime's C API
 opaque nativePipeline (b n sc mk entw ep epcap nk xp xpcap nxp xcarry dst dstcap
   ndst ev evcap nev err arm : USize) : USize
 
-/-- The adapter symbol a Lean caller would need.  A C function under this name
-would take the caller's `ByteArray`s, extract their data pointers with the
-runtime's own API, stage them into the object's ABI, call
-`leanllvm_json_pipeline`, and return the output bytes.  No such function exists
-in this tree. -/
+/-- The adapter symbol the route's Lean caller uses.  The C function under this
+name — `probes/json/route/shim.c` — takes the caller's `ByteArray`s, extracts
+their data pointers with the runtime's own API, stages them into the object's
+ABI, calls `leanllvm_json_pipeline`, and returns the output bytes.
+`decodeRouteCall` below is the model of the bytes it returns; the adapter itself
+is outside Lake, so its link is `probes/json/route/build.sh`. -/
 def nativeAdapterSymbol : String := "leanllvm_json_route"
 
 /-- **What is missing between a Lean program and the native object**, each with
@@ -1469,9 +1476,10 @@ the evidence that it is missing.  The executable route in `probes/json/route/`
 supplies the adapter and the link step outside `lake`; the semantics-to-object
 step remains the documented trust boundary. -/
 def missingBridgePieces : List String :=
-  [ "an FFI adapter: `ByteArray`'s data pointer is the runtime's C API \
-(`lean_sarray_cptr` in `lean.h`), and no Lean term exposes it; the adapter must \
-take the caller's `ByteArray`s and pass their pointers",
+  [ "an FFI adapter inside `lake`: `ByteArray`'s data pointer is the runtime's C \
+API (`lean_sarray_cptr` in `lean.h`), and no Lean term exposes it; the adapter \
+that takes the caller's `ByteArray`s and passes their pointers is \
+`probes/json/route/shim.c`, outside `lake`",
     "a staging copy: the adapter must copy the wrapper's bytes into the object's \
 buffers; a native write into a Lean-owned `ByteArray` is outside Lean's semantics, \
 and the compiler may share two equal `ByteArray` literals",
@@ -1487,6 +1495,402 @@ route's observed one (`tests/json-entry`), not a theorem of this module",
 is about the pinned AST and `Mem`, and nothing connects a run of the linked \
 object to `pipelineUnitsPost`; that is the compiler/FFI trust boundary \
 (`docs/contract.md` row 9)" ]
+
+/-! ### The caller's decode of the emitted stream
+
+The proofs relate a *trace* — `Stage2Records`, the walk's own `List EventRecord`
+— to the parser's tokens, and the post publishes the bytes that trace was written
+as.  A caller has the bytes.  `decodeRecords` is the reader that closes that
+step: each record's first byte announces its own class and width, so the record
+boundaries and payloads are a function of the stream alone, and
+`decodeRecords_flatten` proves the reader returns the trace on a stream the
+records were written as.  `Stage2EventRel`'s constructors are the same relation
+at the byte level, so a caller that decodes this way reads the relation's own
+records rather than a second transcript of them. -/
+
+/-- The caller's record reader over the emitted stream: the first byte's value
+names the record's class and therefore its width, so a stream of records decodes
+without any of the walk's state.  A byte that names no class is not a stream of
+records, and a record whose payload is not all there is a truncated stream; both
+answer `none`, so a result that lost or gained a byte is refused by the reader
+rather than read as some shorter record list. -/
+def decodeRecords : List UInt8 → Option (List EventRecord)
+  | [] => some []
+  | b :: rest =>
+      match b.toNat with
+      | 1 => (decodeRecords rest).map fun rs => EventRecord.tag 1 :: rs
+      | 2 => (decodeRecords rest).map fun rs => EventRecord.tag 2 :: rs
+      | 3 => (decodeRecords rest).map fun rs => EventRecord.tag 3 :: rs
+      | 4 => (decodeRecords rest).map fun rs => EventRecord.tag 4 :: rs
+      | 8 => (decodeRecords rest).map fun rs => EventRecord.tag 8 :: rs
+      | 9 => (decodeRecords rest).map fun rs => EventRecord.tag 9 :: rs
+      | 10 => (decodeRecords rest).map fun rs => EventRecord.tag 10 :: rs
+      | 5 =>
+          if rest.length < 12 then none
+          else
+            let len := bytesToNat (rest.take 4)
+            let span := bytesToNat ((rest.drop 4).take 8)
+            (decodeRecords (rest.drop 12)).map fun rs => EventRecord.str true len span :: rs
+      | 6 =>
+          if rest.length < 12 then none
+          else
+            let len := bytesToNat (rest.take 4)
+            let span := bytesToNat ((rest.drop 4).take 8)
+            (decodeRecords (rest.drop 12)).map fun rs => EventRecord.str false len span :: rs
+      | 7 =>
+          if rest.length < 8 then none
+          else
+            let bits := bytesToNat (rest.take 8)
+            (decodeRecords (rest.drop 8)).map fun rs => EventRecord.number bits :: rs
+      | _ => none
+termination_by bs => bs.length
+decreasing_by
+  all_goals
+    simp only [List.length_cons, List.length_drop]
+    omega
+
+/-- The field widths the emitted records are written at: a tag below a byte, a
+number's bits below the 64-bit word, a key's or string's length below the
+32-bit field and its span below the 64-bit field. -/
+def EventRecord.Bounded : EventRecord → Prop
+  | .tag t => t < 256
+  | .number bits => bits < 2 ^ 64
+  | .str _ len span => len < 2 ^ 32 ∧ span < 2 ^ 64
+
+/-- A word's bytes, taken whole. -/
+theorem take_wordBytes (v w : Nat) (rest : List UInt8) :
+    (wordBytes w v ++ rest).take w = wordBytes w v := by
+  simp [wordBytes, natToBytes_length]
+
+/-- A word's bytes, dropped whole. -/
+theorem drop_wordBytes (v w : Nat) (rest : List UInt8) :
+    (wordBytes w v ++ rest).drop w = rest := by
+  simp [wordBytes, natToBytes_length]
+
+/-- A word's bytes read back as the word, in range. -/
+theorem bytesToNat_wordBytes {v w : Nat} (h : v < 256 ^ w) :
+    bytesToNat (wordBytes w v) = v := by
+  rw [wordBytes, natToBytes_toNat, Nat.mod_eq_of_lt h]
+
+/-- A number record decodes as its payload's bits. -/
+theorem decodeRecords_number (bits : Nat) (hbits : bits < 2 ^ 64) (rest : List UInt8) :
+    decodeRecords (UInt8.ofNat 7 :: (wordBytes 8 bits ++ rest)) =
+      (decodeRecords rest).map (fun rs => EventRecord.number bits :: rs) := by
+  have hb : (UInt8.ofNat 7).toNat = 7 := by decide
+  simp only [decodeRecords, hb]
+  split_ifs with hlen
+  · exfalso
+    rw [List.length_append, wordBytes, natToBytes_length] at hlen
+    omega
+  · rw [take_wordBytes, drop_wordBytes,
+      bytesToNat_wordBytes (w := 8)
+        (by rw [show (256 : Nat) ^ 8 = 2 ^ 64 from by decide]; exact hbits)]
+
+/-- A key's or string's record decodes as its length and span; the tag is the
+record's. -/
+theorem decodeRecords_str_payload (key : Bool) (tag : Nat) (hkey : tag = if key then 5 else 6)
+    (len span : Nat) (hlen : len < 2 ^ 32) (hspan : span < 2 ^ 64)
+    (rest : List UInt8) :
+    decodeRecords (UInt8.ofNat tag :: (wordBytes 4 len ++ wordBytes 8 span ++ rest)) =
+      (decodeRecords rest).map (fun rs => EventRecord.str key len span :: rs) := by
+  subst hkey
+  have htake4 : (wordBytes 4 len ++ (wordBytes 8 span ++ rest)).take 4 = wordBytes 4 len := by
+    rw [List.take_append_of_le_length (by simp [wordBytes, natToBytes_length])]
+    exact List.take_of_length_le (by simp [wordBytes, natToBytes_length])
+  have hdrop4 : (wordBytes 4 len ++ (wordBytes 8 span ++ rest)).drop 4 =
+      wordBytes 8 span ++ rest := by
+    rw [List.drop_append_of_le_length (by simp [wordBytes, natToBytes_length]),
+      List.drop_eq_nil_of_le (by simp [wordBytes, natToBytes_length])]
+    rfl
+  have htake8 : ((wordBytes 4 len ++ (wordBytes 8 span ++ rest)).drop 4).take 8 =
+      wordBytes 8 span := by
+    rw [hdrop4]
+    exact take_wordBytes span 8 rest
+  have hdrop12 : (wordBytes 4 len ++ (wordBytes 8 span ++ rest)).drop 12 = rest := by
+    rw [show (12 : Nat) = 4 + 8 from rfl, ← List.drop_drop (i := 8) (j := 4), hdrop4]
+    exact drop_wordBytes span 8 rest
+  have hlen4 : bytesToNat (wordBytes 4 len) = len :=
+    bytesToNat_wordBytes (w := 4)
+      (by rw [show (256 : Nat) ^ 4 = 2 ^ 32 from by decide]; exact hlen)
+  have hspan8 : bytesToNat (wordBytes 8 span) = span :=
+    bytesToNat_wordBytes (w := 8)
+      (by rw [show (256 : Nat) ^ 8 = 2 ^ 64 from by decide]; exact hspan)
+  have h5 : (UInt8.ofNat 5).toNat = 5 := by decide
+  have h6 : (UInt8.ofNat 6).toNat = 6 := by decide
+  cases key with
+  | true =>
+      simp only [decodeRecords, h5, Bool.true_eq_false, ↓reduceIte]
+      split_ifs with hlen
+      · exfalso
+        simp only [List.length_append, wordBytes, natToBytes_length] at hlen
+        omega
+      · simp [htake4, htake8, hdrop12, hlen4, hspan8]
+  | false =>
+      simp only [decodeRecords, h6, Bool.false_eq_true, ↓reduceIte]
+      split_ifs with hlen
+      · exfalso
+        simp only [List.length_append, wordBytes, natToBytes_length] at hlen
+        omega
+      · simp [htake4, htake8, hdrop12, hlen4, hspan8]
+
+/-- **One record's bytes decode as that record.**  Every emitted record's first
+byte names its own class and width, so the decoder consumes exactly the record
+and leaves the rest of the stream to the induction. -/
+theorem decodeRecords_encoded {r : EventRecord} {rest : List UInt8}
+    (hb : r.Bounded) (ht : r.Tagged) :
+    decodeRecords (r.encodedBytes ++ rest) =
+      (decodeRecords rest).map (fun rs => r :: rs) := by
+  cases r with
+  | tag t =>
+      have hlt : t < 256 := hb
+      have htag : t = 1 ∨ t = 2 ∨ t = 3 ∨ t = 4 ∨ t = 8 ∨ t = 9 ∨ t = 10 := ht
+      simp only [EventRecord.encodedBytes, List.cons_append, List.nil_append]
+      rcases htag with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+        simp [decodeRecords]
+  | number bits =>
+      have hbits : bits < 2 ^ 64 := hb
+      simp only [EventRecord.encodedBytes, numberRecord, List.flatten_cons,
+        List.flatten_nil, List.nil_append, List.cons_append]
+      exact decodeRecords_number bits hbits rest
+  | str key len span =>
+      obtain ⟨hlen, hspan⟩ := hb
+      simp only [EventRecord.encodedBytes, List.cons_append, List.nil_append]
+      exact decodeRecords_str_payload key _ (by cases key <;> rfl) len span hlen hspan rest
+
+/-- **A whole trace's bytes decode as the trace.**  This is the decoder's
+correctness on the emitted stream: reading the bytes record by record returns
+the records they were written from, with no knowledge of the walk. -/
+theorem decodeRecords_flatten {rs : List EventRecord}
+    (hb : ∀ r ∈ rs, r.Bounded) (ht : ∀ r ∈ rs, r.Tagged) :
+    decodeRecords (rs.map EventRecord.encodedBytes).flatten = some rs := by
+  induction rs with
+  | nil => simp [decodeRecords]
+  | cons r rs ih =>
+      have hbr : r.Bounded := hb r (by simp)
+      have htr : r.Tagged := ht r (by simp)
+      have hb' : ∀ x ∈ rs, x.Bounded := fun x hx => hb x (by simp [hx])
+      have ht' : ∀ x ∈ rs, x.Tagged := fun x hx => ht x (by simp [hx])
+      simp only [List.map_cons, List.flatten_cons]
+      rw [decodeRecords_encoded hbr htr, ih hb' ht']
+      rfl
+
+/-! ### The adapter's record, and the caller's view -/
+
+/-- The adapter's header width: ten little-endian 64-bit words (`shim.c`'s
+`ROUTE_HEADER_BYTES`). -/
+def routeHeaderBytes : Nat := 80
+
+/-- The adapter's header: the ten words `tag detail want got verdict nk nxp
+ndst nev err`, each little-endian, in that order. -/
+def routeHeader (tag detail want got verdict nk nxp ndst nev err : Nat) : List UInt8 :=
+  [tag, detail, want, got, verdict, nk, nxp, ndst, nev, err].flatMap (wordBytes 8)
+
+theorem routeHeader_length (tag detail want got verdict nk nxp ndst nev err : Nat) :
+    (routeHeader tag detail want got verdict nk nxp ndst nev err).length = 80 := by
+  simp [routeHeader, wordBytes, natToBytes_length]
+
+/-- The `i`-th little-endian 64-bit word of a byte list. -/
+def routeWordAt (bs : List UInt8) (i : Nat) : Nat :=
+  bytesToNat ((bs.drop (8 * i)).take 8)
+
+/-- A header word reads back as the number it was written from. -/
+theorem routeWordAt_header (ws : List Nat) (rest : List UInt8) (i w : Nat)
+    (hw : ws[i]? = some w) :
+    routeWordAt (ws.flatMap (wordBytes 8) ++ rest) i = w % 256 ^ 8 := by
+  induction ws generalizing i with
+  | nil => simp at hw
+  | cons a ws ih =>
+      cases i with
+      | zero =>
+          simp only [List.getElem?_cons_zero, Option.some.injEq] at hw
+          subst hw
+          unfold routeWordAt
+          rw [Nat.mul_zero, List.drop_zero]
+          simp only [List.flatMap_cons, List.append_assoc]
+          have htake : (wordBytes 8 a ++ (ws.flatMap (wordBytes 8) ++ rest)).take 8 =
+              wordBytes 8 a := by
+            rw [List.take_append_of_le_length (by simp [wordBytes, natToBytes_length])]
+            exact List.take_of_length_le (by simp [wordBytes, natToBytes_length])
+          rw [htake, wordBytes, natToBytes_toNat]
+      | succ i =>
+          simp only [List.getElem?_cons_succ] at hw
+          unfold routeWordAt
+          simp only [List.flatMap_cons, List.append_assoc]
+          rw [show (8 * (i + 1) : Nat) = 8 + 8 * i from by omega,
+            ← List.drop_drop (i := 8 * i) (j := 8)]
+          have hdrop : (wordBytes 8 a ++ (ws.flatMap (wordBytes 8) ++ rest)).drop 8 =
+              ws.flatMap (wordBytes 8) ++ rest := by
+            rw [List.drop_append_of_le_length
+              (by simp [wordBytes, natToBytes_length] : 8 ≤ (wordBytes 8 a).length),
+              List.drop_eq_nil_of_le
+                (by simp [wordBytes, natToBytes_length] : (wordBytes 8 a).length ≤ 8)]
+            rfl
+          rw [hdrop]
+          exact ih i hw
+
+/-- One adapter answer: the header's ten numbers and the two payloads the
+header's extents name. -/
+structure RouteCall where
+  tag : Nat
+  detail : Nat
+  want : Nat
+  got : Nat
+  verdict : Nat
+  nk : Nat
+  nxp : Nat
+  ndst : Nat
+  nev : Nat
+  err : Nat
+  arena : List UInt8
+  events : List UInt8
+deriving Repr, DecidableEq
+
+/-- The adapter's bytes: the header, then the arena's used prefix, then the
+event stream. -/
+def RouteCall.bytes (c : RouteCall) : List UInt8 :=
+  routeHeader c.tag c.detail c.want c.got c.verdict c.nk c.nxp c.ndst c.nev c.err
+    ++ c.arena ++ c.events
+
+theorem RouteCall.bytes_length (c : RouteCall) :
+    c.bytes.length = 80 + c.arena.length + c.events.length := by
+  simp only [RouteCall.bytes, List.length_append, routeHeader_length]
+
+/-- The payloads are the extents the header names: `shim.c` copies exactly that
+many bytes. -/
+def RouteCall.Lengthed (c : RouteCall) : Prop :=
+  c.arena.length = c.ndst ∧ c.events.length = c.nev
+
+/-- What the wrapper reads off the adapter's bytes: the verdict, the two extents
+and the two payloads, copied out. -/
+structure RouteView where
+  verdict : Nat
+  ndstUsed : Nat
+  nev : Nat
+  arena : List UInt8
+  events : List UInt8
+deriving Repr, DecidableEq
+
+/-- The record reader over the adapter's bytes: the header through indexing, the
+length consistency check, and the two payloads cut at the header's extents. -/
+def decodeRouteCall (bs : List UInt8) : Option RouteView :=
+  if 80 ≤ bs.length then
+    let ndst := routeWordAt bs 7
+    let nev := routeWordAt bs 8
+    if bs.length = 80 + ndst + nev then
+      some { verdict := routeWordAt bs 4, ndstUsed := ndst, nev := nev,
+             arena := (bs.drop 80).take ndst,
+             events := (bs.drop (80 + ndst)).take nev }
+    else none
+  else none
+
+/-- **The caller's decode is the adapter's answer.**  At the layout `shim.c`
+writes — ten words, the arena, the event stream — the reader recovers the
+verdict, both extents and both payloads exactly, with the arena cut at the used
+extent and the events at the reported cursor. -/
+theorem decodeRouteCall_bytes (c : RouteCall) (hok : c.Lengthed)
+    (hverdict : c.verdict < 2 ^ 64) (hndst : c.ndst < 2 ^ 64) (hnev : c.nev < 2 ^ 64) :
+    decodeRouteCall c.bytes =
+      some { verdict := c.verdict, ndstUsed := c.ndst, nev := c.nev,
+             arena := c.arena, events := c.events } := by
+  obtain ⟨harena_len, hevents_len⟩ := hok
+  have hw4 : routeWordAt c.bytes 4 = c.verdict := by
+    unfold RouteCall.bytes routeHeader
+    rw [List.append_assoc]
+    have h := routeWordAt_header
+      [c.tag, c.detail, c.want, c.got, c.verdict, c.nk, c.nxp, c.ndst, c.nev, c.err]
+      (c.arena ++ c.events) 4 c.verdict (by simp)
+    rw [h, show 256 ^ 8 = 2 ^ 64 from by decide]
+    exact Nat.mod_eq_of_lt hverdict
+  have hw7 : routeWordAt c.bytes 7 = c.ndst := by
+    unfold RouteCall.bytes routeHeader
+    rw [List.append_assoc]
+    have h := routeWordAt_header
+      [c.tag, c.detail, c.want, c.got, c.verdict, c.nk, c.nxp, c.ndst, c.nev, c.err]
+      (c.arena ++ c.events) 7 c.ndst (by simp)
+    rw [h, show 256 ^ 8 = 2 ^ 64 from by decide]
+    exact Nat.mod_eq_of_lt hndst
+  have hw8 : routeWordAt c.bytes 8 = c.nev := by
+    unfold RouteCall.bytes routeHeader
+    rw [List.append_assoc]
+    have h := routeWordAt_header
+      [c.tag, c.detail, c.want, c.got, c.verdict, c.nk, c.nxp, c.ndst, c.nev, c.err]
+      (c.arena ++ c.events) 8 c.nev (by simp)
+    rw [h, show 256 ^ 8 = 2 ^ 64 from by decide]
+    exact Nat.mod_eq_of_lt hnev
+  have hlen' : c.bytes.length = 80 + c.ndst + c.nev := by
+    rw [RouteCall.bytes_length, harena_len, hevents_len]
+  have hdrop80 : c.bytes.drop 80 = c.arena ++ c.events := by
+    unfold RouteCall.bytes
+    rw [List.append_assoc, List.drop_append_of_le_length (by rw [routeHeader_length]),
+      List.drop_eq_nil_of_le (by simp [routeHeader_length]), List.nil_append]
+  have harena : (c.bytes.drop 80).take c.ndst = c.arena := by
+    rw [hdrop80, List.take_append_of_le_length (by omega), List.take_of_length_le (by omega)]
+  have hdropAll : c.bytes.drop (80 + c.ndst) = c.events := by
+    rw [← List.drop_drop (i := c.ndst) (j := 80), hdrop80,
+      List.drop_append_of_le_length (by omega), List.drop_eq_nil_of_le (by omega),
+      List.nil_append]
+  have hevents : (c.bytes.drop (80 + c.ndst)).take c.nev = c.events := by
+    rw [hdropAll, List.take_of_length_le (by omega)]
+  simp [decodeRouteCall, hw7, hw8, hw4, hlen', harena, hevents]
+  omega
+
+
+/-- **The post's two payload reads.**  A returning run's post names the arena at
+the extent the reported cursor holds (the used prefix) and the event stream at
+its own cursor; this is the pair a caller decodes, named rather than left inside
+the post's existential. -/
+theorem routePost_outputs {l : RouteLayout} {doc : List UInt8} {next : Nat}
+    {verdict : BitVec 64} {m : Mem}
+    (h : routePost l doc next (.ret (some (.int 64 verdict)) m)) :
+    ∃ ndstU ndst' nev' nk' nxp' : Nat, ∃ out evs : List UInt8,
+      ndstU ≤ ndst' ∧
+      pipelineOutputExtents (routeArgs l doc) (.ret (some (.int 64 verdict)) m)
+        ndstU nev' ∧
+      readBytes m l.dst ndstU = some out ∧
+      readBytes m l.ev nev' = some evs ∧
+      readBytes m l.nk 8 = some (wordBytes 8 nk') ∧
+      readBytes m l.nxp 8 = some (wordBytes 8 nxp') := by
+  simp only [routePost, pipelineUnitsPost, routeArgs] at h
+  obtain ⟨-, nk', nxp', ndstU, ndst', nev', ent, ps, out, evs, c, ctype, cst, tok,
+    s, z, e, d, alloc, allocEnd, hle, hout, hnk, hnxp, -, -, hdst, hev, -, -, -, -⟩ := h
+  exact ⟨ndstU, ndst', nev', nk', nxp', out, evs, hle, hout, hdst, hev, hnk, hnxp⟩
+
+/-- **The route's decode, at the proved relation.**  The adapter's record is the
+post's two payloads; the record reader recovers them at the used prefix and the
+reported cursor; the event bytes decode to the walk's trace; the trace is the
+parser's tokens record for record (`TokenRecord`); and the tape's value is
+`decodeTape`'s.  This is the whole of what a caller reads, stated at the relation
+rather than at a byte count. -/
+theorem routeView_decodes {verdict ndstU nev' : Nat} {out evs bs : List UInt8}
+    {t : Tape} {rs : List EventRecord} (c : RouteCall)
+    (hc : c.arena = out ∧ c.events = evs ∧ c.ndst = ndstU ∧ c.nev = nev' ∧
+      c.verdict = verdict)
+    (hok : c.Lengthed)
+    (hverdict : c.verdict < 2 ^ 64) (hndst : c.ndst < 2 ^ 64) (hnev : c.nev < 2 ^ 64)
+    (hparse : parseBytes Limits.default (ByteString.literal bs) = .ok t)
+    (hrel : Stage2Records bs out rs t.tokens)
+    (hb : ∀ r ∈ rs, r.Bounded) (ht : ∀ r ∈ rs, r.Tagged)
+    (hrecs : evs = (rs.map EventRecord.encodedBytes).flatten) :
+    ∃ view : RouteView,
+      decodeRouteCall c.bytes = some view ∧
+      view.arena = out ∧ view.events = evs ∧
+      view.ndstUsed = ndstU ∧ view.nev = nev' ∧ view.verdict = verdict ∧
+      decodeRecords view.events = some rs ∧
+      List.Forall₂ (TokenRecord bs out) rs (Token.nonSeparators t.tokens) ∧
+      Stage2EventRel bs out evs t.tokens ∧
+      parseSkeleton view.events = rs.map EventRecord.tagVal ∧
+      ∃ pv : LeanLLVM.JSON.Value, decodeTape t = some pv := by
+  obtain ⟨harena, hevents, hndst, hnev, hverd⟩ := hc
+  subst harena hevents hndst hnev hverd
+  refine ⟨_, decodeRouteCall_bytes c hok hverdict hndst hnev, rfl, rfl, rfl, rfl, rfl,
+    ?_, ?_, ?_, ?_, ?_⟩
+  · rw [hrecs]; exact decodeRecords_flatten hb ht
+  · exact Stage2Records.forall₂ hrel
+  · rw [hrecs]; exact stage2EventRel_of_records rfl hrel
+  · rw [hrecs]; exact parseSkeleton_trace rs (Stage2Records.tagged hrel)
+  · obtain ⟨pv, hdec, -, -⟩ :=
+      decodeTape_correct Limits.default (ByteString.literal bs) t hparse
+    exact ⟨pv, hdec⟩
 
 /-! ### Axiom footprints
 
@@ -1532,6 +1936,23 @@ too. -/
 /-- info: 'LeanLLVM.Refinement.routePost_result' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms routePost_result
+
+
+/-- info: 'LeanLLVM.Refinement.decodeRecords_flatten' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms decodeRecords_flatten
+
+/-- info: 'LeanLLVM.Refinement.decodeRouteCall_bytes' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms decodeRouteCall_bytes
+
+/-- info: 'LeanLLVM.Refinement.routeView_decodes' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms routeView_decodes
+
+/-- info: 'LeanLLVM.Refinement.routePost_outputs' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms routePost_outputs
 
 /-- info: 'LeanLLVM.Refinement.nativePipeline' does not depend on any axioms -/
 #guard_msgs in

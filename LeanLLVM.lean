@@ -97,6 +97,8 @@ import LeanLLVM.Refinement.JsonStage2WalkInduce
 import LeanLLVM.Refinement.JsonStage2WalkSteps
 import LeanLLVM.Refinement.JsonStage2WalkStepsPath
 import LeanLLVM.Refinement.PipelineDischarge
+-- The route's wrapper contract, its document decision, and the caller's decode.
+import LeanLLVM.JsonCallRoute
 import LeanLLVM.StrtodRefine
 import LeanLLVM.StrtodTier1
 import LeanLLVM.ElGuardRefine

@@ -27,6 +27,12 @@ record's ratios came from a scratch tree, a different pipeline build and a
 rotation this page does not share, so the rows paired round by round inside one
 session are the only comparisons this page reads.
 
+The numbers below are the route's per-stage record at this build; the
+deployment-cost reading — staging and copying on the units harness's corpus, the
+consumer's alternative to the printing path, and the artifact relation they
+belong to — is
+[the artifact boundaries page](json-route-artifact-boundaries.md#the-routes-cost-measured-on-the-units-harnesss-corpus).
+
 ## Reproducing it
 
 ```bash

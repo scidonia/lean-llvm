@@ -13,8 +13,9 @@ pipeline's record demands and calls the native object.  The contract is
 | `guard_check.c`, `guard.sh` | the guard's equivalence gate: 164 documents (the route's corpus, the escape unit's rows, the bench's documents) called twice each, arm 2 against the arm the guard selects, compared field for field and byte for byte; where the guard fires the arm-2 list must be empty, and a forced arm 0 must change the result on every document whose arm-2 list is not empty |
 | `driver.c` | a C caller that stages the document identically and prints the same three lines, for the fidelity comparison |
 | `build.sh` | compiles the six kernel units, the proved depth counter (`tests/v16/depth_count.ll`), the policy scan, the adapter and the program, links them (the program's library modules link from their emitted C), and asserts every symbol the adapter calls is imported and defined |
-| `check.sh` | the route scenario: fidelity against `driver.c` on every admitted row, each fallback answer against the manifest, the empty/over-bound/opener-rich documents, the depth boundary, the depth clause's own documents and a fixed-seed malformed sweep, the fourteen-row policy class, the three outcomes' distinctness, the two-phase decision's agreement with `admission` on every row — at the refusal's class and byte, and at the measured depth wherever the walk ran — with a control that must report a disagreement, and the consumer mode's reading of a five-event fixture |
+| `check.sh` | the route scenario: fidelity against `driver.c` on every admitted row, each fallback answer against the manifest, the empty/over-bound/opener-rich documents, the depth boundary, the depth clause's own documents and a fixed-seed malformed sweep, the fourteen-row policy class, the three outcomes' distinctness, the two-phase decision's agreement with `admission` on every row — at the refusal's class and byte, and at the measured depth wherever the walk ran — with a control that must report a disagreement, the consumer mode's reading of a five-event fixture, and its reading of a refused document (a lone `]`) as a `verdict=0` row rather than a failed reading |
 | `bench.sh` | the route's per-stage timings, the outcome stage's five parts, the consumer rows, the object's -O2/-O3 pair taken paired against a drift control, the boundary rows' two paths, and the simdjson reference arm; the record is [the stage timings page](../../../docs/json-route-stage-timings.md) |
+| `bench-corpus.sh` | the route's cost on the units harness's corpus: it measures the documents `tests/json-units-bench/bench.sh` already generated (same seed, sizes and tiling) with the route's own `--stages` and `--consume` modes, `BENCH_TRIALS` trials of `BENCH_REPS` repetitions pinned with `taskset` exactly as that harness pins its rows, and reports the stage split and the consumer rows.  A document outside the admitted domain is reported as a refusal row rather than measured as if it had called the object; the 4 MiB synthetic documents are all of that class, because the route's input bound is one mebibyte |
 | `bench/simdjson-baseline.cc` | the reference arm: simdjson 4.6.11 on-demand over the same documents, its `padded_string` staging and its `iterate` plus full value traversal timed apart |
 | `correspondence.sh` | the stage-2 artifact correspondence: the flags, the derivation steps, which bodies are identical under the transform, and what is left over |
 | `residue.sh` | the document-domain measurement: every corpus row, the scenario's generated rows, the bench's documents and the constructed shapes the corpus does not cover, each classified by the admission clause that refused it, with the reference's verdict on the same bytes read from `leanllvm-json`; the record is [the residue page](../../../docs/json-route-residue.md) |
@@ -74,6 +75,9 @@ nix develop -c bash probes/json/route/correspondence.sh
 nix develop -c bash probes/install/lake-locked.sh build leanllvm-json   # the residue's validity oracle
 bash probes/json/route/residue.sh
 bash probes/json/route/bench.sh 21        # re-executes itself under a 6 GiB scope
+nix develop -c bash tests/json-units-bench/bench.sh      # the units' corpus and floor
+TIMING=1 nix develop -c bash probes/json/route/build.sh  # the stage instrument
+nix develop -c bash probes/json/route/bench-corpus.sh    # the route on that corpus
 nix develop -c bash probes/install/lake-locked.sh build LeanLLVM.JsonCallRoute
 nix develop -c bash probes/install/lake-locked.sh env lean probes/json/route/DomainCheck.lean
 ```
@@ -144,10 +148,12 @@ path once per repetition and reads the result without printing — the header by
 index, the event stream record by record at the widths `kernel/json/stage2.h`
 documents — as a fold that keeps no per-token object (`consume_fold_ns`) and as
 one that materialises an event record per token (`consume_values_ns`).  The two
-alternate which goes first.  The mode exits 5 unless both readings count the
-same tokens, land exactly on the event stream's end and produce the same
+alternate which goes first.  An accepted run exits 5 unless both readings count
+the same tokens, land exactly on the event stream's end and produce the same
 checksum, so a row reports a reading that was checked rather than a duration
-alone.
+alone.  A run the object *refuses* has no event stream: its row carries `verdict=0`,
+its two readings are the empty walk, and no token count is owed, so a refusal is
+reported rather than mistaken for a reading that missed the stream's end.
 
 ## Observed
 
@@ -303,6 +309,15 @@ comparison is not a comparison of class names: on the cut it reads
 `certified_reason=none`, and `neg-prefix` is a row where the verdict and the
 reason agree on both sides (`1`/`none`) and only the number differs (`2` against
 `0`) — a red only because the depth is compared.
+
+The consumer's refusal block is not a cut of the current code: it is the failure
+the mode's fix prevents, observed against the code before it.  `--consume` on
+`route-u8-64k` (a document the domain admits and the object refuses) printed
+`route: --consume: the readings disagree: tokens=0 values=0 walked=true fold
+sum=0 values sum=0` and exited 5, though the two readings agreed: the gate read
+the empty walk of a refusal as a reading that missed the stream's end.  The mode
+now reports `verdict=0` and no token count is owed, and the block in `check.sh`
+fails if a refused document is reported any other way.
 
 The agreement gate's controls are not cuts: they are inputs the comparator must
 catch, and they run inside the scenario rather than in a throwaway copy.
