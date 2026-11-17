@@ -312,11 +312,11 @@ the base, the document, and the zero padding the mask unit's last block reads. -
 def windowBytes (doc : List UInt8) : List UInt8 :=
   List.replicate 3 0 ++ doc ++ List.replicate (routeBlocks doc - doc.length) 0
 
-/-- The staged regions, exactly the sixteen `pipelineRegions` names, at the
-extents it names.  The document's window and its read-past tail are two writes
-because they are two regions; the tail is presence only, which is why it is
-zeros. -/
-def stagedStore (l : RouteLayout) (doc : List UInt8) : List StagedRegion :=
+/-- The caller's sixteen staged objects, exactly the `pipelineRegions` names, at
+the extents it names.  The document's window and its read-past tail are two
+writes because they are two regions; the tail is presence only, which is why it
+is zeros. -/
+def routeStore (l : RouteLayout) (doc : List UInt8) : List StagedRegion :=
   [ { addr := l.base - 3, bytes := windowBytes doc },
     { addr := l.base + routeBlocks doc, bytes := List.replicate 32 0 },
     { addr := l.tab, bytes := pos8Table },
@@ -333,6 +333,19 @@ def stagedStore (l : RouteLayout) (doc : List UInt8) : List StagedRegion :=
     { addr := l.ev, bytes := List.replicate l.evcap 0 },
     { addr := l.nev, bytes := wordBytes 8 l.nev0 },
     { addr := l.err, bytes := List.replicate 8 0 } ]
+
+/-- The stage-2 work space as zero-byte writes, at the extents
+`stage2WorkExtents` names: the eight objects the flattened stage-2 body's stack
+frame occupies.  They sit above the POS8 table, so the staging separates them
+from the caller's objects through `DisjointRegions` like every other staged
+object, and a consumer reads them at the same addresses the callee's frame
+names. -/
+def stage2WorkStore (tab : Nat) : List StagedRegion :=
+  (stage2WorkExtents tab).map fun r => { addr := r.1, bytes := List.replicate r.2 0 }
+
+/-- The staged regions: the caller's sixteen objects and the stage-2 work space. -/
+def stagedStore (l : RouteLayout) (doc : List UInt8) : List StagedRegion :=
+  routeStore l doc ++ stage2WorkStore l.tab
 
 /-- The memory the wrapper stages. -/
 def stagedMem (l : RouteLayout) (doc : List UInt8) : Mem :=
@@ -481,83 +494,123 @@ member of `stagedStore`. -/
 
 theorem mem_window (l : RouteLayout) (doc : List UInt8) :
     ({ addr := l.base - 3, bytes := windowBytes doc } : StagedRegion) ∈ stagedStore l doc := by
-  simp only [stagedStore]
+  simp only [stagedStore, routeStore, List.mem_append]
+  left
   exact List.mem_cons_self ..
 
 theorem mem_tail (l : RouteLayout) (doc : List UInt8) :
     ({ addr := l.base + routeBlocks doc, bytes := List.replicate 32 0 } : StagedRegion) ∈ stagedStore l doc := by
-  simp only [stagedStore]
+  simp only [stagedStore, routeStore, List.mem_append]
+  left
   exact List.mem_cons_of_mem _ (List.mem_cons_self ..)
 
 theorem mem_table (l : RouteLayout) (doc : List UInt8) :
     ({ addr := l.tab, bytes := pos8Table } : StagedRegion) ∈ stagedStore l doc := by
-  simp only [stagedStore]
+  simp only [stagedStore, routeStore, List.mem_append]
+  left
   exact List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_self ..))
 
 theorem mem_sc (l : RouteLayout) (doc : List UInt8) :
     ({ addr := l.sc, bytes := carrySlot false false false } : StagedRegion) ∈ stagedStore l doc := by
-  simp only [stagedStore]
+  simp only [stagedStore, routeStore, List.mem_append]
+  left
   exact List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_self ..)))
 
 theorem mem_mkSlot (l : RouteLayout) (doc : List UInt8) :
     ({ addr := l.mkSlot, bytes := List.replicate 48 0 } : StagedRegion) ∈ stagedStore l doc := by
-  simp only [stagedStore]
+  simp only [stagedStore, routeStore, List.mem_append]
+  left
   exact List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_self ..))))
 
 theorem mem_entw (l : RouteLayout) (doc : List UInt8) :
     ({ addr := l.entw, bytes := List.replicate 8 0 } : StagedRegion) ∈ stagedStore l doc := by
-  simp only [stagedStore]
+  simp only [stagedStore, routeStore, List.mem_append]
+  left
   exact List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_self ..)))))
 
 theorem mem_ep (l : RouteLayout) (doc : List UInt8) :
     ({ addr := l.ep, bytes := List.replicate (4 * (routeBlocks doc + 9)) 0 } : StagedRegion) ∈ stagedStore l doc := by
-  simp only [stagedStore]
+  simp only [stagedStore, routeStore, List.mem_append]
+  left
   exact List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_self ..))))))
 
 theorem mem_nk (l : RouteLayout) (doc : List UInt8) :
     ({ addr := l.nk, bytes := wordBytes 8 0 } : StagedRegion) ∈ stagedStore l doc := by
-  simp only [stagedStore]
+  simp only [stagedStore, routeStore, List.mem_append]
+  left
   exact List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_self ..)))))))
 
 theorem mem_xp (l : RouteLayout) (doc : List UInt8) :
     ({ addr := l.xp, bytes := List.replicate (4 * (l.nxp0 + routeBlocks doc + 8)) 0 } : StagedRegion) ∈ stagedStore l doc := by
-  simp only [stagedStore]
+  simp only [stagedStore, routeStore, List.mem_append]
+  left
   exact List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_self ..))))))))
 
 theorem mem_nxp (l : RouteLayout) (doc : List UInt8) :
     ({ addr := l.nxp, bytes := wordBytes 8 l.nxp0 } : StagedRegion) ∈ stagedStore l doc := by
-  simp only [stagedStore]
+  simp only [stagedStore, routeStore, List.mem_append]
+  left
   exact List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_self ..)))))))))
 
 theorem mem_xcarry (l : RouteLayout) (doc : List UInt8) :
     ({ addr := l.xcarry, bytes := List.replicate 16 0 } : StagedRegion) ∈ stagedStore l doc := by
-  simp only [stagedStore]
+  simp only [stagedStore, routeStore, List.mem_append]
+  left
   exact List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_self ..))))))))))
 
 theorem mem_dst (l : RouteLayout) (doc : List UInt8) :
     ({ addr := l.dst, bytes := List.replicate l.dstcap 0 } : StagedRegion) ∈ stagedStore l doc := by
-  simp only [stagedStore]
+  simp only [stagedStore, routeStore, List.mem_append]
+  left
   exact List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_self ..)))))))))))
 
 theorem mem_ndst (l : RouteLayout) (doc : List UInt8) :
     ({ addr := l.ndst, bytes := wordBytes 8 l.ndst0 } : StagedRegion) ∈ stagedStore l doc := by
-  simp only [stagedStore]
+  simp only [stagedStore, routeStore, List.mem_append]
+  left
   exact List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_self ..))))))))))))
 
 theorem mem_ev (l : RouteLayout) (doc : List UInt8) :
     ({ addr := l.ev, bytes := List.replicate l.evcap 0 } : StagedRegion) ∈ stagedStore l doc := by
-  simp only [stagedStore]
+  simp only [stagedStore, routeStore, List.mem_append]
+  left
   exact List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_self ..)))))))))))))
 
 theorem mem_nev (l : RouteLayout) (doc : List UInt8) :
     ({ addr := l.nev, bytes := wordBytes 8 l.nev0 } : StagedRegion) ∈ stagedStore l doc := by
-  simp only [stagedStore]
+  simp only [stagedStore, routeStore, List.mem_append]
+  left
   exact List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_self ..))))))))))))))
 
 theorem mem_err (l : RouteLayout) (doc : List UInt8) :
     ({ addr := l.err, bytes := List.replicate 8 0 } : StagedRegion) ∈ stagedStore l doc := by
-  simp only [stagedStore]
+  simp only [stagedStore, routeStore, List.mem_append]
+  left
   exact List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_cons_self ..)))))))))))))))
+
+/-- The stage-2 work space's extents are the extents of its zero-byte writes. -/
+theorem stage2WorkStore_extents (tab : Nat) :
+    (stage2WorkStore tab).map StagedRegion.extent = stage2WorkExtents tab := by
+  simp only [stage2WorkStore, StagedRegion.extent, List.map_map, Function.comp_def,
+    List.length_replicate]
+  exact List.map_id _
+
+/-- A workspace extent is a staged region. -/
+theorem mem_stage2Work (l : RouteLayout) (doc : List UInt8) {r : Nat × Nat}
+    (hr : r ∈ stage2WorkExtents l.tab) :
+    ({ addr := r.1, bytes := List.replicate r.2 0 } : StagedRegion) ∈ stagedStore l doc := by
+  simp only [stagedStore, List.mem_append]
+  right
+  exact List.mem_map_of_mem hr
+
+/-- Every workspace extent is present in the staged memory. -/
+theorem stagedWork_hasBytes (l : RouteLayout) (doc : List UInt8)
+    (hsep : DisjointRegions (stagedExtents l doc)) :
+    ∀ r ∈ stage2WorkExtents l.tab, HasBytes (stagedMem l doc) r.1 r.2 := by
+  intro r hr
+  have hmem := mem_stage2Work l doc hr
+  simpa only [stagedMem] using
+    hasBytes_store_of_mem (m := []) hmem hsep r.2 (by simp)
 
 /-- The document is at most its block count's bytes: a corner of every window
 arithmetic below. -/
@@ -633,12 +686,16 @@ theorem stagedPrefix_read (l : RouteLayout) (doc : List UInt8)
   rw [show l.base - 3 + 0 = l.base - 3 from by omega, List.drop_zero, htake] at h
   exact h
 
-/-- The record's region list is the store's extents: the wrapper stages exactly
-the sixteen objects `pipelineRegions` names, at the extents it names. -/
+/-- The record's region list, extended by the stage-2 work space, is the store's
+extents: the wrapper stages exactly the sixteen objects `pipelineRegions` names,
+at the extents it names, and then the eight the stage-2 body's frame occupies. -/
 theorem pipelineRegions_eq_stagedExtents (l : RouteLayout) (doc : List UInt8)
     (h : doc.length < 2 ^ 64) (hdst : l.dstcap < 2 ^ 64) (hev : l.evcap < 2 ^ 64) :
-    pipelineRegions l.base l.tab 0 l.nxp0 (routeArgs l doc) = stagedExtents l doc := by
-  simp only [pipelineRegions, routeArgs, stagedExtents, stagedStore,
+    pipelineRegions l.base l.tab 0 l.nxp0 (routeArgs l doc) ++ stage2WorkExtents l.tab =
+      stagedExtents l doc := by
+  rw [stagedExtents, stagedStore, StagedRegion.extents, List.map_append,
+    stage2WorkStore_extents, List.append_cancel_right_eq]
+  simp only [pipelineRegions, routeArgs, routeStore,
     StagedRegion.extents, routeBlocks, bitVecOfNat_toNat h,
     bitVecOfNat_toNat hdst, bitVecOfNat_toNat hev, Nat.zero_add,
     List.map_cons, List.map_nil, StagedRegion.extent, List.length_replicate,
@@ -778,9 +835,9 @@ theorem routeStaging (l : RouteLayout) (doc : List UInt8)
   · simpa only [harm']
   · -- the read set
     exact stagedReads_hasBytes l doc hdoc64 hsep
-  · -- separation
-    rw [pipelineRegions_eq_stagedExtents l doc hdoc64 hdst64 hev64]
-    exact hsep
+  · -- separation: the caller's list is a prefix of the staged extents
+    rw [← pipelineRegions_eq_stagedExtents l doc hdoc64 hdst64 hev64] at hsep
+    exact List.Pairwise.sublist (List.sublist_append_left _ _) hsep
   · exact hbLt
   · -- the staged boundary's output clauses: `%ep`'s word, the two staged output
     -- addresses' words, and the event cursor's worst case as a signed index
@@ -805,10 +862,11 @@ theorem stagedDoc_read (l : RouteLayout) (doc : List UInt8)
   exact h'
 
 /-- **The route's cursor.**  A number above every object the wrapper staged: the
-sum of the staged ends.  It is the cursor `routeSpecPre` hands the record, and the
-wrapper's own stand-in for the allocator cursor a C caller would hold. -/
+sum of the staged ends, which now includes the stage-2 work space.  It is the
+cursor `routeSpecPre` hands the record, and the wrapper's own stand-in for the
+allocator cursor a C caller would hold. -/
 def routeNext (l : RouteLayout) (doc : List UInt8) : Nat :=
-  stagedExtentSum (pipelineRegions l.base l.tab 0 l.nxp0 (routeArgs l doc))
+  stagedExtentSum (stagedExtents l doc)
 
 set_option maxHeartbeats 1200000 in
 /-- **The wrapper's staging lies below its cursor.**  The record's cursor clause
@@ -816,10 +874,10 @@ at `routeNext`: the escape count slot holds the one value the wrapper stored, so
 the only number the slot reads as is `l.nxp0`, and every staged object's end is a
 summand of the cursor.
 
-The closing rewrite carries `pipelineRegions_eq_stagedExtents` under the sum's own
-body, which costs more than the file's default budget: `1000000` heartbeats time
-out deterministically in `whnf` on the unfolded cursor, and the `1200000` below is
-the round value tested above that measurement. -/
+The closing rewrite carries `pipelineRegions_eq_stagedExtents`, which costs more
+than the file's default budget: `1000000` heartbeats time out deterministically in
+`whnf` on the unfolded cursor, and the `1200000` below is the round value tested
+above that measurement. -/
 theorem routeStagedBelow (l : RouteLayout) (doc : List UInt8)
     (h : routePre l doc) :
     pipelineStagedBelow l.tab l.base (routeArgs l doc) (stagedMem l doc)
@@ -841,8 +899,10 @@ theorem routeStagedBelow (l : RouteLayout) (doc : List UInt8)
     simpa only [pipelineNxpSlot, routeArgs] using hread
   have hEq : nxp0 = l.nxp0 := slotExtent_eq hlt (by omega) hread' hslot
   subst hEq
-  rw [routeNext, pipelineRegions_eq_stagedExtents l doc hdoc64 hdst64 hev64]
-  exact fun r hr => le_stagedExtentSum (stagedExtents l doc) r hr
+  intro r hr
+  refine le_stagedExtentSum (stagedExtents l doc) r ?_
+  rw [← pipelineRegions_eq_stagedExtents l doc hdoc64 hdst64 hev64]
+  exact List.mem_append_left _ hr
 
 /-- **The wrapper discharges the specification's precondition.**  `routePre`
 establishes `pipelineSpecPre` at the route's arguments: the units staging, the
@@ -869,10 +929,33 @@ theorem routeSpecPre (l : RouteLayout) (doc : List UInt8)
       parseBytes Limits.default (ByteString.literal doc) = .error e →
         e ≠ .depthExceeded ∧ e ≠ .outOfCapacity :=
     fun e he => ⟨(hdom e he).1, (hdom e he).2.1⟩
+  -- the stage-2 work space: the eight objects the flattened body's frame
+  -- occupies, staged as zero bytes above the POS8 table.  Presence and the
+  -- watermark are the staging's own, and the separation is the caller's
+  -- `DisjointRegions` at the extended extent list.
+  have hwork : pipelineStage2Workspace l.tab l.base (routeArgs l doc)
+      (stagedMem l doc) (routeNext l doc) := by
+    refine ⟨BitVec.ofNat 64 doc.length, l.sc, l.mkSlot, l.entw, l.ep, l.nk, l.xp,
+      l.nxp, l.xcarry, l.dst, l.ndst, l.ev, l.nev, l.err, l.nxp0,
+      BitVec.ofNat 64 l.epcap, BitVec.ofNat 64 l.xpcap, BitVec.ofNat 64 l.dstcap,
+      BitVec.ofNat 64 l.evcap, BitVec.ofNat 64 l.arm, rfl, ?_, ?_, ?_, ?_, ?_⟩
+    · exact stagedWork_hasBytes l doc hsep
+    · rw [pipelineRegions_eq_stagedExtents l doc hdoc64 hdst64 hev64]
+      exact hsep
+    · intro r hr
+      refine le_stagedExtentSum (stagedExtents l doc) r ?_
+      rw [← pipelineRegions_eq_stagedExtents l doc hdoc64 hdst64 hev64]
+      exact List.mem_append_right _ hr
+    · simpa only [stagedMem, wordBytes, natToBytes_length] using
+        store_read_full (m := []) (mem_nxp l doc) hsep
+    · have := (cursorRoom_bounds hroomx (i := 0) (nblk := pipelineBlocks doc.length)
+        (by omega) (by decide)).2
+      omega
   refine ⟨routeStaging l doc ⟨hadm, hb3, hbLt, hepLt, hep64, hxp64, hdst64, hev64,
     hepcap, hdst, hev, hdstLtR, hevLtR, hnev63R, hroom0, hroomx, h32, harm, hsep⟩,
     routeStagedBelow l doc ⟨hadm, hb3, hbLt, hepLt, hep64, hxp64, hdst64, hev64,
       hepcap, hdst, hev, hdstLtR, hevLtR, hnev63R, hroom0, hroomx, h32, harm, hsep⟩,
+    hwork,
     doc, l.nev0, l.evcap, l.nev, ?_, ?_, ?_, stagedDoc_read l doc hsep hb3, ?_,
     hdom'⟩
   · simp only [pipelineDocLength, routeArgs, hblocks]

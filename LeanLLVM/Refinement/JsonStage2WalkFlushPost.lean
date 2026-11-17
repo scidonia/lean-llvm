@@ -1014,6 +1014,96 @@ theorem stage2WalkWork_of_staging {d c ctype cst tok s z e : Nat}
           (walkLoopEnd_of_payload (hlast G) (hlastRows G) (hlastArms G))) o
         (by simpa only [walkTargetArgs] using hb)
 
+/-! ### The fixed record at the pipeline's work space
+
+`Γ_stage2work` fixes the boundary's scratch witnesses but is stated at the
+flattened body's twenty-one arguments.  The pipeline calls stage 2 at the ABI's
+thirteen, so the consumer needs a record there: `Γ_stage2fixed` is that record,
+with the pre promising the work space's staging beside the ABI's and the post the
+fixed boundary at the workspace's eight addresses. -/
+
+/-- **The stage-2 record at the pipeline's own work space.**  The pre is the
+ABI's thirteen-slot precondition together with `stage2StagedPre` at the eight
+objects the workspace stages; the post is the boundary with its scratch witnesses
+tied to those eight addresses. -/
+def Γ_stage2fixed (tab : Nat) : MemContract where
+  budget := fun args mem => Γ_stage2.budget (args.take 13) mem
+  pre := fun args mem next =>
+    ∃ (nkSlot nxpSlot : Nat),
+      Γ_stage2.pre args mem next ∧
+      stage2StagedPre args mem next (stage2WorkD tab) (stage2WorkC tab)
+        (stage2WorkCtype tab) (stage2WorkCst tab) (stage2WorkTok tab)
+        (stage2WorkS tab) (stage2WorkZ tab) (stage2WorkE tab) nkSlot nxpSlot
+  post := fun args mem next o =>
+    Stage2PostFixed (stage2WorkC tab) (stage2WorkCtype tab) (stage2WorkCst tab)
+      (stage2WorkTok tab) (stage2WorkS tab) (stage2WorkZ tab) (stage2WorkE tab)
+      (stage2WorkD tab) args mem next o
+
+/-- **The stage-2 selection at the workspace.**  The pipeline calls at the ABI's
+thirteen arguments; the flattened body takes twenty-one, so the selection appends
+the workspace's eight pointers and runs the walk at `Γ_stage2work` there. -/
+def envForStage2Work (tab : Nat) (sub : Calls) : Calls :=
+  fun callee args mem next =>
+    envForUnit "leanllvm_json_stage2"
+      (Γ_stage2work (stage2WorkD tab) (stage2WorkC tab) (stage2WorkCtype tab)
+        (stage2WorkCst tab) (stage2WorkTok tab) (stage2WorkS tab)
+        (stage2WorkZ tab) (stage2WorkE tab))
+      (stage2Calls sub) stage2Body callee
+      (stage2Args args (stage2WorkD tab) (stage2WorkC tab) (stage2WorkCtype tab)
+        (stage2WorkCst tab) (stage2WorkTok tab) (stage2WorkS tab)
+        (stage2WorkZ tab) (stage2WorkE tab)) mem next
+
+/-- **The walk resolves at the fixed record.**  The walk's theorem at
+`Γ_stage2work` is applied at the appended arguments the selection builds, and the
+post's thirteen-slot prefix is the caller's list, which is what makes the fixed
+boundary's scratch witnesses the workspace's addresses. -/
+theorem satisfies_calls_stage2_fixed {tab : Nat} {sub : Calls}
+    (hwalk : Satisfies (stage2Calls sub) stage2Body
+      (Γ_stage2work (stage2WorkD tab) (stage2WorkC tab) (stage2WorkCtype tab)
+        (stage2WorkCst tab) (stage2WorkTok tab) (stage2WorkS tab)
+        (stage2WorkZ tab) (stage2WorkE tab))) :
+    CallSatisfies (envForStage2Work tab sub) (Γ_stage2fixed tab)
+      "leanllvm_json_stage2" := by
+  intro args mem next hpre
+  obtain ⟨nkSlot, nxpSlot, hpre13, hstaged⟩ := hpre
+  have hlen : args.length = 13 := stage2Pre_length hpre13
+  have htake : (stage2Args args (stage2WorkD tab) (stage2WorkC tab)
+      (stage2WorkCtype tab) (stage2WorkCst tab) (stage2WorkTok tab)
+      (stage2WorkS tab) (stage2WorkZ tab) (stage2WorkE tab)).take 13 = args :=
+    stage2Args_take13 args hlen (stage2WorkD tab) (stage2WorkC tab)
+      (stage2WorkCtype tab) (stage2WorkCst tab) (stage2WorkTok tab)
+      (stage2WorkS tab) (stage2WorkZ tab) (stage2WorkE tab)
+  have hpreW : (Γ_stage2work (stage2WorkD tab) (stage2WorkC tab)
+      (stage2WorkCtype tab) (stage2WorkCst tab) (stage2WorkTok tab)
+      (stage2WorkS tab) (stage2WorkZ tab) (stage2WorkE tab)).pre
+      (stage2Args args (stage2WorkD tab) (stage2WorkC tab) (stage2WorkCtype tab)
+        (stage2WorkCst tab) (stage2WorkTok tab) (stage2WorkS tab)
+        (stage2WorkZ tab) (stage2WorkE tab)) mem next :=
+    ⟨args, nkSlot, nxpSlot, rfl, hpre13, hstaged⟩
+  obtain ⟨hcom, hpost⟩ := hwalk _ _ _ hpreW
+  obtain ⟨v, m, hrun⟩ := hcom
+  have hsome : v.isSome := ret_some_of_retsValued stage2Body_retsValued hrun
+  cases v with
+  | none => simp at hsome
+  | some v' =>
+      refine ⟨{ ret := v', mem := m, next := next + 0 }, ?_, ?_, ?_⟩
+      · simp only [envForStage2Work, envForUnit, hrun, ↓reduceIte]
+      · have h := hpost (.ret (some v') m) (Or.inr ⟨_, hrun⟩)
+        simpa only [Γ_stage2fixed, Γ_stage2work, htake] using h
+      · exact Nat.le_refl _
+
+/-- **The fixed record's verdict is the ABI's word.**  The post's boundary
+carries the verdict's range, so a caller of the pipeline's stage-2 slot reads a
+two-valued word. -/
+theorem stage2fixed_verdict_bounded {tab : Nat} :
+    ∀ (args : List Value) (mem : Mem) (next : Nat) (v : Value) (m : Mem),
+      (Γ_stage2fixed tab).post args mem next (.ret (some v) m) →
+      ∃ k : BitVec 64, v = .int 64 k ∧ (k = 0 ∨ k = 1) := by
+  intro args mem next v m h
+  simp only [Γ_stage2fixed, Stage2PostFixed] at h
+  obtain ⟨w, hw, -⟩ := h
+  exact ⟨w.verdict, hw.value_eq, hw.verdict_range⟩
+
 /-! ### Axiom footprints -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.walkFlushRun_of_staging

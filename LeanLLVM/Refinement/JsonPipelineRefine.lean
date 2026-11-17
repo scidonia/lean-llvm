@@ -1228,7 +1228,7 @@ theorem pipeline_satisfies_of_parser {calls : Calls} {f : Function}
     Satisfies calls f (Γ_pipeline eventRel tab base) := by
   intro args mem next hpre
   have hstage : pipelineStaging tab base args mem := hpre.1
-  obtain ⟨hcom, hpost⟩ := hunits args mem next ⟨hstage, hpre.2.1⟩
+  obtain ⟨hcom, hpost⟩ := hunits args mem next ⟨hstage, hpre.2.1, hpre.2.2.1⟩
   refine ⟨hcom, ?_⟩
   intro o ho
   exact pipeline_units_finalisation (eventRel := eventRel) (base := base)

@@ -3358,7 +3358,13 @@ def stage2StagedCaps (S : PipelineLoopCarried) : List (Nat × Nat) :=
    -- below the cursor the call is made at.  They are `pipelineRegions`' own
    -- entries, so the seed reads this pair off the same staging bound the eight
    -- ABI objects come from.
-   (S.nk, 8), (S.nxp, 8)]
+   (S.nk, 8), (S.nxp, 8)] ++
+  -- The stage-2 work space is staged beside the caller's objects and the callee's
+  -- frame occupies it, so the cursor must clear it as well.  Its addresses are
+  -- functions of the table's (`JsonPipelineContract.stage2WorkExtents`), which is
+  -- the record's own `tab`; the exit predicate ties that to the staging's, and
+  -- the seed reads the bound off the caller's `pipelineStage2Workspace`.
+  stage2WorkExtents S.tab
 
 /-- **The caps clause follows a successor and a cursor that did not go down.**
 The successors change the counts, the carry state and the environment cells, never
@@ -3482,8 +3488,8 @@ every step carries it because each call `envForUnit` builds returns the cursor i
 was given and an arm binds no `alloca`.  `PipelineDischarge.stage2Watermark` is
 the projection: at any exit, the record's own stage-2 regions end below its own
 cursor. -/
-abbrev pipelineLoopExitAt (mem : Mem) (args : List Value) (S : PipelineLoopCarried)
-    (s : State) : Prop :=
+abbrev pipelineLoopExitAt (mem : Mem) (args : List Value) (tab : Nat)
+    (S : PipelineLoopCarried) (s : State) : Prop :=
   s.pc = "for.cond.cleanup" ∧
     exitArgs S args ∧
     readLanes32 s.mem S.ep S.k = some S.ent ∧
@@ -3501,12 +3507,18 @@ abbrev pipelineLoopExitAt (mem : Mem) (args : List Value) (S : PipelineLoopCarri
     S.i ≤ pipelineBlocks S.n.toNat ∧
     readBytes mem S.nxp 8 = some (wordBytes 8 S.xn0) ∧
     S.xn0 < 2 ^ 63 ∧
-    ∀ r ∈ stage2StagedCaps S, r.1 + r.2 ≤ s.next
+    (∀ r ∈ stage2StagedCaps S, r.1 + r.2 ≤ s.next) ∧
+    -- **The carried record's table is the staging's.**  The stage-2 work space's
+    -- addresses are functions of the table's, and the consumer that reads the
+    -- workspace's cursor bound off the caps clause needs the two to be one
+    -- number; the loop's invariant states `S.tab = tab` at every iteration, and
+    -- this is that conjunct at the exit.
+    S.tab = tab
 
 /-- **The states the loop may leave in**, at the caller's memory and argument
 list: one carried record's whole conjunction. -/
-def pipelineLoopExit (mem : Mem) (args : List Value) (s : State) : Prop :=
-  ∃ S : PipelineLoopCarried, pipelineLoopExitAt mem args S s
+def pipelineLoopExit (mem : Mem) (args : List Value) (tab : Nat) (s : State) : Prop :=
+  ∃ S : PipelineLoopCarried, pipelineLoopExitAt mem args tab S s
 
 /-- info: 'LeanLLVM.Refinement.PipelineBodyArm.countReg' does not depend on any axioms -/
 #guard_msgs in
@@ -3569,9 +3581,9 @@ The `.ub` this state's first control step produces is
 `PipelineBodyStep.gapState_step`, and it is the reason the predicate may not admit
 it: a bundle whose `exit` field quantified over this state would be asked for a
 return no fuel can produce. -/
-theorem gapState_not_exit (mem : Mem) (args : List Value) :
-    ¬ pipelineLoopExit mem args gapState := by
-  rintro ⟨S, -, -, -, -, -, -, -, hcells, -, -, -, -, -, -, -⟩
+theorem gapState_not_exit (mem : Mem) (args : List Value) (tab : Nat) :
+    ¬ pipelineLoopExit mem args tab gapState := by
+  rintro ⟨S, -, -, -, -, -, -, -, hcells, -, -, -, -, -, -, -, -⟩
   simp only [tailCells] at hcells
   obtain ⟨-, -, -, -, -, -, -, -, -, -, -, hb, -, -⟩ := hcells
   rw [gapState_no_b] at hb
@@ -4030,7 +4042,7 @@ iteration for the split disjunct (`*_split_step`) beside the back-edge ones they
 already had. -/
 def pipelineLoopInv (mem : Mem) (args : List Value) (base tab blocks : Nat) :
     Nat → State → Prop
-  | 0, s => pipelineLoopExit mem args s
+  | 0, s => pipelineLoopExit mem args tab s
   | r + 1, s =>
       pipelineLoopInvSplit mem args base tab blocks (r + 1) s ∨
         pipelineLoopInvBack mem args base tab blocks (r + 1) s
@@ -4049,7 +4061,7 @@ theorem pipelineLoopInv_pc {mem : Mem} {args : List Value} {base tab blocks r : 
 `PipelineLoop.exit` consumes: no step is owed from `Inv 0`. -/
 theorem pipelineLoopInv_zero (mem : Mem) (args : List Value) (base tab : Nat)
     {blocks : Nat} {s : State}
-    (h : pipelineLoopInv mem args base tab blocks 0 s) : pipelineLoopExit mem args s := h
+    (h : pipelineLoopInv mem args base tab blocks 0 s) : pipelineLoopExit mem args tab s := h
 
 /-- **`PipelineLoop.exit`'s obligation, discharged.**  A spent budget is the loop's
 exit block, so from any state the invariant admits at `r = 0` the loop's exit is
@@ -4059,7 +4071,7 @@ successor is `for.cond.cleanup` — and not `exit`'s. -/
 theorem pipelineLoop_exitObligation (calls : Calls) (mem : Mem) (args : List Value)
     (base tab : Nat) (blocks : Nat) (s : State)
     (h : pipelineLoopInv mem args base tab blocks 0 s) :
-    ∃ (e : State) (j : Nat), j ≤ 0 ∧ pipelineLoopExit mem args e ∧
+    ∃ (e : State) (j : Nat), j ≤ 0 ∧ pipelineLoopExit mem args tab e ∧
       ∀ k, runFuel calls (j + k) pipelineBody s = runFuel calls k pipelineBody e :=
   ⟨s, 0, Nat.le_refl 0, h, fun k => by rw [Nat.zero_add]⟩
 

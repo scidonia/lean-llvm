@@ -102,6 +102,7 @@ Nothing here narrows a record or weakens a post: the tail is stated at the same
 predicate the loop hands over, with the caller's arguments in it.
 -/
 import LeanLLVM.Refinement.JsonStage2Contract
+import LeanLLVM.Refinement.JsonStage2WalkFlushPost
 import LeanLLVM.Refinement.PipelineBodyStep
 
 set_option autoImplicit false
@@ -777,11 +778,15 @@ theorem stage2Pre_of_exit
     (hkv : kv = BitVec.ofNat 64 S.k)
     (hld : readBytes (writeBytes sm S.nk (natToBytes kv.toNat 8)) S.nxp 8 =
       some (natToBytes x37.toNat 8))
-    (hwm : ∀ r ∈ stage2ExitRegions S, r.1 + r.2 ≤ next) :
+    (hwm : ∀ r ∈ stage2ExitRegions S, r.1 + r.2 ≤ next)
+    (ndst0p : Nat) (hndst0plt : ndst0p < 2 ^ 64)
+    (hndst0p : readBytes mem S.ndst 8 = some (wordBytes 8 ndst0p)) :
     Γ_stage2.pre
       (stage2Args S.b S.ep S.xp S.dst S.ndst S.ev S.nev S.err S.n kv x37
         S.dstcap S.evcap)
-      (writeBytes sm S.nk (natToBytes kv.toNat 8)) next := by
+      (writeBytes sm S.nk (natToBytes kv.toNat 8)) next ∧
+    DisjointRegions (stage2Regions S.b S.n.toNat S.ep S.k S.xp S.xn S.dst ndst0p
+      S.ev S.evcap.toNat S.ndst S.nev S.err) := by
   -- the frame's projections at the seven staged objects
   obtain ⟨hdoc, htailpos, hdstpos, hndstpos, hevpos, hnevpos, herrpos, herrread, -⟩ :=
     loop_frame_of_staging hst htie hkgr hib hxgr hslot hxn0lt hframe
@@ -1129,11 +1134,22 @@ theorem stage2Pre_of_exit
     · exact hwm (S.ndst, 8) (by simp [stage2ExitRegions])
     · exact hwm (S.nev, 8) (by simp [stage2ExitRegions])
     · exact hwm (S.err, 8) (by simp [stage2ExitRegions])
-  refine ⟨S.b, S.n.toNat, S.ep, S.k, S.xp, x37.toNat, S.dst, S.dstcap.toNat,
+  -- the caller's cursor witness is the staging's own: one slot, one word
+  have hndst0lt' : ndst0 < 2 ^ 64 := by
+    have h1 := hdstcap
+    have h2 := S.dstcap.isLt
+    omega
+  have hndst0eq : ndst0 = ndst0p :=
+    slotExtent_eq (x := ndst0) (y := ndst0p) hndst0lt' hndst0plt hndst hndst0p
+  have hdisj2p : DisjointRegions (stage2Regions S.b S.n.toNat S.ep S.k S.xp S.xn
+      S.dst ndst0p S.ev S.evcap.toNat S.ndst S.nev S.err) := by
+    rw [← hndst0eq]
+    exact hdisj2
+  refine ⟨⟨S.b, S.n.toNat, S.ep, S.k, S.xp, x37.toNat, S.dst, S.dstcap.toNat,
     S.ndst, S.ev, S.evcap.toNat, S.nev, S.err, bs, S.ent, ndst0, nev0,
     ?_, hdoc_ms, htail_ms, hlanes, hord, hbnd, hesc_ms, hdst_ms, ?_, hev_ms, ?_,
     hndst_ms, hnev_ms, herr_ms, ?_, hx37 ▸ hdisj2, by rw [hx37]; exact hstaged,
-    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩, hdisj2p⟩
   · simpa [stage2Args] using hkv
   · simpa [stage2ArenaReserve] using hdstcap
   · simpa [stage2RecordBytes, ← hn] using hnev
@@ -1456,16 +1472,17 @@ an admitted exit refutes it: the quantifier is free in `S`, so the refuser's rec
 
 It is not used by anything; it is here so the defect the repair removed is a
 checked statement rather than a paragraph. -/
-def retiredStage2Watermark (mem : Mem) (args : List Value) : Prop :=
-  ∀ (S : PipelineLoopCarried) (e : State), pipelineLoopExit mem args e →
+def retiredStage2Watermark (mem : Mem) (args : List Value) (tab : Nat) : Prop :=
+  ∀ (S : PipelineLoopCarried) (e : State), pipelineLoopExit mem args tab e →
     ∀ r ∈ stage2ExitRegions S, r.1 + r.2 ≤ e.next
 
 /-- **The retired watermark is false at any admitted exit**, constructively: take
 the exit's own record and move its refusal slot to the cursor itself, which
 `stage2ExitRegions` lists as `(S.ndst, 8)`.  The predicate then demands
 `e.next + 8 ≤ e.next`. -/
-theorem retiredStage2Watermark_false {mem : Mem} {args : List Value} {e : State}
-    (he : pipelineLoopExit mem args e) : ¬ retiredStage2Watermark mem args := by
+theorem retiredStage2Watermark_false {mem : Mem} {args : List Value} {tab : Nat}
+    {e : State} (he : pipelineLoopExit mem args tab e) :
+    ¬ retiredStage2Watermark mem args tab := by
   intro h
   obtain ⟨S, heAt⟩ := he
   have hb := h { S with ndst := e.next } e ⟨S, heAt⟩ (e.next, 8)
@@ -1482,12 +1499,12 @@ This is why `pipelineLoopExitAt` is a separate predicate: the bound is a clause 
 the exit, so the record it speaks about arrives with the state.  The retired
 `retiredStage2Watermark` quantified its own `S` beside the exit and was false
 (`retiredStage2Watermark_false`). -/
-theorem stage2Watermark {mem : Mem} {args : List Value} :
-    ∀ (S : PipelineLoopCarried) (e : State), pipelineLoopExitAt mem args S e →
+theorem stage2Watermark {mem : Mem} {args : List Value} {tab : Nat} :
+    ∀ (S : PipelineLoopCarried) (e : State), pipelineLoopExitAt mem args tab S e →
       ∀ r ∈ stage2ExitRegions S, r.1 + r.2 ≤ e.next := by
   intro S e h
   obtain ⟨-, -, hstream, hord, hbnd, hbnd64, -, -, -, -, hxgr, -, -, -, hib, -, -,
-    hcaps⟩ := h
+    hcaps, -⟩ := h
   exact stage2ExitRegions_le_caps (exit_k_le hstream hord hbnd64) hib hxgr hcaps
 
 /-- **The staging gap, named.**  `Γ_stage2`'s post cannot state that the run left
@@ -1503,9 +1520,9 @@ of the two clauses the composite claim is still conditional on — the other is
 real walk it holds because `%c.i`, both stacks, the token, `%s`, `%z` and `%e` are
 the walk's own stack objects, separate from the caller's slots by the compiler's
 allocation — the model has no stack allocation to derive that from. -/
-def Stage2SlotKeeps (mem : Mem) (args : List Value) (e : State) : Prop :=
+def Stage2SlotKeeps (mem : Mem) (args : List Value) (tab : Nat) (e : State) : Prop :=
   ∀ (S : PipelineLoopCarried) (mem' : Mem) (next' : Nat) (v : Value) (m' : Mem),
-    pipelineLoopExitAt mem args S e →
+    pipelineLoopExitAt mem args tab S e →
     Γ_stage2.post
       (stage2Args S.b S.ep S.xp S.dst S.ndst S.ev S.nev S.err S.n
         S.kw (BitVec.ofNat 64 S.xn) S.dstcap S.evcap) mem' next'
@@ -1556,14 +1573,281 @@ theorem stage2SlotKeeps_of_frame {mem' m' : Mem} {S : PipelineLoopCarried}
       (∀ k, k < 8 → readByte m' (S.nxp + k) = readByte mem' (S.nxp + k)) :=
   ⟨slot_of_frame hframe hnk, slot_of_frame hframe hnxp⟩
 
+set_option maxHeartbeats 2000000 in
+set_option maxRecDepth 16000 in
+/-- **The stage-2 staging at the pipeline's workspace.**  The stage-2 list's ABI
+entries are the eight `stage2Regions` objects at the exit's counts — separated by
+`Γ_stage2.pre`'s own clause — and every one of them is either a sub-interval of a
+`pipelineRegions` entry or, for the document, the union of the pipeline's two
+window entries.  The workspace's scratch and `%d.i` are entries of
+`stage2WorkExtents`, and the caller's two count slots are `pipelineRegions`
+entries; each is separated from the ABI objects through the caller's staging, so
+the whole list is pairwise separate.
+
+The document's entry is the only one that is not a sub-interval of a single
+pipeline entry: it is covered by the padded window and the read-past tail, and
+the union argument needs the other object's positive extent, which every entry of
+the workspace list and every count slot has. -/
+theorem stage2StagedRegions_sep {tab blocks nxp0 ndst0 : Nat} {S : PipelineLoopCarried}
+    {epcap xpcap armv : BitVec 64}
+    (hbd : 3 ≤ S.b)
+    (hkgr : S.k ≤ 64 * S.i) (hib : S.i ≤ pipelineBlocks S.n.toNat)
+    (hxgr : S.xn ≤ S.xn0 + 64 * S.i) (hxn0eq : S.xn0 = nxp0)
+    (hdst : ndst0 + S.n.toNat + 64 ≤ S.dstcap.toNat)
+    (hsep2 : DisjointRegions (stage2Regions S.b S.n.toNat S.ep S.k S.xp S.xn
+      S.dst ndst0 S.ev S.evcap.toNat S.ndst S.nev S.err))
+    (hdisj : DisjointRegions (pipelineRegions S.b tab 0 nxp0
+      [.ptr S.b, .int 64 S.n, .ptr S.sc, .ptr S.maskSlot, .ptr S.entw, .ptr S.ep,
+       .int 64 epcap, .ptr S.nk, .ptr S.xp, .int 64 xpcap, .ptr S.nxp,
+       .ptr S.xcarry, .ptr S.dst, .int 64 S.dstcap, .ptr S.ndst, .ptr S.ev,
+       .int 64 S.evcap, .ptr S.nev, .ptr S.err, .int 64 armv]))
+    (hdisjW : DisjointRegions (pipelineRegions S.b tab 0 nxp0
+      [.ptr S.b, .int 64 S.n, .ptr S.sc, .ptr S.maskSlot, .ptr S.entw, .ptr S.ep,
+       .int 64 epcap, .ptr S.nk, .ptr S.xp, .int 64 xpcap, .ptr S.nxp,
+       .ptr S.xcarry, .ptr S.dst, .int 64 S.dstcap, .ptr S.ndst, .ptr S.ev,
+       .int 64 S.evcap, .ptr S.nev, .ptr S.err, .int 64 armv] ++
+      stage2WorkExtents tab)) :
+    DisjointRegions
+      ((stage2WalkRegions S.b S.n.toNat S.ep S.k S.xp S.xn S.dst ndst0 S.ev
+          S.evcap.toNat S.ndst S.nev S.err (stage2WorkC tab) (stage2WorkCtype tab)
+          (stage2WorkCst tab) (stage2WorkTok tab) (stage2WorkS tab)
+          (stage2WorkZ tab) (stage2WorkE tab) ++ [(stage2WorkD tab, 8)]) ++
+        [(S.nk, 8), (S.nxp, 8)]) := by
+  have hP : DisjointRegions (pipelineRegions S.b tab 0 nxp0
+      [.ptr S.b, .int 64 S.n, .ptr S.sc, .ptr S.maskSlot, .ptr S.entw, .ptr S.ep,
+       .int 64 epcap, .ptr S.nk, .ptr S.xp, .int 64 xpcap, .ptr S.nxp,
+       .ptr S.xcarry, .ptr S.dst, .int 64 S.dstcap, .ptr S.ndst, .ptr S.ev,
+       .int 64 S.evcap, .ptr S.nev, .ptr S.err, .int 64 armv]) := hdisj
+  have pnk : (S.nk, 8) ∈ pipelineRegions S.b tab 0 nxp0
+      [.ptr S.b, .int 64 S.n, .ptr S.sc, .ptr S.maskSlot, .ptr S.entw, .ptr S.ep,
+       .int 64 epcap, .ptr S.nk, .ptr S.xp, .int 64 xpcap, .ptr S.nxp,
+       .ptr S.xcarry, .ptr S.dst, .int 64 S.dstcap, .ptr S.ndst, .ptr S.ev,
+       .int 64 S.evcap, .ptr S.nev, .ptr S.err, .int 64 armv] := by
+    simp [pipelineRegions]
+  have pnxp : (S.nxp, 8) ∈ pipelineRegions S.b tab 0 nxp0
+      [.ptr S.b, .int 64 S.n, .ptr S.sc, .ptr S.maskSlot, .ptr S.entw, .ptr S.ep,
+       .int 64 epcap, .ptr S.nk, .ptr S.xp, .int 64 xpcap, .ptr S.nxp,
+       .ptr S.xcarry, .ptr S.dst, .int 64 S.dstcap, .ptr S.ndst, .ptr S.ev,
+       .int 64 S.evcap, .ptr S.nev, .ptr S.err, .int 64 armv] := by
+    simp [pipelineRegions]
+  -- the workspace list and its head split
+  unfold DisjointRegions at hdisjW ⊢
+  have hW2 : (stage2WorkExtents tab).Pairwise
+      (fun r s => r.1 + r.2 ≤ s.1 ∨ s.1 + s.2 ≤ r.1) :=
+    (List.pairwise_append.mp hdisjW).2.1
+  have hcrossW := (List.pairwise_append.mp hdisjW).2.2
+  have hWcons : ((stage2WorkD tab, 8) :: stage2StagedWrites (stage2WorkC tab)
+      (stage2WorkCtype tab) (stage2WorkCst tab) (stage2WorkTok tab)
+      (stage2WorkS tab) (stage2WorkZ tab) (stage2WorkE tab)).Pairwise
+      (fun r s => r.1 + r.2 ≤ s.1 ∨ s.1 + s.2 ≤ r.1) := by
+    simpa only [stage2WorkExtents, stage2StagedWrites] using hW2
+  have hW : DisjointRegions (stage2StagedWrites (stage2WorkC tab)
+      (stage2WorkCtype tab) (stage2WorkCst tab) (stage2WorkTok tab)
+      (stage2WorkS tab) (stage2WorkZ tab) (stage2WorkE tab)) :=
+    (List.pairwise_cons.mp hWcons).2
+  have hW2mem : ∀ q ∈ stage2StagedWrites (stage2WorkC tab) (stage2WorkCtype tab)
+      (stage2WorkCst tab) (stage2WorkTok tab) (stage2WorkS tab) (stage2WorkZ tab)
+      (stage2WorkE tab), q ∈ stage2WorkExtents tab := by
+    intro q hq
+    simpa only [stage2WorkExtents, stage2StagedWrites] using
+      List.mem_cons_of_mem (stage2WorkD tab, 8) hq
+  have hWnk : ∀ q ∈ stage2WorkExtents tab, q.1 + q.2 ≤ S.nk ∨ S.nk + 8 ≤ q.1 := by
+    intro q hq
+    have := hcrossW (S.nk, 8) pnk q hq
+    exact Or.comm.mp this
+  have hWnxp : ∀ q ∈ stage2WorkExtents tab, q.1 + q.2 ≤ S.nxp ∨ S.nxp + 8 ≤ q.1 := by
+    intro q hq
+    have := hcrossW (S.nxp, 8) pnxp q hq
+    exact Or.comm.mp this
+  have hnkxp : S.nk + 8 ≤ S.nxp ∨ S.nxp + 8 ≤ S.nk :=
+    disjointRegions_pair _ 7 9 (by decide) (S.nk, 8) (S.nxp, 8)
+      (by simp [pipelineRegions]) (by simp [pipelineRegions]) hP
+  -- every stage-2 ABI entry against the workspace
+  have hAW : ∀ a ∈ stage2Regions S.b S.n.toNat S.ep S.k S.xp S.xn S.dst ndst0 S.ev
+      S.evcap.toNat S.ndst S.nev S.err,
+      ∀ q ∈ stage2WorkExtents tab, a.1 + a.2 ≤ q.1 ∨ q.1 + q.2 ≤ a.1 := by
+    intro a ha q hq
+    simp only [stage2Regions, stage2ReadTail, stage2ArenaReserve, List.mem_cons,
+      List.not_mem_nil, or_false] at ha
+    rcases ha with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
+    · -- the document: the union of the pipeline window and its read-past tail
+      have h0 := disjointRegions_against hdisjW (a := S.b - 3)
+        (n := 3 + 64 * pipelineBlocks S.n.toNat)
+        (by simp [pipelineRegions]) q hq
+      have h1 := disjointRegions_against hdisjW
+        (a := S.b + 64 * pipelineBlocks S.n.toNat) (n := 32)
+        (by simp [pipelineRegions]) q hq
+      have hqpos : 0 < q.2 := by
+        simp only [stage2WorkExtents, List.mem_cons, List.not_mem_nil, or_false] at hq
+        rcases hq with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+          simp [stage2CursorExtent, stage2StackExtent, stage2TokenExtent,
+            stage2StateExtent, stage2LogExtent, stage2ErrorExtent]
+      have hle : S.n.toNat ≤ 64 * pipelineBlocks S.n.toNat := le_blocks_mul S.n.toNat
+      omega
+    · have h := disjointRegions_against hdisjW
+        (a := S.ep) (n := 4 * (64 * pipelineBlocks S.n.toNat + 9))
+        (by simp [pipelineRegions]) q hq
+      have hkb : S.k ≤ 64 * pipelineBlocks S.n.toNat := by
+        have := Nat.mul_le_mul_left 64 hib
+        omega
+      rcases h with h | h
+      · exact Or.inr h
+      · exact Or.inl (by omega)
+    · have h := disjointRegions_against hdisjW
+        (a := S.xp) (n := 4 * (nxp0 + 64 * pipelineBlocks S.n.toNat + 8))
+        (by simp [pipelineRegions]) q hq
+      have hxb : S.xn ≤ nxp0 + 64 * pipelineBlocks S.n.toNat := by
+        have := Nat.mul_le_mul_left 64 hib
+        omega
+      rcases h with h | h
+      · exact Or.inr h
+      · exact Or.inl (by omega)
+    · have h := disjointRegions_against hdisjW (a := S.dst) (n := S.dstcap.toNat)
+        (by simp [pipelineRegions]) q hq
+      rcases h with h | h
+      · exact Or.inr h
+      · exact Or.inl (by omega)
+    · have h := disjointRegions_against hdisjW (a := S.ev) (n := S.evcap.toNat)
+        (by simp [pipelineRegions]) q hq
+      rcases h with h | h
+      · exact Or.inr h
+      · exact Or.inl h
+    · have h := disjointRegions_against hdisjW (a := S.ndst) (n := 8)
+        (by simp [pipelineRegions]) q hq
+      rcases h with h | h
+      · exact Or.inr h
+      · exact Or.inl h
+    · have h := disjointRegions_against hdisjW (a := S.nev) (n := 8)
+        (by simp [pipelineRegions]) q hq
+      rcases h with h | h
+      · exact Or.inr h
+      · exact Or.inl h
+    · have h := disjointRegions_against hdisjW (a := S.err) (n := 8)
+        (by simp [pipelineRegions]) q hq
+      rcases h with h | h
+      · exact Or.inr h
+      · exact Or.inl h
+  -- and against the two count slots
+  have hAslots : ∀ a ∈ stage2Regions S.b S.n.toNat S.ep S.k S.xp S.xn S.dst ndst0
+      S.ev S.evcap.toNat S.ndst S.nev S.err,
+      (a.1 + a.2 ≤ S.nk ∨ S.nk + 8 ≤ a.1) ∧
+      (a.1 + a.2 ≤ S.nxp ∨ S.nxp + 8 ≤ a.1) := by
+    intro a ha
+    simp only [stage2Regions, stage2ReadTail, stage2ArenaReserve, List.mem_cons,
+      List.not_mem_nil, or_false] at ha
+    rcases ha with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
+    · have h0 := disjointRegions_pair _ 0 7 (by decide)
+        (S.b - 3, 3 + 64 * pipelineBlocks S.n.toNat) (S.nk, 8)
+        (by simp [pipelineRegions]) (by simp [pipelineRegions]) hP
+      have h1 := disjointRegions_pair _ 1 7 (by decide)
+        (S.b + 64 * pipelineBlocks S.n.toNat, 32) (S.nk, 8)
+        (by simp [pipelineRegions]) (by simp [pipelineRegions]) hP
+      have g0 := disjointRegions_pair _ 0 9 (by decide)
+        (S.b - 3, 3 + 64 * pipelineBlocks S.n.toNat) (S.nxp, 8)
+        (by simp [pipelineRegions]) (by simp [pipelineRegions]) hP
+      have g1 := disjointRegions_pair _ 1 9 (by decide)
+        (S.b + 64 * pipelineBlocks S.n.toNat, 32) (S.nxp, 8)
+        (by simp [pipelineRegions]) (by simp [pipelineRegions]) hP
+      have hle : S.n.toNat ≤ 64 * pipelineBlocks S.n.toNat := le_blocks_mul S.n.toNat
+      constructor <;> omega
+    · have hk := disjointRegions_pair _ 6 7 (by decide)
+        (S.ep, 4 * (64 * pipelineBlocks S.n.toNat + 9)) (S.nk, 8)
+        (by simp [pipelineRegions]) (by simp [pipelineRegions]) hP
+      have hx := disjointRegions_pair _ 6 9 (by decide)
+        (S.ep, 4 * (64 * pipelineBlocks S.n.toNat + 9)) (S.nxp, 8)
+        (by simp [pipelineRegions]) (by simp [pipelineRegions]) hP
+      have hkb : S.k ≤ 64 * pipelineBlocks S.n.toNat := by
+        have := Nat.mul_le_mul_left 64 hib
+        omega
+      constructor <;> omega
+    · have hk := disjointRegions_pair _ 7 8 (by decide) (S.nk, 8)
+        (S.xp, 4 * (nxp0 + 64 * pipelineBlocks S.n.toNat + 8))
+        (by simp [pipelineRegions]) (by simp [pipelineRegions]) hP
+      have hx := disjointRegions_pair _ 8 9 (by decide)
+        (S.xp, 4 * (nxp0 + 64 * pipelineBlocks S.n.toNat + 8)) (S.nxp, 8)
+        (by simp [pipelineRegions]) (by simp [pipelineRegions]) hP
+      have hxb : S.xn ≤ nxp0 + 64 * pipelineBlocks S.n.toNat := by
+        have := Nat.mul_le_mul_left 64 hib
+        omega
+      constructor <;> omega
+    · have hk := disjointRegions_pair _ 7 11 (by decide) (S.nk, 8) (S.dst, S.dstcap.toNat)
+        (by simp [pipelineRegions]) (by simp [pipelineRegions]) hP
+      have hx := disjointRegions_pair _ 9 11 (by decide) (S.nxp, 8) (S.dst, S.dstcap.toNat)
+        (by simp [pipelineRegions]) (by simp [pipelineRegions]) hP
+      constructor <;> omega
+    · have hk := disjointRegions_pair _ 7 13 (by decide) (S.nk, 8) (S.ev, S.evcap.toNat)
+        (by simp [pipelineRegions]) (by simp [pipelineRegions]) hP
+      have hx := disjointRegions_pair _ 9 13 (by decide) (S.nxp, 8) (S.ev, S.evcap.toNat)
+        (by simp [pipelineRegions]) (by simp [pipelineRegions]) hP
+      constructor <;> omega
+    · have hk := disjointRegions_pair _ 7 12 (by decide) (S.nk, 8) (S.ndst, 8)
+        (by simp [pipelineRegions]) (by simp [pipelineRegions]) hP
+      have hx := disjointRegions_pair _ 9 12 (by decide) (S.nxp, 8) (S.ndst, 8)
+        (by simp [pipelineRegions]) (by simp [pipelineRegions]) hP
+      constructor <;> omega
+    · have hk := disjointRegions_pair _ 7 14 (by decide) (S.nk, 8) (S.nev, 8)
+        (by simp [pipelineRegions]) (by simp [pipelineRegions]) hP
+      have hx := disjointRegions_pair _ 9 14 (by decide) (S.nxp, 8) (S.nev, 8)
+        (by simp [pipelineRegions]) (by simp [pipelineRegions]) hP
+      constructor <;> omega
+    · have hk := disjointRegions_pair _ 7 15 (by decide) (S.nk, 8) (S.err, 8)
+        (by simp [pipelineRegions]) (by simp [pipelineRegions]) hP
+      have hx := disjointRegions_pair _ 9 15 (by decide) (S.nxp, 8) (S.err, 8)
+        (by simp [pipelineRegions]) (by simp [pipelineRegions]) hP
+      constructor <;> omega
+  -- assemble
+  have hstep : stage2WalkRegions S.b S.n.toNat S.ep S.k S.xp S.xn S.dst ndst0 S.ev
+      S.evcap.toNat S.ndst S.nev S.err (stage2WorkC tab) (stage2WorkCtype tab)
+      (stage2WorkCst tab) (stage2WorkTok tab) (stage2WorkS tab) (stage2WorkZ tab)
+      (stage2WorkE tab) ++ [(stage2WorkD tab, 8)] =
+      stage2Regions S.b S.n.toNat S.ep S.k S.xp S.xn S.dst ndst0 S.ev S.evcap.toNat
+        S.ndst S.nev S.err ++
+      (stage2StagedWrites (stage2WorkC tab) (stage2WorkCtype tab) (stage2WorkCst tab)
+        (stage2WorkTok tab) (stage2WorkS tab) (stage2WorkZ tab) (stage2WorkE tab) ++
+        [(stage2WorkD tab, 8)]) := rfl
+  rw [hstep]
+  refine List.pairwise_append.mpr ⟨?_, ?_, ?_⟩
+  · refine List.pairwise_append.mpr ⟨hsep2, ?_, ?_⟩
+    · refine List.pairwise_append.mpr ⟨hW, ?_, ?_⟩
+      · simp
+      · intro a ha b hb
+        simp only [List.mem_singleton] at hb
+        subst hb
+        exact Or.comm.mp ((List.pairwise_cons.mp hWcons).1 a ha)
+    · intro a ha b hb
+      rcases List.mem_append.mp hb with hb | hb
+      · exact hAW a ha b (hW2mem b hb)
+      · simp only [List.mem_singleton] at hb
+        subst hb
+        exact hAW a ha (stage2WorkD tab, 8) (by simp [stage2WorkExtents])
+  · simpa [List.pairwise_cons] using hnkxp
+  · -- the ABI entries, the scratch and `%d.i` against the two count slots
+    intro a ha b hb
+    simp only [List.mem_cons, List.mem_nil_iff, or_false] at hb
+    rcases List.mem_append.mp ha with ha | ha
+    · have has := hAslots a ha
+      rcases hb with rfl | rfl
+      · exact has.1
+      · exact has.2
+    · rcases List.mem_append.mp ha with ha | ha
+      · have hq := hW2mem a ha
+        rcases hb with rfl | rfl
+        · exact hWnk a hq
+        · exact hWnxp a hq
+      · simp only [List.mem_singleton] at ha
+        subst ha
+        rcases hb with rfl | rfl
+        · exact hWnk (stage2WorkD tab, 8) (by simp [stage2WorkExtents])
+        · exact hWnxp (stage2WorkD tab, 8) (by simp [stage2WorkExtents])
+
 set_option maxHeartbeats 4000000 in
 /-- **The tail's target at the exit predicate.** -/
 theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}
     {args : List Value} {mem : Mem} {next : Nat}
     (hst : pipelineStaging tab base args mem)
-    (units : PipelineUnits tab base s2 Γ_stage2)
-    (hkeep : ∀ e : State, Stage2SlotKeeps mem args e) :
-    ∀ e : State, pipelineLoopExit mem args e →
+    (hwork : pipelineStage2Workspace tab base args mem next)
+    (units : PipelineUnits tab base s2 (WalkScope.Γ_stage2fixed tab)) :
+    ∀ e : State, pipelineLoopExit mem args tab e →
       ∃ (verdict : BitVec 64) (m : Mem),
         runFuel (pipelineCalls tab base s2) 3 pipelineBody e =
           some (.ret (some (.int 64 verdict)) m) ∧
@@ -1571,11 +1855,8 @@ theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}
           (.ret (some (.int 64 verdict)) m) := by
   intro e he
   obtain ⟨S, heAt⟩ := he
-  -- the exit predicate is eliminated below, and the slot-keeps hypothesis is asked
-  -- at it, so a copy of the conjunction at its own record survives the `obtain`
-  have heKeep := heAt
   obtain ⟨hpc, htie, hstream, hord, hbnd, hbnd64, hpre, hcells, hcount, hnxpslot,
-    hxngr, hdocs, hsxp, hframe, hib, hnxp0slot, hxn0lt, hcaps⟩ := heAt
+    hxngr, hdocs, hsxp, hframe, hib, hnxp0slot, hxn0lt, hcaps, htabTab⟩ := heAt
   -- the staging's hypothesis stays available: the two call preconditions and the
   -- frame's projections read it, and destructuring consumes it
   have hstKeep := hst
@@ -1585,12 +1866,34 @@ theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}
     hzero3, hpos, htab, hsc, hcarry, hnk0, hnxp, hepcap, hxp, hdstcap, hdst, hev,
     hnev, hndst, hnev0, hroomk, hroomxn, hblk, harm, hreads, hdisj, hbLtStaging,
     hepLtStaging⟩ := hst
+  -- the workspace's own staging, aligned with the staging's witnesses
+  obtain ⟨nw, scw, mkw, entww, epw, nkw, xpw, nxpw, xcarryw, dstw, ndstw, evw, nevw,
+    errw, nxp0w, epcapw, xpcapw, dstcapw, evcapw, armw, hwargs, hwpres, hwdisj,
+    _hwwm, hnxp0slotw, hnxp0ltw⟩ := hwork
   subst hargs
+  -- the work space's witnesses are the caller's: the two argument lists agree,
+  -- and the escape count's slot is the count the work space stages
+  have hnxpw_eq : nxpw = nxp := by
+    have h := congrArg (fun l : List Value => l[10]?) hwargs
+    simp only [List.getElem?_cons_zero, List.getElem?_cons_succ, Nat.reduceAdd,
+      Value.ptr.injEq, Option.some.injEq] at h
+    exact h.symm
+  have hnxp0w_eq : nxp0w = nxp0 := by
+    have hlt : nxp0 < 2 ^ 64 := by
+      have h := (cursorRoom_bounds hroomxn (i := 0)
+        (nblk := pipelineBlocks bs.length) (by omega) (by decide)).2
+      omega
+    rw [hnxpw_eq] at hnxp0slotw
+    exact slotExtent_eq (x := nxp0w) (y := nxp0) hnxp0ltw hlt hnxp0slotw hnxp
+  rw [hnxp0w_eq] at hwdisj
   -- the caller's addresses are the carried record's
   simp only [exitArgs] at htie
   obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl,
     rfl, rfl⟩ := htie
-  simp only [pipelineRegions, Nat.zero_add] at hdisj
+  -- the two claims in the form the staged-separation lemma is stated at
+  have hdisjFold := hdisj
+  have hwdisjFold := hwdisj
+  simp only [pipelineRegions, Nat.zero_add] at hdisj hwdisj
   -- the exit block's count, its bound, and the word it stores
   obtain ⟨hkw, hcountReg⟩ := hcount
   have hkgr : S.k ≤ 64 * S.i := exit_k_le hstream hord hbnd64
@@ -1678,23 +1981,132 @@ theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}
       intro r hr
       exact Nat.le_trans
         (stage2ExitRegions_le_caps hkgr hib hxngr hcaps r hr) hnext30
-    have hpre2 : Γ_stage2.pre
+    -- the staged cursor's word at the call's memory
+    have hndst0Lt : ndst0 < 2 ^ 64 := by
+      have h1 := hdstcap
+      have h2 := S.dstcap.isLt
+      omega
+    have hndstCall : readBytes (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8))
+        S.ndst 8 = some (wordBytes 8 ndst0) := by
+      refine (readBytes_writeBytes_of_disjoint (m := e.mem) (start := S.nk)
+        (bs := natToBytes S.kw.toNat 8) (a := S.ndst) (N := 8) ?_).trans ?_
+      · rw [natToBytes_length]
+        exact Or.comm.mp (by
+          simpa using disjointRegions_pair _ 7 12 (by decide) _ _ rfl rfl hdisj)
+      · exact hndstpos.trans hndst
+    -- the words the staged counts came from
+    have hkwNat : S.kw.toNat = S.k := by
+      have hres := wordBytes_residue (x := S.kw.toNat) (y := S.k) hword
+      rwa [Nat.mod_eq_of_lt S.kw.isLt, Nat.mod_eq_of_lt hk64] at hres
+    have hxnNat : (BitVec.ofNat 64 S.xn).toNat = S.xn := by
+      rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hxn64]
+    -- the fixed record's ABI precondition, and the caller's separation at it
+    obtain ⟨hpre2, hsep2⟩ :=
+      stage2Pre_of_exit hstKeep htieKeep hkgr hib hxngr hnxpslot hnxp0slot hxn0lt
+        hframe hstream hord hbnd hsxp hkw hld hwmExit ndst0 hndst0Lt hndst
+    -- the work space is present at the call's memory: the caller's own staging,
+    -- carried through the loop's frame and the count slot's store
+    have hWpos : ∀ obj ∈ stage2WorkExtents tab, 0 < obj.2 := by
+      intro obj hobj
+      simp only [stage2WorkExtents, List.mem_cons, List.not_mem_nil, or_false] at hobj
+      rcases hobj with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+        simp [stage2CursorExtent, stage2StackExtent, stage2TokenExtent,
+          stage2StateExtent, stage2LogExtent, stage2ErrorExtent]
+    -- the growth facts at the block count the loop's write list is drawn at
+    have hkgrB : S.k ≤ 64 * pipelineBlocks S.n.toNat :=
+      Nat.le_trans hkgr (Nat.mul_le_mul_left 64 hib)
+    have hxgrB : S.xn ≤ nxp0 + 64 * pipelineBlocks S.n.toNat := by
+      have := Nat.mul_le_mul_left 64 hib
+      omega
+    have hWorkExit : ∀ obj ∈ stage2WorkExtents tab, HasBytes e.mem obj.1 obj.2 := by
+      intro obj hobj
+      refine hasBytes_of_loop_frame (obj := obj) (a := obj.1) (K := obj.2) hframe
+        ?_ ?_ (hwpres obj hobj)
+      · intro r hr
+        obtain ⟨r', hr', h1, h2⟩ :=
+          loopWrites_cover (blocks := pipelineBlocks S.n.toNat) hkgrB hxgrB r hr
+        have hr'P : r' ∈ [(S.b - 3, 3 + 64 * pipelineBlocks S.n.toNat),
+            (S.b + 64 * pipelineBlocks S.n.toNat, 32), (tab, 8192), (S.sc, 24),
+            (S.maskSlot, 48), (S.entw, 8),
+            (S.ep, 4 * (64 * pipelineBlocks S.n.toNat + 9)), (S.nk, 8),
+            (S.xp, 4 * (nxp0 + 64 * pipelineBlocks S.n.toNat + 8)), (S.nxp, 8),
+            (S.xcarry, 16), (S.dst, S.dstcap.toNat), (S.ndst, 8),
+            (S.ev, S.evcap.toNat), (S.nev, 8), (S.err, 8)] := by
+          simp only [List.mem_cons, List.not_mem_nil, or_false] at hr'
+          rcases hr' with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+            simp [pipelineRegions]
+        exact ⟨r', h1, h2, (List.pairwise_append.mp hwdisj).2.2 r' hr'P obj hobj⟩
+      · intro k hk
+        exact ⟨Nat.le_add_right _ _, by have := hWpos obj hobj; omega⟩
+    have hWorkCall : ∀ obj ∈ stage2WorkExtents tab,
+        HasBytes (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8)) obj.1 obj.2 :=
+      fun obj hobj => hasBytes_writeBytes (hWorkExit obj hobj)
+    have hstagedPres : ∀ r ∈ stage2StagedWrites (stage2WorkC tab)
+        (stage2WorkCtype tab) (stage2WorkCst tab) (stage2WorkTok tab)
+        (stage2WorkS tab) (stage2WorkZ tab) (stage2WorkE tab),
+        HasBytes (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8)) r.1 r.2 := by
+      intro r hr
+      refine hWorkCall r ?_
+      rw [show stage2WorkExtents tab = (stage2WorkD tab, 8) ::
+        stage2StagedWrites (stage2WorkC tab) (stage2WorkCtype tab)
+          (stage2WorkCst tab) (stage2WorkTok tab) (stage2WorkS tab)
+          (stage2WorkZ tab) (stage2WorkE tab) from rfl]
+      exact List.mem_cons_of_mem _ hr
+    have hdCall : HasBytes (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8))
+        (stage2WorkD tab) 8 :=
+      hWorkCall (stage2WorkD tab, 8) (by simp [stage2WorkExtents])
+    -- the stage-2 staging at the workspace's own numbers, from the caller's
+    -- separation at the exit's counts
+    have hstagedDisj : DisjointRegions
+        ((stage2WalkRegions S.b S.n.toNat S.ep S.kw.toNat S.xp
+            (BitVec.ofNat 64 S.xn).toNat S.dst ndst0 S.ev S.evcap.toNat S.ndst
+            S.nev S.err (stage2WorkC tab) (stage2WorkCtype tab)
+            (stage2WorkCst tab) (stage2WorkTok tab) (stage2WorkS tab)
+            (stage2WorkZ tab) (stage2WorkE tab) ++ [(stage2WorkD tab, 8)]) ++
+          [(S.nk, 8), (S.nxp, 8)]) := by
+      rw [hkwNat, hxnNat]
+      exact stage2StagedRegions_sep (S := S) (blocks := pipelineBlocks S.n.toNat)
+        hb3 hkgr hib hxngr hxn0eq hdstcap hsep2 hdisjFold hwdisjFold
+    -- the staged watermark at the call's cursor
+    have hstagedWm : ∀ r ∈ stage2StagedWrites (stage2WorkC tab)
+        (stage2WorkCtype tab) (stage2WorkCst tab) (stage2WorkTok tab)
+        (stage2WorkS tab) (stage2WorkZ tab) (stage2WorkE tab), r.1 + r.2 ≤ n30 := by
+      intro r hr
+      have hmem : r ∈ stage2StagedCaps S := by
+        rw [stage2StagedCaps, htabTab]
+        refine List.mem_append_right _ ?_
+        rw [show stage2WorkExtents tab = (stage2WorkD tab, 8) ::
+          stage2StagedWrites (stage2WorkC tab) (stage2WorkCtype tab)
+            (stage2WorkCst tab) (stage2WorkTok tab) (stage2WorkS tab)
+            (stage2WorkZ tab) (stage2WorkE tab) from rfl]
+        exact List.mem_cons_of_mem _ hr
+      exact Nat.le_trans (hcaps r hmem) hnext30
+    -- the fixed record's precondition: the ABI's and the workspace's staging
+    have hstagedPre : stage2StagedPre
+        (stage2Args S.b S.ep S.xp S.dst S.ndst S.ev S.nev S.err S.n S.kw
+          (BitVec.ofNat 64 S.xn) S.dstcap S.evcap)
+        (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8)) n30 (stage2WorkD tab)
+        (stage2WorkC tab) (stage2WorkCtype tab) (stage2WorkCst tab)
+        (stage2WorkTok tab) (stage2WorkS tab) (stage2WorkZ tab)
+        (stage2WorkE tab) (S.nk) (S.nxp) :=
+      ⟨hstagedPres, hdCall,
+        ⟨S.b, S.n, S.ep, S.kw, S.xp, BitVec.ofNat 64 S.xn, S.dst, S.dstcap,
+          ndst0, S.ev, S.evcap, S.ndst, S.nev, S.err,
+          by simp [stage2Args], hndstCall, hstagedDisj, hndst0Lt, hstagedWm⟩⟩
+    have hfixedPre : (WalkScope.Γ_stage2fixed tab).pre
         (stage2Args S.b S.ep S.xp S.dst S.ndst S.ev S.nev S.err S.n S.kw
           (BitVec.ofNat 64 S.xn) S.dstcap S.evcap)
         (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8)) n30 :=
-      stage2Pre_of_exit hstKeep htieKeep hkgr hib hxngr hnxpslot hnxp0slot hxn0lt hframe
-        hstream hord hbnd hsxp hkw hld hwmExit
+      ⟨S.nk, S.nxp, hpre2, hstagedPre⟩
     obtain ⟨r35, hcall2, hpost2, -⟩ :=
       units.stage2 (stage2Args S.b S.ep S.xp S.dst S.ndst S.ev S.nev S.err S.n S.kw
         (BitVec.ofNat 64 S.xn) S.dstcap S.evcap)
-        (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8)) n30 hpre2
+        (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8)) n30 hfixedPre
     obtain ⟨v35, m35, n35⟩ := r35
     dsimp only at hpost2
-    -- the slot-keeps hypothesis is asked at this post, and the destructure below
-    -- eliminates it, so a copy survives
-    have hpost2Keep := hpost2
-    -- stage two's post, read by name: the witnesses and the clauses it states
-    obtain ⟨w₂, h₂⟩ := stage2Boundary_witness hpost2
+    -- stage two's fixed post: the witness, its clauses, and the eight scratch
+    -- numbers its boundary ties to the workspace's
+    obtain ⟨w₂, h₂, hc₂, hct₂, hcs₂, htk₂, hs₂, hz₂, he₂, hd₂⟩ := hpost2
     let ep₂ := w₂.ep
     let nep₂ := w₂.nep
     let xp₂ := w₂.xp
@@ -1712,14 +2124,14 @@ theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}
     let evlen := w₂.nev'
     let arena := w₂.arena
     let evs := w₂.evs
-    let c₂ := w₂.c
-    let ctype₂ := w₂.ctype
-    let cst₂ := w₂.cst
-    let tok₂ := w₂.tok
-    let s₂ := w₂.s
-    let z₂ := w₂.z
-    let e₂ := w₂.e
-    let d₂ := w₂.d
+    let c₂ := stage2WorkC tab
+    let ctype₂ := stage2WorkCtype tab
+    let cst₂ := stage2WorkCst tab
+    let tok₂ := stage2WorkTok tab
+    let s₂ := stage2WorkS tab
+    let z₂ := stage2WorkZ tab
+    let e₂ := stage2WorkE tab
+    let d₂ := stage2WorkD tab
     let nend₂ := w₂.nextEnd
     have hargs₂ := h₂.args_eq
     have hveq₂ := h₂.value_eq
@@ -1755,8 +2167,11 @@ theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}
       h₂.accept_word
     have hnend₂ := h₂.next_le
     have hframe₂ := h₂.frame
+    rw [hd₂, hc₂, hct₂, hcs₂, htk₂, hs₂, hz₂, he₂] at hframe₂
     have hstaged₂ := h₂.staged
+    rw [hc₂, hct₂, hcs₂, htk₂, hs₂, hz₂, he₂] at hstaged₂
     have hdSep₂ := h₂.dSep
+    rw [hd₂] at hdSep₂
     -- the arguments identify stage two's witnesses with the caller's slots
     have hdst₂ : dst₂ = S.dst := by
       have h := congrArg (fun l : List Value => l[6]?) hargs₂
@@ -1820,6 +2235,14 @@ theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}
           [(n30, nend₂ - n30)]) := by
       rw [← hdst₂, ← hev₂, ← hndst₂, ← hnev₂, ← herr₂]
       simpa [stage2ReportFrame, stage2ReportPresent, stage2Writes] using hframe₂
+    -- the same frame at the predicate the slot-keeps lemma reads, at the fixed
+    -- scratch numbers
+    have hframeFix : UnchangedOutside
+        (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8)) m35
+        (stage2ReportFrame S.dst alen S.ev evlen S.ndst S.nev S.err
+          c₂ ctype₂ cst₂ tok₂ s₂ z₂ e₂ d₂ n30 nend₂) := by
+      rw [← hdst₂, ← hev₂, ← hndst₂, ← hnev₂, ← herr₂]
+      exact hframe₂
     -- the arguments identify stage two's counts with the words the call carried
     have hep₂ : ep₂ = S.ep := by
       have h := congrArg (fun l : List Value => l[2]?) hargs₂
@@ -1981,18 +2404,109 @@ theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}
         exact Or.inr (Nat.le_trans
           (stage2ExitRegions_le_caps hkgr hib hxngr hcaps (S.xp, 4 * S.xn)
             (by simp [stage2ExitRegions])) hnext30)
+    -- the slot-keeps claim at the callee's frame: `%nk` and `%nxp` lie outside
+    -- every region the run writes, so the caller reads the words it staged.
+    -- The seven appended objects are separated from the slots by the staged
+    -- precondition, the five ABI writes and `%d.i` by the staged list itself,
+    -- and the fresh stack interval sits above the cursor the slots end below.
+    have hcountSlots := stage2StagedPre_countSlots hstagedPre
+    have hsevenNk : ∀ r ∈ stage2StagedWrites c₂ ctype₂ cst₂ tok₂ s₂ z₂ e₂,
+        r.1 + r.2 ≤ S.nk ∨ S.nk + 8 ≤ r.1 :=
+      fun r hr => (hcountSlots.1 r hr).1
+    have hsevenNxp : ∀ r ∈ stage2StagedWrites c₂ ctype₂ cst₂ tok₂ s₂ z₂ e₂,
+        r.1 + r.2 ≤ S.nxp ∨ S.nxp + 8 ≤ r.1 :=
+      fun r hr => (hcountSlots.1 r hr).2
+    have hnkSuffix : (S.nk, 8) ∈ [(S.nk, 8), (S.nxp, 8)] := List.mem_cons_self ..
+    have hnxpSuffix : (S.nxp, 8) ∈ [(S.nk, 8), (S.nxp, 8)] :=
+      List.mem_cons_of_mem _ (List.mem_cons_self ..)
+    have hdNk : ∀ r ∈ (stage2WalkRegions S.b S.n.toNat S.ep S.kw.toNat S.xp
+        (BitVec.ofNat 64 S.xn).toNat S.dst ndst0 S.ev S.evcap.toNat S.ndst S.nev
+        S.err c₂ ctype₂ cst₂ tok₂ s₂ z₂ e₂ ++ [(stage2WorkD tab, 8)]),
+        r.1 + r.2 ≤ S.nk ∨ S.nk + 8 ≤ r.1 :=
+      fun r hr => (List.pairwise_append.mp hstagedDisj).2.2 r hr (S.nk, 8) hnkSuffix
+    have hdNxp : ∀ r ∈ (stage2WalkRegions S.b S.n.toNat S.ep S.kw.toNat S.xp
+        (BitVec.ofNat 64 S.xn).toNat S.dst ndst0 S.ev S.evcap.toNat S.ndst S.nev
+        S.err c₂ ctype₂ cst₂ tok₂ s₂ z₂ e₂ ++ [(stage2WorkD tab, 8)]),
+        r.1 + r.2 ≤ S.nxp ∨ S.nxp + 8 ≤ r.1 :=
+      fun r hr => (List.pairwise_append.mp hstagedDisj).2.2 r hr (S.nxp, 8) hnxpSuffix
+    have hsepNkWalk : ∀ r ∈ stage2WalkWrites S.dst alen S.ev evlen S.ndst S.nev
+        S.err c₂ ctype₂ cst₂ tok₂ s₂ z₂ e₂, r.1 + r.2 ≤ S.nk ∨ S.nk + 8 ≤ r.1 :=
+      stage2WalkWrites_sep (S := S) (alen := alen) (evlen := evlen) (a := S.nk)
+        (N := 8) (W := 8) (by omega) sep7_11 sep7_13 sep7_12 sep7_14 sep7_15
+        hdstCapW hevCapW hsevenNk
+    have hsepNxpWalk : ∀ r ∈ stage2WalkWrites S.dst alen S.ev evlen S.ndst S.nev
+        S.err c₂ ctype₂ cst₂ tok₂ s₂ z₂ e₂, r.1 + r.2 ≤ S.nxp ∨ S.nxp + 8 ≤ r.1 :=
+      stage2WalkWrites_sep (S := S) (alen := alen) (evlen := evlen) (a := S.nxp)
+        (N := 8) (W := 8) (by omega) sep9_11 sep9_13 sep9_12 sep9_14 sep9_15
+        hdstCapW hevCapW hsevenNxp
+    have hframeNk : ∀ r ∈ stage2ReportFrame S.dst alen S.ev evlen S.ndst S.nev
+        S.err c₂ ctype₂ cst₂ tok₂ s₂ z₂ e₂ d₂ n30 nend₂,
+        r.1 + r.2 ≤ S.nk ∨ S.nk + 8 ≤ r.1 := by
+      intro r hr
+      have hr' : r ∈ (([(S.dst, alen + stage2ArenaReserve), (S.ndst, 8),
+          (S.ev, evlen), (S.nev, 8), (S.err, 8)] ++
+          stage2ReportScratch c₂ ctype₂ cst₂ tok₂ s₂ z₂ e₂ d₂) ++
+          [(n30, nend₂ - n30)]) := by
+        simpa [stage2ReportFrame, stage2ReportPresent, stage2Writes] using hr
+      rcases List.mem_append.mp hr' with hr' | hr'
+      · rcases List.mem_append.mp hr' with hr' | hr'
+        · have hm : r ∈ stage2Writes S.dst alen S.ev evlen S.ndst S.nev S.err := by
+            simpa [stage2Writes] using hr'
+          exact hsepNkWalk r (by
+            rw [stage2WalkWrites]
+            exact List.mem_append_left _ hm)
+        · rw [stage2ReportScratch] at hr'
+          rcases List.mem_append.mp hr' with hr' | hr'
+          · exact hsevenNk r hr'
+          · rcases List.mem_cons.mp hr' with rfl | hnil
+            · exact hdNk (stage2WorkD tab, 8)
+                (List.mem_append_right _ (List.mem_cons_self ..))
+            · exact absurd hnil (by simp)
+      · simp only [List.mem_singleton] at hr'
+        subst hr'
+        exact Or.inr (Nat.le_trans
+          (hcaps (S.nk, 8) (by simp [stage2StagedCaps])) hnext30)
+    have hframeNxp : ∀ r ∈ stage2ReportFrame S.dst alen S.ev evlen S.ndst S.nev
+        S.err c₂ ctype₂ cst₂ tok₂ s₂ z₂ e₂ d₂ n30 nend₂,
+        r.1 + r.2 ≤ S.nxp ∨ S.nxp + 8 ≤ r.1 := by
+      intro r hr
+      have hr' : r ∈ (([(S.dst, alen + stage2ArenaReserve), (S.ndst, 8),
+          (S.ev, evlen), (S.nev, 8), (S.err, 8)] ++
+          stage2ReportScratch c₂ ctype₂ cst₂ tok₂ s₂ z₂ e₂ d₂) ++
+          [(n30, nend₂ - n30)]) := by
+        simpa [stage2ReportFrame, stage2ReportPresent, stage2Writes] using hr
+      rcases List.mem_append.mp hr' with hr' | hr'
+      · rcases List.mem_append.mp hr' with hr' | hr'
+        · have hm : r ∈ stage2Writes S.dst alen S.ev evlen S.ndst S.nev S.err := by
+            simpa [stage2Writes] using hr'
+          exact hsepNxpWalk r (by
+            rw [stage2WalkWrites]
+            exact List.mem_append_left _ hm)
+        · rw [stage2ReportScratch] at hr'
+          rcases List.mem_append.mp hr' with hr' | hr'
+          · exact hsevenNxp r hr'
+          · rcases List.mem_cons.mp hr' with rfl | hnil
+            · exact hdNxp (stage2WorkD tab, 8)
+                (List.mem_append_right _ (List.mem_cons_self ..))
+            · exact absurd hnil (by simp)
+      · simp only [List.mem_singleton] at hr'
+        subst hr'
+        exact Or.inr (Nat.le_trans
+          (hcaps (S.nxp, 8) (by simp [stage2StagedCaps])) hnext30)
+    have hsepNkFrame := hframeNk
+    have hsepNxpFrame := hframeNxp
+    obtain ⟨hkeepNk, hkeepNxp⟩ :=
+      stage2SlotKeeps_of_frame hframeFix hsepNkFrame hsepNxpFrame
     -- the four reads at the memory stage two returns
     have hnkM : readBytes m35 S.nk 8 = some (wordBytes 8 S.k) := by
       have hb : readBytes m35 S.nk 8 =
           readBytes (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8)) S.nk 8 :=
-        readBytes_of_readByte_eq (fun k hk => (hkeep e S
-          (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8)) n30 v35 m35 heKeep hpost2Keep).1 k hk)
+        readBytes_of_readByte_eq hkeepNk
       exact hb.trans hcountStore
     have hnxpM : readBytes m35 S.nxp 8 = some (wordBytes 8 S.xn) := by
       have hb : readBytes m35 S.nxp 8 =
           readBytes (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8)) S.nxp 8 :=
-        readBytes_of_readByte_eq (fun k hk => (hkeep e S
-          (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8)) n30 v35 m35 heKeep hpost2Keep).2 k hk)
+        readBytes_of_readByte_eq hkeepNxp
       refine hb.trans ?_
       have hsep' : S.nxp + 8 ≤ S.nk ∨ S.nk + (natToBytes S.k 8).length ≤ S.nxp := by
         rw [natToBytes_length]
@@ -2274,30 +2788,44 @@ def pipelineBodyFacts_of_exitStage2 {tab base : Nat} {s2 : Calls}
     {args : List Value} {mem : Mem} {next : Nat}
     (hst : pipelineStaging tab base args mem)
     (hbelow : pipelineStagedBelow tab base args mem next)
-    (units : PipelineUnits tab base s2 Γ_stage2)
-    (hkeep : ∀ e : State, Stage2SlotKeeps mem args e) :
-    PipelineBodyFacts tab base s2 Γ_stage2 args mem next :=
-  { loop := pipelineLoop_of_staging hst s2 Γ_stage2 units
-    N_eq := pipelineLoop_of_staging_N hst s2 Γ_stage2 units
-    cost_le := pipelineLoop_of_staging_cost_le hst s2 Γ_stage2 units
-    seed := pipelineSeed hst hbelow
-    exit := fun e he => pipelineTailTarget hst units hkeep e he }
+    (hwork : pipelineStage2Workspace tab base args mem next)
+    (units : PipelineUnits tab base s2 (WalkScope.Γ_stage2fixed tab)) :
+    PipelineBodyFacts tab base s2 (WalkScope.Γ_stage2fixed tab) args mem next :=
+  { loop := pipelineLoop_of_staging hst s2 (WalkScope.Γ_stage2fixed tab) units
+    N_eq := pipelineLoop_of_staging_N hst s2 (WalkScope.Γ_stage2fixed tab) units
+    cost_le := pipelineLoop_of_staging_cost_le hst s2 (WalkScope.Γ_stage2fixed tab) units
+    seed := pipelineSeed hst hbelow hwork
+    exit := fun e he => pipelineTailTarget hst hwork units e he }
 
-/-- **The assembled pipeline satisfies its unit-level record, from the four
-fields and the tail.**  `pipeline_satisfies_at_stage2`'s `hbody` is supplied by
-`pipelineBodyFacts_of_exitStage2`, so the inputs left are the stage-2 selection
-`h2` and the one staging fact the record cannot state (`Stage2SlotKeeps`); the
-record's own precondition supplies the staging and the cursor bound, and the run
-from the exit the loop leaves is `pipelineTailTarget`, proved above. -/
-theorem pipeline_satisfies_at_stage2_of_exitStage2 (tab : Nat) (s2 : Calls)
-    (h2 : CallSatisfies s2 Γ_stage2 stage2Sym)
-    (hkeep : ∀ (args : List Value) (mem : Mem) (e : State),
-      Stage2SlotKeeps mem args e) :
-    ∀ base, Satisfies (pipelineCalls tab base s2) pipelineBody
-      (Γ_pipeline_units tab base) :=
-  pipeline_satisfies_at_stage2 tab s2 h2
-    (fun _ _ _ _ hpre units => pipelineBodyFacts_of_exitStage2 hpre.1 hpre.2 units
-      (fun e => hkeep _ _ e))
+/-- **The assembled pipeline satisfies its unit-level record.**  The bundle is
+built at `Γ_stage2fixed`, the record the pipeline's own stage-2 selection runs
+under: `satisfies_calls_stage2_fixed` turns the walk's closure (`stage2WalkWork_of_staging`,
+from the six payload groups) into the call-site guarantee, and the fixed record's
+verdict clause is `stage2fixed_verdict_bounded`.  `pipeline_satisfies_of_units`
+then consumes `pipelineBodyFacts_of_exitStage2`, whose pre supplies the staging,
+the cursor bound and the work space's staging, and whose tail is
+`pipelineTailTarget`. -/
+theorem pipeline_satisfies_at_stage2_of_exitStage2 (tab : Nat)
+    (hcont : ∀ {m0 : Mem} (G : WalkGeom m0), WalkScope.HcontPayload G)
+    (hrows : ∀ {m0 : Mem} (G : WalkGeom m0), WalkScope.HcontClassRows G)
+    (hws : ∀ {m0 : Mem} (G : WalkGeom m0), WalkScope.HcontWsRows G)
+    (hlast : ∀ {m0 : Mem} (G : WalkGeom m0), WalkScope.HlastPayload G)
+    (hlastRows : ∀ {m0 : Mem} (G : WalkGeom m0), WalkScope.HlastClassRows G)
+    (hlastArms : ∀ {m0 : Mem} (G : WalkGeom m0), WalkScope.HlastArmRows G) :
+    ∀ base, Satisfies
+      (pipelineCalls tab base (WalkScope.envForStage2Work tab stage2SubCalls))
+      pipelineBody (Γ_pipeline_units tab base) := by
+  refine pipeline_satisfies_of_units tab
+    (WalkScope.envForStage2Work tab stage2SubCalls)
+    (WalkScope.Γ_stage2fixed tab)
+    (fun b => pipelineUnits_of_records tab b
+      (WalkScope.envForStage2Work tab stage2SubCalls) (WalkScope.Γ_stage2fixed tab)
+      (WalkScope.satisfies_calls_stage2_fixed
+        (WalkScope.stage2WalkWork_of_staging hcont hrows hws hlast hlastRows
+          hlastArms))
+      (WalkScope.stage2fixed_verdict_bounded (tab := tab))) ?_
+  intro base args mem next hpre units
+  exact pipelineBodyFacts_of_exitStage2 hpre.1 hpre.2.1 hpre.2.2 units
 
 /-! ### Axiom footprints
 

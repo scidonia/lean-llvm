@@ -228,7 +228,10 @@ the callee's frame, which the model cannot allocate) and the last is
 frame be read, after the call, as silence over the caller's count slots.
 
 The witness set is `pipelineRegions`' own, so the predicate is stated at the
-argument list the caller passes and the staging it has already promised. -/
+argument list the caller passes and the staging it has already promised.  The
+escape count's slot is read back as the witness the extent is drawn at, so a
+consumer reads one number from the slot rather than guessing which of two
+witnesses the list was separated at. -/
 def pipelineStage2Workspace (tab base : Nat) (args : List Value) (mem : Mem)
     (next : Nat) : Prop :=
   ∃ (n : BitVec 64) (sc mk entw ep nk xp nxp xcarry dst ndst ev nev err nxp0 : Nat)
@@ -239,7 +242,13 @@ def pipelineStage2Workspace (tab base : Nat) (args : List Value) (mem : Mem)
       .ptr err, .int 64 arm] ∧
     (∀ r ∈ stage2WorkExtents tab, HasBytes mem r.1 r.2) ∧
     DisjointRegions (pipelineRegions base tab 0 nxp0 args ++ stage2WorkExtents tab) ∧
-    (∀ r ∈ stage2WorkExtents tab, r.1 + r.2 ≤ next)
+    (∀ r ∈ stage2WorkExtents tab, r.1 + r.2 ≤ next) ∧
+    -- **The escape count's slot is the count the staging names.**  The extent
+    -- above is `pipelineRegions`' `xp` entry drawn at `nxp0`, so a consumer that
+    -- reads the staging's own `nxp0` off the slot must be able to identify the
+    -- two numbers: one slot, one word.
+    readBytes mem nxp 8 = some (wordBytes 8 nxp0) ∧
+    nxp0 < 2 ^ 64
 
 /-! ### The caller's objects and its allocator cursor
 
@@ -939,7 +948,8 @@ exit predicate's own last conjunct). -/
 def Γ_pipeline_units (tab base : Nat) : MemContract where
   budget := pipelineBudget
   pre := fun args mem next =>
-    pipelineStaging tab base args mem ∧ pipelineStagedBelow tab base args mem next
+    pipelineStaging tab base args mem ∧ pipelineStagedBelow tab base args mem next ∧
+    pipelineStage2Workspace tab base args mem next
   post := pipelineUnitsPost
 
 /-! ### Sanity checks on the statement's arithmetic -/

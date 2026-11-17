@@ -323,6 +323,7 @@ def pipelineSpecPre (tab base : Nat) (args : List Value) (mem : Mem)
     (next : Nat) : Prop :=
   pipelineStaging tab base args mem ∧
   pipelineStagedBelow tab base args mem next ∧
+  pipelineStage2Workspace tab base args mem next ∧
   ∃ (bs : List UInt8) (nev0 evcap nev : Nat),
     pipelineDocLength args = some bs.length ∧
     pipelineEvCapacity args = some evcap ∧

@@ -298,10 +298,16 @@ claim over the rows may assert.
    post's own witnesses and `pipeline_satisfies_of_parser` carries no frame
    premise. That is the limit stated rather than discharged — in the program the
    seven are private stack objects, and here the clause has to admit them. The
-   one fact of this kind the tree still carries as a hypothesis is
-   `PipelineDischarge.Stage2SlotKeeps` (the callee leaves the caller's two count
-   slots alone), because those two slots appear in no list the stage-2 record
-   declares for itself. What the specification's frame cannot be is a universal:
+   callee's silence over the caller's two count slots is *derived* rather than
+   assumed: the pipeline runs its stage-2 slot under the fixed record
+   `JsonStage2WalkFlushPost.Γ_stage2fixed`, whose post names the callee's whole
+   touched extent — the five ABI writes, the seven appended objects, `%d.i` and
+   the stack interval — and the caller's staging separates `%nk` and `%nxp` from
+   every one of them (`PipelineDischarge.stage2StagedRegions_sep`), so
+   `PipelineDischarge.stage2SlotKeeps_of_frame` turns that frame into the two
+   slot reads `PipelineDischarge.pipelineTailTarget` needs.
+
+   What the specification's frame cannot be is a universal:
    `SigmaFrame` over every argument list, memory and outcome is false, because its
    extent component is a reading of the returned memory
    (`LeanLLVMTest.Counterexamples.pipeline_frame_hsem_false`). The repair that

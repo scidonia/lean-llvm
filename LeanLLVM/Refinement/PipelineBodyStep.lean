@@ -2618,7 +2618,7 @@ theorem usUs_step_exit (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
       show HasBytes e.mem S.xp (4 * S.xn)
       rw [hmemE]
       exact hasBytes_of_le (usUsSucc_capacity (S := S) (s := s.mem) (r1 := r1.mem) (r2 := r2.mem) hsep (natToBytes_length ..) (by omega)
-        hmaskFrame (frame_loose hentFrame) hhas) (by omega), ?_, (by show S.i + 1 ≤ pipelineBlocks S.n.toNat; omega), hnxpTie, hxn0lt, ?_⟩, hrunE⟩
+        hmaskFrame (frame_loose hentFrame) hhas) (by omega), ?_, (by show S.i + 1 ≤ pipelineBlocks S.n.toNat; omega), hnxpTie, hxn0lt, ?_, htabEq⟩, hrunE⟩
   · refine ⟨rfl, ?_⟩
     show lookupName e.env "%call21.us.us" = some (.int 64 (BitVec.ofNat 64 k'))
     rw [hcntE, hret2]
@@ -3132,7 +3132,7 @@ theorem us83_step_exit (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
       show HasBytes e.mem S.xp (4 * S.xn)
       rw [hmemE]
       exact hasBytes_of_le (usUsSucc_capacity (S := S) (s := s.mem) (r1 := r1.mem) (r2 := r2.mem) hsep (natToBytes_length ..) (by omega)
-        hmaskFrame (frame_loose hentFrame) hhas) (by omega), ?_, (by show S.i + 1 ≤ pipelineBlocks S.n.toNat; omega), hnxpTie, hxn0lt, ?_⟩, hrunE⟩
+        hmaskFrame (frame_loose hentFrame) hhas) (by omega), ?_, (by show S.i + 1 ≤ pipelineBlocks S.n.toNat; omega), hnxpTie, hxn0lt, ?_, htabEq⟩, hrunE⟩
   · refine ⟨rfl, ?_⟩
     show lookupName e.env "%call.us" = some (.int 64 (BitVec.ofNat 64 k'))
     rw [hcntE, hret2]
@@ -4861,7 +4861,7 @@ theorem us_step_exit (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
       exact hwinR3, by
       show HasBytes e.mem S.xp (4 * (S.xn + len))
       rw [hmemE]
-      exact hasBytes_of_le hescCap (by omega), ?_, (by show S.i + 1 ≤ pipelineBlocks S.n.toNat; omega), hnxpTie, hxn0lt, ?_⟩, hrunE⟩
+      exact hasBytes_of_le hescCap (by omega), ?_, (by show S.i + 1 ≤ pipelineBlocks S.n.toNat; omega), hnxpTie, hxn0lt, ?_, htabEq⟩, hrunE⟩
   · refine ⟨rfl, ?_⟩
     show lookupName e.env "%call21.us" = some (.int 64 (BitVec.ofNat 64 k'))
     rw [hcntE, hret2]
@@ -4973,7 +4973,7 @@ theorem body_step_exit (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
       exact hwinR3, by
       show HasBytes e.mem S.xp (4 * (S.xn + len))
       rw [hmemE]
-      exact hasBytes_of_le hescCap (by omega), ?_, (by show S.i + 1 ≤ pipelineBlocks S.n.toNat; omega), hnxpTie, hxn0lt, ?_⟩, hrunE⟩
+      exact hasBytes_of_le hescCap (by omega), ?_, (by show S.i + 1 ≤ pipelineBlocks S.n.toNat; omega), hnxpTie, hxn0lt, ?_, htabEq⟩, hrunE⟩
   · refine ⟨rfl, ?_⟩
     show lookupName e.env "%call" = some (.int 64 (BitVec.ofNat 64 k'))
     rw [hcntE, hret2]
@@ -5269,7 +5269,7 @@ theorem usUs_split_step (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
       show HasBytes e.mem S.xp (4 * S.xn)
       rw [hmemE]
       exact hasBytes_of_le (usUsSucc_capacity (S := S) (s := s.mem) (r1 := r1.mem) (r2 := r2.mem) hsep (natToBytes_length ..) (by omega)
-        hmaskFrame (frame_loose hentFrame') hhas) (by omega), ?_, (by show S.i + 1 ≤ pipelineBlocks S.n.toNat; omega), hnxpTie, hxn0lt, ?_⟩, hrunE⟩
+        hmaskFrame (frame_loose hentFrame') hhas) (by omega), ?_, (by show S.i + 1 ≤ pipelineBlocks S.n.toNat; omega), hnxpTie, hxn0lt, ?_, htabEq⟩, hrunE⟩
       · refine ⟨rfl, ?_⟩
         show lookupName e.env "%call21.us.us" = some (.int 64 (BitVec.ofNat 64 k'))
         rw [hcntE, hret2]
@@ -5627,7 +5627,7 @@ theorem us83_split_step (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
       show HasBytes e.mem S.xp (4 * S.xn)
       rw [hmemE]
       exact hasBytes_of_le (usUsSucc_capacity (S := S) (s := s.mem) (r1 := r1.mem) (r2 := r2.mem) hsep (natToBytes_length ..) (by omega)
-        hmaskFrame (frame_loose hentFrame') hhas) (by omega), ?_, (by show S.i + 1 ≤ pipelineBlocks S.n.toNat; omega), hnxpTie, hxn0lt, ?_⟩, hrunE⟩
+        hmaskFrame (frame_loose hentFrame') hhas) (by omega), ?_, (by show S.i + 1 ≤ pipelineBlocks S.n.toNat; omega), hnxpTie, hxn0lt, ?_, htabEq⟩, hrunE⟩
       · refine ⟨rfl, ?_⟩
         show lookupName e.env "%call.us" = some (.int 64 (BitVec.ofNat 64 k'))
         rw [hcntE, hret2]
@@ -6022,7 +6022,7 @@ theorem us_split_step (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
       exact hwinR3, by
       show HasBytes e.mem S.xp (4 * (S.xn + len))
       rw [hmemE]
-      exact hasBytes_of_le hescCap (by omega), ?_, (by show S.i + 1 ≤ pipelineBlocks S.n.toNat; omega), hnxpTie, hxn0lt, ?_⟩, hrunE⟩
+      exact hasBytes_of_le hescCap (by omega), ?_, (by show S.i + 1 ≤ pipelineBlocks S.n.toNat; omega), hnxpTie, hxn0lt, ?_, htabEq⟩, hrunE⟩
       · refine ⟨rfl, ?_⟩
         show lookupName e.env "%call21.us" = some (.int 64 (BitVec.ofNat 64 k'))
         rw [hcntE, hret2]
@@ -6430,7 +6430,7 @@ theorem body_split_step (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
       exact hwinR3, by
       show HasBytes e.mem S.xp (4 * (S.xn + len))
       rw [hmemE]
-      exact hasBytes_of_le hescCap (by omega), ?_, (by show S.i + 1 ≤ pipelineBlocks S.n.toNat; omega), hnxpTie, hxn0lt, ?_⟩, hrunE⟩
+      exact hasBytes_of_le hescCap (by omega), ?_, (by show S.i + 1 ≤ pipelineBlocks S.n.toNat; omega), hnxpTie, hxn0lt, ?_, htabEq⟩, hrunE⟩
       · refine ⟨rfl, ?_⟩
         show lookupName e.env "%call" = some (.int 64 (BitVec.ofNat 64 k'))
         rw [hcntE, hret2]
@@ -6697,7 +6697,7 @@ def pipelineLoop (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
   N := blocks
   cost := 1
   Inv := fun mem args r s => pipelineLoopInv mem args base tab blocks r s
-  Exit := fun mem args s => pipelineLoopExit mem args s
+  Exit := fun mem args s => pipelineLoopExit mem args tab s
   step := fun mem args r s h =>
     pipelineLoop_step tab base s2 Γ2 units blocks hcap r s mem h
   exit := fun mem args s h => by
@@ -6713,7 +6713,8 @@ stage-2 call reads.  `pipelineExit_stream` is the projection of that conjunct,
 stated so a consumer does not open the predicate. -/
 
 /-- **The exit hands the tail the whole stream.** -/
-theorem pipelineExit_stream {mem : Mem} {s : State} (h : pipelineLoopExit mem args s) :
+theorem pipelineExit_stream {mem : Mem} {tab : Nat} {s : State}
+    (h : pipelineLoopExit mem args tab s) :
     ∃ (S : PipelineLoopCarried), readLanes32 s.mem S.ep S.k = some S.ent := by
   obtain ⟨S, _hpc, -, hent, -⟩ := h
   exact ⟨S, hent⟩
@@ -7329,7 +7330,8 @@ registers the exit block's store, its UTF-8 call and its stage-2 call read, at t
 values the carried record supplies, so every state it admits holds them.  The
 empty environment is therefore refused: the predicate is no longer the "names no
 register" statement it was, and the predecessor field is part of it too. -/
-theorem pipelineLoopExit_cells {mem : Mem} {s : State} (h : pipelineLoopExit mem args s) :
+theorem pipelineLoopExit_cells {mem : Mem} {tab : Nat} {s : State}
+    (h : pipelineLoopExit mem args tab s) :
     ∃ S : PipelineLoopCarried, s.pre = some S.arm.head ∧ tailCells S s.env := by
   obtain ⟨S, -, -, -, -, -, -, hpre, htail, -⟩ := h
   exact ⟨S, hpre, htail⟩
@@ -7966,30 +7968,33 @@ theorem seedCarried_caps {base tab : Nat} {args : List Value}
       .ptr dst, .int 64 dstcap, .ptr ndst, .ptr ev, .int 64 evcap, .ptr nev,
       .ptr err, .int 64 arm])
     (hbnd : ∀ r ∈ pipelineRegions base tab 0 nxp0 args, r.1 + r.2 ≤ c)
+    (hworkBnd : ∀ r ∈ stage2WorkExtents tab, r.1 + r.2 ≤ c)
     (hblocks : blocks = pipelineBlocks n.toNat)
     (hnle : n.toNat ≤ 64 * blocks) :
     ∀ r ∈ stage2StagedCaps (seedCarried a base tab sc mk entw ep xp nxp xcarry blocks
       nxp0 n doc nk dst ndst ev nev err dstcap evcap arm), r.1 + r.2 ≤ c := by
   subst hargs
   intro r hr
-  simp only [stage2StagedCaps, seedCarried, List.mem_cons, List.not_mem_nil,
-    or_false] at hr
-  rcases hr with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
-  · -- the document, covered by the read-past tail's entry
-    have h := hbnd (base + 64 * pipelineBlocks n.toNat, 32) (by simp [pipelineRegions])
-    rw [← hblocks] at h
-    omega
-  · exact hbnd (ep, 4 * (64 * pipelineBlocks n.toNat + 9))
-      (by simp [pipelineRegions, hblocks])
-  · exact hbnd (xp, 4 * (nxp0 + 64 * pipelineBlocks n.toNat + 8))
-      (by simp [pipelineRegions, hblocks])
-  · exact hbnd (dst, dstcap.toNat) (by simp [pipelineRegions])
-  · exact hbnd (ev, evcap.toNat) (by simp [pipelineRegions])
-  · exact hbnd (ndst, 8) (by simp [pipelineRegions])
-  · exact hbnd (nev, 8) (by simp [pipelineRegions])
-  · exact hbnd (err, 8) (by simp [pipelineRegions])
-  · exact hbnd (nk, 8) (by simp [pipelineRegions])
-  · exact hbnd (nxp, 8) (by simp [pipelineRegions])
+  simp only [stage2StagedCaps, seedCarried] at hr
+  rcases List.mem_append.mp hr with hr | hr
+  · simp only [List.mem_cons, List.not_mem_nil, or_false] at hr
+    rcases hr with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
+    · -- the document, covered by the read-past tail's entry
+      have h := hbnd (base + 64 * pipelineBlocks n.toNat, 32) (by simp [pipelineRegions])
+      rw [← hblocks] at h
+      omega
+    · exact hbnd (ep, 4 * (64 * pipelineBlocks n.toNat + 9))
+        (by simp [pipelineRegions, hblocks])
+    · exact hbnd (xp, 4 * (nxp0 + 64 * pipelineBlocks n.toNat + 8))
+        (by simp [pipelineRegions, hblocks])
+    · exact hbnd (dst, dstcap.toNat) (by simp [pipelineRegions])
+    · exact hbnd (ev, evcap.toNat) (by simp [pipelineRegions])
+    · exact hbnd (ndst, 8) (by simp [pipelineRegions])
+    · exact hbnd (nev, 8) (by simp [pipelineRegions])
+    · exact hbnd (err, 8) (by simp [pipelineRegions])
+    · exact hbnd (nk, 8) (by simp [pipelineRegions])
+    · exact hbnd (nxp, 8) (by simp [pipelineRegions])
+  · exact hworkBnd r hr
 
 /-- **The seed, at the call environment's table.**  Three control steps take
 the entry state to the loop's first iteration: the entry length test is false
@@ -8003,9 +8008,10 @@ names the table at the address the call environment reads, so the invariant's
 caller picks separately. -/
 theorem pipelineSeed {tab base : Nat} {s2 : Calls} {args : List Value} {mem : Mem}
     {next : Nat} (hst : pipelineStaging tab base args mem)
-    (hbelow : pipelineStagedBelow tab base args mem next) :
+    (hbelow : pipelineStagedBelow tab base args mem next)
+    (hwork : pipelineStage2Workspace tab base args mem next) :
     ∃ (e : State) (j : Nat), j ≤ 3 ∧
-      ((pipelineBlocks (pipelineArgLen args) = 0 ∧ pipelineLoopExit mem args e) ∨
+      ((pipelineBlocks (pipelineArgLen args) = 0 ∧ pipelineLoopExit mem args tab e) ∨
         pipelineLoopInv mem args base tab (pipelineBlocks (pipelineArgLen args))
           (pipelineBlocks (pipelineArgLen args)) e) ∧
       ∀ k, runFuel (pipelineCalls tab base s2) (j + k) pipelineBody
@@ -8017,6 +8023,10 @@ theorem pipelineSeed {tab base : Nat} {s2 : Calls} {args : List Value} {mem : Me
     hev, hevcap, hndst, hnev, hroomk, hroomxn, hblk, harm, hreads, hdisj, _hbLt,
     _hepLt⟩ := hst
   subst hargs
+  -- the workspace's cursor bound, at the caller's own next
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, -, -, -,
+    hwwm, -, -⟩ :=
+    hwork
   -- the block count, as the staging's successor
   have hNpos : 0 < pipelineBlocks bs.length := by
     simp only [pipelineBlocks]
@@ -8120,7 +8130,7 @@ theorem pipelineSeed {tab base : Nat} {s2 : Calls} {args : List Value} {mem : Me
       rw [hnextE3]
       exact seedCarried_caps (a := .b8Gate) rfl
         (hbelow nxp0 hnxp0lt (by simpa only [pipelineNxpSlot] using hnxp))
-        hblocks (by rw [hn, hb]; exact hle)
+        hwwm hblocks (by rw [hn, hb]; exact hle)
     have henv3' : e3.env = seedIn2 base sc mk entw ep nk xp nxp xcarry dst ndst ev
         nev err n epcap xpcap dstcap evcap sel 0 :=
       henv3.trans henv2
@@ -8185,7 +8195,7 @@ theorem pipelineSeed {tab base : Nat} {s2 : Calls} {args : List Value} {mem : Me
       rw [hnextE3]
       exact seedCarried_caps (a := .pos8Gate) rfl
         (hbelow nxp0 hnxp0lt (by simpa only [pipelineNxpSlot] using hnxp))
-        hblocks (by rw [hn, hb]; exact hle)
+        hwwm hblocks (by rw [hn, hb]; exact hle)
     have henv3' : e3.env = seedIn2 base sc mk entw ep nk xp nxp xcarry dst ndst ev
         nev err n epcap xpcap dstcap evcap sel 0 :=
       henv3.trans henv2
