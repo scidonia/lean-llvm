@@ -2429,10 +2429,363 @@ theorem containerOpen_depth_one_stacks {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
       exact hh.inv'.regs ("%nep", .int 64 (BitVec.ofNat 64 G.nep))
         (by simp [walkStaticRegs])
 
+/-! ### The two refusals the head switch has and no arm reached
+
+Two states the switch sends to a refusal the census had no arm for.  Both are the
+delimitation boundary's own, which is why they are here beside `closeWithOpen_at` and
+`containerOpen_depth_one_stacks`:
+
+* **`}` at depth zero.**  `LeafBlock15`'s equality is true at `125`, so the run enters
+  `if.then53.i` through `NodeBlock17 → LeafBlock15` and the depth test sends it to
+  `if.then56.i` — the *same* two blocks the closing bracket's refusal reaches, but not
+  through the bracket's pivots: `NodeBlock11`'s `%Pivot12` is `slt %8, 93` and
+  `LeafBlock9`'s `%SwitchLeaf10` is `eq %8, 93`, while this route reads `NodeBlock17`'s
+  `%Pivot18` (`slt %8, 125`) and `LeafBlock15`'s `%SwitchLeaf16` (`eq %8, 125`).  The
+  count is the bracket refusal's — six links — and the offset store is the same one, so
+  the word is `refuseSegment_word_of_store`'s at the block the run actually took.
+* **A container opener at depth `520`.**  `if.end.i`'s `ugt %sp.i.0248, 519` is taken at
+  the stack's staged extent, so the run leaves the opener route for `if.then21.i`'s
+  offset store and the copy.  `WalkInv.depth_cap` bounds the depth by `520` and nothing
+  below it, so `C.sp = 520` is the arm's premise rather than a consequence; the three
+  blocks are `if.then.i`'s call, `if.end.i`'s taken bite and `if.then21.i`'s store.
+
+Both are refusals of the delimitation, and both carry the copy's own word: the store is
+at `%e + 8` and reads back at it, exactly as the other three refusal stores do. -/
+
+/-- **`if.end.i`'s guard is taken at `520`.**  The test is `ugt %sp.i.0248, 519`, and a
+depth at the stacks' staged extent is the one value it admits. -/
+theorem openUgt519_one {sp : Nat} (h : sp = 520) :
+    evalICmp .ugt (BitVec.ofNat 32 sp) (BitVec.ofNat 32 519) = 1 := by
+  subst h
+  decide
+
+/-- `if.end.i`'s target on the cap: the same bite as `openS₆From`, taken. -/
+abbrev openCapS₆ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s₅ : State) : State :=
+  { s₅.bind "%cmp19.i"
+      (.int 1 (evalICmp .ugt (BitVec.ofNat 32 C.sp) (BitVec.ofNat 32 519))) with
+    pc := "if.then21.i", pre := some s₅.pc }
+
+/-- `if.then21.i`'s target: the refusal's offset store at `%e + 8`, at the copy. -/
+def openCapS₇ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (j : Nat) (s₆ : State) : State :=
+  { { s₆ with
+      env := ("%off1.i.i38", .ptr (C.stage.e + 8)) :: s₆.env
+      mem := writeBytes s₆.mem (C.stage.e + 8) (wordBytes 8 j) } with
+    pc := "if.then", pre := some s₆.pc }
+
+/-- **`if.then21.i`'s link, at its named target.**  `WalkLink.if_then21_i` is the store's
+instance; the state is `openCapS₇`'s, which is the same function read at the block's own
+cells. -/
+theorem openCapStoreLink {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hblock : C.block = "if.then21.i")
+    {j : Nat} (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
+    (he : lookupName s.env "%e" = some (.ptr C.stage.e))
+    (hj : j ≤ G.n) (hj64 : j < 2 ^ 64) :
+    WalkLink calls G C s { C with block := "if.then", eoff := j, refusal := true }
+      (openCapS₇ C j s) := by
+  obtain ⟨s', hlink⟩ := WalkLink.if_then21_i G C s hInv hblock hv he hj hj64
+  have hstep : step calls stage2Body s =
+      .jump (openCapS₇ C j s) :=
+    walkRefusalStoreStep (calls := calls) (s := s) (b := walkIf_then21_i)
+      (off := "%off1.i.i38") (v := "%idxprom.i") (dest := "if.then") (e := C.stage.e)
+      (j := j) (by decide) (by rw [hInv.pc_eq, hblock]; exact walkIf_then21_i_find) rfl rfl
+      he (by simpa only [evalOperand] using hv) hj64
+  have hs' : s' = openCapS₇ C j s := Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
+  rw [hs'] at hlink
+  exact hlink
+
+/-- **A name the open bracket's pivots do not bind reads through them.** -/
+theorem openBrS₄_other (s : State) (n : String)
+    (h1 : "%Pivot22" ≠ n) (h2 : "%Pivot20" ≠ n) (h3 : "%Pivot12" ≠ n)
+    (h4 : "%SwitchLeaf8" ≠ n) :
+    lookupName (openBrS₄ s).env n = lookupName s.env n := by
+  simp only [openBrS₄, openBrS₃, openBrS₂, openBrS₁, State.bind,
+    lookupName_cons_ne _ _ h1, lookupName_cons_ne _ _ h2, lookupName_cons_ne _ _ h3,
+    lookupName_cons_ne _ _ h4]
+
+/-- **A name the open brace's pivots do not bind reads through them.** -/
+theorem openBcS₄_other (s : State) (n : String)
+    (h1 : "%Pivot22" ≠ n) (h2 : "%Pivot20" ≠ n) (h3 : "%Pivot18" ≠ n)
+    (h4 : "%SwitchLeaf14" ≠ n) :
+    lookupName (openBcS₄ s).env n = lookupName s.env n := by
+  simp only [openBcS₄, openBcS₃, openBcS₂, openBcS₁, State.bind,
+    lookupName_cons_ne _ _ h1, lookupName_cons_ne _ _ h2, lookupName_cons_ne _ _ h3,
+    lookupName_cons_ne _ _ h4]
+
+/-- **A name `if.then.i` does not bind reads through it**: the call's three cells are the
+block's own. -/
+theorem openS₅_other (s : State) (r : CallOutcome) (n : String)
+    (h1 : "%tobool15.not.i" ≠ n) (h2 : "%call14.i" ≠ n) (h3 : "%9" ≠ n) :
+    lookupName (openS₅ s r).env n = lookupName s.env n := by
+  simp only [openS₅, stateAt, cells, lookupName_cons_ne _ _ h1,
+    lookupName_cons_ne _ _ h2, lookupName_cons_ne _ _ h3]
+
+/-- **A name the depth guard does not bind reads through it.** -/
+theorem openCapS₆_other {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s₅ : State)
+    (n : String) (h : "%cmp19.i" ≠ n) :
+    lookupName (openCapS₆ C s₅).env n = lookupName s₅.env n := by
+  simp only [State.bind, lookupName_cons_ne _ _ h]
+
+/-- **The cap's three blocks**, at an arbitrary `if.then.i` state: the value-position call
+(the answer `1` leaves for `if.end.i`), the `ugt` bite taken at `520`, and the offset
+store to the copy.  The word the copy loads is the store's, at the position the store
+wrote. -/
+theorem openCapTailSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (hInv : WalkInv G C s) (hblock : C.block = "if.then.i")
+    (hsp520 : C.sp = 520)
+    (hrd : readBytes s.mem (G.next0 + 8) 4 =
+      some (natToBytes (BitVec.ofNat 32 0).toNat 4))
+    (hpreV : s2ValuePosPre
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
+    (r : CallOutcome)
+    (hcall : stage2Calls stage2SubCalls "s2_value_pos"
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r)
+    (hret : r.ret = .int 32 (BitVec.ofNat 32 1))
+    {j : Nat} (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
+    (he : lookupName s.env "%e" = some (.ptr C.stage.e))
+    (hj : j ≤ G.n) (hj64 : j < 2 ^ 64) :
+    ∃ (Cd : WalkCarry G) (sd : State),
+      WalkSegment (stage2Calls stage2SubCalls) G C s Cd sd 3 ∧
+      Cd.block = "if.then" ∧ Cd.eoff = j ∧ Cd.stage = C.stage ∧
+      readBytes sd.mem (C.stage.e + 8) 8 = some (wordBytes 8 j) := by
+  -- the call's answer is `1`, so the branch's bit is clear and the edge is `if.end.i`
+  have hroot : lookupName s.env "%root_done.i" = some (.ptr (G.next0 + 8)) :=
+    hInv.regs ("%root_done.i", .ptr (G.next0 + 8)) (by simp [walkStaticRegs])
+  have hpc₅ : s.pc = "if.then.i" := by rw [hInv.pc_eq, hblock]
+  have hstep₅ : step (stage2Calls stage2SubCalls) stage2Body s = .jump (openS₅ s r) :=
+    openIfThenI_term C s hpc₅ hroot hrd hInv.depth_reg
+      (hInv.ptrs.2.2.2.1) (hInv.ptrs.2.2.2.2.1) hcall hret
+  have hx : ∀ r', stage2Calls stage2SubCalls "s2_value_pos"
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r' →
+      r'.ret = .int 32 (BitVec.ofNat 32 1) := by
+    intro r' h'
+    rw [Option.some.inj (h'.symm.trans hcall)]
+    exact hret
+  obtain ⟨s₅, hl₅⟩ :=
+    WalkLink.if_then_i G C s hInv hblock hroot hrd hpreV hx
+  have hbit₅ : (if evalICmp .eq (BitVec.ofNat 32 1) (BitVec.ofNat 32 0) = 1 then
+      "if.then16.i" else "if.end.i") = "if.end.i" := by
+    rw [show evalICmp .eq (BitVec.ofNat 32 1) (BitVec.ofNat 32 0) = (0 : BitVec 1) from
+      by decide]
+    rfl
+  rw [hbit₅] at hl₅
+  have hs₅ : s₅ = openS₅ s r := Ctrl.jump.inj (hl₅.step.symm.trans hstep₅)
+  rw [hs₅] at hl₅
+  -- the depth guard, taken at `520`
+  have hstep₅' : evalOperand (openS₅ s r) (.reg "%sp.i.0248") =
+      some (.int 32 (BitVec.ofNat 32 C.sp)) := by
+    simp only [evalOperand]
+    exact hl₅.inv'.depth_reg
+  obtain ⟨s₆, hl₆, hs₆⟩ :=
+    WalkLink.if_end_i_at (calls := stage2Calls stage2SubCalls) G (openC₅ C) (openS₅ s r)
+      hl₅.inv' rfl hstep₅'
+  have hbit₆ : evalICmp .ugt (BitVec.ofNat 32 C.sp) (BitVec.ofNat 32 519) = 1 :=
+    openUgt519_one hsp520
+  have hb₆ : (if evalICmp .ugt (BitVec.ofNat 32 C.sp) (BitVec.ofNat 32 519) = 1 then
+      "if.then21.i" else "if.end24.i") = "if.then21.i" := by
+    rw [hbit₆]
+    exact ite_eq_left rfl
+  have hs₆' : s₆ = openCapS₆ C (openS₅ s r) := by
+    rw [hs₆, hb₆]
+  rw [hs₆'] at hl₆
+  rw [hb₆] at hl₆
+  -- the offset store, at the position the entry carries
+  have hv₆ : evalOperand (openCapS₆ C (openS₅ s r)) (.reg "%idxprom.i") =
+      some (.int 64 (BitVec.ofNat 64 j)) := by
+    simp only [evalOperand, openCapS₆_other C (openS₅ s r) "%idxprom.i" (by decide),
+      openS₅_other s r "%idxprom.i" (by decide) (by decide) (by decide)]
+    exact hv
+  have he₆ : lookupName (openCapS₆ C (openS₅ s r)).env "%e" = some (.ptr C.stage.e) := by
+    rw [openCapS₆_other C (openS₅ s r) "%e" (by decide),
+      openS₅_other s r "%e" (by decide) (by decide) (by decide)]
+    exact he
+  have hl₇ : WalkLink (stage2Calls stage2SubCalls) G
+      { openC₅ C with block := "if.then21.i" } (openCapS₆ C (openS₅ s r))
+      { { openC₅ C with block := "if.then21.i" } with
+        block := "if.then", eoff := j, refusal := true }
+      (openCapS₇ { openC₅ C with block := "if.then21.i" } j (openCapS₆ C (openS₅ s r))) :=
+    openCapStoreLink (calls := stage2Calls stage2SubCalls) G
+      { openC₅ C with block := "if.then21.i" } (openCapS₆ C (openS₅ s r)) hl₆.inv' rfl
+      hv₆ he₆ hj hj64
+  refine ⟨{ { openC₅ C with block := "if.then21.i" } with
+      block := "if.then", eoff := j, refusal := true },
+    openCapS₇ { openC₅ C with block := "if.then21.i" } j
+      (openCapS₆ C (openS₅ s r)), ?_, rfl, rfl, rfl, ?_⟩
+  · exact Seg.measure (Seg.tail hl₅ (Seg.tail hl₆ (Seg.tail hl₇ (Seg.nil hl₇.inv'))))
+  · simpa only [openCapS₇] using
+      refuseSegment_word_of_store (m := (openCapS₆ C (openS₅ s r)).mem) (e := C.stage.e)
+        (v := j)
+
+/-- **A container opener at depth `520`**: the head's four pivots to `if.then.i`, then the
+cap's three blocks to the copy.  Seven links, priced at `7 + 2 ≤ 32`, and the store's word
+read at the copy's own load. -/
+theorem containerOpenCap_at {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (hInv : WalkInv G C s) (hhead : C.block = walkLoopHead)
+    {b : BitVec 8} (h8 : evalOperand s (.reg "%8") = some (.int 8 b))
+    (hopen : b = BitVec.ofNat 8 91 ∨ b = BitVec.ofNat 8 123)
+    (hsp520 : C.sp = 520)
+    (hrd : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes 0 4))
+    (hpreV : s2ValuePosPre
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
+    (r : CallOutcome)
+    (hcall : stage2Calls stage2SubCalls "s2_value_pos"
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r)
+    (hret : r.ret = .int 32 (BitVec.ofNat 32 1))
+    {j : Nat} (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
+    (he : lookupName s.env "%e" = some (.ptr C.stage.e))
+    (hj : j ≤ G.n) (hj64 : j < 2 ^ 64) :
+    WalkRefuseAt (stage2Calls stage2SubCalls) G C s := by
+  have hklt : C.k < G.nep :=
+    WalkInv.head_lt hInv (by simpa only [walkLoopHead] using hhead)
+  have h8' : lookupName s.env "%8" = some (.int 8 b) := by
+    simpa only [evalOperand] using h8
+  have hbe0 : b = BitVec.ofNat 8 (entryByte G C.k).toNat := by
+    have h := Option.some.inj (h8'.symm.trans hInv.iter.reg8)
+    simpa using h
+  have hrd' : readBytes (openBrS₄ s).mem (G.next0 + 8) 4 =
+      some (natToBytes (BitVec.ofNat 32 0).toNat 4) := by
+    rw [openBrS₄_mem, openDepthZero_toNat]
+    exact hrd
+  rcases hopen with hb | hb
+  · have hbe : BitVec.ofNat 8 (entryByte G C.k).toNat = BitVec.ofNat 8 91 :=
+      hbe0.symm.trans hb
+    have hh := openBracketHead G C s hInv hhead (by rw [← hb]; exact h8) hbe
+    have hv' : evalOperand (openBrS₄ s) (.reg "%idxprom.i") =
+        some (.int 64 (BitVec.ofNat 64 j)) := by
+      simp only [evalOperand, openBrS₄_other s "%idxprom.i" (by decide) (by decide)
+        (by decide) (by decide)]
+      exact hv
+    have he' : lookupName (openBrS₄ s).env "%e" = some (.ptr C.stage.e) := by
+      rw [openBrS₄_other s "%e" (by decide) (by decide) (by decide) (by decide)]
+      exact he
+    obtain ⟨Cd, sd, hseg, hblk, heoff, hstage, hword⟩ :=
+      openCapTailSeg G (openHeadC C) (openBrS₄ s) hh.inv' rfl
+        (by simpa only [openHeadC] using hsp520) hrd'
+        (by rw [openBrS₄_mem, openBrS₄_next]; exact hpreV) r hcall hret hv' he' hj hj64
+    refine ⟨Cd, sd, 7, ⟨hh.trans hseg, hblk, ?_⟩, ?_,
+      refusePrice_of_le G C (p := 7) (by omega) hklt⟩
+    · exact ⟨j, hj, by rw [hstage]; exact hword⟩
+    · rw [heoff]
+      exact hj
+  · have hbe : BitVec.ofNat 8 (entryByte G C.k).toNat = BitVec.ofNat 8 123 :=
+      hbe0.symm.trans hb
+    have hh := openBraceHead G C s hInv hhead (by rw [← hb]; exact h8) hbe
+    have hv' : evalOperand (openBcS₄ s) (.reg "%idxprom.i") =
+        some (.int 64 (BitVec.ofNat 64 j)) := by
+      simp only [evalOperand, openBcS₄_other s "%idxprom.i" (by decide) (by decide)
+        (by decide) (by decide)]
+      exact hv
+    have he' : lookupName (openBcS₄ s).env "%e" = some (.ptr C.stage.e) := by
+      rw [openBcS₄_other s "%e" (by decide) (by decide) (by decide) (by decide)]
+      exact he
+    obtain ⟨Cd, sd, hseg, hblk, heoff, hstage, hword⟩ :=
+      openCapTailSeg G (openHeadC C) (openBcS₄ s) hh.inv' rfl
+        (by simpa only [openHeadC] using hsp520)
+        (by rw [openBcS₄_mem, openDepthZero_toNat]; exact hrd)
+        (by rw [openBcS₄_mem, openBcS₄_next]; exact hpreV) r hcall hret hv' he' hj hj64
+    refine ⟨Cd, sd, 7, ⟨hh.trans hseg, hblk, ?_⟩, ?_,
+      refusePrice_of_le G C (p := 7) (by omega) hklt⟩
+    · exact ⟨j, hj, by rw [hstage]; exact hword⟩
+    · rw [heoff]
+      exact hj
+
+/-- **`}` at depth zero with a positive count**: the head's four pivots reach
+`if.then53.i` through `NodeBlock17` and `LeafBlock15`, and the depth test's true arm
+stores the entry's position at `%e + 8` before the copy.  Six links, the closing
+bracket's count at different pivots. -/
+theorem closeBraceZero_at {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (hInv : WalkInv G C s) (hhead : C.block = walkLoopHead)
+    (h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 125)))
+    (hsp : C.sp = 0)
+    {j : Nat} (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
+    (he : lookupName s.env "%e" = some (.ptr C.stage.e))
+    (hj : j ≤ G.n) (hj64 : j < 2 ^ 64) (hk : C.k < G.nep) :
+    WalkRefuseAt (stage2Calls stage2SubCalls) G C s := by
+  -- the byte, at each pivot's own state
+  have h8₁ : evalOperand (closeBcS₁ s) (.reg "%8") = some (.int 8 (BitVec.ofNat 8 125)) := by
+    simpa only [closeBcS₁, evalOperand, State.bind,
+      lookupName_cons_ne (k := "%Pivot22") (n := "%8") _ _ (by decide)] using h8
+  have h8₂ : evalOperand (closeBcS₂ (closeBcS₁ s)) (.reg "%8") =
+      some (.int 8 (BitVec.ofNat 8 125)) := by
+    simpa only [closeBcS₂, closeBcS₁, evalOperand, State.bind,
+      lookupName_cons_ne (k := "%Pivot20") (n := "%8") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot22") (n := "%8") _ _ (by decide)] using h8
+  have h8₃ : evalOperand (closeBcS₃ (closeBcS₂ (closeBcS₁ s))) (.reg "%8") =
+      some (.int 8 (BitVec.ofNat 8 125)) := by
+    simpa only [closeBcS₃, closeBcS₂, closeBcS₁, evalOperand, State.bind,
+      lookupName_cons_ne (k := "%Pivot18") (n := "%8") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot20") (n := "%8") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot22") (n := "%8") _ _ (by decide)] using h8
+  -- the position and the refusal record, at the depth test's own source
+  have hv₅ : evalOperand (refuseS₅ (closeBcS₄ (closeBcS₃ (closeBcS₂ (closeBcS₁ s)))))
+      (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)) := by
+    simpa only [refuseS₅, closeBcS₄, closeBcS₃, closeBcS₂, closeBcS₁, evalOperand,
+      State.bind,
+      lookupName_cons_ne (k := "%cmp54.i") (n := "%idxprom.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%SwitchLeaf16") (n := "%idxprom.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot18") (n := "%idxprom.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot20") (n := "%idxprom.i") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot22") (n := "%idxprom.i") _ _ (by decide)] using hv
+  have he₅ : lookupName
+      (refuseS₅ (closeBcS₄ (closeBcS₃ (closeBcS₂ (closeBcS₁ s))))).env "%e" =
+      some (.ptr C.stage.e) := by
+    simpa only [refuseS₅, closeBcS₄, closeBcS₃, closeBcS₂, closeBcS₁, State.bind,
+      lookupName_cons_ne (k := "%cmp54.i") (n := "%e") _ _ (by decide),
+      lookupName_cons_ne (k := "%SwitchLeaf16") (n := "%e") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot18") (n := "%e") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot20") (n := "%e") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot22") (n := "%e") _ _ (by decide)] using he
+  -- the six links, each at the state the previous one names
+  have L₁ : WalkLink (stage2Calls stage2SubCalls) G C s
+      { C with block := "NodeBlock19" } (closeBcS₁ s) :=
+    closeBcStep₁ G C s hInv hhead h8
+  have L₂ : WalkLink (stage2Calls stage2SubCalls) G { C with block := "NodeBlock19" }
+      (closeBcS₁ s) { C with block := "NodeBlock17" } (closeBcS₂ (closeBcS₁ s)) :=
+    closeBcStep₂ G { C with block := "NodeBlock19" } (closeBcS₁ s) L₁.inv' rfl h8₁
+  have L₃ : WalkLink (stage2Calls stage2SubCalls) G { C with block := "NodeBlock17" }
+      (closeBcS₂ (closeBcS₁ s)) { C with block := "LeafBlock15" }
+      (closeBcS₃ (closeBcS₂ (closeBcS₁ s))) :=
+    closeBcStep₃ G { C with block := "NodeBlock17" } (closeBcS₂ (closeBcS₁ s)) L₂.inv' rfl h8₂
+  have L₄ : WalkLink (stage2Calls stage2SubCalls) G { C with block := "LeafBlock15" }
+      (closeBcS₃ (closeBcS₂ (closeBcS₁ s))) (closeC₁ C)
+      (closeBcS₄ (closeBcS₃ (closeBcS₂ (closeBcS₁ s)))) :=
+    closeBcStep₄ G { C with block := "LeafBlock15" }
+      (closeBcS₃ (closeBcS₂ (closeBcS₁ s))) L₃.inv' rfl h8₃
+  have L₅ : WalkLink (stage2Calls stage2SubCalls) G (closeC₁ C)
+      (closeBcS₄ (closeBcS₃ (closeBcS₂ (closeBcS₁ s))))
+      { closeC₁ C with block := "if.then56.i" }
+      (refuseS₅ (closeBcS₄ (closeBcS₃ (closeBcS₂ (closeBcS₁ s))))) :=
+    refuseStep₅ G (closeC₁ C)
+      (closeBcS₄ (closeBcS₃ (closeBcS₂ (closeBcS₁ s)))) L₄.inv' rfl hsp
+  have L₆ : WalkLink (stage2Calls stage2SubCalls) G { closeC₁ C with block := "if.then56.i" }
+      (refuseS₅ (closeBcS₄ (closeBcS₃ (closeBcS₂ (closeBcS₁ s)))))
+      (closeCR C j) (refuseS₆ C j
+        (refuseS₅ (closeBcS₄ (closeBcS₃ (closeBcS₂ (closeBcS₁ s)))))) :=
+    refuseStep₆ G { closeC₁ C with block := "if.then56.i" }
+      (refuseS₅ (closeBcS₄ (closeBcS₃ (closeBcS₂ (closeBcS₁ s))))) L₅.inv' rfl hv₅ he₅ hj hj64
+  have hseg : WalkSegment (stage2Calls stage2SubCalls) G C s (closeCR C j)
+      (refuseS₆ C j (refuseS₅ (closeBcS₄ (closeBcS₃ (closeBcS₂ (closeBcS₁ s)))))) 6 :=
+    Seg.measure (Seg.tail L₁ (Seg.tail L₂ (Seg.tail L₃ (Seg.tail L₄
+      (Seg.tail L₅ (Seg.tail L₆ (Seg.nil L₆.inv')))))))
+  exact closeRefusePkg G C s hseg
+    (by
+      simpa only [refuseS₆] using
+        refuseSegment_word_of_store (m := (refuseS₅ (closeBcS₄ (closeBcS₃ (closeBcS₂
+          (closeBcS₁ s))))).mem) (e := C.stage.e) (v := j))
+    hj hk (by omega)
+
 /-! ### The instrument -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.closeWithOpen_at
 #print axioms LeanLLVM.Refinement.WalkScope.containerOpen_depth_one_stacks
+#print axioms LeanLLVM.Refinement.WalkScope.openCapTailSeg
+#print axioms LeanLLVM.Refinement.WalkScope.openCapStoreLink
+#print axioms LeanLLVM.Refinement.WalkScope.containerOpenCap_at
+#print axioms LeanLLVM.Refinement.WalkScope.closeBraceZero_at
 
 end WalkScope
 end LeanLLVM.Refinement

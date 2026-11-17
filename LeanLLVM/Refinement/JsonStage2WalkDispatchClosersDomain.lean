@@ -774,6 +774,42 @@ theorem depthZero_no_closeBraceAbove {m0 : Mem} (G : WalkGeom m0) (S : WalkStage
     simpa only [evalOperand] using hreg
   · simp [walkSeed]
 
+/-- **`{}` reaches the closing brace's byte at depth one**, so the *zero-depth* arm's
+premise is refuted at the same byte the document `}` takes it with.  The pair is the
+converse of `depthZero_no_closeBraceAbove` at the opposite document: the byte's arm is
+`.closeWithOpen` there and `.closeBraceZero` at the seed, and the two together are what
+makes the depth split a claim about the state's depth rather than about the byte. -/
+theorem depthOne_no_closeBraceZero {args : List Value} {m0 : Mem} {next : Nat}
+    {G : WalkGeom m0} {S : WalkStage G}
+    (hargs : args = [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
+      .int 64 (BitVec.ofNat 64 G.nep), .ptr G.xp, .int 64 (BitVec.ofNat 64 G.nxp),
+      .ptr G.dst, .int 64 (BitVec.ofNat 64 G.dstcap), .ptr G.ndst, .ptr G.ev,
+      .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err])
+    (hnext : G.next0 = next) (h : DelimiterLastDocument G (123 : UInt8) 125)
+    (hrd : readBytes (openerHead G S args next).mem (G.next0 + 8) 4 =
+      some (natToBytes 0 4))
+    (hpreV : s2ValuePosPre
+      [.int 32 (BitVec.ofNat 32 (walkSeed G S).sp), .int 32 (BitVec.ofNat 32 0),
+       .ptr (walkSeed G S).stage.ctype, .ptr (walkSeed G S).stage.cst]
+      (openerHead G S args next).mem (openerHead G S args next).next)
+    (r : CallOutcome)
+    (hcall : stage2Calls stage2SubCalls "s2_value_pos"
+      [.int 32 (BitVec.ofNat 32 (walkSeed G S).sp), .int 32 (BitVec.ofNat 32 0),
+       .ptr (walkSeed G S).stage.ctype, .ptr (walkSeed G S).stage.cst]
+      (openerHead G S args next).mem (openerHead G S args next).next = some r)
+    (hret : r.ret = .int 32 (BitVec.ofNat 32 1)) :
+    ∃ (C' : WalkCarry G) (s' : State),
+      WalkInv G C' s' ∧ C'.sp ≠ 0 ∧
+        evalOperand s' (.reg "%8") = some (.int 8 (BitVec.ofNat 8 125)) := by
+  obtain ⟨C', s', hInv', -, hsp1, -, h8', -, -⟩ :=
+    depthOne_stacks_last_reachable hargs hnext h (Or.inr rfl) hrd hpreV r hcall hret
+  refine ⟨C', s', hInv', ?_, ?_⟩
+  · rw [hsp1]
+    decide
+  · have htoNat : ((125 : UInt8)).toNat = 125 := by decide
+    rw [htoNat] at h8'
+    exact h8'
+
 /-! ### The instrument -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.depthOne_stacks_last_reachable
@@ -792,6 +828,7 @@ theorem depthZero_no_closeBraceAbove {m0 : Mem} (G : WalkGeom m0) (S : WalkStage
 #print axioms LeanLLVM.Refinement.WalkScope.braceMerge_route_cont_at_document
 #print axioms LeanLLVM.Refinement.WalkScope.depthZero_no_closeBracketAbove
 #print axioms LeanLLVM.Refinement.WalkScope.depthZero_no_closeBraceAbove
+#print axioms LeanLLVM.Refinement.WalkScope.depthOne_no_closeBraceZero
 
 end WalkScope
 end LeanLLVM.Refinement

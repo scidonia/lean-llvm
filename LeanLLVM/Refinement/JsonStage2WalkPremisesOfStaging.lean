@@ -264,19 +264,19 @@ evidence carries a tail `WalkSegment` and the scan's traversal hypotheses that a
 supplies at a reachable state rather than `WalkInv` consequences
 (`JsonStage2WalkHcontFactsOfStaging`'s map).
 
-**Two head states the arm family does not reach, so the supply is not the whole story.**
-`JsonStage2WalkDispatchResidual` records both, with the emitted path.  `}` (`125`) at
-depth zero takes `LeafBlock15 → if.then53.i → if.then56.i` and its refusal store, and the
-constructors whose class bits admit the byte — `.classC` and `.run` — each demand a head
-segment to `if.else387.i`, the default arm's path; `.closingZero`/`.closeBracketZero` are
-pinned to `]` and `.closeWithOpen` requires a positive depth.  A container opener at depth
-`520` takes `if.then.i`'s `ugt` arm to `if.then21.i`, and `.containerOpen` carries
-`C.sp ≤ 519` as a premise.  So at those two kinds of state no producer of `hlast` or of
-`HcontArm` can be written, however much a caller supplies: the enum needs a constructor
-there first.  Both inputs are admitted (`"}"`, and 520 nested `[`), so this is a gap in the
-dispatch's census rather than a condition of the domain.  What the rest of the bundle still
-takes, per class, is `JsonStage2WalkDispatchResidual`'s table; the classes whose rows are
-all derived are produced there at every invariant state. -/
+**The two depth states the census once had no arm for are armed.**  `}` (`125`) at depth
+zero takes `LeafBlock15 → if.then53.i → if.then56.i` and its refusal store — the bracket's
+two blocks at the brace's pivots — and a container opener at depth `520` takes
+`if.then.i`'s call and `if.end.i`'s `ugt` arm to `if.then21.i`.  Both now have their own
+constructors at both levels (`.closeBraceZero`, `.openAtCap`), their own producers
+(`hcontArm_closeBraceZero_of_staging`, `lastEntryArm_closeBraceZero_of_staging`,
+`hcontArm_openAtCap91_of_staging` … `lastEntryArm_openAtCap123_of_staging`) and their own
+counted, priced segments (`closeBraceZero_at`, `containerOpenCap_at`), so a producer of
+`hlast` or of `HcontArm` can be written at those states like at any other: the enum is no
+longer the obstruction there.  What the bundle still takes, per class, is
+`JsonStage2WalkDispatchResidual`'s table — the arm's payload — and the two arms' `520` is
+the invariant's own cap (`depth_cap`), so the depth is a state's rather than a document's.
+`JsonStage2WalkDispatchResidual` records what the holes were and what fills them. -/
 structure WalkLoopEnd {m0 : Mem} (G : WalkGeom m0) : Type where
   /-- **The last entry's arm**, at every head state the merge's test sends to the exit.
   It is the dispatch's evidence, not its conclusion: `WalkLoopEnd.dispatch` applies
@@ -692,7 +692,11 @@ The two bundles are the premises, one group each: the continuing entry's class
 `HcontArm.twoEntry`'s field.  The merge's two register cells are not among them: they are
 `WalkInv` clauses, and `mergeHeadCells` reads them at the head state.
 
-**The two bundles are not theorems, and neither is false.**  `WalkContinueFacts` is
+**The two bundles are not theorems, and neither is refuted.**  "Neither is false" is a
+claim about the *classes*, not about the bundles' totality: the census now has an arm for
+every state the invariant admits — `.closeBraceZero` and `.openAtCap` are the two depth
+cases it lacked, and `JsonStage2WalkDispatchResidual` records that history — so no admitted
+state is outside the enum and no arm is refuted by its own class.  `WalkContinueFacts` is
 class data — the class is the head byte's switch arm, read from the document in `G` and the
 head state's own `%8` — but each arm's evidence carries a tail `WalkSegment` and the scan's
 traversal hypotheses that are supplies at a reachable state, not invariant consequences;

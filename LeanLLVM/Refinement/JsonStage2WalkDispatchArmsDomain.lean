@@ -1,18 +1,21 @@
 /-
 The refusal arms' domain, at documents that take them.
 
-`LastEntryArm.commaZero`/`.colonZero` and `HcontArm.commaZero`/`.colonZero` are the
-comma and the colon at depth zero: the head switch selects `if.then127.i`/`if.then173.i`,
-the depth register is `0`, and the run stores the entry's position at `%e + 8` and reaches
-the refusal copy.  This module exhibits each arm at a **document**, so the classification
-is inhabited at an input rather than only shaped:
+`LastEntryArm.commaZero`/`.colonZero`/`.closeBraceZero` and `HcontArm.commaZero`/
+`.colonZero`/`.closeBraceZero` are the comma, the colon and the closing brace at depth
+zero: the head switch selects `if.then127.i`/`if.then173.i`/`if.then53.i` (the brace's
+through `NodeBlock17`), the depth register is `0`, and the run stores the entry's position
+at `%e + 8` and reaches the refusal copy.  This module exhibits each arm at a **document**,
+so the classification is inhabited at an input rather than only shaped:
 
 | arm | document | head byte | entries | level |
 |---|---|---|---|---|
 | `commaZero` | `,` | `44` | one | last entry |
 | `colonZero` | `:` | `58` | one | last entry |
+| `closeBraceZero` | `}` | `125` | one | last entry |
 | `commaZero` | `,0` | `44` | two | continuing |
 | `colonZero` | `:0` | `58` | two | continuing |
+| `closeBraceZero` | `}0` | `125` | two | continuing |
 
 The byte is read off the staged document (`WalkGeom.doc`, `WalkGeom.entries`,
 `entryByte`), and the state is the seed's own handoff (`walkSeedInvariant_geometry`).
@@ -30,11 +33,16 @@ document is a comma-then-scalar one, not a comma-comma one).
 The negative control beside each is `zeroByte_not_comma`'s: the document `0` is the arm's
 *complement* at the byte test — `48 ≠ 44` and `48 ≠ 58` — so the same detector finds the
 arm absent where the byte is a digit.  That is what makes the presence a claim about the
-byte rather than about the document being one long.
+byte rather than about the document being one long.  The brace's two documents have the
+same pair: `closeBraceByte_class_self` shows the detector finds `125` where it is present,
+and `digitByte_not_closeBraceZero` shows it does not find it at the digit or at the closing
+bracket's own `93`.  The brace's *depth* premise has its own refutation at the depth-one
+head, which is `ClosersDomain`'s `{}` instead: there the same byte is `.closeWithOpen`'s.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkPremisesOfStaging
 import LeanLLVM.Refinement.JsonStage2WalkSeedRun
 import LeanLLVM.Refinement.JsonStage2WalkDispatchZeroOfStaging
+import LeanLLVM.Refinement.JsonStage2WalkDispatchRefusalsOfStaging
 
 set_option autoImplicit false
 
@@ -260,6 +268,26 @@ def colonZero_cont_arm {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State
     HcontArm (stage2Calls stage2SubCalls) G (walkSeed G S) s :=
   hcontArm_colonZero_of_staging (walkSeed G S) s hInv (seed_class_two G S h) rfl
 
+/-! ### The two documents that take the brace's refusal
+
+`}` at depth zero is the state the census had no arm for, and these are the documents that
+reach it: `}` at the seed (the last entry's level, since the one-byte document has no entry
+left) and `}0` at the seed (the continuing level's guard).  Both are the *byte's* arms, so
+the wrapper supplies the class's byte test — read off the document, `seed_class`'s — and the
+seed's depth, `rfl`; the other five cells are the invariant's and the geometry's. -/
+
+/-- **The one-byte document `}` takes the last entry's brace-refusal arm.** -/
+def closeBraceZero_last_arm {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
+    (h : OneByteDocument G (125 : UInt8)) (hInv : WalkInv G (walkSeed G S) s) :
+    LastEntryArm (stage2Calls stage2SubCalls) G (walkSeed G S) s :=
+  lastEntryArm_closeBraceZero_of_staging (walkSeed G S) s hInv (seed_class G S h) rfl
+
+/-- **The two-entry document `}0` takes the continuing entry's brace-refusal arm.** -/
+def closeBraceZero_cont_arm {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
+    (h : TwoEntryHeadDocument G (125 : UInt8)) (hInv : WalkInv G (walkSeed G S) s) :
+    HcontArm (stage2Calls stage2SubCalls) G (walkSeed G S) s :=
+  hcontArm_closeBraceZero_of_staging (walkSeed G S) s hInv (seed_class_two G S h) rfl
+
 /-- **The dispatch, from the last entry's comma arm.**  The arm's own evidence carries the
 refusal's five fields, so `LastEntryArm.dispatch` returns the `refuse` alternative at the
 seeded head — the byte `44`'s outcome, read off the dispatch rather than off the switch. -/
@@ -351,6 +379,58 @@ theorem colonZero_cont_dispatch {args : List Value} {m0 : Mem} {next : Nat}
     (seededInv (S := S) hargs hnext hn) (walkSeed_block G S) hk
     (colonZero_cont_arm G S _ h (seededInv (S := S) hargs hnext hn))
 
+/-! ### The brace's two documents, dispatched
+
+The same shape as the comma's and the colon's: the arm's evidence is the producer's, and
+the level's guard is the document's count. -/
+
+/-- **The dispatch at the one-byte document `}`**, from the last entry's brace arm.  The
+byte is `125` and the depth the seed's zero, so the head the document's own entry leaves is
+the refusal's — six links from `walkLoopHead` at `NodeBlock17 → LeafBlock15`. -/
+theorem closeBraceZero_last_dispatch {args : List Value} {m0 : Mem} {next : Nat}
+    {G : WalkGeom m0} {S : WalkStage G}
+    (hargs : args = [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
+      .int 64 (BitVec.ofNat 64 G.nep), .ptr G.xp, .int 64 (BitVec.ofNat 64 G.nxp),
+      .ptr G.dst, .int 64 (BitVec.ofNat 64 G.dstcap), .ptr G.ndst, .ptr G.ev,
+      .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err])
+    (hnext : G.next0 = next) (h : OneByteDocument G (125 : UInt8)) :
+    WalkDispatchResult (stage2Calls stage2SubCalls) G (walkSeed G S)
+      (walkSeedFinalState G S
+        (EntryState stage2Body
+          (stage2Args args S.d S.c S.ctype S.cst S.tok S.s S.z S.e) m0 next)
+        (entryPos G 0) (entryByte G 0)) := by
+  have hn : 0 < G.nep := by rw [h.count]; decide
+  have hnot : ¬ ((walkSeed G S).k + 1 < G.nep) := by
+    rw [h.count]
+    show ¬ (0 + 1 < 1)
+    omega
+  exact LastEntryArm.dispatch
+    (seededInv (S := S) hargs hnext hn) (walkSeed_block G S) hnot
+    (closeBraceZero_last_arm G S _ h (seededInv (S := S) hargs hnext hn))
+
+/-- **The dispatch at the two-entry document `}0`**, from the continuing entry's brace
+arm: the guard is `0 + 1 < 2`, and the arm's depth premise is the seed's zero. -/
+theorem closeBraceZero_cont_dispatch {args : List Value} {m0 : Mem} {next : Nat}
+    {G : WalkGeom m0} {S : WalkStage G}
+    (hargs : args = [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
+      .int 64 (BitVec.ofNat 64 G.nep), .ptr G.xp, .int 64 (BitVec.ofNat 64 G.nxp),
+      .ptr G.dst, .int 64 (BitVec.ofNat 64 G.dstcap), .ptr G.ndst, .ptr G.ev,
+      .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err])
+    (hnext : G.next0 = next) (h : TwoEntryHeadDocument G (125 : UInt8)) :
+    WalkDispatchResult (stage2Calls stage2SubCalls) G (walkSeed G S)
+      (walkSeedFinalState G S
+        (EntryState stage2Body
+          (stage2Args args S.d S.c S.ctype S.cst S.tok S.s S.z S.e) m0 next)
+        (entryPos G 0) (entryByte G 0)) := by
+  have hn : 0 < G.nep := by rw [h.count]; decide
+  have hk : (walkSeed G S).k + 1 < G.nep := by
+    rw [h.count]
+    show 0 + 1 < 2
+    omega
+  exact HcontArm.dispatch
+    (seededInv (S := S) hargs hnext hn) (walkSeed_block G S) hk
+    (closeBraceZero_cont_arm G S _ h (seededInv (S := S) hargs hnext hn))
+
 /-! ### The negative control
 
 The same detector at a byte that is *not* the arm's: the document `0`'s byte is `48`, so
@@ -364,6 +444,21 @@ theorem digitByte_not_comma_colon :
       evalICmp .eq (BitVec.ofNat 8 48) (BitVec.ofNat 8 58) = 0 := by
   constructor <;> decide
 
+/-- **The brace's detector finds `125` where it is present, and not the digit or the
+bracket.**  The affirmative control for the detector the two documents above use, then the
+two bytes that are *not* the brace: the document `0`'s digit and the closing bracket's own
+`93`.  Without the first the two refusals below would prove only that some byte fails a
+test. -/
+theorem closeBraceByte_class_self :
+    evalICmp .eq (BitVec.ofNat 8 125) (BitVec.ofNat 8 125) = 1 :=
+  walkEvalICmp_eq_self _
+
+/-- **`48` and `93` are not the closing brace.** -/
+theorem digitByte_not_closeBraceZero :
+    evalICmp .eq (BitVec.ofNat 8 48) (BitVec.ofNat 8 125) = 0 ∧
+      evalICmp .eq (BitVec.ofNat 8 93) (BitVec.ofNat 8 125) = 0 := by
+  constructor <;> decide
+
 /-! ### The instrument -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.commaZero_last_arm
@@ -374,6 +469,12 @@ theorem digitByte_not_comma_colon :
 #print axioms LeanLLVM.Refinement.WalkScope.colonZero_last_dispatch
 #print axioms LeanLLVM.Refinement.WalkScope.commaZero_cont_dispatch
 #print axioms LeanLLVM.Refinement.WalkScope.colonZero_cont_dispatch
+#print axioms LeanLLVM.Refinement.WalkScope.closeBraceZero_last_arm
+#print axioms LeanLLVM.Refinement.WalkScope.closeBraceZero_cont_arm
+#print axioms LeanLLVM.Refinement.WalkScope.closeBraceZero_last_dispatch
+#print axioms LeanLLVM.Refinement.WalkScope.closeBraceZero_cont_dispatch
+#print axioms LeanLLVM.Refinement.WalkScope.closeBraceByte_class_self
+#print axioms LeanLLVM.Refinement.WalkScope.digitByte_not_closeBraceZero
 
 end WalkScope
 end LeanLLVM.Refinement

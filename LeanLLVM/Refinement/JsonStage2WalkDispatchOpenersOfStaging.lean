@@ -7,6 +7,17 @@ nine links (`containerOpenMerge_at`).  This module produces the arm at every sta
 carries the invariant, at both levels, so the `…Domain` wrappers stop building the
 constructor by hand out of a document's byte read.
 
+## The cap's arm, and the same two literals
+
+`HcontArm.openAtCap` and `LastEntryArm.openAtCap` are the same two bytes at the stacks'
+staged extent: `if.end.i`'s `ugt %sp.i.0248, 519` is taken at `520`, so the run is the
+head's four links, `if.then.i`'s call, the guard's true arm and `if.then21.i`'s offset
+store — seven links (`containerOpenCap_at`), priced at `7 + 2 ≤ 32`.  Its producers take
+`C.sp = 520` in place of `containerOpen`'s `C.sp ≤ 519` and derive the same cells: the
+byte's class test, its disjunction, `%idxprom.i`, `%e` and the two document bounds.  The
+two arms together are the emitted `ugt` test's two sides, so between them the openers'
+depths are covered and neither is the other's residue.
+
 ## The class, and the two literals
 
 The census class is one of two bytes, `91` and `123`, and each is an `eq` test on the
@@ -216,8 +227,198 @@ theorem walkDispatch_at_containerOpen123_last_of_staging {m0 : Mem} {G : WalkGeo
   LastEntryArm.dispatch hInv hblock hnot
     (lastEntryArm_containerOpen123_of_staging C s hInv hclass hsp519 hrd hpreV r hcall hret)
 
+/-! ### The cap's arm
+
+The same two bytes at the stacks' staged extent.  The push's guard is taken there, so the
+run is `if.then.i`'s call, `if.end.i`'s true arm and `if.then21.i`'s offset store — three
+blocks after the head's four — and the arm's premise is `C.sp = 520` in place of the
+`.containerOpen` route's `C.sp ≤ 519`.  The five cells the refusal reads are the
+invariant's: `%8` is `cont_reg8`, `%idxprom.i` is `idx_reg`, `%e` is a static name, and the
+two document bounds are the geometry's (`entryPos_le`, `entryPos_lt_64`), so a wrapper
+supplies the class's byte test, the depth, the root word and the call. -/
+
+/-- **The open bracket's cap arm on the continuing head, from the staging.** -/
+def hcontArm_openAtCap91_of_staging {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s)
+    (hclass : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 91) = 1)
+    (hsp520 : C.sp = 520)
+    (hrd : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes 0 4))
+    (hpreV : s2ValuePosPre
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
+    (r : CallOutcome)
+    (hcall : stage2Calls stage2SubCalls "s2_value_pos"
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r)
+    (hret : r.ret = .int 32 (BitVec.ofNat 32 1)) :
+    HcontArm (stage2Calls stage2SubCalls) G C s :=
+  .openAtCap (b := BitVec.ofNat 8 91) (j := entryPos G C.k)
+    (by
+      rw [← eq_bit_value hclass]
+      exact cont_reg8 hInv)
+    (Or.inl rfl) hsp520 hrd hpreV r hcall hret
+    (by simpa only [evalOperand] using hInv.idx_reg)
+    (hInv.regs ("%e", .ptr C.stage.e) (by simp [walkStaticRegs]))
+    (entryPos_le G C.k) (entryPos_lt_64 G C.k)
+
+/-- **The open brace's cap arm on the continuing head, from the staging.** -/
+def hcontArm_openAtCap123_of_staging {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s)
+    (hclass : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 123) = 1)
+    (hsp520 : C.sp = 520)
+    (hrd : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes 0 4))
+    (hpreV : s2ValuePosPre
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
+    (r : CallOutcome)
+    (hcall : stage2Calls stage2SubCalls "s2_value_pos"
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r)
+    (hret : r.ret = .int 32 (BitVec.ofNat 32 1)) :
+    HcontArm (stage2Calls stage2SubCalls) G C s :=
+  .openAtCap (b := BitVec.ofNat 8 123) (j := entryPos G C.k)
+    (by
+      rw [← eq_bit_value hclass]
+      exact cont_reg8 hInv)
+    (Or.inr rfl) hsp520 hrd hpreV r hcall hret
+    (by simpa only [evalOperand] using hInv.idx_reg)
+    (hInv.regs ("%e", .ptr C.stage.e) (by simp [walkStaticRegs]))
+    (entryPos_le G C.k) (entryPos_lt_64 G C.k)
+
+/-- **The open bracket's cap arm at the last entry, from the staging.** -/
+def lastEntryArm_openAtCap91_of_staging {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s)
+    (hclass : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 91) = 1)
+    (hsp520 : C.sp = 520)
+    (hrd : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes 0 4))
+    (hpreV : s2ValuePosPre
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
+    (r : CallOutcome)
+    (hcall : stage2Calls stage2SubCalls "s2_value_pos"
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r)
+    (hret : r.ret = .int 32 (BitVec.ofNat 32 1)) :
+    LastEntryArm (stage2Calls stage2SubCalls) G C s :=
+  .openAtCap (b := BitVec.ofNat 8 91) (j := entryPos G C.k)
+    (by
+      rw [← eq_bit_value hclass]
+      exact cont_reg8 hInv)
+    (Or.inl rfl) hsp520 hrd hpreV r hcall hret
+    (by simpa only [evalOperand] using hInv.idx_reg)
+    (hInv.regs ("%e", .ptr C.stage.e) (by simp [walkStaticRegs]))
+    (entryPos_le G C.k) (entryPos_lt_64 G C.k)
+
+/-- **The open brace's cap arm at the last entry, from the staging.** -/
+def lastEntryArm_openAtCap123_of_staging {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s)
+    (hclass : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 123) = 1)
+    (hsp520 : C.sp = 520)
+    (hrd : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes 0 4))
+    (hpreV : s2ValuePosPre
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
+    (r : CallOutcome)
+    (hcall : stage2Calls stage2SubCalls "s2_value_pos"
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r)
+    (hret : r.ret = .int 32 (BitVec.ofNat 32 1)) :
+    LastEntryArm (stage2Calls stage2SubCalls) G C s :=
+  .openAtCap (b := BitVec.ofNat 8 123) (j := entryPos G C.k)
+    (by
+      rw [← eq_bit_value hclass]
+      exact cont_reg8 hInv)
+    (Or.inr rfl) hsp520 hrd hpreV r hcall hret
+    (by simpa only [evalOperand] using hInv.idx_reg)
+    (hInv.regs ("%e", .ptr C.stage.e) (by simp [walkStaticRegs]))
+    (entryPos_le G C.k) (entryPos_lt_64 G C.k)
+
+/-- **The open bracket's cap dispatch on the continuing head, from the staging.** -/
+theorem walkDispatch_at_openAtCap91_of_staging {m0 : Mem} {G : WalkGeom m0}
+    {C : WalkCarry G} {s : State} (hInv : WalkInv G C s)
+    (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)
+    (hclass : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 91) = 1)
+    (hsp520 : C.sp = 520)
+    (hrd : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes 0 4))
+    (hpreV : s2ValuePosPre
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
+    (r : CallOutcome)
+    (hcall : stage2Calls stage2SubCalls "s2_value_pos"
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r)
+    (hret : r.ret = .int 32 (BitVec.ofNat 32 1)) :
+    WalkDispatchResult (stage2Calls stage2SubCalls) G C s :=
+  HcontArm.dispatch hInv hblock hk
+    (hcontArm_openAtCap91_of_staging C s hInv hclass hsp520 hrd hpreV r hcall hret)
+
+/-- **The open brace's cap dispatch on the continuing head, from the staging.** -/
+theorem walkDispatch_at_openAtCap123_of_staging {m0 : Mem} {G : WalkGeom m0}
+    {C : WalkCarry G} {s : State} (hInv : WalkInv G C s)
+    (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)
+    (hclass : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 123) = 1)
+    (hsp520 : C.sp = 520)
+    (hrd : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes 0 4))
+    (hpreV : s2ValuePosPre
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
+    (r : CallOutcome)
+    (hcall : stage2Calls stage2SubCalls "s2_value_pos"
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r)
+    (hret : r.ret = .int 32 (BitVec.ofNat 32 1)) :
+    WalkDispatchResult (stage2Calls stage2SubCalls) G C s :=
+  HcontArm.dispatch hInv hblock hk
+    (hcontArm_openAtCap123_of_staging C s hInv hclass hsp520 hrd hpreV r hcall hret)
+
+/-- **The open bracket's cap dispatch at the last entry, from the staging.** -/
+theorem walkDispatch_at_openAtCap91_last_of_staging {m0 : Mem} {G : WalkGeom m0}
+    {C : WalkCarry G} {s : State} (hInv : WalkInv G C s)
+    (hblock : C.block = walkLoopHead) (hnot : ¬ (C.k + 1 < G.nep))
+    (hclass : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 91) = 1)
+    (hsp520 : C.sp = 520)
+    (hrd : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes 0 4))
+    (hpreV : s2ValuePosPre
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
+    (r : CallOutcome)
+    (hcall : stage2Calls stage2SubCalls "s2_value_pos"
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r)
+    (hret : r.ret = .int 32 (BitVec.ofNat 32 1)) :
+    WalkDispatchResult (stage2Calls stage2SubCalls) G C s :=
+  LastEntryArm.dispatch hInv hblock hnot
+    (lastEntryArm_openAtCap91_of_staging C s hInv hclass hsp520 hrd hpreV r hcall hret)
+
+/-- **The open brace's cap dispatch at the last entry, from the staging.** -/
+theorem walkDispatch_at_openAtCap123_last_of_staging {m0 : Mem} {G : WalkGeom m0}
+    {C : WalkCarry G} {s : State} (hInv : WalkInv G C s)
+    (hblock : C.block = walkLoopHead) (hnot : ¬ (C.k + 1 < G.nep))
+    (hclass : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 123) = 1)
+    (hsp520 : C.sp = 520)
+    (hrd : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes 0 4))
+    (hpreV : s2ValuePosPre
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
+    (r : CallOutcome)
+    (hcall : stage2Calls stage2SubCalls "s2_value_pos"
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r)
+    (hret : r.ret = .int 32 (BitVec.ofNat 32 1)) :
+    WalkDispatchResult (stage2Calls stage2SubCalls) G C s :=
+  LastEntryArm.dispatch hInv hblock hnot
+    (lastEntryArm_openAtCap123_of_staging C s hInv hclass hsp520 hrd hpreV r hcall hret)
+
 /-! ### The instrument -/
 
+#print axioms LeanLLVM.Refinement.WalkScope.hcontArm_openAtCap91_of_staging
+#print axioms LeanLLVM.Refinement.WalkScope.hcontArm_openAtCap123_of_staging
+#print axioms LeanLLVM.Refinement.WalkScope.lastEntryArm_openAtCap91_of_staging
+#print axioms LeanLLVM.Refinement.WalkScope.lastEntryArm_openAtCap123_of_staging
+#print axioms LeanLLVM.Refinement.WalkScope.walkDispatch_at_openAtCap91_of_staging
+#print axioms LeanLLVM.Refinement.WalkScope.walkDispatch_at_openAtCap123_of_staging
+#print axioms LeanLLVM.Refinement.WalkScope.walkDispatch_at_openAtCap91_last_of_staging
+#print axioms LeanLLVM.Refinement.WalkScope.walkDispatch_at_openAtCap123_last_of_staging
 #print axioms LeanLLVM.Refinement.WalkScope.hcontArm_containerOpen91_of_staging
 #print axioms LeanLLVM.Refinement.WalkScope.hcontArm_containerOpen123_of_staging
 #print axioms LeanLLVM.Refinement.WalkScope.lastEntryArm_containerOpen91_of_staging

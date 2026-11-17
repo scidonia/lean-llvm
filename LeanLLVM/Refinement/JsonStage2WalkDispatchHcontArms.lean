@@ -52,8 +52,14 @@ supplies, and `.dispatch` turns it into the actual `WalkDispatchResult`:
   cells and the byte before the entry's end with its read.
 * `.closeBracketZero` — `if.then53.i` at depth zero on the **continuing** head: `]` with
   nothing open is refused (`bracketRefuse_at`'s chain; its only count premise is the head's
-  guard, which a continuing entry has).  This is the one refusal arm the continuing side
-  shares with the last entry's, and it is proved rather than supplied.
+  guard, which a continuing entry has).  It is proved rather than supplied, and the last
+  entry has the same arm.
+* `.closeBraceZero` — the same two refusal blocks at `}`, on the continuing head: the byte
+  reaches `if.then53.i` through `NodeBlock17 → LeafBlock15`, so the arm is the bracket
+  refusal's count at its own pivots (`closeBraceZero_at`).  Before it existed the byte at
+  depth zero was in no constructor's class at either level
+  (`JsonStage2WalkDispatchResidual` records that history), so it is the continuing
+  census's second formerly-missing arm beside `.openAtCap`.
 * `.commaZero`, `.colonZero` — the comma's and the colon's depth-zero refusal on the
   continuing head: six links each (`commaRefuse_at`, `colonRefuse_at`), the same two the
   last entry has.  The documents `,0` and `:0` take them.
@@ -67,6 +73,12 @@ supplies, and `.dispatch` turns it into the actual `WalkDispatchResult`:
 * `.containerOpen` — `[` and `{` on the continuing head: both enter `if.then.i`, and the
   four head links beside the tail's five reach the merge — nine links
   (`containerOpenMerge_at`).  The documents `[0]` and `{"a":1}` take it.
+* `.openAtCap` — the same two bytes at the stacks' staged extent, on the continuing head:
+  `if.end.i`'s `ugt %sp.i.0248, 519` is taken at `520`, so the run is the head's four
+  links, the value-position call, the guard's true arm and `if.then21.i`'s offset store to
+  the copy — seven links, `containerOpenCap_at`, priced at `7 + 2 ≤ 32`.  `containerOpen`'s
+  `C.sp ≤ 519` is the other side of the same test, so the two arms divide the depths the
+  invariant admits and neither covers the other's.
 * `.closeWithOpen` — `]` and `}` with a container open, at the continuing head: both enter
   `if.then53.i`, and the nesting check's two stack bytes select the merge or a refusal —
   `closeWithOpen_at`'s four sub-routes.  The continuing guard is the loop's, not the arm's:
@@ -101,6 +113,13 @@ constructor left at this level.  `126` and `127` are `HcontClass.defaultValueHig
 and `HcontArm.ws`/`.cleanup`'s class: both bundles carry the four bits that leave exactly
 those two bytes, and both arms are proved with their counted segments
 (`walkRevolutionMergeSegWs`, `walkRevolutionMergeSeg`).
+
+The class is also *total* over the invariant's states: the byte, the depth's zero/positive
+split and the token-end class are the whole split, and the two depth cases the split had no
+arm for are `.closeBraceZero`'s (`}` at zero) and `.openAtCap`'s (an opener at `520`).
+Before those arms existed those states were in no constructor's class at either level, so
+this sentence would have been false; `JsonStage2WalkDispatchResidual` records what the
+holes were.
 
 Each constructor carries only its own arm's premises, and the price is the dispatch's own
 (`WalkDispatchResult`'s), so no class's byte restriction is a premise of another's.
@@ -285,6 +304,18 @@ inductive HcontArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
       (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
       (he : lookupName s.env "%e" = some (.ptr C.stage.e))
       (hj : j ≤ G.n) (hj64 : j < 2 ^ 64) : HcontArm calls G C s
+  /-- **A closing brace at depth zero**, on the continuing head: the same refusal the
+  bracket's arm states, reached through `NodeBlock17 → LeafBlock15` (`%Pivot18` is
+  `slt %8, 125`, `%SwitchLeaf16` is `eq %8, 125`) rather than `NodeBlock11 → LeafBlock9`.
+  Six links (`closeBraceZero_at`), and the last two blocks — the depth test and the offset
+  store — are the bracket's because neither reads the byte.  The continuing guard is the
+  loop's, not this arm's. -/
+  | closeBraceZero {j : Nat}
+      (h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 125)))
+      (hsp : C.sp = 0)
+      (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
+      (he : lookupName s.env "%e" = some (.ptr C.stage.e))
+      (hj : j ≤ G.n) (hj64 : j < 2 ^ 64) : HcontArm calls G C s
   /-- **A comma at depth zero**, on the continuing head: nothing is open for it to
   separate, so `if.then127.i` sends the run to `if.then130.i`'s offset store and the
   refusal copy — six links (`commaRefuse_at`).  The only count premise is the head's
@@ -340,6 +371,40 @@ inductive HcontArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
         [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
          .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r)
       (hret : r.ret = .int 32 (BitVec.ofNat 32 1)) : HcontArm calls G C s
+  /-- **A container opener at depth `520`**, on the continuing head: the push's guard
+  `ugt %sp.i.0248, 519` is taken at the stacks' staged extent, so the run leaves
+  `if.end.i` for `if.then21.i`'s offset store and the copy.  Seven links from the head
+  (`containerOpenCap_at`), priced at `7 + 2 ≤ 32` inside one entry's allowance.  The
+  depth is the arm's premise: `WalkInv.depth_cap` bounds it by `520` and nothing below
+  it, so a state at the extent is a state the invariant admits and the arm must describe.
+  The continuing guard is the loop's, not this arm's.
+
+  **What the arm covers, and what it does not claim.**  It covers every invariant state
+  whose `C.sp` is `520` — totality's own requirement, since the census asks for an arm at
+  each state the invariant admits.  Document-level reachability is not claimed: the span
+  from the seeded head to a depth-`520` head is 520 applications of the opener's step, each
+  needing the `s2_value_pos` staging at that state, and neither that iteration nor a `Nat`
+  recursion over the walk's depth exists in this tree.  Were depth `520` unreachable from
+  the seed, the arm would be vacuous at that premise and harmless — never wrong, only
+  unused.  `JsonStage2WalkDispatchOpenersDomain` stages the document that carries the
+  bytes and repeats this boundary. -/
+  | openAtCap {b : BitVec 8}
+      (h8 : evalOperand s (.reg "%8") = some (.int 8 b))
+      (hopen : b = BitVec.ofNat 8 91 ∨ b = BitVec.ofNat 8 123)
+      (hsp520 : C.sp = 520)
+      (hrd : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes 0 4))
+      (hpreV : s2ValuePosPre
+        [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+         .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
+      (r : CallOutcome)
+      (hcall : stage2Calls stage2SubCalls "s2_value_pos"
+        [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+         .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r)
+      (hret : r.ret = .int 32 (BitVec.ofNat 32 1))
+      {j : Nat}
+      (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
+      (he : lookupName s.env "%e" = some (.ptr C.stage.e))
+      (hj : j ≤ G.n) (hj64 : j < 2 ^ 64) : HcontArm calls G C s
   /-- **The closing delimiter with a container open**, at the continuing head: `]` and `}`
   at a positive depth, the nesting check's two stack bytes selecting the merge or a
   refusal — `closeWithOpen_at`'s four sub-routes.  The merge keeps the depth and advances
@@ -478,6 +543,11 @@ theorem HcontArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
       WalkDispatchResult.refuse Cd sd p hseg.seg hseg.block hseg.word herr hprice)
       (bracketRefuse_at G C s hInv hblock h8 hsp hv he hj hj64
         (WalkInv.head_lt hInv (by simpa only [walkLoopHead] using hblock)))
+  | .closeBraceZero h8 hsp hv he hj hj64 =>
+    (fun ⟨Cd, sd, p, hseg, herr, hprice⟩ =>
+      WalkDispatchResult.refuse Cd sd p hseg.seg hseg.block hseg.word herr hprice)
+      (closeBraceZero_at G C s hInv hblock h8 hsp hv he hj hj64
+        (WalkInv.head_lt hInv (by simpa only [walkLoopHead] using hblock)))
   | .commaZero h8 hsp hv he hj hj64 =>
     WalkDispatchResult.ofRefuseAt (commaRefuse_at G C s hInv hblock h8 hsp hv he hj hj64
       (WalkInv.head_lt hInv (by simpa only [walkLoopHead] using hblock)))
@@ -507,6 +577,11 @@ theorem HcontArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     · exact colonMarkerRefuse_at G C s hInv hblock h8 hsp hmark (bitZeroOfNeOne hb1)
   | .containerOpen h8 hopen hsp519 hrd hpreV r hcall hret =>
     containerOpenMerge_at G C s hInv hblock h8 hopen hsp519 hrd hpreV r hcall hret
+  | .openAtCap h8 hopen hsp520 hrd hpreV r hcall hret hv he hj hj64 =>
+    (fun ⟨Cd, sd, p, hseg, herr, hprice⟩ =>
+      WalkDispatchResult.refuse Cd sd p hseg.seg hseg.block hseg.word herr hprice)
+      (containerOpenCap_at G C s hInv hblock h8 hopen hsp520 hrd hpreV r hcall hret
+        hv he hj hj64)
   | .closeWithOpen h8 hv hsp hmark hstate hpreA hvj he hj hj64 =>
     closeWithOpen_at G C s hInv hblock h8 hv hsp hmark hstate hpreA hvj he hj hj64
   | .letters h8 hbit h110 hne102 hHead hm hmk h8m hTail ht htk htok => by

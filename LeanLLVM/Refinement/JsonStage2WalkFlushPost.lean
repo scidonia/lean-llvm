@@ -823,15 +823,21 @@ entry stream (`stage2Post_of_staging_flush`, above) and its loop
 entry block's own test on the entry count.  That composition is real; its *premises* are
 supplies no theorem of this tree builds.
 
-**What the two bundles supply, and what they do not.**  `hcont` and `hend` are not supplied
-facts, but neither is false.  `WalkLoopEnd`'s log word is `WalkInv.log_alen`'s witness,
-which `walkMergeWords_of_inv` and `walkRefuseWords_of_inv` produce, so what the bundle still
-supplies is the last entry's arm (`hlast`) — per-input dispatch evidence, not an invariant
-consequence.  `WalkContinueFacts` is class data in the same sense: its per-state producers
-take a tail `WalkSegment` and the scan's traversal hypotheses that are not `WalkInv`
-consequences.  So `∀ G, WalkLoopEnd G` and `∀ G, WalkContinueFacts G` are producer
-obligations rather than theorems — the tier that would build the arm and the class at every
-`WalkGeom` is what is missing — and this implication is conditional on them.
+**What the two bundles supply, and what they do not.**  Neither `hcont` nor `hend` is a
+supplied fact, and neither is refuted — but "not false" is a claim about the *classes* and
+not about the bundles' totality, and it is exactly as strong as the census behind it.  The
+census now has an arm for every state the invariant admits (`.closeBraceZero` and
+`.openAtCap` are the two it lacked — `JsonStage2WalkDispatchResidual` records the history),
+so no admitted state is outside the enum and no arm is refuted by its own class.  What each
+bundle still carries is its class's *payload*: `WalkLoopEnd`'s log word is
+`WalkInv.log_alen`'s witness, which `walkMergeWords_of_inv` and `walkRefuseWords_of_inv`
+produce, so what the bundle still supplies is the last entry's arm (`hlast`) — per-input
+dispatch evidence, not an invariant consequence — and `WalkContinueFacts` is class data in
+the same sense: its per-state producers take a tail `WalkSegment` and the scan's traversal
+hypotheses that are not `WalkInv` consequences.  So `∀ G, WalkLoopEnd G` and
+`∀ G, WalkContinueFacts G` are producer obligations rather than theorems — the tier that
+would build the arm and the class at every `WalkGeom` is what is missing — and this
+implication is conditional on them.
 
 **The closure claim** is `stage2WalkObligation_of_premises`
 (`JsonStage2WalkAssembly`), whose premises are `WalkPremises` and the record's post rule

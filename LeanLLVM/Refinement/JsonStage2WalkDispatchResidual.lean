@@ -18,7 +18,7 @@ tree.  This module states why, per class, and produces the part that is:
 ## The classes whose rows are all derived
 
 `DerivedHcontClass` is the comma and the colon at either depth, the closing bracket at
-either depth, and the closing brace at a positive depth; `DerivedLastClass` adds the bare
+either depth, and the closing brace at either depth; `DerivedLastClass` adds the bare
 string opener, which at a continuing head is the two-entry string's class instead.  Each
 arm's producer takes the class's byte test and, where the arm reads it, the depth's split,
 and derives every cell: the `%8` word (`cont_reg8`, `WalkInv.iter.reg8`), the entry's
@@ -33,36 +33,47 @@ byte at `%ctype.i + (%sp - 1) - 1` exists because the mark covers the depth
 `closeWithOpen` is the arm that benefits: apart from the class's own bits and the cells the
 invariant names, its only premise was that callee precondition.
 
-## The states no arm's path reaches
+## The two states that had no arm, and the arms that supply them
 
-Two head states have no arm whose segment is the emitted path.  Both are admitted inputs,
-so the bundle's field is not merely unproven at them — no producer of that arm can be
-written, and the enum needs a constructor before either bundle can be total.
+The census this module recorded had two holes: two head states the switch sends to a
+refusal no constructor's class admitted, so `WalkContinueFacts` and `WalkLoopEnd` could not
+be total at them.  Each is now an arm of its own, at both levels, with its own producer and
+price — and both are the delimitation boundary's, which is where the lengths are:
 
-* **`}` (125) at depth zero.**  `LeafBlock15` tests `%8 = 125` and takes `if.then53.i`,
-  which tests `%sp = 0` and takes `if.then56.i` — the same store of the entry's position
-  at `%e + 8` that the closing bracket's refusal makes, through *different pivots*:
-  `NodeBlock17 → LeafBlock15` against the bracket's `NodeBlock11 → LeafBlock9`.  The two
-  routes are both six links to `if.then`, so the count is not what separates them — the
+* **`}` (125) at depth zero** — `.closeBraceZero`.  `LeafBlock15` tests `%8 = 125` and
+  takes `if.then53.i`, which tests `%sp = 0` and takes `if.then56.i`: the same store of the
+  entry's position at `%e + 8` the closing bracket's refusal makes, through *different
+  pivots* (`NodeBlock17 → LeafBlock15` against the bracket's `NodeBlock11 → LeafBlock9`).
+  The routes are both six links to `if.then`, so the count is not what separates them — the
   blocks are, and `bracketRefuse_at` reads `%SwitchLeaf10` (`eq %8, 93`) and `%Pivot12`
-  (`slt %8, 93`) by name.  The arms whose class bits admit the byte are `classC`'s
-  (`110 ≤ %8 ≤ 125`, the disjunction's second member is exactly 125) and `run`'s (the tag
-  test clear), and each demands a head segment to `if.else387.i` — the default arm's path,
-  which this byte does not take.  `closingZero` and `closeBracketZero` are byte-pinned to
-  93, and `closeWithOpen` requires `%sp ≠ 0`.  **What would supply it:** a
-  `.closeBraceZero` arm at those pivots, at both levels, with its own producer and price.
-* **A container opener at depth `520`.**  `if.then.i`'s `ugt %sp.i 519` test takes
-  `if.then21.i` — the same store at `%e + 8`, then `if.then` — and `WalkInv.depth_cap`
-  bounds the depth only by `stage2StackExtent = 520`; `containerOpen`'s `hsp519` is the
-  split's premise, so at `520` the arm is uninhabited.  `JsonStage2WalkTerminalPrice`'s
-  `.containerOpen` row records the same boundary.  **What would supply it:** an arm at
-  `if.then.i → if.then21.i → if.then` (one arm serves both opener bytes, since both reach
-  `if.then.i`), or a `WalkInv` clause that the depth never reaches `520` at a container
-  byte — a statement about the walk's own history rather than about the invariant.
+  (`slt %8, 93`) by name while `closeBraceZero_at` reads `%SwitchLeaf16` and `%Pivot18`.
+  The arms whose class bits admitted the byte — `classC` (`110 ≤ %8 ≤ 125`) and `run` (the
+  tag test clear) — demand a head segment to `if.else387.i`, the default arm's path, which
+  this byte does not take; `closingZero`/`closeBracketZero` are byte-pinned to `93`, and
+  `closeWithOpen` requires `%sp ≠ 0`.  So the state was reachable
+  by no arm, and the byte's own arm is the one that reaches it: six links, priced at
+  `6 + 2 ≤ 32` inside one entry's allowance, with the word `refuseSegment_word_of_store`
+  reads back at the store the run took.
+* **A container opener at depth `520`** — `.openAtCap`.  `if.end.i`'s `ugt %sp.i.0248, 519`
+  is taken at the stacks' staged extent, so the run leaves the opener route for
+  `if.then21.i`'s offset store and the copy.  `WalkInv.depth_cap` bounds the depth by
+  `stage2StackExtent = 520` and nothing below it, and `containerOpen`'s `hsp519` is the
+  split's premise, so at `520` that arm was uninhabited; `JsonStage2WalkTerminalPrice`'s
+  `.containerOpen` row records the same boundary.  The arm is `[` and `{` at depth `520`
+  alone — one arm for both bytes, since both reach `if.then.i` — seven links from the head,
+  priced at `7 + 2 ≤ 32`, with the value-position call's staging, the root slot's zero word
+  and the call's answer `1` carried exactly as `.containerOpen` carries them and `C.sp =
+  520` in place of `C.sp ≤ 519`.
 
 Both states are one byte or one nesting away from an ordinary document, so neither is
 excluded by the input domain: `"}"` and 520 nested `[` are admitted, malformed and
-deeply-nested inputs.
+deeply-nested inputs.  That is why the arms were owed rather than the domain narrowed.
+
+With them the *census* is total: every state the invariant admits is in some constructor's
+class at its level — the class is the byte, the depth's zero/positive split, and the
+token-end class, and `.closeBraceZero` and `.openAtCap` fill the two depth cases the split
+had no arm for.  What remains supplied per class is the arm's *payload*, the table below's
+rows, not a state left outside the enum.
 
 ## The rows the remaining classes take, and from which producer
 
@@ -154,13 +165,14 @@ theorem s2AfterValuePre_of_inv {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s
 /-- **The continuing census's classes that need nothing beside the invariant.**  The
 comma's and the colon's bytes take their refusal or their above-depth pair by the depth's
 own split; the closing bracket takes its refusal with nothing open and the nesting check
-with a container open; the closing brace takes the nesting check, which requires one.
-`125` with nothing open is the state no arm reaches — see the module's second section. -/
+with a container open; the closing brace takes its refusal at zero and the nesting check
+above it, which requires one.  Every one of those bytes has an arm at every depth the
+invariant admits, so the class is the byte test alone. -/
 def DerivedHcontClass {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) : Prop :=
   evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 44) = 1 ∨
   evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 58) = 1 ∨
   evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 93) = 1 ∨
-    (evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 125) = 1 ∧ C.sp ≠ 0)
+  evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 125) = 1
 
 /-- **The last-entry census's classes that need nothing beside the invariant.**  The
 continuing head's four bytes, and the bare string opener, which at this level is a refusal
@@ -170,7 +182,7 @@ def DerivedLastClass {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) : Prop :=
   evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 44) = 1 ∨
   evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 58) = 1 ∨
   evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 93) = 1 ∨
-    (evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 125) = 1 ∧ C.sp ≠ 0)
+  evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 125) = 1
 
 /-- **The continuing entry's arm, at the derived classes.**  Every arm here is the class's
 own producer at the state: the class's byte test pins the `%8` cell, the depth's split is
@@ -191,8 +203,10 @@ theorem hcontArm_of_derivedClass {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     · exact ⟨hcontArm_closeBracketZero_of_staging C s hInv h93 hsp⟩
     · exact ⟨hcontArm_closeWithOpen93_of_staging C s hInv h93 hsp
         (s2AfterValuePre_of_inv hInv hsp)⟩
-  · exact ⟨hcontArm_closeWithOpen125_of_staging C s hInv h125.1 h125.2
-      (s2AfterValuePre_of_inv hInv h125.2)⟩
+  · by_cases hsp : C.sp = 0
+    · exact ⟨hcontArm_closeBraceZero_of_staging C s hInv h125 hsp⟩
+    · exact ⟨hcontArm_closeWithOpen125_of_staging C s hInv h125 hsp
+        (s2AfterValuePre_of_inv hInv hsp)⟩
 
 /-- **The last entry's arm, at the derived classes.**  The count is exhausted, which the
 bare opener's refusal reads (`quoteCount_ge`); every other arm is the continuing one's
@@ -213,8 +227,10 @@ theorem lastEntryArm_of_derivedClass {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry
     · exact ⟨lastEntryArm_closeBracketZero_of_staging C s hInv h93 hsp⟩
     · exact ⟨lastEntryArm_closeWithOpen93_of_staging C s hInv h93 hsp
         (s2AfterValuePre_of_inv hInv hsp)⟩
-  · exact ⟨lastEntryArm_closeWithOpen125_of_staging C s hInv h125.1 h125.2
-      (s2AfterValuePre_of_inv hInv h125.2)⟩
+  · by_cases hsp : C.sp = 0
+    · exact ⟨lastEntryArm_closeBraceZero_of_staging C s hInv h125 hsp⟩
+    · exact ⟨lastEntryArm_closeWithOpen125_of_staging C s hInv h125 hsp
+        (s2AfterValuePre_of_inv hInv hsp)⟩
 
 /-- **The continuing entry's dispatch, at the derived classes.**  The arm through
 `HcontArm.dispatch`, at the continuing entry's guard.  This is the shape the loop's step

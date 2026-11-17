@@ -1,7 +1,7 @@
 /-
 # The byte-equality refusals, from the staging
 
-Two arms of the census are refusals whose class is a single byte equality and which carry
+Three arms of the census are refusals whose class is a single byte equality and which carry
 no (ii) call and no (iii) traversal:
 
 * `LastEntryArm.stringOpener` — the bare opener at the last entry: `sw.bb202.i`, the
@@ -11,6 +11,10 @@ no (ii) call and no (iii) traversal:
   nothing open: `if.then53.i` at depth zero and `bracketRefuse_at`'s six links.  The
   continuing level and the last entry share the arm (the head's guard is the only count
   premise, and a continuing entry has it), so there are two producers and two dispatches.
+* `HcontArm.closeBraceZero` and `LastEntryArm.closeBraceZero` — the closing brace with
+  nothing open: the same two blocks as the bracket's refusal at the byte's own pivots
+  (`NodeBlock17 → LeafBlock15`, `closeBraceZero_at`'s six links).  Same count, same price,
+  and the same two levels; the pivots are what separates it from the bracket's arm.
 
 This module produces each at every state that carries the invariant, which is the state
 family the loop's step quantifies over, so a wrapper supplies the class's byte test and
@@ -47,18 +51,25 @@ the dispatch's own hypothesis at the call site.
 | `hj64` (`j < 2 ^ 64`) | **D** | geometry alone: `WalkGeom.n_lt` beside `entryPos_lt_64` |
 | `C.sp = 0` | **F-split** | a named premise: `WalkInv.depth_cap` bounds the depth above only, so zero-versus-positive is the document's |
 
+`closeBraceZero`, at both levels: the same six cells as the bracket's row above, at the
+byte `125` instead of `93`.  The byte's route to the two refusal blocks is the only thing
+that differs — `%Pivot18` (`slt %8, 125`) and `%SwitchLeaf16` (`eq %8, 125`) in place of
+`%Pivot12` and `%SwitchLeaf10` — so the class test is the byte's own and the five derived
+cells are read exactly as at `93`.
+
 Two premises in — the class's byte test and the depth split (the quote's: the class and
 the level's count) — and the arm out; every other cell is the invariant's or the
 geometry's.  That is the row the enumeration marks, with no correction: the census is
-exact for these three arms.
+exact for these four arms.
 
-## The two producer, three arm shapes
+## The three producers, five arm shapes
 
 `stringOpener` exists only at the last entry: at the continuing level the byte `34` is
 `.twoEntry`, whose evidence is the standalone string's residue and its accepting-arm
-selector rather than a refusal, so it is not this module's.  `closeBracketZero`'s two
-levels are the same six fields, because the refusal chain is one path from `NodeBlock21`
-to `if.then` and the depth-zero store at `%e + 8` does not read the count.
+selector rather than a refusal, so it is not this module's.  `closeBracketZero`'s and
+`closeBraceZero`'s two levels are the same six fields, because each refusal chain is one
+path from `NodeBlock21` to `if.then` and the depth-zero store at `%e + 8` does not read the
+count.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkDispatchZeroOfStaging
 
@@ -170,6 +181,44 @@ def lastEntryArm_closeBracketZero_of_staging {m0 : Mem} {G : WalkGeom m0}
     (entryPos_le G C.k)
     (entryPos_lt_64 G C.k)
 
+/-- **The closing brace's refusal on the continuing head, from the staging.**
+`HcontArm.closeBraceZero` at every state that carries the invariant and a zero depth: the
+same six fields as the bracket's, at the byte `125`.  The byte's route to the depth test
+is `NodeBlock17 → LeafBlock15` and the count is the bracket's, so the arm is the class's
+test and the depth split and nothing else. -/
+def hcontArm_closeBraceZero_of_staging {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s)
+    (hclass : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 125) = 1)
+    (hsp : C.sp = 0) :
+    HcontArm (stage2Calls stage2SubCalls) G C s :=
+  .closeBraceZero (j := entryPos G C.k)
+    (by
+      rw [← eq_bit_value hclass]
+      exact cont_reg8 hInv)
+    hsp
+    (by simpa only [evalOperand] using hInv.idx_reg)
+    (hInv.regs ("%e", .ptr C.stage.e) (by simp [walkStaticRegs]))
+    (entryPos_le G C.k)
+    (entryPos_lt_64 G C.k)
+
+/-- **The closing brace's refusal at the last entry, from the staging.**  The continuing
+entry's arm at the level whose count is exhausted: the same six fields, produced the same
+way. -/
+def lastEntryArm_closeBraceZero_of_staging {m0 : Mem} {G : WalkGeom m0}
+    (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hclass : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 125) = 1)
+    (hsp : C.sp = 0) :
+    LastEntryArm (stage2Calls stage2SubCalls) G C s :=
+  .closeBraceZero (j := entryPos G C.k)
+    (by
+      rw [← eq_bit_value hclass]
+      exact cont_reg8 hInv)
+    hsp
+    (by simpa only [evalOperand] using hInv.idx_reg)
+    (hInv.regs ("%e", .ptr C.stage.e) (by simp [walkStaticRegs]))
+    (entryPos_le G C.k)
+    (entryPos_lt_64 G C.k)
+
 /-! ### The dispatches
 
 Each producer through its level's dispatch.  The quote's takes the negated count and the
@@ -204,6 +253,25 @@ theorem walkDispatch_at_closeBracketZero_last_of_staging {m0 : Mem} {G : WalkGeo
   LastEntryArm.dispatch hInv hblock hnot
     (lastEntryArm_closeBracketZero_of_staging C s hInv hclass hsp)
 
+/-- **The closing brace's continuing dispatch, from the staging.** -/
+theorem walkDispatch_at_closeBraceZero_of_staging {m0 : Mem} {G : WalkGeom m0}
+    {C : WalkCarry G} {s : State} (hInv : WalkInv G C s)
+    (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)
+    (hclass : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 125) = 1)
+    (hsp : C.sp = 0) :
+    WalkDispatchResult (stage2Calls stage2SubCalls) G C s :=
+  HcontArm.dispatch hInv hblock hk (hcontArm_closeBraceZero_of_staging C s hInv hclass hsp)
+
+/-- **The closing brace's last-entry dispatch, from the staging.** -/
+theorem walkDispatch_at_closeBraceZero_last_of_staging {m0 : Mem} {G : WalkGeom m0}
+    {C : WalkCarry G} {s : State} (hInv : WalkInv G C s)
+    (hblock : C.block = walkLoopHead) (hnot : ¬ (C.k + 1 < G.nep))
+    (hclass : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 125) = 1)
+    (hsp : C.sp = 0) :
+    WalkDispatchResult (stage2Calls stage2SubCalls) G C s :=
+  LastEntryArm.dispatch hInv hblock hnot
+    (lastEntryArm_closeBraceZero_of_staging C s hInv hclass hsp)
+
 /-! ### The instrument -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.quoteCount_ge
@@ -213,6 +281,10 @@ theorem walkDispatch_at_closeBracketZero_last_of_staging {m0 : Mem} {G : WalkGeo
 #print axioms LeanLLVM.Refinement.WalkScope.walkDispatch_at_stringOpener_last_of_staging
 #print axioms LeanLLVM.Refinement.WalkScope.walkDispatch_at_closeBracketZero_of_staging
 #print axioms LeanLLVM.Refinement.WalkScope.walkDispatch_at_closeBracketZero_last_of_staging
+#print axioms LeanLLVM.Refinement.WalkScope.hcontArm_closeBraceZero_of_staging
+#print axioms LeanLLVM.Refinement.WalkScope.lastEntryArm_closeBraceZero_of_staging
+#print axioms LeanLLVM.Refinement.WalkScope.walkDispatch_at_closeBraceZero_of_staging
+#print axioms LeanLLVM.Refinement.WalkScope.walkDispatch_at_closeBraceZero_last_of_staging
 
 end WalkScope
 end LeanLLVM.Refinement
