@@ -6,8 +6,9 @@ body, and its first conjunct is completion at `stage2Budget`
 (`stage2WalkObligation_iff_completion`).  `runFuel` is fuel-indexed, so the proof
 that resists is the loop: an invariant preserved by every arm, and a measure that
 decreases on every iteration.  This module scopes that proof.  It discharges the
-literal comparison's arm and the four scans', five edges that decrease the measure
-at the edge itself; the entry loop's edge (the merge at `cleanup478.i`, its two
+literal comparison's arm at the edge itself (the four scans' visits, the measure's
+other four decreasing edges, are the guard-free rounds of
+`JsonStage2WalkRevolutionScanRound`); the entry loop's edge (the merge at `cleanup478.i`, its two
 `phi`s, the exit test, and the inner budget's refill), which preserves the invariant and
 hands the decrease to the header's block (`walkMeasure_step`); and it states the
 entry loop's first obligation.  It does not claim the obligation.
@@ -177,22 +178,21 @@ the region claim does not name it.  *The entry loop's first obligation* below
 states it, with the two `Owns` lemmas that make it a necessity rather than a
 convenience.
 
-The four scans are the middle, and their four arms are proved below against the
-same `WalkInv`, one at a time:
+The four scans are the middle.  Their common shape is `scan_step`, stated once: the
+counter's `add`, the bound's `icmp eq` and the two-arm `condbr`, at the scan's own
+names, with the step, the invariant and a strictly smaller measure.  The visit's own
+row — what a traversal applies at each visiting counter — is the guard-free round of
+`JsonStage2WalkRevolutionScanRound` (`scanRound_at` at the state's own cells, and
+`scanRoundField` as the row).  The per-scan arms that used to wrap `scan_step` are
+not here: each took a `ScanGuard` hypothesis that is false at every state whose
+registers hold words, so the statements were vacuous, and they have been removed.
 
-| arm | source block | landing block | measure step |
-| --- | ------------ | ------------- | ------------ |
-| `whitespace_scan` | `while.body370.i` | `land.rhs.i` | `inner : c - i ↦ c - (i + 1)` |
-| `string_scan` | `while.body.i104` | `land.rhs.i103` | `inner : c - i ↦ c - (i + 1)` |
-| `escape_scan` | `while.body76.i` | `land.rhs71.i` | `inner : c - i ↦ c - (i + 1)` |
-| `extraToken_scan` | `while.body462.i` | `land.rhs457.i` | `inner : c - i ↦ c - (i + 1)` |
-
-Each is the same latch: the counter steps by one, the scan's own bound is tested
+Each scan is the same latch: the counter steps by one, the scan's own bound is tested
 for equality, and the test is clear because the counter is still short of it.
 The latch block itself is pinned (`scanWhitespace_find` and its three
 companions), the landing block's `phi` is read out of the body by `#guard`
-(`scanLandSelect`), and the arms read their counter and bound from `WalkLocal`
-and write the landing facts back into it.  They read staged memory — each landing
+(`scanLandSelect`), and a visit reads its counter and bound from `WalkLocal`
+and writes the landing facts back into it.  The scans read staged memory — each landing
 block loads a document byte — but none writes it, so the memory claim and the
 carried extents are untouched.  `k` is not read, so the measure's outer factor is
 the same on both sides and the decrease is the inner component's.
@@ -240,17 +240,21 @@ The trace itself is stated: `WalkLink` is one link (a control step that preserve
 `WalkChain.steps`, `WalkChain.measure_le` and `WalkChain.completes` read a chain
 as a run, a measure bound, and a completion at a returning last state.
 
-A hundred and fifty-seven of the body's 165 blocks are links, and *The middle's
+A hundred and fifty-three of the body's 165 blocks are links, and *The middle's
 two classes* below is the census that decomposes the count: the two named arms
-(`WalkLink.whileBody`, `WalkLink.ifEnd24`), the five that decrease the measure
-(`WalkLink.forInc` and the four scan headers), the classes A, B and B′, class C's
+(`WalkLink.whileBody`, `WalkLink.ifEnd24`), the one that decreases the measure
+(`WalkLink.forInc`), the classes A, B and B′, class C's
 eighteen refusal stores, class D's ten stores (`JsonStage2WalkStore`), class E's
 twelve merges and twelve of class G's fourteen reads (`JsonStage2WalkPhi`,
 `JsonStage2WalkPure`), sixteen of class F's nineteen call blocks
 (`JsonStage2WalkCall`), and the two entry links beside `while.body.i.lr.ph`
-(`JsonStage2WalkEntry`).  The shape each remaining class needs, and the five blocks
-that are still not links, are stated there.  `WalkLocal` is
-still `True` at every block outside the ten the five measure arms reach, so
+(`JsonStage2WalkEntry`).  The other four of the census's ten H1 latches are the
+four scan headers: they are links no longer, and their visit is the counted round
+(`walkScanRounds457_of_cell` applying `scanRound_at`) rather than a link.  The
+shape each remaining class needs, and the nine blocks that are still not links,
+are stated there.  `WalkLocal` is
+still `True` at every block outside the ten whose carrier it names — the five
+latches and their landings — so
 well-foundedness over the whole control flow is not established, and
 `Stage2WalkCompletes` is not inhabited.
 
@@ -265,10 +269,11 @@ level up from `WalkChain`; and (3) the budget's global accounting.  The containe
 stacks' contents are no longer one: `WalkCarry` carries the written mark and the
 two maps, and `WalkInv` carries the two `WalkStackBytes` clauses beside
 `sp ≤ wlen` and `wlen ≤ stage2StackExtent`, so a link that reads a stack byte at
-`sp - 1` derives it from the map (`walkStack_valuePos`) rather than assuming it.  The census's 157 links are the arithmetic of the
+`sp - 1` derives it from the map (`walkStack_valuePos`) rather than assuming it.  The census's 153 links are the arithmetic of the
 *classes*, and a link whose source invariant no run reaches (the preheader's,
 whose premise asks for `%k11.i` before the block binds it) is vacuous: it is
-proved, and it moves nothing.
+proved, and it moves nothing.  The four scan headers are not among them: their
+visit is the counted round (`walkScanRounds457_of_cell` applying `scanRound_at`).
 *The loop's forward stores* below states the rest in order, including the
 pipeline's one pending transport-pair clause.
 
@@ -956,12 +961,14 @@ def ScanLanded (s : State) (src inc cond : String) (inner : Nat) : Prop :=
     lookupName s.env inc = some (.int 64 (BitVec.ofNat 64 i)) ∧
     lookupName s.env cond = some (.int 64 (BitVec.ofNat 64 c))
 
-/-- A scan's latch guard, at the carry.  Whatever counter and bound the local fact
-pins, the increment is still short of the bound, so the latch's equality test is
-clear and the back edge — not the exit — is the edge it takes.  The guard is
-stated over the local fact's own witness rather than beside it: a caller has the
-registers in hand, so it never has a second existential to reconcile with the
-first. -/
+/-- **The guard that is false**, kept as the record of the hypothesis the traversal
+bundles carried.  It quantifies over *every* pair of naturals whose words are the
+two registers' with `c - i ≤ inner` and concludes `i + 1 < c`; the pair `i = c`
+satisfies the premise (`c - i = 0`) and fails the conclusion, so the predicate holds
+at no state whose registers hold words.  Nothing takes it: a visit's `i + 1 < c` is a
+premise of the round (`scanRound_at`, `JsonStage2WalkRevolutionScanRound`) and the
+bundles' rows are the round's own `∀`, stated at the state's cells below the word's
+width. -/
 def ScanGuard (s : State) (phi cond : String) (inner : Nat) : Prop :=
   ∀ i c : Nat, c - i ≤ inner →
     lookupName s.env phi = some (.int 64 (BitVec.ofNat 64 i)) →
@@ -1009,8 +1016,8 @@ def ScanEmpty (s : State) (counter cond : String) : Prop :=
     lookupName s.env cond = some (.int 64 (BitVec.ofNat 64 c))
 
 /-- The block-local half of the invariant: the remaining budget's coverage of the
-work still to do, and the registers it is read from, at the ten blocks the five
-proved arms reach — the literal comparison's two and each of the four scans'
+work still to do, and the registers it is read from, at the ten blocks whose
+carrier is not `True` — the literal comparison's two and each of the four scans'
 latch and landing.  A landing block
 has two predecessors, so its fact is disjunctive: `ScanLanded` on the latch's back
 edge and `ScanEntered` on the edge that first enters the scan, and the literal
@@ -1726,10 +1733,9 @@ theorem walkEmitC_br_le {B : Block} (hB : B ∈ stage2Body.blocks)
   exact of_decide_eq_true h
 
 /-- **The walk's invariant.**  Everything the loop carries, at the block it is at,
-and the memory it has written.  This is the predicate every one of the six arms
-must preserve; `forInc_step` proves the literal comparison's arm does and
-`whitespace_scan`, `string_scan`, `escape_scan` and `extraToken_scan` prove the
-four scans' do. -/
+and the memory it has written.  This is the predicate every arm must preserve;
+`forInc_step` proves the literal comparison's arm does, and the scans' visits are
+the guard-free rounds of `JsonStage2WalkRevolutionScanRound`. -/
 structure WalkInv {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : Prop where
   /-- The run is at the carried block. -/
   pc_eq : s.pc = C.block
@@ -2929,124 +2935,6 @@ theorem scan_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
     rw [show 1 + k = k + 1 from by omega]
     simp only [runFuel, hstep]
 
-/-! #### The four arms -/
-
-/-- **The whitespace skip's back edge**, `while.body370.i → land.rhs.i`.  The
-counter `%ee.0.i238` goes from `i` to `i + 1` and the test `%inc371.i =
-%cond350.i` is clear because `i + 1 < c`; the measure keeps its outer factor and
-loses one from the inner component. -/
-theorem whitespace_scan {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
-    (s : State) (hInv : WalkInv G C s) (hblock : C.block = "while.body370.i")
-    (hguard : ScanGuard s "%ee.0.i238" "%cond350.i" C.inner) :
-    ∃ (e : State) (C' : WalkCarry G),
-      step calls stage2Body s = .jump e ∧
-      WalkInv G C' e ∧ C'.block = "land.rhs.i" ∧
-      walkMeasure G C' < walkMeasure G C ∧
-      ∀ k, runFuel calls (1 + k) stage2Body s = runFuel calls k stage2Body e := by
-  obtain ⟨i, c, hinner, -, hcw, hi, hc⟩ := WalkInv.whitespace hInv hblock
-  have hnext : i + 1 < c := hguard i c hinner hi hc
-  obtain ⟨e, hstep, hinv, hmeas, hrun⟩ :=
-    scan_step G C s i c "while.body370.i" "land.rhs.i" "%ee.0.i238" "%inc371.i"
-      "%exitcond.not" "%cond350.i" "if.end372.i" hInv hblock scanWhitespace_find
-      (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
-      (hincN := by decide) (htestN := by decide)
-      (hincS := by decide) (htestS := by decide)
-      (hincI7 := by decide) (hincI8 := by decide)
-      (htestI7 := by decide) (htestI8 := by decide)
-      hi hc hinner hnext hcw
-      (by
-        intro e hpre hinc hcond
-        rw [WalkLocal.whitespaceLanded rfl]
-        exact Or.inl ⟨i + 1, c, (by show c - (i + 1) ≤ C.inner - 1; omega), hnext, hcw, hpre, hinc, hcond⟩)
-  exact ⟨e, _, hstep, hinv, rfl, hmeas, hrun⟩
-
-/-- **The string scan's back edge**, `while.body.i104 → land.rhs.i103`.  The
-counter `%ee.011.i` goes from `i` to `i + 1` and the test `%inc.i105 = %cond.i`
-is clear because `i + 1 < c`; the latch's exit arm is `cleanup474.i` and it is not
-the edge taken.  The measure keeps its outer factor and loses one from the inner
-component. -/
-theorem string_scan {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
-    (s : State) (hInv : WalkInv G C s) (hblock : C.block = "while.body.i104")
-    (hguard : ScanGuard s "%ee.011.i" "%cond.i" C.inner) :
-    ∃ (e : State) (C' : WalkCarry G),
-      step calls stage2Body s = .jump e ∧
-      WalkInv G C' e ∧ C'.block = "land.rhs.i103" ∧
-      walkMeasure G C' < walkMeasure G C ∧
-      ∀ k, runFuel calls (1 + k) stage2Body s = runFuel calls k stage2Body e := by
-  obtain ⟨i, c, hinner, -, hcw, hi, hc⟩ := WalkInv.stringScan hInv hblock
-  have hnext : i + 1 < c := hguard i c hinner hi hc
-  obtain ⟨e, hstep, hinv, hmeas, hrun⟩ :=
-    scan_step G C s i c "while.body.i104" "land.rhs.i103" "%ee.011.i" "%inc.i105"
-      "%exitcond.not.i" "%cond.i" "cleanup474.i" hInv hblock scanString_find
-      (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
-      (hincN := by decide) (htestN := by decide)
-      (hincS := by decide) (htestS := by decide)
-      (hincI7 := by decide) (hincI8 := by decide)
-      (htestI7 := by decide) (htestI8 := by decide)
-      hi hc hinner hnext hcw
-      (by
-        intro e hpre hinc hcond
-        rw [WalkLocal.stringScanLanded rfl]
-        exact Or.inl ⟨i + 1, c, (by show c - (i + 1) ≤ C.inner - 1; omega), hnext, hcw, hpre, hinc, hcond⟩)
-  exact ⟨e, _, hstep, hinv, rfl, hmeas, hrun⟩
-
-/-- **The escape scan's back edge**, `while.body76.i → land.rhs71.i`.  The counter
-`%s2.020.i` goes from `i` to `i + 1` and the test `%inc77.i = %cond.i` is clear
-because `i + 1 < c`; the measure keeps its outer factor and loses one from the
-inner component. -/
-theorem escape_scan {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
-    (s : State) (hInv : WalkInv G C s) (hblock : C.block = "while.body76.i")
-    (hguard : ScanGuard s "%s2.020.i" "%cond.i" C.inner) :
-    ∃ (e : State) (C' : WalkCarry G),
-      step calls stage2Body s = .jump e ∧
-      WalkInv G C' e ∧ C'.block = "land.rhs71.i" ∧
-      walkMeasure G C' < walkMeasure G C ∧
-      ∀ k, runFuel calls (1 + k) stage2Body s = runFuel calls k stage2Body e := by
-  obtain ⟨i, c, hinner, -, hcw, hi, hc⟩ := WalkInv.escape hInv hblock
-  have hnext : i + 1 < c := hguard i c hinner hi hc
-  obtain ⟨e, hstep, hinv, hmeas, hrun⟩ :=
-    scan_step G C s i c "while.body76.i" "land.rhs71.i" "%s2.020.i" "%inc77.i"
-      "%exitcond24.not.i" "%cond.i" "while.end78.i" hInv hblock scanEscape_find
-      (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
-      (hincN := by decide) (htestN := by decide)
-      (hincS := by decide) (htestS := by decide)
-      (hincI7 := by decide) (hincI8 := by decide)
-      (htestI7 := by decide) (htestI8 := by decide)
-      hi hc hinner hnext hcw
-      (by
-        intro e hpre hinc hcond
-        rw [WalkLocal.escapeLanded rfl]
-        exact Or.inl ⟨i + 1, c, (by show c - (i + 1) ≤ C.inner - 1; omega), hnext, hcw, hpre, hinc, hcond⟩)
-  exact ⟨e, _, hstep, hinv, rfl, hmeas, hrun⟩
-
-/-- **The extra-token scan's back edge**, `while.body462.i → land.rhs457.i`.  The
-counter `%q.0.i246` goes from `i` to `i + 1` and the test `%inc463.i =
-%cond350.i` is clear because `i + 1 < c`; the measure keeps its outer factor and
-loses one from the inner component. -/
-theorem extraToken_scan {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
-    (s : State) (hInv : WalkInv G C s) (hblock : C.block = "while.body462.i")
-    (hguard : ScanGuard s "%q.0.i246" "%cond350.i" C.inner) :
-    ∃ (e : State) (C' : WalkCarry G),
-      step calls stage2Body s = .jump e ∧
-      WalkInv G C' e ∧ C'.block = "land.rhs457.i" ∧
-      walkMeasure G C' < walkMeasure G C ∧
-      ∀ k, runFuel calls (1 + k) stage2Body s = runFuel calls k stage2Body e := by
-  obtain ⟨i, c, hinner, -, hcw, hi, hc⟩ := WalkInv.extraToken hInv hblock
-  have hnext : i + 1 < c := hguard i c hinner hi hc
-  obtain ⟨e, hstep, hinv, hmeas, hrun⟩ :=
-    scan_step G C s i c "while.body462.i" "land.rhs457.i" "%q.0.i246" "%inc463.i"
-      "%exitcond298.not" "%cond350.i" "if.end473.i" hInv hblock scanExtraToken_find
-      (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
-      (hincN := by decide) (htestN := by decide)
-      (hincS := by decide) (htestS := by decide)
-      (hincI7 := by decide) (hincI8 := by decide)
-      (htestI7 := by decide) (htestI8 := by decide)
-      hi hc hinner hnext hcw
-      (by
-        intro e hpre hinc hcond
-        rw [WalkLocal.extraTokenLanded rfl]
-        exact Or.inl ⟨i + 1, c, (by show c - (i + 1) ≤ C.inner - 1; omega), hnext, hcw, hpre, hinc, hcond⟩)
-  exact ⟨e, _, hstep, hinv, rfl, hmeas, hrun⟩
 
 /-! ### The exit
 
@@ -3942,22 +3830,6 @@ theorem walkIter_measure {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (k2 : Na
 /-- info: 'LeanLLVM.Refinement.scan_step' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.scan_step
-
-/-- info: 'LeanLLVM.Refinement.whitespace_scan' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.whitespace_scan
-
-/-- info: 'LeanLLVM.Refinement.string_scan' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.string_scan
-
-/-- info: 'LeanLLVM.Refinement.escape_scan' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.escape_scan
-
-/-- info: 'LeanLLVM.Refinement.extraToken_scan' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.extraToken_scan
 
 /-- info: 'LeanLLVM.Refinement.walkSeed_inner_cap' does not depend on any axioms -/
 #guard_msgs in
@@ -5943,25 +5815,29 @@ control steps, each of which preserves `WalkInv` and does not raise
 `walkMeasure`.  The chain is what an induction over the dispatch produces, block
 by block; this section states it, proves that it carries the invariant and the
 measure, and gives it the links the module has proved: the header's block, the
-nesting arm, the latch, the four scan headers, and the censused classes A, B and
+nesting arm, the latch, and the censused classes A, B and
 B′, the eighteen refusal stores of C, class D's ten stores, the two entry links,
 class E's twelve merges and twelve of class G's fourteen reads, and the class F
 blocks the call and finalisation modules prove, the arena reservation's completion
-among them — a hundred and fifty-seven blocks in all; three
-more are discharged as steps, and the nine outside them are named with their
-obstruction under *The census* below. -/
+among them — a hundred and fifty-three blocks in all.  The four scan headers are
+covered as counted rounds (`walkScanRounds457_of_cell` applying `scanRound_at`)
+rather than as one-block links, three more blocks are discharged as steps, and the
+five outside both are named with their obstruction under *The census* below. -/
 
 /-! ### The census's arithmetic
 
 The table's columns and the reconciliation as `#guard`s: the class rows sum to the
-body's 165 blocks, the proved column sums to the 157 links the modules close, and
-the links, the three finalisation steps and the five rows outside both sum to 165
-again.  `JsonStage2IR` pins the body's own count (`stage2Body.blocks.length = 165`),
-so these lines hold the prose to the pinned body rather than to a transcription. -/
+body's 165 blocks, the proved column sums to the 153 links the modules close, and
+the links, the four scan rounds, the three finalisation steps and the five rows
+outside both sum to 165 again.  `JsonStage2IR` pins the body's own count
+(`stage2Body.blocks.length = 165`), so these lines hold the prose to the pinned body
+rather than to a transcription; H1's four scan headers are counted in the rounds
+term, not in the links, because their visit is the round
+(`walkScanRounds457_of_cell` applying `scanRound_at`) rather than a one-block link. -/
 
 #guard decide (60 + 9 + 1 + 18 + 11 + 15 + 19 + 14 + 10 + 2 + 6 = 165)
-#guard decide (60 + 9 + 1 + 18 + 11 + 15 + 14 + 10 + 2 + 17 = 157)
-#guard decide (157 + 3 + 5 = 165)
+#guard decide (60 + 9 + 1 + 18 + 11 + 15 + 14 + 6 + 2 + 17 = 153)
+#guard decide (153 + 4 + 3 + 5 = 165)
 
 /-- **One link of the dispatch's trace**: a control step that preserves
 `WalkInv` and does not raise the measure. -/
@@ -6089,18 +5965,23 @@ the instruction's constructor, not by the block's name.
 | E | a `phi`-headed block | 15 | 15 |
 | F | a block that calls | 19 | 17 |
 | G | `load` and compare | 14 | 14 |
-| H1 | the arithmetic latch: `add` + `icmp` + `condbr` | 10 | 10 |
+| H1 | the arithmetic latch: `add` + `icmp` + `condbr` | 10 | 6 links + 4 rounds |
 | H2 | `while.body.i.lr.ph` (five `gep`) and `if.then281.i` (`add`/`zext`/`or`) | 2 | 2 |
 | — | `entry`, `if.end`, four `unreachable` traps | 6 | 0 |
 
-**A hundred and fifty-seven of the 165 blocks are links**, and the table's proved
+**A hundred and fifty-three of the 165 blocks are links**, and the table's proved
 column is the decomposition: 60 + 9 + 1 + 18 (A, B, B′, C) + 11 (D) + 15 (E) +
-14 (G) + 10 (H1) + 2 (H2's `while.body.i.lr.ph` and `if.then281.i`) + 17 (F's
-`JsonStage2WalkCall` and `JsonStage2WalkFinal`) = 157, with the five measure arms among those classes rather
-than beside them.  The remaining 11 are named below with their obstruction, one
-row each; six of them are not links at all — the seed, the return's two arms
-(`s2_walk.exit` and `if.then`) and the four `unreachable` arms — and all three
-finalisation blocks are discharged as steps, so five rows remain.
+14 (G) + 6 (H1) + 2 (H2's `while.body.i.lr.ph` and `if.then281.i`) + 17 (F's
+`JsonStage2WalkCall` and `JsonStage2WalkFinal`) = 153, with the one measure arm
+(`WalkLink.forInc`) among those classes rather than beside them.  H1's other four
+are the four scans' headers, and none is a one-block link: its visit is the counted
+round (`walkScanRounds457_of_cell` applying `scanRound_at`,
+`JsonStage2WalkRevolutionScanRound`), four segments covering those four blocks, so
+the walk's coverage is unchanged and only the discharge differs.  The twelve outside
+the links are named below: the five rows still without a link, the three
+finalisation blocks discharged as steps, and those four headers.  The blocks that
+are not links at all are the seed, `if.end`, the return's two arms (`s2_walk.exit`
+and `if.then`) and the four `unreachable` arms.
 
 **The call census, measured.**  The F row's 19 is the number of blocks between the
 arms whose instruction list contains an `Instr.call` or `Instr.callVoid`, read off
@@ -6331,8 +6212,9 @@ finding is in `JsonStage2WalkRest`'s header, with the arithmetic.
 
 ## The remainder, named
 
-The census's rows: five blocks still without a link, 157 already closed as links,
-and three (`s2_walk.exit`, `if.then`, `if.end`) closed as steps — 165 in all.  `class` is the census's;
+The census's rows: five blocks still without a link, 153 already closed as links,
+four scan headers closed as counted rounds and three (`s2_walk.exit`, `if.then`,
+`if.end`) closed as steps — 165 in all.  `class` is the census's;
 `what a link needs` is the block's own instance of the class's obstruction, naming
 the register or address that is missing, and for a closed row the link that closed
 it.
@@ -7663,19 +7545,14 @@ theorem WalkLink.br {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
   · rfl
 
 
-/-! ### The four scan headers, as links
+/-! ### The literal comparison's latch, as a link
 
-The four scans are the inner measure's engine: each of their headers increments
-its counter and takes the back edge while the counter is short of the bound, so
-`scan_step` gives the step, the invariant and a strictly smaller measure.  These
-four wrappers are that arm as a link, for the trace to use: the strictness is
-dropped to `WalkLink`'s non-increase, and the landing carry the arm builds is
-existential there (`scan_step`'s own shape), so the target block is named beside
-it.
-
-The target's `inner` is `c - (i + 1)`, which is the arm's own reading of the
-scan's two registers; the caller reaches it through the `ScanLanded` fact the
-landing block's `WalkLocal` carries, not by naming it here. -/
+`for.inc.i.i` increments its counter and takes the back edge while the counter is
+short of the bound, so `forInc_step` gives the step, the invariant and a strictly
+smaller measure.  `WalkLink.forInc` is that arm as a link, for the trace to use: the
+strictness is dropped to `WalkLink`'s non-increase.  The four scan headers are not
+links here; their visit is the counted round of
+`JsonStage2WalkRevolutionScanRound`. -/
 
 /-- **The literal comparison's latch as a link.**  `for.inc.i.i` is `forInc_step`
 without the strictness: the measure falls by one, so it does not rise. -/
@@ -7686,42 +7563,6 @@ theorem WalkLink.forInc {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
   obtain ⟨i, c, hinner, hlt, hcw, hi, hc⟩ := hguard
   obtain ⟨e, C', hstep, hinv, hland, hmeas, -⟩ :=
     forInc_step G C s i c hInv hblock hi hc hinner hlt hcw
-  exact ⟨e, C', ⟨hInv, hstep, hinv, le_of_lt hmeas⟩, hland⟩
-
-theorem WalkLink.whileBody370 {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
-    (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
-    (hblock : C.block = "while.body370.i")
-    (hguard : ScanGuard s "%ee.0.i238" "%cond350.i" C.inner) :
-    ∃ s' C', WalkLink calls G C s C' s' ∧ C'.block = "land.rhs.i" := by
-  obtain ⟨e, C', hstep, hinv, hland, hmeas, -⟩ :=
-    whitespace_scan (calls := calls) G C s hInv hblock hguard
-  exact ⟨e, C', ⟨hInv, hstep, hinv, le_of_lt hmeas⟩, hland⟩
-
-theorem WalkLink.whileBodyI104 {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
-    (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
-    (hblock : C.block = "while.body.i104")
-    (hguard : ScanGuard s "%ee.011.i" "%cond.i" C.inner) :
-    ∃ s' C', WalkLink calls G C s C' s' ∧ C'.block = "land.rhs.i103" := by
-  obtain ⟨e, C', hstep, hinv, hland, hmeas, -⟩ :=
-    string_scan (calls := calls) G C s hInv hblock hguard
-  exact ⟨e, C', ⟨hInv, hstep, hinv, le_of_lt hmeas⟩, hland⟩
-
-theorem WalkLink.whileBody76 {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
-    (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
-    (hblock : C.block = "while.body76.i")
-    (hguard : ScanGuard s "%s2.020.i" "%cond.i" C.inner) :
-    ∃ s' C', WalkLink calls G C s C' s' ∧ C'.block = "land.rhs71.i" := by
-  obtain ⟨e, C', hstep, hinv, hland, hmeas, -⟩ :=
-    escape_scan (calls := calls) G C s hInv hblock hguard
-  exact ⟨e, C', ⟨hInv, hstep, hinv, le_of_lt hmeas⟩, hland⟩
-
-theorem WalkLink.whileBody462 {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
-    (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
-    (hblock : C.block = "while.body462.i")
-    (hguard : ScanGuard s "%q.0.i246" "%cond350.i" C.inner) :
-    ∃ s' C', WalkLink calls G C s C' s' ∧ C'.block = "land.rhs457.i" := by
-  obtain ⟨e, C', hstep, hinv, hland, hmeas, -⟩ :=
-    extraToken_scan (calls := calls) G C s hInv hblock hguard
   exact ⟨e, C', ⟨hInv, hstep, hinv, le_of_lt hmeas⟩, hland⟩
 
 /-! ### Class A's sixty instances

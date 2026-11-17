@@ -326,7 +326,7 @@ bundle **without that field**: the document's stop, the landing's byte and the s
 traversal, stated at the check state and at the seam's three answers.  Nothing in it is a
 segment and nothing is a bundle: the check state's cells are facts, the landing's reads are
 facts and the traversal's rows are the round, the byte read and the byte's class, which
-`walkScanRounds457` consumes.
+`walkScanRounds457_of_cell` consumes.
 
 The answers are parameters rather than fields because the landing's rows are *about* them —
 `contWsEntry` takes the three outcomes and the copy's words — so a structure that carried
@@ -400,7 +400,7 @@ structure HcontRunRows {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (sl : Stat
   /-- The scan runs inside the entry's span. -/
   hspan : v.toNat ≤ entryPos G (C.k + 1)
   hstart : entryPos G C.k ≤ k
-  /-- The traversal's round and the input's totality: `walkScanRounds457`'s `hround` and
+  /-- The traversal's round and the input's totality: `walkScanRounds457_of_cell`'s `hround` and
   `hbyte`.  The round is `scanRoundField`'s (`JsonStage2WalkRevolutionScanRound`); the
   totality's read half is `scanByteField`'s and its class half is the document's. -/
   hround : ∀ (C' : WalkCarry G) (s' : State) (p a : Nat) (bs : List UInt8) (q : Nat)

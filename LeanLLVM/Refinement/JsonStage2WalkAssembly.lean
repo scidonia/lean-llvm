@@ -1010,7 +1010,8 @@ theorem walkBack_step_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkC
 
 `WalkLoopStepThree`'s left branch is the revolution; its right branch the terminal
 run.  Stated separately, they are the census's remaining two rows: the dispatch's
-trace through the 157 links and the ten predecessors' `phi` facts at `cleanup478.i`,
+trace through the 153 links, the four scan headers' counted rounds, and the ten
+predecessors' `phi` facts at `cleanup478.i`,
 and the false edge's tail to the return. -/
 
 /-- **The dispatch's chain, and the merge it reaches.**  At the head, with an

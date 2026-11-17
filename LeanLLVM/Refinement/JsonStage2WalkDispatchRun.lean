@@ -235,7 +235,7 @@ structure RunFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : 
   hnep : lookupName tl.env "%nep" = some (.int 64 (BitVec.ofNat 64 G.nep))
   hic : i < c
   hcw : c < 2 ^ 64
-  /-- The input's totality at every index the visits read (`walkScanRounds457`'s `hbyte`,
+  /-- The input's totality at every index the visits read (`walkScanRounds457_of_cell`'s `hbyte`,
   unweakened). -/
   hbyte : ∀ (K' : WalkCarry G) (t' : State) (p : Nat), WalkInv G K' t' →
     K'.block = "while.body462.i" → p + 1 < c →
@@ -481,7 +481,7 @@ structure RunLastFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
   hnep : lookupName tl.env "%nep" = some (.int 64 (BitVec.ofNat 64 G.nep))
   hic : i < c
   hcw : c < 2 ^ 64
-  /-- The input's totality at every index the visits read (`walkScanRounds457`'s `hbyte`,
+  /-- The input's totality at every index the visits read (`walkScanRounds457_of_cell`'s `hbyte`,
   unweakened). -/
   hbyte : ∀ (K' : WalkCarry G) (t' : State) (p : Nat), WalkInv G K' t' →
     K'.block = "while.body462.i" → p + 1 < c →

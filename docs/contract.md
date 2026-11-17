@@ -745,20 +745,20 @@ and no entry carries the execution segment its own producer builds.
 |---|---|---|---|---|
 | c1 | `.ws` (bytes `126`/`127`, `C.k + 1 < G.nep`): the head state's memory carries the next entry's lane word, the byte before the entry's end with its no-run class, the whitespace stop `k` with its per-index `∀`, the landing's byte and its three reads | `hcontFacts_of_staging` (`JsonStage2WalkHcontFactsOfStaging`), whose traversal fields are `scanRoundField`/`scanByteField`/`scanTokField` (`JsonStage2WalkRevolutionScanRound`) | `HcontArm.ws` → `HcontArm.dispatch` | the seam's three call rows (`HcontSeamCalls` at `ContTailStartC`/`contWsTailStart`) and one document row, `hbyteClass` — the visited byte's two class bits at `wsByte G (p + 1)`. The round, the byte's address and read, the loaded register, the three local facts and the token register are produced; `hguard` is gone (see below) |
 | c2 | `.cleanup` (bytes `126`/`127`, entry left): the head state's memory carries the next entry's lane word and read, the bound's compare, the byte before the entry's end with its three scan-free bits | `hcontCleanupDoc_of_lane` (`JsonStage2WalkDispatchClassRows`) from the lane's `defaultLane` | `hcontSpan17_of_doc` → `contTailStartInv_of_doc` → `hcontArm_cleanup_of_rows` | **none** on top of the lane row, the head invariant and the seam's three call rows: the seventeen links, the seam's cells and the root slot's word are produced (`JsonStage2WalkDispatchSeamRows`) |
-| c3 | `.twoEntry` (byte `34`, `C.sp = 0`): the standalone string's lane — the next entry's word, the root slot's word, the log's two words, the decoded length — and the body's two call rows | `HcontLane.string`, `HcontAbi.string` (`JsonStage2WalkDispatchSupply`) | `hcontArm_twoEntry_of_staging` → `HcontArm.dispatch` | the lane's words, which are the document's (the entry stream's next position, the decoded length) and the two callee rows, which are the helper boundary; `C.sp = 0` is the class's own split. No document and no callee contract can supply the words' *values*, and no invariant clause fixes the callees' preconditions at their argument list |
-| c4 | `.stringOpenAboveZeroMerge` (byte `34`, `C.sp ≠ 0`): the class's byte, depth and two stack bytes at `C.sp - 1`, and the value-position staging | `stringOpenAboveZero_pre_of_inv` + `WalkInv.tyBytes`/`stBytes` | `hcontArm_stringOpenAboveZeroMerge_of_staging` (`JsonStage2WalkDispatchHcontStringDeep`) | **the route's counted segment** to `cleanup478.i` (`stringDeepMerge_tail`), whose one supplied link is the body call's row — the segment is the walk's own blocks and is composed, so what remains is the callee's precondition and answer at its argument list, not a document fact |
+| c3 | `.twoEntry` (byte `34`, `C.sp = 0`): the standalone string's lane — the next entry's word, the root slot's word, the log's two words, the decoded length — and the body's two call rows | `HcontLane.string`, `HcontAbi.string` (`JsonStage2WalkDispatchSupply`) | `hcontArm_twoEntry_of_staging` → `HcontArm.dispatch` | the lane's five reads and the two callee rows, and no smaller row is available from the tree today: each read is a `readBytes` at a staged address that no `WalkInv` clause names (`log_alen` bounds the log's `%alen` word without stating its read, `root_slot` carries the root slot's presence and not its read, and `%outn.i`'s slot is one of the four `alloca` slots `owned` omits), so a producer for them is an invariant edit; the two callee rows are the helper boundary.  Of those rows, the value-position *precondition* is derivable (`s2ValuePosPre`'s depth clause is `Or.inl` at zero and the two stack maps at a positive depth, the shape `stringOpenAboveZero_pre_of_inv` proves), the body call's staging is a row, and the answers are the helper's.  `C.sp = 0` is the class's own split |
+| c4 | `.stringOpenAboveZeroMerge` (byte `34`, `C.sp ≠ 0`): the class's byte, depth and two stack bytes at `C.sp - 1`, and the value-position staging | `stringOpenAboveZero_pre_of_inv` + `WalkInv.tyBytes`/`stBytes` | `hcontArm_stringOpenAboveZeroMerge_of_staging` (`JsonStage2WalkDispatchHcontStringDeep`) | **the route's counted segment** to `cleanup478.i`, which the producer takes as `hseg` with its endpoint's carry and state, its predecessor, its count and its price — and which no theorem in the tree states: the name `stringDeepMerge_tail` in that module's prose is not a producer.  The route is the walk's own five blocks (the reservation, the body's call, the answer's tests, the record and `if.then330.i`), so composing it takes the body call's row as its one supplied link and no document fact; writing that composition is the row's work |
 | c5 | `.stringOpenAboveZeroRefuse` (same class): the nest's own test clear, the offset store and the copy | `stringDeepRefuse_at` (two links from `if.end245.i`'s state) | `hcontArm_stringOpenAboveZeroRefuse_of_staging` | **none**: the refusal is composed |
 | c6 | `.scalar` (the tag test's true arm): the numeral's document row — the class bits, the span, the entry's non-emptiness and the byte before the entry's end with its no-run class — the lane's word and its read, and the three calls at `scSeamS` | `scSeamInv_of_cells` (`JsonStage2WalkHcontSeamInv`) for the seam's invariant, from that document row; `scContTail_of_calls` (`JsonStage2WalkDispatchSegments`) for the tail, at the callee rows | `hcontArm_scalar_of_rows` → `walkDispatch_at_scalar_of_rows` (`JsonStage2WalkDispatchScalarRows`) | **none** on top of the document row (`HcontScalarPrefix`), the lane word and its read, and the three call rows at `scSeamS`: the seam's invariant, the arm and the dispatch are produced, and the route's two agreements — the kind literal `7` and the root slot's word, transported across the three token-record stores by `scSeam_rootRead` — are the callee group's tie to the state |
 | c7 | `.letters`/`.fLetter` (`0 … 109`, `128 … 255`, the tag test clear): the head chain to `if.else387.i` with its endpoint's lane word, the seam's two test cells and the root slot's word | `lowHeadChain_of_lane` … (`JsonStage2WalkDispatchDefaultLane`) from `HcontLane.defaultLane` for the chain (`HcontHeadChain` carries `v` with `contSeamMid_ee`/`contSeamMid_cond` and the root transport `contSeamMid_rootRead`); `lettersSeamInv_of_chain`/`fLetterSeamInv_of_chain` for the seam's invariant; `lettersSeamCells_of_chain`/`fLetterSeamCells_of_chain` for the seam's cells; `emptyTail_of_cells` for the tail | `hcontArm_letters_of_rows`/`hcontArm_fLetter_of_rows` → `walkDispatch_at_letters_of_rows`/`_fLetter_of_rows` (`JsonStage2WalkDispatchLettersRows`) | **none** on top of the three call rows at `LetS413`/`FS413` and the chain's own data: the seam's invariant, its cells (`%ee.1.i`, `%cond350.i` at the chain's one `Nat`, the root word across the suffix's three token-record stores) and the three-link tail are produced, and the route's two agreements — the kind literal `0` (`if.else405.i`) or `9` (`if.then397.i`), and the root slot's word read at the head state — are the callee group's tie to the state |
-| c8 | `.classC` (`110 … 125`): the same head chain plus the byte's own span | `classCSpan_at` from the class's `slt %8 110` bit for the span; `emptyTail_of_cells` for the tail | `hcontArm_classC_of_rows` → `walkDispatch_at_classC_of_rows` (`JsonStage2WalkDispatchLettersRows`) | the span's leaf endpoint's seam cells (`HcontSeamCells` at `(Cs, ss)`: the `phi`, the four pointers, the root word and the two test cells) and its three call rows. The span returns its target existentially, so the cells are that endpoint's row while the tail is produced from it; naming the endpoint (as `contWsEntry` names the scan's) would turn the cells into a transport and leave only the three callee rows |
+| c8 | `.classC` (`110 … 125`): the same head chain plus the byte's own span | `classCSpan_at` from the class's `slt %8 110` bit for the span; `emptyTail_of_cells` for the tail | `hcontArm_classC_of_rows` → `walkDispatch_at_classC_of_rows` (`JsonStage2WalkDispatchLettersRows`) | the span's endpoint's seam cells (`HcontSeamCells` at `(Cs, ss)`: the `phi`, the four pointers, the root word and the two test cells) and its three call rows. The span returns its target existentially, so the cells are that endpoint's row while the tail is produced from it; the endpoint's *block* is fixed (`if.then413.i`) but its carry and state are the span's witness, so no term names them — the letters and `'f'` seams are the named states `LetS413`/`FS413`, which is why their cells are produced (`lettersSeamCells_of_chain`, `fLetterSeamCells_of_chain`). Naming the endpoint therefore means four named leaf states and the cells built at each, one per class-C leaf |
 | c9 | `.run` (the same six default classes on the run continuation): the check state's cells, the whitespace stop, the landing and the scan's traversal | `hcontRunFacts_of_rows` → `runFacts_of_runBundle` (`JsonStage2WalkDispatchRunHead`), with the c1 round/byte/token fields transported (the same terms, at the check state) | `HcontArm.run` → `dispatch` | the run's document rows and, of the traversal, the same single document row `hbyteClass`; its round and byte read are c1's produced terms and its tail is `hcontScanTail_at`, not a row |
 | c10 | the four delimiter refusals and the two above-zero delimiter pairs | `bracketRefuse_at`, `commaRefuse_at`, `colonRefuse_at`, `closeBraceZero_at`, `commaBraceMerge_at` … | `hcontArm_of_derivedClass` (`JsonStage2WalkDispatchResidual`) | **none**: the class bits and `WalkInv`'s own cells |
-| c11 | `.containerOpen`/`.openAtCap` (bytes `91`/`123`): the root slot's zero word and the value-position call's row | `HcontLane.root`, `HcontAbi.openCall` | `walkDispatch_at_open91_of_payload` … | the lane's root word — the zero word at `G.next0 + 8` — and the call row; the depth `520` is the invariant's own cap. The root word is the *same slot* as l1's `rdv`, at the other end of the walk, and one `WalkInv` clause for that slot would discharge both (see below); the call row is the helper boundary |
+| c11 | `.containerOpen`/`.openAtCap` (bytes `91`/`123`): the root slot's zero word and the value-position call's row | `HcontLane.root`, `HcontAbi.openCall` | `walkDispatch_at_open91_of_payload` … | the lane's root word — the zero word at `G.next0 + 8` — and the call's answer; the depth `520` is the invariant's own cap.  The word is not derivable from the tree: `WalkInv.root_slot` carries the slot's *presence* (`HasBytes`, a `present`-per-byte claim) and `WalkInv.frame` the interval's silence, so no clause names the slot's read, let alone its value, and its one writer outside the walk's own blocks is the callee `s2_after_value`'s store to `%root_done.i`, which no call row models (see the paragraph below — one clause would **not** also discharge l1).  The call's *precondition* at the staged list follows by the same depth case split `stringOpenAboveZero_pre_of_inv` applies (`Or.inl` at depth zero, the two stack maps at a positive depth), though no theorem states the general case yet; the answer is the helper boundary |
 | c12 | `.closeWithOpen` (`93`/`125` at `C.sp ≠ 0`): the two stack bytes and the callee's precondition at `%ctype.i + (%sp - 1) - 1` | `s2AfterValuePre_of_inv` (`JsonStage2WalkDispatchResidual`) | `hcontArm_of_derivedClass` | **none** |
-| l1 | last entry `.highByte` (`126`/`127`, no entry left): the last byte's class, the byte before the token's end, the three calls, the root-done word | `HlastResidue`'s rows; `hlastFacts_of_staging` (`JsonStage2WalkDispatchWitnessHlast`) composes `hlastTailSeg` and `hlastTail_of_calls` | `LastEntryArm.highByte` → `dispatch` | the root-done slot's word `rdv` — the word at `G.next0 + 8`, the *same slot* as c11's `lane.root` at the head (see below) — and its read at the seam: the last entry has no next entry, so the lane's zero does not apply |
-| l2 | last entry `.scalar`: the three call rows at `TailStartC`/`hlastTail` | `scalarTail_of_calls` (`JsonStage2WalkDispatchScalar`) | `LastEntryArm.scalar` | the document's cells and the three call rows |
-| l3 | last entry `.letters`/`.fLetter`/`.classC`: the seven-link suffix and the class's four-pivot prefix | `contDefLastSeg`, `contLastLowHeadSeg` … (`JsonStage2WalkDispatchLettersHead`) | `LastEntryArm.letters` … | the tail's three call rows at the last entry's seam |
-| l4 | last entry `.run`: the terminal run's document bounds and the credit its index consumed | `RunLastFacts` + `runLastMerge_at`, `runLast_price_with_credit` | `LastEntryArm.run` | the document's bounds `hNdoc`/`hstart`/`hspanDoc`; the price is derived from them |
+| l1 | last entry `.highByte` (`126`/`127`, no entry left): the last byte's class, the byte before the token's end, the three calls, the root-done word | `HlastResidue`'s rows; `hlastFacts_of_staging` (`JsonStage2WalkDispatchWitnessHlast`) composes `hlastTailSeg` and `hlastTail_of_calls` | `LastEntryArm.highByte` → `dispatch` | two rows, and the slot is one of them twice: `HlastLane.root` is the zero word at `G.next0 + 8` (c11's claim at the exhausted count) and `HlastFacts` carries the seam's word `rdv` with its read — the same slot at the other end, but a *variable* word, because a decoded string has stored its flag through `s2_after_value`.  Its read at a named state is produced by the seam transports (`letS413_rootRead`, `fs413_rootRead`, `walkReadBytes_rootSlot_of_tokStore`); the value at the last entry is not, and neither is c11's zero (see below) |
+| l2 | last entry `.scalar`: the three call rows at `TailStartC`/`hlastTail` | `scalarTail_of_calls` (`JsonStage2WalkDispatchScalar`) | `LastEntryArm.scalar` | the three call rows at the last entry's seam and the seam state's own cells: `scalarTail_of_calls` composes the tail from the three callees' preconditions and answers at `TailStartC`'s argument lists, so the segment is produced and what remains is the helper boundary — no document row and no arm |
+| l3 | last entry `.letters`/`.fLetter`/`.classC`: the seven-link suffix and the class's four-pivot prefix | `contDefLastSeg`, `contLastLowHeadSeg` … (`JsonStage2WalkDispatchLettersHead`) | `LastEntryArm.letters` … | the tail's three call rows at the last entry's seam: the seven-link suffix and each prefix class's chain are theorems (`contDefLastSeg` at seven, `contLastLowHeadSeg` … `contLastBrcHeadSeg` at ten or eleven), so no link of the route is a row and what remains is the helper boundary at the seam |
+| l4 | last entry `.run`: the terminal run's document bounds and the credit its index consumed | `RunLastFacts` + `runLastMerge_at`, `runLast_price_with_credit` | `LastEntryArm.run` | the document's bounds `hNdoc`/`hstart`/`hspanDoc` at the last entry's run, which `RunLastFacts` takes as its document row and `runLastMerge_at`/`runLast_price_with_credit` consume; the price and the credit are derived from them, so no segment and no callee row is taken.  The bounds are the entry table's and the last entry's span — a document row, not a walk fact |
 | l5 | last entry refusals, `.stringOpener`, `.openAtCap` | `quoteRefuse_at`, `bracketRefuse_at`, `closeBraceZero_at`, `containerOpenCap_at` | `LastEntryArm.dispatch` | **none** |
 
 **What c2 establishes, and why it is the shape the others take.**  `JsonStage2WalkDispatchSeamRows`
@@ -773,14 +773,15 @@ assumption about the chain it establishes.  The two word equalities it requires 
 `rdv = 0`) are the callee group's agreement with those cells, not a second reading of the
 state.
 
-**The guard that was false.**  `walkScanRounds457` takes a hypothesis `hguard` of type
+**The guard that was false.**  The composite `walkScanRounds457` (since deleted, see below)
+took a hypothesis `hguard` of type
 `ScanGuard s "%q.0.i246" "%cond350.i" inner`, and the traversal bundles carried it as a row.
 `ScanGuard` quantifies over *every* pair of naturals whose words are the two registers' with
 `c - i ≤ inner`; above the word's width the subtraction saturates at zero, so such a pair
 exists at every state whose registers hold words and the claim `i + 1 < c` fails there.  The
 statement is therefore false, the bundles carrying it were uninhabited, and the rows
 dependent on them vacuous.  Its production never existed for the same reason, and
-`walkScanRound457`'s proof does not read it: the visit's `i + 1 < c` is a premise of the
+`walkScanRound457`'s proof did not read it: the visit's `i + 1 < c` is a premise of the
 round.  `JsonStage2WalkRevolutionScanRound` proves the round without the guard
 (`scanRound_at`, `scanRoundField`) and the row now carries the round's own `∀`, stated at the
 state's cells below the word's width.  The guard is deleted from `HcontFacts`,
@@ -788,9 +789,9 @@ state's cells below the word's width.  The guard is deleted from `HcontFacts`,
 
 **The two traversal lemmas, restated by dropping the guard.**  The composite lemmas also
 took it, and the repair is the same test applied one level up: does the proof read it?
-`walkScanRounds457`'s induction forwards its `hguard` to the recursive hypothesis and reads
+`walkScanRounds457`'s induction forwarded its `hguard` to the recursive hypothesis and read
 it nowhere else — the step's `i + 1 < c` comes from `c - 1 - i = r + 1` together with
-`i < c` — and `walkScanArrival457` only passes it to `walkScanRound457`, which does not read
+`i < c` — and `walkScanArrival457` only passed it to `walkScanRound457`, which did not read
 it either.  So the parameter is **dropped, not restated**: 
 `walkScanRounds457_of_cell` and `walkScanArrival457_of_cell` state both results with no
 `ScanGuard` hypothesis at all, are inhabited (their only hypotheses are the round, the
@@ -798,33 +799,59 @@ byte's totality, the state's cells and the count bounds), and are proved — the
 the guard-free round.  A restatement of `ScanGuard` at the state's cells would be a strictly
 weaker hypothesis than the one the lemmas need, which is none.
 
-The originals remain in `JsonStage2WalkInduce.lean`, as do the four scan-step lemmas
-(`whitespace_scan`, `string_scan`, `escape_scan`, `extraToken_scan`) and `walkScanRound457`
-in `JsonStage2WalkScope.lean`; each still carries the false `ScanGuard` parameter and is
-therefore vacuous as a statement.  Nothing that produces a row reaches them: the four are
-called only by `WalkLink.whileBody370`/`I104`/`76`/`462` in the same file, which have no
-callers, and `walkScanRound457` only by `walkScanArrival457`, also uncalled.  Removing or
-restating them in place needs those two files, which this change does not own.
+The originals are **deleted**, not restated, and the reachability check is the deletion's
+warrant.  Gone from `JsonStage2WalkInduce.lean`: `walkScanRounds457`, `walkScanArrival457`
+and `walkScanRound457`.  Gone from `JsonStage2WalkScope.lean`: `whitespace_scan`,
+`string_scan`, `escape_scan`, `extraToken_scan` and the four `WalkLink.whileBody370`/
+`whileBodyI104`/`whileBody76`/`whileBody462` wrappers, each with its `#print axioms` line.
+The calls, read by name across every module: the four arms were called only from their own
+wrapper, the wrappers from nothing, `walkScanRounds457` only from `walkScanArrival457`,
+`walkScanRound457` only from `walkScanArrival457`, and `walkScanArrival457` from nothing.
+Nothing that produces a row reached any of them.  The guard-free `walkScanRounds` (the
+scan-agnostic traversal in `JsonStage2WalkInduce`) and
+`walkScanRounds457_of_cell`/`walkScanArrival457_of_cell` remain, and the round is
+`scanRound_at`/`scanRoundField`.  `ScanGuard` itself stays in `JsonStage2WalkScope`, its
+docstring stating that it is false at every state whose registers hold words and that
+nothing takes it.  The deletion also moved four blocks out of the link census — 157 links
+become 153, and class H1's four scan headers are counted as counted rounds instead of as
+one-block links — and `JsonStage2WalkScope`'s `#guard` sums, class table and three
+narrative sites record that re-expression: the coverage is unchanged, the method differs.
 
-**What this ledger says about closure.**  Five rows are produced end-to-end (c2, c6, c7,
-c10, c12), two more are produced up to their named document rows (c1 and c9, whose round,
-byte read, loaded register, local facts and token register are theorems and whose only
-traversal assumption is `hbyteClass`), one is produced up to its endpoint's seam cells (c8)
-and one more up to a single word (l1's `rdv`); the rest are named rows of the kinds §5 of
-the closure review separates.  No entry above is an arm, a bundle, or the segment its own
-producer composes, and the quantifiers are the class's and the state's: a row is stated at
-the continued head it belongs to (`C.k + 1 < G.nep` for c1–c12) or at the exhausted count
+**What this ledger says about closure.**  Seven rows are produced end-to-end (c2, c5, c6,
+c7, c10, c12, l5).  Seven more are produced up to a row the tree names but does not supply:
+c1 and c9 up to the document row `hbyteClass`; c3, l2 and l3 up to the callee rows at their
+own seams; c11 and l1 up to one slot's value; c8 up to its endpoint's seam cells.  **Ten of
+the seventeen rows are open**, and of
+those ten, three are the document's or the traversal's own rows (c1, c9, l4), three are the
+helper boundary (c3's two calls, and l2's and l3's three), two are one slot's value (c11's
+zero word, l1's `rdv`), one is a segment no producer states (c4) and one is four named leaf
+states (c8).  No row is a bundle, an arm, or the segment its own producer composes; the
+value-position precondition, which this ledger used to count against c3 and c11, follows by
+the same depth case split `s2AfterValuePre_of_inv` and `stringOpenAboveZero_pre_of_inv` apply
+(no theorem states the general form yet) and is therefore a smaller row than the one
+recorded here.  The
+quantifiers are the class's and the state's: a row is stated at the continued head it
+belongs to (`C.k + 1 < G.nep` for c1–c12) or at the exhausted count
 (`¬ (C.k + 1 < G.nep)` for l1–l5), never at every head.
 
-**What l1's single word needs, and why c11 shares it.**  The root slot at `G.next0 + 8` is
-one of the four `alloca` slots `WalkInv.owned` deliberately omits, and `WalkInv.frame`
-covers the interval without naming the word inside it, so the word's presence and value are
-neither the document's nor a callee's: no document and no helper contract can supply them.
-c11's `lane.root` is the same slot at the head, where the word is zero; l1's `rdv` is the
-same slot at the end.  One `WalkInv` clause for the slot therefore discharges both, and the
-producing change is a walk-layer edit beside the log's clause, carried through every
-construction site — not a row edit.  Until then both stand named, and the same holds for the
-log's base word in `HlastFacts`.
+**What the two words at `G.next0 + 8` need, and why one clause does not serve both.**  The
+slot is the root-done flag `%root_done.i`: `entry` writes it among its four allocations, and
+its one later writer is the callee `s2_after_value`, whose depth-zero arm stores `1` through
+it (`JsonStage2WalkHelperIRBodies`' `if.then` body).  `WalkInv.root_slot` carries the
+slot's **presence** — `HasBytes` at four bytes, from the seed on — and `WalkInv.frame` the
+interval's silence.  Those are enough for the seam transports (`letS413_rootRead`,
+`fs413_rootRead`, `walkReadBytes_rootSlot_of_tokStore`) to move a word the caller already
+holds across token-record stores, but not for a read of the slot: `HasBytes` is a
+`present`-per-byte claim, and no clause names the four-byte read, let alone its value.  c11's
+zero and l1's `rdv` are therefore two different claims about one slot — zero at a
+continuing head, an arbitrary word at the exhausted count — and no single clause discharges
+both.  A clause carrying the *read* as a word
+(`∃ w, readBytes s.mem (G.next0 + 8) 4 = some (natToBytes w 4)`) follows from `root_slot`
+with `natToBytes_bytesToNat` and would remove the transports' last premise; the *values* also
+need the callee's store modelled, and neither `HcontStringCalls` nor `HlastHighByteAbi`
+mentions that slot.  The producing change is a walk-layer edit beside the log's clause,
+carried through every construction site, plus that postcondition — not a row edit.  Until
+then both words stand named, and the same holds for the log's base word in `HlastFacts`.
 
 ## 8. Out of scope for the first contract
 

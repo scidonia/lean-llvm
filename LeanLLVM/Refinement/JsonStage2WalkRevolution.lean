@@ -42,11 +42,11 @@ the test succeeds.
 
 `23 + 1 + 1` is the prefix plus the exit and the merge, and the visits are a counted
 traversal rather than part of the prefix.  The visits are composed at
-`walkScanRounds457`'s **round**, not at that lemma: its conclusion keeps only the counter
+`walkScanRounds457_of_cell`'s **round**, not at that lemma: its conclusion keeps only the counter
 at the target (`%q.0.i246 = c - 1`), and the exit test reads the bound (`%cond350.i = c`)
 as well, so the traversal's own aggregation cannot reach the exit.  `contScanRounds` is
 that aggregation with both registers kept; its measure, its price and its induction are
-`walkScanRounds457`'s.  Its induction consumes one row, the visited byte's class at the
+`walkScanRounds457_of_cell`'s.  Its induction consumes one row, the visited byte's class at the
 indices the scan walks (`hbyte`); the round is a theorem of the visit's own premises
 (`scanRoundField`, `JsonStage2WalkRevolutionScanRound`) and no guard hypothesis enters.
 `ScanGuard`'s `∀` quantifies over every natural pair carrying the two register words, and
@@ -2404,7 +2404,7 @@ structure HcontFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) 
         (Latch462S (scanLatchOut s' "%inc463.i" "%exitcond298.not" p v.toNat "land.rhs457.i")
           (BitVec.ofNat 64 (p + 1)) a q x)
   /-- **The token record's register at the scan's exit.**  Stated over the states the
-  traversal's counters pin, because `walkScanRounds457` returns its final state
+  traversal's counters pin, because `walkScanRounds457_of_cell` returns its final state
   existentially; every block on the path binds its own cells and none rebinds `%t352.i`,
   so the fact is true of the model and the shape is the traversal's.
 
@@ -2663,13 +2663,13 @@ abbrev contTailStartF {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     (f : HcontCleanupFacts G C s) : State :=
   contTailStart C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.b8 f.x1
 
-/-- **The scan's visits, counted with the registers kept.**  `walkScanRounds457` counts
+/-- **The scan's visits, counted with the registers kept.**  `walkScanRounds457_of_cell` counts
 the visits but keeps only the counter at its target; the exit test reads the bound too, so
 the recursion here is at the round's own granularity (`hround`, the traversal's own
 hypothesis) and its conclusion carries both registers.  The price bound is the traversal's
 own: one byte allowance per visit, `cd - 1 - ei` of them.
 
-**This is the two-register twin of `walkScanRounds457`, not a simplification of it, and it
+**This is the two-register twin of `walkScanRounds457_of_cell`, not a simplification of it, and it
 must not be folded back into that lemma.**  The committed traversal concludes
 `%q.0.i246 = c - 1` and nothing about `%cond350.i`, while the latch's exit test branches on
 the bound (`i + 1 = c`) — so the exit is unreachable from its conclusion by construction,
@@ -3567,7 +3567,7 @@ structure HcontRunFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (sl : Sta
   entry's position, and the run's stop at or after this one's. -/
   hspan : v.toNat ≤ entryPos G (C.k + 1)
   hstart : entryPos G C.k ≤ k
-  /-- **The traversal's round**: `walkScanRounds457`'s `hround`, unweakened. -/
+  /-- **The traversal's round**: `walkScanRounds457_of_cell`'s `hround`, unweakened. -/
   hround : ∀ (C' : WalkCarry G) (s' : State) (p a : Nat) (bs : List UInt8) (q : Nat)
     (x : BitVec 8), WalkInv G C' s' → C'.block = "while.body462.i" →
     lookupName s'.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 p)) →
@@ -3594,7 +3594,7 @@ structure HcontRunFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (sl : Sta
       WalkInv G C'' s'' ∧ C''.block = "while.body462.i" ∧ j ≤ stage2ByteAllowance ∧
       lookupName s''.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 (p + 1))) ∧
       lookupName s''.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 v.toNat))
-  /-- **The input's totality at every index the scan visits**: `walkScanRounds457`'s
+  /-- **The input's totality at every index the scan visits**: `walkScanRounds457_of_cell`'s
   `hbyte`, unweakened. -/
   hbyte : ∀ (C' : WalkCarry G) (s' : State) (p : Nat), WalkInv G C' s' →
     C'.block = "while.body462.i" → p + 1 < v.toNat →

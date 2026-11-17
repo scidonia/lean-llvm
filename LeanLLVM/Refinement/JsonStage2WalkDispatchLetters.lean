@@ -55,8 +55,8 @@ runs at **eleven** head links (`19 + 2 = 21 ≤ 32`): the count test fails there
 Where the byte before the entry's end is whitespace the walk runs that run first and the
 token's end `%ee.1.i` is the run's *stop* `k`, not the entry's end; the extra-token scan
 then traverses `[k, v)` and `walkScanToMerge` is the induction over its visits.  Its
-hypotheses are the traversal's: `hbyte` (every index the scan visits has a whitespace byte),
-`hguard` (the latch's measure) and the round, and `walkScanArrival457` is the induction that
+hypotheses are the traversal's: `hbyte` (every index the scan visits has a whitespace byte)
+and the round, and `walkScanArrival457_of_cell` is the induction that
 composes them at `n ≤ stage2ByteAllowance * (c - 1 - i)` visits.
 
 Both arms this module's composition backs — `HcontArm.letters` and `LastEntryArm.letters` —

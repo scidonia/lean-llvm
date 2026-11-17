@@ -20,7 +20,7 @@ is the one
 **name the states and the carries**, so the endpoint is a term of the composition — and two
 things the earlier revolution left existential have to be named for it:
 
-* **the extra-token scan's round.**  `walkScanRound457` proves one visit's four steps and
+* **the extra-token scan's round.**  `scanRound_at` proves one visit's four steps and
   states its target as `∃ C' s' n, …`; its proof already builds the named target
   (`Latch462S (scanLatchOut …)` at `{ ScanCLand C with block := "while.body462.i" }`), and
   `scanRoundSeg4` is that proof at those names.  `scanWsRounds` is the traversal — the
@@ -280,7 +280,7 @@ theorem contCleanupEndF_tok {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : 
 
 /-! ### The round, named
 
-`walkScanRound457` proves one visit's four steps — the latch's own increment and test, the
+`scanRound_at` proves one visit's four steps — the latch's own increment and test, the
 landing's three links — and states its target as a witness of an existential.  Its proof
 already builds the named target (`Latch462S (scanLatchOut …)` at the carry
 `{ ScanCLand C with block := "while.body462.i" }`), so this is the same four steps at those
@@ -311,7 +311,7 @@ theorem scanRoundOut_nep (s : State) (i c : Nat) (idx : BitVec 64) (a q : Nat)
 /-- **One visit of the extra-token scan, its target named.**  Four steps: the latch's
 `%inc463.i` and its equality test, then `land.rhs457.i`'s three links.  The target is
 `Latch462S (scanLatchOut …) (ofNat 64 (i + 1)) a q x` at the carry
-`{ ScanCLand C with block := "while.body462.i" }` — the term `walkScanRound457`'s proof
+`{ ScanCLand C with block := "while.body462.i" }` — the term `scanRound_at`'s proof
 builds and does not state. -/
 theorem scanRoundSeg4 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
     (s : State) (hInv : WalkInv G C s) (hblock : C.block = "while.body462.i")
@@ -403,7 +403,7 @@ registers the exit reads.  This is that traversal with three more cells in the c
 environment to read a cell at, which is exactly why the merge's cells had no producer.
 
 The price is `4` per visit, not the byte allowance's `8`: the round's four steps are the
-latch's own and the dispatch's three links, and `walkScanRound457`'s bound was never tight.
+latch's own and the dispatch's three links, and `scanRound_at`'s bound was never tight.
 -/
 
 /-- **The extra-token scan's visits, at the merge's registers.**  From a latch state whose

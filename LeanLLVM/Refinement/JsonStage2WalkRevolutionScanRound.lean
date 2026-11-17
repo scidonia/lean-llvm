@@ -1,13 +1,14 @@
 /-
 The extra-token scan's round, without a guard hypothesis.
 
-`walkScanRounds457` (`JsonStage2WalkInduce`) takes three `∀`-form hypotheses at the
+The deleted composite `walkScanRounds457` (`JsonStage2WalkInduce`) took three `∀`-form
+hypotheses at the
 latch: `hround` (the visit's own segment), `hguard` (`ScanGuard` at the state's local
 fact) and `hbyte` (the input's totality at the visited index).  This module shows that
 the first is a theorem of the visit's own premises — the counter's two cells, the visited
 byte's read and the three local facts — and that the guard is not needed to prove it: the
-visit's `i + 1 < c` is a premise of the round, and `walkScanRound457`'s proof never reads
-the guard it accepts.
+visit's `i + 1 < c` is a premise of the round, and the round's proof never reads
+the guard the composite accepted.
 
 **`ScanGuard` is not a fact about the walk.**  It quantifies over every pair of naturals
 whose words are the two registers' and whose difference is inside the inner budget; with
@@ -42,7 +43,7 @@ def wsX {m0 : Mem} (G : WalkGeom m0) (p : Nat) : BitVec 8 :=
 
 /-- **One round of the extra-token scan, from the visit's own premises.**  The latch's
 visit — one step — and the dispatch's three links: four steps.  This is
-`walkScanRound457` without its guard argument, which that proof does not read: the
+the deleted `walkScanRound457` without its guard argument, which its proof did not read: the
 counter's increment being short of the bound is `hlt`, a premise, and the local fact the
 visit leaves is the latch's witness `⟨i + 1, c, …, hlt, …⟩` rather than a consequence of
 `ScanCount`. -/
@@ -139,7 +140,7 @@ theorem scanRound_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
   · rw [hs₃]
     exact latch462S_cond (m0 := m0) s i c (BitVec.ofNat 64 (i + 1)) a q x hc
 
-/-- **The traversal's round, as a row field.**  `walkScanRounds457`'s `hround` at a named
+/-- **The traversal's round, as a row field.**  `walkScanRounds457_of_cell`'s `hround` at a named
 bound `nb`: at every invariant-carrying latch state, a visit at the state's own counter
 and bound, with the byte its landing loads, is a segment of at most one byte allowance
 that returns to the latch with the counter advanced and the bound kept.  It is
@@ -176,7 +177,7 @@ theorem scanRoundField {m0 : Mem} (G : WalkGeom m0) (nb : Nat)
     scanRound_at (calls := stage2Calls stage2SubCalls) (G := G) (C := C') (s := s') hInv hblock
       hi hc hnb hlt hposi h3 hread hbs hl105 h47 hbit hws hl96 hll
 
-/-- **The traversal's byte, from the document and the invariant.**  `walkScanRounds457`'s
+/-- **The traversal's byte, from the document and the invariant.**  `walkScanRounds457_of_cell`'s
 `hbyte` has three ingredients: the landing's address and read, the register the landing
 loads, and the visited byte's class.  Only the last is the input's.  The address is
 `WalkPtrs`'s `%3 = G.b` at every invariant-carrying state; the read is `walkDoc_byte`'s,
@@ -265,7 +266,7 @@ theorem scanByteField {m0 : Mem} (G : WalkGeom m0) (nb : Nat) (hnb : nb < 2 ^ 64
 
 /-- **The extra-token scan's visits, composed, without a guard hypothesis.**
 
-This is `walkScanRounds457` with its `hguard` parameter **dropped, not restated**: the
+This is the deleted `walkScanRounds457` with its `hguard` parameter **dropped, not restated**: the
 induction never reads it.  `go`'s base case needs nothing but the counter's cell, and its
 step gets `i + 1 < c` from `c - 1 - i = r + 1` and `i < c` — the decomposition of the
 remaining distance, not the guard — then applies `hround` at that visit.  The guard's only
@@ -368,7 +369,8 @@ theorem walkScanRounds457_of_cell {calls : Calls} {m0 : Mem} (G : WalkGeom m0) {
 
 /-- **The scan's arrival at its last visit, without a guard hypothesis.**  The visit
 traversal above, with the round built by `scanRound_at` — the guard-free round — rather
-than by `walkScanRound457`, which still takes a `ScanGuard` it does not read. -/
+than by the deleted `walkScanRound457`, which still took a `ScanGuard` its proof did not
+read. -/
 theorem walkScanArrival457_of_cell {calls : Calls} {m0 : Mem} (G : WalkGeom m0) {i c : Nat}
     (hbyte : ∀ (C : WalkCarry G) (s : State) (p : Nat), WalkInv G C s →
       C.block = "while.body462.i" → p + 1 < c →
