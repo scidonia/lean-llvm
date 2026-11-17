@@ -65,6 +65,7 @@ carries it, and the seam state is not one of them — hence the chains: each lin
 machine's own step, and the invariant at its endpoint is the step's `inv'`.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkDispatchCleanupSpan
+import LeanLLVM.Refinement.JsonStage2WalkDispatchScalarOfStaging
 import LeanLLVM.Refinement.JsonStage2WalkHcontScalar
 
 set_option autoImplicit false
@@ -92,15 +93,14 @@ theorem contTailStartInv_of_cleanup {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry 
 
 /-! ### The plain-value route's seam -/
 
-/-- **The invariant at the plain-value route's tail start.**  `scSeamS` is the tag test's
-`1` arm at `if.end372.i`; the chain to it is the scalar prefix's eight links
-(`scPrefixLand`), the byte's three pivots with no whitespace run (`scWsLeafSeg`) and the
-seam's own step (`scSeamSeg`), and their composition's `inv'` is the `hInvS` the tail
-producer reads.  The two cells the seam step needs are the bundle's: `%8` is the head's
-byte (`sP35_env8`) and `%end.i` is the static row (`sP35_envEnd`,
-`WalkInv.regs`). -/
-theorem scSeamInv_of_scalar {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
-    (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead) (f : HcontScalarFacts G C s) :
+/-- **The invariant at the plain-value route's tail start, from the prefix's cells.**
+`scSeamS` is the tag test's `1` arm at `if.end372.i`; the chain to it is the scalar prefix's
+eight links (`scPrefixLand`), the byte's three pivots with no whitespace run (`scWsLeafSeg`)
+and the seam's own step (`scSeamSeg`), and their composition's `inv'` is the `hInvS` the tail
+producer reads.  The two cells the seam step needs are the prefix's: `%8` is the head's
+byte (`sP35_env8`) and `%end.i` is the static row (`sP35_envEnd`, `WalkInv.regs`). -/
+theorem scSeamInv_of_cells {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead) (f : HcontScalarPrefix G C s) :
     WalkInv G (HeadC₄₁₃ (ContAC₇ C))
       (scSeamS C s f.x f.inc f.nep f.ep f.v f.ix f.b35) := by
   have hseg8 : WalkSegment (stage2Calls stage2SubCalls) G C s (Scc₈ C)
@@ -131,6 +131,20 @@ theorem scSeamInv_of_scalar {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : 
   rw [hcarry] at hseg12
   exact hseg12.inv'
 
+/-- **The invariant at the plain-value route's tail start, from the bundle.**  The bundle
+above its tail is the prefix, so this is `scSeamInv_of_cells` at the bundle's own fields. -/
+theorem scSeamInv_of_scalar {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead) (f : HcontScalarFacts G C s) :
+    WalkInv G (HeadC₄₁₃ (ContAC₇ C))
+      (scSeamS C s f.x f.inc f.nep f.ep f.v f.ix f.b35) :=
+  scSeamInv_of_cells hInv hblock
+    { x := f.x, h8 := f.h8, hlt91 := f.hlt91, h44 := f.h44, h58 := f.h58, hne44 := f.hne44,
+      hbit := f.hbit, inc := f.inc, nep := f.nep, hinc := f.hinc, hnep := f.hnep,
+      hnext := f.hnext, ep := f.ep, v := f.v, h5 := f.h5, hi63 := f.hi63, hread := f.hread,
+      ix := f.ix, hidx5 := f.hidx5, htok5 := f.htok5, hgap5 := f.hgap5, hugt := f.hugt,
+      b35 := f.b35, hread35 := f.hread35, hb13 := f.hb13, hb32 := f.hb32,
+      hbne32 := f.hbne32 }
+
 /-! ### The last entry's seam -/
 
 /-- **The invariant at the last entry's tail start.**  `hlastTailSeg`'s sixteen links end
@@ -149,6 +163,7 @@ theorem hlastTailInv_of_facts {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s 
 /-! ### The instrument -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.contTailStartInv_of_cleanup
+#print axioms LeanLLVM.Refinement.WalkScope.scSeamInv_of_cells
 #print axioms LeanLLVM.Refinement.WalkScope.scSeamInv_of_scalar
 #print axioms LeanLLVM.Refinement.WalkScope.hlastTailInv_of_facts
 
