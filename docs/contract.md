@@ -1193,7 +1193,8 @@ transports it to `Stage2EventRel` (`stage2EventRel_of_records` is the form the
 producer uses).  `Stage2Records.append` is what makes a walk step composable: one
 step relates one record to one token, and the trace is the concatenation.
 `pair_records` and `null_records` instantiate it at two documents with the
-emitted bytes computed rather than assumed.
+emitted bytes computed rather than assumed; §7.11 states and proves the relation's
+general form, which makes those two instances rather than the claim.
 
 **What the producer derives, and what it names.**  `Stage2OutcomeEvidence` is the
 evidence at one outcome: the document the arguments name, and the run's answer.
@@ -1218,6 +1219,9 @@ are *related to* the tokens that value came from, which is what a record stream
 means.  So strings and containers are decoded by the tape's spans and the
 relation's constructors, and a number record's payload is `strtodSpec`'s
 encoding — the value is never left as "some bytes satisfying a predicate".
+§7.11 carries the same statement to the *stream*: its record skeleton is a
+function of its bytes, and each record's kind and payload are the token's class
+agreement rather than a predicate the bytes merely satisfy.
 
 **Coverage by value class.**  The record relation's constructors are the five
 classes: scalars (`null`, `true`, `false` as `tag 8`/`9`/`10` at their literal
@@ -1247,6 +1251,130 @@ has; the conversion's arithmetic is not in question, and the relation's number
 clause is discharged at the model.  The same reading excludes `sorry`,
 `admit`, `native_decide` and `Classical.choice`: every theorem above is pinned at
 `[propext]` or `[propext, Quot.sound]`.
+
+### 7.11 The correspondence, record for record
+
+§7.10 left one thing named rather than derived: that the records the walk emitted
+are the reference parser's tokens.
+`LeanLLVM/Refinement/JsonStage2TokenCorrespondence.lean` states what that
+correspondence *says* and proves its content and its statement at the run's own
+reads; the one row it still names is stated at the end of this subsection, with
+the reason it is not a consequence of what precedes it.
+
+**The relation is one record per record-carrying token, in order.**
+`TokenRecord (bs arena) r tok` is the ten-constructor relation at one record
+and one token — the whole-trace `Stage2Records` peeled to a single step — and
+
+```text
+stage2Records_iff_forall₂ {bs arena : List UInt8} {rs : List EventRecord}
+    {toks : List Token} :
+  Stage2Records bs arena rs toks ↔
+    List.Forall₂ (TokenRecord bs arena) rs (Token.nonSeparators toks)
+```
+
+is the exactness statement.  The trace relates to the token list exactly when the
+two are the same length and each record agrees with its token, with commas and
+colons *removed* by the function `Token.nonSeparators` rather than consumed by a
+side condition, so the relation has no slack beyond the class agreement.  What the
+removal leaves outside the relation is the separators' own spans: a comma's or a
+colon's position is the tape's and is not re-checked here, while every
+record-carrying token's kind, span and payload is.  The tree's two instantiations
+are therefore instances rather than the claim: `null_records_of_forall₂`
+rederives the `null` document's trace from the general form.
+
+**The class agreement is one elimination per class.**  `tokenRecord_tagVal` gives
+the value of a record's tag byte as the token's class tag — the four containers,
+the three literals and the number — and states that a key/string record's
+`T_KEY`/`T_STR` is the grammar position's choice, so no class tag is claimed for a
+string token.
+`tokenRecord_tag` gives the seven one-byte classes' kinds, spans and document
+bytes.  `tokenRecord_number` gives the number's lexeme (`s.stop = s.start +
+d.lexeme.length`, with the document holding `d.lexeme`), its well-formedness and
+the record's payload `(strtodSpec d).toBits`.  `tokenRecord_string` gives the
+span's opening quote, its code points through `bodyCodePoints`, and the two forms'
+fields: `plainSpan (s.start + 1)` over the document's body, or an arena offset
+below `2 ^ 63` whose slice reads back through `escapeCodePoints`.  The five value
+classes the contract names are the constructors, and there is no sixth.
+
+**The stream's record structure is decoded.**  The encoding writes the tag first
+and then a fixed-width payload, so `parseSkeleton` — each record's tag, stepping
+over the width its own byte announces — is a total function of the stream, and
+
+```text
+parseSkeleton_trace (rs : List EventRecord) (h : ∀ r ∈ rs, r.Tagged) :
+  parseSkeleton (rs.map EventRecord.encodedBytes).flatten = rs.map EventRecord.tagVal
+```
+
+reads a related trace's bytes back as its tag sequence.  So an emitted stream is
+not left as a bare relation: its record boundaries and classes are a function of
+its bytes, and each record's payload is the class's own — the document's bytes at
+the span, the arena slice decoding to the token's code points, or `strtodSpec`'s
+bits.
+
+**The statement at the run's own reads.**  `stage2Records_at_accept` is the
+correspondence at an accepted run:
+
+```text
+stage2Records_at_accept {bs arena evs : List UInt8} {t : Tape}
+    {rs : List EventRecord} {m : Mem} {dst ev ndst' nev' ndstU : Nat}
+    (hparse : parseBytes Limits.default (ByteString.literal bs) = .ok t)
+    (hdst : readBytes m dst ndst' = some arena)
+    (hU : ndstU ≤ ndst')
+    (hev : readBytes m ev nev' = some evs)
+    (hrecs : evs = (rs.map EventRecord.encodedBytes).flatten)
+    (hrel : Stage2Records bs (arena.take ndstU) rs t.tokens) :
+  t.input = ByteString.literal bs ∧
+    readBytes m dst ndstU = some (arena.take ndstU) ∧
+    List.Forall₂ (TokenRecord bs (arena.take ndstU)) rs
+      (Token.nonSeparators t.tokens) ∧
+    readBytes m ev nev' = some evs ∧
+    parseSkeleton evs = rs.map EventRecord.tagVal
+```
+
+The tape is the reference parser's for the *same* bytes, the arena reads at the
+**used** prefix (derived from the reported reserved read by
+`usedPrefix_of_reserved`), the event stream reads at its reported cursor, the
+trace agrees with the tape's tokens record for record, and the stream's skeleton
+is the trace's tags.  Its hypotheses are the accept path's own — `parseBytes … =
+.ok t`, the two extent reads, the trace's flattening and the relation at the used
+prefix — which is the shape `parserHalf_accept` consumes from
+`Stage2OutcomeEvidence`.
+
+**The relation separates the classes and the spans.**  `null_trueTag_not_records`
+refutes a `true` tag on the `null` document's token and
+`trueTag_null_span_not_records` refutes the `null` document's token at a span
+holding `true`'s bytes.  The correspondence is not a wrapper that admits any
+trace: a wrong class or a wrong span leaves no constructor.
+
+**What is still named, and why.**  The relation is *between* the walk's trace and
+the parser's tokens; it does not say the walk emitted this trace.  That row — the
+walk's `C.events` equal to the tokens' encoding — needs an alignment the walk
+proof does not state: the entry stream's positions (`WalkGeom.ent`, ordered and
+inside the document, with no clause tying them to `parseValue`'s cursors) against
+the parser's token starts.  The walk's per-arm facts are about its own positions
+(`entryPos G C.k`, the scan's extents), so an arm's record can be related to *a*
+token at its span but not to *the parser's token at that position*.  A proof
+starts by adding that alignment as a walk invariant — the entries as the parser's
+token boundaries — and re-proving each arm's append against it.  Until then the
+accept clause's evidence names the relation, and what this section adds is that
+the named relation is exact, per class, and decodable rather than opaque.
+
+**The number class's boundary.**  At the model the number row costs no arithmetic
+beyond `strtodSpec`: `tokenRecord_number` binds the record to `strtodSpec` of the
+span's lexeme.  A binary64 value's bits are a word (`toBits_lt_two_pow_64`,
+`[propext, Quot.sound]`); the composition at `strtodSpec d` is cited rather than
+written, because elaborating an application of `strtodSpec_isCode` reduces
+`(strtodSpec d).IsCode`, whose `strtodSpec` unfolding reaches a `10 ^ 2098`-scale
+exponent and exceeds the elaborator's recursion depth.  The *body's* conversion is
+the staging boundary §7.10 names: `ub` at each of the three callees at the walk's
+selection (`stage2Calls_noCalls_numFast`).
+
+**Axioms.**  Every theorem above is pinned in its module: `TokenRecord`, the four
+class lemmas, `forall₂`, `of_forall₂`, `stage2Records_iff_forall₂`, `tagged` and the
+three controls at `[propext]`; `toBits_lt_two_pow_64`, `parseSkeleton`,
+`parseSkeleton_encodedBytes`, `parseSkeleton_trace` and `stage2Records_at_accept`
+at `[propext, Quot.sound]`.  No `sorry`, `admit`, `native_decide` or
+`Classical.choice`.
 
 ## 8. Out of scope for the first contract
 
