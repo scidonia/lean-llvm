@@ -922,18 +922,23 @@ two theorems, and both are contract changes rather than missing proofs:
 * **The continuing level's run class needs a row group.**  `HcontClassRows.run` takes a
   `HcontRunRow` (the check state's rows plus the seam's group, joined to `RunFacts` by
   `hcontRunFacts_of_seam`), and no field of `HcontPayload` produces one at the class's short
-  prefix, so `(hp : HcontPayload) (hc : HcontClassRows)` cannot close `.run`.
-* **The last level needs a group per class.**  `HlastResidue` and `HlastFacts` are at the
-  byte's route and their producers are written, but `LastEntryArm.scalar`, `.letters`,
-  `.fLetter`, `.classC` and `.run` carry their premises in the constructor and
-  `HlastPayload` carries only the openers' and the high-byte class's rows; a last-level
-  group per class is what a `WalkLoopEnd` producer would read.
+  prefix — `HcontClassRows.runRow` now states the row itself, guarded by the default lane's
+  whitespace class, so the remaining work is the case's `.run` branch, not a supply.
+* **The last level's groups are stated and the case is closed.**  `HlastArmRows`
+  (`JsonStage2WalkDispatchLastRows`) carries the five groups whose types name states above
+  `DispatchClassRows` — `HlastScalarRows`, `HlastLettersRows`, `HlastFLetterRows`,
+  `HlastClassCRows`, `HlastRunRows` — each a `lastEntryArm_*_of_staging` producer's
+  argument list after the invariant, the guard and the class bits, and each field's
+  consumer is named in its docstring.  `walkLoopEnd_of_payload (hp : HlastPayload G)
+  (hc : HlastClassRows G) (ha : HlastArmRows G) : WalkLoopEnd G` is proved by the class
+  case over the head switch's bits, with axioms `propext`, `Classical.choice`,
+  `Quot.sound`.
 
 The last level's route asset is closed: `HlastFacts`/`HlastResidue` carry
 `hb : HcontByteRoute (head35 (G.bs.getD (G.n - 1) 0))`, `hlastTailByte_of_calls` produces
-`hTail` at the class's own seam, and the merge path is counted at the route
-(`hlast_toMerge`, `hlast_finish`, `hlast_refuse`), so `.highByte` is total over the three
-non-whitespace leaves.
+`hTail` at the class's own seam, the merge path is counted at the route (`hlast_toMerge`,
+`hlast_finish`, `hlast_refuse`), and the closure theorem's class case is written, so
+`.highByte` is total over the three non-whitespace leaves.
 
 **What the two words at `G.next0 + 8` need, and why neither is a value row.**  The
 slot is the root-done flag `%root_done.i`: `entry` writes it `0` among its four allocations,

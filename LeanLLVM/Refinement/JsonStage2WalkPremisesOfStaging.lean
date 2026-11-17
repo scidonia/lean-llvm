@@ -95,6 +95,7 @@ import LeanLLVM.Refinement.JsonStage2WalkRevolutionSeg
 import LeanLLVM.Refinement.JsonStage2WalkSeedAtEntry
 import LeanLLVM.Refinement.JsonStage2WalkTargetPost
 import LeanLLVM.Refinement.JsonStage2WalkArenaWord
+import LeanLLVM.Refinement.JsonStage2WalkDispatchLastRows
 
 set_option autoImplicit false
 
@@ -426,6 +427,156 @@ theorem walkLoopStep_of_staging {m0 : Mem} {G : WalkGeom m0}
         hterm)
     (fun Cd sd hInv hblk hword => hend.refuse Cd sd hInv hblk hword)
     (fun nepv Cd sd hInv hblk hnep => WalkLoopEnd.nepBound Cd sd nepv hInv hblk hnep)
+
+/-! ### The last entry's arm, by class
+
+`HcontClass.complete` is the head switch's census at the last entry's byte, and the class
+case reads one premise per class: the derived bytes take the invariant's cells and the
+class bit, the openers take the payload's `openCall` group plus the depth and the answer,
+the high-byte class takes `HlastLane`/`HlastAbi.highByte`, and the default arm's four
+classes take the `HlastArmRows` groups — `.scalar` on the tag test's true arm, and at the
+false one `.run` when the byte before the entry's end is whitespace, else `letters`/
+`'f'`/class C by the head byte's own two pivots.
+
+No branch assumes a segment: the chains, spans and tails are the groups' fields, and the
+segments the derived classes need are the producers' own compositions. -/
+noncomputable def walkLoopEnd_of_payload {m0 : Mem} {G : WalkGeom m0}
+    (hp : HlastPayload G) (hc : HlastClassRows G) (ha : HlastArmRows G) :
+    WalkLoopEnd G := by
+  refine ⟨fun C s hInv hblock hnot => ?_⟩
+  -- the default arm, on the tag test's false side: whitespace is the run class, else a leaf
+  have defaultArm : (hbit : (evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 45) |||
+      evalICmp .ult (hlastByte G C + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0) →
+      evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 125) = 1 ∨
+        evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 125) = 1 →
+      LastEntryArm (stage2Calls stage2SubCalls) G C s := by
+    intro hbit h125
+    by_cases hws : wsStop G (G.n - 1)
+    · obtain ⟨N, Cm, sm, nH, hHead, hnH, hm, hmk, Cs, ss, nS, hSpan, hnS, hs, Ct, st,
+        hTail, ht, htk, Cl, tl, hLatch, hl, hkC, i, c, hcounter, hbound, hic, hbyte,
+        hstop, hN, hcl⟩ := ha.run C s hInv hblock hnot hbit hws
+      exact lastEntryArm_run_of_staging C s hInv hbit N hHead hnH hm hmk hSpan hnS hs
+        hTail ht htk hLatch hl hkC i c hcounter hbound hic hbyte hstop hN hcl
+    · by_cases h110 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 110) = 1
+      · by_cases h102 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 102) = 1
+        · obtain ⟨Cm, sm, nH, hHead, hnH, hm, hmk, h8m, Ct, st, tok, hTail, ht, htk,
+            htok⟩ := ha.fLetter C s hInv hblock hnot hbit h110 h102
+          exact lastEntryArm_fLetter_of_staging C s hInv rfl hbit h110 h102 hHead hnH hm
+            hmk h8m hTail ht htk htok
+        · obtain ⟨Cm, sm, nH, hHead, hnH, hm, hmk, h8m, Ct, st, tok, hTail, ht, htk,
+            htok⟩ := ha.letters C s hInv hblock hnot hbit h110 (bitZeroOfNeOne h102)
+          exact lastEntryArm_letters_of_staging C s hInv rfl hbit h110 (bitZeroOfNeOne h102)
+            hHead hnH hm hmk h8m hTail ht htk htok
+      · obtain ⟨Cm, sm, nH, hHead, hnH, hm, hmk, h8m, Cs, ss, nS, hSpan, hs, hnS, Ct, st,
+          tok, hTail, ht, htk, htok⟩ :=
+          ha.classC C s hInv hblock hnot (bitZeroOfNeOne h110) h125
+        exact lastEntryArm_classC_of_staging C s hInv rfl (bitZeroOfNeOne h110) h125 hHead
+          hnH hm hmk h8m hSpan hs hnS hTail ht htk htok
+  by_cases h34 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 34) = 1
+  · exact lastEntryArm_stringOpener_of_staging C s hInv h34 hnot
+  · by_cases h44 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 44) = 1
+    · -- `%8 < 44`: the low class
+      exact defaultArm (hlast_tag_low (hlastByte G C) h44)
+        (Or.inl (slt_one_of_toInt_le (by decide) h44))
+    · by_cases h44eq : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 44) = 1
+      · -- the comma
+        by_cases hsp : C.sp = 0
+        · exact lastEntryArm_commaZero_of_staging C s hInv h44eq hsp
+        · exact lastEntryArm_commaAboveZero_of_staging C s hInv h44eq hsp
+      · by_cases h58 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 58) = 1
+        · -- `44 ≤ %8 < 58`: the tag test chooses the numeral route or the letters one
+          by_cases hbit : (evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 45) |||
+              evalICmp .ult (hlastByte G C + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 1
+          · obtain ⟨hb13, hb32, hbne32, r₁, r₂, r₃, rdv, xA, hreadT, hpre₁, hcall₁,
+              hret₁, hbit0T, hpre₂, hcall₂, hret₂, hpre₃, hcall₃⟩ :=
+              ha.scalar C s hInv hblock hnot (bitZeroOfNeOne h44) h58
+                (bitZeroOfNeOne h44eq) hbit
+            exact lastEntryArm_scalar_of_staging G C s hInv hblock hnot rfl
+              (bitZeroOfNeOne h44) h58 (bitZeroOfNeOne h44eq) hb13 hb32 hbne32 hbit
+              r₁ r₂ r₃ hreadT hpre₁ hcall₁ hret₁ hbit0T hpre₂ hcall₂ hret₂ hpre₃ hcall₃
+          · exact defaultArm (bitZeroOfNeOne hbit)
+              (Or.inl (slt_one_of_toInt_le (by decide) h58))
+        · by_cases h58eq : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 58) = 1
+          · -- the colon
+            by_cases hsp : C.sp = 0
+            · exact lastEntryArm_colonZero_of_staging C s hInv h58eq hsp
+            · exact lastEntryArm_colonAboveZero_of_staging C s hInv h58eq hsp
+          · by_cases h91 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 91) = 1
+            · -- `58 ≤ %8 < 91`
+              exact defaultArm (hlast_tag_mid (hlastByte G C) h91 (bitZeroOfNeOne h58))
+                (Or.inl (slt_one_of_toInt_le (by decide) h91))
+            · by_cases h123 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 123) = 1
+              · by_cases h93 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 93) = 1
+                · by_cases h91eq : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 91) = 1
+                  · -- the open bracket
+                    obtain ⟨rdv, hread, hpreV, r, hcall⟩ :=
+                      hp.abi.openCall C s hInv hblock hnot
+                    by_cases h1 : r.ret = .int 32 (BitVec.ofNat 32 1)
+                    · by_cases hsp : C.sp ≤ 519
+                      · exact lastEntryArm_containerOpen91_of_staging C s hInv h91eq hsp
+                          hread hpreV r hcall h1
+                      · have h520 : C.sp = 520 := by
+                          have hcap := hInv.depth_cap
+                          simp only [stage2StackExtent] at hcap
+                          omega
+                        exact lastEntryArm_openAtCap91_of_staging C s hInv h91eq h520
+                          hread hpreV r hcall h1
+                    · have h0 : r.ret = .int 32 (BitVec.ofNat 32 0) := by
+                        rcases s2ValuePos_ret_zero_or_one hcall with h | h
+                        · exact absurd h h1
+                        · exact h
+                      exact lastEntryArm_containerOpenRefuse91_of_staging C s hInv h91eq
+                        hread hpreV r hcall h0
+                  · -- `91 < %8 < 93`: the bracket class's own bytes
+                    exact defaultArm
+                      (hlast_tag_bracket (hlastByte G C) (bitZeroOfNeOne h91) h123 h93)
+                      (Or.inl (slt_one_of_toInt_le (by decide) h123))
+                · by_cases h93eq : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 93) = 1
+                  · -- the close bracket
+                    by_cases hsp : C.sp = 0
+                    · exact lastEntryArm_closeBracketZero_of_staging C s hInv h93eq hsp
+                    · exact lastEntryArm_closeWithOpen93_of_staging C s hInv h93eq hsp
+                        (s2AfterValuePre_of_inv hInv hsp)
+                  · -- `93 ≤ %8 < 123`
+                    exact defaultArm
+                      (hlast_tag_bracketHigh (hlastByte G C) (bitZeroOfNeOne h91) h123
+                        (bitZeroOfNeOne h93))
+                      (Or.inl (slt_one_of_toInt_le (by decide) h123))
+              · by_cases h125 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 125) = 1
+                · by_cases h123eq : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 123) = 1
+                  · -- the open brace
+                    obtain ⟨rdv, hread, hpreV, r, hcall⟩ :=
+                      hp.abi.openCall C s hInv hblock hnot
+                    by_cases h1 : r.ret = .int 32 (BitVec.ofNat 32 1)
+                    · by_cases hsp : C.sp ≤ 519
+                      · exact lastEntryArm_containerOpen123_of_staging C s hInv h123eq hsp
+                          hread hpreV r hcall h1
+                      · have h520 : C.sp = 520 := by
+                          have hcap := hInv.depth_cap
+                          simp only [stage2StackExtent] at hcap
+                          omega
+                        exact lastEntryArm_openAtCap123_of_staging C s hInv h123eq h520
+                          hread hpreV r hcall h1
+                    · have h0 : r.ret = .int 32 (BitVec.ofNat 32 0) := by
+                        rcases s2ValuePos_ret_zero_or_one hcall with h | h
+                        · exact absurd h h1
+                        · exact h
+                      exact lastEntryArm_containerOpenRefuse123_of_staging C s hInv h123eq
+                        hread hpreV r hcall h0
+                  · -- `123 ≤ %8 < 125`
+                    exact defaultArm
+                      (hlast_tag_brace (hlastByte G C) (bitZeroOfNeOne h91)
+                        (bitZeroOfNeOne h123) h125)
+                      (Or.inl h125)
+                · by_cases h125eq : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 125) = 1
+                  · -- the close brace
+                    by_cases hsp : C.sp = 0
+                    · exact lastEntryArm_closeBraceZero_of_staging C s hInv h125eq hsp
+                    · exact lastEntryArm_closeWithOpen125_of_staging C s hInv h125eq hsp
+                        (s2AfterValuePre_of_inv hInv hsp)
+                  · -- `%8` is 126 or 127: the high-byte class
+                    exact lastEntryArm_highByte_of_payload (G := G) (C := C) (s := s) hInv
+                      hblock hnot (bitZeroOfNeOne h125) (bitZeroOfNeOne h125eq) hp
 
 /-! ### The empty entry stream's flush, from the staging -/
 
@@ -1037,6 +1188,7 @@ report the invariant's own word. -/
 /-! ### Axiom footprints -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.walkDispatch_of_continue
+#print axioms LeanLLVM.Refinement.WalkScope.walkLoopEnd_of_payload
 #print axioms LeanLLVM.Refinement.WalkScope.walkLoopStep_of_staging
 #print axioms LeanLLVM.Refinement.WalkScope.walkFlushAt_of_staging
 #print axioms LeanLLVM.Refinement.WalkScope.walkPremises_of_staging

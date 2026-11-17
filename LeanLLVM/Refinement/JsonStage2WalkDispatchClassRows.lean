@@ -358,8 +358,16 @@ structure HcontClassRows {m0 : Mem} (G : WalkGeom m0) : Type where
   deep : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     C.k + 1 < G.nep → evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 34) = 1 →
     C.sp ≠ 0 → HcontDeepRow G C s
-  /-- **The run class's row**: the class's prefix and check state with the seam's group,
-  and the byte's own leaf below `if.else387.i` as the arm's span. -/
+  /-- **The run class's row**, at the class's own short prefix: the default lane's document
+  row with the byte before the entry's end whitespace (`wsStop`).  It is the check state's
+  rows, the run's body and the seam's state group — state data, not an arm — and this
+  structure's `run` is its only consumer, joining it to `RunFacts`
+  (`hcontRunFacts_of_seam`) and then to the arm (`hcontArm_run_of_class`). -/
+  runRow : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
+    C.k + 1 < G.nep → (r : HcontDefaultRow G C s) → wsStop G (r.v.toNat - 1) →
+    HcontRunRow G C s
+  /-- **The run class's arm, from `runRow`**: the row joined to `RunFacts` at the class's
+  prefix, with the byte's own leaf below `if.else387.i` as the arm's span. -/
   run : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     C.k + 1 < G.nep → (row : HcontRunRow G C s) → ∀ {nS : Nat},
     Seg (stage2Calls stage2SubCalls) G (ContSeamC C) row.seamS (ContTailStartC C)
