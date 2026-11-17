@@ -59,7 +59,12 @@ cases handed to the next tier) and its tier 3 (the unit's own conversion: a
 768-digit window of significant digits, one sticky bit for the digits past it,
 and one nearest-even rounding from the three) computes this function — is a
 separate slice, and `NumberArmOwed`'s docstring names what it needs.  This
-module proves no run of any emitted code computes anything.  The corpus checks
+module proves no run of any emitted code computes anything.  The body's own
+boundary is stated separately, in `JsonStage2NumFastArm`: at the walk's `Calls`
+selection the pinned body's conversion is `ub` at each of its three out-of-line
+callees, so the arm's statement (`NumFastBodyArm`) is about a `Calls` that
+answers them and a staging that stages the two tables — not about the
+environment the emitted body otherwise runs in.  The corpus checks
 (`tests/json-strtod/`) use glibc's `strtod` as an oracle, not as an assumption
 about how a tier is implemented: `check.sh` is evidence about the
 specification's agreement with it, and `long.sh` is evidence about the emitted
@@ -385,7 +390,15 @@ distances are decided by its comparison and the ambiguous cases are exactly the
 ones that fall through; (c) the tier-3 identity — the fallback's one nearest-even
 rounding from its retained window and its sticky bit is `roundMag`'s, which is a
 proof about this tree's own code and needs no platform axiom.  All three are
-obligations here, not results. -/
+obligations here, not results.
+
+Where the emitted body's arm stops is a separate, stated fact:
+`LeanLLVM/Refinement/JsonStage2NumFastArm` shows that at the walk's `Calls`
+selection the pinned body's conversion is `ub` at each of its three out-of-line
+callees (`num_d8_el1`, `num_el_el1`, `stk_mul_u64`), so the obligation above is
+conditional on a `Calls` that answers them — and on a staging that stages the
+two tables the tier-1 expression reads.  That module's `NumFastBodyArm` is the
+body-level statement; it is not proved. -/
 def NumberArmOwed (numFastBits : Bytes → Nat) : Prop :=
   ∀ (d : Decimal), RfcNumber d.lexeme → numFastBits d.lexeme = (strtodSpec d).toBits
 
