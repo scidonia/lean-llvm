@@ -29,7 +29,8 @@ remains outside the tree. The three units have a measurement of their own,
 separate from every ratio in this note: §"Stage 1's three units, measured in this
 tree" records the instrument, corpus, flags, host and the numbers with their
 variance, and the subsection after it records simdjson 5.0.5's stage 1 and full
-parse on the same corpus, with its own provenance and the comparisons it does
+parse from the same session over the same corpus, with its own provenance, the
+stage ratio that pairing supports and its variance, and the comparisons it does
 and does not support.
 
 The note answers one question: **can a byte-mask JSON parser, in the shape the
@@ -392,8 +393,11 @@ nix develop -c bash tests/json-units-bench/bench.sh
 `BENCH_CPUS` (default `0 4`), `BENCH_TRIALS` (3), `BENCH_REPS` (51),
 `BENCH_DIR`, `BENCH_CC` and `BENCH_SEED` change the run; the corpus and the
 objects are written under `tests/json-units-bench/build/`. The transcript of the
-recorded run is `tests/json-units-bench/transcript.txt`, 240 rows over two CPUs
-and three trials.
+paired run quoted below is `tests/json-units-bench/transcript-paired.txt`, 240
+rows over two CPUs and three trials, with its environment and idle record at
+`tests/json-units-bench/paired-run.txt`. The earlier run's transcript is
+`tests/json-units-bench/transcript.txt`, kept under §"The earlier run, kept as
+history".
 
 ### Corpus
 
@@ -456,62 +460,83 @@ row was measured.
 
 Both cores are reported, because the classes differ and the difference is not a
 constant ratio. Each cell is GB/s at the median of the three trial medians, with
-the minimum and maximum of those three medians in parentheses. The row
-calibrations spanned 4.1-4.8 GHz on cpu0 and 3.6-3.7 GHz on cpu4.
+the minimum and maximum of those three medians in parentheses.
+
+These rows and the simdjson rows in §"The simdjson row, measured" are one
+session's pair. The units ran at 09:50:34-09:50:44Z and simdjson at
+09:50:44-09:50:54Z, back to back, over the same corpus directory, pinned to the
+same two CPUs, with `powersave` recorded on both CPUs before, between and after.
+No `lake build` and no `lean` elaboration ran during either harness: the
+`lean --server` and its worker belong to another checkout's editor and consumed
+zero cpu ticks across both runs (629 ticks at each snapshot, and zero per-pid
+growth over 76 samples), and the one-minute load average was 1.93 before the
+units, 2.09 between the harnesses and 1.92 after. The record is
+`tests/json-units-bench/paired-run.txt`; the transcripts are
+`tests/json-units-bench/transcript-paired.txt` and
+`tests/json-units-bench/simdjson-transcript-paired.txt`. Two earlier attempts
+were discarded because the editor's worker gained one cpu tick (0.01 s) during
+the simdjson run.
+
+The clocks are the reason the pair is worth quoting. The units' row
+calibrations spanned 4.30-4.61 GHz on cpu0 (median 4.49) and 3.60-3.68 on cpu4
+(median 3.67); the simdjson rows spanned 4.31-4.68 (median 4.56) and 3.62-3.67
+(median 3.66). The runs agree within 1.5% on the P core and 0.1% on the E core,
+so both GB/s columns describe one clock regime and the cycles-per-byte columns
+agree with them rather than substituting for them.
 
 **P core (cpu0), GB/s:**
 
 |document|`s1_masks`|`entry_pos8`|`entry_b8`|`utf8_gated`|`utf8_ungated`|
 |---|---:|---:|---:|---:|---:|
-|`route-s1-64k`|13.6 (11.1-13.7)|13.8 (13.6-13.8)|6.0 (5.2-6.0)|83.2 (83.0-96.9)|28.7 (23.9-28.8)|
-|`route-u8-64k`|13.6 (11.2-13.7)|14.1 (14.0-14.1)|8.6 (8.6-8.6)|25.6 (23.4-25.7)|28.7 (28.7-28.8)|
-|`syn-dense-4m`|13.9 (12.6-13.9)|11.4 (11.4-11.8)|5.4 (5.4-5.5)|54.9 (51.1-57.1)|34.7 (31.4-34.8)|
-|`syn-dense-64k`|13.7 (12.5-13.8)|13.7 (13.6-14.1)|6.6 (6.3-6.6)|88.9 (83.0-89.2)|28.7 (26.1-28.7)|
-|`syn-strings-4m`|13.8 (12.8-14.2)|14.8 (14.2-14.9)|23.7 (22.5-24.6)|54.6 (54.3-55.1)|35.7 (32.5-37.2)|
-|`syn-strings-64k`|13.8 (13.7-13.8)|15.1 (13.1-15.1)|30.0 (28.0-32.5)|96.7 (89.2-96.8)|28.7 (23.8-28.7)|
-|`syn-utf8-4m`|13.4 (12.4-13.7)|12.9 (12.4-13.2)|26.1 (23.4-26.6)|29.4 (29.3-30.8)|34.2 (31.8-34.9)|
-|`syn-utf8-64k`|11.3 (11.3-13.9)|14.3 (13.5-14.8)|28.5 (26.8-31.0)|25.7 (23.3-25.7)|26.2 (26.2-28.8)|
+|`route-s1-64k`|12.3 (12.2-13.8)|13.3 (12.4-14.0)|5.9 (5.5-6.0)|89.0 (88.8-97.1)|28.5 (24.0-28.8)|
+|`route-u8-64k`|12.3 (11.4-12.3)|12.8 (12.0-13.8)|8.6 (8.5-8.6)|25.6 (23.3-25.7)|26.2 (23.8-28.7)|
+|`syn-dense-4m`|13.2 (12.9-13.5)|11.1 (10.9-11.4)|5.4 (5.4-5.5)|54.1 (49.9-56.1)|32.3 (31.9-33.3)|
+|`syn-dense-64k`|12.2 (11.2-12.3)|11.9 (11.8-13.9)|6.2 (6.2-6.2)|89.4 (82.7-96.9)|26.1 (26.0-28.8)|
+|`syn-strings-4m`|13.2 (13.1-13.4)|14.1 (13.8-14.2)|22.4 (22.3-22.7)|50.4 (48.0-54.4)|33.2 (32.0-34.1)|
+|`syn-strings-64k`|13.6 (12.3-13.6)|13.1 (12.8-15.3)|31.9 (30.0-32.8)|96.0 (82.9-96.7)|28.8 (26.2-28.8)|
+|`syn-utf8-4m`|13.3 (13.2-13.4)|12.9 (12.8-13.5)|25.7 (24.8-25.9)|30.4 (29.5-31.7)|33.6 (33.6-34.0)|
+|`syn-utf8-64k`|11.4 (11.2-13.7)|13.6 (12.8-13.6)|31.2 (28.7-31.2)|25.6 (24.9-25.7)|26.2 (23.9-27.2)|
 
 **P core (cpu0), cycles per byte at the calibrated core clock:**
 
 |document|`s1_masks`|`entry_pos8`|`entry_b8`|`utf8_gated`|`utf8_ungated`|
 |---|---:|---:|---:|---:|---:|
-|`route-s1-64k`|0.342|0.345|0.795|0.055|0.167|
-|`route-u8-64k`|0.347|0.329|0.558|0.185|0.163|
-|`syn-dense-4m`|0.336|0.399|0.828|0.084|0.134|
-|`syn-dense-64k`|0.332|0.330|0.718|0.052|0.165|
-|`syn-strings-4m`|0.340|0.317|0.198|0.084|0.130|
-|`syn-strings-64k`|0.342|0.311|0.148|0.049|0.160|
-|`syn-utf8-4m`|0.341|0.347|0.177|0.145|0.130|
-|`syn-utf8-64k`|0.392|0.321|0.162|0.186|0.172|
+|`route-s1-64k`|0.362|0.336|0.759|0.051|0.159|
+|`route-u8-64k`|0.369|0.351|0.526|0.174|0.173|
+|`syn-dense-4m`|0.343|0.404|0.828|0.083|0.138|
+|`syn-dense-64k`|0.369|0.370|0.723|0.049|0.168|
+|`syn-strings-4m`|0.341|0.318|0.201|0.089|0.136|
+|`syn-strings-64k`|0.333|0.343|0.142|0.047|0.156|
+|`syn-utf8-4m`|0.338|0.354|0.176|0.147|0.133|
+|`syn-utf8-64k`|0.389|0.333|0.145|0.175|0.171|
 
 **E core (cpu4), GB/s:**
 
 |document|`s1_masks`|`entry_pos8`|`entry_b8`|`utf8_gated`|`utf8_ungated`|
 |---|---:|---:|---:|---:|---:|
-|`route-s1-64k`|8.2 (8.2-8.2)|14.0 (14.0-14.0)|2.2 (2.1-2.2)|63.6 (62.7-63.7)|14.0 (14.0-14.0)|
+|`route-s1-64k`|8.2 (8.2-8.2)|14.0 (14.0-14.0)|2.2 (2.2-2.2)|63.7 (63.6-63.8)|14.0 (13.9-14.0)|
 |`route-u8-64k`|8.2 (8.2-8.2)|13.9 (13.9-14.0)|3.5 (3.5-3.5)|12.5 (12.5-12.5)|14.0 (14.0-14.0)|
-|`syn-dense-4m`|7.3 (7.2-7.4)|7.1 (6.9-7.1)|2.4 (2.4-2.4)|26.3 (23.8-30.2)|11.6 (11.3-11.9)|
-|`syn-dense-64k`|8.2 (8.1-8.2)|13.7 (13.7-13.7)|2.7 (2.7-2.7)|63.8 (63.6-63.8)|14.0 (14.0-14.0)|
-|`syn-strings-4m`|7.6 (7.4-7.7)|13.2 (13.2-13.3)|14.6 (14.5-14.7)|24.3 (22.1-26.4)|11.4 (11.3-11.5)|
-|`syn-strings-64k`|8.2 (8.1-8.2)|14.4 (14.3-14.4)|17.0 (17.0-17.0)|63.7 (63.4-63.7)|14.0 (14.0-14.1)|
-|`syn-utf8-4m`|7.5 (7.3-7.7)|13.6 (13.5-13.6)|15.0 (14.9-15.1)|10.9 (10.4-11.2)|11.7 (11.6-12.1)|
-|`syn-utf8-64k`|8.2 (8.1-8.2)|14.1 (14.1-14.1)|16.1 (16.1-16.1)|12.5 (12.5-12.5)|14.0 (14.0-14.0)|
+|`syn-dense-4m`|7.6 (7.4-7.6)|7.3 (6.8-7.4)|2.4 (2.4-2.4)|23.0 (21.9-24.3)|11.7 (11.5-11.8)|
+|`syn-dense-64k`|8.2 (8.1-8.2)|13.7 (13.7-13.7)|2.7 (2.7-2.7)|63.3 (63.1-63.7)|14.0 (14.0-14.0)|
+|`syn-strings-4m`|7.5 (7.5-7.5)|13.0 (12.9-13.3)|14.4 (14.4-14.6)|25.5 (22.4-26.8)|11.7 (11.7-12.0)|
+|`syn-strings-64k`|8.1 (8.1-8.2)|14.4 (14.2-14.4)|17.0 (17.0-17.0)|63.6 (63.6-63.6)|14.0 (13.9-14.0)|
+|`syn-utf8-4m`|7.6 (7.6-7.7)|13.6 (13.5-13.7)|14.8 (14.8-14.8)|10.8 (10.7-11.2)|11.5 (11.3-11.8)|
+|`syn-utf8-64k`|8.2 (8.1-8.2)|14.1 (14.1-14.1)|16.1 (16.1-16.1)|12.5 (12.1-12.5)|14.0 (14.0-14.0)|
 
 **E core (cpu4), cycles per byte at the calibrated core clock:**
 
 |document|`s1_masks`|`entry_pos8`|`entry_b8`|`utf8_gated`|`utf8_ungated`|
 |---|---:|---:|---:|---:|---:|
-|`route-s1-64k`|0.448|0.261|1.691|0.058|0.262|
-|`route-u8-64k`|0.448|0.262|1.047|0.293|0.262|
-|`syn-dense-4m`|0.501|0.516|1.546|0.140|0.316|
-|`syn-dense-64k`|0.449|0.268|1.378|0.057|0.262|
-|`syn-strings-4m`|0.476|0.277|0.252|0.151|0.322|
-|`syn-strings-64k`|0.450|0.254|0.216|0.058|0.262|
-|`syn-utf8-4m`|0.488|0.269|0.243|0.337|0.313|
-|`syn-utf8-64k`|0.448|0.260|0.228|0.293|0.262|
+|`route-s1-64k`|0.449|0.262|1.687|0.058|0.262|
+|`route-u8-64k`|0.447|0.262|1.047|0.293|0.262|
+|`syn-dense-4m`|0.484|0.503|1.539|0.158|0.315|
+|`syn-dense-64k`|0.448|0.268|1.382|0.058|0.262|
+|`syn-strings-4m`|0.486|0.279|0.254|0.143|0.313|
+|`syn-strings-64k`|0.452|0.254|0.215|0.057|0.263|
+|`syn-utf8-4m`|0.481|0.271|0.248|0.340|0.319|
+|`syn-utf8-64k`|0.450|0.260|0.228|0.293|0.262|
 
-### What the spread shows
+### The noise floor
 
 The rows are medians, and the spread around them is not uniform. Within a row,
 the median relative span between the 10th and 90th percentile of the 51
@@ -519,35 +544,60 @@ repetitions, taken over the eight documents and the three trials:
 
 |core|`s1_masks`|`entry_pos8`|`entry_b8`|`utf8_gated`|`utf8_ungated`|
 |---|---:|---:|---:|---:|---:|
-|P (cpu0)|13.7% (2.5-22.0)|1.3% (0.7-17.9)|5.6% (0.7-15.9)|15.5% (9.5-30.3)|23.1% (15.5-29.1)|
-|E (cpu4)|0.6% (0.5-13.2)|0.7% (0.5-35.2)|0.8% (0.4-8.8)|1.5% (0.5-83.1)|0.8% (0.5-14.5)|
+|P (cpu0)|12.3% (2.2-16.0)|12.9% (6.8-16.2)|13.0% (3.9-17.0)|16.9% (6.7-30.2)|25.8% (17.1-29.0)|
+|E (cpu4)|0.8% (0.5-14.0)|0.7% (0.5-25.0)|0.9% (0.6-10.2)|1.9% (0.5-61.2)|0.9% (0.4-20.4)|
 
-The parenthesised range is over the documents, and the largest single row is the
-E core's `utf8_gated` on `syn-dense-4m` at 83.1%, whose three trial medians
-already span 23.8 to 30.2 GB/s. Two things are recorded rather than resolved:
-the host is a `powersave`-governed laptop SoC with no CPU isolation, so the
-spread includes whatever else the machine was doing; and the instrument does not
-observe the core clock during a row, so a clock change under sustained 256-bit
-code would appear as exactly this kind of within-row drift without being
-identified as one. The P-core rows' larger spread is consistent with such a
-change, but it is not established; the GB/s figures are wall-clock and stand
-whatever the clock did.
+and the same spread for the simdjson arms, whose rows are in the subsection
+below:
+
+|core|`pad`|`stage1`|`parse`|
+|---|---:|---:|---:|
+|P (cpu0)|16.2% (5.8-21.2)|15.6% (13.1-41.4)|16.0% (6.5-27.8)|
+|E (cpu4)|6.2% (1.7-18.1)|2.6% (0.6-7.7)|4.3% (0.4-9.0)|
+
+The parenthesised range is over the documents.
+
+**The noise floor of this record is 61.2%**, the widest within-row spread it
+contains: the E core's `utf8_gated` on `syn-dense-4m`, whose three trial medians
+already span 21.9-24.3 GB/s. Across all 128 rows the median within-row
+p10-p90 spread is 10.1% and its 90th percentile 24.3%.
+
+The tables quote a median of three trial medians, so the bar that matters for a
+row is the spread of those medians rather than of the repetitions: its median is
+3.1%, its 90th percentile 15.4%, and its widest single case 37.9% (the P core's
+`parse` on `syn-strings-64k`, three medians spanning 4.0-5.9 GB/s). A change to
+a row is therefore a result only if it exceeds that row's own spread — roughly
+3% for a stable row, 10% for a typical one, and nothing below 60% on the worst
+row. For the stage ratio below the bar is the ratio's own spread: median 3.6%
+and widest 16.4% on the P core, so a ratio that moves by less than about 17% is
+inside this run's scheduling noise.
+
+Two things are recorded rather than resolved: the host is a `powersave`-governed
+laptop SoC with no CPU isolation, so the spread includes whatever else the
+machine was doing (in this run, nothing that elaborated: see the record above);
+and the instrument does not observe the core clock during a row, so a clock
+change under sustained 256-bit code would appear as exactly this kind of
+within-row drift without being identified as one. The P-core rows' larger
+spread is consistent with such a change, but it is not established; the GB/s
+figures are wall-clock and stand whatever the clock did.
 
 Read as a whole, the rows say three things. The classification unit is close to
-content-independent: 11.3-13.9 GB/s on the P core and 7.3-8.2 on the E core
-across structural densities from 4.6 to 37.2 per block, at 0.33-0.39 and
-0.45-0.50 cycles per byte. The P core's low end is `syn-utf8-64k`, whose three
-trial medians are 11.3, 11.3 and 13.9 GB/s: two trials cluster low and one
+content-independent: 11.4-13.6 GB/s on the P core and 7.5-8.2 on the E core
+across structural densities from 4.6 to 37.2 per block, at 0.333-0.389 and
+0.447-0.486 cycles per byte. The P core's low end is `syn-utf8-64k`, whose three
+trial medians are 11.2, 11.2 and 13.7 GB/s: two trials cluster low and one
 high, so that row is recorded as a spread and not explained by its content. The
 two entry emitters trade places with density as the measured pipeline's decision
-table predicts: at 31.7 positions per block POS8 is the faster (11.4 against 5.4
-GB/s on `syn-dense-4m`, 7.1 against 2.4 on the same document's E-core row, and
-13.7 against 2.7 on the E core's `syn-dense-64k`), at 4.6 B8 is (23.7 against
-14.8, 14.6 against 13.2), the two rows being the same process, the same stream
+table predicts: at 31.7 positions per block POS8 is the faster (11.1 against 5.4
+GB/s on `syn-dense-4m`, 7.3 against 2.4 on the same document's E-core row, and
+13.7 against 2.7 on the E core's `syn-dense-64k`), at 4.6 B8 is (22.4 against
+14.1, 14.4 against 13.0), the two rows being the same process, the same stream
 and the same output buffer. The UTF-8 gate is worth what it costs where it can
-skip: on the all-ASCII documents the gated arm is 83-97 GB/s on the P core and
-63-64 on the E core against 29 and 14 ungated, and on the UTF-8 document the two
-converge (29.4 against 34.2, 10.9 against 11.7).
+skip: on the 65,536-byte all-ASCII documents the gated arm is 89-96 GB/s on the
+P core and 63-64 on the E core against 26-29 and 14.0 ungated; on the
+4,194,304-byte ones it is 50-54 and 23-26 against 32-33 and 11.7, the gate's
+advantage narrowing as the buffer leaves L2. On the UTF-8 document the two
+converge (30.4 against 33.6, 10.8 against 11.5).
 
 ### The simdjson row, measured
 
@@ -590,21 +640,24 @@ line with the C++ standard --
 -- against the header and library above, and runs it over the units' eight
 documents. The corpus is the same byte for byte: the script checks every file
 against the size and sha256 the units' transcript records and refuses to run if
-one differs; this run reused `tests/json-units-bench/build/corpus`. The
-pinning, repetitions and trials are the units' discipline: `taskset` to cpu0
-and cpu4, 51 repetitions per row, the whole binary three times per CPU, a
-buffer staged and warmed before the clock, medians with the minimum and maximum
-of the three trial medians, and a transcript at
-`tests/json-units-bench/simdjson-transcript.txt`. The active implementation was
-`haswell` (AVX2) on both core classes. The library is the realised nix build
-and was not recompiled at the flags above: `stage1` and the library's stage-2
-helpers are its code, while the on-demand traversal in `parse` is compiled
-here. During this run the host was also running five Lean builds (one-minute
-load average 10.6), and the calibrated clock was 2.77-2.78 GHz on the P core
-and 3.12-3.27 on the E core, against 4.4-4.8 and 3.65-3.67 in the units'
-transcript. The GB/s columns below are therefore at a lower clock than the
-units' GB/s columns; the cycles-per-byte columns are the comparison that
-survives the difference, and even those are cross-binary.
+one differs; this run was handed the units' corpus through `BENCH_CORPUS` and
+hash-checked it, so both harnesses read one directory. The pinning, repetitions
+and trials are the units' discipline: `taskset` to cpu0 and cpu4, 51 repetitions
+per row, the whole binary three times per CPU, a buffer staged and warmed before
+the clock, medians with the minimum and maximum of the three trial medians, and
+a transcript at `tests/json-units-bench/simdjson-transcript-paired.txt`. The
+active implementation was `haswell` (AVX2) on both core classes. The library is
+the realised nix build and was not recompiled at the flags above: `stage1` and
+the library's stage-2 helpers are its code, while the on-demand traversal in
+`parse` is compiled here.
+
+This run followed the units' harness in the same session
+(09:50:44-09:50:54Z against 09:50:34-09:50:44Z), and its clock agreed with the
+units' run: 4.31-4.68 GHz on the P core, median 4.56 against the units' 4.49,
+and 3.62-3.67 on the E core, median 3.66 against 3.67. The GB/s columns below
+and the units' GB/s columns are therefore from one clock regime. Cycles per byte
+is still reported beside them because it is what survives a change of host, not
+because the two runs' clocks differ here.
 
 **What each row is work-wise.**
 
@@ -627,14 +680,14 @@ core clock):
 
 |document|P GB/s|P cyc/B|E GB/s|E cyc/B|
 |---|---:|---:|---:|---:|
-|`route-s1-64k`|3.089 (2.969-3.093)|0.902|1.799 (1.757-1.986)|1.698|
-|`route-u8-64k`|5.387 (5.181-5.390)|0.517|3.519 (3.348-3.852)|0.884|
-|`syn-dense-4m`|3.073 (2.957-3.077)|0.905|1.848 (1.794-1.948)|1.715|
-|`syn-dense-64k`|3.642 (3.637-3.778)|0.736|2.097 (2.060-2.156)|1.538|
-|`syn-strings-4m`|5.415 (5.379-5.584)|0.498|5.265 (5.155-5.380)|0.627|
-|`syn-strings-64k`|8.631 (8.375-10.194)|0.317|8.776 (8.717-8.942)|0.374|
-|`syn-utf8-4m`|5.916 (5.710-5.980)|0.468|4.395 (4.321-4.452)|0.756|
-|`syn-utf8-64k`|6.051 (5.367-6.496)|0.428|4.816 (4.720-4.899)|0.665|
+|`route-s1-64k`|4.996 (4.946-5.378)|0.898|2.159 (2.153-2.164)|1.696|
+|`route-u8-64k`|8.145 (8.126-8.161)|0.556|4.136 (4.057-4.178)|0.882|
+|`syn-dense-4m`|4.815 (4.789-4.861)|0.934|2.047 (2.046-2.051)|1.788|
+|`syn-dense-64k`|6.617 (6.072-6.627)|0.707|2.372 (2.348-2.414)|1.542|
+|`syn-strings-4m`|9.085 (9.011-9.205)|0.504|5.610 (5.526-5.676)|0.654|
+|`syn-strings-64k`|15.996 (15.468-17.698)|0.278|9.559 (9.453-9.636)|0.383|
+|`syn-utf8-4m`|9.764 (9.552-10.073)|0.466|4.766 (4.665-4.783)|0.768|
+|`syn-utf8-64k`|10.162 (9.894-10.208)|0.457|5.487 (5.478-5.488)|0.668|
 
 `route-u8-64k`'s stage-1 row returns `UTF8_ERROR`: it is the scan plus its
 verdict, not an accepted stage 1, and it is marked `rejected` in the
@@ -645,12 +698,12 @@ a full-parse row):
 
 |document|P GB/s|P cyc/B|E GB/s|E cyc/B|
 |---|---:|---:|---:|---:|
-|`syn-dense-4m`|0.446 (0.434-0.449)|6.205|0.478 (0.451-0.503)|6.723|
-|`syn-dense-64k`|0.471 (0.458-0.483)|5.867|0.525 (0.481-0.526)|6.422|
-|`syn-strings-4m`|1.071 (1.070-1.072)|2.503|1.184 (1.179-1.222)|2.768|
-|`syn-strings-64k`|3.306 (3.172-3.331)|0.842|3.048 (2.526-3.155)|1.071|
-|`syn-utf8-4m`|1.611 (1.493-1.616)|1.726|1.494 (1.454-1.498)|2.244|
-|`syn-utf8-64k`|2.065 (2.027-2.187)|1.273|1.801 (1.800-1.807)|1.809|
+|`syn-dense-4m`|0.719 (0.706-0.727)|6.374|0.527 (0.523-0.533)|6.955|
+|`syn-dense-64k`|0.804 (0.781-0.828)|5.528|0.573 (0.549-0.578)|6.399|
+|`syn-strings-4m`|1.823 (1.792-1.829)|2.514|1.305 (1.298-1.311)|2.797|
+|`syn-strings-64k`|4.929 (3.999-5.867)|0.944|2.834 (2.805-3.438)|1.292|
+|`syn-utf8-4m`|2.627 (2.588-2.637)|1.717|1.585 (1.533-1.606)|2.315|
+|`syn-utf8-64k`|3.498 (3.286-3.505)|1.297|2.081 (2.061-2.170)|1.758|
 
 The two route documents have no full-parse figure because the parser refuses
 them: `route-s1-64k` is a tiled concatenation, not one JSON document, and its
@@ -659,14 +712,92 @@ UTF-8 and its `parse` row ends in `UTF8_ERROR`. Both are in the transcript as
 `status=refused` rows. They time the refusal, not a parse, and are not
 full-parse figures.
 
+**Stage 1 against the units' whole stage-1 work, as a stage ratio.**
+
+The units' stage-1 work is three calls: classification, entry emission and
+UTF-8 validation. Their total is the composite below — `s1_masks` + the entry
+emitter the unit rows select for that document and core + `utf8_gated` — summed
+per trial on ns/byte and converted to GB/s and cycles per byte. The entry column
+names which emitter was used; `utf8_ungated` is not used, because the gate is
+what the measured pipeline runs on these classes, and the ungated arm is the
+slower of the two on every all-ASCII document (0.159 against 0.051 cycles per
+byte on `route-s1-64k`, P core). It wins only on the UTF-8 documents, where the
+gate cannot skip: 0.133 against 0.147 on `syn-utf8-4m`, 0.171 against 0.175 on
+`syn-utf8-64k` and 0.173 against 0.174 on `route-u8-64k`. `stage1` is
+simdjson's one fused pass over the same bytes, so the quotient prices the same
+stage boundary reached two ways. The composite's cycles per byte is its summed
+ns/byte times the three rows' median calibrated clock for that trial, so it need
+not equal the sum of the three cyc/B cells to the last digit (0.735 against a
+0.749 sum on `route-s1-64k`, P core: the three rows calibrate at slightly
+different clocks).
+
+**P core (cpu0):**
+
+|document|entry|units GB/s|units cyc/B|`stage1` GB/s|`stage1` cyc/B|`stage1` ÷ units|
+|---|---|---:|---:|---:|---:|---:|
+|`route-s1-64k`|pos8|6.126|0.735|4.996|0.898|**1.23** (1.07-1.27)|
+|`route-u8-64k`|pos8|5.023|0.892|8.145|0.556|—|
+|`syn-dense-4m`|pos8|5.407|0.829|4.815|0.934|**1.12** (1.11-1.15)|
+|`syn-dense-64k`|pos8|5.647|0.778|6.617|0.707|**0.88** (0.85-0.92)|
+|`syn-strings-4m`|b8|7.172|0.629|9.085|0.504|**0.79** (0.78-0.79)|
+|`syn-strings-64k`|b8|8.677|0.521|15.996|0.278|**0.49** (0.49-0.56)|
+|`syn-utf8-4m`|b8|6.774|0.662|9.764|0.466|**0.69** (0.67-0.72)|
+|`syn-utf8-64k`|b8|6.236|0.721|10.162|0.457|**0.62** (0.61-0.68)|
+
+**E core (cpu4):**
+
+|document|entry|units GB/s|units cyc/B|`stage1` GB/s|`stage1` cyc/B|`stage1` ÷ units|
+|---|---|---:|---:|---:|---:|---:|
+|`route-s1-64k`|pos8|4.774|0.768|2.159|1.696|**2.21** (2.21-2.22)|
+|`route-u8-64k`|pos8|3.649|1.003|4.136|0.882|—|
+|`syn-dense-4m`|pos8|3.186|1.142|2.047|1.788|**1.56** (1.50-1.57)|
+|`syn-dense-64k`|pos8|4.738|0.773|2.372|1.542|**1.99** (1.96-2.02)|
+|`syn-strings-4m`|b8|4.148|0.882|5.610|0.654|**0.74** (0.72-0.75)|
+|`syn-strings-64k`|b8|5.058|0.723|9.559|0.383|**0.53** (0.53-0.54)|
+|`syn-utf8-4m`|b8|3.435|1.069|4.766|0.768|**0.73** (0.72-0.73)|
+|`syn-utf8-64k`|b8|3.767|0.973|5.487|0.668|**0.69** (0.68-0.69)|
+
+The ratio is a **stage ratio**: the same stage boundary over the same bytes,
+reached by two separate binaries in two processes. §7.2 applies — identical hot
+code across builds spanned ≈6% on `canonical` — and the ratio's own three-trial
+spread is given in parentheses so a reader can see where the quotient is
+resolved and where it is not: the median spread is 3.6% and the widest 16.4%
+(`route-s1-64k` on the P core). It is not a same-binary arm measurement and it
+does not make `stage1` and any single unit the same measurement.
+
+`route-u8-64k` carries no ratio. Its `stage1` row returns `UTF8_ERROR` at the
+first invalid sequence and stops, while the units scan the whole document, so
+the quotient would price different amounts of work. The row is in both tables
+for completeness and is excluded from every statement about the ratio.
+
+Read as a distribution, the ratio says the composite is cheaper than the fused
+pass where the units are strongest. On the dense documents it is 1.12 on
+`syn-dense-4m` and 0.88 on `syn-dense-64k` on the P core, and 1.56 and 1.99 on
+the E core, whose 128-bit datapath pays twice for each 256-bit operation; on
+`route-s1-64k`, a tiled 37-structural-per-block document, stage 1 costs 1.23×
+the composite on the P core and 2.21× on the E core. The fused pass is cheaper
+on everything string- or UTF-8-heavy: 0.49-0.79 on the P core and 0.53-0.74 on
+the E core. Each quotient is only as sharp as its spread — `route-s1-64k`'s
+P-core row is 1.2 ± 0.1 (1.07-1.27), not 1.23 to three digits, while
+`syn-strings-64k`'s 0.49-0.56 is the tighter half of the same reading.
+
+**Cadence.** Each headline row above is re-measured — not adjusted, and not
+re-derived from rows taken in another session — when one of these happens:
+
+|headline row|re-measure when|
+|---|---|
+|`s1_masks`, `entry_pos8`, `entry_b8`, `utf8_gated`, `utf8_ungated`|a unit's kernel source changes (`kernel/json/{s1_block,entry,utf8}.c`) or its pinned IR (`probes/install/ir/json-*.candidate.ll`) is re-pinned; a fourth stage-1 unit is added; the measured compiler line changes (the `clang` version or the flags in `bench.sh`); the corpus changes (route documents, seed, tiling, size classes); the host changes (core class, governor, cache size); or a threshold in §5 changes which entry emitter or UTF-8 arm the pipeline would run|
+|the composite, and the GB/s and cycles-per-byte cells derived from it|any unit trigger, and any change to the composite's definition (the entry emitter selected per row, or `utf8_gated` in place of `utf8_ungated`)|
+|`stage1` and `parse`|the simdjson release changes (5.0.5 now); the harness's compiler line changes; the corpus changes; or the shared library is rebuilt, since here it is the realised nix build and not compiled at these flags|
+|the stage ratio|any of the above, taken as a pair in one session|
+
 **What is like-for-like.**
 
 - `stage1` and the units' stage-1 work: the stage boundary is the same, the
   work is not identical -- one fused pass with an index array against three
-  calls, one of which reads a mask stream rather than the document. The
-  numbers come from different binaries, and §7.2 applies: they are reported
-  side by side, not divided. A reader who wants a ratio must take the two
-  processes' spread into account; this note does not claim one.
+  calls, one of which reads a mask stream rather than the document. The quotient
+  above is a stage ratio with its variance stated, not a same-binary arm; §7.2's
+  cross-build band is the floor under it.
 - `stage1` and `parse`: the same binary, the same process and the same staged
   buffer, so `parse` is the full parser over the same bytes. It includes
   `stage1`; the difference is stage 1 plus the lazy stage 2, not a separately
@@ -676,22 +807,132 @@ full-parse figures.
 - `pad` and the units: staging against compute. The units stage once outside
   the clock; this row prices simdjson's allocation and copy, which is why it is
   in neither table.
-- 5.0.5 and the ratios above: different release, different build, different
+- 5.0.5 and the §3 ratios: different release, different build, different
   corpus (the seven standard documents against the units' eight). The 5.0.5
   rows do not re-derive the `P2`/`P0` table and do not confirm it.
 
-**What the medians say.** The GB/s columns are this run at 2.77/3.17 GHz; the
-full parse runs at 0.45-3.31 GB/s on the P core and 0.48-3.05 on the E core,
-and stage 1 at 3.1-8.6 and 1.8-8.8. Cycles per byte is the column that can be
-set beside the units' tables: the classification unit costs 0.33-0.39 cycles per
-byte on the P core and 0.45-0.50 on the E core, while stage 1 costs 0.32-0.91
-and 0.37-1.70. Stage 1 is 2.2-2.7x the classification unit's cost on the dense
-P-core documents and 3.4x on the E core, where it also validates UTF-8 and
-writes the index array. On the sparse `syn-strings-64k` document it is below the
-unit (0.317 against 0.342 on the P core, 0.374 against 0.449 on the E core),
-the one place its fused SIMD classifier beats the unit's mask pass on the
-clock-normalized column. The two instruments are separate binaries, so those
-are directions read from the medians, not paired ratios.
+**What the medians say.** Both columns are this run: the units at 4.49 GHz
+(P) and 3.67 (E) medians, `stage1` at 4.56 and 3.66, so GB/s is comparable
+across the two tables and cycles per byte agrees with it. The full parse runs at
+0.72-4.93 GB/s on the P core and 0.53-2.83 on the E core; stage 1 at 4.8-16.0
+and 2.0-9.6. Cycles per byte puts the classification unit at 0.333-0.389 on the
+P core and 0.447-0.486 on the E core, against stage 1's 0.278-0.934 and
+0.383-1.788. Stage 1 is 1.9-2.7x the classification unit's cost on the dense
+P-core documents (0.934 against 0.343 on `syn-dense-4m`; 0.707 against 0.369 on
+`syn-dense-64k`) and 3.4-3.7x on the E core (1.788 against 0.484; 1.542 against
+0.448), where it also validates UTF-8 and writes the index array. On
+`syn-strings-64k` it is below the unit (0.278 against 0.333 on the P core, 0.383
+against 0.452 on the E core), the one place its fused SIMD classifier beats the
+unit's mask pass on the clock-normalized column. Against all three units
+together it is 0.49-1.23 on the P core and 0.53-2.21 on the E core: the fused
+pass wins on the string- and UTF-8-heavy documents, the three units win on the
+dense ones.
+
+### The earlier run, kept as history
+
+The two readings before this pair were taken in different sessions, and they are
+kept rather than deleted because the paired numbers above are only interpretable
+against them. The units' run is `tests/json-units-bench/transcript.txt` (240
+rows); its calibrated clock was 4.62 GHz median on cpu0 (4.08-4.84 over its
+rows) and 3.66 on cpu4 (3.61-3.68). The simdjson run is
+`tests/json-units-bench/simdjson-transcript.txt`; the earlier text recorded that
+run as taken while the host was also running five Lean builds, at a one-minute
+load average of 10.6, and its transcript's calibrated clock is 2.77 GHz median
+on the P core (2.09-2.79) and 3.27 on the E core (2.94-3.38) — 60% of the units'
+P-core clock and 89% of the E-core clock.
+
+GB/s is therefore not comparable across those two runs, and nothing in this note
+divided one by the other: at the time no ratio was quoted at all, which is what
+the paired run above was taken to fix. Cycles per byte survives a clock
+difference but stays cross-binary when the clocks agree, so it was the only
+comparable column then and it is the same column, now with a paired clock, in
+the tables above.
+
+**The units, earlier run.**
+
+**P core (cpu0), GB/s:**
+
+|document|`s1_masks`|`entry_pos8`|`entry_b8`|`utf8_gated`|`utf8_ungated`|
+|---|---:|---:|---:|---:|---:|
+|`route-s1-64k`|13.6 (11.1-13.7)|13.8 (13.6-13.8)|6.0 (5.2-6.0)|83.2 (83.0-96.9)|28.7 (23.9-28.8)|
+|`route-u8-64k`|13.6 (11.2-13.7)|14.1 (14.0-14.1)|8.6 (8.6-8.6)|25.6 (23.4-25.7)|28.7 (28.7-28.8)|
+|`syn-dense-4m`|13.9 (12.6-13.9)|11.4 (11.4-11.8)|5.4 (5.4-5.5)|54.9 (51.1-57.1)|34.7 (31.4-34.8)|
+|`syn-dense-64k`|13.7 (12.5-13.8)|13.7 (13.6-14.1)|6.6 (6.3-6.6)|88.9 (83.0-89.2)|28.7 (26.1-28.7)|
+|`syn-strings-4m`|13.8 (12.8-14.2)|14.8 (14.2-14.9)|23.7 (22.5-24.6)|54.6 (54.3-55.1)|35.7 (32.5-37.2)|
+|`syn-strings-64k`|13.8 (13.7-13.8)|15.1 (13.1-15.1)|30.0 (28.0-32.5)|96.7 (89.2-96.8)|28.7 (23.8-28.7)|
+|`syn-utf8-4m`|13.4 (12.4-13.7)|12.9 (12.4-13.2)|26.1 (23.4-26.6)|29.4 (29.3-30.8)|34.2 (31.8-34.9)|
+|`syn-utf8-64k`|11.3 (11.3-13.9)|14.3 (13.5-14.8)|28.5 (26.8-31.0)|25.7 (23.3-25.7)|26.2 (26.2-28.8)|
+
+**P core (cpu0), cycles per byte:**
+
+|document|`s1_masks`|`entry_pos8`|`entry_b8`|`utf8_gated`|`utf8_ungated`|
+|---|---:|---:|---:|---:|---:|
+|`route-s1-64k`|0.342|0.345|0.795|0.055|0.167|
+|`route-u8-64k`|0.347|0.329|0.558|0.185|0.163|
+|`syn-dense-4m`|0.336|0.399|0.828|0.084|0.134|
+|`syn-dense-64k`|0.332|0.330|0.718|0.052|0.165|
+|`syn-strings-4m`|0.340|0.317|0.198|0.084|0.130|
+|`syn-strings-64k`|0.342|0.311|0.148|0.049|0.160|
+|`syn-utf8-4m`|0.341|0.347|0.177|0.145|0.130|
+|`syn-utf8-64k`|0.392|0.321|0.162|0.186|0.172|
+
+**E core (cpu4), GB/s:**
+
+|document|`s1_masks`|`entry_pos8`|`entry_b8`|`utf8_gated`|`utf8_ungated`|
+|---|---:|---:|---:|---:|---:|
+|`route-s1-64k`|8.2 (8.2-8.2)|14.0 (14.0-14.0)|2.2 (2.1-2.2)|63.6 (62.7-63.7)|14.0 (14.0-14.0)|
+|`route-u8-64k`|8.2 (8.2-8.2)|13.9 (13.9-14.0)|3.5 (3.5-3.5)|12.5 (12.5-12.5)|14.0 (14.0-14.0)|
+|`syn-dense-4m`|7.3 (7.2-7.4)|7.1 (6.9-7.1)|2.4 (2.4-2.4)|26.3 (23.8-30.2)|11.6 (11.3-11.9)|
+|`syn-dense-64k`|8.2 (8.1-8.2)|13.7 (13.7-13.7)|2.7 (2.7-2.7)|63.8 (63.6-63.8)|14.0 (14.0-14.0)|
+|`syn-strings-4m`|7.6 (7.4-7.7)|13.2 (13.2-13.3)|14.6 (14.5-14.7)|24.3 (22.1-26.4)|11.4 (11.3-11.5)|
+|`syn-strings-64k`|8.2 (8.1-8.2)|14.4 (14.3-14.4)|17.0 (17.0-17.0)|63.7 (63.4-63.7)|14.0 (14.0-14.1)|
+|`syn-utf8-4m`|7.5 (7.3-7.7)|13.6 (13.5-13.6)|15.0 (14.9-15.1)|10.9 (10.4-11.2)|11.7 (11.6-12.1)|
+|`syn-utf8-64k`|8.2 (8.1-8.2)|14.1 (14.1-14.1)|16.1 (16.1-16.1)|12.5 (12.5-12.5)|14.0 (14.0-14.0)|
+
+**E core (cpu4), cycles per byte:**
+
+|document|`s1_masks`|`entry_pos8`|`entry_b8`|`utf8_gated`|`utf8_ungated`|
+|---|---:|---:|---:|---:|---:|
+|`route-s1-64k`|0.448|0.261|1.691|0.058|0.262|
+|`route-u8-64k`|0.448|0.262|1.047|0.293|0.262|
+|`syn-dense-4m`|0.501|0.516|1.546|0.140|0.316|
+|`syn-dense-64k`|0.449|0.268|1.378|0.057|0.262|
+|`syn-strings-4m`|0.476|0.277|0.252|0.151|0.322|
+|`syn-strings-64k`|0.450|0.254|0.216|0.058|0.262|
+|`syn-utf8-4m`|0.488|0.269|0.243|0.337|0.313|
+|`syn-utf8-64k`|0.448|0.260|0.228|0.293|0.262|
+
+**simdjson, earlier run.**
+
+**Stage 1:**
+
+|document|P GB/s|P cyc/B|E GB/s|E cyc/B|
+|---|---:|---:|---:|---:|
+|`route-s1-64k`|3.089 (2.969-3.093)|0.902|1.799 (1.757-1.986)|1.698|
+|`route-u8-64k`|5.387 (5.181-5.390)|0.517|3.519 (3.348-3.852)|0.884|
+|`syn-dense-4m`|3.073 (2.957-3.077)|0.905|1.848 (1.794-1.948)|1.715|
+|`syn-dense-64k`|3.642 (3.637-3.778)|0.736|2.097 (2.060-2.156)|1.538|
+|`syn-strings-4m`|5.415 (5.379-5.584)|0.498|5.265 (5.155-5.380)|0.627|
+|`syn-strings-64k`|8.631 (8.375-10.194)|0.317|8.776 (8.717-8.942)|0.374|
+|`syn-utf8-4m`|5.916 (5.710-5.980)|0.468|4.395 (4.321-4.452)|0.756|
+|`syn-utf8-64k`|6.051 (5.367-6.496)|0.428|4.816 (4.720-4.899)|0.665|
+
+**Full parse:**
+
+|document|P GB/s|P cyc/B|E GB/s|E cyc/B|
+|---|---:|---:|---:|---:|
+|`syn-dense-4m`|0.446 (0.434-0.449)|6.205|0.478 (0.451-0.503)|6.723|
+|`syn-dense-64k`|0.471 (0.458-0.483)|5.867|0.525 (0.481-0.526)|6.422|
+|`syn-strings-4m`|1.071 (1.070-1.072)|2.503|1.184 (1.179-1.222)|2.768|
+|`syn-strings-64k`|3.306 (3.172-3.331)|0.842|3.048 (2.526-3.155)|1.071|
+|`syn-utf8-4m`|1.611 (1.493-1.616)|1.726|1.494 (1.454-1.498)|2.244|
+|`syn-utf8-64k`|2.065 (2.027-2.187)|1.273|1.801 (1.800-1.807)|1.809|
+
+The earlier simdjson run's `route-u8-64k` stage-1 row is the `UTF8_ERROR`
+refusal described above; its full-parse rows for the two route documents are
+`status=refused` and are not full-parse figures. Nothing in this section is
+divided by anything in the units' earlier tables, and no row here is compared
+with the paired tables above.
 
 ### What this does not establish
 
@@ -708,16 +949,20 @@ are directions read from the medians, not paired ratios.
   slower on `utf8_ungated` over `syn-strings-4m` -- so a single figure without
   its class would be misleading; the tables report both.
 - **Nothing about simdjson beyond these rows.** The simdjson rows are 5.0.5,
-  active implementation `haswell`, this corpus and this host. The earlier ratios
-  are against 4.6.11 and are not re-measured here. The 5.0.5 full parse is a
-  parser against three units, and the stage-1 comparison is work-level across
-  two binaries; neither is a paired ratio or an end-to-end claim about this
-  tree.
+  active implementation `haswell`, this corpus and this host. The §3 ratios are
+  against 4.6.11 and are not re-measured here. The 5.0.5 full parse is a parser
+  against three units and is a ratio of nothing; the stage-1 comparison is a
+  stage ratio across two binaries, given with its three-trial spread, and
+  neither is an end-to-end claim about this tree.
 - **Cycles per byte is derived, not observed.** It is wall time times a clock
   calibrated just before the row. Under sustained 256-bit code the core may run
   below that calibration, which makes the figure an upper bound on true core
-  cycles per byte; GB/s is measured directly. The invariant TSC (3.302 GHz)
-  gives the reader a clock-free conversion of any wall time.
+  cycles per byte; GB/s is measured directly. In the paired run the two
+  harnesses' clocks agree within 1.5% on the P core and 0.1% on the E core, so
+  the GB/s and cycles-per-byte columns describe one regime; that agreement is a
+  property of this run and has to be re-established, not assumed, by the next
+  one. The invariant TSC (3.302 GHz) gives the reader a clock-free conversion of
+  any wall time.
 - **Nothing about documents outside this corpus.** The synthetic documents are
   three shapes from one seed, and the route corpora are the checked-in documents
   tiled to 65,536 bytes. Results are for these bytes and these sizes: the

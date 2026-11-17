@@ -1,0 +1,66 @@
+paired run: the units' harness, then the simdjson harness, back to back
+purpose: the same-setup pair quoted in docs/json-pipeline-performance.md
+host: Linux 6.17.0-1033-oem x86_64
+order: units 09:50:34-09:50:44Z, simdjson 09:50:44-09:50:54Z
+units transcript: tests/json-units-bench/transcript-paired.txt
+simdjson transcript: tests/json-units-bench/simdjson-transcript-paired.txt
+corpus: tests/json-units-bench/build/corpus, built by the units harness and
+        hash-checked by the simdjson harness through BENCH_CORPUS
+criterion: no `lake build` and no `lean` elaboration process, and zero Lean cpu
+           ticks over each check second, for 12 consecutive seconds before the
+           run; the run itself is then watched by sampling /proc every 0.25 s
+
+attempt 3: quiet for 12s before the run (13s waited)
+  idle criterion: no `lake build`, no `lean` elaboration process, and zero lean cpu ticks over each check second
+
+before the units harness
+  time: 2026-11-17T09:50:34Z
+  loadavg: 1.93 2.23 2.90 1/3743 2707688
+  governor cpu0/cpu4: powersave / powersave
+  pgrep -af "bin/lean|lake build":
+    2663387 /nix/store/2vmnq5k9hm3v7rgrrfbchh94cp6gbcbw-lean4-4.35.0-rc3/bin/lean --server
+    2663397 /nix/store/2vmnq5k9hm3v7rgrrfbchh94cp6gbcbw-lean4-4.35.0-rc3/bin/lean --worker file:///home/gavin/dev/Scidonia/ownership/Cap/Surface.lean
+  lean utime+stime ticks: 629
+units harness: nix develop -c bash tests/json-units-bench/bench.sh
+  exit 0, wall 10s
+  cpu0/cpu4 busy over the run: cpu0 busy 43.7% idle 56.3%  cpu4 busy 50.3% idle 49.7%
+  watcher: pid 2663387 editor ticks +0 (not counted)
+  watcher: pid 2663397 worker ticks +0
+  watcher: summary samples=37 busy=0 ticks=0
+between the two harnesses
+  time: 2026-11-17T09:50:44Z
+  loadavg: 2.09 2.25 2.90 1/3709 2710216
+  governor cpu0/cpu4: powersave / powersave
+  pgrep -af "bin/lean|lake build":
+    2663387 /nix/store/2vmnq5k9hm3v7rgrrfbchh94cp6gbcbw-lean4-4.35.0-rc3/bin/lean --server
+    2663397 /nix/store/2vmnq5k9hm3v7rgrrfbchh94cp6gbcbw-lean4-4.35.0-rc3/bin/lean --worker file:///home/gavin/dev/Scidonia/ownership/Cap/Surface.lean
+  lean utime+stime ticks: 629
+simdjson harness: BENCH_CORPUS=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build/corpus nix develop -c bash tests/json-units-bench/bench-simdjson.sh
+  exit 0, wall 10s
+  cpu0/cpu4 busy over the run: cpu0 busy 42.1% idle 57.9%  cpu4 busy 53.5% idle 46.5%
+  watcher: pid 2663387 editor ticks +0 (not counted)
+  watcher: pid 2663397 worker ticks +0
+  watcher: summary samples=39 busy=0 ticks=0
+after the simdjson harness
+  time: 2026-11-17T09:50:54Z
+  loadavg: 1.92 2.21 2.88 2/3723 2710632
+  governor cpu0/cpu4: powersave / powersave
+  pgrep -af "bin/lean|lake build":
+    2663387 /nix/store/2vmnq5k9hm3v7rgrrfbchh94cp6gbcbw-lean4-4.35.0-rc3/bin/lean --server
+    2663397 /nix/store/2vmnq5k9hm3v7rgrrfbchh94cp6gbcbw-lean4-4.35.0-rc3/bin/lean --worker file:///home/gavin/dev/Scidonia/ownership/Cap/Surface.lean
+  lean utime+stime ticks: 629
+
+
+== attempts ==
+An earlier attempt at 09:39:52-09:40:15Z was discarded for contention: a peer's
+`lake build` ran through both harnesses, consuming 10.1 s of cpu during the
+units' run and 28.4 s during the simdjson run, with cpu0 47.6% and then 77.4%
+busy. Its transcripts were deleted rather than kept.
+
+attempt 1: discarded - the editor's `lean --worker` gained 1 cpu tick (0.01 s)
+  during the simdjson run; no build process appeared and no other Lean cpu was
+  consumed. Watcher: 38 + 40 samples, elaboration ticks 0 + 1.
+attempt 2: discarded - the same worker gained 1 cpu tick (0.01 s) during the
+  simdjson run. Watcher: 36 + 38 samples, elaboration ticks 0 + 1.
+attempt 3: accepted - no build or elaboration process in 76 samples over both
+  runs, and zero Lean cpu ticks consumed by any process in either run.
