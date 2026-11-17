@@ -81,19 +81,24 @@ arm at all: `.value` × `wsByte`, the whitespace run after a numeral.
   (the check state's row, `HcontClassRows.runRow`, plus the byte's leaf composed from the
   row), and the three leaves are `letters`/`fLetter`/`classC` by the head byte's pivots,
   with the chain built from `defaultLane` plus those bits.
-* **`.value` has one arm, and it takes the document byte's route.**  `HcontArm.scalar`
-  is the only constructor at `HcontClass.value` (the tag test is `1` there, so
-  `letters`/`fLetter`/`classC`, which take `tag = 0`, are excluded), and both the
+* **`.value` takes the document byte's route, and both of its halves are produced.**
+  `HcontArm.scalar` is the plain-value route's scan-free arm (the tag test is `1` there,
+  so `letters`/`fLetter`/`classC`, which take `tag = 0`, are excluded), and both the
   document row (`HcontScalarPrefix.hb`) and the bundle (`HcontScalarFacts.hb`) carry
   `hb : HcontByteRoute (cont35 b35)`.  The class's seam row (`HcontClassRows.scalar`) is
   stated at `scSeamByte … pre.hb`, the chain to it is `scSeamSegByte` at
   `hlastByteCount hb`, and the tail is `scTailByte_of_calls` at the same seam, so
-  `.value` × {`scanFree`, `lowLeaf`} are produced as well as the high leaf.  The one
-  cell still without a producer is `.value` × `wsByte` — the whitespace run after a
-  numeral, which is not `HcontFacts`'s prefix either — and `WalkInv` does not exclude
-  it: it fixes the memory's shape, not the document's content.  So
-  `walkContinueFacts_of_payload` still owes that run's arm, not a row: a row for that
-  cell would be the arm.
+  `.value` × {`scanFree`, `lowLeaf`} are produced as well as the high leaf.  The fourth
+  cell — `.value` × `wsByte`, the whitespace run after a numeral — is `HcontArm.scalarRun`
+  (`JsonStage2WalkHcontWsScalar`): its bundle `HcontScalarWsFacts` is the numeral prefix's
+  document cells, the byte's class with the run's stop and its per-index facts, the seam's
+  own cells, the tail's segment and the scan's landing; the run is restated at this
+  prefix (`scWsRunF`, whose seam is the tag-true link `scWsSeamSeg` rather than the
+  class-C span's) and the path to the merge is `walkDispatch_at_continue_scalarWs`, so
+  the arm is proved, not supplied.  Its row is `HcontClassRows.scalarRun`
+  (`HcontScalarWsRow`, the seam's three calls in place of the tail's segment) and its
+  branch is `hcontArm_scalarRun_of_class`, whose producer builds the tail from the calls
+  (`scanTailSeg_at`) — so no segment is a premise at that cell either.
 
 **What the last level still needs is a payload item, not a proof** — closed: the last
 level's case is total as written, because its `.scalar` is guarded by the document route
@@ -128,6 +133,19 @@ theorem hcontArm_scalar_of_class {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} 
     Nonempty (HcontArm (stage2Calls stage2SubCalls) G C s) := by
   obtain ⟨calls, hcA, hroot⟩ := hc.scalar C s pre
   exact hcontArm_scalar_of_rows hInv hblock hk pre calls hcA hroot
+
+/-! ### The plain-value class's whitespace run -/
+
+/-- **The whitespace-run cell's continuing arm, from the class's row.**  The row is
+`HcontScalarWsRow`'s — the prefix's document cells, the byte's class with the run's stop,
+the seam's cells and the seam's three calls — and the arm's producer builds the tail from
+the calls (`hcontArm_scalarRun_of_row`), so neither a segment nor a bundle is a premise
+here. -/
+theorem hcontArm_scalarRun_of_class {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {s : State} (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead)
+    (hk : C.k + 1 < G.nep) (hc : HcontClassRows G) :
+    Nonempty (HcontArm (stage2Calls stage2SubCalls) G C s) :=
+  ⟨hcontArm_scalarRun_of_row hInv hblock hk (hc.scalarRun C s hInv hblock hk)⟩
 
 /-! ### The default arm's scan-free classes -/
 

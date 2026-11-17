@@ -98,6 +98,7 @@ import LeanLLVM.Refinement.JsonStage2WalkDispatchSupply
 import LeanLLVM.Refinement.JsonStage2WalkDispatchSeams
 import LeanLLVM.Refinement.JsonStage2WalkDispatchDefaultLane
 import LeanLLVM.Refinement.JsonStage2WalkDispatchRunHead
+import LeanLLVM.Refinement.JsonStage2WalkHcontWsScalar
 
 set_option autoImplicit false
 
@@ -280,6 +281,244 @@ noncomputable def hcontArm_run_of_row {m0 : Mem} {G : WalkGeom m0} {C : WalkCarr
       row.b row.ev row.calls row.rows row.seam)
     hk hSpan hnS)
 
+/-! ### The plain-value class's whitespace run
+
+`HcontScalarWsRow` is the numeral route's whitespace cell: the plain-value prefix's
+document cells, the byte's class with the run's stop, the seam's own cells and invariant,
+and the seam's three call rows with the scan's landing.  The arm's producer joins the last
+two into the tail with `scanTailSeg_at`, so the segment is a consequence of the rows and
+not a field.  It is `HcontRunRow`'s shape at `HcontScalarWsFacts`'s states: the run's body
+enters as the document's class and the stop's per-index facts, and the seam's state group
+as the invariant and the cells. -/
+
+/-- **The numeral route's whitespace row**: the bundle's document fields with the seam's
+three call rows in place of the tail's segment. -/
+structure HcontScalarWsRow {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) :
+    Type where
+  /-- The plain-value prefix: the head's byte and its four pivots, the counts and the
+  lane. -/
+  x : BitVec 8
+  h8 : evalOperand s (.reg "%8") = some (.int 8 x)
+  hlt91 : evalICmp .slt x (BitVec.ofNat 8 91) = 1
+  h44 : evalICmp .slt x (BitVec.ofNat 8 44) = 0
+  h58 : evalICmp .slt x (BitVec.ofNat 8 58) = 1
+  hne44 : evalICmp .eq x (BitVec.ofNat 8 44) = 0
+  hbit : (evalICmp .eq x (BitVec.ofNat 8 45) |||
+    evalICmp .ult (x + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 1
+  inc : BitVec 64
+  nep : BitVec 64
+  hinc : evalOperand (scS₄ s x) (.reg "%inc.i") = some (.int 64 inc)
+  hnep : evalOperand (scS₄ s x) (.reg "%nep") = some (.int 64 nep)
+  hnext : evalICmp .ult inc nep = 1
+  ep : Nat
+  v : BitVec 32
+  h5 : lookupName (scS₅ s x inc nep).env "%5" = some (.ptr ep)
+  hi63 : inc.toNat < 2 ^ 63
+  hread : readBytes (scS₅ s x inc nep).mem (ep + inc.toNat * 4) 4 =
+    some (natToBytes v.toNat 4)
+  ix : BitVec 64
+  hidx5 : lookupName (scS₅ s x inc nep).env "%idxprom.i" = some (.int 64 ix)
+  hidxS : lookupName s.env "%idxprom.i" = some (.int 64 ix)
+  htok5 : lookupName (scS₅ s x inc nep).env "%t352.i" = some (.ptr C.stage.tok)
+  hgap5 : lookupName (scS₅ s x inc nep).env "%gap.i" = some (.ptr (C.stage.tok + 20))
+  hugt : evalICmp .ugt (BitVec.ofNat 64 v.toNat) ix = 1
+  b35 : UInt8
+  hread35 : readBytes (sEnd C s x inc nep ep v ix).mem ((G.b - 1) + v.toNat) 1 =
+    some [b35]
+  hx : x = hlastByte G C
+  /-- The whitespace skip's stop, its byte class and its per-index facts. -/
+  k : Nat
+  hClass :
+    ((evalICmp .slt (cont35 b35) (BitVec.ofNat 8 13) = 1 ∧
+        evalICmp .ule (cont35 b35 + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 1) ∨
+      (evalICmp .slt (cont35 b35) (BitVec.ofNat 8 13) = 0 ∧
+        evalICmp .slt (cont35 b35) (BitVec.ofNat 8 32) = 1 ∧
+        evalICmp .eq (cont35 b35) (BitVec.ofNat 8 13) = 1) ∨
+      (evalICmp .slt (cont35 b35) (BitVec.ofNat 8 13) = 0 ∧
+        evalICmp .slt (cont35 b35) (BitVec.ofNat 8 32) = 0 ∧
+        evalICmp .eq (cont35 b35) (BitVec.ofNat 8 32) = 1)) ∧
+    (∀ q, ix.toNat ≤ q → q < k → wsCont G q) ∧ wsStop G k ∧ ix.toNat < k ∧
+    v.toNat - ix.toNat ≤ C.inner ∧ entryPos G C.k ≤ ix.toNat
+  heicd : k < v.toNat
+  hspan : v.toNat ≤ entryPos G (C.k + 1)
+  /-- The seam's own cells: its byte, the token's end pointer, the bound and the root
+  slot's word — state facts at the run's stop, as `HcontRunRows` states its own. -/
+  h8m : evalOperand (scWsSeam C (scWsSl G C s x inc nep ep v ix b35 k) k x) (.reg "%8") =
+    some (.int 8 x)
+  hendm : lookupName (scWsSeam C (scWsSl G C s x inc nep ep v ix b35 k) k x).env "%end.i" =
+    some (.ptr (C.stage.tok + 8))
+  hcdm : lookupName (scWsSeam C (scWsSl G C s x inc nep ep v ix b35 k) k x).env
+    "%cond350.i" = some (.int 64 (BitVec.ofNat 64 v.toNat))
+  hInvSeam : WalkInv G (HeadC₄₁₃ (ContAC₇ C))
+    (scWsSeam C (scWsSl G C s x inc nep ep v ix b35 k) k x)
+  /-- The seam's three call rows, with the record the scalar call appended. -/
+  calls : HcontSeamCalls G (HeadC₄₁₃ (ContAC₇ C))
+    (scWsSeam C (scWsSl G C s x inc nep ep v ix b35 k) k x)
+  hcA : calls.cA = BitVec.ofNat 32 7
+  ev : EventRecord
+  happ : s2ScalarValueAppend calls.r₁.mem calls.r₂.mem
+    (TailCarry₂ (HeadC₄₁₃ (ContAC₇ C))).stage.z ev.encodedBytes
+  /-- The copy call's test: the root slot's word at the seam's own memory. -/
+  hrootm : readBytes
+    (writeBytes (scWsSeam C (scWsSl G C s x inc nep ep v ix b35 k) k x).mem
+      (C.stage.tok + 16) (natToBytes calls.cA.toNat 4)) (G.next0 + 8) 4 =
+    some (natToBytes calls.rdv.toNat 4)
+  /-- The scan's landing, at the scan's entry. -/
+  a : Nat
+  q : Nat
+  bs : List UInt8
+  h3S : lookupName
+    (scWsEntry C (scWsSl G C s x inc nep ep v ix b35 k) k x v calls.r₁ calls.r₂ calls.r₃
+      calls.cA calls.rdv calls.xA).env "%3" = some (.ptr a)
+  hpos : ((BitVec.ofNat 64 k).signExtend 64).toNat < 2 ^ 63
+  hreadS : readBytes
+    (scWsEntry C (scWsSl G C s x inc nep ep v ix b35 k) k x v calls.r₁ calls.r₂ calls.r₃
+      calls.cA calls.rdv calls.xA).mem
+    (a + ((BitVec.ofNat 64 k).signExtend 64).toNat) 1 = some bs
+  hbsS : bytesToNat bs = q
+  hloc105 : WalkLocal (ScanC₁₀₅ (TailCarryScan (HeadC₄₁₃ (ContAC₇ C)) ev))
+    (landRhs457OutAt
+      (scWsEntry C (scWsSl G C s x inc nep ep v ix b35 k) k x v calls.r₁ calls.r₂ calls.r₃
+        calls.cA calls.rdv calls.xA) (BitVec.ofNat 64 k) a q)
+  x47 : BitVec 8
+  h47 : evalOperand
+    (landRhs457OutAt
+      (scWsEntry C (scWsSl G C s x inc nep ep v ix b35 k) k x v calls.r₁ calls.r₂ calls.r₃
+        calls.cA calls.rdv calls.xA) (BitVec.ofNat 64 k) a q) (.reg "%47") =
+    some (.int 8 x47)
+  hbit47 : evalICmp .slt x47 (BitVec.ofNat 8 13) = 1
+  hws47 : evalICmp .ule (x47 + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 1
+  hloc96 : WalkLocal (ScanC₉₆ (TailCarryScan (HeadC₄₁₃ (ContAC₇ C)) ev))
+    (ScanS₉₆ (scWsEntry C (scWsSl G C s x inc nep ep v ix b35 k) k x v calls.r₁ calls.r₂
+      calls.r₃ calls.cA calls.rdv calls.xA) (BitVec.ofNat 64 k) a q x47)
+  hlatch : WalkLocal
+    { TailCarryScan (HeadC₄₁₃ (ContAC₇ C)) ev with block := "while.body462.i" }
+    (scWsLatch C (scWsSl G C s x inc nep ep v ix b35 k) k x v calls.r₁ calls.r₂ calls.r₃
+      calls.cA calls.rdv calls.xA (BitVec.ofNat 64 k) a q x47)
+  /-- The visits' totality: the document's byte at every index the scan visits. -/
+  hbyte : ∀ (C' : WalkCarry G) (s' : State) (p : Nat), WalkInv G C' s' →
+    C'.block = "while.body462.i" → k < p + 1 → p + 1 < v.toNat →
+    lookupName s'.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 p)) →
+    lookupName s'.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 v.toNat)) →
+    ∃ (a : Nat) (bs : List UInt8) (q : Nat) (x : BitVec 8),
+      lookupName (scanLatchOut s' "%inc463.i" "%exitcond298.not" p v.toNat
+        "land.rhs457.i").env "%3" = some (.ptr a) ∧
+      readBytes s'.mem (a + (p + 1)) 1 = some bs ∧ bytesToNat bs = q ∧
+      evalOperand (landRhs457OutAt (scanLatchOut s' "%inc463.i" "%exitcond298.not" p
+        v.toNat "land.rhs457.i") (BitVec.ofNat 64 (p + 1)) a q) (.reg "%47") =
+        some (.int 8 x) ∧
+      evalICmp .slt x (BitVec.ofNat 8 13) = 1 ∧
+      evalICmp .ule (x + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 1 ∧
+      WalkLocal (ScanC₁₀₅ (ScanCLand C'))
+        (landRhs457OutAt (scanLatchOut s' "%inc463.i" "%exitcond298.not" p v.toNat
+          "land.rhs457.i") (BitVec.ofNat 64 (p + 1)) a q) ∧
+      WalkLocal (ScanC₉₆ (ScanCLand C'))
+        (ScanS₉₆ (scanLatchOut s' "%inc463.i" "%exitcond298.not" p v.toNat "land.rhs457.i")
+          (BitVec.ofNat 64 (p + 1)) a q x) ∧
+      WalkLocal { ScanCLand C' with block := "while.body462.i" }
+        (Latch462S (scanLatchOut s' "%inc463.i" "%exitcond298.not" p v.toNat
+          "land.rhs457.i") (BitVec.ofNat 64 (p + 1)) a q x)
+
+/-- **The whitespace-run arm, from its row.**  The tail is `scanTailSeg_at`'s at the
+seam's own calls, the cells and the record the scalar call appended — so the segment is
+the composition's and no field of the row is one.  The bundle is then the row's fields
+beside that tail. -/
+noncomputable def hcontArm_scalarRun_of_row {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {s : State} (_hInv : WalkInv G C s) (_hblock : C.block = walkLoopHead)
+    (hk : C.k + 1 < G.nep) (row : HcontScalarWsRow G C s) :
+    HcontArm (stage2Calls stage2SubCalls) G C s :=
+  .scalarRun
+    { x := row.x
+      h8 := row.h8
+      hlt91 := row.hlt91
+      h44 := row.h44
+      h58 := row.h58
+      hne44 := row.hne44
+      hbit := row.hbit
+      inc := row.inc
+      nep := row.nep
+      hinc := row.hinc
+      hnep := row.hnep
+      hnext := row.hnext
+      ep := row.ep
+      v := row.v
+      h5 := row.h5
+      hi63 := row.hi63
+      hread := row.hread
+      ix := row.ix
+      hidx5 := row.hidx5
+      hidxS := row.hidxS
+      htok5 := row.htok5
+      hgap5 := row.hgap5
+      hugt := row.hugt
+      b35 := row.b35
+      hread35 := row.hread35
+      hx := row.hx
+      k := row.k
+      hClass := row.hClass
+      heicd := row.heicd
+      hspan := row.hspan
+      h8m := row.h8m
+      hendm := row.hendm
+      r₁ := row.calls.r₁
+      r₂ := row.calls.r₂
+      r₃ := row.calls.r₃
+      ev := row.ev
+      cA := row.calls.cA
+      rdv := row.calls.rdv
+      xA := row.calls.xA
+      hTail :=
+        scanTailSeg_at (G := G) (C := HeadC₄₁₃ (ContAC₇ C))
+          (s := scWsSeam C (scWsSl G C s row.x row.inc row.nep row.ep row.v row.ix row.b35
+            row.k) row.k row.x)
+          row.calls row.ev row.happ (HcontSeamCalls.hzread_mem row.calls) row.hInvSeam
+          rfl (p := "if.end372.i") "if.end372.i"
+          (op := Operand.imm (.int 32 (BitVec.ofNat 32 7)))
+          (by
+            rw [scWsSeam_pre C
+              (scWsSl G C s row.x row.inc row.nep row.ep row.v row.ix row.b35 row.k) row.k
+              row.x]
+            rw [scWsSl_pc C s row.x row.inc row.nep row.ep row.v row.ix row.b35
+              row.hClass.2.2.2.1])
+          (by decide) (by rw [row.hcA]; rfl)
+          (row.hInvSeam.regs ("%kind404.i", .ptr (C.stage.tok + 16))
+            (by simp [walkStaticRegs]))
+          (row.hInvSeam.regs ("%root_done.i", .ptr (G.next0 + 8))
+            (by simp [walkStaticRegs]))
+          row.hrootm
+          (row.hInvSeam.regs ("%c.i",
+            .ptr (TailCarry₂ (HeadC₄₁₃ (ContAC₇ C))).stage.c) (by simp [walkStaticRegs]))
+          (row.hInvSeam.regs ("%t352.i",
+            .ptr (TailCarry₂ (HeadC₄₁₃ (ContAC₇ C))).stage.tok) (by simp [walkStaticRegs]))
+          (row.hInvSeam.regs ("%z",
+            .ptr (TailCarry₂ (HeadC₄₁₃ (ContAC₇ C))).stage.z) (by simp [walkStaticRegs]))
+          (row.hInvSeam.events_le_of_tight
+            (walkEmitC_of_not_contains (b := "if.then413.i") (by decide)))
+          (by show C.k < G.nep; omega)
+          (scWsSeam_ee C _ row.k row.x) row.hcdm
+          (by
+            have hik : row.ix.toNat < row.k := row.hClass.2.2.2.1
+            have hsub : row.v.toNat - row.ix.toNat ≤ C.inner := row.hClass.2.2.2.2.1
+            have hinn : (HeadC₄₁₃ (ContAC₇ C)).inner = C.inner := rfl
+            show row.v.toNat - row.k ≤ (HeadC₄₁₃ (ContAC₇ C)).inner
+            omega)
+          row.heicd (by have := row.v.isLt; omega)
+      a := row.a
+      q := row.q
+      bs := row.bs
+      h3S := row.h3S
+      hpos := row.hpos
+      hreadS := row.hreadS
+      hbsS := row.hbsS
+      hloc105 := row.hloc105
+      x47 := row.x47
+      h47 := row.h47
+      hbit47 := row.hbit47
+      hws47 := row.hws47
+      hloc96 := row.hloc96
+      hlatch := row.hlatch
+      hbyte := row.hbyte }
+
 /-! ### The payload's per-class groups -/
 
 /-- **The continuing payload's class rows**: the rows the residual table names beside
@@ -333,6 +572,14 @@ structure HcontClassRows {m0 : Mem} (G : WalkGeom m0) : Type where
       (scSeamByte (sLand C s pre.x pre.inc pre.nep pre.ep pre.v pre.ix pre.b35)
         pre.v.toNat pre.x C.stage.tok pre.b35 pre.hb)
       (BitVec.ofNat 32 7)
+  /-- **The plain-value class's whitespace-run row**: `.value` × `wsByte`, the cell the
+  route-carrying `scalar` row cannot reach (its `pre.hb` is the three non-whitespace
+  leaves).  The row is `HcontScalarWsRow`'s — the prefix's document cells, the byte's
+  class with the run's stop, the seam's own cells and invariant, and the seam's three
+  calls — and its producer is `hcontArm_scalarRun_of_row`, which builds the tail from the
+  calls. -/
+  scalarRun : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
+    C.k + 1 < G.nep → HcontScalarWsRow G C s
   /-- The letters class's seam row: the head chain's endpoint's seam `LetS413`, whose
   kind literal is `if.end372.i`'s `0`. -/
   letters : ∀ (C : WalkCarry G) (s : State) {x : BitVec 8} (ch : HcontHeadChain G C s x),

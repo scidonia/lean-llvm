@@ -191,6 +191,7 @@ questions, and this module keeps them apart exactly as `JsonStage2WalkDispatchAr
 the last entry's guard apart from its head switch.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkHcontScalar
+import LeanLLVM.Refinement.JsonStage2WalkHcontWsScalar
 import LeanLLVM.Refinement.JsonStage2WalkDispatchWitnessString
 import LeanLLVM.Refinement.JsonStage2WalkDispatchLetters
 import LeanLLVM.Refinement.JsonStage2WalkDispatchFLetter
@@ -420,6 +421,22 @@ inductive HcontArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
   /-- **The plain-value token on the numeral route** (`HcontScalarFacts`): the class the
   old split excluded. -/
   | scalar (f : HcontScalarFacts G C s) : HcontArm calls G C s
+  /-- **The plain-value token with a whitespace run at the document's byte**
+  (`HcontScalarWsFacts`): the numeral's four pivots and the tag test's own `1` arm, the
+  whitespace skip at `%35` and `if.end372.i`, and the scan tail its stop enters.
+
+  This is the cell the route-carrying `.scalar` left empty.  `.scalar`'s `hb` is
+  `HcontByteRoute` — the three non-whitespace leaves — and the whitespace byte is the
+  run class's on the high-byte route (`HcontFacts`) and on the default arm (`RunFacts`),
+  but neither bundle's head is this route's: `HcontFacts`'s prefix is the head chain's
+  `contPrefixLand`, `RunFacts` takes the tag test's *clear* arm and its span below
+  `if.else387.i`, and here the head is the numeral's and the seam is `if.then413.i`.  A
+  numeral followed by whitespace is admitted by the header, so the census needed this
+  arm: the run is restated at this prefix (`scWsRunF`) and its seam is the tag-true link
+  (`scWsSeamSeg`), not the class-C span's.  `HcontScalarWsFacts` is the document's and
+  the callees', and `walkDispatch_at_continue_scalarWs` composes the path to the merge
+  with the merge's three cells — so the arm is proved, not supplied. -/
+  | scalarRun (f : HcontScalarWsFacts G C s) : HcontArm calls G C s
   /-- **A closing bracket at depth zero, with nothing open**: refused at `if.then56.i`.
   The links are `JsonStage2WalkDispatchArms`'s `.closingZero` chain, and its only count
   premise is the head's guard, which a continuing entry has. -/
@@ -744,6 +761,8 @@ theorem HcontArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
       WalkDispatchResult.merge Cd sd p spv k2 prev spOp kOp nepv seg hblk hkC hpre hsp hspv
         hkOp hk2 hnepv hadvance (le_of_lt hbelow) hspcap hspw hprice)
       (walkDispatch_at_continue_scalar C s hInv hblock hk f)
+  | .scalarRun f =>
+    walkDispatch_at_continue_scalarWs hInv hblock hk f
   | .closeBracketZero h8 hsp hv he hj hj64 =>
     (fun ⟨Cd, sd, p, hseg, herr, hprice⟩ =>
       WalkDispatchResult.refuse Cd sd p hseg.seg hseg.block hseg.word herr hprice)
