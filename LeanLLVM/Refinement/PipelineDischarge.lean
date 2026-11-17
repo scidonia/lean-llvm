@@ -91,8 +91,9 @@ The two call outcomes and their posts (`PipelineUnits.utf8`,
 `…_refuse` for the refusal one), the two extents' bounds and the frame
 composition are `pipelineTailTarget`'s own body.  The bounds are the stage-2
 record's: `stage2Boundary` states its capacities as 64-bit numbers and the event
-extent inside its capacity, so `ndst' < 2 ^ 64` and `nev' < 2 ^ 64` — what
-`pipelineOutputExtents` reads — follow from the post, and a consumer with the
+extent inside its capacity, so `ndstU < 2 ^ 64` — the reported extent, through
+`ndstU ≤ ndst'` and the reserve clause — and `nev' < 2 ^ 64`, which is what
+`pipelineOutputExtents` reads at its pair, follow from the post, and a consumer with the
 call's argument list reads each capacity off its word.  The frame composes the
 loop's write list at the exit's counts with the tail's five entries, which is the
 post's list.
@@ -1161,8 +1162,8 @@ two-valuedness of the arm's gate.
 
 `pipelineOutputExtents`'s two bounds are the record's.  `stage2Boundary` names its
 two capacities as 64-bit numbers and the event extent inside its capacity, so the
-reporting slot words decide the extents: `ndst' < 2 ^ 64` follows from the
-reserve clause and `nev' < 2 ^ 64` from the event clause, and a consumer that has
+reporting slot words decide the extents: `ndstU < 2 ^ 64` follows from `ndstU ≤ ndst'`
+and the reserve clause, and `nev' < 2 ^ 64` from the event clause, and a consumer that has
 the call's argument list reads each capacity off its word — one word with two
 widths is one number.  The tail uses the second half of that: stage two's five
 write regions lie inside the two capacities the caller staged, so the staged
@@ -1417,8 +1418,8 @@ two's five write regions are inside the two capacities the caller staged.
 
 `pipelineOutputExtents`'s two bounds are the record's own: `stage2Boundary` states
 its capacities as 64-bit numbers and the event extent inside its capacity, so
-`ndst' < 2 ^ 64` follows from the reserve clause and `nev' < 2 ^ 64` from the
-event clause, and the same widths identify stage two's capacities with the ones
+`ndstU < 2 ^ 64` follows from `ndstU ≤ ndst'` and the reserve clause and `nev' < 2 ^ 64`
+from the event clause, and the same widths identify stage two's capacities with the ones
 the caller staged. -/
 
 /-- **Each of the walk's write regions misses a staged object.**  The five ABI
@@ -1664,6 +1665,7 @@ theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}
     let err₂ := w₂.err
     let verdict₂ := w₂.verdict
     let alen := w₂.ndst'
+    let alenU := w₂.ndstU
     let evlen := w₂.nev'
     let arena := w₂.arena
     let evs := w₂.evs
@@ -1679,8 +1681,11 @@ theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}
     have hargs₂ := h₂.args_eq
     have hveq₂ := h₂.value_eq
     have hvr₂ := h₂.verdict_range
-    have hndstSlot₂ : readBytes m35 ndst₂ 8 = some (wordBytes 8 alen) :=
-      h₂.ndst_read
+    -- the slot holds the decoder's output extent; `alen` is the extent the run
+    -- reserved, which is where the frame, the presence claim and the capacity
+    -- arithmetic are stated
+    have hndstSlot₂ : readBytes m35 ndst₂ 8 = some (wordBytes 8 alenU) :=
+      h₂.ndstU_read
     have hnevSlot₂ : readBytes m35 nev₂ 8 = some (wordBytes 8 evlen) :=
       h₂.nev_read
     have hdstcapLt₂ : dstcap₂ < 2 ^ 64 := h₂.dstcap_lt
@@ -1690,6 +1695,13 @@ theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}
     have hnxpLt₂ : nxp₂ < 2 ^ 64 := h₂.nxp_lt
     have hreserve₂ := h₂.reserve
     have hArena₂ : readBytes m35 dst₂ alen = some arena := h₂.arena_read
+    -- the arena the run reserved reads at its prefix too: the decoded output is
+    -- the used extent's prefix of the reserved window
+    have hUle₂ : alenU ≤ alen := h₂.U_le_ndst
+    have hOut₂ : readBytes m35 dst₂ alenU = some (arena.take alenU) := by
+      obtain ⟨h1, -⟩ := readBytes_split m35 dst₂ alenU (alen - alenU) (by
+        rwa [Nat.add_sub_of_le hUle₂])
+      exact h1
     have hEvs₂ : readBytes m35 ev₂ evlen = some evs := h₂.evs_read
     have hzero₂ : verdict₂ = 0 →
         ∃ e : Nat, e ≤ w₂.n ∧ readBytes m35 err₂ 8 = some (wordBytes 8 e) :=
@@ -1745,6 +1757,7 @@ theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}
       rw [← hevcapEq]
       exact hevle₂
     have halenLt : alen < 2 ^ 64 := by have := S.dstcap.isLt; omega
+    have halenULt : alenU < 2 ^ 64 := by omega
     have hevlenLt : evlen < 2 ^ 64 := by have := S.evcap.isLt; omega
     -- the run
     have hrun := pipelineExit_accept_at tab S.b s2 e S.arm.head S.arm.countReg S.kw
@@ -1988,17 +2001,18 @@ theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}
     refine ⟨verdict₂, m35, ?_, ?_⟩
     · simpa [hveq₂] using hrun
     · simp only [Γ_pipeline_units, pipelineUnitsPost]
-      refine ⟨hvr₂, S.k, S.xn, alen, evlen, S.ent, ps, arena, evs,
+      refine ⟨hvr₂, S.k, S.xn, alenU, alen, evlen, S.ent, ps,
+        arena.take alenU, evs,
         c₂, ctype₂, cst₂, tok₂, s₂, z₂, e₂, d₂, n30, nend₂,
-        ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-      · refine ⟨halenLt, hevlenLt, ?_, ?_⟩
+        hUle₂, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+      · refine ⟨halenULt, hevlenLt, ?_, ?_⟩
         · simpa [hndst₂] using hndstSlot₂
         · simpa [hnev₂] using hnevSlot₂
       · exact hnkM
       · exact hnxpM
       · exact hentM
       · rw [hps]; exact hwsM
-      · simpa [hdst₂] using hArena₂
+      · simpa [hdst₂] using hOut₂
       · simpa [hev₂] using hEvs₂
       · intro hzero
         obtain ⟨e', -, he'⟩ := hzero₂ hzero
@@ -2184,8 +2198,9 @@ theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}
     refine ⟨0, writeBytes (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8))
       S.err (natToBytes S.n.toNat 8), hrun, ?_⟩
     simp only [Γ_pipeline_units, pipelineUnitsPost]
-    refine ⟨Or.inl trivial, S.k, S.xn, ndst0, nev0, S.ent, ps, out, evs,
-      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨Or.inl trivial, S.k, S.xn, ndst0, ndst0, nev0, S.ent, ps, out, evs,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      Nat.le_refl ndst0, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · refine ⟨hndst0Lt, hnev0Lt, ?_, ?_⟩
       · exact hndstF
       · exact hnevF

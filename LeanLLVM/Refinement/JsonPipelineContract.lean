@@ -563,7 +563,10 @@ the stage-2 post's growth clauses give `ndst' ≤ ndst0 + n` and
 `nev' ≤ nev0 + 13 * n`, and the staging's capacities give
 `ndst0 + n + 64 ≤ dstcap.toNat < 2 ^ 64` and
 `nev0 + 13 * n ≤ evcap.toNat < 2 ^ 64`, so both bounds are arithmetic over
-numbers the record already names. -/
+numbers the record already names.  The arena's extent here is the slot's, the
+decoder's output, and it reaches those numbers through `ndstU ≤ ndst'`: the
+reserve charged the window the frame names, so the reported extent is at most
+the reserved one and the reserved one carries the capacity arithmetic. -/
 def pipelineOutputExtents (args : List Value) (o : Outcome)
     (ndst' nev' : Nat) : Prop :=
   match o with
@@ -643,6 +646,17 @@ term both sides can write, and the only such term is the slot word plus the
 bound, which is what the component states.  So the component is the whole of the
 change, and it is where the next reader meets the extents.
 
+**The arena has two extents, and the post names both.**  The cursor cell holds the
+*used* extent, the decoder's output `ndstU`; the reserve charged a window that
+reaches sixty-four bytes past it, and that window is the *reserved* extent
+`ndst'`, which is where the frame's arena entry, the presence claim and the
+capacity arithmetic are stated.  A frame at `ndstU` would leave the reserve
+outside every region the post names, so both numbers are witnesses and
+`ndstU ≤ ndst'` relates them.  The output pair and `out`'s read are at `ndstU`;
+the frame's arena entry is `(dst, ndst' + 64)`.  The event stream has no reserve
+of its own in this shape, so its pair of extents coincides and `nev'` is one
+number.
+
 **The two count slots are in the post twice, and in two senses.**  Their words are
 read at `nk` and `nxp` (presence and value), and both extents are entries of the
 `UnchangedOutside` list — the list is the regions the run *may* write, and the
@@ -687,14 +701,15 @@ def pipelineUnitsPost (args : List Value) (mem : Mem) (_next : Nat)
          .ptr nk, .ptr xp, .int 64 _, .ptr nxp, .ptr xcarry, .ptr dst, .int 64 _,
          .ptr ndst, .ptr ev, .int 64 _, .ptr nev, .ptr err, .int 64 _] =>
           (verdict = 0 ∨ verdict = 1) ∧
-          ∃ (nk' nxp' ndst' nev' : Nat) (ent : List Nat) (ps : List Nat)
+          ∃ (nk' nxp' ndstU ndst' nev' : Nat) (ent : List Nat) (ps : List Nat)
             (out evs : List UInt8) (c ctype cst tok s z e d alloc allocEnd : Nat),
-            pipelineOutputExtents args o ndst' nev' ∧
+            ndstU ≤ ndst' ∧
+            pipelineOutputExtents args o ndstU nev' ∧
             readBytes m nk 8 = some (wordBytes 8 nk') ∧
             readBytes m nxp 8 = some (wordBytes 8 nxp') ∧
             readLanes32 m ep nk' = some ent ∧
             readBytes m xp (4 * nxp') = some (positionsBytes 4 ps) ∧
-            readBytes m dst ndst' = some out ∧
+            readBytes m dst ndstU = some out ∧
             readBytes m ev nev' = some evs ∧
             (verdict = 0 →
               ∃ e : Nat, readBytes m err 8 = some (wordBytes 8 e)) ∧

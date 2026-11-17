@@ -726,7 +726,8 @@ theorem stage2Boundary_of_flush {args : List Value} {mem : Mem} {next : Nat}
       { b := G.b, n := G.n, ep := G.ep, nep := G.nep, xp := G.xp, nxp := G.nxp,
         dst := G.dst, dstcap := G.dstcap, ndst := G.ndst, ev := G.ev,
         evcap := G.evcap, nev := G.nev, err := G.err, verdict := 0,
-        ndst0 := G.ndst0, nev0 := G.nev0, ndst' := G.ndst0, nev' := G.nev0,
+        ndst0 := G.ndst0, nev0 := G.nev0, ndst' := G.ndst0, ndstU := G.ndst0,
+        nev' := G.nev0,
         arena := arena, evs := evs, c := S.c, ctype := S.ctype, cst := S.cst,
         tok := S.tok, s := S.s, z := S.z, e := S.e, d := S.d,
         nkSlot := S.nkSlot, nxpSlot := S.nxpSlot,
@@ -734,8 +735,9 @@ theorem stage2Boundary_of_flush {args : List Value} {mem : Mem} {next : Nat}
     (h :=
       { args_eq := hargs, value_eq := rfl, verdict_range := Or.inl rfl,
         ndst0_read := G.ndstRead, nev0_read := G.nevRead,
-        ndst_read := walkFlushMemAt_ndst G S, nev_read := walkFlushMemAt_nev G S,
-        ndst0_le := Nat.le_refl G.ndst0, ndst_le_n := hndstLe,
+        ndstU_read := walkFlushMemAt_ndst G S, nev_read := walkFlushMemAt_nev G S,
+        ndst0_le_U := Nat.le_refl G.ndst0, U_le_ndst := Nat.le_refl G.ndst0,
+        ndst_le_n := hndstLe,
         nev0_le := Nat.le_refl G.nev0, nev_le := hnevLe,
         dstcap_lt := G.dstcapLt, evcap_lt := G.evcapLt,
         nev_le_evcap := hnev0cap, nep_lt := hnep64, nxp_lt := G.nxpLt,
@@ -811,7 +813,7 @@ theorem stage2Post_of_staging_flush {d c ctype cst tok s z e nkSlot nxpSlot : Na
   rw [hSc, hSct, hScs, hStok, hSs, hSz, hSe]
   exact hb
 
-/-- **The walk's obligation at the two bundles — a vacuous form, retained as history.**
+/-- **The walk's obligation at the two bundles — a conditional, not the closure claim.**
 
 **Do not quote this as the closure claim.**  `Stage2WalkObligation` is `Satisfies` at
 `Γ_stage2at`, and its two conjuncts are the completion (`stage2WalkCompletes_of_staging`)
@@ -819,36 +821,30 @@ and the post at every behaviour of the run.  The post's two arms are the record'
 entry stream (`stage2Post_of_staging_flush`, above) and its loop
 (`stage2Post_of_staging_loop`, `JsonStage2WalkPremisesOfStaging`), and the split is the
 entry block's own test on the entry count.  That composition is real; its *premises* are
-not.
+supplies no theorem of this tree builds.
 
-**The bundles are refutable, so the theorem is vacuous.**  `hcont` and `hend` are not
-supplied facts.  `WalkLoopEnd`'s log word is refuted at any geometry that admits a
-`WalkInv` state at `cleanup478.i` whose slot reads below the carry's cursor:
-`WalkMergeWords.not_of_short` and `not_walkLoopEnd_of_short`
-(`JsonStage2WalkPremisesOfStaging`) derive `WalkLoopEnd G → False` there, and
-`walkLoopEnd_universal_unsatisfiable` turns one such state into
-`¬ Nonempty (∀ G, WalkLoopEnd G)`.  The write-back stores the decoder's output length
-against a reserve of the document extent (`arenaWord_writeBack_iff`,
-`not_arenaWord_of_lt`, `JsonStage2WalkArenaWord`), so an escaping input leaves exactly that
-state.  Where the witness exists, this implication therefore yields nothing about any
-document: `hend` cannot be met.  `WalkContinueFacts` is not refuted but is equally no
-theorem — its per-state producers take a tail `WalkSegment` and the scan's traversal
-hypotheses that are not `WalkInv` consequences — so the theorem is not a closure claim even
-where the log word happens to hold.
+**What the two bundles supply, and what they do not.**  `hcont` and `hend` are not supplied
+facts, but neither is false.  `WalkLoopEnd`'s log word is `WalkInv.log_alen`'s witness,
+which `walkMergeWords_of_inv` and `walkRefuseWords_of_inv` produce, so what the bundle still
+supplies is the last entry's arm (`hlast`) — per-input dispatch evidence, not an invariant
+consequence.  `WalkContinueFacts` is class data in the same sense: its per-state producers
+take a tail `WalkSegment` and the scan's traversal hypotheses that are not `WalkInv`
+consequences.  So `∀ G, WalkLoopEnd G` and `∀ G, WalkContinueFacts G` are producer
+obligations rather than theorems — the tier that would build the arm and the class at every
+`WalkGeom` is what is missing — and this implication is conditional on them.
 
 **The closure claim** is `stage2WalkObligation_of_premises`
 (`JsonStage2WalkAssembly`), whose premises are `WalkPremises` and the record's post rule
 and no bundle.  `walkPremises_of_staging` (`JsonStage2WalkPremisesOfStaging`) is the
-conditional that carries the two bundles into `WalkPremises`, and it inherits their
-vacuity.  The arm-level post theorems read here — `stage2Post_of_staging_flush` above and
-`stage2Post_of_staging_loop` — carry content independently of the log word.
+conditional that carries the two bundles into `WalkPremises`, and it is conditional on the
+same two supplies.  The arm-level post theorems read here — `stage2Post_of_staging_flush`
+above and `stage2Post_of_staging_loop` — carry content independently of the bundles.
 
-**The lesson, recorded where the statement stands.**  A premise whose refutation exists
-anywhere makes every consumer of the form `∀ G, …` vacuous, and a vacuous theorem looks
-exactly like a proved one in a build log: `#print axioms` reports no `sorryAx`, and the
-conclusion is reached through a hypothesis no input can meet.  That is why the top-level
-statement has to carry its premises in the open — as `WalkPremises` does — rather than
-behind a `∀ G` whose inhabitant is the thing in doubt.
+**The lesson, recorded where the statement stands.**  A conditional on an unbuilt producer
+reads exactly like a closure claim in a build log: `#print axioms` reports no `sorryAx`, and
+the conclusion is reached through a hypothesis only a tier nobody wrote could meet.  That is
+why the top-level statement has to carry its premises in the open — as `WalkPremises` does —
+rather than behind a `∀ G` whose inhabitant is the thing in doubt.
 
 The obligation is stated here rather than beside the completion because the two arms live
 on either side of this module's import: the flush's post reads the returned memory this

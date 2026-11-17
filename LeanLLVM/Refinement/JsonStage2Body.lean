@@ -716,8 +716,21 @@ structure Stage2Run (args : List Value) (mem m0 : Mem) where
   ndst0 : Nat
   /-- The event stream's cursor as staged. -/
   nev0 : Nat
-  /-- The arena's cursor as the walk left it. -/
+  /-- The arena's cursor as the walk left it: the extent the run **reserved**,
+  which is where the frame, the presence claim and the capacity arithmetic are
+  stated. -/
   alen : Nat
+  /-- **The arena extent the run reports**: the decoded output, which is the
+  word the log's cursor cell held at the loop head.  The decoder's output is at
+  most the window the reserve charged, and an escaping string's is shorter, so
+  the reported extent sits at or below `alen`; the two numbers are separate
+  fields because the slot is the decoder's progress and the frame is the
+  reservation's. -/
+  alenU : Nat
+  /-- The reported extent only appends. -/
+  arenaUGe : ndst0 ≤ alenU
+  /-- The decoder's output is at most the extent the reserve charged. -/
+  arenaULe : alenU ≤ alen
   /-- The event stream's cursor as the walk left it. -/
   evlen : Nat
   /-- The walk's refusal, as the wrapper's input: the bit `stage2Verdict` coerces
@@ -1263,7 +1276,7 @@ slots' frame — and `stage2Run_boundary` supplies them from `stage2Report`'s
 lemmas at the emitted stores. -/
 theorem stage2Boundary_of_parts {args : List Value} {mem m0 m : Mem}
     (h : Stage2Run args mem m0)
-    (ndstAt : readBytes m h.ndst 8 = some (wordBytes 8 h.alen))
+    (ndstAt : readBytes m h.ndst 8 = some (wordBytes 8 h.alenU))
     (nevAt : readBytes m h.nev 8 = some (wordBytes 8 h.evlen))
     (errRefuse : h.refusal = true → readBytes m h.err 8 = some (wordBytes 8 h.eoff))
     (errAccept : h.refusal = false → readBytes m h.err 8 = readBytes m0 h.err 8)
@@ -1330,7 +1343,7 @@ theorem stage2Boundary_of_parts {args : List Value} {mem m0 m : Mem}
       · exact hpresentWalk a ⟨(h.dst, h.alen + stage2ArenaReserve),
           List.mem_cons_self .., hlo, hhi⟩
       · have hk : a - h.ndst < 8 := by omega
-        have hp := LeanLLVM.readBytes_some_present m h.ndst 8 (wordBytes 8 h.alen)
+        have hp := LeanLLVM.readBytes_some_present m h.ndst 8 (wordBytes 8 h.alenU)
           ndstAt (a - h.ndst) hk
         simpa [show h.ndst + (a - h.ndst) = a by omega] using hp
       · exact hpresentWalk a ⟨(h.ev, h.evlen), by simp, hlo, hhi⟩
@@ -1378,15 +1391,16 @@ theorem stage2Boundary_of_parts {args : List Value} {mem m0 m : Mem}
         dst := h.dst, dstcap := h.dstcap, ndst := h.ndst, ev := h.ev,
         evcap := h.evcap, nev := h.nev, err := h.err,
         verdict := stage2Verdict h.refusal, ndst0 := h.ndst0, nev0 := h.nev0,
-        ndst' := h.alen, nev' := h.evlen, arena := arena, evs := evs, c := h.c,
-        ctype := h.ctype, cst := h.cst, tok := h.tok, s := h.s, z := h.z,
-        e := h.e, d := h.d, nkSlot := h.nkSlot, nxpSlot := h.nxpSlot,
-        nextEnd := nend })
+        ndst' := h.alen, ndstU := h.alenU, nev' := h.evlen, arena := arena,
+        evs := evs, c := h.c, ctype := h.ctype, cst := h.cst, tok := h.tok,
+        s := h.s, z := h.z, e := h.e, d := h.d, nkSlot := h.nkSlot,
+        nxpSlot := h.nxpSlot, nextEnd := nend })
     (h :=
       { args_eq := h.args_eq, value_eq := rfl,
         verdict_range := stage2Verdict_range h.refusal, ndst0_read := h.ndstRead,
-        nev0_read := h.nevRead, ndst_read := ndstAt, nev_read := nevAt,
-        ndst0_le := h.arenaGe, ndst_le_n := h.arenaLe, nev0_le := h.evGe,
+        nev0_read := h.nevRead, ndstU_read := ndstAt, nev_read := nevAt,
+        ndst0_le_U := h.arenaUGe, U_le_ndst := h.arenaULe, ndst_le_n := h.arenaLe,
+        nev0_le := h.evGe,
         nev_le := h.evLe, dstcap_lt := h.dstcapLt, evcap_lt := h.evcapLt,
         nev_le_evcap := le_trans h.evLe h.evRoom, nep_lt := h.nepLt,
         nxp_lt := h.nxpLt, reserve := h.reserve, arena_read := hArena,
@@ -1402,23 +1416,25 @@ theorem stage2Run_boundary {args : List Value} {mem m0 : Mem}
     (h : Stage2Run args mem m0) :
     Γ_stage2.post args mem h.next0
       (.ret (some (.int 64 (stage2Verdict h.refusal)))
-        (stage2Report m0 h.ndst h.nev h.err h.alen h.evlen h.refusal h.eoff)) := by
+        (stage2Report m0 h.ndst h.nev h.err h.alenU h.evlen h.refusal h.eoff)) := by
   obtain ⟨hslot1, hslot2, hslot3⟩ := stage2Regions_slots h.separate
   exact stage2Boundary_of_parts h
-    (stage2Report_ndst m0 h.ndst h.nev h.err h.alen h.evlen h.refusal h.eoff)
+    (stage2Report_ndst m0 h.ndst h.nev h.err h.alenU h.evlen h.refusal h.eoff)
     (stage2Report_nev hslot1)
     (by
       intro hr
       rw [hr]
       exact stage2Report_err_refusal (mem := m0) (ndst := h.ndst) (nev := h.nev)
-        (err := h.err) (alen := h.alen) (evlen := h.evlen) (eoff := h.eoff) hslot2 hslot3)
+        (err := h.err) (alen := h.alenU) (evlen := h.evlen) (eoff := h.eoff)
+        hslot2 hslot3)
     (by
       intro hr
       rw [hr]
       exact stage2Report_err_accept (mem := m0) (ndst := h.ndst) (nev := h.nev)
-        (err := h.err) (alen := h.alen) (evlen := h.evlen) (eoff := h.eoff) hslot2 hslot3)
+        (err := h.err) (alen := h.alenU) (evlen := h.evlen) (eoff := h.eoff)
+        hslot2 hslot3)
     (fun a ha => stage2Report_present ha)
-    (stage2Report_frame m0 h.ndst h.nev h.err h.alen h.evlen h.refusal h.eoff)
+    (stage2Report_frame m0 h.ndst h.nev h.err h.alenU h.evlen h.refusal h.eoff)
 
 /-! ### The report's clauses, and the walk facts that produce them
 

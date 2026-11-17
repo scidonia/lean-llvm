@@ -358,6 +358,13 @@ is the units' post's own frame clause with the callee's declared regions already
 in it: `pipeline_units_finalisation` derives it from that post's witnesses through
 `CallerView_of_framed`, and no premise carries it.
 
+**The arena's entry is the reserved extent.**  The caller's cursor slot reports the
+used extent — the decoder's output — while the region this clause must cover is
+the window the last reserve charged, sixty-four bytes past that output.  A region
+below it would leave the reserve outside every extent the clause names, so the
+list keeps `(dst, ndst' + 64)` and the extent component is read at `ndstU`, with
+`ndstU ≤ ndst'` carried beside it.
+
 **What the clause does not say.**  Because the seven are existential, a byte of
 the caller's `dst`, `ev` or the document at `base` may fall inside one of them,
 and the clause then permits a write there.  In the program the seven are private
@@ -370,8 +377,10 @@ def SigmaFrame (args : List Value) (o : Outcome) (mem : Mem) : Prop :=
      .ptr nk, .ptr xp, .int 64 _, .ptr nxp, .ptr xcarry, .ptr dst, .int 64 _,
      .ptr ndst, .ptr ev, .int 64 _, .ptr nev, .ptr err, .int 64 _],
     .ret (some (.int 64 _)) m =>
-      ∃ (nk' nxp' ndst' nev' : Nat) (c ctype cst tok s z e d alloc allocEnd : Nat),
-        pipelineOutputExtents args o ndst' nev' ∧
+      ∃ (nk' nxp' ndstU ndst' nev' : Nat)
+        (c ctype cst tok s z e d alloc allocEnd : Nat),
+        ndstU ≤ ndst' ∧
+        pipelineOutputExtents args o ndstU nev' ∧
         alloc ≤ allocEnd ∧
         CallerView
           [(sc, 24), (mk, 48), (entw, 8), (ep, 4 * (nk' + 8)), (nk, 8),
@@ -404,13 +413,16 @@ def Sigma_pipeline (eventRel : EventStreamRel) (base : Nat) (args : List Value)
          .ptr nk, .ptr xp, .int 64 xpcap, .ptr nxp, .ptr xcarry, .ptr dst,
          .int 64 dstcap, .ptr ndst, .ptr ev, .int 64 evcap, .ptr nev, .ptr err,
          .int 64 _] =>
-          ∃ (bs : List UInt8) (nk' nxp' ndst' nev' : Nat),
+          ∃ (bs : List UInt8) (nk' nxp' ndstU ndst' nev' : Nat),
             n.toNat = bs.length ∧
             readBytes mem base n.toNat = some bs ∧
-            -- the four cursors at the boundary, as the body's post reads them
+            -- the four cursors at the boundary, as the body's post reads them;
+            -- the arena's slot holds the used extent and `ndst'` is the extent
+            -- the reserve charged, which the frame names
             readBytes m nk 8 = some (wordBytes 8 nk') ∧
             readBytes m nxp 8 = some (wordBytes 8 nxp') ∧
-            readBytes m ndst 8 = some (wordBytes 8 ndst') ∧
+            ndstU ≤ ndst' ∧
+            readBytes m ndst 8 = some (wordBytes 8 ndstU) ∧
             readBytes m nev 8 = some (wordBytes 8 nev') ∧
             -- the return word is the ABI's verdict (`pipeline.h:55-57`)
             (verdict = 0 ∨ verdict = 1) ∧
@@ -424,7 +436,7 @@ def Sigma_pipeline (eventRel : EventStreamRel) (base : Nat) (args : List Value)
                 parseBytes Limits.default (ByteString.literal bs) = .ok t ∧
                 t.input = ByteString.literal bs ∧
                 decodeTape t = some v ∧
-                readBytes m dst ndst' = some arena ∧
+                readBytes m dst ndstU = some arena ∧
                 readBytes m ev nev' = some evs ∧
                 eventRel bs arena evs t.tokens ∧
                 spansWellFormed t = true ∧

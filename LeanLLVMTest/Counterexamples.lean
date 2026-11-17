@@ -134,8 +134,9 @@ theorem pipeline_frame_hsem_false :
   intro h
   have hf := h frameArgs ([] : Mem) (.ret (some (.int 64 0)) ([] : Mem))
   have hnone : readBytes ([] : Mem) 0 8 = none := rfl
-  -- The frame's witness block is fourteen numbers: the four cursors and the
-  -- stage-2 callee's ten private numbers, the stack's two ends included.  Its extents' conjunct then reads
+  -- The frame's witness block is fifteen numbers: the four cursor values with the
+  -- reserved arena extent, and the stage-2 callee's ten private numbers, the
+  -- stack's two ends included.  Its extents' conjunct then reads
   -- the returned memory at `frameArgs`' cursor slots (`ndst = 0`, `nev = 8`),
   -- and the empty memory answers neither eight-byte read.
   simp only [SigmaFrame, frameArgs, pipelineOutputExtents, hnone] at hf

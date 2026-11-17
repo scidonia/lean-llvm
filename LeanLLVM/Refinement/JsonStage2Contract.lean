@@ -147,18 +147,22 @@ else:
   `stage2_verdict_bounded` below reads, which is why it is a conjunct of the
   record and not a companion hypothesis;
 * **the two cursors this unit owns**, reported back —
-  `readBytes m ndst 8 = some (wordBytes 8 ndst')` and the same at `nev`.  The
+  `readBytes m ndst 8 = some (wordBytes 8 ndstU)` and the same at `nev`.  The
   pipeline's post names four cursors: these two are stage 2's, and `nk`/`nxp`
   are the loop's (they are not this ABI's arguments), so they are absent here
-  rather than restated as facts this run cannot have.  The cursors only append
-  (`stage2.h:15-16`), so `ndst0 ≤ ndst'` and `nev0 ≤ nev'`; and the growth is the
-  encoding's: `ndst' ≤ ndst0 + n` (a decoded body is never longer than its
-  bytes, so the arena's growth is at most the document's) and
+  rather than restated as facts this run cannot have.  The arena's slot reports
+  the **decoded** extent `ndstU`, and the extent the run **reserved** is `ndst'`:
+  the decoder's output is never longer than the window the reserve charged, a
+  string's escape decoding makes it strictly shorter, and the frame and the
+  capacity arithmetic are about the reserved extent while the slot is about the
+  decoded one.  So `ndst0 ≤ ndstU ≤ ndst' ≤ ndst0 + n` and `nev0 ≤ nev'`.  The
+  growth is the encoding's: `ndst' ≤ ndst0 + n` (a decoded body is never longer
+  than its bytes, so the arena's growth is at most the document's) and
   `nev' ≤ nev0 + 13 * n` (at most one record per entry, thirteen bytes each, and
   at most one entry per input byte — the pre's `ent.Pairwise (· < ·)` and
   `∀ q ∈ ent, q < n` give `ent.length ≤ n`).  `ndst' + 64 ≤ dstcap` is the
   reserve's own consequence: the last reserve check leaves sixty-four bytes past
-  the appended extent;
+  the reserved extent;
 * **the prefixes at the boundary** — the pipeline's post reads
   `readBytes m dst ndst'` and `readBytes m ev nev'`, so this record says both are
   readable and names them `arena`/`evs`.  Their *contents* are the encoder's, and
@@ -1078,7 +1082,7 @@ below the word's width, the bound `pipelineOutputExtents` reads. -/
 def stage2Boundary (args : List Value) (mem : Mem) (next : Nat) (m : Mem)
     (v : Value) : Prop :=
   ∃ (b n ep nep xp nxp dst dstcap ndst ev evcap nev err : Nat)
-    (verdict : BitVec 64) (ndst0 nev0 ndst' nev' : Nat) (arena evs : List UInt8)
+    (verdict : BitVec 64) (ndst0 nev0 ndst' ndstU nev' : Nat) (arena evs : List UInt8)
     (c ctype cst tok s z e d nkSlot nxpSlot : Nat),
     args = [.ptr b, .int 64 (BitVec.ofNat 64 n), .ptr ep,
             .int 64 (BitVec.ofNat 64 nep), .ptr xp, .int 64 (BitVec.ofNat 64 nxp),
@@ -1091,27 +1095,31 @@ def stage2Boundary (args : List Value) (mem : Mem) (next : Nat) (m : Mem)
     -- the cursors as the caller staged them (`stage2.h:13-16`)
     readBytes mem ndst 8 = some (wordBytes 8 ndst0) ∧
     readBytes mem nev 8 = some (wordBytes 8 nev0) ∧
-    -- and as the run reports them back, append-only
-    readBytes m ndst 8 = some (wordBytes 8 ndst') ∧
+    -- and as the run reports them back, append-only.  The arena slot reports the
+    -- **decoded** extent (`ndstU`, the word the log's cursor cell held at the
+    -- loop head), which is at most the extent the run **reserved** (`ndst'`, the
+    -- walk's arena cursor): the decoder's output is never longer than the window
+    -- the reserve charged, and an escaping string's is strictly shorter.
+    readBytes m ndst 8 = some (wordBytes 8 ndstU) ∧
     readBytes m nev 8 = some (wordBytes 8 nev') ∧
-    ndst0 ≤ ndst' ∧ ndst' ≤ ndst0 + n ∧
+    ndst0 ≤ ndstU ∧ ndstU ≤ ndst' ∧ ndst' ≤ ndst0 + n ∧
     nev0 ≤ nev' ∧ nev' ≤ nev0 + stage2RecordBytes * n ∧
     -- **The reported extents are below the word's width, and the capacities say
-    -- so.**  `ndst'` and `nev'` are what a consumer reads back through the two
+    -- so.**  `ndstU` and `nev'` are what a consumer reads back through the two
     -- eight-byte slots, and a slot word alone leaves its value free modulo
     -- `2 ^ 64`, so a consumer that must name the extents (`pipelineOutputExtents`)
     -- needs each below the width.  The two bounds are stated here, at the clause
     -- that produces them, and through the numbers the run names: the decoder's
     -- reserve and the event extent both lie inside their capacities, and an ABI
     -- capacity argument is a 64-bit word, so `dstcap < 2 ^ 64` gives
-    -- `ndst' < 2 ^ 64` by the reserve clause below and `nev' ≤ evcap < 2 ^ 64`
-    -- gives the other.  The width is the smaller change: stating `ndst' < 2 ^ 64`
-    -- and `nev' < 2 ^ 64` directly would state the consequence twice and leave a
-    -- consumer unable to place either write extent inside the staging the call
-    -- was made at, while a width of the capacity is what identifies the
-    -- capacity — two 64-bit numbers with one word are one number.  Without the
-    -- width the record is `2 ^ 64`-periodic in these numbers and the bounds are
-    -- not derivable at all.
+    -- `ndst' < 2 ^ 64` by the reserve clause below and `ndstU ≤ ndst'` carries it
+    -- to the reported extent, while `nev' ≤ evcap < 2 ^ 64` gives the other.  The
+    -- width is the smaller change: stating `ndstU < 2 ^ 64` and `nev' < 2 ^ 64`
+    -- directly would state the consequence twice and leave a consumer unable to
+    -- place either write extent inside the staging the call was made at, while a
+    -- width of the capacity is what identifies the capacity — two 64-bit numbers
+    -- with one word are one number.  Without the width the record is
+    -- `2 ^ 64`-periodic in these numbers and the bounds are not derivable at all.
     dstcap < 2 ^ 64 ∧ evcap < 2 ^ 64 ∧ nev' ≤ evcap ∧
     -- **The two counts are their words' values.**  `stage2.h` carries each as a
     -- 64-bit argument, so the number a consumer reads off the call is the word's
@@ -1122,7 +1130,9 @@ def stage2Boundary (args : List Value) (mem : Mem) (next : Nat) (m : Mem)
     nep < 2 ^ 64 ∧ nxp < 2 ^ 64 ∧
     -- the decoder's reserve is still inside the capacity (`stage2.h:49-52`)
     ndst' + stage2ArenaReserve ≤ dstcap ∧
-    -- the prefixes the pipeline's post reads
+    -- the readable prefixes: the arena at the extent the run **reserved** (the
+    -- decoder's writes reach that far, so this is the memory a consumer may
+    -- read), the event stream at the extent it reported
     readBytes m dst ndst' = some arena ∧
     readBytes m ev nev' = some evs ∧
     -- the refusal word: written exactly on refusal (`stage2.h:60-61`)
@@ -1208,11 +1218,11 @@ from `Stage2BoundaryFacts`; a new witness is one field in each structure and a
 new clause one field of the facts. -/
 
 /-- **The witnesses of `stage2Boundary`, by name.**  The ABI's thirteen numbers,
-the verdict word, the two cursors as staged and as reported, the two prefixes,
-the walk's own staging, and the stack end the allocator reaches.  `nextEnd` is
-the boundary's thirty-first witness: it is bound inside the frame conjunct in
-`stage2Boundary`, and naming it here is what lets the frame's end be read
-without unpacking an existential. -/
+the verdict word, the two cursors as staged and as reported, the arena extent the
+run reserved, the two prefixes, the walk's own staging, and the stack end the
+allocator reaches.  `nextEnd` is the boundary's thirty-second witness: it is
+bound inside the frame conjunct in `stage2Boundary`, and naming it here is what
+lets the frame's end be read without unpacking an existential. -/
 structure Stage2BoundaryWitness where
   b : Nat
   n : Nat
@@ -1231,6 +1241,10 @@ structure Stage2BoundaryWitness where
   ndst0 : Nat
   nev0 : Nat
   ndst' : Nat
+  /-- The arena extent the run reports: the decoder's output, which the log's
+  cursor cell held at the loop head.  It is at most `ndst'`, the extent the run
+  reserved. -/
+  ndstU : Nat
   nev' : Nat
   arena : List UInt8
   evs : List UInt8
@@ -1264,13 +1278,16 @@ structure Stage2BoundaryFacts (w : Stage2BoundaryWitness) (args : List Value)
   ndst0_read : readBytes mem w.ndst 8 = some (wordBytes 8 w.ndst0)
   /-- The event cursor's slot as the caller staged it. -/
   nev0_read : readBytes mem w.nev 8 = some (wordBytes 8 w.nev0)
-  /-- The arena cursor's slot as the run reports it back. -/
-  ndst_read : readBytes m w.ndst 8 = some (wordBytes 8 w.ndst')
+  /-- The arena cursor's slot as the run reports it back: the decoder's output
+  extent, not the extent the run reserved. -/
+  ndstU_read : readBytes m w.ndst 8 = some (wordBytes 8 w.ndstU)
   /-- The event cursor's slot as the run reports it back. -/
   nev_read : readBytes m w.nev 8 = some (wordBytes 8 w.nev')
-  /-- The arena cursor only appends. -/
-  ndst0_le : w.ndst0 ≤ w.ndst'
-  /-- The arena grows by at most the document's own bytes. -/
+  /-- The decoded extent only appends. -/
+  ndst0_le_U : w.ndst0 ≤ w.ndstU
+  /-- The decoder's output is at most the extent the reserve charged. -/
+  U_le_ndst : w.ndstU ≤ w.ndst'
+  /-- The arena's reserved extent grows by at most the document's own bytes. -/
   ndst_le_n : w.ndst' ≤ w.ndst0 + w.n
   /-- The event cursor only appends. -/
   nev0_le : w.nev0 ≤ w.nev'
@@ -1320,22 +1337,24 @@ theorem stage2Boundary_witness {args : List Value} {mem : Mem} {next : Nat}
     {m : Mem} {v : Value} (h : stage2Boundary args mem next m v) :
     ∃ w : Stage2BoundaryWitness, Stage2BoundaryFacts w args mem next m v := by
   obtain ⟨b, n, ep, nep, xp, nxp, dst, dstcap, ndst, ev, evcap, nev, err, verdict,
-    ndst0, nev0, ndst', nev', arena, evs, c, ctype, cst, tok, s, z, e, d, nkSlot,
-    nxpSlot, hargs, hval, hvr, hndst0, hnev0, hndst, hnev, hndst0le, hndstle,
-    hnev0le, hnevle, hdstcap, hevcap, hnevcap, hnep, hnxp, hreserve, harena, hevs,
-    hrefuse, haccept, hpresent, ⟨nextEnd, hnextle, hframe⟩, hstaged, hdSep⟩ := h
+    ndst0, nev0, ndst', ndstU, nev', arena, evs, c, ctype, cst, tok, s, z, e, d,
+    nkSlot, nxpSlot, hargs, hval, hvr, hndst0, hnev0, hndstU, hnev, hndst0U,
+    hUndst, hndstle, hnev0le, hnevle, hdstcap, hevcap, hnevcap, hnep, hnxp,
+    hreserve, harena, hevs, hrefuse, haccept, hpresent,
+    ⟨nextEnd, hnextle, hframe⟩, hstaged, hdSep⟩ := h
   let w : Stage2BoundaryWitness :=
     { b := b, n := n, ep := ep, nep := nep, xp := xp, nxp := nxp, dst := dst,
       dstcap := dstcap, ndst := ndst, ev := ev, evcap := evcap, nev := nev,
       err := err, verdict := verdict, ndst0 := ndst0, nev0 := nev0, ndst' := ndst',
-      nev' := nev', arena := arena, evs := evs, c := c, ctype := ctype, cst := cst,
-      tok := tok, s := s, z := z, e := e, d := d, nkSlot := nkSlot,
-      nxpSlot := nxpSlot, nextEnd := nextEnd }
+      ndstU := ndstU, nev' := nev', arena := arena, evs := evs, c := c,
+      ctype := ctype, cst := cst, tok := tok, s := s, z := z, e := e, d := d,
+      nkSlot := nkSlot, nxpSlot := nxpSlot, nextEnd := nextEnd }
   refine ⟨w, ?_⟩
   exact
     { args_eq := hargs, value_eq := hval, verdict_range := hvr,
-      ndst0_read := hndst0, nev0_read := hnev0, ndst_read := hndst,
-      nev_read := hnev, ndst0_le := hndst0le, ndst_le_n := hndstle,
+      ndst0_read := hndst0, nev0_read := hnev0, ndstU_read := hndstU,
+      nev_read := hnev, ndst0_le_U := hndst0U, U_le_ndst := hUndst,
+      ndst_le_n := hndstle,
       nev0_le := hnev0le, nev_le := hnevle, dstcap_lt := hdstcap,
       evcap_lt := hevcap, nev_le_evcap := hnevcap, nep_lt := hnep,
       nxp_lt := hnxp, reserve := hreserve, arena_read := harena,
@@ -1349,10 +1368,11 @@ theorem stage2Boundary_of_witness {args : List Value} {mem : Mem} {next : Nat}
     {m : Mem} {v : Value} {w : Stage2BoundaryWitness}
     (h : Stage2BoundaryFacts w args mem next m v) : stage2Boundary args mem next m v := by
   refine ⟨w.b, w.n, w.ep, w.nep, w.xp, w.nxp, w.dst, w.dstcap, w.ndst, w.ev,
-    w.evcap, w.nev, w.err, w.verdict, w.ndst0, w.nev0, w.ndst', w.nev', w.arena,
-    w.evs, w.c, w.ctype, w.cst, w.tok, w.s, w.z, w.e, w.d, w.nkSlot, w.nxpSlot,
-    h.args_eq, h.value_eq, h.verdict_range, h.ndst0_read, h.nev0_read, h.ndst_read,
-    h.nev_read, h.ndst0_le, h.ndst_le_n, h.nev0_le, h.nev_le, h.dstcap_lt,
+    w.evcap, w.nev, w.err, w.verdict, w.ndst0, w.nev0, w.ndst', w.ndstU, w.nev',
+    w.arena, w.evs, w.c, w.ctype, w.cst, w.tok, w.s, w.z, w.e, w.d, w.nkSlot,
+    w.nxpSlot, h.args_eq, h.value_eq, h.verdict_range, h.ndst0_read, h.nev0_read,
+    h.ndstU_read, h.nev_read, h.ndst0_le_U, h.U_le_ndst, h.ndst_le_n, h.nev0_le,
+    h.nev_le, h.dstcap_lt,
     h.evcap_lt, h.nev_le_evcap, h.nep_lt, h.nxp_lt, h.reserve, h.arena_read,
     h.evs_read, h.refuse_word, h.accept_word, h.present,
     ⟨w.nextEnd, h.next_le, h.frame⟩, h.staged, h.dSep⟩

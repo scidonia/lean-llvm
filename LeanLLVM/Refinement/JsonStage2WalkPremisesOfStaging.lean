@@ -246,28 +246,23 @@ dispatch's result, the run and the boundary at its memory.
   `walkRootWord_of_hasBytes` names the word (`JsonStage2WalkTargetPost`);
 * derived: the refusal copy's `%off` word.  The refusing block's store is the last write
   before `if.then`, and `WalkRefuseSegment` (`JsonStage2WalkTraverse`) carries it from
-  the branch that made it, so it arrives with the dispatch's `refuse` arm;
-* supplied: the log's arena word at the merge's state and at the copy's
-  (`WalkMergeWords.log`, `WalkRefuseWords.log`).  This one is *not* a `WalkInv` clause and
-  cannot become one: `log_alen` is an inequality, the slot lags the carry between a
-  reserve and its write-back, and `JsonStage2WalkArenaWord` shows the equality is **false
-  at an escaping input** — the write-back stores the decoder's output length, which is
-  shorter than the document extent the reserve charged.  No proof produces it; the fix is
-  a design change to what the post reports (the carry's `C.alen` or the slot's own word),
-  and `WalkMergeWords`' note records it.
+  the branch that made it, so it arrives with the dispatch's `refuse` arm.
 
-**Consequence for the top level.**  `∀ G, WalkLoopEnd G` is therefore *not* a theorem.  It
-is not merely unproved: `WalkMergeWords.not_of_short` and `WalkRefuseWords.not_of_short`
-refute either word field at a state whose slot reads below the cursor, and
-`not_walkLoopEnd_of_short` turns one such state into a refutation of the structure, so at a
-staging that admits it the bundle has no inhabitant.  `stage2WalkObligation_of_staging`
-(`JsonStage2WalkFlushPost`) remains a true conditional, but its `hend` cannot be
-discharged, and the claim to quote as closure is `stage2WalkObligation_of_premises`
-(`JsonStage2WalkAssembly`), whose statement names the per-input `WalkPremises` and the
-record's post rule and no bundle.  The other bundle, `WalkContinueFacts`, is class data: it
-is not refuted, but no `∀ G` producer exists either, because each arm's evidence carries a
-tail `WalkSegment` and the scan's traversal hypotheses that are supplies at a reachable
-state rather than `WalkInv` consequences (`JsonStage2WalkHcontFactsOfStaging`'s map). -/
+The log's arena word is derived too: the finalisation's copy loads `%z + 48`, whose word
+is `WalkInv.log_alen`'s witness, and the record reports it as the decoded extent.  So the
+structure supplies the arm and nothing else.
+
+**Consequence for the top level.**  `∀ G, WalkLoopEnd G` is still *not* a theorem,
+because `hlast` is real per-input arm evidence and not a `WalkInv` consequence.  That is
+the honest shape: the bundle's remaining supply is the last entry's dispatch, which is
+what a producer must build.  `stage2WalkObligation_of_staging`
+(`JsonStage2WalkFlushPost`) remains a true conditional, and the claim to quote as closure
+is `stage2WalkObligation_of_premises` (`JsonStage2WalkAssembly`), whose statement names
+the per-input `WalkPremises` and the record's post rule and no bundle.  The other bundle,
+`WalkContinueFacts`, is class data: no `∀ G` producer exists either, because each arm's
+evidence carries a tail `WalkSegment` and the scan's traversal hypotheses that are
+supplies at a reachable state rather than `WalkInv` consequences
+(`JsonStage2WalkHcontFactsOfStaging`'s map). -/
 structure WalkLoopEnd {m0 : Mem} (G : WalkGeom m0) : Type where
   /-- **The last entry's arm**, at every head state the merge's test sends to the exit.
   It is the dispatch's evidence, not its conclusion: `WalkLoopEnd.dispatch` applies
@@ -275,118 +270,6 @@ structure WalkLoopEnd {m0 : Mem} (G : WalkGeom m0) : Type where
   and no arm's class is a premise of another's. -/
   hlast : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     ¬ (C.k + 1 < G.nep) → LastEntryArm (stage2Calls stage2SubCalls) G C s
-  /-- **The merge's log word**, at every state a dispatch reaches at `cleanup478.i`. -/
-  mergeWords : ∀ (Cd : WalkCarry G) (sd : State), WalkInv G Cd sd →
-    Cd.block = "cleanup478.i" → WalkMergeWords G Cd sd
-  /-- **The refusal copy's log word**, at every state a refusal reaches at `if.then`.
-  The copy's `%off` word is not supplied here: it is the refusal segment's own
-  (`WalkRefuseSegment`'s `word`), carried from the store by the dispatch's `refuse`
-  arm and passed to `WalkLoopEnd.refuse`. -/
-  refuseWords : ∀ (Cd : WalkCarry G) (sd : State), WalkInv G Cd sd →
-    Cd.block = "if.then" → WalkRefuseWords G Cd sd
-
-/-! ### Why the two log words are not state facts
-
-The structure's last bullet names the one supply that cannot be a premise of the walk:
-the log's arena word at the carry's cursor.  `WalkInv.log_alen` is an existential,
-
-```
-∃ a, G.ndst0 ≤ a ∧ a ≤ C.alen ∧ readBytes s.mem (C.stage.z + 48) 8 = some (wordBytes 8 a)
-```
-
-so the invariant names the slot's value as some `a` at or below the cursor; the bundle
-demands the value *at* the cursor.  The two propositions are not the same, and the gap is
-not a missing lemma: `arenaWord_writeBack_iff` says the write-back's store (`if.else285.i`,
-`%z + %outn.i`, guarded by `a + l ≤ C.alen`) leaves the equality at its target exactly
-when `a + l = C.alen`, and `not_arenaWord_of_lt` exhibits the strict case.  A decoder whose
-output is shorter than the document extent the reserve charged — every escaping string —
-therefore leaves the slot short at every later loop head.
-
-The lemmas below state the consequence at the bundle rather than at the store, which is
-what makes the top level's `hend` uninhabited in the strict case: a *single* `WalkInv` state
-at `cleanup478.i` (or `if.then`) whose slot reads below the cursor refutes the whole
-structure, because the two word fields quantify over every such state. -/
-
-/-- **A short log word refutes the merge's bundle.**  `WalkMergeWords.log` says the slot
-holds `wordBytes 8 C.alen`; the hypothesis says it holds `wordBytes 8 a` with `a < C.alen`,
-and `wordBytes8_inj` (`JsonStage2WalkArenaWord`) makes the two words equal only if the
-numbers are. -/
-theorem WalkMergeWords.not_of_short {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
-    {s : State} {a : Nat}
-    (hread : readBytes s.mem (C.stage.z + 48) 8 = some (wordBytes 8 a))
-    (ha : a < C.alen) (halen : C.alen < 2 ^ 64) :
-    ¬ WalkMergeWords G C s := by
-  intro h
-  have hw : wordBytes 8 a = wordBytes 8 C.alen :=
-    Option.some.inj (hread.symm.trans h.log)
-  exact absurd (wordBytes8_inj (lt_trans ha halen) halen hw) (by omega)
-
-/-- **A short log word refutes the refusal copy's bundle.**  The twin of
-`WalkMergeWords.not_of_short`: `WalkRefuseWords.log` is the same equation. -/
-theorem WalkRefuseWords.not_of_short {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
-    {s : State} {a : Nat}
-    (hread : readBytes s.mem (C.stage.z + 48) 8 = some (wordBytes 8 a))
-    (ha : a < C.alen) (halen : C.alen < 2 ^ 64) :
-    ¬ WalkRefuseWords G C s := by
-  intro h
-  have hw : wordBytes 8 a = wordBytes 8 C.alen :=
-    Option.some.inj (hread.symm.trans h.log)
-  exact absurd (wordBytes8_inj (lt_trans ha halen) halen hw) (by omega)
-
-/-- **One short slot state refutes `WalkLoopEnd` at the geometry.**  The merge's word
-field reads the bundle at a state the invariant admits, so the refutation of the field is
-a refutation of the structure; no producer of the field can exist where the slot is short.
-The cursor's width is the staging's (`WalkInv.alen_le`, `WalkGeom.arenaRoom`,
-`WalkGeom.dstcapLt`), not a premise. -/
-theorem not_walkLoopEnd_of_short {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
-    {s : State} {a : Nat}
-    (hInv : WalkInv G C s) (hblk : C.block = "cleanup478.i")
-    (hread : readBytes s.mem (C.stage.z + 48) 8 = some (wordBytes 8 a))
-    (ha : a < C.alen) :
-    WalkLoopEnd G → False := by
-  have halen : C.alen < 2 ^ 64 := by
-    have hle := hInv.alen_le
-    have hroom := G.arenaRoom
-    have hcap := G.dstcapLt
-    omega
-  intro h
-  exact WalkMergeWords.not_of_short hread ha halen (h.mergeWords C s hInv hblk)
-
-/-- **The same refutation at the refusal copy's block.**  A short slot at a state at
-`if.then` refutes the structure through `refuseWords`. -/
-theorem not_walkLoopEnd_of_short_refuse {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
-    {s : State} {a : Nat}
-    (hInv : WalkInv G C s) (hblk : C.block = "if.then")
-    (hread : readBytes s.mem (C.stage.z + 48) 8 = some (wordBytes 8 a))
-    (ha : a < C.alen) :
-    WalkLoopEnd G → False := by
-  have halen : C.alen < 2 ^ 64 := by
-    have hle := hInv.alen_le
-    have hroom := G.arenaRoom
-    have hcap := G.dstcapLt
-    omega
-  intro h
-  exact WalkRefuseWords.not_of_short hread ha halen (h.refuseWords C s hInv hblk)
-
-/-- **One short slot makes the universal bundle unsatisfiable.**  If the staging admits a
-single `WalkInv` state at `cleanup478.i` whose log word reads below the carry's cursor, then
-no function `∀ G, WalkLoopEnd G` exists: its `mergeWords` field at that state contradicts
-`WalkMergeWords.not_of_short`.  This is the precise form of the vacuity: the top level that
-takes the bundle as a hypothesis yields nothing at any staging that admits the witness.
-
-The witness is the escaping input's state — the write-back stores the decoded prefix short
-of the extent the reserve charged (`arenaWord_writeBack_iff`, `not_arenaWord_of_lt`,
-`JsonStage2WalkArenaWord`), and the carry's cursor never moves back.  This theorem takes the
-witness as a hypothesis rather than constructing it; the reachability of that state at
-`cleanup478.i` is the producer tier's, not a fact of `WalkInv` alone. -/
-theorem walkLoopEnd_universal_unsatisfiable
-    (hw : ∃ (m0 : Mem) (G : WalkGeom m0) (C : WalkCarry G) (s : State) (a : Nat),
-      WalkInv G C s ∧ C.block = "cleanup478.i" ∧
-      readBytes s.mem (C.stage.z + 48) 8 = some (wordBytes 8 a) ∧ a < C.alen) :
-    ¬ Nonempty (∀ {m0 : Mem} (G : WalkGeom m0), WalkLoopEnd G) := by
-  rintro ⟨h⟩
-  obtain ⟨m0, G, C, s, a, hInv, hblk, hread, ha⟩ := hw
-  exact not_walkLoopEnd_of_short hInv hblk hread ha (h G)
 
 /-- **The merge's `%nep` value is inside the stream**: the last entry's price is stated
 against the credit its index consumed, and this is what makes that credit the
@@ -439,8 +322,7 @@ theorem WalkLoopEnd.merge {m0 : Mem} {G : WalkGeom m0} (h : WalkLoopEnd G)
     (hnep : lookupName sd.env "%nep" = some (.int 64 nepv)) (hterm : k2 = nepv.toNat) :
     WalkTargetPost (stage2Calls stage2SubCalls) G Cd sd := by
   exact walkFinishPost_merge G Cd sd hInv
-    hblk hpre hsp hspv hk hkv hnep hterm
-    (h.mergeWords Cd sd hInv hblk)
+    hblk hpre hsp hspv hk hkv hnep hterm (walkMergeWords_of_inv hInv)
 
 /-- **The refusal copy's terminal post, from the copy's word.**  R0: the state is at
 `if.then` already, so the post is the copy's two steps at the word the previous link
@@ -450,8 +332,7 @@ theorem WalkLoopEnd.refuse {m0 : Mem} {G : WalkGeom m0} (h : WalkLoopEnd G)
     (hblk : Cd.block = "if.then")
     (hword : ∃ k, k ≤ G.n ∧ readBytes sd.mem (Cd.stage.e + 8) 8 = some (wordBytes 8 k)) :
     WalkTargetPost (stage2Calls stage2SubCalls) G Cd sd :=
-  walkFinishPost_refuseOfWords G Cd sd hInv hblk
-    (h.refuseWords Cd sd hInv hblk) hword
+  walkFinishPost_refuseOfWords G Cd sd hInv hblk hword
 
 /-- **The loop's step, from the continuing arm and the last entry's arm.**
 `walkLoopStepThree_of_dispatchResult` (`JsonStage2WalkDispatchThreeOfRun`) asks for the
@@ -797,17 +678,17 @@ The two bundles are the premises, one group each: the continuing entry's class
 `HcontArm.twoEntry`'s field.  The merge's two register cells are not among them: they are
 `WalkInv` clauses, and `mergeHeadCells` reads them at the head state.
 
-**The two bundles are not theorems, and the second cannot be.**  `WalkContinueFacts` is
+**The two bundles are not theorems, and neither is false.**  `WalkContinueFacts` is
 class data — the class is the head byte's switch arm, read from the document in `G` and the
 head state's own `%8` — but each arm's evidence carries a tail `WalkSegment` and the scan's
 traversal hypotheses that are supplies at a reachable state, not invariant consequences;
 the producer tier that would build them at every `WalkInv` head state does not exist yet.
-`WalkLoopEnd` is false at an escaping input: its `mergeWords`/`refuseWords` demand the
-log's arena word at `C.alen` while `WalkInv.log_alen` gives only an `a ≤ C.alen`, and
-`not_walkLoopEnd_of_short` refutes the structure at any state whose slot is short (the
-write-back leaves exactly that whenever the decoder's output is shorter than the reserved
-document extent).  So `∀ G, WalkLoopEnd G` is not a theorem, and this conditional does not
-close the obligation; the closure claim to quote is `stage2WalkObligation_of_premises`
+`WalkLoopEnd` is class data on the same pattern: its log words are not demanded at
+`C.alen` — `mergeWords` and `refuseWords` read `WalkInv.log_alen`'s witness `a ≤ C.alen`,
+which `walkMergeWords_of_inv` and `walkRefuseWords_of_inv` produce — so the bundle's
+remaining supply is the last entry's arm (`hlast`).  So `∀ G, WalkLoopEnd G` is not a
+theorem, and this conditional does not close the obligation; the closure claim to quote is
+`stage2WalkObligation_of_premises`
 (`JsonStage2WalkAssembly`), which takes `WalkPremises` and the post rule and no bundle. -/
 theorem walkPremises_of_staging {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
     (hcont : ∀ {m0 : Mem} (G : WalkGeom m0), WalkContinueFacts G)
@@ -1037,20 +918,14 @@ and neither is a theorem.  They are not the same kind of obstruction:
 | bundle | class | why it is not a `∀ G` theorem |
 |---|---|---|
 | `WalkContinueFacts` | **class data, a producer tier.**  The class is the head byte's switch arm, read from the document in `G` (`G.doc`, `G.entries`, `WalkInv.iter.reg8`) and exhaustive by `HcontClass.complete`; its per-class producers are `hcontFacts_of_staging`, `hcontCleanupFacts_of_staging`, `hstringFacts_of_staging`, `hcontScalarFacts_of_staging`, `hcontArm_*_of_staging`, … | Each arm's bundle carries a tail `WalkSegment` (the three callees' preconditions and answers at the call's own argument list) and the scan's traversal hypotheses (`hround`, `hguard`, `hbyte`); these are supplies at a reachable state, not consequences of `WalkInv`, so the producers take them as named premises.  Nothing is false; the tier that would discharge them at every `WalkInv` head state is the remaining work. |
-| `WalkLoopEnd` | **class data plus a word no state supplies.**  `hlast` is the last entry's arm (`LastEntryArm`, every arm with its own producer); `mergeWords`/`refuseWords` are the log's arena word at `C.alen` | `WalkInv.log_alen` gives `∃ a, ndst0 ≤ a ∧ a ≤ C.alen ∧ slot = wordBytes 8 a`; the bundle asks for `a = C.alen`.  `WalkMergeWords.not_of_short`/`WalkRefuseWords.not_of_short` refute the field at a state whose slot is short, and `not_walkLoopEnd_of_short` turns that into a refutation of `WalkLoopEnd G`.  The write-back stores the decoder's output length against a reserve of the document extent (`arenaWord_writeBack_iff`, `not_arenaWord_of_lt`), so an escaping string leaves exactly that state.  **False at an escaping input; `∀ G` cannot be a theorem.** |
+| `WalkLoopEnd` | **class data: the last entry's arm.**  `hlast` is `LastEntryArm` (`LastEntryArm`, every arm with its own producer); the log's arena word is not a field — it is `WalkInv.log_alen`'s witness, which the finalisation's copy loads (`walkMergeWords_of_inv`, `walkRefuseWords_of_inv`) | The arm is supplied evidence at the last-entry head states, not a `WalkInv` consequence: each constructor is a class of the head switch and carries that class's producer's premises.  Nothing in the bundle is false; the tier that would discharge the arm at every `WalkGeom` is what a producer must build, exactly as the continuing bundle's per-class tier is. |
 
-The second row is therefore not an unproved premise but a **refutable** one:
-`walkLoopEnd_universal_unsatisfiable` turns the escaping input's witness into
-`¬ Nonempty (∀ G, WalkLoopEnd G)`.  Where that witness exists,
-`stage2WalkObligation_of_staging` is **vacuous** — its `hend` hypothesis cannot be met, so
-the implication says nothing about any document — and it must not be quoted as the closure
-claim.  A vacuous theorem is indistinguishable from a proved one in a build log: `#print
-axioms` reports no `sorryAx` and the conclusion is reached through a hypothesis no input
-meets.  That is why the top-level statement has to carry its premises in the open, as
-`WalkPremises` does, instead of behind a `∀ G` whose inhabitant is the thing in doubt.  (The
-witness itself — a `WalkInv` state at `cleanup478.i` with a short slot — is the arena
-module's escaping-input argument, not a mechanized existential; the theorem above takes it
-as a hypothesis so the vacuity's exact input is visible.)
+Both rows are therefore the same kind of obstruction: a per-class/per-arm producer tier
+that is not yet built.  Neither is false, and the terminal post's numbers are the
+invariant's own — the log's arena word is `log_alen`'s witness, reported as the decoded
+extent, while the frame, presence and capacity clauses stay at the reserved extent.  The
+top-level statement still carries its premises in the open, as `WalkPremises` does, rather
+than behind a `∀ G`, so a reader can see exactly which tier remains.
 
 So the honest closure claim is `stage2WalkObligation_of_premises`
 (`JsonStage2WalkAssembly`), whose statement has neither bundle:
@@ -1074,24 +949,18 @@ Its premises, classified:
   (above) for the loop, modulo the same loop step.
 
 `walkPremises_of_staging` remains as the conditional that carries the two bundles into
-`WalkPremises`; it is not the closure claim, because `hend` has no inhabitant at an
-escaping input.  The `stage2WalkCompletes_of_staging` above is likewise conditional.
+`WalkPremises`; it is not the closure claim, because both bundles are still premises.
+The `stage2WalkCompletes_of_staging` above is likewise conditional.
 
-The exact honest re-statement of the top level, then, is **not** a change to
+The honest statement of the top level, then, is **not** a change to
 `stage2WalkObligation_of_staging`'s conclusion: it is the pair of the completion from
-`WalkPremises` and the post from the two staging arms, both already in the tree, with the
-log word's falsity recorded here and at `WalkLoopEnd`.  A closure that keeps
-`stage2WalkObligation_of_staging`'s conclusion with no hypotheses needs the terminal post
-restated at `log_alen`'s witness `a` instead of `C.alen` (`JsonStage2WalkArenaWord`'s
-conclusion), which is a change to what the post reports, not a proof. -/
+`WalkPremises` and the post from the two staging arms, both already in the tree.  What
+remains is the producer tier each bundle names — the continuing arm's per-class evidence
+and the last entry's arm — not a statement about the terminal post's numbers, which now
+report the invariant's own word. -/
 
-/-! ### Axiom footprints beyond the five -/
+/-! ### Axiom footprints -/
 
-#print axioms LeanLLVM.Refinement.WalkScope.WalkMergeWords.not_of_short
-#print axioms LeanLLVM.Refinement.WalkScope.WalkRefuseWords.not_of_short
-#print axioms LeanLLVM.Refinement.WalkScope.not_walkLoopEnd_of_short
-#print axioms LeanLLVM.Refinement.WalkScope.not_walkLoopEnd_of_short_refuse
-#print axioms LeanLLVM.Refinement.WalkScope.walkLoopEnd_universal_unsatisfiable
 #print axioms LeanLLVM.Refinement.WalkScope.stage2WalkCompletes_of_staging
 /-- info: 'LeanLLVM.Refinement.WalkScope.stage2Post_of_staging_loop' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

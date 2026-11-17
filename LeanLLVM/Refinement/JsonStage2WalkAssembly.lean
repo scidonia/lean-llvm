@@ -2969,7 +2969,7 @@ there would be false of the run.  Presence needs one step — the carry's own li
 of its entries lies inside a staged extent (`(dst, ndst0 + n + reserve)` covers the
 arena's prefix at `alen ≤ ndst0 + n`, and `(ev, evcap)` covers the event stream's
 at `evlen ≤ evcap`), which is the coverage `WalkInv.report` reads. -/
-def Stage2Run.ofInv {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+noncomputable def Stage2Run.ofInv {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
     (s : State) (h : WalkInv G C s) {args : List Value}
     (hargs : args = [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
       .int 64 (BitVec.ofNat 64 G.nep), .ptr G.xp, .int 64 (BitVec.ofNat 64 G.nxp),
@@ -2994,6 +2994,9 @@ def Stage2Run.ofInv {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
   ndst0 := G.ndst0
   nev0 := G.nev0
   alen := C.alen
+  alenU := h.log_alen.choose
+  arenaUGe := h.log_alen.choose_spec.1
+  arenaULe := h.log_alen.choose_spec.2.1
   evlen := C.evlen
   refusal := C.refusal
   eoff := C.eoff
@@ -3114,7 +3117,7 @@ theorem stage2Post_of_run {args : List Value} {mem m0 : Mem} {B : Nat}
     (hrun : Stage2Run args mem m0)
     (hcom : runFuel calls B stage2Body sE = some
       (Outcome.ret (some (.int 64 (stage2Verdict hrun.refusal)))
-        (stage2Report m0 hrun.ndst hrun.nev hrun.err hrun.alen hrun.evlen
+        (stage2Report m0 hrun.ndst hrun.nev hrun.err hrun.alenU hrun.evlen
           hrun.refusal hrun.eoff))) :
     ∀ o, BehFromState calls stage2Body sE o → stage2Post args mem hrun.next0 o :=
   stage2Post_of_completion hcom (stage2Run_boundary hrun)

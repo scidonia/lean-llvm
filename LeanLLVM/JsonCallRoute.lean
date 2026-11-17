@@ -782,13 +782,9 @@ theorem routeStaging (l : RouteLayout) (doc : List UInt8)
     rw [pipelineRegions_eq_stagedExtents l doc hdoc64 hdst64 hev64]
     exact hsep
   · exact hbLt
-  · exact hepLt
-  · -- the arena's staged address is a word
-    exact hdstLtR
-  · -- the event stream's staged address is a word
-    exact hevLtR
-  · -- the event cursor's worst case is a signed index
-    exact hnev63R
+  · -- the staged boundary's output clauses: `%ep`'s word, the two staged output
+    -- addresses' words, and the event cursor's worst case as a signed index
+    exact ⟨hepLt, hdstLtR, hevLtR, hnev63R⟩
 
 /-- The document's exact-length read at the caller's base, which is
 `pipelineSpecPre`'s input relation and not a clause of `pipelineStaging`. -/
@@ -814,10 +810,16 @@ wrapper's own stand-in for the allocator cursor a C caller would hold. -/
 def routeNext (l : RouteLayout) (doc : List UInt8) : Nat :=
   stagedExtentSum (pipelineRegions l.base l.tab 0 l.nxp0 (routeArgs l doc))
 
+set_option maxHeartbeats 1200000 in
 /-- **The wrapper's staging lies below its cursor.**  The record's cursor clause
 at `routeNext`: the escape count slot holds the one value the wrapper stored, so
 the only number the slot reads as is `l.nxp0`, and every staged object's end is a
-summand of the cursor. -/
+summand of the cursor.
+
+The closing rewrite carries `pipelineRegions_eq_stagedExtents` under the sum's own
+body, which costs more than the file's default budget: `1000000` heartbeats time
+out deterministically in `whnf` on the unfolded cursor, and the `1200000` below is
+the round value tested above that measurement. -/
 theorem routeStagedBelow (l : RouteLayout) (doc : List UInt8)
     (h : routePre l doc) :
     pipelineStagedBelow l.tab l.base (routeArgs l doc) (stagedMem l doc)
@@ -839,7 +841,7 @@ theorem routeStagedBelow (l : RouteLayout) (doc : List UInt8)
     simpa only [pipelineNxpSlot, routeArgs] using hread
   have hEq : nxp0 = l.nxp0 := slotExtent_eq hlt (by omega) hread' hslot
   subst hEq
-  rw [pipelineRegions_eq_stagedExtents l doc hdoc64 hdst64 hev64]
+  rw [routeNext, pipelineRegions_eq_stagedExtents l doc hdoc64 hdst64 hev64]
   exact fun r hr => le_stagedExtentSum (stagedExtents l doc) r hr
 
 /-- **The wrapper discharges the specification's precondition.**  `routePre`
@@ -853,7 +855,7 @@ theorem routeSpecPre (l : RouteLayout) (doc : List UInt8)
     pipelineSpecPre l.tab l.base (routeArgs l doc) (stagedMem l doc)
       (routeNext l doc) := by
   obtain ⟨hadm, hb3, hbLt, hepLt, hep64, hxp64, hdst64, hev64, hepcap, hdst, hev,
-    _hdstLtR, _hevLtR, _hnev63R, hroom0, hroomx, h32, harm, hsep⟩ := h
+    hdstLtR, hevLtR, hnev63R, hroom0, hroomx, h32, harm, hsep⟩ := h
   obtain ⟨hpos, hlim, hdom⟩ := admitted_documentDomain hadm
   have hdoc64 : doc.length < 2 ^ 64 := by
     have : doc.length ≤ 1048576 := by simpa [Limits.default] using hlim
@@ -868,9 +870,9 @@ theorem routeSpecPre (l : RouteLayout) (doc : List UInt8)
         e ≠ .depthExceeded ∧ e ≠ .outOfCapacity :=
     fun e he => ⟨(hdom e he).1, (hdom e he).2.1⟩
   refine ⟨routeStaging l doc ⟨hadm, hb3, hbLt, hepLt, hep64, hxp64, hdst64, hev64,
-    hepcap, hdst, hev, hroom0, hroomx, h32, harm, hsep⟩,
+    hepcap, hdst, hev, hdstLtR, hevLtR, hnev63R, hroom0, hroomx, h32, harm, hsep⟩,
     routeStagedBelow l doc ⟨hadm, hb3, hbLt, hepLt, hep64, hxp64, hdst64, hev64,
-      hepcap, hdst, hev, hroom0, hroomx, h32, harm, hsep⟩,
+      hepcap, hdst, hev, hdstLtR, hevLtR, hnev63R, hroom0, hroomx, h32, harm, hsep⟩,
     doc, l.nev0, l.evcap, l.nev, ?_, ?_, ?_, stagedDoc_read l doc hsep hb3, ?_,
     hdom'⟩
   · simp only [pipelineDocLength, routeArgs, hblocks]
@@ -894,6 +896,7 @@ inductive RouteRefusal where
   | capacityWidth (cap : Nat)
   | addressWidth (addr : Nat)
   | cursorRoom (count : Nat)
+  | signedCursor (count : Nat)
   | documentBound (required : Nat)
   | overlappingRegions
 deriving DecidableEq, Repr
@@ -917,6 +920,8 @@ def RouteRefusal.message : RouteRefusal → String
       s!"address {addr} does not fit the ABI's 64-bit word"
   | .cursorRoom count =>
       s!"cursor room: a growing cursor at {count} leaves the 64-bit domain"
+  | .signedCursor count =>
+      s!"event cursor: the worst case {count} does not fit a signed index"
   | .documentBound required =>
       s!"document bound: {required} bytes overflow the 32-bit entry positions"
   | .overlappingRegions =>
@@ -934,7 +939,9 @@ instance disjointRegionsDecidable (rs : List (Nat × Nat)) : Decidable (Disjoint
 
 /-- The caller-side layout check: the prefix room, the arm's reserved bits, the
 four capacities, the two cursors' room, the 32-bit document bound, the 64-bit
-width of each capacity, and the staged regions' separation. -/
+width of each capacity, the 64-bit width of the base and of the three staged
+addresses `ep`, `dst` and `ev`, the event cursor's signed-index bound, and the
+staged regions' separation. -/
 def layoutRefusal (l : RouteLayout) (doc : List UInt8) : Option RouteRefusal :=
   if l.base < 3 then some (.noPrefixRoom l.base)
   else if 8 ≤ l.arm then some (.armReserved l.arm)
@@ -955,6 +962,10 @@ def layoutRefusal (l : RouteLayout) (doc : List UInt8) : Option RouteRefusal :=
     some (.capacityWidth (max (max l.epcap l.xpcap) (max l.dstcap l.evcap)))
   else if 2 ^ 64 ≤ l.base then some (.addressWidth l.base)
   else if 2 ^ 64 ≤ l.ep then some (.addressWidth l.ep)
+  else if 2 ^ 64 ≤ l.dst then some (.addressWidth l.dst)
+  else if 2 ^ 64 ≤ l.ev then some (.addressWidth l.ev)
+  else if ¬ l.nev0 + 13 * doc.length < 2 ^ 63 then
+    some (.signedCursor (l.nev0 + 13 * doc.length))
   else if ¬ DisjointRegions (stagedExtents l doc) then
     some .overlappingRegions
   else none
@@ -986,7 +997,8 @@ theorem layoutRefusal_none {l : RouteLayout} {doc : List UInt8}
     cursorRoom l.nxp0 (pipelineBlocks doc.length) 9 ∧
     64 * pipelineBlocks doc.length + 63 < 2 ^ 32 ∧
     DisjointRegions (stagedExtents l doc) ∧
-    l.base < 2 ^ 64 ∧ l.ep < 2 ^ 64 := by
+    l.base < 2 ^ 64 ∧ l.ep < 2 ^ 64 ∧
+    l.dst < 2 ^ 64 ∧ l.ev < 2 ^ 64 ∧ l.nev0 + 13 * doc.length < 2 ^ 63 := by
   have hbase : 3 ≤ l.base := by
     apply Classical.byContradiction
     intro h
@@ -1138,6 +1150,76 @@ theorem layoutRefusal_none {l : RouteLayout} {doc : List UInt8}
         if_pos (show 2 ^ 64 ≤ l.ep by omega)]
     rw [this] at hl
     cases hl
+  have hdstLtR : l.dst < 2 ^ 64 := by
+    apply Classical.byContradiction
+    intro h
+    have : layoutRefusal l doc = some (.addressWidth l.dst) := by
+      simp only [layoutRefusal, if_neg (show ¬ l.base < 3 by omega),
+        if_neg (show ¬ 8 ≤ l.arm by omega),
+        if_neg (show ¬ l.epcap < 64 * pipelineBlocks doc.length + 9 by omega),
+        if_neg (show ¬ l.dstcap < l.ndst0 + doc.length + 64 by omega),
+        if_neg (show ¬ l.evcap < l.nev0 + 13 * doc.length by omega),
+        if_neg (show ¬ ¬ cursorRoom 0 (pipelineBlocks doc.length) 9 by
+          intro h; exact h hroom0),
+        if_neg (show ¬ ¬ cursorRoom l.nxp0 (pipelineBlocks doc.length) 9 by
+          intro h; exact h hroomx),
+        if_neg (show ¬ 2 ^ 32 ≤ 64 * pipelineBlocks doc.length + 63 by omega),
+        if_neg (show ¬ ¬ (l.epcap < 2 ^ 64 ∧ l.xpcap < 2 ^ 64 ∧
+          l.dstcap < 2 ^ 64 ∧ l.evcap < 2 ^ 64) by
+          intro h; exact h hwidths),
+        if_neg (show ¬ 2 ^ 64 ≤ l.base by omega),
+        if_neg (show ¬ 2 ^ 64 ≤ l.ep by omega),
+        if_pos (show 2 ^ 64 ≤ l.dst by omega)]
+    rw [this] at hl
+    cases hl
+  have hevLtR : l.ev < 2 ^ 64 := by
+    apply Classical.byContradiction
+    intro h
+    have : layoutRefusal l doc = some (.addressWidth l.ev) := by
+      simp only [layoutRefusal, if_neg (show ¬ l.base < 3 by omega),
+        if_neg (show ¬ 8 ≤ l.arm by omega),
+        if_neg (show ¬ l.epcap < 64 * pipelineBlocks doc.length + 9 by omega),
+        if_neg (show ¬ l.dstcap < l.ndst0 + doc.length + 64 by omega),
+        if_neg (show ¬ l.evcap < l.nev0 + 13 * doc.length by omega),
+        if_neg (show ¬ ¬ cursorRoom 0 (pipelineBlocks doc.length) 9 by
+          intro h; exact h hroom0),
+        if_neg (show ¬ ¬ cursorRoom l.nxp0 (pipelineBlocks doc.length) 9 by
+          intro h; exact h hroomx),
+        if_neg (show ¬ 2 ^ 32 ≤ 64 * pipelineBlocks doc.length + 63 by omega),
+        if_neg (show ¬ ¬ (l.epcap < 2 ^ 64 ∧ l.xpcap < 2 ^ 64 ∧
+          l.dstcap < 2 ^ 64 ∧ l.evcap < 2 ^ 64) by
+          intro h; exact h hwidths),
+        if_neg (show ¬ 2 ^ 64 ≤ l.base by omega),
+        if_neg (show ¬ 2 ^ 64 ≤ l.ep by omega),
+        if_neg (show ¬ 2 ^ 64 ≤ l.dst by omega),
+        if_pos (show 2 ^ 64 ≤ l.ev by omega)]
+    rw [this] at hl
+    cases hl
+  have hnev63R : l.nev0 + 13 * doc.length < 2 ^ 63 := by
+    apply Classical.byContradiction
+    intro h
+    have : layoutRefusal l doc =
+        some (.signedCursor (l.nev0 + 13 * doc.length)) := by
+      simp only [layoutRefusal, if_neg (show ¬ l.base < 3 by omega),
+        if_neg (show ¬ 8 ≤ l.arm by omega),
+        if_neg (show ¬ l.epcap < 64 * pipelineBlocks doc.length + 9 by omega),
+        if_neg (show ¬ l.dstcap < l.ndst0 + doc.length + 64 by omega),
+        if_neg (show ¬ l.evcap < l.nev0 + 13 * doc.length by omega),
+        if_neg (show ¬ ¬ cursorRoom 0 (pipelineBlocks doc.length) 9 by
+          intro h; exact h hroom0),
+        if_neg (show ¬ ¬ cursorRoom l.nxp0 (pipelineBlocks doc.length) 9 by
+          intro h; exact h hroomx),
+        if_neg (show ¬ 2 ^ 32 ≤ 64 * pipelineBlocks doc.length + 63 by omega),
+        if_neg (show ¬ ¬ (l.epcap < 2 ^ 64 ∧ l.xpcap < 2 ^ 64 ∧
+          l.dstcap < 2 ^ 64 ∧ l.evcap < 2 ^ 64) by
+          intro h; exact h hwidths),
+        if_neg (show ¬ 2 ^ 64 ≤ l.base by omega),
+        if_neg (show ¬ 2 ^ 64 ≤ l.ep by omega),
+        if_neg (show ¬ 2 ^ 64 ≤ l.dst by omega),
+        if_neg (show ¬ 2 ^ 64 ≤ l.ev by omega),
+        if_pos (show ¬ l.nev0 + 13 * doc.length < 2 ^ 63 by omega)]
+    rw [this] at hl
+    cases hl
   have hsep : DisjointRegions (stagedExtents l doc) := by
     apply Classical.byContradiction
     intro h
@@ -1157,11 +1239,16 @@ theorem layoutRefusal_none {l : RouteLayout} {doc : List UInt8}
           intro h; exact h hwidths),
         if_neg (show ¬ 2 ^ 64 ≤ l.base by omega),
         if_neg (show ¬ 2 ^ 64 ≤ l.ep by omega),
+        if_neg (show ¬ 2 ^ 64 ≤ l.dst by omega),
+        if_neg (show ¬ 2 ^ 64 ≤ l.ev by omega),
+        if_neg (show ¬ ¬ l.nev0 + 13 * doc.length < 2 ^ 63 by
+          intro h; exact h hnev63R),
         if_pos h]
     rw [this] at hl
     cases hl
   exact ⟨hbase, harm, hwidths.1, hwidths.2.1, hwidths.2.2.1, hwidths.2.2.2,
-    hepcap, hdst, hev, hroom0, hroomx, h32, hsep, hbaseLt, hepLt⟩
+    hepcap, hdst, hev, hroom0, hroomx, h32, hsep, hbaseLt, hepLt, hdstLtR,
+    hevLtR, hnev63R⟩
 
 /-- **Acceptance implies the record's precondition.**  A `checkRoute` that
 accepts has established every clause of `routePre`; this is the bridge a route
@@ -1178,9 +1265,11 @@ theorem routePre_of_checkRoute_ok {l : RouteLayout} {doc : List UInt8}
           cases h
       | none =>
           obtain ⟨hbase, harm, hep64, hxp64, hdst64, hev64, hepcap, hdst,
-            hev, hroom0, hroomx, h32, hsep, hbaseLt, hepLt⟩ := layoutRefusal_none hl
+            hev, hroom0, hroomx, h32, hsep, hbaseLt, hepLt, hdstLtR, hevLtR,
+            hnev63R⟩ := layoutRefusal_none hl
           exact ⟨hd, hbase, hbaseLt, hepLt, hep64, hxp64, hdst64, hev64,
-            hepcap, hdst, hev, hroom0, hroomx, h32, harm, hsep⟩
+            hepcap, hdst, hev, hdstLtR, hevLtR, hnev63R, hroom0, hroomx, h32,
+            harm, hsep⟩
   | refused e =>
       rw [hd] at h
       cases h
@@ -1254,18 +1343,19 @@ is a consequence of the post, not a second statement of it. -/
 theorem routePost_result {l : RouteLayout} {doc : List UInt8} {next : Nat}
     {verdict : BitVec 64} {m : Mem}
     (h : routePost l doc next (.ret (some (.int 64 verdict)) m)) :
-    ∃ (nk' nxp' ndst' nev' : Nat),
+    ∃ (nk' nxp' ndstU nev' : Nat),
       routeResult (routeArgs l doc) (.ret (some (.int 64 verdict)) m) =
         some { verdict := verdict.toNat, nkWord := wordBytes 8 nk',
-               nxpWord := wordBytes 8 nxp', ndstWord := wordBytes 8 ndst',
+               nxpWord := wordBytes 8 nxp', ndstWord := wordBytes 8 ndstU,
                nevWord := wordBytes 8 nev' } ∧
       (verdict.toNat = 0 ∨ verdict.toNat = 1) := by
   simp only [routePost, pipelineUnitsPost, routeArgs] at h
-  obtain ⟨hv, nk', nxp', ndst', nev', ent, ps, out, evs,
-    -, -, -, -, -, -, -, -, -, -, hout, hnk, hnxp, -, -, -, -, -, -, -, -⟩ := h
+  obtain ⟨hv, nk', nxp', ndstU, ndst', nev', ent, ps, out, evs,
+    c, ctype, cst, tok, s, z, e, d, alloc, allocEnd,
+    -, hout, hnk, hnxp, -, -, -, -, -, -, -, -⟩ := h
   simp only [pipelineOutputExtents, routeArgs] at hout
   obtain ⟨-, -, hndst, hnev⟩ := hout
-  refine ⟨nk', nxp', ndst', nev', ?_, ?_⟩
+  refine ⟨nk', nxp', ndstU, nev', ?_, ?_⟩
   · simp only [routeResult, routeArgs, hnk, hnxp, hndst, hnev,
       Option.bind_some, Option.map_some]
   · rcases hv with hv | hv <;> rw [hv] <;> decide

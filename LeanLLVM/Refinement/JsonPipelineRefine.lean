@@ -1138,11 +1138,12 @@ theorem pipeline_units_finalisation {eventRel : EventStreamRel} {tab base : Nat}
   split at hpost
   · exact hpost
   · rename_i _o0 verdict m'
-    obtain ⟨hverdict, nk', nxp', ndst', nev', ent, ps, out, evs,
+    obtain ⟨hverdict, nk', nxp', ndstU, ndst', nev', ent, ps, out, evs,
       c₂, ctype₂, cst₂, tok₂, s₂, z₂, e₂, d₂, alloc₂, allocEnd₂,
-      hext, hnk, hnxp, hent, hxp, hdst, hev, herr, hunch⟩ := hpost
-    -- the extents the record names are the ones it reads back through its slots
-    have hndstSlot : readBytes m' ndst 8 = some (wordBytes 8 ndst') := hext.2.2.1
+      hUle, hext, hnk, hnxp, hent, hxp, hdst, hev, herr, hunch⟩ := hpost
+    -- the extents the record names are the ones it reads back through its slots;
+    -- the arena's slot holds the used extent, the reserved one is the frame's
+    have hndstSlot : readBytes m' ndst 8 = some (wordBytes 8 ndstU) := hext.2.2.1
     have hnevSlot : readBytes m' nev 8 = some (wordBytes 8 nev') := hext.2.2.2
     have hbl : bs.length ≤ 64 * pipelineBlocks bs.length := le_blocks_mul bs.length
     have hK : bs.length + (64 * pipelineBlocks bs.length - bs.length) =
@@ -1159,7 +1160,7 @@ theorem pipeline_units_finalisation {eventRel : EventStreamRel} {tab base : Nat}
     have hdoc : readBytes mem base n.toNat = some bs := by
       rw [hlen]; exact hdoclen
     -- the outcome's own document, identified with the staging's by the read
-    obtain ⟨bs', hlen', hread', hhalf⟩ := hsem ndst' nev' hext
+    obtain ⟨bs', hlen', hread', hhalf⟩ := hsem ndstU nev' hext
     have hbs : bs' = bs := by
       rw [← hlen] at hdoclen
       rw [hread'] at hdoclen
@@ -1167,8 +1168,8 @@ theorem pipeline_units_finalisation {eventRel : EventStreamRel} {tab base : Nat}
     rw [hbs] at hhalf
     obtain ⟨hacc, haccepted, hrefused⟩ := hhalf
     unfold Sigma_pipeline
-    refine ⟨bs, nk', nxp', ndst', nev', hlen, hdoc, hnk, hnxp, hndstSlot,
-      hnevSlot, hverdict, hacc, ?_, ?_, ?_⟩
+    refine ⟨bs, nk', nxp', ndstU, ndst', nev', hlen, hdoc, hnk, hnxp, hUle,
+      hndstSlot, hnevSlot, hverdict, hacc, ?_, ?_, ?_⟩
     · intro h1
       -- the half's arena and event stream are the post's: both are the read at
       -- the extents the record names, and a read's value is the memory's
@@ -1185,8 +1186,8 @@ theorem pipeline_units_finalisation {eventRel : EventStreamRel} {tab base : Nat}
     · -- the frame: the post names the caller's extents and the callee's own
       -- regions at the same witnesses, which is the caller's view
       unfold SigmaFrame
-      exact ⟨nk', nxp', ndst', nev', c₂, ctype₂, cst₂, tok₂, s₂, z₂, e₂, d₂,
-        alloc₂, allocEnd₂, hext, hunch.2.1, hunch.2.2⟩
+      exact ⟨nk', nxp', ndstU, ndst', nev', c₂, ctype₂, cst₂, tok₂, s₂, z₂, e₂, d₂,
+        alloc₂, allocEnd₂, hUle, hext, hunch.2.1, hunch.2.2⟩
   · exact hpost.elim
 
 /-- **The specification's record from the units' record, without `mono`.**
@@ -1266,8 +1267,8 @@ theorem pipelineUnitsPost_not_imp_Sigma :
   refine ⟨fun _ _ _ _ => False, 1000, gapArgs, zeroCells 104, 1,
     .ret (some (.int 64 0)) (zeroCells 104), ?_, ?_⟩
   · unfold pipelineUnitsPost
-    refine ⟨Or.inl rfl, 0, 0, 0, 0, [], [], [], [], 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-      ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨Or.inl rfl, 0, 0, 0, 0, 0, [], [], [], [], 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      Nat.le_refl 0, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · simp only [pipelineOutputExtents]
       exact ⟨by decide, by decide, by decide, by decide⟩
     · decide
@@ -1285,7 +1286,7 @@ theorem pipelineUnitsPost_not_imp_Sigma :
       rfl
   · intro h
     unfold Sigma_pipeline at h
-    obtain ⟨bs, nk', nxp', ndst', nev', hlen, hread, -⟩ := h
+    obtain ⟨bs, nk', nxp', ndstU, ndst', nev', hlen, hread, -⟩ := h
     have hnone : readBytes (zeroCells 104) 1000 ((4 : BitVec 64).toNat) = none := by
       decide
     rw [hnone] at hread
