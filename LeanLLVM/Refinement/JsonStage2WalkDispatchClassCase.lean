@@ -30,15 +30,23 @@ they are proved where they are stated.
 
 ## What the case still needs
 
-Two things stand between these branches and `walkContinueFacts_of_payload`:
+One thing stands between these branches and `walkContinueFacts_of_payload`: the default
+arm's document-byte classes.  The byte below `13` or at or above `32` takes
+`LeafBlock33`/`LeafBlock37` to `if.end372.i`, and the chains are stated
+(`*HeadChain_of_lane` dispatch across `HcontHeadByte`'s three routes), but the `.cleanup`
+arm above them still takes `HcontCleanupFacts`, whose three no-run bits are the scan-free
+class's own.  Until that bundle is restated at the byte's class (or the leaf class gets
+its own bundle and arm), a state whose document byte is a leaf has no arm to select.
 
-* the default arm's other document-byte classes — the byte below `13` or at or above `32`
-  takes `LeafBlock33`/`LeafBlock37` to `if.end372.i`, and no chain producer states those
-  routes, so a state whose document byte is one of them has no arm to select;
-* the byte selection itself — which of `letters`/`fLetter`/`classC` a state takes is
-  decided by the head byte, so the case needs the class bits' transport into those three
-  arms' own bits, for the brace class `124` included (`brcHeadChain_of_lane` now states
-  its chain; the bits' transport is the case's remaining work).
+The byte selection itself is **done**: `JsonStage2WalkDispatchClassTransport` derives the
+route's own bits (`slt %8 110`, `eq %8 102`, `slt %8 116`, `eq %8 116`, `slt %8 125` and
+the seam's tag test) from each default-value constructor's range bits, builds the
+head chain at them, and returns the arm.  Its six branches cover
+`.defaultValueLow`, `.defaultValueMid`, `.otherValue`, `.defaultValueBracket`,
+`.defaultValueBracketHigh` and `.defaultValueBrace`, including the brace class `124` and
+the bracket-high class's `'f'`/letters/class-C split.  So the class case's default-value
+half needs no further bit transport — only the class case's assembly and the leaf
+bundle above.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkDispatchClassCLeaves
 import LeanLLVM.Refinement.JsonStage2WalkDispatchScalarRows

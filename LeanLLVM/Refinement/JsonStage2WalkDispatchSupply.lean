@@ -143,6 +143,16 @@ former obstacles are gone, and the third is a route the tree does not yet compos
   chain at every default class.  What the leaf routes still lack is the `.cleanup` **arm**:
   `HcontCleanupFacts` asserts the scan-free bits, so the high-byte route's leaf chains reach
   the seam but no bundle above them takes them.
+* **The class's route bits are transported.**  The default-value constructors' range bits
+  do not include the bits the spans below `if.else387.i` read, and
+  `JsonStage2WalkDispatchClassTransport` now derives them: `slt %8 110`, `eq %8 102` (and
+  its negation), `slt %8 116`, `eq %8 116`, `slt %8 125` and the seam's tag test, by the
+  signed and unsigned readings of the byte (`toInt_lt_of_slt_one`, `slt_zero_of_toInt_ge`,
+  `eq_zero_of_toInt_ne`, `ult_zero_iff`, and the tag lemmas `tag_zero_of_toInt_ge_58`
+  / `tag_zero_of_toInt_lt_44`).  Its six branches (`hcontArm_defaultValueLow` …
+  `hcontArm_defaultValueBrace`) build the head chain at those bits and return the arm, so
+  the class case's default-value half needs no separate supply.  What remains is the
+  class-case assembly over `HcontClass.complete`, and the leaf byte's bundle above.
 * **The visited-byte row is stated at the visits' span.**  `hcontFacts_of_staging` supplies
   `hbyteClass` at `k < p + 1`, and the traversal's `hbyte` (`walkScanRounds457_of_cell`,
   `walkScanArrival457_of_cell`, `scanRoundsAt`, `scanWsRounds`, `contScanRounds`) carries
