@@ -29,10 +29,13 @@ producer takes it beside the tail.
 (`hcontArm_cleanup_of_doc`, through `hcontArm_cleanup_of_staging`).  The tail itself is
 `emptyTailSeg_of_calls`'s, whose remaining input is the tail-start state's invariant
 (`hInvT`) — a `WalkInv` at a state further along the walk, which no document row and no
-clause of the head state's invariant supplies.  That is the one row the table does not
-name, and it is not a document fact: it is what a producer of the class must derive along
-the head chain.  `hcontArm_cleanup_of_calls` states the same list, so the seam is named
-once.
+clause of the head state's invariant supplies.  It is not a row either: it is the head
+chain's own `inv'`, and `JsonStage2WalkDispatchSeamRows`'s `hcontSpan17_of_doc` derives the
+chain from the document row alone (`contTailStartInv_of_doc`), so the class's arm is
+`hcontArm_cleanup_of_rows` — the row, the lane's root word and the seam's three call rows,
+with the seam's cells and the root slot's word produced beside them.
+`hcontArm_cleanup_of_calls` states the same list at the cells explicitly, so the seam is
+named once.
 
 ## The groups this module states
 

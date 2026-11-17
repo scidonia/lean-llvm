@@ -50,18 +50,27 @@ bit), the default classes' shared four by `contSwToLandSeg`, the empty tail by
 `emptyTailSeg_of_calls`, and the scan arm's tail by `hcontScanTail_at` below.
 
 What remains is **per-class document rows the payload does not carry**: the class case over
-`HcontClass.complete` runs each class's producer, and the producers for `.ws`, `.cleanup` and
+`HcontClass.complete` runs each class's producer, and the producers for `.ws` and
 `.scalar` take their bundle's document facts — the byte before the entry's end with its
 class, the entry lane and its order, the whitespace stop with its per-index `∀`, the log's
-two words — which are `HcontFacts`'s, `HcontCleanupFacts`'s and `HcontScalarFacts`'s
-non-callee fields.  The refusals' arms take `%idxprom.i` and `%e` beside the byte and the
+two words — which are `HcontFacts`'s and `HcontScalarFacts`'s non-callee fields.  The
+refusals' arms take `%idxprom.i` and `%e` beside the byte and the
 depth, the above-zero markers take the two stacks' bytes at `C.sp - 1` (which are `WalkInv`
 clauses), and the openers and the standalone string are the two classes the payload's `lane`
 and `abi` groups reach today.  So the payload that would close the theorem is the class
 rows' payload, one group per class: the continuing payload's `lane`/`abi`/`trav`, the seam's
-calls and the run's rows here, plus `HcontFacts`'s, `HcontCleanupFacts`'s and
-`HcontScalarFacts`'s document groups.  The last entry's payload needs the same for
-`LastEntryArm`'s classes and `RunLastFacts`'s rows.
+calls and the run's rows here, plus `HcontFacts`'s and `HcontScalarFacts`'s document
+groups.  The last entry's payload needs the same for `LastEntryArm`'s classes and
+`RunLastFacts`'s rows.
+
+**One class no longer waits on this list.**  `JsonStage2WalkDispatchSeamRows` closes
+`.cleanup` end to end: the class's document row, the lane's root word and the three call
+rows produce the seventeen-link chain, the seam's invariant, its five environment cells,
+the predecessor's `phi` with the literal `0` it selects, the root slot's word across the
+seam's three token-record stores, and the arm itself
+(`hcontArm_cleanup_of_rows`/`walkDispatch_at_cleanup_of_rows`).  No segment and no bundle
+is among its inputs, so the class's arm no longer waits on the rows above — the remaining
+classes' rows are the same kind, at their own seams.
 -/
 
 import LeanLLVM.Refinement.JsonStage2WalkDispatchRunHead

@@ -727,6 +727,55 @@ seam rows are `JsonStage2WalkDispatchClassRows`', one row per class, and the
 seam state's invariant is produced by the transports above rather than carried as
 a row.
 
+### 7.8 The dispatch's per-row ledger
+
+Every arm the two enumerations contain is either **derived** — a theorem at the state the
+invariant names — or it takes a **row**, and each row is a fact about one of four kinds:
+the document, a callee's argument list, the scan's traversal, or the counted segment of a
+route the walk's own blocks compose.  This is the ledger, one entry per row, with the
+statement's state and memory, the theorem that produces it, the proof that consumes it
+and the assumption that remains.  A row is *not* a bundle: no entry below carries an arm,
+and no entry carries the execution segment its own producer builds.
+
+| # | Row: statement | Producer | Consumer | Remaining assumption |
+|---|---|---|---|---|
+| c1 | `.ws` (bytes `126`/`127`, `C.k + 1 < G.nep`): the head state's memory carries the next entry's lane word, the byte before the entry's end with its no-run class, the whitespace stop `k` with its per-index `∀`, the landing's byte and its three reads | `hcontFacts_of_staging` (`JsonStage2WalkHcontFactsOfStaging`) | `HcontArm.ws` → `HcontArm.dispatch` | the seam's three call rows (`HcontSeamCalls` at `ContTailStartC`/`contWsTailStart`) and the traversal's `hround`/`hguard`/`hbyte` |
+| c2 | `.cleanup` (bytes `126`/`127`, entry left): the head state's memory carries the next entry's lane word and read, the bound's compare, the byte before the entry's end with its three scan-free bits | `hcontCleanupDoc_of_lane` (`JsonStage2WalkDispatchClassRows`) from the lane's `defaultLane` | `hcontSpan17_of_doc` → `contTailStartInv_of_doc` → `hcontArm_cleanup_of_rows` | **none** on top of the lane row, the head invariant and the seam's three call rows: the seventeen links, the seam's cells and the root slot's word are produced (`JsonStage2WalkDispatchSeamRows`) |
+| c3 | `.twoEntry` (byte `34`, `C.sp = 0`): the standalone string's lane — the next entry's word, the root slot's word, the log's two words, the decoded length — and the body's two call rows | `HcontLane.string`, `HcontAbi.string` (`JsonStage2WalkDispatchSupply`) | `hcontArm_twoEntry_of_staging` → `HcontArm.dispatch` | the lane's words and the two call rows; `C.sp = 0` is the class's own split |
+| c4 | `.stringOpenAboveZeroMerge` (byte `34`, `C.sp ≠ 0`): the class's byte, depth and two stack bytes at `C.sp - 1`, and the value-position staging | `stringOpenAboveZero_pre_of_inv` + `WalkInv.tyBytes`/`stBytes` | `hcontArm_stringOpenAboveZeroMerge_of_staging` (`JsonStage2WalkDispatchHcontStringDeep`) | **the route's counted segment** to `cleanup478.i` (`stringDeepMerge_tail`), whose one supplied link is the body call's row |
+| c5 | `.stringOpenAboveZeroRefuse` (same class): the nest's own test clear, the offset store and the copy | `stringDeepRefuse_at` (two links from `if.end245.i`'s state) | `hcontArm_stringOpenAboveZeroRefuse_of_staging` | **none**: the refusal is composed |
+| c6 | `.scalar` (the tag test's true arm): the numeral's document cells and the three calls at `scSeamS` | `hcontScalarFacts_of_staging`, `scSeamInv_of_scalar`, `scContTail_of_calls` | `HcontArm.scalar` → `dispatch` | the document's cells and the three call rows at `scSeamS`; the seam invariant is produced |
+| c7 | `.letters`/`.fLetter` (`0 … 109`, `128 … 255`, the tag test clear): the head chain to `if.else387.i` | `lowHeadChain_of_lane` … (`JsonStage2WalkDispatchDefaultLane`) from `HcontLane.defaultLane` | `hcontArm_letters_of_lane`/`_fLetter_of_lane` | the tail's three calls at `LetS413`/`HeadC₄₁₃ (LetC₄₀₅ Cm)` and that seam's three cells (`%ee.1.i`, `%cond350.i`, the root word) — the head is produced, the tail is not |
+| c8 | `.classC` (`110 … 125`): the same head chain plus the byte's own span | `classCSpan_at` from the class's `slt %8 110` bit | `hcontArm_classC_of_lane` | the span's leaf endpoint's tail rows, as c7 |
+| c9 | `.run` (the same six default classes on the run continuation): the check state's cells, the whitespace stop, the landing and the scan's traversal | `hcontRunFacts_of_rows` → `runFacts_of_runBundle` (`JsonStage2WalkDispatchRunHead`) | `HcontArm.run` → `dispatch` | the run's document rows and its traversal `∀`s; its tail is `hcontScanTail_at`, not a row |
+| c10 | the four delimiter refusals and the two above-zero delimiter pairs | `bracketRefuse_at`, `commaRefuse_at`, `colonRefuse_at`, `closeBraceZero_at`, `commaBraceMerge_at` … | `hcontArm_of_derivedClass` (`JsonStage2WalkDispatchResidual`) | **none**: the class bits and `WalkInv`'s own cells |
+| c11 | `.containerOpen`/`.openAtCap` (bytes `91`/`123`): the root slot's zero word and the value-position call's row | `HcontLane.root`, `HcontAbi.openCall` | `walkDispatch_at_open91_of_payload` … | the lane's root word and the call row; the depth `520` is the invariant's own cap |
+| c12 | `.closeWithOpen` (`93`/`125` at `C.sp ≠ 0`): the two stack bytes and the callee's precondition at `%ctype.i + (%sp - 1) - 1` | `s2AfterValuePre_of_inv` (`JsonStage2WalkDispatchResidual`) | `hcontArm_of_derivedClass` | **none** |
+| l1 | last entry `.highByte` (`126`/`127`, no entry left): the last byte's class, the byte before the token's end, the three calls, the root-done word | `HlastResidue`'s rows; `hlastFacts_of_staging` (`JsonStage2WalkDispatchWitnessHlast`) composes `hlastTailSeg` and `hlastTail_of_calls` | `LastEntryArm.highByte` → `dispatch` | the root-done slot's word `rdv` and its read at the seam: the last entry has no next entry, so the lane's zero does not apply |
+| l2 | last entry `.scalar`: the three call rows at `TailStartC`/`hlastTail` | `scalarTail_of_calls` (`JsonStage2WalkDispatchScalar`) | `LastEntryArm.scalar` | the document's cells and the three call rows |
+| l3 | last entry `.letters`/`.fLetter`/`.classC`: the seven-link suffix and the class's four-pivot prefix | `contDefLastSeg`, `contLastLowHeadSeg` … (`JsonStage2WalkDispatchLettersHead`) | `LastEntryArm.letters` … | the tail's three call rows at the last entry's seam |
+| l4 | last entry `.run`: the terminal run's document bounds and the credit its index consumed | `RunLastFacts` + `runLastMerge_at`, `runLast_price_with_credit` | `LastEntryArm.run` | the document's bounds `hNdoc`/`hstart`/`hspanDoc`; the price is derived from them |
+| l5 | last entry refusals, `.stringOpener`, `.openAtCap` | `quoteRefuse_at`, `bracketRefuse_at`, `closeBraceZero_at`, `containerOpenCap_at` | `LastEntryArm.dispatch` | **none** |
+
+**What c2 establishes, and why it is the shape the others take.**  `JsonStage2WalkDispatchSeamRows`
+produces, from the class's document row alone: the seventeen-link chain
+(`hcontSpan17_of_doc`), the seam's invariant (`contTailStartInv_of_doc`), the seam's five
+environment cells from that invariant's `regs`, the predecessor and its `phi` with the kind
+literal `0` it selects (`contTailStart_pre`, `contTailStart_phi`, `contTailStart_op`), and
+the root slot's word transported across the seam's three token-record stores
+(`contTailStart_mem`, `contTailStart_rootRead` with `walkReadBytes_rootSlot_of_tokStore`).
+The arm is then `hcontArm_cleanup_of_rows`, and it takes no segment, no bundle and no
+assumption about the chain it establishes.  The two word equalities it requires (`cA = 0`,
+`rdv = 0`) are the callee group's agreement with those cells, not a second reading of the
+state.
+
+**What this ledger says about closure.**  Three rows are produced end-to-end (c2, c10, c12)
+and one more is produced up to a single word (l1's `rdv`); the rest are named rows of the
+kinds §5 of the closure review separates.  No entry above is an arm, a bundle, or the
+segment its own producer composes, and the quantifiers are the class's and the state's: a
+row is stated at the continued head it belongs to (`C.k + 1 < G.nep` for c1–c12) or at the
+exhausted count (`¬ (C.k + 1 < G.nep)` for l1–l5), never at every head.
+
 ## 8. Out of scope for the first contract
 
 `NaN`/`Infinity` as inputs the first contract's route reasons about, the
