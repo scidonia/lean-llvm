@@ -46,8 +46,13 @@ traversal rather than part of the prefix.  The visits are composed at
 at the target (`%q.0.i246 = c - 1`), and the exit test reads the bound (`%cond350.i = c`)
 as well, so the traversal's own aggregation cannot reach the exit.  `contScanRounds` is
 that aggregation with both registers kept; its measure, its price and its induction are
-`walkScanRounds457`'s, and it consumes the same three hypotheses (`hround`, `hguard`,
-`hbyte`), unweakened.
+`walkScanRounds457`'s.  Its induction consumes one row, the visited byte's class at the
+indices the scan walks (`hbyte`); the round is a theorem of the visit's own premises
+(`scanRoundField`, `JsonStage2WalkRevolutionScanRound`) and no guard hypothesis enters.
+`ScanGuard`'s `∀` quantifies over every natural pair carrying the two register words, and
+above the word's width the subtraction saturates, so the statement is false at any state
+whose registers hold words: it was never a fact about the walk, and the round's proof
+never read it.
 
 ## The price
 
@@ -140,18 +145,14 @@ Three groups are premises because the model's own layer does not produce them:
   before the entry's end (`b35`) and its three class bits, the seam's byte and its two
   literal tests, and the second byte's class.  Which byte the document holds is not the
   walk's: `WalkGeom` fixes the addresses and the extents, not the values;
-* the scan's traversal hypotheses (`hround`, `hguard`, `hbyte`) — `walkScanRounds457`'s
-  own, unweakened: the round at a byte, the latch's guard, and the input's totality at
-  every index the scan visits (the model branches on a byte it does not store);
-* **the token record's register at the scan's exit** (`htok`).  `if.end473.i`'s lifetime
-  marker reads `%t352.i` and no block on the scan's path rebinds it, but
-  `walkScanRounds457` returns its final state *existentially*, so no named term is
-  available to state the cell at, and the layer has no lemma that the extra-token scan
-  preserves a register.  It is stated over the states the traversal's counters pin, which
-  is the closest a length-position predicate can come to the cell.  **The lemma that would
-  close it is *the extra-token scan preserves a register it does not bind***; that
-  statement needs the visit's target state, which the traversal's conclusion does not
-  expose — the same shape as `happ₂`'s supplied record, one level out.
+* the visited byte's class (`hbyte`'s two bits at `wsByte G (p + 1)`): the input's
+  totality at every index the scan visits, which the model branches on and does not store.
+  The row's *read* is not supplied: `scanByteField` produces the address (`%3 = G.b`),
+  the document read (`walkDoc_byte`), the loaded register (`landRhs457OutAt`'s `%47` cell)
+  and the three local facts, leaving only the class of `G.bs.getD (p + 1) 0`.  The round
+  (`scanRoundField`) and the token's register (`scanTokField`) are derived in the same
+  module, the latter from `WalkInv.regs`; no guard hypothesis is carried, because
+  `ScanGuard` is false at every state whose registers hold words (see above).
 
 Everything else is derived: the `phi`'s selection at `cond.end349.i` is a closed
 computation (`contPhi6`), so no witness for it is carried; `%cond350.i`'s value at the
@@ -241,6 +242,7 @@ merge's supply became a clause, and which half remains the wall.
 import LeanLLVM.Refinement.JsonStage2WalkDispatchWitnessHlast
 import LeanLLVM.Refinement.JsonStage2WalkInduce
 import LeanLLVM.Refinement.JsonStage2WalkRevolutionPrefix
+import LeanLLVM.Refinement.JsonStage2WalkRevolutionScanRound
 
 set_option autoImplicit false
 
@@ -323,13 +325,6 @@ theorem contWsSeamS_nep {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (sl : Sta
   exact h.regs ("%nep", .int 64 (BitVec.ofNat 64 G.nep)) (by simp [walkStaticRegs])
 
 /-! ### The skip's byte, and the states its visits leave -/
-
-/-- The document's byte at `p`: the byte every visit of the whitespace skip loads. -/
-def wsByte {m0 : Mem} (G : WalkGeom m0) (p : Nat) : UInt8 := G.bs.getD p 0
-
-/-- The byte's register value, as `land.rhs.i` binds `%36`. -/
-def wsX {m0 : Mem} (G : WalkGeom m0) (p : Nat) : BitVec 8 :=
-  BitVec.ofNat 8 (wsByte G p).toNat
 
 /-- **The byte `scanB` reads is `wsByte`**, at an index the sign-extension leaves alone. -/
 theorem scanB_ofNat {m0 : Mem} (G : WalkGeom m0) {p : Nat} (hp : p < 2 ^ 63) :
@@ -2358,8 +2353,9 @@ structure HcontFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) 
   the visits and the run no more than the span, and the price's byte term. -/
   hspan : v.toNat ≤ entryPos G (C.k + 1)
   hstart : entryPos G C.k ≤ k
-  /-- **The traversal's round**: `walkScanRounds457`'s `hround`, unweakened — a visit at
-  the byte the landing loads, at the counter's own index and the lane's bound. -/
+  /-- **The traversal's round**, produced: `scanRoundField` at the lane's bound, so no
+  premise supplies it.  A visit at the byte the landing loads, at the counter's own index
+  and the lane's bound. -/
   hround : ∀ (C' : WalkCarry G) (s' : State) (p a : Nat) (bs : List UInt8) (q : Nat)
     (x : BitVec 8), WalkInv G C' s' → C'.block = "while.body462.i" →
     lookupName s'.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 p)) →
@@ -2386,11 +2382,6 @@ structure HcontFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) 
       WalkInv G C'' s'' ∧ C''.block = "while.body462.i" ∧ j ≤ stage2ByteAllowance ∧
       lookupName s''.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 (p + 1))) ∧
       lookupName s''.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 v.toNat))
-  /-- **The latch's guard**: `walkScanRounds457`'s `hguard`, unweakened. -/
-  hguard : ∀ (C' : WalkCarry G) (s' : State), WalkInv G C' s' →
-    C'.block = "while.body462.i" → ScanGuard s' "%q.0.i246" "%cond350.i" C'.inner
-  /-- **The input's totality at every index the scan visits**: `walkScanRounds457`'s
-  `hbyte`, unweakened — the model branches on a byte it does not store. -/
   hbyte : ∀ (C' : WalkCarry G) (s' : State) (p : Nat), WalkInv G C' s' →
     C'.block = "while.body462.i" → p + 1 < v.toNat →
     lookupName s'.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 p)) →
@@ -2417,14 +2408,11 @@ structure HcontFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) 
   existentially; every block on the path binds its own cells and none rebinds `%t352.i`,
   so the fact is true of the model and the shape is the traversal's.
 
-  **Supplied, not derived, and the reason is structural:** a traversal whose final state is
-  existential has no named term to state a register at, and the layer has no preservation
-  lemma for registers — the same shape as `happ₂` in `HlastFacts`, one level out.  The lemma
-  that would close it is *the extra-token scan preserves a register it does not bind*: a
-  `∀` over the scan's carries and states that a name outside the latch's and the landing's
-  cell lists keeps its cell across a visit.  That statement needs the visit's target state,
-  which `walkScanRounds457`'s conclusion does not expose, which is why the register enters
-  here as the bundle's premise rather than as a theorem beside `scanExit_tok`. -/
+  **Derived, not supplied.**  The register is one of `walkStaticRegs`, so `WalkInv.regs`
+  carries it at every state the field quantifies over — the field's `∀` is over the
+  invariant's states, not over the traversal's existential endpoint — and the producer
+  fills it with a term, not with an argument: `scanTokField` (a `∀` in one line) or its
+  twin `cont_static_tok`. -/
   htok : ∀ (C' : WalkCarry G) (s' : State), WalkInv G C' s' →
     C'.block = "while.body462.i" → ∃ tok : Nat, lookupName s'.env "%t352.i" = some (.ptr tok)
 
@@ -2701,7 +2689,6 @@ theorem contScanRounds {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
       n ≤ stage2ByteAllowance * (f.v.toNat - 1 - i) := by
   have go : ∀ r, ∀ (i : Nat) (K : WalkCarry G) (t : State), f.v.toNat - 1 - i = r →
       WalkInv G K t → K.block = "while.body462.i" →
-      ScanGuard t "%q.0.i246" "%cond350.i" K.inner →
       lookupName t.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 i)) →
       lookupName t.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 f.v.toNat)) →
       i < f.v.toNat →
@@ -2714,12 +2701,12 @@ theorem contScanRounds {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
     intro r
     induction r with
     | zero =>
-        intro i K t _ hInv hblock _ hi hb hic
+        intro i K t _ hInv hblock hi hb hic
         have hie : i = f.v.toNat - 1 := by omega
         exact ⟨K, t, 0, Seg.measure (Seg.nil hInv), hInv, hblock,
           by rw [← hie]; exact hi, hb, by simp⟩
     | succ r ih =>
-        intro i K t hr hInv hblock hg hi hb hic
+        intro i K t hr hInv hblock hi hb hic
         have hlt : i + 1 < f.v.toNat := by omega
         have hpos : i + 1 < 2 ^ 63 := by omega
         obtain ⟨a, bs, q, x, h3, hread, hbs, h47, hbit, hws, hl105, hl96, hll⟩ :=
@@ -2728,12 +2715,12 @@ theorem contScanRounds {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
           f.hround K t i a bs q x hInv hblock hi hb hlt hpos h3 hread hbs h47 hbit hws
             hl105 hl96 hll
         obtain ⟨K₂, t₂, m, hseg₂, hInv₂, hb₂, hi₂, hc₂, hm⟩ :=
-          ih (i + 1) K₁ t₁ (by omega) hInv₁ hb₁ (f.hguard K₁ t₁ hInv₁ hb₁) hi₁ hc₁
+          ih (i + 1) K₁ t₁ (by omega) hInv₁ hb₁ hi₁ hc₁
             (by omega)
         refine ⟨K₂, t₂, j + m, hseg.trans hseg₂, hInv₂, hb₂, hi₂, hc₂, ?_⟩
         rw [Nat.mul_succ]
         omega
-  exact go (f.v.toNat - 1 - i) i C' s' rfl hInv hblock (f.hguard C' s' hInv hblock) hi hb hic
+  exact go (f.v.toNat - 1 - i) i C' s' rfl hInv hblock hi hb hic
 
 /-! ### The two arms' compositions, and where they are
 
@@ -3607,9 +3594,6 @@ structure HcontRunFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (sl : Sta
       WalkInv G C'' s'' ∧ C''.block = "while.body462.i" ∧ j ≤ stage2ByteAllowance ∧
       lookupName s''.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 (p + 1))) ∧
       lookupName s''.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 v.toNat))
-  /-- **The latch's guard**: `walkScanRounds457`'s `hguard`, unweakened. -/
-  hguard : ∀ (C' : WalkCarry G) (s' : State), WalkInv G C' s' →
-    C'.block = "while.body462.i" → ScanGuard s' "%q.0.i246" "%cond350.i" C'.inner
   /-- **The input's totality at every index the scan visits**: `walkScanRounds457`'s
   `hbyte`, unweakened. -/
   hbyte : ∀ (C' : WalkCarry G) (s' : State) (p : Nat), WalkInv G C' s' →
@@ -3838,7 +3822,6 @@ noncomputable def hcontRunFacts_of_contFacts {m0 : Mem} (G : WalkGeom m0) (C : W
   hspan := f.hspan
   hstart := f.hstart
   hround := f.hround
-  hguard := f.hguard
   hbyte := f.hbyte
   htok := f.htok
 

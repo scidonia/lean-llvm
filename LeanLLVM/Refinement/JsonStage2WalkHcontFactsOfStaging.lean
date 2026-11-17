@@ -83,7 +83,7 @@ supplied as a named premise.
 | the run endpoint's two registers (`hinc_sl`, `hnep_sl`) | **retired: proved, not supplied.**  `%inc.i` is `WalkInv.inc_reg` and `%nep` is one of `walkStaticRegs`' pairs, and the seam binds neither (`seamS_env_inc`, `seamS_env_nep`), so the segment's target invariant reads both at the endpoint (`contWsSeamS_inc`, `contWsSeamS_nep`).  A `WalkSegment` carries the invariant at its target, and the run's target is the seam's source |
 | the run endpoint's bound (`hcond_sl`) | **retired: derived, not supplied.**  No `WalkInv` clause names `%cond350.i` at an arbitrary state, and a `WalkSegment` records a run and its target's invariant, not the blocks the run passed — so `contWsRunF` returns the cell as its third conjunct, carried through the arms' latch induction, and the bundle names it no longer.  The seam's `%end.i` cell is derived the same way: `wsSlS_envEnd` transports it from the head state's `WalkInv.regs` |
 | the span's two numbers and the run's stop (`hspan`, `hstart`, `heicd`) | **`hspan` is the document's; `hstart` and `heicd` are derived.**  `v.toNat ≤ entryPos G (C.k + 1)` is the entry stream's number, which the staging does not fix.  `hstart` is `entryPos C.k ≤ k`, i.e. the run's own `ix < k` at the pinned index; `heicd` is `k < v.toNat`, and it is the field that decides the bundle's inhabitation: the class disjunct is `wsStop G (v - 1)`, the per-index conjunct makes every index in `[ix, k)` a continuing byte, and `hugt` puts `v - 1` above `ix` — so `v - 1` below `k` would be both (`cont_heicd`, `wsCont_not_wsStop`) |
-| the traversal's three hypotheses (`hround`, `hguard`, `hbyte`) | **supplied: a named premise each, with its source named.**  `hround` is the visit's own step — the latch at `while.body462.i` and its three leaves — so the **staging's** (the pinned body's `step`); it is the `∀`-form of a `WalkLink`, which a `WalkSegment` cannot substitute because a segment records a run and an invariant, not a per-visit obligation.  `hguard` is `ScanGuard` at the latch, the **staging's measure**: the invariant's local clause there is `ScanCount` (`∃ i c, c - i ≤ inner ∧ i < c ∧ …`), and the `∀` form quantifies over representations (`ofNat 64 i`), which the clause does not bound in width.  `hbyte` is **both**: its read is the **document's** — `walkDoc_byte` yields the byte at `G.b + p` at any invariant state, so no frame premise is needed — while its two class bits (`slt 13 = 1`, `ule … = 1`) are the visited byte's **content**, the input's, and its two locals and `%47` binding are `decide`-able.  So of the three, only the document half of `hbyte` is derivable from this layer's evidence; the rest is the pinned body's and the input's |
+| the traversal's rows (`hround`, `hbyte`, `htok`) | **the round, the read and the register are derived; only the visited byte's class is the document's.**  `hround` is `scanRoundField` (`JsonStage2WalkRevolutionScanRound`): the visit's own segment from the state's two cells, the byte facts and the three local facts, with no guard hypothesis — `walkScanRound457`'s proof never read the guard it accepted, and `ScanGuard`'s `∀` is false at any state whose registers hold words, so the old `hguard` row is gone rather than supplied.  `hbyte` is `scanByteField`: `%3 = G.b` (`WalkInv.ptrs`), the read (`walkDoc_byte`, the document lying outside the run's frame at every carry), the `%47` cell (`landRhs457OutAt`'s own) and the three locals (two blocks with no local fact, and the latch's `ScanCount` at the next counter).  What enters is `hbyteClass` — the visited byte's two class bits at `wsByte G (p + 1)` — which is the input's content and which no invariant clause or callee contract fixes.  `htok` is `scanTokField` from `WalkInv.regs` |
 | the token's register at the scan's exit (`htok`) | **derived.**  `%t352.i` is one of `walkStaticRegs`'s thirty-two, and `WalkInv.regs` carries them at every state, so `cont_static_tok` proves the field's `∀` outright — no preservation lemma is needed, and the earlier reading (that a traversal's existential endpoint leaves no term to state a register at) applied to the *scan's own* endpoint, not to the invariant-carrying states the field quantifies over |
 
 **The map's shape.**  *Produced* from the invariant and the staging: the head's byte
@@ -562,7 +562,9 @@ byte is `hlastByte G C`, the counts are `hlastIncV C`/`hlastNepV G`, the positio
 `G.ep`, and the classes are read on `hlastByte G C`.  `hnext` is derived from `hk`
 (`cont_ult_one`), `hi63` from `hk` and the stream's size (`cont_hi63`), and the default
 arm's four cells are the invariant's peels at `contAS₅` — so only the class, the document's
-facts, the tail and the traversal enter as premises.  The class is `hClass`, and it is what
+facts, the tail and the visited byte's class enter as premises — the traversal's round,
+byte read and token register are produced (`JsonStage2WalkRevolutionScanRound`).  The
+class is `hClass`, and it is what
 makes the run derivable: the segment, its count and its price come from `contWsRunF` and
 `contWsPriceAt`, and the seam's `%end.i` from `wsSlS_envEnd`.
 
@@ -609,59 +611,17 @@ def hcontFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
       (contWsLatch C (contWsSlStaging G C s v (contIx G C) (contB35 G v) k) k (hlastByte G C) (hlastByte G C)
         r₁ r₂ r₃ k v cA rdv xA (BitVec.ofNat 64 k) G.b q x47))
     (hspan : v.toNat ≤ entryPos G (C.k + 1))
-    (hround : ∀ (C' : WalkCarry G) (s' : State) (p a : Nat) (bs : List UInt8) (q : Nat)
-      (x : BitVec 8), WalkInv G C' s' → C'.block = "while.body462.i" →
-      lookupName s'.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 p)) →
-      lookupName s'.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 v.toNat)) →
-      p + 1 < v.toNat → p + 1 < 2 ^ 63 →
-      lookupName (scanLatchOut s' "%inc463.i" "%exitcond298.not" p v.toNat
-        "land.rhs457.i").env "%3" = some (.ptr a) →
-      readBytes s'.mem (a + (p + 1)) 1 = some bs → bytesToNat bs = q →
-      evalOperand (landRhs457OutAt (scanLatchOut s' "%inc463.i" "%exitcond298.not" p v.toNat
-        "land.rhs457.i") (BitVec.ofNat 64 (p + 1)) a q) (.reg "%47") = some (.int 8 x) →
-      evalICmp .slt x (BitVec.ofNat 8 13) = 1 →
-      evalICmp .ule (x + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 1 →
-      WalkLocal (ScanC₁₀₅ (ScanCLand C'))
-        (landRhs457OutAt (scanLatchOut s' "%inc463.i" "%exitcond298.not" p v.toNat
-          "land.rhs457.i") (BitVec.ofNat 64 (p + 1)) a q) →
-      WalkLocal (ScanC₉₆ (ScanCLand C'))
-        (ScanS₉₆ (scanLatchOut s' "%inc463.i" "%exitcond298.not" p v.toNat "land.rhs457.i")
-          (BitVec.ofNat 64 (p + 1)) a q x) →
-      WalkLocal { ScanCLand C' with block := "while.body462.i" }
-        (Latch462S (scanLatchOut s' "%inc463.i" "%exitcond298.not" p v.toNat "land.rhs457.i")
-          (BitVec.ofNat 64 (p + 1)) a q x) →
-      ∃ (C'' : WalkCarry G) (s'' : State) (j : Nat),
-        WalkSegment (stage2Calls stage2SubCalls) G C' s' C'' s'' j ∧
-        WalkInv G C'' s'' ∧ C''.block = "while.body462.i" ∧ j ≤ stage2ByteAllowance ∧
-        lookupName s''.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 (p + 1))) ∧
-        lookupName s''.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 v.toNat)))
-    (hguard : ∀ (C' : WalkCarry G) (s' : State), WalkInv G C' s' →
-      C'.block = "while.body462.i" → ScanGuard s' "%q.0.i246" "%cond350.i" C'.inner)
-    (hbyte : ∀ (C' : WalkCarry G) (s' : State) (p : Nat), WalkInv G C' s' →
-      C'.block = "while.body462.i" → p + 1 < v.toNat →
-      lookupName s'.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 p)) →
-      lookupName s'.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 v.toNat)) →
-      ∃ (a : Nat) (bs : List UInt8) (q : Nat) (x : BitVec 8),
-        lookupName (scanLatchOut s' "%inc463.i" "%exitcond298.not" p v.toNat
-          "land.rhs457.i").env "%3" = some (.ptr a) ∧
-        readBytes s'.mem (a + (p + 1)) 1 = some bs ∧ bytesToNat bs = q ∧
-        evalOperand (landRhs457OutAt (scanLatchOut s' "%inc463.i" "%exitcond298.not" p v.toNat
-          "land.rhs457.i") (BitVec.ofNat 64 (p + 1)) a q) (.reg "%47") = some (.int 8 x) ∧
-        evalICmp .slt x (BitVec.ofNat 8 13) = 1 ∧
-        evalICmp .ule (x + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 1 ∧
-        WalkLocal (ScanC₁₀₅ (ScanCLand C'))
-          (landRhs457OutAt (scanLatchOut s' "%inc463.i" "%exitcond298.not" p v.toNat
-            "land.rhs457.i") (BitVec.ofNat 64 (p + 1)) a q) ∧
-        WalkLocal (ScanC₉₆ (ScanCLand C'))
-          (ScanS₉₆ (scanLatchOut s' "%inc463.i" "%exitcond298.not" p v.toNat "land.rhs457.i")
-            (BitVec.ofNat 64 (p + 1)) a q x) ∧
-        WalkLocal { ScanCLand C' with block := "while.body462.i" }
-          (Latch462S (scanLatchOut s' "%inc463.i" "%exitcond298.not" p v.toNat
-            "land.rhs457.i") (BitVec.ofNat 64 (p + 1)) a q x))
+    (hbyteClass : ∀ p, p + 1 < v.toNat →
+      evalICmp .slt (wsX G (p + 1)) (BitVec.ofNat 8 13) = 1 ∧
+        evalICmp .ule (wsX G (p + 1) + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 1)
     :
     HcontFacts G C s :=
   let hkv : k < v.toNat :=
     cont_heicd_of G C hk hClass'.1 hClass'.2.1 hClass'.2.2.2.1 hugt
+  let hn : v.toNat ≤ G.n := by
+    have h1 := hspan
+    have h2 := entryPos_lt G hk
+    omega
   { x := hlastByte G C
     h8 := by
       show evalOperand s (.reg "%8") = some (.int 8 (hlastByte G C))
@@ -747,9 +707,8 @@ def hcontFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
     hlatch := hlatch
     hspan := hspan
     hstart := le_of_lt hClass'.2.2.2.1
-    hround := hround
-    hguard := hguard
-    hbyte := hbyte
+    hround := scanRoundField G v.toNat (by have := v.isLt; omega)
+    hbyte := scanByteField G v.toNat (by have := v.isLt; omega) hn hbyteClass
     htok := fun C' s' hInv' _ => ⟨C'.stage.tok, cont_static_tok hInv'⟩ }
 
 /-! ### The instrument -/

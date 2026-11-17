@@ -325,8 +325,8 @@ state, and one of its fields is the tail's counted segment.  The group below is 
 bundle **without that field**: the document's stop, the landing's byte and the scan's
 traversal, stated at the check state and at the seam's three answers.  Nothing in it is a
 segment and nothing is a bundle: the check state's cells are facts, the landing's reads are
-facts and the traversal's three `∀`-forms are the round, the guard and the byte totality
-that `walkScanRounds457` consumes.
+facts and the traversal's rows are the round, the byte read and the byte's class, which
+`walkScanRounds457` consumes.
 
 The answers are parameters rather than fields because the landing's rows are *about* them —
 `contWsEntry` takes the three outcomes and the copy's words — so a structure that carried
@@ -400,8 +400,9 @@ structure HcontRunRows {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (sl : Stat
   /-- The scan runs inside the entry's span. -/
   hspan : v.toNat ≤ entryPos G (C.k + 1)
   hstart : entryPos G C.k ≤ k
-  /-- The traversal's round, its guard and the input's totality: `walkScanRounds457`'s
-  `hround`, `hguard` and `hbyte`, unweakened. -/
+  /-- The traversal's round and the input's totality: `walkScanRounds457`'s `hround` and
+  `hbyte`.  The round is `scanRoundField`'s (`JsonStage2WalkRevolutionScanRound`); the
+  totality's read half is `scanByteField`'s and its class half is the document's. -/
   hround : ∀ (C' : WalkCarry G) (s' : State) (p a : Nat) (bs : List UInt8) (q : Nat)
     (x : BitVec 8), WalkInv G C' s' → C'.block = "while.body462.i" →
     lookupName s'.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 p)) →
@@ -428,8 +429,6 @@ structure HcontRunRows {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (sl : Stat
       WalkInv G C'' s'' ∧ C''.block = "while.body462.i" ∧ j ≤ stage2ByteAllowance ∧
       lookupName s''.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 (p + 1))) ∧
       lookupName s''.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 v.toNat))
-  hguard : ∀ (C' : WalkCarry G) (s' : State), WalkInv G C' s' →
-    C'.block = "while.body462.i" → ScanGuard s' "%q.0.i246" "%cond350.i" C'.inner
   hbyte : ∀ (C' : WalkCarry G) (s' : State) (p : Nat), WalkInv G C' s' →
     C'.block = "while.body462.i" → p + 1 < v.toNat →
     lookupName s'.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 p)) →
@@ -597,7 +596,6 @@ noncomputable def hcontRunFacts_of_rows {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
     hspan := rows.hspan
     hstart := rows.hstart
     hround := rows.hround
-    hguard := rows.hguard
     hbyte := rows.hbyte
     htok := rows.htok }
 
