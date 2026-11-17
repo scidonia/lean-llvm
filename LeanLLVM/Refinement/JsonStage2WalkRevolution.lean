@@ -178,7 +178,9 @@ continuations** of a continuing entry, and the plan is two structures with a `Su
   (`JsonStage2WalkDispatchHcontArms`), one constructor per class of the emitted head
   switch — the plain-value numeral route (`HcontScalarFacts`), the high-byte route's
   `ws` (`HcontFacts`) and `cleanup` (`HcontCleanupFacts`), the standalone string
-  (`HstringFacts`, whose merge index is `C.k + 2`) beside its residue, and the arms for
+  (`HstringFacts`, whose merge index is `C.k + 2`, **at `C.sp = 0` only** — the
+  positive-depth opener's `land.lhs.true.i` route has no constructor) beside its
+  residue, and the arms for
   the delimiter and token classes (comma, colon, container opener, closer, letters,
   class C, `f` and the run) — and the consumer splits once.  An inductive rather than a
   nested `Sum` because a `Sum` of the arms would re-shape every consumer twice, and the

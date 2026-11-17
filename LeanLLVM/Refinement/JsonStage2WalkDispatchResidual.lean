@@ -69,11 +69,19 @@ Both states are one byte or one nesting away from an ordinary document, so neith
 excluded by the input domain: `"}"` and 520 nested `[` are admitted, malformed and
 deeply-nested inputs.  That is why the arms were owed rather than the domain narrowed.
 
-With them the *census* is total: every state the invariant admits is in some constructor's
-class at its level — the class is the byte, the depth's zero/positive split, and the
-token-end class, and `.closeBraceZero` and `.openAtCap` fill the two depth cases the split
-had no arm for.  What remains supplied per class is the arm's *payload*, the table below's
-rows, not a state left outside the enum.
+With them the census is total over those bytes and depths, **but not over the states**:
+the class the byte census names and no constructor's premises admit is the string opener
+at positive depth.  `HcontClass.stringOpener` is the byte `34`; the continuing arm for it
+is `HcontArm.twoEntry`, whose `HstringFacts` carries `hsp0 : C.sp = 0`, and at `C.sp ≠ 0`
+the head leaves `if.then219.i` for `land.lhs.true.i`, where `%ctype.i`'s and `%cst.i`'s
+bytes at `%sp - 1` select the merge at `if.end245.i` (the key record, kind `5`) or the
+refusal at `if.then249.i`.  The invariant admits the state — `depth_cap` bounds the depth
+above only — and so does the document (`{"a":1}`'s second entry, `["a"]`), so no arm is
+refuted there and no arm describes it either: the class is a hole, not a supplied row.
+`JsonStage2WalkDispatchClassRows`'s report names the two links the arm would need, and
+the seam states the tail producers read are produced in
+`JsonStage2WalkHcontSeamInv` (the head chains' own invariants), not supplied.  What
+remains supplied per class is the arm's *payload*, the table below's rows.
 
 ## The rows the remaining classes take, and from which producer
 
@@ -85,7 +93,7 @@ as a value; **traversal** is the scan's round, guard and byte facts.
 |---|---|---|---|---|
 | both | `.ws` (`126`/`127`, entry left) | `hcontFacts_of_staging` | `hlt125`/`hne125`; the stop's budget conjunct; `hTail`'s three calls | document, ABI |
 | both | `.cleanup` (`126`/`127`, last entry) | `hcontCleanupFacts_of_staging` | the class's bits and `hb13`/`hb32`/`hbne13` from the last byte; `hTail` | document, ABI |
-| both | `.twoEntry` (`"`, entry left) | `hstringFacts_of_staging` | `s2_string_body`'s staging: the allocator cursor's placement, the log's arena word, the byte spacing, the escape count's sign bound; the next lane | ABI, document |
+| both | `.twoEntry` (`"`, entry left, **`C.sp = 0`**) | `hstringFacts_of_staging` | `s2_string_body`'s staging: the allocator cursor's placement, the log's arena word, the byte spacing, the escape count's sign bound; the next lane.  The row is produced at depth zero only — the bundle's `hsp0` — so the class the byte names at positive depth has no arm at all (above) | ABI, document |
 | both | `.scalar` | `hcontScalarFacts_of_staging`, `lastEntryArm_scalar_of_staging` | the root word's zero; the last byte's class; the three calls — their preconditions and answers at the returned memories | document, ABI |
 | last | `.highByte` (`126`/`127`) | `hlastFacts_of_staging` | `HlastResidue`: the head bits, the last byte's class, the root word, the three calls | document, ABI |
 | both | `.containerOpen` (`[`, `{`) | `containerOpenMerge_at` | the `519` boundary (above); the root word's zero; `s2_value_pos`'s outcome and the `1` its contract gives | document, ABI |
@@ -98,6 +106,15 @@ The head chains and the spans are **derived in principle** — the segment lemma
 the class's bits and the endpoint cells — but no lemma exposes one as a segment apart from
 the tail's three calls, so the producers take them beside `hTail`.  Retiring them moves
 work, not closure: `hTail` remains, and it is the row that blocks the spans.
+
+The **seam states' invariants**, which the tail producers take as `hInvT`/`hInvS`, are no
+longer parameters in the same sense: `JsonStage2WalkHcontSeamInv` produces each of the
+three (`ContTailStartC`'s from `hcontSpan17_of_cleanup`'s seventeen links, `scSeamS`'s
+from the scalar route's twelve — the prefix's eight, the byte's three pivots and the
+seam's one — and `TailStartC`'s from `hlastTailSeg`'s sixteen) as the head
+chain's own `inv'`.  So a producer that has the class's head facts can reach the tail's
+three calls without assuming the seam's invariant; what it still takes is `hTail`'s calls
+themselves.
 
 The calls' *preconditions* are a different matter from their answers, and the difference
 is where the remaining work sits.  `s2ValuePosPre` and `s2AfterValuePre` ask for a stack

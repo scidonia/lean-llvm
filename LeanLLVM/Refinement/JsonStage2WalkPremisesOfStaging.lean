@@ -134,7 +134,11 @@ premise of another's:
   `HcontFacts`'s whitespace run and `HcontCleanupFacts`'s no-run continuation, both on the
   bytes 126 and 127;
 * the **standalone string**, `HcontArm.twoEntry`: `HstringFacts` beside its
-  `HstringResidue`, whose merge index is `C.k + 2`;
+  `HstringResidue`, whose merge index is `C.k + 2`.  The bundle's `hsp0 : C.sp = 0` is
+  the depth the arm is stated at, so this bullet covers the opener at depth zero; at
+  positive depth the byte's head takes `land.lhs.true.i` and no constructor describes the
+  merge or the refusal there (the census paragraph in
+  `JsonStage2WalkDispatchHcontArms` names the missing route);
 * the **container openers**, `HcontArm.containerOpen`: `[` and `{` through `if.then.i`,
   nine links to the merge (`containerOpenMerge_at`), priced at `9 + 2`;
 * the **closing delimiter with a container open**, `HcontArm.closeWithOpen`: `]` and `}`
@@ -164,7 +168,10 @@ premise of another's:
   `4·(c - 1 - i)` inside the six links the entry allowance leaves (`RunLastFacts`,
   `runLastMerge_at`), dispatched at `"a "` (`JsonStage2WalkDispatchRunLastDomain`).  Every
   other class at the last entry is proved as well — `.letters`, `.fLetter`, `.classC`, the
-  refusal arms and `.highByte` — so the arm has no `supplied` constructor at either level.
+  refusal arms and `.highByte` — so the last entry's arm has no `supplied` constructor at
+  its level.  The continuing level's one hole is the opener at positive depth: its arm at
+  depth zero is `HcontArm.twoEntry`, and the positive-depth route is not a constructor
+  (`JsonStage2WalkDispatchHcontArms`'s census paragraph).
 
 **The high-byte route is proved, not supplied.**  `126` and `127` are the class
 `HcontArm.ws`/`.cleanup` carry (`HcontFacts`, `HcontCleanupFacts`), with the counted
@@ -377,9 +384,11 @@ head switch: the plain-value numeral route (`scalar`), the high-byte route's whi
 scan-free one-entry classes, the standalone string (`twoEntry`, carrying its own
 `HstringResidue`), the container openers (`containerOpen`), and the default arm's spans on
 the scan-free and run classes (`letters`, `fLetter`, `classC`, `run`) — every one proved,
-with no `supplied` constructor left.
-The class question is answered where the producer knows it — the head's byte and its tag
-test — and `HcontClass.complete` proves the census exhaustive.  So the loop's step takes
+with no `supplied` constructor left.  The one class without an arm at every state is the
+standalone string's above depth zero: `twoEntry`'s bundle pins `C.sp = 0`, and
+`land.lhs.true.i`'s route at positive depth has no constructor.  The class question is
+answered where the producer knows it — the head's byte and its tag test — and
+`HcontClass.complete` proves the *byte* census exhaustive.  So the loop's step takes
 no `WalkStringResidue` beside the continuing premise: the residue is the string arm's
 field, and the branch is a value rather than a re-shaping of every consumer. -/
 theorem walkLoopStep_of_staging {m0 : Mem} {G : WalkGeom m0}
@@ -693,10 +702,14 @@ The two bundles are the premises, one group each: the continuing entry's class
 `WalkInv` clauses, and `mergeHeadCells` reads them at the head state.
 
 **The two bundles are not theorems, and neither is refuted.**  "Neither is false" is a
-claim about the *classes*, not about the bundles' totality: the census now has an arm for
-every state the invariant admits — `.closeBraceZero` and `.openAtCap` are the two depth
-cases it lacked, and `JsonStage2WalkDispatchResidual` records that history — so no admitted
-state is outside the enum and no arm is refuted by its own class.  `WalkContinueFacts` is
+claim about the *classes*, not about the bundles' totality: the census has an arm for
+every state the invariant admits **except one** — `.closeBraceZero` and `.openAtCap` are
+the two depth cases it once lacked, but the string opener at positive depth has no arm at
+all: `HcontClass.stringOpener` is the byte `34`, and its continuing arm
+(`HcontArm.twoEntry`) carries `HstringFacts.hsp0`, so at `C.sp ≠ 0` the class is a hole
+and not a supplied row (`JsonStage2WalkDispatchResidual` and
+`JsonStage2WalkDispatchHcontArms` both record it).  Every arm that exists is unrefuted by
+its own class.  `WalkContinueFacts` is
 class data — the class is the head byte's switch arm, read from the document in `G` and the
 head state's own `%8` — but each arm's evidence carries a tail `WalkSegment` and the scan's
 traversal hypotheses that are supplies at a reachable state, not invariant consequences;

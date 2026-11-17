@@ -114,12 +114,14 @@ turns it into the actual `WalkDispatchResult`:
   is — the run/scan-free split is each class's own tail, not a separate constructor's
   residue.
 
-  The arm is total over the invariant's *states* as well: the split is the byte, the
-  depth's zero/positive pair and the token-end class, and `.closeBraceZero` and
+  The arm is total over the invariant's *states* at this level: the split is the byte,
+  the depth's zero/positive pair and the token-end class, and `.closeBraceZero` and
   `.openAtCap` are the two depth cases it had no arm for — `}` at zero and an opener at
   the stacks' staged extent.  Until they were added those states were in no constructor's
-  class at either level; `JsonStage2WalkDispatchResidual` states what the holes were and
-  what fills them.
+  class at this level; `JsonStage2WalkDispatchResidual` states what the holes were and
+  what fills them.  The continuing level's `"` is not the same case: its bare opener arm
+  is `HcontArm.twoEntry`, which is depth zero's, so the opener at positive depth has no
+  arm there (`JsonStage2WalkDispatchHcontArms`'s census paragraph names the route).
 
 Every constructor's endpoint is either the merge or the refusal copy, and every one
 carries its count.  The price is the dispatch's own: `merge`'s — entry and byte terms —

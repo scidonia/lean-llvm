@@ -56,16 +56,19 @@ None carries a `WalkSegment`, an arm, or a `WalkInv`.  The one input a class's *
 beside its rows is the invariant at the seam state the tail starts from — `hInvT` in
 `hcontTail_of_calls`/`hcontScanTail_at`, `hInvS` in `scContTail_of_calls`
 (`JsonStage2WalkDispatchSegments`).  That state is further along the walk than the head, so
-its invariant is not a consequence of `WalkInv` at the head: no producer of it exists in
-this tree (each occurrence is a parameter), and it is not a document fact, so it is not a
-row.  A class's arm is therefore `rows + hInvT`, and the seam between the two is named once
-per class here rather than hidden in a row.
+its invariant is not a consequence of `WalkInv` at the head alone: the seam's block, its
+extended environment and the token record its step writes are all new.  It is a head
+chain's `inv'` rather than a row, and each of the three (the high-byte route's
+`ContTailStartC`, the scalar route's `scSeamS`, the last entry's `TailStartC`) is produced
+in `JsonStage2WalkHcontSeamInv` (`contTailStartInv_of_cleanup`, `scSeamInv_of_scalar`,
+`hlastTailInv_of_facts`) — so a class's arm is `rows + the seam's chain`, and the seam
+between the two is named once per class here rather than hidden in a row.
 
 The positive-depth string opener is a second and different gap: `HcontClass.stringOpener`
 is the byte test alone, while `HcontArm.twoEntry` takes `C.sp = 0` (at positive depth the
-head block branches to `land.lhs.true.i` and the marker bytes select the merge or a
-refusal), so the class the census names has no arm at positive depth and no row here
-supplies one.
+head block branches to `land.lhs.true.i` and the marker bytes at `%sp - 1` select
+`if.end245.i`'s merge or the refusal at `if.then249.i`), so the class the census names has
+no arm at positive depth and no row here supplies one.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkDispatchSupply
 import LeanLLVM.Refinement.JsonStage2WalkDispatchSeams

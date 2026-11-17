@@ -42,6 +42,15 @@ supplies, and `.dispatch` turns it into the actual `WalkDispatchResult`:
   the continuing premise: it is an arm's field.  The selector is the arm's rather than
   the residue's because the same call can refuse: a refusing body leaves `NodeBlock31`
   at `cleanup339.critedge.i`, which is not this merge.
+
+  **This arm is the string opener at depth zero only**, and the restriction is the
+  bundle's: `HstringFacts.hsp0` is `C.sp = 0`, which is what makes the `if.then219.i`
+  edge the `if.end245.i` one.  At positive depth the same byte's head leaves that block
+  for `land.lhs.true.i`, and the two marker bytes at `%sp - 1` (`%ctype.i`'s and
+  `%cst.i`'s) decide the merge (`if.end256.i`, the key record's kind `5`) or the
+  refusal at `if.then249.i` — a route no constructor below describes.  See the census
+  paragraph after the list: the byte-level class is complete, the state-level coverage
+  is not.
 * `.scalar` — **`HcontScalarFacts`**, the plain-value class on the numeral route: the
   head's four scalar pivots, the count test's succeeding arm, the no-run byte class and
   the tag test's true arm, composed through `walkRevolutionMergeSegScalar`
@@ -105,22 +114,29 @@ supplies, and `.dispatch` turns it into the actual `WalkDispatchResult`:
   segment, the visits by `scanRoundsAt` — the rounds at the seam's own bound, which
   `JsonStage2WalkRevolutionSeg`'s class-C-only `scanWsRounds` is not.
 
-**The census is exhaustive in the proved sense.**  The head switch's bytes are
-`HeadArm.complete`'s and the tag test's two values are `HcontClass.complete`'s; each of
-those classes is one of the arms above, with the run/scan-free split carried by the arm's
-own tail — `.letters`/`.fLetter`/`.classC` end at `if.end473.i`, `.run` at
-`land.rhs457.i`, and `.ws`/`.cleanup` are `126`/`127`'s two.  There is no `.supplied`
-constructor left at this level.  `126` and `127` are `HcontClass.defaultValueHigh`
-and `HcontArm.ws`/`.cleanup`'s class: both bundles carry the four bits that leave exactly
-those two bytes, and both arms are proved with their counted segments
-(`walkRevolutionMergeSegWs`, `walkRevolutionMergeSeg`).
+**The byte census is exhaustive in the proved sense; the arm is not total over the
+invariant's states.**  The head switch's bytes are `HeadArm.complete`'s and the tag
+test's two values are `HcontClass.complete`'s: every byte has exactly one class, by
+theorem, and the run/scan-free split is carried by each arm's own tail
+(`.letters`/`.fLetter`/`.classC` end at `if.end473.i`, `.run` at `land.rhs457.i`, and
+`.ws`/`.cleanup` are `126`/`127`'s two).  `126` and `127` are
+`HcontClass.defaultValueHigh` and `HcontArm.ws`/`.cleanup`'s class: both bundles carry
+the four bits that leave exactly those two bytes, and both arms are proved with their
+counted segments (`walkRevolutionMergeSegWs`, `walkRevolutionMergeSeg`).
 
-The class is also *total* over the invariant's states: the byte, the depth's zero/positive
-split and the token-end class are the whole split, and the two depth cases the split had no
-arm for are `.closeBraceZero`'s (`}` at zero) and `.openAtCap`'s (an opener at `520`).
-Before those arms existed those states were in no constructor's class at either level, so
-this sentence would have been false; `JsonStage2WalkDispatchResidual` records what the
-holes were.
+What the classes do **not** give is an arm at every state.  The one state the invariant
+admits that no constructor's premises admit is the string opener at positive depth:
+`HcontClass.stringOpener` is the byte `34`, and `HcontArm.twoEntry`'s `HstringFacts`
+pins `C.sp = 0`.  At `C.sp ≠ 0` the head leaves `if.then219.i` for `land.lhs.true.i`,
+reads `%ctype.i`'s and `%cst.i`'s bytes at `%sp - 1`, and either takes the merge at
+`if.end245.i` — the key record, kind `5` — or falls to the refusal at `if.then249.i`.
+The state is admitted by the input domain (`{"a":1}`'s second entry, `["a"]`) and by the
+invariant, whose `depth_cap` is an upper bound alone, so this is a hole in the arm and
+not a narrowed document.  Two other depth cases the split once lacked are
+`.closeBraceZero`'s (`}` at zero) and `.openAtCap`'s (an opener at `520`); they are
+covered, and this one is not.  `JsonStage2WalkDispatchResidual` records it beside the
+supplied rows, and `JsonStage2WalkDispatchClassRows`'s report names the two links the
+missing arm would need.
 
 Each constructor carries only its own arm's premises, and the price is the dispatch's own
 (`WalkDispatchResult`'s), so no class's byte restriction is a premise of another's.
@@ -526,8 +542,11 @@ inductive HcontArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
   | run (f : RunFacts G C s) : HcontArm calls G C s
 
 /-- **The dispatch, from the arm.**  Each proved arm runs its own theorem; the standalone
-string is `ofStringMerge` at the arm's residue.  Every constructor is a proved class, so
-the arm is total over the census `HcontClass.complete` states. -/
+string is `ofStringMerge` at the arm's residue.  Every constructor is a proved class, but
+the arm is total over the *byte* census `HcontClass.complete`, not over the invariant's
+states: `HcontClass.stringOpener` at `C.sp ≠ 0` has no constructor (the module header
+names the route), so a caller that only knows the head's byte is a `"` at positive depth
+has no arm to dispatch. -/
 theorem HcontArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     {s : State} (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead)
     (hk : C.k + 1 < G.nep) :

@@ -826,9 +826,13 @@ supplies no theorem of this tree builds.
 **What the two bundles supply, and what they do not.**  Neither `hcont` nor `hend` is a
 supplied fact, and neither is refuted — but "not false" is a claim about the *classes* and
 not about the bundles' totality, and it is exactly as strong as the census behind it.  The
-census now has an arm for every state the invariant admits (`.closeBraceZero` and
-`.openAtCap` are the two it lacked — `JsonStage2WalkDispatchResidual` records the history),
-so no admitted state is outside the enum and no arm is refuted by its own class.  What each
+census has an arm for every state the invariant admits **except one**: `.closeBraceZero`
+and `.openAtCap` are the two depth cases it once lacked (`JsonStage2WalkDispatchResidual`
+records the history), and the string opener at positive depth still has none —
+`HcontClass.stringOpener` is the byte `34`, and its continuing arm is `HcontArm.twoEntry`,
+whose `HstringFacts` pins `C.sp = 0`, so the `land.lhs.true.i` route at positive depth is a
+hole in the enum rather than a supplied row.  Every arm that exists is unrefuted by its own
+class.  What each
 bundle still carries is its class's *payload*: `WalkLoopEnd`'s log word is
 `WalkInv.log_alen`'s witness, which `walkMergeWords_of_inv` and `walkRefuseWords_of_inv`
 produce, so what the bundle still supplies is the last entry's arm (`hlast`) — per-input
