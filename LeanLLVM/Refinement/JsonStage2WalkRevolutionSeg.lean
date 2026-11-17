@@ -45,7 +45,7 @@ different edges and a segment is stitched at its states:
 
 | piece | lemma | links |
 |---|---|---|
-| the head, the whitespace check, the seam and the class-C span | `hcontPrefixCleanupSeg` → `hcontToSpan` | `8 + 4 + 5` |
+| the head, the whitespace check, the seam and the class-C span | `hcontPrefixCleanupSeg` ← `hcontSpan17_of_cleanup` ← `hcontHeadSeg12` | `12 + 5` |
 | the tail's three calls, on their empty arm | the bundle's `hTail` (`consumerTailSegEmptyAt`'s shape) | `3` |
 | the merge | `walkIfEnd473_at` | `1` |
 
@@ -149,6 +149,7 @@ builds, and that the producer's endpoint is the instance `walkDispatch_at_contin
 reads its three cells at.
 -/
 
+import LeanLLVM.Refinement.JsonStage2WalkDispatchCleanupSpan
 import LeanLLVM.Refinement.JsonStage2WalkRevolution
 
 set_option autoImplicit false
@@ -609,7 +610,8 @@ merge: the endpoint is `revMergeS sm v` and the last three conjuncts are the mer
 cells read at it. -/
 
 /-- **The scan-free arm's path to the merge, with the merge's cells at its endpoint.**
-`hcontPrefixCleanupSeg`'s twenty links and the merge's own step, at the endpoint
+`hcontPrefixCleanupSeg`'s twenty links — the bundle's own fields through
+`hcontSpan17_of_cleanup` — and the merge's own step, at the endpoint
 `clnMergeS f` and the carry `clnMergeC C f.ev` — both terms of the composition, so the three
 cells are read where the run actually ends.
 
@@ -634,10 +636,7 @@ theorem walkRevolutionMergeSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s
   -- the span and the scan-free tail: twenty links to the merge's entry
   have hsegP : WalkSegment (stage2Calls stage2SubCalls) G C s
       (TailCarryEnd (ContTailStartC C) f.ev) (contCleanupEndF f) 20 :=
-    hcontPrefixCleanupSeg (G := G) (C := C) (s := s) hInv hblock f.h8 f.hlt91 f.hlt123
-      f.hlt125 f.hne125 f.hinc f.hnep f.hnext f.h5 f.hi63 f.hread f.hidx5 f.htok5 f.hgap5
-      f.hugt f.hread35 f.hb13 f.hb32 f.hbne13 f.hend f.h8end f.hbit f.h8c f.hc110
-      f.hc116 f.hceq116 f.r₁ f.r₂ f.r₃ f.ev f.hTail
+    hcontPrefixCleanupSeg (G := G) (C := C) (s := s) hInv hblock f
   -- the merge's step, one link, from the token record's register
   obtain ⟨s₂, hl₂, hs₂⟩ :=
     walkIfEnd473_at (sub := stage2SubCalls) (G := G)

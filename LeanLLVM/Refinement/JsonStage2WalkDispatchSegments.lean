@@ -2,10 +2,13 @@
 # The head's twelve links, and the class-C span at the arm's endpoint
 
 `hcontToSpan` (`JsonStage2WalkRevolutionPrefix`) composes a continuing entry's path to the
-tail's start at seventeen links, and it builds that path from two pieces that no lemma
-named: the head's **twelve** links to the class-C span's entry (`hseg12` inside its proof)
-and the class-C span's **five**.  This module states both pieces, at the vocabulary their
-consumers read.
+tail's start at seventeen links, and it builds that path from two pieces stated by name:
+the head's **twelve** links to the class-C span's entry (`hcontHeadSeg12`, upstream of it)
+and the class-C span's **five**.  This module states the span's interface, the two tails
+that follow it, and the run class's counted composition.  The bundle-level applications of
+the head's twelve and of the seventeen-link composition are
+`hcontHeadSeg12_of_cleanup`/`hcontSpan17_of_cleanup`/`hcontPrefixCleanupSeg`
+(`JsonStage2WalkDispatchCleanupSpan`), upstream of the merge they serve.
 
 ## Why the twelve are the high-byte class's, and not every class's
 
@@ -47,19 +50,28 @@ arm's shape, not a missing lemma.
 `emptyTailSeg_of_calls` (`JsonStage2WalkDispatchWitnessHlast`) is
 `consumerTailSegEmptyAt`'s composition stated from the three callees' rows at any carry
 whose block is `if.then413.i`, so a bundle's `hTail` is produced from an `abi`-shaped group
-rather than supplied as a segment.  Three consumers use it:
+rather than supplied as a segment.  Four consumers use it:
 `hlastTail_of_calls` (the last entry's high-byte tail) and `scalarTail_of_calls` (the last
-entry's plain-value tail) are now its instances, and `hcontTail_of_calls` applies it to the
+entry's plain-value tail) are its instances, `hcontTail_of_calls` applies it to the
 scan-free continuing class's seam, where `hcontArm_cleanup_of_calls` and
 `walkDispatch_at_cleanup_of_calls` build the arm and its dispatch — `.cleanup`'s `hTail`
-field retired.
+field retired — and `scContTail_of_calls` is the continuing scalar route's instance, at
+`scSeamS` with that seam's own two cells (`scSeam_ee`, `scSeam_cond`).
+
+## The run class's counted composition
+
+`runSegmentsAt` states the run's four segments (head, span, tail, latch) and their
+composition at `nH + nS + 3 + 3`; the composition is `runToLatchSeg_at`, the segment a
+scan's rounds append to.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkDispatchClassC
 import LeanLLVM.Refinement.JsonStage2WalkDispatchCleanupOfStaging
+import LeanLLVM.Refinement.JsonStage2WalkDispatchCleanupSpan
 import LeanLLVM.Refinement.JsonStage2WalkDispatchRun
 import LeanLLVM.Refinement.JsonStage2WalkDispatchSpansOfStaging
 import LeanLLVM.Refinement.JsonStage2WalkDispatchWitnessHlast
 import LeanLLVM.Refinement.JsonStage2WalkHcontFactsOfStaging
+import LeanLLVM.Refinement.JsonStage2WalkHcontScalar
 import LeanLLVM.Refinement.JsonStage2WalkRevolutionSeg
 
 set_option autoImplicit false
@@ -71,141 +83,13 @@ open LeanLLVM.Refinement.JsonStage2IR
 
 namespace WalkScope
 
-/-! ### The continuing head's twelve links
+/-! ### The twelve links live upstream
 
-`contPrefixLand`'s eight (the four pivots, `sw.default.i`'s succeeding arm,
-`cond.true345.i`, the bound's `phi` and the whitespace check) and the byte's four below
-them (`NodeBlock41 → NodeBlock39 → LeafBlock35 → if.end372.i`, and `if.end372.i`'s else arm
-at the seam).  The hypotheses are `hcontToSpan`'s, without the class-C span's three bits
-(`h8c`, `hc110`, `hc116`, `hceq116`): those belong to the span, not to the head. -/
-theorem hcontHeadSeg12 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
-    (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead)
-    {x : BitVec 8} (h8 : evalOperand s (.reg "%8") = some (.int 8 x))
-    (hlt91 : evalICmp .slt x (BitVec.ofNat 8 91) = 0)
-    (hlt123 : evalICmp .slt x (BitVec.ofNat 8 123) = 0)
-    (hlt125 : evalICmp .slt x (BitVec.ofNat 8 125) = 0)
-    (hne125 : evalICmp .eq x (BitVec.ofNat 8 125) = 0)
-    {inc nep : BitVec 64} {ep : Nat} {v : BitVec 32}
-    (hinc : evalOperand (headAS₄ s x) (.reg "%inc.i") = some (.int 64 inc))
-    (hnep : evalOperand (headAS₄ s x) (.reg "%nep") = some (.int 64 nep))
-    (hnext : evalICmp .ult inc nep = 1)
-    (h5 : lookupName (contAS₅ s x inc nep).env "%5" = some (.ptr ep))
-    (hi63 : inc.toNat < 2 ^ 63)
-    (hread : readBytes (contAS₅ s x inc nep).mem (ep + inc.toNat * 4) 4 =
-      some (natToBytes v.toNat 4))
-    {ix : BitVec 64}
-    (hidx5 : lookupName (contAS₅ s x inc nep).env "%idxprom.i" = some (.int 64 ix))
-    (htok5 : lookupName (contAS₅ s x inc nep).env "%t352.i" = some (.ptr C.stage.tok))
-    (hgap5 : lookupName (contAS₅ s x inc nep).env "%gap.i" =
-      some (.ptr (C.stage.tok + 20)))
-    (hugt : evalICmp .ugt (BitVec.ofNat 64 v.toNat) ix = 1)
-    {b35 : UInt8}
-    (hread35 : readBytes (contEndS C s x inc nep ep v ix).mem ((G.b - 1) + v.toNat) 1 =
-      some [b35])
-    (hb13 : evalICmp .slt (cont35 b35) (BitVec.ofNat 8 13) = 0)
-    (hb32 : evalICmp .slt (cont35 b35) (BitVec.ofNat 8 32) = 1)
-    (hbne13 : evalICmp .eq (cont35 b35) (BitVec.ofNat 8 13) = 0)
-    {b8 : BitVec 8}
-    (hend : lookupName (contP35S C s x inc nep ep v ix b35).env "%end.i" =
-      some (.ptr (C.stage.tok + 8)))
-    (h8end : lookupName (contP35S C s x inc nep ep v ix b35).env "%8" = some (.int 8 b8))
-    (hbit : (evalICmp .eq b8 (BitVec.ofNat 8 45) |||
-      evalICmp .ult (b8 + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0) :
-    WalkSegment (stage2Calls stage2SubCalls) G C s (ContSeamC C)
-      (contSeamS C s x inc nep ep v ix b35 b8) 12 := by
-  -- the head path to the whitespace check: `contPrefixLand`'s eight links
-  have hseg8 : WalkSegment (stage2Calls stage2SubCalls) G C s (ContAC₄ C)
-      (contLandS C s x inc nep ep v ix b35) 8 :=
-    contPrefixLand (G := G) (C := C) (s := s) hInv hblock h8 hlt91 hlt123 hlt125 hne125
-      hinc hnep hnext h5 hi63 hread hidx5 htok5 hgap5 hugt hread35
-  -- 9. the byte's first pivot
-  have h35a : evalOperand (contLandS C s x inc nep ep v ix b35) (.reg "%35") =
-      some (.int 8 (cont35 b35)) := by
-    simp only [evalOperand]
-    exact contLandS_35 C s x inc nep ep v ix b35
-  obtain ⟨s₉, hl₉, hs₉⟩ :=
-    WalkLink.NodeBlock41_at (calls := stage2Calls stage2SubCalls) G (ContAC₄ C)
-      (contLandS C s x inc nep ep v ix b35) hseg8.inv' rfl h35a
-  have hl₉' : WalkLink (stage2Calls stage2SubCalls) G (ContAC₄ C)
-      (contLandS C s x inc nep ep v ix b35) (ContAC₅ C)
-      (contP41S C s x inc nep ep v ix b35) := by
-    have hst : s₉ = contP41S C s x inc nep ep v ix b35 := by
-      rw [hs₉, show (if evalICmp .slt (cont35 b35) (BitVec.ofNat 8 13) = 1 then
-        "LeafBlock33" else "NodeBlock39") = "NodeBlock39" from by rw [hb13]; rfl]
-      rfl
-    rw [hst] at hl₉
-    rw [show (if evalICmp .slt (cont35 b35) (BitVec.ofNat 8 13) = 1 then
-      "LeafBlock33" else "NodeBlock39") = "NodeBlock39" from by rw [hb13]; rfl] at hl₉
-    exact hl₉
-  -- 10. the byte's second pivot
-  have h35b : evalOperand (contP41S C s x inc nep ep v ix b35) (.reg "%35") =
-      some (.int 8 (cont35 b35)) := by
-    simp only [evalOperand]
-    exact contP41S_35 C s x inc nep ep v ix b35
-  obtain ⟨s₁₀, hl₁₀, hs₁₀⟩ :=
-    WalkLink.NodeBlock39_at (calls := stage2Calls stage2SubCalls) G (ContAC₅ C)
-      (contP41S C s x inc nep ep v ix b35) hl₉'.inv' rfl h35b
-  have hl₁₀' : WalkLink (stage2Calls stage2SubCalls) G (ContAC₅ C)
-      (contP41S C s x inc nep ep v ix b35) (ContAC₆ C)
-      (contP39S C s x inc nep ep v ix b35) := by
-    have harm : (if evalICmp .slt (cont35 b35) (BitVec.ofNat 8 32) = 1 then
-        "LeafBlock35" else "LeafBlock37") = "LeafBlock35" := by rw [hb32]; rfl
-    have hst : s₁₀ = contP39S C s x inc nep ep v ix b35 := by rw [hs₁₀, harm]; rfl
-    rw [hst] at hl₁₀
-    rw [harm] at hl₁₀
-    exact hl₁₀
-  -- 11. the leaf's equality test
-  have h35c : evalOperand (contP39S C s x inc nep ep v ix b35) (.reg "%35") =
-      some (.int 8 (cont35 b35)) := by
-    simp only [evalOperand]
-    exact contP39S_35 C s x inc nep ep v ix b35
-  obtain ⟨s₁₁, hl₁₁, hs₁₁⟩ :=
-    WalkLink.LeafBlock35_at (calls := stage2Calls stage2SubCalls) G (ContAC₆ C)
-      (contP39S C s x inc nep ep v ix b35) hl₁₀'.inv' rfl h35c
-  have hl₁₁' : WalkLink (stage2Calls stage2SubCalls) G (ContAC₆ C)
-      (contP39S C s x inc nep ep v ix b35) (ContAC₇ C)
-      (contP35S C s x inc nep ep v ix b35) := by
-    have harm : (if evalICmp .eq (cont35 b35) (BitVec.ofNat 8 13) = 1 then
-        "land.rhs.i.preheader" else "if.end372.i") = "if.end372.i" := by
-      rw [hbne13]; rfl
-    have hst : s₁₁ = contP35S C s x inc nep ep v ix b35 := by rw [hs₁₁, harm]; rfl
-    rw [hst] at hl₁₁
-    rw [harm] at hl₁₁
-    exact hl₁₁
-  -- 12. the token's end
-  have hcond35 : evalOperand (contP35S C s x inc nep ep v ix b35) (.reg "%cond350.i") =
-      some (.int 64 (BitVec.ofNat 64 v.toNat)) := by
-    simp only [evalOperand]
-    exact contP35S_cond C s x inc nep ep v ix b35
-  obtain ⟨s₁₂, hl₁₂, hs₁₂⟩ :=
-    WalkLink.if_end372_i_at (calls := stage2Calls stage2SubCalls) (G := G) (C := ContAC₇ C)
-      (s := contP35S C s x inc nep ep v ix b35) hl₁₁'.inv' rfl (p := "LeafBlock35") rfl
-      contPhiSeam hcond35 hend h8end hbit
-  have hl₁₂' : WalkLink (stage2Calls stage2SubCalls) G (ContAC₇ C)
-      (contP35S C s x inc nep ep v ix b35) (ContSeamC C)
-      (contSeamS C s x inc nep ep v ix b35 b8) := by
-    rw [hs₁₂] at hl₁₂
-    exact hl₁₂
-  -- the four links below the check, counted at four
-  have hseg4 : Seg (stage2Calls stage2SubCalls) G (ContAC₄ C)
-      (contLandS C s x inc nep ep v ix b35) (ContSeamC C)
-      (contSeamS C s x inc nep ep v ix b35 b8) 4 :=
-    Seg.tail hl₉' (Seg.tail hl₁₀' (Seg.tail hl₁₁' (Seg.tail hl₁₂' (Seg.nil hl₁₂'.inv'))))
-  exact hseg8.trans (Seg.measure hseg4)
-
-/-- **The scan-free bundle's twelve links, from its own fields.**  Every hypothesis
-`hcontHeadSeg12` reads is a field of `HcontCleanupFacts` (`JsonStage2WalkRevolution`), so
-that bundle's head chain is a theorem rather than a segment a producer must supply.  This
-is the exposure `walkRevolutionMergeSeg` benefits from: its head path is no longer inside
-`hcontToSpan`'s proof. -/
-theorem hcontHeadSeg12_of_cleanup {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
-    {s : State} (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead)
-    (f : HcontCleanupFacts G C s) :
-    WalkSegment (stage2Calls stage2SubCalls) G C s (ContSeamC C)
-      (contSeamS C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.b8) 12 :=
-  hcontHeadSeg12 (G := G) (C := C) (s := s) hInv hblock f.h8 f.hlt91 f.hlt123 f.hlt125
-    f.hne125 f.hinc f.hnep f.hnext f.h5 f.hi63 f.hread f.hidx5 f.htok5 f.hgap5 f.hugt
-    f.hread35 f.hb13 f.hb32 f.hbne13 f.hend f.h8end f.hbit
+`hcontHeadSeg12` is stated in `JsonStage2WalkRevolutionPrefix`, where `hcontToSpan`
+composes it with the class-C span; this module does not restate the head's path.  The
+bundle-level applications (`hcontHeadSeg12_of_cleanup`, `hcontSpan17_of_cleanup`) and the
+twenty-link composition `hcontPrefixCleanupSeg` are in
+`JsonStage2WalkDispatchCleanupSpan`, upstream of the merge they serve. -/
 
 /-! ### The class-C span, at one interface
 
@@ -272,24 +156,10 @@ theorem classCHeadSpan_at {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
 
 /-! ### The composition the exposure buys
 
-The head's twelve and the class-C span's five are `hcontToSpan`'s two pieces, so its
-seventeen-link result follows from them by name.  At the scan-free bundle the head's
-twelve is `hcontHeadSeg12_of_cleanup`'s and the span is the `> 116` route's — `126`/`127`
-clear `slt 125`, so `LeafBlock58`'s else arm is taken — which is
-`classCSpan_at`'s third branch stated directly as `walkHeadChainCSeg`. -/
-theorem hcontSpan17_of_cleanup {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
-    (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead)
-    (f : HcontCleanupFacts G C s) :
-    WalkSegment (stage2Calls stage2SubCalls) G C s (ContTailStartC C)
-      (contTailStart C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.b8 f.x1) 17 := by
-  have hhead := hcontHeadSeg12_of_cleanup hInv hblock f
-  have hspan : Seg (stage2Calls stage2SubCalls) G (ContSeamC C)
-      (contSeamS C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.b8) (ContTailStartC C)
-      (contTailStart C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.b8 f.x1) 5 :=
-    walkHeadChainCSeg (G := G) (C := ContSeamC C)
-      (s := contSeamS C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.b8) hhead.inv' rfl
-      f.h8c f.hc110 f.hc116 f.hceq116
-  exact hhead.trans (Seg.measure hspan)
+`hcontToSpan` is `hcontHeadSeg12` composed with the class-C span; at the scan-free bundle
+that composition is `hcontSpan17_of_cleanup` (`JsonStage2WalkDispatchCleanupSpan`), where
+`HcontCleanupFacts` is in scope, and its consumer is `hcontPrefixCleanupSeg` there and
+`walkRevolutionMergeSeg` (`JsonStage2WalkRevolutionSeg`). -/
 
 /-! ### The run class's four segments, at the run's own count
 
@@ -406,6 +276,107 @@ theorem hcontTail_of_calls {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : S
     hpre₂ hcall₂ hret₂ hev64 htight hklt hpre₃ hcall₃
     (contTailStart_ee C s x inc nep ep v ix b35 b8 x1)
     (contTailStart_cond C s x inc nep ep v ix b35 b8 x1) hv64
+
+/-! ### The scalar route's tail, from the three calls' rows
+
+`HcontScalarFacts` (`JsonStage2WalkHcontScalar`) carries its tail as a field.  Its seam is
+`scSeamS`, the tag test's *true* arm, and its two test cells are that seam's own:
+`scSeam_ee` is the stored end (`%ee.1.i = ofNat 64 v.toNat`) and `scSeam_cond` the bound, so
+the copy call's guard is `ult v v` and the walk leaves for `if.end473.i`.  With those two
+peels the field is the same producer the high-byte route consumes:
+`emptyTailSeg_of_calls`, at this seam's carry and state. -/
+
+/-- **The continuing scalar route's tail, from the three calls' rows.**  `HcontScalarFacts`'s
+`hTail`, at the tag-true seam: the value-position call, the scalar call's emit arm and the
+copy call, then the scan-free arm's three links. -/
+theorem scContTail_of_calls {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
+    (b35 : UInt8)
+    (r₁ r₂ r₃ : CallOutcome) {cA rdv xA : BitVec 32}
+    (hInvS : WalkInv G (HeadC₄₁₃ (ContAC₇ C)) (scSeamS C s x inc nep ep v ix b35))
+    {pT : String} (reg : String) {opT : Operand}
+    (hpreT : (scSeamS C s x inc nep ep v ix b35).pre = some pT)
+    (hincT : phiIncoming pT
+      [("if.else405.i", .imm (.int 32 (BitVec.ofNat 32 0))),
+       ("if.then403.i", .imm (.int 32 (BitVec.ofNat 32 10))),
+       ("if.then397.i", .imm (.int 32 (BitVec.ofNat 32 9))),
+       ("if.end372.i", .imm (.int 32 (BitVec.ofNat 32 7))),
+       ("LeafBlock58", .imm (.int 32 (BitVec.ofNat 32 8)))] = some opT)
+    (hopT : evalOperand (stateAt (scSeamS C s x inc nep ep v ix b35).env
+      (scSeamS C s x inc nep ep v ix b35)) opT = some (.int 32 cA))
+    (hkindT : lookupName (scSeamS C s x inc nep ep v ix b35).env "%kind404.i" =
+      some (.ptr (C.stage.tok + 16)))
+    (hrdT : lookupName (scSeamS C s x inc nep ep v ix b35).env "%root_done.i" =
+      some (.ptr (G.next0 + 8)))
+    (hreadRoot : readBytes
+      (writeBytes (scSeamS C s x inc nep ep v ix b35).mem (C.stage.tok + 16)
+        (natToBytes cA.toNat 4)) (G.next0 + 8) 4 = some (natToBytes rdv.toNat 4))
+    (hpre₁ : s2ValuePosPre
+      [.int 32 (BitVec.ofNat 32 (HeadC₄₁₃ (ContAC₇ C)).sp), .int 32 rdv,
+       .ptr (HeadC₄₁₃ (ContAC₇ C)).stage.ctype, .ptr (HeadC₄₁₃ (ContAC₇ C)).stage.cst]
+      (writeBytes (scSeamS C s x inc nep ep v ix b35).mem (C.stage.tok + 16)
+        (natToBytes cA.toNat 4)) (scSeamS C s x inc nep ep v ix b35).next)
+    (hcall₁ : stage2Calls stage2SubCalls "s2_value_pos"
+      [.int 32 (BitVec.ofNat 32 (HeadC₄₁₃ (ContAC₇ C)).sp), .int 32 rdv,
+       .ptr (HeadC₄₁₃ (ContAC₇ C)).stage.ctype, .ptr (HeadC₄₁₃ (ContAC₇ C)).stage.cst]
+      (writeBytes (scSeamS C s x inc nep ep v ix b35).mem (C.stage.tok + 16)
+        (natToBytes cA.toNat 4)) (scSeamS C s x inc nep ep v ix b35).next = some r₁)
+    (hret₁ : r₁.ret = .int 32 xA)
+    (hbit0T : evalICmp .eq xA (BitVec.ofNat 32 0) = 0)
+    (hzread : readBytes
+      (writeBytes (scSeamS C s x inc nep ep v ix b35).mem (C.stage.tok + 16)
+        (natToBytes cA.toNat 4)) C.stage.z 8 = some (wordBytes 8 G.ev))
+    (hcT : lookupName (scSeamS C s x inc nep ep v ix b35).env "%c.i" =
+      some (.ptr (TailCarry₂ (HeadC₄₁₃ (ContAC₇ C))).stage.c))
+    (htT : lookupName (scSeamS C s x inc nep ep v ix b35).env "%t352.i" =
+      some (.ptr (TailCarry₂ (HeadC₄₁₃ (ContAC₇ C))).stage.tok))
+    (hoT : lookupName (scSeamS C s x inc nep ep v ix b35).env "%z" =
+      some (.ptr (TailCarry₂ (HeadC₄₁₃ (ContAC₇ C))).stage.z))
+    (hpre₂ : s2ScalarValuePre
+      [.ptr (TailCarry₂ (HeadC₄₁₃ (ContAC₇ C))).stage.c,
+       .ptr (TailCarry₂ (HeadC₄₁₃ (ContAC₇ C))).stage.tok,
+       .ptr (TailCarry₂ (HeadC₄₁₃ (ContAC₇ C))).stage.z] r₁.mem r₁.next)
+    (hcall₂ : stage2Calls stage2SubCalls "od_scalar_value"
+      [.ptr (TailCarry₂ (HeadC₄₁₃ (ContAC₇ C))).stage.c,
+       .ptr (TailCarry₂ (HeadC₄₁₃ (ContAC₇ C))).stage.tok,
+       .ptr (TailCarry₂ (HeadC₄₁₃ (ContAC₇ C))).stage.z] r₁.mem r₁.next = some r₂)
+    (hret₂ : r₂.ret = .int 32 (BitVec.ofNat 32 1))
+    (hev64 : G.ev < 2 ^ 64)
+    (htight : (HeadC₄₁₃ (ContAC₇ C)).events.length ≤ (HeadC₄₁₃ (ContAC₇ C)).k)
+    (hklt : (HeadC₄₁₃ (ContAC₇ C)).k < G.nep)
+    (hpre₃ : s2AfterValuePre
+      [.int 32 (BitVec.ofNat 32 (HeadC₄₁₃ (ContAC₇ C)).sp), .ptr (G.next0 + 8),
+       .ptr (HeadC₄₁₃ (ContAC₇ C)).stage.ctype,
+       .ptr (HeadC₄₁₃ (ContAC₇ C)).stage.cst] r₂.mem r₂.next)
+    (hcall₃ : stage2Calls stage2SubCalls "s2_after_value"
+      [.int 32 (BitVec.ofNat 32 (HeadC₄₁₃ (ContAC₇ C)).sp), .ptr (G.next0 + 8),
+       .ptr (HeadC₄₁₃ (ContAC₇ C)).stage.ctype,
+       .ptr (HeadC₄₁₃ (ContAC₇ C)).stage.cst] r₂.mem r₂.next = some r₃)
+    (hv64 : v.toNat < 2 ^ 64) :
+    ∃ ev : EventRecord,
+      WalkSegment (stage2Calls stage2SubCalls) G (HeadC₄₁₃ (ContAC₇ C))
+        (scSeamS C s x inc nep ep v ix b35)
+        (scTailC C ev)
+        (scEnd C s x inc nep ep v ix b35 r₁ r₂ r₃ cA rdv xA) 3 :=
+  emptyTailSeg_of_calls G (HeadC₄₁₃ (ContAC₇ C))
+    (scSeamS C s x inc nep ep v ix b35) r₁ r₂ r₃ v.toNat hInvS rfl reg
+    hpreT hincT hopT hkindT hrdT hreadRoot hpre₁ hcall₁ hret₁ hbit0T hzread hcT htT hoT
+    hpre₂ hcall₂ hret₂ hev64 htight hklt hpre₃ hcall₃
+    (scSeam_ee C s x inc nep ep v ix b35)
+    (scSeam_cond C s x inc nep ep v ix b35) hv64
+
+/-! ### The run's counted composition
+
+`runSegmentsAt`'s last conjunct is the four segments as one, which is what the scan's
+composition appends its rounds to.  Named here so the counted form has a consumer at the
+count it is stated at. -/
+
+/-- **The run class's four segments, composed.**  The head's `nH`, the span's `nS`, the
+tail's three and the latch's three, from `f.Cl`/`f.tl` back to the head. -/
+theorem runToLatchSeg_at {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (f : RunFacts G C s) :
+    WalkSegment (stage2Calls stage2SubCalls) G C s f.Cl f.tl (f.nH + f.nS + 3 + 3) :=
+  (runSegmentsAt f).2.2.2.2
 
 /-! ### The scan-free arm, from the three calls' rows
 
@@ -593,16 +564,15 @@ theorem walkDispatch_at_cleanup_of_calls {m0 : Mem} {G : WalkGeom m0} {C : WalkC
 
 /-! ### The instrument -/
 
-#print axioms LeanLLVM.Refinement.WalkScope.hcontHeadSeg12
-#print axioms LeanLLVM.Refinement.WalkScope.hcontHeadSeg12_of_cleanup
 #print axioms LeanLLVM.Refinement.WalkScope.clsBit_one_zero
 #print axioms LeanLLVM.Refinement.WalkScope.clsBit_zero_of_ne_one
 #print axioms LeanLLVM.Refinement.WalkScope.classCSpan_at
 #print axioms LeanLLVM.Refinement.WalkScope.classCHeadSpan_at
-#print axioms LeanLLVM.Refinement.WalkScope.hcontSpan17_of_cleanup
 #print axioms LeanLLVM.Refinement.WalkScope.runSegmentsAt
 #print axioms LeanLLVM.Refinement.WalkScope.contTailStart_cond
 #print axioms LeanLLVM.Refinement.WalkScope.hcontTail_of_calls
+#print axioms LeanLLVM.Refinement.WalkScope.scContTail_of_calls
+#print axioms LeanLLVM.Refinement.WalkScope.runToLatchSeg_at
 #print axioms LeanLLVM.Refinement.WalkScope.hcontArm_cleanup_of_calls
 #print axioms LeanLLVM.Refinement.WalkScope.walkDispatch_at_cleanup_of_calls
 
