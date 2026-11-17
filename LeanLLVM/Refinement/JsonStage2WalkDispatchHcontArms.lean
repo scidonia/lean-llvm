@@ -43,14 +43,25 @@ supplies, and `.dispatch` turns it into the actual `WalkDispatchResult`:
   the residue's because the same call can refuse: a refusing body leaves `NodeBlock31`
   at `cleanup339.critedge.i`, which is not this merge.
 
-  **This arm is the string opener at depth zero only**, and the restriction is the
-  bundle's: `HstringFacts.hsp0` is `C.sp = 0`, which is what makes the `if.then219.i`
-  edge the `if.end245.i` one.  At positive depth the same byte's head leaves that block
-  for `land.lhs.true.i`, and the two marker bytes at `%sp - 1` (`%ctype.i`'s and
-  `%cst.i`'s) decide the merge (`if.end256.i`, the key record's kind `5`) or the
-  refusal at `if.then249.i` — a route no constructor below describes.  See the census
-  paragraph after the list: the byte-level class is complete, the state-level coverage
-  is not.
+  **This arm is the string opener at depth zero**, and the depth split is now a parameter
+  of the theorems that read it rather than a field of the bundle: `strPath8`/`strPath9`/
+  `stringPath_seg`/`ofStringMerge` take `hsp0 : C.sp = 0`, which is what makes the
+  `if.then219.i` edge the `if.end245.i` one.  At positive depth the same byte's head leaves
+  that block for `land.lhs.true.i`, and the two marker bytes at `%sp - 1` (`%ctype.i`'s and
+  `%cst.i`'s) decide the merge (`if.end256.i`, the key record's kind `5`) or the refusal at
+  `if.then249.i` — that route is
+  `HcontArm.stringOpenAboveZeroMerge`/`.stringOpenAboveZeroRefuse`
+  (`JsonStage2WalkDispatchHcontStringDeep`), the two constructors beside this one.
+* `.stringOpenAboveZeroMerge` / `.stringOpenAboveZeroRefuse` — **the same byte above depth
+  zero**: `if.then219.i`'s depth edge, `land.lhs.true.i`'s marker and `if.then231.i`'s
+  state byte, then `if.end245.i`'s selection.  The route is the merge when the nest's
+  `%or.cond523.i` is set (the reservation, the body's call, the answer's tests, the record
+  and the key's own branch `if.then330.i`), and the refusal at `if.then249.i` when it is
+  clear.  What the constructors carry is the class's own facts — the byte, the depth
+  split, the two stack bytes, the value-position call's answer — and the route's segment
+  with its predecessor and index; the merge's segment is the class's row
+  (`stringDeepRefuse_at` composes the refusal from `if.end245.i`'s state, and the head's
+  marker links are `walkLandLhsTrue_at`/`walkIfThen231_at`).
 * `.scalar` — **`HcontScalarFacts`**, the plain-value class on the numeral route: the
   head's four scalar pivots, the count test's succeeding arm, the no-run byte class and
   the tag test's true arm, composed through `walkRevolutionMergeSegScalar`
@@ -114,29 +125,41 @@ supplies, and `.dispatch` turns it into the actual `WalkDispatchResult`:
   segment, the visits by `scanRoundsAt` — the rounds at the seam's own bound, which
   `JsonStage2WalkRevolutionSeg`'s class-C-only `scanWsRounds` is not.
 
-**The byte census is exhaustive in the proved sense; the arm is not total over the
-invariant's states.**  The head switch's bytes are `HeadArm.complete`'s and the tag
-test's two values are `HcontClass.complete`'s: every byte has exactly one class, by
-theorem, and the run/scan-free split is carried by each arm's own tail
+**The byte census is exhaustive, and the arm is total over the invariant's states.**  The
+head switch's bytes are `HeadArm.complete`'s and the tag test's two values are
+`HcontClass.complete`'s: every byte has exactly one class, by theorem, and the
+run/scan-free split is carried by each arm's own tail
 (`.letters`/`.fLetter`/`.classC` end at `if.end473.i`, `.run` at `land.rhs457.i`, and
 `.ws`/`.cleanup` are `126`/`127`'s two).  `126` and `127` are
 `HcontClass.defaultValueHigh` and `HcontArm.ws`/`.cleanup`'s class: both bundles carry
 the four bits that leave exactly those two bytes, and both arms are proved with their
 counted segments (`walkRevolutionMergeSegWs`, `walkRevolutionMergeSeg`).
 
-What the classes do **not** give is an arm at every state.  The one state the invariant
-admits that no constructor's premises admit is the string opener at positive depth:
-`HcontClass.stringOpener` is the byte `34`, and `HcontArm.twoEntry`'s `HstringFacts`
-pins `C.sp = 0`.  At `C.sp ≠ 0` the head leaves `if.then219.i` for `land.lhs.true.i`,
-reads `%ctype.i`'s and `%cst.i`'s bytes at `%sp - 1`, and either takes the merge at
-`if.end245.i` — the key record, kind `5` — or falls to the refusal at `if.then249.i`.
-The state is admitted by the input domain (`{"a":1}`'s second entry, `["a"]`) and by the
-invariant, whose `depth_cap` is an upper bound alone, so this is a hole in the arm and
-not a narrowed document.  Two other depth cases the split once lacked are
-`.closeBraceZero`'s (`}` at zero) and `.openAtCap`'s (an opener at `520`); they are
-covered, and this one is not.  `JsonStage2WalkDispatchResidual` records it beside the
-supplied rows, and `JsonStage2WalkDispatchClassRows`'s report names the two links the
-missing arm would need.
+The states the split once had no arm for are three, and all three are covered:
+
+* `}` at zero — `.closeBraceZero` (`NodeBlock17 → LeafBlock15` to `if.then53.i`'s
+  refusal);
+* an opener at the stacks' staged extent — `.openAtCap` (`if.end.i`'s `ugt` taken at
+  `520`);
+* the string opener at a positive depth — `.stringOpenAboveZeroMerge` and
+  `.stringOpenAboveZeroRefuse`.  `HcontClass.stringOpener` is the byte `34`, and at
+  `C.sp ≠ 0` the head leaves `if.then219.i` for `land.lhs.true.i`, reads `%ctype.i`'s and
+  `%cst.i`'s bytes at `%sp - 1` and selects the key bit `if.end245.i`'s `phi` carries.
+  The class's premises are the byte, the depth split and the two stack bytes, and the two
+  producers (`hcontArm_stringOpenAboveZeroMerge_of_staging`,
+  `hcontArm_stringOpenAboveZeroRefuse_of_staging`) derive the byte from `cont_reg8`, the
+  stack bytes from the carry's maps and — at a positive depth — the value-position
+  staging from `WalkInv.tyBytes`/`stBytes`
+  (`stringOpenAboveZero_pre_of_inv`).  The document `["`·`a` takes it
+  (`stringOpenAboveZero_reachable`), and the same document's seed head is the control
+  (`stringOpenAboveZero_absent_at_seed`: depth zero, byte `91`).
+
+So no admitted state is outside the enum.  What each class still supplies is its *route*,
+where the route is not a theorem yet: for the new pair that is the merge's counted
+segment (the body's call sits in it, and `s2StringBodyPre`'s producer is the string
+staging) — exactly the grade the residual table records for `.letters`' head chain and
+`.twoEntry`'s body call.  Nothing is refuted and no class is narrowed to make another's
+premise collapse.
 
 Each constructor carries only its own arm's premises, and the price is the dispatch's own
 (`WalkDispatchResult`'s), so no class's byte restriction is a premise of another's.
@@ -302,13 +325,75 @@ inductive HcontArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
   | ws (f : HcontFacts G C s) : HcontArm calls G C s
   /-- The scan-free token on the high-byte route (`HcontCleanupFacts`). -/
   | cleanup (f : HcontCleanupFacts G C s) : HcontArm calls G C s
-  /-- **The standalone string, with its residue and its accepting-arm selector.**
-  `R` is the two words the walk layer does not carry, and `hR8` is `NodeBlock31`'s
-  test: the model's form is `1` or `2` on the accepting arms, and neither is `< 1`
-  signed.  A refusing answer is a legal answer to the same call, so this is the
-  arm's premise rather than the state's. -/
-  | twoEntry (f : HstringFacts G C s) (R : HstringResidue G C s f)
+  /-- **The standalone string, with its residue, its depth split and its accepting-arm
+  selector.**  `R` is the two words the walk layer does not carry, and `hR8` is
+  `NodeBlock31`'s test: the model's form is `1` or `2` on the accepting arms, and
+  neither is `< 1` signed.  A refusing answer is a legal answer to the same call, so
+  this is the arm's premise rather than the state's.  `hsp0` is `if.then219.i`'s edge:
+  the block branches on the depth, and depth zero is the arm's own route — the same
+  byte above depth zero leaves `land.lhs.true.i` and takes the marker links, which is
+  `stringOpenAboveZero`'s route. -/
+  | twoEntry (f : HstringFacts G C s) (hsp0 : C.sp = 0) (R : HstringResidue G C s f)
       (hR8 : evalICmp .slt f.y (BitVec.ofNat 32 1) = 0) : HcontArm calls G C s
+  /-- **A string opener above depth zero, reaching the merge.**  The head is the byte
+  `34` at a positive depth, so `if.then219.i`'s depth test leaves it for
+  `land.lhs.true.i`, whose read of the type stack's byte at `%sp - 1` and
+  `if.then231.i`'s read of the state stack's byte at the same index select the key bit
+  of `if.end245.i`'s `phi`.  The route is the merge once the nest's `%or.cond523.i` is
+  set: the reservation, the body's call, the answer's two tests, the record and the key's
+  own branch `if.then330.i` to `cleanup478.i`.
+
+  **What the arm carries.**  The class's own facts — the byte, the positive depth, the
+  two stack bytes and the value-position call's staging and answer — and the route's
+  endpoint: a counted segment to the merge, its block, the merge's predecessor
+  `if.then330.i`, the index cell and the price.  The segment is the arm's to supply while
+  the body's staging row is: `s2StringBodyPre`'s producer is the string staging, and the
+  composition from `if.end245.i` to the merge is `JsonStage2WalkDispatchHcontStringDeep`'s
+  (`stringDeepMerge_tail`), whose one supplied link is the body's call.
+  `stringOpenAboveZeroMerge_of_staging` is the producer. -/
+  | stringOpenAboveZeroMerge {b1 b2 : UInt8}
+      (h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 34)))
+      (hsp : C.sp ≠ 0)
+      (hmark : C.tyMap (C.sp - 1) = b1)
+      (hstate : C.stMap (C.sp - 1) = b2)
+      (hpreV : s2ValuePosPre
+        [.int 32 (BitVec.ofNat 32 C.sp), .int 32 0,
+         .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
+      (r : CallOutcome)
+      (hcall : stage2Calls stage2SubCalls "s2_value_pos"
+        [.int 32 (BitVec.ofNat 32 C.sp), .int 32 0,
+         .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r)
+      (Cd : WalkCarry G) (sd : State) (p : Nat) (k2 : Nat) (nepv : BitVec 64)
+      (hseg : WalkSegment (stage2Calls stage2SubCalls) G C s Cd sd p)
+      (hblock : Cd.block = "cleanup478.i")
+      (hkC : Cd.k = C.k)
+      (prev : String) (hprev : prev = "if.then330.i" ∨ prev = "if.else334.i")
+      (hpre : sd.pre = some prev)
+      (hinc : lookupName sd.env "%inc208.i" = some (.int 64 (BitVec.ofNat 64 k2)))
+      (hnepv : lookupName sd.env "%nep" = some (.int 64 nepv))
+      (hadvance : C.k < k2) (hcap : k2 ≤ nepv.toNat)
+      (hprice : p + 2 ≤ stage2EntryAllowance * (k2 - C.k) +
+        stage2ByteAllowance * (entryPos G k2 - entryPos G C.k)) : HcontArm calls G C s
+  /-- **A string opener above depth zero, refused at the nest's own test.**  The same
+  class, with `%or.cond523.i` clear: `if.end245.i` leaves for `if.then249.i`, whose offset
+  store and the copy are the refusal arm.  The route witness is `WalkRefuseAt`, the
+  structure every refusing route in the tree states (`bracketRefuse_at`,
+  `commaRefuse_at`, …), so the arm carries the refusal exactly as the other refusal arms
+  do. -/
+  | stringOpenAboveZeroRefuse {b1 b2 : UInt8}
+      (h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 34)))
+      (hsp : C.sp ≠ 0)
+      (hmark : C.tyMap (C.sp - 1) = b1)
+      (hstate : C.stMap (C.sp - 1) = b2)
+      (hpreV : s2ValuePosPre
+        [.int 32 (BitVec.ofNat 32 C.sp), .int 32 0,
+         .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
+      (r : CallOutcome)
+      (hcall : stage2Calls stage2SubCalls "s2_value_pos"
+        [.int 32 (BitVec.ofNat 32 C.sp), .int 32 0,
+         .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r)
+      (href : WalkRefuseAt (stage2Calls stage2SubCalls) G C s) :
+      HcontArm calls G C s
   /-- **The plain-value token on the numeral route** (`HcontScalarFacts`): the class the
   old split excluded. -/
   | scalar (f : HcontScalarFacts G C s) : HcontArm calls G C s
@@ -542,11 +627,12 @@ inductive HcontArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
   | run (f : RunFacts G C s) : HcontArm calls G C s
 
 /-- **The dispatch, from the arm.**  Each proved arm runs its own theorem; the standalone
-string is `ofStringMerge` at the arm's residue.  Every constructor is a proved class, but
-the arm is total over the *byte* census `HcontClass.complete`, not over the invariant's
-states: `HcontClass.stringOpener` at `C.sp ≠ 0` has no constructor (the module header
-names the route), so a caller that only knows the head's byte is a `"` at positive depth
-has no arm to dispatch. -/
+string is `ofStringMerge` at the arm's residue and its depth split, and the positive-depth
+opener is the merge or the refusal its route reached.  Every constructor is a proved
+class, and the arm is total over `HcontClass.complete`'s bytes *and* over the invariant's
+states: `HcontClass.stringOpener` at `C.sp ≠ 0` is
+`stringOpenAboveZeroMerge`/`stringOpenAboveZeroRefuse`, and all three states the earlier
+split lacked (`}` at zero, an opener at `520`, the opener above zero) now have one. -/
 theorem HcontArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     {s : State} (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead)
     (hk : C.k + 1 < G.nep) :
@@ -564,7 +650,27 @@ theorem HcontArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
       WalkDispatchResult.merge Cd sd p spv k2 prev spOp kOp nepv seg hblk hkC hpre hsp hspv
         hkOp hk2 hnepv hadvance (le_of_lt hbelow) hspcap hspw hprice)
       (walkDispatch_at_continue_cells C s hInv hblock hk f)
-  | .twoEntry f R hR8 => WalkDispatchResult.ofStringMerge G C s hblock hInv f R hR8
+  | .twoEntry f hsp0 R hR8 =>
+    WalkDispatchResult.ofStringMerge G C s hblock hInv f hsp0 R hR8
+  | .stringOpenAboveZeroMerge h8 hsp hmark hstate hpreV r hcall Cd sd p k2 nepv hseg
+      hblockD hkC prev hprev hpreD hincD hnepD hadvance hcap hprice => by
+    have hspv : evalOperand sd (.reg "%sp.i.0248") =
+        some (.int 32 (BitVec.ofNat 32 Cd.sp)) := hseg.inv'.depth_reg
+    cases hprev with
+    | inl h =>
+      subst h
+      exact WalkDispatchResult.merge Cd sd p Cd.sp k2 "if.then330.i"
+        (Operand.reg "%sp.i.0248") (Operand.reg "%inc208.i") nepv
+        hseg hblockD hkC hpreD (by decide) hspv (by decide) hincD hnepD
+        hadvance hcap hseg.inv'.depth_cap hseg.inv'.sp_le_wlen hprice
+    | inr h =>
+      subst h
+      exact WalkDispatchResult.merge Cd sd p Cd.sp k2 "if.else334.i"
+        (Operand.reg "%sp.i.0248") (Operand.reg "%inc208.i") nepv
+        hseg hblockD hkC hpreD (by decide) hspv (by decide) hincD hnepD
+        hadvance hcap hseg.inv'.depth_cap hseg.inv'.sp_le_wlen hprice
+  | .stringOpenAboveZeroRefuse h8 hsp hmark hstate hpreV r hcall href =>
+    WalkDispatchResult.ofRefuseAt href
   | .scalar f =>
     (fun ⟨Cd, sd, p, spv, k2, prev, spOp, kOp, nepv, seg, hblk, hkC, hpre, hsp, hspv,
         hkOp, hk2, hnepv, hbelow, _hnep, hadvance, hspcap, hspw, hprice⟩ =>

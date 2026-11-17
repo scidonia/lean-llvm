@@ -367,13 +367,15 @@ structure HstringFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
   root-done word to `s2_value_pos`; the pointer is the invariant's
   (`walkStaticRegs`'s `%root_done.i`), the word, the precondition and the
   callee's answer are **supplied** — no producer of `s2ValuePosPre` at this
-  argument list is stated in the tree — and `C.sp = 0` is the arm's selector: at depth zero the block goes to
-  `if.end245.i`, not to `land.lhs.true.i`. -/
+  argument list is stated in the tree.  The block's *edge* is the depth's:
+  `if.end245.i` at depth zero and `land.lhs.true.i` above it.  That split is not a
+  fact about the token's class — both edges are the same token's — so it is a
+  parameter of the theorems that read it (`strPath8`'s `hsp0`) rather than a field
+  here. -/
   root : Nat
   hroot : lookupName s.env "%root_done.i" = some (.ptr root)
   rd : BitVec 32
   hreadRoot : readBytes s.mem root 4 = some (natToBytes rd.toNat 4)
-  hsp0 : C.sp = 0
   hpreV : s2ValuePosPre
     [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rd,
      .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next
@@ -652,7 +654,7 @@ def strS₅ {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (q : Nat) (s : State)
     pc := "if.then219.i",
     pre := some (strS₄ s).pc }
 
-/-- **The state `if.then219.i` reaches.**  The depth is zero (`G4`'s `hsp0`), so
+/-- **The state `if.then219.i` reaches.**  The depth is zero (`strPath8`'s `hsp0`), so
 the edge is `if.end245.i` and not `land.lhs.true.i`; the three cells are the
 depth's test, the callee's answer and the root word it returned.  The memory is
 the caller's: `s2_value_pos` hands it back (`r.mem = mem`). -/
@@ -1141,7 +1143,8 @@ store while its `%outn.i` zero is inside the four stack objects.  The block's ow
 check is clear at `walkArenaReserve_clear` and the bundle's arithmetic, so the
 carry the link leaves is `strC₈`. -/
 theorem strPath8 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
-    (hhead : C.block = "NodeBlock21") (hInv : WalkInv G C s) (f : HstringFacts G C s) :
+    (hhead : C.block = "NodeBlock21") (hInv : WalkInv G C s) (f : HstringFacts G C s)
+    (hsp0 : C.sp = 0) :
     ∃ s', WalkSegment (stage2Calls stage2SubCalls) G C s (strC₈ C f.ix f.ext) s' 8 ∧
       s' = strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s := by
   obtain ⟨s5, hseg5, hs5⟩ := strPath5 G C s hhead hInv f
@@ -1164,7 +1167,7 @@ theorem strPath8 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     have h := walkReadBytes_rootSlot_at (G := G) (C := C) (s := s) (k := C.k + 2)
       (rd := f.rd) hreadRoot
     simpa only [strS₅, strSetK₅, strS₄, strS₃, strS₂, strS₁, State.bind, stateAt] using h
-  have hspv : (BitVec.ofNat 32 C.sp).toNat = 0 := by rw [f.hsp0]; decide
+  have hspv : (BitVec.ofNat 32 C.sp).toNat = 0 := by rw [hsp0]; decide
   have hpre5 : s2ValuePosPre
       [.int 32 (BitVec.ofNat 32 C.sp), .int 32 f.rd,
        .ptr C.stage.ctype, .ptr C.stage.cst]
@@ -1189,7 +1192,7 @@ theorem strPath8 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     WalkLink.if_then219_i (G := G) (C := strC₅ C) (s := strS₅ G C f.q s) hInv5 rfl
       (root := G.next0 + 8) (rd := f.rd) (x := f.xv) hroot5 hread5 hpre5 hx5
   have hbit6 : evalICmp .eq (BitVec.ofNat 32 C.sp) (BitVec.ofNat 32 0) = 1 := by
-    rw [f.hsp0]; decide
+    rw [hsp0]; decide
   have hs6' : s6 = strS₆ G C f.q f.rd f.xv s := by
     rw [hs6, hbit6, if_pos rfl]
     rfl
@@ -1396,6 +1399,7 @@ walk's own frame across the two stores and its growth (`write_inside`,
 module header; the proof below is `R1's memory, produced`. -/
 theorem strPath9 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     (hhead : C.block = "NodeBlock21") (hInv : WalkInv G C s) (f : HstringFacts G C s)
+    (hsp0 : C.sp = 0)
     (harr : lookupName (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).env "%arrayidx10.i"
       = some (.ptr (G.b + f.ix.toNat)))
     (hreadAr : readBytes s.mem (C.stage.z + 40) 8 = some (wordBytes 8 G.dst))
@@ -1407,7 +1411,7 @@ theorem strPath9 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
       r.ret = .int 32 f.y ∧
       readBytes r.mem C.stage.z 8 = some (wordBytes 8 G.ev) ∧
       (∃ l, readBytes r.mem (G.next0 + 20) 8 = some (wordBytes 8 l) ∧ l ≤ f.ext) := by
-  obtain ⟨s8, hseg8, hs8⟩ := strPath8 G C s hhead hInv f
+  obtain ⟨s8, hseg8, hs8⟩ := strPath8 G C s hhead hInv f hsp0
   subst hs8
   have hInv8 : WalkInv G (strC₈ C f.ix f.ext)
       (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s) := hseg8.inv'
@@ -1789,6 +1793,7 @@ the block's own test — `%call272.i` is the callee's answer and its bit is R8's
 the edge is `LeafBlock29` and the target is `strS₁₀`. -/
 theorem strPath10 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     (hhead : C.block = "NodeBlock21") (hInv : WalkInv G C s) (f : HstringFacts G C s)
+    (hsp0 : C.sp = 0)
     (harr : lookupName (strS₈ G C f.q f.rd f.xv f.A f.Cc f.ix s).env "%arrayidx10.i"
       = some (.ptr (G.b + f.ix.toNat)))
     (hreadAr : readBytes s.mem (C.stage.z + 40) 8 = some (wordBytes 8 G.dst))
@@ -1801,7 +1806,7 @@ theorem strPath10 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
       readBytes r.mem C.stage.z 8 = some (wordBytes 8 G.ev) ∧
       (∃ l, readBytes r.mem (G.next0 + 20) 8 = some (wordBytes 8 l) ∧ l ≤ f.ext) := by
   obtain ⟨r, s9, hseg9, hs9, hretR, hlogBaseR, houtnR⟩ :=
-    strPath9 G C s hhead hInv f harr hreadAr hR8 hlogBase
+    strPath9 G C s hhead hInv f hsp0 harr hreadAr hR8 hlogBase
   subst hs9
   -- ---- link 10: `NodeBlock31`
   have hInv9 : WalkInv G (strC₉ C f.ix f.ext)
@@ -2027,7 +2032,8 @@ it is the arm's field.  `hR8` is the arm's selector, carried here rather than by
 residue because the callee may refuse and a refusal leaves `NodeBlock31` at
 `cleanup339.critedge.i`.  The head facts it does not restate are the bundle's:
 `f.hcount` gives the continuing test (`strCount_test`), `f.hwin` the window's room,
-and `f.hsp0` the depth that makes `if.else334.i`'s precondition an `Or.inl`.
+and the parameter `hsp0` the depth that makes `if.else334.i`'s precondition an
+`Or.inl`.
 Nothing is quantified over states the run does not reach: the endpoint is the state
 the last link leaves.
 
@@ -2038,6 +2044,7 @@ write-back arm's are the decoded length; the merge's two `phi`s select them by t
 predecessor, which is why the arm has to be a case rather than a value. -/
 theorem stringPath_seg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     (hhead : C.block = "NodeBlock21") (hInv : WalkInv G C s) (f : HstringFacts G C s)
+    (hsp0 : C.sp = 0)
     (R : HstringResidue G C s f)
     (hR8 : evalICmp .slt f.y (BitVec.ofNat 32 1) = 0) :
     ∃ (Cd : WalkCarry G) (sd : State),
@@ -2047,7 +2054,7 @@ theorem stringPath_seg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
       lookupName sd.env "%inc208.i" = some (.int 64 (BitVec.ofNat 64 (C.k + 2))) ∧
       lookupName sd.env "%nep" = some (.int 64 (BitVec.ofNat 64 G.nep)) := by
   obtain ⟨r, s10, hseg10, hs10, hretR, hlogBaseR, ⟨l, hreadOutn, hlext⟩⟩ :=
-    strPath10 G C s hhead hInv f (strArr_of_iter (f := f) hInv.iter.regarr)
+    strPath10 G C s hhead hInv f hsp0 (strArr_of_iter (f := f) hInv.iter.regarr)
       hInv.log_dst hR8 hInv.log_base
   subst hs10
   -- the event cursor's signed bound: the staging's clause, through `evlen_le`
@@ -2298,7 +2305,7 @@ theorem stringPath_seg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
               (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))))) :=
       hl14'.inv'
     -- ---- link 15: `if.else334.i`
-    have hspv0 : (BitVec.ofNat 32 C.sp).toNat = 0 := by rw [f.hsp0]; decide
+    have hspv0 : (BitVec.ofNat 32 C.sp).toNat = 0 := by rw [hsp0]; decide
     have hpreAV : s2AfterValuePre
         [.int 32 (BitVec.ofNat 32 C.sp), .ptr (G.next0 + 8),
          .ptr C.stage.ctype, .ptr C.stage.cst]
@@ -2645,7 +2652,7 @@ theorem stringPath_seg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
               C.stage.z f.A.toNat l))) :=
       hl14'.inv'
     -- ---- link 15: `if.else334.i`
-    have hspv0 : (BitVec.ofNat 32 C.sp).toNat = 0 := by rw [f.hsp0]; decide
+    have hspv0 : (BitVec.ofNat 32 C.sp).toNat = 0 := by rw [hsp0]; decide
     have hpreAV : s2AfterValuePre
         [.int 32 (BitVec.ofNat 32 C.sp), .ptr (G.next0 + 8),
          .ptr C.stage.ctype, .ptr C.stage.cst]
@@ -2779,11 +2786,11 @@ not know which of those documents it is at.  `mergeLast` would therefore be unus
 here, and the full price is the one the two-entry advance pays. -/
 theorem WalkDispatchResult.ofStringMerge {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
     (s : State) (hhead : C.block = "NodeBlock21") (hInv : WalkInv G C s)
-    (f : HstringFacts G C s) (R : HstringResidue G C s f)
+    (f : HstringFacts G C s) (hsp0 : C.sp = 0) (R : HstringResidue G C s f)
     (hR8 : evalICmp .slt f.y (BitVec.ofNat 32 1) = 0) :
     WalkDispatchResult (stage2Calls stage2SubCalls) G C s := by
   obtain ⟨Cd, sd, hseg, hsegBlock, hsegK, hsegPre, hInvD, hinc208, hnepM⟩ :=
-    stringPath_seg G C s hhead hInv f R hR8
+    stringPath_seg G C s hhead hInv f hsp0 R hR8
   have hk2cap : C.k + 2 ≤ G.nep := by
     have := strCount_test G C s hInv f
     omega

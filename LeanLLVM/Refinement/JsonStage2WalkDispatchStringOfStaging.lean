@@ -42,7 +42,7 @@ The document's content is taken, each with what supplies it:
 | `heq34` | **the head byte's class**: `%8 = 34` — the document's byte at the entry's position |
 | `bs`, `hreadLane`, `hq` | **the next entry's lane word**: the read at `%5 + (%inc.i)·4` and the word itself, which is the closer's position (`G.ent`) |
 | `rd`, `hreadRoot` | **the root-done word's value**: the four bytes at `%root_done.i`, which the run's own store wrote |
-| `hsp0` | **the depth split**: `C.sp = 0` selects `if.end245.i`, not the helper's success path |
+| `hsp0` | **the depth split**, the arm's rather than the bundle's: `C.sp = 0` selects `if.end245.i` at `if.then219.i`, and above it the same block takes `land.lhs.true.i`.  It is a parameter of `strPath8`/`strPath9`/`stringPath_seg`/`ofStringMerge` and a field of the arm |
 | `hpreV`, `xv`, `hxv`, `hbranch` | **the value-position call**: its precondition, its answer and the success bit |
 | `hcur` | **the cursor pin**: `C.alen ≤ G.ndst0 + ix`, which the loop head's `pending = none` does not carry |
 | `A`, `hreadA` | **the log's arena word**: `WalkInv.log_alen` gives the inequality, the word's identity is the memory's |
@@ -78,7 +78,6 @@ def hstringFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : 
     (hq : bytesToNat bs = entryPos G (C.k + 1))
     {rd : BitVec 32}
     (hreadRoot : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes rd.toNat 4))
-    (hsp0 : C.sp = 0)
     (hpreV : s2ValuePosPre
       [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rd,
        .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
@@ -152,7 +151,6 @@ def hstringFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : 
       hroot := hInv.regs ("%root_done.i", .ptr (G.next0 + 8)) (by simp [walkStaticRegs])
       rd := rd
       hreadRoot := hreadRoot
-      hsp0 := hsp0
       hpreV := hpreV
       xv := xv
       hxv := hxv
@@ -220,8 +218,8 @@ def hcontArm_twoEntry_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
     (houtn : readBytes s.mem (G.next0 + 20) 8 = some (wordBytes 8 outn))
     (hR8 : evalICmp .slt y (BitVec.ofNat 32 1) = 0) :
     HcontArm (stage2Calls stage2SubCalls) G C s :=
-  .twoEntry (hstringFacts_of_staging G C s hInv hk heq34 hreadLane hq hreadRoot hsp0 hpreV
-    hxv hbranch hcur hreadA hreadC hpreS hwin hy houtn) {} hR8
+  .twoEntry (hstringFacts_of_staging G C s hInv hk heq34 hreadLane hq hreadRoot hpreV
+    hxv hbranch hcur hreadA hreadC hpreS hwin hy houtn) hsp0 {} hR8
 
 /-- **The standalone string's dispatch, from the staging.** -/
 theorem walkDispatch_at_twoEntry_of_staging {m0 : Mem} {G : WalkGeom m0}

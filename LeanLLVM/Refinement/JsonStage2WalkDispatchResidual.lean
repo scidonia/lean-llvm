@@ -69,19 +69,22 @@ Both states are one byte or one nesting away from an ordinary document, so neith
 excluded by the input domain: `"}"` and 520 nested `[` are admitted, malformed and
 deeply-nested inputs.  That is why the arms were owed rather than the domain narrowed.
 
-With them the census is total over those bytes and depths, **but not over the states**:
-the class the byte census names and no constructor's premises admit is the string opener
-at positive depth.  `HcontClass.stringOpener` is the byte `34`; the continuing arm for it
-is `HcontArm.twoEntry`, whose `HstringFacts` carries `hsp0 : C.sp = 0`, and at `C.sp ≠ 0`
-the head leaves `if.then219.i` for `land.lhs.true.i`, where `%ctype.i`'s and `%cst.i`'s
-bytes at `%sp - 1` select the merge at `if.end245.i` (the key record, kind `5`) or the
-refusal at `if.then249.i`.  The invariant admits the state — `depth_cap` bounds the depth
-above only — and so does the document (`{"a":1}`'s second entry, `["a"]`), so no arm is
-refuted there and no arm describes it either: the class is a hole, not a supplied row.
-`JsonStage2WalkDispatchClassRows`'s report names the two links the arm would need, and
-the seam states the tail producers read are produced in
-`JsonStage2WalkHcontSeamInv` (the head chains' own invariants), not supplied.  What
-remains supplied per class is the arm's *payload*, the table below's rows.
+With them the census is total over those bytes and depths, **and now over the states
+too**: the string opener at a positive depth has its own pair of arms,
+`HcontArm.stringOpenAboveZeroMerge`/`.stringOpenAboveZeroRefuse`
+(`JsonStage2WalkDispatchHcontStringDeep`).  `HcontClass.stringOpener` is the byte `34`; at
+`C.sp ≠ 0` the head leaves `if.then219.i` for `land.lhs.true.i`, where `%ctype.i`'s and
+`%cst.i`'s bytes at `%sp - 1` select the key bit at `if.end245.i` — the merge (the key
+record, kind `5`, and the key's own branch `if.then330.i`) or the refusal at
+`if.then249.i`.  The invariant admits the state (`depth_cap` bounds the depth above only)
+and so does the document (`["`·`a`; `stringOpenAboveZero_reachable`), and the arm's
+producer derives the class's own premises — the byte, the depth split and (at a positive
+depth) the value-position staging — off the invariant.  Its route's *segment* is the row
+it still takes, as `.twoEntry`'s body call and `.letters`' tail are theirs; the refusal
+half of the route is composed (`stringDeepRefuse_at`).
+`JsonStage2WalkHcontSeamInv` produces the seam states' invariants the tail producers read,
+so those are not rows either.  What remains supplied per class is the arm's *payload*, the
+table below's rows.
 
 ## The rows the remaining classes take, and from which producer
 
@@ -93,7 +96,8 @@ as a value; **traversal** is the scan's round, guard and byte facts.
 |---|---|---|---|---|
 | both | `.ws` (`126`/`127`, entry left) | `hcontFacts_of_staging` | `hlt125`/`hne125`; the stop's budget conjunct; `hTail`'s three calls | document, ABI |
 | both | `.cleanup` (`126`/`127`, last entry) | `hcontCleanupFacts_of_staging` | the class's bits and `hb13`/`hb32`/`hbne13` from the last byte; `hTail` | document, ABI |
-| both | `.twoEntry` (`"`, entry left, **`C.sp = 0`**) | `hstringFacts_of_staging` | `s2_string_body`'s staging: the allocator cursor's placement, the log's arena word, the byte spacing, the escape count's sign bound; the next lane.  The row is produced at depth zero only — the bundle's `hsp0` — so the class the byte names at positive depth has no arm at all (above) | ABI, document |
+| both | `.twoEntry` (`"`, entry left, `C.sp = 0`) | `hstringFacts_of_staging` | `s2_string_body`'s staging: the allocator cursor's placement, the log's arena word, the byte spacing, the escape count's sign bound; the next lane.  The row is the depth-zero edge's — `strPath8`'s `hsp0` parameter — and the bundle carries no depth field | ABI, document |
+| both | `.stringOpenAboveZeroMerge`, `.stringOpenAboveZeroRefuse` (`"`, entry left, `C.sp ≠ 0`) | `hcontArm_stringOpenAboveZeroMerge_of_staging`, `…Refuse_of_staging` | the class's own facts are derived (the byte from `cont_reg8`, the two stack bytes from the carry's maps, the value-position staging from `tyBytes`/`stBytes`); the **route's segment** is the row — the merge's, whose blocks are the reservation, the body's call, the answer's tests, the record and `if.then330.i`.  The refusal half is composed (`stringDeepRefuse_at`, two links from `if.end245.i`'s state) | ABI, segment |
 | both | `.scalar` | `hcontScalarFacts_of_staging`, `lastEntryArm_scalar_of_staging` | the root word's zero; the last byte's class; the three calls — their preconditions and answers at the returned memories | document, ABI |
 | last | `.highByte` (`126`/`127`) | `hlastFacts_of_staging` | `HlastResidue`: the head bits, the last byte's class, the root word, the three calls | document, ABI |
 | both | `.containerOpen` (`[`, `{`) | `containerOpenMerge_at` | the `519` boundary (above); the root word's zero; `s2_value_pos`'s outcome and the `1` its contract gives | document, ABI |
