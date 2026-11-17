@@ -228,27 +228,11 @@ reached from: `LeafBlock35`'s equality test clears on the scan-free class,
 `LeafBlock33`'s offset test clears below `13`, and `LeafBlock37`'s equality test clears
 above `32`.  The route is `Type` valued because the chain a producer returns is a program.
 
-These live here rather than beside the leaf chains because a bundle states its fields at
-them, and a definition a bundle names must exist above the bundle.  The states are
-functions of the byte alone, so the class-C route's `contP35S` and the last entry's own
-byte are instances of the same three names. -/
-
-/-- **The byte's three routes, stated at the byte.**  `HcontHeadByte` is the class a
-document row carries, tied to `G` and the entry's end word; this is the same three
-non-whitespace routes stated at `cont35 b35`, which is what the pivot steps read. -/
-inductive HcontByteRoute (b : BitVec 8) : Type where
-  /-- `LeafBlock35`'s equality test to `if.end372.i`. -/
-  | scanFree (hb13 : evalICmp .slt b (BitVec.ofNat 8 13) = 0)
-      (hb32 : evalICmp .slt b (BitVec.ofNat 8 32) = 1)
-      (hbne13 : evalICmp .eq b (BitVec.ofNat 8 13) = 0) : HcontByteRoute b
-  /-- `NodeBlock41`'s first arm to `LeafBlock33`, its offset test clearing. -/
-  | lowLeaf (hb13 : evalICmp .slt b (BitVec.ofNat 8 13) = 1)
-      (hbns : evalICmp .ule (b + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 0) :
-      HcontByteRoute b
-  /-- `NodeBlock39`'s second arm to `LeafBlock37`, its equality test clearing. -/
-  | highLeaf (hb13 : evalICmp .slt b (BitVec.ofNat 8 13) = 0)
-      (hb32 : evalICmp .slt b (BitVec.ofNat 8 32) = 0)
-      (hbne32 : evalICmp .eq b (BitVec.ofNat 8 32) = 0) : HcontByteRoute b
+The type itself is `JsonStage2WalkPrefixCount`'s, where the last entry's bundles can name
+it too: the last entry's byte is `head35 b35`, the same `BitVec.ofNat 8 b35.toNat` as
+`cont35`, so one route type serves both levels.  What lives here is the continuing side's
+states at it — `contP41Out` … `contSeamByte` — because they are functions of the byte at
+the continuing entry's own `%35` cell. -/
 
 /-! ### The byte's leaf arms, as states -/
 
@@ -1323,42 +1307,6 @@ theorem contP35Any_envNep (s : State) (b35 : UInt8) :
 /-- The scan-free route's endpoint leaves the memory alone. -/
 theorem contP35Any_mem (s : State) (b35 : UInt8) :
     (contP35Any s b35).mem = s.mem := rfl
-
-/-- `%8` at a seam state is the pre-state's. -/
-theorem seamS_env8 (s : State) (e : BitVec 64) (b8 : BitVec 8) (tok : Nat) :
-    lookupName (seamS s e b8 tok).env "%8" = lookupName s.env "%8" := by
-  simp only [seamS, seamFin, stateAt]
-  repeat rw [lookupName_cons_ne _ _ (by decide)]
-
-/-- `%cond350.i` at a seam state is the pre-state's. -/
-theorem seamS_cond (s : State) (e : BitVec 64) (b8 : BitVec 8) (tok : Nat) :
-    lookupName (seamS s e b8 tok).env "%cond350.i" = lookupName s.env "%cond350.i" := by
-  simp only [seamS, seamFin, stateAt]
-  repeat rw [lookupName_cons_ne _ _ (by decide)]
-
-/-- `%inc.i` at a seam state is the pre-state's. -/
-theorem seamS_envInc (s : State) (e : BitVec 64) (b8 : BitVec 8) (tok : Nat) :
-    lookupName (seamS s e b8 tok).env "%inc.i" = lookupName s.env "%inc.i" := by
-  simp only [seamS, seamFin, stateAt]
-  repeat rw [lookupName_cons_ne _ _ (by decide)]
-
-/-- `%nep` at a seam state is the pre-state's. -/
-theorem seamS_envNep (s : State) (e : BitVec 64) (b8 : BitVec 8) (tok : Nat) :
-    lookupName (seamS s e b8 tok).env "%nep" = lookupName s.env "%nep" := by
-  simp only [seamS, seamFin, stateAt]
-  repeat rw [lookupName_cons_ne _ _ (by decide)]
-
-/-- `%ee.1.i` at a seam state is the end the seam stored. -/
-theorem seamS_ee (s : State) (e : BitVec 64) (b8 : BitVec 8) (tok : Nat) :
-    lookupName (seamS s e b8 tok).env "%ee.1.i" = some (.int 64 e) := by
-  simp only [seamS, seamFin, stateAt]
-  repeat rw [lookupName_cons_ne _ _ (by decide)]
-  exact lookupName_cons_self _ _ _
-
-/-- The seam's memory: the pre-state's with the token's end stored inside the record. -/
-theorem seamS_mem (s : State) (e : BitVec 64) (b8 : BitVec 8) (tok : Nat) :
-    (seamS s e b8 tok).mem = writeBytes s.mem (tok + 8) (natToBytes e.toNat 8) := by
-  simp only [seamS, seamFin, stateAt]
 
 /-- **A store inside the token record leaves the root slot's word alone.**  The token record
 ends at or below `G.next0` (`WalkStage.sevenEnd`) and the root slot is four bytes at

@@ -658,7 +658,7 @@ theorem LastEntryArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
   | .highByte r =>
     WalkDispatchResult.ofHlastMerge G C s hInv hblock
       (hlastFacts_of_staging (rdv := r.rdv) (xA := r.xA) G C s hInv hblock hnot
-        r.hlt125 r.hne125 r.hb13 r.hb32 r.hbne13 r.r₁ r.r₂ r.r₃
+        r.hlt125 r.hne125 r.hb r.r₁ r.r₂ r.r₃
         r.hreadT r.hpre₁ r.hcall₁ r.hret₁ r.hbit0T r.hzread
         r.hpre₂ r.hcall₂ r.hret₂ r.hev64 r.hpre₃ r.hcall₃)
   | .stringOpener h8 hinc hnep hge hv he =>

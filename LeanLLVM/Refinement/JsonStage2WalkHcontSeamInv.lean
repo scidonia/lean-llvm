@@ -147,18 +147,20 @@ theorem scSeamInv_of_scalar {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : 
 
 /-! ### The last entry's seam -/
 
-/-- **The invariant at the last entry's tail start.**  `hlastTailSeg`'s sixteen links end
-at `TailStartC`/`hlastTail`, which is the last entry's tail producers' `hInvT`; the
-bundle's fields are the chain's inputs, so this is the head invariant plus the document's
-class, and not a new premise. -/
+/-- **The invariant at the last entry's tail start, at the byte's route.**
+`hlastTailSegByte`'s `12 + hlastByteCount hb` links end at `TailStartC`/
+`hlastTailByte`, which is the last entry's tail producer's `hInvT`; the bundle's fields are
+the chain's inputs, so this is the head invariant plus the document's route, and not a new
+premise. -/
 theorem hlastTailInv_of_facts {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead) (f : HlastFacts G C s) :
-    WalkInv G (TailStartC C) (hlastTail C s f.x f.inc f.nep f.v f.ix f.b35) := by
+    WalkInv G (TailStartC C)
+      (hlastTailByte C s f.x f.inc f.nep f.v f.ix f.b35 f.hb) := by
   have hhead : C.block = "NodeBlock21" := by
     rw [hblock]; rfl
-  exact (hlastTailSeg (G := G) (C := C) (s := s) hInv hhead f.h8 f.hlt91 f.hlt123
+  exact (hlastTailSegByte (G := G) (C := C) (s := s) hInv hhead f.h8 f.hlt91 f.hlt123
     f.hlt125 f.hne125 f.hinc f.hnep f.hge f.hav5 f.hidx5 f.htok5 f.hgap5 f.hugt
-    f.hread35 f.hv63 f.hb13 f.hb32 f.hbne13 f.hbit6 f.hc110 f.hc116 f.hceq116).inv'
+    f.hread35 f.hv63 f.hb f.hbit6 f.hc110 f.hc116 f.hceq116).inv'
 
 /-! ### The instrument -/
 

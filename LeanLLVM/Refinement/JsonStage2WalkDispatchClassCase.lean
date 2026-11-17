@@ -39,26 +39,19 @@ route leaves them at, and states its tail at the class's own seam
 `hcontSpan17_of_cleanup`/`hcontPrefixCleanupSeg`/`walkRevolutionMergeSeg` carry the class's
 own count (`n ≤ 20`, `p ≤ 21`, and the price `p + 2 ≤ 32·Δk`).
 
-**What the leaf classes still owe is the tail, not the chain.**  The bundle's `hTail` is a
-segment from the class's seam to the class's tail end; `hcontTail_of_calls` produces it at
-`contTailStart` — the scan-free instance — so the producers that reach the bundle
-(`hcontArm_cleanup_of_calls`, `hcontArm_cleanup_of_doc`) pass the scan-free route.  A leaf
-byte's arm therefore needs the same three callee rows at its own seam: the tail's calls bind
-no cell the seam's route changes (`contSeamByte_ee`, `contSeamByte_cond` are stated at every
-class), so this is the same producer re-pointed, not a new one.
-
 **What the leaf classes now hold is the tail, and it is produced at the route.**
 `hcontTailByte_of_calls` (`JsonStage2WalkDispatchSegments`) is `hcontTail_of_calls`'s
 route-generic twin: it takes `hb : HcontByteRoute (cont35 b35)` and the three callees'
 rows at `contTailStartByte … hb`, so the arm-level document row (`HcontCleanupDoc`) and
 its chain (`hcontSpan17_of_doc`) are stated at the byte's route too, and the default-value
-branch passes `hb` rather than `.scanFree`.  What `walkContinueFacts_of_payload` still
-waits on is the class-case assembly over `HcontClass.complete`, and, at the last entry,
-the same restatement of `HlastFacts`/`HlastResidue` (those still assert the last byte's
-scan-free bits and so cannot yet select `.lowLeaf`/`.highLeaf`).
+branch passes `hb` rather than `.scanFree`.  The tail's calls bind no cell the seam's
+route changes (`contSeamByte_ee`, `contSeamByte_cond` are stated at every class), so this
+is the same producer re-pointed, not a new one.  What `walkContinueFacts_of_payload` still
+waits on is the class-case assembly over `HcontClass.complete` and the payload item named
+below.
 
 The byte selection itself is **done**: `JsonStage2WalkDispatchClassTransport` derives the
-route's own bits (`slt %8 110`, `eq %8 102`, `slt %8 116`, `eq %8 116`, `slt %8 125` and
+route's own bits (`slt %8 110`, `eq %8 116`, `slt %8 116`, `eq %8 116`, `slt %8 125` and
 the seam's tag test) from each default-value constructor's range bits, builds the
 head chain at them, and returns the arm.  Its six branches cover
 `.defaultValueLow`, `.defaultValueMid`, `.otherValue`, `.defaultValueBracket`,
@@ -66,6 +59,22 @@ head chain at them, and returns the arm.  Its six branches cover
 the bracket-high class's `'f'`/letters/class-C split.  So the class case's default-value
 half needs no further bit transport — only the class case's assembly and the leaf
 bundle above.
+
+**The last level's leaf bundle is closed.**  `HlastFacts` and `HlastResidue` carry the
+last byte's route (`hb : HcontByteRoute (head35 (G.bs.getD (G.n - 1) 0))`) in place of
+the three scan-free bits, `hlastTailByte_of_calls` produces `hTail` at the class's own
+seam, `hlast_toMerge` states the path at the route's count (`12 + hlastByteCount hb + 3 +
+1 ≤ 20`) and `hlast_finish`/`hlast_refuse` price it at `22 ≤ 32` and `25 ≤ 32`, so
+`.highByte` selects `.lowLeaf`/`.highLeaf` rather than assuming the scan-free leaf.
+
+**What the two class cases still need is a payload item, not a proof.**  Each branch
+exists, but `walkContinueFacts_of_payload`'s `.run` branch takes a `HcontRunRow` and
+`walkLoopEnd_of_payload`'s default arms take the `LastEntryArm` constructors' premises,
+and neither `HcontPayload`/`HcontClassRows` nor `HlastPayload`/`HlastClassRows` produces
+those: the first carries no check state's rows, the second only the openers' and the
+high-byte class's.  Widening a payload is a contract change, so it is recorded rather
+than improvised here; the rows themselves are `HcontRunRow`, `HcontRunRows`,
+`HcontWsSeam` and the `lastEntryArm_*_of_staging` producers' argument lists.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkDispatchClassCLeaves
 import LeanLLVM.Refinement.JsonStage2WalkDispatchScalarRows

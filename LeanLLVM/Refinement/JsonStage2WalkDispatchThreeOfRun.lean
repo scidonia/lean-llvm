@@ -341,7 +341,7 @@ theorem WalkDispatchResult.ofHlastMerge {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
     WalkDispatchResult (stage2Calls stage2SubCalls) G C s := by
   obtain ⟨seg, hinv⟩ := hlast_toMerge G C s hInv hblock f
   refine WalkDispatchResult.merge (hlastMergeCF f) (hlastMergeF f)
-    ((((((6 + 1) + 5) + 3) + 3) + 1) + 1) (hlastMergeCF f).sp f.k2 "if.end473.i"
+    (((12 + hlastByteCount f.hb) + 3) + 1) (hlastMergeCF f).sp f.k2 "if.end473.i"
     (Operand.reg "%sp.i.0248") (Operand.reg "%inc.i") f.nepv seg rfl rfl rfl (by decide)
     hinv.depth_reg (by decide) f.hk2 f.hnepM ?_ ?_ hinv.depth_cap hinv.sp_le_wlen ?_
   · have h1 := f.hlastK
@@ -352,6 +352,7 @@ theorem WalkDispatchResult.ofHlastMerge {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
     rw [f.hterm]
   · rw [f.hk2nep, walkEntryPos_at_nep G]
     have hΔ : G.nep - C.k = 1 := by rw [← f.hlastK]; omega
+    have hc : hlastByteCount f.hb ≤ 4 := hlastByteCount_le f.hb
     simp only [Nat.zero_sub, Nat.mul_zero, Nat.add_zero, stage2EntryAllowance, hΔ]
     omega
 

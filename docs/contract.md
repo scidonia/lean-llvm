@@ -783,7 +783,7 @@ and no entry carries the execution segment its own producer builds.
 | c10 | the four delimiter refusals and the two above-zero delimiter pairs | `bracketRefuse_at`, `commaRefuse_at`, `colonRefuse_at`, `closeBraceZero_at`, `commaBraceMerge_at` … | `hcontArm_of_derivedClass` (`JsonStage2WalkDispatchResidual`) | **none**: the class bits and `WalkInv`'s own cells |
 | c11 | `.containerOpen`/`.openAtCap`/`.containerOpenRefuse` (bytes `91`/`123`): the value-position call's row at the root slot's witness word, and the answer that selects the arm | `HcontAbi.openCall` (the witness, its read, the staging and the outcome — no answer); `s2ValuePos_ret_zero_or_one` for the split | `walkDispatch_at_open91_of_payload` … | **the call's row at the witness word**, and nothing else.  The *value* is the arm's witness `rdv`, read by `walkReadBytes_rootSlot_word` from `root_slot`'s four present bytes, and **not derivable**: `entry` writes the initial `0` and `s2_after_value`'s depth-zero arm writes `1` (`s2AfterValuePost_rootSlot_at_zero`), while above depth zero it leaves the slot alone (`s2AfterValuePost_rootSlot_above`), so `0` is not among the callee's writes and the word is a function of the path.  That distinction is recorded rather than repaired: no clause pins the word and none is owed, because the arms carry it.  The *answer* is derived, not assumed: the callee's model returns `0` or `1` (`stage2ValuePos_lt_two`), so the `1` arms (`.containerOpen` at depth `≤ 519`, `.openAtCap` at `520`) and the `0` arm (`.containerOpenRefuse`, `if.then16.i`'s offset store to the copy, six links) are exhaustive over the class's states.  The call's *precondition* at the witness word follows by the same depth case split `stringOpenAboveZero_pre_of_inv` applies (`Or.inl` at depth zero, the two stack maps at a positive depth), though no theorem states the general case yet; the row is the call itself |
 | c12 | `.closeWithOpen` (`93`/`125` at `C.sp ≠ 0`): the two stack bytes and the callee's precondition at `%ctype.i + (%sp - 1) - 1` | `s2AfterValuePre_of_inv` (`JsonStage2WalkDispatchResidual`) | `hcontArm_of_derivedClass` | **none** |
-| l1 | last entry `.highByte` (`126`/`127`, no entry left): the last byte's class, the byte before the token's end, the three calls, the root-done word | `HlastResidue`'s rows; `hlastFacts_of_staging` (`JsonStage2WalkDispatchWitnessHlast`) composes `hlastTailSeg` and `hlastTail_of_calls`; `hlastTail_rootSlot_word` (`JsonStage2WalkDispatchSupply`) for the slot's read | `LastEntryArm.highByte` → `dispatch` | **none**: `HlastFacts`'s seam word `rdv` with its read is produced.  `hlastTail_rootSlot_word` reads the slot as a word from `WalkInv.root_slot` (`walkReadBytes_rootSlot_word`) and transports it across the tail's four token-record stores — the position, the gap, the seam's end and the kind — each of which the record's extent separates from `G.next0 + 8` (`readBytes_rootSlot_tokWrite`).  `rdv` is the memory's witness, which is what the row's *variable* word means: the slot's writers are `entry`'s `0` and `s2_after_value`'s depth-zero `1`, and no consumer pins which.  The last entry's openers take the same witness row as c11's (`HcontOpenCall`, at the exhausted count), so neither level's lane carries a value clause |
+| l1 | last entry `.highByte`: the last byte's **route** (whichever non-whitespace leaf the document's byte selects), the byte before the token's end, the three calls, the root-done word | `HlastResidue`'s rows, whose `hb` is the route; `hlastFacts_of_staging` (`JsonStage2WalkDispatchWitnessHlast`) composes `hlastTailSegByte` and `hlastTailByte_of_calls` (the tail at the class's own seam); `hlastTail_rootSlot_word` (`JsonStage2WalkDispatchSupply`) for the slot's read | `LastEntryArm.highByte` → `dispatch` | **none**: `HlastFacts`'s seam word `rdv` with its read is produced.  `hlastTail_rootSlot_word` reads the slot as a word from `WalkInv.root_slot` (`walkReadBytes_rootSlot_word`) and transports it across the tail's four token-record stores — the position, the gap, the seam's end and the kind — each of which the record's extent separates from `G.next0 + 8` (`readBytes_rootSlot_tokWrite`).  `rdv` is the memory's witness, which is what the row's *variable* word means: the slot's writers are `entry`'s `0` and `s2_after_value`'s depth-zero `1`, and no consumer pins which.  The last entry's openers take the same witness row as c11's (`HcontOpenCall`, at the exhausted count), so neither level's lane carries a value clause |
 | l2 | last entry `.scalar`: the three call rows at `TailStartC`/`hlastTail` | `scalarTail_of_calls` (`JsonStage2WalkDispatchScalar`) | `LastEntryArm.scalar` | the three call rows at the last entry's seam and the seam state's own cells: `scalarTail_of_calls` composes the tail from the three callees' preconditions and answers at `TailStartC`'s argument lists, so the segment is produced and what remains is the helper boundary — no document row and no arm |
 | l3 | last entry `.letters`/`.fLetter`/`.classC`: the seven-link suffix and the class's four-pivot prefix | `contDefLastSeg`, `contLastLowHeadSeg` … (`JsonStage2WalkDispatchLettersHead`) | `LastEntryArm.letters` … | the tail's three call rows at the last entry's seam: the seven-link suffix and each prefix class's chain are theorems (`contDefLastSeg` at seven, `contLastLowHeadSeg` … `contLastBrcHeadSeg` at ten or eleven), so no link of the route is a row and what remains is the helper boundary at the seam |
 | l4 | last entry `.run`: the terminal run's document bounds and the credit its index consumed | `RunLastFacts` + `runLastMerge_at`, `runLast_price_with_credit`; `terminalStop_bounds` (`JsonStage2WalkDispatchRunOfStaging`) for the three bounds | `LastEntryArm.run` | **none** for the bounds: `terminalStop_bounds` derives `hstart`/`hNdoc`/`hspanDoc` from the terminal stop's two (`terminalStop_ge`, `terminalStop_le`) and the geometry's width (`WalkGeom.doc`), and `runLastFacts_of_staging` fills them with it; the price and the credit are derived from them (`runLast_price_with_credit`), so no segment and no callee row is taken.  What the bundle still takes is the traversal's own numbers — the counter `i`, the seam's bound `c`, `i < c`, and the two ties that name them (`i = terminalStop G.bs (entryPos G C.k)`, `c = G.n`) — and the tail's call row, not a document bound |
@@ -858,17 +858,19 @@ consumed by the payload's own `walkDispatch_of_payload_covered`.  What is left i
 c9's *run* class — closed since: `HcontRunRow` (`JsonStage2WalkDispatchClassRows`) carries
 the check state's rows and the seam's state group, and `hcontRunFacts_of_seam`
 (`JsonStage2WalkDispatchSeams`) joins them to `RunFacts`, with `hcontArm_run_of_class`
-projecting the row into the arm.  The continuing side's remaining items are the `.cleanup` leaf classes' *tail*
-(`HcontCleanupFacts` now carries the byte's route — its seam cells sit at the `NodeBlock41`
-state every route leaves them at and its chain is `∃ nH ≤ 12` at whichever leaf the byte
-takes — so what is still scan-free is the bundle's `hTail`, produced by
-`hcontTail_of_calls` at `contTailStart`) and the
-class bits' transport into `letters`/`fLetter`/`classC`.  On the last side, `RunLastFacts`
-is now derived from a seam group (`JsonStage2WalkDispatchRunLastSeam`), so what remains is
-l2/l3's asset: `HlastFacts` asserts the scan-free bits and no row states the leaf document
-byte's class there.  No row is a bundle or an arm, and the one row that carries a segment —
-c4's merge route — is the arm's own route, named as such and not assumed by a producer
-beside the row.
+projecting the row into the arm.  The continuing side's remaining items are the `.cleanup`
+leaf classes' *tail* — closed since: `hcontTailByte_of_calls`
+(`JsonStage2WalkDispatchSegments`) produces it at the byte's route, and `HcontCleanupFacts`
+carries that route — and the class bits' transport into `letters`/`fLetter`/`classC`.  On
+the last side, `RunLastFacts` is derived from a seam group
+(`JsonStage2WalkDispatchRunLastSeam`), and l2/l3's asset is **closed**: `HlastFacts` and
+`HlastResidue` carry the last byte's route (`hb : HcontByteRoute (head35 (G.bs.getD (G.n -
+1) 0))`) in place of the scan-free bits, `hlastTailByte_of_calls` produces the tail at the
+class's own seam, and `hlast_toMerge`/`hlast_finish`/`hlast_refuse` state the path at the
+route's count (`12 + hlastByteCount hb + 3 + 1 ≤ 20`, priced at `22 ≤ 32` and `25 ≤ 32` at
+`Δk = 1`), so `.highByte` selects whichever leaf the document's byte names.  No row is a
+bundle or an arm, and the one row that carries a segment — c4's merge route — is the arm's
+own route, named as such and not assumed by a producer beside the row.
 The quantifiers are the class's and the state's: a
 row is stated at the continued head it belongs to (`C.k + 1 < G.nep` for c1–c12) or at the
 exhausted count (`¬ (C.k + 1 < G.nep)` for l1–l5), never at every head.
@@ -914,11 +916,24 @@ class's document row, the plain-value class's seam row at its prefix, the defaul
 scan-free classes' seam rows at `LetS413`/`FS413`, the four class-C leaves' at
 `ClsS413T`/`ClsS413F`/`ClsS58T`/`HeadS413`, the positive-depth opener's route, and the
 seam's three calls at `contTailStart`), and each has its branch in
-`JsonStage2WalkDispatchClassCase`.  What the continuing level still needs is the run class's
-row: the check state's rows plus the seam's state group, joined to `HcontRunFacts` and then
-to `RunFacts` at the class's short prefix.  No producer does that today, and a field stated
-as the bundle would be what `HcontClassRows`' own rule forbids.  The last level's rows are
-`HlastClassRows`' and `RunLastFacts`'s, and its branches are still to be written.
+`JsonStage2WalkDispatchClassCase`.  Two payload items stand between those branches and the
+two theorems, and both are contract changes rather than missing proofs:
+
+* **The continuing level's run class needs a row group.**  `HcontClassRows.run` takes a
+  `HcontRunRow` (the check state's rows plus the seam's group, joined to `RunFacts` by
+  `hcontRunFacts_of_seam`), and no field of `HcontPayload` produces one at the class's short
+  prefix, so `(hp : HcontPayload) (hc : HcontClassRows)` cannot close `.run`.
+* **The last level needs a group per class.**  `HlastResidue` and `HlastFacts` are at the
+  byte's route and their producers are written, but `LastEntryArm.scalar`, `.letters`,
+  `.fLetter`, `.classC` and `.run` carry their premises in the constructor and
+  `HlastPayload` carries only the openers' and the high-byte class's rows; a last-level
+  group per class is what a `WalkLoopEnd` producer would read.
+
+The last level's route asset is closed: `HlastFacts`/`HlastResidue` carry
+`hb : HcontByteRoute (head35 (G.bs.getD (G.n - 1) 0))`, `hlastTailByte_of_calls` produces
+`hTail` at the class's own seam, and the merge path is counted at the route
+(`hlast_toMerge`, `hlast_finish`, `hlast_refuse`), so `.highByte` is total over the three
+non-whitespace leaves.
 
 **What the two words at `G.next0 + 8` need, and why neither is a value row.**  The
 slot is the root-done flag `%root_done.i`: `entry` writes it `0` among its four allocations,

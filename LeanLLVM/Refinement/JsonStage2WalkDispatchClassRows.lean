@@ -387,7 +387,7 @@ both.  What the last level's remaining classes read is the same pair at the last
 seam — the `.scalar` route's three calls there — so the group below names the seam's calls
 at the last entry's tail start, which is `HcontSeamAbi.last`'s instance. -/
 
-/-- **The last entry's document row**: the last byte's class, one group.  It is
+/-- **The last entry's document row**: the last byte's route, one group.  It is
 `HlastTailLane`'s content, which the payload's `lane.tail` states at the high-byte route's
 two conditions. -/
 abbrev HlastClassDoc {m0 : Mem} (G : WalkGeom m0) : Type :=
@@ -397,15 +397,17 @@ abbrev HlastClassDoc {m0 : Mem} (G : WalkGeom m0) : Type :=
     evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 125) = 0 → HlastTailLane G
 
 /-- **The last entry's class rows**: the last byte's document row and the seam's three
-calls at the last entry's tail start. -/
+calls at the last entry's tail start, at the route the document's byte selects. -/
 structure HlastClassRows {m0 : Mem} (G : WalkGeom m0) : Type where
   /-- The last byte's class (`126`/`127` at the exhausted count). -/
   tail : HlastClassDoc G
   /-- The seam's three calls at the last entry's tail start, for the `.scalar` route and
-  the `.run` class beside it. -/
+  the `.run` class beside it.  The seam is the class's: its source is
+  `hlastTailByte … hb`, so a caller carries the route it read from `tail`. -/
   seam : ∀ (C : WalkCarry G) (s : State) (x : BitVec 8) (inc nep : BitVec 64)
-    (v : Nat) (ix : BitVec 64) (b35 : UInt8),
-    HcontSeamCalls G (TailStartC C) (hlastTail C s x inc nep v ix b35)
+    (v : Nat) (ix : BitVec 64) (b35 : UInt8)
+    (hb : HcontByteRoute (head35 b35)),
+    HcontSeamCalls G (TailStartC C) (hlastTailByte C s x inc nep v ix b35 hb)
 
 /-! ### The instrument -/
 
