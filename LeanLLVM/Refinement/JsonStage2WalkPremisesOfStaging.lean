@@ -960,14 +960,18 @@ and neither is a theorem.  They are not the same kind of obstruction:
 | `WalkLoopEnd` | **class data: the last entry's arm.**  `hlast` is `LastEntryArm` (`LastEntryArm`, every arm with its own producer); the log's arena word is not a field — it is `WalkInv.log_alen`'s witness, which the finalisation's copy loads (`walkMergeWords_of_inv`, `walkRefuseWords_of_inv`) | The arm is supplied evidence at the last-entry head states, not a `WalkInv` consequence: each constructor is a class of the head switch and carries that class's producer's premises.  Nothing in the bundle is false; the tier that would discharge the arm at every `WalkGeom` is what a producer must build, exactly as the continuing bundle's per-class tier is. |
 
 Both rows are the same kind of obstruction — a per-class/per-arm producer tier that is not
-yet built — with two corrections that are now theorems rather than readings, both in the
-continuing bundle's producer rows.  `hcontDefaultRow_not_wsStop`
-(`JsonStage2WalkDispatchSupply`) proves that `HcontPayload.lane.defaultLane`'s row excludes
-the whitespace class, so the payload is uninhabited at the `.ws`/`.run` states and a bundle
-payload must carry that byte's class as a disjunction instead; and
-`cont_hbyteClass_not_wsCont` (`JsonStage2WalkHcontFactsOfStaging`) proves that
-`hcontFacts_of_staging`'s `hbyteClass` range contradicts the bundle's own class field, so
-that producer is vacuous until the traversal's `hbyte` carries the visits' lower bound.
+yet built — and the three shape defects the continuing bundle's producer rows carried are
+now repaired rather than described.  `HcontDefaultRow.hclass` is a `Type`-valued
+disjunction (`HcontByteClass`: `.wsStop` or `.scanFree`), each arm taking its own disjunct,
+so `HcontPayload` is inhabited at the whitespace states again and
+`HcontScanFree.not_wsStop` records the exclusion the old row had asserted; the visited-byte
+row is stated at the visits' span (`k < p + 1`) in `hcontFacts_of_staging`, in
+`scanByteField`, in every `hbyte` and in `ScanVisits`, which `cont_hbyteClass_not_wsCont`
+(`JsonStage2WalkHcontFactsOfStaging`) certifies as the only consistent range; and the
+whitespace seam's invariant and cells are the state group `HcontWsSeam` /
+`hcontWsSeam_of_body` (`JsonStage2WalkDispatchSeams`), produced from `HcontRunBody` /
+`contWsRunBody` (`JsonStage2WalkRevolution`) and the class-C span, so the tail follows
+(`hcontScanTail_of_seam`) without the bundle's own `hTail`.
 Neither bundle's *statement* is false, and the terminal post's numbers are the
 invariant's own — the log's arena word is `log_alen`'s witness, reported as the decoded
 extent, while the frame, presence and capacity clauses stay at the reserved extent.  The

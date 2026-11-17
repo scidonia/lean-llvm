@@ -84,7 +84,7 @@ supplied as a named premise.
 | the run endpoint's two registers (`hinc_sl`, `hnep_sl`) | **retired: proved, not supplied.**  `%inc.i` is `WalkInv.inc_reg` and `%nep` is one of `walkStaticRegs`' pairs, and the seam binds neither (`seamS_env_inc`, `seamS_env_nep`), so the segment's target invariant reads both at the endpoint (`contWsSeamS_inc`, `contWsSeamS_nep`).  A `WalkSegment` carries the invariant at its target, and the run's target is the seam's source |
 | the run endpoint's bound (`hcond_sl`) | **retired: derived, not supplied.**  No `WalkInv` clause names `%cond350.i` at an arbitrary state, and a `WalkSegment` records a run and its target's invariant, not the blocks the run passed — so `contWsRunF` returns the cell as its third conjunct, carried through the arms' latch induction, and the bundle names it no longer.  The seam's `%end.i` cell is derived the same way: `wsSlS_envEnd` transports it from the head state's `WalkInv.regs` |
 | the span's two numbers and the run's stop (`hspan`, `hstart`, `heicd`) | **`hspan` is the document's; `hstart` and `heicd` are derived.**  `v.toNat ≤ entryPos G (C.k + 1)` is the entry stream's number, which the staging does not fix.  `hstart` is `entryPos C.k ≤ k`, i.e. the run's own `ix < k` at the pinned index; `heicd` is `k < v.toNat`, and it is the field that decides the bundle's inhabitation: the class disjunct is `wsStop G (v - 1)`, the per-index conjunct makes every index in `[ix, k)` a continuing byte, and `hugt` puts `v - 1` above `ix` — so `v - 1` below `k` would be both (`cont_heicd`, `wsCont_not_wsStop`) |
-| the traversal's rows (`hround`, `hbyte`, `htok`) | **the round, the read and the register are derived; only the visited byte's class is the document's.**  `hround` is `scanRoundField` (`JsonStage2WalkRevolutionScanRound`): the visit's own segment from the state's two cells, the byte facts and the three local facts, with no guard hypothesis — the round's proof never read the guard the deleted composite accepted, and `ScanGuard`'s `∀` is false at any state whose registers hold words, so the old `hguard` row is gone rather than supplied.  `hbyte` is `scanByteField`: `%3 = G.b` (`WalkInv.ptrs`), the read (`walkDoc_byte`, the document lying outside the run's frame at every carry), the `%47` cell (`landRhs457OutAt`'s own) and the three locals (two blocks with no local fact, and the latch's `ScanCount` at the next counter).  What enters is `hbyteClass` — the visited byte's two class bits at `wsByte G (p + 1)` — which is the input's content and which no invariant clause or callee contract fixes.  `htok` is `scanTokField` from `WalkInv.regs` |
+| the traversal's rows (`hround`, `hbyte`, `htok`) | **the round, the read and the register are derived; only the visited byte's class is the document's.**  `hround` is `scanRoundField` (`JsonStage2WalkRevolutionScanRound`): the visit's own segment from the state's two cells, the byte facts and the three local facts, with no guard hypothesis — the round's proof never read the guard the deleted composite accepted, and `ScanGuard`'s `∀` is false at any state whose registers hold words, so the old `hguard` row is gone rather than supplied.  `hbyte` is `scanByteField`: `%3 = G.b` (`WalkInv.ptrs`), the read (`walkDoc_byte`, the document lying outside the run's frame at every carry), the `%47` cell (`landRhs457OutAt`'s own) and the three locals (two blocks with no local fact, and the latch's `ScanCount` at the next counter).  What enters is `hbyteClass` — the visited byte's two class bits at `wsByte G (p + 1)`, stated at the visits' span (`k < p + 1`), not at every index below the bound — which is the input's content and which no invariant clause or callee contract fixes.  `htok` is `scanTokField` from `WalkInv.regs` |
 | the token's register at the scan's exit (`htok`) | **derived.**  `%t352.i` is one of `walkStaticRegs`'s thirty-two, and `WalkInv.regs` carries them at every state, so `cont_static_tok` proves the field's `∀` outright — no preservation lemma is needed, and the earlier reading (that a traversal's existential endpoint leaves no term to state a register at) applied to the *scan's own* endpoint, not to the invariant-carrying states the field quantifies over |
 
 **The map's shape.**  *Produced* from the invariant and the staging: the head's byte
@@ -541,12 +541,11 @@ theorem cont_wsTailSpan {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) {v : BitV
   have hv := v.isLt
   omega
 
-/-- **The visited-byte class row cannot range over the whole entry.**  `scanByteField`
-takes the byte's two class bits at every index below the bound `v`, and
-`hcontFacts_of_staging` supplies them at every `p + 1 < v.toNat` — but the scan only visits
-the indices at or past its start `k`, and the entry's token prefix `[entryPos C.k, k)` is
-*non-whitespace* by the bundle's own class field (`hClass`'s per-index conjunct).  The two
-statements are exclusive, which this theorem reads off `wsCont_not_wsStop`:
+/-- **The visited-byte class row cannot range over the whole entry.**  This theorem records
+the range defect the traversal used to carry and is why `scanByteField` takes the visits'
+start `st`: the class bits at every `p + 1 < v.toNat` include the entry's token prefix
+`[entryPos C.k, k)`, which the bundle's own `hClass` makes *non-whitespace*, and the two
+statements are exclusive (`wsCont_not_wsStop`):
 
 ```
 hcls   : ∀ p, p + 1 < v.toNat → (the whitespace bits at wsX G (p + 1))
@@ -554,14 +553,11 @@ hcont  : ∀ q, ix ≤ q → q < k → wsCont G q        (the bundle's class fie
         ix < k < v.toNat, 1 ≤ ix   ⊢  False
 ```
 
-So the row must be stated at the visits' own span (`k < p + 1`), not at `p + 1 < v`; as it
-stands, `hcontFacts_of_staging`'s premises are unsatisfiable at any state whose token has a
-non-empty prefix, and the bundle it returns is inhabited only vacuously.  Narrowing the row
-is not a local edit: the traversal's `hbyte` (`walkScanRounds457_of_cell`) and the bundles'
-`hbyte` fields (`HcontFacts`, `HcontRunFacts`, `HcontRunRows`, `RunFacts`, `RunLastFacts`)
-state the `∀` without a lower bound, so the width has to be added to that shape and to
-`contScanRounds`'s induction before the row can be supplied honestly.  Until then no
-consumer may instantiate this producer. -/
+The row is therefore stated at the visits' own span, `k < p + 1`, which is
+`scanByteField`'s `st` argument and the `hbyte` fields' lower bound
+(`HcontFacts`, `HcontRunFacts`, `HcontRunRows`, `RunFacts`, `RunLastFacts`).  The theorem
+below is the statement of record for the wide form only; it is not a premise of any
+producer. -/
 theorem cont_hbyteClass_not_wsCont {m0 : Mem} (G : WalkGeom m0) {v : BitVec 32}
     {k ix : Nat}
     (hcls : ∀ p, p + 1 < v.toNat →
@@ -573,6 +569,14 @@ theorem cont_hbyteClass_not_wsCont {m0 : Mem} (G : WalkGeom m0) {v : BitVec 32}
   obtain ⟨hb, hw⟩ := hcls (ix - 1) hp
   rw [Nat.sub_add_cancel hq1] at hb hw
   exact wsCont_not_wsStop G (hcont ix le_rfl hik) (Or.inl ⟨hb, hw⟩)
+
+/-- **The narrowed row and the class field constrain disjoint index sets.**  The old wide
+row shared the prefix's index (its `hcls (ix - 1)` needed `k < ix`), which is exactly what
+`cont_hbyteClass_not_wsCont` exhibited.  Under the visits' lower bound the byte's indices
+are `> k` and the class field's are `< k`, so no index is constrained twice; the narrowed
+producer is not vacuous for the wide form's reason. -/
+theorem cont_hbyteClass_disjoint {k p q : Nat} (hp : k < p + 1) (hq : q < k) :
+    p + 1 ≠ q := by omega
 
 /-! ### The producer
 
@@ -607,15 +611,16 @@ makes the run derivable: the segment, its count and its price come from `contWsR
 against a stopper.  That is the repair this producer's earlier shape recorded as impossible
 — see this module's header.
 
-**This producer must not be instantiated.**  Its `hbyteClass` premise states the visited
-byte's class at every `p + 1 < v.toNat`, while the scan visits only `k ≤ p`, and the
-bundle's own class conjunct makes `[entryPos C.k, k)` non-whitespace; the two are
-exclusive, and `cont_hbyteClass_not_wsCont` above proves it.  So the premises are
-unsatisfiable at any state whose token is non-empty and the returned bundle is vacuous.  The
-row has to be narrowed to `k < p + 1` first, which means adding the lower bound to
-`walkScanRounds457_of_cell`'s and the bundles' `hbyte` shape; the tail's `hTail` is the
-second row and is *not* yet derivable from the three call rows, because the seam state
-`contWsTailStart`'s invariant is obtained from this bundle's own tail (`contWsRunF`). -/
+**The visited-byte row is at the visits' span.**  Its `hbyteClass` premise states the
+visited byte's class at `k < p + 1`, which is exactly the indices the scan reads
+(`k + 1 … v - 1`); the bundle's own class conjunct makes the entry's token prefix
+`[entryPos C.k, k)` non-whitespace, and the two no longer overlap, so the premises are
+satisfiable at a non-empty token.  The wide form is the defect `cont_hbyteClass_not_wsCont`
+records, and `scanByteField` takes the start as its `st` argument.
+
+The tail's `hTail` is the second row: it is supplied here, and the seam group
+(`JsonStage2WalkDispatchSeams`) derives it from the run's own body and the three call rows
+rather than from this bundle's tail. -/
 def hcontFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     (hInv : WalkInv G C s) (hk : C.k + 1 < G.nep)
     (hlt125 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 125) = 0)
@@ -655,7 +660,7 @@ def hcontFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
       (contWsLatch C (contWsSlStaging G C s v (contIx G C) (contB35 G v) k) k (hlastByte G C) (hlastByte G C)
         r₁ r₂ r₃ k v cA rdv xA (BitVec.ofNat 64 k) G.b q x47))
     (hspan : v.toNat ≤ entryPos G (C.k + 1))
-    (hbyteClass : ∀ p, p + 1 < v.toNat →
+    (hbyteClass : ∀ p, k < p + 1 → p + 1 < v.toNat →
       evalICmp .slt (wsX G (p + 1)) (BitVec.ofNat 8 13) = 1 ∧
         evalICmp .ule (wsX G (p + 1) + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 1)
     :
@@ -752,7 +757,7 @@ def hcontFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
     hspan := hspan
     hstart := le_of_lt hClass'.2.2.2.1
     hround := scanRoundField G v.toNat (by have := v.isLt; omega)
-    hbyte := scanByteField G v.toNat (by have := v.isLt; omega) hn hbyteClass
+    hbyte := scanByteField G v.toNat (by have := v.isLt; omega) hn k hbyteClass
     htok := fun C' s' hInv' _ => ⟨C'.stage.tok, cont_static_tok hInv'⟩ }
 
 /-! ### The instrument -/
@@ -769,6 +774,7 @@ def hcontFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
 #print axioms LeanLLVM.Refinement.WalkScope.cont_hread35
 #print axioms LeanLLVM.Refinement.WalkScope.cont_wsTailSpan
 #print axioms LeanLLVM.Refinement.WalkScope.cont_hbyteClass_not_wsCont
+#print axioms LeanLLVM.Refinement.WalkScope.cont_hbyteClass_disjoint
 #print axioms LeanLLVM.Refinement.WalkScope.hcontFacts_of_staging
 
 end WalkScope

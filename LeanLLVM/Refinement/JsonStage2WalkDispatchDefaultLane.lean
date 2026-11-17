@@ -3,8 +3,10 @@
 
 `HcontLane.defaultLane` (`JsonStage2WalkDispatchSupply`) carries the default arm's document
 facts: the next entry's position word and the read that fetches it, the bound's compare,
-and the byte before the entry's end with its three scan-free pivot bits.  This module turns
-that one row into the arm's head chain at each head-switch class the default arm admits.
+and the byte before the entry's end with its class (`HcontByteClass`).  The class is a
+disjunction; this module consumes its `.scanFree` disjunct (`HcontScanFree`) and turns the
+row into the arm's head chain at each head-switch class the default arm admits.  The `.ws`
+disjunct is the run class's, consumed by `JsonStage2WalkDispatchSeams`' seam group.
 
 ## The chain is the class's prefix plus the shared suffix
 
@@ -114,10 +116,10 @@ noncomputable def lowHeadChain_of_lane {m0 : Mem} {G : WalkGeom m0} {C : WalkCar
     (hne34 : evalICmp .eq x (BitVec.ofNat 8 34) = 0)
     (hbit : (evalICmp .eq x (BitVec.ofNat 8 45) |||
       evalICmp .ult (x + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
-    (hLane : HcontLane G) :
+    (r : HcontDefaultRow G C s) (hf : HcontScanFree G r.v) :
     HcontHeadChain G C s x := by
-  obtain ⟨v, hread0, hv1, hvle, hugt, hb13, hb32, hbne13⟩ :=
-    hLane.defaultLane C s hInv hblock hk
+  obtain ⟨v, hread0, _hv1, hvle, hugt, _hclass⟩ := r
+  obtain ⟨hb13, hb32, hbne13⟩ := hf
   -- the head's byte and the invariant's cells at the class's prefix state
   have h8q : lookupName (lowS₃ s x).env "%8" = some (.int 8 x) := by
     simp only [lowS₃, lowS₂, lowS₁, State.bind]
@@ -239,10 +241,10 @@ noncomputable def midHeadChain_of_lane {m0 : Mem} {G : WalkGeom m0} {C : WalkCar
     (hne58 : evalICmp .eq x (BitVec.ofNat 8 58) = 0)
     (hbit : (evalICmp .eq x (BitVec.ofNat 8 45) |||
       evalICmp .ult (x + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
-    (hLane : HcontLane G) :
+    (r : HcontDefaultRow G C s) (hf : HcontScanFree G r.v) :
     HcontHeadChain G C s x := by
-  obtain ⟨v, hread0, hv1, hvle, hugt, hb13, hb32, hbne13⟩ :=
-    hLane.defaultLane C s hInv hblock hk
+  obtain ⟨v, hread0, _hv1, hvle, hugt, _hclass⟩ := r
+  obtain ⟨hb13, hb32, hbne13⟩ := hf
   have h8q : lookupName (midS₄ s x).env "%8" = some (.int 8 x) := by
     simp only [midS₄, midS₃, midS₂, midS₁, State.bind]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
@@ -358,10 +360,10 @@ noncomputable def othHeadChain_of_lane {m0 : Mem} {G : WalkGeom m0} {C : WalkCar
     (hne44 : evalICmp .eq x (BitVec.ofNat 8 44) = 0)
     (hbit : (evalICmp .eq x (BitVec.ofNat 8 45) |||
       evalICmp .ult (x + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
-    (hLane : HcontLane G) :
+    (r : HcontDefaultRow G C s) (hf : HcontScanFree G r.v) :
     HcontHeadChain G C s x := by
-  obtain ⟨v, hread0, hv1, hvle, hugt, hb13, hb32, hbne13⟩ :=
-    hLane.defaultLane C s hInv hblock hk
+  obtain ⟨v, hread0, _hv1, hvle, hugt, _hclass⟩ := r
+  obtain ⟨hb13, hb32, hbne13⟩ := hf
   have h8q : lookupName (othS₄ s x).env "%8" = some (.int 8 x) := by
     simp only [othS₄, othS₃, othS₂, othS₁, State.bind]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
@@ -477,10 +479,10 @@ noncomputable def brkHeadChain_of_lane {m0 : Mem} {G : WalkGeom m0} {C : WalkCar
     (hne91 : evalICmp .eq x (BitVec.ofNat 8 91) = 0)
     (hbit : (evalICmp .eq x (BitVec.ofNat 8 45) |||
       evalICmp .ult (x + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
-    (hLane : HcontLane G) :
+    (r : HcontDefaultRow G C s) (hf : HcontScanFree G r.v) :
     HcontHeadChain G C s x := by
-  obtain ⟨v, hread0, hv1, hvle, hugt, hb13, hb32, hbne13⟩ :=
-    hLane.defaultLane C s hInv hblock hk
+  obtain ⟨v, hread0, _hv1, hvle, hugt, _hclass⟩ := r
+  obtain ⟨hb13, hb32, hbne13⟩ := hf
   have h8q : lookupName (brkS₄ s x).env "%8" = some (.int 8 x) := by
     simp only [brkS₄, brkS₃, brkS₂, brkS₁, State.bind]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
@@ -597,10 +599,10 @@ noncomputable def bhHeadChain_of_lane {m0 : Mem} {G : WalkGeom m0} {C : WalkCarr
     (hne93 : evalICmp .eq x (BitVec.ofNat 8 93) = 0)
     (hbit : (evalICmp .eq x (BitVec.ofNat 8 45) |||
       evalICmp .ult (x + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
-    (hLane : HcontLane G) :
+    (r : HcontDefaultRow G C s) (hf : HcontScanFree G r.v) :
     HcontHeadChain G C s x := by
-  obtain ⟨v, hread0, hv1, hvle, hugt, hb13, hb32, hbne13⟩ :=
-    hLane.defaultLane C s hInv hblock hk
+  obtain ⟨v, hread0, _hv1, hvle, hugt, _hclass⟩ := r
+  obtain ⟨hb13, hb32, hbne13⟩ := hf
   have h8q : lookupName (bhS₄ s x).env "%8" = some (.int 8 x) := by
     simp only [bhS₄, bhS₃, bhS₂, bhS₁, State.bind]
     repeat rw [lookupName_cons_ne _ _ (by decide)]

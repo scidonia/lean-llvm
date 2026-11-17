@@ -187,15 +187,18 @@ the two blocks the landing and the pivot leave and the latch's `ScanCount` at th
 counter, produced by the same witnesses the round uses.
 
 What remains supplied is `hcls`: the visited byte's two class bits, at `wsByte G (p + 1)`
-— the document's content, which no invariant clause and no callee contract fixes.  The
-bound below `G.n` is the span's, `v.toNat ≤ entryPos G (C.k + 1) < G.n`. -/
+— the document's content, which no invariant clause and no callee contract fixes.  Its
+range is the scan's: `st < p + 1` is the visits' lower bound, so the row says nothing
+about the entry's token prefix, which the whitespace bundle's own class field makes
+non-whitespace.  The bound below `G.n` is the span's,
+`v.toNat ≤ entryPos G (C.k + 1) < G.n`. -/
 theorem scanByteField {m0 : Mem} (G : WalkGeom m0) (nb : Nat) (hnb : nb < 2 ^ 64)
-    (hn : nb ≤ G.n)
-    (hcls : ∀ p, p + 1 < nb →
+    (hn : nb ≤ G.n) (st : Nat)
+    (hcls : ∀ p, st < p + 1 → p + 1 < nb →
       evalICmp .slt (wsX G (p + 1)) (BitVec.ofNat 8 13) = 1 ∧
         evalICmp .ule (wsX G (p + 1) + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 1) :
     ∀ (C' : WalkCarry G) (s' : State) (p : Nat), WalkInv G C' s' →
-      C'.block = "while.body462.i" → p + 1 < nb →
+      C'.block = "while.body462.i" → st < p + 1 → p + 1 < nb →
       lookupName s'.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 p)) →
       lookupName s'.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 nb)) →
       ∃ (a : Nat) (bs : List UInt8) (q : Nat) (x : BitVec 8),
@@ -215,7 +218,7 @@ theorem scanByteField {m0 : Mem} (G : WalkGeom m0) (nb : Nat) (hnb : nb < 2 ^ 64
         WalkLocal { ScanCLand C' with block := "while.body462.i" }
           (Latch462S (scanLatchOut s' "%inc463.i" "%exitcond298.not" p nb "land.rhs457.i")
             (BitVec.ofNat 64 (p + 1)) a q x) := by
-  intro C' s' p hInv' hblock' hlt hi hc
+  intro C' s' p hInv' hblock' hlo hlt hi hc
   -- the address: `%3` is the document's base at every invariant-carrying state
   have h3 : lookupName (scanLatchOut s' "%inc463.i" "%exitcond298.not" p nb
       "land.rhs457.i").env "%3" = some (.ptr G.b) := by
@@ -260,7 +263,7 @@ theorem scanByteField {m0 : Mem} (G : WalkGeom m0) (nb : Nat) (hnb : nb < 2 ^ 64
         (wsByte G (p + 1)).toNat (wsX G (p + 1)),
       latch462S_cond (m0 := m0) s' p nb (BitVec.ofNat 64 (p + 1)) G.b
         (wsByte G (p + 1)).toNat (wsX G (p + 1)) hc⟩
-  obtain ⟨hb, hw⟩ := hcls p hlt
+  obtain ⟨hb, hw⟩ := hcls p hlo hlt
   exact ⟨G.b, [wsByte G (p + 1)], (wsByte G (p + 1)).toNat, wsX G (p + 1),
     h3, hread, bytesToNat_singleton _, h47, hb, hw, hl105, hl96, hlatch⟩
 
@@ -306,7 +309,7 @@ theorem walkScanRounds457_of_cell {calls : Calls} {m0 : Mem} (G : WalkGeom m0) {
         lookupName s'.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 (p + 1))) ∧
         lookupName s'.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)))
     (hbyte : ∀ (C : WalkCarry G) (s : State) (p : Nat), WalkInv G C s →
-      C.block = "while.body462.i" → p + 1 < c →
+      C.block = "while.body462.i" → i < p + 1 → p + 1 < c →
       lookupName s.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 p)) →
       lookupName s.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)) →
       ∃ (a : Nat) (bs : List UInt8) (q : Nat) (x : BitVec 8),
@@ -334,11 +337,11 @@ theorem walkScanRounds457_of_cell {calls : Calls} {m0 : Mem} (G : WalkGeom m0) {
       WalkSegment calls G C s C' s' n ∧ WalkInv G C' s' ∧ C'.block = "while.body462.i" ∧
       lookupName s'.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 (c - 1))) ∧
       n ≤ stage2ByteAllowance * (c - 1 - i) := by
-  have go : ∀ r, ∀ (i : Nat) (C : WalkCarry G) (s : State), c - 1 - i = r →
+  have go : ∀ r, ∀ (j : Nat) (C : WalkCarry G) (s : State), c - 1 - j = r →
       WalkInv G C s → C.block = "while.body462.i" →
-      lookupName s.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 i)) →
+      lookupName s.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 j)) →
       lookupName s.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)) →
-      i < c →
+      j < c → i ≤ j →
       ∃ (C' : WalkCarry G) (s' : State) (n : Nat),
         WalkSegment calls G C s C' s' n ∧ WalkInv G C' s' ∧ C'.block = "while.body462.i" ∧
         lookupName s'.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 (c - 1))) ∧
@@ -346,25 +349,25 @@ theorem walkScanRounds457_of_cell {calls : Calls} {m0 : Mem} (G : WalkGeom m0) {
     intro r
     induction r with
     | zero =>
-        intro i C s _ hInv hblock hi _ hic
-        have hie : i = c - 1 := by omega
+        intro j C s _ hInv hblock hi _ hic _
+        have hie : j = c - 1 := by omega
         exact ⟨C, s, 0, Seg.measure (Seg.nil hInv), hInv, hblock, by rw [← hie]; exact hi, by simp⟩
     | succ n ih =>
-        intro i C s hr hInv hblock hi hc' hic
-        have hlt : i + 1 < c := by omega
-        have hposi : i + 1 < 2 ^ 63 := by omega
+        intro j C s hr hInv hblock hi hc' hic hlo
+        have hlt : j + 1 < c := by omega
+        have hposi : j + 1 < 2 ^ 63 := by omega
         obtain ⟨a, bs, q, x, h3, hread, hbs, h47, hbit, hws, hl105, hl96, hll⟩ :=
-          hbyte C s i hInv hblock hlt hi hc'
-        obtain ⟨C₁, s₁, j, hseg, hInv₁, hb₁, hj, hi₁, hc₁⟩ :=
-          hround C s i a bs q x hInv hblock hi hc' hlt hposi h3 hread hbs h47 hbit hws
+          hbyte C s j hInv hblock (by omega) hlt hi hc'
+        obtain ⟨C₁, s₁, j₁, hseg, hInv₁, hb₁, hj, hi₁, hc₁⟩ :=
+          hround C s j a bs q x hInv hblock hi hc' hlt hposi h3 hread hbs h47 hbit hws
             hl105 hl96 hll
         obtain ⟨C₂, s₂, m, hseg₂, hInv₂, hb₂, hi₂, hm⟩ :=
-          ih (i + 1) C₁ s₁ (by omega) hInv₁ hb₁ hi₁ hc₁ (by omega)
-        refine ⟨C₂, s₂, j + m, hseg.trans hseg₂, hInv₂, hb₂, hi₂, ?_⟩
+          ih (j + 1) C₁ s₁ (by omega) hInv₁ hb₁ hi₁ hc₁ (by omega) (by omega)
+        refine ⟨C₂, s₂, j₁ + m, hseg.trans hseg₂, hInv₂, hb₂, hi₂, ?_⟩
         rw [Nat.mul_succ]
         omega
   obtain ⟨C', s', n, hseg, hInv', hb, hi', hn⟩ :=
-    go (c - 1 - i) i C s rfl hInv hblock hi hc hic
+    go (c - 1 - i) i C s rfl hInv hblock hi hc hic (le_rfl)
   exact ⟨C', s', n, hseg, hInv', hb, hi', hn⟩
 
 /-- **The scan's arrival at its last visit, without a guard hypothesis.**  The visit
@@ -373,7 +376,7 @@ than by the deleted `walkScanRound457`, which still took a `ScanGuard` its proof
 read. -/
 theorem walkScanArrival457_of_cell {calls : Calls} {m0 : Mem} (G : WalkGeom m0) {i c : Nat}
     (hbyte : ∀ (C : WalkCarry G) (s : State) (p : Nat), WalkInv G C s →
-      C.block = "while.body462.i" → p + 1 < c →
+      C.block = "while.body462.i" → i < p + 1 → p + 1 < c →
       lookupName s.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 p)) →
       lookupName s.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)) →
       ∃ (a : Nat) (bs : List UInt8) (q : Nat) (x : BitVec 8),

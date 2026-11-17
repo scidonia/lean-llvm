@@ -94,9 +94,9 @@ namespace WalkScope
 `RunFacts.hbyte` and `RunLastFacts.hbyte` are the same proposition, and each producer takes
 it as its premise.  Naming it here keeps the two producers' signatures from repeating the
 quantifier, and the two bundles' fields remain the statements of record. -/
-abbrev ScanVisits {m0 : Mem} (G : WalkGeom m0) (c : Nat) : Prop :=
+abbrev ScanVisits {m0 : Mem} (G : WalkGeom m0) (c i : Nat) : Prop :=
   ∀ (K' : WalkCarry G) (t' : State) (p : Nat), WalkInv G K' t' →
-    K'.block = "while.body462.i" → p + 1 < c →
+    K'.block = "while.body462.i" → i < p + 1 → p + 1 < c →
     lookupName t'.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 p)) →
     lookupName t'.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)) →
     ∃ (a : Nat) (bs : List UInt8) (q : Nat) (x : BitVec 8),
@@ -185,7 +185,7 @@ def runFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : Stat
     (hcounter : lookupName tl.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 i)))
     (hbound : lookupName tl.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)))
     (hic : i < c)
-    (hbyte : ScanVisits G c)
+    (hbyte : ScanVisits G c i)
     (hprice : N + stage2ByteAllowance * (c - 1 - i) ≤
       stage2ByteAllowance * (entryPos G (C.k + 1) - entryPos G C.k) + 5)
     (hspanStart : c ≤ entryPos G (C.k + 1))
@@ -317,7 +317,7 @@ def runLastFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : 
     (hcounter : lookupName tl.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 i)))
     (hbound : lookupName tl.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)))
     (hic : i < c)
-    (hbyte : ScanVisits G c)
+    (hbyte : ScanVisits G c i)
     (hstop : i = terminalStop G.bs (entryPos G C.k))
     (hN : N = i - entryPos G C.k)
     (hc : c = G.n) :
@@ -403,7 +403,7 @@ def hcontArm_run_of_staging {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : 
     (hcounter : lookupName tl.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 i)))
     (hbound : lookupName tl.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)))
     (hic : i < c)
-    (hbyte : ScanVisits G c)
+    (hbyte : ScanVisits G c i)
     (hprice : N + stage2ByteAllowance * (c - 1 - i) ≤
       stage2ByteAllowance * (entryPos G (C.k + 1) - entryPos G C.k) + 5)
     (hspanStart : c ≤ entryPos G (C.k + 1))
@@ -437,7 +437,7 @@ def lastEntryArm_run_of_staging {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (
     (hcounter : lookupName tl.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 i)))
     (hbound : lookupName tl.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)))
     (hic : i < c)
-    (hbyte : ScanVisits G c)
+    (hbyte : ScanVisits G c i)
     (hstop : i = terminalStop G.bs (entryPos G C.k))
     (hN : N = i - entryPos G C.k)
     (hc : c = G.n) :
@@ -469,7 +469,7 @@ theorem walkDispatch_at_run_of_staging {m0 : Mem} {G : WalkGeom m0}
     (hcounter : lookupName tl.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 i)))
     (hbound : lookupName tl.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)))
     (hic : i < c)
-    (hbyte : ScanVisits G c)
+    (hbyte : ScanVisits G c i)
     (hprice : N + stage2ByteAllowance * (c - 1 - i) ≤
       stage2ByteAllowance * (entryPos G (C.k + 1) - entryPos G C.k) + 5)
     (hspanStart : c ≤ entryPos G (C.k + 1))
@@ -504,7 +504,7 @@ theorem walkDispatch_at_run_last_of_staging {m0 : Mem} {G : WalkGeom m0}
     (hcounter : lookupName tl.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 i)))
     (hbound : lookupName tl.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)))
     (hic : i < c)
-    (hbyte : ScanVisits G c)
+    (hbyte : ScanVisits G c i)
     (hstop : i = terminalStop G.bs (entryPos G C.k))
     (hN : N = i - entryPos G C.k)
     (hc : c = G.n) :

@@ -121,12 +121,15 @@ structure HcontCleanupDoc {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
 `lane.defaultLane` states the same document at the head state's memory and the header's
 increment; the producers read it at `cond.true345.i`'s memory and `%inc.i`'s word.  The
 memory is the state's (every state between the head and the check binds registers only),
-the word's value is `cont_inc_toNat`'s, and the index is `contIx`'s own spelling. -/
+the word's value is `cont_inc_toNat`'s, and the index is `contIx`'s own spelling.  This is
+the class's own row: it takes the row and the scan-free disjunct, so it is stated only at
+the states whose byte the class names. -/
 noncomputable def hcontCleanupDoc_of_lane {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     {s : State} (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead)
-    (hk : C.k + 1 < G.nep) (hLane : HcontLane G) : HcontCleanupDoc G C s := by
-  obtain ⟨v, hread0, _hv1, hvle, hugt0, hb13, hb32, hbne13⟩ :=
-    hLane.defaultLane C s hInv hblock hk
+    (hk : C.k + 1 < G.nep) (r : HcontDefaultRow G C s) (hf : HcontScanFree G r.v) :
+    HcontCleanupDoc G C s := by
+  obtain ⟨v, hread0, _hv1, hvle, hugt0, _hclass⟩ := r
+  obtain ⟨hb13, hb32, hbne13⟩ := hf
   have hmem : (contAS₅ s (hlastByte G C) (hlastIncV C) (hlastNepV G)).mem = s.mem := rfl
   refine ⟨v, ?_, hvle, ?_, hb13, hb32, hbne13⟩
   · rw [hmem, cont_inc_toNat G C hk]
@@ -200,9 +203,11 @@ beside `HcontPayload`'s, one group per class.  `cleanup` is produced from the pa
 `defaultLane` (`hcontCleanupDoc_of_lane`); `run` is the whitespace stop's row; the seam's
 three calls are `HcontSeamAbi`'s, one instance per seam the classes read. -/
 structure HcontClassRows {m0 : Mem} (G : WalkGeom m0) : Type where
-  /-- The scan-free class's document row (`126`/`127` at a continuing head). -/
+  /-- The scan-free class's document row (`126`/`127` at a continuing head), at the
+  payload's default row and the scan-free disjunct. -/
   cleanup : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
-    C.k + 1 < G.nep → HcontCleanupDoc G C s
+    C.k + 1 < G.nep → (r : HcontDefaultRow G C s) → HcontScanFree G r.v →
+    HcontCleanupDoc G C s
   /-- The run class's document row, at the seam's own calls. -/
   run : HcontRunRow G
   /-- The plain-value class's three calls at its own seam. -/
@@ -218,9 +223,10 @@ already carries it: this is the group's producer from the payload's own fields, 
 the class the table marks *document* costs no new supply. -/
 noncomputable def hcontClassRows_cleanup_of_payload {m0 : Mem} {G : WalkGeom m0}
     (hp : HcontPayload G) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
-    (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep) :
+    (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)
+    (hf : HcontScanFree G ((hp.lane.defaultLane C s hInv hblock hk).v)) :
     HcontCleanupDoc G C s :=
-  hcontCleanupDoc_of_lane hInv hblock hk hp.lane
+  hcontCleanupDoc_of_lane hInv hblock hk (hp.lane.defaultLane C s hInv hblock hk) hf
 
 /-! ### The last entry's last byte, with its three calls
 

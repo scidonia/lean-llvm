@@ -98,7 +98,7 @@ theorem scanRoundsAt {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     (hnep : lookupName t.env "%nep" = some (.int 64 nep0))
     (hk : K.k = k0) (hcw : c < 2 ^ 64) (hc63 : c < 2 ^ 63) (hic : i < c)
     (hbyte : ∀ (K' : WalkCarry G) (t' : State) (p : Nat), WalkInv G K' t' →
-      K'.block = "while.body462.i" → p + 1 < c →
+      K'.block = "while.body462.i" → i < p + 1 → p + 1 < c →
       lookupName t'.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 p)) →
       lookupName t'.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)) →
       ∃ (a : Nat) (bs : List UInt8) (q : Nat) (x : BitVec 8),
@@ -126,14 +126,14 @@ theorem scanRoundsAt {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
       lookupName t'.env "%inc.i" = some (.int 64 inc0) ∧
       lookupName t'.env "%nep" = some (.int 64 nep0) ∧
       n ≤ 4 * (c - 1 - i) := by
-  have go : ∀ r, ∀ (i : Nat) (K : WalkCarry G) (t : State) (inc0 nep0 : BitVec 64)
-      (k0 : Nat), c - 1 - i = r →
+  have go : ∀ r, ∀ (j : Nat) (K : WalkCarry G) (t : State) (inc0 nep0 : BitVec 64)
+      (k0 : Nat), c - 1 - j = r →
       WalkInv G K t → K.block = "while.body462.i" →
-      lookupName t.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 i)) →
+      lookupName t.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 j)) →
       lookupName t.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)) →
       lookupName t.env "%inc.i" = some (.int 64 inc0) →
       lookupName t.env "%nep" = some (.int 64 nep0) →
-      K.k = k0 → i < c →
+      K.k = k0 → j < c → i ≤ j →
       ∃ (K' : WalkCarry G) (t' : State) (n : Nat),
         WalkSegment (stage2Calls stage2SubCalls) G K t K' t' n ∧ WalkInv G K' t' ∧
         K'.block = "while.body462.i" ∧ K'.k = k0 ∧
@@ -146,41 +146,41 @@ theorem scanRoundsAt {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     intro r
     induction r with
     | zero =>
-        intro i K t inc0 nep0 k0 hr hInv hblock hi hb hinc hnep hk hic
-        have hie : i = c - 1 := by omega
+        intro j K t inc0 nep0 k0 hr hInv hblock hi hb hinc hnep hk hic _
+        have hie : j = c - 1 := by omega
         exact ⟨K, t, 0, Seg.measure (Seg.nil hInv), hInv, hblock, hk,
           by rw [← hie]; exact hi, hb, hinc, hnep, by simp⟩
     | succ r ih =>
-        intro i K t inc0 nep0 k0 hr hInv hblock hi hb hinc hnep hk hic
-        have hlt : i + 1 < c := by omega
+        intro j K t inc0 nep0 k0 hr hInv hblock hi hb hinc hnep hk hic hlo
+        have hlt : j + 1 < c := by omega
         obtain ⟨a, bs, q, x, h3, hread, hbs, h47, hbit, hws, hl105, hl96, hll⟩ :=
-          hbyte K t i hInv hblock hlt hi hb
+          hbyte K t j hInv hblock (by omega) hlt hi hb
         have hSC : ScanCount t "%q.0.i246" "%cond350.i" K.inner := by
           have h := hInv.blockLocal
           rwa [WalkLocal.extraToken hblock] at h
-        have hinner : c - i ≤ K.inner := ScanCount.same hSC hi hb hcw hic
-        have hinner' : c - (i + 1) ≤ K.inner := by omega
-        have hposi : i + 1 < 2 ^ 63 := by omega
+        have hinner : c - j ≤ K.inner := ScanCount.same hSC hi hb hcw hic
+        have hinner' : c - (j + 1) ≤ K.inner := by omega
+        have hposi : j + 1 < 2 ^ 63 := by omega
         have hseg : WalkSegment (stage2Calls stage2SubCalls) G K t
             { ScanCLand K with block := "while.body462.i" }
-            (Latch462S (scanLatchOut t "%inc463.i" "%exitcond298.not" i c
-              "land.rhs457.i") (BitVec.ofNat 64 (i + 1)) a q x) 4 :=
+            (Latch462S (scanLatchOut t "%inc463.i" "%exitcond298.not" j c
+              "land.rhs457.i") (BitVec.ofNat 64 (j + 1)) a q x) 4 :=
           scanRoundSeg4 (calls := stage2Calls stage2SubCalls) G K t hInv hblock hi hb hcw
             hlt hposi hinner' h3 hread hbs hl105 h47 hbit hws hl96 hll
         obtain ⟨K₂, t₂, m, hseg₂, hInv₂, hb₂, hk₂, hi₂, hc₂, hinc₂, hnep₂, hm⟩ :=
-          ih (i + 1) { ScanCLand K with block := "while.body462.i" }
-            (Latch462S (scanLatchOut t "%inc463.i" "%exitcond298.not" i c
-              "land.rhs457.i") (BitVec.ofNat 64 (i + 1)) a q x) inc0 nep0 k0
+          ih (j + 1) { ScanCLand K with block := "while.body462.i" }
+            (Latch462S (scanLatchOut t "%inc463.i" "%exitcond298.not" j c
+              "land.rhs457.i") (BitVec.ofNat 64 (j + 1)) a q x) inc0 nep0 k0
             (by omega) hseg.inv' rfl
-            (latch462S_counter (m0 := m0) t i c (BitVec.ofNat 64 (i + 1)) a q x)
-            (latch462S_cond (m0 := m0) t i c (BitVec.ofNat 64 (i + 1)) a q x hb)
+            (latch462S_counter (m0 := m0) t j c (BitVec.ofNat 64 (j + 1)) a q x)
+            (latch462S_cond (m0 := m0) t j c (BitVec.ofNat 64 (j + 1)) a q x hb)
             (by rw [scanRoundOut_inc]; exact hinc)
             (by rw [scanRoundOut_nep]; exact hnep)
-            hk (by omega)
+            hk (by omega) (by omega)
         refine ⟨K₂, t₂, 4 + m, hseg.trans hseg₂, hInv₂, hb₂, hk₂, hi₂, hc₂, hinc₂, hnep₂, ?_⟩
         rw [Nat.mul_succ]
         omega
-  exact go (c - 1 - i) i K t inc0 nep0 k0 rfl hInv hblock hi hb hinc hnep hk hic
+  exact go (c - 1 - i) i K t inc0 nep0 k0 rfl hInv hblock hi hb hinc hnep hk hic le_rfl
 
 /-! ### The bundle, and the segment
 
@@ -236,9 +236,9 @@ structure RunFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : 
   hic : i < c
   hcw : c < 2 ^ 64
   /-- The input's totality at every index the visits read (`walkScanRounds457_of_cell`'s `hbyte`,
-  unweakened). -/
+  at the visits' span: `i` is the scan's start, so `i < p + 1`). -/
   hbyte : ∀ (K' : WalkCarry G) (t' : State) (p : Nat), WalkInv G K' t' →
-    K'.block = "while.body462.i" → p + 1 < c →
+    K'.block = "while.body462.i" → i < p + 1 → p + 1 < c →
     lookupName t'.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 p)) →
     lookupName t'.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)) →
     ∃ (a : Nat) (bs : List UInt8) (q : Nat) (x : BitVec 8),
@@ -482,9 +482,9 @@ structure RunLastFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
   hic : i < c
   hcw : c < 2 ^ 64
   /-- The input's totality at every index the visits read (`walkScanRounds457_of_cell`'s `hbyte`,
-  unweakened). -/
+  at the visits' span: `i` is the scan's start, so `i < p + 1`). -/
   hbyte : ∀ (K' : WalkCarry G) (t' : State) (p : Nat), WalkInv G K' t' →
-    K'.block = "while.body462.i" → p + 1 < c →
+    K'.block = "while.body462.i" → i < p + 1 → p + 1 < c →
     lookupName t'.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 p)) →
     lookupName t'.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 c)) →
     ∃ (a : Nat) (bs : List UInt8) (q : Nat) (x : BitVec 8),

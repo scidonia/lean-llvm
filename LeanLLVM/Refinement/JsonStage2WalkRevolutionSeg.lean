@@ -418,7 +418,7 @@ theorem scanWsRounds {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     (hb : lookupName t.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 f.v.toNat)))
     (hinc : lookupName t.env "%inc.i" = some (.int 64 inc0))
     (hnep : lookupName t.env "%nep" = some (.int 64 nep0))
-    (hk : K.k = k0) (hic : i < f.v.toNat) :
+    (hk : K.k = k0) (hic : i < f.v.toNat) (hik : f.k ≤ i) :
     ∃ (K' : WalkCarry G) (t' : State) (n : Nat),
       WalkSegment (stage2Calls stage2SubCalls) G K t K' t' n ∧ WalkInv G K' t' ∧
       K'.block = "while.body462.i" ∧ K'.k = k0 ∧
@@ -428,14 +428,14 @@ theorem scanWsRounds {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
       lookupName t'.env "%nep" = some (.int 64 nep0) ∧
       n ≤ 4 * (f.v.toNat - 1 - i) := by
   have hc64 : f.v.toNat < 2 ^ 64 := by have := f.v.isLt; omega
-  have go : ∀ r, ∀ (i : Nat) (K : WalkCarry G) (t : State) (inc0 nep0 : BitVec 64)
-      (k0 : Nat), f.v.toNat - 1 - i = r →
+  have go : ∀ r, ∀ (j : Nat) (K : WalkCarry G) (t : State) (inc0 nep0 : BitVec 64)
+      (k0 : Nat), f.v.toNat - 1 - j = r →
       WalkInv G K t → K.block = "while.body462.i" →
-      lookupName t.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 i)) →
+      lookupName t.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 j)) →
       lookupName t.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 f.v.toNat)) →
       lookupName t.env "%inc.i" = some (.int 64 inc0) →
       lookupName t.env "%nep" = some (.int 64 nep0) →
-      K.k = k0 → i < f.v.toNat →
+      K.k = k0 → j < f.v.toNat → f.k ≤ j →
       ∃ (K' : WalkCarry G) (t' : State) (n : Nat),
         WalkSegment (stage2Calls stage2SubCalls) G K t K' t' n ∧ WalkInv G K' t' ∧
         K'.block = "while.body462.i" ∧ K'.k = k0 ∧
@@ -448,41 +448,41 @@ theorem scanWsRounds {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     intro r
     induction r with
     | zero =>
-        intro i K t inc0 nep0 k0 hr hInv hblock hi hb hinc hnep hk hic
-        have hie : i = f.v.toNat - 1 := by omega
+        intro j K t inc0 nep0 k0 hr hInv hblock hi hb hinc hnep hk hic _
+        have hie : j = f.v.toNat - 1 := by omega
         exact ⟨K, t, 0, Seg.measure (Seg.nil hInv), hInv, hblock, hk,
           by rw [← hie]; exact hi, hb, hinc, hnep, by simp⟩
     | succ r ih =>
-        intro i K t inc0 nep0 k0 hr hInv hblock hi hb hinc hnep hk hic
-        have hlt : i + 1 < f.v.toNat := by omega
+        intro j K t inc0 nep0 k0 hr hInv hblock hi hb hinc hnep hk hic hlo
+        have hlt : j + 1 < f.v.toNat := by omega
         obtain ⟨a, bs, q, x, h3, hread, hbs, h47, hbit, hws, hl105, hl96, hll⟩ :=
-          f.hbyte K t i hInv hblock hlt hi hb
+          f.hbyte K t j hInv hblock (by omega) hlt hi hb
         have hSC : ScanCount t "%q.0.i246" "%cond350.i" K.inner := by
           have h := hInv.blockLocal
           rwa [WalkLocal.extraToken hblock] at h
-        have hinner : f.v.toNat - i ≤ K.inner := ScanCount.same hSC hi hb hc64 hic
-        have hinner' : f.v.toNat - (i + 1) ≤ K.inner := by omega
-        have hposi : i + 1 < 2 ^ 63 := by have := f.v.isLt; omega
+        have hinner : f.v.toNat - j ≤ K.inner := ScanCount.same hSC hi hb hc64 hic
+        have hinner' : f.v.toNat - (j + 1) ≤ K.inner := by omega
+        have hposi : j + 1 < 2 ^ 63 := by have := f.v.isLt; omega
         have hseg : WalkSegment (stage2Calls stage2SubCalls) G K t
             { ScanCLand K with block := "while.body462.i" }
-            (Latch462S (scanLatchOut t "%inc463.i" "%exitcond298.not" i f.v.toNat
-              "land.rhs457.i") (BitVec.ofNat 64 (i + 1)) a q x) 4 :=
+            (Latch462S (scanLatchOut t "%inc463.i" "%exitcond298.not" j f.v.toNat
+              "land.rhs457.i") (BitVec.ofNat 64 (j + 1)) a q x) 4 :=
           scanRoundSeg4 (calls := stage2Calls stage2SubCalls) G K t hInv hblock hi hb hc64
             hlt hposi hinner' h3 hread hbs hl105 h47 hbit hws hl96 hll
         obtain ⟨K₂, t₂, m, hseg₂, hInv₂, hb₂, hk₂, hi₂, hc₂, hinc₂, hnep₂, hm⟩ :=
-          ih (i + 1) { ScanCLand K with block := "while.body462.i" }
-            (Latch462S (scanLatchOut t "%inc463.i" "%exitcond298.not" i f.v.toNat
-              "land.rhs457.i") (BitVec.ofNat 64 (i + 1)) a q x) inc0 nep0 k0
+          ih (j + 1) { ScanCLand K with block := "while.body462.i" }
+            (Latch462S (scanLatchOut t "%inc463.i" "%exitcond298.not" j f.v.toNat
+              "land.rhs457.i") (BitVec.ofNat 64 (j + 1)) a q x) inc0 nep0 k0
             (by omega) hseg.inv' rfl
-            (latch462S_counter (m0 := m0) t i f.v.toNat (BitVec.ofNat 64 (i + 1)) a q x)
-            (latch462S_cond (m0 := m0) t i f.v.toNat (BitVec.ofNat 64 (i + 1)) a q x hb)
+            (latch462S_counter (m0 := m0) t j f.v.toNat (BitVec.ofNat 64 (j + 1)) a q x)
+            (latch462S_cond (m0 := m0) t j f.v.toNat (BitVec.ofNat 64 (j + 1)) a q x hb)
             (by rw [scanRoundOut_inc]; exact hinc)
             (by rw [scanRoundOut_nep]; exact hnep)
-            hk (by omega)
+            hk (by omega) (by omega)
         refine ⟨K₂, t₂, 4 + m, hseg.trans hseg₂, hInv₂, hb₂, hk₂, hi₂, hc₂, hinc₂, hnep₂, ?_⟩
         rw [Nat.mul_succ]
         omega
-  exact go (f.v.toNat - 1 - i) i K t inc0 nep0 k0 rfl hInv hblock hi hb hinc hnep hk hic
+  exact go (f.v.toNat - 1 - i) i K t inc0 nep0 k0 rfl hInv hblock hi hb hinc hnep hk hic hik
 
 /-! ### The head state's two cells, and their producers
 
@@ -865,7 +865,7 @@ theorem walkRevolutionMergeSegWs {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) 
   have hk0 : (ContLatchC C f.ev).k = C.k := rfl
   obtain ⟨Cm, sm, nSc, hsegS, hInvR, hbR, hkR, hiR, hcR, hincR, hnepR, hnR⟩ :=
     scanWsRounds (G := G) (C := C) (s := s) f hsegP.inv' rfl hcounter hbound hinc0 hnep0
-      hk0 f.heicd
+      hk0 f.heicd le_rfl
   have hc64 : f.v.toNat < 2 ^ 64 := by have := f.v.isLt; omega
   have heicd := f.heicd
   -- 7. the exit: the inner budget is the invariant's local clause at the counts
