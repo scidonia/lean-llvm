@@ -180,4 +180,5 @@ import LeanLLVM.Refinement.JsonStage2WalkDispatchScalarRows
 import LeanLLVM.Refinement.JsonStage2WalkDispatchLettersRows
 import LeanLLVM.Refinement.JsonStage2WalkDispatchClassCLeaves
 import LeanLLVM.Refinement.JsonStage2WalkDispatchClassCase
+import LeanLLVM.Refinement.JsonStage2WalkDispatchRunRow
 import LeanLLVM.Refinement.JsonStage2WalkDispatchClassTransport

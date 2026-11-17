@@ -779,7 +779,7 @@ and no entry carries the execution segment its own producer builds.
 | c6 | `.scalar` (the tag test's true arm): the numeral's document row — the class bits, the span, the entry's non-emptiness, the byte before the entry's end and its route (`HcontByteRoute`: the scan-free, low or high leaf) — the lane's word and its read, and the three calls at `scSeamByte` | `scSeamInv_of_cells` (`JsonStage2WalkHcontSeamInv`) for the seam's invariant, from that document row and the byte's route; `scSeamSegByte` (`JsonStage2WalkHcontScalar`) for the route's counted chain to the seam; `scTailByte_of_calls` (`JsonStage2WalkDispatchSegments`) for the tail, at the callee rows | `hcontArm_scalar_of_rows` → `walkDispatch_at_scalar_of_rows` (`JsonStage2WalkDispatchScalarRows`) | **none** on top of the document row (`HcontScalarPrefix`), the lane word and its read, and the three call rows at `scSeamByte … pre.hb`: the seam's invariant, the route's chain, the arm and the dispatch are produced, and the route's two agreements — the kind literal `7` and the root slot's word, transported across the token-record stores by `sLand_rootRead`/`scSeamByte_rootRead` — are the callee group's tie to the state |
 | c7 | `.letters`/`.fLetter` (`0 … 109`, `128 … 255`, the tag test clear): the head chain to `if.else387.i` with its endpoint's lane word, the seam's two test cells and the root slot's word | `lowHeadChain_of_lane` … (`JsonStage2WalkDispatchDefaultLane`) from `HcontLane.defaultLane` for the chain (`HcontHeadChain` carries `v` with `contSeamMid_ee`/`contSeamMid_cond` and the root transport `contSeamMid_rootRead`); `lettersSeamInv_of_chain`/`fLetterSeamInv_of_chain` for the seam's invariant; `lettersSeamCells_of_chain`/`fLetterSeamCells_of_chain` for the seam's cells; `emptyTail_of_cells` for the tail | `hcontArm_letters_of_rows`/`hcontArm_fLetter_of_rows` → `walkDispatch_at_letters_of_rows`/`_fLetter_of_rows` (`JsonStage2WalkDispatchLettersRows`) | **none** on top of the three call rows at `LetS413`/`FS413` and the chain's own data: the seam's invariant, its cells (`%ee.1.i`, `%cond350.i` at the chain's one `Nat`, the root word across the suffix's three token-record stores) and the three-link tail are produced, and the route's two agreements — the kind literal `0` (`if.else405.i`) or `9` (`if.then397.i`), and the root slot's word read at the head state — are the callee group's tie to the state |
 | c8 | `.classC` (`110 … 125`): the same head chain plus the byte's own span | `classCSpan_at` from the class's `slt %8 110` bit for the span — the four leaves' spans are `c56TrueSpan`/`c56ElseSpan`/`c58TrueSpan`/`c58ElseSpan` | `hcontArm_classC_56True_of_rows` … `walkDispatch_at_classC_58Else_of_rows` (`JsonStage2WalkDispatchClassCLeaves`) | **the three call rows**, and nothing else: the endpoint's seam cells are produced at the four named leaf states — `ClsS413T` (`110`), `ClsS413F` (`111 … 115`), `ClsS58T` (`116`), `HeadS413` (`117 … 125`) — by `classCSeamCells_56True` … `…_58Else`, from the leaf's own `phi` incoming (`10`, `0`, `8`, `0`), the endpoint's invariant, the chain's one `Nat` read through the leaf's binds and the root word's transport past the kind record's store (`classCSeam_rootRead`).  Each arm takes the chain, the leaf's bits, its call group at the named seam and the root word's agreement; the tail is `emptyTail_of_cells` at the produced cells, so no row sits at an unnamed endpoint |
-| c9 | `.run` (the same six default classes on the run continuation): the check state's cells, the whitespace stop, the landing and the scan's traversal | `hcontRunFacts_of_rows` → `runFacts_of_runBundle` (`JsonStage2WalkDispatchRunHead`), with the c1 round/byte/token fields transported (the same terms, at the check state) | `HcontArm.run` → `dispatch` | the run's document rows, and of the traversal the same narrow row as c1 (`k < p + 1`, carried by `HcontRunRows`/`RunFacts`); its round and byte read are c1's produced terms, and its tail is `hcontScanTailAt_leaf`, whose leaf, invariant and call rows are the byte's own (`HcontRunLeaf`: the six producers `hcontRunLeaf_letters` … `_58Else`), so no bundle's tail gates it and no leaf is pinned.  Its production at a given leaf remains a supply item: `HcontClassRows.runRow` takes the leaf, because the kind literal the leaf's `phi` selects is part of the memory the first call reads |
+| c9 | `.run` (the same six default classes on the run continuation): the check state's cells, the whitespace stop, the landing and the scan's traversal | `hcontRunFacts_of_rows` → `runFacts_of_runBundle` (`JsonStage2WalkDispatchRunHead`), with the c1 round/byte/token fields transported (the same terms, at the check state) | `HcontArm.run` → `dispatch` | the run's document rows, and of the traversal the same narrow row as c1 (`k < p + 1`, carried by `HcontRunRows`/`RunFacts`); its round and byte read are c1's produced terms, and its tail is `hcontScanTailAt_leaf`, whose leaf, invariant and call rows are the byte's own (`HcontRunLeaf`: the six producers `hcontRunLeaf_letters` … `_58Else`, wired to the seam's supply per leaf by `hcontRunLeafAt_letters` … `_58Else` and applied to the row by `hcontRunRowAt_letters` … `_58Else`, `JsonStage2WalkDispatchRunRow`), so no bundle's tail gates it and no leaf is pinned.  Its production at a given leaf remains a supply item: `HcontClassRows.runRow` takes the leaf, because the kind literal the leaf's `phi` selects is part of the memory the first call reads |
 | c10 | the four delimiter refusals and the two above-zero delimiter pairs | `bracketRefuse_at`, `commaRefuse_at`, `colonRefuse_at`, `closeBraceZero_at`, `commaBraceMerge_at` … | `hcontArm_of_derivedClass` (`JsonStage2WalkDispatchResidual`) | **none**: the class bits and `WalkInv`'s own cells |
 | c11 | `.containerOpen`/`.openAtCap`/`.containerOpenRefuse` (bytes `91`/`123`): the value-position call's row at the root slot's witness word, and the answer that selects the arm | `HcontAbi.openCall` (the witness, its read, the staging and the outcome — no answer); `s2ValuePos_ret_zero_or_one` for the split | `walkDispatch_at_open91_of_payload` … | **the call's row at the witness word**, and nothing else.  The *value* is the arm's witness `rdv`, read by `walkReadBytes_rootSlot_word` from `root_slot`'s four present bytes, and **not derivable**: `entry` writes the initial `0` and `s2_after_value`'s depth-zero arm writes `1` (`s2AfterValuePost_rootSlot_at_zero`), while above depth zero it leaves the slot alone (`s2AfterValuePost_rootSlot_above`), so `0` is not among the callee's writes and the word is a function of the path.  That distinction is recorded rather than repaired: no clause pins the word and none is owed, because the arms carry it.  The *answer* is derived, not assumed: the callee's model returns `0` or `1` (`stage2ValuePos_lt_two`), so the `1` arms (`.containerOpen` at depth `≤ 519`, `.openAtCap` at `520`) and the `0` arm (`.containerOpenRefuse`, `if.then16.i`'s offset store to the copy, six links) are exhaustive over the class's states.  The call's *precondition* at the witness word follows by the same depth case split `stringOpenAboveZero_pre_of_inv` applies (`Or.inl` at depth zero, the two stack maps at a positive depth), though no theorem states the general case yet; the row is the call itself |
 | c12 | `.closeWithOpen` (`93`/`125` at `C.sp ≠ 0`): the two stack bytes and the callee's precondition at `%ctype.i + (%sp - 1) - 1` | `s2AfterValuePre_of_inv` (`JsonStage2WalkDispatchResidual`) | `hcontArm_of_derivedClass` | **none** |
@@ -917,10 +917,26 @@ byte's route, the default arm's
 scan-free classes' seam rows at `LetS413`/`FS413`, the four class-C leaves' at
 `ClsS413T`/`ClsS413F`/`ClsS58T`/`HeadS413`, the positive-depth opener's route, and the
 seam's three calls at `contTailStart`), and each has its branch in
-`JsonStage2WalkDispatchClassCase`.  What stands between those branches and
-`walkContinueFacts_of_payload` is the class-case assembly over `HcontClass.complete` at
-every cell, and the `.run` cells' landing (below) is stated at one leaf; the last level's
-case is closed:
+`JsonStage2WalkDispatchClassCase`.  The class case is two-dimensional — the head class does
+not fix the next byte's class — and of its cells the ones reached by the rows above all
+have a producer: the six default classes × the three non-whitespace byte classes are
+`JsonStage2WalkDispatchClassTransport`'s six branches, the delimiters and openers are
+`walkDispatch_of_derivedClass` and the payload's openers, `.twoEntry` at `C.sp = 0` and the
+positive-depth opener are `hcontArm_twoEntry_of_payload` and
+`hcontArm_stringOpenAboveZero_of_class`, `.value` × `wsByte` is
+`hcontArm_scalarRun_of_class` and `.value` × {`scanFree`, `lowLeaf`, `highLeaf`} is
+`hcontArm_value_of_lane` (`JsonStage2WalkDispatchRunRow`), which produces the prefix
+(`hcontScalarPrefix_of_inv`) from the row's lane and the class's bits; and the run class's
+leaf is wired at each of the six leaves.  Two groups of cells still have no producer, and
+they are payload rows rather than branches: `.defaultValueHigh` × `wsByte` (the `.ws` arm)
+needs `HcontFacts`, and `hcontFacts_of_staging` takes the whitespace skip's class — the
+per-index run and the stop, which the payload's `HcontDefaultRow.hclass` gives only at
+`v - 1` — together with the landing's byte and its callee rows at `contWsTailStart`; and
+the six default classes × `wsByte` (the `.run` arm) need `HcontRunRow`, whose document
+data — the run's body at the check state, the record the scalar call appends and the
+landing's rows — the payloads do not carry either.
+`walkContinueFacts_of_payload` is therefore not yet a theorem, and the last level's case is
+closed:
 
 * **The continuing level's run class is a row, and its leaf is no longer pinned.**
   `HcontClassRows.runRow` states the run's row (the check state's rows plus the byte's leaf,
@@ -933,16 +949,22 @@ case is closed:
   `hcontRunLeaf_letters`, `_fLetter`, `_56True`, `_56Else`, `_58True` and `_58Else`
   (`JsonStage2WalkDispatchClassCase`), the class-C else instance is
   `hcontRunLeaf_of_seam` (`JsonStage2WalkDispatchSeams`), and each leaves' span is the
-  byte's own (`lettersSpan`, `fSpan`, `c56TrueSpan` … `c58ElseSpan`).  So the run's arm is
-  available at every leaf's cell now, and what a producer of the *row* supplies is the
-  leaf's three call answers with the landing built on them: the kind literal
-  (`%.sink372`) is part of the memory the first call reads
+  byte's own (`lettersSpan`, `fSpan`, `c56TrueSpan` … `c58ElseSpan`).  Their supply is
+  wired per leaf by `hcontRunLeafAt_letters` … `_58Else`
+  (`JsonStage2WalkDispatchRunRow`), and the row follows at each: `hcontRunRowAt_letters` …
+  `_58Else` apply `HcontClassRows.runRow` at the leaf the producer built.  The kind
+  literal (`%.sink372`) is part of the memory the first call reads
   (`s2ValuePosPre`'s `writeBytes … (natToBytes cA.toNat 4)`), so `102`/`110`/`116` —
   `if.then397.i`'s `9`, `if.then403.i`'s `10`, `LeafBlock58`'s `8` — have their own groups
   (`HcontSeamAbi.scanF`/`scan56True`/`scan58True`), while the three leaves whose
   predecessor is `if.else405.i` (kind `0`) take the seam's rows by
-  `HcontSeamCalls.cast`.  That is why the leaf is the row's argument: one row cannot serve
-  two leaves whose kinds differ.
+  `HcontSeamCalls.cast`.  Those three are **not** new supply: their seam is the one state
+  `contWsTailStart` builds, so one item (`scan`) serves all three, the leaf's span leaving
+  that state only for the carry it binds.  The three nonzero ones are, and
+  `HcontSeamAbi`'s four continuing fields therefore state their literal
+  (`HcontSeamKind`), because a cast preserves `cA` and the leaf's `hval` pins it —
+  `HcontRunLeaf.cA_of_imm` is that pinning stated.  That is why the leaf is the row's
+  argument: one row cannot serve two leaves whose kinds differ.
   The continuing case is two-dimensional — the head class does not fix the next byte's
   class — and at `HcontClass.value` (the tag test is `1`) the constructor is
   `HcontArm.scalar`, whose bundle and document row now carry the byte's

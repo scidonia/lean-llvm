@@ -164,33 +164,63 @@ def HcontSeamCalls.cast {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
   hpre₃ := rows.hpre₃
   hcall₃ := rows.hcall₃
 
+/-- **A seam's three call rows with the kind literal they store.**  The rows are
+`HcontSeamCalls`' — the three callees' preconditions and answers at one seam — and the
+literal is separate because it is *about* them: the first call's argument list and the
+copy's test are read at `writeBytes s.mem (C.stage.tok + 16) (natToBytes cA.toNat 4)`, so
+two seams whose literals differ are two different memories, not one row at two states.
+
+`if.then413.i`'s `phi` selects the literal from its predecessor's edge, and a leaf's
+`hval` reads that selection, so the literal a leaf needs is fixed by the edge the leaf
+comes from.  A seam group that omitted it could not build a leaf at all: the structure's
+`hval` would be an equation between the `phi`'s value and an unconstrained word. -/
+structure HcontSeamKind {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (cA0 : BitVec 32) : Type where
+  /-- The three callee rows at the seam. -/
+  calls : HcontSeamCalls G C s
+  /-- The kind literal the seam's store writes: the `phi`'s selected incoming. -/
+  hcA : calls.cA = cA0
+
 /-- **The seam's call rows at every seam**: one `∀`-field each.  The continuing scan arm's
 seam is the run class's own `if.then413.i` — `ContTailStartC C` at the state
 `contWsTailStart` builds from the check state's stop and byte — and the last entry's seam is
-`TailStartC C` at `hlastTail`. -/
+`TailStartC C` at `hlastTail`.
+
+The four continuing fields carry their literal (`HcontSeamKind`), because the six leaves
+into `if.then413.i` do not share one: `if.else405.i`'s edge selects `0`, `if.then397.i`'s
+`9`, `if.then403.i`'s `10` and `LeafBlock58`'s `8`.  Three of the six leaves — the letters
+`LetS413`, `LeafBlock56`'s else arm `ClsS413F` and `LeafBlock58`'s else arm `HeadS413` —
+have `if.else405.i` as their predecessor, so they share the one `scan` item and
+`HcontSeamCalls.cast` moves its rows to each: they differ in the carry the span leaves, and
+the rows mention only the memory and the counter.  The other three cannot be cast from it,
+because a cast preserves `cA` and the leaf's `hval` pins it; those are the three items a
+producer genuinely adds (`scanF`, `scan56True`, `scan58True`).
+
+The last entry's field states the calls alone: `hlastTailByte`'s route fixes the literal at
+its own class, and `HlastClassRows.seam` is where the last level's rows are grouped. -/
 structure HcontSeamAbi {m0 : Mem} (G : WalkGeom m0) : Type where
-  /-- The continuing run class's seam: the scan arm's `if.then413.i`. -/
+  /-- The continuing run class's seam: the scan arm's `if.then413.i`, `if.else405.i`'s `0`. -/
   scan : ∀ (C : WalkCarry G) (sl : State) (b35 : UInt8) (ix : BitVec 64) (v : BitVec 32)
     (k : Nat) (x1 : BitVec 8),
-    HcontSeamCalls G (ContTailStartC C)
-      (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1)
+    HcontSeamKind G (ContTailStartC C)
+      (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1) (BitVec.ofNat 32 0)
   /-- **The `'f'` leaf's seam**: `FS413`, whose `phi` incoming is `if.then397.i`'s `9`.
   The rows are not the class-C else seam's: the kind literal is the memory the first call
   reads, so each leaf whose predecessor is not `if.else405.i` has its own. -/
   scanF : ∀ (C : WalkCarry G) (sl : State) (b35 : UInt8) (ix : BitVec 64) (v : BitVec 32)
     (k : Nat) (x1 : BitVec 8),
-    HcontSeamCalls G (ContTailStartC C)
-      (FS413 (contWsSeamS C (wsSlAt G sl b35 ix v k) k x1) x1)
+    HcontSeamKind G (ContTailStartC C)
+      (FS413 (contWsSeamS C (wsSlAt G sl b35 ix v k) k x1) x1) (BitVec.ofNat 32 9)
   /-- **`110`'s leaf's seam**: `ClsS413T`, whose `phi` incoming is `if.then403.i`'s `10`. -/
   scan56True : ∀ (C : WalkCarry G) (sl : State) (b35 : UInt8) (ix : BitVec 64)
     (v : BitVec 32) (k : Nat) (x1 : BitVec 8),
-    HcontSeamCalls G (ContTailStartC C)
-      (ClsS413T (contWsSeamS C (wsSlAt G sl b35 ix v k) k x1) x1)
+    HcontSeamKind G (ContTailStartC C)
+      (ClsS413T (contWsSeamS C (wsSlAt G sl b35 ix v k) k x1) x1) (BitVec.ofNat 32 10)
   /-- **`116`'s leaf's seam**: `ClsS58T`, whose `phi` incoming is `LeafBlock58`'s own `8`. -/
   scan58True : ∀ (C : WalkCarry G) (sl : State) (b35 : UInt8) (ix : BitVec 64)
     (v : BitVec 32) (k : Nat) (x1 : BitVec 8),
-    HcontSeamCalls G (ContTailStartC C)
-      (ClsS58T (contWsSeamS C (wsSlAt G sl b35 ix v k) k x1) x1)
+    HcontSeamKind G (ContTailStartC C)
+      (ClsS58T (contWsSeamS C (wsSlAt G sl b35 ix v k) k x1) x1) (BitVec.ofNat 32 8)
   /-- The last entry's seam: the same three calls at the last entry's tail start. -/
   last : ∀ (C : WalkCarry G) (s : State) (x : BitVec 8) (inc nep : BitVec 64)
     (v : Nat) (ix : BitVec 64) (b35 : UInt8),

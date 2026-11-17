@@ -47,8 +47,10 @@ its chain (`hcontSpan17_of_doc`) are stated at the byte's route too, and the def
 branch passes `hb` rather than `.scanFree`.  The tail's calls bind no cell the seam's
 route changes (`contSeamByte_ee`, `contSeamByte_cond` are stated at every class), so this
 is the same producer re-pointed, not a new one.  What `walkContinueFacts_of_payload` still
-waits on is the class-case assembly over `HcontClass.complete` and the payload item named
-below.
+waits on is the class-case assembly over `HcontClass.complete` at the cells whose rows the
+payloads do not carry — the `.ws` arm's `HcontFacts` and the six `.run` cells' document
+rows — and not the leaf wiring, which is `JsonStage2WalkDispatchRunRow`'s, nor the
+plain-value class's cell, which is `hcontArm_value_of_lane`'s.
 
 **The run's shape no longer restricts the leaf.**  `.run` needed `lettersSpan`
 (`LetS413`) or `fSpan` (`FS413`) as its span below `if.else387.i`, and the bundle's tail
@@ -60,8 +62,11 @@ ends at it.  The six leaves' producers are this module's `hcontRunLeaf_letters` 
 What a producer of the *row* must add is the leaf's three call answers and the landing
 built on them: the kind literal is part of the memory the first call reads, so `102`,
 `110` and `116` have their own groups (`HcontSeamAbi.scanF`/`scan56True`/`scan58True`) and
-the other three cast the seam's (`HcontSeamCalls.cast`).  See `HcontClassRows.runRow` and
-`hcontArm_run_of_row`.
+the other three cast the seam's (`HcontSeamCalls.cast`).  That wiring is
+`JsonStage2WalkDispatchRunRow`'s (`hcontRunLeafAt_letters` … `_58Else`, and the row at each
+leaf by `hcontRunRowAt_letters` … `_58Else`); the four continuing seam fields carry their
+literal (`HcontSeamKind`), so the three nonzero-kind leaves' supply cannot be cast from the
+`0` seam's.  See `HcontClassRows.runRow` and `hcontArm_run_of_row`.
 
 The byte selection itself is **done**: `JsonStage2WalkDispatchClassTransport` derives the
 route's own bits (`slt %8 110`, `eq %8 116`, `slt %8 116`, `eq %8 116`, `slt %8 125` and

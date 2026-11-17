@@ -110,6 +110,24 @@ A `walkContinueFacts_of_payload` stated over a payload carrying those groups wou
 class case over `HcontClass.complete` with every arm's producer in hand.  What this module
 will not do is state it over a payload that quietly holds the arms themselves.
 
+**The run class's leaf is wired per leaf, and the rows it still needs are named.**
+`JsonStage2WalkDispatchRunRow` supplies the six leaves from the seam's group —
+`hcontRunLeafAt_letters` … `_58Else`, the three kind-`0` leaves sharing
+`HcontSeamAbi.scan` and the three others taking `scanF`/`scan56True`/`scan58True`, whose
+literals are `9`/`10`/`8` — and applies `HcontClassRows.runRow` at each
+(`hcontRunRowAt_letters` … `_58Else`).  So the run's arm is available at every leaf of the
+byte, and no leaf's supply is missing.  The plain-value class's cell is covered too:
+`.value` × `wsByte` by `hcontArm_scalarRun_of_class` and `.value` × the three
+non-whitespace byte classes by `hcontArm_value_of_lane`, which produces the prefix
+`hcontScalarPrefix_of_inv` needs from the lane row and the class's bits.  What the class
+case still lacks is not a branch but two groups of rows: `.defaultValueHigh` × the
+whitespace byte needs `HcontFacts`, whose producer takes the whitespace skip's class — the
+per-index run and the stop, which the payload's `HcontDefaultRow.hclass` gives only at
+`v - 1` — with the landing's byte and its callee rows at `contWsTailStart`; and the six
+default classes × the whitespace byte need `HcontRunRow`'s document data (the run's body,
+the appended record and the landing).  Every other cell of the two-dimensional split has a
+producer, and the last level's case is closed.
+
 ## The seam's calls and the run's rows
 
 `JsonStage2WalkDispatchSeams` states the two groups the rows above were waiting on, and the
@@ -118,7 +136,7 @@ producer the scan arm needed:
 | statement | what it is |
 |---|---|
 | `HcontSeamCalls G C s` | **the seam's three calls as one group**: the value-position call, the scalar call's emit arm and the copy call, each with its precondition at the staged argument list, its outcome and the memory it reads and leaves.  It carries the kind literal `cA` and the root-done word `rdv` because the memories mention them; the seam's own cells are the state's, not the group's |
-| `HcontSeamAbi G` | the group at each seam, one `∀`-field: the continuing run class's `if.then413.i` (at `contWsTailStart`) and the last entry's (at `hlastTail`) |
+| `HcontSeamAbi G` | the group at each seam, one `∀`-field: the continuing run class's `if.then413.i` (at `contWsTailStart`) and the last entry's (at `hlastTail`).  The four continuing fields carry their kind literal (`HcontSeamKind`): `if.else405.i`'s `0` for the shared `scan` item, and `9`/`10`/`8` for `scanF`/`scan56True`/`scan58True`, whose leaves' `phi` incomings are the nonzero ones.  A cast preserves `cA` and the leaf's `hval` pins it (`HcontRunLeaf.cA_of_imm`), so the three nonzero ones are new supply and the three kind-`0` leaves share `scan` |
 | `scanTailSeg_of_calls` | **the scan arm's tail from those rows**: `consumerTailSegAt`'s three links at `TailCarryScan C ev`, ending at the scan's entry, returning the record the scalar call appends.  `emptyTailSeg_of_calls`'s twin, and the piece it does not cover: the empty arm's equation `%ee.1.i = %cond350.i` becomes the scan arm's strict inequality and span |
 | `hcontScanTail_of_calls`, `hcontScanTail_at` | that producer at the run class's seam — the `∃`-form (`Facts`'/`RunFacts`' `hTail`) and the record-pinned form |
 | `HcontRunRows G C sl ss b35 ix v k x1` | **the run's rows at a class's check state and a byte's leaf**: `HcontRunFacts` minus its `hTail` field — the check state's cells, the whitespace stop and its class, the entry's span, the landing's byte and its three reads, and the traversal's `hround`/`hbyte` (the old `hguard` is gone, and the round and the read are produced by `JsonStage2WalkRevolutionScanRound`).  The leaf `ss` is an index and the four cells `ScanEntry`/`Latch462S` bind nothing of (`%ee.1.i`, `%cond350.i`, `%inc.i`, `%nep`) are fields, because the landing's rows are stated at `ScanEntry ss …`; it carries the seam's call group and the record they appended |
@@ -205,12 +223,18 @@ its row is now `HcontRunRow` (`JsonStage2WalkDispatchClassRows`): the class's pr
 `runFacts_of_defaultClass` places that bundle after the class's prefix, so
 `hcontArm_run_of_row` produces the whole arm and `hcontArm_run_of_class` is its branch.
 The one segment the arm takes beside the row is the head byte's own leaf below
-`if.else387.i`, at its own count (`nS ≤ 5`) — **but only the class-C else leaf's**: the
-row's `tailS` and the bundle's tail target and landing are `contWsTailStart`/`contWsEntry`,
-i.e. `HeadS413`'s binds, so `lettersSpan`'s `LetS413` and `fSpan`'s `FS413` do not fit.
-`.run` is therefore closed at the head bytes `117 … 124` only; the cells below `110` need
-the run's landing parameterized by the byte's leaf (`contWsEntry`, `contWsLatch`,
-`HcontRunBody`, `HcontRunRows`, `HcontRunFacts`).
+`if.else387.i`, at its own count (`nS ≤ 5`), and **every leaf fits**: the row's `tailS` is
+the leaf's endpoint and the bundle's tail target and landing are `ScanEntry ss …`'s, so
+`lettersSpan`'s `LetS413`, `fSpan`'s `FS413`, the four class-C spans and `contWsTailStart`
+all serve it.  Each leaf's supply is wired by `JsonStage2WalkDispatchRunRow`
+(`hcontRunLeafAt_letters` … `_58Else`, and `hcontRunRowAt_letters` … `_58Else` for the row
+at each), the three nonzero-kind leaves taking their own items
+(`HcontSeamAbi.scanF`/`scan56True`/`scan58True`) and the three kind-`0` ones the shared
+`scan`.
+
+What `.run` still takes is the row's *document* data — the run's body at the check state,
+the record the scalar call appends and the landing's rows — which `HcontClassRows.runRow`
+states as its own obligation and which no payload field carries.
 
 The other three former obstacles are retired: the payload's document row carries the byte's
 class (`HcontDefaultRow.hclass`), the visits' bound is the scan's span, the whitespace seam
