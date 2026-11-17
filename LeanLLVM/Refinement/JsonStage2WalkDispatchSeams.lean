@@ -137,6 +137,33 @@ structure HcontSeamCalls {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : Sta
     [.int 32 (BitVec.ofNat 32 C.sp), .ptr (G.next0 + 8),
      .ptr C.stage.ctype, .ptr C.stage.cst] r₂.mem r₂.next = some r₃
 
+/-- **The seam's three call rows transport across the byte's leaf.**  Nothing but the
+state's memory and counter appears in the group — the callees read `%tok`, `%z`, `%c` and
+the two test cells off the carry and the arguments, and each row is stated at the memory
+and the counter the state carries — so the same rows serve every leaf of `if.then413.i`.
+The leaves differ in their environment, so this is a cast rather than a definitional
+equality, and it is what lets a leaf's producer use the seam's rows once. -/
+def HcontSeamCalls.cast {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {s s' : State} (hmem : s'.mem = s.mem) (hnext : s'.next = s.next)
+    (rows : HcontSeamCalls G C s) : HcontSeamCalls G C s' where
+  cA := rows.cA
+  rdv := rows.rdv
+  r₁ := rows.r₁
+  xA := rows.xA
+  hpre₁ := by rw [hmem, hnext]; exact rows.hpre₁
+  hcall₁ := by rw [hmem, hnext]; exact rows.hcall₁
+  hret₁ := rows.hret₁
+  hbit0 := rows.hbit0
+  hzread := by rw [hmem]; exact rows.hzread
+  r₂ := rows.r₂
+  hpre₂ := rows.hpre₂
+  hcall₂ := rows.hcall₂
+  hret₂ := rows.hret₂
+  hev64 := rows.hev64
+  r₃ := rows.r₃
+  hpre₃ := rows.hpre₃
+  hcall₃ := rows.hcall₃
+
 /-- **The seam's call rows at every seam**: one `∀`-field each.  The continuing scan arm's
 seam is the run class's own `if.then413.i` — `ContTailStartC C` at the state
 `contWsTailStart` builds from the check state's stop and byte — and the last entry's seam is

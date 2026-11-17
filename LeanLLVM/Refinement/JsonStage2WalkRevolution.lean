@@ -2549,6 +2549,63 @@ theorem wsSlS_envEnd {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
   simp only [wsSlS, landRhsPreheaderOutAt]
   rw [wsStopAt_envEnd, wsLeafS_envEnd, wsPreS_envEnd]
 
+/-! #### `%cond350.i` through the skip
+
+The copy call's bound is the lane's word, and every state the skip passes keeps it: the
+pivots, the switch leaf and the landing's three cells are the states' own binds, and none
+of them is `%cond350.i`.  The `%end.i` family above has the same shape; this one is needed
+because the run's tail states its copy call at the byte's leaf, so the bound has to be read
+there rather than at the check state.  The three-way byte split and `wsStopAt`'s
+`match k - i` are why the peel cannot be one `simp`: each arm's binds are its own. -/
+
+/-- The latch's step keeps `%cond350.i`. -/
+theorem scanLatchOut_cond (s : State) (i c : Nat) (t : String) :
+    lookupName (scanLatchOut s "%inc371.i" "%exitcond.not" i c t).env "%cond350.i" =
+      lookupName s.env "%cond350.i" := by
+  simp only [stateAt, cells]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+
+/-- The leaf keeps it, whichever of the three arms stopped the skip. -/
+theorem wsLeafS_cond {m0 : Mem} (G : WalkGeom m0) (s : State) (p : Nat) :
+    lookupName (wsLeafS G s p).env "%cond350.i" = lookupName s.env "%cond350.i" := by
+  simp only [wsLeafS]
+  split
+  · simp only [leafBlock43OutAt, nodeBlock52OutAt, wsLandS, landRhsIOutAt, stateAt, cells,
+      State.bind, State.bindAll]
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+  · split
+    · simp only [scanNodeBlock50In, wsLandS, landRhsIOutAt, stateAt, cells, State.bind,
+        State.bindAll]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+    · simp only [scanNodeBlock50In, wsLandS, landRhsIOutAt, stateAt, cells, State.bind,
+        State.bindAll]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+
+/-- The latch at `n` visits keeps it. -/
+theorem wsLatchAt_cond {m0 : Mem} (G : WalkGeom m0) (l : State) (i v : Nat) :
+    ∀ n, lookupName (wsLatchAt G l i v n).env "%cond350.i" = lookupName l.env "%cond350.i"
+  | 0 => rfl
+  | n + 1 => by
+    simp only [wsLatchAt]
+    rw [wsLeafS_cond, scanLatchOut_cond, wsLatchAt_cond G l i v n]
+
+/-- The stop's leaf, at `if.end372.i`, keeps it: the arm binds cells and moves the edge,
+nothing else. -/
+theorem wsStopS_cond {m0 : Mem} (G : WalkGeom m0) (s : State) (p : Nat) :
+    lookupName (wsStopS G s p).env "%cond350.i" = lookupName s.env "%cond350.i" := by
+  simp only [wsStopS]
+  exact wsLeafS_cond G s p
+
+/-- The stop state keeps it, whichever leaf stopped the skip. -/
+theorem wsStopAt_cond {m0 : Mem} (G : WalkGeom m0) (l : State) (i v k : Nat) :
+    lookupName (wsStopAt G l i v k).env "%cond350.i" = lookupName l.env "%cond350.i" := by
+  unfold wsStopAt
+  split
+  · rfl
+  · simp only [wsStopS]
+    rw [wsLeafS_cond, scanLatchOut_cond]
+    exact wsLatchAt_cond G l i v _
+
 /-- The scan's entry, at the bundle's own terms.  Named for the same reason
 `hlastEntryF` is: the bundle's fields are the `def`s' arguments in order, so a lemma's
 statement at `contWsEntryF f` is the one its field types spell out. -/
@@ -3335,6 +3392,17 @@ theorem wsSlAt_env8 {m0 : Mem} (G : WalkGeom m0) (sl : State) (b35 : UInt8)
   simp only [wsSlAt]
   rw [wsStopAt_env8, wsLeafS_env8]
   exact wsPreSAt_env8 sl b35
+
+/-- **The check state's run landing keeps `%cond350.i`**: the preheader's cell is the check
+state's, and the skip's states above it bind nothing of that name.  The run's tail reads the
+copy call's bound at the byte's leaf, so this is the transport that makes the lane's word
+available there. -/
+theorem wsSlAt_cond {m0 : Mem} (G : WalkGeom m0) (sl : State) (b35 : UInt8)
+    (ix : BitVec 64) (v : BitVec 32) (k : Nat) :
+    lookupName (wsSlAt G sl b35 ix v k).env "%cond350.i" = lookupName sl.env "%cond350.i" := by
+  simp only [wsSlAt]
+  rw [wsStopAt_cond, wsLeafS_cond]
+  exact wsPreSAt_cond sl b35
 
 /-! ### The three arms
 

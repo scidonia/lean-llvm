@@ -627,7 +627,20 @@ structure HcontClassRows {m0 : Mem} (G : WalkGeom m0) : Type where
   `lettersSpan`'s `LetS413` (or `FS413` at `102`), so its span's endpoint is not this
   row's: the class case cannot pass such a span to `run` as the fields stand.  Closing
   those cells needs the run's landing (`contWsEntry`, `contWsLatch`, `HcontRunBody`,
-  `HcontRunRows`, `HcontRunFacts`) parameterized by the byte's leaf, not a new row. -/
+  `HcontRunRows`, `HcontRunFacts`) parameterized by the byte's leaf, not a new row.
+
+  **What that parameterization takes, worked out at the statements.**  `HcontRunFacts` and
+  `HcontRunRows` both pin the tail and the landing at `contWsEntry`, so both gain a leaf
+  `ss`, with `hTail`'s source and target and every landing field read at
+  `ScanEntry ss …`.  The bundle must also *carry* four cells, because `ScanEntry` and
+  `Latch462S` bind none of them and the seam state does: `%ee.1.i` (the run's stop),
+  `%inc.i`, `%nep` and `%cond350.i` (the lane's word).  The first three are a `simp only
+  [<seam and leaf defines>, stateAt, cells, State.bind]` plus
+  `lookupName_cons_ne`/`lookupName_cons_self`; the fourth needs the transport through the
+  skip that the tree now has: `scanLatchOut_cond`, `wsLeafS_cond`, `wsStopS_cond`,
+  `wsLatchAt_cond`, `wsStopAt_cond` and `wsSlAt_cond` (`JsonStage2WalkRevolution`).  What
+  remains after the cells is the five leaf producers, this row's and the arm's leaf index,
+  and the class case. -/
   runRow : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     C.k + 1 < G.nep → (r : HcontDefaultRow G C s) → wsStop G (r.v.toNat - 1) →
     HcontRunRow G C s
