@@ -125,7 +125,7 @@ at four links each, at the entry's byte credit plus the five the price spares.
 links, with no byte term.  Both follow from the price forms the route already proves. -/
 
 /-- **The four-per-visit budget follows from the byte allowance's eight.**  The field is
-`contWsPriceF`'s inequality at this arm's tighter per-visit price: one visit costs
+`contWsPriceAt`'s inequality at this arm's tighter per-visit price: one visit costs
 `scanRoundSeg4`'s four links, and the allowance pays eight, so the price form with eight per
 visit implies the form the bundle states.  Nothing is spent: every visit the premise charges
 eight for, the field charges four. -/
@@ -135,7 +135,7 @@ theorem runBudget_of_bytePrice {N c i Δ : Nat}
   simp only [stage2ByteAllowance] at h ⊢
   omega
 
-/-- **The budget, from the whitespace class's own price.**  `contWsPriceF`
+/-- **The budget, from the whitespace class's own price.**  `contWsPriceAt`
 (`JsonStage2WalkRevolution`) proves `N + 8·(v - 1 - k) ≤ 8·ΔA + 5` at the class's stop `k`
 and the lane's bound `v`.  The run class's own numbers are the same span — the stop is the
 run's *start* here and the bound is downstream of it — so `k ≤ i` and `c ≤ v` carry the
@@ -177,7 +177,7 @@ in the header's table. -/
 /-- **The run bundle on the continuing head, from the entry's evidence.**  `RunFacts` at
 every state that carries the invariant and has an entry left: the head's byte is
 `hlastByte G C`, and `h8`, `h8m`, `hinc`, `hnep`, `hcw` and `hbudget` are this module's.
-`hprice` is the price at the byte allowance's eight per visit — `contWsPriceF`'s own form,
+`hprice` is the price at the byte allowance's eight per visit — `contWsPriceAt`'s own form,
 carried across by `runBudget_of_wsPrice` — and the field's four per visit is
 `runBudget_of_bytePrice`'s. -/
 def runFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)

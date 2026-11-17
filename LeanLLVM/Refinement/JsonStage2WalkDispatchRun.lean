@@ -260,7 +260,7 @@ structure RunFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : 
           (BitVec.ofNat 64 (p + 1)) a q x)
   /-- **The budget is not double-spent: the run and the visits share the entry's span.**
   The run's count `N` and the scan's visits `4·(c - 1 - i)` are together at most the
-  entry's byte credit plus the five the `+5` spares.  This is `contWsPriceF`'s inequality
+  entry's byte credit plus the five the `+5` spares.  This is `contWsPriceAt`'s inequality
   (`N + 8·(v - 1 - k) ≤ 8·ΔA + 5`, proved at the class-C route) at this module's *tighter*
   four-per-visit price: `4·(c - 1 - i) ≤ 8·(v - 1 - k)` because `c ≤ v` and `i ≥ k`, so
   the fact is implied by the existing derivation rather than being a price this arm

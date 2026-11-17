@@ -77,7 +77,7 @@ supplied as a named premise.
 | the second byte's class (`x1`, `h8c`) | **produced**: `if.end372.i`'s else arm binds five cells and none is `%8`, so `contSeamS_env8` peels the seam to the token's end and `h8c` *is* `h8end` |
 | the second byte's three class bits (`hc110`, `hc116`, `hceq116`) | **produced** from the class's two: the same byte, whose signed order already clears `110` and `116` and excludes `116` (`hlast_slt_zero_of_toInt_le`, `hlast_eq_zero_of_slt_zero`) |
 | the tail's counted segment (`hTail`, `cA`, `rdv`, `xA`) | **supplied: a named premise, and now with a reachable producer.**  `consumerTailSegAt` composes the segment from the three calls' contracts.  Its third link's span bound (`v.toNat - k ≤ C.inner`) used to be the obstruction; it is now derived — `k < v.toNat` is `cont_heicd` and `v.toNat - ix.toNat ≤ C.inner` plus `ix.toNat < k` gives it.  What remains between this field and `consumerTailSegAt` is the three callees' own preconditions and answers, which are the staging's and no clause of `WalkInv` fixes at the callee's argument list (the same survivors `hlastTail_of_calls`'s map names).  So the field stays the named premise and its producer is `consumerTailSegAt` at the seam's landing |
-| the whitespace run (`k`, `x1`, `hClass`) | **the class is supplied, the run is derived.**  `hClass` is the one premise that makes the segment total: `%35` is one of the four whitespace bytes, so the leaf the pivots reach takes its true arm, the per-index `∀` continues the token to `k` and the stop is at `k`.  Its last two conjuncts are the inner budget the first visit's `ScanEntered` needs — the refill's, so supplied — and `entryPos C.k ≤ ix.toNat`, which is now `le_rfl` at the pinned `contIx G C`.  `contWsRunF` (`JsonStage2WalkRevolution`) derives the segment, its count `N ≤ 5·(k - i) + 10` and the stop's `%cond350.i` cell; `contWsPriceF` derives `N + 8·(v - 1 - k) ≤ 8·ΔA + 5` |
+| the whitespace run (`k`, `x1`, `hClass`) | **the class is supplied, the run is derived.**  `hClass` is the one premise that makes the segment total: `%35` is one of the four whitespace bytes, so the leaf the pivots reach takes its true arm, the per-index `∀` continues the token to `k` and the stop is at `k`.  Its last two conjuncts are the inner budget the first visit's `ScanEntered` needs — the refill's, so supplied — and `entryPos C.k ≤ ix.toNat`, which is now `le_rfl` at the pinned `contIx G C`.  `contWsRunF` (`JsonStage2WalkRevolution`) derives the segment, its count `N ≤ 5·(k - i) + 10` and the stop's `%cond350.i` cell; `contWsPriceAt` derives `N + 8·(v - 1 - k) ≤ 8·ΔA + 5` |
 | the scan's landing (`q`, `bs`, `hreadS`, `hbsS`, `x47`, `h47`) | **premised correctly: the document's.**  The address is derived — `%3` at `contWsEntry` is `WalkPtrs`'s `some (.ptr G.b)`, which is the tail segment's own target invariant (`hTail.inv'.ptrs.1`), so `a := G.b`; and `hpos`, `hloc105`, `hloc96` are derived (`cont_hpos`, and the two `hlastLoc*` lemmas, which are generic in the state).  What stays supplied is the byte at `G.b + k` and its class — the input's — and the two index cells `q`/`x47` that name it |
 | the landing's selection (`hopS`) | **produced** (`contWsEntry_hopS`): the operand is `%ee.1.i` and the seam stored the run's stop `k` in it (`contWsEntry_ee`), so the landing's index *is* the run's stop.  This is the field that used to be supplied and that contradicted the stopper — the finding below |
 | the run endpoint's two registers (`hinc_sl`, `hnep_sl`) | **retired: proved, not supplied.**  `%inc.i` is `WalkInv.inc_reg` and `%nep` is one of `walkStaticRegs`' pairs, and the seam binds neither (`seamS_env_inc`, `seamS_env_nep`), so the segment's target invariant reads both at the endpoint (`contWsSeamS_inc`, `contWsSeamS_nep`).  A `WalkSegment` carries the invariant at its target, and the run's target is the seam's source |
@@ -96,7 +96,7 @@ bits on the head's byte, the entry's word (`hread`) and its order (`hugt`), the 
 class (`hClass`) — which is the document's content and the refill's budget — the tail's
 segment (the three callees' own preconditions), the landing's byte and its class, and the
 traversal's three hypotheses.  The run, its count, its price, its endpoint's two cells and
-the token register at its exit are no longer premises: `contWsRunF`, `contWsPriceF`,
+the token register at its exit are no longer premises: `contWsRunF`, `contWsPriceAt`,
 `wsSlS_envEnd` and `cont_static_tok` derive them.  No row is a field weakened to make a
 proof close, and the two that were supplied *because* the seam's cell contradicted the
 stopper — `hopS` and the tail — are now either produced or supplied for a reason that
@@ -564,7 +564,7 @@ byte is `hlastByte G C`, the counts are `hlastIncV C`/`hlastNepV G`, the positio
 arm's four cells are the invariant's peels at `contAS₅` — so only the class, the document's
 facts, the tail and the traversal enter as premises.  The class is `hClass`, and it is what
 makes the run derivable: the segment, its count and its price come from `contWsRunF` and
-`contWsPriceF`, and the seam's `%end.i` from `wsSlS_envEnd`.
+`contWsPriceAt`, and the seam's `%end.i` from `wsSlS_envEnd`.
 
 `hopS` is **not** a premise any more: at `contWsEntry` the seam stored the run's stop
 (`contWsEntry_ee`), so the landing's index follows from the cell rather than being asserted

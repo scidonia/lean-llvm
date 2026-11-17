@@ -187,6 +187,91 @@ theorem contSeamMid_env8 {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (q : Sta
 
 /-! ### The suffix, counted at eight -/
 
+/-- **The default arm's four links to the whitespace check**, at any state at
+`sw.default.i`.  `contDefaultSeg`'s first four, cut out so the run class's head can join
+them to the run instead of to the byte's pivots and the token's end: every default class's
+run reaches its check state as its own prefix plus these four. -/
+theorem contSwToLandSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (q5 : State)
+    (hInv : WalkInv G (HeadAC₄ C) q5) (hblock : (HeadAC₄ C).block = "sw.default.i")
+    {inc nep : BitVec 64}
+    (hinc : evalOperand q5 (.reg "%inc.i") = some (.int 64 inc))
+    (hnep : evalOperand q5 (.reg "%nep") = some (.int 64 nep))
+    (hnext : evalICmp .ult inc nep = 1)
+    {ep : Nat} {v : BitVec 32}
+    (h5 : lookupName (contSwOut q5 inc nep).env "%5" = some (.ptr ep))
+    (hi63 : inc.toNat < 2 ^ 63)
+    (hread : readBytes (contSwOut q5 inc nep).mem (ep + inc.toNat * 4) 4 =
+      some (natToBytes v.toNat 4))
+    {ix : BitVec 64}
+    (hidx : lookupName (contSwOut q5 inc nep).env "%idxprom.i" = some (.int 64 ix))
+    (htok : lookupName (contSwOut q5 inc nep).env "%t352.i" = some (.ptr C.stage.tok))
+    (hgap : lookupName (contSwOut q5 inc nep).env "%gap.i" = some (.ptr (C.stage.tok + 20)))
+    (hugt : evalICmp .ugt (BitVec.ofNat 64 v.toNat) ix = 1)
+    {b35 : UInt8}
+    (hread35 : readBytes (contMidS C q5 inc nep ep v ix).mem ((G.b - 1) + v.toNat) 1 =
+      some [b35]) :
+    WalkSegment (stage2Calls stage2SubCalls) G (HeadAC₄ C) q5 (ContAC₄ C)
+      (contLandOut (G := G) (contMidS C q5 inc nep ep v ix) v.toNat b35) 4 := by
+  -- 1. `sw.default.i`'s count test, on the succeeding arm
+  have hres₁ : (if evalICmp .ult inc nep = 1 then
+      "cond.true345.i" else "cond.end349.i") = "cond.true345.i" := by
+    rw [hnext]; rfl
+  obtain ⟨s₁, hl₁, hs₁⟩ :=
+    WalkLink.sw_default_i_at (calls := stage2Calls stage2SubCalls) G (HeadAC₄ C) q5
+      hInv hblock hinc hnep
+  have hl₁' : WalkLink (stage2Calls stage2SubCalls) G (HeadAC₄ C) q5
+      (ContAC₁ C) (contSwOut q5 inc nep) := by
+    have hst : s₁ = contSwOut q5 inc nep := by rw [hs₁, hres₁]; rfl
+    rw [hst] at hl₁
+    rw [hres₁] at hl₁
+    exact hl₁
+  -- 2. `cond.true345.i`: the next entry's lane
+  have hinc' : lookupName (contSwOut q5 inc nep).env "%inc.i" = some (.int 64 inc) := by
+    simp only [contSwOut, State.bind, lookupName_cons_ne (k := "%cmp343.i") (n := "%inc.i")
+      _ _ (by decide)]
+    simpa only [evalOperand] using hinc
+  obtain ⟨s₂, hl₂, hs₂⟩ :=
+    WalkLink.cond_true345_i_at (calls := stage2Calls stage2SubCalls) G (ContAC₁ C)
+      (contSwOut q5 inc nep) hl₁'.inv' rfl h5 hinc' hi63 hread
+  have hl₂' : WalkLink (stage2Calls stage2SubCalls) G (ContAC₁ C) (contSwOut q5 inc nep)
+      (ContAC₂ C) (cte345OutAt (contSwOut q5 inc nep) ep inc v) := by
+    rw [hs₂] at hl₂
+    exact hl₂
+  -- 3. the bound's `phi` and the compare
+  obtain ⟨s₃, hl₃, hs₃⟩ :=
+    WalkLink.cond_end349_i_at G (ContAC₂ C) (cte345OutAt (contSwOut q5 inc nep) ep inc v)
+      hl₂'.inv' rfl (p := "cond.true345.i") rfl contPhi6
+      (cte345OutAt_conv (contSwOut q5 inc nep) ep inc v) hidx htok hgap
+  have hres₃ : (if evalICmp .ugt (BitVec.ofNat 64 v.toNat) ix = 1 then
+      "land.lhs.true357.i" else "if.end372.i") = "land.lhs.true357.i" := by
+    rw [hugt]; rfl
+  have hl₃' : WalkLink (stage2Calls stage2SubCalls) G (ContAC₂ C)
+      (cte345OutAt (contSwOut q5 inc nep) ep inc v) (ContAC₃ C)
+      (contMidS C q5 inc nep ep v ix) := by
+    have hst : s₃ = contMidS C q5 inc nep ep v ix := by
+      rw [hs₃]
+      rfl
+    rw [hst] at hl₃
+    rw [hres₃] at hl₃
+    exact hl₃
+  -- 4. the whitespace check: the byte before the entry's end
+  have hig : lookupName (contMidS C q5 inc nep ep v ix).env "%invariant.gep" =
+      some (.ptr (G.b - 1)) :=
+    hl₃'.inv'.regs ("%invariant.gep", .ptr (G.b - 1)) (by simp [walkStaticRegs])
+  have hcond : lookupName (contMidS C q5 inc nep ep v ix).env "%cond350.i" =
+      some (.int 64 (BitVec.ofNat 64 v.toNat)) := contMidS_cond C q5 inc nep ep v ix
+  have hq63 : v.toNat < 2 ^ 63 := by have := v.isLt; omega
+  obtain ⟨s₄, hl₄, hs₄⟩ :=
+    WalkLink.land_lhs_true357_i_at G (ContAC₃ C) (contMidS C q5 inc nep ep v ix)
+      hl₃'.inv' rfl (ig := G.b - 1) (q := v.toNat) (b := b35) hig hcond hq63 hread35
+  have hl₄' : WalkLink (stage2Calls stage2SubCalls) G (ContAC₃ C)
+      (contMidS C q5 inc nep ep v ix) (ContAC₄ C)
+      (contLandOut (G := G) (contMidS C q5 inc nep ep v ix) v.toNat b35) := by
+    rw [hs₄] at hl₄
+    exact hl₄
+  exact ((WalkSegment.of_link hl₁').trans (WalkSegment.of_link hl₂')).trans
+    ((WalkSegment.of_link hl₃').trans (WalkSegment.of_link hl₄'))
+
 /-- **The default arm's chain from `sw.default.i` to `if.else387.i`, at any state.**  The
 count test's succeeding arm, the bound's `phi`, the whitespace check and the byte's three
 pivots with the token's end: eight links, the same eight for every head class that reaches
@@ -1082,6 +1167,160 @@ theorem contBhHeadSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
   exact Seg.tail hl₁' (Seg.tail hl₂' (Seg.tail hl₃' (Seg.tail hl₄' (by
     simpa only [Nat.reduceAdd] using hseg8))))
 
+/-! #### `.defaultValueBrace`: `NodeBlock19 → NodeBlock17 → LeafBlock13`, four links
+
+The byte `124`: `91 ≤ %8`, `123 ≤ %8`, `%8 < 125` and `%8 ≠ 123`.  It is the sixth default
+class, and the one class-C's byte range reaches without the bracket's route: `124`'s
+class-C span is `LeafBlock58`'s else arm (as `117 … 125` is), but its head chain is
+`NodeBlock19 → NodeBlock17 → LeafBlock13` and not `NodeBlock19 → NodeBlock11 →
+LeafBlock9`.  Stating it completes the class-C selection at every byte of `[110, 125]`
+that the letters arm does not take. -/
+
+/-- The carry at `NodeBlock19`: the first pivot's high arm. -/
+abbrev BrcAC₁ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) : WalkCarry G :=
+  { C with block := "NodeBlock19" }
+
+/-- The carry at `NodeBlock17`. -/
+abbrev BrcAC₂ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) : WalkCarry G :=
+  { BrcAC₁ C with block := "NodeBlock17" }
+
+/-- The carry at `LeafBlock13`. -/
+abbrev BrcAC₃ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) : WalkCarry G :=
+  { BrcAC₂ C with block := "LeafBlock13" }
+
+/-- The state `NodeBlock21` leaves on the high arm: `91 ≤ %8`, so `NodeBlock19`. -/
+def brcS₁ (s : State) (x : BitVec 8) : State :=
+  { (s.bind "%Pivot22" (.int 1 (evalICmp .slt x (BitVec.ofNat 8 91)))) with
+    pc := "NodeBlock19", pre := some s.pc }
+
+/-- The state `NodeBlock19` leaves: `123 ≤ %8`, so `NodeBlock17`. -/
+def brcS₂ (s : State) (x : BitVec 8) : State :=
+  { (brcS₁ s x).bind "%Pivot20" (.int 1 (evalICmp .slt x (BitVec.ofNat 8 123))) with
+    pc := "NodeBlock17", pre := some (brcS₁ s x).pc }
+
+/-- The state `NodeBlock17` leaves: `%8 < 125`, so `LeafBlock13`. -/
+def brcS₃ (s : State) (x : BitVec 8) : State :=
+  { (brcS₂ s x).bind "%Pivot18" (.int 1 (evalICmp .slt x (BitVec.ofNat 8 125))) with
+    pc := "LeafBlock13", pre := some (brcS₂ s x).pc }
+
+/-- The state `LeafBlock13` leaves: the class's `sw.default.i`. -/
+def brcS₄ (s : State) (x : BitVec 8) : State :=
+  { (brcS₃ s x).bind "%SwitchLeaf14" (.int 1 (evalICmp .eq x (BitVec.ofNat 8 123))) with
+    pc := "sw.default.i", pre := some (brcS₃ s x).pc }
+
+/-- **The `.defaultValueBrace` class's head chain to `if.else387.i`, at four plus eight.**
+`91 ≤ %8`, `123 ≤ %8`, `%8 < 125` and `%8 ≠ 123`: `NodeBlock19 → NodeBlock17 →
+LeafBlock13 → sw.default.i`, then `contDefaultSeg`'s eight.  The byte `124` is the class,
+and its twelve links are what `HcontArm.classC`'s `hHead` takes at it. -/
+theorem contBrcHeadSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead)
+    {x : BitVec 8} (h8 : evalOperand s (.reg "%8") = some (.int 8 x))
+    (h91 : evalICmp .slt x (BitVec.ofNat 8 91) = 0)
+    (h123 : evalICmp .slt x (BitVec.ofNat 8 123) = 0)
+    (h125 : evalICmp .slt x (BitVec.ofNat 8 125) = 1)
+    (hne123 : evalICmp .eq x (BitVec.ofNat 8 123) = 0)
+    {inc nep : BitVec 64}
+    (hinc : evalOperand (brcS₄ s x) (.reg "%inc.i") = some (.int 64 inc))
+    (hnep : evalOperand (brcS₄ s x) (.reg "%nep") = some (.int 64 nep))
+    (hnext : evalICmp .ult inc nep = 1)
+    {ep : Nat} {v : BitVec 32}
+    (h5 : lookupName (contSwOut (brcS₄ s x) inc nep).env "%5" = some (.ptr ep))
+    (hi63 : inc.toNat < 2 ^ 63)
+    (hread : readBytes (contSwOut (brcS₄ s x) inc nep).mem (ep + inc.toNat * 4) 4 =
+      some (natToBytes v.toNat 4))
+    {ix : BitVec 64}
+    (hidx : lookupName (contSwOut (brcS₄ s x) inc nep).env "%idxprom.i" =
+      some (.int 64 ix))
+    (htok : lookupName (contSwOut (brcS₄ s x) inc nep).env "%t352.i" =
+      some (.ptr C.stage.tok))
+    (hgap : lookupName (contSwOut (brcS₄ s x) inc nep).env "%gap.i" =
+      some (.ptr (C.stage.tok + 20)))
+    (hugt : evalICmp .ugt (BitVec.ofNat 64 v.toNat) ix = 1)
+    {b35 : UInt8}
+    (hread35 : readBytes (contMidS C (brcS₄ s x) inc nep ep v ix).mem
+      ((G.b - 1) + v.toNat) 1 = some [b35])
+    (hb13 : evalICmp .slt (cont35 b35) (BitVec.ofNat 8 13) = 0)
+    (hb32 : evalICmp .slt (cont35 b35) (BitVec.ofNat 8 32) = 1)
+    (hbne13 : evalICmp .eq (cont35 b35) (BitVec.ofNat 8 13) = 0)
+    {b8 : BitVec 8}
+    (hend : lookupName (contP35Mid C (brcS₄ s x) inc nep ep v ix b35).env "%end.i" =
+      some (.ptr (C.stage.tok + 8)))
+    (h8end : lookupName (contP35Mid C (brcS₄ s x) inc nep ep v ix b35).env "%8" =
+      some (.int 8 b8))
+    (hbit : (evalICmp .eq b8 (BitVec.ofNat 8 45) |||
+      evalICmp .ult (b8 + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0) :
+    Seg (stage2Calls stage2SubCalls) G C s (ContSeamC C)
+      (contSeamMid C (brcS₄ s x) inc nep ep v ix b35 b8) 12 := by
+  have hres₁ : (if evalICmp .slt x (BitVec.ofNat 8 91) = 1 then
+      "NodeBlock5" else "NodeBlock19") = "NodeBlock19" := by rw [h91]; rfl
+  have hres₂ : (if evalICmp .slt x (BitVec.ofNat 8 123) = 1 then
+      "NodeBlock11" else "NodeBlock17") = "NodeBlock17" := by rw [h123]; rfl
+  have hres₃ : (if evalICmp .slt x (BitVec.ofNat 8 125) = 1 then
+      "LeafBlock13" else "LeafBlock15") = "LeafBlock13" := by rw [h125]; rfl
+  have hres₄ : (if evalICmp .eq x (BitVec.ofNat 8 123) = 1 then
+      "if.then.i" else "sw.default.i") = "sw.default.i" := by rw [hne123]; rfl
+  -- 1. the head's first pivot
+  obtain ⟨s₁, hl₁, hs₁⟩ :=
+    WalkLink.NodeBlock21_at (calls := stage2Calls stage2SubCalls) G C s hInv hblock h8
+  have hl₁' : WalkLink (stage2Calls stage2SubCalls) G C s (BrcAC₁ C) (brcS₁ s x) := by
+    have hst : s₁ = brcS₁ s x := by rw [hs₁, hres₁]; rfl
+    rw [hst] at hl₁
+    rw [hres₁] at hl₁
+    exact hl₁
+  -- 2. `NodeBlock19`'s second pivot
+  have h8₂ : evalOperand (brcS₁ s x) (.reg "%8") = some (.int 8 x) := by
+    simp only [brcS₁, evalOperand, State.bind,
+      lookupName_cons_ne (k := "%Pivot22") (n := "%8") _ _ (by decide)]
+    exact h8
+  obtain ⟨s₂, hl₂, hs₂⟩ :=
+    WalkLink.NodeBlock19_at (calls := stage2Calls stage2SubCalls) G (BrcAC₁ C)
+      (brcS₁ s x) hl₁'.inv' rfl h8₂
+  have hl₂' : WalkLink (stage2Calls stage2SubCalls) G (BrcAC₁ C) (brcS₁ s x)
+      (BrcAC₂ C) (brcS₂ s x) := by
+    have hst : s₂ = brcS₂ s x := by rw [hs₂, hres₂]; rfl
+    rw [hst] at hl₂
+    rw [hres₂] at hl₂
+    exact hl₂
+  -- 3. `NodeBlock17`'s third pivot
+  have h8₃ : evalOperand (brcS₂ s x) (.reg "%8") = some (.int 8 x) := by
+    simp only [brcS₂, brcS₁, evalOperand, State.bind,
+      lookupName_cons_ne (k := "%Pivot20") (n := "%8") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot22") (n := "%8") _ _ (by decide)]
+    exact h8
+  obtain ⟨s₃, hl₃, hs₃⟩ :=
+    WalkLink.NodeBlock17_at (calls := stage2Calls stage2SubCalls) G (BrcAC₂ C)
+      (brcS₂ s x) hl₂'.inv' rfl h8₃
+  have hl₃' : WalkLink (stage2Calls stage2SubCalls) G (BrcAC₂ C) (brcS₂ s x)
+      (BrcAC₃ C) (brcS₃ s x) := by
+    have hst : s₃ = brcS₃ s x := by rw [hs₃, hres₃]; rfl
+    rw [hst] at hl₃
+    rw [hres₃] at hl₃
+    exact hl₃
+  -- 4. the leaf's equality test
+  have h8₄ : evalOperand (brcS₃ s x) (.reg "%8") = some (.int 8 x) := by
+    simp only [brcS₃, brcS₂, brcS₁, evalOperand, State.bind,
+      lookupName_cons_ne (k := "%Pivot18") (n := "%8") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot20") (n := "%8") _ _ (by decide),
+      lookupName_cons_ne (k := "%Pivot22") (n := "%8") _ _ (by decide)]
+    exact h8
+  obtain ⟨s₄, hl₄, hs₄⟩ :=
+    WalkLink.LeafBlock13_at (calls := stage2Calls stage2SubCalls) G (BrcAC₃ C)
+      (brcS₃ s x) hl₃'.inv' rfl h8₄
+  have hl₄' : WalkLink (stage2Calls stage2SubCalls) G (BrcAC₃ C) (brcS₃ s x)
+      (HeadAC₄ C) (brcS₄ s x) := by
+    have hst : s₄ = brcS₄ s x := by rw [hs₄, hres₄]; rfl
+    rw [hst] at hl₄
+    rw [hres₄] at hl₄
+    exact hl₄
+  -- the suffix at the class's own state
+  have hcarry : (HeadAC₄ C).block = "sw.default.i" := rfl
+  have hseg8 : Seg (stage2Calls stage2SubCalls) G (HeadAC₄ C) (brcS₄ s x)
+      (ContSeamC C) (contSeamMid C (brcS₄ s x) inc nep ep v ix b35 b8) 8 :=
+    contDefaultSeg G C (brcS₄ s x) hl₄'.inv' hcarry hinc hnep hnext h5 hi63 hread hidx htok
+      hgap hugt hread35 hb13 hb32 hbne13 hend h8end hbit
+  exact Seg.tail hl₁' (Seg.tail hl₂' (Seg.tail hl₃' (Seg.tail hl₄' (by
+    simpa only [Nat.reduceAdd] using hseg8))))
+
 /-! ### The instrument -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.contDefaultSeg
@@ -1090,6 +1329,8 @@ theorem contBhHeadSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
 #print axioms LeanLLVM.Refinement.WalkScope.contOthHeadSeg
 #print axioms LeanLLVM.Refinement.WalkScope.contBrkHeadSeg
 #print axioms LeanLLVM.Refinement.WalkScope.contBhHeadSeg
+#print axioms LeanLLVM.Refinement.WalkScope.contSwToLandSeg
+#print axioms LeanLLVM.Refinement.WalkScope.contBrcHeadSeg
 
 end WalkScope
 end LeanLLVM.Refinement

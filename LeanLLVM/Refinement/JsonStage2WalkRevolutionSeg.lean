@@ -816,7 +816,9 @@ theorem walkRevolutionMergeSegWs {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) 
       f.hread35
   -- 2. the run and the seam, derived from the bundle's class: from the whitespace check's
   -- target to the seam, at the count and the stop's own cell the producer returns
-  obtain ⟨N, hN, hsegRun, hcond⟩ := contWsRunF G C s f hseg8.inv' hk
+  obtain ⟨N, hN, hsegRun, hcond⟩ :=
+    contWsRunF G C (contLandS C s f.x f.inc f.nep f.ep f.v f.ix f.b35)
+      (hcontRunFacts_of_contFacts G C s f hseg8.inv') hk
   -- 3. the class-C span
   have hsegC : Seg (stage2Calls stage2SubCalls) G (ContSeamC C)
       (contWsSeamS C (wsSlS G C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.k) f.k f.x1)
@@ -901,7 +903,10 @@ theorem walkRevolutionMergeSegWs {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) 
   refine ⟨Cm, sm, N, nSc, ?_, hl₂.inv', rfl, hpreM, hkM, hincM, hnepM, hnR, ?_⟩
   · exact (((hsegP.trans hsegS).trans hseg₁).trans (WalkSegment.of_link hl₂))
   · -- the price: the run's own bound and the scan's visits against the entry's span
-    have hp := contWsPriceF G C s f hN
+    have hp : N + stage2ByteAllowance * (f.v.toNat - 1 - f.k) ≤
+        stage2ByteAllowance * (entryPos G (C.k + 1) - entryPos G C.k) + 5 :=
+      contWsPriceAt G C (contLandS C s f.x f.inc f.nep f.ep f.v f.ix f.b35)
+        (hcontRunFacts_of_contFacts G C s f hseg8.inv') hN
     have hΔ : C.k + 1 - C.k = 1 := by omega
     simp only [stage2EntryAllowance, stage2ByteAllowance, hΔ, Nat.mul_one] at hp ⊢
     omega

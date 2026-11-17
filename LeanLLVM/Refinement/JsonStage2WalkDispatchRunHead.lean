@@ -14,7 +14,7 @@ bundle — and the invariant.
 `N ≤ 5·(k - i) + 10` — and upstream of it is `contPrefixLand`'s eight links, the head's
 chain to the whitespace check.  Composed, they are the head's chain to `if.else387.i` at
 `8 + N`, which is inside `RunFacts`'s bound `12 + N` with four links to spare; the run's own
-price (`contWsPriceF`) is `RunFacts`'s `hprice` with the run's stop `k` for the scan's first
+price (`contWsPriceAt`) is `RunFacts`'s `hprice` with the run's stop `k` for the scan's first
 index and the lane's word for its bound.
 
 The composition is at the bundle's own states, so the seam's byte cell is `HcontFacts`'s
@@ -47,6 +47,7 @@ class beyond the bundle's own callee and traversal rows.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkDispatchSegments
 import LeanLLVM.Refinement.JsonStage2WalkDispatchRunOfStaging
+import LeanLLVM.Refinement.JsonStage2WalkDispatchLettersHead
 import LeanLLVM.Refinement.JsonStage2WalkRevolutionSeg
 
 set_option autoImplicit false
@@ -82,14 +83,14 @@ structure WsRunHead {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
   /-- The stop's bound cell, which the latch's bound is. -/
   hcond : lookupName (wsSlS G C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.k).env "%cond350.i" =
     some (.int 64 (BitVec.ofNat 64 f.v.toNat))
-  /-- The price at the byte allowance's eight per visit — `contWsPriceF`'s own form. -/
+  /-- The price at the byte allowance's eight per visit — `contWsPriceAt`'s own form. -/
   hprice : N + 8 * (f.v.toNat - 1 - f.k) ≤
     8 * (entryPos G (C.k + 1) - entryPos G C.k) + 5
 
 /-- **The run class's head chain to `if.else387.i`.**  `contPrefixLand`'s eight links and
 `contWsRunF`'s run: the count is `8 + N`, inside `RunFacts`'s `12 + N`; the endpoint is the
 bundle's own seam state, whose `%8` is `hlastByte G C` by the composed segment's invariant;
-the stop's bound cell is `contWsRunF`'s; and the price is `contWsPriceF`'s.
+the stop's bound cell is `contWsRunF`'s; and the price is `contWsPriceAt`'s.
 
 `N` is the run's count and `f.k` its stop, so `RunFacts`'s `N` and `i` are this producer's
 `N` and `f.k`. -/
@@ -104,16 +105,23 @@ noncomputable def wsRunHeadSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s
       f.hne125 f.hinc f.hnep f.hnext f.h5 f.hi63 f.hread f.hidx5 f.htok5 f.hgap5 f.hugt
       f.hread35
   -- the run, at its own count
-  let hc := contWsRunF G C s f hseg8.inv' hk
+  let hc := contWsRunF G C (contLandS C s f.x f.inc f.nep f.ep f.v f.ix f.b35)
+    (hcontRunFacts_of_contFacts G C s f hseg8.inv') hk
   let N := hc.choose
   have hspec := hc.choose_spec
   have hN : N ≤ 5 * (f.k - f.ix.toNat) + 10 := hspec.1
+  have hsl : wsSlAt G (contLandS C s f.x f.inc f.nep f.ep f.v f.ix f.b35) f.b35 f.ix f.v f.k =
+      wsSlS G C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.k :=
+    wsSlAt_transport G C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.k
   have hrun : WalkSegment (stage2Calls stage2SubCalls) G (ContAC₄ C)
       (contLandS C s f.x f.inc f.nep f.ep f.v f.ix f.b35) (ContSeamC C)
-      (contWsSeamS C (wsSlS G C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.k) f.k f.x1) N :=
-    hspec.2.1
+      (contWsSeamS C (wsSlS G C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.k) f.k f.x1) N := by
+    rw [← hsl]
+    exact hspec.2.1
   have hcond : lookupName (wsSlS G C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.k).env
-      "%cond350.i" = some (.int 64 (BitVec.ofNat 64 f.v.toNat)) := hspec.2.2
+      "%cond350.i" = some (.int 64 (BitVec.ofNat 64 f.v.toNat)) := by
+    rw [← hsl]
+    exact hspec.2.2
   have hseg : WalkSegment (stage2Calls stage2SubCalls) G C s (ContSeamC C)
       (contWsSeamS C (wsSlS G C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.k) f.k f.x1)
       (8 + N) := hseg8.trans hrun
@@ -124,7 +132,9 @@ noncomputable def wsRunHeadSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s
     show lookupName (contWsSeamS C (wsSlS G C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.k)
       f.k f.x1).env "%8" = some (.int 8 (hlastByte G C))
     simpa only [hlastByte] using hcell
-  exact ⟨N, by omega, hseg, rfl, rfl, h8, hcond, contWsPriceF G C s f hN⟩
+  exact ⟨N, by omega, hseg, rfl, rfl, h8, hcond,
+    contWsPriceAt G C (contLandS C s f.x f.inc f.nep f.ep f.v f.ix f.b35)
+      (hcontRunFacts_of_contFacts G C s f hseg8.inv') hN⟩
 
 /-! ### The landing's three links, at the bundle's entry -/
 
@@ -223,11 +233,136 @@ noncomputable def runFacts_of_wsFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarr
       hspanStart := f.hspan
       hstart := f.hstart }
 
+/-! ### `RunFacts` at any class's check state
+
+`runFacts_of_wsFacts` is the class-C route's instance of one producer.  The classes that
+reach their own check state — the six default classes, whose byte before the entry's end is
+whitespace and whose head chain is their prefix joined to `contSwToLandSeg`'s four — take
+the *same* bundle and the class's own span, so the run's fields are derived once here.
+
+What the class supplies and what the bundle supplies are disjoint: the class supplies its
+chain to the check state (`hPre`, at most the prefix's four and `contSwToLandSeg`'s four)
+and the class-C span (`hSpan`, the byte's own leaf), and the bundle supplies everything from
+the check state on — the stop, the landing's byte and its class, the tail and the traversal.
+`runFacts_of_wsFacts` is this at `sl := contLandS …`, `nPre := 8` and
+`walkHeadChainCSeg`'s span. -/
+
+/-- **`RunFacts` from the run's bundle, at any class's check state.** -/
+noncomputable def runFacts_of_runBundle {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead)
+    (sl : State) (nPre : Nat)
+    (hPre : WalkSegment (stage2Calls stage2SubCalls) G C s (ContAC₄ C) sl nPre)
+    (hnPre : nPre ≤ 8) (f : HcontRunFacts G C sl) (hk : C.k + 1 < G.nep)
+    (hSpan : Seg (stage2Calls stage2SubCalls) G (ContSeamC C)
+      (contWsSeamS C (wsSlAt G sl f.b35 f.ix f.v f.k) f.k f.x1) (ContTailStartC C)
+      (contWsTailStart C (wsSlAt G sl f.b35 f.ix f.v f.k) f.k f.x1 f.x1) 5) :
+    RunFacts G C s := by
+  let w := wsRunHeadAt G C s sl nPre hPre hnPre f hk
+  refine
+    { x := hlastByte G C
+      h8 := by
+        show evalOperand s (.reg "%8") = some (.int 8 (hlastByte G C))
+        simp only [evalOperand]
+        exact hInv.iter.reg8
+      hbit := by
+        rw [← hcontRunFacts_x1 f]
+        exact f.hbit
+      N := w.N
+      Cm := ContSeamC C
+      sm := contWsSeamS C (wsSlAt G sl f.b35 f.ix f.v f.k) f.k f.x1
+      nH := nPre + w.N
+      hHead := w.seg
+      hnH := w.hnH
+      hm := rfl
+      hmk := rfl
+      h8m := w.h8
+      Cs := ContTailStartC C
+      ss := contWsTailStart C (wsSlAt G sl f.b35 f.ix f.v f.k) f.k f.x1 f.x1
+      nS := 5
+      hSpan := hSpan
+      hnS := le_rfl
+      hs := rfl
+      Ct := TailCarryScan (ContTailStartC C) f.ev
+      st := contWsEntryAt f
+      hTail := f.hTail
+      ht := rfl
+      htk := rfl
+      Cl := { TailCarryScan (ContTailStartC C) f.ev with block := "while.body462.i" }
+      tl := contWsLatchAt f
+      hLatch := wsLandingSegAt f
+      hl := rfl
+      hk := rfl
+      i := f.k
+      c := f.v.toNat
+      hcounter := latch_counter (contWsEntryAt f) (BitVec.ofNat 64 f.k) f.a f.q f.x47
+      hbound := contWsLatchAt_cond f w.hcond
+      hinc := by
+        rw [contWsLatchAt_inc]
+        exact contWsSeamS_inc C (wsSlAt G sl f.b35 f.ix f.v f.k) f.k f.x1 w.seg.inv'
+      hnep := by
+        rw [contWsLatchAt_nep]
+        exact contWsSeamS_nep C (wsSlAt G sl f.b35 f.ix f.v f.k) f.k f.x1 w.seg.inv'
+      hic := f.heicd
+      hcw := by have := f.v.isLt; omega
+      hbyte := f.hbyte
+      hbudget := runBudget_of_wsPrice (N := w.N) (c := f.v.toNat) (i := f.k)
+        (v := f.v.toNat) (k := f.k)
+        (Δ := entryPos G (C.k + 1) - entryPos G C.k) le_rfl le_rfl w.hprice
+      hspanStart := f.hspan
+      hstart := f.hstart }
+
+/-- **`RunFacts` at a default class.**  The class's prefix to `sw.default.i`
+(`hPrefix`, at most four links: `.defaultValueLow`'s three, the four others' four) and
+`contSwToLandSeg`'s shared four bring the head to the check state; the bundle and the
+class's own span are the rest.  One theorem covers the six default classes, because what
+differs between them is exactly the prefix — the pivots' carries and states — which enters
+as the segment's index. -/
+noncomputable def runFacts_of_defaultClass {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead)
+    (q5 : State) (nq : Nat)
+    (hPrefix : WalkSegment (stage2Calls stage2SubCalls) G C s (HeadAC₄ C) q5 nq)
+    (hnq : nq ≤ 4)
+    {inc nep : BitVec 64}
+    (hinc : evalOperand q5 (.reg "%inc.i") = some (.int 64 inc))
+    (hnep : evalOperand q5 (.reg "%nep") = some (.int 64 nep))
+    (hnext : evalICmp .ult inc nep = 1)
+    {ep : Nat} {v : BitVec 32}
+    (h5 : lookupName (contSwOut q5 inc nep).env "%5" = some (.ptr ep))
+    (hi63 : inc.toNat < 2 ^ 63)
+    (hread : readBytes (contSwOut q5 inc nep).mem (ep + inc.toNat * 4) 4 =
+      some (natToBytes v.toNat 4))
+    {ix : BitVec 64}
+    (hidx : lookupName (contSwOut q5 inc nep).env "%idxprom.i" = some (.int 64 ix))
+    (htok : lookupName (contSwOut q5 inc nep).env "%t352.i" = some (.ptr C.stage.tok))
+    (hgap : lookupName (contSwOut q5 inc nep).env "%gap.i" = some (.ptr (C.stage.tok + 20)))
+    (hugt : evalICmp .ugt (BitVec.ofNat 64 v.toNat) ix = 1)
+    {b35 : UInt8}
+    (hread35 : readBytes (contMidS C q5 inc nep ep v ix).mem ((G.b - 1) + v.toNat) 1 =
+      some [b35])
+    (f : HcontRunFacts G C
+      (contLandOut (G := G) (contMidS C q5 inc nep ep v ix) v.toNat b35))
+    (hk : C.k + 1 < G.nep)
+    (hSpan : Seg (stage2Calls stage2SubCalls) G (ContSeamC C)
+      (contWsSeamS C (wsSlAt G
+        (contLandOut (G := G) (contMidS C q5 inc nep ep v ix) v.toNat b35)
+        f.b35 f.ix f.v f.k) f.k f.x1) (ContTailStartC C)
+      (contWsTailStart C (wsSlAt G
+        (contLandOut (G := G) (contMidS C q5 inc nep ep v ix) v.toNat b35)
+        f.b35 f.ix f.v f.k) f.k f.x1 f.x1) 5) :
+    RunFacts G C s :=
+  runFacts_of_runBundle G C s hInv hblock _
+    (nq + 4)
+    (hPrefix.trans (contSwToLandSeg G C q5 hPrefix.inv' rfl hinc hnep hnext h5 hi63 hread
+      hidx htok hgap hugt hread35))
+    (by omega) f hk hSpan
+
 /-! ### The instrument -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.wsRunHeadSeg
 #print axioms LeanLLVM.Refinement.WalkScope.wsLandingSeg
 #print axioms LeanLLVM.Refinement.WalkScope.runFacts_of_wsFacts
+#print axioms LeanLLVM.Refinement.WalkScope.runFacts_of_runBundle
+#print axioms LeanLLVM.Refinement.WalkScope.runFacts_of_defaultClass
 
 end WalkScope
 end LeanLLVM.Refinement
