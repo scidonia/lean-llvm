@@ -85,6 +85,8 @@ import LeanLLVM.Refinement.JsonStage2HelperIRBodies
 import LeanLLVM.Refinement.JsonStage2HelperIRNumFast
 import LeanLLVM.Refinement.JsonStage2HelperIROdScalar
 import LeanLLVM.Refinement.JsonStage2NumFastArm
+import LeanLLVM.Refinement.JsonStage2NumFastCalls
+import LeanLLVM.Refinement.JsonStage2NumFastCounters
 import LeanLLVM.Refinement.JsonStage2Hsem
 import LeanLLVM.Refinement.JsonStage2TokenCorrespondence
 import LeanLLVM.Refinement.JsonStage2NumFastBody

@@ -81,8 +81,13 @@ boundary rather than a numeric defect:
   at the call environment the walk's contracts are proved in;
 * a body-level proof therefore needs a `Calls` selection that answers the three
   callees and a staging that stages the two tables (`NUMF_EL1_P10`,
-  `NUMF_EL1_POW10`), which `NumFastBodyArm` states and nothing in the tree
-  supplies; and
+  `NUMF_EL1_POW10`).  Both are supplied now, in
+  `JsonStage2NumFastCalls`: `stage2NumFastCalls` answers the three callees (each
+  modelled from its measured C text), the three sites' steps are jumps at it
+  rather than `ub`, and `numFastTables_holds` is `NumFastTables` at a concrete
+  staging.  What `NumFastBodyArm` still needs is the conversion's *run* — the
+  three digit runs' arms, the inlined tier-1 arithmetic, and the tier-2
+  kernel's exactness bound — not its environment; and
 * at the walk's own selection the slot is answered by the model instead
   (`stage2Calls stage2SubCalls "num_fast_el1"` is `stage2NumFast`), which is why
   the number *class* is covered here while the conversion's body is not.

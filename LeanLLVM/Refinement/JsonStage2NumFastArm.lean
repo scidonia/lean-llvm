@@ -36,27 +36,48 @@ use:
   answers the three callees, a staging that stages the two tables
   (`NumFastTables`), and the conclusion — `strtodSpec`'s eight bytes at `out`,
   `err` untouched, the cursor unchanged, the memory outside the two slots the
-  caller's.  It is **not** claimed; its `calls` parameter is exactly what is
-  missing.
+  caller's.
 
-A proof needs three things the tree does not have:
+**What the supplied environment changes, and what it does not.**  The `calls`
+parameter is no longer missing a value: `JsonStage2NumFastCalls.numFastCalls`
+answers the three callees (each modelled from its measured C text),
+`stage2NumFastCalls` is that selection composed with the walk's `s2HelperCalls`,
+and at each of the three sites the block's `denoteCode` is now `some` and its
+`step` a jump (`numFast_ifEnd268_denote_some`/`_step_jump`,
+`numFast_whileBodyPreheader_denote_some`/`_step_jump`,
+`numFast_ifThen178_denote_some`/`_step_jump`).  The three `ub` theorems above
+remain true of `s2HelperCalls`, which is why they are kept: they are the
+statement that the walk's own selection does not answer.
 
-1. **A `Calls` selection answering the three callees.**  None of the three is
-   captured as a fixture: no `define` for `num_d8_el1`, `num_el_el1` or
-   `stk_mul_u64` exists under `probes/` or `kernel/`, and the captured helper's
-   own text is the only place their names appear, as call targets.  Their
-   answers' shape (the digit pair, the kernel's decision and code, the 64-bit
-   multiply's product) is therefore a decision a proof makes, not a fact it
-   reads.
-2. **The inlined scan's counters.**  `JsonStage2NumFastScan` fixes the digit
-   run's `BoundLoop` *shape* and states its two arms as per-iteration facts; the
-   arms are not discharged, and the fraction and exponent runs have no instance
-   at all.  The dispatch's counters (`digitCount`, `numEff`) are the model's,
-   not the body's, until that composition exists.
-3. **The two tables' contents.**  The tier-1 expression reads
-   `@NUMF_EL1_P10[fdig]` and `@NUMF_EL1_POW10[eff]`, both `Operand.global`; the
-   contract's `s2NumFastPre` fixes four arguments and a lexeme and stages no
-   global, so the arithmetic's inputs are free in the contract's own staging.
+`NumFastTables` is inhabited at a concrete staging
+(`JsonStage2NumFastCalls.numFastTables_holds`), and
+`JsonStage2NumFastCounters` reads the merge block's two counters at the model.
+The arm itself is still **not** claimed: what it needs now is the runs, not the
+environment — the inlined scan's per-iteration arms (the integer run at
+`land.lhs.true41` has the `BoundLoop` shape and its arms as parameters; the
+fraction and exponent runs have the same shape and are open), the inlined
+tier-1 arithmetic's correspondence to the model, and the tier-2 kernel's
+exactness bound.  `JsonStage2NumFastCalls`' header names the last as the
+approximation boundary the refinement obligation carries.
+
+A proof needs three things, of which the first two the tree now supplies and the
+third it does not:
+
+1. **A `Calls` selection answering the three callees.**  Supplied by
+   `JsonStage2NumFastCalls`: each of the three is modelled from its measured C
+   text (`numf_el1.h`, `numel_el.h`, `stage2.c`), the selection composes with
+   the walk's `s2HelperCalls`, and the three sites' steps are jumps at it.
+2. **The two tables' contents.**  Supplied as a concrete staging:
+   `JsonStage2NumFastCalls.numFastTables_holds` is `NumFastTables` at
+   `numFastTableEnv`/`numFastTableMem`, twenty `NUMF_EL1_P10` rows and
+   twenty-three `NUMF_EL1_POW10` rows, proved from `readBytes`' definition.
+3. **The inlined scan's counters, at the runs.**  `JsonStage2NumFastScan` fixes
+   the integer run's `BoundLoop` shape and states its two arms as per-iteration
+   facts; the arms are not discharged, and the fraction and exponent runs have
+   no instance.  `JsonStage2NumFastCounters` proves the merge block's two
+   counters at the model, but the runs' trip counts — that `%idig.4`,
+   `%fdig.4` and `%exp10.4` are the lexeme's counts — are the arms, and an arm
+   is a `runFuel` prefix over the four blocks of one iteration.
 
 There is no `sorry`, `admit` or `native_decide` below.
 -/
