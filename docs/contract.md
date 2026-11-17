@@ -83,6 +83,7 @@ may change; the strength may not.
 |---|---|---|
 | Reference correctness | `parseRef_sound`, `parseRef_complete`: acceptance and decoding agree with the byte-level JSON semantics, subject to policy and limits | `LeanLLVM/JSON/Correct.lean` |
 | Tape interpretation | `tape_valid`, `decodeTape_correct`: spans well formed, nesting and values consistent, decoded meaning correct; a source-backed tape owns its input for its lifetime | `LeanLLVM/JSON/TapeCorrect.lean` (`tape_valid`), `LeanLLVM/JSON/Correct.lean` (`decodeTape_correct`) |
+| Token payload | `TokenBytes`, `tape_tokenBytes`: every token of an accepted tape carries its class's document facts — a literal's span and bytes, a number's span and maximal lexeme, a key or string's quote and body — and `walkTraceRow_of_position` assembles the stage-2 trace row from per-index records | `LeanLLVM/JSON/TapeCorrect.lean` (`TokenBytes`, `tape_tokenBytes`), `LeanLLVM/Refinement/JsonStage2TraceRow.lean` |
 | Adherence, forward | `accepted_is_rfc_text`: everything accepted is an RFC 8259 text, with an interpretation — `Accepted → RfcText` | `LeanLLVM/JSON/Correct.lean` |
 | Adherence, backward | `rfc_text_accepted_on_policy`: every RFC 8259 text whose interpretation satisfies `Policy`, inside the resource limits, is accepted and decodes to that interpretation — `RfcText ∧ Policy → Accepted` | `LeanLLVM/JSON/Correct.lean` |
 | Block correctness | `scanBlock_correct`: the candidate block operation refines the scalar transition, including next state and error information | `LeanLLVM/JSON/ScanBlock.lean` (`scanBlock_correct`) |
@@ -1454,13 +1455,13 @@ the decoded skeleton `parseSkeleton evs = rs.map EventRecord.tagVal`.
 `emittedStream_at_walk` reads that composition at a walk state: `WalkInv.evBytes`
 names the bytes at the log's cursor as the trace's flattening, so the stream the
 walk has written is the tokens' encoding exactly when the row holds.  The three
-remaining classes are why that row is not a theorem here: a literal's exact span,
-a string's body and a number's lexeme are the parser's token-construction facts,
-and `LeanLLVM/JSON/Correct.lean` keeps them private (`DecodesValue` and the mutual
-induction's per-branch facts are `private`, and what the tape exports is the span
-discipline and the span-level decode); the arms' payloads come from their own
-reads.  Punctuation's one-byte shape is the only class the span discipline alone
-supplies — hence the four container rows above and not the rest.
+payload classes are why that row is not a theorem here: a literal's exact span, a
+string's body and a number's lexeme are the parser's token-construction facts, and
+they are now exported rather than private (`TokenBytes` and `tape_tokenBytes`; see
+§7.13), so the row's *elements* are theorems and what stays an arm's obligation is
+the record the arm appended and, for a string, which of the two forms it chose.
+Punctuation's one-byte shape is the class the span discipline alone supplies —
+hence the four container rows above.
 
 **Axioms.**  The module pins every declaration at `[propext]` or
 `[propext, Quot.sound]`; the bare definitions (`classOfByte`, `tokenClass`,
@@ -1468,6 +1469,67 @@ supplies — hence the four container rows above and not the rest.
 equations) depend on no axioms at all.  No `sorry`, `admit`, `native_decide` or
 `Classical.choice` — the last is why `classOfByte` compares with `decide` rather
 than `BEq`.
+
+### 7.13 The per-record row: the parser's token facts and the record each class carries
+
+§7.12 leaves one row: `WalkTraceRow`, the pointwise `TokenRecord` relation between
+the walk's trace and the parser's record-carrying tokens.  Its elements are the
+parser's token-construction facts, and those are what
+`LeanLLVM/JSON/TapeCorrect.lean` now states per class and proves of every token of a
+tape the decoder accepts.
+
+**The facts.**  `TokenBytes bs tok` is the document-side statement a token carries:
+
+```text
+TokenBytes bs (.punct _ s)      :=  s.stop = s.start + 1
+TokenBytes bs (.null s)         :=  (bs.drop s.start).take 4 = literal "null"  ∧ s.stop = s.start + 4
+TokenBytes bs (.bool true s)    :=  (bs.drop s.start).take 4 = literal "true"  ∧ s.stop = s.start + 4
+TokenBytes bs (.bool false s)   :=  (bs.drop s.start).take 5 = literal "false" ∧ s.stop = s.start + 5
+TokenBytes bs (.number s)       :=  ∃ lex, (bs.drop s.start).take (s.stop - s.start) = lex
+                                      ∧ lex.length = s.stop - s.start ∧ RfcNumber lex
+TokenBytes bs (.string s)       :=  bs[s.start]? = some 0x22
+                                      ∧ ∃ cs, StringAt .strict bs s.start s.stop cs
+```
+
+`tape_tokenBytes` proves it of every token of a tape with `decodeTape t = some v`,
+by the decoder's own recursion (`decodeTokenBytes_aux`, the three mutual functions
+at the guards that produced each token).  Nothing private had to be exported for
+it: the facts are read off the guards rather than restated from the parser's
+soundness theorem, so `DecodesValue` and the per-branch `valueAt_*_inv` lemmas stay
+`private` and no claim about the parser is duplicated.  The punctuation byte is
+deliberately *not* in `TokenBytes`: the run's own read supplies it (`WalkAlign.class`
+plus the arm's byte test), which is why §7.12's four container rows need nothing
+from the tape but the one-byte stop.
+
+**The record each class carries.**  `LeanLLVM/Refinement/JsonStage2TraceRow.lean`
+reads those facts at the byte list the records are stated over
+(`TokenBytes.of_input`, then `tape_tokenBytes_null`/`_true_`/`_false_`/`_number`/
+`_string`) and hands them to `TokenRecord`'s constructors one class at a time:
+`tokenRecord_null_of_tape`, `_true_`, `_false_`, `tokenRecord_number_of_tape`,
+`tokenRecord_string_plain_of_tape` and `tokenRecord_string_arena_of_tape`.  The
+parser supplies the span and payload; what stays the walk's is the record it
+appended — its class, and for a number the `Decimal` whose lexeme is the bytes the
+span holds, for a string the form and the remaining slice.
+
+**The payloads, named.**  `tokenRecord_number` and `tokenRecord_string` instantiated
+at those records are `row_number_payload_of_tape` and `row_string_payload_of_tape`:
+a walked number's bits are `strtodSpec`'s of a well-formed decomposition of exactly
+the bytes the token's span holds, and a walked string's slice decodes to the code
+points `bodyCodePoints` reads off the span — which `bodyCodePoints_of_stringAt`
+derives from the tape's own `StringAt` through `scanChars_iff` and
+`scanCharsEnd_ok_of_scanCharsFrom`.  The plain form's `escapeCodePoints` premise is
+the walk's reading of a body it emitted unescaped, so the two forms differ only in
+where the body lives.
+
+**The row.**  `forall₂_of_position` assembles `List.Forall₂` from length agreement
+plus `TokenRecord` at every index, and `walkTraceRow_of_position` is that at
+`WalkTraceRow` — the "one record per step" shape a per-arm proof produces, which
+`emittedStream_of_row` then turns into `Stage2Records`, `Stage2EventRel` and the
+decoded skeleton.  `null_row_of_tape` is the worked instance at the `null`
+document's tape, where the record comes from `tokenRecord_null_of_tape` rather than
+from a constructor chain.  Every theorem is pinned at `[propext, Quot.sound]`
+(`TokenBytes.of_input` at `[propext]`), with no `Classical.choice`, `sorry`,
+`admit` or `native_decide`.
 
 ## 8. Out of scope for the first contract
 

@@ -1065,4 +1065,601 @@ theorem tape_valid (t : Tape) (v : Value) (h : decodeTape t = some v) :
     · exact absurd h (by simp)
   · exact absurd h (by simp)
 
+/-! ### Each token carries its class's bytes
+
+`decodeValue`'s guards are per-token statements, and they are what a consumer
+reading a tape against the document needs.  The span discipline (`tape_valid`)
+fixes a punctuation span's one-byte width and every span's placement, but it says
+nothing about the three payload classes: a literal's span and its bytes, a
+number's maximal lexeme, and a key or string's body.  Those are the decoder's own
+per-token decisions, so they are stated here, per class, and proved of every token
+a successful decode consumes.
+
+The proof is the decoder's own recursion — the three mutual functions' cases, at
+the guards that produced each token.  It restates nothing about the parser: the
+token's facts are read off the document at the span the guard fixed, and the
+guards are the evidence. -/
+
+/-- The document facts a token carries.  A punctuation span is one byte; a
+literal's span is the literal's own length and the document holds its bytes; a
+number's span holds the maximal lexeme, which is an RFC 8259 number; a key or
+string's span opens with the quote and reads as a JSON string literal.  The
+punctuation byte itself is the run's own read (`WalkAlign.class` in the
+refinement); what the tape's construction adds is the one-byte width. -/
+def TokenBytes (bs : Bytes) : Token → Prop
+  | .punct _ s => s.stop = s.start + 1
+  | .null s =>
+      (bs.drop s.start).take 4 = ByteString.literal [0x6E, 0x75, 0x6C, 0x6C] ∧
+        s.stop = s.start + 4
+  | .bool true s =>
+      (bs.drop s.start).take 4 = ByteString.literal [0x74, 0x72, 0x75, 0x65] ∧
+        s.stop = s.start + 4
+  | .bool false s =>
+      (bs.drop s.start).take 5 = ByteString.literal [0x66, 0x61, 0x6C, 0x73, 0x65] ∧
+        s.stop = s.start + 5
+  | .number s =>
+      ∃ lex : Bytes, (bs.drop s.start).take (s.stop - s.start) = lex ∧
+        lex.length = s.stop - s.start ∧ RfcNumber lex
+  | .string s =>
+      bs[s.start]? = some 0x22 ∧ ∃ cs : List Nat, StringAt .strict bs s.start s.stop cs
+
+/-- **Every token a successful decode consumes carries its class's bytes.**  The
+three mutual decoders, at the token count they were entered with: a token either
+is one the decoder left unconsumed or satisfies `TokenBytes`. -/
+private theorem decodeTokenBytes_aux (bs : Bytes) :
+    ∀ (n : Nat) (toks : List Token), toks.length = n →
+      (∀ (i : Nat) (d : Decoded toks), decodeValue bs i toks = some d →
+        ∀ tok ∈ toks, tok ∈ d.rest ∨ TokenBytes bs tok) ∧
+      (∀ (j : Nat) (t : ElemsTail toks), decodeElemsTail bs j toks = some t →
+        ∀ tok ∈ toks, tok ∈ t.rest ∨ TokenBytes bs tok) ∧
+      (∀ (j : Nat) (t : MembersTail toks), decodeMembersTail bs j toks = some t →
+        ∀ tok ∈ toks, tok ∈ t.rest ∨ TokenBytes bs tok) := by
+  intro n
+  induction n using Nat.strongRecOn with
+  | ind n ih =>
+    intro toks hlen
+    refine ⟨?_, ?_, ?_⟩
+    · -- decodeValue
+      intro i d hdec
+      cases toks with
+      | nil => intro tok htok; cases htok
+      | cons tok rest =>
+        cases tok with
+        | null s =>
+          rw [decodeValue] at hdec
+          split at hdec
+          · rename_i hcond
+            obtain ⟨hs, hp⟩ := by
+              simpa only [Bool.and_eq_true, beq_iff_eq] using hcond
+            injection hdec with hd
+            subst hd
+            subst hs
+            intro tok htok
+            rcases List.mem_cons.mp htok with rfl | hmem
+            · exact Or.inr ⟨by simpa [HasPrefix] using hasPrefixB_iff.mp hp, rfl⟩
+            · exact Or.inl hmem
+          · cases hdec
+        | bool b s =>
+          rw [decodeValue] at hdec
+          split at hdec
+          · rename_i hbt
+            subst hbt
+            split at hdec
+            · rename_i hcond
+              obtain ⟨hs, hp⟩ := by
+                simpa only [Bool.and_eq_true, beq_iff_eq] using hcond
+              injection hdec with hd
+              subst hd
+              subst hs
+              intro tok htok
+              rcases List.mem_cons.mp htok with rfl | hmem
+              · exact Or.inr ⟨by simpa [HasPrefix] using hasPrefixB_iff.mp hp, rfl⟩
+              · exact Or.inl hmem
+            · cases hdec
+          · rename_i hbf
+            have hbfl : b = false := by cases b <;> simp_all
+            subst hbfl
+            split at hdec
+            · rename_i hcond
+              obtain ⟨hs, hp⟩ := by
+                simpa only [Bool.and_eq_true, beq_iff_eq] using hcond
+              injection hdec with hd
+              subst hd
+              subst hs
+              intro tok htok
+              rcases List.mem_cons.mp htok with rfl | hmem
+              · exact Or.inr ⟨by simpa [HasPrefix] using hasPrefixB_iff.mp hp, rfl⟩
+              · exact Or.inl hmem
+            · cases hdec
+        | number s =>
+          rw [decodeValue] at hdec <;> (first | (intro c rest' heq; cases heq) | skip)
+          split at hdec
+          · rename_i hcond
+            obtain ⟨hs, hlex⟩ := by
+              simpa only [Bool.and_eq_true, beq_iff_eq] using hcond
+            simp only [numRunFrom_eq] at hlex hs
+            injection hdec with hd
+            subst hd
+            subst hs
+            intro tok htok
+            rcases List.mem_cons.mp htok with rfl | hmem
+            · refine Or.inr ⟨numRun (bs.drop i), ?_, ?_, numLexB_spec hlex⟩
+              · rw [Nat.add_sub_cancel_left]
+                exact (numRun_spec (bs.drop i)).1
+              · rw [Nat.add_sub_cancel_left]
+            · exact Or.inl hmem
+          · cases hdec
+        | string s =>
+          rw [decodeValue] at hdec <;> (first | (intro c rest' heq; cases heq) | skip)
+          split at hdec
+          · cases hdec
+          · rename_i cs stop hs
+            split at hdec
+            · rename_i hcond
+              obtain ⟨hq, hspan⟩ := by
+                simpa only [Bool.and_eq_true, decide_eq_true_eq] using hcond
+              obtain ⟨rest, hrest, hdrop⟩ := scanCharsEnd_sound hs
+              have hok : scanChars (bs.drop (i + 1)) = .ok (cs, rest) := by
+                rw [scanChars_eq]; exact hrest
+              have hstr : StrChars .strict (bs.drop (i + 1)) cs rest :=
+                (scanChars_iff (bs.drop (i + 1)) cs rest).mp hok
+              injection hdec with hd
+              subst hd
+              subst hspan
+              intro tok htok
+              rcases List.mem_cons.mp htok with rfl | hmem
+              · exact Or.inr ⟨hq, cs, hq, rest, hstr, hdrop⟩
+              · exact Or.inl hmem
+            · cases hdec
+        | punct k s =>
+          cases k with
+          | openBracket =>
+            cases rest with
+            | nil => simp [decodeValue] at hdec
+            | cons tok2 rest2 =>
+              by_cases h : headPunct .closeBracket (tok2 :: rest2) = true
+              · cases tok2 with
+                | punct k2 s2 =>
+                  cases k2 with
+                  | closeBracket =>
+                      rw [decodeValue] at hdec <;> (first | (intro a b hh; cases hh) | skip)
+                      split at hdec
+                      · rename_i hcond
+                        simp only [Bool.and_eq_true, decide_eq_true_eq, and_assoc,
+                          beq_iff_eq] at hcond
+                        obtain ⟨hs, hb, hc, hcl⟩ := hcond
+                        injection hdec with hd
+                        subst hd
+                        subst hs
+                        subst hc
+                        intro tok htok
+                        rcases List.mem_cons.mp htok with rfl | htok'
+                        · exact Or.inr rfl
+                        rcases List.mem_cons.mp htok' with rfl | hmem
+                        · exact Or.inr rfl
+                        · exact Or.inl hmem
+                      · cases hdec
+                  | openBracket => simp [headPunct] at h
+                  | openBrace => simp [headPunct] at h
+                  | closeBrace => simp [headPunct] at h
+                  | comma => simp [headPunct] at h
+                  | colon => simp [headPunct] at h
+                | null s2 => simp [headPunct] at h
+                | bool b2 s2 => simp [headPunct] at h
+                | number s2 => simp [headPunct] at h
+                | string s2 => simp [headPunct] at h
+              · have hnot : ∀ (c : Span) (rest' : List Token),
+                    ¬ (tok2 :: rest2 = .punct .closeBracket c :: rest') := by
+                  intro c rest' heq
+                  have h1 : headPunct .closeBracket (tok2 :: rest2) = true := by
+                    rw [heq]
+                    simp [headPunct]
+                  exact h h1
+                rw [decodeValue] at hdec <;> (first | exact hnot | skip)
+                split at hdec
+                · rename_i hcond
+                  dsimp only at hdec
+                  cases hdv : decodeValue bs (skipFrom bs (i + 1)) (tok2 :: rest2) with
+                  | none => rw [hdv] at hdec
+                            cases hdec
+                  | some d1 =>
+                    rw [hdv] at hdec
+                    dsimp only at hdec
+                    cases hdt : decodeElemsTail bs d1.cursor d1.rest with
+                    | none => rw [hdt] at hdec
+                              cases hdec
+                    | some t =>
+                      rw [hdt] at hdec
+                      dsimp only at hdec
+                      split at hdec
+                      · rename_i c rest' hC
+                        split at hdec
+                        · rename_i hcond2
+                          simp only [Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq]
+                            at hcond hcond2
+                          obtain ⟨hs, hb⟩ := hcond
+                          obtain ⟨hcspan, hcl⟩ := hcond2
+                          subst hs
+                          subst hcspan
+                          injection hdec with hd
+                          subst hd
+                          intro tok htok
+                          rcases List.mem_cons.mp htok with rfl | hmem
+                          · exact Or.inr rfl
+                          · have hlen1 : (tok2 :: rest2).length < n := by
+                              simp only [List.length_cons] at hlen ⊢
+                              omega
+                            obtain ⟨hV, hE, hM⟩ :=
+                              ih (tok2 :: rest2).length hlen1 (tok2 :: rest2) rfl
+                            rcases hV (skipFrom bs (i + 1)) d1 hdv tok hmem with hm1 | htb
+                            · have hlen2 : d1.rest.length < n := by
+                                have hsh := d1.shrunk
+                                have h1 := hlen1
+                                simp only [List.length_cons] at hsh h1
+                                omega
+                              obtain ⟨hV2, hE2, hM2⟩ :=
+                                ih d1.rest.length hlen2 d1.rest rfl
+                              rcases hE2 d1.cursor t hdt tok hm1 with hm2 | htb
+                              · rw [hC] at hm2
+                                rcases List.mem_cons.mp hm2 with rfl | hm3
+                                · exact Or.inr rfl
+                                · exact Or.inl hm3
+                              · exact Or.inr htb
+                            · exact Or.inr htb
+                        · cases hdec
+                      · cases hdec
+                · cases hdec
+          | closeBracket => simp [decodeValue] at hdec
+          | openBrace =>
+            cases rest with
+            | nil => simp [decodeValue] at hdec
+            | cons tok2 rest2 =>
+              by_cases h : headPunct .closeBrace (tok2 :: rest2) = true
+              · cases tok2 with
+                | punct k2 s2 =>
+                  cases k2 with
+                  | closeBrace =>
+                      rw [decodeValue] at hdec <;> (first | (intro a b hh; cases hh) | skip)
+                      split at hdec
+                      · rename_i hcond
+                        simp only [Bool.and_eq_true, decide_eq_true_eq, and_assoc,
+                          beq_iff_eq] at hcond
+                        obtain ⟨hs, hb, hc, hcl⟩ := hcond
+                        injection hdec with hd
+                        subst hd
+                        subst hs
+                        subst hc
+                        intro tok htok
+                        rcases List.mem_cons.mp htok with rfl | htok'
+                        · exact Or.inr rfl
+                        rcases List.mem_cons.mp htok' with rfl | hmem
+                        · exact Or.inr rfl
+                        · exact Or.inl hmem
+                      · cases hdec
+                  | openBracket => simp [headPunct] at h
+                  | closeBracket => simp [headPunct] at h
+                  | openBrace => simp [headPunct] at h
+                  | comma => simp [headPunct] at h
+                  | colon => simp [headPunct] at h
+                | null s2 => simp [headPunct] at h
+                | bool b2 s2 => simp [headPunct] at h
+                | number s2 => simp [headPunct] at h
+                | string s2 => simp [headPunct] at h
+              · have hnot : ∀ (c : Span) (rest' : List Token),
+                    ¬ (tok2 :: rest2 = .punct .closeBrace c :: rest') := by
+                  intro c rest' heq
+                  have h1 : headPunct .closeBrace (tok2 :: rest2) = true := by
+                    rw [heq]
+                    simp [headPunct]
+                  exact h h1
+                rw [decodeValue] at hdec <;> (first | exact hnot | skip)
+                split at hdec
+                · rename_i hcond
+                  dsimp only at hdec
+                  cases hkv : decodeValue bs (skipFrom bs (i + 1)) (tok2 :: rest2) with
+                  | none => rw [hkv] at hdec
+                            cases hdec
+                  | some k =>
+                    rw [hkv] at hdec
+                    dsimp only at hdec
+                    cases hkv2 : k.value with
+                    | null => rw [hkv2] at hdec; cases hdec
+                    | bool b => rw [hkv2] at hdec; cases hdec
+                    | number l => rw [hkv2] at hdec; cases hdec
+                    | array vs => rw [hkv2] at hdec; cases hdec
+                    | object ms => rw [hkv2] at hdec; cases hdec
+                    | string cs =>
+                      rw [hkv2] at hdec
+                      dsimp only at hdec
+                      split at hdec
+                      · rename_i sc rest1 hColon
+                        split at hdec
+                        · rename_i hcondC
+                          cases hdv : decodeValue bs (skipFrom bs (skipFrom bs k.cursor + 1))
+                            rest1 with
+                          | none => rw [hdv] at hdec
+                                    cases hdec
+                          | some d1 =>
+                            rw [hdv] at hdec
+                            dsimp only at hdec
+                            cases hdt : decodeMembersTail bs d1.cursor d1.rest with
+                            | none => rw [hdt] at hdec
+                                      cases hdec
+                            | some t =>
+                              rw [hdt] at hdec
+                              dsimp only at hdec
+                              split at hdec
+                              · rename_i c rest' hC
+                                split at hdec
+                                · rename_i hcond2
+                                  simp only [Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq]
+                                    at hcond hcondC hcond2
+                                  obtain ⟨hs, hb⟩ := hcond
+                                  obtain ⟨hsc, hcol⟩ := hcondC
+                                  obtain ⟨hcspan, hcl⟩ := hcond2
+                                  subst hs
+                                  subst hsc
+                                  subst hcspan
+                                  injection hdec with hd
+                                  subst hd
+                                  intro tok htok
+                                  rcases List.mem_cons.mp htok with rfl | hmem
+                                  · exact Or.inr rfl
+                                  · have hlen1 : (tok2 :: rest2).length < n := by
+                                      simp only [List.length_cons] at hlen ⊢
+                                      omega
+                                    obtain ⟨hV, hE, hM⟩ :=
+                                      ih (tok2 :: rest2).length hlen1 (tok2 :: rest2) rfl
+                                    rcases hV (skipFrom bs (i + 1)) k hkv tok hmem
+                                      with hm1 | htb
+                                    · rw [hColon] at hm1
+                                      rcases List.mem_cons.mp hm1 with rfl | hm2
+                                      · exact Or.inr rfl
+                                      · have hlenR1 : rest1.length < n := by
+                                          have hkl : k.rest.length = rest1.length + 1 := by
+                                            rw [hColon]; simp
+                                          have hsh := k.shrunk
+                                          have h1 := hlen1
+                                          simp only [List.length_cons] at hsh h1
+                                          omega
+                                        obtain ⟨hV1, hE1, hM1⟩ :=
+                                          ih rest1.length hlenR1 rest1 rfl
+                                        rcases hV1 (skipFrom bs (skipFrom bs k.cursor + 1))
+                                          d1 hdv tok hm2 with hm3 | htb
+                                        · have hlenD : d1.rest.length < n := by
+                                            have hsh := d1.shrunk
+                                            omega
+                                          obtain ⟨hV2, hE2, hM2⟩ :=
+                                            ih d1.rest.length hlenD d1.rest rfl
+                                          rcases hM2 d1.cursor t hdt tok hm3 with hm4 | htb
+                                          · rw [hC] at hm4
+                                            rcases List.mem_cons.mp hm4 with rfl | hm5
+                                            · exact Or.inr rfl
+                                            · exact Or.inl hm5
+                                          · exact Or.inr htb
+                                        · exact Or.inr htb
+                                    · exact Or.inr htb
+                                · cases hdec
+                              · cases hdec
+                        · cases hdec
+                      · cases hdec
+                · cases hdec
+          | closeBrace => simp [decodeValue] at hdec
+          | comma => simp [decodeValue] at hdec
+          | colon => simp [decodeValue] at hdec
+    · -- decodeElemsTail
+      intro j t hdec
+      cases toks with
+      | nil =>
+        rw [decodeElemsTail] at hdec <;> (first | (intro a b hh; cases hh) | skip)
+        injection hdec with hd
+        subst hd
+        intro tok htok
+        exact Or.inl htok
+      | cons tok rest =>
+        by_cases hcm : headPunct .comma (tok :: rest) = true
+        · cases tok with
+          | punct k s =>
+            cases k with
+            | comma =>
+              rw [decodeElemsTail] at hdec
+              split at hdec
+              · rename_i hcond
+                simp only [Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq] at hcond
+                obtain ⟨hs, hc⟩ := hcond
+                subst hs
+                dsimp only at hdec
+                cases hdv : decodeValue bs (skipFrom bs (skipFrom bs j + 1)) rest with
+                | none => rw [hdv] at hdec
+                          cases hdec
+                | some d =>
+                  rw [hdv] at hdec
+                  dsimp only at hdec
+                  cases hdt : decodeElemsTail bs d.cursor d.rest with
+                  | none => rw [hdt] at hdec
+                            dsimp only at hdec
+                            exact absurd hdec (by simp)
+                  | some t =>
+                    rw [hdt] at hdec
+                    dsimp only at hdec
+                    injection hdec with hd
+                    subst hd
+                    intro tok' htok'
+                    rcases List.mem_cons.mp htok' with rfl | hmem
+                    · exact Or.inr rfl
+                    · have hlen1 : rest.length < n := by
+                        simp only [List.length_cons] at hlen
+                        omega
+                      obtain ⟨hV, hE, hM⟩ := ih rest.length hlen1 rest rfl
+                      rcases hV (skipFrom bs (skipFrom bs j + 1)) d hdv tok' hmem
+                        with hm1 | htb
+                      · have hlen2 : d.rest.length < n := by
+                          have hsh := d.shrunk
+                          omega
+                        obtain ⟨hV2, hE2, hM2⟩ := ih d.rest.length hlen2 d.rest rfl
+                        rcases hE2 d.cursor t hdt tok' hm1 with hm2 | htb
+                        · exact Or.inl hm2
+                        · exact Or.inr htb
+                      · exact Or.inr htb
+              · cases hdec
+            | openBracket => simp [headPunct] at hcm
+            | closeBracket => simp [headPunct] at hcm
+            | openBrace => simp [headPunct] at hcm
+            | closeBrace => simp [headPunct] at hcm
+            | colon => simp [headPunct] at hcm
+          | null s => simp [headPunct] at hcm
+          | bool b s => simp [headPunct] at hcm
+          | number s => simp [headPunct] at hcm
+          | string s => simp [headPunct] at hcm
+        · have hnot : ∀ (c : Span) (rest' : List Token),
+              ¬ (tok :: rest = .punct .comma c :: rest') := by
+            intro c rest' heq
+            have h1 : headPunct .comma (tok :: rest) = true := by
+              rw [heq]
+              simp [headPunct]
+            exact hcm h1
+          rw [decodeElemsTail] at hdec <;> (first | exact hnot | skip)
+          injection hdec with hd
+          subst hd
+          intro tok' htok'
+          exact Or.inl htok'
+    · -- decodeMembersTail
+      intro j t hdec
+      cases toks with
+      | nil =>
+        rw [decodeMembersTail] at hdec <;> (first | (intro a b hh; cases hh) | skip)
+        injection hdec with hd
+        subst hd
+        intro tok htok
+        exact Or.inl htok
+      | cons tok rest =>
+        by_cases hcm : headPunct .comma (tok :: rest) = true
+        · cases tok with
+          | punct k s =>
+            cases k with
+            | comma =>
+              rw [decodeMembersTail] at hdec
+              split at hdec
+              · rename_i hcond
+                simp only [Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq] at hcond
+                obtain ⟨hs, hc⟩ := hcond
+                subst hs
+                dsimp only at hdec
+                cases hkv : decodeValue bs (skipFrom bs (skipFrom bs j + 1)) rest with
+                | none => rw [hkv] at hdec
+                          cases hdec
+                | some k =>
+                  rw [hkv] at hdec
+                  dsimp only at hdec
+                  cases hkv2 : k.value with
+                  | null => rw [hkv2] at hdec; cases hdec
+                  | bool b => rw [hkv2] at hdec; cases hdec
+                  | number l => rw [hkv2] at hdec; cases hdec
+                  | array vs => rw [hkv2] at hdec; cases hdec
+                  | object ms => rw [hkv2] at hdec; cases hdec
+                  | string cs =>
+                    rw [hkv2] at hdec
+                    dsimp only at hdec
+                    split at hdec
+                    · rename_i sc rest1 hColon
+                      split at hdec
+                      · rename_i hcondC
+                        cases hdv : decodeValue bs (skipFrom bs (skipFrom bs k.cursor + 1))
+                          rest1 with
+                        | none => rw [hdv] at hdec
+                                  cases hdec
+                        | some d =>
+                          rw [hdv] at hdec
+                          dsimp only at hdec
+                          cases hdt : decodeMembersTail bs d.cursor d.rest with
+                          | none => rw [hdt] at hdec
+                                    cases hdec
+                          | some t =>
+                            rw [hdt] at hdec
+                            dsimp only at hdec
+                            injection hdec with hd
+                            subst hd
+                            simp only [Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq]
+                              at hcondC
+                            obtain ⟨hsc, hcol⟩ := hcondC
+                            subst hsc
+                            intro tok' htok'
+                            rcases List.mem_cons.mp htok' with rfl | hmem
+                            · exact Or.inr rfl
+                            · have hlen1 : rest.length < n := by
+                                simp only [List.length_cons] at hlen
+                                omega
+                              obtain ⟨hV, hE, hM⟩ := ih rest.length hlen1 rest rfl
+                              rcases hV (skipFrom bs (skipFrom bs j + 1)) k hkv tok' hmem
+                                with hm1 | htb
+                              · rw [hColon] at hm1
+                                rcases List.mem_cons.mp hm1 with rfl | hm2
+                                · exact Or.inr rfl
+                                · have hlenR1 : rest1.length < n := by
+                                    have hkl : k.rest.length = rest1.length + 1 := by
+                                      rw [hColon]; simp
+                                    have hsh := k.shrunk
+                                    omega
+                                  obtain ⟨hV1, hE1, hM1⟩ :=
+                                    ih rest1.length hlenR1 rest1 rfl
+                                  rcases hV1 (skipFrom bs (skipFrom bs k.cursor + 1))
+                                    d hdv tok' hm2 with hm3 | htb
+                                  · have hlenD : d.rest.length < n := by
+                                      have hsh := d.shrunk
+                                      omega
+                                    obtain ⟨hV2, hE2, hM2⟩ :=
+                                      ih d.rest.length hlenD d.rest rfl
+                                    rcases hM2 d.cursor t hdt tok' hm3 with hm4 | htb
+                                    · exact Or.inl hm4
+                                    · exact Or.inr htb
+                                  · exact Or.inr htb
+                              · exact Or.inr htb
+                      · cases hdec
+                    · cases hdec
+              · cases hdec
+            | openBracket => simp [headPunct] at hcm
+            | closeBracket => simp [headPunct] at hcm
+            | openBrace => simp [headPunct] at hcm
+            | closeBrace => simp [headPunct] at hcm
+            | colon => simp [headPunct] at hcm
+          | null s => simp [headPunct] at hcm
+          | bool b s => simp [headPunct] at hcm
+          | number s => simp [headPunct] at hcm
+          | string s => simp [headPunct] at hcm
+        · have hnot : ∀ (c : Span) (rest' : List Token),
+              ¬ (tok :: rest = .punct .comma c :: rest') := by
+            intro c rest' heq
+            have h1 : headPunct .comma (tok :: rest) = true := by
+              rw [heq]
+              simp [headPunct]
+            exact hcm h1
+          rw [decodeMembersTail] at hdec <;> (first | exact hnot | skip)
+          injection hdec with hd
+          subst hd
+          intro tok' htok'
+          exact Or.inl htok'
+
+/-- **Every token of an accepted tape carries its class's bytes.**  The tape's
+tokens are exactly the ones the decoder consumed, so each of them satisfies
+`TokenBytes`: its span and its bytes for a literal, its lexeme for a number, its
+body for a key or string.  This is the payload half of the tape's construction,
+stated against the tape rather than against a parser run. -/
+theorem tape_tokenBytes (t : Tape) (v : Value) (h : decodeTape t = some v) :
+    ∀ tok ∈ t.tokens, TokenBytes t.input tok := by
+  unfold decodeTape at h
+  split at h
+  · rename_i d hdec
+    split at h
+    · rename_i hok
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at hok
+      obtain ⟨hrest, -⟩ := hok
+      intro tok htok
+      rcases (decodeTokenBytes_aux t.input t.tokens.length t.tokens rfl).1
+        (skipFrom t.input 0) d hdec tok htok with hmem | htb
+      · rw [hrest] at hmem
+        cases hmem
+      · exact htb
+    · exact absurd h (by simp)
+  · exact absurd h (by simp)
+
 end LeanLLVM.JSON
