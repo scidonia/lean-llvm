@@ -4,17 +4,20 @@
 `HcontLane.defaultLane` (`JsonStage2WalkDispatchSupply`) carries the default arm's document
 facts: the next entry's position word and the read that fetches it, the bound's compare,
 and the byte before the entry's end with its class (`HcontByteClass`).  The class is a
-disjunction; this module consumes its `.scanFree` disjunct (`HcontScanFree`) and turns the
-row into the arm's head chain at each head-switch class the default arm admits.  The `.ws`
-disjunct is the run class's, consumed by `JsonStage2WalkDispatchSeams`' seam group.
+disjunction; this module consumes its three non-whitespace disjuncts (`HcontHeadByte`) and
+turns the row into the arm's head chain at each head-switch class the default arm admits.
+The `.wsByte` disjunct is the run class's, consumed by `JsonStage2WalkDispatchSeams`' seam
+group.
 
 ## The chain is the class's prefix plus the shared suffix
 
 `JsonStage2WalkDispatchLettersHead` factors the chain into a prefix per head-switch class —
-`.defaultValueLow`'s three links, the four-pivot classes' four — and one suffix of eight
-that every class reaches (`contDefaultSeg`).  The prefix's binds are the only difference
-between the classes' states, and no block of either part touches the document's memory, so
-the payload's single document row feeds all five.
+`.defaultValueLow`'s three links, the four-pivot classes' four — and the shared four to
+`NodeBlock41` (`contSwToLandSeg`).  The byte's pivots then take one of three routes, stated
+once in `JsonStage2WalkDispatchLeafBytes` (`contByteSegScanFree`/`Low`/`High`): the
+scan-free class's four links, the low leaf's three and the high leaf's four.  The prefix's
+binds are the only difference between the classes' states, and no block of either part
+touches the document's memory, so the payload's single document row feeds all six.
 
 The other cells the chain reads are the invariant's: `%inc.i` and `%nep` are `WalkInv`'s
 count cells, `%5` is `WalkPtrs`'s positions table, `%idxprom.i` is `WalkInv.idx_reg`, and
@@ -31,6 +34,7 @@ byte is read at the suffix's state.  That lemma is the `contMidS` twin of
 -/
 import LeanLLVM.Refinement.JsonStage2WalkDispatchSupply
 import LeanLLVM.Refinement.JsonStage2WalkDispatchLettersHead
+import LeanLLVM.Refinement.JsonStage2WalkDispatchLeafBytes
 import LeanLLVM.Refinement.JsonStage2WalkHcontFactsOfStaging
 
 set_option autoImplicit false
@@ -70,38 +74,6 @@ theorem contMidS_docByte {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s q : S
   exact walkDoc_byte G C s hInv (by have h := hInv.alen_le; omega)
     (le_trans hInv.evlen_le G.evRoom) hidx
 
-/-! ### The chain, as the data an arm reads -/
-
-/-- **The default arm's head chain**: the class's count, its segment, the endpoint's
-carry, block, index and byte, and the endpoint's own scan-free seam cells.  A structure
-rather than an existential because the arms' fields are data: the constructor takes the
-segment at `nH` and the endpoint cells beside it, so the producer's result is destructured
-into exactly those fields.  The three seam fields are the endpoint's, not a row's: the
-suffix stores the token's end (`%ee.1.i`) and `cond.end349.i` bound `%cond350.i`, so the
-pair is one `Nat`, and the three stores are inside the token record, so the root slot's
-word is the head's. -/
-structure HcontHeadChain {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
-    (x : BitVec 8) : Type where
-  nH : Nat
-  hnH : nH ≤ 12
-  Cm : WalkCarry G
-  sm : State
-  seg : WalkSegment (stage2Calls stage2SubCalls) G C s Cm sm nH
-  hblock : Cm.block = "if.else387.i"
-  hk : Cm.k = C.k
-  h8 : evalOperand sm (.reg "%8") = some (.int 8 x)
-  /-- The lane's word: the one `Nat` both of the seam's test cells hold. -/
-  v : BitVec 32
-  /-- `%ee.1.i` at the endpoint: the token's end `seamFin` stored. -/
-  hee : lookupName sm.env "%ee.1.i" = some (.int 64 (BitVec.ofNat 64 v.toNat))
-  /-- `%cond350.i` at the endpoint: the bound `cond.end349.i` stored. -/
-  hcond : lookupName sm.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 v.toNat))
-  /-- The endpoint's stores are all inside the token record, so the root slot's word at the
-  endpoint is the head state's. -/
-  hroot : ∀ {rdv : BitVec 32},
-    readBytes s.mem (G.next0 + 8) 4 = some (natToBytes rdv.toNat 4) →
-    readBytes sm.mem (G.next0 + 8) 4 = some (natToBytes rdv.toNat 4)
-
 /-! ### `.defaultValueLow`: three links, then the shared eight -/
 
 /-- **`NodeBlock5 → LeafBlock → sw.default.i` plus the suffix, from the payload's row.**
@@ -116,10 +88,9 @@ noncomputable def lowHeadChain_of_lane {m0 : Mem} {G : WalkGeom m0} {C : WalkCar
     (hne34 : evalICmp .eq x (BitVec.ofNat 8 34) = 0)
     (hbit : (evalICmp .eq x (BitVec.ofNat 8 45) |||
       evalICmp .ult (x + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
-    (r : HcontDefaultRow G C s) (hf : HcontScanFree G r.v) :
+    (r : HcontDefaultRow G C s) (hb : HcontHeadByte G r.v) :
     HcontHeadChain G C s x := by
   obtain ⟨v, hread0, _hv1, hvle, hugt, _hclass⟩ := r
-  obtain ⟨hb13, hb32, hbne13⟩ := hf
   -- the head's byte and the invariant's cells at the class's prefix state
   have h8q : lookupName (lowS₃ s x).env "%8" = some (.int 8 x) := by
     simp only [lowS₃, lowS₂, lowS₁, State.bind]
@@ -194,38 +165,9 @@ noncomputable def lowHeadChain_of_lane {m0 : Mem} {G : WalkGeom m0} {C : WalkCar
     have hb : 1 ≤ G.b := G.bPos
     rw [show (G.b - 1) + v.toNat = G.b + (v.toNat - 1) from by omega]
     simpa only [contB35] using hmid
-  -- the seam's two cells
-  have hend : lookupName (contP35Mid C (lowS₃ s x) (hlastIncV C) (hlastNepV G) G.ep v
-      (contIx G C) (contB35 G v)).env "%end.i" = some (.ptr (C.stage.tok + 8)) := by
-    rw [contP35Mid_envEnd C (lowS₃ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-      (contB35 G v)]
-    exact hendq
-  have h8end : lookupName (contP35Mid C (lowS₃ s x) (hlastIncV C) (hlastNepV G) G.ep v
-      (contIx G C) (contB35 G v)).env "%8" = some (.int 8 x) := by
-    rw [contP35Mid_env8 C (lowS₃ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-      (contB35 G v)]
-    exact h8q
-  have h8seam : evalOperand (contSeamMid C (lowS₃ s x) (hlastIncV C) (hlastNepV G) G.ep v
-      (contIx G C) (contB35 G v) x) (.reg "%8") = some (.int 8 x) := by
-    show lookupName (contSeamMid C (lowS₃ s x) (hlastIncV C) (hlastNepV G) G.ep v
-      (contIx G C) (contB35 G v) x).env "%8" = some (.int 8 x)
-    rw [contSeamMid_env8 C (lowS₃ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-      (contB35 G v) x]
-    exact h8q
-  exact ⟨11, by omega, ContSeamC C,
-    contSeamMid C (lowS₃ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-      (contB35 G v) x,
-    (contLowHeadSeg G C s hInv hblock h8 h91 h44 hne34 hincq hnepq (cont_ult_one G C hk)
-      h5 (cont_hi63 G C hk) hread hidx htok hgap hugt hread35 hb13 hb32 hbne13 hend h8end
-      hbit).measure,
-    rfl, rfl, h8seam, v,
-    contSeamMid_ee C (lowS₃ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-      (contB35 G v) x,
-    contSeamMid_cond C (lowS₃ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-      (contB35 G v) x,
-    fun {rdv} hroot =>
-      contSeamMid_rootRead C (lowS₃ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-        (contB35 G v) x hroot⟩
+  exact contLowHeadLeafSeg G C s hInv hblock h8 h91 h44 hne34 hincq hnepq
+    (cont_ult_one G C hk) h5 (cont_hi63 G C hk) hread hidx htok hgap hugt hread35 hbit
+    (HcontHeadByte.toRoute rfl hb) hendq h8q
 
 /-! ### The four-pivot classes: four links, then the shared eight -/
 
@@ -241,10 +183,9 @@ noncomputable def midHeadChain_of_lane {m0 : Mem} {G : WalkGeom m0} {C : WalkCar
     (hne58 : evalICmp .eq x (BitVec.ofNat 8 58) = 0)
     (hbit : (evalICmp .eq x (BitVec.ofNat 8 45) |||
       evalICmp .ult (x + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
-    (r : HcontDefaultRow G C s) (hf : HcontScanFree G r.v) :
+    (r : HcontDefaultRow G C s) (hb : HcontHeadByte G r.v) :
     HcontHeadChain G C s x := by
   obtain ⟨v, hread0, _hv1, hvle, hugt, _hclass⟩ := r
-  obtain ⟨hb13, hb32, hbne13⟩ := hf
   have h8q : lookupName (midS₄ s x).env "%8" = some (.int 8 x) := by
     simp only [midS₄, midS₃, midS₂, midS₁, State.bind]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
@@ -316,37 +257,9 @@ noncomputable def midHeadChain_of_lane {m0 : Mem} {G : WalkGeom m0} {C : WalkCar
     have hb : 1 ≤ G.b := G.bPos
     rw [show (G.b - 1) + v.toNat = G.b + (v.toNat - 1) from by omega]
     simpa only [contB35] using hmid
-  have hend : lookupName (contP35Mid C (midS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v
-      (contIx G C) (contB35 G v)).env "%end.i" = some (.ptr (C.stage.tok + 8)) := by
-    rw [contP35Mid_envEnd C (midS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-      (contB35 G v)]
-    exact hendq
-  have h8end : lookupName (contP35Mid C (midS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v
-      (contIx G C) (contB35 G v)).env "%8" = some (.int 8 x) := by
-    rw [contP35Mid_env8 C (midS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-      (contB35 G v)]
-    exact h8q
-  have h8seam : evalOperand (contSeamMid C (midS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v
-      (contIx G C) (contB35 G v) x) (.reg "%8") = some (.int 8 x) := by
-    show lookupName (contSeamMid C (midS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v
-      (contIx G C) (contB35 G v) x).env "%8" = some (.int 8 x)
-    rw [contSeamMid_env8 C (midS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-      (contB35 G v) x]
-    exact h8q
-  exact ⟨12, by omega, ContSeamC C,
-    contSeamMid C (midS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-      (contB35 G v) x,
-    (contMidHeadSeg G C s hInv hblock h8 h91 h44 h58 hne58 hincq hnepq
-      (cont_ult_one G C hk) h5 (cont_hi63 G C hk) hread hidx htok hgap hugt hread35 hb13
-      hb32 hbne13 hend h8end hbit).measure,
-    rfl, rfl, h8seam, v,
-    contSeamMid_ee C (midS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-      (contB35 G v) x,
-    contSeamMid_cond C (midS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-      (contB35 G v) x,
-    fun {rdv} hroot =>
-      contSeamMid_rootRead C (midS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-        (contB35 G v) x hroot⟩
+  exact contMidHeadLeafSeg G C s hInv hblock h8 h91 h44 h58 hne58 hincq hnepq
+    (cont_ult_one G C hk) h5 (cont_hi63 G C hk) hread hidx htok hgap hugt hread35 hbit
+    (HcontHeadByte.toRoute rfl hb) hendq h8q
 
 /-- **`NodeBlock5 → NodeBlock → LeafBlock1 → sw.default.i` plus the suffix.**  The
 `.otherValue` class's four pivots and the payload's document row: twelve links. -/
@@ -360,10 +273,9 @@ noncomputable def othHeadChain_of_lane {m0 : Mem} {G : WalkGeom m0} {C : WalkCar
     (hne44 : evalICmp .eq x (BitVec.ofNat 8 44) = 0)
     (hbit : (evalICmp .eq x (BitVec.ofNat 8 45) |||
       evalICmp .ult (x + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
-    (r : HcontDefaultRow G C s) (hf : HcontScanFree G r.v) :
+    (r : HcontDefaultRow G C s) (hb : HcontHeadByte G r.v) :
     HcontHeadChain G C s x := by
   obtain ⟨v, hread0, _hv1, hvle, hugt, _hclass⟩ := r
-  obtain ⟨hb13, hb32, hbne13⟩ := hf
   have h8q : lookupName (othS₄ s x).env "%8" = some (.int 8 x) := by
     simp only [othS₄, othS₃, othS₂, othS₁, State.bind]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
@@ -435,37 +347,9 @@ noncomputable def othHeadChain_of_lane {m0 : Mem} {G : WalkGeom m0} {C : WalkCar
     have hb : 1 ≤ G.b := G.bPos
     rw [show (G.b - 1) + v.toNat = G.b + (v.toNat - 1) from by omega]
     simpa only [contB35] using hmid
-  have hend : lookupName (contP35Mid C (othS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v
-      (contIx G C) (contB35 G v)).env "%end.i" = some (.ptr (C.stage.tok + 8)) := by
-    rw [contP35Mid_envEnd C (othS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-      (contB35 G v)]
-    exact hendq
-  have h8end : lookupName (contP35Mid C (othS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v
-      (contIx G C) (contB35 G v)).env "%8" = some (.int 8 x) := by
-    rw [contP35Mid_env8 C (othS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-      (contB35 G v)]
-    exact h8q
-  have h8seam : evalOperand (contSeamMid C (othS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v
-      (contIx G C) (contB35 G v) x) (.reg "%8") = some (.int 8 x) := by
-    show lookupName (contSeamMid C (othS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v
-      (contIx G C) (contB35 G v) x).env "%8" = some (.int 8 x)
-    rw [contSeamMid_env8 C (othS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-      (contB35 G v) x]
-    exact h8q
-  exact ⟨12, by omega, ContSeamC C,
-    contSeamMid C (othS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-      (contB35 G v) x,
-    (contOthHeadSeg G C s hInv hblock h8 h91 h44 h58 hne44 hincq hnepq
-      (cont_ult_one G C hk) h5 (cont_hi63 G C hk) hread hidx htok hgap hugt hread35 hb13
-      hb32 hbne13 hend h8end hbit).measure,
-    rfl, rfl, h8seam, v,
-    contSeamMid_ee C (othS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-      (contB35 G v) x,
-    contSeamMid_cond C (othS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-      (contB35 G v) x,
-    fun {rdv} hroot =>
-      contSeamMid_rootRead C (othS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-        (contB35 G v) x hroot⟩
+  exact contOthHeadLeafSeg G C s hInv hblock h8 h91 h44 h58 hne44 hincq hnepq
+    (cont_ult_one G C hk) h5 (cont_hi63 G C hk) hread hidx htok hgap hugt hread35 hbit
+    (HcontHeadByte.toRoute rfl hb) hendq h8q
 
 /-- **`NodeBlock19 → NodeBlock11 → LeafBlock7 → sw.default.i` plus the suffix.**  The
 `.defaultValueBracket` class's four pivots and the payload's document row: twelve links. -/
@@ -479,10 +363,9 @@ noncomputable def brkHeadChain_of_lane {m0 : Mem} {G : WalkGeom m0} {C : WalkCar
     (hne91 : evalICmp .eq x (BitVec.ofNat 8 91) = 0)
     (hbit : (evalICmp .eq x (BitVec.ofNat 8 45) |||
       evalICmp .ult (x + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
-    (r : HcontDefaultRow G C s) (hf : HcontScanFree G r.v) :
+    (r : HcontDefaultRow G C s) (hb : HcontHeadByte G r.v) :
     HcontHeadChain G C s x := by
   obtain ⟨v, hread0, _hv1, hvle, hugt, _hclass⟩ := r
-  obtain ⟨hb13, hb32, hbne13⟩ := hf
   have h8q : lookupName (brkS₄ s x).env "%8" = some (.int 8 x) := by
     simp only [brkS₄, brkS₃, brkS₂, brkS₁, State.bind]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
@@ -554,37 +437,9 @@ noncomputable def brkHeadChain_of_lane {m0 : Mem} {G : WalkGeom m0} {C : WalkCar
     have hb : 1 ≤ G.b := G.bPos
     rw [show (G.b - 1) + v.toNat = G.b + (v.toNat - 1) from by omega]
     simpa only [contB35] using hmid
-  have hend : lookupName (contP35Mid C (brkS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v
-      (contIx G C) (contB35 G v)).env "%end.i" = some (.ptr (C.stage.tok + 8)) := by
-    rw [contP35Mid_envEnd C (brkS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-      (contB35 G v)]
-    exact hendq
-  have h8end : lookupName (contP35Mid C (brkS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v
-      (contIx G C) (contB35 G v)).env "%8" = some (.int 8 x) := by
-    rw [contP35Mid_env8 C (brkS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-      (contB35 G v)]
-    exact h8q
-  have h8seam : evalOperand (contSeamMid C (brkS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v
-      (contIx G C) (contB35 G v) x) (.reg "%8") = some (.int 8 x) := by
-    show lookupName (contSeamMid C (brkS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v
-      (contIx G C) (contB35 G v) x).env "%8" = some (.int 8 x)
-    rw [contSeamMid_env8 C (brkS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-      (contB35 G v) x]
-    exact h8q
-  exact ⟨12, by omega, ContSeamC C,
-    contSeamMid C (brkS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-      (contB35 G v) x,
-    (contBrkHeadSeg G C s hInv hblock h8 h91 h123 h93 hne91 hincq hnepq
-      (cont_ult_one G C hk) h5 (cont_hi63 G C hk) hread hidx htok hgap hugt hread35 hb13
-      hb32 hbne13 hend h8end hbit).measure,
-    rfl, rfl, h8seam, v,
-    contSeamMid_ee C (brkS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-      (contB35 G v) x,
-    contSeamMid_cond C (brkS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-      (contB35 G v) x,
-    fun {rdv} hroot =>
-      contSeamMid_rootRead C (brkS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-        (contB35 G v) x hroot⟩
+  exact contBrkHeadLeafSeg G C s hInv hblock h8 h91 h123 h93 hne91 hincq hnepq
+    (cont_ult_one G C hk) h5 (cont_hi63 G C hk) hread hidx htok hgap hugt hread35 hbit
+    (HcontHeadByte.toRoute rfl hb) hendq h8q
 
 /-- **`NodeBlock19 → NodeBlock11 → LeafBlock9 → sw.default.i` plus the suffix.**  The
 `.defaultValueBracketHigh` class's four pivots and the payload's document row: twelve
@@ -599,10 +454,9 @@ noncomputable def bhHeadChain_of_lane {m0 : Mem} {G : WalkGeom m0} {C : WalkCarr
     (hne93 : evalICmp .eq x (BitVec.ofNat 8 93) = 0)
     (hbit : (evalICmp .eq x (BitVec.ofNat 8 45) |||
       evalICmp .ult (x + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
-    (r : HcontDefaultRow G C s) (hf : HcontScanFree G r.v) :
+    (r : HcontDefaultRow G C s) (hb : HcontHeadByte G r.v) :
     HcontHeadChain G C s x := by
   obtain ⟨v, hread0, _hv1, hvle, hugt, _hclass⟩ := r
-  obtain ⟨hb13, hb32, hbne13⟩ := hf
   have h8q : lookupName (bhS₄ s x).env "%8" = some (.int 8 x) := by
     simp only [bhS₄, bhS₃, bhS₂, bhS₁, State.bind]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
@@ -674,37 +528,9 @@ noncomputable def bhHeadChain_of_lane {m0 : Mem} {G : WalkGeom m0} {C : WalkCarr
     have hb : 1 ≤ G.b := G.bPos
     rw [show (G.b - 1) + v.toNat = G.b + (v.toNat - 1) from by omega]
     simpa only [contB35] using hmid
-  have hend : lookupName (contP35Mid C (bhS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v
-      (contIx G C) (contB35 G v)).env "%end.i" = some (.ptr (C.stage.tok + 8)) := by
-    rw [contP35Mid_envEnd C (bhS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-      (contB35 G v)]
-    exact hendq
-  have h8end : lookupName (contP35Mid C (bhS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v
-      (contIx G C) (contB35 G v)).env "%8" = some (.int 8 x) := by
-    rw [contP35Mid_env8 C (bhS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-      (contB35 G v)]
-    exact h8q
-  have h8seam : evalOperand (contSeamMid C (bhS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v
-      (contIx G C) (contB35 G v) x) (.reg "%8") = some (.int 8 x) := by
-    show lookupName (contSeamMid C (bhS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v
-      (contIx G C) (contB35 G v) x).env "%8" = some (.int 8 x)
-    rw [contSeamMid_env8 C (bhS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-      (contB35 G v) x]
-    exact h8q
-  exact ⟨12, by omega, ContSeamC C,
-    contSeamMid C (bhS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-      (contB35 G v) x,
-    (contBhHeadSeg G C s hInv hblock h8 h91 h123 h93 hne93 hincq hnepq
-      (cont_ult_one G C hk) h5 (cont_hi63 G C hk) hread hidx htok hgap hugt hread35 hb13
-      hb32 hbne13 hend h8end hbit).measure,
-    rfl, rfl, h8seam, v,
-    contSeamMid_ee C (bhS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-      (contB35 G v) x,
-    contSeamMid_cond C (bhS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-      (contB35 G v) x,
-    fun {rdv} hroot =>
-      contSeamMid_rootRead C (bhS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-        (contB35 G v) x hroot⟩
+  exact contBhHeadLeafSeg G C s hInv hblock h8 h91 h123 h93 hne93 hincq hnepq
+    (cont_ult_one G C hk) h5 (cont_hi63 G C hk) hread hidx htok hgap hugt hread35 hbit
+    (HcontHeadByte.toRoute rfl hb) hendq h8q
 
 /-- **`NodeBlock19 → NodeBlock17 → LeafBlock13 → sw.default.i` plus the suffix.**  The
 `.defaultValueBrace` class's four pivots — the byte `124` — and the payload's document row:
@@ -720,10 +546,9 @@ noncomputable def brcHeadChain_of_lane {m0 : Mem} {G : WalkGeom m0} {C : WalkCar
     (hne123 : evalICmp .eq x (BitVec.ofNat 8 123) = 0)
     (hbit : (evalICmp .eq x (BitVec.ofNat 8 45) |||
       evalICmp .ult (x + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
-    (r : HcontDefaultRow G C s) (hf : HcontScanFree G r.v) :
+    (r : HcontDefaultRow G C s) (hb : HcontHeadByte G r.v) :
     HcontHeadChain G C s x := by
   obtain ⟨v, hread0, _hv1, hvle, hugt, _hclass⟩ := r
-  obtain ⟨hb13, hb32, hbne13⟩ := hf
   have h8q : lookupName (brcS₄ s x).env "%8" = some (.int 8 x) := by
     simp only [brcS₄, brcS₃, brcS₂, brcS₁, State.bind]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
@@ -795,37 +620,9 @@ noncomputable def brcHeadChain_of_lane {m0 : Mem} {G : WalkGeom m0} {C : WalkCar
     have hb : 1 ≤ G.b := G.bPos
     rw [show (G.b - 1) + v.toNat = G.b + (v.toNat - 1) from by omega]
     simpa only [contB35] using hmid
-  have hend : lookupName (contP35Mid C (brcS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v
-      (contIx G C) (contB35 G v)).env "%end.i" = some (.ptr (C.stage.tok + 8)) := by
-    rw [contP35Mid_envEnd C (brcS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-      (contB35 G v)]
-    exact hendq
-  have h8end : lookupName (contP35Mid C (brcS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v
-      (contIx G C) (contB35 G v)).env "%8" = some (.int 8 x) := by
-    rw [contP35Mid_env8 C (brcS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-      (contB35 G v)]
-    exact h8q
-  have h8seam : evalOperand (contSeamMid C (brcS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v
-      (contIx G C) (contB35 G v) x) (.reg "%8") = some (.int 8 x) := by
-    show lookupName (contSeamMid C (brcS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v
-      (contIx G C) (contB35 G v) x).env "%8" = some (.int 8 x)
-    rw [contSeamMid_env8 C (brcS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-      (contB35 G v) x]
-    exact h8q
-  exact ⟨12, by omega, ContSeamC C,
-    contSeamMid C (brcS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-      (contB35 G v) x,
-    (contBrcHeadSeg G C s hInv hblock h8 h91 h123 h125 hne123 hincq hnepq
-      (cont_ult_one G C hk) h5 (cont_hi63 G C hk) hread hidx htok hgap hugt hread35 hb13
-      hb32 hbne13 hend h8end hbit).measure,
-    rfl, rfl, h8seam, v,
-    contSeamMid_ee C (brcS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-      (contB35 G v) x,
-    contSeamMid_cond C (brcS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-      (contB35 G v) x,
-    fun {rdv} hroot =>
-      contSeamMid_rootRead C (brcS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-        (contB35 G v) x hroot⟩
+  exact contBrcHeadLeafSeg G C s hInv hblock h8 h91 h123 h125 hne123 hincq hnepq
+    (cont_ult_one G C hk) h5 (cont_hi63 G C hk) hread hidx htok hgap hugt hread35 hbit
+    (HcontHeadByte.toRoute rfl hb) hendq h8q
 
 /-! ### The arms, at the chain the payload's row produced
 

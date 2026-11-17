@@ -855,12 +855,18 @@ producer (`hcontArm_scalar_of_class`, `hcontArm_letters_of_class`,
 `hcontArm_cleanup_of_class`, `hcontArm_stringOpenAboveZero_of_class`).  Of the seventeen
 rows, c2, c4, c5, c6, c7, c8, c10, c12 and c11's call row are consumed by a branch; c3 is
 consumed by the payload's own `walkDispatch_of_payload_covered`.  What is left is c1 and
-c9's *run* class: `HcontArm.run` takes `RunFacts`, and no producer joins the check state's
-rows and the seam's state group to that bundle at the class's short prefix, so the class has
-no row and the class case cannot be completed without it.  The run row is the ledger's one
-remaining continuing row; the last level's l2/l3 rows and `RunLastFacts` are the other
-side's.  No row is a bundle or an arm, and the one row that carries a segment — c4's merge
-route — is the arm's own route, named as such and not assumed by a producer beside the row.
+c9's *run* class — closed since: `HcontRunRow` (`JsonStage2WalkDispatchClassRows`) carries
+the check state's rows and the seam's state group, and `hcontRunFacts_of_seam`
+(`JsonStage2WalkDispatchSeams`) joins them to `RunFacts`, with `hcontArm_run_of_class`
+projecting the row into the arm.  The continuing side's remaining items are the `.cleanup`
+leaf classes' *arm* (`HcontCleanupFacts` still asserts the scan-free bits, although
+`JsonStage2WalkDispatchLeafBytes` now states the high-byte route's leaf chains) and the
+class bits' transport into `letters`/`fLetter`/`classC`.  On the last side, `RunLastFacts`
+is now derived from a seam group (`JsonStage2WalkDispatchRunLastSeam`), so what remains is
+l2/l3's asset: `HlastFacts` asserts the scan-free bits and no row states the leaf document
+byte's class there.  No row is a bundle or an arm, and the one row that carries a segment —
+c4's merge route — is the arm's own route, named as such and not assumed by a producer
+beside the row.
 The quantifiers are the class's and the state's: a
 row is stated at the continued head it belongs to (`C.k + 1 < G.nep` for c1–c12) or at the
 exhausted count (`¬ (C.k + 1 < G.nep)` for l1–l5), never at every head.

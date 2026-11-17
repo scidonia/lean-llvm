@@ -97,13 +97,13 @@ exactly here.  None is a missing segment.
 
 | row | what it is | what it needs |
 |---|---|---|
-| the default arm's document cells | the next entry's position word and its read, the bound's compare, and the byte before the entry's end with its class | **closed for the scan-free disjunct**: `HcontLane.defaultLane` carries the row and its `HcontByteClass`, and `JsonStage2WalkDispatchDefaultLane` turns the `.scanFree` disjunct into the class's head chain at all five head-switch classes (`lowHeadChain_of_lane`, `midHeadChain_of_lane`, `othHeadChain_of_lane`, `brkHeadChain_of_lane`, `bhHeadChain_of_lane`) and into the three arms (`hcontArm_letters_of_lane`, `hcontArm_fLetter_of_lane`, `hcontArm_classC_of_lane`) with their dispatches.  The chain's other cells are derived through the class's prefix and the suffix's first bind; the document byte is transported by `contMidS_docByte`.  The brace class `124`'s chain is `brcHeadChain_of_lane` (the last head-switch class without a wrapper).  What remains for those arms is the tail's three calls, `.classC`'s span, and the other non-whitespace sub-classes' leaf routes (`LeafBlock33`/`LeafBlock37`): `HcontByteClass` now carries `.lowLeaf`/`.highLeaf` and `HcontByteClass.complete` proves the four classes cover the byte, but no per-prefix head chain composes those two leaves |
+| the default arm's document cells | the next entry's position word and its read, the bound's compare, and the byte before the entry's end with its class | **closed at all three non-whitespace classes**: `HcontLane.defaultLane` carries the row and its `HcontByteClass`, and `JsonStage2WalkDispatchDefaultLane` turns the class into the head chain at all six head-switch classes (`lowHeadChain_of_lane`, `midHeadChain_of_lane`, `othHeadChain_of_lane`, `brkHeadChain_of_lane`, `bhHeadChain_of_lane`, `brcHeadChain_of_lane`) and into the three arms (`hcontArm_letters_of_lane`, `hcontArm_fLetter_of_lane`, `hcontArm_classC_of_lane`) with their dispatches.  The chain's other cells are derived through the class's prefix and the suffix's first bind; the document byte is transported by `contMidS_docByte`.  The brace class `124`'s chain is `brcHeadChain_of_lane` (the last head-switch class without a wrapper).  What remains for those arms is the tail's three calls and `.classC`'s span; the other non-whitespace sub-classes' leaf routes are now stated (`JsonStage2WalkDispatchLeafBytes`: `contByteSegScanFree`/`Low`/`High`, the six classes' `cont*HeadLeafSeg` producers, and `hcontHeadLeafSeg` for the high-byte route), and the six `*HeadChain_of_lane` producers take `HcontHeadByte` and dispatch across all three |
 | the default arm's tail and span | the three callees' rows and the class-C leaf | the payload's `abi` group carries the openers' and the string's calls, not the tail's; `emptyTailSeg_of_calls` produces the segment from the three callees' preconditions and answers, which the staging supplies at the seam's landing.  `.classC`'s span is `classCSpan_at`'s at the byte's own leaf |
 | the run's bundle at each default class | `RunFacts` at the six default head classes | **closed, apart from the bundle's own supply**: the run is stated once at an arbitrary check state (`HcontRunFacts`, `contWsRunF`), so the class-independent part is no longer a per-class restatement: `runFacts_of_runBundle` builds the whole bundle from it at any class's chain to the check state at `nPre ≤ 8`, and `runFacts_of_defaultClass` is the six classes' one producer — the class's prefix to `sw.default.i` (`nq ≤ 4`), `contSwToLandSeg`'s shared four and the bundle, with the class's own span (`.defaultValueBracketHigh`/`.defaultValueBrace`/`115`'s `LeafBlock58` arm, `.defaultValueLow`/`.defaultValueMid`/`.otherValue`'s letters span).  What the row still needed is now `HcontRunRow` (`JsonStage2WalkDispatchClassRows`): the check state's cells, the landing's reads and the traversal are its `HcontRunRows`, the seam's cells and the tail's three call rows are its `HcontWsSeam`, and `hcontRunFacts_of_seam` (`JsonStage2WalkDispatchSeams`) joins them into the bundle.  `hcontArm_run_of_row` then produces the arm, taking the head byte's own leaf below `if.else387.i` at its own count — the producers now accept any `nS ≤ 5`, so the letters, `'f'` and class-C spans all serve |
 | the run's bundle fields | `HcontRunFacts` at `contLandOut (contMidS C q5 …) v b35` | the class's own head bundle is not the run's: `HcontFacts` is stated at the high-byte route's `contLandS`, and its `hClass` is the byte's class.  The fields the check state supplies are the first six (`hInv`, `%35`, `%idxprom.i`, `%cond350.i`, `hugt`, `h8c`), which the class's prefix and `contSwToLandSeg` derive (`contLandS_idx`/`contLandS_cond` are the class-C instance of the same peels); the rest — the stop, the class, the seam's byte test, the tail, the landing and the traversal — are the document's and the staging's, so they enter as the payload's rows.  No field is a segment |
-| the last entry's default arms | a per-class last-entry chain, and the last level's run bundle | **the chain is closed, the run bundle is not**: `JsonStage2WalkDispatchLettersHead` states the last entry's suffix once (`contDefLastSeg`, seven links: the failing count test `%inc.i ≥ %nep`, the bound's `%4`, the whitespace check, the byte's three pivots and the token's end) and one counted chain per prefix class (`contLastLowHeadSeg` at ten links, `contLastMidHeadSeg`/`contLastOthHeadSeg`/`contLastBrkHeadSeg`/`contLastBhHeadSeg`/`contLastBrcHeadSeg` at eleven).  `hlastTailSeg` is the high-byte class's sixteen links and is not any of them.  What the row still needs is the last level's **run** bundle: `lastEntryArm`'s `.run` constructor takes `RunLastFacts`, whose `hHead`/`hSpan` are segments, so no payload row can stand in for it (`runLastFacts_of_staging` remains its producer at the staging) |
-| `walkContinueFacts_of_payload` | `HcontPayload` → `WalkContinueFacts` | the rows above at every arm; the payload must not hold an arm or a segment, so the class case over `HcontClass.complete` runs each class's producer.  The default arm's chain is in hand; its tail, `.ws`/`.cleanup`'s call rows and `.scalar`'s seam are the rows still listed above.  The class case is complete: the positive-depth opener's `%sp ≠ 0` states are `HcontArm.stringOpenAboveZeroMerge`/`.stringOpenAboveZeroRefuse`, whose class facts the invariant supplies and whose row is the merge's counted segment (`JsonStage2WalkDispatchHcontStringDeep`), with `.twoEntry`'s `C.sp = 0` beside them.  What the theorem still needs is the document rows, not an arm: the two leaf routes' per-prefix head chains (`LeafBlock33`/`LeafBlock37` to `if.end372.i`), the class bits' transport into `letters`/`fLetter`/`classC`, and the last level.  The run class's branch is in hand (`hcontArm_run_of_class`) |
-| `walkLoopEnd_of_payload` | `HlastPayload` → `WalkLoopEnd` | the last entry's rows above, and the terminal log words `WalkLoopEnd.merge`/`.refuse` compose |
+| the last entry's default arms | a per-class last-entry chain, and the last level's run bundle | **the chain is closed, the run bundle is not**: `JsonStage2WalkDispatchLettersHead` states the last entry's suffix once (`contDefLastSeg`, seven links: the failing count test `%inc.i ≥ %nep`, the bound's `%4`, the whitespace check, the byte's three pivots and the token's end) and one counted chain per prefix class (`contLastLowHeadSeg` at ten links, `contLastMidHeadSeg`/`contLastOthHeadSeg`/`contLastBrkHeadSeg`/`contLastBhHeadSeg`/`contLastBrcHeadSeg` at eleven).  `hlastTailSeg` is the high-byte class's sixteen links and is not any of them.  The last level's **run** bundle now has its seam group: `JsonStage2WalkDispatchRunLastSeam` states `HlastWsSeam` at `hlastRunSeam` (the run's stop `k` as the token's end, the bound `c` as `%cond350.i`) and derives `RunLastFacts` from it (`hlastRunTail_of_seam`, `runLastFacts_of_seam`, `lastEntryArm_run_of_seam`), so `runLastFacts_of_staging` is no longer the bundle's only producer.  What remains at this level is the **head** document byte's class: `HlastFacts` asserts the scan-free bits, so the last chains are not total over `.lowLeaf`/`.highLeaf` |
+| `walkContinueFacts_of_payload` | `HcontPayload` → `WalkContinueFacts` | the rows above at every arm; the payload must not hold an arm or a segment, so the class case over `HcontClass.complete` runs each class's producer.  The default arm's chain is in hand at every byte class (`JsonStage2WalkDispatchLeafBytes`); its tail, `.ws`/`.cleanup`'s call rows and `.scalar`'s seam are the rows still listed above.  The class case is complete: the positive-depth opener's `%sp ≠ 0` states are `HcontArm.stringOpenAboveZeroMerge`/`.stringOpenAboveZeroRefuse`, whose class facts the invariant supplies and whose row is the merge's counted segment (`JsonStage2WalkDispatchHcontStringDeep`), with `.twoEntry`'s `C.sp = 0` beside them.  What the theorem still needs is the document rows, not an arm: the `.cleanup` leaf classes' **bundle** (`HcontCleanupFacts` still asserts the scan-free bits, so the high-byte route's leaf chains have no arm above them), the class bits' transport into `letters`/`fLetter`/`classC`, and the last level.  The run class's branch is in hand (`hcontArm_run_of_class`) |
+| `walkLoopEnd_of_payload` | `HlastPayload` → `WalkLoopEnd` | the last entry's rows above, and the terminal log words `WalkLoopEnd.merge`/`.refuse` compose.  The last run's bundle is now derived from a seam group (`runLastFacts_of_seam`), so what the last level still owes is the **head** document byte's class: `HlastFacts` asserts the scan-free bits and no row states `.lowLeaf`/`.highLeaf` there |
 
 A `walkContinueFacts_of_payload` stated over a payload carrying those groups would be a
 class case over `HcontClass.complete` with every arm's producer in hand.  What this module
@@ -133,11 +133,16 @@ former obstacles are gone, and the third is a route the tree does not yet compos
   whitespace, whose route is `LeafBlock33`'s or `LeafBlock37`'s offset test to
   `if.end372.i`).  `HcontByteClass.complete` proves the four cover the byte, so the row is
   inhabited at every head state with an entry left; `HcontScanFree.not_wsStop` is the
-  exclusivity theorem the old asserted row lacked.  The scan-free disjunct's chain is
-  stated at all five head-switch classes; the two leaf routes' *chains* are the part the
-  tree does not yet compose — the class case names them and no per-prefix producer states
-  them, so an arm at a state whose document byte is one of those two has no head chain to
-  take.
+  exclusivity theorem the old asserted row lacked.  All three non-whitespace disjuncts now
+  have their chains: `JsonStage2WalkDispatchLeafBytes` states the byte's three pivot routes
+  from any state at `NodeBlock41` (`contByteSegScanFree`/`Low`/`High`, seven, six and eight
+  links from `sw.default.i`), composes them after each head-switch class's prefix
+  (`contLowHeadLeafSeg` … `contBrcHeadLeafSeg`) and after the high-byte route's
+  `contPrefixLand`, and the six `*HeadChain_of_lane` producers take `HcontHeadByte` — the
+  three non-whitespace classes — and dispatch, so a row's `.lowLeaf`/`.highLeaf` has a head
+  chain at every default class.  What the leaf routes still lack is the `.cleanup` **arm**:
+  `HcontCleanupFacts` asserts the scan-free bits, so the high-byte route's leaf chains reach
+  the seam but no bundle above them takes them.
 * **The visited-byte row is stated at the visits' span.**  `hcontFacts_of_staging` supplies
   `hbyteClass` at `k < p + 1`, and the traversal's `hbyte` (`walkScanRounds457_of_cell`,
   `walkScanArrival457_of_cell`, `scanRoundsAt`, `scanWsRounds`, `contScanRounds`) carries
@@ -646,6 +651,57 @@ noncomputable def HcontByteClass.complete {m0 : Mem} (G : WalkGeom m0) (v : BitV
         by_cases he32 : evalICmp .eq (wsX G (v.toNat - 1)) (BitVec.ofNat 8 32) = 1
         · exact absurd (Or.inr (Or.inr ⟨h13', h32', he32⟩)) hws
         · exact .highLeaf h13' h32' (bitZeroOfNeOne he32)
+
+/-- **The non-whitespace byte classes, as the head chain's three routes.**  A row's
+`HcontByteClass` classifies four ways; the whitespace class is the run's and has no head
+chain to `if.else387.i`, because all three of its pivot arms enter `land.rhs.i.preheader`.
+A head chain therefore takes this sum: the scan-free route and the two leaf routes.  It is
+`Type`-valued for the same reason as `HcontByteClass`: a producer eliminates it into the
+chain's `Type`. -/
+inductive HcontHeadByte {m0 : Mem} (G : WalkGeom m0) (v : BitVec 32) : Type where
+  /-- The byte is the scan-free class: `LeafBlock35`'s equality test to `if.end372.i`. -/
+  | scanFree (f : HcontScanFree G v) : HcontHeadByte G v
+  /-- The byte is below `13` and not `9`/`10`: `NodeBlock41`'s pivot takes `LeafBlock33`
+  and its offset test clears to `if.end372.i`. -/
+  | lowLeaf (hb13 : evalICmp .slt (cont35 (contB35 G v)) (BitVec.ofNat 8 13) = 1)
+      (hbns : evalICmp .ule (cont35 (contB35 G v) + BitVec.ofNat 8 247)
+        (BitVec.ofNat 8 1) = 0) : HcontHeadByte G v
+  /-- The byte is at or above `32` and not `32`: `NodeBlock39`'s pivot takes `LeafBlock37`
+  and its equality test clears to `if.end372.i`. -/
+  | highLeaf (hb13 : evalICmp .slt (cont35 (contB35 G v)) (BitVec.ofNat 8 13) = 0)
+      (hb32 : evalICmp .slt (cont35 (contB35 G v)) (BitVec.ofNat 8 32) = 0)
+      (hbne32 : evalICmp .eq (cont35 (contB35 G v)) (BitVec.ofNat 8 32) = 0) :
+      HcontHeadByte G v
+
+/-- **The default arm's head chain**: the class's count, its segment, the endpoint's
+carry, block, index and byte, and the endpoint's own seam cells.  A structure rather than
+an existential because the arms' fields are data: the constructor takes the segment at
+`nH` and the endpoint cells beside it, so the producer's result is destructured into
+exactly those fields.  The three seam fields are the endpoint's, not a row's: the suffix
+stores the token's end (`%ee.1.i`) and `cond.end349.i` bound `%cond350.i`, so the pair is
+one `Nat`, and the three stores are inside the token record, so the root slot's word is
+the head's. -/
+structure HcontHeadChain {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (x : BitVec 8) : Type where
+  nH : Nat
+  hnH : nH ≤ 12
+  Cm : WalkCarry G
+  sm : State
+  seg : WalkSegment (stage2Calls stage2SubCalls) G C s Cm sm nH
+  hblock : Cm.block = "if.else387.i"
+  hk : Cm.k = C.k
+  h8 : evalOperand sm (.reg "%8") = some (.int 8 x)
+  /-- The lane's word: the one `Nat` both of the seam's test cells hold. -/
+  v : BitVec 32
+  /-- `%ee.1.i` at the endpoint: the token's end `seamFin` stored. -/
+  hee : lookupName sm.env "%ee.1.i" = some (.int 64 (BitVec.ofNat 64 v.toNat))
+  /-- `%cond350.i` at the endpoint: the bound `cond.end349.i` stored. -/
+  hcond : lookupName sm.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 v.toNat))
+  /-- The endpoint's stores are all inside the token record, so the root slot's word at the
+  endpoint is the head state's. -/
+  hroot : ∀ {rdv : BitVec 32},
+    readBytes s.mem (G.next0 + 8) 4 = some (natToBytes rdv.toNat 4) →
+    readBytes sm.mem (G.next0 + 8) 4 = some (natToBytes rdv.toNat 4)
 
 /-- **The default arm's document row.**  The next entry's position word and the read that
 fetches it, the bound's compare against this entry's index, and the byte before the
