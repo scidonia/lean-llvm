@@ -262,7 +262,21 @@ the per-input `WalkPremises` and the record's post rule and no bundle.  The othe
 `WalkContinueFacts`, is class data: no `∀ G` producer exists either, because each arm's
 evidence carries a tail `WalkSegment` and the scan's traversal hypotheses that are
 supplies at a reachable state rather than `WalkInv` consequences
-(`JsonStage2WalkHcontFactsOfStaging`'s map). -/
+(`JsonStage2WalkHcontFactsOfStaging`'s map).
+
+**Two head states the arm family does not reach, so the supply is not the whole story.**
+`JsonStage2WalkDispatchResidual` records both, with the emitted path.  `}` (`125`) at
+depth zero takes `LeafBlock15 → if.then53.i → if.then56.i` and its refusal store, and the
+constructors whose class bits admit the byte — `.classC` and `.run` — each demand a head
+segment to `if.else387.i`, the default arm's path; `.closingZero`/`.closeBracketZero` are
+pinned to `]` and `.closeWithOpen` requires a positive depth.  A container opener at depth
+`520` takes `if.then.i`'s `ugt` arm to `if.then21.i`, and `.containerOpen` carries
+`C.sp ≤ 519` as a premise.  So at those two kinds of state no producer of `hlast` or of
+`HcontArm` can be written, however much a caller supplies: the enum needs a constructor
+there first.  Both inputs are admitted (`"}"`, and 520 nested `[`), so this is a gap in the
+dispatch's census rather than a condition of the domain.  What the rest of the bundle still
+takes, per class, is `JsonStage2WalkDispatchResidual`'s table; the classes whose rows are
+all derived are produced there at every invariant state. -/
 structure WalkLoopEnd {m0 : Mem} (G : WalkGeom m0) : Type where
   /-- **The last entry's arm**, at every head state the merge's test sends to the exit.
   It is the dispatch's evidence, not its conclusion: `WalkLoopEnd.dispatch` applies
