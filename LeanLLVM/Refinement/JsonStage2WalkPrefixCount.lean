@@ -10,7 +10,7 @@ the same: a counted twin, not a derivation.
 
 | appearance | what needed the count | resolution |
 |---|---|---|
-| `walkScanRounds457` | the scan's round | `hround` returns a segment |
+| `walkScanRounds457_of_cell` | the scan's round | `hround` returns a segment |
 | `walkHeadChainToScan` | the last entry's price | `hprice` became a bundle field |
 | `consumer_tail_seg` | the tail's count, to compose it | the count existed — `3` — and a **name** did not |
 | this module | the price, again | counted twins and a `Nat` |

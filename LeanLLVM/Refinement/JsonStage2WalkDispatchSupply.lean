@@ -42,7 +42,7 @@ does not hold and the reason:
 | `.cleanup` | **none, at the continuing head**: the class's document row (`HcontCleanupDoc`) | **closed**: `hcontArm_cleanup_of_rows` (`JsonStage2WalkDispatchSeamRows`) takes the document row, the lane's root word and the seam's three call rows, and produces the arm — the seventeen-link chain (`hcontSpan17_of_doc`), the seam's invariant (`contTailStartInv_of_doc`), its five environment cells, the predecessor's `phi` with the literal `0` it selects, and the root slot's word across the seam's three token-record stores are all theorems.  `hcontArm_cleanup_of_calls` remains as the same arm at the seam's cells stated explicitly, and `emptyTailSeg_of_calls` composes the three links.  The two `contTailStart_*` cells are that module's `contTailStart_ee`/`contTailStart_cond` |
 | `.scalar` | the empty tail's three calls at the *continuing* route's seam | **the tail's producer is now `scContTail_of_calls`** (`JsonStage2WalkDispatchSegments`): the seam is `scSeamS`, its two test cells are that seam's own peels (`scSeam_ee`, `scSeam_cond`, `JsonStage2WalkHcontScalar`), and `emptyTailSeg_of_calls` composes the three calls at them.  What remains is the arm-level assembly that puts those rows into `HcontScalarFacts` — the bundle's other fields plus the call rows — not a missing cell.  **Closed** by `hcontArm_scalar_of_rows`/`walkDispatch_at_scalar_of_rows` (`JsonStage2WalkDispatchScalarRows`), which take the document row (`HcontScalarPrefix`), the lane word and its read, the three call rows and the class's two agreements — the kind literal `7` and the root slot's word — and produce the arm; the root transport is `scSeam_rootRead` |
 | `.letters`, `.fLetter` | the head's chain to `if.else387.i` | **per head-switch class, and now one theorem per class**: `JsonStage2WalkDispatchLettersHead` factors the chain into the **suffix** every default class shares — `sw.default.i`, the count test's succeeding arm, the bound's `phi`, the whitespace check, the byte's three pivots and the token's end, eight links at *any* state at `sw.default.i` (`contDefaultSeg`) — and the class's **prefix**: `.defaultValueLow`'s three links (`contLowHeadSeg`, eleven in all — the low bytes and every byte above `127`), and `.defaultValueMid`/`.otherValue`/`.defaultValueBracket`/`.defaultValueBracketHigh`'s four (`contMidHeadSeg`, `contOthHeadSeg`, `contBrkHeadSeg`, `contBhHeadSeg`, twelve each).  The arm's field is the class's **count**: `HcontArm.letters`/`.fLetter`/`.classC` take `{nH}` with `hnH : nH ≤ 12` (and the `LastEntryArm` twins `hnH : nH ≤ 11`), which the compositions (`lettersCleanupMerge_at`, `fCleanupMerge_at`, `classCMerge_at`) already took, so the class's chain feeds the constructor at every class.  The chain's *cells* are the payload's now: `HcontLane.defaultLane` carries the next lane's word and read, the bound's compare and the byte before the entry's end with its class, and `JsonStage2WalkDispatchDefaultLane` derives the chain at five of the six head-switch classes (`lowHeadChain_of_lane`, `midHeadChain_of_lane`, `othHeadChain_of_lane`, `brkHeadChain_of_lane`, `bhHeadChain_of_lane`; the sixth, `.defaultValueBrace`/`124`, has its chain `contBrcHeadSeg` and still owes its `_of_lane` producer); the three-link tail is produced by `JsonStage2WalkDispatchLettersRows`: the seam's invariant is `lettersSeamInv_of_chain`/`fLetterSeamInv_of_chain`, its cells `lettersSeamCells_of_chain`/`fLetterSeamCells_of_chain` (the pair `contSeamMid_ee`/`contSeamMid_cond`, the root word `contSeamMid_rootRead`), and the tail `emptyTail_of_cells`, so `hcontArm_letters_of_rows`/`hcontArm_fLetter_of_rows` take the call rows and the kind-literal agreement alone |
-| `.classC` | the byte's own span | **exposed**: `classCSpan_at` produces a span at the arm's endpoint from the class's `slt %8 110` bit alone (the upper bound is not a premise: `126`/`127` take the same leaf), and `classCHeadSpan_at` composes it with the head's twelve at `12 + nS`.  The arm's `hTail` is stated at the span's *endpoint*, which the span returns existentially, so the endpoint's seam cells (`HcontSeamCells`: the `phi`, the four pointers, the root word and the two test cells) are that state's row while the three-link tail is produced from them (`hcontArm_classC_of_rows`, `JsonStage2WalkDispatchLettersRows`); the span is derivable where the endpoint is named, and is the arm's field otherwise.  Its bytes' head-switch classes are `.defaultValueBracketHigh` (`110 … 122`, `contBhHeadSeg`'s twelve) and `.defaultValueBrace` (`124`, `contBrcHeadSeg`'s twelve: `NodeBlock19 → NodeBlock17 → LeafBlock13 → sw.default.i` then the suffix's eight), so every byte of `[110, 125]` the letters arm does not take has its chain and `.classC`'s `hHead` takes it at `nH ≤ 12`. |
+| `.classC` | the byte's own span | **exposed**: `classCSpan_at` produces a span at the arm's endpoint from the class's `slt %8 110` bit alone (the upper bound is not a premise: `126`/`127` take the same leaf), and `classCHeadSpan_at` composes it with the head's twelve at `12 + nS`.  The arm's `hTail` is stated at the span's *endpoint*, and the endpoint is one of four named states (`ClsS413T`/`ClsS413F`/`ClsS58T`/`HeadS413`), so its seam cells (`HcontSeamCells`: the `phi`, the four pointers, the root word and the two test cells) are **produced** at each (`classCSeamCells_56True` … `…_58Else`, `JsonStage2WalkDispatchClassCLeaves`) and the three-link tail from them; the four arms take the chain, the leaf's bits, its call group and the root word's agreement.  The span is derivable where the endpoint is named, and is the arm's field otherwise.  Its bytes' head-switch classes are `.defaultValueBracketHigh` (`110 … 122`, `contBhHeadSeg`'s twelve) and `.defaultValueBrace` (`124`, `contBrcHeadSeg`'s twelve: `NodeBlock19 → NodeBlock17 → LeafBlock13 → sw.default.i` then the suffix's eight), so every byte of `[110, 125]` the letters arm does not take has its chain and `.classC`'s `hHead` takes it at `nH ≤ 12`. |
 | `.run` | `RunFacts` and its four segments | **composed at the whitespace class, and now at any class's check state**: `HcontRunFacts` is the run's bundle stated at the check state itself — the stop, the landing byte and its seam test, the tail, the landing and the traversal — and `contWsRunF` derives the segment at **any** such state, so the class-C route's `contLandS` is its instance (`hcontRunFacts_of_contFacts`) and no longer its only one.  `JsonStage2WalkDispatchRunHead`'s `wsRunHeadAt`/`wsLandingSegAt` build the head and the landing from the bundle, and `runFacts_of_runBundle` the **whole** `RunFacts`, at `nPre ≤ 8`; `runFacts_of_defaultClass` is the six default classes' producer — the class's prefix to `sw.default.i` plus `contSwToLandSeg`'s four, the bundle, and the class's own span.  At `126`/`127` `runFacts_of_wsFacts` remains the instance, and no `RunFacts` field is a supply there.  What remains is the bundle's *fields* at each class (the payload's document and traversal rows), not a composition |
 | the last entry's `.highByte` | none — `HlastLane.tail` and `HlastAbi.highByte` | proved below: the residue `HlastResidue` is *built* from the two groups (`lastEntryArm_highByte_of_payload`), so the bundle is constructed, not assumed |
 | the last entry's `.scalar` | the three calls at the scalar route's seam | `JsonStage2WalkDispatchScalarOfStaging` states the producer; its call rows are at the scalar route's own seam state, which the payload's last-level `abi` group does not reach |
@@ -224,6 +224,88 @@ structure HcontStringCalls {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : S
      .ptr (G.dst + A.toNat), .ptr (G.next0 + 20), .ptr G.xp, .ptr (G.next0 + 12),
      .int 64 (BitVec.ofNat 64 G.nxp)] s.mem s.next = some r → r.ret = .int 32 y
   hR8 : evalICmp .slt y (BitVec.ofNat 32 1) = 0
+
+/-! ### The lane's five reads, and which of them the tree states
+
+`HcontStringLane` reads five words at the head state.  Four follow from clauses `WalkInv`
+already carries, and the fifth does not:
+
+* the **next entry's position word** is the geometry's `entries` table transported to the
+  state by the frame's silence over the entry stream and its `k + 1`-th lane
+  (`walkReadBytes_entryPos_word`);
+* the **root slot's word** is `WalkInv.root_slot`'s four present bytes read back as a word
+  (`walkReadBytes_rootSlot_word`).  The clause states presence and not the value, so the
+  lane's `rd` is a witness: nothing in the invariant pins it, and no consumer needs it
+  pinned — `s2ValuePosPre` takes the word it is handed;
+* the **log's arena word** is `WalkInv.log_alen`'s read at `%z + 48`
+  (`walkReadBytes_logArena_word`), whose *value* the clause bounds rather than names;
+* the **log's capacity word** is `WalkInv.log_acap` read as `dstcap` outright
+  (`walkReadBytes_logCap_word`).
+
+The fifth, the **decoded length** at `%outn.i`, is not statable.  The slot is one of the
+four `alloca` slots `WalkInv.owned` deliberately omits — its docstring records that their
+presence is false at the loop head — so no clause names the eight bytes at `G.next0 + 20`,
+and a clause naming them is an invariant edit.  Its *value* is not a call row's either:
+`s2StringBodyPost` names the decoded length in the memory the body returns, and neither
+`s2StringBodyPre` nor the body's answer (`HcontStringCalls.hy`) carries it.  So the lane's
+row is one slot's presence at the head and one postcondition at the call, and the other
+four reads are proofs.
+-/
+
+/-- **The next entry's position word**, from the entry stream and the frame.  `G.entries`
+is the table at the staged memory; `WalkInv.frame` and `entry_outside` carry the read to
+the state, and `readLanes32_nth` names the lane's word as the entry's own position. -/
+theorem walkReadBytes_entryPos_word {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {s : State} (hInv : WalkInv G C s) {k : Nat} (hk : k < G.nep) :
+    ∃ bs : List UInt8, readBytes s.mem (G.ep + k * 4) 4 = some bs ∧
+      bytesToNat bs = entryPos G k := by
+  obtain ⟨-, hget⟩ := readLanes32_nth (m := m0) (addr := G.ep) (n := G.nep)
+    (l := G.ent) G.entries
+  obtain ⟨q, bs, hqmem, hread0, hbs0⟩ := hget k hk
+  refine ⟨bs, ?_, ?_⟩
+  · rw [show G.ep + k * 4 = G.ep + 4 * k from by rw [Nat.mul_comm]]
+    rw [readBytes_eq_of_UnchangedOn (mem := m0) (m := s.mem)
+      (unchangedOutside_iff_inRegions.mp hInv.frame)
+      (a := G.ep + 4 * k) (n := 4)
+      (fun i hi => hInv.entry_outside (by omega) (by omega))]
+    exact hread0
+  · rw [hbs0, entryPos, List.getD_eq_getElem?_getD, hqmem, Option.getD_some]
+
+/-- **The root slot's word.**  `WalkInv.root_slot` is presence over the slot's four bytes;
+four present bytes are a word (`natToBytes_bytesToNat`, with the value below `2 ^ 32`
+because four bytes are).  The clause fixes no value: the witness is the memory's own. -/
+theorem walkReadBytes_rootSlot_word {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {s : State} (hInv : WalkInv G C s) :
+    ∃ rd : BitVec 32, readBytes s.mem (G.next0 + 8) 4 = some (natToBytes rd.toNat 4) := by
+  obtain ⟨vs, hvs⟩ := hInv.root_slot
+  have hlen : vs.length = 4 := walkReadBytes_length hvs
+  refine ⟨BitVec.ofNat 32 (bytesToNat vs), ?_⟩
+  rw [walkToNat_ofNat32 (bytesToNat_lt_32 hlen), ← hlen,
+    JsonEntrySteps.natToBytes_bytesToNat, hlen]
+  exact hvs
+
+/-- **The log's arena word**, at the invariant's own existential: `log_alen` names both
+the read and the bound its value sits in. -/
+theorem walkReadBytes_logArena_word {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {s : State} (hInv : WalkInv G C s) :
+    ∃ A : BitVec 64, readBytes s.mem (C.stage.z + 48) 8 = some (natToBytes A.toNat 8) := by
+  obtain ⟨a, ha1, ha2, hr⟩ := hInv.log_alen
+  have ha : a < 2 ^ 64 := by
+    have h1 := hInv.alen_le
+    have h2 := G.arenaRoom
+    have h3 := G.dstcapLt
+    omega
+  refine ⟨BitVec.ofNat 64 a, ?_⟩
+  rw [walkToNat_ofNat64 ha]
+  exact hr
+
+/-- **The log's capacity word**: `log_acap` names it as `dstcap`. -/
+theorem walkReadBytes_logCap_word {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {s : State} (hInv : WalkInv G C s) :
+    ∃ Cc : BitVec 64, readBytes s.mem (C.stage.z + 56) 8 = some (natToBytes Cc.toNat 8) := by
+  refine ⟨BitVec.ofNat 64 G.dstcap, ?_⟩
+  rw [walkToNat_ofNat64 G.dstcapLt]
+  exact hInv.log_acap
 
 /-- **The openers' call row**: the precondition at the staged argument list, the outcome
 and the contract's `1`. -/
@@ -627,6 +709,10 @@ theorem hcontPayload_of_nep_zero {m0 : Mem} (G : WalkGeom m0) (h : G.nep = 0) :
 
 /-! ### The instrument -/
 
+#print axioms LeanLLVM.Refinement.WalkScope.walkReadBytes_entryPos_word
+#print axioms LeanLLVM.Refinement.WalkScope.walkReadBytes_rootSlot_word
+#print axioms LeanLLVM.Refinement.WalkScope.walkReadBytes_logArena_word
+#print axioms LeanLLVM.Refinement.WalkScope.walkReadBytes_logCap_word
 #print axioms LeanLLVM.Refinement.WalkScope.walkDispatch_at_open91_of_payload
 #print axioms LeanLLVM.Refinement.WalkScope.walkDispatch_at_open123_of_payload
 #print axioms LeanLLVM.Refinement.WalkScope.hcontArm_twoEntry_of_payload

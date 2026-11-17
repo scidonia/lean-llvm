@@ -26,7 +26,7 @@ its end costs a full ~10-minute re-elaboration, so edit it in one pass.
 | Layer | Theorem |
 |---|---|
 **the walk, loop head → scan latch** | `walkHeadChainToScan` (`JsonStage2WalkHeadChainScan`) |
-**the scan** | `walkScanArrival457` (latch → last visit), `scanExitSeg`, `walkScanToMerge` (→ `cleanup478.i`) |
+**the scan** | `walkScanArrival457_of_cell` (latch → last visit), `scanExitSeg`, `walkScanToMerge` (→ `cleanup478.i`) |
 **the finish paths** | `walkFinishPath1`/`2`/`3`, `walkFinishRun`, and `walkFinish_not_frame_of` (why none is a `WalkSegment` at `if.end`) |
 **the last entry** | `hlast_toMerge`, `hlast_finish`, `hlast_refuse`; `HlastFacts` **10 of 14 rows produced**, the scan-free arm's fields all read off `%4`'s word, and the bundle inhabited at a real last entry — `hlastPrefixSeg` is 19 links (`hlast_toMerge` 20), so the price is `20 + 2 ≤ 32·1 + 8·0`
 **the continue case** | `walkRevolution_seg` — a priced segment to `cleanup478.i` on the count test's *succeeding* arm |

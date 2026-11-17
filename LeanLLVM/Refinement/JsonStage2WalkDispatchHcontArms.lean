@@ -346,10 +346,16 @@ inductive HcontArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
   **What the arm carries.**  The class's own facts — the byte, the positive depth, the
   two stack bytes and the value-position call's staging and answer — and the route's
   endpoint: a counted segment to the merge, its block, the merge's predecessor
-  `if.then330.i`, the index cell and the price.  The segment is the arm's to supply while
-  the body's staging row is: `s2StringBodyPre`'s producer is the string staging, and the
-  composition from `if.end245.i` to the merge is `JsonStage2WalkDispatchHcontStringDeep`'s
-  (`stringDeepMerge_tail`), whose one supplied link is the body's call.
+  `if.then330.i`, the index cell and the price.  The segment is the arm's to supply.
+  Every link of it is proved (`if_end256_i`, `z_arena_reserve_exit`, `NodeBlock31_at`,
+  `LeafBlock29_at`, `if_then281_i`/`if_else285_i_at`, `if_end290_i`, `if_then328_i`,
+  `walkIfThen330_at`), and the rows that stop the composition are the seam's three cells
+  (`%conv211.i`'s word, the cursor pin and the window bound) and the body's staging at the
+  call's memory — the staging has a producer (`s2StringBodyPre_of_staging`) and the
+  emitted body's contract (`s2StringBodyBody_contract`) makes the model the body's, so no
+  clause is missing; the composition is.  Its source is the loop head, so the head chain
+  to `if.then219.i` and the two marker links are part of the same segment, and that chain
+  reads the document's next lane and the root slot's word.
   `stringOpenAboveZeroMerge_of_staging` is the producer. -/
   | stringOpenAboveZeroMerge {b1 b2 : UInt8}
       (h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 34)))

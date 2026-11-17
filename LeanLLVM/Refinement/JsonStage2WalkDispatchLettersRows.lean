@@ -17,22 +17,26 @@ group of calls and nothing else:
   token-record stores (`contSeamMid_rootRead`), and the kind literal is the arm's own;
 * the **tail** is `emptyTail_of_cells`, which is `emptyTailSeg_of_calls` at one seam's
   cells, so the three calls' outcomes are the callee rows' and no segment is taken;
-* the **arms** are `hcontArm_letters_of_rows`, `hcontArm_fLetter_of_rows` and
-  `hcontArm_classC_of_rows`.
+* the **arms** are `hcontArm_letters_of_rows`, `hcontArm_fLetter_of_rows` and the
+  class-C leaves' four (`hcontArm_classC_56True_of_rows` … `…_58Else_of_rows`).
 
-## What the class-C arm still takes, and why
+## The class-C leaves, named
 
-The class-C span returns its endpoint existentially (`classCSpan_at`): which of four leaves
-the byte takes decides the target carry *and* the state, and the four differ.  The arm
-therefore takes the endpoint's `HcontSeamCells` as its row — the three cells plus the four
-pointers and the `phi` at that state — while the tail itself is produced.  For the letters
-route and its leaf, whose seams are the named states `LetS413` and `FS413`, the cells are
-produced instead, which is why those two arms take no seam row at all.
+The class-C span's endpoint is a term: the four leaves are the named states `ClsS413T`
+(`110`), `ClsS413F` (`111 … 115`), `ClsS58T` (`116`) and `HeadS413` (`117 … 125`), and each
+span theorem concludes at its own.  So the seam's cells are **produced** at each leaf
+(`classCSeamCells_56True` … `…_58Else`) exactly as `lettersSeamCells_of_chain` and
+`fLetterSeamCells_of_chain` produce them for the letters route and its leaf: the pair is
+the chain's one `Nat`, the four pointers and the root word are the endpoint's invariant and
+the chain's root transport, and the kind literal is the leaf's own `phi` incoming.  The
+four producers take the chain, the leaf's span, its call group and the root word's
+agreement; nothing is taken at an unnamed endpoint.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkDispatchSeamRows
 import LeanLLVM.Refinement.JsonStage2WalkDispatchClassRows
 import LeanLLVM.Refinement.JsonStage2WalkDispatchDefaultLane
 import LeanLLVM.Refinement.JsonStage2WalkDispatchFLetter
+import LeanLLVM.Refinement.JsonStage2WalkDispatchClassC
 
 set_option autoImplicit false
 
@@ -402,53 +406,10 @@ theorem walkDispatch_at_fLetter_of_rows {m0 : Mem} {G : WalkGeom m0} {C : WalkCa
     hcontArm_fLetter_of_rows hInv hk h8 hbit h110 h102 ch calls hcA hroot
   exact HcontArm.dispatch hInv hblock hk arm
 
-/-- **The class-C continuing arm, at its rows.**  The span's endpoint is existential, so
-the seam's cells are taken there — `cells` at the span's own `(Cs, ss)` — while the tail is
-produced from the callee rows. -/
-theorem hcontArm_classC_of_rows {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
-    {s : State} (hInv : WalkInv G C s)
-    (hk : C.k + 1 < G.nep)
-    {x : BitVec 8} (h8 : evalOperand s (.reg "%8") = some (.int 8 x))
-    (h110 : evalICmp .slt x (BitVec.ofNat 8 110) = 0)
-    (h125 : evalICmp .slt x (BitVec.ofNat 8 125) = 1 ∨
-      evalICmp .eq x (BitVec.ofNat 8 125) = 1)
-    (ch : HcontHeadChain G C s x)
-    {Cs : WalkCarry G} {ss : State} {nS : Nat}
-    (hSpan : Seg (stage2Calls stage2SubCalls) G ch.Cm ch.sm Cs ss nS)
-    (hs : Cs.block = "if.then413.i") (hnS : nS ≤ 5)
-    (hkCs : Cs.k = C.k)
-    (calls : HcontSeamCalls G Cs ss)
-    (cells : HcontSeamCells Cs ss calls.cA calls.rdv) :
-    Nonempty (HcontArm (stage2Calls stage2SubCalls) G C s) := by
-  have htight : Cs.events.length ≤ Cs.k :=
-    hSpan.measure.inv'.events_le_of_tight (by rw [hs]; decide)
-  have hklt : Cs.k < G.nep := by rw [hkCs]; exact Nat.lt_of_succ_lt hk
-  obtain ⟨ev, hTail⟩ :=
-    emptyTail_of_cells (G := G) (C := Cs) (s := ss) calls cells
-      hSpan.measure.inv' hs htight hklt
-  exact ⟨hcontArm_classC_of_lane hInv h8 h110 h125 ch hSpan hs hnS hTail rfl
-    (by rw [show (TailCarryEnd Cs ev).k = Cs.k from rfl, hkCs])
-    (scanEntry_envTok ss calls.r₁ calls.r₂ calls.r₃ calls.cA calls.rdv calls.xA cells.ht)⟩
+/- ### The class-C leaves' arms
 
-/-- **The class-C continuing dispatch, at its rows.** -/
-theorem walkDispatch_at_classC_of_rows {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
-    {s : State} (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead)
-    (hk : C.k + 1 < G.nep)
-    {x : BitVec 8} (h8 : evalOperand s (.reg "%8") = some (.int 8 x))
-    (h110 : evalICmp .slt x (BitVec.ofNat 8 110) = 0)
-    (h125 : evalICmp .slt x (BitVec.ofNat 8 125) = 1 ∨
-      evalICmp .eq x (BitVec.ofNat 8 125) = 1)
-    (ch : HcontHeadChain G C s x)
-    {Cs : WalkCarry G} {ss : State} {nS : Nat}
-    (hSpan : Seg (stage2Calls stage2SubCalls) G ch.Cm ch.sm Cs ss nS)
-    (hs : Cs.block = "if.then413.i") (hnS : nS ≤ 5)
-    (hkCs : Cs.k = C.k)
-    (calls : HcontSeamCalls G Cs ss)
-    (cells : HcontSeamCells Cs ss calls.cA calls.rdv) :
-    WalkDispatchResult (stage2Calls stage2SubCalls) G C s := by
-  obtain ⟨arm⟩ :=
-    hcontArm_classC_of_rows hInv hk h8 h110 h125 ch hSpan hs hnS hkCs calls cells
-  exact HcontArm.dispatch hInv hblock hk arm
+They are `JsonStage2WalkDispatchClassCLeaves`': the span's endpoint is a named state per
+leaf, so the seam's cells are produced there rather than taken as a row. -/
 
 /-! ### The instrument -/
 
@@ -463,8 +424,6 @@ theorem walkDispatch_at_classC_of_rows {m0 : Mem} {G : WalkGeom m0} {C : WalkCar
 #print axioms LeanLLVM.Refinement.WalkScope.walkDispatch_at_letters_of_rows
 #print axioms LeanLLVM.Refinement.WalkScope.hcontArm_fLetter_of_rows
 #print axioms LeanLLVM.Refinement.WalkScope.walkDispatch_at_fLetter_of_rows
-#print axioms LeanLLVM.Refinement.WalkScope.hcontArm_classC_of_rows
-#print axioms LeanLLVM.Refinement.WalkScope.walkDispatch_at_classC_of_rows
 
 end WalkScope
 end LeanLLVM.Refinement

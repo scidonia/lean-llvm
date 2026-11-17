@@ -175,3 +175,4 @@ import LeanLLVM.Refinement.JsonStage2WalkDispatchHcontStringDomain
 import LeanLLVM.Refinement.JsonStage2WalkDispatchSeamRows
 import LeanLLVM.Refinement.JsonStage2WalkDispatchScalarRows
 import LeanLLVM.Refinement.JsonStage2WalkDispatchLettersRows
+import LeanLLVM.Refinement.JsonStage2WalkDispatchClassCLeaves
