@@ -119,7 +119,7 @@ theorem depthOne_stacks_last_reachable {args : List Value} {m0 : Mem} {next : Na
     containerOpen_depth_one_stacks G (walkSeed G S) (openerHead G S args next) hInv
       (walkSeed_block G S) h8s hopen
       (by change (0 : Nat) ≤ 519; decide)
-      hrd hpreV r hcall hret
+      (rd := BitVec.ofNat 32 0) hrd hpreV r hcall hret
       (by change (0 : Nat) + 1 < G.nep; rw [h.count]; decide)
   have hsp1 : C'.sp = 1 := by rw [hsp']; rfl
   have hk1 : C'.k = 1 := by rw [hk']; rfl
@@ -175,7 +175,7 @@ theorem depthOne_stacks_cont_reachable {args : List Value} {m0 : Mem} {next : Na
     containerOpen_depth_one_stacks G (walkSeed G S) (openerHead G S args next) hInv
       (walkSeed_block G S) h8s hopen
       (by change (0 : Nat) ≤ 519; decide)
-      hrd hpreV r hcall hret
+      (rd := BitVec.ofNat 32 0) hrd hpreV r hcall hret
       (by change (0 : Nat) + 1 < G.nep; rw [h.count]; decide)
   have hsp1 : C'.sp = 1 := by rw [hsp']; rfl
   have hk1 : C'.k = 1 := by rw [hk']; rfl

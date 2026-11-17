@@ -119,13 +119,17 @@ turns it into the actual `WalkDispatchResult`:
   residue.
 
   The arm is total over the invariant's *states* at this level: the split is the byte,
-  the depth's zero/positive pair and the token-end class, and `.closeBraceZero` and
-  `.openAtCap` are the two depth cases it had no arm for — `}` at zero and an opener at
-  the stacks' staged extent.  Until they were added those states were in no constructor's
-  class at this level; `JsonStage2WalkDispatchResidual` states what the holes were and
-  what fills them.  The continuing level's `"` is not the same case: its bare opener arm
-  is `HcontArm.twoEntry`, which is depth zero's, and its positive-depth route is that
-  level's own pair, `HcontArm.stringOpenAboveZeroMerge`/`.stringOpenAboveZeroRefuse`
+  the depth's zero/positive pair, the value-position answer and the token-end class, and
+  `.closeBraceZero`, `.openAtCap` and `.containerOpenRefuse` are the states it had no arm
+  for — `}` at zero, an opener at the stacks' staged extent, and an opener whose call
+  answers `0`.  Until they were added those states were in no constructor's class at this
+  level; `JsonStage2WalkDispatchResidual` states what the holes were and what fills them.
+  The answer split is what makes the opener's class total over the states as well as over
+  the bytes (`s2ValuePos_ret_zero_or_one`), and the root slot's value is a witness the arms
+  carry rather than a clause any of them assumes.  The continuing level's `"` is not the
+  same case: its bare opener arm is `HcontArm.twoEntry`, which is depth zero's, and its
+  positive-depth route is that level's own pair,
+  `HcontArm.stringOpenAboveZeroMerge`/`.stringOpenAboveZeroRefuse`
   (`JsonStage2WalkDispatchHcontStringDeep`), where the depth split is stated.
 
 Every constructor's endpoint is either the merge or the refusal copy, and every one
@@ -427,20 +431,21 @@ inductive LastEntryArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
       (hstate : C.stMap (C.sp - 1) = b2) : LastEntryArm calls G C s
   /-- **The container openers `[` and `{` at the last entry**: both enter `if.then.i`,
   and the four head links beside the tail's five reach the merge — nine links
-  (`containerOpenMerge_at`).  The byte class is the arm's, the depth's `519`-guard and the
-  root slot's zero word are the block's, and the callee's staging and answer are the
-  call's, exactly as the scalar arm carries its own three calls. -/
+  (`containerOpenMerge_at`).  The byte class is the arm's, the depth's `519`-guard is the
+  block's, and the callee's staging and answer are the call's at the word its `load` read —
+  the root slot's own witness `rdv`, exactly as the scalar arm carries its `rdv`. -/
   | containerOpen {b : BitVec 8}
       (h8 : evalOperand s (.reg "%8") = some (.int 8 b))
       (hopen : b = BitVec.ofNat 8 91 ∨ b = BitVec.ofNat 8 123)
       (hsp519 : C.sp ≤ 519)
-      (hrd : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes 0 4))
+      {rdv : BitVec 32}
+      (hread : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes rdv.toNat 4))
       (hpreV : s2ValuePosPre
-        [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+        [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
          .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
       (r : CallOutcome)
       (hcall : stage2Calls stage2SubCalls "s2_value_pos"
-        [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+        [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
          .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r)
       (hret : r.ret = .int 32 (BitVec.ofNat 32 1)) : LastEntryArm calls G C s
   /-- **A container opener at depth `520`**: the push's guard is `ugt %sp.i.0248, 519`,
@@ -449,8 +454,8 @@ inductive LastEntryArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
   `if.then21.i`'s offset store and the copy.  So the arm is `[` and `{` at depth `520`
   alone, seven links from the head (`containerOpenCap_at`), and `C.sp = 520` is its
   premise because `WalkInv.depth_cap` bounds the depth by the staged extent and nothing
-  below it.  `hpreV` is the callee's staging at that depth and `hrd` the root slot's zero
-  word, exactly as `.containerOpen` carries them.
+  below it.  `hpreV` is the callee's staging at that depth and `hread`/`rdv` the root
+  slot's witness word, exactly as `.containerOpen` carries them.
 
   **What the arm covers, and what it does not claim.**  It covers *every* invariant state
   whose `C.sp` is `520` — that is what totality needs, since the census asks for an arm at
@@ -466,15 +471,46 @@ inductive LastEntryArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
       (h8 : evalOperand s (.reg "%8") = some (.int 8 b))
       (hopen : b = BitVec.ofNat 8 91 ∨ b = BitVec.ofNat 8 123)
       (hsp520 : C.sp = 520)
-      (hrd : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes 0 4))
+      {rdv : BitVec 32}
+      (hread : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes rdv.toNat 4))
       (hpreV : s2ValuePosPre
-        [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+        [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
          .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
       (r : CallOutcome)
       (hcall : stage2Calls stage2SubCalls "s2_value_pos"
-        [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+        [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
          .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r)
       (hret : r.ret = .int 32 (BitVec.ofNat 32 1))
+      {j : Nat}
+      (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
+      (he : lookupName s.env "%e" = some (.ptr C.stage.e))
+      (hj : j ≤ G.n) (hj64 : j < 2 ^ 64) : LastEntryArm calls G C s
+  /-- **A container opener at the last entry whose value-position answer is `0`**: the
+  run is the head's four pivots, the call's refusal and `if.then16.i`'s offset store at
+  `%e + 8` — six links to the refusal copy (`containerOpenRefuse_at`), priced at
+  `6 + 2 ≤ 32`.  The *answer* selects this arm, not the byte: the same two bytes with a
+  `1` take `.containerOpen` or `.openAtCap`.  With this constructor the class `91`/`123`
+  is total over the invariant's states at the last entry as well as over its bytes, since
+  the callee's answer is always `0` or `1`.
+
+  **What the arm carries.**  The call's row at its witness word `rdv` and the offset
+  store's three cells; the segment is `containerOpenRefuse_at`'s, composed from them, not
+  assumed.  The slot's value is the memory's own: `entry` writes the initial `0` and
+  `s2_after_value`'s depth-zero arm writes `1`, so `0` is not among the callee's writes
+  and no clause names the value. -/
+  | containerOpenRefuse {b : BitVec 8}
+      (h8 : evalOperand s (.reg "%8") = some (.int 8 b))
+      (hopen : b = BitVec.ofNat 8 91 ∨ b = BitVec.ofNat 8 123)
+      {rdv : BitVec 32}
+      (hread : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes rdv.toNat 4))
+      (hpreV : s2ValuePosPre
+        [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
+         .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
+      (r : CallOutcome)
+      (hcall : stage2Calls stage2SubCalls "s2_value_pos"
+        [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
+         .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r)
+      (hret : r.ret = .int 32 (BitVec.ofNat 32 0))
       {j : Nat}
       (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
       (he : lookupName s.env "%e" = some (.ptr C.stage.e))
@@ -667,12 +703,17 @@ theorem LastEntryArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
       · exact colonBraceRefuse_at G C s hInv hblock h8 hsp hmark hstate hb1
           (bitZeroOfNeOne hb2)
     · exact colonMarkerRefuse_at G C s hInv hblock h8 hsp hmark (bitZeroOfNeOne hb1)
-  | .containerOpen h8 hopen hsp519 hrd hpreV r hcall hret =>
-    containerOpenMerge_at G C s hInv hblock h8 hopen hsp519 hrd hpreV r hcall hret
-  | .openAtCap h8 hopen hsp520 hrd hpreV r hcall hret hv he hj hj64 =>
+  | .containerOpen h8 hopen hsp519 hread hpreV r hcall hret =>
+    containerOpenMerge_at G C s hInv hblock h8 hopen hsp519 hread hpreV r hcall hret
+  | .openAtCap h8 hopen hsp520 hread hpreV r hcall hret hv he hj hj64 =>
     (fun ⟨Cd, sd, p, hseg, herr, hprice⟩ =>
       WalkDispatchResult.refuse Cd sd p hseg.seg hseg.block hseg.word herr hprice)
-      (containerOpenCap_at G C s hInv hblock h8 hopen hsp520 hrd hpreV r hcall hret
+      (containerOpenCap_at G C s hInv hblock h8 hopen hsp520 hread hpreV r hcall hret
+        hv he hj hj64)
+  | .containerOpenRefuse h8 hopen hread hpreV r hcall hret hv he hj hj64 =>
+    (fun ⟨Cd, sd, p, hseg, herr, hprice⟩ =>
+      WalkDispatchResult.refuse Cd sd p hseg.seg hseg.block hseg.word herr hprice)
+      (containerOpenRefuse_at G C s hInv hblock h8 hopen hread hpreV r hcall hret
         hv he hj hj64)
   | .closeWithOpen h8 hv hsp hmark hstate hpreA hvj he hj hj64 =>
     closeWithOpen_at G C s hInv hblock h8 hv hsp hmark hstate hpreA hvj he hj hj64

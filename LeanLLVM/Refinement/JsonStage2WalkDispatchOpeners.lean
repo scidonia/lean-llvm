@@ -38,7 +38,7 @@ form (`_at`, `ifEnd24_term`), so no step lemma sits beside them.
 ## What the arm owes
 
 The composition's premises are the block's own: the byte's class, the depth's
-`519`-guard, the root slot's zero word (what makes the answer `1` at depth zero), the
+`519`-guard, the root slot's word (a witness the call is made at, as at `.containerOpen`), the
 callee's staging and answer, and the event cursor's gep bound.  Everything else — the
 two stacks' bytes, the log's words, `%nep`, `%z` and the trace's tight count — is a
 clause of `WalkInv` at the state the previous link's `inv'` names, which is why the
@@ -77,13 +77,10 @@ open LeanLLVM.Refinement.JsonStage2IR
 
 namespace WalkScope
 
-/-! ### The zero word and the `519` guard
+/-! ### The `519` guard
 
-Two arithmetic facts the route reads: the loaded depth's zero is the empty word, and
-the push's own guard (`%sp.i.0248 > 519` clear) is the depth bound `NestGuard` states. -/
-
-/-- The depth cell's zero word is zero. -/
-theorem openDepthZero_toNat : (BitVec.ofNat 32 0).toNat = 0 := by decide
+One arithmetic fact the route reads: the push's own guard (`%sp.i.0248 > 519` clear) is
+the depth bound `NestGuard` states. -/
 
 /-- **`if.end.i`'s guard is clear below `520`.**  `%cmp19.i` is
 `ugt %sp.i.0248, 519`; at a depth `NestGuard` admits it is `0`, so the run enters
@@ -219,15 +216,38 @@ Five, each the successor of one block: the value-position call's cells, the dept
 guard's bite, the push's writes, the reserve's four cells, and the tag's two. -/
 
 /-- **`if.then.i`'s target at the answer `1`**: the call's three cells, the branch to
-`if.end.i`, and the callee's memory and cursor (it writes nothing). -/
-def openS₅ (s : State) (r : CallOutcome) : State :=
+`if.end.i`, and the callee's memory and cursor (it writes nothing).  `rd` is the word the
+block's `load` read from the root slot — the value-position call's third argument — and it
+is the arm's witness rather than a number the state fixes. -/
+def openS₅ (s : State) (r : CallOutcome) (rd : BitVec 32) : State :=
   { stateAt (cells
       [("%tobool15.not.i",
           .int 1 (evalICmp .eq (BitVec.ofNat 32 1) (BitVec.ofNat 32 0))),
        ("%call14.i", .int 32 (BitVec.ofNat 32 1)),
-       ("%9", .int 32 (BitVec.ofNat 32 0))] s.env)
+       ("%9", .int 32 rd)] s.env)
       { s with mem := r.mem, next := r.next } with
     pc := "if.end.i", pre := some s.pc }
+
+/-- **`if.then.i`'s target at the answer `0`**: the same three cells with the call's zero,
+the branch to `if.then16.i` — the refusal's offset store.  The answer `0` is the branch
+`if.then.i` takes when the value-position call refuses the value, and its word `rd` is the
+slot's own. -/
+def openRefS₅ (s : State) (r : CallOutcome) (rd : BitVec 32) : State :=
+  { stateAt (cells
+      [("%tobool15.not.i",
+          .int 1 (evalICmp .eq (BitVec.ofNat 32 0) (BitVec.ofNat 32 0))),
+       ("%call14.i", .int 32 (BitVec.ofNat 32 0)),
+       ("%9", .int 32 rd)] s.env)
+      { s with mem := r.mem, next := r.next } with
+    pc := "if.then16.i", pre := some s.pc }
+
+/-- **`if.then16.i`'s target, named**: the refusal's offset store at `%e + 8`, at the copy.
+The state is the store's write under the record update `WalkLink.if_then16_i_at` names. -/
+def openRefS₆ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (j : Nat) (s₅ : State) : State :=
+  { { s₅ with
+      env := ("%off1.i.i", .ptr (C.stage.e + 8)) :: s₅.env
+      mem := writeBytes s₅.mem (C.stage.e + 8) (wordBytes 8 j) } with
+    pc := "if.then", pre := some s₅.pc }
 
 /-- **`if.end.i`'s target from its own source**: the depth guard's bite, on the arm to
 the push. -/
@@ -238,8 +258,8 @@ abbrev openS₆From {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s₅ : State
 
 /-- **`if.end.i`'s target, at the tail's own state.** -/
 abbrev openS₆ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (r : CallOutcome) : State :=
-  openS₆From C (openS₅ s r)
+    (r : CallOutcome) (rd : BitVec 32) : State :=
+  openS₆From C (openS₅ s r rd)
 
 /-- **`if.end24.i`'s target from its own source**: the two stacks written at the carried
 depth and the push's own cells, with the log's zeroed hash word fixing the branch to the
@@ -254,8 +274,8 @@ abbrev openS₇From {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s₆ : State
 
 /-- **`if.end24.i`'s target, at the tail's own state.** -/
 abbrev openS₇ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (r : CallOutcome) (b : BitVec 8) : State :=
-  openS₇From C (openS₆ C s r) b
+    (r : CallOutcome) (rd : BitVec 32) (b : BitVec 8) : State :=
+  openS₇From C (openS₆ C s r rd) b
 
 /-- `if.end.i.i`'s target from its own source: the two log words' loads, the increment's
 sum and the reserve guard's bite, on the arm to the tag's store. -/
@@ -272,8 +292,8 @@ abbrev openS₈From {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s₇ : State
 
 /-- **`if.end.i.i`'s target, at the tail's own state.** -/
 abbrev openS₈ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (r : CallOutcome) (b : BitVec 8) : State :=
-  openS₈From C (openS₇ C s r b)
+    (r : CallOutcome) (rd : BitVec 32) (b : BitVec 8) : State :=
+  openS₈From C (openS₇ C s r rd b)
 
 /-- **`out_reserve.exit.i.i`'s target from its own source, the merge's own state**: the
 tag byte written at the event cursor, the length word advanced by one. -/
@@ -288,8 +308,8 @@ abbrev openS₉From {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s₈ : State
 
 /-- **`out_reserve.exit.i.i`'s target, at the tail's own state**: the merge's own state. -/
 abbrev openS₉ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (r : CallOutcome) (b : BitVec 8) : State :=
-  openS₉From C (openS₈ C s r b) b
+    (r : CallOutcome) (rd : BitVec 32) (b : BitVec 8) : State :=
+  openS₉From C (openS₈ C s r rd b) b
 
 /-! ### The cells the merge and the tag's store read
 
@@ -299,8 +319,8 @@ at the previous link's target. -/
 
 /-- `%conv42.i` at the reserve: the state stack's byte the opener's own byte selects. -/
 theorem openS₈_conv42 {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (r : CallOutcome) (b : BitVec 8) :
-    lookupName (openS₈ C s r b).env "%conv42.i" = some (.int 8 (ifEnd24St b)) := by
+    (r : CallOutcome) (rd : BitVec 32) (b : BitVec 8) :
+    lookupName (openS₈ C s r rd b).env "%conv42.i" = some (.int 8 (ifEnd24St b)) := by
   simp only [ifEnd24Out, ifEnd24TailCells, ifEnd24Mid, ifEnd24HeadCells, openS₅, stateAt,
     cells, State.bind]
   repeat rw [lookupName_cons_ne _ _ (by decide)]
@@ -309,8 +329,8 @@ theorem openS₈_conv42 {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : Stat
 /-- The reserve's increment cell is `%o.val.i.i + 1`, at the word the tag's store
 reads. -/
 theorem openS₈_addiii {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (r : CallOutcome) (b : BitVec 8) :
-    lookupName (openS₈ C s r b).env "%add.i.i.i" =
+    (r : CallOutcome) (rd : BitVec 32) (b : BitVec 8) :
+    lookupName (openS₈ C s r rd b).env "%add.i.i.i" =
       some (.int 64 (BitVec.ofNat 64 (C.evlen + 1))) := by
   simp only [ifEnd24Out, ifEnd24TailCells, ifEnd24Mid, ifEnd24HeadCells, openS₅, stateAt,
     cells, State.bind]
@@ -320,8 +340,8 @@ theorem openS₈_addiii {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : Stat
 
 /-- The reserve's loaded length is the carried event cursor. -/
 theorem openS₈_oval {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (r : CallOutcome) (b : BitVec 8) :
-    lookupName (openS₈ C s r b).env "%o.val.i.i" = some (.int 64 (BitVec.ofNat 64 C.evlen)) := by
+    (r : CallOutcome) (rd : BitVec 32) (b : BitVec 8) :
+    lookupName (openS₈ C s r rd b).env "%o.val.i.i" = some (.int 64 (BitVec.ofNat 64 C.evlen)) := by
   simp only [ifEnd24Out, ifEnd24TailCells, ifEnd24Mid, ifEnd24HeadCells, openS₅, stateAt,
     cells, State.bind]
   repeat rw [lookupName_cons_ne _ _ (by decide)]
@@ -329,8 +349,8 @@ theorem openS₈_oval {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
 
 /-- **The merge's depth operand**: `%inc33.i` is the push's own `C.sp + 1`. -/
 theorem openS₉_inc33 {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (r : CallOutcome) (b : BitVec 8) :
-    lookupName (openS₉ C s r b).env "%inc33.i" =
+    (r : CallOutcome) (rd : BitVec 32) (b : BitVec 8) :
+    lookupName (openS₉ C s r rd b).env "%inc33.i" =
       some (.int 32 (BitVec.ofNat 32 (C.sp + 1))) := by
   simp only [ifEnd24Out, ifEnd24TailCells, ifEnd24Mid, ifEnd24HeadCells, openS₅, stateAt,
     cells, State.bind]
@@ -340,16 +360,16 @@ theorem openS₉_inc33 {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State
 /-- **The merge's index operand**: `%inc.i` is the header's cell, reached through the
 whole tail. -/
 theorem openS₉_inc {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (r : CallOutcome) (b : BitVec 8) :
-    lookupName (openS₉ C s r b).env "%inc.i" = lookupName s.env "%inc.i" := by
+    (r : CallOutcome) (rd : BitVec 32) (b : BitVec 8) :
+    lookupName (openS₉ C s r rd b).env "%inc.i" = lookupName s.env "%inc.i" := by
   simp only [ifEnd24Out, ifEnd24TailCells, ifEnd24Mid, ifEnd24HeadCells, openS₅, stateAt,
     cells, State.bind]
   repeat rw [lookupName_cons_ne _ _ (by decide)]
 
 /-- `%nep` at the merge is the static carrier's. -/
 theorem openS₉_nep {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (r : CallOutcome) (b : BitVec 8) :
-    lookupName (openS₉ C s r b).env "%nep" = lookupName s.env "%nep" := by
+    (r : CallOutcome) (rd : BitVec 32) (b : BitVec 8) :
+    lookupName (openS₉ C s r rd b).env "%nep" = lookupName s.env "%nep" := by
   simp only [ifEnd24Out, ifEnd24TailCells, ifEnd24Mid, ifEnd24HeadCells, openS₅, stateAt,
     cells, State.bind]
   repeat rw [lookupName_cons_ne _ _ (by decide)]
@@ -362,30 +382,31 @@ the next link reads is not a term.  Each block's named `step` is here; the link'
 `Ctrl.jump.inj`. -/
 
 /-- **`if.then.i`'s step, at the state `openS₅`.**  The value-position call's answer is
-`1`, so the branch's bit is zero and the edge is `if.end.i`. -/
+`1`, so the branch's bit is zero and the edge is `if.end.i`.  `rd` is the word the block's
+`load` read from the root slot; the call is at that word, not at a literal. -/
 theorem openIfThenI_term {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
     (hpc : s.pc = "if.then.i")
-    {root : Nat} {r : CallOutcome}
+    {root : Nat} {rd : BitVec 32} {r : CallOutcome}
     (hroot : lookupName s.env "%root_done.i" = some (.ptr root))
-    (hread : readBytes s.mem root 4 = some (natToBytes (BitVec.ofNat 32 0).toNat 4))
+    (hread : readBytes s.mem root 4 = some (natToBytes rd.toNat 4))
     (hsp : lookupName s.env "%sp.i.0248" = some (.int 32 (BitVec.ofNat 32 C.sp)))
     (hct : lookupName s.env "%ctype.i" = some (.ptr C.stage.ctype))
     (hcs : lookupName s.env "%cst.i" = some (.ptr C.stage.cst))
     (hcall : stage2Calls stage2SubCalls "s2_value_pos"
-      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rd,
        .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r)
     (hret : r.ret = .int 32 (BitVec.ofNat 32 1)) :
-    step (stage2Calls stage2SubCalls) stage2Body s = .jump (openS₅ s r) := by
+    step (stage2Calls stage2SubCalls) stage2Body s = .jump (openS₅ s r rd) := by
   have hden : denoteCode (stage2Calls stage2SubCalls) walkIfThenI.instrs s =
       some (stateAt (cells
         [("%tobool15.not.i",
             .int 1 (evalICmp .eq (BitVec.ofNat 32 1) (BitVec.ofNat 32 0))),
          ("%call14.i", .int 32 (BitVec.ofNat 32 1)),
-         ("%9", .int 32 (BitVec.ofNat 32 0))] s.env)
+         ("%9", .int 32 rd)] s.env)
         { s with mem := r.mem, next := r.next }) := by
     rw [← stateAt_self s]
     exact walkIfThenI_denote (sub := stage2SubCalls) (env := s.env) (s := s)
-      (root := root) (rd := (BitVec.ofNat 32 0)) (sp := BitVec.ofNat 32 C.sp)
+      (root := root) (rd := rd) (sp := BitVec.ofNat 32 C.sp)
       (ct := C.stage.ctype) (cs := C.stage.cst) (r := r) (x := BitVec.ofNat 32 1)
       hroot hread hsp hct hcs hcall hret
   have hbit : evalICmp .eq (BitVec.ofNat 32 1) (BitVec.ofNat 32 0) = (0 : BitVec 1) := by
@@ -395,7 +416,7 @@ theorem openIfThenI_term {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : Sta
         [("%tobool15.not.i",
             .int 1 (evalICmp .eq (BitVec.ofNat 32 1) (BitVec.ofNat 32 0))),
          ("%call14.i", .int 32 (BitVec.ofNat 32 1)),
-         ("%9", .int 32 (BitVec.ofNat 32 0))] s.env) { s with mem := r.mem, next := r.next }).env
+         ("%9", .int 32 rd)] s.env) { s with mem := r.mem, next := r.next }).env
       "%tobool15.not.i" =
       some (.int 1 (evalICmp .eq (BitVec.ofNat 32 1) (BitVec.ofNat 32 0))) := by
     dsimp only [stateAt, cells]
@@ -408,6 +429,56 @@ theorem openIfThenI_term {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : Sta
   rw [walkExecTerm_condbr hd]
   simp only [openS₅]
   rw [hbit, ite_eq_right (by decide)]
+  rfl
+
+/-- **`if.then.i`'s step at the answer `0`**: the same block and the same three cells, with
+the call's zero, so the branch's bit is one and the edge is `if.then16.i` — the refusal's
+offset store.  The state is `openRefS₅`'s. -/
+theorem openRefIfThenI_term {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (hpc : s.pc = "if.then.i")
+    {root : Nat} {rd : BitVec 32} {r : CallOutcome}
+    (hroot : lookupName s.env "%root_done.i" = some (.ptr root))
+    (hread : readBytes s.mem root 4 = some (natToBytes rd.toNat 4))
+    (hsp : lookupName s.env "%sp.i.0248" = some (.int 32 (BitVec.ofNat 32 C.sp)))
+    (hct : lookupName s.env "%ctype.i" = some (.ptr C.stage.ctype))
+    (hcs : lookupName s.env "%cst.i" = some (.ptr C.stage.cst))
+    (hcall : stage2Calls stage2SubCalls "s2_value_pos"
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rd,
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r)
+    (hret : r.ret = .int 32 (BitVec.ofNat 32 0)) :
+    step (stage2Calls stage2SubCalls) stage2Body s = .jump (openRefS₅ s r rd) := by
+  have hden : denoteCode (stage2Calls stage2SubCalls) walkIfThenI.instrs s =
+      some (stateAt (cells
+        [("%tobool15.not.i",
+            .int 1 (evalICmp .eq (BitVec.ofNat 32 0) (BitVec.ofNat 32 0))),
+         ("%call14.i", .int 32 (BitVec.ofNat 32 0)),
+         ("%9", .int 32 rd)] s.env)
+        { s with mem := r.mem, next := r.next }) := by
+    rw [← stateAt_self s]
+    exact walkIfThenI_denote (sub := stage2SubCalls) (env := s.env) (s := s)
+      (root := root) (rd := rd) (sp := BitVec.ofNat 32 C.sp)
+      (ct := C.stage.ctype) (cs := C.stage.cst) (r := r) (x := BitVec.ofNat 32 0)
+      hroot hread hsp hct hcs hcall hret
+  have hbit : evalICmp .eq (BitVec.ofNat 32 0) (BitVec.ofNat 32 0) = (1 : BitVec 1) := by
+    decide
+  have hd : lookupName
+      (stateAt (cells
+        [("%tobool15.not.i",
+            .int 1 (evalICmp .eq (BitVec.ofNat 32 0) (BitVec.ofNat 32 0))),
+         ("%call14.i", .int 32 (BitVec.ofNat 32 0)),
+         ("%9", .int 32 rd)] s.env) { s with mem := r.mem, next := r.next }).env
+      "%tobool15.not.i" =
+      some (.int 1 (evalICmp .eq (BitVec.ofNat 32 0) (BitVec.ofNat 32 0))) := by
+    dsimp only [stateAt, cells]
+    exact lookupName_cons_self _ _ _
+  have hfind : stage2Body.findBlock s.pc = some walkIfThenI := by
+    rw [hpc]; exact walkIfThenI_find
+  have hterm : walkIfThenI.term =
+      Term.condbr (Operand.reg "%tobool15.not.i") "if.then16.i" "if.end.i" := rfl
+  simp only [step, hfind, hden, hterm]
+  rw [walkExecTerm_condbr hd]
+  simp only [openRefS₅]
+  rw [hbit, ite_eq_left rfl]
   rfl
 
 /-- **`if.end.i.i`'s step, at the state `openS₈`.**  The reserve's guard is clear, so
@@ -655,57 +726,58 @@ Stated at an arbitrary `if.then.i` state, because every premise but the callee's
 clause of that state's invariant. -/
 
 /-- **The opener's tail**: the value-position call, the depth guard, the push, the
-event reserve and the tag — five links from `if.then.i` to `cleanup478.i`. -/
+event reserve and the tag — five links from `if.then.i` to `cleanup478.i`.  `rd` is the
+word the block's `load` reads from the root slot and hands the call; the route does not
+fix it. -/
 theorem openTailSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     (hInv : WalkInv G C s) (hblock : C.block = "if.then.i")
     {b : BitVec 8}
     (hbe : b = BitVec.ofNat 8 (entryByte G C.k).toNat)
     (hsp519 : C.sp ≤ 519)
-    (hrd : readBytes s.mem (G.next0 + 8) 4 =
-      some (natToBytes (BitVec.ofNat 32 0).toNat 4))
+    {rd : BitVec 32}
+    (hrd : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes rd.toNat 4))
     (hpreV : s2ValuePosPre
-      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rd,
        .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
     (r : CallOutcome)
     (hcall : stage2Calls stage2SubCalls "s2_value_pos"
-      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rd,
        .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r)
     (hret : r.ret = .int 32 (BitVec.ofNat 32 1))
     (hklt : C.k < G.nep) :
-    WalkSegment (stage2Calls stage2SubCalls) G C s (openC₉ C b) (openS₉ C s r b) 5 := by
+    WalkSegment (stage2Calls stage2SubCalls) G C s (openC₉ C b) (openS₉ C s r rd b) 5 := by
   have hnep64 : G.nep < 2 ^ 64 := openNep_lt G
   -- 5. `if.then.i`: the callee's answer `1` selects `if.end.i`
   have hroot : lookupName s.env "%root_done.i" = some (.ptr (G.next0 + 8)) :=
     hInv.regs ("%root_done.i", .ptr (G.next0 + 8)) (by simp [walkStaticRegs])
   have hpc₅ : s.pc = "if.then.i" := by rw [hInv.pc_eq, hblock]
-  have hstep₅ : step (stage2Calls stage2SubCalls) stage2Body s = .jump (openS₅ s r) :=
+  have hstep₅ : step (stage2Calls stage2SubCalls) stage2Body s = .jump (openS₅ s r rd) :=
     openIfThenI_term C s hpc₅ hroot hrd hInv.depth_reg
       (hInv.ptrs.2.2.2.1) (hInv.ptrs.2.2.2.2.1) hcall hret
   have hx : ∀ r', stage2Calls stage2SubCalls "s2_value_pos"
-      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rd,
        .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r' →
       r'.ret = .int 32 (BitVec.ofNat 32 1) := by
     intro r' h'
     rw [Option.some.inj (h'.symm.trans hcall)]
     exact hret
   obtain ⟨s₅, hl₅⟩ :=
-    WalkLink.if_then_i G C s hInv hblock hroot
-      (by rw [openDepthZero_toNat]; exact hrd) hpreV hx
+    WalkLink.if_then_i G C s hInv hblock hroot hrd hpreV hx
   have hbit₅ : (if evalICmp .eq (BitVec.ofNat 32 1) (BitVec.ofNat 32 0) = 1 then
       "if.then16.i" else "if.end.i") = "if.end.i" := by
     rw [show evalICmp .eq (BitVec.ofNat 32 1) (BitVec.ofNat 32 0) = (0 : BitVec 1) from
       by decide]
     rfl
   rw [hbit₅] at hl₅
-  have hs₅ : s₅ = openS₅ s r := Ctrl.jump.inj (hl₅.step.symm.trans hstep₅)
+  have hs₅ : s₅ = openS₅ s r rd := Ctrl.jump.inj (hl₅.step.symm.trans hstep₅)
   rw [hs₅] at hl₅
   -- 6. `if.end.i`: the depth guard is clear below `520`
-  have hstep₆ : evalOperand (openS₅ s r) (.reg "%sp.i.0248") =
+  have hstep₆ : evalOperand (openS₅ s r rd) (.reg "%sp.i.0248") =
       some (.int 32 (BitVec.ofNat 32 C.sp)) := by
     simp only [evalOperand]
     exact hl₅.inv'.depth_reg
   obtain ⟨s₆, hl₆, hs₆⟩ :=
-    WalkLink.if_end_i_at G (openC₅ C) (openS₅ s r) hl₅.inv' rfl hstep₆
+    WalkLink.if_end_i_at G (openC₅ C) (openS₅ s r rd) hl₅.inv' rfl hstep₆
   have hbit₆ : (if evalICmp .ugt (BitVec.ofNat 32 C.sp) (BitVec.ofNat 32 519) = 1 then
       "if.then21.i" else "if.end24.i") = "if.end24.i" := by
     rw [openUgt519_zero hsp519]; rfl
@@ -713,29 +785,29 @@ theorem openTailSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
       (BitVec.ofNat 32 519) = 1 then "if.then21.i" else "if.end24.i") } = openC₆ C := by
     rw [hbit₆]
   rw [hc₆] at hl₆
-  have hl₆' : WalkLink (stage2Calls stage2SubCalls) G (openC₅ C) (openS₅ s r)
-      (openC₆ C) (openS₆ C s r) := by
-    have hst₆ : s₆ = openS₆ C s r := by rw [hs₆, hbit₆]
+  have hl₆' : WalkLink (stage2Calls stage2SubCalls) G (openC₅ C) (openS₅ s r rd)
+      (openC₆ C) (openS₆ C s r rd) := by
+    have hst₆ : s₆ = openS₆ C s r rd := by rw [hs₆, hbit₆]
     rw [hst₆] at hl₆
     exact hl₆
   -- 7. `if.end24.i`: the push, at the log's zeroed hash word
-  have h8₆ : lookupName (openS₆ C s r).env "%8" = some (.int 8 b) := by
+  have h8₆ : lookupName (openS₆ C s r rd).env "%8" = some (.int 8 b) := by
     rw [hl₆'.inv'.iter.reg8, ← hbe]
   have hsp32 : C.sp < stage2StackExtent := by
     have h520 : stage2StackExtent = 520 := rfl
     omega
   obtain ⟨s₇, hl₇⟩ :=
-    WalkLink.ifEnd24 G (openC₆ C) (openS₆ C s r) hl₆'.inv' rfl h8₆ hsp519
-  have hpc₇ : (openS₆ C s r).pc = "if.end24.i" := hl₆'.inv'.pc_eq
-  have hstep₇ : step (stage2Calls stage2SubCalls) stage2Body (openS₆ C s r) =
-      .jump (openS₇ C s r b) :=
-    ifEnd24_term (calls := stage2Calls stage2SubCalls) (s := openS₆ C s r)
+    WalkLink.ifEnd24 G (openC₆ C) (openS₆ C s r rd) hl₆'.inv' rfl h8₆ hsp519
+  have hpc₇ : (openS₆ C s r rd).pc = "if.end24.i" := hl₆'.inv'.pc_eq
+  have hstep₇ : step (stage2Calls stage2SubCalls) stage2Body (openS₆ C s r rd) =
+      .jump (openS₇ C s r rd b) :=
+    ifEnd24_term (calls := stage2Calls stage2SubCalls) (s := openS₆ C s r rd)
       (sp := C.sp) (ctype := C.stage.ctype) (cst := C.stage.cst) (z := C.stage.z) (b := b)
       hpc₇ h8₆ hl₆'.inv'.depth_reg
       (hl₆'.inv'.ptrs.2.2.2.1) (hl₆'.inv'.ptrs.2.2.2.2.1) (hl₆'.inv'.ptrs.2.2.2.2.2)
       hsp32 (ctype_log_sep (C := openC₆ C) hl₆'.inv')
       (cst_log_sep (C := openC₆ C) hl₆'.inv') hl₆'.inv'.log_hash
-  have hs₇ : s₇ = openS₇ C s r b := Ctrl.jump.inj (hl₇.step.symm.trans hstep₇)
+  have hs₇ : s₇ = openS₇ C s r rd b := Ctrl.jump.inj (hl₇.step.symm.trans hstep₇)
   rw [hs₇] at hl₇
   -- 8. `if.end.i.i`: the reserve's guard is clear
   have hevclear : C.evlen + 1 ≤ G.evcap :=
@@ -748,12 +820,12 @@ theorem openTailSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
   have hev64len : C.evlen + 1 < 2 ^ 64 := by
     have h1 := G.evcapLt
     omega
-  have hreadL : readBytes (openS₇ C s r b).mem (C.stage.z + 8) 8 =
+  have hreadL : readBytes (openS₇ C s r rd b).mem (C.stage.z + 8) 8 =
       some (natToBytes (BitVec.ofNat 64 C.evlen).toNat 8) := by
     have h := hl₇.inv'.log_len
     rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega : C.evlen < 2 ^ 64)]
     simpa only [wordBytes] using h
-  have hreadC : readBytes (openS₇ C s r b).mem (C.stage.z + 16) 8 =
+  have hreadC : readBytes (openS₇ C s r rd b).mem (C.stage.z + 16) 8 =
       some (natToBytes (BitVec.ofNat 64 G.evcap).toNat 8) := by
     have h := hl₇.inv'.log_cap
     rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt G.evcapLt]
@@ -765,7 +837,7 @@ theorem openTailSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     rw [hsum]
     exact walkEvalICmp_ugt_ofNat_zero hev64len G.evcapLt (by omega)
   obtain ⟨s₈, hl₈⟩ :=
-    WalkLink.if_end_i_i G (openC₇ C b) (openS₇ C s r b) hl₇.inv' rfl
+    WalkLink.if_end_i_i G (openC₇ C b) (openS₇ C s r rd b) hl₇.inv' rfl
       (hl₇.inv'.regs ("%len", .ptr (C.stage.z + 8)) (by simp [walkStaticRegs]))
       (hl₇.inv'.regs ("%cap", .ptr (C.stage.z + 16)) (by simp [walkStaticRegs]))
       hreadL hreadC
@@ -779,22 +851,22 @@ theorem openTailSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
       openC₈ C b := by
     rw [hbit₈]
   rw [hc₈] at hl₈
-  have hstep₈ : step (stage2Calls stage2SubCalls) stage2Body (openS₇ C s r b) =
-      .jump (openS₈ C s r b) :=
-    openIfEndIITerm C (openS₇ C s r b) hl₇.inv'.pc_eq
+  have hstep₈ : step (stage2Calls stage2SubCalls) stage2Body (openS₇ C s r rd b) =
+      .jump (openS₈ C s r rd b) :=
+    openIfEndIITerm C (openS₇ C s r rd b) hl₇.inv'.pc_eq
       (hl₇.inv'.regs ("%len", .ptr (C.stage.z + 8)) (by simp [walkStaticRegs]))
       (hl₇.inv'.regs ("%cap", .ptr (C.stage.z + 16)) (by simp [walkStaticRegs]))
       hreadL hreadC hguard₈
-  have hs₈ : s₈ = openS₈ C s r b := Ctrl.jump.inj (hl₈.step.symm.trans hstep₈)
+  have hs₈ : s₈ = openS₈ C s r rd b := Ctrl.jump.inj (hl₈.step.symm.trans hstep₈)
   rw [hs₈] at hl₈
   -- 9. `out_reserve.exit.i.i`: the tag byte and the length word
   have htight : C.events.length ≤ C.k :=
     hl₇.inv'.events_le_of_tight (walkEmitC_of_not_contains (b := "if.end.i.i") (by decide))
   obtain ⟨s₉, hl₉⟩ :=
-    WalkLink.out_reserve_exit_i_i G (openC₈ C b) (openS₈ C s r b) hl₈.inv' rfl
+    WalkLink.out_reserve_exit_i_i G (openC₈ C b) (openS₈ C s r rd b) hl₈.inv' rfl
       (hl₈.inv'.regs ("%z", .ptr C.stage.z) (by simp [walkStaticRegs]))
       hl₈.inv'.log_base G.evLt
-      (openS₈_conv42 C s r b) (openS₈_oval C s r b) (openS₈_addiii C s r b)
+      (openS₈_conv42 C s r rd b) (openS₈_oval C s r rd b) (openS₈_addiii C s r rd b)
       (hl₈.inv'.regs ("%len", .ptr (C.stage.z + 8)) (by simp [walkStaticRegs]))
       hev63 hev64len htight hklt
   have hc₉ : { openC₈ C b with
@@ -802,15 +874,15 @@ theorem openTailSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
       events := (openC₈ C b).events ++ [EventRecord.tag (ifEnd24St b).toNat] } =
       openC₉ C b := rfl
   rw [hc₉] at hl₉
-  have hstep₉ : step (stage2Calls stage2SubCalls) stage2Body (openS₈ C s r b) =
-      .jump (openS₉ C s r b) :=
-    openOutReserveTerm C (openS₈ C s r b) b hl₈.inv'.pc_eq
+  have hstep₉ : step (stage2Calls stage2SubCalls) stage2Body (openS₈ C s r rd b) =
+      .jump (openS₉ C s r rd b) :=
+    openOutReserveTerm C (openS₈ C s r rd b) b hl₈.inv'.pc_eq
       (hl₈.inv'.regs ("%z", .ptr C.stage.z) (by simp [walkStaticRegs]))
-      hl₈.inv'.log_base G.evLt (openS₈_conv42 C s r b) (openS₈_oval C s r b)
-      (openS₈_addiii C s r b)
+      hl₈.inv'.log_base G.evLt (openS₈_conv42 C s r rd b) (openS₈_oval C s r rd b)
+      (openS₈_addiii C s r rd b)
       (hl₈.inv'.regs ("%len", .ptr (C.stage.z + 8)) (by simp [walkStaticRegs]))
       hev63 hev64len
-  have hs₉ : s₉ = openS₉ C s r b := Ctrl.jump.inj (hl₉.step.symm.trans hstep₉)
+  have hs₉ : s₉ = openS₉ C s r rd b := Ctrl.jump.inj (hl₉.step.symm.trans hstep₉)
   rw [hs₉] at hl₉
   exact Seg.measure (Seg.tail hl₅ (Seg.tail hl₆' (Seg.tail hl₇ (Seg.tail hl₈
     (Seg.tail hl₉ (Seg.nil hl₉.inv'))))))
@@ -827,13 +899,14 @@ theorem containerOpenSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : Sta
     {b : BitVec 8} (h8 : evalOperand s (.reg "%8") = some (.int 8 b))
     (hopen : b = BitVec.ofNat 8 91 ∨ b = BitVec.ofNat 8 123)
     (hsp519 : C.sp ≤ 519)
-    (hrd : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes 0 4))
+    {rd : BitVec 32}
+    (hread : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes rd.toNat 4))
     (hpreV : s2ValuePosPre
-      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rd,
        .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
     (r : CallOutcome)
     (hcall : stage2Calls stage2SubCalls "s2_value_pos"
-      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rd,
        .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r)
     (hret : r.ret = .int 32 (BitVec.ofNat 32 1)) :
     ∃ (Cd : WalkCarry G) (sd : State),
@@ -855,18 +928,18 @@ theorem containerOpenSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : Sta
       hbe0.symm.trans hb
     have hh := openBracketHead G C s hInv hblock (by rw [← hb]; exact h8) hbe
     have ht := openTailSeg G (openHeadC C) (openBrS₄ s) hh.inv' rfl hbe0 hsp519
-      (by rw [openBrS₄_mem, openDepthZero_toNat]; exact hrd)
+      (by rw [openBrS₄_mem]; exact hread)
       (by rw [openBrS₄_mem, openBrS₄_next]; exact hpreV)
       r hcall hret hklt
     refine ⟨_, _, hh.trans ht, rfl, rfl, ?_, rfl, ?_, ?_, ?_⟩
     · show C.sp + 1 ≤ max (openHeadC C).wlen ((openHeadC C).sp + 1)
       exact le_max_right _ _
     · simp only [evalOperand]
-      exact openS₉_inc33 (openHeadC C) (openBrS₄ s) r b
+      exact openS₉_inc33 (openHeadC C) (openBrS₄ s) r rd b
     · simp only [evalOperand]
-      rw [openS₉_inc (openHeadC C) (openBrS₄ s) r b]
+      rw [openS₉_inc (openHeadC C) (openBrS₄ s) r rd b]
       exact hh.inv'.inc_reg
-    · rw [openS₉_nep (openHeadC C) (openBrS₄ s) r b]
+    · rw [openS₉_nep (openHeadC C) (openBrS₄ s) r rd b]
       exact hh.inv'.regs ("%nep", .int 64 (BitVec.ofNat 64 G.nep))
         (by simp [walkStaticRegs])
   · -- the open brace
@@ -874,18 +947,18 @@ theorem containerOpenSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : Sta
       hbe0.symm.trans hb
     have hh := openBraceHead G C s hInv hblock (by rw [← hb]; exact h8) hbe
     have ht := openTailSeg G (openHeadC C) (openBcS₄ s) hh.inv' rfl hbe0 hsp519
-      (by rw [openBcS₄_mem, openDepthZero_toNat]; exact hrd)
+      (by rw [openBcS₄_mem]; exact hread)
       (by rw [openBcS₄_mem, openBcS₄_next]; exact hpreV)
       r hcall hret hklt
     refine ⟨_, _, hh.trans ht, rfl, rfl, ?_, rfl, ?_, ?_, ?_⟩
     · show C.sp + 1 ≤ max (openHeadC C).wlen ((openHeadC C).sp + 1)
       exact le_max_right _ _
     · simp only [evalOperand]
-      exact openS₉_inc33 (openHeadC C) (openBcS₄ s) r b
+      exact openS₉_inc33 (openHeadC C) (openBcS₄ s) r rd b
     · simp only [evalOperand]
-      rw [openS₉_inc (openHeadC C) (openBcS₄ s) r b]
+      rw [openS₉_inc (openHeadC C) (openBcS₄ s) r rd b]
       exact hh.inv'.inc_reg
-    · rw [openS₉_nep (openHeadC C) (openBcS₄ s) r b]
+    · rw [openS₉_nep (openHeadC C) (openBcS₄ s) r rd b]
       exact hh.inv'.regs ("%nep", .int 64 (BitVec.ofNat 64 G.nep))
         (by simp [walkStaticRegs])
 
@@ -901,18 +974,19 @@ theorem containerOpenMerge_at {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
     {b : BitVec 8} (h8 : evalOperand s (.reg "%8") = some (.int 8 b))
     (hopen : b = BitVec.ofNat 8 91 ∨ b = BitVec.ofNat 8 123)
     (hsp519 : C.sp ≤ 519)
-    (hrd : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes 0 4))
+    {rd : BitVec 32}
+    (hread : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes rd.toNat 4))
     (hpreV : s2ValuePosPre
-      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rd,
        .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
     (r : CallOutcome)
     (hcall : stage2Calls stage2SubCalls "s2_value_pos"
-      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rd,
        .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r)
     (hret : r.ret = .int 32 (BitVec.ofNat 32 1)) :
     WalkDispatchResult (stage2Calls stage2SubCalls) G C s := by
   obtain ⟨Cd, sd, hseg, hblk, hkC, hwlen, hpre, hspv, hk2, hnepv⟩ :=
-    containerOpenSeg G C s hInv hblock h8 hopen hsp519 hrd hpreV r hcall hret
+    containerOpenSeg G C s hInv hblock h8 hopen hsp519 hread hpreV r hcall hret
   have hklt : C.k < G.nep := WalkInv.head_lt hInv (by simpa only [walkLoopHead] using hblock)
   refine WalkDispatchResult.merge Cd sd 9 (C.sp + 1) (C.k + 1)
     "out_reserve.exit.i.i" (.reg "%inc33.i") (.reg "%inc.i") (BitVec.ofNat 64 G.nep)
@@ -948,13 +1022,14 @@ theorem containerOpen_depth_one {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (
     {b : BitVec 8} (h8 : evalOperand s (.reg "%8") = some (.int 8 b))
     (hopen : b = BitVec.ofNat 8 91 ∨ b = BitVec.ofNat 8 123)
     (hsp519 : C.sp ≤ 519)
-    (hrd : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes 0 4))
+    {rd : BitVec 32}
+    (hread : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes rd.toNat 4))
     (hpreV : s2ValuePosPre
-      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rd,
        .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
     (r : CallOutcome)
     (hcall : stage2Calls stage2SubCalls "s2_value_pos"
-      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rd,
        .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r)
     (hret : r.ret = .int 32 (BitVec.ofNat 32 1))
     (hcont : C.k + 1 < G.nep) :
@@ -962,7 +1037,7 @@ theorem containerOpen_depth_one {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (
       WalkInv G Cd' sd' ∧ Cd'.block = walkLoopHead ∧ Cd'.sp = C.sp + 1 ∧
         Cd'.k = C.k + 1 := by
   obtain ⟨Cd, sd, hseg, hblk, hkC, hwlen, hpre, hspv, hk2, hnepv⟩ :=
-    containerOpenSeg G C s hInv hblock h8 hopen hsp519 hrd hpreV r hcall hret
+    containerOpenSeg G C s hInv hblock h8 hopen hsp519 hread hpreV r hcall hret
   have hguard : C.k + 1 < (BitVec.ofNat 64 G.nep).toNat := by
     rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (openNep_lt G)]
     exact hcont

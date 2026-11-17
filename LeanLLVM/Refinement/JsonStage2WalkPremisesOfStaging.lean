@@ -273,18 +273,25 @@ evidence carries a tail `WalkSegment` and the scan's traversal hypotheses that a
 supplies at a reachable state rather than `WalkInv` consequences
 (`JsonStage2WalkHcontFactsOfStaging`'s map).
 
-**The two depth states the census once had no arm for are armed.**  `}` (`125`) at depth
+**The states the census once had no arm for are armed.**  `}` (`125`) at depth
 zero takes `LeafBlock15 → if.then53.i → if.then56.i` and its refusal store — the bracket's
 two blocks at the brace's pivots — and a container opener at depth `520` takes
-`if.then.i`'s call and `if.end.i`'s `ugt` arm to `if.then21.i`.  Both now have their own
-constructors at both levels (`.closeBraceZero`, `.openAtCap`), their own producers
+`if.then.i`'s call and `if.end.i`'s `ugt` arm to `if.then21.i`; and an opener whose
+value-position answer is `0` takes `if.then.i`'s other branch, `if.then16.i`'s offset
+store.  All three now have their own
+constructors at both levels (`.closeBraceZero`, `.openAtCap`, `.containerOpenRefuse`),
+their own producers
 (`hcontArm_closeBraceZero_of_staging`, `lastEntryArm_closeBraceZero_of_staging`,
-`hcontArm_openAtCap91_of_staging` … `lastEntryArm_openAtCap123_of_staging`) and their own
-counted, priced segments (`closeBraceZero_at`, `containerOpenCap_at`), so a producer of
+`hcontArm_openAtCap91_of_staging` … `lastEntryArm_openAtCap123_of_staging`,
+`hcontArm_containerOpenRefuse91_of_staging` … `lastEntryArm_containerOpenRefuse123_of_staging`)
+and their own counted, priced segments (`closeBraceZero_at`, `containerOpenCap_at`,
+`containerOpenRefuse_at`), so a producer of
 `hlast` or of `HcontArm` can be written at those states like at any other: the enum is no
 longer the obstruction there.  What the bundle still takes, per class, is
 `JsonStage2WalkDispatchResidual`'s table — the arm's payload — and the two arms' `520` is
-the invariant's own cap (`depth_cap`), so the depth is a state's rather than a document's.
+the invariant's own cap (`depth_cap`), so the depth is a state's rather than a document's;
+the answer split is the callee's own two values (`s2ValuePos_ret_zero_or_one`), so it is a
+state's too.
 `JsonStage2WalkDispatchResidual` records what the holes were and what fills them. -/
 structure WalkLoopEnd {m0 : Mem} (G : WalkGeom m0) : Type where
   /-- **The last entry's arm**, at every head state the merge's test sends to the exit.

@@ -35,7 +35,7 @@ does not hold and the reason:
 
 | class | row | why the payload does not hold it |
 |---|---|---|
-| `.containerOpen`, `.openAtCap`, `.closeWithOpen`, the four zero refusals, `.commaAboveZero`, `.colonAboveZero` | none — `lane.root` and `abi.open`, and the invariant's own cells | proved below (`…_of_payload`) and in `hcontArm_of_derivedClass` |
+| `.containerOpen`, `.openAtCap`, `.containerOpenRefuse`, `.closeWithOpen`, the four zero refusals, `.commaAboveZero`, `.colonAboveZero` | none — `abi.openCall` (the call's row at the root slot's witness word) and the invariant's own cells | proved below (`…_of_payload`) and in `hcontArm_of_derivedClass`; the payload's `openCall` carries the witness and no answer, and the dispatch splits on it (`s2ValuePos_ret_zero_or_one`) |
 | `.twoEntry` | none — `lane.string` and `abi.string` | the class's producer takes exactly these rows plus the invariant — **at depth zero**, which is `strPath8`'s parameter and not a field of the bundle: at a positive depth the same byte has its own arms (the row below) |
 | `.ws` | `HcontFacts`'s `hTail`, and of the traversal only the visited byte's class | the tail starts at a *landing* whose index is the run's stop, and the stop is the run's own count; the round, the byte's read and the token's register are produced (`JsonStage2WalkRevolutionScanRound`), so the traversal enters as one document row rather than as its three `∀`-forms |
 | `stringOpener` at `%sp ≠ 0` | **the route's segment, not a class row** | the class is `HcontArm.stringOpenAboveZeroMerge`/`.stringOpenAboveZeroRefuse`.  Its own facts are derived — the byte from `cont_reg8`, the two stack bytes at `%sp - 1` from the carry's maps and `WalkInv.tyBytes`/`stBytes`, and the value-position staging (`stringOpenAboveZero_pre_of_inv`) — so what the producers take is the merge's counted segment (`hcontArm_stringOpenAboveZeroMerge_of_staging`) or the refusal's witness, which `stringDeepRefuse_at` composes from `if.end245.i`'s state in two links |
@@ -323,6 +323,50 @@ theorem s2ValuePos_rootWord_of_answer {mem : Mem} {next : Nat} {sp rd : BitVec 3
   rw [hz] at hv
   exact absurd hv (by decide)
 
+/-- **The value-position model's answer is a bit.**  Each arm of `stage2ValuePos` returns
+`if … then 1 else 0`; the negated arms return `none`, which the hypothesis excludes. -/
+theorem stage2ValuePos_lt_two {mem : Mem} {sp rd ct cs : Nat} {v : Nat}
+    (hv : stage2ValuePos mem sp rd ct cs = some v) : v < 2 := by
+  unfold stage2ValuePos at hv
+  split at hv
+  · have h := (Option.some.inj hv).symm
+    rw [h]
+    split <;> (try split) <;> omega
+  · split at hv
+    · have h := (Option.some.inj hv).symm
+      rw [h]
+      split <;> (try split) <;> omega
+    · cases hv
+
+/-- **The answer of a value-position call is `1` or `0`.**  The callee returns the model's
+bit, so every invariant state's call settles into one of the two routes: `1` for the
+openers' merge (`if.end.i`) and `0` for the refusal (`if.then16.i`).  This is what makes
+the byte class `91`/`123` total over the invariant's states rather than only over its
+bytes. -/
+theorem s2ValuePos_ret_zero_or_one {mem : Mem} {next : Nat} {sp rd : BitVec 32}
+    {ct cs : Nat} {r : CallOutcome}
+    (hcall : stage2Calls stage2SubCalls "s2_value_pos"
+      [.int 32 sp, .int 32 rd, .ptr ct, .ptr cs] mem next = some r) :
+    r.ret = .int 32 (BitVec.ofNat 32 1) ∨ r.ret = .int 32 (BitVec.ofNat 32 0) := by
+  rw [s2ValuePos_reply] at hcall
+  cases hv : stage2ValuePos mem sp.toNat rd.toNat ct cs with
+  | none =>
+      rw [hv] at hcall
+      cases hcall
+  | some v =>
+      have hr : r = ⟨.int 32 (BitVec.ofNat 32 v), mem, next⟩ :=
+        Option.some.inj (hcall.symm.trans (by rw [hv]; rfl))
+      rw [hr]
+      have h2 := stage2ValuePos_lt_two hv
+      have hb : v = 0 ∨ v = 1 := by
+        rcases v with _ | _ | n
+        · exact Or.inl rfl
+        · exact Or.inr rfl
+        · omega
+      rcases hb with h | h
+      · exact Or.inr (by rw [h])
+      · exact Or.inl (by rw [h])
+
 /-- **A store inside the token record leaves the root slot's word alone.**  The record ends
 at or below `G.next0` (`WalkStage.sevenEnd`) and the root slot is four bytes at
 `G.next0 + 8`, so a store whose extent is inside the record (`start`'s plus the payload's,
@@ -455,18 +499,31 @@ theorem walkReadBytes_logCap_word {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
   rw [walkToNat_ofNat64 G.dstcapLt]
   exact hInv.log_acap
 
-/-- **The openers' call row**: the precondition at the staged argument list, the outcome
-and the contract's `1`. -/
+/-- **The openers' call row**: the root slot's witness word and its read, the
+predicondition at the argument list the `load` builds, the outcome — and no answer.
+
+**Why the answer is not a field.**  The word `%9` the block loads from the slot is the
+call's third argument, and the class fixes no value for it: the slot's writers are
+`entry`'s initial `0` and `s2_after_value`'s depth-zero flag `1`
+(`s2AfterValuePost_rootSlot_at_zero`, `…_above`), so `0` is not among the callee's writes
+and no clause names the word.  The row therefore carries the memory's own word as a
+witness and the call at it; the answer is the *state's*, and the dispatch splits on it
+into the `1` route (`if.end.i`) and the `0` refusal (`if.then16.i`).  That split is what
+makes the byte class total over the invariant's states — `s2ValuePos_ret_zero_or_one` says
+the answer is one of the two bits. -/
 structure HcontOpenCall {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) :
     Type where
+  /-- The word the block's `load` read from the root slot. -/
+  rdv : BitVec 32
+  /-- The read that names it. -/
+  hread : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes rdv.toNat 4)
   hpreV : s2ValuePosPre
-    [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+    [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
      .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next
   r : CallOutcome
   hcall : stage2Calls stage2SubCalls "s2_value_pos"
-    [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+    [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
      .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r
-  hret : r.ret = .int 32 (BitVec.ofNat 32 1)
 
 /-- **The default arm's document row.**  The next entry's position word and the read that
 fetches it, the bound's compare against this entry's index, and the byte before the
@@ -489,26 +546,16 @@ structure HcontDefaultRow {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
   hbne13 : evalICmp .eq (cont35 (contB35 G v)) (BitVec.ofNat 8 13) = 0
 
 /-- **The document's lane facts at a continuing head**: the words the dispatch's own
-blocks have already laid down, read at the state the arm is read at. -/
+blocks have already laid down, read at the state the arm is read at.
+
+**The root slot's value is not here.**  The openers read it as the call's third argument,
+and the read is a theorem (`walkReadBytes_rootSlot_word`): the slot's presence in
+`WalkInv.root_slot` is four bytes, and four present bytes are a word.  Its *value* is the
+memory's — `entry` writes the initial `0` and `s2_after_value`'s depth-zero arm writes `1`
+(`s2AfterValuePost_rootSlot_at_zero`; above depth zero it leaves the slot,
+`…_above`) — so no clause names it and none is owed: the arms carry it as their witness
+(`HcontOpenCall.rdv`), and the answer the callee gives at that word selects the arm. -/
 structure HcontLane {m0 : Mem} (G : WalkGeom m0) : Type where
-  /-- The root slot's word: zero, which is what `.containerOpen` and `.openAtCap` read.
-
-  **The zero is this field's, and no theorem produces it.**  `WalkInv.root_slot` gives the
-  slot's presence, read back as a word by `walkReadBytes_rootSlot_word`; the slot's writers
-  are `entry`'s initial `0` and `s2_after_value`'s depth-zero flag `1`
-  (`s2AfterValuePost_rootSlot_at_zero`; above depth zero the callee leaves it,
-  `s2AfterValuePost_rootSlot_above`).  So the value is a function of the path, not of the
-  class.  What the *value-position* contract gives is the depth-zero tie:
-  `s2ValuePos_rootWord_of_answer` turns the answer `1` into the word `0`.  Producing this
-  field from it needs the arm's argument list to name the slot's witness word rather than
-  the literal `0` (`HcontOpenCall`), which is a `WalkStep`-level change
-  (`openIfThenI_term`, `openTailSeg`), not a dispatch row.
-
-  The byte class is also not total: the answer `0` arm at `if.then.i` is `if.then16.i`,
-  the refusal's offset store, and neither `HcontArm` nor `LastEntryArm` has a constructor
-  for it. -/
-  root : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
-    C.k + 1 < G.nep → readBytes s.mem (G.next0 + 8) 4 = some (natToBytes 0 4)
   /-- The standalone string's lane. -/
   string : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     C.k + 1 < G.nep → C.sp = 0 → HcontStringLane G C s
@@ -540,8 +587,10 @@ structure HcontPayload {m0 : Mem} (G : WalkGeom m0) : Type where
 /-! ### The continuing openers, from the payload
 
 The class's two bytes and two depths: `if.then.i`'s call and the merge's nine links below
-the guard, or the same call and `if.end.i`'s taken arm to the copy.  The payload supplies
-the root slot's zero word and the call's row; everything else is the invariant's. -/
+the guard, or the same call and `if.end.i`'s taken arm to the copy — and, when the call
+answers `0`, its branch to `if.then16.i` and the refusal's six links.  The payload supplies
+the call's row at the root slot's witness word; the answer is the state's, and
+`s2ValuePos_ret_zero_or_one` splits it, so the class is covered at every invariant state. -/
 
 /-- **The open bracket's continuing dispatch, from the payload's rows.** -/
 theorem walkDispatch_at_open91_of_payload {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
@@ -550,25 +599,19 @@ theorem walkDispatch_at_open91_of_payload {m0 : Mem} {G : WalkGeom m0} {C : Walk
     (hclass : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 91) = 1)
     (hp : HcontPayload G) :
     WalkDispatchResult (stage2Calls stage2SubCalls) G C s := by
-  by_cases hsp : C.sp ≤ 519
+  obtain ⟨rdv, hread, hpreV, r, hcall⟩ := hp.abi.openCall C s hInv hblock hk
+  rcases s2ValuePos_ret_zero_or_one hcall with h1 | h0
+  · by_cases hsp : C.sp ≤ 519
+    · exact HcontArm.dispatch hInv hblock hk
+        (hcontArm_containerOpen91_of_staging C s hInv hclass hsp hread hpreV r hcall h1)
+    · have h520 : C.sp = 520 := by
+        have hcap := hInv.depth_cap
+        simp only [stage2StackExtent] at hcap
+        omega
+      exact HcontArm.dispatch hInv hblock hk
+        (hcontArm_openAtCap91_of_staging C s hInv hclass h520 hread hpreV r hcall h1)
   · exact HcontArm.dispatch hInv hblock hk
-      (hcontArm_containerOpen91_of_staging C s hInv hclass hsp
-        (hp.lane.root C s hInv hblock hk)
-        (hp.abi.openCall C s hInv hblock hk).hpreV
-        (hp.abi.openCall C s hInv hblock hk).r
-        (hp.abi.openCall C s hInv hblock hk).hcall
-        (hp.abi.openCall C s hInv hblock hk).hret)
-  · have h520 : C.sp = 520 := by
-      have hcap := hInv.depth_cap
-      simp only [stage2StackExtent] at hcap
-      omega
-    exact HcontArm.dispatch hInv hblock hk
-      (hcontArm_openAtCap91_of_staging C s hInv hclass h520
-        (hp.lane.root C s hInv hblock hk)
-        (hp.abi.openCall C s hInv hblock hk).hpreV
-        (hp.abi.openCall C s hInv hblock hk).r
-        (hp.abi.openCall C s hInv hblock hk).hcall
-        (hp.abi.openCall C s hInv hblock hk).hret)
+      (hcontArm_containerOpenRefuse91_of_staging C s hInv hclass hread hpreV r hcall h0)
 
 /-- **The open brace's continuing dispatch, from the payload's rows.** -/
 theorem walkDispatch_at_open123_of_payload {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
@@ -577,25 +620,19 @@ theorem walkDispatch_at_open123_of_payload {m0 : Mem} {G : WalkGeom m0} {C : Wal
     (hclass : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 123) = 1)
     (hp : HcontPayload G) :
     WalkDispatchResult (stage2Calls stage2SubCalls) G C s := by
-  by_cases hsp : C.sp ≤ 519
+  obtain ⟨rdv, hread, hpreV, r, hcall⟩ := hp.abi.openCall C s hInv hblock hk
+  rcases s2ValuePos_ret_zero_or_one hcall with h1 | h0
+  · by_cases hsp : C.sp ≤ 519
+    · exact HcontArm.dispatch hInv hblock hk
+        (hcontArm_containerOpen123_of_staging C s hInv hclass hsp hread hpreV r hcall h1)
+    · have h520 : C.sp = 520 := by
+        have hcap := hInv.depth_cap
+        simp only [stage2StackExtent] at hcap
+        omega
+      exact HcontArm.dispatch hInv hblock hk
+        (hcontArm_openAtCap123_of_staging C s hInv hclass h520 hread hpreV r hcall h1)
   · exact HcontArm.dispatch hInv hblock hk
-      (hcontArm_containerOpen123_of_staging C s hInv hclass hsp
-        (hp.lane.root C s hInv hblock hk)
-        (hp.abi.openCall C s hInv hblock hk).hpreV
-        (hp.abi.openCall C s hInv hblock hk).r
-        (hp.abi.openCall C s hInv hblock hk).hcall
-        (hp.abi.openCall C s hInv hblock hk).hret)
-  · have h520 : C.sp = 520 := by
-      have hcap := hInv.depth_cap
-      simp only [stage2StackExtent] at hcap
-      omega
-    exact HcontArm.dispatch hInv hblock hk
-      (hcontArm_openAtCap123_of_staging C s hInv hclass h520
-        (hp.lane.root C s hInv hblock hk)
-        (hp.abi.openCall C s hInv hblock hk).hpreV
-        (hp.abi.openCall C s hInv hblock hk).r
-        (hp.abi.openCall C s hInv hblock hk).hcall
-        (hp.abi.openCall C s hInv hblock hk).hret)
+      (hcontArm_containerOpenRefuse123_of_staging C s hInv hclass hread hpreV r hcall h0)
 
 /-! ### The standalone string, from the payload
 
@@ -686,14 +723,11 @@ structure HlastHighByteAbi {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : S
      .ptr (TailStartC C).stage.ctype,
      .ptr (TailStartC C).stage.cst] r₂.mem r₂.next = some r₃
 
-/-- **The document's lane facts at the last entry.** -/
+/-- **The document's lane facts at the last entry.**  The root slot's value is not a
+field here either: the last entry's openers read it through `HcontOpenCall`'s witness, the
+same row the continuing head takes, and the callee's zero at that word is what the refusal
+arm answers. -/
 structure HlastLane {m0 : Mem} (G : WalkGeom m0) : Type where
-  /-- The openers' root word at the exhausted count: the zero word `HcontLane.root` states
-  at a continuing head.  The same status: the slot's read is `walkReadBytes_rootSlot_word`,
-  the value is this field's, and the callee's own writes never put `0` there
-  (`s2AfterValuePost_rootSlot_at_zero`/`_above`). -/
-  root : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
-    ¬ (C.k + 1 < G.nep) → readBytes s.mem (G.next0 + 8) 4 = some (natToBytes 0 4)
   /-- The last byte's class, at the high-byte route's two conditions. -/
   tail : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     ¬ (C.k + 1 < G.nep) →
@@ -723,25 +757,19 @@ theorem walkDispatch_at_open91_last_of_payload {m0 : Mem} {G : WalkGeom m0}
     (hclass : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 91) = 1)
     (hp : HlastPayload G) :
     WalkDispatchResult (stage2Calls stage2SubCalls) G C s := by
-  by_cases hsp : C.sp ≤ 519
+  obtain ⟨rdv, hread, hpreV, r, hcall⟩ := hp.abi.openCall C s hInv hblock hnot
+  rcases s2ValuePos_ret_zero_or_one hcall with h1 | h0
+  · by_cases hsp : C.sp ≤ 519
+    · exact LastEntryArm.dispatch hInv hblock hnot
+        (lastEntryArm_containerOpen91_of_staging C s hInv hclass hsp hread hpreV r hcall h1)
+    · have h520 : C.sp = 520 := by
+        have hcap := hInv.depth_cap
+        simp only [stage2StackExtent] at hcap
+        omega
+      exact LastEntryArm.dispatch hInv hblock hnot
+        (lastEntryArm_openAtCap91_of_staging C s hInv hclass h520 hread hpreV r hcall h1)
   · exact LastEntryArm.dispatch hInv hblock hnot
-      (lastEntryArm_containerOpen91_of_staging C s hInv hclass hsp
-        (hp.lane.root C s hInv hblock hnot)
-        (hp.abi.openCall C s hInv hblock hnot).hpreV
-        (hp.abi.openCall C s hInv hblock hnot).r
-        (hp.abi.openCall C s hInv hblock hnot).hcall
-        (hp.abi.openCall C s hInv hblock hnot).hret)
-  · have h520 : C.sp = 520 := by
-      have hcap := hInv.depth_cap
-      simp only [stage2StackExtent] at hcap
-      omega
-    exact LastEntryArm.dispatch hInv hblock hnot
-      (lastEntryArm_openAtCap91_of_staging C s hInv hclass h520
-        (hp.lane.root C s hInv hblock hnot)
-        (hp.abi.openCall C s hInv hblock hnot).hpreV
-        (hp.abi.openCall C s hInv hblock hnot).r
-        (hp.abi.openCall C s hInv hblock hnot).hcall
-        (hp.abi.openCall C s hInv hblock hnot).hret)
+      (lastEntryArm_containerOpenRefuse91_of_staging C s hInv hclass hread hpreV r hcall h0)
 
 /-- **The open brace's last-entry dispatch, from the payload's rows.** -/
 theorem walkDispatch_at_open123_last_of_payload {m0 : Mem} {G : WalkGeom m0}
@@ -750,25 +778,19 @@ theorem walkDispatch_at_open123_last_of_payload {m0 : Mem} {G : WalkGeom m0}
     (hclass : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 123) = 1)
     (hp : HlastPayload G) :
     WalkDispatchResult (stage2Calls stage2SubCalls) G C s := by
-  by_cases hsp : C.sp ≤ 519
+  obtain ⟨rdv, hread, hpreV, r, hcall⟩ := hp.abi.openCall C s hInv hblock hnot
+  rcases s2ValuePos_ret_zero_or_one hcall with h1 | h0
+  · by_cases hsp : C.sp ≤ 519
+    · exact LastEntryArm.dispatch hInv hblock hnot
+        (lastEntryArm_containerOpen123_of_staging C s hInv hclass hsp hread hpreV r hcall h1)
+    · have h520 : C.sp = 520 := by
+        have hcap := hInv.depth_cap
+        simp only [stage2StackExtent] at hcap
+        omega
+      exact LastEntryArm.dispatch hInv hblock hnot
+        (lastEntryArm_openAtCap123_of_staging C s hInv hclass h520 hread hpreV r hcall h1)
   · exact LastEntryArm.dispatch hInv hblock hnot
-      (lastEntryArm_containerOpen123_of_staging C s hInv hclass hsp
-        (hp.lane.root C s hInv hblock hnot)
-        (hp.abi.openCall C s hInv hblock hnot).hpreV
-        (hp.abi.openCall C s hInv hblock hnot).r
-        (hp.abi.openCall C s hInv hblock hnot).hcall
-        (hp.abi.openCall C s hInv hblock hnot).hret)
-  · have h520 : C.sp = 520 := by
-      have hcap := hInv.depth_cap
-      simp only [stage2StackExtent] at hcap
-      omega
-    exact LastEntryArm.dispatch hInv hblock hnot
-      (lastEntryArm_openAtCap123_of_staging C s hInv hclass h520
-        (hp.lane.root C s hInv hblock hnot)
-        (hp.abi.openCall C s hInv hblock hnot).hpreV
-        (hp.abi.openCall C s hInv hblock hnot).r
-        (hp.abi.openCall C s hInv hblock hnot).hcall
-        (hp.abi.openCall C s hInv hblock hnot).hret)
+      (lastEntryArm_containerOpenRefuse123_of_staging C s hInv hclass hread hpreV r hcall h0)
 
 /-! ### The last entry's high-byte class, from the payload
 
@@ -866,8 +888,7 @@ table above enumerates; it is not a one-document construction, and pretending ot
 would be the vacuity this module avoids. -/
 theorem hcontPayload_of_nep_zero {m0 : Mem} (G : WalkGeom m0) (h : G.nep = 0) :
     Nonempty (HcontPayload G) := by
-  refine ⟨⟨⟨?_, ?_, ?_⟩, ⟨?_, ?_⟩, ?_⟩⟩
-  · exact fun C s _ _ hk => absurd hk (by omega)
+  refine ⟨⟨⟨?_, ?_⟩, ⟨?_, ?_⟩, ?_⟩⟩
   · exact fun C s _ _ hk => absurd hk (by omega)
   · exact fun C s _ _ hk => absurd hk (by omega)
   · exact fun C s _ _ hk => absurd hk (by omega)

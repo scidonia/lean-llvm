@@ -714,15 +714,17 @@ are `JsonStage2WalkHcontSeamInv`'s: `contTailStartInv_of_cleanup`,
 `scSeamInv_of_scalar` and `hlastTailInv_of_facts`, and — for the default arm's
 two letters classes — `JsonStage2WalkDispatchLettersRows`'
 `lettersSeamInv_of_chain`/`fLetterSeamInv_of_chain`.
-4. **The census is exhaustive and the arms are total over the bytes.**  `HeadArm.complete` gives
+4. **The census is exhaustive, and the arms are total over the bytes and the states.**  `HeadArm.complete` gives
 every byte exactly one head arm, so the byte census is exhaustive by theorem,
 and every state the invariant admits whose class the arms' premises hold is
-dispatched by an arm.  The continuing enumeration is `HcontArm`, nineteen constructors: the string opener is
+dispatched by an arm.  The continuing enumeration is `HcontArm`, twenty constructors: the string opener is
 one class with three arms (`.twoEntry`, `.stringOpenAboveZeroMerge`,
 `.stringOpenAboveZeroRefuse`), the high bytes `126`/`127` one class with two
-(`.ws`, `.cleanup`), and the two openers one class with two (`.containerOpen`,
-`.openAtCap`).  The last entry's enumeration is `LastEntryArm`, sixteen
-constructors.  Where a class's route is a counted chain of its own, the arm takes
+(`.ws`, `.cleanup`), and the two openers one class with three (`.containerOpen`,
+`.openAtCap` at the answer `1`, `.containerOpenRefuse` at the answer `0`).  The last entry's
+enumeration is `LastEntryArm`, seventeen constructors.  Each opener constructor is not a
+byte but a *state*: `if.then.i` branches on the value-position call's answer, and the three
+arms are the two answers crossed with the depth split the push's guard makes.  Where a class's route is a counted chain of its own, the arm takes
 that chain as a row: `.classC` its span past the head chain,
 `.stringOpenAboveZeroMerge` its segment to the merge.  The `.letters`/`.fLetter`
 classes take no tail row: their head chain is produced from the lane's document
@@ -731,21 +733,31 @@ rows (`JsonStage2WalkDispatchLettersRows`).  The document and seam rows are
 `JsonStage2WalkDispatchClassRows`', one row per class, and the seam state's
 invariant is produced by the transports above rather than carried as a row.
 
-**One class is total by byte and not by state, and the ledger's c11 row is where
-that is worked out.**  The two openers' class is the byte, but `if.then.i`
-branches on the value-position call's answer: the answer `1` arms are
-`.containerOpen` (depth at or below `519`) and `.openAtCap` (`520`), and the
-answer `0` arm is `if.then16.i` — the refusal's offset store — which neither
-enumeration has a constructor for.  The answer `0` is reachable at the class: at
-depth zero the callee returns `1` only when the root word is `0`
-(`s2ValuePos_rootWord_of_answer`), so a head the root flag has been set on takes
-`if.then16.i` instead of the open arm, and a depth-zero `s2_after_value` sets that
-flag (`s2AfterValuePost_rootSlot_at_zero`) — the walk's own call at
-`if.then109.i` passes `%sub.i = %sp - 1`, so a key at depth `1` sets it, and the
-flag survives the container's close.  No theorem states that reachability, so it
-is recorded here rather than claimed; what it costs is one arm, and until the arm
-exists the arms are total over the states whose answer is `1`, which is what
-`HcontLane.root` and `HlastLane.root` state.
+**The openers' class is total by state as well as by byte.**  The class is the byte,
+but `if.then.i` branches on the value-position call's answer, and the answer is the
+state's: the callee's model returns `0` or `1` and nothing else
+(`s2ValuePos_ret_zero_or_one`, through `stage2ValuePos_lt_two`), so a head in the class
+takes exactly one of three routes — answer `1` at or below depth `519`
+(`.containerOpen`, the merge), answer `1` at depth `520` (`.openAtCap`, the push's guard's
+false side), answer `0` at any depth (`.containerOpenRefuse`, `if.then16.i`'s offset store
+and the copy).  The refusal is the arm the earlier census lacked, and it is reachable: at
+depth zero the callee answers `1` only when the root word is `0`
+(`s2ValuePos_rootWord_of_answer`), a depth-zero `s2_after_value` writes that flag `1`
+(`s2AfterValuePost_rootSlot_at_zero`) — the walk's own call at `if.then109.i` passes
+`%sub.i = %sp - 1`, so the close of a top-level container sets it — and
+`JsonStage2WalkDispatchOpenersDomain` stages the second-value documents (`[0][`, `[0][0`)
+at whose second opener the slot holds `1` and the answer is `0`
+(`secondValue_last_refuses`, `secondValue_cont_refuses`).  The document-level step from
+the seeded head to that opener is not a theorem of this tree — the close, its
+`s2_after_value` and the header's pass are the walk's own execution — so the staged
+theorems take the slot's word as their state's premise while *deriving* the answer from
+the callee's model.  The control is the same class at the same depth with the slot at `0`:
+`firstValue_answer_one` gives the answer `1`, and `[0]`'s head takes `.containerOpen`.
+What the value does **not** need is a clause: the slot's writers are `entry`'s initial `0`
+and the callee's flag `1`, so `0` is not among them (`s2AfterValuePost_rootSlot_above`
+leaves the slot alone above depth zero), and the arms carry the word as the witness
+`rdv` — the read is `walkReadBytes_rootSlot_word`'s, from `root_slot`'s four present
+bytes.
 
 ### 7.8 The dispatch's per-row ledger
 
@@ -769,13 +781,13 @@ and no entry carries the execution segment its own producer builds.
 | c8 | `.classC` (`110 … 125`): the same head chain plus the byte's own span | `classCSpan_at` from the class's `slt %8 110` bit for the span — the four leaves' spans are `c56TrueSpan`/`c56ElseSpan`/`c58TrueSpan`/`c58ElseSpan` | `hcontArm_classC_56True_of_rows` … `walkDispatch_at_classC_58Else_of_rows` (`JsonStage2WalkDispatchClassCLeaves`) | **the three call rows**, and nothing else: the endpoint's seam cells are produced at the four named leaf states — `ClsS413T` (`110`), `ClsS413F` (`111 … 115`), `ClsS58T` (`116`), `HeadS413` (`117 … 125`) — by `classCSeamCells_56True` … `…_58Else`, from the leaf's own `phi` incoming (`10`, `0`, `8`, `0`), the endpoint's invariant, the chain's one `Nat` read through the leaf's binds and the root word's transport past the kind record's store (`classCSeam_rootRead`).  Each arm takes the chain, the leaf's bits, its call group at the named seam and the root word's agreement; the tail is `emptyTail_of_cells` at the produced cells, so no row sits at an unnamed endpoint |
 | c9 | `.run` (the same six default classes on the run continuation): the check state's cells, the whitespace stop, the landing and the scan's traversal | `hcontRunFacts_of_rows` → `runFacts_of_runBundle` (`JsonStage2WalkDispatchRunHead`), with the c1 round/byte/token fields transported (the same terms, at the check state) | `HcontArm.run` → `dispatch` | the run's document rows and, of the traversal, the same single document row `hbyteClass`; its round and byte read are c1's produced terms and its tail is `hcontScanTail_at`, not a row |
 | c10 | the four delimiter refusals and the two above-zero delimiter pairs | `bracketRefuse_at`, `commaRefuse_at`, `colonRefuse_at`, `closeBraceZero_at`, `commaBraceMerge_at` … | `hcontArm_of_derivedClass` (`JsonStage2WalkDispatchResidual`) | **none**: the class bits and `WalkInv`'s own cells |
-| c11 | `.containerOpen`/`.openAtCap` (bytes `91`/`123`): the root slot's zero word and the value-position call's row | `HcontLane.root`, `HcontAbi.openCall` | `walkDispatch_at_open91_of_payload` … | the lane's root word — the zero word at `G.next0 + 8` — and the call's answer; the depth `520` is the invariant's own cap.  The *read* is a theorem (`walkReadBytes_rootSlot_word`: `root_slot`'s four present bytes through `natToBytes_bytesToNat`, no value fixed).  The *value* is not, and the callee contracts say why: `s2AfterValuePost_rootSlot_at_zero` gives `1` after a depth-zero `s2_after_value` and `s2AfterValuePost_rootSlot_above` leaves the slot alone above it, so `0` is not among the slot's writers and an invariant clause asserting it would be false at exactly the heads a decoded root has flagged.  What the value-position contract gives is the depth-zero tie, `s2ValuePos_rootWord_of_answer` (an answer of `1` forces the word `0`); at depth `520` the answer does not read the word at all.  The missing piece is the arm's argument list: `HcontOpenCall` stages the *literal* `0` and `openTailSeg`'s `load` consumes the slot as a memory fact, so the substitution is a `WalkStep`-level edit, not a row.  The class is also not total: the answer `0` branch at `if.then.i` is `if.then16.i`, the refusal's offset store, and neither `HcontArm` nor `LastEntryArm` has a constructor for it.  The call's *precondition* at the staged list follows by the same depth case split `stringOpenAboveZero_pre_of_inv` applies (`Or.inl` at depth zero, the two stack maps at a positive depth), though no theorem states the general case yet; the answer is the helper boundary |
+| c11 | `.containerOpen`/`.openAtCap`/`.containerOpenRefuse` (bytes `91`/`123`): the value-position call's row at the root slot's witness word, and the answer that selects the arm | `HcontAbi.openCall` (the witness, its read, the staging and the outcome — no answer); `s2ValuePos_ret_zero_or_one` for the split | `walkDispatch_at_open91_of_payload` … | **the call's row at the witness word**, and nothing else.  The *value* is the arm's witness `rdv`, read by `walkReadBytes_rootSlot_word` from `root_slot`'s four present bytes, and **not derivable**: `entry` writes the initial `0` and `s2_after_value`'s depth-zero arm writes `1` (`s2AfterValuePost_rootSlot_at_zero`), while above depth zero it leaves the slot alone (`s2AfterValuePost_rootSlot_above`), so `0` is not among the callee's writes and the word is a function of the path.  That distinction is recorded rather than repaired: no clause pins the word and none is owed, because the arms carry it.  The *answer* is derived, not assumed: the callee's model returns `0` or `1` (`stage2ValuePos_lt_two`), so the `1` arms (`.containerOpen` at depth `≤ 519`, `.openAtCap` at `520`) and the `0` arm (`.containerOpenRefuse`, `if.then16.i`'s offset store to the copy, six links) are exhaustive over the class's states.  The call's *precondition* at the witness word follows by the same depth case split `stringOpenAboveZero_pre_of_inv` applies (`Or.inl` at depth zero, the two stack maps at a positive depth), though no theorem states the general case yet; the row is the call itself |
 | c12 | `.closeWithOpen` (`93`/`125` at `C.sp ≠ 0`): the two stack bytes and the callee's precondition at `%ctype.i + (%sp - 1) - 1` | `s2AfterValuePre_of_inv` (`JsonStage2WalkDispatchResidual`) | `hcontArm_of_derivedClass` | **none** |
-| l1 | last entry `.highByte` (`126`/`127`, no entry left): the last byte's class, the byte before the token's end, the three calls, the root-done word | `HlastResidue`'s rows; `hlastFacts_of_staging` (`JsonStage2WalkDispatchWitnessHlast`) composes `hlastTailSeg` and `hlastTail_of_calls`; `hlastTail_rootSlot_word` (`JsonStage2WalkDispatchSupply`) for the slot's read | `LastEntryArm.highByte` → `dispatch` | **none**: `HlastFacts`'s seam word `rdv` with its read is produced.  `hlastTail_rootSlot_word` reads the slot as a word from `WalkInv.root_slot` (`walkReadBytes_rootSlot_word`) and transports it across the tail's four token-record stores — the position, the gap, the seam's end and the kind — each of which the record's extent separates from `G.next0 + 8` (`readBytes_rootSlot_tokWrite`).  `rdv` is the memory's witness, which is what the row's *variable* word means: the slot's writers are `entry`'s `0` and `s2_after_value`'s depth-zero `1`, and no consumer pins which.  `HlastLane.root`'s zero is c11's row at the exhausted count, not this one — the `.highByte` arm's copy call takes the word it is handed |
+| l1 | last entry `.highByte` (`126`/`127`, no entry left): the last byte's class, the byte before the token's end, the three calls, the root-done word | `HlastResidue`'s rows; `hlastFacts_of_staging` (`JsonStage2WalkDispatchWitnessHlast`) composes `hlastTailSeg` and `hlastTail_of_calls`; `hlastTail_rootSlot_word` (`JsonStage2WalkDispatchSupply`) for the slot's read | `LastEntryArm.highByte` → `dispatch` | **none**: `HlastFacts`'s seam word `rdv` with its read is produced.  `hlastTail_rootSlot_word` reads the slot as a word from `WalkInv.root_slot` (`walkReadBytes_rootSlot_word`) and transports it across the tail's four token-record stores — the position, the gap, the seam's end and the kind — each of which the record's extent separates from `G.next0 + 8` (`readBytes_rootSlot_tokWrite`).  `rdv` is the memory's witness, which is what the row's *variable* word means: the slot's writers are `entry`'s `0` and `s2_after_value`'s depth-zero `1`, and no consumer pins which.  The last entry's openers take the same witness row as c11's (`HcontOpenCall`, at the exhausted count), so neither level's lane carries a value clause |
 | l2 | last entry `.scalar`: the three call rows at `TailStartC`/`hlastTail` | `scalarTail_of_calls` (`JsonStage2WalkDispatchScalar`) | `LastEntryArm.scalar` | the three call rows at the last entry's seam and the seam state's own cells: `scalarTail_of_calls` composes the tail from the three callees' preconditions and answers at `TailStartC`'s argument lists, so the segment is produced and what remains is the helper boundary — no document row and no arm |
 | l3 | last entry `.letters`/`.fLetter`/`.classC`: the seven-link suffix and the class's four-pivot prefix | `contDefLastSeg`, `contLastLowHeadSeg` … (`JsonStage2WalkDispatchLettersHead`) | `LastEntryArm.letters` … | the tail's three call rows at the last entry's seam: the seven-link suffix and each prefix class's chain are theorems (`contDefLastSeg` at seven, `contLastLowHeadSeg` … `contLastBrcHeadSeg` at ten or eleven), so no link of the route is a row and what remains is the helper boundary at the seam |
 | l4 | last entry `.run`: the terminal run's document bounds and the credit its index consumed | `RunLastFacts` + `runLastMerge_at`, `runLast_price_with_credit`; `terminalStop_bounds` (`JsonStage2WalkDispatchRunOfStaging`) for the three bounds | `LastEntryArm.run` | **none** for the bounds: `terminalStop_bounds` derives `hstart`/`hNdoc`/`hspanDoc` from the terminal stop's two (`terminalStop_ge`, `terminalStop_le`) and the geometry's width (`WalkGeom.doc`), and `runLastFacts_of_staging` fills them with it; the price and the credit are derived from them (`runLast_price_with_credit`), so no segment and no callee row is taken.  What the bundle still takes is the traversal's own numbers — the counter `i`, the seam's bound `c`, `i < c`, and the two ties that name them (`i = terminalStop G.bs (entryPos G C.k)`, `c = G.n`) — and the tail's call row, not a document bound |
-| l5 | last entry refusals, `.stringOpener`, `.openAtCap` | `quoteRefuse_at`, `bracketRefuse_at`, `closeBraceZero_at`, `containerOpenCap_at` | `LastEntryArm.dispatch` | **none** |
+| l5 | last entry refusals, `.stringOpener`, `.openAtCap`, `.containerOpenRefuse` | `quoteRefuse_at`, `bracketRefuse_at`, `closeBraceZero_at`, `containerOpenCap_at`, `containerOpenRefuse_at` | `LastEntryArm.dispatch` | **none**: the class bits, `WalkInv`'s own cells and the call's row at the slot's witness word — the answer `0` is the state's, and the arm composes its six links |
 
 **What c2 establishes, and why it is the shape the others take.**  `JsonStage2WalkDispatchSeamRows`
 produces, from the class's document row alone: the seventeen-link chain
@@ -836,11 +848,11 @@ narrative sites record that re-expression: the coverage is unchanged, the method
 **What this ledger says about closure.**  Ten rows are produced end-to-end (c2, c5, c6, c7,
 c8, c10, c12, l5, l1, l4).  Five more are produced up to a row the tree names but does not
 supply: c1 and c9 up to the document row `hbyteClass`; c3 up to one slot's carrier; l2 and
-l3 up to the callee rows at their own seams.  c11 is the one class whose *value* no producer
-supplies.  **Seven of the seventeen rows are open**, and of
-those seven, two are the document's or the traversal's own rows (c1, c9), three are the
-helper boundary (c3's two calls, and l2's and l3's three), one is one slot's value (c11's
-zero word, with c3's `%outn.i` present but uncaught by any clause), and one is a segment no
+l3 up to the callee rows at their own seams.  c11 is produced up to the call's row at the
+root slot's witness word — no longer a *value* row, since the arms carry the witness and the
+answer is derived.  **Six of the seventeen rows are open**, and of
+those six, two are the document's or the traversal's own rows (c1, c9), three are the
+helper boundary (c3's two calls, and l2's and l3's three), and one is a segment no
 producer states (c4).  No row is a bundle, an arm, or the segment its own producer composes;
 the value-position precondition, which this ledger used to count against c3 and c11, follows
 by the same depth case split `s2AfterValuePre_of_inv` and `stringOpenAboveZero_pre_of_inv`
@@ -850,14 +862,17 @@ quantifiers are the class's and the state's: a row is stated at the continued he
 belongs to (`C.k + 1 < G.nep` for c1–c12) or at the exhausted count
 (`¬ (C.k + 1 < G.nep)` for l1–l5), never at every head.
 
-**What the two words at `G.next0 + 8` need, and why one of them is now produced.**  The
+**What the two words at `G.next0 + 8` need, and why neither is a value row.**  The
 slot is the root-done flag `%root_done.i`: `entry` writes it `0` among its four allocations,
 and its other writer is the callee `s2_after_value`, whose depth-zero arm stores `1` through
 it (`s2AfterValuePost_rootSlot_at_zero`) and whose positive-depth arm rewrites one
 state-stack byte and leaves the slot alone (`s2AfterValuePost_rootSlot_above`).  Both facts
 are theorems of the contract's post, and together they are the whole of the callee's effect
 on the slot: **`0` is not among its writes.**  So the slot's value is a function of the path,
-not of the byte class, and the two rows are different claims about it.
+not of the byte class, and the only honest statement of it is a witness.  The openers' arms
+and the last entry's take that witness (`rdv`) with its read, and the two arms of the
+value-position answer are the split; nothing needs the word pinned, and an invariant clause
+asserting `0` would be false at exactly the heads a depth-zero call has flagged.
 
 l1 is closed.  Its word `rdv` is a witness, so what the row needs is the read, and
 `hlastTail_rootSlot_word` produces it: `WalkInv.root_slot`'s four present bytes read back as
@@ -866,19 +881,23 @@ across the tail's four token-record stores, each separated from the slot by the 
 extent (`readBytes_rootSlot_tokWrite`).  The value stays open only in the sense that nothing
 pins it, which is what "variable word" meant.
 
-c11 is not, and the reason is the arm's signature rather than a missing clause.  Its `hrd` is
-the value `if.then.i`'s `load` hands the value-position call, and `openTailSeg` consumes it as
-a memory fact; the argument list `HcontOpenCall` stages is the *literal* `0`, so the callee's
-contract cannot be the producer.  The contract does carry the depth-zero tie:
-`s2ValuePos_rootWord_of_answer` turns the answer `1` into the word `0`, and at depth `520`
-the answer does not read the word at all, so a read with a witness word would serve both
-arms.  Making that substitution is a `WalkStep`-level change (`openIfThenI_term`'s `load` and
-the arm's argument list), not a row edit.  Two boundary facts are recorded with it: a clause
-asserting `0` in `WalkInv` would be false at the heads a depth-zero call has flagged; and the
-answer `0` branch at `if.then.i` is `if.then16.i`, the refusal's offset store, for which
-neither `HcontArm` nor `LastEntryArm` has a constructor — so the byte class `91`/`123` is not
-total over the state space without one, and `HcontLane.root` is exactly the condition under
-which the open arm is reachable.  The same holds for the log's base word in `HlastFacts`.
+c11 is closed as a *value* row by being stated as a witness, and the substitution that made
+that possible is now the code's.  Its `hrd` used to be the value `if.then.i`'s `load` hands
+the value-position call, consumed by `openTailSeg` as a memory fact, with `HcontOpenCall`
+staging the *literal* `0`; the callee's contract therefore could not produce it.  The two
+`WalkStep`-level changes are made: `openIfThenI_term` and `openTailSeg` (with `openCapTailSeg`,
+`containerOpenSeg`, `containerOpenMerge_at`, `containerOpenCap_at`) read the slot at a
+witness word `rd`, and the arms and the payload's row (`HcontOpenCall`) name it.  With the
+witness in place the answer is derived rather than assumed — `s2ValuePos_ret_zero_or_one`
+splits the callee's two bits — and the missing arm exists: `if.then16.i`, the refusal's
+offset store, is `.containerOpenRefuse`/`LastEntryArm.containerOpenRefuse`, six links from
+the head (`containerOpenRefuse_at`) with the copy's word by `refuseSegment_word_of_store`.
+So the byte class `91`/`123` *is* total over the state space: the two answers are the whole
+branch and each has its arm, and `HcontLane.root`/`HlastLane.root` — the value clauses that
+used to stand in for it — are retired.  The reachability that was only recorded is now
+stated at two staged documents (`secondValue_last_refuses`, `secondValue_cont_refuses`,
+`JsonStage2WalkDispatchOpenersDomain`), with the first value as the answer's control.
+The same holds for the log's base word in `HlastFacts`: a witness, never a pinned value.
 
 ## 8. Out of scope for the first contract
 

@@ -99,6 +99,13 @@ supplies, and `.dispatch` turns it into the actual `WalkDispatchResult`:
   the copy — seven links, `containerOpenCap_at`, priced at `7 + 2 ≤ 32`.  `containerOpen`'s
   `C.sp ≤ 519` is the other side of the same test, so the two arms divide the depths the
   invariant admits and neither covers the other's.
+* `.containerOpenRefuse` — the same two bytes at the reason the class was once only total
+  over its bytes: `if.then.i`'s call answers `0`, so the branch is `if.then16.i`'s offset
+  store and the copy — six links, `containerOpenRefuse_at`, priced at `6 + 2 ≤ 32`.  The
+  answer, not the byte and not the depth, selects it, and the callee's answer is always `0`
+  or `1` (`s2ValuePos_ret_zero_or_one`), so this constructor is what makes the class total
+  over the invariant's states.  Its word is the root slot's witness, the same witness the
+  `1` arms carry, and no clause names the value.
 * `.closeWithOpen` — `]` and `}` with a container open, at the continuing head: both enter
   `if.then53.i`, and the nesting check's two stack bytes select the merge or a refusal —
   `closeWithOpen_at`'s four sub-routes.  The continuing guard is the loop's, not the arm's:
@@ -135,12 +142,19 @@ run/scan-free split is carried by each arm's own tail
 the four bits that leave exactly those two bytes, and both arms are proved with their
 counted segments (`walkRevolutionMergeSegWs`, `walkRevolutionMergeSeg`).
 
-The states the split once had no arm for are three, and all three are covered:
+The states the split once had no arm for are four, and all four are covered:
 
 * `}` at zero — `.closeBraceZero` (`NodeBlock17 → LeafBlock15` to `if.then53.i`'s
   refusal);
 * an opener at the stacks' staged extent — `.openAtCap` (`if.end.i`'s `ugt` taken at
   `520`);
+* an opener whose value-position answer is `0` — `.containerOpenRefuse` (`if.then.i`'s
+  branch to `if.then16.i`'s offset store).  The class `91`/`123` is the census's byte, but
+  `if.then.i` branches on the call's answer and it is the state's: `1` takes `.containerOpen`
+  or `.openAtCap`, `0` takes this arm, and `s2ValuePos_ret_zero_or_one` says the answer is
+  one of the two.  So the class is now total over the invariant's states as well as over
+  its bytes, and the root slot's value — a witness word the arms carry, not a clause —
+  is not what the split turns on;
 * the string opener at a positive depth — `.stringOpenAboveZeroMerge` and
   `.stringOpenAboveZeroRefuse`.  `HcontClass.stringOpener` is the byte `34`, and at
   `C.sp ≠ 0` the head leaves `if.then219.i` for `land.lhs.true.i`, reads `%ctype.i`'s and
@@ -465,18 +479,24 @@ inductive HcontArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
   /-- **The container openers `[` and `{` on the continuing head**: both enter
   `if.then.i`, and the four head links beside the tail's five reach the merge — nine
   links (`containerOpenMerge_at`).  The continuing entry's guard is the loop's, not this
-  arm's: the merge's index is the push's `C.k + 1`. -/
+  arm's: the merge's index is the push's `C.k + 1`.
+
+  **The call's word is a witness.**  `if.then.i` loads the root slot and hands the word to
+  `s2_value_pos`, so `rdv` is the memory's own and not a number the class fixes; the
+  staging and the answer are the call's row at it.  The answer `1` is what selects this
+  arm — the order is `≤ 519` here and `= 520` at `.openAtCap`. -/
   | containerOpen {b : BitVec 8}
       (h8 : evalOperand s (.reg "%8") = some (.int 8 b))
       (hopen : b = BitVec.ofNat 8 91 ∨ b = BitVec.ofNat 8 123)
       (hsp519 : C.sp ≤ 519)
-      (hrd : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes 0 4))
+      {rdv : BitVec 32}
+      (hread : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes rdv.toNat 4))
       (hpreV : s2ValuePosPre
-        [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+        [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
          .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
       (r : CallOutcome)
       (hcall : stage2Calls stage2SubCalls "s2_value_pos"
-        [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+        [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
          .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r)
       (hret : r.ret = .int 32 (BitVec.ofNat 32 1)) : HcontArm calls G C s
   /-- **A container opener at depth `520`**, on the continuing head: the push's guard
@@ -485,7 +505,8 @@ inductive HcontArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
   (`containerOpenCap_at`), priced at `7 + 2 ≤ 32` inside one entry's allowance.  The
   depth is the arm's premise: `WalkInv.depth_cap` bounds it by `520` and nothing below
   it, so a state at the extent is a state the invariant admits and the arm must describe.
-  The continuing guard is the loop's, not this arm's.
+  The continuing guard is the loop's, not this arm's.  Its word is the call's witness, as
+  at `.containerOpen`, and the answer `1` is what selects it.
 
   **What the arm covers, and what it does not claim.**  It covers every invariant state
   whose `C.sp` is `520` — totality's own requirement, since the census asks for an arm at
@@ -500,15 +521,48 @@ inductive HcontArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
       (h8 : evalOperand s (.reg "%8") = some (.int 8 b))
       (hopen : b = BitVec.ofNat 8 91 ∨ b = BitVec.ofNat 8 123)
       (hsp520 : C.sp = 520)
-      (hrd : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes 0 4))
+      {rdv : BitVec 32}
+      (hread : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes rdv.toNat 4))
       (hpreV : s2ValuePosPre
-        [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+        [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
          .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
       (r : CallOutcome)
       (hcall : stage2Calls stage2SubCalls "s2_value_pos"
-        [.int 32 (BitVec.ofNat 32 C.sp), .int 32 (BitVec.ofNat 32 0),
+        [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
          .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r)
       (hret : r.ret = .int 32 (BitVec.ofNat 32 1))
+      {j : Nat}
+      (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
+      (he : lookupName s.env "%e" = some (.ptr C.stage.e))
+      (hj : j ≤ G.n) (hj64 : j < 2 ^ 64) : HcontArm calls G C s
+  /-- **A container opener whose value-position answer is `0`**, on the continuing head:
+  `if.then.i`'s branch is taken, so the run is the head's four pivots, the call, and
+  `if.then16.i`'s offset store at `%e + 8` — six links to the refusal copy
+  (`containerOpenRefuse_at`), priced at `6 + 2 ≤ 32`.  The *answer* selects this arm, not
+  the byte and not the depth: the same two bytes at any depth take it when the callee
+  refuses the value, and the same two bytes at a `1` take `.containerOpen` or `.openAtCap`
+  instead.  With this constructor the class `91`/`123` is total over the invariant's states
+  as well as over the bytes — the answer is always `0` or `1`, and each has its arm.
+
+  **What the arm carries.**  The call's row at its witness word `rdv` — the root slot's
+  read, the staging, the outcome and the zero — plus the offset store's three cells.  The
+  word is the memory's own: the slot's writers are `entry`'s initial `0` and
+  `s2_after_value`'s depth-zero flag `1`, so `0` is not among them and no clause names the
+  value.  The arm does not assume the segment it establishes: `containerOpenRefuse_at`
+  composes the six links from these cells. -/
+  | containerOpenRefuse {b : BitVec 8}
+      (h8 : evalOperand s (.reg "%8") = some (.int 8 b))
+      (hopen : b = BitVec.ofNat 8 91 ∨ b = BitVec.ofNat 8 123)
+      {rdv : BitVec 32}
+      (hread : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes rdv.toNat 4))
+      (hpreV : s2ValuePosPre
+        [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
+         .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
+      (r : CallOutcome)
+      (hcall : stage2Calls stage2SubCalls "s2_value_pos"
+        [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
+         .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r)
+      (hret : r.ret = .int 32 (BitVec.ofNat 32 0))
       {j : Nat}
       (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
       (he : lookupName s.env "%e" = some (.ptr C.stage.e))
@@ -640,8 +694,9 @@ string is `ofStringMerge` at the arm's residue and its depth split, and the posi
 opener is the merge or the refusal its route reached.  Every constructor is a proved
 class, and the arm is total over `HcontClass.complete`'s bytes *and* over the invariant's
 states: `HcontClass.stringOpener` at `C.sp ≠ 0` is
-`stringOpenAboveZeroMerge`/`stringOpenAboveZeroRefuse`, and all three states the earlier
-split lacked (`}` at zero, an opener at `520`, the opener above zero) now have one. -/
+`stringOpenAboveZeroMerge`/`stringOpenAboveZeroRefuse`, and all four states the earlier
+split lacked (`}` at zero, an opener at `520`, an opener whose call answers `0`, the
+opener above zero) now have one. -/
 theorem HcontArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     {s : State} (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead)
     (hk : C.k + 1 < G.nep) :
@@ -723,12 +778,17 @@ theorem HcontArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
       · exact colonBraceRefuse_at G C s hInv hblock h8 hsp hmark hstate hb1
           (bitZeroOfNeOne hb2)
     · exact colonMarkerRefuse_at G C s hInv hblock h8 hsp hmark (bitZeroOfNeOne hb1)
-  | .containerOpen h8 hopen hsp519 hrd hpreV r hcall hret =>
-    containerOpenMerge_at G C s hInv hblock h8 hopen hsp519 hrd hpreV r hcall hret
-  | .openAtCap h8 hopen hsp520 hrd hpreV r hcall hret hv he hj hj64 =>
+  | .containerOpen h8 hopen hsp519 hread hpreV r hcall hret =>
+    containerOpenMerge_at G C s hInv hblock h8 hopen hsp519 hread hpreV r hcall hret
+  | .openAtCap h8 hopen hsp520 hread hpreV r hcall hret hv he hj hj64 =>
     (fun ⟨Cd, sd, p, hseg, herr, hprice⟩ =>
       WalkDispatchResult.refuse Cd sd p hseg.seg hseg.block hseg.word herr hprice)
-      (containerOpenCap_at G C s hInv hblock h8 hopen hsp520 hrd hpreV r hcall hret
+      (containerOpenCap_at G C s hInv hblock h8 hopen hsp520 hread hpreV r hcall hret
+        hv he hj hj64)
+  | .containerOpenRefuse h8 hopen hread hpreV r hcall hret hv he hj hj64 =>
+    (fun ⟨Cd, sd, p, hseg, herr, hprice⟩ =>
+      WalkDispatchResult.refuse Cd sd p hseg.seg hseg.block hseg.word herr hprice)
+      (containerOpenRefuse_at G C s hInv hblock h8 hopen hread hpreV r hcall hret
         hv he hj hj64)
   | .closeWithOpen h8 hv hsp hmark hstate hpreA hvj he hj hj64 =>
     closeWithOpen_at G C s hInv hblock h8 hv hsp hmark hstate hpreA hvj he hj hj64

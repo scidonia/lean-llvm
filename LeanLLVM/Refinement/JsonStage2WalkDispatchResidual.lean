@@ -34,12 +34,12 @@ byte at `%ctype.i + (%sp - 1) - 1` exists because the mark covers the depth
 `closeWithOpen` is the arm that benefits: apart from the class's own bits and the cells the
 invariant names, its only premise was that callee precondition.
 
-## The two states that had no arm, and the arms that supply them
+## The states that had no arm, and the arms that supply them
 
-The census this module recorded had two holes: two head states the switch sends to a
-refusal no constructor's class admitted, so `WalkContinueFacts` and `WalkLoopEnd` could not
+The census this module recorded had holes: head states the switch sends to a refusal or a
+route no constructor's class admitted, so `WalkContinueFacts` and `WalkLoopEnd` could not
 be total at them.  Each is now an arm of its own, at both levels, with its own producer and
-price — and both are the delimitation boundary's, which is where the lengths are:
+price — and the first two are the delimitation boundary's, which is where the lengths are:
 
 * **`}` (125) at depth zero** — `.closeBraceZero`.  `LeafBlock15` tests `%8 = 125` and
   takes `if.then53.i`, which tests `%sp = 0` and takes `if.then56.i`: the same store of the
@@ -62,13 +62,26 @@ price — and both are the delimitation boundary's, which is where the lengths a
   split's premise, so at `520` that arm was uninhabited; `JsonStage2WalkTerminalPrice`'s
   `.containerOpen` row records the same boundary.  The arm is `[` and `{` at depth `520`
   alone — one arm for both bytes, since both reach `if.then.i` — seven links from the head,
-  priced at `7 + 2 ≤ 32`, with the value-position call's staging, the root slot's zero word
-  and the call's answer `1` carried exactly as `.containerOpen` carries them and `C.sp =
-  520` in place of `C.sp ≤ 519`.
+  priced at `7 + 2 ≤ 32`, with the value-position call's row at the root slot's witness
+  word and the call's answer `1` carried exactly as `.containerOpen` carries them and `C.sp =
+  `520` in place of `C.sp ≤ 519`.
+* **A container opener whose value-position answer is `0`** — `.containerOpenRefuse`.  The
+  class `91`/`123` is the census's byte, but `if.then.i` branches on the call's answer: the
+  `1` arms are `.containerOpen` (depth at or below `519`) and `.openAtCap` (`520`), and the
+  `0` arm is `if.then16.i` — the refusal's offset store — which neither enumeration had a
+  constructor for.  The answer is the *state's*: the callee's model returns `0` or `1`
+  (`s2ValuePos_ret_zero_or_one`), and the branch takes the bit.  The arm is `[` and `{` at
+  either depth when the answer is `0` — one arm for both bytes and all depths, since
+  `if.then16.i` reads neither the byte nor the depth — six links from the head, priced at
+  `6 + 2 ≤ 32`, with the call's row at the root slot's witness word.  With it the class is
+  total over the invariant's states as well as over its bytes: the two answers are the
+  whole of the branch, and each has its arm.
 
-Both states are one byte or one nesting away from an ordinary document, so neither is
-excluded by the input domain: `"}"` and 520 nested `[` are admitted, malformed and
-deeply-nested inputs.  That is why the arms were owed rather than the domain narrowed.
+The third state is one byte, one nesting or one call's answer away from an ordinary
+document, so none is excluded by the input domain: `"}"`, 520 nested `[` and a second
+top-level value (`[0][`; its opener's answer is `0` at the slot the first value's close set)
+are admitted, malformed and deeply-nested inputs.  That is why the arms were owed rather
+than the domain narrowed.
 
 With them the census is total over those bytes and depths, **and now over the states
 too**: the string opener at a positive depth has its own pair of arms,
@@ -101,7 +114,9 @@ as a value; **traversal** is the scan's round, guard and byte facts.
 | both | `.stringOpenAboveZeroMerge`, `.stringOpenAboveZeroRefuse` (`"`, entry left, `C.sp ≠ 0`) | `hcontArm_stringOpenAboveZeroMerge_of_staging`, `…Refuse_of_staging` | the class's own facts are derived (the byte from `cont_reg8`, the two stack bytes from the carry's maps, the value-position staging from `tyBytes`/`stBytes`); the **route's segment** is the row — the merge's, whose blocks are the reservation, the body's call, the answer's tests, the record and `if.then330.i`.  The refusal half is composed (`stringDeepRefuse_at`, two links from `if.end245.i`'s state) | ABI, segment |
 | both | `.scalar` | `hcontScalarFacts_of_staging`, `lastEntryArm_scalar_of_staging`; at the continuing head `hcontArm_scalar_of_rows` (`JsonStage2WalkDispatchScalarRows`) | the root word's zero; the last byte's class; the three calls — their preconditions and answers at the returned memories.  At the continuing head the seam's invariant and the tail are produced, so the row is the document row, the lane word and its read, and the three call rows | document, ABI |
 | last | `.highByte` (`126`/`127`) | `hlastFacts_of_staging` | `HlastResidue`: the head bits, the last byte's class, the root word, the three calls | document, ABI |
-| both | `.containerOpen` (`[`, `{`) | `containerOpenMerge_at` | the `519` boundary (above); the root word's zero; `s2_value_pos`'s outcome and the `1` its contract gives | document, ABI |
+| both | `.containerOpen` (`[`, `{`, answer `1`, depth `≤ 519`) | `containerOpenMerge_at` | the `519` boundary (above); the call's row at the root slot's witness word | document, ABI |
+| both | `.openAtCap` (`[`, `{`, answer `1`, depth `520`) | `containerOpenCap_at` | `C.sp = 520` and the same witness row | depth, ABI |
+| both | `.containerOpenRefuse` (`[`, `{`, answer `0`) | `containerOpenRefuse_at` | the call's row at the witness word and its answer `0` — the answer is the state's and the two arms split it | ABI |
 | both | `.letters`, `.fLetter` | `hcontArm_letters_of_staging`, `hcontArm_fLetter_of_staging`; at the continuing head `hcontArm_letters_of_rows`/`hcontArm_fLetter_of_rows` (`JsonStage2WalkDispatchLettersRows`) | the three call rows at the seam, and the head's root-slot read: the seam's invariant, its two test cells and the root word's transport are the chain's (`contSeamMid_ee`, `contSeamMid_cond`, `contSeamMid_rootRead`), and the tail is `emptyTail_of_cells`'s | ABI, document |
 | both | `.classC` (`110 … 125`) | `hcontArm_classC_of_staging`; at the continuing head the four leaves' `hcontArm_classC_56True_of_rows` … `walkDispatch_at_classC_58Else_of_rows` (`JsonStage2WalkDispatchClassCLeaves`) | the three call rows, and no seam row: the span's endpoint is one of four named states (`ClsS413T` `110`, `ClsS413F` `111 … 115`, `ClsS58T` `116`, `HeadS413` `117 … 125`), so its `HcontSeamCells` are produced at each (`classCSeamCells_56True` … `…_58Else`) from the leaf's span, its `phi` incoming and the chain's data; the byte's own span is `classCSpan_at`'s, and the tail is produced from those cells | ABI, document |
 | both | `.run` | `runFacts_of_staging`, `runLastFacts_of_staging` | the traversal (`hbyte`); the tail's scan arm; the landing; the scan's counter and bound; the lane's order; the price | traversal, document |
