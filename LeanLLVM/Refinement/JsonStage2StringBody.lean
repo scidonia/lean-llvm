@@ -320,7 +320,22 @@ expander's record is proved of the emitted expander body
 (`escape_expand_satisfies_unconditional`, `JsonEscapeExpandAssembly`), and its
 post's decode clause is `escapeDecodeGo` at the caller's cursor.  What this
 clause adds is the eight-argument reading of that rule, which no statement in
-that file makes, because its calls carry the table. -/
+that file makes, because its calls carry the table.
+
+**This is a boundary, not a queued proof.**  The record's ninth argument and its
+`readBytes mem tab 256 = some unescapeTable` conjunct are what the emitted call
+cannot supply: the call passes eight arguments, its callee has the table compiled
+in, and `Calls` — `String → List Value → Mem → Nat → Option CallOutcome` — carries
+no module-level global.  That is the same boundary the refusal message's symbol
+operand runs into on this capture (`stage2.helpers.tsv` records the rewrite to
+`null`, and the extracted body takes the table as an appended `%tab` parameter,
+which is the fragment's stand-in for a global).  So the clause is the reading in
+use, not a promise: identifying it with the record would take a staging that
+carries the table's address and its 256 bytes and an adapter between the eight-
+and nine-argument calls, and neither is in the tree.  What the body proof rests
+on is therefore the decoder's rule at this call's arguments — `escapeDecodeGo`,
+which is the proved record's post's decode clause — and not the expander's own
+call. -/
 def escapeExpand8 : Calls
   | "leanllvm_json_escape_expand",
     [.ptr p, .int 64 len, .ptr dst, .ptr ei, .ptr xp, .ptr xj, .int 64 nxp,
