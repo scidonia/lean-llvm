@@ -73,6 +73,7 @@ import LeanLLVM.Refinement.BlockEval
 import LeanLLVM.Refinement.JsonPipelineBlockEval
 import LeanLLVM.Refinement.JsonPipelineRefine
 import LeanLLVM.Refinement.JsonPipelineSpec
+import LeanLLVM.Refinement.JsonStage2Spec
 import LeanLLVM.FramePredicate
 import LeanLLVM.Permissions
 import LeanLLVM.HeapLogic

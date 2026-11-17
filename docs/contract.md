@@ -1071,6 +1071,59 @@ stated at two staged documents (`secondValue_last_refuses`, `secondValue_cont_re
 `JsonStage2WalkDispatchOpenersDomain`), with the first value as the answer's control.
 The same holds for the log's base word in `HlastFacts`: a witness, never a pinned value.
 
+### 7.9 The event relation is instantiated
+
+`EventStreamRel` (`LeanLLVM/Refinement/JsonPipelineSpec.lean`) is no longer a
+free parameter at the specification: `LeanLLVM/Refinement/JsonStage2Spec.lean`
+defines
+
+```text
+stage2EventRel : EventStreamRel :=
+  fun bs arena evs toks => Stage2EventRel bs arena evs toks
+```
+
+and the record `Γ_pipeline_stage2` is `Γ_pipeline stage2EventRel`.  The relation
+is inductive and consumes the emitted encoding byte for byte: `tagRecord` is
+`out_tag`'s one byte, `numberRecordBytes` is `T_NUM` plus the eight payload
+bytes, and `strRecordBytes` is the tag, the four-byte length and the eight-byte
+span-or-arena field (`EventRecord`, the trace `JsonStage2Body` pins to
+`stage2.h:68-75`).  Comma and colon tokens have no record and are consumed by
+their own constructors.
+
+Its payload correspondence is the parser's own vocabulary.  A number record's
+payload is `bitsBytes (strtodSpec d).toBits` for a well-formed `Decimal d` whose
+lexeme is the token's span (`EventStreamNumberArm` in `Strtod`); a plain
+string/key record is span-addressed (`plainSpan`) and its body reads as the
+token's code points; an escaped one's arena slice reads back through
+`escapeCodePoints` as those code points; scalars and containers are the ABI's
+tags at the token's span.  The coverage lemmas are
+`stage2EventRel_scalars`, `_string_plain`, `_string_arena`, `_number`, `_array`
+and `_object`, each universal in its payload, not a list of examples.  The
+arena side of the escaped-string form is inhabited for every code-point list by
+`stage2EventRel_string_arena_inhabited` (`escapeCodePoints_encode`).  The number
+clause binds the record to `strtodSpec`; that the emitted `num_fast`/`strtod`
+path computes that function is `NumberArmOwed` in `Strtod`, still owed and not
+claimed by the relation.
+
+The used prefix is derived where the post supplies the reserved read:
+`usedPrefix_of_reserved` splits `readBytes m dst ndst' = some arena` at
+`ndstU ≤ ndst'`, and `stage2Boundary_usedArena` states the used-prefix read.
+`stage2Boundary_acceptedValue` and `stage2Boundary_refusal` are the semantic
+correspondences at the named stage-2 boundary witnesses: the accepted value is
+`decodeTape`'s, with `ValidDocument` from `decodeTape_correct`, read at the used
+prefix and the reported event cursor; the refused offset is `RefusalOffset`'s.
+The reserved extent `ndst'` remains the presence, capacity and frame extent —
+this module narrows no memory claim to `ndstU`.
+
+The refusal policy is `RefusalOffset` on both sides: `refusalOffset_walk` reads
+the parser's constructor position for a walk-owned refusal and
+`refusalOffset_utf8` the document's end for a UTF-8-owned one.  The resource
+policy is `Stage2ResourcePolicy` (the input bound and the two parser limits the
+pipeline's ABI does not carry), derived from `pipelineSpecPre` by
+`pipelineSpecPre_resourcePolicy`.  The axioms are pinned: the relation and its
+coverage constructors at `[propext]`, and the used-prefix, semantic,
+refusal and policy theorems at `[propext, Quot.sound]`.
+
 ## 8. Out of scope for the first contract
 
 `NaN`/`Infinity` as inputs the first contract's route reasons about, the
