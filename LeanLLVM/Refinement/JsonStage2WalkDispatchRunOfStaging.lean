@@ -257,6 +257,36 @@ bytes the entry has left (`hNdoc`), its start at the entry's position (`hstart`)
 scan's bound inside the document (`hspanDoc`), and `runLastMerge_at` applies
 `runLast_price_with_credit` to the three. -/
 
+/-- **The terminal stop's two bounds are the run's three document bounds.**  The scan's
+counter `i` is the stop, its distance from the entry's position is the run's count `N`, and
+the seam's bound `c` is the document's length.  `terminalStop_ge` places the stop at or after
+the entry's position and `terminalStop_le` inside the document, whose width is the
+geometry's (`WalkGeom.doc`); the three bounds `runLast_price_with_credit` spends follow by
+arithmetic — the start (`hstart`), the run inside the bytes the entry has left (`hNdoc`),
+and the scan's bound inside the document (`hspanDoc`).
+
+The premise is the scan's own: that the counter is the stop, that the stop is the seam's
+bound's antecedent, and that the bound is the document's length.  None of the three is a
+document bound; they are the traversal's numbers at the terminal index. -/
+theorem terminalStop_bounds {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {i c N : Nat}
+    (hstop : i = terminalStop G.bs (entryPos G C.k))
+    (hN : N = i - entryPos G C.k) (hc : c = G.n) :
+    entryPos G C.k ≤ i ∧ N ≤ G.n - entryPos G C.k ∧ c ≤ G.n := by
+  have hbs : G.bs.length = G.n := walkReadBytes_length G.doc
+  have hix : entryPos G C.k ≤ G.bs.length := by
+    rw [hbs]
+    exact le_trans (boundary_ge_entryPos G C.k) (boundary_le G C.k)
+  have hge : entryPos G C.k ≤ terminalStop G.bs (entryPos G C.k) :=
+    terminalStop_ge G.bs (entryPos G C.k)
+  have hle : terminalStop G.bs (entryPos G C.k) ≤ G.bs.length :=
+    terminalStop_le G.bs hix
+  refine ⟨?_, ?_, ?_⟩
+  · rw [hstop]
+    exact hge
+  · rw [hN, hstop]
+    omega
+  · rw [hc]
+
 /-- **The run bundle at the last entry, from the entry's evidence.**  `RunLastFacts` at
 every state that carries the invariant: the head's byte is `hlastByte G C` and `h8`, `h8m`,
 `hinc`, `hnep`, `hcw` and the three document bounds are this module's.  The document's own
@@ -343,18 +373,9 @@ def runLastFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : 
       simp only [stage2MaxDocument] at hmax
       omega
     hbyte := hbyte
-    hstart := by
-      rw [hstop]
-      exact terminalStop_ge G.bs (entryPos G C.k)
-    hNdoc := by
-      have hbs : G.bs.length = G.n := walkReadBytes_length G.doc
-      have hix : entryPos G C.k ≤ G.bs.length := by
-        rw [hbs]
-        exact le_trans (boundary_ge_entryPos G C.k) (boundary_le G C.k)
-      have hle := terminalStop_le G.bs hix
-      rw [hN, hstop]
-      omega
-    hspanDoc := le_of_eq hc }
+    hstart := (terminalStop_bounds (C := C) (i := i) (c := c) (N := N) hstop hN hc).1
+    hNdoc := (terminalStop_bounds (C := C) (i := i) (c := c) (N := N) hstop hN hc).2.1
+    hspanDoc := (terminalStop_bounds (C := C) (i := i) (c := c) (N := N) hstop hN hc).2.2 }
 
 /-! ### The arms, and their dispatches -/
 
@@ -497,6 +518,7 @@ theorem walkDispatch_at_run_last_of_staging {m0 : Mem} {G : WalkGeom m0}
 #print axioms LeanLLVM.Refinement.WalkScope.runBudget_of_bytePrice
 #print axioms LeanLLVM.Refinement.WalkScope.runBudget_of_wsPrice
 #print axioms LeanLLVM.Refinement.WalkScope.runFacts_of_staging
+#print axioms LeanLLVM.Refinement.WalkScope.terminalStop_bounds
 #print axioms LeanLLVM.Refinement.WalkScope.runLastFacts_of_staging
 #print axioms LeanLLVM.Refinement.WalkScope.hcontArm_run_of_staging
 #print axioms LeanLLVM.Refinement.WalkScope.lastEntryArm_run_of_staging

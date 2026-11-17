@@ -242,12 +242,18 @@ already carries, and the fifth does not:
 * the **log's capacity word** is `WalkInv.log_acap` read as `dstcap` outright
   (`walkReadBytes_logCap_word`).
 
-The fifth, the **decoded length** at `%outn.i`, is not statable.  The slot is one of the
-four `alloca` slots `WalkInv.owned` deliberately omits — its docstring records that their
-presence is false at the loop head — so no clause names the eight bytes at `G.next0 + 20`,
-and a clause naming them is an invariant edit.  Its *value* is not a call row's either:
-`s2StringBodyPost` names the decoded length in the memory the body returns, and neither
-`s2StringBodyPre` nor the body's answer (`HcontStringCalls.hy`) carries it.  So the lane's
+The fifth, the **decoded length** at `%outn.i`, is statable as a clause but not produced by
+this module.  The slot is one of the four `alloca` slots `WalkInv.owned` deliberately omits
+— its docstring records that their presence is false at the loop head — so the eight bytes
+at `G.next0 + 20` are named by no clause, and a clause naming them is an invariant edit
+carried through every construction site, not a dispatch row.  Its *value* is the previous
+iteration's body call: `s2StringBody_outn_le` (`JsonStage2Helpers`) turns the accepting
+forms of `stage2StringBody` into `∃ on, readBytes m outn 8 = some (wordBytes 8 on) ∧ on ≤
+len.toNat` at the answered memory, and `strPath9`/`strPath10`
+(`JsonStage2WalkDispatchWitnessString`) transport it across the private slot's write to
+`r.mem`.  What is missing is the carrier: neither `s2StringBodyPre` nor the body's answer
+(`HcontStringCalls.hy`) mentions the slot, so the word produced at the answer has no
+theorem carrying it to the next head where `HcontStringLane.houtn` is read.  So the lane's
 row is one slot's presence at the head and one postcondition at the call, and the other
 four reads are proofs.
 -/
@@ -283,6 +289,148 @@ theorem walkReadBytes_rootSlot_word {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry 
   rw [walkToNat_ofNat32 (bytesToNat_lt_32 hlen), ← hlen,
     JsonEntrySteps.natToBytes_bytesToNat, hlen]
   exact hvs
+
+/-- **The depth-zero value-position answer decides the root word.**  The callee's contract
+is `s2ValuePosPost`: its return is the model's `stage2ValuePos`, which at depth zero is
+`if rootDone = 0 then 1 else 0`.  So an answer of `1` at depth zero is possible only when
+the word the caller passed is `0` — the fact `if.then.i`'s `load` supplies to the call.
+
+This is the *contract* side of the root slot's zero: it turns the word into a consequence
+of the answer (`hret`), not a clause about the memory.  It does not by itself discharge
+`HcontLane.root`, because the arm's argument list names the literal `0` (`HcontOpenCall`)
+and the segment's `openTailSeg` reads the slot as a memory fact; the arm would have to carry
+the slot's witness word for this to produce it.  At a positive depth the answer does not
+depend on the word at all, so nothing there can produce a value. -/
+theorem s2ValuePos_rootWord_of_answer {mem : Mem} {next : Nat} {sp rd : BitVec 32}
+    {ct cs : Nat} {r : CallOutcome}
+    (hsp : sp.toNat = 0)
+    (hcall : stage2Calls stage2SubCalls "s2_value_pos"
+      [.int 32 sp, .int 32 rd, .ptr ct, .ptr cs] mem next = some r)
+    (hret : r.ret = .int 32 (BitVec.ofNat 32 1)) :
+    rd.toNat = 0 := by
+  rw [s2ValuePos_reply] at hcall
+  have h0 : stage2ValuePos mem sp.toNat rd.toNat ct cs =
+      some (if rd.toNat = 0 then 1 else 0) := by
+    simp only [stage2ValuePos, hsp, ↓reduceIte]
+  rw [h0] at hcall
+  have hr : (⟨.int 32 (BitVec.ofNat 32 (if rd.toNat = 0 then 1 else 0)), mem, next⟩ :
+      CallOutcome) = r := Option.some.inj hcall
+  rw [← hr] at hret
+  have hv : BitVec.ofNat 32 (if rd.toNat = 0 then 1 else 0) = BitVec.ofNat 32 1 := by
+    simpa using hret
+  by_contra hne
+  have hz : (if rd.toNat = 0 then 1 else 0) = 0 := by rw [ite_eq_right hne]
+  rw [hz] at hv
+  exact absurd hv (by decide)
+
+/-- **A store inside the token record leaves the root slot's word alone.**  The record ends
+at or below `G.next0` (`WalkStage.sevenEnd`) and the root slot is four bytes at
+`G.next0 + 8`, so a store whose extent is inside the record (`start`'s plus the payload's,
+both bounded by the record's extent) is outside the slot's range. -/
+theorem readBytes_rootSlot_tokWrite {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {m : Mem} {start len : Nat} {v : List UInt8}
+    (hstart : start + len ≤ C.stage.tok + stage2TokenExtent) (hlen : v.length = len) :
+    readBytes (writeBytes m start v) (G.next0 + 8) 4 = readBytes m (G.next0 + 8) 4 := by
+  refine walkReadBytes_writeBytes_outside (m := m) (v := v) (start := start)
+    (addr := G.next0 + 8) (n := 4) ?_
+  refine Or.inr ?_
+  have h := C.stage.sevenEnd (C.stage.tok, stage2TokenExtent) (by simp [stage2StagedWrites])
+  simp only [stage2TokenExtent] at h hstart
+  omega
+
+/-- **What `s2_after_value` writes at the root slot, at depth zero.**  The contract's post
+is the model's `stage2AfterValue`, whose depth-zero arm is
+`writeBytes mem rootDone (wordBytes 4 1)`.  So the slot holds **`1`**, not `0`: the callee
+never writes the zero `entry`'s initial store left.  This is why c11's zero cannot be a
+consequence of this contract — a head that has passed through a depth-zero call has `1`
+there, and the value-position call's answer is what distinguishes the two. -/
+theorem s2AfterValuePost_rootSlot_at_zero {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {mem : Mem} {next : Nat} {sp : BitVec 32} {r : CallOutcome}
+    (hpost : s2AfterValuePost [.int 32 sp, .ptr (G.next0 + 8), .ptr C.stage.ctype,
+      .ptr C.stage.cst] mem next r)
+    (hsp : sp.toNat = 0) :
+    readBytes r.mem (G.next0 + 8) 4 = some (natToBytes 1 4) := by
+  obtain ⟨m, hm, -, hmem, -⟩ := hpost
+  rw [hmem]
+  unfold stage2AfterValue at hm
+  rw [hsp, ite_eq_left rfl] at hm
+  obtain rfl := Option.some.inj hm
+  have h := readBytes_writeBytes_same mem (natToBytes 1 4) (addr := G.next0 + 8)
+  rwa [show (natToBytes 1 4).length = 4 from natToBytes_length 1 4] at h
+
+/-- **What `s2_after_value` leaves at the root slot, above depth zero.**  The positive-depth
+arm writes one byte of the state stack at `%cst.i + (%sp - 1)`, and the stack's staged extent
+ends at or below `G.next0`, so the slot is untouched: the word the caller held is the word it
+still holds.  Together with `s2AfterValuePost_rootSlot_at_zero` this is the callee's whole
+effect on the slot — `0` is not among its writes. -/
+theorem s2AfterValuePost_rootSlot_above {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {mem : Mem} {next : Nat} {sp : BitVec 32} {r : CallOutcome}
+    (hpost : s2AfterValuePost [.int 32 sp, .ptr (G.next0 + 8), .ptr C.stage.ctype,
+      .ptr C.stage.cst] mem next r)
+    (hsp : sp.toNat ≠ 0) (hcap : sp.toNat ≤ stage2StackExtent) :
+    readBytes r.mem (G.next0 + 8) 4 = readBytes mem (G.next0 + 8) 4 := by
+  obtain ⟨m, hm, -, hmem, -⟩ := hpost
+  rw [hmem]
+  unfold stage2AfterValue at hm
+  rw [ite_eq_right hsp] at hm
+  cases hc : readByte mem (C.stage.ctype + (sp.toNat - 1)) with
+  | none => rw [hc] at hm; cases hm
+  | some ctv =>
+      rw [hc] at hm
+      obtain rfl := Option.some.inj hm
+      refine walkReadBytes_writeBytes_outside (m := mem)
+        (v := [UInt8.ofNat (if ctv.toNat = 1 then 3 else 1)])
+        (start := C.stage.cst + (sp.toNat - 1)) (addr := G.next0 + 8) (n := 4) ?_
+      refine Or.inr ?_
+      have hse := C.stage.sevenEnd (C.stage.cst, stage2StackExtent)
+        (by simp [stage2StagedWrites])
+      simp only [stage2StackExtent] at hse hcap
+      show C.stage.cst + (sp.toNat - 1) + 1 ≤ G.next0 + 8
+      omega
+
+/-- **The root slot's word at the last entry's seam.**  The tail's start's stores are all
+inside the token record: `cond.end349.i`'s position and gap stores (`%t352.i` and
+`%t352.i + 20`), the seam's end store at `%t352.i + 8`, and the tail's three calls' kind
+store at `%t352.i + 16`.  The record ends at or below `G.next0` (`WalkStage.sevenEnd`) and
+the root slot is four bytes at `G.next0 + 8`, so every one of them misses it: the word the
+copy call's argument list carries is the head's, read by `walkReadBytes_rootSlot_word` from
+`WalkInv.root_slot`.
+
+The value is the memory's — `rdv` is a witness, not a number.  That is the honest statement
+of l1's row: the slot has two writers (`entry`'s initial `0` and `s2_after_value`'s
+depth-zero flag `1`, `s2AfterValueBody_contract`), so no clause names its value at the
+exhausted count, and no consumer needs it pinned. -/
+theorem hlastTail_rootSlot_word {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (v : Nat) (ix : BitVec 64) (b35 : UInt8)
+    (cA : BitVec 32) (hInv : WalkInv G C s) :
+    ∃ rdv : BitVec 32,
+      readBytes (writeBytes (hlastTail C s x inc nep v ix b35).mem (C.stage.tok + 16)
+        (natToBytes cA.toNat 4)) (G.next0 + 8) 4 = some (natToBytes rdv.toNat 4) := by
+  obtain ⟨rd, hread⟩ := walkReadBytes_rootSlot_word hInv
+  refine ⟨rd, ?_⟩
+  have hmem : (hlastTail C s x inc nep v ix b35).mem =
+      writeBytes
+        (writeBytes
+          (writeBytes s.mem C.stage.tok (natToBytes ix.toNat 8))
+          (C.stage.tok + 20) (natToBytes (BitVec.ofNat 32 1).toNat 4))
+        (C.stage.tok + 8) (natToBytes (BitVec.ofNat 64 v).toNat 8) := by
+    simp only [hlastTail, HeadS413, HeadS405, HeadS58, HeadS60, HeadS62, hlastSeam, seamS,
+      seamFin, hlastP35, hlastP39, hlastP41, hlastLand, headEndS, condEnd349OutAt, headAS₅,
+      headAS₄, headAS₃, headAS₂, headAS₁, stateAt, State.bind, cells]
+  rw [hmem]
+  rw [readBytes_rootSlot_tokWrite (C := C) (start := C.stage.tok + 16) (len := 4)
+    (v := natToBytes cA.toNat 4) (by simp only [stage2TokenExtent]; omega)
+    (natToBytes_length _ _)]
+  rw [readBytes_rootSlot_tokWrite (C := C) (start := C.stage.tok + 8) (len := 8)
+    (v := natToBytes (BitVec.ofNat 64 v).toNat 8) (by simp only [stage2TokenExtent]; omega)
+    (natToBytes_length _ _)]
+  rw [readBytes_rootSlot_tokWrite (C := C) (start := C.stage.tok + 20) (len := 4)
+    (v := natToBytes (BitVec.ofNat 32 1).toNat 4)
+    (by simp only [stage2TokenExtent]; omega) (natToBytes_length _ _)]
+  rw [readBytes_rootSlot_tokWrite (C := C) (start := C.stage.tok) (len := 8)
+    (v := natToBytes ix.toNat 8) (by simp only [stage2TokenExtent]; omega)
+    (natToBytes_length _ _)]
+  exact hread
 
 /-- **The log's arena word**, at the invariant's own existential: `log_alen` names both
 the read and the bound its value sits in. -/
@@ -343,7 +491,22 @@ structure HcontDefaultRow {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
 /-- **The document's lane facts at a continuing head**: the words the dispatch's own
 blocks have already laid down, read at the state the arm is read at. -/
 structure HcontLane {m0 : Mem} (G : WalkGeom m0) : Type where
-  /-- The root slot's word: zero, which is what `.containerOpen` and `.openAtCap` read. -/
+  /-- The root slot's word: zero, which is what `.containerOpen` and `.openAtCap` read.
+
+  **The zero is this field's, and no theorem produces it.**  `WalkInv.root_slot` gives the
+  slot's presence, read back as a word by `walkReadBytes_rootSlot_word`; the slot's writers
+  are `entry`'s initial `0` and `s2_after_value`'s depth-zero flag `1`
+  (`s2AfterValuePost_rootSlot_at_zero`; above depth zero the callee leaves it,
+  `s2AfterValuePost_rootSlot_above`).  So the value is a function of the path, not of the
+  class.  What the *value-position* contract gives is the depth-zero tie:
+  `s2ValuePos_rootWord_of_answer` turns the answer `1` into the word `0`.  Producing this
+  field from it needs the arm's argument list to name the slot's witness word rather than
+  the literal `0` (`HcontOpenCall`), which is a `WalkStep`-level change
+  (`openIfThenI_term`, `openTailSeg`), not a dispatch row.
+
+  The byte class is also not total: the answer `0` arm at `if.then.i` is `if.then16.i`,
+  the refusal's offset store, and neither `HcontArm` nor `LastEntryArm` has a constructor
+  for it. -/
   root : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     C.k + 1 < G.nep → readBytes s.mem (G.next0 + 8) 4 = some (natToBytes 0 4)
   /-- The standalone string's lane. -/
@@ -525,6 +688,10 @@ structure HlastHighByteAbi {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : S
 
 /-- **The document's lane facts at the last entry.** -/
 structure HlastLane {m0 : Mem} (G : WalkGeom m0) : Type where
+  /-- The openers' root word at the exhausted count: the zero word `HcontLane.root` states
+  at a continuing head.  The same status: the slot's read is `walkReadBytes_rootSlot_word`,
+  the value is this field's, and the callee's own writes never put `0` there
+  (`s2AfterValuePost_rootSlot_at_zero`/`_above`). -/
   root : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     ¬ (C.k + 1 < G.nep) → readBytes s.mem (G.next0 + 8) 4 = some (natToBytes 0 4)
   /-- The last byte's class, at the high-byte route's two conditions. -/
@@ -711,6 +878,10 @@ theorem hcontPayload_of_nep_zero {m0 : Mem} (G : WalkGeom m0) (h : G.nep = 0) :
 
 #print axioms LeanLLVM.Refinement.WalkScope.walkReadBytes_entryPos_word
 #print axioms LeanLLVM.Refinement.WalkScope.walkReadBytes_rootSlot_word
+#print axioms LeanLLVM.Refinement.WalkScope.s2ValuePos_rootWord_of_answer
+#print axioms LeanLLVM.Refinement.WalkScope.s2AfterValuePost_rootSlot_at_zero
+#print axioms LeanLLVM.Refinement.WalkScope.s2AfterValuePost_rootSlot_above
+#print axioms LeanLLVM.Refinement.WalkScope.hlastTail_rootSlot_word
 #print axioms LeanLLVM.Refinement.WalkScope.walkReadBytes_logArena_word
 #print axioms LeanLLVM.Refinement.WalkScope.walkReadBytes_logCap_word
 #print axioms LeanLLVM.Refinement.WalkScope.walkDispatch_at_open91_of_payload
