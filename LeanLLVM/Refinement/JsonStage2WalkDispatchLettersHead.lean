@@ -102,21 +102,6 @@ def contLandOut {m0 : Mem} {G : WalkGeom m0} (s : State) (v : Nat) (b35 : UInt8)
       ("%gep", .ptr ((G.b - 1) + v))] s.env) s) with
     pc := "NodeBlock41", pre := some s.pc }
 
-/-- `NodeBlock41`'s target: the byte's first pivot, at `NodeBlock39`. -/
-def contP41Out (s : State) (b35 : UInt8) : State :=
-  { (s.bind "%Pivot42" (.int 1 (evalICmp .slt (cont35 b35) (BitVec.ofNat 8 13)))) with
-    pc := "NodeBlock39", pre := some s.pc }
-
-/-- `NodeBlock39`'s target: the byte's second pivot, at `LeafBlock35`. -/
-def contP39Out (s : State) (b35 : UInt8) : State :=
-  { (s.bind "%Pivot40" (.int 1 (evalICmp .slt (cont35 b35) (BitVec.ofNat 8 32)))) with
-    pc := "LeafBlock35", pre := some s.pc }
-
-/-- `LeafBlock35`'s target: the byte's equality test, at `if.end372.i`. -/
-def contP35Out (s : State) (b35 : UInt8) : State :=
-  { (s.bind "%SwitchLeaf36" (.int 1 (evalICmp .eq (cont35 b35) (BitVec.ofNat 8 13)))) with
-    pc := "if.end372.i", pre := some s.pc }
-
 /-- The byte's three pivots' target, at `if.end372.i`. -/
 def contP35Mid {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (q : State)
     (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64) (b35 : UInt8) : State :=
@@ -237,22 +222,6 @@ theorem contSeamMid_mem {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (q : Stat
   simp only [contSeamMid, seamS, seamFin, contP35Mid, contP35Out, contP39Out, contP41Out,
     contLandOut, contMidS, condEnd349OutAt, cte345OutAt, contSwOut, stateAt, cells,
     State.bind]
-
-/-- **A store inside the token record leaves the root slot's word alone.**  The token record
-ends at or below `G.next0` (`WalkStage.sevenEnd`) and the root slot is four bytes at
-`G.next0 + 8`; the store's own extent is the offset's plus the payload's. -/
-theorem walkReadBytes_rootSlot_of_tokStore {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
-    {m : Mem} {off len : Nat} {v : List UInt8}
-    (hoff : off + len ≤ stage2TokenExtent) (hlen : v.length = len) :
-    readBytes (writeBytes m (C.stage.tok + off) v) (G.next0 + 8) 4 =
-      readBytes m (G.next0 + 8) 4 := by
-  refine walkReadBytes_writeBytes_outside (start := C.stage.tok + off)
-    (addr := G.next0 + 8) (n := 4) ?_
-  right
-  have h := C.stage.sevenEnd (C.stage.tok, stage2TokenExtent)
-    (by simp [stage2StagedWrites])
-  simp only [stage2TokenExtent] at h hoff
-  omega
 
 /-- **The root slot's word at the seam is the state's.**  The three stores are inside the
 token record, so the word the copy call's argument list carries is the one its argument

@@ -83,12 +83,12 @@ open LeanLLVM.Refinement.JsonStage2IR
 
 namespace WalkScope
 
-/-! ### The twelve links live upstream
+/-! ### The head's chain lives upstream
 
 `hcontHeadSeg12` is stated in `JsonStage2WalkRevolutionPrefix`, where `hcontToSpan`
 composes it with the class-C span; this module does not restate the head's path.  The
-bundle-level applications (`hcontHeadSeg12_of_cleanup`, `hcontSpan17_of_cleanup`) and the
-twenty-link composition `hcontPrefixCleanupSeg` are in
+bundle-level applications (`hcontHeadSegCleanup` at the bundle's route,
+`hcontSpan17_of_cleanup`) and the `n ≤ 20` composition `hcontPrefixCleanupSeg` are in
 `JsonStage2WalkDispatchCleanupSpan`, upstream of the merge they serve. -/
 
 /-! ### The class-C span, at one interface
@@ -156,10 +156,10 @@ theorem classCHeadSpan_at {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
 
 /-! ### The composition the exposure buys
 
-`hcontToSpan` is `hcontHeadSeg12` composed with the class-C span; at the scan-free bundle
-that composition is `hcontSpan17_of_cleanup` (`JsonStage2WalkDispatchCleanupSpan`), where
-`HcontCleanupFacts` is in scope, and its consumer is `hcontPrefixCleanupSeg` there and
-`walkRevolutionMergeSeg` (`JsonStage2WalkRevolutionSeg`). -/
+`hcontToSpan` is `hcontHeadSeg12` composed with the class-C span; at the bundle that
+composition is `hcontSpan17_of_cleanup` (`JsonStage2WalkDispatchCleanupSpan`), where
+`HcontCleanupFacts` is in scope and the byte's class selects the chain, and its consumer is
+`hcontPrefixCleanupSeg` there and `walkRevolutionMergeSeg` (`JsonStage2WalkRevolutionSeg`). -/
 
 /-! ### The run class's four segments, at the run's own count
 
@@ -475,8 +475,8 @@ theorem hcontArm_cleanup_of_calls {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
       (contIx G C) (contB35 G v) (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ hInvT hblockT
       reg hpreT hincT hopT hkindT hrdT hreadRoot hpre₁ hcall₁ hret₁ hbit0T hzread hcT htT
       hoT hpre₂ hcall₂ hret₂ hev64 htight hklt hpre₃ hcall₃ hv64
-  exact ⟨hcontArm_cleanup_of_staging G C s hInv hk hlt125 hne125 hread hspan hugt hb13
-    hb32 hbne13 r₁ r₂ r₃ ev (cA := cA) (rdv := rdv) (xA := xA) hTail⟩
+  exact ⟨hcontArm_cleanup_of_staging G C s hInv hk hlt125 hne125 hread hspan hugt
+    (.scanFree hb13 hb32 hbne13) r₁ r₂ r₃ ev (cA := cA) (rdv := rdv) (xA := xA) hTail⟩
 
 /-- **The scan-free continuing dispatch, from the three calls' rows.** -/
 theorem walkDispatch_at_cleanup_of_calls {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}

@@ -45,13 +45,14 @@ different edges and a segment is stitched at its states:
 
 | piece | lemma | links |
 |---|---|---|
-| the head, the whitespace check, the seam and the class-C span | `hcontPrefixCleanupSeg` ← `hcontSpan17_of_cleanup` ← `hcontHeadSeg12` | `12 + 5` |
+| the head, the whitespace check, the byte's route and the class-C span | `hcontPrefixCleanupSeg` ← `hcontSpan17_of_cleanup` ← `hcontHeadSegCleanup` | `nH ≤ 12`, `+ 5`, `+ 3` |
 | the tail's three calls, on their empty arm | the bundle's `hTail` (`consumerTailSegEmptyAt`'s shape) | `3` |
 | the merge | `walkIfEnd473_at` | `1` |
 
-at `20 + 1 = 21`, from the loop head `s` to `clnMergeS f` at `clnMergeC C f.ev`, with the
-price `21 + 2 ≤ 32·Δk` — **no byte term**, because this arm spends no document byte after
-the whitespace check's two.  Its three cells are `clnMergeC_k` (rfl), `contCleanupEndF_inc`
+at `p ≤ 21` (twelve at the scan-free byte and the high leaf, eleven at the low one), from
+the loop head `s` to `clnMergeS f` at `clnMergeC C f.ev`, with the price
+`p + 2 ≤ 32·Δk` — **no byte term**, because this arm spends no document byte after the
+whitespace check's two.  Its three cells are `clnMergeC_k` (rfl), `contCleanupEndF_inc`
 and `contCleanupEndF_nep`: the seam, the span and the tail rebind neither register.
 
 `walkRevolutionMergeSegWs` — the **whitespace** arm — composes
@@ -238,31 +239,28 @@ def clnMergeS {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
 theorem clnMergeC_k {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (ev : EventRecord) :
     (clnMergeC C ev).k = C.k := rfl
 
-/-- `%inc.i` at the scan-free tail's end is the loop head's: the seam binds `%ee.1.i`,
+/-- `%inc.i` at the class's tail end is the loop head's: the seam binds `%ee.1.i`,
 `%end.i` and the byte's cells, the class-C span its own five, and the tail's three calls
 `%kind404.i`, `%38`, `%call416.i`, `%tobool417.not.i`, `%.sink372`, `%call427.i`,
 `%tobool428.not.i` and `%cmp451.i` — none of them is the header's increment. -/
 theorem contCleanupEndF_inc {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     (f : HcontCleanupFacts G C s) :
     lookupName (contCleanupEndF f).env "%inc.i" = lookupName s.env "%inc.i" := by
-  simp only [contCleanupEndF, contCleanupEnd, ScanEntry, TailS₃, TailS₂, TailS₁,
-    contTailStart, HeadS413, HeadS405, HeadS58, HeadS60, HeadS62, contSeamS, seamS, seamFin,
-    contP35S, contP39S, contP41S, contLandS, contEndS, cte345OutAt, condEnd349OutAt,
-    contAS₅, headAS₄, headAS₃, headAS₂, headAS₁, stateAt, cells, State.bind]
-  repeat rw [lookupName_cons_ne _ _ (by decide)]
+  simp only [contCleanupEndF]
+  exact contCleanupEndByte_inc C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.b8 f.x1 f.hb
+    f.r₁ f.r₂ f.r₃ f.cA f.rdv f.xA
 
-/-- `%nep` at the scan-free tail's end is the loop head's, for the same reason. -/
+/-- `%nep` at the class's tail end is the loop head's, for the same reason. -/
 theorem contCleanupEndF_nep {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     (f : HcontCleanupFacts G C s) :
     lookupName (contCleanupEndF f).env "%nep" = lookupName s.env "%nep" := by
-  simp only [contCleanupEndF, contCleanupEnd, ScanEntry, TailS₃, TailS₂, TailS₁,
-    contTailStart, HeadS413, HeadS405, HeadS58, HeadS60, HeadS62, contSeamS, seamS, seamFin,
-    contP35S, contP39S, contP41S, contLandS, contEndS, cte345OutAt, condEnd349OutAt,
-    contAS₅, headAS₄, headAS₃, headAS₂, headAS₁, stateAt, cells, State.bind]
-  repeat rw [lookupName_cons_ne _ _ (by decide)]
+  simp only [contCleanupEndF]
+  exact contCleanupEndByte_nep C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.b8 f.x1 f.hb
+    f.r₁ f.r₂ f.r₃ f.cA f.rdv f.xA
 
-/-- **The token record at the scan-free tail's end**, which is what the merge's lifetime
-marker reads.  No block on this path rebinds `%t352.i`, so the cell is the head state's. -/
+/-- **The token record at the class's tail end**, which is what the merge's lifetime
+marker reads.  No block on any of the byte's routes rebinds `%t352.i`, so the cell is the
+head state's. -/
 theorem contCleanupEndF_tok {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     (f : HcontCleanupFacts G C s) :
     lookupName (contCleanupEndF f).env "%t352.i" = some (.ptr C.stage.tok) := by
@@ -270,12 +268,9 @@ theorem contCleanupEndF_tok {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : 
     (headAS5_envTokEq s f.x f.inc f.nep).symm.trans
       (show lookupName (headAS₅ s f.x f.inc f.nep).env "%t352.i" =
         some (.ptr C.stage.tok) from f.htok5)
-  simp only [contCleanupEndF, contCleanupEnd, ScanEntry, TailS₃, TailS₂, TailS₁,
-    contTailStart, HeadS413, HeadS405, HeadS58, HeadS60, HeadS62, contSeamS, seamS, seamFin,
-    contP35S, contP39S, contP41S, contLandS, contEndS, cte345OutAt, condEnd349OutAt,
-    contAS₅, headAS₄, headAS₃, headAS₂, headAS₁, stateAt, cells, State.bind]
-  repeat rw [lookupName_cons_ne _ _ (by decide)]
-  exact hS
+  simp only [contCleanupEndF]
+  exact contCleanupEndByte_tok C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.b8 f.x1 f.hb
+    f.r₁ f.r₂ f.r₃ f.cA f.rdv f.xA hS
 
 
 /-! ### The round, named
@@ -609,21 +604,22 @@ The head path at its twenty-three, the scan's visits at four each, the latch's e
 merge: the endpoint is `revMergeS sm v` and the last three conjuncts are the merge's three
 cells read at it. -/
 
-/-- **The scan-free arm's path to the merge, with the merge's cells at its endpoint.**
-`hcontPrefixCleanupSeg`'s twenty links — the bundle's own fields through
+/-- **The class's path to the merge, with the merge's cells at its endpoint.**
+`hcontPrefixCleanupSeg`'s `n ≤ 20` links — the bundle's own fields through
 `hcontSpan17_of_cleanup` — and the merge's own step, at the endpoint
 `clnMergeS f` and the carry `clnMergeC C f.ev` — both terms of the composition, so the three
 cells are read where the run actually ends.
 
-The price is the entry's own: `21 + 2 ≤ 32·Δk` at `Δk = 1`, and **no byte term** — this arm
-spends no document byte after the whitespace check's two, so the visits a scan would charge
-for do not exist here.  That is the difference the last-entry repair turned on, carried to
-the continuing arm: the token's end is the entry's end, `if.then447.i`'s test is `ult v v`,
-and the merge is reached without entering the scan. -/
+The price is the entry's own: `p + 2 ≤ 32·Δk` at `p ≤ 21` and `Δk = 1`, and **no byte
+term** — this arm spends no document byte after the whitespace check's two, so the visits a
+scan would charge for do not exist here.  That is the difference the last-entry repair
+turned on, carried to the continuing arm: the token's end is the entry's end,
+`if.then447.i`'s test is `ult v v`, and the merge is reached without entering the scan. -/
 theorem walkRevolutionMergeSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead)
     (f : HcontCleanupFacts G C s) :
-    WalkSegment (stage2Calls stage2SubCalls) G C s (clnMergeC C f.ev) (clnMergeS f) 21 ∧
+    ∃ p, p ≤ 21 ∧
+      WalkSegment (stage2Calls stage2SubCalls) G C s (clnMergeC C f.ev) (clnMergeS f) p ∧
       WalkInv G (clnMergeC C f.ev) (clnMergeS f) ∧
       (clnMergeC C f.ev).block = "cleanup478.i" ∧
       (clnMergeS f).pre = some "if.end473.i" ∧
@@ -632,11 +628,9 @@ theorem walkRevolutionMergeSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s
         some (.int 64 (BitVec.ofNat 64 (C.k + 1))) ∧
       lookupName (clnMergeS f).env "%nep" =
         some (.int 64 (BitVec.ofNat 64 G.nep)) ∧
-      21 + 2 ≤ stage2EntryAllowance * (C.k + 1 - C.k) := by
-  -- the span and the scan-free tail: twenty links to the merge's entry
-  have hsegP : WalkSegment (stage2Calls stage2SubCalls) G C s
-      (TailCarryEnd (ContTailStartC C) f.ev) (contCleanupEndF f) 20 :=
-    hcontPrefixCleanupSeg (G := G) (C := C) (s := s) hInv hblock f
+      p + 2 ≤ stage2EntryAllowance * (C.k + 1 - C.k) := by
+  -- the byte's class's chain and the scan-free tail: at most twenty links to the entry
+  obtain ⟨n, hn, hsegP⟩ := hcontPrefixCleanupSeg (G := G) (C := C) (s := s) hInv hblock f
   -- the merge's step, one link, from the token record's register
   obtain ⟨s₂, hl₂, hs₂⟩ :=
     walkIfEnd473_at (sub := stage2SubCalls) (G := G)
@@ -644,8 +638,8 @@ theorem walkRevolutionMergeSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s
       (tok := C.stage.tok) (contCleanupEndF_tok f)
   -- the tail's `if` is its else arm, so the block it leaves is the merge's entry
   have hpc : (contCleanupEndF f).pc = "if.end473.i" :=
-    contCleanupEnd_pc C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.b8 f.x1 f.r₁ f.r₂ f.r₃
-      f.cA f.rdv f.xA
+    contCleanupEndByte_pc C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.b8 f.x1 f.hb f.r₁ f.r₂
+      f.r₃ f.cA f.rdv f.xA
   rw [hpc] at hs₂
   have hs₂' : s₂ = clnMergeS f := hs₂
   subst hs₂'
@@ -658,12 +652,12 @@ theorem walkRevolutionMergeSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s
       some (.int 64 (BitVec.ofNat 64 G.nep)) := by
     rw [show (clnMergeS f).env = (contCleanupEndF f).env from rfl, contCleanupEndF_nep]
     exact hInv.regs ("%nep", .int 64 (BitVec.ofNat 64 G.nep)) (by simp [walkStaticRegs])
-  refine ⟨hsegP.trans (WalkSegment.of_link hl₂), hl₂.inv', rfl, rfl, clnMergeC_k C f.ev,
-    hincM, hnepM, ?_⟩
-  -- the price: the path is twenty-one links and the byte term is zero
+  refine ⟨n + 1, by omega, hsegP.trans (WalkSegment.of_link hl₂), hl₂.inv', rfl, rfl,
+    clnMergeC_k C f.ev, hincM, hnepM, ?_⟩
+  -- the price: the class's links plus one, and the byte term is zero
   have hΔ : C.k + 1 - C.k = 1 := by omega
   simp only [stage2EntryAllowance, hΔ, Nat.mul_one]
-  decide
+  omega
 
 /-! ### The `∀`-form, and the consumer that reads it
 
@@ -697,9 +691,9 @@ theorem walkMergeCells_cleanup {m0 : Mem} (G : WalkGeom m0) :
           lookupName sd.env "%nep" = some (.int 64 (BitVec.ofNat 64 G.nep))) ∧
         p + 2 ≤ stage2EntryAllowance * (C.k + 1 - C.k) := by
   intro C s hInv hblock f
-  obtain ⟨hseg, hInvD, hblockD, hpre, hkC, hinc, hnep, hprice⟩ :=
+  obtain ⟨p, _hp, hseg, hInvD, hblockD, hpre, hkC, hinc, hnep, hprice⟩ :=
     walkRevolutionMergeSeg G C s hInv hblock f
-  exact ⟨clnMergeC C f.ev, clnMergeS f, 21, hseg, hblockD, hInvD, hpre,
+  exact ⟨clnMergeC C f.ev, clnMergeS f, p, hseg, hblockD, hInvD, hpre,
     ⟨hkC, hinc, hnep⟩, hprice⟩
 
 /-- **`WalkDispatch`'s body for a scan-free continuing entry, from the cells instead of a
@@ -709,7 +703,7 @@ about an arbitrary segment is needed.
 
 The depth is the invariant's (`depth_reg`, `depth_cap`, `sp_le_wlen`); the index and the two
 register cells are the composition's.  The contract's byte term is a credit this arm does
-not spend — the path's price `21 + 2 ≤ 32·Δk` holds with no byte term at all — so the
+not spend — the path's price `p + 2 ≤ 32·Δk` at `p ≤ 21` holds with no byte term at all — so the
 statement keeps the contract's shape and the proof discharges it from the smaller bound. -/
 theorem walkDispatch_at_continue_cells {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G)
     (s : State) (hInv : WalkInv G C s) (hhead : C.block = walkLoopHead)
@@ -732,7 +726,7 @@ theorem walkDispatch_at_continue_cells {m0 : Mem} {G : WalkGeom m0} (C : WalkCar
       spv ≤ Cd.wlen ∧
       p + 2 ≤ stage2EntryAllowance * (k2 - C.k) +
         stage2ByteAllowance * (entryPos G k2 - entryPos G C.k) := by
-  obtain ⟨hseg, hInvD, hblock, hpre, hkC, hinc, hnep, hprice⟩ :=
+  obtain ⟨p, _hp, hseg, hInvD, hblock, hpre, hkC, hinc, hnep, hprice⟩ :=
     walkRevolutionMergeSeg G C s hInv hhead hcont
   have hdepth : evalOperand (clnMergeS hcont) (Operand.reg "%sp.i.0248") =
       some (.int 32 (BitVec.ofNat 32 (clnMergeC C hcont.ev).sp)) := hInvD.depth_reg
@@ -745,7 +739,7 @@ theorem walkDispatch_at_continue_cells {m0 : Mem} {G : WalkGeom m0} (C : WalkCar
     omega
   have hnepv : (BitVec.ofNat 64 G.nep).toNat = G.nep := by
     rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hnep64]
-  refine ⟨clnMergeC C hcont.ev, clnMergeS hcont, 21, (clnMergeC C hcont.ev).sp,
+  refine ⟨clnMergeC C hcont.ev, clnMergeS hcont, p, (clnMergeC C hcont.ev).sp,
     C.k + 1, "if.end473.i", Operand.reg "%sp.i.0248", Operand.reg "%inc.i",
     BitVec.ofNat 64 G.nep, hseg, hblock, hkC, hpre, (by decide), hdepth, (by decide),
     hincv, hnep, ?_, hk, ?_, hInvD.depth_cap, hInvD.sp_le_wlen, ?_⟩

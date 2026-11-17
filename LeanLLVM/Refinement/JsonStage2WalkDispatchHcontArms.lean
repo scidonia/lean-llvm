@@ -183,7 +183,7 @@ Each constructor carries only its own arm's premises, and the price is the dispa
 The head switch's tests are on the entry's first byte (`%8`), and the tag test is the same
 byte's.  The whitespace run is decided by the byte before the *entry's end* (`%35`), which
 is the document's content rather than the head state's dispatch; so it is each one-entry
-arm's own premise (`HcontFacts.hClass`, `HcontCleanupFacts`'s three no-run bits,
+arm's own premise (`HcontFacts.hClass`, `HcontCleanupFacts`'s `hb : HcontByteRoute`,
 `HcontScalarFacts`'s three), not a second classification over `%8`.  The two are different
 questions, and this module keeps them apart exactly as `JsonStage2WalkDispatchArms` keeps
 the last entry's guard apart from its head switch.

@@ -221,6 +221,98 @@ def contAS₅ (s : State) (x : BitVec 8) (inc nep : BitVec 64) : State :=
 /-- The byte `land.lhs.true357.i` loads, as the `%35` cell holds it. -/
 abbrev cont35 (b : UInt8) : BitVec 8 := BitVec.ofNat 8 b.toNat
 
+/-! ### The byte's three routes, at the byte
+
+`%35` is the byte before the entry's end.  Its class selects the leaf the token's end is
+reached from: `LeafBlock35`'s equality test clears on the scan-free class,
+`LeafBlock33`'s offset test clears below `13`, and `LeafBlock37`'s equality test clears
+above `32`.  The route is `Type` valued because the chain a producer returns is a program.
+
+These live here rather than beside the leaf chains because a bundle states its fields at
+them, and a definition a bundle names must exist above the bundle.  The states are
+functions of the byte alone, so the class-C route's `contP35S` and the last entry's own
+byte are instances of the same three names. -/
+
+/-- **The byte's three routes, stated at the byte.**  `HcontHeadByte` is the class a
+document row carries, tied to `G` and the entry's end word; this is the same three
+non-whitespace routes stated at `cont35 b35`, which is what the pivot steps read. -/
+inductive HcontByteRoute (b : BitVec 8) : Type where
+  /-- `LeafBlock35`'s equality test to `if.end372.i`. -/
+  | scanFree (hb13 : evalICmp .slt b (BitVec.ofNat 8 13) = 0)
+      (hb32 : evalICmp .slt b (BitVec.ofNat 8 32) = 1)
+      (hbne13 : evalICmp .eq b (BitVec.ofNat 8 13) = 0) : HcontByteRoute b
+  /-- `NodeBlock41`'s first arm to `LeafBlock33`, its offset test clearing. -/
+  | lowLeaf (hb13 : evalICmp .slt b (BitVec.ofNat 8 13) = 1)
+      (hbns : evalICmp .ule (b + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 0) :
+      HcontByteRoute b
+  /-- `NodeBlock39`'s second arm to `LeafBlock37`, its equality test clearing. -/
+  | highLeaf (hb13 : evalICmp .slt b (BitVec.ofNat 8 13) = 0)
+      (hb32 : evalICmp .slt b (BitVec.ofNat 8 32) = 0)
+      (hbne32 : evalICmp .eq b (BitVec.ofNat 8 32) = 0) : HcontByteRoute b
+
+/-! ### The byte's leaf arms, as states -/
+
+/-- `NodeBlock41`'s target: the byte's first pivot, at `NodeBlock39`. -/
+def contP41Out (s : State) (b35 : UInt8) : State :=
+  { (s.bind "%Pivot42" (.int 1 (evalICmp .slt (cont35 b35) (BitVec.ofNat 8 13)))) with
+    pc := "NodeBlock39", pre := some s.pc }
+
+/-- `NodeBlock39`'s target: the byte's second pivot, at `LeafBlock35`. -/
+def contP39Out (s : State) (b35 : UInt8) : State :=
+  { (s.bind "%Pivot40" (.int 1 (evalICmp .slt (cont35 b35) (BitVec.ofNat 8 32)))) with
+    pc := "LeafBlock35", pre := some s.pc }
+
+/-- `LeafBlock35`'s target: the byte's equality test, at `if.end372.i`. -/
+def contP35Out (s : State) (b35 : UInt8) : State :=
+  { (s.bind "%SwitchLeaf36" (.int 1 (evalICmp .eq (cont35 b35) (BitVec.ofNat 8 13)))) with
+    pc := "if.end372.i", pre := some s.pc }
+
+/-- `NodeBlock41`'s target on the arm its `%35 < 13` test takes: `LeafBlock33`. -/
+def contP41Low (s : State) (b35 : UInt8) : State :=
+  { (s.bind "%Pivot42" (.int 1 (evalICmp .slt (cont35 b35) (BitVec.ofNat 8 13)))) with
+    pc := "LeafBlock33", pre := some s.pc }
+
+/-- `LeafBlock33`'s target on the arm its offset test does not take: `if.end372.i`. -/
+def contP33Out (s : State) (b35 : UInt8) : State :=
+  { stateAt (cells
+      [("%SwitchLeaf34", .int 1 (evalICmp .ule (cont35 b35 + BitVec.ofNat 8 247)
+        (BitVec.ofNat 8 1))),
+       ("%.off", .int 8 (cont35 b35 + BitVec.ofNat 8 247))] s.env) s with
+    pc := "if.end372.i", pre := some s.pc }
+
+/-- `NodeBlock39`'s target on the arm its `%35 < 32` test does not take: `LeafBlock37`. -/
+def contP39High (s : State) (b35 : UInt8) : State :=
+  { (s.bind "%Pivot40" (.int 1 (evalICmp .slt (cont35 b35) (BitVec.ofNat 8 32)))) with
+    pc := "LeafBlock37", pre := some s.pc }
+
+/-- `LeafBlock37`'s target on the arm its equality test does not take: `if.end372.i`. -/
+def contP37Out (s : State) (b35 : UInt8) : State :=
+  { (s.bind "%SwitchLeaf38" (.int 1 (evalICmp .eq (cont35 b35) (BitVec.ofNat 8 32)))) with
+    pc := "if.end372.i", pre := some s.pc }
+
+/-- The scan-free route's pivot endpoint, at any state at `NodeBlock41`. -/
+def contP35Any (s : State) (b35 : UInt8) : State :=
+  contP35Out (contP39Out (contP41Out s b35) b35) b35
+
+/-- The low leaf's pivot endpoint, at any state at `NodeBlock41`. -/
+def contP33Any (s : State) (b35 : UInt8) : State :=
+  contP33Out (contP41Low s b35) b35
+
+/-- The high leaf's pivot endpoint, at any state at `NodeBlock41`. -/
+def contP37Any (s : State) (b35 : UInt8) : State :=
+  contP37Out (contP39High (contP41Out s b35) b35) b35
+
+/-- **The seam the byte's class reaches**, as a function of the class: the token's end's
+else arm at `if.else387.i`.  Each leaf binds its own comparison cell, so the endpoint is
+the class's; the three terms' `%8`, `%ee.1.i`, `%cond350.i` and memory are the same, which
+is what the arm above them reads. -/
+def contSeamByte (q4 : State) (vN tok : Nat)
+    (b35 : UInt8) (b8 : BitVec 8) (hb : HcontByteRoute (cont35 b35)) : State :=
+  match hb with
+  | .scanFree _ _ _ => seamS (contP35Any q4 b35) (BitVec.ofNat 64 vN) b8 tok
+  | .lowLeaf _ _ => seamS (contP33Any q4 b35) (BitVec.ofNat 64 vN) b8 tok
+  | .highLeaf _ _ _ => seamS (contP37Any q4 b35) (BitVec.ofNat 64 vN) b8 tok
+
 /-- `cond.end349.i`'s target on the continuing arm: its source is `cond.true345.i`'s
 target, so the bound's `phi` selects `%conv347.i` and `%cond350.i` is `ofNat 64 v.toNat`. -/
 def contEndS {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State) (x : BitVec 8)
@@ -274,6 +366,16 @@ def contTailStart {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State) (x 
     (b35 : UInt8) (b8 : BitVec 8) (x1 : BitVec 8) : State :=
   HeadS413 (contSeamS C s x inc nep ep v ix b35 b8) x1
 
+/-- **The same target, at the byte's route.**  `contTailStart` is the scan-free route's
+instance: at `.scanFree` the seam is `contSeamS` and the two terms are the same by `rfl`.
+The other two classes reach their own leaf's seam, so the tail's source is the class's. -/
+def contTailStartByte {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
+    (b35 : UInt8) (b8 : BitVec 8) (x1 : BitVec 8)
+    (hb : HcontByteRoute (cont35 b35)) : State :=
+  HeadS413 (contSeamByte (contLandS C s x inc nep ep v ix b35) v.toNat C.stage.tok b35 b8
+    hb) x1
+
 /-- The scan's entry: the tail's end state, at the block `%cond350.i` makes `v.toNat`. -/
 def contEntry {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State) (x : BitVec 8)
     (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
@@ -303,6 +405,17 @@ def contCleanupEnd {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State) (x
     (b35 : UInt8) (b8 : BitVec 8) (x1 : BitVec 8)
     (r₁ r₂ r₃ : CallOutcome) (cA rdv xA : BitVec 32) : State :=
   ScanEntry (contTailStart C s x inc nep ep v ix b35 b8 x1) r₁ r₂ r₃ v.toNat v.toNat cA rdv xA
+
+/-- **The same end, at the byte's route.**  `contCleanupEnd` is the scan-free instance;
+the three calls' entry state is the class's tail start, and its block and bound are the
+entry's end, which no leaf changes. -/
+def contCleanupEndByte {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
+    (b35 : UInt8) (b8 : BitVec 8) (x1 : BitVec 8)
+    (hb : HcontByteRoute (cont35 b35))
+    (r₁ r₂ r₃ : CallOutcome) (cA rdv xA : BitVec 32) : State :=
+  ScanEntry (contTailStartByte C s x inc nep ep v ix b35 b8 x1 hb) r₁ r₂ r₃ v.toNat v.toNat
+    cA rdv xA
 
 /-- The scan-free tail's end is `if.end473.i`: the copy's test is `ult v v`. -/
 theorem contCleanupEnd_pc {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
@@ -544,6 +657,26 @@ theorem contP35S_cond {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
     cells, State.bind]
   repeat rw [lookupName_cons_ne _ _ (by decide)]
   exact lookupName_cons_self _ _ _
+
+/-- `%8` at the `NodeBlock41` state is the loop head's byte: the lane, the bound's `phi`
+and the whitespace check bind their own cells and none of them is `%8`. -/
+theorem contLandS_env8 {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
+    (b35 : UInt8) :
+    lookupName (contLandS C s x inc nep ep v ix b35).env "%8" = lookupName s.env "%8" := by
+  simp only [contLandS, contEndS, cte345OutAt, condEnd349OutAt, contAS₅, headAS₄, headAS₃,
+    headAS₂, headAS₁, stateAt, cells, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+
+/-- `%end.i` at the `NodeBlock41` state is the loop head's: it is `walkStaticRegs`'s token
+slot and no link above the check rebinds it. -/
+theorem contLandS_envEnd {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
+    (b35 : UInt8) :
+    lookupName (contLandS C s x inc nep ep v ix b35).env "%end.i" = lookupName s.env "%end.i" := by
+  simp only [contLandS, contEndS, cte345OutAt, condEnd349OutAt, contAS₅, headAS₄, headAS₃,
+    headAS₂, headAS₁, stateAt, cells, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
 
 /-- `%ee.1.i` at the scan's entry is the token's end the seam stored: the phi selects it on
 `if.then447.i`'s edge and nothing between the seam and the tail's end rebinds it. -/
@@ -1062,6 +1195,638 @@ theorem hcontPrefixSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
       hTail.inv' rfl hpreS hincS hopS h3S hpos hreadS hbsS hloc105 h47 hbit47 hws47
       hloc96 hlatch
   exact ⟨s₁₃, hs₁₃, (hspan17.trans hTail).trans hscan⟩
+
+/-! ### The route's cells, at each endpoint
+
+`NodeBlock41`'s and the leaves' arms bind `%Pivot42`, `%Pivot40`, `%SwitchLeaf34`, `%.off`,
+`%SwitchLeaf36` and `%SwitchLeaf38`; none of them is `%8`, `%end.i`, `%cond350.i`,
+`%inc.i` or `%nep`, and none touches the memory.  The seam binds `%ee.1.i` and its four
+comparison cells.  So each pivot endpoint and each seam leaves those cells at the state it
+was entered at, and a bundle can state them once at the byte's own pivots. -/
+
+/-- `%35` survives `NodeBlock41`'s low arm. -/
+theorem contP41Low_35 (s : State) (b35 : UInt8) :
+    lookupName (contP41Low s b35).env "%35" = lookupName s.env "%35" := by
+  simp only [contP41Low, State.bind]
+  rw [lookupName_cons_ne (k := "%Pivot42") (n := "%35") _ _ (by decide)]
+
+/-- `%35` survives `NodeBlock39`'s low arm. -/
+theorem contP41Out_env35 (s : State) (b35 : UInt8) :
+    lookupName (contP41Out s b35).env "%35" = lookupName s.env "%35" := by
+  simp only [contP41Out, State.bind]
+  rw [lookupName_cons_ne (k := "%Pivot42") (n := "%35") _ _ (by decide)]
+
+/-- `%35` survives `NodeBlock39`'s high arm. -/
+theorem contP39High_env35 (s : State) (b35 : UInt8) :
+    lookupName (contP39High s b35).env "%35" = lookupName s.env "%35" := by
+  simp only [contP39High, State.bind]
+  rw [lookupName_cons_ne (k := "%Pivot40") (n := "%35") _ _ (by decide)]
+
+/-- `%8` at the low leaf's endpoint is the `NodeBlock41` state's. -/
+theorem contP33Any_env8 (s : State) (b35 : UInt8) :
+    lookupName (contP33Any s b35).env "%8" = lookupName s.env "%8" := by
+  simp only [contP33Any, contP33Out, contP41Low, stateAt, cells, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+
+/-- `%end.i` at the low leaf's endpoint is the `NodeBlock41` state's. -/
+theorem contP33Any_envEnd (s : State) (b35 : UInt8) :
+    lookupName (contP33Any s b35).env "%end.i" = lookupName s.env "%end.i" := by
+  simp only [contP33Any, contP33Out, contP41Low, stateAt, cells, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+
+/-- `%cond350.i` at the low leaf's endpoint is the `NodeBlock41` state's. -/
+theorem contP33Any_cond (s : State) (b35 : UInt8) :
+    lookupName (contP33Any s b35).env "%cond350.i" = lookupName s.env "%cond350.i" := by
+  simp only [contP33Any, contP33Out, contP41Low, stateAt, cells, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+
+/-- `%inc.i` at the low leaf's endpoint is the `NodeBlock41` state's. -/
+theorem contP33Any_envInc (s : State) (b35 : UInt8) :
+    lookupName (contP33Any s b35).env "%inc.i" = lookupName s.env "%inc.i" := by
+  simp only [contP33Any, contP33Out, contP41Low, stateAt, cells, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+
+/-- `%nep` at the low leaf's endpoint is the `NodeBlock41` state's. -/
+theorem contP33Any_envNep (s : State) (b35 : UInt8) :
+    lookupName (contP33Any s b35).env "%nep" = lookupName s.env "%nep" := by
+  simp only [contP33Any, contP33Out, contP41Low, stateAt, cells, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+
+/-- The low leaf's endpoint leaves the memory alone. -/
+theorem contP33Any_mem (s : State) (b35 : UInt8) :
+    (contP33Any s b35).mem = s.mem := rfl
+
+/-- `%8` at the high leaf's endpoint is the `NodeBlock41` state's. -/
+theorem contP37Any_env8 (s : State) (b35 : UInt8) :
+    lookupName (contP37Any s b35).env "%8" = lookupName s.env "%8" := by
+  simp only [contP37Any, contP37Out, contP39High, contP41Out, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+
+/-- `%end.i` at the high leaf's endpoint is the `NodeBlock41` state's. -/
+theorem contP37Any_envEnd (s : State) (b35 : UInt8) :
+    lookupName (contP37Any s b35).env "%end.i" = lookupName s.env "%end.i" := by
+  simp only [contP37Any, contP37Out, contP39High, contP41Out, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+
+/-- `%cond350.i` at the high leaf's endpoint is the `NodeBlock41` state's. -/
+theorem contP37Any_cond (s : State) (b35 : UInt8) :
+    lookupName (contP37Any s b35).env "%cond350.i" = lookupName s.env "%cond350.i" := by
+  simp only [contP37Any, contP37Out, contP39High, contP41Out, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+
+/-- `%inc.i` at the high leaf's endpoint is the `NodeBlock41` state's. -/
+theorem contP37Any_envInc (s : State) (b35 : UInt8) :
+    lookupName (contP37Any s b35).env "%inc.i" = lookupName s.env "%inc.i" := by
+  simp only [contP37Any, contP37Out, contP39High, contP41Out, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+
+/-- `%nep` at the high leaf's endpoint is the `NodeBlock41` state's. -/
+theorem contP37Any_envNep (s : State) (b35 : UInt8) :
+    lookupName (contP37Any s b35).env "%nep" = lookupName s.env "%nep" := by
+  simp only [contP37Any, contP37Out, contP39High, contP41Out, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+
+/-- The high leaf's endpoint leaves the memory alone. -/
+theorem contP37Any_mem (s : State) (b35 : UInt8) :
+    (contP37Any s b35).mem = s.mem := rfl
+
+/-- `%8` at the scan-free route's endpoint is the `NodeBlock41` state's. -/
+theorem contP35Any_env8 (s : State) (b35 : UInt8) :
+    lookupName (contP35Any s b35).env "%8" = lookupName s.env "%8" := by
+  simp only [contP35Any, contP35Out, contP39Out, contP41Out, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+
+/-- `%end.i` at the scan-free route's endpoint is the `NodeBlock41` state's. -/
+theorem contP35Any_envEnd (s : State) (b35 : UInt8) :
+    lookupName (contP35Any s b35).env "%end.i" = lookupName s.env "%end.i" := by
+  simp only [contP35Any, contP35Out, contP39Out, contP41Out, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+
+/-- `%cond350.i` at the scan-free route's endpoint is the `NodeBlock41` state's. -/
+theorem contP35Any_cond (s : State) (b35 : UInt8) :
+    lookupName (contP35Any s b35).env "%cond350.i" = lookupName s.env "%cond350.i" := by
+  simp only [contP35Any, contP35Out, contP39Out, contP41Out, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+
+/-- `%inc.i` at the scan-free route's endpoint is the `NodeBlock41` state's. -/
+theorem contP35Any_envInc (s : State) (b35 : UInt8) :
+    lookupName (contP35Any s b35).env "%inc.i" = lookupName s.env "%inc.i" := by
+  simp only [contP35Any, contP35Out, contP39Out, contP41Out, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+
+/-- `%nep` at the scan-free route's endpoint is the `NodeBlock41` state's. -/
+theorem contP35Any_envNep (s : State) (b35 : UInt8) :
+    lookupName (contP35Any s b35).env "%nep" = lookupName s.env "%nep" := by
+  simp only [contP35Any, contP35Out, contP39Out, contP41Out, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+
+/-- The scan-free route's endpoint leaves the memory alone. -/
+theorem contP35Any_mem (s : State) (b35 : UInt8) :
+    (contP35Any s b35).mem = s.mem := rfl
+
+/-- `%8` at a seam state is the pre-state's. -/
+theorem seamS_env8 (s : State) (e : BitVec 64) (b8 : BitVec 8) (tok : Nat) :
+    lookupName (seamS s e b8 tok).env "%8" = lookupName s.env "%8" := by
+  simp only [seamS, seamFin, stateAt]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+
+/-- `%cond350.i` at a seam state is the pre-state's. -/
+theorem seamS_cond (s : State) (e : BitVec 64) (b8 : BitVec 8) (tok : Nat) :
+    lookupName (seamS s e b8 tok).env "%cond350.i" = lookupName s.env "%cond350.i" := by
+  simp only [seamS, seamFin, stateAt]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+
+/-- `%inc.i` at a seam state is the pre-state's. -/
+theorem seamS_envInc (s : State) (e : BitVec 64) (b8 : BitVec 8) (tok : Nat) :
+    lookupName (seamS s e b8 tok).env "%inc.i" = lookupName s.env "%inc.i" := by
+  simp only [seamS, seamFin, stateAt]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+
+/-- `%nep` at a seam state is the pre-state's. -/
+theorem seamS_envNep (s : State) (e : BitVec 64) (b8 : BitVec 8) (tok : Nat) :
+    lookupName (seamS s e b8 tok).env "%nep" = lookupName s.env "%nep" := by
+  simp only [seamS, seamFin, stateAt]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+
+/-- `%ee.1.i` at a seam state is the end the seam stored. -/
+theorem seamS_ee (s : State) (e : BitVec 64) (b8 : BitVec 8) (tok : Nat) :
+    lookupName (seamS s e b8 tok).env "%ee.1.i" = some (.int 64 e) := by
+  simp only [seamS, seamFin, stateAt]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+  exact lookupName_cons_self _ _ _
+
+/-- The seam's memory: the pre-state's with the token's end stored inside the record. -/
+theorem seamS_mem (s : State) (e : BitVec 64) (b8 : BitVec 8) (tok : Nat) :
+    (seamS s e b8 tok).mem = writeBytes s.mem (tok + 8) (natToBytes e.toNat 8) := by
+  simp only [seamS, seamFin, stateAt]
+
+/-- **A store inside the token record leaves the root slot's word alone.**  The token record
+ends at or below `G.next0` (`WalkStage.sevenEnd`) and the root slot is four bytes at
+`G.next0 + 8`; the store's own extent is the offset's plus the payload's. -/
+theorem walkReadBytes_rootSlot_of_tokStore {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {m : Mem} {off len : Nat} {v : List UInt8}
+    (hoff : off + len ≤ stage2TokenExtent) (hlen : v.length = len) :
+    readBytes (writeBytes m (C.stage.tok + off) v) (G.next0 + 8) 4 =
+      readBytes m (G.next0 + 8) 4 := by
+  refine walkReadBytes_writeBytes_outside (start := C.stage.tok + off)
+    (addr := G.next0 + 8) (n := 4) ?_
+  right
+  have h := C.stage.sevenEnd (C.stage.tok, stage2TokenExtent)
+    (by simp [stage2StagedWrites])
+  simp only [stage2TokenExtent] at h hoff
+  omega
+
+/-- **A store inside the token record leaves the root slot's word alone**, at the seam's
+own store. -/
+theorem seamS_rootRead {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} (s : State)
+    (e : BitVec 64) (b8 : BitVec 8) {rdv : BitVec 32}
+    (hroot : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes rdv.toNat 4)) :
+    readBytes (seamS s e b8 C.stage.tok).mem (G.next0 + 8) 4 =
+      some (natToBytes rdv.toNat 4) := by
+  rw [seamS_mem]
+  rw [walkReadBytes_rootSlot_of_tokStore (C := C) (off := 8) (len := 8)
+    (v := natToBytes e.toNat 8) (by decide) (natToBytes_length _ _)]
+  exact hroot
+
+/-! ### The seam's cells at the class's endpoint -/
+
+/-- `%8` at the class's seam is the `NodeBlock41` state's. -/
+theorem contSeamByte_env8 (q4 : State)
+    (vN tok : Nat) (b35 : UInt8) (b8 : BitVec 8) (hb : HcontByteRoute (cont35 b35)) :
+    lookupName (contSeamByte q4 vN tok b35 b8 hb).env "%8" = lookupName q4.env "%8" := by
+  rcases hb with ⟨a1, a2, a3⟩ | ⟨a1, a2⟩ | ⟨a1, a2, a3⟩ <;>
+    simp only [contSeamByte, seamS_env8, contP33Any_env8, contP37Any_env8,
+      contP35Any_env8]
+
+/-- `%cond350.i` at the class's seam is the `NodeBlock41` state's. -/
+theorem contSeamByte_cond (q4 : State)
+    (vN tok : Nat) (b35 : UInt8) (b8 : BitVec 8) (hb : HcontByteRoute (cont35 b35)) :
+    lookupName (contSeamByte q4 vN tok b35 b8 hb).env "%cond350.i" =
+      lookupName q4.env "%cond350.i" := by
+  rcases hb with ⟨a1, a2, a3⟩ | ⟨a1, a2⟩ | ⟨a1, a2, a3⟩ <;>
+    simp only [contSeamByte, seamS_cond, contP33Any_cond, contP37Any_cond,
+      contP35Any_cond]
+
+/-- `%inc.i` at the class's seam is the `NodeBlock41` state's. -/
+theorem contSeamByte_envInc (q4 : State)
+    (vN tok : Nat) (b35 : UInt8) (b8 : BitVec 8) (hb : HcontByteRoute (cont35 b35)) :
+    lookupName (contSeamByte q4 vN tok b35 b8 hb).env "%inc.i" =
+      lookupName q4.env "%inc.i" := by
+  rcases hb with ⟨a1, a2, a3⟩ | ⟨a1, a2⟩ | ⟨a1, a2, a3⟩ <;>
+    simp only [contSeamByte, seamS_envInc, contP33Any_envInc, contP37Any_envInc,
+      contP35Any_envInc]
+
+/-- `%nep` at the class's seam is the `NodeBlock41` state's. -/
+theorem contSeamByte_envNep (q4 : State)
+    (vN tok : Nat) (b35 : UInt8) (b8 : BitVec 8) (hb : HcontByteRoute (cont35 b35)) :
+    lookupName (contSeamByte q4 vN tok b35 b8 hb).env "%nep" =
+      lookupName q4.env "%nep" := by
+  rcases hb with ⟨a1, a2, a3⟩ | ⟨a1, a2⟩ | ⟨a1, a2, a3⟩ <;>
+    simp only [contSeamByte, seamS_envNep, contP33Any_envNep, contP37Any_envNep,
+      contP35Any_envNep]
+
+/-- `%ee.1.i` at the class's seam is the stored end. -/
+theorem contSeamByte_ee (q4 : State)
+    (vN tok : Nat) (b35 : UInt8) (b8 : BitVec 8) (hb : HcontByteRoute (cont35 b35)) :
+    lookupName (contSeamByte q4 vN tok b35 b8 hb).env "%ee.1.i" =
+      some (.int 64 (BitVec.ofNat 64 vN)) := by
+  rcases hb with ⟨a1, a2, a3⟩ | ⟨a1, a2⟩ | ⟨a1, a2, a3⟩ <;>
+    simp only [contSeamByte, seamS_ee]
+
+/-- The class's seam memory: the state's with the token's end stored. -/
+theorem contSeamByte_mem (q4 : State)
+    (vN tok : Nat) (b35 : UInt8) (b8 : BitVec 8) (hb : HcontByteRoute (cont35 b35)) :
+    (contSeamByte q4 vN tok b35 b8 hb).mem =
+      writeBytes q4.mem (tok + 8) (natToBytes (BitVec.ofNat 64 vN).toNat 8) := by
+  rcases hb with ⟨a1, a2, a3⟩ | ⟨a1, a2⟩ | ⟨a1, a2, a3⟩ <;>
+    simp only [contSeamByte, seamS_mem, contP33Any_mem, contP37Any_mem, contP35Any_mem]
+
+/-- The root slot's word at the class's seam is the `NodeBlock41` state's. -/
+theorem contSeamByte_rootRead {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} (q4 : State)
+    (vN : Nat) (b35 : UInt8) (b8 : BitVec 8) (hb : HcontByteRoute (cont35 b35))
+    {rdv : BitVec 32}
+    (hroot : readBytes q4.mem (G.next0 + 8) 4 = some (natToBytes rdv.toNat 4)) :
+    readBytes (contSeamByte q4 vN C.stage.tok b35 b8 hb).mem (G.next0 + 8) 4 =
+      some (natToBytes rdv.toNat 4) := by
+  rcases hb with ⟨a1, a2, a3⟩ | ⟨a1, a2⟩ | ⟨a1, a2, a3⟩
+  · simpa only [contSeamByte] using
+      (seamS_rootRead (C := C) (contP35Any q4 b35) (BitVec.ofNat 64 vN) b8 hroot)
+  · simpa only [contSeamByte] using
+      (seamS_rootRead (C := C) (contP33Any q4 b35) (BitVec.ofNat 64 vN) b8 hroot)
+  · simpa only [contSeamByte] using
+      (seamS_rootRead (C := C) (contP37Any q4 b35) (BitVec.ofNat 64 vN) b8 hroot)
+
+/-! ### The token's end `phi`, at each leaf
+
+`if.end372.i`'s `phi` names all three leaves' incoming `%cond350.i`; the predecessor
+selects the same register at each, so the leaves differ only in which label the selector
+matches. -/
+
+/-- The token's end's `phi` at `LeafBlock33`. -/
+theorem contPhiSeam33 :
+    phiIncoming "LeafBlock33"
+      [("cond.end349.i", (Operand.reg "%idxprom.i")),
+       ("while.body370.i", (Operand.reg "%cond350.i")),
+       ("LeafBlock43", (Operand.reg "%ee.0.i238")),
+       ("LeafBlock46", (Operand.reg "%ee.0.i238")),
+       ("LeafBlock48", (Operand.reg "%ee.0.i238")),
+       ("LeafBlock33", (Operand.reg "%cond350.i")),
+       ("LeafBlock35", (Operand.reg "%cond350.i")),
+       ("LeafBlock37", (Operand.reg "%cond350.i"))] = some (.reg "%cond350.i") := by
+  decide
+
+/-- The token's end's `phi` at `LeafBlock37`. -/
+theorem contPhiSeam37 :
+    phiIncoming "LeafBlock37"
+      [("cond.end349.i", (Operand.reg "%idxprom.i")),
+       ("while.body370.i", (Operand.reg "%cond350.i")),
+       ("LeafBlock43", (Operand.reg "%ee.0.i238")),
+       ("LeafBlock46", (Operand.reg "%ee.0.i238")),
+       ("LeafBlock48", (Operand.reg "%ee.0.i238")),
+       ("LeafBlock33", (Operand.reg "%cond350.i")),
+       ("LeafBlock35", (Operand.reg "%cond350.i")),
+       ("LeafBlock37", (Operand.reg "%cond350.i"))] = some (.reg "%cond350.i") := by
+  decide
+
+/-! ### The byte's three routes, from any state at `NodeBlock41`
+
+Each route is counted: the scan-free class's four links
+(`NodeBlock41 → NodeBlock39 → LeafBlock35 → if.end372.i`), the low leaf's three
+(`NodeBlock41 → LeafBlock33 → if.end372.i`) and the high leaf's four
+(`NodeBlock41 → NodeBlock39 → LeafBlock37 → if.end372.i`).  They are stated once, at any
+carry and state at `NodeBlock41` whose cells are the bundle's, so a class's prefix is the
+only part a producer supplies. -/
+
+/-- **The byte's scan-free route**, from `NodeBlock41` to the seam:
+`NodeBlock41 → NodeBlock39 → LeafBlock35 → if.end372.i`. -/
+theorem contByteSegScanFree {m0 : Mem} {G : WalkGeom m0}
+    (Ca : WalkCarry G) (q4 : State) (hInv : WalkInv G Ca q4)
+    (hblock : Ca.block = "NodeBlock41")
+    {vN : Nat} {b35 : UInt8} {b8 : BitVec 8}
+    (h35 : evalOperand q4 (.reg "%35") = some (.int 8 (cont35 b35)))
+    (hcond : lookupName q4.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 vN)))
+    (hend : lookupName q4.env "%end.i" = some (.ptr (Ca.stage.tok + 8)))
+    (h8q : lookupName q4.env "%8" = some (.int 8 b8))
+    (hbit : (evalICmp .eq b8 (BitVec.ofNat 8 45) |||
+      evalICmp .ult (b8 + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
+    (hb13 : evalICmp .slt (cont35 b35) (BitVec.ofNat 8 13) = 0)
+    (hb32 : evalICmp .slt (cont35 b35) (BitVec.ofNat 8 32) = 1)
+    (hbne13 : evalICmp .eq (cont35 b35) (BitVec.ofNat 8 13) = 0) :
+    Seg (stage2Calls stage2SubCalls) G Ca q4 { Ca with block := "if.else387.i" }
+      (contSeamByte q4 vN Ca.stage.tok b35 b8 (.scanFree hb13 hb32 hbne13)) 4 := by
+  -- scan-free: `NodeBlock41 → NodeBlock39 → LeafBlock35 → if.end372.i`
+    obtain ⟨s₅, hl₅, hs₅⟩ :=
+      WalkLink.NodeBlock41_at (calls := stage2Calls stage2SubCalls) G Ca q4 hInv hblock h35
+    have hl₅' : WalkLink (stage2Calls stage2SubCalls) G Ca q4
+        { Ca with block := "NodeBlock39" } (contP41Out q4 b35) := by
+      have harm : (if evalICmp .slt (cont35 b35) (BitVec.ofNat 8 13) = 1 then
+          "LeafBlock33" else "NodeBlock39") = "NodeBlock39" := by
+        rw [hb13]; rfl
+      have hst : s₅ = contP41Out q4 b35 := by rw [hs₅, harm]; rfl
+      rw [hst] at hl₅
+      rw [harm] at hl₅
+      exact hl₅
+    have h35b : evalOperand (contP41Out q4 b35) (.reg "%35") =
+        some (.int 8 (cont35 b35)) := by
+      simp only [evalOperand]
+      rw [contP41Out_env35]
+      simpa only [evalOperand] using h35
+    obtain ⟨s₆, hl₆, hs₆⟩ :=
+      WalkLink.NodeBlock39_at (calls := stage2Calls stage2SubCalls) G
+        { Ca with block := "NodeBlock39" } (contP41Out q4 b35) hl₅'.inv' rfl h35b
+    have hl₆' : WalkLink (stage2Calls stage2SubCalls) G { Ca with block := "NodeBlock39" }
+        (contP41Out q4 b35) { { Ca with block := "NodeBlock39" } with block := "LeafBlock35" }
+        (contP39Out (contP41Out q4 b35) b35) := by
+      have harm : (if evalICmp .slt (cont35 b35) (BitVec.ofNat 8 32) = 1 then
+          "LeafBlock35" else "LeafBlock37") = "LeafBlock35" := by
+        rw [hb32]; rfl
+      have hst : s₆ = contP39Out (contP41Out q4 b35) b35 := by rw [hs₆, harm]; rfl
+      rw [hst] at hl₆
+      rw [harm] at hl₆
+      exact hl₆
+    have h35c : evalOperand (contP39Out (contP41Out q4 b35) b35) (.reg "%35") =
+        some (.int 8 (cont35 b35)) := by
+      simp only [contP39Out, evalOperand, State.bind,
+        lookupName_cons_ne (k := "%Pivot40") (n := "%35") _ _ (by decide)]
+      rw [contP41Out_env35]
+      simpa only [evalOperand] using h35
+    obtain ⟨s₇, hl₇, hs₇⟩ :=
+      WalkLink.LeafBlock35_at (calls := stage2Calls stage2SubCalls) G
+        { { Ca with block := "NodeBlock39" } with block := "LeafBlock35" }
+        (contP39Out (contP41Out q4 b35) b35) hl₆'.inv' rfl h35c
+    have hl₇' : WalkLink (stage2Calls stage2SubCalls) G
+        { { Ca with block := "NodeBlock39" } with block := "LeafBlock35" }
+        (contP39Out (contP41Out q4 b35) b35)
+        { { { Ca with block := "NodeBlock39" } with block := "LeafBlock35" } with
+          block := "if.end372.i" }
+        (contP35Any q4 b35) := by
+      have harm : (if evalICmp .eq (cont35 b35) (BitVec.ofNat 8 13) = 1 then
+          "land.rhs.i.preheader" else "if.end372.i") = "if.end372.i" := by
+        rw [hbne13]; rfl
+      have hst : s₇ = contP35Any q4 b35 := by
+        rw [hs₇, harm]
+        rfl
+      rw [hst] at hl₇
+      rw [harm] at hl₇
+      exact hl₇
+    have hcond35 : evalOperand (contP35Any q4 b35) (.reg "%cond350.i") =
+        some (.int 64 (BitVec.ofNat 64 vN)) := by
+      simp only [evalOperand]
+      rw [contP35Any_cond, hcond]
+    have hend35 : lookupName (contP35Any q4 b35).env "%end.i" =
+        some (.ptr (Ca.stage.tok + 8)) := by
+      rw [contP35Any_envEnd]; exact hend
+    have h8end35 : lookupName (contP35Any q4 b35).env "%8" = some (.int 8 b8) := by
+      rw [contP35Any_env8]; exact h8q
+    obtain ⟨s₈, hl₈, hs₈⟩ :=
+      WalkLink.if_end372_i_at (calls := stage2Calls stage2SubCalls) (G := G)
+        (C := { { { Ca with block := "NodeBlock39" } with block := "LeafBlock35" } with
+          block := "if.end372.i" }) (s := contP35Any q4 b35) hl₇'.inv' rfl
+        (p := "LeafBlock35") rfl contPhiSeam hcond35 hend35 h8end35 hbit
+    have hl₈' : WalkLink (stage2Calls stage2SubCalls) G
+        { { { Ca with block := "NodeBlock39" } with block := "LeafBlock35" } with
+          block := "if.end372.i" }
+        (contP35Any q4 b35) { Ca with block := "if.else387.i" }
+        (contSeamByte q4 vN Ca.stage.tok b35 b8 (.scanFree hb13 hb32 hbne13)) := by
+      rw [hs₈] at hl₈
+      exact hl₈
+    exact Seg.tail hl₅' (Seg.tail hl₆' (Seg.tail hl₇' (Seg.tail hl₈'
+      (Seg.nil hl₈'.inv'))))
+
+/-- **The byte's low-leaf route**, from `NodeBlock41` to the seam:
+`NodeBlock41 → LeafBlock33 → if.end372.i`, one link shorter. -/
+theorem contByteSegLow {m0 : Mem} {G : WalkGeom m0}
+    (Ca : WalkCarry G) (q4 : State) (hInv : WalkInv G Ca q4)
+    (hblock : Ca.block = "NodeBlock41")
+    {vN : Nat} {b35 : UInt8} {b8 : BitVec 8}
+    (h35 : evalOperand q4 (.reg "%35") = some (.int 8 (cont35 b35)))
+    (hcond : lookupName q4.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 vN)))
+    (hend : lookupName q4.env "%end.i" = some (.ptr (Ca.stage.tok + 8)))
+    (h8q : lookupName q4.env "%8" = some (.int 8 b8))
+    (hbit : (evalICmp .eq b8 (BitVec.ofNat 8 45) |||
+      evalICmp .ult (b8 + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
+    (hb13 : evalICmp .slt (cont35 b35) (BitVec.ofNat 8 13) = 1)
+    (hbns : evalICmp .ule (cont35 b35 + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 0) :
+    Seg (stage2Calls stage2SubCalls) G Ca q4 { Ca with block := "if.else387.i" }
+      (contSeamByte q4 vN Ca.stage.tok b35 b8 (.lowLeaf hb13 hbns)) 3 := by
+  -- low leaf: `NodeBlock41 → LeafBlock33 → if.end372.i`
+    obtain ⟨s₅, hl₅, hs₅⟩ :=
+      WalkLink.NodeBlock41_at (calls := stage2Calls stage2SubCalls) G Ca q4 hInv hblock h35
+    have hl₅' : WalkLink (stage2Calls stage2SubCalls) G Ca q4
+        { Ca with block := "LeafBlock33" } (contP41Low q4 b35) := by
+      have harm : (if evalICmp .slt (cont35 b35) (BitVec.ofNat 8 13) = 1 then
+          "LeafBlock33" else "NodeBlock39") = "LeafBlock33" := by
+        rw [hb13]; rfl
+      have hst : s₅ = contP41Low q4 b35 := by rw [hs₅, harm]; rfl
+      rw [hst] at hl₅
+      rw [harm] at hl₅
+      exact hl₅
+    have h35l : lookupName (contP41Low q4 b35).env "%35" =
+        some (.int 8 (cont35 b35)) := by
+      rw [contP41Low_35]
+      simpa only [evalOperand] using h35
+    obtain ⟨s₆, hl₆, hs₆⟩ :=
+      WalkLink.LeafBlock33_at (calls := stage2Calls stage2SubCalls) G
+        { Ca with block := "LeafBlock33" } (contP41Low q4 b35) hl₅'.inv' rfl h35l
+    have hl₆' : WalkLink (stage2Calls stage2SubCalls) G { Ca with block := "LeafBlock33" }
+        (contP41Low q4 b35) { { Ca with block := "LeafBlock33" } with block := "if.end372.i" }
+        (contP33Any q4 b35) := by
+      have harm : (if evalICmp .ule (cont35 b35 + BitVec.ofNat 8 247)
+          (BitVec.ofNat 8 1) = 1 then "land.rhs.i.preheader" else "if.end372.i") =
+          "if.end372.i" := by
+        rw [hbns]; rfl
+      have hst : s₆ = contP33Any q4 b35 := by
+        rw [hs₆, harm]
+        rfl
+      rw [hst] at hl₆
+      rw [harm] at hl₆
+      exact hl₆
+    have hcond33 : evalOperand (contP33Any q4 b35) (.reg "%cond350.i") =
+        some (.int 64 (BitVec.ofNat 64 vN)) := by
+      simp only [evalOperand]
+      rw [contP33Any_cond, hcond]
+    have hend33 : lookupName (contP33Any q4 b35).env "%end.i" =
+        some (.ptr (Ca.stage.tok + 8)) := by
+      rw [contP33Any_envEnd]; exact hend
+    have h8end33 : lookupName (contP33Any q4 b35).env "%8" = some (.int 8 b8) := by
+      rw [contP33Any_env8]; exact h8q
+    obtain ⟨s₇, hl₇, hs₇⟩ :=
+      WalkLink.if_end372_i_at (calls := stage2Calls stage2SubCalls) (G := G)
+        (C := { { Ca with block := "LeafBlock33" } with block := "if.end372.i" })
+        (s := contP33Any q4 b35) hl₆'.inv' rfl (p := "LeafBlock33") rfl
+        contPhiSeam33 hcond33 hend33 h8end33 hbit
+    have hl₇' : WalkLink (stage2Calls stage2SubCalls) G
+        { { Ca with block := "LeafBlock33" } with block := "if.end372.i" }
+        (contP33Any q4 b35) { Ca with block := "if.else387.i" }
+        (contSeamByte q4 vN Ca.stage.tok b35 b8 (.lowLeaf hb13 hbns)) := by
+      rw [hs₇] at hl₇
+      exact hl₇
+    exact Seg.tail hl₅' (Seg.tail hl₆' (Seg.tail hl₇'
+      (Seg.nil hl₇'.inv')))
+
+/-- **The byte's high-leaf route**, from `NodeBlock41` to the seam:
+`NodeBlock41 → NodeBlock39 → LeafBlock37 → if.end372.i`. -/
+theorem contByteSegHigh {m0 : Mem} {G : WalkGeom m0}
+    (Ca : WalkCarry G) (q4 : State) (hInv : WalkInv G Ca q4)
+    (hblock : Ca.block = "NodeBlock41")
+    {vN : Nat} {b35 : UInt8} {b8 : BitVec 8}
+    (h35 : evalOperand q4 (.reg "%35") = some (.int 8 (cont35 b35)))
+    (hcond : lookupName q4.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 vN)))
+    (hend : lookupName q4.env "%end.i" = some (.ptr (Ca.stage.tok + 8)))
+    (h8q : lookupName q4.env "%8" = some (.int 8 b8))
+    (hbit : (evalICmp .eq b8 (BitVec.ofNat 8 45) |||
+      evalICmp .ult (b8 + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
+    (hb13 : evalICmp .slt (cont35 b35) (BitVec.ofNat 8 13) = 0)
+    (hb32 : evalICmp .slt (cont35 b35) (BitVec.ofNat 8 32) = 0)
+    (hbne32 : evalICmp .eq (cont35 b35) (BitVec.ofNat 8 32) = 0) :
+    Seg (stage2Calls stage2SubCalls) G Ca q4 { Ca with block := "if.else387.i" }
+      (contSeamByte q4 vN Ca.stage.tok b35 b8 (.highLeaf hb13 hb32 hbne32)) 4 := by
+  -- high leaf: `NodeBlock41 → NodeBlock39 → LeafBlock37 → if.end372.i`
+    obtain ⟨s₅, hl₅, hs₅⟩ :=
+      WalkLink.NodeBlock41_at (calls := stage2Calls stage2SubCalls) G Ca q4 hInv hblock h35
+    have hl₅' : WalkLink (stage2Calls stage2SubCalls) G Ca q4
+        { Ca with block := "NodeBlock39" } (contP41Out q4 b35) := by
+      have harm : (if evalICmp .slt (cont35 b35) (BitVec.ofNat 8 13) = 1 then
+          "LeafBlock33" else "NodeBlock39") = "NodeBlock39" := by
+        rw [hb13]; rfl
+      have hst : s₅ = contP41Out q4 b35 := by rw [hs₅, harm]; rfl
+      rw [hst] at hl₅
+      rw [harm] at hl₅
+      exact hl₅
+    have h35b : evalOperand (contP41Out q4 b35) (.reg "%35") =
+        some (.int 8 (cont35 b35)) := by
+      simp only [evalOperand]
+      rw [contP41Out_env35]
+      simpa only [evalOperand] using h35
+    obtain ⟨s₆, hl₆, hs₆⟩ :=
+      WalkLink.NodeBlock39_at (calls := stage2Calls stage2SubCalls) G
+        { Ca with block := "NodeBlock39" } (contP41Out q4 b35) hl₅'.inv' rfl h35b
+    have hl₆' : WalkLink (stage2Calls stage2SubCalls) G { Ca with block := "NodeBlock39" }
+        (contP41Out q4 b35) { { Ca with block := "NodeBlock39" } with block := "LeafBlock37" }
+        (contP39High (contP41Out q4 b35) b35) := by
+      have harm : (if evalICmp .slt (cont35 b35) (BitVec.ofNat 8 32) = 1 then
+          "LeafBlock35" else "LeafBlock37") = "LeafBlock37" := by
+        rw [hb32]; rfl
+      have hst : s₆ = contP39High (contP41Out q4 b35) b35 := by rw [hs₆, harm]; rfl
+      rw [hst] at hl₆
+      rw [harm] at hl₆
+      exact hl₆
+    have h35h : evalOperand (contP39High (contP41Out q4 b35) b35) (.reg "%35") =
+        some (.int 8 (cont35 b35)) := by
+      simp only [contP39High, evalOperand, State.bind,
+        lookupName_cons_ne (k := "%Pivot40") (n := "%35") _ _ (by decide)]
+      rw [contP41Out_env35]
+      simpa only [evalOperand] using h35
+    obtain ⟨s₇, hl₇, hs₇⟩ :=
+      WalkLink.LeafBlock37_at (calls := stage2Calls stage2SubCalls) G
+        { { Ca with block := "NodeBlock39" } with block := "LeafBlock37" }
+        (contP39High (contP41Out q4 b35) b35) hl₆'.inv' rfl h35h
+    have hl₇' : WalkLink (stage2Calls stage2SubCalls) G
+        { { Ca with block := "NodeBlock39" } with block := "LeafBlock37" }
+        (contP39High (contP41Out q4 b35) b35)
+        { { { Ca with block := "NodeBlock39" } with block := "LeafBlock37" } with
+          block := "if.end372.i" }
+        (contP37Any q4 b35) := by
+      have harm : (if evalICmp .eq (cont35 b35) (BitVec.ofNat 8 32) = 1 then
+          "land.rhs.i.preheader" else "if.end372.i") = "if.end372.i" := by
+        rw [hbne32]; rfl
+      have hst : s₇ = contP37Any q4 b35 := by
+        rw [hs₇, harm]
+        rfl
+      rw [hst] at hl₇
+      rw [harm] at hl₇
+      exact hl₇
+    have hcond37 : evalOperand (contP37Any q4 b35) (.reg "%cond350.i") =
+        some (.int 64 (BitVec.ofNat 64 vN)) := by
+      simp only [evalOperand]
+      rw [contP37Any_cond, hcond]
+    have hend37 : lookupName (contP37Any q4 b35).env "%end.i" =
+        some (.ptr (Ca.stage.tok + 8)) := by
+      rw [contP37Any_envEnd]; exact hend
+    have h8end37 : lookupName (contP37Any q4 b35).env "%8" = some (.int 8 b8) := by
+      rw [contP37Any_env8]; exact h8q
+    obtain ⟨s₈, hl₈, hs₈⟩ :=
+      WalkLink.if_end372_i_at (calls := stage2Calls stage2SubCalls) (G := G)
+        (C := { { { Ca with block := "NodeBlock39" } with block := "LeafBlock37" } with
+          block := "if.end372.i" }) (s := contP37Any q4 b35) hl₇'.inv' rfl
+        (p := "LeafBlock37") rfl contPhiSeam37 hcond37 hend37 h8end37 hbit
+    have hl₈' : WalkLink (stage2Calls stage2SubCalls) G
+        { { { Ca with block := "NodeBlock39" } with block := "LeafBlock37" } with
+          block := "if.end372.i" }
+        (contP37Any q4 b35) { Ca with block := "if.else387.i" }
+        (contSeamByte q4 vN Ca.stage.tok b35 b8 (.highLeaf hb13 hb32 hbne32)) := by
+      rw [hs₈] at hl₈
+      exact hl₈
+    exact Seg.tail hl₅' (Seg.tail hl₆' (Seg.tail hl₇' (Seg.tail hl₈'
+      (Seg.nil hl₈'.inv'))))
+
+/-- The class's tail end is `if.end473.i` for every route: the copy's test is `ult v v`. -/
+theorem contCleanupEndByte_pc {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
+    (b35 : UInt8) (b8 x1 : BitVec 8) (hb : HcontByteRoute (cont35 b35))
+    (r₁ r₂ r₃ : CallOutcome) (cA rdv xA : BitVec 32) :
+    (contCleanupEndByte C s x inc nep ep v ix b35 b8 x1 hb r₁ r₂ r₃ cA rdv xA).pc =
+      "if.end473.i" := by
+  show (if evalICmp .ult (BitVec.ofNat 64 v.toNat) (BitVec.ofNat 64 v.toNat) = 1 then
+    "land.rhs457.i" else "if.end473.i") = "if.end473.i"
+  rw [hlast_ult_self (BitVec.ofNat 64 v.toNat)]
+  rfl
+
+/-- `%inc.i` at the class's tail end is the loop head's: the tail's three calls,
+`ScanEntry`'s eight cells, the seam's five and the byte's pivots bind their own cells and
+none of them is the header's increment. -/
+theorem contCleanupEndByte_inc {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
+    (b35 : UInt8) (b8 x1 : BitVec 8) (hb : HcontByteRoute (cont35 b35))
+    (r₁ r₂ r₃ : CallOutcome) (cA rdv xA : BitVec 32) :
+    lookupName
+      (contCleanupEndByte C s x inc nep ep v ix b35 b8 x1 hb r₁ r₂ r₃ cA rdv xA).env
+      "%inc.i" = lookupName s.env "%inc.i" := by
+  rcases hb with ⟨a1, a2, a3⟩ | ⟨a1, a2⟩ | ⟨a1, a2, a3⟩ <;>
+    simp only [contCleanupEndByte, ScanEntry, TailS₃, TailS₂, TailS₁, contTailStartByte,
+      HeadS413, HeadS405, HeadS58, HeadS60, HeadS62, contSeamByte, seamS, seamFin,
+      contP35Any, contP35Out, contP39Out, contP41Out, contP33Any, contP33Out, contP41Low,
+      contP37Any, contP37Out, contP39High, contLandS, contEndS, cte345OutAt,
+      condEnd349OutAt, contAS₅, headAS₄, headAS₃, headAS₂, headAS₁, stateAt, cells,
+      State.bind] <;>
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+
+/-- `%nep` at the class's tail end is the loop head's, for the same reason. -/
+theorem contCleanupEndByte_nep {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
+    (b35 : UInt8) (b8 x1 : BitVec 8) (hb : HcontByteRoute (cont35 b35))
+    (r₁ r₂ r₃ : CallOutcome) (cA rdv xA : BitVec 32) :
+    lookupName
+      (contCleanupEndByte C s x inc nep ep v ix b35 b8 x1 hb r₁ r₂ r₃ cA rdv xA).env
+      "%nep" = lookupName s.env "%nep" := by
+  rcases hb with ⟨a1, a2, a3⟩ | ⟨a1, a2⟩ | ⟨a1, a2, a3⟩ <;>
+    simp only [contCleanupEndByte, ScanEntry, TailS₃, TailS₂, TailS₁, contTailStartByte,
+      HeadS413, HeadS405, HeadS58, HeadS60, HeadS62, contSeamByte, seamS, seamFin,
+      contP35Any, contP35Out, contP39Out, contP41Out, contP33Any, contP33Out, contP41Low,
+      contP37Any, contP37Out, contP39High, contLandS, contEndS, cte345OutAt,
+      condEnd349OutAt, contAS₅, headAS₄, headAS₃, headAS₂, headAS₁, stateAt, cells,
+      State.bind] <;>
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+
+/-- **The token record at the class's tail end**, which is what the merge's lifetime marker
+reads.  No block on any of the three routes rebinds `%t352.i`. -/
+theorem contCleanupEndByte_tok {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
+    (b35 : UInt8) (b8 x1 : BitVec 8) (hb : HcontByteRoute (cont35 b35))
+    (r₁ r₂ r₃ : CallOutcome) (cA rdv xA : BitVec 32)
+    (hS : lookupName s.env "%t352.i" = some (.ptr C.stage.tok)) :
+    lookupName
+      (contCleanupEndByte C s x inc nep ep v ix b35 b8 x1 hb r₁ r₂ r₃ cA rdv xA).env
+      "%t352.i" = some (.ptr C.stage.tok) := by
+  rcases hb with ⟨a1, a2, a3⟩ | ⟨a1, a2⟩ | ⟨a1, a2, a3⟩ <;>
+    simp only [contCleanupEndByte, ScanEntry, TailS₃, TailS₂, TailS₁, contTailStartByte,
+      HeadS413, HeadS405, HeadS58, HeadS60, HeadS62, contSeamByte, seamS, seamFin,
+      contP35Any, contP35Out, contP39Out, contP41Out, contP33Any, contP33Out, contP41Low,
+      contP37Any, contP37Out, contP39High, contLandS, contEndS, cte345OutAt,
+      condEnd349OutAt, contAS₅, headAS₄, headAS₃, headAS₂, headAS₁, stateAt, cells,
+      State.bind] <;>
+    repeat rw [lookupName_cons_ne _ _ (by decide)] <;>
+    exact hS
 
 /-! ### The instrument -/
 

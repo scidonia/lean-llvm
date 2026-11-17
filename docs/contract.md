@@ -858,9 +858,11 @@ consumed by the payload's own `walkDispatch_of_payload_covered`.  What is left i
 c9's *run* class — closed since: `HcontRunRow` (`JsonStage2WalkDispatchClassRows`) carries
 the check state's rows and the seam's state group, and `hcontRunFacts_of_seam`
 (`JsonStage2WalkDispatchSeams`) joins them to `RunFacts`, with `hcontArm_run_of_class`
-projecting the row into the arm.  The continuing side's remaining items are the `.cleanup`
-leaf classes' *arm* (`HcontCleanupFacts` still asserts the scan-free bits, although
-`JsonStage2WalkDispatchLeafBytes` now states the high-byte route's leaf chains) and the
+projecting the row into the arm.  The continuing side's remaining items are the `.cleanup` leaf classes' *tail*
+(`HcontCleanupFacts` now carries the byte's route — its seam cells sit at the `NodeBlock41`
+state every route leaves them at and its chain is `∃ nH ≤ 12` at whichever leaf the byte
+takes — so what is still scan-free is the bundle's `hTail`, produced by
+`hcontTail_of_calls` at `contTailStart`) and the
 class bits' transport into `letters`/`fLetter`/`classC`.  On the last side, `RunLastFacts`
 is now derived from a seam group (`JsonStage2WalkDispatchRunLastSeam`), so what remains is
 l2/l3's asset: `HlastFacts` asserts the scan-free bits and no row states the leaf document

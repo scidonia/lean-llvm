@@ -5,8 +5,9 @@
 class: the head's byte is `126` or `127`, the byte before the entry's end is not
 whitespace, and the token ends at the entry's end — `if.end372.i`'s else arm, the class-C
 span, the tail's three calls on their empty arm and the merge, with no scan entered.
-`walkRevolutionMergeSeg` (`JsonStage2WalkRevolutionSeg`) composes it to the merge at
-twenty-one links, and its bundle is `HcontCleanupFacts` (`JsonStage2WalkRevolution`).
+`walkRevolutionMergeSeg` (`JsonStage2WalkRevolutionSeg`) composes it to the merge at the
+class's own count (`p ≤ 21`), and its bundle is `HcontCleanupFacts`
+(`JsonStage2WalkRevolution`).
 
 This module produces that bundle at every state that carries the invariant, and the arm
 and dispatch with it.
@@ -29,10 +30,10 @@ producer *derives* them:
 | `ix`, `hidx5` | `WalkInv.idx_reg`'s cell, peeled to `contAS₅` |
 | `htok5`, `hgap5` | `WalkInv.regs`'s `%t352.i` and `%gap.i` rows, peeled to `contAS₅` |
 | `b35`, `hread35` | `contB35 G v`, and the read is `cont_hread35`'s: `cond.end349.i`'s two token-record stores are disjoint from the document's region, so the byte before the entry's end is `walkDoc_byte`'s |
-| `b8`, `h8end` | the loop head's `%8` through `contP35S_env8`: none of the byte's pivots rebinds `%8` |
-| `hend` | `%end.i`'s `walkStaticRegs` row through `contP35S_envEnd` |
+| `b8`, `h8end` | the loop head's `%8` through `contLandS_env8`: none of the byte's pivots rebinds `%8` |
+| `hend` | `%end.i`'s `walkStaticRegs` row through `contLandS_envEnd` |
 | `hbit` | `hlast_bit6_of_class` at the two class bits: the seam's tag test is clear at `126`/`127` |
-| `x1`, `h8c` | `%8` at the seam (`contSeamS_env8`), the same cell |
+| `x1`, `h8c` | `%8` at the class's seam (`contSeamByte_env8`), the same cell |
 | `hc110`, `hc116`, `hceq116` | the class bits again: the byte clears 110 and 116 and is not 116 |
 
 The document's content stays a named premise, each with what supplies it:
@@ -43,7 +44,7 @@ The document's content stays a named premise, each with what supplies it:
 | `v`, `hread` | **the next entry's lane word**: `%5`'s pointer is the invariant's, but the word at the next index is `G.ent`'s |
 | `hspan` | **the entry stream's order**: the lane is at or below the next entry's position (`WalkGeom.order`/`inside`), which is what places the byte before the entry's end inside the document |
 | `hugt` | **the entry's non-emptiness**: the lane's word is above this entry's index (`%idxprom.i`), a relation between the input's positions |
-| `hb13`, `hb32`, `hbne13` | **the byte before the entry's end and its no-run class**: the document's content at that index |
+| `hb` | **the byte before the entry's end and its route**: the document's content at that index, whose three leaves the class records |
 | `r₁`, `r₂`, `r₃`, `ev`, `cA`, `rdv`, `xA`, `hTail` | **the tail's three callees**: their preconditions and answers at the argument lists the walk stages (`consumerTailSegEmptyAt`) |
 
 `hspan` is the one premise the bundle's *statement* does not carry: it is read only by the
@@ -62,12 +63,13 @@ open LeanLLVM.Refinement.JsonStage2IR
 
 namespace WalkScope
 
-/-- **The scan-free bundle, from the entry's evidence.**  Produced at the loop's own
-witnesses: the head's byte is `hlastByte G C`, the counts are `hlastIncV C`/`hlastNepV G`,
-the position table is `G.ep`, and the byte before the entry's end is `contB35 G v`.  Only
-the document's facts, the depth-free no-run class and the tail's staging enter as
+/-- **The bundle, from the entry's evidence.**  Produced at the loop's own witnesses: the
+head's byte is `hlastByte G C`, the counts are `hlastIncV C`/`hlastNepV G`, the position
+table is `G.ep`, and the byte before the entry's end is `contB35 G v`, whose class the
+caller names.  Only the document's facts, the byte's route and the tail's staging enter as
 premises; every cell the walk's own blocks bind is derived (this module's header names
-each). -/
+each), and at each of the three routes they are the same cells: the byte's pivots and the
+seam bind none of `%8`, `%end.i` or `%ee.1.i`. -/
 def hcontCleanupFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
     (s : State) (hInv : WalkInv G C s) (hk : C.k + 1 < G.nep)
     (hlt125 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 125) = 0)
@@ -78,16 +80,14 @@ def hcontCleanupFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
     (hspan : v.toNat ≤ entryPos G (C.k + 1))
     (hugt : evalICmp .ugt (BitVec.ofNat 64 v.toNat)
       (BitVec.ofNat 64 (entryPos G C.k)) = 1)
-    (hb13 : evalICmp .slt (cont35 (contB35 G v)) (BitVec.ofNat 8 13) = 0)
-    (hb32 : evalICmp .slt (cont35 (contB35 G v)) (BitVec.ofNat 8 32) = 1)
-    (hbne13 : evalICmp .eq (cont35 (contB35 G v)) (BitVec.ofNat 8 13) = 0)
+    (hb : HcontByteRoute (cont35 (contB35 G v)))
     (r₁ r₂ r₃ : CallOutcome) (ev : EventRecord) {cA rdv xA : BitVec 32}
     (hTail : WalkSegment (stage2Calls stage2SubCalls) G (ContTailStartC C)
-      (contTailStart C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-        (contB35 G v) (hlastByte G C) (hlastByte G C))
+      (contTailStartByte C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
+        (contB35 G v) (hlastByte G C) (hlastByte G C) hb)
       (TailCarryEnd (ContTailStartC C) ev)
-      (contCleanupEnd C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-        (contB35 G v) (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ cA rdv xA) 3) :
+      (contCleanupEndByte C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
+        (contB35 G v) (hlastByte G C) (hlastByte G C) hb r₁ r₂ r₃ cA rdv xA) 3) :
     HcontCleanupFacts G C s := by
   -- the lane is above the entry's index, so the byte before the entry's end is inside
   have hgt : entryPos G C.k < v.toNat := contLane_gt G C hk hugt
@@ -138,19 +138,17 @@ def hcontCleanupFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
       hugt := hugt
       b35 := contB35 G v
       hread35 := hread35
-      hb13 := hb13
-      hb32 := hb32
-      hbne13 := hbne13
+      hb := hb
       b8 := hlastByte G C
       hend := by
-        show lookupName (contP35S C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep v
+        show lookupName (contLandS C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep v
           (contIx G C) (contB35 G v)).env "%end.i" = some (.ptr (C.stage.tok + 8))
-        rw [contP35S_envEnd]
+        rw [contLandS_envEnd]
         exact hInv.regs ("%end.i", .ptr (C.stage.tok + 8)) (by simp [walkStaticRegs])
       h8end := by
-        show lookupName (contP35S C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep v
+        show lookupName (contLandS C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep v
           (contIx G C) (contB35 G v)).env "%8" = some (.int 8 (hlastByte G C))
-        rw [contP35S_env8]
+        rw [contLandS_env8]
         exact hInv.iter.reg8
       hbit := by
         show (evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 45) |||
@@ -158,11 +156,11 @@ def hcontCleanupFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
         exact hlast_bit6_of_class hlt125 hne125
       x1 := hlastByte G C
       h8c := by
-        show evalOperand (contSeamS C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep v
-          (contIx G C) (contB35 G v) (hlastByte G C)) (.reg "%8") =
-          some (.int 8 (hlastByte G C))
+        show evalOperand (contSeamByte (contLandS C s (hlastByte G C) (hlastIncV C)
+          (hlastNepV G) G.ep v (contIx G C) (contB35 G v)) v.toNat C.stage.tok
+          (contB35 G v) (hlastByte G C) hb) (.reg "%8") = some (.int 8 (hlastByte G C))
         simp only [evalOperand]
-        rw [contSeamS_env8, contP35S_env8]
+        rw [contSeamByte_env8, contLandS_env8]
         exact hInv.iter.reg8
       hc110 := hlast_slt_zero_of_toInt_le (by decide) hlt125
       hc116 := hlast_slt_zero_of_toInt_le (by decide) hlt125
@@ -188,19 +186,17 @@ def hcontArm_cleanup_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
     (hspan : v.toNat ≤ entryPos G (C.k + 1))
     (hugt : evalICmp .ugt (BitVec.ofNat 64 v.toNat)
       (BitVec.ofNat 64 (entryPos G C.k)) = 1)
-    (hb13 : evalICmp .slt (cont35 (contB35 G v)) (BitVec.ofNat 8 13) = 0)
-    (hb32 : evalICmp .slt (cont35 (contB35 G v)) (BitVec.ofNat 8 32) = 1)
-    (hbne13 : evalICmp .eq (cont35 (contB35 G v)) (BitVec.ofNat 8 13) = 0)
+    (hb : HcontByteRoute (cont35 (contB35 G v)))
     (r₁ r₂ r₃ : CallOutcome) (ev : EventRecord) {cA rdv xA : BitVec 32}
     (hTail : WalkSegment (stage2Calls stage2SubCalls) G (ContTailStartC C)
-      (contTailStart C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-        (contB35 G v) (hlastByte G C) (hlastByte G C))
+      (contTailStartByte C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
+        (contB35 G v) (hlastByte G C) (hlastByte G C) hb)
       (TailCarryEnd (ContTailStartC C) ev)
-      (contCleanupEnd C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-        (contB35 G v) (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ cA rdv xA) 3) :
+      (contCleanupEndByte C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
+        (contB35 G v) (hlastByte G C) (hlastByte G C) hb r₁ r₂ r₃ cA rdv xA) 3) :
     HcontArm (stage2Calls stage2SubCalls) G C s :=
   .cleanup (hcontCleanupFacts_of_staging G C s hInv hk hlt125 hne125 hread hspan hugt
-    hb13 hb32 hbne13 r₁ r₂ r₃ ev (cA := cA) (rdv := rdv) (xA := xA) hTail)
+    hb r₁ r₂ r₃ ev (cA := cA) (rdv := rdv) (xA := xA) hTail)
 
 /-- **The scan-free continuing dispatch, from the staging.**  The arm's own producer, and
 `HcontArm.dispatch` at its composition. -/
@@ -215,20 +211,18 @@ theorem walkDispatch_at_cleanup_of_staging {m0 : Mem} {G : WalkGeom m0}
     (hspan : v.toNat ≤ entryPos G (C.k + 1))
     (hugt : evalICmp .ugt (BitVec.ofNat 64 v.toNat)
       (BitVec.ofNat 64 (entryPos G C.k)) = 1)
-    (hb13 : evalICmp .slt (cont35 (contB35 G v)) (BitVec.ofNat 8 13) = 0)
-    (hb32 : evalICmp .slt (cont35 (contB35 G v)) (BitVec.ofNat 8 32) = 1)
-    (hbne13 : evalICmp .eq (cont35 (contB35 G v)) (BitVec.ofNat 8 13) = 0)
+    (hb : HcontByteRoute (cont35 (contB35 G v)))
     (r₁ r₂ r₃ : CallOutcome) (ev : EventRecord) {cA rdv xA : BitVec 32}
     (hTail : WalkSegment (stage2Calls stage2SubCalls) G (ContTailStartC C)
-      (contTailStart C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-        (contB35 G v) (hlastByte G C) (hlastByte G C))
+      (contTailStartByte C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
+        (contB35 G v) (hlastByte G C) (hlastByte G C) hb)
       (TailCarryEnd (ContTailStartC C) ev)
-      (contCleanupEnd C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
-        (contB35 G v) (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ cA rdv xA) 3) :
+      (contCleanupEndByte C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
+        (contB35 G v) (hlastByte G C) (hlastByte G C) hb r₁ r₂ r₃ cA rdv xA) 3) :
     WalkDispatchResult (stage2Calls stage2SubCalls) G C s :=
   HcontArm.dispatch hInv hblock hk
-    (hcontArm_cleanup_of_staging G C s hInv hk hlt125 hne125 hread hspan hugt hb13 hb32
-      hbne13 r₁ r₂ r₃ ev (cA := cA) (rdv := rdv) (xA := xA) hTail)
+    (hcontArm_cleanup_of_staging G C s hInv hk hlt125 hne125 hread hspan hugt hb
+      r₁ r₂ r₃ ev (cA := cA) (rdv := rdv) (xA := xA) hTail)
 
 /-! ### The instrument -/
 

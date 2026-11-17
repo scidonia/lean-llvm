@@ -11,9 +11,9 @@ about it follows from `WalkInv` at the head alone.
 
 This module produces the three, and each is the head chain's own `inv'`:
 
-* `contTailStartInv_of_cleanup` — the high-byte route's seam,
-  `ContTailStartC`/`contTailStart`, from `hcontSpan17_of_cleanup`'s seventeen links (the
-  head's twelve and the class-C span's five);
+* `contTailStartInv_of_cleanup` — the continuing route's seam,
+  `ContTailStartC`/`contTailStartF`, from `hcontSpan17_of_cleanup`'s `n ≤ 17` links (the
+  head's `nH ≤ 12` and the class-C span's five);
 * `scSeamInv_of_scalar` — the plain-value route's seam,
   `HeadC₄₁₃ (ContAC₇ C)`/`scSeamS`, from the scalar prefix's eight links, the byte's
   three pivots and the tag-true seam's one, composed here;
@@ -79,17 +79,17 @@ namespace WalkScope
 
 /-! ### The high-byte route's seam -/
 
-/-- **The invariant at the high-byte route's tail start**, from the head chain.  The
-seventeen links are `hcontSpan17_of_cleanup`'s (the head's twelve and the class-C span's
+/-- **The invariant at the continuing route's tail start**, from the class's chain.  The
+`n ≤ 17` links are `hcontSpan17_of_cleanup`'s (the head's `nH ≤ 12` and the class-C span's
 five), and the seam they end at is the tail producers' `hInvT`.  The class's head inputs
 are the bundle's, so a producer of the class hands its own fields and reads the invariant
 here instead of taking it as a parameter. -/
 theorem contTailStartInv_of_cleanup {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     {s : State} (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead)
     (f : HcontCleanupFacts G C s) :
-    WalkInv G (ContTailStartC C)
-      (contTailStart C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.b8 f.x1) :=
-  (hcontSpan17_of_cleanup (G := G) (C := C) (s := s) hInv hblock f).inv'
+    WalkInv G (ContTailStartC C) (contTailStartF f) := by
+  obtain ⟨n, _hn, hseg⟩ := hcontSpan17_of_cleanup (G := G) (C := C) (s := s) hInv hblock f
+  exact hseg.inv'
 
 /-! ### The plain-value route's seam -/
 

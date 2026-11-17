@@ -2563,7 +2563,7 @@ abbrev contWsLatchF {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
   contWsLatch C (wsSlS G C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.k) f.k f.x1 f.x1
     f.r₁ f.r₂ f.r₃ f.k f.v f.cA f.rdv f.xA (BitVec.ofNat 64 f.k) f.a f.q f.x47
 
-/-! ### The scan-free class's bundle
+/-! ### The no-run class's bundle
 
 `HcontFacts` describes the token that ends *inside* its entry, so the extra-token scan runs
 over `[ei, v.toNat)` and the walk enters it.  A continuing entry whose token ends at the
@@ -2576,15 +2576,24 @@ rather than a mode of `HcontFacts`: the fields it does not have are the reason.
 (`a`, `q`, `bs`, `src`, `sel`, `hpreS`, `hincS`, `hopS`, `h3S`, `hpos`, `hreadS`, `hbsS`,
 `hloc105`, `x47`, `h47`, `hbit47`, `hws47`, `hloc96`, `hlatch`), no span (`hspan`,
 `hstart`), no traversal (`hround`, `hguard`, `hbyte`) and no token register across the scan
-(`htok`).  What it keeps is the span to the tail's start (`hcontToSpan`'s inputs), the tail's
-three calls on their empty arm, and the no-whitespace class of the byte before the entry's
-end — the class whose seam stores the entry's own end.
+(`htok`).  What it keeps is the class's chain to the tail's start (`hcontToSpan`'s inputs),
+the tail's three calls on their empty arm, and the byte before the entry's end.
 
-**Why the price has no byte term.**  The bundle's segment is the twenty links
-`hcontPrefixCleanupSeg` composes plus the merge's one; nothing in it consumes a document
-byte beyond the two the whitespace check reads, so the entry allowance pays it whole:
-`21 + 2 ≤ 32·Δk` at `Δk = 1`.  The whitespace class is the one whose price needs
-`8·ΔA` — its scan's visits — and that is the arm `HcontFacts` describes. -/
+**Why the byte is carried as a route and not as three bits.**  The bundle's fields are read
+at the byte's pivots, and the pivots' target depends on the byte's class: the scan-free
+class takes `NodeBlock41 → NodeBlock39 → LeafBlock35`, the low leaf
+`NodeBlock41 → LeafBlock33`, the high leaf `NodeBlock41 → NodeBlock39 → LeafBlock37`.  A
+bundle stated at `contP35S` — the scan-free endpoint — can only describe a document whose
+byte is that class.  `HcontByteRoute` is the class, `contPByte`-free: the cell fields are
+stated at the `NodeBlock41` state every route leaves them at, and the seam is
+`contSeamByte`, whose cells are the same at all three endpoints.
+
+**Why the price has no byte term.**  The bundle's segment is the class's chain
+(`hcontPrefixCleanupSeg`: the head's eight links, the byte's three or four and the class-C
+span's five) plus the merge's one; nothing in it consumes a document byte beyond the two
+the whitespace check reads, so the entry allowance pays it whole: `p + 2 ≤ 32·Δk` at
+`p ≤ 21` and `Δk = 1`.  The whitespace class is the one whose price needs `8·ΔA` — its
+scan's visits — and that is the arm `HcontFacts` describes. -/
 structure HcontCleanupFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) :
     Type where
   /-- The head's byte and its four pivot bits. -/
@@ -2614,31 +2623,30 @@ structure HcontCleanupFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : 
   hgap5 : lookupName (contAS₅ s x inc nep).env "%gap.i" = some (.ptr (C.stage.tok + 20))
   /-- The entry is not empty, so the whitespace check reads the byte before its end. -/
   hugt : evalICmp .ugt (BitVec.ofNat 64 v.toNat) ix = 1
-  /-- **The byte before the entry's end and its class: no whitespace run.**  The three
-  pivots take `NodeBlock41 → NodeBlock39 → LeafBlock35 → if.end372.i`, which is what makes
-  the seam's stored end the entry's own end. -/
+  /-- **The byte before the entry's end and its class.**  The three pivots take the class's
+  leaf to `if.end372.i`; the route is what makes the seam's stored end the entry's own end
+  at every leaf, and what lets the class's chain be composed rather than assumed. -/
   b35 : UInt8
   hread35 : readBytes (contEndS C s x inc nep ep v ix).mem ((G.b - 1) + v.toNat) 1 =
     some [b35]
-  hb13 : evalICmp .slt (cont35 b35) (BitVec.ofNat 8 13) = 0
-  hb32 : evalICmp .slt (cont35 b35) (BitVec.ofNat 8 32) = 1
-  hbne13 : evalICmp .eq (cont35 b35) (BitVec.ofNat 8 13) = 0
-  /-- The seam's cells: the stored end at `%end.i`, the byte and its two literal tests. -/
+  hb : HcontByteRoute (cont35 b35)
+  /-- The seam's cells: the stored end at `%end.i`, the byte and its two literal tests,
+  read at the `NodeBlock41` state the class's pivots leave them at. -/
   b8 : BitVec 8
-  hend : lookupName (contP35S C s x inc nep ep v ix b35).env "%end.i" =
+  hend : lookupName (contLandS C s x inc nep ep v ix b35).env "%end.i" =
     some (.ptr (C.stage.tok + 8))
-  h8end : lookupName (contP35S C s x inc nep ep v ix b35).env "%8" = some (.int 8 b8)
+  h8end : lookupName (contLandS C s x inc nep ep v ix b35).env "%8" = some (.int 8 b8)
   hbit : (evalICmp .eq b8 (BitVec.ofNat 8 45) |||
     evalICmp .ult (b8 + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0
-  /-- The entry's first byte's class, read at the seam's name. -/
+  /-- The entry's first byte's class, read at the class's own seam. -/
   x1 : BitVec 8
-  h8c : evalOperand (contSeamS C s x inc nep ep v ix b35 b8) (.reg "%8") =
-    some (.int 8 x1)
+  h8c : evalOperand (contSeamByte (contLandS C s x inc nep ep v ix b35) v.toNat
+    C.stage.tok b35 b8 hb) (.reg "%8") = some (.int 8 x1)
   hc110 : evalICmp .slt x1 (BitVec.ofNat 8 110) = 0
   hc116 : evalICmp .slt x1 (BitVec.ofNat 8 116) = 0
   hceq116 : evalICmp .eq x1 (BitVec.ofNat 8 116) = 0
   /-- The tail's three calls, its event and the seed's words: its segment on the empty arm,
-  reaching `if.end473.i` with `TailCarryEnd`'s carry. -/
+  reaching `if.end473.i` with `TailCarryEnd`'s carry, from the class's own seam. -/
   r₁ : CallOutcome
   r₂ : CallOutcome
   r₃ : CallOutcome
@@ -2647,21 +2655,21 @@ structure HcontCleanupFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : 
   rdv : BitVec 32
   xA : BitVec 32
   hTail : WalkSegment (stage2Calls stage2SubCalls) G (ContTailStartC C)
-    (contTailStart C s x inc nep ep v ix b35 b8 x1)
+    (contTailStartByte C s x inc nep ep v ix b35 b8 x1 hb)
     (TailCarryEnd (ContTailStartC C) ev)
-    (contCleanupEnd C s x inc nep ep v ix b35 b8 x1 r₁ r₂ r₃ cA rdv xA) 3
+    (contCleanupEndByte C s x inc nep ep v ix b35 b8 x1 hb r₁ r₂ r₃ cA rdv xA) 3
 
-/-- The scan-free tail's end, at the bundle's own terms. -/
+/-- The class's tail end, at the bundle's own terms. -/
 abbrev contCleanupEndF {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     (f : HcontCleanupFacts G C s) : State :=
-  contCleanupEnd C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.b8 f.x1 f.r₁ f.r₂ f.r₃
-    f.cA f.rdv f.xA
+  contCleanupEndByte C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.b8 f.x1 f.hb f.r₁ f.r₂
+    f.r₃ f.cA f.rdv f.xA
 
 /-- The tail's start, at the bundle's own terms: the segment's source, where the body of
 the merge's composition reads its cells. -/
 abbrev contTailStartF {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     (f : HcontCleanupFacts G C s) : State :=
-  contTailStart C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.b8 f.x1
+  contTailStartByte C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.b8 f.x1 f.hb
 
 /-- **The scan's visits, counted with the registers kept.**  `walkScanRounds457_of_cell` counts
 the visits but keeps only the counter at its target; the exit test reads the bound too, so

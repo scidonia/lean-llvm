@@ -30,13 +30,27 @@ they are proved where they are stated.
 
 ## What the case still needs
 
-One thing stands between these branches and `walkContinueFacts_of_payload`: the default
-arm's document-byte classes.  The byte below `13` or at or above `32` takes
-`LeafBlock33`/`LeafBlock37` to `if.end372.i`, and the chains are stated
-(`*HeadChain_of_lane` dispatch across `HcontHeadByte`'s three routes), but the `.cleanup`
-arm above them still takes `HcontCleanupFacts`, whose three no-run bits are the scan-free
-class's own.  Until that bundle is restated at the byte's class (or the leaf class gets
-its own bundle and arm), a state whose document byte is a leaf has no arm to select.
+**One half is closed.**  `HcontCleanupFacts` (`JsonStage2WalkRevolution`) no longer asserts
+the scan-free bits of the byte before the entry's end: it carries the byte's class
+(`hb : HcontByteRoute (cont35 b35)`), states its seam cells at the `NodeBlock41` state every
+route leaves them at, and states its tail at the class's own seam
+(`contTailStartByte`/`contCleanupEndByte`).  The class's chain is then a theorem per class
+— `hcontHeadSegCleanup` is `∃ nH ≤ 12` at whichever leaf `hb` names, and
+`hcontSpan17_of_cleanup`/`hcontPrefixCleanupSeg`/`walkRevolutionMergeSeg` carry the class's
+own count (`n ≤ 20`, `p ≤ 21`, and the price `p + 2 ≤ 32·Δk`).
+
+**What the leaf classes still owe is the tail, not the chain.**  The bundle's `hTail` is a
+segment from the class's seam to the class's tail end; `hcontTail_of_calls` produces it at
+`contTailStart` — the scan-free instance — so the producers that reach the bundle
+(`hcontArm_cleanup_of_calls`, `hcontArm_cleanup_of_doc`) pass the scan-free route.  A leaf
+byte's arm therefore needs the same three callee rows at its own seam: the tail's calls bind
+no cell the seam's route changes (`contSeamByte_ee`, `contSeamByte_cond` are stated at every
+class), so this is the same producer re-pointed, not a new one.
+
+So `walkContinueFacts_of_payload` is still unproved, and what it waits on is one producer
+per leaf class at `.cleanup` — `hcontTail_of_calls`'s instance at
+`contTailStartByte … (.lowLeaf …)`/`(.highLeaf …)` — and the same for the last entry's
+`.highByte` (`HlastFacts`'s route).
 
 The byte selection itself is **done**: `JsonStage2WalkDispatchClassTransport` derives the
 route's own bits (`slt %8 110`, `eq %8 102`, `slt %8 116`, `eq %8 116`, `slt %8 125` and

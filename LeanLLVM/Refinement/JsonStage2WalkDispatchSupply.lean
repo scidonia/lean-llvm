@@ -55,14 +55,15 @@ the reason are named row by row in the table above.**
 
 ## What the segments' exposure moved
 
-`hcontHeadSeg12` (`JsonStage2WalkRevolutionPrefix`) is the continuing head's **twelve**
-links, the high-byte class's, and `hcontToSpan` is now its composition with the class-C
-span rather than a second copy of the head's path.  `JsonStage2WalkDispatchCleanupSpan`
-applies the twelve to `HcontCleanupFacts`'s own fields (`hcontHeadSeg12_of_cleanup`),
-composes them with the span at seventeen (`hcontSpan17_of_cleanup`) and gives that
-composition its consumer, `hcontPrefixCleanupSeg` — which `walkRevolutionMergeSeg`
-(`JsonStage2WalkRevolutionSeg`) reads for the scan-free arm's twenty links.  So no exposed
-statement of that chain is without a consumer, and the twelve appear once.
+`hcontHeadSeg12` (`JsonStage2WalkRevolutionPrefix`) is the continuing head's eight links to
+the byte's `NodeBlock41` state, and `hcontToSpan` is its composition with the byte's route
+and the class-C span rather than a second copy of the head's path.
+`JsonStage2WalkDispatchCleanupSpan` applies the fields to `HcontCleanupFacts`
+(`hcontHeadSegCleanup`, at the bundle's own `hb`), composes them with the span at
+`nH + 5 ≤ 17` (`hcontSpan17_of_cleanup`) and gives that composition its consumer,
+`hcontPrefixCleanupSeg` — which `walkRevolutionMergeSeg` (`JsonStage2WalkRevolutionSeg`)
+reads for the class's `p ≤ 21` links.  So no exposed statement of that chain is without a
+consumer, and the head appears once.
 
 `JsonStage2WalkDispatchSegments` states the class-C span's one interface and the tails:
 
@@ -102,7 +103,7 @@ exactly here.  None is a missing segment.
 | the run's bundle at each default class | `RunFacts` at the six default head classes | **closed, apart from the bundle's own supply**: the run is stated once at an arbitrary check state (`HcontRunFacts`, `contWsRunF`), so the class-independent part is no longer a per-class restatement: `runFacts_of_runBundle` builds the whole bundle from it at any class's chain to the check state at `nPre ≤ 8`, and `runFacts_of_defaultClass` is the six classes' one producer — the class's prefix to `sw.default.i` (`nq ≤ 4`), `contSwToLandSeg`'s shared four and the bundle, with the class's own span (`.defaultValueBracketHigh`/`.defaultValueBrace`/`115`'s `LeafBlock58` arm, `.defaultValueLow`/`.defaultValueMid`/`.otherValue`'s letters span).  What the row still needed is now `HcontRunRow` (`JsonStage2WalkDispatchClassRows`): the check state's cells, the landing's reads and the traversal are its `HcontRunRows`, the seam's cells and the tail's three call rows are its `HcontWsSeam`, and `hcontRunFacts_of_seam` (`JsonStage2WalkDispatchSeams`) joins them into the bundle.  `hcontArm_run_of_row` then produces the arm, taking the head byte's own leaf below `if.else387.i` at its own count — the producers now accept any `nS ≤ 5`, so the letters, `'f'` and class-C spans all serve |
 | the run's bundle fields | `HcontRunFacts` at `contLandOut (contMidS C q5 …) v b35` | the class's own head bundle is not the run's: `HcontFacts` is stated at the high-byte route's `contLandS`, and its `hClass` is the byte's class.  The fields the check state supplies are the first six (`hInv`, `%35`, `%idxprom.i`, `%cond350.i`, `hugt`, `h8c`), which the class's prefix and `contSwToLandSeg` derive (`contLandS_idx`/`contLandS_cond` are the class-C instance of the same peels); the rest — the stop, the class, the seam's byte test, the tail, the landing and the traversal — are the document's and the staging's, so they enter as the payload's rows.  No field is a segment |
 | the last entry's default arms | a per-class last-entry chain, and the last level's run bundle | **the chain is closed, the run bundle is not**: `JsonStage2WalkDispatchLettersHead` states the last entry's suffix once (`contDefLastSeg`, seven links: the failing count test `%inc.i ≥ %nep`, the bound's `%4`, the whitespace check, the byte's three pivots and the token's end) and one counted chain per prefix class (`contLastLowHeadSeg` at ten links, `contLastMidHeadSeg`/`contLastOthHeadSeg`/`contLastBrkHeadSeg`/`contLastBhHeadSeg`/`contLastBrcHeadSeg` at eleven).  `hlastTailSeg` is the high-byte class's sixteen links and is not any of them.  The last level's **run** bundle now has its seam group: `JsonStage2WalkDispatchRunLastSeam` states `HlastWsSeam` at `hlastRunSeam` (the run's stop `k` as the token's end, the bound `c` as `%cond350.i`) and derives `RunLastFacts` from it (`hlastRunTail_of_seam`, `runLastFacts_of_seam`, `lastEntryArm_run_of_seam`), so `runLastFacts_of_staging` is no longer the bundle's only producer.  What remains at this level is the **head** document byte's class: `HlastFacts` asserts the scan-free bits, so the last chains are not total over `.lowLeaf`/`.highLeaf` |
-| `walkContinueFacts_of_payload` | `HcontPayload` → `WalkContinueFacts` | the rows above at every arm; the payload must not hold an arm or a segment, so the class case over `HcontClass.complete` runs each class's producer.  The default arm's chain is in hand at every byte class (`JsonStage2WalkDispatchLeafBytes`); its tail, `.ws`/`.cleanup`'s call rows and `.scalar`'s seam are the rows still listed above.  The class case is complete: the positive-depth opener's `%sp ≠ 0` states are `HcontArm.stringOpenAboveZeroMerge`/`.stringOpenAboveZeroRefuse`, whose class facts the invariant supplies and whose row is the merge's counted segment (`JsonStage2WalkDispatchHcontStringDeep`), with `.twoEntry`'s `C.sp = 0` beside them.  What the theorem still needs is the document rows, not an arm: the `.cleanup` leaf classes' **bundle** (`HcontCleanupFacts` still asserts the scan-free bits, so the high-byte route's leaf chains have no arm above them), the class bits' transport into `letters`/`fLetter`/`classC`, and the last level.  The run class's branch is in hand (`hcontArm_run_of_class`) |
+| `walkContinueFacts_of_payload` | `HcontPayload` → `WalkContinueFacts` | the rows above at every arm; the payload must not hold an arm or a segment, so the class case over `HcontClass.complete` runs each class's producer.  The default arm's chain is in hand at every byte class (`JsonStage2WalkDispatchLeafBytes`); its tail, `.ws`/`.cleanup`'s call rows and `.scalar`'s seam are the rows still listed above.  The class case is complete: the positive-depth opener's `%sp ≠ 0` states are `HcontArm.stringOpenAboveZeroMerge`/`.stringOpenAboveZeroRefuse`, whose class facts the invariant supplies and whose row is the merge's counted segment (`JsonStage2WalkDispatchHcontStringDeep`), with `.twoEntry`'s `C.sp = 0` beside them.  What the theorem still needs is the document rows, not an arm: the `.cleanup` leaf classes' **tail** (`HcontCleanupFacts` now carries the byte's route and its chain is stated at every class, but `hcontTail_of_calls` — the bundle's `hTail` producer — is the scan-free instance, so a leaf byte's arm above it waits on the same three callee rows re-pointed at its own seam), the class bits' transport into `letters`/`fLetter`/`classC`, and the last level.  The run class's branch is in hand (`hcontArm_run_of_class`) |
 | `walkLoopEnd_of_payload` | `HlastPayload` → `WalkLoopEnd` | the last entry's rows above, and the terminal log words `WalkLoopEnd.merge`/`.refuse` compose.  The last run's bundle is now derived from a seam group (`runLastFacts_of_seam`), so what the last level still owes is the **head** document byte's class: `HlastFacts` asserts the scan-free bits and no row states `.lowLeaf`/`.highLeaf` there |
 
 A `walkContinueFacts_of_payload` stated over a payload carrying those groups would be a
@@ -140,9 +141,11 @@ former obstacles are gone, and the third is a route the tree does not yet compos
   (`contLowHeadLeafSeg` … `contBrcHeadLeafSeg`) and after the high-byte route's
   `contPrefixLand`, and the six `*HeadChain_of_lane` producers take `HcontHeadByte` — the
   three non-whitespace classes — and dispatch, so a row's `.lowLeaf`/`.highLeaf` has a head
-  chain at every default class.  What the leaf routes still lack is the `.cleanup` **arm**:
-  `HcontCleanupFacts` asserts the scan-free bits, so the high-byte route's leaf chains reach
-  the seam but no bundle above them takes them.
+  chain at every default class.  What the leaf routes still lack is the `.cleanup` **arm**
+  at the leaf: `HcontCleanupFacts` now carries the byte's route and its chain is stated at
+  every class, so the high-byte route's leaf chains reach the seam and a bundle above them
+  accepts them; what is still scan-free is the bundle's `hTail`, whose producer
+  (`hcontTail_of_calls`) is stated at `contTailStart`.
 * **The class's route bits are transported.**  The default-value constructors' range bits
   do not include the bits the spans below `if.else387.i` read, and
   `JsonStage2WalkDispatchClassTransport` now derives them: `slt %8 110`, `eq %8 102` (and

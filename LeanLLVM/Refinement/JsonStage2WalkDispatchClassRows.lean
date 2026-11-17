@@ -175,7 +175,7 @@ noncomputable def hcontArm_cleanup_of_doc {m0 : Mem} (G : WalkGeom m0) (C : Walk
         (contB35 G doc.v) (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ cA rdv xA) 3) :
     HcontArm (stage2Calls stage2SubCalls) G C s :=
   hcontArm_cleanup_of_staging G C s hInv hk hlt125 hne125 doc.hread doc.hspan doc.hugt
-    doc.hb13 doc.hb32 doc.hbne13 r₁ r₂ r₃ ev hTail
+    (.scanFree doc.hb13 doc.hb32 doc.hbne13) r₁ r₂ r₃ ev hTail
 
 /-! ### A class's seam, as one row
 
