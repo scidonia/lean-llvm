@@ -27,13 +27,16 @@ visits' totality are the input's, and no `WalkInv` clause fixes them.  What the 
 below exercises is what the arm composes: `runLastMerge_at`'s path, the merge's cells and
 `mergeLast`'s price.
 
-## The terminal index's empty byte span
+## The terminal index, and the two readings of the credit
 
-`entryPos G 1 = 0` at this document (`entryPos_one`), which is the fact the terminal price
-rests on: past the last entry the byte span is empty, so `mergeLast` states the entry term
-alone.  `spaceVisits_le` is the same document's arrow on the budget: the scan's bound is the
-document's length, two, so the visits `4·(2 - 1 - i)` are at most four of the six links the
-entry allowance leaves — the run has the rest.
+`entryPos G 1 = 0` at this document (`entryPos_one`): past the last entry the *stream*
+position totalises to zero, so a terminal price read through `entryPos` charges nothing for
+the document the walk has left.  That is why `mergeLast` states its byte term at the credit
+boundary — `boundary G 1 = G.n = 2` — and why the bundle carries the run's count and start
+as document bounds rather than as a budget: `runLastMerge_at` turns them into the price with
+`runLast_price_with_credit`.  `spaceVisits_le` is the same document's arrow on the scan: the
+scan's bound is the document's length, two (`hspanDoc`), so the visits `4·(2 - 1 - i)` are
+at most four — the trailing whitespace of a two-byte document cannot be longer.
 
 ## The controls
 
@@ -180,9 +183,10 @@ theorem run_last_dispatch {args : List Value} {m0 : Mem} {next : Nat}
 
 /-! ### The terminal index's arithmetic, at the document -/
 
-/-- **The scan's visits are at most four of the six.**  The bundle's bound is inside the
-document (two bytes), so `c - 1 - i ≤ 1` and `4·(c - 1 - i) ≤ 4`: what the entry allowance
-leaves for the run is at least two links. -/
+/-- **The scan's visits are at most four, at a two-byte document.**  The bundle's bound is
+inside the document (two bytes, `hspanDoc`), so `c - 1 - i ≤ 1` and `4·(c - 1 - i) ≤ 4`:
+the trailing whitespace a two-byte document can hold is one byte, and the price it can
+charge for the scan is its four links. -/
 theorem spaceVisits_le {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     (h : TrailingSpaceDocument G (97 : UInt8)) (f : RunLastFacts G C s) :
     4 * (f.c - 1 - f.i) ≤ 4 := by

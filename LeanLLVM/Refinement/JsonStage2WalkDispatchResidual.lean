@@ -11,9 +11,10 @@ tree.  This module states why, per class, and produces the part that is:
   `lastEntryArm_of_derivedClass`, through `HcontArm.dispatch` and `LastEntryArm.dispatch`;
 * at the remaining classes the arm's payload is a row that no clause of `WalkInv` supplies,
   and the table below names which row, and from which producer;
-* the terminal price row is not a supplied value at all: at the document `"abcdefgh "` the
-  entry allowance's form of it is false (`runLast_budget_false_at_eight`), which is what
-  `JsonStage2WalkTerminalPrice`'s credit form pays and the entry-only spelling does not.
+* the terminal price row is derived, not supplied: at the document `"abcdefgh "` the
+  entry allowance's form of it is false (`entryOnlyBudget_false_at_eight`), and the price
+  is read at the credit boundary instead — `JsonStage2WalkTerminalPrice`'s credit form at
+  the document's own bounds, which `runLastMerge_at` applies.
 
 ## The classes whose rows are all derived
 
@@ -132,13 +133,20 @@ missing input — and it is what `JsonStage2StringStageFacts` already does once 
 
 ## The price, at a document the walk admits
 
-`RunLastFacts.hbudget` is `N + 4 * (c - 1 - i) ≤ 6` — the entry allowance's form of
-`terminalPriceFits`.  At `"abcdefgh "` the terminal run is eight links, so the form is
-false at the document's own numbers, and a producer that took `N`, `c` and `i` from the
-document could not state it.  `JsonStage2WalkTerminalPrice`'s credit form pays the same
-document (`6 + 8 * (n - ix)`); restating `mergeLast`'s price at the boundary is what would
-supply the row, and that is a change to the dispatch's statement rather than a proof of
-this one.
+The run class's price row used to be the entry allowance's form,
+`N + 4 * (c - 1 - i) ≤ 6` — `terminalPriceFits` at the document's numbers.  At
+`"abcdefgh "` the terminal run is eight links, so that row is false at the document's own
+numbers, and no producer that read `N`, `c` and `i` from the document could state it: the
+row was a restriction on the input, not a fact about it.
+
+The row is now derived rather than excluded.  `RunLastFacts` carries the three things the
+document does supply — the run's count inside the bytes the entry has left (`hNdoc`), the
+run's start at the entry's position (`hstart`) and the scan's bound inside the document
+(`hspanDoc`) — and `runLastMerge_at` spends them through `runLast_price_with_credit`, whose
+credit form `6 + 8 * (n - ix)` pays the same document.  What closed the gap was restating
+`mergeLast`'s price at the credit boundary (`boundary G G.nep = G.n`), which the dispatch
+now states; the theorem below is what the *old* form says at that document, and it is the
+reason the general form exists.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkTerminalPrice
 import LeanLLVM.Refinement.JsonStage2WalkDispatchRefusalsOfStaging
@@ -274,15 +282,15 @@ theorem walkDispatchLast_of_derivedClass {m0 : Mem} {G : WalkGeom m0} {C : WalkC
 
 /-! ### The price row, at a document the walk admits -/
 
-/-- **The terminal price's entry-only form is false at `"abcdefgh "`.**  The run class's
-price row is `N + 4 * (c - 1 - i) ≤ 6` at the state's numbers, and `RunLastFacts` carries
-the ties that name them — the stop inside the document, the document's length, the run
-beginning at the entry's position.  At eight continuing bytes in one entry the terminal run
-is eight links, so the row is false at the numbers a producer of that class supplies: the
-row cannot be derived from the document, and a producer that took its values from the
-document could not state it.  `JsonStage2WalkTerminalPrice`'s credit form pays the same
-document; the entry allowance's form does not. -/
-theorem runLast_budget_false_at_eight {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+/-- **The entry-only allowance is false at `"abcdefgh "` — and the general price covers
+it.**  The old row was `N + 4 * (c - 1 - i) ≤ 6` at the state's numbers, with
+`RunLastFacts` carrying the ties that name them; the bundle no longer states it, and this
+theorem is the arithmetic that retired it.  At eight continuing bytes in one entry the
+terminal run is eight links, so the six-link form is false at the document's own numbers —
+it was a restriction on the input, not a fact about it.  `JsonStage2WalkTerminalPrice`'s
+credit form pays the same document, and `RunLastFacts` now carries that document's bounds
+(`hNdoc`, `hstart`, `hspanDoc`) with `runLastMerge_at` spending them. -/
+theorem entryOnlyBudget_false_at_eight {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     {s : State} {f : RunLastFacts G C s}
     (hbs : G.bs = [97, 98, 99, 100, 101, 102, 103, 104, 32])
     (hpos : entryPos G C.k = 0)
@@ -300,7 +308,7 @@ theorem runLast_budget_false_at_eight {m0 : Mem} {G : WalkGeom m0} {C : WalkCarr
 #print axioms LeanLLVM.Refinement.WalkScope.lastEntryArm_of_derivedClass
 #print axioms LeanLLVM.Refinement.WalkScope.walkDispatch_of_derivedClass
 #print axioms LeanLLVM.Refinement.WalkScope.walkDispatchLast_of_derivedClass
-#print axioms LeanLLVM.Refinement.WalkScope.runLast_budget_false_at_eight
+#print axioms LeanLLVM.Refinement.WalkScope.entryOnlyBudget_false_at_eight
 
 end WalkScope
 end LeanLLVM.Refinement

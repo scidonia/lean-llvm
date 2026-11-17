@@ -7,21 +7,21 @@ entry's end is whitespace, so the whitespace skip runs, the token's end `%ee.1.i
 run's stop, the copy call's test is true, the extra-token scan traverses the span between
 the stop and the seam's bound, and the merge follows the scan's exit.  The continuing
 composition is `runScanMerge_at` (`JsonStage2WalkDispatchRun`), its bundle `RunFacts`; the
-terminal one is `runLastMerge_at` at `RunLastFacts`, priced against the entry allowance
-alone.
+terminal one is `runLastMerge_at` at `RunLastFacts`, priced in the document bytes the
+entry has left to reach.
 
 This module produces both bundles at every state that carries the invariant, and the two
 arms from them.  Which side of the count a state is on is the dispatch's hypothesis, so the
 arms carry nothing about it; the two bundles differ exactly where the prices do (the head
-chain's count, the seam's bound and the budget), and each producer states its own.
+chain's count, the seam's bound and the document bounds), and each producer states its own.
 
 ## What is derived, and what is taken
 
-Six rows of either bundle are derived, and the terminal bundle's seventh: three are read
+Six rows of either bundle are derived, and the terminal bundle's other two: three are read
 off the invariant at a *named* state — the head state for `x`/`h8`, the head chain's
 endpoint for `h8m`, the scan's landing for `hinc`/`hnep` — one off the geometry once the
-scan's span is in hand (`hcw`), one off the price (`hbudget`), and, at the last entry,
-`hspanDoc` off the seam's bound.
+scan's span is in hand (`hcw`), one off the continuing price (`hbudget`), and the
+terminal bundle's three document bounds off the stop, the length and the entry's position.
 
 | row | how it is derived |
 |---|---|
@@ -30,18 +30,18 @@ scan's span is in hand (`hcw`), one off the price (`hbudget`), and, at the last 
 | `hinc` | the landing's endpoint invariant, `WalkInv.inc_reg`, at `hkC` |
 | `hnep` | the landing's endpoint invariant, `%nep`'s `walkStaticRegs` row |
 | `hcw` | `entryPos_lt` at the head's guard (continuing), `G.maxDoc` at the seam's bound (terminal) |
-| `hbudget` | the price's own arithmetic — `runBudget_of_bytePrice` (continuing) and `runLastBudget_of_price` (terminal) |
+| `hbudget` | the continuing price's own arithmetic — `runBudget_of_bytePrice`, at the entry's byte credit |
+| `hstart`, `hNdoc` | the terminal stop's own bounds — `terminalStop_ge`, and `terminalStop_le` with the length read off the geometry |
 | `hspanDoc` | the seam's bound being `%4`: `hc` at `le_of_eq` (terminal) |
 
-Two of those the census's tables do not credit as derivable.  `h8m` is marked there as the
-default arm's own field (**F**), and it is a theorem of the segment the arm already carries:
-a `WalkSegment` records its target's invariant, and the target's `WalkIter` is the byte cell
-at the target's index, which `hmk` names.  `hbudget` is marked **D-in-principle** at the
-continuing level and **boundary** at the terminal one; both are now derived — the
-continuing field from the price at the byte allowance's eight per visit (weaker than the
-field's four per visit, so the derivation spends nothing), and the terminal field from the
-document's own price `terminalPriceFits`, which is what `JsonStage2WalkTerminalPrice` §1
-measures and what `runLastFacts_budget_iff_price` ties to the field.
+Two of the continuing rows the census's tables do not credit as derivable, and neither is
+the terminal bundle's: `h8m` is marked **F** there, and it is a theorem of the segment the
+arm already carries — a `WalkSegment` records its target's invariant, and the target's
+`WalkIter` is the byte cell at the target's index, which `hmk` names; `hbudget` is marked
+**D-in-principle**, and it is derived from the price at the byte allowance's eight per visit
+(weaker than the field's four per visit, so the derivation spends nothing).  The terminal
+bundle has no budget row at all: its three document bounds are read off the stop, and
+`runLastMerge_at` applies `runLast_price_with_credit` to them.
 
 ## What is taken, and what supplies it
 
@@ -56,7 +56,7 @@ measures and what `runLastFacts_budget_iff_price` ties to the field.
 | `i`, `c`, `hcounter`, `hbound`, `hic` | **the scan's counter, the seam's bound and the copy call's test**: `WalkInv` names neither cell, and the bound's value is the lane's at a continuing entry and `%4` at the last |
 | `hbyte` | **the scan's per-visit totality** (`walkScanRounds457`'s `hbyte`): the visited byte and its read, the two class bits the visit's leaves test, and the three local facts of the visit.  Its *read* half is derivable in principle — `%3` is `WalkPtrs`'s `G.b` at every invariant-carrying state and `walkDoc_byte` reads the document at `G.b + p` — but the two class bits are the visited byte's **content**, the input's, so splitting the read out trades one premise for another of the same size; the arm takes the traversal whole, as the whitespace class's bundle does |
 | `hprice`, `hspanStart`, `hstart` | **the document's numbers**: `%cond350.i`'s value at or before the next entry's position (`HcontFacts`'s `hspan`), the run starting at or after the entry's position, and the price at the byte allowance's eight |
-| `hstop`, `hN`, `hc`, `hprice` | **the document's numbers, at the terminal index**: the scan's stop is `terminalStop`, the run's count is the stop's distance from the entry, `%cond350.i` is `%4` = `G.n`, and the price is `terminalPriceFits` |
+| `hstop`, `hN`, `hc` | **the document's numbers, at the terminal index**: the scan's stop is `terminalStop`, the run's count is the stop's distance from the entry, and `%cond350.i` is `%4` = `G.n`.  The bundle's three bounds and the composition's price are proved from these; nothing about the document's length is assumed |
 
 ## Which reusable pieces serve, and which do not
 
@@ -121,8 +121,9 @@ abbrev ScanVisits {m0 : Mem} (G : WalkGeom m0) (c : Nat) : Prop :=
 
 `RunFacts.hbudget` is `N + 4·(c - 1 - i) ≤ 8·ΔA + 5`: the run's count and the scan's visits
 at four links each, at the entry's byte credit plus the five the price spares.
-`RunLastFacts.hbudget` is `N + 4·(c - 1 - i) ≤ 6`: the entry allowance's six remaining
-links, with no byte term.  Both follow from the price forms the route already proves. -/
+`RunLastFacts` states no budget: its three terminals are the document's bounds, and
+`runLast_price_with_credit` (`JsonStage2WalkDispatchRun`) turns them into the price at the
+composition, where the potential is in hand. -/
 
 /-- **The four-per-visit budget follows from the byte allowance's eight.**  The field is
 `contWsPriceAt`'s inequality at this arm's tighter per-visit price: one visit costs
@@ -147,24 +148,6 @@ theorem runBudget_of_wsPrice {N c i v k Δ : Nat} (hki : k ≤ i) (hcv : c ≤ v
   apply runBudget_of_bytePrice
   have hmono : c - 1 - i ≤ v - 1 - k := by omega
   simp only [stage2ByteAllowance] at h ⊢
-  omega
-
-/-- **The terminal budget is the document's own price.**  `terminalPriceFits G.bs ix` is
-`terminalStop`'s run plus four per visited byte, at the document's length — a computable
-predicate of `G.bs` and the entry's position (`terminalPrice_eight_outside`,
-`terminalPrice_two` compute it at two documents).  Reading `i` as `terminalStop`, `c` as
-`%4` = `G.n` and `N` as the stop's distance from the entry turns that price into the
-bundle's `hbudget`: the field is not a fresh supply but the document's cost, and the
-documents on the far side of the six (`terminalPrice_eight_outside`) are exactly those with
-no inhabitant of the bundle. -/
-theorem runLastBudget_of_price {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
-    {N c i : Nat} (hstop : i = terminalStop G.bs (entryPos G C.k))
-    (hc : c = G.n) (hN : N = i - entryPos G C.k)
-    (h : terminalPriceFits G.bs (entryPos G C.k)) :
-    N + 4 * (c - 1 - i) ≤ 6 := by
-  have hbs : G.bs.length = G.n := walkReadBytes_length G.doc
-  simp only [terminalPriceFits, terminalPrice] at h
-  rw [hbs] at h
   omega
 
 /-! ### The continuing bundle
@@ -268,16 +251,20 @@ def runFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : Stat
 /-! ### The terminal bundle
 
 The same composition at the last entry, where the head chain is one link shorter, the
-seam's bound is the document's length and the budget is the entry allowance's six.  The
-budget is derived here rather than taken: `runLastBudget_of_price` reads it off
-`terminalPriceFits`, which is the document's own price. -/
+seam's bound is the document's length and the price's terminals are the document's own
+bounds.  Nothing is taken from the price: the bundle carries the run's count inside the
+bytes the entry has left (`hNdoc`), its start at the entry's position (`hstart`) and the
+scan's bound inside the document (`hspanDoc`), and `runLastMerge_at` applies
+`runLast_price_with_credit` to the three. -/
 
 /-- **The run bundle at the last entry, from the entry's evidence.**  `RunLastFacts` at
 every state that carries the invariant: the head's byte is `hlastByte G C` and `h8`, `h8m`,
-`hinc`, `hnep`, `hcw`, `hbudget` and `hspanDoc` are this module's.  The document's own
-numbers enter as premises — the scan's stop `terminalStop`, the run's count, `%4` = `G.n` and
-the price `terminalPriceFits` — which are the three equalities
-`runLastFacts_budget_iff_price` names as the producer's. -/
+`hinc`, `hnep`, `hcw` and the three document bounds are this module's.  The document's own
+numbers enter as premises — the scan's stop `terminalStop`, the run's count's distance from
+the entry's position, and `%4` = `G.n` — so `N`, `i` and `c` are the document's, and the
+bounds are proved from them rather than assumed: `hstart` is the stop's own lower bound and
+`hNdoc` is the stop inside the document (`terminalStop_le`), with the length read off the
+geometry. -/
 def runLastFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     (hInv : WalkInv G C s)
     (hbit : (evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 45) |||
@@ -303,8 +290,7 @@ def runLastFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : 
     (hbyte : ScanVisits G c)
     (hstop : i = terminalStop G.bs (entryPos G C.k))
     (hN : N = i - entryPos G C.k)
-    (hc : c = G.n)
-    (hprice : terminalPriceFits G.bs (entryPos G C.k)) :
+    (hc : c = G.n) :
     RunLastFacts G C s :=
   { x := hlastByte G C
     h8 := by
@@ -357,7 +343,17 @@ def runLastFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : 
       simp only [stage2MaxDocument] at hmax
       omega
     hbyte := hbyte
-    hbudget := runLastBudget_of_price G C hstop hc hN hprice
+    hstart := by
+      rw [hstop]
+      exact terminalStop_ge G.bs (entryPos G C.k)
+    hNdoc := by
+      have hbs : G.bs.length = G.n := walkReadBytes_length G.doc
+      have hix : entryPos G C.k ≤ G.bs.length := by
+        rw [hbs]
+        exact le_trans (boundary_ge_entryPos G C.k) (boundary_le G C.k)
+      have hle := terminalStop_le G.bs hix
+      rw [hN, hstop]
+      omega
     hspanDoc := le_of_eq hc }
 
 /-! ### The arms, and their dispatches -/
@@ -423,11 +419,10 @@ def lastEntryArm_run_of_staging {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (
     (hbyte : ScanVisits G c)
     (hstop : i = terminalStop G.bs (entryPos G C.k))
     (hN : N = i - entryPos G C.k)
-    (hc : c = G.n)
-    (hprice : terminalPriceFits G.bs (entryPos G C.k)) :
+    (hc : c = G.n) :
     LastEntryArm (stage2Calls stage2SubCalls) G C s :=
   .run (runLastFacts_of_staging G C s hInv hbit N hHead hnH hm hmk hSpan hnS hs hTail ht htk
-    hLatch hl hkC i c hcounter hbound hic hbyte hstop hN hc hprice)
+    hLatch hl hkC i c hcounter hbound hic hbyte hstop hN hc)
 
 /-- **The continuing run dispatch, from the staging.** -/
 theorem walkDispatch_at_run_of_staging {m0 : Mem} {G : WalkGeom m0}
@@ -491,18 +486,16 @@ theorem walkDispatch_at_run_last_of_staging {m0 : Mem} {G : WalkGeom m0}
     (hbyte : ScanVisits G c)
     (hstop : i = terminalStop G.bs (entryPos G C.k))
     (hN : N = i - entryPos G C.k)
-    (hc : c = G.n)
-    (hprice : terminalPriceFits G.bs (entryPos G C.k)) :
+    (hc : c = G.n) :
     WalkDispatchResult (stage2Calls stage2SubCalls) G C s :=
   LastEntryArm.dispatch hInv hblock hnot
     (lastEntryArm_run_of_staging C s hInv hbit N hHead hnH hm hmk hSpan hnS hs hTail ht htk
-      hLatch hl hkC i c hcounter hbound hic hbyte hstop hN hc hprice)
+      hLatch hl hkC i c hcounter hbound hic hbyte hstop hN hc)
 
 /-! ### The instrument -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.runBudget_of_bytePrice
 #print axioms LeanLLVM.Refinement.WalkScope.runBudget_of_wsPrice
-#print axioms LeanLLVM.Refinement.WalkScope.runLastBudget_of_price
 #print axioms LeanLLVM.Refinement.WalkScope.runFacts_of_staging
 #print axioms LeanLLVM.Refinement.WalkScope.runLastFacts_of_staging
 #print axioms LeanLLVM.Refinement.WalkScope.hcontArm_run_of_staging

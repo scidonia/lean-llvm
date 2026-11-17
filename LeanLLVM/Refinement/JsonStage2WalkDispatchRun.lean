@@ -284,15 +284,17 @@ The price is `nH + nS + 11 + nSc + 2 ≤ 32·Δk + 8·ΔA`: `nH ≤ 12 + N` and 
 `27 + N + nSc`, `nSc ≤ 4·(c - 1 - i)`, and the bundle's `hbudget` places `N + 4·(c - 1 - i)`
 inside `8·ΔA + 5` — so the whole is `32 + 8·ΔA`, the budget spent and not double-spent.
 
-**The continuing level's price, and why the terminal one is different.**  `ΔA` is
+**The continuing level's price, and why the terminal one reads the boundary.**  `ΔA` is
 `entryPos (C.k + 1) - entryPos C.k`, which is a positive entry span only while
 `C.k + 1 < G.nep`; at the terminal index `entryPos G G.nep = 0` (`walkEntryPos_at_nep`), so
-the byte credit is empty rather than small, and the same `hbudget` would read
-`N + 4·(c - 1 - i) ≤ 5`.  That is why this composition is the **continuing** run class's,
-and the last entry's has its own bundle beside it: `RunLastFacts` states the six links the
-entry allowance leaves at the terminal index, and `runLastMerge_at` spends exactly those
-against `WalkDispatchResult.mergeLast` — the price without a byte term, which is sound
-there because the span it would charge does not exist. -/
+a byte term read through `entryPos` is *not applicable* rather than zero, and the same
+`hbudget` would read `N + 4·(c - 1 - i) ≤ 5`.  The walk still has document bytes to reach
+there, and the potential counts them: `boundary G G.nep = G.n` (`boundary_nep`), so the
+byte credit the last entry has is `8·(G.n - entryPos G C.k)`.  That is why the last
+entry's bundle is its own: `RunLastFacts` states the run and the scan inside *that* credit,
+`runLastMerge_at` concludes its price with the byte term read at the boundary, and
+`WalkDispatchResult.mergeLast` carries exactly that term — the same credit the loop's
+induction spends, with no six-link allowance assumed and no document length restricted. -/
 theorem runScanMerge_at {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)
     (f : RunFacts G C s) :
@@ -386,8 +388,8 @@ theorem runScanMerge_at {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : Stat
 
 /-! ### The terminal index's run class
 
-The same path, at the last entry, priced against the entry allowance alone.  Its merge
-index is the stream's end — `k2 = G.nep` — so it lands against
+The same path, at the last entry, priced in the document bytes the entry has left to
+reach.  Its merge index is the stream's end — `k2 = G.nep` — so it lands against
 `WalkDispatchResult.mergeLast` (`JsonStage2WalkDispatchThreeOfRun`) rather than `merge`.
 
 **What changes, and why.**  Three things, and each is the terminal index's own:
@@ -396,34 +398,38 @@ index is the stream's end — `k2 = G.nep` — so it lands against
 |---|---|---|
 | `nH ≤ 12 + N` | `nH ≤ 11 + N` | the head chain's fixed part is eleven here: `sw.default.i`'s count test *fails* at the last entry, so the `cond.true345.i` link the continuing route takes is not on this path (`.letters`' last-entry count) |
 | `c ≤ entryPos G (C.k + 1)` | `c ≤ G.n` | the scan's bound `%cond350.i` is `%4`, the document's length, at the last entry, not the next entry's position (`HcontFacts`' note on the two bundles' opposite values of the same lane) |
-| `N + 4·(c - 1 - i) ≤ 8·ΔA + 5` | `N + 4·(c - 1 - i) ≤ 6` | there is no `ΔA`: `entryPos G G.nep = 0`, and the entry allowance leaves six links for the run and the scan together |
+| `hspanStart`, `hbudget` (a byte span and an entry allowance) | `hspanDoc`, `hstart`, `hNdoc` (three document bounds) | there is no next entry position to charge and no entry allowance left to spend: the composition reads the bytes the entry still has, and `runLast_price_with_credit` turns them into the price |
 
 The fixed part is twenty-four links — the head's eleven, the byte's span at most five,
 the tail's three, the landing's three, the exit's one and the merge's one — and with the
-price's own two, the run's visits and the scan's share the remaining six.  So the bundle's
-`hbudget` is exactly the arithmetic `mergeLast` can pay, and the composition below spends
-it without a byte term.
+price's own two, the run and the scan are paid out of the document bytes the entry still
+has.  `runLast_price_with_credit` is that arithmetic, and the composition below applies it
+at the path's own counts rather than taking a budget.
 
-**Why this is a class and not a weakening.**  A document whose terminal run exceeds those
-six links has no arm here: the price is not available at the terminal index, and inventing
-one by shortening the count would be the very weakening the split exists to prevent.  The
-class states the budget as a premise of its own, so the arm's coverage is exactly what
-`mergeLast` pays for.
+**Why the class is not a restriction on the input.**  Its three terminals are document
+facts: the run's count inside the bytes from the entry's position, the scan's first index
+at or after that position, and the scan's bound inside the document.  All three are read
+off the execution state and the entry stream, so a document whose terminal run or trailing
+scan is long is *priced* here rather than excluded: the byte credit the potential already
+carries pays for both, and the entry allowance's six is not a ceiling on either.
 
 **The bundle's fields are the input's**, as `RunFacts`' are: the document's bytes (the
 landing's and the visits'), the head and tail segments with their own counts, and the
-seam's bound.  Two of `RunFacts`' fields are absent rather than
-copied: `hspanStart` states the scan inside the *next* entry's span, which the terminal
-index has not got (the budget does that work here), and `hstart` places the run's start in
-the entry — true at the last entry too, but no proof reads it, so carrying it would narrow
-the class for nothing. -/
+seam's bound.  One of `RunFacts`' fields is absent rather than copied: `hspanStart` states
+the scan inside the *next* entry's span, which the terminal index has not got, and
+`hspanDoc` states the bound inside the document in its place.  The other two document
+bounds — `hstart`, the run's start in the entry, and `hNdoc`, the run's count inside the
+bytes from the entry's position — are `RunFacts`' `hstart` and its byte span's terminal
+form; the composition reads all three through `runLast_price_with_credit`.
+-/
 
 /-- **The terminal run class's inputs**, at the last entry: the head's chain through the
 seam (`nH ≤ 11 + N`, the whitespace run's count `N` inside it), the byte's span at
 `nS ≤ 5`, the tail's three calls on their *scan* arm, the landing, the seam's bound and its
-two registers, the visits' totality, and the budget: the run
-and the visits together inside the six links the entry allowance leaves.  The token
-record's register is not among them: `runLastMerge_at` reads it from `WalkInv.regs`.
+two registers, the visits' totality, and the three document bounds the price consumes —
+the run inside the entry's remaining bytes, the run's start in the entry, and the scan's
+bound inside the document.  The token record's register is not among them:
+`runLastMerge_at` reads it from `WalkInv.regs`.
 
 `hspanDoc` is the terminal analogue of `RunFacts.hspanStart`: at the last entry the scan's
 bound `%cond350.i` is `%4`, the document's length, so the bound is at most `G.n` rather
@@ -498,30 +504,64 @@ structure RunLastFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
       WalkLocal { ScanCLand K' with block := "while.body462.i" }
         (Latch462S (scanLatchOut t' "%inc463.i" "%exitcond298.not" p c "land.rhs457.i")
           (BitVec.ofNat 64 (p + 1)) a q x)
-  /-- **The entry allowance's six remaining links pay for the run and the scan.**  The
-  fixed part is twenty-four links and the price's own two are the other twenty-six of the
-  thirty-two; `N` is the run's count and `4·(c - 1 - i)` the visits' count
-  (`scanRoundsAt`'s four per visit).  There is no byte term to spend: the terminal index's
-  credit is the entry allowance's alone. -/
-  hbudget : N + 4 * (c - 1 - i) ≤ 6
+  /-- **The run starts at or after the entry's position.**  `RunFacts.hstart`'s terminal
+  copy, and a document fact like it: the scan's first index is the run's stop, which is
+  at or after the byte the entry begins at.  The composition reads it through
+  `runLast_price_with_credit`, whose first document bound it is. -/
+  hstart : entryPos G C.k ≤ i
+  /-- **The run is inside the document from the entry's position.**  Its count `N` is at
+  most the bytes the entry has left to reach, which is what a whitespace skip inside the
+  entry's span is: `N` counts the continuing bytes of the document, and its start is the
+  entry's position.  The second document bound `runLast_price_with_credit` takes. -/
+  hNdoc : N ≤ G.n - entryPos G C.k
   /-- **The scan's bound is inside the document.**  `%cond350.i` is `%4` at the last
   entry, and `%4` is the document's length, so this is the terminal form of
   `RunFacts.hspanStart` and it is what puts the bound below `2 ^ 63` at the width the
   document has. -/
   hspanDoc : c ≤ G.n
 
+/-! ### The price's arithmetic, at the document's own bounds
+
+The terminal price is paid out of the bytes the entry has left to reach, and the fixed
+part of the path is the same twenty-four links the continuing composition counts.  What
+makes the terminal one payable where the entry-only form was not is that the span the
+continuing budget charges through `entryPos` is here the document's remaining bytes: at
+the exhausted index `boundary G G.nep = G.n`, so the byte credit does not vanish with the
+entry stream's totalisation. -/
+
+/-- **The terminal price is paid by the credit, from the document's own bounds.**  `nH` is
+the head chain's count, `nS` the byte's span, `nSc` the visits' count and `N` the run's;
+the document bounds are `N` inside the bytes the entry has left, the scan starting at or
+past the entry's position, and the scan's bound inside the document.  The fixed
+twenty-four, the price's two, the run and the scan are inside `32 + 8 * (n - ix)` — the
+entry allowance and eight per document byte from the entry's position — for every
+document, however long the run or the trailing scan. -/
+theorem runLast_price_with_credit {nH nS nSc N c i ix n : Nat}
+    (hnH : nH ≤ 11 + N) (hnS : nS ≤ 5) (hnSc : nSc ≤ 4 * (c - 1 - i))
+    (hix : ix ≤ i) (hc : c ≤ n) (hN : N ≤ n - ix) :
+    nH + nS + 8 + nSc + 2 ≤ stage2EntryAllowance + stage2ByteAllowance * (n - ix) := by
+  have hscan : 4 * (c - 1 - i) ≤ 4 * (n - ix) := by
+    have : c - 1 - i ≤ n - ix := by omega
+    omega
+  simp only [stage2EntryAllowance, stage2ByteAllowance]
+  omega
+
 /-- **The terminal run class's segment to the merge, with the merge's cells at its
 endpoint.**  The same composition as `runScanMerge_at` — head, span, the tail's scan arm,
 the landing, the visits by `scanRoundsAt` at the seam's bound `c`, the exit and the
 merge — to `revMergeS sm f.c` at `revMergeC Cm`, and the price is
-`nH + nS + 8 + nSc + 2 ≤ 32·(G.nep - C.k)`: at `nH ≤ 11 + N` and `nS ≤ 5` the fixed part is
-twenty-four, the price's own two make twenty-six, and `hbudget` places
-`N + 4·(c - 1 - i)` inside the six that remain.
+`nH + nS + 8 + nSc + 2 ≤ 32·(G.nep - C.k) + 8·(boundary G G.nep - boundary G C.k)`: at
+`nH ≤ 11 + N` and `nS ≤ 5` the fixed part is twenty-four, the price's own two make
+twenty-six, and `runLast_price_with_credit` places the run's `N` and the scan's
+`4·(c - 1 - i)` inside the six and the document bytes the entry has left to reach — the
+bundle's three document bounds, spent at the path's own counts.
 
-The right-hand side is stated as `32·(G.nep - C.k)` — the entry term `mergeLast` carries —
-and no byte term appears, because there is none to carry: `entryPos G G.nep = 0`.  The
-dispatch reads `G.nep - C.k = 1` from the head's own guard and hands this price to
-`WalkDispatchResult.mergeLast` unchanged. -/
+The byte term is the potential's, read at the credit boundary: at the exhausted index
+`boundary G G.nep = G.n` (`boundary_nep`), so the term is `8·(G.n - entryPos G C.k)` and
+the right-hand side is exactly `walkPotential G C` at `C.k < G.nep`.  That is what makes
+this price the one the induction spends — the terminal charge is `p + 2` against the
+potential and nothing else (`terminalCharge_boundary`, `JsonStage2WalkTraverse`), where
+the entry-only form would have needed a byte span the terminal index does not have. -/
 theorem runLastMerge_at {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead)
     (f : RunLastFacts G C s) :
@@ -537,7 +577,8 @@ theorem runLastMerge_at {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : Stat
       lookupName (revMergeS sm f.c).env "%nep" =
         some (.int 64 (BitVec.ofNat 64 G.nep)) ∧
       nSc ≤ 4 * (f.c - 1 - f.i) ∧
-      (f.nH + f.nS + 8 + nSc) + 2 ≤ stage2EntryAllowance * (G.nep - C.k) := by
+      (f.nH + f.nS + 8 + nSc) + 2 ≤ stage2EntryAllowance * (G.nep - C.k) +
+        stage2ByteAllowance * (boundary G G.nep - boundary G C.k) := by
   -- 1. the head's chain, the span and the tail's scan arm
   have hsegHS : WalkSegment (stage2Calls stage2SubCalls) G C s f.Cs f.ss (f.nH + f.nS) :=
     f.hHead.trans (Seg.measure f.hSpan)
@@ -602,19 +643,24 @@ theorem runLastMerge_at {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : Stat
       exact hsegP.trans hseg₁
     rw [show f.nH + f.nS + 8 + nSc = f.nH + f.nS + 3 + 3 + nSc + 1 + 1 from by omega]
     exact hexit.trans (WalkSegment.of_link hl₂)
-  · -- the price: twenty-four fixed links, the price's two, and the six the budget shares
-    have hnH := f.hnH
-    have hnS := f.hnS
-    have hbudget := f.hbudget
+  · -- the price: `runLast_price_with_credit`'s arithmetic at the path's own counts, and
+    -- the entry term's one entry allowance inside `G.nep - C.k`
+    have hprice := runLast_price_with_credit (nH := f.nH) (nS := f.nS) (nSc := nSc)
+      (N := f.N) (c := f.c) (i := f.i) (ix := entryPos G C.k) (n := G.n)
+      f.hnH f.hnS hnR f.hstart f.hspanDoc f.hNdoc
     have hguard : C.k < G.nep :=
       WalkInv.head_lt hInv (by simpa only [walkLoopHead] using hblock)
     have hΔ : 1 ≤ G.nep - C.k := by omega
-    simp only [stage2EntryAllowance]
+    have hb : boundary G G.nep - boundary G C.k = G.n - entryPos G C.k := by
+      rw [boundary_nep, boundary_eq_entryPos G hguard]
+    simp only [stage2EntryAllowance, stage2ByteAllowance] at hprice ⊢
+    rw [hb]
     omega
 
 /-! ### The instrument -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.scanRoundsAt
+#print axioms LeanLLVM.Refinement.WalkScope.runLast_price_with_credit
 #print axioms LeanLLVM.Refinement.WalkScope.runScanMerge_at
 #print axioms LeanLLVM.Refinement.WalkScope.runLastMerge_at
 

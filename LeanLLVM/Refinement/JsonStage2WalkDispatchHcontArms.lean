@@ -620,9 +620,12 @@ inductive HcontArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
   rounds at the seam's own bound, which is what the class-C-only `scanWsRounds` is not.
 
   **This is the continuing level's class.**  The last entry's run class is priced
-  differently: `WalkDispatchResult.mergeLast`'s byte credit past the last entry does not
-  exist (`entryPos G G.nep = 0`), so a run there spends the entry allowance's six
-  remaining links alone.  That class is `LastEntryArm.run` beside `RunLastFacts`
+  differently: past the last entry the `entryPos` form of the byte credit is zero
+  (`entryPos G G.nep = 0`), so a price read through it charges nothing for the document the
+  entry has left.  The credit itself is not zero — `boundary G G.nep = G.n` — and
+  `WalkDispatchResult.mergeLast` states it at the boundary, so a run there spends the
+  entry allowance and the entry's remaining document together.  That class is
+  `LastEntryArm.run` beside `RunLastFacts`
   (`JsonStage2WalkDispatchRun`, `JsonStage2WalkDispatchArms`). -/
   | run (f : RunFacts G C s) : HcontArm calls G C s
 

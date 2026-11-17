@@ -164,9 +164,11 @@ premise of another's:
   bundle projection — the exit and the merge, with the merge's three cells at the composed
   endpoint (`runScanMerge_at`), dispatched at `"a0"` (`JsonStage2WalkDispatchRunDomain`);
 * the **last entry's run class**, `LastEntryArm.run`: the same path with `nH ≤ 11 + N` and
-  the terminal price — `mergeLast`'s entry term alone, the run's visits and the scan's
-  `4·(c - 1 - i)` inside the six links the entry allowance leaves (`RunLastFacts`,
-  `runLastMerge_at`), dispatched at `"a "` (`JsonStage2WalkDispatchRunLastDomain`).  Every
+  the terminal price read at the credit boundary — `mergeLast`'s byte term is the document
+  bytes the entry has left to reach, so the run and the scan's `4·(c - 1 - i)` are paid out
+  of the potential rather than out of a six-link allowance (`RunLastFacts`,
+  `runLastMerge_at`, applying `runLast_price_with_credit` to the bundle's three document
+  bounds), dispatched at `"a "` (`JsonStage2WalkDispatchRunLastDomain`).  Every
   other class at the last entry is proved as well — `.letters`, `.fLetter`, `.classC`, the
   refusal arms and `.highByte` — so the last entry's arm has no `supplied` constructor at
   its level.  The continuing level's one hole is the opener at positive depth: its arm at

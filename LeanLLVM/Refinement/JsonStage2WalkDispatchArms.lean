@@ -99,12 +99,16 @@ turns it into the actual `WalkDispatchResult`:
 * `.run` — **the last entry's run class**, at the default arm's spans, proved against the
   terminal price: the byte before the entry's end is whitespace, so the token's own scan
   traverses `[k, G.n)`.  The path's fixed part is twenty-four links and the price's own two
-  are twenty-six of the thirty-two, so the run's visits `N` and the scan's `4·(c - 1 - i)`
-  share the six that remain — `RunLastFacts.hbudget`, the class's own premise.  The merge's
-  index is the stream's end, so the arm lands against `WalkDispatchResult.mergeLast`: there
-  is no byte span past the last entry to charge, and the price says so rather than charging
-  zero for it.  `runLastMerge_at` is the composition and
-  `JsonStage2WalkDispatchRunLastDomain` dispatches it at a staged document.
+  are twenty-six of the thirty-two, and the run's visits `N` and the scan's `4·(c - 1 - i)`
+  are paid out of the document bytes the entry has left to reach — the bundle carries them
+  as the document bounds `hNdoc`/`hstart` beside the seam's `hspanDoc`, and
+  `runLast_price_with_credit` turns the three into the price.  The merge's index is the
+  stream's end, so the arm lands against `WalkDispatchResult.mergeLast`, whose byte term is
+  the credit read at the boundary: `entryPos` totalises to zero at `nep`, but
+  `boundary G G.nep = G.n`, so the credit the entry still holds exists and the arm charges
+  it rather than zero.  No document length is excluded by that row.  `runLastMerge_at` is
+  the composition and `JsonStage2WalkDispatchRunLastDomain` dispatches it at a staged
+  document.
 
   **No other class remains here at either level:** the letters route is
   `LastEntryArm.letters` at the scan-free class, the `'f'` leaf's is `.fLetter`, the
@@ -575,27 +579,31 @@ inductive LastEntryArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
       (hTail : WalkSegment (stage2Calls stage2SubCalls) G Cs ss Ct st 3)
       (ht : Ct.block = "if.end473.i") (htk : Ct.k = C.k)
       (htok : lookupName st.env "%t352.i" = some (.ptr tok)) : LastEntryArm calls G C s
-  /-- **The last entry's run class**, priced against the entry allowance alone.  The byte
-  before the entry's end is whitespace, so the whitespace skip runs, the token's end
-  `%ee.1.i` is the run's stop `k < G.n`, and the copy call's test `ult k %cond350.i` is
-  true — the extra-token scan traverses `[k, G.n)` and the merge follows its exit.
+  /-- **The last entry's run class**, priced in the document bytes the entry has left to
+  reach.  The byte before the entry's end is whitespace, so the whitespace skip runs, the
+  token's end `%ee.1.i` is the run's stop `k < G.n`, and the copy call's test
+  `ult k %cond350.i` is true — the extra-token scan traverses `[k, G.n)` and the merge
+  follows its exit.
 
-  **Its price is `mergeLast`'s, and that is what the terminal index needs.**  At the last
-  entry the merge's index is the stream's end, `k2 = C.k + 1 = G.nep`, so `merge`'s byte
-  term `entryPos G k2 - entryPos G C.k` is `entryPos G G.nep - entryPos G C.k = 0`
-  (`walkEntryPos_at_nep`): there is no byte span to charge.  `WalkDispatchResult.mergeLast`
-  states exactly that price, and this arm lands against it — `runLastMerge_at` composes the
-  path and the price, and `.dispatch` builds the result at the merge's cells.
+  **Its price is `mergeLast`'s, read at the credit boundary.**  At the last entry the
+  merge's index is the stream's end, `k2 = C.k + 1 = G.nep`, so `merge`'s byte term
+  `entryPos G k2 - entryPos G C.k` is the stream's totalisation at zero
+  (`walkEntryPos_at_nep`) and charges nothing for a document the walk has not finished.
+  The credit is not gone, only unreadable through `entryPos`: `boundary G G.nep = G.n`
+  (`boundary_nep`), so `WalkDispatchResult.mergeLast` states the byte term as
+  `8·(boundary G k2 - boundary G C.k)` — the entry's remaining document — and this arm
+  lands against it: `runLastMerge_at` composes the path and the price, and `.dispatch`
+  builds the result at the merge's cells.
 
   **The arithmetic.**  The path's fixed part is twenty-four links — the head's eleven, the
   span's at most five, the tail's three, the landing's three, and the exit's and the
-  merge's one each — so with the price's own two, twenty-six of the thirty-two are gone and
-  the run's whitespace visits `N` *and* the scan's `4·(c - 1 - i)` share the six that
-  remain.  That is the bundle's `hbudget`, a premise of this class rather than a bound
-  invented here: a document whose terminal run exceeds the six has no arm at this level,
-  because the price for it does not exist.  The continuing level's `.run` prices the same
-  path with `ΔA` positive; the difference is in the price the dispatch states, not in the
-  walk. -/
+  merge's one each — so with the price's own two, the remaining twenty-six are the run's
+  whitespace visits `N`, the scan's `4·(c - 1 - i)` and the document credit beside them.
+  That is the bundle's three document bounds (`hNdoc`, `hstart`, `hspanDoc`), which
+  `runLastMerge_at` spends through `runLast_price_with_credit`: a long terminal run or a
+  long trailing scan is *priced* rather than excluded, which is what the entry allowance's
+  six could not do.  The continuing level's `.run` prices the same path against the next
+  entry's span; the difference is in the credit the dispatch states, not in the walk. -/
   | run (f : RunLastFacts G C s) : LastEntryArm calls G C s
 
 /-- **The dispatch, from the arm.**  Each proved arm runs its own theorem; the preserved
@@ -759,7 +767,7 @@ theorem LastEntryArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     · -- the merge's index cell is the header's increment, at the stream's end
       rw [← hlast]
       simpa only [evalOperand] using hincD
-    · -- the price: the entry allowance at the terminal index, and no byte term
+    · -- the price: the composition's own, read at the credit boundary
       exact hprice
 
 /-! ### The instrument -/

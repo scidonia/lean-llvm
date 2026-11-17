@@ -175,25 +175,29 @@ theorem WalkTargetRun.ofExitTail {calls : Calls} {s : State} {v : Value}
 /-! ### Two facts about the potential the terminal branches read -/
 
 /-- **The entry stream's end is position zero.**  Past the last entry the lane list has
-no entry at all and `entryPos` reads `0`.  The `finish` outcome's index is exactly the
-stream's end (`WalkDispatchOutcome.finish`'s `hterm`), so the entry credit it consumed
-is `32 · (nep - C.k)` with no byte term, and this is what says so. -/
+no entry at all and `entryPos` reads `0`.  This is a fact about the *stream*, not about
+the credit: the terminal outcomes' byte term is read at `boundary`, which is `G.n` there
+(`boundary_nep`), and it is the `entryPos` spelling that this zeroes — which is why a
+terminal price stated through `entryPos` charges nothing for the document the walk has
+left. -/
 theorem walkEntryPos_at_nep {m0 : Mem} (G : WalkGeom m0) : entryPos G G.nep = 0 := by
   have hlen : G.ent.length = G.nep := by
     rw [← readLanes32_length m0 G.ep G.nep G.ent G.entries]
   have hnone : G.ent[G.nep]? = none := List.getElem?_eq_none (by omega)
   simp only [entryPos, List.getD_eq_getElem?_getD, hnone, Option.getD_none]
 
-/-- **The `finish` outcome's credit is inside the potential.**  Its price is stated
-against `32 · Δk + 8 · ΔA` at the index the merge selected, and the potential is the
-same shape at the stream's end.  An index at the stream's end and one before it are
-the two cases: before it the positions advance with the index
-(`entryPos_mono`), at it the byte term is zero (`walkEntryPos_at_nep`).
+/-- **The `entryPos` spelling of the terminal credit is inside the potential.**  This is
+the form the `merge` arm states (`JsonStage2WalkDispatchThreeOfRun`), and it is what its
+`finish` case reads: `32 · Δk + 8 · ΔA` at the index the merge selected, against the
+potential at the same shape.  An index at the stream's end and one before it are the two
+cases: before it the positions advance with the index (`entryPos_mono`), at it the byte
+term is zero (`walkEntryPos_at_nep`).  The `finish` *outcome* carries the boundary
+spelling instead, whose credit lemma is `walkFinishCreditBoundary_le`.
 
 The conclusion is the credit form and not the potential's fold: a hypothesis that
-`C.k ≤ k2` is what the outcome's own fields give in the `cont` branch and not in
-`finish`'s, so the branch splits on it and the negative case is closed by the price
-itself — at an index below the head's the credit is zero, which `p + 2 ≤ 0` denies. -/
+`C.k ≤ k2` is what the `merge` arm's own fields give, so the branch splits on it and the
+negative case is closed by the price itself — at an index below the head's the credit is
+zero, which `p + 2 ≤ 0` denies. -/
 theorem walkFinishCredit_le {m0 : Mem} (G : WalkGeom m0) {C : WalkCarry G} {k2 : Nat}
     (hk : C.k < G.nep) (hkm : C.k ≤ k2) (hk2 : k2 ≤ G.nep) :
     stage2EntryAllowance * (k2 - C.k) +
@@ -210,6 +214,22 @@ theorem walkFinishCredit_le {m0 : Mem} (G : WalkGeom m0) {C : WalkCarry G} {k2 :
     simp only [Nat.zero_sub, Nat.mul_zero, walkPotential, boundary_eq_entryPos G hk,
       stage2EntryAllowance, stage2ByteAllowance]
     omega
+
+/-- **The `finish` outcome's credit is inside the potential, read at the boundary.**  Its
+price is `32·(k2 - C.k) + 8·(boundary G k2 - boundary G C.k)` — the entries consumed and
+the document bytes between the two indices, the latter read at the credit boundary rather
+than through `entryPos`.  At `k2 ≤ G.nep` the boundary at `k2` is at most the document's
+length (`boundary_le`) and the boundary at `C.k` is the entry's position, so the whole is
+at most the potential's entry and byte terms.  No case split on the index: the two terms
+move monotonically and the byte term needs only the length's bound. -/
+theorem walkFinishCreditBoundary_le {m0 : Mem} (G : WalkGeom m0) {C : WalkCarry G}
+    {k2 : Nat} (hk : C.k < G.nep) (hk2 : k2 ≤ G.nep) :
+    stage2EntryAllowance * (k2 - C.k) +
+      stage2ByteAllowance * (boundary G k2 - boundary G C.k) ≤ walkPotential G C := by
+  have hb : boundary G k2 ≤ G.n := boundary_le G k2
+  have hbc : boundary G C.k = entryPos G C.k := boundary_eq_entryPos G hk
+  simp only [walkPotential, hbc, stage2EntryAllowance, stage2ByteAllowance]
+  omega
 
 /-! ### A revolution, from the `cont` outcome's own fields
 
@@ -326,14 +346,8 @@ theorem walkLoopStepThree_of_dispatchThree {calls : Calls} {m0 : Mem} {G : WalkG
     · have hk2nep : k2 ≤ G.nep := by
         have := hnepBound Cd sd nepv hseg.inv' hblock hnepv
         omega
-      have hcredit : stage2EntryAllowance * (k2 - C.k) +
-          stage2ByteAllowance * (entryPos G k2 - entryPos G C.k) ≤ walkPotential G C := by
-        by_cases hkm : C.k ≤ k2
-        · exact walkFinishCredit_le G hk hkm hk2nep
-        · exfalso
-          have hmono : entryPos G k2 ≤ entryPos G C.k := entryPos_mono G (by omega) hk
-          simp only [stage2EntryAllowance, stage2ByteAllowance] at hprice
-          omega
+      have hcredit := walkFinishCreditBoundary_le (G := G) (C := C) hk hk2nep
+      have hbound := boundary_le G k2
       simp only [walkPotential, boundary_eq_entryPos G hk, stage2EntryAllowance,
         stage2ByteAllowance] at hcredit hprice hq ⊢
       omega
@@ -353,6 +367,7 @@ theorem walkLoopStepThree_of_dispatchThree {calls : Calls} {m0 : Mem} {G : WalkG
 #print axioms LeanLLVM.Refinement.WalkScope.WalkTargetRun.ofExitTail
 #print axioms LeanLLVM.Refinement.WalkScope.walkEntryPos_at_nep
 #print axioms LeanLLVM.Refinement.WalkScope.walkFinishCredit_le
+#print axioms LeanLLVM.Refinement.WalkScope.walkFinishCreditBoundary_le
 #print axioms LeanLLVM.Refinement.WalkScope.walkContRevolution
 #print axioms LeanLLVM.Refinement.WalkScope.walkLoopStepThree_of_dispatchThree
 

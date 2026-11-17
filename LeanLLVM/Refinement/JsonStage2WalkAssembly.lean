@@ -1150,7 +1150,12 @@ inductive WalkDispatchOutcome (calls : Calls) {m0 : Mem} (G : WalkGeom m0)
       (hprice : p + 2 ≤ stage2EntryAllowance * (k2 - C.k) +
         stage2ByteAllowance * (entryPos G k2 - entryPos G C.k))
   /-- **Finish normally**: the token consumed the *last* entry — the merge's index is `nep`,
-  which the old `k2 < G.nep` requirement excluded and which the string branch reaches. -/
+  which the old `k2 < G.nep` requirement excluded and which the string branch reaches.
+  The price is `p + 2 ≤ 32·(k2 - C.k) + 8·(boundary G k2 - boundary G C.k)`: the credit
+  consumed between the head's index and the merge's, read at the credit boundary, which at
+  `k2 = G.nep` is the document's end (`boundary_nep`).  It is what the loop's terminal
+  branch spends, and at `C.k < G.nep` the right-hand side is `walkPotential G C` when
+  `k2 = G.nep` — no entry allowance's six and no byte span read through `entryPos`. -/
   | finish (Cd : WalkCarry G) (sd : State) (p k2 : Nat) (prev : String)
       (kOp : Operand) (nepv : BitVec 64)
       (seg : WalkSegment calls G C s Cd sd p)
@@ -1161,7 +1166,7 @@ inductive WalkDispatchOutcome (calls : Calls) {m0 : Mem} (G : WalkGeom m0)
       (hnepv : lookupName sd.env "%nep" = some (.int 64 nepv))
       (hterm : k2 = nepv.toNat)
       (hprice : p + 2 ≤ stage2EntryAllowance * (k2 - C.k) +
-        stage2ByteAllowance * (entryPos G k2 - entryPos G C.k))
+        stage2ByteAllowance * (boundary G k2 - boundary G C.k))
   /-- **Refuse early**: the token is rejected before the merge at any index — a mismatched
   literal's `if.then57.i`, a closing bracket's `if.then53.i`/`if.then56.i`, whose error store
   jumps to the refusal finalisation — so the segment ends there with the error position and a

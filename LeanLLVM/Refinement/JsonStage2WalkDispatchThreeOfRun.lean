@@ -37,19 +37,24 @@ why the consumer's terminal branch states both its verdict and its memory existe
 |---|---|
 | `cont` | the merge arm with `k2 < nepv.toNat`, the merge's `%nep ≤ G.nep`, and the arm's own price |
 | `finish` | the merge arm with `¬ (k2 < nepv.toNat)`; with `k2 ≤ nepv.toNat` that is `k2 = nepv.toNat` |
-| `finish` at the stream's end | the `mergeLast` arm: the same cells with `k2 = G.nep`, and only the entry allowance's price |
+| `finish` at the stream's end | the `mergeLast` arm: the same cells with `k2 = G.nep`, and the price read at the credit boundary |
 | `refuse` | the refusal arm: the segment ends at `if.then` with the word the copy loads inside the document |
 
-**Why there are two merge arms.**  `merge`'s price has a byte term,
-`8 · (entryPos G k2 - entryPos G C.k)`, and it is a fact about the merge's own index that
-the byte span it crossed is charged.  Past the last entry there is no such span:
-`entryPos G G.nep = 0` (`walkEntryPos_at_nep`), so the byte credit is *not applicable*
-rather than zero.  `mergeLast` states exactly that — the same fields plus `k2 = G.nep`,
-and the price `p + 2 ≤ 32 · (k2 - C.k)` with no byte term — and it is a separate
-constructor rather than a weakening of `merge`, because a result carrying an unqualified
-`k2` and no byte term would be a price used where the stronger one is owed.  The missing
-term is recovered wherever it is needed: `toOutcome` rewrites by `walkEntryPos_at_nep`,
-so `mergeLast` yields the same `finish` as `merge` would at the terminal index.
+**Why there are two merge arms, and why their prices are two readings of one credit.**
+`merge`'s price has a byte term, `8 · (entryPos G k2 - entryPos G C.k)`, and it is a fact
+about the merge's own index that the span it crossed is charged.  Past the last entry
+there is no such *span*: `entryPos G G.nep = 0` (`walkEntryPos_at_nep`), because the
+position is a stream read and the index has left the stream — not because the walk has no
+bytes left.  The document's bytes are still there, and the potential counts them through
+`boundary`, whose byte term is the document's length at and past the terminal index
+(`boundary_nep`).  So `mergeLast` states the same credit read at the boundary —
+`p + 2 ≤ 32 · (k2 - C.k) + 8 · (boundary G k2 - boundary G C.k)` — and it is a separate
+constructor because it also carries `k2 = G.nep`, which is what lets a caller read the
+terminal index rather than infer it.  Below the stream the two readings are the same
+number (`boundary_eq_entryPos`), so `toOutcome` carries `merge`'s price to the boundary
+form by `terminalPrice_boundary` and both arms reach `finish` at the same price.  The
+one convention across the three arms is the potential's: the byte term is the credit
+consumed between the two indices, read where `boundary` reads it.
 
 `ofContinueAndLast` stays in the tree: it is the assembly's own producer and other
 modules read it, and this module's producer is a second route to the same predicate, not
@@ -63,6 +68,7 @@ post's merge wrapper reads (`WalkLoopEnd.nepBound`).
 -/
 import LeanLLVM.Refinement.JsonStage2WalkLoopStepOutcome
 import LeanLLVM.Refinement.JsonStage2WalkDispatchWitnessHlast
+import LeanLLVM.Refinement.JsonStage2WalkCredit
 
 set_option autoImplicit false
 
@@ -109,17 +115,18 @@ inductive WalkDispatchResult (calls : Calls) {m0 : Mem} (G : WalkGeom m0)
         stage2ByteAllowance * (entryPos G k2 - entryPos G C.k))
   /-- **The dispatch reached the merge past the last entry.**  The same two `phi`
   selections, the same register `%nep`, the same bounds and the same counted segment as
-  `merge`; the index is the stream's end and the price is the entry allowance's alone.
+  `merge`; the index is the stream's end and the price reads the byte credit at the
+  boundary.
 
-  **Why the field and the price are one thing.**  `entryPos G G.nep = 0`
-  (`walkEntryPos_at_nep`), so the byte span past the last entry is empty: the credit
-  `stage2ByteAllowance * (entryPos G k2 - entryPos G C.k)` is *not applicable* there
-  rather than zero, which is why this arm does not state it.  The field `hlast` is what
-  says that: a `k2` below the stream's end has a byte span, and a result that stated only
-  the entry term would be a weaker price used where the stronger one is owed.  With
-  `hlast`, the omitted byte term is *derivable* (`toOutcome` rewrites by
-  `walkEntryPos_at_nep` and recovers `merge`'s price), so nothing is lost and nothing is
-  silently weakened. -/
+  **Why the price is stated this way.**  `entryPos G G.nep = 0`
+  (`walkEntryPos_at_nep`), so the byte term `merge`'s price states through `entryPos` is
+  *not applicable* past the last entry — it is not that the span is empty, it is that the
+  index has left the stream the position is read from.  The credit does not vanish:
+  `boundary G G.nep = G.n` (`boundary_nep`), so at `k2 = G.nep` the term is
+  `8·(G.n - entryPos G C.k)`, the document bytes the entry has left to reach — which the
+  potential already counts and which pays the trailing whitespace run and scan
+  (`runLast_price_with_credit`, `JsonStage2WalkDispatchRun`).  The result is the same shape
+  `refuse` states, with `k2` in place of `G.nep`. -/
   | mergeLast (Cd : WalkCarry G) (sd : State) (p spv k2 : Nat) (prev : String)
       (spOp kOp : Operand) (nepv : BitVec 64)
       (seg : WalkSegment calls G C s Cd sd p)
@@ -133,7 +140,8 @@ inductive WalkDispatchResult (calls : Calls) {m0 : Mem} (G : WalkGeom m0)
       (hlast : k2 = G.nep)
       (hadvance : C.k < k2) (hcap : k2 ≤ nepv.toNat)
       (hspcap : spv ≤ stage2StackExtent) (hspw : spv ≤ Cd.wlen)
-      (hprice : p + 2 ≤ stage2EntryAllowance * (k2 - C.k))
+      (hprice : p + 2 ≤ stage2EntryAllowance * (k2 - C.k) +
+        stage2ByteAllowance * (boundary G k2 - boundary G C.k))
   /-- **The dispatch reached the refusal copy.**  The token was rejected before the merge
   at any index, so the segment ends at `if.then` with the word the copy's `%off` load
   reads — a stored word inside the document — and the price inside the remaining
@@ -163,9 +171,8 @@ three outcomes.
 
 The `mergeLast` arm is the same equation with its evidence already in hand: `hlast` makes
 the index the stream's end, `hnepBound` makes `%nep` no larger, and `hcap` makes it no
-smaller, so `hterm` is the three together.  Its price is `merge`'s price minus a term that
-is zero at that index (`walkEntryPos_at_nep`), which is why the arm may state the shorter
-one and the outcome still receives the full one. -/
+smaller, so `hterm` is the three together.  Its price is already stated at the credit
+boundary, which is `finish`'s form, so the arm hands it over unchanged. -/
 theorem WalkDispatchResult.toOutcome {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
     {C : WalkCarry G} {s : State} (r : WalkDispatchResult calls G C s)
     (hnepBound : ∀ (nepv : BitVec 64), ∀ (Cd : WalkCarry G) (sd : State),
@@ -175,22 +182,24 @@ theorem WalkDispatchResult.toOutcome {calls : Calls} {m0 : Mem} {G : WalkGeom m0
   cases r with
   | merge Cd sd p spv k2 prev spOp kOp nepv seg hblock hk hpre hsp hspv hkOp hk2 hnepv
       hadvance hcap hspcap hspw hprice =>
+    -- the head's index is inside the stream, so the two spellings of the credit agree
+    have hkc : C.k < G.nep := by
+      have := hnepBound nepv Cd sd seg.inv' hblock hnepv
+      omega
     by_cases hbelow : k2 < nepv.toNat
     · exact WalkDispatchOutcome.cont Cd sd p spv k2 prev spOp kOp nepv seg hblock hk hpre
         hsp hspv hkOp hk2 hnepv hbelow
         (by have := hnepBound nepv Cd sd seg.inv' hblock hnepv; omega)
         hadvance hspcap hspw hprice
     · exact WalkDispatchOutcome.finish Cd sd p k2 prev kOp nepv seg hblock hpre hkOp hk2
-        hnepv (by omega) hprice
+        hnepv (by omega) (terminalPrice_boundary G hkc hprice)
   | mergeLast Cd sd p spv k2 prev spOp kOp nepv seg hblock hk hpre hsp hspv hkOp hk2 hnepv
       hlast hadvance hcap hspcap hspw hprice =>
     have hterm : k2 = nepv.toNat := by
       have := hnepBound nepv Cd sd seg.inv' hblock hnepv
       omega
     exact WalkDispatchOutcome.finish Cd sd p k2 prev kOp nepv seg hblock hpre hkOp hk2
-      hnepv hterm (by
-        simpa only [hlast, walkEntryPos_at_nep, Nat.zero_sub, Nat.mul_zero, Nat.add_zero]
-          using hprice)
+      hnepv hterm hprice
   | refuse Cd sd p seg hblock _hrw herr hprice =>
     exact WalkDispatchOutcome.refuse Cd sd p seg hblock herr hprice
 
@@ -276,7 +285,8 @@ theorem walkLoopStepThree_of_dispatchResult {calls : Calls} {m0 : Mem}
         hnepv hterm
     refine Or.inr ⟨p + q, v, m, ?_, ?_, hb⟩
     · have hk2nep : k2 ≤ G.nep := by rw [hlast]
-      have hcredit := walkFinishCredit_le (G := G) (C := C) hk (by omega) hk2nep
+      have hcredit := walkFinishCreditBoundary_le (G := G) (C := C) hk hk2nep
+      have hbound := boundary_le G k2
       simp only [walkPotential, boundary_eq_entryPos G hk, stage2EntryAllowance,
         stage2ByteAllowance] at hcredit hprice hq ⊢
       omega
@@ -307,16 +317,19 @@ The merge arm's evidence is `hlast_finish`'s, read at the endpoint that lemma na
 (`hlastMergeCF f`, `hlastMergeF f`) rather than through its existential: the arm has to
 carry the endpoint's own carry (its index is `C.k`, which is what the revolution's price
 is stated against) and that carry is opaque inside an existential.  The price is the same
-arithmetic: the terminal index is the stream's end, so the byte term is zero and
-`G.nep - C.k = 1` pays for the path.
+arithmetic as the continuing arm's: `hlast_finish` states the entry position's byte term,
+`walkEntryPos_at_nep` makes it zero at the stream's end, and `G.nep - C.k = 1` pays for
+the path.
 
 **Why this arm builds `merge` and not `mergeLast`.**  `hlastFacts_of_staging` gives the
 index's equation (`hk2nep`) as well as the segment, so the byte term is here to be
-discharged — `walkEntryPos_at_nep` makes it zero — and the stronger price is available and
-used.  `mergeLast` is the arm for the producers that have only the entry term (the run
-class's composition does not compute a byte span at all); a result that stated the shorter
-price where the longer one is proved would be needlessly weak, and `mergeLast`'s `k2 =
-G.nep` is what keeps the short price from standing in for the long one elsewhere. -/
+discharged — `walkEntryPos_at_nep` makes it zero — and the price is stated in `merge`'s
+own spelling.  `mergeLast` is the arm for the producer that reads the credit at the
+boundary (the run class's composition, `runLastMerge_at`), whose byte term is the
+document's remaining bytes rather than the zero `entryPos` totalises to.  Both are prices
+the potential pays, and a result that stated the shorter where the longer is proved would
+be needlessly weak; `mergeLast`'s `k2 = G.nep` is what keeps the boundary reading from
+standing in for `merge` elsewhere. -/
 
 /-- **The `merge` arm from the last entry's bundle.**  The dispatch reaches
 `cleanup478.i` at `%k.2.i = %nep`, so its index is the stream's end and its outcome is
@@ -351,9 +364,9 @@ merge's index is the count, and the outcome is `finish`. -/
 
 /-- **The standalone string is a `finish`.**  The merge reached `cleanup478.i` with
 `%k.2.i = 2` and `%nep = 2`, so the entry stream is exhausted at the merge and the loop
-does not run again.  The price is the dispatch's own, at `Δk = 2 - C.k` and the byte span
-between the head's position and `entryPos G 2`; at `C.k = 0` that is two entry
-allowances, which is what a standalone string consumes.
+does not run again.  The price is the dispatch's own, at `Δk = 2 - C.k` and the byte
+credit between the head's index and the stream's end read at the boundary — at `C.k = 0`
+two entry allowances and the document from its first byte.
 
 Nothing here asserts acceptance: the finalisation that follows decides, and an unclosed
 string is refused there. -/
@@ -366,7 +379,7 @@ theorem standaloneString_finish {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
     (hk2 : evalOperand sd kOp = some (.int 64 (BitVec.ofNat 64 2)))
     (hnepv : lookupName sd.env "%nep" = some (.int 64 (BitVec.ofNat 64 2)))
     (hprice : p + 2 ≤ stage2EntryAllowance * (2 - C.k) +
-      stage2ByteAllowance * (entryPos G 2 - entryPos G C.k)) :
+      stage2ByteAllowance * (boundary G 2 - boundary G C.k)) :
     WalkDispatchOutcome calls G C s :=
   WalkDispatchOutcome.finish Cd sd p 2 prev kOp (BitVec.ofNat 64 2) seg hblock hpre hkOp
     hk2 hnepv (by decide) hprice

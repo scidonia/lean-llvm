@@ -3,47 +3,48 @@
 
 ## 1. The terminal price
 
-`RunLastFacts.hbudget` (`JsonStage2WalkDispatchRun`) is the last entry's run class's
-price: `N + 4 * (c - 1 - i) ≤ 6`, where `N` is the whitespace run's count and
-`4 * (c - 1 - i)` the extra-token scan's visits.  The six is what the entry allowance
-leaves after the path's fixed twenty-four links and the price's own two; there is no
-byte term, because `mergeLast`'s price is stated at `k2 = G.nep`, where `entryPos`
-totalises to zero (`entryPos_eq_zero_of_nep_le`).  So a document whose terminal run plus
-scan exceeds six links has **no arm** at that level, and the bundle's field is where that
-absence lives — as a hypothesis of the class, not as a fact about the document.
+`RunLastFacts` (`JsonStage2WalkDispatchRun`) is the last entry's run class, and its
+composition `runLastMerge_at` prices the path in the potential the loop's induction
+spends: `p + 2 ≤ 32·(G.nep - C.k) + 8·(boundary G G.nep - boundary G C.k)`, which at
+`C.k < G.nep` is `walkPotential G C` exactly (`boundary_nep`, `boundary_eq_entryPos`).
+The byte term is the document's length read at the exhausted index — `boundary G G.nep =
+G.n` — so the credit the entry has left to reach pays the whitespace run and the trailing
+scan, and `terminalCharge_boundary` (`JsonStage2WalkTraverse`) reads the same price as the
+potential's spend: `(p + 2) + walkPotential (C with k := G.nep) ≤ walkPotential C`.
 
-This module states the boundary the field stands for, at the object the price is really
-about: the document's bytes.
+The entry-only form this module once measured is **retired as a restriction on admitted
+inputs**.  `RunLastFacts` used to carry `N + 4 * (c - 1 - i) ≤ 6` — the entry allowance's
+remaining six after the path's fixed twenty-four links and the price's own two — and a
+terminal run or trailing scan longer than that had no arm, because `entryPos` totalises to
+zero at `G.nep` (`entryPos_eq_zero_of_nep_le`) and a byte term read through it charges
+nothing.  The bundle's budget fields are now the document's own bounds (the run's count,
+its start, the scan's bound) and `runLast_price_with_credit` turns them into the price,
+so no document length is restricted; the entry-only form survives as the corollary
+`terminalPriceFits_credit`.
+
+This module states the price at the object it is really about: the document's bytes.
 
 * **the class is computable from the document.**  `wsScanStop` finds the whitespace run's
   stop in the byte list; its prefix is `wsCont` and its end is `wsStop`
   (`wsScanStop_class`).  So the run class's per-index conjunct and its stop are a
   *function* of `G.bs`, not an irreducible supply.
-* **the entry-only price and the credit differ by the document the walk has left to
-  reach.**  `terminalPriceFits` is the six-link form (the bundle's field at the
-  document's numbers); `terminalPriceFitsCredit` is `6 + 8 * (n - ix)`, the form the
-  potential's credit boundary pays (`boundary G G.nep = G.n`, `JsonStage2WalkTraverse`).
-  `terminalPrice_credit` proves the credit form holds whenever the stop is inside the
-  document; `terminalPrice_eight_outside` and `terminalPrice_four` are documents on the
-  far side of the six — `"abcdefgh "` and `"a   "` — where the run arm has no inhabitant
-  at the entry-only price.
-* **the walk accepts those documents; the price is a report.**  `runLast_price_with_credit`
-  is the arithmetic: with the two document bounds a producer has — the run inside the
-  entry's span, and the run starting at the entry — the path's twenty-six fixed links
-  plus the run and the scan fit `32 + 8 * (n - ix)`.  The exclusion is the `entryPos`
-  spelling of the terminal price, not a limit of the body.  `JsonStage2WalkCredit` already
-  restates the price conjunct on `boundary` (`terminalPrice_boundary`,
-  `terminalPrice_terminal_byteTerm`, `terminalPrice_of_scan`) and this module's theorem is
-  the same conclusion read at the run class's own numbers rather than the dispatch's
-  per-byte form.  **This module does not change `mergeLast` or
-  `WalkDispatchOutcome.finish`**: rewiring the dispatch to the restated price needs two
-  new `RunLastFacts` fields with their producer's proofs, and it is not this round's
-  change.
-* **the bridge to the field.**  `runLastFacts_budget_iff_price`: at a last-entry state
-  whose run data read the document's own numbers — `i` the computed stop, `c` the length,
-  `N` the stop's distance from the entry's position — `hbudget` *is*
-  `terminalPriceFits`.  Those three equalities are the producer's; `WalkInv` names
-  neither the scan's counter nor its bound.
+* **the price is inside the credit, at every index.**  `terminalPrice_le_credit` is the
+  bound with no hypothesis at all: the run's count and the scan's visits fit
+  `6 + 8 * (n - ix)`.  `terminalPriceFits` is the entry-only form and
+  `terminalPriceFitsCredit` the credit's; `terminalPrice_eight_outside` and
+  `terminalPrice_four` are documents on the far side of the six — `"abcdefgh "` and
+  `"a   "` — and `terminalPrice_whitespace_twelve` is a long run *and* a long trailing
+  scan, all of them inside the credit.
+* **the composition's arithmetic.**  `runLast_price_with_credit` is the terminal
+  composition's own spending: the fixed twenty-four links, the price's two, the run and
+  the scan fit `32 + 8 * (n - ix)` from the run's two document bounds.  `runLastMerge_at`
+  applies it, the dispatch states its conclusion at the credit boundary
+  (`WalkDispatchResult.mergeLast`, `WalkDispatchOutcome.finish`), and
+  `terminalCharge_boundary` reads it as the potential's spend.
+* **the trace of the old restriction.**  `runLastFacts_budget_iff_price` is the entry-only
+  form's identity at the document's numbers, and `terminalPrice_no_runLastFacts` holds of
+  the *arithmetic*: an eight-link terminal run is not `≤ 6` there.  Neither is a statement
+  about the bundle any more, because the bundle no longer states that row.
 
 ## 2. The residual premises, measured per arm
 
@@ -90,8 +91,8 @@ span, the tail's three calls on their scan arm, the landing, the scan's counter 
 bound's cell with the copy test's value, and — the one row stated at a document number
 rather than at a cell — the lane's order at the continuing entry and the price at the last.
 Everything the walk's own blocks bind is derived there: the head byte and its cell, the head
-chain's endpoint cell, the landing's two registers, the bound's width, and the budget
-(see the two `run` rows below).
+chain's endpoint cell, the landing's two registers, the bound's width, and the price's
+document bounds (see the two `run` rows below).
 
 Kind labels: **(i)** per-document class data; **(ii)** callee preconditions/answers;
 **(iii)** the scan traversal's round/guard/byte facts.  For (i) the decision is
@@ -149,7 +150,7 @@ unfolds is named.  Shared `D` items, named once:
 | `letters` | **F** the byte; **D** its class bits given it and `h8` once it is named; **D** `hHead` (eleven links, class-independent), endpoint cells, `htok` | `hTail` | — |
 | `fLetter` | as `letters`, with its `h102` test **D** given the same byte | `hTail` | — |
 | `classC` | **F** the byte; **D** `h110`/`h125` given it, hence `h8`; **D** `hHead`/`hSpan`/`hnS`/`htok` | `hTail` | — |
-| `run` (producer `runLastFacts_of_staging`/`lastEntryArm_run_of_staging`) | **F** `hbit` (the tag test at the document's head byte); **D, derived by the producer** `x`/`h8`, `h8m`, `hinc`/`hnep`, `hcw` (`G.maxDoc` at the bound), `hspanDoc` (`hc`, the bound being `%4`, at `le_of_eq`), and `hbudget` — the **boundary** row of section 1 is now derived from the document's price: `terminalPriceFits` at `entryPos G C.k`, with the stop, the run's count and `%4`'s value supplied (`runLastBudget_of_price`, the bundle-free half of `runLastFacts_budget_iff_price`); **D-in-principle** the segments `hHead`/`hSpan`/`hLatch` and their endpoints; **F** `i`/`c` and `hic`, and the document's three numbers | `hTail` | `hbyte` |
+| `run` (producer `runLastFacts_of_staging`/`lastEntryArm_run_of_staging`) | **F** `hbit` (the tag test at the document's head byte); **D, derived by the producer** `x`/`h8`, `h8m`, `hinc`/`hnep`, `hcw` (`G.maxDoc` at the bound), `hspanDoc` (`hc`, the bound being `%4`, at `le_of_eq`), `hstart` (`terminalStop_ge`) and `hNdoc` (`terminalStop_le` at the document's length) — the three document bounds section 1's price consumes; **D-in-principle** the segments `hHead`/`hSpan`/`hLatch` and their endpoints; **F** `i`/`c` and `hic`, and the document's three numbers | `hTail` | `hbyte` |
 
 **What the enumeration decides.**  The **F** rows are the document's content (the entry
 stream's lanes, the bytes the paths read, the root word, the log word's value) and the
@@ -194,8 +195,9 @@ be produced at an arbitrary document.
   keeps the class bits, the last byte's class, the root word and the three calls.
   `hlast`'s other arms are as `WalkContinueFacts`'s, with `.run` now produced by
   `runLastFacts_of_staging`/`lastEntryArm_run_of_staging` — its bundle keeps the segments,
-  the tail's calls and the traversal, and derives its budget from section 1's price rather
-  than taking it (§2's `run` rows); `mergeWords`/`refuseWords` are the log word, which is
+  the tail's calls and the traversal, and derives the price's three document bounds from
+  the stop, the length and the run's start (§2's `run` rows); `mergeWords`/`refuseWords`
+  are the log word, which is
   **false** at an escaping input (`JsonStage2WalkArenaWord`) and is a statement change, not
   a proof.
 
@@ -387,8 +389,11 @@ def terminalStop (bs : List UInt8) (ix : Nat) : Nat := wsScanStop bs ix (bs.leng
 def terminalPrice (bs : List UInt8) (ix : Nat) : Nat :=
   (terminalStop bs ix - ix) + 4 * (bs.length - 1 - terminalStop bs ix)
 
-/-- **The entry allowance's form**: what `RunLastFacts.hbudget` states at the document's
-numbers.  Six links remain after the path's fixed twenty-four and the price's own two. -/
+/-- **The entry allowance's form**: the terminal price inside the six links the entry
+allowance leaves after the path's fixed twenty-four and its own two.  It is a computable
+predicate of the document (`terminalPrice_eight_outside`, `terminalPrice_two`), and it is
+not the bundle's budget any more: `terminalPriceFits_credit` is the implication that
+survives, and the budget's rows are the document's own bounds. -/
 def terminalPriceFits (bs : List UInt8) (ix : Nat) : Prop := terminalPrice bs ix ≤ 6
 
 /-- **The credit's form**: the entry allowance plus the document bytes the walk has left
@@ -417,14 +422,38 @@ theorem terminalStop_le (bs : List UInt8) {ix : Nat} (hix : ix ≤ bs.length) :
 
 /-! ### The two prices, and the difference -/
 
-/-- **The credit form follows from the stop being inside the document.**  The run's count
-is at most the span it starts in, and each visited byte costs four against eight
-available, so the price is inside `6 + 8 * (n - ix)` with nothing supplied. -/
-theorem terminalPrice_credit (bs : List UInt8) {ix : Nat} (hix : ix ≤ bs.length)
-    (hk : terminalStop bs ix < bs.length) : terminalPriceFitsCredit bs ix := by
-  have hge := terminalStop_ge bs ix
-  have hle := terminalStop_le bs hix
-  simp only [terminalPriceFitsCredit, terminalPrice, stage2ByteAllowance]
+/-- **The price is inside the credit, at every index.**  No hypothesis on the document or
+the index: the stop is at or after the entry's position and — when the scan had the fuel
+to reach it — at most the document's end, and when the index is already past the document
+the run and the scan are both empty.  So the run's count and the scan's four-per-visit
+visits fit `6 + 8 * (n - ix)`: the six the entry allowance leaves and eight per document
+byte from the entry's position to the document's end. -/
+theorem terminalPrice_le_credit (bs : List UInt8) (ix : Nat) :
+    terminalPrice bs ix ≤ 6 + stage2ByteAllowance * (bs.length - ix) := by
+  by_cases hix : ix ≤ bs.length
+  · have hge := terminalStop_ge bs ix
+    have hle := terminalStop_le bs hix
+    have h1 : terminalStop bs ix - ix ≤ bs.length - ix := by omega
+    have h2 : bs.length - 1 - terminalStop bs ix ≤ bs.length - ix := by omega
+    simp only [terminalPrice, stage2ByteAllowance]
+    omega
+  · have hz : bs.length - ix = 0 := by omega
+    have hs : terminalStop bs ix = ix := by
+      show wsScanStop bs ix (bs.length - ix) = ix
+      rw [hz]
+      rfl
+    have hz' : bs.length - 1 - ix = 0 := by omega
+    simp only [terminalPrice, stage2ByteAllowance, hs, hz, hz']
+    omega
+
+/-- **The entry-only form implies the credit's.**  The short-path result, as the corollary
+it is: `6` is inside `6 + 8 * (n - ix)`, so every price the old form paid, the credit pays.
+What the implication does *not* say is that the entry-only form holds — a terminal run of
+more than six links is inside the credit and outside the six. -/
+theorem terminalPriceFits_credit {bs : List UInt8} {ix : Nat}
+    (h : terminalPriceFits bs ix) : terminalPriceFitsCredit bs ix := by
+  have := terminalPrice_le_credit bs ix
+  simp only [terminalPriceFitsCredit, terminalPriceFits] at h ⊢
   omega
 
 /-- **At the document's end the two forms coincide**: with no byte left to reach the
@@ -439,8 +468,8 @@ theorem terminalPrice_entryOnly_of_credit (bs : List UInt8) (ix : Nat)
 /-! ### The documents on either side
 
 `"abcdefgh "` is eight continuing bytes and a trailing space: the run is eight, the scan
-is empty, and the entry-only price is eight — outside `hbudget`, so the run arm has no
-inhabitant there at the entry allowance's price.  `"a "` is one continuing byte and a
+is empty, and the entry-only price is eight — outside the six, so the entry allowance did
+not pay for it.  `"a "` is one continuing byte and a
 space: the price is one.  `"a   "` stops after the first byte and scans three. -/
 
 /-- Eight continuing bytes then a space: the terminal run is eight links. -/
@@ -468,12 +497,45 @@ theorem terminalPrice_four :
       terminalPriceFitsCredit [97, 32, 32, 32] 0 := by
   decide
 
+/-- **A document with both a long run and a long trailing scan.**  Eight letters then four
+spaces: the run is eight links, the scan visits three more, and the price is `8 + 12 = 20`
+— three times the six the entry allowance leaves, so the entry-only form excludes it
+(`¬ terminalPriceFits`).  The credit pays it, and so does the composition's own
+arithmetic: the fixed twenty-four links and the price's two beside the twenty are
+`46 ≤ 32 + 96`, the entry allowance plus eight per byte of the twelve.
+This is the shape the old restriction had no arm for. -/
+theorem terminalPrice_whitespace_twelve :
+    terminalPrice [97, 98, 99, 100, 101, 102, 103, 104, 32, 32, 32, 32] 0 = 20 ∧
+      ¬ terminalPriceFits [97, 98, 99, 100, 101, 102, 103, 104, 32, 32, 32, 32] 0 ∧
+      terminalPriceFitsCredit [97, 98, 99, 100, 101, 102, 103, 104, 32, 32, 32, 32] 0 ∧
+      terminalPrice [97, 98, 99, 100, 101, 102, 103, 104, 32, 32, 32, 32] 0 + 26 ≤
+        stage2EntryAllowance + stage2ByteAllowance * 12 := by
+  decide
+
+/-- **The composition prices that document.**  The same twelve bytes at the terminal
+index, with the numbers a producer of the run class supplies: the stop is `8`, so the
+run's count is `8` and the scan's three visits are `12` links; the head chain is
+`11 + 8 ≤ 19` and the byte's span at most `5`; the entry is at `0` and the document is
+`12`.  `runLast_price_with_credit` — the lemma `runLastMerge_at` applies to a
+`RunLastFacts`'s three document bounds — then pays the whole `46`-link path out of the
+entry allowance and the ninety-six byte links, `46 ≤ 128`.  Under the entry-only form the
+same numbers are `46 ≤ 32 + 0`: there was no arm, and there is no premise here that could
+hold only for a short document. -/
+theorem runLast_price_whitespace_twelve :
+    (11 + 8) + 5 + 8 + 12 + 2 ≤ stage2EntryAllowance + stage2ByteAllowance * 12 :=
+  runLast_price_with_credit (nH := 19) (nS := 5) (nSc := 12) (N := 8) (c := 12) (i := 8)
+    (ix := 0) (n := 12) (by decide) (by decide) (by decide) (by decide) (by decide)
+    (by decide)
+
 /-! ### The bridge to the bundle's field -/
 
-/-- **`hbudget` is the document's price, at the document's own numbers.**  The three
-equalities are the producer's: `WalkInv` names neither the scan's counter nor its bound,
-so a producer of the run class supplies them (with `hix`, the run starting at the entry's
-position). -/
+/-- **The entry-only form is the legacy arithmetic, at the document's own numbers.**  The
+three equalities are the producer's: `WalkInv` names neither the scan's counter nor its
+bound, so a producer of the run class supplies them (with `hix`, the run starting at the
+entry's position).  This is the *retired* row's arithmetic — `RunLastFacts` now carries the
+document's bounds and the composition applies `runLast_price_with_credit` — and
+`JsonStage2WalkDispatchResidual` reads it as the measurement of a document against the
+form the bundle no longer states. -/
 theorem runLastFacts_budget_iff_price {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     {s : State} (f : RunLastFacts G C s)
     (_hix : entryPos G C.k ≤ f.i)
@@ -485,10 +547,11 @@ theorem runLastFacts_budget_iff_price {m0 : Mem} {G : WalkGeom m0} {C : WalkCarr
   simp only [terminalPriceFits, terminalPrice]
   rw [hbs, ← hk, ← hc, ← hN]
 
-/-- **The priced induction's boundary, stated once.**  A document whose terminal run and
-scan exceed the entry allowance has no `RunLastFacts` at the document's own numbers — the
-field is unsatisfiable there, not false.  The walk accepts the document (it is
-fuel-bounded); the price is a report of cost whose entry-only spelling excludes it. -/
+/-- **The entry-only row is false at the document's numbers, for a long run.**  The *row*,
+not the bundle: `RunLastFacts` no longer states it.  The walk accepts such a document (it
+is fuel-bounded) and the composition prices it out of the document's credit
+(`runLast_price_with_credit`); what remains true is the arithmetic — an eight-link
+terminal run is not `≤ 6` at the stop, the length and the run's start. -/
 theorem terminalPrice_no_runLastFacts {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     {s : State} {f : RunLastFacts G C s}
     (hix : entryPos G C.k ≤ f.i)
@@ -500,27 +563,16 @@ theorem terminalPrice_no_runLastFacts {m0 : Mem} {G : WalkGeom m0} {C : WalkCarr
 
 /-! ### The credit's arithmetic
 
-`mergeLast` (`JsonStage2WalkDispatchThreeOfRun`) states the terminal price at
-`k2 = G.nep` with the entry term alone, because `entryPos G G.nep = 0`.  The potential's
-credit reads `boundary G G.nep = G.n` (`boundary_nep`, `JsonStage2WalkTraverse`), so the
-last entry's remaining byte allowance is `8 * (G.n - entryPos G C.k)`.  This is the
-arithmetic a restated terminal price would need; **this round does not restate it** — the
-statement that is there is honest, and the change needs the two producer ties above. -/
+The terminal price is stated at the potential the induction spends.  `mergeLast`
+(`JsonStage2WalkDispatchThreeOfRun`) states it at `k2 = G.nep` with the byte term read at
+the credit boundary: `boundary G G.nep = G.n` (`boundary_nep`, `JsonStage2WalkTraverse`),
+so the last entry's remaining byte allowance is `8 * (G.n - entryPos G C.k)` and the
+price's right-hand side is `walkPotential G C` at `C.k < G.nep`.
 
-/-- **The terminal price is paid by the credit, from the document's own bounds.**  `nH` is
-the head chain's count, `nS` the byte's span, `nSc` the visits' count and `N` the run's;
-the two document bounds are `N` inside the entry's span and the scan starting at or past
-the entry's position.  The fixed twenty-four, the price's two and the run and scan are
-inside `32 + 8 * (n - ix)`. -/
-theorem runLast_price_with_credit {nH nS nSc N c i ix n : Nat}
-    (hnH : nH ≤ 11 + N) (hnS : nS ≤ 5) (hnSc : nSc ≤ 4 * (c - 1 - i))
-    (hix : ix ≤ i) (hc : c ≤ n) (hN : N ≤ n - ix) :
-    nH + nS + 8 + nSc + 2 ≤ stage2EntryAllowance + stage2ByteAllowance * (n - ix) := by
-  have hscan : 4 * (c - 1 - i) ≤ 4 * (n - ix) := by
-    have : c - 1 - i ≤ n - ix := by omega
-    omega
-  simp only [stage2EntryAllowance, stage2ByteAllowance]
-  omega
+`runLast_price_with_credit` is that arithmetic, and `runLastMerge_at`
+(`JsonStage2WalkDispatchRun`) applies it: the three document bounds are the bundle's
+fields, and the fixed part is the terminal path's own twenty-four links.  Nothing here
+names the entry allowance's six, and nothing restricts the document's length. -/
 
 /-! ### The instrument -/
 
@@ -528,12 +580,14 @@ theorem runLast_price_with_credit {nH nS nSc N c i ix n : Nat}
 #print axioms LeanLLVM.Refinement.WalkScope.wsScanStop_cont
 #print axioms LeanLLVM.Refinement.WalkScope.wsScanStop_stop
 #print axioms LeanLLVM.Refinement.WalkScope.wsScanStop_class
-#print axioms LeanLLVM.Refinement.WalkScope.terminalPrice_credit
+#print axioms LeanLLVM.Refinement.WalkScope.terminalPrice_le_credit
+#print axioms LeanLLVM.Refinement.WalkScope.terminalPriceFits_credit
 #print axioms LeanLLVM.Refinement.WalkScope.terminalPrice_eight_outside
 #print axioms LeanLLVM.Refinement.WalkScope.terminalPrice_four
+#print axioms LeanLLVM.Refinement.WalkScope.terminalPrice_whitespace_twelve
+#print axioms LeanLLVM.Refinement.WalkScope.runLast_price_whitespace_twelve
 #print axioms LeanLLVM.Refinement.WalkScope.runLastFacts_budget_iff_price
 #print axioms LeanLLVM.Refinement.WalkScope.terminalPrice_no_runLastFacts
-#print axioms LeanLLVM.Refinement.WalkScope.runLast_price_with_credit
 
 end WalkScope
 end LeanLLVM.Refinement
