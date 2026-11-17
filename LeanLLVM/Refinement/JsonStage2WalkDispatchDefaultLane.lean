@@ -71,9 +71,13 @@ theorem contMidS_docByte {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s q : S
 /-! ### The chain, as the data an arm reads -/
 
 /-- **The default arm's head chain**: the class's count, its segment, the endpoint's
-carry, block, index and byte.  A structure rather than an existential because the arms'
-fields are data: the constructor takes the segment at `nH` and the endpoint cells beside
-it, so the producer's result is destructured into exactly those fields. -/
+carry, block, index and byte, and the endpoint's own scan-free seam cells.  A structure
+rather than an existential because the arms' fields are data: the constructor takes the
+segment at `nH` and the endpoint cells beside it, so the producer's result is destructured
+into exactly those fields.  The three seam fields are the endpoint's, not a row's: the
+suffix stores the token's end (`%ee.1.i`) and `cond.end349.i` bound `%cond350.i`, so the
+pair is one `Nat`, and the three stores are inside the token record, so the root slot's
+word is the head's. -/
 structure HcontHeadChain {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     (x : BitVec 8) : Type where
   nH : Nat
@@ -84,6 +88,17 @@ structure HcontHeadChain {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : Sta
   hblock : Cm.block = "if.else387.i"
   hk : Cm.k = C.k
   h8 : evalOperand sm (.reg "%8") = some (.int 8 x)
+  /-- The lane's word: the one `Nat` both of the seam's test cells hold. -/
+  v : BitVec 32
+  /-- `%ee.1.i` at the endpoint: the token's end `seamFin` stored. -/
+  hee : lookupName sm.env "%ee.1.i" = some (.int 64 (BitVec.ofNat 64 v.toNat))
+  /-- `%cond350.i` at the endpoint: the bound `cond.end349.i` stored. -/
+  hcond : lookupName sm.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 v.toNat))
+  /-- The endpoint's stores are all inside the token record, so the root slot's word at the
+  endpoint is the head state's. -/
+  hroot : ∀ {rdv : BitVec 32},
+    readBytes s.mem (G.next0 + 8) 4 = some (natToBytes rdv.toNat 4) →
+    readBytes sm.mem (G.next0 + 8) 4 = some (natToBytes rdv.toNat 4)
 
 /-! ### `.defaultValueLow`: three links, then the shared eight -/
 
@@ -201,7 +216,14 @@ noncomputable def lowHeadChain_of_lane {m0 : Mem} {G : WalkGeom m0} {C : WalkCar
     (contLowHeadSeg G C s hInv hblock h8 h91 h44 hne34 hincq hnepq (cont_ult_one G C hk)
       h5 (cont_hi63 G C hk) hread hidx htok hgap hugt hread35 hb13 hb32 hbne13 hend h8end
       hbit).measure,
-    rfl, rfl, h8seam⟩
+    rfl, rfl, h8seam, v,
+    contSeamMid_ee C (lowS₃ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
+      (contB35 G v) x,
+    contSeamMid_cond C (lowS₃ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
+      (contB35 G v) x,
+    fun {rdv} hroot =>
+      contSeamMid_rootRead C (lowS₃ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
+        (contB35 G v) x hroot⟩
 
 /-! ### The four-pivot classes: four links, then the shared eight -/
 
@@ -315,7 +337,14 @@ noncomputable def midHeadChain_of_lane {m0 : Mem} {G : WalkGeom m0} {C : WalkCar
     (contMidHeadSeg G C s hInv hblock h8 h91 h44 h58 hne58 hincq hnepq
       (cont_ult_one G C hk) h5 (cont_hi63 G C hk) hread hidx htok hgap hugt hread35 hb13
       hb32 hbne13 hend h8end hbit).measure,
-    rfl, rfl, h8seam⟩
+    rfl, rfl, h8seam, v,
+    contSeamMid_ee C (midS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
+      (contB35 G v) x,
+    contSeamMid_cond C (midS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
+      (contB35 G v) x,
+    fun {rdv} hroot =>
+      contSeamMid_rootRead C (midS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
+        (contB35 G v) x hroot⟩
 
 /-- **`NodeBlock5 → NodeBlock → LeafBlock1 → sw.default.i` plus the suffix.**  The
 `.otherValue` class's four pivots and the payload's document row: twelve links. -/
@@ -427,7 +456,14 @@ noncomputable def othHeadChain_of_lane {m0 : Mem} {G : WalkGeom m0} {C : WalkCar
     (contOthHeadSeg G C s hInv hblock h8 h91 h44 h58 hne44 hincq hnepq
       (cont_ult_one G C hk) h5 (cont_hi63 G C hk) hread hidx htok hgap hugt hread35 hb13
       hb32 hbne13 hend h8end hbit).measure,
-    rfl, rfl, h8seam⟩
+    rfl, rfl, h8seam, v,
+    contSeamMid_ee C (othS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
+      (contB35 G v) x,
+    contSeamMid_cond C (othS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
+      (contB35 G v) x,
+    fun {rdv} hroot =>
+      contSeamMid_rootRead C (othS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
+        (contB35 G v) x hroot⟩
 
 /-- **`NodeBlock19 → NodeBlock11 → LeafBlock7 → sw.default.i` plus the suffix.**  The
 `.defaultValueBracket` class's four pivots and the payload's document row: twelve links. -/
@@ -539,7 +575,14 @@ noncomputable def brkHeadChain_of_lane {m0 : Mem} {G : WalkGeom m0} {C : WalkCar
     (contBrkHeadSeg G C s hInv hblock h8 h91 h123 h93 hne91 hincq hnepq
       (cont_ult_one G C hk) h5 (cont_hi63 G C hk) hread hidx htok hgap hugt hread35 hb13
       hb32 hbne13 hend h8end hbit).measure,
-    rfl, rfl, h8seam⟩
+    rfl, rfl, h8seam, v,
+    contSeamMid_ee C (brkS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
+      (contB35 G v) x,
+    contSeamMid_cond C (brkS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
+      (contB35 G v) x,
+    fun {rdv} hroot =>
+      contSeamMid_rootRead C (brkS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
+        (contB35 G v) x hroot⟩
 
 /-- **`NodeBlock19 → NodeBlock11 → LeafBlock9 → sw.default.i` plus the suffix.**  The
 `.defaultValueBracketHigh` class's four pivots and the payload's document row: twelve
@@ -652,15 +695,24 @@ noncomputable def bhHeadChain_of_lane {m0 : Mem} {G : WalkGeom m0} {C : WalkCarr
     (contBhHeadSeg G C s hInv hblock h8 h91 h123 h93 hne93 hincq hnepq
       (cont_ult_one G C hk) h5 (cont_hi63 G C hk) hread hidx htok hgap hugt hread35 hb13
       hb32 hbne13 hend h8end hbit).measure,
-    rfl, rfl, h8seam⟩
+    rfl, rfl, h8seam, v,
+    contSeamMid_ee C (bhS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
+      (contB35 G v) x,
+    contSeamMid_cond C (bhS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
+      (contB35 G v) x,
+    fun {rdv} hroot =>
+      contSeamMid_rootRead C (bhS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
+        (contB35 G v) x hroot⟩
 
 /-! ### The arms, at the chain the payload's row produced
 
 Three arms share the default arm's document row: the scan-free letters route, its `'f'`
 leaf, and the class-C span whose bytes are `110 … 125`.  Each takes the chain the producers
-above return and the tail's three calls — the row the payload does not hold — and each
-runs the real `.dispatch`.  So the payload's `lane` group now reaches the default arm's
-head chain, and the residual table's remaining default row is the tail and the span.
+above return and a three-link tail at the seam it names, and each runs the real
+`.dispatch`.  So the payload's `lane` group now reaches the default arm's head chain.  The
+tails themselves are `JsonStage2WalkDispatchLettersRows`': the chain carries the seam's
+pair and the root word's transport, so the letters and `'f'` arms are handed the callee
+rows in place of a tail, and the class-C arm the span's endpoint's cells beside the rows.
 -/
 
 /-- **The letters arm, from the payload's chain.** -/

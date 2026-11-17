@@ -276,22 +276,6 @@ The three stores are audited by the register's own extent rather than one at a t
 store at an offset whose record extent covers it leaves the root slot alone
 (`walkReadBytes_rootSlot_of_tokStore`). -/
 
-/-- **A store inside the token record leaves the root slot's word alone.**  The token record
-ends at or below `G.next0` (`WalkStage.sevenEnd`) and the root slot is four bytes at
-`G.next0 + 8`; the store's own extent is the offset's plus the payload's. -/
-theorem walkReadBytes_rootSlot_of_tokStore {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
-    {m : Mem} {off len : Nat} {v : List UInt8}
-    (hoff : off + len ≤ stage2TokenExtent) (hlen : v.length = len) :
-    readBytes (writeBytes m (C.stage.tok + off) v) (G.next0 + 8) 4 =
-      readBytes m (G.next0 + 8) 4 := by
-  refine walkReadBytes_writeBytes_outside (start := C.stage.tok + off)
-    (addr := G.next0 + 8) (n := 4) ?_
-  right
-  have h := C.stage.sevenEnd (C.stage.tok, stage2TokenExtent)
-    (by simp [stage2StagedWrites])
-  simp only [stage2TokenExtent] at h hoff
-  omega
-
 /-- **The seam's memory, exactly**: the head's with the three token-record stores.  The
 chain's binds leave the memory alone, and `seamFin`'s token end is the outermost. -/
 theorem contTailStart_mem {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)

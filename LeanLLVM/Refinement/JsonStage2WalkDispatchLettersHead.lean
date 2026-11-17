@@ -201,6 +201,86 @@ theorem contSeamMid_env8 {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (q : Sta
     State.bind]
   repeat rw [lookupName_cons_ne _ _ (by decide)]
 
+/-- **The seam's `%ee.1.i` cell.**  `seamFin` stores the token's end at the entry's span
+bound, so the register is `ofNat 64 v.toNat` — the same `Nat` the bound `%cond350.i`
+holds.  The scan-free class's test is therefore `ult v v`. -/
+theorem contSeamMid_ee {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (q : State)
+    (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64) (b35 : UInt8)
+    (b8 : BitVec 8) :
+    lookupName (contSeamMid C q inc nep ep v ix b35 b8).env "%ee.1.i" =
+      some (.int 64 (BitVec.ofNat 64 v.toNat)) := by
+  simp only [contSeamMid, seamS, seamFin, stateAt]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+  exact lookupName_cons_self _ _ _
+
+/-- **The seam's `%cond350.i` cell**: `cond.end349.i` bound it and neither the byte's
+pivots nor the token's end rebind it. -/
+theorem contSeamMid_cond {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (q : State)
+    (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64) (b35 : UInt8)
+    (b8 : BitVec 8) :
+    lookupName (contSeamMid C q inc nep ep v ix b35 b8).env "%cond350.i" =
+      some (.int 64 (BitVec.ofNat 64 v.toNat)) := by
+  simp only [contSeamMid, seamS, seamFin, stateAt]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+  exact contP35Mid_cond C q inc nep ep v ix b35
+
+/-- **The seam's memory, exactly**: the state's with the three token-record stores — the
+token's position at `%t352.i`, the gap at `+ 20` and the end at `+ 8`.  Every other link
+binds cells. -/
+theorem contSeamMid_mem {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (q : State)
+    (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64) (b35 : UInt8)
+    (b8 : BitVec 8) :
+    (contSeamMid C q inc nep ep v ix b35 b8).mem =
+      writeBytes (writeBytes (writeBytes q.mem C.stage.tok (natToBytes ix.toNat 8))
+        (C.stage.tok + 20) (natToBytes (BitVec.ofNat 32 1).toNat 4)) (C.stage.tok + 8)
+        (natToBytes (BitVec.ofNat 64 v.toNat).toNat 8) := by
+  simp only [contSeamMid, seamS, seamFin, contP35Mid, contP35Out, contP39Out, contP41Out,
+    contLandOut, contMidS, condEnd349OutAt, cte345OutAt, contSwOut, stateAt, cells,
+    State.bind]
+
+/-- **A store inside the token record leaves the root slot's word alone.**  The token record
+ends at or below `G.next0` (`WalkStage.sevenEnd`) and the root slot is four bytes at
+`G.next0 + 8`; the store's own extent is the offset's plus the payload's. -/
+theorem walkReadBytes_rootSlot_of_tokStore {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {m : Mem} {off len : Nat} {v : List UInt8}
+    (hoff : off + len ≤ stage2TokenExtent) (hlen : v.length = len) :
+    readBytes (writeBytes m (C.stage.tok + off) v) (G.next0 + 8) 4 =
+      readBytes m (G.next0 + 8) 4 := by
+  refine walkReadBytes_writeBytes_outside (start := C.stage.tok + off)
+    (addr := G.next0 + 8) (n := 4) ?_
+  right
+  have h := C.stage.sevenEnd (C.stage.tok, stage2TokenExtent)
+    (by simp [stage2StagedWrites])
+  simp only [stage2TokenExtent] at h hoff
+  omega
+
+/-- **The root slot's word at the seam is the state's.**  The three stores are inside the
+token record, so the word the copy call's argument list carries is the one its argument
+list's memory already held. -/
+theorem contSeamMid_rootRead {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (q : State)
+    (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64) (b35 : UInt8)
+    (b8 : BitVec 8) {rdv : BitVec 32}
+    (hroot : readBytes q.mem (G.next0 + 8) 4 = some (natToBytes rdv.toNat 4)) :
+    readBytes (contSeamMid C q inc nep ep v ix b35 b8).mem (G.next0 + 8) 4 =
+      some (natToBytes rdv.toNat 4) := by
+  rw [contSeamMid_mem]
+  rw [walkReadBytes_rootSlot_of_tokStore (off := 8) (len := 8)
+    (v := natToBytes (BitVec.ofNat 64 v.toNat).toNat 8) (by decide) (natToBytes_length _ _)]
+  rw [walkReadBytes_rootSlot_of_tokStore (off := 20) (len := 4)
+    (v := natToBytes (BitVec.ofNat 32 1).toNat 4) (by decide) (natToBytes_length _ _)]
+  have h0 : readBytes (writeBytes q.mem C.stage.tok (natToBytes ix.toNat 8))
+      (G.next0 + 8) 4 = readBytes q.mem (G.next0 + 8) 4 := by
+    refine walkReadBytes_writeBytes_outside (start := C.stage.tok) (addr := G.next0 + 8)
+      (n := 4) ?_
+    right
+    have h := C.stage.sevenEnd (C.stage.tok, stage2TokenExtent)
+      (by simp [stage2StagedWrites])
+    have hlen : (natToBytes ix.toNat 8).length = 8 := natToBytes_length _ _
+    simp only [stage2TokenExtent] at h
+    omega
+  rw [h0]
+  exact hroot
+
 /-! ### The suffix, counted at eight -/
 
 /-- **The default arm's four links to the whitespace check**, at any state at

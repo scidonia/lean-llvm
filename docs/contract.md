@@ -711,7 +711,9 @@ it is a statement about the state at its block rather than a consequence at the
 head.  A seam state — the written token record a tail starts from — is therefore
 not covered by the head state's invariant, and the transports that close the gap
 are `JsonStage2WalkHcontSeamInv`'s: `contTailStartInv_of_cleanup`,
-`scSeamInv_of_scalar` and `hlastTailInv_of_facts`.
+`scSeamInv_of_scalar` and `hlastTailInv_of_facts`, and — for the default arm's
+two letters classes — `JsonStage2WalkDispatchLettersRows`'
+`lettersSeamInv_of_chain`/`fLetterSeamInv_of_chain`.
 4. **The census is exhaustive and the arms are total.**  `HeadArm.complete` gives
 every byte exactly one head arm, so the byte census is exhaustive by theorem,
 and the dispatch arms are total over the states the invariant admits.  The
@@ -721,11 +723,13 @@ one class with three arms (`.twoEntry`, `.stringOpenAboveZeroMerge`,
 (`.ws`, `.cleanup`), and the two openers one class with two (`.containerOpen`,
 `.openAtCap`).  The last entry's enumeration is `LastEntryArm`, sixteen
 constructors.  Where a class's route is a counted chain of its own, the arm takes
-that chain as a row: `.letters`, `.fLetter` and `.classC` their head and tail
-segments, `.stringOpenAboveZeroMerge` its segment to the merge.  The document and
-seam rows are `JsonStage2WalkDispatchClassRows`', one row per class, and the
-seam state's invariant is produced by the transports above rather than carried as
-a row.
+that chain as a row: `.classC` its span past the head chain,
+`.stringOpenAboveZeroMerge` its segment to the merge.  The `.letters`/`.fLetter`
+classes take no tail row: their head chain is produced from the lane's document
+row and their three-link tail is produced from the seam's cells and the callee
+rows (`JsonStage2WalkDispatchLettersRows`).  The document and seam rows are
+`JsonStage2WalkDispatchClassRows`', one row per class, and the seam state's
+invariant is produced by the transports above rather than carried as a row.
 
 ### 7.8 The dispatch's per-row ledger
 
@@ -744,9 +748,9 @@ and no entry carries the execution segment its own producer builds.
 | c3 | `.twoEntry` (byte `34`, `C.sp = 0`): the standalone string's lane — the next entry's word, the root slot's word, the log's two words, the decoded length — and the body's two call rows | `HcontLane.string`, `HcontAbi.string` (`JsonStage2WalkDispatchSupply`) | `hcontArm_twoEntry_of_staging` → `HcontArm.dispatch` | the lane's words and the two call rows; `C.sp = 0` is the class's own split |
 | c4 | `.stringOpenAboveZeroMerge` (byte `34`, `C.sp ≠ 0`): the class's byte, depth and two stack bytes at `C.sp - 1`, and the value-position staging | `stringOpenAboveZero_pre_of_inv` + `WalkInv.tyBytes`/`stBytes` | `hcontArm_stringOpenAboveZeroMerge_of_staging` (`JsonStage2WalkDispatchHcontStringDeep`) | **the route's counted segment** to `cleanup478.i` (`stringDeepMerge_tail`), whose one supplied link is the body call's row |
 | c5 | `.stringOpenAboveZeroRefuse` (same class): the nest's own test clear, the offset store and the copy | `stringDeepRefuse_at` (two links from `if.end245.i`'s state) | `hcontArm_stringOpenAboveZeroRefuse_of_staging` | **none**: the refusal is composed |
-| c6 | `.scalar` (the tag test's true arm): the numeral's document cells and the three calls at `scSeamS` | `hcontScalarFacts_of_staging`, `scSeamInv_of_scalar`, `scContTail_of_calls` | `HcontArm.scalar` → `dispatch` | the document's cells and the three call rows at `scSeamS`; the seam invariant is produced |
-| c7 | `.letters`/`.fLetter` (`0 … 109`, `128 … 255`, the tag test clear): the head chain to `if.else387.i` | `lowHeadChain_of_lane` … (`JsonStage2WalkDispatchDefaultLane`) from `HcontLane.defaultLane` | `hcontArm_letters_of_lane`/`_fLetter_of_lane` | the tail's three calls at `LetS413`/`HeadC₄₁₃ (LetC₄₀₅ Cm)` and that seam's three cells (`%ee.1.i`, `%cond350.i`, the root word) — the head is produced, the tail is not |
-| c8 | `.classC` (`110 … 125`): the same head chain plus the byte's own span | `classCSpan_at` from the class's `slt %8 110` bit | `hcontArm_classC_of_lane` | the span's leaf endpoint's tail rows, as c7 |
+| c6 | `.scalar` (the tag test's true arm): the numeral's document row — the class bits, the span, the entry's non-emptiness and the byte before the entry's end with its no-run class — the lane's word and its read, and the three calls at `scSeamS` | `scSeamInv_of_cells` (`JsonStage2WalkHcontSeamInv`) for the seam's invariant, from that document row; `scContTail_of_calls` (`JsonStage2WalkDispatchSegments`) for the tail, at the callee rows | `hcontArm_scalar_of_rows` → `walkDispatch_at_scalar_of_rows` (`JsonStage2WalkDispatchScalarRows`) | **none** on top of the document row (`HcontScalarPrefix`), the lane word and its read, and the three call rows at `scSeamS`: the seam's invariant, the arm and the dispatch are produced, and the route's two agreements — the kind literal `7` and the root slot's word, transported across the three token-record stores by `scSeam_rootRead` — are the callee group's tie to the state |
+| c7 | `.letters`/`.fLetter` (`0 … 109`, `128 … 255`, the tag test clear): the head chain to `if.else387.i` with its endpoint's lane word, the seam's two test cells and the root slot's word | `lowHeadChain_of_lane` … (`JsonStage2WalkDispatchDefaultLane`) from `HcontLane.defaultLane` for the chain (`HcontHeadChain` carries `v` with `contSeamMid_ee`/`contSeamMid_cond` and the root transport `contSeamMid_rootRead`); `lettersSeamInv_of_chain`/`fLetterSeamInv_of_chain` for the seam's invariant; `lettersSeamCells_of_chain`/`fLetterSeamCells_of_chain` for the seam's cells; `emptyTail_of_cells` for the tail | `hcontArm_letters_of_rows`/`hcontArm_fLetter_of_rows` → `walkDispatch_at_letters_of_rows`/`_fLetter_of_rows` (`JsonStage2WalkDispatchLettersRows`) | **none** on top of the three call rows at `LetS413`/`FS413` and the chain's own data: the seam's invariant, its cells (`%ee.1.i`, `%cond350.i` at the chain's one `Nat`, the root word across the suffix's three token-record stores) and the three-link tail are produced, and the route's two agreements — the kind literal `0` (`if.else405.i`) or `9` (`if.then397.i`), and the root slot's word read at the head state — are the callee group's tie to the state |
+| c8 | `.classC` (`110 … 125`): the same head chain plus the byte's own span | `classCSpan_at` from the class's `slt %8 110` bit for the span; `emptyTail_of_cells` for the tail | `hcontArm_classC_of_rows` → `walkDispatch_at_classC_of_rows` (`JsonStage2WalkDispatchLettersRows`) | the span's leaf endpoint's seam cells (`HcontSeamCells` at `(Cs, ss)`: the `phi`, the four pointers, the root word and the two test cells) and its three call rows: the span returns its target existentially, so the cells are that endpoint's row while the tail is produced from it |
 | c9 | `.run` (the same six default classes on the run continuation): the check state's cells, the whitespace stop, the landing and the scan's traversal | `hcontRunFacts_of_rows` → `runFacts_of_runBundle` (`JsonStage2WalkDispatchRunHead`) | `HcontArm.run` → `dispatch` | the run's document rows and its traversal `∀`s; its tail is `hcontScanTail_at`, not a row |
 | c10 | the four delimiter refusals and the two above-zero delimiter pairs | `bracketRefuse_at`, `commaRefuse_at`, `colonRefuse_at`, `closeBraceZero_at`, `commaBraceMerge_at` … | `hcontArm_of_derivedClass` (`JsonStage2WalkDispatchResidual`) | **none**: the class bits and `WalkInv`'s own cells |
 | c11 | `.containerOpen`/`.openAtCap` (bytes `91`/`123`): the root slot's zero word and the value-position call's row | `HcontLane.root`, `HcontAbi.openCall` | `walkDispatch_at_open91_of_payload` … | the lane's root word and the call row; the depth `520` is the invariant's own cap |
@@ -769,12 +773,13 @@ assumption about the chain it establishes.  The two word equalities it requires 
 `rdv = 0`) are the callee group's agreement with those cells, not a second reading of the
 state.
 
-**What this ledger says about closure.**  Three rows are produced end-to-end (c2, c10, c12)
-and one more is produced up to a single word (l1's `rdv`); the rest are named rows of the
-kinds §5 of the closure review separates.  No entry above is an arm, a bundle, or the
-segment its own producer composes, and the quantifiers are the class's and the state's: a
-row is stated at the continued head it belongs to (`C.k + 1 < G.nep` for c1–c12) or at the
-exhausted count (`¬ (C.k + 1 < G.nep)` for l1–l5), never at every head.
+**What this ledger says about closure.**  Five rows are produced end-to-end (c2, c6, c7,
+c10, c12), one is produced up to its endpoint's seam cells (c8) and one more up to a single
+word (l1's `rdv`); the rest are named rows of the kinds §5 of the closure review separates.
+No entry above is an arm, a bundle, or the segment its own producer composes, and the
+quantifiers are the class's and the state's: a row is stated at the continued head it
+belongs to (`C.k + 1 < G.nep` for c1–c12) or at the exhausted count
+(`¬ (C.k + 1 < G.nep)` for l1–l5), never at every head.
 
 ## 8. Out of scope for the first contract
 
