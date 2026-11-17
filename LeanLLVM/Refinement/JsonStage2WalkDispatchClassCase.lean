@@ -63,10 +63,10 @@ What a producer of the *row* must add is the leaf's three call answers and the l
 built on them: the kind literal is part of the memory the first call reads, so `102`,
 `110` and `116` have their own groups (`HcontSeamAbi.scanF`/`scan56True`/`scan58True`) and
 the other three cast the seam's (`HcontSeamCalls.cast`).  That wiring is
-`JsonStage2WalkDispatchRunRow`'s (`hcontRunLeafAt_letters` … `_58Else`, and the row at each
-leaf by `hcontRunRowAt_letters` … `_58Else`); the four continuing seam fields carry their
+`JsonStage2WalkDispatchRunRow`'s (`hcontRunLeafAt_letters` … `_58Else`, and the row by
+`hcontRunRow_of_rows`); the four continuing seam fields carry their
 literal (`HcontSeamKind`), so the three nonzero-kind leaves' supply cannot be cast from the
-`0` seam's.  See `HcontClassRows.runRow` and `hcontArm_run_of_row`.
+`0` seam's.  See `hcontRunRow_of_rows` and `hcontArm_run_of_row`.
 
 The byte selection itself is **done**: `JsonStage2WalkDispatchClassTransport` derives the
 route's own bits (`slt %8 110`, `eq %8 116`, `slt %8 116`, `eq %8 116`, `slt %8 125` and
@@ -96,7 +96,7 @@ arm at all: `.value` × `wsByte`, the whitespace run after a numeral.
   (`HcontFacts`, whose prefix is that head's) and the three leaves are
   `HcontArm.cleanup`'s (`HcontCleanupFacts` carries the route, so all three).  At the
   default arm's classes (`tag = 0`) they partition it too: `wsByte` is `HcontArm.run`
-  (the check state's row, `HcontClassRows.runRow`, plus the byte's leaf composed from the
+  (the check state's row, `hcontRunRow_of_rows`, plus the byte's leaf composed from the
   row), and the three leaves are `letters`/`fLetter`/`classC` by the head byte's pivots,
   with the chain built from `defaultLane` plus those bits.
 * **`.value` takes the document byte's route, and both of its halves are produced.**

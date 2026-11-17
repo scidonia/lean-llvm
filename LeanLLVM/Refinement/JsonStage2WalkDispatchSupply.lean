@@ -110,12 +110,12 @@ A `walkContinueFacts_of_payload` stated over a payload carrying those groups wou
 class case over `HcontClass.complete` with every arm's producer in hand.  What this module
 will not do is state it over a payload that quietly holds the arms themselves.
 
-**The run class's leaf is wired per leaf, and the rows it still needs are named.**
+**The run class's leaf is wired per leaf, and the row is produced.**
 `JsonStage2WalkDispatchRunRow` supplies the six leaves from the seam's group —
 `hcontRunLeafAt_letters` … `_58Else`, the three kind-`0` leaves sharing
 `HcontSeamAbi.scan` and the three others taking `scanF`/`scan56True`/`scan58True`, whose
-literals are `9`/`10`/`8` — and applies `HcontClassRows.runRow` at each
-(`hcontRunRowAt_letters` … `_58Else`).  So the run's arm is available at every leaf of the
+literals are `9`/`10`/`8` — and the row at each leaf by `hcontRunRow_of_rows`.  So the
+run's arm is available at every leaf of the
 byte, and no leaf's supply is missing.  The plain-value class's cell is covered too:
 `.value` × `wsByte` by `hcontArm_scalarRun_of_class` and `.value` × the three
 non-whitespace byte classes by `hcontArm_value_of_lane`, which produces the prefix
@@ -232,9 +232,11 @@ at each), the three nonzero-kind leaves taking their own items
 (`HcontSeamAbi.scanF`/`scan56True`/`scan58True`) and the three kind-`0` ones the shared
 `scan`.
 
-What `.run` still takes is the row's *document* data — the run's body at the check state,
-the record the scalar call appends and the landing's rows — which `HcontClassRows.runRow`
-states as its own obligation and which no payload field carries.
+What `.run` takes is now the payload's two groups — `runSkip`'s class and `runTail`'s rows —
+at the class's own prefix; the row is `hcontRunRow_of_rows`'s, and what remains is the
+case's composition of the six default prefixes, not a missing row.  The `.ws` cell's group
+is the high-byte class's counterpart of the same rows, whose producer `hcontFacts_of_staging`
+already states; it is the one cell the case still lacks.
 
 The other three former obstacles are retired: the payload's document row carries the byte's
 class (`HcontDefaultRow.hclass`), the visits' bound is the scan's span, the whitespace seam

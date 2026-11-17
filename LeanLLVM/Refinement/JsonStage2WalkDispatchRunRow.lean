@@ -38,17 +38,19 @@ three kind-`0` leaves are **not** new supply: their seam is the one state
 the carry the leaf binds, and the rows mention only the memory, the counter and the
 carry's stage, so one item serves all three by `HcontSeamCalls.cast`.
 
-## The row at each leaf
+## The row: a producer now, not a field
 
-`HcontClassRows.runRow` (`JsonStage2WalkDispatchClassRows`) is the run class's row: the
-class's prefix to `sw.default.i`, the shared four's cells, the check state's rows, the
-run's body and the byte's leaf.  Its leaf is its argument, so a producer of the row is a
-producer *at a leaf*: `hcontRunRowAt_letters` … `_58Else` below are those, each building
-the row from the class's rows and the leaf's own supply.  What they do not supply is the
-row's remaining data — the prefix and the check state's document rows — which
-`HcontClassRows.runRow` states as its own obligation; the composition here is what the
-class case needs at a whitespace document byte, and it is stated per leaf so no cell of the
-two-dimensional split (head class × `HcontByteClass`) is missing a row.
+`HcontRunRow` used to be a payload field (`HcontClassRows.runRow`) whose argument was the
+leaf.  It is now **produced**: `hcontRunRow_of_rows` derives the head part — the class's
+prefix to `sw.default.i`, the shared four's cells, the entry's lane and the byte before the
+entry's end — from the prefix segment's invariant and the payload's row, and takes the
+document part as the arguments the reshape names: the run's body (`hcontRunBody_of_skip`,
+from `runSkip`'s class), the record the scalar call appends, and `HcontRunRows`
+(`runTail`).  There is one `HcontRunRow` and one producer; the old field is gone.
+
+The leaf stays the producer's argument and is built per leaf by the six
+`hcontRunLeafAt_*`: the case pairs the two, which is what makes the cell
+`.run` × `wsByte` at every default class reachable from the payload's groups.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkDispatchClassCase
 
@@ -201,112 +203,218 @@ noncomputable def hcontRunLeafAt_58Else {m0 : Mem} {G : WalkGeom m0} {C : WalkCa
   hcontRunLeaf_58Else G C sl b35 ix v k x1 hInvS h8 (hs.scan C sl b35 ix v k x1).calls
     (hs.scan C sl b35 ix v k x1).hcA hroot0 hk h110 h116 h116eq
 
-/-! ### The run's row at each leaf
+/-! ### The run's row, from the class's prefix and the payload's two groups
 
-`HcontClassRows.runRow` is the row, with the leaf as its argument; each producer below
-applies it at one leaf, built from that leaf's own supply item.  The row's other data —
-the class's prefix to `sw.default.i`, the shared four's cells and the check state's
-document rows — is `runRow`'s own obligation, stated where the row is stated. -/
+`HcontRunRow`'s head part — the class's prefix to `sw.default.i`, the shared four's cells
+and the check state's byte — is derived here; its document part is the payload's
+(`runSkip`'s class, `runTail`'s rows).  The reshape this module carries is that the row is
+**no longer a supply item**: `HcontClassRows.runRow`'s old field is gone, and
+`hcontRunRow_of_rows` is its producer, taking the body, the record and the rows the
+instruction names.
 
-/-- **The run's row at the letters leaf.** -/
-noncomputable def hcontRunRowAt_letters {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
-    {s : State} (hc : HcontClassRows G) (hInv : WalkInv G C s)
-    (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)
-    (r : HcontDefaultRow G C s) (hws : wsStop G (r.v.toNat - 1))
-    (sl : State) (b35 : UInt8) (ix : BitVec 64) (v : BitVec 32) (k : Nat) (x1 : BitVec 8)
-    (hInvS : WalkInv G (ContSeamC C) (contRunLeafS G C sl b35 ix v k x1))
-    (h8 : evalOperand (contRunLeafS G C sl b35 ix v k x1) (.reg "%8") = some (.int 8 x1))
-    (hroot0 : readBytes (contRunLeafS G C sl b35 ix v k x1).mem (G.next0 + 8) 4 =
-      some (natToBytes (hc.seam.scan C sl b35 ix v k x1).calls.rdv.toNat 4))
-    (h110 : evalICmp .slt x1 (BitVec.ofNat 8 110) = 1)
-    (hne102 : evalICmp .eq x1 (BitVec.ofNat 8 102) = 0) :
-    HcontRunRow G C s :=
-  hc.runRow C s hInv hblock hk r hws
-    (hcontRunLeafAt_letters hc.seam sl b35 ix v k x1 hInvS h8 hroot0 hk h110 hne102)
+**Why the prefix data is an argument and the document rows are not.**  The class's chain to
+`sw.default.i` ends at a state whose *name* differs per head class (`lowS₃`, `midS₄`,
+`othS₄`, `brkS₄`, `bhS₄`, `brcS₄`), and the case composes it (`contLowToDefault` …
+`contBrcToDefault`); the row's cells are then the invariant's at that endpoint, which is
+what makes this producer class-independent.  The document rows, by contrast, are rows: the
+payload carries them and the case passes them through.
 
-/-- **The run's row at the `'f'` leaf.** -/
-noncomputable def hcontRunRowAt_fLetter {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
-    {s : State} (hc : HcontClassRows G) (hInv : WalkInv G C s)
-    (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)
-    (r : HcontDefaultRow G C s) (hws : wsStop G (r.v.toNat - 1))
-    (sl : State) (b35 : UInt8) (ix : BitVec 64) (v : BitVec 32) (k : Nat) (x1 : BitVec 8)
-    (hInvS : WalkInv G (ContSeamC C) (contRunLeafS G C sl b35 ix v k x1))
-    (h8 : evalOperand (contRunLeafS G C sl b35 ix v k x1) (.reg "%8") = some (.int 8 x1))
-    (hroot0 : readBytes (contRunLeafS G C sl b35 ix v k x1).mem (G.next0 + 8) 4 =
-      some (natToBytes (hc.seam.scanF C sl b35 ix v k x1).calls.rdv.toNat 4))
-    (h110 : evalICmp .slt x1 (BitVec.ofNat 8 110) = 1)
-    (h102 : evalICmp .eq x1 (BitVec.ofNat 8 102) = 1) :
-    HcontRunRow G C s :=
-  hc.runRow C s hInv hblock hk r hws
-    (hcontRunLeafAt_fLetter hc.seam sl b35 ix v k x1 hInvS h8 hroot0 hk h110 h102)
+**The memory tie.**  The default arm's prefix binds registers only, so `q5.mem = s.mem` is
+the fact that makes the lane's read and the byte's read the head state's.  It is an
+argument rather than a field because it is a theorem at every default class (`rfl`). -/
 
-/-- **The run's row at `110`'s leaf.** -/
-noncomputable def hcontRunRowAt_56True {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
-    {s : State} (hc : HcontClassRows G) (hInv : WalkInv G C s)
-    (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)
-    (r : HcontDefaultRow G C s) (hws : wsStop G (r.v.toNat - 1))
-    (sl : State) (b35 : UInt8) (ix : BitVec 64) (v : BitVec 32) (k : Nat) (x1 : BitVec 8)
-    (hInvS : WalkInv G (ContSeamC C) (contRunLeafS G C sl b35 ix v k x1))
-    (h8 : evalOperand (contRunLeafS G C sl b35 ix v k x1) (.reg "%8") = some (.int 8 x1))
-    (hroot0 : readBytes (contRunLeafS G C sl b35 ix v k x1).mem (G.next0 + 8) 4 =
-      some (natToBytes (hc.seam.scan56True C sl b35 ix v k x1).calls.rdv.toNat 4))
-    (h110 : evalICmp .slt x1 (BitVec.ofNat 8 110) = 0)
-    (h116 : evalICmp .slt x1 (BitVec.ofNat 8 116) = 1)
-    (h110eq : evalICmp .eq x1 (BitVec.ofNat 8 110) = 1) :
-    HcontRunRow G C s :=
-  hc.runRow C s hInv hblock hk r hws
-    (hcontRunLeafAt_56True hc.seam sl b35 ix v k x1 hInvS h8 hroot0 hk h110 h116 h110eq)
+/-- `%8` at the check state is `sw.default.i`'s: none of the suffix's four blocks rebinds
+it. -/
+theorem contRunCheck_env8 {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (q5 : State)
+    (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64) (b35 : UInt8) :
+    lookupName (contRunCheck G C q5 inc nep ep v ix b35).env "%8" =
+      lookupName q5.env "%8" := by
+  simp only [contRunCheck, contLandOut, contMidS, condEnd349OutAt, cte345OutAt, contSwOut,
+    stateAt, cells, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
 
-/-- **The run's row at `111 … 115`'s leaf.** -/
-noncomputable def hcontRunRowAt_56Else {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
-    {s : State} (hc : HcontClassRows G) (hInv : WalkInv G C s)
-    (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)
-    (r : HcontDefaultRow G C s) (hws : wsStop G (r.v.toNat - 1))
-    (sl : State) (b35 : UInt8) (ix : BitVec 64) (v : BitVec 32) (k : Nat) (x1 : BitVec 8)
-    (hInvS : WalkInv G (ContSeamC C) (contRunLeafS G C sl b35 ix v k x1))
-    (h8 : evalOperand (contRunLeafS G C sl b35 ix v k x1) (.reg "%8") = some (.int 8 x1))
-    (hroot0 : readBytes (contRunLeafS G C sl b35 ix v k x1).mem (G.next0 + 8) 4 =
-      some (natToBytes (hc.seam.scan C sl b35 ix v k x1).calls.rdv.toNat 4))
-    (h110 : evalICmp .slt x1 (BitVec.ofNat 8 110) = 0)
-    (h116 : evalICmp .slt x1 (BitVec.ofNat 8 116) = 1)
-    (h110eq : evalICmp .eq x1 (BitVec.ofNat 8 110) = 0) :
-    HcontRunRow G C s :=
-  hc.runRow C s hInv hblock hk r hws
-    (hcontRunLeafAt_56Else hc.seam sl b35 ix v k x1 hInvS h8 hroot0 hk h110 h116 h110eq)
+/-- `%idxprom.i` at the check state is `contSwOut`'s: neither the bound's store nor the
+byte's pivots rebind it. -/
+theorem contRunCheck_idx {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (q5 : State)
+    (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64) (b35 : UInt8) :
+    lookupName (contRunCheck G C q5 inc nep ep v ix b35).env "%idxprom.i" =
+      lookupName (contSwOut q5 inc nep).env "%idxprom.i" := by
+  simp only [contRunCheck, contLandOut, contMidS, condEnd349OutAt, cte345OutAt, contSwOut,
+    stateAt, cells, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
 
-/-- **The run's row at `116`'s leaf.** -/
-noncomputable def hcontRunRowAt_58True {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
-    {s : State} (hc : HcontClassRows G) (hInv : WalkInv G C s)
-    (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)
-    (r : HcontDefaultRow G C s) (hws : wsStop G (r.v.toNat - 1))
-    (sl : State) (b35 : UInt8) (ix : BitVec 64) (v : BitVec 32) (k : Nat) (x1 : BitVec 8)
-    (hInvS : WalkInv G (ContSeamC C) (contRunLeafS G C sl b35 ix v k x1))
-    (h8 : evalOperand (contRunLeafS G C sl b35 ix v k x1) (.reg "%8") = some (.int 8 x1))
-    (hroot0 : readBytes (contRunLeafS G C sl b35 ix v k x1).mem (G.next0 + 8) 4 =
-      some (natToBytes (hc.seam.scan58True C sl b35 ix v k x1).calls.rdv.toNat 4))
-    (h110 : evalICmp .slt x1 (BitVec.ofNat 8 110) = 0)
-    (h116 : evalICmp .slt x1 (BitVec.ofNat 8 116) = 0)
-    (h116eq : evalICmp .eq x1 (BitVec.ofNat 8 116) = 1) :
-    HcontRunRow G C s :=
-  hc.runRow C s hInv hblock hk r hws
-    (hcontRunLeafAt_58True hc.seam sl b35 ix v k x1 hInvS h8 hroot0 hk h110 h116 h116eq)
+/-- `%8` at the count test's target is `sw.default.i`'s. -/
+theorem contSwOut_env8 (q5 : State) (inc nep : BitVec 64) :
+    lookupName (contSwOut q5 inc nep).env "%8" = lookupName q5.env "%8" := by
+  simp only [contSwOut, State.bind]
+  rw [lookupName_cons_ne (k := "%cmp343.i") (n := "%8") _ _ (by decide)]
 
-/-- **The run's row at `117 … 125`'s leaf.** -/
-noncomputable def hcontRunRowAt_58Else {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
-    {s : State} (hc : HcontClassRows G) (hInv : WalkInv G C s)
-    (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)
-    (r : HcontDefaultRow G C s) (hws : wsStop G (r.v.toNat - 1))
-    (sl : State) (b35 : UInt8) (ix : BitVec 64) (v : BitVec 32) (k : Nat) (x1 : BitVec 8)
-    (hInvS : WalkInv G (ContSeamC C) (contRunLeafS G C sl b35 ix v k x1))
-    (h8 : evalOperand (contRunLeafS G C sl b35 ix v k x1) (.reg "%8") = some (.int 8 x1))
-    (hroot0 : readBytes (contRunLeafS G C sl b35 ix v k x1).mem (G.next0 + 8) 4 =
-      some (natToBytes (hc.seam.scan C sl b35 ix v k x1).calls.rdv.toNat 4))
-    (h110 : evalICmp .slt x1 (BitVec.ofNat 8 110) = 0)
-    (h116 : evalICmp .slt x1 (BitVec.ofNat 8 116) = 0)
-    (h116eq : evalICmp .eq x1 (BitVec.ofNat 8 116) = 0) :
-    HcontRunRow G C s :=
-  hc.runRow C s hInv hblock hk r hws
-    (hcontRunLeafAt_58Else hc.seam sl b35 ix v k x1 hInvS h8 hroot0 hk h110 h116 h116eq)
+/-- **The run's body, from the skip's class and the check state's cells.**  The class
+conjunct is `runSkip`'s own: the per-index run, the stop and the stop's place; the byte
+before the entry's end being whitespace is the caller's guard, unfolded into the class's
+first disjunct; the stop's place inside the entry is `cont_heicd_of`'s arithmetic, *not* a
+field.  The check state's cells (`%8`, `%35`, `%idxprom.i`, `%cond350.i`, the compare)
+enter as arguments, because they are the class's chain's — the six default prefixes reach
+them at six differently-named states — while everything about the document is
+`runSkip`'s. -/
+noncomputable def hcontRunBody_of_skip {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {s : State} (hk : C.k + 1 < G.nep) (r : HcontDefaultRow G C s)
+    (hws : wsStop G (r.v.toNat - 1)) (skip : HcontRunSkip G C s r)
+    (hbit : (evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 45) |||
+      evalICmp .ult (hlastByte G C + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
+    (q5 : State)
+    (hInvC : WalkInv G (ContAC₄ C) (contRunCheck G C q5 (hlastIncV C) (hlastNepV G) G.ep
+      r.v (contIx G C) (contB35 G r.v)))
+    (h8c : evalOperand (contWsSeamS C
+        (wsSlAt G (contRunCheck G C q5 (hlastIncV C) (hlastNepV G) G.ep r.v (contIx G C)
+          (contB35 G r.v)) (contB35 G r.v) (contIx G C) r.v skip.k) skip.k
+        (hlastByte G C)) (.reg "%8") = some (.int 8 (hlastByte G C)))
+    (h35 : evalOperand (contRunCheck G C q5 (hlastIncV C) (hlastNepV G) G.ep r.v
+        (contIx G C) (contB35 G r.v)) (.reg "%35") = some (.int 8 (cont35 (contB35 G r.v))))
+    (hidx : lookupName (contRunCheck G C q5 (hlastIncV C) (hlastNepV G) G.ep r.v
+        (contIx G C) (contB35 G r.v)).env "%idxprom.i" = some (.int 64 (contIx G C)))
+    (hcond : lookupName (contRunCheck G C q5 (hlastIncV C) (hlastNepV G) G.ep r.v
+        (contIx G C) (contB35 G r.v)).env "%cond350.i" =
+      some (.int 64 (BitVec.ofNat 64 r.v.toNat)))
+    (hugt : evalICmp .ugt (BitVec.ofNat 64 r.v.toNat) (contIx G C) = 1) :
+    HcontRunBody G C (contRunCheck G C q5 (hlastIncV C) (hlastNepV G) G.ep r.v
+      (contIx G C) (contB35 G r.v)) := by
+  -- the byte before the entry's end is whitespace: the guard, unfolded
+  have hcls : (evalICmp .slt (cont35 (contB35 G r.v)) (BitVec.ofNat 8 13) = 1 ∧
+      evalICmp .ule (cont35 (contB35 G r.v) + BitVec.ofNat 8 247)
+        (BitVec.ofNat 8 1) = 1) ∨
+      (evalICmp .slt (cont35 (contB35 G r.v)) (BitVec.ofNat 8 13) = 0 ∧
+        evalICmp .slt (cont35 (contB35 G r.v)) (BitVec.ofNat 8 32) = 1 ∧
+        evalICmp .eq (cont35 (contB35 G r.v)) (BitVec.ofNat 8 13) = 1) ∨
+      (evalICmp .slt (cont35 (contB35 G r.v)) (BitVec.ofNat 8 13) = 0 ∧
+        evalICmp .slt (cont35 (contB35 G r.v)) (BitVec.ofNat 8 32) = 0 ∧
+        evalICmp .eq (cont35 (contB35 G r.v)) (BitVec.ofNat 8 32) = 1) := by
+    have hx : wsX G (r.v.toNat - 1) = cont35 (contB35 G r.v) := rfl
+    have h := hws
+    unfold wsStop at h
+    rw [hx] at h
+    exact h
+  -- the stop is inside the entry
+  have hentry : (contIx G C).toNat = entryPos G C.k := by
+    rw [contIx, BitVec.toNat_ofNat]
+    exact Nat.mod_eq_of_lt (entryPos_lt_64 G C.k)
+  have hik' : entryPos G C.k < skip.k := by rw [← hentry]; exact skip.hik
+  have heicd : skip.k < r.v.toNat := by
+    refine cont_heicd_of G C hk hws ?_ hik' hugt
+    intro q hq hqk
+    exact skip.hrun q (by omega) hqk
+  exact
+    { hInv := hInvC
+      b35 := contB35 G r.v
+      h35 := h35
+      ix := contIx G C
+      hidx := hidx
+      v := r.v
+      hcond := hcond
+      hugt := hugt
+      k := skip.k
+      x1 := hlastByte G C
+      hClass := ⟨hcls, skip.hrun, skip.hstop, skip.hik, skip.hinner, by omega⟩
+      heicd := heicd
+      h8c := h8c
+      hbit := hbit
+      hspan := r.hvle }
+
+/-- **The run's row, from the class's prefix and the payload's groups.**  The head part is
+derived: the count cells from `hPrefix.inv'`, the entry's lane from the payload's row at
+the prefix's own memory, the shared four's cells through their one bind, and the byte before
+the entry's end from the document.  The body, the record and the rows are the arguments the
+instruction names; the body is the caller's `hcontRunBody_of_skip`, which is why the
+payload's skip class and its rows are the only document supply. -/
+noncomputable def hcontRunRow_of_rows {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {s : State} (hInv : WalkInv G C s)
+    (hk : C.k + 1 < G.nep) (r : HcontDefaultRow G C s)
+    (q5 : State) (nq : Nat)
+    (hPrefix : WalkSegment (stage2Calls stage2SubCalls) G C s (HeadAC₄ C) q5 nq)
+    (hnq : nq ≤ 4) (hmem : q5.mem = s.mem)
+    (b : HcontRunBody G C (contRunCheck G C q5 (hlastIncV C) (hlastNepV G) G.ep r.v
+      (contIx G C) (contB35 G r.v)))
+    (leaf : HcontRunLeaf G C) (ev : EventRecord)
+    (rows : HcontRunRows G C (contRunCheck G C q5 (hlastIncV C) (hlastNepV G) G.ep r.v
+        (contIx G C) (contB35 G r.v)) leaf.ss b.b35 b.ix b.v b.k b.x1
+      leaf.calls.r₁ leaf.calls.r₂ leaf.calls.r₃ ev leaf.calls.cA leaf.calls.rdv leaf.calls.xA) :
+    HcontRunRow G C s := by
+  -- the prefix endpoint's invariant and its cells
+  have hInv5 : WalkInv G (HeadAC₄ C) q5 := hPrefix.inv'
+  have hinc : evalOperand q5 (.reg "%inc.i") = some (.int 64 (hlastIncV C)) := by
+    simp only [evalOperand, hlastIncV]
+    exact hInv5.inc_reg
+  have hnep : evalOperand q5 (.reg "%nep") = some (.int 64 (hlastNepV G)) := by
+    simp only [evalOperand, hlastNepV]
+    exact hInv5.regs ("%nep", .int 64 (BitVec.ofNat 64 G.nep)) (by simp [walkStaticRegs])
+  have hnext : evalICmp .ult (hlastIncV C) (hlastNepV G) = 1 := cont_ult_one G C hk
+  have h5 : lookupName (contSwOut q5 (hlastIncV C) (hlastNepV G)).env "%5" =
+      some (.ptr G.ep) := by
+    simp only [contSwOut, State.bind]
+    rw [lookupName_cons_ne (k := "%cmp343.i") (n := "%5") _ _ (by decide)]
+    exact hInv5.ptrs.2.1
+  have hi63 : (hlastIncV C).toNat < 2 ^ 63 := cont_hi63 G C hk
+  have hread : readBytes (contSwOut q5 (hlastIncV C) (hlastNepV G)).mem
+      (G.ep + (hlastIncV C).toNat * 4) 4 = some (natToBytes r.v.toNat 4) := by
+    have hsm : (contSwOut q5 (hlastIncV C) (hlastNepV G)).mem = s.mem := by
+      simp only [contSwOut, State.bind, hmem]
+    rw [hsm, cont_inc_toNat G C hk]
+    exact r.hread
+  have hidx : lookupName (contSwOut q5 (hlastIncV C) (hlastNepV G)).env "%idxprom.i" =
+      some (.int 64 (contIx G C)) := by
+    simp only [contSwOut, State.bind, contIx]
+    rw [lookupName_cons_ne (k := "%cmp343.i") (n := "%idxprom.i") _ _ (by decide)]
+    exact hInv5.idx_reg
+  have htok : lookupName (contSwOut q5 (hlastIncV C) (hlastNepV G)).env "%t352.i" =
+      some (.ptr C.stage.tok) := by
+    simp only [contSwOut, State.bind]
+    rw [lookupName_cons_ne (k := "%cmp343.i") (n := "%t352.i") _ _ (by decide)]
+    exact hInv5.regs ("%t352.i", .ptr C.stage.tok) (by simp [walkStaticRegs])
+  have hgap : lookupName (contSwOut q5 (hlastIncV C) (hlastNepV G)).env "%gap.i" =
+      some (.ptr (C.stage.tok + 20)) := by
+    simp only [contSwOut, State.bind]
+    rw [lookupName_cons_ne (k := "%cmp343.i") (n := "%gap.i") _ _ (by decide)]
+    exact hInv5.regs ("%gap.i", .ptr (C.stage.tok + 20)) (by simp [walkStaticRegs])
+  have hugt : evalICmp .ugt (BitVec.ofNat 64 r.v.toNat) (contIx G C) = 1 := r.hugt
+  -- the byte before the entry's end, at the suffix's own memory
+  have hread35 : readBytes (contMidS C q5 (hlastIncV C) (hlastNepV G) G.ep r.v
+      (contIx G C)).mem ((G.b - 1) + r.v.toNat) 1 = some [contB35 G r.v] := by
+    have hq : r.v.toNat - 1 < G.n := by
+      have hvle := r.hvle
+      have hpos := entryPos_lt G hk
+      omega
+    have hmid := contMidS_docByte G C s q5 hInv hmem (hlastIncV C) (hlastNepV G) G.ep r.v
+      (contIx G C) hq
+    have hb : 1 ≤ G.b := G.bPos
+    have hv1 := r.hv1
+    rw [show (G.b - 1) + r.v.toNat = G.b + (r.v.toNat - 1) from by omega]
+    simpa only [contB35] using hmid
+  exact
+    { q5 := q5
+      nq := nq
+      hPrefix := hPrefix
+      hnq := hnq
+      inc := hlastIncV C
+      nep := hlastNepV G
+      hinc := hinc
+      hnep := hnep
+      hnext := hnext
+      ep := G.ep
+      h5 := h5
+      hi63 := hi63
+      v := r.v
+      hread := hread
+      ix := contIx G C
+      hidx := hidx
+      htok := htok
+      hgap := hgap
+      hugt := hugt
+      b35 := contB35 G r.v
+      hread35 := hread35
+      b := b
+      leaf := leaf
+      ev := ev
+      rows := rows }
 
 /-! ### The plain-value class's three non-whitespace byte classes
 
@@ -351,12 +459,11 @@ theorem hcontArm_value_of_lane {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s
 #print axioms LeanLLVM.Refinement.WalkScope.hcontRunLeafAt_56Else
 #print axioms LeanLLVM.Refinement.WalkScope.hcontRunLeafAt_58True
 #print axioms LeanLLVM.Refinement.WalkScope.hcontRunLeafAt_58Else
-#print axioms LeanLLVM.Refinement.WalkScope.hcontRunRowAt_letters
-#print axioms LeanLLVM.Refinement.WalkScope.hcontRunRowAt_fLetter
-#print axioms LeanLLVM.Refinement.WalkScope.hcontRunRowAt_56True
-#print axioms LeanLLVM.Refinement.WalkScope.hcontRunRowAt_56Else
-#print axioms LeanLLVM.Refinement.WalkScope.hcontRunRowAt_58True
-#print axioms LeanLLVM.Refinement.WalkScope.hcontRunRowAt_58Else
+#print axioms LeanLLVM.Refinement.WalkScope.contRunCheck_env8
+#print axioms LeanLLVM.Refinement.WalkScope.contRunCheck_idx
+#print axioms LeanLLVM.Refinement.WalkScope.contSwOut_env8
+#print axioms LeanLLVM.Refinement.WalkScope.hcontRunBody_of_skip
+#print axioms LeanLLVM.Refinement.WalkScope.hcontRunRow_of_rows
 #print axioms LeanLLVM.Refinement.WalkScope.hcontArm_value_of_lane
 
 end WalkScope

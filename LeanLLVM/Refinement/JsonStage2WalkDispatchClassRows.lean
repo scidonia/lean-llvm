@@ -96,7 +96,8 @@ the class case composes it from the head byte's bits rather than the row holding
 leaf is the row's argument, so every leaf's cell is in the case: the six producers are
 `hcontRunLeaf_letters` … `_58Else` (`JsonStage2WalkDispatchClassCase`).  What the leaf's
 own producers do *not* supply is its three call answers and the landing built on them —
-those are the row's, stated at the leaf the class's bits select (`HcontClassRows.runRow`).
+those are the payload's tail rows (`runTail`), and the row is `hcontRunRow_of_rows`'
+(`JsonStage2WalkDispatchRunRow`).
 -/
 import LeanLLVM.Refinement.JsonStage2WalkDispatchSupply
 import LeanLLVM.Refinement.JsonStage2WalkDispatchSeams
@@ -528,6 +529,75 @@ noncomputable def hcontArm_scalarRun_of_row {m0 : Mem} {G : WalkGeom m0} {C : Wa
 
 /-! ### The payload's per-class groups -/
 
+/-! ### The run class's document rows
+
+Two groups, both about the document and neither about the run's execution: the whitespace
+skip's **class** (its per-index run, its stop and the stop's place inside the entry) and
+the run's **tail rows** (the landing's byte and the scan's traversal, at the check state and
+the byte's leaf).  They are separated because they are read at different points: the class
+fixes `k`, which is what the check state and the tail are stated at, so the tail group takes
+the body as an argument rather than choosing `k` again.
+
+**What the payload's own rows already supply, and what these add.**  `HcontDefaultRow`
+carries the entry's lane and, in its `hclass`, the *class* of the byte before the entry's
+end — at `.wsByte` that is `wsStop G (r.v.toNat - 1)`, one byte's fact.  The skip runs from
+the entry's index until its first whitespace byte, so the stop and the per-index run are
+what the one-byte class cannot give; `HcontRunSkip` is exactly that, and it is guarded by
+the one-byte class the payload already carries.  `HcontRunTail` is the group
+`HcontRunRows` names — the landing's reads and the traversal's `hround`/`hbyte` — which is
+the input's content at the scan's own span and is not derivable from the invariant.
+
+**Neither group carries a segment, a bundle or an arm**, and neither chooses a state: the
+skip group is stated at the head state (its terms are `contIx G C` and `r.v`, both functions
+of the head), and the tail group at the check state the class's prefix and the shared four
+build, with the byte's leaf as its index. -/
+
+/-- **The whitespace skip's class at a continuing head.**  `k` is the stop: every index from
+this entry's position to `k` continues the token, the byte at `k` stops it, and `k` is above
+the entry's position.
+
+The byte before the entry's end being whitespace is the caller's guard — it is the
+payload's `HcontDefaultRow.hclass` at `.wsByte`, and the class case destructures that
+disjunct — so this group does not restate it.  `k < r.v.toNat` is *not* a field: it follows
+from the stop being inside the entry, which the per-index run and the one-byte class force
+(`cont_heicd` is that argument at the bundle that carries it). -/
+structure HcontRunSkip {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (r : HcontDefaultRow G C s) : Type where
+  /-- The skip's stop. -/
+  k : Nat
+  /-- Every index from this entry's position to the stop continues the token. -/
+  hrun : ∀ q, (contIx G C).toNat ≤ q → q < k → wsCont G q
+  /-- The byte at the stop is whitespace. -/
+  hstop : wsStop G k
+  /-- The stop is above the entry's position. -/
+  hik : (contIx G C).toNat < k
+  /-- **The entry's span is inside the component's budget.**  This is the one conjunct
+  `WalkInv` cannot supply: `inner_cap` bounds `C.inner` above, and the walk asserts the
+  invariant at mid-scan states where the component is being spent down.  At the loop head it
+  is the refill's — `walkSeed` and the back edge both set `inner := walkInnerCap G`, and
+  `v.toNat - entryPos G C.k ≤ G.n` by the stream's order (`walkLoopHead_inner_pos`).  It is
+  the same conjunct `HcontRunBody.hClass` carries and the first visit's `ScanEntered` reads. -/
+  hinner : r.v.toNat - (contIx G C).toNat ≤ C.inner
+
+/-- **The run's tail rows, at the class's check state and the byte's leaf.**  The landing's
+byte and its three reads, the scan's traversal `hround`/`hbyte`, and the four cells the
+leaf's state does not bind — `HcontRunRows`' content — with the record the scalar call
+appends existentially, because the record is the call's post's and not a choice.
+
+The body is an argument: its `k` is the skip's, so the group does not restate the skip's
+class.  The consumer is `hcontRunRow_of_rows`, which places it in `HcontRunRow` after the
+row's head part. -/
+structure HcontRunTail {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (r : HcontDefaultRow G C s) (q5 : State) (leaf : HcontRunLeaf G C)
+    (b : HcontRunBody G C (contRunCheck G C q5 (hlastIncV C) (hlastNepV G) G.ep r.v
+      (contIx G C) (contB35 G r.v))) : Type where
+  /-- The record the tail's scalar call appends. -/
+  ev : EventRecord
+  /-- The landing and the traversal, at the leaf's own three answers. -/
+  rows : HcontRunRows G C (contRunCheck G C q5 (hlastIncV C) (hlastNepV G) G.ep r.v
+      (contIx G C) (contB35 G r.v)) leaf.ss b.b35 b.ix b.v b.k b.x1
+    leaf.calls.r₁ leaf.calls.r₂ leaf.calls.r₃ ev leaf.calls.cA leaf.calls.rdv leaf.calls.xA
+
 /-- **The continuing payload's class rows**: the rows the residual table names beside
 `HcontPayload`'s, one group per class of `HcontClass`.  Each field is guarded by its
 class's own states — the head state's invariant and continuing guard where the class's
@@ -548,13 +618,18 @@ The fields are the producers' remaining argument lists:
   at the four named seam states (`ClsS413T`/`ClsS413F`/`ClsS58T`/`HeadS413`);
 * `deep` — the positive-depth opener's route row (`HcontDeepRow`): the merge's counted
   segment and endpoint, or the refusal's witness, named as the arm's own segment;
-* `run` — the run class's row (`HcontRunRow`) and the byte's own span below
-  `if.else387.i`, which the class case composes from the head byte's bits;
+* `runSkip` — the whitespace skip's class (`HcontRunSkip`): the per-index run, the stop and
+  its place in the entry, at a continuing head whose next entry's last byte is whitespace;
+* `runTail` — the run's tail rows (`HcontRunTail`): the landing's byte, its reads and the
+  traversal's two `∀`s, at the check state the class's prefix builds and the byte's leaf,
+  with the appended record; the body it is stated at is `hcontRunBody_of_skip`'s;
+* `run` — the run class's arm from a row, which the class case feeds with
+  `hcontRunRow_of_rows` at the leaf the head byte's bits select;
 * `seam` — the two seams `HcontSeamAbi` names.
 
-The run class's field takes the byte's leaf as an argument rather than holding it: the
-segment belongs to the head byte's class, and the case's branch composes it
-(`hcontArm_run_of_class`). -/
+The run class's leaf is an argument of both producers rather than a field of the payload:
+the segment below `if.else387.i` belongs to the head byte's class, and the case's branch
+composes it (`hcontArm_run_of_class`). -/
 structure HcontClassRows {m0 : Mem} (G : WalkGeom m0) : Type where
   /-- The default-value class's document row (`126`/`127` at a continuing head), at the
   payload's default row and the byte's own route: the three non-whitespace leaves all
@@ -614,34 +689,35 @@ structure HcontClassRows {m0 : Mem} (G : WalkGeom m0) : Type where
   deep : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     C.k + 1 < G.nep → evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 34) = 1 →
     C.sp ≠ 0 → HcontDeepRow G C s
-  /-- **The run class's row**, at the class's own short prefix: the default lane's document
-  row with the byte before the entry's end whitespace (`wsStop`).  It is the check state's
-  rows, the run's body and the byte's leaf — state data, not an arm — and this structure's
-  `run` is its only consumer, joining it to `RunFacts` (`hcontRunFacts_of_seam`) and then
-  to the arm (`hcontArm_run_of_class`).
-
-  **The leaf is an argument, so the row serves every leaf.**  `HcontRunRows` and
-  `HcontRunFacts` state the tail's source at the leaf `ss`, its target at
-  `ScanEntry ss …`, and every landing field at `ScanEntry ss …`; they carry the four cells
-  `ScanEntry`/`Latch462S` bind nothing of (`%ee.1.i`, `%cond350.i`, `%inc.i`, `%nep`), so a
-  leaf's endpoint and its four cells enter as the row's data instead of being peeled from
-  `contWsTailStart`.  The six leaves' producers are `hcontRunLeaf_letters`,
-  `_fLetter`, `_56True`, `_56Else`, `_58True` and `_58Else`
-  (`JsonStage2WalkDispatchClassCase`); the class-C else instance is
-  `hcontRunLeaf_of_seam` (`JsonStage2WalkDispatchSeams`).
-
-  **What the row still takes is the leaf's landing**, and that is a supply item rather
-  than a proof: the landing's reads are stated at the leaf's three call answers, and a
-  leaf whose `phi` incoming is not `if.else405.i`'s `0` (`102`, `110`, `116`) has its own
-  answer group (`HcontSeamAbi.scanF`, `scan56True`, `scan58True`), because the kind
-  literal is part of the memory the first call reads.  So a producer of this row must be
-  stated at the leaf the class's bits select, which is why the leaf is the row's
-  argument. -/
-  runRow : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
+  /-- **The whitespace skip's class**, at the class's own continuing head: the stop `k`, the
+  per-index run and the stop's place above the entry's position.  Its guard is the payload's
+  own one-byte class — `HcontDefaultRow.hclass` at `.wsByte`, i.e.
+  `wsStop G (r.v.toNat - 1)` — so the group is stated where the run class's document byte is
+  whitespace and nowhere else.  Its consumer is `hcontRunBody_of_skip`
+  (`JsonStage2WalkDispatchRunRow`), which reads `k` and the run and derives the stop's place
+  in the entry from them and the one-byte class (`cont_heicd`). -/
+  runSkip : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     C.k + 1 < G.nep → (r : HcontDefaultRow G C s) → wsStop G (r.v.toNat - 1) →
-    (leaf : HcontRunLeaf G C) → HcontRunRow G C s
-  /-- **The run class's arm, from `runRow`**: the row joined to `RunFacts` at the class's
-  prefix, with the byte's own leaf below `if.else387.i` as the arm's span. -/
+    HcontRunSkip G C s r
+  /-- **The run's tail rows**, at the check state the class's prefix builds and the byte's
+  leaf: the landing's byte and its three reads, the scan's traversal `hround`/`hbyte` and the
+  record the scalar call appends.
+
+  **The body is an argument**, because its `k` is the skip's: the case supplies it from
+  `hcontRunBody_of_skip` and this group states the rows at it, so no second `k` enters the
+  payload.  The prefix enters as the class's own endpoint `q5` and its invariant, and the
+  memory tie `q5.mem = s.mem` is what makes the landing's reads the head state's — the
+  default arm's prefix binds registers only.  Its consumer is `hcontRunRow_of_rows`. -/
+  runTail : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
+    C.k + 1 < G.nep → (r : HcontDefaultRow G C s) → wsStop G (r.v.toNat - 1) →
+    (q5 : State) → WalkInv G (HeadAC₄ C) q5 → q5.mem = s.mem →
+    (leaf : HcontRunLeaf G C) →
+    (b : HcontRunBody G C (contRunCheck G C q5 (hlastIncV C) (hlastNepV G) G.ep r.v
+      (contIx G C) (contB35 G r.v))) →
+    HcontRunTail G C s r q5 leaf b
+  /-- **The run class's arm, from a row**: the row joined to `RunFacts` at the class's
+  prefix, with the byte's own leaf below `if.else387.i` as the arm's span.  The row is
+  `hcontRunRow_of_rows`' at the class's prefix, `runSkip`'s stop and `runTail`'s rows. -/
   run : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     C.k + 1 < G.nep → (row : HcontRunRow G C s) → ∀ {nS : Nat},
     Seg (stage2Calls stage2SubCalls) G (ContSeamC C) row.seamS (ContTailStartC C)

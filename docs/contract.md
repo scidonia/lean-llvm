@@ -927,21 +927,27 @@ positive-depth opener are `hcontArm_twoEntry_of_payload` and
 `hcontArm_scalarRun_of_class` and `.value` × {`scanFree`, `lowLeaf`, `highLeaf`} is
 `hcontArm_value_of_lane` (`JsonStage2WalkDispatchRunRow`), which produces the prefix
 (`hcontScalarPrefix_of_inv`) from the row's lane and the class's bits; and the run class's
-leaf is wired at each of the six leaves.  Two groups of cells still have no producer, and
-they are payload rows rather than branches: `.defaultValueHigh` × `wsByte` (the `.ws` arm)
-needs `HcontFacts`, and `hcontFacts_of_staging` takes the whitespace skip's class — the
-per-index run and the stop, which the payload's `HcontDefaultRow.hclass` gives only at
-`v - 1` — together with the landing's byte and its callee rows at `contWsTailStart`; and
-the six default classes × `wsByte` (the `.run` arm) need `HcontRunRow`, whose document
-data — the run's body at the check state, the record the scalar call appends and the
-landing's rows — the payloads do not carry either.
-`walkContinueFacts_of_payload` is therefore not yet a theorem, and the last level's case is
-closed:
+leaf is wired at each of the six leaves.  The six `.run` cells' document rows are the
+payload's now (`HcontClassRows.runSkip`/`runTail`), and the row is `hcontRunRow_of_rows`',
+which derives the head part from the class's prefix segment's invariant and takes the body
+(`hcontRunBody_of_skip`), the record and the rows as arguments — so those cells need the
+case's composition of the six prefixes, not a row that does not exist.  **One cell is still
+without a producer: `.defaultValueHigh` × `wsByte`** (the `.ws` arm), whose bundle
+`HcontFacts` is `hcontFacts_of_staging`'s and whose argument list — the skip's class, the
+landing's byte and its callee rows at `contWsTailStart` — is the high-byte class's
+counterpart of `runSkip`/`runTail` and is not yet a payload group.
+`walkContinueFacts_of_payload` is therefore not yet a theorem — its `.ws` cell is the one
+gap — and the last level's case is closed:
 
-* **The continuing level's run class is a row, and its leaf is no longer pinned.**
-  `HcontClassRows.runRow` states the run's row (the check state's rows plus the byte's leaf,
-  guarded by the default lane's whitespace class) and `HcontClassRows.run` joins it to
-  `RunFacts` through `hcontRunFacts_of_seam`.  `HcontRunRows`/`HcontRunFacts` state the
+
+* **The continuing level's run class is a produced row, and its leaf is no longer pinned.**
+  `hcontRunRow_of_rows` produces the run's row (the check state's rows plus the byte's leaf,
+  guarded by the default lane's whitespace class) from the class's prefix segment and two
+  payload groups, `runSkip` (the skip's class) and `runTail` (the landing's byte, its reads,
+  the traversal and the appended record); `HcontClassRows.run` joins the row to
+  `RunFacts` through `hcontRunFacts_of_seam`.  The old `HcontClassRows.runRow` field is
+  **replaced**, not kept beside the producer: it had no producer and made the field an
+  assumption about a document.  `HcontRunRows`/`HcontRunFacts` state the
   tail's source at the leaf `ss`, its target and every landing field at
   `ScanEntry ss …`, and carry the four cells `ScanEntry`/`Latch462S` bind nothing of
   (`%ee.1.i`, `%cond350.i`, `%inc.i`, `%nep`); `runFacts_of_runBundle` reads `f.ss`, so
@@ -951,8 +957,11 @@ closed:
   `hcontRunLeaf_of_seam` (`JsonStage2WalkDispatchSeams`), and each leaves' span is the
   byte's own (`lettersSpan`, `fSpan`, `c56TrueSpan` … `c58ElseSpan`).  Their supply is
   wired per leaf by `hcontRunLeafAt_letters` … `_58Else`
-  (`JsonStage2WalkDispatchRunRow`), and the row follows at each: `hcontRunRowAt_letters` …
-  `_58Else` apply `HcontClassRows.runRow` at the leaf the producer built.  The kind
+  (`JsonStage2WalkDispatchRunRow`), and the row is **produced**, not supplied:
+  `hcontRunRow_of_rows` derives the head part — the class's prefix to `sw.default.i`, the
+  shared four's cells and the entry's lane — from the prefix segment's invariant and the
+  payload's row, and takes the body (`hcontRunBody_of_skip`, from the payload's skip class),
+  the appended record and `HcontRunRows` as arguments.  The kind
   literal (`%.sink372`) is part of the memory the first call reads
   (`s2ValuePosPre`'s `writeBytes … (natToBytes cA.toNat 4)`), so `102`/`110`/`116` —
   `if.then397.i`'s `9`, `if.then403.i`'s `10`, `LeafBlock58`'s `8` — have their own groups
