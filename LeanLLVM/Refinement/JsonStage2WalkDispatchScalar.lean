@@ -142,47 +142,22 @@ theorem scalarTail_of_calls {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : 
         (scalarSeam C s x inc nep v ix b35)
         (TailCarryEnd (ScalarC₁₁ C) ev)
         (ScanEntry (scalarSeam C s x inc nep v ix b35) r₁ r₂ r₃ v v
-          (BitVec.ofNat 32 7) rdv xA) 3 := by
-  -- the value-position call's contract: the caller's memory comes back unchanged
-  obtain ⟨r₁', hcall₁', hpost₁, _⟩ :=
-    s2ValuePosContract.resolves (next := (scalarSeam C s x inc nep v ix b35).next) hpre₁
-  obtain ⟨v₁, _, _, hmemV₁, _⟩ := hpost₁
-  have hr₁ : r₁' = r₁ := Option.some.inj (hcall₁'.symm.trans hcall₁)
-  rw [hr₁] at hmemV₁
-  have hzreadJ : readBytes r₁.mem C.stage.z 8 = some (wordBytes 8 G.ev) := by
-    rw [hmemV₁]; exact hzread
-  -- the scalar call's contract: the record it appended, named here
-  obtain ⟨r₂', hcall₂', hpost₂, _⟩ :=
-    s2ScalarValueContract.resolves (next := r₁.next) hpre₂
-  have hr₂ : r₂' = r₂ := Option.some.inj (hcall₂'.symm.trans hcall₂)
-  rw [hr₂] at hpost₂
-  obtain ⟨⟨_, _, _, _, _, _⟩, happPost⟩ := hpost₂
-  obtain ⟨ev, happ₂⟩ := happPost hret₂
-  -- the copy call's contract: the answer and the memory it leaves
-  obtain ⟨r₃', hcall₃', hpost₃, _⟩ :=
-    s2AfterValueContract.resolves (next := r₂.next) hpre₃
-  have hr₃ : r₃' = r₃ := Option.some.inj (hcall₃'.symm.trans hcall₃)
-  rw [hr₃] at hpost₃
-  obtain ⟨_, _, _, _, _⟩ := hpost₃
-  exact ⟨ev, Seg.measure (consumerTailSegEmptyAt (G := G) (C := ScalarC₁₁ C)
-    (s := scalarSeam C s x inc nep v ix b35) r₁ r₂ r₃ ev v
-    hInvS rfl "if.end372.i" "%kind404.i" (BitVec.ofNat 32 7)
-    (.imm (.int 32 (BitVec.ofNat 32 7))) rdv xA rfl scalar_phiKind rfl
+          (BitVec.ofNat 32 7) rdv xA) 3 :=
+  emptyTailSeg_of_calls G (ScalarC₁₁ C) (scalarSeam C s x inc nep v ix b35) r₁ r₂ r₃ v
+    (cA := BitVec.ofNat 32 7) hInvS rfl "%kind404.i" rfl scalar_phiKind rfl
     (hInvS.regs ("%kind404.i", .ptr ((ScalarC₁₁ C).stage.tok + 16))
       (by simp [walkStaticRegs]))
     (hInvS.regs ("%root_done.i", .ptr (G.next0 + 8)) (by simp [walkStaticRegs]))
-    hreadT hpre₁ hcall₁ hret₁ hbit0T hzreadJ
+    hreadT hpre₁ hcall₁ hret₁ hbit0T hzread
     (hInvS.regs ("%c.i", .ptr (TailCarry₂ (ScalarC₁₁ C)).stage.c)
       (by simp [walkStaticRegs]))
     (hInvS.regs ("%t352.i", .ptr (TailCarry₂ (ScalarC₁₁ C)).stage.tok)
       (by simp [walkStaticRegs]))
     (hInvS.regs ("%z", .ptr (TailCarry₂ (ScalarC₁₁ C)).stage.z)
       (by simp [walkStaticRegs]))
-    hcall₂ happ₂ hret₂ hev64
-    (by have h1 := hInvS.evlen_le; have h2 := G.evRoom; have h3 := G.evcapLt; omega)
-    htight hklt hpre₃ hcall₃
+    hpre₂ hcall₂ hret₂ hev64 htight hklt hpre₃ hcall₃
     (scalarSeam_ee C s x inc nep v ix b35) (scalarSeam_cond C s x inc nep v ix b35)
-    hv64)⟩
+    hv64
 
 /-! ### The arm's result
 

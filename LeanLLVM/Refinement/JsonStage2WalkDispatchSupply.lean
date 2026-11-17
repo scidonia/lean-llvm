@@ -35,10 +35,11 @@ does not hold and the reason:
 | `.containerOpen`, `.openAtCap`, `.closeWithOpen`, the four zero refusals, `.commaAboveZero`, `.colonAboveZero` | none — `lane.root` and `abi.open`, and the invariant's own cells | proved below (`…_of_payload`) and in `hcontArm_of_derivedClass` |
 | `.twoEntry` | none — `lane.string` and `abi.string` | the class's producer takes exactly these rows plus the invariant; the decoded length and the two log words are the lane's |
 | `.ws` | `HcontFacts`'s `hTail` and its `hround`/`hguard`/`hbyte` | the tail starts at a *landing* whose index is the run's stop, and the stop is the run's own count; the scan's traversal rows are `∀`-forms over the latch's recursion, which the payload cannot name before that recursion exists |
-| `.cleanup`, `.scalar` | the empty tail's three calls | the tail is a composition of three links; the payload holds the calls' rows (`abi.open` is the value-position call) but the scalar route's own two call rows are not yet split out of `HcontScalarFacts` |
-| `.letters`, `.fLetter`, `.classC` | the head's twelve links to `if.else387.i` | **owed**: the last entry's eleven-link twin is `hlastTailSeg`; the continuing level's twelve exist only inside `hcontToSpan`'s proof (`hseg12`) and no lemma exposes them as a segment |
-| `.classC` | the byte's own span | `walkHeadChainCSeg` produces the `> 116` arm's five links; the three other leaves' spans (`c56TrueSpan`, `c56ElseSpan`, `c58TrueSpan`, `c58ElseSpan`) are segments whose class bits the payload's lane holds and whose composition no lemma states at the arm's endpoint |
-| `.run` | `RunFacts` and its four segments | the run's head, span, tail and latch are four compositions at the run's own count; the payload holds the document's visits (`trav.visits`) but not the count's segments |
+| `.cleanup` | the empty tail's three calls | **exposed, and the arm consumes it**: the three links are `emptyTailSeg_of_calls` (`JsonStage2WalkDispatchSegments`) from the value-position, scalar and copy calls' rows, and `hcontArm_cleanup_of_calls` builds the arm at those rows plus the seam's two cells (`contTailStart_ee`, `contTailStart_cond`).  Its head chain is a theorem too: `hcontHeadSeg12_of_cleanup` and `hcontSpan17_of_cleanup` derive the seventeen links from the bundle's fields.  So the payload's `abi` group plus the lane's word produce this class's arm |
+| `.scalar` | the empty tail's three calls at the *continuing* route's seam | `emptyTailSeg_of_calls` is the same producer, but this class's tail starts at `scSeamS`, whose two test cells have no peel yet — `contTailStart_ee`/`_cond` are the high-byte route's and `scalarSeam_ee`/`_cond` the last entry's — and whose kind row is `sP35`'s `phi`.  Until those are stated the field stays, which is what `HcontScalarFacts`'s `hTail` is |
+| `.letters`, `.fLetter` | the head's chain to `if.else387.i` | **per head-switch class, not one composition**: `97` takes `NodeBlock19 → NodeBlock11 → LeafBlock9` and `200` takes `NodeBlock5 → LeafBlock` (`JsonStage2WalkDispatchLettersDomain`), so this class's chain is several prefixes and no single twelve-link statement covers it.  `hcontHeadSeg12` exposes the **high-byte** class's twelve — the one `hcontToSpan` proved, consumed by `.cleanup` through `hcontSpan17_of_cleanup` — so the letters class's chain stays the arm's field |
+| `.classC` | the byte's own span | **exposed**: `classCSpan_at` produces a span at the arm's endpoint from the class's `slt %8 110` bit alone (the upper bound is not a premise: `126`/`127` take the same leaf), and `classCHeadSpan_at` composes it with the head's twelve at `12 + nS`.  The arm's `hTail` is stated at the span's *endpoint*, which the span returns existentially, so a producer passing both must name the leaf; the span is derivable where the endpoint is named, and is the arm's field otherwise |
+| `.run` | `RunFacts` and its four segments | **stated, and still fields**: `runSegmentsAt` states the head, span, tail and latch at their own counts (the head's `≤ 12 + N`, the run `N` inside it), but each is a per-class composition — the head's is `contWsRunF`'s at the whitespace route's named states and the tail's scan arm is `consumerTailSegAt`'s at the callee rows — so the payload's `trav` rows do not build them |
 | the last entry's `.highByte` | none — `HlastLane.tail` and `HlastAbi.highByte` | proved below: the residue `HlastResidue` is *built* from the two groups (`lastEntryArm_highByte_of_payload`), so the bundle is constructed, not assumed |
 | the last entry's `.scalar` | the three calls at the scalar route's seam | `JsonStage2WalkDispatchScalarOfStaging` states the producer; its call rows are at the scalar route's own seam state, which the payload's last-level `abi` group does not reach |
 | the last entry's `.letters`, `.fLetter`, `.classC`, `.run` | the head's eleven links and the listed spans | the eleven-link head is `hlastTailSeg`'s, so this is the one level where the head row *is* a theorem; what remains is the assembly |
@@ -46,10 +47,32 @@ does not hold and the reason:
 So the answer this module gives to "is a bundle still a hypothesis" is: **no bundle is
 assumed by the payloads or by the paths proved here; the classes listed above take a named
 row (a segment, a traversal `∀`, or a bundle structure not yet split), and the field and
-the reason are named row by row in the table above.**  The bundle theorems
-`walkContinueFacts_of_payload`/`walkLoopEnd_of_payload` are therefore **not** produced:
-the class-selection assembly they need is the tier this table enumerates, and producing it
-means writing the missing head-segment lemma and the three span compositions first.
+the reason are named row by row in the table above.**
+
+## What the segments' exposure moved
+
+`JsonStage2WalkDispatchSegments` states the two pieces `hcontToSpan` built privately and the
+two the run class and the empty tail hold as fields:
+
+* `hcontHeadSeg12` — the continuing head's **twelve** links, the high-byte class's;
+  `hcontHeadSeg12_of_cleanup` applies them to `HcontCleanupFacts`'s own fields, and
+  `hcontSpan17_of_cleanup` composes them with the class-C span at seventeen.  The letters
+  class's chain is per head-switch class, which is why that field survives;
+* `classCSpan_at` — the class-C span at the arm's endpoint, one interface over the four
+  leaves, and `classCHeadSpan_at` at `12 + nS`;
+* `runSegmentsAt` — the run's four segments at their own counts, head included;
+* `emptyTailSeg_of_calls` — the empty tail's **three** links from the three callees' rows,
+  at any carry whose block is `if.then413.i`.  `.cleanup` now consumes it
+  (`hcontArm_cleanup_of_calls`, `walkDispatch_at_cleanup_of_calls`), the last entry's tail
+  is its instance (`hlastTail_of_calls`) and so is the last entry's scalar route
+  (`scalarTail_of_calls`).
+
+What that does **not** yet give is the bundle theorems
+`walkContinueFacts_of_payload`/`walkLoopEnd_of_payload`: three rows still stand between the
+payloads and `WalkPremises`, one per class family, and the table names each — the letters
+class's per-class head chain, the continuing scalar route's two seam cells and kind row,
+and the run class's per-class head and scan-arm compositions.  Retiring them is more
+segment statements of the same kind, not a missing input.
 
 ## The closure claim
 

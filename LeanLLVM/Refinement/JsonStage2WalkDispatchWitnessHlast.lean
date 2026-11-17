@@ -846,6 +846,105 @@ theorem hlastEntry_phiSel :
        ("if.then447.i", (Operand.reg "%ee.1.i"))] = some (.reg "%ee.1.i") := by
   decide
 
+/-! ### The empty tail's three links, from its three calls' rows
+
+`consumerTailSegEmptyAt` (`JsonStage2WalkPrefixCount`) is the three links' composition at
+*any* carry whose block is `if.then413.i` and any state whose two test cells hold one
+number; the theorem below states it from the three calls' rows alone.  It is the producer
+of a class's `hTail` field — `.cleanup`'s seam, the scalar route's and the last entry's all
+reach `if.then413.i` — so the tail enters as three callee rows rather than as a segment.
+The event record is produced, not supplied: the scalar call's post names it existentially
+(`s2ScalarValuePost`), and `hret₂` selects the emit arm.
+
+The tail's source state's two test cells are hypotheses: `%ee.1.i` is the seam's stored end
+and `%cond350.i` the same word at each class's own seam, so each consumer reads them from
+its own peel (`hlastTail_ee`/`hlastTail_cond`, `contTailStart_ee`, `scalarSeam_ee`/
+`scalarSeam_cond`). -/
+theorem emptyTailSeg_of_calls {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (r₁ r₂ r₃ : CallOutcome) (cd : Nat) {cA rdv xA : BitVec 32}
+    (hInv : WalkInv G C s) (hblock : C.block = "if.then413.i")
+    {p : String} (reg : String) {op : Operand}
+    (hpre : s.pre = some p)
+    (hphi : phiIncoming p
+      [("if.else405.i", .imm (.int 32 (BitVec.ofNat 32 0))),
+       ("if.then403.i", .imm (.int 32 (BitVec.ofNat 32 10))),
+       ("if.then397.i", .imm (.int 32 (BitVec.ofNat 32 9))),
+       ("if.end372.i", .imm (.int 32 (BitVec.ofNat 32 7))),
+       ("LeafBlock58", .imm (.int 32 (BitVec.ofNat 32 8)))] = some op)
+    (hop : evalOperand (stateAt s.env s) op = some (.int 32 cA))
+    (hkind : lookupName s.env "%kind404.i" = some (.ptr (C.stage.tok + 16)))
+    (hrd : lookupName s.env "%root_done.i" = some (.ptr (G.next0 + 8)))
+    (hread : readBytes
+      (writeBytes s.mem (C.stage.tok + 16) (natToBytes cA.toNat 4))
+      (G.next0 + 8) 4 = some (natToBytes rdv.toNat 4))
+    (hpre₁ : s2ValuePosPre
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
+       .ptr C.stage.ctype, .ptr C.stage.cst]
+      (writeBytes s.mem (C.stage.tok + 16) (natToBytes cA.toNat 4)) s.next)
+    (hcall₁ : stage2Calls stage2SubCalls "s2_value_pos"
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
+       .ptr C.stage.ctype, .ptr C.stage.cst]
+      (writeBytes s.mem (C.stage.tok + 16) (natToBytes cA.toNat 4)) s.next = some r₁)
+    (hret₁ : r₁.ret = .int 32 xA)
+    (hbit0 : evalICmp .eq xA (BitVec.ofNat 32 0) = 0)
+    (hzread : readBytes
+      (writeBytes s.mem (C.stage.tok + 16) (natToBytes cA.toNat 4)) C.stage.z 8 =
+      some (wordBytes 8 G.ev))
+    (hc : lookupName s.env "%c.i" = some (.ptr (TailCarry₂ C).stage.c))
+    (ht : lookupName s.env "%t352.i" = some (.ptr (TailCarry₂ C).stage.tok))
+    (ho : lookupName s.env "%z" = some (.ptr (TailCarry₂ C).stage.z))
+    (hpre₂ : s2ScalarValuePre
+      [.ptr (TailCarry₂ C).stage.c, .ptr (TailCarry₂ C).stage.tok,
+       .ptr (TailCarry₂ C).stage.z] r₁.mem r₁.next)
+    (hcall₂ : stage2Calls stage2SubCalls "od_scalar_value"
+      [.ptr (TailCarry₂ C).stage.c, .ptr (TailCarry₂ C).stage.tok,
+       .ptr (TailCarry₂ C).stage.z] r₁.mem r₁.next = some r₂)
+    (hret₂ : r₂.ret = .int 32 (BitVec.ofNat 32 1))
+    (hev64 : G.ev < 2 ^ 64)
+    (htight : C.events.length ≤ C.k) (hklt : C.k < G.nep)
+    (hpre₃ : s2AfterValuePre
+      [.int 32 (BitVec.ofNat 32 C.sp), .ptr (G.next0 + 8),
+       .ptr C.stage.ctype, .ptr C.stage.cst] r₂.mem r₂.next)
+    (hcall₃ : stage2Calls stage2SubCalls "s2_after_value"
+      [.int 32 (BitVec.ofNat 32 C.sp), .ptr (G.next0 + 8),
+       .ptr C.stage.ctype, .ptr C.stage.cst] r₂.mem r₂.next = some r₃)
+    (hei : lookupName s.env "%ee.1.i" = some (.int 64 (BitVec.ofNat 64 cd)))
+    (hcd : lookupName s.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 cd)))
+    (hcd64 : cd < 2 ^ 64) :
+    ∃ ev : EventRecord,
+      WalkSegment (stage2Calls stage2SubCalls) G C s (TailCarryEnd C ev)
+        (ScanEntry s r₁ r₂ r₃ cd cd cA rdv xA) 3 := by
+  -- 1. the value-position call's contract: the caller's memory comes back unchanged
+  obtain ⟨r₁', hcall₁', hpost₁, _⟩ :=
+    s2ValuePosContract.resolves (next := s.next) hpre₁
+  obtain ⟨v₁, _, _, hmemV₁, _⟩ := hpost₁
+  have hr₁ : r₁' = r₁ := Option.some.inj (hcall₁'.symm.trans hcall₁)
+  rw [hr₁] at hmemV₁
+  have hzreadJ : readBytes r₁.mem C.stage.z 8 = some (wordBytes 8 G.ev) := by
+    rw [hmemV₁]; exact hzread
+  -- 2. the scalar call's contract: the record it appended, named by its post
+  obtain ⟨r₂', hcall₂', hpost₂, _⟩ :=
+    s2ScalarValueContract.resolves (next := r₁.next) hpre₂
+  have hr₂ : r₂' = r₂ := Option.some.inj (hcall₂'.symm.trans hcall₂)
+  rw [hr₂] at hpost₂
+  obtain ⟨⟨_, _, _, _, _, _⟩, happPost⟩ := hpost₂
+  obtain ⟨ev, happ₂⟩ := happPost hret₂
+  -- 3. the copy call's contract: the answer and the memory it leaves
+  obtain ⟨r₃', hcall₃', hpost₃, _⟩ :=
+    s2AfterValueContract.resolves (next := r₂.next) hpre₃
+  have hr₃ : r₃' = r₃ := Option.some.inj (hcall₃'.symm.trans hcall₃)
+  rw [hr₃] at hpost₃
+  obtain ⟨_, _, _, _, _⟩ := hpost₃
+  exact ⟨ev, Seg.measure (consumerTailSegEmptyAt (G := G) (C := C) (s := s) r₁ r₂ r₃ ev
+    cd hInv hblock p reg cA op rdv xA hpre hphi hop hkind hrd hread hpre₁ hcall₁ hret₁
+    hbit0 hzreadJ hc ht ho hcall₂ happ₂ hret₂ hev64
+    (by
+      have h1 := hInv.evlen_le
+      have h2 := G.evRoom
+      have h3 := G.evcapLt
+      omega)
+    htight hklt hpre₃ hcall₃ hei hcd hcd64)⟩
+
 /-! ### The tail, produced from the three calls' contracts, on the scan-free arm
 
 The value-position call, the scalar call's emit arm and the copy call, each applied at its
@@ -929,40 +1028,11 @@ theorem hlastTail_of_calls {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : S
       WalkSegment (stage2Calls stage2SubCalls) G (TailStartC C)
         (hlastTail C s x inc nep v ix b35)
         (TailCarryEnd (TailStartC C) ev)
-        (hlastEntry C s x inc nep v ix b35 r₁ r₂ r₃ cA rdv xA) 3 := by
-  -- 1. the value-position call's contract: the caller's memory comes back unchanged
-  obtain ⟨r₁', hcall₁', hpost₁, _⟩ :=
-    s2ValuePosContract.resolves (next := (hlastTail C s x inc nep v ix b35).next) hpre₁
-  obtain ⟨v₁, _, _, hmemV₁, _⟩ := hpost₁
-  have hr₁ : r₁' = r₁ := Option.some.inj (hcall₁'.symm.trans hcall₁)
-  rw [hr₁] at hmemV₁
-  have hzreadJ : readBytes r₁.mem C.stage.z 8 = some (wordBytes 8 G.ev) := by
-    rw [hmemV₁]; exact hzread
-  -- 2. the scalar call's contract: its answer's memory shape, and **the record it
-  -- appended** — the post names it existentially, so the bundle's `ev` is produced here
-  -- rather than supplied, and `happ₂` is that post's second conjunct at our `hret₂`
-  obtain ⟨r₂', hcall₂', hpost₂, _⟩ :=
-    s2ScalarValueContract.resolves (next := r₁.next) hpre₂
-  have hr₂ : r₂' = r₂ := Option.some.inj (hcall₂'.symm.trans hcall₂)
-  rw [hr₂] at hpost₂
-  obtain ⟨⟨_, _, _, _, _, _⟩, happPost⟩ := hpost₂
-  obtain ⟨ev, happ₂⟩ := happPost hret₂
-  -- 3. the copy call's contract: the answer and the memory it leaves
-  obtain ⟨r₃', hcall₃', hpost₃, _⟩ :=
-    s2AfterValueContract.resolves (next := r₂.next) hpre₃
-  have hr₃ : r₃' = r₃ := Option.some.inj (hcall₃'.symm.trans hcall₃)
-  rw [hr₃] at hpost₃
-  obtain ⟨_, _, _, _, _⟩ := hpost₃
-  exact ⟨ev, Seg.measure (consumerTailSegEmptyAt (G := G) (C := TailStartC C)
-    (s := hlastTail C s x inc nep v ix b35) r₁ r₂ r₃ ev v hInvT hblockT pT regT cA opT
-    rdv xA hpreT hincT hopT hkindT hrdT hreadT hpre₁ hcall₁ hret₁ hbit0T hzreadJ
-    hcT htT hoT hcall₂ happ₂ hret₂ hev64
-    (by
-      have h1 := hInvT.evlen_le
-      have h2 := G.evRoom
-      have h3 := G.evcapLt
-      omega) htight hklt hpre₃ hcall₃
-    (hlastTail_ee C s x inc nep v ix b35) (hlastTail_cond C s x inc nep v ix b35) hvT)⟩
+        (hlastEntry C s x inc nep v ix b35 r₁ r₂ r₃ cA rdv xA) 3 :=
+  emptyTailSeg_of_calls G (TailStartC C) (hlastTail C s x inc nep v ix b35) r₁ r₂ r₃ v
+    hInvT hblockT regT hpreT hincT hopT hkindT hrdT hreadT hpre₁ hcall₁ hret₁ hbit0T
+    hzread hcT htT hoT hpre₂ hcall₂ hret₂ hev64 htight hklt hpre₃ hcall₃
+    (hlastTail_ee C s x inc nep v ix b35) (hlastTail_cond C s x inc nep v ix b35) hvT
 
 /-! ### The head byte's class, from the two bits that name it
 
@@ -1469,6 +1539,7 @@ structure HlastResidue {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
 #print axioms LeanLLVM.Refinement.WalkScope.hlast_finish
 #print axioms LeanLLVM.Refinement.WalkScope.hlast_refuse
 #print axioms LeanLLVM.Refinement.WalkScope.hlastTail_of_calls
+#print axioms LeanLLVM.Refinement.WalkScope.emptyTailSeg_of_calls
 #print axioms LeanLLVM.Refinement.WalkScope.hlast_slt_zero_of_toInt_le
 #print axioms LeanLLVM.Refinement.WalkScope.hlast_eq_zero_of_slt_zero
 #print axioms LeanLLVM.Refinement.WalkScope.hlast_bit6_of_class
