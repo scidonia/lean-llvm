@@ -827,8 +827,9 @@ supplies no theorem of this tree builds.
 supplied fact, and neither is refuted — but "not false" is a claim about the *classes* and
 not about the bundles' totality, and it is exactly as strong as the census behind it.  The
 census has an arm at every state the invariant admits: `.closeBraceZero` and `.openAtCap`
-were the two depth cases it once lacked (`JsonStage2WalkDispatchResidual` records the
-history), and the string opener at positive depth — `HcontClass.stringOpener`'s byte `34`
+were the two depth cases it once lacked, `.containerOpenRefuse` the value-position answer's
+(`JsonStage2WalkDispatchResidual` records the history), and the string opener at positive
+depth — `HcontClass.stringOpener`'s byte `34`
 above depth zero, where `.twoEntry`'s own `hsp0 : C.sp = 0` does not reach — is
 `HcontArm.stringOpenAboveZeroMerge`/`.stringOpenAboveZeroRefuse`
 (`JsonStage2WalkDispatchHcontStringDeep`).  Every arm is unrefuted by its own class.  What

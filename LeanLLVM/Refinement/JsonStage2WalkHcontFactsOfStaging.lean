@@ -541,6 +541,39 @@ theorem cont_wsTailSpan {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) {v : BitV
   have hv := v.isLt
   omega
 
+/-- **The visited-byte class row cannot range over the whole entry.**  `scanByteField`
+takes the byte's two class bits at every index below the bound `v`, and
+`hcontFacts_of_staging` supplies them at every `p + 1 < v.toNat` — but the scan only visits
+the indices at or past its start `k`, and the entry's token prefix `[entryPos C.k, k)` is
+*non-whitespace* by the bundle's own class field (`hClass`'s per-index conjunct).  The two
+statements are exclusive, which this theorem reads off `wsCont_not_wsStop`:
+
+```
+hcls   : ∀ p, p + 1 < v.toNat → (the whitespace bits at wsX G (p + 1))
+hcont  : ∀ q, ix ≤ q → q < k → wsCont G q        (the bundle's class field)
+        ix < k < v.toNat, 1 ≤ ix   ⊢  False
+```
+
+So the row must be stated at the visits' own span (`k < p + 1`), not at `p + 1 < v`; as it
+stands, `hcontFacts_of_staging`'s premises are unsatisfiable at any state whose token has a
+non-empty prefix, and the bundle it returns is inhabited only vacuously.  Narrowing the row
+is not a local edit: the traversal's `hbyte` (`walkScanRounds457_of_cell`) and the bundles'
+`hbyte` fields (`HcontFacts`, `HcontRunFacts`, `HcontRunRows`, `RunFacts`, `RunLastFacts`)
+state the `∀` without a lower bound, so the width has to be added to that shape and to
+`contScanRounds`'s induction before the row can be supplied honestly.  Until then no
+consumer may instantiate this producer. -/
+theorem cont_hbyteClass_not_wsCont {m0 : Mem} (G : WalkGeom m0) {v : BitVec 32}
+    {k ix : Nat}
+    (hcls : ∀ p, p + 1 < v.toNat →
+      evalICmp .slt (wsX G (p + 1)) (BitVec.ofNat 8 13) = 1 ∧
+        evalICmp .ule (wsX G (p + 1) + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 1)
+    (hcont : ∀ q, ix ≤ q → q < k → wsCont G q)
+    (hq1 : 1 ≤ ix) (hik : ix < k) (hkv : k < v.toNat) : False := by
+  have hp : ix - 1 + 1 < v.toNat := by omega
+  obtain ⟨hb, hw⟩ := hcls (ix - 1) hp
+  rw [Nat.sub_add_cancel hq1] at hb hw
+  exact wsCont_not_wsStop G (hcont ix le_rfl hik) (Or.inl ⟨hb, hw⟩)
+
 /-! ### The producer
 
 `HcontFacts` from the entry's evidence.  The groups the invariant and the staging fix are
@@ -572,7 +605,17 @@ makes the run derivable: the segment, its count and its price come from `contWsR
 `hopS` is **not** a premise any more: at `contWsEntry` the seam stored the run's stop
 (`contWsEntry_ee`), so the landing's index follows from the cell rather than being asserted
 against a stopper.  That is the repair this producer's earlier shape recorded as impossible
-— see this module's header. -/
+— see this module's header.
+
+**This producer must not be instantiated.**  Its `hbyteClass` premise states the visited
+byte's class at every `p + 1 < v.toNat`, while the scan visits only `k ≤ p`, and the
+bundle's own class conjunct makes `[entryPos C.k, k)` non-whitespace; the two are
+exclusive, and `cont_hbyteClass_not_wsCont` above proves it.  So the premises are
+unsatisfiable at any state whose token is non-empty and the returned bundle is vacuous.  The
+row has to be narrowed to `k < p + 1` first, which means adding the lower bound to
+`walkScanRounds457_of_cell`'s and the bundles' `hbyte` shape; the tail's `hTail` is the
+second row and is *not* yet derivable from the three call rows, because the seam state
+`contWsTailStart`'s invariant is obtained from this bundle's own tail (`contWsRunF`). -/
 def hcontFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     (hInv : WalkInv G C s) (hk : C.k + 1 < G.nep)
     (hlt125 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 125) = 0)
@@ -725,6 +768,7 @@ def hcontFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
 #print axioms LeanLLVM.Refinement.WalkScope.cont_hpos
 #print axioms LeanLLVM.Refinement.WalkScope.cont_hread35
 #print axioms LeanLLVM.Refinement.WalkScope.cont_wsTailSpan
+#print axioms LeanLLVM.Refinement.WalkScope.cont_hbyteClass_not_wsCont
 #print axioms LeanLLVM.Refinement.WalkScope.hcontFacts_of_staging
 
 end WalkScope

@@ -37,7 +37,7 @@ does not hold and the reason:
 |---|---|---|
 | `.containerOpen`, `.openAtCap`, `.containerOpenRefuse`, `.closeWithOpen`, the four zero refusals, `.commaAboveZero`, `.colonAboveZero` | none — `abi.openCall` (the call's row at the root slot's witness word) and the invariant's own cells | proved below (`…_of_payload`) and in `hcontArm_of_derivedClass`; the payload's `openCall` carries the witness and no answer, and the dispatch splits on it (`s2ValuePos_ret_zero_or_one`) |
 | `.twoEntry` | none — `lane.string` and `abi.string` | the class's producer takes exactly these rows plus the invariant — **at depth zero**, which is `strPath8`'s parameter and not a field of the bundle: at a positive depth the same byte has its own arms (the row below) |
-| `.ws` | `HcontFacts`'s `hTail`, and of the traversal only the visited byte's class | the tail starts at a *landing* whose index is the run's stop, and the stop is the run's own count; the round, the byte's read and the token's register are produced (`JsonStage2WalkRevolutionScanRound`), so the traversal enters as one document row rather than as its three `∀`-forms |
+| `.ws` | `HcontFacts`'s `hTail` and its class field, and a visited-byte class stated at the *visits'* span | the tail starts at a landing whose index is the run's stop, and the round, the byte's read and the token's register are produced (`JsonStage2WalkRevolutionScanRound`).  Two things are not: (i) the seam state `contWsTailStart`'s invariant is derived from the bundle's own `hTail` (`hcontRunFacts_of_contFacts` feeds `contWsRunF`), so the segment cannot yet be replaced by the three call rows — what the seam's invariant and cells are is a *state* group at the seam, and no theorem states it for this class; (ii) `hcontFacts_of_staging`'s `hbyteClass` ranges over `p + 1 < v.toNat`, wider than the scan and inconsistent with the bundle's own per-index class conjunct — `cont_hbyteClass_not_wsCont` (`JsonStage2WalkHcontFactsOfStaging`) certifies the inconsistency, and the row has to be stated at `k < p + 1`, which needs a lower bound in the traversal's `hbyte` shape before it can be supplied |
 | `stringOpener` at `%sp ≠ 0` | **the route's segment, not a class row** | the class is `HcontArm.stringOpenAboveZeroMerge`/`.stringOpenAboveZeroRefuse`.  Its own facts are derived — the byte from `cont_reg8`, the two stack bytes at `%sp - 1` from the carry's maps and `WalkInv.tyBytes`/`stBytes`, and the value-position staging (`stringOpenAboveZero_pre_of_inv`) — so what the producers take is the merge's counted segment (`hcontArm_stringOpenAboveZeroMerge_of_staging`) or the refusal's witness, which `stringDeepRefuse_at` composes from `if.end245.i`'s state in two links |
 | `.cleanup` | **none, at the continuing head**: the class's document row (`HcontCleanupDoc`) | **closed**: `hcontArm_cleanup_of_rows` (`JsonStage2WalkDispatchSeamRows`) takes the document row, the lane's root word and the seam's three call rows, and produces the arm — the seventeen-link chain (`hcontSpan17_of_doc`), the seam's invariant (`contTailStartInv_of_doc`), its five environment cells, the predecessor's `phi` with the literal `0` it selects, and the root slot's word across the seam's three token-record stores are all theorems.  `hcontArm_cleanup_of_calls` remains as the same arm at the seam's cells stated explicitly, and `emptyTailSeg_of_calls` composes the three links.  The two `contTailStart_*` cells are that module's `contTailStart_ee`/`contTailStart_cond` |
 | `.scalar` | the empty tail's three calls at the *continuing* route's seam | **the tail's producer is now `scContTail_of_calls`** (`JsonStage2WalkDispatchSegments`): the seam is `scSeamS`, its two test cells are that seam's own peels (`scSeam_ee`, `scSeam_cond`, `JsonStage2WalkHcontScalar`), and `emptyTailSeg_of_calls` composes the three calls at them.  What remains is the arm-level assembly that puts those rows into `HcontScalarFacts` — the bundle's other fields plus the call rows — not a missing cell.  **Closed** by `hcontArm_scalar_of_rows`/`walkDispatch_at_scalar_of_rows` (`JsonStage2WalkDispatchScalarRows`), which take the document row (`HcontScalarPrefix`), the lane word and its read, the three call rows and the class's two agreements — the kind literal `7` and the root slot's word — and produce the arm; the root transport is `scSeam_rootRead` |
@@ -123,17 +123,41 @@ producer the scan arm needed:
 | `HcontRunRows G C sl b35 ix v k x1` | **the run's rows at a class's check state**: `HcontRunFacts` minus its `hTail` field — the check state's cells, the whitespace stop and its class, the entry's span, the landing's byte and its three reads, and the traversal's `hround`/`hbyte` (the old `hguard` is gone, and the round and the read are produced by `JsonStage2WalkRevolutionScanRound`).  It carries the seam's call group and the record they appended, because the landing's rows are stated at `contWsEntry`, which takes the answers |
 | `hcontRunFacts_of_rows` | `HcontRunFacts` from the rows and the seam's cells: every field but the tail is the rows', and the tail is `hcontScanTail_at`.  So `runFacts_of_runBundle`'s input is segment-free |
 
-What is still not stated is the pair of bundle theorems.  They are **not** blocked by a
-segment: each arm's chain, span and tail is producible from rows (`lowHeadChain_of_lane` …
-`bhHeadChain_of_lane`, `classCSpan_at`, `contSwToLandSeg`, `emptyTailSeg_of_calls`,
-`hcontScanTail_at`).  They are blocked by the payload's **per-class document rows**: the
-class case over `HcontClass.complete` needs `HcontFacts`'s and `HcontScalarFacts`'s
-non-callee fields at every head state (the byte before the entry's end with its class, the
-entry lane and its order, the whitespace stop with its per-index `∀`, the log's two
-words), the refusals' `%idxprom.i`/`%e` cells, and — for the last level —
-`RunLastFacts`'s rows.  The continuing payload carries the openers' and the string's only,
-so `walkContinueFacts_of_payload` would be a class case whose evidence classes are missing,
-and a theorem stated with them added would take the classes' bundles under another name.
+**What blocks the pair of bundle theorems, and what is certified about it.**  Two of the
+three obstacles are now theorems, not observations, and none of them is a missing arm or a
+class without a producer:
+
+* **The payload's document row is one class, not the class.**  `HcontLane.defaultLane`'s
+  `HcontDefaultRow` asserts that the byte before the entry's end lies in `[14, 32)` — the
+  scan-free pivots — and `hcontDefaultRow_not_wsStop` (below) proves that this excludes the
+  whitespace class outright.  So `HcontPayload` is uninhabited at exactly the states the
+  `.ws`/`.run` arms describe, and the class case cannot reach them.  A bundle's payload has
+  to carry that byte's class as a *disjunction*, with each arm taking its own disjunct; that
+  is the shape the arms' sub-split (the trailing byte's class, then the seam's tag test)
+  needs, and the field does not exist yet.
+* **The visited-byte row is wider than the scan.**  `hcontFacts_of_staging` supplies
+  `hbyteClass` at every `p + 1 < v.toNat`, while the bundle's own `hClass` makes the entry's
+  token prefix `[entryPos C.k, k)` non-whitespace; `cont_hbyteClass_not_wsCont`
+  (`JsonStage2WalkHcontFactsOfStaging`) proves the two cannot both hold.  The row has to be
+  stated at `k < p + 1`, and that is a change to the traversal's `hbyte` shape
+  (`walkScanRounds457_of_cell` and the four bundles' fields plus `contScanRounds`'s
+  induction), not a local edit.  Until it is made, `hcontFacts_of_staging` is inhabited only
+  vacuously and must not be instantiated.
+* **The positive-depth opener's merge is a route, not a row.**
+  `hcontArm_stringOpenAboveZeroMerge_of_staging` takes the counted segment to
+  `cleanup478.i`, and no theorem in the tree states it: this is c4's row.
+
+The statements the two theorems would have are
+`walkContinueFacts_of_payload (hp : HcontPayload G) : WalkContinueFacts G` and
+`walkLoopEnd_of_payload (hp : HlastPayload G) : WalkLoopEnd G`, each by the class case over
+`HcontClass.complete`.  Beyond the three items above, the continuing payload needs the
+per-class `∀`-fields the producers read (`HcontScalarPrefix`, the two `HcontSeamCalls`
+groups at `scSeamS` and at each chain's `LetS413`/`FS413`/`ClsS…` seam, `HcontCleanupDoc`,
+`HcontRunRows` and `HcontFacts`'s class field), and the last level needs `RunLastFacts`'s
+rows; the field types are the producers' own argument lists, so adding them is plumbing
+over rows, not new mathematics.  What is *not* plumbing is the trailing byte's class
+disjunction, because it decides which arm a state takes and a payload that fixes it either
+way is uninhabited on the other side.
 
 **One class is now closed end to end, and its shape is the other classes' target.**
 `JsonStage2WalkDispatchSeamRows` produces `.cleanup`'s arm from the class's document row,
@@ -545,6 +569,35 @@ structure HcontDefaultRow {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
   hb32 : evalICmp .slt (cont35 (contB35 G v)) (BitVec.ofNat 8 32) = 1
   hbne13 : evalICmp .eq (cont35 (contB35 G v)) (BitVec.ofNat 8 13) = 0
 
+/-- **The payload's default row is the scan-free class, and that is a *class*, not a
+document fact about every head.**  `HcontDefaultRow` carries the byte before the entry's
+end with its three scan-free pivots (`hb13`, `hb32`, `hbne13`: the byte lies in
+`[14, 32)`), so it asserts the no-run class outright.  That is exactly one of the two
+classes the arm census splits on — the `.ws`/`.run` arms need the same byte to be
+whitespace (`9`, `10`, `13` or `32`), which is the opposite class.  The two are exclusive:
+```
+hcontDefaultRow_not_wsStop : HcontDefaultRow G C s → ¬ wsStop G (r.v.toNat - 1)
+```
+so a payload whose `lane.defaultLane` is this row is **uninhabited** at every whitespace
+class state, and a class case over `HcontClass.complete` cannot use it there.  The row a
+bundle needs is the byte's *class* as a disjunction (the three pivots' bits or the
+whitespace bits), with the arms' producers taking their own disjunct; supplying the
+scan-free bits unconditionally is the defect this theorem certifies, and it is why
+`walkContinueFacts_of_payload` is not stated over `HcontPayload` as it stands. -/
+theorem hcontDefaultRow_not_wsStop {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {s : State} (r : HcontDefaultRow G C s) : ¬ wsStop G (r.v.toNat - 1) := by
+  have hx : wsX G (r.v.toNat - 1) = cont35 (contB35 G r.v) := rfl
+  intro h
+  unfold wsStop at h
+  rw [hx] at h
+  rcases h with h | h | h
+  · rw [r.hb13] at h
+    exact absurd h.1 (by decide)
+  · rw [r.hbne13] at h
+    exact absurd h.2.2 (by decide)
+  · rw [r.hb32] at h
+    exact absurd h.2.1 (by decide)
+
 /-- **The document's lane facts at a continuing head**: the words the dispatch's own
 blocks have already laid down, read at the state the arm is read at.
 
@@ -898,6 +951,7 @@ theorem hcontPayload_of_nep_zero {m0 : Mem} (G : WalkGeom m0) (h : G.nep = 0) :
 /-! ### The instrument -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.walkReadBytes_entryPos_word
+#print axioms LeanLLVM.Refinement.WalkScope.hcontDefaultRow_not_wsStop
 #print axioms LeanLLVM.Refinement.WalkScope.walkReadBytes_rootSlot_word
 #print axioms LeanLLVM.Refinement.WalkScope.s2ValuePos_rootWord_of_answer
 #print axioms LeanLLVM.Refinement.WalkScope.s2AfterValuePost_rootSlot_at_zero

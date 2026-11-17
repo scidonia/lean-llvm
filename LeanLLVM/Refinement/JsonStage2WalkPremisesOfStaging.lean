@@ -959,8 +959,16 @@ and neither is a theorem.  They are not the same kind of obstruction:
 | `WalkContinueFacts` | **class data, a producer tier.**  The class is the head byte's switch arm, read from the document in `G` (`G.doc`, `G.entries`, `WalkInv.iter.reg8`) and exhaustive by `HcontClass.complete`; its per-class producers are `hcontFacts_of_staging`, `hcontCleanupFacts_of_staging`, `hstringFacts_of_staging`, `hcontScalarFacts_of_staging`, `hcontArm_*_of_staging`, … | Each arm's bundle carries a tail `WalkSegment` (the three callees' preconditions and answers at the call's own argument list).  The scan's traversal rows are no longer supplied: `hround`, `hbyte`'s read and `htok` are produced by `JsonStage2WalkRevolutionScanRound` (`scanRoundField`, `scanByteField`, `scanTokField`), so what remains of that group is the visited byte's class (`hbyteClass`), the document's content, and the old `hguard` is gone because `ScanGuard` is false at any state whose registers hold words.  Nothing is false; the tier that would discharge the document's facts at every `WalkInv` head state is the remaining work. |
 | `WalkLoopEnd` | **class data: the last entry's arm.**  `hlast` is `LastEntryArm` (`LastEntryArm`, every arm with its own producer); the log's arena word is not a field — it is `WalkInv.log_alen`'s witness, which the finalisation's copy loads (`walkMergeWords_of_inv`, `walkRefuseWords_of_inv`) | The arm is supplied evidence at the last-entry head states, not a `WalkInv` consequence: each constructor is a class of the head switch and carries that class's producer's premises.  Nothing in the bundle is false; the tier that would discharge the arm at every `WalkGeom` is what a producer must build, exactly as the continuing bundle's per-class tier is. |
 
-Both rows are therefore the same kind of obstruction: a per-class/per-arm producer tier
-that is not yet built.  Neither is false, and the terminal post's numbers are the
+Both rows are the same kind of obstruction — a per-class/per-arm producer tier that is not
+yet built — with two corrections that are now theorems rather than readings, both in the
+continuing bundle's producer rows.  `hcontDefaultRow_not_wsStop`
+(`JsonStage2WalkDispatchSupply`) proves that `HcontPayload.lane.defaultLane`'s row excludes
+the whitespace class, so the payload is uninhabited at the `.ws`/`.run` states and a bundle
+payload must carry that byte's class as a disjunction instead; and
+`cont_hbyteClass_not_wsCont` (`JsonStage2WalkHcontFactsOfStaging`) proves that
+`hcontFacts_of_staging`'s `hbyteClass` range contradicts the bundle's own class field, so
+that producer is vacuous until the traversal's `hbyte` carries the visits' lower bound.
+Neither bundle's *statement* is false, and the terminal post's numbers are the
 invariant's own — the log's arena word is `log_alen`'s witness, reported as the decoded
 extent, while the frame, presence and capacity clauses stay at the reserved extent.  The
 top-level statement still carries its premises in the open, as `WalkPremises` does, rather
