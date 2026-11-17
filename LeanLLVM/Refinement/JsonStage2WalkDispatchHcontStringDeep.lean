@@ -337,46 +337,29 @@ theorem stringDeepRefuse_at {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : 
 
 The class's two statements are the byte (`%8 = 34`, which `cont_reg8` reads off the
 invariant) and the depth's positivity; the two stack bytes are the carry's maps at
-`%sp - 1`, read by witness.  The value-position staging is **not** supplied at positive
-depth: `s2ValuePosPre` asks for the two stack bytes at `%sp - 1` when the depth is
-positive, and those are `WalkInv.tyBytes`/`stBytes`.  So the arm's own rows are the
-callee's answer, the route and the index. -/
-
-/-- **The value-position call's staging, from the invariant, at a positive depth.**
-`s2ValuePosPre`'s depth clause is `sp = 0 ∨` the two reads at `sp - 1`; at `sp ≠ 0` the
-reads are the two stack maps' bytes, which the invariant carries at `%sp - 1 < wlen`. -/
-theorem stringOpenAboveZero_pre_of_inv {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
-    {s : State} (hInv : WalkInv G C s) (hsp : C.sp ≠ 0) :
-    s2ValuePosPre
-      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 0,
-       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next := by
-  have hle : C.sp ≤ stage2StackExtent := hInv.depth_cap
-  have hsp32 : C.sp < 2 ^ 32 := by
-    simp only [stage2StackExtent] at hle
-    omega
-  have hspv : (BitVec.ofNat 32 C.sp).toNat = C.sp := by
-    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)]
-  have hlt : C.sp - 1 < C.wlen := by
-    have h := hInv.sp_le_wlen
-    omega
-  refine ⟨_, 0, C.stage.ctype, C.stage.cst, rfl, Or.inr ⟨?_, ?_⟩⟩
-  · rw [hspv]
-    exact ⟨C.tyMap (C.sp - 1), hInv.tyBytes (C.sp - 1) hlt⟩
-  · rw [hspv]
-    exact ⟨C.stMap (C.sp - 1), hInv.stBytes (C.sp - 1) hlt⟩
+`%sp - 1`, read by witness.  The value-position staging is the **caller's**, at the
+state's own root word: the slot is the memory's, so nothing in the invariant names it, and
+`HcontOpenCall` is the row that carries the read and the staging.  So the arm's own rows
+are the callee's answer, the route and the index. -/
 
 /-- **The positive-depth opener's merge arm, from the staging.**  `HcontArm`'s
 `stringOpenAboveZeroMerge` at every state that carries the invariant, the byte `34` and a
-positive depth: the byte is the invariant's `%8` cell at the class's value, the two stack
-bytes are the carry's maps at `%sp - 1`, and the staging is the invariant's.  What the
-arm still takes is its route's row: the counted segment, the merge's predecessor and the
-index, exactly as the residual table lists them. -/
+positive depth: the byte is the invariant's `%8` cell at the class's value and the two
+stack bytes are the carry's maps at `%sp - 1`.  The value-position staging is the
+caller's, at the state's own root word `rdv` — the slot is the memory's, so no clause
+pins it (`HcontOpenCall` carries the read and the staging).  What the arm still takes
+is its route's row: the counted segment, the merge's predecessor and the index, exactly
+as the residual table lists them. -/
 def hcontArm_stringOpenAboveZeroMerge_of_staging {m0 : Mem} {G : WalkGeom m0}
     (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
     (hclass : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 34) = 1) (hsp : C.sp ≠ 0)
+    {rdv : BitVec 32}
+    (hpreV : s2ValuePosPre
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
     (r : CallOutcome)
     (hcall : stage2Calls stage2SubCalls "s2_value_pos"
-      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 0,
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
        .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r)
     (Cd : WalkCarry G) (sd : State) (p k2 : Nat) (nepv : BitVec 64)
     (hseg : WalkSegment (stage2Calls stage2SubCalls) G C s Cd sd p)
@@ -391,7 +374,7 @@ def hcontArm_stringOpenAboveZeroMerge_of_staging {m0 : Mem} {G : WalkGeom m0}
     HcontArm (stage2Calls stage2SubCalls) G C s :=
   .stringOpenAboveZeroMerge
     (by rw [← eq_bit_value hclass]; exact cont_reg8 hInv)
-    hsp rfl rfl (stringOpenAboveZero_pre_of_inv hInv hsp) r hcall
+    hsp rfl rfl hpreV r hcall
     Cd sd p k2 nepv hseg hblock hkC prev hprev hpre hinc hnepv hadvance hcap hprice
 
 /-- **The positive-depth opener's ready dispatch.**  The arm above through
@@ -400,9 +383,13 @@ theorem walkDispatch_at_stringOpenAboveZero_of_staging {m0 : Mem} {G : WalkGeom 
     {C : WalkCarry G} {s : State} (hInv : WalkInv G C s)
     (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)
     (hclass : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 34) = 1) (hsp : C.sp ≠ 0)
+    {rdv : BitVec 32}
+    (hpreV : s2ValuePosPre
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
     (r : CallOutcome)
     (hcall : stage2Calls stage2SubCalls "s2_value_pos"
-      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 0,
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
        .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r)
     (Cd : WalkCarry G) (sd : State) (p k2 : Nat) (nepv : BitVec 64)
     (hseg : WalkSegment (stage2Calls stage2SubCalls) G C s Cd sd p)
@@ -416,7 +403,7 @@ theorem walkDispatch_at_stringOpenAboveZero_of_staging {m0 : Mem} {G : WalkGeom 
       stage2ByteAllowance * (entryPos G k2 - entryPos G C.k)) :
     WalkDispatchResult (stage2Calls stage2SubCalls) G C s :=
   HcontArm.dispatch hInv hblock hk
-    (hcontArm_stringOpenAboveZeroMerge_of_staging C s hInv hclass hsp r hcall
+    (hcontArm_stringOpenAboveZeroMerge_of_staging C s hInv hclass hsp hpreV r hcall
       Cd sd p k2 nepv hseg hblockD hkC prev hprev hpre hinc hnepv hadvance hcap hprice)
 
 /-- **The positive-depth opener's refusal arm, from the staging.**  The class's own
@@ -425,29 +412,37 @@ state, and this is where it enters the census. -/
 def hcontArm_stringOpenAboveZeroRefuse_of_staging {m0 : Mem} {G : WalkGeom m0}
     {C : WalkCarry G} {s : State} (hInv : WalkInv G C s)
     (hclass : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 34) = 1) (hsp : C.sp ≠ 0)
+    {rdv : BitVec 32}
+    (hpreV : s2ValuePosPre
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
     (r : CallOutcome)
     (hcall : stage2Calls stage2SubCalls "s2_value_pos"
-      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 0,
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
        .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r)
     (href : WalkRefuseAt (stage2Calls stage2SubCalls) G C s) :
     HcontArm (stage2Calls stage2SubCalls) G C s :=
   .stringOpenAboveZeroRefuse
     (by rw [← eq_bit_value hclass]; exact cont_reg8 hInv)
-    hsp rfl rfl (stringOpenAboveZero_pre_of_inv hInv hsp) r hcall href
+    hsp rfl rfl hpreV r hcall href
 
 /-- **The positive-depth opener's refusal dispatch.** -/
 theorem walkDispatch_at_stringOpenAboveZeroRefuse_of_staging {m0 : Mem} {G : WalkGeom m0}
     {C : WalkCarry G} {s : State} (hInv : WalkInv G C s)
     (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)
     (hclass : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 34) = 1) (hsp : C.sp ≠ 0)
+    {rdv : BitVec 32}
+    (hpreV : s2ValuePosPre
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
     (r : CallOutcome)
     (hcall : stage2Calls stage2SubCalls "s2_value_pos"
-      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 0,
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
        .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r)
     (href : WalkRefuseAt (stage2Calls stage2SubCalls) G C s) :
     WalkDispatchResult (stage2Calls stage2SubCalls) G C s :=
   HcontArm.dispatch hInv hblock hk
-    (hcontArm_stringOpenAboveZeroRefuse_of_staging hInv hclass hsp r hcall href)
+    (hcontArm_stringOpenAboveZeroRefuse_of_staging hInv hclass hsp hpreV r hcall href)
 
 /-! ### The instrument -/
 
@@ -455,7 +450,6 @@ theorem walkDispatch_at_stringOpenAboveZeroRefuse_of_staging {m0 : Mem} {G : Wal
 #print axioms LeanLLVM.Refinement.WalkScope.walkIfThen231_at
 #print axioms LeanLLVM.Refinement.WalkScope.walkIfThen330_at
 #print axioms LeanLLVM.Refinement.WalkScope.stringDeepRefuse_at
-#print axioms LeanLLVM.Refinement.WalkScope.stringOpenAboveZero_pre_of_inv
 #print axioms LeanLLVM.Refinement.WalkScope.hcontArm_stringOpenAboveZeroMerge_of_staging
 #print axioms LeanLLVM.Refinement.WalkScope.hcontArm_stringOpenAboveZeroRefuse_of_staging
 

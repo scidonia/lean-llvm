@@ -184,7 +184,20 @@ The case is a value and not a second conjoined premise.  Two premises would be j
 uninhabited at exactly the input the walk handles: at `C.k = 0`, `G.nep = 2` the head's
 test `0 + 1 < 2` is true, so the continuing branch runs, and each class's evidence is a
 different bundle.  The class question therefore has to be answered where the producer
-knows the answer (the head's byte and its tests), and this is where it is answered. -/
+knows the answer (the head's byte and its tests), and this is where it is answered.
+
+**What the class case has, and what it lacks.**  The per-class rows are
+`HcontClassRows`' (`JsonStage2WalkDispatchClassRows`) and each of the classes whose rows
+they are has its branch (`JsonStage2WalkDispatchClassCase`: `hcontArm_scalar_of_class`,
+`hcontArm_letters_of_class`, `hcontArm_fLetter_of_class`, the four
+`hcontArm_classC_*_of_class`, `hcontArm_cleanup_of_class` and
+`hcontArm_stringOpenAboveZero_of_class`).  The class the rows do not reach is `.run`: its
+arm takes `RunFacts`, and no producer joins the check state's rows and the seam's state
+group to that bundle at the class's short prefix, so `walkContinueFacts_of_payload` has no
+`.run` branch to run at a whitespace document byte.  The two arms' constructors are stated
+at the state's own root word (`HcontArm.stringOpenAboveZeroMerge`/`.Refuse`,
+`hcontArm_cleanup_of_rows`), so the class is not narrowed to the states where that slot
+holds `0`. -/
 abbrev WalkContinueFacts {m0 : Mem} (G : WalkGeom m0) : Type :=
   ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     C.k + 1 < G.nep → HcontArm (stage2Calls stage2SubCalls) G C s

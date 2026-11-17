@@ -38,7 +38,7 @@ does not hold and the reason:
 | `.containerOpen`, `.openAtCap`, `.containerOpenRefuse`, `.closeWithOpen`, the four zero refusals, `.commaAboveZero`, `.colonAboveZero` | none — `abi.openCall` (the call's row at the root slot's witness word) and the invariant's own cells | proved below (`…_of_payload`) and in `hcontArm_of_derivedClass`; the payload's `openCall` carries the witness and no answer, and the dispatch splits on it (`s2ValuePos_ret_zero_or_one`) |
 | `.twoEntry` | none — `lane.string` and `abi.string` | the class's producer takes exactly these rows plus the invariant — **at depth zero**, which is `strPath8`'s parameter and not a field of the bundle: at a positive depth the same byte has its own arms (the row below) |
 | `.ws` | `HcontFacts`'s `hTail` and its class field, and a visited-byte class stated at the *visits'* span | the tail starts at a landing whose index is the run's stop, and the round, the byte's read and the token's register are produced (`JsonStage2WalkRevolutionScanRound`).  The seam's invariant and cells are the class's state group (`HcontWsSeam`, `hcontWsSeam_of_body`, `JsonStage2WalkDispatchSeams`), produced from the run's body (`HcontRunBody`/`contWsRunBody`) and the class-C span, so the tail is `hcontScanTail_of_seam`'s and no bundle's tail enters.  The visited byte's class is stated at `k < p + 1` — the visits' span — in `hcontFacts_of_staging` and in every `hbyte`; the wide form's contradiction is `cont_hbyteClass_not_wsCont` |
-| `stringOpener` at `%sp ≠ 0` | **the route's segment, not a class row** | the class is `HcontArm.stringOpenAboveZeroMerge`/`.stringOpenAboveZeroRefuse`.  Its own facts are derived — the byte from `cont_reg8`, the two stack bytes at `%sp - 1` from the carry's maps and `WalkInv.tyBytes`/`stBytes`, and the value-position staging (`stringOpenAboveZero_pre_of_inv`) — so what the producers take is the merge's counted segment (`hcontArm_stringOpenAboveZeroMerge_of_staging`) or the refusal's witness, which `stringDeepRefuse_at` composes from `if.end245.i`'s state in two links |
+| `stringOpener` at `%sp ≠ 0` | **the route's segment, not a class row** | the class is `HcontArm.stringOpenAboveZeroMerge`/`.stringOpenAboveZeroRefuse`.  Its own facts are derived — the byte from `cont_reg8`, the two stack bytes at `%sp - 1` from the carry's maps and `WalkInv.tyBytes`/`stBytes` — and the value-position call's staging is the payload's `abi.openCall`, at the state's own root word; so what the producers take is the merge's counted segment (`hcontArm_stringOpenAboveZeroMerge_of_staging`) or the refusal's witness, which `stringDeepRefuse_at` composes from `if.end245.i`'s state in two links |
 | `.cleanup` | **none, at the continuing head**: the class's document row (`HcontCleanupDoc`) | **closed**: `hcontArm_cleanup_of_rows` (`JsonStage2WalkDispatchSeamRows`) takes the document row, the lane's root word and the seam's three call rows, and produces the arm — the seventeen-link chain (`hcontSpan17_of_doc`), the seam's invariant (`contTailStartInv_of_doc`), its five environment cells, the predecessor's `phi` with the literal `0` it selects, and the root slot's word across the seam's three token-record stores are all theorems.  `hcontArm_cleanup_of_calls` remains as the same arm at the seam's cells stated explicitly, and `emptyTailSeg_of_calls` composes the three links.  The two `contTailStart_*` cells are that module's `contTailStart_ee`/`contTailStart_cond` |
 | `.scalar` | the empty tail's three calls at the *continuing* route's seam | **the tail's producer is now `scContTail_of_calls`** (`JsonStage2WalkDispatchSegments`): the seam is `scSeamS`, its two test cells are that seam's own peels (`scSeam_ee`, `scSeam_cond`, `JsonStage2WalkHcontScalar`), and `emptyTailSeg_of_calls` composes the three calls at them.  What remains is the arm-level assembly that puts those rows into `HcontScalarFacts` — the bundle's other fields plus the call rows — not a missing cell.  **Closed** by `hcontArm_scalar_of_rows`/`walkDispatch_at_scalar_of_rows` (`JsonStage2WalkDispatchScalarRows`), which take the document row (`HcontScalarPrefix`), the lane word and its read, the three call rows and the class's two agreements — the kind literal `7` and the root slot's word — and produce the arm; the root transport is `scSeam_rootRead` |
 | `.letters`, `.fLetter` | the head's chain to `if.else387.i` | **per head-switch class, and now one theorem per class**: `JsonStage2WalkDispatchLettersHead` factors the chain into the **suffix** every default class shares — `sw.default.i`, the count test's succeeding arm, the bound's `phi`, the whitespace check, the byte's three pivots and the token's end, eight links at *any* state at `sw.default.i` (`contDefaultSeg`) — and the class's **prefix**: `.defaultValueLow`'s three links (`contLowHeadSeg`, eleven in all — the low bytes and every byte above `127`), and `.defaultValueMid`/`.otherValue`/`.defaultValueBracket`/`.defaultValueBracketHigh`'s four (`contMidHeadSeg`, `contOthHeadSeg`, `contBrkHeadSeg`, `contBhHeadSeg`, twelve each).  The arm's field is the class's **count**: `HcontArm.letters`/`.fLetter`/`.classC` take `{nH}` with `hnH : nH ≤ 12` (and the `LastEntryArm` twins `hnH : nH ≤ 11`), which the compositions (`lettersCleanupMerge_at`, `fCleanupMerge_at`, `classCMerge_at`) already took, so the class's chain feeds the constructor at every class.  The chain's *cells* are the payload's now: `HcontLane.defaultLane` carries the next lane's word and read, the bound's compare and the byte before the entry's end with its class, and `JsonStage2WalkDispatchDefaultLane` derives the chain at five of the six head-switch classes (`lowHeadChain_of_lane`, `midHeadChain_of_lane`, `othHeadChain_of_lane`, `brkHeadChain_of_lane`, `bhHeadChain_of_lane`; the sixth, `.defaultValueBrace`/`124`, has its chain `contBrcHeadSeg` and still owes its `_of_lane` producer); the three-link tail is produced by `JsonStage2WalkDispatchLettersRows`: the seam's invariant is `lettersSeamInv_of_chain`/`fLetterSeamInv_of_chain`, its cells `lettersSeamCells_of_chain`/`fLetterSeamCells_of_chain` (the pair `contSeamMid_ee`/`contSeamMid_cond`, the root word `contSeamMid_rootRead`), and the tail `emptyTail_of_cells`, so `hcontArm_letters_of_rows`/`hcontArm_fLetter_of_rows` take the call rows and the kind-literal agreement alone |
@@ -152,21 +152,40 @@ former obstacles are gone, and the third is a route the tree does not yet compos
   the seam's invariant and cells from the body and the class-C span, then the tail from the
   three calls.  The class needs the head byte's class-C bits (`hc110`/`hc116`/`hceq116`) and
   the head's root word beside the body; both are state data of the class, not the tail.
-* **The positive-depth opener's merge is a route, not a row.**
-  `hcontArm_stringOpenAboveZeroMerge_of_staging` takes the counted segment to
-  `cleanup478.i`, and no theorem in the tree states it: this is c4's row.
+* **The positive-depth opener's merge is the arm's own segment, and the class's row is the
+  route.**  `hcontArm_stringOpenAboveZeroMerge_of_staging` takes the counted segment to
+  `cleanup478.i`; no theorem in the tree states it, so `HcontDeepRow`
+  (`JsonStage2WalkDispatchClassRows`) carries it as the class's row — the merge's segment
+  and endpoint, or the refusal's witness — and `hcontArm_stringOpenAboveZero_of_class`
+  projects it into the producer.  What the arm asserts is that route, not an execution it
+  meant to establish beside the row.  The class's own facts (the byte, the two stack bytes,
+  the call's staging at the state's root word) are derived, so the row is exactly the
+  route.
 
 The statements the two theorems would have are
-`walkContinueFacts_of_payload (hp : HcontPayload G) : WalkContinueFacts G` and
-`walkLoopEnd_of_payload (hp : HlastPayload G) : WalkLoopEnd G`, each by the class case over
-`HcontClass.complete`.  Beyond the items above, the continuing payload needs the
-per-class `∀`-fields the producers read (`HcontScalarPrefix`, the two `HcontSeamCalls`
-groups at `scSeamS` and at each chain's `LetS413`/`FS413`/`ClsS…` seam, `HcontCleanupDoc`,
-`HcontRunRows`, `HcontFacts`'s class field, and the seam's calls at the run class's own
-seam), and the last level needs `RunLastFacts`'s rows; the field types are the producers'
-own argument lists, so adding them is plumbing over rows, not new mathematics.  What is
-*not* plumbing is the default chain's other two leaf routes, because the arm a state takes
-is decided by the trailing byte's class.
+`walkContinueFacts_of_payload (hp : HcontPayload G) (hc : HcontClassRows G) :
+WalkContinueFacts G` and `walkLoopEnd_of_payload (hp : HlastPayload G)
+(hc : HlastClassRows G) : WalkLoopEnd G`, each by the class case over
+`HcontClass.complete`.  The continuing level's per-class `∀`-fields are `HcontClassRows`'
+(`JsonStage2WalkDispatchClassRows`): the scan-free class's document row, the plain-value
+class's seam row at its prefix, the default arm's scan-free classes' seam rows at
+`LetS413`/`FS413` and the four class-C leaves' at `ClsS413T`/`ClsS413F`/`ClsS58T`/
+`HeadS413`, and the positive-depth opener's route.  Their branches are
+`JsonStage2WalkDispatchClassCase`'s: one theorem per class, each the projection of its row
+into the producer the arm was already proved to need
+(`hcontArm_scalar_of_class` … `hcontArm_stringOpenAboveZero_of_class`,
+`hcontArm_cleanup_of_class`).
+
+What the continuing level still owes is one row, and it is not plumbing: the run class's.
+`HcontArm.run` takes `RunFacts`, and its producers take either that bundle
+(`runFacts_of_defaultClass`) or the check state's `WalkInv` and the seam's thirteen cells
+(`hcontRunFacts_of_rows`, i.e. `HcontWsSeam`'s content).  The class's row is therefore the
+check state's rows plus the seam's state group, and the producer joining them to
+`HcontRunFacts` and on to `RunFacts` at the class's short prefix is not in the tree.  The
+other three former obstacles are retired: the payload's document row carries the byte's
+class (`HcontDefaultRow.hclass`), the visits' bound is the scan's span, the whitespace seam
+is a state group, and the positive-depth opener's merge is the arm's own segment field
+rather than a producer's assumption.
 
 **One class is now closed end to end, and its shape is the other classes' target.**
 `JsonStage2WalkDispatchSeamRows` produces `.cleanup`'s arm from the class's document row,

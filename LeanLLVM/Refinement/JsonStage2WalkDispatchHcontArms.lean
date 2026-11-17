@@ -161,10 +161,10 @@ The states the split once had no arm for are four, and all four are covered:
   `%cst.i`'s bytes at `%sp - 1` and selects the key bit `if.end245.i`'s `phi` carries.
   The class's premises are the byte, the depth split and the two stack bytes, and the two
   producers (`hcontArm_stringOpenAboveZeroMerge_of_staging`,
-  `hcontArm_stringOpenAboveZeroRefuse_of_staging`) derive the byte from `cont_reg8`, the
-  stack bytes from the carry's maps and — at a positive depth — the value-position
-  staging from `WalkInv.tyBytes`/`stBytes`
-  (`stringOpenAboveZero_pre_of_inv`).  The document `["`·`a` takes it
+  `hcontArm_stringOpenAboveZeroRefuse_of_staging`) derive the byte from `cont_reg8` and the
+  stack bytes from the carry's maps at `WalkInv.tyBytes`/`stBytes`; the value-position
+  call's staging is the caller's, at the state's own root word, which `HcontOpenCall`
+  carries.  The document `["`·`a` takes it
   (`stringOpenAboveZero_reachable`), and the same document's seed head is the control
   (`stringOpenAboveZero_absent_at_seed`: depth zero, byte `91`).
 
@@ -358,7 +358,8 @@ inductive HcontArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
   own branch `if.then330.i` to `cleanup478.i`.
 
   **What the arm carries.**  The class's own facts — the byte, the positive depth, the
-  two stack bytes and the value-position call's staging and answer — and the route's
+  two stack bytes and the value-position call's staging and answer at the state's *own*
+  root word (`rdv`, the slot's value as the block's load reads it) — and the route's
   endpoint: a counted segment to the merge, its block, the merge's predecessor
   `if.then330.i`, the index cell and the price.  The segment is the arm's to supply.
   Every link of it is proved (`if_end256_i`, `z_arena_reserve_exit`, `NodeBlock31_at`,
@@ -371,17 +372,17 @@ inductive HcontArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
   to `if.then219.i` and the two marker links are part of the same segment, and that chain
   reads the document's next lane and the root slot's word.
   `stringOpenAboveZeroMerge_of_staging` is the producer. -/
-  | stringOpenAboveZeroMerge {b1 b2 : UInt8}
+  | stringOpenAboveZeroMerge {b1 b2 : UInt8} {rdv : BitVec 32}
       (h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 34)))
       (hsp : C.sp ≠ 0)
       (hmark : C.tyMap (C.sp - 1) = b1)
       (hstate : C.stMap (C.sp - 1) = b2)
       (hpreV : s2ValuePosPre
-        [.int 32 (BitVec.ofNat 32 C.sp), .int 32 0,
+        [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
          .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
       (r : CallOutcome)
       (hcall : stage2Calls stage2SubCalls "s2_value_pos"
-        [.int 32 (BitVec.ofNat 32 C.sp), .int 32 0,
+        [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
          .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r)
       (Cd : WalkCarry G) (sd : State) (p : Nat) (k2 : Nat) (nepv : BitVec 64)
       (hseg : WalkSegment (stage2Calls stage2SubCalls) G C s Cd sd p)
@@ -400,17 +401,17 @@ inductive HcontArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
   structure every refusing route in the tree states (`bracketRefuse_at`,
   `commaRefuse_at`, …), so the arm carries the refusal exactly as the other refusal arms
   do. -/
-  | stringOpenAboveZeroRefuse {b1 b2 : UInt8}
+  | stringOpenAboveZeroRefuse {b1 b2 : UInt8} {rdv : BitVec 32}
       (h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 34)))
       (hsp : C.sp ≠ 0)
       (hmark : C.tyMap (C.sp - 1) = b1)
       (hstate : C.stMap (C.sp - 1) = b2)
       (hpreV : s2ValuePosPre
-        [.int 32 (BitVec.ofNat 32 C.sp), .int 32 0,
+        [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
          .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
       (r : CallOutcome)
       (hcall : stage2Calls stage2SubCalls "s2_value_pos"
-        [.int 32 (BitVec.ofNat 32 C.sp), .int 32 0,
+        [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
          .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r)
       (href : WalkRefuseAt (stage2Calls stage2SubCalls) G C s) :
       HcontArm calls G C s

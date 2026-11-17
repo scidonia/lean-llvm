@@ -294,9 +294,10 @@ token record, so the word the copy call's argument list carries is the lane's ze
 theorem contTailStart_rootRead {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
     (b35 : UInt8) (b8 : BitVec 8) (x1 : BitVec 8)
-    (hroot : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes 0 4)) :
+    {rdv : BitVec 32}
+    (hroot : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes rdv.toNat 4)) :
     readBytes (contTailStart C s x inc nep ep v ix b35 b8 x1).mem (G.next0 + 8) 4 =
-      some (natToBytes 0 4) := by
+      some (natToBytes rdv.toNat 4) := by
   rw [contTailStart_mem]
   rw [walkReadBytes_rootSlot_of_tokStore (off := 8) (len := 8)
     (v := natToBytes (BitVec.ofNat 64 v.toNat).toNat 8) (by decide) (natToBytes_length _ _)]
@@ -388,9 +389,10 @@ theorem hcontArm_cleanup_of_rows {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} 
     (hlt125 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 125) = 0)
     (hne125 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 125) = 0)
     (doc : HcontCleanupDoc G C s)
-    (hroot : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes 0 4))
+    {rdv0 : BitVec 32}
+    (hroot : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes rdv0.toNat 4))
     (calls : HcontSeamCalls G (ContTailStartC C) (contTailStartOfDoc (G := G) C s doc))
-    (hcA : calls.cA = BitVec.ofNat 32 0) (hrdv : calls.rdv = BitVec.ofNat 32 0) :
+    (hcA : calls.cA = BitVec.ofNat 32 0) (hrdv : calls.rdv = rdv0) :
     Nonempty (HcontArm (stage2Calls stage2SubCalls) G C s) := by
   have hInvS := contTailStartInv_of_doc hInv hblock hk hlt125 hne125 doc
   have hopS : evalOperand
@@ -400,7 +402,7 @@ theorem hcontArm_cleanup_of_rows {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} 
     rw [hcA]
     exact contTailStartOfDoc_op (G := G) (C := C) (s := s) doc
   have hrootS : readBytes (contTailStartOfDoc (G := G) C s doc).mem (G.next0 + 8) 4 =
-      some (natToBytes 0 4) :=
+      some (natToBytes rdv0.toNat 4) :=
     contTailStart_rootRead (G := G) (C := C) (s := s) (x := hlastByte G C)
       (inc := hlastIncV C) (nep := hlastNepV G) (ep := G.ep) (v := doc.v) (ix := contIx G C)
       (b35 := contB35 G doc.v) (b8 := hlastByte G C) (x1 := hlastByte G C) hroot
@@ -448,9 +450,10 @@ theorem walkDispatch_at_cleanup_of_rows {m0 : Mem} {G : WalkGeom m0} {C : WalkCa
     (hlt125 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 125) = 0)
     (hne125 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 125) = 0)
     (doc : HcontCleanupDoc G C s)
-    (hroot : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes 0 4))
+    {rdv0 : BitVec 32}
+    (hroot : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes rdv0.toNat 4))
     (calls : HcontSeamCalls G (ContTailStartC C) (contTailStartOfDoc (G := G) C s doc))
-    (hcA : calls.cA = BitVec.ofNat 32 0) (hrdv : calls.rdv = BitVec.ofNat 32 0) :
+    (hcA : calls.cA = BitVec.ofNat 32 0) (hrdv : calls.rdv = rdv0) :
     WalkDispatchResult (stage2Calls stage2SubCalls) G C s := by
   obtain ⟨arm⟩ := hcontArm_cleanup_of_rows hInv hblock hk hlt125 hne125 doc hroot calls
     hcA hrdv
