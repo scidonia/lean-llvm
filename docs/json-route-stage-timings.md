@@ -777,13 +777,18 @@ measures that — but not the route's cost at these sizes, where the object is a
 fraction of a percent of the total (0.29–1.27%).
 
 **The reference arm is absent from this run.**  `bench/simdjson-baseline.cc`
-compiles against a local simdjson 4.6.11 `singleheader/` source, and this machine's
-store now holds only the built library (`libsimdjson.so.33`) with no headers, so
-`bench.sh` reported the arm absent rather than substituting a row.  The previous
-record's `native/parse` and `core/pad+parse` ratios are therefore not carried
-forward: they were another session's two binaries, and the ratios this page reads
-are the paired rows above.  `SIMDJSON_SRC=<tree with singleheader/>` re-establishes
-the arm; the section prints again when it can be built.
+compiles against a local simdjson 4.6.11 `singleheader/` source.  At the time of
+this run the store held the 4.6.11 built library (`libsimdjson.so.33`) without
+its headers, so `bench.sh` reported the arm absent rather than substituting a
+row.  A 5.0.5 dev output has since been realised, and the units' harness measures
+simdjson 5.0.5's stage 1 and full parse against it
+(`tests/json-units-bench/bench-simdjson.sh`, `docs/json-pipeline-performance.md`);
+that is a different release and a different instrument, and it does not restore
+this arm.  The 4.6.11 `singleheader/` source is still absent, so
+`SIMDJSON_SRC=<tree with singleheader/>` remains the way to re-establish it; the
+section prints again when it can be built.  The previous record's `native/parse`
+and `core/pad+parse` ratios are therefore not carried forward: they were another
+session's two binaries, and the ratios this page reads are the paired rows above.
 
 ## The instrument, and the two defects it has caught
 

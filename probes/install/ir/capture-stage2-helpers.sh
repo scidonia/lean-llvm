@@ -7,10 +7,13 @@
 #   nix develop -c bash probes/install/ir/capture-stage2-helpers.sh
 #
 # The bodies' Lean pins are generated from the same parse rather than copied
-# from the text; `--emit-pins` prints them, which is how
-# LeanLLVM/Refinement/JsonStage2HelperIRNumFast's generated section is produced:
+# from the text; `--emit-pins [symbol]` prints them, which is how
+# LeanLLVM/Refinement/JsonStage2HelperIRNumFast's generated section and
+# JsonStage2HelperIROdScalar's body literal are produced (`num_fast_el1` by
+# default, `od_scalar_value` the other configured body):
 #
 #   nix develop -c bash probes/install/ir/capture-stage2-helpers.sh --emit-pins
+#   nix develop -c bash probes/install/ir/capture-stage2-helpers.sh --emit-pins od_scalar_value
 #
 # Input
 #   kernel/json/stage2.c   the stage-2 unit: the six helpers `s2_walk` calls out
@@ -126,7 +129,12 @@ fail() { printf 'SETUP: %s\n' "$*" >&2; exit 3; }
 # parser refuses it.
 # ---------------------------------------------------------------------------
 if [ "${1:-}" = "--emit-pins" ]; then
-  fixture=$here/stage2.helper.num_fast_el1.ll
+  sym=${2:-num_fast_el1}
+  case "$sym" in
+    num_fast_el1 | od_scalar_value) ;;
+    *) fail "--emit-pins: no pin configuration for ${sym} (num_fast_el1, od_scalar_value)" ;;
+  esac
+  fixture=$here/stage2.helper.$sym.ll
   [ -f "$fixture" ] || fail "absent: $fixture"
   command -v lake >/dev/null 2>&1 || fail "lake is not on PATH"
   gen=$repo/.lake/tmp-numfast-pins.lean
@@ -242,17 +250,19 @@ def camel (s : String) : String :=
     | [] => ""
     | c :: rest => String.singleton c.toUpper ++ String.ofList rest)
 
-def defOf (b : Block) : String :=
-  "def numFast" ++ camel b.name ++ "Instrs : List Instr :=\n  [\n" ++
+def defOf (pre : String) (b : Block) : String :=
+  "def " ++ pre ++ camel b.name ++ "Instrs : List Instr :=\n  [\n" ++
     String.intercalate ",\n" (b.instrs.map fun i => "    " ++ instrStr i) ++ "]\n"
 
-def pin (b : Block) (lhs : String) : String :=
-  "theorem numFast_findBlock_" ++ sanitize b.name ++ " :\n    numFastBody.findBlock \"" ++ b.name ++
+def pin (pre : String) (b : Block) (lhs : String) : String :=
+  "theorem " ++ pre ++ "_findBlock_" ++ sanitize b.name ++ " :\n    " ++ pre ++
+    "Body.findBlock \"" ++ b.name ++
     "\" = some ⟨\"" ++ b.name ++ "\", " ++ lhs ++ ", " ++ termStr b.term ++ "⟩ := by decide\n"
 
-def instrsEq (b : Block) : String :=
-  "theorem numFast" ++ camel b.name ++ "Instrs_eq :\n    (numFastBody.findBlock \"" ++ b.name ++
-    "\").map (·.instrs) = some numFast" ++ camel b.name ++ "Instrs := by decide\n"
+def instrsEq (pre : String) (b : Block) : String :=
+  "theorem " ++ pre ++ camel b.name ++ "Instrs_eq :\n    (" ++ pre ++ "Body.findBlock \"" ++
+    b.name ++ "\").map (·.instrs) = some " ++ pre ++ camel b.name ++
+    "Instrs := by decide\n"
 
 end Gen
 
@@ -263,37 +273,56 @@ def runBlocks : List String :=
    "cleanup300", "land.lhs.true41", "while.body52", "if.then55", "if.end62", "if.end68",
    "if.end230"]
 
+/-- The fixture, its declared layout, the prefix of the generated names, and the
+blocks a run reads (an empty list emits the body literal alone). -/
+def config : String → Option (String × List (String × Nat) × String × List String)
+  | "num_fast_el1" =>
+      some ("probes/install/ir/stage2.helper.num_fast_el1.ll", [("Stk", 1568)], "numFast",
+        runBlocks)
+  | "od_scalar_value" =>
+      some ("probes/install/ir/stage2.helper.od_scalar_value.ll", [], "odScalarValue", [])
+  | _ => none
+
 def main : IO Unit := do
-  let src ← IO.FS.readFile "probes/install/ir/stage2.helper.num_fast_el1.ll"
-  match parseModuleWith [("Stk", 1568)] src with
+  let sym := (← IO.getEnv "STAGE2_PIN_SYMBOL").getD "num_fast_el1"
+  let some (path, layout, pre, runs) := config sym
+    | IO.eprintln s!"ERROR: no pin configuration for {sym}"; IO.Process.exit 3
+  let src ← IO.FS.readFile path
+  match parseModuleWith layout src with
   | .error e => IO.eprintln s!"ERROR: {e}"; IO.Process.exit 3
   | .ok m =>
     match m.functions.head? with
     | none => IO.eprintln "ERROR: no function"; IO.Process.exit 3
     | some f =>
+      if f.name ≠ sym then
+        IO.eprintln s!"ERROR: the fixture's function is {f.name}, not {sym}"; IO.Process.exit 3
       IO.println "-- § the body literal"
-      IO.println ("def numFastBody : Function := " ++ fnStr f)
-      IO.println "-- § the instruction lists"
-      let mut defs := ""
-      for b in f.blocks do
-        if runBlocks.contains b.name then defs := defs ++ defOf b ++ "\n"
-      IO.print defs
-      IO.println "-- § the pins"
-      let mut pins := ""
-      for b in f.blocks do
-        if runBlocks.contains b.name then
-          pins := pins ++ pin b ("numFast" ++ camel b.name ++ "Instrs") ++ "\n"
-        else
-          pins := pins ++ pin b (pinList b) ++ "\n"
-      IO.print pins
-      IO.println "-- § the instruction-list projections"
-      let mut eqs := ""
-      for b in f.blocks do
-        if runBlocks.contains b.name then eqs := eqs ++ instrsEq b ++ "\n"
-      IO.print eqs
-      IO.eprintln s!"emitted pins for {f.blocks.length} blocks, {(f.blocks.flatMap (·.instrs)).length} instructions"
+      IO.println ("def " ++ pre ++ "Body : Function :=\n" ++ fnStr f)
+      if runs.isEmpty then
+        IO.eprintln s!"emitted the literal for {f.blocks.length} blocks, {(f.blocks.flatMap (·.instrs)).length} instructions (no block runs)"
+      else
+        IO.println "-- § the instruction lists"
+        let mut defs := ""
+        for b in f.blocks do
+          if runs.contains b.name then defs := defs ++ defOf pre b ++ "\n"
+        IO.print defs
+        IO.println "-- § the pins"
+        let mut pins := ""
+        for b in f.blocks do
+          if runs.contains b.name then
+            pins := pins ++ pin pre b (pre ++ camel b.name ++ "Instrs") ++ "\n"
+          else
+            pins := pins ++ pin pre b (pinList b) ++ "\n"
+        IO.print pins
+        IO.println "-- § the instruction-list projections"
+        let mut eqs := ""
+        for b in f.blocks do
+          if runs.contains b.name then eqs := eqs ++ instrsEq pre b ++ "\n"
+        IO.print eqs
+        IO.eprintln s!"emitted pins for {f.blocks.length} blocks, {(f.blocks.flatMap (·.instrs)).length} instructions"
 LEANGEN
-  ( cd "$repo" && lake env lean --run "$gen" 2>/dev/null | grep -v '^lean-llvm: Lean' )
+  ( cd "$repo" && STAGE2_PIN_SYMBOL=$sym lake env lean --run "$gen" 2>/dev/null |
+      grep -v '^lean-llvm: Lean' )
   rc=${PIPESTATUS[0]}
   rm -f "$gen"
   exit $rc
@@ -575,11 +604,11 @@ for sym in s2_init s2_value_pos s2_after_value s2_string_body od_scalar_value nu
   out=$here/stage2.helper.$sym.ll
   case "$sym" in
     s2_string_body)
-      note='The body is a program of this fragment: its `ptrtoint` pair is modelled, and `JsonStage2HelperIR` pins the AST it parses to.  Its refusal message is `null` here — the call boundary carries no global table — so this fixture is not where `Operand.global`'"'"'s body-level evidence lives; that evidence is tests/core-extension.lean'"'"'s acceptance pins.' ;;
+      note='The body is a program of this fragment: its `ptrtoint` pair is modelled, and `JsonStage2StringBody` pins the AST it parses to and proves the helper contract of that body.  Its refusal message is `null` here — the call boundary carries no global table — so this fixture is not where `Operand.global`'"'"'s body-level evidence lives; that evidence is tests/core-extension.lean'"'"'s acceptance pins.' ;;
     od_scalar_value)
-      note='The body is captured as the fragment expresses it; its accepted path calls `num_fast_el1`, whose own body is `stage2.helper.num_fast_el1.ll`.' ;;
+      note='The body is captured as the fragment expresses it and pinned whole in `JsonStage2HelperIROdScalar`; its accepted path calls `num_fast_el1`, whose own body is `stage2.helper.num_fast_el1.ll`.' ;;
     num_fast_el1)
-      note='The body is a program of this fragment after its two strip rewrites (the `llvm.umin.i64` fold and the dropped `exact` flag) and with the extent of `%struct.Stk` supplied as the `Layout` `[("Stk", 1568)]` the pin states, which is the number the body own `llvm.lifetime.start` names.  `JsonStage2HelperIR` pins the AST it parses to.' ;;
+      note='The body is a program of this fragment after its two strip rewrites (the `llvm.umin.i64` fold and the dropped `exact` flag) and with the extent of `%struct.Stk` supplied as the `Layout` `[("Stk", 1568)]` the pin states, which is the number the body own `llvm.lifetime.start` names.  `JsonStage2HelperIRNumFast` pins the AST it parses to, block by block.' ;;
     *)
       note='The body is captured and the fragment expresses it.' ;;
   esac
@@ -607,6 +636,9 @@ done
       num_fast_el1)
         verdict=expressible
         basis="aggregate and binary64 text ($nagg aggregate alloca(s), $nfp floating-point site(s)); parses after two strip rewrites — the one llvm.umin.i64 folds to its icmp/select pair (the fragment's umin is i32 at two registers), and ashr exact loses the flag, so the pinned body is the flag-erased form and 'the bits shifted out are zero' is a staging fact the text does not carry — and with %struct.Stk's 1568-byte extent supplied as the Layout the pin states; the decimal literals parse.  Pinned at every block in LeanLLVM/Refinement/JsonStage2HelperIRNumFast.lean (255 findBlock equations emitted by --emit-pins); the digit scan's BoundLoop is JsonStage2NumFastScan's, and the empty lexeme's refusal is proved of the body in JsonStage2NumFastBody.lean; the conversion arm is open" ;;
+      od_scalar_value)
+        verdict=expressible
+        basis="parsed by LeanLLVM.Parser; pinned whole in LeanLLVM/Refinement/JsonStage2HelperIROdScalar.lean — the body literal and its #guard equality, with a mutated-pivot control — so the block and instruction counts above are a corollary of what the text is.  The three rewrites are the walk's own: the conversion slot becomes a pointer parameter, the message stores become null, and the one llvm.umin.i64 unfolds to its icmp/select pair.  The body's contract proof is obstructed by its num_fast_el1 call and by the outTag/emitBlobs record chain it must match" ;;
       *)
         verdict=expressible
         basis="parsed by LeanLLVM.Parser; pinned in LeanLLVM/Refinement/JsonStage2HelperIR.lean" ;;

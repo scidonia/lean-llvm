@@ -656,9 +656,11 @@ measured on the **one-TU form**: the same six files compiled as a single
 translation unit, with `-O3` free to inline across what the staged form keeps
 apart.  The two forms are therefore not interchangeable for a ratio, and the
 timing arm measures the difference rather than transferring the record.
-`docs/json-pipeline-performance.md` states no simdjson release, so this arm
-claims no ratio against that reference at all: it compares two builds of this
-repository's own source, and continuity with the recorded table is not assumed.
+The record's scratch ratios are against the 4.6.11 On-Demand the scratch harness
+used, and its units section now adds a separate simdjson 5.0.5 stage-1 and
+full-parse measurement on the units' corpus.  This arm claims no ratio against
+either: it compares two builds of this repository's own source, and continuity
+with the recorded tables is not assumed.
 
 ### The entry table is the caller's
 

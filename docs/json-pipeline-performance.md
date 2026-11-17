@@ -28,7 +28,9 @@ and escape stages, the assembled pipeline, and the parser's own refinement —
 remains outside the tree. The three units have a measurement of their own,
 separate from every ratio in this note: §"Stage 1's three units, measured in this
 tree" records the instrument, corpus, flags, host and the numbers with their
-variance.
+variance, and the subsection after it records simdjson 5.0.5's stage 1 and full
+parse on the same corpus, with its own provenance and the comparisons it does
+and does not support.
 
 The note answers one question: **can a byte-mask JSON parser, in the shape the
 Lean development would lower to, be competitive with a mature native parser on
@@ -312,7 +314,10 @@ the common case, recovers the ratio. Both are available and neither is done.
 Everything above this heading is the scratch pipeline's record. This section is
 the three extracted stage-1 units of that pipeline, measured on their own, in
 this tree, with the instrument in this tree. It is not a re-measurement of any
-row above, and no number below is compared with a parser or with those rows.
+row above, and none of the unit rows below is compared with a parser or with
+those rows. The subsection after the unit tables is a separate instrument:
+simdjson 5.0.5's stage 1 and full parse on the same corpus, with its own
+comparisons and limits stated.
 
 The units are `kernel/json/s1_block.c` (classification masks),
 `kernel/json/entry.c` (entry positions) and `kernel/json/utf8.c` (UTF-8
@@ -544,48 +549,170 @@ skip: on the all-ASCII documents the gated arm is 83-97 GB/s on the P core and
 63-64 on the E core against 29 and 14 ungated, and on the UTF-8 document the two
 converge (29.4 against 34.2, 10.9 against 11.7).
 
-### Why there is no simdjson row
+### The simdjson row, measured
 
-No simdjson comparison was measured, and none is implied. The obstacle is that
-no simdjson development output or source is obtainable on this host without
-network access or a new flake input, and neither was used.
+The earlier version of this section said no simdjson row was measured, because
+no simdjson development output or source was obtainable on this host without
+network access. That was true of the first attempt and false of the second, and
+the difference is recorded here rather than left as an assumption.
 
-- A shared library from an earlier realisation exists at
-  `/nix/store/i3gz6v86drjzzf5q9887q5zcll0ybygv-simdjson-4.6.11/lib/libsimdjson.so.33.0.0`,
-  but its output holds `lib/` only; there are no headers anywhere in the store.
-- The `dev` output the simdjson 4.6.11 derivation declares,
-  `/nix/store/y0hqbi9vc9khdw90i1hwdar0ja664kv8-simdjson-4.6.11-dev`, is absent.
-  An offline realisation of it was still building bootstrap derivations (bash,
-  binutils tarball derivations) when it was stopped after three minutes, so it
-  was not obtainable for this measurement.
-- The nixpkgs registry's simdjson 5.0.5 has neither its `dev` output
-  (`/nix/store/m2i8165bayxxgzj3fbvdg6gihz6na93d-simdjson-5.0.5-dev`) nor its
-  source (`/nix/store/206chydsvdm9vxfbarpaa1r6vnm7acjb-source`) in the store, so
-  realising it needs a fetch.
-- `probes/json/route/bench/simdjson-baseline.cc` needs `simdjson.h` from a
-  `SIMDJSON_SRC` tree, for the same reason the route's stage-timings page
-  records its reference arm as unmeasured.
+The fetch did need network access. The first attempt tried to realise the
+4.6.11 derivation's `dev` output offline and was still building bootstrap
+derivations (bash, binutils tarballs) when it was stopped after three minutes.
+The second attempt realised the nixpkgs registry's **simdjson 5.0.5**:
 
-That is the whole reason: the numbers above stand alone rather than being set
-against a parser. It is also worth stating what the comparison would have to be
-if it is added later: the corresponding stage is simdjson's stage 1 -- its
-structural-character indexing, and its UTF-8 validation -- not the full parse.
-A ratio against a full parse would be a parser against three units, which is not
-a like-for-like claim and is the reason this section is separated from the
-ratios above.
+```bash
+nix build --no-link --print-out-paths 'nixpkgs#simdjson.dev'
+nix build --no-link --print-out-paths 'nixpkgs#simdjson'
+```
+
+which produced the dev output
+`/nix/store/m2i8165bayxxgzj3fbvdg6gihz6na93d-simdjson-5.0.5-dev` (the
+amalgamated `include/simdjson.h`, sha256 `869e8a4ff285cec36bc79d4a671a433158391a4f1898bb1c3b1f6e654b9547ae`)
+and the library output
+`/nix/store/jglxdk9y0yfk3mc9dbr675pfmv42a89y-simdjson-5.0.5` (the shared
+library `libsimdjson.so.34.0.0`, sha256
+`9b2368aaa42dbfbf125cedea26c86914b622899c4ebeaf3f9fc7fd7bbcdd7184`). The
+4.6.11 `dev` output and source are still absent, and the earlier 4.6.11
+library (`libsimdjson.so.33.0.0`) is still there. **The row below is therefore
+5.0.5, not the 4.6.11 the earlier text named and not the 4.6.11 the scratch
+ratios were taken against.** It does not re-measure, confirm or supersede any
+ratio above.
+
+The instrument is `tests/json-units-bench/bench-simdjson.sh`, which builds
+`tests/json-units-bench/simdjson-baseline.cc` at the units' measured compiler
+line with the C++ standard --
+
+```
+-O3 -march=x86-64-v3 -mpclmul -std=c++17 -falign-loops=64 -falign-functions=64
+```
+
+-- against the header and library above, and runs it over the units' eight
+documents. The corpus is the same byte for byte: the script checks every file
+against the size and sha256 the units' transcript records and refuses to run if
+one differs; this run reused `tests/json-units-bench/build/corpus`. The
+pinning, repetitions and trials are the units' discipline: `taskset` to cpu0
+and cpu4, 51 repetitions per row, the whole binary three times per CPU, a
+buffer staged and warmed before the clock, medians with the minimum and maximum
+of the three trial medians, and a transcript at
+`tests/json-units-bench/simdjson-transcript.txt`. The active implementation was
+`haswell` (AVX2) on both core classes. The library is the realised nix build
+and was not recompiled at the flags above: `stage1` and the library's stage-2
+helpers are its code, while the on-demand traversal in `parse` is compiled
+here. During this run the host was also running five Lean builds (one-minute
+load average 10.6), and the calibrated clock was 2.77-2.78 GHz on the P core
+and 3.12-3.27 on the E core, against 4.4-4.8 and 3.65-3.67 in the units'
+transcript. The GB/s columns below are therefore at a lower clock than the
+units' GB/s columns; the cycles-per-byte columns are the comparison that
+survives the difference, and even those are cross-binary.
+
+**What each row is work-wise.**
+
+|arm|one timed pass|comparable with|
+|---|---|---|
+|`pad`|one `padded_string` construction: allocate, copy, pad to simdjson's boundary|simdjson's staging; not a unit row, whose staging is outside the clock|
+|`stage1`|one `dom_parser_implementation::stage1` in `stage1_mode::regular`: classification of structural characters, the string/escape state machine, UTF-8 validation, and the structural-index array stage 2 reads|the units' stage-1 work: the closest stage-for-stage counterpart|
+|`parse`|one on-demand `iterate` plus the full value traversal: every string fetched (and validated), every key unescaped, every number converted|a parser; not comparable with three units|
+
+`stage1` is not `s1_masks`. The classification unit produces six masks and a
+carry and no index array; it does not validate UTF-8. The entry units expand a
+precomputed mask stream to positions; they do not read the document. The UTF-8
+unit validates a document. simdjson fuses classification, index emission and
+UTF-8 validation into one pass and writes `structural_indexes`, so `stage1` is
+the whole of that work, not a function-for-function match with any one unit.
+
+**Stage 1** (GB/s at the median of the three trial medians, with the minimum
+and maximum of those medians in parentheses; cycles per byte at the calibrated
+core clock):
+
+|document|P GB/s|P cyc/B|E GB/s|E cyc/B|
+|---|---:|---:|---:|---:|
+|`route-s1-64k`|3.089 (2.969-3.093)|0.902|1.799 (1.757-1.986)|1.698|
+|`route-u8-64k`|5.387 (5.181-5.390)|0.517|3.519 (3.348-3.852)|0.884|
+|`syn-dense-4m`|3.073 (2.957-3.077)|0.905|1.848 (1.794-1.948)|1.715|
+|`syn-dense-64k`|3.642 (3.637-3.778)|0.736|2.097 (2.060-2.156)|1.538|
+|`syn-strings-4m`|5.415 (5.379-5.584)|0.498|5.265 (5.155-5.380)|0.627|
+|`syn-strings-64k`|8.631 (8.375-10.194)|0.317|8.776 (8.717-8.942)|0.374|
+|`syn-utf8-4m`|5.916 (5.710-5.980)|0.468|4.395 (4.321-4.452)|0.756|
+|`syn-utf8-64k`|6.051 (5.367-6.496)|0.428|4.816 (4.720-4.899)|0.665|
+
+`route-u8-64k`'s stage-1 row returns `UTF8_ERROR`: it is the scan plus its
+verdict, not an accepted stage 1, and it is marked `rejected` in the
+transcript. `route-s1-64k`'s stage 1 accepts, and its full parse does not.
+
+**Full parse** (same units of measurement; only the six synthetic documents have
+a full-parse row):
+
+|document|P GB/s|P cyc/B|E GB/s|E cyc/B|
+|---|---:|---:|---:|---:|
+|`syn-dense-4m`|0.446 (0.434-0.449)|6.205|0.478 (0.451-0.503)|6.723|
+|`syn-dense-64k`|0.471 (0.458-0.483)|5.867|0.525 (0.481-0.526)|6.422|
+|`syn-strings-4m`|1.071 (1.070-1.072)|2.503|1.184 (1.179-1.222)|2.768|
+|`syn-strings-64k`|3.306 (3.172-3.331)|0.842|3.048 (2.526-3.155)|1.071|
+|`syn-utf8-4m`|1.611 (1.493-1.616)|1.726|1.494 (1.454-1.498)|2.244|
+|`syn-utf8-64k`|2.065 (2.027-2.187)|1.273|1.801 (1.800-1.807)|1.809|
+
+The two route documents have no full-parse figure because the parser refuses
+them: `route-s1-64k` is a tiled concatenation, not one JSON document, and its
+`parse` row ends in `INCOMPLETE_ARRAY_OR_OBJECT`; `route-u8-64k` is invalid
+UTF-8 and its `parse` row ends in `UTF8_ERROR`. Both are in the transcript as
+`status=refused` rows. They time the refusal, not a parse, and are not
+full-parse figures.
+
+**What is like-for-like.**
+
+- `stage1` and the units' stage-1 work: the stage boundary is the same, the
+  work is not identical -- one fused pass with an index array against three
+  calls, one of which reads a mask stream rather than the document. The
+  numbers come from different binaries, and §7.2 applies: they are reported
+  side by side, not divided. A reader who wants a ratio must take the two
+  processes' spread into account; this note does not claim one.
+- `stage1` and `parse`: the same binary, the same process and the same staged
+  buffer, so `parse` is the full parser over the same bytes. It includes
+  `stage1`; the difference is stage 1 plus the lazy stage 2, not a separately
+  measured stage 2.
+- `parse` and the units: a parser against three units. This is not a
+  like-for-like claim, and no unit row above is a full-parse row.
+- `pad` and the units: staging against compute. The units stage once outside
+  the clock; this row prices simdjson's allocation and copy, which is why it is
+  in neither table.
+- 5.0.5 and the ratios above: different release, different build, different
+  corpus (the seven standard documents against the units' eight). The 5.0.5
+  rows do not re-derive the `P2`/`P0` table and do not confirm it.
+
+**What the medians say.** The GB/s columns are this run at 2.77/3.17 GHz; the
+full parse runs at 0.45-3.31 GB/s on the P core and 0.48-3.05 on the E core,
+and stage 1 at 3.1-8.6 and 1.8-8.8. Cycles per byte is the column that can be
+set beside the units' tables: the classification unit costs 0.33-0.39 cycles per
+byte on the P core and 0.45-0.50 on the E core, while stage 1 costs 0.32-0.91
+and 0.37-1.70. Stage 1 is 2.2-2.7x the classification unit's cost on the dense
+P-core documents and 3.4x on the E core, where it also validates UTF-8 and
+writes the index array. On the sparse `syn-strings-64k` document it is below the
+unit (0.317 against 0.342 on the P core, 0.374 against 0.449 on the E core),
+the one place its fused SIMD classifier beats the unit's mask pass on the
+clock-normalized column. The two instruments are separate binaries, so those
+are directions read from the medians, not paired ratios.
 
 ### What this does not establish
 
-- **Not a parser.** These are three stage-1 units at their own ABIs. The entry
-  stream's selection, the escape and exit stages, stage 2 and the assembled
-  pipeline are absent, so the GB/s rows are not end-to-end JSON throughput and
-  no row above is re-derived or confirmed.
+- **Not a parser.** The three units are stage-1 units at their own ABIs. The
+  entry stream's selection, the escape and exit stages, stage 2 and the assembled
+  pipeline are absent, so the unit GB/s rows are not end-to-end JSON throughput.
+  The simdjson `parse` rows after them are a parser, but they are not this
+  pipeline, and they do not turn the units into one; no unit row above is
+  re-derived or confirmed by them.
 - **Nothing about another host.** One machine, two core classes, one compiler,
   one `powersave` setting, one staging alignment (64 bytes), one corpus seed.
   The same row can differ by a factor from 0.95 to 3.1 between the classes -- the
   E core is faster on `entry_pos8` over `syn-utf8-4m`, and about three times
   slower on `utf8_ungated` over `syn-strings-4m` -- so a single figure without
   its class would be misleading; the tables report both.
+- **Nothing about simdjson beyond these rows.** The simdjson rows are 5.0.5,
+  active implementation `haswell`, this corpus and this host. The earlier ratios
+  are against 4.6.11 and are not re-measured here. The 5.0.5 full parse is a
+  parser against three units, and the stage-1 comparison is work-level across
+  two binaries; neither is a paired ratio or an end-to-end claim about this
+  tree.
 - **Cycles per byte is derived, not observed.** It is wall time times a clock
   calibrated just before the row. Under sustained 256-bit code the core may run
   below that calibration, which makes the figure an upper bound on true core

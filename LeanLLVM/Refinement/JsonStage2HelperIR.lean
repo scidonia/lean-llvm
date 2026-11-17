@@ -32,10 +32,12 @@ at `s2InitFoot`'s region with `s2InitStores_inside`'s membership, the two facts
 literal outcome, and reading its projection across a fifteen-store term is the
 cost `JsonStage2Helpers` records).
 
-**Pinned, with the body proof open.**  `s2_value_pos` and `s2_after_value` are
-programs of the fragment and are pinned to their parsed ASTs by `#guard`
-(`s2ValuePosBody`, `s2AfterValueBody`), but their contracts are not proved of
-their bodies here.  What remains is stated rather than implied:
+**Pinned here, proved in the bodies module.**  `s2_value_pos` and
+`s2_after_value` are programs of the fragment and are pinned to their parsed ASTs
+by `#guard` (`s2ValuePosBody`, `s2AfterValueBody`); their contracts are proved of
+their bodies in `JsonStage2HelperIRBodies` (`s2ValuePosBody_contract`,
+`s2AfterValueBody_contract`, over those bodies' arms at the contracts' own
+stagings).  The trace each proof takes is stated here rather than implied:
 
 * `s2_value_pos`: the four-arm trace needs the `phi` thread through `return`
   (the state's predecessor field, written by the jumps) and the byte-value
@@ -45,18 +47,20 @@ their bodies here.  What remains is stated rather than implied:
 * `s2_after_value`: the same byte plumbing, plus the 32-bit `sp + (-1)` read as
   `sp.toNat - 1` — the index both the type stack and the state stack are read at.
 
-Both are stated at the same staging the contracts give, so neither is blocked by
-a missing representation; the obligation is the trace, not a widening.
+Both were stated at the same staging the contracts give, so neither was blocked
+by a missing representation; the work was the trace, not a widening.
 
 **The obstructions, measured.**  One body is expressible but its proof is
 obstructed, one was outside the fragment and is now a program whose proof is
 open, and one is still outside it:
 
 * `od_scalar_value` is expressible after the walk's three rewrites and is pinned
-  by shape (38 blocks, 145 instructions, four parameters).  Its proof is
-  obstructed: its accepted path calls `num_fast_el1`, whose body is pinned but
-  whose proof is open, and it must match `outTag`'s hash chain and `emitBlobs`'
-  reserve byte for byte.
+  whole — the literal is `JsonStage2HelperIROdScalar`'s, and its `#guard` holds
+  it to the fixture — so the shape claim (38 blocks, 145 instructions, four
+  parameters) is now a corollary of what the text is, not a substitute for it.
+  Its proof is obstructed: its accepted path calls `num_fast_el1`, whose body is
+  pinned but whose proof is open, and it must match `outTag`'s hash chain and
+  `emitBlobs`' reserve byte for byte.
 * `s2_string_body` carries `ptrtoint`, which the fragment models as
   `Instr.ptrtoint` at the model's 64-bit pointer width; the step is exact below
   `2 ^ 64` and `ub` at or above it, so a use owes the staging's address bound.
@@ -71,7 +75,8 @@ open, and one is still outside it:
   this fixture is no longer where `Operand.global` is run, and that operand's
   body-level evidence is `tests/core-extension.lean`'s acceptance pins (a store,
   a load, an `icmpPtr` and a `gep` at a global symbol).  The body parses; its
-  contents are pinned below.
+  AST is pinned whole, and its contract proved of that body, in
+  `JsonStage2StringBody`.
 * `num_fast_el1` carries `alloca [768 x i8]`, `alloca %struct.Stk` and the
   binary64 chain (`uitofp`, `fmul`, `fdiv`, `fneg`, `select double`), all of
   which the fragment models.  Three surfaces kept the raw text out of the
@@ -85,8 +90,9 @@ open, and one is still outside it:
   flag is dropped, which leaves the model *weaker* than the instruction at the
   inputs the flag excludes (`numFast_ashr_admits_shifted_out_bit` is the
   witness), so the flag's obligation is a staging fact the text does not carry.
-  The body is now written to the tree and pinned by shape (255 parsed blocks,
-  1 157 instructions, four parameters), with the refusal of the same bytes under
+  The body is now written to the tree and pinned whole, block by block, in
+  `JsonStage2HelperIRNumFast` (255 parsed blocks, 1 157 instructions, four
+  parameters), with the refusal of the same bytes under
   no declared layout as the control that the extent is load-bearing.
   `stage2.helpers.tsv` records the shape, the two rewrites and the flag, and the
   capture refuses if the emission stops carrying the constructs it measures or if
@@ -413,36 +419,22 @@ def s2InitSrcMutated : String := (s2InitSrc.replace "%s, i64 8" "%s, i64 12")
 #guard parses s2InitSrcMutated
 #guard decide (firstFunction s2InitSrcMutated ≠ some s2InitBody)
 
-/-! #### `od_scalar_value`, pinned by shape
+/-! #### `od_scalar_value`, pinned whole in the sibling module
 
-Its body is expressible and is the text this module pins; it is not proved here
-(see the module header).  What the pin establishes is the shape the capture
-checks and the refusal path's message store the footprint finding below names. -/
-def odScalarValueBody : Option Function := firstFunction odScalarValueSrc
+Its body is expressible and is the text the capture writes, and the literal and
+its `#guard` are `JsonStage2HelperIROdScalar`'s: a shape pin does not say what any
+block holds, so the hole it leaves is closed there rather than described here.
+The marker below is what that module's message-store reading consumes. -/
 
-/-- Whether a body stores a null pointer into the register named.  The guard
-below and its control are the marker's two readings: it finds the store where it
-is, and not in a body that lacks it. -/
+/-- Whether a body stores a null pointer into the register named.  The
+`od_scalar_value` and `s2_string_body` guards and their controls are the
+marker's two readings: it finds the store where it is, and not in a body that
+lacks it. -/
 def storesNullAt (f : Function) (reg : String) : Bool :=
   f.blocks.any fun b => b.instrs.any fun i =>
     match i with
     | Instr.store .ptr (.imm .null) (.reg r) => r == reg
     | _ => false
-
--- The body parses, at the shape the capture records (38 blocks, 145 instructions).
-#guard decide (odScalarValueBody.map
-  (fun f => (f.name, f.blocks.length, (f.blocks.flatMap (·.instrs)).length, f.params.length)) =
-    some ("od_scalar_value", 38, 145, 4))
-
--- The refusal path stores the error record's message pointer at offset sixteen.
-#guard (match odScalarValueBody with
-  | some f => storesNullAt f "%msg2.i.i"
-  | none => false)
-
--- The control: the message store's marker does not fire on a body without it.
-#guard (match firstFunction s2InitSrc with
-  | some f => !storesNullAt f "%msg2.i.i"
-  | none => false)
 
 /-! #### `num_fast_el1`, pinned at the shape the capture records
 

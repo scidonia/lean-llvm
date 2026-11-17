@@ -291,8 +291,18 @@ needs the other two to match.
   line, generates the fixed-seed synthetic corpus and tiles the route documents
   for size, and reports GB/s and calibrated cycles per byte per unit from a warm
   buffer on both core classes, with the corpus, flags, host and gates recorded.
-  Run it with `nix develop -c bash tests/json-units-bench/bench.sh`; its numbers
-  and limits are the last section of `docs/json-pipeline-performance.md`.
+  `bench-simdjson.sh` measures simdjson 5.0.5 on the same corpus with the same
+  pinning, repetitions and trials: `simdjson-baseline.cc` reports its stage 1
+  (classification, UTF-8 validation and the structural-index array) separately
+  from its full on-demand parse, and the script checks every corpus file against
+  the units' size and sha256 before timing. It builds against the realised
+  `simdjson-5.0.5-dev` and `simdjson-5.0.5` store outputs and writes
+  `simdjson-transcript.txt`; run it with
+  `nix develop -c bash tests/json-units-bench/bench-simdjson.sh`. Its rows are
+  not a check, and the note's last section states which comparisons are
+  like-for-like. Run the units' bench with
+  `nix develop -c bash tests/json-units-bench/bench.sh`; its numbers and limits
+  are the last section of `docs/json-pipeline-performance.md`.
   `probes/install/ir/capture-json.sh` regenerates the classifier fixture and
   records its invocation and stripped items, and `lake exe leanllvm-json-emit`
   prints the caller fixture.  Each route carries a
@@ -325,7 +335,10 @@ needs the other two to match.
   `utf8_stage_refines`); the note's ratios are measurements
   of the scratch build and are not claims about those units, and the note's
   last section records the units' own measurement, with its instrument, corpus,
-  flags, host and variance, kept separate from those ratios.
+  flags, host and variance, kept separate from those ratios.  That section also
+  records a simdjson 5.0.5 stage-1 and full-parse measurement on the same
+  corpus, with the store paths, flags and transcript, and states that stage 1
+  is the stage-for-stage counterpart while the full parse is not.
 
 ## What a change must satisfy
 

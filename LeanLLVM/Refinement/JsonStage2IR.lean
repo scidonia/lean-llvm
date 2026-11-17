@@ -70,6 +70,45 @@ the number dispatch's counters.  The number conversion's two caps
 this body; they are stated at that callee's contract, and the call census below
 is what says so.
 
+## The six sub-units, and their text
+
+The obligation names one `Function`: `stage2Body`, pinned above.  Its six
+out-of-line callees are reached through `stage2Calls stage2SubCalls`, and each
+one's text is pinned where its own module sits, by the same equality the pin
+above uses:
+
+* `s2_init` — `JsonStage2HelperIR.s2InitBody`, `firstFunction s2InitSrc =
+  some s2InitBody`, with a mutated-offset control beside it.
+* `s2_value_pos` — `JsonStage2HelperIR.s2ValuePosBody`, the same equality pin.
+* `s2_after_value` — `JsonStage2HelperIR.s2AfterValueBody`, the same.
+* `s2_string_body` — `JsonStage2StringBody.s2StringBodyBody`, pinned to
+  `stage2.helper.s2_string_body.ll` with a mutated-offset control, and its
+  contract proved of that body (`s2StringBodyBody_contract`).
+* `od_scalar_value` — `JsonStage2HelperIROdScalar.odScalarValueBody`, pinned to
+  the whole parse with a mutated-pivot control; its contract proof is
+  obstructed (below).
+* `num_fast_el1` — `JsonStage2HelperIRNumFast.numFastBody`, pinned block by
+  block, the pins generated from the parse, with the declared layout and a
+  mutated-immediate control.
+
+So none of the seven bodies this obligation reaches is a transcription: each is
+a written-out parse held to its committed fixture by a `#guard`, as
+`JsonClassifyIR` holds `classify32Function` to `json-classify.candidate.ll`.  The
+models' own text is pinned separately: `JsonStage2Body`'s `#guard`s assert that
+each line the model encodes is a line of `kernel/json/stage2.c`, and a control
+beside them shows the marker discriminates.
+
+What remains outside the kernel is named in the two sections below: the fixtures
+are clang's output (the capture scripts record the compiler line, the strip
+classes, the rewrites and the staging, `capture-stage2.sh` refuses a second
+compilation that differs, and `capture-stage2-helpers.sh` refuses a body that
+stops being the symbol the walk declares or whose arguments drift from the
+walk's), and the six models `stage2SubCalls` selects are not refinements of
+these bodies — the contracts are proved of the bodies for `s2_init`,
+`s2_value_pos`, `s2_after_value` and `s2_string_body` (the last under its
+expander call clause), and `od_scalar_value`'s and `num_fast_el1`'s are owed or
+partial, as `docs/contract.md` §7.6 rows e and f record.
+
 ## What is discharged here, and what is not
 
 Discharged: the pin; the ABI prefix and the staging suffix; the census; the
