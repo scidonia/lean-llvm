@@ -37,12 +37,12 @@ does not hold and the reason:
 | `.ws` | `HcontFacts`'s `hTail` and its `hround`/`hguard`/`hbyte` | the tail starts at a *landing* whose index is the run's stop, and the stop is the run's own count; the scan's traversal rows are `∀`-forms over the latch's recursion, which the payload cannot name before that recursion exists |
 | `.cleanup` | the empty tail's three calls | **exposed, and the arm consumes it**: the three links are `emptyTailSeg_of_calls` (`JsonStage2WalkDispatchSegments`) from the value-position, scalar and copy calls' rows, and `hcontArm_cleanup_of_calls` builds the arm at those rows plus the seam's two cells (`contTailStart_ee`, `contTailStart_cond`).  Its head chain is a theorem too: `hcontHeadSeg12_of_cleanup` and `hcontSpan17_of_cleanup` derive the seventeen links from the bundle's fields.  So the payload's `abi` group plus the lane's word produce this class's arm |
 | `.scalar` | the empty tail's three calls at the *continuing* route's seam | **the tail's producer is now `scContTail_of_calls`** (`JsonStage2WalkDispatchSegments`): the seam is `scSeamS`, its two test cells are that seam's own peels (`scSeam_ee`, `scSeam_cond`, `JsonStage2WalkHcontScalar`), and `emptyTailSeg_of_calls` composes the three calls at them.  What remains is the arm-level assembly that puts those rows into `HcontScalarFacts` — the bundle's other fields plus the call rows — not a missing cell |
-| `.letters`, `.fLetter` | the head's chain to `if.else387.i` | **per head-switch class, not one composition**: `97` takes `NodeBlock19 → NodeBlock11 → LeafBlock9` and `200` takes `NodeBlock5 → LeafBlock` (`JsonStage2WalkDispatchLettersDomain`), so this class's chain is several prefixes and no single twelve-link statement covers it.  `hcontHeadSeg12` exposes the **high-byte** class's twelve — the one `hcontToSpan` proved, consumed by `.cleanup` through `hcontSpan17_of_cleanup` — so the letters class's chain stays the arm's field |
-| `.classC` | the byte's own span | **exposed**: `classCSpan_at` produces a span at the arm's endpoint from the class's `slt %8 110` bit alone (the upper bound is not a premise: `126`/`127` take the same leaf), and `classCHeadSpan_at` composes it with the head's twelve at `12 + nS`.  The arm's `hTail` is stated at the span's *endpoint*, which the span returns existentially, so a producer passing both must name the leaf; the span is derivable where the endpoint is named, and is the arm's field otherwise |
-| `.run` | `RunFacts` and its four segments | **the composition is stated and consumed; its head and scan tail are still fields**: `runSegmentsAt` states the head, span, tail and latch at their own counts (the head's `≤ 12 + N`, the run `N` inside it), and `runToLatchSeg_at` (`JsonStage2WalkDispatchSegments`) is the counted form's consumer.  The head's chain would be `contWsRunF`'s at the whitespace route's named states and the tail's scan arm `consumerTailSegAt`'s at the callee rows; neither is composed into `RunFacts`'s fields yet, so the payload's `trav` rows do not build them |
+| `.letters`, `.fLetter` | the head's chain to `if.else387.i` | **per head-switch class, and now one theorem per class**: `JsonStage2WalkDispatchLettersHead` factors the chain into the **suffix** every default class shares — `sw.default.i`, the count test's succeeding arm, the bound's `phi`, the whitespace check, the byte's three pivots and the token's end, eight links at *any* state at `sw.default.i` (`contDefaultSeg`) — and the class's **prefix**: `.defaultValueLow`'s three links (`contLowHeadSeg`, eleven in all — the low bytes and every byte above `127`), and `.defaultValueMid`/`.otherValue`/`.defaultValueBracket`/`.defaultValueBracketHigh`'s four (`contMidHeadSeg`, `contOthHeadSeg`, `contBrkHeadSeg`, `contBhHeadSeg`, twelve each).  What remains is the **arm's shape**: `HcontArm.letters`/`.fLetter`/`.classC` fix the chain at twelve and `LastEntryArm`'s at eleven, and `.defaultValueLow`'s continuing chain is eleven, so the constructor must take a counted field (`nH` with `nH ≤ 12`) before a producer can pass the class's chain.  The compositions (`lettersCleanupMerge_at`, `fCleanupMerge_at`, `classCMerge_at`) already take `nH`/`hnH`, so this is a change to the arm's statement, not a missing proof.  The chain's *cells* — the next lane's word and its read, the bound's compare, `%35` and its class — are the class's document facts, which no payload group carries yet (see below) |
+| `.classC` | the byte's own span | **exposed**: `classCSpan_at` produces a span at the arm's endpoint from the class's `slt %8 110` bit alone (the upper bound is not a premise: `126`/`127` take the same leaf), and `classCHeadSpan_at` composes it with the head's twelve at `12 + nS`.  The arm's `hTail` is stated at the span's *endpoint*, which the span returns existentially, so a producer passing both must name the leaf; the span is derivable where the endpoint is named, and is the arm's field otherwise.  Its bytes' head-switch classes are `.defaultValueBracketHigh` (`110 … 122`, `contBhHeadSeg`'s twelve) and `.defaultValueBrace` (`124`, `NodeBlock17 → LeafBlock13 → sw.default.i`), so `124` needs a sixth prefix — `.classC`'s chain is not one class's either |
+| `.run` | `RunFacts` and its four segments | **composed at the whitespace class**: `JsonStage2WalkDispatchRunHead`'s `wsRunHeadSeg` joins `contPrefixLand`'s eight to `contWsRunF`'s run at `8 + N ≤ 12 + N`, returns the seam's `%8` cell and the stop's bound, and carries `contWsPriceF`'s price as `RunFacts`'s `hprice`.  `wsLandingSeg` is `walkScanLinks457`'s three at `HcontFacts`'s own entry (its `pre`, its selection and its four byte facts), and `runFacts_of_wsFacts` builds the **whole bundle** from `HcontFacts` and the invariant: the span is `walkHeadChainCSeg`'s five at the bundle's seam byte, the tail is the bundle's `hTail` (`consumerTailSegAt`'s), the counter and bound are the latch's, the budget is `runBudget_of_wsPrice`'s, and the merge's cells are `contWsLatch_inc`/`_nep`'s.  So at `126`/`127` **no `RunFacts` field is a supply**.  What remains for `.run` at the *other* default classes is the same bundle at their own head state: `runFacts_of_staging` already takes exactly the segments the class's head chain and span provide, and its `hbit`/`h8m` are the class's byte — a keyed producer per class, not a missing composition |
 | the last entry's `.highByte` | none — `HlastLane.tail` and `HlastAbi.highByte` | proved below: the residue `HlastResidue` is *built* from the two groups (`lastEntryArm_highByte_of_payload`), so the bundle is constructed, not assumed |
 | the last entry's `.scalar` | the three calls at the scalar route's seam | `JsonStage2WalkDispatchScalarOfStaging` states the producer; its call rows are at the scalar route's own seam state, which the payload's last-level `abi` group does not reach |
-| the last entry's `.letters`, `.fLetter`, `.classC`, `.run` | the head's eleven links and the listed spans | the eleven-link head is `hlastTailSeg`'s, so this is the one level where the head row *is* a theorem; what remains is the assembly |
+| the last entry's `.letters`, `.fLetter`, `.classC`, `.run` | the head's eleven links and the listed spans | `hlastTailSeg` is the last entry's **high-byte** class's sixteen links (six head links, the whitespace check's four, the token's end and the span), not the letters class's; the letters arms at this level take their own chains, whose counts are the continuing ones' minus the count test's `cond.true345.i` (so ten for `.defaultValueLow`, eleven for the four others).  No per-class last-entry chain is stated yet, and the arm's fixed count has the same shape problem as the continuing level's |
 
 So the answer this module gives to "is a bundle still a hypothesis" is: **no bundle is
 assumed by the payloads or by the paths proved here; the classes listed above take a named
@@ -73,15 +73,28 @@ statement of that chain is without a consumer, and the twelve appear once.
   (`scalarTail_of_calls`), and so is the continuing scalar route (`scContTail_of_calls`, at
   `scSeamS`'s own two cells).
 
+The two rows this round set out to retire are **statements now**: the letters class's head
+chain is one theorem per head-switch class (`JsonStage2WalkDispatchLettersHead`, above), and
+the run class's head is composed at the whitespace class with the whole `RunFacts` built
+from `HcontFacts` (`JsonStage2WalkDispatchRunHead`, above).
+
 What that does **not** yet give is the bundle theorems
-`walkContinueFacts_of_payload`/`walkLoopEnd_of_payload`: two rows still stand between the
-payloads and `WalkPremises`, and the table names each — the letters class's per-class head
-chain (one segment per head-switch class, `97`'s and `200`'s differ in both blocks and
-count) and the run class's per-class head and scan-arm compositions (`contWsRunF` at the
-whitespace route's named states, `consumerTailSegAt` at the callee rows).  The continuing
-scalar route's row is now a producer call (`scContTail_of_calls`) and its arm-level
-assembly, not a missing peel.  Retiring the two remaining rows is more segment statements
-of the same kind, not a missing input.
+`walkContinueFacts_of_payload`/`walkLoopEnd_of_payload`, and the reasons are now three,
+none of them a missing segment.  First, the letters arms' fields are fixed counts
+(`HcontArm.letters`/`.fLetter`/`.classC` at twelve, `LastEntryArm`'s at eleven) while
+`.defaultValueLow`'s continuing chain is eleven, so the arm must take a counted field
+(`nH` with `nH ≤ 12`) before a producer can pass the class's chain; the compositions
+already take `nH`/`hnH`, so that is a statement change to the enum, not a proof.  Second,
+the chain's *document cells* — the next lane's word and its read, the bound's compare, the
+byte before the entry's end and its class — are not carried by any payload group: the
+`lane`/`abi`/`trav` groups describe the openers' and the standalone string's rows, and a
+per-class `HcontDefaultLane`/`HcontDefaultTrav` group is the work a producer of `.letters`,
+`.fLetter` and `.classC` needs beside `hTail`.  Third, the run's bundle is produced only at
+the whitespace class: `runFacts_of_staging` takes the segments at any class, but its `hbit`
+and `h8m` are `hlastByte`-shaped, so each other default class needs its own keyed producer.
+A `walkContinueFacts_of_payload` stated over a payload carrying those two groups would be a
+class case over `HcontClass.complete` with every arm's producer in hand; what this module
+will not do is state it over a payload that quietly holds the arms themselves.
 
 ## The closure claim
 

@@ -162,3 +162,5 @@ import LeanLLVM.Refinement.JsonStage2WalkTerminalPrice
 import LeanLLVM.Refinement.JsonStage2WalkDispatchResidual
 import LeanLLVM.Refinement.JsonStage2WalkDispatchSegments
 import LeanLLVM.Refinement.JsonStage2WalkDispatchSupply
+import LeanLLVM.Refinement.JsonStage2WalkDispatchLettersHead
+import LeanLLVM.Refinement.JsonStage2WalkDispatchRunHead

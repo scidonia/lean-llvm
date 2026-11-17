@@ -132,7 +132,16 @@ def letters_cont_arm_a {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State
     (lettersPrem_a).1 (lettersPrem_a).2.1 (lettersPrem_a).2.2
     hHead hm hmk h8m hTail ht htk htok
 
-/-- **`\xC8 0`'s head takes the continuing letters arm**, on the other head class. -/
+/-- **`\xC8 0`'s head takes the continuing letters arm**, on the other head class.
+
+**The arm's field is stated at twelve, and this class's route is eleven.**  `.defaultValueLow`
+takes `NodeBlock5 → LeafBlock → sw.default.i` — three pivots, where `.defaultValueBracketHigh`
+takes four — so the segment to `if.else387.i` is eleven links
+(`contLowHeadSeg`, `JsonStage2WalkDispatchLettersHead`).  The twelve-link hypothesis below
+therefore cannot be built at this document: the arm is inhabited here only once its `hHead`
+field is a counted one (`nH` with `nH ≤ 12`), which is what the segment's own count says.
+The composition above the arm (`lettersCleanupMerge_at`) already takes `nH`/`hnH`; the
+constructor is the piece still at a fixed count. -/
 def letters_cont_arm_high {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
     (h : LettersDocument G (200 : UInt8)) (hInv : WalkInv G (walkSeed G S) s)
     {Cm : WalkCarry G} {sm : State}

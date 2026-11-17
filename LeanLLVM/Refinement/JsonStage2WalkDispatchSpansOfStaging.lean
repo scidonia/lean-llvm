@@ -97,7 +97,15 @@ theorem hlastByte_of_reg8 {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : St
 The class is `slt %8 110 = 1` beside `%8 ≠ 102`, on the scan-free continuation: the span
 below `if.else387.i` is `lettersSpan`'s four links at kind `0`, the head's chain is twelve
 links at a continuing entry and eleven at the last, and the tail's three calls end at
-`if.end473.i` on their empty arm. -/
+`if.end473.i` on their empty arm.
+
+**The head's count is the head-switch class's**, not this producer's: twelve at the
+bracket-and-mid classes and **eleven** at `.defaultValueLow` (the low bytes and every byte
+above `127`), whose route is `NodeBlock5 → LeafBlock → sw.default.i`.  The per-class chains
+are `JsonStage2WalkDispatchLettersHead`'s (`contLowHeadSeg` at eleven, `contMidHeadSeg`,
+`contOthHeadSeg`, `contBrkHeadSeg`, `contBhHeadSeg` at twelve).  The producer below takes
+the segment at a fixed twelve, so it cannot be applied at a `.defaultValueLow` state until
+the field is counted (`nH` with `nH ≤ 12`). -/
 
 /-- **The letters arm on the continuing head, from the staging.**  `HcontArm.letters` at
 every state that carries the invariant, with the class's own predicate at the register's

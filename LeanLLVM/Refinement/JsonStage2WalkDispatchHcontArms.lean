@@ -437,7 +437,15 @@ inductive HcontArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
   end at `if.end473.i`, i.e. the copy call's test `ult %ee.1.i %cond350.i` was false, which
   is the token-end class whose byte before the entry's end is not whitespace.  On the run
   class that test is true and the target is `land.rhs457.i`, the scan's landing, so that
-  class's segment is the scan's — `HcontFacts`'s, `.ws`'s — and not this one. -/
+  class's segment is the scan's — `HcontFacts`'s, `.ws`'s — and not this one.
+
+  **The twelve is the four-pivot classes' count, and this field is fixed at it.**  The
+  bytes `0 … 43` and `128 … 255` (`.defaultValueLow`) take `NodeBlock5 → LeafBlock →
+  sw.default.i`, three pivots, so their chain is **eleven** links
+  (`contLowHeadSeg`, `JsonStage2WalkDispatchLettersHead`), and no segment at twelve exists
+  at their states.  The constructor is therefore not inhabited at every state its class
+  admits; it becomes so when this field is counted (`nH` with `nH ≤ 12`), which
+  `lettersCleanupMerge_at` already takes. -/
   | letters {x : BitVec 8} (h8 : evalOperand s (.reg "%8") = some (.int 8 x))
       (hbit : (evalICmp .eq x (BitVec.ofNat 8 45) |||
         evalICmp .ult (x + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
