@@ -160,3 +160,4 @@ import LeanLLVM.Refinement.JsonStage2WalkDispatchStringOfStaging
 import LeanLLVM.Refinement.JsonStage2WalkDispatchRunOfStaging
 import LeanLLVM.Refinement.JsonStage2WalkTerminalPrice
 import LeanLLVM.Refinement.JsonStage2WalkDispatchResidual
+import LeanLLVM.Refinement.JsonStage2WalkDispatchSupply
