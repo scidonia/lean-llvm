@@ -68,13 +68,41 @@ seam, `hlast_toMerge` states the path at the route's count (`12 + hlastByteCount
 `.highByte` selects `.lowLeaf`/`.highLeaf` rather than assuming the scan-free leaf.
 
 **What the two class cases still need is a payload item, not a proof.**  Each branch
-exists, but `walkContinueFacts_of_payload`'s `.run` branch takes a `HcontRunRow` and
-`walkLoopEnd_of_payload`'s default arms take the `LastEntryArm` constructors' premises,
-and neither `HcontPayload`/`HcontClassRows` nor `HlastPayload`/`HlastClassRows` produces
-those: the first carries no check state's rows, the second only the openers' and the
-high-byte class's.  Widening a payload is a contract change, so it is recorded rather
-than improvised here; the rows themselves are `HcontRunRow`, `HcontRunRows`,
-`HcontWsSeam` and the `lastEntryArm_*_of_staging` producers' argument lists.
+exists, but the continuing case is two-dimensional — the head class does not fix the next
+byte's class — and one cell of that matrix has no arm at all:
+
+* The head's byte class is `HcontClass`'s; the next entry's last byte's class is
+  `HcontByteClass` (from the payload's `defaultLane`).  At the high-byte head (`126`/`127`)
+  the two partition the matrix: `HcontByteClass.wsByte` is `HcontArm.ws`'s run
+  (`HcontFacts`, whose prefix is that head's) and the three leaves are
+  `HcontArm.cleanup`'s (`HcontCleanupFacts` carries the route, so all three).  At the
+  default arm's classes (`tag = 0`) they partition it too: `wsByte` is `HcontArm.run`
+  (the check state's row, `HcontClassRows.runRow`, plus the byte's leaf composed from the
+  row), and the three leaves are `letters`/`fLetter`/`classC` by the head byte's pivots,
+  with the chain built from `defaultLane` plus those bits.
+* **`.value` has one arm, and it is route-fixed.**  `HcontArm.scalar` is the only
+  constructor at `HcontClass.value` (the tag test is `1` there, so `letters`/`fLetter`/
+  `classC`, which take `tag = 0`, are excluded), and its bundle's route is
+  `HcontByteRoute.highLeaf`: `HcontScalarFacts.hb13/hb32/hbne32` are `slt 13 = 0`,
+  `slt 32 = 0`, `eq 32 = 0`.  So `.value` × {`wsByte`, `scanFree`, `lowLeaf`} — three
+  cells of 4 — have no producer, and `WalkInv` does not exclude them: it fixes the
+  memory's shape, not the document's content.  `walkContinueFacts_of_payload` therefore
+  cannot be total today, and the fix is a producer per cell (a route-carrying scalar
+  bundle for the three leaves, as `HcontCleanupFacts` was restated; and the whitespace
+  run after a numeral, which is not `HcontFacts`'s prefix either), not a row: a row for
+  those cells would be the arm.
+
+  The route-carrying bundle's first piece is in `JsonStage2WalkHcontScalar`: `sP41Out`/
+  `sP41Low`/`sP33Out`/`sP39Out`/`sP39High`/`sP37Out`, the three endpoints `sP35Any`/
+  `sP33Any`/`sP37Any`, and `scSeamByte` — the scalar route's seam at `HcontByteRoute` —
+  with `scSeamByte_highLeaf` proving the high-leaf instance is `scSeamS` by `rfl`, so the
+  bundle's existing proofs read the route's seam unchanged.
+
+**What the last level still needs is a payload item, not a proof** — closed: the last
+level's case is total as written, because its `.scalar` is guarded by the document route
+the row carries (`HlastScalarRows.hb13/hb32/hbne32`) rather than by a fixed bundle, and
+its default arm splits on `wsStop` before choosing a leaf, so every cell of its matrix has
+a branch.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkDispatchClassCLeaves
 import LeanLLVM.Refinement.JsonStage2WalkDispatchScalarRows

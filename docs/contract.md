@@ -919,11 +919,18 @@ seam's three calls at `contTailStart`), and each has its branch in
 `JsonStage2WalkDispatchClassCase`.  Two payload items stand between those branches and the
 two theorems, and both are contract changes rather than missing proofs:
 
-* **The continuing level's run class needs a row group.**  `HcontClassRows.run` takes a
-  `HcontRunRow` (the check state's rows plus the seam's group, joined to `RunFacts` by
-  `hcontRunFacts_of_seam`), and no field of `HcontPayload` produces one at the class's short
-  prefix — `HcontClassRows.runRow` now states the row itself, guarded by the default lane's
-  whitespace class, so the remaining work is the case's `.run` branch, not a supply.
+* **The continuing level's run class is a row, and its case's remaining cell is a
+  producer.**  `HcontClassRows.runRow` states the run's row (the check state's rows plus
+  the seam's group, guarded by the default lane's whitespace class) and
+  `HcontClassRows.run` joins it to `RunFacts` through `hcontRunFacts_of_seam`; what the
+  case still composes is the byte's leaf below `if.else387.i` from the row's own cells.
+  The continuing case is two-dimensional — the head class does not fix the next byte's
+  class — and one cell has no arm: at `HcontClass.value` (the tag test is `1`) the only
+  constructor is `HcontArm.scalar`, whose bundle fixes the route at
+  `HcontByteRoute.highLeaf` (`HcontScalarFacts.hb13/hb32/hbne32`), so `.value` ×
+  {`wsByte`, `scanFree`, `lowLeaf`} has no producer and `WalkInv` does not exclude those
+  states.  That is a missing arm per cell — a route-carrying scalar bundle, and the
+  whitespace run after a numeral — not a row.
 * **The last level's groups are stated and the case is closed.**  `HlastArmRows`
   (`JsonStage2WalkDispatchLastRows`) carries the five groups whose types name states above
   `DispatchClassRows` — `HlastScalarRows`, `HlastLettersRows`, `HlastFLetterRows`,
