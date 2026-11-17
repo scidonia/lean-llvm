@@ -975,8 +975,9 @@ and neither is a theorem.  They are not the same kind of obstruction:
 Both rows are the same kind of obstruction — a per-class/per-arm producer tier that is not
 yet built — and the three shape defects the continuing bundle's producer rows carried are
 now repaired rather than described.  `HcontDefaultRow.hclass` is a `Type`-valued
-disjunction (`HcontByteClass`: `.wsStop` or `.scanFree`), each arm taking its own disjunct,
-so `HcontPayload` is inhabited at the whitespace states again and
+classification (`HcontByteClass`: `.wsByte`, `.scanFree`, `.lowLeaf` or `.highLeaf`), each
+arm taking its own disjunct and `HcontByteClass.complete` proving the four cover the byte,
+so `HcontPayload` is inhabited at every head state with an entry left and
 `HcontScanFree.not_wsStop` records the exclusion the old row had asserted; the visited-byte
 row is stated at the visits' span (`k < p + 1`) in `hcontFacts_of_staging`, in
 `scanByteField`, in every `hbyte` and in `ScanVisits`, which `cont_hbyteClass_not_wsCont`

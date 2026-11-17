@@ -253,9 +253,11 @@ noncomputable def runFacts_of_runBundle {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
     (sl : State) (nPre : Nat)
     (hPre : WalkSegment (stage2Calls stage2SubCalls) G C s (ContAC₄ C) sl nPre)
     (hnPre : nPre ≤ 8) (f : HcontRunFacts G C sl) (hk : C.k + 1 < G.nep)
+    {nS : Nat}
     (hSpan : Seg (stage2Calls stage2SubCalls) G (ContSeamC C)
       (contWsSeamS C (wsSlAt G sl f.b35 f.ix f.v f.k) f.k f.x1) (ContTailStartC C)
-      (contWsTailStart C (wsSlAt G sl f.b35 f.ix f.v f.k) f.k f.x1 f.x1) 5) :
+      (contWsTailStart C (wsSlAt G sl f.b35 f.ix f.v f.k) f.k f.x1 f.x1) nS)
+    (hnS : nS ≤ 5) :
     RunFacts G C s := by
   let w := wsRunHeadAt G C s sl nPre hPre hnPre f hk
   refine
@@ -278,9 +280,9 @@ noncomputable def runFacts_of_runBundle {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
       h8m := w.h8
       Cs := ContTailStartC C
       ss := contWsTailStart C (wsSlAt G sl f.b35 f.ix f.v f.k) f.k f.x1 f.x1
-      nS := 5
+      nS := nS
       hSpan := hSpan
-      hnS := le_rfl
+      hnS := hnS
       hs := rfl
       Ct := TailCarryScan (ContTailStartC C) f.ev
       st := contWsEntryAt f
@@ -342,19 +344,21 @@ noncomputable def runFacts_of_defaultClass {m0 : Mem} (G : WalkGeom m0) (C : Wal
     (f : HcontRunFacts G C
       (contLandOut (G := G) (contMidS C q5 inc nep ep v ix) v.toNat b35))
     (hk : C.k + 1 < G.nep)
+    {nS : Nat}
     (hSpan : Seg (stage2Calls stage2SubCalls) G (ContSeamC C)
       (contWsSeamS C (wsSlAt G
         (contLandOut (G := G) (contMidS C q5 inc nep ep v ix) v.toNat b35)
         f.b35 f.ix f.v f.k) f.k f.x1) (ContTailStartC C)
       (contWsTailStart C (wsSlAt G
         (contLandOut (G := G) (contMidS C q5 inc nep ep v ix) v.toNat b35)
-        f.b35 f.ix f.v f.k) f.k f.x1 f.x1) 5) :
+        f.b35 f.ix f.v f.k) f.k f.x1 f.x1) nS)
+    (hnS : nS ≤ 5) :
     RunFacts G C s :=
   runFacts_of_runBundle G C s hInv hblock _
     (nq + 4)
     (hPrefix.trans (contSwToLandSeg G C q5 hPrefix.inv' rfl hinc hnep hnext h5 hi63 hread
       hidx htok hgap hugt hread35))
-    (by omega) f hk hSpan
+    (by omega) f hk hSpan hnS
 
 /-! ### The instrument -/
 

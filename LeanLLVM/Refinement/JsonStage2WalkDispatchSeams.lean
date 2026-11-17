@@ -751,6 +751,63 @@ noncomputable def hcontRunFacts_of_rows {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
     hbyte := rows.hbyte
     htok := rows.htok }
 
+/-! ### The run's bundle at a class's check state, from its rows and its seam
+
+`hcontRunFacts_of_rows` takes the rows and the seam's cells separately; a class supplies
+them as two groups: `HcontRunRows` at the check state and `HcontWsSeam` at the seam the
+class's own span reaches.  This joins them, so the bundle's one segment is the tail the
+cells produce and nothing enters as an assumed segment. -/
+
+/-- **A class's check state**: its prefix's endpoint and the shared four links to
+`NodeBlock41`. -/
+abbrev contRunCheck {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (q5 : State)
+    (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64) (b35 : UInt8) :
+    State :=
+  contLandOut (G := G) (contMidS C q5 inc nep ep v ix) v.toNat b35
+
+/-- The seam the run's chain reaches: `if.else387.i`'s state at the run's stop.  The
+check state's byte is `b35`; the record's byte, the run's start and its bound are the
+body's (`bb35`, `bix`, `bv`). -/
+abbrev contRunSeamS {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (q5 : State)
+    (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64) (b35 : UInt8)
+    (bb35 : UInt8) (bix : BitVec 64) (bv : BitVec 32) (k : Nat) (x1 : BitVec 8) : State :=
+  contWsSeamS C (wsSlAt G (contRunCheck G C q5 inc nep ep v ix b35) bb35 bix bv k) k x1
+
+/-- The tail's start: the byte's own leaf leaves `if.then413.i`. -/
+abbrev contRunTailS {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (q5 : State)
+    (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64) (b35 : UInt8)
+    (bb35 : UInt8) (bix : BitVec 64) (bv : BitVec 32) (k : Nat) (x1 : BitVec 8) : State :=
+  contWsTailStart C (wsSlAt G (contRunCheck G C q5 inc nep ep v ix b35) bb35 bix bv k) k x1 x1
+
+/-- **`HcontRunFacts` from the run's rows and the seam's group.**  Every cell the tail's
+producer reads is one of the seam's fields, and the one numeric fact it needs beside them
+is the lane's bound at the run's stop, which is the rows' class: `v - k ≤ inner` follows
+from `v - ix ≤ inner` and `ix < k`.  So the bundle's tail is `hcontScanTail_at`'s at the
+rows' own stop, and no segment is an input. -/
+noncomputable def hcontRunFacts_of_seam {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (q5 : State) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
+    (b35 : UInt8)
+    (b : HcontRunBody G C (contRunCheck G C q5 inc nep ep v ix b35))
+    (ev : EventRecord)
+    (calls : HcontSeamCalls G (ContTailStartC C)
+      (contRunTailS G C q5 inc nep ep v ix b35 b.b35 b.ix b.v b.k b.x1))
+    (rows : HcontRunRows G C (contRunCheck G C q5 inc nep ep v ix b35)
+      b.b35 b.ix b.v b.k b.x1 calls.r₁ calls.r₂ calls.r₃ ev calls.cA calls.rdv calls.xA)
+    (seam : HcontWsSeam G C (contRunCheck G C q5 inc nep ep v ix b35) b calls) :
+    HcontRunFacts G C (contRunCheck G C q5 inc nep ep v ix b35) :=
+  hcontRunFacts_of_rows G C (contRunCheck G C q5 inc nep ep v ix b35)
+    b.b35 b.ix b.v b.k b.x1 calls ev rows seam.hInv
+    (pT := "if.else405.i") (regT := "if.else405.i")
+    (opT := Operand.imm (.int 32 (BitVec.ofNat 32 0)))
+    seam.hpre seam.hphi seam.hop seam.hkind seam.hrd seam.hreadRoot seam.hc seam.ht seam.ho
+    seam.htight seam.hklt seam.hei seam.hcd
+    (by
+      have hik : b.ix.toNat < b.k := rows.hClass.2.2.2.1
+      have hsub : b.v.toNat - b.ix.toNat ≤ C.inner := rows.hClass.2.2.2.2.1
+      have hinn : (ContTailStartC C).inner = C.inner := rfl
+      show b.v.toNat - b.k ≤ (ContTailStartC C).inner
+      omega)
+
 /-! ### The instrument -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.scanTailSeg_at
@@ -758,6 +815,7 @@ noncomputable def hcontRunFacts_of_rows {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
 #print axioms LeanLLVM.Refinement.WalkScope.hcontScanTail_of_calls
 #print axioms LeanLLVM.Refinement.WalkScope.hcontScanTail_at
 #print axioms LeanLLVM.Refinement.WalkScope.hcontRunFacts_of_rows
+#print axioms LeanLLVM.Refinement.WalkScope.hcontRunFacts_of_seam
 #print axioms LeanLLVM.Refinement.WalkScope.hcontWsSeam_of_body
 #print axioms LeanLLVM.Refinement.WalkScope.hcontScanTail_of_seam
 

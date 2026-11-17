@@ -19,6 +19,7 @@ and (for the positive-depth opener) the route the arm itself carries.
 | `.value`, at a scan-free document byte | `hcontArm_scalar_of_class` | `scalar` — the prefix's seam row |
 | `.defaultValueHigh`, at a scan-free document byte | `hcontArm_cleanup_of_class` | `cleanupRow`, and `cleanup` for the document row |
 | the default arm's scan-free classes | `hcontArm_letters_of_class`, `hcontArm_fLetter_of_class`, `hcontArm_classC_56True_of_class` … `hcontArm_classC_58Else_of_class` | `letters`, `fLetter`, `c56True` … `c58Else` |
+| `.run`, the whitespace document byte | `hcontArm_run_of_class` | `run`, with the byte's own leaf below `if.else387.i` as the arm's span |
 | `.stringOpener` at `C.sp ≠ 0` | `hcontArm_stringOpenAboveZero_of_class` | `deep`, and the payload's `abi.openCall` |
 
 The classes whose producer is the invariant's own — the four derived delimiters
@@ -29,18 +30,15 @@ they are proved where they are stated.
 
 ## What the case still needs
 
-Three things stand between these branches and `walkContinueFacts_of_payload`:
+Two things stand between these branches and `walkContinueFacts_of_payload`:
 
-* the run class's row — its arm takes `RunFacts`, and no producer joins the check state's
-  rows and the seam's state group to that bundle at the class's short prefix, so the
-  whitespace document byte has no branch;
 * the default arm's other document-byte classes — the byte below `13` or at or above `32`
   takes `LeafBlock33`/`LeafBlock37` to `if.end372.i`, and no chain producer states those
   routes, so a state whose document byte is one of them has no arm to select;
-* the byte selection itself — which of `letters`/`fLetter`/`classC` a scan-free state takes
-  is decided by the head byte, so the case needs the class bits' transport into those three
-  arms' own bits, and the brace class `124`'s chain (`contBrcHeadSeg` has no `_of_lane`
-  wrapper yet).
+* the byte selection itself — which of `letters`/`fLetter`/`classC` a state takes is
+  decided by the head byte, so the case needs the class bits' transport into those three
+  arms' own bits, for the brace class `124` included (`brcHeadChain_of_lane` now states
+  its chain; the bits' transport is the case's remaining work).
 -/
 import LeanLLVM.Refinement.JsonStage2WalkDispatchClassCLeaves
 import LeanLLVM.Refinement.JsonStage2WalkDispatchScalarRows
@@ -172,6 +170,21 @@ theorem hcontArm_cleanup_of_class {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
   obtain ⟨calls, hcA, hroot⟩ := hc.cleanupRow C s doc
   exact hcontArm_cleanup_of_rows hInv hblock hk hlt125 hne125 doc hroot calls hcA rfl
 
+/-! ### The run class -/
+
+/-- **The run class's continuing arm, from the class's row.**  The row is `HcontRunRow`'s —
+the prefix, the check state's rows and the seam's group — and the span is the head byte's
+own leaf below `if.else387.i`, which the caller composes from the class's bits.  The bundle
+is the row's consequence (`hcontRunFacts_of_seam`), not a premise. -/
+theorem hcontArm_run_of_class {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)
+    (row : HcontRunRow G C s) {nS : Nat}
+    (hSpan : Seg (stage2Calls stage2SubCalls) G (ContSeamC C) row.seamS
+      (ContTailStartC C) row.tailS nS)
+    (hnS : nS ≤ 5) (hc : HcontClassRows G) :
+    Nonempty (HcontArm (stage2Calls stage2SubCalls) G C s) :=
+  hc.run C s hInv hblock hk row hSpan hnS
+
 /-! ### The string opener above depth zero -/
 
 /-- **The positive-depth opener's arm, from the class's row.**  The class's own facts are
@@ -203,6 +216,7 @@ def hcontArm_stringOpenAboveZero_of_class {m0 : Mem} {G : WalkGeom m0}
 #print axioms LeanLLVM.Refinement.WalkScope.hcontArm_classC_58True_of_class
 #print axioms LeanLLVM.Refinement.WalkScope.hcontArm_classC_58Else_of_class
 #print axioms LeanLLVM.Refinement.WalkScope.hcontArm_cleanup_of_class
+#print axioms LeanLLVM.Refinement.WalkScope.hcontArm_run_of_class
 #print axioms LeanLLVM.Refinement.WalkScope.hcontArm_stringOpenAboveZero_of_class
 
 end WalkScope

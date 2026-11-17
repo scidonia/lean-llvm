@@ -706,6 +706,127 @@ noncomputable def bhHeadChain_of_lane {m0 : Mem} {G : WalkGeom m0} {C : WalkCarr
       contSeamMid_rootRead C (bhS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
         (contB35 G v) x hroot⟩
 
+/-- **`NodeBlock19 → NodeBlock17 → LeafBlock13 → sw.default.i` plus the suffix.**  The
+`.defaultValueBrace` class's four pivots — the byte `124` — and the payload's document row:
+twelve links.  This is the brace class's chain, at `contBrcHeadSeg`; it was the one
+head-switch class of the default arm whose chain had no `_of_lane` wrapper. -/
+noncomputable def brcHeadChain_of_lane {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {s : State}
+    (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)
+    {x : BitVec 8} (h8 : evalOperand s (.reg "%8") = some (.int 8 x))
+    (h91 : evalICmp .slt x (BitVec.ofNat 8 91) = 0)
+    (h123 : evalICmp .slt x (BitVec.ofNat 8 123) = 0)
+    (h125 : evalICmp .slt x (BitVec.ofNat 8 125) = 1)
+    (hne123 : evalICmp .eq x (BitVec.ofNat 8 123) = 0)
+    (hbit : (evalICmp .eq x (BitVec.ofNat 8 45) |||
+      evalICmp .ult (x + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
+    (r : HcontDefaultRow G C s) (hf : HcontScanFree G r.v) :
+    HcontHeadChain G C s x := by
+  obtain ⟨v, hread0, _hv1, hvle, hugt, _hclass⟩ := r
+  obtain ⟨hb13, hb32, hbne13⟩ := hf
+  have h8q : lookupName (brcS₄ s x).env "%8" = some (.int 8 x) := by
+    simp only [brcS₄, brcS₃, brcS₂, brcS₁, State.bind]
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+    simpa only [evalOperand] using h8
+  have hincq : evalOperand (brcS₄ s x) (.reg "%inc.i") =
+      some (.int 64 (hlastIncV C)) := by
+    simp only [evalOperand, brcS₄, brcS₃, brcS₂, brcS₁, State.bind]
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+    simpa only [hlastIncV] using hInv.inc_reg
+  have hnepq : evalOperand (brcS₄ s x) (.reg "%nep") =
+      some (.int 64 (hlastNepV G)) := by
+    simp only [evalOperand, brcS₄, brcS₃, brcS₂, brcS₁, State.bind]
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+    simpa only [hlastNepV] using
+      hInv.regs ("%nep", .int 64 (hlastNepV G)) (by simp [walkStaticRegs])
+  have h5q : lookupName (brcS₄ s x).env "%5" = some (.ptr G.ep) := by
+    simp only [brcS₄, brcS₃, brcS₂, brcS₁, State.bind]
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+    exact hInv.ptrs.2.1
+  have hidxq : lookupName (brcS₄ s x).env "%idxprom.i" =
+      some (.int 64 (contIx G C)) := by
+    simp only [brcS₄, brcS₃, brcS₂, brcS₁, State.bind]
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+    simpa only [contIx] using hInv.idx_reg
+  have htokq : lookupName (brcS₄ s x).env "%t352.i" = some (.ptr C.stage.tok) := by
+    simp only [brcS₄, brcS₃, brcS₂, brcS₁, State.bind]
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+    exact hInv.regs ("%t352.i", .ptr C.stage.tok) (by simp [walkStaticRegs])
+  have hgapq : lookupName (brcS₄ s x).env "%gap.i" = some (.ptr (C.stage.tok + 20)) := by
+    simp only [brcS₄, brcS₃, brcS₂, brcS₁, State.bind]
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+    exact hInv.regs ("%gap.i", .ptr (C.stage.tok + 20)) (by simp [walkStaticRegs])
+  have hendq : lookupName (brcS₄ s x).env "%end.i" = some (.ptr (C.stage.tok + 8)) := by
+    simp only [brcS₄, brcS₃, brcS₂, brcS₁, State.bind]
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+    exact hInv.regs ("%end.i", .ptr (C.stage.tok + 8)) (by simp [walkStaticRegs])
+  have h5 : lookupName (contSwOut (brcS₄ s x) (hlastIncV C) (hlastNepV G)).env "%5" =
+      some (.ptr G.ep) := by
+    simp only [contSwOut, State.bind]
+    rw [lookupName_cons_ne (k := "%cmp343.i") (n := "%5") _ _ (by decide)]
+    exact h5q
+  have hidx : lookupName (contSwOut (brcS₄ s x) (hlastIncV C) (hlastNepV G)).env
+      "%idxprom.i" = some (.int 64 (contIx G C)) := by
+    simp only [contSwOut, State.bind]
+    rw [lookupName_cons_ne (k := "%cmp343.i") (n := "%idxprom.i") _ _ (by decide)]
+    exact hidxq
+  have htok : lookupName (contSwOut (brcS₄ s x) (hlastIncV C) (hlastNepV G)).env
+      "%t352.i" = some (.ptr C.stage.tok) := by
+    simp only [contSwOut, State.bind]
+    rw [lookupName_cons_ne (k := "%cmp343.i") (n := "%t352.i") _ _ (by decide)]
+    exact htokq
+  have hgap : lookupName (contSwOut (brcS₄ s x) (hlastIncV C) (hlastNepV G)).env
+      "%gap.i" = some (.ptr (C.stage.tok + 20)) := by
+    simp only [contSwOut, State.bind]
+    rw [lookupName_cons_ne (k := "%cmp343.i") (n := "%gap.i") _ _ (by decide)]
+    exact hgapq
+  have hincTo : (hlastIncV C).toNat = C.k + 1 := cont_inc_toNat G C hk
+  have hread : readBytes (contSwOut (brcS₄ s x) (hlastIncV C) (hlastNepV G)).mem
+      (G.ep + (hlastIncV C).toNat * 4) 4 = some (natToBytes v.toNat 4) := by
+    rw [hincTo]
+    simpa only [contSwOut, State.bind, brcS₄, brcS₃, brcS₂, brcS₁] using hread0
+  have hread35 : readBytes (contMidS C (brcS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v
+      (contIx G C)).mem ((G.b - 1) + v.toNat) 1 = some [contB35 G v] := by
+    have hq : v.toNat - 1 < G.n := by
+      have hpos := entryPos_lt G hk
+      omega
+    have hmid := contMidS_docByte G C s (brcS₄ s x) hInv rfl (hlastIncV C) (hlastNepV G)
+      G.ep v (contIx G C) hq
+    have hb : 1 ≤ G.b := G.bPos
+    rw [show (G.b - 1) + v.toNat = G.b + (v.toNat - 1) from by omega]
+    simpa only [contB35] using hmid
+  have hend : lookupName (contP35Mid C (brcS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v
+      (contIx G C) (contB35 G v)).env "%end.i" = some (.ptr (C.stage.tok + 8)) := by
+    rw [contP35Mid_envEnd C (brcS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
+      (contB35 G v)]
+    exact hendq
+  have h8end : lookupName (contP35Mid C (brcS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v
+      (contIx G C) (contB35 G v)).env "%8" = some (.int 8 x) := by
+    rw [contP35Mid_env8 C (brcS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
+      (contB35 G v)]
+    exact h8q
+  have h8seam : evalOperand (contSeamMid C (brcS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v
+      (contIx G C) (contB35 G v) x) (.reg "%8") = some (.int 8 x) := by
+    show lookupName (contSeamMid C (brcS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v
+      (contIx G C) (contB35 G v) x).env "%8" = some (.int 8 x)
+    rw [contSeamMid_env8 C (brcS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
+      (contB35 G v) x]
+    exact h8q
+  exact ⟨12, by omega, ContSeamC C,
+    contSeamMid C (brcS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
+      (contB35 G v) x,
+    (contBrcHeadSeg G C s hInv hblock h8 h91 h123 h125 hne123 hincq hnepq
+      (cont_ult_one G C hk) h5 (cont_hi63 G C hk) hread hidx htok hgap hugt hread35 hb13
+      hb32 hbne13 hend h8end hbit).measure,
+    rfl, rfl, h8seam, v,
+    contSeamMid_ee C (brcS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
+      (contB35 G v) x,
+    contSeamMid_cond C (brcS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
+      (contB35 G v) x,
+    fun {rdv} hroot =>
+      contSeamMid_rootRead C (brcS₄ s x) (hlastIncV C) (hlastNepV G) G.ep v (contIx G C)
+        (contB35 G v) x hroot⟩
+
 /-! ### The arms, at the chain the payload's row produced
 
 Three arms share the default arm's document row: the scan-free letters route, its `'f'`
@@ -838,6 +959,7 @@ theorem walkDispatch_at_classC_of_lane {m0 : Mem} {G : WalkGeom m0} {C : WalkCar
 #print axioms LeanLLVM.Refinement.WalkScope.othHeadChain_of_lane
 #print axioms LeanLLVM.Refinement.WalkScope.brkHeadChain_of_lane
 #print axioms LeanLLVM.Refinement.WalkScope.bhHeadChain_of_lane
+#print axioms LeanLLVM.Refinement.WalkScope.brcHeadChain_of_lane
 #print axioms LeanLLVM.Refinement.WalkScope.hcontArm_letters_of_lane
 #print axioms LeanLLVM.Refinement.WalkScope.hcontArm_fLetter_of_lane
 #print axioms LeanLLVM.Refinement.WalkScope.hcontArm_classC_of_lane

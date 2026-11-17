@@ -44,6 +44,10 @@ total over the slot's values and not only at `0`.
   three calls, because what differs between them is the seam state and the literal;
 * `HcontDeepRow` — the positive-depth opener's route: the merge's counted segment with its
   endpoint, or the refusal's witness;
+* `HcontRunRow` — the run class's row: the class's prefix and the shared four's cells at
+  their endpoint, the check state's rows, the run's body and the seam's state group.  Its
+  arm follows from it (`hcontArm_run_of_row`), the one segment below `if.else387.i` being
+  the head byte's own leaf;
 * `HlastClassDoc`/`HlastClassRows` — the last entry's last byte's class with the seam's
   three calls at its tail start.
 
@@ -77,18 +81,18 @@ arm is the class's row plus the chain it carries — the merge's counted segment
 to `cleanup478.i`, the refusal's `WalkRefuseAt` — so the class has an arm at both
 depths and this module owes it no further row.
 
-## The one class whose row is still owed
+## The run class's row
 
-The run class (the one-entry class whose document byte is whitespace) has no field here.
-Its arm is `HcontArm.run (f : RunFacts G C s)`, and the two producers —
-`runFacts_of_defaultClass` and `runFacts_of_runBundle` — take either a bundle
-(`HcontRunFacts`) or the check state's `WalkInv` and the seam's thirteen cells
-(`hcontRunFacts_of_rows`), i.e. `HcontWsSeam`'s content.  So the class's row is *the check
-state's rows plus the seam's state group*, and the producer that joins them to
-`HcontRunFacts` and then to `RunFacts` at the class's short prefix is not in the tree.  A
-field stated as a bundle would be the vacuity the group's rule forbids, so the row is named
-where the class is discussed (`JsonStage2WalkDispatchClassRows`'s run section) rather than
-asserted.
+The run class (the one-entry class whose document byte is whitespace) has its own group,
+`HcontRunRow`.  Its arm is `HcontArm.run (f : RunFacts G C s)`, and the row is *not* a
+bundle: it is the class's prefix to `sw.default.i` with the shared four's cells at that
+endpoint, the check state's rows (`HcontRunRows`), the run's body there and the seam's state
+group (`HcontWsSeam`).  `hcontRunFacts_of_seam` (`JsonStage2WalkDispatchSeams`) joins the
+last two into `HcontRunFacts` — its tail is `hcontScanTail_at`'s at the rows' own stop — and
+`runFacts_of_defaultClass` places that bundle after the class's prefix, so the whole
+`RunFacts` follows from the row.  The one segment the arm still takes beside the row is the
+byte's own leaf below `if.else387.i` (the class-C span, `lettersSpan`, `fSpan`), and the
+class case composes it from the head byte's bits rather than the row holding it.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkDispatchSupply
 import LeanLLVM.Refinement.JsonStage2WalkDispatchSeams
@@ -218,24 +222,90 @@ inductive HcontDeepRow {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
   /-- The refusal's route: `if.then249.i`'s witness, as every refusing route states it. -/
   | refuse (href : WalkRefuseAt (stage2Calls stage2SubCalls) G C s) : HcontDeepRow G C s
 
-/-! ### The run class's row, and why it is not a field here
+/-! ### The run class's row, and its arm
 
 The run class is the one-entry class whose document byte is whitespace: the skip runs, the
 token's end is the run's stop, the copy call's test is true, and the scan is entered so the
-merge follows its exit.  Its arm is `HcontArm.run (f : RunFacts G C s)`, and the two
-producers are `runFacts_of_defaultClass` (the class's prefix to `sw.default.i`, the shared
-`contSwToLandSeg`, and the bundle at the check state) and `runFacts_of_runBundle` (the same
-from the rows at that state).
+merge follows its exit.  Its arm is `HcontArm.run (f : RunFacts G C s)`.
 
-Neither is a row of this group.  The first takes `f : HcontRunFacts` — a bundle, which is
-what this module's groups may not hold — and the ten cells at the prefix's endpoint
-(`hinc` …, `hread35`), which its caller must read off that endpoint's invariant;
-`hcontRunFacts_of_rows` produces the bundle from `HcontRunRows` but takes the check state's
-`WalkInv` and the seam's thirteen cells, i.e. `HcontWsSeam`'s content.  So the class's row
-is *the check state's rows plus the seam's state group*, and the producer that joins them
-to `HcontRunFacts` and then to `RunFacts` at the class's short prefix is not in the tree.
-That is the row this group is still owed, and stating it as a bundle field would be the
-vacuity the payload's rule forbids. -/
+The row is the class's evidence, not the bundle: the prefix segment to `sw.default.i` and
+the shared four's cells at its endpoint (the ten numbers `runFacts_of_defaultClass` reads),
+the check state's rows at `NodeBlock41` (`HcontRunRows`), the run's body there
+(`HcontRunBody`), and the seam's state group (`HcontWsSeam`) with its three calls.  Both
+groups are state data — a document's cells and a set of call rows — and neither is an arm,
+a bundle or a segment. -/
+structure HcontRunRow {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : Type where
+  /-- The class's prefix endpoint: `sw.default.i`'s state. -/
+  q5 : State
+  nq : Nat
+  hPrefix : WalkSegment (stage2Calls stage2SubCalls) G C s (HeadAC₄ C) q5 nq
+  hnq : nq ≤ 4
+  /-- The count test's two words and its outcome at the endpoint. -/
+  inc : BitVec 64
+  nep : BitVec 64
+  hinc : evalOperand q5 (.reg "%inc.i") = some (.int 64 inc)
+  hnep : evalOperand q5 (.reg "%nep") = some (.int 64 nep)
+  hnext : evalICmp .ult inc nep = 1
+  /-- The next entry's position word, its read and the bound's compare. -/
+  ep : Nat
+  h5 : lookupName (contSwOut q5 inc nep).env "%5" = some (.ptr ep)
+  hi63 : inc.toNat < 2 ^ 63
+  v : BitVec 32
+  hread : readBytes (contSwOut q5 inc nep).mem (ep + inc.toNat * 4) 4 =
+    some (natToBytes v.toNat 4)
+  /-- The entry's index and the two token-record pointers the check stores. -/
+  ix : BitVec 64
+  hidx : lookupName (contSwOut q5 inc nep).env "%idxprom.i" = some (.int 64 ix)
+  htok : lookupName (contSwOut q5 inc nep).env "%t352.i" = some (.ptr C.stage.tok)
+  hgap : lookupName (contSwOut q5 inc nep).env "%gap.i" = some (.ptr (C.stage.tok + 20))
+  hugt : evalICmp .ugt (BitVec.ofNat 64 v.toNat) ix = 1
+  /-- The byte before the entry's end, read at the whitespace check. -/
+  b35 : UInt8
+  hread35 : readBytes (contMidS C q5 inc nep ep v ix).mem ((G.b - 1) + v.toNat) 1 =
+    some [b35]
+  /-- The run's own rows at the check state: its stop, its class and its span. -/
+  b : HcontRunBody G C (contRunCheck G C q5 inc nep ep v ix b35)
+  /-- The record the tail's scalar call appends. -/
+  ev : EventRecord
+  /-- The seam's three calls, at the tail's start. -/
+  calls : HcontSeamCalls G (ContTailStartC C)
+    (contRunTailS G C q5 inc nep ep v ix b35 b.b35 b.ix b.v b.k b.x1)
+  /-- The check state's rows: the cells, the landing's reads and the traversal. -/
+  rows : HcontRunRows G C (contRunCheck G C q5 inc nep ep v ix b35)
+    b.b35 b.ix b.v b.k b.x1 calls.r₁ calls.r₂ calls.r₃ ev calls.cA calls.rdv calls.xA
+  /-- The seam's state group: its invariant, its cells and the root word across the kind
+  store. -/
+  seam : HcontWsSeam G C (contRunCheck G C q5 inc nep ep v ix b35) b calls
+
+/-- The run class's seam state, from a row's own fields. -/
+abbrev HcontRunRow.seamS {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (row : HcontRunRow G C s) : State :=
+  contRunSeamS G C row.q5 row.inc row.nep row.ep row.v row.ix row.b35
+    row.b.b35 row.b.ix row.b.v row.b.k row.b.x1
+
+/-- The tail's start, from a row's own fields. -/
+abbrev HcontRunRow.tailS {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (row : HcontRunRow G C s) : State :=
+  contRunTailS G C row.q5 row.inc row.nep row.ep row.v row.ix row.b35
+    row.b.b35 row.b.ix row.b.v row.b.k row.b.x1
+
+/-- **The run class's arm, from its row.**  The bundle is `hcontRunFacts_of_seam`'s at the
+check state, placed after the class's prefix and the shared four by
+`runFacts_of_defaultClass`; the byte's own span below `if.else387.i` is the one segment the
+arm takes beside the row, and the class case composes it from the head byte's bits. -/
+noncomputable def hcontArm_run_of_row {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {s : State} (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead)
+    (hk : C.k + 1 < G.nep) (row : HcontRunRow G C s) {nS : Nat}
+    (hSpan : Seg (stage2Calls stage2SubCalls) G (ContSeamC C) row.seamS
+      (ContTailStartC C) row.tailS nS)
+    (hnS : nS ≤ 5) :
+    HcontArm (stage2Calls stage2SubCalls) G C s :=
+  .run (runFacts_of_defaultClass G C s hInv hblock row.q5 row.nq row.hPrefix row.hnq
+    row.hinc row.hnep row.hnext row.h5 row.hi63 row.hread row.hidx row.htok row.hgap row.hugt
+    row.hread35
+    (hcontRunFacts_of_seam G C row.q5 row.inc row.nep row.ep row.v row.ix row.b35
+      row.b row.ev row.calls row.rows row.seam)
+    hk hSpan hnS)
 
 /-! ### The payload's per-class groups -/
 
@@ -259,10 +329,13 @@ The fields are the producers' remaining argument lists:
   at the four named seam states (`ClsS413T`/`ClsS413F`/`ClsS58T`/`HeadS413`);
 * `deep` — the positive-depth opener's route row (`HcontDeepRow`): the merge's counted
   segment and endpoint, or the refusal's witness, named as the arm's own segment;
+* `run` — the run class's row (`HcontRunRow`) and the byte's own span below
+  `if.else387.i`, which the class case composes from the head byte's bits;
 * `seam` — the two seams `HcontSeamAbi` names.
 
-The run class has no field here; the section above states why, and what its row would be.
--/
+The run class's field takes the byte's leaf as an argument rather than holding it: the
+segment belongs to the head byte's class, and the case's branch composes it
+(`hcontArm_run_of_class`). -/
 structure HcontClassRows {m0 : Mem} (G : WalkGeom m0) : Type where
   /-- The scan-free class's document row (`126`/`127` at a continuing head), at the
   payload's default row and the scan-free disjunct. -/
@@ -310,6 +383,13 @@ structure HcontClassRows {m0 : Mem} (G : WalkGeom m0) : Type where
   deep : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     C.k + 1 < G.nep → evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 34) = 1 →
     C.sp ≠ 0 → HcontDeepRow G C s
+  /-- **The run class's row**: the class's prefix and check state with the seam's group,
+  and the byte's own leaf below `if.else387.i` as the arm's span. -/
+  run : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
+    C.k + 1 < G.nep → (row : HcontRunRow G C s) → ∀ {nS : Nat},
+    Seg (stage2Calls stage2SubCalls) G (ContSeamC C) row.seamS (ContTailStartC C)
+      row.tailS nS → nS ≤ 5 →
+    Nonempty (HcontArm (stage2Calls stage2SubCalls) G C s)
   /-- The seam's three calls, at the run class's seam and the last entry's. -/
   seam : HcontSeamAbi G
 
@@ -357,6 +437,7 @@ structure HlastClassRows {m0 : Mem} (G : WalkGeom m0) : Type where
 #print axioms LeanLLVM.Refinement.WalkScope.hcontCleanupDoc_of_lane
 #print axioms LeanLLVM.Refinement.WalkScope.hcontArm_cleanup_of_doc
 #print axioms LeanLLVM.Refinement.WalkScope.hcontClassRows_cleanup_of_payload
+#print axioms LeanLLVM.Refinement.WalkScope.hcontArm_run_of_row
 
 end WalkScope
 end LeanLLVM.Refinement
