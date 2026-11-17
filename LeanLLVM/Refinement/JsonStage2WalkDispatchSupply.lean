@@ -108,6 +108,32 @@ A `walkContinueFacts_of_payload` stated over a payload carrying those groups wou
 class case over `HcontClass.complete` with every arm's producer in hand; what this module
 will not do is state it over a payload that quietly holds the arms themselves.
 
+## The seam's calls and the run's rows
+
+`JsonStage2WalkDispatchSeams` states the two groups the rows above were waiting on, and the
+producer the scan arm needed:
+
+| statement | what it is |
+|---|---|
+| `HcontSeamCalls G C s` | **the seam's three calls as one group**: the value-position call, the scalar call's emit arm and the copy call, each with its precondition at the staged argument list, its outcome and the memory it reads and leaves.  It carries the kind literal `cA` and the root-done word `rdv` because the memories mention them; the seam's own cells are the state's, not the group's |
+| `HcontSeamAbi G` | the group at each seam, one `∀`-field: the continuing run class's `if.then413.i` (at `contWsTailStart`) and the last entry's (at `hlastTail`) |
+| `scanTailSeg_of_calls` | **the scan arm's tail from those rows**: `consumerTailSegAt`'s three links at `TailCarryScan C ev`, ending at the scan's entry, returning the record the scalar call appends.  `emptyTailSeg_of_calls`'s twin, and the piece it does not cover: the empty arm's equation `%ee.1.i = %cond350.i` becomes the scan arm's strict inequality and span |
+| `hcontScanTail_of_calls`, `hcontScanTail_at` | that producer at the run class's seam — the `∃`-form (`Facts`'/`RunFacts`' `hTail`) and the record-pinned form |
+| `HcontRunRows G C sl b35 ix v k x1` | **the run's rows at a class's check state**: `HcontRunFacts` minus its `hTail` field — the check state's cells, the whitespace stop and its class, the entry's span, the landing's byte and its three reads, and the traversal's `hround`/`hguard`/`hbyte`.  It carries the seam's call group and the record they appended, because the landing's rows are stated at `contWsEntry`, which takes the answers |
+| `hcontRunFacts_of_rows` | `HcontRunFacts` from the rows and the seam's cells: every field but the tail is the rows', and the tail is `hcontScanTail_at`.  So `runFacts_of_runBundle`'s input is segment-free |
+
+What is still not stated is the pair of bundle theorems.  They are **not** blocked by a
+segment: each arm's chain, span and tail is producible from rows (`lowHeadChain_of_lane` …
+`bhHeadChain_of_lane`, `classCSpan_at`, `contSwToLandSeg`, `emptyTailSeg_of_calls`,
+`hcontScanTail_at`).  They are blocked by the payload's **per-class document rows**: the
+class case over `HcontClass.complete` needs `HcontFacts`'s, `HcontCleanupFacts`'s and
+`HcontScalarFacts`'s non-callee fields at every head state (the byte before the entry's end
+with its class, the entry lane and its order, the whitespace stop with its per-index `∀`,
+the log's two words), the refusals' `%idxprom.i`/`%e` cells, and — for the last level —
+`RunLastFacts`'s rows.  The continuing payload carries the openers' and the string's only,
+so `walkContinueFacts_of_payload` would be a class case whose evidence classes are missing,
+and a theorem stated with them added would take the classes' bundles under another name.
+
 ## The closure claim
 
 Its statement is unchanged: `stage2WalkObligation_of_premises`

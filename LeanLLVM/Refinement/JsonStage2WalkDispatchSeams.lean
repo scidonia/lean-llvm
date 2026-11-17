@@ -1,0 +1,604 @@
+/-
+# The seam's three calls, and the scan tail they produce
+
+`JsonStage2WalkDispatchWitnessHlast`'s `emptyTailSeg_of_calls` states the tail's three
+links from the three callees' rows **on the empty arm** — the arm where the copy call's
+test `ult %ee.1.i %cond350.i` is false and the walk leaves for `if.end473.i`.  This module
+adds the two pieces the scan arm needs, and it states them at the granularity the payloads
+in `JsonStage2WalkDispatchSupply` are stated at: **facts about a document and a call
+environment, never a segment and never a bundle.**
+
+## The seam's call rows
+
+`HcontSeamCalls` is the three calls at one seam: the value-position call, the scalar call's
+emit arm and the copy call, each with its precondition at the staged argument list, its
+outcome and the memory chain the three read and leave.  The structure carries the kind
+literal `cA` and the root-done word `rdv` because the *memories* mention them: the first
+call's argument list and the copy's test are read at the memory
+`writeBytes s.mem (C.stage.tok + 16) (natToBytes cA.toNat 4)`, so those two words are part
+of what the rows are about.  Nothing else is: the seam's own cells (`%ee.1.i`,
+`%cond350.i`, `%kind404.i`, `%root_done.i`, `%c.i`, `%t352.i`, `%z`, the state's `pre` and
+the `phi`'s operand) are the *state's*, and a theorem that consumes the rows takes them at
+the state it is given — they are the same peels at every seam
+(`contTailStart_ee`/`contTailStart_cond`, `scSeam_ee`/`scSeam_cond`,
+`hlastTail_ee`/`hlastTail_cond`).
+
+`HcontSeamAbi` is that structure as one `∀`-field per seam: the scan arm's seam at the run
+class's `if.then413.i` (`ContTailStartC C` at `contWsTailStart …`), which is the one seam
+whose tail `emptyTailSeg_of_calls` does not cover.
+
+## The scan arm's tail, from the rows
+
+`scanTailSeg_of_calls` is `emptyTailSeg_of_calls`'s twin on `consumerTailSegAt`: the three
+links at count `3`, ending at `TailCarryScan C ev` and the scan's entry `ScanEntry s …`
+instead of the scan-free `TailCarryEnd C ev`.  What changes is the copy call's test: the
+empty arm supplies the equation `%ee.1.i = %cond350.i` (`rfl` at its seam), while the scan
+arm supplies the strict inequality and the span the three links then need —
+`ei < cd` and `cd - ei ≤ C.inner`.  Both are consequences of the class's own field, not new
+premises: at the run class `cd` is the lane's word `v.toNat`, `ei` is the stop `k`, and
+`k < v.toNat` is `HcontRunFacts.heicd` while `v.toNat - k ≤ C.inner` follows from
+`v.toNat - ix.toNat ≤ C.inner` and `ix.toNat < k`.
+
+## What remains between these statements and the bundles
+
+The two bundle theorems (`walkContinueFacts_of_payload`, `walkLoopEnd_of_payload`) are **not**
+stated, and what stands in their way is not a segment: every segment an arm carries is
+produced per class from rows that already exist — the head chain by
+`JsonStage2WalkDispatchDefaultLane`'s `lowHeadChain_of_lane` … `bhHeadChain_of_lane` (from
+the lane's `defaultLane`), the class-C span by `classCSpan_at` (from the class's `slt %8 110`
+bit), the default classes' shared four by `contSwToLandSeg`, the empty tail by
+`emptyTailSeg_of_calls`, and the scan arm's tail by `hcontScanTail_at` below.
+
+What remains is **per-class document rows the payload does not carry**: the class case over
+`HcontClass.complete` runs each class's producer, and the producers for `.ws`, `.cleanup` and
+`.scalar` take their bundle's document facts — the byte before the entry's end with its
+class, the entry lane and its order, the whitespace stop with its per-index `∀`, the log's
+two words — which are `HcontFacts`'s, `HcontCleanupFacts`'s and `HcontScalarFacts`'s
+non-callee fields.  The refusals' arms take `%idxprom.i` and `%e` beside the byte and the
+depth, the above-zero markers take the two stacks' bytes at `C.sp - 1` (which are `WalkInv`
+clauses), and the openers and the standalone string are the two classes the payload's `lane`
+and `abi` groups reach today.  So the payload that would close the theorem is the class
+rows' payload, one group per class: the continuing payload's `lane`/`abi`/`trav`, the seam's
+calls and the run's rows here, plus `HcontFacts`'s, `HcontCleanupFacts`'s and
+`HcontScalarFacts`'s document groups.  The last entry's payload needs the same for
+`LastEntryArm`'s classes and `RunLastFacts`'s rows.
+-/
+
+import LeanLLVM.Refinement.JsonStage2WalkDispatchRunHead
+
+set_option autoImplicit false
+
+namespace LeanLLVM.Refinement
+open LeanLLVM
+open LeanLLVM.Refinement.BlockEval
+open LeanLLVM.Refinement.JsonStage2IR
+
+namespace WalkScope
+
+/-! ### The seam's three calls, as one group -/
+
+/-- **The three calls at a seam**: the value-position call, the scalar call's emit arm and
+the copy call, each with its staged argument list's precondition, its outcome and the
+memory it reads and leaves.
+
+The kind literal `cA` and the root-done word `rdv` are fields because the first call's
+argument list and the copy's test are read at the post-store memory
+`writeBytes s.mem (C.stage.tok + 16) (natToBytes cA.toNat 4)`: the rows are *about* those
+two words.  The seam's own cells are not fields — they are the state's, and the consumer
+reads them at the state it is given. -/
+structure HcontSeamCalls {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : Type where
+  /-- The kind literal `if.then413.i`'s `phi` selects, read at its own store. -/
+  cA : BitVec 32
+  /-- The root-done slot's word, as the first call's argument list carries it. -/
+  rdv : BitVec 32
+  /-- The value-position call. -/
+  r₁ : CallOutcome
+  xA : BitVec 32
+  hpre₁ : s2ValuePosPre
+    [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
+     .ptr C.stage.ctype, .ptr C.stage.cst]
+    (writeBytes s.mem (C.stage.tok + 16) (natToBytes cA.toNat 4)) s.next
+  hcall₁ : stage2Calls stage2SubCalls "s2_value_pos"
+    [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
+     .ptr C.stage.ctype, .ptr C.stage.cst]
+    (writeBytes s.mem (C.stage.tok + 16) (natToBytes cA.toNat 4)) s.next = some r₁
+  hret₁ : r₁.ret = .int 32 xA
+  /-- The call's zero test: the arm that continues at `if.then425.i`. -/
+  hbit0 : evalICmp .eq xA (BitVec.ofNat 32 0) = 0
+  /-- The log's base word, read at the post-store memory. -/
+  hzread : readBytes
+    (writeBytes s.mem (C.stage.tok + 16) (natToBytes cA.toNat 4)) C.stage.z 8 =
+      some (wordBytes 8 G.ev)
+  /-- The scalar call's emit arm. -/
+  r₂ : CallOutcome
+  hpre₂ : s2ScalarValuePre
+    [.ptr (TailCarry₂ C).stage.c, .ptr (TailCarry₂ C).stage.tok,
+     .ptr (TailCarry₂ C).stage.z] r₁.mem r₁.next
+  hcall₂ : stage2Calls stage2SubCalls "od_scalar_value"
+    [.ptr (TailCarry₂ C).stage.c, .ptr (TailCarry₂ C).stage.tok,
+     .ptr (TailCarry₂ C).stage.z] r₁.mem r₁.next = some r₂
+  hret₂ : r₂.ret = .int 32 (BitVec.ofNat 32 1)
+  hev64 : G.ev < 2 ^ 64
+  /-- The copy call, at the root-done slot. -/
+  r₃ : CallOutcome
+  hpre₃ : s2AfterValuePre
+    [.int 32 (BitVec.ofNat 32 C.sp), .ptr (G.next0 + 8),
+     .ptr C.stage.ctype, .ptr C.stage.cst] r₂.mem r₂.next
+  hcall₃ : stage2Calls stage2SubCalls "s2_after_value"
+    [.int 32 (BitVec.ofNat 32 C.sp), .ptr (G.next0 + 8),
+     .ptr C.stage.ctype, .ptr C.stage.cst] r₂.mem r₂.next = some r₃
+
+/-- **The seam's call rows at every seam**: one `∀`-field each.  The continuing scan arm's
+seam is the run class's own `if.then413.i` — `ContTailStartC C` at the state
+`contWsTailStart` builds from the check state's stop and byte — and the last entry's seam is
+`TailStartC C` at `hlastTail`. -/
+structure HcontSeamAbi {m0 : Mem} (G : WalkGeom m0) : Type where
+  /-- The continuing run class's seam: the scan arm's `if.then413.i`. -/
+  scan : ∀ (C : WalkCarry G) (sl : State) (b35 : UInt8) (ix : BitVec 64) (v : BitVec 32)
+    (k : Nat) (x1 : BitVec 8),
+    HcontSeamCalls G (ContTailStartC C)
+      (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1)
+  /-- The last entry's seam: the same three calls at the last entry's tail start. -/
+  last : ∀ (C : WalkCarry G) (s : State) (x : BitVec 8) (inc nep : BitVec 64)
+    (v : Nat) (ix : BitVec 64) (b35 : UInt8),
+    HcontSeamCalls G (TailStartC C) (hlastTail C s x inc nep v ix b35)
+
+/-! ### The scan arm's three links, from the rows
+
+`emptyTailSeg_of_calls` (`JsonStage2WalkDispatchWitnessHlast`) is the same three links on
+the arm where the copy call's test is `ult v v`: the equation `%ee.1.i = %cond350.i` makes
+the test's result a `decide`, so no span is claimed.  This is the other arm: the index is
+strictly below the bound, and the copy's third link needs the span `cd - ei ≤ C.inner`.
+-/
+
+/-- **The seam's log word at the first answer's memory.**  The value-position contract's
+post hands back the caller's memory, so the post-store read is the callee's memory's read.
+This is what lets a consumer that already holds the three answers state the tail without
+re-deriving the record the scalar call appended. -/
+theorem HcontSeamCalls.hzread_mem {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {s : State} (rows : HcontSeamCalls G C s) :
+    readBytes rows.r₁.mem C.stage.z 8 = some (wordBytes 8 G.ev) := by
+  obtain ⟨r₁', hcall₁', hpost₁, _⟩ :=
+    s2ValuePosContract.resolves (next := s.next) rows.hpre₁
+  obtain ⟨_, _, _, hmemV₁, _⟩ := hpost₁
+  have hr₁ : r₁' = rows.r₁ := Option.some.inj (hcall₁'.symm.trans rows.hcall₁)
+  rw [hr₁] at hmemV₁
+  rw [hmemV₁]
+  exact rows.hzread
+
+/-- **The scan arm's tail at a named record.**  `consumerTailSegAt`
+(`JsonStage2WalkPrefixCount`) at `Seg.measure`: the three calls' rows, the record the
+scalar call appended, and the seam's own cells.  Every premise is a hypothesis of the
+composition's, so this is the composition itself rather than a proof about it. -/
+theorem scanTailSeg_at {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (rows : HcontSeamCalls G C s) (ev : EventRecord) {ei cd : Nat}
+    (happ : s2ScalarValueAppend rows.r₁.mem rows.r₂.mem (TailCarry₂ C).stage.z
+      ev.encodedBytes)
+    (hzreadJ : readBytes rows.r₁.mem C.stage.z 8 = some (wordBytes 8 G.ev))
+    (hInv : WalkInv G C s) (hblock : C.block = "if.then413.i")
+    {p : String} (reg : String) {op : Operand}
+    (hpre : s.pre = some p)
+    (hphi : phiIncoming p
+      [("if.else405.i", .imm (.int 32 (BitVec.ofNat 32 0))),
+       ("if.then403.i", .imm (.int 32 (BitVec.ofNat 32 10))),
+       ("if.then397.i", .imm (.int 32 (BitVec.ofNat 32 9))),
+       ("if.end372.i", .imm (.int 32 (BitVec.ofNat 32 7))),
+       ("LeafBlock58", .imm (.int 32 (BitVec.ofNat 32 8)))] = some op)
+    (hop : evalOperand (stateAt s.env s) op = some (.int 32 rows.cA))
+    (hkind : lookupName s.env "%kind404.i" = some (.ptr (C.stage.tok + 16)))
+    (hrd : lookupName s.env "%root_done.i" = some (.ptr (G.next0 + 8)))
+    (hread : readBytes
+      (writeBytes s.mem (C.stage.tok + 16) (natToBytes rows.cA.toNat 4))
+      (G.next0 + 8) 4 = some (natToBytes rows.rdv.toNat 4))
+    (hc : lookupName s.env "%c.i" = some (.ptr (TailCarry₂ C).stage.c))
+    (ht : lookupName s.env "%t352.i" = some (.ptr (TailCarry₂ C).stage.tok))
+    (ho : lookupName s.env "%z" = some (.ptr (TailCarry₂ C).stage.z))
+    (htight : C.events.length ≤ C.k) (hklt : C.k < G.nep)
+    (hei : lookupName s.env "%ee.1.i" = some (.int 64 (BitVec.ofNat 64 ei)))
+    (hcd : lookupName s.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 cd)))
+    (hinner : cd - ei ≤ C.inner) (hlt2 : ei < cd) (hcd64 : cd < 2 ^ 64) :
+    WalkSegment (stage2Calls stage2SubCalls) G C s (TailCarryScan C ev)
+      (ScanEntry s rows.r₁ rows.r₂ rows.r₃ ei cd rows.cA rows.rdv rows.xA) 3 :=
+  Seg.measure (consumerTailSegAt (G := G) (C := C) (s := s) rows.r₁ rows.r₂ rows.r₃ ev ei cd
+    hInv hblock p reg rows.cA op rows.rdv rows.xA hpre hphi hop hkind hrd hread rows.hpre₁
+    rows.hcall₁ rows.hret₁ rows.hbit0 hzreadJ hc ht ho rows.hcall₂ happ rows.hret₂
+    rows.hev64
+    (by
+      have h1 := hInv.evlen_le
+      have h2 := G.evRoom
+      have h3 := G.evcapLt
+      omega)
+    htight hklt rows.hpre₃ rows.hcall₃ hei hcd hinner hlt2 hcd64)
+
+/-- **The scan arm's tail, from the three calls' rows.**  The record the scalar call
+appends is existential in its contract's post, so this theorem *returns* it: the three
+contracts are applied at their staged argument lists and the composition is
+`scanTailSeg_at` at the record the post names. -/
+theorem scanTailSeg_of_calls {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (rows : HcontSeamCalls G C s) {ei cd : Nat}
+    (hInv : WalkInv G C s) (hblock : C.block = "if.then413.i")
+    {p : String} (reg : String) {op : Operand}
+    (hpre : s.pre = some p)
+    (hphi : phiIncoming p
+      [("if.else405.i", .imm (.int 32 (BitVec.ofNat 32 0))),
+       ("if.then403.i", .imm (.int 32 (BitVec.ofNat 32 10))),
+       ("if.then397.i", .imm (.int 32 (BitVec.ofNat 32 9))),
+       ("if.end372.i", .imm (.int 32 (BitVec.ofNat 32 7))),
+       ("LeafBlock58", .imm (.int 32 (BitVec.ofNat 32 8)))] = some op)
+    (hop : evalOperand (stateAt s.env s) op = some (.int 32 rows.cA))
+    (hkind : lookupName s.env "%kind404.i" = some (.ptr (C.stage.tok + 16)))
+    (hrd : lookupName s.env "%root_done.i" = some (.ptr (G.next0 + 8)))
+    (hread : readBytes
+      (writeBytes s.mem (C.stage.tok + 16) (natToBytes rows.cA.toNat 4))
+      (G.next0 + 8) 4 = some (natToBytes rows.rdv.toNat 4))
+    (hc : lookupName s.env "%c.i" = some (.ptr (TailCarry₂ C).stage.c))
+    (ht : lookupName s.env "%t352.i" = some (.ptr (TailCarry₂ C).stage.tok))
+    (ho : lookupName s.env "%z" = some (.ptr (TailCarry₂ C).stage.z))
+    (htight : C.events.length ≤ C.k) (hklt : C.k < G.nep)
+    (hei : lookupName s.env "%ee.1.i" = some (.int 64 (BitVec.ofNat 64 ei)))
+    (hcd : lookupName s.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 cd)))
+    (hinner : cd - ei ≤ C.inner) (hlt2 : ei < cd) (hcd64 : cd < 2 ^ 64) :
+    ∃ ev : EventRecord,
+      WalkSegment (stage2Calls stage2SubCalls) G C s (TailCarryScan C ev)
+        (ScanEntry s rows.r₁ rows.r₂ rows.r₃ ei cd rows.cA rows.rdv rows.xA) 3 := by
+  obtain ⟨r₂', hcall₂', hpost₂, _⟩ :=
+    s2ScalarValueContract.resolves (next := rows.r₁.next) rows.hpre₂
+  have hr₂ : r₂' = rows.r₂ := Option.some.inj (hcall₂'.symm.trans rows.hcall₂)
+  rw [hr₂] at hpost₂
+  obtain ⟨⟨_, _, _, _, _, _⟩, happPost⟩ := hpost₂
+  obtain ⟨ev, happ₂⟩ := happPost rows.hret₂
+  exact ⟨ev, scanTailSeg_at G C s rows ev happ₂ rows.hzread_mem hInv hblock reg hpre hphi hop
+    hkind hrd hread hc ht ho htight hklt hei hcd hinner hlt2 hcd64⟩
+
+/-! ### The run class's scan tail, at its own seam
+
+The `.ws`/`.run` classes' `hTail`, at `ContTailStartC C` and `contWsTailStart`: the scan
+arm's three links with the seam's two cells (`%ee.1.i` is the stop `k` the seam stored,
+`%cond350.i` the lane's word) and the span the class's field leaves. -/
+
+/-- **The continuing run class's scan tail, from the seam's rows.**  `HcontFacts.hTail`'s
+and `RunFacts.hTail`'s producer: the class's `heicd` (`k < v.toNat`) and its lane bound
+(`v.toNat - ix.toNat ≤ C.inner` with `ix.toNat < k`) are the two numeric facts the scan arm
+needs, and the seam's cells are the state's. -/
+theorem hcontScanTail_of_calls {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (sl : State)
+    (b35 : UInt8) (ix : BitVec 64) (v : BitVec 32) (k : Nat) (x1 : BitVec 8)
+    (rows : HcontSeamCalls G (ContTailStartC C)
+      (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1))
+    (hInvT : WalkInv G (ContTailStartC C)
+      (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1))
+    {pT : String} (regT : String) {opT : Operand}
+    (hpreT : (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1).pre = some pT)
+    (hincT : phiIncoming pT
+      [("if.else405.i", .imm (.int 32 (BitVec.ofNat 32 0))),
+       ("if.then403.i", .imm (.int 32 (BitVec.ofNat 32 10))),
+       ("if.then397.i", .imm (.int 32 (BitVec.ofNat 32 9))),
+       ("if.end372.i", .imm (.int 32 (BitVec.ofNat 32 7))),
+       ("LeafBlock58", .imm (.int 32 (BitVec.ofNat 32 8)))] = some opT)
+    (hopT : evalOperand
+      (stateAt (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1).env
+        (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1)) opT = some (.int 32 rows.cA))
+    (hkindT : lookupName (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1).env
+      "%kind404.i" = some (.ptr (C.stage.tok + 16)))
+    (hrdT : lookupName (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1).env
+      "%root_done.i" = some (.ptr (G.next0 + 8)))
+    (hreadRoot : readBytes
+      (writeBytes (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1).mem
+        (C.stage.tok + 16) (natToBytes rows.cA.toNat 4)) (G.next0 + 8) 4 =
+      some (natToBytes rows.rdv.toNat 4))
+    (hcT : lookupName (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1).env
+      "%c.i" = some (.ptr (TailCarry₂ (ContTailStartC C)).stage.c))
+    (htT : lookupName (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1).env
+      "%t352.i" = some (.ptr (TailCarry₂ (ContTailStartC C)).stage.tok))
+    (hoT : lookupName (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1).env
+      "%z" = some (.ptr (TailCarry₂ (ContTailStartC C)).stage.z))
+    (htightT : (ContTailStartC C).events.length ≤ (ContTailStartC C).k)
+    (hkltT : (ContTailStartC C).k < G.nep)
+    (heiT : lookupName (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1).env
+      "%ee.1.i" = some (.int 64 (BitVec.ofNat 64 k)))
+    (hcdT : lookupName (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1).env
+      "%cond350.i" = some (.int 64 (BitVec.ofNat 64 v.toNat)))
+    (hinner : v.toNat - k ≤ (ContTailStartC C).inner)
+    (heicd : k < v.toNat) (hcd64 : v.toNat < 2 ^ 64) :
+    ∃ ev : EventRecord,
+      WalkSegment (stage2Calls stage2SubCalls) G (ContTailStartC C)
+        (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1)
+        (TailCarryScan (ContTailStartC C) ev)
+        (contWsEntry C (wsSlAt G sl b35 ix v k) k x1 x1 rows.r₁ rows.r₂ rows.r₃ k v
+          rows.cA rows.rdv rows.xA) 3 :=
+  scanTailSeg_of_calls G (ContTailStartC C)
+    (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1) rows hInvT rfl regT hpreT hincT
+    hopT hkindT hrdT hreadRoot hcT htT hoT htightT hkltT heiT hcdT hinner heicd hcd64
+
+/-! ### The run's rows at a class's check state
+
+`HcontRunFacts` (`JsonStage2WalkRevolution`) is the run class's bundle at an arbitrary check
+state, and one of its fields is the tail's counted segment.  The group below is the same
+bundle **without that field**: the document's stop, the landing's byte and the scan's
+traversal, stated at the check state and at the seam's three answers.  Nothing in it is a
+segment and nothing is a bundle: the check state's cells are facts, the landing's reads are
+facts and the traversal's three `∀`-forms are the round, the guard and the byte totality
+that `walkScanRounds457` consumes.
+
+The answers are parameters rather than fields because the landing's rows are *about* them —
+`contWsEntry` takes the three outcomes and the copy's words — so a structure that carried
+its own copies could not be fed the seam's.
+-/
+
+/-- **The run's rows at a check state**: `HcontRunFacts` minus its `hTail` field. -/
+structure HcontRunRows {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (sl : State)
+    (b35 : UInt8) (ix : BitVec 64) (v : BitVec 32) (k : Nat) (x1 : BitVec 8)
+    (r₁ r₂ r₃ : CallOutcome) (ev : EventRecord) (cA rdv xA : BitVec 32) : Type where
+  /-- The check state's own invariant. -/
+  hInv : WalkInv G (ContAC₄ C) sl
+  /-- The byte before the entry's end, as the check reads it. -/
+  h35 : evalOperand sl (.reg "%35") = some (.int 8 (cont35 b35))
+  /-- The entry's index and end. -/
+  hidx : lookupName sl.env "%idxprom.i" = some (.int 64 ix)
+  hcond : lookupName sl.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 v.toNat))
+  hugt : evalICmp .ugt (BitVec.ofNat 64 v.toNat) ix = 1
+  /-- **The whitespace skip's stop and traversal class.** -/
+  hClass :
+    ((evalICmp .slt (cont35 b35) (BitVec.ofNat 8 13) = 1 ∧
+        evalICmp .ule (cont35 b35 + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 1) ∨
+      (evalICmp .slt (cont35 b35) (BitVec.ofNat 8 13) = 0 ∧
+        evalICmp .slt (cont35 b35) (BitVec.ofNat 8 32) = 1 ∧
+        evalICmp .eq (cont35 b35) (BitVec.ofNat 8 13) = 1) ∨
+      (evalICmp .slt (cont35 b35) (BitVec.ofNat 8 13) = 0 ∧
+        evalICmp .slt (cont35 b35) (BitVec.ofNat 8 32) = 0 ∧
+        evalICmp .eq (cont35 b35) (BitVec.ofNat 8 32) = 1)) ∧
+    (∀ q, ix.toNat ≤ q → q < k → wsCont G q) ∧ wsStop G k ∧ ix.toNat < k ∧
+    v.toNat - ix.toNat ≤ C.inner ∧ entryPos G C.k ≤ ix.toNat
+  /-- The run's stop is inside the entry. -/
+  heicd : k < v.toNat
+  /-- The entry's first byte's class at the seam, and the byte test's clear arm — the arm
+  that leaves `if.end372.i` for `if.else387.i`. -/
+  h8c : evalOperand (contWsSeamS C (wsSlAt G sl b35 ix v k) k x1) (.reg "%8") =
+    some (.int 8 x1)
+  hbit : (evalICmp .eq x1 (BitVec.ofNat 8 45) |||
+    evalICmp .ult (x1 + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0
+  /-- The record the scalar call appended, and the memory it wrote. -/
+  happ : s2ScalarValueAppend r₁.mem r₂.mem (TailCarry₂ (ContTailStartC C)).stage.z
+    ev.encodedBytes
+  /-- The copy call's landing: the byte's address and the byte. -/
+  a : Nat
+  q : Nat
+  bs : List UInt8
+  h3S : lookupName
+    (contWsEntry C (wsSlAt G sl b35 ix v k) k x1 x1 r₁ r₂ r₃ k v cA rdv xA).env "%3" =
+      some (.ptr a)
+  hpos : ((BitVec.ofNat 64 k).signExtend 64).toNat < 2 ^ 63
+  hreadS : readBytes
+    (contWsEntry C (wsSlAt G sl b35 ix v k) k x1 x1 r₁ r₂ r₃ k v cA rdv xA).mem
+    (a + ((BitVec.ofNat 64 k).signExtend 64).toNat) 1 = some bs
+  hbsS : bytesToNat bs = q
+  hloc105 : WalkLocal (ScanC₁₀₅ (TailCarryScan (ContTailStartC C) ev))
+    (landRhs457OutAt
+      (contWsEntry C (wsSlAt G sl b35 ix v k) k x1 x1 r₁ r₂ r₃ k v cA rdv xA)
+      (BitVec.ofNat 64 k) a q)
+  x47 : BitVec 8
+  h47 : evalOperand
+    (landRhs457OutAt
+      (contWsEntry C (wsSlAt G sl b35 ix v k) k x1 x1 r₁ r₂ r₃ k v cA rdv xA)
+      (BitVec.ofNat 64 k) a q) (.reg "%47") = some (.int 8 x47)
+  hbit47 : evalICmp .slt x47 (BitVec.ofNat 8 13) = 1
+  hws47 : evalICmp .ule (x47 + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 1
+  hloc96 : WalkLocal (ScanC₉₆ (TailCarryScan (ContTailStartC C) ev))
+    (ScanS₉₆ (contWsEntry C (wsSlAt G sl b35 ix v k) k x1 x1 r₁ r₂ r₃ k v cA rdv xA)
+      (BitVec.ofNat 64 k) a q x47)
+  hlatch : WalkLocal { TailCarryScan (ContTailStartC C) ev with block := "while.body462.i" }
+    (contWsLatch C (wsSlAt G sl b35 ix v k) k x1 x1 r₁ r₂ r₃ k v cA rdv xA
+      (BitVec.ofNat 64 k) a q x47)
+  /-- The scan runs inside the entry's span. -/
+  hspan : v.toNat ≤ entryPos G (C.k + 1)
+  hstart : entryPos G C.k ≤ k
+  /-- The traversal's round, its guard and the input's totality: `walkScanRounds457`'s
+  `hround`, `hguard` and `hbyte`, unweakened. -/
+  hround : ∀ (C' : WalkCarry G) (s' : State) (p a : Nat) (bs : List UInt8) (q : Nat)
+    (x : BitVec 8), WalkInv G C' s' → C'.block = "while.body462.i" →
+    lookupName s'.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 p)) →
+    lookupName s'.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 v.toNat)) →
+    p + 1 < v.toNat → p + 1 < 2 ^ 63 →
+    lookupName (scanLatchOut s' "%inc463.i" "%exitcond298.not" p v.toNat "land.rhs457.i").env
+      "%3" = some (.ptr a) →
+    readBytes s'.mem (a + (p + 1)) 1 = some bs → bytesToNat bs = q →
+    evalOperand (landRhs457OutAt (scanLatchOut s' "%inc463.i" "%exitcond298.not" p v.toNat
+      "land.rhs457.i") (BitVec.ofNat 64 (p + 1)) a q) (.reg "%47") = some (.int 8 x) →
+    evalICmp .slt x (BitVec.ofNat 8 13) = 1 →
+    evalICmp .ule (x + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 1 →
+    WalkLocal (ScanC₁₀₅ (ScanCLand C'))
+      (landRhs457OutAt (scanLatchOut s' "%inc463.i" "%exitcond298.not" p v.toNat
+        "land.rhs457.i") (BitVec.ofNat 64 (p + 1)) a q) →
+    WalkLocal (ScanC₉₆ (ScanCLand C'))
+      (ScanS₉₆ (scanLatchOut s' "%inc463.i" "%exitcond298.not" p v.toNat "land.rhs457.i")
+        (BitVec.ofNat 64 (p + 1)) a q x) →
+    WalkLocal { ScanCLand C' with block := "while.body462.i" }
+      (Latch462S (scanLatchOut s' "%inc463.i" "%exitcond298.not" p v.toNat "land.rhs457.i")
+        (BitVec.ofNat 64 (p + 1)) a q x) →
+    ∃ (C'' : WalkCarry G) (s'' : State) (j : Nat),
+      WalkSegment (stage2Calls stage2SubCalls) G C' s' C'' s'' j ∧
+      WalkInv G C'' s'' ∧ C''.block = "while.body462.i" ∧ j ≤ stage2ByteAllowance ∧
+      lookupName s''.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 (p + 1))) ∧
+      lookupName s''.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 v.toNat))
+  hguard : ∀ (C' : WalkCarry G) (s' : State), WalkInv G C' s' →
+    C'.block = "while.body462.i" → ScanGuard s' "%q.0.i246" "%cond350.i" C'.inner
+  hbyte : ∀ (C' : WalkCarry G) (s' : State) (p : Nat), WalkInv G C' s' →
+    C'.block = "while.body462.i" → p + 1 < v.toNat →
+    lookupName s'.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 p)) →
+    lookupName s'.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 v.toNat)) →
+    ∃ (a : Nat) (bs : List UInt8) (q : Nat) (x : BitVec 8),
+      lookupName (scanLatchOut s' "%inc463.i" "%exitcond298.not" p v.toNat
+        "land.rhs457.i").env "%3" = some (.ptr a) ∧
+      readBytes s'.mem (a + (p + 1)) 1 = some bs ∧ bytesToNat bs = q ∧
+      evalOperand (landRhs457OutAt (scanLatchOut s' "%inc463.i" "%exitcond298.not" p v.toNat
+        "land.rhs457.i") (BitVec.ofNat 64 (p + 1)) a q) (.reg "%47") = some (.int 8 x) ∧
+      evalICmp .slt x (BitVec.ofNat 8 13) = 1 ∧
+      evalICmp .ule (x + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 1 ∧
+      WalkLocal (ScanC₁₀₅ (ScanCLand C'))
+        (landRhs457OutAt (scanLatchOut s' "%inc463.i" "%exitcond298.not" p v.toNat
+          "land.rhs457.i") (BitVec.ofNat 64 (p + 1)) a q) ∧
+      WalkLocal (ScanC₉₆ (ScanCLand C'))
+        (ScanS₉₆ (scanLatchOut s' "%inc463.i" "%exitcond298.not" p v.toNat "land.rhs457.i")
+          (BitVec.ofNat 64 (p + 1)) a q x) ∧
+      WalkLocal { ScanCLand C' with block := "while.body462.i" }
+        (Latch462S (scanLatchOut s' "%inc463.i" "%exitcond298.not" p v.toNat "land.rhs457.i")
+          (BitVec.ofNat 64 (p + 1)) a q x)
+  /-- The token record's register at the scan's exit. -/
+  htok : ∀ (C' : WalkCarry G) (s' : State), WalkInv G C' s' →
+    C'.block = "while.body462.i" → ∃ tok : Nat, lookupName s'.env "%t352.i" = some (.ptr tok)
+
+/-- **The scan tail at the run class's seam, at a named record.**  `scanTailSeg_at` at
+`ContTailStartC C` and `contWsTailStart`, with the two cells the seam stores and the span
+the class's field leaves. -/
+theorem hcontScanTail_at {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (sl : State)
+    (b35 : UInt8) (ix : BitVec 64) (v : BitVec 32) (k : Nat) (x1 : BitVec 8)
+    (rows : HcontSeamCalls G (ContTailStartC C)
+      (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1))
+    (ev : EventRecord)
+    (happ : s2ScalarValueAppend rows.r₁.mem rows.r₂.mem
+      (TailCarry₂ (ContTailStartC C)).stage.z ev.encodedBytes)
+    (hInvT : WalkInv G (ContTailStartC C)
+      (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1))
+    {pT : String} (regT : String) {opT : Operand}
+    (hpreT : (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1).pre = some pT)
+    (hincT : phiIncoming pT
+      [("if.else405.i", .imm (.int 32 (BitVec.ofNat 32 0))),
+       ("if.then403.i", .imm (.int 32 (BitVec.ofNat 32 10))),
+       ("if.then397.i", .imm (.int 32 (BitVec.ofNat 32 9))),
+       ("if.end372.i", .imm (.int 32 (BitVec.ofNat 32 7))),
+       ("LeafBlock58", .imm (.int 32 (BitVec.ofNat 32 8)))] = some opT)
+    (hopT : evalOperand
+      (stateAt (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1).env
+        (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1)) opT = some (.int 32 rows.cA))
+    (hkindT : lookupName (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1).env
+      "%kind404.i" = some (.ptr (C.stage.tok + 16)))
+    (hrdT : lookupName (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1).env
+      "%root_done.i" = some (.ptr (G.next0 + 8)))
+    (hreadRoot : readBytes
+      (writeBytes (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1).mem
+        (C.stage.tok + 16) (natToBytes rows.cA.toNat 4)) (G.next0 + 8) 4 =
+      some (natToBytes rows.rdv.toNat 4))
+    (hcT : lookupName (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1).env
+      "%c.i" = some (.ptr (TailCarry₂ (ContTailStartC C)).stage.c))
+    (htT : lookupName (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1).env
+      "%t352.i" = some (.ptr (TailCarry₂ (ContTailStartC C)).stage.tok))
+    (hoT : lookupName (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1).env
+      "%z" = some (.ptr (TailCarry₂ (ContTailStartC C)).stage.z))
+    (htightT : (ContTailStartC C).events.length ≤ (ContTailStartC C).k)
+    (hkltT : (ContTailStartC C).k < G.nep)
+    (heiT : lookupName (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1).env
+      "%ee.1.i" = some (.int 64 (BitVec.ofNat 64 k)))
+    (hcdT : lookupName (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1).env
+      "%cond350.i" = some (.int 64 (BitVec.ofNat 64 v.toNat)))
+    (hinner : v.toNat - k ≤ (ContTailStartC C).inner)
+    (heicd : k < v.toNat) (hcd64 : v.toNat < 2 ^ 64) :
+    WalkSegment (stage2Calls stage2SubCalls) G (ContTailStartC C)
+      (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1)
+      (TailCarryScan (ContTailStartC C) ev)
+      (contWsEntry C (wsSlAt G sl b35 ix v k) k x1 x1 rows.r₁ rows.r₂ rows.r₃ k v
+        rows.cA rows.rdv rows.xA) 3 :=
+  scanTailSeg_at G (ContTailStartC C)
+    (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1) rows ev happ rows.hzread_mem
+    hInvT rfl regT hpreT hincT hopT hkindT hrdT hreadRoot hcT htT hoT htightT hkltT heiT hcdT
+    hinner heicd hcd64
+
+/-- **`HcontRunFacts` from the run's rows and the seam's calls.**  Every field but the
+tail's segment is the rows'; the tail is `hcontScanTail_at` at the record the rows name, so
+the bundle's one segment enters as the composition's result and not as a field of the
+group. -/
+noncomputable def hcontRunFacts_of_rows {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (sl : State) (b35 : UInt8) (ix : BitVec 64) (v : BitVec 32) (k : Nat) (x1 : BitVec 8)
+    (calls : HcontSeamCalls G (ContTailStartC C)
+      (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1))
+    (ev : EventRecord)
+    (rows : HcontRunRows G C sl b35 ix v k x1 calls.r₁ calls.r₂ calls.r₃ ev calls.cA
+      calls.rdv calls.xA)
+    (hInvT : WalkInv G (ContTailStartC C)
+      (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1))
+    {pT : String} (regT : String) {opT : Operand}
+    (hpreT : (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1).pre = some pT)
+    (hincT : phiIncoming pT
+      [("if.else405.i", .imm (.int 32 (BitVec.ofNat 32 0))),
+       ("if.then403.i", .imm (.int 32 (BitVec.ofNat 32 10))),
+       ("if.then397.i", .imm (.int 32 (BitVec.ofNat 32 9))),
+       ("if.end372.i", .imm (.int 32 (BitVec.ofNat 32 7))),
+       ("LeafBlock58", .imm (.int 32 (BitVec.ofNat 32 8)))] = some opT)
+    (hopT : evalOperand
+      (stateAt (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1).env
+        (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1)) opT = some (.int 32 calls.cA))
+    (hkindT : lookupName (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1).env
+      "%kind404.i" = some (.ptr (C.stage.tok + 16)))
+    (hrdT : lookupName (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1).env
+      "%root_done.i" = some (.ptr (G.next0 + 8)))
+    (hreadRoot : readBytes
+      (writeBytes (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1).mem
+        (C.stage.tok + 16) (natToBytes calls.cA.toNat 4)) (G.next0 + 8) 4 =
+      some (natToBytes calls.rdv.toNat 4))
+    (hcT : lookupName (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1).env
+      "%c.i" = some (.ptr (TailCarry₂ (ContTailStartC C)).stage.c))
+    (htT : lookupName (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1).env
+      "%t352.i" = some (.ptr (TailCarry₂ (ContTailStartC C)).stage.tok))
+    (hoT : lookupName (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1).env
+      "%z" = some (.ptr (TailCarry₂ (ContTailStartC C)).stage.z))
+    (htightT : (ContTailStartC C).events.length ≤ (ContTailStartC C).k)
+    (hkltT : (ContTailStartC C).k < G.nep)
+    (heiT : lookupName (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1).env
+      "%ee.1.i" = some (.int 64 (BitVec.ofNat 64 k)))
+    (hcdT : lookupName (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1).env
+      "%cond350.i" = some (.int 64 (BitVec.ofNat 64 v.toNat)))
+    (hinner : v.toNat - k ≤ (ContTailStartC C).inner) :
+    HcontRunFacts G C sl :=
+  { hInv := rows.hInv
+    b35 := b35
+    h35 := rows.h35
+    ix := ix
+    hidx := rows.hidx
+    v := v
+    hcond := rows.hcond
+    hugt := rows.hugt
+    k := k
+    x1 := x1
+    hClass := rows.hClass
+    heicd := rows.heicd
+    h8c := rows.h8c
+    hbit := rows.hbit
+    r₁ := calls.r₁
+    r₂ := calls.r₂
+    r₃ := calls.r₃
+    ev := ev
+    cA := calls.cA
+    rdv := calls.rdv
+    xA := calls.xA
+    hTail := hcontScanTail_at G C sl b35 ix v k x1 calls ev rows.happ hInvT regT hpreT hincT
+      hopT hkindT hrdT hreadRoot hcT htT hoT htightT hkltT heiT hcdT hinner rows.heicd
+      (by have := v.isLt; omega)
+    a := rows.a
+    q := rows.q
+    bs := rows.bs
+    h3S := rows.h3S
+    hpos := rows.hpos
+    hreadS := rows.hreadS
+    hbsS := rows.hbsS
+    hloc105 := rows.hloc105
+    x47 := rows.x47
+    h47 := rows.h47
+    hbit47 := rows.hbit47
+    hws47 := rows.hws47
+    hloc96 := rows.hloc96
+    hlatch := rows.hlatch
+    hspan := rows.hspan
+    hstart := rows.hstart
+    hround := rows.hround
+    hguard := rows.hguard
+    hbyte := rows.hbyte
+    htok := rows.htok }
+
+/-! ### The instrument -/
+
+#print axioms LeanLLVM.Refinement.WalkScope.scanTailSeg_at
+#print axioms LeanLLVM.Refinement.WalkScope.scanTailSeg_of_calls
+#print axioms LeanLLVM.Refinement.WalkScope.hcontScanTail_of_calls
+#print axioms LeanLLVM.Refinement.WalkScope.hcontScanTail_at
+#print axioms LeanLLVM.Refinement.WalkScope.hcontRunFacts_of_rows
+
+end WalkScope
+end LeanLLVM.Refinement

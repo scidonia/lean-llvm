@@ -165,3 +165,4 @@ import LeanLLVM.Refinement.JsonStage2WalkDispatchSupply
 import LeanLLVM.Refinement.JsonStage2WalkDispatchLettersHead
 import LeanLLVM.Refinement.JsonStage2WalkDispatchRunHead
 import LeanLLVM.Refinement.JsonStage2WalkDispatchDefaultLane
+import LeanLLVM.Refinement.JsonStage2WalkDispatchSeams
