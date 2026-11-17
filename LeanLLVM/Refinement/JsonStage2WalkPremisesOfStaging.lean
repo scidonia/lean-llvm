@@ -42,7 +42,10 @@ step — are composed here from the steps the layer already states.
   and `walkLoopFinishesThree`'s triple, which names the returned verdict and memory, and
   the boundary at that memory is the post.
 
-Two groups are premises, and each is a bundle rather than a field per fact:
+Two bundles are what the loop's step reads, and each is the arm rather than a field per
+fact.  They are **produced**, not premises: `walkContinueFacts_of_payload`
+(`JsonStage2WalkDispatchContinuing`) and `walkLoopEnd_of_payload` (below) build them from
+the payload groups, and the table states what each bundle's arms need.
 
 | premise | what it is | why it is not derived |
 |---|---|---|
@@ -96,6 +99,7 @@ import LeanLLVM.Refinement.JsonStage2WalkSeedAtEntry
 import LeanLLVM.Refinement.JsonStage2WalkTargetPost
 import LeanLLVM.Refinement.JsonStage2WalkArenaWord
 import LeanLLVM.Refinement.JsonStage2WalkDispatchLastRows
+import LeanLLVM.Refinement.JsonStage2WalkDispatchContinuing
 
 set_option autoImplicit false
 
@@ -120,7 +124,7 @@ abbrev WalkContinueWsFacts {m0 : Mem} (G : WalkGeom m0) : Type :=
   ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     C.k + 1 < G.nep → HcontFacts G C s
 
-/-- **The continuing entry's facts, as the arm the head dispatch took.**  The evidence is
+/-! **The continuing entry's facts, as the arm the head dispatch took.**  The evidence is
 `HcontArm` (`JsonStage2WalkDispatchHcontArms`), one constructor per class of the emitted
 head switch, and the census over those classes is `HcontClass.complete` — exhaustive over
 the entry's first byte and the tag test *by theorem*, so no class's byte restriction is a
@@ -198,10 +202,13 @@ group to that bundle at the class's short prefix, so `walkContinueFacts_of_paylo
 `.run` branch to run at a whitespace document byte.  The two arms' constructors are stated
 at the state's own root word (`HcontArm.stringOpenAboveZeroMerge`/`.Refuse`,
 `hcontArm_cleanup_of_rows`), so the class is not narrowed to the states where that slot
-holds `0`. -/
-abbrev WalkContinueFacts {m0 : Mem} (G : WalkGeom m0) : Type :=
-  ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
-    C.k + 1 < G.nep → HcontArm (stage2Calls stage2SubCalls) G C s
+holds `0`.
+
+The abbreviation is `JsonStage2WalkDispatchHcontArms`'s, beside the `HcontArm` inductive —
+the bundle is the arm, and the arm's own module names it.  Its producer is
+`walkContinueFacts_of_payload` (`JsonStage2WalkDispatchContinuing`), which reads the
+payload's rows: no `∀ G` producer is a theorem, because each arm's evidence carries
+supplies at a reachable state; the class case is what turns those rows into the arm. -/
 
 /-! ### The head state's two register cells are not premises
 
@@ -868,34 +875,36 @@ The stage is `walkStage_at_pre_fields`', so the flush and the seed are stated at
 record's numbers: those lemmas read `WalkStage`'s fields, `WalkPremises` names the
 record's, and the fields' equalities are the construction's.
 
-The two bundles are the premises, one group each: the continuing entry's class
-(`WalkContinueFacts`) and the last entry's arm with the finalisation's two log words
-(`WalkLoopEnd`).  The two-entry token's residue is no longer a third: it is
-`HcontArm.twoEntry`'s field.  The merge's two register cells are not among them: they are
-`WalkInv` clauses, and `mergeHeadCells` reads them at the head state.
+The two bundles the loop's step reads are **produced here**, one per level: the continuing
+entry's class is `walkContinueFacts_of_payload` (`JsonStage2WalkDispatchContinuing`) at the
+payload, the class rows and the whitespace rows, and the last entry's arm with the
+finalisation's two log words is `walkLoopEnd_of_payload` at the last payload and its two
+row groups.  So this theorem's premises are the payload groups, not the bundles.  The
+two-entry token's residue is not a third: it is `HcontArm.twoEntry`'s field.  The merge's
+two register cells are not premises either: they are `WalkInv` clauses, and
+`mergeHeadCells` reads them at the head state.
 
-**The two bundles are not theorems, and neither is refuted.**  "Neither is false" is a
-claim about the *classes*, not about the bundles' totality: the census has an arm at every
-state the invariant admits — `.closeBraceZero` and `.openAtCap` were the two depth cases it
-once lacked, and the string opener at positive depth, the class that had no arm, is
-`HcontArm.stringOpenAboveZeroMerge`/`.stringOpenAboveZeroRefuse`
+**Why the bundles are still not `∀ G` theorems.**  Their producers' arguments are rows
+about the document and the call environment, and those rows are per-input supplies: the
+census has an arm at every state the invariant admits — `.closeBraceZero` and `.openAtCap`
+were the two depth cases it once lacked, and the string opener at positive depth, the class
+that had no arm, is `HcontArm.stringOpenAboveZeroMerge`/`.stringOpenAboveZeroRefuse`
 (`JsonStage2WalkDispatchHcontStringDeep`), with `.twoEntry`'s own `hsp0 : C.sp = 0`
-covering the depth-zero half.  Every arm is unrefuted by its own class.
-`WalkContinueFacts` is
-class data — the class is the head byte's switch arm, read from the document in `G` and the
-head state's own `%8` — but each arm's evidence carries a tail `WalkSegment` and the scan's
-traversal hypotheses that are supplies at a reachable state, not invariant consequences;
-the producer tier that would build them at every `WalkInv` head state does not exist yet.
-`WalkLoopEnd` is class data on the same pattern: its log words are not demanded at
-`C.alen` — `mergeWords` and `refuseWords` read `WalkInv.log_alen`'s witness `a ≤ C.alen`,
-which `walkMergeWords_of_inv` and `walkRefuseWords_of_inv` produce — so the bundle's
-remaining supply is the last entry's arm (`hlast`).  So `∀ G, WalkLoopEnd G` is not a
-theorem, and this conditional does not close the obligation; the closure claim to quote is
-`stage2WalkObligation_of_premises`
-(`JsonStage2WalkAssembly`), which takes `WalkPremises` and the post rule and no bundle. -/
+covering the depth-zero half — so no state is excluded, but the rows the arms consume (the
+tail's calls, the run's stop, the visits' class, the last byte's route) are the document's
+and the staging's, not consequences of `WalkInv`.  `WalkLoopEnd`'s log words, by contrast,
+*are* produced from the invariant: `mergeWords` and `refuseWords` read `WalkInv.log_alen`'s
+witness `a ≤ C.alen`, which `walkMergeWords_of_inv` and `walkRefuseWords_of_inv` produce,
+so what the last level still reads is the arm.  The closure claim to quote is
+`stage2WalkObligation_of_premises` (`JsonStage2WalkAssembly`), which takes `WalkPremises`
+and the post rule and no bundle; this theorem is the producer of its first premise. -/
 theorem walkPremises_of_staging {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
-    (hcont : ∀ {m0 : Mem} (G : WalkGeom m0), WalkContinueFacts G)
-    (hend : ∀ {m0 : Mem} (G : WalkGeom m0), WalkLoopEnd G) :
+    (hcont : ∀ {m0 : Mem} (G : WalkGeom m0), HcontPayload G)
+    (hrows : ∀ {m0 : Mem} (G : WalkGeom m0), HcontClassRows G)
+    (hws : ∀ {m0 : Mem} (G : WalkGeom m0), HcontWsRows G)
+    (hlast : ∀ {m0 : Mem} (G : WalkGeom m0), HlastPayload G)
+    (hlastRows : ∀ {m0 : Mem} (G : WalkGeom m0), HlastClassRows G)
+    (hlastArms : ∀ {m0 : Mem} (G : WalkGeom m0), HlastArmRows G) :
     WalkPremises d c ctype cst tok s z e nkSlot nxpSlot := by
   intro a13 mem next hpre hst
   obtain ⟨G, S, hnext, hSc, hSct, hScs, hStok, hSs, hSz, hSe, hSd, hargs⟩ :=
@@ -944,8 +953,10 @@ theorem walkPremises_of_staging {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
       · exact hnext.symm
       · rw [hargs, walkEntryState_env]
         simp [lookupName]
-    · -- the loop's step, from the two bundles
-      exact walkLoopStep_of_staging (G := G) (hcont G) (hend G)
+    · -- the loop's step, from the two bundles the payload groups produce
+      exact walkLoopStep_of_staging (G := G)
+        (walkContinueFacts_of_payload (hcont G) (hrows G) (hws G))
+        (walkLoopEnd_of_payload (hlast G) (hlastRows G) (hlastArms G))
 
 /-! ### The loop's post, from the staging
 
@@ -1063,18 +1074,23 @@ region claim at the outcome, and `stage2Post_of_run` is what produces it from a
 there — the state's post is not the walk's statement.
 -/
 
-/-- **The completion, at the two bundles — a vacuous form.**  `stage2WalkCompletes_of_premises`
-at `walkPremises_of_staging`: the body's run reaches an outcome inside the record's budget
-whenever the record's pre and the adapter's staging hold.  It consumes `hend`, so it
-inherits the vacuity recorded at `WalkLoopEnd`: where `WalkLoopEnd`'s log word is refuted,
-the hypothesis cannot be met and the implication says nothing about any document.  The
-claim that carries content is the completion from `WalkPremises`, which
-`stage2WalkCompletes_of_premises` states directly. -/
+/-- **The completion, at the payload groups.**  `stage2WalkCompletes_of_premises` at
+`walkPremises_of_staging`: the body's run reaches an outcome inside the record's budget
+whenever the record's pre and the adapter's staging hold.  Its premises are the six groups,
+and the two bundles are produced from them, so no bundle enters as a hypothesis — the
+`WalkLoopEnd` the last entry's arm yields has its log words from `WalkInv.log_alen`'s
+witness, which is what makes the implication say something about a document rather than
+about a refutable bundle. -/
 theorem stage2WalkCompletes_of_staging {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
-    (hcont : ∀ {m0 : Mem} (G : WalkGeom m0), WalkContinueFacts G)
-    (hend : ∀ {m0 : Mem} (G : WalkGeom m0), WalkLoopEnd G) :
+    (hcont : ∀ {m0 : Mem} (G : WalkGeom m0), HcontPayload G)
+    (hrows : ∀ {m0 : Mem} (G : WalkGeom m0), HcontClassRows G)
+    (hws : ∀ {m0 : Mem} (G : WalkGeom m0), HcontWsRows G)
+    (hlast : ∀ {m0 : Mem} (G : WalkGeom m0), HlastPayload G)
+    (hlastRows : ∀ {m0 : Mem} (G : WalkGeom m0), HlastClassRows G)
+    (hlastArms : ∀ {m0 : Mem} (G : WalkGeom m0), HlastArmRows G) :
     Stage2WalkCompletes d c ctype cst tok s z e nkSlot nxpSlot stage2SubCalls :=
-  stage2WalkCompletes_of_premises (walkPremises_of_staging hcont hend)
+  stage2WalkCompletes_of_premises
+    (walkPremises_of_staging hcont hrows hws hlast hlastRows hlastArms)
 
  /-! **The walk's obligation: the completion half here, the post half one module up.**
 `Stage2WalkObligation` is `Satisfies` at `Γ_stage2at`, and its two conjuncts are the
@@ -1112,19 +1128,27 @@ The top-level theorem in the tree, `stage2WalkObligation_of_staging`
 (`JsonStage2WalkFlushPost`), takes
 
 ```
-(hcont : ∀ {m0 : Mem} (G : WalkGeom m0), WalkContinueFacts G)
-(hend  : ∀ {m0 : Mem} (G : WalkGeom m0), WalkLoopEnd G)
+(hcont     : ∀ {m0 : Mem} (G : WalkGeom m0), HcontPayload G)
+(hrows     : ∀ {m0 : Mem} (G : WalkGeom m0), HcontClassRows G)
+(hws       : ∀ {m0 : Mem} (G : WalkGeom m0), HcontWsRows G)
+(hlast     : ∀ {m0 : Mem} (G : WalkGeom m0), HlastPayload G)
+(hlastRows : ∀ {m0 : Mem} (G : WalkGeom m0), HlastClassRows G)
+(hlastArms : ∀ {m0 : Mem} (G : WalkGeom m0), HlastArmRows G)
 ```
 
-and neither is a theorem.  They are not the same kind of obstruction:
+and the two bundles are produced from them — `walkContinueFacts_of_payload` and
+`walkLoopEnd_of_payload` — so no bundle is a hypothesis.  Each bundle is still not a
+`∀ G` theorem, and the two are not the same kind of obstruction:
 
 | bundle | class | why it is not a `∀ G` theorem |
 |---|---|---|
-| `WalkContinueFacts` | **class data, a producer tier.**  The class is the head byte's switch arm, read from the document in `G` (`G.doc`, `G.entries`, `WalkInv.iter.reg8`) and exhaustive by `HcontClass.complete`; its per-class producers are `hcontFacts_of_staging`, `hcontCleanupFacts_of_staging`, `hstringFacts_of_staging`, `hcontScalarFacts_of_staging`, `hcontArm_*_of_staging`, … | Each arm's bundle carries a tail `WalkSegment` (the three callees' preconditions and answers at the call's own argument list).  The scan's traversal rows are no longer supplied: `hround`, `hbyte`'s read and `htok` are produced by `JsonStage2WalkRevolutionScanRound` (`scanRoundField`, `scanByteField`, `scanTokField`), so what remains of that group is the visited byte's class (`hbyteClass`), the document's content, and the old `hguard` is gone because `ScanGuard` is false at any state whose registers hold words.  Nothing is false; the tier that would discharge the document's facts at every `WalkInv` head state is the remaining work. |
-| `WalkLoopEnd` | **class data: the last entry's arm.**  `hlast` is `LastEntryArm` (`LastEntryArm`, every arm with its own producer); the log's arena word is not a field — it is `WalkInv.log_alen`'s witness, which the finalisation's copy loads (`walkMergeWords_of_inv`, `walkRefuseWords_of_inv`) | The arm is supplied evidence at the last-entry head states, not a `WalkInv` consequence: each constructor is a class of the head switch and carries that class's producer's premises.  Nothing in the bundle is false; the tier that would discharge the arm at every `WalkGeom` is what a producer must build, exactly as the continuing bundle's per-class tier is. |
+| `WalkContinueFacts` | **class data, a producer tier.**  The class is the head byte's switch arm, read from the document in `G` (`G.doc`, `G.entries`, `WalkInv.iter.reg8`) and exhaustive by `HcontClass.complete`; its per-class producers are `hcontFacts_of_staging`, `hcontCleanupFacts_of_staging`, `hstringFacts_of_staging`, `hcontScalarFacts_of_staging`, `hcontArm_*_of_staging`, … | Each arm's bundle carries a tail `WalkSegment` (the three callees' preconditions and answers at the call's own argument list).  The scan's traversal rows are no longer supplied: `hround`, `hbyte`'s read and `htok` are produced by `JsonStage2WalkRevolutionScanRound` (`scanRoundField`, `scanByteField`, `scanTokField`), so what remains of that group is the visited byte's class (`hbyteClass`), the document's content, and the old `hguard` is gone because `ScanGuard` is false at any state whose registers hold words.  Nothing is false; the document's facts are per input, which is why the bundle is a producer from rows — `walkContinueFacts_of_payload` — and not a `∀ G` theorem. |
+| `WalkLoopEnd` | **class data: the last entry's arm.**  `hlast` is `LastEntryArm` (`LastEntryArm`, every arm with its own producer); the log's arena word is not a field — it is `WalkInv.log_alen`'s witness, which the finalisation's copy loads (`walkMergeWords_of_inv`, `walkRefuseWords_of_inv`) | The arm is built from the last level's payload and its two row groups — `walkLoopEnd_of_payload` — not from a `WalkInv` clause: each constructor is a class of the head switch and carries that class's producer's premises.  Nothing in the bundle is false, and the rows it reads are per input, exactly as the continuing bundle's are. |
 
-Both rows are the same kind of obstruction — a per-class/per-arm producer tier that is not
-yet built — and the three shape defects the continuing bundle's producer rows carried are
+Both rows are the same kind of obstruction — a per-class/per-arm producer tier — and that
+tier is now built, from the payload groups rather than from the arms: the continuing bundle
+by `walkContinueFacts_of_payload` and the last entry's by `walkLoopEnd_of_payload`.  The
+three shape defects the continuing bundle's producer rows carried are
 now repaired rather than described.  `HcontDefaultRow.hclass` is a `Type`-valued
 classification (`HcontByteClass`: `.wsByte`, `.scanFree`, `.lowLeaf` or `.highLeaf`), each
 arm taking its own disjunct and `HcontByteClass.complete` proving the four cover the byte,
@@ -1164,16 +1188,19 @@ Its premises, classified:
   (`JsonStage2WalkFlushPost`) for the empty stream and `stage2Post_of_staging_loop`
   (above) for the loop, modulo the same loop step.
 
-`walkPremises_of_staging` remains as the conditional that carries the two bundles into
-`WalkPremises`; it is not the closure claim, because both bundles are still premises.
-The `stage2WalkCompletes_of_staging` above is likewise conditional.
+`walkPremises_of_staging` is the producer from the payload groups to `WalkPremises`: the
+two bundles are `walkContinueFacts_of_payload` and `walkLoopEnd_of_payload` applied to
+those groups, so what the conditional still takes is rows about the document and the call
+environment rather than a `∀ G` bundle.  The `stage2WalkCompletes_of_staging` above takes
+the same groups, and `JsonStage2WalkFlushPost`'s `stage2WalkObligation_of_staging` composes
+the two.
 
 The honest statement of the top level, then, is **not** a change to
 `stage2WalkObligation_of_staging`'s conclusion: it is the pair of the completion from
-`WalkPremises` and the post from the two staging arms, both already in the tree.  What
-remains is the producer tier each bundle names — the continuing arm's per-class evidence
-and the last entry's arm — not a statement about the terminal post's numbers, which now
-report the invariant's own word. -/
+`WalkPremises` and the post from the two staging arms, both already in the tree, at the six
+payload groups.  What the groups name is a tier of rows about the document and the call
+environment — the continuing arm's per-class evidence and the last entry's arm — and not
+the terminal post's numbers, which report the invariant's own word. -/
 
 /-! ### Axiom footprints -/
 

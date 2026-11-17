@@ -875,13 +875,16 @@ The quantifiers are the class's and the state's: a
 row is stated at the continued head it belongs to (`C.k + 1 < G.nep` for c1–c12) or at the
 exhausted count (`¬ (C.k + 1 < G.nep)` for l1–l5), never at every head.
 
-**What stands between the payloads and the two bundle theorems, after the repairs.**  The
-statements —
-`walkContinueFacts_of_payload (hp : HcontPayload G) (hc : HcontClassRows G) :
-WalkContinueFacts G` and `walkLoopEnd_of_payload (hp : HlastPayload G)
-(hc : HlastClassRows G) : WalkLoopEnd G`, each by the class case over
-`HcontClass.complete` — are still not in the tree; the three shape defects that used to
-block them are repaired:
+**The two bundle theorems, and the repairs behind them.**  The statements are
+`walkContinueFacts_of_payload (hp : HcontPayload G) (hc : HcontClassRows G)
+(hw : HcontWsRows G) : WalkContinueFacts G` (`JsonStage2WalkDispatchContinuing`, the class
+case over `HcontClass.complete` beside the payload's `HcontByteClass`, read out of its
+`Nonempty` by `Classical.choice` because the arm is data) and
+`walkLoopEnd_of_payload (hp : HlastPayload G) (hc : HlastClassRows G)
+(ha : HlastArmRows G) : WalkLoopEnd G` (`JsonStage2WalkPremisesOfStaging`, the class case
+over the head switch's own bits).  Both are in the default target, with axioms `propext`,
+`Classical.choice`, `Quot.sound`.  The three shape defects that used to block the
+continuing one are repaired:
 
 * **The payload's document row carries the byte's class.**  `HcontDefaultRow.hclass` is
   `HcontByteClass G v`, a `Type`-valued disjunction with `.wsStop` and `.scanFree`, and the
@@ -955,9 +958,10 @@ traversal's class is the one row the skip's class cannot produce — the skip's 
 stop's own byte admits `13`/`32` while the visits' class is the `9`/`10` arm — so it is
 named there, not weakened.
 
-`walkContinueFacts_of_payload` is therefore not yet a theorem — every cell now has a
-producer and what remains is the class case's assembly over `HcontClass.complete` — and the
-last level's case is closed:
+`walkContinueFacts_of_payload` is the class case over those cells
+(`JsonStage2WalkDispatchContinuing`): each cell of the matrix reads its producer, and the
+bundle is the `Nonempty` the case proves, read by `Classical.choice`.  The last level's
+case is closed:
 
 
 * **The continuing level's run class is a produced row, and its leaf is no longer pinned.**

@@ -3,7 +3,7 @@ The continuing entry's dispatch: one arm per head-switch class, and the census.
 
 ## What was wrong
 
-`WalkContinueFacts` (`JsonStage2WalkPremisesOfStaging`) asked for `HcontCase` at every
+`WalkContinueFacts` (this module's, beside the arm) asked for `HcontCase` at every
 head state with an entry left.  `HcontCase`'s three arms are the whitespace and scan-free
 one-entry bundles — both of which require the head byte to be `126` or `127` — and the
 standalone string, which requires `34`.  `JsonStage2WalkHcontDomain` refutes that split at
@@ -708,6 +708,16 @@ inductive HcontArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
   `LastEntryArm.run` beside `RunLastFacts`
   (`JsonStage2WalkDispatchRun`, `JsonStage2WalkDispatchArms`). -/
   | run (f : RunFacts G C s) : HcontArm calls G C s
+
+/-- **The continuing entry's bundle**: the arm at every head state with an entry left.  A
+`Type`-valued abbreviation, so the bundle is the arm and not a proposition about it; the
+class the arm is read at is `HcontClass`, and the document's byte beside it is the
+payload's `HcontByteClass`.  Its producer is
+`walkContinueFacts_of_payload` (`JsonStage2WalkDispatchContinuing`), and the loop's step
+and `WalkPremises` read it. -/
+abbrev WalkContinueFacts {m0 : Mem} (G : WalkGeom m0) : Type :=
+  ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
+    C.k + 1 < G.nep → HcontArm (stage2Calls stage2SubCalls) G C s
 
 /-- **The dispatch, from the arm.**  Each proved arm runs its own theorem; the standalone
 string is `ofStringMerge` at the arm's residue and its depth split, and the positive-depth

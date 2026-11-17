@@ -41,27 +41,29 @@ premises: at the run class `cd` is the lane's word `v.toNat`, `ei` is the stop `
 
 ## What remains between these statements and the bundles
 
-The two bundle theorems (`walkContinueFacts_of_payload`, `walkLoopEnd_of_payload`) are **not**
-stated, and what stands in their way is not a segment: every segment an arm carries is
+The two bundle theorems (`walkContinueFacts_of_payload`
+(`JsonStage2WalkDispatchContinuing`), `walkLoopEnd_of_payload`
+(`JsonStage2WalkPremisesOfStaging`)) are stated from the rows this module's seams produce,
+and what stood in their way was not a segment: every segment an arm carries is
 produced per class from rows that already exist — the head chain by
 `JsonStage2WalkDispatchDefaultLane`'s `lowHeadChain_of_lane` … `bhHeadChain_of_lane` (from
 the lane's `defaultLane`), the class-C span by `classCSpan_at` (from the class's `slt %8 110`
 bit), the default classes' shared four by `contSwToLandSeg`, the empty tail by
 `emptyTailSeg_of_calls`, and the scan arm's tail by `hcontScanTail_at` below.
 
-What remains is **per-class document rows the payload does not carry**: the class case over
-`HcontClass.complete` runs each class's producer, and the producers for `.ws` and
-`.scalar` take their bundle's document facts — the byte before the entry's end with its
-class, the entry lane and its order, the whitespace stop with its per-index `∀`, the log's
-two words — which are `HcontFacts`'s and `HcontScalarFacts`'s non-callee fields.  The
-refusals' arms take `%idxprom.i` and `%e` beside the byte and the
+What the class case reads is **per-class document rows the payload does not carry**: the
+producers for `.ws` and `.scalar` take their bundle's document facts — the byte before the
+entry's end with its class, the entry lane and its order, the whitespace stop with its
+per-index `∀`, the log's two words — which are `HcontFacts`'s and `HcontScalarFacts`'s
+non-callee fields.  The refusals' arms take `%idxprom.i` and `%e` beside the byte and the
 depth, the above-zero markers take the two stacks' bytes at `C.sp - 1` (which are `WalkInv`
 clauses), and the openers and the standalone string are the two classes the payload's `lane`
-and `abi` groups reach today.  So the payload that would close the theorem is the class
-rows' payload, one group per class: the continuing payload's `lane`/`abi`/`trav`, the seam's
-calls and the run's rows here, plus `HcontFacts`'s and `HcontScalarFacts`'s document
-groups.  The last entry's payload needs the same for `LastEntryArm`'s classes and
-`RunLastFacts`'s rows.
+and `abi` groups reach.  So the groups the theorem takes are the class rows' ones: the
+continuing payload's `lane`/`abi`/`trav`, `HcontClassRows`' seam and run rows, and
+`HcontWsRows` for `.ws` × `.defaultValueHigh` — which is what
+`walkContinueFacts_of_payload` (`JsonStage2WalkDispatchContinuing`) is stated over.  The
+last entry's is the same shape for `LastEntryArm`'s classes and `RunLastFacts`'s rows,
+stated by `walkLoopEnd_of_payload`.
 
 **One class no longer waits on this list.**  `JsonStage2WalkDispatchSeamRows` closes
 `.cleanup` end to end: the class's document row, the lane's root word and the three call

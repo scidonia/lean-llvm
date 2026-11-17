@@ -46,11 +46,11 @@ rows at `contTailStartByte … hb`, so the arm-level document row (`HcontCleanup
 its chain (`hcontSpan17_of_doc`) are stated at the byte's route too, and the default-value
 branch passes `hb` rather than `.scanFree`.  The tail's calls bind no cell the seam's
 route changes (`contSeamByte_ee`, `contSeamByte_cond` are stated at every class), so this
-is the same producer re-pointed, not a new one.  What `walkContinueFacts_of_payload` still
-waits on is the class-case assembly over `HcontClass.complete` at the cells whose rows the
-payloads do not carry — the `.ws` arm's `HcontFacts` and the six `.run` cells' document
-rows — and not the leaf wiring, which is `JsonStage2WalkDispatchRunRow`'s, nor the
-plain-value class's cell, which is `hcontArm_value_of_lane`'s.
+is the same producer re-pointed, not a new one.  The `.ws` arm's `HcontFacts` is the
+whitespace group's (`.ws` × `.defaultValueHigh`, `JsonStage2WalkDispatchWsRows`) and the
+six `.run` cells' document rows are `HcontClassRows`' run rows
+(`JsonStage2WalkDispatchRunRow`), so the class case's assembly is
+`walkContinueFacts_of_payload` (`JsonStage2WalkDispatchContinuing`).
 
 **The run's shape no longer restricts the leaf.**  `.run` needed `lettersSpan`
 (`LetS413`) or `fSpan` (`FS413`) as its span below `if.else387.i`, and the bundle's tail

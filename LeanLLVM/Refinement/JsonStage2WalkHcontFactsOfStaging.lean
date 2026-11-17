@@ -1,8 +1,8 @@
 /-
 # The continuing entry's facts, from the staging
 
-`WalkContinueFacts` (`JsonStage2WalkPremisesOfStaging`) is the continuing entry's premise:
-one bundle per class at every head state with an entry left.  This module produces the
+`WalkContinueFacts` (`JsonStage2WalkDispatchHcontArms`) is the continuing entry's bundle:
+one arm per class at every head state with an entry left.  This module produces the
 **whitespace** class's — `HcontFacts` (`JsonStage2WalkRevolution`), the bundle
 `walkRevolutionMergeSegWs` consumes field for field.  The path it describes is the run
 class's: the four high-byte pivots, `sw.default.i`'s *succeeding* arm, the bound's `phi`,

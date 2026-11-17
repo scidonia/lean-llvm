@@ -1,10 +1,12 @@
 /-
 # The dispatch's residual rows, and the classes that need none
 
-`WalkContinueFacts` and `WalkLoopEnd` (`JsonStage2WalkPremisesOfStaging`) are the loop's
-two supplies: the continuing entry's arm at every invariant head with an entry left, and
-the last entry's arm at every invariant head without one.  Neither is a theorem of this
-tree.  This module states why, per class, and produces the part that is:
+`WalkContinueFacts` (`JsonStage2WalkDispatchHcontArms`) and `WalkLoopEnd`
+(`JsonStage2WalkPremisesOfStaging`) are the loop's two bundles: the continuing entry's arm
+at every invariant head with an entry left, and the last entry's arm at every invariant
+head without one.  Both are produced from payload rows — `walkContinueFacts_of_payload`
+and `walkLoopEnd_of_payload` — and this module states, per class, which rows the arms
+need, and produces the part the invariant alone supplies:
 
 * at the classes whose rows the layer **derives**, the arm is a theorem at every state
   that carries the invariant — `hcontArm_of_derivedClass` and
