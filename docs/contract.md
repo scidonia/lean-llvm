@@ -930,14 +930,34 @@ positive-depth opener are `hcontArm_twoEntry_of_payload` and
 leaf is wired at each of the six leaves.  The six `.run` cells' document rows are the
 payload's now (`HcontClassRows.runSkip`/`runTail`), and the row is `hcontRunRow_of_rows`',
 which derives the head part from the class's prefix segment's invariant and takes the body
-(`hcontRunBody_of_skip`), the record and the rows as arguments — so those cells need the
-case's composition of the six prefixes, not a row that does not exist.  **One cell is still
-without a producer: `.defaultValueHigh` × `wsByte`** (the `.ws` arm), whose bundle
-`HcontFacts` is `hcontFacts_of_staging`'s and whose argument list — the skip's class, the
-landing's byte and its callee rows at `contWsTailStart` — is the high-byte class's
-counterpart of `runSkip`/`runTail` and is not yet a payload group.
-`walkContinueFacts_of_payload` is therefore not yet a theorem — its `.ws` cell is the one
-gap — and the last level's case is closed:
+(`hcontRunBody_of_skip`), the record and the rows as arguments.  The composition at one leaf
+is `hcontRunArmAt`: prefix segment + `hcontRunHeadCells_of_prefix` /
+`hcontRunCheckCells_of_head` + `hcontRunBody_of_skip` + `runTail` +
+`hcontRunRow_of_rows` + `HcontClassRows.run`, with the span chosen by the *leaf* rather than
+by the prefix's class.  The six branches are theorems now:
+`hcontArm_run_defaultValueLow`, `hcontArm_run_defaultValueMid`, `hcontArm_run_otherValue`,
+`hcontArm_run_defaultValueBracket`, `hcontArm_run_defaultValueBrace` and
+`hcontArm_run_defaultValueBracketHigh` (the last dispatching on the byte's pivots to the four
+class-C/letters/`'f'` leaves) — each stated at the class's own terms and rewriting the body's
+equations (`HcontRunBodyAt.hb35`, `.hx1`, `.hk`) where the leaf's pivots and the span need
+them.  The seam's root word is a field of `HcontSeamKind` (`hroot`), so no branch supplies a
+memory fact; each leaf reads its own item's (`scan`, `scanF`, `scan56True`, `scan58True`).
+
+`.ws` — `.defaultValueHigh` × `wsByte` — is closed as a payload group: `HcontWsRows`
+(`JsonStage2WalkDispatchWsRows`) carries the run's own rows at the class's check state
+(`HcontRunBody`), the tail's rows (the seam's three calls with their `if.else405.i` `0`, the
+root word, the record the scalar call appends and the landing's byte with its class) and the
+traversal's per-index class on the visits' window `[k + 1, v)`; `hcontFacts_of_rows`
+produces `HcontFacts` from the payload's `defaultLane` and the group, deriving the tail
+through `hcontWsSeam_of_body` and `hcontScanTail_of_seam` rather than taking it.  The
+traversal's class is the one row the skip's class cannot produce — the skip's window is
+`[entryPos C.k, k)` and the visits' is `[k + 1, v)`, the document is arbitrary, and the
+stop's own byte admits `13`/`32` while the visits' class is the `9`/`10` arm — so it is
+named there, not weakened.
+
+`walkContinueFacts_of_payload` is therefore not yet a theorem — every cell now has a
+producer and what remains is the class case's assembly over `HcontClass.complete` — and the
+last level's case is closed:
 
 
 * **The continuing level's run class is a produced row, and its leaf is no longer pinned.**

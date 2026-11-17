@@ -180,6 +180,12 @@ structure HcontSeamKind {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : Stat
   calls : HcontSeamCalls G C s
   /-- The kind literal the seam's store writes: the `phi`'s selected incoming. -/
   hcA : calls.cA = cA0
+  /-- **The root slot's word before the kind store**, at the seam's memory: the read the
+  copy call's argument list carries, which a leaf's `hroot` is the post-store transport of
+  (`classCSeam_rootRead`).  It is `HcontSeamRow.hroot`'s statement at the seam rather than at
+  the head, and the same shape `HcontWsRows` uses (`hroot` at the run's `contWsTailStart`):
+  one form, two states. -/
+  hroot : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes calls.rdv.toNat 4)
 
 /-- **The seam's call rows at every seam**: one `∀`-field each.  The continuing scan arm's
 seam is the run class's own `if.then413.i` — `ContTailStartC C` at the state

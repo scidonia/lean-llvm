@@ -53,6 +53,7 @@ The leaf stays the producer's argument and is built per leaf by the six
 `.run` × `wsByte` at every default class reachable from the payload's groups.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkDispatchClassCase
+import LeanLLVM.Refinement.JsonStage2WalkDispatchClassTransport
 
 set_option autoImplicit false
 
@@ -243,13 +244,148 @@ theorem contRunCheck_idx {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (q5 : St
     stateAt, cells, State.bind]
   repeat rw [lookupName_cons_ne _ _ (by decide)]
 
-/-- `%8` at the count test's target is `sw.default.i`'s. -/
-theorem contSwOut_env8 (q5 : State) (inc nep : BitVec 64) :
-    lookupName (contSwOut q5 inc nep).env "%8" = lookupName q5.env "%8" := by
-  simp only [contSwOut, State.bind]
-  rw [lookupName_cons_ne (k := "%cmp343.i") (n := "%8") _ _ (by decide)]
+/-! ### The row's cells, split from its document rows
 
-/-- **The run's body, from the skip's class and the check state's cells.**  The class
+The row needs the class's prefix endpoint's cells; the body needs the check state's.  Both
+are the same invariant's, so they are produced once (`hcontRunHeadCells_of_prefix`,
+`hcontRunCheckCells_of_head`) and consumed by `hcontRunRow_of_rows`,
+`hcontRunBody_of_skip` and the arm helper. -/
+
+/-- **The class's prefix endpoint's cells**, at `sw.default.i`: the count cells, the index,
+the token's two pointers, the shared four's lane read and the byte before the entry's end.
+Nothing here is a document fact — all of it is `hPrefix.inv'`'s, peeled through the suffix's
+one bind — except the lane's read and the byte's, which are the payload's row at the
+endpoint's memory. -/
+structure HcontRunHeadCells {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (r : HcontDefaultRow G C s) (q5 : State) : Type where
+  hInv : WalkInv G (HeadAC₄ C) q5
+  hinc : evalOperand q5 (.reg "%inc.i") = some (.int 64 (hlastIncV C))
+  hnep : evalOperand q5 (.reg "%nep") = some (.int 64 (hlastNepV G))
+  hnext : evalICmp .ult (hlastIncV C) (hlastNepV G) = 1
+  h5 : lookupName (contSwOut q5 (hlastIncV C) (hlastNepV G)).env "%5" = some (.ptr G.ep)
+  hi63 : (hlastIncV C).toNat < 2 ^ 63
+  hread : readBytes (contSwOut q5 (hlastIncV C) (hlastNepV G)).mem
+    (G.ep + (hlastIncV C).toNat * 4) 4 = some (natToBytes r.v.toNat 4)
+  hidx : lookupName (contSwOut q5 (hlastIncV C) (hlastNepV G)).env "%idxprom.i" =
+    some (.int 64 (contIx G C))
+  htok : lookupName (contSwOut q5 (hlastIncV C) (hlastNepV G)).env "%t352.i" =
+    some (.ptr C.stage.tok)
+  hgap : lookupName (contSwOut q5 (hlastIncV C) (hlastNepV G)).env "%gap.i" =
+    some (.ptr (C.stage.tok + 20))
+  hread35 : readBytes (contMidS C q5 (hlastIncV C) (hlastNepV G) G.ep r.v
+    (contIx G C)).mem ((G.b - 1) + r.v.toNat) 1 = some [contB35 G r.v]
+
+/-- **The check state's cells**, at the leaf the skip stops at: the check's invariant, its
+three cells and the seam's `%8`.  All five are the chain's: the invariant is
+`contSwToLandSeg`'s at the head cells, and the cells are the suffix's peels. -/
+structure HcontRunCheckCells {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (r : HcontDefaultRow G C s) (q5 : State) : Type where
+  hInvC : WalkInv G (ContAC₄ C) (contRunCheck G C q5 (hlastIncV C) (hlastNepV G) G.ep r.v
+    (contIx G C) (contB35 G r.v))
+  h35 : evalOperand (contRunCheck G C q5 (hlastIncV C) (hlastNepV G) G.ep r.v
+    (contIx G C) (contB35 G r.v)) (.reg "%35") = some (.int 8 (cont35 (contB35 G r.v)))
+  hidx : lookupName (contRunCheck G C q5 (hlastIncV C) (hlastNepV G) G.ep r.v
+    (contIx G C) (contB35 G r.v)).env "%idxprom.i" = some (.int 64 (contIx G C))
+  hcond : lookupName (contRunCheck G C q5 (hlastIncV C) (hlastNepV G) G.ep r.v
+    (contIx G C) (contB35 G r.v)).env "%cond350.i" =
+    some (.int 64 (BitVec.ofNat 64 r.v.toNat))
+
+/-- **The head cells, from the prefix segment.**  Every cell is `hPrefix.inv'`'s, peeled
+through `contSwOut`'s single bind; the lane's read is the payload's row at the endpoint's
+memory (`hmem`), and the byte before the entry's end is the document's at the suffix's own
+memory (`contMidS_docByte`). -/
+noncomputable def hcontRunHeadCells_of_prefix {m0 : Mem} {G : WalkGeom m0}
+    {C : WalkCarry G} {s : State} (hInv : WalkInv G C s) (hk : C.k + 1 < G.nep)
+    (r : HcontDefaultRow G C s) (q5 : State) (nq : Nat)
+    (hPrefix : WalkSegment (stage2Calls stage2SubCalls) G C s (HeadAC₄ C) q5 nq)
+    (hmem : q5.mem = s.mem) : HcontRunHeadCells G C s r q5 := by
+  have hInv5 : WalkInv G (HeadAC₄ C) q5 := hPrefix.inv'
+  have hinc : evalOperand q5 (.reg "%inc.i") = some (.int 64 (hlastIncV C)) := by
+    simp only [evalOperand, hlastIncV]
+    exact hInv5.inc_reg
+  have hnep : evalOperand q5 (.reg "%nep") = some (.int 64 (hlastNepV G)) := by
+    simp only [evalOperand, hlastNepV]
+    exact hInv5.regs ("%nep", .int 64 (BitVec.ofNat 64 G.nep)) (by simp [walkStaticRegs])
+  have hnext : evalICmp .ult (hlastIncV C) (hlastNepV G) = 1 := cont_ult_one G C hk
+  have h5 : lookupName (contSwOut q5 (hlastIncV C) (hlastNepV G)).env "%5" =
+      some (.ptr G.ep) := by
+    simp only [contSwOut, State.bind]
+    rw [lookupName_cons_ne (k := "%cmp343.i") (n := "%5") _ _ (by decide)]
+    exact hInv5.ptrs.2.1
+  have hi63 : (hlastIncV C).toNat < 2 ^ 63 := cont_hi63 G C hk
+  have hread : readBytes (contSwOut q5 (hlastIncV C) (hlastNepV G)).mem
+      (G.ep + (hlastIncV C).toNat * 4) 4 = some (natToBytes r.v.toNat 4) := by
+    have hsm : (contSwOut q5 (hlastIncV C) (hlastNepV G)).mem = s.mem := by
+      simp only [contSwOut, State.bind, hmem]
+    rw [hsm, cont_inc_toNat G C hk]
+    exact r.hread
+  have hidx : lookupName (contSwOut q5 (hlastIncV C) (hlastNepV G)).env "%idxprom.i" =
+      some (.int 64 (contIx G C)) := by
+    simp only [contSwOut, State.bind, contIx]
+    rw [lookupName_cons_ne (k := "%cmp343.i") (n := "%idxprom.i") _ _ (by decide)]
+    exact hInv5.idx_reg
+  have htok : lookupName (contSwOut q5 (hlastIncV C) (hlastNepV G)).env "%t352.i" =
+      some (.ptr C.stage.tok) := by
+    simp only [contSwOut, State.bind]
+    rw [lookupName_cons_ne (k := "%cmp343.i") (n := "%t352.i") _ _ (by decide)]
+    exact hInv5.regs ("%t352.i", .ptr C.stage.tok) (by simp [walkStaticRegs])
+  have hgap : lookupName (contSwOut q5 (hlastIncV C) (hlastNepV G)).env "%gap.i" =
+      some (.ptr (C.stage.tok + 20)) := by
+    simp only [contSwOut, State.bind]
+    rw [lookupName_cons_ne (k := "%cmp343.i") (n := "%gap.i") _ _ (by decide)]
+    exact hInv5.regs ("%gap.i", .ptr (C.stage.tok + 20)) (by simp [walkStaticRegs])
+  have hread35 : readBytes (contMidS C q5 (hlastIncV C) (hlastNepV G) G.ep r.v
+      (contIx G C)).mem ((G.b - 1) + r.v.toNat) 1 = some [contB35 G r.v] := by
+    have hq : r.v.toNat - 1 < G.n := by
+      have hvle := r.hvle
+      have hpos := entryPos_lt G hk
+      omega
+    have hmid := contMidS_docByte G C s q5 hInv hmem (hlastIncV C) (hlastNepV G) G.ep r.v
+      (contIx G C) hq
+    have hb : 1 ≤ G.b := G.bPos
+    have hv1 := r.hv1
+    rw [show (G.b - 1) + r.v.toNat = G.b + (r.v.toNat - 1) from by omega]
+    simpa only [contB35] using hmid
+  exact
+    { hInv := hInv5
+      hinc := hinc
+      hnep := hnep
+      hnext := hnext
+      h5 := h5
+      hi63 := hi63
+      hread := hread
+      hidx := hidx
+      htok := htok
+      hgap := hgap
+      hread35 := hread35 }
+
+/-- **The check state's cells, from the head's and the prefix's invariant.**  The invariant
+is `contSwToLandSeg`'s at the head cells, and `%35`/`%idxprom.i`/`%cond350.i` are the
+suffix's own peels.  No `%8` here: the seam's byte is the check state's, which the arm
+helper reads at `q5` (`contRunCheck_env8`). -/
+noncomputable def hcontRunCheckCells_of_head {m0 : Mem} {G : WalkGeom m0}
+    {C : WalkCarry G} {s : State} {r : HcontDefaultRow G C s} {q5 : State}
+    (d : HcontRunHeadCells G C s r q5) : HcontRunCheckCells G C s r q5 := by
+  have hseg : WalkSegment (stage2Calls stage2SubCalls) G (HeadAC₄ C) q5 (ContAC₄ C)
+      (contRunCheck G C q5 (hlastIncV C) (hlastNepV G) G.ep r.v (contIx G C)
+        (contB35 G r.v)) 4 :=
+    contSwToLandSeg G C q5 d.hInv rfl d.hinc d.hnep d.hnext d.h5 d.hi63 d.hread d.hidx
+      d.htok d.hgap r.hugt d.hread35
+  exact
+    { hInvC := hseg.inv'
+      h35 := by
+        show evalOperand (contRunCheck G C q5 (hlastIncV C) (hlastNepV G) G.ep r.v
+          (contIx G C) (contB35 G r.v)) (.reg "%35") = _
+        simp only [evalOperand]
+        exact contLandOut_35 (contMidS C q5 (hlastIncV C) (hlastNepV G) G.ep r.v
+          (contIx G C)) r.v.toNat (contB35 G r.v)
+      hidx := by
+        rw [contRunCheck_idx]
+        exact d.hidx
+      hcond := by
+        rw [contLandOut_cond, contMidS_cond] }
+
+/-- The run's body, from the skip's class and the check state's cells.  The class
 conjunct is `runSkip`'s own: the per-index run, the stop and the stop's place; the byte
 before the entry's end being whitespace is the caller's guard, unfolded into the class's
 first disjunct; the stop's place inside the entry is `cont_heicd_of`'s arithmetic, *not* a
@@ -339,56 +475,7 @@ noncomputable def hcontRunRow_of_rows {m0 : Mem} {G : WalkGeom m0} {C : WalkCarr
         (contIx G C) (contB35 G r.v)) leaf.ss b.b35 b.ix b.v b.k b.x1
       leaf.calls.r₁ leaf.calls.r₂ leaf.calls.r₃ ev leaf.calls.cA leaf.calls.rdv leaf.calls.xA) :
     HcontRunRow G C s := by
-  -- the prefix endpoint's invariant and its cells
-  have hInv5 : WalkInv G (HeadAC₄ C) q5 := hPrefix.inv'
-  have hinc : evalOperand q5 (.reg "%inc.i") = some (.int 64 (hlastIncV C)) := by
-    simp only [evalOperand, hlastIncV]
-    exact hInv5.inc_reg
-  have hnep : evalOperand q5 (.reg "%nep") = some (.int 64 (hlastNepV G)) := by
-    simp only [evalOperand, hlastNepV]
-    exact hInv5.regs ("%nep", .int 64 (BitVec.ofNat 64 G.nep)) (by simp [walkStaticRegs])
-  have hnext : evalICmp .ult (hlastIncV C) (hlastNepV G) = 1 := cont_ult_one G C hk
-  have h5 : lookupName (contSwOut q5 (hlastIncV C) (hlastNepV G)).env "%5" =
-      some (.ptr G.ep) := by
-    simp only [contSwOut, State.bind]
-    rw [lookupName_cons_ne (k := "%cmp343.i") (n := "%5") _ _ (by decide)]
-    exact hInv5.ptrs.2.1
-  have hi63 : (hlastIncV C).toNat < 2 ^ 63 := cont_hi63 G C hk
-  have hread : readBytes (contSwOut q5 (hlastIncV C) (hlastNepV G)).mem
-      (G.ep + (hlastIncV C).toNat * 4) 4 = some (natToBytes r.v.toNat 4) := by
-    have hsm : (contSwOut q5 (hlastIncV C) (hlastNepV G)).mem = s.mem := by
-      simp only [contSwOut, State.bind, hmem]
-    rw [hsm, cont_inc_toNat G C hk]
-    exact r.hread
-  have hidx : lookupName (contSwOut q5 (hlastIncV C) (hlastNepV G)).env "%idxprom.i" =
-      some (.int 64 (contIx G C)) := by
-    simp only [contSwOut, State.bind, contIx]
-    rw [lookupName_cons_ne (k := "%cmp343.i") (n := "%idxprom.i") _ _ (by decide)]
-    exact hInv5.idx_reg
-  have htok : lookupName (contSwOut q5 (hlastIncV C) (hlastNepV G)).env "%t352.i" =
-      some (.ptr C.stage.tok) := by
-    simp only [contSwOut, State.bind]
-    rw [lookupName_cons_ne (k := "%cmp343.i") (n := "%t352.i") _ _ (by decide)]
-    exact hInv5.regs ("%t352.i", .ptr C.stage.tok) (by simp [walkStaticRegs])
-  have hgap : lookupName (contSwOut q5 (hlastIncV C) (hlastNepV G)).env "%gap.i" =
-      some (.ptr (C.stage.tok + 20)) := by
-    simp only [contSwOut, State.bind]
-    rw [lookupName_cons_ne (k := "%cmp343.i") (n := "%gap.i") _ _ (by decide)]
-    exact hInv5.regs ("%gap.i", .ptr (C.stage.tok + 20)) (by simp [walkStaticRegs])
-  have hugt : evalICmp .ugt (BitVec.ofNat 64 r.v.toNat) (contIx G C) = 1 := r.hugt
-  -- the byte before the entry's end, at the suffix's own memory
-  have hread35 : readBytes (contMidS C q5 (hlastIncV C) (hlastNepV G) G.ep r.v
-      (contIx G C)).mem ((G.b - 1) + r.v.toNat) 1 = some [contB35 G r.v] := by
-    have hq : r.v.toNat - 1 < G.n := by
-      have hvle := r.hvle
-      have hpos := entryPos_lt G hk
-      omega
-    have hmid := contMidS_docByte G C s q5 hInv hmem (hlastIncV C) (hlastNepV G) G.ep r.v
-      (contIx G C) hq
-    have hb : 1 ≤ G.b := G.bPos
-    have hv1 := r.hv1
-    rw [show (G.b - 1) + r.v.toNat = G.b + (r.v.toNat - 1) from by omega]
-    simpa only [contB35] using hmid
+  let d := hcontRunHeadCells_of_prefix hInv hk r q5 nq hPrefix hmem
   exact
     { q5 := q5
       nq := nq
@@ -396,25 +483,607 @@ noncomputable def hcontRunRow_of_rows {m0 : Mem} {G : WalkGeom m0} {C : WalkCarr
       hnq := hnq
       inc := hlastIncV C
       nep := hlastNepV G
-      hinc := hinc
-      hnep := hnep
-      hnext := hnext
+      hinc := d.hinc
+      hnep := d.hnep
+      hnext := d.hnext
       ep := G.ep
-      h5 := h5
-      hi63 := hi63
+      h5 := d.h5
+      hi63 := d.hi63
       v := r.v
-      hread := hread
+      hread := d.hread
       ix := contIx G C
-      hidx := hidx
-      htok := htok
-      hgap := hgap
-      hugt := hugt
+      hidx := d.hidx
+      htok := d.htok
+      hgap := d.hgap
+      hugt := r.hugt
       b35 := contB35 G r.v
-      hread35 := hread35
+      hread35 := d.hread35
       b := b
       leaf := leaf
       ev := ev
       rows := rows }
+
+/-! ### The run class's arm at one leaf
+
+The two-dimensional split's `.run` cells are assembled here: the class's prefix segment (the
+six default classes reach `sw.default.i` at six differently-named states), the payload's
+`runSkip` and `runTail`, and the *leaf's* span.  The span is chosen by the byte, not by the
+prefix's class — `.defaultValueBracketHigh`'s `93 … 122` alone takes four leaves — so this
+helper takes the leaf and its span, and the class branches below dispatch on the byte's
+pivots.
+
+`h8q` is the prefix endpoint's `%8`: the segment binds registers only, and `WalkInv` does
+not name `%8`, so the endpoint's byte is the class's own peel (`lowS₃`'s, `midS₄`'s …). -/
+
+/-- **The seam's `%8`, from the prefix endpoint's.**  The seam's byte is the check state's
+(`wsSlAt_env8`, `seamS_env8`) and the check state's is `sw.default.i`'s
+(`contRunCheck_env8`); `h8q` is the class's own peel. -/
+theorem hcontRunSeamByte {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    {r : HcontDefaultRow G C s} {q5 : State} (k : Nat)
+    (h8q : lookupName q5.env "%8" = some (.int 8 (hlastByte G C))) :
+    evalOperand (contWsSeamS C
+      (wsSlAt G (contRunCheck G C q5 (hlastIncV C) (hlastNepV G) G.ep r.v (contIx G C)
+        (contB35 G r.v)) (contB35 G r.v) (contIx G C) r.v k) k (hlastByte G C))
+      (.reg "%8") = some (.int 8 (hlastByte G C)) := by
+  simp only [evalOperand, contWsSeamS]
+  rw [seamS_env8, wsSlAt_env8, contRunCheck_env8]
+  exact h8q
+
+/-- **The run's body with its defining equations.**  The equations are what a branch needs
+because a `def`'s projections are opaque: the body's fields give the tag bit and the seam's
+`%8`, but a leaf's pivots must be read off `x1`, and a span must be stated at the body's own
+fields.  `hb35`/`hx1`/`hk` turn that opacity into rewrites. -/
+structure HcontRunBodyAt {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (r : HcontDefaultRow G C s) (q5 : State) (skip : HcontRunSkip G C s r) : Type where
+  /-- The body at the class's check state. -/
+  b : HcontRunBody G C (contRunCheck G C q5 (hlastIncV C) (hlastNepV G) G.ep r.v
+    (contIx G C) (contB35 G r.v))
+  hb35 : b.b35 = contB35 G r.v
+  hx1 : b.x1 = hlastByte G C
+  hk : b.k = skip.k
+
+/-- **The run's body at the class's prefix endpoint, with its equations.**  The check
+state's cells are the prefix's (`hcontRunHeadCells_of_prefix`, `hcontRunCheckCells_of_head`)
+and the body is `hcontRunBody_of_skip`'s; `runSkip`'s class supplies `k` and the run. -/
+noncomputable def hcontRunBodyAt {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (hInv : WalkInv G C s) (hk : C.k + 1 < G.nep) (r : HcontDefaultRow G C s)
+    (hws : wsStop G (r.v.toNat - 1))
+    (hbit : (evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 45) |||
+      evalICmp .ult (hlastByte G C + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
+    (skip : HcontRunSkip G C s r) (q5 : State) (nq : Nat)
+    (hPrefix : WalkSegment (stage2Calls stage2SubCalls) G C s (HeadAC₄ C) q5 nq)
+    (hmem : q5.mem = s.mem)
+    (h8q : lookupName q5.env "%8" = some (.int 8 (hlastByte G C))) :
+    HcontRunBodyAt G C s r q5 skip := by
+  let d := hcontRunHeadCells_of_prefix hInv hk r q5 nq hPrefix hmem
+  let c := hcontRunCheckCells_of_head d
+  let b := hcontRunBody_of_skip hk r hws skip hbit q5 c.hInvC
+    (hcontRunSeamByte (r := r) (q5 := q5) skip.k h8q) c.h35 c.hidx c.hcond r.hugt
+  exact { b := b, hb35 := rfl, hx1 := rfl, hk := rfl }
+
+/-- **The run class's arm, at one leaf**, from the body, the leaf and the leaf's span.  The
+check state's invariant is the prefix segment's (`hPrefix.inv'`), so this needs no cells:
+`runTail` states the rows at it, `hcontRunRow_of_rows` builds the row, and `HcontClassRows.run`
+joins the row to the arm at the span.  The span starts at the row's seam, which is the run's
+endpoint at the skip's stop — the term the row's `seamS` unfolds to. -/
+theorem hcontRunArmAt {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {s : State} (hc : HcontClassRows G) (hInv : WalkInv G C s)
+    (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)
+    (r : HcontDefaultRow G C s) (hws : wsStop G (r.v.toNat - 1))
+    (skip : HcontRunSkip G C s r)
+    (q5 : State) (nq : Nat)
+    (hPrefix : WalkSegment (stage2Calls stage2SubCalls) G C s (HeadAC₄ C) q5 nq)
+    (hnq : nq ≤ 4) (hmem : q5.mem = s.mem)
+    (b : HcontRunBody G C (contRunCheck G C q5 (hlastIncV C) (hlastNepV G) G.ep r.v
+      (contIx G C) (contB35 G r.v)))
+    (leaf : HcontRunLeaf G C) {nS : Nat}
+    (hSpan : Seg (stage2Calls stage2SubCalls) G (ContSeamC C)
+      (contRunSeamS G C q5 (hlastIncV C) (hlastNepV G) G.ep r.v (contIx G C)
+        (contB35 G r.v) b.b35 b.ix b.v b.k b.x1)
+      (ContTailStartC C) leaf.ss nS)
+    (hnS : nS ≤ 5) :
+    Nonempty (HcontArm (stage2Calls stage2SubCalls) G C s) := by
+  obtain ⟨ev, rows⟩ := hc.runTail C s hInv hblock hk r hws q5 hPrefix.inv' hmem leaf b
+  let row := hcontRunRow_of_rows hInv hk r q5 nq hPrefix hnq hmem b leaf ev rows
+  have hSpan' : Seg (stage2Calls stage2SubCalls) G (ContSeamC C) row.seamS
+      (ContTailStartC C) row.tailS nS := hSpan
+  exact hc.run C s hInv hblock hk row hSpan' hnS
+
+/-! ### The six default classes' `.run` cells
+
+One theorem per head class, each with the leaf's span.  `defaultValueLow`, `_Mid`,
+`otherValue` and `_Bracket` take one leaf each (the letters route); `_BracketHigh` takes four
+and dispatches on the byte's pivots; `_Brace` takes the class-C else leaf.  Every theorem is
+stated at the class's own terms and reads the body's equations (`hb35`, `hx1`, `hk`) where
+the leaf's pivots and the span need them. -/
+
+/-- **`.defaultValueLow`'s `.run` continuation.**  The byte's signed reading is below `44`, so
+the leaf is the letters one (`slt %8 110` and `%8 ≠ 102` follow) and the span is
+`lettersSpan`'s. -/
+theorem hcontArm_run_defaultValueLow {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {s : State} (hc : HcontClassRows G) (hInv : WalkInv G C s)
+    (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)
+    (r : HcontDefaultRow G C s) (hws : wsStop G (r.v.toNat - 1))
+    {x : BitVec 8} (h8 : evalOperand s (.reg "%8") = some (.int 8 x))
+    (h91 : evalICmp .slt x (BitVec.ofNat 8 91) = 1)
+    (h44 : evalICmp .slt x (BitVec.ofNat 8 44) = 1)
+    (hne34 : evalICmp .eq x (BitVec.ofNat 8 34) = 0) :
+    Nonempty (HcontArm (stage2Calls stage2SubCalls) G C s) := by
+  have hx44 : x.toInt < 44 := by simpa using toInt_lt_of_slt_one h44
+  have hbitx := tag_zero_of_toInt_lt_44 (x := x) hx44
+  have hx : x = hlastByte G C := hlastByte_of_reg8 hInv h8
+  have hbit : (evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 45) |||
+      evalICmp .ult (hlastByte G C + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0 := by
+    rw [← hx]; exact hbitx
+  have h110 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 110) = 1 := by
+    rw [← hx]
+    exact slt_one_of_toInt_lt (x := x) (a := BitVec.ofNat 8 110)
+      (by simp only [toInt_8_110]; omega)
+  have hne102 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 102) = 0 := by
+    rw [← hx]
+    exact eq_zero_of_toInt_ne (x := x) (c := BitVec.ofNat 8 102)
+      (by simp only [toInt_8_102]; omega)
+  -- the class's prefix to `sw.default.i`, its memory and its byte
+  let q5 : State := lowS₃ s x
+  have hq5 : q5 = lowS₃ s x := rfl
+  have hPrefix : WalkSegment (stage2Calls stage2SubCalls) G C s (HeadAC₄ C) q5 3 := by
+    rw [hq5]
+    exact Seg.measure (contLowToDefault G C s hInv hblock h8 h91 h44 hne34)
+  have hmem : q5.mem = s.mem := rfl
+  have h8q : lookupName q5.env "%8" = some (.int 8 (hlastByte G C)) := by
+    have h : lookupName q5.env "%8" = some (.int 8 x) := by
+      show lookupName (lowS₃ s x).env "%8" = some (.int 8 x)
+      simp only [lowS₃, lowS₂, lowS₁, State.bind]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+      simpa only [evalOperand] using h8
+    rw [h, hx]
+  let skip := hc.runSkip C s hInv hblock hk r hws
+  let ba := hcontRunBodyAt hInv hk r hws hbit skip q5 3 hPrefix hmem h8q
+  -- the seam's invariant, the leaf and the leaf's span
+  let cl := contRunCheck G C q5 (hlastIncV C) (hlastNepV G) G.ep r.v (contIx G C)
+    (contB35 G r.v)
+  obtain ⟨N, _, hrun, _⟩ :=
+    contWsRunBody G C cl ba.b hk
+  have hInvS : WalkInv G (ContSeamC C)
+      (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1) := hrun.inv'
+  have h110b : evalICmp .slt ba.b.x1 (BitVec.ofNat 8 110) = 1 := by
+    rw [ba.hx1]; exact h110
+  have hne102b : evalICmp .eq ba.b.x1 (BitVec.ofNat 8 102) = 0 := by
+    rw [ba.hx1]; exact hne102
+  let leaf := hcontRunLeafAt_letters hc.seam cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1
+    hInvS ba.b.h8c
+    (hc.seam.scan C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1).hroot hk h110b hne102b
+  have hSpan : Seg (stage2Calls stage2SubCalls) G (ContSeamC C)
+      (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1)
+      (ContTailStartC C) leaf.ss 4 :=
+    lettersSpan (calls := stage2Calls stage2SubCalls) G (ContSeamC C)
+      (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1) hInvS rfl ba.b.h8c
+      h110b hne102b
+  exact hcontRunArmAt hc hInv hblock hk r hws skip q5 3 hPrefix (by decide) hmem ba.b leaf
+    hSpan (by decide)
+
+/-! The remaining default classes' `.run` cells, one theorem each -/
+
+/-- **`.defaultValueMid`'s `.run` continuation** — `58 < %8 < 91`, so the letters leaf. -/
+theorem hcontArm_run_defaultValueMid {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {s : State} (hc : HcontClassRows G) (hInv : WalkInv G C s)
+    (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)
+    (r : HcontDefaultRow G C s) (hws : wsStop G (r.v.toNat - 1))
+    {x : BitVec 8} (h8 : evalOperand s (.reg "%8") = some (.int 8 x))
+    (h91 : evalICmp .slt x (BitVec.ofNat 8 91) = 1)
+    (h44 : evalICmp .slt x (BitVec.ofNat 8 44) = 0)
+    (h58 : evalICmp .slt x (BitVec.ofNat 8 58) = 0)
+    (hne58 : evalICmp .eq x (BitVec.ofNat 8 58) = 0) :
+    Nonempty (HcontArm (stage2Calls stage2SubCalls) G C s) := by
+  have hx91 : x.toInt < 91 := by simpa using toInt_lt_of_slt_one h91
+  have hge58 : 58 ≤ x.toInt := by simpa using toInt_ge_of_slt_zero h58
+  have hbitx := tag_zero_of_toInt_ge_58 (x := x) (by omega)
+  have hx : x = hlastByte G C := hlastByte_of_reg8 hInv h8
+  have hbit : (evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 45) |||
+      evalICmp .ult (hlastByte G C + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0 := by
+    rw [← hx]; exact hbitx
+  have h110 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 110) = 1 := by
+    rw [← hx]
+    exact slt_one_of_toInt_lt (x := x) (a := BitVec.ofNat 8 110)
+      (by simp only [toInt_8_110]; omega)
+  have hne102 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 102) = 0 := by
+    rw [← hx]
+    exact eq_zero_of_toInt_ne (x := x) (c := BitVec.ofNat 8 102)
+      (by simp only [toInt_8_102]; omega)
+  let q5 : State := midS₄ s x
+  have hq5 : q5 = midS₄ s x := rfl
+  have hPrefix : WalkSegment (stage2Calls stage2SubCalls) G C s (HeadAC₄ C) q5 4 := by
+    rw [hq5]
+    exact Seg.measure (contMidToDefault G C s hInv hblock h8 h91 h44 h58 hne58)
+  have hmem : q5.mem = s.mem := rfl
+  have h8q : lookupName q5.env "%8" = some (.int 8 (hlastByte G C)) := by
+    have h : lookupName q5.env "%8" = some (.int 8 x) := by
+      show lookupName (midS₄ s x).env "%8" = some (.int 8 x)
+      simp only [midS₄, midS₃, midS₂, midS₁, State.bind]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+      simpa only [evalOperand] using h8
+    rw [h, hx]
+  let skip := hc.runSkip C s hInv hblock hk r hws
+  let ba := hcontRunBodyAt hInv hk r hws hbit skip q5 4 hPrefix hmem h8q
+  let cl := contRunCheck G C q5 (hlastIncV C) (hlastNepV G) G.ep r.v (contIx G C)
+    (contB35 G r.v)
+  obtain ⟨N, _, hrun, _⟩ := contWsRunBody G C cl ba.b hk
+  have hInvS : WalkInv G (ContSeamC C)
+      (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1) := hrun.inv'
+  have h110b : evalICmp .slt ba.b.x1 (BitVec.ofNat 8 110) = 1 := by
+    rw [ba.hx1]; exact h110
+  have hne102b : evalICmp .eq ba.b.x1 (BitVec.ofNat 8 102) = 0 := by
+    rw [ba.hx1]; exact hne102
+  let leaf := hcontRunLeafAt_letters hc.seam cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1
+    hInvS ba.b.h8c
+    (hc.seam.scan C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1).hroot hk h110b hne102b
+  have hSpan : Seg (stage2Calls stage2SubCalls) G (ContSeamC C)
+      (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1)
+      (ContTailStartC C) leaf.ss 4 :=
+    lettersSpan (calls := stage2Calls stage2SubCalls) G (ContSeamC C)
+      (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1) hInvS rfl ba.b.h8c
+      h110b hne102b
+  exact hcontRunArmAt hc hInv hblock hk r hws skip q5 4 hPrefix (by decide) hmem ba.b leaf
+    hSpan (by decide)
+
+/-- **`.otherValue`'s `.run` continuation** — `44 ≤ %8 < 58` and the tag test clear, so the
+letters leaf.  The tag bit is the constructor's own field. -/
+theorem hcontArm_run_otherValue {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {s : State} (hc : HcontClassRows G) (hInv : WalkInv G C s)
+    (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)
+    (r : HcontDefaultRow G C s) (hws : wsStop G (r.v.toNat - 1))
+    {x : BitVec 8} (h8 : evalOperand s (.reg "%8") = some (.int 8 x))
+    (h91 : evalICmp .slt x (BitVec.ofNat 8 91) = 1)
+    (h44 : evalICmp .slt x (BitVec.ofNat 8 44) = 0)
+    (h58 : evalICmp .slt x (BitVec.ofNat 8 58) = 1)
+    (hne44 : evalICmp .eq x (BitVec.ofNat 8 44) = 0)
+    (hbitx : (evalICmp .eq x (BitVec.ofNat 8 45) |||
+      evalICmp .ult (x + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0) :
+    Nonempty (HcontArm (stage2Calls stage2SubCalls) G C s) := by
+  have hx58 : x.toInt < 58 := by simpa using toInt_lt_of_slt_one h58
+  have hx : x = hlastByte G C := hlastByte_of_reg8 hInv h8
+  have hbit : (evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 45) |||
+      evalICmp .ult (hlastByte G C + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0 := by
+    rw [← hx]; exact hbitx
+  have h110 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 110) = 1 := by
+    rw [← hx]
+    exact slt_one_of_toInt_lt (x := x) (a := BitVec.ofNat 8 110)
+      (by simp only [toInt_8_110]; omega)
+  have hne102 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 102) = 0 := by
+    rw [← hx]
+    exact eq_zero_of_toInt_ne (x := x) (c := BitVec.ofNat 8 102)
+      (by simp only [toInt_8_102]; omega)
+  let q5 : State := othS₄ s x
+  have hq5 : q5 = othS₄ s x := rfl
+  have hPrefix : WalkSegment (stage2Calls stage2SubCalls) G C s (HeadAC₄ C) q5 4 := by
+    rw [hq5]
+    exact Seg.measure (contOthToDefault G C s hInv hblock h8 h91 h44 h58 hne44)
+  have hmem : q5.mem = s.mem := rfl
+  have h8q : lookupName q5.env "%8" = some (.int 8 (hlastByte G C)) := by
+    have h : lookupName q5.env "%8" = some (.int 8 x) := by
+      show lookupName (othS₄ s x).env "%8" = some (.int 8 x)
+      simp only [othS₄, othS₃, othS₂, othS₁, State.bind]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+      simpa only [evalOperand] using h8
+    rw [h, hx]
+  let skip := hc.runSkip C s hInv hblock hk r hws
+  let ba := hcontRunBodyAt hInv hk r hws hbit skip q5 4 hPrefix hmem h8q
+  let cl := contRunCheck G C q5 (hlastIncV C) (hlastNepV G) G.ep r.v (contIx G C)
+    (contB35 G r.v)
+  obtain ⟨N, _, hrun, _⟩ := contWsRunBody G C cl ba.b hk
+  have hInvS : WalkInv G (ContSeamC C)
+      (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1) := hrun.inv'
+  have h110b : evalICmp .slt ba.b.x1 (BitVec.ofNat 8 110) = 1 := by
+    rw [ba.hx1]; exact h110
+  have hne102b : evalICmp .eq ba.b.x1 (BitVec.ofNat 8 102) = 0 := by
+    rw [ba.hx1]; exact hne102
+  let leaf := hcontRunLeafAt_letters hc.seam cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1
+    hInvS ba.b.h8c
+    (hc.seam.scan C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1).hroot hk h110b hne102b
+  have hSpan : Seg (stage2Calls stage2SubCalls) G (ContSeamC C)
+      (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1)
+      (ContTailStartC C) leaf.ss 4 :=
+    lettersSpan (calls := stage2Calls stage2SubCalls) G (ContSeamC C)
+      (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1) hInvS rfl ba.b.h8c
+      h110b hne102b
+  exact hcontRunArmAt hc hInv hblock hk r hws skip q5 4 hPrefix (by decide) hmem ba.b leaf
+    hSpan (by decide)
+
+/-- **`.defaultValueBracket`'s `.run` continuation** — the byte `92`, so the letters leaf. -/
+theorem hcontArm_run_defaultValueBracket {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {s : State} (hc : HcontClassRows G) (hInv : WalkInv G C s)
+    (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)
+    (r : HcontDefaultRow G C s) (hws : wsStop G (r.v.toNat - 1))
+    {x : BitVec 8} (h8 : evalOperand s (.reg "%8") = some (.int 8 x))
+    (h91 : evalICmp .slt x (BitVec.ofNat 8 91) = 0)
+    (h123 : evalICmp .slt x (BitVec.ofNat 8 123) = 1)
+    (h93 : evalICmp .slt x (BitVec.ofNat 8 93) = 1)
+    (hne91 : evalICmp .eq x (BitVec.ofNat 8 91) = 0) :
+    Nonempty (HcontArm (stage2Calls stage2SubCalls) G C s) := by
+  have hge91 : 91 ≤ x.toInt := by simpa using toInt_ge_of_slt_zero h91
+  have hx93 : x.toInt < 93 := by simpa using toInt_lt_of_slt_one h93
+  have hbitx := tag_zero_of_toInt_ge_58 (x := x) (by omega)
+  have hx : x = hlastByte G C := hlastByte_of_reg8 hInv h8
+  have hbit : (evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 45) |||
+      evalICmp .ult (hlastByte G C + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0 := by
+    rw [← hx]; exact hbitx
+  have h110 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 110) = 1 := by
+    rw [← hx]
+    exact slt_one_of_toInt_lt (x := x) (a := BitVec.ofNat 8 110)
+      (by simp only [toInt_8_110]; omega)
+  have hne102 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 102) = 0 := by
+    rw [← hx]
+    exact eq_zero_of_toInt_ne (x := x) (c := BitVec.ofNat 8 102)
+      (by simp only [toInt_8_102]; omega)
+  let q5 : State := brkS₄ s x
+  have hq5 : q5 = brkS₄ s x := rfl
+  have hPrefix : WalkSegment (stage2Calls stage2SubCalls) G C s (HeadAC₄ C) q5 4 := by
+    rw [hq5]
+    exact Seg.measure (contBrkToDefault G C s hInv hblock h8 h91 h123 h93 hne91)
+  have hmem : q5.mem = s.mem := rfl
+  have h8q : lookupName q5.env "%8" = some (.int 8 (hlastByte G C)) := by
+    have h : lookupName q5.env "%8" = some (.int 8 x) := by
+      show lookupName (brkS₄ s x).env "%8" = some (.int 8 x)
+      simp only [brkS₄, brkS₃, brkS₂, brkS₁, State.bind]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+      simpa only [evalOperand] using h8
+    rw [h, hx]
+  let skip := hc.runSkip C s hInv hblock hk r hws
+  let ba := hcontRunBodyAt hInv hk r hws hbit skip q5 4 hPrefix hmem h8q
+  let cl := contRunCheck G C q5 (hlastIncV C) (hlastNepV G) G.ep r.v (contIx G C)
+    (contB35 G r.v)
+  obtain ⟨N, _, hrun, _⟩ := contWsRunBody G C cl ba.b hk
+  have hInvS : WalkInv G (ContSeamC C)
+      (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1) := hrun.inv'
+  have h110b : evalICmp .slt ba.b.x1 (BitVec.ofNat 8 110) = 1 := by
+    rw [ba.hx1]; exact h110
+  have hne102b : evalICmp .eq ba.b.x1 (BitVec.ofNat 8 102) = 0 := by
+    rw [ba.hx1]; exact hne102
+  let leaf := hcontRunLeafAt_letters hc.seam cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1
+    hInvS ba.b.h8c
+    (hc.seam.scan C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1).hroot hk h110b hne102b
+  have hSpan : Seg (stage2Calls stage2SubCalls) G (ContSeamC C)
+      (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1)
+      (ContTailStartC C) leaf.ss 4 :=
+    lettersSpan (calls := stage2Calls stage2SubCalls) G (ContSeamC C)
+      (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1) hInvS rfl ba.b.h8c
+      h110b hne102b
+  exact hcontRunArmAt hc hInv hblock hk r hws skip q5 4 hPrefix (by decide) hmem ba.b leaf
+    hSpan (by decide)
+
+/-- **`.defaultValueBrace`'s `.run` continuation** — the byte `124`, so the class-C span's
+last leaf (`117 … 125`'s else arm). -/
+theorem hcontArm_run_defaultValueBrace {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {s : State} (hc : HcontClassRows G) (hInv : WalkInv G C s)
+    (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)
+    (r : HcontDefaultRow G C s) (hws : wsStop G (r.v.toNat - 1))
+    {x : BitVec 8} (h8 : evalOperand s (.reg "%8") = some (.int 8 x))
+    (h91 : evalICmp .slt x (BitVec.ofNat 8 91) = 0)
+    (h123 : evalICmp .slt x (BitVec.ofNat 8 123) = 0)
+    (h125 : evalICmp .slt x (BitVec.ofNat 8 125) = 1)
+    (hne123 : evalICmp .eq x (BitVec.ofNat 8 123) = 0) :
+    Nonempty (HcontArm (stage2Calls stage2SubCalls) G C s) := by
+  have hge123 : 123 ≤ x.toInt := by simpa using toInt_ge_of_slt_zero h123
+  have hx125 : x.toInt < 125 := by simpa using toInt_lt_of_slt_one h125
+  have hbitx := tag_zero_of_toInt_ge_58 (x := x) (by omega)
+  have hx : x = hlastByte G C := hlastByte_of_reg8 hInv h8
+  have hbit : (evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 45) |||
+      evalICmp .ult (hlastByte G C + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0 := by
+    rw [← hx]; exact hbitx
+  have h110 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 110) = 0 := by
+    rw [← hx]
+    exact slt_zero_of_toInt_ge (x := x) (a := BitVec.ofNat 8 110)
+      (by simp only [toInt_8_110]; omega)
+  have h116 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 116) = 0 := by
+    rw [← hx]
+    exact slt_zero_of_toInt_ge (x := x) (a := BitVec.ofNat 8 116)
+      (by simp only [toInt_8_116]; omega)
+  have h116eq : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 116) = 0 := by
+    rw [← hx]
+    exact eq_zero_of_toInt_ne (x := x) (c := BitVec.ofNat 8 116)
+      (by simp only [toInt_8_116]; omega)
+  let q5 : State := brcS₄ s x
+  have hq5 : q5 = brcS₄ s x := rfl
+  have hPrefix : WalkSegment (stage2Calls stage2SubCalls) G C s (HeadAC₄ C) q5 4 := by
+    rw [hq5]
+    exact Seg.measure (contBrcToDefault G C s hInv hblock h8 h91 h123 h125 hne123)
+  have hmem : q5.mem = s.mem := rfl
+  have h8q : lookupName q5.env "%8" = some (.int 8 (hlastByte G C)) := by
+    have h : lookupName q5.env "%8" = some (.int 8 x) := by
+      show lookupName (brcS₄ s x).env "%8" = some (.int 8 x)
+      simp only [brcS₄, brcS₃, brcS₂, brcS₁, State.bind]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+      simpa only [evalOperand] using h8
+    rw [h, hx]
+  let skip := hc.runSkip C s hInv hblock hk r hws
+  let ba := hcontRunBodyAt hInv hk r hws hbit skip q5 4 hPrefix hmem h8q
+  let cl := contRunCheck G C q5 (hlastIncV C) (hlastNepV G) G.ep r.v (contIx G C)
+    (contB35 G r.v)
+  obtain ⟨N, _, hrun, _⟩ := contWsRunBody G C cl ba.b hk
+  have hInvS : WalkInv G (ContSeamC C)
+      (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1) := hrun.inv'
+  have h110b : evalICmp .slt ba.b.x1 (BitVec.ofNat 8 110) = 0 := by
+    rw [ba.hx1]; exact h110
+  have h116b : evalICmp .slt ba.b.x1 (BitVec.ofNat 8 116) = 0 := by
+    rw [ba.hx1]; exact h116
+  have h116eqb : evalICmp .eq ba.b.x1 (BitVec.ofNat 8 116) = 0 := by
+    rw [ba.hx1]; exact h116eq
+  let leaf := hcontRunLeafAt_58Else hc.seam cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1
+    hInvS ba.b.h8c
+    (hc.seam.scan C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1).hroot hk h110b h116b h116eqb
+  have hSpan : Seg (stage2Calls stage2SubCalls) G (ContSeamC C)
+      (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1)
+      (ContTailStartC C) leaf.ss 5 :=
+    c58ElseSpan (calls := stage2Calls stage2SubCalls) G (ContSeamC C)
+      (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1) hInvS rfl ba.b.h8c
+      h110b h116b h116eqb
+  exact hcontRunArmAt hc hInv hblock hk r hws skip q5 4 hPrefix (by decide) hmem ba.b leaf
+    hSpan (by decide)
+
+/-- **`.defaultValueBracketHigh`'s `.run` continuation** — `93 … 122`, the one default class
+whose byte spans the four routes below `if.else387.i`: `'f'` at `102`, the letters span
+below `110` and not `102`, and the class-C span from `110` on, split by the same pivots the
+emitted pair performs. -/
+theorem hcontArm_run_defaultValueBracketHigh {m0 : Mem} {G : WalkGeom m0}
+    {C : WalkCarry G} {s : State} (hc : HcontClassRows G) (hInv : WalkInv G C s)
+    (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)
+    (r : HcontDefaultRow G C s) (hws : wsStop G (r.v.toNat - 1))
+    {x : BitVec 8} (h8 : evalOperand s (.reg "%8") = some (.int 8 x))
+    (h91 : evalICmp .slt x (BitVec.ofNat 8 91) = 0)
+    (h123 : evalICmp .slt x (BitVec.ofNat 8 123) = 1)
+    (h93 : evalICmp .slt x (BitVec.ofNat 8 93) = 0)
+    (hne93 : evalICmp .eq x (BitVec.ofNat 8 93) = 0) :
+    Nonempty (HcontArm (stage2Calls stage2SubCalls) G C s) := by
+  have hge93 : 93 ≤ x.toInt := by simpa using toInt_ge_of_slt_zero h93
+  have hx123 : x.toInt < 123 := by simpa using toInt_lt_of_slt_one h123
+  have hbitx := tag_zero_of_toInt_ge_58 (x := x) (by omega)
+  have hx : x = hlastByte G C := hlastByte_of_reg8 hInv h8
+  have hbit : (evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 45) |||
+      evalICmp .ult (hlastByte G C + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0 := by
+    rw [← hx]; exact hbitx
+  have h125x : evalICmp .slt x (BitVec.ofNat 8 125) = 1 :=
+    slt_one_of_toInt_lt (x := x) (a := BitVec.ofNat 8 125)
+      (by simp only [toInt_8_125]; omega)
+  have h125 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 125) = 1 ∨
+      evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 125) = 1 := by
+    rw [← hx]; exact Or.inl h125x
+  let q5 : State := bhS₄ s x
+  have hq5 : q5 = bhS₄ s x := rfl
+  have hPrefix : WalkSegment (stage2Calls stage2SubCalls) G C s (HeadAC₄ C) q5 4 := by
+    rw [hq5]
+    exact Seg.measure (contBhToDefault G C s hInv hblock h8 h91 h123 h93 hne93)
+  have hmem : q5.mem = s.mem := rfl
+  have h8q : lookupName q5.env "%8" = some (.int 8 (hlastByte G C)) := by
+    have h : lookupName q5.env "%8" = some (.int 8 x) := by
+      show lookupName (bhS₄ s x).env "%8" = some (.int 8 x)
+      simp only [bhS₄, bhS₃, bhS₂, bhS₁, State.bind]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+      simpa only [evalOperand] using h8
+    rw [h, hx]
+  let skip := hc.runSkip C s hInv hblock hk r hws
+  let ba := hcontRunBodyAt hInv hk r hws hbit skip q5 4 hPrefix hmem h8q
+  let cl := contRunCheck G C q5 (hlastIncV C) (hlastNepV G) G.ep r.v (contIx G C)
+    (contB35 G r.v)
+  obtain ⟨N, _, hrun, _⟩ := contWsRunBody G C cl ba.b hk
+  have hInvS : WalkInv G (ContSeamC C)
+      (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1) := hrun.inv'
+  have root0 : readBytes (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1).mem
+      (G.next0 + 8) 4 =
+      some (natToBytes (hc.seam.scan C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1).calls.rdv.toNat 4) :=
+    (hc.seam.scan C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1).hroot
+  have rootF : readBytes (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1).mem
+      (G.next0 + 8) 4 =
+      some (natToBytes (hc.seam.scanF C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1).calls.rdv.toNat 4) :=
+    (hc.seam.scanF C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1).hroot
+  have root56T : readBytes (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1).mem
+      (G.next0 + 8) 4 =
+      some (natToBytes (hc.seam.scan56True C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1).calls.rdv.toNat 4) :=
+    (hc.seam.scan56True C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1).hroot
+  have root58T : readBytes (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1).mem
+      (G.next0 + 8) 4 =
+      some (natToBytes (hc.seam.scan58True C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1).calls.rdv.toNat 4) :=
+    (hc.seam.scan58True C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1).hroot
+  by_cases h110one : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 110) = 1
+  · have h110b : evalICmp .slt ba.b.x1 (BitVec.ofNat 8 110) = 1 := by
+      rw [ba.hx1]; exact h110one
+    by_cases h102one : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 102) = 1
+    · have h102b : evalICmp .eq ba.b.x1 (BitVec.ofNat 8 102) = 1 := by
+        rw [ba.hx1]; exact h102one
+      let leaf := hcontRunLeafAt_fLetter hc.seam cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1
+        hInvS ba.b.h8c rootF hk h110b h102b
+      have hSpan : Seg (stage2Calls stage2SubCalls) G (ContSeamC C)
+          (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1)
+          (ContTailStartC C) leaf.ss 4 :=
+        fSpan (calls := stage2Calls stage2SubCalls) G (ContSeamC C)
+          (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1) hInvS rfl
+          ba.b.h8c h110b h102b
+      exact hcontRunArmAt hc hInv hblock hk r hws skip q5 4 hPrefix (by decide) hmem ba.b
+        leaf hSpan (by decide)
+    · have h102z : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 102) = 0 :=
+        bitZeroOfNeOne h102one
+      have hne102b : evalICmp .eq ba.b.x1 (BitVec.ofNat 8 102) = 0 := by
+        rw [ba.hx1]; exact h102z
+      let leaf := hcontRunLeafAt_letters hc.seam cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1
+        hInvS ba.b.h8c root0 hk h110b hne102b
+      have hSpan : Seg (stage2Calls stage2SubCalls) G (ContSeamC C)
+          (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1)
+          (ContTailStartC C) leaf.ss 4 :=
+        lettersSpan (calls := stage2Calls stage2SubCalls) G (ContSeamC C)
+          (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1) hInvS rfl
+          ba.b.h8c h110b hne102b
+      exact hcontRunArmAt hc hInv hblock hk r hws skip q5 4 hPrefix (by decide) hmem ba.b
+        leaf hSpan (by decide)
+  · have h110z : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 110) = 0 :=
+      bitZeroOfNeOne h110one
+    have h110b : evalICmp .slt ba.b.x1 (BitVec.ofNat 8 110) = 0 := by
+      rw [ba.hx1]; exact h110z
+    by_cases h110eq : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 110) = 1
+    · have h110eqb : evalICmp .eq ba.b.x1 (BitVec.ofNat 8 110) = 1 := by
+        rw [ba.hx1]; exact h110eq
+      have h116one : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 116) = 1 := by
+        have hb110 : hlastByte G C = BitVec.ofNat 8 110 := (evalICmp_eq_one_iff _ _).1 h110eq
+        rw [hb110]
+        decide
+      have h116b : evalICmp .slt ba.b.x1 (BitVec.ofNat 8 116) = 1 := by
+        rw [ba.hx1]; exact h116one
+      let leaf := hcontRunLeafAt_56True hc.seam cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1
+        hInvS ba.b.h8c root56T hk h110b h116b h110eqb
+      have hSpan : Seg (stage2Calls stage2SubCalls) G (ContSeamC C)
+          (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1)
+          (ContTailStartC C) leaf.ss 5 :=
+        c56TrueSpan (calls := stage2Calls stage2SubCalls) G (ContSeamC C)
+          (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1) hInvS rfl
+          ba.b.h8c h110b h116b h110eqb
+      exact hcontRunArmAt hc hInv hblock hk r hws skip q5 4 hPrefix (by decide) hmem ba.b
+        leaf hSpan (by decide)
+    · have h110eqz : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 110) = 0 :=
+        bitZeroOfNeOne h110eq
+      have h110eqb : evalICmp .eq ba.b.x1 (BitVec.ofNat 8 110) = 0 := by
+        rw [ba.hx1]; exact h110eqz
+      by_cases h116one : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 116) = 1
+      · have h116b : evalICmp .slt ba.b.x1 (BitVec.ofNat 8 116) = 1 := by
+          rw [ba.hx1]; exact h116one
+        let leaf := hcontRunLeafAt_56Else hc.seam cl ba.b.b35 ba.b.ix ba.b.v ba.b.k
+          ba.b.x1 hInvS ba.b.h8c root0 hk h110b h116b h110eqb
+        have hSpan : Seg (stage2Calls stage2SubCalls) G (ContSeamC C)
+            (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1)
+            (ContTailStartC C) leaf.ss 5 :=
+          c56ElseSpan (calls := stage2Calls stage2SubCalls) G (ContSeamC C)
+            (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1) hInvS rfl
+            ba.b.h8c h110b h116b h110eqb
+        exact hcontRunArmAt hc hInv hblock hk r hws skip q5 4 hPrefix (by decide) hmem ba.b
+          leaf hSpan (by decide)
+      · have h116z : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 116) = 0 :=
+          bitZeroOfNeOne h116one
+        have h116b : evalICmp .slt ba.b.x1 (BitVec.ofNat 8 116) = 0 := by
+          rw [ba.hx1]; exact h116z
+        by_cases h116eq : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 116) = 1
+        · have h116eqb : evalICmp .eq ba.b.x1 (BitVec.ofNat 8 116) = 1 := by
+            rw [ba.hx1]; exact h116eq
+          let leaf := hcontRunLeafAt_58True hc.seam cl ba.b.b35 ba.b.ix ba.b.v ba.b.k
+            ba.b.x1 hInvS ba.b.h8c root58T hk h110b h116b h116eqb
+          have hSpan : Seg (stage2Calls stage2SubCalls) G (ContSeamC C)
+              (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1)
+              (ContTailStartC C) leaf.ss 4 :=
+            c58TrueSpan (calls := stage2Calls stage2SubCalls) G (ContSeamC C)
+              (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1) hInvS rfl
+              ba.b.h8c h110b h116b h116eqb
+          exact hcontRunArmAt hc hInv hblock hk r hws skip q5 4 hPrefix (by decide) hmem
+            ba.b leaf hSpan (by decide)
+        · have h116eqz : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 116) = 0 :=
+            bitZeroOfNeOne h116eq
+          have h116eqb : evalICmp .eq ba.b.x1 (BitVec.ofNat 8 116) = 0 := by
+            rw [ba.hx1]; exact h116eqz
+          let leaf := hcontRunLeafAt_58Else hc.seam cl ba.b.b35 ba.b.ix ba.b.v ba.b.k
+            ba.b.x1 hInvS ba.b.h8c root0 hk h110b h116b h116eqb
+          have hSpan : Seg (stage2Calls stage2SubCalls) G (ContSeamC C)
+              (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1)
+              (ContTailStartC C) leaf.ss 5 :=
+            c58ElseSpan (calls := stage2Calls stage2SubCalls) G (ContSeamC C)
+              (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1) hInvS rfl
+              ba.b.h8c h110b h116b h116eqb
+          exact hcontRunArmAt hc hInv hblock hk r hws skip q5 4 hPrefix (by decide) hmem
+            ba.b leaf hSpan (by decide)
 
 /-! ### The plain-value class's three non-whitespace byte classes
 
@@ -461,10 +1130,18 @@ theorem hcontArm_value_of_lane {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s
 #print axioms LeanLLVM.Refinement.WalkScope.hcontRunLeafAt_58Else
 #print axioms LeanLLVM.Refinement.WalkScope.contRunCheck_env8
 #print axioms LeanLLVM.Refinement.WalkScope.contRunCheck_idx
-#print axioms LeanLLVM.Refinement.WalkScope.contSwOut_env8
+#print axioms LeanLLVM.Refinement.WalkScope.hcontRunHeadCells_of_prefix
+#print axioms LeanLLVM.Refinement.WalkScope.hcontRunCheckCells_of_head
 #print axioms LeanLLVM.Refinement.WalkScope.hcontRunBody_of_skip
 #print axioms LeanLLVM.Refinement.WalkScope.hcontRunRow_of_rows
+#print axioms LeanLLVM.Refinement.WalkScope.hcontRunArmAt
 #print axioms LeanLLVM.Refinement.WalkScope.hcontArm_value_of_lane
+#print axioms LeanLLVM.Refinement.WalkScope.hcontArm_run_defaultValueLow
+#print axioms LeanLLVM.Refinement.WalkScope.hcontArm_run_defaultValueMid
+#print axioms LeanLLVM.Refinement.WalkScope.hcontArm_run_otherValue
+#print axioms LeanLLVM.Refinement.WalkScope.hcontArm_run_defaultValueBracket
+#print axioms LeanLLVM.Refinement.WalkScope.hcontArm_run_defaultValueBrace
+#print axioms LeanLLVM.Refinement.WalkScope.hcontArm_run_defaultValueBracketHigh
 
 end WalkScope
 end LeanLLVM.Refinement
