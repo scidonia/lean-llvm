@@ -1162,6 +1162,92 @@ pipeline's ABI does not carry), derived from `pipelineSpecPre` by
 coverage constructors at `[propext]`, and the used-prefix, semantic,
 refusal and policy theorems at `[propext, Quot.sound]`.
 
+### 7.10 The parser half is produced, at the walk's own trace
+
+`pipeline_satisfies_stage2`'s premise is `hsem`: at each outcome an execution
+produces, `ParserHalfForOutcome stage2EventRel` — the acceptance equivalence at
+that outcome's verdict, the accepted tape with its decoded value and validity,
+and the policy on the refusal word.  `LeanLLVM/Refinement/JsonStage2Hsem.lean`
+produces it:
+
+```text
+hsem_of_evidence :
+  (∀ args mem next o ndst' nev', pipelineStaging … → BehFromState … o →
+     pipelineOutputExtents … → Stage2OutcomeEvidence base args mem ndst' nev' o) →
+  ∀ args mem next o ndst' nev', pipelineStaging … → BehFromState … o →
+     pipelineOutputExtents … → ParserHalfForOutcome stage2EventRel base args mem ndst' nev' o
+```
+
+`pipeline_satisfies_stage2_of_evidence` is that statement applied where the
+bridge consumes it — the units' record and the per-outcome evidence give
+`Satisfies calls f (Γ_pipeline_stage2 tab base)` — so the produced shape is the
+one `pipeline_satisfies_stage2` asks for rather than a lookalike.
+
+**The two vocabularies are joined by the record trace.**  The specification's
+relation is stated over bytes; the walk's invariant carries a
+`List EventRecord` and states the event stream's written suffix as its
+flattening (`(C.events.map EventRecord.encodedBytes).flatten`).  `Stage2Records`
+is the relation at that vocabulary — one constructor per record class, consuming
+the record at the head instead of its bytes — and `Stage2Records.toEventRel`
+transports it to `Stage2EventRel` (`stage2EventRel_of_records` is the form the
+producer uses).  `Stage2Records.append` is what makes a walk step composable: one
+step relates one record to one token, and the trace is the concatenation.
+`pair_records` and `null_records` instantiate it at two documents with the
+emitted bytes computed rather than assumed.
+
+**What the producer derives, and what it names.**  `Stage2OutcomeEvidence` is the
+evidence at one outcome: the document the arguments name, and the run's answer.
+Derived from it are the decoded value (`decodeTape_correct`), the tape's validity
+and span discipline (`tape_valid`), the byte-level relation (the trace), the
+acceptance equivalence (the outcome's verdict, its two-valuedness and the
+parser's answer at that verdict), and — on the accept path — the refusal policy
+(`refusalOffset_of_parseOk`: both of `RefusalOffset`'s clauses are vacuous at an
+accepted document whose staged window passed the UTF-8 stage).  Named, not
+derived, is the one thing the tree has no theorem for: that the records the walk
+emitted are the *reference parser's* tokens.  The walk's trace records each
+event's shape and payload; that those are `parseBytes`'s tokens at that document
+is a row-per-arm obligation of the walk proof, and it is not a consequence of the
+boundary post — `stage2Post`'s verdict is two-valued and says nothing about the
+stream's meaning (`JsonStage2Contract`).  On the refusal path the evidence also
+carries the policy at the written word; the offset's two clauses are
+`refusalOffset_walk`'s and `refusalOffset_utf8`'s.
+
+**No accepted run's output is only related.**  The accepted clause's value is
+`decodeTape`'s and its validity is `ValidDocument`'s; the arena and event bytes
+are *related to* the tokens that value came from, which is what a record stream
+means.  So strings and containers are decoded by the tape's spans and the
+relation's constructors, and a number record's payload is `strtodSpec`'s
+encoding — the value is never left as "some bytes satisfying a predicate".
+
+**Coverage by value class.**  The record relation's constructors are the five
+classes: scalars (`null`, `true`, `false` as `tag 8`/`9`/`10` at their literal
+spans), containers (`tag 1`–`4` at their one-byte spans), plain strings (`str`
+with `plainSpan`, the body's code points read off the document), escaped strings
+(`str` with an arena offset below `2 ^ 63`, the slice read back through
+`escapeCodePoints`), and numbers (`number`, `strtodSpec`'s eight bytes at a
+well-formed lexeme).  `null_records` and `pair_records` instantiate the scalar
+and container rows; the two string rows are the specification's
+`stage2EventRel_string_plain`/`_arena` at the same hypotheses, and the arena form
+is inhabited for every code-point list
+(`stage2EventRel_string_arena_inhabited`).
+
+**The numeric arm's boundary is a staging boundary, not a numeric defect.**  The
+number row costs no arithmetic at the model: `stage2NumFast` is what the walk's
+`num_fast_el1` slot is answered by at `stage2SubCalls`, and at a well-formed
+lexeme its eight bytes are `strtodSpec`'s
+(`stage2NumFast_writes_strtodSpec`, from `numFastEmitted_strtodSpec`).  The
+*pinned helper body* is the different statement.  At `stage2Calls noCalls` the
+slot has no answer (`stage2Calls_noCalls_numFast`, with
+`stage2Calls_subCalls_numFast` as the control that the same reading answers the
+model), and `JsonStage2NumFastArm` shows that at each of the body's three
+out-of-line callees — `num_d8_el1`, `num_el_el1`, `stk_mul_u64` — the step is
+`ub`.  So a body-level conversion proof needs a different call environment and a
+staging that stages the two tables (`NumFastBodyArm`), neither of which the tree
+has; the conversion's arithmetic is not in question, and the relation's number
+clause is discharged at the model.  The same reading excludes `sorry`,
+`admit`, `native_decide` and `Classical.choice`: every theorem above is pinned at
+`[propext]` or `[propext, Quot.sound]`.
+
 ## 8. Out of scope for the first contract
 
 `NaN`/`Infinity` as inputs the first contract's route reasons about, the
