@@ -20,7 +20,7 @@ of what the rows are about.  Nothing else is: the seam's own cells (`%ee.1.i`,
 `%cond350.i`, `%kind404.i`, `%root_done.i`, `%c.i`, `%t352.i`, `%z`, the state's `pre` and
 the `phi`'s operand) are the *state's*, and a theorem that consumes the rows takes them at
 the state it is given — they are the same peels at every seam
-(`contTailStart_ee`/`contTailStart_cond`, `scSeam_ee`/`scSeam_cond`,
+(`contTailStart_ee`/`contTailStart_cond`, `scSeamByte_ee`/`scSeamByte_cond`,
 `hlastTail_ee`/`hlastTail_cond`).
 
 `HcontSeamAbi` is that structure as one `∀`-field per seam: the scan arm's seam at the run

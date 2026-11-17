@@ -63,13 +63,15 @@ supplies, and `.dispatch` turns it into the actual `WalkDispatchResult`:
   (`stringDeepRefuse_at` composes the refusal from `if.end245.i`'s state, and the head's
   marker links are `walkLandLhsTrue_at`/`walkIfThen231_at`).
 * `.scalar` — **`HcontScalarFacts`**, the plain-value class on the numeral route: the
-  head's four scalar pivots, the count test's succeeding arm, the no-run byte class and
-  the tag test's true arm, composed through `walkRevolutionMergeSegScalar`
-  (`JsonStage2WalkHcontScalar`).  This is the class the old split excluded, and it is
-  proved — not supplied — so the document `"01"`'s head is a merge arm.  Its producer is
-  `hcontArm_scalar_of_staging` (`JsonStage2WalkDispatchScalarOfStaging`), which derives the
-  `%8` cell, `h91`, the counts, the lane's pointer, the entry's index, the token record's
-  cells and the byte before the entry's end with its read.
+  head's four scalar pivots, the count test's succeeding arm, the byte's own route below
+  `if.else387.i` and the tag test's true arm, composed through
+  `walkRevolutionMergeSegScalar` (`JsonStage2WalkHcontScalar`).  This is the class the old
+  split excluded, and it is proved — not supplied — so the document `"01"`'s head is a
+  merge arm.  Its producer is `hcontArm_scalar_of_staging`
+  (`JsonStage2WalkDispatchScalarOfStaging`), which derives the `%8` cell, `h91`, the
+  counts, the lane's pointer, the entry's index, the token record's cells and the byte
+  before the entry's end with its read, and carries the byte's route
+  (`HcontScalarPrefix.hb`).
 * `.closeBracketZero` — `if.then53.i` at depth zero on the **continuing** head: `]` with
   nothing open is refused (`bracketRefuse_at`'s chain; its only count premise is the head's
   guard, which a continuing entry has).  It is proved rather than supplied, and the last

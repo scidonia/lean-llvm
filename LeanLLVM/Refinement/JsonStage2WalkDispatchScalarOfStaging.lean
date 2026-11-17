@@ -4,9 +4,10 @@
 `HcontArm.scalar` (`JsonStage2WalkDispatchHcontArms`) and `LastEntryArm.scalar`
 (`JsonStage2WalkDispatchArms`) are the head switch's plain-value arm: the four pivots
 `NodeBlock5 → NodeBlock → LeafBlock1 → sw.default.i`, the count test's succeeding arm at
-a continuing entry and its failing one at the last, the whitespace check's no-run class,
-and the tag test's *true* arm — a digit or `-`, so `if.end372.i` leaves for
-`if.then413.i` with kind `7` and the scan-free tail follows.  The continuing composition
+a continuing entry and its failing one at the last, the byte before the entry's end and
+the route its class selects (no run at any of the three), and the tag test's *true* arm —
+a digit or `-`, so `if.end372.i` leaves for `if.then413.i` with kind `7` and the
+scan-free tail follows.  The continuing composition
 is `walkRevolutionMergeSegScalar` (`JsonStage2WalkHcontScalar`), its bundle
 `HcontScalarFacts`; the terminal composition is `scalarMerge_at`
 (`JsonStage2WalkDispatchScalar`) at the prefix `scalarPrefixSeg`
@@ -45,7 +46,7 @@ The document's content is taken, each with what supplies it:
 | `hbit` | **the tag test**: `%8 = 45` or `%8 + 208 <u 10`, so `.` and `/` are excluded |
 | `v`, `hread`, `hspan` | **the next entry's lane word and its order** (continuing only): `%5`'s pointer is the invariant's, the word is `G.ent`'s |
 | `hugt` | **the entry's non-emptiness** (continuing only) |
-| `hb13`, `hb32`, `hbne32` | **the byte before the entry's end and its no-run class**: the document's content |
+| `hb` | **the byte before the entry's end and its route**: the document's content |
 | the three calls, their pre/postconditions and answers | **the tail's callees** at the argument lists the walk stages |
 -/
 import LeanLLVM.Refinement.JsonStage2WalkDispatchLaneOfStaging
@@ -160,9 +161,7 @@ structure HcontScalarPrefix {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : 
   b35 : UInt8
   hread35 : readBytes (sEnd C s x inc nep ep v ix).mem ((G.b - 1) + v.toNat) 1 =
     some [b35]
-  hb13 : evalICmp .slt (cont35 b35) (BitVec.ofNat 8 13) = 0
-  hb32 : evalICmp .slt (cont35 b35) (BitVec.ofNat 8 32) = 0
-  hbne32 : evalICmp .eq (cont35 b35) (BitVec.ofNat 8 32) = 0
+  hb : HcontByteRoute (cont35 b35)
 
 /-- **The prefix's cells, from the entry's evidence.**  The class's four bits and the
 entry's lane are the document's; `h8`, `hlt91`, the counts, the pointer, the index, the
@@ -183,9 +182,7 @@ def hcontScalarPrefix_of_inv {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
     (hspan : v.toNat ≤ entryPos G (C.k + 1))
     (hugt : evalICmp .ugt (BitVec.ofNat 64 v.toNat)
       (BitVec.ofNat 64 (entryPos G C.k)) = 1)
-    (hb13 : evalICmp .slt (cont35 (contB35 G v)) (BitVec.ofNat 8 13) = 0)
-    (hb32 : evalICmp .slt (cont35 (contB35 G v)) (BitVec.ofNat 8 32) = 0)
-    (hbne32 : evalICmp .eq (cont35 (contB35 G v)) (BitVec.ofNat 8 32) = 0) :
+    (hb : HcontByteRoute (cont35 (contB35 G v))) :
     HcontScalarPrefix G C s := by
   -- the lane is above the entry's index, so the byte before the entry's end is inside
   have hgt : entryPos G C.k < v.toNat := contLane_gt G C hk hugt
@@ -229,19 +226,20 @@ def hcontScalarPrefix_of_inv {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
       hugt := hugt
       b35 := contB35 G v
       hread35 := hread35
-      hb13 := hb13
-      hb32 := hb32
-      hbne32 := hbne32 }
+      hb := hb }
 
 /-- **The plain-value continuing bundle, from the prefix and the tail.** -/
 def hcontScalarFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
     (s : State) (pre : HcontScalarPrefix G C s)
     (r₁ r₂ r₃ : CallOutcome) (ev : EventRecord) {cA rdv xA : BitVec 32}
     (hTail : WalkSegment (stage2Calls stage2SubCalls) G (HeadC₄₁₃ (ContAC₇ C))
-      (scSeamS C s pre.x pre.inc pre.nep pre.ep pre.v pre.ix pre.b35)
+      (scSeamByte
+        (sLand C s pre.x pre.inc pre.nep pre.ep pre.v pre.ix pre.b35) pre.v.toNat pre.x
+        C.stage.tok pre.b35 pre.hb)
       (TailCarryEnd (HeadC₄₁₃ (ContAC₇ C)) ev)
-      (scEnd C s pre.x pre.inc pre.nep pre.ep pre.v pre.ix pre.b35 r₁ r₂ r₃
-        cA rdv xA) 3) :
+      (scEndByte
+        (sLand C s pre.x pre.inc pre.nep pre.ep pre.v pre.ix pre.b35) pre.v.toNat pre.x
+        C.stage.tok pre.b35 pre.hb r₁ r₂ r₃ cA rdv xA) 3) :
     HcontScalarFacts G C s :=
   { x := pre.x
     h8 := pre.h8
@@ -267,9 +265,7 @@ def hcontScalarFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
     hugt := pre.hugt
     b35 := pre.b35
     hread35 := pre.hread35
-    hb13 := pre.hb13
-    hb32 := pre.hb32
-    hbne32 := pre.hbne32
+    hb := pre.hb
     r₁ := r₁
     r₂ := r₂
     r₃ := r₃
@@ -294,19 +290,20 @@ def hcontArm_scalar_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
     (hspan : v.toNat ≤ entryPos G (C.k + 1))
     (hugt : evalICmp .ugt (BitVec.ofNat 64 v.toNat)
       (BitVec.ofNat 64 (entryPos G C.k)) = 1)
-    (hb13 : evalICmp .slt (cont35 (contB35 G v)) (BitVec.ofNat 8 13) = 0)
-    (hb32 : evalICmp .slt (cont35 (contB35 G v)) (BitVec.ofNat 8 32) = 0)
-    (hbne32 : evalICmp .eq (cont35 (contB35 G v)) (BitVec.ofNat 8 32) = 0)
+    (hb : HcontByteRoute (cont35 (contB35 G v)))
     (r₁ r₂ r₃ : CallOutcome) (ev : EventRecord) {cA rdv xA : BitVec 32}
     (hTail : WalkSegment (stage2Calls stage2SubCalls) G (HeadC₄₁₃ (ContAC₇ C))
-      (scSeamS C s x (hlastIncV C) (hlastNepV G) G.ep v (contIx G C) (contB35 G v))
+      (scSeamByte
+        (sLand C s x (hlastIncV C) (hlastNepV G) G.ep v (contIx G C) (contB35 G v))
+        v.toNat x C.stage.tok (contB35 G v) hb)
       (TailCarryEnd (HeadC₄₁₃ (ContAC₇ C)) ev)
-      (scEnd C s x (hlastIncV C) (hlastNepV G) G.ep v (contIx G C) (contB35 G v) r₁ r₂ r₃
-        cA rdv xA) 3) :
+      (scEndByte
+        (sLand C s x (hlastIncV C) (hlastNepV G) G.ep v (contIx G C) (contB35 G v))
+        v.toNat x C.stage.tok (contB35 G v) hb r₁ r₂ r₃ cA rdv xA) 3) :
     HcontArm (stage2Calls stage2SubCalls) G C s :=
   .scalar (hcontScalarFacts_of_staging G C s
-    (hcontScalarPrefix_of_inv G C s hInv hk hx h44 h58 hne44 hbit hread hspan hugt hb13 hb32
-      hbne32) r₁ r₂ r₃ ev (cA := cA) (rdv := rdv) (xA := xA) hTail)
+    (hcontScalarPrefix_of_inv G C s hInv hk hx h44 h58 hne44 hbit hread hspan hugt hb)
+      r₁ r₂ r₃ ev (cA := cA) (rdv := rdv) (xA := xA) hTail)
 
 /-- **The plain-value continuing dispatch, from the staging.** -/
 theorem walkDispatch_at_scalar_of_staging {m0 : Mem} {G : WalkGeom m0}
@@ -324,19 +321,20 @@ theorem walkDispatch_at_scalar_of_staging {m0 : Mem} {G : WalkGeom m0}
     (hspan : v.toNat ≤ entryPos G (C.k + 1))
     (hugt : evalICmp .ugt (BitVec.ofNat 64 v.toNat)
       (BitVec.ofNat 64 (entryPos G C.k)) = 1)
-    (hb13 : evalICmp .slt (cont35 (contB35 G v)) (BitVec.ofNat 8 13) = 0)
-    (hb32 : evalICmp .slt (cont35 (contB35 G v)) (BitVec.ofNat 8 32) = 0)
-    (hbne32 : evalICmp .eq (cont35 (contB35 G v)) (BitVec.ofNat 8 32) = 0)
+    (hb : HcontByteRoute (cont35 (contB35 G v)))
     (r₁ r₂ r₃ : CallOutcome) (ev : EventRecord) {cA rdv xA : BitVec 32}
     (hTail : WalkSegment (stage2Calls stage2SubCalls) G (HeadC₄₁₃ (ContAC₇ C))
-      (scSeamS C s x (hlastIncV C) (hlastNepV G) G.ep v (contIx G C) (contB35 G v))
+      (scSeamByte
+        (sLand C s x (hlastIncV C) (hlastNepV G) G.ep v (contIx G C) (contB35 G v))
+        v.toNat x C.stage.tok (contB35 G v) hb)
       (TailCarryEnd (HeadC₄₁₃ (ContAC₇ C)) ev)
-      (scEnd C s x (hlastIncV C) (hlastNepV G) G.ep v (contIx G C) (contB35 G v) r₁ r₂ r₃
-        cA rdv xA) 3) :
+      (scEndByte
+        (sLand C s x (hlastIncV C) (hlastNepV G) G.ep v (contIx G C) (contB35 G v))
+        v.toNat x C.stage.tok (contB35 G v) hb r₁ r₂ r₃ cA rdv xA) 3) :
     WalkDispatchResult (stage2Calls stage2SubCalls) G C s :=
   HcontArm.dispatch hInv hblock hk
-    (hcontArm_scalar_of_staging G C s hInv hk hx h44 h58 hne44 hbit hread hspan hugt hb13
-      hb32 hbne32 r₁ r₂ r₃ ev (cA := cA) (rdv := rdv) (xA := xA) hTail)
+    (hcontArm_scalar_of_staging G C s hInv hk hx h44 h58 hne44 hbit hread hspan hugt
+      hb r₁ r₂ r₃ ev (cA := cA) (rdv := rdv) (xA := xA) hTail)
 
 /-! ### The terminal plain-value arm
 

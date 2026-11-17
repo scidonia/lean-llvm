@@ -69,7 +69,8 @@ seam, `hlast_toMerge` states the path at the route's count (`12 + hlastByteCount
 
 **What the two class cases still need is a payload item, not a proof.**  Each branch
 exists, but the continuing case is two-dimensional — the head class does not fix the next
-byte's class — and one cell of that matrix has no arm at all:
+byte's class — and after the route-carrying scalar bundle one cell of that matrix has no
+arm at all: `.value` × `wsByte`, the whitespace run after a numeral.
 
 * The head's byte class is `HcontClass`'s; the next entry's last byte's class is
   `HcontByteClass` (from the payload's `defaultLane`).  At the high-byte head (`126`/`127`)
@@ -80,23 +81,19 @@ byte's class — and one cell of that matrix has no arm at all:
   (the check state's row, `HcontClassRows.runRow`, plus the byte's leaf composed from the
   row), and the three leaves are `letters`/`fLetter`/`classC` by the head byte's pivots,
   with the chain built from `defaultLane` plus those bits.
-* **`.value` has one arm, and it is route-fixed.**  `HcontArm.scalar` is the only
-  constructor at `HcontClass.value` (the tag test is `1` there, so `letters`/`fLetter`/
-  `classC`, which take `tag = 0`, are excluded), and its bundle's route is
-  `HcontByteRoute.highLeaf`: `HcontScalarFacts.hb13/hb32/hbne32` are `slt 13 = 0`,
-  `slt 32 = 0`, `eq 32 = 0`.  So `.value` × {`wsByte`, `scanFree`, `lowLeaf`} — three
-  cells of 4 — have no producer, and `WalkInv` does not exclude them: it fixes the
-  memory's shape, not the document's content.  `walkContinueFacts_of_payload` therefore
-  cannot be total today, and the fix is a producer per cell (a route-carrying scalar
-  bundle for the three leaves, as `HcontCleanupFacts` was restated; and the whitespace
-  run after a numeral, which is not `HcontFacts`'s prefix either), not a row: a row for
-  those cells would be the arm.
-
-  The route-carrying bundle's first piece is in `JsonStage2WalkHcontScalar`: `sP41Out`/
-  `sP41Low`/`sP33Out`/`sP39Out`/`sP39High`/`sP37Out`, the three endpoints `sP35Any`/
-  `sP33Any`/`sP37Any`, and `scSeamByte` — the scalar route's seam at `HcontByteRoute` —
-  with `scSeamByte_highLeaf` proving the high-leaf instance is `scSeamS` by `rfl`, so the
-  bundle's existing proofs read the route's seam unchanged.
+* **`.value` has one arm, and it takes the document byte's route.**  `HcontArm.scalar`
+  is the only constructor at `HcontClass.value` (the tag test is `1` there, so
+  `letters`/`fLetter`/`classC`, which take `tag = 0`, are excluded), and both the
+  document row (`HcontScalarPrefix.hb`) and the bundle (`HcontScalarFacts.hb`) carry
+  `hb : HcontByteRoute (cont35 b35)`.  The class's seam row (`HcontClassRows.scalar`) is
+  stated at `scSeamByte … pre.hb`, the chain to it is `scSeamSegByte` at
+  `hlastByteCount hb`, and the tail is `scTailByte_of_calls` at the same seam, so
+  `.value` × {`scanFree`, `lowLeaf`} are produced as well as the high leaf.  The one
+  cell still without a producer is `.value` × `wsByte` — the whitespace run after a
+  numeral, which is not `HcontFacts`'s prefix either — and `WalkInv` does not exclude
+  it: it fixes the memory's shape, not the document's content.  So
+  `walkContinueFacts_of_payload` still owes that run's arm, not a row: a row for that
+  cell would be the arm.
 
 **What the last level still needs is a payload item, not a proof** — closed: the last
 level's case is total as written, because its `.scalar` is guarded by the document route

@@ -131,9 +131,9 @@ work, not closure: `hTail` remains, and it is the row that blocks the spans.
 
 The **seam states' invariants**, which the tail producers take as `hInvT`/`hInvS`, are no
 longer parameters in the same sense: `JsonStage2WalkHcontSeamInv` produces each of the
-three (`ContTailStartC`'s from `hcontSpan17_of_cleanup`'s `n ≤ 17` links, `scSeamS`'s
-from the scalar route's twelve — the prefix's eight, the byte's three pivots and the
-seam's one — and `TailStartC`'s from `hlastTailSeg`'s sixteen) as the head
+three (`ContTailStartC`'s from `hcontSpan17_of_cleanup`'s `n ≤ 17` links,
+`scSeamByte`'s from the scalar route's `8 + hlastByteCount hb` — the prefix's eight and
+the byte's route — and `TailStartC`'s from `hlastTailSeg`'s sixteen) as the head
 chain's own `inv'`.  So a producer that has the class's head facts can reach the tail's
 three calls without assuming the seam's invariant; what it still takes is `hTail`'s calls
 themselves.

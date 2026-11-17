@@ -61,11 +61,11 @@ None carries an arm, and none carries a bundle (`HcontFacts`, `HcontCleanupFacts
 `HcontScalarFacts`, `RunFacts`, `HstringFacts`, `HlastResidue`, `HlastFacts`).  The one
 input a class's *arm* needs beside its rows is the invariant at the seam state the tail
 starts from — `hInvT` in `hcontTail_of_calls`/`hcontScanTail_at`, `hInvS` in
-`scContTail_of_calls` (`JsonStage2WalkDispatchSegments`).  That state is further along the
+`scTailByte_of_calls` (`JsonStage2WalkDispatchSegments`).  That state is further along the
 walk than the head, so its invariant is not a consequence of `WalkInv` at the head alone:
 the seam's block, its extended environment and the token record its step writes are all
 new.  It is a head chain's `inv'` rather than a row, and each of the three (the high-byte
-route's `ContTailStartC`, the scalar route's `scSeamS`, the last entry's `TailStartC`) is
+route's `ContTailStartC`, the scalar route's `scSeamByte`, the last entry's `TailStartC`) is
 produced in `JsonStage2WalkHcontSeamInv` (`contTailStartInv_of_cleanup`,
 `scSeamInv_of_scalar`, `hlastTailInv_of_facts`) — so a class's arm is `rows + the seam's
 chain`, and the seam between the two is named once per class here rather than hidden in a
@@ -294,8 +294,8 @@ The fields are the producers' remaining argument lists:
   `defaultLane` (`hcontCleanupDoc_of_lane`), so it costs no new supply;
 * `cleanupRow` — the same class's seam row, at `contTailStart`'s own state; its root slot's
   word is the state's, which the arm's producer takes freely (`rdv0`);
-* `scalar` — the plain-value class's seam row, at the seam `scContTail_of_calls` reads
-  (`scSeamS`, whose cells are the class's own peels);
+* `scalar` — the plain-value class's seam row, at the seam `scTailByte_of_calls` reads
+  (`scSeamByte … pre.hb`, whose cells are the class's own peels);
 * `letters`, `fLetter` — the default arm's scan-free classes' seam rows, at the seams
   `LetS413` and `FS413` that their head chains reach;
 * `c56True`, `c56Else`, `c58True`, `c58Else` — the class-C span's four leaves' seam rows,
@@ -325,11 +325,13 @@ structure HcontClassRows {m0 : Mem} (G : WalkGeom m0) : Type where
       (contTailStartByte C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep doc.v
         (contIx G C) (contB35 G doc.v) (hlastByte G C) (hlastByte G C) doc.hb)
       (BitVec.ofNat 32 0)
-  /-- The plain-value class's seam row, at the class's own prefix: the producer's remaining
-  argument, with the prefix's values fixing the seam state. -/
+  /-- The plain-value class's seam row, at the class's own prefix and the document byte's
+  route: the producer's remaining argument, with the prefix's values fixing the seam
+  state. -/
   scalar : ∀ (C : WalkCarry G) (s : State) (pre : HcontScalarPrefix G C s),
     HcontSeamRow G s (HeadC₄₁₃ (ContAC₇ C))
-      (scSeamS C s pre.x pre.inc pre.nep pre.ep pre.v pre.ix pre.b35)
+      (scSeamByte (sLand C s pre.x pre.inc pre.nep pre.ep pre.v pre.ix pre.b35)
+        pre.v.toNat pre.x C.stage.tok pre.b35 pre.hb)
       (BitVec.ofNat 32 7)
   /-- The letters class's seam row: the head chain's endpoint's seam `LetS413`, whose
   kind literal is `if.end372.i`'s `0`. -/

@@ -229,16 +229,13 @@ def scMergeS {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State) (x : Bit
 
 /-! ### The scalar route's seam, at the byte's own route
 
-`scSeamS` is the scalar route's seam at the **high leaf** (`LeafBlock37`, its equality test
-clearing), and it is what `HcontScalarFacts`' three bits name.  The scalar route reaches
-`if.then413.i` from the other two non-whitespace leaves as well — the pivots differ, the
-seam's stored end, the `%8` test and the memory do not — so the seam is stated here at the
-byte's own class, exactly as the continuing side's `contSeamByte` and the last entry's
-`hlastSeamByte` are.  The high-leaf instance is `scSeamS` by `rfl`, which is what lets the
-bundle's existing proofs keep reading it.
-
-These are stated in this module because the scalar bundle's states live here; the bundle
-itself is still the three-bit one, and the route-carrying restatement reads these. -/
+`scSeamS` is the scalar route's seam at the **high leaf** (`LeafBlock37`, its equality
+test clearing).  The scalar route reaches `if.then413.i` from the other two non-whitespace
+leaves as well — the pivots differ, the seam's stored end, the `%8` test and the memory do
+not — so the seam is stated here at the byte's own class, exactly as the continuing side's
+`contSeamByte` and the last entry's `hlastSeamByte` are.  The high-leaf instance is
+`scSeamS` by `rfl` (`scSeamByte_highLeaf`), so the route's statements are the old ones at
+that leaf, and the bundle's `hTail` and the merge's chain read this seam at every leaf. -/
 
 /-- `NodeBlock41`'s target: the byte's first pivot, at `NodeBlock39`. -/
 def sP41Out (q4 : State) (b35 : UInt8) : State :=
@@ -316,6 +313,174 @@ theorem scSeamByte_highLeaf {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : 
     scSeamByte (sLand C s x inc nep ep v ix b35) v.toNat x C.stage.tok b35
         (.highLeaf h13 h32 hne32) =
       scSeamS C s x inc nep ep v ix b35 := rfl
+
+/-- **The tail's end at the byte's own route.**  The copy call's test is `ult v v`, so
+the merge's entry is reached without a scan whichever leaf the token's end came from. -/
+def scEndByte (q4 : State) (vN : Nat) (x : BitVec 8) (tok : Nat) (b35 : UInt8)
+    (hb : HcontByteRoute (cont35 b35)) (r₁ r₂ r₃ : CallOutcome) (cA rdv xA : BitVec 32) :
+    State :=
+  ScanEntry (scSeamByte q4 vN x tok b35 hb) r₁ r₂ r₃ vN vN cA rdv xA
+
+/-- **The merge's entry at the byte's own route.** -/
+def scMergeByte (q4 : State) (vN : Nat) (x : BitVec 8) (tok : Nat) (b35 : UInt8)
+    (hb : HcontByteRoute (cont35 b35)) (r₁ r₂ r₃ : CallOutcome) (cA rdv xA : BitVec 32) :
+    State :=
+  { scEndByte q4 vN x tok b35 hb r₁ r₂ r₃ cA rdv xA with
+    pc := "cleanup478.i", pre := some "if.end473.i" }
+
+/-- **The high-leaf instance is the scalar route's tail end**, by `rfl`. -/
+theorem scEndByte_highLeaf {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
+    (b35 : UInt8) (h13 : evalICmp .slt (cont35 b35) (BitVec.ofNat 8 13) = 0)
+    (h32 : evalICmp .slt (cont35 b35) (BitVec.ofNat 8 32) = 0)
+    (hne32 : evalICmp .eq (cont35 b35) (BitVec.ofNat 8 32) = 0)
+    (r₁ r₂ r₃ : CallOutcome) (cA rdv xA : BitVec 32) :
+    scEndByte (sLand C s x inc nep ep v ix b35) v.toNat x C.stage.tok b35
+        (.highLeaf h13 h32 hne32) r₁ r₂ r₃ cA rdv xA =
+      scEnd C s x inc nep ep v ix b35 r₁ r₂ r₃ cA rdv xA := rfl
+
+/-- **The high-leaf instance is the scalar route's merge**, by `rfl`. -/
+theorem scMergeByte_highLeaf {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
+    (b35 : UInt8) (h13 : evalICmp .slt (cont35 b35) (BitVec.ofNat 8 13) = 0)
+    (h32 : evalICmp .slt (cont35 b35) (BitVec.ofNat 8 32) = 0)
+    (hne32 : evalICmp .eq (cont35 b35) (BitVec.ofNat 8 32) = 0)
+    (r₁ r₂ r₃ : CallOutcome) (cA rdv xA : BitVec 32) :
+    scMergeByte (sLand C s x inc nep ep v ix b35) v.toNat x C.stage.tok b35
+        (.highLeaf h13 h32 hne32) r₁ r₂ r₃ cA rdv xA =
+      scMergeS C s x inc nep ep v ix b35 r₁ r₂ r₃ cA rdv xA := rfl
+
+/-! ### The cells the route's seam and tail read
+
+The seam's own two test cells and its memory, at any state at `NodeBlock41`; then the
+tail's end's three fields, which no binder of the tail rebinds. -/
+
+/-- `%ee.1.i` at the byte's seam is the stored end. -/
+theorem scSeamByte_ee (q4 : State) (vN : Nat) (x : BitVec 8) (tok : Nat) (b35 : UInt8)
+    (hb : HcontByteRoute (cont35 b35)) :
+    lookupName (scSeamByte q4 vN x tok b35 hb).env "%ee.1.i" =
+      some (.int 64 (BitVec.ofNat 64 vN)) := by
+  rcases hb with ⟨a1, a2, a3⟩ | ⟨a1, a2⟩ | ⟨a1, a2, a3⟩ <;> rfl
+
+/-- The byte's seam is reached from `if.end372.i`, at every leaf. -/
+theorem scSeamByte_pre (q4 : State) (vN : Nat) (x : BitVec 8) (tok : Nat) (b35 : UInt8)
+    (hb : HcontByteRoute (cont35 b35)) :
+    (scSeamByte q4 vN x tok b35 hb).pre = some "if.end372.i" := by
+  rcases hb with ⟨a1, a2, a3⟩ | ⟨a1, a2⟩ | ⟨a1, a2, a3⟩ <;> rfl
+
+/-- `%cond350.i` at the byte's seam is the `NodeBlock41` state's. -/
+theorem scSeamByte_cond (q4 : State) (vN : Nat) (x : BitVec 8) (tok : Nat) (b35 : UInt8)
+    (hb : HcontByteRoute (cont35 b35)) :
+    lookupName (scSeamByte q4 vN x tok b35 hb).env "%cond350.i" =
+      lookupName q4.env "%cond350.i" := by
+  rcases hb with ⟨a1, a2, a3⟩ | ⟨a1, a2⟩ | ⟨a1, a2, a3⟩ <;> rfl
+
+/-- The byte's seam memory: the `NodeBlock41` state's with the token's end stored. -/
+theorem scSeamByte_mem (q4 : State) (vN : Nat) (x : BitVec 8) (tok : Nat) (b35 : UInt8)
+    (hb : HcontByteRoute (cont35 b35)) :
+    (scSeamByte q4 vN x tok b35 hb).mem =
+      writeBytes q4.mem (tok + 8) (natToBytes (BitVec.ofNat 64 vN).toNat 8) := by
+  rcases hb with ⟨a1, a2, a3⟩ | ⟨a1, a2⟩ | ⟨a1, a2, a3⟩ <;> rfl
+
+/-- **A store inside the token record leaves the root slot's word alone**, at the byte's
+seam and the tail's own kind store. -/
+theorem scSeamByte_rootRead {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} (q4 : State)
+    (vN : Nat) (x : BitVec 8) (b35 : UInt8) (hb : HcontByteRoute (cont35 b35))
+    {cA rdv : BitVec 32}
+    (hroot : readBytes q4.mem (G.next0 + 8) 4 = some (natToBytes rdv.toNat 4)) :
+    readBytes
+      (writeBytes (scSeamByte q4 vN x C.stage.tok b35 hb).mem (C.stage.tok + 16)
+        (natToBytes cA.toNat 4)) (G.next0 + 8) 4 = some (natToBytes rdv.toNat 4) := by
+  rw [scSeamByte_mem]
+  rw [walkReadBytes_rootSlot_of_tokStore (C := C) (off := 16) (len := 4)
+    (v := natToBytes cA.toNat 4) (by decide) (natToBytes_length _ _)]
+  rw [walkReadBytes_rootSlot_of_tokStore (C := C) (off := 8) (len := 8)
+    (v := natToBytes (BitVec.ofNat 64 vN).toNat 8) (by decide) (natToBytes_length _ _)]
+  exact hroot
+
+/-- `%inc.i` at the byte's tail end is the `NodeBlock41` state's. -/
+theorem scEndByte_inc (q4 : State) (vN : Nat) (x : BitVec 8) (tok : Nat) (b35 : UInt8)
+    (hb : HcontByteRoute (cont35 b35)) (r₁ r₂ r₃ : CallOutcome) (cA rdv xA : BitVec 32) :
+    lookupName (scEndByte q4 vN x tok b35 hb r₁ r₂ r₃ cA rdv xA).env "%inc.i" =
+      lookupName q4.env "%inc.i" := by
+  rcases hb with ⟨a1, a2, a3⟩ | ⟨a1, a2⟩ | ⟨a1, a2, a3⟩ <;> rfl
+
+/-- `%nep` at the byte's tail end is the `NodeBlock41` state's. -/
+theorem scEndByte_nep (q4 : State) (vN : Nat) (x : BitVec 8) (tok : Nat) (b35 : UInt8)
+    (hb : HcontByteRoute (cont35 b35)) (r₁ r₂ r₃ : CallOutcome) (cA rdv xA : BitVec 32) :
+    lookupName (scEndByte q4 vN x tok b35 hb r₁ r₂ r₃ cA rdv xA).env "%nep" =
+      lookupName q4.env "%nep" := by
+  rcases hb with ⟨a1, a2, a3⟩ | ⟨a1, a2⟩ | ⟨a1, a2, a3⟩ <;> rfl
+
+/-- `%t352.i` at the byte's tail end is the `NodeBlock41` state's. -/
+theorem scEndByte_tok (q4 : State) (vN : Nat) (x : BitVec 8) (tok : Nat) (b35 : UInt8)
+    (hb : HcontByteRoute (cont35 b35)) (r₁ r₂ r₃ : CallOutcome) (cA rdv xA : BitVec 32) :
+    lookupName (scEndByte q4 vN x tok b35 hb r₁ r₂ r₃ cA rdv xA).env "%t352.i" =
+      lookupName q4.env "%t352.i" := by
+  rcases hb with ⟨a1, a2, a3⟩ | ⟨a1, a2⟩ | ⟨a1, a2, a3⟩ <;> rfl
+
+/-- The byte's tail end is `if.end473.i`: the copy's test is `ult v v`. -/
+theorem scEndByte_pc (q4 : State) (vN : Nat) (x : BitVec 8) (tok : Nat) (b35 : UInt8)
+    (hb : HcontByteRoute (cont35 b35)) (r₁ r₂ r₃ : CallOutcome) (cA rdv xA : BitVec 32) :
+    (scEndByte q4 vN x tok b35 hb r₁ r₂ r₃ cA rdv xA).pc = "if.end473.i" := by
+  rcases hb with ⟨a1, a2, a3⟩ | ⟨a1, a2⟩ | ⟨a1, a2, a3⟩ <;>
+    simp only [scEndByte, ScanEntry, TailS₃] <;>
+    rw [hlast_ult_self (BitVec.ofNat 64 vN)] <;> rfl
+
+/-- `%8` at the byte's first pivot's target is the `NodeBlock41` state's. -/
+theorem sLand_env8 {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
+    (b35 : UInt8) :
+    lookupName (sLand C s x inc nep ep v ix b35).env "%8" = lookupName s.env "%8" := by
+  simp only [sLand, stateAt, cells, sEnd, condEnd349OutAt, cte345OutAt, scS₅, scS₄, scS₃,
+    scS₂, scS₁, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+
+/-- `%end.i` at the byte's second pivot's target is the loop head's. -/
+theorem sLand_envEnd {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
+    (b35 : UInt8) :
+    lookupName (sLand C s x inc nep ep v ix b35).env "%end.i" =
+      lookupName s.env "%end.i" := by
+  simp only [sLand, stateAt, cells, sEnd, condEnd349OutAt, cte345OutAt, scS₅, scS₄, scS₃,
+    scS₂, scS₁, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+
+/-- `%cond350.i` at the byte's second pivot's target is the token's end. -/
+theorem sLand_cond {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
+    (b35 : UInt8) :
+    lookupName (sLand C s x inc nep ep v ix b35).env "%cond350.i" =
+      some (.int 64 (BitVec.ofNat 64 v.toNat)) := by
+  simp only [sLand, stateAt, cells, sEnd, condEnd349OutAt]
+  rw [lookupName_cons_ne (k := "%35") (n := "%cond350.i") _ _ (by decide)]
+  rw [lookupName_cons_ne (k := "%gep") (n := "%cond350.i") _ _ (by decide)]
+  rw [lookupName_cons_ne (k := "%cmp355.i") (n := "%cond350.i") _ _ (by decide)]
+  exact lookupName_cons_self _ _ _
+
+/-- **The root slot's word at the byte's second pivot's target**: the two token stores
+`cond.end349.i` makes are inside the record, so the head's read survives. -/
+theorem sLand_rootRead {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
+    (b35 : UInt8) {rdv : BitVec 32}
+    (hroot : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes rdv.toNat 4)) :
+    readBytes (sLand C s x inc nep ep v ix b35).mem (G.next0 + 8) 4 =
+      some (natToBytes rdv.toNat 4) := by
+  simp only [sLand, stateAt, sEnd, condEnd349OutAt, cte345OutAt]
+  rw [walkReadBytes_rootSlot_of_tokStore (C := C) (off := 20) (len := 4)
+    (v := natToBytes (BitVec.ofNat 32 1).toNat 4) (by decide) (natToBytes_length _ _)]
+  rw [show readBytes
+      (writeBytes (scS₅ s x inc nep).mem C.stage.tok (natToBytes ix.toNat 8))
+      (G.next0 + 8) 4 = readBytes (scS₅ s x inc nep).mem (G.next0 + 8) 4 from by
+    refine walkReadBytes_writeBytes_outside (start := C.stage.tok) (addr := G.next0 + 8)
+      (n := 4) ?_
+    right
+    have h := C.stage.sevenEnd (C.stage.tok, stage2TokenExtent)
+      (by simp [stage2StagedWrites])
+    have hlen : (natToBytes ix.toNat 8).length = 8 := natToBytes_length _ _
+    simp only [stage2TokenExtent] at h
+    omega]
+  exact hroot
 
 /-! ### The cells the route reads
 
@@ -403,88 +568,6 @@ theorem scPhiSeam :
        ("LeafBlock37", (Operand.reg "%cond350.i"))] = some (.reg "%cond350.i") := by
   decide
 
-/-- `%ee.1.i` at the tail's start is the seam's stored end: `seamFin` binds it. -/
-theorem scSeam_ee {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
-    (b35 : UInt8) :
-    lookupName (scSeamS C s x inc nep ep v ix b35).env "%ee.1.i" =
-      some (.int 64 (BitVec.ofNat 64 v.toNat)) := by
-  simp only [scSeamS, seamFin, stateAt]
-  repeat rw [lookupName_cons_ne _ _ (by decide)]
-  exact lookupName_cons_self _ _ _
-
-/-- `%cond350.i` at the tail's start is the token's end. -/
-theorem scSeam_cond {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
-    (b35 : UInt8) :
-    lookupName (scSeamS C s x inc nep ep v ix b35).env "%cond350.i" =
-      some (.int 64 (BitVec.ofNat 64 v.toNat)) := by
-  simp only [scSeamS, seamFin, stateAt, cells]
-  repeat rw [lookupName_cons_ne _ _ (by decide)]
-  exact sP35_cond C s x inc nep ep v ix b35
-
-/-- `%t352.i` at the tail's start is the token record's: the seam binds five cells and
-none of them is it. -/
-theorem scSeam_tok {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
-    (b35 : UInt8) :
-    lookupName (scSeamS C s x inc nep ep v ix b35).env "%t352.i" =
-      lookupName (sP35 C s x inc nep ep v ix b35).env "%t352.i" := by
-  simp only [scSeamS, seamFin, stateAt, cells, State.bind]
-  repeat rw [lookupName_cons_ne _ _ (by decide)]
-
-/-- `%8` at the tail's start is the head state's byte. -/
-theorem scSeam_8 {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
-    (b35 : UInt8) :
-    lookupName (scSeamS C s x inc nep ep v ix b35).env "%8" = lookupName s.env "%8" := by
-  simp only [scSeamS, seamFin, stateAt, cells, State.bind]
-  repeat rw [lookupName_cons_ne _ _ (by decide)]
-  exact sP35_env8 C s x inc nep ep v ix b35
-
-/-- `%inc.i` at the tail's end is the loop head's: the seam, the tail's three calls bind
-their own cells and none is the header's increment. -/
-theorem scEnd_inc {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
-    (b35 : UInt8) (r₁ r₂ r₃ : CallOutcome) (cA rdv xA : BitVec 32) :
-    lookupName (scEnd C s x inc nep ep v ix b35 r₁ r₂ r₃ cA rdv xA).env "%inc.i" =
-      lookupName s.env "%inc.i" := by
-  simp only [scEnd, ScanEntry, TailS₃, TailS₂, TailS₁, scSeamS, seamFin, sP35, sP39, sP41,
-    sLand, sEnd, condEnd349OutAt, cte345OutAt, scS₅, scS₄, scS₃, scS₂, scS₁, stateAt, cells,
-    State.bind]
-  repeat rw [lookupName_cons_ne _ _ (by decide)]
-
-/-- `%nep` at the tail's end is the loop head's. -/
-theorem scEnd_nep {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
-    (b35 : UInt8) (r₁ r₂ r₃ : CallOutcome) (cA rdv xA : BitVec 32) :
-    lookupName (scEnd C s x inc nep ep v ix b35 r₁ r₂ r₃ cA rdv xA).env "%nep" =
-      lookupName s.env "%nep" := by
-  simp only [scEnd, ScanEntry, TailS₃, TailS₂, TailS₁, scSeamS, seamFin, sP35, sP39, sP41,
-    sLand, sEnd, condEnd349OutAt, cte345OutAt, scS₅, scS₄, scS₃, scS₂, scS₁, stateAt, cells,
-    State.bind]
-  repeat rw [lookupName_cons_ne _ _ (by decide)]
-
-/-- `%t352.i` at the tail's end is the token record's. -/
-theorem scEnd_tok {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
-    (b35 : UInt8) (r₁ r₂ r₃ : CallOutcome) (cA rdv xA : BitVec 32) :
-    lookupName (scEnd C s x inc nep ep v ix b35 r₁ r₂ r₃ cA rdv xA).env "%t352.i" =
-      lookupName (sP35 C s x inc nep ep v ix b35).env "%t352.i" := by
-  simp only [scEnd, ScanEntry, TailS₃, TailS₂, TailS₁, scSeamS, seamFin, stateAt, cells,
-    State.bind]
-  repeat rw [lookupName_cons_ne _ _ (by decide)]
-
-/-- The scan-free tail's end is `if.end473.i`: the copy's test is `ult v v`. -/
-theorem scEnd_pc {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
-    (b35 : UInt8) (r₁ r₂ r₃ : CallOutcome) (cA rdv xA : BitVec 32) :
-    (scEnd C s x inc nep ep v ix b35 r₁ r₂ r₃ cA rdv xA).pc = "if.end473.i" := by
-  show (if evalICmp .ult (BitVec.ofNat 64 v.toNat) (BitVec.ofNat 64 v.toNat) = 1 then
-    "land.rhs457.i" else "if.end473.i") = "if.end473.i"
-  rw [hlast_ult_self (BitVec.ofNat 64 v.toNat)]
-  rfl
-
 /-- The merge's carry keeps the head state's index. -/
 theorem scMergeC_k {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (ev : EventRecord) :
     (scMergeC C ev).k = C.k := rfl
@@ -493,9 +576,10 @@ theorem scMergeC_k {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (ev : EventRec
 
 /-- **The scalar continuing token's facts.**  The head switch's *plain-value* arm: the
 head byte's four pivots take `NodeBlock5 → NodeBlock → LeafBlock1`, the default arm's
-count test succeeds at a continuing entry, the byte before the entry's end is the no-run
-class, and the token's end's tag test is *true*.  This is the class the document `"01"`'s
-byte `0x30` takes, and the one no arm of the old `HcontCase` covered.
+count test succeeds at a continuing entry, the byte before the entry's end takes one of
+the three non-whitespace routes, and the token's end's tag test is *true*.  This is the
+class the document `"01"`'s byte `0x30` takes, and the one no arm of the old `HcontCase`
+covered.
 
 Called *the scalar arm* rather than *the scan-free arm*, which is `HcontCleanupFacts`'s
 name: that bundle is the same token-end shape on the high-byte route, and the difference is
@@ -535,15 +619,13 @@ structure HcontScalarFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : S
   hgap5 : lookupName (scS₅ s x inc nep).env "%gap.i" = some (.ptr (C.stage.tok + 20))
   /-- The entry is not empty, so the whitespace check reads the byte before its end. -/
   hugt : evalICmp .ugt (BitVec.ofNat 64 v.toNat) ix = 1
-  /-- **The byte before the entry's end and its no-run class**: `13 ≤ %35`, `32 ≤ %35`
-  and `%35 ≠ 32` in the signed order, so the check takes `LeafBlock37`'s else arm and the
-  token ends at the entry's end. -/
+  /-- **The byte before the entry's end and its route**: the byte is the document's, and
+  the route is the class its three pivots below `if.else387.i` select — the scan-free,
+  low or high leaf, each reaching `if.end372.i` and then `if.then413.i` without a run. -/
   b35 : UInt8
   hread35 : readBytes (sEnd C s x inc nep ep v ix).mem ((G.b - 1) + v.toNat) 1 =
     some [b35]
-  hb13 : evalICmp .slt (cont35 b35) (BitVec.ofNat 8 13) = 0
-  hb32 : evalICmp .slt (cont35 b35) (BitVec.ofNat 8 32) = 0
-  hbne32 : evalICmp .eq (cont35 b35) (BitVec.ofNat 8 32) = 0
+  hb : HcontByteRoute (cont35 b35)
   /-- The tail's three calls and its event, on the empty arm, from the tag-true seam. -/
   r₁ : CallOutcome
   r₂ : CallOutcome
@@ -553,24 +635,28 @@ structure HcontScalarFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : S
   rdv : BitVec 32
   xA : BitVec 32
   hTail : WalkSegment (stage2Calls stage2SubCalls) G (HeadC₄₁₃ (ContAC₇ C))
-    (scSeamS C s x inc nep ep v ix b35)
+    (scSeamByte (sLand C s x inc nep ep v ix b35) v.toNat x C.stage.tok b35 hb)
     (scTailC C ev)
-    (scEnd C s x inc nep ep v ix b35 r₁ r₂ r₃ cA rdv xA) 3
+    (scEndByte (sLand C s x inc nep ep v ix b35) v.toNat x C.stage.tok b35 hb
+      r₁ r₂ r₃ cA rdv xA) 3
 
 /-- The merge's endpoint, at the bundle's own terms. -/
 abbrev scMergeF {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     (f : HcontScalarFacts G C s) : State :=
-  scMergeS C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.r₁ f.r₂ f.r₃ f.cA f.rdv f.xA
+  scMergeByte (sLand C s f.x f.inc f.nep f.ep f.v f.ix f.b35) f.v.toNat f.x C.stage.tok
+    f.b35 f.hb f.r₁ f.r₂ f.r₃ f.cA f.rdv f.xA
 
 /-- The tail's source, at the bundle's own terms. -/
 abbrev scSeamF {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     (f : HcontScalarFacts G C s) : State :=
-  scSeamS C s f.x f.inc f.nep f.ep f.v f.ix f.b35
+  scSeamByte (sLand C s f.x f.inc f.nep f.ep f.v f.ix f.b35) f.v.toNat f.x C.stage.tok
+    f.b35 f.hb
 
 /-- The tail's end, at the bundle's own terms. -/
 abbrev scEndF {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     (f : HcontScalarFacts G C s) : State :=
-  scEnd C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.r₁ f.r₂ f.r₃ f.cA f.rdv f.xA
+  scEndByte (sLand C s f.x f.inc f.nep f.ep f.v f.ix f.b35) f.v.toNat f.x C.stage.tok
+    f.b35 f.hb f.r₁ f.r₂ f.r₃ f.cA f.rdv f.xA
 
 /-! ### The head prefix: eight links
 
@@ -747,249 +833,6 @@ theorem scPrefixLand {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
       (Seg.tail hl₅' (Seg.tail hl₆' (Seg.tail hl₇' (Seg.tail hl₈'
         (Seg.nil hl₈'.inv'))))))))))
 
-/-! ### The byte's pivots and the token's end: three links -/
-
-/-- **`NodeBlock41` to `if.end372.i`, counted at three**, on `LeafBlock37`'s else arm:
-the byte's two pivots and its equality test, with no whitespace run. -/
-theorem scWsLeafSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
-    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
-    (b35 : UInt8)
-    (hInv : WalkInv G (Scc₈ C) (sLand C s x inc nep ep v ix b35))
-    (hb13 : evalICmp .slt (cont35 b35) (BitVec.ofNat 8 13) = 0)
-    (hb32 : evalICmp .slt (cont35 b35) (BitVec.ofNat 8 32) = 0)
-    (hbne32 : evalICmp .eq (cont35 b35) (BitVec.ofNat 8 32) = 0) :
-    Seg (stage2Calls stage2SubCalls) G (Scc₈ C) (sLand C s x inc nep ep v ix b35)
-      (Scc₁₁ C) (sP35 C s x inc nep ep v ix b35) 3 := by
-  -- the byte's first pivot
-  have h35a : evalOperand (sLand C s x inc nep ep v ix b35) (.reg "%35") =
-      some (.int 8 (cont35 b35)) := by
-    simp only [evalOperand]
-    exact sLand_35 C s x inc nep ep v ix b35
-  obtain ⟨s₉, hl₉, hs₉⟩ :=
-    WalkLink.NodeBlock41_at (calls := stage2Calls stage2SubCalls) G (Scc₈ C)
-      (sLand C s x inc nep ep v ix b35) hInv rfl h35a
-  have hl₉' : WalkLink (stage2Calls stage2SubCalls) G (Scc₈ C)
-      (sLand C s x inc nep ep v ix b35) (Scc₉ C)
-      (sP41 C s x inc nep ep v ix b35) := by
-    have harm : (if evalICmp .slt (cont35 b35) (BitVec.ofNat 8 13) = 1 then
-        "LeafBlock33" else "NodeBlock39") = "NodeBlock39" := by rw [hb13]; rfl
-    have hst : s₉ = sP41 C s x inc nep ep v ix b35 := by rw [hs₉, harm]; rfl
-    rw [hst] at hl₉
-    rw [harm] at hl₉
-    exact hl₉
-  -- the byte's second pivot
-  have h35b : evalOperand (sP41 C s x inc nep ep v ix b35) (.reg "%35") =
-      some (.int 8 (cont35 b35)) := by
-    simp only [evalOperand]
-    exact sP41_35 C s x inc nep ep v ix b35
-  obtain ⟨s₁₀, hl₁₀, hs₁₀⟩ :=
-    WalkLink.NodeBlock39_at (calls := stage2Calls stage2SubCalls) G (Scc₉ C)
-      (sP41 C s x inc nep ep v ix b35) hl₉'.inv' rfl h35b
-  have hl₁₀' : WalkLink (stage2Calls stage2SubCalls) G (Scc₉ C)
-      (sP41 C s x inc nep ep v ix b35) (Scc₁₀ C)
-      (sP39 C s x inc nep ep v ix b35) := by
-    have harm : (if evalICmp .slt (cont35 b35) (BitVec.ofNat 8 32) = 1 then
-        "LeafBlock35" else "LeafBlock37") = "LeafBlock37" := by rw [hb32]; rfl
-    have hst : s₁₀ = sP39 C s x inc nep ep v ix b35 := by rw [hs₁₀, harm]; rfl
-    rw [hst] at hl₁₀
-    rw [harm] at hl₁₀
-    exact hl₁₀
-  -- the leaf's equality test
-  have h35c : evalOperand (sP39 C s x inc nep ep v ix b35) (.reg "%35") =
-      some (.int 8 (cont35 b35)) := by
-    simp only [evalOperand]
-    exact sP39_35 C s x inc nep ep v ix b35
-  obtain ⟨s₁₁, hl₁₁, hs₁₁⟩ :=
-    WalkLink.LeafBlock37_at (calls := stage2Calls stage2SubCalls) G (Scc₁₀ C)
-      (sP39 C s x inc nep ep v ix b35) hl₁₀'.inv' rfl h35c
-  have hl₁₁' : WalkLink (stage2Calls stage2SubCalls) G (Scc₁₀ C)
-      (sP39 C s x inc nep ep v ix b35) (Scc₁₁ C)
-      (sP35 C s x inc nep ep v ix b35) := by
-    have harm : (if evalICmp .eq (cont35 b35) (BitVec.ofNat 8 32) = 1 then
-        "land.rhs.i.preheader" else "if.end372.i") = "if.end372.i" := by rw [hbne32]; rfl
-    have hst : s₁₁ = sP35 C s x inc nep ep v ix b35 := by rw [hs₁₁, harm]; rfl
-    rw [hst] at hl₁₁
-    rw [harm] at hl₁₁
-    exact hl₁₁
-  exact Seg.tail hl₉' (Seg.tail hl₁₀' (Seg.tail hl₁₁' (Seg.nil hl₁₁'.inv')))
-
-/-! ### The tag-true seam: one link -/
-
-/-- **The token's end leaves for the value call**, on its tag test's `1` arm.  The
-successor is `seamFin`'s at `if.then413.i`, named so the tail appends there. -/
-theorem scSeamSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
-    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
-    (b35 : UInt8)
-    (hInv : WalkInv G (Scc₁₁ C) (sP35 C s x inc nep ep v ix b35))
-    (h8 : lookupName (sP35 C s x inc nep ep v ix b35).env "%8" = some (.int 8 x))
-    (hend : lookupName (sP35 C s x inc nep ep v ix b35).env "%end.i" =
-      some (.ptr (C.stage.tok + 8)))
-    (hbit : (evalICmp .eq x (BitVec.ofNat 8 45) |||
-      evalICmp .ult (x + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 1) :
-    Seg (stage2Calls stage2SubCalls) G (Scc₁₁ C) (sP35 C s x inc nep ep v ix b35)
-      (Scc₁₂ C) (scSeamS C s x inc nep ep v ix b35) 1 := by
-  have hcond : evalOperand (sP35 C s x inc nep ep v ix b35) (.reg "%cond350.i") =
-      some (.int 64 (BitVec.ofNat 64 v.toNat)) := by
-    simp only [evalOperand]
-    exact sP35_cond C s x inc nep ep v ix b35
-  obtain ⟨s₁₂, hl₁₂, hs₁₂⟩ :=
-    WalkLink.if_end372_i_true_at (calls := stage2Calls stage2SubCalls) (G := G)
-      (C := Scc₁₁ C) (s := sP35 C s x inc nep ep v ix b35) hInv rfl
-      (p := "LeafBlock37") rfl scPhiSeam hcond hend h8 hbit
-  have hl₁₂' : WalkLink (stage2Calls stage2SubCalls) G (Scc₁₁ C)
-      (sP35 C s x inc nep ep v ix b35) (Scc₁₂ C)
-      (scSeamS C s x inc nep ep v ix b35) := by
-    rw [hs₁₂] at hl₁₂
-    exact hl₁₂
-  exact Seg.tail hl₁₂' (Seg.nil hl₁₂'.inv')
-
-/-! ### The composition, and the dispatch result -/
-
-/-- **The scalar continuing entry's path to the merge, counted at sixteen.**  The head's
-twelve links, the tail's three on its empty arm and the merge's step.  The price is
-`18 ≤ 32·Δk` at `Δk = 1` with the entry's span as the byte credit it does not spend.
-
-The three cells are the merge's own: `%inc.i` and `%nep` peeled through the seam, the
-span and the tail's three calls, and the carry's index (`scMergeC_k`, `rfl`).  The count
-guard `_hk` is taken for uniformity with the other arms but not read: this arm's price is
-the entry allowance's alone, and no byte or count credit enters it. -/
-theorem walkRevolutionMergeSegScalar {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
-    (s : State) (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead)
-    (_hk : C.k + 1 < G.nep) (f : HcontScalarFacts G C s) :
-    WalkSegment (stage2Calls stage2SubCalls) G C s (scMergeC C f.ev) (scMergeF f) 16 ∧
-      WalkInv G (scMergeC C f.ev) (scMergeF f) ∧
-      (scMergeC C f.ev).block = "cleanup478.i" ∧
-      (scMergeF f).pre = some "if.end473.i" ∧
-      (scMergeC C f.ev).k = C.k ∧
-      lookupName (scMergeF f).env "%inc.i" =
-        some (.int 64 (BitVec.ofNat 64 (C.k + 1))) ∧
-      lookupName (scMergeF f).env "%nep" =
-        some (.int 64 (BitVec.ofNat 64 G.nep)) ∧
-      18 ≤ stage2EntryAllowance * (C.k + 1 - C.k) := by
-  -- 1. the head's eight links
-  have hseg8 : WalkSegment (stage2Calls stage2SubCalls) G C s (Scc₈ C)
-      (sLand C s f.x f.inc f.nep f.ep f.v f.ix f.b35) 8 :=
-    scPrefixLand (G := G) (C := C) (s := s) hInv hblock f.h8 f.hlt91 f.h44 f.h58 f.hne44
-      f.hinc f.hnep f.hnext f.h5 f.hi63 f.hread f.hidx5 f.htok5 f.hgap5 f.hugt f.hread35
-  -- 2. the byte's pivots and the token's end: three links
-  have hseg3 : Seg (stage2Calls stage2SubCalls) G (Scc₈ C)
-      (sLand C s f.x f.inc f.nep f.ep f.v f.ix f.b35) (Scc₁₁ C)
-      (sP35 C s f.x f.inc f.nep f.ep f.v f.ix f.b35) 3 :=
-    scWsLeafSeg (G := G) (C := C) (s := s) f.x f.inc f.nep f.ep f.v f.ix f.b35 hseg8.inv'
-      f.hb13 f.hb32 f.hbne32
-  -- 3. the tag-true seam: one link
-  have h8p : lookupName (sP35 C s f.x f.inc f.nep f.ep f.v f.ix f.b35).env "%8" =
-      some (.int 8 f.x) := by
-    rw [sP35_env8]; exact f.h8
-  have hendp : lookupName (sP35 C s f.x f.inc f.nep f.ep f.v f.ix f.b35).env "%end.i" =
-      some (.ptr (C.stage.tok + 8)) := by
-    rw [sP35_envEnd]
-    exact hInv.regs ("%end.i", .ptr (C.stage.tok + 8)) (by simp [walkStaticRegs])
-  have hseg1 : Seg (stage2Calls stage2SubCalls) G (Scc₁₁ C)
-      (sP35 C s f.x f.inc f.nep f.ep f.v f.ix f.b35) (Scc₁₂ C)
-      (scSeamS C s f.x f.inc f.nep f.ep f.v f.ix f.b35) 1 :=
-    scSeamSeg (G := G) (C := C) (s := s) f.x f.inc f.nep f.ep f.v f.ix f.b35
-      (Seg.measure hseg3).inv' h8p hendp f.hbit
-  -- 4. the tail's three links, on the empty arm
-  have hsegP : WalkSegment (stage2Calls stage2SubCalls) G C s (Scc₁₂ C)
-      (scSeamF f) 12 :=
-    hseg8.trans ((Seg.measure hseg3).trans (Seg.measure hseg1))
-  have htail : WalkSegment (stage2Calls stage2SubCalls) G (HeadC₄₁₃ (ContAC₇ C))
-      (scSeamF f) (scTailC C f.ev) (scEndF f) 3 := f.hTail
-  have hseg15 : WalkSegment (stage2Calls stage2SubCalls) G C s (scTailC C f.ev)
-      (scEndF f) 15 := by
-    -- the carry at the seam is `HeadC₄₁₃ (ContAC₇ C)`; the segment's target joins it
-    have hcarry : Scc₁₂ C = HeadC₄₁₃ (ContAC₇ C) := rfl
-    rw [hcarry] at hsegP
-    exact hsegP.trans htail
-  -- 5. the merge's empty step
-  have htok : lookupName (scEndF f).env "%t352.i" = some (.ptr C.stage.tok) := by
-    rw [scEnd_tok]
-    exact f.htok5
-  obtain ⟨s₂, hl₂, hs₂⟩ :=
-    walkIfEnd473_at (sub := stage2SubCalls) (G := G) (C := scTailC C f.ev)
-      (s := scEndF f) hseg15.inv' rfl htok
-  have hpc : (scEndF f).pc = "if.end473.i" := scEnd_pc C s f.x f.inc f.nep f.ep f.v f.ix f.b35
-    f.r₁ f.r₂ f.r₃ f.cA f.rdv f.xA
-  rw [hpc] at hs₂
-  have hs₂' : s₂ = scMergeF f := hs₂
-  subst hs₂'
-  -- the cells at the merge
-  have hincM : lookupName (scMergeF f).env "%inc.i" =
-      some (.int 64 (BitVec.ofNat 64 (C.k + 1))) := by
-    rw [show (scMergeF f).env = (scEndF f).env from rfl, scEnd_inc]
-    exact hInv.inc_reg
-  have hnepM : lookupName (scMergeF f).env "%nep" =
-      some (.int 64 (BitVec.ofNat 64 G.nep)) := by
-    rw [show (scMergeF f).env = (scEndF f).env from rfl, scEnd_nep]
-    exact hInv.regs ("%nep", .int 64 (BitVec.ofNat 64 G.nep)) (by simp [walkStaticRegs])
-  refine ⟨hseg15.trans (WalkSegment.of_link hl₂), hl₂.inv', rfl, rfl, scMergeC_k C f.ev,
-    hincM, hnepM, ?_⟩
-  have hΔ : C.k + 1 - C.k = 1 := by omega
-  simp only [stage2EntryAllowance, hΔ, Nat.mul_one]
-  decide
-
-/-- **`WalkDispatch`'s body on the scalar arm.**  The composition's endpoint and its
-three cells, in the dispatch's own shape: the index is `C.k + 1`, the depth is the
-invariant's, and the price is the arm's own `p + 2 ≤ 32·Δk + 8·ΔA`. -/
-theorem walkDispatch_at_continue_scalar {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G)
-    (s : State) (hInv : WalkInv G C s) (hhead : C.block = walkLoopHead)
-    (hk : C.k + 1 < G.nep) (hcont : HcontScalarFacts G C s) :
-    ∃ (Cd : WalkCarry G) (sd : State) (p spv k2 : Nat) (prev : String)
-      (spOp kOp : Operand) (nepv : BitVec 64),
-      WalkSegment (stage2Calls stage2SubCalls) G C s Cd sd p ∧
-      Cd.block = "cleanup478.i" ∧
-      Cd.k = C.k ∧
-      sd.pre = some prev ∧
-      phiIncoming prev cleanupSpIncoming = some spOp ∧
-      evalOperand sd spOp = some (.int 32 (BitVec.ofNat 32 spv)) ∧
-      phiIncoming prev cleanupKIncoming = some kOp ∧
-      evalOperand sd kOp = some (.int 64 (BitVec.ofNat 64 k2)) ∧
-      lookupName sd.env "%nep" = some (.int 64 nepv) ∧
-      k2 < nepv.toNat ∧
-      k2 < G.nep ∧
-      C.k < k2 ∧
-      spv ≤ stage2StackExtent ∧
-      spv ≤ Cd.wlen ∧
-      p + 2 ≤ stage2EntryAllowance * (k2 - C.k) +
-        stage2ByteAllowance * (entryPos G k2 - entryPos G C.k) := by
-  obtain ⟨hseg, hInvD, hblockD, hpre, hkC, hinc, hnep, hprice⟩ :=
-    walkRevolutionMergeSegScalar G C s hInv hhead hk hcont
-  have hdepth : evalOperand (scMergeF hcont) (Operand.reg "%sp.i.0248") =
-      some (.int 32 (BitVec.ofNat 32 (scMergeC C hcont.ev).sp)) := hInvD.depth_reg
-  have hincv : evalOperand (scMergeF hcont) (Operand.reg "%inc.i") =
-      some (.int 64 (BitVec.ofNat 64 (C.k + 1))) := hinc
-  have hnep64 : G.nep < 2 ^ 64 := by
-    have h := G.nep_le
-    have h2 := G.maxDoc
-    simp only [stage2MaxDocument] at h2
-    omega
-  have hnepv : (BitVec.ofNat 64 G.nep).toNat = G.nep := by
-    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hnep64]
-  refine ⟨scMergeC C hcont.ev, scMergeF hcont, 16, (scMergeC C hcont.ev).sp,
-    C.k + 1, "if.end473.i", Operand.reg "%sp.i.0248", Operand.reg "%inc.i",
-    BitVec.ofNat 64 G.nep, hseg, hblockD, hkC, hpre, (by decide), hdepth, (by decide),
-    hincv, hnep, ?_, hk, ?_, hInvD.depth_cap, hInvD.sp_le_wlen, ?_⟩
-  · rw [hnepv]; exact hk
-  · omega
-  · have hΔ : C.k + 1 - C.k = 1 := by omega
-    have h0 : 0 ≤ 8 * (entryPos G (C.k + 1) - entryPos G C.k) := Nat.zero_le _
-    simp only [stage2EntryAllowance, hΔ, Nat.mul_one] at hprice ⊢
-    omega
-
-/-! ### The instrument -/
-
-#print axioms LeanLLVM.Refinement.WalkScope.sEnd_mem
-#print axioms LeanLLVM.Refinement.WalkScope.scPrefixLand
-#print axioms LeanLLVM.Refinement.WalkScope.scWsLeafSeg
-#print axioms LeanLLVM.Refinement.WalkScope.scSeamSeg
-#print axioms LeanLLVM.Refinement.WalkScope.scEnd_inc
-#print axioms LeanLLVM.Refinement.WalkScope.scEnd_nep
-#print axioms LeanLLVM.Refinement.WalkScope.scEnd_tok
-#print axioms LeanLLVM.Refinement.WalkScope.scEnd_pc
-#print axioms LeanLLVM.Refinement.WalkScope.walkRevolutionMergeSegScalar
-#print axioms LeanLLVM.Refinement.WalkScope.walkDispatch_at_continue_scalar
-
 /-- `%35` survives `NodeBlock41`'s first pivot. -/
 theorem sP41Out_35 (q4 : State) (b35 : UInt8) :
     lookupName (sP41Out q4 b35).env "%35" = lookupName q4.env "%35" := by
@@ -1072,8 +915,8 @@ theorem sP37Any_env8 (q4 : State) (b35 : UInt8) :
 
 Three segments per class, stated once at any state at `NodeBlock41`: the pivots to
 `if.end372.i` (three links on the scan-free and high leaves, two on the low leaf) and the
-seam's own link at the tag test's true arm.  The high-leaf instances are `scWsLeafSeg` and
-`scSeamSeg`, by `rfl`. -/
+seam's own link at the tag test's true arm.  `scSeamSegByte` composes the class's pair, so
+the byte's route is one segment at `hlastByteCount hb` links. -/
 
 /-- **The scan-free route's pivots**, `NodeBlock41 → NodeBlock39 → LeafBlock35 →
 if.end372.i`. -/
@@ -1177,7 +1020,7 @@ theorem sPivotSegLow {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
   exact Seg.tail hl₅' (Seg.tail hl₆' (Seg.nil hl₆'.inv'))
 
 /-- **The high leaf's pivots**, `NodeBlock41 → NodeBlock39 → LeafBlock37 →
-if.end372.i` — `scWsLeafSeg`'s three links, at any state at `NodeBlock41`. -/
+if.end372.i`, at any state at `NodeBlock41`. -/
 theorem sPivotSegHigh {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
     (Ca : WalkCarry G) (q4 : State) (hInv : WalkInv G Ca q4)
     (hblock : Ca.block = "NodeBlock41")
@@ -1242,8 +1085,8 @@ theorem sPivotSegHigh {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
 /-! ### The scalar route's seam link, at the byte's class
 
 `if.end372.i`'s tag test is `1`, so the walk leaves for `if.then413.i`; the endpoint is
-the class's, and so is the `phi`'s matching predecessor.  These are `scSeamSeg`'s link at
-the other two leaves. -/
+the class's, and so is the `phi`'s matching predecessor.  One theorem per leaf, the three
+differing only in the pivot endpoint and the label the `phi`'s selector names. -/
 
 /-- **The scan-free class's seam link.** -/
 theorem sSeamByteSegScanFree {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
@@ -1298,7 +1141,7 @@ theorem sSeamByteSegLow {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
   rw [hs'] at hl
   exact Seg.tail hl (Seg.nil hl.inv')
 
-/-- **The high leaf's seam link** — `scSeamSeg`'s link, at any state at `if.end372.i`. -/
+/-- **The high leaf's seam link**, at any state at `if.end372.i`. -/
 theorem sSeamByteSegHigh {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
     (Ca : WalkCarry G) (q4 : State) {b35 : UInt8} {vN : Nat} {x : BitVec 8}
     (hInv : WalkInv G Ca (sP37Any q4 b35))
@@ -1324,6 +1167,228 @@ theorem sSeamByteSegHigh {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
       h8q hbit
   rw [hs'] at hl
   exact Seg.tail hl (Seg.nil hl.inv')
+
+/-! ### The byte's route and the tag-true seam, as one segment -/
+
+/-- **The byte's route and its seam**, `hlastByteCount hb` links at any state at
+`NodeBlock41`: the class's pivots to `if.end372.i` and the token's end's true arm to
+`if.then413.i`.  The three leaves differ only in the pivot taken and the label the
+token's end `phi` names, so the class selects the pair. -/
+theorem scSeamSegByte {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (q4 : State)
+    (hInv : WalkInv G C q4) (hblock : C.block = "NodeBlock41")
+    {b35 : UInt8} {vN : Nat} {x : BitVec 8}
+    (h35 : evalOperand q4 (.reg "%35") = some (.int 8 (cont35 b35)))
+    (hcond : lookupName q4.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 vN)))
+    (hend : lookupName q4.env "%end.i" = some (.ptr (C.stage.tok + 8)))
+    (h8q : lookupName q4.env "%8" = some (.int 8 x))
+    (hbit : (evalICmp .eq x (BitVec.ofNat 8 45) |||
+      evalICmp .ult (x + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 1)
+    (hb : HcontByteRoute (cont35 b35)) :
+    WalkSegment (stage2Calls stage2SubCalls) G C q4 { C with block := "if.then413.i" }
+      (scSeamByte q4 vN x C.stage.tok b35 hb) (hlastByteCount hb) := by
+  rcases hb with ⟨h13, h32, hne13⟩ | ⟨h13, hns⟩ | ⟨h13, h32, hne32⟩
+  · have hsegP := sPivotSegScanFree (calls := stage2Calls stage2SubCalls) (Ca := C)
+      (q4 := q4) hInv hblock h35 h13 h32 hne13
+    have hcond' : lookupName (sP35Any q4 b35).env "%cond350.i" =
+        some (.int 64 (BitVec.ofNat 64 vN)) := by
+      rw [sP35Any_cond]; exact hcond
+    have hend' : lookupName (sP35Any q4 b35).env "%end.i" =
+        some (.ptr (C.stage.tok + 8)) := by
+      rw [sP35Any_envEnd]; exact hend
+    have h8' : lookupName (sP35Any q4 b35).env "%8" = some (.int 8 x) := by
+      rw [sP35Any_env8]; exact h8q
+    have hsegS := sSeamByteSegScanFree (calls := stage2Calls stage2SubCalls)
+      (Ca := { C with block := "if.end372.i" })
+      (q4 := q4) (vN := vN) (x := x) (b35 := b35) (Seg.measure hsegP).inv' rfl hcond'
+      hend' h8' hbit h13 h32 hne13
+    exact (Seg.measure hsegP).trans (Seg.measure hsegS)
+  · have hsegP := sPivotSegLow (calls := stage2Calls stage2SubCalls) (Ca := C)
+      (q4 := q4) hInv hblock h35 h13 hns
+    have hcond' : lookupName (sP33Any q4 b35).env "%cond350.i" =
+        some (.int 64 (BitVec.ofNat 64 vN)) := by
+      rw [sP33Any_cond]; exact hcond
+    have hend' : lookupName (sP33Any q4 b35).env "%end.i" =
+        some (.ptr (C.stage.tok + 8)) := by
+      rw [sP33Any_envEnd]; exact hend
+    have h8' : lookupName (sP33Any q4 b35).env "%8" = some (.int 8 x) := by
+      rw [sP33Any_env8]; exact h8q
+    have hsegS := sSeamByteSegLow (calls := stage2Calls stage2SubCalls)
+      (Ca := { C with block := "if.end372.i" })
+      (q4 := q4) (vN := vN) (x := x) (b35 := b35) (Seg.measure hsegP).inv' rfl hcond'
+      hend' h8' hbit h13 hns
+    exact (Seg.measure hsegP).trans (Seg.measure hsegS)
+  · have hsegP := sPivotSegHigh (calls := stage2Calls stage2SubCalls) (Ca := C)
+      (q4 := q4) hInv hblock h35 h13 h32 hne32
+    have hcond' : lookupName (sP37Any q4 b35).env "%cond350.i" =
+        some (.int 64 (BitVec.ofNat 64 vN)) := by
+      rw [sP37Any_cond]; exact hcond
+    have hend' : lookupName (sP37Any q4 b35).env "%end.i" =
+        some (.ptr (C.stage.tok + 8)) := by
+      rw [sP37Any_envEnd]; exact hend
+    have h8' : lookupName (sP37Any q4 b35).env "%8" = some (.int 8 x) := by
+      rw [sP37Any_env8]; exact h8q
+    have hsegS := sSeamByteSegHigh (calls := stage2Calls stage2SubCalls)
+      (Ca := { C with block := "if.end372.i" })
+      (q4 := q4) (vN := vN) (x := x) (b35 := b35) (Seg.measure hsegP).inv' rfl hcond'
+      hend' h8' hbit h13 h32 hne32
+    exact (Seg.measure hsegP).trans (Seg.measure hsegS)
+
+/-! ### The composition, and the dispatch result -/
+
+/-- **The scalar continuing entry's path to the merge, at the byte's route.**  The head's
+twelve links — the eight of `scPrefixLand` and the byte's own three or four — the tail's
+three on its empty arm and the merge's step.  The price is `18 ≤ 32·Δk` at `Δk = 1` with
+the entry's span as the byte credit it does not spend.
+
+The route's count is `hlastByteCount f.hb`: the scan-free and high leaves take three
+pivots, the low leaf two.  The three cells are the merge's own: `%inc.i` and `%nep` peeled
+through the tail's end, the span and the tail's three calls, and the carry's index
+(`scMergeC_k`, `rfl`).  The count guard `_hk` is taken for uniformity with the other arms
+but not read: this arm's price is the entry allowance's alone, and no byte or count credit
+enters it. -/
+theorem walkRevolutionMergeSegScalar {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead)
+    (_hk : C.k + 1 < G.nep) (f : HcontScalarFacts G C s) :
+    WalkSegment (stage2Calls stage2SubCalls) G C s (scMergeC C f.ev) (scMergeF f)
+        (((8 + hlastByteCount f.hb) + 3) + 1) ∧
+      WalkInv G (scMergeC C f.ev) (scMergeF f) ∧
+      (scMergeC C f.ev).block = "cleanup478.i" ∧
+      (scMergeF f).pre = some "if.end473.i" ∧
+      (scMergeC C f.ev).k = C.k ∧
+      lookupName (scMergeF f).env "%inc.i" =
+        some (.int 64 (BitVec.ofNat 64 (C.k + 1))) ∧
+      lookupName (scMergeF f).env "%nep" =
+        some (.int 64 (BitVec.ofNat 64 G.nep)) ∧
+      18 ≤ stage2EntryAllowance * (C.k + 1 - C.k) := by
+  -- 1. the head's eight links
+  have hseg8 : WalkSegment (stage2Calls stage2SubCalls) G C s (Scc₈ C)
+      (sLand C s f.x f.inc f.nep f.ep f.v f.ix f.b35) 8 :=
+    scPrefixLand (G := G) (C := C) (s := s) hInv hblock f.h8 f.hlt91 f.h44 f.h58 f.hne44
+      f.hinc f.hnep f.hnext f.h5 f.hi63 f.hread f.hidx5 f.htok5 f.hgap5 f.hugt f.hread35
+  -- 2. the byte's route and its seam: `hlastByteCount f.hb` links
+  have h35 : evalOperand (sLand C s f.x f.inc f.nep f.ep f.v f.ix f.b35) (.reg "%35") =
+      some (.int 8 (cont35 f.b35)) := by
+    simp only [evalOperand]
+    exact sLand_35 C s f.x f.inc f.nep f.ep f.v f.ix f.b35
+  have h8q : lookupName (sLand C s f.x f.inc f.nep f.ep f.v f.ix f.b35).env "%8" =
+      some (.int 8 f.x) := by
+    rw [sLand_env8]; exact f.h8
+  have hcond : lookupName (sLand C s f.x f.inc f.nep f.ep f.v f.ix f.b35).env
+      "%cond350.i" = some (.int 64 (BitVec.ofNat 64 f.v.toNat)) :=
+    sLand_cond C s f.x f.inc f.nep f.ep f.v f.ix f.b35
+  have hend : lookupName (sLand C s f.x f.inc f.nep f.ep f.v f.ix f.b35).env "%end.i" =
+      some (.ptr (C.stage.tok + 8)) := by
+    rw [sLand_envEnd]
+    exact hInv.regs ("%end.i", .ptr (C.stage.tok + 8)) (by simp [walkStaticRegs])
+  have hsegRoute : WalkSegment (stage2Calls stage2SubCalls) G (Scc₈ C)
+      (sLand C s f.x f.inc f.nep f.ep f.v f.ix f.b35)
+      { Scc₈ C with block := "if.then413.i" }
+      (scSeamByte (sLand C s f.x f.inc f.nep f.ep f.v f.ix f.b35) f.v.toNat f.x
+        C.stage.tok f.b35 f.hb) (hlastByteCount f.hb) :=
+    scSeamSegByte (C := Scc₈ C) (q4 := sLand C s f.x f.inc f.nep f.ep f.v f.ix f.b35)
+      hseg8.inv' rfl h35 hcond hend h8q f.hbit f.hb
+  -- 3. the carry at the seam is `HeadC₄₁₃ (ContAC₇ C)`
+  have hcarry : { Scc₈ C with block := "if.then413.i" } = HeadC₄₁₃ (ContAC₇ C) := rfl
+  have hsegP : WalkSegment (stage2Calls stage2SubCalls) G C s
+      (HeadC₄₁₃ (ContAC₇ C))
+      (scSeamByte (sLand C s f.x f.inc f.nep f.ep f.v f.ix f.b35) f.v.toNat f.x
+        C.stage.tok f.b35 f.hb) (8 + hlastByteCount f.hb) := by
+    have h := hseg8.trans hsegRoute
+    rw [hcarry] at h
+    exact h
+  -- 4. the tail's three links, on the empty arm
+  have htail : WalkSegment (stage2Calls stage2SubCalls) G (HeadC₄₁₃ (ContAC₇ C))
+      (scSeamF f) (scTailC C f.ev) (scEndF f) 3 := f.hTail
+  have hseg15 : WalkSegment (stage2Calls stage2SubCalls) G C s (scTailC C f.ev)
+      (scEndF f) ((8 + hlastByteCount f.hb) + 3) := hsegP.trans htail
+  -- 5. the merge's empty step
+  have htok : lookupName (scEndF f).env "%t352.i" = some (.ptr C.stage.tok) := by
+    rw [scEndByte_tok]
+    exact f.htok5
+  obtain ⟨s₂, hl₂, hs₂⟩ :=
+    walkIfEnd473_at (sub := stage2SubCalls) (G := G) (C := scTailC C f.ev)
+      (s := scEndF f) hseg15.inv' rfl htok
+  have hpc : (scEndF f).pc = "if.end473.i" :=
+    scEndByte_pc (sLand C s f.x f.inc f.nep f.ep f.v f.ix f.b35) f.v.toNat f.x
+      C.stage.tok f.b35 f.hb f.r₁ f.r₂ f.r₃ f.cA f.rdv f.xA
+  rw [hpc] at hs₂
+  have hs₂' : s₂ = scMergeF f := hs₂
+  subst hs₂'
+  -- the cells at the merge
+  have hincM : lookupName (scMergeF f).env "%inc.i" =
+      some (.int 64 (BitVec.ofNat 64 (C.k + 1))) := by
+    rw [show (scMergeF f).env = (scEndF f).env from rfl, scEndByte_inc]
+    exact hInv.inc_reg
+  have hnepM : lookupName (scMergeF f).env "%nep" =
+      some (.int 64 (BitVec.ofNat 64 G.nep)) := by
+    rw [show (scMergeF f).env = (scEndF f).env from rfl, scEndByte_nep]
+    exact hInv.regs ("%nep", .int 64 (BitVec.ofNat 64 G.nep)) (by simp [walkStaticRegs])
+  refine ⟨hseg15.trans (WalkSegment.of_link hl₂), hl₂.inv', rfl, rfl, scMergeC_k C f.ev,
+    hincM, hnepM, ?_⟩
+  have hΔ : C.k + 1 - C.k = 1 := by omega
+  simp only [stage2EntryAllowance, hΔ, Nat.mul_one]
+  decide
+
+/-- **`WalkDispatch`'s body on the scalar arm.**  The composition's endpoint and its
+three cells, in the dispatch's own shape: the index is `C.k + 1`, the depth is the
+invariant's, and the price is the arm's own `p + 2 ≤ 32·Δk + 8·ΔA`. -/
+theorem walkDispatch_at_continue_scalar {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hhead : C.block = walkLoopHead)
+    (hk : C.k + 1 < G.nep) (hcont : HcontScalarFacts G C s) :
+    ∃ (Cd : WalkCarry G) (sd : State) (p spv k2 : Nat) (prev : String)
+      (spOp kOp : Operand) (nepv : BitVec 64),
+      WalkSegment (stage2Calls stage2SubCalls) G C s Cd sd p ∧
+      Cd.block = "cleanup478.i" ∧
+      Cd.k = C.k ∧
+      sd.pre = some prev ∧
+      phiIncoming prev cleanupSpIncoming = some spOp ∧
+      evalOperand sd spOp = some (.int 32 (BitVec.ofNat 32 spv)) ∧
+      phiIncoming prev cleanupKIncoming = some kOp ∧
+      evalOperand sd kOp = some (.int 64 (BitVec.ofNat 64 k2)) ∧
+      lookupName sd.env "%nep" = some (.int 64 nepv) ∧
+      k2 < nepv.toNat ∧
+      k2 < G.nep ∧
+      C.k < k2 ∧
+      spv ≤ stage2StackExtent ∧
+      spv ≤ Cd.wlen ∧
+      p + 2 ≤ stage2EntryAllowance * (k2 - C.k) +
+        stage2ByteAllowance * (entryPos G k2 - entryPos G C.k) := by
+  obtain ⟨hseg, hInvD, hblockD, hpre, hkC, hinc, hnep, hprice⟩ :=
+    walkRevolutionMergeSegScalar G C s hInv hhead hk hcont
+  have hdepth : evalOperand (scMergeF hcont) (Operand.reg "%sp.i.0248") =
+      some (.int 32 (BitVec.ofNat 32 (scMergeC C hcont.ev).sp)) := hInvD.depth_reg
+  have hincv : evalOperand (scMergeF hcont) (Operand.reg "%inc.i") =
+      some (.int 64 (BitVec.ofNat 64 (C.k + 1))) := hinc
+  have hnep64 : G.nep < 2 ^ 64 := by
+    have h := G.nep_le
+    have h2 := G.maxDoc
+    simp only [stage2MaxDocument] at h2
+    omega
+  have hnepv : (BitVec.ofNat 64 G.nep).toNat = G.nep := by
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hnep64]
+  refine ⟨scMergeC C hcont.ev, scMergeF hcont, ((8 + hlastByteCount hcont.hb) + 3) + 1,
+    (scMergeC C hcont.ev).sp, C.k + 1, "if.end473.i", Operand.reg "%sp.i.0248",
+    Operand.reg "%inc.i", BitVec.ofNat 64 G.nep, hseg, hblockD, hkC, hpre, (by decide),
+    hdepth, (by decide), hincv, hnep, ?_, hk, ?_, hInvD.depth_cap, hInvD.sp_le_wlen, ?_⟩
+  · rw [hnepv]; exact hk
+  · omega
+  · have hΔ : C.k + 1 - C.k = 1 := by omega
+    have hc := hlastByteCount_le hcont.hb
+    have h0 : 0 ≤ 8 * (entryPos G (C.k + 1) - entryPos G C.k) := Nat.zero_le _
+    simp only [stage2EntryAllowance, hΔ, Nat.mul_one] at hprice ⊢
+    omega
+
+/-! ### The instrument -/
+
+#print axioms LeanLLVM.Refinement.WalkScope.sEnd_mem
+#print axioms LeanLLVM.Refinement.WalkScope.scPrefixLand
+#print axioms LeanLLVM.Refinement.WalkScope.scSeamByte_ee
+#print axioms LeanLLVM.Refinement.WalkScope.scSeamByte_cond
+#print axioms LeanLLVM.Refinement.WalkScope.scSeamByte_mem
+#print axioms LeanLLVM.Refinement.WalkScope.scSeamByte_rootRead
+#print axioms LeanLLVM.Refinement.WalkScope.scSeamSegByte
+#print axioms LeanLLVM.Refinement.WalkScope.walkRevolutionMergeSegScalar
+#print axioms LeanLLVM.Refinement.WalkScope.walkDispatch_at_continue_scalar
 
 end WalkScope
 end LeanLLVM.Refinement

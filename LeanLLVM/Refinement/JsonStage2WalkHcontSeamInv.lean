@@ -4,7 +4,7 @@
 The tail producers state their three callees' rows at a *seam* — the block where the
 head chain hands over to the tail — and each of them takes the invariant at that seam as
 a parameter: `hInvT` in `hcontTail_of_calls` and in the last entry's
-`hcontTail_of_calls`-shaped consumer, `hInvS` in `scContTail_of_calls`
+`hcontTail_of_calls`-shaped consumer, `hInvS` in `scTailByte_of_calls`
 (`JsonStage2WalkDispatchSegments`).  Those parameters are the one input a class's *arm*
 owes beside its rows: the seam state is further along the walk than the head, so nothing
 about it follows from `WalkInv` at the head alone.
@@ -15,8 +15,8 @@ This module produces the three, and each is the head chain's own `inv'`:
   `ContTailStartC`/`contTailStartF`, from `hcontSpan17_of_cleanup`'s `n ≤ 17` links (the
   head's `nH ≤ 12` and the class-C span's five);
 * `scSeamInv_of_scalar` — the plain-value route's seam,
-  `HeadC₄₁₃ (ContAC₇ C)`/`scSeamS`, from the scalar prefix's eight links, the byte's
-  three pivots and the tag-true seam's one, composed here;
+  `HeadC₄₁₃ (ContAC₇ C)`/`scSeamByte … pre.hb`, from the scalar prefix's eight links,
+  the byte's own route and the tag-true seam's link (`scSeamSegByte`), composed here;
 * `hlastTailInv_of_facts` — the last entry's seam, `TailStartC`/`hlastTail`, from
   `hlastTailSeg`'s sixteen links (the failing count test's six, the whitespace check's
   four, the byte's pivots, the token's end and the class-C span's five).
@@ -94,56 +94,64 @@ theorem contTailStartInv_of_cleanup {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry 
 /-! ### The plain-value route's seam -/
 
 /-- **The invariant at the plain-value route's tail start, from the prefix's cells.**
-`scSeamS` is the tag test's `1` arm at `if.end372.i`; the chain to it is the scalar prefix's
-eight links (`scPrefixLand`), the byte's three pivots with no whitespace run (`scWsLeafSeg`)
-and the seam's own step (`scSeamSeg`), and their composition's `inv'` is the `hInvS` the tail
-producer reads.  The two cells the seam step needs are the prefix's: `%8` is the head's
-byte (`sP35_env8`) and `%end.i` is the static row (`sP35_envEnd`, `WalkInv.regs`). -/
+The chain to the seam is the scalar prefix's eight links (`scPrefixLand`), the byte's own
+route to `if.end372.i` and the tag test's true arm (`scSeamSegByte`), and their
+composition's `inv'` is the `hInvS` the tail producer reads.  The cells the route and the
+seam read are the prefix's: `%35` and `%8` at the landing, `%cond350.i` at the token's end,
+and `%end.i` the static row (`WalkInv.regs`). -/
 theorem scSeamInv_of_cells {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead) (f : HcontScalarPrefix G C s) :
     WalkInv G (HeadC₄₁₃ (ContAC₇ C))
-      (scSeamS C s f.x f.inc f.nep f.ep f.v f.ix f.b35) := by
+      (scSeamByte (sLand C s f.x f.inc f.nep f.ep f.v f.ix f.b35) f.v.toNat f.x
+        C.stage.tok f.b35 f.hb) := by
   have hseg8 : WalkSegment (stage2Calls stage2SubCalls) G C s (Scc₈ C)
       (sLand C s f.x f.inc f.nep f.ep f.v f.ix f.b35) 8 :=
     scPrefixLand (G := G) (C := C) (s := s) hInv hblock f.h8 f.hlt91 f.h44 f.h58 f.hne44
       f.hinc f.hnep f.hnext f.h5 f.hi63 f.hread f.hidx5 f.htok5 f.hgap5 f.hugt f.hread35
-  have hseg3 : Seg (stage2Calls stage2SubCalls) G (Scc₈ C)
-      (sLand C s f.x f.inc f.nep f.ep f.v f.ix f.b35) (Scc₁₁ C)
-      (sP35 C s f.x f.inc f.nep f.ep f.v f.ix f.b35) 3 :=
-    scWsLeafSeg (G := G) (C := C) (s := s) f.x f.inc f.nep f.ep f.v f.ix f.b35 hseg8.inv'
-      f.hb13 f.hb32 f.hbne32
-  have h8p : lookupName (sP35 C s f.x f.inc f.nep f.ep f.v f.ix f.b35).env "%8" =
+  have h35 : evalOperand (sLand C s f.x f.inc f.nep f.ep f.v f.ix f.b35) (.reg "%35") =
+      some (.int 8 (cont35 f.b35)) := by
+    simp only [evalOperand]
+    exact sLand_35 C s f.x f.inc f.nep f.ep f.v f.ix f.b35
+  have h8q : lookupName (sLand C s f.x f.inc f.nep f.ep f.v f.ix f.b35).env "%8" =
       some (.int 8 f.x) := by
-    rw [sP35_env8]; exact f.h8
-  have hendp : lookupName (sP35 C s f.x f.inc f.nep f.ep f.v f.ix f.b35).env "%end.i" =
+    rw [sLand_env8]; exact f.h8
+  have hcond : lookupName (sLand C s f.x f.inc f.nep f.ep f.v f.ix f.b35).env
+      "%cond350.i" = some (.int 64 (BitVec.ofNat 64 f.v.toNat)) :=
+    sLand_cond C s f.x f.inc f.nep f.ep f.v f.ix f.b35
+  have hend : lookupName (sLand C s f.x f.inc f.nep f.ep f.v f.ix f.b35).env "%end.i" =
       some (.ptr (C.stage.tok + 8)) := by
-    rw [sP35_envEnd]
+    rw [sLand_envEnd]
     exact hInv.regs ("%end.i", .ptr (C.stage.tok + 8)) (by simp [walkStaticRegs])
-  have hseg1 : Seg (stage2Calls stage2SubCalls) G (Scc₁₁ C)
-      (sP35 C s f.x f.inc f.nep f.ep f.v f.ix f.b35) (Scc₁₂ C)
-      (scSeamS C s f.x f.inc f.nep f.ep f.v f.ix f.b35) 1 :=
-    scSeamSeg (G := G) (C := C) (s := s) f.x f.inc f.nep f.ep f.v f.ix f.b35
-      (Seg.measure hseg3).inv' h8p hendp f.hbit
-  have hseg12 : WalkSegment (stage2Calls stage2SubCalls) G C s (Scc₁₂ C)
-      (scSeamS C s f.x f.inc f.nep f.ep f.v f.ix f.b35) 12 :=
-    hseg8.trans ((Seg.measure hseg3).trans (Seg.measure hseg1))
-  have hcarry : Scc₁₂ C = HeadC₄₁₃ (ContAC₇ C) := rfl
-  rw [hcarry] at hseg12
-  exact hseg12.inv'
+  have hsegRoute : WalkSegment (stage2Calls stage2SubCalls) G (Scc₈ C)
+      (sLand C s f.x f.inc f.nep f.ep f.v f.ix f.b35)
+      { Scc₈ C with block := "if.then413.i" }
+      (scSeamByte (sLand C s f.x f.inc f.nep f.ep f.v f.ix f.b35) f.v.toNat f.x
+        C.stage.tok f.b35 f.hb) (hlastByteCount f.hb) :=
+    scSeamSegByte (C := Scc₈ C) (q4 := sLand C s f.x f.inc f.nep f.ep f.v f.ix f.b35)
+      hseg8.inv' rfl h35 hcond hend h8q f.hbit f.hb
+  have hseam : WalkSegment (stage2Calls stage2SubCalls) G C s
+      (HeadC₄₁₃ (ContAC₇ C))
+      (scSeamByte (sLand C s f.x f.inc f.nep f.ep f.v f.ix f.b35) f.v.toNat f.x
+        C.stage.tok f.b35 f.hb) (8 + hlastByteCount f.hb) := by
+    have h := hseg8.trans hsegRoute
+    have hcarry : { Scc₈ C with block := "if.then413.i" } = HeadC₄₁₃ (ContAC₇ C) := rfl
+    rw [hcarry] at h
+    exact h
+  exact hseam.inv'
 
 /-- **The invariant at the plain-value route's tail start, from the bundle.**  The bundle
 above its tail is the prefix, so this is `scSeamInv_of_cells` at the bundle's own fields. -/
 theorem scSeamInv_of_scalar {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead) (f : HcontScalarFacts G C s) :
     WalkInv G (HeadC₄₁₃ (ContAC₇ C))
-      (scSeamS C s f.x f.inc f.nep f.ep f.v f.ix f.b35) :=
+      (scSeamByte (sLand C s f.x f.inc f.nep f.ep f.v f.ix f.b35) f.v.toNat f.x
+        C.stage.tok f.b35 f.hb) :=
   scSeamInv_of_cells hInv hblock
     { x := f.x, h8 := f.h8, hlt91 := f.hlt91, h44 := f.h44, h58 := f.h58, hne44 := f.hne44,
       hbit := f.hbit, inc := f.inc, nep := f.nep, hinc := f.hinc, hnep := f.hnep,
       hnext := f.hnext, ep := f.ep, v := f.v, h5 := f.h5, hi63 := f.hi63, hread := f.hread,
       ix := f.ix, hidx5 := f.hidx5, htok5 := f.htok5, hgap5 := f.hgap5, hugt := f.hugt,
-      b35 := f.b35, hread35 := f.hread35, hb13 := f.hb13, hb32 := f.hb32,
-      hbne32 := f.hbne32 }
+      b35 := f.b35, hread35 := f.hread35, hb := f.hb }
 
 /-! ### The last entry's seam -/
 

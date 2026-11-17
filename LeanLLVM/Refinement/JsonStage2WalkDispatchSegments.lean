@@ -55,8 +55,8 @@ rather than supplied as a segment.  Four consumers use it:
 entry's plain-value tail) are its instances, `hcontTail_of_calls` applies it to the
 scan-free continuing class's seam, where `hcontArm_cleanup_of_calls` and
 `walkDispatch_at_cleanup_of_calls` build the arm and its dispatch — `.cleanup`'s `hTail`
-field retired — and `scContTail_of_calls` is the continuing scalar route's instance, at
-`scSeamS` with that seam's own two cells (`scSeam_ee`, `scSeam_cond`).
+field retired — and `scTailByte_of_calls` is the continuing scalar route's instance, at
+`scSeamByte` with that seam's own two cells (`scSeamByte_ee`, `scSeamByte_cond`).
 
 ## The run class's counted composition
 
@@ -545,57 +545,61 @@ theorem hcontTailByte_of_calls {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s
 /-! ### The scalar route's tail, from the three calls' rows
 
 `HcontScalarFacts` (`JsonStage2WalkHcontScalar`) carries its tail as a field.  Its seam is
-`scSeamS`, the tag test's *true* arm, and its two test cells are that seam's own:
-`scSeam_ee` is the stored end (`%ee.1.i = ofNat 64 v.toNat`) and `scSeam_cond` the bound, so
-the copy call's guard is `ult v v` and the walk leaves for `if.end473.i`.  With those two
-peels the field is the same producer the high-byte route consumes:
-`emptyTailSeg_of_calls`, at this seam's carry and state. -/
+`scSeamByte`, the tag test's *true* arm at the byte's own route, and its two test cells are
+that seam's own: `scSeamByte_ee` is the stored end (`%ee.1.i = ofNat 64 vN`) and
+`scSeamByte_cond` the bound, so the copy call's guard is `ult vN vN` and the walk leaves
+for `if.end473.i`.  With those two peels the field is the same producer the high-byte route
+consumes: `emptyTailSeg_of_calls`, at this seam's carry and state. -/
 
-/-- **The continuing scalar route's tail, from the three calls' rows.**  `HcontScalarFacts`'s
-`hTail`, at the tag-true seam: the value-position call, the scalar call's emit arm and the
-copy call, then the scan-free arm's three links. -/
-theorem scContTail_of_calls {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
-    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
-    (b35 : UInt8)
+/-- **The continuing scalar route's tail, from the three calls' rows, at the byte's
+route.**  `HcontScalarFacts`'s `hTail` at the seam the document's byte selects: the
+value-position call, the scalar call's emit arm and the copy call, then the scan-free
+arm's three links.  The three routes reach the same shoulder, so the rows are stated once
+at the class's seam and the class only selects the state. -/
+theorem scTailByte_of_calls {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (q4 : State) {vN : Nat} {x : BitVec 8} (b35 : UInt8)
+    (hb : HcontByteRoute (cont35 b35))
     (r₁ r₂ r₃ : CallOutcome) {cA rdv xA : BitVec 32}
-    (hInvS : WalkInv G (HeadC₄₁₃ (ContAC₇ C)) (scSeamS C s x inc nep ep v ix b35))
+    (hcond : lookupName q4.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 vN)))
+    (hInvS : WalkInv G (HeadC₄₁₃ (ContAC₇ C))
+      (scSeamByte q4 vN x C.stage.tok b35 hb))
     {pT : String} (reg : String) {opT : Operand}
-    (hpreT : (scSeamS C s x inc nep ep v ix b35).pre = some pT)
+    (hpreT : (scSeamByte q4 vN x C.stage.tok b35 hb).pre = some pT)
     (hincT : phiIncoming pT
       [("if.else405.i", .imm (.int 32 (BitVec.ofNat 32 0))),
        ("if.then403.i", .imm (.int 32 (BitVec.ofNat 32 10))),
        ("if.then397.i", .imm (.int 32 (BitVec.ofNat 32 9))),
        ("if.end372.i", .imm (.int 32 (BitVec.ofNat 32 7))),
        ("LeafBlock58", .imm (.int 32 (BitVec.ofNat 32 8)))] = some opT)
-    (hopT : evalOperand (stateAt (scSeamS C s x inc nep ep v ix b35).env
-      (scSeamS C s x inc nep ep v ix b35)) opT = some (.int 32 cA))
-    (hkindT : lookupName (scSeamS C s x inc nep ep v ix b35).env "%kind404.i" =
+    (hopT : evalOperand (stateAt (scSeamByte q4 vN x C.stage.tok b35 hb).env
+      (scSeamByte q4 vN x C.stage.tok b35 hb)) opT = some (.int 32 cA))
+    (hkindT : lookupName (scSeamByte q4 vN x C.stage.tok b35 hb).env "%kind404.i" =
       some (.ptr (C.stage.tok + 16)))
-    (hrdT : lookupName (scSeamS C s x inc nep ep v ix b35).env "%root_done.i" =
+    (hrdT : lookupName (scSeamByte q4 vN x C.stage.tok b35 hb).env "%root_done.i" =
       some (.ptr (G.next0 + 8)))
     (hreadRoot : readBytes
-      (writeBytes (scSeamS C s x inc nep ep v ix b35).mem (C.stage.tok + 16)
+      (writeBytes (scSeamByte q4 vN x C.stage.tok b35 hb).mem (C.stage.tok + 16)
         (natToBytes cA.toNat 4)) (G.next0 + 8) 4 = some (natToBytes rdv.toNat 4))
     (hpre₁ : s2ValuePosPre
       [.int 32 (BitVec.ofNat 32 (HeadC₄₁₃ (ContAC₇ C)).sp), .int 32 rdv,
        .ptr (HeadC₄₁₃ (ContAC₇ C)).stage.ctype, .ptr (HeadC₄₁₃ (ContAC₇ C)).stage.cst]
-      (writeBytes (scSeamS C s x inc nep ep v ix b35).mem (C.stage.tok + 16)
-        (natToBytes cA.toNat 4)) (scSeamS C s x inc nep ep v ix b35).next)
+      (writeBytes (scSeamByte q4 vN x C.stage.tok b35 hb).mem (C.stage.tok + 16)
+        (natToBytes cA.toNat 4)) (scSeamByte q4 vN x C.stage.tok b35 hb).next)
     (hcall₁ : stage2Calls stage2SubCalls "s2_value_pos"
       [.int 32 (BitVec.ofNat 32 (HeadC₄₁₃ (ContAC₇ C)).sp), .int 32 rdv,
        .ptr (HeadC₄₁₃ (ContAC₇ C)).stage.ctype, .ptr (HeadC₄₁₃ (ContAC₇ C)).stage.cst]
-      (writeBytes (scSeamS C s x inc nep ep v ix b35).mem (C.stage.tok + 16)
-        (natToBytes cA.toNat 4)) (scSeamS C s x inc nep ep v ix b35).next = some r₁)
+      (writeBytes (scSeamByte q4 vN x C.stage.tok b35 hb).mem (C.stage.tok + 16)
+        (natToBytes cA.toNat 4)) (scSeamByte q4 vN x C.stage.tok b35 hb).next = some r₁)
     (hret₁ : r₁.ret = .int 32 xA)
     (hbit0T : evalICmp .eq xA (BitVec.ofNat 32 0) = 0)
     (hzread : readBytes
-      (writeBytes (scSeamS C s x inc nep ep v ix b35).mem (C.stage.tok + 16)
+      (writeBytes (scSeamByte q4 vN x C.stage.tok b35 hb).mem (C.stage.tok + 16)
         (natToBytes cA.toNat 4)) C.stage.z 8 = some (wordBytes 8 G.ev))
-    (hcT : lookupName (scSeamS C s x inc nep ep v ix b35).env "%c.i" =
+    (hcT : lookupName (scSeamByte q4 vN x C.stage.tok b35 hb).env "%c.i" =
       some (.ptr (TailCarry₂ (HeadC₄₁₃ (ContAC₇ C))).stage.c))
-    (htT : lookupName (scSeamS C s x inc nep ep v ix b35).env "%t352.i" =
+    (htT : lookupName (scSeamByte q4 vN x C.stage.tok b35 hb).env "%t352.i" =
       some (.ptr (TailCarry₂ (HeadC₄₁₃ (ContAC₇ C))).stage.tok))
-    (hoT : lookupName (scSeamS C s x inc nep ep v ix b35).env "%z" =
+    (hoT : lookupName (scSeamByte q4 vN x C.stage.tok b35 hb).env "%z" =
       some (.ptr (TailCarry₂ (HeadC₄₁₃ (ContAC₇ C))).stage.z))
     (hpre₂ : s2ScalarValuePre
       [.ptr (TailCarry₂ (HeadC₄₁₃ (ContAC₇ C))).stage.c,
@@ -617,18 +621,31 @@ theorem scContTail_of_calls {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : 
       [.int 32 (BitVec.ofNat 32 (HeadC₄₁₃ (ContAC₇ C)).sp), .ptr (G.next0 + 8),
        .ptr (HeadC₄₁₃ (ContAC₇ C)).stage.ctype,
        .ptr (HeadC₄₁₃ (ContAC₇ C)).stage.cst] r₂.mem r₂.next = some r₃)
-    (hv64 : v.toNat < 2 ^ 64) :
+    (hv64 : vN < 2 ^ 64) :
     ∃ ev : EventRecord,
       WalkSegment (stage2Calls stage2SubCalls) G (HeadC₄₁₃ (ContAC₇ C))
-        (scSeamS C s x inc nep ep v ix b35)
+        (scSeamByte q4 vN x C.stage.tok b35 hb)
         (scTailC C ev)
-        (scEnd C s x inc nep ep v ix b35 r₁ r₂ r₃ cA rdv xA) 3 :=
-  emptyTailSeg_of_calls G (HeadC₄₁₃ (ContAC₇ C))
-    (scSeamS C s x inc nep ep v ix b35) r₁ r₂ r₃ v.toNat hInvS rfl reg
-    hpreT hincT hopT hkindT hrdT hreadRoot hpre₁ hcall₁ hret₁ hbit0T hzread hcT htT hoT
-    hpre₂ hcall₂ hret₂ hev64 htight hklt hpre₃ hcall₃
-    (scSeam_ee C s x inc nep ep v ix b35)
-    (scSeam_cond C s x inc nep ep v ix b35) hv64
+        (scEndByte q4 vN x C.stage.tok b35 hb r₁ r₂ r₃ cA rdv xA) 3 := by
+  have hcd : lookupName (scSeamByte q4 vN x C.stage.tok b35 hb).env "%cond350.i" =
+      some (.int 64 (BitVec.ofNat 64 vN)) := by
+    rw [scSeamByte_cond]; exact hcond
+  rcases hb with ⟨h13, h32, hne13⟩ | ⟨h13, hns⟩ | ⟨h13, h32, hne32⟩
+  · exact emptyTailSeg_of_calls G (HeadC₄₁₃ (ContAC₇ C))
+      (scSeamByte q4 vN x C.stage.tok b35 (.scanFree h13 h32 hne13)) r₁ r₂ r₃ vN
+      hInvS rfl reg hpreT hincT hopT hkindT hrdT hreadRoot hpre₁ hcall₁ hret₁ hbit0T hzread
+      hcT htT hoT hpre₂ hcall₂ hret₂ hev64 htight hklt hpre₃ hcall₃
+      (scSeamByte_ee q4 vN x C.stage.tok b35 (.scanFree h13 h32 hne13)) hcd hv64
+  · exact emptyTailSeg_of_calls G (HeadC₄₁₃ (ContAC₇ C))
+      (scSeamByte q4 vN x C.stage.tok b35 (.lowLeaf h13 hns)) r₁ r₂ r₃ vN
+      hInvS rfl reg hpreT hincT hopT hkindT hrdT hreadRoot hpre₁ hcall₁ hret₁ hbit0T hzread
+      hcT htT hoT hpre₂ hcall₂ hret₂ hev64 htight hklt hpre₃ hcall₃
+      (scSeamByte_ee q4 vN x C.stage.tok b35 (.lowLeaf h13 hns)) hcd hv64
+  · exact emptyTailSeg_of_calls G (HeadC₄₁₃ (ContAC₇ C))
+      (scSeamByte q4 vN x C.stage.tok b35 (.highLeaf h13 h32 hne32)) r₁ r₂ r₃ vN
+      hInvS rfl reg hpreT hincT hopT hkindT hrdT hreadRoot hpre₁ hcall₁ hret₁ hbit0T hzread
+      hcT htT hoT hpre₂ hcall₂ hret₂ hev64 htight hklt hpre₃ hcall₃
+      (scSeamByte_ee q4 vN x C.stage.tok b35 (.highLeaf h13 h32 hne32)) hcd hv64
 
 /-! ### The run's counted composition
 
@@ -848,7 +865,7 @@ theorem walkDispatch_at_cleanup_of_calls {m0 : Mem} {G : WalkGeom m0} {C : WalkC
 #print axioms LeanLLVM.Refinement.WalkScope.contTailStartByte_rootRead
 #print axioms LeanLLVM.Refinement.WalkScope.hcontTail_of_calls
 #print axioms LeanLLVM.Refinement.WalkScope.hcontTailByte_of_calls
-#print axioms LeanLLVM.Refinement.WalkScope.scContTail_of_calls
+#print axioms LeanLLVM.Refinement.WalkScope.scTailByte_of_calls
 #print axioms LeanLLVM.Refinement.WalkScope.runToLatchSeg_at
 #print axioms LeanLLVM.Refinement.WalkScope.hcontArm_cleanup_of_calls
 #print axioms LeanLLVM.Refinement.WalkScope.walkDispatch_at_cleanup_of_calls
