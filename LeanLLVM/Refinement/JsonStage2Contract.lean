@@ -1078,7 +1078,60 @@ call site's number is the word's value below `2 ^ 64`; with the reserve clause
 this places the arena's write extent inside the arena and the event extent
 inside the event stream, which is what a consumer composing this post with the
 caller's staging of the two buffers needs.  It also makes the reported extents
-below the word's width, the bound `pipelineOutputExtents` reads. -/
+below the word's width, the bound `pipelineOutputExtents` reads.
+
+**The four decisions a consumer of this record inherits.**  Each was implicit
+once.  They are stated here, with the witnesses named, so that a consumer reads
+the boundary and the walk's vocabulary together.
+
+1. **The used cursor and the reserved extent are two numbers.**  The arena slot
+reports `ndstU`, the decoded extent — the word the log's cursor cell held at the
+loop head — and that is what the report carries.  The extent the run *reserved*
+is `ndst'`, the walk's arena cursor.  They differ because the reserve charges a
+window before the body is decoded: a decoded body is never longer than its
+bytes, and an escaping string's is strictly shorter, so an escaping input leaves
+the slot short of its reserve (`ndst0 ≤ ndstU ≤ ndst' ≤ ndst0 + n`).  Presence,
+the arena read `readBytes m dst ndst'`, the frame's arena entry and the capacity
+bound `ndst' + stage2ArenaReserve ≤ dstcap` are therefore stated at `ndst'` and
+not at the slot: a clause at the slot would leave the decoder's slack outside
+every extent the record names.  `SigmaFrame`'s arena entry is the reserved one
+for the same reason — `(dst, ndst' + 64)`, with `ndstU ≤ ndst'` carried beside
+it (`JsonPipelineSpec`).
+2. **The report reads the slot, not the carry.**  The two cursor clauses are
+`readBytes m ndst 8 = some (wordBytes 8 ndstU)` and
+`readBytes m nev 8 = some (wordBytes 8 nev')`: the words the run stored back.
+The carry is the walk's internal state, and this boundary has only the words.  A
+caller needs the *used* extent in the arena slot because it is the only number
+that says where the decoded bytes end; the reserve the run was charged at is the
+run's own number, not the caller's.  Both extents lie below the word's width —
+`ndstU ≤ ndst' < 2 ^ 64` and `nev' ≤ evcap < 2 ^ 64` — which is what lets a
+consumer name them at all (`pipelineOutputExtents`).
+3. **The invariant admits states the head's clauses do not reach.**  `WalkInv`'s
+log clauses read the record's fields at `%z + 8`, `+16`, `+32`, `+48` and `+56`;
+the arena's is the existential `log_alen` — some `a` with `G.ndst0 ≤ a` and
+`a ≤ C.alen`, read at `%z + 48`, a word between the arena's staged start and the
+carried cursor — because the carry reserves a body's window before the block
+that writes the word back, so between the two the memory is short of the carry.
+The event clause is block-keyed, `C.events.length ≤ C.k + walkEmitC C.block`, so
+it is a statement about the state at its block rather than a consequence at the
+head.  A seam state — the written token record a tail starts from — is therefore
+not covered by the head state's invariant, and the transports that close the gap
+are `JsonStage2WalkHcontSeamInv`'s: `contTailStartInv_of_cleanup`,
+`scSeamInv_of_scalar` and `hlastTailInv_of_facts`.
+4. **The census is exhaustive and the arms are total.**  `HeadArm.complete` gives
+every byte exactly one head arm, so the byte census is exhaustive by theorem,
+and the dispatch arms are total over the states the invariant admits.  The
+continuing enumeration is `HcontArm`, nineteen constructors: the string opener is
+one class with three arms (`.twoEntry`, `.stringOpenAboveZeroMerge`,
+`.stringOpenAboveZeroRefuse`), the high bytes `126`/`127` one class with two
+(`.ws`, `.cleanup`), and the two openers one class with two (`.containerOpen`,
+`.openAtCap`).  The last entry's enumeration is `LastEntryArm`, sixteen
+constructors.  Where a class's route is a counted chain of its own, the arm takes
+that chain as a row: `.letters`, `.fLetter` and `.classC` their head and tail
+segments, `.stringOpenAboveZeroMerge` its segment to the merge.  The document and
+seam rows are `JsonStage2WalkDispatchClassRows`', one row per class, and the
+seam state's invariant is produced by the transports above rather than carried as
+a row. -/
 def stage2Boundary (args : List Value) (mem : Mem) (next : Nat) (m : Mem)
     (v : Value) : Prop :=
   ∃ (b n ep nep xp nxp dst dstcap ndst ev evcap nev err : Nat)

@@ -702,14 +702,13 @@ The two bundles are the premises, one group each: the continuing entry's class
 `WalkInv` clauses, and `mergeHeadCells` reads them at the head state.
 
 **The two bundles are not theorems, and neither is refuted.**  "Neither is false" is a
-claim about the *classes*, not about the bundles' totality: the census has an arm for
-every state the invariant admits **except one** — `.closeBraceZero` and `.openAtCap` are
-the two depth cases it once lacked, but the string opener at positive depth has no arm at
-all: `HcontClass.stringOpener` is the byte `34`, and its continuing arm
-(`HcontArm.twoEntry`) carries `HstringFacts.hsp0`, so at `C.sp ≠ 0` the class is a hole
-and not a supplied row (`JsonStage2WalkDispatchResidual` and
-`JsonStage2WalkDispatchHcontArms` both record it).  Every arm that exists is unrefuted by
-its own class.  `WalkContinueFacts` is
+claim about the *classes*, not about the bundles' totality: the census has an arm at every
+state the invariant admits — `.closeBraceZero` and `.openAtCap` were the two depth cases it
+once lacked, and the string opener at positive depth, the class that had no arm, is
+`HcontArm.stringOpenAboveZeroMerge`/`.stringOpenAboveZeroRefuse`
+(`JsonStage2WalkDispatchHcontStringDeep`), with `.twoEntry`'s own `hsp0 : C.sp = 0`
+covering the depth-zero half.  Every arm is unrefuted by its own class.
+`WalkContinueFacts` is
 class data — the class is the head byte's switch arm, read from the document in `G` and the
 head state's own `%8` — but each arm's evidence carries a tail `WalkSegment` and the scan's
 traversal hypotheses that are supplies at a reachable state, not invariant consequences;

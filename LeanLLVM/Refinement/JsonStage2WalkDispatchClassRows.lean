@@ -64,11 +64,15 @@ in `JsonStage2WalkHcontSeamInv` (`contTailStartInv_of_cleanup`, `scSeamInv_of_sc
 `hlastTailInv_of_facts`) — so a class's arm is `rows + the seam's chain`, and the seam
 between the two is named once per class here rather than hidden in a row.
 
-The positive-depth string opener is a second and different gap: `HcontClass.stringOpener`
-is the byte test alone, while `HcontArm.twoEntry` takes `C.sp = 0` (at positive depth the
-head block branches to `land.lhs.true.i` and the marker bytes at `%sp - 1` select
-`if.end245.i`'s merge or the refusal at `if.then249.i`), so the class the census names has
-no arm at positive depth and no row here supplies one.
+The positive-depth string opener is the same kind of seam, and it is closed:
+`HcontClass.stringOpener` is the byte test alone and `HcontArm.twoEntry` takes
+`C.sp = 0`, so at positive depth `land.lhs.true.i`'s depth test and the marker
+bytes at `%sp - 1` select `if.end245.i`'s merge or `if.then249.i`'s refusal.
+Those two states are `HcontArm.stringOpenAboveZeroMerge` and
+`.stringOpenAboveZeroRefuse` (`JsonStage2WalkDispatchHcontStringDeep`), and each
+arm is the class's row plus the chain it carries — the merge's counted segment
+to `cleanup478.i`, the refusal's `WalkRefuseAt` — so the class has an arm at both
+depths and this module owes it no further row.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkDispatchSupply
 import LeanLLVM.Refinement.JsonStage2WalkDispatchSeams
