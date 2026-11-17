@@ -25,7 +25,10 @@ judged against, and `utf8_stage_refines` (`LeanLLVM/Refinement/JsonUtf8Steps.lea
 proves the pinned body returns zero exactly when the staged window is a valid
 prefix. Everything else — the selection that fills the entry stream, the exit
 and escape stages, the assembled pipeline, and the parser's own refinement —
-remains outside the tree.
+remains outside the tree. The three units have a measurement of their own,
+separate from every ratio in this note: §"Stage 1's three units, measured in this
+tree" records the instrument, corpus, flags, host and the numbers with their
+variance.
 
 The note answers one question: **can a byte-mask JSON parser, in the shape the
 Lean development would lower to, be competitive with a mature native parser on
@@ -303,3 +306,297 @@ argument for reverting.
 
 Not measured: whether a smaller frame for short lexemes, or a fast path for
 the common case, recovers the ratio. Both are available and neither is done.
+
+## Stage 1's three units, measured in this tree
+
+Everything above this heading is the scratch pipeline's record. This section is
+the three extracted stage-1 units of that pipeline, measured on their own, in
+this tree, with the instrument in this tree. It is not a re-measurement of any
+row above, and no number below is compared with a parser or with those rows.
+
+The units are `kernel/json/s1_block.c` (classification masks),
+`kernel/json/entry.c` (entry positions) and `kernel/json/utf8.c` (UTF-8
+validity), each called at the ABI its header states and each proved against its
+specification (`s1_masks_refines`, `entry_pos8_refines`, `entry_b8_refines`,
+`utf8_stage_refines`). What they are not is a parser: the selection that fills
+the entry stream, the escape and exit stages, stage 2, and the assembled
+pipeline are not in this tree, so no figure here is an end-to-end one.
+
+### The instrument
+
+`tests/json-units-bench/bench.sh` compiles the three kernel sources at the
+measured compiler line (`-O3 -march=x86-64-v3 -mpclmul -std=gnu11
+-falign-loops=64 -falign-functions=64`), links them against
+`tests/json-units-bench/bench.c`, and runs one process per CPU and trial. The
+harness declares the ABIs rather than including the headers, as the route
+drivers do, and does not edit a kernel source. Five rows:
+
+|row|entry point|one pass|
+|---|---|---|
+|`s1_masks`|`leanllvm_json_s1_masks`|once per complete 64-byte block, with the carry threaded; the timed loop reads one mask word per block back into its accumulator|
+|`entry_pos8`|`leanllvm_json_entry_pos8`|once over the document's whole mask stream, cursor 0, output buffer pre-sized|
+|`entry_b8`|`leanllvm_json_entry_b8`|the same stream and buffer, the other emitter|
+|`utf8_gated`|`leanllvm_json_utf8` with `ungated = 0`|once over the document|
+|`utf8_ungated`|`leanllvm_json_utf8` with `ungated = 1`|once over the document|
+
+The mask stream is derived the way the entry route derives its corpus: lane `t`
+of block `i` is set exactly when byte `64*i + t` is one of the eight structural
+bytes, so the entry rows read a stream of the form the entry route's corpus has,
+not arbitrary data. The UTF-8 staging is the ABI's: three zero bytes before the
+document and zero padding to the block boundary; the document's first byte, and
+every document and derived array, is 64-byte aligned (the units' loads are
+unaligned and take any address, so alignment is the caller's choice; one choice
+is made and recorded rather than leaving it to `malloc` placement).
+
+Every pass sweeps a buffer that the preceding passes already read: the corpus is
+loaded once, each row is warmed once, and each repetition re-runs the unit
+over the same bytes, so no repetition pays a first-touch page fault or a
+cold-cache fill of its own. One repetition processes the whole document. Each
+row is 51 repetitions; the whole binary is run three times per CPU, so
+process-to-process variance is visible beside the within-row spread. The
+reported quantity is `CLOCK_MONOTONIC_RAW` around one repetition: GB/s is
+document bytes per nanosecond (one byte per ns is one GB/s), and cycles per byte
+is ns per byte times the core clock measured immediately before the row.
+
+That clock is calibrated, not observed: this host has no perf events for an
+unprivileged process (`perf_event_paranoid` is 4), so the harness times a serial
+dependent-add chain (`add; dec; jne`, one iteration per cycle on this part) with
+the same clock, twice, and uses the mean. On cpu4 the chain reads 3.65-3.67
+GHz, which is the clock the E cores are recorded at above and is what the
+one-cycle premise predicts. The chain measures the core's clock at
+the moment of the row, not during it; if the core runs at a lower clock under
+the row's 256-bit code, the cycles/byte column is high by that ratio while the
+GB/s column is unaffected. The invariant TSC frequency is measured and printed
+too (3.302 GHz on this host), so a wall time converts to reference cycles
+independently of the calibration.
+
+Gates held fixed across every row, because a row that did not reach the code is
+not a measurement: `entry_pos8`'s and `entry_b8`'s cursors must both equal the
+stream's total set lanes; the gated and ungated UTF-8 words must be equal; every
+timed pass's checksum must equal its warm-up pass's; and the checksum of a
+(document, unit) pair must be identical across all trials and both CPU classes. The
+harness exits 3 rather than print a number when one of those fails, and the
+script also asserts that every row ran on the CPU `taskset` pinned it to.
+
+Reproduce, from the repository root:
+
+```bash
+nix develop -c bash tests/json-units-bench/bench.sh
+```
+
+`BENCH_CPUS` (default `0 4`), `BENCH_TRIALS` (3), `BENCH_REPS` (51),
+`BENCH_DIR`, `BENCH_CC` and `BENCH_SEED` change the run; the corpus and the
+objects are written under `tests/json-units-bench/build/`. The transcript of the
+recorded run is `tests/json-units-bench/transcript.txt`, 240 rows over two CPUs
+and three trials.
+
+### Corpus
+
+Two classes, both produced by the script under the build directory. The route
+documents are the checked-in documents the unit routes already use: the six
+`tests/json-s1-masks/corpus/*.json` files (63 to 98 bytes) and the fifteen
+`tests/json/corpus/utf8-*.json` files (3 to 7 bytes). Each class is
+concatenated in byte order and tiled to exactly 65,536 bytes, so a class whose
+files total a few dozen bytes still has a document long enough to time. Tiling
+changes where block boundaries and the escape/in-string carry fall, which is
+irrelevant to what these units compute per block, and it is recorded rather than
+assumed; the tiled bytes are not valid JSON at the seams, and `route-u8-64k` is
+a rejecting UTF-8 byte string (it contains the corpus's invalid sequences), so
+its UTF-8 rows measure the rejecting path.
+
+The synthetic documents come from `tests/json-units-bench/gen.c` at seed
+`0x243F6A8885A308D3` -- the seed the unit drivers' random arms use -- and are
+written at 65,536 and 4,194,304 bytes in three shapes: `dense` (small objects,
+many structural bytes), `strings` (long ASCII strings with occasional escapes)
+and `utf8` (raw multi-byte UTF-8 sequences). The generator closes the array
+inside the budget and pads with newlines to the exact size, and refuses to write
+a file whose byte count is not the requested one.
+
+|file|bytes|sha256 (first 16)|structurals/block|all-ASCII vectors|UTF-8 word|
+|---|---:|---|---:|---:|---:|
+|`route-s1-64k.json`|65,536|`41f918853d55dad0`|37.24|2048 / 2048|0|
+|`route-u8-64k.json`|65,536|`d14a6a6842610aaa`|26.67|0 / 2048|1|
+|`syn-dense-64k.json`|65,536|`3d9e0237ec66adb2`|31.60|2048 / 2048|0|
+|`syn-dense-4m.json`|4,194,304|`243e8f36f14e1acb`|31.73|131072 / 131072|0|
+|`syn-strings-64k.json`|65,536|`bd007090d7a5ab09`|4.61|2048 / 2048|0|
+|`syn-strings-4m.json`|4,194,304|`3ce71d559eef1d11`|4.61|131072 / 131072|0|
+|`syn-utf8-64k.json`|65,536|`f95f4aeaac083d5d`|5.44|25 / 2048|0|
+|`syn-utf8-4m.json`|4,194,304|`2091fc28bf071e8a`|5.44|1132 / 131072|0|
+
+"Structurals/block" is the mean set lanes of the entry mask stream; "all-ASCII
+vectors" counts the 32-byte vectors the UTF-8 gate can skip; "UTF-8 word" is the
+verdict. Every document's length is a multiple of 64, so the UTF-8 rows' bytes
+charged equal the padded window they scan.
+
+### Host and build
+
+|what|value|
+|---|---|
+|CPU|Intel Core Ultra 7 268V, 8 CPUs online|
+|core classes|`CPUID.1Ah.EAX[31:24]` reads `0x40` on cpu0 (P) and `0x20` on cpu4 (E)|
+|cache|cpu0: L1d 48 KiB, L2 2560 KiB; cpu4: L1d 32 KiB, L2 4096 KiB; L3 12288 KiB|
+|host kernel|Linux 6.17.0-1033-oem x86_64|
+|governor|`powersave` on all CPUs; no CPU isolation, no frequency pinning|
+|PMU|`perf_event_paranoid = 4`, no events for an unprivileged process; cycles are calibrated|
+|compiler|clang 21.1.8|
+|kernel objects|`s1_block.o=80d29a5b5aed7902`, `entry.o=384f710b27a7829b`, `utf8.o=78cd3df8fe422e9f` (sha256, first 16)|
+|harness|`-O2 -std=gnu11`|
+
+The 65,536-byte documents are L2-resident on both classes; the 4,194,304-byte
+documents exceed the P-core's 2560 KiB L2 and match the E cluster's 4096 KiB L2,
+so their sweeps do not fit a private L2 and are served from L3. No DRAM-resident
+row was measured.
+
+### Numbers
+
+Both cores are reported, because the classes differ and the difference is not a
+constant ratio. Each cell is GB/s at the median of the three trial medians, with
+the minimum and maximum of those three medians in parentheses. The row
+calibrations spanned 4.1-4.8 GHz on cpu0 and 3.6-3.7 GHz on cpu4.
+
+**P core (cpu0), GB/s:**
+
+|document|`s1_masks`|`entry_pos8`|`entry_b8`|`utf8_gated`|`utf8_ungated`|
+|---|---:|---:|---:|---:|---:|
+|`route-s1-64k`|13.6 (11.1-13.7)|13.8 (13.6-13.8)|6.0 (5.2-6.0)|83.2 (83.0-96.9)|28.7 (23.9-28.8)|
+|`route-u8-64k`|13.6 (11.2-13.7)|14.1 (14.0-14.1)|8.6 (8.6-8.6)|25.6 (23.4-25.7)|28.7 (28.7-28.8)|
+|`syn-dense-4m`|13.9 (12.6-13.9)|11.4 (11.4-11.8)|5.4 (5.4-5.5)|54.9 (51.1-57.1)|34.7 (31.4-34.8)|
+|`syn-dense-64k`|13.7 (12.5-13.8)|13.7 (13.6-14.1)|6.6 (6.3-6.6)|88.9 (83.0-89.2)|28.7 (26.1-28.7)|
+|`syn-strings-4m`|13.8 (12.8-14.2)|14.8 (14.2-14.9)|23.7 (22.5-24.6)|54.6 (54.3-55.1)|35.7 (32.5-37.2)|
+|`syn-strings-64k`|13.8 (13.7-13.8)|15.1 (13.1-15.1)|30.0 (28.0-32.5)|96.7 (89.2-96.8)|28.7 (23.8-28.7)|
+|`syn-utf8-4m`|13.4 (12.4-13.7)|12.9 (12.4-13.2)|26.1 (23.4-26.6)|29.4 (29.3-30.8)|34.2 (31.8-34.9)|
+|`syn-utf8-64k`|11.3 (11.3-13.9)|14.3 (13.5-14.8)|28.5 (26.8-31.0)|25.7 (23.3-25.7)|26.2 (26.2-28.8)|
+
+**P core (cpu0), cycles per byte at the calibrated core clock:**
+
+|document|`s1_masks`|`entry_pos8`|`entry_b8`|`utf8_gated`|`utf8_ungated`|
+|---|---:|---:|---:|---:|---:|
+|`route-s1-64k`|0.342|0.345|0.795|0.055|0.167|
+|`route-u8-64k`|0.347|0.329|0.558|0.185|0.163|
+|`syn-dense-4m`|0.336|0.399|0.828|0.084|0.134|
+|`syn-dense-64k`|0.332|0.330|0.718|0.052|0.165|
+|`syn-strings-4m`|0.340|0.317|0.198|0.084|0.130|
+|`syn-strings-64k`|0.342|0.311|0.148|0.049|0.160|
+|`syn-utf8-4m`|0.341|0.347|0.177|0.145|0.130|
+|`syn-utf8-64k`|0.392|0.321|0.162|0.186|0.172|
+
+**E core (cpu4), GB/s:**
+
+|document|`s1_masks`|`entry_pos8`|`entry_b8`|`utf8_gated`|`utf8_ungated`|
+|---|---:|---:|---:|---:|---:|
+|`route-s1-64k`|8.2 (8.2-8.2)|14.0 (14.0-14.0)|2.2 (2.1-2.2)|63.6 (62.7-63.7)|14.0 (14.0-14.0)|
+|`route-u8-64k`|8.2 (8.2-8.2)|13.9 (13.9-14.0)|3.5 (3.5-3.5)|12.5 (12.5-12.5)|14.0 (14.0-14.0)|
+|`syn-dense-4m`|7.3 (7.2-7.4)|7.1 (6.9-7.1)|2.4 (2.4-2.4)|26.3 (23.8-30.2)|11.6 (11.3-11.9)|
+|`syn-dense-64k`|8.2 (8.1-8.2)|13.7 (13.7-13.7)|2.7 (2.7-2.7)|63.8 (63.6-63.8)|14.0 (14.0-14.0)|
+|`syn-strings-4m`|7.6 (7.4-7.7)|13.2 (13.2-13.3)|14.6 (14.5-14.7)|24.3 (22.1-26.4)|11.4 (11.3-11.5)|
+|`syn-strings-64k`|8.2 (8.1-8.2)|14.4 (14.3-14.4)|17.0 (17.0-17.0)|63.7 (63.4-63.7)|14.0 (14.0-14.1)|
+|`syn-utf8-4m`|7.5 (7.3-7.7)|13.6 (13.5-13.6)|15.0 (14.9-15.1)|10.9 (10.4-11.2)|11.7 (11.6-12.1)|
+|`syn-utf8-64k`|8.2 (8.1-8.2)|14.1 (14.1-14.1)|16.1 (16.1-16.1)|12.5 (12.5-12.5)|14.0 (14.0-14.0)|
+
+**E core (cpu4), cycles per byte at the calibrated core clock:**
+
+|document|`s1_masks`|`entry_pos8`|`entry_b8`|`utf8_gated`|`utf8_ungated`|
+|---|---:|---:|---:|---:|---:|
+|`route-s1-64k`|0.448|0.261|1.691|0.058|0.262|
+|`route-u8-64k`|0.448|0.262|1.047|0.293|0.262|
+|`syn-dense-4m`|0.501|0.516|1.546|0.140|0.316|
+|`syn-dense-64k`|0.449|0.268|1.378|0.057|0.262|
+|`syn-strings-4m`|0.476|0.277|0.252|0.151|0.322|
+|`syn-strings-64k`|0.450|0.254|0.216|0.058|0.262|
+|`syn-utf8-4m`|0.488|0.269|0.243|0.337|0.313|
+|`syn-utf8-64k`|0.448|0.260|0.228|0.293|0.262|
+
+### What the spread shows
+
+The rows are medians, and the spread around them is not uniform. Within a row,
+the median relative span between the 10th and 90th percentile of the 51
+repetitions, taken over the eight documents and the three trials:
+
+|core|`s1_masks`|`entry_pos8`|`entry_b8`|`utf8_gated`|`utf8_ungated`|
+|---|---:|---:|---:|---:|---:|
+|P (cpu0)|13.7% (2.5-22.0)|1.3% (0.7-17.9)|5.6% (0.7-15.9)|15.5% (9.5-30.3)|23.1% (15.5-29.1)|
+|E (cpu4)|0.6% (0.5-13.2)|0.7% (0.5-35.2)|0.8% (0.4-8.8)|1.5% (0.5-83.1)|0.8% (0.5-14.5)|
+
+The parenthesised range is over the documents, and the largest single row is the
+E core's `utf8_gated` on `syn-dense-4m` at 83.1%, whose three trial medians
+already span 23.8 to 30.2 GB/s. Two things are recorded rather than resolved:
+the host is a `powersave`-governed laptop SoC with no CPU isolation, so the
+spread includes whatever else the machine was doing; and the instrument does not
+observe the core clock during a row, so a clock change under sustained 256-bit
+code would appear as exactly this kind of within-row drift without being
+identified as one. The P-core rows' larger spread is consistent with such a
+change, but it is not established; the GB/s figures are wall-clock and stand
+whatever the clock did.
+
+Read as a whole, the rows say three things. The classification unit is close to
+content-independent: 11.3-13.9 GB/s on the P core and 7.3-8.2 on the E core
+across structural densities from 4.6 to 37.2 per block, at 0.33-0.39 and
+0.45-0.50 cycles per byte. The P core's low end is `syn-utf8-64k`, whose three
+trial medians are 11.3, 11.3 and 13.9 GB/s: two trials cluster low and one
+high, so that row is recorded as a spread and not explained by its content. The
+two entry emitters trade places with density as the measured pipeline's decision
+table predicts: at 31.7 positions per block POS8 is the faster (11.4 against 5.4
+GB/s on `syn-dense-4m`, 7.1 against 2.4 on the same document's E-core row, and
+13.7 against 2.7 on the E core's `syn-dense-64k`), at 4.6 B8 is (23.7 against
+14.8, 14.6 against 13.2), the two rows being the same process, the same stream
+and the same output buffer. The UTF-8 gate is worth what it costs where it can
+skip: on the all-ASCII documents the gated arm is 83-97 GB/s on the P core and
+63-64 on the E core against 29 and 14 ungated, and on the UTF-8 document the two
+converge (29.4 against 34.2, 10.9 against 11.7).
+
+### Why there is no simdjson row
+
+No simdjson comparison was measured, and none is implied. The obstacle is that
+no simdjson development output or source is obtainable on this host without
+network access or a new flake input, and neither was used.
+
+- A shared library from an earlier realisation exists at
+  `/nix/store/i3gz6v86drjzzf5q9887q5zcll0ybygv-simdjson-4.6.11/lib/libsimdjson.so.33.0.0`,
+  but its output holds `lib/` only; there are no headers anywhere in the store.
+- The `dev` output the simdjson 4.6.11 derivation declares,
+  `/nix/store/y0hqbi9vc9khdw90i1hwdar0ja664kv8-simdjson-4.6.11-dev`, is absent.
+  An offline realisation of it was still building bootstrap derivations (bash,
+  binutils tarball derivations) when it was stopped after three minutes, so it
+  was not obtainable for this measurement.
+- The nixpkgs registry's simdjson 5.0.5 has neither its `dev` output
+  (`/nix/store/m2i8165bayxxgzj3fbvdg6gihz6na93d-simdjson-5.0.5-dev`) nor its
+  source (`/nix/store/206chydsvdm9vxfbarpaa1r6vnm7acjb-source`) in the store, so
+  realising it needs a fetch.
+- `probes/json/route/bench/simdjson-baseline.cc` needs `simdjson.h` from a
+  `SIMDJSON_SRC` tree, for the same reason the route's stage-timings page
+  records its reference arm as unmeasured.
+
+That is the whole reason: the numbers above stand alone rather than being set
+against a parser. It is also worth stating what the comparison would have to be
+if it is added later: the corresponding stage is simdjson's stage 1 -- its
+structural-character indexing, and its UTF-8 validation -- not the full parse.
+A ratio against a full parse would be a parser against three units, which is not
+a like-for-like claim and is the reason this section is separated from the
+ratios above.
+
+### What this does not establish
+
+- **Not a parser.** These are three stage-1 units at their own ABIs. The entry
+  stream's selection, the escape and exit stages, stage 2 and the assembled
+  pipeline are absent, so the GB/s rows are not end-to-end JSON throughput and
+  no row above is re-derived or confirmed.
+- **Nothing about another host.** One machine, two core classes, one compiler,
+  one `powersave` setting, one staging alignment (64 bytes), one corpus seed.
+  The same row can differ by a factor from 0.95 to 3.1 between the classes -- the
+  E core is faster on `entry_pos8` over `syn-utf8-4m`, and about three times
+  slower on `utf8_ungated` over `syn-strings-4m` -- so a single figure without
+  its class would be misleading; the tables report both.
+- **Cycles per byte is derived, not observed.** It is wall time times a clock
+  calibrated just before the row. Under sustained 256-bit code the core may run
+  below that calibration, which makes the figure an upper bound on true core
+  cycles per byte; GB/s is measured directly. The invariant TSC (3.302 GHz)
+  gives the reader a clock-free conversion of any wall time.
+- **Nothing about documents outside this corpus.** The synthetic documents are
+  three shapes from one seed, and the route corpora are the checked-in documents
+  tiled to 65,536 bytes. Results are for these bytes and these sizes: the
+  65,536-byte rows are L2-resident and the 4,194,304-byte rows are L3-resident,
+  and no DRAM-resident row was measured.
+- **Nothing about the unmeasured arms.** The UTF-8 stage's document-end rule is
+  measured only through the unit's verdict (the corpus's rejecting document
+  returns 1 under both gate values); no separate row measures the tail term, and
+  the units' correctness rests on their routes, not on these timings.

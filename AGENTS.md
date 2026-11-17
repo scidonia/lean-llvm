@@ -286,6 +286,13 @@ needs the other two to match.
   Every detector runs on an in-memory sample it must catch — and, where the
   corpus allows, on a file it must catch — before any absence is asserted.
   Run it with `nix develop -c bash tests/json-import-boundary.sh`.
+  `tests/json-units-bench/` is not a check but the measurement instrument beside
+  them: `bench.sh` compiles the three stage-1 units at the measured compiler
+  line, generates the fixed-seed synthetic corpus and tiles the route documents
+  for size, and reports GB/s and calibrated cycles per byte per unit from a warm
+  buffer on both core classes, with the corpus, flags, host and gates recorded.
+  Run it with `nix develop -c bash tests/json-units-bench/bench.sh`; its numbers
+  and limits are the last section of `docs/json-pipeline-performance.md`.
   `probes/install/ir/capture-json.sh` regenerates the classifier fixture and
   records its invocation and stripped items, and `lake exe leanllvm-json-emit`
   prints the caller fixture.  Each route carries a
@@ -316,7 +323,9 @@ needs the other two to match.
   unit and the UTF-8 validity unit named above — each pinned and proved
   (`s1_masks_refines`, `entry_pos8_refines`, `entry_b8_refines`,
   `utf8_stage_refines`); the note's ratios are measurements
-  of the scratch build and are not claims about those units.
+  of the scratch build and are not claims about those units, and the note's
+  last section records the units' own measurement, with its instrument, corpus,
+  flags, host and variance, kept separate from those ratios.
 
 ## What a change must satisfy
 

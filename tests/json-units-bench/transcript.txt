@@ -1,0 +1,418 @@
+command: nix develop -c bash tests/json-units-bench/bench.sh
+objects: s1_block.o=80d29a5b5aed7902 entry.o=384f710b27a7829b utf8.o=78cd3df8fe422e9f 
+compiler: clang (clang version 21.1.8)
+unit flags: -O3 -march=x86-64-v3 -mpclmul -std=gnu11 -falign-loops=64 -falign-functions=64
+harness flags: -O2 -std=gnu11
+host: Linux 6.17.0-1033-oem x86_64
+cpu: Intel(R) Core(TM) Ultra 7 268V
+cpus online: 8; pinned to: 0 4
+scaling governor: powersave
+perf_event_paranoid: 4 (no PMU; cycles are calibrated, see bench.c)
+cpu0 cache: L1d=48K L2=2560K L3=12288K
+cpu4 cache: L1d=32K L2=4096K L3=?
+
+corpus seed: 0x243F6A8885A308D3
+file                    bytes sha256
+route-s1-64k.json       65536 41f918853d55dad0e05d3ec03682e037925759031632f045a755db5a5173535c
+route-u8-64k.json       65536 d14a6a6842610aaaf2bdd13a292730f156cf5c6c5724eddae93effa9b697f18c
+syn-dense-4m.json     4194304 243e8f36f14e1acb5694d8c873c18f46a86a073c768944abaa94cfb57883accd
+syn-dense-64k.json      65536 3d9e0237ec66adb2d77848a24f1998fa4b56b4dbe77a11431b02176fcd162995
+syn-strings-4m.json    4194304 3ce71d559eef1d11e83272b999fe944f49cb5bef656b5ec863044ed8f1b5cd27
+syn-strings-64k.json      65536 bd007090d7a5ab09a1fc69c0b96879f101dbf8b3f13a300d7d3e46127d26fb12
+syn-utf8-4m.json      4194304 2091fc28bf071e8a7311f43754d8bb82cb2ddef54360be8570c46b7a94d298f2
+syn-utf8-64k.json       65536 f95f4aeaac083d5d97ff98f9ad6aa09e4ed8c905d89e1bf3a3177179533400a4
+
+trial cpu=0 trial=1/3
+instrument bench=1 reps=51 tsc_ghz=3.302 cpuid_1a=40 cpu=0
+doc name=route-s1-64k bytes=65536 blocks=1024 structural=38136 structural_per_block=37.24 vectors=2048 ascii_vectors=2048 utf8_word=0 entry_positions=38136
+row cpu=0 doc=route-s1-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=4798 p10_ns=4806 median_ns=4821 p90_ns=5766 max_ns=6856 ns_per_byte=0.07356 gbps=13.594 cycles_per_byte=0.3423 core_ghz=4.653 calib_spread_pct=2.05 checksum=0x34269984e5039e51
+row cpu=0 doc=route-s1-64k unit=entry_pos8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=4706 p10_ns=4728 median_ns=4764 p90_ns=4797 max_ns=4854 ns_per_byte=0.07269 gbps=13.757 cycles_per_byte=0.3456 core_ghz=4.754 calib_spread_pct=0.04 checksum=0xf518451f213fcb99
+row cpu=0 doc=route-s1-64k unit=entry_b8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=10839 p10_ns=10847 median_ns=10891 p90_ns=10922 max_ns=12734 ns_per_byte=0.16618 gbps=6.017 cycles_per_byte=0.7947 core_ghz=4.782 calib_spread_pct=0.53 checksum=0xf518451f213fcb99
+row cpu=0 doc=route-s1-64k unit=utf8_gated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=692 p10_ns=704 median_ns=790 p90_ns=799 max_ns=848 ns_per_byte=0.01205 gbps=82.957 cycles_per_byte=0.0558 core_ghz=4.631 calib_spread_pct=2.35 checksum=0x386d4ddf683fceb4
+row cpu=0 doc=route-s1-64k unit=utf8_ungated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=1981 p10_ns=1985 median_ns=2744 p90_ns=3080 max_ns=3253 ns_per_byte=0.04187 gbps=23.883 cycles_per_byte=0.1935 core_ghz=4.621 calib_spread_pct=0.87 checksum=0x386d4ddf683fceb4
+doc name=route-u8-64k bytes=65536 blocks=1024 structural=27306 structural_per_block=26.67 vectors=2048 ascii_vectors=0 utf8_word=1 entry_positions=27306
+row cpu=0 doc=route-u8-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=4755 p10_ns=4766 median_ns=4816 p90_ns=4850 max_ns=5893 ns_per_byte=0.07349 gbps=13.608 cycles_per_byte=0.3474 core_ghz=4.728 calib_spread_pct=0.68 checksum=0x2003e2c865c4ff08
+row cpu=0 doc=route-u8-64k unit=entry_pos8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=4631 p10_ns=4641 median_ns=4663 p90_ns=4695 max_ns=4718 ns_per_byte=0.07115 gbps=14.054 cycles_per_byte=0.3377 core_ghz=4.746 calib_spread_pct=1.83 checksum=0x35944bafc3ad1433
+row cpu=0 doc=route-u8-64k unit=entry_b8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=7596 p10_ns=7615 median_ns=7647 p90_ns=7693 max_ns=8386 ns_per_byte=0.11668 gbps=8.570 cycles_per_byte=0.5583 core_ghz=4.785 calib_spread_pct=1.13 checksum=0x35944bafc3ad1433
+row cpu=0 doc=route-u8-64k unit=utf8_gated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=2373 p10_ns=2377 median_ns=2806 p90_ns=3178 max_ns=4056 ns_per_byte=0.04282 gbps=23.356 cycles_per_byte=0.1972 core_ghz=4.606 calib_spread_pct=4.33 checksum=0x8ab33ae23aa63869
+row cpu=0 doc=route-u8-64k unit=utf8_ungated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=1981 p10_ns=1983 median_ns=2277 p90_ns=2636 max_ns=5285 ns_per_byte=0.03474 gbps=28.782 cycles_per_byte=0.1626 core_ghz=4.679 calib_spread_pct=0.75 checksum=0x8ab33ae23aa63869
+doc name=syn-dense-4m bytes=4194304 blocks=65536 structural=2079681 structural_per_block=31.73 vectors=131072 ascii_vectors=131072 utf8_word=0 entry_positions=2079681
+row cpu=0 doc=syn-dense-4m unit=s1_masks bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=289067 p10_ns=289279 median_ns=302135 p90_ns=329083 max_ns=393002 ns_per_byte=0.07203 gbps=13.882 cycles_per_byte=0.3276 core_ghz=4.548 calib_spread_pct=1.72 checksum=0x5c0a644b05c811a9
+row cpu=0 doc=syn-dense-4m unit=entry_pos8 bytes=4194304 touch=524288 blocks=65536 reps=51 min_ns=334864 p10_ns=337732 median_ns=368794 p90_ns=408964 max_ns=448702 ns_per_byte=0.08793 gbps=11.373 cycles_per_byte=0.4117 core_ghz=4.682 calib_spread_pct=1.99 checksum=0x2b0c722f0e9e8ad2
+row cpu=0 doc=syn-dense-4m unit=entry_b8 bytes=4194304 touch=524288 blocks=65536 reps=51 min_ns=713438 p10_ns=731751 median_ns=763469 p90_ns=795852 max_ns=823615 ns_per_byte=0.18203 gbps=5.494 cycles_per_byte=0.8282 core_ghz=4.550 calib_spread_pct=1.14 checksum=0x2b0c722f0e9e8ad2
+row cpu=0 doc=syn-dense-4m unit=utf8_gated bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=72267 p10_ns=72886 median_ns=73462 p90_ns=83600 max_ns=213514 ns_per_byte=0.01751 gbps=57.095 cycles_per_byte=0.0825 core_ghz=4.712 calib_spread_pct=1.51 checksum=0xe3170551b7758eb5
+row cpu=0 doc=syn-dense-4m unit=utf8_ungated bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=112844 p10_ns=113079 median_ns=120807 p90_ns=131756 max_ns=161999 ns_per_byte=0.02880 gbps=34.719 cycles_per_byte=0.1344 core_ghz=4.667 calib_spread_pct=0.78 checksum=0xe3170551b7758eb5
+doc name=syn-dense-64k bytes=65536 blocks=1024 structural=32361 structural_per_block=31.60 vectors=2048 ascii_vectors=2048 utf8_word=0 entry_positions=32361
+row cpu=0 doc=syn-dense-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=4602 p10_ns=4614 median_ns=5243 p90_ns=5352 max_ns=6422 ns_per_byte=0.08000 gbps=12.500 cycles_per_byte=0.3758 core_ghz=4.697 calib_spread_pct=1.36 checksum=0x1f43c566f518b152
+row cpu=0 doc=syn-dense-64k unit=entry_pos8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=4746 p10_ns=4771 median_ns=4802 p90_ns=4836 max_ns=5243 ns_per_byte=0.07327 gbps=13.648 cycles_per_byte=0.3399 core_ghz=4.639 calib_spread_pct=1.27 checksum=0x1a48754ed9e69767
+row cpu=0 doc=syn-dense-64k unit=entry_b8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=9075 p10_ns=9123 median_ns=9922 p90_ns=10509 max_ns=15216 ns_per_byte=0.15140 gbps=6.605 cycles_per_byte=0.7014 core_ghz=4.633 calib_spread_pct=1.25 checksum=0x1a48754ed9e69767
+row cpu=0 doc=syn-dense-64k unit=utf8_gated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=634 p10_ns=638 median_ns=735 p90_ns=745 max_ns=822 ns_per_byte=0.01122 gbps=89.165 cycles_per_byte=0.0525 core_ghz=4.679 calib_spread_pct=0.40 checksum=0x442b53e1feb9c0cd
+row cpu=0 doc=syn-dense-64k unit=utf8_ungated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=1977 p10_ns=1983 median_ns=2283 p90_ns=2641 max_ns=2750 ns_per_byte=0.03484 gbps=28.706 cycles_per_byte=0.1630 core_ghz=4.680 calib_spread_pct=2.05 checksum=0x442b53e1feb9c0cd
+doc name=syn-strings-4m bytes=4194304 blocks=65536 structural=301905 structural_per_block=4.61 vectors=131072 ascii_vectors=131072 utf8_word=0 entry_positions=301905
+row cpu=0 doc=syn-strings-4m unit=s1_masks bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=289192 p10_ns=289631 median_ns=302975 p90_ns=329800 max_ns=339104 ns_per_byte=0.07223 gbps=13.844 cycles_per_byte=0.3397 core_ghz=4.702 calib_spread_pct=1.27 checksum=0x7b0f574a31895110
+row cpu=0 doc=syn-strings-4m unit=entry_pos8 bytes=4194304 touch=524288 blocks=65536 reps=51 min_ns=274499 p10_ns=274686 median_ns=281989 p90_ns=299382 max_ns=315783 ns_per_byte=0.06723 gbps=14.874 cycles_per_byte=0.3170 core_ghz=4.715 calib_spread_pct=2.63 checksum=0x56b37ebd0a715ac5
+row cpu=0 doc=syn-strings-4m unit=entry_b8 bytes=4194304 touch=524288 blocks=65536 reps=51 min_ns=169207 p10_ns=169533 median_ns=170270 p90_ns=174969 max_ns=194381 ns_per_byte=0.04060 gbps=24.633 cycles_per_byte=0.1926 core_ghz=4.745 calib_spread_pct=1.57 checksum=0x56b37ebd0a715ac5
+row cpu=0 doc=syn-strings-4m unit=utf8_gated bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=70889 p10_ns=71925 median_ns=77300 p90_ns=83664 max_ns=137107 ns_per_byte=0.01843 gbps=54.260 cycles_per_byte=0.0889 core_ghz=4.822 calib_spread_pct=1.02 checksum=0xb2da6503647a0cc5
+row cpu=0 doc=syn-strings-4m unit=utf8_ungated bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=112477 p10_ns=112555 median_ns=112795 p90_ns=120910 max_ns=145884 ns_per_byte=0.02689 gbps=37.185 cycles_per_byte=0.1294 core_ghz=4.811 calib_spread_pct=1.49 checksum=0xb2da6503647a0cc5
+doc name=syn-strings-64k bytes=65536 blocks=1024 structural=4717 structural_per_block=4.61 vectors=2048 ascii_vectors=2048 utf8_word=0 entry_positions=4717
+row cpu=0 doc=syn-strings-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=4230 p10_ns=4241 median_ns=4760 p90_ns=5343 max_ns=5884 ns_per_byte=0.07263 gbps=13.768 cycles_per_byte=0.3489 core_ghz=4.804 calib_spread_pct=0.81 checksum=0x0efff33f436b558a
+row cpu=0 doc=syn-strings-64k unit=entry_pos8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=4309 p10_ns=4323 median_ns=4336 p90_ns=4355 max_ns=4386 ns_per_byte=0.06616 gbps=15.114 cycles_per_byte=0.3110 core_ghz=4.701 calib_spread_pct=5.58 checksum=0x5b45b3b2a6b5187f
+row cpu=0 doc=syn-strings-64k unit=entry_b8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=2000 p10_ns=2005 median_ns=2015 p90_ns=2036 max_ns=2148 ns_per_byte=0.03075 gbps=32.524 cycles_per_byte=0.1477 core_ghz=4.805 calib_spread_pct=0.71 checksum=0x5b45b3b2a6b5187f
+row cpu=0 doc=syn-strings-64k unit=utf8_gated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=570 p10_ns=583 median_ns=678 p90_ns=687 max_ns=734 ns_per_byte=0.01035 gbps=96.661 cycles_per_byte=0.0488 core_ghz=4.721 calib_spread_pct=1.13 checksum=0xf045bbe0ddf23029
+row cpu=0 doc=syn-strings-64k unit=utf8_ungated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=1975 p10_ns=1983 median_ns=2280 p90_ns=2640 max_ns=3148 ns_per_byte=0.03479 gbps=28.744 cycles_per_byte=0.1604 core_ghz=4.611 calib_spread_pct=3.88 checksum=0xf045bbe0ddf23029
+doc name=syn-utf8-4m bytes=4194304 blocks=65536 structural=356743 structural_per_block=5.44 vectors=131072 ascii_vectors=1132 utf8_word=0 entry_positions=356743
+row cpu=0 doc=syn-utf8-4m unit=s1_masks bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=288877 p10_ns=289729 median_ns=305656 p90_ns=326475 max_ns=343566 ns_per_byte=0.07287 gbps=13.722 cycles_per_byte=0.3412 core_ghz=4.682 calib_spread_pct=0.39 checksum=0x7da9c654aa03f95a
+row cpu=0 doc=syn-utf8-4m unit=entry_pos8 bytes=4194304 touch=524288 blocks=65536 reps=51 min_ns=291506 p10_ns=291919 median_ns=317800 p90_ns=340003 max_ns=392664 ns_per_byte=0.07577 gbps=13.198 cycles_per_byte=0.3581 core_ghz=4.726 calib_spread_pct=1.59 checksum=0x29c6c40ba4c8eb45
+row cpu=0 doc=syn-utf8-4m unit=entry_b8 bytes=4194304 touch=524288 blocks=65536 reps=51 min_ns=152777 p10_ns=153378 median_ns=160410 p90_ns=178867 max_ns=192824 ns_per_byte=0.03824 gbps=26.147 cycles_per_byte=0.1770 core_ghz=4.628 calib_spread_pct=1.10 checksum=0x29c6c40ba4c8eb45
+row cpu=0 doc=syn-utf8-4m unit=utf8_gated bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=141177 p10_ns=141218 median_ns=143334 p90_ns=150256 max_ns=247959 ns_per_byte=0.03417 gbps=29.262 cycles_per_byte=0.1518 core_ghz=4.441 calib_spread_pct=7.35 checksum=0x0005b908bf0a5ca3
+row cpu=0 doc=syn-utf8-4m unit=utf8_ungated bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=122602 p10_ns=131271 median_ns=131754 p90_ns=136862 max_ns=275255 ns_per_byte=0.03141 gbps=31.834 cycles_per_byte=0.1296 core_ghz=4.125 calib_spread_pct=0.82 checksum=0x0005b908bf0a5ca3
+doc name=syn-utf8-64k bytes=65536 blocks=1024 structural=5572 structural_per_block=5.44 vectors=2048 ascii_vectors=25 utf8_word=0 entry_positions=5572
+row cpu=0 doc=syn-utf8-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=4639 p10_ns=4952 median_ns=5822 p90_ns=6021 max_ns=7076 ns_per_byte=0.08884 gbps=11.257 cycles_per_byte=0.3924 core_ghz=4.417 calib_spread_pct=7.94 checksum=0x01a502e35e260a07
+row cpu=0 doc=syn-utf8-64k unit=entry_pos8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=4519 p10_ns=4551 median_ns=4575 p90_ns=4608 max_ns=4880 ns_per_byte=0.06981 gbps=14.325 cycles_per_byte=0.3212 core_ghz=4.601 calib_spread_pct=1.03 checksum=0x7e4cdd981b7bdb23
+row cpu=0 doc=syn-utf8-64k unit=entry_b8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=2281 p10_ns=2286 median_ns=2301 p90_ns=2322 max_ns=2392 ns_per_byte=0.03511 gbps=28.482 cycles_per_byte=0.1621 core_ghz=4.617 calib_spread_pct=0.53 checksum=0x7e4cdd981b7bdb23
+row cpu=0 doc=syn-utf8-64k unit=utf8_gated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=2376 p10_ns=2382 median_ns=2811 p90_ns=2919 max_ns=5493 ns_per_byte=0.04289 gbps=23.314 cycles_per_byte=0.1981 core_ghz=4.618 calib_spread_pct=2.30 checksum=0xe84b45e0d72ae4e8
+row cpu=0 doc=syn-utf8-64k unit=utf8_ungated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=1970 p10_ns=1976 median_ns=2277 p90_ns=2642 max_ns=8443 ns_per_byte=0.03474 gbps=28.782 cycles_per_byte=0.1636 core_ghz=4.709 calib_spread_pct=0.63 checksum=0xe84b45e0d72ae4e8
+trial cpu=0 trial=2/3
+instrument bench=1 reps=51 tsc_ghz=3.302 cpuid_1a=40 cpu=0
+doc name=route-s1-64k bytes=65536 blocks=1024 structural=38136 structural_per_block=37.24 vectors=2048 ascii_vectors=2048 utf8_word=0 entry_positions=38136
+row cpu=0 doc=route-s1-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=4743 p10_ns=4776 median_ns=5903 p90_ns=5952 max_ns=8982 ns_per_byte=0.09007 gbps=11.102 cycles_per_byte=0.4246 core_ghz=4.714 calib_spread_pct=3.98 checksum=0x34269984e5039e51
+row cpu=0 doc=route-s1-64k unit=entry_pos8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=4643 p10_ns=4719 median_ns=4745 p90_ns=4775 max_ns=6541 ns_per_byte=0.07240 gbps=13.812 cycles_per_byte=0.3426 core_ghz=4.732 calib_spread_pct=2.65 checksum=0xf518451f213fcb99
+row cpu=0 doc=route-s1-64k unit=entry_b8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=10813 p10_ns=10848 median_ns=10876 p90_ns=10918 max_ns=14643 ns_per_byte=0.16595 gbps=6.026 cycles_per_byte=0.7861 core_ghz=4.737 calib_spread_pct=1.97 checksum=0xf518451f213fcb99
+row cpu=0 doc=route-s1-64k unit=utf8_gated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=572 p10_ns=581 median_ns=676 p90_ns=686 max_ns=831 ns_per_byte=0.01031 gbps=96.947 cycles_per_byte=0.0494 core_ghz=4.787 calib_spread_pct=0.22 checksum=0x386d4ddf683fceb4
+row cpu=0 doc=route-s1-64k unit=utf8_ungated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=2271 p10_ns=2278 median_ns=2284 p90_ns=2648 max_ns=2780 ns_per_byte=0.03485 gbps=28.694 cycles_per_byte=0.1666 core_ghz=4.780 calib_spread_pct=0.83 checksum=0x386d4ddf683fceb4
+doc name=route-u8-64k bytes=65536 blocks=1024 structural=27306 structural_per_block=26.67 vectors=2048 ascii_vectors=0 utf8_word=1 entry_positions=27306
+row cpu=0 doc=route-u8-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=4944 p10_ns=5246 median_ns=5851 p90_ns=6143 max_ns=9179 ns_per_byte=0.08928 gbps=11.201 cycles_per_byte=0.4317 core_ghz=4.835 calib_spread_pct=1.02 checksum=0x2003e2c865c4ff08
+row cpu=0 doc=route-u8-64k unit=entry_pos8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=4616 p10_ns=4634 median_ns=4660 p90_ns=4690 max_ns=4698 ns_per_byte=0.07111 gbps=14.064 cycles_per_byte=0.3272 core_ghz=4.602 calib_spread_pct=5.37 checksum=0x35944bafc3ad1433
+row cpu=0 doc=route-u8-64k unit=entry_b8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=7600 p10_ns=7617 median_ns=7642 p90_ns=7670 max_ns=10824 ns_per_byte=0.11661 gbps=8.576 cycles_per_byte=0.5635 core_ghz=4.833 calib_spread_pct=0.88 checksum=0x35944bafc3ad1433
+row cpu=0 doc=route-u8-64k unit=utf8_gated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=2145 p10_ns=2150 median_ns=2554 p90_ns=2921 max_ns=6760 ns_per_byte=0.03897 gbps=25.660 cycles_per_byte=0.1838 core_ghz=4.717 calib_spread_pct=1.41 checksum=0x8ab33ae23aa63869
+row cpu=0 doc=route-u8-64k unit=utf8_ungated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=1976 p10_ns=1982 median_ns=2282 p90_ns=2639 max_ns=2667 ns_per_byte=0.03482 gbps=28.719 cycles_per_byte=0.1657 core_ghz=4.759 calib_spread_pct=1.98 checksum=0x8ab33ae23aa63869
+doc name=syn-dense-4m bytes=4194304 blocks=65536 structural=2079681 structural_per_block=31.73 vectors=131072 ascii_vectors=131072 utf8_word=0 entry_positions=2079681
+row cpu=0 doc=syn-dense-4m unit=s1_masks bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=288966 p10_ns=289197 median_ns=302783 p90_ns=341482 max_ns=394916 ns_per_byte=0.07219 gbps=13.853 cycles_per_byte=0.3364 core_ghz=4.659 calib_spread_pct=2.11 checksum=0x5c0a644b05c811a9
+row cpu=0 doc=syn-dense-4m unit=entry_pos8 bytes=4194304 touch=524288 blocks=65536 reps=51 min_ns=346964 p10_ns=350124 median_ns=368555 p90_ns=398686 max_ns=536854 ns_per_byte=0.08787 gbps=11.380 cycles_per_byte=0.3988 core_ghz=4.539 calib_spread_pct=0.18 checksum=0x2b0c722f0e9e8ad2
+row cpu=0 doc=syn-dense-4m unit=entry_b8 bytes=4194304 touch=524288 blocks=65536 reps=51 min_ns=714693 p10_ns=727499 median_ns=781595 p90_ns=839187 max_ns=915533 ns_per_byte=0.18635 gbps=5.366 cycles_per_byte=0.7875 core_ghz=4.226 calib_spread_pct=2.86 checksum=0x2b0c722f0e9e8ad2
+row cpu=0 doc=syn-dense-4m unit=utf8_gated bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=69444 p10_ns=69867 median_ns=76449 p90_ns=85925 max_ns=257040 ns_per_byte=0.01823 gbps=54.864 cycles_per_byte=0.0837 core_ghz=4.592 calib_spread_pct=1.59 checksum=0xe3170551b7758eb5
+row cpu=0 doc=syn-dense-4m unit=utf8_ungated bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=112496 p10_ns=112710 median_ns=120358 p90_ns=131829 max_ns=159694 ns_per_byte=0.02870 gbps=34.849 cycles_per_byte=0.1316 core_ghz=4.586 calib_spread_pct=1.59 checksum=0xe3170551b7758eb5
+doc name=syn-dense-64k bytes=65536 blocks=1024 structural=32361 structural_per_block=31.60 vectors=2048 ascii_vectors=2048 utf8_word=0 entry_positions=32361
+row cpu=0 doc=syn-dense-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=4225 p10_ns=4235 median_ns=4742 p90_ns=4819 max_ns=5844 ns_per_byte=0.07236 gbps=13.820 cycles_per_byte=0.3321 core_ghz=4.590 calib_spread_pct=1.53 checksum=0x1f43c566f518b152
+row cpu=0 doc=syn-dense-64k unit=entry_pos8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=4604 p10_ns=4615 median_ns=4647 p90_ns=4688 max_ns=4717 ns_per_byte=0.07091 gbps=14.103 cycles_per_byte=0.3301 core_ghz=4.656 calib_spread_pct=0.07 checksum=0x1a48754ed9e69767
+row cpu=0 doc=syn-dense-64k unit=entry_b8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=9075 p10_ns=9114 median_ns=9904 p90_ns=9960 max_ns=33769 ns_per_byte=0.15112 gbps=6.617 cycles_per_byte=0.7182 core_ghz=4.752 calib_spread_pct=1.06 checksum=0x1a48754ed9e69767
+row cpu=0 doc=syn-dense-64k unit=utf8_gated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=698 p10_ns=707 median_ns=790 p90_ns=803 max_ns=857 ns_per_byte=0.01205 gbps=82.957 cycles_per_byte=0.0568 core_ghz=4.710 calib_spread_pct=0.01 checksum=0x442b53e1feb9c0cd
+row cpu=0 doc=syn-dense-64k unit=utf8_ungated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=1976 p10_ns=2274 median_ns=2283 p90_ns=2640 max_ns=2674 ns_per_byte=0.03484 gbps=28.706 cycles_per_byte=0.1646 core_ghz=4.726 calib_spread_pct=0.39 checksum=0x442b53e1feb9c0cd
+doc name=syn-strings-4m bytes=4194304 blocks=65536 structural=301905 structural_per_block=4.61 vectors=131072 ascii_vectors=131072 utf8_word=0 entry_positions=301905
+row cpu=0 doc=syn-strings-4m unit=s1_masks bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=288719 p10_ns=289306 median_ns=295616 p90_ns=313260 max_ns=331722 ns_per_byte=0.07048 gbps=14.188 cycles_per_byte=0.3376 core_ghz=4.790 calib_spread_pct=1.67 checksum=0x7b0f574a31895110
+row cpu=0 doc=syn-strings-4m unit=entry_pos8 bytes=4194304 touch=524288 blocks=65536 reps=51 min_ns=274506 p10_ns=274589 median_ns=284038 p90_ns=321031 max_ns=359873 ns_per_byte=0.06772 gbps=14.767 cycles_per_byte=0.3157 core_ghz=4.662 calib_spread_pct=0.04 checksum=0x56b37ebd0a715ac5
+row cpu=0 doc=syn-strings-4m unit=entry_b8 bytes=4194304 touch=524288 blocks=65536 reps=51 min_ns=168271 p10_ns=169037 median_ns=176696 p90_ns=196747 max_ns=202010 ns_per_byte=0.04213 gbps=23.737 cycles_per_byte=0.1982 core_ghz=4.705 calib_spread_pct=0.15 checksum=0x56b37ebd0a715ac5
+row cpu=0 doc=syn-strings-4m unit=utf8_gated bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=70308 p10_ns=70514 median_ns=76151 p90_ns=82958 max_ns=118443 ns_per_byte=0.01816 gbps=55.079 cycles_per_byte=0.0839 core_ghz=4.623 calib_spread_pct=3.85 checksum=0xb2da6503647a0cc5
+row cpu=0 doc=syn-strings-4m unit=utf8_ungated bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=112500 p10_ns=112741 median_ns=117380 p90_ns=132590 max_ns=215708 ns_per_byte=0.02799 gbps=35.733 cycles_per_byte=0.1297 core_ghz=4.634 calib_spread_pct=0.63 checksum=0xb2da6503647a0cc5
+doc name=syn-strings-64k bytes=65536 blocks=1024 structural=4717 structural_per_block=4.61 vectors=2048 ascii_vectors=2048 utf8_word=0 entry_positions=4717
+row cpu=0 doc=syn-strings-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=4718 p10_ns=4737 median_ns=4755 p90_ns=5782 max_ns=6622 ns_per_byte=0.07256 gbps=13.783 cycles_per_byte=0.3415 core_ghz=4.707 calib_spread_pct=4.88 checksum=0x0efff33f436b558a
+row cpu=0 doc=syn-strings-64k unit=entry_pos8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=4970 p10_ns=4987 median_ns=5003 p90_ns=5024 max_ns=7931 ns_per_byte=0.07634 gbps=13.099 cycles_per_byte=0.3229 core_ghz=4.229 calib_spread_pct=2.58 checksum=0x5b45b3b2a6b5187f
+row cpu=0 doc=syn-strings-64k unit=entry_b8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=2320 p10_ns=2327 median_ns=2339 p90_ns=2358 max_ns=2815 ns_per_byte=0.03569 gbps=28.019 cycles_per_byte=0.1454 core_ghz=4.075 calib_spread_pct=2.07 checksum=0x5b45b3b2a6b5187f
+row cpu=0 doc=syn-strings-64k unit=utf8_gated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=580 p10_ns=644 median_ns=677 p90_ns=689 max_ns=3259 ns_per_byte=0.01033 gbps=96.804 cycles_per_byte=0.0438 core_ghz=4.241 calib_spread_pct=3.52 checksum=0xf045bbe0ddf23029
+row cpu=0 doc=syn-strings-64k unit=utf8_ungated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=2190 p10_ns=2323 median_ns=2749 p90_ns=3083 max_ns=3960 ns_per_byte=0.04195 gbps=23.840 cycles_per_byte=0.1834 core_ghz=4.372 calib_spread_pct=1.52 checksum=0xf045bbe0ddf23029
+doc name=syn-utf8-4m bytes=4194304 blocks=65536 structural=356743 structural_per_block=5.44 vectors=131072 ascii_vectors=1132 utf8_word=0 entry_positions=356743
+row cpu=0 doc=syn-utf8-4m unit=s1_masks bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=309162 p10_ns=321599 median_ns=338186 p90_ns=348648 max_ns=470965 ns_per_byte=0.08063 gbps=12.402 cycles_per_byte=0.3433 core_ghz=4.257 calib_spread_pct=1.39 checksum=0x7da9c654aa03f95a
+row cpu=0 doc=syn-utf8-4m unit=entry_pos8 bytes=4194304 touch=524288 blocks=65536 reps=51 min_ns=329007 p10_ns=338838 median_ns=339403 p90_ns=343327 max_ns=346390 ns_per_byte=0.08092 gbps=12.358 cycles_per_byte=0.3366 core_ghz=4.160 calib_spread_pct=0.85 checksum=0x29c6c40ba4c8eb45
+row cpu=0 doc=syn-utf8-4m unit=entry_b8 bytes=4194304 touch=524288 blocks=65536 reps=51 min_ns=152223 p10_ns=165370 median_ns=179010 p90_ns=184265 max_ns=193948 ns_per_byte=0.04268 gbps=23.431 cycles_per_byte=0.1781 core_ghz=4.173 calib_spread_pct=0.21 checksum=0x29c6c40ba4c8eb45
+row cpu=0 doc=syn-utf8-4m unit=utf8_gated bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=132616 p10_ns=133892 median_ns=142469 p90_ns=154789 max_ns=286642 ns_per_byte=0.03397 gbps=29.440 cycles_per_byte=0.1447 core_ghz=4.259 calib_spread_pct=1.30 checksum=0x0005b908bf0a5ca3
+row cpu=0 doc=syn-utf8-4m unit=utf8_ungated bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=112418 p10_ns=112536 median_ns=120311 p90_ns=135798 max_ns=253174 ns_per_byte=0.02868 gbps=34.862 cycles_per_byte=0.1272 core_ghz=4.433 calib_spread_pct=2.63 checksum=0x0005b908bf0a5ca3
+doc name=syn-utf8-64k bytes=65536 blocks=1024 structural=5572 structural_per_block=5.44 vectors=2048 ascii_vectors=25 utf8_word=0 entry_positions=5572
+row cpu=0 doc=syn-utf8-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=4608 p10_ns=4614 median_ns=4710 p90_ns=5824 max_ns=6664 ns_per_byte=0.07187 gbps=13.914 cycles_per_byte=0.3310 core_ghz=4.606 calib_spread_pct=0.58 checksum=0x01a502e35e260a07
+row cpu=0 doc=syn-utf8-64k unit=entry_pos8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=4461 p10_ns=4469 median_ns=4857 p90_ns=4879 max_ns=4895 ns_per_byte=0.07411 gbps=13.493 cycles_per_byte=0.3467 core_ghz=4.678 calib_spread_pct=0.71 checksum=0x7e4cdd981b7bdb23
+row cpu=0 doc=syn-utf8-64k unit=entry_b8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=2093 p10_ns=2100 median_ns=2114 p90_ns=2124 max_ns=2901 ns_per_byte=0.03226 gbps=31.001 cycles_per_byte=0.1509 core_ghz=4.677 calib_spread_pct=3.08 checksum=0x7e4cdd981b7bdb23
+row cpu=0 doc=syn-utf8-64k unit=utf8_gated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=2139 p10_ns=2142 median_ns=2552 p90_ns=2916 max_ns=2924 ns_per_byte=0.03894 gbps=25.680 cycles_per_byte=0.1864 core_ghz=4.787 calib_spread_pct=0.39 checksum=0xe84b45e0d72ae4e8
+row cpu=0 doc=syn-utf8-64k unit=utf8_ungated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=2191 p10_ns=2197 median_ns=2499 p90_ns=2639 max_ns=5176 ns_per_byte=0.03813 gbps=26.225 cycles_per_byte=0.1720 core_ghz=4.510 calib_spread_pct=2.30 checksum=0xe84b45e0d72ae4e8
+trial cpu=0 trial=3/3
+instrument bench=1 reps=51 tsc_ghz=3.302 cpuid_1a=40 cpu=0
+doc name=route-s1-64k bytes=65536 blocks=1024 structural=38136 structural_per_block=37.24 vectors=2048 ascii_vectors=2048 utf8_word=0 entry_positions=38136
+row cpu=0 doc=route-s1-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=4747 p10_ns=4768 median_ns=4798 p90_ns=4826 max_ns=6343 ns_per_byte=0.07321 gbps=13.659 cycles_per_byte=0.3273 core_ghz=4.471 calib_spread_pct=3.56 checksum=0x34269984e5039e51
+row cpu=0 doc=route-s1-64k unit=entry_pos8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=4765 p10_ns=4783 median_ns=4803 p90_ns=4832 max_ns=4891 ns_per_byte=0.07329 gbps=13.645 cycles_per_byte=0.3454 core_ghz=4.712 calib_spread_pct=1.63 checksum=0xf518451f213fcb99
+row cpu=0 doc=route-s1-64k unit=entry_b8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=11811 p10_ns=11867 median_ns=12689 p90_ns=12744 max_ns=12813 ns_per_byte=0.19362 gbps=5.165 cycles_per_byte=0.8661 core_ghz=4.473 calib_spread_pct=2.39 checksum=0xf518451f213fcb99
+row cpu=0 doc=route-s1-64k unit=utf8_gated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=690 p10_ns=702 median_ns=788 p90_ns=803 max_ns=913 ns_per_byte=0.01202 gbps=83.168 cycles_per_byte=0.0546 core_ghz=4.542 calib_spread_pct=0.31 checksum=0x386d4ddf683fceb4
+row cpu=0 doc=route-s1-64k unit=utf8_ungated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=1973 p10_ns=1976 median_ns=2278 p90_ns=2640 max_ns=2775 ns_per_byte=0.03476 gbps=28.769 cycles_per_byte=0.1594 core_ghz=4.587 calib_spread_pct=0.54 checksum=0x386d4ddf683fceb4
+doc name=route-u8-64k bytes=65536 blocks=1024 structural=27306 structural_per_block=26.67 vectors=2048 ascii_vectors=0 utf8_word=1 entry_positions=27306
+row cpu=0 doc=route-u8-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=4749 p10_ns=4778 median_ns=4799 p90_ns=4896 max_ns=5875 ns_per_byte=0.07323 gbps=13.656 cycles_per_byte=0.3460 core_ghz=4.725 calib_spread_pct=1.88 checksum=0x2003e2c865c4ff08
+row cpu=0 doc=route-u8-64k unit=entry_pos8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=4618 p10_ns=4629 median_ns=4669 p90_ns=4697 max_ns=5024 ns_per_byte=0.07124 gbps=14.036 cycles_per_byte=0.3293 core_ghz=4.622 calib_spread_pct=0.65 checksum=0x35944bafc3ad1433
+row cpu=0 doc=route-u8-64k unit=entry_b8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=7598 p10_ns=7613 median_ns=7647 p90_ns=7671 max_ns=10488 ns_per_byte=0.11668 gbps=8.570 cycles_per_byte=0.5471 core_ghz=4.689 calib_spread_pct=2.31 checksum=0x35944bafc3ad1433
+row cpu=0 doc=route-u8-64k unit=utf8_gated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=2373 p10_ns=2377 median_ns=2560 p90_ns=2922 max_ns=3044 ns_per_byte=0.03906 gbps=25.600 cycles_per_byte=0.1851 core_ghz=4.739 calib_spread_pct=2.42 checksum=0x8ab33ae23aa63869
+row cpu=0 doc=route-u8-64k unit=utf8_ungated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=1971 p10_ns=1976 median_ns=2280 p90_ns=2640 max_ns=2711 ns_per_byte=0.03479 gbps=28.744 cycles_per_byte=0.1631 core_ghz=4.689 calib_spread_pct=0.86 checksum=0x8ab33ae23aa63869
+doc name=syn-dense-4m bytes=4194304 blocks=65536 structural=2079681 structural_per_block=31.73 vectors=131072 ascii_vectors=131072 utf8_word=0 entry_positions=2079681
+row cpu=0 doc=syn-dense-4m unit=s1_masks bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=290705 p10_ns=302011 median_ns=333600 p90_ns=342899 max_ns=563420 ns_per_byte=0.07954 gbps=12.573 cycles_per_byte=0.3668 core_ghz=4.611 calib_spread_pct=1.43 checksum=0x5c0a644b05c811a9
+row cpu=0 doc=syn-dense-4m unit=entry_pos8 bytes=4194304 touch=524288 blocks=65536 reps=51 min_ns=336009 p10_ns=337024 median_ns=354309 p90_ns=400316 max_ns=453009 ns_per_byte=0.08447 gbps=11.838 cycles_per_byte=0.3862 core_ghz=4.572 calib_spread_pct=4.06 checksum=0x2b0c722f0e9e8ad2
+row cpu=0 doc=syn-dense-4m unit=entry_b8 bytes=4194304 touch=524288 blocks=65536 reps=51 min_ns=724238 p10_ns=750970 median_ns=780807 p90_ns=826873 max_ns=1187083 ns_per_byte=0.18616 gbps=5.372 cycles_per_byte=0.8466 core_ghz=4.547 calib_spread_pct=3.03 checksum=0x2b0c722f0e9e8ad2
+row cpu=0 doc=syn-dense-4m unit=utf8_gated bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=73404 p10_ns=74518 median_ns=82118 p90_ns=88219 max_ns=257434 ns_per_byte=0.01958 gbps=51.077 cycles_per_byte=0.0857 core_ghz=4.380 calib_spread_pct=4.92 checksum=0xe3170551b7758eb5
+row cpu=0 doc=syn-dense-4m unit=utf8_ungated bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=123583 p10_ns=129532 median_ns=133430 p90_ns=138882 max_ns=270213 ns_per_byte=0.03181 gbps=31.434 cycles_per_byte=0.1350 core_ghz=4.245 calib_spread_pct=1.96 checksum=0xe3170551b7758eb5
+doc name=syn-dense-64k bytes=65536 blocks=1024 structural=32361 structural_per_block=31.60 vectors=2048 ascii_vectors=2048 utf8_word=0 entry_positions=32361
+row cpu=0 doc=syn-dense-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=4739 p10_ns=4761 median_ns=4798 p90_ns=5900 max_ns=8128 ns_per_byte=0.07321 gbps=13.659 cycles_per_byte=0.3090 core_ghz=4.220 calib_spread_pct=0.24 checksum=0x1f43c566f518b152
+row cpu=0 doc=syn-dense-64k unit=entry_pos8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=4695 p10_ns=4738 median_ns=4770 p90_ns=4800 max_ns=4971 ns_per_byte=0.07278 gbps=13.739 cycles_per_byte=0.3220 core_ghz=4.424 calib_spread_pct=7.68 checksum=0x1a48754ed9e69767
+row cpu=0 doc=syn-dense-64k unit=entry_b8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=9069 p10_ns=9090 median_ns=10367 p90_ns=10641 max_ns=10698 ns_per_byte=0.15819 gbps=6.322 cycles_per_byte=0.7322 core_ghz=4.629 calib_spread_pct=0.24 checksum=0x1a48754ed9e69767
+row cpu=0 doc=syn-dense-64k unit=utf8_gated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=630 p10_ns=641 median_ns=737 p90_ns=746 max_ns=2109 ns_per_byte=0.01125 gbps=88.923 cycles_per_byte=0.0505 core_ghz=4.494 calib_spread_pct=3.04 checksum=0x442b53e1feb9c0cd
+row cpu=0 doc=syn-dense-64k unit=utf8_ungated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=2195 p10_ns=2500 median_ns=2514 p90_ns=2874 max_ns=4443 ns_per_byte=0.03836 gbps=26.068 cycles_per_byte=0.1679 core_ghz=4.378 calib_spread_pct=4.01 checksum=0x442b53e1feb9c0cd
+doc name=syn-strings-4m bytes=4194304 blocks=65536 structural=301905 structural_per_block=4.61 vectors=131072 ascii_vectors=131072 utf8_word=0 entry_positions=301905
+row cpu=0 doc=syn-strings-4m unit=s1_masks bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=289271 p10_ns=298134 median_ns=327565 p90_ns=346891 max_ns=399188 ns_per_byte=0.07810 gbps=12.804 cycles_per_byte=0.3492 core_ghz=4.471 calib_spread_pct=4.83 checksum=0x7b0f574a31895110
+row cpu=0 doc=syn-strings-4m unit=entry_pos8 bytes=4194304 touch=524288 blocks=65536 reps=51 min_ns=274606 p10_ns=274936 median_ns=294339 p90_ns=320808 max_ns=388847 ns_per_byte=0.07018 gbps=14.250 cycles_per_byte=0.3245 core_ghz=4.624 calib_spread_pct=0.03 checksum=0x56b37ebd0a715ac5
+row cpu=0 doc=syn-strings-4m unit=entry_b8 bytes=4194304 touch=524288 blocks=65536 reps=51 min_ns=168310 p10_ns=168492 median_ns=186678 p90_ns=199547 max_ns=263122 ns_per_byte=0.04451 gbps=22.468 cycles_per_byte=0.2038 core_ghz=4.579 calib_spread_pct=3.22 checksum=0x56b37ebd0a715ac5
+row cpu=0 doc=syn-strings-4m unit=utf8_gated bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=71299 p10_ns=71536 median_ns=76854 p90_ns=84710 max_ns=174569 ns_per_byte=0.01832 gbps=54.575 cycles_per_byte=0.0818 core_ghz=4.466 calib_spread_pct=0.51 checksum=0xb2da6503647a0cc5
+row cpu=0 doc=syn-strings-4m unit=utf8_ungated bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=112861 p10_ns=115700 median_ns=128862 p90_ns=137181 max_ns=198205 ns_per_byte=0.03072 gbps=32.549 cycles_per_byte=0.1361 core_ghz=4.429 calib_spread_pct=2.11 checksum=0xb2da6503647a0cc5
+doc name=syn-strings-64k bytes=65536 blocks=1024 structural=4717 structural_per_block=4.61 vectors=2048 ascii_vectors=2048 utf8_word=0 entry_positions=4717
+row cpu=0 doc=syn-strings-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=4226 p10_ns=4240 median_ns=4768 p90_ns=4840 max_ns=6011 ns_per_byte=0.07275 gbps=13.745 cycles_per_byte=0.3215 core_ghz=4.419 calib_spread_pct=0.21 checksum=0x0efff33f436b558a
+row cpu=0 doc=syn-strings-64k unit=entry_pos8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=4276 p10_ns=4302 median_ns=4333 p90_ns=5043 max_ns=5189 ns_per_byte=0.06612 gbps=15.125 cycles_per_byte=0.3001 core_ghz=4.539 calib_spread_pct=1.55 checksum=0x5b45b3b2a6b5187f
+row cpu=0 doc=syn-strings-64k unit=entry_b8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=1994 p10_ns=2007 median_ns=2182 p90_ns=2208 max_ns=2341 ns_per_byte=0.03329 gbps=30.035 cycles_per_byte=0.1528 core_ghz=4.590 calib_spread_pct=3.58 checksum=0x5b45b3b2a6b5187f
+row cpu=0 doc=syn-strings-64k unit=utf8_gated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=673 p10_ns=677 median_ns=735 p90_ns=747 max_ns=3079 ns_per_byte=0.01122 gbps=89.165 cycles_per_byte=0.0508 core_ghz=4.526 calib_spread_pct=6.46 checksum=0xf045bbe0ddf23029
+row cpu=0 doc=syn-strings-64k unit=utf8_ungated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=1978 p10_ns=1983 median_ns=2283 p90_ns=2639 max_ns=2673 ns_per_byte=0.03484 gbps=28.706 cycles_per_byte=0.1576 core_ghz=4.525 calib_spread_pct=2.43 checksum=0xf045bbe0ddf23029
+doc name=syn-utf8-4m bytes=4194304 blocks=65536 structural=356743 structural_per_block=5.44 vectors=131072 ascii_vectors=1132 utf8_word=0 entry_positions=356743
+row cpu=0 doc=syn-utf8-4m unit=s1_masks bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=288751 p10_ns=290471 median_ns=314149 p90_ns=342452 max_ns=435975 ns_per_byte=0.07490 gbps=13.351 cycles_per_byte=0.3410 core_ghz=4.553 calib_spread_pct=10.12 checksum=0x7da9c654aa03f95a
+row cpu=0 doc=syn-utf8-4m unit=entry_pos8 bytes=4194304 touch=524288 blocks=65536 reps=51 min_ns=290940 p10_ns=292091 median_ns=324799 p90_ns=347718 max_ns=436070 ns_per_byte=0.07744 gbps=12.914 cycles_per_byte=0.3474 core_ghz=4.487 calib_spread_pct=3.92 checksum=0x29c6c40ba4c8eb45
+row cpu=0 doc=syn-utf8-4m unit=entry_b8 bytes=4194304 touch=524288 blocks=65536 reps=51 min_ns=149109 p10_ns=149407 median_ns=157443 p90_ns=175637 max_ns=182103 ns_per_byte=0.03754 gbps=26.640 cycles_per_byte=0.1664 core_ghz=4.433 calib_spread_pct=4.04 checksum=0x29c6c40ba4c8eb45
+row cpu=0 doc=syn-utf8-4m unit=utf8_gated bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=120943 p10_ns=121528 median_ns=136127 p90_ns=158471 max_ns=229109 ns_per_byte=0.03246 gbps=30.812 cycles_per_byte=0.1451 core_ghz=4.472 calib_spread_pct=3.20 checksum=0x0005b908bf0a5ca3
+row cpu=0 doc=syn-utf8-4m unit=utf8_ungated bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=112279 p10_ns=112723 median_ns=122710 p90_ns=136277 max_ns=211135 ns_per_byte=0.02926 gbps=34.181 cycles_per_byte=0.1328 core_ghz=4.538 calib_spread_pct=1.81 checksum=0x0005b908bf0a5ca3
+doc name=syn-utf8-64k bytes=65536 blocks=1024 structural=5572 structural_per_block=5.44 vectors=2048 ascii_vectors=25 utf8_word=0 entry_positions=5572
+row cpu=0 doc=syn-utf8-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=5213 p10_ns=5249 median_ns=5818 p90_ns=5856 max_ns=9151 ns_per_byte=0.08878 gbps=11.264 cycles_per_byte=0.4019 core_ghz=4.527 calib_spread_pct=3.59 checksum=0x01a502e35e260a07
+row cpu=0 doc=syn-utf8-64k unit=entry_pos8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=4409 p10_ns=4417 median_ns=4437 p90_ns=4454 max_ns=4725 ns_per_byte=0.06770 gbps=14.770 cycles_per_byte=0.3099 core_ghz=4.577 calib_spread_pct=1.20 checksum=0x7e4cdd981b7bdb23
+row cpu=0 doc=syn-utf8-64k unit=entry_b8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=2432 p10_ns=2439 median_ns=2447 p90_ns=2469 max_ns=2577 ns_per_byte=0.03734 gbps=26.782 cycles_per_byte=0.1671 core_ghz=4.474 calib_spread_pct=5.07 checksum=0x7e4cdd981b7bdb23
+row cpu=0 doc=syn-utf8-64k unit=utf8_gated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=2138 p10_ns=2144 median_ns=2553 p90_ns=2919 max_ns=2936 ns_per_byte=0.03896 gbps=25.670 cycles_per_byte=0.1761 core_ghz=4.521 calib_spread_pct=1.27 checksum=0xe84b45e0d72ae4e8
+row cpu=0 doc=syn-utf8-64k unit=utf8_ungated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=2191 p10_ns=2195 median_ns=2503 p90_ns=2870 max_ns=5389 ns_per_byte=0.03819 gbps=26.183 cycles_per_byte=0.1729 core_ghz=4.528 calib_spread_pct=1.18 checksum=0xe84b45e0d72ae4e8
+trial cpu=4 trial=1/3
+instrument bench=1 reps=51 tsc_ghz=3.302 cpuid_1a=20 cpu=4
+doc name=route-s1-64k bytes=65536 blocks=1024 structural=38136 structural_per_block=37.24 vectors=2048 ascii_vectors=2048 utf8_word=0 entry_positions=38136
+row cpu=4 doc=route-s1-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=7985 p10_ns=7991 median_ns=8009 p90_ns=8047 max_ns=18366 ns_per_byte=0.12221 gbps=8.183 cycles_per_byte=0.4460 core_ghz=3.650 calib_spread_pct=1.09 checksum=0x34269984e5039e51
+row cpu=4 doc=route-s1-64k unit=entry_pos8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=4677 p10_ns=4680 median_ns=4693 p90_ns=4707 max_ns=32155 ns_per_byte=0.07161 gbps=13.965 cycles_per_byte=0.2612 core_ghz=3.647 calib_spread_pct=0.47 checksum=0xf518451f213fcb99
+row cpu=4 doc=route-s1-64k unit=entry_b8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=30357 p10_ns=30465 median_ns=30761 p90_ns=31062 max_ns=44940 ns_per_byte=0.46938 gbps=2.130 cycles_per_byte=1.7155 core_ghz=3.655 calib_spread_pct=0.58 checksum=0xf518451f213fcb99
+row cpu=4 doc=route-s1-64k unit=utf8_gated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=1026 p10_ns=1033 median_ns=1045 p90_ns=1055 max_ns=5970 ns_per_byte=0.01595 gbps=62.714 cycles_per_byte=0.0582 core_ghz=3.653 calib_spread_pct=0.39 checksum=0x386d4ddf683fceb4
+row cpu=4 doc=route-s1-64k unit=utf8_ungated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=4662 p10_ns=4667 median_ns=4680 p90_ns=4695 max_ns=7685 ns_per_byte=0.07141 gbps=14.003 cycles_per_byte=0.2605 core_ghz=3.647 calib_spread_pct=0.38 checksum=0x386d4ddf683fceb4
+doc name=route-u8-64k bytes=65536 blocks=1024 structural=27306 structural_per_block=26.67 vectors=2048 ascii_vectors=0 utf8_word=1 entry_positions=27306
+row cpu=4 doc=route-u8-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=8005 p10_ns=8013 median_ns=8035 p90_ns=8053 max_ns=10402 ns_per_byte=0.12260 gbps=8.156 cycles_per_byte=0.4485 core_ghz=3.658 calib_spread_pct=0.40 checksum=0x2003e2c865c4ff08
+row cpu=4 doc=route-u8-64k unit=entry_pos8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=4681 p10_ns=4687 median_ns=4703 p90_ns=4716 max_ns=23421 ns_per_byte=0.07176 gbps=13.935 cycles_per_byte=0.2616 core_ghz=3.645 calib_spread_pct=0.67 checksum=0x35944bafc3ad1433
+row cpu=4 doc=route-u8-64k unit=entry_b8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=18590 p10_ns=18660 median_ns=18744 p90_ns=18811 max_ns=22543 ns_per_byte=0.28601 gbps=3.496 cycles_per_byte=1.0440 core_ghz=3.650 calib_spread_pct=0.58 checksum=0x35944bafc3ad1433
+row cpu=4 doc=route-u8-64k unit=utf8_gated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=5128 p10_ns=5231 median_ns=5247 p90_ns=5297 max_ns=16880 ns_per_byte=0.08006 gbps=12.490 cycles_per_byte=0.2930 core_ghz=3.659 calib_spread_pct=0.17 checksum=0x8ab33ae23aa63869
+row cpu=4 doc=route-u8-64k unit=utf8_ungated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=4665 p10_ns=4675 median_ns=4690 p90_ns=4709 max_ns=10199 ns_per_byte=0.07156 gbps=13.974 cycles_per_byte=0.2617 core_ghz=3.657 calib_spread_pct=0.39 checksum=0x8ab33ae23aa63869
+doc name=syn-dense-4m bytes=4194304 blocks=65536 structural=2079681 structural_per_block=31.73 vectors=131072 ascii_vectors=131072 utf8_word=0 entry_positions=2079681
+row cpu=4 doc=syn-dense-4m unit=s1_masks bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=525249 p10_ns=530974 median_ns=565221 p90_ns=605538 max_ns=620025 ns_per_byte=0.13476 gbps=7.421 cycles_per_byte=0.4946 core_ghz=3.670 calib_spread_pct=0.23 checksum=0x5c0a644b05c811a9
+row cpu=4 doc=syn-dense-4m unit=entry_pos8 bytes=4194304 touch=524288 blocks=65536 reps=51 min_ns=532483 p10_ns=535666 median_ns=589502 p90_ns=743442 max_ns=834856 ns_per_byte=0.14055 gbps=7.115 cycles_per_byte=0.5161 core_ghz=3.672 calib_spread_pct=0.09 checksum=0x2b0c722f0e9e8ad2
+row cpu=4 doc=syn-dense-4m unit=entry_b8 bytes=4194304 touch=524288 blocks=65536 reps=51 min_ns=1745333 p10_ns=1753660 median_ns=1766158 p90_ns=1787399 max_ns=1937948 ns_per_byte=0.42108 gbps=2.375 cycles_per_byte=1.5455 core_ghz=3.670 calib_spread_pct=0.07 checksum=0x2b0c722f0e9e8ad2
+row cpu=4 doc=syn-dense-4m unit=utf8_gated bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=132202 p10_ns=133729 median_ns=138809 p90_ns=317023 max_ns=504186 ns_per_byte=0.03309 gbps=30.216 cycles_per_byte=0.1214 core_ghz=3.668 calib_spread_pct=0.03 checksum=0xe3170551b7758eb5
+row cpu=4 doc=syn-dense-4m unit=utf8_ungated bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=336763 p10_ns=347273 median_ns=370064 p90_ns=407505 max_ns=796336 ns_per_byte=0.08823 gbps=11.334 cycles_per_byte=0.3239 core_ghz=3.671 calib_spread_pct=0.15 checksum=0xe3170551b7758eb5
+doc name=syn-dense-64k bytes=65536 blocks=1024 structural=32361 structural_per_block=31.60 vectors=2048 ascii_vectors=2048 utf8_word=0 entry_positions=32361
+row cpu=4 doc=syn-dense-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=8006 p10_ns=8021 median_ns=8043 p90_ns=8061 max_ns=20908 ns_per_byte=0.12273 gbps=8.148 cycles_per_byte=0.4489 core_ghz=3.658 calib_spread_pct=0.09 checksum=0x1f43c566f518b152
+row cpu=4 doc=syn-dense-64k unit=entry_pos8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=4764 p10_ns=4777 median_ns=4786 p90_ns=4801 max_ns=16326 ns_per_byte=0.07303 gbps=13.693 cycles_per_byte=0.2672 core_ghz=3.659 calib_spread_pct=0.31 checksum=0x1a48754ed9e69767
+row cpu=4 doc=syn-dense-64k unit=entry_b8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=24561 p10_ns=24604 median_ns=24656 p90_ns=24702 max_ns=29905 ns_per_byte=0.37622 gbps=2.658 cycles_per_byte=1.3778 core_ghz=3.662 calib_spread_pct=0.36 checksum=0x1a48754ed9e69767
+row cpu=4 doc=syn-dense-64k unit=utf8_gated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=1016 p10_ns=1024 median_ns=1030 p90_ns=1035 max_ns=6172 ns_per_byte=0.01572 gbps=63.627 cycles_per_byte=0.0575 core_ghz=3.661 calib_spread_pct=0.04 checksum=0x442b53e1feb9c0cd
+row cpu=4 doc=syn-dense-64k unit=utf8_ungated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=4654 p10_ns=4670 median_ns=4687 p90_ns=4946 max_ns=6190 ns_per_byte=0.07152 gbps=13.983 cycles_per_byte=0.2626 core_ghz=3.671 calib_spread_pct=0.20 checksum=0x442b53e1feb9c0cd
+doc name=syn-strings-4m bytes=4194304 blocks=65536 structural=301905 structural_per_block=4.61 vectors=131072 ascii_vectors=131072 utf8_word=0 entry_positions=301905
+row cpu=4 doc=syn-strings-4m unit=s1_masks bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=528347 p10_ns=532840 median_ns=543052 p90_ns=564318 max_ns=579296 ns_per_byte=0.12947 gbps=7.724 cycles_per_byte=0.4762 core_ghz=3.678 calib_spread_pct=0.01 checksum=0x7b0f574a31895110
+row cpu=4 doc=syn-strings-4m unit=entry_pos8 bytes=4194304 touch=524288 blocks=65536 reps=51 min_ns=309023 p10_ns=310575 median_ns=316695 p90_ns=326844 max_ns=333809 ns_per_byte=0.07551 gbps=13.244 cycles_per_byte=0.2767 core_ghz=3.664 calib_spread_pct=0.08 checksum=0x56b37ebd0a715ac5
+row cpu=4 doc=syn-strings-4m unit=entry_b8 bytes=4194304 touch=524288 blocks=65536 reps=51 min_ns=281682 p10_ns=284389 median_ns=287880 p90_ns=297770 max_ns=313558 ns_per_byte=0.06864 gbps=14.570 cycles_per_byte=0.2515 core_ghz=3.664 calib_spread_pct=0.10 checksum=0x56b37ebd0a715ac5
+row cpu=4 doc=syn-strings-4m unit=utf8_gated bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=141609 p10_ns=145816 median_ns=172699 p90_ns=241981 max_ns=265187 ns_per_byte=0.04117 gbps=24.287 cycles_per_byte=0.1511 core_ghz=3.670 calib_spread_pct=0.41 checksum=0xb2da6503647a0cc5
+row cpu=4 doc=syn-strings-4m unit=utf8_ungated bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=330068 p10_ns=347744 median_ns=371564 p90_ns=401685 max_ns=423568 ns_per_byte=0.08859 gbps=11.288 cycles_per_byte=0.3250 core_ghz=3.669 calib_spread_pct=0.41 checksum=0xb2da6503647a0cc5
+doc name=syn-strings-64k bytes=65536 blocks=1024 structural=4717 structural_per_block=4.61 vectors=2048 ascii_vectors=2048 utf8_word=0 entry_positions=4717
+row cpu=4 doc=syn-strings-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=8015 p10_ns=8026 median_ns=8052 p90_ns=8105 max_ns=10584 ns_per_byte=0.12286 gbps=8.139 cycles_per_byte=0.4511 core_ghz=3.672 calib_spread_pct=0.44 checksum=0x0efff33f436b558a
+row cpu=4 doc=syn-strings-64k unit=entry_pos8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=4551 p10_ns=4553 median_ns=4567 p90_ns=4614 max_ns=9311 ns_per_byte=0.06969 gbps=14.350 cycles_per_byte=0.2540 core_ghz=3.644 calib_spread_pct=1.38 checksum=0x5b45b3b2a6b5187f
+row cpu=4 doc=syn-strings-64k unit=entry_b8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=3823 p10_ns=3840 median_ns=3857 p90_ns=3869 max_ns=7856 ns_per_byte=0.05885 gbps=16.991 cycles_per_byte=0.2161 core_ghz=3.672 calib_spread_pct=0.06 checksum=0x5b45b3b2a6b5187f
+row cpu=4 doc=syn-strings-64k unit=utf8_gated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=1017 p10_ns=1023 median_ns=1029 p90_ns=1039 max_ns=34650 ns_per_byte=0.01570 gbps=63.689 cycles_per_byte=0.0577 core_ghz=3.674 calib_spread_pct=0.18 checksum=0xf045bbe0ddf23029
+row cpu=4 doc=syn-strings-64k unit=utf8_ungated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=4648 p10_ns=4652 median_ns=4663 p90_ns=4677 max_ns=9739 ns_per_byte=0.07115 gbps=14.054 cycles_per_byte=0.2612 core_ghz=3.671 calib_spread_pct=0.08 checksum=0xf045bbe0ddf23029
+doc name=syn-utf8-4m bytes=4194304 blocks=65536 structural=356743 structural_per_block=5.44 vectors=131072 ascii_vectors=1132 utf8_word=0 entry_positions=356743
+row cpu=4 doc=syn-utf8-4m unit=s1_masks bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=529931 p10_ns=536047 median_ns=544489 p90_ns=552784 max_ns=573015 ns_per_byte=0.12982 gbps=7.703 cycles_per_byte=0.4771 core_ghz=3.675 calib_spread_pct=0.04 checksum=0x7da9c654aa03f95a
+row cpu=4 doc=syn-utf8-4m unit=entry_pos8 bytes=4194304 touch=524288 blocks=65536 reps=51 min_ns=302453 p10_ns=305465 median_ns=311231 p90_ns=320918 max_ns=334415 ns_per_byte=0.07420 gbps=13.476 cycles_per_byte=0.2717 core_ghz=3.661 calib_spread_pct=0.73 checksum=0x29c6c40ba4c8eb45
+row cpu=4 doc=syn-utf8-4m unit=entry_b8 bytes=4194304 touch=524288 blocks=65536 reps=51 min_ns=274237 p10_ns=274958 median_ns=278649 p90_ns=299459 max_ns=353948 ns_per_byte=0.06644 gbps=15.052 cycles_per_byte=0.2429 core_ghz=3.656 calib_spread_pct=0.24 checksum=0x29c6c40ba4c8eb45
+row cpu=4 doc=syn-utf8-4m unit=utf8_gated bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=365767 p10_ns=372514 median_ns=384468 p90_ns=412516 max_ns=431345 ns_per_byte=0.09166 gbps=10.909 cycles_per_byte=0.3368 core_ghz=3.674 calib_spread_pct=0.16 checksum=0x0005b908bf0a5ca3
+row cpu=4 doc=syn-utf8-4m unit=utf8_ungated bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=333830 p10_ns=346006 median_ns=360134 p90_ns=416212 max_ns=436869 ns_per_byte=0.08586 gbps=11.647 cycles_per_byte=0.3159 core_ghz=3.679 calib_spread_pct=0.13 checksum=0x0005b908bf0a5ca3
+doc name=syn-utf8-64k bytes=65536 blocks=1024 structural=5572 structural_per_block=5.44 vectors=2048 ascii_vectors=25 utf8_word=0 entry_positions=5572
+row cpu=4 doc=syn-utf8-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=8016 p10_ns=8032 median_ns=8054 p90_ns=8073 max_ns=10304 ns_per_byte=0.12289 gbps=8.137 cycles_per_byte=0.4516 core_ghz=3.675 calib_spread_pct=0.02 checksum=0x01a502e35e260a07
+row cpu=4 doc=syn-utf8-64k unit=entry_pos8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=4623 p10_ns=4637 median_ns=4648 p90_ns=4659 max_ns=4881 ns_per_byte=0.07092 gbps=14.100 cycles_per_byte=0.2607 core_ghz=3.675 calib_spread_pct=0.25 checksum=0x7e4cdd981b7bdb23
+row cpu=4 doc=syn-utf8-64k unit=entry_b8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=4042 p10_ns=4053 median_ns=4069 p90_ns=4086 max_ns=4827 ns_per_byte=0.06209 gbps=16.106 cycles_per_byte=0.2280 core_ghz=3.672 calib_spread_pct=0.04 checksum=0x7e4cdd981b7bdb23
+row cpu=4 doc=syn-utf8-64k unit=utf8_gated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=5212 p10_ns=5218 median_ns=5235 p90_ns=5251 max_ns=9341 ns_per_byte=0.07988 gbps=12.519 cycles_per_byte=0.2936 core_ghz=3.675 calib_spread_pct=0.13 checksum=0xe84b45e0d72ae4e8
+row cpu=4 doc=syn-utf8-64k unit=utf8_ungated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=4650 p10_ns=4662 median_ns=4673 p90_ns=4686 max_ns=8974 ns_per_byte=0.07130 gbps=14.024 cycles_per_byte=0.2620 core_ghz=3.674 calib_spread_pct=0.27 checksum=0xe84b45e0d72ae4e8
+trial cpu=4 trial=2/3
+instrument bench=1 reps=51 tsc_ghz=3.302 cpuid_1a=20 cpu=4
+doc name=route-s1-64k bytes=65536 blocks=1024 structural=38136 structural_per_block=37.24 vectors=2048 ascii_vectors=2048 utf8_word=0 entry_positions=38136
+row cpu=4 doc=route-s1-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=7963 p10_ns=7988 median_ns=8011 p90_ns=8029 max_ns=13526 ns_per_byte=0.12224 gbps=8.181 cycles_per_byte=0.4481 core_ghz=3.666 calib_spread_pct=0.62 checksum=0x34269984e5039e51
+row cpu=4 doc=route-s1-64k unit=entry_pos8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=4662 p10_ns=4666 median_ns=4679 p90_ns=4696 max_ns=31570 ns_per_byte=0.07140 gbps=14.006 cycles_per_byte=0.2607 core_ghz=3.651 calib_spread_pct=0.25 checksum=0xf518451f213fcb99
+row cpu=4 doc=route-s1-64k unit=entry_b8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=30060 p10_ns=30112 median_ns=30166 p90_ns=30272 max_ns=36394 ns_per_byte=0.46030 gbps=2.173 cycles_per_byte=1.6864 core_ghz=3.664 calib_spread_pct=0.27 checksum=0xf518451f213fcb99
+row cpu=4 doc=route-s1-64k unit=utf8_gated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=1016 p10_ns=1021 median_ns=1030 p90_ns=1036 max_ns=13754 ns_per_byte=0.01572 gbps=63.627 cycles_per_byte=0.0575 core_ghz=3.657 calib_spread_pct=0.14 checksum=0x386d4ddf683fceb4
+row cpu=4 doc=route-s1-64k unit=utf8_ungated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=4667 p10_ns=4672 median_ns=4681 p90_ns=4696 max_ns=18069 ns_per_byte=0.07143 gbps=14.000 cycles_per_byte=0.2616 core_ghz=3.662 calib_spread_pct=0.26 checksum=0x386d4ddf683fceb4
+doc name=route-u8-64k bytes=65536 blocks=1024 structural=27306 structural_per_block=26.67 vectors=2048 ascii_vectors=0 utf8_word=1 entry_positions=27306
+row cpu=4 doc=route-u8-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=7982 p10_ns=7988 median_ns=8012 p90_ns=8030 max_ns=17113 ns_per_byte=0.12225 gbps=8.180 cycles_per_byte=0.4478 core_ghz=3.663 calib_spread_pct=0.13 checksum=0x2003e2c865c4ff08
+row cpu=4 doc=route-u8-64k unit=entry_pos8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=4671 p10_ns=4679 median_ns=4693 p90_ns=4707 max_ns=14186 ns_per_byte=0.07161 gbps=13.965 cycles_per_byte=0.2623 core_ghz=3.663 calib_spread_pct=0.44 checksum=0x35944bafc3ad1433
+row cpu=4 doc=route-u8-64k unit=entry_b8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=18621 p10_ns=18635 median_ns=18694 p90_ns=18879 max_ns=25731 ns_per_byte=0.28525 gbps=3.506 cycles_per_byte=1.0469 core_ghz=3.670 calib_spread_pct=0.01 checksum=0x35944bafc3ad1433
+row cpu=4 doc=route-u8-64k unit=utf8_gated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=5161 p10_ns=5230 median_ns=5246 p90_ns=5258 max_ns=14063 ns_per_byte=0.08005 gbps=12.493 cycles_per_byte=0.2929 core_ghz=3.660 calib_spread_pct=0.22 checksum=0x8ab33ae23aa63869
+row cpu=4 doc=route-u8-64k unit=utf8_ungated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=4667 p10_ns=4672 median_ns=4689 p90_ns=4717 max_ns=7807 ns_per_byte=0.07155 gbps=13.977 cycles_per_byte=0.2616 core_ghz=3.656 calib_spread_pct=0.11 checksum=0x8ab33ae23aa63869
+doc name=syn-dense-4m bytes=4194304 blocks=65536 structural=2079681 structural_per_block=31.73 vectors=131072 ascii_vectors=131072 utf8_word=0 entry_positions=2079681
+row cpu=4 doc=syn-dense-4m unit=s1_masks bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=520877 p10_ns=536535 median_ns=573093 p90_ns=607334 max_ns=826512 ns_per_byte=0.13664 gbps=7.319 cycles_per_byte=0.5008 core_ghz=3.666 calib_spread_pct=0.21 checksum=0x5c0a644b05c811a9
+row cpu=4 doc=syn-dense-4m unit=entry_pos8 bytes=4194304 touch=524288 blocks=65536 reps=51 min_ns=533568 p10_ns=545266 median_ns=605442 p90_ns=754751 max_ns=1686037 ns_per_byte=0.14435 gbps=6.928 cycles_per_byte=0.5297 core_ghz=3.670 calib_spread_pct=0.22 checksum=0x2b0c722f0e9e8ad2
+row cpu=4 doc=syn-dense-4m unit=entry_b8 bytes=4194304 touch=524288 blocks=65536 reps=51 min_ns=1752951 p10_ns=1760222 median_ns=1771088 p90_ns=1785808 max_ns=1807758 ns_per_byte=0.42226 gbps=2.368 cycles_per_byte=1.5470 core_ghz=3.664 calib_spread_pct=0.14 checksum=0x2b0c722f0e9e8ad2
+row cpu=4 doc=syn-dense-4m unit=utf8_gated bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=131327 p10_ns=133221 median_ns=159356 p90_ns=265691 max_ns=660088 ns_per_byte=0.03799 gbps=26.320 cycles_per_byte=0.1396 core_ghz=3.675 calib_spread_pct=0.00 checksum=0xe3170551b7758eb5
+row cpu=4 doc=syn-dense-4m unit=utf8_ungated bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=344209 p10_ns=350658 median_ns=361534 p90_ns=380620 max_ns=755770 ns_per_byte=0.08620 gbps=11.601 cycles_per_byte=0.3162 core_ghz=3.668 calib_spread_pct=0.05 checksum=0xe3170551b7758eb5
+doc name=syn-dense-64k bytes=65536 blocks=1024 structural=32361 structural_per_block=31.60 vectors=2048 ascii_vectors=2048 utf8_word=0 entry_positions=32361
+row cpu=4 doc=syn-dense-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=8006 p10_ns=8015 median_ns=8035 p90_ns=8127 max_ns=18315 ns_per_byte=0.12260 gbps=8.156 cycles_per_byte=0.4496 core_ghz=3.667 calib_spread_pct=0.04 checksum=0x1f43c566f518b152
+row cpu=4 doc=syn-dense-64k unit=entry_pos8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=4766 p10_ns=4782 median_ns=4795 p90_ns=4811 max_ns=13653 ns_per_byte=0.07317 gbps=13.668 cycles_per_byte=0.2680 core_ghz=3.663 calib_spread_pct=0.01 checksum=0x1a48754ed9e69767
+row cpu=4 doc=syn-dense-64k unit=entry_b8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=24547 p10_ns=24572 median_ns=24632 p90_ns=24720 max_ns=34746 ns_per_byte=0.37585 gbps=2.661 cycles_per_byte=1.3741 core_ghz=3.656 calib_spread_pct=0.01 checksum=0x1a48754ed9e69767
+row cpu=4 doc=syn-dense-64k unit=utf8_gated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=1018 p10_ns=1023 median_ns=1028 p90_ns=1037 max_ns=7729 ns_per_byte=0.01569 gbps=63.751 cycles_per_byte=0.0574 core_ghz=3.661 calib_spread_pct=0.38 checksum=0x442b53e1feb9c0cd
+row cpu=4 doc=syn-dense-64k unit=utf8_ungated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=4657 p10_ns=4663 median_ns=4674 p90_ns=4688 max_ns=6428 ns_per_byte=0.07132 gbps=14.021 cycles_per_byte=0.2618 core_ghz=3.670 calib_spread_pct=0.21 checksum=0x442b53e1feb9c0cd
+doc name=syn-strings-4m bytes=4194304 blocks=65536 structural=301905 structural_per_block=4.61 vectors=131072 ascii_vectors=131072 utf8_word=0 entry_positions=301905
+row cpu=4 doc=syn-strings-4m unit=s1_masks bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=521933 p10_ns=538034 median_ns=565678 p90_ns=630952 max_ns=845332 ns_per_byte=0.13487 gbps=7.415 cycles_per_byte=0.4949 core_ghz=3.670 calib_spread_pct=0.05 checksum=0x7b0f574a31895110
+row cpu=4 doc=syn-strings-4m unit=entry_pos8 bytes=4194304 touch=524288 blocks=65536 reps=51 min_ns=309009 p10_ns=309537 median_ns=316587 p90_ns=342905 max_ns=435505 ns_per_byte=0.07548 gbps=13.249 cycles_per_byte=0.2767 core_ghz=3.666 calib_spread_pct=0.09 checksum=0x56b37ebd0a715ac5
+row cpu=4 doc=syn-strings-4m unit=entry_b8 bytes=4194304 touch=524288 blocks=65536 reps=51 min_ns=282022 p10_ns=283367 median_ns=289329 p90_ns=304877 max_ns=390119 ns_per_byte=0.06898 gbps=14.497 cycles_per_byte=0.2515 core_ghz=3.646 calib_spread_pct=0.68 checksum=0x56b37ebd0a715ac5
+row cpu=4 doc=syn-strings-4m unit=utf8_gated bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=129319 p10_ns=140335 median_ns=190136 p90_ns=238883 max_ns=744238 ns_per_byte=0.04533 gbps=22.059 cycles_per_byte=0.1663 core_ghz=3.668 calib_spread_pct=0.01 checksum=0xb2da6503647a0cc5
+row cpu=4 doc=syn-strings-4m unit=utf8_ungated bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=329832 p10_ns=341361 median_ns=363510 p90_ns=402911 max_ns=436778 ns_per_byte=0.08667 gbps=11.538 cycles_per_byte=0.3154 core_ghz=3.639 calib_spread_pct=1.47 checksum=0xb2da6503647a0cc5
+doc name=syn-strings-64k bytes=65536 blocks=1024 structural=4717 structural_per_block=4.61 vectors=2048 ascii_vectors=2048 utf8_word=0 entry_positions=4717
+row cpu=4 doc=syn-strings-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=7995 p10_ns=8001 median_ns=8018 p90_ns=8038 max_ns=17833 ns_per_byte=0.12234 gbps=8.174 cycles_per_byte=0.4461 core_ghz=3.646 calib_spread_pct=0.88 checksum=0x0efff33f436b558a
+row cpu=4 doc=syn-strings-64k unit=entry_pos8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=4523 p10_ns=4526 median_ns=4541 p90_ns=4557 max_ns=11960 ns_per_byte=0.06929 gbps=14.432 cycles_per_byte=0.2541 core_ghz=3.668 calib_spread_pct=0.09 checksum=0x5b45b3b2a6b5187f
+row cpu=4 doc=syn-strings-64k unit=entry_b8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=3832 p10_ns=3841 median_ns=3856 p90_ns=3876 max_ns=10933 ns_per_byte=0.05884 gbps=16.996 cycles_per_byte=0.2158 core_ghz=3.668 calib_spread_pct=0.30 checksum=0x5b45b3b2a6b5187f
+row cpu=4 doc=syn-strings-64k unit=utf8_gated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=1020 p10_ns=1025 median_ns=1033 p90_ns=1043 max_ns=8831 ns_per_byte=0.01576 gbps=63.442 cycles_per_byte=0.0577 core_ghz=3.662 calib_spread_pct=0.25 checksum=0xf045bbe0ddf23029
+row cpu=4 doc=syn-strings-64k unit=utf8_ungated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=4664 p10_ns=4674 median_ns=4686 p90_ns=4703 max_ns=17929 ns_per_byte=0.07150 gbps=13.985 cycles_per_byte=0.2616 core_ghz=3.659 calib_spread_pct=0.17 checksum=0xf045bbe0ddf23029
+doc name=syn-utf8-4m bytes=4194304 blocks=65536 structural=356743 structural_per_block=5.44 vectors=131072 ascii_vectors=1132 utf8_word=0 entry_positions=356743
+row cpu=4 doc=syn-utf8-4m unit=s1_masks bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=529467 p10_ns=538655 median_ns=575908 p90_ns=621283 max_ns=645818 ns_per_byte=0.13731 gbps=7.283 cycles_per_byte=0.5031 core_ghz=3.664 calib_spread_pct=0.01 checksum=0x7da9c654aa03f95a
+row cpu=4 doc=syn-utf8-4m unit=entry_pos8 bytes=4194304 touch=524288 blocks=65536 reps=51 min_ns=300393 p10_ns=301233 median_ns=308603 p90_ns=330414 max_ns=349249 ns_per_byte=0.07358 gbps=13.591 cycles_per_byte=0.2694 core_ghz=3.661 calib_spread_pct=0.10 checksum=0x29c6c40ba4c8eb45
+row cpu=4 doc=syn-utf8-4m unit=entry_b8 bytes=4194304 touch=524288 blocks=65536 reps=51 min_ns=273001 p10_ns=273618 median_ns=278934 p90_ns=318396 max_ns=355684 ns_per_byte=0.06650 gbps=15.037 cycles_per_byte=0.2427 core_ghz=3.650 calib_spread_pct=0.02 checksum=0x29c6c40ba4c8eb45
+row cpu=4 doc=syn-utf8-4m unit=utf8_gated bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=358450 p10_ns=360914 median_ns=375589 p90_ns=389920 max_ns=433356 ns_per_byte=0.08955 gbps=11.167 cycles_per_byte=0.3286 core_ghz=3.669 calib_spread_pct=0.09 checksum=0x0005b908bf0a5ca3
+row cpu=4 doc=syn-utf8-4m unit=utf8_ungated bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=333106 p10_ns=334799 median_ns=346207 p90_ns=385097 max_ns=729023 ns_per_byte=0.08254 gbps=12.115 cycles_per_byte=0.3033 core_ghz=3.675 calib_spread_pct=0.17 checksum=0x0005b908bf0a5ca3
+doc name=syn-utf8-64k bytes=65536 blocks=1024 structural=5572 structural_per_block=5.44 vectors=2048 ascii_vectors=25 utf8_word=0 entry_positions=5572
+row cpu=4 doc=syn-utf8-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=7985 p10_ns=7998 median_ns=8014 p90_ns=8039 max_ns=15737 ns_per_byte=0.12228 gbps=8.178 cycles_per_byte=0.4484 core_ghz=3.667 calib_spread_pct=0.01 checksum=0x01a502e35e260a07
+row cpu=4 doc=syn-utf8-64k unit=entry_pos8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=4632 p10_ns=4637 median_ns=4647 p90_ns=4661 max_ns=5892 ns_per_byte=0.07091 gbps=14.103 cycles_per_byte=0.2600 core_ghz=3.667 calib_spread_pct=0.39 checksum=0x7e4cdd981b7bdb23
+row cpu=4 doc=syn-utf8-64k unit=entry_b8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=4037 p10_ns=4057 median_ns=4071 p90_ns=4082 max_ns=6586 ns_per_byte=0.06212 gbps=16.098 cycles_per_byte=0.2272 core_ghz=3.658 calib_spread_pct=0.02 checksum=0x7e4cdd981b7bdb23
+row cpu=4 doc=syn-utf8-64k unit=utf8_gated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=5209 p10_ns=5222 median_ns=5234 p90_ns=5251 max_ns=17351 ns_per_byte=0.07986 gbps=12.521 cycles_per_byte=0.2881 core_ghz=3.607 calib_spread_pct=0.25 checksum=0xe84b45e0d72ae4e8
+row cpu=4 doc=syn-utf8-64k unit=utf8_ungated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=4658 p10_ns=4664 median_ns=4676 p90_ns=4688 max_ns=8283 ns_per_byte=0.07135 gbps=14.015 cycles_per_byte=0.2607 core_ghz=3.653 calib_spread_pct=0.08 checksum=0xe84b45e0d72ae4e8
+trial cpu=4 trial=3/3
+instrument bench=1 reps=51 tsc_ghz=3.302 cpuid_1a=20 cpu=4
+doc name=route-s1-64k bytes=65536 blocks=1024 structural=38136 structural_per_block=37.24 vectors=2048 ascii_vectors=2048 utf8_word=0 entry_positions=38136
+row cpu=4 doc=route-s1-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=7978 p10_ns=7990 median_ns=8010 p90_ns=8052 max_ns=15592 ns_per_byte=0.12222 gbps=8.182 cycles_per_byte=0.4481 core_ghz=3.666 calib_spread_pct=0.33 checksum=0x34269984e5039e51
+row cpu=4 doc=route-s1-64k unit=entry_pos8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=4655 p10_ns=4662 median_ns=4678 p90_ns=4751 max_ns=12281 ns_per_byte=0.07138 gbps=14.009 cycles_per_byte=0.2607 core_ghz=3.653 calib_spread_pct=0.59 checksum=0xf518451f213fcb99
+row cpu=4 doc=route-s1-64k unit=entry_b8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=30046 p10_ns=30118 median_ns=30192 p90_ns=30275 max_ns=63301 ns_per_byte=0.46069 gbps=2.171 cycles_per_byte=1.6913 core_ghz=3.671 calib_spread_pct=0.35 checksum=0xf518451f213fcb99
+row cpu=4 doc=route-s1-64k unit=utf8_gated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=1013 p10_ns=1023 median_ns=1029 p90_ns=1036 max_ns=6448 ns_per_byte=0.01570 gbps=63.689 cycles_per_byte=0.0574 core_ghz=3.655 calib_spread_pct=0.10 checksum=0x386d4ddf683fceb4
+row cpu=4 doc=route-s1-64k unit=utf8_ungated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=4669 p10_ns=4673 median_ns=4684 p90_ns=4702 max_ns=5252 ns_per_byte=0.07147 gbps=13.991 cycles_per_byte=0.2616 core_ghz=3.660 calib_spread_pct=0.13 checksum=0x386d4ddf683fceb4
+doc name=route-u8-64k bytes=65536 blocks=1024 structural=27306 structural_per_block=26.67 vectors=2048 ascii_vectors=0 utf8_word=1 entry_positions=27306
+row cpu=4 doc=route-u8-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=7984 p10_ns=7990 median_ns=8008 p90_ns=8036 max_ns=12111 ns_per_byte=0.12219 gbps=8.184 cycles_per_byte=0.4477 core_ghz=3.664 calib_spread_pct=0.26 checksum=0x2003e2c865c4ff08
+row cpu=4 doc=route-u8-64k unit=entry_pos8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=4690 p10_ns=4693 median_ns=4703 p90_ns=4718 max_ns=21103 ns_per_byte=0.07176 gbps=13.935 cycles_per_byte=0.2628 core_ghz=3.662 calib_spread_pct=0.14 checksum=0x35944bafc3ad1433
+row cpu=4 doc=route-u8-64k unit=entry_b8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=18556 p10_ns=18650 median_ns=18691 p90_ns=18733 max_ns=26393 ns_per_byte=0.28520 gbps=3.506 cycles_per_byte=1.0475 core_ghz=3.673 calib_spread_pct=0.00 checksum=0x35944bafc3ad1433
+row cpu=4 doc=route-u8-64k unit=utf8_gated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=5156 p10_ns=5228 median_ns=5239 p90_ns=5250 max_ns=5263 ns_per_byte=0.07994 gbps=12.509 cycles_per_byte=0.2927 core_ghz=3.662 calib_spread_pct=0.03 checksum=0x8ab33ae23aa63869
+row cpu=4 doc=route-u8-64k unit=utf8_ungated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=4666 p10_ns=4671 median_ns=4691 p90_ns=4713 max_ns=4994 ns_per_byte=0.07158 gbps=13.971 cycles_per_byte=0.2624 core_ghz=3.665 calib_spread_pct=0.50 checksum=0x8ab33ae23aa63869
+doc name=syn-dense-4m bytes=4194304 blocks=65536 structural=2079681 structural_per_block=31.73 vectors=131072 ascii_vectors=131072 utf8_word=0 entry_positions=2079681
+row cpu=4 doc=syn-dense-4m unit=s1_masks bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=524417 p10_ns=532687 median_ns=579459 p90_ns=617814 max_ns=898253 ns_per_byte=0.13815 gbps=7.238 cycles_per_byte=0.5065 core_ghz=3.666 calib_spread_pct=0.24 checksum=0x5c0a644b05c811a9
+row cpu=4 doc=syn-dense-4m unit=entry_pos8 bytes=4194304 touch=524288 blocks=65536 reps=51 min_ns=534616 p10_ns=541429 median_ns=586846 p90_ns=814626 max_ns=1598468 ns_per_byte=0.13991 gbps=7.147 cycles_per_byte=0.5135 core_ghz=3.670 calib_spread_pct=0.12 checksum=0x2b0c722f0e9e8ad2
+row cpu=4 doc=syn-dense-4m unit=entry_b8 bytes=4194304 touch=524288 blocks=65536 reps=51 min_ns=1746433 p10_ns=1753370 median_ns=1765493 p90_ns=1780937 max_ns=1899770 ns_per_byte=0.42093 gbps=2.376 cycles_per_byte=1.5390 core_ghz=3.656 calib_spread_pct=0.28 checksum=0x2b0c722f0e9e8ad2
+row cpu=4 doc=syn-dense-4m unit=utf8_gated bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=131553 p10_ns=133710 median_ns=176137 p90_ns=253055 max_ns=336279 ns_per_byte=0.04199 gbps=23.813 cycles_per_byte=0.1541 core_ghz=3.668 calib_spread_pct=0.17 checksum=0xe3170551b7758eb5
+row cpu=4 doc=syn-dense-4m unit=utf8_ungated bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=336000 p10_ns=336689 median_ns=353724 p90_ns=387326 max_ns=830109 ns_per_byte=0.08433 gbps=11.858 cycles_per_byte=0.3092 core_ghz=3.667 calib_spread_pct=0.21 checksum=0xe3170551b7758eb5
+doc name=syn-dense-64k bytes=65536 blocks=1024 structural=32361 structural_per_block=31.60 vectors=2048 ascii_vectors=2048 utf8_word=0 entry_positions=32361
+row cpu=4 doc=syn-dense-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=7978 p10_ns=7984 median_ns=8006 p90_ns=8027 max_ns=14727 ns_per_byte=0.12216 gbps=8.186 cycles_per_byte=0.4461 core_ghz=3.652 calib_spread_pct=1.00 checksum=0x1f43c566f518b152
+row cpu=4 doc=syn-dense-64k unit=entry_pos8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=4771 p10_ns=4776 median_ns=4791 p90_ns=4984 max_ns=20969 ns_per_byte=0.07310 gbps=13.679 cycles_per_byte=0.2676 core_ghz=3.661 calib_spread_pct=0.37 checksum=0x1a48754ed9e69767
+row cpu=4 doc=syn-dense-64k unit=entry_b8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=24607 p10_ns=24638 median_ns=24682 p90_ns=24738 max_ns=32302 ns_per_byte=0.37662 gbps=2.655 cycles_per_byte=1.3788 core_ghz=3.661 calib_spread_pct=0.19 checksum=0x1a48754ed9e69767
+row cpu=4 doc=syn-dense-64k unit=utf8_gated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=1008 p10_ns=1019 median_ns=1028 p90_ns=1037 max_ns=4602 ns_per_byte=0.01569 gbps=63.751 cycles_per_byte=0.0574 core_ghz=3.661 calib_spread_pct=0.33 checksum=0x442b53e1feb9c0cd
+row cpu=4 doc=syn-dense-64k unit=utf8_ungated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=4651 p10_ns=4659 median_ns=4673 p90_ns=4684 max_ns=10270 ns_per_byte=0.07130 gbps=14.024 cycles_per_byte=0.2598 core_ghz=3.643 calib_spread_pct=0.34 checksum=0x442b53e1feb9c0cd
+doc name=syn-strings-4m bytes=4194304 blocks=65536 structural=301905 structural_per_block=4.61 vectors=131072 ascii_vectors=131072 utf8_word=0 entry_positions=301905
+row cpu=4 doc=syn-strings-4m unit=s1_masks bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=524904 p10_ns=532629 median_ns=548757 p90_ns=567394 max_ns=593180 ns_per_byte=0.13083 gbps=7.643 cycles_per_byte=0.4755 core_ghz=3.635 calib_spread_pct=0.35 checksum=0x7b0f574a31895110
+row cpu=4 doc=syn-strings-4m unit=entry_pos8 bytes=4194304 touch=524288 blocks=65536 reps=51 min_ns=309447 p10_ns=311127 median_ns=315655 p90_ns=327119 max_ns=340367 ns_per_byte=0.07526 gbps=13.288 cycles_per_byte=0.2767 core_ghz=3.677 calib_spread_pct=0.08 checksum=0x56b37ebd0a715ac5
+row cpu=4 doc=syn-strings-4m unit=entry_b8 bytes=4194304 touch=524288 blocks=65536 reps=51 min_ns=282101 p10_ns=282780 median_ns=285211 p90_ns=290606 max_ns=306404 ns_per_byte=0.06800 gbps=14.706 cycles_per_byte=0.2490 core_ghz=3.662 calib_spread_pct=0.20 checksum=0x56b37ebd0a715ac5
+row cpu=4 doc=syn-strings-4m unit=utf8_gated bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=136600 p10_ns=139931 median_ns=158596 p90_ns=204068 max_ns=237635 ns_per_byte=0.03781 gbps=26.446 cycles_per_byte=0.1390 core_ghz=3.675 calib_spread_pct=0.11 checksum=0xb2da6503647a0cc5
+row cpu=4 doc=syn-strings-4m unit=utf8_ungated bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=346218 p10_ns=352087 median_ns=367380 p90_ns=391346 max_ns=413719 ns_per_byte=0.08759 gbps=11.417 cycles_per_byte=0.3219 core_ghz=3.675 calib_spread_pct=0.05 checksum=0xb2da6503647a0cc5
+doc name=syn-strings-64k bytes=65536 blocks=1024 structural=4717 structural_per_block=4.61 vectors=2048 ascii_vectors=2048 utf8_word=0 entry_positions=4717
+row cpu=4 doc=syn-strings-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=7980 p10_ns=7990 median_ns=8012 p90_ns=8033 max_ns=12588 ns_per_byte=0.12225 gbps=8.180 cycles_per_byte=0.4495 core_ghz=3.676 calib_spread_pct=0.04 checksum=0x0efff33f436b558a
+row cpu=4 doc=syn-strings-64k unit=entry_pos8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=4520 p10_ns=4526 median_ns=4539 p90_ns=4554 max_ns=7937 ns_per_byte=0.06926 gbps=14.438 cycles_per_byte=0.2541 core_ghz=3.668 calib_spread_pct=0.04 checksum=0x5b45b3b2a6b5187f
+row cpu=4 doc=syn-strings-64k unit=entry_b8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=3830 p10_ns=3845 median_ns=3857 p90_ns=3869 max_ns=4580 ns_per_byte=0.05885 gbps=16.991 cycles_per_byte=0.2160 core_ghz=3.670 calib_spread_pct=0.42 checksum=0x5b45b3b2a6b5187f
+row cpu=4 doc=syn-strings-64k unit=utf8_gated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=1021 p10_ns=1024 median_ns=1029 p90_ns=1038 max_ns=5852 ns_per_byte=0.01570 gbps=63.689 cycles_per_byte=0.0577 core_ghz=3.672 calib_spread_pct=0.30 checksum=0xf045bbe0ddf23029
+row cpu=4 doc=syn-strings-64k unit=utf8_ungated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=4661 p10_ns=4668 median_ns=4678 p90_ns=4709 max_ns=7782 ns_per_byte=0.07138 gbps=14.009 cycles_per_byte=0.2620 core_ghz=3.670 calib_spread_pct=0.06 checksum=0xf045bbe0ddf23029
+doc name=syn-utf8-4m bytes=4194304 blocks=65536 structural=356743 structural_per_block=5.44 vectors=131072 ascii_vectors=1132 utf8_word=0 entry_positions=356743
+row cpu=4 doc=syn-utf8-4m unit=s1_masks bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=517210 p10_ns=530884 median_ns=559700 p90_ns=597546 max_ns=614678 ns_per_byte=0.13344 gbps=7.494 cycles_per_byte=0.4877 core_ghz=3.655 calib_spread_pct=1.08 checksum=0x7da9c654aa03f95a
+row cpu=4 doc=syn-utf8-4m unit=entry_pos8 bytes=4194304 touch=524288 blocks=65536 reps=51 min_ns=300391 p10_ns=301277 median_ns=308466 p90_ns=326036 max_ns=333417 ns_per_byte=0.07354 gbps=13.597 cycles_per_byte=0.2688 core_ghz=3.655 calib_spread_pct=0.70 checksum=0x29c6c40ba4c8eb45
+row cpu=4 doc=syn-utf8-4m unit=entry_b8 bytes=4194304 touch=524288 blocks=65536 reps=51 min_ns=275072 p10_ns=275678 median_ns=282043 p90_ns=288882 max_ns=303723 ns_per_byte=0.06724 gbps=14.871 cycles_per_byte=0.2436 core_ghz=3.622 calib_spread_pct=0.28 checksum=0x29c6c40ba4c8eb45
+row cpu=4 doc=syn-utf8-4m unit=utf8_gated bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=356876 p10_ns=386930 median_ns=402935 p90_ns=420115 max_ns=441610 ns_per_byte=0.09607 gbps=10.409 cycles_per_byte=0.3523 core_ghz=3.667 calib_spread_pct=0.45 checksum=0x0005b908bf0a5ca3
+row cpu=4 doc=syn-utf8-4m unit=utf8_ungated bytes=4194304 touch=4194304 blocks=65536 reps=51 min_ns=331374 p10_ns=341233 median_ns=358901 p90_ns=376502 max_ns=610372 ns_per_byte=0.08557 gbps=11.687 cycles_per_byte=0.3127 core_ghz=3.654 calib_spread_pct=0.32 checksum=0x0005b908bf0a5ca3
+doc name=syn-utf8-64k bytes=65536 blocks=1024 structural=5572 structural_per_block=5.44 vectors=2048 ascii_vectors=25 utf8_word=0 entry_positions=5572
+row cpu=4 doc=syn-utf8-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=7985 p10_ns=7998 median_ns=8013 p90_ns=8036 max_ns=13103 ns_per_byte=0.12227 gbps=8.179 cycles_per_byte=0.4484 core_ghz=3.667 calib_spread_pct=0.15 checksum=0x01a502e35e260a07
+row cpu=4 doc=syn-utf8-64k unit=entry_pos8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=4630 p10_ns=4639 median_ns=4648 p90_ns=4663 max_ns=4944 ns_per_byte=0.07092 gbps=14.100 cycles_per_byte=0.2597 core_ghz=3.662 calib_spread_pct=0.21 checksum=0x7e4cdd981b7bdb23
+row cpu=4 doc=syn-utf8-64k unit=entry_b8 bytes=65536 touch=8192 blocks=1024 reps=51 min_ns=4038 p10_ns=4051 median_ns=4068 p90_ns=4084 max_ns=5167 ns_per_byte=0.06207 gbps=16.110 cycles_per_byte=0.2275 core_ghz=3.666 calib_spread_pct=0.08 checksum=0x7e4cdd981b7bdb23
+row cpu=4 doc=syn-utf8-64k unit=utf8_gated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=5215 p10_ns=5225 median_ns=5238 p90_ns=5253 max_ns=5551 ns_per_byte=0.07993 gbps=12.512 cycles_per_byte=0.2935 core_ghz=3.672 calib_spread_pct=0.14 checksum=0xe84b45e0d72ae4e8
+row cpu=4 doc=syn-utf8-64k unit=utf8_ungated bytes=65536 touch=65536 blocks=1024 reps=51 min_ns=4659 p10_ns=4667 median_ns=4679 p90_ns=4709 max_ns=15662 ns_per_byte=0.07140 gbps=14.006 cycles_per_byte=0.2616 core_ghz=3.664 calib_spread_pct=0.34 checksum=0xe84b45e0d72ae4e8
+
+CORPUS name=route-s1-64k bytes=65536 blocks=1024 structural_per_block=37.24 ascii_vectors=2048 vectors=2048 utf8_word=0
+CORPUS name=route-u8-64k bytes=65536 blocks=1024 structural_per_block=26.67 ascii_vectors=0 vectors=2048 utf8_word=1
+CORPUS name=syn-dense-4m bytes=4194304 blocks=65536 structural_per_block=31.73 ascii_vectors=131072 vectors=131072 utf8_word=0
+CORPUS name=syn-dense-64k bytes=65536 blocks=1024 structural_per_block=31.60 ascii_vectors=2048 vectors=2048 utf8_word=0
+CORPUS name=syn-strings-4m bytes=4194304 blocks=65536 structural_per_block=4.61 ascii_vectors=131072 vectors=131072 utf8_word=0
+CORPUS name=syn-strings-64k bytes=65536 blocks=1024 structural_per_block=4.61 ascii_vectors=2048 vectors=2048 utf8_word=0
+CORPUS name=syn-utf8-4m bytes=4194304 blocks=65536 structural_per_block=5.44 ascii_vectors=1132 vectors=131072 utf8_word=0
+CORPUS name=syn-utf8-64k bytes=65536 blocks=1024 structural_per_block=5.44 ascii_vectors=25 vectors=2048 utf8_word=0
+SUMMARY cpu doc unit bytes trials gbps gbps_min gbps_max cycles_per_byte rep_spread_pct core_ghz
+0 route-s1-64k s1_masks 65536 3 13.594 11.102 13.659 0.3423 19.91 4.653
+0 route-s1-64k entry_pos8 65536 3 13.757 13.645 13.812 0.3454 1.18 4.732
+0 route-s1-64k entry_b8 65536 3 6.017 5.165 6.026 0.7947 0.69 4.737
+0 route-s1-64k utf8_gated 65536 3 83.168 82.957 96.947 0.0546 12.82 4.631
+0 route-s1-64k utf8_ungated 65536 3 28.694 23.883 28.769 0.1666 29.15 4.621
+0 route-u8-64k s1_masks 65536 3 13.608 11.201 13.656 0.3474 2.46 4.728
+0 route-u8-64k entry_pos8 65536 3 14.054 14.036 14.064 0.3293 1.20 4.622
+0 route-u8-64k entry_b8 65536 3 8.570 8.570 8.576 0.5583 0.76 4.785
+0 route-u8-64k utf8_gated 65536 3 25.600 23.356 25.660 0.1851 28.55 4.717
+0 route-u8-64k utf8_ungated 65536 3 28.744 28.719 28.782 0.1631 28.79 4.689
+0 syn-dense-4m s1_masks 4194304 3 13.853 12.573 13.882 0.3364 13.17 4.611
+0 syn-dense-4m entry_pos8 4194304 3 11.380 11.373 11.838 0.3988 17.86 4.572
+0 syn-dense-4m entry_b8 4194304 3 5.372 5.366 5.494 0.8282 9.72 4.547
+0 syn-dense-4m utf8_gated 4194304 3 54.864 51.077 57.095 0.0837 16.68 4.592
+0 syn-dense-4m utf8_ungated 4194304 3 34.719 31.434 34.849 0.1344 15.46 4.586
+0 syn-dense-64k s1_masks 65536 3 13.659 12.500 13.820 0.3321 14.08 4.590
+0 syn-dense-64k entry_pos8 65536 3 13.739 13.648 14.103 0.3301 1.35 4.639
+0 syn-dense-64k entry_b8 65536 3 6.605 6.322 6.617 0.7182 13.97 4.633
+0 syn-dense-64k utf8_gated 65536 3 88.923 82.957 89.165 0.0525 14.25 4.679
+0 syn-dense-64k utf8_ungated 65536 3 28.706 26.068 28.706 0.1646 16.03 4.680
+0 syn-strings-4m s1_masks 4194304 3 13.844 12.804 14.188 0.3397 13.26 4.702
+0 syn-strings-4m entry_pos8 4194304 3 14.767 14.250 14.874 0.3170 15.58 4.662
+0 syn-strings-4m entry_b8 4194304 3 23.737 22.468 24.633 0.1982 15.68 4.705
+0 syn-strings-4m utf8_gated 4194304 3 54.575 54.260 55.079 0.0839 16.34 4.623
+0 syn-strings-4m utf8_ungated 4194304 3 35.733 32.549 37.185 0.1297 16.67 4.634
+0 syn-strings-64k s1_masks 65536 3 13.768 13.745 13.783 0.3415 21.98 4.707
+0 syn-strings-64k entry_pos8 65536 3 15.114 13.099 15.125 0.3110 0.74 4.539
+0 syn-strings-64k entry_b8 65536 3 30.035 28.019 32.524 0.1477 1.54 4.590
+0 syn-strings-64k utf8_gated 65536 3 96.661 89.165 96.804 0.0488 9.52 4.526
+0 syn-strings-64k utf8_ungated 65536 3 28.706 23.840 28.744 0.1604 28.73 4.525
+0 syn-utf8-4m s1_masks 4194304 3 13.351 12.402 13.722 0.3412 12.02 4.553
+0 syn-utf8-4m entry_pos8 4194304 3 12.914 12.358 13.198 0.3474 15.13 4.487
+0 syn-utf8-4m entry_b8 4194304 3 26.147 23.431 26.640 0.1770 15.89 4.433
+0 syn-utf8-4m utf8_gated 4194304 3 29.440 29.262 30.812 0.1451 14.67 4.441
+0 syn-utf8-4m utf8_ungated 4194304 3 34.181 31.834 34.862 0.1296 19.19 4.433
+0 syn-utf8-64k s1_masks 65536 3 11.264 11.257 13.914 0.3924 18.36 4.527
+0 syn-utf8-64k entry_pos8 65536 3 14.325 13.493 14.770 0.3212 1.25 4.601
+0 syn-utf8-64k entry_b8 65536 3 28.482 26.782 31.001 0.1621 1.23 4.617
+0 syn-utf8-64k utf8_gated 65536 3 25.670 23.314 25.680 0.1864 30.33 4.618
+0 syn-utf8-64k utf8_ungated 65536 3 26.225 26.183 28.782 0.1720 26.97 4.528
+4 route-s1-64k s1_masks 65536 3 8.182 8.181 8.183 0.4481 0.70 3.666
+4 route-s1-64k entry_pos8 65536 3 14.006 13.965 14.009 0.2607 0.64 3.651
+4 route-s1-64k entry_b8 65536 3 2.171 2.130 2.173 1.6913 0.53 3.664
+4 route-s1-64k utf8_gated 65536 3 63.627 62.714 63.689 0.0575 1.46 3.655
+4 route-s1-64k utf8_ungated 65536 3 14.000 13.991 14.003 0.2616 0.60 3.660
+4 route-u8-64k s1_masks 65536 3 8.180 8.156 8.184 0.4478 0.52 3.663
+4 route-u8-64k entry_pos8 65536 3 13.935 13.935 13.965 0.2623 0.60 3.662
+4 route-u8-64k entry_b8 65536 3 3.506 3.496 3.506 1.0469 0.81 3.670
+4 route-u8-64k utf8_gated 65536 3 12.493 12.490 12.509 0.2929 0.53 3.660
+4 route-u8-64k utf8_ungated 65536 3 13.974 13.971 13.977 0.2617 0.90 3.657
+4 syn-dense-4m s1_masks 4194304 3 7.319 7.238 7.421 0.5008 13.19 3.666
+4 syn-dense-4m entry_pos8 4194304 3 7.115 6.928 7.147 0.5161 35.25 3.670
+4 syn-dense-4m entry_b8 4194304 3 2.375 2.368 2.376 1.5455 1.56 3.664
+4 syn-dense-4m utf8_gated 4194304 3 26.320 23.813 30.216 0.1396 83.13 3.668
+4 syn-dense-4m utf8_ungated 4194304 3 11.601 11.334 11.858 0.3162 14.32 3.668
+4 syn-dense-64k s1_masks 65536 3 8.156 8.148 8.186 0.4489 0.54 3.658
+4 syn-dense-64k entry_pos8 65536 3 13.679 13.668 13.693 0.2676 0.60 3.661
+4 syn-dense-64k entry_b8 65536 3 2.658 2.655 2.661 1.3778 0.41 3.661
+4 syn-dense-64k utf8_gated 65536 3 63.751 63.627 63.751 0.0574 1.36 3.661
+4 syn-dense-64k utf8_ungated 65536 3 14.021 13.983 14.024 0.2618 0.53 3.670
+4 syn-strings-4m s1_masks 4194304 3 7.643 7.415 7.724 0.4762 6.34 3.670
+4 syn-strings-4m entry_pos8 4194304 3 13.249 13.244 13.288 0.2767 5.14 3.666
+4 syn-strings-4m entry_b8 4194304 3 14.570 14.497 14.706 0.2515 4.65 3.662
+4 syn-strings-4m utf8_gated 4194304 3 24.287 22.059 26.446 0.1511 51.83 3.670
+4 syn-strings-4m utf8_ungated 4194304 3 11.417 11.288 11.538 0.3219 14.52 3.669
+4 syn-strings-64k s1_masks 65536 3 8.174 8.139 8.180 0.4495 0.54 3.672
+4 syn-strings-64k entry_pos8 65536 3 14.432 14.350 14.438 0.2541 0.68 3.668
+4 syn-strings-64k entry_b8 65536 3 16.991 16.991 16.996 0.2160 0.75 3.670
+4 syn-strings-64k utf8_gated 65536 3 63.689 63.442 63.689 0.0577 1.55 3.672
+4 syn-strings-64k utf8_ungated 65536 3 14.009 13.985 14.054 0.2616 0.62 3.670
+4 syn-utf8-4m s1_masks 4194304 3 7.494 7.283 7.703 0.4877 11.91 3.664
+4 syn-utf8-4m entry_pos8 4194304 3 13.591 13.476 13.597 0.2694 8.03 3.661
+4 syn-utf8-4m entry_b8 4194304 3 15.037 14.871 15.052 0.2429 8.79 3.650
+4 syn-utf8-4m utf8_gated 4194304 3 10.909 10.409 11.167 0.3368 8.24 3.669
+4 syn-utf8-4m utf8_ungated 4194304 3 11.687 11.647 12.115 0.3127 14.53 3.675
+4 syn-utf8-64k s1_masks 65536 3 8.178 8.137 8.179 0.4484 0.51 3.667
+4 syn-utf8-64k entry_pos8 65536 3 14.100 14.100 14.103 0.2600 0.52 3.667
+4 syn-utf8-64k entry_b8 65536 3 16.106 16.098 16.110 0.2275 0.81 3.666
+4 syn-utf8-64k utf8_gated 65536 3 12.519 12.512 12.521 0.2935 0.55 3.672
+4 syn-utf8-64k utf8_ungated 65536 3 14.015 14.006 14.024 0.2616 0.51 3.664
+ok: 240 row(s) measured over 2 CPU(s), 3 trial(s), 51 repetition(s) per row
+ok: every row checksum is stable across its trials, and across both core classes
+ok: entry_pos8 and entry_b8 returned the stream total on every document; the gated and ungated UTF-8 words agree
+note: cycles/byte = median ns/byte x the core clock calibrated immediately before the row; no PMU on this host
