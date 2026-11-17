@@ -2447,6 +2447,7 @@ theorem forInc_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
     ∃ (e : State) (C' : WalkCarry G),
       step calls stage2Body s = .jump e ∧
       WalkInv G C' e ∧
+      C'.stage = C.stage ∧
       C'.block = "for.body.i.i" ∧
       walkMeasure G C' < walkMeasure G C ∧
       ∀ k, runFuel calls (1 + k) stage2Body s = runFuel calls k stage2Body e := by
@@ -2465,7 +2466,7 @@ theorem forInc_step {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
   have hsp : lookupName e.env "%sp.i.0248" = lookupName s.env "%sp.i.0248" := by
     dsimp only [e, State.bind]
     rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
-  refine ⟨e, C', hstep, ?_, rfl, ?_, ?_⟩
+  refine ⟨e, C', hstep, ?_, rfl, rfl, ?_, ?_⟩
   · refine
       { pc_eq := rfl
         blockIndex := by rw [hk]; exact hInv.blockIndex
@@ -2560,6 +2561,7 @@ theorem forInc_arm {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
     ∃ (e : State) (C' : WalkCarry G),
       step calls stage2Body s = .jump e ∧
       WalkInv G C' e ∧
+      C'.stage = C.stage ∧
       C'.block = "for.body.i.i" ∧
       walkMeasure G C' < walkMeasure G C ∧
       ∀ k, runFuel calls (1 + k) stage2Body s = runFuel calls k stage2Body e := by
@@ -5851,6 +5853,12 @@ structure WalkLink (calls : Calls) {m0 : Mem} (G : WalkGeom m0)
   inv' : WalkInv G C' s'
   /-- The measure does not rise across the link. -/
   mono : walkMeasure G C' ≤ walkMeasure G C
+  /-- **The link keeps the adapter's staging.**  A control step moves the carried
+  numbers and the state, never the staging objects: every successor is a
+  `{ C with … }` update, so this is `rfl` at each link site.  It is a field rather
+  than a derived fact because the targets are existential in the dispatch results
+  and the terminal post has to name the scratch objects the caller staged. -/
+  stage_eq : C'.stage = C.stage
 
 /-- **A trace**: a chain of links, from the invariant at its head to the invariant
 at its tail. -/
@@ -5918,7 +5926,7 @@ theorem WalkLink.whileBody {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : Wal
     ∃ s', WalkLink calls G C s { C with block := "NodeBlock21", k := k, sp := sp } s' := by
   obtain ⟨e, hstep, hinv, hmono, -⟩ :=
     whileBody_step (calls := calls) G C s hInv hblock hpre hk2 hsp1 hkge hklt hspc hspw
-  exact ⟨e, ⟨hInv, hstep, hinv, le_of_lt hmono⟩⟩
+  exact ⟨e, ⟨hInv, hstep, hinv, le_of_lt hmono, rfl⟩⟩
 
 /-- **The trace's second proved link: the nesting arm.**  `if.end24.i` writes the
 two container stacks and branches on the log's zeroed hash word, with the measure
@@ -5935,7 +5943,7 @@ theorem WalkLink.ifEnd24 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkC
       stMap := fun i => if i = C.sp then ifEnd24StByte else C.stMap i } s' := by
   obtain ⟨e, hstep, hinv, hmono, -⟩ :=
     ifEnd24_step (b := b) G C s hInv hblock h8 hguard
-  exact ⟨e, ⟨hInv, hstep, hinv, le_of_eq hmono⟩⟩
+  exact ⟨e, ⟨hInv, hstep, hinv, le_of_eq hmono, rfl⟩⟩
 
 
 
@@ -6557,7 +6565,7 @@ theorem WalkLink.icmpBr {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
     simp only [LeanLLVM.step, hpc, hfind, hden, hterm]
     exact walkExecTerm_condbr (d := d) (tl := tl) (fl := fl)
       (bit := evalICmp p x y) (by simp only [stateAt, lookupName_cons_self])
-  refine ⟨s', ⟨hInv, hstep, ?_, ?_⟩⟩
+  refine ⟨s', ⟨hInv, hstep, ?_, ?_, rfl⟩⟩
   · have hnm : B.name = C.block := findBlockList_name hfind
     have hle := walkEmitC_condbr_le (findBlockList_mem hfind) hterm
     have hph : walkEmitC C.block ≤
@@ -6809,7 +6817,7 @@ theorem WalkLink.refusalStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
   have hph : walkEmitC C.block ≤ walkEmitC t := by
     rw [← hnm]
     exact walkEmitC_br_le (findBlockList_mem hfind) (by rw [hnm]; exact hne) hterm
-  refine ⟨s', ⟨hInv, hstep, ?_, ?_⟩⟩
+  refine ⟨s', ⟨hInv, hstep, ?_, ?_, rfl⟩⟩
   · refine
       { pc_eq := rfl
         blockIndex := ?_
@@ -7395,7 +7403,7 @@ theorem WalkLink.condBr {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
   have hstep : LeanLLVM.step calls stage2Body s = Ctrl.jump s' := by
     simp only [LeanLLVM.step, hpc, hfind, hden, hterm]
     exact walkExecTerm_condbr (bit := bit) hd
-  refine ⟨s', ⟨hInv, hstep, ?_, ?_⟩⟩
+  refine ⟨s', ⟨hInv, hstep, ?_, ?_, rfl⟩⟩
   · have hnm : B.name = C.block := findBlockList_name hfind
     have hle := walkEmitC_condbr_le (findBlockList_mem hfind) hterm
     have hph : walkEmitC C.block ≤ walkEmitC (if bit = 1 then tl else fl) := by
@@ -7497,7 +7505,7 @@ theorem WalkLink.br {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
   have hph : walkEmitC C.block ≤ walkEmitC t := by
     rw [← hnm]
     exact walkEmitC_br_le (findBlockList_mem hfind) (by rw [hnm]; exact hne) hterm
-  refine ⟨s', ⟨hInv, hstep, ?_, ?_⟩⟩
+  refine ⟨s', ⟨hInv, hstep, ?_, ?_, rfl⟩⟩
   · refine
       { pc_eq := rfl
         blockIndex := hInv.blockIndex
@@ -7561,9 +7569,9 @@ theorem WalkLink.forInc {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
     (hblock : C.block = "for.inc.i.i") (hguard : ForIncGuard C s) :
     ∃ s' C', WalkLink calls G C s C' s' ∧ C'.block = "for.body.i.i" := by
   obtain ⟨i, c, hinner, hlt, hcw, hi, hc⟩ := hguard
-  obtain ⟨e, C', hstep, hinv, hland, hmeas, -⟩ :=
+  obtain ⟨e, C', hstep, hinv, hstage, hland, hmeas, -⟩ :=
     forInc_step G C s i c hInv hblock hi hc hinner hlt hcw
-  exact ⟨e, C', ⟨hInv, hstep, hinv, le_of_lt hmeas⟩, hland⟩
+  exact ⟨e, C', ⟨hInv, hstep, hinv, le_of_lt hmeas, hstage⟩, hland⟩
 
 /-! ### Class A's sixty instances
 

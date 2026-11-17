@@ -358,7 +358,7 @@ theorem WalkLink.callQuiet {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : S
   have hph : walkEmitC C.block ≤ walkEmitC t := by
     rw [← hnm]
     exact walkEmitC_br_le (findBlockList_mem hfind) (by rw [hnm]; exact hne) hterm
-  refine ⟨s'', ⟨hInv, hstep, ?_, le_of_eq rfl⟩⟩
+  refine ⟨s'', ⟨hInv, hstep, ?_, le_of_eq rfl, rfl⟩⟩
   refine
     { pc_eq := rfl
       blockIndex := ?_
@@ -489,7 +489,7 @@ theorem WalkLink.callQuietBr {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
     by_cases hb : bit = 1
     · rw [if_pos hb]; exact hle.1
     · rw [if_neg hb]; exact hle.2
-  refine ⟨s'', ⟨hInv, hstep, ?_, le_of_eq rfl⟩⟩
+  refine ⟨s'', ⟨hInv, hstep, ?_, le_of_eq rfl, rfl⟩⟩
   refine
     { pc_eq := rfl
       blockIndex := ?_
@@ -632,7 +632,7 @@ theorem WalkLink.callQuietBrPending {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
     by_cases hb : bit = 1
     · rw [if_pos hb]; exact hle.1
     · rw [if_neg hb]; exact hle.2
-  refine ⟨s'', ⟨hInv, hstep, ?_, le_of_eq rfl⟩⟩
+  refine ⟨s'', ⟨hInv, hstep, ?_, le_of_eq rfl, rfl⟩⟩
   refine
     { pc_eq := rfl
       blockIndex := ?_
@@ -2215,7 +2215,7 @@ theorem WalkLink.z_arena_reserve_exit {m0 : Mem} (G : WalkGeom m0) (C : WalkCarr
     have hterm : walkZArenaReserveExit.term = Term.br "NodeBlock31" := rfl
     simp only [LeanLLVM.step, hpc, hfind, hden, hterm, execTerm]
     dsimp only [s', s₁, stateAt]
-  refine ⟨s', ⟨hInv, hstep, ?_, le_of_eq rfl⟩, rfl⟩
+  refine ⟨s', ⟨hInv, hstep, ?_, le_of_eq rfl, rfl⟩, rfl⟩
   have hnm : walkZArenaReserveExit.name = C.block := findBlockList_name hfind
   have hph : walkEmitC C.block ≤ walkEmitC "NodeBlock31" := by
     rw [← hnm]
@@ -2606,7 +2606,7 @@ theorem WalkLink.if_then328_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
       (fl := "if.else334.i") (bit := keyBit)
       (by dsimp only [s₁, envF]; simpa [stateAt, walkSetMem, cells, lookupName] using hkey)]
     dsimp only [s', s₁, envF, walkSetMem, stateAt]
-  refine ⟨s', ⟨hInv, hstep, ?_, le_of_eq rfl⟩, rfl⟩
+  refine ⟨s', ⟨hInv, hstep, ?_, le_of_eq rfl, rfl⟩, rfl⟩
   -- the invariant at the target
   have hEvLen : (C.events.map EventRecord.encodedBytes).flatten.length =
       (C.events.map EventRecord.encodedSize).sum := by

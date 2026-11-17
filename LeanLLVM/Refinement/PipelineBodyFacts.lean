@@ -3352,7 +3352,13 @@ def stage2StagedCaps (S : PipelineLoopCarried) : List (Nat × Nat) :=
    (S.ep, 4 * (64 * pipelineBlocks S.n.toNat + 9)),
    (S.xp, 4 * (S.xn0 + 64 * pipelineBlocks S.n.toNat + 8)),
    (S.dst, S.dstcap.toNat), (S.ev, S.evcap.toNat), (S.ndst, 8), (S.nev, 8),
-   (S.err, 8)]
+   (S.err, 8),
+   -- The caller's two count slots are staged objects too: the loop writes them,
+   -- the stage-2 call must leave them alone, and the tail's transport needs them
+   -- below the cursor the call is made at.  They are `pipelineRegions`' own
+   -- entries, so the seed reads this pair off the same staging bound the eight
+   -- ABI objects come from.
+   (S.nk, 8), (S.nxp, 8)]
 
 /-- **The caps clause follows a successor and a cursor that did not go down.**
 The successors change the counts, the carry state and the environment cells, never

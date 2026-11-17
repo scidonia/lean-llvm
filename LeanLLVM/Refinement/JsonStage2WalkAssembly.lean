@@ -2464,7 +2464,8 @@ theorem WalkDispatch.revolution {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
     { run := fun n => by
         rw [show p + 1 + 1 + n = p + (1 + (1 + n)) from by omega,
           hseg.run (1 + (1 + n)), hrunB (1 + n), hrunH n]
-      inv' := hInvH }
+      inv' := hInvH
+      stage_eq := hseg.stage_eq }
   have hpot' : (p + 1 + 1) + walkPotential G C' ≤ walkPotential G C := by
     have hpotB : p + 2 ≤ stage2EntryAllowance * (k2 - C.k) +
         stage2ByteAllowance * (boundary G k2 - boundary G C.k) := by

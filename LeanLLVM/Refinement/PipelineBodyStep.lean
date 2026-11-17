@@ -7974,7 +7974,7 @@ theorem seedCarried_caps {base tab : Nat} {args : List Value}
   intro r hr
   simp only [stage2StagedCaps, seedCarried, List.mem_cons, List.not_mem_nil,
     or_false] at hr
-  rcases hr with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
+  rcases hr with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
   · -- the document, covered by the read-past tail's entry
     have h := hbnd (base + 64 * pipelineBlocks n.toNat, 32) (by simp [pipelineRegions])
     rw [← hblocks] at h
@@ -7988,6 +7988,8 @@ theorem seedCarried_caps {base tab : Nat} {args : List Value}
   · exact hbnd (ndst, 8) (by simp [pipelineRegions])
   · exact hbnd (nev, 8) (by simp [pipelineRegions])
   · exact hbnd (err, 8) (by simp [pipelineRegions])
+  · exact hbnd (nk, 8) (by simp [pipelineRegions])
+  · exact hbnd (nxp, 8) (by simp [pipelineRegions])
 
 /-- **The seed, at the call environment's table.**  Three control steps take
 the entry state to the loop's first iteration: the entry length test is false

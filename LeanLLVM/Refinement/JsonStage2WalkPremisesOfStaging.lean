@@ -971,15 +971,33 @@ at the merge's and the copy's tests, and the boundary is read at the memory each
 returns (`JsonStage2WalkTargetPost`).  This is why the post cannot be a fixed verdict at
 a fixed memory, and why the terminal vocabulary had to carry both. -/
 
+/-- **A fixed post carries from one outcome to every behaviour**, as
+`stage2Post_of_completion` does for the existential one. -/
+theorem Stage2PostFixed_of_completion {calls : Calls} {args : List Value} {mem : Mem}
+    {next : Nat} {sE : State} {B : Nat} {oGood : Outcome}
+    {c ctype cst tok s z e d : Nat}
+    (hcom : runFuel calls B stage2Body sE = some oGood)
+    (hgood : Stage2PostFixed c ctype cst tok s z e d args mem next oGood) :
+    ∀ o, BehFromState calls stage2Body sE o →
+      Stage2PostFixed c ctype cst tok s z e d args mem next o := by
+  intro o hbeh
+  rcases hbeh with ⟨n, hn⟩ | ⟨n, hn⟩
+  · have hEq : oGood = Outcome.ub := (runFuel_outcome_unique hn hcom).symm
+    rw [hEq] at hgood
+    exact hgood.elim
+  · have hEq := runFuel_outcome_unique hn hcom
+    rw [hEq]
+    exact hgood
+
 /-- **The loop's post, at the staging.**  At `nep > 0` the entry block's test sends the
 run into the loop; the seed's three steps (`walkSeedPrefix_entry_geometry`), the invariant
 at the loop head (`walkSeedInvariant_geometry`), the loop's step and its completion
 (`walkLoopFinishesThree` at `F ≤ 27`) give the returned verdict and memory, and the
 boundary at that memory is the post. -/
-theorem stage2Post_of_staging_loop {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
+theorem stage2PostFixed_of_staging_loop {d c ctype cst tok s z e : Nat}
     {a13 : List Value} {mem : Mem} {next : Nat} {G : WalkGeom mem} {S : WalkStage G}
     (hSc : S.c = c) (hSct : S.ctype = ctype) (hScs : S.cst = cst) (hStok : S.tok = tok)
-    (hSs : S.s = s) (hSz : S.z = z) (hSe : S.e = e)
+    (hSs : S.s = s) (hSz : S.z = z) (hSe : S.e = e) (hSd : S.d = d)
     (hargs : a13 = [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
       .int 64 (BitVec.ofNat 64 G.nep), .ptr G.xp, .int 64 (BitVec.ofNat 64 G.nxp),
       .ptr G.dst, .int 64 (BitVec.ofNat 64 G.dstcap), .ptr G.ndst, .ptr G.ev,
@@ -988,8 +1006,7 @@ theorem stage2Post_of_staging_loop {d c ctype cst tok s z e nkSlot nxpSlot : Nat
     (hloop : WalkLoopStepThree (stage2Calls stage2SubCalls) G F) :
     ∀ o, BehFromState (stage2Calls stage2SubCalls) stage2Body
         (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next) o →
-      (Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot).post
-        (stage2Args a13 d c ctype cst tok s z e) mem next o := by
+      Stage2PostFixed c ctype cst tok s z e d a13 mem next o := by
   -- the seed's three steps, and the invariant at the loop head
   have hseed : ∀ k, runFuel (stage2Calls stage2SubCalls) (3 + k) stage2Body
       (EntryState stage2Body (stage2Args a13 d S.c S.ctype S.cst S.tok S.s S.z S.e)
@@ -1052,14 +1069,55 @@ theorem stage2Post_of_staging_loop {d c ctype cst tok s z e nkSlot nxpSlot : Nat
       some (.ret (some (.int 64 v)) m) := by
     rw [← hstate, hseed (q + 2)]
     exact hrun
-  have hgood : stage2Post a13 mem next (.ret (some (.int 64 v)) m) := by
-    show stage2Boundary a13 mem next m (.int 64 v)
-    rw [hargs, ← hnext]
-    exact hb
+  have hgood : Stage2PostFixed c ctype cst tok s z e d a13 mem next
+      (.ret (some (.int 64 v)) m) := by
+    -- the boundary is at the staging `S`; the record's numbers are `hSc`…`hSd`
+    have hbS : Stage2BoundaryAtN S.c S.ctype S.cst S.tok S.s S.z S.e S.d
+        (walkTargetArgs G) mem next m (.int 64 v) := by
+      rw [← hnext]
+      exact hb
+    rw [hSc, hSct, hScs, hStok, hSs, hSz, hSe, hSd] at hbS
+    have hbN : Stage2BoundaryAtN c ctype cst tok s z e d a13 mem next m (.int 64 v) := by
+      simpa [walkTargetArgs, hargs] using hbS
+    exact hbN
   intro o hb'
+  exact Stage2PostFixed_of_completion hcom hgood o hb'
+
+/-- **The loop's post, at the record's existential boundary**, projected from the
+fixed form.  This is the statement `Γ_stage2at`'s post is, and it is derived so
+the two forms cannot drift. -/
+theorem stage2Post_of_staging_loop {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
+    {a13 : List Value} {mem : Mem} {next : Nat} {G : WalkGeom mem} {S : WalkStage G}
+    (hSc : S.c = c) (hSct : S.ctype = ctype) (hScs : S.cst = cst) (hStok : S.tok = tok)
+    (hSs : S.s = s) (hSz : S.z = z) (hSe : S.e = e) (hSd : S.d = d)
+    (hargs : a13 = [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
+      .int 64 (BitVec.ofNat 64 G.nep), .ptr G.xp, .int 64 (BitVec.ofNat 64 G.nxp),
+      .ptr G.dst, .int 64 (BitVec.ofNat 64 G.dstcap), .ptr G.ndst, .ptr G.ev,
+      .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err])
+    (hnext : G.next0 = next) (hpos : 0 < G.nep) {F : Nat}
+    (hloop : WalkLoopStepThree (stage2Calls stage2SubCalls) G F) :
+    ∀ o, BehFromState (stage2Calls stage2SubCalls) stage2Body
+        (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next) o →
+      (Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot).post
+        (stage2Args a13 d c ctype cst tok s z e) mem next o := by
+  intro o hb
+  have hlen : a13.length = 13 := by rw [hargs]; rfl
   show stage2Post ((stage2Args a13 d c ctype cst tok s z e).take 13) mem next o
-  rw [stage2Args_take13 a13 (by rw [hargs]; rfl)]
-  exact stage2Post_of_completion hcom hgood o hb'
+  rw [stage2Args_take13 a13 hlen]
+  cases o with
+  | ub =>
+      exact stage2PostFixed_of_staging_loop hSc hSct hScs hStok hSs hSz hSe hSd hargs
+        hnext hpos hloop .ub hb
+  | ret v m =>
+      cases v with
+      | none =>
+          exact stage2PostFixed_of_staging_loop hSc hSct hScs hStok hSs hSz hSe hSd hargs
+            hnext hpos hloop (.ret none m) hb
+      | some v =>
+          obtain ⟨w, hw, -⟩ :=
+            stage2PostFixed_of_staging_loop hSc hSct hScs hStok hSs hSz hSe hSd hargs
+              hnext hpos hloop (.ret (some v) m) hb
+          exact stage2Boundary_of_witness hw
 
 /-! ### The completion and the walk's obligation
 

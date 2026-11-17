@@ -249,7 +249,7 @@ theorem WalkLink.store8Stack {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
     rw [hlen]; omega
   have hsz := cst_log_sep hInv
   have hsev := cst_ev_sep hInv
-  refine ⟨s', ⟨hInv, hstep, ?_, ?_⟩⟩
+  refine ⟨s', ⟨hInv, hstep, ?_, ?_, rfl⟩⟩
   · refine
       { pc_eq := rfl
         blockIndex := hInv.blockIndex
@@ -550,7 +550,7 @@ theorem WalkLink.hashStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
     have h2 := hInv.k_le; have h3 := G.nep_le
     rw [hlen]; omega
   have hzev := walkLog_ev_sep hInv
-  refine ⟨s', ⟨hInv, hstep, ?_, ?_⟩⟩
+  refine ⟨s', ⟨hInv, hstep, ?_, ?_, rfl⟩⟩
   · refine
       { pc_eq := rfl
         blockIndex := ?_
@@ -904,7 +904,7 @@ theorem WalkLink.outReserveStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
       exact List.mem_append_left _ (List.mem_cons_of_mem _ (List.mem_cons_self ..))
     exact ⟨(G.ev, C.evlen + 1), mem_walkWideAt_present hm, by omega,
       by rw [htaglen]; omega⟩
-  refine ⟨s', ⟨hInv, hstep, ?_, ?_⟩⟩
+  refine ⟨s', ⟨hInv, hstep, ?_, ?_, rfl⟩⟩
   · refine
       { pc_eq := rfl
         blockIndex := ?_
@@ -1289,7 +1289,7 @@ theorem WalkLink.if_else285_i {calls : Calls} {m0 : Mem}
     have h2 := hInv.k_le; have h3 := G.nep_le
     rw [hlen]; omega
   have hzev := walkLog_ev_sep hInv
-  refine ⟨s', ⟨hInv, hstep, ?_, le_of_eq rfl⟩⟩
+  refine ⟨s', ⟨hInv, hstep, ?_, le_of_eq rfl, rfl⟩⟩
   refine
     { pc_eq := rfl
       blockIndex := ?_
@@ -1593,7 +1593,7 @@ theorem WalkLink.if_then330_i {calls : Calls} {m0 : Mem}
     rw [hlen']; omega
   have hsz := cst_log_sep hInv
   have hsev := cst_ev_sep hInv
-  refine ⟨s', ⟨hInv, hstep, ?_, ?_⟩⟩
+  refine ⟨s', ⟨hInv, hstep, ?_, ?_, rfl⟩⟩
   · refine
       { pc_eq := rfl
         blockIndex := ?_
@@ -1892,7 +1892,7 @@ theorem WalkLink.if_end207_i {calls : Calls} {m0 : Mem}
   have hcz := cursor_log_sep hInv
   have hcev := walkCursor_ev_sep hInv
   have hwlen : (wordBytes 8 (C.k + 2)).length = 8 := natToBytes_length _ _
-  refine ⟨s', ⟨hInv, hstep, ?_, ?_⟩, ?_⟩
+  refine ⟨s', ⟨hInv, hstep, ?_, ?_, rfl⟩, ?_⟩
   · refine
       { pc_eq := rfl
         blockIndex := ?_

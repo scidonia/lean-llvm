@@ -169,6 +169,78 @@ objects' sub-extents. -/
 def DisjointRegions (rs : List (Nat × Nat)) : Prop :=
   rs.Pairwise fun r s => r.1 + r.2 ≤ s.1 ∨ s.1 + s.2 ≤ r.1
 
+/-! ### The stage-2 walk's work space
+
+The flattened stage-2 body takes eight appended objects (`stage2StagingArgs`): the
+seven the walk writes and `%d.i`.  In the emitted code they are the body's stack
+slots; the model has no stack allocation, so the caller stages them, exactly as
+`JsonStage2Contract.stage2StagedPre` requires.  They live at fixed offsets above
+the POS8 table, whose base `pipelineCalls` already carries, so the concrete
+stage-2 selection can be built from `tab` and the callee's frame can be read at
+the same addresses. -/
+
+/-- The workspace's base: immediately above the 8 KiB entry table. -/
+def stage2WorkBase (tab : Nat) : Nat := tab + 8192
+
+/-- `%d.i`'s slot. -/
+def stage2WorkD (tab : Nat) : Nat := stage2WorkBase tab
+
+/-- The cursor record `%c.i`. -/
+def stage2WorkC (tab : Nat) : Nat := stage2WorkBase tab + 8
+
+/-- The type stack `%ctype.i`. -/
+def stage2WorkCtype (tab : Nat) : Nat := stage2WorkBase tab + 1200
+
+/-- The state stack `%cst.i`. -/
+def stage2WorkCst (tab : Nat) : Nat := stage2WorkBase tab + 1720
+
+/-- The token `%t352.i`. -/
+def stage2WorkTok (tab : Nat) : Nat := stage2WorkBase tab + 2240
+
+/-- The decoder state `%s`. -/
+def stage2WorkS (tab : Nat) : Nat := stage2WorkBase tab + 2264
+
+/-- The log `%z`. -/
+def stage2WorkZ (tab : Nat) : Nat := stage2WorkBase tab + 2384
+
+/-- The refusal record `%e`. -/
+def stage2WorkE (tab : Nat) : Nat := stage2WorkBase tab + 2448
+
+/-- The eight appended arguments, in `stage2StagingArgs`' order. -/
+def stage2WorkArgs (tab : Nat) : List Value :=
+  [.ptr (stage2WorkD tab), .ptr (stage2WorkC tab), .ptr (stage2WorkCtype tab),
+   .ptr (stage2WorkCst tab), .ptr (stage2WorkTok tab), .ptr (stage2WorkS tab),
+   .ptr (stage2WorkZ tab), .ptr (stage2WorkE tab)]
+
+/-- The workspace's extents: `%d.i`'s eight bytes and the seven staged objects. -/
+def stage2WorkExtents (tab : Nat) : List (Nat × Nat) :=
+  [(stage2WorkD tab, 8), (stage2WorkC tab, stage2CursorExtent),
+   (stage2WorkCtype tab, stage2StackExtent), (stage2WorkCst tab, stage2StackExtent),
+   (stage2WorkTok tab, stage2TokenExtent), (stage2WorkS tab, stage2StateExtent),
+   (stage2WorkZ tab, stage2LogExtent), (stage2WorkE tab, stage2ErrorExtent)]
+
+/-- **The stage-2 work space, staged beside the caller's objects.**  The workspace
+is present at its extents, separate from every object `pipelineRegions` names —
+which includes the caller's `%nk` and `%nxp` — and ends at or below the cursor the
+call is made at.  The first clause is the caller's promise (the eight objects are
+the callee's frame, which the model cannot allocate) and the last is
+`stage2StagedPre`'s watermark; the separation is what lets the stage-2 record's
+frame be read, after the call, as silence over the caller's count slots.
+
+The witness set is `pipelineRegions`' own, so the predicate is stated at the
+argument list the caller passes and the staging it has already promised. -/
+def pipelineStage2Workspace (tab base : Nat) (args : List Value) (mem : Mem)
+    (next : Nat) : Prop :=
+  ∃ (n : BitVec 64) (sc mk entw ep nk xp nxp xcarry dst ndst ev nev err nxp0 : Nat)
+      (epcap xpcap dstcap evcap arm : BitVec 64),
+    args = [.ptr base, .int 64 n, .ptr sc, .ptr mk, .ptr entw, .ptr ep,
+      .int 64 epcap, .ptr nk, .ptr xp, .int 64 xpcap, .ptr nxp, .ptr xcarry,
+      .ptr dst, .int 64 dstcap, .ptr ndst, .ptr ev, .int 64 evcap, .ptr nev,
+      .ptr err, .int 64 arm] ∧
+    (∀ r ∈ stage2WorkExtents tab, HasBytes mem r.1 r.2) ∧
+    DisjointRegions (pipelineRegions base tab 0 nxp0 args ++ stage2WorkExtents tab) ∧
+    (∀ r ∈ stage2WorkExtents tab, r.1 + r.2 ≤ next)
+
 /-! ### The caller's objects and its allocator cursor
 
 `pipelineStaging` is a predicate of the memory: it says which bytes the caller

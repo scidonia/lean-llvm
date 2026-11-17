@@ -1268,7 +1268,7 @@ theorem WalkLink.if_end372_i {calls : Calls} {m0 : Mem}
         evalICmp .ult (b8 + BitVec.ofNat 8 208) (BitVec.ofNat 8 10))
       (by exact walkLookup_cons_self "%or.cond677.i" (.int 1 (evalICmp .eq b8 (BitVec.ofNat 8 45) ||| evalICmp .ult (b8 + BitVec.ofNat 8 208) (BitVec.ofNat 8 10))) (("%or.cond524.i", .int 1 (evalICmp .ult (b8 + BitVec.ofNat 8 208) (BitVec.ofNat 8 10))) :: ("%37", .int 8 (b8 + BitVec.ofNat 8 208)) :: ("%cmp376.i", .int 1 (evalICmp .eq b8 (BitVec.ofNat 8 45))) :: ("%ee.1.i", .int 64 e) :: s.env))]
     dsimp only [s', sFin, m', stateAt]
-  refine ⟨s', ⟨hInv, hstep, ?_, ?_⟩⟩
+  refine ⟨s', ⟨hInv, hstep, ?_, ?_, rfl⟩⟩
   refine
     { pc_eq := rfl
       blockIndex := ?_
@@ -1502,7 +1502,7 @@ theorem WalkLink.if_then57_i {calls : Calls} {m0 : Mem}
   have hstep : LeanLLVM.step calls stage2Body s = Ctrl.jump s' := by
     simp only [LeanLLVM.step, hfind', hden, hterm, execTerm]
     dsimp only [s', sFin, m', stateAt]
-  refine ⟨s', ⟨hInv, hstep, ?_, ?_⟩⟩
+  refine ⟨s', ⟨hInv, hstep, ?_, ?_, rfl⟩⟩
   refine
     { pc_eq := rfl
       blockIndex := ?_
@@ -1726,7 +1726,7 @@ theorem WalkLink.while_end78_i {calls : Calls} {m0 : Mem}
   have hstep : LeanLLVM.step calls stage2Body s = Ctrl.jump s' := by
     simp only [LeanLLVM.step, hfind', hden, hterm, execTerm]
     dsimp only [s', sFin, m', stateAt]
-  refine ⟨s', ⟨hInv, hstep, ?_, ?_⟩⟩
+  refine ⟨s', ⟨hInv, hstep, ?_, ?_, rfl⟩⟩
   refine
     { pc_eq := rfl
       blockIndex := ?_

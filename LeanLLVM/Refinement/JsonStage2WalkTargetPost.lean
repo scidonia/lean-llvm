@@ -701,10 +701,10 @@ as the log's words — the arena's slot reports the word the copy loaded (`a`, t
 cursor cell) and the reserved extent is the carry's — the two prefixes read back, the
 refusal slot as the caller staged it, presence and the frame at the record's lists, and
 the staging. -/
-theorem stage2Boundary_of_accept {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) {s : State}
+theorem stage2BoundaryAt_of_accept {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) {s : State}
     (hInv : WalkInv G C s) {a : Nat}
     (hge : G.ndst0 ≤ a) (hle : a ≤ C.alen) :
-    stage2Boundary (walkFinishArgs G) m0 G.next0
+    Stage2BoundaryAt G C.stage (walkFinishArgs G) m0 G.next0
       (walkFinishMemAccept G s.mem a C.evlen) (.int 64 1) := by
   obtain ⟨hndnev, hnderr, hnverr, -, -, -⟩ := walkFinish_sep G C
   have halen := hInv.alen_le
@@ -750,8 +750,7 @@ theorem stage2Boundary_of_accept {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) 
       C.stage.s C.stage.z C.stage.e, r.1 + r.2 ≤ C.stage.d ∨ C.stage.d + 8 ≤ r.1 :=
     C.stage.dSep
   obtain ⟨nendT, hnendT, hframeT⟩ := hframeT
-  refine stage2Boundary_of_witness
-    (w :=
+  refine ⟨
       { b := G.b, n := G.n, ep := G.ep, nep := G.nep, xp := G.xp, nxp := G.nxp,
         dst := G.dst, dstcap := G.dstcap, ndst := G.ndst, ev := G.ev,
         evcap := G.evcap, nev := G.nev, err := G.err, verdict := 1,
@@ -760,8 +759,7 @@ theorem stage2Boundary_of_accept {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) 
         ctype := C.stage.ctype,
         cst := C.stage.cst, tok := C.stage.tok, s := C.stage.s, z := C.stage.z,
         e := C.stage.e, d := C.stage.d, nkSlot := C.stage.nkSlot,
-        nxpSlot := C.stage.nxpSlot, nextEnd := nendT })
-    (h :=
+        nxpSlot := C.stage.nxpSlot, nextEnd := nendT },
       { args_eq := rfl, value_eq := rfl, verdict_range := Or.inr rfl,
         ndst0_read := G.ndstRead, nev0_read := G.nevRead,
         ndstU_read := walkFinishMemAccept_ndst (a := a) (l := C.evlen) G hndnev,
@@ -771,15 +769,26 @@ theorem stage2Boundary_of_accept {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) 
         nep_lt := hnep64, nxp_lt := G.nxpLt, reserve := hres,
         arena_read := hArenaRead, evs_read := hEvRead, refuse_word := hRefuse0,
         accept_word := hAccept1, present := hpresentT, next_le := hnendT,
-        frame := hframeT, staged := hsep24, dSep := hsep25 })
+        frame := hframeT, staged := hsep24, dSep := hsep25 },
+      rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+/-- **The record's boundary at R1's returned memory**, projected from the fixed
+form: the same existential, with its witnesses no longer named. -/
+theorem stage2Boundary_of_accept {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) {s : State}
+    (hInv : WalkInv G C s) {a : Nat}
+    (hge : G.ndst0 ≤ a) (hle : a ≤ C.alen) :
+    stage2Boundary (walkFinishArgs G) m0 G.next0
+      (walkFinishMemAccept G s.mem a C.evlen) (.int 64 1) := by
+  obtain ⟨w, hw, -⟩ := stage2BoundaryAt_of_accept G C hInv hge hle
+  exact stage2Boundary_of_witness hw
 
 /-- **The record's boundary at R0's returned memory.**  The copy's three stores over the
 state's own memory: verdict `0`, the two cursors as the log's words, the refusal word `e`
 bounded by the document, presence, the frame, and the staging. -/
-theorem stage2Boundary_of_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) {s : State}
+theorem stage2BoundaryAt_of_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) {s : State}
     (hInv : WalkInv G C s) {a e : Nat} (hge : G.ndst0 ≤ a) (hle : a ≤ C.alen)
     (he : e ≤ G.n) :
-    stage2Boundary (walkFinishArgs G) m0 G.next0
+    Stage2BoundaryAt G C.stage (walkFinishArgs G) m0 G.next0
       (walkFinishMemRefuse G s.mem a C.evlen e) (.int 64 0) := by
   obtain ⟨hndnev, hnderr, hnverr, -, -, -⟩ := walkFinish_sep G C
   have halen := hInv.alen_le
@@ -827,8 +836,7 @@ theorem stage2Boundary_of_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) 
       C.stage.s C.stage.z C.stage.e, r.1 + r.2 ≤ C.stage.d ∨ C.stage.d + 8 ≤ r.1 :=
     C.stage.dSep
   obtain ⟨nendT, hnendT, hframeT⟩ := hframeT
-  refine stage2Boundary_of_witness
-    (w :=
+  refine ⟨
       { b := G.b, n := G.n, ep := G.ep, nep := G.nep, xp := G.xp, nxp := G.nxp,
         dst := G.dst, dstcap := G.dstcap, ndst := G.ndst, ev := G.ev,
         evcap := G.evcap, nev := G.nev, err := G.err, verdict := 0,
@@ -837,8 +845,7 @@ theorem stage2Boundary_of_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) 
         arena := arena, evs := evs, c := C.stage.c, ctype := C.stage.ctype,
         cst := C.stage.cst, tok := C.stage.tok, s := C.stage.s, z := C.stage.z,
         e := C.stage.e, d := C.stage.d, nkSlot := C.stage.nkSlot,
-        nxpSlot := C.stage.nxpSlot, nextEnd := nendT })
-    (h :=
+        nxpSlot := C.stage.nxpSlot, nextEnd := nendT },
       { args_eq := rfl, value_eq := rfl, verdict_range := Or.inl rfl,
         ndst0_read := G.ndstRead, nev0_read := G.nevRead,
         ndstU_read := walkFinishMemRefuse_ndst (a := a) (l := C.evlen) G hndnev hnderr,
@@ -849,16 +856,27 @@ theorem stage2Boundary_of_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) 
         nep_lt := hnep64, nxp_lt := G.nxpLt, reserve := hres,
         arena_read := hArenaRead, evs_read := hEvRead, refuse_word := hRefuse0,
         accept_word := hAccept1, present := hpresentT, next_le := hnendT,
-        frame := hframeT, staged := hsep24, dSep := hsep25 })
+        frame := hframeT, staged := hsep24, dSep := hsep25 },
+      rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+/-- **The record's boundary at R0's returned memory**, projected from the fixed
+form. -/
+theorem stage2Boundary_of_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) {s : State}
+    (hInv : WalkInv G C s) {a e : Nat} (hge : G.ndst0 ≤ a) (hle : a ≤ C.alen)
+    (he : e ≤ G.n) :
+    stage2Boundary (walkFinishArgs G) m0 G.next0
+      (walkFinishMemRefuse G s.mem a C.evlen e) (.int 64 0) := by
+  obtain ⟨w, hw, -⟩ := stage2BoundaryAt_of_refuse G C hInv hge hle he
+  exact stage2Boundary_of_witness hw
 
 /-- **The record's boundary at the merge refusal routes' returned memory.**  The offset
 store at `%e + 8` and then the copy's three: the same 25 conjuncts, at the memory whose
 base is `walkFinishMemOffset`.  The two facts the shifted base costs are the offset
 store's own (presence monotone, and the frame's scratch entry). -/
-theorem stage2Boundary_of_refuse_offset {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+theorem stage2BoundaryAt_of_refuse_offset {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
     {s : State} (hInv : WalkInv G C s) {v a e : Nat} (hge : G.ndst0 ≤ a)
     (hle : a ≤ C.alen) (he : e ≤ G.n) :
-    stage2Boundary (walkFinishArgs G) m0 G.next0
+    Stage2BoundaryAt G C.stage (walkFinishArgs G) m0 G.next0
       (walkFinishMemRefuse G (walkFinishMemOffset C.stage.e v s.mem) a C.evlen e)
       (.int 64 0) := by
   obtain ⟨hndnev, hnderr, hnverr, -, -, -⟩ := walkFinish_sep G C
@@ -915,8 +933,7 @@ theorem stage2Boundary_of_refuse_offset {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
       C.stage.s C.stage.z C.stage.e, r.1 + r.2 ≤ C.stage.d ∨ C.stage.d + 8 ≤ r.1 :=
     C.stage.dSep
   obtain ⟨nendT, hnendT, hframeT⟩ := hframeT
-  refine stage2Boundary_of_witness
-    (w :=
+  refine ⟨
       { b := G.b, n := G.n, ep := G.ep, nep := G.nep, xp := G.xp, nxp := G.nxp,
         dst := G.dst, dstcap := G.dstcap, ndst := G.ndst, ev := G.ev,
         evcap := G.evcap, nev := G.nev, err := G.err, verdict := 0,
@@ -925,8 +942,7 @@ theorem stage2Boundary_of_refuse_offset {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
         arena := arena, evs := evs, c := C.stage.c, ctype := C.stage.ctype,
         cst := C.stage.cst, tok := C.stage.tok, s := C.stage.s, z := C.stage.z,
         e := C.stage.e, d := C.stage.d, nkSlot := C.stage.nkSlot,
-        nxpSlot := C.stage.nxpSlot, nextEnd := nendT })
-    (h :=
+        nxpSlot := C.stage.nxpSlot, nextEnd := nendT },
       { args_eq := rfl, value_eq := rfl, verdict_range := Or.inl rfl,
         ndst0_read := G.ndstRead, nev0_read := G.nevRead,
         ndstU_read := walkFinishMemRefuse_ndst (a := a) (l := C.evlen) G hndnev hnderr,
@@ -937,7 +953,19 @@ theorem stage2Boundary_of_refuse_offset {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
         nep_lt := hnep64, nxp_lt := G.nxpLt, reserve := hres,
         arena_read := hArenaRead, evs_read := hEvRead, refuse_word := hRefuse0,
         accept_word := hAccept1, present := hpresentT, next_le := hnendT,
-        frame := hframeT, staged := hsep24, dSep := hsep25 })
+        frame := hframeT, staged := hsep24, dSep := hsep25 },
+      rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+/-- **The record's boundary at the merge refusal routes' returned memory**,
+projected from the fixed form. -/
+theorem stage2Boundary_of_refuse_offset {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    {s : State} (hInv : WalkInv G C s) {v a e : Nat} (hge : G.ndst0 ≤ a)
+    (hle : a ≤ C.alen) (he : e ≤ G.n) :
+    stage2Boundary (walkFinishArgs G) m0 G.next0
+      (walkFinishMemRefuse G (walkFinishMemOffset C.stage.e v s.mem) a C.evlen e)
+      (.int 64 0) := by
+  obtain ⟨w, hw, -⟩ := stage2BoundaryAt_of_refuse_offset G C hInv hge hle he
+  exact stage2Boundary_of_witness hw
 
 /-! ### R1: the accept route
 
@@ -975,7 +1003,7 @@ theorem walkFinishPost_accept {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
     ∃ (q : Nat) (v : BitVec 64) (m : Mem), q + 2 ≤ 27 ∧
       runFuel (stage2Calls stage2SubCalls) (q + 2) stage2Body s =
         some (.ret (some (.int 64 v)) m) ∧
-      stage2Boundary (walkFinishArgs G) m0 G.next0 m (.int 64 v) := by
+      Stage2BoundaryAt G C.stage (walkFinishArgs G) m0 G.next0 m (.int 64 v) := by
   have henv0 : WalkFinalEnv G C s.env := henv
   obtain ⟨he, hz, hs, hc, hnd, hnv, her⟩ := henv0
   -- the merge's step
@@ -1117,7 +1145,7 @@ theorem walkFinishPost_accept {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
     dsimp only [s₅, s₄]
     rw [stateAt_mem, walkExitBlockState_mem, walkFinishMemAccept, hAtoNat, hLtoNat, hsm₃]
   refine ⟨3, 1, walkFinishMemAccept G s.mem a C.evlen, by omega, ?_,
-    stage2Boundary_of_accept G C hInv hge hle⟩
+    stage2BoundaryAt_of_accept G C hInv hge hle⟩
   rw [show (3 + 2 : Nat) = 1 + (1 + (1 + (1 + (1 + 0)))) from by omega]
   rw [runFuel_jump_prefix (f := stage2Body) hstep₁ (1 + (1 + (1 + (1 + 0))))]
   rw [runFuel_jump_prefix (f := stage2Body) hstep₂ (1 + (1 + (1 + 0)))]
@@ -1245,7 +1273,7 @@ theorem walkFinishPost_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
     ∃ (q : Nat) (v : BitVec 64) (m : Mem), q + 2 ≤ 27 ∧
       runFuel (stage2Calls stage2SubCalls) (q + 2) stage2Body s =
         some (.ret (some (.int 64 v)) m) ∧
-      stage2Boundary (walkFinishArgs G) m0 G.next0 m (.int 64 v) := by
+      Stage2BoundaryAt G C.stage (walkFinishArgs G) m0 G.next0 m (.int 64 v) := by
   have hn64 : G.n < 2 ^ 64 := by
     have h := G.maxDoc
     simp only [stage2MaxDocument] at h
@@ -1404,7 +1432,7 @@ theorem walkFinishPost_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
   · rw [hmem₄]
     rw [show (BitVec.ofNat 64 G.n).toNat = G.n from by
       rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hn64]]
-    exact stage2Boundary_of_refuse_offset G C hInv hge hle (Nat.le_refl G.n)
+    exact stage2BoundaryAt_of_refuse_offset G C hInv hge hle (Nat.le_refl G.n)
 
 /-- **R3: the refusal from the merge through `if.then488.i`.**  The depth's non-zero arm
 takes the refusal copy without the root-done test, so the route is one step shorter than
@@ -1434,7 +1462,7 @@ theorem walkFinishPost_refuse488 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) 
     ∃ (q : Nat) (v : BitVec 64) (m : Mem), q + 2 ≤ 27 ∧
       runFuel (stage2Calls stage2SubCalls) (q + 2) stage2Body s =
         some (.ret (some (.int 64 v)) m) ∧
-      stage2Boundary (walkFinishArgs G) m0 G.next0 m (.int 64 v) := by
+      Stage2BoundaryAt G C.stage (walkFinishArgs G) m0 G.next0 m (.int 64 v) := by
   have hn64 : G.n < 2 ^ 64 := by
     have h := G.maxDoc
     simp only [stage2MaxDocument] at h
@@ -1564,7 +1592,7 @@ theorem walkFinishPost_refuse488 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) 
   · rw [hmem₃]
     rw [show (BitVec.ofNat 64 G.n).toNat = G.n from by
       rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hn64]]
-    exact stage2Boundary_of_refuse_offset G C hInv hge hle (Nat.le_refl G.n)
+    exact stage2BoundaryAt_of_refuse_offset G C hInv hge hle (Nat.le_refl G.n)
 
 /-- **R0: the refusal already at the copy.**  A segment that ended at `if.then` — the
 dispatch's refusal outcome — leaves the state the copy starts from, so the route is the
@@ -1584,7 +1612,7 @@ theorem walkFinishPost_copy {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : 
     ∃ (q : Nat) (v : BitVec 64) (m : Mem), q + 2 ≤ 27 ∧
       runFuel (stage2Calls stage2SubCalls) (q + 2) stage2Body s =
         some (.ret (some (.int 64 v)) m) ∧
-      stage2Boundary (walkFinishArgs G) m0 G.next0 m (.int 64 v) := by
+      Stage2BoundaryAt G C.stage (walkFinishArgs G) m0 G.next0 m (.int 64 v) := by
   obtain ⟨k, hk, hword⟩ := hword
   have hn64 : G.n < 2 ^ 64 := by
     have h := G.maxDoc
@@ -1598,7 +1626,7 @@ theorem walkFinishPost_copy {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : 
     rw [hktoNat]
     exact hword
   refine ⟨0, 0, walkFinishMemRefuse G s.mem a C.evlen k, by omega, ?_,
-    stage2Boundary_of_refuse G C hInv hge hle hk⟩
+    stage2BoundaryAt_of_refuse G C hInv hge hle hk⟩
   have ha64 : a < 2 ^ 64 := by
     have h := G.arenaRoom
     have hcap := G.dstcapLt

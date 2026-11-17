@@ -133,6 +133,7 @@ theorem WalkSegment.of_link {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
     WalkSegment calls G C s C' s' 1 where
   run n := walkLink_runFuel hl n
   inv' := hl.inv'
+  stage_eq := hl.stage_eq
 
 /-! ### The visit
 
@@ -1133,7 +1134,7 @@ theorem Seg.measure {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
     WalkSegment calls G C s C' s' n := by
   induction h with
   | nil h =>
-      refine ⟨fun k => ?_, h⟩
+      refine ⟨fun k => ?_, h, rfl⟩
       simp only [Nat.zero_add]
   | @tail C C' C'' s s' s'' n hl _ ih =>
       have := WalkSegment.of_link hl |>.trans ih
@@ -2095,7 +2096,7 @@ theorem walkScanRounds {calls : Calls} {m0 : Mem} {G : WalkGeom m0} {i c k : Nat
         intro i C s _ hInv hblock hi _ hic
         have hie : i = c - 1 := by omega
         refine ⟨C, s, ?_, hInv, hblock, ?_⟩
-        · refine ⟨fun k => ?_, hInv⟩
+        · refine ⟨fun k => ?_, hInv, rfl⟩
           rw [Nat.mul_zero, Nat.zero_add]
         · rw [← hie]
           exact hi

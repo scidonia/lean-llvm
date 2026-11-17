@@ -270,7 +270,7 @@ theorem WalkLink.if_then425_i_emit {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
     rw [hmem]
     exact readBytes_writeBytes_same (writeBytes s.mem (G.ev + C.evlen) ev.encodedBytes)
       (wordBytes 8 (C.evlen + ev.encodedBytes.length)) (addr := C.stage.z + 8)
-  refine ⟨s', ⟨hInv, hstep, ?_, le_of_eq rfl⟩⟩
+  refine ⟨s', ⟨hInv, hstep, ?_, le_of_eq rfl, rfl⟩⟩
   refine
     { pc_eq := rfl
       blockIndex := ?_
@@ -648,7 +648,7 @@ theorem WalkLink.if_then425_i_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
       rcases heev with h | h
       · right; omega
       · left; omega
-  refine ⟨s', ⟨hInv, hstep, ?_, le_of_eq rfl⟩⟩
+  refine ⟨s', ⟨hInv, hstep, ?_, le_of_eq rfl, rfl⟩⟩
   refine
     { pc_eq := rfl
       blockIndex := ?_
@@ -1167,7 +1167,7 @@ theorem WalkLink.if_then109_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
     dsimp only [s', s₁, cells, stateAt]
     simp only [hbit]
     rfl
-  refine ⟨s', ⟨hInv, hstep, ?_, le_of_eq rfl⟩⟩
+  refine ⟨s', ⟨hInv, hstep, ?_, le_of_eq rfl, rfl⟩⟩
   refine
     { pc_eq := rfl
       blockIndex := ?_
@@ -1501,7 +1501,7 @@ theorem WalkLink.if_then19_i {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
       (fl := "if.end67.critedge.i") (bit := bit)
       (by dsimp only [s₁, bit]; simp [stateAt, cells, lookupName])]
     dsimp only [s', s₁, bit, cells, stateAt]
-  refine ⟨s', ⟨hInv, hstep, ?_, le_of_eq rfl⟩⟩
+  refine ⟨s', ⟨hInv, hstep, ?_, le_of_eq rfl, rfl⟩⟩
   refine
     { pc_eq := rfl
       blockIndex := ?_

@@ -175,6 +175,10 @@ structure WalkSegment (calls : Calls) {m0 : Mem} (G : WalkGeom m0)
   run : ∀ n, runFuel calls (j + n) stage2Body s = runFuel calls n stage2Body s'
   /-- The invariant at the segment's target. -/
   inv' : WalkInv G C' s'
+  /-- The adapter's staging is the same at both ends, as it is at every link:
+  the segments are links and their compositions.  The terminal post reads its
+  scratch objects at this staging, so the chain's endpoints have to carry it. -/
+  stage_eq : C'.stage = C.stage
 
 /-- **Segments compose**, and their counts add: the first's equality at the
 second's count is the second's source. -/
@@ -185,6 +189,7 @@ theorem WalkSegment.trans {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
   run n := by
     rw [show j + k + n = j + (k + n) from by omega, h₁.run (k + n), h₂.run n]
   inv' := h₂.inv'
+  stage_eq := h₂.stage_eq.trans h₁.stage_eq
 
 /-- **A segment that ended at the refusal copy, with the word the copy loads.**  The
 refusal's offset store is the last write before `if.then` — `if.then56.i`,
@@ -217,6 +222,16 @@ theorem WalkChain.inv_last {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
   | nil h => exact h
   | tail _ _ ih => exact ih
 
+/-- **A chain keeps the adapter's staging**, as every link does.  Stated by
+recursion rather than `induction` because the chain is a `Prop` and the motive is
+about its two index carries. -/
+theorem WalkChain.stage_eq {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
+    {C C' : WalkCarry G} {s s' : State} (h : WalkChain calls G C s C' s') :
+    C'.stage = C.stage :=
+  match h with
+  | WalkChain.nil _ => rfl
+  | WalkChain.tail hl ht => (WalkChain.stage_eq ht).trans hl.stage_eq
+
 /-- **A chain is a segment, at the count `WalkChain.steps` names.**  The count is
 existential and cannot be a function: `WalkChain` is a `Prop`, so a
 `Nat`-valued `length` is not definable — that would be a large elimination — and a
@@ -228,7 +243,7 @@ theorem WalkSegment.of_chain {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
     {C C' : WalkCarry G} {s s' : State} (h : WalkChain calls G C s C' s') :
     ∃ j, WalkSegment calls G C s C' s' j := by
   obtain ⟨j, hj⟩ := h.steps
-  exact ⟨j, ⟨hj, h.inv_last⟩⟩
+  exact ⟨j, ⟨hj, h.inv_last, WalkChain.stage_eq h⟩⟩
 
 /-- **Chains concatenate.**  The cons form (`tail`) is the only constructor, so
 composition up to now was by re-deriving the left chain at the right's head; this
@@ -607,22 +622,56 @@ def walkTargetArgs {m0 : Mem} (G : WalkGeom m0) : List Value :=
    .ptr G.dst, .int 64 (BitVec.ofNat 64 G.dstcap), .ptr G.ndst, .ptr G.ev,
    .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err]
 
+/-- **The boundary at a fixed staging.**  `stage2Boundary` is existential in its
+eight scratch witnesses; this is the same statement with those witnesses tied to
+the adapter's staging `S`.  The frame's scratch entries are then the objects the
+caller staged at the appended arguments, which is what a consumer of the count
+slots needs: the post's generic witnesses could cover any region, so a frame read
+at them says nothing about the caller's slots. -/
+def Stage2BoundaryAtN (c ctype cst tok s z e d : Nat) (args : List Value) (mem : Mem)
+    (next : Nat) (m : Mem) (v : Value) : Prop :=
+  ∃ w : Stage2BoundaryWitness, Stage2BoundaryFacts w args mem next m v ∧
+    w.c = c ∧ w.ctype = ctype ∧ w.cst = cst ∧ w.tok = tok ∧
+    w.s = s ∧ w.z = z ∧ w.e = e ∧ w.d = d
+
+/-- The same at a staging.  An `abbrev` so the eight addresses are reducible and a
+rewrite of the staging rewrites the statement. -/
+abbrev Stage2BoundaryAt {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G)
+    (args : List Value) (mem : Mem) (next : Nat) (m : Mem) (v : Value) : Prop :=
+  Stage2BoundaryAtN S.c S.ctype S.cst S.tok S.s S.z S.e S.d args mem next m v
+
+/-- **The fixed post at the boundary's thirteen arguments.**  This is the post a
+record at the adapter's eight staging numbers states: the boundary at `args`,
+with the scratch witnesses tied to those numbers. -/
+def Stage2PostFixed (c ctype cst tok s z e d : Nat) (args : List Value) (mem : Mem)
+    (next : Nat) : Outcome → Prop
+  | .ret (some v) m => Stage2BoundaryAtN c ctype cst tok s z e d args mem next m v
+  | _ => False
+
+/-- **The post at a fixed staging**, at an outcome. -/
+def Stage2PostAt {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G)
+    (args : List Value) (mem : Mem) (next : Nat) : Outcome → Prop
+  | .ret (some v) m => Stage2BoundaryAt G S args mem next m v
+  | _ => False
+
 /-- **The walk's post at a loop state.**  `q` steps carry the state to a return, at
 the verdict the run reaches and at the memory it returns, and the record's boundary
-holds there (`stage2Boundary`, `JsonStage2Contract`).  It is the terminal vocabulary
-the loop's branch needs and the one `WalkTargetRun` could not state: that predicate is
-existential in the memory, and the record's post is about the memory the run returns.
+holds there (`stage2Boundary`, `JsonStage2Contract`) **at the carry's own staging**.
+It is the terminal vocabulary the loop's branch needs and the one `WalkTargetRun`
+could not state: that predicate is existential in the memory, and the record's post
+is about the memory the run returns.  The fixed staging is what makes the frame
+readable at the caller's count slots.
 
 The count is the same one the terminal disjunct carried: `q` is the run's length less
 the two terminal steps, so `q + 2` bounds the whole finalisation.  The thirteen
 arguments are spelled once (`walkTargetArgs`); `JsonStage2WalkTargetPost` spells the
 same list as `walkFinishArgs` and proves the boundary at all four terminal routes'
 returned memories. -/
-def WalkTargetPost (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (_C : WalkCarry G)
+def WalkTargetPost (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
     (s : State) : Prop :=
   ∃ (q : Nat) (v : BitVec 64) (m : Mem), q + 2 ≤ 27 ∧
     runFuel calls (q + 2) stage2Body s = some (.ret (some (.int 64 v)) m) ∧
-    stage2Boundary (walkTargetArgs G) m0 G.next0 m (.int 64 v)
+    Stage2BoundaryAt G C.stage (walkTargetArgs G) m0 G.next0 m (.int 64 v)
 
 /-- **The loop's next step**: at the head, a revolution (potential spent) or the
 loop's terminal run with the record's post at the memory it returns.  The terminal
@@ -654,7 +703,7 @@ def WalkLoopStepThree (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (F : Nat) : P
     ∨ (∃ (q : Nat) (v : BitVec 64) (m : Mem),
         q ≤ walkPotential G C + F ∧
         runFuel calls (q + 2) stage2Body s = some (.ret (some (.int 64 v)) m) ∧
-        stage2Boundary (walkTargetArgs G) m0 G.next0 m (.int 64 v))
+        Stage2BoundaryAt G C.stage (walkTargetArgs G) m0 G.next0 m (.int 64 v))
 
 /-- **The loop finishes, and its run is inside the potential.**  Strong recursion
 on the remaining entries: the revolution's advance shortens it, and the terminal
@@ -668,13 +717,13 @@ theorem walkLoopFinishesThree {calls : Calls} {m0 : Mem} {G : WalkGeom m0} {F : 
     ∃ (q : Nat) (v : BitVec 64) (m : Mem),
       q + 2 ≤ walkPotential G C + F + 2 ∧
       runFuel calls (q + 2) stage2Body s = some (.ret (some (.int 64 v)) m) ∧
-      stage2Boundary (walkTargetArgs G) m0 G.next0 m (.int 64 v) := by
+      Stage2BoundaryAt G C.stage (walkTargetArgs G) m0 G.next0 m (.int 64 v) := by
   have key : ∀ (m : Nat), ∀ (C : WalkCarry G) (s : State), G.nep - C.k = m →
       WalkInv G C s → C.block = walkLoopHead → C.k < G.nep →
       ∃ (q : Nat) (v : BitVec 64) (mr : Mem),
         q + 2 ≤ walkPotential G C + F + 2 ∧
         runFuel calls (q + 2) stage2Body s = some (.ret (some (.int 64 v)) mr) ∧
-        stage2Boundary (walkTargetArgs G) m0 G.next0 mr (.int 64 v) := by
+        Stage2BoundaryAt G C.stage (walkTargetArgs G) m0 G.next0 mr (.int 64 v) := by
     intro m
     induction m using Nat.strongRecOn with
     | ind m ih =>
@@ -684,6 +733,7 @@ theorem walkLoopFinishesThree {calls : Calls} {m0 : Mem} {G : WalkGeom m0} {F : 
           ⟨q, v, mr, hq, hrun, hb⟩
         · obtain ⟨q, v, mr, hq', hrun', hb'⟩ :=
             ih (G.nep - C'.k) (by omega) C' s' rfl hseg.inv' hhead' hklt'
+          rw [hseg.stage_eq] at hb'
           refine ⟨p + q, v, mr, by omega, ?_, hb'⟩
           rw [show p + q + 2 = p + (q + 2) from by omega, hseg.run (q + 2)]
           exact hrun'

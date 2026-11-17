@@ -238,7 +238,7 @@ theorem WalkLink.pureCore {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : Walk
     rw [walkExecTerm_condbr (d := d) (tl := tl) (fl := fl) (bit := bit) hbit]
     dsimp only [s']
     rw [hpc₁]
-  refine ⟨s', ⟨hInv, hstep, ?_, ?_⟩⟩
+  refine ⟨s', ⟨hInv, hstep, ?_, ?_, rfl⟩⟩
   · have hnm : B.name = C.block := findBlockList_name hfind
     have hle := walkEmitC_condbr_le (findBlockList_mem hfind) hterm
     have hph : walkEmitC C.block ≤ walkEmitC (if bit = 1 then tl else fl) := by
@@ -350,7 +350,7 @@ theorem WalkLink.pureJumpCore {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : 
   have hph : walkEmitC C.block ≤ walkEmitC t := by
     rw [← hnm]
     exact walkEmitC_br_le (findBlockList_mem hfind) (by rw [hnm]; exact hne) hterm
-  refine ⟨s', ⟨hInv, hstep, ?_, ?_⟩⟩
+  refine ⟨s', ⟨hInv, hstep, ?_, ?_, rfl⟩⟩
   · refine
       { pc_eq := rfl
         blockIndex := ?_
@@ -651,7 +651,7 @@ theorem WalkLink.pureJumpK11 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : W
   have hph : walkEmitC C.block ≤ walkEmitC t := by
     rw [← hnm]
     exact walkEmitC_br_le (findBlockList_mem hfind) (by rw [hnm]; exact hne) hterm
-  refine ⟨s', ⟨hInv, hstep, ?_, ?_⟩⟩
+  refine ⟨s', ⟨hInv, hstep, ?_, ?_, rfl⟩⟩
   · refine
       { pc_eq := rfl
         blockIndex := ?_

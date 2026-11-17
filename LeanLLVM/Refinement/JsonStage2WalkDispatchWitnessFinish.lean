@@ -965,7 +965,8 @@ theorem scanExitSeg {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
   exact { run := fun n => by
             rw [show 1 + n = n + 1 from by omega]
             simp only [runFuel, hstep]
-          inv' := hinv' }
+          inv' := hinv'
+          stage_eq := rfl }
 
 
 

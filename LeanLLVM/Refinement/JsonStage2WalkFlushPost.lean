@@ -683,13 +683,13 @@ verdict `0`, `ndst0` at the arena's slot, `nev0` at the event stream's, `G.n` at
 the refusal slot (which `≤ n` by `le_rfl`), the two prefixes as the caller staged
 them, presence and the frame at the record's lists, and the staging's
 separation. -/
-theorem stage2Boundary_of_flush {args : List Value} {mem : Mem} {next : Nat}
+theorem stage2BoundaryAt_of_flush {args : List Value} {mem : Mem} {next : Nat}
     (G : WalkGeom mem) (S : WalkStage G) (hnext : G.next0 = next)
     (hargs : args = [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
       .int 64 (BitVec.ofNat 64 G.nep), .ptr G.xp, .int 64 (BitVec.ofNat 64 G.nxp),
       .ptr G.dst, .int 64 (BitVec.ofNat 64 G.dstcap), .ptr G.ndst, .ptr G.ev,
       .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err]) :
-    stage2Boundary args mem next (walkFlushMemAt G S) (.int 64 0) := by
+    Stage2BoundaryAt G S args mem next (walkFlushMemAt G S) (.int 64 0) := by
   have hArena : Refinement.HasBytes (walkFlushMemAt G S) G.dst G.ndst0 :=
     walkFlushMemAt_hasBytes G S (walkHasBytes_short G.arenaCap (by have h := G.arenaRoom; omega))
   have hEv : Refinement.HasBytes (walkFlushMemAt G S) G.ev G.nev0 :=
@@ -721,8 +721,7 @@ theorem stage2Boundary_of_flush {args : List Value} {mem : Mem} {next : Nat}
       readBytes (walkFlushMemAt G S) G.err 8 = readBytes mem G.err 8 := by
     intro h
     exact absurd h (by decide)
-  refine stage2Boundary_of_witness
-    (w :=
+  refine ⟨
       { b := G.b, n := G.n, ep := G.ep, nep := G.nep, xp := G.xp, nxp := G.nxp,
         dst := G.dst, dstcap := G.dstcap, ndst := G.ndst, ev := G.ev,
         evcap := G.evcap, nev := G.nev, err := G.err, verdict := 0,
@@ -731,8 +730,7 @@ theorem stage2Boundary_of_flush {args : List Value} {mem : Mem} {next : Nat}
         arena := arena, evs := evs, c := S.c, ctype := S.ctype, cst := S.cst,
         tok := S.tok, s := S.s, z := S.z, e := S.e, d := S.d,
         nkSlot := S.nkSlot, nxpSlot := S.nxpSlot,
-        nextEnd := next + (stage2BootstrapExtent + 8) })
-    (h :=
+        nextEnd := next + (stage2BootstrapExtent + 8) },
       { args_eq := hargs, value_eq := rfl, verdict_range := Or.inl rfl,
         ndst0_read := G.ndstRead, nev0_read := G.nevRead,
         ndstU_read := walkFlushMemAt_ndst G S, nev_read := walkFlushMemAt_nev G S,
@@ -746,7 +744,20 @@ theorem stage2Boundary_of_flush {args : List Value} {mem : Mem} {next : Nat}
         refuse_word := fun _ => ⟨G.n, Nat.le_refl _, walkFlushMemAt_err G S⟩,
         accept_word := haccept,
         present := walkFlushMemAt_present G S, next_le := hnendT,
-        frame := hframeT, staged := S.separate, dSep := S.dSep })
+        frame := hframeT, staged := S.separate, dSep := S.dSep },
+      rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+/-- **The record's boundary at the empty-stream arm's memory**, projected from the
+fixed form. -/
+theorem stage2Boundary_of_flush {args : List Value} {mem : Mem} {next : Nat}
+    (G : WalkGeom mem) (S : WalkStage G) (hnext : G.next0 = next)
+    (hargs : args = [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
+      .int 64 (BitVec.ofNat 64 G.nep), .ptr G.xp, .int 64 (BitVec.ofNat 64 G.nxp),
+      .ptr G.dst, .int 64 (BitVec.ofNat 64 G.dstcap), .ptr G.ndst, .ptr G.ev,
+      .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err]) :
+    stage2Boundary args mem next (walkFlushMemAt G S) (.int 64 0) := by
+  obtain ⟨w, hw, -⟩ := stage2BoundaryAt_of_flush G S hnext hargs
+  exact stage2Boundary_of_witness hw
 
 /-! ### The post, for the empty entry stream
 
@@ -760,7 +771,7 @@ fuel's uniqueness.
 completion is `walkFlushRun_of_staging` at the returned word and memory, and the
 boundary at that outcome is `stage2Boundary_of_flush`; `stage2Post` is a match on
 the outcome, so the two are the whole post. -/
-theorem stage2Post_of_flush {a13 : List Value} {mem : Mem} {next : Nat}
+theorem stage2PostFixed_of_flush {a13 : List Value} {mem : Mem} {next : Nat}
     {d : Nat} (G : WalkGeom mem) (S : WalkStage G)
     (hargs : a13 = [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
       .int 64 (BitVec.ofNat 64 G.nep), .ptr G.xp, .int 64 (BitVec.ofNat 64 G.nxp),
@@ -769,7 +780,8 @@ theorem stage2Post_of_flush {a13 : List Value} {mem : Mem} {next : Nat}
     (hnext : G.next0 = next) (hzero : G.nep = 0) :
     ∀ o, BehFromState (stage2Calls stage2SubCalls) stage2Body
         (EntryState stage2Body (stage2Args a13 d S.c S.ctype S.cst S.tok S.s S.z S.e)
-          mem next) o → stage2Post a13 mem next o := by
+          mem next) o →
+      Stage2PostFixed S.c S.ctype S.cst S.tok S.s S.z S.e S.d a13 mem next o := by
   obtain ⟨q, -, hrun⟩ := walkFlushRun_of_staging (d := d) G S hzero
   have hentry : EntryState stage2Body
       (stage2Args [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
@@ -780,21 +792,69 @@ theorem stage2Post_of_flush {a13 : List Value} {mem : Mem} {next : Nat}
       EntryState stage2Body (stage2Args a13 d S.c S.ctype S.cst S.tok S.s S.z S.e)
         mem next := by
     rw [hargs, hnext]
-  refine stage2Post_of_completion (B := q)
+  have hgood : Stage2PostFixed S.c S.ctype S.cst S.tok S.s S.z S.e S.d a13 mem next
+      (.ret (some (.int 64 0)) (walkFlushMemAt G S)) := by
+    simpa [Stage2PostFixed, Stage2BoundaryAt, walkFinishArgs, walkTargetArgs, ← hargs, hnext]
+      using stage2BoundaryAt_of_flush G S hnext hargs
+  refine Stage2PostFixed_of_completion (B := q)
     (oGood := .ret (some (.int 64 0)) (walkFlushMemAt G S))
     (sE := EntryState stage2Body (stage2Args a13 d S.c S.ctype S.cst S.tok S.s S.z S.e)
-      mem next) ?_ (stage2Boundary_of_flush G S hnext hargs)
+      mem next) ?_ hgood
   rwa [← hentry]
 
 /-- **The all-whitespace case of the post, at the record's numbers.**  The arm's
 post at a13: every behaviour of the run at the record's entry state satisfies
 `Γ_stage2at`'s post, which is `stage2Post` at the thirteen arguments.  The
-staging's fields are the record's (`hSc`…`hSe`), so the entry state the run was
+staging's fields are the record's (`hSc`…`hSd`), so the entry state the run was
 stated at is the record's own. -/
+theorem stage2PostFixed_of_staging_flush {d c ctype cst tok s z e : Nat}
+    {a13 : List Value} {mem : Mem} {next : Nat} {G : WalkGeom mem} {S : WalkStage G}
+    (hSc : S.c = c) (hSct : S.ctype = ctype) (hScs : S.cst = cst) (hStok : S.tok = tok)
+    (hSs : S.s = s) (hSz : S.z = z) (hSe : S.e = e) (hSd : S.d = d)
+    (hargs : a13 = [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
+      .int 64 (BitVec.ofNat 64 G.nep), .ptr G.xp, .int 64 (BitVec.ofNat 64 G.nxp),
+      .ptr G.dst, .int 64 (BitVec.ofNat 64 G.dstcap), .ptr G.ndst, .ptr G.ev,
+      .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err])
+    (hnext : G.next0 = next) (hzero : G.nep = 0) :
+    ∀ o, BehFromState (stage2Calls stage2SubCalls) stage2Body
+        (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next) o →
+      Stage2PostFixed c ctype cst tok s z e d a13 mem next o := by
+  have h := stage2PostFixed_of_flush (d := d) G S hargs hnext hzero
+  intro o hb
+  have h' := h o ?_
+  · simpa [hSc, hSct, hScs, hStok, hSs, hSz, hSe, hSd] using h'
+  · rw [hSc, hSct, hScs, hStok, hSs, hSz, hSe]
+    exact hb
+
+/-- **The empty-stream post at the record's existential boundary**, projected from
+the fixed form. -/
+theorem stage2Post_of_flush {a13 : List Value} {mem : Mem} {next : Nat}
+    {d : Nat} (G : WalkGeom mem) (S : WalkStage G)
+    (hargs : a13 = [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
+      .int 64 (BitVec.ofNat 64 G.nep), .ptr G.xp, .int 64 (BitVec.ofNat 64 G.nxp),
+      .ptr G.dst, .int 64 (BitVec.ofNat 64 G.dstcap), .ptr G.ndst, .ptr G.ev,
+      .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err])
+    (hnext : G.next0 = next) (hzero : G.nep = 0) :
+    ∀ o, BehFromState (stage2Calls stage2SubCalls) stage2Body
+        (EntryState stage2Body (stage2Args a13 d S.c S.ctype S.cst S.tok S.s S.z S.e)
+          mem next) o → stage2Post a13 mem next o := by
+  intro o hb
+  cases o with
+  | ub => exact stage2PostFixed_of_flush G S hargs hnext hzero .ub hb
+  | ret v m =>
+      cases v with
+      | none => exact stage2PostFixed_of_flush G S hargs hnext hzero (.ret none m) hb
+      | some v =>
+          obtain ⟨w, hw, -⟩ :=
+            stage2PostFixed_of_flush G S hargs hnext hzero (.ret (some v) m) hb
+          exact stage2Boundary_of_witness hw
+
+/-- **The empty-stream post at the record's numbers**, projected from the fixed
+form. -/
 theorem stage2Post_of_staging_flush {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
     {a13 : List Value} {mem : Mem} {next : Nat} {G : WalkGeom mem} {S : WalkStage G}
     (hSc : S.c = c) (hSct : S.ctype = ctype) (hScs : S.cst = cst) (hStok : S.tok = tok)
-    (hSs : S.s = s) (hSz : S.z = z) (hSe : S.e = e)
+    (hSs : S.s = s) (hSz : S.z = z) (hSe : S.e = e) (hSd : S.d = d)
     (hargs : a13 = [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
       .int 64 (BitVec.ofNat 64 G.nep), .ptr G.xp, .int 64 (BitVec.ofNat 64 G.nxp),
       .ptr G.dst, .int 64 (BitVec.ofNat 64 G.dstcap), .ptr G.ndst, .ptr G.ev,
@@ -804,14 +864,20 @@ theorem stage2Post_of_staging_flush {d c ctype cst tok s z e nkSlot nxpSlot : Na
         (EntryState stage2Body (stage2Args a13 d c ctype cst tok s z e) mem next) o →
       (Γ_stage2at d c ctype cst tok s z e nkSlot nxpSlot).post
         (stage2Args a13 d c ctype cst tok s z e) mem next o := by
-  have h := stage2Post_of_flush (d := d) G S hargs hnext hzero
+  have h := stage2PostFixed_of_staging_flush hSc hSct hScs hStok hSs hSz hSe hSd hargs
+    hnext hzero
   have hlen : a13.length = 13 := by rw [hargs]; rfl
   intro o hb
   show stage2Post ((stage2Args a13 d c ctype cst tok s z e).take 13) mem next o
   rw [stage2Args_take13 a13 hlen]
-  refine h o ?_
-  rw [hSc, hSct, hScs, hStok, hSs, hSz, hSe]
-  exact hb
+  cases o with
+  | ub => exact h .ub hb
+  | ret v m =>
+      cases v with
+      | none => exact h (.ret none m) hb
+      | some v =>
+          obtain ⟨w, hw, -⟩ := h (.ret (some v) m) hb
+          exact stage2Boundary_of_witness hw
 
 /-- **The walk's obligation at the payload groups — a conditional, not the closure claim.**
 
@@ -877,15 +943,76 @@ theorem stage2WalkObligation_of_staging {d c ctype cst tok s z e nkSlot nxpSlot 
     (walkPremises_of_staging hcont hrows hws hlast hlastRows hlastArms) ?_
   intro args mem next hpre o hb
   obtain ⟨a13, rfl, hpre13, hstaged⟩ := hpre
-  obtain ⟨G, S, hnext, hSc, hSct, hScs, hStok, hSs, hSz, hSe, _hSd, hargs⟩ :=
+  obtain ⟨G, S, hnext, hSc, hSct, hScs, hStok, hSs, hSz, hSe, hSd, hargs⟩ :=
     walkStage_at_pre_fields hpre13 hstaged
   by_cases hzero : G.nep = 0
-  · exact stage2Post_of_staging_flush hSc hSct hScs hStok hSs hSz hSe hargs hnext hzero o hb
-  · refine stage2Post_of_staging_loop (F := 27) hSc hSct hScs hStok hSs hSz hSe hargs hnext
+  · exact stage2Post_of_staging_flush hSc hSct hScs hStok hSs hSz hSe hSd hargs hnext
+      hzero o hb
+  · refine stage2Post_of_staging_loop (F := 27) hSc hSct hScs hStok hSs hSz hSe hSd
+      hargs hnext
       (Nat.pos_of_ne_zero hzero)
       (walkLoopStep_of_staging (G := G)
         (walkContinueFacts_of_payload (hcont G) (hrows G) (hws G))
         (walkLoopEnd_of_payload (hlast G) (hlastRows G) (hlastArms G))) o hb
+
+/-! ### The fixed adapter record, and its closure
+
+`Γ_stage2work` is the stage-2 record at the eight staging numbers the caller
+stages, with its post pinned to them.  It is the record the pipeline's concrete
+selection runs under: the pre is the adapter's (`stage2StagedPre` at the call's
+nine staging arguments), and the post is the boundary with its scratch witnesses
+tied, so the frame can be read at the caller's count slots rather than at an
+existential's witnesses. -/
+def Γ_stage2work (d c ctype cst tok s z e : Nat) : MemContract where
+  budget := fun args mem => Γ_stage2.budget (args.take 13) mem
+  pre := fun args mem next =>
+    ∃ (a13 : List Value) (nkSlot nxpSlot : Nat),
+      args = stage2Args a13 d c ctype cst tok s z e ∧
+      Γ_stage2.pre a13 mem next ∧
+      stage2StagedPre a13 mem next d c ctype cst tok s z e nkSlot nxpSlot
+  post := fun args mem next o =>
+    Stage2PostFixed c ctype cst tok s z e d (args.take 13) mem next o
+
+/-- **The walk, at the fixed adapter record.**  The premises are the six payload
+groups; the pre supplies the adapter's staging, the seed and the loop's step do
+the work, and the post is the fixed boundary at the appended arguments. -/
+theorem stage2WalkWork_of_staging {d c ctype cst tok s z e : Nat}
+    (hcont : ∀ {m0 : Mem} (G : WalkGeom m0), HcontPayload G)
+    (hrows : ∀ {m0 : Mem} (G : WalkGeom m0), HcontClassRows G)
+    (hws : ∀ {m0 : Mem} (G : WalkGeom m0), HcontWsRows G)
+    (hlast : ∀ {m0 : Mem} (G : WalkGeom m0), HlastPayload G)
+    (hlastRows : ∀ {m0 : Mem} (G : WalkGeom m0), HlastClassRows G)
+    (hlastArms : ∀ {m0 : Mem} (G : WalkGeom m0), HlastArmRows G) :
+    Satisfies (stage2Calls stage2SubCalls) stage2Body
+      (Γ_stage2work d c ctype cst tok s z e) := by
+  intro args mem next hpre
+  obtain ⟨a13, nkSlot, nxpSlot, hargsEq, hpre13, hstaged⟩ := hpre
+  subst hargsEq
+  have hlen : a13.length = 13 := stage2Pre_length hpre13
+  have htake : (stage2Args a13 d c ctype cst tok s z e).take 13 = a13 :=
+    stage2Args_take13 a13 hlen d c ctype cst tok s z e
+  refine ⟨?_,
+    fun o hb => ?_⟩
+  · obtain ⟨v, m, hrun⟩ :=
+      stage2WalkCompletes_of_staging hcont hrows hws hlast hlastRows hlastArms
+        a13 mem next hpre13 hstaged
+    exact ⟨v, m, by simpa only [Γ_stage2work, Γ_stage2, htake] using hrun⟩
+  · obtain ⟨G, S, hnext, hSc, hSct, hScs, hStok, hSs, hSz, hSe, hSd, hargs⟩ :=
+      walkStage_at_pre_fields hpre13 hstaged
+    show Stage2PostFixed c ctype cst tok s z e d
+        ((stage2Args a13 d c ctype cst tok s z e).take 13) mem next o
+    rw [htake]
+    by_cases hzero : G.nep = 0
+    · exact stage2PostFixed_of_staging_flush hSc hSct hScs hStok hSs hSz hSe hSd
+        (by simpa only [walkFinishArgs, walkTargetArgs] using hargs) hnext hzero o
+        (by simpa only [walkTargetArgs] using hb)
+    · refine stage2PostFixed_of_staging_loop (F := 27) hSc hSct hScs hStok hSs hSz hSe hSd
+        (by simpa only [walkFinishArgs, walkTargetArgs] using hargs) hnext
+        (Nat.pos_of_ne_zero hzero)
+        (walkLoopStep_of_staging (G := G)
+          (walkContinueFacts_of_payload (hcont G) (hrows G) (hws G))
+          (walkLoopEnd_of_payload (hlast G) (hlastRows G) (hlastArms G))) o
+        (by simpa only [walkTargetArgs] using hb)
 
 /-! ### Axiom footprints -/
 

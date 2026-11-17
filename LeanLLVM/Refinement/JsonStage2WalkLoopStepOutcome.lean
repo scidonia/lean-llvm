@@ -273,7 +273,7 @@ theorem walkContRevolution {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
     { { Cd with block := "while.body.i", inner := walkInnerCap G } with
         block := walkLoopHead, k := k2, sp := spv }
   refine ⟨C', s', p + 1 + 1, ?_, rfl, ?_, ?_, ?_⟩
-  · refine ⟨fun n => ?_, hInvH⟩
+  · refine ⟨fun n => ?_, hInvH, hseg.stage_eq⟩
     rw [show p + 1 + 1 + n = p + (1 + (1 + n)) from by omega,
       hseg.run (1 + (1 + n)), hrunB (1 + n), hrunH n]
   · show C.k < k2
@@ -342,6 +342,7 @@ theorem walkLoopStepThree_of_dispatchThree {calls : Calls} {m0 : Mem} {G : WalkG
   · exact Or.inl (walkContRevolution hseg hblock hkc hpre hsp hspv hkOp hk2 hnepv
       hbelow hnep hadvance hspcap hspw hprice)
   · obtain ⟨q, v, m, hq, hrun, hb⟩ := htail Cd sd hseg.inv' (Or.inl hblock)
+    rw [hseg.stage_eq] at hb
     refine Or.inr ⟨p + q, v, m, ?_, ?_, hb⟩
     · have hk2nep : k2 ≤ G.nep := by
         have := hnepBound Cd sd nepv hseg.inv' hblock hnepv
@@ -354,6 +355,7 @@ theorem walkLoopStepThree_of_dispatchThree {calls : Calls} {m0 : Mem} {G : WalkG
     · rw [show p + q + 2 = p + (q + 2) from by omega, hseg.run (q + 2)]
       exact hrun
   · obtain ⟨q, v, m, hq, hrun, hb⟩ := htail Cd sd hseg.inv' (Or.inr hblock)
+    rw [hseg.stage_eq] at hb
     refine Or.inr ⟨p + q, v, m, ?_, ?_, hb⟩
     · simp only [walkPotential, boundary_eq_entryPos G hk, stage2EntryAllowance,
         stage2ByteAllowance] at hprice hq ⊢

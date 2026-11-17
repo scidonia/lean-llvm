@@ -613,7 +613,7 @@ theorem walkFinishPath3 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s0 : Sta
       .jump (finishSThen (finishS₄₈₈ s0 spv) C.stage.e v) :=
     walkFinish488Step rfl he h4' hv64
   have hinv := walkFinish488Inv (v := v) (walkFinish485Inv (spv := spv) hInv)
-  refine ⟨finishSThen (finishS₄₈₈ s0 spv) C.stage.e v, ⟨fun n => ?_, hinv⟩, rfl, rfl, hinv⟩
+  refine ⟨finishSThen (finishS₄₈₈ s0 spv) C.stage.e v, ⟨fun n => ?_, hinv, rfl⟩, rfl, rfl, hinv⟩
   rw [show 2 + n = 1 + (1 + n) from by omega]
   rw [runFuel_jump_prefix (f := stage2Body) hstep₁ (1 + n)]
   rw [runFuel_jump_prefix (f := stage2Body) hstep₂ n]

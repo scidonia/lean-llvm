@@ -1513,6 +1513,49 @@ def Stage2SlotKeeps (mem : Mem) (args : List Value) (e : State) : Prop :=
     (∀ k, k < 8 → readByte m' (S.nk + k) = readByte mem' (S.nk + k)) ∧
     (∀ k, k < 8 → readByte m' (S.nxp + k) = readByte mem' (S.nxp + k))
 
+/-- **A byte outside every region of a frame is the pre-state's byte.**  This is
+`UnchangedOutside` at one address, with the region arithmetic written out so a
+consumer's separation proof closes it by `omega`. -/
+theorem readByte_of_frame {mem m : Mem} {regions : List (Nat × Nat)} {a : Nat}
+    (h : UnchangedOutside mem m regions)
+    (hsep : ∀ r ∈ regions, r.1 + r.2 ≤ a ∨ a + 1 ≤ r.1) :
+    readByte m a = readByte mem a :=
+  h a (by
+    rintro r hr ⟨hlo, hhi⟩
+    rcases hsep r hr with h1 | h1 <;> omega)
+
+/-- **An eight-byte slot that no region of a frame reaches is left alone.**  The
+slot's bytes are the frame's pre-state bytes: a region either ends at or below the
+slot or begins at or after its end, so no byte of the slot is inside one. -/
+theorem slot_of_frame {mem m : Mem} {regions : List (Nat × Nat)} {a : Nat}
+    (h : UnchangedOutside mem m regions)
+    (hsep : ∀ r ∈ regions, r.1 + r.2 ≤ a ∨ a + 8 ≤ r.1) :
+    ∀ k, k < 8 → readByte m (a + k) = readByte mem (a + k) := by
+  intro k hk
+  exact readByte_of_frame h fun r hr => by
+    rcases hsep r hr with h1 | h1
+    · exact Or.inl (by omega)
+    · exact Or.inr (by omega)
+
+/-- **The stage-2 call's frame leaves a caller slot alone.**  This is the framed
+contract the generic stage-2 ABI cannot state: the record's post is silent outside
+`stage2ReportFrame`, and a slot whose extent misses every entry of that list is
+therefore read back unchanged.  `hnk`/`hnxp` are the separation — the arena
+reserve/slack, the event writes, the three report slots, the appended scratch
+objects and the fresh allocation interval all miss the slot. -/
+theorem stage2SlotKeeps_of_frame {mem' m' : Mem} {S : PipelineLoopCarried}
+    {ndst' ev' next nextEnd c ctype cst tok s z e d : Nat}
+    (hframe : UnchangedOutside mem' m'
+      (stage2ReportFrame S.dst ndst' S.ev ev' S.ndst S.nev S.err c ctype cst tok s z e d
+        next nextEnd))
+    (hnk : ∀ r ∈ stage2ReportFrame S.dst ndst' S.ev ev' S.ndst S.nev S.err c ctype cst
+      tok s z e d next nextEnd, r.1 + r.2 ≤ S.nk ∨ S.nk + 8 ≤ r.1)
+    (hnxp : ∀ r ∈ stage2ReportFrame S.dst ndst' S.ev ev' S.ndst S.nev S.err c ctype cst
+      tok s z e d next nextEnd, r.1 + r.2 ≤ S.nxp ∨ S.nxp + 8 ≤ r.1) :
+    (∀ k, k < 8 → readByte m' (S.nk + k) = readByte mem' (S.nk + k)) ∧
+      (∀ k, k < 8 → readByte m' (S.nxp + k) = readByte mem' (S.nxp + k)) :=
+  ⟨slot_of_frame hframe hnk, slot_of_frame hframe hnxp⟩
+
 set_option maxHeartbeats 4000000 in
 /-- **The tail's target at the exit predicate.** -/
 theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}

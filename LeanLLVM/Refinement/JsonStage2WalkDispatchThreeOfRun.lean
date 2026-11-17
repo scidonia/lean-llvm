@@ -266,6 +266,7 @@ theorem walkLoopStepThree_of_dispatchResult {calls : Calls} {m0 : Mem}
       obtain ⟨q, v, m, hq, hrun, hb⟩ :=
         hmerge Cd sd p spv k2 prev spOp kOp nepv seg.inv' hblock hpre hsp hspv hkOp hk2
           hnepv hterm
+      rw [seg.stage_eq] at hb
       refine Or.inr ⟨p + q, v, m, ?_, ?_, hb⟩
       · have hk2nep : k2 ≤ G.nep := by
           have := hnepBound nepv Cd sd seg.inv' hblock hnepv
@@ -283,6 +284,7 @@ theorem walkLoopStepThree_of_dispatchResult {calls : Calls} {m0 : Mem}
     obtain ⟨q, v, m, hq, hrun, hb⟩ :=
       hmerge Cd sd p spv k2 prev spOp kOp nepv seg.inv' hblock hpre hsp hspv hkOp hk2
         hnepv hterm
+    rw [seg.stage_eq] at hb
     refine Or.inr ⟨p + q, v, m, ?_, ?_, hb⟩
     · have hk2nep : k2 ≤ G.nep := by rw [hlast]
       have hcredit := walkFinishCreditBoundary_le (G := G) (C := C) hk hk2nep
@@ -293,6 +295,7 @@ theorem walkLoopStepThree_of_dispatchResult {calls : Calls} {m0 : Mem}
     · rw [show p + q + 2 = p + (q + 2) from by omega, seg.run (q + 2)]
       exact hrun
   · obtain ⟨q, v, m, hq, hrun, hb⟩ := hrefuse Cd sd seg.inv' hblock hrw
+    rw [seg.stage_eq] at hb
     refine Or.inr ⟨p + q, v, m, ?_, ?_, hb⟩
     · simp only [walkPotential, boundary_eq_entryPos G hk, stage2EntryAllowance,
         stage2ByteAllowance] at hprice hq ⊢

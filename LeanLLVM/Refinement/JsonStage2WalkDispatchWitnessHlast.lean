@@ -453,7 +453,8 @@ theorem hlast_refuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     { run := fun n => by
         rw [show 1 + n = n + 1 from by omega]
         simp only [runFuel, hstep, hlastThenF, hlastThen]
-      inv' := hInvE }
+      inv' := hInvE
+      stage_eq := rfl }
   -- the exit tail's first two blocks, from the merge's `phi` cells
   have hspT : lookupName (hlastThenF f).env "%sp.i.1" =
       some (.int 32 (BitVec.ofNat 32 f.spv)) := by
