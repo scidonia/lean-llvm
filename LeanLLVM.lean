@@ -90,6 +90,7 @@ import LeanLLVM.Refinement.JsonStage2TokenCorrespondence
 import LeanLLVM.Refinement.JsonStage2NumFastBody
 import LeanLLVM.Refinement.JsonStage2NumFastScan
 import LeanLLVM.Refinement.JsonStage2StringBody
+import LeanLLVM.Refinement.JsonStage2WalkAlignment
 import LeanLLVM.Refinement.JsonStage2WalkChain
 import LeanLLVM.Refinement.JsonStage2WalkInduce
 import LeanLLVM.Refinement.JsonStage2WalkSteps

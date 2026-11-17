@@ -1348,16 +1348,14 @@ trace: a wrong class or a wrong span leaves no constructor.
 
 **What is still named, and why.**  The relation is *between* the walk's trace and
 the parser's tokens; it does not say the walk emitted this trace.  That row — the
-walk's `C.events` equal to the tokens' encoding — needs an alignment the walk
-proof does not state: the entry stream's positions (`WalkGeom.ent`, ordered and
-inside the document, with no clause tying them to `parseValue`'s cursors) against
-the parser's token starts.  The walk's per-arm facts are about its own positions
-(`entryPos G C.k`, the scan's extents), so an arm's record can be related to *a*
-token at its span but not to *the parser's token at that position*.  A proof
-starts by adding that alignment as a walk invariant — the entries as the parser's
-token boundaries — and re-proving each arm's append against it.  Until then the
-accept clause's evidence names the relation, and what this section adds is that
-the named relation is exact, per class, and decodable rather than opaque.
+walk's `C.events` equal to the tokens' encoding — needs an alignment of the entry
+stream's positions (`WalkGeom.ent`, ordered and inside the document, with no
+clause of `stage2Pre` tying them to `parseValue`'s cursors) with the parser's
+token starts.  §7.12 states that alignment and what it closes; what the alignment
+does not do is produce the per-entry record rows, and §7.12 names the row that
+remains.  So the accept clause's evidence still names the trace relation, and what
+§7.11 adds is that the named relation is exact, per class, and decodable rather
+than opaque.
 
 **The number class's boundary.**  At the model the number row costs no arithmetic
 beyond `strtodSpec`: `tokenRecord_number` binds the record to `strtodSpec` of the
@@ -1375,6 +1373,101 @@ three controls at `[propext]`; `toBits_lt_two_pow_64`, `parseSkeleton`,
 `parseSkeleton_encodedBytes`, `parseSkeleton_trace` and `stage2Records_at_accept`
 at `[propext, Quot.sound]`.  No `sorry`, `admit`, `native_decide` or
 `Classical.choice`.
+
+### 7.12 The entry alignment: the clause, its preservation, and its limit
+
+§7.11's remaining row needs the walk's entry positions to *be* the parser's token
+boundaries.  `LeanLLVM/Refinement/JsonStage2WalkAlignment.lean` states that as a
+clause over the staging and the tape — not over the walk's carry — and proves
+what follows from it and what does not.
+
+**The clause.**  The class of a document byte is the parser's own first-byte
+dispatch, written as a function (`classOfByte`, with the number class read as `-`
+or a digit; its `if` chain is `decide`-based because `UInt8`'s `BEq` carries
+`Classical.choice`), and a token's class is its constructor's (`tokenClass`).
+The alignment is:
+
+```text
+WalkAlign {m0 : Mem} (G : WalkGeom m0) (t : Tape) : Prop :=
+  t.input = ByteString.literal G.bs ∧
+    G.nep = t.tokens.length ∧
+    (∀ k, k < G.nep → ∃ tok : Token, ∃ b : UInt8,
+      t.tokens[k]? = some tok ∧ tok.span.start = entryPos G k ∧
+        G.bs[entryPos G k]? = some b) ∧
+    (∀ k, k < G.nep → ∀ (tok : Token) (b : UInt8),
+      t.tokens[k]? = some tok → G.bs[entryPos G k]? = some b →
+        classOfByte b = some (tokenClass tok)) ∧
+    (∀ k, k + 1 < G.nep → ∃ tok : Token,
+      t.tokens[k + 1]? = some tok ∧ tok.span.start = entryPos G (k + 1))
+```
+
+At each entry index the parser's token starts at `entryPos G k`, the byte there is
+the class its constructor names, and the next entry is the next token's start.
+`WalkAlign.at`, `.class` and `.next` are the clause's three readings (the last at
+the index's successor); the class clause is an implication rather than a component
+of the token existential so that the two parts are read separately.
+
+**The loop head's reading.**  `WalkAlign.head` reads the clause at a head state:
+the parser's token at the carried index starts at `entryPos G C.k`; the walk's
+`%8` is that token's class byte (`WalkIter.reg8` at `entryByte = b`); `%idxprom.i`
+and `%arrayidx10.i` are its start and its address (`WalkInv.idx_reg`,
+`WalkIter.regarr`).  `WalkAlign.head_class` and the eleven `head_*` corollaries
+turn a byte test of the walk's into the parser's constructor — `.punct`, `.null`,
+`.bool`, `.string` or `.number` — which is the form a per-arm proof consumes: the
+arm's branch on `%8` is then a statement about the parser's token rather than a
+byte the arm alone knows.
+
+**Preservation.**  The clause mentions only `G`, `t`, so no step of the walk can
+change it: `WalkScope.WalkLink.align` carries it across a link and
+`WalkScope.WalkChain.inv_align` across a trace, beside `WalkInv`.  That would be
+vacuous if the memory changed under the two reads it rests on; it does not.
+`WalkInv.doc_read` and `WalkInv.entries_read` state that every state of the walk
+still reads the staged document and the staged entry stream, from
+`WalkInv.frame` and the `doc_outside`/`entry_outside` exclusions (the two objects
+end at or below the call's cursor, so the run's write extents miss them).  The
+walk's index advance is the clause's own next-entry conjunct at `k + 1`
+(`WalkAlign.next`).  What the clause does *not* do at the seed is establish
+itself: `stage2Pre`'s entry-stream clause is order and inside-the-document only,
+and the positions' provenance is the stage-1 emitter's (`entryMask64`'s lanes,
+`JsonEntSpec`), whose composition with `parseValue`'s token starts is outside this
+tree.  So the alignment is a staging hypothesis of the same kind as the record's
+other clauses, and it is not derivable from `stage2Pre`.
+
+**What the clause closes.**  The four container classes' rows are theorems rather
+than an arm's obligation.  The alignment fixes the start and the byte; the tape's
+span discipline (`checkSpans`, reached through `spansWellFormed`, and
+`checkSpans_mem` for one token of the list) fixes the one-byte stop; and
+`TokenRecord`'s own constructor follows (`tokenRecord_punct`): the class's tag at
+the class's span, given the arm's own byte test.  The two separators carry no
+record, so they owe no row.
+
+**What it does not close: the trace.**  The alignment says which token an entry
+is; it says nothing about the record an arm appended, so it does not imply the
+encoding.  `align_not_enough` proves that rather than asserting it: at the `null`
+document an entry stream of `[0]` satisfies the alignment, and an empty trace at
+that geometry still satisfies it while `Stage2Records` is false of the pair.  The
+row still owed is `WalkTraceRow bs arena t rs` — the pointwise `TokenRecord`
+relation over `rs` and the parser's non-separator tokens, which is
+`stage2Records_iff_forall₂`'s right side — and `emittedStream_of_row` is the
+composition that turns it into `Stage2Records`, the stream's `Stage2EventRel` and
+the decoded skeleton `parseSkeleton evs = rs.map EventRecord.tagVal`.
+`emittedStream_at_walk` reads that composition at a walk state: `WalkInv.evBytes`
+names the bytes at the log's cursor as the trace's flattening, so the stream the
+walk has written is the tokens' encoding exactly when the row holds.  The three
+remaining classes are why that row is not a theorem here: a literal's exact span,
+a string's body and a number's lexeme are the parser's token-construction facts,
+and `LeanLLVM/JSON/Correct.lean` keeps them private (`DecodesValue` and the mutual
+induction's per-branch facts are `private`, and what the tape exports is the span
+discipline and the span-level decode); the arms' payloads come from their own
+reads.  Punctuation's one-byte shape is the only class the span discipline alone
+supplies — hence the four container rows above and not the rest.
+
+**Axioms.**  The module pins every declaration at `[propext]` or
+`[propext, Quot.sound]`; the bare definitions (`classOfByte`, `tokenClass`,
+`punctByte`, `punctTag`, `TokClass`, and the ten one-byte `classOfByte_*`
+equations) depend on no axioms at all.  No `sorry`, `admit`, `native_decide` or
+`Classical.choice` — the last is why `classOfByte` compares with `decide` rather
+than `BEq`.
 
 ## 8. Out of scope for the first contract
 
