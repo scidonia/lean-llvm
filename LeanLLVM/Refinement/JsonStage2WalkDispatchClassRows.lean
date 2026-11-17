@@ -86,15 +86,17 @@ depths and this module owes it no further row.
 The run class (the one-entry class whose document byte is whitespace) has its own group,
 `HcontRunRow`.  Its arm is `HcontArm.run (f : RunFacts G C s)`, and the row is *not* a
 bundle: it is the class's prefix to `sw.default.i` with the shared four's cells at that
-endpoint, the check state's rows (`HcontRunRows`), the run's body there and the seam's state
-group (`HcontWsSeam`).  `hcontRunFacts_of_seam` (`JsonStage2WalkDispatchSeams`) joins the
-last two into `HcontRunFacts` — its tail is `hcontScanTail_at`'s at the rows' own stop — and
+endpoint, the check state's rows (`HcontRunRows`), the run's body there and the byte's leaf
+(`HcontRunLeaf`).  `hcontRunFacts_of_seam` (`JsonStage2WalkDispatchSeams`) joins the last
+two into `HcontRunFacts` — its tail is `hcontScanTailAt_leaf`'s at the leaf — and
 `runFacts_of_defaultClass` places that bundle after the class's prefix, so the whole
-`RunFacts` follows from the row.  The one segment the arm still takes beside the row is the
-byte's own leaf below `if.else387.i` (the class-C span, `lettersSpan`, `fSpan`), and the
-class case composes it from the head byte's bits rather than the row holding it — at the
-class-C else leaf only, because the row's endpoints and the bundle's landing are that
-leaf's (`HcontClassRows.runRow` records why `lettersSpan`'s and `fSpan`'s ends do not fit).
+`RunFacts` follows from the row.  The one segment the arm takes beside the row is the
+byte's own leaf below `if.else387.i` (`lettersSpan`, `fSpan`, the four class-C spans), and
+the class case composes it from the head byte's bits rather than the row holding it.  The
+leaf is the row's argument, so every leaf's cell is in the case: the six producers are
+`hcontRunLeaf_letters` … `_58Else` (`JsonStage2WalkDispatchClassCase`).  What the leaf's
+own producers do *not* supply is its three call answers and the landing built on them —
+those are the row's, stated at the leaf the class's bits select (`HcontClassRows.runRow`).
 -/
 import LeanLLVM.Refinement.JsonStage2WalkDispatchSupply
 import LeanLLVM.Refinement.JsonStage2WalkDispatchSeams
@@ -241,17 +243,18 @@ structure HcontRunRow {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     some [b35]
   /-- The run's own rows at the check state: its stop, its class and its span. -/
   b : HcontRunBody G C (contRunCheck G C q5 inc nep ep v ix b35)
+  /-- **The byte's own leaf below `if.else387.i`.**  The class reaches `if.then413.i`
+  through one of six leaves, and they differ in the environment they bind and in the kind
+  literal the `phi` selects; the tail's three calls, the landing and the scan's entry are
+  stated at whichever leaf the class's own bits select.  So the leaf is the row's data. -/
+  leaf : HcontRunLeaf G C
   /-- The record the tail's scalar call appends. -/
   ev : EventRecord
-  /-- The seam's three calls, at the tail's start. -/
-  calls : HcontSeamCalls G (ContTailStartC C)
-    (contRunTailS G C q5 inc nep ep v ix b35 b.b35 b.ix b.v b.k b.x1)
-  /-- The check state's rows: the cells, the landing's reads and the traversal. -/
-  rows : HcontRunRows G C (contRunCheck G C q5 inc nep ep v ix b35)
-    b.b35 b.ix b.v b.k b.x1 calls.r₁ calls.r₂ calls.r₃ ev calls.cA calls.rdv calls.xA
-  /-- The seam's state group: its invariant, its cells and the root word across the kind
-  store. -/
-  seam : HcontWsSeam G C (contRunCheck G C q5 inc nep ep v ix b35) b calls
+  /-- The check state's rows: the cells, the landing's reads and the traversal, at the
+  leaf's own three answers. -/
+  rows : HcontRunRows G C (contRunCheck G C q5 inc nep ep v ix b35) leaf.ss
+    b.b35 b.ix b.v b.k b.x1 leaf.calls.r₁ leaf.calls.r₂ leaf.calls.r₃ ev leaf.calls.cA
+    leaf.calls.rdv leaf.calls.xA
 
 /-- The run class's seam state, from a row's own fields. -/
 abbrev HcontRunRow.seamS {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
@@ -259,19 +262,18 @@ abbrev HcontRunRow.seamS {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : Sta
   contRunSeamS G C row.q5 row.inc row.nep row.ep row.v row.ix row.b35
     row.b.b35 row.b.ix row.b.v row.b.k row.b.x1
 
-/-- The tail's start, from a row's own fields. -/
+/-- The leaf's endpoint, from a row's own fields: the tail's source and the landing's
+base. -/
 abbrev HcontRunRow.tailS {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     (row : HcontRunRow G C s) : State :=
-  contRunTailS G C row.q5 row.inc row.nep row.ep row.v row.ix row.b35
-    row.b.b35 row.b.ix row.b.v row.b.k row.b.x1
+  row.leaf.ss
 
 /-- **The run class's arm, from its row.**  The bundle is `hcontRunFacts_of_seam`'s at the
 check state, placed after the class's prefix and the shared four by
 `runFacts_of_defaultClass`; the byte's own span below `if.else387.i` is the one segment the
 arm takes beside the row, and the class case composes it from the head byte's bits.  The
-span must end at `row.tailS`, which is the class-C else leaf: `lettersSpan`'s and
-`fSpan`'s ends are not this row's shape, so the cells whose head byte is below `110` are
-outside what this producer can take (see `HcontClassRows.runRow`). -/
+span ends at the leaf's endpoint `row.tailS`, whose invariant is the span's own, so the
+producer takes no state fact the class does not have. -/
 noncomputable def hcontArm_run_of_row {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     {s : State} (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead)
     (hk : C.k + 1 < G.nep) (row : HcontRunRow G C s) {nS : Nat}
@@ -283,7 +285,7 @@ noncomputable def hcontArm_run_of_row {m0 : Mem} {G : WalkGeom m0} {C : WalkCarr
     row.hinc row.hnep row.hnext row.h5 row.hi63 row.hread row.hidx row.htok row.hgap row.hugt
     row.hread35
     (hcontRunFacts_of_seam G C row.q5 row.inc row.nep row.ep row.v row.ix row.b35
-      row.b row.ev row.calls row.rows row.seam)
+      row.b row.leaf row.ev row.rows)
     hk hSpan hnS)
 
 /-! ### The plain-value class's whitespace run
@@ -614,36 +616,30 @@ structure HcontClassRows {m0 : Mem} (G : WalkGeom m0) : Type where
     C.sp ≠ 0 → HcontDeepRow G C s
   /-- **The run class's row**, at the class's own short prefix: the default lane's document
   row with the byte before the entry's end whitespace (`wsStop`).  It is the check state's
-  rows, the run's body and the seam's state group — state data, not an arm — and this
-  structure's `run` is its only consumer, joining it to `RunFacts`
-  (`hcontRunFacts_of_seam`) and then to the arm (`hcontArm_run_of_class`).
+  rows, the run's body and the byte's leaf — state data, not an arm — and this structure's
+  `run` is its only consumer, joining it to `RunFacts` (`hcontRunFacts_of_seam`) and then
+  to the arm (`hcontArm_run_of_class`).
 
-  **The row's endpoints are the class-C else leaf's**, and that is a restriction on the
-  classes `run` can serve.  `HcontRunRow.tailS` is `contWsTailStart`, and the bundle the
-  row produces (`HcontRunFacts`) states its tail's *target* at `contWsEntry`, which
-  `contWsEntry` builds from `contWsTailStart` as well; both name `HeadS413`'s binds
-  (`%Pivot63`, `%Pivot61`, `%SwitchLeaf59`), which only the class-C else leaf (bytes
-  `117 … 127`) produces.  A `.run` state whose head byte is below `110` takes
-  `lettersSpan`'s `LetS413` (or `FS413` at `102`), so its span's endpoint is not this
-  row's: the class case cannot pass such a span to `run` as the fields stand.  Closing
-  those cells needs the run's landing (`contWsEntry`, `contWsLatch`, `HcontRunBody`,
-  `HcontRunRows`, `HcontRunFacts`) parameterized by the byte's leaf, not a new row.
+  **The leaf is an argument, so the row serves every leaf.**  `HcontRunRows` and
+  `HcontRunFacts` state the tail's source at the leaf `ss`, its target at
+  `ScanEntry ss …`, and every landing field at `ScanEntry ss …`; they carry the four cells
+  `ScanEntry`/`Latch462S` bind nothing of (`%ee.1.i`, `%cond350.i`, `%inc.i`, `%nep`), so a
+  leaf's endpoint and its four cells enter as the row's data instead of being peeled from
+  `contWsTailStart`.  The six leaves' producers are `hcontRunLeaf_letters`,
+  `_fLetter`, `_56True`, `_56Else`, `_58True` and `_58Else`
+  (`JsonStage2WalkDispatchClassCase`); the class-C else instance is
+  `hcontRunLeaf_of_seam` (`JsonStage2WalkDispatchSeams`).
 
-  **What that parameterization takes, worked out at the statements.**  `HcontRunFacts` and
-  `HcontRunRows` both pin the tail and the landing at `contWsEntry`, so both gain a leaf
-  `ss`, with `hTail`'s source and target and every landing field read at
-  `ScanEntry ss …`.  The bundle must also *carry* four cells, because `ScanEntry` and
-  `Latch462S` bind none of them and the seam state does: `%ee.1.i` (the run's stop),
-  `%inc.i`, `%nep` and `%cond350.i` (the lane's word).  The first three are a `simp only
-  [<seam and leaf defines>, stateAt, cells, State.bind]` plus
-  `lookupName_cons_ne`/`lookupName_cons_self`; the fourth needs the transport through the
-  skip that the tree now has: `scanLatchOut_cond`, `wsLeafS_cond`, `wsStopS_cond`,
-  `wsLatchAt_cond`, `wsStopAt_cond` and `wsSlAt_cond` (`JsonStage2WalkRevolution`).  What
-  remains after the cells is the five leaf producers, this row's and the arm's leaf index,
-  and the class case. -/
+  **What the row still takes is the leaf's landing**, and that is a supply item rather
+  than a proof: the landing's reads are stated at the leaf's three call answers, and a
+  leaf whose `phi` incoming is not `if.else405.i`'s `0` (`102`, `110`, `116`) has its own
+  answer group (`HcontSeamAbi.scanF`, `scan56True`, `scan58True`), because the kind
+  literal is part of the memory the first call reads.  So a producer of this row must be
+  stated at the leaf the class's bits select, which is why the leaf is the row's
+  argument. -/
   runRow : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     C.k + 1 < G.nep → (r : HcontDefaultRow G C s) → wsStop G (r.v.toNat - 1) →
-    HcontRunRow G C s
+    (leaf : HcontRunLeaf G C) → HcontRunRow G C s
   /-- **The run class's arm, from `runRow`**: the row joined to `RunFacts` at the class's
   prefix, with the byte's own leaf below `if.else387.i` as the arm's span. -/
   run : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →

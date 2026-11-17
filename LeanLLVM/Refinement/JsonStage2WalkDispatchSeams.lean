@@ -174,6 +174,23 @@ structure HcontSeamAbi {m0 : Mem} (G : WalkGeom m0) : Type where
     (k : Nat) (x1 : BitVec 8),
     HcontSeamCalls G (ContTailStartC C)
       (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1)
+  /-- **The `'f'` leaf's seam**: `FS413`, whose `phi` incoming is `if.then397.i`'s `9`.
+  The rows are not the class-C else seam's: the kind literal is the memory the first call
+  reads, so each leaf whose predecessor is not `if.else405.i` has its own. -/
+  scanF : ∀ (C : WalkCarry G) (sl : State) (b35 : UInt8) (ix : BitVec 64) (v : BitVec 32)
+    (k : Nat) (x1 : BitVec 8),
+    HcontSeamCalls G (ContTailStartC C)
+      (FS413 (contWsSeamS C (wsSlAt G sl b35 ix v k) k x1) x1)
+  /-- **`110`'s leaf's seam**: `ClsS413T`, whose `phi` incoming is `if.then403.i`'s `10`. -/
+  scan56True : ∀ (C : WalkCarry G) (sl : State) (b35 : UInt8) (ix : BitVec 64)
+    (v : BitVec 32) (k : Nat) (x1 : BitVec 8),
+    HcontSeamCalls G (ContTailStartC C)
+      (ClsS413T (contWsSeamS C (wsSlAt G sl b35 ix v k) k x1) x1)
+  /-- **`116`'s leaf's seam**: `ClsS58T`, whose `phi` incoming is `LeafBlock58`'s own `8`. -/
+  scan58True : ∀ (C : WalkCarry G) (sl : State) (b35 : UInt8) (ix : BitVec 64)
+    (v : BitVec 32) (k : Nat) (x1 : BitVec 8),
+    HcontSeamCalls G (ContTailStartC C)
+      (ClsS58T (contWsSeamS C (wsSlAt G sl b35 ix v k) k x1) x1)
   /-- The last entry's seam: the same three calls at the last entry's tail start. -/
   last : ∀ (C : WalkCarry G) (s : State) (x : BitVec 8) (inc nep : BitVec 64)
     (v : Nat) (ix : BitVec 64) (b35 : UInt8),
@@ -360,8 +377,12 @@ The answers are parameters rather than fields because the landing's rows are *ab
 its own copies could not be fed the seam's.
 -/
 
-/-- **The run's rows at a check state**: `HcontRunFacts` minus its `hTail` field. -/
+/-- **The run's rows at a check state**: `HcontRunFacts` minus its `hTail` field.  The
+byte's leaf `ss` is an index as well as the tail's source, because the landing's states are
+built from it (`ScanEntry ss …`) and the four cells `ScanEntry`/`Latch462S` do not bind are
+the leaf's — so they are fields here and the bundle reads them at the rows. -/
 structure HcontRunRows {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (sl : State)
+    (ss : State)
     (b35 : UInt8) (ix : BitVec 64) (v : BitVec 32) (k : Nat) (x1 : BitVec 8)
     (r₁ r₂ r₃ : CallOutcome) (ev : EventRecord) (cA rdv xA : BitVec 32) : Type where
   /-- The check state's own invariant. -/
@@ -392,6 +413,13 @@ structure HcontRunRows {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (sl : Stat
     some (.int 8 x1)
   hbit : (evalICmp .eq x1 (BitVec.ofNat 8 45) |||
     evalICmp .ult (x1 + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0
+  /-- The four cells the leaf carries and `ScanEntry`/`Latch462S` bind nothing of: the
+  run's stop, the lane's word and the head's two registers.  The tail's contracts read all
+  four at the leaf, so the rows state them instead of peeling them from a named leaf. -/
+  hssEe : lookupName ss.env "%ee.1.i" = some (.int 64 (BitVec.ofNat 64 k))
+  hssCond : lookupName ss.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 v.toNat))
+  hssInc : lookupName ss.env "%inc.i" = some (.int 64 (BitVec.ofNat 64 (C.k + 1)))
+  hssNep : lookupName ss.env "%nep" = some (.int 64 (BitVec.ofNat 64 G.nep))
   /-- The record the scalar call appended, and the memory it wrote. -/
   happ : s2ScalarValueAppend r₁.mem r₂.mem (TailCarry₂ (ContTailStartC C)).stage.z
     ev.encodedBytes
@@ -399,31 +427,29 @@ structure HcontRunRows {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (sl : Stat
   a : Nat
   q : Nat
   bs : List UInt8
-  h3S : lookupName
-    (contWsEntry C (wsSlAt G sl b35 ix v k) k x1 x1 r₁ r₂ r₃ k v cA rdv xA).env "%3" =
+  h3S : lookupName (ScanEntry ss r₁ r₂ r₃ k v.toNat cA rdv xA).env "%3" =
       some (.ptr a)
   hpos : ((BitVec.ofNat 64 k).signExtend 64).toNat < 2 ^ 63
   hreadS : readBytes
-    (contWsEntry C (wsSlAt G sl b35 ix v k) k x1 x1 r₁ r₂ r₃ k v cA rdv xA).mem
+    (ScanEntry ss r₁ r₂ r₃ k v.toNat cA rdv xA).mem
     (a + ((BitVec.ofNat 64 k).signExtend 64).toNat) 1 = some bs
   hbsS : bytesToNat bs = q
   hloc105 : WalkLocal (ScanC₁₀₅ (TailCarryScan (ContTailStartC C) ev))
     (landRhs457OutAt
-      (contWsEntry C (wsSlAt G sl b35 ix v k) k x1 x1 r₁ r₂ r₃ k v cA rdv xA)
+      (ScanEntry ss r₁ r₂ r₃ k v.toNat cA rdv xA)
       (BitVec.ofNat 64 k) a q)
   x47 : BitVec 8
   h47 : evalOperand
     (landRhs457OutAt
-      (contWsEntry C (wsSlAt G sl b35 ix v k) k x1 x1 r₁ r₂ r₃ k v cA rdv xA)
+      (ScanEntry ss r₁ r₂ r₃ k v.toNat cA rdv xA)
       (BitVec.ofNat 64 k) a q) (.reg "%47") = some (.int 8 x47)
   hbit47 : evalICmp .slt x47 (BitVec.ofNat 8 13) = 1
   hws47 : evalICmp .ule (x47 + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 1
   hloc96 : WalkLocal (ScanC₉₆ (TailCarryScan (ContTailStartC C) ev))
-    (ScanS₉₆ (contWsEntry C (wsSlAt G sl b35 ix v k) k x1 x1 r₁ r₂ r₃ k v cA rdv xA)
+    (ScanS₉₆ (ScanEntry ss r₁ r₂ r₃ k v.toNat cA rdv xA)
       (BitVec.ofNat 64 k) a q x47)
   hlatch : WalkLocal { TailCarryScan (ContTailStartC C) ev with block := "while.body462.i" }
-    (contWsLatch C (wsSlAt G sl b35 ix v k) k x1 x1 r₁ r₂ r₃ k v cA rdv xA
-      (BitVec.ofNat 64 k) a q x47)
+    (Latch462S (ScanEntry ss r₁ r₂ r₃ k v.toNat cA rdv xA) (BitVec.ofNat 64 k) a q x47)
   /-- The scan runs inside the entry's span. -/
   hspan : v.toNat ≤ entryPos G (C.k + 1)
   hstart : entryPos G C.k ≤ k
@@ -535,6 +561,67 @@ theorem hcontScanTail_at {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (sl : St
     (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1) rows ev happ rows.hzread_mem
     hInvT rfl regT hpreT hincT hopT hkindT hrdT hreadRoot hcT htT hoT htightT hkltT heiT hcdT
     hinner heicd hcd64
+
+/-- **The byte's own leaf below `if.else387.i`, as the run's tail reads it.**  The six
+leaves into `if.then413.i` differ in the names they bind and in the kind literal their
+`phi` selects; they agree in the carry (`{C with block := "if.then413.i"}`), in the memory
+and in the counter.  So the leaf is data: its state, its invariant, its three call rows,
+the root slot's word at the memory the first call reads, and the `phi`'s own predecessor and
+operand.  The four cells `ScanEntry`/`Latch462S` bind nothing of are the rows'
+(`HcontRunRows`), not the leaf's, since a `ScanEntry`'s environment is its source's plus the
+tail's six binds. -/
+structure HcontRunLeaf {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) : Type where
+  /-- The leaf's endpoint: `if.then413.i`'s state. -/
+  ss : State
+  /-- The endpoint's invariant, which the class's span produces. -/
+  hInv : WalkInv G (ContTailStartC C) ss
+  /-- The tail's three call rows at the endpoint. -/
+  calls : HcontSeamCalls G (ContTailStartC C) ss
+  /-- The root slot's word at the memory the first call reads.  The kind store is inside the
+  token record and the slot is outside it, so this is `walkReadBytes_rootSlot_of_tokStore`'s
+  transport of the head state's read. -/
+  hroot : readBytes (writeBytes ss.mem (C.stage.tok + 16) (natToBytes calls.cA.toNat 4))
+    (G.next0 + 8) 4 = some (natToBytes calls.rdv.toNat 4)
+  /-- The carry's two bounds, which the tail's contracts read. -/
+  htight : (ContTailStartC C).events.length ≤ (ContTailStartC C).k
+  hklt : (ContTailStartC C).k < G.nep
+  /-- The `phi`'s predecessor, its operand, the operand's value and the `phi` itself: the
+  leaf's own edge, and the kind literal it selects. -/
+  pT : String
+  hpre : ss.pre = some pT
+  op : Operand
+  hphi : phiIncoming pT
+    [("if.else405.i", .imm (.int 32 (BitVec.ofNat 32 0))),
+     ("if.then403.i", .imm (.int 32 (BitVec.ofNat 32 10))),
+     ("if.then397.i", .imm (.int 32 (BitVec.ofNat 32 9))),
+     ("if.end372.i", .imm (.int 32 (BitVec.ofNat 32 7))),
+     ("LeafBlock58", .imm (.int 32 (BitVec.ofNat 32 8)))] = some op
+  hval : evalOperand (stateAt ss.env ss) op = some (.int 32 calls.cA)
+
+/-- **The scan tail at the byte's own leaf.**  `hcontScanTail_at`'s statement at the leaf
+rather than at the class-C seam: the source is `leaf.ss`, the target `ScanEntry leaf.ss …`,
+and every other premise is the leaf's or the rows'. -/
+theorem hcontScanTailAt_leaf {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (leaf : HcontRunLeaf G C) (k : Nat) (v : BitVec 32) (ev : EventRecord)
+    (happ : s2ScalarValueAppend leaf.calls.r₁.mem leaf.calls.r₂.mem
+      (TailCarry₂ (ContTailStartC C)).stage.z ev.encodedBytes)
+    (hkindT : lookupName leaf.ss.env "%kind404.i" = some (.ptr (C.stage.tok + 16)))
+    (hrdT : lookupName leaf.ss.env "%root_done.i" = some (.ptr (G.next0 + 8)))
+    (hcT : lookupName leaf.ss.env "%c.i" = some (.ptr (TailCarry₂ (ContTailStartC C)).stage.c))
+    (htT : lookupName leaf.ss.env "%t352.i" =
+      some (.ptr (TailCarry₂ (ContTailStartC C)).stage.tok))
+    (hoT : lookupName leaf.ss.env "%z" = some (.ptr (TailCarry₂ (ContTailStartC C)).stage.z))
+    (heiT : lookupName leaf.ss.env "%ee.1.i" = some (.int 64 (BitVec.ofNat 64 k)))
+    (hcdT : lookupName leaf.ss.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 v.toNat)))
+    (hinner : v.toNat - k ≤ (ContTailStartC C).inner)
+    (heicd : k < v.toNat) :
+    WalkSegment (stage2Calls stage2SubCalls) G (ContTailStartC C) leaf.ss
+      (TailCarryScan (ContTailStartC C) ev)
+      (ScanEntry leaf.ss leaf.calls.r₁ leaf.calls.r₂ leaf.calls.r₃ k v.toNat leaf.calls.cA
+        leaf.calls.rdv leaf.calls.xA) 3 :=
+  scanTailSeg_at G (ContTailStartC C) leaf.ss leaf.calls ev happ leaf.calls.hzread_mem
+    leaf.hInv rfl leaf.pT leaf.hpre leaf.hphi leaf.hval hkindT hrdT leaf.hroot hcT htT hoT
+    leaf.htight leaf.hklt heiT hcdT hinner heicd (by have := v.isLt; omega)
 
 /-- **The run class's seam, as a state group.**  The invariant at `contWsTailStart` and the
 cells the tail's three calls read: the predecessor and the `phi`'s kind, the five static
@@ -693,47 +780,18 @@ tail's segment is the rows'; the tail is `hcontScanTail_at` at the record the ro
 the bundle's one segment enters as the composition's result and not as a field of the
 group. -/
 noncomputable def hcontRunFacts_of_rows {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
-    (sl : State) (b35 : UInt8) (ix : BitVec 64) (v : BitVec 32) (k : Nat) (x1 : BitVec 8)
-    (calls : HcontSeamCalls G (ContTailStartC C)
-      (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1))
+    (sl : State) (leaf : HcontRunLeaf G C)
+    (b35 : UInt8) (ix : BitVec 64) (v : BitVec 32) (k : Nat) (x1 : BitVec 8)
     (ev : EventRecord)
-    (rows : HcontRunRows G C sl b35 ix v k x1 calls.r₁ calls.r₂ calls.r₃ ev calls.cA
-      calls.rdv calls.xA)
-    (hInvT : WalkInv G (ContTailStartC C)
-      (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1))
-    {pT : String} (regT : String) {opT : Operand}
-    (hpreT : (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1).pre = some pT)
-    (hincT : phiIncoming pT
-      [("if.else405.i", .imm (.int 32 (BitVec.ofNat 32 0))),
-       ("if.then403.i", .imm (.int 32 (BitVec.ofNat 32 10))),
-       ("if.then397.i", .imm (.int 32 (BitVec.ofNat 32 9))),
-       ("if.end372.i", .imm (.int 32 (BitVec.ofNat 32 7))),
-       ("LeafBlock58", .imm (.int 32 (BitVec.ofNat 32 8)))] = some opT)
-    (hopT : evalOperand
-      (stateAt (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1).env
-        (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1)) opT = some (.int 32 calls.cA))
-    (hkindT : lookupName (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1).env
-      "%kind404.i" = some (.ptr (C.stage.tok + 16)))
-    (hrdT : lookupName (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1).env
-      "%root_done.i" = some (.ptr (G.next0 + 8)))
-    (hreadRoot : readBytes
-      (writeBytes (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1).mem
-        (C.stage.tok + 16) (natToBytes calls.cA.toNat 4)) (G.next0 + 8) 4 =
-      some (natToBytes calls.rdv.toNat 4))
-    (hcT : lookupName (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1).env
-      "%c.i" = some (.ptr (TailCarry₂ (ContTailStartC C)).stage.c))
-    (htT : lookupName (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1).env
-      "%t352.i" = some (.ptr (TailCarry₂ (ContTailStartC C)).stage.tok))
-    (hoT : lookupName (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1).env
-      "%z" = some (.ptr (TailCarry₂ (ContTailStartC C)).stage.z))
-    (htightT : (ContTailStartC C).events.length ≤ (ContTailStartC C).k)
-    (hkltT : (ContTailStartC C).k < G.nep)
-    (heiT : lookupName (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1).env
-      "%ee.1.i" = some (.int 64 (BitVec.ofNat 64 k)))
-    (hcdT : lookupName (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1).env
-      "%cond350.i" = some (.int 64 (BitVec.ofNat 64 v.toNat)))
-    (hinner : v.toNat - k ≤ (ContTailStartC C).inner) :
-    HcontRunFacts G C sl :=
+    (rows : HcontRunRows G C sl leaf.ss b35 ix v k x1 leaf.calls.r₁ leaf.calls.r₂
+      leaf.calls.r₃ ev leaf.calls.cA leaf.calls.rdv leaf.calls.xA) :
+    HcontRunFacts G C sl := by
+  have hinner : v.toNat - k ≤ (ContTailStartC C).inner := by
+    have hinn : (ContTailStartC C).inner = C.inner := rfl
+    have hik := rows.hClass.2.2.2.1
+    have hsub := rows.hClass.2.2.2.2.1
+    omega
+  exact
   { hInv := rows.hInv
     b35 := b35
     h35 := rows.h35
@@ -748,16 +806,29 @@ noncomputable def hcontRunFacts_of_rows {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
     heicd := rows.heicd
     h8c := rows.h8c
     hbit := rows.hbit
-    r₁ := calls.r₁
-    r₂ := calls.r₂
-    r₃ := calls.r₃
+    ss := leaf.ss
+    hssEe := rows.hssEe
+    hssCond := rows.hssCond
+    hssInc := rows.hssInc
+    hssNep := rows.hssNep
+    r₁ := leaf.calls.r₁
+    r₂ := leaf.calls.r₂
+    r₃ := leaf.calls.r₃
     ev := ev
-    cA := calls.cA
-    rdv := calls.rdv
-    xA := calls.xA
-    hTail := hcontScanTail_at G C sl b35 ix v k x1 calls ev rows.happ hInvT regT hpreT hincT
-      hopT hkindT hrdT hreadRoot hcT htT hoT htightT hkltT heiT hcdT hinner rows.heicd
-      (by have := v.isLt; omega)
+    cA := leaf.calls.cA
+    rdv := leaf.calls.rdv
+    xA := leaf.calls.xA
+    hTail := hcontScanTailAt_leaf G C leaf k v ev rows.happ
+      (leaf.hInv.regs ("%kind404.i", .ptr ((ContTailStartC C).stage.tok + 16))
+        (by simp [walkStaticRegs]))
+      (leaf.hInv.regs ("%root_done.i", .ptr (G.next0 + 8)) (by simp [walkStaticRegs]))
+      (leaf.hInv.regs ("%c.i", .ptr (TailCarry₂ (ContTailStartC C)).stage.c)
+        (by simp [walkStaticRegs]))
+      (leaf.hInv.regs ("%t352.i", .ptr (TailCarry₂ (ContTailStartC C)).stage.tok)
+        (by simp [walkStaticRegs]))
+      (leaf.hInv.regs ("%z", .ptr (TailCarry₂ (ContTailStartC C)).stage.z)
+        (by simp [walkStaticRegs]))
+      rows.hssEe rows.hssCond hinner rows.heicd
     a := rows.a
     q := rows.q
     bs := rows.bs
@@ -806,34 +877,45 @@ abbrev contRunTailS {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (q5 : State)
     (bb35 : UInt8) (bix : BitVec 64) (bv : BitVec 32) (k : Nat) (x1 : BitVec 8) : State :=
   contWsTailStart C (wsSlAt G (contRunCheck G C q5 inc nep ep v ix b35) bb35 bix bv k) k x1 x1
 
-/-- **`HcontRunFacts` from the run's rows and the seam's group.**  Every cell the tail's
-producer reads is one of the seam's fields, and the one numeric fact it needs beside them
-is the lane's bound at the run's stop, which is the rows' class: `v - k ≤ inner` follows
-from `v - ix ≤ inner` and `ix < k`.  So the bundle's tail is `hcontScanTail_at`'s at the
-rows' own stop, and no segment is an input. -/
+/-- **The class-C else leaf, from the seam group.**  The seam's invariant, its three call
+rows, its root word and its `phi` — `if.else405.i`'s edge, whose kind literal is `0` — are
+the leaf's, so a row stated at the class-C else leaf needs no new leaf data.  This is the
+instance `HcontRunRow`'s rows are written at; a row at another leaf supplies its own
+producer. -/
+noncomputable def hcontRunLeaf_of_seam {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (sl : State) (b : HcontRunBody G C sl)
+    (calls : HcontSeamCalls G (ContTailStartC C)
+      (contWsTailStart C (wsSlAt G sl b.b35 b.ix b.v b.k) b.k b.x1 b.x1))
+    (seam : HcontWsSeam G C sl b calls) : HcontRunLeaf G C where
+  ss := contWsTailStart C (wsSlAt G sl b.b35 b.ix b.v b.k) b.k b.x1 b.x1
+  hInv := seam.hInv
+  calls := calls
+  hroot := seam.hreadRoot
+  htight := seam.htight
+  hklt := seam.hklt
+  pT := "if.else405.i"
+  hpre := seam.hpre
+  op := Operand.imm (.int 32 (BitVec.ofNat 32 0))
+  hphi := seam.hphi
+  hval := seam.hop
+
+/-- **`HcontRunFacts` from the run's rows and the byte's leaf.**  The rows are the check
+state's and the landing's, and the leaf is the byte's own: its invariant, its three call
+rows and its `phi`.  The one numeric fact the tail needs beside them is the lane's bound at
+the run's stop, which is the rows' class (`v - k ≤ inner` from `v - ix ≤ inner` and
+`ix < k`).  So the bundle's tail is `hcontScanTailAt_leaf`'s at the leaf, and no segment is
+an input. -/
 noncomputable def hcontRunFacts_of_seam {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
     (q5 : State) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
     (b35 : UInt8)
     (b : HcontRunBody G C (contRunCheck G C q5 inc nep ep v ix b35))
-    (ev : EventRecord)
-    (calls : HcontSeamCalls G (ContTailStartC C)
-      (contRunTailS G C q5 inc nep ep v ix b35 b.b35 b.ix b.v b.k b.x1))
-    (rows : HcontRunRows G C (contRunCheck G C q5 inc nep ep v ix b35)
-      b.b35 b.ix b.v b.k b.x1 calls.r₁ calls.r₂ calls.r₃ ev calls.cA calls.rdv calls.xA)
-    (seam : HcontWsSeam G C (contRunCheck G C q5 inc nep ep v ix b35) b calls) :
+    (leaf : HcontRunLeaf G C) (ev : EventRecord)
+    (rows : HcontRunRows G C (contRunCheck G C q5 inc nep ep v ix b35) leaf.ss
+      b.b35 b.ix b.v b.k b.x1 leaf.calls.r₁ leaf.calls.r₂ leaf.calls.r₃ ev leaf.calls.cA
+      leaf.calls.rdv leaf.calls.xA) :
     HcontRunFacts G C (contRunCheck G C q5 inc nep ep v ix b35) :=
-  hcontRunFacts_of_rows G C (contRunCheck G C q5 inc nep ep v ix b35)
-    b.b35 b.ix b.v b.k b.x1 calls ev rows seam.hInv
-    (pT := "if.else405.i") (regT := "if.else405.i")
-    (opT := Operand.imm (.int 32 (BitVec.ofNat 32 0)))
-    seam.hpre seam.hphi seam.hop seam.hkind seam.hrd seam.hreadRoot seam.hc seam.ht seam.ho
-    seam.htight seam.hklt seam.hei seam.hcd
-    (by
-      have hik : b.ix.toNat < b.k := rows.hClass.2.2.2.1
-      have hsub : b.v.toNat - b.ix.toNat ≤ C.inner := rows.hClass.2.2.2.2.1
-      have hinn : (ContTailStartC C).inner = C.inner := rfl
-      show b.v.toNat - b.k ≤ (ContTailStartC C).inner
-      omega)
+  hcontRunFacts_of_rows G C (contRunCheck G C q5 inc nep ep v ix b35) leaf
+    b.b35 b.ix b.v b.k b.x1 ev rows
 
 /-! ### The instrument -/
 
@@ -843,6 +925,8 @@ noncomputable def hcontRunFacts_of_seam {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
 #print axioms LeanLLVM.Refinement.WalkScope.hcontScanTail_at
 #print axioms LeanLLVM.Refinement.WalkScope.hcontRunFacts_of_rows
 #print axioms LeanLLVM.Refinement.WalkScope.hcontRunFacts_of_seam
+#print axioms LeanLLVM.Refinement.WalkScope.hcontScanTailAt_leaf
+#print axioms LeanLLVM.Refinement.WalkScope.hcontRunLeaf_of_seam
 #print axioms LeanLLVM.Refinement.WalkScope.hcontWsSeam_of_body
 #print axioms LeanLLVM.Refinement.WalkScope.hcontScanTail_of_seam
 

@@ -256,7 +256,7 @@ noncomputable def runFacts_of_runBundle {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
     {nS : Nat}
     (hSpan : Seg (stage2Calls stage2SubCalls) G (ContSeamC C)
       (contWsSeamS C (wsSlAt G sl f.b35 f.ix f.v f.k) f.k f.x1) (ContTailStartC C)
-      (contWsTailStart C (wsSlAt G sl f.b35 f.ix f.v f.k) f.k f.x1 f.x1) nS)
+      f.ss nS)
     (hnS : nS ≤ 5) :
     RunFacts G C s := by
   let w := wsRunHeadAt G C s sl nPre hPre hnPre f hk
@@ -279,7 +279,7 @@ noncomputable def runFacts_of_runBundle {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
       hmk := rfl
       h8m := w.h8
       Cs := ContTailStartC C
-      ss := contWsTailStart C (wsSlAt G sl f.b35 f.ix f.v f.k) f.k f.x1 f.x1
+      ss := f.ss
       nS := nS
       hSpan := hSpan
       hnS := hnS
@@ -297,13 +297,9 @@ noncomputable def runFacts_of_runBundle {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
       i := f.k
       c := f.v.toNat
       hcounter := latch_counter (contWsEntryAt f) (BitVec.ofNat 64 f.k) f.a f.q f.x47
-      hbound := contWsLatchAt_cond f w.hcond
-      hinc := by
-        rw [contWsLatchAt_inc]
-        exact contWsSeamS_inc C (wsSlAt G sl f.b35 f.ix f.v f.k) f.k f.x1 w.seg.inv'
-      hnep := by
-        rw [contWsLatchAt_nep]
-        exact contWsSeamS_nep C (wsSlAt G sl f.b35 f.ix f.v f.k) f.k f.x1 w.seg.inv'
+      hbound := contWsLatchAt_cond f
+      hinc := contWsLatchAt_inc f
+      hnep := contWsLatchAt_nep f
       hic := f.heicd
       hcw := by have := f.v.isLt; omega
       hbyte := f.hbyte
@@ -348,10 +344,7 @@ noncomputable def runFacts_of_defaultClass {m0 : Mem} (G : WalkGeom m0) (C : Wal
     (hSpan : Seg (stage2Calls stage2SubCalls) G (ContSeamC C)
       (contWsSeamS C (wsSlAt G
         (contLandOut (G := G) (contMidS C q5 inc nep ep v ix) v.toNat b35)
-        f.b35 f.ix f.v f.k) f.k f.x1) (ContTailStartC C)
-      (contWsTailStart C (wsSlAt G
-        (contLandOut (G := G) (contMidS C q5 inc nep ep v ix) v.toNat b35)
-        f.b35 f.ix f.v f.k) f.k f.x1 f.x1) nS)
+        f.b35 f.ix f.v f.k) f.k f.x1) (ContTailStartC C) f.ss nS)
     (hnS : nS ≤ 5) :
     RunFacts G C s :=
   runFacts_of_runBundle G C s hInv hblock _

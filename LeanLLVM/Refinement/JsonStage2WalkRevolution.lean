@@ -3598,9 +3598,28 @@ structure HcontRunFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (sl : Sta
     some (.int 8 x1)
   hbit : (evalICmp .eq x1 (BitVec.ofNat 8 45) |||
     evalICmp .ult (x1 + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0
+  /-- **The byte's own leaf below `if.else387.i`.**  `if.then413.i` is reached through one
+  of six leaves — the letters pivot's two arms, the `LeafBlock58` root's two and
+  `LeafBlock56`'s two — and they differ only in the names they bind: the class-C span's
+  target and the letters and `'f'` spans' targets are the same carry and the same memory.
+  So the leaf's endpoint is data, and every state below it is stated at it: the tail's
+  source, and the scan's entry and latch.  Naming one leaf would state the bundle at that
+  leaf only, which is the restriction this field removes. -/
+  ss : State
+  /-- `%ee.1.i` at the leaf: the run's stop, which the token's end stored and the scan
+  entry's `phi` selects.  `ScanEntry` and `Latch462S` bind no cell, so the bundle carries
+  the four the tail reads instead of peeling them from a named leaf. -/
+  hssEe : lookupName ss.env "%ee.1.i" = some (.int 64 (BitVec.ofNat 64 k))
+  /-- `%cond350.i` at the leaf: the lane's word, bound once at `cond.end349.i`. -/
+  hssCond : lookupName ss.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 v.toNat))
+  /-- `%inc.i` at the leaf: the head's counter, which `WalkInv.inc_reg` fixes and no chain
+  block rebinds. -/
+  hssInc : lookupName ss.env "%inc.i" = some (.int 64 (BitVec.ofNat 64 (C.k + 1)))
+  /-- `%nep` at the leaf: one of `walkStaticRegs`' pairs. -/
+  hssNep : lookupName ss.env "%nep" = some (.int 64 (BitVec.ofNat 64 G.nep))
   /-- The tail's own: its three call outcomes, the event it emits, and its segment from
-  the class-C span's target to the scan's entry — `consumerTailSegAt` at count `3`, its
-  first index the run's stop `k` and its bound the lane's word. -/
+  the leaf to the scan's entry — `scanTailSeg_at` at count `3`, its first index the run's
+  stop `k` and its bound the lane's word. -/
   r₁ : CallOutcome
   r₂ : CallOutcome
   r₃ : CallOutcome
@@ -3608,37 +3627,34 @@ structure HcontRunFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (sl : Sta
   cA : BitVec 32
   rdv : BitVec 32
   xA : BitVec 32
-  hTail : WalkSegment (stage2Calls stage2SubCalls) G (ContTailStartC C)
-    (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1)
+  hTail : WalkSegment (stage2Calls stage2SubCalls) G (ContTailStartC C) ss
     (TailCarryScan (ContTailStartC C) ev)
-    (contWsEntry C (wsSlAt G sl b35 ix v k) k x1 x1 r₁ r₂ r₃ k v cA rdv xA) 3
-  /-- The scan's landing: the byte's address and the byte.  The index is `k` — the seam's
+    (ScanEntry ss r₁ r₂ r₃ k v.toNat cA rdv xA) 3
+  /-- The scan's landing: the byte's address and the byte.  The index is `k` — the leaf's
   stored end — everywhere the landing's states name it. -/
   a : Nat
   q : Nat
   bs : List UInt8
-  h3S : lookupName (contWsEntry C (wsSlAt G sl b35 ix v k) k x1 x1 r₁ r₂ r₃ k v cA rdv xA).env
-    "%3" = some (.ptr a)
+  h3S : lookupName (ScanEntry ss r₁ r₂ r₃ k v.toNat cA rdv xA).env "%3" = some (.ptr a)
   hpos : ((BitVec.ofNat 64 k).signExtend 64).toNat < 2 ^ 63
   hreadS : readBytes
-    (contWsEntry C (wsSlAt G sl b35 ix v k) k x1 x1 r₁ r₂ r₃ k v cA rdv xA).mem
+    (ScanEntry ss r₁ r₂ r₃ k v.toNat cA rdv xA).mem
     (a + ((BitVec.ofNat 64 k).signExtend 64).toNat) 1 = some bs
   hbsS : bytesToNat bs = q
   hloc105 : WalkLocal (ScanC₁₀₅ (TailCarryScan (ContTailStartC C) ev))
-    (landRhs457OutAt (contWsEntry C (wsSlAt G sl b35 ix v k) k x1 x1 r₁ r₂ r₃ k v cA rdv xA)
+    (landRhs457OutAt (ScanEntry ss r₁ r₂ r₃ k v.toNat cA rdv xA)
       (BitVec.ofNat 64 k) a q)
   x47 : BitVec 8
   h47 : evalOperand
-    (landRhs457OutAt (contWsEntry C (wsSlAt G sl b35 ix v k) k x1 x1 r₁ r₂ r₃ k v cA rdv xA)
+    (landRhs457OutAt (ScanEntry ss r₁ r₂ r₃ k v.toNat cA rdv xA)
       (BitVec.ofNat 64 k) a q) (.reg "%47") = some (.int 8 x47)
   hbit47 : evalICmp .slt x47 (BitVec.ofNat 8 13) = 1
   hws47 : evalICmp .ule (x47 + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 1
   hloc96 : WalkLocal (ScanC₉₆ (TailCarryScan (ContTailStartC C) ev))
-    (ScanS₉₆ (contWsEntry C (wsSlAt G sl b35 ix v k) k x1 x1 r₁ r₂ r₃ k v cA rdv xA)
+    (ScanS₉₆ (ScanEntry ss r₁ r₂ r₃ k v.toNat cA rdv xA)
       (BitVec.ofNat 64 k) a q x47)
   hlatch : WalkLocal { TailCarryScan (ContTailStartC C) ev with block := "while.body462.i" }
-    (contWsLatch C (wsSlAt G sl b35 ix v k) k x1 x1 r₁ r₂ r₃ k v cA rdv xA
-      (BitVec.ofNat 64 k) a q x47)
+    (Latch462S (ScanEntry ss r₁ r₂ r₃ k v.toNat cA rdv xA) (BitVec.ofNat 64 k) a q x47)
   /-- **The scan runs inside the entry's span.**  Its bound is at or before the next
   entry's position, and the run's stop at or after this one's. -/
   hspan : v.toNat ≤ entryPos G (C.k + 1)
@@ -3909,6 +3925,34 @@ noncomputable def hcontRunFacts_of_contFacts {m0 : Mem} (G : WalkGeom m0) (C : W
     rw [wsSlAt_transport]
     exact f.h8c
   hbit := wsBit45 f.hc110
+  ss := contWsTailStart C (wsSlAt G (contLandS C s f.x f.inc f.nep f.ep f.v f.ix f.b35)
+    f.b35 f.ix f.v f.k) f.k f.x1 f.x1
+  hssEe := by
+    simp only [contWsTailStart, HeadS413, HeadS405, HeadS58, HeadS60, HeadS62,
+      contWsSeamS, seamS, seamFin, stateAt, cells, State.bind]
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+    exact lookupName_cons_self _ _ _
+  hssCond := by
+    simp only [contWsTailStart, HeadS413, HeadS405, HeadS58, HeadS60, HeadS62,
+      contWsSeamS, seamS, seamFin, stateAt, cells, State.bind]
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+    rw [wsSlAt_cond]
+    exact contLandS_cond C s f.x f.inc f.nep f.ep f.v f.ix f.b35
+  hssInc := by
+    have h := f.hTail.inv'.inc_reg
+    rw [wsSlAt_transport]
+    simp only [contWsEntry, ScanEntry, TailS₃, TailS₂, TailS₁, stateAt, cells,
+      State.bind] at h ⊢
+    repeat rw [lookupName_cons_ne _ _ (by decide)] at h ⊢
+    exact h
+  hssNep := by
+    have h := f.hTail.inv'.regs ("%nep", .int 64 (BitVec.ofNat 64 G.nep))
+      (by simp [walkStaticRegs])
+    rw [wsSlAt_transport]
+    simp only [contWsEntry, ScanEntry, TailS₃, TailS₂, TailS₁, stateAt, cells,
+      State.bind] at h ⊢
+    repeat rw [lookupName_cons_ne _ _ (by decide)] at h ⊢
+    exact h
   r₁ := f.r₁
   r₂ := f.r₂
   r₃ := f.r₃
@@ -3958,17 +4002,15 @@ at `HcontFacts`'s), the peels the landing and the scan's cells need, and the bri
 makes the seam's byte the head's: `%8` is loaded once and the skip keeps it, so `x1` is
 `hlastByte G C`. -/
 
-/-- The scan's entry, at the bundle's own terms. -/
+/-- The scan's entry, at the leaf's own terms. -/
 abbrev contWsEntryAt {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {sl : State}
     (f : HcontRunFacts G C sl) : State :=
-  contWsEntry C (wsSlAt G sl f.b35 f.ix f.v f.k) f.k f.x1 f.x1 f.r₁ f.r₂ f.r₃ f.k f.v
-    f.cA f.rdv f.xA
+  ScanEntry f.ss f.r₁ f.r₂ f.r₃ f.k f.v.toNat f.cA f.rdv f.xA
 
-/-- The scan's latch, at the bundle's own terms. -/
+/-- The scan's latch, at the leaf's own terms. -/
 abbrev contWsLatchAt {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {sl : State}
     (f : HcontRunFacts G C sl) : State :=
-  contWsLatch C (wsSlAt G sl f.b35 f.ix f.v f.k) f.k f.x1 f.x1 f.r₁ f.r₂ f.r₃ f.k f.v
-    f.cA f.rdv f.xA (BitVec.ofNat 64 f.k) f.a f.q f.x47
+  Latch462S (contWsEntryAt f) (BitVec.ofNat 64 f.k) f.a f.q f.x47
 
 /-- **The seam's byte is the head's byte.**  `f.h8c` reads the seam's `%8` as `x1`, the
 skip keeps `%8` (`wsSlAt_env8`), and the check state's invariant carries it as
@@ -3991,51 +4033,52 @@ theorem hcontRunFacts_x1 {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {sl : St
 /-- The scan's entry's predecessor is the copy call's block, at the bundle. -/
 theorem contWsEntryAt_pre {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {sl : State}
     (f : HcontRunFacts G C sl) : (contWsEntryAt f).pre = some "if.then447.i" := by
-  simp only [contWsEntryAt, contWsEntry, ScanEntry, TailS₃]
+  simp only [contWsEntryAt, ScanEntry, TailS₃]
 
-/-- **`hopS` is produced at the bundle.**  The seam stored the run's stop `k` in `%ee.1.i`
-and the scan's entry `phi` selects that cell on `if.then447.i`'s edge, so the landing's
-index *is* the run's stop. -/
+/-- **`hopS` is produced at the bundle.**  The leaf's `%ee.1.i` is the run's stop — the
+token's end stored it there and the scan entry's `phi` selects that cell on `if.then447.i`'s
+edge — so the landing's index *is* the run's stop.  The tail's three steps bind no cell of
+that name (`TailS₁/₂/₃` bind their own four, two and one), so the peel reaches the leaf. -/
 theorem contWsEntryAt_hopS {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {sl : State}
     (f : HcontRunFacts G C sl) :
     evalOperand (stateAt (contWsEntryAt f).env (contWsEntryAt f)) (.reg "%ee.1.i") =
       some (.int 64 (BitVec.ofNat 64 f.k)) := by
-  simp only [evalOperand, stateAt]
-  exact contWsEntry_ee C (wsSlAt G sl f.b35 f.ix f.v f.k) f.k f.x1 f.x1 f.r₁ f.r₂ f.r₃
-    f.k f.v f.cA f.rdv f.xA
+  simp only [evalOperand, contWsEntryAt, ScanEntry, TailS₃, TailS₂, TailS₁, stateAt, cells,
+    State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+  exact f.hssEe
 
-/-- `%inc.i` at the bundle's latch is the run's endpoint's. -/
+/-- `%inc.i` at the bundle's latch is the leaf's: the tail's steps and the scan's three
+bind no cell of that name, so it is the endpoint's word, which the chain kept. -/
 theorem contWsLatchAt_inc {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {sl : State}
     (f : HcontRunFacts G C sl) :
     lookupName (contWsLatchAt f).env "%inc.i" =
-      lookupName (wsSlAt G sl f.b35 f.ix f.v f.k).env "%inc.i" := by
-  simp only [contWsLatchAt, contWsLatch, Latch462S, ScanS₉₆, landRhs457OutAt, scanLatchOut,
-    contWsEntry, ScanEntry, TailS₃, TailS₂, TailS₁, contWsTailStart, HeadS413, HeadS405,
-    HeadS58, HeadS60, HeadS62, contWsSeamS, seamS, seamFin, stateAt, cells, State.bind]
+      some (.int 64 (BitVec.ofNat 64 (C.k + 1))) := by
+  simp only [contWsLatchAt, contWsEntryAt, Latch462S, ScanS₉₆, landRhs457OutAt, ScanEntry,
+    TailS₃, TailS₂, TailS₁, stateAt, cells, State.bind]
   repeat rw [lookupName_cons_ne _ _ (by decide)]
+  exact f.hssInc
 
-/-- `%nep` at the bundle's latch is the run's endpoint's. -/
+/-- `%nep` at the bundle's latch is the leaf's, for the same reason. -/
 theorem contWsLatchAt_nep {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {sl : State}
     (f : HcontRunFacts G C sl) :
     lookupName (contWsLatchAt f).env "%nep" =
-      lookupName (wsSlAt G sl f.b35 f.ix f.v f.k).env "%nep" := by
-  simp only [contWsLatchAt, contWsLatch, Latch462S, ScanS₉₆, landRhs457OutAt, scanLatchOut,
-    contWsEntry, ScanEntry, TailS₃, TailS₂, TailS₁, contWsTailStart, HeadS413, HeadS405,
-    HeadS58, HeadS60, HeadS62, contWsSeamS, seamS, seamFin, stateAt, cells, State.bind]
+      some (.int 64 (BitVec.ofNat 64 G.nep)) := by
+  simp only [contWsLatchAt, contWsEntryAt, Latch462S, ScanS₉₆, landRhs457OutAt, ScanEntry,
+    TailS₃, TailS₂, TailS₁, stateAt, cells, State.bind]
   repeat rw [lookupName_cons_ne _ _ (by decide)]
+  exact f.hssNep
 
-/-- `%cond350.i` at the bundle's latch is the lane's word. -/
+/-- `%cond350.i` at the bundle's latch is the lane's word: the leaf carries it and no step
+below binds it. -/
 theorem contWsLatchAt_cond {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {sl : State}
-    (f : HcontRunFacts G C sl)
-    (hcond : lookupName (wsSlAt G sl f.b35 f.ix f.v f.k).env "%cond350.i" =
-      some (.int 64 (BitVec.ofNat 64 f.v.toNat))) :
+    (f : HcontRunFacts G C sl) :
     lookupName (contWsLatchAt f).env "%cond350.i" =
       some (.int 64 (BitVec.ofNat 64 f.v.toNat)) := by
-  simp only [contWsLatchAt, contWsLatch, Latch462S, ScanS₉₆, landRhs457OutAt, scanLatchOut,
-    contWsEntry, ScanEntry, TailS₃, TailS₂, TailS₁, contWsTailStart, HeadS413, HeadS405,
-    HeadS58, HeadS60, HeadS62, contWsSeamS, seamS, seamFin, stateAt, cells, State.bind]
+  simp only [contWsLatchAt, contWsEntryAt, Latch462S, ScanS₉₆, landRhs457OutAt, ScanEntry,
+    TailS₃, TailS₂, TailS₁, stateAt, cells, State.bind]
   repeat rw [lookupName_cons_ne _ _ (by decide)]
-  exact hcond
+  exact f.hssCond
 
 /-- **The scan's landing, at the bundle's own entry.**  `walkScanLinks457`'s three links,
 with the bundle's fields at every premise, and the latch named at `contWsLatchAt`. -/
