@@ -102,7 +102,7 @@ def fLetter_cont_arm {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
   hcontArm_fLetter_of_staging (walkSeed G S) s hInv
     (hlastByte_of_reg8 hInv (fHead_cont G S s h hInv))
     (fPrem_102).1 (fPrem_102).2.1 (fPrem_102).2.2
-    hHead hm hmk h8m hTail ht htk htok
+    hHead (by omega) hm hmk h8m hTail ht htk htok
 
 /-- **`"f"`'s head takes the last entry's `'f'` arm.** -/
 def fLetter_last_arm {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
@@ -120,7 +120,7 @@ def fLetter_last_arm {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
   lastEntryArm_fLetter_of_staging (walkSeed G S) s hInv
     (hlastByte_of_reg8 hInv (fHead_last G S s h hInv))
     (fPrem_102).1 (fPrem_102).2.1 (fPrem_102).2.2
-    hHead hm hmk h8m hTail ht htk htok
+    hHead (by omega) hm hmk h8m hTail ht htk htok
 
 /-! ### The dispatch, through the real `.dispatch` -/
 

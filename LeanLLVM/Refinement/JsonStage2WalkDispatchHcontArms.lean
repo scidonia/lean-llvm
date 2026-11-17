@@ -87,8 +87,9 @@ supplies, and `.dispatch` turns it into the actual `WalkDispatchResult`:
 * `.letters` — the default arm's letter and high-byte route on the scan-free class:
   `lettersSpan`'s four links below `if.else387.i` (`NodeBlock62`, `LeafBlock54`,
   `if.else405.i`, `if.then413.i`), with the head's chain to the seam and the tail's three
-  calls as their own counted segments (twelve and three) and the merge's own step — twenty
-  links, `lettersCleanupMerge_at`.  The class premise is explicit (the tag test clear,
+  calls as their own counted segments (the head class's `nH ≤ 12`, and three) and the
+  merge's own step — at most twenty links, `lettersCleanupMerge_at`.  The class premise is
+  explicit (the tag test clear,
   `slt %8 110 = 1`, `%8 ≠ 102`), so the chain the reader must supply is the class's.
 * `.fLetter` — the byte `102` (`'f'`) on the scan-free class: `LeafBlock54`'s *true* arm,
   `if.then397.i`'s empty body to `if.then413.i` (kind `9`) rather than the letters route's
@@ -439,20 +440,22 @@ inductive HcontArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
   class that test is true and the target is `land.rhs457.i`, the scan's landing, so that
   class's segment is the scan's — `HcontFacts`'s, `.ws`'s — and not this one.
 
-  **The twelve is the four-pivot classes' count, and this field is fixed at it.**  The
-  bytes `0 … 43` and `128 … 255` (`.defaultValueLow`) take `NodeBlock5 → LeafBlock →
+  **The chain is counted, and its bound is the longest class's twelve.**  The bytes
+  `0 … 43` and `128 … 255` (`.defaultValueLow`) take `NodeBlock5 → LeafBlock →
   sw.default.i`, three pivots, so their chain is **eleven** links
-  (`contLowHeadSeg`, `JsonStage2WalkDispatchLettersHead`), and no segment at twelve exists
-  at their states.  The constructor is therefore not inhabited at every state its class
-  admits; it becomes so when this field is counted (`nH` with `nH ≤ 12`), which
-  `lettersCleanupMerge_at` already takes. -/
+  (`contLowHeadSeg`, `JsonStage2WalkDispatchLettersHead`), while
+  `.defaultValueMid`, `.otherValue`, `.defaultValueBracket` and
+  `.defaultValueBracketHigh` take four and cost twelve.  The field is therefore the
+  class's own count `nH` with `nH ≤ 12`, which is what makes the constructor inhabited at
+  every state its class admits; `lettersCleanupMerge_at` takes the same pair. -/
   | letters {x : BitVec 8} (h8 : evalOperand s (.reg "%8") = some (.int 8 x))
       (hbit : (evalICmp .eq x (BitVec.ofNat 8 45) |||
         evalICmp .ult (x + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
       (h110 : evalICmp .slt x (BitVec.ofNat 8 110) = 1)
       (hne102 : evalICmp .eq x (BitVec.ofNat 8 102) = 0)
-      {Cm : WalkCarry G} {sm : State}
-      (hHead : WalkSegment (stage2Calls stage2SubCalls) G C s Cm sm 12)
+      {Cm : WalkCarry G} {sm : State} {nH : Nat}
+      (hHead : WalkSegment (stage2Calls stage2SubCalls) G C s Cm sm nH)
+      (hnH : nH ≤ 12)
       (hm : Cm.block = "if.else387.i") (hmk : Cm.k = C.k)
       (h8m : evalOperand sm (.reg "%8") = some (.int 8 x))
       {Ct : WalkCarry G} {st : State} {tok : Nat}
@@ -463,16 +466,17 @@ inductive HcontArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
   /-- **The byte `102` (`'f'`) on the scan-free class**, at the continuing head: the
   letters span's true arm, `LeafBlock54`'s `eq %8, 102` set, so `if.then397.i` (kind `9`)
   rather than `if.else405.i` (kind `0`).  `fSpan`'s four links, with the head's chain to
-  the seam (twelve links at a continuing entry) and the tail's three calls on their empty
-  arm: `12 + 4 + 3 + 1 = 20`, and the price `20 + 2 = 22 ≤ 32` spends no byte term — the
+  the seam (the class's own count `nH ≤ 12`) and the tail's three calls on their empty
+  arm: `nH + 4 + 3 + 1 ≤ 20`, and the price `≤ 22 ≤ 32` spends no byte term — the
   tail's endpoint is `if.end473.i`, the copy call's `ult v v` arm. -/
   | fLetter {x : BitVec 8} (h8 : evalOperand s (.reg "%8") = some (.int 8 x))
       (hbit : (evalICmp .eq x (BitVec.ofNat 8 45) |||
         evalICmp .ult (x + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
       (h110 : evalICmp .slt x (BitVec.ofNat 8 110) = 1)
       (h102 : evalICmp .eq x (BitVec.ofNat 8 102) = 1)
-      {Cm : WalkCarry G} {sm : State}
-      (hHead : WalkSegment (stage2Calls stage2SubCalls) G C s Cm sm 12)
+      {Cm : WalkCarry G} {sm : State} {nH : Nat}
+      (hHead : WalkSegment (stage2Calls stage2SubCalls) G C s Cm sm nH)
+      (hnH : nH ≤ 12)
       (hm : Cm.block = "if.else387.i") (hmk : Cm.k = C.k)
       (h8m : evalOperand sm (.reg "%8") = some (.int 8 x))
       {Ct : WalkCarry G} {st : State} {tok : Nat}
@@ -485,15 +489,17 @@ inductive HcontArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
   leaf test, kind `10`), `111 … 115` via its else arm, `116` from `LeafBlock58` itself
   (kind `8`) and `117 … 125` via its else arm.  The span is the byte's own
   (`c56TrueSpan`, `c56ElseSpan`, `c58TrueSpan`, `c58ElseSpan`) at `nS ≤ 5`; the head's
-  chain to the seam costs twelve links and the tail's three calls end at `if.end473.i` on
-  their empty arm, so `12 + nS + 3 + 1 ≤ 21` and the price `≤ 23 ≤ 32` with no byte term.
+  chain to the seam costs the class's own count (`nH ≤ 12`) and the tail's three calls
+  end at `if.end473.i` on their empty arm, so `nH + nS + 3 + 1 ≤ 21` and the price
+  `≤ 23 ≤ 32` with no byte term.
   The class is `126`/`127`'s complement in `[110, 125]`, and `.ws`/`.cleanup` are theirs. -/
   | classC {x : BitVec 8} (h8 : evalOperand s (.reg "%8") = some (.int 8 x))
       (h110 : evalICmp .slt x (BitVec.ofNat 8 110) = 0)
       (h125 : evalICmp .slt x (BitVec.ofNat 8 125) = 1 ∨
         evalICmp .eq x (BitVec.ofNat 8 125) = 1)
-      {Cm : WalkCarry G} {sm : State}
-      (hHead : WalkSegment (stage2Calls stage2SubCalls) G C s Cm sm 12)
+      {Cm : WalkCarry G} {sm : State} {nH : Nat}
+      (hHead : WalkSegment (stage2Calls stage2SubCalls) G C s Cm sm nH)
+      (hnH : nH ≤ 12)
       (hm : Cm.block = "if.else387.i") (hmk : Cm.k = C.k)
       (h8m : evalOperand sm (.reg "%8") = some (.int 8 x))
       {Cs : WalkCarry G} {ss : State} {nS : Nat}
@@ -592,10 +598,10 @@ theorem HcontArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
         hv he hj hj64)
   | .closeWithOpen h8 hv hsp hmark hstate hpreA hvj he hj hj64 =>
     closeWithOpen_at G C s hInv hblock h8 hv hsp hmark hstate hpreA hvj he hj hj64
-  | .letters h8 hbit h110 hne102 hHead hm hmk h8m hTail ht htk htok => by
+  | .letters h8 hbit h110 hne102 hHead hnH hm hmk h8m hTail ht htk htok => by
     obtain ⟨Cd, sd, p, hseg, hblockD, hkD, hpreD, hincD, hnepD, hpriceD⟩ :=
       lettersCleanupMerge_at G C s hInv hblock h8 hbit h110 hne102 hHead hm hmk h8m
-        hTail ht htk htok le_rfl (by omega)
+        hTail ht htk htok hnH (by omega)
     have hspv : evalOperand sd (Operand.reg "%sp.i.0248") =
         some (.int 32 (BitVec.ofNat 32 Cd.sp)) := hseg.inv'.depth_reg
     have hnep64 : G.nep < 2 ^ 64 := by
@@ -612,10 +618,10 @@ theorem HcontArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
       (by omega) hcap hseg.inv'.depth_cap hseg.inv'.sp_le_wlen hpriceD
     · -- the merge's index cell is the header's increment, at the entry's successor
       simpa only [evalOperand] using hincD
-  | .fLetter h8 hbit h110 h102 hHead hm hmk h8m hTail ht htk htok => by
+  | .fLetter h8 hbit h110 h102 hHead hnH hm hmk h8m hTail ht htk htok => by
     obtain ⟨Cd, sd, p, hseg, hblockD, hkD, hpreD, hincD, hnepD, hpriceD⟩ :=
       fCleanupMerge_at G C s hInv hblock h8 hbit h110 h102 hHead hm hmk h8m
-        hTail ht htk htok le_rfl (by omega)
+        hTail ht htk htok hnH (by omega)
     have hspv : evalOperand sd (Operand.reg "%sp.i.0248") =
         some (.int 32 (BitVec.ofNat 32 Cd.sp)) := hseg.inv'.depth_reg
     have hnep64 : G.nep < 2 ^ 64 := by
@@ -632,10 +638,10 @@ theorem HcontArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
       (by omega) hcap hseg.inv'.depth_cap hseg.inv'.sp_le_wlen hpriceD
     · -- the merge's index cell is the header's increment, at the entry's successor
       simpa only [evalOperand] using hincD
-  | .classC h8 h110 h125 hHead hm hmk h8m hSpan hs hnS hTail ht htk htok => by
+  | .classC h8 h110 h125 hHead hnH hm hmk h8m hSpan hs hnS hTail ht htk htok => by
     obtain ⟨Cd, sd, p, hseg, hblockD, hkD, hpreD, hincD, hnepD, hpriceD⟩ :=
       classCMerge_at G C s hInv hblock h8 h110 h125 hHead hm hmk h8m hSpan hs hnS
-        hTail ht htk htok (by omega) (by omega)
+        hTail ht htk htok hnH (by omega)
     have hspv : evalOperand sd (Operand.reg "%sp.i.0248") =
         some (.int 32 (BitVec.ofNat 32 Cd.sp)) := hseg.inv'.depth_reg
     have hnep64 : G.nep < 2 ^ 64 := by

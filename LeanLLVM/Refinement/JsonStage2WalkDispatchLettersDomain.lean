@@ -130,22 +130,22 @@ def letters_cont_arm_a {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State
   hcontArm_letters_of_staging (walkSeed G S) s hInv
     (hlastByte_of_reg8 hInv (lettersHead_a G S s h hInv))
     (lettersPrem_a).1 (lettersPrem_a).2.1 (lettersPrem_a).2.2
-    hHead hm hmk h8m hTail ht htk htok
+    hHead (by omega) hm hmk h8m hTail ht htk htok
 
 /-- **`\xC8 0`'s head takes the continuing letters arm**, on the other head class.
 
-**The arm's field is stated at twelve, and this class's route is eleven.**  `.defaultValueLow`
-takes `NodeBlock5 → LeafBlock → sw.default.i` — three pivots, where `.defaultValueBracketHigh`
-takes four — so the segment to `if.else387.i` is eleven links
-(`contLowHeadSeg`, `JsonStage2WalkDispatchLettersHead`).  The twelve-link hypothesis below
-therefore cannot be built at this document: the arm is inhabited here only once its `hHead`
-field is a counted one (`nH` with `nH ≤ 12`), which is what the segment's own count says.
-The composition above the arm (`lettersCleanupMerge_at`) already takes `nH`/`hnH`; the
-constructor is the piece still at a fixed count. -/
+**The class's route is eleven, and the segment is taken at it.**  `.defaultValueLow`
+takes `NodeBlock5 → LeafBlock → sw.default.i` — three pivots, where
+`.defaultValueBracketHigh` takes four — so the segment to `if.else387.i` is eleven links
+(`contLowHeadSeg`, `JsonStage2WalkDispatchLettersHead`), and that is the hypothesis below.
+The arm's field is the counted one (`nH` with `nH ≤ 12`), so the class's own chain feeds it
+as `nH = 11`; the twelve belongs to the four-pivot classes and no such segment exists here.
+`lettersCleanupMerge_at` and the constructor both take the pair, so nothing above the arm
+supplies a count of its own. -/
 def letters_cont_arm_high {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
     (h : LettersDocument G (200 : UInt8)) (hInv : WalkInv G (walkSeed G S) s)
     {Cm : WalkCarry G} {sm : State}
-    (hHead : WalkSegment (stage2Calls stage2SubCalls) G (walkSeed G S) s Cm sm 12)
+    (hHead : WalkSegment (stage2Calls stage2SubCalls) G (walkSeed G S) s Cm sm 11)
     (hm : Cm.block = "if.else387.i") (hmk : Cm.k = (walkSeed G S).k)
     (h8m : evalOperand sm (.reg "%8") = some (.int 8 (BitVec.ofNat 8 200)))
     {Ct : WalkCarry G} {st : State} {tok : Nat}
@@ -157,7 +157,7 @@ def letters_cont_arm_high {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : St
   hcontArm_letters_of_staging (walkSeed G S) s hInv
     (hlastByte_of_reg8 hInv (lettersHead_high G S s h hInv))
     (lettersPrem_high).1 (lettersPrem_high).2.1 (lettersPrem_high).2.2
-    hHead hm hmk h8m hTail ht htk htok
+    hHead (by omega) hm hmk h8m hTail ht htk htok
 
 /-! ### The dispatch, through the real `.dispatch` -/
 
@@ -193,7 +193,7 @@ theorem letters_cont_dispatch_a {args : List Value} {m0 : Mem} {next : Nat}
       hHead hm hmk h8m hTail ht htk htok)
 
 /-- **The dispatch at `\xC8 0`.**  The same arm at the high byte's route, whose head chain
-is the other class's. -/
+is the other class's — eleven links, so that is the hypothesis. -/
 theorem letters_cont_dispatch_high {args : List Value} {m0 : Mem} {next : Nat}
     {G : WalkGeom m0} {S : WalkStage G}
     (hargs : args = [.ptr G.b, .int 64 (BitVec.ofNat 64 G.n), .ptr G.ep,
@@ -203,7 +203,7 @@ theorem letters_cont_dispatch_high {args : List Value} {m0 : Mem} {next : Nat}
     (hnext : G.next0 = next) (h : LettersDocument G (200 : UInt8))
     {Cm : WalkCarry G} {sm : State}
     (hHead : WalkSegment (stage2Calls stage2SubCalls) G (walkSeed G S)
-      (openerHead G S args next) Cm sm 12)
+      (openerHead G S args next) Cm sm 11)
     (hm : Cm.block = "if.else387.i") (hmk : Cm.k = (walkSeed G S).k)
     (h8m : evalOperand sm (.reg "%8") = some (.int 8 (BitVec.ofNat 8 200)))
     {Ct : WalkCarry G} {st : State} {tok : Nat}
@@ -296,7 +296,7 @@ def letters_last_arm_a {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State
     simpa only [evalOperand] using hreg
   exact lastEntryArm_letters_of_staging (walkSeed G S) s hInv
     (hlastByte_of_reg8 hInv h8) (lettersPrem_a).1 (lettersPrem_a).2.1 (lettersPrem_a).2.2
-    hHead hm hmk h8m hTail ht htk htok
+    hHead (by omega) hm hmk h8m hTail ht htk htok
 
 /-- **The high byte's document takes the last entry's letters arm.** -/
 def letters_last_arm_high {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
@@ -318,7 +318,7 @@ def letters_last_arm_high {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : St
     simpa only [evalOperand] using hreg
   exact lastEntryArm_letters_of_staging (walkSeed G S) s hInv
     (hlastByte_of_reg8 hInv h8) (lettersPrem_high).1 (lettersPrem_high).2.1
-    (lettersPrem_high).2.2 hHead hm hmk h8m hTail ht htk htok
+    (lettersPrem_high).2.2 hHead (by omega) hm hmk h8m hTail ht htk htok
 
 /-- **The dispatch at `"a"`.**  `LastEntryArm.dispatch` at the seeded head: the entry
 stream is exhausted (`¬ (0 + 1 < 1)`), and the letters route's nineteen links still reach

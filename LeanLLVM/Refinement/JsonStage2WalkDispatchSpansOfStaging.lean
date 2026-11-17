@@ -43,7 +43,7 @@ document's.  So the predicate is supplied and `h8` is derived from it — exactl
 |---|---|---|
 | `h8` | **D** | `cont_reg8_at` at the class's own identity (`WalkInv.iter.reg8`) |
 | the class's tests (`hbit`, `h110`, `hne102`/`h102`, `h125`) | **F** the byte, **D** given it | The census is right that the tests are a function of the head byte; what no lemma supplies is the byte, because the class is a range rather than a literal.  So the producer takes the predicate in one piece — the byte named as `hlastByte G C` beside its tests — and `h8` follows from the naming.  At a literal class the same row is one `eq_bit_value` away |
-| `hHead` (the head's chain to `if.else387.i`) | **F** (the arm's own field) | the four pivots pick different blocks per byte class, so the chain is the class's own; it enters as a counted `WalkSegment` at its own count (`12` continuing, `11` at the last entry) |
+| `hHead` (the head's chain to `if.else387.i`) | **F** (the arm's own field) | the four pivots pick different blocks per byte class, so the chain is the class's own; it enters as a counted `WalkSegment` at the class's count, with the bound the level's longest class sets (`nH ≤ 12` continuing, `nH ≤ 11` at the last entry) |
 | `hm`/`hmk`/`h8m` (the head segment's endpoint) | **F** (the arm's own field) | the endpoint's block, index and byte are the segment's, not the invariant's at `s` |
 | `hSpan`/`hs`/`hnS` (`.classC` only) | **F** (the arm's own field) | the span is the byte's own leaf (`c56TrueSpan`, `c56ElseSpan`, `c58TrueSpan`, `c58ElseSpan`) at `nS ≤ 5` |
 | `hTail` (the tail's three calls) | **F** (the arm's own field) | the three callees' preconditions and answers at their own argument lists |
@@ -104,8 +104,8 @@ bracket-and-mid classes and **eleven** at `.defaultValueLow` (the low bytes and 
 above `127`), whose route is `NodeBlock5 → LeafBlock → sw.default.i`.  The per-class chains
 are `JsonStage2WalkDispatchLettersHead`'s (`contLowHeadSeg` at eleven, `contMidHeadSeg`,
 `contOthHeadSeg`, `contBrkHeadSeg`, `contBhHeadSeg` at twelve).  The producer below takes
-the segment at a fixed twelve, so it cannot be applied at a `.defaultValueLow` state until
-the field is counted (`nH` with `nH ≤ 12`). -/
+the segment at the class's own count `nH` with `nH ≤ 12`, so it applies wherever the class's
+chain is supplied. -/
 
 /-- **The letters arm on the continuing head, from the staging.**  `HcontArm.letters` at
 every state that carries the invariant, with the class's own predicate at the register's
@@ -117,8 +117,9 @@ def hcontArm_letters_of_staging {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G)
       evalICmp .ult (x + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
     (h110 : evalICmp .slt x (BitVec.ofNat 8 110) = 1)
     (hne102 : evalICmp .eq x (BitVec.ofNat 8 102) = 0)
-    {Cm : WalkCarry G} {sm : State}
-    (hHead : WalkSegment (stage2Calls stage2SubCalls) G C s Cm sm 12)
+    {Cm : WalkCarry G} {sm : State} {nH : Nat}
+    (hHead : WalkSegment (stage2Calls stage2SubCalls) G C s Cm sm nH)
+    (hnH : nH ≤ 12)
     (hm : Cm.block = "if.else387.i") (hmk : Cm.k = C.k)
     (h8m : evalOperand sm (.reg "%8") = some (.int 8 x))
     {Ct : WalkCarry G} {st : State} {tok : Nat}
@@ -127,7 +128,7 @@ def hcontArm_letters_of_staging {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G)
     (ht : Ct.block = "if.end473.i") (htk : Ct.k = C.k)
     (htok : lookupName st.env "%t352.i" = some (.ptr tok)) :
     HcontArm (stage2Calls stage2SubCalls) G C s :=
-  .letters (cont_reg8_at hInv hx) hbit h110 hne102 hHead hm hmk h8m hTail ht htk htok
+  .letters (cont_reg8_at hInv hx) hbit h110 hne102 hHead hnH hm hmk h8m hTail ht htk htok
 
 /-- **The letters arm at the last entry, from the staging.**  The same class and the same
 fields at the level whose head chain is one link shorter; which side of the count the state
@@ -138,8 +139,9 @@ def lastEntryArm_letters_of_staging {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry 
       evalICmp .ult (x + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
     (h110 : evalICmp .slt x (BitVec.ofNat 8 110) = 1)
     (hne102 : evalICmp .eq x (BitVec.ofNat 8 102) = 0)
-    {Cm : WalkCarry G} {sm : State}
-    (hHead : WalkSegment (stage2Calls stage2SubCalls) G C s Cm sm 11)
+    {Cm : WalkCarry G} {sm : State} {nH : Nat}
+    (hHead : WalkSegment (stage2Calls stage2SubCalls) G C s Cm sm nH)
+    (hnH : nH ≤ 11)
     (hm : Cm.block = "if.else387.i") (hmk : Cm.k = C.k)
     (h8m : evalOperand sm (.reg "%8") = some (.int 8 x))
     {Ct : WalkCarry G} {st : State} {tok : Nat}
@@ -148,7 +150,7 @@ def lastEntryArm_letters_of_staging {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry 
     (ht : Ct.block = "if.end473.i") (htk : Ct.k = C.k)
     (htok : lookupName st.env "%t352.i" = some (.ptr tok)) :
     LastEntryArm (stage2Calls stage2SubCalls) G C s :=
-  .letters (cont_reg8_at hInv hx) hbit h110 hne102 hHead hm hmk h8m hTail ht htk htok
+  .letters (cont_reg8_at hInv hx) hbit h110 hne102 hHead hnH hm hmk h8m hTail ht htk htok
 
 /-- **The letters continuing dispatch, from the staging.** -/
 theorem walkDispatch_at_letters_of_staging {m0 : Mem} {G : WalkGeom m0}
@@ -159,8 +161,9 @@ theorem walkDispatch_at_letters_of_staging {m0 : Mem} {G : WalkGeom m0}
       evalICmp .ult (x + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
     (h110 : evalICmp .slt x (BitVec.ofNat 8 110) = 1)
     (hne102 : evalICmp .eq x (BitVec.ofNat 8 102) = 0)
-    {Cm : WalkCarry G} {sm : State}
-    (hHead : WalkSegment (stage2Calls stage2SubCalls) G C s Cm sm 12)
+    {Cm : WalkCarry G} {sm : State} {nH : Nat}
+    (hHead : WalkSegment (stage2Calls stage2SubCalls) G C s Cm sm nH)
+    (hnH : nH ≤ 12)
     (hm : Cm.block = "if.else387.i") (hmk : Cm.k = C.k)
     (h8m : evalOperand sm (.reg "%8") = some (.int 8 x))
     {Ct : WalkCarry G} {st : State} {tok : Nat}
@@ -170,7 +173,7 @@ theorem walkDispatch_at_letters_of_staging {m0 : Mem} {G : WalkGeom m0}
     (htok : lookupName st.env "%t352.i" = some (.ptr tok)) :
     WalkDispatchResult (stage2Calls stage2SubCalls) G C s :=
   HcontArm.dispatch hInv hblock hk
-    (hcontArm_letters_of_staging C s hInv hx hbit h110 hne102 hHead hm hmk h8m
+    (hcontArm_letters_of_staging C s hInv hx hbit h110 hne102 hHead hnH hm hmk h8m
       hTail ht htk htok)
 
 /-- **The letters last-entry dispatch, from the staging.**  The level's negated count, at
@@ -183,8 +186,9 @@ theorem walkDispatch_at_letters_last_of_staging {m0 : Mem} {G : WalkGeom m0}
       evalICmp .ult (x + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
     (h110 : evalICmp .slt x (BitVec.ofNat 8 110) = 1)
     (hne102 : evalICmp .eq x (BitVec.ofNat 8 102) = 0)
-    {Cm : WalkCarry G} {sm : State}
-    (hHead : WalkSegment (stage2Calls stage2SubCalls) G C s Cm sm 11)
+    {Cm : WalkCarry G} {sm : State} {nH : Nat}
+    (hHead : WalkSegment (stage2Calls stage2SubCalls) G C s Cm sm nH)
+    (hnH : nH ≤ 11)
     (hm : Cm.block = "if.else387.i") (hmk : Cm.k = C.k)
     (h8m : evalOperand sm (.reg "%8") = some (.int 8 x))
     {Ct : WalkCarry G} {st : State} {tok : Nat}
@@ -194,7 +198,7 @@ theorem walkDispatch_at_letters_last_of_staging {m0 : Mem} {G : WalkGeom m0}
     (htok : lookupName st.env "%t352.i" = some (.ptr tok)) :
     WalkDispatchResult (stage2Calls stage2SubCalls) G C s :=
   LastEntryArm.dispatch hInv hblock hnot
-    (lastEntryArm_letters_of_staging C s hInv hx hbit h110 hne102 hHead hm hmk h8m
+    (lastEntryArm_letters_of_staging C s hInv hx hbit h110 hne102 hHead hnH hm hmk h8m
       hTail ht htk htok)
 
 /-! ### The `'f'` leaf
@@ -210,8 +214,9 @@ def hcontArm_fLetter_of_staging {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G)
       evalICmp .ult (x + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
     (h110 : evalICmp .slt x (BitVec.ofNat 8 110) = 1)
     (h102 : evalICmp .eq x (BitVec.ofNat 8 102) = 1)
-    {Cm : WalkCarry G} {sm : State}
-    (hHead : WalkSegment (stage2Calls stage2SubCalls) G C s Cm sm 12)
+    {Cm : WalkCarry G} {sm : State} {nH : Nat}
+    (hHead : WalkSegment (stage2Calls stage2SubCalls) G C s Cm sm nH)
+    (hnH : nH ≤ 12)
     (hm : Cm.block = "if.else387.i") (hmk : Cm.k = C.k)
     (h8m : evalOperand sm (.reg "%8") = some (.int 8 x))
     {Ct : WalkCarry G} {st : State} {tok : Nat}
@@ -220,7 +225,7 @@ def hcontArm_fLetter_of_staging {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G)
     (ht : Ct.block = "if.end473.i") (htk : Ct.k = C.k)
     (htok : lookupName st.env "%t352.i" = some (.ptr tok)) :
     HcontArm (stage2Calls stage2SubCalls) G C s :=
-  .fLetter (cont_reg8_at hInv hx) hbit h110 h102 hHead hm hmk h8m hTail ht htk htok
+  .fLetter (cont_reg8_at hInv hx) hbit h110 h102 hHead hnH hm hmk h8m hTail ht htk htok
 
 /-- **The `'f'` arm at the last entry, from the staging.** -/
 def lastEntryArm_fLetter_of_staging {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G)
@@ -229,8 +234,9 @@ def lastEntryArm_fLetter_of_staging {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry 
       evalICmp .ult (x + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
     (h110 : evalICmp .slt x (BitVec.ofNat 8 110) = 1)
     (h102 : evalICmp .eq x (BitVec.ofNat 8 102) = 1)
-    {Cm : WalkCarry G} {sm : State}
-    (hHead : WalkSegment (stage2Calls stage2SubCalls) G C s Cm sm 11)
+    {Cm : WalkCarry G} {sm : State} {nH : Nat}
+    (hHead : WalkSegment (stage2Calls stage2SubCalls) G C s Cm sm nH)
+    (hnH : nH ≤ 11)
     (hm : Cm.block = "if.else387.i") (hmk : Cm.k = C.k)
     (h8m : evalOperand sm (.reg "%8") = some (.int 8 x))
     {Ct : WalkCarry G} {st : State} {tok : Nat}
@@ -239,7 +245,7 @@ def lastEntryArm_fLetter_of_staging {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry 
     (ht : Ct.block = "if.end473.i") (htk : Ct.k = C.k)
     (htok : lookupName st.env "%t352.i" = some (.ptr tok)) :
     LastEntryArm (stage2Calls stage2SubCalls) G C s :=
-  .fLetter (cont_reg8_at hInv hx) hbit h110 h102 hHead hm hmk h8m hTail ht htk htok
+  .fLetter (cont_reg8_at hInv hx) hbit h110 h102 hHead hnH hm hmk h8m hTail ht htk htok
 
 /-- **The `'f'` continuing dispatch, from the staging.** -/
 theorem walkDispatch_at_fLetter_of_staging {m0 : Mem} {G : WalkGeom m0}
@@ -250,8 +256,9 @@ theorem walkDispatch_at_fLetter_of_staging {m0 : Mem} {G : WalkGeom m0}
       evalICmp .ult (x + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
     (h110 : evalICmp .slt x (BitVec.ofNat 8 110) = 1)
     (h102 : evalICmp .eq x (BitVec.ofNat 8 102) = 1)
-    {Cm : WalkCarry G} {sm : State}
-    (hHead : WalkSegment (stage2Calls stage2SubCalls) G C s Cm sm 12)
+    {Cm : WalkCarry G} {sm : State} {nH : Nat}
+    (hHead : WalkSegment (stage2Calls stage2SubCalls) G C s Cm sm nH)
+    (hnH : nH ≤ 12)
     (hm : Cm.block = "if.else387.i") (hmk : Cm.k = C.k)
     (h8m : evalOperand sm (.reg "%8") = some (.int 8 x))
     {Ct : WalkCarry G} {st : State} {tok : Nat}
@@ -261,7 +268,7 @@ theorem walkDispatch_at_fLetter_of_staging {m0 : Mem} {G : WalkGeom m0}
     (htok : lookupName st.env "%t352.i" = some (.ptr tok)) :
     WalkDispatchResult (stage2Calls stage2SubCalls) G C s :=
   HcontArm.dispatch hInv hblock hk
-    (hcontArm_fLetter_of_staging C s hInv hx hbit h110 h102 hHead hm hmk h8m
+    (hcontArm_fLetter_of_staging C s hInv hx hbit h110 h102 hHead hnH hm hmk h8m
       hTail ht htk htok)
 
 /-- **The `'f'` last-entry dispatch, from the staging.** -/
@@ -273,8 +280,9 @@ theorem walkDispatch_at_fLetter_last_of_staging {m0 : Mem} {G : WalkGeom m0}
       evalICmp .ult (x + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
     (h110 : evalICmp .slt x (BitVec.ofNat 8 110) = 1)
     (h102 : evalICmp .eq x (BitVec.ofNat 8 102) = 1)
-    {Cm : WalkCarry G} {sm : State}
-    (hHead : WalkSegment (stage2Calls stage2SubCalls) G C s Cm sm 11)
+    {Cm : WalkCarry G} {sm : State} {nH : Nat}
+    (hHead : WalkSegment (stage2Calls stage2SubCalls) G C s Cm sm nH)
+    (hnH : nH ≤ 11)
     (hm : Cm.block = "if.else387.i") (hmk : Cm.k = C.k)
     (h8m : evalOperand sm (.reg "%8") = some (.int 8 x))
     {Ct : WalkCarry G} {st : State} {tok : Nat}
@@ -284,7 +292,7 @@ theorem walkDispatch_at_fLetter_last_of_staging {m0 : Mem} {G : WalkGeom m0}
     (htok : lookupName st.env "%t352.i" = some (.ptr tok)) :
     WalkDispatchResult (stage2Calls stage2SubCalls) G C s :=
   LastEntryArm.dispatch hInv hblock hnot
-    (lastEntryArm_fLetter_of_staging C s hInv hx hbit h110 h102 hHead hm hmk h8m
+    (lastEntryArm_fLetter_of_staging C s hInv hx hbit h110 h102 hHead hnH hm hmk h8m
       hTail ht htk htok)
 
 /-! ### The class-C span
@@ -303,8 +311,9 @@ def hcontArm_classC_of_staging {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G)
     (h110 : evalICmp .slt x (BitVec.ofNat 8 110) = 0)
     (h125 : evalICmp .slt x (BitVec.ofNat 8 125) = 1 ∨
       evalICmp .eq x (BitVec.ofNat 8 125) = 1)
-    {Cm : WalkCarry G} {sm : State}
-    (hHead : WalkSegment (stage2Calls stage2SubCalls) G C s Cm sm 12)
+    {Cm : WalkCarry G} {sm : State} {nH : Nat}
+    (hHead : WalkSegment (stage2Calls stage2SubCalls) G C s Cm sm nH)
+    (hnH : nH ≤ 12)
     (hm : Cm.block = "if.else387.i") (hmk : Cm.k = C.k)
     (h8m : evalOperand sm (.reg "%8") = some (.int 8 x))
     {Cs : WalkCarry G} {ss : State} {nS : Nat}
@@ -315,7 +324,7 @@ def hcontArm_classC_of_staging {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G)
     (ht : Ct.block = "if.end473.i") (htk : Ct.k = C.k)
     (htok : lookupName st.env "%t352.i" = some (.ptr tok)) :
     HcontArm (stage2Calls stage2SubCalls) G C s :=
-  .classC (cont_reg8_at hInv hx) h110 h125 hHead hm hmk h8m hSpan hs hnS
+  .classC (cont_reg8_at hInv hx) h110 h125 hHead hnH hm hmk h8m hSpan hs hnS
     hTail ht htk htok
 
 /-- **The class-C arm at the last entry, from the staging.** -/
@@ -324,8 +333,9 @@ def lastEntryArm_classC_of_staging {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G
     (h110 : evalICmp .slt x (BitVec.ofNat 8 110) = 0)
     (h125 : evalICmp .slt x (BitVec.ofNat 8 125) = 1 ∨
       evalICmp .eq x (BitVec.ofNat 8 125) = 1)
-    {Cm : WalkCarry G} {sm : State}
-    (hHead : WalkSegment (stage2Calls stage2SubCalls) G C s Cm sm 11)
+    {Cm : WalkCarry G} {sm : State} {nH : Nat}
+    (hHead : WalkSegment (stage2Calls stage2SubCalls) G C s Cm sm nH)
+    (hnH : nH ≤ 11)
     (hm : Cm.block = "if.else387.i") (hmk : Cm.k = C.k)
     (h8m : evalOperand sm (.reg "%8") = some (.int 8 x))
     {Cs : WalkCarry G} {ss : State} {nS : Nat}
@@ -336,7 +346,7 @@ def lastEntryArm_classC_of_staging {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G
     (ht : Ct.block = "if.end473.i") (htk : Ct.k = C.k)
     (htok : lookupName st.env "%t352.i" = some (.ptr tok)) :
     LastEntryArm (stage2Calls stage2SubCalls) G C s :=
-  .classC (cont_reg8_at hInv hx) h110 h125 hHead hm hmk h8m hSpan hs hnS
+  .classC (cont_reg8_at hInv hx) h110 h125 hHead hnH hm hmk h8m hSpan hs hnS
     hTail ht htk htok
 
 /-- **The class-C continuing dispatch, from the staging.** -/
@@ -347,8 +357,9 @@ theorem walkDispatch_at_classC_of_staging {m0 : Mem} {G : WalkGeom m0}
     (h110 : evalICmp .slt x (BitVec.ofNat 8 110) = 0)
     (h125 : evalICmp .slt x (BitVec.ofNat 8 125) = 1 ∨
       evalICmp .eq x (BitVec.ofNat 8 125) = 1)
-    {Cm : WalkCarry G} {sm : State}
-    (hHead : WalkSegment (stage2Calls stage2SubCalls) G C s Cm sm 12)
+    {Cm : WalkCarry G} {sm : State} {nH : Nat}
+    (hHead : WalkSegment (stage2Calls stage2SubCalls) G C s Cm sm nH)
+    (hnH : nH ≤ 12)
     (hm : Cm.block = "if.else387.i") (hmk : Cm.k = C.k)
     (h8m : evalOperand sm (.reg "%8") = some (.int 8 x))
     {Cs : WalkCarry G} {ss : State} {nS : Nat}
@@ -360,7 +371,7 @@ theorem walkDispatch_at_classC_of_staging {m0 : Mem} {G : WalkGeom m0}
     (htok : lookupName st.env "%t352.i" = some (.ptr tok)) :
     WalkDispatchResult (stage2Calls stage2SubCalls) G C s :=
   HcontArm.dispatch hInv hblock hk
-    (hcontArm_classC_of_staging C s hInv hx h110 h125 hHead hm hmk h8m hSpan hs hnS
+    (hcontArm_classC_of_staging C s hInv hx h110 h125 hHead hnH hm hmk h8m hSpan hs hnS
       hTail ht htk htok)
 
 /-- **The class-C last-entry dispatch, from the staging.** -/
@@ -371,8 +382,9 @@ theorem walkDispatch_at_classC_last_of_staging {m0 : Mem} {G : WalkGeom m0}
     (h110 : evalICmp .slt x (BitVec.ofNat 8 110) = 0)
     (h125 : evalICmp .slt x (BitVec.ofNat 8 125) = 1 ∨
       evalICmp .eq x (BitVec.ofNat 8 125) = 1)
-    {Cm : WalkCarry G} {sm : State}
-    (hHead : WalkSegment (stage2Calls stage2SubCalls) G C s Cm sm 11)
+    {Cm : WalkCarry G} {sm : State} {nH : Nat}
+    (hHead : WalkSegment (stage2Calls stage2SubCalls) G C s Cm sm nH)
+    (hnH : nH ≤ 11)
     (hm : Cm.block = "if.else387.i") (hmk : Cm.k = C.k)
     (h8m : evalOperand sm (.reg "%8") = some (.int 8 x))
     {Cs : WalkCarry G} {ss : State} {nS : Nat}
@@ -384,7 +396,7 @@ theorem walkDispatch_at_classC_last_of_staging {m0 : Mem} {G : WalkGeom m0}
     (htok : lookupName st.env "%t352.i" = some (.ptr tok)) :
     WalkDispatchResult (stage2Calls stage2SubCalls) G C s :=
   LastEntryArm.dispatch hInv hblock hnot
-    (lastEntryArm_classC_of_staging C s hInv hx h110 h125 hHead hm hmk h8m hSpan hs hnS
+    (lastEntryArm_classC_of_staging C s hInv hx h110 h125 hHead hnH hm hmk h8m hSpan hs hnS
       hTail ht htk htok)
 
 /-! ### The instrument -/
