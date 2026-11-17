@@ -47,10 +47,15 @@ byte's arm therefore needs the same three callee rows at its own seam: the tail'
 no cell the seam's route changes (`contSeamByte_ee`, `contSeamByte_cond` are stated at every
 class), so this is the same producer re-pointed, not a new one.
 
-So `walkContinueFacts_of_payload` is still unproved, and what it waits on is one producer
-per leaf class at `.cleanup` — `hcontTail_of_calls`'s instance at
-`contTailStartByte … (.lowLeaf …)`/`(.highLeaf …)` — and the same for the last entry's
-`.highByte` (`HlastFacts`'s route).
+**What the leaf classes now hold is the tail, and it is produced at the route.**
+`hcontTailByte_of_calls` (`JsonStage2WalkDispatchSegments`) is `hcontTail_of_calls`'s
+route-generic twin: it takes `hb : HcontByteRoute (cont35 b35)` and the three callees'
+rows at `contTailStartByte … hb`, so the arm-level document row (`HcontCleanupDoc`) and
+its chain (`hcontSpan17_of_doc`) are stated at the byte's route too, and the default-value
+branch passes `hb` rather than `.scanFree`.  What `walkContinueFacts_of_payload` still
+waits on is the class-case assembly over `HcontClass.complete`, and, at the last entry,
+the same restatement of `HlastFacts`/`HlastResidue` (those still assert the last byte's
+scan-free bits and so cannot yet select `.lowLeaf`/`.highLeaf`).
 
 The byte selection itself is **done**: `JsonStage2WalkDispatchClassTransport` derives the
 route's own bits (`slt %8 110`, `eq %8 102`, `slt %8 116`, `eq %8 116`, `slt %8 125` and
@@ -176,19 +181,20 @@ theorem hcontArm_classC_58Else_of_class {m0 : Mem} {G : WalkGeom m0} {C : WalkCa
   obtain ⟨calls, hcA, hroot⟩ := hc.c58Else C s ch
   exact hcontArm_classC_58Else_of_rows hInv hk h8 h110 h116 h116eq h125 ch calls hcA hroot
 
-/-! ### The scan-free high-byte class -/
+/-! ### The default-value class -/
 
-/-- **The high-byte route's scan-free arm, from the class's rows.**  The document row is
-produced from the payload's own default row (`hcontCleanupDoc_of_lane`), and the seam's
-three callee rows are the class's; the root slot's word is the state's own, so the arm is
-total over it. -/
+/-- **The default-value route's arm, from the class's rows.**  The document row is produced
+from the payload's own default row (`hcontCleanupDoc_of_lane`) at the byte's route, and the
+seam's three callee rows are the class's; the root slot's word is the state's own, so the
+arm is total over it. -/
 theorem hcontArm_cleanup_of_class {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)
     (hlt125 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 125) = 0)
     (hne125 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 125) = 0)
-    (r : HcontDefaultRow G C s) (hf : HcontScanFree G r.v) (hc : HcontClassRows G) :
+    (r : HcontDefaultRow G C s) (hb : HcontByteRoute (cont35 (contB35 G r.v)))
+    (hc : HcontClassRows G) :
     Nonempty (HcontArm (stage2Calls stage2SubCalls) G C s) := by
-  let doc := hcontCleanupDoc_of_lane hk r hf
+  let doc := hcontCleanupDoc_of_lane hk r hb
   obtain ⟨calls, hcA, hroot⟩ := hc.cleanupRow C s doc
   exact hcontArm_cleanup_of_rows hInv hblock hk hlt125 hne125 doc hroot calls hcA rfl
 

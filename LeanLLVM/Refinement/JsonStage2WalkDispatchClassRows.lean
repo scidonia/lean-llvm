@@ -108,14 +108,15 @@ open LeanLLVM.Refinement.JsonStage2IR
 
 namespace WalkScope
 
-/-! ### The scan-free class's document row -/
+/-! ### The class's document row -/
 
-/-- **The scan-free class's document row**: the next entry's position word and the read at
-the head's own memory, the bound's compare against this entry's index, and the byte before
-the entry's end with its three scan-free pivot bits.  The same document fact as
-`HcontDefaultRow` (`JsonStage2WalkDispatchSupply`), at the two spellings the producers read:
-the word at `contAS₅`'s memory and `%inc.i`'s own value, the compare against the index term
-the lookup carries. -/
+/-- **The class's document row**: the next entry's position word and the read at the
+head's own memory, the bound's compare against this entry's index, and the byte before the
+entry's end with its route.  The same document fact as `HcontDefaultRow`
+(`JsonStage2WalkDispatchSupply`), at the two spellings the producers read: the word at
+`contAS₅`'s memory and `%inc.i`'s own value, the compare against the index term the lookup
+carries.  The route is the byte's (`HcontByteRoute`), not one asserted leaf: all three
+non-whitespace leaves reach `if.end372.i` without a run. -/
 structure HcontCleanupDoc {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) :
     Type where
   /-- The next entry's position word. -/
@@ -128,54 +129,26 @@ structure HcontCleanupDoc {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
   /-- The bound's compare: the entry is not empty. -/
   hugt : evalICmp .ugt (BitVec.ofNat 64 v.toNat)
     (BitVec.ofNat 64 (entryPos G C.k)) = 1
-  /-- The byte before the entry's end is above `13` (`\r`). -/
-  hb13 : evalICmp .slt (cont35 (contB35 G v)) (BitVec.ofNat 8 13) = 0
-  /-- It is below `32`, the whitespace range's upper bound. -/
-  hb32 : evalICmp .slt (cont35 (contB35 G v)) (BitVec.ofNat 8 32) = 1
-  /-- It is not `13`: the three bits are the scan-free class's own. -/
-  hbne13 : evalICmp .eq (cont35 (contB35 G v)) (BitVec.ofNat 8 13) = 0
+  /-- The byte before the entry's end and its route below `if.else387.i`. -/
+  hb : HcontByteRoute (cont35 (contB35 G v))
 
-/-- **The scan-free class's document row, from the payload's default row.**  The payload's
+/-- **The class's document row, from the payload's default row.**  The payload's
 `lane.defaultLane` states the same document at the head state's memory and the header's
 increment; the producers read it at `cond.true345.i`'s memory and `%inc.i`'s word.  The
 memory is the state's (every state between the head and the check binds registers only),
-the word's value is `cont_inc_toNat`'s, and the index is `contIx`'s own spelling.  This is
-the class's own row: it takes the row and the scan-free disjunct, so it is stated only at
-the states whose byte the class names. -/
+the word's value is `cont_inc_toNat`'s, and the index is `contIx`'s own spelling.  The
+caller names the byte's route — the three non-whitespace classes — because the whitespace
+byte is the run class's, not this one's. -/
 noncomputable def hcontCleanupDoc_of_lane {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     {s : State} (hk : C.k + 1 < G.nep) (r : HcontDefaultRow G C s)
-    (hf : HcontScanFree G r.v) :
+    (hb : HcontByteRoute (cont35 (contB35 G r.v))) :
     HcontCleanupDoc G C s := by
   obtain ⟨v, hread0, _hv1, hvle, hugt0, _hclass⟩ := r
-  obtain ⟨hb13, hb32, hbne13⟩ := hf
   have hmem : (contAS₅ s (hlastByte G C) (hlastIncV C) (hlastNepV G)).mem = s.mem := rfl
-  refine ⟨v, ?_, hvle, ?_, hb13, hb32, hbne13⟩
+  refine ⟨v, ?_, hvle, ?_, hb⟩
   · rw [hmem, cont_inc_toNat G C hk]
     exact hread0
   · exact hugt0
-
-/-! ### The scan-free class's arm, at that row and the tail -/
-
-/-- **The scan-free continuing arm, from its document row and its tail.**  The row is
-`HcontCleanupDoc`'s and the tail is `emptyTailSeg_of_calls`'s at the class's own seam; the
-class's bits are the payload's (`defaultValueHigh`'s two) and the staging producer is
-`hcontArm_cleanup_of_staging`.  Nothing here names a memory the walk has not written: the
-tail is the argument. -/
-noncomputable def hcontArm_cleanup_of_doc {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
-    (s : State) (hInv : WalkInv G C s) (hk : C.k + 1 < G.nep)
-    (hlt125 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 125) = 0)
-    (hne125 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 125) = 0)
-    (doc : HcontCleanupDoc G C s)
-    (r₁ r₂ r₃ : CallOutcome) (ev : EventRecord) {cA rdv xA : BitVec 32}
-    (hTail : WalkSegment (stage2Calls stage2SubCalls) G (ContTailStartC C)
-      (contTailStart C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep doc.v (contIx G C)
-        (contB35 G doc.v) (hlastByte G C) (hlastByte G C))
-      (TailCarryEnd (ContTailStartC C) ev)
-      (contCleanupEnd C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep doc.v (contIx G C)
-        (contB35 G doc.v) (hlastByte G C) (hlastByte G C) r₁ r₂ r₃ cA rdv xA) 3) :
-    HcontArm (stage2Calls stage2SubCalls) G C s :=
-  hcontArm_cleanup_of_staging G C s hInv hk hlt125 hne125 doc.hread doc.hspan doc.hugt
-    (.scanFree doc.hb13 doc.hb32 doc.hbne13) r₁ r₂ r₃ ev hTail
 
 /-! ### A class's seam, as one row
 
@@ -337,18 +310,20 @@ The run class's field takes the byte's leaf as an argument rather than holding i
 segment belongs to the head byte's class, and the case's branch composes it
 (`hcontArm_run_of_class`). -/
 structure HcontClassRows {m0 : Mem} (G : WalkGeom m0) : Type where
-  /-- The scan-free class's document row (`126`/`127` at a continuing head), at the
-  payload's default row and the scan-free disjunct. -/
+  /-- The default-value class's document row (`126`/`127` at a continuing head), at the
+  payload's default row and the byte's own route: the three non-whitespace leaves all
+  reach the seam without a run. -/
   cleanup : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
-    C.k + 1 < G.nep → (r : HcontDefaultRow G C s) → HcontScanFree G r.v →
-    HcontCleanupDoc G C s
-  /-- The scan-free class's seam row: the three callee rows at `contTailStartOfDoc`, whose
-  kind literal is `if.else405.i`'s `0`.  Its root slot's word is the state's own, so the
-  arm is total over the slot's values (`hcontArm_cleanup_of_rows` takes `rdv0` freely). -/
+    C.k + 1 < G.nep → (r : HcontDefaultRow G C s) →
+    HcontByteRoute (cont35 (contB35 G r.v)) → HcontCleanupDoc G C s
+  /-- The default-value class's seam row: the three callee rows at the byte route's tail
+  start, whose kind literal is `if.else405.i`'s `0`.  Its root slot's word is the state's
+  own, so the arm is total over the slot's values (`hcontArm_cleanup_of_rows` takes
+  `rdv0` freely). -/
   cleanupRow : ∀ (C : WalkCarry G) (s : State) (doc : HcontCleanupDoc G C s),
     HcontSeamRow G s (ContTailStartC C)
-      (contTailStart C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep doc.v
-        (contIx G C) (contB35 G doc.v) (hlastByte G C) (hlastByte G C))
+      (contTailStartByte C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep doc.v
+        (contIx G C) (contB35 G doc.v) (hlastByte G C) (hlastByte G C) doc.hb)
       (BitVec.ofNat 32 0)
   /-- The plain-value class's seam row, at the class's own prefix: the producer's remaining
   argument, with the prefix's values fixing the seam state. -/
@@ -393,16 +368,16 @@ structure HcontClassRows {m0 : Mem} (G : WalkGeom m0) : Type where
   /-- The seam's three calls, at the run class's seam and the last entry's. -/
   seam : HcontSeamAbi G
 
-/-- **The continuing class rows hold what the payload holds.**  The scan-free class's
+/-- **The continuing class rows hold what the payload holds.**  The default-value class's
 document row is `defaultLane`'s, so a payload with the default row and the seam's calls
 already carries it: this is the group's producer from the payload's own fields, and it says
 the class the table marks *document* costs no new supply. -/
 noncomputable def hcontClassRows_cleanup_of_payload {m0 : Mem} {G : WalkGeom m0}
     (hp : HcontPayload G) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
     (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)
-    (hf : HcontScanFree G ((hp.lane.defaultLane C s hInv hblock hk).v)) :
+    (hb : HcontByteRoute (cont35 (contB35 G ((hp.lane.defaultLane C s hInv hblock hk).v)))) :
     HcontCleanupDoc G C s :=
-  hcontCleanupDoc_of_lane hk (hp.lane.defaultLane C s hInv hblock hk) hf
+  hcontCleanupDoc_of_lane hk (hp.lane.defaultLane C s hInv hblock hk) hb
 
 /-! ### The last entry's last byte, with its three calls
 
@@ -435,7 +410,6 @@ structure HlastClassRows {m0 : Mem} (G : WalkGeom m0) : Type where
 /-! ### The instrument -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.hcontCleanupDoc_of_lane
-#print axioms LeanLLVM.Refinement.WalkScope.hcontArm_cleanup_of_doc
 #print axioms LeanLLVM.Refinement.WalkScope.hcontClassRows_cleanup_of_payload
 #print axioms LeanLLVM.Refinement.WalkScope.hcontArm_run_of_row
 

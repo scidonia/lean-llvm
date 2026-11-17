@@ -1,5 +1,5 @@
 /-
-# The high-byte route's seam, as cells the state supplies
+# The default-value route's seam, as cells the state supplies
 
 `JsonStage2WalkDispatchSegments` builds `.cleanup`'s arm and its tail from three callee
 rows, and every other premise it takes at the seam is a **cell of the seam's own state**:
@@ -9,16 +9,23 @@ list carries.  This module produces them, so a producer of the class hands its d
 row and the callee rows and nothing else:
 
 * the **seam invariant**, from the class's document row alone
-  (`contTailStartInv_of_doc`): the head's twelve links (`hcontHeadSeg12`) and the class-C
-  span's five (`walkHeadChainCSeg`) at the row's own word, byte and class;
-* the **environment cells**, from that invariant's `regs` (`contTailStart_envKind` and its
-  four siblings): every one of the names is in `walkStaticRegs`, and the seam's blocks bind
+  (`contTailStartInv_of_doc`): the head's eight links (`contPrefixLand`), the byte's
+  route (the scan-free leaf's four, the low leaf's three or the high leaf's four) and the
+  class-C span's five (`walkHeadChainCSeg`);
+* the **environment cells**, from that invariant's `regs` (`contTailStartByte_envKind` and
+  its siblings): every one of the names is in `walkStaticRegs`, and the seam's blocks bind
   none of them;
-* the **predecessor and its `phi`** (`contTailStart_pre`, `contTailStart_phi`) and the kind
-  word it selects (`contTailStart_op`), which is the literal `0` at `if.else405.i`;
-* the **root slot's word**, `0`, transported across the seam's one store
-  (`contTailStart_mem`, `contTailStart_rootRead`) from the lane's `root` row;
-* the **arm itself** (`hcontArm_cleanup_of_rows`), at the callee rows and those cells.
+* the **predecessor and its `phi`** (`contTailStartByte_pre`, `contTailStart_phi`) and the
+  kind word it selects (`contTailStartByte_op`), which is the literal `0` at
+  `if.else405.i`;
+* the **root slot's word**, transported across the seam's three token-record stores
+  (`contTailStartByte_mem`, `contTailStartByte_rootRead`) from the lane's `root` row;
+* the **tail itself**, `hcontTailByte_of_calls`'s at the byte's route, and the **arm**
+  (`hcontArm_cleanup_of_rows`) at the callee rows and those cells.
+
+The row's `hb : HcontByteRoute (cont35 (contB35 G v))` is the document's content, not one
+asserted leaf: all three non-whitespace routes reach `if.end372.i` without a run, so the
+same producer serves them and the caller no longer narrows the entry's last byte.
 
 ## The rows this does not produce, and why
 
@@ -30,11 +37,9 @@ assumes them: the arm below takes the group.
 
 The group carries two **word** fields, `cA` (the kind literal at `%kind404.i`) and `rdv`
 (the root-done slot's word).  Both are cells of the seam state, and this module produces
-both — `contTailStart_phi` names the first `0` and `contTailStart_rootRead` the second — so
-the two equalities `hcontArm_cleanup_of_rows` takes (`hcA`, `hrdv`) are the *agreement* of
-the caller's group with the state, not a second reading of it.  A caller that supplied the
-head's words instead of the seam's would fail them, which is what makes the pair worth
-stating rather than folding into the group.
+both — `contTailStart_phi` names the first `0` and `contTailStartByte_rootRead` the second
+— so the two equalities `hcontArm_cleanup_of_rows` takes (`hcA`, `hrdv`) are the
+*agreement* of the caller's group with the state, not a second reading of it.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkDispatchClassRows
 import LeanLLVM.Refinement.JsonStage2WalkDispatchCleanupSpan
@@ -51,43 +56,39 @@ namespace WalkScope
 
 /-! ### The seam's state, named from the class's row -/
 
-/-- **The seam state a document row names**: `contTailStart` at the row's word and byte,
-the invariant's index, the counts and the entry's byte. -/
+/-- **The seam state a document row names**: `contTailStartByte` at the row's word and
+byte, the invariant's index, the counts and the entry's byte. -/
 abbrev contTailStartOfDoc {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
     (doc : HcontCleanupDoc G C s) : State :=
-  contTailStart C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep doc.v (contIx G C)
-    (contB35 G doc.v) (hlastByte G C) (hlastByte G C)
+  contTailStartByte C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep doc.v (contIx G C)
+    (contB35 G doc.v) (hlastByte G C) (hlastByte G C) doc.hb
 
 /-! ### The seventeen links, from the row
 
-`hcontSpan17_of_cleanup` reads the bundle's fields; the bundle's non-tail fields are the
-document row's, the invariant's and the class's, so the same seventeen links are stated at
-those and the bundle is no longer an input. -/
+The head's eight links to the byte's `NodeBlock41` state, the byte's route to the seam and
+the class-C span's five.  Every hypothesis the head reads is one of the document row's, the
+invariant's or the class's, so the chain is a theorem at the row and the class. -/
 
-/-- **The class's seventeen links, at its document row.**  The head's twelve
-(`hcontHeadSeg12`) and the class-C span's five (`walkHeadChainCSeg`), at the row's word,
-its byte and its class.  Every argument of the head chain is a cell the invariant or the
-row supplies (`cont_ult_one`, `contAS5_env*`, `cont_hi63`, `cont_hread35`, the two static
-rows), so the only inputs are the invariant, the head block, the class's two bits and the
-row. -/
+/-- **The class's seventeen links, at its document row and the byte's route.** -/
 theorem hcontSpan17_of_doc {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     {s : State} (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead)
     (hk : C.k + 1 < G.nep)
     (hlt125 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 125) = 0)
     (hne125 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 125) = 0)
     (doc : HcontCleanupDoc G C s) :
-    WalkSegment (stage2Calls stage2SubCalls) G C s (ContTailStartC C)
-      (contTailStartOfDoc (G := G) C s doc) 17 := by
+    ∃ nP, nP ≤ 17 ∧
+      WalkSegment (stage2Calls stage2SubCalls) G C s (ContTailStartC C)
+        (contTailStartOfDoc (G := G) C s doc) nP := by
   have hspan : doc.v.toNat ≤ entryPos G (C.k + 1) := doc.hspan
   have hgt : entryPos G C.k < doc.v.toNat := contLane_gt G C hk doc.hugt
   have heicd : doc.v.toNat - 1 < doc.v.toNat := by omega
-  have hhead :
-      WalkSegment (stage2Calls stage2SubCalls) G C s (ContSeamC C)
-        (contSeamS C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep doc.v (contIx G C)
-          (contB35 G doc.v) (hlastByte G C)) 12 :=
-    hcontHeadSeg12 (G := G) (C := C) (s := s) hInv hblock
+  -- the head's eight links, to the byte's `NodeBlock41` state
+  have hseg8 : WalkSegment (stage2Calls stage2SubCalls) G C s (ContAC₄ C)
+      (contLandS C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep doc.v
+        (contIx G C) (contB35 G doc.v)) 8 :=
+    contPrefixLand (G := G) (C := C) (s := s) hInv hblock
       (x := hlastByte G C) (inc := hlastIncV C) (nep := hlastNepV G) (ep := G.ep)
-      (v := doc.v) (ix := contIx G C) (b35 := contB35 G doc.v) (b8 := hlastByte G C)
+      (v := doc.v) (ix := contIx G C) (b35 := contB35 G doc.v)
       (by
         show evalOperand s (.reg "%8") = some (.int 8 (hlastByte G C))
         simp only [evalOperand]
@@ -120,126 +121,138 @@ theorem hcontSpan17_of_doc {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
         (hInv.regs ("%gap.i", .ptr (C.stage.tok + 20)) (by simp [walkStaticRegs])))
       doc.hugt
       (cont_hread35 G C s hInv hk hspan heicd)
-      doc.hb13 doc.hb32 doc.hbne13
-      (by
-        show lookupName (contP35S C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep doc.v
-          (contIx G C) (contB35 G doc.v)).env "%end.i" = some (.ptr (C.stage.tok + 8))
-        rw [contP35S_envEnd]
-        exact hInv.regs ("%end.i", .ptr (C.stage.tok + 8)) (by simp [walkStaticRegs]))
-      (by
-        show lookupName (contP35S C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep doc.v
-          (contIx G C) (contB35 G doc.v)).env "%8" = some (.int 8 (hlastByte G C))
-        rw [contP35S_env8]
-        exact hInv.iter.reg8)
-      (hlast_bit6_of_class hlt125 hne125)
+  -- the cells the byte's route reads at `NodeBlock41`
+  have h35 : evalOperand (contLandS C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep
+      doc.v (contIx G C) (contB35 G doc.v)) (.reg "%35") =
+      some (.int 8 (cont35 (contB35 G doc.v))) := by
+    simp only [evalOperand]
+    exact contLandS_35 C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep doc.v
+      (contIx G C) (contB35 G doc.v)
+  have hcond : lookupName (contLandS C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep
+      doc.v (contIx G C) (contB35 G doc.v)).env "%cond350.i" =
+      some (.int 64 (BitVec.ofNat 64 doc.v.toNat)) := by
+    simp only [contLandS]
+    exact contLandS_cond C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep doc.v
+      (contIx G C) (contB35 G doc.v)
+  have hend : lookupName (contLandS C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep
+      doc.v (contIx G C) (contB35 G doc.v)).env "%end.i" =
+      some (.ptr (C.stage.tok + 8)) := by
+    rw [contLandS_envEnd]
+    exact hInv.regs ("%end.i", .ptr (C.stage.tok + 8)) (by simp [walkStaticRegs])
+  have h8end : lookupName (contLandS C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep
+      doc.v (contIx G C) (contB35 G doc.v)).env "%8" =
+      some (.int 8 (hlastByte G C)) := by
+    rw [contLandS_env8]
+    exact hInv.iter.reg8
+  have hbit : (evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 45) |||
+      evalICmp .ult (hlastByte G C + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0 :=
+    hlast_bit6_of_class hlt125 hne125
+  -- the byte's route, to the seam
+  have hseam : ∃ nR, nR ≤ 4 ∧
+      Seg (stage2Calls stage2SubCalls) G (ContAC₄ C)
+        (contLandS C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep doc.v
+          (contIx G C) (contB35 G doc.v))
+        { ContAC₄ C with block := "if.else387.i" }
+        (contSeamByte (contLandS C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep
+          doc.v (contIx G C) (contB35 G doc.v)) doc.v.toNat C.stage.tok
+          (contB35 G doc.v) (hlastByte G C) doc.hb) nR := by
+    rcases doc.hb with ⟨hb13, hb32, hbne13⟩ | ⟨hb13, hbns⟩ | ⟨hb13, hb32, hbne32⟩
+    · exact ⟨4, by omega, contByteSegScanFree (ContAC₄ C) _ hseg8.inv' rfl h35 hcond hend
+        h8end hbit hb13 hb32 hbne13⟩
+    · exact ⟨3, by omega, contByteSegLow (ContAC₄ C) _ hseg8.inv' rfl h35 hcond hend
+        h8end hbit hb13 hbns⟩
+    · exact ⟨4, by omega, contByteSegHigh (ContAC₄ C) _ hseg8.inv' rfl h35 hcond hend
+        h8end hbit hb13 hb32 hbne32⟩
+  obtain ⟨nR, hnR, hseam⟩ := hseam
+  have hhead : WalkSegment (stage2Calls stage2SubCalls) G C s (ContSeamC C)
+      (contSeamByte (contLandS C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep doc.v
+        (contIx G C) (contB35 G doc.v)) doc.v.toNat C.stage.tok (contB35 G doc.v)
+        (hlastByte G C) doc.hb) (8 + nR) :=
+    hseg8.trans (Seg.measure hseam)
+  -- the class-C span's five
+  have h8c : evalOperand (contSeamByte (contLandS C s (hlastByte G C) (hlastIncV C)
+      (hlastNepV G) G.ep doc.v (contIx G C) (contB35 G doc.v)) doc.v.toNat C.stage.tok
+      (contB35 G doc.v) (hlastByte G C) doc.hb) (.reg "%8") =
+      some (.int 8 (hlastByte G C)) := by
+    simp only [evalOperand]
+    rw [contSeamByte_env8, contLandS_env8]
+    exact hInv.iter.reg8
   have hspan5 : Seg (stage2Calls stage2SubCalls) G (ContSeamC C)
-      (contSeamS C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep doc.v (contIx G C)
-        (contB35 G doc.v) (hlastByte G C)) (ContTailStartC C)
+      (contSeamByte (contLandS C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep doc.v
+        (contIx G C) (contB35 G doc.v)) doc.v.toNat C.stage.tok (contB35 G doc.v)
+        (hlastByte G C) doc.hb) (ContTailStartC C)
       (contTailStartOfDoc (G := G) C s doc) 5 :=
     walkHeadChainCSeg (G := G) (C := ContSeamC C)
-      (s := contSeamS C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep doc.v (contIx G C)
-        (contB35 G doc.v) (hlastByte G C)) hhead.inv' rfl
-      (by
-        show evalOperand (contSeamS C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep doc.v
-          (contIx G C) (contB35 G doc.v) (hlastByte G C)) (.reg "%8") =
-          some (.int 8 (hlastByte G C))
-        simp only [evalOperand]
-        rw [contSeamS_env8, contP35S_env8]
-        exact hInv.iter.reg8)
+      (s := contSeamByte (contLandS C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep
+        doc.v (contIx G C) (contB35 G doc.v)) doc.v.toNat C.stage.tok (contB35 G doc.v)
+        (hlastByte G C) doc.hb) hhead.inv' rfl h8c
       (hlast_slt_zero_of_toInt_le (by decide) hlt125)
       (hlast_slt_zero_of_toInt_le (by decide) hlt125)
       (hlast_eq_zero_of_slt_zero (by decide) hlt125)
-  exact hhead.trans (Seg.measure hspan5)
+  exact ⟨(8 + nR) + 5, by omega, hhead.trans (Seg.measure hspan5)⟩
 
 /-- **The seam carries the invariant**, from the row: the chain's own `inv'`. -/
 theorem contTailStartInv_of_doc {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
-    (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)
+    (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead)
+    (hk : C.k + 1 < G.nep)
     (hlt125 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 125) = 0)
     (hne125 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 125) = 0)
     (doc : HcontCleanupDoc G C s) :
-    WalkInv G (ContTailStartC C) (contTailStartOfDoc (G := G) C s doc) :=
-  (hcontSpan17_of_doc hInv hblock hk hlt125 hne125 doc).inv'
+    WalkInv G (ContTailStartC C) (contTailStartOfDoc (G := G) C s doc) := by
+  obtain ⟨nP, _hnP, hseg⟩ := hcontSpan17_of_doc hInv hblock hk hlt125 hne125 doc
+  exact hseg.inv'
 
 /-! ### The seam's cells, from that invariant
 
 The seam's own blocks bind `%Pivot63`, `%SwitchLeaf55`, `%SwitchLeaf59`, `%or.cond677.i`,
 `%or.cond524.i`, `%37`, `%cmp376.i`, `%ee.1.i`, `%cmp343.i`, `%34`, `%conv347.i`,
 `%cond350.i`, `%35`, `%gep`, `%Pivot42`, `%Pivot40` and `%SwitchLeaf36`.  None of them is
-a cell read below, so each lookup is the head's, read through the binds. -/
+a cell read below, so each lookup is the head's, read through the binds.  The peels are
+`contTailStartByte`'s (`JsonStage2WalkDispatchSegments`), at the route this row names. -/
 
-/-- **`%kind404.i` at the seam** is the token record's kind slot: `walkStaticRegs`'s row,
-which the seam binds nothing over. -/
-theorem contTailStart_envKind {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
-    (b35 : UInt8) (b8 : BitVec 8) (x1 : BitVec 8)
+theorem contTailStartOfDoc_envKind {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (doc : HcontCleanupDoc G C s)
     (h : lookupName s.env "%kind404.i" = some (.ptr (C.stage.tok + 16))) :
-    lookupName (contTailStart C s x inc nep ep v ix b35 b8 x1).env "%kind404.i" =
-      some (.ptr (C.stage.tok + 16)) := by
-  simp only [contTailStart, HeadS413, HeadS405, HeadS58, HeadS60, HeadS62, contSeamS, seamS,
-    seamFin, contP35S, contP39S, contP41S, contLandS, contEndS, cte345OutAt,
-    condEnd349OutAt, contAS₅, headAS₄, headAS₃, headAS₂, headAS₁, stateAt, cells, State.bind]
-  repeat rw [lookupName_cons_ne _ _ (by decide)]
-  exact h
+    lookupName (contTailStartOfDoc (G := G) C s doc).env "%kind404.i" =
+      some (.ptr (C.stage.tok + 16)) :=
+  contTailStartByte_envKind C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep doc.v
+    (contIx G C) (contB35 G doc.v) (hlastByte G C) (hlastByte G C) doc.hb h
 
-/-- **`%root_done.i` at the seam** is the root slot's pointer. -/
-theorem contTailStart_envRootDone {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
-    (b35 : UInt8) (b8 : BitVec 8) (x1 : BitVec 8)
+theorem contTailStartOfDoc_envRootDone {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {s : State} (doc : HcontCleanupDoc G C s)
     (h : lookupName s.env "%root_done.i" = some (.ptr (G.next0 + 8))) :
-    lookupName (contTailStart C s x inc nep ep v ix b35 b8 x1).env "%root_done.i" =
-      some (.ptr (G.next0 + 8)) := by
-  simp only [contTailStart, HeadS413, HeadS405, HeadS58, HeadS60, HeadS62, contSeamS, seamS,
-    seamFin, contP35S, contP39S, contP41S, contLandS, contEndS, cte345OutAt,
-    condEnd349OutAt, contAS₅, headAS₄, headAS₃, headAS₂, headAS₁, stateAt, cells, State.bind]
-  repeat rw [lookupName_cons_ne _ _ (by decide)]
-  exact h
+    lookupName (contTailStartOfDoc (G := G) C s doc).env "%root_done.i" =
+      some (.ptr (G.next0 + 8)) :=
+  contTailStartByte_envRootDone C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep doc.v
+    (contIx G C) (contB35 G doc.v) (hlastByte G C) (hlastByte G C) doc.hb h
 
-/-- **`%c.i` at the seam** is the cursor record. -/
-theorem contTailStart_envC {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
-    (b35 : UInt8) (b8 : BitVec 8) (x1 : BitVec 8)
+theorem contTailStartOfDoc_envC {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (doc : HcontCleanupDoc G C s)
     (h : lookupName s.env "%c.i" = some (.ptr C.stage.c)) :
-    lookupName (contTailStart C s x inc nep ep v ix b35 b8 x1).env "%c.i" =
-      some (.ptr C.stage.c) := by
-  simp only [contTailStart, HeadS413, HeadS405, HeadS58, HeadS60, HeadS62, contSeamS, seamS,
-    seamFin, contP35S, contP39S, contP41S, contLandS, contEndS, cte345OutAt,
-    condEnd349OutAt, contAS₅, headAS₄, headAS₃, headAS₂, headAS₁, stateAt, cells, State.bind]
-  repeat rw [lookupName_cons_ne _ _ (by decide)]
-  exact h
+    lookupName (contTailStartOfDoc (G := G) C s doc).env "%c.i" = some (.ptr C.stage.c) :=
+  contTailStartByte_envC C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep doc.v
+    (contIx G C) (contB35 G doc.v) (hlastByte G C) (hlastByte G C) doc.hb h
 
-/-- **`%t352.i` at the seam** is the token record's base. -/
-theorem contTailStart_envTok {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
-    (b35 : UInt8) (b8 : BitVec 8) (x1 : BitVec 8)
+theorem contTailStartOfDoc_envTok {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (doc : HcontCleanupDoc G C s)
     (h : lookupName s.env "%t352.i" = some (.ptr C.stage.tok)) :
-    lookupName (contTailStart C s x inc nep ep v ix b35 b8 x1).env "%t352.i" =
-      some (.ptr C.stage.tok) := by
-  simp only [contTailStart, HeadS413, HeadS405, HeadS58, HeadS60, HeadS62, contSeamS, seamS,
-    seamFin, contP35S, contP39S, contP41S, contLandS, contEndS, cte345OutAt,
-    condEnd349OutAt, contAS₅, headAS₄, headAS₃, headAS₂, headAS₁, stateAt, cells, State.bind]
-  repeat rw [lookupName_cons_ne _ _ (by decide)]
-  exact h
+    lookupName (contTailStartOfDoc (G := G) C s doc).env "%t352.i" =
+      some (.ptr C.stage.tok) :=
+  contTailStartByte_envTok C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep doc.v
+    (contIx G C) (contB35 G doc.v) (hlastByte G C) (hlastByte G C) doc.hb h
 
-/-- **`%z` at the seam** is the log. -/
-theorem contTailStart_envZ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
-    (b35 : UInt8) (b8 : BitVec 8) (x1 : BitVec 8)
+theorem contTailStartOfDoc_envZ {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (doc : HcontCleanupDoc G C s)
     (h : lookupName s.env "%z" = some (.ptr C.stage.z)) :
-    lookupName (contTailStart C s x inc nep ep v ix b35 b8 x1).env "%z" =
-      some (.ptr C.stage.z) := by
-  simp only [contTailStart, HeadS413, HeadS405, HeadS58, HeadS60, HeadS62, contSeamS, seamS,
-    seamFin, contP35S, contP39S, contP41S, contLandS, contEndS, cte345OutAt,
-    condEnd349OutAt, contAS₅, headAS₄, headAS₃, headAS₂, headAS₁, stateAt, cells, State.bind]
-  repeat rw [lookupName_cons_ne _ _ (by decide)]
-  exact h
+    lookupName (contTailStartOfDoc (G := G) C s doc).env "%z" = some (.ptr C.stage.z) :=
+  contTailStartByte_envZ C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep doc.v
+    (contIx G C) (contB35 G doc.v) (hlastByte G C) (hlastByte G C) doc.hb h
 
-/-- **The seam's predecessor is `if.else405.i`**: `if.end372.i`'s empty body leaves for
-`if.then413.i` on that arm, and `HeadS413` names the predecessor. -/
-theorem contTailStart_pre {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
-    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
-    (b35 : UInt8) (b8 : BitVec 8) (x1 : BitVec 8) :
-    (contTailStart C s x inc nep ep v ix b35 b8 x1).pre = some "if.else405.i" := by
-  simp only [contTailStart, HeadS413, HeadS405]
+theorem contTailStartOfDoc_pre {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (doc : HcontCleanupDoc G C s) :
+    (contTailStartOfDoc (G := G) C s doc).pre = some "if.else405.i" :=
+  contTailStartByte_pre C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep doc.v
+    (contIx G C) (contB35 G doc.v) (hlastByte G C) (hlastByte G C) doc.hb
 
 /-- **The seam's `phi` selects the literal `0` on that edge.**  The kind word `%kind404.i`
 carries is the incoming literal the block's `phi` names, and `if.else405.i`'s entry is
@@ -254,136 +267,34 @@ theorem contTailStart_phi :
       some (.imm (.int 32 (BitVec.ofNat 32 0))) := by
   decide
 
-/-- **The kind word the seam's `phi` selects** is `0`: the operand is a literal, so no
-environment cell is read. -/
-theorem contTailStart_op {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
-    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
-    (b35 : UInt8) (b8 : BitVec 8) (x1 : BitVec 8) :
-    evalOperand (stateAt (contTailStart C s x inc nep ep v ix b35 b8 x1).env
-      (contTailStart C s x inc nep ep v ix b35 b8 x1))
-      (.imm (.int 32 (BitVec.ofNat 32 0))) =
-      some (.int 32 (BitVec.ofNat 32 0)) := by
-  simp only [evalOperand, Const.toValue]
-
-/-! ### The seam's memory
-
-The chain stores three times, all inside the token record: `cond.true345.i`'s end word at
-`%t352.i`, `cond.end349.i`'s gap at `+ 20`, and `if.end372.i`'s token end at `+ 8`.  Every
-other link binds cells.  The root slot is above every staged object
-(`WalkStage.sevenEnd`), so its word is the lane's.
-
-The three stores are audited by the register's own extent rather than one at a time: a
-store at an offset whose record extent covers it leaves the root slot alone
-(`walkReadBytes_rootSlot_of_tokStore`). -/
-
-/-- **The seam's memory, exactly**: the head's with the three token-record stores.  The
-chain's binds leave the memory alone, and `seamFin`'s token end is the outermost. -/
-theorem contTailStart_mem {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
-    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
-    (b35 : UInt8) (b8 : BitVec 8) (x1 : BitVec 8) :
-    (contTailStart C s x inc nep ep v ix b35 b8 x1).mem =
-      writeBytes (writeBytes (writeBytes s.mem C.stage.tok (natToBytes ix.toNat 8))
-        (C.stage.tok + 20) (natToBytes (BitVec.ofNat 32 1).toNat 4)) (C.stage.tok + 8)
-        (natToBytes (BitVec.ofNat 64 v.toNat).toNat 8) := by
-  simp only [contTailStart, HeadS413, HeadS405, HeadS58, HeadS60, HeadS62, contSeamS, seamS,
-    seamFin, contP35S, contP39S, contP41S, contLandS, contEndS, cte345OutAt,
-    condEnd349OutAt, contAS₅, headAS₄, headAS₃, headAS₂, headAS₁, stateAt, cells, State.bind]
-
-/-- **The root slot's word at the seam is the head's.**  The three stores are inside the
-token record, so the word the copy call's argument list carries is the lane's zero. -/
-theorem contTailStart_rootRead {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
-    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
-    (b35 : UInt8) (b8 : BitVec 8) (x1 : BitVec 8)
-    {rdv : BitVec 32}
-    (hroot : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes rdv.toNat 4)) :
-    readBytes (contTailStart C s x inc nep ep v ix b35 b8 x1).mem (G.next0 + 8) 4 =
-      some (natToBytes rdv.toNat 4) := by
-  rw [contTailStart_mem]
-  rw [walkReadBytes_rootSlot_of_tokStore (off := 8) (len := 8)
-    (v := natToBytes (BitVec.ofNat 64 v.toNat).toNat 8) (by decide) (natToBytes_length _ _)]
-  rw [walkReadBytes_rootSlot_of_tokStore (off := 20) (len := 4)
-    (v := natToBytes (BitVec.ofNat 32 1).toNat 4) (by decide) (natToBytes_length _ _)]
-  have h0 : readBytes (writeBytes s.mem C.stage.tok (natToBytes ix.toNat 8))
-      (G.next0 + 8) 4 = readBytes s.mem (G.next0 + 8) 4 := by
-    refine walkReadBytes_writeBytes_outside (start := C.stage.tok) (addr := G.next0 + 8)
-      (n := 4) ?_
-    right
-    have h := C.stage.sevenEnd (C.stage.tok, stage2TokenExtent)
-      (by simp [stage2StagedWrites])
-    have hlen : (natToBytes ix.toNat 8).length = 8 := natToBytes_length _ _
-    simp only [stage2TokenExtent] at h
-    omega
-  rw [h0]
-  exact hroot
-
-/-! ### The same cells at the row's own state name
-
-The lemmas above are stated at `contTailStart`'s own parameters; the arm reads
-`contTailStartOfDoc`, so each is restated there once.  Nothing is proved twice: each is
-the general lemma at the row's witness. -/
-
-theorem contTailStartOfDoc_envKind {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
-    (doc : HcontCleanupDoc G C s)
-    (h : lookupName s.env "%kind404.i" = some (.ptr (C.stage.tok + 16))) :
-    lookupName (contTailStartOfDoc (G := G) C s doc).env "%kind404.i" =
-      some (.ptr (C.stage.tok + 16)) :=
-  contTailStart_envKind C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep doc.v
-    (contIx G C) (contB35 G doc.v) (hlastByte G C) (hlastByte G C) h
-
-theorem contTailStartOfDoc_envRootDone {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
-    {s : State} (doc : HcontCleanupDoc G C s)
-    (h : lookupName s.env "%root_done.i" = some (.ptr (G.next0 + 8))) :
-    lookupName (contTailStartOfDoc (G := G) C s doc).env "%root_done.i" =
-      some (.ptr (G.next0 + 8)) :=
-  contTailStart_envRootDone C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep doc.v
-    (contIx G C) (contB35 G doc.v) (hlastByte G C) (hlastByte G C) h
-
-theorem contTailStartOfDoc_envC {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
-    (doc : HcontCleanupDoc G C s)
-    (h : lookupName s.env "%c.i" = some (.ptr C.stage.c)) :
-    lookupName (contTailStartOfDoc (G := G) C s doc).env "%c.i" = some (.ptr C.stage.c) :=
-  contTailStart_envC C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep doc.v
-    (contIx G C) (contB35 G doc.v) (hlastByte G C) (hlastByte G C) h
-
-theorem contTailStartOfDoc_envTok {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
-    (doc : HcontCleanupDoc G C s)
-    (h : lookupName s.env "%t352.i" = some (.ptr C.stage.tok)) :
-    lookupName (contTailStartOfDoc (G := G) C s doc).env "%t352.i" =
-      some (.ptr C.stage.tok) :=
-  contTailStart_envTok C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep doc.v
-    (contIx G C) (contB35 G doc.v) (hlastByte G C) (hlastByte G C) h
-
-theorem contTailStartOfDoc_envZ {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
-    (doc : HcontCleanupDoc G C s)
-    (h : lookupName s.env "%z" = some (.ptr C.stage.z)) :
-    lookupName (contTailStartOfDoc (G := G) C s doc).env "%z" = some (.ptr C.stage.z) :=
-  contTailStart_envZ C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep doc.v
-    (contIx G C) (contB35 G doc.v) (hlastByte G C) (hlastByte G C) h
-
-theorem contTailStartOfDoc_pre {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
-    (doc : HcontCleanupDoc G C s) :
-    (contTailStartOfDoc (G := G) C s doc).pre = some "if.else405.i" :=
-  contTailStart_pre G C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep doc.v
-    (contIx G C) (contB35 G doc.v) (hlastByte G C) (hlastByte G C)
-
 theorem contTailStartOfDoc_op {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     (doc : HcontCleanupDoc G C s) :
     evalOperand (stateAt (contTailStartOfDoc (G := G) C s doc).env
       (contTailStartOfDoc (G := G) C s doc)) (.imm (.int 32 (BitVec.ofNat 32 0))) =
       some (.int 32 (BitVec.ofNat 32 0)) :=
-  contTailStart_op G C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep doc.v
-    (contIx G C) (contB35 G doc.v) (hlastByte G C) (hlastByte G C)
+  contTailStartByte_op C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep doc.v
+    (contIx G C) (contB35 G doc.v) (hlastByte G C) (hlastByte G C) doc.hb
+
+/-- **The root slot's word at the seam is the head's**, across the seam's three stores. -/
+theorem contTailStartOfDoc_rootRead {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {s : State} (doc : HcontCleanupDoc G C s) {rdv : BitVec 32}
+    (hroot : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes rdv.toNat 4)) :
+    readBytes (contTailStartOfDoc (G := G) C s doc).mem (G.next0 + 8) 4 =
+      some (natToBytes rdv.toNat 4) :=
+  contTailStartByte_rootRead C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep doc.v
+    (contIx G C) (contB35 G doc.v) (hlastByte G C) (hlastByte G C) doc.hb hroot
 
 /-! ### The class's arm, at the rows
 
-`hcontArm_cleanup_of_calls` takes the seam's cells as premises; the two producers above
-supply them from the row and the invariant, so what this theorem takes is the document row,
-the lane's root word, the three callee rows and the two word agreements. -/
+`hcontArm_cleanup_of_calls` takes the seam's cells as premises; the producers above
+supply them from the row and the invariant, and the tail is `hcontTailByte_of_calls`'s at
+the byte's route.  So what the arm takes beside the row and the lane's root word is the
+three callee rows and the two word agreements. -/
 
-/-- **The scan-free continuing arm, at the rows.**  The chain is `hcontSpan17_of_doc`'s,
-the seam's cells are the lemmas above, and the two words `cA`/`rdv` are the state's
-(`contTailStart_phi`, `contTailStart_rootRead`) — the callee group must carry those, which
-is the pair of equalities below. -/
+/-- **The default-value class's continuing arm, at the rows.**  The tail is
+`hcontTailByte_of_calls`'s at the row's own seam, the chain is `hcontSpan17_of_doc`'s, the
+seam's cells are the lemmas above, and the two words `cA`/`rdv` are the state's — the
+callee group must carry those, which is the pair of equalities below. -/
 theorem hcontArm_cleanup_of_rows {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)
     (hlt125 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 125) = 0)
@@ -403,9 +314,7 @@ theorem hcontArm_cleanup_of_rows {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} 
     exact contTailStartOfDoc_op (G := G) (C := C) (s := s) doc
   have hrootS : readBytes (contTailStartOfDoc (G := G) C s doc).mem (G.next0 + 8) 4 =
       some (natToBytes rdv0.toNat 4) :=
-    contTailStart_rootRead (G := G) (C := C) (s := s) (x := hlastByte G C)
-      (inc := hlastIncV C) (nep := hlastNepV G) (ep := G.ep) (v := doc.v) (ix := contIx G C)
-      (b35 := contB35 G doc.v) (b8 := hlastByte G C) (x1 := hlastByte G C) hroot
+    contTailStartOfDoc_rootRead (G := G) (C := C) (s := s) doc hroot
   have hreadRoot : readBytes
       (writeBytes (contTailStartOfDoc (G := G) C s doc).mem (C.stage.tok + 16)
         (natToBytes calls.cA.toNat 4)) (G.next0 + 8) 4 =
@@ -434,16 +343,20 @@ theorem hcontArm_cleanup_of_rows {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} 
   have htightS : (ContTailStartC C).events.length ≤ (ContTailStartC C).k :=
     hInv.events_le_of_tight (by rw [hblock]; decide)
   have hkltS : (ContTailStartC C).k < G.nep := Nat.lt_of_succ_lt hk
-  exact hcontArm_cleanup_of_calls G C s hInv hk hlt125 hne125 doc.hread doc.hspan doc.hugt
-    doc.hb13 doc.hb32 doc.hbne13 calls.r₁ calls.r₂ calls.r₃
-    (cA := calls.cA) (rdv := calls.rdv) (xA := calls.xA) "if.else405.i" hInvS rfl
-    (contTailStartOfDoc_pre (G := G) (C := C) (s := s) doc) contTailStart_phi hopS hkindS
-    hrdS hreadRoot
-    calls.hpre₁ calls.hcall₁ calls.hret₁ calls.hbit0 calls.hzread hcS htS hzS
-    calls.hpre₂ calls.hcall₂ calls.hret₂ calls.hev64 htightS hkltS
-    calls.hpre₃ calls.hcall₃ (by have := doc.v.isLt; omega)
+  obtain ⟨ev, hTail⟩ :=
+    hcontTailByte_of_calls G C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep doc.v
+      (contIx G C) (contB35 G doc.v) (hlastByte G C) (hlastByte G C) doc.hb
+      calls.r₁ calls.r₂ calls.r₃ hInvS rfl "if.else405.i"
+      (contTailStartOfDoc_pre (G := G) (C := C) (s := s) doc) contTailStart_phi hopS
+      hkindS hrdS hreadRoot
+      calls.hpre₁ calls.hcall₁ calls.hret₁ calls.hbit0 calls.hzread hcS htS hzS
+      calls.hpre₂ calls.hcall₂ calls.hret₂ calls.hev64 htightS hkltS
+      calls.hpre₃ calls.hcall₃ (by have := doc.v.isLt; omega)
+  exact ⟨hcontArm_cleanup_of_staging G C s hInv hk hlt125 hne125 doc.hread doc.hspan
+    doc.hugt doc.hb calls.r₁ calls.r₂ calls.r₃ ev (cA := calls.cA) (rdv := calls.rdv)
+    (xA := calls.xA) hTail⟩
 
-/-- **The scan-free continuing dispatch, at the rows.** -/
+/-- **The default-value class's continuing dispatch, at the rows.** -/
 theorem walkDispatch_at_cleanup_of_rows {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     {s : State} (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead)
     (hk : C.k + 1 < G.nep)
@@ -463,16 +376,14 @@ theorem walkDispatch_at_cleanup_of_rows {m0 : Mem} {G : WalkGeom m0} {C : WalkCa
 
 #print axioms LeanLLVM.Refinement.WalkScope.hcontSpan17_of_doc
 #print axioms LeanLLVM.Refinement.WalkScope.contTailStartInv_of_doc
-#print axioms LeanLLVM.Refinement.WalkScope.contTailStart_envKind
-#print axioms LeanLLVM.Refinement.WalkScope.contTailStart_envRootDone
-#print axioms LeanLLVM.Refinement.WalkScope.contTailStart_envC
-#print axioms LeanLLVM.Refinement.WalkScope.contTailStart_envTok
-#print axioms LeanLLVM.Refinement.WalkScope.contTailStart_envZ
-#print axioms LeanLLVM.Refinement.WalkScope.contTailStart_pre
-#print axioms LeanLLVM.Refinement.WalkScope.contTailStart_phi
-#print axioms LeanLLVM.Refinement.WalkScope.contTailStart_op
-#print axioms LeanLLVM.Refinement.WalkScope.contTailStart_mem
-#print axioms LeanLLVM.Refinement.WalkScope.contTailStart_rootRead
+#print axioms LeanLLVM.Refinement.WalkScope.contTailStartOfDoc_envKind
+#print axioms LeanLLVM.Refinement.WalkScope.contTailStartOfDoc_envRootDone
+#print axioms LeanLLVM.Refinement.WalkScope.contTailStartOfDoc_envC
+#print axioms LeanLLVM.Refinement.WalkScope.contTailStartOfDoc_envTok
+#print axioms LeanLLVM.Refinement.WalkScope.contTailStartOfDoc_envZ
+#print axioms LeanLLVM.Refinement.WalkScope.contTailStartOfDoc_pre
+#print axioms LeanLLVM.Refinement.WalkScope.contTailStartOfDoc_op
+#print axioms LeanLLVM.Refinement.WalkScope.contTailStartOfDoc_rootRead
 #print axioms LeanLLVM.Refinement.WalkScope.hcontArm_cleanup_of_rows
 #print axioms LeanLLVM.Refinement.WalkScope.walkDispatch_at_cleanup_of_rows
 

@@ -197,6 +197,183 @@ theorem contTailStart_cond {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : S
   repeat rw [lookupName_cons_ne _ _ (by decide)]
   exact contEndS_cond C s x inc nep ep v ix
 
+/-! ### The same cells at the byte's route
+
+`contTailStart` is the `.scanFree` instance of `contTailStartByte`; the cells the tail's
+three calls read are the same at all three routes, because the pivots bind their own
+comparison cells and nothing the tail reads.  Stating the peels at the route is what lets
+a producer pass the seam's class (`hb : HcontByteRoute (cont35 b35)`) rather than narrowing
+to the scan-free leaf. -/
+
+/-- **`%kind404.i` at the byte route's tail start** is the token record's kind slot. -/
+theorem contTailStartByte_envKind {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
+    (b35 : UInt8) (b8 : BitVec 8) (x1 : BitVec 8)
+    (hb : HcontByteRoute (cont35 b35))
+    (h : lookupName s.env "%kind404.i" = some (.ptr (C.stage.tok + 16))) :
+    lookupName (contTailStartByte C s x inc nep ep v ix b35 b8 x1 hb).env "%kind404.i" =
+      some (.ptr (C.stage.tok + 16)) := by
+  rcases hb with ⟨a1, a2, a3⟩ | ⟨a1, a2⟩ | ⟨a1, a2, a3⟩ <;>
+    simp only [contTailStartByte, HeadS413, HeadS405, HeadS58, HeadS60, HeadS62,
+      contSeamByte, contP35Any, contP33Any, contP37Any, contP35Out, contP33Out, contP37Out,
+      contP39Out, contP41Out, contP41Low, contP39High, seamS, seamFin, contLandS, contEndS,
+      cte345OutAt, condEnd349OutAt, contAS₅, headAS₄, headAS₃, headAS₂, headAS₁, stateAt,
+      cells, State.bind] <;>
+    repeat rw [lookupName_cons_ne _ _ (by decide)] <;>
+    exact h
+
+/-- **`%root_done.i` at the byte route's tail start** is the root slot's pointer. -/
+theorem contTailStartByte_envRootDone {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G)
+    (s : State) (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32)
+    (ix : BitVec 64) (b35 : UInt8) (b8 : BitVec 8) (x1 : BitVec 8)
+    (hb : HcontByteRoute (cont35 b35))
+    (h : lookupName s.env "%root_done.i" = some (.ptr (G.next0 + 8))) :
+    lookupName (contTailStartByte C s x inc nep ep v ix b35 b8 x1 hb).env "%root_done.i" =
+      some (.ptr (G.next0 + 8)) := by
+  rcases hb with ⟨a1, a2, a3⟩ | ⟨a1, a2⟩ | ⟨a1, a2, a3⟩ <;>
+    simp only [contTailStartByte, HeadS413, HeadS405, HeadS58, HeadS60, HeadS62,
+      contSeamByte, contP35Any, contP33Any, contP37Any, contP35Out, contP33Out, contP37Out,
+      contP39Out, contP41Out, contP41Low, contP39High, seamS, seamFin, contLandS, contEndS,
+      cte345OutAt, condEnd349OutAt, contAS₅, headAS₄, headAS₃, headAS₂, headAS₁, stateAt,
+      cells, State.bind] <;>
+    repeat rw [lookupName_cons_ne _ _ (by decide)] <;>
+    exact h
+
+/-- **`%c.i` at the byte route's tail start** is the cursor record. -/
+theorem contTailStartByte_envC {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
+    (b35 : UInt8) (b8 : BitVec 8) (x1 : BitVec 8)
+    (hb : HcontByteRoute (cont35 b35))
+    (h : lookupName s.env "%c.i" = some (.ptr C.stage.c)) :
+    lookupName (contTailStartByte C s x inc nep ep v ix b35 b8 x1 hb).env "%c.i" =
+      some (.ptr C.stage.c) := by
+  rcases hb with ⟨a1, a2, a3⟩ | ⟨a1, a2⟩ | ⟨a1, a2, a3⟩ <;>
+    simp only [contTailStartByte, HeadS413, HeadS405, HeadS58, HeadS60, HeadS62,
+      contSeamByte, contP35Any, contP33Any, contP37Any, contP35Out, contP33Out, contP37Out,
+      contP39Out, contP41Out, contP41Low, contP39High, seamS, seamFin, contLandS, contEndS,
+      cte345OutAt, condEnd349OutAt, contAS₅, headAS₄, headAS₃, headAS₂, headAS₁, stateAt,
+      cells, State.bind] <;>
+    repeat rw [lookupName_cons_ne _ _ (by decide)] <;>
+    exact h
+
+/-- **`%t352.i` at the byte route's tail start** is the token record's base. -/
+theorem contTailStartByte_envTok {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
+    (b35 : UInt8) (b8 : BitVec 8) (x1 : BitVec 8)
+    (hb : HcontByteRoute (cont35 b35))
+    (h : lookupName s.env "%t352.i" = some (.ptr C.stage.tok)) :
+    lookupName (contTailStartByte C s x inc nep ep v ix b35 b8 x1 hb).env "%t352.i" =
+      some (.ptr C.stage.tok) := by
+  rcases hb with ⟨a1, a2, a3⟩ | ⟨a1, a2⟩ | ⟨a1, a2, a3⟩ <;>
+    simp only [contTailStartByte, HeadS413, HeadS405, HeadS58, HeadS60, HeadS62,
+      contSeamByte, contP35Any, contP33Any, contP37Any, contP35Out, contP33Out, contP37Out,
+      contP39Out, contP41Out, contP41Low, contP39High, seamS, seamFin, contLandS, contEndS,
+      cte345OutAt, condEnd349OutAt, contAS₅, headAS₄, headAS₃, headAS₂, headAS₁, stateAt,
+      cells, State.bind] <;>
+    repeat rw [lookupName_cons_ne _ _ (by decide)] <;>
+    exact h
+
+/-- **`%z` at the byte route's tail start** is the log. -/
+theorem contTailStartByte_envZ {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
+    (b35 : UInt8) (b8 : BitVec 8) (x1 : BitVec 8)
+    (hb : HcontByteRoute (cont35 b35))
+    (h : lookupName s.env "%z" = some (.ptr C.stage.z)) :
+    lookupName (contTailStartByte C s x inc nep ep v ix b35 b8 x1 hb).env "%z" =
+      some (.ptr C.stage.z) := by
+  rcases hb with ⟨a1, a2, a3⟩ | ⟨a1, a2⟩ | ⟨a1, a2, a3⟩ <;>
+    simp only [contTailStartByte, HeadS413, HeadS405, HeadS58, HeadS60, HeadS62,
+      contSeamByte, contP35Any, contP33Any, contP37Any, contP35Out, contP33Out, contP37Out,
+      contP39Out, contP41Out, contP41Low, contP39High, seamS, seamFin, contLandS, contEndS,
+      cte345OutAt, condEnd349OutAt, contAS₅, headAS₄, headAS₃, headAS₂, headAS₁, stateAt,
+      cells, State.bind] <;>
+    repeat rw [lookupName_cons_ne _ _ (by decide)] <;>
+    exact h
+
+/-- **`%ee.1.i` at the byte route's tail start** is the seam's stored end. -/
+theorem contTailStartByte_ee {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
+    (b35 : UInt8) (b8 : BitVec 8) (x1 : BitVec 8)
+    (hb : HcontByteRoute (cont35 b35)) :
+    lookupName (contTailStartByte C s x inc nep ep v ix b35 b8 x1 hb).env "%ee.1.i" =
+      some (.int 64 (BitVec.ofNat 64 v.toNat)) := by
+  simp only [contTailStartByte, HeadS413, HeadS405, HeadS58, HeadS60, HeadS62, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+  exact contSeamByte_ee (contLandS C s x inc nep ep v ix b35) v.toNat C.stage.tok b35 b8 hb
+
+/-- **`%cond350.i` at the byte route's tail start** is the lane's word. -/
+theorem contTailStartByte_cond {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
+    (b35 : UInt8) (b8 : BitVec 8) (x1 : BitVec 8)
+    (hb : HcontByteRoute (cont35 b35)) :
+    lookupName (contTailStartByte C s x inc nep ep v ix b35 b8 x1 hb).env "%cond350.i" =
+      some (.int 64 (BitVec.ofNat 64 v.toNat)) := by
+  simp only [contTailStartByte, HeadS413, HeadS405, HeadS58, HeadS60, HeadS62, State.bind]
+  repeat rw [lookupName_cons_ne _ _ (by decide)]
+  rw [contSeamByte_cond]
+  exact contLandS_cond C s x inc nep ep v ix b35
+
+/-- **The byte route's predecessor is `if.else405.i`**, as at the scan-free seam. -/
+theorem contTailStartByte_pre {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
+    (b35 : UInt8) (b8 : BitVec 8) (x1 : BitVec 8)
+    (hb : HcontByteRoute (cont35 b35)) :
+    (contTailStartByte C s x inc nep ep v ix b35 b8 x1 hb).pre = some "if.else405.i" := by
+  simp only [contTailStartByte, HeadS413, HeadS405]
+
+/-- **The kind word at the byte route's seam is the literal `0`.** -/
+theorem contTailStartByte_op {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
+    (b35 : UInt8) (b8 : BitVec 8) (x1 : BitVec 8)
+    (hb : HcontByteRoute (cont35 b35)) :
+    evalOperand (stateAt (contTailStartByte C s x inc nep ep v ix b35 b8 x1 hb).env
+      (contTailStartByte C s x inc nep ep v ix b35 b8 x1 hb))
+      (.imm (.int 32 (BitVec.ofNat 32 0))) =
+      some (.int 32 (BitVec.ofNat 32 0)) := by
+  simp only [evalOperand, Const.toValue]
+
+/-- **The byte route's seam memory**: the head's with the three token-record stores. -/
+theorem contTailStartByte_mem {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
+    (b35 : UInt8) (b8 : BitVec 8) (x1 : BitVec 8)
+    (hb : HcontByteRoute (cont35 b35)) :
+    (contTailStartByte C s x inc nep ep v ix b35 b8 x1 hb).mem =
+      writeBytes (writeBytes (writeBytes s.mem C.stage.tok (natToBytes ix.toNat 8))
+        (C.stage.tok + 20) (natToBytes (BitVec.ofNat 32 1).toNat 4)) (C.stage.tok + 8)
+        (natToBytes (BitVec.ofNat 64 v.toNat).toNat 8) := by
+  rcases hb with ⟨a1, a2, a3⟩ | ⟨a1, a2⟩ | ⟨a1, a2, a3⟩ <;>
+    simp only [contTailStartByte, HeadS413, HeadS405, HeadS58, HeadS60, HeadS62,
+      contSeamByte, contP35Any, contP33Any, contP37Any, contP35Out, contP33Out,
+      contP37Out, contP39Out, contP41Out, contP41Low, contP39High, seamS, seamFin,
+      contLandS, contEndS, cte345OutAt, condEnd349OutAt, contAS₅, headAS₄, headAS₃,
+      headAS₂, headAS₁, stateAt, cells, State.bind]
+
+/-- **The root slot's word at the byte route's seam is the head's.** -/
+theorem contTailStartByte_rootRead {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
+    (b35 : UInt8) (b8 : BitVec 8) (x1 : BitVec 8)
+    (hb : HcontByteRoute (cont35 b35)) {rdv : BitVec 32}
+    (hroot : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes rdv.toNat 4)) :
+    readBytes (contTailStartByte C s x inc nep ep v ix b35 b8 x1 hb).mem (G.next0 + 8) 4 =
+      some (natToBytes rdv.toNat 4) := by
+  rw [contTailStartByte_mem]
+  rw [walkReadBytes_rootSlot_of_tokStore (off := 8) (len := 8)
+    (v := natToBytes (BitVec.ofNat 64 v.toNat).toNat 8) (by decide) (natToBytes_length _ _)]
+  rw [walkReadBytes_rootSlot_of_tokStore (off := 20) (len := 4)
+    (v := natToBytes (BitVec.ofNat 32 1).toNat 4) (by decide) (natToBytes_length _ _)]
+  have h0 : readBytes (writeBytes s.mem C.stage.tok (natToBytes ix.toNat 8))
+      (G.next0 + 8) 4 = readBytes s.mem (G.next0 + 8) 4 := by
+    refine walkReadBytes_writeBytes_outside (start := C.stage.tok) (addr := G.next0 + 8)
+      (n := 4) ?_
+    right
+    have h := C.stage.sevenEnd (C.stage.tok, stage2TokenExtent)
+      (by simp [stage2StagedWrites])
+    have hlen : (natToBytes ix.toNat 8).length = 8 := natToBytes_length _ _
+    simp only [stage2TokenExtent] at h
+    omega
+  rw [h0]
+  exact hroot
+
 /-- **The scan-free continuing tail, from the three calls' rows.**  `HcontCleanupFacts`'s
 `hTail`, at the class's own seam. -/
 theorem hcontTail_of_calls {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
@@ -276,6 +453,94 @@ theorem hcontTail_of_calls {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : S
     hpre₂ hcall₂ hret₂ hev64 htight hklt hpre₃ hcall₃
     (contTailStart_ee C s x inc nep ep v ix b35 b8 x1)
     (contTailStart_cond C s x inc nep ep v ix b35 b8 x1) hv64
+
+/-- **The continuing tail at the byte's route, from the three calls' rows.**  The same
+three links as `hcontTail_of_calls`, at `contTailStartByte` instead of its `.scanFree`
+instance: the pivots' class selects the seam's source state, and the tail's cells are the
+same at all three leaves, so the producer takes `hb` and the caller no longer narrows the
+document's last byte. -/
+theorem hcontTailByte_of_calls {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
+    (b35 : UInt8) (b8 : BitVec 8) (x1 : BitVec 8)
+    (hb : HcontByteRoute (cont35 b35))
+    (r₁ r₂ r₃ : CallOutcome) {cA rdv xA : BitVec 32}
+    (hInvT : WalkInv G (ContTailStartC C)
+      (contTailStartByte C s x inc nep ep v ix b35 b8 x1 hb))
+    (hblockT : (ContTailStartC C).block = "if.then413.i")
+    {pT : String} (reg : String) {opT : Operand}
+    (hpreT : (contTailStartByte C s x inc nep ep v ix b35 b8 x1 hb).pre = some pT)
+    (hincT : phiIncoming pT
+      [("if.else405.i", .imm (.int 32 (BitVec.ofNat 32 0))),
+       ("if.then403.i", .imm (.int 32 (BitVec.ofNat 32 10))),
+       ("if.then397.i", .imm (.int 32 (BitVec.ofNat 32 9))),
+       ("if.end372.i", .imm (.int 32 (BitVec.ofNat 32 7))),
+       ("LeafBlock58", .imm (.int 32 (BitVec.ofNat 32 8)))] = some opT)
+    (hopT : evalOperand (stateAt (contTailStartByte C s x inc nep ep v ix b35 b8 x1 hb).env
+      (contTailStartByte C s x inc nep ep v ix b35 b8 x1 hb)) opT = some (.int 32 cA))
+    (hkindT : lookupName (contTailStartByte C s x inc nep ep v ix b35 b8 x1 hb).env
+      "%kind404.i" = some (.ptr (C.stage.tok + 16)))
+    (hrdT : lookupName (contTailStartByte C s x inc nep ep v ix b35 b8 x1 hb).env
+      "%root_done.i" = some (.ptr (G.next0 + 8)))
+    (hreadRoot : readBytes
+      (writeBytes (contTailStartByte C s x inc nep ep v ix b35 b8 x1 hb).mem
+        (C.stage.tok + 16) (natToBytes cA.toNat 4)) (G.next0 + 8) 4 =
+      some (natToBytes rdv.toNat 4))
+    (hpre₁ : s2ValuePosPre
+      [.int 32 (BitVec.ofNat 32 (ContTailStartC C).sp), .int 32 rdv,
+       .ptr (ContTailStartC C).stage.ctype, .ptr (ContTailStartC C).stage.cst]
+      (writeBytes (contTailStartByte C s x inc nep ep v ix b35 b8 x1 hb).mem
+        (C.stage.tok + 16) (natToBytes cA.toNat 4))
+      (contTailStartByte C s x inc nep ep v ix b35 b8 x1 hb).next)
+    (hcall₁ : stage2Calls stage2SubCalls "s2_value_pos"
+      [.int 32 (BitVec.ofNat 32 (ContTailStartC C).sp), .int 32 rdv,
+       .ptr (ContTailStartC C).stage.ctype, .ptr (ContTailStartC C).stage.cst]
+      (writeBytes (contTailStartByte C s x inc nep ep v ix b35 b8 x1 hb).mem
+        (C.stage.tok + 16) (natToBytes cA.toNat 4))
+      (contTailStartByte C s x inc nep ep v ix b35 b8 x1 hb).next = some r₁)
+    (hret₁ : r₁.ret = .int 32 xA)
+    (hbit0T : evalICmp .eq xA (BitVec.ofNat 32 0) = 0)
+    (hzread : readBytes
+      (writeBytes (contTailStartByte C s x inc nep ep v ix b35 b8 x1 hb).mem
+        (C.stage.tok + 16) (natToBytes cA.toNat 4)) C.stage.z 8 =
+      some (wordBytes 8 G.ev))
+    (hcT : lookupName (contTailStartByte C s x inc nep ep v ix b35 b8 x1 hb).env "%c.i" =
+      some (.ptr (TailCarry₂ (ContTailStartC C)).stage.c))
+    (htT : lookupName (contTailStartByte C s x inc nep ep v ix b35 b8 x1 hb).env
+      "%t352.i" = some (.ptr (TailCarry₂ (ContTailStartC C)).stage.tok))
+    (hoT : lookupName (contTailStartByte C s x inc nep ep v ix b35 b8 x1 hb).env "%z" =
+      some (.ptr (TailCarry₂ (ContTailStartC C)).stage.z))
+    (hpre₂ : s2ScalarValuePre
+      [.ptr (TailCarry₂ (ContTailStartC C)).stage.c,
+       .ptr (TailCarry₂ (ContTailStartC C)).stage.tok,
+       .ptr (TailCarry₂ (ContTailStartC C)).stage.z] r₁.mem r₁.next)
+    (hcall₂ : stage2Calls stage2SubCalls "od_scalar_value"
+      [.ptr (TailCarry₂ (ContTailStartC C)).stage.c,
+       .ptr (TailCarry₂ (ContTailStartC C)).stage.tok,
+       .ptr (TailCarry₂ (ContTailStartC C)).stage.z] r₁.mem r₁.next = some r₂)
+    (hret₂ : r₂.ret = .int 32 (BitVec.ofNat 32 1))
+    (hev64 : G.ev < 2 ^ 64)
+    (htight : (ContTailStartC C).events.length ≤ (ContTailStartC C).k)
+    (hklt : (ContTailStartC C).k < G.nep)
+    (hpre₃ : s2AfterValuePre
+      [.int 32 (BitVec.ofNat 32 (ContTailStartC C).sp), .ptr (G.next0 + 8),
+       .ptr (ContTailStartC C).stage.ctype,
+       .ptr (ContTailStartC C).stage.cst] r₂.mem r₂.next)
+    (hcall₃ : stage2Calls stage2SubCalls "s2_after_value"
+      [.int 32 (BitVec.ofNat 32 (ContTailStartC C).sp), .ptr (G.next0 + 8),
+       .ptr (ContTailStartC C).stage.ctype,
+       .ptr (ContTailStartC C).stage.cst] r₂.mem r₂.next = some r₃)
+    (hv64 : v.toNat < 2 ^ 64) :
+    ∃ ev : EventRecord,
+      WalkSegment (stage2Calls stage2SubCalls) G (ContTailStartC C)
+        (contTailStartByte C s x inc nep ep v ix b35 b8 x1 hb)
+        (TailCarryEnd (ContTailStartC C) ev)
+        (contCleanupEndByte C s x inc nep ep v ix b35 b8 x1 hb r₁ r₂ r₃ cA rdv xA) 3 :=
+  emptyTailSeg_of_calls G (ContTailStartC C)
+    (contTailStartByte C s x inc nep ep v ix b35 b8 x1 hb) r₁ r₂ r₃ v.toNat hInvT hblockT
+    reg hpreT hincT hopT hkindT hrdT hreadRoot hpre₁ hcall₁ hret₁ hbit0T hzread hcT htT hoT
+    hpre₂ hcall₂ hret₂ hev64 htight hklt hpre₃ hcall₃
+    (contTailStartByte_ee C s x inc nep ep v ix b35 b8 x1 hb)
+    (contTailStartByte_cond C s x inc nep ep v ix b35 b8 x1 hb) hv64
 
 /-! ### The scalar route's tail, from the three calls' rows
 
@@ -570,7 +835,19 @@ theorem walkDispatch_at_cleanup_of_calls {m0 : Mem} {G : WalkGeom m0} {C : WalkC
 #print axioms LeanLLVM.Refinement.WalkScope.classCHeadSpan_at
 #print axioms LeanLLVM.Refinement.WalkScope.runSegmentsAt
 #print axioms LeanLLVM.Refinement.WalkScope.contTailStart_cond
+#print axioms LeanLLVM.Refinement.WalkScope.contTailStartByte_envKind
+#print axioms LeanLLVM.Refinement.WalkScope.contTailStartByte_envRootDone
+#print axioms LeanLLVM.Refinement.WalkScope.contTailStartByte_envC
+#print axioms LeanLLVM.Refinement.WalkScope.contTailStartByte_envTok
+#print axioms LeanLLVM.Refinement.WalkScope.contTailStartByte_envZ
+#print axioms LeanLLVM.Refinement.WalkScope.contTailStartByte_ee
+#print axioms LeanLLVM.Refinement.WalkScope.contTailStartByte_cond
+#print axioms LeanLLVM.Refinement.WalkScope.contTailStartByte_pre
+#print axioms LeanLLVM.Refinement.WalkScope.contTailStartByte_op
+#print axioms LeanLLVM.Refinement.WalkScope.contTailStartByte_mem
+#print axioms LeanLLVM.Refinement.WalkScope.contTailStartByte_rootRead
 #print axioms LeanLLVM.Refinement.WalkScope.hcontTail_of_calls
+#print axioms LeanLLVM.Refinement.WalkScope.hcontTailByte_of_calls
 #print axioms LeanLLVM.Refinement.WalkScope.scContTail_of_calls
 #print axioms LeanLLVM.Refinement.WalkScope.runToLatchSeg_at
 #print axioms LeanLLVM.Refinement.WalkScope.hcontArm_cleanup_of_calls
