@@ -917,25 +917,37 @@ byte's route, the default arm's
 scan-free classes' seam rows at `LetS413`/`FS413`, the four class-C leaves' at
 `ClsS413T`/`ClsS413F`/`ClsS58T`/`HeadS413`, the positive-depth opener's route, and the
 seam's three calls at `contTailStart`), and each has its branch in
-`JsonStage2WalkDispatchClassCase`.  One payload item stands between the continuing
-branches and its theorem — a contract change rather than a missing proof — and the last
-level's case is closed:
+`JsonStage2WalkDispatchClassCase`.  What stands between those branches and
+`walkContinueFacts_of_payload` is the class-case assembly over `HcontClass.complete` at
+every cell, and the `.run` cells' landing (below) is stated at one leaf; the last level's
+case is closed:
 
 * **The continuing level's run class is a row, and its case's remaining cell is a
-  producer.**  `HcontClassRows.runRow` states the run's row (the check state's rows plus
-  the seam's group, guarded by the default lane's whitespace class) and
-  `HcontClassRows.run` joins it to `RunFacts` through `hcontRunFacts_of_seam`; what the
-  case still composes is the byte's leaf below `if.else387.i` from the row's own cells.
+  producer — at the class-C else leaf only.**  `HcontClassRows.runRow` states the run's row
+  (the check state's rows plus the seam's group, guarded by the default lane's whitespace
+  class) and `HcontClassRows.run` joins it to `RunFacts` through `hcontRunFacts_of_seam`;
+  what the case still composes is the byte's leaf below `if.else387.i` from the row's own
+  cells.  That composition is possible only where the leaf is the class-C else one: the
+  row's `tailS` and the bundle's tail target and landing are `contWsTailStart`/`contWsEntry`,
+  which carry `HeadS413`'s binds (`%Pivot63`, `%Pivot61`, `%SwitchLeaf59`), and
+  `lettersSpan` ends at `LetS413` (`%SwitchLeaf55`) while `fSpan` ends at `FS413`.  So
+  `.run` is closed at the head bytes `117 … 124`; the cells whose head byte is below `110`
+  wait on the run's landing parameterized by the byte's leaf (`contWsEntry`, `contWsLatch`,
+  `HcontRunBody`, `HcontRunRows`, `HcontRunFacts`) — a statement change, not a proof.
   The continuing case is two-dimensional — the head class does not fix the next byte's
-  class — and one cell has no arm: at `HcontClass.value` (the tag test is `1`) the only
-  constructor is `HcontArm.scalar`, whose bundle and document row now carry the byte's
+  class — and at `HcontClass.value` (the tag test is `1`) the constructor is
+  `HcontArm.scalar`, whose bundle and document row now carry the byte's
   route (`HcontScalarFacts.hb`, `HcontScalarPrefix.hb`); its seam row is stated at
   `scSeamByte … pre.hb`, its chain to the seam is `scSeamSegByte` and its tail
-  `scTailByte_of_calls`, so `.value` × {`scanFree`, `lowLeaf`} are produced.  The one
-  live cell is `.value` × `wsByte` — the whitespace run after a numeral — which is not
-  `HcontFacts`'s prefix either, and `WalkInv` does not exclude it.  That is a missing
-  arm, not a row: the numeral prefix's chain, the whitespace skip, the span, the scan
-  tail, the latch, the visits and the merge.
+  `scTailByte_of_calls`, so `.value` × {`scanFree`, `lowLeaf`} are produced.  The fourth
+  cell — `.value` × `wsByte`, the whitespace run after a numeral — is `HcontArm.scalarRun`
+  (`JsonStage2WalkHcontWsScalar`): its bundle is `HcontScalarWsFacts` (the numeral prefix's
+  document cells, the byte's class with the run's stop and its per-index facts, the seam's
+  own cells, the tail's segment and the scan's landing), its row is
+  `HcontClassRows.scalarRun` (`HcontScalarWsRow`, the seam's three calls in place of the
+  tail's segment), its producer is `hcontArm_scalarRun_of_row`, which builds the tail from
+  the calls (`scanTailSeg_at`), and its branch is `hcontArm_scalarRun_of_class`.  So no
+  cell of the plain-value row is a missing arm.
 * **The last level's groups are stated and the case is closed.**  `HlastArmRows`
   (`JsonStage2WalkDispatchLastRows`) carries the five groups whose types name states above
   `DispatchClassRows` — `HlastScalarRows`, `HlastLettersRows`, `HlastFLetterRows`,

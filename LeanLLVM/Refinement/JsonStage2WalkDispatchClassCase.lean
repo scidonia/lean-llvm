@@ -50,6 +50,17 @@ is the same producer re-pointed, not a new one.  What `walkContinueFacts_of_payl
 waits on is the class-case assembly over `HcontClass.complete` and the payload item named
 below.
 
+**One cell of that assembly is blocked by the run's shape, not by a missing row.**  The
+`.run` cell at a default class whose head byte is below `110` needs `lettersSpan`
+(`LetS413`) or `fSpan` (`FS413`) as its span below `if.else387.i`, but `HcontRunRow.tailS`
+and the bundle's tail target are both `contWsTailStart`-shaped — `HeadS413`'s binds — and
+`HcontRunFacts` states its landing at `contWsEntry`, which is built on `contWsTailStart`
+too.  So `.run` is closed at the class-C else leaf only (bytes `117 … 124`); the cells at
+`letters`/`f` need the run's landing parameterized by the byte's leaf
+(`contWsEntry`, `contWsLatch`, `HcontRunBody`, `HcontRunRows`, `HcontRunFacts`), which is a
+statement change and not a proof.  See `HcontClassRows.runRow` and
+`hcontArm_run_of_row`.
+
 The byte selection itself is **done**: `JsonStage2WalkDispatchClassTransport` derives the
 route's own bits (`slt %8 110`, `eq %8 116`, `slt %8 116`, `eq %8 116`, `slt %8 125` and
 the seam's tag test) from each default-value constructor's range bits, builds the

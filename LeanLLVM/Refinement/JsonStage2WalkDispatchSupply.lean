@@ -205,8 +205,12 @@ its row is now `HcontRunRow` (`JsonStage2WalkDispatchClassRows`): the class's pr
 `runFacts_of_defaultClass` places that bundle after the class's prefix, so
 `hcontArm_run_of_row` produces the whole arm and `hcontArm_run_of_class` is its branch.
 The one segment the arm takes beside the row is the head byte's own leaf below
-`if.else387.i`, and `runFacts_of_runBundle`/`runFacts_of_defaultClass` take that span at
-its own count (`nS ≤ 5`), so the letters, `'f'` and class-C spans all fit.
+`if.else387.i`, at its own count (`nS ≤ 5`) — **but only the class-C else leaf's**: the
+row's `tailS` and the bundle's tail target and landing are `contWsTailStart`/`contWsEntry`,
+i.e. `HeadS413`'s binds, so `lettersSpan`'s `LetS413` and `fSpan`'s `FS413` do not fit.
+`.run` is therefore closed at the head bytes `117 … 124` only; the cells below `110` need
+the run's landing parameterized by the byte's leaf (`contWsEntry`, `contWsLatch`,
+`HcontRunBody`, `HcontRunRows`, `HcontRunFacts`).
 
 The other three former obstacles are retired: the payload's document row carries the byte's
 class (`HcontDefaultRow.hclass`), the visits' bound is the scan's span, the whitespace seam
