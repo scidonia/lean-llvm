@@ -268,10 +268,16 @@ end Gen
 
 open Gen
 
+/-- The blocks a run reads: the refusal arm's four, the integer digit run's four
+and its exit, and each of the fraction and exponent runs' four blocks with the
+blocks its exit lands in.  `if.end230` is both runs' end-of-lexeme exit and the
+merge `JsonStage2NumFastCounters` reads. -/
 def runBlocks : List String :=
   ["entry", "land.lhs.true", "if.end", "if.then5", "if.end6", "if.else", "if.else66",
    "cleanup300", "land.lhs.true41", "while.body52", "if.then55", "if.end62", "if.end68",
-   "if.end230"]
+   "land.lhs.true119", "while.body130", "if.then133", "if.end140", "if.end144",
+   "land.lhs.true195", "while.body206", "if.then209", "if.end216", "cleanup223.thread",
+   "if.end226", "if.end230"]
 
 /-- The fixture, its declared layout, the prefix of the generated names, and the
 blocks a run reads (an empty list emits the body literal alone). -/

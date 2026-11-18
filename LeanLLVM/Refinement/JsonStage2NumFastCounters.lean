@@ -22,15 +22,15 @@ contract's gates read.
 `BoundLoop` arms.  For the integer run they are parameters of
 `JsonStage2NumFastScan.numFastScanBoundLoop`; the fraction run at
 `land.lhs.true119` and the exponent run at `land.lhs.true195` have the same
-shape, and their arms are open for a reason that is partly mechanical: the two
-runs' blocks are pinned (`numFastBody.findBlock` resolves them, and the whole
-body literal carries their text), but `JsonStage2HelperIRNumFast` exposes named
-instruction lists only for the fourteen blocks the straight-line proofs read,
-and neither run's four blocks is among them.  An arm is a `runFuel` prefix over
-four blocks, so stating it needs those blocks' instruction lists as literals —
-either a regeneration of `capture-stage2-helpers.sh --emit-pins` output for the
-six blocks, or a hand transcription, which is what the pinning module exists to
-avoid.  The counters are therefore proved *at the merge*, not at the three runs.
+shape, and their arms are open: the two runs' blocks are pinned
+(`numFastBody.findBlock` resolves them, and the whole body literal carries their
+text), and `JsonStage2HelperIRNumFast` now names all three runs' blocks and the
+blocks their exits land in — a regeneration of
+`capture-stage2-helpers.sh --emit-pins` over the extended run-block set, so an
+arm can be written against the block's own instruction list rather than a hand
+transcription.  What that leaves is the arm's proof: an arm is a `runFuel`
+prefix over four blocks, and its statement at the body is not yet discharged.
+The counters are therefore proved *at the merge*, not at the three runs.
 -/
 import LeanLLVM.Refinement.JsonStage2NumFastCalls
 import LeanLLVM.Refinement.JsonStage2Body

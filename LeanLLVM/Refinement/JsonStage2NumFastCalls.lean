@@ -56,13 +56,18 @@ than a fact these definitions establish:
   proves its binary64 encoding is `strtodSpec`'s at the model;
 * **tier 2** is `numElEl1`'s Eisel-Lemire decision.  Outside the guard window
   `hp ∈ [hh - 2, hh]` it rounds from the high 64 bits of `W * hi` alone, without
-  forming the exact rational and without the low half of the product; the
-  claim that this decision equals `roundMag`'s — the window's sufficiency and
-  the low multiply's settling of it — is unproved in this tree
-  (`LeanLLVM.StrtodRefine` names the same statement as its "first
-  obstruction", and `LeanLLVM.StrtodTier3` proves the *fallback's* comparisons,
-  not the kernel's).  A body-level arm at `stage2NumFastCalls` inherits that
-  obligation: its eight bytes are `strtodSpec`'s only under the kernel's bound;
+  forming the exact rational and without the low half of the product.  The
+  window's decision *is* proved to be `roundMag`'s for the kernel as
+  `LeanLLVM.ElGuardRefine` writes it: `elGuardRefinesOn` states and proves
+  `elTier2Code w q = some c → roundMag (valueTicks w q) = .fin c` for
+  `0 < w < 2 ^ 64`, with `not_elGuardRefinesUnbounded` showing the word bound is
+  load-bearing, and `JsonStage2Body.numTier2Binary_eq_strtodSpec` composes it at
+  the model.  What is *not* in this tree is the correspondence from this file's
+  `numElEl1 epow` — the body's callee model, with the table as a parameter — to
+  `elTier2Code`: the two are written from the same C text but no lemma relates
+  their `elPack`/`elExact` forms, so a body-level arm at `stage2NumFastCalls`
+  inherits that gap rather than `elGuardRefinesOn`'s result.  The stop is that
+  bridge, not the guard slice;
 * **tier 3** (the fallback) is reached whenever the kernel refuses, and its
   obligation is the bracketing argument `LeanLLVM.StrtodTier3` states and
   partly proves.

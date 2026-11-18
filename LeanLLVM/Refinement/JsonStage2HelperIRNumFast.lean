@@ -1,6 +1,6 @@
 /-
 `num_fast_el1`'s emitted body, pinned at every block: the AST the fixture parses
-to, the two hundred and fifty-five blocks `findBlock` resolves, and the fourteen
+to, the two hundred and fifty-five blocks `findBlock` resolves, and the twenty-five
 instruction lists the loop and the straight-line runs read.
 
 `JsonStage2HelperIR` pins this body *by shape*: the parsed block count, the
@@ -11,7 +11,7 @@ module removes.  The pins below are **generated from the parse**, not copied
 from the fixture: `capture-stage2-helpers.sh --emit-pins` parses
 `stage2.helper.num_fast_el1.ll` under `numFastLayout` and prints the block
 literals, the instruction lists and the `findBlock` equations, in the spelling
-this module uses.  The whole body literal (`numFastBody`) and the fourteen
+this module uses.  The whole body literal (`numFastBody`) and the twenty-five
 instruction lists are that output; the `#guard` beneath the literal is what holds
 the two together, so a regeneration that drifts from the fixture fails the build
 rather than pinning a body the text no longer has.
@@ -2714,6 +2714,104 @@ def numFastIfEnd68Instrs : List Instr :=
                                        ("land.lhs.true41", (Operand.reg "%i.4575"))],
     Instr.icmp "%cmp69" (IPred.ult) 64 (Operand.reg "%i.5") (Operand.reg "%n")]
 
+def numFastLandLhsTrue119Instrs : List Instr :=
+  [
+    Instr.phi "%i.9595" (Ty.int 64) [("if.end140", (Operand.reg "%inc142")),
+                                       ("land.lhs.true119.preheader", (Operand.reg "%i.6552"))],
+    Instr.phi "%fdig.3594" (Ty.int 64) [("if.end140", (Operand.reg "%inc141")),
+                                       ("land.lhs.true119.preheader", (Operand.reg "%fdig.0554"))],
+    Instr.phi "%fr.3593" (Ty.int 64) [("if.end140", (Operand.reg "%fr.4")),
+                                       ("land.lhs.true119.preheader", (Operand.reg "%fr.0556"))],
+    Instr.gep "%arrayidx120" (Ty.int 8) (Operand.reg "%p") (Operand.reg "%i.9595"),
+    Instr.load "%18" (Ty.int 8) (Operand.reg "%arrayidx120"),
+    Instr.binop "%19" (BinOp.add) 8 (Operand.reg "%18") (Operand.imm (Const.int 8 0xd0#8)),
+    Instr.icmp "%or.cond443" (IPred.ult) 8 (Operand.reg "%19") (Operand.imm (Const.int 8 0x0a#8))]
+
+def numFastWhileBody130Instrs : List Instr :=
+  [
+    Instr.icmp "%cmp131" (IPred.ult) 64 (Operand.reg "%fdig.3594") (Operand.imm (Const.int 64 0x0000000000000013#64))]
+
+def numFastIfThen133Instrs : List Instr :=
+  [
+    Instr.binop "%mul134" (BinOp.mul) 64 (Operand.reg "%fr.3593") (Operand.imm (Const.int 64 0x000000000000000a#64)),
+    Instr.binop "%20" (BinOp.and) 8 (Operand.reg "%18") (Operand.imm (Const.int 8 0x0f#8)),
+    Instr.zext "%conv138" 8 64 (Operand.reg "%20"),
+    Instr.binop "%add139" (BinOp.add) 64 (Operand.reg "%mul134") (Operand.reg "%conv138")]
+
+def numFastIfEnd140Instrs : List Instr :=
+  [
+    Instr.phi "%fr.4" (Ty.int 64) [("if.then133", (Operand.reg "%add139")),
+                                       ("while.body130", (Operand.reg "%fr.3593"))],
+    Instr.binop "%inc141" (BinOp.add) 64 (Operand.reg "%fdig.3594") (Operand.imm (Const.int 64 0x0000000000000001#64)),
+    Instr.binop "%inc142" (BinOp.add) 64 (Operand.reg "%i.9595") (Operand.imm (Const.int 64 0x0000000000000001#64)),
+    Instr.icmp "%exitcond702.not" (IPred.eq) 64 (Operand.reg "%inc142") (Operand.reg "%n")]
+
+def numFastIfEnd144Instrs : List Instr :=
+  [
+    Instr.phi "%fr.5" (Ty.int 64) [("land.lhs.true71", (Operand.imm (Const.int 64 0x0000000000000000#64))),
+                                       ("if.end68", (Operand.imm (Const.int 64 0x0000000000000000#64))),
+                                       ("while.end115", (Operand.reg "%fr.0556")),
+                                       ("land.lhs.true119", (Operand.reg "%fr.3593"))],
+    Instr.phi "%fdig.4" (Ty.int 64) [("land.lhs.true71", (Operand.imm (Const.int 64 0x0000000000000000#64))),
+                                       ("if.end68", (Operand.imm (Const.int 64 0x0000000000000000#64))),
+                                       ("while.end115", (Operand.reg "%fdig.0554")),
+                                       ("land.lhs.true119", (Operand.reg "%fdig.3594"))],
+    Instr.phi "%i.10" (Ty.int 64) [("land.lhs.true71", (Operand.reg "%i.5")),
+                                       ("if.end68", (Operand.reg "%i.5")),
+                                       ("while.end115", (Operand.reg "%i.6552")),
+                                       ("land.lhs.true119", (Operand.reg "%i.9595"))],
+    Instr.icmp "%cmp145" (IPred.ult) 64 (Operand.reg "%i.10") (Operand.reg "%n")]
+
+def numFastLandLhsTrue195Instrs : List Instr :=
+  [
+    Instr.phi "%i.12604" (Ty.int 64) [("if.end216", (Operand.reg "%inc217")),
+                                       ("lor.lhs.false180", (Operand.reg "%i.11"))],
+    Instr.phi "%exp10.0603" (Ty.int 64) [("if.end216", (Operand.reg "%exp10.1")),
+                                       ("lor.lhs.false180", (Operand.imm (Const.int 64 0x0000000000000000#64)))],
+    Instr.gep "%arrayidx196" (Ty.int 8) (Operand.reg "%p") (Operand.reg "%i.12604"),
+    Instr.load "%25" (Ty.int 8) (Operand.reg "%arrayidx196"),
+    Instr.binop "%26" (BinOp.add) 8 (Operand.reg "%25") (Operand.imm (Const.int 8 0xd0#8)),
+    Instr.icmp "%or.cond445" (IPred.ult) 8 (Operand.reg "%26") (Operand.imm (Const.int 8 0x0a#8))]
+
+def numFastWhileBody206Instrs : List Instr :=
+  [
+    Instr.icmp "%cmp207" (IPred.slt) 64 (Operand.reg "%exp10.0603") (Operand.imm (Const.int 64 0x00000000000186a0#64))]
+
+def numFastIfThen209Instrs : List Instr :=
+  [
+    Instr.binop "%mul210" (BinOp.mul) 64 (Operand.reg "%exp10.0603") (Operand.imm (Const.int 64 0x000000000000000a#64)),
+    Instr.binop "%27" (BinOp.and) 8 (Operand.reg "%25") (Operand.imm (Const.int 8 0x0f#8)),
+    Instr.zext "%conv214" 8 64 (Operand.reg "%27"),
+    Instr.binop "%add215" (BinOp.add) 64 (Operand.reg "%mul210") (Operand.reg "%conv214")]
+
+def numFastIfEnd216Instrs : List Instr :=
+  [
+    Instr.phi "%exp10.1" (Ty.int 64) [("if.then209", (Operand.reg "%add215")),
+                                       ("while.body206", (Operand.reg "%exp10.0603"))],
+    Instr.binop "%inc217" (BinOp.add) 64 (Operand.reg "%i.12604") (Operand.imm (Const.int 64 0x0000000000000001#64)),
+    Instr.icmp "%exitcond703.not" (IPred.eq) 64 (Operand.reg "%inc217") (Operand.reg "%n")]
+
+def numFastCleanup223ThreadInstrs : List Instr :=
+  [
+    Instr.phi "%exp10.0.lcssa.ph" (Ty.int 64) [("land.lhs.true195", (Operand.reg "%exp10.0603")),
+                                       ("if.end216", (Operand.reg "%exp10.1"))],
+    Instr.phi "%i.12.lcssa.ph" (Ty.int 64) [("land.lhs.true195", (Operand.reg "%i.12604")),
+                                       ("if.end216", (Operand.reg "%n"))],
+    Instr.binop "%sub221" (BinOp.sub) 64 (Operand.imm (Const.int 64 0x0000000000000000#64)) (Operand.reg "%exp10.0.lcssa.ph"),
+    Instr.select "%spec.select446" (Ty.int 64) (Operand.reg "%esign.0") (Operand.reg "%exp10.0.lcssa.ph") (Operand.reg "%sub221")]
+
+def numFastIfEnd226Instrs : List Instr :=
+  [
+    Instr.phi "%exp10.4" (Ty.int 64) [("if.end144", (Operand.imm (Const.int 64 0x0000000000000000#64))),
+                                       ("cleanup223.thread", (Operand.reg "%spec.select446")),
+                                       ("LeafBlock", (Operand.imm (Const.int 64 0x0000000000000000#64))),
+                                       ("LeafBlock1", (Operand.imm (Const.int 64 0x0000000000000000#64)))],
+    Instr.phi "%i.14" (Ty.int 64) [("if.end144", (Operand.reg "%i.10")),
+                                       ("cleanup223.thread", (Operand.reg "%i.12.lcssa.ph")),
+                                       ("LeafBlock", (Operand.reg "%i.10")),
+                                       ("LeafBlock1", (Operand.reg "%i.10"))],
+    Instr.icmp "%cmp227.not" (IPred.eq) 64 (Operand.reg "%i.14") (Operand.reg "%n")]
+
 def numFastIfEnd230Instrs : List Instr :=
   [
     Instr.phi "%exp10.4731" (Ty.int 64) [("if.end226", (Operand.reg "%exp10.4")),
@@ -2758,7 +2856,7 @@ def numFastCleanup300Instrs : List Instr :=
 /-! ### The pins: every block `findBlock` answers
 
 Two hundred and fifty-five `decide`d equations, one per block, generated from the
-parse.  The fourteen blocks above are named by their instruction-list `def`; the
+parse.  The twenty-five blocks above are named by their instruction-list `def`; the
 rest carry the list inline, so no block's contents reach this module only through
 a comment. -/
 theorem numFast_findBlock_entry :
@@ -4986,6 +5084,39 @@ theorem numFastIfElse66Instrs_eq :
 
 theorem numFastIfEnd68Instrs_eq :
     (numFastBody.findBlock "if.end68").map (·.instrs) = some numFastIfEnd68Instrs := by decide
+
+theorem numFastLandLhsTrue119Instrs_eq :
+    (numFastBody.findBlock "land.lhs.true119").map (·.instrs) = some numFastLandLhsTrue119Instrs := by decide
+
+theorem numFastWhileBody130Instrs_eq :
+    (numFastBody.findBlock "while.body130").map (·.instrs) = some numFastWhileBody130Instrs := by decide
+
+theorem numFastIfThen133Instrs_eq :
+    (numFastBody.findBlock "if.then133").map (·.instrs) = some numFastIfThen133Instrs := by decide
+
+theorem numFastIfEnd140Instrs_eq :
+    (numFastBody.findBlock "if.end140").map (·.instrs) = some numFastIfEnd140Instrs := by decide
+
+theorem numFastIfEnd144Instrs_eq :
+    (numFastBody.findBlock "if.end144").map (·.instrs) = some numFastIfEnd144Instrs := by decide
+
+theorem numFastLandLhsTrue195Instrs_eq :
+    (numFastBody.findBlock "land.lhs.true195").map (·.instrs) = some numFastLandLhsTrue195Instrs := by decide
+
+theorem numFastWhileBody206Instrs_eq :
+    (numFastBody.findBlock "while.body206").map (·.instrs) = some numFastWhileBody206Instrs := by decide
+
+theorem numFastIfThen209Instrs_eq :
+    (numFastBody.findBlock "if.then209").map (·.instrs) = some numFastIfThen209Instrs := by decide
+
+theorem numFastIfEnd216Instrs_eq :
+    (numFastBody.findBlock "if.end216").map (·.instrs) = some numFastIfEnd216Instrs := by decide
+
+theorem numFastCleanup223ThreadInstrs_eq :
+    (numFastBody.findBlock "cleanup223.thread").map (·.instrs) = some numFastCleanup223ThreadInstrs := by decide
+
+theorem numFastIfEnd226Instrs_eq :
+    (numFastBody.findBlock "if.end226").map (·.instrs) = some numFastIfEnd226Instrs := by decide
 
 theorem numFastIfEnd230Instrs_eq :
     (numFastBody.findBlock "if.end230").map (·.instrs) = some numFastIfEnd230Instrs := by decide
