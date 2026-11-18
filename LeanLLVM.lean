@@ -99,6 +99,7 @@ import LeanLLVM.Refinement.JsonStage2NumFastScan
 import LeanLLVM.Refinement.JsonStage2NumFastScanRun
 import LeanLLVM.Refinement.JsonStage2NumFastSeams
 import LeanLLVM.Refinement.JsonStage2NumFastSign
+import LeanLLVM.Refinement.JsonStage2NumFastTaken
 import LeanLLVM.Refinement.JsonStage2StringBody
 import LeanLLVM.Refinement.JsonStage2WalkAlignment
 import LeanLLVM.Refinement.JsonStage2TraceRow

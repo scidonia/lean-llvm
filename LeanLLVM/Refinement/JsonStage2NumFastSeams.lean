@@ -56,10 +56,11 @@ edges a fraction byte can leave by.  The loop's own `runFuel` composition is
 supplied: `fpFastSecond_run` is the first fold, the second group and the
 refused count guard as three steps to `while.end` (`fpFastSecond_run_refuse`
 is the second reader's failed call instead), and the accumulator is the digits'
-fold (`fpFirstFold`, `fpSecondFold`, `d8Value_slice`).  What the fast path still
-owes is the taken guard's entry into `intRunInv`: the exit's three cells and
-their ties are named, and the `while.end` block's own two steps to the head are
-what remains of that composition.
+fold (`fpFirstFold`, `fpSecondFold`, `d8Value_slice`).  The taken guard's entry
+into `intRunInv` — the `while.end` block's two steps and the four paths the two
+reader answers admit — is `JsonStage2NumFastTaken`, which composes these pieces
+at `if.then22`'s taken edge; the fraction's copy is chained here but not
+composed there.
 
 **The reader's agreement.**  `num_d8_el1`'s answer against the eight bytes at its
 pointer is `numD8Answer_read`'s model read at `readBytes`: `d8Value_eq_fold` says

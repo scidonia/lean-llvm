@@ -89,16 +89,18 @@ the other two only in part:
    * `expRun_start`: from the digit gate at `lor.lhs.false180`, one step reaches
      `land.lhs.true195` with `expRunInv … i11 bs … 0`.
 
-   What remains of the scan, and is *not* claimed: the two eight-digit fast
+   What remains of the scan, and is *not* claimed here: the two eight-digit fast
    paths (`while.body`/`cleanup` at `if.then22` and
    `while.body100`/`cleanup112` at `while.cond91.preheader`), whose registers
-   the starts above are proved *behind* the guard of; and the exponent's marker
-   nest between `if.end144` and `lor.lhs.false180` (`land.lhs.true147`,
-   `NodeBlock`, `LeafBlock`/`LeafBlock1`, `if.then157`, `land.lhs.true161`,
-   `NodeBlock7`, `LeafBlock5`/`LeafBlock3`, `if.then171`, `if.end177`), whose
-   four path shapes (marker `e`/`E` × sign present/absent) fix `%i.11`, the
-   index `expRun_start` takes.  `JsonStage2NumFastStarts`'s own header names
-   both, and `expRun_start`'s docstring names the nest register by register.
+   the starts above are proved *behind* the guard of — the integer one's entry is
+   `JsonStage2NumFastTaken.fpIfThen22_entry`, and the fraction's is not composed;
+   and the exponent's marker nest between `if.end144` and `lor.lhs.false180`
+   (`land.lhs.true147`, `NodeBlock`, `LeafBlock`/`LeafBlock1`, `if.then157`,
+   `land.lhs.true161`, `NodeBlock7`, `LeafBlock5`/`LeafBlock3`, `if.then171`,
+   `if.end177`), whose four path shapes (marker `e`/`E` × sign present/absent)
+   fix `%i.11`, the index `expRun_start` takes.  `JsonStage2NumFastStarts`'s own
+   header names both, and `expRun_start`'s docstring names the nest register by
+   register.
 4. **The inlined tier-1 arithmetic, and tier 3's traversal.**  Two boundaries,
    each stated at the block it stops before.
 
@@ -178,15 +180,21 @@ is `cleanup223.thread`'s two edges, `if.end226`'s four, and
 is `ifEnd230_denote_end62`/`ifEnd230_step_end62`.  Of item 1's mantissa, the
 word-level ties are `ip_word_digitsNat`/`fr_word_digitsNat`, fed by
 `intRunExit_end230`/`fracRunExit_end230`.  Still open on this list: the
-eight-digit fast paths' `runFuel` composition (their blocks are chained —
-`JsonStage2NumFastSeams`' `fpCleanup_*`/`fpBody_*`/`fpWhileEnd_*` and the
-fraction's copies — so what is left there is the loop's own run, not its
-blocks), the seam steps that would thread one theorem from `entry` to
-`if.end230`, and tier 3's region beyond its poison edge (`JsonStage2NumFastTier3`
-states the edge's traversal, the window tie and the proximity estimate).  The
-accumulator's tie at `if.end230` is now stated: `intRunExit_gate` reads the run's
-`%ip.4` and `%7` as the merge's `%ip.5708717729` and `%idig.4709716730`, and the
-exit's own `%n` cell fixes the run's stop index as the lexeme's end.
+eight-digit fast paths' `runFuel` composition.  The integer one is now composed
+at `if.then22`'s taken edge: `JsonStage2NumFastTaken.fpIfThen22_entry` takes the
+guard's zero through `while.body.preheader` and the loop's four branches to
+`intRunInv`, at `(start + 1, 1)`, `(start + 9, 9)` or `(start + 17, 17)`; what is
+still missing there is the join with `intScan_run`'s refused-guard statement
+(`intScan_run` states the dispatch behind the guard's *refusal*, so a scan from
+`entry` needs the guarded branch's `if` on the two Nat readings), and the
+fraction's copy (`while.body100`/`cleanup112`), whose blocks are chained in
+`JsonStage2NumFastSeams` but whose entry is not composed.  Also open: the seam
+steps that would thread one theorem from `entry` to `if.end230`, and tier 3's
+region beyond its poison edge (`JsonStage2NumFastTier3` states the edge's
+traversal, the window tie and the proximity estimate).  The accumulator's tie at
+`if.end230` is now stated: `intRunExit_gate` reads the run's `%ip.4` and `%7` as
+the merge's `%ip.5708717729` and `%idig.4709716730`, and the exit's own `%n` cell
+fixes the run's stop index as the lexeme's end.
 
 
 There is no `sorry`, `admit` or `native_decide` below.
