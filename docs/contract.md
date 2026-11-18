@@ -1285,10 +1285,14 @@ proximity estimate at the tree's own rounding (`roundMag_dist_le_step` bounds on
 rounding by one lattice step, `fmulBits_dist_le_step`/`fdivBits_dist_le_step` are
 that bound at the emitted operations, `proximity_scale` composes the two-step
 bracket, and `t3_scale_of_ulp` concludes `valLeqBoundary m E (2 * J) eB`, the
-premise `shift_of_near` takes).  What the region still owes is its remaining
-blocks, block by block, from `for.body.i.i566.i.i.epil`, and the starting
-approximation's own fold (`dbits (d) * 10 ^ e10` as two applications of the
-table's rows) — both named in that module's record of the boundary.
+premise `shift_of_near` takes).  The epilogue block itself is chained
+(`t3_epil_denote` is `for.body.i.i566.i.i.epil`'s fourteen instructions at its
+pin, with `t3_epil_step_lcssa`/`t3_epil_step_self` its two successors and the
+three `i128` operations stated width-generically).  What the region still owes
+is its remaining blocks — the four-way copy loop, a `BoundLoop` rather than a
+straight-line chain — and the starting approximation's own fold
+(`dbits (d) * 10 ^ e10` as two applications of the table's rows), both named in
+that module's record of the boundary.
 The kernel's bound is not among the obstructions: `num_el_el1`'s mantissa is a
 `uint64_t`, and the body's own argument at `if.end268` is `%add244`, a 64-bit
 word, so `NumFastElAgrees`'s `w < 2 ^ 64` domain is met at the body

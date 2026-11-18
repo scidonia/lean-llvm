@@ -52,10 +52,14 @@ reader call (`fpBody_denote_ok`/`_denote_refuse`, `fpBody_step_ok`/`_step_refuse
 `fpWhileEnd_denote_cleanup` reads `while.end`'s three `phi`s off the folded
 cells.  `fpCleanup112Instrs`, `fpBody100Instrs` and `fpWhileEnd115Instrs` are the
 fraction's copies, with `fpWhileEnd115_denote_cleanup`/`_denote_thread` the two
-edges a fraction byte can leave by.  What the loop still owes is its own
-`runFuel` composition (the second group's two steps under `fastGuard_two_groups`)
-and, through it, the taken guard's entry into `intRunInv`; the registers
-`intRun_start` and `fracRun_start` consume are that loop's exit.
+edges a fraction byte can leave by.  The loop's own `runFuel` composition is
+supplied: `fpFastSecond_run` is the first fold, the second group and the
+refused count guard as three steps to `while.end` (`fpFastSecond_run_refuse`
+is the second reader's failed call instead), and the accumulator is the digits'
+fold (`fpFirstFold`, `fpSecondFold`, `d8Value_slice`).  What the fast path still
+owes is the taken guard's entry into `intRunInv`: the exit's three cells and
+their ties are named, and the `while.end` block's own two steps to the head are
+what remains of that composition.
 
 **The reader's agreement.**  `num_d8_el1`'s answer against the eight bytes at its
 pointer is `numD8Answer_read`'s model read at `readBytes`: `d8Value_eq_fold` says
@@ -1385,6 +1389,479 @@ theorem fpBody_step_refuse {epow : Int → Option EPow} {env : Env} {s : State}
     rw [numFast_execTerm_condbr_one _ "%tobool.not" "cleanup.thread" "cleanup" hlk rfl]
     simp only [stateAt, hpc]
 
+/-! ### The fast path's accumulator at the loop's exit
+
+`d8Value_eq_fold` reads the reader's word as its eight bytes' fold.  The fast
+path consumes the integer part's lead digit and then one or two groups, so the
+accumulator `while.end` merges is `digitFold` over the digits from the lead:
+`%add35 = %ip * 10 ^ 8 + %4` per group, and the splitting lemma composes the
+lead with a group.  The two ties below are that composition at the window's
+nine and seventeen digits, and `fpSecondFold` is the second group's own
+accumulation of the nine the first took.
+
+The refusal way's last block is the second group's: `while.body`'s failed read
+leaves `cleanup.thread`, whose phis take `while.body`'s own cells — the
+incremented index, the count nine and the first group's folded word, none of
+which the failed read touched.  `fpCleanupThread_denote_body` and
+`fpCleanupThread_step_body` are that edge. -/
+
+/-- The digit fold splits at a prefix: the first `k` digits, then the next `m`. -/
+theorem digitFold_split {bs : List UInt8} {start k m : Nat}
+    (hlen : start + k + m ≤ bs.length) :
+    digitFold bs start (k + m)
+      = digitFold bs start k * 10 ^ m + digitFold bs (start + k) m := by
+  unfold digitFold
+  rw [List.take_add, List.drop_drop, List.foldl_append, foldl_digits_add]
+  have hlen' : ((bs.drop (start + k)).take m).length = m := by
+    rw [List.length_take, List.length_drop]
+    exact Nat.min_eq_left (by omega)
+  rw [hlen']
+
+/-- A prefix read at the same address is the longer read's prefix: the memory is
+a function of the address. -/
+theorem readBytes_take_le {m : Mem} {a n k : Nat} {bs bs' : List UInt8}
+    (hk : k ≤ n) (h : readBytes m a k = some bs) (h' : readBytes m a n = some bs') :
+    bs'.take k = bs := by
+  obtain ⟨i, rfl⟩ := Nat.le.dest hk
+  obtain ⟨h1, -⟩ := readBytes_split m a k i h'
+  rw [h1] at h
+  exact Option.some.inj h
+
+/-- **The reader's word is the lexeme's fold.**  A successful `d8Value` of the
+eight bytes at `a + start` is `digitFold bs start 8` at the lexeme `bs` the walk
+reads from `a`. -/
+theorem d8Value_slice {m : Mem} {a n start : Nat} {bs bs8 : List UInt8} {w : Nat}
+    (hread : readBytes m a n = some bs)
+    (hslice : readBytes m (a + start) 8 = some bs8)
+    (hstart : start + 8 ≤ n) (hval : d8Value bs8 = some w) :
+    w = digitFold bs start 8 := by
+  have hk : start ≤ n := by omega
+  obtain ⟨-, hdrop⟩ := readBytes_split m a start (n - start) (by
+    rw [Nat.add_sub_cancel' hk]; exact hread)
+  obtain ⟨h8, -⟩ := readBytes_split m (a + start) 8 ((n - start) - 8) (by
+    rw [show 8 + ((n - start) - 8) = n - start from by omega]; exact hdrop)
+  have htake : (bs.drop start).take 8 = bs8 := by
+    rw [h8] at hslice
+    exact Option.some.inj hslice
+  rw [digitFold, htake, ← d8Value_eq_fold bs8 hval]
+
+/-- A one-digit fold is the byte's difference from `'0'`. -/
+theorem digitFold_one {bs : List UInt8} {start : Nat} {b : UInt8}
+    (hlen : start < bs.length) (hb : bs.getD start 0 = b) :
+    digitFold bs start 1 = b.toNat - 0x30 := by
+  rw [show (1 : Nat) = 0 + 1 from rfl, digitFold_succ hlen, Nat.add_zero,
+    digitFold_zero, Nat.zero_mul, Nat.zero_add, hb]
+
+/-- **The first group's accumulator.**  The lead digit's value and the reader's
+eight bytes are the nine digits from `start`. -/
+theorem fpFirstFold {bs bs8 : List UInt8} {m : Mem} {a start n lead w : Nat}
+    (hread : readBytes m a n = some bs)
+    (hlead : lead = digitFold bs start 1)
+    (hslice : readBytes m (a + (start + 1)) 8 = some bs8)
+    (hstart : start + 9 ≤ n) (hval : d8Value bs8 = some w) :
+    BitVec.ofNat 64 lead * 0x5f5e100#64 + BitVec.ofNat 64 w
+      = BitVec.ofNat 64 (digitFold bs start 9) := by
+  have hblen : bs.length = n := JsonEntrySteps.readBytes_length m a n hread
+  have hw : w = digitFold bs (start + 1) 8 :=
+    d8Value_slice hread hslice (by omega) hval
+  have hsplit : digitFold bs start 9
+      = digitFold bs start 1 * 10 ^ 8 + digitFold bs (start + 1) 8 := by
+    have := digitFold_split (bs := bs) (start := start) (k := 1) (m := 8) (by omega)
+    simpa only [show (1 : Nat) + 8 = 9 from rfl] using this
+  rw [hsplit, hlead, hw,
+    show (0x5f5e100#64) = BitVec.ofNat 64 (10 ^ 8) from by decide,
+    BitVec.ofNat_mul_ofNat, BitVec.ofNat_add_ofNat]
+
+/-- **The second group's accumulator.**  The nine digits the first group took and
+the second reader's eight bytes are the seventeen digits from `start`. -/
+theorem fpSecondFold {bs bs8 : List UInt8} {m : Mem} {a start n w2 : Nat}
+    (hread : readBytes m a n = some bs)
+    (hslice : readBytes m (a + (start + 9)) 8 = some bs8)
+    (hstart : start + 17 ≤ n) (hval : d8Value bs8 = some w2) :
+    BitVec.ofNat 64 (digitFold bs start 9) * 0x5f5e100#64 + BitVec.ofNat 64 w2
+      = BitVec.ofNat 64 (digitFold bs start 17) := by
+  have hblen : bs.length = n := JsonEntrySteps.readBytes_length m a n hread
+  have hw : w2 = digitFold bs (start + 9) 8 :=
+    d8Value_slice hread hslice (by omega) hval
+  have hsplit : digitFold bs start 17
+      = digitFold bs start 9 * 10 ^ 8 + digitFold bs (start + 9) 8 := by
+    have := digitFold_split (bs := bs) (start := start) (k := 9) (m := 8) (by omega)
+    simpa only [show (9 : Nat) + 8 = 17 from rfl] using this
+  rw [hsplit, hw,
+    show (0x5f5e100#64) = BitVec.ofNat 64 (10 ^ 8) from by decide,
+    BitVec.ofNat_mul_ofNat, BitVec.ofNat_add_ofNat]
+
+/-- The loop's count guard at its second group: `%idig.0560` has reached
+`9 + 8`, so `%idig < 12` is refused and the guard is zero whatever the index
+test is. -/
+theorem fpGuard_second_group (add nv : BitVec 64) :
+    fpGuard add (0x9#64 + 0x8#64) nv = 0 := by
+  unfold fpGuard
+  rw [show evalICmp .ult (0x9#64 + 0x8#64) (0xc#64) = 0 from by decide]
+  split <;> rfl
+
+/-- `cleanup.thread` from the second group's refusal: the index, the count and
+the accumulator are `while.body`'s cells, unchanged by the failed read. -/
+theorem fpCleanupThread_denote_body {epow : Int → Option EPow} {env : Env} {s : State}
+    {i d ip : BitVec 64} {v8a : Nat}
+    (hpre : s.pre = some "while.body")
+    (hi : lookupName env "%add568934" = some (.int 64 i))
+    (hd : lookupName env "%add29569933" = some (.int 64 d))
+    (hip : lookupName env "%add35" = some (.int 64 ip))
+    (hv8 : lookupName env "%v8" = some (.ptr v8a)) :
+    denoteCode (stage2NumFastCalls epow) fpCleanupThreadInstrs (stateAt env s) =
+      some (stateAt (fpCleanupThreadEnv env i d ip) s) := by
+  unfold fpCleanupThreadInstrs
+  block_phi_run
+  rotate_left 1
+  · exact hpre
+  · rfl
+  · simp only [phiIncoming]; rfl
+  · exact evalOperand_reg_of env s "%add568934" _ hi
+  · simp only [phiIncoming]; rfl
+  · exact evalOperand_reg_of env s "%add29569933" _ hd
+  · simp only [phiIncoming]; rfl
+  · exact evalOperand_reg_of env s "%add35" _ hip
+  have hv8' : lookupName
+      (runCells [("%i.1567.lcssa", .int 64 i), ("%idig.0566.lcssa", .int 64 d),
+        ("%ip.0565.lcssa", .int 64 ip)] env) "%v8" = some (.ptr v8a) := by
+    simp only [runCells]
+    rw [lookupName_cons_ne _ _ (by decide : ("%ip.0565.lcssa" : String) ≠ "%v8"),
+      lookupName_cons_ne _ _ (by decide : ("%idig.0566.lcssa" : String) ≠ "%v8"),
+      lookupName_cons_ne _ _ (by decide : ("%i.1567.lcssa" : String) ≠ "%v8")]
+    exact hv8
+  rw [denoteCode_callVoid_some (stage2NumFastCalls epow)
+      (runCells [("%i.1567.lcssa", .int 64 i), ("%idig.0566.lcssa", .int 64 d),
+        ("%ip.0565.lcssa", .int 64 ip)] env) s
+      "llvm.lifetime.end.p0"
+      [((Ty.int 64), (Operand.imm (Const.int 64 0x0000000000000004#64))),
+       (Ty.ptr, (Operand.reg "%v8"))]
+      [.int 64 0x0000000000000004#64, .ptr v8a]
+      { ret := .int 1 0, mem := s.mem, next := s.next }
+      (evalOperands_lifetimeMark (s := s) (w := 4) (ptr := "%v8") hv8')
+      (stage2NumFastCalls_lifetime_end epow _ _ _) []]
+  simp only [denoteCode_nil, stateAt, fpCleanupThreadEnv, runCells]
+
+/-- `cleanup.thread`'s step from the second group: an unconditional branch to
+`while.end`. -/
+theorem fpCleanupThread_step_body {epow : Int → Option EPow} {env : Env} {s : State}
+    {i d ip : BitVec 64} {v8a : Nat}
+    (hpc : s.pc = "cleanup.thread")
+    (hpre : s.pre = some "while.body")
+    (hi : lookupName env "%add568934" = some (.int 64 i))
+    (hd : lookupName env "%add29569933" = some (.int 64 d))
+    (hip : lookupName env "%add35" = some (.int 64 ip))
+    (hv8 : lookupName env "%v8" = some (.ptr v8a)) :
+    step (stage2NumFastCalls epow) numFastBody (stateAt env s) =
+      .jump (stateAt (fpCleanupThreadEnv env i d ip)
+        { s with pc := "while.end", pre := some "cleanup.thread" }) := by
+  refine numFast_step_at (s' := stateAt (fpCleanupThreadEnv env i d ip) s)
+    (b := ⟨"cleanup.thread", fpCleanupThreadInstrs, Term.br "while.end"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc, fpCleanupThreadInstrs] using findBlock_fpCleanupThread
+  · simpa only [denoteCode_nil] using
+      fpCleanupThread_denote_body (epow := epow) hpre hi hd hip hv8
+  · simp only [execTerm, stateAt, hpc]
+
+/-! ### The fast path's run: the first fold, the second group, and `while.end`
+
+The loop's blocks are chained above; this is their composition.  From the first
+`cleanup` at a taken count guard, `while.body` reads the next eight digits and
+the second `cleanup` folds them; its own count guard is then refused
+(`fpGuard_second_group`, since `%idig` has reached `9 + 8`), so `while.end`
+merges the second fold with the count seventeen and the advanced index.  On the
+other reader answer the second group's failed call leaves for `cleanup.thread`,
+whose three carried cells are the first fold's, and `while.end` merges those with
+the count nine.  The two `runFuel` threads below are the loop's last two groups;
+they are what the taken guard's entry into `intRunInv` composes. -/
+
+/-- The first fold's environment: `cleanup`'s cells over the preheader's. -/
+def fpFirstEnv (env : Env) (ip add568 nv : BitVec 64) (w : BitVec 32) : Env :=
+  fpCleanupEnv env ip add568 (0x9#64) nv w
+
+/-- The second reader's environment: `while.body`'s cells over the first fold's. -/
+def fpBodyEnv2 (env : Env) (a v8a : Nat) (ip add568 nv : BitVec 64) (w : BitVec 32) : Env :=
+  fpBodyEnv (fpFirstEnv env ip add568 nv w) a v8a add568 (0x9#64) 1
+
+/-- The second reader's refusal environment. -/
+def fpBodyEnv2r (env : Env) (a v8a : Nat) (ip add568 nv : BitVec 64) (w : BitVec 32) : Env :=
+  fpBodyEnv (fpFirstEnv env ip add568 nv w) a v8a add568 (0x9#64) 0
+
+/-- The second fold's environment: the loop's exit on the success way. -/
+def fpSecondEnv (env : Env) (a v8a : Nat) (ip add568 nv : BitVec 64) (w : BitVec 32)
+    (w2 : Nat) : Env :=
+  fpCleanupEnv (fpBodyEnv2 env a v8a ip add568 nv w)
+    (ip * (0x5f5e100#64) + BitVec.ofNat 64 w.toNat) (add568 + 0x8#64)
+    ((0x9#64) + 0x8#64) nv (BitVec.ofNat 32 w2)
+
+/-- The refusal's `cleanup.thread` environment: the loop's exit on the failed
+second read. -/
+def fpSecondThreadEnv (env : Env) (a v8a : Nat) (ip add568 nv : BitVec 64)
+    (w : BitVec 32) : Env :=
+  fpCleanupThreadEnv (fpBodyEnv2r env a v8a ip add568 nv w) add568 (0x9#64)
+    (ip * (0x5f5e100#64) + BitVec.ofNat 64 w.toNat)
+
+/-! ### The nested environments' cells
+
+The two folds stack three builders, so a cell read through the stack is a chain
+of `lookupName` peels.  The readings are hoisted here, one per cell and one per
+carried name, so each block step's hypotheses are small terms and the loop's
+composition does not carry the whole stack in its proof term. -/
+
+theorem fpFirstEnv_p {env : Env} {ip add568 nv : BitVec 64} {w : BitVec 32} {a : Nat}
+    (h : lookupName env "%p" = some (.ptr a)) :
+    lookupName (fpFirstEnv env ip add568 nv w) "%p" = some (.ptr a) := by
+  simp only [fpFirstEnv, fpCleanupEnv]; block_lk
+
+theorem fpFirstEnv_add568934 (env : Env) (ip add568 nv : BitVec 64) (w : BitVec 32) :
+    lookupName (fpFirstEnv env ip add568 nv w) "%add568934"
+      = some (.int 64 add568) := by
+  simp only [fpFirstEnv, fpCleanupEnv]; block_lk
+
+theorem fpFirstEnv_add29569933 (env : Env) (ip add568 nv : BitVec 64) (w : BitVec 32) :
+    lookupName (fpFirstEnv env ip add568 nv w) "%add29569933"
+      = some (.int 64 (0x9#64)) := by
+  simp only [fpFirstEnv, fpCleanupEnv]; block_lk
+
+theorem fpFirstEnv_v8 {env : Env} {ip add568 nv : BitVec 64} {w : BitVec 32} {v8a : Nat}
+    (h : lookupName env "%v8" = some (.ptr v8a)) :
+    lookupName (fpFirstEnv env ip add568 nv w) "%v8" = some (.ptr v8a) := by
+  simp only [fpFirstEnv, fpCleanupEnv]; block_lk
+
+theorem fpBodyEnv2_add35 (env : Env) (a v8a : Nat) (ip add568 nv : BitVec 64)
+    (w : BitVec 32) :
+    lookupName (fpBodyEnv2 env a v8a ip add568 nv w) "%add35"
+      = some (.int 64 (ip * (0x5f5e100#64) + BitVec.ofNat 64 w.toNat)) := by
+  simp only [fpBodyEnv2, fpBodyEnv, fpFirstEnv, fpCleanupEnv]; block_lk
+
+theorem fpBodyEnv2_add (env : Env) (a v8a : Nat) (ip add568 nv : BitVec 64)
+    (w : BitVec 32) :
+    lookupName (fpBodyEnv2 env a v8a ip add568 nv w) "%add"
+      = some (.int 64 (add568 + 0x8#64)) := by
+  simp only [fpBodyEnv2, fpBodyEnv, fpFirstEnv, fpCleanupEnv]; block_lk
+
+theorem fpBodyEnv2_add29 (env : Env) (a v8a : Nat) (ip add568 nv : BitVec 64)
+    (w : BitVec 32) :
+    lookupName (fpBodyEnv2 env a v8a ip add568 nv w) "%add29"
+      = some (.int 64 ((0x9#64) + 0x8#64)) := by
+  simp only [fpBodyEnv2, fpBodyEnv, fpFirstEnv, fpCleanupEnv]; block_lk
+
+theorem fpBodyEnv2_v8 {env : Env} {a v8a : Nat} {ip add568 nv : BitVec 64}
+    {w : BitVec 32}
+    (h : lookupName env "%v8" = some (.ptr v8a)) :
+    lookupName (fpBodyEnv2 env a v8a ip add568 nv w) "%v8" = some (.ptr v8a) := by
+  simp only [fpBodyEnv2, fpBodyEnv, fpFirstEnv, fpCleanupEnv]; block_lk
+
+theorem fpBodyEnv2_n {env : Env} {a v8a : Nat} {ip add568 nv : BitVec 64}
+    {w : BitVec 32}
+    (h : lookupName env "%n" = some (.int 64 nv)) :
+    lookupName (fpBodyEnv2 env a v8a ip add568 nv w) "%n" = some (.int 64 nv) := by
+  simp only [fpBodyEnv2, fpBodyEnv, fpFirstEnv, fpCleanupEnv]; block_lk
+
+theorem fpBodyEnv2r_add35 (env : Env) (a v8a : Nat) (ip add568 nv : BitVec 64)
+    (w : BitVec 32) :
+    lookupName (fpBodyEnv2r env a v8a ip add568 nv w) "%add35"
+      = some (.int 64 (ip * (0x5f5e100#64) + BitVec.ofNat 64 w.toNat)) := by
+  simp only [fpBodyEnv2r, fpBodyEnv, fpFirstEnv, fpCleanupEnv]; block_lk
+
+theorem fpBodyEnv2r_add568934 (env : Env) (a v8a : Nat) (ip add568 nv : BitVec 64)
+    (w : BitVec 32) :
+    lookupName (fpBodyEnv2r env a v8a ip add568 nv w) "%add568934"
+      = some (.int 64 add568) := by
+  simp only [fpBodyEnv2r, fpBodyEnv, fpFirstEnv, fpCleanupEnv]; block_lk
+
+theorem fpBodyEnv2r_add29569933 (env : Env) (a v8a : Nat) (ip add568 nv : BitVec 64)
+    (w : BitVec 32) :
+    lookupName (fpBodyEnv2r env a v8a ip add568 nv w) "%add29569933"
+      = some (.int 64 (0x9#64)) := by
+  simp only [fpBodyEnv2r, fpBodyEnv, fpFirstEnv, fpCleanupEnv]; block_lk
+
+theorem fpBodyEnv2r_v8 {env : Env} {a v8a : Nat} {ip add568 nv : BitVec 64}
+    {w : BitVec 32}
+    (h : lookupName env "%v8" = some (.ptr v8a)) :
+    lookupName (fpBodyEnv2r env a v8a ip add568 nv w) "%v8" = some (.ptr v8a) := by
+  simp only [fpBodyEnv2r, fpBodyEnv, fpFirstEnv, fpCleanupEnv]; block_lk
+
+/-- **The second group folds into the loop's exit.**  From the first `cleanup`
+at a taken count guard, three control steps: the second group's reader call, its
+fold at the second `cleanup`, and that cleanup's refused count guard.  The exit
+is `while.end` with `%add35` the seventeen digits' fold, `%add29569933` the count
+seventeen and `%add568934` the index advanced by sixteen. -/
+theorem fpFastSecond_run {epow : Int → Option EPow} {env : Env} {s : State}
+    {a v8a : Nat} {ip add568 nv : BitVec 64} {w : BitVec 32} {w2 : Nat}
+    {bs8 : List UInt8}
+    (hpc : s.pc = "cleanup")
+    (hpre : s.pre = some "while.body.preheader")
+    (hp : lookupName env "%p" = some (.ptr a))
+    (hip : lookupName env "%conv25" = some (.int 64 ip))
+    (h568 : lookupName env "%add563" = some (.int 64 add568))
+    (hv8 : lookupName env "%v8" = some (.ptr v8a))
+    (hn : lookupName env "%n" = some (.int 64 nv))
+    (hread1 : readBytes s.mem v8a 4 = some (natToBytes w.toNat 4))
+    (hbit1 : fpGuard (add568 + 0x8#64) (0x9#64) nv = 1)
+    (hpos : (add568.signExtend 64).toNat < 2 ^ 63)
+    (hread2 : readBytes s.mem (a + (add568.signExtend 64).toNat) 8 = some bs8)
+    (hval2 : d8Value bs8 = some w2) (hw2 : w2 < 2 ^ 32) :
+    ∃ e : State, e.pc = "while.end" ∧ e.pre = some "cleanup" ∧
+      e.mem = writeBytes s.mem v8a (natToBytes w2 4) ∧
+      e.env = fpSecondEnv env a v8a ip add568 nv w w2 ∧
+      ∀ k, runFuel (stage2NumFastCalls epow) (3 + k) numFastBody (stateAt env s)
+        = runFuel (stage2NumFastCalls epow) k numFastBody e := by
+  have hden1 : denoteCode (stage2NumFastCalls epow) fpCleanupInstrs (stateAt env s) =
+      some (stateAt (fpFirstEnv env ip add568 nv w) s) :=
+    fpCleanup_denote_pre (epow := epow) hpre hip h568 hv8 hread1 hn
+  have hstep1 : step (stage2NumFastCalls epow) numFastBody (stateAt env s) =
+      .jump (stateAt (fpFirstEnv env ip add568 nv w)
+        { s with pc := "while.body", pre := some "cleanup" }) :=
+    fpCleanup_step_body (epow := epow) hpc hden1 hbit1
+  have hp1 : lookupName (fpFirstEnv env ip add568 nv w) "%p"
+      = some (.ptr a) := fpFirstEnv_p hp
+  have h568_1 : lookupName (fpFirstEnv env ip add568 nv w) "%add568934"
+      = some (.int 64 add568) := fpFirstEnv_add568934 env ip add568 nv w
+  have h295_1 : lookupName (fpFirstEnv env ip add568 nv w) "%add29569933"
+      = some (.int 64 (0x9#64)) := fpFirstEnv_add29569933 env ip add568 nv w
+  have hv8_1 : lookupName (fpFirstEnv env ip add568 nv w) "%v8"
+      = some (.ptr v8a) := fpFirstEnv_v8 hv8
+  have hread2' : readBytes (stateAt (fpFirstEnv env ip add568 nv w)
+      { s with pc := "while.body", pre := some "cleanup" }).mem
+      (a + (add568.signExtend 64).toNat) 8 = some bs8 := by
+    simpa only [fpFirstEnv, fpCleanupEnv, stateAt] using hread2
+  have hstep2 : step (stage2NumFastCalls epow) numFastBody
+      (stateAt (fpFirstEnv env ip add568 nv w)
+        { s with pc := "while.body", pre := some "cleanup" }) =
+      .jump (stateAt (fpBodyEnv2 env a v8a ip add568 nv w)
+        { s with mem := writeBytes s.mem v8a (natToBytes w2 4), next := s.next,
+                 pc := "cleanup", pre := some "while.body" }) :=
+    fpBody_step_ok (epow := epow) (env := fpFirstEnv env ip add568 nv w)
+      (s := { s with pc := "while.body", pre := some "cleanup" })
+      rfl hp1 h568_1 h295_1 hv8_1 hpos hread2' hval2 hw2
+  have hback : readBytes (writeBytes s.mem v8a (natToBytes w2 4)) v8a 4
+      = some (natToBytes w2 4) :=
+    (numD8Answer_writes (p := a + (add568.signExtend 64).toNat) (v := v8a)
+      (w := w2) (bs := bs8) (mem := s.mem) (next := s.next)
+      hread2 hval2 hw2).2.1
+  have h35_2 : lookupName (fpBodyEnv2 env a v8a ip add568 nv w) "%add35"
+      = some (.int 64 (ip * (0x5f5e100#64) + BitVec.ofNat 64 w.toNat)) :=
+    fpBodyEnv2_add35 env a v8a ip add568 nv w
+  have hadd_2 : lookupName (fpBodyEnv2 env a v8a ip add568 nv w) "%add"
+      = some (.int 64 (add568 + 0x8#64)) :=
+    fpBodyEnv2_add env a v8a ip add568 nv w
+  have h29_2 : lookupName (fpBodyEnv2 env a v8a ip add568 nv w) "%add29"
+      = some (.int 64 ((0x9#64) + 0x8#64)) :=
+    fpBodyEnv2_add29 env a v8a ip add568 nv w
+  have hv8_2 : lookupName (fpBodyEnv2 env a v8a ip add568 nv w) "%v8"
+      = some (.ptr v8a) := fpBodyEnv2_v8 hv8
+  have hn_2 : lookupName (fpBodyEnv2 env a v8a ip add568 nv w) "%n"
+      = some (.int 64 nv) := fpBodyEnv2_n hn
+  have hwx : (BitVec.ofNat 32 w2).toNat = w2 := by
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt]; omega
+  have hread3 : readBytes (stateAt (fpBodyEnv2 env a v8a ip add568 nv w)
+      { s with mem := writeBytes s.mem v8a (natToBytes w2 4), next := s.next,
+               pc := "cleanup", pre := some "while.body" }).mem v8a 4
+      = some (natToBytes (BitVec.ofNat 32 w2).toNat 4) := by
+    rw [hwx]
+    simpa only [fpBodyEnv2, stateAt] using hback
+  have hden3 := fpCleanup_denote_body (epow := epow)
+    (env := fpBodyEnv2 env a v8a ip add568 nv w)
+    (s := { s with mem := writeBytes s.mem v8a (natToBytes w2 4), next := s.next,
+                    pc := "cleanup", pre := some "while.body" })
+    (w := BitVec.ofNat 32 w2)
+    rfl h35_2 hadd_2 h29_2 hv8_2 hread3 hn_2
+  have hbit2 : fpGuard ((add568 + 0x8#64) + 0x8#64) ((0x9#64) + 0x8#64) nv = 0 :=
+    fpGuard_second_group ((add568 + 0x8#64) + 0x8#64) nv
+  have hstep3 : step (stage2NumFastCalls epow) numFastBody
+      (stateAt (fpBodyEnv2 env a v8a ip add568 nv w)
+        { s with mem := writeBytes s.mem v8a (natToBytes w2 4), next := s.next,
+                 pc := "cleanup", pre := some "while.body" }) =
+      .jump (stateAt (fpSecondEnv env a v8a ip add568 nv w w2)
+        { s with mem := writeBytes s.mem v8a (natToBytes w2 4), next := s.next,
+                 pc := "while.end", pre := some "cleanup" }) :=
+    fpCleanup_step_end (epow := epow) rfl hden3 hbit2
+  refine ⟨stateAt (fpSecondEnv env a v8a ip add568 nv w w2)
+    { s with mem := writeBytes s.mem v8a (natToBytes w2 4), next := s.next,
+             pc := "while.end", pre := some "cleanup" }, rfl, rfl, rfl, rfl, ?_⟩
+  intro k
+  rw [show 3 + k = 1 + (1 + (1 + k)) from by omega,
+    runFuel_jump_prefix hstep1, runFuel_jump_prefix hstep2,
+    runFuel_jump_prefix hstep3]
+
+/-- **The second group's failed read.**  From the first `cleanup` at a taken
+count guard, the second reader's refusal leaves the first fold's cells
+untouched: `while.body` jumps to `cleanup.thread`, whose phis carry the index,
+the count nine and the first fold to `while.end`. -/
+theorem fpFastSecond_run_refuse {epow : Int → Option EPow} {env : Env} {s : State}
+    {a v8a : Nat} {ip add568 nv : BitVec 64} {w : BitVec 32} {bs8 : List UInt8}
+    (hpc : s.pc = "cleanup")
+    (hpre : s.pre = some "while.body.preheader")
+    (hp : lookupName env "%p" = some (.ptr a))
+    (hip : lookupName env "%conv25" = some (.int 64 ip))
+    (h568 : lookupName env "%add563" = some (.int 64 add568))
+    (hv8 : lookupName env "%v8" = some (.ptr v8a))
+    (hn : lookupName env "%n" = some (.int 64 nv))
+    (hread1 : readBytes s.mem v8a 4 = some (natToBytes w.toNat 4))
+    (hbit1 : fpGuard (add568 + 0x8#64) (0x9#64) nv = 1)
+    (hpos : (add568.signExtend 64).toNat < 2 ^ 63)
+    (hread2 : readBytes s.mem (a + (add568.signExtend 64).toNat) 8 = some bs8)
+    (hval2 : d8Value bs8 = none) :
+    ∃ e : State, e.pc = "while.end" ∧ e.pre = some "cleanup.thread" ∧
+      e.mem = s.mem ∧
+      e.env = fpSecondThreadEnv env a v8a ip add568 nv w ∧
+      ∀ k, runFuel (stage2NumFastCalls epow) (3 + k) numFastBody (stateAt env s)
+        = runFuel (stage2NumFastCalls epow) k numFastBody e := by
+  have hden1 : denoteCode (stage2NumFastCalls epow) fpCleanupInstrs (stateAt env s) =
+      some (stateAt (fpFirstEnv env ip add568 nv w) s) :=
+    fpCleanup_denote_pre (epow := epow) hpre hip h568 hv8 hread1 hn
+  have hstep1 : step (stage2NumFastCalls epow) numFastBody (stateAt env s) =
+      .jump (stateAt (fpFirstEnv env ip add568 nv w)
+        { s with pc := "while.body", pre := some "cleanup" }) :=
+    fpCleanup_step_body (epow := epow) hpc hden1 hbit1
+  have hp1 : lookupName (fpFirstEnv env ip add568 nv w) "%p"
+      = some (.ptr a) := fpFirstEnv_p hp
+  have h568_1 : lookupName (fpFirstEnv env ip add568 nv w) "%add568934"
+      = some (.int 64 add568) := fpFirstEnv_add568934 env ip add568 nv w
+  have h295_1 : lookupName (fpFirstEnv env ip add568 nv w) "%add29569933"
+      = some (.int 64 (0x9#64)) := fpFirstEnv_add29569933 env ip add568 nv w
+  have hv8_1 : lookupName (fpFirstEnv env ip add568 nv w) "%v8"
+      = some (.ptr v8a) := fpFirstEnv_v8 hv8
+  have hread2' : readBytes (stateAt (fpFirstEnv env ip add568 nv w)
+      { s with pc := "while.body", pre := some "cleanup" }).mem
+      (a + (add568.signExtend 64).toNat) 8 = some bs8 := by
+    simpa only [fpFirstEnv, fpCleanupEnv, stateAt] using hread2
+  have hstep2 : step (stage2NumFastCalls epow) numFastBody
+      (stateAt (fpFirstEnv env ip add568 nv w)
+        { s with pc := "while.body", pre := some "cleanup" }) =
+      .jump (stateAt (fpBodyEnv2r env a v8a ip add568 nv w)
+        { s with pc := "cleanup.thread", pre := some "while.body" }) :=
+    fpBody_step_refuse (epow := epow) (env := fpFirstEnv env ip add568 nv w)
+      (s := { s with pc := "while.body", pre := some "cleanup" })
+      rfl hp1 h568_1 h295_1 hv8_1 hpos hread2' hval2
+  have h35_2 : lookupName (fpBodyEnv2r env a v8a ip add568 nv w) "%add35"
+      = some (.int 64 (ip * (0x5f5e100#64) + BitVec.ofNat 64 w.toNat)) :=
+    fpBodyEnv2r_add35 env a v8a ip add568 nv w
+  have h568_2 : lookupName (fpBodyEnv2r env a v8a ip add568 nv w) "%add568934"
+      = some (.int 64 add568) := fpBodyEnv2r_add568934 env a v8a ip add568 nv w
+  have h295_2 : lookupName (fpBodyEnv2r env a v8a ip add568 nv w) "%add29569933"
+      = some (.int 64 (0x9#64)) := fpBodyEnv2r_add29569933 env a v8a ip add568 nv w
+  have hv8_2 : lookupName (fpBodyEnv2r env a v8a ip add568 nv w) "%v8"
+      = some (.ptr v8a) := fpBodyEnv2r_v8 hv8
+  have hden3 := fpCleanupThread_denote_body (epow := epow)
+    (env := fpBodyEnv2r env a v8a ip add568 nv w)
+    (s := { s with pc := "cleanup.thread", pre := some "while.body" })
+    rfl h568_2 h295_2 h35_2 hv8_2
+  have hstep3 : step (stage2NumFastCalls epow) numFastBody
+      (stateAt (fpBodyEnv2r env a v8a ip add568 nv w)
+        { s with pc := "cleanup.thread", pre := some "while.body" }) =
+      .jump (stateAt (fpSecondThreadEnv env a v8a ip add568 nv w)
+        { s with pc := "while.end", pre := some "cleanup.thread" }) :=
+    fpCleanupThread_step_body (epow := epow)
+      (s := { s with pc := "cleanup.thread", pre := some "while.body" })
+      rfl rfl h568_2 h295_2 h35_2 hv8_2
+  refine ⟨stateAt (fpSecondThreadEnv env a v8a ip add568 nv w)
+    { s with pc := "while.end", pre := some "cleanup.thread" }, rfl, rfl, rfl, rfl, ?_⟩
+  intro k
+  rw [show 3 + k = 1 + (1 + (1 + k)) from by omega,
+    runFuel_jump_prefix hstep1, runFuel_jump_prefix hstep2,
+    runFuel_jump_prefix hstep3]
+
 /-! ### The fraction's copy of the fold
 
 `cleanup112` and `while.body100` are the same three shapes on the fraction's
@@ -1897,6 +2374,30 @@ steps are at `stage2NumFastCalls`, whose reader answer is the model's. -/
 #print axioms NumFastSeams.fpWhileEnd115_denote_thread
 #print axioms NumFastSeams.fpWhileEnd115_step_head
 #print axioms NumFastSeams.fpWhileEnd115_step_merge
+#print axioms NumFastSeams.digitFold_split
+#print axioms NumFastSeams.readBytes_take_le
+#print axioms NumFastSeams.d8Value_slice
+#print axioms NumFastSeams.digitFold_one
+#print axioms NumFastSeams.fpFirstFold
+#print axioms NumFastSeams.fpSecondFold
+#print axioms NumFastSeams.fpGuard_second_group
+#print axioms NumFastSeams.fpCleanupThread_denote_body
+#print axioms NumFastSeams.fpCleanupThread_step_body
+#print axioms NumFastSeams.fpFirstEnv_p
+#print axioms NumFastSeams.fpFirstEnv_add568934
+#print axioms NumFastSeams.fpFirstEnv_add29569933
+#print axioms NumFastSeams.fpFirstEnv_v8
+#print axioms NumFastSeams.fpBodyEnv2_add35
+#print axioms NumFastSeams.fpBodyEnv2_add
+#print axioms NumFastSeams.fpBodyEnv2_add29
+#print axioms NumFastSeams.fpBodyEnv2_v8
+#print axioms NumFastSeams.fpBodyEnv2_n
+#print axioms NumFastSeams.fpBodyEnv2r_add35
+#print axioms NumFastSeams.fpBodyEnv2r_add568934
+#print axioms NumFastSeams.fpBodyEnv2r_add29569933
+#print axioms NumFastSeams.fpBodyEnv2r_v8
+#print axioms NumFastSeams.fpFastSecond_run
+#print axioms NumFastSeams.fpFastSecond_run_refuse
 
 end NumFastSeams
 

@@ -43,6 +43,19 @@ pair as two `runFuel` steps, the state it reaches is named, and
 that no read can observe.  The region's simulation therefore continues at
 `for.body.i.i566.i.i.epil` rather than at `.ub`.
 
+**The epilogue chain.**  The block the traversal hands to is the copy's last
+group: three carried `phi`s, the table row read at `%pow.i.i + 8 * %indvars`, the
+widen to `i128`, the `10 ^ 19` multiply and the carry's addition, the low word's
+store, the high word's `lshr` by sixty-four, the two increments, and the residue
+test.  `t3_epil_denote` is that block's chain at its pin, `t3_epil_step_lcssa`
+and `t3_epil_step_self` are its two successors, and the three `i128` operations
+the chain needs beyond the existing steps (`mul` with an immediate, `add` of two
+registers, `lshr` with an immediate) are stated width-generically
+(`step_mul_imm_w`/`denoteCode_mul_imm_w`, `step_add_reg_w`/`denoteCode_add_reg_w`,
+`step_lshr_imm_w`/`denoteCode_lshr_imm_w`).  `t3PowConst` is `10 ^ 19`, the table
+row the copy reads past the nineteen it retains, and the shift's amount is the
+word's high half.
+
 **The window tie.**  `StrtodTier3.windowOf`'s `M`, `S` and `sticky` are the
 model; the body's copy writes the significant digits into its 768-byte array,
 sets one sticky bit for the digits past it, and counts `T`, `lead`, `F` and `R`.
@@ -308,9 +321,11 @@ supplies for each, and what is left:
   exactly at a peeled count below four.  The residual block's own step is
   supplied (`t3_poison_edge_step_one`/`t3_poison_edge_step_zero`), and the two
   are composed into the traversal at the count (`t3_traversal_counts_1_3`), with
-  the reached state's markers unread (`t3_traversal_markers`).  What is still
-  open is the rest of the region's simulation, block by block, from the epilogue
-  `for.body.i.i566.i.i.epil` the traversal hands to.
+  the reached state's markers unread (`t3_traversal_markers`).  The traversal's
+  handoff is chained through the epilogue block itself (`t3_epil_denote` and its
+  two successors `t3_epil_step_lcssa`/`t3_epil_step_self`).  What is still open
+  is the region's copy loop — unrolled four ways, so a `BoundLoop` obligation
+  rather than a straight-line chain — and the starting approximation's own fold.
 * **The window tie.**  `StrtodTier3.windowOf` defines `M`, `S` and `sticky`
   (`windowOf_sticky_iff` is the model's own reading); the body's copy's retained
   array is that `M` (`copy_retained`), its stuck bit is that `sticky`
@@ -889,6 +904,281 @@ theorem t3_copy_denote {calls : Calls} {env : Env} {s : State}
         (lookupName_cons_tail (by decide) htopn)))]
   simp only [denoteCode_nil, t3CopyEnv, t3CopyState, stateAt]
 
+/-! ### The epilogue chain: `for.body.i.i566.i.i.epil`
+
+The traversal hands the residual path to the peeled nest's epilogue.  The block
+is the copy's last group: its three carried `phi`s (the index, the carry and the
+residue counter), the table's row read at `%pow.i.i + %indvars`, the widen and the
+`10 ^ 19` multiply, the carry's addition at `i128`, the low word's store, the high
+word's `lshr` by sixty-four, the two increments, and the residue test.  It is the
+region's only block that works at `i128`, so the three operations it needs beyond
+the existing chain steps — `mul` with an immediate, `add` of two registers, and
+`lshr` with an immediate — are stated width-generically here, and the block is
+then one chain at its pin, with both of its successors.
+
+`t3PowConst` is `10 ^ 19`, the `NUMF_EL1_P10` row the copy reads past the
+nineteen it retains; the shift is the `i128` sum's high word. -/
+
+/-- `10 ^ 19` at `i128`: the epilogue's multiplier, the table's twentieth row. -/
+def t3PowConst : BitVec 128 := 0x8ac7230489e80000#128
+
+/-- The multiplier is the table's row, at the width the epilogue's multiply
+reads. -/
+theorem t3PowConst_eq : t3PowConst = BitVec.ofNat 128 (10 ^ 19) := by decide
+
+/-- `%d = mul iW %a, <c>`, at any width. -/
+theorem step_mul_imm_w (calls : Calls) (env : Env) (s : State) (d a : String)
+    (w : Nat) {x c : BitVec w}
+    (ha : lookupName env a = some (.int w x)) :
+    evalInstr calls (stateAt env s) (.binop d .mul w (.reg a) (.imm (.int w c))) =
+      some (stateAt ((d, .int w (x * c)) :: env) s) := by
+  simpa only [BitVec.ofNat_toNat, BitVec.setWidth_eq, stateAt, State.bind]
+    using JsonS1MasksIR.evalInstr_binop (r := (x * c).toNat)
+      (ha := BlockEval.evalOperand_reg_of env s a (.int w x) ha)
+      (hb := BlockEval.evalOperand_lit_of _ w c)
+      (hr := by simp [evalBinopNat, evalBinop, BitVec.ofNat_toNat])
+
+/-- The chain step for `mul iW %a, <c>`. -/
+theorem denoteCode_mul_imm_w (calls : Calls) (env : Env) (s : State) (d a : String)
+    (w : Nat) {x c : BitVec w}
+    (ha : lookupName env a = some (.int w x)) (is : List Instr) :
+    denoteCode calls (.binop d .mul w (.reg a) (.imm (.int w c)) :: is) (stateAt env s) =
+      denoteCode calls is (stateAt ((d, .int w (x * c)) :: env) s) := by
+  rw [denoteCode_cons_of _ _ _ _ _ (step_mul_imm_w calls env s d a w ha)]
+
+/-- `%d = add iW %a, %b`, at any width. -/
+theorem step_add_reg_w (calls : Calls) (env : Env) (s : State) (d a b : String)
+    (w : Nat) {x y : BitVec w}
+    (ha : lookupName env a = some (.int w x))
+    (hb : lookupName env b = some (.int w y)) :
+    evalInstr calls (stateAt env s) (.binop d .add w (.reg a) (.reg b)) =
+      some (stateAt ((d, .int w (x + y)) :: env) s) := by
+  simpa only [BitVec.ofNat_toNat, BitVec.setWidth_eq, stateAt, State.bind]
+    using JsonS1MasksIR.evalInstr_binop (r := (x + y).toNat)
+      (ha := BlockEval.evalOperand_reg_of env s a (.int w x) ha)
+      (hb := BlockEval.evalOperand_reg_of env s b (.int w y) hb)
+      (hr := by simp [evalBinopNat, evalBinop, BitVec.ofNat_toNat])
+
+/-- The chain step for `add iW %a, %b`. -/
+theorem denoteCode_add_reg_w (calls : Calls) (env : Env) (s : State) (d a b : String)
+    (w : Nat) {x y : BitVec w}
+    (ha : lookupName env a = some (.int w x))
+    (hb : lookupName env b = some (.int w y)) (is : List Instr) :
+    denoteCode calls (.binop d .add w (.reg a) (.reg b) :: is) (stateAt env s) =
+      denoteCode calls is (stateAt ((d, .int w (x + y)) :: env) s) := by
+  rw [denoteCode_cons_of _ _ _ _ _ (step_add_reg_w calls env s d a b w ha hb)]
+
+/-- `%d = lshr iW %a, <c>`, at any width. -/
+theorem step_lshr_imm_w (calls : Calls) (env : Env) (s : State) (d a : String)
+    (w : Nat) {x c : BitVec w}
+    (ha : lookupName env a = some (.int w x)) :
+    evalInstr calls (stateAt env s) (.binop d .lshr w (.reg a) (.imm (.int w c))) =
+      some (stateAt ((d, .int w (x >>> c.toNat)) :: env) s) := by
+  simpa only [BitVec.ofNat_toNat, BitVec.setWidth_eq, stateAt, State.bind]
+    using JsonS1MasksIR.evalInstr_binop (r := (x >>> c.toNat).toNat)
+      (ha := BlockEval.evalOperand_reg_of env s a (.int w x) ha)
+      (hb := BlockEval.evalOperand_lit_of _ w c)
+      (hr := by simp [evalBinopNat, evalBinop, BitVec.ofNat_toNat])
+
+/-- The chain step for `lshr iW %a, <c>`. -/
+theorem denoteCode_lshr_imm_w (calls : Calls) (env : Env) (s : State) (d a : String)
+    (w : Nat) {x c : BitVec w}
+    (ha : lookupName env a = some (.int w x)) (is : List Instr) :
+    denoteCode calls (.binop d .lshr w (.reg a) (.imm (.int w c)) :: is) (stateAt env s) =
+      denoteCode calls is (stateAt ((d, .int w (x >>> c.toNat)) :: env) s) := by
+  rw [denoteCode_cons_of _ _ _ _ _ (step_lshr_imm_w calls env s d a w ha)]
+
+/-- The epilogue's `i128` product: the widened table row times `10 ^ 19`. -/
+def t3EpilProd (w : BitVec 64) : BitVec 128 := BitVec.ofNat 128 w.toNat * t3PowConst
+
+/-- The epilogue's `i128` sum: the product plus the carried word. -/
+def t3EpilSum (w : BitVec 64) (carry : BitVec 128) : BitVec 128 := t3EpilProd w + carry
+
+/-- The block's leading `phi` run, from its pin. -/
+def t3EpilPhis : List Instr :=
+  [Instr.phi "%indvars.iv.i.i567.i.i.epil" (Ty.int 64)
+     [("for.body.i.i566.i.i.epil", (Operand.reg "%indvars.iv.next.i.i575.i.i.epil")),
+      ("while.cond.preheader.i.i577.i.i.unr-lcssa",
+        (Operand.reg "%indvars.iv.i.i567.i.i.unr"))],
+   Instr.phi "%carry.029.i.i568.i.i.epil" (Ty.int 128)
+     [("for.body.i.i566.i.i.epil", (Operand.reg "%shr.i.i574.i.i.epil")),
+      ("while.cond.preheader.i.i577.i.i.unr-lcssa",
+        (Operand.reg "%carry.029.i.i568.i.i.unr"))],
+   Instr.phi "%epil.iter1084" (Ty.int 64)
+     [("for.body.i.i566.i.i.epil", (Operand.reg "%epil.iter1084.next")),
+      ("while.cond.preheader.i.i577.i.i.unr-lcssa",
+        (Operand.imm (Const.int 64 0x0000000000000000#64)))]]
+
+/-- The block's instructions: its `phi` run, then the table read, the `i128`
+arithmetic, the store, the two increments and the residue test. -/
+def t3EpilInstrs : List Instr :=
+  t3EpilPhis ++
+    [Instr.gep "%arrayidx.i.i569.i.i.epil" (Ty.int 64) (Operand.reg "%pow.i.i")
+       (Operand.reg "%indvars.iv.i.i567.i.i.epil"),
+     Instr.load "%102" (Ty.int 64) (Operand.reg "%arrayidx.i.i569.i.i.epil"),
+     Instr.zext "%conv2.i.i570.i.i.epil" 64 128 (Operand.reg "%102"),
+     Instr.binop "%mul.i.i571.i.i.epil" (BinOp.mul) 128
+       (Operand.reg "%conv2.i.i570.i.i.epil")
+       (Operand.imm (Const.int 128 0x00000000000000008ac7230489e80000#128)),
+     Instr.binop "%add4.i.i572.i.i.epil" (BinOp.add) 128
+       (Operand.reg "%mul.i.i571.i.i.epil")
+       (Operand.reg "%carry.029.i.i568.i.i.epil"),
+     Instr.trunc "%conv5.i.i573.i.i.epil" 128 64 (Operand.reg "%add4.i.i572.i.i.epil"),
+     Instr.store (Ty.int 64) (Operand.reg "%conv5.i.i573.i.i.epil")
+       (Operand.reg "%arrayidx.i.i569.i.i.epil"),
+     Instr.binop "%shr.i.i574.i.i.epil" (BinOp.lshr) 128
+       (Operand.reg "%add4.i.i572.i.i.epil")
+       (Operand.imm (Const.int 128 0x00000000000000000000000000000040#128)),
+     Instr.binop "%indvars.iv.next.i.i575.i.i.epil" (BinOp.add) 64
+       (Operand.reg "%indvars.iv.i.i567.i.i.epil")
+       (Operand.imm (Const.int 64 0x0000000000000001#64)),
+     Instr.binop "%epil.iter1084.next" (BinOp.add) 64
+       (Operand.reg "%epil.iter1084")
+       (Operand.imm (Const.int 64 0x0000000000000001#64)),
+     Instr.icmp "%epil.iter1084.cmp.not" (IPred.eq) 64
+       (Operand.reg "%epil.iter1084.next") (Operand.reg "%xtraiter1083")]
+
+theorem t3_findBlock_epil :
+    numFastBody.findBlock "for.body.i.i566.i.i.epil" =
+      some ⟨"for.body.i.i566.i.i.epil", t3EpilInstrs,
+        Term.condbr (Operand.reg "%epil.iter1084.cmp.not")
+          "while.cond.preheader.i.i577.i.i.epilog-lcssa" "for.body.i.i566.i.i.epil"⟩ := by
+  simpa only [t3EpilInstrs, t3EpilPhis, List.cons_append, List.nil_append] using
+    numFast_findBlock_for_body_i_i566_i_i_epil
+
+/-- The environment the block leaves: the three carried `phi`s, the table
+address, the widened row, its product and sum, the stored low word and the
+shifted high word, the two increments and the residue test. -/
+def t3EpilEnv (env : Env) (addr : Nat) (w : BitVec 64) (iv : BitVec 64)
+    (carry : BitVec 128) (iter : BitVec 64) (xt : BitVec 64) : Env :=
+  ("%epil.iter1084.cmp.not", .int 1 (evalICmp .eq (iter + 0x1#64) xt)) ::
+  ("%epil.iter1084.next", .int 64 (iter + 0x1#64)) ::
+  ("%indvars.iv.next.i.i575.i.i.epil", .int 64 (iv + 0x1#64)) ::
+  ("%shr.i.i574.i.i.epil", .int 128
+    (t3EpilSum w carry >>> (0x00000000000000000000000000000040#128).toNat)) ::
+  ("%conv5.i.i573.i.i.epil", .int 64
+    (BitVec.ofNat 64 ((t3EpilSum w carry).toNat % 2 ^ 64))) ::
+  ("%add4.i.i572.i.i.epil", .int 128 (t3EpilSum w carry)) ::
+  ("%mul.i.i571.i.i.epil", .int 128 (t3EpilProd w)) ::
+  ("%conv2.i.i570.i.i.epil", .int 128 (BitVec.ofNat 128 w.toNat)) ::
+  ("%102", .int 64 w) ::
+  ("%arrayidx.i.i569.i.i.epil", .ptr (addr + (iv.signExtend 64).toNat * 8)) ::
+  ("%epil.iter1084", .int 64 iter) ::
+  ("%carry.029.i.i568.i.i.epil", .int 128 carry) ::
+  ("%indvars.iv.i.i567.i.i.epil", .int 64 iv) :: env
+
+/-- The state the block leaves: the environment above and the low word written
+at the table row's address. -/
+def t3EpilState (env : Env) (addr : Nat) (w : BitVec 64) (iv : BitVec 64)
+    (carry : BitVec 128) (iter : BitVec 64) (xt : BitVec 64) (s : State) : State :=
+  { stateAt (t3EpilEnv env addr w iv carry iter xt) s with
+      mem := writeBytes s.mem (addr + (iv.signExtend 64).toNat * 8)
+        (natToBytes (BitVec.ofNat 64 ((t3EpilSum w carry).toNat % 2 ^ 64)).toNat 8) }
+
+/-- **The epilogue's chain from the traversal's edge.**  At the entry edge the
+three `phi`s take the traversal's cells and the residue counter's zero, and the
+block runs to its test: the row read, the widen, the `10 ^ 19` multiply, the
+carry's addition, the low word's store, the high word's shift, the increments. -/
+theorem t3_epil_denote {calls : Calls} {env : Env} {s : State}
+    {addr : Nat} {w : BitVec 64} {iv : BitVec 64} {carry : BitVec 128} {xt : BitVec 64}
+    (hpre : s.pre = some "while.cond.preheader.i.i577.i.i.unr-lcssa")
+    (hp : lookupName env "%pow.i.i" = some (.ptr addr))
+    (hiv : lookupName env "%indvars.iv.i.i567.i.i.unr" = some (.int 64 iv))
+    (hcarry : lookupName env "%carry.029.i.i568.i.i.unr" = some (.int 128 carry))
+    (hxt : lookupName env "%xtraiter1083" = some (.int 64 xt))
+    (hpos : (iv.signExtend 64).toNat < 2 ^ 63)
+    (hread : readBytes s.mem (addr + (iv.signExtend 64).toNat * 8) 8
+      = some (natToBytes w.toNat 8)) :
+    denoteCode calls t3EpilInstrs (stateAt env s) =
+      some (t3EpilState env addr w iv carry (0x0000000000000000#64) xt s) := by
+  unfold t3EpilInstrs
+  block_phi_run
+  rotate_left 1
+  · exact hpre
+  · rfl
+  · simp only [phiIncoming]; rfl
+  · exact evalOperand_reg_of env s "%indvars.iv.i.i567.i.i.unr" _ hiv
+  · simp only [phiIncoming]; rfl
+  · exact evalOperand_reg_of env s "%carry.029.i.i568.i.i.unr" _ hcarry
+  · simp only [phiIncoming]; rfl
+  · exact BlockEval.evalOperand_lit_of _ 64 (0x0000000000000000#64)
+  rw [NumFastTier1.denoteCode_gep64_reg calls _ _ "%arrayidx.i.i569.i.i.epil" "%pow.i.i"
+    "%indvars.iv.i.i567.i.i.epil" (by block_lk) (by block_lk) hpos _]
+  rw [denoteCode_load64 calls _ _ "%102" "%arrayidx.i.i569.i.i.epil"
+    (by block_lk) hread _]
+  rw [denoteCode_zext calls _ _ "%conv2.i.i570.i.i.epil" "%102" 64 128
+    (by block_lk) _]
+  rw [denoteCode_mul_imm_w calls _ _ "%mul.i.i571.i.i.epil"
+    "%conv2.i.i570.i.i.epil" 128 (by block_lk) _]
+  rw [denoteCode_add_reg_w calls _ _ "%add4.i.i572.i.i.epil" "%mul.i.i571.i.i.epil"
+    "%carry.029.i.i568.i.i.epil" 128 (by block_lk) (by block_lk) _]
+  rw [denoteCode_trunc calls _ _ "%conv5.i.i573.i.i.epil" "%add4.i.i572.i.i.epil"
+    128 64 (by block_lk) _]
+  rw [denoteCode_store64 calls _ _ "%conv5.i.i573.i.i.epil" "%arrayidx.i.i569.i.i.epil"
+    (by block_lk) (by block_lk) _]
+  rw [denoteCode_lshr_imm_w calls _ _ "%shr.i.i574.i.i.epil" "%add4.i.i572.i.i.epil"
+    128 (by block_lk) _]
+  rw [JsonScanLane.denoteCode_add_imm_w calls _ _ "%indvars.iv.next.i.i575.i.i.epil"
+    "%indvars.iv.i.i567.i.i.epil" 64 (by block_lk) _]
+  rw [JsonScanLane.denoteCode_add_imm_w calls _ _ "%epil.iter1084.next" "%epil.iter1084"
+    64 (by block_lk) _]
+  rw [BlockEval.denoteCode_icmp_eq_reg calls _ _ "%epil.iter1084.cmp.not"
+    "%epil.iter1084.next" "%xtraiter1083" (by block_lk) (by block_lk) _]
+  simp only [denoteCode_nil, stateAt, runCells, t3EpilState, t3EpilEnv, t3EpilProd,
+    t3EpilSum, t3PowConst]
+
+/-- The epilogue's step to its exit: the residue counter reached the remainder,
+so the path leaves for `while.cond.preheader.i.i577.i.i.epilog-lcssa`. -/
+theorem t3_epil_step_lcssa {calls : Calls} {env : Env} {s : State}
+    {addr : Nat} {w : BitVec 64} {iv : BitVec 64} {carry : BitVec 128}
+    {iter : BitVec 64} {xt : BitVec 64}
+    (hpc : s.pc = "for.body.i.i566.i.i.epil")
+    (hden : denoteCode calls t3EpilInstrs (stateAt env s) =
+      some (t3EpilState env addr w iv carry iter xt s))
+    (hbit : evalICmp .eq (iter + 0x1#64) xt = (1 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (t3EpilState env addr w iv carry iter xt
+        { s with pc := "while.cond.preheader.i.i577.i.i.epilog-lcssa",
+                 pre := some "for.body.i.i566.i.i.epil" }) := by
+  refine numFast_step_at (s' := t3EpilState env addr w iv carry iter xt s)
+    (b := ⟨"for.body.i.i566.i.i.epil", t3EpilInstrs,
+      Term.condbr (Operand.reg "%epil.iter1084.cmp.not")
+        "while.cond.preheader.i.i577.i.i.epilog-lcssa" "for.body.i.i566.i.i.epil"⟩)
+    ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using t3_findBlock_epil
+  · exact hden
+  · have hlk : lookupName (t3EpilEnv env addr w iv carry iter xt) "%epil.iter1084.cmp.not"
+        = some (.int 1 (evalICmp .eq (iter + 0x1#64) xt)) := lookupName_cons_self ..
+    rw [numFast_execTerm_condbr_one _ "%epil.iter1084.cmp.not" _ _
+      hlk hbit]
+    simp only [t3EpilState, stateAt, hpc]
+
+/-- The epilogue's step back to itself: the residue counter is short of the
+remainder, so the next group is the same block at the incremented counter. -/
+theorem t3_epil_step_self {calls : Calls} {env : Env} {s : State}
+    {addr : Nat} {w : BitVec 64} {iv : BitVec 64} {carry : BitVec 128}
+    {iter : BitVec 64} {xt : BitVec 64}
+    (hpc : s.pc = "for.body.i.i566.i.i.epil")
+    (hden : denoteCode calls t3EpilInstrs (stateAt env s) =
+      some (t3EpilState env addr w iv carry iter xt s))
+    (hbit : evalICmp .eq (iter + 0x1#64) xt = (0 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (t3EpilState env addr w iv carry iter xt
+        { s with pc := "for.body.i.i566.i.i.epil",
+                 pre := some "for.body.i.i566.i.i.epil" }) := by
+  refine numFast_step_at (s' := t3EpilState env addr w iv carry iter xt s)
+    (b := ⟨"for.body.i.i566.i.i.epil", t3EpilInstrs,
+      Term.condbr (Operand.reg "%epil.iter1084.cmp.not")
+        "while.cond.preheader.i.i577.i.i.epilog-lcssa" "for.body.i.i566.i.i.epil"⟩)
+    ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using t3_findBlock_epil
+  · exact hden
+  · have hlk : lookupName (t3EpilEnv env addr w iv carry iter xt) "%epil.iter1084.cmp.not"
+        = some (.int 1 (evalICmp .eq (iter + 0x1#64) xt)) := lookupName_cons_self ..
+    rw [numFast_execTerm_condbr_zero _ "%epil.iter1084.cmp.not" _ _
+      hlk hbit]
+    simp only [t3EpilState, stateAt, hpc]
+
 /-! ### The proximity estimate at the tree's own rounding
 
 The emitted starting approximation is `top * 10 ^ e10`, at most two `fmul`/`fdiv`
@@ -1310,6 +1600,17 @@ end NumFastTier3
 #print axioms NumFastTier3.t3_findBlock_copy
 #print axioms NumFastTier3.step_store8
 #print axioms NumFastTier3.t3_copy_denote
+#print axioms NumFastTier3.t3PowConst_eq
+#print axioms NumFastTier3.step_mul_imm_w
+#print axioms NumFastTier3.denoteCode_mul_imm_w
+#print axioms NumFastTier3.step_add_reg_w
+#print axioms NumFastTier3.denoteCode_add_reg_w
+#print axioms NumFastTier3.step_lshr_imm_w
+#print axioms NumFastTier3.denoteCode_lshr_imm_w
+#print axioms NumFastTier3.t3_findBlock_epil
+#print axioms NumFastTier3.t3_epil_denote
+#print axioms NumFastTier3.t3_epil_step_lcssa
+#print axioms NumFastTier3.t3_epil_step_self
 #print axioms NumFastTier3.roundMag_isMag
 #print axioms NumFastTier3.lo_mul
 #print axioms NumFastTier3.hi_mul
