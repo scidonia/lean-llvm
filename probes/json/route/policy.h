@@ -32,6 +32,18 @@
 int leanllvm_route_policy_scan(const uint8_t *b, uint64_t n, uint64_t *cls,
                                uint64_t *pos);
 
+/* The same scan with the caller's class array instead of one allocated per
+   call.  `ws` carries at least `ws_cap` bytes and is used only where the
+   document does not fit the scan's own stack array; a caller that passes
+   `ws = NULL` gets the allocating behaviour above, which is what
+   `leanllvm_route_policy_scan` is.  Every byte the scan reads from the array
+   is written by the same call before it is read, so a reused array carries no
+   state between documents.  Returns 0 for a measured answer and -1 only when
+   no array could be found: `ws` too small and the allocation failed. */
+int leanllvm_route_policy_scan_ws(const uint8_t *b, uint64_t n, uint8_t *ws,
+                                  uint64_t ws_cap, uint64_t *cls,
+                                  uint64_t *pos);
+
 /* The reference string-body scan's stop (`scanCharsEnd b i 0`), for a caller
    that asks only whether it succeeds and where it ends: 0 and the position
    just past the closing quote when the body scans, 1 when it refuses for any

@@ -414,20 +414,40 @@ static uint64_t policy_first_quote(const uint8_t *b, uint64_t n,
   return POLICY_NONE;
 }
 
-int leanllvm_route_policy_scan(const uint8_t *b, uint64_t n, uint64_t *cls_o,
-                               uint64_t *pos_o) {
+static int policy_scan(const uint8_t *b, uint64_t n, uint8_t *ws,
+                       uint64_t ws_cap, uint64_t *cls_o, uint64_t *pos_o) {
   *cls_o = POLICY_NONE;
   *pos_o = 0;
   if (n == 0) return 0;
   if (!policy_possible(b, n)) return 0;
 
   uint8_t stack[POLICY_STACK_DOC + 1];
-  uint8_t *cls = n <= POLICY_STACK_DOC ? stack : (uint8_t *)malloc(n + 1);
-  if (!cls) return -1;
+  uint8_t *cls;
+  int heap = 0;
+  if (n <= POLICY_STACK_DOC) {
+    cls = stack;
+  } else if (ws != NULL && ws_cap >= n + 1) {
+    cls = ws;
+  } else {
+    cls = (uint8_t *)malloc(n + 1);
+    if (!cls) return -1;
+    heap = 1;
+  }
   cls[n] = POLICY_NONE;
   for (uint64_t i = n; i-- > 0;) cls[i] = policy_class_of(b, n, i, cls);
 
   *cls_o = policy_first_quote(b, n, cls, pos_o);
-  if (cls != stack) free(cls);
+  if (heap) free(cls);
   return 0;
+}
+
+int leanllvm_route_policy_scan(const uint8_t *b, uint64_t n, uint64_t *cls_o,
+                               uint64_t *pos_o) {
+  return policy_scan(b, n, NULL, 0, cls_o, pos_o);
+}
+
+int leanllvm_route_policy_scan_ws(const uint8_t *b, uint64_t n, uint8_t *ws,
+                                  uint64_t ws_cap, uint64_t *cls_o,
+                                  uint64_t *pos_o) {
+  return policy_scan(b, n, ws, ws_cap, cls_o, pos_o);
 }

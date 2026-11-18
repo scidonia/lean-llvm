@@ -2793,6 +2793,8 @@ theorem intRunExit_land71 {calls : Calls} {mem0 : Mem} {bs : List UInt8}
     (hpc : e.pc = "if.end68") (he : intRunExit mem0 bs p n i0 d0 e)
     (hnlt : n < 2 ^ 63) :
     ∃ (i1 : Nat) (e' : State), land71Entry e.mem p n i1 e' ∧
+      NumFastIntPart (BitVec.ofNat 64 (d0 + (i1 - i0)))
+        (BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + (i1 - i0)) 19))) e' ∧
       ∀ k, runFuel calls (1 + k) numFastBody e = runFuel calls k numFastBody e' := by
   rcases he with ⟨_, hpre, _, hn, i1, _, hi1n, hi, hid, hip, _, _, _⟩ | hend
   · have hbit : evalICmp .ult (BitVec.ofNat 64 i1) (BitVec.ofNat 64 n) = 1 :=
@@ -2811,7 +2813,7 @@ theorem intRunExit_land71 {calls : Calls} {mem0 : Mem} {bs : List UInt8}
       NumFastStarts.ifEnd68_step (calls := calls) hpc hden hbit
     refine ⟨i1, stateAt (NumFastStarts.ifEnd68Env e.env i5 ip5 idig5 nv)
       { e with pc := "land.lhs.true71", pre := some "if.end68" },
-      ⟨rfl, rfl, rfl, ?_, ?_, ?_, ?_⟩, ?_⟩
+      ⟨rfl, rfl, rfl, ?_, ?_, ?_, ?_⟩, ⟨?_, ?_⟩, ?_⟩
     · simp only [stateAt, NumFastStarts.ifEnd68Env, NumFastStarts.ifEnd68PhiEnv]
       block_lk
     · simp only [stateAt, NumFastStarts.ifEnd68Env, NumFastStarts.ifEnd68PhiEnv]
@@ -2823,6 +2825,10 @@ theorem intRunExit_land71 {calls : Calls} {mem0 : Mem} {bs : List UInt8}
         block_lk
       · simp only [stateAt, NumFastStarts.ifEnd68Env, NumFastStarts.ifEnd68PhiEnv]
         block_lk
+    · simp only [stateAt, NumFastStarts.ifEnd68Env, NumFastStarts.ifEnd68PhiEnv]
+      block_lk
+    · simp only [stateAt, NumFastStarts.ifEnd68Env, NumFastStarts.ifEnd68PhiEnv]
+      block_lk
     · intro k
       exact runFuel_jump_prefix hstep k
   · rw [hend.1] at hpc
@@ -2920,7 +2926,7 @@ theorem fracScan_end230 {mem : Mem} {e : State} {a n i1 : Nat} {bs : List UInt8}
       ∀ k, runFuel calls (j + k) numFastBody e =
         runFuel calls k numFastBody e' := by
   rcases h with ⟨hpc, _, hmem, hp, hn, hi5, hparts⟩
-  obtain ⟨e0, hinv0, _hcell0, hrun0⟩ :=
+  obtain ⟨e0, hinv0, _hcell0, _, hrun0⟩ :=
     NumFastStarts.fracRun_start (calls := calls) (env := e.env) (s := e)
       hpc hp hn (by rw [hmem]; exact hread) hi5 hparts
       (by rw [hmem]; exact hdot) hdoteq (by rw [hmem]; exact hd2) hd2digit
@@ -2952,7 +2958,7 @@ theorem fracScan_end230Cells {calls : Calls} {mem : Mem} {e : State} {a n i1 : N
       ∀ k, runFuel calls (j + k) numFastBody e =
         runFuel calls k numFastBody e' := by
   rcases h with ⟨hpc, _, hmem, hp, hn, hi5, hparts⟩
-  obtain ⟨e0, hinv0, hcell0, hrun0⟩ :=
+  obtain ⟨e0, hinv0, hcell0, _, hrun0⟩ :=
     NumFastStarts.fracRun_start (calls := calls) (env := e.env) (s := e)
       hpc hp hn (by rw [hmem]; exact hread) hi5 hparts
       (by rw [hmem]; exact hdot) hdoteq (by rw [hmem]; exact hd2) hd2digit

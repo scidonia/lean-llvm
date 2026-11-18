@@ -242,8 +242,10 @@ the merged registers as `Decimal.digitsNat`.
 the staging (item 2) are values, each *site*'s step is a jump at them, and the
 scan's three runs and their starts are discharged, with the two eight-digit fast
 paths composed at their guards' taken edges; the integer part's route from
-`entry` to the merge is one trace (`intScan_end230` + `intScan_merge`), while the
-fraction and exponent routes are composed one seam at a time.  Item 4's tier-1
+`entry` to the merge is one trace (`intScan_end230` + `intScan_merge`), the
+fraction route is one from its `.` answer to the return
+(`JsonStage2NumFastFraction.fracScan_t1_arm_of_dispatch`), and the exponent
+route's seams are composed one at a time.  Item 4's tier-1
 chain is stated at its blocks with its four links
 named ((a) the instruction steps, which the tier-1 module supplies; (b) the class
 test; (c) the mantissa; (d) the tick algebra).  Tier 3's window tie and proximity
@@ -368,16 +370,27 @@ cell of the body's.  `intScan_run` and the fast path's appended runs keep their
 old shapes: the arms' cell conclusion is conditional, and its old projection is
 the old statement.
 
-**The fraction and exponent routes' cells, after the transport.**  The same
-conclusion is now an arm conclusion on both remaining routes.  The fraction run's
+**The fraction route's carry, and the arm at the `.` test.**  The fraction run's
 arms carry the integer part's cells the merge reads
 (`fracRun_step_loop`/`_exit`/`_end230` concluding `NumFastIntPart`, with
-`numFast_step_intPart` as the per-step fact), `fracRun_start`'s six dispatch steps
-carry them from the `.` test, `fracRunEndFrameCells` lifts them through
+`numFast_step_intPart` as the per-step fact), and the same arms carry the kept
+cells and the sign (one `numFast_step_cells` per step of each arm's chain) and
+the staging (`e.mem = s.mem`: every block on the route is a `stateAt`, which
+writes the environment and nothing else — the exit arms hand it back, the loop's
+arm reads it off its invariant's memory).  `fracRun_start`'s six dispatch steps
+carry all three from the `.` test, so
+`JsonStage2NumFastFraction.fracRunEndFrameCarried` can lift them through
 `fracRunEndBoundLoop` as `BoundLoopFrame`'s caller property,
-`JsonStage2NumFastSeams.fracScan_end230Cells`
-composes the dispatch and the run, and `fracRunEndWord_tie_cells` reads the
-merge's five registers off that exit.  The exponent run's four cells
+`fracScan_end230Carried` composes the dispatch and the run to `if.end230`, and
+`fracScan_t1_arm` is the conversion behind it — `t1_fracEnd230_run`, whose
+`%out`, two table symbols and sign are now the run's carry rather than
+hypotheses — the tier-1 arm at the `.` test.
+`JsonStage2NumFastFraction.fracScan_t1_arm_of_dispatch` is that statement at the
+staged entry state: `intScan_to_dot`'s left answer is the `.` test's state and
+the run's fuel prefix, and the two cells `if.end68` installs are the model's
+`intDigits d` and `digitsNat d.ip` at the dispatch's own `i0 = negIndex b + 1`,
+`d0 = 1` — the decimal point's index and the run's two counters read where the
+dispatch fixed them rather than assumed.  The exponent run's four cells
 (`%idig.4`, `%ip.5`, `%fr.5`, `%fdig.4`) are an arm conclusion the same way:
 `ExpRunCells` is their value form, `expRun_step_cells` is the step (the run's
 blocks write none of them, `decide`d over the pinned body),
@@ -387,15 +400,18 @@ blocks write none of them, `decide`d over the pinned body),
 terms: `JsonStage2NumFastSeams.expSelect_tie` is the block's select in both
 polarities (`if %esign.0 = 1 then %exp10 else 0 - %exp10` as
 `BitVec.ofInt 64 (expVal d)`), and `expExit_merge` is the two-step merge with
-`%exp10.4` that value.
+`%exp10.4` that value.  The exponent route does not yet have the fraction's
+transport of the kept cells and the sign: its run carries `ExpRunCells` alone,
+so its merge still owes the words `t1_end230_run` reads there.
 
-What the arm still waits on is the composition of those pieces into one trace
-and tier 3's region.  The nest's own nine steps (`nest_marker_start`) hand
-`%i.11` and `%esign.0` but not the four cells, so the exponent run is appended to
-the nest at the two statements; `expRunExit`'s head arm does not name the byte the
-run stopped on, so the end-of-lexeme arm is `expExit_merge`'s `hhead` hypothesis;
-and tier 1's four links are proved (`JsonStage2NumFastTier1`, with `t1_store_run`
-the body's chain from `if.end230`), while tier 3's region is stated edge by edge:
+What the arm still waits on is the exponent route's merge, the routes below
+tier 1, and tier 3's region.  The nest's own nine steps (`nest_marker_start`)
+hand `%i.11` and `%esign.0` but not the four cells, so the exponent run is
+appended to the nest at the two statements; `expRunExit`'s head arm does not name
+the byte the run stopped on, so the end-of-lexeme arm is `expExit_merge`'s
+`hhead` hypothesis; and tier 1's four links are proved (`JsonStage2NumFastTier1`,
+with `t1_store_run` the body's chain from `if.end230`), while tier 3's region is
+stated edge by edge:
 the poison edge and its trip count (`t3_traversal_counts_1_3`), the epilogue
 (`t3_epil_denote`), the window tie (`copy_*_window`, `t3_copy_denote`), the
 proximity estimate at the tree's own rounding (`t3_scale_of_ulp`), the copy's
@@ -405,9 +421,10 @@ handoff into it (`t3_exit_handoff`), and the ladder's two loops at the emitted
 rows (`t3MulLoop_run_t3Rows`, `t3DivLoop_run_t3Rows`) with the join at the
 invariant level (`t3_ladder_run`).  What the arm still owes there is the region's
 blocks before the peeled nest — the inlined second reader's chain — and the join's
-state-level case.  `intScan_t1_arm_at_entry` is therefore the
-arm's conclusion on the integer route, not `NumFastBodyArm` — and the kernel's
-bound is not the stopper (it is met at the body's own word).
+state-level case.  `intScan_t1_arm_at_entry` and
+`NumFastFraction.fracScan_t1_arm_of_dispatch` are therefore the arm's conclusion
+on the tier-1 window's integer and fraction shapes, not `NumFastBodyArm` — and
+the kernel's bound is not the stopper (it is met at the body's own word).
 
 **The kernel's site after the tie.**  `%add244` and `%sub231` are now read as the
 model's `(d.mantissa, eff d)` at `if.end268`:

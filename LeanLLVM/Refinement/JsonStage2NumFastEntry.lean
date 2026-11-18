@@ -160,7 +160,11 @@ theorem intScan_to_dot {calls : Calls} {env : Env} {s : State} {a n : Nat} {bs :
     (hfast : n < NumFastStarts.negIndex b + 9) (hnlt : n < 2 ^ 63) :
     ∃ (e : State) (j : Nat),
       j ≤ 9 + (n - (NumFastStarts.negIndex b + 1) + 1) * 4 ∧
-      ((∃ i1, NumFastSeams.land71Entry e.mem a n i1 e) ∨
+      ((∃ i1, NumFastSeams.land71Entry e.mem a n i1 e ∧
+          NumFastIntPart
+            (BitVec.ofNat 64 (1 + (i1 - (NumFastStarts.negIndex b + 1))))
+            (BitVec.ofNat 64 (digitFold bs ((NumFastStarts.negIndex b + 1) - 1)
+              (min (1 + (i1 - (NumFastStarts.negIndex b + 1))) 19))) e) ∨
         intRunEndWord s.mem bs a n (NumFastStarts.negIndex b + 1) 1 e) ∧
       ∀ k, runFuel calls (j + k) numFastBody (stateAt env s) =
         runFuel calls k numFastBody e := by
@@ -168,14 +172,15 @@ theorem intScan_to_dot {calls : Calls} {env : Env} {s : State} {a n : Nat} {bs :
     NumFastScanRun.intScan_run (calls := calls) hpc hp hn hread hsign hbyte hlead
       hnpos hltn hnext hfast hnlt
   rcases hexit with hleft | hend
-  · obtain ⟨i1, e1, hland, hrun1⟩ :=
+  · obtain ⟨i1, e1, hland, hcells, hrun1⟩ :=
       NumFastSeams.intRunExit_land71 (calls := calls) (mem0 := s.mem) (bs := bs)
         (p := a) (n := n) (i0 := NumFastStarts.negIndex b + 1) (d0 := 1) (e := e0)
         hleft.1 (Or.inl hleft) hnlt
-    refine ⟨e1, j0 + 1, by omega, Or.inl ⟨i1, ?_⟩, ?_⟩
+    refine ⟨e1, j0 + 1, by omega, Or.inl ⟨i1, ?_, ?_⟩, ?_⟩
     · have hmem : e1.mem = e0.mem := hland.2.2.1
       rw [hmem]
       exact hland
+    · exact hcells
     · intro k
       rw [show j0 + 1 + k = j0 + (1 + k) from by omega]
       exact (hrun0 (1 + k)).trans (hrun1 k)

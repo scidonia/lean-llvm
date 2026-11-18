@@ -52,6 +52,12 @@ the run does: `fracRun_step_loop`, `fracRun_step_exit` and `fracRun_step_end230`
 conclude `NumFastIntPart` through `numFast_step_intPart`,
 `fracRunEndFrameCells` frames `fracRunEndBoundLoop` on them as its caller
 property, and `fracRun_end_run_cells` is the run at the whole distance.  The
+same arms hand back what the conversion past the merge reads: the caller's kept
+cells and sign (`NumFastCarried`, one `numFast_step_cells` per step of the arm's
+chain: the run's blocks write none of `%out` or the two symbols and none of them
+is `if.end`), and — the two exit arms — the staging the two table rows come from
+(`e.mem = s.mem`, since every block on the route is a `stateAt`);
+`JsonStage2NumFastFraction` frames the loop on all three.  The
 exponent run's are the four cells
 `if.end230`'s `phi`s read — `%idig.4`, `%ip.5`, `%fr.5`, `%fdig.4` — carried by
 value as `ExpRunCells`: no block of the run (or of its start at
@@ -2781,6 +2787,8 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
     ∃ (e : State) (c' : Nat) (j : Nat), j ≤ 4 ∧ e.pc = "land.lhs.true119" ∧ c < c' ∧
       fracRunInv mem0 p n i0 d0 bs r e c' ∧
       (∀ (idig ip : BitVec 64), NumFastIntPart idig ip s → NumFastIntPart idig ip e) ∧
+      (∀ (env0 : Env) (sign : BitVec 1), NumFastCarried env0 sign s →
+        NumFastCarried env0 sign e) ∧
       ∀ k, runFuel calls (j + k) numFastBody s =
         runFuel calls k numFastBody e := by
   obtain ⟨hpc, hmem, hsum, hltn, hnlt, hd0le, hp, hn, hread, h17,
@@ -2882,7 +2890,7 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
             (JsonScanLane.vByte b &&& 0x0f#8).toNat)
           (by simp only [e2, stateAt]) (by simp only [e2, stateAt]) hphi hphiOp
           hidig2 hi2 hn2 hbits
-      refine ⟨e3, c + 1, 4, by omega, ?_, by omega, ?_, ?_, ?_⟩
+      refine ⟨e3, c + 1, 4, by omega, ?_, by omega, ?_, ?_, ?_, ?_⟩
       · simp only [e3, stateAt]
       · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
         · simp only [e3, stateAt]
@@ -2934,6 +2942,11 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
           (numFast_step_intPart (by simp only [e1, stateAt]; decide) hstep3
             (numFast_step_intPart (by simp only [e0, stateAt]; decide) hstep2
               (numFast_step_intPart (by rw [hpc]; decide) hstep1 hpart)))
+      · intro env0 sign hcarried
+        exact numFast_step_cells (by simp only [e2, stateAt]; decide) hstep4
+          (numFast_step_cells (by simp only [e1, stateAt]; decide) hstep3
+            (numFast_step_cells (by simp only [e0, stateAt]; decide) hstep2
+              (numFast_step_cells (by rw [hpc]; decide) hstep1 hcarried)))
       · intro k
         rw [show 4 + k = 1 + (1 + (1 + (1 + k))) from by omega,
           runFuel_jump_prefix hstep1 (1 + (1 + (1 + k))),
@@ -2986,7 +2999,7 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
           (p := "while.body130") (op := Operand.reg "%fr.3593") (frv := fr)
           (by simp only [e1, stateAt]) (by simp only [e1, stateAt]) hphi hphiOp
           hidig1 hi1 hn1 hbits
-      refine ⟨e2, c + 1, 3, by omega, ?_, by omega, ?_, ?_, ?_⟩
+      refine ⟨e2, c + 1, 3, by omega, ?_, by omega, ?_, ?_, ?_, ?_⟩
       · simp only [e2, stateAt]
       · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
         · simp only [e2, stateAt]
@@ -3032,6 +3045,10 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
         exact numFast_step_intPart (by simp only [e1, stateAt]; decide) hstep3
           (numFast_step_intPart (by simp only [e0, stateAt]; decide) hstep2
             (numFast_step_intPart (by rw [hpc]; decide) hstep1 hpart))
+      · intro env0 sign hcarried
+        exact numFast_step_cells (by simp only [e1, stateAt]; decide) hstep3
+          (numFast_step_cells (by simp only [e0, stateAt]; decide) hstep2
+            (numFast_step_cells (by rw [hpc]; decide) hstep1 hcarried))
       · intro k
         rw [show 3 + k = 1 + (1 + (1 + k)) from by omega,
           runFuel_jump_prefix hstep1 (1 + (1 + k)),
@@ -3112,7 +3129,7 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
             (JsonScanLane.vByte b &&& 0x0f#8).toNat)
           (by simp only [e2, stateAt]) (by simp only [e2, stateAt]) hphi hphiOp
           hidig2 hi2 hn2 hbits
-      refine ⟨e3, c + 1, 4, by omega, ?_, by omega, ?_, ?_, ?_⟩
+      refine ⟨e3, c + 1, 4, by omega, ?_, by omega, ?_, ?_, ?_, ?_⟩
       · simp only [e3, stateAt]
       · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
         · simp only [e3, stateAt]
@@ -3164,6 +3181,11 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
           (numFast_step_intPart (by simp only [e1, stateAt]; decide) hstep3
             (numFast_step_intPart (by simp only [e0, stateAt]; decide) hstep2
               (numFast_step_intPart (by rw [hpc]; decide) hstep1 hpart)))
+      · intro env0 sign hcarried
+        exact numFast_step_cells (by simp only [e2, stateAt]; decide) hstep4
+          (numFast_step_cells (by simp only [e1, stateAt]; decide) hstep3
+            (numFast_step_cells (by simp only [e0, stateAt]; decide) hstep2
+              (numFast_step_cells (by rw [hpc]; decide) hstep1 hcarried)))
       · intro k
         rw [show 4 + k = 1 + (1 + (1 + (1 + k))) from by omega,
           runFuel_jump_prefix hstep1 (1 + (1 + (1 + k))),
@@ -3216,7 +3238,7 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
           (p := "while.body130") (op := Operand.reg "%fr.3593") (frv := fr)
           (by simp only [e1, stateAt]) (by simp only [e1, stateAt]) hphi hphiOp
           hidig1 hi1 hn1 hbits
-      refine ⟨e2, c + 1, 3, by omega, ?_, by omega, ?_, ?_, ?_⟩
+      refine ⟨e2, c + 1, 3, by omega, ?_, by omega, ?_, ?_, ?_, ?_⟩
       · simp only [e2, stateAt]
       · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
         · simp only [e2, stateAt]
@@ -3262,6 +3284,10 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
         exact numFast_step_intPart (by simp only [e1, stateAt]; decide) hstep3
           (numFast_step_intPart (by simp only [e0, stateAt]; decide) hstep2
             (numFast_step_intPart (by rw [hpc]; decide) hstep1 hpart))
+      · intro env0 sign hcarried
+        exact numFast_step_cells (by simp only [e1, stateAt]; decide) hstep3
+          (numFast_step_cells (by simp only [e0, stateAt]; decide) hstep2
+            (numFast_step_cells (by rw [hpc]; decide) hstep1 hcarried))
       · intro k
         rw [show 3 + k = 1 + (1 + (1 + k)) from by omega,
           runFuel_jump_prefix hstep1 (1 + (1 + k)),
@@ -3293,6 +3319,9 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
     ∃ (e : State) (j : Nat), j ≤ 4 ∧ fracRunExitBlock e ∧
       fracRunExit mem0 bs p n i0 d0 e ∧
       (∀ (idig ip : BitVec 64), NumFastIntPart idig ip s → NumFastIntPart idig ip e) ∧
+      (∀ (env0 : Env) (sign : BitVec 1), NumFastCarried env0 sign s →
+        NumFastCarried env0 sign e) ∧
+      e.mem = s.mem ∧
       ∀ k, runFuel calls (j + k) numFastBody s =
         runFuel calls k numFastBody e := by
   obtain ⟨hpc, hmem, hsum, hltn, hnlt, hd0le, hp, hn, hread, h17,
@@ -3385,7 +3414,7 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
                 (JsonScanLane.vByte b &&& 0x0f#8).toNat)
               (by simp only [e2, stateAt]) (by simp only [e2, stateAt]) hphi hphiOp
               hidig2 hi2 hn2 hbits
-          refine ⟨e3, 4, by omega, Or.inr (by simp only [e3, stateAt]), ?_, ?_, ?_⟩
+          refine ⟨e3, 4, by omega, Or.inr (by simp only [e3, stateAt]), ?_, ?_, ?_, ?_, ?_⟩
           · refine Or.inr ⟨by simp only [e3, stateAt], by simp only [e3, stateAt], ?_⟩
             refine ⟨by omega, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
             · simp only [e3, e2, e1, e0, stateAt, fracIfEndEnv, fracIfThenEnv, fracBodyEnv,
@@ -3431,6 +3460,12 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               (numFast_step_intPart (by simp only [e1, stateAt]; decide) hstep3
                 (numFast_step_intPart (by simp only [e0, stateAt]; decide) hstep2
                   (numFast_step_intPart (by rw [hpc]; decide) hstep1 hpart)))
+          · intro env0 sign hcarried
+            exact numFast_step_cells (by simp only [e2, stateAt]; decide) hstep4
+              (numFast_step_cells (by simp only [e1, stateAt]; decide) hstep3
+                (numFast_step_cells (by simp only [e0, stateAt]; decide) hstep2
+                  (numFast_step_cells (by rw [hpc]; decide) hstep1 hcarried)))
+          · simp only [e3, e2, e1, e0, stateAt]
           · intro k
             rw [show 4 + k = 1 + (1 + (1 + (1 + k))) from by omega,
               runFuel_jump_prefix hstep1 (1 + (1 + (1 + k))),
@@ -3480,7 +3515,7 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               (p := "while.body130") (op := Operand.reg "%fr.3593") (frv := fr)
               (by simp only [e1, stateAt]) (by simp only [e1, stateAt]) hphi hphiOp
               hidig1 hi1 hn1 hbits
-          refine ⟨e2, 3, by omega, Or.inr (by simp only [e2, stateAt]), ?_, ?_, ?_⟩
+          refine ⟨e2, 3, by omega, Or.inr (by simp only [e2, stateAt]), ?_, ?_, ?_, ?_, ?_⟩
           · refine Or.inr ⟨by simp only [e2, stateAt], by simp only [e2, stateAt], ?_⟩
             refine ⟨by omega, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
             · simp only [e2, e1, e0, stateAt, fracIfEndEnv, fracBodyEnv, fracHeadEnv,
@@ -3520,6 +3555,11 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
             exact numFast_step_intPart (by simp only [e1, stateAt]; decide) hstep3
               (numFast_step_intPart (by simp only [e0, stateAt]; decide) hstep2
                 (numFast_step_intPart (by rw [hpc]; decide) hstep1 hpart))
+          · intro env0 sign hcarried
+            exact numFast_step_cells (by simp only [e1, stateAt]; decide) hstep3
+              (numFast_step_cells (by simp only [e0, stateAt]; decide) hstep2
+                (numFast_step_cells (by rw [hpc]; decide) hstep1 hcarried))
+          · simp only [e2, e1, e0, stateAt]
           · intro k
             rw [show 3 + k = 1 + (1 + (1 + k)) from by omega,
               runFuel_jump_prefix hstep1 (1 + (1 + k)),
@@ -3598,7 +3638,7 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
                 (JsonScanLane.vByte b &&& 0x0f#8).toNat)
               (by simp only [e2, stateAt]) (by simp only [e2, stateAt]) hphi hphiOp
               hidig2 hi2 hn2 hbits
-          refine ⟨e3, 4, by omega, Or.inr (by simp only [e3, stateAt]), ?_, ?_, ?_⟩
+          refine ⟨e3, 4, by omega, Or.inr (by simp only [e3, stateAt]), ?_, ?_, ?_, ?_, ?_⟩
           · refine Or.inr ⟨by simp only [e3, stateAt], by simp only [e3, stateAt], ?_⟩
             refine ⟨by omega, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
             · simp only [e3, e2, e1, e0, stateAt, fracIfEndEnv, fracIfThenEnv, fracBodyEnv,
@@ -3644,6 +3684,12 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               (numFast_step_intPart (by simp only [e1, stateAt]; decide) hstep3
                 (numFast_step_intPart (by simp only [e0, stateAt]; decide) hstep2
                   (numFast_step_intPart (by rw [hpc]; decide) hstep1 hpart)))
+          · intro env0 sign hcarried
+            exact numFast_step_cells (by simp only [e2, stateAt]; decide) hstep4
+              (numFast_step_cells (by simp only [e1, stateAt]; decide) hstep3
+                (numFast_step_cells (by simp only [e0, stateAt]; decide) hstep2
+                  (numFast_step_cells (by rw [hpc]; decide) hstep1 hcarried)))
+          · simp only [e3, e2, e1, e0, stateAt]
           · intro k
             rw [show 4 + k = 1 + (1 + (1 + (1 + k))) from by omega,
               runFuel_jump_prefix hstep1 (1 + (1 + (1 + k))),
@@ -3693,7 +3739,7 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               (p := "while.body130") (op := Operand.reg "%fr.3593") (frv := fr)
               (by simp only [e1, stateAt]) (by simp only [e1, stateAt]) hphi hphiOp
               hidig1 hi1 hn1 hbits
-          refine ⟨e2, 3, by omega, Or.inr (by simp only [e2, stateAt]), ?_, ?_, ?_⟩
+          refine ⟨e2, 3, by omega, Or.inr (by simp only [e2, stateAt]), ?_, ?_, ?_, ?_, ?_⟩
           · refine Or.inr ⟨by simp only [e2, stateAt], by simp only [e2, stateAt], ?_⟩
             refine ⟨by omega, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
             · simp only [e2, e1, e0, stateAt, fracIfEndEnv, fracBodyEnv, fracHeadEnv,
@@ -3733,6 +3779,11 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
             exact numFast_step_intPart (by simp only [e1, stateAt]; decide) hstep3
               (numFast_step_intPart (by simp only [e0, stateAt]; decide) hstep2
                 (numFast_step_intPart (by rw [hpc]; decide) hstep1 hpart))
+          · intro env0 sign hcarried
+            exact numFast_step_cells (by simp only [e1, stateAt]; decide) hstep3
+              (numFast_step_cells (by simp only [e0, stateAt]; decide) hstep2
+                (numFast_step_cells (by rw [hpc]; decide) hstep1 hcarried))
+          · simp only [e2, e1, e0, stateAt]
           · intro k
             rw [show 3 + k = 1 + (1 + (1 + k)) from by omega,
               runFuel_jump_prefix hstep1 (1 + (1 + k)),
@@ -3754,7 +3805,7 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
             (BlockEval.evalOperand_reg_of s.env s "%i.6552" _ hi)
             (BlockEval.evalOperand_reg_of s.env s "%fdig.0554" _ hid)
             (BlockEval.evalOperand_reg_of s.env s "%fr.0556" _ hfr) hj hbyte_s hdigit'
-        refine ⟨e0, 1, by omega, Or.inl (by simp only [e0, stateAt]), ?_, ?_, ?_⟩
+        refine ⟨e0, 1, by omega, Or.inl (by simp only [e0, stateAt]), ?_, ?_, ?_, ?_, ?_⟩
         · refine Or.inl ⟨by simp only [e0, stateAt], by simp only [e0, stateAt],
             by simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]; block_lk,
             by simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]; block_lk,
@@ -3773,6 +3824,9 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
             exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hval
         · intro idig ip hpart
           exact numFast_step_intPart (by rw [hpc]; decide) hstep1 hpart
+        · intro env0 sign hcarried
+          exact numFast_step_cells (by rw [hpc]; decide) hstep1 hcarried
+        · simp only [e0, stateAt]
         · intro k
           rw [runFuel_jump_prefix hstep1 k]
       · obtain ⟨hpre0, hi, hid, hfr⟩ := hback
@@ -3786,7 +3840,7 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
             (BlockEval.evalOperand_reg_of s.env s "%inc142" _ hi)
             (BlockEval.evalOperand_reg_of s.env s "%inc141" _ hid)
             (BlockEval.evalOperand_reg_of s.env s "%fr.4" _ hfr) hj hbyte_s hdigit'
-        refine ⟨e0, 1, by omega, Or.inl (by simp only [e0, stateAt]), ?_, ?_, ?_⟩
+        refine ⟨e0, 1, by omega, Or.inl (by simp only [e0, stateAt]), ?_, ?_, ?_, ?_, ?_⟩
         · refine Or.inl ⟨by simp only [e0, stateAt], by simp only [e0, stateAt],
             by simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]; block_lk,
             by simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]; block_lk,
@@ -3805,6 +3859,9 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
             exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hval
         · intro idig ip hpart
           exact numFast_step_intPart (by rw [hpc]; decide) hstep1 hpart
+        · intro env0 sign hcarried
+          exact numFast_step_cells (by rw [hpc]; decide) hstep1 hcarried
+        · simp only [e0, stateAt]
         · intro k
           rw [runFuel_jump_prefix hstep1 k]
   · obtain ⟨b', hbyte', hdigit'⟩ := fracRun_bound_nondigit hread hltn hb hle
@@ -3823,7 +3880,7 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
           (BlockEval.evalOperand_reg_of s.env s "%i.6552" _ hi)
           (BlockEval.evalOperand_reg_of s.env s "%fdig.0554" _ hid)
           (BlockEval.evalOperand_reg_of s.env s "%fr.0556" _ hfr) hj hbyte'_s hdigit'
-      refine ⟨e0, 1, by omega, Or.inl (by simp only [e0, stateAt]), ?_, ?_, ?_⟩
+      refine ⟨e0, 1, by omega, Or.inl (by simp only [e0, stateAt]), ?_, ?_, ?_, ?_, ?_⟩
       · refine Or.inl ⟨by simp only [e0, stateAt], by simp only [e0, stateAt],
           by simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]; block_lk,
           by simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]; block_lk,
@@ -3842,6 +3899,9 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
           exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hval
       · intro idig ip hpart
         exact numFast_step_intPart (by rw [hpc]; decide) hstep1 hpart
+      · intro env0 sign hcarried
+        exact numFast_step_cells (by rw [hpc]; decide) hstep1 hcarried
+      · simp only [e0, stateAt]
       · intro k
         rw [runFuel_jump_prefix hstep1 k]
     · obtain ⟨hpre0, hi, hid, hfr⟩ := hback
@@ -3855,7 +3915,7 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
           (BlockEval.evalOperand_reg_of s.env s "%inc142" _ hi)
           (BlockEval.evalOperand_reg_of s.env s "%inc141" _ hid)
           (BlockEval.evalOperand_reg_of s.env s "%fr.4" _ hfr) hj hbyte'_s hdigit'
-      refine ⟨e0, 1, by omega, Or.inl (by simp only [e0, stateAt]), ?_, ?_, ?_⟩
+      refine ⟨e0, 1, by omega, Or.inl (by simp only [e0, stateAt]), ?_, ?_, ?_, ?_, ?_⟩
       · refine Or.inl ⟨by simp only [e0, stateAt], by simp only [e0, stateAt],
           by simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]; block_lk,
           by simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]; block_lk,
@@ -3874,6 +3934,9 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
           exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hval
       · intro idig ip hpart
         exact numFast_step_intPart (by rw [hpc]; decide) hstep1 hpart
+      · intro env0 sign hcarried
+        exact numFast_step_cells (by rw [hpc]; decide) hstep1 hcarried
+      · simp only [e0, stateAt]
       · intro k
         rw [runFuel_jump_prefix hstep1 k]
 
@@ -3889,11 +3952,11 @@ def fracRunBoundLoop (mem0 : Mem) (p n i0 d0 : Nat) (bs : List UInt8) (cost : Na
   ExitWord := fracRunExit mem0 bs p n i0 d0
   step_exit := by
     intro r s c hinv hb
-    obtain ⟨e, j, hj, hexit, hword, _hcell, hrun⟩ := fracRun_step_exit hinv hb
+    obtain ⟨e, j, hj, hexit, hword, _hcell, _, _, hrun⟩ := fracRun_step_exit hinv hb
     exact ⟨e, j, by omega, hexit, hword, hrun⟩
   step_loop := by
     intro r s c hinv hb
-    obtain ⟨e, c', j, hj, hpc, hlt, hinv', _hcell, hrun⟩ := fracRun_step_loop hinv hb
+    obtain ⟨e, c', j, hj, hpc, hlt, hinv', _hcell, _, hrun⟩ := fracRun_step_loop hinv hb
     exact ⟨e, c', j, by omega, hpc, hlt, hinv', hrun⟩
   exit_at_zero := by
     intro s c h
@@ -3928,16 +3991,19 @@ theorem fracRun_step_end230 {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
     (hdigits : ∀ k, i0 ≤ k → k < n → IsDigitB (bs.getD k 0) = true) :
     ∃ (e : State) (j : Nat), j ≤ 4 ∧ fracRunEndWord bs p n i0 d0 e ∧
       (∀ (idig ip : BitVec 64), NumFastIntPart idig ip s → NumFastIntPart idig ip e) ∧
+      (∀ (env0 : Env) (sign : BitVec 1), NumFastCarried env0 sign s →
+        NumFastCarried env0 sign e) ∧
+      e.mem = s.mem ∧
       ∀ k, runFuel calls (j + k) numFastBody s =
         runFuel calls k numFastBody e := by
-  obtain ⟨e, j, hj, _, hexit, hcell, hrun⟩ := fracRun_step_exit hinv hb
+  obtain ⟨e, j, hj, _, hexit, hcell, hcarried, hmem, hrun⟩ := fracRun_step_exit hinv hb
   obtain ⟨_, _, _, _, _, _, _, _, hread, _, _, _⟩ := hinv
   rcases hexit with ⟨_, _, _, _, i1, hi0, hi1lt, _, _, _, b, hbytei, hbd⟩ | hend
   · have hbs : bs.getD i1 0 = b := getD_of_readBytes hread hi1lt hbytei
     have hdig := hdigits i1 hi0 hi1lt
     rw [hbs, hbd] at hdig
     exact absurd hdig (by decide)
-  · exact ⟨e, j, hj, hend, hcell, hrun⟩
+  · exact ⟨e, j, hj, hend, hcell, hcarried, hmem, hrun⟩
 
 /-- **The fraction run's end-of-lexeme loop.**  With every byte from the run's
 start to the lexeme's end a digit, the run's only bound is the lexeme's end, so
@@ -3956,11 +4022,11 @@ def fracRunEndBoundLoop (mem0 : Mem) (p n i0 d0 : Nat) (bs : List UInt8) (cost :
   ExitWord := fracRunEndWord bs p n i0 d0
   step_exit := by
     intro r s c hinv hb
-    obtain ⟨e, j, hj, hword, _hcell, hrun⟩ := fracRun_step_end230 hinv hb hdigits
+    obtain ⟨e, j, hj, hword, _hcell, _, _, hrun⟩ := fracRun_step_end230 hinv hb hdigits
     exact ⟨e, j, by omega, hword.1, hword, hrun⟩
   step_loop := by
     intro r s c hinv hb
-    obtain ⟨e, c', j, hj, hpc, hlt, hinv', _hcell, hrun⟩ := fracRun_step_loop hinv hb
+    obtain ⟨e, c', j, hj, hpc, hlt, hinv', _hcell, _, hrun⟩ := fracRun_step_loop hinv hb
     exact ⟨e, c', j, by omega, hpc, hlt, hinv', hrun⟩
   exit_at_zero := by
     intro s c h
@@ -4002,12 +4068,12 @@ abbrev fracRunEndFrameCells (mem0 : Mem) (p n i0 d0 : Nat) (bs : List UInt8)
     P := NumFastIntPart idig ip
     step_exit := by
       intro r s c hinv hb
-      obtain ⟨e, j, hj, hword, hcell, hrun⟩ := fracRun_step_end230 hinv hb hdigits
+      obtain ⟨e, j, hj, hword, hcell, _, _, hrun⟩ := fracRun_step_end230 hinv hb hdigits
       exact ⟨e, j, by simp only [fracRunEndBoundLoop]; omega, hword.1, hword,
         hcell idig ip, hrun⟩
     step_loop := by
       intro r s c hinv hb
-      obtain ⟨e, c', j, hj, hpc, hlt, hinv', hcell, hrun⟩ := fracRun_step_loop hinv hb
+      obtain ⟨e, c', j, hj, hpc, hlt, hinv', hcell, _, hrun⟩ := fracRun_step_loop hinv hb
       exact ⟨e, c', j, by simp only [fracRunEndBoundLoop]; omega, hpc, hlt, hinv',
         hcell idig ip, hrun⟩ }
 

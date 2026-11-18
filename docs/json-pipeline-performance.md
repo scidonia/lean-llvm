@@ -38,7 +38,9 @@ parse from the same session over the same corpus, with its own provenance, the
 stage ratio that pairing supports and its variance, and the comparisons it does
 and does not support. §"The composed route, against simdjson 5.0.5" then
 measures the assembled route beside the same simdjson arms over that corpus,
-with its own instrument, cost split, quotients and limits.
+with its own instrument, cost split, quotients and limits, and §"The workspace,
+fresh against reused" measures the same route with the caller's workspace
+rebuilt per document and with one workspace reused across the corpus.
 
 The note answers one question: **can a byte-mask JSON parser, in the shape the
 Lean development would lower to, be competitive with a mature native parser on
@@ -781,16 +783,19 @@ first invalid sequence and stops, while the units scan the whole document, so
 the quotient would price different amounts of work. The row is in both tables
 for completeness and is excluded from every statement about the ratio.
 
-Read as a distribution, the ratio says the composite is cheaper than the fused
-pass where the units are strongest. On the dense documents it is 1.12 on
-`syn-dense-4m` and 0.88 on `syn-dense-64k` on the P core, and 1.56 and 1.99 on
-the E core, whose 128-bit datapath pays twice for each 256-bit operation; on
-`route-s1-64k`, a tiled 37-structural-per-block document, stage 1 costs 1.23×
-the composite on the P core and 2.21× on the E core. The fused pass is cheaper
-on everything string- or UTF-8-heavy: 0.49-0.79 on the P core and 0.53-0.74 on
-the E core. Each quotient is only as sharp as its spread — `route-s1-64k`'s
-P-core row is 1.2 ± 0.1 (1.07-1.27), not 1.23 to three digits, while
-`syn-strings-64k`'s 0.49-0.56 is the tighter half of the same reading.
+Read as a distribution, the quotient is a **time ratio**, and its direction is
+fixed: below 1, simdjson's fused pass takes less time than the units'
+composite; above 1, the composite is cheaper. The composite wins on
+`syn-dense-4m` and on the tiled `route-s1-64k` — 1.12 and 1.23 on the P core,
+1.56 and 2.21 on the E core, whose 128-bit datapath pays twice for each 256-bit
+operation — and the fused pass wins on `syn-dense-64k`'s P-core row (0.88) and
+on every string- or UTF-8-heavy document: 0.49-0.79 on the P core and 0.53-0.74
+on the E core. The 0.49 on `syn-strings-64k` therefore means simdjson's stage 1
+takes roughly **half the time** of the composite, which the throughput columns
+corroborate (15.996 GB/s against 8.677); it does not mean the units are the
+faster side on that document. Each quotient is only as sharp as its spread —
+`route-s1-64k`'s P-core row is 1.2 ± 0.1 (1.07-1.27), not 1.23 to three digits,
+while `syn-strings-64k`'s 0.49-0.56 is the tighter half of the same reading.
 
 **Cadence.** Each headline row above is re-measured — not adjusted, and not
 re-derived from rows taken in another session — when one of these happens:
@@ -1278,3 +1283,232 @@ taken in another session -- when one of these happens:
 
 The route rows are tied to a binary by the sha256 the transcript prints, so a
 reader can tell whether the build they have is the one these numbers belong to.
+
+## The workspace, fresh against reused
+
+Status: **measured from this tree, reproducible from the commands below.** The
+instrument is `probes/json/route/workspace.cc`, built and run by
+`probes/json/route/workspace.sh`; the two sessions below are their stdout in
+`tests/json-units-bench/workspace-fresh-reused-transcript.txt` and
+`...-session-b.txt`. The subject is the caller's workspace discipline, not the
+kernel: the same six kernel translation units, the same pipeline call and the
+same admission code run in both arms.
+
+The command, from the repository root, after the units' corpus has been
+generated once (the script checks each document's size and sha256 against the
+record before it measures, and refuses if one differs):
+
+```bash
+nix develop -c bash tests/json-units-bench/bench.sh          # the corpus, once
+nix develop -c bash probes/json/route/workspace.sh --rounds 15 --reps 21 --core 0
+```
+
+### What the two arms are
+
+The four intervals are the route's own stages, in the order `RouteMain.lean`
+runs them:
+
+|interval|what it contains|
+|---|---|
+|`admission`|the two-phase decision: the depth walk over the structural delimiter sequence, then the character-policy scan where the walk saw a candidate byte (`admission.h`, the code the adapter calls)|
+|`staging`|the caller's window `[0,0,0] ++ doc ++ padding ++ 32` and the thirteen buffers in the record's capacities|
+|`native`|the adapter's copy-in (present in the fresh arm only), `leanllvm_json_pipeline`, and the tagged result's construction|
+|`consumer`|the values reading of `--consume`: the header decode, the arena sum, and one record materialised per event|
+
+`fresh` rebuilds the workspace on every call: the window and the thirteen
+buffers are allocated and zeroed per call, the adapter's thirteen copies are
+allocated and freed per call, and the consumer's record vector starts empty.
+It is `RouteMain.lean`'s `stage` and `shim.c`'s adapter in shape.
+
+`reused` allocates the same buffers once and keeps them: staging copies the
+document into the window and resets the five cursor words and the two carries
+(`sc`, `xcarry`), the pipeline writes the caller's own buffers, so the adapter's
+protective copy is absent, and the consumer's record vector keeps its capacity.
+That is one reuse discipline, and it deliberately folds two measures together:
+the allocation is removed *and* the pipeline's buffers are handed over in place.
+The report names the fold rather than hiding it, because the earlier note's
+measure 2 (avoid the copy) is a separate change that would need its own proof.
+
+The fresh arm also builds a result buffer per call, as the adapter does; the
+reused arm builds it in one persistent buffer. The reused arm allocates nothing
+inside any of the four intervals; the fresh arm's admission allocates the
+policy scan's class array (64 KiB on these documents), as the route does, and
+the admission quotient is what says that allocation is not the stage's cost.
+
+### The four intervals
+
+Session A, unit ns: the median of the fifteen round medians, with the minimum
+and maximum of those medians. Corpus: the three accepted 64 KiB documents of
+the units' corpus. Host: Intel Core Ultra 7 268V, 8 cores, `powersave`, pinned
+to cpu0; load average 1.18 at the start of the sweep and 1.25 after it.
+
+|document|arm|admission|staging|native|consumer|
+|---|---|---:|---:|---:|---:|
+|`syn-dense-64k`|fresh|69598 (67875-75292)|495210 (485456-514697)|690097 (679307-724074)|53478 (52350-56840)|
+|`syn-dense-64k`|reused|74640 (70648-79534)|1566 (1424-1681)|100616 (91838-107308)|45674 (42154-48887)|
+|`syn-strings-64k`|fresh|255030 (244330-267079)|507679 (491616-521378)|611599 (592657-637750)|4795 (4641-5448)|
+|`syn-strings-64k`|reused|267998 (257800-285055)|1575 (1478-1658)|42206 (40148-44428)|3649 (3330-3770)|
+|`syn-utf8-64k`|fresh|389699 (376635-415514)|492412 (484030-515838)|559662 (542542-573997)|5848 (5662-6363)|
+|`syn-utf8-64k`|reused|412927 (390913-447803)|1475 (1423-1585)|21927 (21346-23283)|4389 (4275-4672)|
+
+### The paired quotients
+
+Each cell is one arm over the other inside one round, then reduced across the
+fifteen rounds to its median and range. Session A and session B are separate
+runs of the same command on the same host; the second is the reproducibility
+check.
+
+|document|admission A / B|staging A / B|native A / B|consumer A / B|
+|---|---|---|---|---|
+|`syn-dense-64k`|1.060 / 1.051|0.003 / 0.003|0.145 / 0.145|0.849 / 0.827|
+|`syn-strings-64k`|1.062 / 1.081|0.003 / 0.003|0.069 / 0.069|0.738 / 0.733|
+|`syn-utf8-64k`|1.055 / 1.059|0.003 / 0.003|0.040 / 0.038|0.747 / 0.750|
+
+The session-A ranges, for the cells whose spread is not negligible: admission
+1.060 (0.994-1.123), 1.062 (0.965-1.118) and 1.055 (0.989-1.149); staging
+0.003 (0.003-0.003) on all three; native 0.145 (0.132-0.158), 0.069
+(0.066-0.073) and 0.040 (0.037-0.042); consumer 0.849 (0.791-0.915), 0.738
+(0.670-0.800) and 0.747 (0.700-0.803). Session B's ranges cover the same
+intervals.
+
+Four readings of the table, and one it refuses:
+
+- **Staging collapses.** Reuse leaves 0.3% of it on every document (the
+  quotient is 0.003 in every round): 0.49-0.51 ms of allocation and zero-fill
+  become 1.5-1.6 µs of copying the 64 KiB document into a window whose cursors
+  are reset. This is the measure's whole claim, and it is the one cell the two
+  sessions agree on to three digits.
+- **Admission does not collapse.** It is 1.055-1.062× the fresh interval, with
+  ranges that cross 1: the decision is a scan of the document's bytes (the
+  depth walk and, where the walk saw a candidate, the policy scan's backward
+  and forward passes), not workspace construction. Its one allocation, the
+  policy scan's 64 KiB class array, is not a measurable part of it; giving the
+  scan a persistent array changes nothing the row resolves. The earlier
+  suggestion that admission and staging both collapse to "the update cost"
+  holds for staging alone.
+- **Native falls to 0.04-0.15×, and that is not a parse speed-up.** Both arms
+  call `leanllvm_json_pipeline` on the same bytes; the fresh arm's interval
+  pays for the thirteen fresh adapter allocations, their page faults and the
+  copies. The difference is allocation and copy work, not parse work.
+- **The consumer falls to 0.74-0.85×.** The fresh reading grows its record
+  vector from empty on every reading; the reused one clears a vector that keeps
+  its capacity. No algorithm changes.
+
+### The ratio that matters, and the one it is not
+
+`native ÷ parse` divides the route's native interval by simdjson 5.0.5's full
+parse of the same bytes in the same round: `iterate` plus the complete value
+traversal, over a `padded_string` staged before the clock, at the units'
+compiler line. simdjson's parse in this session: 74148 (71608-84322) ns on
+`syn-dense-64k`, 11538 (11038-13723) on `syn-strings-64k` and 19953
+(16764-22613) on `syn-utf8-64k`; session B read 78492, 13145 and 21153 ns.
+
+|document|fresh `native ÷ parse` A / B|reused `native ÷ parse` A / B|
+|---|---|---|
+|`syn-dense-64k`|9.403 (8.099-9.765) / 8.888|1.360 (1.191-1.431) / 1.278|
+|`syn-strings-64k`|53.126 (44.113-55.976) / 46.812|3.630 (3.091-3.772) / 3.341|
+|`syn-utf8-64k`|27.716 (24.797-34.057) / 26.632|1.107 (0.983-1.389) / 1.007|
+
+Session B's own ranges: fresh 8.888 (8.012-9.388), 46.812 (43.227-54.009) and
+26.632 (24.295-35.646); reused 1.278 (1.151-1.466), 3.341 (2.995-3.724) and
+1.007 (0.919-1.391). The interval quotients agree between the sessions to
+within a few percent; these cells are only as sharp as simdjson's own
+run-to-run spread on the same document, which is why the ranges, not the
+medians alone, are the reading.
+
+The fresh cells are not the earlier section's 1.68, 5.98 and 4.32, and they do
+not supersede them. Those figures were taken on a host where a fresh staging of
+the same size cost 42-164 µs; here it costs 492-508 µs. The route binary
+itself, run on the same files in the same session, reports `staging_ns`
+392281-415423 and `route_ns` 693725-782787 in its own `--consume` rows at one
+repetition each — a sample of the regime rather than a row of its own — quoted
+in the transcript, so the fresh arm's regime is the route's on this host and
+not an artefact of the C harness. The reused arm removes that term, which is
+why its cells are the ones that price parse work: 1.1-3.6× simdjson's full
+parse on these three documents, with `syn-strings-64k` at 3.6× the outlier.
+
+That 3.6× is also where the **corrected interpretation** belongs, because it is
+easy to conflate with the stage-1 ratio. The earlier stage table's 0.49 on
+`syn-strings-64k` is a time ratio: simdjson's stage 1 takes about half the time
+of the units' composite there (16.0 GB/s against 8.68). It says the fused pass
+is faster *on that stage*, not that the units are faster, and it does not
+carry to the whole route: the composite's stage-1 share at 8.68 GB/s is about
+7.5 µs of the reused arm's 42 µs native interval on the same document (an
+arithmetic over the recorded rows, not a same-session measurement), so the
+remaining stage 2 and escape work is most of it. Two full parses of the same
+bytes (3.6×) and one stage reached two ways (0.49×) are different questions
+with different answers, and neither is evidence for the other. The stage table
+above states the same direction literally: 0.49 is stage 1's time over the
+composite's.
+
+### Alternation, cursor reset and stale bytes
+
+The reused arm rotates the documents inside every round
+(`(k + round + rep) mod 3`), and the fresh and reused arms alternate which goes
+first by round, so no document always follows the same predecessor and no arm
+always runs first. Staging resets only the five cursor words and the two
+carries; it does not zero the arena or the event stream, so a call sees the
+previous document's bytes in both.
+
+The following checks held on every act, timed or not:
+
+- **Output.** The tagged header's words, the arena bytes, the event bytes, the
+  consumer's token count, value count and both checksums equal the reference
+  observation's for the same document, in both arms and in every round.
+- **Error policy.** `route-s1-64k` — the route corpus document the admission
+  admits and stage 2 refuses — returns verdict 0 and error offset 63 in both
+  arms, with identical observation words and payloads. This is the path where
+  a reused workspace could change an error, because the same buffers both
+  accept and refuse; a document the admission refuses never reaches the
+  workspace in the route, since it takes the fallback, so there is no reused
+  buffer for its error policy to depend on.
+- **The stale tail is present, not merely absent.** Across the sweep the reused
+  workspace carried 38,604,072 bytes past the current document's `nev`, in 412
+  transitions with a nonzero stale tail; the consumer still read only `nev`
+  bytes and returned the reference sums. The equality is therefore a statement
+  about stale bytes that were there, not about zero-filled buffers.
+- **The independent cross-check.** The harness's reference observation for each
+  document equals the route binary's own `--consume` row for the same file:
+  verdict, `ndst`, `nev`, tokens, values, `foldsum`, `valuessum`. The C
+  transcription of the route's reading and the Lean route's reading agree on
+  these identities.
+
+### What this does and does not establish
+
+- **It establishes** that on this corpus, with this workspace discipline, the
+  staging interval is workspace construction and disappears under reuse; that
+  the admission interval is not; that the native and consumer intervals fall by
+  the allocation and growth they no longer do; and that alternating documents
+  through one workspace changes no output under the cursor reset the reused
+  arm performs, with stale bytes demonstrably present.
+- **It does not establish a working set or an allocation policy.** The reused
+  arm is a measurement discipline, not a deployed caller; the handoff's
+  position is that a new reuse discipline needs its own wrapper proof before
+  adoption, and nothing here supplies one.
+- **Nothing about an idle host for the fresh arm.** Load averaged 1.18 (session
+  A) and 1.25 (session B) on a desktop host with browser and session processes
+  running, so the host was not idle and the fresh absolutes are this host's
+  allocation regime rather than a stable constant. The paired quotients inside
+  a round are the cells that survive that: the interval quotients repeat
+  between the two sessions to within a few percent, and the `native ÷ parse`
+  cells carry the spread printed beside them.
+- **One host, one core class, one governor.** cpu0 only; the E-core class was
+  not measured in this experiment. The 4 MiB documents are outside the route's
+  one-mebibyte domain and have no route interval.
+- **Nothing about a different consumer.** The consumer is the harness's C
+  transcription of `--consume`'s values reading; its identities are checked
+  against the route, its timing is not the Lean runtime's. The admission
+  interval likewise omits the Lean runtime's small result allocations.
+- **Nothing about simdjson's parity of work.** Both sides parse the same bytes
+  but produce different artifacts (an event stream and an on-demand DOM); the
+  quotient is a cost ratio for a job both do.
+
+### Cadence
+
+Re-measure the rows above — not adjust them — when any of these changes:
+
+|row|re-measure when|
+|---|---|
+|all four intervals and their quotients|`workspace.cc`, `workspace.sh`, `admission.h`, `policy.c`, `shim.c`, any kernel source the harness links, the corpus, or the route's staging shape changes|
+|`native ÷ parse`|the above, and a change of simdjson release, of the realised dev/library outputs (their sha256s are in the transcripts), or of the harness's compiler line|
+|the stale-tail and refusal controls|any change to the staging reset, the consumer walk, or the admission's escape-guard fact|

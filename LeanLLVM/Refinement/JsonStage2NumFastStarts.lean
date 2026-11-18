@@ -1539,6 +1539,8 @@ theorem fracRun_start {calls : Calls} {env : Env} {s : State} {a n : Nat}
       fracRunInv s.mem a n (i5 + 1) 0 bs (n - (i5 + 1)) e 0 ∧
       (∀ (idig ip : BitVec 64),
         NumFastIntPart idig ip (stateAt env s) → NumFastIntPart idig ip e) ∧
+      (∀ (env0 : Env) (sign : BitVec 1),
+        NumFastCarried env0 sign (stateAt env s) → NumFastCarried env0 sign e) ∧
       ∀ k, runFuel calls (6 + k) numFastBody (stateAt env s) =
         runFuel calls k numFastBody e := by
   have hi63 : i5 < 2 ^ 63 := by omega
@@ -1646,6 +1648,13 @@ theorem fracRun_start {calls : Calls} {env : Env} {s : State} {a n : Nat}
             (numFast_step_intPart (by simp only [stateAt]; decide) h3s
               (numFast_step_intPart (by simp only [stateAt]; decide) h2s
                 (numFast_step_intPart (by simp only [stateAt]; rw [hpc]; decide) h1s hpart))))),
+    fun env0 sign hcarried =>
+      numFast_step_cells (by simp only [stateAt]; decide) h6s
+        (numFast_step_cells (by simp only [stateAt]; decide) h5s
+          (numFast_step_cells (by simp only [stateAt]; decide) h4s
+            (numFast_step_cells (by simp only [stateAt]; decide) h3s
+              (numFast_step_cells (by simp only [stateAt]; decide) h2s
+                (numFast_step_cells (by simp only [stateAt]; rw [hpc]; decide) h1s hcarried))))),
     fun k => by
       rw [show 6 + k = 1 + (1 + (1 + (1 + (1 + (1 + k))))) from by omega,
         runFuel_jump_prefix h1s, runFuel_jump_prefix h2s, runFuel_jump_prefix h3s,

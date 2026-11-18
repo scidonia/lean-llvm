@@ -1373,6 +1373,23 @@ on the route writes them; the fraction run's own exit word is the gate's
 predecessor and its four counters, and `t1_fracRun_tie`'s bit tests are re-derived
 from the model's digit count.
 
+**The fraction route's one run.**  `t1_fracEnd230_run` reads `%out`, the sign and
+the two table symbols at the state it starts from, and the fraction run's arms
+carried only the integer part's two cells, so the exit and the conversion did not
+compose.  `JsonStage2NumFastFraction` closes that seam: the run's arms carry the
+kept cells and the sign (their conditional `numFast_step_cells` transport) and the
+exit arms the staging (`e.mem = s.mem`, since every block on the route is a
+`stateAt`), the dispatch's six steps carry the same three from the `.` test,
+`fracRunEndFrameCarried` lifts them through the end-of-lexeme loop, and
+`fracScan_end230Carried` composes the dispatch and the run to the merge.
+`fracScan_t1_arm` spends them on `t1_fracEnd230_run`: the tier-1 arm at the `.`
+test, returning `1` with `strtodSpec`'s bytes at `%out`, and
+`fracScan_t1_arm_of_dispatch` is that statement at the staged entry state, where
+the two cells `if.end68` installs (`1 + (i1 - i0)` and
+`digitFold bs (i0 - d0) …` at the dispatch's own `i0`/`d0`) are tied to the
+model's `intDigits`/`digitsNat d.ip`.  `intScan_to_dot`'s left disjunct is the
+dispatch's half of that composition, and it now carries those two cells.
+
 **What the two chains leave.**  The exponent exit's word names the four cells, the
 stop index and — through `expRunStop` — the cursor and the length, so
 `expExit_merge`'s `%p`/`%n` are read off the chain's exit; what neither

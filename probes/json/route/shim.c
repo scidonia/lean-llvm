@@ -55,6 +55,7 @@
 #include "pipeline.h"
 #include "entry.h"
 #include "policy.h"
+#include "admission.h"
 
 /* The proved stage-1 depth counter's one entry point, at the ABI
    `tests/v16/depth_count.ll` defines and `DepthCountRefine` proves: the
@@ -311,117 +312,7 @@ enum policy_tag {
   POLICY_ALLOC = 3    /* the scan's class array could not be allocated */
 };
 
-/* The class of an admission result. */
-enum admit_tag {
-  ADMIT_MEASURED = 0, /* the scan ran; the clause words follow */
-  ADMIT_DOMAIN = 2    /* a precondition failed before the scan */
-};
-
-/* The clause that refused the document, in `admission`'s own order. */
-enum admit_clause {
-  ADMIT_NONE = 0,
-  ADMIT_EMPTY = 1,
-  ADMIT_LENGTH = 2,
-  ADMIT_DEPTH = 3
-};
-
-/* The document's 64-byte blocks, without the overflow `(n + 63) / 64` has at
-   `n` near `UINT64_MAX`. */
-static uint64_t block_count(uint64_t n) { return n / 64 + (n % 64 != 0); }
-
-/* What the document's structural delimiter sequence measures. */
-typedef struct {
-  int64_t max;        /* the maximum running depth: the clause's number */
-  int64_t final;      /* the proved counter's recombined final depth */
-  int64_t walk_final; /* the accumulator's own final depth */
-  int64_t sum;        /* the proved counter's recombined prefix-depth sum */
-  uint64_t tokens;    /* structural delimiters the fold stepped over */
-  uint64_t blocks;    /* the document's 64-byte blocks */
-  int candidate;      /* a quote or a backslash byte anywhere in the document */
-} depth_facts;
-
-/* The block's structural lanes, through the proved depth counter and
-   recombined.  The unit starts every call at depth 0, so the block's prefix
-   depths are its own plus the depth carried into it, which enters its sum once
-   per lane; the carry after the block is the sum of the spans. */
-static void depth_flush(const uint8_t *b, uint64_t n, uint8_t *tail,
-                        uint64_t block, const uint32_t *lanes, uint64_t cnt,
-                        int64_t *into, int64_t *sum) {
-  const uint8_t *p = b + 64 * block;
-  uint64_t rest = n - 64 * block;
-  if (rest < 64) {
-    memset(tail, 0, 64);
-    memcpy(tail, p, (size_t)rest);
-    p = tail;
-  }
-  int64_t stats[2];
-  int64_t span = depth_count(p, (const int32_t *)lanes, (int64_t)cnt, stats);
-  *sum += stats[1] + (int64_t)cnt * *into;
-  *into += span;
-}
-
-/* The document's structural token walk, and the maximum it reaches.
-
-   `structTokensFrom` is the rule: at a `"` the reference body scan runs and the
-   walk continues past its stop, and a body that scan refuses ends the sequence
-   there; any other byte is a structural delimiter if it is one of `{`/`[`/`}`/
-   `]`, stepped `+1`/`-1`.  The walk is by position, not by the classifier's
-   masks: `in_string` is the unescaped-quote reading, and a quote a backslash run
-   precedes is *not* escaped to this walk -- at the top level there is no escape
-   state, so `\"` opens a body the classifier would not open.  That document
-   (`sweep-114` in the gate's fixed-seed set) is why the string state is carried
-   here and the delimiter bytes are read by the walk.
-
-   The maximum is tracked as the running depth grows, because neither statistic
-   the proved counter returns determines one; the lanes the walk steps are handed
-   to that counter per block, so the two arithmetics are over one list.  The
-   candidate flag is the walk's own reading of the bytes it visits: a quote byte
-   exists exactly when the walk visited one -- every body is opened by a quote the
-   walk sees -- and a backslash outside a body is visited too, so the flag is true
-   whenever the document carries either byte. */
-static void depth_measure(const uint8_t *b, uint64_t n, depth_facts *f) {
-  uint32_t lanes[64];
-  uint8_t tail[64] __attribute__((aligned(32)));
-  uint64_t nb = block_count(n);
-  int64_t at = 0, into = 0, sum = 0, max = 0;
-  uint64_t tokens = 0, nl = 0, block = 0;
-  int cand = 0;
-
-  for (uint64_t i = 0; i < n;) {
-    uint8_t c = b[i];
-    if (c == 0x22) { /* a string body, or the sequence's end */
-      uint64_t stop;
-      cand = 1;
-      if (leanllvm_route_body_stop(b, n, i + 1, &stop)) break;
-      i = stop;
-      continue;
-    }
-    if (c == 0x5C) cand = 1;
-    if (c == 0x5B || c == 0x7B || c == 0x5D || c == 0x7D) {
-      int open = c == 0x5B || c == 0x7B;
-      uint64_t blk = i / 64;
-      if (blk != block) {
-        if (nl) depth_flush(b, n, tail, block, lanes, nl, &into, &sum);
-        nl = 0;
-        block = blk;
-      }
-      lanes[nl++] = (uint32_t)(i & 63);
-      at += open ? 1 : -1;
-      if (at > max) max = at;
-      tokens++;
-    }
-    i++;
-  }
-  if (nl) depth_flush(b, n, tail, block, lanes, nl, &into, &sum);
-
-  f->max = max;
-  f->final = into;
-  f->walk_final = at;
-  f->sum = sum;
-  f->tokens = tokens;
-  f->blocks = nb;
-  f->candidate = cand;
-}
+/* The class of an admission result and its clauses are `admission.h`'s. */
 
 /* A word-addressed header, `words` words wide, no payload. */
 static lean_object *word_result(size_t bytes, const uint64_t *w, size_t words) {
@@ -449,31 +340,17 @@ static lean_object *admit_result(uint64_t tag, uint64_t detail, uint64_t want,
 }
 
 /* The document's bytes, which the caller provides the length of: `n > doc.size`
-   is the one precondition, and it is checked before a byte is read. */
+   is the one precondition, and it is checked before a byte is read.  The pass
+   itself is `admission.h`'s, which the workspace probe calls directly; this
+   wrapper only packs its answer into the header `RouteMain.lean` decodes. */
 static lean_object *admit_impl(lean_object *doc, uint64_t n, uint64_t maxInput,
                                uint64_t maxDepth) {
-  uint64_t bytes = array_bytes(doc);
-  if (n > bytes)
-    return admit_result(ADMIT_DOMAIN, PC_DOC, n, bytes, 0, 0, 0, 0, ADMIT_NONE,
-                        0);
-  if (n == 0)
-    return admit_result(ADMIT_MEASURED, 0, 1, 0, 0, 0, 0, 0, ADMIT_EMPTY, 0);
-  if (n > maxInput)
-    return admit_result(ADMIT_MEASURED, 0, maxInput, n, 0, 0, 0, 0,
-                        ADMIT_LENGTH, 0);
-
   const uint8_t *b = lean_sarray_cptr(doc);
-  depth_facts f;
-  depth_measure(b, n, &f);
-  uint64_t depth = (uint64_t)f.max;
-  uint64_t clause = depth > maxDepth ? ADMIT_DEPTH : ADMIT_NONE;
-  uint64_t verdict = clause == ADMIT_NONE ? 1 : 0;
-  /* The escape-list guard, one presence pass over the same bytes.  Only a
-     document the native clauses admit can reach the pipeline, so a refused one
-     is not scanned: the fact costs nothing on a row the route refuses. */
-  uint64_t skip = verdict ? (uint64_t)leanllvm_route_escape_can_skip(b, n) : 0;
-  return admit_result(ADMIT_MEASURED, 0, maxDepth, depth, depth,
-                      (uint64_t)f.candidate, f.blocks, verdict, clause, skip);
+  admit_facts f;
+  admit_phase1(b, n, array_bytes(doc), maxInput, maxDepth, &f);
+  return admit_result(f.tag, f.tag == ADMIT_DOMAIN ? PC_DOC : 0, f.want, f.got,
+                      f.depth, f.candidate, f.blocks, f.verdict, f.clause,
+                      f.escape_skip);
 }
 
 /* The depth facts, as their own pass over the document. */
@@ -484,7 +361,7 @@ static lean_object *depth_impl(lean_object *doc, uint64_t n) {
     return word_result(DEPTH_HEADER_BYTES, w, 9);
   }
   depth_facts f = {0, 0, 0, 0, 0, 0, 0};
-  if (n) depth_measure(lean_sarray_cptr(doc), n, &f);
+  if (n) admit_depth_measure(lean_sarray_cptr(doc), n, &f);
   uint64_t w[9] = {ADMIT_MEASURED, 0, 0, 0, (uint64_t)f.final, (uint64_t)f.sum,
                    f.tokens, (uint64_t)f.max, (uint64_t)f.walk_final};
   return word_result(DEPTH_HEADER_BYTES, w, 9);
@@ -543,8 +420,8 @@ static lean_object *route_impl(
   uint64_t past = winLen < 3 ? 0 : winLen - 3;
   if (winLen < 3 || n > past)
     return failure(ROUTE_DOMAIN, PC_WINDOW, n, past);
-  if (block_count(n) > past / 64)
-    return failure(ROUTE_DOMAIN, PC_WINDOW_BLOCKS, block_count(n), past / 64);
+  if (admit_block_count(n) > past / 64)
+    return failure(ROUTE_DOMAIN, PC_WINDOW_BLOCKS, admit_block_count(n), past / 64);
   if (array_bytes(sc) < 24) return failure(ROUTE_DOMAIN, PC_SC, 24, array_bytes(sc));
   if (array_bytes(mk) < 48) return failure(ROUTE_DOMAIN, PC_MK, 48, array_bytes(mk));
   if (array_bytes(entw) < 8)

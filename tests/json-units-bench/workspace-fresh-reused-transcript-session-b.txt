@@ -1,0 +1,122 @@
+lean-llvm: Lean (version 4.35.0, Release)
+command: nix develop -c bash probes/json/route/workspace.sh --rounds 15 --reps 21 --core 0
+harness: probes/json/route/workspace.cc sha256=b27fc9a908c234c8eee404016b0e99eb768d7e967529e491c7a730b50d8ec80f
+script: probes/json/route/workspace.sh sha256=cda20d25bd46f5cadff37ada041e5ecefade5def00617f1c5fc99e085d5afcba
+admission source: probes/json/route/admission.h sha256=167b21241b8881498132831bea4df91a8366f08c5fa5007275ad447b2a766440
+guard source: probes/json/route/escape_guard.h sha256=34d733ea8c79b173d7f31324722a424a1a1ccaf9c7f4d9806a003e0b1353702d
+policy source: probes/json/route/policy.c sha256=c8673bfabaa3a848847d1d9ecddab95f9dff385f46eded3fbdc2a90b522873cf
+simdjson: 5.0.5; dev: /nix/store/m2i8165bayxxgzj3fbvdg6gihz6na93d-simdjson-5.0.5-dev
+simdjson lib: libsimdjson.so.34.0.0 sha256=9b2368aaa42dbfbf125cedea26c86914b622899c4ebeaf3f9fc7fd7bbcdd7184
+header: simdjson.h sha256=869e8a4ff285cec36bc79d4a671a433158391a4f1898bb1c3b1f6e654b9547ae
+route binary: /home/gavin/dev/Scidonia/lean-llvm/probes/json/route/build/leanllvm-json-route sha256=a9e37c684223fb0d9950c67c8c91723997bfc5212205c4ce595f6e1df7714a37 mtime=2026-11-18 00:17:20.061016427 +0100
+compiler: clang++ (clang version 21.1.8)
+kernel flags: -O2 -march=x86-64-v3 -mpclmul -std=gnu11 -falign-loops=64 -falign-functions=64 -I /home/gavin/dev/Scidonia/lean-llvm/kernel/json
+harness flags: -O3 -march=x86-64-v3 -mpclmul -std=c++17 -falign-loops=64 -falign-functions=64
+host: Linux 6.17.0-1033-oem x86_64
+cpu: Intel(R) Core(TM) Ultra 7 268V
+cpus online: 8; pinned to: cpu0
+scaling governor: powersave
+load average at start: 1.25 1.28 1.69 1/3302 1294890
+rounds: 15; repetitions per arm per round: 21
+build directory: /home/gavin/dev/Scidonia/lean-llvm/probes/json/route/build/workspace
+
+corpus: /home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build/corpus
+file                      bytes sha256
+syn-dense-64k.json        65536 3d9e0237ec66adb2d77848a24f1998fa4b56b4dbe77a11431b02176fcd162995
+syn-strings-64k.json      65536 bd007090d7a5ab09a1fc69c0b96879f101dbf8b3f13a300d7d3e46127d26fb12
+syn-utf8-64k.json         65536 f95f4aeaac083d5d97ff98f9ad6aa09e4ed8c905d89e1bf3a3177179533400a4
+route-s1-64k.json         65536 41f918853d55dad0e05d3ec03682e037925759031632f045a755db5a5173535c
+
+## the route binary's own `--consume` rows (unit ns; repetitions: 1, for the identities)
+row doc=syn-dense-64k.json size=65536 path=fast reps=1 read_ns=24811 admission_ns=78708 staging_ns=421599 route_ns=736691 copyout_ns=- consume_fold_ns=183799 consume_values_ns=373909 verdict=1 ndst=0 nev=132638 tokens=16182 values=16182 walked=1 foldsum=6121954025005732784 valuessum=6121954025005732784
+row doc=syn-strings-64k.json size=65536 path=fast reps=1 read_ns=26001 admission_ns=288522 staging_ns=396581 route_ns=665848 copyout_ns=- consume_fold_ns=91822 consume_values_ns=116038 verdict=1 ndst=55931 nev=8907 tokens=687 values=687 walked=1 foldsum=9223372036880353449 valuessum=9223372036880353449
+row doc=syn-utf8-64k.json size=65536 path=fast reps=1 read_ns=28840 admission_ns=465757 staging_ns=436243 route_ns=732492 copyout_ns=- consume_fold_ns=32093 consume_values_ns=179233 verdict=1 ndst=0 nev=24143 tokens=1859 values=1859 walked=1 foldsum=9223372036915455257 valuessum=9223372036915455257
+
+instrument workspace=1 simdjson=5.0.5 implementation=haswell rounds=15 reps=21
+compiler: Clang 21.1.8
+reference doc=syn-dense-64k size=65536 verdict=1 nk=37215 nxp=0 ndst=0 nev=132638 err=0 tokens=16182 values=16182 foldsum=6121954025005732784 valuessum=6121954025005732784 walked=1
+reference doc=syn-strings-64k size=65536 verdict=1 nk=2056 nxp=1772 ndst=55931 nev=8907 err=0 tokens=687 values=687 foldsum=9223372036880353449 valuessum=9223372036880353449 walked=1
+reference doc=syn-utf8-64k size=65536 verdict=1 nk=5572 nxp=0 ndst=0 nev=24143 err=0 tokens=1859 values=1859 foldsum=9223372036915455257 valuessum=9223372036915455257 walked=1
+refusal-reference doc=route-s1-64k verdict=0 nk=39276 nxp=1551 ndst=0 nev=159 err=63
+round=0 doc=syn-dense-64k fresh_first=1 admission=70515 staging=490042 native=718792 consumer=56957 reused_admission=75691 reused_staging=1558 reused_native=100744 reused_consumer=44896 simdjson_parse=79144
+round=0 doc=syn-strings-64k fresh_first=1 admission=262661 staging=516479 native=598397 consumer=5047 reused_admission=273775 reused_staging=1527 reused_native=40796 reused_consumer=3451 simdjson_parse=11739
+round=0 doc=syn-utf8-64k fresh_first=1 admission=391378 staging=485853 native=554440 consumer=5787 reused_admission=431806 reused_staging=1460 reused_native=21210 reused_consumer=4368 simdjson_parse=20252
+round=1 doc=syn-dense-64k fresh_first=0 admission=73527 staging=488777 native=690109 consumer=53464 reused_admission=80914 reused_staging=1708 reused_native=107748 reused_consumer=47909 simdjson_parse=73506
+round=1 doc=syn-strings-64k fresh_first=0 admission=257080 staging=501551 native=631450 consumer=5533 reused_admission=261632 reused_staging=1571 reused_native=42294 reused_consumer=3654 simdjson_parse=13489
+round=1 doc=syn-utf8-64k fresh_first=0 admission=381803 staging=491998 native=567195 consumer=6265 reused_admission=412067 reused_staging=1524 reused_native=22733 reused_consumer=4523 simdjson_parse=16340
+round=2 doc=syn-dense-64k fresh_first=1 admission=68100 staging=487402 native=672200 consumer=52623 reused_admission=72434 reused_staging=1533 reused_native=97616 reused_consumer=45669 simdjson_parse=75630
+round=2 doc=syn-strings-64k fresh_first=1 admission=259068 staging=494850 native=632210 consumer=5011 reused_admission=280658 reused_staging=1568 reused_native=43186 reused_consumer=3680 simdjson_parse=11867
+round=2 doc=syn-utf8-64k fresh_first=1 admission=385206 staging=490254 native=558511 consumer=5844 reused_admission=406166 reused_staging=1474 reused_native=20872 reused_consumer=4379 simdjson_parse=20722
+round=3 doc=syn-dense-64k fresh_first=0 admission=68991 staging=487899 native=671019 consumer=52541 reused_admission=72489 reused_staging=1552 reused_native=99453 reused_consumer=44799 simdjson_parse=73599
+round=3 doc=syn-strings-64k fresh_first=0 admission=241234 staging=498040 native=605731 consumer=4623 reused_admission=260800 reused_staging=1466 reused_native=40924 reused_consumer=3345 simdjson_parse=11500
+round=3 doc=syn-utf8-64k fresh_first=0 admission=392529 staging=497117 native=545871 consumer=5788 reused_admission=412982 reused_staging=1545 reused_native=22866 reused_consumer=4620 simdjson_parse=20891
+round=4 doc=syn-dense-64k fresh_first=1 admission=70322 staging=505095 native=708313 consumer=53466 reused_admission=71323 reused_staging=1568 reused_native=102631 reused_consumer=46878 simdjson_parse=79667
+round=4 doc=syn-strings-64k fresh_first=1 admission=253287 staging=524115 native=613867 consumer=5254 reused_admission=279381 reused_staging=1590 reused_native=42379 reused_consumer=3780 simdjson_parse=12180
+round=4 doc=syn-utf8-64k fresh_first=1 admission=400926 staging=507027 native=555384 consumer=5828 reused_admission=431490 reused_staging=1543 reused_native=22238 reused_consumer=4602 simdjson_parse=21891
+round=5 doc=syn-dense-64k fresh_first=0 admission=73492 staging=494288 native=681170 consumer=52512 reused_admission=76090 reused_staging=1576 reused_native=105939 reused_consumer=48612 simdjson_parse=82917
+round=5 doc=syn-strings-64k fresh_first=0 admission=261974 staging=502515 native=586213 consumer=4623 reused_admission=265885 reused_staging=1541 reused_native=42068 reused_consumer=3543 simdjson_parse=12434
+round=5 doc=syn-utf8-64k fresh_first=0 admission=381775 staging=489403 native=563346 consumer=6101 reused_admission=401503 reused_staging=1432 reused_native=21217 reused_consumer=4284 simdjson_parse=21153
+round=6 doc=syn-dense-64k fresh_first=1 admission=72043 staging=479765 native=683774 consumer=53206 reused_admission=70803 reused_staging=1494 reused_native=96990 reused_consumer=44018 simdjson_parse=81869
+round=6 doc=syn-strings-64k fresh_first=1 admission=250200 staging=499508 native=604890 consumer=4701 reused_admission=272905 reused_staging=1543 reused_native=41831 reused_consumer=3483 simdjson_parse=11746
+round=6 doc=syn-utf8-64k fresh_first=1 admission=387790 staging=485396 native=553960 consumer=5810 reused_admission=420673 reused_staging=1525 reused_native=20958 reused_consumer=4359 simdjson_parse=22801
+round=7 doc=syn-dense-64k fresh_first=0 admission=66641 staging=491505 native=694130 consumer=52458 reused_admission=73074 reused_staging=1532 reused_native=100848 reused_consumer=45715 simdjson_parse=77607
+round=7 doc=syn-strings-64k fresh_first=0 admission=267402 staging=512233 native=613432 consumer=4690 reused_admission=263736 reused_staging=1449 reused_native=42304 reused_consumer=3531 simdjson_parse=11358
+round=7 doc=syn-utf8-64k fresh_first=0 admission=401809 staging=502066 native=559710 consumer=5785 reused_admission=421628 reused_staging=1605 reused_native=22830 reused_consumer=4818 simdjson_parse=16788
+round=8 doc=syn-dense-64k fresh_first=1 admission=69840 staging=494270 native=690662 consumer=54520 reused_admission=70324 reused_staging=1529 reused_native=99751 reused_consumer=43960 simdjson_parse=77331
+round=8 doc=syn-strings-64k fresh_first=1 admission=259069 staging=521031 native=616021 consumer=5219 reused_admission=286273 reused_staging=1572 reused_native=42681 reused_consumer=3729 simdjson_parse=14251
+round=8 doc=syn-utf8-64k fresh_first=1 admission=396111 staging=489637 native=564779 consumer=5834 reused_admission=420396 reused_staging=1538 reused_native=22166 reused_consumer=4389 simdjson_parse=19154
+round=9 doc=syn-dense-64k fresh_first=0 admission=74604 staging=512375 native=719832 consumer=57273 reused_admission=77106 reused_staging=1634 reused_native=102789 reused_consumer=47175 simdjson_parse=83982
+round=9 doc=syn-strings-64k fresh_first=0 admission=247146 staging=504072 native=615359 consumer=5149 reused_admission=262968 reused_staging=1558 reused_native=43325 reused_consumer=3515 simdjson_parse=13403
+round=9 doc=syn-utf8-64k fresh_first=0 admission=403458 staging=519337 native=579975 consumer=6328 reused_admission=413805 reused_staging=1633 reused_native=22795 reused_consumer=4808 simdjson_parse=22641
+round=10 doc=syn-dense-64k fresh_first=1 admission=71211 staging=500041 native=692095 consumer=52605 reused_admission=71468 reused_staging=1590 reused_native=105795 reused_consumer=44573 simdjson_parse=86376
+round=10 doc=syn-strings-64k fresh_first=1 admission=248577 staging=508679 native=606408 consumer=5058 reused_admission=278694 reused_staging=1593 reused_native=43922 reused_consumer=3758 simdjson_parse=13145
+round=10 doc=syn-utf8-64k fresh_first=1 admission=408892 staging=520294 native=580494 consumer=6899 reused_admission=432993 reused_staging=1555 reused_native=22268 reused_consumer=4625 simdjson_parse=23591
+round=11 doc=syn-dense-64k fresh_first=0 admission=70883 staging=502435 native=728190 consumer=56974 reused_admission=78291 reused_staging=1623 reused_native=102691 reused_consumer=46145 simdjson_parse=89216
+round=11 doc=syn-strings-64k fresh_first=0 admission=260334 staging=511124 native=596680 consumer=5121 reused_admission=272647 reused_staging=1594 reused_native=44319 reused_consumer=3796 simdjson_parse=13442
+round=11 doc=syn-utf8-64k fresh_first=0 admission=401381 staging=535352 native=614037 consumer=6846 reused_admission=417382 reused_staging=1557 reused_native=22888 reused_consumer=4671 simdjson_parse=22991
+round=12 doc=syn-dense-64k fresh_first=1 admission=71485 staging=514467 native=684782 consumer=55528 reused_admission=75291 reused_staging=1632 reused_native=99075 reused_consumer=44151 simdjson_parse=78492
+round=12 doc=syn-strings-64k fresh_first=1 admission=250323 staging=502509 native=621066 consumer=4998 reused_admission=271715 reused_staging=1589 reused_native=42629 reused_consumer=3727 simdjson_parse=13283
+round=12 doc=syn-utf8-64k fresh_first=1 admission=410524 staging=527939 native=601248 consumer=6434 reused_admission=417040 reused_staging=1471 reused_native=20945 reused_consumer=4352 simdjson_parse=16867
+round=13 doc=syn-dense-64k fresh_first=0 admission=70529 staging=494627 native=709004 consumer=57348 reused_admission=76656 reused_staging=1692 reused_native=107984 reused_consumer=46786 simdjson_parse=75774
+round=13 doc=syn-strings-64k fresh_first=0 admission=252855 staging=508668 native=602799 consumer=5111 reused_admission=265503 reused_staging=1572 reused_native=42841 reused_consumer=3621 simdjson_parse=13657
+round=13 doc=syn-utf8-64k fresh_first=0 admission=405952 staging=518177 native=574692 consumer=6336 reused_admission=431796 reused_staging=1597 reused_native=22775 reused_consumer=4667 simdjson_parse=23225
+round=14 doc=syn-dense-64k fresh_first=1 admission=66970 staging=486312 native=669693 consumer=54477 reused_admission=69842 reused_staging=1502 reused_native=98056 reused_consumer=43840 simdjson_parse=77084
+round=14 doc=syn-strings-64k fresh_first=1 admission=244945 staging=497046 native=590928 consumer=4706 reused_admission=266280 reused_staging=1451 reused_native=40195 reused_consumer=3450 simdjson_parse=13241
+round=14 doc=syn-utf8-64k fresh_first=1 admission=386418 staging=490954 native=557335 consumer=5781 reused_admission=409616 reused_staging=1444 reused_native=20906 reused_consumer=4367 simdjson_parse=21938
+
+## absolute, unit ns (median of the round medians; min-max of those)
+document             arm               admission            staging             native           consumer
+syn-dense-64k        fresh      70529 ( 66641-74604)  494270 (479765-514467)  690662 (669693-728190)   53466 ( 52458-57348)
+                     reused     73074 ( 69842-80914)    1568 (  1494-1708)  100848 ( 96990-107984)   45669 ( 43840-48612)
+syn-strings-64k      fresh     253287 (241234-267402)  504072 (494850-524115)  606408 (586213-632210)    5047 (  4623-5533)
+                     reused    271715 (260800-286273)    1568 (  1449-1594)   42379 ( 40195-44319)    3621 (  3345-3796)
+syn-utf8-64k         fresh     396111 (381775-410524)  497117 (485396-535352)  563346 (545871-614037)    5844 (  5781-6899)
+                     reused    417382 (401503-432993)    1538 (  1432-1633)   22238 ( 20872-22888)    4523 (  4284-4818)
+
+## the paired ratios (unit: multiplier; per-round quotients, median with min-max)
+reused/fresh above 1 means the reused workspace costs more; native/parse divides the route's native interval by simdjson's full parse in the same round.
+document                       admission             staging              native            consumer    fresh native/parse   reused native/parse
+syn-dense-64k         1.051 ( 0.983- 1.105)  0.003 ( 0.003- 0.003)  0.145 ( 0.140- 0.156)  0.827 ( 0.788- 0.926)   8.888 (  8.012-  9.388)   1.278 (  1.151-  1.466)
+syn-strings-64k       1.081 ( 0.986- 1.121)  0.003 ( 0.003- 0.003)  0.069 ( 0.067- 0.074)  0.733 ( 0.660- 0.766)  46.812 ( 43.227- 54.009)   3.341 (  2.995-  3.724)
+syn-utf8-64k          1.059 ( 1.016- 1.103)  0.003 ( 0.003- 0.003)  0.038 ( 0.035- 0.042)  0.750 ( 0.670- 0.833)  26.632 ( 24.295- 35.646)   1.007 (  0.919-  1.391)
+
+## simdjson's full parse (unit ns; median of the round medians, min-max)
+doc=syn-dense-64k parse=78492 (73506-89216) walked=53898807
+doc=syn-strings-64k parse=13145 (11358-14251) walked=60837
+doc=syn-utf8-64k parse=21153 (16340-23591) walked=61552
+
+## the stale-tail control
+stale_bytes=38604072 transitions_with_nonzero_stale=412
+
+## the refusal control
+doc=route-s1-64k verdict=0 err=63 fresh_err=63 reused_err=63
+
+ok: 3 documents x 15 rounds x 21 repetitions per arm; every act's header, bytes and consumer readings equal the reference
+
+## the cross-check (the C harness's reading against the route binary's)
+syn-dense-64k      verdict=1 ndst=0 nev=132638 tokens=16182 values=16182
+syn-strings-64k    verdict=1 ndst=55931 nev=8907 tokens=687 values=687
+syn-utf8-64k       verdict=1 ndst=0 nev=24143 tokens=1859 values=1859
+
+load average after the sweep: 1.23 1.27 1.69 1/3292 1295148
+ok: the paired run completed; the reference observation and the route binary agree
