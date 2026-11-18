@@ -1395,12 +1395,10 @@ stop index and — through `expRunStop` — the cursor and the length, so
 `expExit_merge`'s `%p`/`%n` are read off the chain's exit; what neither
 `expRunExit` nor the stop word supplies is `hacc`: the accumulator's reading as
 the exponent digits' `expAcc`, which no invariant in the tree states, so the
-merge's select still takes it as that seam's hypothesis.  On the fraction side
-the chain starts at the run's exit word, and `fracRunEndWord` binds the memory not
-at all: a composition from `entry` reads the staged tables at the entry state and
-has to carry the exit's memory and the dispatch's two integer cells
-(`fracPartCells`' values, which `t1_headTie` and the integer run supply) to
-`if.end230` itself.
+  merge's select still takes it as that seam's hypothesis.  On the fraction side
+the composition from `entry` now carries the exit's memory and the dispatch's two
+integer cells (`fracPartCells`' values, which `t1_headTie` and the integer run
+supply) to `if.end230` itself: that is `fracScan_end230Carried` above.
 
 **Where the composition stops, and why it is not a seam.**  `%out`,
 `%tobool274.not` and the two table symbols are the caller's cells, and no block on

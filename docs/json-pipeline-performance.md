@@ -1294,11 +1294,13 @@ instrument is `probes/json/route/workspace.cc`, built and run by
 kernel: the same six kernel translation units, the same pipeline call and the
 same admission code run in both arms.
 
-The command, from the repository root, after the units' corpus has been
-generated once (the script checks each document's size and sha256 against the
-record before it measures, and refuses if one differs):
+The commands, from the repository root, build the route binary the workspace
+script requires and generate the units' corpus once (the workspace script checks
+each document's size and sha256 against the record before it measures, and
+refuses if one differs):
 
 ```bash
+nix develop -c bash probes/json/route/build.sh
 nix develop -c bash tests/json-units-bench/bench.sh          # the corpus, once
 nix develop -c bash probes/json/route/workspace.sh --rounds 15 --reps 21 --core 0
 ```

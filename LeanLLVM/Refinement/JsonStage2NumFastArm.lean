@@ -389,8 +389,9 @@ hypotheses — the tier-1 arm at the `.` test.
 staged entry state: `intScan_to_dot`'s left answer is the `.` test's state and
 the run's fuel prefix, and the two cells `if.end68` installs are the model's
 `intDigits d` and `digitsNat d.ip` at the dispatch's own `i0 = negIndex b + 1`,
-`d0 = 1` — the decimal point's index and the run's two counters read where the
-dispatch fixed them rather than assumed.  The exponent run's four cells
+`d0 = 1` — the dispatch fixes the decimal point's index and the run's two
+counters, while the equalities `hid`/`hip` tying their values to the model remain
+explicit hypotheses of `fracScan_t1_arm_of_dispatch`.  The exponent run's four cells
 (`%idig.4`, `%ip.5`, `%fr.5`, `%fdig.4`) are an arm conclusion the same way:
 `ExpRunCells` is their value form, `expRun_step_cells` is the step (the run's
 blocks write none of them, `decide`d over the pinned body),
