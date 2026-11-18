@@ -1360,11 +1360,34 @@ are the caller's (or an earlier block's), and no block on these routes writes
 them.  A `runFuel` prefix does not expose the environments it crosses, so a
 composition spanning a digit run cannot re-read them at the run's exit; the exit
 predicates name only what a successor's `phi`s read — the cursor, the length,
-the predecessor, `%7`, the residues and the run's memory.  The arm's instance at
-`entry` therefore waits on a transport (`JsonStage2NumFastSign`'s `NumFastChain`,
-supplied by a caller, or a run invariant that carries the cells), not on an
-unwritten seam.  The kernel's `w < 2 ^ 64` bound is not the stopper either: it is
-met at the body's own word (`numFast_ifEnd268_domain`).
+the predecessor, `%7`, the residues and the run's memory.  The transport is
+`JsonStage2NumFastCells`' `NumFastChain`: a finite chain of the body's jumps, each
+step stating that its block writes none of the cells in hand.  Three facts close
+it.  The three kept cells are written by no block at all, which is a `decide`
+over the pinned body (`numFast_out_unwritten`, `numFast_p10_unwritten`,
+`numFast_pow10_unwritten`), so a chain carries them from any state.  The sign is
+`if.end`'s destination and no other block's (`numFast_tobool_written_at_if_end`),
+so a chain whose steps avoid `if.end` carries it (`NumFastChain.sign`).  And a
+chain is a `runFuel` prefix (`NumFastChain.runFuel`), so the cells and the fuel
+compose without a second statement of the run.
+`JsonStage2NumFastCarried` spends the transport at both ends: `sign_at_ifEnd6` is
+the dispatch's three steps from `entry` — the test, the sign check and `if.end`'s
+`phi` run — fixing the sign's word at `if.end6` while carrying the kept cells,
+`t1_chain_run` is the tier-1 conversion from a state a caller stages, with the
+kept cells read at the caller's environment through the chain and the sign
+through its `if.end`-free filter — the arm's conclusion from the supplied
+environment, staging and chain; `t1_chain_run_of_entry` is the same conversion
+stated at `entry`, with the dispatch's three steps produced and the digit run's
+chain as the one input it still takes; and `fracRunEndWord_tie_of_chain` is the same
+spending on `fracPartCells`' two integer cells, which `NumFastChain.intPart`
+carries from the state `if.end68` formed them (`if.end68` is their only writer)
+to the fraction run's exit, so the merge's `%idig`/`%ip` phis are the model's
+from there.  What the tree does not produce is a chain
+*across* the digit run: the runs are `runFuel` prefixes (`intScan_run`,
+`intScan_end230`) and `BoundLoop`'s induction consumes `runFuel` arms, so the
+loop's arms are not in chain form, and a dispatch composition owes that chain.
+The kernel's `w < 2 ^ 64` bound is not the stopper either: it is met at the
+body's own word (`numFast_ifEnd268_domain`).
 
 **Tier 3's copy: the nest's exit into the residual loop.**  The four-way unrolled
 nest's visits and the residual loop's induction met at
@@ -1399,8 +1422,9 @@ the mantissa block (`t1_then241_chain_mul`/`_div` are its four steps) and
 is the three cells no block on the path writes — `%out`, `%tobool274.not` and the
 two table symbols — because the scan's `runFuel` prefix does not expose the
 environment it leaves; closing them at `entry` is the transport
-`JsonStage2NumFastSign`'s `NumFastChain` states, one the scan's run has to be
-read as a chain of steps to use.
+`JsonStage2NumFastCells`' `NumFastChain` states, one the scan's run has to be
+read as a chain of steps to use, and `JsonStage2NumFastCarried.t1_chain_run` is
+the same chain spent at a state a caller stages.
 
 The tier-2 gate's value tie is at its own site:
 `JsonStage2NumFastTier2.numFast_ifEnd268_value` reads `if.end268`'s two
@@ -1914,8 +1938,14 @@ route by
 threaded one seam at a time; `numFast_merge_end62_needs_seven` keeps the
 merge's cell requirement on the record).  What the chain still takes as
 hypotheses are the three cells no block on the path writes (`%out`,
-`%tobool274.not`, the two table symbols), which close at `entry` through
-`JsonStage2NumFastSign`'s chain transport.  The kernel's site is tied to the
+`%tobool274.not`, the two table symbols), which close through
+`JsonStage2NumFastCells`' chain transport where the caller supplies the chain:
+`JsonStage2NumFastCarried.t1_chain_run_of_entry` is the conversion stated at
+`entry` with the dispatch produced, `t1_chain_run` its form at a staged state,
+`sign_at_ifEnd6` the dispatch segment, and `fracRunEndWord_tie_of_chain` the
+carriage of the integer part's two cells to the fraction run's exit.
+
+The kernel's site is tied to the
 model's own args: `JsonStage2NumFastTier2.numFast_ifEnd268_value` reads
 `%add244`/`%sub231` as `(d.mantissa, eff d)` so the call's decision is the
 guard's encoding, and `numFast_ifEnd268_accept`/`_refuse` read the block's bit

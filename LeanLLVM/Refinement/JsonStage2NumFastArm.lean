@@ -337,9 +337,21 @@ environments it crosses, so a composition that spans a digit run cannot re-read
 them at the run's exit, and the exit predicates name only what a successor reads:
 the cursor, the length, the predecessor, `%7` and the residues.  That boundary is
 what `t1_end230_run` and `intScan_tie_merge` take as hypotheses, and its transport
-is `JsonStage2NumFastSign`'s `NumFastChain` — supplied by a caller — or a run
-invariant that carries the cells.  The arm's instance at the entry waits on that
-transport, not on a seam.
+is `JsonStage2NumFastCells`' `NumFastChain`: the kept cells are written by no
+block of the body (`decide`d over the pinned body), the sign by `if.end` alone,
+and the chain carries what its steps' blocks do not write.  On it,
+`JsonStage2NumFastCarried` states the arm at a supplied chain: `t1_chain_run` is
+the six-step conversion from a state a caller stages, with `%out` and the two
+tables read at the caller's environment and the sign through the chain,
+`sign_at_ifEnd6` is the dispatch's three steps that fix the sign's word,
+`t1_chain_run_of_entry` is the same conversion stated at `entry` with the
+dispatch produced and the digit run's chain as its only remaining input, and
+`fracRunEndWord_tie_of_chain` is `JsonStage2NumFastEntry.fracRunEndWord_tie` with
+the integer part's two cells carried to the fraction run's exit.  What
+the tree does not produce is a chain *across* the digit run: the runs are stated
+as `runFuel` prefixes (`intScan_run`, `intScan_end230`), and `BoundLoop`'s
+induction consumes `runFuel` arms, so the loop's arms are not in chain form.
+That — not the kernel's bound — is what the arm's instance at `entry` waits on.
 
 **The kernel's site after the tie.**  `%add244` and `%sub231` are now read as the
 model's `(d.mantissa, eff d)` at `if.end268`:

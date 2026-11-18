@@ -36,15 +36,21 @@ their values: their tie is `t1_headTie`'s, at the block that formed them, and th
 transport from there to the fraction run's exit is not this module's (see the
 note below).
 
-**What the composition cannot carry.**  `%out`, `%tobool274.not` and the two
-table symbols are the caller's cells, and none of the bodies on these routes
-writes them.  A `runFuel` prefix does not expose the environments it crosses, so
-a composition that spans a digit run cannot re-read them at the run's exit: they
+**What the composition cannot carry.**  `%out` and the two table symbols are the
+caller's cells and no block on these routes writes them; `%tobool274.not` is
+`if.end`'s `phi` and no block after it writes it.  A `runFuel` prefix does not
+expose the environments it crosses, so a composition that spans a digit run
+cannot re-read them at the run's exit: they
 are read at the state the caller stages
 (`JsonStage2NumFastRun.t1_end230_run`'s hypotheses) or carried through a
-`NumFastChain` (`JsonStage2NumFastSign`), which a caller has to supply.  The
+`NumFastChain` (`JsonStage2NumFastCells`), which a caller has to supply.  The
 same holds for `fracPartCells`'s two integer cells.  Nothing below claims
 otherwise; the two joins that need those cells state them as their hypotheses.
+`JsonStage2NumFastCarried.t1_chain_run` is that arm at a supplied chain,
+`JsonStage2NumFastCarried.sign_at_ifEnd6` is the dispatch segment that fixes the
+sign, and `JsonStage2NumFastCarried.fracRunEndWord_tie_of_chain` is
+`fracRunEndWord_tie` with the integer part's two cells carried to the fraction
+run's exit from the state `if.end68` formed them.
 
 There is no `sorry`, `admit` or `native_decide` below.
 -/

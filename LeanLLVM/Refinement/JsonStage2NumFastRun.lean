@@ -21,9 +21,9 @@ for the folded integer part, `intDigits d` for the count, the lexeme's zeros for
 the fraction and the exponent — so the conclusion is `strtodSpec`'s bytes and not
 the body's expression.  What the exit word does not carry is the three cells no
 block on the path writes (`%out`, `%tobool274.not`, the two table symbols): they
-are the caller's environment, and `JsonStage2NumFastSign`'s `NumFastChain` is the
-transport that reads them at a later state, one the scan's run has to be read as
-a chain of steps to use.
+are the caller's environment, and `JsonStage2NumFastCells`'
+`NumFastChain` is the transport that reads them at a later state, one the scan's
+run has to be read as a chain of steps to use.
 
 
 **The returning edge is shared by all three accepting arms.**  Tier 1's store
@@ -226,9 +226,11 @@ store *reads* but no block on the path writes — `%out`, `%tobool274.not` and t
 two table symbols — are not in it: they are the caller's environment, and the
 scan's `runFuel` prefix does not expose the environment it leaves.  They are
 therefore hypotheses of this seam, and closing them at the entry state is the
-transport `JsonStage2NumFastSign`'s `NumFastChain` states for a chain of steps
+transport `JsonStage2NumFastCells`' `NumFastChain` states for a chain of steps
 (one the scan's run must be read as, since a `runFuel` prefix alone does not name
-the blocks it crossed). -/
+the blocks it crossed).  `JsonStage2NumFastCarried.t1_chain_run` spends it: the
+same six steps from a state a caller stages, with the kept cells read through
+the chain and the sign through its `if.end`-free filter. -/
 
 /-- **The tier-1 conversion from the run's exit.**  At the integer run's
 end-of-lexeme exit, with the fraction absent and the exponent absent, the

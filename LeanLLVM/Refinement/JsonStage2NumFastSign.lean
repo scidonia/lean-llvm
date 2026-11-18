@@ -2,32 +2,31 @@
 `num_fast_el1`'s sign at the merge: `%tobool274.not` is the lexeme's sign, and
 nothing on the scan's path rebinds it.
 
-`if.end`'s first `phi` is the sign's bit: `1` from `entry` (the empty lexeme) and
-`%cmp1 = (%0 != '-')` from `land.lhs.true`.  The merge block `cleanup282.thread`
-reads that same register through the select `%cond266`, so the store's sign is
-the sign of the lexeme's first byte — provided the scan between the two blocks
-never writes the register.
+`if.end`'s first `phi` is the sign's bit: `%cmp1 = (%0 != '-')` from
+`land.lhs.true`.  The merge block `cleanup282.thread` reads that same register
+through the select `%cond266`, so the store's sign is the sign of the lexeme's
+first byte — provided the scan between the two blocks never writes the register.
 
-That is the tie this module proves, in three pieces.
+Two statements make that tie available, and this module states the second.
 
-1. **No rebind.**  `%tobool274.not` is written by `if.end` and by no other block
-   of the body; the fact is a `decide` over the pinned block list, and
-   `numFast_step_tobool` is the per-step transport it implies, through
-   `denoteCode`'s own non-interference and the terminator's environment.
-2. **The chain.**  The scan's path is not a single block, so the transport is
-   closed over a finite chain of steps (`NumFastChain`), with the chain's fuel
-   count exposed as `NumFastChain.runFuel`.  A caller supplies the chain; nothing
-   here decides which blocks the scan visits.
-3. **The tie at the model.**  `sign_tie` reads a well-formed lexeme's first byte
+1. **The transport.**  `JsonStage2NumFastCells` carries the sign across a run:
+   `%tobool274.not` is `if.end`'s destination and no other block's
+   (`numFast_tobool_written_at_if_end`), so a `NumFastChain` whose steps avoid
+   `if.end` leaves the cell where it found it (`NumFastChain.sign`), and the
+   dispatch establishes it at `if.end` in three steps
+   (`JsonStage2NumFastCarried.sign_at_ifEnd6`).  The sign's *value* is therefore
+   `evalICmp .ne (%0) '-'` at every later state of the route, which is what the
+   tie below reads.
+2. **The tie at the model.**  `sign_tie` reads a well-formed lexeme's first byte
    as `d.neg`: `-` exactly at a negative sign, so `%tobool274.not = 1 ↔ ¬d.neg`.
+   `sign_tie_of_read` is the same statement at the register the block's
+   comparison leaves, which is the form a body-level statement reads.
 
-The transport is what a composite reads, not the composite: the tier-1 store of
-`JsonStage2NumFastTier1` takes the sign's cell at its own state
-(`JsonStage2NumFastRun.t1_end230_run`'s `hsig`), and the staging `NumFastTables`
-is a hypothesis of that theorem rather than a value read at `entry`.
+There is no `sorry`, `admit` or `native_decide` below.
 -/
 import LeanLLVM.Refinement.JsonStage2NumFastTier1
 import LeanLLVM.Refinement.JsonStage2NumFastArm
+import LeanLLVM.Refinement.JsonStage2NumFastCells
 import LeanLLVM.Refinement.JsonEntrySteps
 
 set_option autoImplicit false
@@ -43,118 +42,6 @@ open LeanLLVM.StrtodRefine
 open LeanLLVM.StrtodTier1
 
 namespace NumFastSign
-
-/-! ### No rebind
-
-`%tobool274.not` is `if.end`'s `phi` and nothing else's destination.  The fact is
-over the pinned body, so it is a kernel computation rather than a reading of the
-block list. -/
-
-/-- **Only `if.end` writes the sign's register.**  The statement is closed, so
-`decide` reads it off the pinned body. -/
-theorem numFast_tobool_written_at_if_end :
-    ∀ b ∈ numFastBody.blocks, b.name ≠ "if.end" →
-      ∀ i ∈ b.instrs, i.dst? ≠ some "%tobool274.not" := by
-  decide
-
-/-- A block found by name is named that name. -/
-theorem findBlockList_name {bs : List Block} {n : String} {b : Block}
-    (h : findBlockList bs n = some b) : b.name = n := by
-  induction bs with
-  | nil => simp [findBlockList] at h
-  | cons b' rest ih =>
-      simp only [findBlockList] at h
-      split at h
-      · next hb => cases h; exact hb
-      · exact ih h
-
-/-- A terminator leaves the environment alone: `execTerm` moves the program
-counter and nothing else, or the block is `ub`. -/
-theorem execTerm_env {s s' : State} {tm : Term} (h : execTerm s tm = .jump s') :
-    s'.env = s.env := by
-  cases tm with
-  | br d => simp only [execTerm] at h; cases h; rfl
-  | condbr c t f =>
-      simp only [execTerm] at h
-      split at h
-      · split at h
-        · cases h; rfl
-        · split at h
-          · cases h; rfl
-          · cases h
-      · cases h
-  | ret ty v =>
-      cases v with
-      | none => cases ty <;> (simp only [execTerm] at h; cases h)
-      | some o =>
-          cases ty with
-          | void => simp only [execTerm] at h; cases h
-          | int w => simp only [execTerm] at h; split at h <;> cases h
-          | ptr => simp only [execTerm] at h; split at h <;> cases h
-          | vec n e => simp only [execTerm] at h; split at h <;> cases h
-          | array n e => simp only [execTerm] at h; split at h <;> cases h
-          | struct n b => simp only [execTerm] at h; split at h <;> cases h
-          | double => simp only [execTerm] at h; split at h <;> cases h
-  | unreachable => simp only [execTerm] at h; cases h
-
-/-- **A step leaves the sign's register alone.**  Everything a step does to the
-environment is the block's own instruction run, so the register survives a
-block that does not write it, and the terminator changes only the program
-counter. -/
-theorem numFast_step_tobool {calls : Calls} {s s' : State}
-    (hpc : s.pc ≠ "if.end") (h : step calls numFastBody s = .jump s') :
-    lookupName s'.env "%tobool274.not" = lookupName s.env "%tobool274.not" := by
-  cases hf : numFastBody.findBlock s.pc with
-  | none => rw [step, hf] at h; cases h
-  | some b =>
-      simp only [step, hf] at h
-      have hname : b.name = s.pc := findBlockList_name hf
-      have hno : ∀ i ∈ b.instrs, i.dst? ≠ some "%tobool274.not" :=
-        numFast_tobool_written_at_if_end b (findBlockList_mem hf)
-          (by rw [hname]; exact hpc)
-      cases hd : denoteCode calls b.instrs s with
-      | none => simp only [hd] at h; cases h
-      | some s1 =>
-          simp only [hd] at h
-          rw [execTerm_env h]
-          exact JsonEntrySteps.denoteCode_lookupName calls b.instrs "%tobool274.not"
-            hno s s1 hd
-
-/-! ### The chain
-
-The scan is a finite path, not one block, so the transport is closed over a
-chain.  The chain carries its fuel, so a scan simulation's `runFuel` prefix is
-`NumFastChain.runFuel`'s index. -/
-
-/-- A finite chain of control steps of the body, each leaving a block other than
-`if.end`. -/
-inductive NumFastChain (calls : Calls) : State → State → Prop
-  /-- The empty chain. -/
-  | refl (s : State) : NumFastChain calls s s
-  /-- One step, then the rest. -/
-  | step {s s' e : State} (hpc : s.pc ≠ "if.end")
-      (hs : step calls numFastBody s = .jump s') (ht : NumFastChain calls s' e) :
-      NumFastChain calls s e
-
-/-- **The chain's sign.**  The register is the same at both ends. -/
-theorem NumFastChain.tobool {calls : Calls} {s e : State} (h : NumFastChain calls s e) :
-    lookupName e.env "%tobool274.not" = lookupName s.env "%tobool274.not" := by
-  induction h with
-  | refl s => rfl
-  | step hpc hs _ ih => rw [ih, numFast_step_tobool hpc hs]
-
-/-- **The chain's fuel.**  A chain of `j` steps is a `runFuel` prefix: the run
-from the head at `j + k` is the run from the tail at `k`. -/
-theorem NumFastChain.runFuel {calls : Calls} {s e : State}
-    (h : NumFastChain calls s e) :
-    ∃ j, ∀ k, runFuel calls (j + k) numFastBody s = runFuel calls k numFastBody e := by
-  induction h with
-  | refl s => exact ⟨0, fun k => by simp⟩
-  | step hpc hs _ ih =>
-      obtain ⟨j, hj⟩ := ih
-      refine ⟨j + 1, fun k => ?_⟩
-      rw [show j + 1 + k = 1 + (j + k) from by omega,
-        runFuel_jump_prefix hs, hj]
 
 /-! ### The lexeme's first byte
 
@@ -257,6 +144,20 @@ theorem sign_tie_of_read {d : Decimal} {b : UInt8} (hd : d.wellFormed)
     (sign = 1) ↔ d.neg = false := by
   subst hs
   exact sign_tie hd hb
+
+/-! ### Axiom footprints -/
+
+/-- info: 'LeanLLVM.Refinement.NumFastSign.sign_tie' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms sign_tie
+
+/-- info: 'LeanLLVM.Refinement.NumFastSign.body_head_ne' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms body_head_ne
+
+/-- info: 'LeanLLVM.Refinement.NumFastSign.sign_tie_of_read' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms sign_tie_of_read
 
 end NumFastSign
 
