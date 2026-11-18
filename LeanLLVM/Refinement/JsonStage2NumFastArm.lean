@@ -59,10 +59,12 @@ environment is the runs: `JsonStage2NumFastDigitRuns` discharges all three
 carrying its counters.  What the arm still owes is the runs' *starts* (the
 inlined scan's dispatch: the index after the sign, after the `.`, after the `e`
 and its sign, which is what makes the carried registers the lexeme's counts), the
-inlined tier-1 arithmetic's correspondence to the model, the tier-2 bridge
-(stated in `JsonStage2NumFastTier2.NumFastElAgrees`, proved at the guard's
-witnesses, its general proof open), and tier 3's bracketing traversal.  That
-list, not the callee environment, is where the arm stops.
+inlined tier-1 arithmetic's correspondence to the model, and tier 3's bracketing
+traversal.  Tier 2 is no longer on that list: `JsonStage2NumFastTier2`
+proves the model is the guard's decision on the kernel's `w < 2 ^ 64` domain
+(`NumFastElAgrees`, from `numElEl1_eq_elTier2Code`), and
+`not_numFastElUnbounded` shows the bound is the kernel's, not the proof's.  The
+remaining list, not the callee environment, is where the arm stops.
 
 A proof needs three things, of which the first two the tree now supplies and the
 third it does not:

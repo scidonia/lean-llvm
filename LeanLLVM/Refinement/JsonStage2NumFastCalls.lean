@@ -63,24 +63,24 @@ than a fact these definitions establish:
   `0 < w < 2 ^ 64`, with `not_elGuardRefinesUnbounded` showing the word bound is
   load-bearing, and `JsonStage2Body.numTier2Binary_eq_strtodSpec` composes it at
   the model.  The correspondence from this file's `numElEl1 epow` to
-  `elTier2Code` is stated in `JsonStage2NumFastTier2.NumFastElAgrees`; its
-  general proof is open there, while the model's decision and the guard's are
-  proved equal at the guard's own witness set
-  (`JsonStage2NumFastTier2.numElEl1_witnesses`).  Writing that correspondence
-  found a defect in this file's model rather than only a missing lemma:
-  `elExact`'s `Rlo`/`Rhi` are `uint64_t` adds in the emitted code, and the model
-  was reading them as unreduced naturals.  The wrap is now in the model
-  (`elExact`'s docstring carries the input that exposes it), so a body-level arm
-  at `stage2NumFastCalls` inherits the stated bridge rather than a mismatched
-  callee; the stop is the bridge's general proof, not the guard slice;
+  `elTier2Code` is `JsonStage2NumFastTier2.NumFastElAgrees`, proved there on
+  the kernel's `w < 2 ^ 64` domain (`numFastElAgrees`), with
+  `not_numFastElUnbounded` recording that the bound is load-bearing — the model
+  and the guard's wrapped window test separate at `(43 · 2 ^ 64, -45)`.  Writing
+  that correspondence found a defect in this file's model rather than only a
+  missing lemma: `elExact`'s `Rlo`/`Rhi` are `uint64_t` adds in the emitted code,
+  and the model was reading them as unreduced naturals.  The wrap is now in the
+  model (`elExact`'s docstring carries the input that exposes it), so a
+  body-level arm at `stage2NumFastCalls` inherits the proved bridge rather than a
+  mismatched callee;
 * **tier 3** (the fallback) is reached whenever the kernel refuses, and its
   obligation is the bracketing argument `LeanLLVM.StrtodTier3` states and
   partly proves.
 
 So the boundary this module and `JsonStage2NumFastArm` leave is: the environment
-is supplied and the three sites are reachable, while the
-conversion's agreement with `strtodSpec` is conditional on the tier-2 kernel's
-exactness bound and the tier-3 traversal, neither of which is a staging fact.
+is supplied, the three sites are reachable, and tier 2's model is the guard's
+decision; the conversion's *run* — the scan's carries, the inlined tier-1
+arithmetic, tier 3's traversal — is what remains.
 -/
 import LeanLLVM.Refinement.JsonStage2NumFastArm
 import LeanLLVM.Binary64

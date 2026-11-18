@@ -1255,13 +1255,18 @@ from its measured C text), `stage2NumFastCalls` composes it with the walk's
 (`numFast_*_denote_some`/`_step_jump`), and `numFastTables_holds` is
 `NumFastTables` at a concrete twenty-row/twenty-three-row staging.  What remains
 open is the conversion's *run*, not its environment: the three digit runs' arms,
-the inlined tier-1 arithmetic, and the tier-2 kernel's exactness bound;
+the inlined tier-1 arithmetic, and tier 3's traversal.  Tier 2 is closed on the
+model side too: `JsonStage2NumFastTier2.NumFastElAgrees` proves `numElEl1` is the
+guard's decision for the kernel's `w < 2 ^ 64` mantissa, so
+`elGuardRefinesOn`'s exactness transfers to the model, and
+`not_numFastElUnbounded` records that the bound is the kernel's.
 `JsonStage2NumFastCounters` reads the merge block's two counters at the model
 (`numFast_ifEnd230_counts`) and names the runs' trip counts as the arms still
 owed.  The conversion's arithmetic is not in question, and the relation's number
-clause is discharged at the model.  The same reading excludes `sorry`,
-`admit`, `native_decide` and `Classical.choice`: every theorem above is pinned at
-`[propext]` or `[propext, Quot.sound]`.
+clause is discharged at the model.  No theorem here uses `sorry`, `admit` or
+`native_decide`; the §7.10 environment and reachability theorems are pinned at
+`[propext]` or `[propext, Quot.sound]`, while the tier-2 bridge carries
+`Classical.choice` through Mathlib's `Nat.size` lemmas.
 
 ### 7.11 The correspondence, record for record
 
