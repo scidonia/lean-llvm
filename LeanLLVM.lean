@@ -96,6 +96,7 @@ import LeanLLVM.Refinement.JsonStage2Hsem
 import LeanLLVM.Refinement.JsonStage2TokenCorrespondence
 import LeanLLVM.Refinement.JsonStage2NumFastBody
 import LeanLLVM.Refinement.JsonStage2NumFastScan
+import LeanLLVM.Refinement.JsonStage2NumFastScanRun
 import LeanLLVM.Refinement.JsonStage2NumFastSign
 import LeanLLVM.Refinement.JsonStage2StringBody
 import LeanLLVM.Refinement.JsonStage2WalkAlignment

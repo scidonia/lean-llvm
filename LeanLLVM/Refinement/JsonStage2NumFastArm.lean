@@ -162,6 +162,23 @@ the other two only in part:
    about these blocks, and neither does any other module — the arm's conversion
    is still open at them.
 
+**What `JsonStage2NumFastScanRun` now supplies, against that list.**  Item 3's
+scan has its exponent nest: `nestTo157_e`/`nestTo157_E` take the marker's byte
+through `land.lhs.true147`/`NodeBlock`/`LeafBlock*`, `nestFrom157_nosign`/`_sign`
+reach `lor.lhs.false180` with `%i.11` and `%esign.0` — the registers
+`expRun_start` consumes — and `nest_nomarker` takes the no-exponent branch to
+`if.end226`.  `intScan_run` is the integer dispatch and its run from `entry`, and
+`fracScan_run` is the fraction dispatch and its run from `land.lhs.true71`; both
+are `runFuel` prefixes with the fuel as a term of the arguments.  Item 1's merge
+is `cleanup223.thread`'s two edges, `if.end226`'s four, and
+`expMerge_run_inc`/`expMerge_run_head` into `mergeEntry`; `if.end230`'s bound edge
+is `ifEnd230_denote_end62`/`ifEnd230_step_end62`.  Of item 1's mantissa, the
+word-level ties are `ip_word_digitsNat`/`fr_word_digitsNat`, fed by
+`intRunExit_end230`/`fracRunExit_end230`.  Still open on this list: the two
+eight-digit fast paths and the reader's agreement (the reader `%7`'s count tie
+among them), the seam steps that would thread one theorem from `entry` to
+`if.end230`, and tier 3's three traversal links.
+
 
 There is no `sorry`, `admit` or `native_decide` below.
 -/
