@@ -111,9 +111,9 @@ the other two only in part:
    `StrtodTier1.emittedRefinesOn_tier1` the missing links are four:
    (a) `denoteCode` chain steps for `uitofp`, `fmul`, `fdiv`, `fneg` and an
    eight-byte `double` load — `evalInstr` defines all four operations
-   (`Semantics.lean:547-562`) but the tree has no `evalInstr_*`/`step_*`/
-   `denoteCode_*` lemma for any of them, so no block of this path can be
-   stepped at all; (b) the class test: `%or.cond304` at `if.end230`
+   (`Semantics.lean:547-562`) and `JsonStage2NumFastTier1` supplies the
+   `evalInstr_*`/`step_*`/`denoteCode_*` lemmas, so this path's blocks are
+   steppable and the module's header records where its own chain stops; (b) the class test: `%or.cond304` at `if.end230`
    (`%add232 <u 20` and `%sub231 + 45 <u 91`) and `%or.cond306` at `if.then241`
    (`%add232 <u 16`, `%sub231 + 22 <u 45`) against `StrtodRefine.Tier1`,
    `digitCount d ≤ 15 ∧ |eff| ≤ 22`; (c) the mantissa: `%add244` against
@@ -145,22 +145,25 @@ the other two only in part:
    the ladder (`if.else164.i.i`, `while.body173.i.i`, `while.cond184.preheader
    .i.i`).  The model's decision half is complete (`walkLoop_computes_tier3Mag`
    is the loop's answer at `tier3Mag`'s ticks, and the tier-3 module's
-   `What is not proved` names what it takes), so three links remain: (a) a
-   `runFuel` simulation of that region — no block of it has a step lemma, and
-   several of its `phi`s carry `Const.poison` immediates (e.g.
-   `while.cond.preheader.i.i577.i.i.unr-lcssa`'s `%add4.i.i572.i.i.lcssa.ph`),
-   so the poison edges' unreachability is the *first* obligation there, not a
-   detail of the trace; (b) the tie of the window's retained digits `M`, its
-   weight `S` and the sticky bit to the model's inputs (`Decimal.mantissa`,
-   `Decimal.exponent`, and the `stkDrop` the copy loop's `STK_DIGITS` window
-   enforces); (c) the proximity estimate the tier-3 module still records — an
-   ulp bound on the starting approximation `dbits (d) * 10 ^ e10` — whose
-   operations are the same `fmulBits`/`fdivBits` as tier-1's, so `(d)` above
-   discharges that class too instead of leaving it to hardware.
+   `What is not proved` names what it takes).  Of the three links that remained,
+   `JsonStage2NumFastTier3` now states all three and proves each at its
+   statement: (a) the region's `runFuel` simulation — the `poison` edges bind
+   the marker rather than being unreachable (the peeled entry takes them at
+   counts 1–3), the residual block's own step is a jump, and
+   `t3_traversal_counts_1_3` composes the two steps with the reached state's
+   markers unread; what remains is the region's other blocks, from
+   `for.body.i.i566.i.i.epil`; (b) the window tie — `copy_retained` is the
+   retained array as `m / 10 ^ stkDrop m`, `copy_sticky` the copy's sticky bit
+   as the model's remainder test, `copy_counters` the emitted `S`/`f` as
+   `E + stkDrop m`/`leadM`, and `t3_copy_denote` the store block at its pin,
+   with the copy loop's own `BoundLoop` instance the piece not composed; and
+   (c) the proximity estimate — `roundMag_dist_le_step`,
+   `fmulBits_dist_le_step`/`fdivBits_dist_le_step`, `proximity_scale` and
+   `t3_scale_of_ulp`, which concludes `shift_of_near`'s premise from the tree's
+   own rounding, with the starting approximation's fold the piece not derived.
 
-   Neither boundary is a `sorry`: `JsonStage2NumFastStarts` proves no statement
-   about these blocks, and neither does any other module — the arm's conversion
-   is still open at them.
+   Neither boundary is a `sorry`, and neither is a paragraph: each is a
+   statement in the module named above, with what it leaves open named there.
 
 **What `JsonStage2NumFastScanRun` now supplies, against that list.**  Item 3's
 scan has its exponent nest: `nestTo157_e`/`nestTo157_E` take the marker's byte
@@ -177,7 +180,8 @@ word-level ties are `ip_word_digitsNat`/`fr_word_digitsNat`, fed by
 `intRunExit_end230`/`fracRunExit_end230`.  Still open on this list: the two
 eight-digit fast paths and the reader's agreement (the reader `%7`'s count tie
 among them), the seam steps that would thread one theorem from `entry` to
-`if.end230`, and tier 3's three traversal links.
+`if.end230`, and tier 3's region beyond its poison edge (`JsonStage2NumFastTier3`
+states the edge's traversal, the window tie and the proximity estimate).
 
 
 There is no `sorry`, `admit` or `native_decide` below.

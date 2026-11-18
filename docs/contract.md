@@ -1255,7 +1255,29 @@ from its measured C text), `stage2NumFastCalls` composes it with the walk's
 (`numFast_*_denote_some`/`_step_jump`), and `numFastTables_holds` is
 `NumFastTables` at a concrete twenty-row/twenty-three-row staging.  What remains
 open is the conversion's *run*, not its environment: the three digit runs' arms,
-their starts, the inlined tier-1 arithmetic, and tier 3's traversal.  Tier 2 is
+their starts, the inlined tier-1 arithmetic, and tier 3's region.  Tier 3's three
+links are now stated and proved at their statements
+(`JsonStage2NumFastTier3`): the traversal with the trip count
+(`t3_traversal_counts_1_3`, two `runFuel` steps from the peeled entry at a count
+in `0 < k < 4`, with the reached state's two `poison` cells holding the marker and
+unread — `t3_traversal_markers`); the window's copy (`copy_retained` is the
+retained array as `m / 10 ^ stkDrop m`, `copy_sticky` the copy's sticky bit as
+the model's remainder test, `copy_counters` the emitted `S` and `f` as `E +
+stkDrop m` and `leadM`, with `copy_retained_window`/`copy_sticky_window`/
+`copy_S_window`/`copy_lead_window` the same at `windowOf`'s own fields, and
+`t3_copy_denote` the store block at its pin); and the
+proximity estimate at the tree's own rounding (`roundMag_dist_le_step` bounds one
+rounding by one lattice step, `fmulBits_dist_le_step`/`fdivBits_dist_le_step` are
+that bound at the emitted operations, `proximity_scale` composes the two-step
+bracket, and `t3_scale_of_ulp` concludes `valLeqBoundary m E (2 * J) eB`, the
+premise `shift_of_near` takes).  What the region still owes is its remaining
+blocks, block by block, from `for.body.i.i566.i.i.epil`, and the starting
+approximation's own fold (`dbits (d) * 10 ^ e10` as two applications of the
+table's rows) — both named in that module's record of the boundary.
+The kernel's bound is not among the obstructions: `num_el_el1`'s mantissa is a
+`uint64_t`, and the body's own argument at `if.end268` is `%add244`, a 64-bit
+word, so `NumFastElAgrees`'s `w < 2 ^ 64` domain is met at the body
+(`numFast_ifEnd268_domain`).  Tier 2 is
 closed on the model side too: `JsonStage2NumFastTier2.NumFastElAgrees` proves
 `numElEl1` is the guard's decision for the kernel's `w < 2 ^ 64` mantissa, so
 `elGuardRefinesOn`'s exactness transfers to the model, and
@@ -1586,10 +1608,13 @@ for it is the observation `check.sh` makes.
 decimal-to-binary64 conversion as a proved equivalence (the model's `double`
 forms, NaN and infinity included, are modelled and `strtodSpec` computes the
 value; that an emitted conversion computes it is owed, and
-`JsonStage2NumFastArm` states where the pinned body's proof stops: its three
-conversion callees are absent from the walk's `Calls`, so the conversion's
-arithmetic is stuck there, and `NumFastBodyArm` names the `Calls` and the table
-staging a proof must supply before the equivalence itself is reached), NDJSON, incremental
+`JsonStage2NumFastArm` states where the pinned body's proof stops: at the walk's
+own `Calls` its three conversion callees are absent, so the conversion's
+arithmetic is stuck there, while at the supplied `stage2NumFastCalls` and table
+staging the three sites are jumps and the kernel's `w < 2 ^ 64` domain is met by
+the body's own word — `JsonStage2NumFastTier3.numFast_ifEnd268_domain` — so what
+`NumFastBodyArm` still owes is the conversion's run, and tier 3's three links
+are stated in `JsonStage2NumFastTier3`), NDJSON, incremental
 input, concurrent parsing, diagnostic text or positions,
 and any vector operation the semantics does not model. The modelled vector
 forms — `Ty.vec` with integer lanes, `Const.splat`, a vector `load`, lane-wise
