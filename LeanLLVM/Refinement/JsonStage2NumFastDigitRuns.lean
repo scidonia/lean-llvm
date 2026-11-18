@@ -835,29 +835,48 @@ theorem intHead_step_back_nondigit {env : Env} {s : State} {a j : Nat} {b : UInt
 
 /-! ### The integer run's invariant, test and exit -/
 
+/-- The end-of-lexeme exit's cells: the run stopped at the lexeme's end, so the
+index is the length, and the block it leaves for is `if.end230` from `if.end62`.
+It carries the cursor, the length, the count `d0 + (n - i0)` the count cell reads,
+the accumulator's value at those digits, and the count `%7` the digit head's
+preheader formed: `if.end230`'s `%idig.4709716730` phi reads it on this edge, so
+a composed run exit has to hand it on.  The cursor and the length are the cells
+every later block reads. -/
+def intRunEndWord (bs : List UInt8) (p n i0 d0 : Nat) (e : State) : Prop :=
+  e.pc = "if.end230" ∧ e.pre = some "if.end62" ∧ n < 2 ^ 64 ∧
+  lookupName e.env "%p" = some (.ptr p) ∧
+  lookupName e.env "%n" = some (.int 64 (BitVec.ofNat 64 n)) ∧
+  lookupName e.env "%inc64" = some (.int 64 (BitVec.ofNat 64 n)) ∧
+  lookupName e.env "%inc63"
+    = some (.int 64 (BitVec.ofNat 64 (d0 + (n - i0)))) ∧
+  lookupName e.env "%ip.4"
+    = some (.int 64
+      (BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + (n - i0)) 19)))) ∧
+  lookupName e.env "%7"
+    = some (.int 64 (BitVec.ofNat 64 d0 + BitVec.ofNat 64 n - BitVec.ofNat 64 i0))
+
 /-- The exit states: the head's non-digit branch (`if.end68`) or the
-end-of-lexeme branch (`if.end230`), each carrying the count at the index it
-stopped at and the accumulator's value at the digits the count names.  The
-end-of-lexeme exit also carries that it *is* the lexeme's end: the index is
-inside the word, and the length's cell reads it, which is what makes `%7`'s digit
-count and the fold's length the same number. -/
-def intRunExit (bs : List UInt8) (i0 d0 : Nat) (e : State) : Prop :=
-  (e.pc = "if.end68" ∧
-      ∃ i1, lookupName e.env "%i.4575" = some (.int 64 (BitVec.ofNat 64 i1)) ∧
+end-of-lexeme branch (`intRunEndWord`), each carrying the cursor, the length, the
+count at the index it stopped at and the accumulator's value at the digits the
+count names, and each naming its predecessor.  The non-digit exit's index is
+inside the lexeme, so the `.` test reads a byte; it also hands the byte it
+stopped on and that byte's non-digit answer, read at the run's own memory — the
+exit state is opaque to a composition, so a reader that has to know whether the
+run stopped at the lexeme's end or on a non-digit cannot re-read the byte
+itself. -/
+def intRunExit (mem0 : Mem) (bs : List UInt8) (p n i0 d0 : Nat) (e : State) : Prop :=
+  (e.pc = "if.end68" ∧ e.pre = some "land.lhs.true41" ∧
+      lookupName e.env "%p" = some (.ptr p) ∧
+      lookupName e.env "%n" = some (.int 64 (BitVec.ofNat 64 n)) ∧
+      ∃ i1, i0 ≤ i1 ∧ i1 < n ∧
+        lookupName e.env "%i.4575" = some (.int 64 (BitVec.ofNat 64 i1)) ∧
         lookupName e.env "%idig.3574"
           = some (.int 64 (BitVec.ofNat 64 (d0 + (i1 - i0)))) ∧
         lookupName e.env "%ip.3573"
           = some (.int 64
-            (BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + (i1 - i0)) 19)))))
-  ∨ (e.pc = "if.end230" ∧
-      ∃ i1, i1 < 2 ^ 64 ∧
-        lookupName e.env "%inc64" = some (.int 64 (BitVec.ofNat 64 i1)) ∧
-        lookupName e.env "%n" = some (.int 64 (BitVec.ofNat 64 i1)) ∧
-        lookupName e.env "%inc63"
-          = some (.int 64 (BitVec.ofNat 64 (d0 + (i1 - i0)))) ∧
-        lookupName e.env "%ip.4"
-          = some (.int 64
-            (BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + (i1 - i0)) 19)))))
+            (BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + (i1 - i0)) 19)))) ∧
+        ∃ b, readByte mem0 (p + i1) = some b ∧ IsDigitB b = false)
+  ∨ intRunEndWord bs p n i0 d0 e
 
 /-- The head's test, at the run's own start: the remaining length is one short
 of the counter, or the byte at the counter is not a digit. -/
@@ -867,7 +886,10 @@ def intRunAtBound (mem0 : Mem) (p n i0 : Nat) (s : State) (c : Nat) : Bool :=
 /-- The run's invariant: the head with the counters at `c`, the byte readable at
 `i0 + c`, the edge's phi sources at `i0 + c` and `d0 + c`, and the accumulator
 at the digits consumed — the fold over `min (d0 + c) 19` of the bytes from
-`i0 - d0`, which is where the integer part's digits begin. -/
+`i0 - d0`, which is where the integer part's digits begin.  `%7` is the count
+the head's preheader formed from the entry counters; the run never rewrites it,
+and the end-of-lexeme exit reads it as the merge's `%idig.4709716730`, so it is
+carried at every iteration. -/
 def intRunInv (mem0 : Mem) (p n i0 d0 : Nat) (bs : List UInt8) (r : Nat)
     (s : State) (c : Nat) : Prop :=
   s.pc = "land.lhs.true41" ∧ s.mem = mem0 ∧ c + r = n - i0 ∧ i0 + c < n ∧
@@ -875,6 +897,8 @@ def intRunInv (mem0 : Mem) (p n i0 d0 : Nat) (bs : List UInt8) (r : Nat)
   lookupName s.env "%p" = some (.ptr p) ∧
   lookupName s.env "%n" = some (.int 64 (BitVec.ofNat 64 n)) ∧
   readBytes mem0 p n = some bs ∧
+  lookupName s.env "%7"
+    = some (.int 64 (BitVec.ofNat 64 d0 + BitVec.ofNat 64 n - BitVec.ofNat 64 i0)) ∧
   ((s.pre = some "land.lhs.true41.preheader" ∧
       lookupName s.env "%i.1558" = some (.int 64 (BitVec.ofNat 64 (i0 + c))) ∧
       lookupName s.env "%idig.0560" = some (.int 64 (BitVec.ofNat 64 (d0 + c))) ∧
@@ -922,7 +946,7 @@ theorem intRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
       intRunInv mem0 p n i0 d0 bs r e c' ∧
       ∀ k, runFuel s2HelperCalls (j + k) numFastBody s =
         runFuel s2HelperCalls k numFastBody e := by
-  obtain ⟨hpc, hmem, hsum, hltn, hnlt, hd0le, hp, hn, hread, hpre⟩ := hinv
+  obtain ⟨hpc, hmem, hsum, hltn, hnlt, hd0le, hp, hn, hread, h7, hpre⟩ := hinv
   have hblen : bs.length = n := JsonEntrySteps.readBytes_length mem0 p n hread
   unfold intRunAtBound at hb
   obtain ⟨hnoD, hdig⟩ := Bool.or_eq_false_iff.mp hb
@@ -1020,7 +1044,7 @@ theorem intRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
       refine ⟨e3, c + 1, 4, by omega, ?_, by omega, ?_, ?_⟩
       · simp only [e3, stateAt]
       · -- the invariant at the new head
-        refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+        refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
         · simp only [e3, stateAt]
         · simp only [e3, stateAt]; exact hmem
         · omega
@@ -1034,6 +1058,9 @@ theorem intRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
             intHeadEnv, intHeadPhiEnv]
           block_lk
         · simpa only [e3, stateAt] using hread
+        · simp only [e3, e2, e1, e0, stateAt, intIfEndEnv, intIfThenEnv, intBodyEnv,
+            intHeadEnv, intHeadPhiEnv]
+          block_lk
         · right
           refine ⟨by simp only [e3, stateAt], ?_, ?_, ?_⟩
           · simp only [e3, e2, e1, e0, stateAt, intIfEndEnv, intIfThenEnv, intBodyEnv,
@@ -1108,7 +1135,7 @@ theorem intRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
           (by simp only [e1, stateAt]) hphi hphiOp hidig1 hi1 hn1 hbits
       refine ⟨e2, c + 1, 3, by omega, ?_, by omega, ?_, ?_⟩
       · simp only [e2, stateAt]
-      · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+      · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
         · simp only [e2, stateAt]
         · simp only [e2, stateAt]; exact hmem
         · omega
@@ -1122,6 +1149,9 @@ theorem intRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
             intHeadPhiEnv]
           block_lk
         · simpa only [e2, stateAt] using hread
+        · simp only [e2, e1, e0, stateAt, intIfEndEnv, intBodyEnv, intHeadEnv,
+            intHeadPhiEnv]
+          block_lk
         · right
           refine ⟨by simp only [e2, stateAt], ?_, ?_, ?_⟩
           · simp only [e2, e1, e0, stateAt, intIfEndEnv, intBodyEnv, intHeadEnv,
@@ -1217,7 +1247,7 @@ theorem intRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
           (by simp only [e2, stateAt]) hphi hphiOp hidig2 hi2 hn2 hbits
       refine ⟨e3, c + 1, 4, by omega, ?_, by omega, ?_, ?_⟩
       · simp only [e3, stateAt]
-      · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+      · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
         · simp only [e3, stateAt]
         · simp only [e3, stateAt]; exact hmem
         · omega
@@ -1231,6 +1261,9 @@ theorem intRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
             intHeadEnv, intHeadPhiEnv]
           block_lk
         · simpa only [e3, stateAt] using hread
+        · simp only [e3, e2, e1, e0, stateAt, intIfEndEnv, intIfThenEnv, intBodyEnv,
+            intHeadEnv, intHeadPhiEnv]
+          block_lk
         · right
           refine ⟨by simp only [e3, stateAt], ?_, ?_, ?_⟩
           · simp only [e3, e2, e1, e0, stateAt, intIfEndEnv, intIfThenEnv, intBodyEnv,
@@ -1305,7 +1338,7 @@ theorem intRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
           (by simp only [e1, stateAt]) hphi hphiOp hidig1 hi1 hn1 hbits
       refine ⟨e2, c + 1, 3, by omega, ?_, by omega, ?_, ?_⟩
       · simp only [e2, stateAt]
-      · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+      · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
         · simp only [e2, stateAt]
         · simp only [e2, stateAt]; exact hmem
         · omega
@@ -1319,6 +1352,9 @@ theorem intRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
             intHeadPhiEnv]
           block_lk
         · simpa only [e2, stateAt] using hread
+        · simp only [e2, e1, e0, stateAt, intIfEndEnv, intBodyEnv, intHeadEnv,
+            intHeadPhiEnv]
+          block_lk
         · right
           refine ⟨by simp only [e2, stateAt], ?_, ?_, ?_⟩
           · simp only [e2, e1, e0, stateAt, intIfEndEnv, intBodyEnv, intHeadEnv,
@@ -1353,17 +1389,18 @@ def intRunExitBlock (e : State) : Prop :=
   e.pc = "if.end68" ∨ e.pc = "if.end230"
 
 /-- The counters the exit hands back, read off `intRunExit`. -/
-theorem intRunExit_count (bs : List UInt8) (i0 d0 : Nat) (e : State)
-    (h : intRunExit bs i0 d0 e) :
+theorem intRunExit_count (mem0 : Mem) (bs : List UInt8) (p n i0 d0 : Nat) (e : State)
+    (h : intRunExit mem0 bs p n i0 d0 e) :
     (∃ i1, e.pc = "if.end68" ∧
       lookupName e.env "%idig.3574"
         = some (.int 64 (BitVec.ofNat 64 (d0 + (i1 - i0))))) ∨
-    (∃ i1, e.pc = "if.end230" ∧
+    (e.pc = "if.end230" ∧
       lookupName e.env "%inc63"
-        = some (.int 64 (BitVec.ofNat 64 (d0 + (i1 - i0))))) := by
-  rcases h with ⟨hpc, i1, _, hcnt, _⟩ | ⟨hpc, i1, _, _, _, hcnt, _⟩
+        = some (.int 64 (BitVec.ofNat 64 (d0 + (n - i0))))) := by
+  rcases h with ⟨hpc, _, _, _, i1, _, _, _, hcnt, _, _, _, _⟩
+    | ⟨hpc, _, _, _, _, _, hcnt, _, _⟩
   · exact Or.inl ⟨i1, hpc, hcnt⟩
-  · exact Or.inr ⟨i1, hpc, hcnt⟩
+  · exact Or.inr ⟨hpc, hcnt⟩
 
 /-- At the bound with the counter short of the length, the byte is not a
 digit. -/
@@ -1390,10 +1427,11 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
     {s : State} {c : Nat}
     (hinv : intRunInv mem0 p n i0 d0 bs r s c)
     (hb : intRunAtBound mem0 p n i0 s c = true) :
-    ∃ (e : State) (j : Nat), j ≤ 4 ∧ intRunExitBlock e ∧ intRunExit bs i0 d0 e ∧
+    ∃ (e : State) (j : Nat), j ≤ 4 ∧ intRunExitBlock e ∧
+      intRunExit mem0 bs p n i0 d0 e ∧
       ∀ k, runFuel s2HelperCalls (j + k) numFastBody s =
         runFuel s2HelperCalls k numFastBody e := by
-  obtain ⟨hpc, hmem, hsum, hltn, hnlt, hd0le, hp, hn, hread, hpre⟩ := hinv
+  obtain ⟨hpc, hmem, hsum, hltn, hnlt, hd0le, hp, hn, hread, h7, hpre⟩ := hinv
   have hblen : bs.length = n := JsonEntrySteps.readBytes_length mem0 p n hread
   have hd0next64 : d0 + c + 1 < 2 ^ 64 := by omega
   obtain ⟨b, hbyte⟩ := readByte_of_readBytes_lt hread hltn
@@ -1485,15 +1523,20 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               (by simp only [e2, stateAt]) (by simp only [e2, stateAt]) hphi hphiOp
               hidig2 hi2 hn2 hbits
           refine ⟨e3, 4, by omega, Or.inr (by simp only [e3, stateAt]), ?_, ?_⟩
-          · refine Or.inr ⟨by simp only [e3, stateAt], ?_⟩
-            refine ⟨i0 + c + 1, hnext64, ?_, ?_, ?_, ?_⟩
-            · simp only [e3, stateAt, intIfEndEnv]
+          · refine Or.inr ⟨by simp only [e3, stateAt], by simp only [e3, stateAt], ?_⟩
+            refine ⟨by omega, ?_, ?_, ?_, ?_, ?_, ?_⟩
+            · simp only [e3, e2, e1, e0, stateAt, intIfEndEnv, intIfThenEnv, intBodyEnv,
+                intHeadEnv, intHeadPhiEnv]
               block_lk
-              exact int_succ_eq _ hnext64
-            · rw [h_eq]
+            · simp only [e3, e2, e1, e0, stateAt, intIfEndEnv, intIfThenEnv, intBodyEnv,
+                intHeadEnv, intHeadPhiEnv]
+              block_lk
+            · rw [← h_eq]
               simp only [e3, stateAt, intIfEndEnv]
               block_lk
-            · simp only [e3, stateAt, intIfEndEnv]
+              exact int_succ_eq _ hnext64
+            · rw [← h_eq]
+              simp only [e3, stateAt, intIfEndEnv]
               rw [hcnt64]
               block_lk
               exact int_succ_eq _ hd0next64
@@ -1506,9 +1549,13 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
                 rw [hcnt64]
                 exact digitFold_step_at hd0le (ofNat_ult_true (by omega) hguard)
                   (by rw [hblen]; omega) hbyteD hdigit rfl
+              rw [← h_eq]
               simp only [e3, stateAt, intIfEndEnv]
               block_lk
               exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hval
+            · simp only [e3, e2, e1, e0, stateAt, intIfEndEnv, intIfThenEnv, intBodyEnv,
+                intHeadEnv, intHeadPhiEnv]
+              block_lk
           · intro k
             rw [show 4 + k = 1 + (1 + (1 + (1 + k))) from by omega,
               runFuel_jump_prefix hstep1 (1 + (1 + (1 + k))),
@@ -1559,15 +1606,20 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               (by simp only [e1, stateAt]) (by simp only [e1, stateAt]) hphi hphiOp
               hidig1 hi1 hn1 hbits
           refine ⟨e2, 3, by omega, Or.inr (by simp only [e2, stateAt]), ?_, ?_⟩
-          · refine Or.inr ⟨by simp only [e2, stateAt], ?_⟩
-            refine ⟨i0 + c + 1, hnext64, ?_, ?_, ?_, ?_⟩
-            · simp only [e2, stateAt, intIfEndEnv]
+          · refine Or.inr ⟨by simp only [e2, stateAt], by simp only [e2, stateAt], ?_⟩
+            refine ⟨by omega, ?_, ?_, ?_, ?_, ?_, ?_⟩
+            · simp only [e2, e1, e0, stateAt, intIfEndEnv, intBodyEnv, intHeadEnv,
+                intHeadPhiEnv]
               block_lk
-              exact int_succ_eq _ hnext64
-            · rw [h_eq]
+            · simp only [e2, e1, e0, stateAt, intIfEndEnv, intBodyEnv, intHeadEnv,
+                intHeadPhiEnv]
+              block_lk
+            · rw [← h_eq]
               simp only [e2, stateAt, intIfEndEnv]
               block_lk
-            · simp only [e2, stateAt, intIfEndEnv]
+              exact int_succ_eq _ hnext64
+            · rw [← h_eq]
+              simp only [e2, stateAt, intIfEndEnv]
               rw [hcnt64]
               block_lk
               exact int_succ_eq _ hd0next64
@@ -1575,9 +1627,13 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
                   (digitFold bs (i0 - d0) (min (d0 + (i0 + c + 1 - i0)) 19)) := by
                 rw [hcnt64]
                 exact digitFold_frozen (ofNat_ult_false (by omega) hguard') rfl
+              rw [← h_eq]
               simp only [e2, stateAt, intIfEndEnv]
               block_lk
               exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hval
+            · simp only [e2, e1, e0, stateAt, intIfEndEnv, intBodyEnv, intHeadEnv,
+                intHeadPhiEnv]
+              block_lk
           · intro k
             rw [show 3 + k = 1 + (1 + (1 + k)) from by omega,
               runFuel_jump_prefix hstep1 (1 + (1 + k)),
@@ -1657,15 +1713,20 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               (by simp only [e2, stateAt]) (by simp only [e2, stateAt]) hphi hphiOp
               hidig2 hi2 hn2 hbits
           refine ⟨e3, 4, by omega, Or.inr (by simp only [e3, stateAt]), ?_, ?_⟩
-          · refine Or.inr ⟨by simp only [e3, stateAt], ?_⟩
-            refine ⟨i0 + c + 1, hnext64, ?_, ?_, ?_, ?_⟩
-            · simp only [e3, stateAt, intIfEndEnv]
+          · refine Or.inr ⟨by simp only [e3, stateAt], by simp only [e3, stateAt], ?_⟩
+            refine ⟨by omega, ?_, ?_, ?_, ?_, ?_, ?_⟩
+            · simp only [e3, e2, e1, e0, stateAt, intIfEndEnv, intIfThenEnv, intBodyEnv,
+                intHeadEnv, intHeadPhiEnv]
               block_lk
-              exact int_succ_eq _ hnext64
-            · rw [h_eq]
+            · simp only [e3, e2, e1, e0, stateAt, intIfEndEnv, intIfThenEnv, intBodyEnv,
+                intHeadEnv, intHeadPhiEnv]
+              block_lk
+            · rw [← h_eq]
               simp only [e3, stateAt, intIfEndEnv]
               block_lk
-            · simp only [e3, stateAt, intIfEndEnv]
+              exact int_succ_eq _ hnext64
+            · rw [← h_eq]
+              simp only [e3, stateAt, intIfEndEnv]
               rw [hcnt64]
               block_lk
               exact int_succ_eq _ hd0next64
@@ -1678,9 +1739,13 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
                 rw [hcnt64]
                 exact digitFold_step_at hd0le (ofNat_ult_true (by omega) hguard)
                   (by rw [hblen]; omega) hbyteD hdigit rfl
+              rw [← h_eq]
               simp only [e3, stateAt, intIfEndEnv]
               block_lk
               exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hval
+            · simp only [e3, e2, e1, e0, stateAt, intIfEndEnv, intIfThenEnv, intBodyEnv,
+                intHeadEnv, intHeadPhiEnv]
+              block_lk
           · intro k
             rw [show 4 + k = 1 + (1 + (1 + (1 + k))) from by omega,
               runFuel_jump_prefix hstep1 (1 + (1 + (1 + k))),
@@ -1731,15 +1796,20 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               (by simp only [e1, stateAt]) (by simp only [e1, stateAt]) hphi hphiOp
               hidig1 hi1 hn1 hbits
           refine ⟨e2, 3, by omega, Or.inr (by simp only [e2, stateAt]), ?_, ?_⟩
-          · refine Or.inr ⟨by simp only [e2, stateAt], ?_⟩
-            refine ⟨i0 + c + 1, hnext64, ?_, ?_, ?_, ?_⟩
-            · simp only [e2, stateAt, intIfEndEnv]
+          · refine Or.inr ⟨by simp only [e2, stateAt], by simp only [e2, stateAt], ?_⟩
+            refine ⟨by omega, ?_, ?_, ?_, ?_, ?_, ?_⟩
+            · simp only [e2, e1, e0, stateAt, intIfEndEnv, intBodyEnv, intHeadEnv,
+                intHeadPhiEnv]
               block_lk
-              exact int_succ_eq _ hnext64
-            · rw [h_eq]
+            · simp only [e2, e1, e0, stateAt, intIfEndEnv, intBodyEnv, intHeadEnv,
+                intHeadPhiEnv]
+              block_lk
+            · rw [← h_eq]
               simp only [e2, stateAt, intIfEndEnv]
               block_lk
-            · simp only [e2, stateAt, intIfEndEnv]
+              exact int_succ_eq _ hnext64
+            · rw [← h_eq]
+              simp only [e2, stateAt, intIfEndEnv]
               rw [hcnt64]
               block_lk
               exact int_succ_eq _ hd0next64
@@ -1747,9 +1817,13 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
                   (digitFold bs (i0 - d0) (min (d0 + (i0 + c + 1 - i0)) 19)) := by
                 rw [hcnt64]
                 exact digitFold_frozen (ofNat_ult_false (by omega) hguard') rfl
+              rw [← h_eq]
               simp only [e2, stateAt, intIfEndEnv]
               block_lk
               exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hval
+            · simp only [e2, e1, e0, stateAt, intIfEndEnv, intBodyEnv, intHeadEnv,
+                intHeadPhiEnv]
+              block_lk
           · intro k
             rw [show 3 + k = 1 + (1 + (1 + k)) from by omega,
               runFuel_jump_prefix hstep1 (1 + (1 + k)),
@@ -1773,8 +1847,11 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               (BlockEval.evalOperand_reg_of s.env s "%idig.0560" _ hid)
               (BlockEval.evalOperand_reg_of s.env s "%ip.0562" _ hipv) hj hbyte_s hdigit'
           refine ⟨e0, 1, by omega, Or.inl (by simp only [e0, stateAt]), ?_, ?_⟩
-          · refine Or.inl ⟨by simp only [e0, stateAt], ?_⟩
-            refine ⟨i0 + c, ?_, ?_, ?_⟩
+          · refine Or.inl ⟨by simp only [e0, stateAt], by simp only [e0, stateAt],
+              by simp only [e0, stateAt, intHeadEnv, intHeadPhiEnv]; block_lk,
+              by simp only [e0, stateAt, intHeadEnv, intHeadPhiEnv]; block_lk,
+              i0 + c, by omega, hltn, ?_, ?_, ?_,
+              b, by rw [← hmem]; exact hbyte_s, hdigit'⟩
             · simp only [e0, stateAt, intHeadEnv, intHeadPhiEnv]
               block_lk
             · simp only [e0, stateAt, intHeadEnv, intHeadPhiEnv]
@@ -1800,8 +1877,11 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               (BlockEval.evalOperand_reg_of s.env s "%inc63" _ hid)
               (BlockEval.evalOperand_reg_of s.env s "%ip.4" _ hipv) hj hbyte_s hdigit'
           refine ⟨e0, 1, by omega, Or.inl (by simp only [e0, stateAt]), ?_, ?_⟩
-          · refine Or.inl ⟨by simp only [e0, stateAt], ?_⟩
-            refine ⟨i0 + c, ?_, ?_, ?_⟩
+          · refine Or.inl ⟨by simp only [e0, stateAt], by simp only [e0, stateAt],
+              by simp only [e0, stateAt, intHeadEnv, intHeadPhiEnv]; block_lk,
+              by simp only [e0, stateAt, intHeadEnv, intHeadPhiEnv]; block_lk,
+              i0 + c, by omega, hltn, ?_, ?_, ?_,
+              b, by rw [← hmem]; exact hbyte_s, hdigit'⟩
             · simp only [e0, stateAt, intHeadEnv, intHeadPhiEnv]
               block_lk
             · simp only [e0, stateAt, intHeadEnv, intHeadPhiEnv]
@@ -1834,8 +1914,11 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
           (BlockEval.evalOperand_reg_of s.env s "%idig.0560" _ hid)
           (BlockEval.evalOperand_reg_of s.env s "%ip.0562" _ hipv) hj hbyte_s hdigit'
       refine ⟨e0, 1, by omega, Or.inl (by simp only [e0, stateAt]), ?_, ?_⟩
-      · refine Or.inl ⟨by simp only [e0, stateAt], ?_⟩
-        refine ⟨i0 + c, ?_, ?_, ?_⟩
+      · refine Or.inl ⟨by simp only [e0, stateAt], by simp only [e0, stateAt],
+          by simp only [e0, stateAt, intHeadEnv, intHeadPhiEnv]; block_lk,
+          by simp only [e0, stateAt, intHeadEnv, intHeadPhiEnv]; block_lk,
+          i0 + c, by omega, hltn, ?_, ?_, ?_,
+          b, by rw [← hmem]; exact hbyte'_s, hdigit'⟩
         · simp only [e0, stateAt, intHeadEnv, intHeadPhiEnv]
           block_lk
         · simp only [e0, stateAt, intHeadEnv, intHeadPhiEnv]
@@ -1861,8 +1944,11 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
           (BlockEval.evalOperand_reg_of s.env s "%inc63" _ hid)
           (BlockEval.evalOperand_reg_of s.env s "%ip.4" _ hipv) hj hbyte_s hdigit'
       refine ⟨e0, 1, by omega, Or.inl (by simp only [e0, stateAt]), ?_, ?_⟩
-      · refine Or.inl ⟨by simp only [e0, stateAt], ?_⟩
-        refine ⟨i0 + c, ?_, ?_, ?_⟩
+      · refine Or.inl ⟨by simp only [e0, stateAt], by simp only [e0, stateAt],
+          by simp only [e0, stateAt, intHeadEnv, intHeadPhiEnv]; block_lk,
+          by simp only [e0, stateAt, intHeadEnv, intHeadPhiEnv]; block_lk,
+          i0 + c, by omega, hltn, ?_, ?_, ?_,
+          b, by rw [← hmem]; exact hbyte'_s, hdigit'⟩
         · simp only [e0, stateAt, intHeadEnv, intHeadPhiEnv]
           block_lk
         · simp only [e0, stateAt, intHeadEnv, intHeadPhiEnv]
@@ -1890,7 +1976,7 @@ def intRunBoundLoop (mem0 : Mem) (p n i0 d0 : Nat) (bs : List UInt8) (cost : Nat
   Inv := intRunInv mem0 p n i0 d0 bs
   atBound := intRunAtBound mem0 p n i0
   Exit := intRunExitBlock
-  ExitWord := intRunExit bs i0 d0
+  ExitWord := intRunExit mem0 bs p n i0 d0
   step_exit := by
     intro r s c hinv hb
     have hb' : intRunAtBound mem0 p n i0 s c = true := hb
@@ -1902,14 +1988,14 @@ def intRunBoundLoop (mem0 : Mem) (p n i0 d0 : Nat) (bs : List UInt8) (cost : Nat
     exact ⟨e, c', j, by omega, hpc, hlt, hinv', hrun⟩
   exit_at_zero := by
     intro s c h
-    obtain ⟨_, _, hsum, _, _, _, _, _, _, _⟩ := h
+    obtain ⟨_, _, hsum, _, _, _, _, _, _, _, _⟩ := h
     unfold intRunAtBound
     have hle : decide (n - i0 ≤ c + 1) = true := decide_eq_true (by omega)
     rw [hle]
     simp
   budget := by
     intro r s c h
-    obtain ⟨_, _, hsum, _, _, _, _, _, _, _⟩ := h
+    obtain ⟨_, _, hsum, _, _, _, _, _, _, _, _⟩ := h
     omega
 
 /-- **The integer run reaches its exit.**  At the whole distance as its budget,
@@ -1919,10 +2005,80 @@ theorem intRun_run (mem0 : Mem) (p n i0 d0 : Nat) (bs : List UInt8) (cost : Nat)
     (hcost : 4 ≤ cost) (s : State) (c : Nat)
     (hinv : intRunInv mem0 p n i0 d0 bs (n - i0) s c) (k : Nat) :
     ∃ (e : State) (j : Nat), j ≤ (n - i0 + 1) * cost ∧ intRunExitBlock e ∧
-      intRunExit bs i0 d0 e ∧
+      intRunExit mem0 bs p n i0 d0 e ∧
       runFuel s2HelperCalls (j + k) numFastBody s =
         runFuel s2HelperCalls k numFastBody e :=
   (intRunBoundLoop mem0 p n i0 d0 bs cost hcost).run s c hinv k
+
+/-- **The run's end-of-lexeme exit when every remaining byte is a digit.**  The
+non-digit exit's own stop byte is a non-digit, so a lexeme whose bytes from the
+run's start to its end are digits rules that arm out and leaves the end-of-lexeme
+one — the arm a composition needs to know the run stopped at the lexeme's end. -/
+theorem intRun_step_end230 {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
+    {s : State} {c : Nat}
+    (hinv : intRunInv mem0 p n i0 d0 bs r s c)
+    (hb : intRunAtBound mem0 p n i0 s c = true)
+    (hdigits : ∀ k, i0 ≤ k → k < n → IsDigitB (bs.getD k 0) = true) :
+    ∃ (e : State) (j : Nat), j ≤ 4 ∧ intRunEndWord bs p n i0 d0 e ∧
+      ∀ k, runFuel s2HelperCalls (j + k) numFastBody s =
+        runFuel s2HelperCalls k numFastBody e := by
+  obtain ⟨e, j, hj, _, hexit, hrun⟩ := intRun_step_exit hinv hb
+  obtain ⟨_, _, _, _, _, _, _, _, hread, _, _⟩ := hinv
+  rcases hexit with ⟨_, _, _, _, i1, hi0, hi1lt, _, _, _, b, hbytei, hbd⟩ | hend
+  · have hbs : bs.getD i1 0 = b := getD_of_readBytes hread hi1lt hbytei
+    have hdig := hdigits i1 hi0 hi1lt
+    rw [hbs, hbd] at hdig
+    exact absurd hdig (by decide)
+  · exact ⟨e, j, hj, hend, hrun⟩
+
+/-- **The integer run's end-of-lexeme loop.**  With every byte from the run's
+start to the lexeme's end a digit, the run's only bound is the lexeme's end, so
+its exit is the end-of-lexeme one and the exit word is `intRunEndWord`. -/
+def intRunEndBoundLoop (mem0 : Mem) (p n i0 d0 : Nat) (bs : List UInt8) (cost : Nat)
+    (hcost : 4 ≤ cost)
+    (hdigits : ∀ k, i0 ≤ k → k < n → IsDigitB (bs.getD k 0) = true) :
+    BoundLoop s2HelperCalls numFastBody where
+  head := "land.lhs.true41"
+  exitBlock := "if.end230"
+  N := n - i0
+  cost := cost
+  Inv := intRunInv mem0 p n i0 d0 bs
+  atBound := intRunAtBound mem0 p n i0
+  Exit := fun e => e.pc = "if.end230"
+  ExitWord := intRunEndWord bs p n i0 d0
+  step_exit := by
+    intro r s c hinv hb
+    obtain ⟨e, j, hj, hword, hrun⟩ := intRun_step_end230 hinv hb hdigits
+    exact ⟨e, j, by omega, hword.1, hword, hrun⟩
+  step_loop := by
+    intro r s c hinv hb
+    obtain ⟨e, c', j, hj, hpc, hlt, hinv', hrun⟩ := intRun_step_loop hinv hb
+    exact ⟨e, c', j, by omega, hpc, hlt, hinv', hrun⟩
+  exit_at_zero := by
+    intro s c h
+    obtain ⟨_, _, hsum, _, _, _, _, _, _, _, _⟩ := h
+    unfold intRunAtBound
+    have hle : decide (n - i0 ≤ c + 1) = true := decide_eq_true (by omega)
+    rw [hle]
+    simp
+  budget := by
+    intro r s c h
+    obtain ⟨_, _, hsum, _, _, _, _, _, _, _, _⟩ := h
+    omega
+
+/-- **The integer run reaches the lexeme's end.**  At the whole distance as its
+budget, a run whose remaining bytes are all digits leaves at `if.end230` with the
+end-of-lexeme exit word within `(n - i0 + 1) * cost` control steps. -/
+theorem intRun_end_run (mem0 : Mem) (p n i0 d0 : Nat) (bs : List UInt8) (cost : Nat)
+    (hcost : 4 ≤ cost)
+    (hdigits : ∀ k, i0 ≤ k → k < n → IsDigitB (bs.getD k 0) = true)
+    (s : State) (c : Nat)
+    (hinv : intRunInv mem0 p n i0 d0 bs (n - i0) s c) (k : Nat) :
+    ∃ (e : State) (j : Nat), j ≤ (n - i0 + 1) * cost ∧ e.pc = "if.end230" ∧
+      intRunEndWord bs p n i0 d0 e ∧
+      runFuel s2HelperCalls (j + k) numFastBody s =
+        runFuel s2HelperCalls k numFastBody e :=
+  (intRunEndBoundLoop mem0 p n i0 d0 bs cost hcost hdigits).run s c hinv k
 
 /-! ### The fraction run: `land.lhs.true119`
 
@@ -2427,24 +2583,55 @@ theorem fracHead_step_back_nondigit {env : Env} {s : State} {a j : Nat} {b : UIn
 
 /-! #### The fraction run's invariant, arms and instance -/
 
+/-- The integer part's two cells, as the fraction run carries them: `if.end230`'s
+fraction edge reads `%idig.4` and `%ip.5`, which the merge before the run wrote
+and the run never touches. -/
+def fracPartCells (env : Env) : Prop :=
+  ∃ idig5 ip5 : BitVec 64,
+    lookupName env "%idig.4" = some (.int 64 idig5) ∧
+    lookupName env "%ip.5" = some (.int 64 ip5)
+
+/-- The fraction run's end-of-lexeme exit's cells: the run stopped at the
+lexeme's end, so the index is the length, and the block it leaves for is
+`if.end230` from `if.end140`.  It carries the cursor, the length, the count
+`d0 + (n - i0)`, the accumulator's value at those digits, the count `%17` the
+head's preheader formed (`if.end230`'s `%fdig.4719727` phi reads it), and the
+integer part's two cells `%idig.4`/`%ip.5`, which the run carries untouched from
+the merge before it and whose phis the same block reads. -/
+def fracRunEndWord (bs : List UInt8) (p n i0 d0 : Nat) (e : State) : Prop :=
+  e.pc = "if.end230" ∧ e.pre = some "if.end140" ∧ n < 2 ^ 64 ∧
+  lookupName e.env "%p" = some (.ptr p) ∧
+  lookupName e.env "%n" = some (.int 64 (BitVec.ofNat 64 n)) ∧
+  lookupName e.env "%inc142" = some (.int 64 (BitVec.ofNat 64 n)) ∧
+  lookupName e.env "%inc141"
+    = some (.int 64 (BitVec.ofNat 64 (d0 + (n - i0)))) ∧
+  lookupName e.env "%fr.4"
+    = some (.int 64
+      (BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + (n - i0)) 19)))) ∧
+  lookupName e.env "%17"
+    = some (.int 64 (BitVec.ofNat 64 d0 + BitVec.ofNat 64 n - BitVec.ofNat 64 i0)) ∧
+  fracPartCells e.env
+
 /-- The fraction run's exits: `if.end144` at the head's non-digit branch, or
-`if.end230` at `if.end140`'s end-of-lexeme branch; each carries the count and the
-accumulator's value at the digits the count names. -/
-def fracRunExit (bs : List UInt8) (i0 d0 : Nat) (e : State) : Prop :=
-  (e.pc = "if.end144" ∧
-      ∃ i1, lookupName e.env "%i.9595" = some (.int 64 (BitVec.ofNat 64 i1)) ∧
+`if.end230` at `if.end140`'s end-of-lexeme branch (`fracRunEndWord`); each
+carries the cursor, the length, the count and the accumulator's value at the
+digits the count names, and names its predecessor, and the non-digit exit's index
+is inside the lexeme and hands the byte it stopped on and that byte's non-digit
+answer, read at the run's own memory — the exit state is opaque to a composition,
+so the reader cannot re-read it. -/
+def fracRunExit (mem0 : Mem) (bs : List UInt8) (p n i0 d0 : Nat) (e : State) : Prop :=
+  (e.pc = "if.end144" ∧ e.pre = some "land.lhs.true119" ∧
+      lookupName e.env "%p" = some (.ptr p) ∧
+      lookupName e.env "%n" = some (.int 64 (BitVec.ofNat 64 n)) ∧
+      ∃ i1, i0 ≤ i1 ∧ i1 < n ∧
+        lookupName e.env "%i.9595" = some (.int 64 (BitVec.ofNat 64 i1)) ∧
         lookupName e.env "%fdig.3594"
           = some (.int 64 (BitVec.ofNat 64 (d0 + (i1 - i0)))) ∧
         lookupName e.env "%fr.3593"
           = some (.int 64
-            (BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + (i1 - i0)) 19)))))
-  ∨ (e.pc = "if.end230" ∧
-      ∃ i1, lookupName e.env "%inc142" = some (.int 64 (BitVec.ofNat 64 i1)) ∧
-        lookupName e.env "%inc141"
-          = some (.int 64 (BitVec.ofNat 64 (d0 + (i1 - i0)))) ∧
-        lookupName e.env "%fr.4"
-          = some (.int 64
-            (BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + (i1 - i0)) 19)))))
+            (BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + (i1 - i0)) 19)))) ∧
+        ∃ b, readByte mem0 (p + i1) = some b ∧ IsDigitB b = false)
+  ∨ fracRunEndWord bs p n i0 d0 e
 
 def fracRunAtBound (mem0 : Mem) (p n i0 : Nat) (s : State) (c : Nat) : Bool :=
   decide (n - i0 ≤ c + 1) || !numFastDigitAt mem0 p (i0 + c)
@@ -2456,6 +2643,9 @@ def fracRunInv (mem0 : Mem) (p n i0 d0 : Nat) (bs : List UInt8) (r : Nat)
   lookupName s.env "%p" = some (.ptr p) ∧
   lookupName s.env "%n" = some (.int 64 (BitVec.ofNat 64 n)) ∧
   readBytes mem0 p n = some bs ∧
+  lookupName s.env "%17"
+    = some (.int 64 (BitVec.ofNat 64 d0 + BitVec.ofNat 64 n - BitVec.ofNat 64 i0)) ∧
+  fracPartCells s.env ∧
   ((s.pre = some "land.lhs.true119.preheader" ∧
       lookupName s.env "%i.6552" = some (.int 64 (BitVec.ofNat 64 (i0 + c))) ∧
       lookupName s.env "%fdig.0554" = some (.int 64 (BitVec.ofNat 64 (d0 + c))) ∧
@@ -2491,7 +2681,8 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
       fracRunInv mem0 p n i0 d0 bs r e c' ∧
       ∀ k, runFuel s2HelperCalls (j + k) numFastBody s =
         runFuel s2HelperCalls k numFastBody e := by
-  obtain ⟨hpc, hmem, hsum, hltn, hnlt, hd0le, hp, hn, hread, hpre⟩ := hinv
+  obtain ⟨hpc, hmem, hsum, hltn, hnlt, hd0le, hp, hn, hread, h17,
+    ⟨idig5, ip5, hidig5, hip5⟩, hpre⟩ := hinv
   have hblen : bs.length = n := JsonEntrySteps.readBytes_length mem0 p n hread
   unfold fracRunAtBound at hb
   obtain ⟨hnoD, hdig⟩ := Bool.or_eq_false_iff.mp hb
@@ -2591,7 +2782,7 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
           hidig2 hi2 hn2 hbits
       refine ⟨e3, c + 1, 4, by omega, ?_, by omega, ?_, ?_⟩
       · simp only [e3, stateAt]
-      · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+      · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
         · simp only [e3, stateAt]
         · simp only [e3, stateAt]; exact hmem
         · omega
@@ -2605,6 +2796,16 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
             fracBodyEnv, fracHeadEnv, fracHeadPhiEnv]
           block_lk
         · simpa only [e3, stateAt] using hread
+        · simp only [e3, e2, e1, e0, stateAt, fracIfEndEnv, fracIfThenEnv,
+            fracBodyEnv, fracHeadEnv, fracHeadPhiEnv]
+          block_lk
+        · refine ⟨idig5, ip5, ?_, ?_⟩
+          · simp only [e3, e2, e1, e0, stateAt, fracIfEndEnv, fracIfThenEnv,
+              fracBodyEnv, fracHeadEnv, fracHeadPhiEnv]
+            block_lk
+          · simp only [e3, e2, e1, e0, stateAt, fracIfEndEnv, fracIfThenEnv,
+              fracBodyEnv, fracHeadEnv, fracHeadPhiEnv]
+            block_lk
         · right
           refine ⟨by simp only [e3, stateAt], ?_, ?_, ?_⟩
           · simp only [e3, e2, e1, e0, stateAt, fracIfEndEnv, fracIfThenEnv,
@@ -2680,7 +2881,7 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
           hidig1 hi1 hn1 hbits
       refine ⟨e2, c + 1, 3, by omega, ?_, by omega, ?_, ?_⟩
       · simp only [e2, stateAt]
-      · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+      · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
         · simp only [e2, stateAt]
         · simp only [e2, stateAt]; exact hmem
         · omega
@@ -2694,6 +2895,16 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
             fracHeadPhiEnv]
           block_lk
         · simpa only [e2, stateAt] using hread
+        · simp only [e2, e1, e0, stateAt, fracIfEndEnv, fracBodyEnv, fracHeadEnv,
+            fracHeadPhiEnv]
+          block_lk
+        · refine ⟨idig5, ip5, ?_, ?_⟩
+          · simp only [e2, e1, e0, stateAt, fracIfEndEnv, fracBodyEnv, fracHeadEnv,
+              fracHeadPhiEnv]
+            block_lk
+          · simp only [e2, e1, e0, stateAt, fracIfEndEnv, fracBodyEnv, fracHeadEnv,
+              fracHeadPhiEnv]
+            block_lk
         · right
           refine ⟨by simp only [e2, stateAt], ?_, ?_, ?_⟩
           · simp only [e2, e1, e0, stateAt, fracIfEndEnv, fracBodyEnv, fracHeadEnv,
@@ -2792,7 +3003,7 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
           hidig2 hi2 hn2 hbits
       refine ⟨e3, c + 1, 4, by omega, ?_, by omega, ?_, ?_⟩
       · simp only [e3, stateAt]
-      · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+      · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
         · simp only [e3, stateAt]
         · simp only [e3, stateAt]; exact hmem
         · omega
@@ -2806,6 +3017,16 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
             fracBodyEnv, fracHeadEnv, fracHeadPhiEnv]
           block_lk
         · simpa only [e3, stateAt] using hread
+        · simp only [e3, e2, e1, e0, stateAt, fracIfEndEnv, fracIfThenEnv,
+            fracBodyEnv, fracHeadEnv, fracHeadPhiEnv]
+          block_lk
+        · refine ⟨idig5, ip5, ?_, ?_⟩
+          · simp only [e3, e2, e1, e0, stateAt, fracIfEndEnv, fracIfThenEnv,
+              fracBodyEnv, fracHeadEnv, fracHeadPhiEnv]
+            block_lk
+          · simp only [e3, e2, e1, e0, stateAt, fracIfEndEnv, fracIfThenEnv,
+              fracBodyEnv, fracHeadEnv, fracHeadPhiEnv]
+            block_lk
         · right
           refine ⟨by simp only [e3, stateAt], ?_, ?_, ?_⟩
           · simp only [e3, e2, e1, e0, stateAt, fracIfEndEnv, fracIfThenEnv,
@@ -2881,7 +3102,7 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
           hidig1 hi1 hn1 hbits
       refine ⟨e2, c + 1, 3, by omega, ?_, by omega, ?_, ?_⟩
       · simp only [e2, stateAt]
-      · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+      · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
         · simp only [e2, stateAt]
         · simp only [e2, stateAt]; exact hmem
         · omega
@@ -2895,6 +3116,16 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
             fracHeadPhiEnv]
           block_lk
         · simpa only [e2, stateAt] using hread
+        · simp only [e2, e1, e0, stateAt, fracIfEndEnv, fracBodyEnv, fracHeadEnv,
+            fracHeadPhiEnv]
+          block_lk
+        · refine ⟨idig5, ip5, ?_, ?_⟩
+          · simp only [e2, e1, e0, stateAt, fracIfEndEnv, fracBodyEnv, fracHeadEnv,
+              fracHeadPhiEnv]
+            block_lk
+          · simp only [e2, e1, e0, stateAt, fracIfEndEnv, fracBodyEnv, fracHeadEnv,
+              fracHeadPhiEnv]
+            block_lk
         · right
           refine ⟨by simp only [e2, stateAt], ?_, ?_, ?_⟩
           · simp only [e2, e1, e0, stateAt, fracIfEndEnv, fracBodyEnv, fracHeadEnv,
@@ -2922,26 +3153,29 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
 def fracRunExitBlock (e : State) : Prop :=
   e.pc = "if.end144" ∨ e.pc = "if.end230"
 
-theorem fracRunExit_count (bs : List UInt8) (i0 d0 : Nat) (e : State)
-    (h : fracRunExit bs i0 d0 e) :
+theorem fracRunExit_count (mem0 : Mem) (bs : List UInt8) (p n i0 d0 : Nat) (e : State)
+    (h : fracRunExit mem0 bs p n i0 d0 e) :
     (∃ i1, e.pc = "if.end144" ∧
       lookupName e.env "%fdig.3594"
         = some (.int 64 (BitVec.ofNat 64 (d0 + (i1 - i0))))) ∨
-    (∃ i1, e.pc = "if.end230" ∧
+    (e.pc = "if.end230" ∧
       lookupName e.env "%inc141"
-        = some (.int 64 (BitVec.ofNat 64 (d0 + (i1 - i0))))) := by
-  rcases h with ⟨hpc, i1, _, hcnt, _⟩ | ⟨hpc, i1, _, hcnt, _⟩
+        = some (.int 64 (BitVec.ofNat 64 (d0 + (n - i0))))) := by
+  rcases h with ⟨hpc, _, _, _, i1, _, _, _, hcnt, _, _, _, _⟩
+    | ⟨hpc, _, _, _, _, _, hcnt, _, _, _⟩
   · exact Or.inl ⟨i1, hpc, hcnt⟩
-  · exact Or.inr ⟨i1, hpc, hcnt⟩
+  · exact Or.inr ⟨hpc, hcnt⟩
 
 theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
     {s : State} {c : Nat}
     (hinv : fracRunInv mem0 p n i0 d0 bs r s c)
     (hb : fracRunAtBound mem0 p n i0 s c = true) :
-    ∃ (e : State) (j : Nat), j ≤ 4 ∧ fracRunExitBlock e ∧ fracRunExit bs i0 d0 e ∧
+    ∃ (e : State) (j : Nat), j ≤ 4 ∧ fracRunExitBlock e ∧
+      fracRunExit mem0 bs p n i0 d0 e ∧
       ∀ k, runFuel s2HelperCalls (j + k) numFastBody s =
         runFuel s2HelperCalls k numFastBody e := by
-  obtain ⟨hpc, hmem, hsum, hltn, hnlt, hd0le, hp, hn, hread, hpre⟩ := hinv
+  obtain ⟨hpc, hmem, hsum, hltn, hnlt, hd0le, hp, hn, hread, h17,
+    ⟨idig5, ip5, hidig5, hip5⟩, hpre⟩ := hinv
   have hblen : bs.length = n := JsonEntrySteps.readBytes_length mem0 p n hread
   have hd0next64 : d0 + c + 1 < 2 ^ 64 := by omega
   obtain ⟨b, hbyte⟩ := readByte_of_readBytes_lt hread hltn
@@ -3031,12 +3265,20 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               (by simp only [e2, stateAt]) (by simp only [e2, stateAt]) hphi hphiOp
               hidig2 hi2 hn2 hbits
           refine ⟨e3, 4, by omega, Or.inr (by simp only [e3, stateAt]), ?_, ?_⟩
-          · refine Or.inr ⟨by simp only [e3, stateAt], ?_⟩
-            refine ⟨i0 + c + 1, ?_, ?_, ?_⟩
-            · simp only [e3, stateAt, fracIfEndEnv]
+          · refine Or.inr ⟨by simp only [e3, stateAt], by simp only [e3, stateAt], ?_⟩
+            refine ⟨by omega, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+            · simp only [e3, e2, e1, e0, stateAt, fracIfEndEnv, fracIfThenEnv, fracBodyEnv,
+                fracHeadEnv, fracHeadPhiEnv]
+              block_lk
+            · simp only [e3, e2, e1, e0, stateAt, fracIfEndEnv, fracIfThenEnv, fracBodyEnv,
+                fracHeadEnv, fracHeadPhiEnv]
+              block_lk
+            · rw [← h_eq]
+              simp only [e3, stateAt, fracIfEndEnv]
               block_lk
               exact int_succ_eq _ hnext64
-            · simp only [e3, stateAt, fracIfEndEnv]
+            · rw [← h_eq]
+              simp only [e3, stateAt, fracIfEndEnv]
               rw [hcnt64]
               block_lk
               exact int_succ_eq _ hd0next64
@@ -3049,9 +3291,20 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
                 rw [hcnt64]
                 exact digitFold_step_at hd0le (ofNat_ult_true (by omega) hguard)
                   (by rw [hblen]; omega) hbyteD hdigit rfl
+              rw [← h_eq]
               simp only [e3, stateAt, fracIfEndEnv]
               block_lk
               exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hval
+            · simp only [e3, e2, e1, e0, stateAt, fracIfEndEnv, fracIfThenEnv, fracBodyEnv,
+                fracHeadEnv, fracHeadPhiEnv]
+              block_lk
+            · refine ⟨idig5, ip5, ?_, ?_⟩
+              · simp only [e3, e2, e1, e0, stateAt, fracIfEndEnv, fracIfThenEnv, fracBodyEnv,
+                  fracHeadEnv, fracHeadPhiEnv]
+                block_lk
+              · simp only [e3, e2, e1, e0, stateAt, fracIfEndEnv, fracIfThenEnv, fracBodyEnv,
+                  fracHeadEnv, fracHeadPhiEnv]
+                block_lk
           · intro k
             rw [show 4 + k = 1 + (1 + (1 + (1 + k))) from by omega,
               runFuel_jump_prefix hstep1 (1 + (1 + (1 + k))),
@@ -3102,12 +3355,20 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               (by simp only [e1, stateAt]) (by simp only [e1, stateAt]) hphi hphiOp
               hidig1 hi1 hn1 hbits
           refine ⟨e2, 3, by omega, Or.inr (by simp only [e2, stateAt]), ?_, ?_⟩
-          · refine Or.inr ⟨by simp only [e2, stateAt], ?_⟩
-            refine ⟨i0 + c + 1, ?_, ?_, ?_⟩
-            · simp only [e2, stateAt, fracIfEndEnv]
+          · refine Or.inr ⟨by simp only [e2, stateAt], by simp only [e2, stateAt], ?_⟩
+            refine ⟨by omega, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+            · simp only [e2, e1, e0, stateAt, fracIfEndEnv, fracBodyEnv, fracHeadEnv,
+                fracHeadPhiEnv]
+              block_lk
+            · simp only [e2, e1, e0, stateAt, fracIfEndEnv, fracBodyEnv, fracHeadEnv,
+                fracHeadPhiEnv]
+              block_lk
+            · rw [← h_eq]
+              simp only [e2, stateAt, fracIfEndEnv]
               block_lk
               exact int_succ_eq _ hnext64
-            · simp only [e2, stateAt, fracIfEndEnv]
+            · rw [← h_eq]
+              simp only [e2, stateAt, fracIfEndEnv]
               rw [hcnt64]
               block_lk
               exact int_succ_eq _ hd0next64
@@ -3115,9 +3376,20 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
                   (digitFold bs (i0 - d0) (min (d0 + (i0 + c + 1 - i0)) 19)) := by
                 rw [hcnt64]
                 exact digitFold_frozen (ofNat_ult_false (by omega) hguard') rfl
+              rw [← h_eq]
               simp only [e2, stateAt, fracIfEndEnv]
               block_lk
               exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hval
+            · simp only [e2, e1, e0, stateAt, fracIfEndEnv, fracBodyEnv, fracHeadEnv,
+                fracHeadPhiEnv]
+              block_lk
+            · refine ⟨idig5, ip5, ?_, ?_⟩
+              · simp only [e2, e1, e0, stateAt, fracIfEndEnv, fracBodyEnv, fracHeadEnv,
+                  fracHeadPhiEnv]
+                block_lk
+              · simp only [e2, e1, e0, stateAt, fracIfEndEnv, fracBodyEnv, fracHeadEnv,
+                  fracHeadPhiEnv]
+                block_lk
           · intro k
             rw [show 3 + k = 1 + (1 + (1 + k)) from by omega,
               runFuel_jump_prefix hstep1 (1 + (1 + k)),
@@ -3197,12 +3469,20 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               (by simp only [e2, stateAt]) (by simp only [e2, stateAt]) hphi hphiOp
               hidig2 hi2 hn2 hbits
           refine ⟨e3, 4, by omega, Or.inr (by simp only [e3, stateAt]), ?_, ?_⟩
-          · refine Or.inr ⟨by simp only [e3, stateAt], ?_⟩
-            refine ⟨i0 + c + 1, ?_, ?_, ?_⟩
-            · simp only [e3, stateAt, fracIfEndEnv]
+          · refine Or.inr ⟨by simp only [e3, stateAt], by simp only [e3, stateAt], ?_⟩
+            refine ⟨by omega, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+            · simp only [e3, e2, e1, e0, stateAt, fracIfEndEnv, fracIfThenEnv, fracBodyEnv,
+                fracHeadEnv, fracHeadPhiEnv]
+              block_lk
+            · simp only [e3, e2, e1, e0, stateAt, fracIfEndEnv, fracIfThenEnv, fracBodyEnv,
+                fracHeadEnv, fracHeadPhiEnv]
+              block_lk
+            · rw [← h_eq]
+              simp only [e3, stateAt, fracIfEndEnv]
               block_lk
               exact int_succ_eq _ hnext64
-            · simp only [e3, stateAt, fracIfEndEnv]
+            · rw [← h_eq]
+              simp only [e3, stateAt, fracIfEndEnv]
               rw [hcnt64]
               block_lk
               exact int_succ_eq _ hd0next64
@@ -3215,9 +3495,20 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
                 rw [hcnt64]
                 exact digitFold_step_at hd0le (ofNat_ult_true (by omega) hguard)
                   (by rw [hblen]; omega) hbyteD hdigit rfl
+              rw [← h_eq]
               simp only [e3, stateAt, fracIfEndEnv]
               block_lk
               exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hval
+            · simp only [e3, e2, e1, e0, stateAt, fracIfEndEnv, fracIfThenEnv, fracBodyEnv,
+                fracHeadEnv, fracHeadPhiEnv]
+              block_lk
+            · refine ⟨idig5, ip5, ?_, ?_⟩
+              · simp only [e3, e2, e1, e0, stateAt, fracIfEndEnv, fracIfThenEnv, fracBodyEnv,
+                  fracHeadEnv, fracHeadPhiEnv]
+                block_lk
+              · simp only [e3, e2, e1, e0, stateAt, fracIfEndEnv, fracIfThenEnv, fracBodyEnv,
+                  fracHeadEnv, fracHeadPhiEnv]
+                block_lk
           · intro k
             rw [show 4 + k = 1 + (1 + (1 + (1 + k))) from by omega,
               runFuel_jump_prefix hstep1 (1 + (1 + (1 + k))),
@@ -3268,12 +3559,20 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               (by simp only [e1, stateAt]) (by simp only [e1, stateAt]) hphi hphiOp
               hidig1 hi1 hn1 hbits
           refine ⟨e2, 3, by omega, Or.inr (by simp only [e2, stateAt]), ?_, ?_⟩
-          · refine Or.inr ⟨by simp only [e2, stateAt], ?_⟩
-            refine ⟨i0 + c + 1, ?_, ?_, ?_⟩
-            · simp only [e2, stateAt, fracIfEndEnv]
+          · refine Or.inr ⟨by simp only [e2, stateAt], by simp only [e2, stateAt], ?_⟩
+            refine ⟨by omega, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+            · simp only [e2, e1, e0, stateAt, fracIfEndEnv, fracBodyEnv, fracHeadEnv,
+                fracHeadPhiEnv]
+              block_lk
+            · simp only [e2, e1, e0, stateAt, fracIfEndEnv, fracBodyEnv, fracHeadEnv,
+                fracHeadPhiEnv]
+              block_lk
+            · rw [← h_eq]
+              simp only [e2, stateAt, fracIfEndEnv]
               block_lk
               exact int_succ_eq _ hnext64
-            · simp only [e2, stateAt, fracIfEndEnv]
+            · rw [← h_eq]
+              simp only [e2, stateAt, fracIfEndEnv]
               rw [hcnt64]
               block_lk
               exact int_succ_eq _ hd0next64
@@ -3281,9 +3580,20 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
                   (digitFold bs (i0 - d0) (min (d0 + (i0 + c + 1 - i0)) 19)) := by
                 rw [hcnt64]
                 exact digitFold_frozen (ofNat_ult_false (by omega) hguard') rfl
+              rw [← h_eq]
               simp only [e2, stateAt, fracIfEndEnv]
               block_lk
               exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hval
+            · simp only [e2, e1, e0, stateAt, fracIfEndEnv, fracBodyEnv, fracHeadEnv,
+                fracHeadPhiEnv]
+              block_lk
+            · refine ⟨idig5, ip5, ?_, ?_⟩
+              · simp only [e2, e1, e0, stateAt, fracIfEndEnv, fracBodyEnv, fracHeadEnv,
+                  fracHeadPhiEnv]
+                block_lk
+              · simp only [e2, e1, e0, stateAt, fracIfEndEnv, fracBodyEnv, fracHeadEnv,
+                  fracHeadPhiEnv]
+                block_lk
           · intro k
             rw [show 3 + k = 1 + (1 + (1 + k)) from by omega,
               runFuel_jump_prefix hstep1 (1 + (1 + k)),
@@ -3306,8 +3616,11 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
             (BlockEval.evalOperand_reg_of s.env s "%fdig.0554" _ hid)
             (BlockEval.evalOperand_reg_of s.env s "%fr.0556" _ hfr) hj hbyte_s hdigit'
         refine ⟨e0, 1, by omega, Or.inl (by simp only [e0, stateAt]), ?_, ?_⟩
-        · refine Or.inl ⟨by simp only [e0, stateAt], ?_⟩
-          refine ⟨i0 + c, ?_, ?_, ?_⟩
+        · refine Or.inl ⟨by simp only [e0, stateAt], by simp only [e0, stateAt],
+            by simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]; block_lk,
+            by simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]; block_lk,
+            i0 + c, by omega, hltn, ?_, ?_, ?_,
+            b, by rw [← hmem]; exact hbyte_s, hdigit'⟩
           · simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]
             block_lk
           · simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]
@@ -3333,8 +3646,11 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
             (BlockEval.evalOperand_reg_of s.env s "%inc141" _ hid)
             (BlockEval.evalOperand_reg_of s.env s "%fr.4" _ hfr) hj hbyte_s hdigit'
         refine ⟨e0, 1, by omega, Or.inl (by simp only [e0, stateAt]), ?_, ?_⟩
-        · refine Or.inl ⟨by simp only [e0, stateAt], ?_⟩
-          refine ⟨i0 + c, ?_, ?_, ?_⟩
+        · refine Or.inl ⟨by simp only [e0, stateAt], by simp only [e0, stateAt],
+            by simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]; block_lk,
+            by simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]; block_lk,
+            i0 + c, by omega, hltn, ?_, ?_, ?_,
+            b, by rw [← hmem]; exact hbyte_s, hdigit'⟩
           · simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]
             block_lk
           · simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]
@@ -3365,8 +3681,11 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
           (BlockEval.evalOperand_reg_of s.env s "%fdig.0554" _ hid)
           (BlockEval.evalOperand_reg_of s.env s "%fr.0556" _ hfr) hj hbyte'_s hdigit'
       refine ⟨e0, 1, by omega, Or.inl (by simp only [e0, stateAt]), ?_, ?_⟩
-      · refine Or.inl ⟨by simp only [e0, stateAt], ?_⟩
-        refine ⟨i0 + c, ?_, ?_, ?_⟩
+      · refine Or.inl ⟨by simp only [e0, stateAt], by simp only [e0, stateAt],
+          by simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]; block_lk,
+          by simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]; block_lk,
+          i0 + c, by omega, hltn, ?_, ?_, ?_,
+          b, by rw [← hmem]; exact hbyte'_s, hdigit'⟩
         · simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]
           block_lk
         · simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]
@@ -3392,8 +3711,11 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
           (BlockEval.evalOperand_reg_of s.env s "%inc141" _ hid)
           (BlockEval.evalOperand_reg_of s.env s "%fr.4" _ hfr) hj hbyte'_s hdigit'
       refine ⟨e0, 1, by omega, Or.inl (by simp only [e0, stateAt]), ?_, ?_⟩
-      · refine Or.inl ⟨by simp only [e0, stateAt], ?_⟩
-        refine ⟨i0 + c, ?_, ?_, ?_⟩
+      · refine Or.inl ⟨by simp only [e0, stateAt], by simp only [e0, stateAt],
+          by simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]; block_lk,
+          by simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]; block_lk,
+          i0 + c, by omega, hltn, ?_, ?_, ?_,
+          b, by rw [← hmem]; exact hbyte'_s, hdigit'⟩
         · simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]
           block_lk
         · simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]
@@ -3417,7 +3739,7 @@ def fracRunBoundLoop (mem0 : Mem) (p n i0 d0 : Nat) (bs : List UInt8) (cost : Na
   Inv := fracRunInv mem0 p n i0 d0 bs
   atBound := fracRunAtBound mem0 p n i0
   Exit := fracRunExitBlock
-  ExitWord := fracRunExit bs i0 d0
+  ExitWord := fracRunExit mem0 bs p n i0 d0
   step_exit := by
     intro r s c hinv hb
     obtain ⟨e, j, hj, hexit, hword, hrun⟩ := fracRun_step_exit hinv hb
@@ -3428,21 +3750,21 @@ def fracRunBoundLoop (mem0 : Mem) (p n i0 d0 : Nat) (bs : List UInt8) (cost : Na
     exact ⟨e, c', j, by omega, hpc, hlt, hinv', hrun⟩
   exit_at_zero := by
     intro s c h
-    obtain ⟨_, _, hsum, _, _, _, _, _, _, _⟩ := h
+    obtain ⟨_, _, hsum, _, _, _, _, _, _, _, _, _⟩ := h
     unfold fracRunAtBound
     have hle : decide (n - i0 ≤ c + 1) = true := decide_eq_true (by omega)
     rw [hle]
     simp
   budget := by
     intro r s c h
-    obtain ⟨_, _, hsum, _, _, _, _, _, _, _⟩ := h
+    obtain ⟨_, _, hsum, _, _, _, _, _, _, _, _, _⟩ := h
     omega
 
 theorem fracRun_run (mem0 : Mem) (p n i0 d0 : Nat) (bs : List UInt8) (cost : Nat)
     (hcost : 4 ≤ cost) (s : State) (c : Nat)
     (hinv : fracRunInv mem0 p n i0 d0 bs (n - i0) s c) (k : Nat) :
     ∃ (e : State) (j : Nat), j ≤ (n - i0 + 1) * cost ∧ fracRunExitBlock e ∧
-      fracRunExit bs i0 d0 e ∧
+      fracRunExit mem0 bs p n i0 d0 e ∧
       runFuel s2HelperCalls (j + k) numFastBody s =
         runFuel s2HelperCalls k numFastBody e :=
   (fracRunBoundLoop mem0 p n i0 d0 bs cost hcost).run s c hinv k
@@ -4691,6 +5013,14 @@ theorem expRun_run (mem0 : Mem) (p n i0 : Nat) (bs : List UInt8) (cost : Nat)
 /-- info: 'LeanLLVM.Refinement.intRun_run' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms intRun_run
+
+/-- info: 'LeanLLVM.Refinement.intRun_step_end230' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms intRun_step_end230
+
+/-- info: 'LeanLLVM.Refinement.intRun_end_run' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms intRun_end_run
 
 /-- info: 'LeanLLVM.Refinement.fracRun_run' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

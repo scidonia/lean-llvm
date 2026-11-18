@@ -247,10 +247,13 @@ theorem fpWhileEnd_entry {epow : Int → Option EPow} {env : Env} {s : State}
       { s with pc := "land.lhs.true41", pre := some "land.lhs.true41.preheader" },
     ?_, ?_⟩
   · refine NumFastStarts.intRunInv_entry (mem := mem) (p := p) (n := n)
-      (i0 := i0) (d0 := d0) (bs := bs) rfl rfl ?_ hltn hnlt hd0 ?_ ?_ hread ?_ ?_ ?_
+      (i0 := i0) (d0 := d0) (bs := bs) rfl rfl ?_ hltn hnlt hd0 ?_ ?_ hread ?_ ?_ ?_ ?_
     · simpa only [stateAt] using hmem
     · simpa only [stateAt] using intPreheaderEnv_p hp
     · simpa only [stateAt] using intPreheaderEnv_n hn
+    · rw [← hi, ← hid]
+      simp only [stateAt, NumFastStarts.intPreheaderEnv]
+      block_lk
     · simpa only [stateAt] using intPreheaderEnv_i hi''
     · simpa only [stateAt] using intPreheaderEnv_idig hid''
     · simpa only [stateAt] using intPreheaderEnv_ip hip''
@@ -2011,6 +2014,7 @@ theorem fpWhileEnd115_entry {epow : Int → Option EPow} {env : Env} {s : State}
     (hn : lookupName (NumFastSeams.fpWhileEnd115Env env i fr fdig (BitVec.ofNat 64 n)) "%n"
       = some (.int 64 (BitVec.ofNat 64 n)))
     (hread : readBytes mem p n = some bs)
+    (hparts : fracPartCells env)
     (hi : i = BitVec.ofNat 64 i0) (hfd : fdig = BitVec.ofNat 64 d0)
     (hfr : fr = BitVec.ofNat 64 (digitFold bs (i0 - d0) (min d0 19)))
     (hltn : i0 < n) (hnlt : n < 2 ^ 63) (hd0 : d0 ≤ i0) :
@@ -2056,10 +2060,21 @@ theorem fpWhileEnd115_entry {epow : Int → Option EPow} {env : Env} {s : State}
       { s with pc := "land.lhs.true119", pre := some "land.lhs.true119.preheader" },
     ?_, ?_⟩
   · refine NumFastStarts.fracRunInv_entry (mem := mem) (p := p) (n := n)
-      (i0 := i0) (d0 := d0) (bs := bs) rfl rfl ?_ hltn hnlt hd0 ?_ ?_ hread ?_ ?_ ?_
+      (i0 := i0) (d0 := d0) (bs := bs) rfl rfl ?_ hltn hnlt hd0 ?_ ?_ hread ?_ ?_ ?_ ?_ ?_
     · simpa only [stateAt] using hmem
     · simpa only [stateAt] using fracPreheaderEnv_p hp
     · simpa only [stateAt] using fracPreheaderEnv_n hn
+    · rw [← hi, ← hfd]
+      simp only [stateAt, NumFastStarts.fracPreheaderEnv]
+      block_lk
+    · obtain ⟨idigv, ipv, hidigv, hipv⟩ := hparts
+      refine ⟨idigv, ipv, ?_, ?_⟩
+      · simp only [stateAt, NumFastStarts.fracPreheaderEnv,
+          NumFastSeams.fpWhileEnd115Env]
+        block_lk
+      · simp only [stateAt, NumFastStarts.fracPreheaderEnv,
+          NumFastSeams.fpWhileEnd115Env]
+        block_lk
     · simpa only [stateAt] using fracPreheaderEnv_i hi''
     · simpa only [stateAt] using fracPreheaderEnv_d hfd''
     · simpa only [stateAt] using fracPreheaderEnv_f hfr''
@@ -2082,6 +2097,7 @@ merges them.  Four steps reach the head at `i0 = start`, `d0 = 0`. -/
 theorem fracTaken_refuse1 {epow : Int → Option EPow} {env : Env} {s : State}
     {a v8a start n : Nat} {bs bs8 : List UInt8}
     (hpc : s.pc = "while.body100.preheader")
+    (hparts : fracPartCells env)
     (hpre : s.pre = some "while.cond91.preheader")
     (hp : lookupName env "%p" = some (.ptr a))
     (hv8 : lookupName env "%v8101" = some (.ptr v8a))
@@ -2168,7 +2184,12 @@ theorem fracTaken_refuse1 {epow : Int → Option EPow} {env : Env} {s : State}
     (s := st2)
     (i := BitVec.ofNat 64 start) (fr := 0) (fdig := 0)
     (mem := s.mem) (p := a) (n := n) (i0 := start) (d0 := 0) (bs := bs)
-    rfl hden hbit rfl hp' hn' hread rfl rfl
+    rfl hden hbit rfl hp' hn' hread
+    (by obtain ⟨idigv, ipv, hidigv, hipv⟩ := hparts
+        exact ⟨idigv, ipv, by
+          simp only [fpCleanupThread112Env, fpPre100Env]; block_lk, by
+          simp only [fpCleanupThread112Env, fpPre100Env]; block_lk⟩)
+    rfl rfl
     (by rw [Nat.sub_zero, show min 0 19 = 0 from by decide, digitFold_zero]; rfl)
     (by omega) hnlt (by omega)
   refine ⟨e, hinv, ?_⟩
@@ -2194,6 +2215,7 @@ after the group.  Four steps reach the head at `i0 = start + 8`, `d0 = 8`. -/
 theorem fracTaken_exit {epow : Int → Option EPow} {env : Env} {s : State}
     {a v8a start n w : Nat} {bs bs8 : List UInt8}
     (hpc : s.pc = "while.body100.preheader")
+    (hparts : fracPartCells env)
     (hpre : s.pre = some "while.cond91.preheader")
     (hp : lookupName env "%p" = some (.ptr a))
     (hv8 : lookupName env "%v8101" = some (.ptr v8a))
@@ -2332,7 +2354,12 @@ theorem fracTaken_exit {epow : Int → Option EPow} {env : Env} {s : State}
     (fdig := 0x8#64)
     (mem := writeBytes s.mem v8a (natToBytes w 4)) (p := a) (n := n)
     (i0 := start + 8) (d0 := 8) (bs := bs)
-    rfl hden hbit rfl hp' hn' hread' rfl (by decide)
+    rfl hden hbit rfl hp' hn' hread'
+    (by obtain ⟨idigv, ipv, hidigv, hipv⟩ := hparts
+        exact ⟨idigv, ipv, by
+          simp only [NumFastSeams.fpCleanup112Env, fpPre100Env]; block_lk, by
+          simp only [NumFastSeams.fpCleanup112Env, fpPre100Env]; block_lk⟩)
+    rfl (by decide)
     (by rw [show start + 8 - 8 = start from by omega,
       show min 8 19 = 8 from by decide])
     hmore hnlt (by omega)
@@ -2357,6 +2384,7 @@ reach the head at `i0 = start + 8`, `d0 = 8`. -/
 theorem fracTaken_refuse2 {epow : Int → Option EPow} {env : Env} {s : State}
     {a v8a start n w : Nat} {bs bs8a bs8b : List UInt8}
     (hpc : s.pc = "while.body100.preheader")
+    (hparts : fracPartCells env)
     (hpre : s.pre = some "while.cond91.preheader")
     (hp : lookupName env "%p" = some (.ptr a))
     (hv8 : lookupName env "%v8101" = some (.ptr v8a))
@@ -2467,7 +2495,12 @@ theorem fracTaken_refuse2 {epow : Int → Option EPow} {env : Env} {s : State}
     (i0 := start + 8) (d0 := 8) (bs := bs)
     rfl hden hbit rfl (fpWhileEnd115Env_p (fracThread2Env_p hp))
     (fpWhileEnd115Env_n (fracThread2Env_n hn))
-    hread' rfl (by decide)
+    hread'
+    (by obtain ⟨idigv, ipv, hidigv, hipv⟩ := hparts
+        exact ⟨idigv, ipv, by
+          simp only [fracThread2Env]; block_lk, by
+          simp only [fracThread2Env]; block_lk⟩)
+    rfl (by decide)
     (by rw [hfold, show start + 8 - 8 = start from by omega,
       show min 8 19 = 8 from by decide])
     hmore hnlt (by omega)
@@ -2484,6 +2517,7 @@ test refuses the third group.  Six steps reach the head at `i0 = start + 16`,
 theorem fracTaken_fold2 {epow : Int → Option EPow} {env : Env} {s : State}
     {a v8a start n w w2 : Nat} {bs bs8a bs8b : List UInt8}
     (hpc : s.pc = "while.body100.preheader")
+    (hparts : fracPartCells env)
     (hpre : s.pre = some "while.cond91.preheader")
     (hp : lookupName env "%p" = some (.ptr a))
     (hv8 : lookupName env "%v8101" = some (.ptr v8a))
@@ -2635,7 +2669,12 @@ theorem fracTaken_fold2 {epow : Int → Option EPow} {env : Env} {s : State}
     (p := a) (n := n) (i0 := start + 16) (d0 := 16) (bs := bs)
     rfl hden4 hbit3 hmem (fpWhileEnd115Env_p (fracFold2Env_p hp))
     (fpWhileEnd115Env_n (fracFold2Env_n hn))
-    hread' rfl (by decide)
+    hread'
+    (by obtain ⟨idigv, ipv, hidigv, hipv⟩ := hparts
+        exact ⟨idigv, ipv, by
+          simp only [fracFold2Env]; block_lk, by
+          simp only [fracFold2Env]; block_lk⟩)
+    rfl (by decide)
     (by rw [show start + 16 - 16 = start from by omega,
       show min 16 19 = 16 from by decide])
     hmore hnlt (by omega)
@@ -2654,6 +2693,7 @@ before the second group is the first two branches. -/
 theorem fracTakenGuard_entry {epow : Int → Option EPow} {env : Env} {s : State}
     {a v8a start n : Nat} {bs bs8a bs8b : List UInt8}
     (hpc : s.pc = "while.body100.preheader")
+    (hparts : fracPartCells env)
     (hpre : s.pre = some "while.cond91.preheader")
     (hp : lookupName env "%p" = some (.ptr a))
     (hv8 : lookupName env "%v8101" = some (.ptr v8a))
@@ -2698,15 +2738,16 @@ theorem fracTakenGuard_entry {epow : Int → Option EPow} {env : Env} {s : State
             = runFuel (stage2NumFastCalls epow) k numFastBody e) := by
   refine ⟨?_, ?_, ?_, ?_⟩
   · intro hnone
-    exact fracTaken_refuse1 hpc hpre hp hv8 hinc h563 hn hread hslicea hstart hnlt hnone
+    exact fracTaken_refuse1 hpc hparts hpre hp hv8 hinc h563 hn hread hslicea hstart
+      hnlt hnone
   · intro w hsome hw hguard hmore
-    exact fracTaken_exit hpc hpre hp hv8 hinc h563 hn hread hslicea hstart hnlt
+    exact fracTaken_exit hpc hparts hpre hp hv8 hinc h563 hn hread hslicea hstart hnlt
       hsome hw hsep hguard hmore
   · intro hsliceb hsep2 w hsome hw hguard hmore hnone
-    exact fracTaken_refuse2 hpc hpre hp hv8 hinc h563 hn hread hslicea hsliceb
+    exact fracTaken_refuse2 hpc hparts hpre hp hv8 hinc h563 hn hread hslicea hsliceb
       hstart hnlt hsome hw hsep hsep2 hguard hmore hnone
   · intro hsliceb hsep2 w w2 hsome hw hguard hmore hsome2 hw2
-    exact fracTaken_fold2 hpc hpre hp hv8 hinc h563 hn hread hslicea hsliceb
+    exact fracTaken_fold2 hpc hparts hpre hp hv8 hinc h563 hn hread hslicea hsliceb
       hstart hnlt hsome hw hsep hsep2 hguard hmore hsome2 hw2
 
 /-! ### The fraction's guard block
@@ -2754,6 +2795,7 @@ steps for the one-group shapes and eight for the two-group ones. -/
 theorem fracWhileCond91_entry {epow : Int → Option EPow} {env : Env} {s : State}
     {a v8a i5 n : Nat} {bs : List UInt8}
     (hpc : s.pc = "while.cond91.preheader")
+    (hparts : fracPartCells env)
     (hp : lookupName env "%p" = some (.ptr a))
     (hv8 : lookupName env "%v8101" = some (.ptr v8a))
     (hi5 : lookupName env "%i.5" = some (.int 64 (BitVec.ofNat 64 i5)))
@@ -2835,7 +2877,12 @@ theorem fracWhileCond91_entry {epow : Int → Option EPow} {env : Env} {s : Stat
     (a := a) (v8a := v8a) (start := i5 + 1) (n := n)
     (bs := bs) (bs8a := (bs.drop (i5 + 1)).take 8)
     (bs8b := (bs.drop (i5 + 1 + 8)).take 8)
-    rfl rfl hp' hv8' hinc' h92' hn' hread hslicea (by omega) hnlt hsep
+    rfl
+    (by obtain ⟨idigv, ipv, hidigv, hipv⟩ := hparts
+        exact ⟨idigv, ipv, by
+          simp only [NumFastStarts.whileCond91PreheaderEnv]; block_lk, by
+          simp only [NumFastStarts.whileCond91PreheaderEnv]; block_lk⟩)
+    rfl hp' hv8' hinc' h92' hn' hread hslicea (by omega) hnlt hsep
   exact ⟨fun hnone => by
       obtain ⟨e, hinv, hcont⟩ := hbase.1 hnone
       exact ⟨e, hinv, fun k => by

@@ -148,9 +148,13 @@ theorem ifThen22_refused_run {epow : Int → Option EPow} {env : Env} {s : State
     ?_, ?_⟩
   refine NumFastStarts.intRunInv_entry (mem := s.mem) (p := a) (n := n)
       (i0 := start + 1) (d0 := 1) (bs := bs) rfl rfl rfl hnext hnlt (by omega)
-      ?_ ?_ hread ?_ ?_ ?_
+      ?_ ?_ hread ?_ ?_ ?_ ?_
   · lk_all
   · lk_all
+  · rw [show BitVec.ofNat 64 (start + 1) = BitVec.ofNat 64 start + 0x1#64
+        from (ofNat64_add_one (by omega)).symm]
+    simp only [stateAt, NumFastStarts.intPreheaderEnv]
+    block_lk
   · simp only [stateAt]
     have hcell : lookupName (NumFastStarts.intPreheaderEnv (NumFastStarts.whileEndEnv
         (NumFastStarts.ifThen22Env env start b0 n) start b0 n)

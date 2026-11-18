@@ -44,9 +44,22 @@ composition is `intScan_run`: from `entry` at a non-empty lexeme whose `int` par
 leads with `'1' … '9'` and whose eight-digit guard is refused, the body reaches
 the integer run's exit predicate within `8 + (n - i0 + 1) * 4` control steps —
 a term of the arguments, not of the trip count — carrying the counters and the
-accumulator's fold.  `intScan_run`'s calls are the walk's own `s2HelperCalls`,
-because the run instances it composes are stated there; the blocks it crosses
-call nothing.
+accumulator's fold.  `intScan_end230` is the same trace with the arm fixed: for a
+lexeme whose bytes from the run's start to its end are all digits, the exit is
+the end-of-lexeme one and the body reaches `if.end230` within the same bound.
+`intScan_run`'s calls are the walk's own `s2HelperCalls`, because the run
+instances it composes are stated there; the blocks it crosses call nothing.
+
+**The exit's cells, and the transport.**  The runs' exit predicates hand what a
+composition reads past them, because the exit state is existential to that
+composition: `%p` and `%n` (every successor reads them), the predecessor the
+merge's `phi` selection depends on, `%7`/`%17` (the counts the merge's phis
+read), and — on the non-digit arms — the byte the run stopped on with its
+non-digit answer.  `intRunEndWord` and `fracRunEndWord` are the two
+end-of-lexeme arms at exactly the lexeme's end, so `%ip.4`'s move into
+`%ip.5708717729` is `ifEnd230_step_end62` fed by the exit's own cells
+(`JsonStage2NumFastSeams.intRunExit_gate`), and `%7`'s reading as the digit
+count is the same statement.
 
 **The tie's arithmetic, and half the register tie.**  The runs carry
 `digitFold`'s value; the model folds the decimal part's own bytes.  `intRunExit_end230`
@@ -54,9 +67,7 @@ and `fracRunExit_end230` expose the run's index and word at the `if.end230` edge
 `digitFold_tie` and `digitsNat_word` read such a word as the part's fold with the
 `19`-digit guard inert, and `ip_word_digitsNat`/`fr_word_digitsNat` are the two
 premises `JsonStage2NumFastTier1`'s `t1_add244_eq_mantissa` takes — `%ip`'s and
-`%fr`'s ties to `Decimal.digitsNat`.  What remains of the register tie is the
-*transport*: `%ip.4`'s move into `%ip.5708717729` at `if.end62` (no `if.end62`
-step lemma exists in the tree) and `%7`'s reading as the digit count.
+`%fr`'s ties to `Decimal.digitsNat`.
 
 **What is not proved here.**  Four things, each named at the block or the
 register it stops at.
@@ -76,17 +87,19 @@ eight-digit reader's.
 maximal by the grammar, so the run's exit is the back edge's; that argument is
 the arm's, not this module's.
 
-*The scan's middle* is composed in pieces but not as one run: `intScan_run`
-reaches the integer run's exit, `fracScan_run` runs the fraction dispatch
+*The scan's middle* is one run on the integer part's route and pieces elsewhere:
+`intScan_run` reaches the integer run's exit, `intScan_end230` fixes the arm and
+reaches `if.end230`, and `JsonStage2NumFastSeams.intScan_merge` appends the
+merge block's step; `fracScan_run` runs the fraction dispatch
 (`land.lhs.true71` → `land.lhs.true119`) and the fraction run to its exit,
 `nestEntry_run` carries the fraction run's `if.end144` exit into the nest, and
 the nest, the merge and `if.end230`'s bound edge are proved.  What is *not*
-composed is the seam between them: the integer run's `if.end68` exit to
-`land.lhs.true71` (`JsonStage2NumFastStarts.ifEnd68_step`), the fraction run's
-`if.end144` exit's predecessor (`ifEnd144_denote_frac` takes it as a hypothesis),
-and the chain from `land.lhs.true71`'s no-dot edge (`landLhsTrue71_step_nodot`)
-straight to `if.end144`.  Each seam is one block; no single theorem yet threads
-`entry` to `if.end230`.
+composed is the fraction's and the exponent's routes to the merge: the integer
+run's `if.end68` exit to `land.lhs.true71`
+(`JsonStage2NumFastStarts.ifEnd68_step`), the fraction run's `if.end144` exit's
+predecessor (`ifEnd144_denote_frac` takes it as a hypothesis), and the chain from
+`land.lhs.true71`'s no-dot edge (`landLhsTrue71_step_nodot`) straight to
+`if.end144` are each one block, not one trace.
 
 *The reader's agreement* — `num_d8_el1`'s answer at the fast path against the
 eight bytes at its pointer — is untouched: `JsonStage2NumFastCalls` models the
@@ -1893,7 +1906,7 @@ theorem intScan_run {env : Env} {s : State} {a n : Nat}
     (hnext : NumFastStarts.negIndex b + 1 < n)
     (hfast : n < NumFastStarts.negIndex b + 9) (hnlt : n < 2 ^ 63) :
     ∃ (e : State) (j : Nat), j ≤ 8 + (n - (NumFastStarts.negIndex b + 1) + 1) * 4 ∧
-      intRunExit bs (NumFastStarts.negIndex b + 1) 1 e ∧
+      intRunExit s.mem bs a n (NumFastStarts.negIndex b + 1) 1 e ∧
       ∀ k, runFuel s2HelperCalls (j + k) numFastBody (stateAt env s) =
         runFuel s2HelperCalls k numFastBody e := by
   have hn64 : n < 2 ^ 64 := by omega
@@ -2040,6 +2053,67 @@ the tie's arithmetic at `[propext]`. -/
 #guard_msgs in
 #print axioms intScan_run
 
+/-- **The scan reaches the merge.**  From `entry` at a non-empty lexeme whose
+`int` part leads with `'1' … '9'`, whose eight-digit guard is refused and whose
+bytes from the run's start to the lexeme's end are all digits, the body reaches
+`if.end230` within `8 + (n - i0 + 1) * 4` control steps with the end-of-lexeme
+exit word: the cursor, the length, the count `d0 + (n - i0)` and the folded
+accumulator, plus the predecessor `if.end62`, `%7` and the memory the fold was
+taken at.  The dispatch reads the sign at position 0 and the lead digit, which is
+what fixes `i0 = negIndex b + 1` and `d0 = 1`; the decimal point is not read on
+this route, because the lexeme ends at the integer part. -/
+theorem intScan_end230 {env : Env} {s : State} {a n : Nat}
+    {bs : List UInt8} {b b0 : UInt8}
+    (hpc : s.pc = "entry")
+    (hp : lookupName env "%p" = some (.ptr a))
+    (hn : lookupName env "%n" = some (.int 64 (BitVec.ofNat 64 n)))
+    (hread : readBytes s.mem a n = some bs)
+    (hsign : readByte s.mem a = some b)
+    (hbyte : readByte s.mem (a + NumFastStarts.negIndex b) = some b0)
+    (hlead : 0x31 ≤ b0 ∧ b0 ≤ 0x39)
+    (hnpos : 0 < n) (hltn : NumFastStarts.negIndex b < n)
+    (hnext : NumFastStarts.negIndex b + 1 < n)
+    (hfast : n < NumFastStarts.negIndex b + 9) (hnlt : n < 2 ^ 63)
+    (hdigits : ∀ k, NumFastStarts.negIndex b + 1 ≤ k → k < n →
+      IsDigitB (bs.getD k 0) = true) :
+    ∃ (e : State) (j : Nat), j ≤ 8 + (n - (NumFastStarts.negIndex b + 1) + 1) * 4 ∧
+      intRunEndWord bs a n (NumFastStarts.negIndex b + 1) 1 e ∧
+      ∀ k, runFuel s2HelperCalls (j + k) numFastBody (stateAt env s) =
+        runFuel s2HelperCalls k numFastBody e := by
+  have hn64 : n < 2 ^ 64 := by omega
+  have hne : BitVec.ofNat 64 n ≠ 0x0000000000000000#64 := by
+    intro h
+    have h2 := congrArg BitVec.toNat h
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hn64] at h2
+    simp at h2
+    omega
+  let cmp : BitVec 1 := evalICmp .eq (BitVec.ofNat 64 n) 0x0000000000000000#64
+  have hbit0 : cmp = 0 := NumFastStarts.eq_zero_iff _ _ |>.mpr hne
+  let s1 : State := { s with next := s.next + 768 + 1568 + 4 + 4 + 8, pc := "land.lhs.true", pre := some "entry" }
+  have h1 : step s2HelperCalls numFastBody (stateAt env s) =
+      .jump (stateAt (numFastEntryEnv env s.next cmp) s1) :=
+    entry_step_land (calls := s2HelperCalls) hpc hn hbit0
+  obtain ⟨e0, hinv0, hrun0⟩ :=
+    NumFastStarts.intRun_start (calls := s2HelperCalls)
+      (env := numFastEntryEnv env s.next cmp) (s := s1)
+      rfl rfl
+      (entry_env_lookup_p hp) (entry_env_lookup_n hn)
+      hread hsign hbyte hlead hltn hnext hfast hnlt
+  obtain ⟨e1, j1, hj1, _, hexitw, hrun1⟩ :=
+    (intRunEndBoundLoop s.mem a n (NumFastStarts.negIndex b + 1) 1 bs 4 (by omega)
+      hdigits).run_from (n - (NumFastStarts.negIndex b + 1)) e0 0 hinv0
+  refine ⟨e1, 1 + (7 + j1), ?_, hexitw, ?_⟩
+  · rw [show 1 + (7 + j1) = 8 + j1 from by omega]
+    exact Nat.add_le_add_left hj1 8
+  · intro k
+    rw [show 1 + (7 + j1) + k = 1 + (7 + (j1 + k)) from by omega,
+      runFuel_jump_prefix h1]
+    exact (hrun0 (j1 + k)).trans (hrun1 k)
+
+/-- info: 'LeanLLVM.Refinement.NumFastScanRun.intScan_end230' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms intScan_end230
+
 /-- info: 'LeanLLVM.Refinement.NumFastScanRun.ifEnd230_denote_end62' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms ifEnd230_denote_end62
@@ -2068,28 +2142,28 @@ bound is the caller's: the guard is the accumulators' `%idig < 19` / `%fdig < 19
 so a lexeme inside the tier-1 window (`≤ 15` digits) satisfies it outright. -/
 
 /-- **The integer run's word at the lexeme's end.** -/
-theorem intRunExit_end230 {bs : List UInt8} {i0 d0 : Nat} {e : State}
-    (hpc : e.pc = "if.end230") (he : intRunExit bs i0 d0 e) :
-    ∃ i1, lookupName e.env "%inc64" = some (.int 64 (BitVec.ofNat 64 i1)) ∧
+theorem intRunExit_end230 {mem0 : Mem} {bs : List UInt8} {p n i0 d0 : Nat} {e : State}
+    (hpc : e.pc = "if.end230") (he : intRunExit mem0 bs p n i0 d0 e) :
+    lookupName e.env "%inc64" = some (.int 64 (BitVec.ofNat 64 n)) ∧
       lookupName e.env "%inc63"
-        = some (.int 64 (BitVec.ofNat 64 (d0 + (i1 - i0)))) ∧
+        = some (.int 64 (BitVec.ofNat 64 (d0 + (n - i0)))) ∧
       lookupName e.env "%ip.4" = some (.int 64
-        (BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + (i1 - i0)) 19)))) := by
-  rcases he with ⟨h68, _⟩ | ⟨h230, i1, _, hi1, _, hid, hip⟩
-  · rw [h68] at hpc; exact absurd hpc (by decide)
-  · exact ⟨i1, hi1, hid, hip⟩
+        (BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + (n - i0)) 19)))) := by
+  rcases he with hleft | ⟨h230, _, _, _, _, hi, hid, hip, _⟩
+  · rw [hleft.1] at hpc; exact absurd hpc (by decide)
+  · exact ⟨hi, hid, hip⟩
 
 /-- **The fraction run's word at the lexeme's end.** -/
-theorem fracRunExit_end230 {bs : List UInt8} {i0 d0 : Nat} {e : State}
-    (hpc : e.pc = "if.end230") (he : fracRunExit bs i0 d0 e) :
-    ∃ i1, lookupName e.env "%inc142" = some (.int 64 (BitVec.ofNat 64 i1)) ∧
+theorem fracRunExit_end230 {mem0 : Mem} {bs : List UInt8} {p n i0 d0 : Nat} {e : State}
+    (hpc : e.pc = "if.end230") (he : fracRunExit mem0 bs p n i0 d0 e) :
+    lookupName e.env "%inc142" = some (.int 64 (BitVec.ofNat 64 n)) ∧
       lookupName e.env "%inc141"
-        = some (.int 64 (BitVec.ofNat 64 (d0 + (i1 - i0)))) ∧
+        = some (.int 64 (BitVec.ofNat 64 (d0 + (n - i0)))) ∧
       lookupName e.env "%fr.4" = some (.int 64
-        (BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + (i1 - i0)) 19)))) := by
-  rcases he with ⟨h144, _⟩ | ⟨h230, i1, hi1, hid, hfr⟩
-  · rw [h144] at hpc; exact absurd hpc (by decide)
-  · exact ⟨i1, hi1, hid, hfr⟩
+        (BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + (n - i0)) 19)))) := by
+  rcases he with hleft | ⟨h230, _, _, _, _, hi, hid, hfr, _, _⟩
+  · rw [hleft.1] at hpc; exact absurd hpc (by decide)
+  · exact ⟨hi, hid, hfr⟩
 
 /-- **A run's accumulated word is the model's fold of the part's bytes.**  The
 run's bytes at its start are the decimal part's, and the count is inside the
@@ -2165,16 +2239,17 @@ theorem fracScan_run {env : Env} {s : State} {a n : Nat} {bs : List UInt8}
     (hn : lookupName env "%n" = some (.int 64 (BitVec.ofNat 64 n)))
     (hread : readBytes s.mem a n = some bs)
     (hi5 : lookupName env "%i.5" = some (.int 64 (BitVec.ofNat 64 i5)))
+    (hparts : fracPartCells env)
     (hdot : readByte s.mem (a + i5) = some bd) (hdoteq : bd = 0x2E)
     (hd2 : readByte s.mem (a + (i5 + 1)) = some bd2)
     (hd2digit : IsDigitB bd2 = true)
     (hltn : i5 + 1 < n) (hfast : n < i5 + 9) (hnlt : n < 2 ^ 63) :
     ∃ (e : State) (j : Nat), j ≤ 6 + (n - (i5 + 1) + 1) * 4 ∧
-      fracRunExit bs (i5 + 1) 0 e ∧
+      fracRunExit s.mem bs a n (i5 + 1) 0 e ∧
       ∀ k, runFuel s2HelperCalls (j + k) numFastBody (stateAt env s) =
         runFuel s2HelperCalls k numFastBody e := by
   obtain ⟨e0, hinv0, hrun0⟩ :=
-    NumFastStarts.fracRun_start (calls := s2HelperCalls) hpc hp hn hread hi5
+    NumFastStarts.fracRun_start (calls := s2HelperCalls) hpc hp hn hread hi5 hparts
       hdot hdoteq hd2 hd2digit hltn hfast hnlt
   obtain ⟨e1, j1, hj1, _hexitb, hexitw, hrun1⟩ :=
     (fracRunBoundLoop s.mem a n (i5 + 1) 0 bs 4 (by omega)).run_from

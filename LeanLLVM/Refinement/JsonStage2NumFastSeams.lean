@@ -33,6 +33,13 @@ count `d0 + (%n - %i0)` — the count the merge's phis read — and
 `intExit_gate` is the one-step composition that says so, with the
 accumulated word's tie (`intRunExit_end230`) as the other half.
 
+**The composed trace.**  `JsonStage2NumFastScanRun.intScan_end230` is the scan
+with the arm fixed — the integer part running to the lexeme's end — and
+`intScan_merge` below appends the gate's own step, so the body reaches
+`if.then241` from `entry` as one `runFuel` chain within `9 + (n - i0 + 1) * 4`
+control steps, with the merge's five registers.  The fraction's and the
+exponent's routes are still the one-block seams above.
+
 **The two eight-digit fast paths.**  `if.then22`'s taken edge leads to
 `while.body.preheader`, whose `@num_d8_el1` call reads eight digits into the
 local `%v8`; `cleanup` folds that word into the accumulator, advances the index by
@@ -126,16 +133,16 @@ theorem ifEnd68_denote_head {calls : Calls} {env : Env} {s : State}
 /-- **The integer run's exit registers.**  At `if.end68` the run has stopped on
 the non-digit head, so the cells are `land.lhs.true41`'s, at the index the run
 stopped at. -/
-theorem intRunExit_end68 {bs : List UInt8} {i0 d0 : Nat} {e : State}
-    (hpc : e.pc = "if.end68") (he : intRunExit bs i0 d0 e) :
+theorem intRunExit_end68 {mem0 : Mem} {bs : List UInt8} {p n i0 d0 : Nat} {e : State}
+    (hpc : e.pc = "if.end68") (he : intRunExit mem0 bs p n i0 d0 e) :
     ∃ i1, lookupName e.env "%i.4575" = some (.int 64 (BitVec.ofNat 64 i1)) ∧
       lookupName e.env "%idig.3574"
         = some (.int 64 (BitVec.ofNat 64 (d0 + (i1 - i0)))) ∧
       lookupName e.env "%ip.3573" = some (.int 64
         (BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + (i1 - i0)) 19)))) := by
-  rcases he with ⟨_, i1, hi1, hid, hip⟩ | ⟨h230, _⟩
+  rcases he with ⟨h68, _, _, _, i1, _, _, hi1, hid, hip, _, _, _⟩ | hend
   · exact ⟨i1, hi1, hid, hip⟩
-  · rw [h230] at hpc; exact absurd hpc (by decide)
+  · rw [hend.1] at hpc; exact absurd hpc (by decide)
 
 /-- **Seam one, the `.` taken.**  From the integer run's non-digit exit, the
 dispatch's test and the `.` test take two control steps to `if.then76`, carrying
@@ -469,19 +476,17 @@ theorem intExit_gate {calls : Calls} {env : Env} {s : State}
     rw [runFuel_jump_prefix h1]
 
 /-- **The run's own exit at the gate.**  The integer run's end-of-lexeme exit
-carries `%inc64` and `%n` at the same value, so the merge's `%ip.5708717729` is
-the run's folded accumulator and its `%idig.4709716730` is `%7`'s digit count —
-the length's index, `d0 + (i1 - i0)`, whose `i1` the exit's own cell fixes as the
-lexeme's end.  The two register ties are therefore one statement: the
+carries `%inc64` at the length, so the merge's `%idig.4709716730` is `%7`'s digit
+count — the length's index, `d0 + (n - i0)` — and its `%ip.5708717729` is the
+run's folded accumulator.  The two register ties are therefore one statement: the
 accumulator the run carried through `if.end62` and the count `%7` computed at
-`land.lhs.true41.preheader`. -/
-theorem intRunExit_gate {bs : List UInt8} {i0 d0 n : Nat} {e : State}
-    (hpc : e.pc = "if.end230") (hpre : e.pre = some "if.end62")
-    (he : intRunExit bs i0 d0 e)
-    (hn : lookupName e.env "%n" = some (.int 64 (BitVec.ofNat 64 n)))
+`land.lhs.true41.preheader`.  The predecessor, `%7`, `%ip.4` and the length are
+the exit's own fields, so this statement reads them off the exit rather than
+taking them as hypotheses. -/
+theorem intRunExit_gate {mem0 : Mem} {bs : List UInt8} {p n i0 d0 : Nat} {e : State}
+    (hpc : e.pc = "if.end230")
+    (he : intRunExit mem0 bs p n i0 d0 e)
     (hi0 : i0 ≤ n) (hbn : d0 + n < 2 ^ 64)
-    (h7 : lookupName e.env "%7"
-      = some (.int 64 (BitVec.ofNat 64 d0 + BitVec.ofNat 64 n - BitVec.ofNat 64 i0)))
     (hdig : d0 + (n - i0) < 20) :
     ∃ o : State, o.pc = "if.then241" ∧ o.pre = some "if.end230" ∧ o.mem = e.mem ∧
       lookupName o.env "%ip.5708717729" = some (.int 64
@@ -493,39 +498,68 @@ theorem intRunExit_gate {bs : List UInt8} {i0 d0 n : Nat} {e : State}
       lookupName o.env "%exp10.4731" = some (.int 64 0) ∧
       ∀ k, runFuel s2HelperCalls (1 + k) numFastBody (stateAt e.env e) =
         runFuel s2HelperCalls k numFastBody o := by
-  have hn64 : n < 2 ^ 64 := by omega
-  rcases he with ⟨h68, _⟩ | ⟨h230, i1, hi1lt, hi1, hin, hid, hip⟩
-  · rw [h68] at hpc; exact absurd hpc (by decide)
-  -- the exit's own index is the length's
-  have hi1n : i1 = n := by
-    have h1 : (Value.int 64 (BitVec.ofNat 64 i1) : Value)
-        = .int 64 (BitVec.ofNat 64 n) := by
-      rw [hin] at hn
-      exact Option.some.inj hn
-    have h2 : BitVec.ofNat 64 i1 = BitVec.ofNat 64 n :=
-      eq_of_heq (Value.int.inj h1).2
-    have h3 := congrArg BitVec.toNat h2
-    rw [BitVec.toNat_ofNat, BitVec.toNat_ofNat, Nat.mod_eq_of_lt hi1lt,
-      Nat.mod_eq_of_lt hn64] at h3
-    exact h3
+  rcases he with hleft | ⟨h230, hpre, _, _, _, _, _, hip, h7⟩
+  · rw [hleft.1] at hpc; exact absurd hpc (by decide)
   have h7i : lookupName e.env "%7"
-      = some (.int 64 (BitVec.ofNat 64 (d0 + (i1 - i0)))) := by
-    have h := h7
-    rw [seven_tie hi0 hbn] at h
-    rw [← hi1n] at h
-    exact h
-  have hdigi : d0 + (i1 - i0) < 20 := by
-    have h := hdig
-    rw [← hi1n] at h
-    exact h
+      = some (.int 64 (BitVec.ofNat 64 (d0 + (n - i0)))) := by
+    rw [h7, seven_tie hi0 hbn]
   obtain ⟨o, hpc', hpre', hmem', hip', hid', hfr, hfd, hexp, hrun⟩ :=
-    intExit_gate (calls := s2HelperCalls) (env := e.env) (s := e) (n := i1) (i0 := i0)
-      (d0 := d0) hpc hpre h7i hip hdigi
-  refine ⟨o, hpc', hpre', hmem', ?_, ?_, hfr, hfd, hexp, hrun⟩
-  · rw [← hi1n]
-    exact hip'
-  · rw [← hi1n]
-    exact hid'
+    intExit_gate (calls := s2HelperCalls) (env := e.env) (s := e) (n := n) (i0 := i0)
+      (d0 := d0) hpc hpre h7i hip hdig
+  exact ⟨o, hpc', hpre', hmem', hip', hid', hfr, hfd, hexp, hrun⟩
+
+/-- **The scan's trace to the merge's gate.**  Composing `intScan_end230` with the
+merge block's own step, a lexeme whose integer part is all digits and which ends
+there reaches `if.then241` within `9 + (n - i0 + 1) * 4` control steps from
+`entry`, carrying the merge's five registers: the folded integer part, its digit
+count, and the fraction's and exponent's cells zero.  The dispatch reads the sign
+at position 0 and the lead digit, fixing `i0 = negIndex b + 1` and `d0 = 1`. -/
+theorem intScan_merge {env : Env} {s : State} {a n : Nat} {bs : List UInt8}
+    {b b0 : UInt8}
+    (hpc : s.pc = "entry")
+    (hp : lookupName env "%p" = some (.ptr a))
+    (hn : lookupName env "%n" = some (.int 64 (BitVec.ofNat 64 n)))
+    (hread : readBytes s.mem a n = some bs)
+    (hsign : readByte s.mem a = some b)
+    (hbyte : readByte s.mem (a + NumFastStarts.negIndex b) = some b0)
+    (hlead : 0x31 ≤ b0 ∧ b0 ≤ 0x39)
+    (hnpos : 0 < n) (hltn : NumFastStarts.negIndex b < n)
+    (hnext : NumFastStarts.negIndex b + 1 < n)
+    (hfast : n < NumFastStarts.negIndex b + 9) (hnlt : n < 2 ^ 63)
+    (hdigits : ∀ k, NumFastStarts.negIndex b + 1 ≤ k → k < n →
+      IsDigitB (bs.getD k 0) = true)
+    (hdig : 1 + (n - (NumFastStarts.negIndex b + 1)) < 20) :
+    ∃ (o : State) (j : Nat),
+      j ≤ 9 + (n - (NumFastStarts.negIndex b + 1) + 1) * 4 ∧
+      o.pc = "if.then241" ∧ o.pre = some "if.end230" ∧
+      lookupName o.env "%ip.5708717729" = some (.int 64
+        (BitVec.ofNat 64 (digitFold bs (NumFastStarts.negIndex b + 1 - 1)
+          (min (1 + (n - (NumFastStarts.negIndex b + 1))) 19)))) ∧
+      lookupName o.env "%idig.4709716730"
+        = some (.int 64
+          (BitVec.ofNat 64 (1 + (n - (NumFastStarts.negIndex b + 1))))) ∧
+      lookupName o.env "%fr.5718728" = some (.int 64 0) ∧
+      lookupName o.env "%fdig.4719727" = some (.int 64 0) ∧
+      lookupName o.env "%exp10.4731" = some (.int 64 0) ∧
+      ∀ k, runFuel s2HelperCalls (j + k) numFastBody (stateAt env s) =
+        runFuel s2HelperCalls k numFastBody o := by
+  obtain ⟨e, j, hj, hend, hrun⟩ :=
+    NumFastScanRun.intScan_end230 hpc hp hn hread hsign hbyte hlead hnpos hltn hnext
+      hfast hnlt hdigits
+  obtain ⟨h230, hpre, _, _, _, _, _, hip, h7⟩ := hend
+  have hi0 : NumFastStarts.negIndex b + 1 ≤ n := by omega
+  have hbn : 1 + n < 2 ^ 64 := by omega
+  have h7i : lookupName e.env "%7"
+      = some (.int 64 (BitVec.ofNat 64 (1 + (n - (NumFastStarts.negIndex b + 1))))) := by
+    rw [h7, seven_tie hi0 hbn]
+  obtain ⟨o, hpc', hpre', _, hip', hid', hfr, hfd, hexp, ho_run⟩ :=
+    intExit_gate (calls := s2HelperCalls) (env := e.env) (s := e) (n := n)
+      (i0 := NumFastStarts.negIndex b + 1) (d0 := 1) h230 hpre h7i hip hdig
+  refine ⟨o, j + 1, ?_, hpc', hpre', hip', hid', hfr, hfd, hexp, ?_⟩
+  · omega
+  · intro k
+    rw [show j + 1 + k = j + (1 + k) from by omega]
+    exact (hrun (1 + k)).trans (ho_run k)
 
 section Tier1Tie
 
@@ -565,12 +599,9 @@ exit, `%7` is the digit count and `%ip.4` the part's fold; the gate's two tests
 are the tier-1 window's, so the block takes its `if.then241` edge with the
 merge's registers the model's and the fraction's two cells zero. -/
 theorem t1_intRun_tie {calls : Calls} {d : Decimal} {bs : List UInt8}
-    {i0 d0 n : Nat} {e : State}
-    (hpc : e.pc = "if.end230") (hpre : e.pre = some "if.end62")
-    (h7 : lookupName e.env "%7" = some (.int 64
-      (BitVec.ofNat 64 d0 + BitVec.ofNat 64 n - BitVec.ofNat 64 i0)))
-    (hip4 : lookupName e.env "%ip.4" = some (.int 64
-      (BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + (n - i0)) 19)))))
+    {mem0 : Mem} {p n i0 d0 : Nat} {e : State}
+    (hpc : e.pc = "if.end230")
+    (he : intRunExit mem0 bs p n i0 d0 e)
     (hi0 : i0 ≤ n) (hbn : d0 + n < 2 ^ 64)
     (hint : intDigits d = d0 + (n - i0))
     (hshape : d.ip.data.toList = (bs.drop (i0 - d0)).take (d0 + (n - i0)))
@@ -585,6 +616,8 @@ theorem t1_intRun_tie {calls : Calls} {d : Decimal} {bs : List UInt8}
       lookupName o.env "%fdig.4719727" = some (.int 64 0) ∧
       ∀ k, runFuel calls (1 + k) numFastBody (stateAt e.env e) =
         runFuel calls k numFastBody o := by
+  rcases he with hleft | ⟨h230, hpre, _, _, _, _, _, hip4, h7⟩
+  · rw [hleft.1] at hpc; exact absurd hpc (by decide)
   have hlen : d0 + (n - i0) ≤ 19 := by
     have h := hdig; rw [digitCount, hint] at h; omega
   have hlt : intDigits d < 20 := by
@@ -2699,6 +2732,7 @@ steps are at `stage2NumFastCalls`, whose reader answer is the model's. -/
 #print axioms NumFastSeams.ifEnd62_step_end
 #print axioms NumFastSeams.intExit_gate
 #print axioms NumFastSeams.intRunExit_gate
+#print axioms NumFastSeams.intScan_merge
 #print axioms NumFastSeams.foldl_digits_add
 #print axioms NumFastSeams.d8Value_eq_fold
 #print axioms NumFastSeams.numD8Answer_writes

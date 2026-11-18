@@ -223,14 +223,17 @@ The guard's *two* answers are one statement in `JsonStage2NumFastJoin.guard_join
 `intRunInv` at `(start + 1, 1)` in three steps — given the successor's presence,
 which `intScan_run` also carries — and the taken answer is
 `fpIfThen22_entry`'s four shapes, so `intScan_run`'s refused-guard dispatch and
-the guarded run continue at the same predicate.  Also open: the seam steps that
-would thread one theorem from `entry` to `if.end230` — the merge's registers are
-tied, but the scan's blocks are composed one seam at a time rather than as one
-run from `entry` — and tier 3's region beyond
-its poison edge (`JsonStage2NumFastTier3` states the edge's traversal, the window
-tie and the proximity estimate).  The accumulator's tie at `if.end230` is
+the guarded run continue at the same predicate.  The seam from `entry` to
+`if.end230` is one trace on the integer part's route: `intScan_end230` runs
+`entry` to the merge for a lexeme whose remaining bytes are all digits, and
+`intScan_merge` appends the merge block's own step, so a composition past the
+exit no longer needs the exit's cells as hypotheses — the predicates hand the
+cursor, the length, the predecessor and `%7`.  Still open on this list: the
+fraction and exponent routes, threaded one seam at a time, and tier 3's region
+beyond its poison edge (`JsonStage2NumFastTier3` states the edge's traversal, the
+window tie and the proximity estimate).  The accumulator's tie at `if.end230` is
 stated: `intRunExit_gate` reads the run's `%ip.4` and `%7` as the merge's
-`%ip.5708717729` and `%idig.4709716730`, the exit's own `%n` cell fixes the
+`%ip.5708717729` and `%idig.4709716730`, the exit's own length cell fixes the
 run's stop index as the lexeme's end, and `t1_intRun_tie`/`t1_fracRun_tie` read
 the merged registers as `Decimal.digitsNat`.
 
@@ -238,9 +241,10 @@ the merged registers as `Decimal.digitsNat`.
 **Where the arm stands after the tier-3 modules.**  The environment (item 1) and
 the staging (item 2) are values, each *site*'s step is a jump at them, and the
 scan's three runs and their starts are discharged, with the two eight-digit fast
-paths composed at their guards' taken edges; the seam steps that would thread one
-run from `entry` to `if.end230` are still composed one at a time rather than as a
-single trace.  Item 4's tier-1 chain is stated at its blocks with its four links
+paths composed at their guards' taken edges; the integer part's route from
+`entry` to the merge is one trace (`intScan_end230` + `intScan_merge`), while the
+fraction and exponent routes are composed one seam at a time.  Item 4's tier-1
+chain is stated at its blocks with its four links
 named ((a) the instruction steps, which the tier-1 module supplies; (b) the class
 test; (c) the mantissa; (d) the tick algebra).  Tier 3's window tie and proximity
 estimate are at their statements, the residual copy loop is now an induction at the
@@ -262,12 +266,12 @@ the arm, and none is instantiated at the walk's own `s2HelperCalls`; the kernel'
 the arm — the run's composition is.  `JsonStage2NumFastRun` composes the part the
 merge block fixes: the tier-1 conversion from `if.end230` to the return, as the
 arm's own conclusion at that block, and the returning edge the kernel's and the
-fallback's store blocks share with it.  The scan's seam to the merge is that
-module's boundary, stated there: the run-exit predicates name their own run's
-registers and not the merge's predecessor or the earlier parts' cells (`%7` at
-the integer part's end-of-lexeme edge), so `intRunExit`/`fracRunExit` have to
-carry them before `intScan_run` or `fracScan_run` composes into the merge
-block's step.
+fallback's store blocks share with it.  The scan's seam to the merge is closed on
+the integer part's route: the run-exit predicates hand the merge's predecessor,
+`%7`, the cursor and the length (`intRunEndWord`, `fracRunEndWord`), and
+`intScan_end230` together with `JsonStage2NumFastSeams.intScan_merge` threads
+`entry` to `if.then241` as one `runFuel` chain.  The fraction and exponent routes
+are still composed one seam at a time.
 
 There is no `sorry`, `admit` or `native_decide` below.
 -/

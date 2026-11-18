@@ -1269,10 +1269,19 @@ model's five counters, the two tables and the tier-1 window, six control steps
 return `1` with `strtodSpec`'s eight bytes at `out` and the two-slot frame, via
 `t1_store_run` and the returning edge `numFast_step_cleanup300_one` that the
 kernel's and the fallback's store blocks share.  The scan's seam to the merge is
-that module's boundary, stated there: the run-exit predicates do not name the
-merge's predecessor or the earlier parts' cells, and
-`numFast_merge_end62_needs_seven` shows the integer part's edge does not denote
-without `%7`.
+that module's boundary, stated there: the run-exit predicates hand the cells a
+composition reads — the cursor, the length, the predecessor, `%7` (the
+end-of-lexeme arm) and, on the non-digit arm, the byte the run stopped on with
+its non-digit answer — because the exit state is existential to a composition and
+a reader cannot re-read a cell it does not have.
+`JsonStage2NumFastScanRun.intScan_end230` threads `entry` to `if.end230` for a
+lexeme whose integer part runs to its end (the sign read at position 0, the lead
+digit at `negIndex b`, so the dispatch fixes `i0 = negIndex b + 1` and `d0 = 1`),
+and `JsonStage2NumFastSeams.intScan_merge` appends the merge block's own step:
+`if.then241` with the folded integer part, its digit count and the fraction's and
+exponent's cells zero, within `9 + (n - i0 + 1) * 4` control steps.  The fraction
+and exponent routes are still threaded one seam at a time, and the decimal point
+is not read on the route above because the lexeme ends at the integer part.
 Two pieces of
 the run are now supplies rather than obligations.  The eight-digit fast path's
 blocks are chained (`JsonStage2NumFastSeams`): `fpCleanup_denote_pre`/
@@ -1284,11 +1293,11 @@ reads the exit's three `phi`s, and `fpCleanup112Instrs`/`fpBody100Instrs`/
 `fpWhileEnd115_denote_cleanup`/`_denote_thread` at the two edges a fraction byte
 leaves by; the loop's own `runFuel` composition and the taken guard's entry into
 `intRunInv` are what the fast path still owes.  The accumulator's tie at
-`if.end230` is stated: `intRunExit`'s end-of-lexeme exit now carries the
-length's cell beside the incremented index (both `BitVec.ofNat 64 i1`), and
-`intRunExit_gate` reads `%ip.4` and `%7` as the merge's `%ip.5708717729` and
-`%idig.4709716730` — the fold's word and the digit count `d0 + (n - i0)` — so the
-tie `ip_word_digitsNat` takes is available from the run's own exit.  The merge's
+`if.end230` is stated: `intRunEndWord` carries the length as the index, the count
+`d0 + (n - i0)` and `%7` in the preheader's raw form, and `intRunExit_gate` reads
+`%ip.4` and `%7` as the merge's `%ip.5708717729` and `%idig.4709716730` — the
+fold's word and the digit count — so the tie `ip_word_digitsNat` takes is
+available from the run's own exit.  The merge's
 registers are then read as the model's at the two digit edges:
 `JsonStage2NumFastSeams.t1_intRun_tie` (the integer run's end-of-lexeme exit
 reaches `if.then241` with `%ip.5708717729` the part's `digitsNat` and
@@ -1714,9 +1723,12 @@ arm's statement carries the entry state
 (`JsonStage2NumFastArm.numFastArm_entry_necessary` is why the entry condition is
 load-bearing), so what `NumFastBodyArm` still owes is the conversion's run: its
 tier-1 tail from the merge block is
-`JsonStage2NumFastRun.numFastArm_tier1_at_merge`, and the scan's seam to the
-merge is that module's boundary
-(`numFast_merge_end62_needs_seven`).  Tier 3's three links
+`JsonStage2NumFastRun.numFastArm_tier1_at_merge`, and the scan reaches the merge
+on the integer part's route by
+`JsonStage2NumFastScanRun.intScan_end230` and
+`JsonStage2NumFastSeams.intScan_merge` (the fraction and exponent routes are
+threaded one seam at a time; `numFast_merge_end62_needs_seven` keeps the
+merge's cell requirement on the record).  Tier 3's three links
 are stated in `JsonStage2NumFastTier3`, with the emitted ladder's charging and
 its two loops' shapes closed in `JsonStage2NumFastTier3Ladder` and both loops —
 the positive one and the negative one — closed at the emitted rows in

@@ -753,7 +753,8 @@ theorem intPreheader_step {calls : Calls} {env : Env} {s : State}
 /-- **The invariant at the head's entry edge.**  A head state the preheader
 reached, with the carried counters the dispatch fixed, is `intRunInv` at its
 first iteration: the budget is the whole distance to the lexeme's end and the
-counter is zero. -/
+counter is zero.  The preheader's `%7` is the carried fact the end-of-lexeme exit
+reads. -/
 theorem intRunInv_entry {mem : Mem} {p n i0 d0 : Nat} {bs : List UInt8} {s : State}
     (hpc : s.pc = "land.lhs.true41")
     (hpre : s.pre = some "land.lhs.true41.preheader")
@@ -761,12 +762,14 @@ theorem intRunInv_entry {mem : Mem} {p n i0 d0 : Nat} {bs : List UInt8} {s : Sta
     (hp : lookupName s.env "%p" = some (.ptr p))
     (hn : lookupName s.env "%n" = some (.int 64 (BitVec.ofNat 64 n)))
     (hread : readBytes mem p n = some bs)
+    (h7 : lookupName s.env "%7"
+      = some (.int 64 (BitVec.ofNat 64 d0 + BitVec.ofNat 64 n - BitVec.ofNat 64 i0)))
     (hi : lookupName s.env "%i.1558" = some (.int 64 (BitVec.ofNat 64 i0)))
     (hid : lookupName s.env "%idig.0560" = some (.int 64 (BitVec.ofNat 64 d0)))
     (hip : lookupName s.env "%ip.0562"
       = some (.int 64 (BitVec.ofNat 64 (digitFold bs (i0 - d0) (min d0 19))))) :
     intRunInv mem p n i0 d0 bs (n - i0) s 0 := by
-  refine ⟨hpc, hmem, by omega, by omega, hnlt, hd0, hp, hn, hread,
+  refine ⟨hpc, hmem, by omega, by omega, hnlt, hd0, hp, hn, hread, h7,
     Or.inl ⟨hpre, ?_, ?_, ?_⟩⟩
   · simpa using hi
   · simpa using hid
@@ -920,9 +923,13 @@ theorem intRun_start {calls : Calls} {env : Env} {s : State} {a n : Nat}
   refine ⟨stateAt (intStartEnv env b b0 a n)
     { s with pc := "land.lhs.true41", pre := some "land.lhs.true41.preheader" }, ?_, ?_⟩
   · refine intRunInv_entry rfl rfl rfl (by omega) hnlt (by omega) ?_ ?_ hread
-      ?_ ?_ ?_
+      ?_ ?_ ?_ ?_
     · lk_all
     · lk_all
+    · have h1 : BitVec.ofNat 64 (negIndex b + 1)
+          = BitVec.ofNat 64 (negIndex b) + 0x1#64 :=
+        (ofNat64_add_one (by omega)).symm
+      rw [h1]; lk_all
     · have h1 : BitVec.ofNat 64 (negIndex b + 1)
           = BitVec.ofNat 64 (negIndex b) + 0x1#64 :=
         (ofNat64_add_one (by omega)).symm
@@ -1470,12 +1477,15 @@ theorem fracRunInv_entry {mem : Mem} {p n i0 d0 : Nat} {bs : List UInt8} {s : St
     (hp : lookupName s.env "%p" = some (.ptr p))
     (hn : lookupName s.env "%n" = some (.int 64 (BitVec.ofNat 64 n)))
     (hread : readBytes mem p n = some bs)
+    (h17 : lookupName s.env "%17"
+      = some (.int 64 (BitVec.ofNat 64 d0 + BitVec.ofNat 64 n - BitVec.ofNat 64 i0)))
+    (hparts : fracPartCells s.env)
     (hi : lookupName s.env "%i.6552" = some (.int 64 (BitVec.ofNat 64 i0)))
     (hid : lookupName s.env "%fdig.0554" = some (.int 64 (BitVec.ofNat 64 d0)))
     (hf : lookupName s.env "%fr.0556"
       = some (.int 64 (BitVec.ofNat 64 (digitFold bs (i0 - d0) (min d0 19))))) :
     fracRunInv mem p n i0 d0 bs (n - i0) s 0 := by
-  refine ⟨hpc, hmem, by omega, by omega, hnlt, hd0, hp, hn, hread,
+  refine ⟨hpc, hmem, by omega, by omega, hnlt, hd0, hp, hn, hread, h17, hparts,
     Or.inl ⟨hpre, ?_, ?_, ?_⟩⟩
   · simpa using hi
   · simpa using hid
@@ -1506,6 +1516,7 @@ theorem fracRun_start {calls : Calls} {env : Env} {s : State} {a n : Nat}
     (hn : lookupName env "%n" = some (.int 64 (BitVec.ofNat 64 n)))
     (hread : readBytes s.mem a n = some bs)
     (hi5 : lookupName env "%i.5" = some (.int 64 (BitVec.ofNat 64 i5)))
+    (hparts : fracPartCells env)
     (hdot : readByte s.mem (a + i5) = some bd) (hdoteq : bd = 0x2E)
     (hd2 : readByte s.mem (a + (i5 + 1)) = some bd2)
     (hd2digit : IsDigitB bd2 = true)
@@ -1605,7 +1616,10 @@ theorem fracRun_start {calls : Calls} {env : Env} {s : State} {a n : Nat}
       (BitVec.ofNat 64 n) (BitVec.ofNat 64 i5 + 0x1#64) (0x0#64))
     { s with pc := "land.lhs.true119", pre := some "land.lhs.true119.preheader" },
     fracRunInv_entry rfl rfl rfl (by omega) hnlt (by omega) (by lk_frac) (by lk_frac)
-      hread (by rw [hinc_lk]; lk_frac) (by lk_frac)
+      hread (by rw [hinc_lk]; lk_frac)
+      (by obtain ⟨idigv, ipv, hidigv, hipv⟩ := hparts
+          exact ⟨idigv, ipv, by lk_frac, by lk_frac⟩)
+      (by rw [hinc_lk]; lk_frac) (by lk_frac)
       (by
         rw [show min 0 19 = 0 from by decide, digitFold_zero]
         lk_frac),

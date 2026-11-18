@@ -22,20 +22,18 @@ store blocks write.
 blocks before the run they end: the integer part's end-of-lexeme edge reads `%7`
 — the count `land.lhs.true41.preheader` formed — and `%ip.4`, and the fraction's
 end-of-lexeme edge reads `%idig.4`, `%ip.5`, `%fr.4` and `%17`.  The run-exit
-predicates name their own run's registers only: `intRunExit`'s `if.end230` arm
-fixes `%inc64`, `%n`, `%inc63` and `%ip.4`, and `fracRunExit`'s fixes `%inc142`,
-`%inc141` and `%fr.4`; neither names the block's predecessor, which the `phi`s
-also read.  `numFast_merge_end62_needs_seven` and
-`numFast_merge_end140_needs_idig` are the mechanical record: at those edges a
-state whose earlier cell is unbound does not denote at all, so a composition
-from `intScan_run`/`fracScan_run` into the merge block's step needs the exit
-predicates to carry the predecessor and the earlier parts' cells.  That
-strengthening — not the arithmetic, and not the tables — is what stands between
-the scan's seams and the merge; the runs themselves are
-`JsonStage2NumFastDigitRuns`' and `JsonStage2NumFastScanRun`'s.  The tree's two
-files already take the missing cells as hypotheses where they cross the seam
-(`JsonStage2NumFastSeams.intRunExit_gate`'s `hpre`/`h7`, and
-`t1_intRun_tie`'s), which is why the controls below are stated at the block.
+predicates hand those cells on: `intRunEndWord` carries the predecessor
+`if.end62`, the length as the index, `%7` in the preheader's raw form, `%p` and
+`%n`, and `fracRunEndWord` carries `if.end140`, `%17`, `%idig.4`/`%ip.5` and
+`%fr.4`, so the block denotes at either non-exponent edge from the exit alone.
+`numFast_merge_end62_needs_seven` and `numFast_merge_end140_needs_idig` remain
+the mechanical record of why each cell is needed: at those edges a state whose
+earlier cell is unbound does not denote at all.  What the composition takes
+beyond the predicate is the scan's own trace to the exit, and that is
+`JsonStage2NumFastScanRun.intScan_end230` and
+`JsonStage2NumFastSeams.intScan_merge` for a lexeme whose integer part runs to
+the lexeme's end; the fraction and exponent routes are threaded one seam at a
+time.
 
 **Tier 2 and tier 3.**  The same returning edge closes them once their store
 blocks' words are proved: the kernel's answer at `cleanup282` is
@@ -197,12 +195,12 @@ theorem numFastArm_tier1_at_merge {calls : Calls} {env : Env} {s : State}
 /-! ### The merge block's non-exponent edges read earlier cells
 
 Two controls on the seam.  The block's `phi`s at `if.end62` and `if.end140`
-select cells the digit runs' own exits do not name, and a state whose cell is
-unbound does not denote: the selection fails and the block's chain is `none`,
-which `step` reads as `ub`.  So a composed scan cannot reach
-`JsonStage2NumFastSeams.intRunExit_gate` or the fraction's mirror without the
-exit predicate carrying the cell, and those two theorems' hypotheses are the
-record of what is missing. -/
+select cells the digit runs' registers name, and a state whose cell is unbound
+does not denote: the selection fails and the block's chain is `none`, which
+`step` reads as `ub`.  The exit predicates carry those cells
+(`intRunEndWord`, `fracRunEndWord`), which is what lets
+`JsonStage2NumFastSeams.intRunExit_gate` read them off the exit; the controls
+below keep each cell's necessity on the record at the block. -/
 
 /-- A leading `phi` run whose *second* selection is empty is `none`, whatever
 the first selection was: the run's first phi installs its binding and the second
