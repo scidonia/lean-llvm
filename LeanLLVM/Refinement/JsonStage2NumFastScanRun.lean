@@ -2075,7 +2075,7 @@ theorem intRunExit_end230 {bs : List UInt8} {i0 d0 : Nat} {e : State}
         = some (.int 64 (BitVec.ofNat 64 (d0 + (i1 - i0)))) ∧
       lookupName e.env "%ip.4" = some (.int 64
         (BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + (i1 - i0)) 19)))) := by
-  rcases he with ⟨h68, _⟩ | ⟨h230, i1, hi1, hid, hip⟩
+  rcases he with ⟨h68, _⟩ | ⟨h230, i1, _, hi1, _, hid, hip⟩
   · rw [h68] at hpc; exact absurd hpc (by decide)
   · exact ⟨i1, hi1, hid, hip⟩
 

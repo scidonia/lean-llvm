@@ -837,7 +837,10 @@ theorem intHead_step_back_nondigit {env : Env} {s : State} {a j : Nat} {b : UInt
 
 /-- The exit states: the head's non-digit branch (`if.end68`) or the
 end-of-lexeme branch (`if.end230`), each carrying the count at the index it
-stopped at and the accumulator's value at the digits the count names. -/
+stopped at and the accumulator's value at the digits the count names.  The
+end-of-lexeme exit also carries that it *is* the lexeme's end: the index is
+inside the word, and the length's cell reads it, which is what makes `%7`'s digit
+count and the fold's length the same number. -/
 def intRunExit (bs : List UInt8) (i0 d0 : Nat) (e : State) : Prop :=
   (e.pc = "if.end68" ∧
       ∃ i1, lookupName e.env "%i.4575" = some (.int 64 (BitVec.ofNat 64 i1)) ∧
@@ -847,7 +850,9 @@ def intRunExit (bs : List UInt8) (i0 d0 : Nat) (e : State) : Prop :=
           = some (.int 64
             (BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + (i1 - i0)) 19)))))
   ∨ (e.pc = "if.end230" ∧
-      ∃ i1, lookupName e.env "%inc64" = some (.int 64 (BitVec.ofNat 64 i1)) ∧
+      ∃ i1, i1 < 2 ^ 64 ∧
+        lookupName e.env "%inc64" = some (.int 64 (BitVec.ofNat 64 i1)) ∧
+        lookupName e.env "%n" = some (.int 64 (BitVec.ofNat 64 i1)) ∧
         lookupName e.env "%inc63"
           = some (.int 64 (BitVec.ofNat 64 (d0 + (i1 - i0)))) ∧
         lookupName e.env "%ip.4"
@@ -1356,7 +1361,7 @@ theorem intRunExit_count (bs : List UInt8) (i0 d0 : Nat) (e : State)
     (∃ i1, e.pc = "if.end230" ∧
       lookupName e.env "%inc63"
         = some (.int 64 (BitVec.ofNat 64 (d0 + (i1 - i0))))) := by
-  rcases h with ⟨hpc, i1, _, hcnt, _⟩ | ⟨hpc, i1, _, hcnt, _⟩
+  rcases h with ⟨hpc, i1, _, hcnt, _⟩ | ⟨hpc, i1, _, _, _, hcnt, _⟩
   · exact Or.inl ⟨i1, hpc, hcnt⟩
   · exact Or.inr ⟨i1, hpc, hcnt⟩
 
@@ -1481,10 +1486,13 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               hidig2 hi2 hn2 hbits
           refine ⟨e3, 4, by omega, Or.inr (by simp only [e3, stateAt]), ?_, ?_⟩
           · refine Or.inr ⟨by simp only [e3, stateAt], ?_⟩
-            refine ⟨i0 + c + 1, ?_, ?_, ?_⟩
+            refine ⟨i0 + c + 1, hnext64, ?_, ?_, ?_, ?_⟩
             · simp only [e3, stateAt, intIfEndEnv]
               block_lk
               exact int_succ_eq _ hnext64
+            · rw [h_eq]
+              simp only [e3, stateAt, intIfEndEnv]
+              block_lk
             · simp only [e3, stateAt, intIfEndEnv]
               rw [hcnt64]
               block_lk
@@ -1552,10 +1560,13 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               hidig1 hi1 hn1 hbits
           refine ⟨e2, 3, by omega, Or.inr (by simp only [e2, stateAt]), ?_, ?_⟩
           · refine Or.inr ⟨by simp only [e2, stateAt], ?_⟩
-            refine ⟨i0 + c + 1, ?_, ?_, ?_⟩
+            refine ⟨i0 + c + 1, hnext64, ?_, ?_, ?_, ?_⟩
             · simp only [e2, stateAt, intIfEndEnv]
               block_lk
               exact int_succ_eq _ hnext64
+            · rw [h_eq]
+              simp only [e2, stateAt, intIfEndEnv]
+              block_lk
             · simp only [e2, stateAt, intIfEndEnv]
               rw [hcnt64]
               block_lk
@@ -1647,10 +1658,13 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               hidig2 hi2 hn2 hbits
           refine ⟨e3, 4, by omega, Or.inr (by simp only [e3, stateAt]), ?_, ?_⟩
           · refine Or.inr ⟨by simp only [e3, stateAt], ?_⟩
-            refine ⟨i0 + c + 1, ?_, ?_, ?_⟩
+            refine ⟨i0 + c + 1, hnext64, ?_, ?_, ?_, ?_⟩
             · simp only [e3, stateAt, intIfEndEnv]
               block_lk
               exact int_succ_eq _ hnext64
+            · rw [h_eq]
+              simp only [e3, stateAt, intIfEndEnv]
+              block_lk
             · simp only [e3, stateAt, intIfEndEnv]
               rw [hcnt64]
               block_lk
@@ -1718,10 +1732,13 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               hidig1 hi1 hn1 hbits
           refine ⟨e2, 3, by omega, Or.inr (by simp only [e2, stateAt]), ?_, ?_⟩
           · refine Or.inr ⟨by simp only [e2, stateAt], ?_⟩
-            refine ⟨i0 + c + 1, ?_, ?_, ?_⟩
+            refine ⟨i0 + c + 1, hnext64, ?_, ?_, ?_, ?_⟩
             · simp only [e2, stateAt, intIfEndEnv]
               block_lk
               exact int_succ_eq _ hnext64
+            · rw [h_eq]
+              simp only [e2, stateAt, intIfEndEnv]
+              block_lk
             · simp only [e2, stateAt, intIfEndEnv]
               rw [hcnt64]
               block_lk

@@ -42,11 +42,20 @@ count is below twelve.  `cleanup112` is the fraction's copy of the same loop fro
 reader answered, the word written into `%v8`'s local, the path at `cleanup`) and
 `fpPreheader_step_refuse` (the answer zero, the path at `cleanup.thread`); the
 count guard's arithmetic is `fastGuard_two_groups`, so the loop admits at most
-two groups.  What is *not* composed is the loop: `cleanup`'s own block (three
-`phi`s, the `i32` load, the `@ 10 ^ 8` multiply, the zero-extend and its two
-tests) has no chain lemma yet, and with it the second group's `while.body` and
-the exit's `while.end` merge.  The registers `intRun_start` and `fracRun_start`
-consume are that loop's exit, so the fast-path loop remains their boundary.
+two groups.
+
+The loop's blocks are chained.  `fpCleanupInstrs` is `cleanup`'s twelve-
+instruction chain (`fpCleanup_denote_pre` from the first group,
+`fpCleanup_denote_body` from the second) and its two exits are
+`fpCleanup_step_body`/`fpCleanup_step_end`; `fpBodyInstrs` is the second group's
+reader call (`fpBody_denote_ok`/`_denote_refuse`, `fpBody_step_ok`/`_step_refuse`);
+`fpWhileEnd_denote_cleanup` reads `while.end`'s three `phi`s off the folded
+cells.  `fpCleanup112Instrs`, `fpBody100Instrs` and `fpWhileEnd115Instrs` are the
+fraction's copies, with `fpWhileEnd115_denote_cleanup`/`_denote_thread` the two
+edges a fraction byte can leave by.  What the loop still owes is its own
+`runFuel` composition (the second group's two steps under `fastGuard_two_groups`)
+and, through it, the taken guard's entry into `intRunInv`; the registers
+`intRun_start` and `fracRun_start` consume are that loop's exit.
 
 **The reader's agreement.**  `num_d8_el1`'s answer against the eight bytes at its
 pointer is `numD8Answer_read`'s model read at `readBytes`: `d8Value_eq_fold` says
@@ -453,6 +462,65 @@ theorem intExit_gate {calls : Calls} {env : Env} {s : State}
   · simp only [stateAt, NumFastTier1.t1GateEnv]; block_lk
   · intro k
     rw [runFuel_jump_prefix h1]
+
+/-- **The run's own exit at the gate.**  The integer run's end-of-lexeme exit
+carries `%inc64` and `%n` at the same value, so the merge's `%ip.5708717729` is
+the run's folded accumulator and its `%idig.4709716730` is `%7`'s digit count —
+the length's index, `d0 + (i1 - i0)`, whose `i1` the exit's own cell fixes as the
+lexeme's end.  The two register ties are therefore one statement: the
+accumulator the run carried through `if.end62` and the count `%7` computed at
+`land.lhs.true41.preheader`. -/
+theorem intRunExit_gate {bs : List UInt8} {i0 d0 n : Nat} {e : State}
+    (hpc : e.pc = "if.end230") (hpre : e.pre = some "if.end62")
+    (he : intRunExit bs i0 d0 e)
+    (hn : lookupName e.env "%n" = some (.int 64 (BitVec.ofNat 64 n)))
+    (hi0 : i0 ≤ n) (hbn : d0 + n < 2 ^ 64)
+    (h7 : lookupName e.env "%7"
+      = some (.int 64 (BitVec.ofNat 64 d0 + BitVec.ofNat 64 n - BitVec.ofNat 64 i0)))
+    (hdig : d0 + (n - i0) < 20) :
+    ∃ o : State, o.pc = "if.then241" ∧ o.pre = some "if.end230" ∧ o.mem = e.mem ∧
+      lookupName o.env "%ip.5708717729" = some (.int 64
+        (BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + (n - i0)) 19)))) ∧
+      lookupName o.env "%idig.4709716730"
+        = some (.int 64 (BitVec.ofNat 64 (d0 + (n - i0)))) ∧
+      lookupName o.env "%fr.5718728" = some (.int 64 0) ∧
+      lookupName o.env "%fdig.4719727" = some (.int 64 0) ∧
+      lookupName o.env "%exp10.4731" = some (.int 64 0) ∧
+      ∀ k, runFuel s2HelperCalls (1 + k) numFastBody (stateAt e.env e) =
+        runFuel s2HelperCalls k numFastBody o := by
+  have hn64 : n < 2 ^ 64 := by omega
+  rcases he with ⟨h68, _⟩ | ⟨h230, i1, hi1lt, hi1, hin, hid, hip⟩
+  · rw [h68] at hpc; exact absurd hpc (by decide)
+  -- the exit's own index is the length's
+  have hi1n : i1 = n := by
+    have h1 : (Value.int 64 (BitVec.ofNat 64 i1) : Value)
+        = .int 64 (BitVec.ofNat 64 n) := by
+      rw [hin] at hn
+      exact Option.some.inj hn
+    have h2 : BitVec.ofNat 64 i1 = BitVec.ofNat 64 n :=
+      eq_of_heq (Value.int.inj h1).2
+    have h3 := congrArg BitVec.toNat h2
+    rw [BitVec.toNat_ofNat, BitVec.toNat_ofNat, Nat.mod_eq_of_lt hi1lt,
+      Nat.mod_eq_of_lt hn64] at h3
+    exact h3
+  have h7i : lookupName e.env "%7"
+      = some (.int 64 (BitVec.ofNat 64 (d0 + (i1 - i0)))) := by
+    have h := h7
+    rw [seven_tie hi0 hbn] at h
+    rw [← hi1n] at h
+    exact h
+  have hdigi : d0 + (i1 - i0) < 20 := by
+    have h := hdig
+    rw [← hi1n] at h
+    exact h
+  obtain ⟨o, hpc', hpre', hmem', hip', hid', hfr, hfd, hexp, hrun⟩ :=
+    intExit_gate (calls := s2HelperCalls) (env := e.env) (s := e) (n := i1) (i0 := i0)
+      (d0 := d0) hpc hpre h7i hip hdigi
+  refine ⟨o, hpc', hpre', hmem', ?_, ?_, hfr, hfd, hexp, hrun⟩
+  · rw [← hi1n]
+    exact hip'
+  · rw [← hi1n]
+    exact hid'
 
 /-! ### `num_d8_el1`'s agreement with the bytes at its pointer
 
@@ -904,6 +972,879 @@ theorem fpWhileEnd_step_merge {epow : Int → Option EPow} {env : Env} {s : Stat
     rw [numFast_execTerm_condbr_zero _ "%cmp39572" _ _ hlk hbit]
     simp only [stateAt, hpc]
 
+/-! ### The fast path's fold: `cleanup` and the second group
+
+The refusal way's blocks are above.  The taken way's are the loop: `cleanup`
+folds the reader's word into the accumulator (`%mul = %ip * 10 ^ 8`, the `i32`
+load of the local, the zero-extend, the sum), ends the marker, advances the index
+by eight and tests the two guards; `while.body` is the second group's reader
+call; and `while.end` reads whichever of `cleanup`, `cleanup.thread` and
+`if.then22` left.
+
+The guard's count test is immediate: `%idig.0560` enters at one and grows by
+eight, so `%idig < 12` admits `1` and `9` and refuses `17`
+(`fastGuard_two_groups`), which is why the loop is at most two groups.  The
+reader's answer is the model's at the local: a success writes the word and
+returns one, so `%4` reads back the word the reader computed
+(`numD8Answer_writes`); a refusal returns zero and leaves for `cleanup.thread`
+with the walk's memory. -/
+
+/-- The lifetime marker's closing form at a named local: `llvm.lifetime.end`
+leaves the state, since its answer is the identity. -/
+theorem denoteCode_lifetimeEnd_fp (epow : Int → Option EPow) {env : Env} {s : State}
+    {ptr : String} {v8a : Nat}
+    (hv8 : lookupName env ptr = some (.ptr v8a)) (is : List Instr) :
+    denoteCode (stage2NumFastCalls epow)
+      (Instr.callVoid "llvm.lifetime.end.p0"
+        [((Ty.int 64), (Operand.imm (Const.int 64 0x0000000000000004#64))),
+         (Ty.ptr, (Operand.reg ptr))] :: is) (stateAt env s) =
+      denoteCode (stage2NumFastCalls epow) is (stateAt env s) := by
+  rw [denoteCode_callVoid_some (stage2NumFastCalls epow) env s "llvm.lifetime.end.p0"
+      [((Ty.int 64), (Operand.imm (Const.int 64 0x0000000000000004#64))),
+       (Ty.ptr, (Operand.reg ptr))]
+      [.int 64 0x0000000000000004#64, .ptr v8a]
+      { ret := .int 1 0, mem := s.mem, next := s.next }
+      (evalOperands_lifetimeMark (s := s) (w := 4) (ptr := ptr) hv8)
+      (stage2NumFastCalls_lifetime_end epow _ _ _) is]
+
+/-- `cleanup`, from its `findBlock` pin. -/
+def fpCleanupInstrs : List Instr :=
+  [Instr.phi "%ip.0565935" (Ty.int 64) [("while.body", (Operand.reg "%add35")),
+                                       ("while.body.preheader", (Operand.reg "%conv25"))],
+   Instr.phi "%add568934" (Ty.int 64) [("while.body", (Operand.reg "%add")),
+                                       ("while.body.preheader", (Operand.reg "%add563"))],
+   Instr.phi "%add29569933" (Ty.int 64) [("while.body", (Operand.reg "%add29")),
+                                       ("while.body.preheader", (Operand.imm (Const.int 64 0x0000000000000009#64)))],
+   Instr.binop "%mul" (BinOp.mul) 64 (Operand.reg "%ip.0565935") (Operand.imm (Const.int 64 0x0000000005f5e100#64)),
+   Instr.load "%4" (Ty.int 32) (Operand.reg "%v8"),
+   Instr.zext "%conv34" 32 64 (Operand.reg "%4"),
+   Instr.binop "%add35" (BinOp.add) 64 (Operand.reg "%mul") (Operand.reg "%conv34"),
+   Instr.callVoid "llvm.lifetime.end.p0" [((Ty.int 64), (Operand.imm (Const.int 64 0x0000000000000004#64))),
+                        (Ty.ptr, (Operand.reg "%v8"))],
+   Instr.binop "%add" (BinOp.add) 64 (Operand.reg "%add568934") (Operand.imm (Const.int 64 0x0000000000000008#64)),
+   Instr.icmp "%cmp27" (IPred.ule) 64 (Operand.reg "%add") (Operand.reg "%n"),
+   Instr.icmp "%cmp30" (IPred.ult) 64 (Operand.reg "%add29569933") (Operand.imm (Const.int 64 0x000000000000000c#64)),
+   Instr.select "%5" (Ty.int 1) (Operand.reg "%cmp27") (Operand.reg "%cmp30") (Operand.imm (Const.int 1 0x0#1))]
+
+theorem findBlock_fpCleanup :
+    numFastBody.findBlock "cleanup" =
+      some ⟨"cleanup", fpCleanupInstrs,
+        Term.condbr (Operand.reg "%5") "while.body" "while.end"⟩ := by
+  simpa only [fpCleanupInstrs] using numFast_findBlock_cleanup
+
+/-- The fold's guard: the two tests on the advanced index and the count, as
+`%5`'s `select` binds them. -/
+def fpGuard (add cnt nv : BitVec 64) : BitVec 1 :=
+  if evalICmp .ule add nv = 1 then evalICmp .ult cnt (0xc#64) else (0x0#1)
+
+/-- `cleanup`'s environment: the folded word, the advanced index, the two guards
+and the three `phi` cells. -/
+def fpCleanupEnv (env : Env) (ip add568 add295 nv : BitVec 64) (w : BitVec 32) : Env :=
+  ("%5", .int 1 (fpGuard (add568 + 0x8#64) add295 nv)) ::
+  ("%cmp30", .int 1 (evalICmp .ult add295 (0xc#64))) ::
+  ("%cmp27", .int 1 (evalICmp .ule (add568 + 0x8#64) nv)) ::
+  ("%add", .int 64 (add568 + 0x8#64)) ::
+  ("%add35", .int 64 (ip * (0x5f5e100#64) + BitVec.ofNat 64 w.toNat)) ::
+  ("%conv34", .int 64 (BitVec.ofNat 64 w.toNat)) ::
+  ("%4", .int 32 w) ::
+  ("%mul", .int 64 (ip * (0x5f5e100#64))) ::
+  ("%add29569933", .int 64 add295) ::
+  ("%add568934", .int 64 add568) ::
+  ("%ip.0565935", .int 64 ip) :: env
+
+/-- `cleanup` from the first group: the preheader's lead digit and index, the
+reader's word, and the advanced count `9`. -/
+theorem fpCleanup_denote_pre {epow : Int → Option EPow} {env : Env} {s : State}
+    {ip add568 nv : BitVec 64} {v8a : Nat} {w : BitVec 32}
+    (hpre : s.pre = some "while.body.preheader")
+    (hip : lookupName env "%conv25" = some (.int 64 ip))
+    (h568 : lookupName env "%add563" = some (.int 64 add568))
+    (hv8 : lookupName env "%v8" = some (.ptr v8a))
+    (hread : readBytes s.mem v8a 4 = some (natToBytes w.toNat 4))
+    (hn : lookupName env "%n" = some (.int 64 nv)) :
+    denoteCode (stage2NumFastCalls epow) fpCleanupInstrs (stateAt env s) =
+      some (stateAt (fpCleanupEnv env ip add568 (0x0000000000000009#64) nv w) s) := by
+  unfold fpCleanupInstrs
+  block_phi_run
+  rotate_left 1
+  · exact hpre
+  · rfl
+  · simp only [phiIncoming]; rfl
+  · exact evalOperand_reg_of env s "%conv25" _ hip
+  · simp only [phiIncoming]; rfl
+  · exact evalOperand_reg_of env s "%add563" _ h568
+  · simp only [phiIncoming]; rfl
+  · exact evalOperand_lit_of _ 64 (0x0000000000000009#64)
+  rw [denoteCode_mul_imm _ _ _ "%mul" "%ip.0565935" (by block_lk) _]
+  rw [LeanLLVM.Refinement.JsonScanLane.denoteCode_load_i32 _ _ _ "%4" "%v8"
+    (by block_lk) hread _]
+  rw [denoteCode_zext _ _ _ "%conv34" "%4" 32 64 (by block_lk) _]
+  rw [denoteCode_add_reg _ _ _ "%add35" "%mul" "%conv34" (by block_lk) (by block_lk) _]
+  rw [denoteCode_lifetimeEnd_fp epow (ptr := "%v8") (by block_lk) _]
+  rw [denoteCode_add_imm _ _ _ "%add" "%add568934" (by block_lk) _]
+  rw [LeanLLVM.Refinement.JsonScanLane.denoteCode_icmp_reg_w _ _ _ "%cmp27" "%add" "%n"
+    .ule 64 (by block_lk) (by block_lk) _]
+  rw [LeanLLVM.Refinement.JsonScanLane.denoteCode_icmp_imm_w _ _ _ "%cmp30"
+    "%add29569933" .ult (by block_lk) _]
+  rw [LeanLLVM.Refinement.JsonScanLane.denoteCode_select_bit_reg_imm_w _ _ _ "%5"
+    "%cmp27" "%cmp30" 1 (by block_lk) (by block_lk) _]
+  simp only [denoteCode_nil, stateAt, fpCleanupEnv, fpGuard, runCells]
+
+/-- `cleanup` from the second group: `while.body`'s cells on the same shape. -/
+theorem fpCleanup_denote_body {epow : Int → Option EPow} {env : Env} {s : State}
+    {ip add568 add295 nv : BitVec 64} {v8a : Nat} {w : BitVec 32}
+    (hpre : s.pre = some "while.body")
+    (hip : lookupName env "%add35" = some (.int 64 ip))
+    (h568 : lookupName env "%add" = some (.int 64 add568))
+    (h295 : lookupName env "%add29" = some (.int 64 add295))
+    (hv8 : lookupName env "%v8" = some (.ptr v8a))
+    (hread : readBytes s.mem v8a 4 = some (natToBytes w.toNat 4))
+    (hn : lookupName env "%n" = some (.int 64 nv)) :
+    denoteCode (stage2NumFastCalls epow) fpCleanupInstrs (stateAt env s) =
+      some (stateAt (fpCleanupEnv env ip add568 add295 nv w) s) := by
+  unfold fpCleanupInstrs
+  block_phi_run
+  rotate_left 1
+  · exact hpre
+  · rfl
+  · simp only [phiIncoming]; rfl
+  · exact evalOperand_reg_of env s "%add35" _ hip
+  · simp only [phiIncoming]; rfl
+  · exact evalOperand_reg_of env s "%add" _ h568
+  · simp only [phiIncoming]; rfl
+  · exact evalOperand_reg_of env s "%add29" _ h295
+  rw [denoteCode_mul_imm _ _ _ "%mul" "%ip.0565935" (by block_lk) _]
+  rw [LeanLLVM.Refinement.JsonScanLane.denoteCode_load_i32 _ _ _ "%4" "%v8"
+    (by block_lk) hread _]
+  rw [denoteCode_zext _ _ _ "%conv34" "%4" 32 64 (by block_lk) _]
+  rw [denoteCode_add_reg _ _ _ "%add35" "%mul" "%conv34" (by block_lk) (by block_lk) _]
+  rw [denoteCode_lifetimeEnd_fp epow (ptr := "%v8") (by block_lk) _]
+  rw [denoteCode_add_imm _ _ _ "%add" "%add568934" (by block_lk) _]
+  rw [LeanLLVM.Refinement.JsonScanLane.denoteCode_icmp_reg_w _ _ _ "%cmp27" "%add" "%n"
+    .ule 64 (by block_lk) (by block_lk) _]
+  rw [LeanLLVM.Refinement.JsonScanLane.denoteCode_icmp_imm_w _ _ _ "%cmp30"
+    "%add29569933" .ult (by block_lk) _]
+  rw [LeanLLVM.Refinement.JsonScanLane.denoteCode_select_bit_reg_imm_w _ _ _ "%5"
+    "%cmp27" "%cmp30" 1 (by block_lk) (by block_lk) _]
+  simp only [denoteCode_nil, stateAt, fpCleanupEnv, fpGuard, runCells]
+
+/-- `cleanup`'s step into the second group: both guards passed. -/
+theorem fpCleanup_step_body {epow : Int → Option EPow} {env : Env} {s : State}
+    {ip add568 add295 nv : BitVec 64} {w : BitVec 32}
+    (hpc : s.pc = "cleanup")
+    (hden : denoteCode (stage2NumFastCalls epow) fpCleanupInstrs (stateAt env s) =
+      some (stateAt (fpCleanupEnv env ip add568 add295 nv w) s))
+    (hbit : fpGuard (add568 + 0x8#64) add295 nv = 1) :
+    step (stage2NumFastCalls epow) numFastBody (stateAt env s) =
+      .jump (stateAt (fpCleanupEnv env ip add568 add295 nv w)
+        { s with pc := "while.body", pre := some "cleanup" }) := by
+  refine numFast_step_at (s' := stateAt (fpCleanupEnv env ip add568 add295 nv w) s)
+    (b := ⟨"cleanup", fpCleanupInstrs,
+      Term.condbr (Operand.reg "%5") "while.body" "while.end"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc, fpCleanupInstrs] using findBlock_fpCleanup
+  · simpa only [denoteCode_nil] using hden
+  · have hlk : lookupName (fpCleanupEnv env ip add568 add295 nv w) "%5"
+        = some (.int 1 (fpGuard (add568 + 0x8#64) add295 nv)) := lookupName_cons_self ..
+    rw [numFast_execTerm_condbr_one _ "%5" _ _ hlk hbit]
+    simp only [stateAt, hpc]
+
+/-- `cleanup`'s step out of the loop: one guard failed. -/
+theorem fpCleanup_step_end {epow : Int → Option EPow} {env : Env} {s : State}
+    {ip add568 add295 nv : BitVec 64} {w : BitVec 32}
+    (hpc : s.pc = "cleanup")
+    (hden : denoteCode (stage2NumFastCalls epow) fpCleanupInstrs (stateAt env s) =
+      some (stateAt (fpCleanupEnv env ip add568 add295 nv w) s))
+    (hbit : fpGuard (add568 + 0x8#64) add295 nv = 0) :
+    step (stage2NumFastCalls epow) numFastBody (stateAt env s) =
+      .jump (stateAt (fpCleanupEnv env ip add568 add295 nv w)
+        { s with pc := "while.end", pre := some "cleanup" }) := by
+  refine numFast_step_at (s' := stateAt (fpCleanupEnv env ip add568 add295 nv w) s)
+    (b := ⟨"cleanup", fpCleanupInstrs,
+      Term.condbr (Operand.reg "%5") "while.body" "while.end"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc, fpCleanupInstrs] using findBlock_fpCleanup
+  · simpa only [denoteCode_nil] using hden
+  · have hlk : lookupName (fpCleanupEnv env ip add568 add295 nv w) "%5"
+        = some (.int 1 (fpGuard (add568 + 0x8#64) add295 nv)) := lookupName_cons_self ..
+    rw [numFast_execTerm_condbr_zero _ "%5" _ _ hlk hbit]
+    simp only [stateAt, hpc]
+
+/-- `while.end` from `cleanup`: the folded accumulator, the advanced count and
+the advanced index. -/
+theorem fpWhileEnd_denote_cleanup {epow : Int → Option EPow} {env : Env} {s : State}
+    {ipr idigr ir nv : BitVec 64}
+    (hpre : s.pre = some "cleanup")
+    (hip : lookupName env "%add35" = some (.int 64 ipr))
+    (hid : lookupName env "%add29569933" = some (.int 64 idigr))
+    (hi : lookupName env "%add568934" = some (.int 64 ir))
+    (hn : lookupName env "%n" = some (.int 64 nv)) :
+    denoteCode (stage2NumFastCalls epow) fpWhileEndInstrs (stateAt env s) =
+      some (stateAt (fpWhileEndEnv env ir idigr ipr nv) s) := by
+  unfold fpWhileEndInstrs
+  block_eval
+
+/-- `while.body`'s instructions, from its pin: the second group's `%add29`, the
+marker's opening, the pointer and the reader call. -/
+def fpBodyInstrs : List Instr :=
+  [Instr.binop "%add29" (BinOp.add) 64 (Operand.reg "%add29569933") (Operand.imm (Const.int 64 0x0000000000000008#64)),
+   Instr.callVoid "llvm.lifetime.start.p0" [((Ty.int 64), (Operand.imm (Const.int 64 0x0000000000000004#64))),
+                        (Ty.ptr, (Operand.reg "%v8"))],
+   Instr.gep "%add.ptr" (Ty.int 8) (Operand.reg "%p") (Operand.reg "%add568934"),
+   Instr.call "%call" (Ty.int 32) "num_d8_el1" [(Ty.ptr, (Operand.reg "%add.ptr")),
+                        (Ty.ptr, (Operand.reg "%v8"))],
+   Instr.icmp "%tobool.not" (IPred.eq) 32 (Operand.reg "%call") (Operand.imm (Const.int 32 0x00000000#32))]
+
+theorem findBlock_fpBody :
+    numFastBody.findBlock "while.body" =
+      some ⟨"while.body", fpBodyInstrs,
+        Term.condbr (Operand.reg "%tobool.not") "cleanup.thread" "cleanup"⟩ := by
+  simpa only [fpBodyInstrs] using numFast_findBlock_while_body
+
+/-- `while.body`'s environment: the advanced count, the pointer, the reader's
+answer and its test. -/
+def fpBodyEnv (env : Env) (a v8a : Nat) (idx add295 : BitVec 64)
+    (call : BitVec 32) : Env :=
+  ("%tobool.not", .int 1 (evalICmp .eq call (0x0#32))) ::
+  ("%call", .int 32 call) ::
+  ("%add.ptr", .ptr (a + (idx.signExtend 64).toNat)) ::
+  ("%add29", .int 64 (add295 + 0x8#64)) :: env
+
+/-- `while.body` at a successful reader: the count advances, the pointer is the
+index's, the word lands in `%v8`'s local and the test is zero. -/
+theorem fpBody_denote_ok {epow : Int → Option EPow} {env : Env} {s : State}
+    {a v8a w : Nat} {idx add295 : BitVec 64} {bs : List UInt8}
+    (hp : lookupName env "%p" = some (.ptr a))
+    (hidx : lookupName env "%add568934" = some (.int 64 idx))
+    (hcnt : lookupName env "%add29569933" = some (.int 64 add295))
+    (hv8 : lookupName env "%v8" = some (.ptr v8a))
+    (hpos : (idx.signExtend 64).toNat < 2 ^ 63)
+    (hread : readBytes s.mem (a + (idx.signExtend 64).toNat) 8 = some bs)
+    (hval : d8Value bs = some w) (hw : w < 2 ^ 32) :
+    denoteCode (stage2NumFastCalls epow) fpBodyInstrs (stateAt env s) =
+      some (stateAt (fpBodyEnv env a v8a idx add295 1)
+        { s with mem := writeBytes s.mem v8a (natToBytes w 4), next := s.next }) := by
+  unfold fpBodyInstrs
+  rw [denoteCode_add_imm (stage2NumFastCalls epow) env s "%add29" "%add29569933"
+    (by block_lk) _]
+  rw [denoteCode_callVoid_some (stage2NumFastCalls epow)
+    (("%add29", .int 64 (add295 + 0x8#64)) :: env) s "llvm.lifetime.start.p0"
+    [((Ty.int 64), (Operand.imm (Const.int 64 0x0000000000000004#64))),
+     (Ty.ptr, (Operand.reg "%v8"))]
+    [.int 64 0x0000000000000004#64, .ptr v8a]
+    { ret := .int 1 0, mem := s.mem, next := s.next }
+    (evalOperands_lifetimeMark (s := s) (w := 4) (ptr := "%v8") (by block_lk))
+    (stage2NumFastCalls_lifetime_end epow
+      [.int 64 0x0000000000000004#64, .ptr v8a] s.mem s.next) _]
+  rw [denoteCode_gep8_reg (stage2NumFastCalls epow)
+    (("%add29", .int 64 (add295 + 0x8#64)) :: env) _ "%add.ptr" "%p" "%add568934"
+    (by block_lk) (by block_lk) hpos _]
+  rw [denoteCode_call_some (stage2NumFastCalls epow)
+    (("%add.ptr", .ptr (a + (idx.signExtend 64).toNat)) ::
+     ("%add29", .int 64 (add295 + 0x8#64)) :: env)
+    { s with mem := s.mem, next := s.next }
+    "%call" (Ty.int 32) "num_d8_el1"
+    [(Ty.ptr, (Operand.reg "%add.ptr")), (Ty.ptr, (Operand.reg "%v8"))]
+    [.ptr (a + (idx.signExtend 64).toNat), .ptr v8a]
+    { ret := .int 32 1, mem := writeBytes s.mem v8a (natToBytes w 4), next := s.next }
+    (by
+      have hcell : lookupName
+          (("%add.ptr", .ptr (a + (idx.signExtend 64).toNat)) ::
+           ("%add29", .int 64 (add295 + 0x8#64)) :: env) "%add.ptr"
+          = some (.ptr (a + (idx.signExtend 64).toNat)) := lookupName_cons_self ..
+      have htail : lookupName
+          (("%add.ptr", .ptr (a + (idx.signExtend 64).toNat)) ::
+           ("%add29", .int 64 (add295 + 0x8#64)) :: env) "%v8"
+          = some (.ptr v8a) := by
+        rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
+        exact hv8
+      simp only [evalOperands, evalOperand, stateAt, hcell, htail])
+    (by
+      rw [stage2NumFastCalls_num_d8]
+      exact numD8Answer_read hread hval)]
+  rw [LeanLLVM.Refinement.JsonScanLane.denoteCode_icmp_imm_w (stage2NumFastCalls epow)
+    (("%call", .int 32 1) :: ("%add.ptr", .ptr (a + (idx.signExtend 64).toNat)) ::
+     ("%add29", .int 64 (add295 + 0x8#64)) :: env)
+    { s with mem := writeBytes s.mem v8a (natToBytes w 4), next := s.next }
+    "%tobool.not" "%call" .eq (lookupName_cons_self ..) _]
+  simp only [denoteCode_nil, stateAt, fpBodyEnv]
+
+/-- `while.body` at a refused reader: the count advances and the memory is the
+walk's. -/
+theorem fpBody_denote_refuse {epow : Int → Option EPow} {env : Env} {s : State}
+    {a v8a : Nat} {idx add295 : BitVec 64} {bs : List UInt8}
+    (hp : lookupName env "%p" = some (.ptr a))
+    (hidx : lookupName env "%add568934" = some (.int 64 idx))
+    (hcnt : lookupName env "%add29569933" = some (.int 64 add295))
+    (hv8 : lookupName env "%v8" = some (.ptr v8a))
+    (hpos : (idx.signExtend 64).toNat < 2 ^ 63)
+    (hread : readBytes s.mem (a + (idx.signExtend 64).toNat) 8 = some bs)
+    (hval : d8Value bs = none) :
+    denoteCode (stage2NumFastCalls epow) fpBodyInstrs (stateAt env s) =
+      some (stateAt (fpBodyEnv env a v8a idx add295 0)
+        { s with mem := s.mem, next := s.next }) := by
+  unfold fpBodyInstrs
+  rw [denoteCode_add_imm (stage2NumFastCalls epow) env s "%add29" "%add29569933"
+    (by block_lk) _]
+  rw [denoteCode_callVoid_some (stage2NumFastCalls epow)
+    (("%add29", .int 64 (add295 + 0x8#64)) :: env) s "llvm.lifetime.start.p0"
+    [((Ty.int 64), (Operand.imm (Const.int 64 0x0000000000000004#64))),
+     (Ty.ptr, (Operand.reg "%v8"))]
+    [.int 64 0x0000000000000004#64, .ptr v8a]
+    { ret := .int 1 0, mem := s.mem, next := s.next }
+    (evalOperands_lifetimeMark (s := s) (w := 4) (ptr := "%v8") (by block_lk))
+    (stage2NumFastCalls_lifetime_end epow
+      [.int 64 0x0000000000000004#64, .ptr v8a] s.mem s.next) _]
+  rw [denoteCode_gep8_reg (stage2NumFastCalls epow)
+    (("%add29", .int 64 (add295 + 0x8#64)) :: env) _ "%add.ptr" "%p" "%add568934"
+    (by block_lk) (by block_lk) hpos _]
+  rw [denoteCode_call_some (stage2NumFastCalls epow)
+    (("%add.ptr", .ptr (a + (idx.signExtend 64).toNat)) ::
+     ("%add29", .int 64 (add295 + 0x8#64)) :: env)
+    { s with mem := s.mem, next := s.next }
+    "%call" (Ty.int 32) "num_d8_el1"
+    [(Ty.ptr, (Operand.reg "%add.ptr")), (Ty.ptr, (Operand.reg "%v8"))]
+    [.ptr (a + (idx.signExtend 64).toNat), .ptr v8a]
+    { ret := .int 32 0, mem := s.mem, next := s.next }
+    (by
+      have hcell : lookupName
+          (("%add.ptr", .ptr (a + (idx.signExtend 64).toNat)) ::
+           ("%add29", .int 64 (add295 + 0x8#64)) :: env) "%add.ptr"
+          = some (.ptr (a + (idx.signExtend 64).toNat)) := lookupName_cons_self ..
+      have htail : lookupName
+          (("%add.ptr", .ptr (a + (idx.signExtend 64).toNat)) ::
+           ("%add29", .int 64 (add295 + 0x8#64)) :: env) "%v8"
+          = some (.ptr v8a) := by
+        rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
+        exact hv8
+      simp only [evalOperands, evalOperand, stateAt, hcell, htail])
+    (by
+      rw [stage2NumFastCalls_num_d8]
+      exact numD8Answer_refuse hread hval)]
+  rw [LeanLLVM.Refinement.JsonScanLane.denoteCode_icmp_imm_w (stage2NumFastCalls epow)
+    (("%call", .int 32 0) :: ("%add.ptr", .ptr (a + (idx.signExtend 64).toNat)) ::
+     ("%add29", .int 64 (add295 + 0x8#64)) :: env)
+    { s with mem := s.mem, next := s.next }
+    "%tobool.not" "%call" .eq (lookupName_cons_self ..) _]
+  simp only [denoteCode_nil, stateAt, fpBodyEnv]
+
+/-- `while.body`'s step at a successful reader: the fold's block. -/
+theorem fpBody_step_ok {epow : Int → Option EPow} {env : Env} {s : State}
+    {a v8a w : Nat} {idx add295 : BitVec 64} {bs : List UInt8}
+    (hpc : s.pc = "while.body")
+    (hp : lookupName env "%p" = some (.ptr a))
+    (hidx : lookupName env "%add568934" = some (.int 64 idx))
+    (hcnt : lookupName env "%add29569933" = some (.int 64 add295))
+    (hv8 : lookupName env "%v8" = some (.ptr v8a))
+    (hpos : (idx.signExtend 64).toNat < 2 ^ 63)
+    (hread : readBytes s.mem (a + (idx.signExtend 64).toNat) 8 = some bs)
+    (hval : d8Value bs = some w) (hw : w < 2 ^ 32) :
+    step (stage2NumFastCalls epow) numFastBody (stateAt env s) =
+      .jump (stateAt (fpBodyEnv env a v8a idx add295 1)
+        { s with mem := writeBytes s.mem v8a (natToBytes w 4), next := s.next,
+                 pc := "cleanup", pre := some "while.body" }) := by
+  have hbit : evalICmp .eq ((1 : BitVec 32)) (0 : BitVec 32) = 0 := by decide
+  refine numFast_step_at (s' := stateAt (fpBodyEnv env a v8a idx add295 1)
+      { s with mem := writeBytes s.mem v8a (natToBytes w 4), next := s.next })
+    (b := ⟨"while.body", fpBodyInstrs,
+      Term.condbr (Operand.reg "%tobool.not") "cleanup.thread" "cleanup"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc, fpBodyInstrs] using findBlock_fpBody
+  · simpa only [denoteCode_nil] using
+      fpBody_denote_ok (epow := epow) hp hidx hcnt hv8 hpos hread hval hw
+  · have hlk : lookupName (fpBodyEnv env a v8a idx add295 1) "%tobool.not"
+        = some (.int 1 (evalICmp .eq ((1 : BitVec 32)) (0 : BitVec 32))) :=
+      lookupName_cons_self ..
+    rw [hbit] at hlk
+    rw [numFast_execTerm_condbr_zero _ "%tobool.not" "cleanup.thread" "cleanup" hlk rfl]
+    simp only [stateAt, hpc]
+
+/-- `while.body`'s step at a refused reader: `cleanup.thread`. -/
+theorem fpBody_step_refuse {epow : Int → Option EPow} {env : Env} {s : State}
+    {a v8a : Nat} {idx add295 : BitVec 64} {bs : List UInt8}
+    (hpc : s.pc = "while.body")
+    (hp : lookupName env "%p" = some (.ptr a))
+    (hidx : lookupName env "%add568934" = some (.int 64 idx))
+    (hcnt : lookupName env "%add29569933" = some (.int 64 add295))
+    (hv8 : lookupName env "%v8" = some (.ptr v8a))
+    (hpos : (idx.signExtend 64).toNat < 2 ^ 63)
+    (hread : readBytes s.mem (a + (idx.signExtend 64).toNat) 8 = some bs)
+    (hval : d8Value bs = none) :
+    step (stage2NumFastCalls epow) numFastBody (stateAt env s) =
+      .jump (stateAt (fpBodyEnv env a v8a idx add295 0)
+        { s with pc := "cleanup.thread", pre := some "while.body" }) := by
+  have hbit : evalICmp .eq ((0 : BitVec 32)) (0 : BitVec 32) = 1 := by decide
+  refine numFast_step_at (s' := stateAt (fpBodyEnv env a v8a idx add295 0)
+      { s with mem := s.mem, next := s.next })
+    (b := ⟨"while.body", fpBodyInstrs,
+      Term.condbr (Operand.reg "%tobool.not") "cleanup.thread" "cleanup"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc, fpBodyInstrs] using findBlock_fpBody
+  · simpa only [denoteCode_nil] using
+      fpBody_denote_refuse (epow := epow) hp hidx hcnt hv8 hpos hread hval
+  · have hlk : lookupName (fpBodyEnv env a v8a idx add295 0) "%tobool.not"
+        = some (.int 1 (evalICmp .eq ((0 : BitVec 32)) (0 : BitVec 32))) :=
+      lookupName_cons_self ..
+    rw [hbit] at hlk
+    rw [numFast_execTerm_condbr_one _ "%tobool.not" "cleanup.thread" "cleanup" hlk rfl]
+    simp only [stateAt, hpc]
+
+/-! ### The fraction's copy of the fold
+
+`cleanup112` and `while.body100` are the same three shapes on the fraction's
+copy: `%fr.0584943` replaces `%ip.0565935`, `%add92587942` the index,
+`%add96588941` the count, and `%v8101` the local.  `while.end115` is the merge,
+whose `%fr.0556`, `%fdig.0554` and `%i.6552` read whichever of `cleanup112`,
+`cleanup112.thread` and `while.cond91.preheader` left. -/
+
+/-- `cleanup112`, from its `findBlock` pin. -/
+def fpCleanup112Instrs : List Instr :=
+  [Instr.phi "%fr.0584943" (Ty.int 64) [("while.body100", (Operand.reg "%add109")),
+                                       ("while.body100.preheader", (Operand.imm (Const.int 64 0x0000000000000000#64)))],
+   Instr.phi "%add92587942" (Ty.int 64) [("while.body100", (Operand.reg "%add92")),
+                                       ("while.body100.preheader", (Operand.reg "%add92582"))],
+   Instr.phi "%add96588941" (Ty.int 64) [("while.body100", (Operand.reg "%add96")),
+                                       ("while.body100.preheader", (Operand.imm (Const.int 64 0x0000000000000008#64)))],
+   Instr.binop "%mul107" (BinOp.mul) 64 (Operand.reg "%fr.0584943") (Operand.imm (Const.int 64 0x0000000005f5e100#64)),
+   Instr.load "%14" (Ty.int 32) (Operand.reg "%v8101"),
+   Instr.zext "%conv108" 32 64 (Operand.reg "%14"),
+   Instr.binop "%add109" (BinOp.add) 64 (Operand.reg "%mul107") (Operand.reg "%conv108"),
+   Instr.callVoid "llvm.lifetime.end.p0" [((Ty.int 64), (Operand.imm (Const.int 64 0x0000000000000004#64))),
+                        (Ty.ptr, (Operand.reg "%v8101"))],
+   Instr.binop "%add92" (BinOp.add) 64 (Operand.reg "%add92587942") (Operand.imm (Const.int 64 0x0000000000000008#64)),
+   Instr.icmp "%cmp93" (IPred.ule) 64 (Operand.reg "%add92") (Operand.reg "%n"),
+   Instr.icmp "%cmp97" (IPred.ult) 64 (Operand.reg "%add96588941") (Operand.imm (Const.int 64 0x000000000000000c#64)),
+   Instr.select "%15" (Ty.int 1) (Operand.reg "%cmp93") (Operand.reg "%cmp97") (Operand.imm (Const.int 1 0x0#1))]
+
+theorem findBlock_fpCleanup112 :
+    numFastBody.findBlock "cleanup112" =
+      some ⟨"cleanup112", fpCleanup112Instrs,
+        Term.condbr (Operand.reg "%15") "while.body100" "while.end115"⟩ := by
+  simpa only [fpCleanup112Instrs] using numFast_findBlock_cleanup112
+
+/-- `cleanup112`'s environment: the fraction's folded word, the advanced index,
+the two guards and the three `phi` cells. -/
+def fpCleanup112Env (env : Env) (fr add92 add96 nv : BitVec 64) (w : BitVec 32) : Env :=
+  ("%15", .int 1 (fpGuard (add92 + 0x8#64) add96 nv)) ::
+  ("%cmp97", .int 1 (evalICmp .ult add96 (0xc#64))) ::
+  ("%cmp93", .int 1 (evalICmp .ule (add92 + 0x8#64) nv)) ::
+  ("%add92", .int 64 (add92 + 0x8#64)) ::
+  ("%add109", .int 64 (fr * (0x5f5e100#64) + BitVec.ofNat 64 w.toNat)) ::
+  ("%conv108", .int 64 (BitVec.ofNat 64 w.toNat)) ::
+  ("%14", .int 32 w) ::
+  ("%mul107", .int 64 (fr * (0x5f5e100#64))) ::
+  ("%add96588941", .int 64 add96) ::
+  ("%add92587942", .int 64 add92) ::
+  ("%fr.0584943", .int 64 fr) :: env
+
+/-- `cleanup112` from the first group: the preheader's zero fraction, the
+preheader's index, the reader's word, and the advanced count `8`. -/
+theorem fpCleanup112_denote_pre {epow : Int → Option EPow} {env : Env} {s : State}
+    {fr add92 nv : BitVec 64} {v8a : Nat} {w : BitVec 32}
+    (hpre : s.pre = some "while.body100.preheader")
+    (hfr : lookupName env "%add92582" = some (.int 64 add92))
+    (hv8 : lookupName env "%v8101" = some (.ptr v8a))
+    (hread : readBytes s.mem v8a 4 = some (natToBytes w.toNat 4))
+    (hn : lookupName env "%n" = some (.int 64 nv)) :
+    denoteCode (stage2NumFastCalls epow) fpCleanup112Instrs (stateAt env s) =
+      some (stateAt (fpCleanup112Env env 0 add92 (0x0000000000000008#64) nv w) s) := by
+  unfold fpCleanup112Instrs
+  block_phi_run
+  rotate_left 1
+  · exact hpre
+  · rfl
+  · simp only [phiIncoming]; rfl
+  · exact evalOperand_lit_of _ 64 0
+  · simp only [phiIncoming]; rfl
+  · exact evalOperand_reg_of env s "%add92582" _ hfr
+  · simp only [phiIncoming]; rfl
+  · exact evalOperand_lit_of _ 64 (0x0000000000000008#64)
+  rw [denoteCode_mul_imm _ _ _ "%mul107" "%fr.0584943" (by block_lk) _]
+  rw [LeanLLVM.Refinement.JsonScanLane.denoteCode_load_i32 _ _ _ "%14" "%v8101"
+    (by block_lk) hread _]
+  rw [denoteCode_zext _ _ _ "%conv108" "%14" 32 64 (by block_lk) _]
+  rw [denoteCode_add_reg _ _ _ "%add109" "%mul107" "%conv108" (by block_lk) (by block_lk) _]
+  rw [denoteCode_lifetimeEnd_fp epow (ptr := "%v8101") (by block_lk) _]
+  rw [denoteCode_add_imm _ _ _ "%add92" "%add92587942" (by block_lk) _]
+  rw [LeanLLVM.Refinement.JsonScanLane.denoteCode_icmp_reg_w _ _ _ "%cmp93" "%add92" "%n"
+    .ule 64 (by block_lk) (by block_lk) _]
+  rw [LeanLLVM.Refinement.JsonScanLane.denoteCode_icmp_imm_w _ _ _ "%cmp97"
+    "%add96588941" .ult (by block_lk) _]
+  rw [LeanLLVM.Refinement.JsonScanLane.denoteCode_select_bit_reg_imm_w _ _ _ "%15"
+    "%cmp93" "%cmp97" 1 (by block_lk) (by block_lk) _]
+  simp only [denoteCode_nil, stateAt, fpCleanup112Env, fpGuard, runCells]
+
+/-- `cleanup112` from the second group: `while.body100`'s cells on the same
+shape. -/
+theorem fpCleanup112_denote_body {epow : Int → Option EPow} {env : Env} {s : State}
+    {fr add92 add96 nv : BitVec 64} {v8a : Nat} {w : BitVec 32}
+    (hpre : s.pre = some "while.body100")
+    (hfr : lookupName env "%add109" = some (.int 64 fr))
+    (h92 : lookupName env "%add92" = some (.int 64 add92))
+    (h96 : lookupName env "%add96" = some (.int 64 add96))
+    (hv8 : lookupName env "%v8101" = some (.ptr v8a))
+    (hread : readBytes s.mem v8a 4 = some (natToBytes w.toNat 4))
+    (hn : lookupName env "%n" = some (.int 64 nv)) :
+    denoteCode (stage2NumFastCalls epow) fpCleanup112Instrs (stateAt env s) =
+      some (stateAt (fpCleanup112Env env fr add92 add96 nv w) s) := by
+  unfold fpCleanup112Instrs
+  block_phi_run
+  rotate_left 1
+  · exact hpre
+  · rfl
+  · simp only [phiIncoming]; rfl
+  · exact evalOperand_reg_of env s "%add109" _ hfr
+  · simp only [phiIncoming]; rfl
+  · exact evalOperand_reg_of env s "%add92" _ h92
+  · simp only [phiIncoming]; rfl
+  · exact evalOperand_reg_of env s "%add96" _ h96
+  rw [denoteCode_mul_imm _ _ _ "%mul107" "%fr.0584943" (by block_lk) _]
+  rw [LeanLLVM.Refinement.JsonScanLane.denoteCode_load_i32 _ _ _ "%14" "%v8101"
+    (by block_lk) hread _]
+  rw [denoteCode_zext _ _ _ "%conv108" "%14" 32 64 (by block_lk) _]
+  rw [denoteCode_add_reg _ _ _ "%add109" "%mul107" "%conv108" (by block_lk) (by block_lk) _]
+  rw [denoteCode_lifetimeEnd_fp epow (ptr := "%v8101") (by block_lk) _]
+  rw [denoteCode_add_imm _ _ _ "%add92" "%add92587942" (by block_lk) _]
+  rw [LeanLLVM.Refinement.JsonScanLane.denoteCode_icmp_reg_w _ _ _ "%cmp93" "%add92" "%n"
+    .ule 64 (by block_lk) (by block_lk) _]
+  rw [LeanLLVM.Refinement.JsonScanLane.denoteCode_icmp_imm_w _ _ _ "%cmp97"
+    "%add96588941" .ult (by block_lk) _]
+  rw [LeanLLVM.Refinement.JsonScanLane.denoteCode_select_bit_reg_imm_w _ _ _ "%15"
+    "%cmp93" "%cmp97" 1 (by block_lk) (by block_lk) _]
+  simp only [denoteCode_nil, stateAt, fpCleanup112Env, fpGuard, runCells]
+
+/-- `cleanup112`'s step into the second group: both guards passed. -/
+theorem fpCleanup112_step_body {epow : Int → Option EPow} {env : Env} {s : State}
+    {fr add92 add96 nv : BitVec 64} {w : BitVec 32}
+    (hpc : s.pc = "cleanup112")
+    (hden : denoteCode (stage2NumFastCalls epow) fpCleanup112Instrs (stateAt env s) =
+      some (stateAt (fpCleanup112Env env fr add92 add96 nv w) s))
+    (hbit : fpGuard (add92 + 0x8#64) add96 nv = 1) :
+    step (stage2NumFastCalls epow) numFastBody (stateAt env s) =
+      .jump (stateAt (fpCleanup112Env env fr add92 add96 nv w)
+        { s with pc := "while.body100", pre := some "cleanup112" }) := by
+  refine numFast_step_at (s' := stateAt (fpCleanup112Env env fr add92 add96 nv w) s)
+    (b := ⟨"cleanup112", fpCleanup112Instrs,
+      Term.condbr (Operand.reg "%15") "while.body100" "while.end115"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc, fpCleanup112Instrs] using findBlock_fpCleanup112
+  · simpa only [denoteCode_nil] using hden
+  · have hlk : lookupName (fpCleanup112Env env fr add92 add96 nv w) "%15"
+        = some (.int 1 (fpGuard (add92 + 0x8#64) add96 nv)) := lookupName_cons_self ..
+    rw [numFast_execTerm_condbr_one _ "%15" _ _ hlk hbit]
+    simp only [stateAt, hpc]
+
+/-- `cleanup112`'s step out of the loop: one guard failed. -/
+theorem fpCleanup112_step_end {epow : Int → Option EPow} {env : Env} {s : State}
+    {fr add92 add96 nv : BitVec 64} {w : BitVec 32}
+    (hpc : s.pc = "cleanup112")
+    (hden : denoteCode (stage2NumFastCalls epow) fpCleanup112Instrs (stateAt env s) =
+      some (stateAt (fpCleanup112Env env fr add92 add96 nv w) s))
+    (hbit : fpGuard (add92 + 0x8#64) add96 nv = 0) :
+    step (stage2NumFastCalls epow) numFastBody (stateAt env s) =
+      .jump (stateAt (fpCleanup112Env env fr add92 add96 nv w)
+        { s with pc := "while.end115", pre := some "cleanup112" }) := by
+  refine numFast_step_at (s' := stateAt (fpCleanup112Env env fr add92 add96 nv w) s)
+    (b := ⟨"cleanup112", fpCleanup112Instrs,
+      Term.condbr (Operand.reg "%15") "while.body100" "while.end115"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc, fpCleanup112Instrs] using findBlock_fpCleanup112
+  · simpa only [denoteCode_nil] using hden
+  · have hlk : lookupName (fpCleanup112Env env fr add92 add96 nv w) "%15"
+        = some (.int 1 (fpGuard (add92 + 0x8#64) add96 nv)) := lookupName_cons_self ..
+    rw [numFast_execTerm_condbr_zero _ "%15" _ _ hlk hbit]
+    simp only [stateAt, hpc]
+
+/-- `while.body100`'s instructions, from its pin. -/
+def fpBody100Instrs : List Instr :=
+  [Instr.binop "%add96" (BinOp.add) 64 (Operand.reg "%add96588941") (Operand.imm (Const.int 64 0x0000000000000008#64)),
+   Instr.callVoid "llvm.lifetime.start.p0" [((Ty.int 64), (Operand.imm (Const.int 64 0x0000000000000004#64))),
+                        (Ty.ptr, (Operand.reg "%v8101"))],
+   Instr.gep "%add.ptr102" (Ty.int 8) (Operand.reg "%p") (Operand.reg "%add92587942"),
+   Instr.call "%call103" (Ty.int 32) "num_d8_el1" [(Ty.ptr, (Operand.reg "%add.ptr102")),
+                        (Ty.ptr, (Operand.reg "%v8101"))],
+   Instr.icmp "%tobool104.not" (IPred.eq) 32 (Operand.reg "%call103") (Operand.imm (Const.int 32 0x00000000#32))]
+
+theorem findBlock_fpBody100 :
+    numFastBody.findBlock "while.body100" =
+      some ⟨"while.body100", fpBody100Instrs,
+        Term.condbr (Operand.reg "%tobool104.not") "cleanup112.thread" "cleanup112"⟩ := by
+  simpa only [fpBody100Instrs] using numFast_findBlock_while_body100
+
+/-- `while.body100`'s environment. -/
+def fpBody100Env (env : Env) (a v8a : Nat) (idx add96 : BitVec 64)
+    (call : BitVec 32) : Env :=
+  ("%tobool104.not", .int 1 (evalICmp .eq call (0x0#32))) ::
+  ("%call103", .int 32 call) ::
+  ("%add.ptr102", .ptr (a + (idx.signExtend 64).toNat)) ::
+  ("%add96", .int 64 (add96 + 0x8#64)) :: env
+
+/-- `while.body100` at a successful reader. -/
+theorem fpBody100_denote_ok {epow : Int → Option EPow} {env : Env} {s : State}
+    {a v8a w : Nat} {idx add96 : BitVec 64} {bs : List UInt8}
+    (hp : lookupName env "%p" = some (.ptr a))
+    (hidx : lookupName env "%add92587942" = some (.int 64 idx))
+    (hcnt : lookupName env "%add96588941" = some (.int 64 add96))
+    (hv8 : lookupName env "%v8101" = some (.ptr v8a))
+    (hpos : (idx.signExtend 64).toNat < 2 ^ 63)
+    (hread : readBytes s.mem (a + (idx.signExtend 64).toNat) 8 = some bs)
+    (hval : d8Value bs = some w) (hw : w < 2 ^ 32) :
+    denoteCode (stage2NumFastCalls epow) fpBody100Instrs (stateAt env s) =
+      some (stateAt (fpBody100Env env a v8a idx add96 1)
+        { s with mem := writeBytes s.mem v8a (natToBytes w 4), next := s.next }) := by
+  unfold fpBody100Instrs
+  rw [denoteCode_add_imm (stage2NumFastCalls epow) env s "%add96" "%add96588941"
+    (by block_lk) _]
+  rw [denoteCode_callVoid_some (stage2NumFastCalls epow)
+    (("%add96", .int 64 (add96 + 0x8#64)) :: env) s "llvm.lifetime.start.p0"
+    [((Ty.int 64), (Operand.imm (Const.int 64 0x0000000000000004#64))),
+     (Ty.ptr, (Operand.reg "%v8101"))]
+    [.int 64 0x0000000000000004#64, .ptr v8a]
+    { ret := .int 1 0, mem := s.mem, next := s.next }
+    (evalOperands_lifetimeMark (s := s) (w := 4) (ptr := "%v8101") (by block_lk))
+    (stage2NumFastCalls_lifetime_end epow
+      [.int 64 0x0000000000000004#64, .ptr v8a] s.mem s.next) _]
+  rw [denoteCode_gep8_reg (stage2NumFastCalls epow)
+    (("%add96", .int 64 (add96 + 0x8#64)) :: env) _ "%add.ptr102" "%p" "%add92587942"
+    (by block_lk) (by block_lk) hpos _]
+  rw [denoteCode_call_some (stage2NumFastCalls epow)
+    (("%add.ptr102", .ptr (a + (idx.signExtend 64).toNat)) ::
+     ("%add96", .int 64 (add96 + 0x8#64)) :: env)
+    { s with mem := s.mem, next := s.next }
+    "%call103" (Ty.int 32) "num_d8_el1"
+    [(Ty.ptr, (Operand.reg "%add.ptr102")), (Ty.ptr, (Operand.reg "%v8101"))]
+    [.ptr (a + (idx.signExtend 64).toNat), .ptr v8a]
+    { ret := .int 32 1, mem := writeBytes s.mem v8a (natToBytes w 4), next := s.next }
+    (by
+      have hcell : lookupName
+          (("%add.ptr102", .ptr (a + (idx.signExtend 64).toNat)) ::
+           ("%add96", .int 64 (add96 + 0x8#64)) :: env) "%add.ptr102"
+          = some (.ptr (a + (idx.signExtend 64).toNat)) := lookupName_cons_self ..
+      have htail : lookupName
+          (("%add.ptr102", .ptr (a + (idx.signExtend 64).toNat)) ::
+           ("%add96", .int 64 (add96 + 0x8#64)) :: env) "%v8101"
+          = some (.ptr v8a) := by
+        rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
+        exact hv8
+      simp only [evalOperands, evalOperand, stateAt, hcell, htail])
+    (by
+      rw [stage2NumFastCalls_num_d8]
+      exact numD8Answer_read hread hval)]
+  rw [LeanLLVM.Refinement.JsonScanLane.denoteCode_icmp_imm_w (stage2NumFastCalls epow)
+    (("%call103", .int 32 1) :: ("%add.ptr102", .ptr (a + (idx.signExtend 64).toNat)) ::
+     ("%add96", .int 64 (add96 + 0x8#64)) :: env)
+    { s with mem := writeBytes s.mem v8a (natToBytes w 4), next := s.next }
+    "%tobool104.not" "%call103" .eq (lookupName_cons_self ..) _]
+  simp only [denoteCode_nil, stateAt, fpBody100Env]
+
+/-- `while.body100` at a refused reader. -/
+theorem fpBody100_denote_refuse {epow : Int → Option EPow} {env : Env} {s : State}
+    {a v8a : Nat} {idx add96 : BitVec 64} {bs : List UInt8}
+    (hp : lookupName env "%p" = some (.ptr a))
+    (hidx : lookupName env "%add92587942" = some (.int 64 idx))
+    (hcnt : lookupName env "%add96588941" = some (.int 64 add96))
+    (hv8 : lookupName env "%v8101" = some (.ptr v8a))
+    (hpos : (idx.signExtend 64).toNat < 2 ^ 63)
+    (hread : readBytes s.mem (a + (idx.signExtend 64).toNat) 8 = some bs)
+    (hval : d8Value bs = none) :
+    denoteCode (stage2NumFastCalls epow) fpBody100Instrs (stateAt env s) =
+      some (stateAt (fpBody100Env env a v8a idx add96 0)
+        { s with mem := s.mem, next := s.next }) := by
+  unfold fpBody100Instrs
+  rw [denoteCode_add_imm (stage2NumFastCalls epow) env s "%add96" "%add96588941"
+    (by block_lk) _]
+  rw [denoteCode_callVoid_some (stage2NumFastCalls epow)
+    (("%add96", .int 64 (add96 + 0x8#64)) :: env) s "llvm.lifetime.start.p0"
+    [((Ty.int 64), (Operand.imm (Const.int 64 0x0000000000000004#64))),
+     (Ty.ptr, (Operand.reg "%v8101"))]
+    [.int 64 0x0000000000000004#64, .ptr v8a]
+    { ret := .int 1 0, mem := s.mem, next := s.next }
+    (evalOperands_lifetimeMark (s := s) (w := 4) (ptr := "%v8101") (by block_lk))
+    (stage2NumFastCalls_lifetime_end epow
+      [.int 64 0x0000000000000004#64, .ptr v8a] s.mem s.next) _]
+  rw [denoteCode_gep8_reg (stage2NumFastCalls epow)
+    (("%add96", .int 64 (add96 + 0x8#64)) :: env) _ "%add.ptr102" "%p" "%add92587942"
+    (by block_lk) (by block_lk) hpos _]
+  rw [denoteCode_call_some (stage2NumFastCalls epow)
+    (("%add.ptr102", .ptr (a + (idx.signExtend 64).toNat)) ::
+     ("%add96", .int 64 (add96 + 0x8#64)) :: env)
+    { s with mem := s.mem, next := s.next }
+    "%call103" (Ty.int 32) "num_d8_el1"
+    [(Ty.ptr, (Operand.reg "%add.ptr102")), (Ty.ptr, (Operand.reg "%v8101"))]
+    [.ptr (a + (idx.signExtend 64).toNat), .ptr v8a]
+    { ret := .int 32 0, mem := s.mem, next := s.next }
+    (by
+      have hcell : lookupName
+          (("%add.ptr102", .ptr (a + (idx.signExtend 64).toNat)) ::
+           ("%add96", .int 64 (add96 + 0x8#64)) :: env) "%add.ptr102"
+          = some (.ptr (a + (idx.signExtend 64).toNat)) := lookupName_cons_self ..
+      have htail : lookupName
+          (("%add.ptr102", .ptr (a + (idx.signExtend 64).toNat)) ::
+           ("%add96", .int 64 (add96 + 0x8#64)) :: env) "%v8101"
+          = some (.ptr v8a) := by
+        rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
+        exact hv8
+      simp only [evalOperands, evalOperand, stateAt, hcell, htail])
+    (by
+      rw [stage2NumFastCalls_num_d8]
+      exact numD8Answer_refuse hread hval)]
+  rw [LeanLLVM.Refinement.JsonScanLane.denoteCode_icmp_imm_w (stage2NumFastCalls epow)
+    (("%call103", .int 32 0) :: ("%add.ptr102", .ptr (a + (idx.signExtend 64).toNat)) ::
+     ("%add96", .int 64 (add96 + 0x8#64)) :: env)
+    { s with mem := s.mem, next := s.next }
+    "%tobool104.not" "%call103" .eq (lookupName_cons_self ..) _]
+  simp only [denoteCode_nil, stateAt, fpBody100Env]
+
+/-- `while.body100`'s step at a successful reader. -/
+theorem fpBody100_step_ok {epow : Int → Option EPow} {env : Env} {s : State}
+    {a v8a w : Nat} {idx add96 : BitVec 64} {bs : List UInt8}
+    (hpc : s.pc = "while.body100")
+    (hp : lookupName env "%p" = some (.ptr a))
+    (hidx : lookupName env "%add92587942" = some (.int 64 idx))
+    (hcnt : lookupName env "%add96588941" = some (.int 64 add96))
+    (hv8 : lookupName env "%v8101" = some (.ptr v8a))
+    (hpos : (idx.signExtend 64).toNat < 2 ^ 63)
+    (hread : readBytes s.mem (a + (idx.signExtend 64).toNat) 8 = some bs)
+    (hval : d8Value bs = some w) (hw : w < 2 ^ 32) :
+    step (stage2NumFastCalls epow) numFastBody (stateAt env s) =
+      .jump (stateAt (fpBody100Env env a v8a idx add96 1)
+        { s with mem := writeBytes s.mem v8a (natToBytes w 4), next := s.next,
+                 pc := "cleanup112", pre := some "while.body100" }) := by
+  have hbit : evalICmp .eq ((1 : BitVec 32)) (0 : BitVec 32) = 0 := by decide
+  refine numFast_step_at (s' := stateAt (fpBody100Env env a v8a idx add96 1)
+      { s with mem := writeBytes s.mem v8a (natToBytes w 4), next := s.next })
+    (b := ⟨"while.body100", fpBody100Instrs,
+      Term.condbr (Operand.reg "%tobool104.not") "cleanup112.thread" "cleanup112"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc, fpBody100Instrs] using findBlock_fpBody100
+  · simpa only [denoteCode_nil] using
+      fpBody100_denote_ok (epow := epow) hp hidx hcnt hv8 hpos hread hval hw
+  · have hlk : lookupName (fpBody100Env env a v8a idx add96 1) "%tobool104.not"
+        = some (.int 1 (evalICmp .eq ((1 : BitVec 32)) (0 : BitVec 32))) :=
+      lookupName_cons_self ..
+    rw [hbit] at hlk
+    rw [numFast_execTerm_condbr_zero _ "%tobool104.not" "cleanup112.thread" "cleanup112"
+      hlk rfl]
+    simp only [stateAt, hpc]
+
+/-- `while.body100`'s step at a refused reader. -/
+theorem fpBody100_step_refuse {epow : Int → Option EPow} {env : Env} {s : State}
+    {a v8a : Nat} {idx add96 : BitVec 64} {bs : List UInt8}
+    (hpc : s.pc = "while.body100")
+    (hp : lookupName env "%p" = some (.ptr a))
+    (hidx : lookupName env "%add92587942" = some (.int 64 idx))
+    (hcnt : lookupName env "%add96588941" = some (.int 64 add96))
+    (hv8 : lookupName env "%v8101" = some (.ptr v8a))
+    (hpos : (idx.signExtend 64).toNat < 2 ^ 63)
+    (hread : readBytes s.mem (a + (idx.signExtend 64).toNat) 8 = some bs)
+    (hval : d8Value bs = none) :
+    step (stage2NumFastCalls epow) numFastBody (stateAt env s) =
+      .jump (stateAt (fpBody100Env env a v8a idx add96 0)
+        { s with pc := "cleanup112.thread", pre := some "while.body100" }) := by
+  have hbit : evalICmp .eq ((0 : BitVec 32)) (0 : BitVec 32) = 1 := by decide
+  refine numFast_step_at (s' := stateAt (fpBody100Env env a v8a idx add96 0)
+      { s with mem := s.mem, next := s.next })
+    (b := ⟨"while.body100", fpBody100Instrs,
+      Term.condbr (Operand.reg "%tobool104.not") "cleanup112.thread" "cleanup112"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc, fpBody100Instrs] using findBlock_fpBody100
+  · simpa only [denoteCode_nil] using
+      fpBody100_denote_refuse (epow := epow) hp hidx hcnt hv8 hpos hread hval
+  · have hlk : lookupName (fpBody100Env env a v8a idx add96 0) "%tobool104.not"
+        = some (.int 1 (evalICmp .eq ((0 : BitVec 32)) (0 : BitVec 32))) :=
+      lookupName_cons_self ..
+    rw [hbit] at hlk
+    rw [numFast_execTerm_condbr_one _ "%tobool104.not" "cleanup112.thread" "cleanup112"
+      hlk rfl]
+    simp only [stateAt, hpc]
+
+/-- `while.end115`'s environment: the three merged cells and the test. -/
+def fpWhileEnd115Env (env : Env) (i fr fdig nv : BitVec 64) : Env :=
+  ("%cmp117592", .int 1 (evalICmp .ult i nv)) ::
+  ("%i.6552", .int 64 i) :: ("%fdig.0554", .int 64 fdig) ::
+  ("%fr.0556", .int 64 fr) :: env
+
+/-- `while.end115`'s three `phi`s and its test, from the block's pin. -/
+def fpWhileEnd115Instrs : List Instr :=
+  [Instr.phi "%fr.0556" (Ty.int 64) [("cleanup112.thread", (Operand.reg "%fr.0584.lcssa")),
+                                       ("while.cond91.preheader", (Operand.imm (Const.int 64 0x0000000000000000#64))),
+                                       ("cleanup112", (Operand.reg "%add109"))],
+   Instr.phi "%fdig.0554" (Ty.int 64) [("cleanup112.thread", (Operand.reg "%fdig.0585.lcssa")),
+                                       ("while.cond91.preheader", (Operand.imm (Const.int 64 0x0000000000000000#64))),
+                                       ("cleanup112", (Operand.reg "%add96588941"))],
+   Instr.phi "%i.6552" (Ty.int 64) [("cleanup112.thread", (Operand.reg "%i.6586.lcssa")),
+                                       ("while.cond91.preheader", (Operand.reg "%inc77")),
+                                       ("cleanup112", (Operand.reg "%add92587942"))],
+   Instr.icmp "%cmp117592" (IPred.ult) 64 (Operand.reg "%i.6552") (Operand.reg "%n")]
+
+theorem findBlock_fpWhileEnd115 :
+    numFastBody.findBlock "while.end115" =
+      some ⟨"while.end115", fpWhileEnd115Instrs,
+        Term.condbr (Operand.reg "%cmp117592") "land.lhs.true119.preheader" "if.end144"⟩ := by
+  simpa only [fpWhileEnd115Instrs] using numFast_findBlock_while_end115
+
+/-- `while.end115` from `cleanup112`: the folded fraction, the advanced count
+and the advanced index. -/
+theorem fpWhileEnd115_denote_cleanup {epow : Int → Option EPow} {env : Env} {s : State}
+    {frr fdigr ir nv : BitVec 64}
+    (hpre : s.pre = some "cleanup112")
+    (hfr : lookupName env "%add109" = some (.int 64 frr))
+    (hfd : lookupName env "%add96588941" = some (.int 64 fdigr))
+    (hi : lookupName env "%add92587942" = some (.int 64 ir))
+    (hn : lookupName env "%n" = some (.int 64 nv)) :
+    denoteCode (stage2NumFastCalls epow) fpWhileEnd115Instrs (stateAt env s) =
+      some (stateAt (fpWhileEnd115Env env ir frr fdigr nv) s) := by
+  unfold fpWhileEnd115Instrs
+  block_eval
+
+/-- `while.end115` from `cleanup112.thread`: the refusal carries the
+preheader's zero fraction, its count and its index. -/
+theorem fpWhileEnd115_denote_thread {epow : Int → Option EPow} {env : Env} {s : State}
+    {frr fdigr ir nv : BitVec 64}
+    (hpre : s.pre = some "cleanup112.thread")
+    (hfr : lookupName env "%fr.0584.lcssa" = some (.int 64 frr))
+    (hfd : lookupName env "%fdig.0585.lcssa" = some (.int 64 fdigr))
+    (hi : lookupName env "%i.6586.lcssa" = some (.int 64 ir))
+    (hn : lookupName env "%n" = some (.int 64 nv)) :
+    denoteCode (stage2NumFastCalls epow) fpWhileEnd115Instrs (stateAt env s) =
+      some (stateAt (fpWhileEnd115Env env ir frr fdigr nv) s) := by
+  unfold fpWhileEnd115Instrs
+  block_eval
+
+/-- `while.end115`'s step to the fraction head. -/
+theorem fpWhileEnd115_step_head {epow : Int → Option EPow} {env : Env} {s : State}
+    {i fr fdig nv : BitVec 64}
+    (hpc : s.pc = "while.end115")
+    (hden : denoteCode (stage2NumFastCalls epow) fpWhileEnd115Instrs (stateAt env s) =
+      some (stateAt (fpWhileEnd115Env env i fr fdig nv) s))
+    (hbit : evalICmp .ult i nv = 1) :
+    step (stage2NumFastCalls epow) numFastBody (stateAt env s) =
+      .jump (stateAt (fpWhileEnd115Env env i fr fdig nv)
+        { s with pc := "land.lhs.true119.preheader", pre := some "while.end115" }) := by
+  refine numFast_step_at (s' := stateAt (fpWhileEnd115Env env i fr fdig nv) s)
+    (b := ⟨"while.end115", fpWhileEnd115Instrs,
+      Term.condbr (Operand.reg "%cmp117592") "land.lhs.true119.preheader" "if.end144"⟩)
+    ?_ ?_ ?_
+  · simpa only [stateAt, hpc, fpWhileEnd115Instrs] using findBlock_fpWhileEnd115
+  · simpa only [denoteCode_nil] using hden
+  · have hlk : lookupName (fpWhileEnd115Env env i fr fdig nv) "%cmp117592"
+        = some (.int 1 (evalICmp .ult i nv)) := lookupName_cons_self ..
+    rw [numFast_execTerm_condbr_one _ "%cmp117592" _ _ hlk hbit]
+    simp only [stateAt, hpc]
+
+/-- `while.end115`'s step to the marker's block: the index reached the length. -/
+theorem fpWhileEnd115_step_merge {epow : Int → Option EPow} {env : Env} {s : State}
+    {i fr fdig nv : BitVec 64}
+    (hpc : s.pc = "while.end115")
+    (hden : denoteCode (stage2NumFastCalls epow) fpWhileEnd115Instrs (stateAt env s) =
+      some (stateAt (fpWhileEnd115Env env i fr fdig nv) s))
+    (hbit : evalICmp .ult i nv = 0) :
+    step (stage2NumFastCalls epow) numFastBody (stateAt env s) =
+      .jump (stateAt (fpWhileEnd115Env env i fr fdig nv)
+        { s with pc := "if.end144", pre := some "while.end115" }) := by
+  refine numFast_step_at (s' := stateAt (fpWhileEnd115Env env i fr fdig nv) s)
+    (b := ⟨"while.end115", fpWhileEnd115Instrs,
+      Term.condbr (Operand.reg "%cmp117592") "land.lhs.true119.preheader" "if.end144"⟩)
+    ?_ ?_ ?_
+  · simpa only [stateAt, hpc, fpWhileEnd115Instrs] using findBlock_fpWhileEnd115
+  · simpa only [denoteCode_nil] using hden
+  · have hlk : lookupName (fpWhileEnd115Env env i fr fdig nv) "%cmp117592"
+        = some (.int 1 (evalICmp .ult i nv)) := lookupName_cons_self ..
+    rw [numFast_execTerm_condbr_zero _ "%cmp117592" _ _ hlk hbit]
+    simp only [stateAt, hpc]
+
 /-! ### Axiom footprints
 
 The seams and the transport are instruction chains over the blocks' pins, so
@@ -921,6 +1862,7 @@ steps are at `stage2NumFastCalls`, whose reader answer is the model's. -/
 #print axioms NumFastSeams.ifEnd62_denote_back
 #print axioms NumFastSeams.ifEnd62_step_end
 #print axioms NumFastSeams.intExit_gate
+#print axioms NumFastSeams.intRunExit_gate
 #print axioms NumFastSeams.foldl_digits_add
 #print axioms NumFastSeams.d8Value_eq_fold
 #print axioms NumFastSeams.numD8Answer_writes
@@ -933,6 +1875,28 @@ steps are at `stage2NumFastCalls`, whose reader answer is the model's. -/
 #print axioms NumFastSeams.fpWhileEnd_denote_thread
 #print axioms NumFastSeams.fpWhileEnd_step_head
 #print axioms NumFastSeams.fpWhileEnd_step_merge
+#print axioms NumFastSeams.denoteCode_lifetimeEnd_fp
+#print axioms NumFastSeams.fpCleanup_denote_pre
+#print axioms NumFastSeams.fpCleanup_denote_body
+#print axioms NumFastSeams.fpCleanup_step_body
+#print axioms NumFastSeams.fpCleanup_step_end
+#print axioms NumFastSeams.fpWhileEnd_denote_cleanup
+#print axioms NumFastSeams.fpBody_denote_ok
+#print axioms NumFastSeams.fpBody_denote_refuse
+#print axioms NumFastSeams.fpBody_step_ok
+#print axioms NumFastSeams.fpBody_step_refuse
+#print axioms NumFastSeams.fpCleanup112_denote_pre
+#print axioms NumFastSeams.fpCleanup112_denote_body
+#print axioms NumFastSeams.fpCleanup112_step_body
+#print axioms NumFastSeams.fpCleanup112_step_end
+#print axioms NumFastSeams.fpBody100_denote_ok
+#print axioms NumFastSeams.fpBody100_denote_refuse
+#print axioms NumFastSeams.fpBody100_step_ok
+#print axioms NumFastSeams.fpBody100_step_refuse
+#print axioms NumFastSeams.fpWhileEnd115_denote_cleanup
+#print axioms NumFastSeams.fpWhileEnd115_denote_thread
+#print axioms NumFastSeams.fpWhileEnd115_step_head
+#print axioms NumFastSeams.fpWhileEnd115_step_merge
 
 end NumFastSeams
 

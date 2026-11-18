@@ -1255,8 +1255,23 @@ from its measured C text), `stage2NumFastCalls` composes it with the walk's
 (`numFast_*_denote_some`/`_step_jump`), and `numFastTables_holds` is
 `NumFastTables` at a concrete twenty-row/twenty-three-row staging.  What remains
 open is the conversion's *run*, not its environment: the three digit runs' arms,
-their starts, the inlined tier-1 arithmetic, and tier 3's region.  Tier 3's three
-links are now stated and proved at their statements
+their starts, the inlined tier-1 arithmetic, and tier 3's region.  Two pieces of
+the run are now supplies rather than obligations.  The eight-digit fast path's
+blocks are chained (`JsonStage2NumFastSeams`): `fpCleanup_denote_pre`/
+`_denote_body` and `fpCleanup_step_body`/`_step_end` are the fold block at both
+its edges, `fpBody_denote_ok`/`_denote_refuse` and `fpBody_step_ok`/
+`_step_refuse` are the second group's reader call, `fpWhileEnd_denote_cleanup`
+reads the exit's three `phi`s, and `fpCleanup112Instrs`/`fpBody100Instrs`/
+`fpWhileEnd115Instrs` are the fraction's copies with
+`fpWhileEnd115_denote_cleanup`/`_denote_thread` at the two edges a fraction byte
+leaves by; the loop's own `runFuel` composition and the taken guard's entry into
+`intRunInv` are what the fast path still owes.  The accumulator's tie at
+`if.end230` is stated: `intRunExit`'s end-of-lexeme exit now carries the
+length's cell beside the incremented index (both `BitVec.ofNat 64 i1`), and
+`intRunExit_gate` reads `%ip.4` and `%7` as the merge's `%ip.5708717729` and
+`%idig.4709716730` — the fold's word and the digit count `d0 + (n - i0)` — so the
+tie `ip_word_digitsNat` takes is available from the run's own exit.  Tier 3's
+three links are stated and proved at their statements
 (`JsonStage2NumFastTier3`): the traversal with the trip count
 (`t3_traversal_counts_1_3`, two `runFuel` steps from the peeled entry at a count
 in `0 < k < 4`, with the reached state's two `poison` cells holding the marker and

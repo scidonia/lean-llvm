@@ -177,11 +177,16 @@ is `cleanup223.thread`'s two edges, `if.end226`'s four, and
 `expMerge_run_inc`/`expMerge_run_head` into `mergeEntry`; `if.end230`'s bound edge
 is `ifEnd230_denote_end62`/`ifEnd230_step_end62`.  Of item 1's mantissa, the
 word-level ties are `ip_word_digitsNat`/`fr_word_digitsNat`, fed by
-`intRunExit_end230`/`fracRunExit_end230`.  Still open on this list: the two
-eight-digit fast paths and the reader's agreement (the reader `%7`'s count tie
-among them), the seam steps that would thread one theorem from `entry` to
+`intRunExit_end230`/`fracRunExit_end230`.  Still open on this list: the
+eight-digit fast paths' `runFuel` composition (their blocks are chained —
+`JsonStage2NumFastSeams`' `fpCleanup_*`/`fpBody_*`/`fpWhileEnd_*` and the
+fraction's copies — so what is left there is the loop's own run, not its
+blocks), the seam steps that would thread one theorem from `entry` to
 `if.end230`, and tier 3's region beyond its poison edge (`JsonStage2NumFastTier3`
-states the edge's traversal, the window tie and the proximity estimate).
+states the edge's traversal, the window tie and the proximity estimate).  The
+accumulator's tie at `if.end230` is now stated: `intRunExit_gate` reads the run's
+`%ip.4` and `%7` as the merge's `%ip.5708717729` and `%idig.4709716730`, and the
+exit's own `%n` cell fixes the run's stop index as the lexeme's end.
 
 
 There is no `sorry`, `admit` or `native_decide` below.
