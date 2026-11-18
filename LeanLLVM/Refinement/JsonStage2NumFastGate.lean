@@ -196,12 +196,14 @@ def expRunEndBoundLoopStop (calls : Calls) (mem0 : Mem) (p n i0 : Nat)
   step_exit := by
     intro r s c hinv hb
     obtain ⟨hinv, hcells⟩ := hinv
-    obtain ⟨e, j, hj, hpc, hword, hstop, hcell, hrun⟩ := expRun_step_exit hinv hb
+    obtain ⟨e, j, hj, hpc, hword, hstop, hcell, _hcarried, _hmem, hrun⟩ :=
+      expRun_step_exit hinv hb
     exact ⟨e, j, by omega, hpc, ⟨hword, hcell idig5 ip5 fr5 fd5 hcells, hstop⟩, hrun⟩
   step_loop := by
     intro r s c hinv hb
     obtain ⟨hinv, hcells⟩ := hinv
-    obtain ⟨e, c', j, hj, hpc, hlt, hinv', hcell, hrun⟩ := expRun_step_loop hinv hb
+    obtain ⟨e, c', j, hj, hpc, hlt, hinv', hcell, _hcarried, _hmem, hrun⟩ :=
+      expRun_step_loop hinv hb
     exact ⟨e, c', j, by omega, hpc, hlt, ⟨hinv', hcell idig5 ip5 fr5 fd5 hcells⟩, hrun⟩
   exit_at_zero := by
     intro s c h
@@ -301,7 +303,7 @@ theorem nest_expRun_run {calls : Calls} {e : State} {a n i10 : Nat} {b1 b2 : UIn
         exact readByte_of_readBytes hread hjlt
       have hdigB : IsDigitB (bs.getD (i10 + 2) 0) = true :=
         hdigits (i10 + 2) (by omega) hjlt
-      obtain ⟨e'', hinv, hcellsT, hrun1⟩ :=
+      obtain ⟨e'', hinv, hcellsT, _hcarriedT, hrun1⟩ :=
         NumFastStarts.expRun_start (calls := calls) (env := e'.env) (s := e')
           hpc' hp2 hn2 (by rw [hmemE]; exact hread) hi11 ⟨_, hes⟩ hcarry' hd hdigB
           (by omega) hnlt
@@ -340,7 +342,7 @@ theorem nest_expRun_run {calls : Calls} {e : State} {a n i10 : Nat} {b1 b2 : UIn
         exact readByte_of_readBytes hread hjlt
       have hdigB : IsDigitB (bs.getD (i10 + 1) 0) = true :=
         hdigits (i10 + 1) (by omega) hjlt
-      obtain ⟨e'', hinv, hcellsT, hrun1⟩ :=
+      obtain ⟨e'', hinv, hcellsT, _hcarriedT, hrun1⟩ :=
         NumFastStarts.expRun_start (calls := calls) (env := e'.env) (s := e')
           hpc' hp2 hn2 (by rw [hmemE]; exact hread) hi11 ⟨_, hes⟩ hcarry' hd hdigB
           (by omega) hnlt
@@ -404,7 +406,7 @@ theorem nest_expRun_run {calls : Calls} {e : State} {a n i10 : Nat} {b1 b2 : UIn
         exact readByte_of_readBytes hread hjlt
       have hdigB : IsDigitB (bs.getD (i10 + 2) 0) = true :=
         hdigits (i10 + 2) (by omega) hjlt
-      obtain ⟨e'', hinv, hcellsT, hrun1⟩ :=
+      obtain ⟨e'', hinv, hcellsT, _hcarriedT, hrun1⟩ :=
         NumFastStarts.expRun_start (calls := calls) (env := e'.env) (s := e')
           hpc' hp2 hn2 (by rw [hmemE]; exact hread) hi11 ⟨_, hes⟩ hcarry' hd hdigB
           (by omega) hnlt
@@ -442,7 +444,7 @@ theorem nest_expRun_run {calls : Calls} {e : State} {a n i10 : Nat} {b1 b2 : UIn
         exact readByte_of_readBytes hread hjlt
       have hdigB : IsDigitB (bs.getD (i10 + 1) 0) = true :=
         hdigits (i10 + 1) (by omega) hjlt
-      obtain ⟨e'', hinv, hcellsT, hrun1⟩ :=
+      obtain ⟨e'', hinv, hcellsT, _hcarriedT, hrun1⟩ :=
         NumFastStarts.expRun_start (calls := calls) (env := e'.env) (s := e')
           hpc' hp2 hn2 (by rw [hmemE]; exact hread) hi11 ⟨_, hes⟩ hcarry' hd hdigB
           (by omega) hnlt

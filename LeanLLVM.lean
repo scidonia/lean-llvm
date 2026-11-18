@@ -117,6 +117,7 @@ import LeanLLVM.Refinement.JsonStage2NumFastScanFast
 import LeanLLVM.Refinement.JsonStage2NumFastRun
 import LeanLLVM.Refinement.JsonStage2NumFastEntry
 import LeanLLVM.Refinement.JsonStage2NumFastGate
+import LeanLLVM.Refinement.JsonStage2NumFastExponent
 import LeanLLVM.Refinement.JsonStage2NumFastFraction
 import LeanLLVM.Refinement.JsonStage2NumFastTier3Handoff
 import LeanLLVM.Refinement.JsonStage2StringBody

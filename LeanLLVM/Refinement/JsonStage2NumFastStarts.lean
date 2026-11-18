@@ -1771,6 +1771,8 @@ theorem expRun_start {calls : Calls} {env : Env} {s : State} {a n : Nat}
       (∀ (idig5 ip5 fr5 fd5 : BitVec 64),
         ExpRunCells idig5 ip5 fr5 fd5 (stateAt env s) →
         ExpRunCells idig5 ip5 fr5 fd5 e) ∧
+      (∀ (env0 : Env) (sign : BitVec 1),
+        NumFastCarried env0 sign (stateAt env s) → NumFastCarried env0 sign e) ∧
       ∀ k, runFuel calls (1 + k) numFastBody (stateAt env s) =
         runFuel calls k numFastBody e := by
   have hi63 : i11 < 2 ^ 63 := by omega
@@ -1794,6 +1796,8 @@ theorem expRun_start {calls : Calls} {env : Env} {s : State} {a n : Nat}
         exact ⟨idig5, ip5, fr5, fd5, by lk_exp, by lk_exp, by lk_exp, by lk_exp⟩),
     fun idig5 ip5 fr5 fd5 hcells =>
       expRun_step_cells (by simp only [stateAt]; rw [hpc]; decide) h1s hcells,
+    fun env0 sign hcarried =>
+      numFast_step_cells (by simp only [stateAt]; rw [hpc]; decide) h1s hcarried,
     fun k => by
       rw [runFuel_jump_prefix h1s k]⟩
 

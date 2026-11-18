@@ -4703,6 +4703,9 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
       expRunInv mem0 p n i0 bs r e c' ∧
       (∀ (idig5 ip5 fr5 fd5 : BitVec 64),
         ExpRunCells idig5 ip5 fr5 fd5 s → ExpRunCells idig5 ip5 fr5 fd5 e) ∧
+      (∀ (env0 : Env) (sign : BitVec 1), NumFastCarried env0 sign s →
+        NumFastCarried env0 sign e) ∧
+      e.mem = s.mem ∧
       ∀ k, runFuel calls (j + k) numFastBody s =
         runFuel calls k numFastBody e := by
   obtain ⟨hpc, hmem, hsum, hltn, hnlt, hp, hn, hread, hpre, hesign, hcarry⟩ := hinv
@@ -4789,7 +4792,7 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
             (JsonScanLane.vByte b &&& 0x0f#8).toNat)
           (by simp only [e2, stateAt]) (by simp only [e2, stateAt]) hphi hphiOp
           hi2 hn2 hbits
-      refine ⟨e3, c + 1, 4, by omega, ?_, by omega, ?_, ?_, ?_⟩
+      refine ⟨e3, c + 1, 4, by omega, ?_, by omega, ?_, ?_, ?_, ?_, ?_⟩
       · simp only [e3, stateAt]
       · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
         · simp only [e3, stateAt]
@@ -4829,6 +4832,12 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
           (expRun_step_cells (by simp only [e1, stateAt]; decide) hstep3
             (expRun_step_cells (by simp only [e0, stateAt]; decide) hstep2
               (expRun_step_cells (by rw [hpc]; decide) hstep1 hcells)))
+      · intro env0 sign hcarried
+        exact numFast_step_cells (by simp only [e2, stateAt]; decide) hstep4
+          (numFast_step_cells (by simp only [e1, stateAt]; decide) hstep3
+            (numFast_step_cells (by simp only [e0, stateAt]; decide) hstep2
+              (numFast_step_cells (by rw [hpc]; decide) hstep1 hcarried)))
+      · simp only [e3, e2, e1, e0, stateAt]
       · intro k
         rw [show 4 + k = 1 + (1 + (1 + (1 + k))) from by omega,
           runFuel_jump_prefix hstep1 (1 + (1 + (1 + k))),
@@ -4873,7 +4882,7 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
           (p := "while.body206") (op := Operand.reg "%exp10.0603") (vv := 0)
           (by simp only [e1, stateAt]) (by simp only [e1, stateAt]) hphi hphiOp
           hi1 hn1 hbits
-      refine ⟨e2, c + 1, 3, by omega, ?_, by omega, ?_, ?_, ?_⟩
+      refine ⟨e2, c + 1, 3, by omega, ?_, by omega, ?_, ?_, ?_, ?_, ?_⟩
       · simp only [e2, stateAt]
       · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
         · simp only [e2, stateAt]
@@ -4910,6 +4919,11 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
         exact expRun_step_cells (by simp only [e1, stateAt]; decide) hstep3
           (expRun_step_cells (by simp only [e0, stateAt]; decide) hstep2
             (expRun_step_cells (by rw [hpc]; decide) hstep1 hcells))
+      · intro env0 sign hcarried
+        exact numFast_step_cells (by simp only [e1, stateAt]; decide) hstep3
+          (numFast_step_cells (by simp only [e0, stateAt]; decide) hstep2
+            (numFast_step_cells (by rw [hpc]; decide) hstep1 hcarried))
+      · simp only [e2, e1, e0, stateAt]
       · intro k
         rw [show 3 + k = 1 + (1 + (1 + k)) from by omega,
           runFuel_jump_prefix hstep1 (1 + (1 + k)),
@@ -4975,7 +4989,7 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
             (JsonScanLane.vByte b &&& 0x0f#8).toNat)
           (by simp only [e2, stateAt]) (by simp only [e2, stateAt]) hphi hphiOp
           hi2 hn2 hbits
-      refine ⟨e3, c + 1, 4, by omega, ?_, by omega, ?_, ?_, ?_⟩
+      refine ⟨e3, c + 1, 4, by omega, ?_, by omega, ?_, ?_, ?_, ?_, ?_⟩
       · simp only [e3, stateAt]
       · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
         · simp only [e3, stateAt]
@@ -5015,6 +5029,12 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
           (expRun_step_cells (by simp only [e1, stateAt]; decide) hstep3
             (expRun_step_cells (by simp only [e0, stateAt]; decide) hstep2
               (expRun_step_cells (by rw [hpc]; decide) hstep1 hcells)))
+      · intro env0 sign hcarried
+        exact numFast_step_cells (by simp only [e2, stateAt]; decide) hstep4
+          (numFast_step_cells (by simp only [e1, stateAt]; decide) hstep3
+            (numFast_step_cells (by simp only [e0, stateAt]; decide) hstep2
+              (numFast_step_cells (by rw [hpc]; decide) hstep1 hcarried)))
+      · simp only [e3, e2, e1, e0, stateAt]
       · intro k
         rw [show 4 + k = 1 + (1 + (1 + (1 + k))) from by omega,
           runFuel_jump_prefix hstep1 (1 + (1 + (1 + k))),
@@ -5059,7 +5079,7 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
           (p := "while.body206") (op := Operand.reg "%exp10.0603") (vv := v)
           (by simp only [e1, stateAt]) (by simp only [e1, stateAt]) hphi hphiOp
           hi1 hn1 hbits
-      refine ⟨e2, c + 1, 3, by omega, ?_, by omega, ?_, ?_, ?_⟩
+      refine ⟨e2, c + 1, 3, by omega, ?_, by omega, ?_, ?_, ?_, ?_, ?_⟩
       · simp only [e2, stateAt]
       · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
         · simp only [e2, stateAt]
@@ -5096,6 +5116,11 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
         exact expRun_step_cells (by simp only [e1, stateAt]; decide) hstep3
           (expRun_step_cells (by simp only [e0, stateAt]; decide) hstep2
             (expRun_step_cells (by rw [hpc]; decide) hstep1 hcells))
+      · intro env0 sign hcarried
+        exact numFast_step_cells (by simp only [e1, stateAt]; decide) hstep3
+          (numFast_step_cells (by simp only [e0, stateAt]; decide) hstep2
+            (numFast_step_cells (by rw [hpc]; decide) hstep1 hcarried))
+      · simp only [e2, e1, e0, stateAt]
       · intro k
         rw [show 3 + k = 1 + (1 + (1 + k)) from by omega,
           runFuel_jump_prefix hstep1 (1 + (1 + k)),
@@ -5111,6 +5136,9 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
       expRunStop p n i0 e ∧
       (∀ (idig5 ip5 fr5 fd5 : BitVec 64),
         ExpRunCells idig5 ip5 fr5 fd5 s → ExpRunCells idig5 ip5 fr5 fd5 e) ∧
+      (∀ (env0 : Env) (sign : BitVec 1), NumFastCarried env0 sign s →
+        NumFastCarried env0 sign e) ∧
+      e.mem = s.mem ∧
       ∀ k, runFuel calls (j + k) numFastBody s =
         runFuel calls k numFastBody e := by
   obtain ⟨hpc, hmem, hsum, hltn, hnlt, hp, hn, hread, hpre, hesign, hcarry⟩ := hinv
@@ -5186,7 +5214,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
                 (JsonScanLane.vByte b &&& 0x0f#8).toNat)
               (by simp only [e2, stateAt]) (by simp only [e2, stateAt]) hphi hphiOp
               hi2 hn2 hbits
-          refine ⟨e3, 4, by omega, by simp only [e3, stateAt], ?_, ?_, ?_, ?_⟩
+          refine ⟨e3, 4, by omega, by simp only [e3, stateAt], ?_, ?_, ?_, ?_, ?_, ?_⟩
           · refine ⟨by simp only [e3, stateAt],
               Or.inr ⟨by simp only [e3, stateAt], i0 + c + 1,
                 (0 * 10 + BitVec.ofNat 64 (JsonScanLane.vByte b &&& 0x0f#8).toNat),
@@ -5224,6 +5252,12 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
               (expRun_step_cells (by simp only [e1, stateAt]; decide) hstep3
                 (expRun_step_cells (by simp only [e0, stateAt]; decide) hstep2
                   (expRun_step_cells (by rw [hpc]; decide) hstep1 hcells)))
+          · intro env0 sign hcarried
+            exact numFast_step_cells (by simp only [e2, stateAt]; decide) hstep4
+              (numFast_step_cells (by simp only [e1, stateAt]; decide) hstep3
+                (numFast_step_cells (by simp only [e0, stateAt]; decide) hstep2
+                  (numFast_step_cells (by rw [hpc]; decide) hstep1 hcarried)))
+          · simp only [e3, e2, e1, e0, stateAt]
           · intro k
             rw [show 4 + k = 1 + (1 + (1 + (1 + k))) from by omega,
               runFuel_jump_prefix hstep1 (1 + (1 + (1 + k))),
@@ -5269,7 +5303,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
               (p := "while.body206") (op := Operand.reg "%exp10.0603") (vv := 0)
               (by simp only [e1, stateAt]) (by simp only [e1, stateAt]) hphi hphiOp
               hi1 hn1 hbits
-          refine ⟨e2, 3, by omega, by simp only [e2, stateAt], ?_, ?_, ?_, ?_⟩
+          refine ⟨e2, 3, by omega, by simp only [e2, stateAt], ?_, ?_, ?_, ?_, ?_, ?_⟩
           · refine ⟨by simp only [e2, stateAt],
               Or.inr ⟨by simp only [e2, stateAt], i0 + c + 1, 0, ?_, ?_⟩, ?_, ?_⟩
             · simp only [e2, stateAt, expIfEndEnv]
@@ -5303,6 +5337,11 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
             exact expRun_step_cells (by simp only [e1, stateAt]; decide) hstep3
               (expRun_step_cells (by simp only [e0, stateAt]; decide) hstep2
                 (expRun_step_cells (by rw [hpc]; decide) hstep1 hcells))
+          · intro env0 sign hcarried
+            exact numFast_step_cells (by simp only [e1, stateAt]; decide) hstep3
+              (numFast_step_cells (by simp only [e0, stateAt]; decide) hstep2
+                (numFast_step_cells (by rw [hpc]; decide) hstep1 hcarried))
+          · simp only [e2, e1, e0, stateAt]
           · intro k
             rw [show 3 + k = 1 + (1 + (1 + k)) from by omega,
               runFuel_jump_prefix hstep1 (1 + (1 + k)),
@@ -5369,7 +5408,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
                 (JsonScanLane.vByte b &&& 0x0f#8).toNat)
               (by simp only [e2, stateAt]) (by simp only [e2, stateAt]) hphi hphiOp
               hi2 hn2 hbits
-          refine ⟨e3, 4, by omega, by simp only [e3, stateAt], ?_, ?_, ?_, ?_⟩
+          refine ⟨e3, 4, by omega, by simp only [e3, stateAt], ?_, ?_, ?_, ?_, ?_, ?_⟩
           · refine ⟨by simp only [e3, stateAt],
               Or.inr ⟨by simp only [e3, stateAt], i0 + c + 1,
                 (v * 10 + BitVec.ofNat 64 (JsonScanLane.vByte b &&& 0x0f#8).toNat),
@@ -5407,6 +5446,12 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
               (expRun_step_cells (by simp only [e1, stateAt]; decide) hstep3
                 (expRun_step_cells (by simp only [e0, stateAt]; decide) hstep2
                   (expRun_step_cells (by rw [hpc]; decide) hstep1 hcells)))
+          · intro env0 sign hcarried
+            exact numFast_step_cells (by simp only [e2, stateAt]; decide) hstep4
+              (numFast_step_cells (by simp only [e1, stateAt]; decide) hstep3
+                (numFast_step_cells (by simp only [e0, stateAt]; decide) hstep2
+                  (numFast_step_cells (by rw [hpc]; decide) hstep1 hcarried)))
+          · simp only [e3, e2, e1, e0, stateAt]
           · intro k
             rw [show 4 + k = 1 + (1 + (1 + (1 + k))) from by omega,
               runFuel_jump_prefix hstep1 (1 + (1 + (1 + k))),
@@ -5452,7 +5497,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
               (p := "while.body206") (op := Operand.reg "%exp10.0603") (vv := v)
               (by simp only [e1, stateAt]) (by simp only [e1, stateAt]) hphi hphiOp
               hi1 hn1 hbits
-          refine ⟨e2, 3, by omega, by simp only [e2, stateAt], ?_, ?_, ?_, ?_⟩
+          refine ⟨e2, 3, by omega, by simp only [e2, stateAt], ?_, ?_, ?_, ?_, ?_, ?_⟩
           · refine ⟨by simp only [e2, stateAt],
               Or.inr ⟨by simp only [e2, stateAt], i0 + c + 1, v, ?_, ?_⟩, ?_, ?_⟩
             · simp only [e2, stateAt, expIfEndEnv]
@@ -5486,6 +5531,11 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
             exact expRun_step_cells (by simp only [e1, stateAt]; decide) hstep3
               (expRun_step_cells (by simp only [e0, stateAt]; decide) hstep2
                 (expRun_step_cells (by rw [hpc]; decide) hstep1 hcells))
+          · intro env0 sign hcarried
+            exact numFast_step_cells (by simp only [e1, stateAt]; decide) hstep3
+              (numFast_step_cells (by simp only [e0, stateAt]; decide) hstep2
+                (numFast_step_cells (by rw [hpc]; decide) hstep1 hcarried))
+          · simp only [e2, e1, e0, stateAt]
           · intro k
             rw [show 3 + k = 1 + (1 + (1 + k)) from by omega,
               runFuel_jump_prefix hstep1 (1 + (1 + k)),
@@ -5503,7 +5553,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
           expHead_step_entry_nondigit (env := s.env) (s := s) (a := p) (j := i0 + c)
             (b := b) hpc hpre0 hp
             (BlockEval.evalOperand_reg_of s.env s "%i.11" _ hi) hj hbyte_s hdigit'
-        refine ⟨e0, 1, by omega, by simp only [e0, stateAt], ?_, ?_, ?_, ?_⟩
+        refine ⟨e0, 1, by omega, by simp only [e0, stateAt], ?_, ?_, ?_, ?_, ?_, ?_⟩
         · refine ⟨by simp only [e0, stateAt],
             Or.inl ⟨by simp only [e0, stateAt], i0 + c, 0, ?_, ?_⟩, ?_, ?_⟩
           · simp only [e0, stateAt, expHeadEnv, expHeadPhiEnv]
@@ -5532,6 +5582,9 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
           · simpa only [e0, stateAt] using hbyte_s
         · intro c1 c2 c3 c4 hcells
           exact expRun_step_cells (by rw [hpc]; decide) hstep1 hcells
+        · intro env0 sign hcarried
+          exact numFast_step_cells (by rw [hpc]; decide) hstep1 hcarried
+        · simp only [e0, stateAt]
         · intro k
           rw [runFuel_jump_prefix hstep1 k]
       · obtain ⟨hpre0, hi, v, hvv⟩ := hback
@@ -5542,7 +5595,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
             (b := b) (v := v) hpc hpre0 hp
             (BlockEval.evalOperand_reg_of s.env s "%inc217" _ hi)
             (BlockEval.evalOperand_reg_of s.env s "%exp10.1" _ hvv) hj hbyte_s hdigit'
-        refine ⟨e0, 1, by omega, by simp only [e0, stateAt], ?_, ?_, ?_, ?_⟩
+        refine ⟨e0, 1, by omega, by simp only [e0, stateAt], ?_, ?_, ?_, ?_, ?_, ?_⟩
         · refine ⟨by simp only [e0, stateAt],
             Or.inl ⟨by simp only [e0, stateAt], i0 + c, v, ?_, ?_⟩, ?_, ?_⟩
           · simp only [e0, stateAt, expHeadEnv, expHeadPhiEnv]
@@ -5571,6 +5624,9 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
           · simpa only [e0, stateAt] using hbyte_s
         · intro c1 c2 c3 c4 hcells
           exact expRun_step_cells (by rw [hpc]; decide) hstep1 hcells
+        · intro env0 sign hcarried
+          exact numFast_step_cells (by rw [hpc]; decide) hstep1 hcarried
+        · simp only [e0, stateAt]
         · intro k
           rw [runFuel_jump_prefix hstep1 k]
   · obtain ⟨b', hbyte', hdigit'⟩ := expRun_bound_nondigit hread hltn hb hle
@@ -5585,7 +5641,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
         expHead_step_entry_nondigit (env := s.env) (s := s) (a := p) (j := i0 + c)
           (b := b) hpc hpre0 hp
           (BlockEval.evalOperand_reg_of s.env s "%i.11" _ hi) hj hbyte'_s hdigit'
-      refine ⟨e0, 1, by omega, by simp only [e0, stateAt], ?_, ?_, ?_, ?_⟩
+      refine ⟨e0, 1, by omega, by simp only [e0, stateAt], ?_, ?_, ?_, ?_, ?_, ?_⟩
       · refine ⟨by simp only [e0, stateAt],
           Or.inl ⟨by simp only [e0, stateAt], i0 + c, 0, ?_, ?_⟩, ?_, ?_⟩
         · simp only [e0, stateAt, expHeadEnv, expHeadPhiEnv]
@@ -5614,6 +5670,9 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
         · simpa only [e0, stateAt] using hbyte'_s
       · intro c1 c2 c3 c4 hcells
         exact expRun_step_cells (by rw [hpc]; decide) hstep1 hcells
+      · intro env0 sign hcarried
+        exact numFast_step_cells (by rw [hpc]; decide) hstep1 hcarried
+      · simp only [e0, stateAt]
       · intro k
         rw [runFuel_jump_prefix hstep1 k]
     · obtain ⟨hpre0, hi, v, hvv⟩ := hback
@@ -5624,7 +5683,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
           (b := b) (v := v) hpc hpre0 hp
           (BlockEval.evalOperand_reg_of s.env s "%inc217" _ hi)
           (BlockEval.evalOperand_reg_of s.env s "%exp10.1" _ hvv) hj hbyte'_s hdigit'
-      refine ⟨e0, 1, by omega, by simp only [e0, stateAt], ?_, ?_, ?_, ?_⟩
+      refine ⟨e0, 1, by omega, by simp only [e0, stateAt], ?_, ?_, ?_, ?_, ?_, ?_⟩
       · refine ⟨by simp only [e0, stateAt],
           Or.inl ⟨by simp only [e0, stateAt], i0 + c, v, ?_, ?_⟩, ?_, ?_⟩
         · simp only [e0, stateAt, expHeadEnv, expHeadPhiEnv]
@@ -5653,6 +5712,9 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
         · simpa only [e0, stateAt] using hbyte'_s
       · intro c1 c2 c3 c4 hcells
         exact expRun_step_cells (by rw [hpc]; decide) hstep1 hcells
+      · intro env0 sign hcarried
+        exact numFast_step_cells (by rw [hpc]; decide) hstep1 hcarried
+      · simp only [e0, stateAt]
       · intro k
         rw [runFuel_jump_prefix hstep1 k]
 
@@ -5668,11 +5730,13 @@ def expRunBoundLoop (mem0 : Mem) (p n i0 : Nat) (bs : List UInt8) (cost : Nat)
   ExitWord := expRunExit
   step_exit := by
     intro r s c hinv hb
-    obtain ⟨e, j, hj, hpc, hword, _hstop, _hcell, hrun⟩ := expRun_step_exit hinv hb
+    obtain ⟨e, j, hj, hpc, hword, _hstop, _hcell, _hcarried, _hmem, hrun⟩ :=
+      expRun_step_exit hinv hb
     exact ⟨e, j, by omega, hpc, hword, hrun⟩
   step_loop := by
     intro r s c hinv hb
-    obtain ⟨e, c', j, hj, hpc, hlt, hinv', _hcell, hrun⟩ := expRun_step_loop hinv hb
+    obtain ⟨e, c', j, hj, hpc, hlt, hinv', _hcell, _hcarried, _hmem, hrun⟩ :=
+      expRun_step_loop hinv hb
     exact ⟨e, c', j, by omega, hpc, hlt, hinv', hrun⟩
   exit_at_zero := by
     intro s c h
@@ -5706,12 +5770,14 @@ abbrev expRunEndFrameCells (mem0 : Mem) (p n i0 : Nat) (bs : List UInt8)
     P := ExpRunCells idig5 ip5 fr5 fd5
     step_exit := by
       intro r s c hinv hb
-      obtain ⟨e, j, hj, hpc, hword, _hstop, hcell, hrun⟩ := expRun_step_exit hinv hb
+      obtain ⟨e, j, hj, hpc, hword, _hstop, hcell, _hcarried, _hmem, hrun⟩ :=
+        expRun_step_exit hinv hb
       exact ⟨e, j, by simp only [expRunBoundLoop]; omega, hpc, hword,
         hcell idig5 ip5 fr5 fd5, hrun⟩
     step_loop := by
       intro r s c hinv hb
-      obtain ⟨e, c', j, hj, hpc, hlt, hinv', hcell, hrun⟩ := expRun_step_loop hinv hb
+      obtain ⟨e, c', j, hj, hpc, hlt, hinv', hcell, _hcarried, _hmem, hrun⟩ :=
+        expRun_step_loop hinv hb
       exact ⟨e, c', j, by simp only [expRunBoundLoop]; omega, hpc, hlt, hinv',
         hcell idig5 ip5 fr5 fd5, hrun⟩ }
 
