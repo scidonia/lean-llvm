@@ -1434,14 +1434,25 @@ easy to conflate with the stage-1 ratio. The earlier stage table's 0.49 on
 `syn-strings-64k` is a time ratio: simdjson's stage 1 takes about half the time
 of the units' composite there (16.0 GB/s against 8.68). It says the fused pass
 is faster *on that stage*, not that the units are faster, and it does not
-carry to the whole route: the composite's stage-1 share at 8.68 GB/s is about
-7.5 µs of the reused arm's 42 µs native interval on the same document (an
-arithmetic over the recorded rows, not a same-session measurement), so the
-remaining stage 2 and escape work is most of it. Two full parses of the same
-bytes (3.6×) and one stage reached two ways (0.49×) are different questions
-with different answers, and neither is evidence for the other. The stage table
-above states the same direction literally: 0.49 is stage 1's time over the
-composite's.
+carry to the whole route. Two full parses of the same bytes (3.6×) and one
+stage reached two ways (0.49×) are different questions with different answers,
+and neither is evidence for the other. The stage table above states the same
+direction literally: 0.49 is stage 1's time over the composite's.
+
+The direct profile in `probes/json/route/cost-profile/` supersedes the earlier
+arithmetic estimate of a 7.5 µs stage-1 share. In its route-shaped harness,
+stage 1's three calls cost **21.189 µs (67%)** of the reproduced **31.607 µs**
+native interval: masks 6.422, entry emission 10.951 and escape-list
+construction 3.816. Stage 2 costs **10.559 µs (33%)**, including 8.944 µs of
+list-driven decode, and UTF-8 0.159 µs. The route's own same-session native
+interval is **40.812 µs**, leaving **9.205 µs** unreproduced at harness level;
+matching the pipeline's exact code address does not remove that remainder.
+Whole-binary rebuilds also span 23.8–41.2 µs at the same calibrated clock, so
+the ratio is not a pure algorithmic-cost measurement. The supported
+optimisation target is stage 1 first, particularly entry emission, with the
+harness remainder named rather than assigned to a stage. The instrument's
+transcript and README carry the identity gates, the 620-call/55,931-byte
+expansion control and the placement limits.
 
 ### Alternation, cursor reset and stale bytes
 
