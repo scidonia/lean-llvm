@@ -457,6 +457,11 @@ theorem head_lt (h : WalkInv G C s) (hhead : C.block = "NodeBlock21") : C.k < G.
   repeat rw [ite_eq_right (by decide)] at hb
   exact hb
 
+/- The pin is sited with its theorem rather than in the instrument section: an
+in-module `#print axioms` walks the elaborated proof, while an imported
+declaration is read from the array its own module exported, and `WalkInv` is one
+whose two readings differ — `[propext]` here, `[]` when imported.  A pin in a
+later module would assert the weaker of the two. -/
 /-- info: 'LeanLLVM.Refinement.WalkInv.head_lt' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.WalkInv.head_lt

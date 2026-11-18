@@ -158,12 +158,15 @@ the other two only in part:
    `for.body.i.i566.i.i.epil`; (b) the window tie — `copy_retained` is the
    retained array as `m / 10 ^ stkDrop m`, `copy_sticky` the copy's sticky bit
    as the model's remainder test, `copy_counters` the emitted `S`/`f` as
-   `E + stkDrop m`/`leadM`, and `t3_copy_denote` the store block at its pin,
-   with the copy loop's own `BoundLoop` instance the piece not composed; and
+   `E + stkDrop m`/`leadM`, and `t3_copy_denote` the store block at its pin;
+   the loop's blocks are then stepped per edge
+   (`JsonStage2NumFastTier3CopySteps`), with the loop's two `BoundLoop`
+   instances the piece not composed; and
    (c) the proximity estimate — `roundMag_dist_le_step`,
    `fmulBits_dist_le_step`/`fdivBits_dist_le_step`, `proximity_scale` and
    `t3_scale_of_ulp`, which concludes `shift_of_near`'s premise from the tree's
-   own rounding, with the starting approximation's fold the piece not derived.
+   own rounding, with the fold's two blocks and its two-step error now in
+   `JsonStage2NumFastTier3Fold`.
 
    Neither boundary is a `sorry`, and neither is a paragraph: each is a
    statement in the module named above, with what it leaves open named there.

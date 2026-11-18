@@ -323,17 +323,21 @@ supplies for each, and what is left:
   are composed into the traversal at the count (`t3_traversal_counts_1_3`), with
   the reached state's markers unread (`t3_traversal_markers`).  The traversal's
   handoff is chained through the epilogue block itself (`t3_epil_denote` and its
-  two successors `t3_epil_step_lcssa`/`t3_epil_step_self`).  What is still open
-  is the region's copy loop — unrolled four ways, so a `BoundLoop` obligation
-  rather than a straight-line chain — and the starting approximation's own fold.
+  two successors `t3_epil_step_lcssa`/`t3_epil_step_self`).  The copy loop's
+  blocks are then stepped per edge in `JsonStage2NumFastTier3CopySteps` — the
+  head, the three unrolled tests, the store and both latches, each at its own
+  predecessor — so what is still open is the loop's two `BoundLoop` instances,
+  the unrolled nest's and the residual one's; the starting approximation's fold
+  is `JsonStage2NumFastTier3Fold`'s.
 * **The window tie.**  `StrtodTier3.windowOf` defines `M`, `S` and `sticky`
   (`windowOf_sticky_iff` is the model's own reading); the body's copy's retained
   array is that `M` (`copy_retained`), its stuck bit is that `sticky`
   (`copy_sticky`), and its counters `T`, `lead`, `F`, `R` give that `S` and that
   leading exponent (`copy_counters`).  The block that writes the array is stepped
-  at its pin (`t3_copy_denote`).  What is not composed is the loop itself: the
-  copy is unrolled four ways with an epilogue, so its `runFuel` simulation is a
-  separate `BoundLoop` obligation, not a straight-line chain.
+  at its pin (`t3_copy_denote`), and the loop's own blocks are
+  `JsonStage2NumFastTier3CopySteps`' per-edge steps.  What is not composed is
+  the induction: the copy is unrolled four ways with an epilogue, so its
+  `runFuel` simulation is two `BoundLoop` instances, one per loop.
 * **The proximity estimate.**  Its operations are `fmulBits` and `fdivBits`,
   which `JsonStage2NumFastTier1` defines and proves at the tree's bit model
   (`fmulBits_pack`, `fdivBits_pack`, `fdivBits_uitofp_pow`), so the estimate does
@@ -345,6 +349,10 @@ supplies for each, and what is left:
   that its two-step error is the `2 * u` the hypothesis names, is the fold's
   arithmetic — one application of `fmulBits_dist_le_step` or
   `fdivBits_dist_le_step` per operation, at the scale `tenDen E * twoDen eB`.
+  `JsonStage2NumFastTier3Fold` is that: which blocks form `top` and `e10`
+  (`if.end198.i.i`), the two operations at their own pins (`while.body206.i.i`,
+  `while.body232.i.i`), the emitted double `t3Approx`, its per-operation bound
+  and the two-step composition `t3Fold_two_step`.
 
 None of the three is a `sorry`; each is stated, and what remains is named above
 rather than assumed. -/

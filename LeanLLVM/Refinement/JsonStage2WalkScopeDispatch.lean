@@ -3,6 +3,7 @@ import LeanLLVM.Refinement.JsonStage2WalkScopeStaged
 set_option autoImplicit false
 
 namespace LeanLLVM.Refinement
+namespace WalkScope
 
 open LeanLLVM
 open LeanLLVM.Refinement.JsonStage2IR
@@ -763,4 +764,5 @@ theorem WalkLink.ifEnd24 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkC
     ifEnd24_step (b := b) G C s hInv hblock h8 hguard
   exact ⟨e, ⟨hInv, hstep, hinv, le_of_eq hmono, rfl⟩⟩
 
+end WalkScope
 end LeanLLVM.Refinement

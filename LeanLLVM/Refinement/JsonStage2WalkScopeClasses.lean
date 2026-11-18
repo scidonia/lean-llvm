@@ -3,6 +3,7 @@ import LeanLLVM.Refinement.JsonStage2WalkScopeDispatch
 set_option autoImplicit false
 
 namespace LeanLLVM.Refinement
+namespace WalkScope
 
 open LeanLLVM
 open LeanLLVM.Refinement.JsonStage2IR
@@ -1037,4 +1038,5 @@ theorem WalkLink.refusalStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
           (k := k) (by omega))
   · rfl
 
+end WalkScope
 end LeanLLVM.Refinement

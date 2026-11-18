@@ -3,6 +3,7 @@ import LeanLLVM.Refinement.JsonStage2WalkScopeClassC
 set_option autoImplicit false
 
 namespace LeanLLVM.Refinement
+namespace WalkScope
 
 open LeanLLVM
 open LeanLLVM.Refinement.JsonStage2IR
@@ -1201,4 +1202,5 @@ theorem WalkLink.if_then42_i {calls : Calls} {m0 : Mem}
     (by rw [hblock]; exact walkIf_then42_i_find) rfl rfl (by simp [WalkLocal])
     (hne := by rw [hblock]; decide)
 
+end WalkScope
 end LeanLLVM.Refinement

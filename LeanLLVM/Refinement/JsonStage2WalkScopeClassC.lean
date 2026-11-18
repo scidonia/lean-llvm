@@ -3,6 +3,7 @@ import LeanLLVM.Refinement.JsonStage2WalkScopeClasses
 set_option autoImplicit false
 
 namespace LeanLLVM.Refinement
+namespace WalkScope
 
 open LeanLLVM
 open LeanLLVM.Refinement.JsonStage2IR
@@ -637,4 +638,5 @@ theorem WalkLink.forInc {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
     forInc_step G C s i c hInv hblock hi hc hinner hlt hcw
   exact ⟨e, C', ⟨hInv, hstep, hinv, le_of_lt hmeas, hstage⟩, hland⟩
 
+end WalkScope
 end LeanLLVM.Refinement
