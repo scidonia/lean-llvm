@@ -62,12 +62,17 @@ than a fact these definitions establish:
   `elTier2Code w q = some c → roundMag (valueTicks w q) = .fin c` for
   `0 < w < 2 ^ 64`, with `not_elGuardRefinesUnbounded` showing the word bound is
   load-bearing, and `JsonStage2Body.numTier2Binary_eq_strtodSpec` composes it at
-  the model.  What is *not* in this tree is the correspondence from this file's
-  `numElEl1 epow` — the body's callee model, with the table as a parameter — to
-  `elTier2Code`: the two are written from the same C text but no lemma relates
-  their `elPack`/`elExact` forms, so a body-level arm at `stage2NumFastCalls`
-  inherits that gap rather than `elGuardRefinesOn`'s result.  The stop is that
-  bridge, not the guard slice;
+  the model.  The correspondence from this file's `numElEl1 epow` to
+  `elTier2Code` is stated in `JsonStage2NumFastTier2.NumFastElAgrees`; its
+  general proof is open there, while the model's decision and the guard's are
+  proved equal at the guard's own witness set
+  (`JsonStage2NumFastTier2.numElEl1_witnesses`).  Writing that correspondence
+  found a defect in this file's model rather than only a missing lemma:
+  `elExact`'s `Rlo`/`Rhi` are `uint64_t` adds in the emitted code, and the model
+  was reading them as unreduced naturals.  The wrap is now in the model
+  (`elExact`'s docstring carries the input that exposes it), so a body-level arm
+  at `stage2NumFastCalls` inherits the stated bridge rather than a mismatched
+  callee; the stop is the bridge's general proof, not the guard slice;
 * **tier 3** (the fallback) is reached whenever the kernel refuses, and its
   obligation is the bracketing argument `LeanLLVM.StrtodTier3` states and
   partly proves.
@@ -230,7 +235,15 @@ def elPack (m up ub : Nat) (t : EPow) (lz : Nat) : Option Nat :=
   else some ((eu + 1023).toNat * 2 ^ 52 + mm % 2 ^ 52)
 
 /-- `el_exact`: both halves of the product, the exact rounding decision, and the
-`q < 0` refusals the C's `undec` test makes. -/
+`q < 0` refusals the C's `undec` test makes.
+
+The low word `Rlo` and the high word `Rhi` are the emitted `uint64_t` adds: the
+carry out of `Alo + c` is `Rlo < Alo` on the *wrapped* sum, and `Rhi` carries it
+into a 64-bit word.  The wrap is load-bearing, not a convenience: at
+`(w, q) = (34, -36)` the unwrapped sum is `18870555535664931523 ≥ 2 ^ 64`, and
+the unwrapped reading decides `511` against the emitted `512` — the emitted
+kernel's `el_exact` rounds up there.  `ElGuardRefine.elTier2Code` is the guard's
+own decision and reduces both words modulo `2 ^ 64`; this model now does too. -/
 def elExact (W lz : Nat) (t : EPow) (q : Int) : Option Nat :=
   let A := W * t.hi
   let B := W * t.lo
@@ -238,8 +251,8 @@ def elExact (W lz : Nat) (t : EPow) (q : Int) : Option Nat :=
   let Ahi := A / 2 ^ 64
   let L := B % 2 ^ 64
   let c := B / 2 ^ 64
-  let Rlo := Alo + c
-  let Rhi := Ahi + (if Rlo < Alo then 1 else 0)
+  let Rlo := (Alo + c) % 2 ^ 64
+  let Rhi := (Ahi + (if Rlo < Alo then 1 else 0)) % 2 ^ 64
   let ub := Rhi / 2 ^ 63
   let sh := 10 + ub
   let m := Rhi / 2 ^ sh

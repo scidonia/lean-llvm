@@ -18,19 +18,17 @@ accumulator (`exp10 = expVal d`, `fdig` the fraction's digit count, `idig` the
 integer part's), the pair is `(@numEff d, @digitCount d)`, the values the
 contract's gates read.
 
-**What is not.**  That the three runs' registers carry those counts is the
-`BoundLoop` arms.  For the integer run they are parameters of
-`JsonStage2NumFastScan.numFastScanBoundLoop`; the fraction run at
-`land.lhs.true119` and the exponent run at `land.lhs.true195` have the same
-shape, and their arms are open: the two runs' blocks are pinned
-(`numFastBody.findBlock` resolves them, and the whole body literal carries their
-text), and `JsonStage2HelperIRNumFast` now names all three runs' blocks and the
-blocks their exits land in — a regeneration of
-`capture-stage2-helpers.sh --emit-pins` over the extended run-block set, so an
-arm can be written against the block's own instruction list rather than a hand
-transcription.  What that leaves is the arm's proof: an arm is a `runFuel`
-prefix over four blocks, and its statement at the body is not yet discharged.
-The counters are therefore proved *at the merge*, not at the three runs.
+**The runs.**  That the three runs' registers carry those counts is
+`JsonStage2NumFastDigitRuns`' three `BoundLoop` instances: `intRun_run` at
+`land.lhs.true41` (`%idig.3574`), `fracRun_run` at `land.lhs.true119`
+(`%fdig.3594`) and `expRun_run` at `land.lhs.true195` (`%exp10.0603`, whose
+carried register is the accumulator's value rather than a count).  Each instance's
+`ExitWord` is the run's exit predicate with the counters read off the exit state's
+`%idig`/`%inc63`, `%fdig`/`%inc141` and `%exp10` registers.  The counters are
+proved *at the merge*; the runs' *starts* — the index after the sign, after the
+`.` and after the `e` and its sign — are the inlined scan's dispatch, which is
+the conversion arm's remaining piece, so the runs' exiting registers are not yet
+pinned to `intDigits`/`fracDigits`/`expVal` for a lexeme.
 -/
 import LeanLLVM.Refinement.JsonStage2NumFastCalls
 import LeanLLVM.Refinement.JsonStage2Body

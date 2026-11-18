@@ -52,13 +52,17 @@ statement that the walk's own selection does not answer.
 `NumFastTables` is inhabited at a concrete staging
 (`JsonStage2NumFastCalls.numFastTables_holds`), and
 `JsonStage2NumFastCounters` reads the merge block's two counters at the model.
-The arm itself is still **not** claimed: what it needs now is the runs, not the
-environment — the inlined scan's per-iteration arms (the integer run at
-`land.lhs.true41` has the `BoundLoop` shape and its arms as parameters; the
-fraction and exponent runs have the same shape and are open), the inlined
-tier-1 arithmetic's correspondence to the model, and the tier-2 kernel's
-exactness bound.  `JsonStage2NumFastCalls`' header names the last as the
-approximation boundary the refinement obligation carries.
+The arm itself is still **not** claimed.  What the tree now supplies beyond the
+environment is the runs: `JsonStage2NumFastDigitRuns` discharges all three
+`BoundLoop` instances — `intRun_run` at `land.lhs.true41`, `fracRun_run` at
+`land.lhs.true119`, `expRun_run` at `land.lhs.true195` — each with the exit
+carrying its counters.  What the arm still owes is the runs' *starts* (the
+inlined scan's dispatch: the index after the sign, after the `.`, after the `e`
+and its sign, which is what makes the carried registers the lexeme's counts), the
+inlined tier-1 arithmetic's correspondence to the model, the tier-2 bridge
+(stated in `JsonStage2NumFastTier2.NumFastElAgrees`, proved at the guard's
+witnesses, its general proof open), and tier 3's bracketing traversal.  That
+list, not the callee environment, is where the arm stops.
 
 A proof needs three things, of which the first two the tree now supplies and the
 third it does not:
@@ -72,12 +76,13 @@ third it does not:
    `numFastTableEnv`/`numFastTableMem`, twenty `NUMF_EL1_P10` rows and
    twenty-three `NUMF_EL1_POW10` rows, proved from `readBytes`' definition.
 3. **The inlined scan's counters, at the runs.**  `JsonStage2NumFastScan` fixes
-   the integer run's `BoundLoop` shape and states its two arms as per-iteration
-   facts; the arms are not discharged, and the fraction and exponent runs have
-   no instance.  `JsonStage2NumFastCounters` proves the merge block's two
-   counters at the model, but the runs' trip counts — that `%idig.4`,
-   `%fdig.4` and `%exp10.4` are the lexeme's counts — are the arms, and an arm
-   is a `runFuel` prefix over the four blocks of one iteration.
+   the `BoundLoop` shape, and `JsonStage2NumFastDigitRuns` discharges the three
+   instances, each a `runFuel` prefix over the four blocks of one iteration with
+   the exit carrying the counters.  `JsonStage2NumFastCounters` proves the merge
+   block's two counters at the model.  What remains between them is the runs'
+   starts: the dispatch that fixes `i0`/`d0` from the sign, the `.` and the `e`,
+   so the carried registers are the lexeme's counts rather than offsets from an
+   arbitrary head entry.
 
 There is no `sorry`, `admit` or `native_decide` below.
 -/
