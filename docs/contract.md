@@ -1299,11 +1299,18 @@ bracket, and `t3_scale_of_ulp` concludes `valLeqBoundary m E (2 * J) eB`, the
 premise `shift_of_near` takes).  The epilogue block itself is chained
 (`t3_epil_denote` is `for.body.i.i566.i.i.epil`'s fourteen instructions at its
 pin, with `t3_epil_step_lcssa`/`t3_epil_step_self` its two successors and the
-three `i128` operations stated width-generically).  What the region still owes
-is its remaining blocks — the four-way copy loop, a `BoundLoop` rather than a
-straight-line chain — and the starting approximation's own fold
-(`dbits (d) * 10 ^ e10` as two applications of the table's rows), both named in
-that module's record of the boundary.
+three `i128` operations stated width-generically).  The copy loop's blocks are
+then stepped per edge (`JsonStage2NumFastTier3CopySteps`: the head
+`for.body87.i.i`, the three unrolled tests, the store and both latches, each at
+its own predecessor), and the residual loop's measure, invariant and exit are
+fixed (`JsonStage2NumFastTier3CopyLoop.t3EpilLoopOf`, whose two visits are the
+piece not discharged).  The starting approximation's fold is
+`JsonStage2NumFastTier3Fold`: `if.end198.i.i` forms `top` and `e10`, the two
+ladder operations are `while.body206.i.i`'s `fmul` and `while.body232.i.i`'s
+`fdiv`, `t3Approx` is the emitted double, and `t3Fold_two_step` is its two-step
+error.  What the region still owes is the unrolled nest's `BoundLoop` shape and
+the residual loop's two visits, both named in that module's record of the
+boundary.
 The kernel's bound is not among the obstructions: `num_el_el1`'s mantissa is a
 `uint64_t`, and the body's own argument at `if.end268` is `%add244`, a 64-bit
 word, so `NumFastElAgrees`'s `w < 2 ^ 64` domain is met at the body

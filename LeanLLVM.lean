@@ -93,6 +93,7 @@ import LeanLLVM.Refinement.JsonStage2NumFastTier1
 import LeanLLVM.Refinement.JsonStage2NumFastTier2
 import LeanLLVM.Refinement.JsonStage2NumFastTier3
 import LeanLLVM.Refinement.JsonStage2NumFastTier3CopySteps
+import LeanLLVM.Refinement.JsonStage2NumFastTier3CopyLoop
 import LeanLLVM.Refinement.JsonStage2NumFastTier3Fold
 import LeanLLVM.Refinement.JsonStage2Hsem
 import LeanLLVM.Refinement.JsonStage2TokenCorrespondence
