@@ -14,7 +14,7 @@ Staging copies the document into the pipeline record's shape. If the caller can 
 simdjson fuses classification, the string/escape state and UTF-8 into one pass that writes a structural-index array. The units are three calls reading a mask stream: classification masks, entry positions, UTF-8 validity. Fusing them into a single pass over the document removes the mask-stream staging and the three-call overhead. That is the largest structural lever for the pipeline itself, and it is what makes the units' stage-1 numbers meaningful for a composed route.
 
 **4. Use the units' measured fast paths where they win.**
-On strings and UTF-8 the units are faster than simdjson's stage 1 (0.49–0.79 of it). On route-like documents the composed route's staging dominates, so the win is in staging, not in the units. Any optimisation effort should go where the measured cost is: staging, not the units' already-competitive classification.
+On strings and UTF-8, **simdjson's stage 1 is faster than the units' composite**: the units take roughly **2× as long** as stage 1 on strings (or stage 1 takes roughly **half** the time of the units). On route-like documents the composed route's staging dominates, so the win is in staging, not in the units. Any optimisation effort should go where the measured cost is: staging, not inverting the units' already-competitive classification.
 
 **5. Measure the pipeline alone, after the workspace is reused.**
 The current split includes admission and staging. Reusing the workspace isolates the pipeline's own cost and shows whether the pipeline itself is competitive with simdjson's stage 1. That is the measurement that decides whether further optimisation should target the pipeline or the staging.

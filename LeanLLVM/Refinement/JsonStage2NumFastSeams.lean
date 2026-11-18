@@ -2916,7 +2916,7 @@ theorem fracScan_end230 {mem : Mem} {e : State} {a n i1 : Nat} {bs : List UInt8}
       ∀ k, runFuel calls (j + k) numFastBody e =
         runFuel calls k numFastBody e' := by
   rcases h with ⟨hpc, _, hmem, hp, hn, hi5, hparts⟩
-  obtain ⟨e0, hinv0, hrun0⟩ :=
+  obtain ⟨e0, hinv0, _hcell0, hrun0⟩ :=
     NumFastStarts.fracRun_start (calls := calls) (env := e.env) (s := e)
       hpc hp hn (by rw [hmem]; exact hread) hi5 hparts
       (by rw [hmem]; exact hdot) hdoteq (by rw [hmem]; exact hd2) hd2digit
@@ -2925,6 +2925,42 @@ theorem fracScan_end230 {mem : Mem} {e : State} {a n i1 : Nat} {bs : List UInt8}
     (fracRunEndBoundLoop e.mem a n (i1 + 1) 0 bs 4 (by omega) hdigits).run_from
       (n - (i1 + 1)) e0 0 hinv0
   refine ⟨e1, 6 + j1, Nat.add_le_add_left hj1 6, hend, ?_⟩
+  intro k
+  rw [show 6 + j1 + k = 6 + (j1 + k) from by omega]
+  exact (hrun0 (j1 + k)).trans (hrun1 k)
+
+/-- **The fraction route ends at the merge with the integer part's cells.**  The
+same trace as `fracScan_end230`, with the two cells `%idig.4`/`%ip.5` that
+`if.end68` formed at the dispatch's entry carried to `if.end230`: the dispatch's
+six steps and the run's iterations leave them, so the merge's
+`%idig`/`%ip` phis are the model's from the state the `.` test was entered at. -/
+theorem fracScan_end230Cells {calls : Calls} {mem : Mem} {e : State} {a n i1 : Nat}
+    {bs : List UInt8} {bd bd2 : UInt8} {idig ip : BitVec 64}
+    (h : land71Entry mem a n i1 e)
+    (hpart : NumFastIntPart idig ip e)
+    (hread : readBytes mem a n = some bs)
+    (hdot : readByte mem (a + i1) = some bd) (hdoteq : bd = 0x2E)
+    (hd2 : readByte mem (a + (i1 + 1)) = some bd2) (hd2digit : IsDigitB bd2 = true)
+    (hltn : i1 + 1 < n) (hfast : n < i1 + 9) (hnlt : n < 2 ^ 63)
+    (hdigits : ∀ k, i1 + 1 ≤ k → k < n → IsDigitB (bs.getD k 0) = true) :
+    ∃ (e' : State) (j : Nat), j ≤ 6 + (n - (i1 + 1) + 1) * 4 ∧
+      fracRunEndWord bs a n (i1 + 1) 0 e' ∧ NumFastIntPart idig ip e' ∧
+      ∀ k, runFuel calls (j + k) numFastBody e =
+        runFuel calls k numFastBody e' := by
+  rcases h with ⟨hpc, _, hmem, hp, hn, hi5, hparts⟩
+  obtain ⟨e0, hinv0, hcell0, hrun0⟩ :=
+    NumFastStarts.fracRun_start (calls := calls) (env := e.env) (s := e)
+      hpc hp hn (by rw [hmem]; exact hread) hi5 hparts
+      (by rw [hmem]; exact hdot) hdoteq (by rw [hmem]; exact hd2) hd2digit
+      hltn hfast hnlt
+  have hpart0 : NumFastIntPart idig ip (stateAt e.env e) := by
+    simpa only [stateAt] using hpart
+  have hpart1 : NumFastIntPart idig ip e0 := hcell0 idig ip hpart0
+  obtain ⟨e1, j1, hj1, _, ⟨hend, hpart2⟩, hrun1⟩ :=
+    BoundLoop.run_from
+      (fracRunEndBoundLoopCells e.mem a n (i1 + 1) 0 bs 4 (by omega) hdigits idig ip)
+      (n - (i1 + 1)) e0 0 ⟨hinv0, hpart1⟩
+  refine ⟨e1, 6 + j1, Nat.add_le_add_left hj1 6, hend, hpart2, ?_⟩
   intro k
   rw [show 6 + j1 + k = 6 + (j1 + k) from by omega]
   exact (hrun0 (j1 + k)).trans (hrun1 k)
@@ -3242,6 +3278,7 @@ steps are at `stage2NumFastCalls`, whose reader answer is the model's. -/
 #print axioms NumFastSeams.expExit_merge
 #print axioms NumFastSeams.ofInt_negNat
 #print axioms NumFastSeams.expSelect_tie
+#print axioms NumFastSeams.fracScan_end230Cells
 
 end NumFastSeams
 

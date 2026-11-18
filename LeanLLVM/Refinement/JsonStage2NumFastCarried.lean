@@ -28,19 +28,21 @@ from the caller's state.  The three kept cells are read at the caller's
 environment by `NumFastChain.kept`; the sign by `NumFastChain.sign`, on the
 chain whose blocks avoid `if.end`.
 
-**The fraction edge's integer cells.**  `fracRunEndWord_tie_of_chain` is the same
+**The fraction edge's integer cells.**  `fracRunEndWord_tie_cells` is the same
 spending on the other stopper: the integer part's two cells, which
 `fracRunEndWord` binds by name only (`fracPartCells`), are named at the state
-`if.end68` formed them and carried to the fraction run's exit along a chain whose
-blocks avoid it (`NumFastChain.intPart`), so the merge's five registers are the
-model's from that state rather than from two lookups at the exit.
+`if.end68` formed them and carried to the fraction run's exit by the run's own
+arms (`JsonStage2NumFastDigitRuns.fracRunEndBoundLoopCells`), so the merge's five
+registers are the model's from the run's start rather than from two lookups at
+the exit.
 
 **What is not here.**  No chain across the digit run is produced by this tree.
 The runs are stated as `runFuel` prefixes (`intScan_run`, `intScan_end230`), and
 the step-level facts the loop's arms are proved from are local to those proofs;
 `BoundLoop`'s induction consumes `runFuel` arms, so a chain across the loop is a
-statement its arms do not yet carry.  `t1_chain_run` is therefore the arm at the
-supplied environment *and* the supplied chain, and `t1_chain_run_of_entry` is the
+statement its arms do not carry — the cells are, instead, an arm conclusion on
+both digit routes.  `t1_chain_run` is therefore the arm at the supplied
+environment *and* the supplied chain, and `t1_chain_run_of_entry` is the
 composition from `entry`: the dispatch's three steps are produced, the
 conversion's six follow, and the digit run's chain is the one input the
 composition takes that the tree does not supply.
@@ -307,22 +309,22 @@ theorem t1_chain_run_of_entry {calls : Calls} {env : Env} {s : State} {d : Decim
 
 `fracRunEndWord_tie` reads the merge's five registers off the fraction run's
 end-of-lexeme exit.  Two of them are the integer part's cells, which the exit
-word binds by name only (`fracPartCells`); this section names their *values* at
-the state `if.end68` formed them and carries them to the exit along a chain. -/
+word binds by name only (`fracPartCells`); the two values are named at the
+state `if.end68` formed them and carried to the exit by the run's own arms
+(`fracRunEndBoundLoopCells`), so the merge's five registers are the model's from
+the run's start rather than from two lookups at the exit. -/
 
-/-- **The fraction edge from the integer part's own state.**  Given the integer
-part's two cells at a state `if.end68` left and a chain from it to the fraction
-run's end-of-lexeme exit whose blocks avoid `if.end68`, the merge takes
-`if.then241` with its five registers as the model's — the same conclusion
-`fracRunEndWord_tie` states, with the integer part's cells transported rather
-than assumed at the exit. -/
-theorem fracRunEndWord_tie_of_chain {calls : Calls} {d : Decimal}
-    {bs : List UInt8} {fs : Bytes} {a n i0 d0 : Nat} {s0 e : State}
-    (hchain : NumFastChain calls (fun pc => pc ≠ "if.end68") s0 e)
-    (hcell : NumFastIntPart (BitVec.ofNat 64 (intDigits d))
-      (BitVec.ofNat 64 (Decimal.digitsNat d.ip)) s0)
+/-- **The fraction edge from the run's start.**  Given the integer part's two
+cells at the state the fraction run was entered at — the state `if.end68` left —
+and the run's end-of-lexeme exit word, the merge takes `if.then241` with its five
+registers as the model's.  The cells are the run's own: no block of it writes
+them, so `fracRunEndBoundLoopCells` hands them back at the exit. -/
+theorem fracRunEndWord_tie_cells {calls : Calls} {d : Decimal}
+    {bs : List UInt8} {fs : Bytes} {a n i0 d0 : Nat} {e : State}
     (hpc : e.pc = "if.end230")
     (he : fracRunEndWord bs a n i0 d0 e)
+    (hpart : NumFastIntPart (BitVec.ofNat 64 (intDigits d))
+      (BitVec.ofNat 64 (Decimal.digitsNat d.ip)) e)
     (hi0 : i0 ≤ n) (hbn : d0 + n < 2 ^ 64)
     (hfs : d.fr = some fs)
     (hintF : fracDigits d = d0 + (n - i0))
@@ -339,9 +341,8 @@ theorem fracRunEndWord_tie_of_chain {calls : Calls} {d : Decimal}
       lookupName o.env "%fdig.4719727"
         = some (.int 64 (BitVec.ofNat 64 (fracDigits d))) ∧
       ∀ k, LeanLLVM.runFuel calls (1 + k) numFastBody (stateAt e.env e) =
-        LeanLLVM.runFuel calls k numFastBody o := by
-  have hcells := hchain.intPart (fun _ h => h) hcell
-  exact NumFastEntry.fracRunEndWord_tie hpc he hi0 hbn hcells.1 hcells.2 hfs hintF
+        LeanLLVM.runFuel calls k numFastBody o :=
+  NumFastEntry.fracRunEndWord_tie hpc he hi0 hbn hpart.1 hpart.2 hfs hintF
     hshape hdig
 
 /-! ### Axiom footprints -/
@@ -358,8 +359,8 @@ theorem fracRunEndWord_tie_of_chain {calls : Calls} {d : Decimal}
 #guard_msgs in
 #print axioms t1_chain_run_of_entry
 
-/-- info: 'LeanLLVM.Refinement.fracRunEndWord_tie_of_chain' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.fracRunEndWord_tie_cells' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
-#print axioms fracRunEndWord_tie_of_chain
+#print axioms fracRunEndWord_tie_cells
 
 end LeanLLVM.Refinement

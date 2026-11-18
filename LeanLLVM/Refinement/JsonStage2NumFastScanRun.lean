@@ -2262,7 +2262,7 @@ theorem fracScan_run {env : Env} {s : State} {a n : Nat} {bs : List UInt8}
       fracRunExit s.mem bs a n (i5 + 1) 0 e ∧
       ∀ k, runFuel calls (j + k) numFastBody (stateAt env s) =
         runFuel calls k numFastBody e := by
-  obtain ⟨e0, hinv0, hrun0⟩ :=
+  obtain ⟨e0, hinv0, _hcell0, hrun0⟩ :=
     NumFastStarts.fracRun_start (calls := calls) hpc hp hn hread hi5 hparts
       hdot hdoteq hd2 hd2digit hltn hfast hnlt
   obtain ⟨e1, j1, hj1, _hexitb, hexitw, hrun1⟩ :=

@@ -346,8 +346,9 @@ tables read at the caller's environment and the sign through the chain,
 `sign_at_ifEnd6` is the dispatch's three steps that fix the sign's word,
 `t1_chain_run_of_entry` is the same conversion stated at `entry` with the
 dispatch produced and the digit run's chain as its only remaining input, and
-`fracRunEndWord_tie_of_chain` is `JsonStage2NumFastEntry.fracRunEndWord_tie` with
-the integer part's two cells carried to the fraction run's exit.  What
+`fracRunEndWord_tie_cells` is `JsonStage2NumFastEntry.fracRunEndWord_tie` with
+the integer part's two cells carried to the fraction run's exit by the run's own
+arms.  What
 the tree does not produce is a chain *across* the digit run: the runs are stated
 as `runFuel` prefixes (`intScan_run`, `intScan_end230`), and `BoundLoop`'s
 induction consumes `runFuel` arms, so the loop's arms are not in chain form.
@@ -367,13 +368,45 @@ cell of the body's.  `intScan_run` and the fast path's appended runs keep their
 old shapes: the arms' cell conclusion is conditional, and its old projection is
 the old statement.
 
-What the arm still waits on is the other two routes and the arithmetic:
-`fracRunInv`/`fracRunEndWord` do not carry the integer part's cells (the
-fraction run leaves `%idig.4`/`%ip.5` where `if.end68` put them, so the
-transport is available there but not yet stated), the exponent route and the
-merge's sign case are as above, and tier 1's arithmetic and tier 3's traversal
-are item 4's.  `intScan_t1_arm_at_entry` is therefore the arm's conclusion on
-the integer route, not `NumFastBodyArm`.
+**The fraction and exponent routes' cells, after the transport.**  The same
+conclusion is now an arm conclusion on both remaining routes.  The fraction run's
+arms carry the integer part's cells the merge reads
+(`fracRun_step_loop`/`_exit`/`_end230` concluding `NumFastIntPart`, with
+`numFast_step_intPart` as the per-step fact), `fracRun_start`'s six dispatch steps
+carry them from the `.` test, `fracRunEndBoundLoopCells` conjoins them to the
+loop's invariant and exit word, `JsonStage2NumFastSeams.fracScan_end230Cells`
+composes the dispatch and the run, and `fracRunEndWord_tie_cells` reads the
+merge's five registers off that exit.  The exponent run's four cells
+(`%idig.4`, `%ip.5`, `%fr.5`, `%fdig.4`) are an arm conclusion the same way:
+`ExpRunCells` is their value form, `expRun_step_cells` is the step (the run's
+blocks write none of them, `decide`d over the pinned body),
+`expRun_step_loop`/`_exit` conclude it, `expRun_start` carries it in, and
+`expRunEndBoundLoopCells`/`expRun_run_cells` hand it back at
+`cleanup223.thread`.  The merge's sign case at `if.end226` is stated on those
+terms: `JsonStage2NumFastSeams.expSelect_tie` is the block's select in both
+polarities (`if %esign.0 = 1 then %exp10 else 0 - %exp10` as
+`BitVec.ofInt 64 (expVal d)`), and `expExit_merge` is the two-step merge with
+`%exp10.4` that value.
+
+What the arm still waits on is the composition of those pieces into one trace
+and tier 3's region.  The nest's own nine steps (`nest_marker_start`) hand
+`%i.11` and `%esign.0` but not the four cells, so the exponent run is appended to
+the nest at the two statements; `expRunExit`'s head arm does not name the byte the
+run stopped on, so the end-of-lexeme arm is `expExit_merge`'s `hhead` hypothesis;
+and tier 1's four links are proved (`JsonStage2NumFastTier1`, with `t1_store_run`
+the body's chain from `if.end230`), while tier 3's region is stated edge by edge:
+the poison edge and its trip count (`t3_traversal_counts_1_3`), the epilogue
+(`t3_epil_denote`), the window tie (`copy_*_window`, `t3_copy_denote`), the
+proximity estimate at the tree's own rounding (`t3_scale_of_ulp`), the copy's
+unrolled nest at its emitted blocks (`t3MainLoop_run_at'`, whose visits are
+`t3Visit` and the latch's two arms), the residual loop (`t3EpilLoop`) and the
+handoff into it (`t3_exit_handoff`), and the ladder's two loops at the emitted
+rows (`t3MulLoop_run_t3Rows`, `t3DivLoop_run_t3Rows`) with the join at the
+invariant level (`t3_ladder_run`).  What the arm still owes there is the region's
+blocks before the peeled nest — the inlined second reader's chain — and the join's
+state-level case.  `intScan_t1_arm_at_entry` is therefore the
+arm's conclusion on the integer route, not `NumFastBodyArm` — and the kernel's
+bound is not the stopper (it is met at the body's own word).
 
 **The kernel's site after the tie.**  `%add244` and `%sub231` are now read as the
 model's `(d.mantissa, eff d)` at `if.end268`:

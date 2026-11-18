@@ -1350,19 +1350,22 @@ answer: the same chain reaches either the `.` test (`land71Entry`, with the run'
 stop index) or the integer part's end at the lexeme's end (`intRunEndWord`), and
 the disjunction is the run's own because which exit it takes is a byte fact its
 exit predicate names.  `fracRunEndWord_tie` reads the fraction run's
-end-of-lexeme exit word into the merge's five registers as the model's; the
-integer part's two carried cells are its hypotheses, because `fracPartCells`
-binds `%idig.4`/`%ip.5` without their values.
+end-of-lexeme exit word into the merge's five registers as the model's, with the
+integer part's two cells as its hypotheses because `fracPartCells` binds
+`%idig.4`/`%ip.5` without their values; `fracRunEndWord_tie_cells` is the same
+tie with those two supplied by the run's own arms.
 
 **Where the composition stops, and why it is not a seam.**  `%out`,
-`%tobool274.not`, the two table symbols and `fracPartCells`'s two integer cells
-are the caller's (or an earlier block's), and no block on these routes writes
-them.  A `runFuel` prefix does not expose the environments it crosses, so a
+`%tobool274.not` and the two table symbols are the caller's cells, and no block on
+these routes writes them.  A `runFuel` prefix does not expose the environments it
+crosses, so a
 composition spanning a digit run cannot re-read them at the run's exit; the exit
 predicates name only what a successor's `phi`s read — the cursor, the length,
-the predecessor, `%7`, the residues and the run's memory.  The transport is
+the predecessor, `%7`, the residues and the run's memory.  Those four are the
+remaining boundary; the digit parts' cells are not, since the runs' arms carry
+them (see the next paragraph).  The transport for the four is
 `JsonStage2NumFastCells`' `NumFastChain`: a finite chain of the body's jumps, each
-step stating that its block writes none of the cells in hand.  Three facts close
+step stating that its block writes none of the cells in hand.  Two facts close
 it.  The three kept cells are written by no block at all, which is a `decide`
 over the pinned body (`numFast_out_unwritten`, `numFast_p10_unwritten`,
 `numFast_pow10_unwritten`), so a chain carries them from any state.  The sign is
@@ -1378,11 +1381,14 @@ kept cells read at the caller's environment through the chain and the sign
 through its `if.end`-free filter — the arm's conclusion from the supplied
 environment, staging and chain; `t1_chain_run_of_entry` is the same conversion
 stated at `entry`, with the dispatch's three steps produced and the digit run's
-chain as the one input it still takes; and `fracRunEndWord_tie_of_chain` is the same
-spending on `fracPartCells`' two integer cells, which `NumFastChain.intPart`
-carries from the state `if.end68` formed them (`if.end68` is their only writer)
-to the fraction run's exit, so the merge's `%idig`/`%ip` phis are the model's
-from there.  A chain *across* the digit run is still not what the tree
+chain as the one input it still takes.  The fraction edge's two integer cells no
+longer need a chain either: `fracRunEndWord_tie_cells` is the same spending on
+`fracPartCells`' two cells, which the fraction run's own arms carry — no block of
+the run writes `%idig.4`/`%ip.5`, so `fracRun_step_loop`/`_exit`/`_end230`
+conclude `NumFastIntPart` and `fracRunEndBoundLoopCells` conjoins it to the
+loop's invariant and exit word — so the merge's `%idig`/`%ip` phis are the
+model's from the state `if.end68` formed the cells at.  A chain *across* the
+digit run is still not what the tree
 produces — the runs are `runFuel` prefixes (`intScan_run`, `intScan_end230`) and
 `BoundLoop`'s induction consumes `runFuel` arms — but the cells no longer need
 one.  `JsonStage2NumFastDigitRuns`' arms carry them (`intRun_step_loop`,
@@ -1391,11 +1397,14 @@ blocks that are not `if.end`), `JsonStage2NumFastCellsRun` conjoins them to the
 loop's invariant and exit word (`intRunEndBoundLoopCells`), concludes them at the
 run's end-of-lexeme exit (`intScan_end230Cells`) and composes the six-step
 conversion behind them, so `JsonStage2NumFastCellsRun.intScan_t1_arm_at_entry` is
-the arm's conclusion at `entry` on the integer route: it returns `1` and writes
+the arm's conclusion at `entry` on the integer route: it returns 1 and writes
 `strtodSpec`'s eight bytes at `%out`, with the model's ties — the lexeme's bytes
 as `d.ip`, the sign's word as `d.neg`, the two tables' rows — as its hypotheses
-and no cell of the body's.  The kernel's `w < 2 ^ 64` bound is not the stopper
-either: it is met at the body's own word (`numFast_ifEnd268_domain`).
+and no cell of the body's.  On the fraction route the same transport is
+`fracRun_start`'s six dispatch steps and the run's arms, composed by
+`JsonStage2NumFastSeams.fracScan_end230Cells`.  The kernel's `w < 2 ^ 64` bound
+is not the stopper either: it is met at the body's own word
+(`numFast_ifEnd268_domain`).
 
 **Tier 3's copy: the nest's exit into the residual loop.**  The four-way unrolled
 nest's visits and the residual loop's induction met at
@@ -1954,8 +1963,9 @@ conclusion at `entry` from them.  Elsewhere they close through
 `JsonStage2NumFastCells`' chain transport where the caller supplies the chain:
 `JsonStage2NumFastCarried.t1_chain_run_of_entry` is the conversion stated at
 `entry` with the dispatch produced, `t1_chain_run` its form at a staged state,
-`sign_at_ifEnd6` the dispatch segment, and `fracRunEndWord_tie_of_chain` the
-carriage of the integer part's two cells to the fraction run's exit.
+`sign_at_ifEnd6` the dispatch segment, and `fracRunEndWord_tie_cells` the
+carriage of the integer part's two cells to the fraction run's exit — carried by
+that run's own arms rather than by a supplied chain.
 
 The kernel's site is tied to the
 model's own args: `JsonStage2NumFastTier2.numFast_ifEnd268_value` reads

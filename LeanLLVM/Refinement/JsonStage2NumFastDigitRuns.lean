@@ -43,7 +43,20 @@ and `sign`, the starting state's `NumFastCarried` implies the ending state's —
 proved as one iteration's chain of jumps at blocks that are not `if.end`
 (`numFast_step_cells`).  The condition keeps the arms' old shape available to
 the scan's users, which project it away; `JsonStage2NumFastCellsRun` spends it
-on the loop's exit word.  The fraction and exponent arms are unchanged.
+on the loop's exit word.
+
+The fraction and exponent runs carry cells the merge past them reads, and their
+arms now hand those back too, on the same conditional shape.  The fraction run's
+are the integer part's `%idig.4`/`%ip.5`, which `if.end68` writes and no block of
+the run does: `fracRun_step_loop`, `fracRun_step_exit` and `fracRun_step_end230`
+conclude `NumFastIntPart` through `numFast_step_intPart`, and
+`fracRunEndBoundLoopCells`/`fracRun_end_run_cells` are the loop and its run at
+the conjoined invariant and exit word.  The exponent run's are the four cells
+`if.end230`'s `phi`s read — `%idig.4`, `%ip.5`, `%fr.5`, `%fdig.4` — carried by
+value as `ExpRunCells`: no block of the run (or of its start at
+`lor.lhs.false180`) writes them, which is `decide`d over the pinned body
+(`expRun_idig4_unwritten` and its three siblings), and `expRun_step_cells` is the
+step those arms chain.
 
 **The boundary.**  The runs' *starts* — the index after the sign, after the
 `.`, after the `e` and its sign — are the inlined scan's dispatch, and they are
@@ -2762,6 +2775,7 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
     (hb : fracRunAtBound mem0 p n i0 s c = false) :
     ∃ (e : State) (c' : Nat) (j : Nat), j ≤ 4 ∧ e.pc = "land.lhs.true119" ∧ c < c' ∧
       fracRunInv mem0 p n i0 d0 bs r e c' ∧
+      (∀ (idig ip : BitVec 64), NumFastIntPart idig ip s → NumFastIntPart idig ip e) ∧
       ∀ k, runFuel calls (j + k) numFastBody s =
         runFuel calls k numFastBody e := by
   obtain ⟨hpc, hmem, hsum, hltn, hnlt, hd0le, hp, hn, hread, h17,
@@ -2863,7 +2877,7 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
             (JsonScanLane.vByte b &&& 0x0f#8).toNat)
           (by simp only [e2, stateAt]) (by simp only [e2, stateAt]) hphi hphiOp
           hidig2 hi2 hn2 hbits
-      refine ⟨e3, c + 1, 4, by omega, ?_, by omega, ?_, ?_⟩
+      refine ⟨e3, c + 1, 4, by omega, ?_, by omega, ?_, ?_, ?_⟩
       · simp only [e3, stateAt]
       · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
         · simp only [e3, stateAt]
@@ -2910,6 +2924,11 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
             simp only [e3, stateAt, fracIfEndEnv]
             block_lk
             exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hnew
+      · intro idig ip hpart
+        exact numFast_step_intPart (by simp only [e2, stateAt]; decide) hstep4
+          (numFast_step_intPart (by simp only [e1, stateAt]; decide) hstep3
+            (numFast_step_intPart (by simp only [e0, stateAt]; decide) hstep2
+              (numFast_step_intPart (by rw [hpc]; decide) hstep1 hpart)))
       · intro k
         rw [show 4 + k = 1 + (1 + (1 + (1 + k))) from by omega,
           runFuel_jump_prefix hstep1 (1 + (1 + (1 + k))),
@@ -2962,7 +2981,7 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
           (p := "while.body130") (op := Operand.reg "%fr.3593") (frv := fr)
           (by simp only [e1, stateAt]) (by simp only [e1, stateAt]) hphi hphiOp
           hidig1 hi1 hn1 hbits
-      refine ⟨e2, c + 1, 3, by omega, ?_, by omega, ?_, ?_⟩
+      refine ⟨e2, c + 1, 3, by omega, ?_, by omega, ?_, ?_, ?_⟩
       · simp only [e2, stateAt]
       · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
         · simp only [e2, stateAt]
@@ -3004,6 +3023,10 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
             simp only [e2, stateAt, fracIfEndEnv]
             block_lk
             exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hfrozen
+      · intro idig ip hpart
+        exact numFast_step_intPart (by simp only [e1, stateAt]; decide) hstep3
+          (numFast_step_intPart (by simp only [e0, stateAt]; decide) hstep2
+            (numFast_step_intPart (by rw [hpc]; decide) hstep1 hpart))
       · intro k
         rw [show 3 + k = 1 + (1 + (1 + k)) from by omega,
           runFuel_jump_prefix hstep1 (1 + (1 + k)),
@@ -3084,7 +3107,7 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
             (JsonScanLane.vByte b &&& 0x0f#8).toNat)
           (by simp only [e2, stateAt]) (by simp only [e2, stateAt]) hphi hphiOp
           hidig2 hi2 hn2 hbits
-      refine ⟨e3, c + 1, 4, by omega, ?_, by omega, ?_, ?_⟩
+      refine ⟨e3, c + 1, 4, by omega, ?_, by omega, ?_, ?_, ?_⟩
       · simp only [e3, stateAt]
       · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
         · simp only [e3, stateAt]
@@ -3131,6 +3154,11 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
             simp only [e3, stateAt, fracIfEndEnv]
             block_lk
             exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hnew
+      · intro idig ip hpart
+        exact numFast_step_intPart (by simp only [e2, stateAt]; decide) hstep4
+          (numFast_step_intPart (by simp only [e1, stateAt]; decide) hstep3
+            (numFast_step_intPart (by simp only [e0, stateAt]; decide) hstep2
+              (numFast_step_intPart (by rw [hpc]; decide) hstep1 hpart)))
       · intro k
         rw [show 4 + k = 1 + (1 + (1 + (1 + k))) from by omega,
           runFuel_jump_prefix hstep1 (1 + (1 + (1 + k))),
@@ -3183,7 +3211,7 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
           (p := "while.body130") (op := Operand.reg "%fr.3593") (frv := fr)
           (by simp only [e1, stateAt]) (by simp only [e1, stateAt]) hphi hphiOp
           hidig1 hi1 hn1 hbits
-      refine ⟨e2, c + 1, 3, by omega, ?_, by omega, ?_, ?_⟩
+      refine ⟨e2, c + 1, 3, by omega, ?_, by omega, ?_, ?_, ?_⟩
       · simp only [e2, stateAt]
       · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
         · simp only [e2, stateAt]
@@ -3225,6 +3253,10 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
             simp only [e2, stateAt, fracIfEndEnv]
             block_lk
             exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hfrozen
+      · intro idig ip hpart
+        exact numFast_step_intPart (by simp only [e1, stateAt]; decide) hstep3
+          (numFast_step_intPart (by simp only [e0, stateAt]; decide) hstep2
+            (numFast_step_intPart (by rw [hpc]; decide) hstep1 hpart))
       · intro k
         rw [show 3 + k = 1 + (1 + (1 + k)) from by omega,
           runFuel_jump_prefix hstep1 (1 + (1 + k)),
@@ -3255,6 +3287,7 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
     (hb : fracRunAtBound mem0 p n i0 s c = true) :
     ∃ (e : State) (j : Nat), j ≤ 4 ∧ fracRunExitBlock e ∧
       fracRunExit mem0 bs p n i0 d0 e ∧
+      (∀ (idig ip : BitVec 64), NumFastIntPart idig ip s → NumFastIntPart idig ip e) ∧
       ∀ k, runFuel calls (j + k) numFastBody s =
         runFuel calls k numFastBody e := by
   obtain ⟨hpc, hmem, hsum, hltn, hnlt, hd0le, hp, hn, hread, h17,
@@ -3347,7 +3380,7 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
                 (JsonScanLane.vByte b &&& 0x0f#8).toNat)
               (by simp only [e2, stateAt]) (by simp only [e2, stateAt]) hphi hphiOp
               hidig2 hi2 hn2 hbits
-          refine ⟨e3, 4, by omega, Or.inr (by simp only [e3, stateAt]), ?_, ?_⟩
+          refine ⟨e3, 4, by omega, Or.inr (by simp only [e3, stateAt]), ?_, ?_, ?_⟩
           · refine Or.inr ⟨by simp only [e3, stateAt], by simp only [e3, stateAt], ?_⟩
             refine ⟨by omega, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
             · simp only [e3, e2, e1, e0, stateAt, fracIfEndEnv, fracIfThenEnv, fracBodyEnv,
@@ -3388,6 +3421,11 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               · simp only [e3, e2, e1, e0, stateAt, fracIfEndEnv, fracIfThenEnv, fracBodyEnv,
                   fracHeadEnv, fracHeadPhiEnv]
                 block_lk
+          · intro idig ip hpart
+            exact numFast_step_intPart (by simp only [e2, stateAt]; decide) hstep4
+              (numFast_step_intPart (by simp only [e1, stateAt]; decide) hstep3
+                (numFast_step_intPart (by simp only [e0, stateAt]; decide) hstep2
+                  (numFast_step_intPart (by rw [hpc]; decide) hstep1 hpart)))
           · intro k
             rw [show 4 + k = 1 + (1 + (1 + (1 + k))) from by omega,
               runFuel_jump_prefix hstep1 (1 + (1 + (1 + k))),
@@ -3437,7 +3475,7 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               (p := "while.body130") (op := Operand.reg "%fr.3593") (frv := fr)
               (by simp only [e1, stateAt]) (by simp only [e1, stateAt]) hphi hphiOp
               hidig1 hi1 hn1 hbits
-          refine ⟨e2, 3, by omega, Or.inr (by simp only [e2, stateAt]), ?_, ?_⟩
+          refine ⟨e2, 3, by omega, Or.inr (by simp only [e2, stateAt]), ?_, ?_, ?_⟩
           · refine Or.inr ⟨by simp only [e2, stateAt], by simp only [e2, stateAt], ?_⟩
             refine ⟨by omega, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
             · simp only [e2, e1, e0, stateAt, fracIfEndEnv, fracBodyEnv, fracHeadEnv,
@@ -3473,6 +3511,10 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               · simp only [e2, e1, e0, stateAt, fracIfEndEnv, fracBodyEnv, fracHeadEnv,
                   fracHeadPhiEnv]
                 block_lk
+          · intro idig ip hpart
+            exact numFast_step_intPart (by simp only [e1, stateAt]; decide) hstep3
+              (numFast_step_intPart (by simp only [e0, stateAt]; decide) hstep2
+                (numFast_step_intPart (by rw [hpc]; decide) hstep1 hpart))
           · intro k
             rw [show 3 + k = 1 + (1 + (1 + k)) from by omega,
               runFuel_jump_prefix hstep1 (1 + (1 + k)),
@@ -3551,7 +3593,7 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
                 (JsonScanLane.vByte b &&& 0x0f#8).toNat)
               (by simp only [e2, stateAt]) (by simp only [e2, stateAt]) hphi hphiOp
               hidig2 hi2 hn2 hbits
-          refine ⟨e3, 4, by omega, Or.inr (by simp only [e3, stateAt]), ?_, ?_⟩
+          refine ⟨e3, 4, by omega, Or.inr (by simp only [e3, stateAt]), ?_, ?_, ?_⟩
           · refine Or.inr ⟨by simp only [e3, stateAt], by simp only [e3, stateAt], ?_⟩
             refine ⟨by omega, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
             · simp only [e3, e2, e1, e0, stateAt, fracIfEndEnv, fracIfThenEnv, fracBodyEnv,
@@ -3592,6 +3634,11 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               · simp only [e3, e2, e1, e0, stateAt, fracIfEndEnv, fracIfThenEnv, fracBodyEnv,
                   fracHeadEnv, fracHeadPhiEnv]
                 block_lk
+          · intro idig ip hpart
+            exact numFast_step_intPart (by simp only [e2, stateAt]; decide) hstep4
+              (numFast_step_intPart (by simp only [e1, stateAt]; decide) hstep3
+                (numFast_step_intPart (by simp only [e0, stateAt]; decide) hstep2
+                  (numFast_step_intPart (by rw [hpc]; decide) hstep1 hpart)))
           · intro k
             rw [show 4 + k = 1 + (1 + (1 + (1 + k))) from by omega,
               runFuel_jump_prefix hstep1 (1 + (1 + (1 + k))),
@@ -3641,7 +3688,7 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               (p := "while.body130") (op := Operand.reg "%fr.3593") (frv := fr)
               (by simp only [e1, stateAt]) (by simp only [e1, stateAt]) hphi hphiOp
               hidig1 hi1 hn1 hbits
-          refine ⟨e2, 3, by omega, Or.inr (by simp only [e2, stateAt]), ?_, ?_⟩
+          refine ⟨e2, 3, by omega, Or.inr (by simp only [e2, stateAt]), ?_, ?_, ?_⟩
           · refine Or.inr ⟨by simp only [e2, stateAt], by simp only [e2, stateAt], ?_⟩
             refine ⟨by omega, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
             · simp only [e2, e1, e0, stateAt, fracIfEndEnv, fracBodyEnv, fracHeadEnv,
@@ -3677,6 +3724,10 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               · simp only [e2, e1, e0, stateAt, fracIfEndEnv, fracBodyEnv, fracHeadEnv,
                   fracHeadPhiEnv]
                 block_lk
+          · intro idig ip hpart
+            exact numFast_step_intPart (by simp only [e1, stateAt]; decide) hstep3
+              (numFast_step_intPart (by simp only [e0, stateAt]; decide) hstep2
+                (numFast_step_intPart (by rw [hpc]; decide) hstep1 hpart))
           · intro k
             rw [show 3 + k = 1 + (1 + (1 + k)) from by omega,
               runFuel_jump_prefix hstep1 (1 + (1 + k)),
@@ -3698,7 +3749,7 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
             (BlockEval.evalOperand_reg_of s.env s "%i.6552" _ hi)
             (BlockEval.evalOperand_reg_of s.env s "%fdig.0554" _ hid)
             (BlockEval.evalOperand_reg_of s.env s "%fr.0556" _ hfr) hj hbyte_s hdigit'
-        refine ⟨e0, 1, by omega, Or.inl (by simp only [e0, stateAt]), ?_, ?_⟩
+        refine ⟨e0, 1, by omega, Or.inl (by simp only [e0, stateAt]), ?_, ?_, ?_⟩
         · refine Or.inl ⟨by simp only [e0, stateAt], by simp only [e0, stateAt],
             by simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]; block_lk,
             by simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]; block_lk,
@@ -3715,6 +3766,8 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
             simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]
             block_lk
             exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hval
+        · intro idig ip hpart
+          exact numFast_step_intPart (by rw [hpc]; decide) hstep1 hpart
         · intro k
           rw [runFuel_jump_prefix hstep1 k]
       · obtain ⟨hpre0, hi, hid, hfr⟩ := hback
@@ -3728,7 +3781,7 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
             (BlockEval.evalOperand_reg_of s.env s "%inc142" _ hi)
             (BlockEval.evalOperand_reg_of s.env s "%inc141" _ hid)
             (BlockEval.evalOperand_reg_of s.env s "%fr.4" _ hfr) hj hbyte_s hdigit'
-        refine ⟨e0, 1, by omega, Or.inl (by simp only [e0, stateAt]), ?_, ?_⟩
+        refine ⟨e0, 1, by omega, Or.inl (by simp only [e0, stateAt]), ?_, ?_, ?_⟩
         · refine Or.inl ⟨by simp only [e0, stateAt], by simp only [e0, stateAt],
             by simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]; block_lk,
             by simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]; block_lk,
@@ -3745,6 +3798,8 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
             simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]
             block_lk
             exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hval
+        · intro idig ip hpart
+          exact numFast_step_intPart (by rw [hpc]; decide) hstep1 hpart
         · intro k
           rw [runFuel_jump_prefix hstep1 k]
   · obtain ⟨b', hbyte', hdigit'⟩ := fracRun_bound_nondigit hread hltn hb hle
@@ -3763,7 +3818,7 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
           (BlockEval.evalOperand_reg_of s.env s "%i.6552" _ hi)
           (BlockEval.evalOperand_reg_of s.env s "%fdig.0554" _ hid)
           (BlockEval.evalOperand_reg_of s.env s "%fr.0556" _ hfr) hj hbyte'_s hdigit'
-      refine ⟨e0, 1, by omega, Or.inl (by simp only [e0, stateAt]), ?_, ?_⟩
+      refine ⟨e0, 1, by omega, Or.inl (by simp only [e0, stateAt]), ?_, ?_, ?_⟩
       · refine Or.inl ⟨by simp only [e0, stateAt], by simp only [e0, stateAt],
           by simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]; block_lk,
           by simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]; block_lk,
@@ -3780,6 +3835,8 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
           simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]
           block_lk
           exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hval
+      · intro idig ip hpart
+        exact numFast_step_intPart (by rw [hpc]; decide) hstep1 hpart
       · intro k
         rw [runFuel_jump_prefix hstep1 k]
     · obtain ⟨hpre0, hi, hid, hfr⟩ := hback
@@ -3793,7 +3850,7 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
           (BlockEval.evalOperand_reg_of s.env s "%inc142" _ hi)
           (BlockEval.evalOperand_reg_of s.env s "%inc141" _ hid)
           (BlockEval.evalOperand_reg_of s.env s "%fr.4" _ hfr) hj hbyte'_s hdigit'
-      refine ⟨e0, 1, by omega, Or.inl (by simp only [e0, stateAt]), ?_, ?_⟩
+      refine ⟨e0, 1, by omega, Or.inl (by simp only [e0, stateAt]), ?_, ?_, ?_⟩
       · refine Or.inl ⟨by simp only [e0, stateAt], by simp only [e0, stateAt],
           by simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]; block_lk,
           by simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]; block_lk,
@@ -3810,6 +3867,8 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
           simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]
           block_lk
           exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hval
+      · intro idig ip hpart
+        exact numFast_step_intPart (by rw [hpc]; decide) hstep1 hpart
       · intro k
         rw [runFuel_jump_prefix hstep1 k]
 
@@ -3825,11 +3884,11 @@ def fracRunBoundLoop (mem0 : Mem) (p n i0 d0 : Nat) (bs : List UInt8) (cost : Na
   ExitWord := fracRunExit mem0 bs p n i0 d0
   step_exit := by
     intro r s c hinv hb
-    obtain ⟨e, j, hj, hexit, hword, hrun⟩ := fracRun_step_exit hinv hb
+    obtain ⟨e, j, hj, hexit, hword, _hcell, hrun⟩ := fracRun_step_exit hinv hb
     exact ⟨e, j, by omega, hexit, hword, hrun⟩
   step_loop := by
     intro r s c hinv hb
-    obtain ⟨e, c', j, hj, hpc, hlt, hinv', hrun⟩ := fracRun_step_loop hinv hb
+    obtain ⟨e, c', j, hj, hpc, hlt, hinv', _hcell, hrun⟩ := fracRun_step_loop hinv hb
     exact ⟨e, c', j, by omega, hpc, hlt, hinv', hrun⟩
   exit_at_zero := by
     intro s c h
@@ -3863,16 +3922,17 @@ theorem fracRun_step_end230 {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
     (hb : fracRunAtBound mem0 p n i0 s c = true)
     (hdigits : ∀ k, i0 ≤ k → k < n → IsDigitB (bs.getD k 0) = true) :
     ∃ (e : State) (j : Nat), j ≤ 4 ∧ fracRunEndWord bs p n i0 d0 e ∧
+      (∀ (idig ip : BitVec 64), NumFastIntPart idig ip s → NumFastIntPart idig ip e) ∧
       ∀ k, runFuel calls (j + k) numFastBody s =
         runFuel calls k numFastBody e := by
-  obtain ⟨e, j, hj, _, hexit, hrun⟩ := fracRun_step_exit hinv hb
+  obtain ⟨e, j, hj, _, hexit, hcell, hrun⟩ := fracRun_step_exit hinv hb
   obtain ⟨_, _, _, _, _, _, _, _, hread, _, _, _⟩ := hinv
   rcases hexit with ⟨_, _, _, _, i1, hi0, hi1lt, _, _, _, b, hbytei, hbd⟩ | hend
   · have hbs : bs.getD i1 0 = b := getD_of_readBytes hread hi1lt hbytei
     have hdig := hdigits i1 hi0 hi1lt
     rw [hbs, hbd] at hdig
     exact absurd hdig (by decide)
-  · exact ⟨e, j, hj, hend, hrun⟩
+  · exact ⟨e, j, hj, hend, hcell, hrun⟩
 
 /-- **The fraction run's end-of-lexeme loop.**  With every byte from the run's
 start to the lexeme's end a digit, the run's only bound is the lexeme's end, so
@@ -3891,11 +3951,11 @@ def fracRunEndBoundLoop (mem0 : Mem) (p n i0 d0 : Nat) (bs : List UInt8) (cost :
   ExitWord := fracRunEndWord bs p n i0 d0
   step_exit := by
     intro r s c hinv hb
-    obtain ⟨e, j, hj, hword, hrun⟩ := fracRun_step_end230 hinv hb hdigits
+    obtain ⟨e, j, hj, hword, _hcell, hrun⟩ := fracRun_step_end230 hinv hb hdigits
     exact ⟨e, j, by omega, hword.1, hword, hrun⟩
   step_loop := by
     intro r s c hinv hb
-    obtain ⟨e, c', j, hj, hpc, hlt, hinv', hrun⟩ := fracRun_step_loop hinv hb
+    obtain ⟨e, c', j, hj, hpc, hlt, hinv', _hcell, hrun⟩ := fracRun_step_loop hinv hb
     exact ⟨e, c', j, by omega, hpc, hlt, hinv', hrun⟩
   exit_at_zero := by
     intro s c h
@@ -3922,6 +3982,66 @@ theorem fracRun_end_run (mem0 : Mem) (p n i0 d0 : Nat) (bs : List UInt8) (cost :
       runFuel calls (j + k) numFastBody s =
         runFuel calls k numFastBody e :=
   (fracRunEndBoundLoop mem0 p n i0 d0 bs cost hcost hdigits).run s c hinv k
+
+/-- **The fraction run's end-of-lexeme loop, with the integer part's cells.**
+`fracRunEndBoundLoop`'s invariant and exit word with `NumFastIntPart` conjoined to
+both.  No block of the fraction run writes `%idig.4` or `%ip.5` — `if.end68`
+alone does — so the two cells the merge's `phi`s read arrive from the merge that
+preceded the run, and the arms' transport carries them through every iteration. -/
+def fracRunEndBoundLoopCells (mem0 : Mem) (p n i0 d0 : Nat) (bs : List UInt8)
+    (cost : Nat) (hcost : 4 ≤ cost)
+    (hdigits : ∀ k, i0 ≤ k → k < n → IsDigitB (bs.getD k 0) = true)
+    (idig ip : BitVec 64) : BoundLoop calls numFastBody where
+  head := "land.lhs.true119"
+  exitBlock := "if.end230"
+  N := n - i0
+  cost := cost
+  Inv := fun r s c => fracRunInv mem0 p n i0 d0 bs r s c ∧ NumFastIntPart idig ip s
+  atBound := fracRunAtBound mem0 p n i0
+  Exit := fun e => e.pc = "if.end230"
+  ExitWord := fun e => fracRunEndWord bs p n i0 d0 e ∧ NumFastIntPart idig ip e
+  step_exit := by
+    intro r s c hinv hb
+    obtain ⟨hinv, hcells⟩ := hinv
+    obtain ⟨e, j, hj, hword, hcell, hrun⟩ := fracRun_step_end230 hinv hb hdigits
+    exact ⟨e, j, by omega, hword.1, ⟨hword, hcell idig ip hcells⟩, hrun⟩
+  step_loop := by
+    intro r s c hinv hb
+    obtain ⟨hinv, hcells⟩ := hinv
+    obtain ⟨e, c', j, hj, hpc, hlt, hinv', hcell, hrun⟩ := fracRun_step_loop hinv hb
+    exact ⟨e, c', j, by omega, hpc, hlt, ⟨hinv', hcell idig ip hcells⟩, hrun⟩
+  exit_at_zero := by
+    intro s c h
+    obtain ⟨hinv, _⟩ := h
+    obtain ⟨_, _, hsum, _, _, _, _, _, _, _, _, _⟩ := hinv
+    unfold fracRunAtBound
+    have hle : decide (n - i0 ≤ c + 1) = true := decide_eq_true (by omega)
+    rw [hle]
+    simp
+  budget := by
+    intro r s c h
+    obtain ⟨hinv, _⟩ := h
+    obtain ⟨_, _, hsum, _, _, _, _, _, _, _, _, _⟩ := hinv
+    omega
+
+/-- **The fraction run reaches the lexeme's end with the integer part's cells.**
+At the whole distance as its budget, a run whose remaining bytes are all digits
+leaves at `if.end230` with the end-of-lexeme exit word and the two cells it
+carried. -/
+theorem fracRun_end_run_cells (mem0 : Mem) (p n i0 d0 : Nat) (bs : List UInt8)
+    (cost : Nat) (hcost : 4 ≤ cost)
+    (hdigits : ∀ k, i0 ≤ k → k < n → IsDigitB (bs.getD k 0) = true)
+    (idig ip : BitVec 64) (s : State) (c : Nat)
+    (hinv : fracRunInv mem0 p n i0 d0 bs (n - i0) s c)
+    (hpart : NumFastIntPart idig ip s) (k : Nat) :
+    ∃ (e : State) (j : Nat), j ≤ (n - i0 + 1) * cost ∧ e.pc = "if.end230" ∧
+      fracRunEndWord bs p n i0 d0 e ∧ NumFastIntPart idig ip e ∧
+      runFuel calls (j + k) numFastBody s =
+        runFuel calls k numFastBody e := by
+  obtain ⟨e, j, hj, hexit, ⟨hword, hpart'⟩, hrun⟩ :=
+    (fracRunEndBoundLoopCells mem0 p n i0 d0 bs cost hcost hdigits idig ip).run
+      s c ⟨hinv, hpart⟩ k
+  exact ⟨e, j, hj, hexit, hword, hpart', hrun⟩
 
 /-! ### The exponent run: `land.lhs.true195`
 
@@ -4400,6 +4520,56 @@ def expRunCarried (env : Env) : Prop :=
     lookupName env "%fr.5" = some (.int 64 fr5) ∧
     lookupName env "%fdig.4" = some (.int 64 fd5)
 
+/-- The same four cells by value: the form a composition past the run reads,
+since `expRunCarried` binds their names without their contents. -/
+def ExpRunCells (idig5 ip5 fr5 fd5 : BitVec 64) (s : State) : Prop :=
+  lookupName s.env "%idig.4" = some (.int 64 idig5) ∧
+  lookupName s.env "%ip.5" = some (.int 64 ip5) ∧
+  lookupName s.env "%fr.5" = some (.int 64 fr5) ∧
+  lookupName s.env "%fdig.4" = some (.int 64 fd5)
+
+/-- The exponent run's blocks: its head, the accumulator's two blocks, the back
+edge's merge, and the block its exits leave for.  No block of the run writes the
+four carried cells, which is a `decide` over the pinned body rather than a
+reading of the route. -/
+def expRunBlocks : List String :=
+  ["lor.lhs.false180", "land.lhs.true195", "while.body206", "if.then209",
+    "if.end216", "cleanup223.thread"]
+
+/-- `n` is written by no block of the exponent run. -/
+abbrev ExpRunUnwritten (n : String) : Prop :=
+  ∀ b ∈ numFastBody.blocks, b.name ∈ expRunBlocks → ∀ i ∈ b.instrs, i.dst? ≠ some n
+
+theorem expRun_idig4_unwritten : ExpRunUnwritten "%idig.4" := by decide
+
+theorem expRun_ip5_unwritten : ExpRunUnwritten "%ip.5" := by decide
+
+theorem expRun_fr5_unwritten : ExpRunUnwritten "%fr.5" := by decide
+
+theorem expRun_fdig4_unwritten : ExpRunUnwritten "%fdig.4" := by decide
+
+/-- **A step off a block of the exponent run leaves its four cells.**  The block
+the step takes writes none of them, so all four are read off the environment they
+had. -/
+theorem expRun_step_cells {calls : Calls} {s s' : State}
+    {idig5 ip5 fr5 fd5 : BitVec 64} (hpc : s.pc ∈ expRunBlocks)
+    (hs : step calls numFastBody s = .jump s') (h : ExpRunCells idig5 ip5 fr5 fd5 s) :
+    ExpRunCells idig5 ip5 fr5 fd5 s' := by
+  obtain ⟨h1, h2, h3, h4⟩ := h
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · rw [numFast_step_lookup (n := "%idig.4") hs
+      (fun b hb hbpc => expRun_idig4_unwritten b hb (by rw [hbpc]; exact hpc))]
+    exact h1
+  · rw [numFast_step_lookup (n := "%ip.5") hs
+      (fun b hb hbpc => expRun_ip5_unwritten b hb (by rw [hbpc]; exact hpc))]
+    exact h2
+  · rw [numFast_step_lookup (n := "%fr.5") hs
+      (fun b hb hbpc => expRun_fr5_unwritten b hb (by rw [hbpc]; exact hpc))]
+    exact h3
+  · rw [numFast_step_lookup (n := "%fdig.4") hs
+      (fun b hb hbpc => expRun_fdig4_unwritten b hb (by rw [hbpc]; exact hpc))]
+    exact h4
+
 /-- The exponent run's exit: both branches land in `cleanup223.thread`, and the
 register carrying the accumulator is the head's `%exp10.0603` on the entry edge
 and the `if.end216` phi `%exp10.1` on the back edge.  Each disjunct names its
@@ -4460,6 +4630,8 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
     (hb : expRunAtBound mem0 p n i0 s c = false) :
     ∃ (e : State) (c' : Nat) (j : Nat), j ≤ 4 ∧ e.pc = "land.lhs.true195" ∧ c < c' ∧
       expRunInv mem0 p n i0 bs r e c' ∧
+      (∀ (idig5 ip5 fr5 fd5 : BitVec 64),
+        ExpRunCells idig5 ip5 fr5 fd5 s → ExpRunCells idig5 ip5 fr5 fd5 e) ∧
       ∀ k, runFuel calls (j + k) numFastBody s =
         runFuel calls k numFastBody e := by
   obtain ⟨hpc, hmem, hsum, hltn, hnlt, hp, hn, hread, hpre, hesign, hcarry⟩ := hinv
@@ -4546,7 +4718,7 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
             (JsonScanLane.vByte b &&& 0x0f#8).toNat)
           (by simp only [e2, stateAt]) (by simp only [e2, stateAt]) hphi hphiOp
           hi2 hn2 hbits
-      refine ⟨e3, c + 1, 4, by omega, ?_, by omega, ?_, ?_⟩
+      refine ⟨e3, c + 1, 4, by omega, ?_, by omega, ?_, ?_, ?_⟩
       · simp only [e3, stateAt]
       · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
         · simp only [e3, stateAt]
@@ -4581,6 +4753,11 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
             simp only [e3, e2, e1, e0, stateAt, expIfEndEnv, expIfThenEnv,
               expBodyEnv, expHeadEnv, expHeadPhiEnv]
             block_lk
+      · intro c1 c2 c3 c4 hcells
+        exact expRun_step_cells (by simp only [e2, stateAt]; decide) hstep4
+          (expRun_step_cells (by simp only [e1, stateAt]; decide) hstep3
+            (expRun_step_cells (by simp only [e0, stateAt]; decide) hstep2
+              (expRun_step_cells (by rw [hpc]; decide) hstep1 hcells)))
       · intro k
         rw [show 4 + k = 1 + (1 + (1 + (1 + k))) from by omega,
           runFuel_jump_prefix hstep1 (1 + (1 + (1 + k))),
@@ -4625,7 +4802,7 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
           (p := "while.body206") (op := Operand.reg "%exp10.0603") (vv := 0)
           (by simp only [e1, stateAt]) (by simp only [e1, stateAt]) hphi hphiOp
           hi1 hn1 hbits
-      refine ⟨e2, c + 1, 3, by omega, ?_, by omega, ?_, ?_⟩
+      refine ⟨e2, c + 1, 3, by omega, ?_, by omega, ?_, ?_, ?_⟩
       · simp only [e2, stateAt]
       · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
         · simp only [e2, stateAt]
@@ -4658,6 +4835,10 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
             simp only [e2, e1, e0, stateAt, expIfEndEnv, expBodyEnv, expHeadEnv,
               expHeadPhiEnv]
             block_lk
+      · intro c1 c2 c3 c4 hcells
+        exact expRun_step_cells (by simp only [e1, stateAt]; decide) hstep3
+          (expRun_step_cells (by simp only [e0, stateAt]; decide) hstep2
+            (expRun_step_cells (by rw [hpc]; decide) hstep1 hcells))
       · intro k
         rw [show 3 + k = 1 + (1 + (1 + k)) from by omega,
           runFuel_jump_prefix hstep1 (1 + (1 + k)),
@@ -4723,7 +4904,7 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
             (JsonScanLane.vByte b &&& 0x0f#8).toNat)
           (by simp only [e2, stateAt]) (by simp only [e2, stateAt]) hphi hphiOp
           hi2 hn2 hbits
-      refine ⟨e3, c + 1, 4, by omega, ?_, by omega, ?_, ?_⟩
+      refine ⟨e3, c + 1, 4, by omega, ?_, by omega, ?_, ?_, ?_⟩
       · simp only [e3, stateAt]
       · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
         · simp only [e3, stateAt]
@@ -4758,6 +4939,11 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
             simp only [e3, e2, e1, e0, stateAt, expIfEndEnv, expIfThenEnv,
               expBodyEnv, expHeadEnv, expHeadPhiEnv]
             block_lk
+      · intro c1 c2 c3 c4 hcells
+        exact expRun_step_cells (by simp only [e2, stateAt]; decide) hstep4
+          (expRun_step_cells (by simp only [e1, stateAt]; decide) hstep3
+            (expRun_step_cells (by simp only [e0, stateAt]; decide) hstep2
+              (expRun_step_cells (by rw [hpc]; decide) hstep1 hcells)))
       · intro k
         rw [show 4 + k = 1 + (1 + (1 + (1 + k))) from by omega,
           runFuel_jump_prefix hstep1 (1 + (1 + (1 + k))),
@@ -4802,7 +4988,7 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
           (p := "while.body206") (op := Operand.reg "%exp10.0603") (vv := v)
           (by simp only [e1, stateAt]) (by simp only [e1, stateAt]) hphi hphiOp
           hi1 hn1 hbits
-      refine ⟨e2, c + 1, 3, by omega, ?_, by omega, ?_, ?_⟩
+      refine ⟨e2, c + 1, 3, by omega, ?_, by omega, ?_, ?_, ?_⟩
       · simp only [e2, stateAt]
       · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
         · simp only [e2, stateAt]
@@ -4835,6 +5021,10 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
             simp only [e2, e1, e0, stateAt, expIfEndEnv, expBodyEnv, expHeadEnv,
               expHeadPhiEnv]
             block_lk
+      · intro c1 c2 c3 c4 hcells
+        exact expRun_step_cells (by simp only [e1, stateAt]; decide) hstep3
+          (expRun_step_cells (by simp only [e0, stateAt]; decide) hstep2
+            (expRun_step_cells (by rw [hpc]; decide) hstep1 hcells))
       · intro k
         rw [show 3 + k = 1 + (1 + (1 + k)) from by omega,
           runFuel_jump_prefix hstep1 (1 + (1 + k)),
@@ -4847,6 +5037,8 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
     (hinv : expRunInv mem0 p n i0 bs r s c)
     (hb : expRunAtBound mem0 p n i0 s c = true) :
     ∃ (e : State) (j : Nat), j ≤ 4 ∧ e.pc = "cleanup223.thread" ∧ expRunExit e ∧
+      (∀ (idig5 ip5 fr5 fd5 : BitVec 64),
+        ExpRunCells idig5 ip5 fr5 fd5 s → ExpRunCells idig5 ip5 fr5 fd5 e) ∧
       ∀ k, runFuel calls (j + k) numFastBody s =
         runFuel calls k numFastBody e := by
   obtain ⟨hpc, hmem, hsum, hltn, hnlt, hp, hn, hread, hpre, hesign, hcarry⟩ := hinv
@@ -4922,7 +5114,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
                 (JsonScanLane.vByte b &&& 0x0f#8).toNat)
               (by simp only [e2, stateAt]) (by simp only [e2, stateAt]) hphi hphiOp
               hi2 hn2 hbits
-          refine ⟨e3, 4, by omega, by simp only [e3, stateAt], ?_, ?_⟩
+          refine ⟨e3, 4, by omega, by simp only [e3, stateAt], ?_, ?_, ?_⟩
           · refine ⟨by simp only [e3, stateAt],
               Or.inr ⟨by simp only [e3, stateAt], i0 + c + 1,
                 (0 * 10 + BitVec.ofNat 64 (JsonScanLane.vByte b &&& 0x0f#8).toNat),
@@ -4942,6 +5134,11 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
                 simp only [e3, e2, e1, e0, stateAt, expIfEndEnv, expIfThenEnv,
                   expBodyEnv, expHeadEnv, expHeadPhiEnv]
                 block_lk
+          · intro c1 c2 c3 c4 hcells
+            exact expRun_step_cells (by simp only [e2, stateAt]; decide) hstep4
+              (expRun_step_cells (by simp only [e1, stateAt]; decide) hstep3
+                (expRun_step_cells (by simp only [e0, stateAt]; decide) hstep2
+                  (expRun_step_cells (by rw [hpc]; decide) hstep1 hcells)))
           · intro k
             rw [show 4 + k = 1 + (1 + (1 + (1 + k))) from by omega,
               runFuel_jump_prefix hstep1 (1 + (1 + (1 + k))),
@@ -4987,7 +5184,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
               (p := "while.body206") (op := Operand.reg "%exp10.0603") (vv := 0)
               (by simp only [e1, stateAt]) (by simp only [e1, stateAt]) hphi hphiOp
               hi1 hn1 hbits
-          refine ⟨e2, 3, by omega, by simp only [e2, stateAt], ?_, ?_⟩
+          refine ⟨e2, 3, by omega, by simp only [e2, stateAt], ?_, ?_, ?_⟩
           · refine ⟨by simp only [e2, stateAt],
               Or.inr ⟨by simp only [e2, stateAt], i0 + c + 1, 0, ?_, ?_⟩, ?_, ?_⟩
             · simp only [e2, stateAt, expIfEndEnv]
@@ -5005,6 +5202,10 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
                 simp only [e2, e1, e0, stateAt, expIfEndEnv, expBodyEnv, expHeadEnv,
                   expHeadPhiEnv]
                 block_lk
+          · intro c1 c2 c3 c4 hcells
+            exact expRun_step_cells (by simp only [e1, stateAt]; decide) hstep3
+              (expRun_step_cells (by simp only [e0, stateAt]; decide) hstep2
+                (expRun_step_cells (by rw [hpc]; decide) hstep1 hcells))
           · intro k
             rw [show 3 + k = 1 + (1 + (1 + k)) from by omega,
               runFuel_jump_prefix hstep1 (1 + (1 + k)),
@@ -5071,7 +5272,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
                 (JsonScanLane.vByte b &&& 0x0f#8).toNat)
               (by simp only [e2, stateAt]) (by simp only [e2, stateAt]) hphi hphiOp
               hi2 hn2 hbits
-          refine ⟨e3, 4, by omega, by simp only [e3, stateAt], ?_, ?_⟩
+          refine ⟨e3, 4, by omega, by simp only [e3, stateAt], ?_, ?_, ?_⟩
           · refine ⟨by simp only [e3, stateAt],
               Or.inr ⟨by simp only [e3, stateAt], i0 + c + 1,
                 (v * 10 + BitVec.ofNat 64 (JsonScanLane.vByte b &&& 0x0f#8).toNat),
@@ -5091,6 +5292,11 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
                 simp only [e3, e2, e1, e0, stateAt, expIfEndEnv, expIfThenEnv,
                   expBodyEnv, expHeadEnv, expHeadPhiEnv]
                 block_lk
+          · intro c1 c2 c3 c4 hcells
+            exact expRun_step_cells (by simp only [e2, stateAt]; decide) hstep4
+              (expRun_step_cells (by simp only [e1, stateAt]; decide) hstep3
+                (expRun_step_cells (by simp only [e0, stateAt]; decide) hstep2
+                  (expRun_step_cells (by rw [hpc]; decide) hstep1 hcells)))
           · intro k
             rw [show 4 + k = 1 + (1 + (1 + (1 + k))) from by omega,
               runFuel_jump_prefix hstep1 (1 + (1 + (1 + k))),
@@ -5136,7 +5342,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
               (p := "while.body206") (op := Operand.reg "%exp10.0603") (vv := v)
               (by simp only [e1, stateAt]) (by simp only [e1, stateAt]) hphi hphiOp
               hi1 hn1 hbits
-          refine ⟨e2, 3, by omega, by simp only [e2, stateAt], ?_, ?_⟩
+          refine ⟨e2, 3, by omega, by simp only [e2, stateAt], ?_, ?_, ?_⟩
           · refine ⟨by simp only [e2, stateAt],
               Or.inr ⟨by simp only [e2, stateAt], i0 + c + 1, v, ?_, ?_⟩, ?_, ?_⟩
             · simp only [e2, stateAt, expIfEndEnv]
@@ -5154,6 +5360,10 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
                 simp only [e2, e1, e0, stateAt, expIfEndEnv, expBodyEnv, expHeadEnv,
                   expHeadPhiEnv]
                 block_lk
+          · intro c1 c2 c3 c4 hcells
+            exact expRun_step_cells (by simp only [e1, stateAt]; decide) hstep3
+              (expRun_step_cells (by simp only [e0, stateAt]; decide) hstep2
+                (expRun_step_cells (by rw [hpc]; decide) hstep1 hcells))
           · intro k
             rw [show 3 + k = 1 + (1 + (1 + k)) from by omega,
               runFuel_jump_prefix hstep1 (1 + (1 + k)),
@@ -5171,7 +5381,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
           expHead_step_entry_nondigit (env := s.env) (s := s) (a := p) (j := i0 + c)
             (b := b) hpc hpre0 hp
             (BlockEval.evalOperand_reg_of s.env s "%i.11" _ hi) hj hbyte_s hdigit'
-        refine ⟨e0, 1, by omega, by simp only [e0, stateAt], ?_, ?_⟩
+        refine ⟨e0, 1, by omega, by simp only [e0, stateAt], ?_, ?_, ?_⟩
         · refine ⟨by simp only [e0, stateAt],
             Or.inl ⟨by simp only [e0, stateAt], i0 + c, 0, ?_, ?_⟩, ?_, ?_⟩
           · simp only [e0, stateAt, expHeadEnv, expHeadPhiEnv]
@@ -5187,6 +5397,8 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
             all_goals
               simp only [e0, stateAt, expHeadEnv, expHeadPhiEnv]
               block_lk
+        · intro c1 c2 c3 c4 hcells
+          exact expRun_step_cells (by rw [hpc]; decide) hstep1 hcells
         · intro k
           rw [runFuel_jump_prefix hstep1 k]
       · obtain ⟨hpre0, hi, v, hvv⟩ := hback
@@ -5197,7 +5409,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
             (b := b) (v := v) hpc hpre0 hp
             (BlockEval.evalOperand_reg_of s.env s "%inc217" _ hi)
             (BlockEval.evalOperand_reg_of s.env s "%exp10.1" _ hvv) hj hbyte_s hdigit'
-        refine ⟨e0, 1, by omega, by simp only [e0, stateAt], ?_, ?_⟩
+        refine ⟨e0, 1, by omega, by simp only [e0, stateAt], ?_, ?_, ?_⟩
         · refine ⟨by simp only [e0, stateAt],
             Or.inl ⟨by simp only [e0, stateAt], i0 + c, v, ?_, ?_⟩, ?_, ?_⟩
           · simp only [e0, stateAt, expHeadEnv, expHeadPhiEnv]
@@ -5213,6 +5425,8 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
             all_goals
               simp only [e0, stateAt, expHeadEnv, expHeadPhiEnv]
               block_lk
+        · intro c1 c2 c3 c4 hcells
+          exact expRun_step_cells (by rw [hpc]; decide) hstep1 hcells
         · intro k
           rw [runFuel_jump_prefix hstep1 k]
   · obtain ⟨b', hbyte', hdigit'⟩ := expRun_bound_nondigit hread hltn hb hle
@@ -5227,7 +5441,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
         expHead_step_entry_nondigit (env := s.env) (s := s) (a := p) (j := i0 + c)
           (b := b) hpc hpre0 hp
           (BlockEval.evalOperand_reg_of s.env s "%i.11" _ hi) hj hbyte'_s hdigit'
-      refine ⟨e0, 1, by omega, by simp only [e0, stateAt], ?_, ?_⟩
+      refine ⟨e0, 1, by omega, by simp only [e0, stateAt], ?_, ?_, ?_⟩
       · refine ⟨by simp only [e0, stateAt],
           Or.inl ⟨by simp only [e0, stateAt], i0 + c, 0, ?_, ?_⟩, ?_, ?_⟩
         · simp only [e0, stateAt, expHeadEnv, expHeadPhiEnv]
@@ -5243,6 +5457,8 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
           all_goals
             simp only [e0, stateAt, expHeadEnv, expHeadPhiEnv]
             block_lk
+      · intro c1 c2 c3 c4 hcells
+        exact expRun_step_cells (by rw [hpc]; decide) hstep1 hcells
       · intro k
         rw [runFuel_jump_prefix hstep1 k]
     · obtain ⟨hpre0, hi, v, hvv⟩ := hback
@@ -5253,7 +5469,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
           (b := b) (v := v) hpc hpre0 hp
           (BlockEval.evalOperand_reg_of s.env s "%inc217" _ hi)
           (BlockEval.evalOperand_reg_of s.env s "%exp10.1" _ hvv) hj hbyte'_s hdigit'
-      refine ⟨e0, 1, by omega, by simp only [e0, stateAt], ?_, ?_⟩
+      refine ⟨e0, 1, by omega, by simp only [e0, stateAt], ?_, ?_, ?_⟩
       · refine ⟨by simp only [e0, stateAt],
           Or.inl ⟨by simp only [e0, stateAt], i0 + c, v, ?_, ?_⟩, ?_, ?_⟩
         · simp only [e0, stateAt, expHeadEnv, expHeadPhiEnv]
@@ -5269,6 +5485,8 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
           all_goals
             simp only [e0, stateAt, expHeadEnv, expHeadPhiEnv]
             block_lk
+      · intro c1 c2 c3 c4 hcells
+        exact expRun_step_cells (by rw [hpc]; decide) hstep1 hcells
       · intro k
         rw [runFuel_jump_prefix hstep1 k]
 
@@ -5284,11 +5502,11 @@ def expRunBoundLoop (mem0 : Mem) (p n i0 : Nat) (bs : List UInt8) (cost : Nat)
   ExitWord := expRunExit
   step_exit := by
     intro r s c hinv hb
-    obtain ⟨e, j, hj, hpc, hword, hrun⟩ := expRun_step_exit hinv hb
+    obtain ⟨e, j, hj, hpc, hword, _hcell, hrun⟩ := expRun_step_exit hinv hb
     exact ⟨e, j, by omega, hpc, hword, hrun⟩
   step_loop := by
     intro r s c hinv hb
-    obtain ⟨e, c', j, hj, hpc, hlt, hinv', hrun⟩ := expRun_step_loop hinv hb
+    obtain ⟨e, c', j, hj, hpc, hlt, hinv', _hcell, hrun⟩ := expRun_step_loop hinv hb
     exact ⟨e, c', j, by omega, hpc, hlt, hinv', hrun⟩
   exit_at_zero := by
     intro s c h
@@ -5310,6 +5528,61 @@ theorem expRun_run (mem0 : Mem) (p n i0 : Nat) (bs : List UInt8) (cost : Nat)
       runFuel calls (j + k) numFastBody s =
         runFuel calls k numFastBody e :=
   (expRunBoundLoop mem0 p n i0 bs cost hcost).run s c hinv k
+
+/-- **The exponent run's loop, with its four carried cells by value.**  The
+invariant and the exit word carry `ExpRunCells`, so a composition past the run
+reads `%idig.4`, `%ip.5`, `%fr.5` and `%fdig.4` at the state the run leaves
+rather than through an existential. -/
+def expRunEndBoundLoopCells (mem0 : Mem) (p n i0 : Nat) (bs : List UInt8)
+    (cost : Nat) (hcost : 4 ≤ cost) (idig5 ip5 fr5 fd5 : BitVec 64) :
+    BoundLoop calls numFastBody where
+  head := "land.lhs.true195"
+  exitBlock := "cleanup223.thread"
+  N := n - i0
+  cost := cost
+  Inv := fun r s c => expRunInv mem0 p n i0 bs r s c ∧ ExpRunCells idig5 ip5 fr5 fd5 s
+  atBound := expRunAtBound mem0 p n i0
+  Exit := fun e => e.pc = "cleanup223.thread"
+  ExitWord := fun e => expRunExit e ∧ ExpRunCells idig5 ip5 fr5 fd5 e
+  step_exit := by
+    intro r s c hinv hb
+    obtain ⟨hinv, hcells⟩ := hinv
+    obtain ⟨e, j, hj, hpc, hword, hcell, hrun⟩ := expRun_step_exit hinv hb
+    exact ⟨e, j, by omega, hpc, ⟨hword, hcell idig5 ip5 fr5 fd5 hcells⟩, hrun⟩
+  step_loop := by
+    intro r s c hinv hb
+    obtain ⟨hinv, hcells⟩ := hinv
+    obtain ⟨e, c', j, hj, hpc, hlt, hinv', hcell, hrun⟩ := expRun_step_loop hinv hb
+    exact ⟨e, c', j, by omega, hpc, hlt, ⟨hinv', hcell idig5 ip5 fr5 fd5 hcells⟩, hrun⟩
+  exit_at_zero := by
+    intro s c h
+    obtain ⟨hinv, _⟩ := h
+    obtain ⟨_, _, hsum, _, _, _, _, _, _, _, _⟩ := hinv
+    unfold expRunAtBound
+    have hle : decide (n - i0 ≤ c + 1) = true := decide_eq_true (by omega)
+    rw [hle]
+    simp
+  budget := by
+    intro r s c h
+    obtain ⟨hinv, _⟩ := h
+    obtain ⟨_, _, hsum, _, _, _, _, _, _, _, _⟩ := hinv
+    omega
+
+/-- **The exponent run, with its four cells.**  At the whole distance as its
+budget the run leaves `cleanup223.thread` with the exit word and the four cells
+it carried. -/
+theorem expRun_run_cells (mem0 : Mem) (p n i0 : Nat) (bs : List UInt8)
+    (cost : Nat) (hcost : 4 ≤ cost) (idig5 ip5 fr5 fd5 : BitVec 64)
+    (s : State) (c : Nat) (hinv : expRunInv mem0 p n i0 bs (n - i0) s c)
+    (hpart : ExpRunCells idig5 ip5 fr5 fd5 s) (k : Nat) :
+    ∃ (e : State) (j : Nat), j ≤ (n - i0 + 1) * cost ∧ e.pc = "cleanup223.thread" ∧
+      expRunExit e ∧ ExpRunCells idig5 ip5 fr5 fd5 e ∧
+      runFuel calls (j + k) numFastBody s =
+        runFuel calls k numFastBody e := by
+  obtain ⟨e, j, hj, hexit, ⟨hword, hpart'⟩, hrun⟩ :=
+    (expRunEndBoundLoopCells mem0 p n i0 bs cost hcost idig5 ip5 fr5 fd5).run
+      s c ⟨hinv, hpart⟩ k
+  exact ⟨e, j, hj, hexit, hword, hpart', hrun⟩
 
 /-! ### Axiom footprints -/
 
@@ -5336,5 +5609,11 @@ theorem expRun_run (mem0 : Mem) (p n i0 : Nat) (bs : List UInt8) (cost : Nat)
 /-- info: 'LeanLLVM.Refinement.expRun_run' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms expRun_run
+
+#print axioms expRun_step_cells
+#print axioms fracRunEndBoundLoopCells
+#print axioms fracRun_end_run_cells
+#print axioms expRunEndBoundLoopCells
+#print axioms expRun_run_cells
 
 end LeanLLVM.Refinement

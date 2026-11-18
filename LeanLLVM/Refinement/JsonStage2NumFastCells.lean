@@ -26,20 +26,21 @@ cells in hand.  Three facts close it:
   dispatch's sign step does;
 * the integer part's two cells are `if.end68`'s alone
   (`numFast_idig4_written_at_ifEnd68`, `numFast_ip5_written_at_ifEnd68`), so a
-  chain that avoids that block carries the values the fraction run's exit reads
-  (`NumFastChain.intPart`), which is what the merge's `%idig`/`%ip` phis want;
+  step off that block leaves them where it found them
+  (`numFast_step_intPart`) — the per-step fact the fraction run's arms conclude
+  with, which is what the merge's `%idig`/`%ip` phis want;
 * a chain is a `runFuel` prefix (`NumFastChain.runFuel`), so the cell transport
   and the fuel compose without a second statement of the run.
 
-`NumFastChain.carried` is the transport a composite reads: the cells at the
-chain's start, the cells at its end.
-
 **Where it is spent.**  The digit runs' arms conclude the same transport as one
-step's obligation (`numFastStep_cells`): `JsonStage2NumFastDigitRuns`'
+step's obligation (`numFast_step_cells`): `JsonStage2NumFastDigitRuns`'
 `intRun_step_loop`, `intRun_step_exit` and `intRun_step_end230` carry the cells
 their starting state had through one iteration's jumps, and
 `JsonStage2NumFastCellsRun` conjoins them to the loop's invariant and exit word,
-so the integer run's end-of-lexeme exit names the caller's cells.  The dispatch's
+so the integer run's end-of-lexeme exit names the caller's cells.  The fraction
+run's arms conclude the integer part's cells the same way
+(`fracRun_step_loop`/`_exit`/`_end230`, with `numFast_step_intPart`), which is
+what names `%idig.4`/`%ip.5` at the merge past it.  The dispatch's
 sign word is `numFastSignWord`, defined here because the run's start and the
 store's operand both read it.
 
@@ -315,26 +316,6 @@ theorem NumFastChain.sign {calls : Calls} {ok : String → Prop} {sign : BitVec 
   | step hokpc hstep _ ih =>
       exact fun hs => ih (numFast_step_sign (hok _ hokpc) hstep hs)
 
-/-- **The chain's integer part.**  A chain whose steps avoid `if.end68` leaves
-the integer part's two cells where it found them. -/
-theorem NumFastChain.intPart {calls : Calls} {ok : String → Prop}
-    {idig ip : BitVec 64} {s e : State}
-    (hok : ∀ pc, ok pc → pc ≠ "if.end68") :
-    NumFastChain calls ok s e → NumFastIntPart idig ip s → NumFastIntPart idig ip e := by
-  intro h
-  induction h with
-  | refl s => exact id
-  | step hokpc hstep _ ih =>
-      exact fun hs => ih (numFast_step_intPart (hok _ hokpc) hstep hs)
-
-/-- **The chain's cells.**  The transport a composite reads: the cells at the
-chain's start are the cells at its end. -/
-theorem NumFastChain.carried {calls : Calls} {ok : String → Prop} {env0 : Env}
-    {sign : BitVec 1} {s e : State} (h : NumFastChain calls ok s e)
-    (hok : ∀ pc, ok pc → pc ≠ "if.end") (hs : NumFastCarried env0 sign s) :
-    NumFastCarried env0 sign e :=
-  ⟨h.kept hs.1, h.sign hok hs.2⟩
-
 /-- Two chains in sequence. -/
 theorem NumFastChain.append {calls : Calls} {ok : String → Prop} {s m e : State}
     (h1 : NumFastChain calls ok s m) :
@@ -372,10 +353,6 @@ theorem NumFastChain.single {calls : Calls} {ok : String → Prop} {s s' : State
 #guard_msgs in
 #print axioms numFast_step_lookup
 
-/-- info: 'LeanLLVM.Refinement.NumFastChain.carried' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms NumFastChain.carried
-
 /-- info: 'LeanLLVM.Refinement.NumFastChain.kept' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms NumFastChain.kept
@@ -391,10 +368,6 @@ theorem NumFastChain.single {calls : Calls} {ok : String → Prop} {s s' : State
 /-- info: 'LeanLLVM.Refinement.numFast_step_cells' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms numFast_step_cells
-
-/-- info: 'LeanLLVM.Refinement.NumFastChain.intPart' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms NumFastChain.intPart
 
 /-- info: 'LeanLLVM.Refinement.NumFastChain.runFuel' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in

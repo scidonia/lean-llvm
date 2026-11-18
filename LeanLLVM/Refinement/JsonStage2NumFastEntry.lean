@@ -48,9 +48,9 @@ same holds for `fracPartCells`'s two integer cells.  Nothing below claims
 otherwise; the two joins that need those cells state them as their hypotheses.
 `JsonStage2NumFastCarried.t1_chain_run` is that arm at a supplied chain,
 `JsonStage2NumFastCarried.sign_at_ifEnd6` is the dispatch segment that fixes the
-sign, and `JsonStage2NumFastCarried.fracRunEndWord_tie_of_chain` is
+sign, and `JsonStage2NumFastCarried.fracRunEndWord_tie_cells` is
 `fracRunEndWord_tie` with the integer part's two cells carried to the fraction
-run's exit from the state `if.end68` formed them.
+run's exit by the run's own arms.
 
 There is no `sorry`, `admit` or `native_decide` below.
 -/

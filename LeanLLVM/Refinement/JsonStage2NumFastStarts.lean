@@ -1537,6 +1537,8 @@ theorem fracRun_start {calls : Calls} {env : Env} {s : State} {a n : Nat}
     (hltn : i5 + 1 < n) (hfast : n < i5 + 9) (hnlt : n < 2 ^ 63) :
     ∃ e : State,
       fracRunInv s.mem a n (i5 + 1) 0 bs (n - (i5 + 1)) e 0 ∧
+      (∀ (idig ip : BitVec 64),
+        NumFastIntPart idig ip (stateAt env s) → NumFastIntPart idig ip e) ∧
       ∀ k, runFuel calls (6 + k) numFastBody (stateAt env s) =
         runFuel calls k numFastBody e := by
   have hi63 : i5 < 2 ^ 63 := by omega
@@ -1637,6 +1639,13 @@ theorem fracRun_start {calls : Calls} {env : Env} {s : State} {a n : Nat}
       (by
         rw [show min 0 19 = 0 from by decide, digitFold_zero]
         lk_frac),
+    fun idig ip hpart =>
+      numFast_step_intPart (by simp only [stateAt]; decide) h6s
+        (numFast_step_intPart (by simp only [stateAt]; decide) h5s
+          (numFast_step_intPart (by simp only [stateAt]; decide) h4s
+            (numFast_step_intPart (by simp only [stateAt]; decide) h3s
+              (numFast_step_intPart (by simp only [stateAt]; decide) h2s
+                (numFast_step_intPart (by simp only [stateAt]; rw [hpc]; decide) h1s hpart))))),
     fun k => by
       rw [show 6 + k = 1 + (1 + (1 + (1 + (1 + (1 + k))))) from by omega,
         runFuel_jump_prefix h1s, runFuel_jump_prefix h2s, runFuel_jump_prefix h3s,
@@ -1750,6 +1759,9 @@ theorem expRun_start {calls : Calls} {env : Env} {s : State} {a n : Nat}
     (hltn : i11 < n) (hnlt : n < 2 ^ 63) :
     ∃ e : State,
       expRunInv s.mem a n i11 bs (n - i11) e 0 ∧
+      (∀ (idig5 ip5 fr5 fd5 : BitVec 64),
+        ExpRunCells idig5 ip5 fr5 fd5 (stateAt env s) →
+        ExpRunCells idig5 ip5 fr5 fd5 e) ∧
       ∀ k, runFuel calls (1 + k) numFastBody (stateAt env s) =
         runFuel calls k numFastBody e := by
   have hi63 : i11 < 2 ^ 63 := by omega
@@ -1771,6 +1783,8 @@ theorem expRun_start {calls : Calls} {env : Env} {s : State} {a n : Nat}
       (by
         obtain ⟨idig5, ip5, fr5, fd5, h1, h2, h3, h4⟩ := hcarry
         exact ⟨idig5, ip5, fr5, fd5, by lk_exp, by lk_exp, by lk_exp, by lk_exp⟩),
+    fun idig5 ip5 fr5 fd5 hcells =>
+      expRun_step_cells (by simp only [stateAt]; rw [hpc]; decide) h1s hcells,
     fun k => by
       rw [runFuel_jump_prefix h1s k]⟩
 
