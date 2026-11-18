@@ -1932,12 +1932,14 @@ theorem intScan_run {env : Env} {s : State} {a n : Nat}
   have h1 : step calls numFastBody (stateAt env s) =
       .jump (stateAt (numFastEntryEnv env s.next cmp) s1) :=
     entry_step_land (calls := calls) hpc hn hbit0
-  obtain ⟨e0, hinv0, hrun0⟩ :=
+  obtain ⟨e0, hinv0, _, hrun0⟩ :=
     NumFastStarts.intRun_start (calls := calls)
       (env := numFastEntryEnv env s.next cmp) (s := s1)
+      (env0 := numFastEntryEnv env s.next cmp)
       rfl rfl
       (entry_env_lookup_p hp) (entry_env_lookup_n hn)
       hread hsign hbyte hlead hltn hnext hfast hnlt
+      (numFastKept_stateAt _ s1)
   obtain ⟨e1, j1, hj1, _hexitb, hexitw, hrun1⟩ :=
     (intRunBoundLoop s.mem a n (NumFastStarts.negIndex b + 1) 1 bs 4 (by omega)).run_from
       (n - (NumFastStarts.negIndex b + 1)) e0 0 hinv0
@@ -2103,12 +2105,14 @@ theorem intScan_end230 {env : Env} {s : State} {a n : Nat}
   have h1 : step calls numFastBody (stateAt env s) =
       .jump (stateAt (numFastEntryEnv env s.next cmp) s1) :=
     entry_step_land (calls := calls) hpc hn hbit0
-  obtain ⟨e0, hinv0, hrun0⟩ :=
+  obtain ⟨e0, hinv0, _, hrun0⟩ :=
     NumFastStarts.intRun_start (calls := calls)
       (env := numFastEntryEnv env s.next cmp) (s := s1)
+      (env0 := numFastEntryEnv env s.next cmp)
       rfl rfl
       (entry_env_lookup_p hp) (entry_env_lookup_n hn)
       hread hsign hbyte hlead hltn hnext hfast hnlt
+      (numFastKept_stateAt _ s1)
   obtain ⟨e1, j1, hj1, _, hexitw, hrun1⟩ :=
     (intRunEndBoundLoop s.mem a n (NumFastStarts.negIndex b + 1) 1 bs 4 (by omega)
       hdigits).run_from (n - (NumFastStarts.negIndex b + 1)) e0 0 hinv0

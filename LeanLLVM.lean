@@ -88,6 +88,7 @@ import LeanLLVM.Refinement.JsonStage2NumFastArm
 import LeanLLVM.Refinement.JsonStage2NumFastCalls
 import LeanLLVM.Refinement.JsonStage2NumFastCarried
 import LeanLLVM.Refinement.JsonStage2NumFastCells
+import LeanLLVM.Refinement.JsonStage2NumFastCellsRun
 import LeanLLVM.Refinement.JsonStage2NumFastCounters
 import LeanLLVM.Refinement.JsonStage2NumFastDigitRuns
 import LeanLLVM.Refinement.JsonStage2NumFastStarts

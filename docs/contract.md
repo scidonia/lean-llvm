@@ -1382,12 +1382,20 @@ chain as the one input it still takes; and `fracRunEndWord_tie_of_chain` is the 
 spending on `fracPartCells`' two integer cells, which `NumFastChain.intPart`
 carries from the state `if.end68` formed them (`if.end68` is their only writer)
 to the fraction run's exit, so the merge's `%idig`/`%ip` phis are the model's
-from there.  What the tree does not produce is a chain
-*across* the digit run: the runs are `runFuel` prefixes (`intScan_run`,
-`intScan_end230`) and `BoundLoop`'s induction consumes `runFuel` arms, so the
-loop's arms are not in chain form, and a dispatch composition owes that chain.
-The kernel's `w < 2 ^ 64` bound is not the stopper either: it is met at the
-body's own word (`numFast_ifEnd268_domain`).
+from there.  A chain *across* the digit run is still not what the tree
+produces — the runs are `runFuel` prefixes (`intScan_run`, `intScan_end230`) and
+`BoundLoop`'s induction consumes `runFuel` arms — but the cells no longer need
+one.  `JsonStage2NumFastDigitRuns`' arms carry them (`intRun_step_loop`,
+`intRun_step_exit`, `intRun_step_end230`: each one iteration's chain of jumps at
+blocks that are not `if.end`), `JsonStage2NumFastCellsRun` conjoins them to the
+loop's invariant and exit word (`intRunEndBoundLoopCells`), concludes them at the
+run's end-of-lexeme exit (`intScan_end230Cells`) and composes the six-step
+conversion behind them, so `JsonStage2NumFastCellsRun.intScan_t1_arm_at_entry` is
+the arm's conclusion at `entry` on the integer route: it returns `1` and writes
+`strtodSpec`'s eight bytes at `%out`, with the model's ties — the lexeme's bytes
+as `d.ip`, the sign's word as `d.neg`, the two tables' rows — as its hypotheses
+and no cell of the body's.  The kernel's `w < 2 ^ 64` bound is not the stopper
+either: it is met at the body's own word (`numFast_ifEnd268_domain`).
 
 **Tier 3's copy: the nest's exit into the residual loop.**  The four-way unrolled
 nest's visits and the residual loop's induction met at
@@ -1421,10 +1429,11 @@ the mantissa block (`t1_then241_chain_mul`/`_div` are its four steps) and
 `t1_store_run` composes it behind the gate.  What that chain takes as hypotheses
 is the three cells no block on the path writes — `%out`, `%tobool274.not` and the
 two table symbols — because the scan's `runFuel` prefix does not expose the
-environment it leaves; closing them at `entry` is the transport
-`JsonStage2NumFastCells`' `NumFastChain` states, one the scan's run has to be
-read as a chain of steps to use, and `JsonStage2NumFastCarried.t1_chain_run` is
-the same chain spent at a state a caller stages.
+environment it leaves.  They are closed at the run's own exit by
+`JsonStage2NumFastCellsRun` (`intScan_end230Cells` concludes them at `if.end230`,
+and `intScan_t1_arm_at_entry` spends them on the integer route), and
+`JsonStage2NumFastCarried.t1_chain_run` is the same cells spent through a
+caller-supplied chain at a state a caller stages.
 
 The tier-2 gate's value tie is at its own site:
 `JsonStage2NumFastTier2.numFast_ifEnd268_value` reads `if.end268`'s two
@@ -1938,7 +1947,10 @@ route by
 threaded one seam at a time; `numFast_merge_end62_needs_seven` keeps the
 merge's cell requirement on the record).  What the chain still takes as
 hypotheses are the three cells no block on the path writes (`%out`,
-`%tobool274.not`, the two table symbols), which close through
+`%tobool274.not`, the two table symbols).  On the integer route they are no
+longer hypotheses: `JsonStage2NumFastCellsRun.intScan_end230Cells` concludes them
+at the run's end-of-lexeme exit and `intScan_t1_arm_at_entry` is the arm's
+conclusion at `entry` from them.  Elsewhere they close through
 `JsonStage2NumFastCells`' chain transport where the caller supplies the chain:
 `JsonStage2NumFastCarried.t1_chain_run_of_entry` is the conversion stated at
 `entry` with the dispatch produced, `t1_chain_run` its form at a staged state,

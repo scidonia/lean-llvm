@@ -812,7 +812,11 @@ the lexeme's bytes readable, the first byte the sign's own, the `int` part's
 lead a `'1' … '9'`, the length past it and the eight-digit fast path's guard
 refused, the seven dispatch steps reach `land.lhs.true41` with the run's
 invariant at `i0 = negIndex b + 1` and `d0 = 1`: the index after the lead and
-the one digit counted. -/
+the one digit counted.  The state it leaves also carries the cells the
+dispatch crossed: the kept cells are the caller's — the seven steps write none
+of them — and the sign is `if.end`'s own word, `numFastSignWord b`, so a
+composition that starts here holds the cells `NumFastBodyArm` reads at the
+store without re-running the sign check. -/
 theorem intRun_start {calls : Calls} {env : Env} {s : State} {a n : Nat}
     {bs : List UInt8} {b b0 : UInt8}
     (hpc : s.pc = "land.lhs.true") (hpre : s.pre = some "entry")
@@ -823,9 +827,11 @@ theorem intRun_start {calls : Calls} {env : Env} {s : State} {a n : Nat}
     (hbyte : readByte s.mem (a + negIndex b) = some b0)
     (hlead : 0x31 ≤ b0 ∧ b0 ≤ 0x39)
     (hltn : negIndex b < n) (hnext : negIndex b + 1 < n)
-    (hfast : n < negIndex b + 9) (hnlt : n < 2 ^ 63) :
+    (hfast : n < negIndex b + 9) (hnlt : n < 2 ^ 63)
+    {env0 : Env} (hkeep : NumFastKept env0 (stateAt env s)) :
     ∃ e : State,
       intRunInv s.mem a n (negIndex b + 1) 1 bs (n - (negIndex b + 1)) e 0 ∧
+      NumFastCarried env0 (numFastSignWord b) e ∧
       ∀ k, runFuel calls (7 + k) numFastBody (stateAt env s) =
         runFuel calls k numFastBody e := by
   have hng1 : negIndex b ≤ 1 := negIndex_le_one b
@@ -921,7 +927,7 @@ theorem intRun_start {calls : Calls} {env : Env} {s : State} {a n : Nat}
         { s with pc := "land.lhs.true41", pre := some "land.lhs.true41.preheader" }) :=
     intPreheader_step (calls := calls) rfl hd6 hi6' (by lk_all)
   refine ⟨stateAt (intStartEnv env b b0 a n)
-    { s with pc := "land.lhs.true41", pre := some "land.lhs.true41.preheader" }, ?_, ?_⟩
+    { s with pc := "land.lhs.true41", pre := some "land.lhs.true41.preheader" }, ?_, ?_, ?_⟩
   · refine intRunInv_entry rfl rfl rfl (by omega) hnlt (by omega) ?_ ?_ hread
       ?_ ?_ ?_ ?_
     · lk_all
@@ -963,6 +969,14 @@ theorem intRun_start {calls : Calls} {env : Env} {s : State} {a n : Nat}
           digit_and_toNat hdig]
       rw [hval] at hconv
       exact hconv
+  · -- the cells the dispatch carries
+    refine ⟨?_, ?_⟩
+    · exact numFast_step_kept h7s (numFast_step_kept h6s (numFast_step_kept h5s
+        (numFast_step_kept h4s (numFast_step_kept h3s (numFast_step_kept h2s
+          (numFast_step_kept h1s hkeep))))))
+    · show lookupName (intStartEnv env b b0 a n) "%tobool274.not"
+        = some (.int 1 (evalICmp .ne (JsonScanLane.vByte b) 0x2d#8))
+      lk_all
   · intro k
     rw [show 7 + k = 1 + (1 + (1 + (1 + (1 + (1 + (1 + k)))))) from by omega,
       runFuel_jump_prefix h1s, runFuel_jump_prefix h2s, runFuel_jump_prefix h3s,

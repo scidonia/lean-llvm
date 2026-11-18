@@ -353,6 +353,28 @@ as `runFuel` prefixes (`intScan_run`, `intScan_end230`), and `BoundLoop`'s
 induction consumes `runFuel` arms, so the loop's arms are not in chain form.
 That — not the kernel's bound — is what the arm's instance at `entry` waits on.
 
+**The integer route's cells, after the transport.**  The wait above is now
+spent on the integer route.  The digit run's arms carry the cells their starting
+state had (`intRun_step_loop`/`intRun_step_exit`/`intRun_step_end230`, each one
+iteration's chain of jumps at blocks that are not `if.end`),
+`JsonStage2NumFastCellsRun.intRunEndBoundLoopCells` conjoins them to the loop's
+invariant and exit word, `intScan_end230Cells` is `intScan_end230` with them
+concluded at `if.end230`, and `intScan_t1_arm_at_entry` composes the six-step
+conversion behind it: the integer route's arm at `entry`, returning `1` with
+`strtodSpec`'s bytes at `%out`.  Its hypotheses are the model's ties (the
+lexeme's bytes as `d.ip`, its sign as `d.neg`, the two tables' rows) and not a
+cell of the body's.  `intScan_run` and the fast path's appended runs keep their
+old shapes: the arms' cell conclusion is conditional, and its old projection is
+the old statement.
+
+What the arm still waits on is the other two routes and the arithmetic:
+`fracRunInv`/`fracRunEndWord` do not carry the integer part's cells (the
+fraction run leaves `%idig.4`/`%ip.5` where `if.end68` put them, so the
+transport is available there but not yet stated), the exponent route and the
+merge's sign case are as above, and tier 1's arithmetic and tier 3's traversal
+are item 4's.  `intScan_t1_arm_at_entry` is therefore the arm's conclusion on
+the integer route, not `NumFastBodyArm`.
+
 **The kernel's site after the tie.**  `%add244` and `%sub231` are now read as the
 model's `(d.mantissa, eff d)` at `if.end268`:
 `JsonStage2NumFastTier2.numFast_ifEnd268_value` is the guard's decision at the

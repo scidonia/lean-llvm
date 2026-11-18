@@ -34,6 +34,15 @@ cells in hand.  Three facts close it:
 `NumFastChain.carried` is the transport a composite reads: the cells at the
 chain's start, the cells at its end.
 
+**Where it is spent.**  The digit runs' arms conclude the same transport as one
+step's obligation (`numFastStep_cells`): `JsonStage2NumFastDigitRuns`'
+`intRun_step_loop`, `intRun_step_exit` and `intRun_step_end230` carry the cells
+their starting state had through one iteration's jumps, and
+`JsonStage2NumFastCellsRun` conjoins them to the loop's invariant and exit word,
+so the integer run's end-of-lexeme exit names the caller's cells.  The dispatch's
+sign word is `numFastSignWord`, defined here because the run's start and the
+store's operand both read it.
+
 **Superseded.**  `JsonStage2NumFastSign`'s chain carried the sign alone, with
 `if.end` the one block its steps had to avoid; the chain here takes the cells as
 a parameter, so the same induction carries the sign, the three kept cells, or
@@ -43,6 +52,7 @@ the sign carries rather than its transport.
 There is no `sorry`, `admit` or `native_decide` below.
 -/
 import LeanLLVM.Refinement.JsonEntrySteps
+import LeanLLVM.Refinement.JsonScanLane
 import LeanLLVM.Refinement.JsonStage2NumFastScan
 import LeanLLVM.Refinement.LoopFuel
 
@@ -120,6 +130,13 @@ def NumFastKept (env0 : Env) (s : State) : Prop :=
 /-- The sign's cell holds `sign`. -/
 def NumFastSign (sign : BitVec 1) (s : State) : Prop :=
   lookupName s.env "%tobool274.not" = some (.int 1 sign)
+
+/-- The dispatch's sign word: `%cmp1 = (%0 != '-')`, `if.end`'s `phi` and the
+store's operand.  It is the value `if.end` writes, `evalICmp .ne` of the
+lexeme's head byte against `'-'`, so a scan's exit carries it without a reader
+having to re-run the dispatch. -/
+def numFastSignWord (b : UInt8) : BitVec 1 :=
+  evalICmp .ne (JsonScanLane.vByte b) 0x2d#8
 
 /-- The integer part's two cells hold `idig` and `ip`: the count and the
 accumulator `if.end68`'s `phi`s leave, which the fraction run carries and the
@@ -223,6 +240,15 @@ theorem numFast_step_sign {calls : Calls} {s s' : State} {sign : BitVec 1}
   show lookupName s'.env "%tobool274.not" = some (.int 1 sign)
   rw [numFast_step_lookup (n := "%tobool274.not") hs hno]
   exact h
+
+/-- **A step's cells.**  One control step from a block that is not `if.end`
+carries both the kept cells and the sign: the block writes neither, since the
+kept names are nobody's destination and the sign's is `if.end`'s alone. -/
+theorem numFast_step_cells {calls : Calls} {s s' : State} {env0 : Env}
+    {sign : BitVec 1} (hpc : s.pc ≠ "if.end")
+    (hs : LeanLLVM.step calls numFastBody s = .jump s') (h : NumFastCarried env0 sign s) :
+    NumFastCarried env0 sign s' :=
+  ⟨numFast_step_kept hs h.1, numFast_step_sign hpc hs h.2⟩
 
 /-- **A step off `if.end68` preserves the integer part's cells.** -/
 theorem numFast_step_intPart {calls : Calls} {s s' : State} {idig ip : BitVec 64}
@@ -361,6 +387,10 @@ theorem NumFastChain.single {calls : Calls} {ok : String → Prop} {s s' : State
 /-- info: 'LeanLLVM.Refinement.numFast_step_intPart' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms numFast_step_intPart
+
+/-- info: 'LeanLLVM.Refinement.numFast_step_cells' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms numFast_step_cells
 
 /-- info: 'LeanLLVM.Refinement.NumFastChain.intPart' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in

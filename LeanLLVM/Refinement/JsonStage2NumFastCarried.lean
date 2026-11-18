@@ -83,10 +83,6 @@ def numFastDispatchState (env : Env) (s : State) (b : UInt8) (n : Nat) : State :
     { s with next := s.next + 768 + 1568 + 4 + 4 + 8,
              pc := "if.end6", pre := some "if.end" }
 
-/-- The dispatch's sign word. -/
-def numFastSignWord (b : UInt8) : BitVec 1 :=
-  evalICmp .ne (JsonScanLane.vByte b) 0x2d#8
-
 /-- **The sign's three steps.**  From `entry` at a non-empty lexeme, the
 dispatch's test, the sign check and `if.end`'s `phi` run reach `if.end6` in
 three control steps; the state there holds the sign's word,
