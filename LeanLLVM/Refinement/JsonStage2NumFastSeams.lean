@@ -2756,9 +2756,13 @@ takes the fraction dispatch and the run (`land71_fracScan`), and the run's
 non-digit exit lands in the same `if.end144` with the fraction's own cells
 (`fracExit_nest`).  A lexeme whose bytes from the `.` to the end are digits never
 leaves `if.end140`'s end-of-lexeme edge, so the run ends *at the merge*
-(`fracScan_end230`), and `intScan_frac_end230` is that trace from `entry`: the
-sign at position 0, the integer run to the `.`, and the fraction run to
-`if.end230`.
+(`fracScan_end230`, and `fracScan_end230Cells` with the integer part's two cells
+carried from the dispatch's entry).  The trace from `entry` — the sign at
+position 0, the integer run to the `.`, and the fraction run to `if.end230` — is
+not stated here: `JsonStage2NumFastEntry.intScan_to_dot` reaches `land71Entry`
+with `fracPartCells` binding the two cells' names without their values, and the
+values are `t1_headTie`'s at the integer run's exit, so a composition from
+`entry` carries that tie through the dispatch first.
 
 Past the marker's block the exponent is read.  `nest_marker_start` is the marker
 and its optional sign to `lor.lhs.false180` with `%i.11` and `%esign.0`,
@@ -2956,10 +2960,9 @@ theorem fracScan_end230Cells {calls : Calls} {mem : Mem} {e : State} {a n i1 : N
   have hpart0 : NumFastIntPart idig ip (stateAt e.env e) := by
     simpa only [stateAt] using hpart
   have hpart1 : NumFastIntPart idig ip e0 := hcell0 idig ip hpart0
-  obtain ⟨e1, j1, hj1, _, ⟨hend, hpart2⟩, hrun1⟩ :=
-    BoundLoop.run_from
-      (fracRunEndBoundLoopCells e.mem a n (i1 + 1) 0 bs 4 (by omega) hdigits idig ip)
-      (n - (i1 + 1)) e0 0 ⟨hinv0, hpart1⟩
+  obtain ⟨e1, j1, hj1, _, hend, hpart2, hrun1⟩ :=
+    (fracRunEndFrameCells e.mem a n (i1 + 1) 0 bs 4 (by omega) hdigits idig ip).run_from
+      (n - (i1 + 1)) e0 0 hinv0 hpart1
   refine ⟨e1, 6 + j1, Nat.add_le_add_left hj1 6, hend, hpart2, ?_⟩
   intro k
   rw [show 6 + j1 + k = 6 + (j1 + k) from by omega]
@@ -3011,7 +3014,7 @@ theorem nest_marker_start {e : State} {a n i10 : Nat} {b1 b2 : UInt8}
       block_lk
     by_cases hsign : b2 = 0x2b ∨ b2 = 0x2d
     · have hread2 : readByte e.mem (a + (i10 + 1)) = some b2 := hread2
-      obtain ⟨e', hpc', hmem', hp2, hn2, hi11, hes, hrun6⟩ :=
+      obtain ⟨e', hpc', hmem', hp2, hn2, hi11, hes, _hc, hrun6⟩ :=
         NumFastScanRun.nestFrom157_sign (calls := calls) (env := env1)
           (s := { e with pc := "if.then157", pre := some "LeafBlock1" })
           rfl hp' hi' hn' hnlt (by omega) hread2 hsign
@@ -3021,7 +3024,7 @@ theorem nest_marker_start {e : State} {a n i10 : Nat} {b1 b2 : UInt8}
       exact (hrun3 (6 + k)).trans (hrun6 k)
     · have hnosign : b2 ≠ 0x2b ∧ b2 ≠ 0x2d :=
         ⟨fun h => hsign (Or.inl h), fun h => hsign (Or.inr h)⟩
-      obtain ⟨e', hpc', hmem', hp2, hn2, hi11, hes, hrun5⟩ :=
+      obtain ⟨e', hpc', hmem', hp2, hn2, hi11, hes, _hc, hrun5⟩ :=
         NumFastScanRun.nestFrom157_nosign (calls := calls) (env := env1)
           (s := { e with pc := "if.then157", pre := some "LeafBlock1" })
           rfl hp' hi' hn' hnlt (by omega) hread2 hnosign
@@ -3049,7 +3052,7 @@ theorem nest_marker_start {e : State} {a n i10 : Nat} {b1 b2 : UInt8}
         NumFastScanRun.t147Env]
       block_lk
     by_cases hsign : b2 = 0x2b ∨ b2 = 0x2d
-    · obtain ⟨e', hpc', hmem', hp2, hn2, hi11, hes, hrun6⟩ :=
+    · obtain ⟨e', hpc', hmem', hp2, hn2, hi11, hes, _hc, hrun6⟩ :=
         NumFastScanRun.nestFrom157_sign (calls := calls) (env := env1)
           (s := { e with pc := "if.then157", pre := some "LeafBlock" })
           rfl hp' hi' hn' hnlt (by omega) hread2 hsign
@@ -3059,7 +3062,7 @@ theorem nest_marker_start {e : State} {a n i10 : Nat} {b1 b2 : UInt8}
       exact (hrun3 (6 + k)).trans (hrun6 k)
     · have hnosign : b2 ≠ 0x2b ∧ b2 ≠ 0x2d :=
         ⟨fun h => hsign (Or.inl h), fun h => hsign (Or.inr h)⟩
-      obtain ⟨e', hpc', hmem', hp2, hn2, hi11, hes, hrun5⟩ :=
+      obtain ⟨e', hpc', hmem', hp2, hn2, hi11, hes, _hc, hrun5⟩ :=
         NumFastScanRun.nestFrom157_nosign (calls := calls) (env := env1)
           (s := { e with pc := "if.then157", pre := some "LeafBlock" })
           rfl hp' hi' hn' hnlt (by omega) hread2 hnosign

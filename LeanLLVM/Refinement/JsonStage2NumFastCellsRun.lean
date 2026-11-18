@@ -19,7 +19,11 @@ This module spends that transport on the integer route.
 **The loop with the cells.**  `intRunEndBoundLoopCells` is `intRunEndBoundLoop`'s
 `BoundLoop` with the cells conjoined to the invariant and to the exit word, so
 `run_from` hands back both the end-of-lexeme exit word and the cells at it, and
-the fuel stays an identity of prefixes.  Nothing about `intRunInv`'s own shape
+the fuel stays an identity of prefixes.  The conjunction is the framing rule's
+(`LoopFuel`'s `BoundLoopFrame`): the loop, a caller property, and each arm's
+endpoint transport, projected to a `BoundLoop` — the measure, the cost and the
+`(N + 1) * cost` bound are the loop's, and no arm of the loop is restated.
+Nothing about `intRunInv`'s own shape
 changes: the scan's other users (`intScan_run`, the fast path's appended runs)
 keep the invariant they were stated at, because the arms' cell conclusion is
 conditional on the starting state's cells and its old projection is the old
@@ -99,42 +103,38 @@ arm hands back the cells its iteration carried, and the end-of-lexeme exit hands
 back the ones its starting state had, because the exit's blocks are not
 `if.end`. -/
 
-/-- **The integer run's end-of-lexeme loop, with the caller's cells.** -/
+/-- **The integer run's end-of-lexeme loop, framed with the caller's cells.**  The
+loop is `intRunEndBoundLoop`; the caller property is `NumFastCarried env0 sign`,
+and each arm hands it back at its own endpoint — the digit run's arms'
+conditional transport, spent at the state they leave.  The measure, the cost and
+the `(N + 1) * cost` bound are the loop's. -/
+def intRunEndBoundLoopFrame (calls : Calls) (mem0 : Mem) (p n i0 d0 : Nat)
+    (bs : List UInt8) (cost : Nat) (hcost : 4 ≤ cost)
+    (hdigits : ∀ k, i0 ≤ k → k < n → IsDigitB (bs.getD k 0) = true)
+    (env0 : Env) (sign : BitVec 1) : BoundLoopFrame calls numFastBody where
+  loop := intRunEndBoundLoop mem0 p n i0 d0 bs cost hcost hdigits
+  P := NumFastCarried env0 sign
+  step_exit := by
+    intro r s c hinv hb
+    obtain ⟨e, j, hj, hword, hcarried, hrun⟩ := intRun_step_end230 hinv hb hdigits
+    have hjc : j ≤ cost := by omega
+    exact ⟨e, j, hjc, hword.1, hword, hcarried env0 sign, hrun⟩
+  step_loop := by
+    intro r s c hinv hb
+    obtain ⟨e, c', j, hj, hpc, hlt, hinv', hcarried, hrun⟩ := intRun_step_loop hinv hb
+    have hjc : j ≤ cost := by omega
+    exact ⟨e, c', j, hjc, hpc, hlt, hinv', hcarried env0 sign, hrun⟩
+
+/-- **The integer run's end-of-lexeme loop, with the caller's cells.**  The
+conjoined `BoundLoop` the frame describes: `NumFastCarried` is in the invariant
+and in the exit word, so `run_from` hands back both the exit word and the cells
+at it, and the fuel stays an identity of prefixes.  Its arms are the frame's,
+projected. -/
 def intRunEndBoundLoopCells (calls : Calls) (mem0 : Mem) (p n i0 d0 : Nat)
     (bs : List UInt8) (cost : Nat) (hcost : 4 ≤ cost)
     (hdigits : ∀ k, i0 ≤ k → k < n → IsDigitB (bs.getD k 0) = true)
-    (env0 : Env) (sign : BitVec 1) : BoundLoop calls numFastBody where
-  head := "land.lhs.true41"
-  exitBlock := "if.end230"
-  N := n - i0
-  cost := cost
-  Inv := fun r s c => intRunInv mem0 p n i0 d0 bs r s c ∧ NumFastCarried env0 sign s
-  atBound := intRunAtBound mem0 p n i0
-  Exit := fun e => e.pc = "if.end230"
-  ExitWord := fun e => intRunEndWord mem0 bs p n i0 d0 e ∧ NumFastCarried env0 sign e
-  step_exit := by
-    intro r s c hinv hb
-    obtain ⟨hinv, hcells⟩ := hinv
-    obtain ⟨e, j, hj, hword, hcarried, hrun⟩ := intRun_step_end230 hinv hb hdigits
-    exact ⟨e, j, by omega, hword.1, ⟨hword, hcarried env0 sign hcells⟩, hrun⟩
-  step_loop := by
-    intro r s c hinv hb
-    obtain ⟨hinv, hcells⟩ := hinv
-    obtain ⟨e, c', j, hj, hpc, hlt, hinv', hcarried, hrun⟩ := intRun_step_loop hinv hb
-    exact ⟨e, c', j, by omega, hpc, hlt, ⟨hinv', hcarried env0 sign hcells⟩, hrun⟩
-  exit_at_zero := by
-    intro s c h
-    obtain ⟨hinv, _⟩ := h
-    obtain ⟨_, _, hsum, _, _, _, _, _, _, _, _⟩ := hinv
-    unfold intRunAtBound
-    have hle : decide (n - i0 ≤ c + 1) = true := decide_eq_true (by omega)
-    rw [hle]
-    simp
-  budget := by
-    intro r s c h
-    obtain ⟨hinv, _⟩ := h
-    obtain ⟨_, _, hsum, _, _, _, _, _, _, _, _⟩ := hinv
-    omega
+    (env0 : Env) (sign : BitVec 1) : BoundLoop calls numFastBody :=
+  (intRunEndBoundLoopFrame calls mem0 p n i0 d0 bs cost hcost hdigits env0 sign).toBoundLoop
 
 /-- **The scan's end-of-lexeme exit, with the caller's cells.**  `entry`'s step,
 the dispatch's seven and the digit run at the whole distance leave
@@ -285,6 +285,10 @@ theorem intScan_t1_arm_at_entry {calls : Calls} {env : Env} {s : State} {a n : N
 /-- info: 'LeanLLVM.Refinement.numFastEntryEnv_kept' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms numFastEntryEnv_kept
+
+/-- info: 'LeanLLVM.Refinement.intRunEndBoundLoopFrame' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms intRunEndBoundLoopFrame
 
 /-- info: 'LeanLLVM.Refinement.intRunEndBoundLoopCells' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

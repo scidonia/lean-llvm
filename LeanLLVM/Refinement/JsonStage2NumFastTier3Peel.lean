@@ -30,8 +30,17 @@ staging at the next index; that is the whole of the memory the loop writes, and
 followed by the loop at its whole bound, so the region past the poison edge is
 one `runFuel` chain from the peel's entry to the epilogue's exit, at the trip
 count the peel's residue supplies.
+
+**One more cell at the consumer.**  The arms also expose the `Path` their one
+step takes (`t3PeelLoopPath`), so a consumer can ask for a fact the exit word
+does not name.  `t3PeelLoop_run_out` does that for `%out`: the store past this
+region reads it, no block of the body writes it (`t3_out_unwritten`, a `decide`
+over the pinned body), and the path frame carries it to the exit.  That proof is
+local — the new fact and its write-set check — and the visit's arms, `T3PeelInv`
+and `BoundLoop.run_from` are unchanged.
 -/
 import LeanLLVM.Refinement.JsonStage2NumFastTier3CopyLoop
+import LeanLLVM.Refinement.PathTransport
 
 set_option autoImplicit false
 set_option maxRecDepth 12000
@@ -237,15 +246,16 @@ theorem row_shift {m : Mem} {addr : Nat} {bs : List UInt8} {iv j : Nat}
 The back edge spends one step and advances the counter, the index and the carried
 sum; the exit arm spends one step and leaves the three cells the truncation block
 reads.  Each arm builds the successor invariant field by field, so a mismatch
-names the cell it is about. -/
+names the cell it is about, and hands back the counted `Path` its step takes with
+the endpoint, so a consumer can transport a fact of its own there
+(`t3PeelLoopPath`). -/
 theorem t3_peel_step_loop (addr N xt : Nat) :
     ∀ (r : Nat) (s : State) (c : Nat), T3PeelInv addr N xt (r + 1) s c →
       t3PeelAtBound xt s c = false →
-      ∃ (e : State) (c' : Nat) (j : Nat), j ≤ 1 ∧
+      ∃ (e : State) (c' : Nat) (p : Path s2HelperCalls numFastBody (fun _ => True) s e),
+        p.length ≤ 1 ∧
         e.pc = "for.body.i.i566.i.i.epil" ∧ c < c' ∧
-        T3PeelInv addr N xt r e c' ∧
-        ∀ k, runFuel s2HelperCalls (j + k) numFastBody s =
-          runFuel s2HelperCalls k numFastBody e := by
+        T3PeelInv addr N xt r e c' := by
   intro r s c hinv hb
   obtain ⟨hpc, hp, hxt, hN, hxt63, ⟨iv, carryB, row, hivN, hrow, hpre⟩, hsum, hr1⟩ := hinv
   unfold t3PeelAtBound at hb
@@ -329,12 +339,11 @@ theorem t3_peel_step_loop (addr N xt : Nat) :
       block_lk
       exact congrArg (fun x : BitVec 64 => some (Value.int 64 x))
         (ofNat64_add_one (j := 0) (by omega))
-    refine ⟨_, 1, 1, le_rfl, rfl, by omega,
+    refine ⟨_, 1, Path.single trivial hstep, le_rfl, rfl, by omega,
       ⟨rfl, hpow', hxt', hN, hxt63,
         ⟨iv + 1, t3EpilSum (row (iv + 0)) carryB >>> (0x00000000000000000000000000000040#128).toNat,
           row, hivN', hrows', Or.inr ⟨rfl, hivNext, hcarryNext, hiterNext⟩⟩,
-        by omega, by omega⟩, ?_⟩
-    · intro k; exact runFuel_jump_prefix hstep k
+        by omega, by omega⟩⟩
   · obtain ⟨hpre0, hivCell, hcarryCell, hiterCell⟩ := hback
     have hden := t3_epil_denote_self (calls := s2HelperCalls) (env := s.env) (s := s)
       (addr := addr) (w := row (iv + 0)) (iv := BitVec.ofNat 64 iv)
@@ -391,19 +400,17 @@ theorem t3_peel_step_loop (addr N xt : Nat) :
       block_lk
       exact congrArg (fun x : BitVec 64 => some (Value.int 64 x))
         (ofNat64_add_one (j := c) hc64)
-    refine ⟨_, c + 1, 1, le_rfl, rfl, by omega,
+    refine ⟨_, c + 1, Path.single trivial hstep, le_rfl, rfl, by omega,
       ⟨rfl, hpow', hxt', hN, hxt63,
         ⟨iv + 1, t3EpilSum (row (iv + 0)) carryB >>> (0x00000000000000000000000000000040#128).toNat,
           row, hivN', hrows', Or.inr ⟨rfl, hivNext, hcarryNext, hiterNext⟩⟩,
-        by omega, by omega⟩, ?_⟩
-    · intro k; exact runFuel_jump_prefix hstep k
+        by omega, by omega⟩⟩
 
 theorem t3_peel_step_exit (addr N xt : Nat) :
     ∀ (r : Nat) (s : State) (c : Nat), T3PeelInv addr N xt r s c →
       t3PeelAtBound xt s c = true →
-      ∃ (e : State) (j : Nat), j ≤ 1 ∧ t3PeelExit e ∧ t3PeelExitWord addr xt e ∧
-        ∀ k, runFuel s2HelperCalls (j + k) numFastBody s =
-          runFuel s2HelperCalls k numFastBody e := by
+      ∃ (e : State) (p : Path s2HelperCalls numFastBody (fun _ => True) s e),
+        p.length ≤ 1 ∧ t3PeelExit e ∧ t3PeelExitWord addr xt e := by
   intro r s c hinv hb
   obtain ⟨hpc, hp, hxt, hN, hxt63, ⟨iv, carryB, row, hivN, hrow, hpre⟩, hsum, hr1⟩ := hinv
   unfold t3PeelAtBound at hb
@@ -432,12 +439,11 @@ theorem t3_peel_step_exit (addr N xt : Nat) :
     have hstep := t3_epil_step_lcssa (calls := s2HelperCalls) (env := s.env) (s := s)
       (addr := addr) (w := row (iv + 0)) (iv := BitVec.ofNat 64 iv) (carry := carryB)
       (iter := (0x0#64)) (xt := BitVec.ofNat 64 xt) hpc hden hbit
-    refine ⟨t3EpilState s.env addr (row (iv + 0)) (BitVec.ofNat 64 iv) carryB (0x0#64) (BitVec.ofNat 64 xt) { s with pc := "while.cond.preheader.i.i577.i.i.epilog-lcssa", pre := some "for.body.i.i566.i.i.epil" }, 1, le_rfl, rfl, ?_, ?_⟩
+    refine ⟨t3EpilState s.env addr (row (iv + 0)) (BitVec.ofNat 64 iv) carryB (0x0#64) (BitVec.ofNat 64 xt) { s with pc := "while.cond.preheader.i.i577.i.i.epilog-lcssa", pre := some "for.body.i.i566.i.i.epil" }, Path.single trivial hstep, le_rfl, rfl, ?_⟩
     · exact ⟨by simp only [t3EpilState, stateAt]; exact t3EpilEnv_pow addr _ _ _ _ _ hp,
         by simp only [t3EpilState, stateAt]; exact t3EpilEnv_xt addr _ _ _ _ _ hxt,
         by simp only [t3EpilState, stateAt]
            exact ⟨_, t3EpilEnv_shrNext _ _ _ _ _ _ _⟩⟩
-    · intro k; exact runFuel_jump_prefix hstep k
   · obtain ⟨hpre0, hivCell, hcarryCell, hiterCell⟩ := hback
     have hden := t3_epil_denote_self (calls := s2HelperCalls) (env := s.env) (s := s)
       (addr := addr) (w := row (iv + 0)) (iv := BitVec.ofNat 64 iv)
@@ -446,12 +452,11 @@ theorem t3_peel_step_exit (addr N xt : Nat) :
     have hstep := t3_epil_step_lcssa (calls := s2HelperCalls) (env := s.env) (s := s)
       (addr := addr) (w := row (iv + 0)) (iv := BitVec.ofNat 64 iv) (carry := carryB)
       (iter := BitVec.ofNat 64 c) (xt := BitVec.ofNat 64 xt) hpc hden hbit
-    refine ⟨t3EpilState s.env addr (row (iv + 0)) (BitVec.ofNat 64 iv) carryB (BitVec.ofNat 64 c) (BitVec.ofNat 64 xt) { s with pc := "while.cond.preheader.i.i577.i.i.epilog-lcssa", pre := some "for.body.i.i566.i.i.epil" }, 1, le_rfl, rfl, ?_, ?_⟩
+    refine ⟨t3EpilState s.env addr (row (iv + 0)) (BitVec.ofNat 64 iv) carryB (BitVec.ofNat 64 c) (BitVec.ofNat 64 xt) { s with pc := "while.cond.preheader.i.i577.i.i.epilog-lcssa", pre := some "for.body.i.i566.i.i.epil" }, Path.single trivial hstep, le_rfl, rfl, ?_⟩
     · exact ⟨by simp only [t3EpilState, stateAt]; exact t3EpilEnv_pow addr _ _ _ _ _ hp,
         by simp only [t3EpilState, stateAt]; exact t3EpilEnv_xt addr _ _ _ _ _ hxt,
         by simp only [t3EpilState, stateAt]
            exact ⟨_, t3EpilEnv_shrNext _ _ _ _ _ _ _⟩⟩
-    · intro k; exact runFuel_jump_prefix hstep k
 
 /-! ### The epilogue's loop
 
@@ -469,11 +474,12 @@ def t3PeelLoop (addr N xt : Nat) : BoundLoop s2HelperCalls numFastBody where
   ExitWord := t3PeelExitWord addr xt
   step_exit := by
     intro r s c hinv hb
-    obtain ⟨e, j, hj, hexit, hword, hrun⟩ := t3_peel_step_exit addr N xt r s c hinv hb
-    exact ⟨e, j, hj, hexit, hword, hrun⟩
+    obtain ⟨e, p, hl, hexit, hword⟩ := t3_peel_step_exit addr N xt r s c hinv hb
+    exact ⟨e, p.length, hl, hexit, hword, p.runFuel⟩
   step_loop := by
     intro r s c hinv hb
-    exact t3_peel_step_loop addr N xt r s c hinv hb
+    obtain ⟨e, c', p, hl, hpc, hlt, hinv'⟩ := t3_peel_step_loop addr N xt r s c hinv hb
+    exact ⟨e, c', p.length, hl, hpc, hlt, hinv', p.runFuel⟩
   exit_at_zero := by
     intro s c h
     obtain ⟨-, -, -, -, -, -, -, hr1⟩ := h
@@ -496,6 +502,48 @@ theorem t3PeelLoop_run (addr N xt : Nat) (s : State) (k : Nat)
   have h' : (t3PeelLoop addr N xt).Inv (t3PeelLoop addr N xt).N s 0 := by
     simpa only [t3PeelLoop] using h
   simpa only [t3PeelLoop] using (t3PeelLoop addr N xt).run s 0 h' k
+
+/-- **The epilogue's loop with its arms' paths.**  The same loop, with the two
+one-step arms exposing the `Path` they take: a consumer transports a fact of its
+own along them instead of reopening the visit's proof, and `toFrame` spends one
+per-step rule at the loop's own measure, cost and bound. -/
+def t3PeelLoopPath (addr N xt : Nat) :
+    BoundLoopPathFrame s2HelperCalls numFastBody where
+  loop := t3PeelLoop addr N xt
+  ok := fun _ => True
+  step_exit := by
+    intro r s c hinv hb
+    obtain ⟨e, p, hl, hexit, hword⟩ := t3_peel_step_exit addr N xt r s c hinv hb
+    exact ⟨e, p, hl, hexit, hword⟩
+  step_loop := by
+    intro r s c hinv hb
+    obtain ⟨e, c', p, hl, hpc, hlt, hinv'⟩ := t3_peel_step_loop addr N xt r s c hinv hb
+    exact ⟨e, c', p, hl, hpc, hlt, hinv'⟩
+
+/-- **`%out` is nobody's destination.**  The write-set check the new consumer
+needs, read off the pinned body. -/
+theorem t3_out_unwritten : UnwrittenBy numFastBody "%out" := by decide
+
+/-- **One more live cell at the consumer.**  The store past this region reads
+`%out`, and no block writes it, so the epilogue's visits carry the caller's
+pointer to the exit.  The proof is the write-set check above and the arm's path;
+`T3PeelInv`, the visit's two arms and `BoundLoop.run_from` are untouched. -/
+theorem t3PeelLoop_run_out (addr N xt : Nat) (s : State) (k : Nat) {out : Nat}
+    (h : T3PeelInv addr N xt xt s 0)
+    (hout : lookupName s.env "%out" = some (.ptr out)) :
+    ∃ (e : State) (j : Nat), j ≤ (xt + 1) * 1 ∧ t3PeelExit e ∧
+      t3PeelExitWord addr xt e ∧ lookupName e.env "%out" = some (.ptr out) ∧
+      runFuel s2HelperCalls (j + k) numFastBody s =
+        runFuel s2HelperCalls k numFastBody e := by
+  have h' : (t3PeelLoopPath addr N xt).loop.Inv (t3PeelLoopPath addr N xt).loop.N s 0 := by
+    simpa only [t3PeelLoopPath, t3PeelLoop] using h
+  obtain ⟨e, j, hj, hexit, hword, hP, hrun⟩ :=
+    ((t3PeelLoopPath addr N xt).toFrame
+        (fun t => lookupName t.env "%out" = some (.ptr out))
+        (fun a b _ hs hP =>
+          (step_lookupName hs (fun bl hb _ => t3_out_unwritten bl hb)).trans hP)).run
+      s 0 h' hout k
+  exact ⟨e, j, hj, hexit, hword, hP, hrun⟩
 
 /-- `%xtraiter1083` at a peeled count below four is the count itself: the residue
 `%wide.trip.count & 3` does not mask a value the width already holds. -/
@@ -573,6 +621,18 @@ theorem t3_traversal_peel_run {env : Env} {s : State} {c : BitVec 32} {addr N : 
 /-- info: 'LeanLLVM.Refinement.NumFastTier3Peel.t3PeelLoop_run' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms t3PeelLoop_run
+
+/-- info: 'LeanLLVM.Refinement.NumFastTier3Peel.t3PeelLoopPath' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms t3PeelLoopPath
+
+/-- info: 'LeanLLVM.Refinement.NumFastTier3Peel.t3_out_unwritten' does not depend on any axioms -/
+#guard_msgs in
+#print axioms t3_out_unwritten
+
+/-- info: 'LeanLLVM.Refinement.NumFastTier3Peel.t3PeelLoop_run_out' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms t3PeelLoop_run_out
 
 /-- info: 'LeanLLVM.Refinement.NumFastTier3Peel.t3_traversal_peel_run' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

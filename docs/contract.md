@@ -1283,7 +1283,11 @@ digit at `negIndex b`, so the dispatch fixes `i0 = negIndex b + 1` and `d0 = 1`)
 and `JsonStage2NumFastSeams.intScan_merge` appends the merge block's own step:
 `if.then241` with the folded integer part, its digit count and the fraction's and
 exponent's cells zero, within `9 + (n - i0 + 1) * 4` control steps.  The fraction
-and exponent routes are still threaded one seam at a time, and the decimal point
+and exponent routes are one trace each now (`JsonStage2NumFastGate`):
+`t1_fracEnd230_run` is the fraction run's end-of-lexeme exit through the gate and
+`t1_then241_store_run` to the return, and `nest_expRun_run` is the marker's block
+through the nest and the exponent run to `cleanup223.thread` with the four cells
+and the stop word.  The decimal point
 is not read on the route above because the lexeme ends at the integer part.
 Two pieces of
 the run are now supplies rather than obligations.  The eight-digit fast path's
@@ -1355,6 +1359,30 @@ integer part's two cells as its hypotheses because `fracPartCells` binds
 `%idig.4`/`%ip.5` without their values; `fracRunEndWord_tie_cells` is the same
 tie with those two supplied by the run's own arms.
 
+**The fraction edge's conversion as a chain.**  A single step's conclusion is an
+existential state, so `t1_fracRun_tie`'s reading cannot be continued by a block's
+chain: the environment it leaves is not a term a caller can rewrite.
+`JsonStage2NumFastGate.t1_fracEnd230_run` is the same edge with the gate's step,
+`t1_then241_store_run`'s four and `cleanup300`'s return as one `runFuel` chain of
+six control steps: from the fraction run's end-of-lexeme exit word, with the
+integer part's two cells the model's and no exponent, it reaches the returned
+value with `strtodSpec`'s eight bytes at `%out` and every byte outside the two
+slots as it was.  `%out`, `%tobool274.not` and the two table symbols are read at
+the state the caller stages, exactly as `t1_end230_run`'s are, because no block
+on the route writes them; the fraction run's own exit word is the gate's
+predecessor and its four counters, and `t1_fracRun_tie`'s bit tests are re-derived
+from the model's digit count.
+
+**What the two chains leave.**  The exponent exit's word names the four cells and
+the stop index, not the cursor or the length: `expRunExit` carries neither `%p`
+nor `%n`, so `expExit_merge`'s `hn`, and its `hacc` — the accumulator's reading
+as the exponent digits' `expAcc`, which no invariant in the tree states — remain
+that seam's hypotheses.  On the fraction side the chain starts at the run's exit
+word, and `fracRunEndWord` binds the memory not at all: a composition from
+`entry` reads the staged tables at the entry state and has to carry the exit's
+memory and the dispatch's two integer cells (`fracPartCells`' values, which
+`t1_headTie` and the integer run supply) to `if.end230` itself.
+
 **Where the composition stops, and why it is not a seam.**  `%out`,
 `%tobool274.not` and the two table symbols are the caller's cells, and no block on
 these routes writes them.  A `runFuel` prefix does not expose the environments it
@@ -1385,8 +1413,8 @@ chain as the one input it still takes.  The fraction edge's two integer cells no
 longer need a chain either: `fracRunEndWord_tie_cells` is the same spending on
 `fracPartCells`' two cells, which the fraction run's own arms carry — no block of
 the run writes `%idig.4`/`%ip.5`, so `fracRun_step_loop`/`_exit`/`_end230`
-conclude `NumFastIntPart` and `fracRunEndBoundLoopCells` conjoins it to the
-loop's invariant and exit word — so the merge's `%idig`/`%ip` phis are the
+conclude `NumFastIntPart` and `fracRunEndFrameCells` lifts it through the loop as
+`BoundLoopFrame`'s caller property — so the merge's `%idig`/`%ip` phis are the
 model's from the state `if.end68` formed the cells at.  A chain *across* the
 digit run is still not what the tree
 produces — the runs are `runFuel` prefixes (`intScan_run`, `intScan_end230`) and
@@ -1622,7 +1650,9 @@ pieces this round added are pinned the same way: `t3_peel_exit_tie` and
 Where a
 module header still reads that a route is threaded one seam at a time, this
 ledger is the current statement: the fraction and exponent routes to the merge
-are threaded, and the fast paths are composed from their dispatch's edges.
+are threaded, the fraction route's conversion is `JsonStage2NumFastGate`'s
+`t1_fracEnd230_run` and the exponent's nest→run chain its `nest_expRun_run`, and
+the fast paths are composed from their dispatch's edges.
 
 The conversion's arithmetic is not in question, and the relation's number
 clause is discharged at the model.  No theorem here uses `sorry`, `admit` or
@@ -1952,8 +1982,9 @@ arm, the store and the return, six control steps, with `intRunEndWord` now
 carrying the run's memory), and the scan reaches that exit on the integer part's
 route by
 `JsonStage2NumFastScanRun.intScan_end230` and
-`JsonStage2NumFastSeams.intScan_merge` (the fraction and exponent routes are
-threaded one seam at a time; `numFast_merge_end62_needs_seven` keeps the
+`JsonStage2NumFastSeams.intScan_merge` (the fraction route's conversion is
+`JsonStage2NumFastGate.t1_fracEnd230_run` and the exponent's nest→run chain its
+`nest_expRun_run`; `numFast_merge_end62_needs_seven` keeps the
 merge's cell requirement on the record).  What the chain still takes as
 hypotheses are the three cells no block on the path writes (`%out`,
 `%tobool274.not`, the two table symbols).  On the integer route they are no

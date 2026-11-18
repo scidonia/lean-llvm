@@ -44,8 +44,11 @@ cannot re-read them at the run's exit: they
 are read at the state the caller stages
 (`JsonStage2NumFastRun.t1_end230_run`'s hypotheses) or carried through a
 `NumFastChain` (`JsonStage2NumFastCells`), which a caller has to supply.  The
-same holds for `fracPartCells`'s two integer cells.  Nothing below claims
-otherwise; the two joins that need those cells state them as their hypotheses.
+integer part's two cells are not in that set: no block of the fraction run writes
+them, so the run's arms carry them and
+`JsonStage2NumFastSeams.fracScan_end230Cells` hands them back at `if.end230`.
+Nothing below claims otherwise; the join that reads those cells at `if.end230`
+states them as its hypotheses.
 `JsonStage2NumFastCarried.t1_chain_run` is that arm at a supplied chain,
 `JsonStage2NumFastCarried.sign_at_ifEnd6` is the dispatch segment that fixes the
 sign, and `JsonStage2NumFastCarried.fracRunEndWord_tie_cells` is

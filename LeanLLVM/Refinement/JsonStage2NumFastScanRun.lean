@@ -1128,7 +1128,9 @@ shapes are the two lemmas: without a sign the merge takes `%inc158` and
 sign's own comparison, `%22 != 0x2d`. -/
 
 /-- **No exponent sign.**  From `if.then157`, five steps reach
-`lor.lhs.false180` with `%i.11 = %i.10 + 1` and `%esign.0 = 1`. -/
+`lor.lhs.false180` with `%i.11 = %i.10 + 1` and `%esign.0 = 1`.  None of the
+blocks the path crosses writes the four cells `if.end230`'s `phi`s read, so the
+endpoint carries them (`ExpRunCells`) from the state the argument names. -/
 theorem nestFrom157_nosign {calls : Calls} {env : Env} {s : State} {a i10 n : Nat}
     {b2 : UInt8}
     (hpc : s.pc = "if.then157")
@@ -1143,6 +1145,9 @@ theorem nestFrom157_nosign {calls : Calls} {env : Env} {s : State} {a i10 n : Na
       lookupName e.env "%n" = some (.int 64 (BitVec.ofNat 64 n)) ∧
       lookupName e.env "%i.11" = some (.int 64 (BitVec.ofNat 64 (i10 + 1))) ∧
       lookupName e.env "%esign.0" = some (.int 1 1) ∧
+      (∀ (idig5 ip5 fr5 fd5 : BitVec 64),
+        ExpRunCells idig5 ip5 fr5 fd5 (stateAt env s) →
+          ExpRunCells idig5 ip5 fr5 fd5 e) ∧
       ∀ k, runFuel calls (5 + k) numFastBody (stateAt env s) =
         runFuel calls k numFastBody e := by
   have h4 : step calls numFastBody (stateAt env s) =
@@ -1218,7 +1223,7 @@ theorem nestFrom157_nosign {calls : Calls} {env : Env} {s : State} {a i10 n : Na
       rw [show 5 + k = 1 + (1 + (1 + (1 + (1 + k)))) from by omega,
         runFuel_jump_prefix h4, runFuel_jump_prefix h5, runFuel_jump_prefix h6,
         runFuel_jump_prefix h7, runFuel_jump_prefix h8]
-    refine ⟨eF, rfl, rfl, ?_, ?_, ?_, ?_, huniv⟩
+    refine ⟨eF, rfl, rfl, ?_, ?_, ?_, ?_, ?_, huniv⟩
     · simp only [eF, end177Env, leafBlock3Env, nodeBlock7Env, t161Env, then157Env]
       first
        | (simp only [stateAt]; block_lk)
@@ -1230,6 +1235,14 @@ theorem nestFrom157_nosign {calls : Calls} {env : Env} {s : State} {a i10 n : Na
     · rw [ofNat64_add_one (by omega)] at hi11
       exact hi11
     · simp only [eF, end177Env]; block_lk
+    · intro idig5 ip5 fr5 fd5 hcells
+      obtain ⟨h1, h2, h3, h4⟩ := hcells
+      refine ⟨?_, ?_, ?_, ?_⟩
+      all_goals
+        simp only [eF, end177Env, leafBlock3Env, nodeBlock7Env, t161Env, then157Env]
+        first
+         | (simp only [stateAt]; block_lk)
+         | block_lk
   · -- `LeafBlock5`, whose `'-'` equality fails
     have hpiv0 : evalICmp .slt (JsonScanLane.vByte b2) 0x2d#8 = 0 := by
       rcases bitVec1_eq_zero_or_one (evalICmp .slt (JsonScanLane.vByte b2) 0x2d#8) with h | h
@@ -1292,7 +1305,7 @@ theorem nestFrom157_nosign {calls : Calls} {env : Env} {s : State} {a i10 n : Na
       rw [show 5 + k = 1 + (1 + (1 + (1 + (1 + k)))) from by omega,
         runFuel_jump_prefix h4, runFuel_jump_prefix h5, runFuel_jump_prefix h6,
         runFuel_jump_prefix h7, runFuel_jump_prefix h8]
-    refine ⟨eF, rfl, rfl, ?_, ?_, ?_, ?_, huniv⟩
+    refine ⟨eF, rfl, rfl, ?_, ?_, ?_, ?_, ?_, huniv⟩
     · simp only [eF, end177Env, leafBlock5Env, nodeBlock7Env, t161Env, then157Env]
       first
        | (simp only [stateAt]; block_lk)
@@ -1304,10 +1317,19 @@ theorem nestFrom157_nosign {calls : Calls} {env : Env} {s : State} {a i10 n : Na
     · rw [ofNat64_add_one (by omega)] at hi11
       exact hi11
     · simp only [eF, end177Env]; block_lk
+    · intro idig5 ip5 fr5 fd5 hcells
+      obtain ⟨h1, h2, h3, h4⟩ := hcells
+      refine ⟨?_, ?_, ?_, ?_⟩
+      all_goals
+        simp only [eF, end177Env, leafBlock5Env, nodeBlock7Env, t161Env, then157Env]
+        first
+         | (simp only [stateAt]; block_lk)
+         | block_lk
 
 /-- **With an exponent sign.**  The sign's byte is `'+'` or `'-'`, six steps
 reach `lor.lhs.false180` with `%i.11 = %i.10 + 2` and `%esign.0` the sign's
-comparison `%22 != 0x2d` — one for `'+'` and zero for `'-'`. -/
+comparison `%22 != 0x2d` — one for `'+'` and zero for `'-'`.  The four cells
+`if.end230`'s `phi`s read survive the path as they do without a sign. -/
 theorem nestFrom157_sign {calls : Calls} {env : Env} {s : State} {a i10 n : Nat}
     {b2 : UInt8}
     (hpc : s.pc = "if.then157")
@@ -1323,6 +1345,9 @@ theorem nestFrom157_sign {calls : Calls} {env : Env} {s : State} {a i10 n : Nat}
       lookupName e.env "%i.11" = some (.int 64 (BitVec.ofNat 64 (i10 + 2))) ∧
       lookupName e.env "%esign.0"
         = some (.int 1 (evalICmp .ne (JsonScanLane.vByte b2) 0x2d#8)) ∧
+      (∀ (idig5 ip5 fr5 fd5 : BitVec 64),
+        ExpRunCells idig5 ip5 fr5 fd5 (stateAt env s) →
+          ExpRunCells idig5 ip5 fr5 fd5 e) ∧
       ∀ k, runFuel calls (6 + k) numFastBody (stateAt env s) =
         runFuel calls k numFastBody e := by
   let nv : BitVec 64 := BitVec.ofNat 64 n
@@ -1414,7 +1439,7 @@ theorem nestFrom157_sign {calls : Calls} {env : Env} {s : State} {a i10 n : Nat}
       rw [show 6 + k = 1 + (1 + (1 + (1 + (1 + (1 + k))))) from by omega,
         runFuel_jump_prefix h4, runFuel_jump_prefix h5, runFuel_jump_prefix h6,
         runFuel_jump_prefix h7, runFuel_jump_prefix h8, runFuel_jump_prefix h9]
-    refine ⟨eF, rfl, rfl, ?_, ?_, ?_, ?_, huniv⟩
+    refine ⟨eF, rfl, rfl, ?_, ?_, ?_, ?_, ?_, huniv⟩
     · simp only [eF, end177Env, then171Env, leafBlock3Env, nodeBlock7Env, t161Env, then157Env]
       first
        | (simp only [stateAt]; block_lk)
@@ -1426,6 +1451,14 @@ theorem nestFrom157_sign {calls : Calls} {env : Env} {s : State} {a i10 n : Nat}
     · rw [NumFastStarts.ofNat64_add_const (by omega)] at hi11
       exact hi11
     · simp only [eF, end177Env]; block_lk
+    · intro idig5 ip5 fr5 fd5 hcells
+      obtain ⟨h1, h2, h3, h4⟩ := hcells
+      refine ⟨?_, ?_, ?_, ?_⟩
+      all_goals
+        simp only [eF, end177Env, then171Env, leafBlock3Env, nodeBlock7Env, t161Env, then157Env]
+        first
+         | (simp only [stateAt]; block_lk)
+         | block_lk
   · -- the `'-'` leaf: `NodeBlock7` pivots to `LeafBlock5`
     have h6 : step calls numFastBody
         (stateAt (t161Env (then157Env env i10 nv) a i10 0x2d)
@@ -1499,7 +1532,7 @@ theorem nestFrom157_sign {calls : Calls} {env : Env} {s : State} {a i10 n : Nat}
       rw [show 6 + k = 1 + (1 + (1 + (1 + (1 + (1 + k))))) from by omega,
         runFuel_jump_prefix h4, runFuel_jump_prefix h5, runFuel_jump_prefix h6,
         runFuel_jump_prefix h7, runFuel_jump_prefix h8, runFuel_jump_prefix h9]
-    refine ⟨eF, rfl, rfl, ?_, ?_, ?_, ?_, huniv⟩
+    refine ⟨eF, rfl, rfl, ?_, ?_, ?_, ?_, ?_, huniv⟩
     · simp only [eF, end177Env, then171Env, leafBlock5Env, nodeBlock7Env, t161Env, then157Env]
       first
        | (simp only [stateAt]; block_lk)
@@ -1511,6 +1544,14 @@ theorem nestFrom157_sign {calls : Calls} {env : Env} {s : State} {a i10 n : Nat}
     · rw [NumFastStarts.ofNat64_add_const (by omega)] at hi11
       exact hi11
     · simp only [eF, end177Env]; block_lk
+    · intro idig5 ip5 fr5 fd5 hcells
+      obtain ⟨h1, h2, h3, h4⟩ := hcells
+      refine ⟨?_, ?_, ?_, ?_⟩
+      all_goals
+        simp only [eF, end177Env, then171Env, leafBlock5Env, nodeBlock7Env, t161Env, then157Env]
+        first
+         | (simp only [stateAt]; block_lk)
+         | block_lk
 
 /-! ### The merge: `cleanup223.thread`, `if.end226`, `if.end230`
 

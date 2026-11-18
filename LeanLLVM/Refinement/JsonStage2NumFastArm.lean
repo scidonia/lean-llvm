@@ -373,15 +373,16 @@ conclusion is now an arm conclusion on both remaining routes.  The fraction run'
 arms carry the integer part's cells the merge reads
 (`fracRun_step_loop`/`_exit`/`_end230` concluding `NumFastIntPart`, with
 `numFast_step_intPart` as the per-step fact), `fracRun_start`'s six dispatch steps
-carry them from the `.` test, `fracRunEndBoundLoopCells` conjoins them to the
-loop's invariant and exit word, `JsonStage2NumFastSeams.fracScan_end230Cells`
+carry them from the `.` test, `fracRunEndFrameCells` lifts them through
+`fracRunEndBoundLoop` as `BoundLoopFrame`'s caller property,
+`JsonStage2NumFastSeams.fracScan_end230Cells`
 composes the dispatch and the run, and `fracRunEndWord_tie_cells` reads the
 merge's five registers off that exit.  The exponent run's four cells
 (`%idig.4`, `%ip.5`, `%fr.5`, `%fdig.4`) are an arm conclusion the same way:
 `ExpRunCells` is their value form, `expRun_step_cells` is the step (the run's
 blocks write none of them, `decide`d over the pinned body),
 `expRun_step_loop`/`_exit` conclude it, `expRun_start` carries it in, and
-`expRunEndBoundLoopCells`/`expRun_run_cells` hand it back at
+`expRunEndFrameCells`/`expRun_run_cells` hand it back at
 `cleanup223.thread`.  The merge's sign case at `if.end226` is stated on those
 terms: `JsonStage2NumFastSeams.expSelect_tie` is the block's select in both
 polarities (`if %esign.0 = 1 then %exp10 else 0 - %exp10` as

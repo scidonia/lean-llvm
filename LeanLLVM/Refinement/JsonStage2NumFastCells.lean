@@ -44,6 +44,15 @@ what names `%idig.4`/`%ip.5` at the merge past it.  The dispatch's
 sign word is `numFastSignWord`, defined here because the run's start and the
 store's operand both read it.
 
+**The generic form.**  The counted form of the same chain is `LoopFuel`'s `Path`,
+generalised over the function with its count as `Path.length`.  A path at the
+pinned body is handed to this module's users by `NumFastChain.ofPath`, and the
+step's write-set fact is `PathTransport.step_lookupName` at `numFastBody`, which
+is `numFast_step_lookup`.  A caller that wants its own fact at a loop's exit,
+rather than a chain's end states, states it with `LoopFuel`'s `BoundLoopFrame`,
+whose two arms conclude the property at their own endpoint
+(`JsonStage2NumFastCellsRun`).
+
 **Superseded.**  `JsonStage2NumFastSign`'s chain carried the sign alone, with
 `if.end` the one block its steps had to avoid; the chain here takes the cells as
 a parameter, so the same induction carries the sign, the three kept cells, or
@@ -56,6 +65,7 @@ import LeanLLVM.Refinement.JsonEntrySteps
 import LeanLLVM.Refinement.JsonScanLane
 import LeanLLVM.Refinement.JsonStage2NumFastScan
 import LeanLLVM.Refinement.LoopFuel
+import LeanLLVM.Refinement.PathTransport
 
 set_option autoImplicit false
 set_option maxRecDepth 20000
@@ -73,13 +83,13 @@ address, and the two tables the tier-1 expression loads. -/
 def numFastKept : List String := ["%out", "@NUMF_EL1_P10", "@NUMF_EL1_POW10"]
 
 /-- `n` is a name no block of the body writes.  `abbrev`, so the `decide`s below
-elaborate against the body rather than against the definition's name. -/
-abbrev NumFastUnwritten (n : String) : Prop :=
-  ∀ b ∈ numFastBody.blocks, ∀ i ∈ b.instrs, i.dst? ≠ some n
+elaborate against the body rather than against the definition's name.  The
+reading is `PathTransport`'s `UnwrittenBy`, stated once over the function. -/
+abbrev NumFastUnwritten (n : String) : Prop := UnwrittenBy numFastBody n
 
-/-- `n` is written only by the block named `pc`. -/
-abbrev NumFastWrittenOnlyAt (n pc : String) : Prop :=
-  ∀ b ∈ numFastBody.blocks, b.name ≠ pc → ∀ i ∈ b.instrs, i.dst? ≠ some n
+/-- `n` is written only by the block named `pc`.  `PathTransport`'s
+`WrittenOnlyAt`, at the pinned body. -/
+abbrev NumFastWrittenOnlyAt (n pc : String) : Prop := WrittenOnlyAt numFastBody n pc
 
 /-- **`%out` is nobody's destination.**  Closed, so `decide` reads it off the
 pinned body. -/
@@ -155,68 +165,20 @@ theorem numFastKept_stateAt (env0 : Env) (s : State) :
     NumFastKept env0 (stateAt env0 s) :=
   fun _ _ => rfl
 
-/-! ### One step -/
+/-! ### One step
 
-/-- A terminator leaves the environment alone: `execTerm` moves the program
-counter and nothing else, or the block is `ub`. -/
-theorem execTerm_env {s s' : State} {tm : Term} (h : execTerm s tm = .jump s') :
-    s'.env = s.env := by
-  cases tm with
-  | br d => simp only [execTerm] at h; cases h; rfl
-  | condbr c t f =>
-      simp only [execTerm] at h
-      split at h
-      · split at h
-        · cases h; rfl
-        · split at h
-          · cases h; rfl
-          · cases h
-      · cases h
-  | ret ty v =>
-      cases v with
-      | none => cases ty <;> (simp only [execTerm] at h; cases h)
-      | some o =>
-          cases ty with
-          | void => simp only [execTerm] at h; cases h
-          | int w => simp only [execTerm] at h; split at h <;> cases h
-          | ptr => simp only [execTerm] at h; split at h <;> cases h
-          | vec n e => simp only [execTerm] at h; split at h <;> cases h
-          | array n e => simp only [execTerm] at h; split at h <;> cases h
-          | struct n b => simp only [execTerm] at h; split at h <;> cases h
-          | double => simp only [execTerm] at h; split at h <;> cases h
-  | unreachable => simp only [execTerm] at h; cases h
+The two facts a step needs are `PathTransport`'s: the terminator leaves the
+environment alone (`execTerm_env`) and a block that writes none of `n` leaves it
+(`step_lookupName`).  Both are stated there once over the function; the body's
+step is their instance at `numFastBody`. -/
 
-/-- A block found by name is named that name. -/
-theorem findBlockList_name {bs : List Block} {n : String} {b : Block}
-    (h : findBlockList bs n = some b) : b.name = n := by
-  induction bs with
-  | nil => simp [findBlockList] at h
-  | cons b' rest ih =>
-      simp only [findBlockList] at h
-      split at h
-      · next hb => cases h; exact hb
-      · exact ih h
-
-/-- **A step's non-interference.**  A block that writes none of `n`'s cells is a
-`denoteCode` that leaves `n` where it was, and the terminator changes only the
-program counter. -/
+/-- **A step's non-interference.**  `PathTransport.step_lookupName` at the pinned
+body. -/
 theorem numFast_step_lookup {calls : Calls} {s s' : State} {n : String}
     (hs : step calls numFastBody s = .jump s')
     (hno : ∀ b ∈ numFastBody.blocks, b.name = s.pc → ∀ i ∈ b.instrs, i.dst? ≠ some n) :
-    lookupName s'.env n = lookupName s.env n := by
-  cases hf : numFastBody.findBlock s.pc with
-  | none => rw [step, hf] at hs; cases hs
-  | some b =>
-      simp only [step, hf] at hs
-      have hname : b.name = s.pc := findBlockList_name hf
-      have hmem : b ∈ numFastBody.blocks := findBlockList_mem hf
-      cases hd : denoteCode calls b.instrs s with
-      | none => simp only [hd] at hs; cases hs
-      | some s1 =>
-          simp only [hd] at hs
-          rw [execTerm_env hs]
-          exact JsonEntrySteps.denoteCode_lookupName calls b.instrs n
-            (hno b hmem hname) s s1 hd
+    lookupName s'.env n = lookupName s.env n :=
+  step_lookupName hs hno
 
 /-- **A step preserves the kept cells.**  No block writes them, so the step's own
 block does, and the counter fact is `decide`d over the body. -/
@@ -281,6 +243,16 @@ inductive NumFastChain (calls : Calls) (ok : String → Prop) : State → State 
   | step {s s' e : State} (hok : ok s.pc)
       (hs : LeanLLVM.step calls numFastBody s = .jump s')
       (ht : NumFastChain calls ok s' e) : NumFastChain calls ok s e
+
+/-- **A path's chain.**  `Path` is the counted form of a chain.  At a fixed
+function and filter the chain is the `Prop` a region's older users take, so a
+caller holding the path hands them one; the chain's own consequences below then
+follow. -/
+def NumFastChain.ofPath {calls : Calls} {ok : String → Prop} {s e : State}
+    (h : Path calls numFastBody ok s e) : NumFastChain calls ok s e :=
+  match h with
+  | .nil _ => .refl _
+  | .step hok hs rest => .step hok hs (NumFastChain.ofPath rest)
 
 /-- **The chain's fuel.**  A chain of `j` steps is a `runFuel` prefix: the run
 from the head at `j + k` is the run from the tail at `k`. -/

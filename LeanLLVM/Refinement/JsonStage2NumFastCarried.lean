@@ -32,7 +32,7 @@ chain whose blocks avoid `if.end`.
 spending on the other stopper: the integer part's two cells, which
 `fracRunEndWord` binds by name only (`fracPartCells`), are named at the state
 `if.end68` formed them and carried to the fraction run's exit by the run's own
-arms (`JsonStage2NumFastDigitRuns.fracRunEndBoundLoopCells`), so the merge's five
+arms (`JsonStage2NumFastDigitRuns.fracRunEndFrameCells`), so the merge's five
 registers are the model's from the run's start rather than from two lookups at
 the exit.
 
@@ -311,14 +311,15 @@ theorem t1_chain_run_of_entry {calls : Calls} {env : Env} {s : State} {d : Decim
 end-of-lexeme exit.  Two of them are the integer part's cells, which the exit
 word binds by name only (`fracPartCells`); the two values are named at the
 state `if.end68` formed them and carried to the exit by the run's own arms
-(`fracRunEndBoundLoopCells`), so the merge's five registers are the model's from
-the run's start rather than from two lookups at the exit. -/
+(`JsonStage2NumFastDigitRuns.fracRunEndFrameCells`), so the merge's five
+registers are the model's from the run's start rather than from two lookups at
+the exit. -/
 
 /-- **The fraction edge from the run's start.**  Given the integer part's two
 cells at the state the fraction run was entered at — the state `if.end68` left —
 and the run's end-of-lexeme exit word, the merge takes `if.then241` with its five
 registers as the model's.  The cells are the run's own: no block of it writes
-them, so `fracRunEndBoundLoopCells` hands them back at the exit. -/
+them, so the run's arms hand them back at the exit. -/
 theorem fracRunEndWord_tie_cells {calls : Calls} {d : Decimal}
     {bs : List UInt8} {fs : Bytes} {a n i0 d0 : Nat} {e : State}
     (hpc : e.pc = "if.end230")

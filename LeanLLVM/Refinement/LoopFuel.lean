@@ -363,6 +363,277 @@ theorem runFuel_jump_prefix {calls : Calls} {f : Function} {s s' : State}
   rw [show 1 + k = k + 1 from by omega]
   simp only [runFuel, h]
 
+/-! ### A counted path
+
+A region's proof usually ends in a `runFuel` identity: the run from here is the
+run from there at a smaller fuel.  That identity is all a completed outcome
+needs, but it says nothing about the states the run crossed, so a caller that
+wants a register's value, a frame, or any other fact at the far end cannot get it
+from the identity however much fuel it is given.
+
+`Path` is the same witness with the loop taken off.  It is a chain of admitted
+control steps of one function, with a filter `ok` on the blocks it may visit, and
+its **count** (`Path.length`) is the number of steps it takes.  Its consequences
+are the three a caller is missing:
+
+* composition (`Path.append`), with the counts adding (`Path.length_append`);
+* the continuation fuel equation (`Path.runFuel`) — the run from the path's start
+  at `length + k` is the run from its end at `k`;
+* transport (`Path.transport`) — any property each admitted step preserves holds
+  at the end.
+
+The fuel equation and the transport end at the **same** state, so a caller can
+spend both on one exit: the run's prefix and the fact it wants to read there.
+
+The filter is what keeps the domain narrow.  A property written by one block, such
+as a sign the dispatch's `if.end` leaves, is preserved by a path that avoids that
+block, and `Path.lookupNameOutside` turns that reading into a register transport
+without a per-instance induction. -/
+inductive Path (calls : Calls) (f : Function) (ok : String → Prop) :
+    State → State → Type where
+  /-- The empty path: the same state at both ends. -/
+  | nil (s : State) : Path calls f ok s s
+  /-- One admitted jump, then the rest of the path. -/
+  | step {s s' e : State} (hok : ok s.pc)
+      (hstep : LeanLLVM.step calls f s = .jump s') (rest : Path calls f ok s' e) :
+      Path calls f ok s e
+
+namespace Path
+
+/-- **The count.**  The number of control steps the path takes. -/
+def length {calls : Calls} {f : Function} {ok : String → Prop} {s e : State}
+    (h : Path calls f ok s e) : Nat :=
+  match h with
+  | .nil _ => 0
+  | .step _ _ rest => length rest + 1
+
+/-- **Composition.**  Two paths in sequence, and the counts add. -/
+def append {calls : Calls} {f : Function} {ok : String → Prop} {s m e : State}
+    (h1 : Path calls f ok s m) (h2 : Path calls f ok m e) : Path calls f ok s e :=
+  match h1 with
+  | .nil _ => h2
+  | .step hok hstep rest => .step hok hstep (append rest h2)
+
+/-- **Composition's count.**  `Path.append` adds the two counts. -/
+theorem length_append {calls : Calls} {f : Function} {ok : String → Prop}
+    {s m e : State} (h1 : Path calls f ok s m) (h2 : Path calls f ok m e) :
+    (append h1 h2).length = h1.length + h2.length := by
+  induction h1 with
+  | nil => simp [append, length]
+  | step hok hstep rest ih =>
+      simp only [append, length]
+      rw [ih]
+      omega
+
+/-- **The continuation fuel equation.**  A path of `length` steps is a `runFuel`
+prefix: the run from the path's start at `length + k` is the run from its end at
+`k`. -/
+theorem runFuel {calls : Calls} {f : Function} {ok : String → Prop}
+    {s e : State} (h : Path calls f ok s e) (k : Nat) :
+    runFuel calls (h.length + k) f s = runFuel calls k f e := by
+  induction h with
+  | nil => simp only [length, Nat.zero_add]
+  | step hok hstep rest ih =>
+      have hl : (Path.step hok hstep rest).length = rest.length + 1 := rfl
+      rw [hl, show rest.length + 1 + k = 1 + (rest.length + k) from by omega,
+        runFuel_jump_prefix hstep (rest.length + k)]
+      exact ih
+
+/-- **Transport.**  A property every admitted step preserves holds at the path's
+end whenever it holds at its start.  The transport and `Path.runFuel` name the
+same end state, so a caller composes them. -/
+theorem transport {calls : Calls} {f : Function} {ok : String → Prop} {P : State → Prop}
+    (hstep : ∀ (s s' : State), ok s.pc → LeanLLVM.step calls f s = .jump s' → P s → P s')
+    {s e : State} (h : Path calls f ok s e) (hP : P s) : P e := by
+  induction h with
+  | nil => exact hP
+  | step hok hs _ ih => exact ih (hstep _ _ hok hs hP)
+
+/-- **One step's path.**  A single admitted jump is a path of count one. -/
+def single {calls : Calls} {f : Function} {ok : String → Prop} {s s' : State}
+    (hok : ok s.pc) (hstep : LeanLLVM.step calls f s = .jump s') :
+    Path calls f ok s s' :=
+  .step hok hstep (.nil s')
+
+end Path
+
+/-! ### Framing a bounded loop
+
+`BoundLoop` states a loop's exit facts at exactly the invariant and exit word its
+instance chose.  A caller that needs a fact of its own at the exit cannot conjoin
+it afterwards: an arm's conclusion is `∃ e j, j ≤ cost ∧ ... ∧ fuel`, which does
+not expose the states the iteration crossed, so no projection recovers the fact
+at the endpoint.  The arm has to hand it back.
+
+`BoundLoopFrame` is that companion rule.  It is the same loop — same measure,
+same `cost`, same `(N + 1) * cost` bound — with a caller property `P` and the two
+arms restated to conclude `P` at their own endpoint, from `P` at the head.  The
+rule's conclusions are `loop.Inv r s c ∧ P s` at the head and
+`loop.ExitWord e ∧ P e` at the exit, and `toBoundLoop` is the conjoined
+`BoundLoop` they describe, so every existing `BoundLoop` lemma applies to it.
+`step_exit`/`step_loop` of the conjoined loop are projections of the framed arms,
+which is why no existing user of `BoundLoop` has to change: the plain loop is
+still the plain loop.
+
+An arm may instead expose a counted `Path`, which is stronger than one endpoint
+transport: `BoundLoopPathFrame` takes the paths, derives the plain loop's fuel
+identities with `Path.runFuel`, and `toFrame` transports a caller property along
+the path with a per-step rule.  That is what makes a second preserved register a
+local edit at the consumer — a new `toFrame` at the same arms and the
+write-set check the transport needs — rather than a second arm proof. -/
+structure BoundLoopFrame (calls : Calls) (f : Function) where
+  /-- The loop the frame frames.  Its measure, cost, bound and exit are the
+  frame's own. -/
+  loop : BoundLoop calls f
+  /-- The caller's property. -/
+  P : State → Prop
+  /-- The exit arm, with `P` at its endpoint. -/
+  step_exit : ∀ (r : Nat) (s : State) (c : Nat), loop.Inv r s c → loop.atBound s c = true →
+    ∃ (e : State) (j : Nat), j ≤ loop.cost ∧ loop.Exit e ∧ loop.ExitWord e ∧
+      (P s → P e) ∧
+      ∀ k, runFuel calls (j + k) f s = runFuel calls k f e
+  /-- The back edge, with `P` at its endpoint. -/
+  step_loop : ∀ (r : Nat) (s : State) (c : Nat), loop.Inv (r + 1) s c →
+    loop.atBound s c = false →
+    ∃ (e : State) (c' : Nat) (j : Nat), j ≤ loop.cost ∧ e.pc = loop.head ∧ c < c' ∧
+      loop.Inv r e c' ∧ (P s → P e) ∧
+      ∀ k, runFuel calls (j + k) f s = runFuel calls k f e
+
+namespace BoundLoopFrame
+
+/-- **The conjoined loop.**  The same loop with `P` in its invariant and its exit
+word: `Inv r s c ∧ P s` at the head, `ExitWord e ∧ P e` at the exit, and the arms
+projected from the framed ones.  The measure, the cost and the bound are the
+loop's. -/
+def toBoundLoop {calls : Calls} {f : Function} (F : BoundLoopFrame calls f) :
+    BoundLoop calls f where
+  head := F.loop.head
+  exitBlock := F.loop.exitBlock
+  N := F.loop.N
+  cost := F.loop.cost
+  Inv := fun r s c => F.loop.Inv r s c ∧ F.P s
+  atBound := F.loop.atBound
+  Exit := F.loop.Exit
+  ExitWord := fun e => F.loop.ExitWord e ∧ F.P e
+  step_exit := by
+    intro r s c h hb
+    obtain ⟨e, j, hj, hexit, hword, hP, hrun⟩ := F.step_exit r s c h.1 hb
+    exact ⟨e, j, hj, hexit, ⟨hword, hP h.2⟩, hrun⟩
+  step_loop := by
+    intro r s c h hb
+    obtain ⟨e, c', j, hj, hpc, hlt, hinv, hP, hrun⟩ := F.step_loop r s c h.1 hb
+    exact ⟨e, c', j, hj, hpc, hlt, ⟨hinv, hP h.2⟩, hrun⟩
+  exit_at_zero := fun s c h => F.loop.exit_at_zero s c h.1
+  budget := fun r s c h => F.loop.budget r s c h.1
+
+/-- **The framed induction.**  From `loop.Inv r s c` and `P s`, the run reaches
+an exit state — one `loop.Exit` admits — within `(r + 1) * cost` control steps,
+carrying `loop.ExitWord` and `P`, with the same continuation fuel equation the
+unframed induction gives. -/
+theorem run_from {calls : Calls} {f : Function} (F : BoundLoopFrame calls f) :
+    ∀ (r : Nat) (s : State) (c : Nat), F.loop.Inv r s c → F.P s →
+      ∃ (e : State) (j : Nat), j ≤ (r + 1) * F.loop.cost ∧ F.loop.Exit e ∧
+        F.loop.ExitWord e ∧ F.P e ∧
+        ∀ k, runFuel calls (j + k) f s = runFuel calls k f e
+  | r, s, c, h, hp => by
+      obtain ⟨e, j, hj, hexit, ⟨hword, hP⟩, hrun⟩ :=
+        F.toBoundLoop.run_from r s c ⟨h, hp⟩
+      exact ⟨e, j, hj, hexit, hword, hP, hrun⟩
+
+/-- **The framed loop from its head.**  At the whole bound as its budget, the run
+reaches the exit within `(N + 1) * cost` control steps, carrying the exit word and
+the caller's property. -/
+theorem run {calls : Calls} {f : Function} (F : BoundLoopFrame calls f)
+    (s : State) (c : Nat) (h : F.loop.Inv F.loop.N s c) (hp : F.P s) (k : Nat) :
+    ∃ (e : State) (j : Nat), j ≤ (F.loop.N + 1) * F.loop.cost ∧ F.loop.Exit e ∧
+      F.loop.ExitWord e ∧ F.P e ∧
+      runFuel calls (j + k) f s = runFuel calls k f e := by
+  obtain ⟨e, j, hj, hexit, hword, hP, hrun⟩ := F.run_from F.loop.N s c h hp
+  exact ⟨e, j, hj, hexit, hword, hP, hrun k⟩
+
+/-- **A budget at the bound, with the caller's property.**  A completed
+continuation from an exit state that carries `P` gives a completed outcome from
+the loop's head at `(N + 1) * cost + k`: the caller reads its property at the
+exit and spends it there, without the induction knowing what it is. -/
+theorem run_at {calls : Calls} {f : Function} (F : BoundLoopFrame calls f)
+    (s : State) (c : Nat) (h : F.loop.Inv F.loop.N s c) (hp : F.P s) (k : Nat)
+    {o : Outcome}
+    (hcont : ∀ (e : State), F.loop.Exit e → F.loop.ExitWord e → F.P e →
+      runFuel calls k f e = some o) :
+    runFuel calls ((F.loop.N + 1) * F.loop.cost + k) f s = some o := by
+  obtain ⟨e, j, hj, hexit, hword, hp', hrun⟩ := F.run s c h hp k
+  have hone : runFuel calls (j + k) f s = some o := by
+    rw [hrun]
+    exact hcont e hexit hword hp'
+  exact runFuel_mono_le (by omega) hone
+
+end BoundLoopFrame
+
+/-- **A loop whose arms expose their paths.**  The arms hand back a counted
+`Path` instead of a bare fuel identity, so the loop's fuel identities are
+projections (`Path.runFuel`) and any property a step preserves can be transported
+to the endpoint.  `toFrame` spends that on one caller property; a second property
+is another `toFrame` at the same arms. -/
+structure BoundLoopPathFrame (calls : Calls) (f : Function) where
+  /-- The loop the frame frames. -/
+  loop : BoundLoop calls f
+  /-- The blocks the arms' paths are admitted to visit. -/
+  ok : String → Prop
+  /-- The exit arm: one path to the endpoint, at most `cost` steps. -/
+  step_exit : ∀ (r : Nat) (s : State) (c : Nat), loop.Inv r s c → loop.atBound s c = true →
+    ∃ (e : State) (p : Path calls f ok s e), p.length ≤ loop.cost ∧
+      loop.Exit e ∧ loop.ExitWord e
+  /-- The back edge: one path to the next head, at most `cost` steps. -/
+  step_loop : ∀ (r : Nat) (s : State) (c : Nat), loop.Inv (r + 1) s c →
+    loop.atBound s c = false →
+    ∃ (e : State) (c' : Nat) (p : Path calls f ok s e), p.length ≤ loop.cost ∧
+      e.pc = loop.head ∧ c < c' ∧ loop.Inv r e c'
+
+namespace BoundLoopPathFrame
+
+/-- The loop, with the arms' fuel identities projected from their paths. -/
+def toBoundLoop {calls : Calls} {f : Function} (F : BoundLoopPathFrame calls f) :
+    BoundLoop calls f where
+  head := F.loop.head
+  exitBlock := F.loop.exitBlock
+  N := F.loop.N
+  cost := F.loop.cost
+  Inv := F.loop.Inv
+  atBound := F.loop.atBound
+  Exit := F.loop.Exit
+  ExitWord := F.loop.ExitWord
+  step_exit := by
+    intro r s c h hb
+    obtain ⟨e, p, hl, hexit, hword⟩ := F.step_exit r s c h hb
+    exact ⟨e, p.length, hl, hexit, hword, p.runFuel⟩
+  step_loop := by
+    intro r s c h hb
+    obtain ⟨e, c', p, hl, hpc, hlt, hinv⟩ := F.step_loop r s c h hb
+    exact ⟨e, c', p.length, hl, hpc, hlt, hinv, p.runFuel⟩
+  exit_at_zero := F.loop.exit_at_zero
+  budget := F.loop.budget
+
+/-- **The framed loop from the paths.**  One per-step preservation rule — the
+property holds after any admitted jump — and the paths give the caller property
+at every endpoint; `BoundLoopFrame` then carries it through the induction. -/
+def toFrame {calls : Calls} {f : Function} (F : BoundLoopPathFrame calls f)
+    (P : State → Prop)
+    (hstep : ∀ (s s' : State), F.ok s.pc → LeanLLVM.step calls f s = .jump s' → P s → P s') :
+    BoundLoopFrame calls f where
+  loop := F.toBoundLoop
+  P := P
+  step_exit := by
+    intro r s c h hb
+    obtain ⟨e, p, hl, hexit, hword⟩ := F.step_exit r s c h hb
+    exact ⟨e, p.length, hl, hexit, hword, fun hP => Path.transport hstep p hP, p.runFuel⟩
+  step_loop := by
+    intro r s c h hb
+    obtain ⟨e, c', p, hl, hpc, hlt, hinv⟩ := F.step_loop r s c h hb
+    exact ⟨e, c', p.length, hl, hpc, hlt, hinv,
+      fun hP => Path.transport hstep p hP, p.runFuel⟩
+
+end BoundLoopPathFrame
+
 /-! ### Axiom footprints -/
 
 /-- info: 'LeanLLVM.Refinement.iter' does not depend on any axioms -/
@@ -396,5 +667,41 @@ theorem runFuel_jump_prefix {calls : Calls} {f : Function} {s s' : State}
 /-- info: 'LeanLLVM.Refinement.runFuel_jump_prefix' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms runFuel_jump_prefix
+
+/-- info: 'LeanLLVM.Refinement.Path.append' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Path.append
+
+/-- info: 'LeanLLVM.Refinement.Path.runFuel' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Path.runFuel
+
+/-- info: 'LeanLLVM.Refinement.Path.transport' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Path.transport
+
+/-- info: 'LeanLLVM.Refinement.BoundLoopFrame.toBoundLoop' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms BoundLoopFrame.toBoundLoop
+
+/-- info: 'LeanLLVM.Refinement.BoundLoopFrame.run_from' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms BoundLoopFrame.run_from
+
+/-- info: 'LeanLLVM.Refinement.BoundLoopFrame.run' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms BoundLoopFrame.run
+
+/-- info: 'LeanLLVM.Refinement.BoundLoopFrame.run_at' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms BoundLoopFrame.run_at
+
+/-- info: 'LeanLLVM.Refinement.BoundLoopPathFrame.toBoundLoop' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms BoundLoopPathFrame.toBoundLoop
+
+/-- info: 'LeanLLVM.Refinement.BoundLoopPathFrame.toFrame' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms BoundLoopPathFrame.toFrame
 
 end LeanLLVM.Refinement
