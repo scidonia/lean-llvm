@@ -932,6 +932,52 @@ theorem t3_latch_epil_step_back {calls : Calls} {env : Env} {s : State}
     (evalOperand_reg_of env s "%e.0734.i.i.epil" (.int 64 e) he) hi hn hu
     (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) hbit
 
+/-- The residual latch at its store edge, the counter short of the bound: the
+latch re-enters the head, so a visit that stored a digit loops. -/
+theorem t3_latch_epil_step_back_store {calls : Calls} {env : Env} {s : State}
+    {e i n u : BitVec 64}
+    (hpc : s.pc = "for.inc98.i.i.epil") (hpre : s.pre = some "if.then90.i.i.epil")
+    (he : lookupName env "%add96.i.i.epil" = some (.int 64 e))
+    (hi : lookupName env "%i.3735.i.i.epil" = some (.int 64 i))
+    (hn : lookupName env "%epil.iter" = some (.int 64 n))
+    (hu : lookupName env "%xtraiter" = some (.int 64 u))
+    (hbit : evalICmp .eq (n + 0x1#64) u = (0 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (t3LatchEnv env "%e.1.i.i.epil" "%inc99.i.i.epil"
+        "%epil.iter.next" "%epil.iter.cmp.not" e (i + 0x1#64) (n + 0x1#64) u)
+        { s with pc := "for.body87.i.i.epil", pre := some "for.inc98.i.i.epil" }) :=
+  t3_latch_step_back calls "for.inc98.i.i.epil" "%e.1.i.i.epil" "%i.3735.i.i.epil"
+    "%epil.iter" "%xtraiter" "%inc99.i.i.epil" "%epil.iter.next" "%epil.iter.cmp.not"
+    [("if.then90.i.i.epil", (Operand.reg "%add96.i.i.epil")),
+     ("for.body87.i.i.epil", (Operand.reg "%e.0734.i.i.epil"))]
+    0x1#64 0x1#64 "for.end100.i.i" "for.body87.i.i.epil"
+    t3_latch_epil_find hpc hpre (by decide)
+    (evalOperand_reg_of env s "%add96.i.i.epil" (.int 64 e) he) hi hn hu
+    (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) hbit
+
+/-- The residual latch at its head edge, the counter reaching the bound: a visit
+that refused the store leaves the loop from the head's own cells. -/
+theorem t3_latch_epil_step_exit_skip {calls : Calls} {env : Env} {s : State}
+    {e i n u : BitVec 64}
+    (hpc : s.pc = "for.inc98.i.i.epil") (hpre : s.pre = some "for.body87.i.i.epil")
+    (he : lookupName env "%e.0734.i.i.epil" = some (.int 64 e))
+    (hi : lookupName env "%i.3735.i.i.epil" = some (.int 64 i))
+    (hn : lookupName env "%epil.iter" = some (.int 64 n))
+    (hu : lookupName env "%xtraiter" = some (.int 64 u))
+    (hbit : evalICmp .eq (n + 0x1#64) u = (1 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (t3LatchEnv env "%e.1.i.i.epil" "%inc99.i.i.epil"
+        "%epil.iter.next" "%epil.iter.cmp.not" e (i + 0x1#64) (n + 0x1#64) u)
+        { s with pc := "for.end100.i.i", pre := some "for.inc98.i.i.epil" }) :=
+  t3_latch_step_taken calls "for.inc98.i.i.epil" "%e.1.i.i.epil" "%i.3735.i.i.epil"
+    "%epil.iter" "%xtraiter" "%inc99.i.i.epil" "%epil.iter.next" "%epil.iter.cmp.not"
+    [("if.then90.i.i.epil", (Operand.reg "%add96.i.i.epil")),
+     ("for.body87.i.i.epil", (Operand.reg "%e.0734.i.i.epil"))]
+    0x1#64 0x1#64 "for.end100.i.i" "for.body87.i.i.epil"
+    t3_latch_epil_find hpc hpre (by decide)
+    (evalOperand_reg_of env s "%e.0734.i.i.epil" (.int 64 e) he) hi hn hu
+    (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) hbit
+
 /-! ### The residual head: `for.body87.i.i.epil`
 
 The same test as the head, with the residual iteration counter carried beside it.
@@ -1157,6 +1203,9 @@ theorem t3_store_next_lt {e : BitVec 64} {d : UInt8}
 #print axioms t3_epil_head_denote_back
 #print axioms t3_if_then90_step_epil
 #print axioms t3_latch_epil_step_exit
+#print axioms t3_latch_epil_step_back
+#print axioms t3_latch_epil_step_back_store
+#print axioms t3_latch_epil_step_exit_skip
 #print axioms t3_store_next_toNat
 
 end NumFastTier3Copy

@@ -1302,15 +1302,30 @@ pin, with `t3_epil_step_lcssa`/`t3_epil_step_self` its two successors and the
 three `i128` operations stated width-generically).  The copy loop's blocks are
 then stepped per edge (`JsonStage2NumFastTier3CopySteps`: the head
 `for.body87.i.i`, the three unrolled tests, the store and both latches, each at
-its own predecessor), and the residual loop's measure, invariant and exit are
-fixed (`JsonStage2NumFastTier3CopyLoop.t3EpilLoopOf`, whose two visits are the
-piece not discharged).  The starting approximation's fold is
+its own predecessor), the residual loop's measure, invariant and exit are fixed
+(`JsonStage2NumFastTier3CopyLoop.t3EpilLoopOf`) and its two visits are discharged
+(`t3Epil_step_exit_test`/`t3Epil_step_loop_test` are `runFuel` chains of at most
+three control steps over the concrete latch/test/store states, so `t3EpilLoop` is
+the loop's `BoundLoop` instance and `t3EpilLoop_run_at'` its budget at a caller's
+continuation).  The starting approximation's fold is
 `JsonStage2NumFastTier3Fold`: `if.end198.i.i` forms `top` and `e10`, the two
 ladder operations are `while.body206.i.i`'s `fmul` and `while.body232.i.i`'s
 `fdiv`, `t3Approx` is the emitted double, and `t3Fold_two_step` is its two-step
-error.  What the region still owes is the unrolled nest's `BoundLoop` shape and
-the residual loop's two visits, both named in that module's record of the
-boundary.
+error.  The emitted loops apply more than one row, and
+`JsonStage2NumFastTier3Ladder` states that repetition: the residual exponent is
+spent `min e 22` at a time (`t3Rows`), the rows sum to it (`t3Rows_sum`), each is
+a row the table holds (`t3Rows_pos`/`t3Rows_le`), their exact product is the
+model's single scaling row (`t3Rows_prod`), their count is at most sixteen at the
+emitted range `|e10| ≤ 342` (`t3Rows_length_le`), each row is one `roundMag`
+(`t3Row_mul_step`/`t3Row_div_step` at a row with `ticks = 10 ^ c * 2 ^ 1074`), and
+the fold's bracket has the same form at the ladder's own step count
+(`t3Ladder_two_step`/`t3Ladder_steps`/`t3Ladder_scale`).  What the region still
+owes is the unrolled nest's `BoundLoop` shape (the copy's four-way unrolled main
+loop), the ladder's charging of each row's step at the final row's scale — the
+accumulation `E_{k+1} ≤ 10 ^ c * E_k + 2 ^ 1074 * step_k` needs the monotonicity
+of `t3RoundStep` along the rows — and the ladder loops' own `runFuel` simulation:
+`while.cond203.i.i` and `while.cond229.i.i` have no `findBlock` pin in this tree.
+Each of those is named in the module that states the nearest thing to it.
 The kernel's bound is not among the obstructions: `num_el_el1`'s mantissa is a
 `uint64_t`, and the body's own argument at `if.end268` is `%add244`, a 64-bit
 word, so `NumFastElAgrees`'s `w < 2 ^ 64` domain is met at the body

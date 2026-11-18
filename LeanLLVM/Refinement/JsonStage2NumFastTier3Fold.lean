@@ -16,6 +16,14 @@ bounds are `fmulBits_dist_le_step` and `fdivBits_dist_le_step` — one lattice s
 each, at the tree's own `roundMag` — and `t3Approx_step` reads those at
 `t3Approx`.
 
+**The repetition.**  The two loops apply more than one row: the residual exponent
+`%e10` is spent `min %e10 22` at a time, so the emitted `d` is a ladder of up to
+sixteen rows, not the one this module's `t3Approx` multiplies by.
+`JsonStage2NumFastTier3Ladder` states that ladder: the rows' exact product is the
+model's single scaling (`t3Rows_prod`), each row is one `roundMag`
+(`t3Row_mul_step`/`t3Row_div_step`), and the two-step bracket has the same form at
+the ladder's step count (`t3Ladder_two_step`/`t3Ladder_steps`).
+
 **The two-step error.**  A rounding at the widen and a rounding at the scaling
 put the exact value within a step of the approximation and every boundary the
 walk compares within a step of it; `proximity_scale` charges two steps each, and

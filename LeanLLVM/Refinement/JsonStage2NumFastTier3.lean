@@ -327,10 +327,12 @@ supplies for each, and what is left:
   blocks are then stepped per edge in `JsonStage2NumFastTier3CopySteps` — the
   head, the three unrolled tests, the store and both latches, each at its own
   predecessor — and the residual loop's measure, invariant and exit are fixed
-  (`JsonStage2NumFastTier3CopyLoop.t3EpilLoopOf`, whose two visits are the piece
-  not discharged), so what is still open is the unrolled nest's `BoundLoop`
-  shape and those two visits; the starting approximation's fold is
-  `JsonStage2NumFastTier3Fold`'s.
+  (`JsonStage2NumFastTier3CopyLoop.t3EpilLoopOf`) with its two visits discharged
+  (`t3Epil_step_exit_test`/`t3Epil_step_loop_test`, hence `t3EpilLoop` and
+  `t3EpilLoop_run_at'`), so what is still open is the unrolled nest's
+  `BoundLoop` shape; the starting approximation's fold is
+  `JsonStage2NumFastTier3Fold`'s and its repetition at the emitted rows is
+  `JsonStage2NumFastTier3Ladder`'s.
 * **The window tie.**  `StrtodTier3.windowOf` defines `M`, `S` and `sticky`
   (`windowOf_sticky_iff` is the model's own reading); the body's copy's retained
   array is that `M` (`copy_retained`), its stuck bit is that `sticky`
@@ -340,7 +342,8 @@ supplies for each, and what is left:
   `JsonStage2NumFastTier3CopySteps`' per-edge steps.  What is not composed is
   the induction: the copy is unrolled four ways with an epilogue, so its
   `runFuel` simulation is two `BoundLoop` instances, one per loop — the residual
-  loop's shape is `t3EpilLoopOf`'s, with its two visits the residual.
+  loop's is `t3EpilLoop` (`t3EpilLoopOf`'s shape at the discharged visits), so
+  the unrolled nest's shape is the piece not composed.
 * **The proximity estimate.**  Its operations are `fmulBits` and `fdivBits`,
   which `JsonStage2NumFastTier1` defines and proves at the tree's bit model
   (`fmulBits_pack`, `fdivBits_pack`, `fdivBits_uitofp_pow`), so the estimate does
@@ -355,7 +358,14 @@ supplies for each, and what is left:
   `JsonStage2NumFastTier3Fold` is that: which blocks form `top` and `e10`
   (`if.end198.i.i`), the two operations at their own pins (`while.body206.i.i`,
   `while.body232.i.i`), the emitted double `t3Approx`, its per-operation bound
-  and the two-step composition `t3Fold_two_step`.
+  and the two-step composition `t3Fold_two_step`.  Its repetition at the emitted
+  rows is `JsonStage2NumFastTier3Ladder`'s: the rows `min e 22` at a time compose
+  exactly to the model's one row (`t3Rows_prod`), each row is one `roundMag`
+  (`t3Row_mul_step`/`t3Row_div_step`), the count is at most sixteen at the
+  emitted exponent (`t3Rows_length_le`), and the bracket composes at the ladder's
+  own step count (`t3Ladder_two_step`/`t3Ladder_steps`); what the ladder does not
+  compose is charging each row's step at the final row's scale, and the loops'
+  `while.cond203.i.i`/`while.cond229.i.i` have no `findBlock` pin in this tree.
 
 None of the three is a `sorry`; each is stated, and what remains is named above
 rather than assumed. -/

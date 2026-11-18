@@ -160,14 +160,18 @@ the other two only in part:
    as the model's remainder test, `copy_counters` the emitted `S`/`f` as
    `E + stkDrop m`/`leadM`, and `t3_copy_denote` the store block at its pin;
    the loop's blocks are then stepped per edge
-   (`JsonStage2NumFastTier3CopySteps`) and the residual loop's shape is fixed
-   (`t3EpilLoopOf`), with its two visits and the unrolled nest's shape the piece
-   not composed; and
+   (`JsonStage2NumFastTier3CopySteps`), the residual loop's shape is fixed
+   (`t3EpilLoopOf`) and its two visits are discharged (`t3Epil_step_exit_test`,
+   `t3Epil_step_loop_test`, `t3EpilLoop`, `t3EpilLoop_run_at'`), so the unrolled
+   nest's shape is the piece not composed; and
    (c) the proximity estimate — `roundMag_dist_le_step`,
    `fmulBits_dist_le_step`/`fdivBits_dist_le_step`, `proximity_scale` and
    `t3_scale_of_ulp`, which concludes `shift_of_near`'s premise from the tree's
    own rounding, with the fold's two blocks and its two-step error now in
-   `JsonStage2NumFastTier3Fold`.
+   `JsonStage2NumFastTier3Fold` and the ladder's repetition at the emitted rows
+   in `JsonStage2NumFastTier3Ladder` (the rows compose to the model's one row,
+   one rounding each, at most sixteen, with the bracket at that many steps; what
+   is not composed is charging the rows' steps at the final row's scale).
 
    Neither boundary is a `sorry`, and neither is a paragraph: each is a
    statement in the module named above, with what it leaves open named there.
@@ -210,6 +214,25 @@ stated: `intRunExit_gate` reads the run's `%ip.4` and `%7` as the merge's
 run's stop index as the lexeme's end, and `t1_intRun_tie`/`t1_fracRun_tie` read
 the merged registers as `Decimal.digitsNat`.
 
+
+**Where the arm stands after the tier-3 modules.**  The environment (item 1) and
+the staging (item 2) are values, each *site*'s step is a jump at them, and the
+scan's three runs and their starts are discharged, with the two eight-digit fast
+paths composed at their guards' taken edges; the seam steps that would thread one
+run from `entry` to `if.end230` are still composed one at a time rather than as a
+single trace.  Item 4's tier-1 chain is stated at its blocks with its four links
+named ((a) the instruction steps, which the tier-1 module supplies; (b) the class
+test; (c) the mantissa; (d) the tick algebra).  Tier 3's window tie and proximity
+estimate are at their statements, the residual copy loop is now an induction at the
+emitted blocks (`JsonStage2NumFastTier3CopyLoop.t3EpilLoop`, with
+`t3EpilLoop_run_at'` its budget), and the emitted ladder's repetition is
+`JsonStage2NumFastTier3Ladder`'s: the rows compose to the model's one row, each is
+one rounding, and the bracket composes at the row count, with the charging of the
+rows' steps at the final row's scale and the two loops' own `runFuel` simulation
+(the blocks have no pin here) named there.  What the arm still needs is the run
+itself: the copy's four-way unrolled main loop as a `BoundLoop`, the seam steps
+above, and tier 1's store chain from the exponent edge.  No theorem below claims
+the arm, and none is instantiated at the walk's own `s2HelperCalls`.
 
 There is no `sorry`, `admit` or `native_decide` below.
 -/
