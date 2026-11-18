@@ -31,12 +31,16 @@ digits consumed; `expRun_value` turns that into the model's `digitsNat` when the
 accumulator has not frozen.
 
 **The boundary.**  The runs' *starts* — the index after the sign, after the
-`.`, after the `e` and its sign — are the inlined scan's dispatch, which is the
-conversion arm's remaining piece and not this module's.  The counters are
-therefore stated at the body relative to the run's start (`i0`, `d0`), and the
-model-facing corollaries in `JsonStage2NumFastCounters` read them at the
-dispatch's start facts.  Nothing here restates a block's text: every step
-rewrites with the pin's own instruction-list equation.
+`.`, after the `e` and its sign — are the inlined scan's dispatch, and they are
+`JsonStage2NumFastStarts`': `intRun_start`, `fracRun_start` and `expRun_start`
+each reach the run's head with this module's invariant at `c = 0` and the
+counter the dispatch fixed.  What that module does not cover is named there —
+the two eight-digit fast paths, and the exponent's marker nest that fixes
+`%i.11`.  The counters are therefore stated at the body relative to the run's
+start (`i0`, `d0`), and the model-facing corollaries in
+`JsonStage2NumFastCounters` read them at the dispatch's start facts.  Nothing
+here restates a block's text: every step rewrites with the pin's own
+instruction-list equation.
 
 The digit test is the emitted byte rule: `(b - 0x30) <u 10` at `i8`, which is
 `IsDigitB b` (`isDigitB_ult`), so the head's branch is the scan's test rather

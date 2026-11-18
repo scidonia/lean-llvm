@@ -56,18 +56,14 @@ The arm itself is still **not** claimed.  What the tree now supplies beyond the
 environment is the runs: `JsonStage2NumFastDigitRuns` discharges all three
 `BoundLoop` instances — `intRun_run` at `land.lhs.true41`, `fracRun_run` at
 `land.lhs.true119`, `expRun_run` at `land.lhs.true195` — each with the exit
-carrying its counters.  What the arm still owes is the runs' *starts* (the
-inlined scan's dispatch: the index after the sign, after the `.`, after the `e`
-and its sign, which is what makes the carried registers the lexeme's counts), the
-inlined tier-1 arithmetic's correspondence to the model, and tier 3's bracketing
-traversal.  Tier 2 is no longer on that list: `JsonStage2NumFastTier2`
+carrying its counters, and `JsonStage2NumFastStarts` supplies the runs' *starts*
+at the dispatch's edges.  Tier 2 is not on the list: `JsonStage2NumFastTier2`
 proves the model is the guard's decision on the kernel's `w < 2 ^ 64` domain
 (`NumFastElAgrees`, from `numElEl1_eq_elTier2Code`), and
-`not_numFastElUnbounded` shows the bound is the kernel's, not the proof's.  The
-remaining list, not the callee environment, is where the arm stops.
+`not_numFastElUnbounded` shows the bound is the kernel's, not the proof's.
 
-A proof needs three things, of which the first two the tree now supplies and the
-third it does not:
+A proof needs four things, of which the first two the tree supplies outright and
+the other two only in part:
 
 1. **A `Calls` selection answering the three callees.**  Supplied by
    `JsonStage2NumFastCalls`: each of the three is modelled from its measured C
@@ -78,13 +74,94 @@ third it does not:
    `numFastTableEnv`/`numFastTableMem`, twenty `NUMF_EL1_P10` rows and
    twenty-three `NUMF_EL1_POW10` rows, proved from `readBytes`' definition.
 3. **The inlined scan's counters, at the runs.**  `JsonStage2NumFastScan` fixes
-   the `BoundLoop` shape, and `JsonStage2NumFastDigitRuns` discharges the three
-   instances, each a `runFuel` prefix over the four blocks of one iteration with
-   the exit carrying the counters.  `JsonStage2NumFastCounters` proves the merge
-   block's two counters at the model.  What remains between them is the runs'
-   starts: the dispatch that fixes `i0`/`d0` from the sign, the `.` and the `e`,
-   so the carried registers are the lexeme's counts rather than offsets from an
-   arbitrary head entry.
+   the `BoundLoop` shape, `JsonStage2NumFastDigitRuns` discharges the three
+   instances, `JsonStage2NumFastCounters` reads the merge block's two counters
+   at the model, and `JsonStage2NumFastStarts` closes the runs' starts:
+   * `intRun_start`: from the sign check at `land.lhs.true`, with the lead a
+     `'1' … '9'` and the eight-digit guard at `if.then22` refused, seven steps
+     reach `land.lhs.true41` with `intRunInv … (negIndex b + 1) 1 bs … 0` — the
+     index after the lead and the one digit counted;
+   * the `0`-alone arm is `ifThen11_step`/`ifEnd68_denote_zero`, which fix
+     `%i.5 = %inc12`, `%idig.4 = 1`, `%ip.5 = 0` and never enter the run;
+   * `fracRun_start`: from the `.` test at `land.lhs.true71`, with a digit after
+     the `.` and the eight-digit guard at `while.cond91.preheader` refused, six
+     steps reach `land.lhs.true119` with `fracRunInv … (i5 + 1) 0 bs … 0`;
+   * `expRun_start`: from the digit gate at `lor.lhs.false180`, one step reaches
+     `land.lhs.true195` with `expRunInv … i11 bs … 0`.
+
+   What remains of the scan, and is *not* claimed: the two eight-digit fast
+   paths (`while.body`/`cleanup` at `if.then22` and
+   `while.body100`/`cleanup112` at `while.cond91.preheader`), whose registers
+   the starts above are proved *behind* the guard of; and the exponent's marker
+   nest between `if.end144` and `lor.lhs.false180` (`land.lhs.true147`,
+   `NodeBlock`, `LeafBlock`/`LeafBlock1`, `if.then157`, `land.lhs.true161`,
+   `NodeBlock7`, `LeafBlock5`/`LeafBlock3`, `if.then171`, `if.end177`), whose
+   four path shapes (marker `e`/`E` × sign present/absent) fix `%i.11`, the
+   index `expRun_start` takes.  `JsonStage2NumFastStarts`'s own header names
+   both, and `expRun_start`'s docstring names the nest register by register.
+4. **The inlined tier-1 arithmetic, and tier 3's traversal.**  Two boundaries,
+   each stated at the block it stops before.
+
+   *Tier 1.*  The body's tier-1 path is `if.end230` (the counters, proved) →
+   `if.then241` (the mantissa word `%add244 = %30 * %ip + %fr` with
+   `%30 = NUMF_EL1_P10[%fdig]`, and the narrow class test `%or.cond306`) →
+   `if.then253` (`%conv256 = uitofp %add244`, the sign test `%cmp254`) →
+   `cond.true`/`cond.false` (the `NUMF_EL1_POW10` load and `fmul`/`fdiv`) →
+   `cleanup282.thread` (`fneg`, the sign select, the store at `%out`).  Against
+   `StrtodTier1.emittedRefinesOn_tier1` the missing links are four:
+   (a) `denoteCode` chain steps for `uitofp`, `fmul`, `fdiv`, `fneg` and an
+   eight-byte `double` load — `evalInstr` defines all four operations
+   (`Semantics.lean:547-562`) but the tree has no `evalInstr_*`/`step_*`/
+   `denoteCode_*` lemma for any of them, so no block of this path can be
+   stepped at all; (b) the class test: `%or.cond304` at `if.end230`
+   (`%add232 <u 20` and `%sub231 + 45 <u 91`) and `%or.cond306` at `if.then241`
+   (`%add232 <u 16`, `%sub231 + 22 <u 45`) against `StrtodRefine.Tier1`,
+   `digitCount d ≤ 15 ∧ |eff| ≤ 22`; (c) the mantissa: `%add244` against
+   `Decimal.mantissa d` inside that window — `%ip`'s accumulator agreement and
+   the `NUMF_EL1_P10` rows (`NumFastTables`), with the `idig < 19` cap inert at
+   `≤ 15` digits; (d) the tick algebra: `uitofpBits`, `fmulBits`, `fdivBits`
+   and `fnegBits` are *defined* as `packMag ∘ roundMag` (`Binary64.lean:1424-
+   1450`), so the single correctly rounded operation the tier module names as
+   outside the tree is the tree's own definition, and what is left is the
+   arithmetic `fmulBits (packMag (roundMag (10 ^ k * 2 ^ 1074) 1)) (uitofpBits
+   mant) = packMag (roundMag (mant * 10 ^ k * 2 ^ 1074) 1)`, the division's
+   mirror, and the `F64.ofBits (packMag _)` readbacks those two read through.
+   `StrtodTier1`'s `opP_eq_ticks`/`opD_eq_ticks` then supply the `(P, D)` both
+   `roundMag`s share.  None of the four is a platform axiom: `(d)` closes on
+   the tree's definitions, not on hardware.
+
+   *Tier 3.*  The body's fallback is reached at `if.end285` and is the inlined
+   `num_scan` second reader — `g_nume1_slow`'s increment, `if.end6.i` …
+   `if.else35.i`, `land.lhs.true40.i`, `if.then45.i`, `if.end77.i`,
+   `land.lhs.true80.i`/`NodeBlock13`/`LeafBlock11`/`LeafBlock9`, `if.then90.i`,
+   `if.then104.i`, `if.end106.i`, `lor.lhs.false109.i`, `if.then119.i`,
+   `while.body135.i`, `if.end138.i`, `if.then141.i`, `if.then143.i` — and then
+   the inlined `to_double`: `for.body.outer.i.outer.i`, the window copy
+   (`for.body87.i.i`, its three unrolled copies and `for.inc98.i.i`, `.epil`,
+   `for.end100.i.i`), the `T`/`F` parse (`for.body.i.i`, `if.then31.i.i`,
+   `if.then36.i.i`, `if.else46.i.i`, `for.end.i.i`), the lead clamps
+   (`if.then113.i.i`, `if.end120.i.i`, `if.then123.i.i`, `if.end126.i.i`), the
+   big multiply (`for.body.i.i.i`, `stk_mul_u64.exit.i.i`, `while.end.i.i`) and
+   the ladder (`if.else164.i.i`, `while.body173.i.i`, `while.cond184.preheader
+   .i.i`).  The model's decision half is complete (`walkLoop_computes_tier3Mag`
+   is the loop's answer at `tier3Mag`'s ticks, and the tier-3 module's
+   `What is not proved` names what it takes), so three links remain: (a) a
+   `runFuel` simulation of that region — no block of it has a step lemma, and
+   several of its `phi`s carry `Const.poison` immediates (e.g.
+   `while.cond.preheader.i.i577.i.i.unr-lcssa`'s `%add4.i.i572.i.i.lcssa.ph`),
+   so the poison edges' unreachability is the *first* obligation there, not a
+   detail of the trace; (b) the tie of the window's retained digits `M`, its
+   weight `S` and the sticky bit to the model's inputs (`Decimal.mantissa`,
+   `Decimal.exponent`, and the `stkDrop` the copy loop's `STK_DIGITS` window
+   enforces); (c) the proximity estimate the tier-3 module still records — an
+   ulp bound on the starting approximation `dbits (d) * 10 ^ e10` — whose
+   operations are the same `fmulBits`/`fdivBits` as tier-1's, so `(d)` above
+   discharges that class too instead of leaving it to hardware.
+
+   Neither boundary is a `sorry`: `JsonStage2NumFastStarts` proves no statement
+   about these blocks, and neither does any other module — the arm's conversion
+   is still open at them.
+
 
 There is no `sorry`, `admit` or `native_decide` below.
 -/

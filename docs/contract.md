@@ -1255,18 +1255,29 @@ from its measured C text), `stage2NumFastCalls` composes it with the walk's
 (`numFast_*_denote_some`/`_step_jump`), and `numFastTables_holds` is
 `NumFastTables` at a concrete twenty-row/twenty-three-row staging.  What remains
 open is the conversion's *run*, not its environment: the three digit runs' arms,
-the inlined tier-1 arithmetic, and tier 3's traversal.  Tier 2 is closed on the
-model side too: `JsonStage2NumFastTier2.NumFastElAgrees` proves `numElEl1` is the
-guard's decision for the kernel's `w < 2 ^ 64` mantissa, so
+their starts, the inlined tier-1 arithmetic, and tier 3's traversal.  Tier 2 is
+closed on the model side too: `JsonStage2NumFastTier2.NumFastElAgrees` proves
+`numElEl1` is the guard's decision for the kernel's `w < 2 ^ 64` mantissa, so
 `elGuardRefinesOn`'s exactness transfers to the model, and
 `not_numFastElUnbounded` records that the bound is the kernel's.
 `JsonStage2NumFastCounters` reads the merge block's two counters at the model
-(`numFast_ifEnd230_counts`) and names the runs' trip counts as the arms still
-owed.  The conversion's arithmetic is not in question, and the relation's number
+(`numFast_ifEnd230_counts`), and the runs' starts are now dispatched:
+`JsonStage2NumFastStarts.intRun_start` reaches `land.lhs.true41` from the sign
+check with `intRunInv … (negIndex b + 1) 1 bs … 0`, `fracRun_start` reaches
+`land.lhs.true119` from the `.` test with `fracRunInv … (i5 + 1) 0 bs … 0`, and
+`expRun_start` reaches `land.lhs.true195` from the exponent's digit gate at
+`lor.lhs.false180` with `expRunInv … i11 bs … 0`; the `0`-alone arm
+(`ifThen11`/`if.end68`) is there too.  The dispatch is proved *behind* the two
+eight-digit fast-path guards, and the exponent's marker nest between `if.end144`
+and `lor.lhs.false180` is the piece of the scan that still fixes an index
+(`%i.11`) rather than being fixed by this module; both are named at the block in
+`JsonStage2NumFastArm`.
+The conversion's arithmetic is not in question, and the relation's number
 clause is discharged at the model.  No theorem here uses `sorry`, `admit` or
 `native_decide`; the §7.10 environment and reachability theorems are pinned at
 `[propext]` or `[propext, Quot.sound]`, while the tier-2 bridge carries
-`Classical.choice` through Mathlib's `Nat.size` lemmas.
+`Classical.choice` through Mathlib's `Nat.size` lemmas and the three run-start
+theorems carry it through the digit-window lemmas' `by_contra`.
 
 ### 7.11 The correspondence, record for record
 

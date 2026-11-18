@@ -26,9 +26,16 @@ carried register is the accumulator's value rather than a count).  Each instance
 `ExitWord` is the run's exit predicate with the counters read off the exit state's
 `%idig`/`%inc63`, `%fdig`/`%inc141` and `%exp10` registers.  The counters are
 proved *at the merge*; the runs' *starts* — the index after the sign, after the
-`.` and after the `e` and its sign — are the inlined scan's dispatch, which is
-the conversion arm's remaining piece, so the runs' exiting registers are not yet
-pinned to `intDigits`/`fracDigits`/`expVal` for a lexeme.
+`.` and after the `e` and its sign — are `JsonStage2NumFastStarts`':
+`intRun_start`, `fracRun_start` and `expRun_start` reach the heads with the
+runs' invariants at `c = 0` and the counters the dispatch fixed (and `%i.11`
+for the exponent, the one start that module takes as its input).  So a run's
+exit is pinned to `intDigits`/`fracDigits`/`expVal` up to the tie between the
+carried registers and `Decimal`'s fields: `d0 = 1` and `i0 = negIndex b + 1` for
+the integer part, `d0 = 0` and `i0` the byte after the `.` for the fraction, and
+an empty accumulator at `%i.11` for the exponent.  The remaining piece of that
+tie is the accumulator's own value (`%ip`, `%fr`, `%exp10`), which is the reader
+agreement `StrtodReader`'s docstring names and not a count.
 -/
 import LeanLLVM.Refinement.JsonStage2NumFastCalls
 import LeanLLVM.Refinement.JsonStage2Body
