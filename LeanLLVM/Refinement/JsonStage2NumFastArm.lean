@@ -204,8 +204,9 @@ reach `lor.lhs.false180` with `%i.11` and `%esign.0` — the registers
 `if.end226`.  `intScan_run` is the integer dispatch and its run from `entry`, and
 `fracScan_run` is the fraction dispatch and its run from `land.lhs.true71`; both
 are `runFuel` prefixes with the fuel as a term of the arguments.  Item 1's merge
-is `cleanup223.thread`'s two edges, `if.end226`'s four, and
-`expMerge_run_inc`/`expMerge_run_head` into `mergeEntry`; `if.end230`'s bound edge
+  is `cleanup223.thread`'s two edges, `if.end226`'s four, and the back edge's
+`expMerge_run_inc` into `mergeEntry`; the head edge is the refusal rather than a
+merge, with `ifThen229`'s error store and `cleanup300`'s zero return.  `if.end230`'s bound edge
 is `ifEnd230_denote_end62`/`ifEnd230_step_end62`.  Of item 1's mantissa, the
 word-level ties are `ip_word_digitsNat`/`fr_word_digitsNat`, fed by
 `intRunExit_end230`/`fracRunExit_end230`; at the merge they are
@@ -274,10 +275,11 @@ composition no longer owes a `re-proved arm at another environment`.
 
 The exponent's own tie is closed at the merge: `JsonStage2NumFastSeams`
 `expSelect_tie` reads the block's select `if %esign.0 = 1 then %exp10 else
-0 - %exp10` as `BitVec.ofInt 64 (expVal d)`, and `expExit_merge` carries it
-through `cleanup223.thread`/`if.end226` into `mergeEntry`'s `%exp10.4`, with the
-exit's accumulator reading (`expAcc` of the exponent's digits) and the sign's
-polarity as the seam's hypotheses.  Both carry `[propext, Quot.sound]`.
+0 - %exp10` as `BitVec.ofInt 64 (expVal d)`, and the back edge's
+`expExit_merge_back` carries it through `cleanup223.thread`/`if.end226` into
+`mergeEntry`'s `%exp10.4`, with the exit's accumulator reading (`expAcc` of the
+exponent's digits) and the sign's polarity as the seam's hypotheses.  The head
+edge is `expExit_refuse_head`, which returns zero with the stop index at `%err`.
 
 What the arm needs beyond that is the run itself.  The copy's four-way unrolled
 main loop's visits are closed — its `BoundLoop` shape and budget
@@ -397,20 +399,21 @@ explicit hypotheses of `fracScan_t1_arm_of_dispatch`.  The exponent run's four c
 blocks write none of them, `decide`d over the pinned body),
 `expRun_step_loop`/`_exit` conclude it, `expRun_start` carries it in, and
 `expRunEndFrameCells`/`expRun_run_cells` hand it back at
-`cleanup223.thread`.  The merge's sign case at `if.end226` is stated on those
+`cleanup223.thread`, and `JsonStage2NumFastExponent.expRun_run_carried` adds the
+kept cells, sign and staging memory.  The back edge's merge is stated on those
 terms: `JsonStage2NumFastSeams.expSelect_tie` is the block's select in both
 polarities (`if %esign.0 = 1 then %exp10 else 0 - %exp10` as
-`BitVec.ofInt 64 (expVal d)`), and `expExit_merge` is the two-step merge with
-`%exp10.4` that value.  The exponent route does not yet have the fraction's
-transport of the kept cells and the sign: its run carries `ExpRunCells` alone,
-so its merge still owes the words `t1_end230_run` reads there.
+`BitVec.ofInt 64 (expVal d)`), and `expExit_merge_back` is the two-step merge with
+`%exp10.4` that value.  The head edge is `expExit_refuse_head`: it stores the stop
+index at `%err` and returns zero rather than demanding the unreachable
+`%i.12604 = n` premise the retired merge carried.
 
-What the arm still waits on is the exponent route's merge, the routes below
-tier 1, and tier 3's region.  The nest's own nine steps (`nest_marker_start`)
-hand `%i.11` and `%esign.0` but not the four cells, so the exponent run is
-appended to the nest at the two statements; `expRunExit`'s head arm does not name
-the byte the run stopped on, so the end-of-lexeme arm is `expExit_merge`'s
-`hhead` hypothesis; and tier 1's four links are proved (`JsonStage2NumFastTier1`,
+What the arm still waits on is the nest handoff and accumulator tie into that
+merge, the routes below tier 1, and tier 3's region.  The nest's own nine steps
+(`nest_marker_start`) hand `%i.11` and `%esign.0` but not the four cells or the
+caller's kept cells, so the exponent run is appended to the nest at the two
+statements; the accumulator's reading as `expAcc` remains a merge hypothesis;
+and tier 1's four links are proved (`JsonStage2NumFastTier1`,
 with `t1_store_run` the body's chain from `if.end230`), while tier 3's region is
 stated edge by edge:
 the poison edge and its trip count (`t3_traversal_counts_1_3`), the epilogue

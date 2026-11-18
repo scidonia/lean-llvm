@@ -1332,8 +1332,8 @@ seam) and `t1_fracCount_tie` (the fraction's count preheader).  What the store
 chain still takes as its entry is the exponent edge's incoming cells
 (`t1_store_run`'s hypotheses): the digit parts' cells carried through `if.end144`
 are the same ties, while `%exp10.4`'s reading as `expVal d` is
-`JsonStage2NumFastSeams.expExit_merge`, which folds the exponent run's exit
-through `cleanup223.thread`'s select and `if.end226`'s test with
+`JsonStage2NumFastSeams.expExit_merge_back`, which folds the exponent run's
+back-edge exit through `cleanup223.thread`'s select and `if.end226`'s test with
 `expSelect_tie`: the block's `if %esign.0 = 1 then %exp10 else 0 - %exp10` is
 `BitVec.ofInt 64 (expVal d)` once the accumulator reads as the exponent digits'
 `expAcc` and `%esign.0` is the sign's bit (both as the seam's hypotheses, since
@@ -1391,8 +1391,8 @@ model's `intDigits`/`digitsNat d.ip`.  `intScan_to_dot`'s left disjunct is the
 dispatch's half of that composition, and it now carries those two cells.
 
 **What the two chains leave.**  The exponent exit's word names the four cells, the
-stop index and — through `expRunStop` — the cursor and the length, so
-`expExit_merge`'s `%p`/`%n` are read off the chain's exit; what neither
+stop index and — through `expRunStop` — the cursor and the length, so the back
+edge's `expExit_merge_back` reads `%p`/`%n` off the chain's exit; what neither
 `expRunExit` nor the stop word supplies is `hacc`: the accumulator's reading as
 the exponent digits' `expAcc`, which no invariant in the tree states, so the
   merge's select still takes it as that seam's hypothesis.  On the fraction side

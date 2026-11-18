@@ -37,9 +37,11 @@ byte through `land.lhs.true147`/`NodeBlock`/`LeafBlock*` to `if.then157`;
 `lor.lhs.false180` with `%i.11 = %i.10 + 1`, `%esign.0 = 1` or
 `%i.11 = %i.10 + 2`, `%esign.0 = (%22 != 0x2d)` — the registers `expRun_start`
 consumes — and `nest_nomarker` takes the no-exponent branch to `if.end226`.
-`cleanup223.thread`'s step is stated at both of the run's exits, and
-`expMerge_run_inc`/`expMerge_run_head` compose the two-step merge into `mergeEntry`,
-the state `JsonStage2NumFastTier1`'s `t1_ifEnd230_denote` names.  The scan's own
+`cleanup223.thread`'s step is stated at both of the run's exits,
+`expMerge_run_inc` composes the back edge's two-step merge into `mergeEntry`, the
+state `JsonStage2NumFastTier1`'s `t1_ifEnd230_denote` names, and the head edge —
+whose index is short of the length — is the refusal: `ifThen229_step_refuse`
+stores it at `%err` and `cleanup300_step_refuse` returns zero.  The scan's own
 composition is `intScan_run`: from `entry` at a non-empty lexeme whose `int` part
 leads with `'1' … '9'` and whose eight-digit guard is refused, the body reaches
 the integer run's exit predicate within `8 + (n - i0 + 1) * 4` control steps —
@@ -84,11 +86,13 @@ nine or more digits left takes the other branch, and that branch's loop is the
 eight-digit reader's.
 
 *The exponent run's exit shape* is not decided by any theorem in the tree:
-`expRunExit` names the two exits' registers, not which exit the run took, so
-`expMerge_run_head` takes the index's value at `%n` as a hypothesis and
-`expMerge_run_inc` does not need one.  A well-formed lexeme's exponent digits are
-maximal by the grammar, so the run's exit is the back edge's; that argument is
-the arm's, not this module's.
+`expRunExit` names the two exits' registers, not which exit the run took.
+`expMerge_run_inc` needs no index hypothesis, because `if.end216`'s
+`%i.12.lcssa.ph` is `%n` by construction and the test is its reflexivity; the
+head edge's index is the run's own counter, short of the length, and its tail is
+the refusal (`ifThen229_step_refuse`, `cleanup300_step_refuse`).  A well-formed
+lexeme's exponent digits are maximal by the grammar, so the run's exit is the
+back edge's; that argument is the arm's, not this module's.
 
 *The scan's middle* is one run on the integer part's route and pieces elsewhere:
 `intScan_run` reaches the integer run's exit, `intScan_end230` fixes the arm and
@@ -1739,14 +1743,66 @@ theorem ifEnd226_step_refuse {calls : Calls} {env : Env} {s : State}
     rw [numFast_execTerm_condbr_zero _ "%cmp227.not" _ _ hlk hbit]
     simp only [stateAt, hpc]
 
+/-! ### The refusing exit
+
+`if.end226`'s equality test is what admits a lexeme into the merge, and a
+lexeme whose exponent digits stop short of its end fails it: the block takes
+`if.then229`, which stores the stop index at `%err`, and `cleanup300` returns
+zero.  The two blocks are the head exit's tail; `if.then229`'s store is
+`ifThen229_step_refuse` and the `phi` at the `if.then229` incoming is
+`cleanup300_step_refuse`'s zero. -/
+
+/-- `if.then229`'s step: the stop index, stored at `%err`, then the jump to
+`cleanup300`. -/
+theorem ifThen229_step_refuse {calls : Calls} {env : Env} {s : State}
+    {i14 : BitVec 64} {err : Nat}
+    (hpc : s.pc = "if.then229")
+    (hi : lookupName env "%i.14" = some (.int 64 i14))
+    (herr : lookupName env "%err" = some (.ptr err)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt env
+        { s with mem := writeBytes s.mem err (natToBytes i14.toNat 8),
+                 pc := "cleanup300", pre := some "if.then229" }) := by
+  refine numFast_step_at
+    (s' := stateAt env { s with mem := writeBytes s.mem err (natToBytes i14.toNat 8) })
+    (b := ⟨"if.then229",
+      [Instr.store (Ty.int 64) (Operand.reg "%i.14") (Operand.reg "%err")],
+      Term.br "cleanup300"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using numFast_findBlock_if_then229
+  · rw [denoteCode_store64 calls env s "%i.14" "%err" hi herr, denoteCode_nil]
+  · simp only [execTerm, stateAt, hpc]
+
+/-- `cleanup300`'s run at the refusal's edge: the thirteen-member `phi`'s
+`if.then229` incoming is the literal zero. -/
+theorem cleanup300_denote_refuse {calls : Calls} {env : Env} {s : State}
+    (hpre : s.pre = some "if.then229") :
+    denoteCode calls numFastCleanup300Instrs (stateAt env s) =
+      some (stateAt (numFastCleanup300Env env) s) := by
+  unfold numFastCleanup300Instrs
+  block_eval
+
+/-- **The refusal's return.**  At `cleanup300` entered from `if.then229`, the
+body returns the `phi`'s zero and leaves the memory the error store wrote. -/
+theorem cleanup300_step_refuse {calls : Calls} {env : Env} {s : State}
+    (hpc : s.pc = "cleanup300") (hpre : s.pre = some "if.then229") :
+    step calls numFastBody (stateAt env s) =
+      .ret (some (.int 32 0)) (stateAt (numFastCleanup300Env env) s) := by
+  refine numFast_step_at (s' := stateAt (numFastCleanup300Env env) s)
+    (b := ⟨"cleanup300", numFastCleanup300Instrs,
+      Term.ret (Ty.int 32) (some (Operand.reg "%retval.8"))⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using numFast_findBlock_cleanup300
+  · simpa only [denoteCode_nil] using cleanup300_denote_refuse (calls := calls) hpre
+  · simp only [execTerm, evalOperand, stateAt, numFastCleanup300Env]
+    rw [lookupName_cons_self]
+
 /-! ### The merge opens
 
 `if.end226`'s equality test is what admits a lexeme into the merge.  At the
 back-edge exit the index is `%n` by construction (`%i.12.lcssa.ph` selects `%n`
-there), so the test is `n = n` and the merge is taken; at the head exit the
-index is the run's own counter, and a lexeme whose exponent digits run to the
-end has it at `%n` too.  Both lemmas end at the merge's entry, which is the
-state `JsonStage2NumFastTier1`'s `t1_ifEnd230_denote` names. -/
+there), so the test is `n = n` and the merge is taken; the head exit's index is
+the run's own counter and is short of the length, so that edge is the refusal
+above rather than the merge.  `expMerge_run_inc` ends at the merge's entry, which
+is the state `JsonStage2NumFastTier1`'s `t1_ifEnd230_denote` names. -/
 
 /-- **The merge's entry.**  The state at `if.end230` from the `if.end226` edge:
 its predecessor, its memory, and the five registers the merge reads.  The
@@ -1780,56 +1836,6 @@ theorem expMerge_run_inc {calls : Calls} {env : Env} {s : State}
       .jump (stateAt (cleanup223ThreadEnv env exp10 (BitVec.ofNat 64 n) esign)
         { s with pc := "if.end226", pre := some "cleanup223.thread" }) :=
     cleanup223Thread_step_inc (calls := calls) hpc hpre he hn hesign
-  have h2 : step calls numFastBody
-      (stateAt (cleanup223ThreadEnv env exp10 (BitVec.ofNat 64 n) esign)
-        { s with pc := "if.end226", pre := some "cleanup223.thread" }) =
-      .jump (stateAt
-        (ifEnd226Env (cleanup223ThreadEnv env exp10 (BitVec.ofNat 64 n) esign)
-          (if esign = 1 then exp10 else 0 - exp10) (BitVec.ofNat 64 n) (BitVec.ofNat 64 n))
-        { s with pc := "if.end230", pre := some "if.end226" }) :=
-    ifEnd226_step_merge (calls := calls) rfl
-      (ifEnd226_denote_thread (calls := calls) rfl
-        (by simp only [cleanup223ThreadEnv, lookupName_cons_self])
-        (by block_lk)
-        (by block_lk))
-      (NumFastStarts.eq_iff_one _ _ |>.mpr rfl)
-  refine ⟨stateAt
-      (ifEnd226Env (cleanup223ThreadEnv env exp10 (BitVec.ofNat 64 n) esign)
-        (if esign = 1 then exp10 else 0 - exp10) (BitVec.ofNat 64 n) (BitVec.ofNat 64 n))
-      { s with pc := "if.end230", pre := some "if.end226" },
-    ⟨rfl, rfl, rfl, ?_, ?_, ?_, ?_, ?_⟩, ?_⟩
-  · simp only [stateAt, ifEnd226Env, cleanup223ThreadEnv]
-    block_lk
-  · simp only [stateAt, ifEnd226Env, cleanup223ThreadEnv]; block_lk
-  · simp only [stateAt, ifEnd226Env, cleanup223ThreadEnv]; block_lk
-  · simp only [stateAt, ifEnd226Env, cleanup223ThreadEnv]; block_lk
-  · simp only [stateAt, ifEnd226Env, cleanup223ThreadEnv]; block_lk
-  · intro k
-    rw [show 2 + k = 1 + (1 + k) from by omega,
-      runFuel_jump_prefix h1, runFuel_jump_prefix h2]
-
-/-- **The merge, from the exponent run's head exit.**  The head's byte is not a
-digit there, so the run stopped at `%i.12604`; a lexeme whose exponent digits run
-to the end has that counter at `%n`, and the merge is taken. -/
-theorem expMerge_run_head {calls : Calls} {env : Env} {s : State}
-    {exp10 idig ip fr fdig : BitVec 64} {esign : BitVec 1} {n : Nat}
-    (hpc : s.pc = "cleanup223.thread")
-    (hpre : s.pre = some "land.lhs.true195")
-    (he : lookupName env "%exp10.0603" = some (.int 64 exp10))
-    (hi : lookupName env "%i.12604" = some (.int 64 (BitVec.ofNat 64 n)))
-    (hn : lookupName env "%n" = some (.int 64 (BitVec.ofNat 64 n)))
-    (hesign : lookupName env "%esign.0" = some (.int 1 esign))
-    (hid : lookupName env "%idig.4" = some (.int 64 idig))
-    (hip : lookupName env "%ip.5" = some (.int 64 ip))
-    (hfr : lookupName env "%fr.5" = some (.int 64 fr))
-    (hfd : lookupName env "%fdig.4" = some (.int 64 fdig)) :
-    ∃ e : State,
-      mergeEntry s.mem (if esign = 1 then exp10 else 0 - exp10) idig ip fr fdig e ∧
-      ∀ k, runFuel calls (2 + k) numFastBody (stateAt env s) = runFuel calls k numFastBody e := by
-  have h1 : step calls numFastBody (stateAt env s) =
-      .jump (stateAt (cleanup223ThreadEnv env exp10 (BitVec.ofNat 64 n) esign)
-        { s with pc := "if.end226", pre := some "cleanup223.thread" }) :=
-    cleanup223Thread_step_head (calls := calls) hpc hpre he hi hesign
   have h2 : step calls numFastBody
       (stateAt (cleanup223ThreadEnv env exp10 (BitVec.ofNat 64 n) esign)
         { s with pc := "if.end226", pre := some "cleanup223.thread" }) =
@@ -2097,10 +2103,6 @@ the tie's arithmetic at `[propext]`. -/
 /-- info: 'LeanLLVM.Refinement.NumFastScanRun.expMerge_run_inc' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms expMerge_run_inc
-
-/-- info: 'LeanLLVM.Refinement.NumFastScanRun.expMerge_run_head' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms expMerge_run_head
 
 /-- info: 'LeanLLVM.Refinement.NumFastScanRun.intScan_run' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

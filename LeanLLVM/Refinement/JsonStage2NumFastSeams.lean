@@ -48,9 +48,11 @@ non-digit exit into the nest, and `fracScan_end230` is the whole fraction route
 at a lexeme that ends on its digits — the run stops at `if.end140`'s
 end-of-lexeme edge, which *is* the merge's fraction edge.  The exponent is
 `nest_marker_start` (the marker and its optional sign to `lor.lhs.false180` with
-`%i.11` and `%esign.0`) and `expExit_merge` (the merge's two steps at the run's
-exit).  The exit predicate hands the edge it left by, the sign and the four cells
-`if.end230`'s `phi`s read, so the merge's registers are the exit's.  The run
+`%i.11` and `%esign.0`) and `expExit_merge_back` (the back edge's two merge
+steps); the head exit is `expExit_refuse_head`, which stores the stop index at
+`%err` and returns zero.  The exit predicate hands the edge it left by, the sign
+and the four cells `if.end230`'s `phi`s read, so the merge's registers are the
+exit's.  The run
 itself is `expRun_start` and the run instance, chained at the two statements
 rather than as one: the nest's exit state is existential, so the four cells have
 to be named at the run's start.  What the routes leave open is named at the end
@@ -608,14 +610,15 @@ edges carry.
 
 The third edge into `if.end230`, the exponent path `if.end226`, is
 `JsonStage2NumFastTier1.t1_store_run`'s own hypotheses: the five cells it reads
-are the digit parts' ties carried through `if.end144`, plus `%exp10.4`.  That
-cell's tie to `expVal d` is `expExit_merge`: the exponent run's exit hands the
-accumulator's register (from `land.lhs.true195`'s `%exp10.0603` or the back
-edge's `%exp10.1`) and `%esign.0`, the marker nest's sign (`nestFrom157_nosign`/
-`_sign` fix `%i.11`), and the block's own select is `expSelect_tie`'s
-`BitVec.ofInt 64 (expVal d)` once the accumulator reads as `expAcc` of the
-exponent's digits.  The exit is existential, so that reading is a hypothesis of
-the seam (`hacc`, `hesign`) rather than a field of the exit predicate.
+are the digit parts' ties carried through `if.end144`, plus `%exp10.4`.  At the
+back edge that cell's tie to `expVal d` is `expExit_merge_back`: the exit hands
+the back edge's accumulator `%exp10.1` and `%esign.0`, the marker nest's sign
+(`nestFrom157_nosign`/`_sign` fix `%i.11`), and the block's own select is
+`expSelect_tie`'s `BitVec.ofInt 64 (expVal d)` once the accumulator reads as
+`expAcc` of the exponent's digits.  The exit is existential, so that reading is a
+hypothesis of the seam (`hacc`, `hes`) rather than a field of the exit predicate;
+the head edge's counter is short of the length, and `expExit_refuse_head` is that
+exit.
 
 Each is the block's own `step` plus the fold's reading, so each hands the
 successor state's registers, the memory and the `runFuel` prefix. -/
@@ -2766,13 +2769,13 @@ values are `t1_headTie`'s at the integer run's exit, so a composition from
 
 Past the marker's block the exponent is read.  `nest_marker_start` is the marker
 and its optional sign to `lor.lhs.false180` with `%i.11` and `%esign.0`,
-`nest_exp_run` appends the exponent run, and `expExit_merge` is the merge's two
-steps at the run's exit.  The exit predicate names which edge the run left by, so
-the merge's block is decided there; what it does not name is the four cells the
-merge's `phi`s read (`%idig.4`, `%ip.5`, `%fr.5`, `%fdig.4`), which a composition
-past it therefore takes as hypotheses — the run's blocks only cons onto the
-head's environment, so the cells are at the exit, but `expRunExit` does not say
-so. -/
+`nest_exp_run` appends the exponent run, and the run's two exits are
+`expExit_merge_back` (the back edge's two merge steps) and `expExit_refuse_head`
+(the head edge's store and zero return).  The exit predicate names which edge the
+run left by, the sign and the four carried cells (`%idig.4`, `%ip.5`, `%fr.5`,
+`%fdig.4`) by value, so the merge's registers are the exit's; what it does not
+name is the accumulator's reading as the exponent digits' `expAcc`, which stays
+the back seam's hypothesis. -/
 
 /-- The dispatch's entry: what `if.end68`'s step hands the `.` test — the run's
 stop index, the cursor, the length, the memory the test reads, and the fraction's
@@ -3124,54 +3127,140 @@ theorem expSelect_tie {d : Decimal} {sign : Bool} {ds : Bytes} {v : BitVec 64}
     simp only [reduceIte]
     exact (ofInt_negNat (expAcc ds)).symm
 
-/-- **The merge at the exponent run's exit, with the model's exponent.**
-`cleanup223.thread` folds the run's accumulator with its sign and `if.end226`'s
-equality test opens `if.end230`: two control steps from either exit edge, with
-the merge's five registers and `%exp10.4` the model's signed exponent.  The sign
-is the exit's (`%esign.0`), the accumulator is the arm's (`%exp10.0603` at the
-head, `%exp10.1` at the back edge), and the head arm needs its index at the
-length — the back edge's `%inc217` is `%n` there — so `hhead` names that.
+/-- **The merge at the exponent run's back-edge exit.**  `cleanup223.thread`
+folds the run's accumulator with its sign and `if.end226`'s equality test opens
+`if.end230`: two control steps from the back edge, with the merge's five
+registers and `%exp10.4` the model's signed exponent.  The index the test reads
+is `%n` — `%i.12.lcssa.ph` selects `%n` at the `if.end216` ingress — so the test
+is its own reflexivity and needs no premise about the head's counter.
 
 The exit is an `∃`-state, so the two readings that make the select the model's
-are hypotheses rather than fields: `hacc` fixes whichever accumulator cell the
-exit carries at `expAcc ds`, and `hesign` fixes the sign bit's polarity. -/
-theorem expExit_merge {calls : Calls} {e : State} {n : Nat} {d : Decimal}
-    {sign : Bool} {ds : Bytes}
-    (he : expRunExit e)
+are hypotheses rather than fields: `hacc` fixes the run's accumulator cell at
+`expAcc ds`, and `hes` fixes the sign bit's polarity. -/
+theorem expExit_merge_back {calls : Calls} {e : State} {n : Nat} {d : Decimal}
+    {sign : Bool} {ds : Bytes} {v : BitVec 64} {esign : BitVec 1}
+    {idig ip fr fdig : BitVec 64}
+    (hpc : e.pc = "cleanup223.thread")
+    (hpre : e.pre = some "if.end216")
+    (he : lookupName e.env "%exp10.1" = some (.int 64 v))
     (hn : lookupName e.env "%n" = some (.int 64 (BitVec.ofNat 64 n)))
-    (hhead : ∀ i1, lookupName e.env "%i.12604"
-      = some (.int 64 (BitVec.ofNat 64 i1)) → i1 = n)
+    (hesign : lookupName e.env "%esign.0" = some (.int 1 esign))
+    (hid : lookupName e.env "%idig.4" = some (.int 64 idig))
+    (hip : lookupName e.env "%ip.5" = some (.int 64 ip))
+    (hfr : lookupName e.env "%fr.5" = some (.int 64 fr))
+    (hfd : lookupName e.env "%fdig.4" = some (.int 64 fdig))
     (hx : d.ex = some (sign, ds))
-    (hacc : ∀ v, (lookupName e.env "%exp10.0603" = some (.int 64 v) ∨
-        lookupName e.env "%exp10.1" = some (.int 64 v)) →
-        v = BitVec.ofNat 64 (expAcc ds))
-    (hesign : ∀ esg, lookupName e.env "%esign.0" = some (.int 1 esg) →
-        esg = (if sign then (0 : BitVec 1) else 1)) :
-    ∃ (idig ip fr fdig : BitVec 64) (e' : State),
+    (hacc : v = BitVec.ofNat 64 (expAcc ds))
+    (hes : esign = (if sign then (0 : BitVec 1) else 1)) :
+    ∃ (e' : State),
       NumFastScanRun.mergeEntry e.mem (BitVec.ofInt 64 (expVal d))
         idig ip fr fdig e' ∧
       ∀ k, runFuel calls (2 + k) numFastBody e = runFuel calls k numFastBody e' := by
-  obtain ⟨hpc, hdisj, hesign', hcarry⟩ := he
-  obtain ⟨esg, hes⟩ := hesign'
-  obtain ⟨idig, ip, fr, fdig, hid, hip, hfr, hfd⟩ := hcarry
-  rcases hdisj with ⟨hpre, i1, v, hi1, haccv⟩ | ⟨hpre, i1, v, hi1, haccv⟩
-  · have hi1n : i1 = n := hhead i1 hi1
-    have hi : lookupName e.env "%i.12604" = some (.int 64 (BitVec.ofNat 64 n)) := by
-      rw [hi1, hi1n]
-    have hsel : (if esg = 1 then v else 0 - v) = BitVec.ofInt 64 (expVal d) :=
-      expSelect_tie hx (hacc v (Or.inl haccv)) (hesign esg hes)
-    obtain ⟨e', hmerge, hrun⟩ :=
-      NumFastScanRun.expMerge_run_head (calls := calls) hpc hpre haccv hi hn hes
-        hid hip hfr hfd
-    rw [hsel] at hmerge
-    exact ⟨idig, ip, fr, fdig, e', hmerge, hrun⟩
-  · have hsel : (if esg = 1 then v else 0 - v) = BitVec.ofInt 64 (expVal d) :=
-      expSelect_tie hx (hacc v (Or.inr haccv)) (hesign esg hes)
-    obtain ⟨e', hmerge, hrun⟩ :=
-      NumFastScanRun.expMerge_run_inc (calls := calls) hpc hpre haccv hn hes
-        hid hip hfr hfd
-    rw [hsel] at hmerge
-    exact ⟨idig, ip, fr, fdig, e', hmerge, hrun⟩
+  have hsel : (if esign = 1 then v else 0 - v) = BitVec.ofInt 64 (expVal d) :=
+    expSelect_tie hx hacc hes
+  obtain ⟨e', hmerge, hrun⟩ :=
+    NumFastScanRun.expMerge_run_inc (calls := calls) hpc hpre he hn hesign
+      hid hip hfr hfd
+  rw [hsel] at hmerge
+  exact ⟨e', hmerge, hrun⟩
+
+/-- **One store's frame.**  A write of `bs` at `a` leaves every byte outside its
+own extent as it found it. -/
+theorem storeBytes_frame (mem : Mem) (a0 : Nat) (bs : List UInt8) :
+    UnchangedOutside mem (writeBytes mem a0 bs) [(a0, bs.length)] := by
+  intro x hx
+  apply readByte_writeBytes_outside
+  by_cases h : x < a0
+  · exact Or.inl h
+  · right
+    apply Nat.le_of_not_lt
+    intro h4
+    exact hx (a0, bs.length) (by simp) ⟨by omega, h4⟩
+
+/-- **The head exit refuses the merge.**  The head exit's counter is short of the
+length — `%i.12604 = i1` with `i1 < n`, which is what `expRunStop`'s head arm
+gives — so `if.end226`'s equality test is false and the block takes `if.then229`
+rather than `if.end230`: the store writes the counter at `%err` and `cleanup300`
+returns zero.  Four control steps leave the store's eight bytes at `%err` and
+every other byte as it was.
+
+The `2 ^ 64` bound is what makes the test false: `BitVec.ofNat 64` is not
+injective above its width, so `i1 < n` alone would not distinguish the two
+readings.  `expRunInv` carries the stronger `n < 2 ^ 63`, so every caller from
+the run holds `hn64`. -/
+theorem expExit_refuse_head {calls : Calls} {e : State} {n i1 err : Nat}
+    {v : BitVec 64} {esign : BitVec 1}
+    (hpc : e.pc = "cleanup223.thread")
+    (hpre : e.pre = some "land.lhs.true195")
+    (hi : lookupName e.env "%i.12604" = some (.int 64 (BitVec.ofNat 64 i1)))
+    (hn : lookupName e.env "%n" = some (.int 64 (BitVec.ofNat 64 n)))
+    (hlt : i1 < n) (hn64 : n < 2 ^ 64)
+    (hexp : lookupName e.env "%exp10.0603" = some (.int 64 v))
+    (hesign : lookupName e.env "%esign.0" = some (.int 1 esign))
+    (herr : lookupName e.env "%err" = some (.ptr err)) :
+    runFuel calls 4 numFastBody e =
+      some (.ret (some (.int 32 0))
+        (writeBytes e.mem err (wordBytes 8 (BitVec.ofNat 64 i1).toNat))) ∧
+    UnchangedOutside e.mem
+      (writeBytes e.mem err (wordBytes 8 (BitVec.ofNat 64 i1).toNat)) [(err, 8)] := by
+  have hi64 : i1 < 2 ^ 64 := by omega
+  have hneq : BitVec.ofNat 64 i1 ≠ BitVec.ofNat 64 n := by
+    intro h
+    have h2 := congrArg BitVec.toNat h
+    rw [BitVec.toNat_ofNat, BitVec.toNat_ofNat,
+      Nat.mod_eq_of_lt hi64, Nat.mod_eq_of_lt hn64] at h2
+    omega
+  have hbit : evalICmp .eq (BitVec.ofNat 64 i1) (BitVec.ofNat 64 n) = 0 :=
+    NumFastStarts.eq_zero_iff _ _ |>.mpr hneq
+  let env1 := NumFastScanRun.cleanup223ThreadEnv e.env v (BitVec.ofNat 64 i1) esign
+  let s1 : State :=
+    stateAt env1 { e with pc := "if.end226", pre := some "cleanup223.thread" }
+  let env2 := NumFastScanRun.ifEnd226Env env1
+    (if esign = 1 then v else 0 - v) (BitVec.ofNat 64 i1) (BitVec.ofNat 64 n)
+  let s2 : State :=
+    stateAt env2 { e with pc := "if.then229", pre := some "if.end226" }
+  let s3 : State :=
+    stateAt env2
+      { e with mem := writeBytes e.mem err (wordBytes 8 (BitVec.ofNat 64 i1).toNat),
+               pc := "cleanup300", pre := some "if.then229" }
+  have h1 : step calls numFastBody e = .jump s1 :=
+    NumFastScanRun.cleanup223Thread_step_head (calls := calls) (env := e.env) (s := e)
+      hpc hpre hexp hi hesign
+  have h2 : step calls numFastBody s1 = .jump s2 := by
+    have hden := NumFastScanRun.ifEnd226_denote_thread (calls := calls)
+      (env := env1) (s := { e with pc := "if.end226", pre := some "cleanup223.thread" })
+      (exp10 := (if esign = 1 then v else 0 - v))
+      (i14 := (BitVec.ofNat 64 i1)) (nv := (BitVec.ofNat 64 n))
+      rfl
+      (by simp only [env1, NumFastScanRun.cleanup223ThreadEnv, lookupName_cons_self])
+      (by simp only [env1, NumFastScanRun.cleanup223ThreadEnv]; block_lk)
+      (by simp only [env1, NumFastScanRun.cleanup223ThreadEnv]; block_lk)
+    exact NumFastScanRun.ifEnd226_step_refuse (calls := calls) rfl hden hbit
+  have h3 : step calls numFastBody s2 = .jump s3 := by
+    have hi14 : lookupName env2 "%i.14" = some (.int 64 (BitVec.ofNat 64 i1)) := by
+      simp only [env2, NumFastScanRun.ifEnd226Env]; block_lk
+    have herr2 : lookupName env2 "%err" = some (.ptr err) := by
+      simp only [env2, env1, NumFastScanRun.ifEnd226Env,
+        NumFastScanRun.cleanup223ThreadEnv]; block_lk
+    exact NumFastScanRun.ifThen229_step_refuse (calls := calls) rfl hi14 herr2
+  have h4 : step calls numFastBody s3 =
+      .ret (some (.int 32 0)) (stateAt (numFastCleanup300Env env2) s3) :=
+    NumFastScanRun.cleanup300_step_refuse (calls := calls) (env := env2) (s := s3) rfl rfl
+  have hrun : runFuel calls 4 numFastBody e =
+      some (.ret (some (.int 32 0))
+        (writeBytes e.mem err (wordBytes 8 (BitVec.ofNat 64 i1).toNat))) := by
+    rw [show (4 : Nat) = 3 + 1 from rfl, runFuel.eq_2, h1]
+    simp only []
+    rw [show (3 : Nat) = 2 + 1 from rfl, runFuel.eq_2, h2]
+    simp only []
+    rw [show (2 : Nat) = 1 + 1 from rfl, runFuel.eq_2, h3]
+    simp only []
+    rw [show (1 : Nat) = 0 + 1 from rfl, runFuel.eq_2, h4]
+    simp only [s3, stateAt]
+  refine ⟨hrun, ?_⟩
+  have hframe := storeBytes_frame e.mem err (wordBytes 8 (BitVec.ofNat 64 i1).toNat)
+  rwa [show (wordBytes 8 (BitVec.ofNat 64 i1).toNat).length = 8 from by
+    simp only [wordBytes, natToBytes_length]] at hframe
 
 /-! ### What the routes leave open
 
@@ -3179,19 +3268,20 @@ theorem expExit_merge {calls : Calls} {e : State} {n : Nat} {d : Decimal}
 are `∃`-states: their environments are not terms a caller can rewrite, so a
 composition that needs a cell past them has to receive it from the predicate.
 `expRunExit` now hands the four carried cells (and the sign and the edge), which
-is what `expExit_merge` reads; `nest_marker_start` hands `%i.11` and `%esign.0`,
-which is what `expRun_start` reads, but not the four cells — so the exponent run
-is appended to the nest at the two statements, with the cells named at the run's
-start, rather than as one chain.  Handing them from the nest is the same edit the
-sign took: one conjunct on each nest lemma's conclusion and on `nestEntry_run` /
-`nodot_seam`.
+is what `expExit_merge_back` reads; `nest_marker_start` hands `%i.11` and
+`%esign.0`, which is what `expRun_start` reads, but not the four cells — so the
+exponent run is appended to the nest at the two statements, with the cells named
+at the run's start, rather than as one chain.  Handing them from the nest is the
+same edit the sign took: one conjunct on each nest lemma's conclusion and on
+`nestEntry_run` / `nodot_seam`.
 
 *The exit-arm decisions.*  `intScan_run`, `fracRun_run` and `expRun_run` all
 conclude an exit predicate whose arms are the two ways out of the loop, so a
 composition from `entry` splits at the exit.  `intScan_end230` fixes the integer
-run's end-of-lexeme arm and `fracScan_end230` the fraction's, and `expExit_merge`
-splits the exponent's; a single chain from `entry` through all four is the arm's
-work, not a seam's. -/
+run's end-of-lexeme arm and `fracScan_end230` the fraction's; the exponent's two
+arms are the merge at the back edge (`expExit_merge_back`) and the refusal at the
+head (`expExit_refuse_head`), so a single chain from `entry` through all four is
+the arm's work, not a seam's. -/
 
 /-! ### Axiom footprints
 
@@ -3284,7 +3374,8 @@ steps are at `stage2NumFastCalls`, whose reader answer is the model's. -/
 #print axioms NumFastSeams.fracExit_nest
 #print axioms NumFastSeams.fracScan_end230
 #print axioms NumFastSeams.nest_marker_start
-#print axioms NumFastSeams.expExit_merge
+#print axioms NumFastSeams.expExit_merge_back
+#print axioms NumFastSeams.expExit_refuse_head
 #print axioms NumFastSeams.ofInt_negNat
 #print axioms NumFastSeams.expSelect_tie
 #print axioms NumFastSeams.fracScan_end230Cells

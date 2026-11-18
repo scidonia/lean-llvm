@@ -28,11 +28,12 @@ The instance's `run_from` therefore hands back the counters with the exit, and
 `*_counters` reads them.  The exponent run's carried register is its
 accumulator rather than a count, and its `Exit` states the accumulator's *cell*
 and not the fold's value: the accumulator is read at the merge by
-`JsonStage2NumFastSeams.expExit_merge`, which takes the cell's reading as
+`JsonStage2NumFastSeams.expExit_merge_back`, which takes the cell's reading as
 `expAcc` of the exponent's digits as a hypothesis (`hacc`, since the exit state
-is existential) and `expSelect_tie` turns it into `expVal`.  A run-internal
-`fold` conjunct on `expRunInv` would state the same reading at the invariant;
-nothing here claims it.
+is existential) and `expSelect_tie` turns it into `expVal`.  The head exit does
+not reach a merge: `expExit_refuse_head` stores its counter at `%err` and returns
+zero.  A run-internal `fold` conjunct on `expRunInv` would state the same reading
+at the invariant; nothing here claims it.
 
 **The cells the run crosses.**  A `runFuel` prefix does not expose the
 environments it crosses, so the exit predicates name only what a successor's

@@ -20,8 +20,9 @@ starts.  `JsonStage2NumFastScanRun.nestFrom157_nosign`/`_sign` hand them back
 now, and `nest_expRun_run` composes the marker's two shapes and the sign's
 presence, the nest's steps, the gate's dispatch step and the run's loop,
 concluding `cleanup223.thread` with the exit word, the four cells by value and
-the stop word `expRunStop` — the index the run stopped at and the byte there,
-which is what `expExit_merge`'s end-of-lexeme reading needs.
+the stop word `expRunStop` — the index the run stopped at and the byte there.
+The back arm's index is the length, which is `expExit_merge_back`'s equality
+test; the head arm's is short of it, which is `expExit_refuse_head`'s refusal.
 
 There is no `sorry`, `admit` or `native_decide` below.
 -/
@@ -228,9 +229,10 @@ the chain hands the run's exit word, the four cells by value and the stop word:
 `%i.11` is the exponent's first index, one past the marker's byte or past a sign
 at it, and the stop index is the length on the back edge and a non-digit byte
 inside the lexeme on the head's.  The stop word also names the cursor and the
-length, so a composition past this chain holds `expExit_merge`'s `%p`/`%n`; what
-it does not supply is the accumulator's reading as the exponent digits' `expAcc`,
-which that seam still takes as its own hypothesis. -/
+length, so a composition past this chain holds `expExit_merge_back`'s `%n`; the
+head exit's counter is the premise `expExit_refuse_head` reads.  What the chain
+does not supply is the accumulator's reading as the exponent digits' `expAcc`,
+which the back seam still takes as its own hypothesis. -/
 theorem nest_expRun_run {calls : Calls} {e : State} {a n i10 : Nat} {b1 b2 : UInt8}
     {bs : List UInt8} {idig5 ip5 fr5 fd5 : BitVec 64}
     (hpc : e.pc = "land.lhs.true147")
