@@ -763,12 +763,14 @@ theorem intRunInv_entry {mem : Mem} {p n i0 d0 : Nat} {bs : List UInt8} {s : Sta
     (hread : readBytes mem p n = some bs)
     (hi : lookupName s.env "%i.1558" = some (.int 64 (BitVec.ofNat 64 i0)))
     (hid : lookupName s.env "%idig.0560" = some (.int 64 (BitVec.ofNat 64 d0)))
-    (hip : ∃ ip, lookupName s.env "%ip.0562" = some (.int 64 ip)) :
+    (hip : lookupName s.env "%ip.0562"
+      = some (.int 64 (BitVec.ofNat 64 (digitFold bs (i0 - d0) (min d0 19))))) :
     intRunInv mem p n i0 d0 bs (n - i0) s 0 := by
   refine ⟨hpc, hmem, by omega, by omega, hnlt, hd0, hp, hn, hread,
-    Or.inl ⟨hpre, ?_, ?_, hip⟩⟩
+    Or.inl ⟨hpre, ?_, ?_, ?_⟩⟩
   · simpa using hi
   · simpa using hid
+  · simpa only [Nat.add_zero] using hip
 
 /-! ### The dispatch's environment, and the ties between the block builders
 
@@ -918,7 +920,7 @@ theorem intRun_start {calls : Calls} {env : Env} {s : State} {a n : Nat}
   refine ⟨stateAt (intStartEnv env b b0 a n)
     { s with pc := "land.lhs.true41", pre := some "land.lhs.true41.preheader" }, ?_, ?_⟩
   · refine intRunInv_entry rfl rfl rfl (by omega) hnlt (by omega) ?_ ?_ hread
-      ?_ ?_ ⟨_, by lk_all⟩
+      ?_ ?_ ?_
     · lk_all
     · lk_all
     · have h1 : BitVec.ofNat 64 (negIndex b + 1)
@@ -926,6 +928,34 @@ theorem intRun_start {calls : Calls} {env : Env} {s : State} {a n : Nat}
         (ofNat64_add_one (by omega)).symm
       rw [h1]; lk_all
     · lk_all
+    · have hdig : IsDigitB b0 = true := by
+        unfold IsDigitB
+        rw [Bool.and_eq_true]
+        exact ⟨decide_eq_true (UInt8.le_iff_toNat_le.mpr (by
+            show (0x30 : UInt8).toNat ≤ b0.toNat
+            rw [show (0x30 : UInt8).toNat = 48 from by decide]
+            omega)),
+          decide_eq_true (UInt8.le_iff_toNat_le.mpr (by
+            show b0.toNat ≤ (0x39 : UInt8).toNat
+            rw [show (0x39 : UInt8).toNat = 57 from by decide]
+            omega))⟩
+      have hblen : bs.length = n := JsonEntrySteps.readBytes_length s.mem a n hread
+      have hget : bs.getD (negIndex b) 0 = b0 :=
+        getD_of_readBytes hread hltn hbyte
+      have hfold : digitFold bs (negIndex b) 1 = b0.toNat - 0x30 := by
+        rw [show (1 : Nat) = 0 + 1 from rfl,
+          digitFold_succ (by omega),
+          Nat.add_zero, digitFold_zero, Nat.zero_mul, Nat.zero_add, hget]
+      have hconv : lookupName (intStartEnv env b b0 a n) "%ip.0562"
+          = some (.int 64 (BitVec.ofNat 64
+            (JsonScanLane.vByte b0 &&& 0x0f#8).toNat)) := by lk_all
+      have hval : BitVec.ofNat 64 (JsonScanLane.vByte b0 &&& 0x0f#8).toNat
+          = BitVec.ofNat 64 (digitFold bs (negIndex b + 1 - 1) (min 1 19)) := by
+        rw [show negIndex b + 1 - 1 = negIndex b from by omega,
+          show min 1 19 = 1 from by decide, hfold,
+          digit_and_toNat hdig]
+      rw [hval] at hconv
+      exact hconv
   · intro k
     rw [show 7 + k = 1 + (1 + (1 + (1 + (1 + (1 + (1 + k)))))) from by omega,
       runFuel_jump_prefix h1s, runFuel_jump_prefix h2s, runFuel_jump_prefix h3s,
@@ -1434,7 +1464,6 @@ theorem fracPreheader_step {calls : Calls} {env : Env} {s : State}
   · simp only [execTerm, stateAt, hpc]
 
 theorem fracRunInv_entry {mem : Mem} {p n i0 d0 : Nat} {bs : List UInt8} {s : State}
-    {fr : BitVec 64}
     (hpc : s.pc = "land.lhs.true119")
     (hpre : s.pre = some "land.lhs.true119.preheader")
     (hmem : s.mem = mem) (hltn : i0 < n) (hnlt : n < 2 ^ 63) (hd0 : d0 ≤ i0)
@@ -1443,12 +1472,14 @@ theorem fracRunInv_entry {mem : Mem} {p n i0 d0 : Nat} {bs : List UInt8} {s : St
     (hread : readBytes mem p n = some bs)
     (hi : lookupName s.env "%i.6552" = some (.int 64 (BitVec.ofNat 64 i0)))
     (hid : lookupName s.env "%fdig.0554" = some (.int 64 (BitVec.ofNat 64 d0)))
-    (hf : lookupName s.env "%fr.0556" = some (.int 64 fr)) :
+    (hf : lookupName s.env "%fr.0556"
+      = some (.int 64 (BitVec.ofNat 64 (digitFold bs (i0 - d0) (min d0 19))))) :
     fracRunInv mem p n i0 d0 bs (n - i0) s 0 := by
   refine ⟨hpc, hmem, by omega, by omega, hnlt, hd0, hp, hn, hread,
-    Or.inl ⟨hpre, ?_, ?_, fr, hf⟩⟩
+    Or.inl ⟨hpre, ?_, ?_, ?_⟩⟩
   · simpa using hi
   · simpa using hid
+  · simpa only [Nat.add_zero] using hf
 
 /-- Every `lookupName` the fraction dispatch's composition reads.  The
 fraction builders are declared above the integer composition's tactic, so this
@@ -1574,7 +1605,10 @@ theorem fracRun_start {calls : Calls} {env : Env} {s : State} {a n : Nat}
       (BitVec.ofNat 64 n) (BitVec.ofNat 64 i5 + 0x1#64) (0x0#64))
     { s with pc := "land.lhs.true119", pre := some "land.lhs.true119.preheader" },
     fracRunInv_entry rfl rfl rfl (by omega) hnlt (by omega) (by lk_frac) (by lk_frac)
-      hread (by rw [hinc_lk]; lk_frac) (by lk_frac) (by lk_frac),
+      hread (by rw [hinc_lk]; lk_frac) (by lk_frac)
+      (by
+        rw [show min 0 19 = 0 from by decide, digitFold_zero]
+        lk_frac),
     fun k => by
       rw [show 6 + k = 1 + (1 + (1 + (1 + (1 + (1 + k))))) from by omega,
         runFuel_jump_prefix h1s, runFuel_jump_prefix h2s, runFuel_jump_prefix h3s,

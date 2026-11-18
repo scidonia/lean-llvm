@@ -179,6 +179,153 @@ theorem int_succ_eq (j : Nat) (hj : j + 1 < 2 ^ 64) :
       some (.int 64 (BitVec.ofNat 64 (j + 1))) := by
   rw [ofNat64_add_one hj]
 
+/-! ### The accumulator's value
+
+Each run's accumulator is not free: it holds the decimal value of the digits the
+run has consumed.  `digitFold bs start len` is that value — the bytes at `start`,
+the first `len` of them, read base ten — and one accumulating iteration is the
+blocks' own `ip * 10 + digit`: a consumed byte is a digit (`IsDigitB`), whose low
+nibble, `%10 = and %8, 15`, is its difference from `'0'`.
+
+The `19` the ties carry is the accumulators' guard (`%idig.3574 < 19` at
+`while.body52`, `%fdig.3594 < 19` at `while.body130`): past nineteen digits the
+blocks stop accumulating, so the tie is stated over `min len 19` and holds on
+both sides of the guard. -/
+
+/-- The value the digit runs' accumulators compute: the bytes at `start`, the
+first `len` of them, folded base ten. -/
+def digitFold (bs : List UInt8) (start len : Nat) : Nat :=
+  ((bs.drop start).take len).foldl (fun acc b => acc * 10 + (b.toNat - 0x30)) 0
+
+/-- A digit byte's low nibble is its difference from `'0'` — the value the
+blocks' `%10 = and %8, 15` and `%conv60 = zext %10` compute. -/
+theorem digit_and_toNat {b : UInt8} (hb : IsDigitB b = true) :
+    (JsonScanLane.vByte b &&& 0x0f#8).toNat = b.toNat - 0x30 := by
+  unfold IsDigitB at hb
+  rw [Bool.and_eq_true] at hb
+  obtain ⟨h1, h2⟩ := hb
+  rw [decide_eq_true_eq] at h1 h2
+  have h30 : (0x30 : UInt8).toNat = 48 := by decide
+  have h39 : (0x39 : UInt8).toNat = 57 := by decide
+  have hb1 : 48 ≤ b.toNat := by rw [← h30]; exact UInt8.le_iff_toNat_le.mp h1
+  have hb2 : b.toNat ≤ 57 := by rw [← h39]; exact UInt8.le_iff_toNat_le.mp h2
+  have hr : b.toNat % 16 = b.toNat - 48 := by
+    have hsplit : b.toNat = 48 + (b.toNat - 48) := by omega
+    have hlt : b.toNat - 48 < 16 := by omega
+    conv_lhs => rw [hsplit]
+    rw [Nat.add_mod, show (48 : Nat) % 16 = 0 from by decide, Nat.zero_add,
+      Nat.mod_mod, Nat.mod_eq_of_lt hlt]
+  rw [BitVec.toNat_and, JsonScanLane.vByte_toNat,
+    show (0x0f#8 : BitVec 8).toNat = 15 from by decide,
+    show (15 : Nat) = 2 ^ 4 - 1 from by decide,
+    Nat.and_two_pow_sub_one_eq_mod, hr]
+
+/-- The fold's successor: one more digit multiplies by ten and adds it. -/
+theorem digitFold_succ {bs : List UInt8} {start k : Nat}
+    (hlen : start + k < bs.length) :
+    digitFold bs start (k + 1)
+      = digitFold bs start k * 10 + ((bs.getD (start + k) 0).toNat - 0x30) := by
+  have hk : (bs.drop start)[k]? = some (bs.getD (start + k) 0) := by
+    rw [List.getElem?_drop, List.getD_eq_getElem?_getD,
+      List.getElem?_eq_getElem (by omega)]
+    rfl
+  simp only [digitFold, List.take_succ, hk, Option.toList_some, List.foldl_append,
+    List.foldl_cons, List.foldl_nil]
+
+/-- No digits consumed: the fold is zero, which is the accumulator's value at a
+run's start before it accumulates anything. -/
+theorem digitFold_zero (bs : List UInt8) (start : Nat) : digitFold bs start 0 = 0 := by
+  simp only [digitFold, Nat.min_zero, List.take_zero, List.foldl_nil]
+
+/-- A 64-bit word's ten-fold and add, as the block's `%add61`/`%add139` writes it:
+`ofNat` truncates both sides alike, so no bound on the value is needed. -/
+theorem ofNat_mul10_add (v d : Nat) :
+    BitVec.ofNat 64 v * (10 : BitVec 64) + BitVec.ofNat 64 d
+      = BitVec.ofNat 64 (v * 10 + d) := by
+  rw [show (10 : BitVec 64) = BitVec.ofNat 64 10 from rfl,
+    BitVec.ofNat_mul_ofNat, BitVec.ofNat_add_ofNat]
+
+/-- `min` at a length below the cap: one more digit is one more. -/
+theorem min_succ_of_lt {k cap : Nat} (h : k < cap) :
+    min (k + 1) cap = min k cap + 1 := by
+  rw [Nat.min_eq_left (by omega), Nat.min_eq_left (by omega)]
+
+/-- `min` at a length past the cap: the cap has already been reached. -/
+theorem min_succ_of_le {k cap : Nat} (h : cap ≤ k) :
+    min (k + 1) cap = min k cap := by
+  rw [Nat.min_eq_right (by omega), Nat.min_eq_right (by omega)]
+
+/-- The accumulator guard taken, as the count: `%idig.3574 < 19` at a counter
+below `2 ^ 64` is `d0 + c < 19`. -/
+theorem ofNat_ult_true {k : Nat} (hk : k < 2 ^ 64)
+    (h : (BitVec.ofNat 64 k).ult (19#64) = true) : k < 19 := by
+  have h' : (BitVec.ofNat 64 k).toNat < (19#64 : BitVec 64).toNat :=
+    BitVec.ult_iff_toNat_lt.mp h
+  rwa [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hk,
+    show (19#64 : BitVec 64).toNat = 19 from by decide] at h'
+
+/-- The accumulator guard refused, as the count: the counter already reached
+nineteen. -/
+theorem ofNat_ult_false {k : Nat} (hk : k < 2 ^ 64)
+    (h : (BitVec.ofNat 64 k).ult (19#64) = false) : 19 ≤ k := by
+  by_contra hlt
+  have hklt : k < 19 := by omega
+  have htrue : (BitVec.ofNat 64 k).ult (19#64) = true := by
+    apply BitVec.ult_iff_toNat_lt.mpr
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hk,
+      show (19#64 : BitVec 64).toNat = 19 from by decide]
+    exact hklt
+  rw [htrue] at h
+  exact absurd h (by decide)
+
+/-- **One accumulating iteration's arithmetic.**  With the register the fold at
+the digits consumed and the next byte a digit, the block's
+`ip * 10 + (and %8, 15)` is the fold one digit longer. -/
+theorem digitFold_step {bs : List UInt8} {start k : Nat} {b : UInt8} {ip : BitVec 64}
+    (hk : k < 19) (hlen : start + k < bs.length)
+    (hbyte : bs.getD (start + k) 0 = b) (hdig : IsDigitB b = true)
+    (hip : ip = BitVec.ofNat 64 (digitFold bs start k)) :
+    ip * 10 + BitVec.ofNat 64 (JsonScanLane.vByte b &&& 0x0f#8).toNat
+      = BitVec.ofNat 64 (digitFold bs start (k + 1)) := by
+  subst hip
+  rw [digitFold_succ hlen, hbyte, digit_and_toNat hdig, ofNat_mul10_add]
+
+/-- The frozen iteration's arithmetic: the guard refused, so the register is the
+fold at the cap already and stays it. -/
+theorem digitFold_frozen {bs : List UInt8} {start k : Nat} {ip : BitVec 64}
+    (h : 19 ≤ k) (hip : ip = BitVec.ofNat 64 (digitFold bs start (min k 19))) :
+    ip = BitVec.ofNat 64 (digitFold bs start (min (k + 1) 19)) := by
+  rw [min_succ_of_le h]; exact hip
+
+/-- **One accumulating iteration, at the run's own indices.**  The same step
+stated with the counter `c` and the digits' start `i0 - d0` kept apart, so the
+caller supplies `i0 + c < bs.length` at the run's own index rather than the sum
+of a subtraction. -/
+theorem digitFold_step_at {bs : List UInt8} {i0 d0 c : Nat} {b : UInt8} {ip : BitVec 64}
+    (hd0 : d0 ≤ i0) (hk : d0 + c < 19) (hlen : i0 + c < bs.length)
+    (hbyte : bs.getD (i0 + c) 0 = b) (hdig : IsDigitB b = true)
+    (hip : ip = BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + c) 19))) :
+    ip * 10 + BitVec.ofNat 64 (JsonScanLane.vByte b &&& 0x0f#8).toNat
+      = BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + c + 1) 19)) := by
+  have hidx : i0 - d0 + (d0 + c) = i0 + c := by
+    rw [← Nat.add_assoc, Nat.sub_add_cancel hd0]
+  have hklt : min (d0 + c) 19 = d0 + c := Nat.min_eq_left (by omega)
+  have hstep : min (d0 + c + 1) 19 = d0 + c + 1 := by
+    rw [min_succ_of_lt hk, Nat.min_eq_left (by omega)]
+  rw [hstep]
+  refine digitFold_step hk ?_ ?_ hdig ?_
+  · rw [hidx]; exact hlen
+  · rwa [hidx]
+  · rw [← hklt]; exact hip
+
+/-- The byte a run is about to consume, as the invariant's list reads it: the
+memory's byte at `start + k` is the list's, since the list is the range's. -/
+theorem getD_of_readBytes {m : Mem} {p n k : Nat} {bs : List UInt8} {b : UInt8}
+    (h : readBytes m p n = some bs) (hk : k < n) (hb : readByte m (p + k) = some b) :
+    bs.getD k 0 = b := by
+  have hsome : readByte m (p + k) = some (bs.getD k 0) := readByte_of_readBytes h hk
+  exact Option.some.inj (hsome.symm.trans hb)
+
 /-! ### The integer run: `land.lhs.true41`
 
 The head's three `phi`s, its byte load and its test; the exit is `if.end68` at
@@ -690,16 +837,22 @@ theorem intHead_step_back_nondigit {env : Env} {s : State} {a j : Nat} {b : UInt
 
 /-- The exit states: the head's non-digit branch (`if.end68`) or the
 end-of-lexeme branch (`if.end230`), each carrying the count at the index it
-stopped at. -/
-def intRunExit (i0 d0 : Nat) (e : State) : Prop :=
+stopped at and the accumulator's value at the digits the count names. -/
+def intRunExit (bs : List UInt8) (i0 d0 : Nat) (e : State) : Prop :=
   (e.pc = "if.end68" ∧
       ∃ i1, lookupName e.env "%i.4575" = some (.int 64 (BitVec.ofNat 64 i1)) ∧
         lookupName e.env "%idig.3574"
-          = some (.int 64 (BitVec.ofNat 64 (d0 + (i1 - i0)))))
+          = some (.int 64 (BitVec.ofNat 64 (d0 + (i1 - i0)))) ∧
+        lookupName e.env "%ip.3573"
+          = some (.int 64
+            (BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + (i1 - i0)) 19)))))
   ∨ (e.pc = "if.end230" ∧
       ∃ i1, lookupName e.env "%inc64" = some (.int 64 (BitVec.ofNat 64 i1)) ∧
         lookupName e.env "%inc63"
-          = some (.int 64 (BitVec.ofNat 64 (d0 + (i1 - i0)))))
+          = some (.int 64 (BitVec.ofNat 64 (d0 + (i1 - i0)))) ∧
+        lookupName e.env "%ip.4"
+          = some (.int 64
+            (BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + (i1 - i0)) 19)))))
 
 /-- The head's test, at the run's own start: the remaining length is one short
 of the counter, or the byte at the counter is not a digit. -/
@@ -707,7 +860,9 @@ def intRunAtBound (mem0 : Mem) (p n i0 : Nat) (s : State) (c : Nat) : Bool :=
   decide (n - i0 ≤ c + 1) || !numFastDigitAt mem0 p (i0 + c)
 
 /-- The run's invariant: the head with the counters at `c`, the byte readable at
-`i0 + c`, and the edge's phi sources at `i0 + c` and `d0 + c`. -/
+`i0 + c`, the edge's phi sources at `i0 + c` and `d0 + c`, and the accumulator
+at the digits consumed — the fold over `min (d0 + c) 19` of the bytes from
+`i0 - d0`, which is where the integer part's digits begin. -/
 def intRunInv (mem0 : Mem) (p n i0 d0 : Nat) (bs : List UInt8) (r : Nat)
     (s : State) (c : Nat) : Prop :=
   s.pc = "land.lhs.true41" ∧ s.mem = mem0 ∧ c + r = n - i0 ∧ i0 + c < n ∧
@@ -718,11 +873,13 @@ def intRunInv (mem0 : Mem) (p n i0 d0 : Nat) (bs : List UInt8) (r : Nat)
   ((s.pre = some "land.lhs.true41.preheader" ∧
       lookupName s.env "%i.1558" = some (.int 64 (BitVec.ofNat 64 (i0 + c))) ∧
       lookupName s.env "%idig.0560" = some (.int 64 (BitVec.ofNat 64 (d0 + c))) ∧
-      ∃ ip : BitVec 64, lookupName s.env "%ip.0562" = some (.int 64 ip))
+      lookupName s.env "%ip.0562"
+        = some (.int 64 (BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + c) 19)))))
    ∨ (s.pre = some "if.end62" ∧
       lookupName s.env "%inc64" = some (.int 64 (BitVec.ofNat 64 (i0 + c))) ∧
       lookupName s.env "%inc63" = some (.int 64 (BitVec.ofNat 64 (d0 + c))) ∧
-      ∃ ip : BitVec 64, lookupName s.env "%ip.4" = some (.int 64 ip)))
+      lookupName s.env "%ip.4"
+        = some (.int 64 (BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + c) 19))))))
 
 /-- A readable trace's byte is present. -/
 theorem readByte_of_readBytes_lt {m : Mem} {a n : Nat} {bs : List UInt8}
@@ -761,6 +918,7 @@ theorem intRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
       ∀ k, runFuel s2HelperCalls (j + k) numFastBody s =
         runFuel s2HelperCalls k numFastBody e := by
   obtain ⟨hpc, hmem, hsum, hltn, hnlt, hd0le, hp, hn, hread, hpre⟩ := hinv
+  have hblen : bs.length = n := JsonEntrySteps.readBytes_length mem0 p n hread
   unfold intRunAtBound at hb
   obtain ⟨hnoD, hdig⟩ := Bool.or_eq_false_iff.mp hb
   have hno : ¬ (n - i0 ≤ c + 1) := of_decide_eq_false hnoD
@@ -782,7 +940,8 @@ theorem intRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
       Nat.mod_eq_of_lt hnext64, Nat.mod_eq_of_lt (by omega)] at h2
     omega
   rcases hpre with hent | hback
-  · obtain ⟨hpre0, hi, hid, ip, hipv⟩ := hent
+  · obtain ⟨hpre0, hi, hid, hipv⟩ := hent
+    let ip : BitVec 64 := BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + c) 19))
     let e0 : State := stateAt (intHeadEnv s.env p (i0 + c) b
         (BitVec.ofNat 64 (d0 + c)) ip)
       { s with pc := "while.body52", pre := some "land.lhs.true41" }
@@ -880,8 +1039,17 @@ theorem intRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               intHeadEnv, intHeadPhiEnv]
             block_lk
             exact int_succ_eq _ hd0next64
-          · exact ⟨ip * 10 + BitVec.ofNat 64 (JsonScanLane.vByte b &&& 0x0f#8).toNat,
-              by simp only [e3, stateAt, intIfEndEnv]; block_lk⟩
+          · have hbyteD : bs.getD (i0 + c) 0 = b :=
+              getD_of_readBytes hread (by omega) hbyte
+            have hnew : ip * 10 + BitVec.ofNat 64
+                (JsonScanLane.vByte b &&& 0x0f#8).toNat
+                = BitVec.ofNat 64
+                  (digitFold bs (i0 - d0) (min (d0 + c + 1) 19)) :=
+              digitFold_step_at hd0le (ofNat_ult_true (by omega) hguard)
+                (by rw [hblen]; exact hltn) hbyteD hdigitB rfl
+            simp only [e3, stateAt, intIfEndEnv]
+            block_lk
+            exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hnew
       · intro k
         rw [show 4 + k = 1 + (1 + (1 + (1 + k))) from by omega,
           runFuel_jump_prefix hstep1 (1 + (1 + (1 + k))),
@@ -959,13 +1127,19 @@ theorem intRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               intHeadPhiEnv]
             block_lk
             exact int_succ_eq _ hd0next64
-          · exact ⟨ip, by simp only [e2, stateAt, intIfEndEnv]; block_lk⟩
+          · have hfrozen : ip = BitVec.ofNat 64
+                (digitFold bs (i0 - d0) (min (d0 + c + 1) 19)) :=
+              digitFold_frozen (ofNat_ult_false (by omega) hguard') rfl
+            simp only [e2, stateAt, intIfEndEnv]
+            block_lk
+            exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hfrozen
       · intro k
         rw [show 3 + k = 1 + (1 + (1 + k)) from by omega,
           runFuel_jump_prefix hstep1 (1 + (1 + k)),
           runFuel_jump_prefix hstep2 (1 + k),
           runFuel_jump_prefix hstep3 k]
-  · obtain ⟨hpre0, hi, hid, ip, hipv⟩ := hback
+  · obtain ⟨hpre0, hi, hid, hipv⟩ := hback
+    let ip : BitVec 64 := BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + c) 19))
     let e0 : State := stateAt (intHeadEnv s.env p (i0 + c) b
         (BitVec.ofNat 64 (d0 + c)) ip)
       { s with pc := "while.body52", pre := some "land.lhs.true41" }
@@ -1062,8 +1236,17 @@ theorem intRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               intHeadEnv, intHeadPhiEnv]
             block_lk
             exact int_succ_eq _ hd0next64
-          · exact ⟨ip * 10 + BitVec.ofNat 64 (JsonScanLane.vByte b &&& 0x0f#8).toNat,
-              by simp only [e3, stateAt, intIfEndEnv]; block_lk⟩
+          · have hbyteD : bs.getD (i0 + c) 0 = b :=
+              getD_of_readBytes hread (by omega) hbyte
+            have hnew : ip * 10 + BitVec.ofNat 64
+                (JsonScanLane.vByte b &&& 0x0f#8).toNat
+                = BitVec.ofNat 64
+                  (digitFold bs (i0 - d0) (min (d0 + c + 1) 19)) :=
+              digitFold_step_at hd0le (ofNat_ult_true (by omega) hguard)
+                (by rw [hblen]; exact hltn) hbyteD hdigitB rfl
+            simp only [e3, stateAt, intIfEndEnv]
+            block_lk
+            exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hnew
       · intro k
         rw [show 4 + k = 1 + (1 + (1 + (1 + k))) from by omega,
           runFuel_jump_prefix hstep1 (1 + (1 + (1 + k))),
@@ -1141,7 +1324,12 @@ theorem intRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               intHeadPhiEnv]
             block_lk
             exact int_succ_eq _ hd0next64
-          · exact ⟨ip, by simp only [e2, stateAt, intIfEndEnv]; block_lk⟩
+          · have hfrozen : ip = BitVec.ofNat 64
+                (digitFold bs (i0 - d0) (min (d0 + c + 1) 19)) :=
+              digitFold_frozen (ofNat_ult_false (by omega) hguard') rfl
+            simp only [e2, stateAt, intIfEndEnv]
+            block_lk
+            exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hfrozen
       · intro k
         rw [show 3 + k = 1 + (1 + (1 + k)) from by omega,
           runFuel_jump_prefix hstep1 (1 + (1 + k)),
@@ -1160,14 +1348,15 @@ def intRunExitBlock (e : State) : Prop :=
   e.pc = "if.end68" ∨ e.pc = "if.end230"
 
 /-- The counters the exit hands back, read off `intRunExit`. -/
-theorem intRunExit_count (i0 d0 : Nat) (e : State) (h : intRunExit i0 d0 e) :
+theorem intRunExit_count (bs : List UInt8) (i0 d0 : Nat) (e : State)
+    (h : intRunExit bs i0 d0 e) :
     (∃ i1, e.pc = "if.end68" ∧
       lookupName e.env "%idig.3574"
         = some (.int 64 (BitVec.ofNat 64 (d0 + (i1 - i0))))) ∨
     (∃ i1, e.pc = "if.end230" ∧
       lookupName e.env "%inc63"
         = some (.int 64 (BitVec.ofNat 64 (d0 + (i1 - i0))))) := by
-  rcases h with ⟨hpc, i1, _, hcnt⟩ | ⟨hpc, i1, _, hcnt⟩
+  rcases h with ⟨hpc, i1, _, hcnt, _⟩ | ⟨hpc, i1, _, hcnt, _⟩
   · exact Or.inl ⟨i1, hpc, hcnt⟩
   · exact Or.inr ⟨i1, hpc, hcnt⟩
 
@@ -1196,10 +1385,11 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
     {s : State} {c : Nat}
     (hinv : intRunInv mem0 p n i0 d0 bs r s c)
     (hb : intRunAtBound mem0 p n i0 s c = true) :
-    ∃ (e : State) (j : Nat), j ≤ 4 ∧ intRunExitBlock e ∧ intRunExit i0 d0 e ∧
+    ∃ (e : State) (j : Nat), j ≤ 4 ∧ intRunExitBlock e ∧ intRunExit bs i0 d0 e ∧
       ∀ k, runFuel s2HelperCalls (j + k) numFastBody s =
         runFuel s2HelperCalls k numFastBody e := by
   obtain ⟨hpc, hmem, hsum, hltn, hnlt, hd0le, hp, hn, hread, hpre⟩ := hinv
+  have hblen : bs.length = n := JsonEntrySteps.readBytes_length mem0 p n hread
   have hd0next64 : d0 + c + 1 < 2 ^ 64 := by omega
   obtain ⟨b, hbyte⟩ := readByte_of_readBytes_lt hread hltn
   have hbyte_s : readByte s.mem (p + (i0 + c)) = some b := by rw [hmem]; exact hbyte
@@ -1216,7 +1406,8 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
     by_cases hdigit : IsDigitB b = true
     · -- the byte is a digit: the iteration reaches `if.end230` at `i0 + c + 1`
       rcases hpre with hent | hback
-      · obtain ⟨hpre0, hi, hid, ip, hipv⟩ := hent
+      · obtain ⟨hpre0, hi, hid, hipv⟩ := hent
+        let ip : BitVec 64 := BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + c) 19))
         let e0 : State := stateAt (intHeadEnv s.env p (i0 + c) b
             (BitVec.ofNat 64 (d0 + c)) ip)
           { s with pc := "while.body52", pre := some "land.lhs.true41" }
@@ -1290,7 +1481,7 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               hidig2 hi2 hn2 hbits
           refine ⟨e3, 4, by omega, Or.inr (by simp only [e3, stateAt]), ?_, ?_⟩
           · refine Or.inr ⟨by simp only [e3, stateAt], ?_⟩
-            refine ⟨i0 + c + 1, ?_, ?_⟩
+            refine ⟨i0 + c + 1, ?_, ?_, ?_⟩
             · simp only [e3, stateAt, intIfEndEnv]
               block_lk
               exact int_succ_eq _ hnext64
@@ -1298,6 +1489,18 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               rw [hcnt64]
               block_lk
               exact int_succ_eq _ hd0next64
+            · have hbyteD : bs.getD (i0 + c) 0 = b :=
+                getD_of_readBytes hread (by omega) hbyte
+              have hval : ip * 10 + BitVec.ofNat 64
+                  (JsonScanLane.vByte b &&& 0x0f#8).toNat
+                  = BitVec.ofNat 64
+                    (digitFold bs (i0 - d0) (min (d0 + (i0 + c + 1 - i0)) 19)) := by
+                rw [hcnt64]
+                exact digitFold_step_at hd0le (ofNat_ult_true (by omega) hguard)
+                  (by rw [hblen]; omega) hbyteD hdigit rfl
+              simp only [e3, stateAt, intIfEndEnv]
+              block_lk
+              exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hval
           · intro k
             rw [show 4 + k = 1 + (1 + (1 + (1 + k))) from by omega,
               runFuel_jump_prefix hstep1 (1 + (1 + (1 + k))),
@@ -1349,7 +1552,7 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               hidig1 hi1 hn1 hbits
           refine ⟨e2, 3, by omega, Or.inr (by simp only [e2, stateAt]), ?_, ?_⟩
           · refine Or.inr ⟨by simp only [e2, stateAt], ?_⟩
-            refine ⟨i0 + c + 1, ?_, ?_⟩
+            refine ⟨i0 + c + 1, ?_, ?_, ?_⟩
             · simp only [e2, stateAt, intIfEndEnv]
               block_lk
               exact int_succ_eq _ hnext64
@@ -1357,12 +1560,20 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               rw [hcnt64]
               block_lk
               exact int_succ_eq _ hd0next64
+            · have hval : ip = BitVec.ofNat 64
+                  (digitFold bs (i0 - d0) (min (d0 + (i0 + c + 1 - i0)) 19)) := by
+                rw [hcnt64]
+                exact digitFold_frozen (ofNat_ult_false (by omega) hguard') rfl
+              simp only [e2, stateAt, intIfEndEnv]
+              block_lk
+              exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hval
           · intro k
             rw [show 3 + k = 1 + (1 + (1 + k)) from by omega,
               runFuel_jump_prefix hstep1 (1 + (1 + k)),
               runFuel_jump_prefix hstep2 (1 + k),
               runFuel_jump_prefix hstep3 k]
-      · obtain ⟨hpre0, hi, hid, ip, hipv⟩ := hback
+      · obtain ⟨hpre0, hi, hid, hipv⟩ := hback
+        let ip : BitVec 64 := BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + c) 19))
         let e0 : State := stateAt (intHeadEnv s.env p (i0 + c) b
             (BitVec.ofNat 64 (d0 + c)) ip)
           { s with pc := "while.body52", pre := some "land.lhs.true41" }
@@ -1436,7 +1647,7 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               hidig2 hi2 hn2 hbits
           refine ⟨e3, 4, by omega, Or.inr (by simp only [e3, stateAt]), ?_, ?_⟩
           · refine Or.inr ⟨by simp only [e3, stateAt], ?_⟩
-            refine ⟨i0 + c + 1, ?_, ?_⟩
+            refine ⟨i0 + c + 1, ?_, ?_, ?_⟩
             · simp only [e3, stateAt, intIfEndEnv]
               block_lk
               exact int_succ_eq _ hnext64
@@ -1444,6 +1655,18 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               rw [hcnt64]
               block_lk
               exact int_succ_eq _ hd0next64
+            · have hbyteD : bs.getD (i0 + c) 0 = b :=
+                getD_of_readBytes hread (by omega) hbyte
+              have hval : ip * 10 + BitVec.ofNat 64
+                  (JsonScanLane.vByte b &&& 0x0f#8).toNat
+                  = BitVec.ofNat 64
+                    (digitFold bs (i0 - d0) (min (d0 + (i0 + c + 1 - i0)) 19)) := by
+                rw [hcnt64]
+                exact digitFold_step_at hd0le (ofNat_ult_true (by omega) hguard)
+                  (by rw [hblen]; omega) hbyteD hdigit rfl
+              simp only [e3, stateAt, intIfEndEnv]
+              block_lk
+              exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hval
           · intro k
             rw [show 4 + k = 1 + (1 + (1 + (1 + k))) from by omega,
               runFuel_jump_prefix hstep1 (1 + (1 + (1 + k))),
@@ -1495,7 +1718,7 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               hidig1 hi1 hn1 hbits
           refine ⟨e2, 3, by omega, Or.inr (by simp only [e2, stateAt]), ?_, ?_⟩
           · refine Or.inr ⟨by simp only [e2, stateAt], ?_⟩
-            refine ⟨i0 + c + 1, ?_, ?_⟩
+            refine ⟨i0 + c + 1, ?_, ?_, ?_⟩
             · simp only [e2, stateAt, intIfEndEnv]
               block_lk
               exact int_succ_eq _ hnext64
@@ -1503,6 +1726,13 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               rw [hcnt64]
               block_lk
               exact int_succ_eq _ hd0next64
+            · have hval : ip = BitVec.ofNat 64
+                  (digitFold bs (i0 - d0) (min (d0 + (i0 + c + 1 - i0)) 19)) := by
+                rw [hcnt64]
+                exact digitFold_frozen (ofNat_ult_false (by omega) hguard') rfl
+              simp only [e2, stateAt, intIfEndEnv]
+              block_lk
+              exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hval
           · intro k
             rw [show 3 + k = 1 + (1 + (1 + k)) from by omega,
               runFuel_jump_prefix hstep1 (1 + (1 + k)),
@@ -1514,7 +1744,8 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
           · rfl
           · exact absurd h hdigit
         rcases hpre with hent | hback
-        · obtain ⟨hpre0, hi, hid, ip, hipv⟩ := hent
+        · obtain ⟨hpre0, hi, hid, hipv⟩ := hent
+          let ip : BitVec 64 := BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + c) 19))
           let e0 : State := stateAt (intHeadEnv s.env p (i0 + c) b
               (BitVec.ofNat 64 (d0 + c)) ip)
             { s with pc := "if.end68", pre := some "land.lhs.true41" }
@@ -1526,15 +1757,22 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               (BlockEval.evalOperand_reg_of s.env s "%ip.0562" _ hipv) hj hbyte_s hdigit'
           refine ⟨e0, 1, by omega, Or.inl (by simp only [e0, stateAt]), ?_, ?_⟩
           · refine Or.inl ⟨by simp only [e0, stateAt], ?_⟩
-            refine ⟨i0 + c, ?_, ?_⟩
+            refine ⟨i0 + c, ?_, ?_, ?_⟩
             · simp only [e0, stateAt, intHeadEnv, intHeadPhiEnv]
               block_lk
             · simp only [e0, stateAt, intHeadEnv, intHeadPhiEnv]
               rw [show d0 + (i0 + c - i0) = d0 + c from by omega]
               block_lk
+            · have hval : ip = BitVec.ofNat 64
+                  (digitFold bs (i0 - d0) (min (d0 + (i0 + c - i0)) 19)) := by
+                rw [show d0 + (i0 + c - i0) = d0 + c from by omega]
+              simp only [e0, stateAt, intHeadEnv, intHeadPhiEnv]
+              block_lk
+              exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hval
           · intro k
             rw [runFuel_jump_prefix hstep1 k]
-        · obtain ⟨hpre0, hi, hid, ip, hipv⟩ := hback
+        · obtain ⟨hpre0, hi, hid, hipv⟩ := hback
+          let ip : BitVec 64 := BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + c) 19))
           let e0 : State := stateAt (intHeadEnv s.env p (i0 + c) b
               (BitVec.ofNat 64 (d0 + c)) ip)
             { s with pc := "if.end68", pre := some "land.lhs.true41" }
@@ -1546,12 +1784,18 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               (BlockEval.evalOperand_reg_of s.env s "%ip.4" _ hipv) hj hbyte_s hdigit'
           refine ⟨e0, 1, by omega, Or.inl (by simp only [e0, stateAt]), ?_, ?_⟩
           · refine Or.inl ⟨by simp only [e0, stateAt], ?_⟩
-            refine ⟨i0 + c, ?_, ?_⟩
+            refine ⟨i0 + c, ?_, ?_, ?_⟩
             · simp only [e0, stateAt, intHeadEnv, intHeadPhiEnv]
               block_lk
             · simp only [e0, stateAt, intHeadEnv, intHeadPhiEnv]
               rw [show d0 + (i0 + c - i0) = d0 + c from by omega]
               block_lk
+            · have hval : ip = BitVec.ofNat 64
+                  (digitFold bs (i0 - d0) (min (d0 + (i0 + c - i0)) 19)) := by
+                rw [show d0 + (i0 + c - i0) = d0 + c from by omega]
+              simp only [e0, stateAt, intHeadEnv, intHeadPhiEnv]
+              block_lk
+              exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hval
           · intro k
             rw [runFuel_jump_prefix hstep1 k]
   · -- the counter is not at the bound: the byte is not a digit
@@ -1561,7 +1805,8 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
     have hbb : b = b' := Option.some.inj (hbyte.symm.trans hbyte')
     subst hbb
     rcases hpre with hent | hback
-    · obtain ⟨hpre0, hi, hid, ip, hipv⟩ := hent
+    · obtain ⟨hpre0, hi, hid, hipv⟩ := hent
+      let ip : BitVec 64 := BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + c) 19))
       let e0 : State := stateAt (intHeadEnv s.env p (i0 + c) b
           (BitVec.ofNat 64 (d0 + c)) ip)
         { s with pc := "if.end68", pre := some "land.lhs.true41" }
@@ -1573,15 +1818,22 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
           (BlockEval.evalOperand_reg_of s.env s "%ip.0562" _ hipv) hj hbyte_s hdigit'
       refine ⟨e0, 1, by omega, Or.inl (by simp only [e0, stateAt]), ?_, ?_⟩
       · refine Or.inl ⟨by simp only [e0, stateAt], ?_⟩
-        refine ⟨i0 + c, ?_, ?_⟩
+        refine ⟨i0 + c, ?_, ?_, ?_⟩
         · simp only [e0, stateAt, intHeadEnv, intHeadPhiEnv]
           block_lk
         · simp only [e0, stateAt, intHeadEnv, intHeadPhiEnv]
           rw [show d0 + (i0 + c - i0) = d0 + c from by omega]
           block_lk
+        · have hval : ip = BitVec.ofNat 64
+              (digitFold bs (i0 - d0) (min (d0 + (i0 + c - i0)) 19)) := by
+            rw [show d0 + (i0 + c - i0) = d0 + c from by omega]
+          simp only [e0, stateAt, intHeadEnv, intHeadPhiEnv]
+          block_lk
+          exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hval
       · intro k
         rw [runFuel_jump_prefix hstep1 k]
-    · obtain ⟨hpre0, hi, hid, ip, hipv⟩ := hback
+    · obtain ⟨hpre0, hi, hid, hipv⟩ := hback
+      let ip : BitVec 64 := BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + c) 19))
       let e0 : State := stateAt (intHeadEnv s.env p (i0 + c) b
           (BitVec.ofNat 64 (d0 + c)) ip)
         { s with pc := "if.end68", pre := some "land.lhs.true41" }
@@ -1593,12 +1845,18 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
           (BlockEval.evalOperand_reg_of s.env s "%ip.4" _ hipv) hj hbyte_s hdigit'
       refine ⟨e0, 1, by omega, Or.inl (by simp only [e0, stateAt]), ?_, ?_⟩
       · refine Or.inl ⟨by simp only [e0, stateAt], ?_⟩
-        refine ⟨i0 + c, ?_, ?_⟩
+        refine ⟨i0 + c, ?_, ?_, ?_⟩
         · simp only [e0, stateAt, intHeadEnv, intHeadPhiEnv]
           block_lk
         · simp only [e0, stateAt, intHeadEnv, intHeadPhiEnv]
           rw [show d0 + (i0 + c - i0) = d0 + c from by omega]
           block_lk
+        · have hval : ip = BitVec.ofNat 64
+              (digitFold bs (i0 - d0) (min (d0 + (i0 + c - i0)) 19)) := by
+            rw [show d0 + (i0 + c - i0) = d0 + c from by omega]
+          simp only [e0, stateAt, intHeadEnv, intHeadPhiEnv]
+          block_lk
+          exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hval
       · intro k
         rw [runFuel_jump_prefix hstep1 k]
 
@@ -1615,7 +1873,7 @@ def intRunBoundLoop (mem0 : Mem) (p n i0 d0 : Nat) (bs : List UInt8) (cost : Nat
   Inv := intRunInv mem0 p n i0 d0 bs
   atBound := intRunAtBound mem0 p n i0
   Exit := intRunExitBlock
-  ExitWord := intRunExit i0 d0
+  ExitWord := intRunExit bs i0 d0
   step_exit := by
     intro r s c hinv hb
     have hb' : intRunAtBound mem0 p n i0 s c = true := hb
@@ -1644,7 +1902,7 @@ theorem intRun_run (mem0 : Mem) (p n i0 d0 : Nat) (bs : List UInt8) (cost : Nat)
     (hcost : 4 ≤ cost) (s : State) (c : Nat)
     (hinv : intRunInv mem0 p n i0 d0 bs (n - i0) s c) (k : Nat) :
     ∃ (e : State) (j : Nat), j ≤ (n - i0 + 1) * cost ∧ intRunExitBlock e ∧
-      intRunExit i0 d0 e ∧
+      intRunExit bs i0 d0 e ∧
       runFuel s2HelperCalls (j + k) numFastBody s =
         runFuel s2HelperCalls k numFastBody e :=
   (intRunBoundLoop mem0 p n i0 d0 bs cost hcost).run s c hinv k
@@ -2153,16 +2411,23 @@ theorem fracHead_step_back_nondigit {env : Env} {s : State} {a j : Nat} {b : UIn
 /-! #### The fraction run's invariant, arms and instance -/
 
 /-- The fraction run's exits: `if.end144` at the head's non-digit branch, or
-`if.end230` at `if.end140`'s end-of-lexeme branch; each carries the count. -/
-def fracRunExit (i0 d0 : Nat) (e : State) : Prop :=
+`if.end230` at `if.end140`'s end-of-lexeme branch; each carries the count and the
+accumulator's value at the digits the count names. -/
+def fracRunExit (bs : List UInt8) (i0 d0 : Nat) (e : State) : Prop :=
   (e.pc = "if.end144" ∧
       ∃ i1, lookupName e.env "%i.9595" = some (.int 64 (BitVec.ofNat 64 i1)) ∧
         lookupName e.env "%fdig.3594"
-          = some (.int 64 (BitVec.ofNat 64 (d0 + (i1 - i0)))))
+          = some (.int 64 (BitVec.ofNat 64 (d0 + (i1 - i0)))) ∧
+        lookupName e.env "%fr.3593"
+          = some (.int 64
+            (BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + (i1 - i0)) 19)))))
   ∨ (e.pc = "if.end230" ∧
       ∃ i1, lookupName e.env "%inc142" = some (.int 64 (BitVec.ofNat 64 i1)) ∧
         lookupName e.env "%inc141"
-          = some (.int 64 (BitVec.ofNat 64 (d0 + (i1 - i0)))))
+          = some (.int 64 (BitVec.ofNat 64 (d0 + (i1 - i0)))) ∧
+        lookupName e.env "%fr.4"
+          = some (.int 64
+            (BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + (i1 - i0)) 19)))))
 
 def fracRunAtBound (mem0 : Mem) (p n i0 : Nat) (s : State) (c : Nat) : Bool :=
   decide (n - i0 ≤ c + 1) || !numFastDigitAt mem0 p (i0 + c)
@@ -2177,11 +2442,13 @@ def fracRunInv (mem0 : Mem) (p n i0 d0 : Nat) (bs : List UInt8) (r : Nat)
   ((s.pre = some "land.lhs.true119.preheader" ∧
       lookupName s.env "%i.6552" = some (.int 64 (BitVec.ofNat 64 (i0 + c))) ∧
       lookupName s.env "%fdig.0554" = some (.int 64 (BitVec.ofNat 64 (d0 + c))) ∧
-      ∃ fr : BitVec 64, lookupName s.env "%fr.0556" = some (.int 64 fr))
+      lookupName s.env "%fr.0556"
+        = some (.int 64 (BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + c) 19)))))
    ∨ (s.pre = some "if.end140" ∧
       lookupName s.env "%inc142" = some (.int 64 (BitVec.ofNat 64 (i0 + c))) ∧
       lookupName s.env "%inc141" = some (.int 64 (BitVec.ofNat 64 (d0 + c))) ∧
-      ∃ fr : BitVec 64, lookupName s.env "%fr.4" = some (.int 64 fr)))
+      lookupName s.env "%fr.4"
+        = some (.int 64 (BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + c) 19))))))
 
 theorem fracRun_bound_nondigit {mem0 : Mem} {p n i0 : Nat} {bs : List UInt8}
     {s : State} {c : Nat} (hread : readBytes mem0 p n = some bs)
@@ -2208,6 +2475,7 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
       ∀ k, runFuel s2HelperCalls (j + k) numFastBody s =
         runFuel s2HelperCalls k numFastBody e := by
   obtain ⟨hpc, hmem, hsum, hltn, hnlt, hd0le, hp, hn, hread, hpre⟩ := hinv
+  have hblen : bs.length = n := JsonEntrySteps.readBytes_length mem0 p n hread
   unfold fracRunAtBound at hb
   obtain ⟨hnoD, hdig⟩ := Bool.or_eq_false_iff.mp hb
   have hno : ¬ (n - i0 ≤ c + 1) := of_decide_eq_false hnoD
@@ -2229,7 +2497,8 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
       Nat.mod_eq_of_lt hnext64, Nat.mod_eq_of_lt (by omega)] at h2
     omega
   rcases hpre with hent | hback
-  · obtain ⟨hpre0, hi, hid, fr, hfr⟩ := hent
+  · obtain ⟨hpre0, hi, hid, hfr⟩ := hent
+    let fr : BitVec 64 := BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + c) 19))
     let e0 : State := stateAt (fracHeadEnv s.env p (i0 + c) b
         (BitVec.ofNat 64 (d0 + c)) fr)
       { s with pc := "while.body130", pre := some "land.lhs.true119" }
@@ -2329,9 +2598,17 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               fracBodyEnv, fracHeadEnv, fracHeadPhiEnv]
             block_lk
             exact int_succ_eq _ hd0next64
-          · exact ⟨fr * 10 + BitVec.ofNat 64
-              (JsonScanLane.vByte b &&& 0x0f#8).toNat,
-              by simp only [e3, stateAt, fracIfEndEnv]; block_lk⟩
+          · have hbyteD : bs.getD (i0 + c) 0 = b :=
+              getD_of_readBytes hread (by omega) hbyte
+            have hnew : fr * 10 + BitVec.ofNat 64
+                (JsonScanLane.vByte b &&& 0x0f#8).toNat
+                = BitVec.ofNat 64
+                  (digitFold bs (i0 - d0) (min (d0 + c + 1) 19)) :=
+              digitFold_step_at hd0le (ofNat_ult_true (by omega) hguard)
+                (by rw [hblen]; exact hltn) hbyteD hdigitB rfl
+            simp only [e3, stateAt, fracIfEndEnv]
+            block_lk
+            exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hnew
       · intro k
         rw [show 4 + k = 1 + (1 + (1 + (1 + k))) from by omega,
           runFuel_jump_prefix hstep1 (1 + (1 + (1 + k))),
@@ -2410,13 +2687,19 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               fracHeadPhiEnv]
             block_lk
             exact int_succ_eq _ hd0next64
-          · exact ⟨fr, by simp only [e2, stateAt, fracIfEndEnv]; block_lk⟩
+          · have hfrozen : fr = BitVec.ofNat 64
+                (digitFold bs (i0 - d0) (min (d0 + c + 1) 19)) :=
+              digitFold_frozen (ofNat_ult_false (by omega) hguard') rfl
+            simp only [e2, stateAt, fracIfEndEnv]
+            block_lk
+            exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hfrozen
       · intro k
         rw [show 3 + k = 1 + (1 + (1 + k)) from by omega,
           runFuel_jump_prefix hstep1 (1 + (1 + k)),
           runFuel_jump_prefix hstep2 (1 + k),
           runFuel_jump_prefix hstep3 k]
-  · obtain ⟨hpre0, hi, hid, fr, hfr⟩ := hback
+  · obtain ⟨hpre0, hi, hid, hfr⟩ := hback
+    let fr : BitVec 64 := BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + c) 19))
     let e0 : State := stateAt (fracHeadEnv s.env p (i0 + c) b
         (BitVec.ofNat 64 (d0 + c)) fr)
       { s with pc := "while.body130", pre := some "land.lhs.true119" }
@@ -2516,9 +2799,17 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               fracBodyEnv, fracHeadEnv, fracHeadPhiEnv]
             block_lk
             exact int_succ_eq _ hd0next64
-          · exact ⟨fr * 10 + BitVec.ofNat 64
-              (JsonScanLane.vByte b &&& 0x0f#8).toNat,
-              by simp only [e3, stateAt, fracIfEndEnv]; block_lk⟩
+          · have hbyteD : bs.getD (i0 + c) 0 = b :=
+              getD_of_readBytes hread (by omega) hbyte
+            have hnew : fr * 10 + BitVec.ofNat 64
+                (JsonScanLane.vByte b &&& 0x0f#8).toNat
+                = BitVec.ofNat 64
+                  (digitFold bs (i0 - d0) (min (d0 + c + 1) 19)) :=
+              digitFold_step_at hd0le (ofNat_ult_true (by omega) hguard)
+                (by rw [hblen]; exact hltn) hbyteD hdigitB rfl
+            simp only [e3, stateAt, fracIfEndEnv]
+            block_lk
+            exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hnew
       · intro k
         rw [show 4 + k = 1 + (1 + (1 + (1 + k))) from by omega,
           runFuel_jump_prefix hstep1 (1 + (1 + (1 + k))),
@@ -2597,7 +2888,12 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               fracHeadPhiEnv]
             block_lk
             exact int_succ_eq _ hd0next64
-          · exact ⟨fr, by simp only [e2, stateAt, fracIfEndEnv]; block_lk⟩
+          · have hfrozen : fr = BitVec.ofNat 64
+                (digitFold bs (i0 - d0) (min (d0 + c + 1) 19)) :=
+              digitFold_frozen (ofNat_ult_false (by omega) hguard') rfl
+            simp only [e2, stateAt, fracIfEndEnv]
+            block_lk
+            exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hfrozen
       · intro k
         rw [show 3 + k = 1 + (1 + (1 + k)) from by omega,
           runFuel_jump_prefix hstep1 (1 + (1 + k)),
@@ -2609,14 +2905,15 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
 def fracRunExitBlock (e : State) : Prop :=
   e.pc = "if.end144" ∨ e.pc = "if.end230"
 
-theorem fracRunExit_count (i0 d0 : Nat) (e : State) (h : fracRunExit i0 d0 e) :
+theorem fracRunExit_count (bs : List UInt8) (i0 d0 : Nat) (e : State)
+    (h : fracRunExit bs i0 d0 e) :
     (∃ i1, e.pc = "if.end144" ∧
       lookupName e.env "%fdig.3594"
         = some (.int 64 (BitVec.ofNat 64 (d0 + (i1 - i0))))) ∨
     (∃ i1, e.pc = "if.end230" ∧
       lookupName e.env "%inc141"
         = some (.int 64 (BitVec.ofNat 64 (d0 + (i1 - i0))))) := by
-  rcases h with ⟨hpc, i1, _, hcnt⟩ | ⟨hpc, i1, _, hcnt⟩
+  rcases h with ⟨hpc, i1, _, hcnt, _⟩ | ⟨hpc, i1, _, hcnt, _⟩
   · exact Or.inl ⟨i1, hpc, hcnt⟩
   · exact Or.inr ⟨i1, hpc, hcnt⟩
 
@@ -2624,10 +2921,11 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
     {s : State} {c : Nat}
     (hinv : fracRunInv mem0 p n i0 d0 bs r s c)
     (hb : fracRunAtBound mem0 p n i0 s c = true) :
-    ∃ (e : State) (j : Nat), j ≤ 4 ∧ fracRunExitBlock e ∧ fracRunExit i0 d0 e ∧
+    ∃ (e : State) (j : Nat), j ≤ 4 ∧ fracRunExitBlock e ∧ fracRunExit bs i0 d0 e ∧
       ∀ k, runFuel s2HelperCalls (j + k) numFastBody s =
         runFuel s2HelperCalls k numFastBody e := by
   obtain ⟨hpc, hmem, hsum, hltn, hnlt, hd0le, hp, hn, hread, hpre⟩ := hinv
+  have hblen : bs.length = n := JsonEntrySteps.readBytes_length mem0 p n hread
   have hd0next64 : d0 + c + 1 < 2 ^ 64 := by omega
   obtain ⟨b, hbyte⟩ := readByte_of_readBytes_lt hread hltn
   have hbyte_s : readByte s.mem (p + (i0 + c)) = some b := by rw [hmem]; exact hbyte
@@ -2642,7 +2940,8 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
     have hcnt64 : d0 + (i0 + c + 1 - i0) = d0 + c + 1 := by omega
     by_cases hdigit : IsDigitB b = true
     · rcases hpre with hent | hback
-      · obtain ⟨hpre0, hi, hid, fr, hfr⟩ := hent
+      · obtain ⟨hpre0, hi, hid, hfr⟩ := hent
+        let fr : BitVec 64 := BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + c) 19))
         let e0 : State := stateAt (fracHeadEnv s.env p (i0 + c) b
             (BitVec.ofNat 64 (d0 + c)) fr)
           { s with pc := "while.body130", pre := some "land.lhs.true119" }
@@ -2716,7 +3015,7 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               hidig2 hi2 hn2 hbits
           refine ⟨e3, 4, by omega, Or.inr (by simp only [e3, stateAt]), ?_, ?_⟩
           · refine Or.inr ⟨by simp only [e3, stateAt], ?_⟩
-            refine ⟨i0 + c + 1, ?_, ?_⟩
+            refine ⟨i0 + c + 1, ?_, ?_, ?_⟩
             · simp only [e3, stateAt, fracIfEndEnv]
               block_lk
               exact int_succ_eq _ hnext64
@@ -2724,6 +3023,18 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               rw [hcnt64]
               block_lk
               exact int_succ_eq _ hd0next64
+            · have hbyteD : bs.getD (i0 + c) 0 = b :=
+                getD_of_readBytes hread (by omega) hbyte
+              have hval : fr * 10 + BitVec.ofNat 64
+                  (JsonScanLane.vByte b &&& 0x0f#8).toNat
+                  = BitVec.ofNat 64
+                    (digitFold bs (i0 - d0) (min (d0 + (i0 + c + 1 - i0)) 19)) := by
+                rw [hcnt64]
+                exact digitFold_step_at hd0le (ofNat_ult_true (by omega) hguard)
+                  (by rw [hblen]; omega) hbyteD hdigit rfl
+              simp only [e3, stateAt, fracIfEndEnv]
+              block_lk
+              exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hval
           · intro k
             rw [show 4 + k = 1 + (1 + (1 + (1 + k))) from by omega,
               runFuel_jump_prefix hstep1 (1 + (1 + (1 + k))),
@@ -2775,7 +3086,7 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               hidig1 hi1 hn1 hbits
           refine ⟨e2, 3, by omega, Or.inr (by simp only [e2, stateAt]), ?_, ?_⟩
           · refine Or.inr ⟨by simp only [e2, stateAt], ?_⟩
-            refine ⟨i0 + c + 1, ?_, ?_⟩
+            refine ⟨i0 + c + 1, ?_, ?_, ?_⟩
             · simp only [e2, stateAt, fracIfEndEnv]
               block_lk
               exact int_succ_eq _ hnext64
@@ -2783,12 +3094,20 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               rw [hcnt64]
               block_lk
               exact int_succ_eq _ hd0next64
+            · have hval : fr = BitVec.ofNat 64
+                  (digitFold bs (i0 - d0) (min (d0 + (i0 + c + 1 - i0)) 19)) := by
+                rw [hcnt64]
+                exact digitFold_frozen (ofNat_ult_false (by omega) hguard') rfl
+              simp only [e2, stateAt, fracIfEndEnv]
+              block_lk
+              exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hval
           · intro k
             rw [show 3 + k = 1 + (1 + (1 + k)) from by omega,
               runFuel_jump_prefix hstep1 (1 + (1 + k)),
               runFuel_jump_prefix hstep2 (1 + k),
               runFuel_jump_prefix hstep3 k]
-      · obtain ⟨hpre0, hi, hid, fr, hfr⟩ := hback
+      · obtain ⟨hpre0, hi, hid, hfr⟩ := hback
+        let fr : BitVec 64 := BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + c) 19))
         let e0 : State := stateAt (fracHeadEnv s.env p (i0 + c) b
             (BitVec.ofNat 64 (d0 + c)) fr)
           { s with pc := "while.body130", pre := some "land.lhs.true119" }
@@ -2862,7 +3181,7 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               hidig2 hi2 hn2 hbits
           refine ⟨e3, 4, by omega, Or.inr (by simp only [e3, stateAt]), ?_, ?_⟩
           · refine Or.inr ⟨by simp only [e3, stateAt], ?_⟩
-            refine ⟨i0 + c + 1, ?_, ?_⟩
+            refine ⟨i0 + c + 1, ?_, ?_, ?_⟩
             · simp only [e3, stateAt, fracIfEndEnv]
               block_lk
               exact int_succ_eq _ hnext64
@@ -2870,6 +3189,18 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               rw [hcnt64]
               block_lk
               exact int_succ_eq _ hd0next64
+            · have hbyteD : bs.getD (i0 + c) 0 = b :=
+                getD_of_readBytes hread (by omega) hbyte
+              have hval : fr * 10 + BitVec.ofNat 64
+                  (JsonScanLane.vByte b &&& 0x0f#8).toNat
+                  = BitVec.ofNat 64
+                    (digitFold bs (i0 - d0) (min (d0 + (i0 + c + 1 - i0)) 19)) := by
+                rw [hcnt64]
+                exact digitFold_step_at hd0le (ofNat_ult_true (by omega) hguard)
+                  (by rw [hblen]; omega) hbyteD hdigit rfl
+              simp only [e3, stateAt, fracIfEndEnv]
+              block_lk
+              exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hval
           · intro k
             rw [show 4 + k = 1 + (1 + (1 + (1 + k))) from by omega,
               runFuel_jump_prefix hstep1 (1 + (1 + (1 + k))),
@@ -2921,7 +3252,7 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               hidig1 hi1 hn1 hbits
           refine ⟨e2, 3, by omega, Or.inr (by simp only [e2, stateAt]), ?_, ?_⟩
           · refine Or.inr ⟨by simp only [e2, stateAt], ?_⟩
-            refine ⟨i0 + c + 1, ?_, ?_⟩
+            refine ⟨i0 + c + 1, ?_, ?_, ?_⟩
             · simp only [e2, stateAt, fracIfEndEnv]
               block_lk
               exact int_succ_eq _ hnext64
@@ -2929,6 +3260,13 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               rw [hcnt64]
               block_lk
               exact int_succ_eq _ hd0next64
+            · have hval : fr = BitVec.ofNat 64
+                  (digitFold bs (i0 - d0) (min (d0 + (i0 + c + 1 - i0)) 19)) := by
+                rw [hcnt64]
+                exact digitFold_frozen (ofNat_ult_false (by omega) hguard') rfl
+              simp only [e2, stateAt, fracIfEndEnv]
+              block_lk
+              exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hval
           · intro k
             rw [show 3 + k = 1 + (1 + (1 + k)) from by omega,
               runFuel_jump_prefix hstep1 (1 + (1 + k)),
@@ -2939,7 +3277,8 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
         · rfl
         · exact absurd h hdigit
       rcases hpre with hent | hback
-      · obtain ⟨hpre0, hi, hid, fr, hfr⟩ := hent
+      · obtain ⟨hpre0, hi, hid, hfr⟩ := hent
+        let fr : BitVec 64 := BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + c) 19))
         let e0 : State := stateAt (fracHeadEnv s.env p (i0 + c) b
             (BitVec.ofNat 64 (d0 + c)) fr)
           { s with pc := "if.end144", pre := some "land.lhs.true119" }
@@ -2951,15 +3290,22 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
             (BlockEval.evalOperand_reg_of s.env s "%fr.0556" _ hfr) hj hbyte_s hdigit'
         refine ⟨e0, 1, by omega, Or.inl (by simp only [e0, stateAt]), ?_, ?_⟩
         · refine Or.inl ⟨by simp only [e0, stateAt], ?_⟩
-          refine ⟨i0 + c, ?_, ?_⟩
+          refine ⟨i0 + c, ?_, ?_, ?_⟩
           · simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]
             block_lk
           · simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]
             rw [show d0 + (i0 + c - i0) = d0 + c from by omega]
             block_lk
+          · have hval : fr = BitVec.ofNat 64
+                (digitFold bs (i0 - d0) (min (d0 + (i0 + c - i0)) 19)) := by
+              rw [show d0 + (i0 + c - i0) = d0 + c from by omega]
+            simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]
+            block_lk
+            exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hval
         · intro k
           rw [runFuel_jump_prefix hstep1 k]
-      · obtain ⟨hpre0, hi, hid, fr, hfr⟩ := hback
+      · obtain ⟨hpre0, hi, hid, hfr⟩ := hback
+        let fr : BitVec 64 := BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + c) 19))
         let e0 : State := stateAt (fracHeadEnv s.env p (i0 + c) b
             (BitVec.ofNat 64 (d0 + c)) fr)
           { s with pc := "if.end144", pre := some "land.lhs.true119" }
@@ -2971,12 +3317,18 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
             (BlockEval.evalOperand_reg_of s.env s "%fr.4" _ hfr) hj hbyte_s hdigit'
         refine ⟨e0, 1, by omega, Or.inl (by simp only [e0, stateAt]), ?_, ?_⟩
         · refine Or.inl ⟨by simp only [e0, stateAt], ?_⟩
-          refine ⟨i0 + c, ?_, ?_⟩
+          refine ⟨i0 + c, ?_, ?_, ?_⟩
           · simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]
             block_lk
           · simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]
             rw [show d0 + (i0 + c - i0) = d0 + c from by omega]
             block_lk
+          · have hval : fr = BitVec.ofNat 64
+                (digitFold bs (i0 - d0) (min (d0 + (i0 + c - i0)) 19)) := by
+              rw [show d0 + (i0 + c - i0) = d0 + c from by omega]
+            simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]
+            block_lk
+            exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hval
         · intro k
           rw [runFuel_jump_prefix hstep1 k]
   · obtain ⟨b', hbyte', hdigit'⟩ := fracRun_bound_nondigit hread hltn hb hle
@@ -2984,7 +3336,8 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
     have hbb : b = b' := Option.some.inj (hbyte.symm.trans hbyte')
     subst hbb
     rcases hpre with hent | hback
-    · obtain ⟨hpre0, hi, hid, fr, hfr⟩ := hent
+    · obtain ⟨hpre0, hi, hid, hfr⟩ := hent
+      let fr : BitVec 64 := BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + c) 19))
       let e0 : State := stateAt (fracHeadEnv s.env p (i0 + c) b
           (BitVec.ofNat 64 (d0 + c)) fr)
         { s with pc := "if.end144", pre := some "land.lhs.true119" }
@@ -2996,15 +3349,22 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
           (BlockEval.evalOperand_reg_of s.env s "%fr.0556" _ hfr) hj hbyte'_s hdigit'
       refine ⟨e0, 1, by omega, Or.inl (by simp only [e0, stateAt]), ?_, ?_⟩
       · refine Or.inl ⟨by simp only [e0, stateAt], ?_⟩
-        refine ⟨i0 + c, ?_, ?_⟩
+        refine ⟨i0 + c, ?_, ?_, ?_⟩
         · simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]
           block_lk
         · simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]
           rw [show d0 + (i0 + c - i0) = d0 + c from by omega]
           block_lk
+        · have hval : fr = BitVec.ofNat 64
+              (digitFold bs (i0 - d0) (min (d0 + (i0 + c - i0)) 19)) := by
+            rw [show d0 + (i0 + c - i0) = d0 + c from by omega]
+          simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]
+          block_lk
+          exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hval
       · intro k
         rw [runFuel_jump_prefix hstep1 k]
-    · obtain ⟨hpre0, hi, hid, fr, hfr⟩ := hback
+    · obtain ⟨hpre0, hi, hid, hfr⟩ := hback
+      let fr : BitVec 64 := BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + c) 19))
       let e0 : State := stateAt (fracHeadEnv s.env p (i0 + c) b
           (BitVec.ofNat 64 (d0 + c)) fr)
         { s with pc := "if.end144", pre := some "land.lhs.true119" }
@@ -3016,12 +3376,18 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
           (BlockEval.evalOperand_reg_of s.env s "%fr.4" _ hfr) hj hbyte'_s hdigit'
       refine ⟨e0, 1, by omega, Or.inl (by simp only [e0, stateAt]), ?_, ?_⟩
       · refine Or.inl ⟨by simp only [e0, stateAt], ?_⟩
-        refine ⟨i0 + c, ?_, ?_⟩
+        refine ⟨i0 + c, ?_, ?_, ?_⟩
         · simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]
           block_lk
         · simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]
           rw [show d0 + (i0 + c - i0) = d0 + c from by omega]
           block_lk
+        · have hval : fr = BitVec.ofNat 64
+              (digitFold bs (i0 - d0) (min (d0 + (i0 + c - i0)) 19)) := by
+            rw [show d0 + (i0 + c - i0) = d0 + c from by omega]
+          simp only [e0, stateAt, fracHeadEnv, fracHeadPhiEnv]
+          block_lk
+          exact congrArg (fun x : BitVec 64 => some (Value.int 64 x)) hval
       · intro k
         rw [runFuel_jump_prefix hstep1 k]
 
@@ -3034,7 +3400,7 @@ def fracRunBoundLoop (mem0 : Mem) (p n i0 d0 : Nat) (bs : List UInt8) (cost : Na
   Inv := fracRunInv mem0 p n i0 d0 bs
   atBound := fracRunAtBound mem0 p n i0
   Exit := fracRunExitBlock
-  ExitWord := fracRunExit i0 d0
+  ExitWord := fracRunExit bs i0 d0
   step_exit := by
     intro r s c hinv hb
     obtain ⟨e, j, hj, hexit, hword, hrun⟩ := fracRun_step_exit hinv hb
@@ -3059,7 +3425,7 @@ theorem fracRun_run (mem0 : Mem) (p n i0 d0 : Nat) (bs : List UInt8) (cost : Nat
     (hcost : 4 ≤ cost) (s : State) (c : Nat)
     (hinv : fracRunInv mem0 p n i0 d0 bs (n - i0) s c) (k : Nat) :
     ∃ (e : State) (j : Nat), j ≤ (n - i0 + 1) * cost ∧ fracRunExitBlock e ∧
-      fracRunExit i0 d0 e ∧
+      fracRunExit bs i0 d0 e ∧
       runFuel s2HelperCalls (j + k) numFastBody s =
         runFuel s2HelperCalls k numFastBody e :=
   (fracRunBoundLoop mem0 p n i0 d0 bs cost hcost).run s c hinv k
