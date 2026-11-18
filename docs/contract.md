@@ -1453,10 +1453,44 @@ poison edge is one `runFuel` chain to
 steps, carrying the shifted sum the truncation block reads.  The residual edge
 zeroes the epilogue's two carried words, so the first visit reads the table's
 row `0`, and `%xtraiter1083` at a count below four is the count itself
-(`and_three_ofNat`).  What the region still owes is the unrolled nest's
-`BoundLoop` shape (the copy's four-way unrolled main loop), the ladder's join
-under the exponent's sign case, and the tie of the copy loop's entry to the peel
-epilogue's exit, each named in the module that states the nearest thing to it.
+(`and_three_ofNat`).
+Where the epilogue's exit goes is now a theorem rather than a reading
+(`JsonStage2NumFastTier3PeelTie`): it does **not** reach the copy's entry —
+`for.body87.i.i` is entered from `for.body87.i.i.preheader`, whose only
+predecessor is `if.end83.i.i`, upstream of the whole peel — it reaches
+`while.cond.preheader.i.i577.i.i`, whose `phi`s select the last visit's `i128`
+sum and its truncated low word and whose `ult` against `2 ^ 64` chooses between
+`stk_mul_u64.exit583.i.i` and the store block `while.body.us.i.i579.i.i`.
+`t3_peel_exit_tie` is that disjunction: two control steps with the counter
+unchanged and the memory untouched, or three with `%inc12` advanced and the
+carry's high word stored at `%pow.i.i + 8 * %wide.trip.count`, both landing on
+`stk_mul_u64.exit583.i.i` with the cells its `phi`, `%sub175.i.i` and
+`%cmp171.i.i` read.  The landing block's own four steps
+(`t3_tie_exit_step_from_cond`/`_from_store`, each at the outer test's bit) are
+proved beside it, so the outer loop's body `while.body173.i.i` and its end
+`while.end176.i.i` are one step further.
+The ladder's two loops are joined at the invariant (`JsonStage2NumFastTier3LadderRun`):
+the positive loop's exit word now carries the two cells the join's `phi`s read at
+their values — the spent residual, zero at the bound, and the fold over every row
+— because a word that named only their presence could not be composed with the
+join.  `t3_join_divInv` states *which* loop's invariant holds where the runs are
+appended: the join's state is the **negative** loop's invariant at counter zero
+with the **empty** row list, whose carried double is the positive fold's last
+value.  `t3_ladder_run` is the composition — the positive loop's budget
+`(rows.length + 1) * 2`, one control step for the join, the negative loop's exit
+arm at the empty row list within its `(0 + 1) * 2`, and the caller's
+continuation — with one hypothesis the emitted code reads and does not compute:
+that the last carried double is a positive finite code.
+The copy's own four-way unrolled main loop is a `BoundLoop` *shape* and budget
+(`JsonStage2NumFastTier3CopyUnroll`): `t3MainInv` carries the frame, the index,
+the accumulator and the visit index with `i + 4 * r + xt = Nd`, the latch's test
+is `nv ≤ c + 1` with `nv = %unroll_iter / 4` (`t3MainLoopOf` takes
+`%unroll_iter = 4 * nv`), a visit's cost is nine control steps, and
+`t3MainLoop_run_at` is the loop's budget `(nv + 1) * 9`.  Its two visits are
+**owed**: `t3MainLoopOf` takes them as parameters, and the per-edge steps they
+compose are `JsonStage2NumFastTier3CopySteps`'.  What the region still owes is
+therefore the visits of that shape, and the handoff of its exit block's `phi`s
+into `T3EpilInv`, each named in the module that states the nearest thing to it.
 The kernel's bound is not among the obstructions: `num_el_el1`'s mantissa is a
 `uint64_t`, and the body's own argument at `if.end268` is `%add244`, a 64-bit
 word, so `NumFastElAgrees`'s `w < 2 ^ 64` domain is met at the body
@@ -1488,7 +1522,15 @@ pinned: `intScan_fastTaken` and `fracGuard_join` at `[propext, Classical.choice,
 Quot.sound]`, `whileCond91_refused_run` at `[propext, Quot.sound]`,
 `t3_epil_denote_self` and `readBytes_writeBytes_above'` at `[propext,
 Quot.sound]`, and `t3_peel_step_loop`/`t3_peel_step_exit`/`t3PeelLoop_run`/
-`t3_traversal_peel_run` at `[propext, Classical.choice, Quot.sound]`.  Where a
+`t3_traversal_peel_run` at `[propext, Classical.choice, Quot.sound]`.  The three
+pieces this round added are pinned the same way: `t3_peel_exit_tie` and
+`t3_ladder_run` at `[propext, Classical.choice, Quot.sound]`,
+`t3_join_divInv`, `t3DivAtBound_nil`, `t3_tie_cond_step_exit`/`_store` and
+`t3_tie_store_step` at `[propext, Quot.sound]`, `t3Rows_zero` and
+`t3MulLoop_exit` at `[propext, Quot.sound]`, `t3_tie_lcssa_step` and
+`t3_tie_exit_step_from_cond`/`_from_store` at `[propext, Quot.sound]`, and
+`t3MainLoopOf`/`t3MainLoop_run_at` at `[propext, Classical.choice, Quot.sound]`.
+Where a
 module header still reads that a route is threaded one seam at a time, this
 ledger is the current statement: the fraction and exponent routes to the merge
 are threaded, and the fast paths are composed from their dispatch's edges.

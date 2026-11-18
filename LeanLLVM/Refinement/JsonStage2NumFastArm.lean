@@ -277,13 +277,17 @@ through `cleanup223.thread`/`if.end226` into `mergeEntry`'s `%exp10.4`, with the
 exit's accumulator reading (`expAcc` of the exponent's digits) and the sign's
 polarity as the seam's hypotheses.  Both carry `[propext, Quot.sound]`.
 
-What the arm needs beyond that is the run itself: the ladder's join at the
-invariant level (its block is stepped — `JsonStage2NumFastTier3Ladder`'s
-`t3_join_*` and `t3_ladder_join_spent` — so what remains is deciding which of the
-two loops' invariants holds where their runs are appended), the copy's four-way
-unrolled main loop as a `BoundLoop`, and the tie of the copy loop's entry to the
-peel epilogue's exit (whose `while.cond.preheader.i.i577.i.i` successors are the
-outer loop's and `stk_mul_u64`'s, not `for.body87.i.i`'s directly).  No theorem below claims
+What the arm needs beyond that is the run itself: the copy's four-way unrolled
+main loop's *visits* — its `BoundLoop` shape and budget are fixed
+(`JsonStage2NumFastTier3CopyUnroll.t3MainLoopOf`/`t3MainLoop_run_at`), and what
+it still takes are the two arms `t3MainLoopOf` names — and the handoff of that
+loop's exit block's `phi`s into the residual loop's invariant.  Two items this
+list used to carry are closed: the ladder's join **at the invariant level**
+(`JsonStage2NumFastTier3LadderRun.t3_join_divInv`/`t3_ladder_run`: the join's
+state is the negative loop's invariant at counter zero with the empty row list),
+and the peel epilogue's exit tie — proved at `while.cond.preheader.i.i577.i.i`,
+whose successors are the outer loop's and `stk_mul_u64`'s, not `for.body87.i.i`'s
+directly (`JsonStage2NumFastTier3PeelTie.t3_peel_exit_tie`).  No theorem below claims
 the arm, and none is instantiated at the walk's own `s2HelperCalls`; the kernel's
 `w < 2 ^ 64` bound is met at the body's own word
 (`JsonStage2NumFastTier3.numFast_ifEnd268_domain`), so the bound is not what stops

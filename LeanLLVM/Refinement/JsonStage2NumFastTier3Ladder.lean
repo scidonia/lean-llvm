@@ -1136,11 +1136,16 @@ def t3MulAtBound (rows : List Nat) (_s : State) (c : Nat) : Bool :=
   decide ((rows.drop c).sum = 0)
 
 /-- What the positive loop's exit state carries: the join's predecessor is the
-head, and the two cells the preheader's `phi`s read are present. -/
-def t3MulExitWord (s : State) : Prop :=
+head, and the two cells the preheader's `phi`s read, at their values.  The join's
+`phi`s read `%e10.0.i.i` and `%d201.0.i.i`, so a word that named only their
+presence could not be composed with the join: the residual at the bound is zero
+and the carried double is the fold over every row, and those are the two values
+the join hands the negative ladder. -/
+def t3MulExitWord (d0 : BitVec 64) (rows : List Nat) : State → Prop := fun s =>
   s.pre = some t3MulHead ∧
-    lookupName s.env "%e10.0.i.i" ≠ none ∧
-    lookupName s.env "%d201.0.i.i" ≠ none
+    lookupName s.env "%e10.0.i.i" =
+      some (.int 64 (BitVec.ofNat 64 ((rows.drop rows.length).sum))) ∧
+    lookupName s.env "%d201.0.i.i" = some (.float (t3MulCarried d0 rows rows.length))
 
 /-- **The positive loop's shape.**  Head, exit, bound, cost, invariant and exit
 test are fixed at the emitted blocks; the two arms are the head's and the row
@@ -1148,7 +1153,7 @@ block's per-edge steps. -/
 def t3MulLoopOf (calls : Calls) (d0 : BitVec 64) (rows : List Nat)
     (step_exit : ∀ (r : Nat) (s : State) (c : Nat),
       t3MulInv d0 rows r s c → t3MulAtBound rows s c = true →
-      ∃ (e : State) (j : Nat), j ≤ 2 ∧ e.pc = t3LadderJoin ∧ t3MulExitWord e ∧
+      ∃ (e : State) (j : Nat), j ≤ 2 ∧ e.pc = t3LadderJoin ∧ t3MulExitWord d0 rows e ∧
         ∀ k, runFuel calls (j + k) numFastBody s = runFuel calls k numFastBody e)
     (step_loop : ∀ (r : Nat) (s : State) (c : Nat),
       t3MulInv d0 rows (r + 1) s c → t3MulAtBound rows s c = false →
@@ -1163,7 +1168,7 @@ def t3MulLoopOf (calls : Calls) (d0 : BitVec 64) (rows : List Nat)
   Inv := t3MulInv d0 rows
   atBound := t3MulAtBound rows
   Exit := fun e => e.pc = t3LadderJoin
-  ExitWord := t3MulExitWord
+  ExitWord := t3MulExitWord d0 rows
   step_exit := step_exit
   step_loop := step_loop
   exit_at_zero := by
@@ -1182,7 +1187,7 @@ run reaches the join within `(rows.length + 1) * 2` control steps. -/
 theorem t3MulLoop_run_at (calls : Calls) (d0 : BitVec 64) (rows : List Nat)
     (step_exit : ∀ (r : Nat) (s : State) (c : Nat),
       t3MulInv d0 rows r s c → t3MulAtBound rows s c = true →
-      ∃ (e : State) (j : Nat), j ≤ 2 ∧ e.pc = t3LadderJoin ∧ t3MulExitWord e ∧
+      ∃ (e : State) (j : Nat), j ≤ 2 ∧ e.pc = t3LadderJoin ∧ t3MulExitWord d0 rows e ∧
         ∀ k, runFuel calls (j + k) numFastBody s = runFuel calls k numFastBody e)
     (step_loop : ∀ (r : Nat) (s : State) (c : Nat),
       t3MulInv d0 rows (r + 1) s c → t3MulAtBound rows s c = false →
@@ -1191,7 +1196,7 @@ theorem t3MulLoop_run_at (calls : Calls) (d0 : BitVec 64) (rows : List Nat)
         ∀ k, runFuel calls (j + k) numFastBody s = runFuel calls k numFastBody e)
     (s : State) (c : Nat) (h : t3MulInv d0 rows rows.length s c) (k : Nat)
     {o : Outcome}
-    (hcont : ∀ (e : State), e.pc = t3LadderJoin → t3MulExitWord e →
+    (hcont : ∀ (e : State), e.pc = t3LadderJoin → t3MulExitWord d0 rows e →
       runFuel calls k numFastBody e = some o) :
     runFuel calls ((rows.length + 1) * 2 + k) numFastBody s = some o :=
   (t3MulLoopOf calls d0 rows step_exit step_loop).run_at s c h k hcont

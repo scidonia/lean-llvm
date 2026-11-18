@@ -329,10 +329,13 @@ supplies for each, and what is left:
   predecessor — and the residual loop's measure, invariant and exit are fixed
   (`JsonStage2NumFastTier3CopyLoop.t3EpilLoopOf`) with its two visits discharged
   (`t3Epil_step_exit_test`/`t3Epil_step_loop_test`, hence `t3EpilLoop` and
-  `t3EpilLoop_run_at'`), so what is still open is the unrolled nest's
-  `BoundLoop` shape; the starting approximation's fold is
+  `t3EpilLoop_run_at'`), so what is still open is the unrolled nest's two visits:
+  its `BoundLoop` shape and budget are fixed
+  (`JsonStage2NumFastTier3CopyUnroll.t3MainLoopOf`/`t3MainLoop_run_at`) and the
+  visits they take are owed; the starting approximation's fold is
   `JsonStage2NumFastTier3Fold`'s and its repetition at the emitted rows is
-  `JsonStage2NumFastTier3Ladder`'s.
+  `JsonStage2NumFastTier3Ladder`'s, whose two loops are joined at the invariant
+  in `JsonStage2NumFastTier3LadderRun`.
 * **The window tie.**  `StrtodTier3.windowOf` defines `M`, `S` and `sticky`
   (`windowOf_sticky_iff` is the model's own reading); the body's copy's retained
   array is that `M` (`copy_retained`), its stuck bit is that `sticky`
@@ -342,8 +345,9 @@ supplies for each, and what is left:
   `JsonStage2NumFastTier3CopySteps`' per-edge steps.  What is not composed is
   the induction: the copy is unrolled four ways with an epilogue, so its
   `runFuel` simulation is two `BoundLoop` instances, one per loop — the residual
-  loop's is `t3EpilLoop` (`t3EpilLoopOf`'s shape at the discharged visits), so
-  the unrolled nest's shape is the piece not composed.
+  loop's is `t3EpilLoop` (`t3EpilLoopOf`'s shape at the discharged visits), and
+  the unrolled nest's is `t3MainLoopOf`'s shape with its two visits still owed
+  (`JsonStage2NumFastTier3CopyUnroll`).
 * **The proximity estimate.**  Its operations are `fmulBits` and `fdivBits`,
   which `JsonStage2NumFastTier1` defines and proves at the tree's bit model
   (`fmulBits_pack`, `fdivBits_pack`, `fdivBits_uitofp_pow`), so the estimate does

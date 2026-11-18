@@ -1071,16 +1071,40 @@ rows' own count. -/
 theorem evalICmp_sgt_zero : evalICmp .sgt (0 : BitVec 64) (0 : BitVec 64) =
     (0 : BitVec 1) := by decide
 
+/-- A drop of a list of positive entries is positive while anything is left. -/
+theorem sum_drop_pos : ∀ (l : List Nat), (∀ x ∈ l, 0 < x) → ∀ c, c < l.length →
+    0 < (l.drop c).sum
+  | [], _, c, h => by simp at h
+  | x :: xs, hpos, 0, _ => by
+      have hx : 0 < x := hpos x (List.mem_cons_self ..)
+      simp only [List.drop_zero, List.sum_cons]
+      omega
+  | x :: xs, hpos, c + 1, h => by
+      have h' := sum_drop_pos xs (fun y hy => hpos y (List.mem_cons_of_mem _ hy)) c
+        (by simpa using h)
+      simpa only [List.drop_succ_cons] using h'
+
+/-- A spent residual is the counter at the rows' own count: the rows are positive,
+so nothing is left to apply. -/
+theorem t3Rows_drop_length_of_sum_zero {E c : Nat} (hc : c ≤ (t3Rows E).length)
+    (h : ((t3Rows E).drop c).sum = 0) : c = (t3Rows E).length := by
+  rcases Nat.lt_or_ge c (t3Rows E).length with hlt | hge
+  · have hpos := sum_drop_pos (t3Rows E) (fun _ hx => t3Rows_pos hx) c hlt
+    omega
+  · omega
+
 /-- **The positive loop's exit.**  At the bound the head jumps to the join. -/
 theorem t3MulLoop_exit (calls : Calls) (d0 : BitVec 64) (E : Nat) :
     ∀ (r : Nat) (s : State) (c : Nat),
       t3MulInv d0 (t3Rows E) r s c → t3MulAtBound (t3Rows E) s c = true →
-      ∃ (e : State) (j : Nat), j ≤ 2 ∧ e.pc = t3LadderJoin ∧ t3MulExitWord e ∧
+      ∃ (e : State) (j : Nat), j ≤ 2 ∧ e.pc = t3LadderJoin ∧ t3MulExitWord d0 (t3Rows E) e ∧
         ∀ k, runFuel calls (j + k) numFastBody s = runFuel calls k numFastBody e := by
   intro r s c hinv hbound
   obtain ⟨hpc, hcr, hpre, hc0, hcpos⟩ := hinv
   have hresid : t3Resid E c = 0 := by
     simpa only [t3MulAtBound, t3Resid, decide_eq_true_eq] using hbound
+  have hclen : c = (t3Rows E).length :=
+    t3Rows_drop_length_of_sum_zero (by omega) (by simpa only [t3Resid] using hresid)
   have hbit : evalICmp .sgt (BitVec.ofNat 64 (t3Resid E c)) (0 : BitVec 64)
       = (0 : BitVec 1) := by
     rw [hresid]
@@ -1093,11 +1117,9 @@ theorem t3MulLoop_exit (calls : Calls) (d0 : BitVec 64) (E : Nat) :
         (t3MulCarried d0 (t3Rows E) 0)) { s with pc := t3LadderJoin, pre := some t3MulHead },
       1, by omega, rfl, ⟨rfl, ?_, ?_⟩, ?_⟩
     · simp only [stateAt]
-      rw [t3MulHeadEnv_e10]
-      simp
+      rw [t3MulHeadEnv_e10, hresid, List.drop_length, List.sum_nil]
     · simp only [stateAt]
-      rw [t3MulHeadEnv_d201]
-      simp
+      rw [t3MulHeadEnv_d201, hclen]
     · intro k
       exact runFuel_jump_prefix
         (t3_mulHead_step_zero_entry (calls := calls) (env := s.env) (s := s)
@@ -1109,11 +1131,9 @@ theorem t3MulLoop_exit (calls : Calls) (d0 : BitVec 64) (E : Nat) :
         (t3MulCarried d0 (t3Rows E) c)) { s with pc := t3LadderJoin, pre := some t3MulHead },
       1, by omega, rfl, ⟨rfl, ?_, ?_⟩, ?_⟩
     · simp only [stateAt]
-      rw [t3MulHeadEnv_e10]
-      simp
+      rw [t3MulHeadEnv_e10, hresid, List.drop_length, List.sum_nil]
     · simp only [stateAt]
-      rw [t3MulHeadEnv_d201]
-      simp
+      rw [t3MulHeadEnv_d201, hclen]
     · intro k
       exact runFuel_jump_prefix
         (t3_mulHead_step_zero (calls := calls) (env := s.env) (s := s)
@@ -1154,7 +1174,7 @@ theorem t3MulLoop_run_t3Rows (calls : Calls) (d0 : BitVec 64) (E address : Nat)
             * (10 ^ min (t3Resid E c) 22 * 2 ^ 1074))
     (s : State) (c : Nat) (h : t3MulInv d0 (t3Rows E) (t3Rows E).length s c) (k : Nat)
     {o : Outcome}
-    (hcont : ∀ (e : State), e.pc = t3LadderJoin → t3MulExitWord e →
+    (hcont : ∀ (e : State), e.pc = t3LadderJoin → t3MulExitWord d0 (t3Rows E) e →
       runFuel calls k numFastBody e = some o) :
     runFuel calls (((t3Rows E).length + 1) * 2 + k) numFastBody s = some o :=
   (t3MulLoop_t3Rows calls d0 E address hE hpack hstage hno).run_at s c h k hcont
@@ -1392,6 +1412,8 @@ theorem t3DivLoop_run_t3Rows (calls : Calls) (d0 : BitVec 64) (E address : Nat)
 #print axioms t3Rows_drop_sum
 #print axioms t3Rows_drop_split
 #print axioms t3Rows_getElem_eq_min
+#print axioms sum_drop_pos
+#print axioms t3Rows_drop_length_of_sum_zero
 #print axioms t3Rows_take_succ_split
 #print axioms t3MulCarried_succ
 #print axioms t3DivCarried_succ
