@@ -63,6 +63,18 @@ block's step, with its `%cmp221` overflow test, and the invariant's arithmetic
 (`t3Rows`'s first row is `min` of its sum, its sum splits at that row, and
 `take`/`drop` at the counter) are `JsonStage2NumFastTier3Rows`', which also
 instantiates `t3MulLoopOf` at the emitted rows.
+
+**The join.**  The two loops are not entered from one another directly: the
+positive loop's refused test and its row block's overflow test both leave for
+`while.cond229.i.i.preheader`, whose two `phi`s carry the residual and the
+double's bits into the negative head's cells.  That block is pinned and stepped
+here (`t3_join_pin`, `t3_join_denote_from_head`/`_from_body`,
+`t3_join_step_from_head`/`_from_body`, `t3_join_run_from_head`/`_from_body`), so
+the sign case is the negative head's own test once the join is crossed
+(`t3_ladder_join_spent` is the head's refused edge and the join as one `runFuel`
+prefix).  What remains at the invariant level is which loop's invariant holds
+where the two runs are appended — the ladder's `t3MulLoopOf`/`t3DivLoopOf` runs
+know their own exits, not each other's.
 -/
 import LeanLLVM.Refinement.JsonStage2NumFastTier3Fold
 
@@ -944,6 +956,154 @@ theorem t3_divHead_step_zero_entry {calls : Calls} {env : Env} {s : State}
     rw [numFast_execTerm_condbr_zero _ "%cmp230.i.i" _ _ hlk hbit]
     simp only [stateAt, hpc]
 
+/-! ### The join block: `while.cond229.i.i.preheader`
+
+The positive loop leaves for this block on two edges — the head's test refused
+(the residual is not positive) and the row block's overflow test taken (the
+double's bits are above `DBL_MAX`) — and both carry the residual and the
+double's bits forward, from `%e10.0.i.i`/`%d201.0.i.i` on the first and
+`%sub219.i.i`/`%mul217.i.i` on the second.  The block's two `phi`s select them
+and its `br` enters the negative loop's head, so the join is one control step
+whose successor is `t3DivHead` with exactly the two cells
+`t3_divHead_denote_entry` reads.  The sign case is then the head's own test
+(`t3DivHead_step_one_entry`/`_zero_entry`), not a second reading of it. -/
+
+/-- The join block's instructions, from its pin. -/
+def t3JoinInstrs : List Instr :=
+  [Instr.phi "%e10.2.i.i.ph" (Ty.int 64)
+      [("while.cond203.i.i", (Operand.reg "%e10.0.i.i")),
+       ("while.body206.i.i", (Operand.reg "%sub219.i.i"))],
+   Instr.phi "%d201.2.i.i.ph" Ty.double
+      [("while.cond203.i.i", (Operand.reg "%d201.0.i.i")),
+       ("while.body206.i.i", (Operand.reg "%mul217.i.i"))]]
+
+/-- The join's pin: its two `phi`s and its `br` to the negative head. -/
+theorem t3_join_pin :
+    numFastBody.findBlock t3LadderJoin =
+      some ⟨t3LadderJoin, t3JoinInstrs, Term.br t3DivHead⟩ := by
+  simpa only [t3LadderJoin, t3DivHead, t3JoinInstrs]
+    using numFast_findBlock_while_cond229_i_i_preheader
+
+/-- The environment the join leaves: the two carried cells. -/
+def t3JoinEnv (env : Env) (e d : BitVec 64) : Env :=
+  ("%d201.2.i.i.ph", .float d) :: ("%e10.2.i.i.ph", .int 64 e) :: env
+
+/-- The join's `denoteCode` from the positive head's refused test. -/
+theorem t3_join_denote_from_head {calls : Calls} {env : Env} {s : State}
+    {e d : BitVec 64}
+    (hpre : s.pre = some "while.cond203.i.i")
+    (he : lookupName env "%e10.0.i.i" = some (.int 64 e))
+    (hd : lookupName env "%d201.0.i.i" = some (.float d)) :
+    denoteCode calls t3JoinInstrs (stateAt env s) =
+      some (stateAt (t3JoinEnv env e d) s) := by
+  unfold t3JoinInstrs
+  block_phi_run
+  all_goals block_close
+
+/-- The join's `denoteCode` from the row block's overflow edge. -/
+theorem t3_join_denote_from_body {calls : Calls} {env : Env} {s : State}
+    {e d : BitVec 64}
+    (hpre : s.pre = some "while.body206.i.i")
+    (he : lookupName env "%sub219.i.i" = some (.int 64 e))
+    (hd : lookupName env "%mul217.i.i" = some (.float d)) :
+    denoteCode calls t3JoinInstrs (stateAt env s) =
+      some (stateAt (t3JoinEnv env e d) s) := by
+  unfold t3JoinInstrs
+  block_phi_run
+  all_goals block_close
+
+/-- The join's step from the positive head's refused test. -/
+theorem t3_join_step_from_head {calls : Calls} {env : Env} {s : State}
+    {e d : BitVec 64}
+    (hpc : s.pc = t3LadderJoin)
+    (hpre : s.pre = some "while.cond203.i.i")
+    (he : lookupName env "%e10.0.i.i" = some (.int 64 e))
+    (hd : lookupName env "%d201.0.i.i" = some (.float d)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (t3JoinEnv env e d)
+        { s with pc := t3DivHead, pre := some t3LadderJoin }) := by
+  refine numFast_step_at (s' := stateAt (t3JoinEnv env e d) s)
+    (b := ⟨t3LadderJoin, t3JoinInstrs, Term.br t3DivHead⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc, t3LadderJoin] using t3_join_pin
+  · simpa only [denoteCode_nil] using t3_join_denote_from_head hpre he hd
+  · simp only [execTerm, stateAt, hpc]
+
+/-- The join's step from the row block's overflow edge. -/
+theorem t3_join_step_from_body {calls : Calls} {env : Env} {s : State}
+    {e d : BitVec 64}
+    (hpc : s.pc = t3LadderJoin)
+    (hpre : s.pre = some "while.body206.i.i")
+    (he : lookupName env "%sub219.i.i" = some (.int 64 e))
+    (hd : lookupName env "%mul217.i.i" = some (.float d)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (t3JoinEnv env e d)
+        { s with pc := t3DivHead, pre := some t3LadderJoin }) := by
+  refine numFast_step_at (s' := stateAt (t3JoinEnv env e d) s)
+    (b := ⟨t3LadderJoin, t3JoinInstrs, Term.br t3DivHead⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc, t3LadderJoin] using t3_join_pin
+  · simpa only [denoteCode_nil] using t3_join_denote_from_body hpre he hd
+  · simp only [execTerm, stateAt, hpc]
+
+/-- **The join's run, from the positive head's refused test.**  One control step
+carries the residual and the double's bits into the negative head. -/
+theorem t3_join_run_from_head {calls : Calls} {env : Env} {s : State}
+    {e d : BitVec 64} {k : Nat}
+    (hpc : s.pc = t3LadderJoin)
+    (hpre : s.pre = some "while.cond203.i.i")
+    (he : lookupName env "%e10.0.i.i" = some (.int 64 e))
+    (hd : lookupName env "%d201.0.i.i" = some (.float d)) :
+    runFuel calls (1 + k) numFastBody (stateAt env s) =
+      runFuel calls k numFastBody
+        (stateAt (t3JoinEnv env e d)
+          { s with pc := t3DivHead, pre := some t3LadderJoin }) :=
+  runFuel_jump_prefix (t3_join_step_from_head hpc hpre he hd) k
+
+/-- **The join's run, from the row block's overflow edge.** -/
+theorem t3_join_run_from_body {calls : Calls} {env : Env} {s : State}
+    {e d : BitVec 64} {k : Nat}
+    (hpc : s.pc = t3LadderJoin)
+    (hpre : s.pre = some "while.body206.i.i")
+    (he : lookupName env "%sub219.i.i" = some (.int 64 e))
+    (hd : lookupName env "%mul217.i.i" = some (.float d)) :
+    runFuel calls (1 + k) numFastBody (stateAt env s) =
+      runFuel calls k numFastBody
+        (stateAt (t3JoinEnv env e d)
+          { s with pc := t3DivHead, pre := some t3LadderJoin }) :=
+  runFuel_jump_prefix (t3_join_step_from_body hpc hpre he hd) k
+
+/-- **The ladder's join at a spent exponent.**  At the ladder's start with the
+residual already spent (the head's test refused), two control steps — the head's
+and the join's — reach the negative head with the residual and the double's bits
+in the cells its `phi`s read, so the sign case is decided there. -/
+theorem t3_ladder_join_spent {calls : Calls} {env : Env} {s : State}
+    {e d : BitVec 64} {k : Nat}
+    (hpc : s.pc = t3MulHead)
+    (hpre : s.pre = some "if.end198.i.i")
+    (he : lookupName env "%sub200.i.i" = some (.int 64 e))
+    (hd : lookupName env "%conv202.i.i" = some (.float d))
+    (hbit : evalICmp .sgt e 0x0000000000000000#64 = (0 : BitVec 1)) :
+    runFuel calls (2 + k) numFastBody (stateAt env s) =
+      runFuel calls k numFastBody
+        (stateAt (t3JoinEnv (t3MulHeadEnv env e d) e d)
+          { s with pc := t3DivHead, pre := some t3LadderJoin }) := by
+  have h1 : step calls numFastBody (stateAt env s) =
+      .jump (stateAt (t3MulHeadEnv env e d)
+        { s with pc := t3LadderJoin, pre := some t3MulHead }) :=
+    t3_mulHead_step_zero_entry (calls := calls) hpc hpre he hd hbit
+  have h2 : step calls numFastBody
+      (stateAt (t3MulHeadEnv env e d)
+        { s with pc := t3LadderJoin, pre := some t3MulHead }) =
+      .jump (stateAt (t3JoinEnv (t3MulHeadEnv env e d) e d)
+        { s with pc := t3DivHead, pre := some t3LadderJoin }) := by
+    refine t3_join_step_from_head (calls := calls) (env := t3MulHeadEnv env e d)
+      (s := { s with pc := t3LadderJoin, pre := some t3MulHead }) rfl rfl ?_ ?_
+    · simp only [t3MulHeadEnv]
+      block_lk
+    · simp only [t3MulHeadEnv]
+      block_lk
+  rw [show 2 + k = 1 + (1 + k) from by omega,
+    runFuel_jump_prefix h1, runFuel_jump_prefix h2]
+
 /-! ### The loops' shapes at the pins -/
 
 /-- The carried double after the positive ladder's first `c` rows. -/
@@ -1158,6 +1318,14 @@ theorem t3DivLoop_run_at (calls : Calls) (d0 : BitVec 64) (rows : List Nat)
 #print axioms t3MulLoop_run_at
 #print axioms t3DivLoopOf
 #print axioms t3DivLoop_run_at
+#print axioms t3_join_pin
+#print axioms t3_join_denote_from_head
+#print axioms t3_join_denote_from_body
+#print axioms t3_join_step_from_head
+#print axioms t3_join_step_from_body
+#print axioms t3_join_run_from_head
+#print axioms t3_join_run_from_body
+#print axioms t3_ladder_join_spent
 
 end NumFastTier3Ladder
 

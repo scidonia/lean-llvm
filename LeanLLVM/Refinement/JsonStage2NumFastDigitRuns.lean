@@ -25,10 +25,14 @@ and the `if.end`'s end-of-lexeme branch (one block for the integer run's
 **The counters.**  Each run's `Exit` carries the register facts it stops with:
 the index it stopped at and the count it advanced to, `start + (stop - start)`.
 The instance's `run_from` therefore hands back the counters with the exit, and
-`*_counters` reads them.  For the exponent run the carried register is the
-accumulator's value rather than a count, and its `Exit` states the value at the
-digits consumed; `expRun_value` turns that into the model's `digitsNat` when the
-accumulator has not frozen.
+`*_counters` reads them.  The exponent run's carried register is its
+accumulator rather than a count, and its `Exit` states the accumulator's *cell*
+and not the fold's value: the accumulator is read at the merge by
+`JsonStage2NumFastSeams.expExit_merge`, which takes the cell's reading as
+`expAcc` of the exponent's digits as a hypothesis (`hacc`, since the exit state
+is existential) and `expSelect_tie` turns it into `expVal`.  A run-internal
+`fold` conjunct on `expRunInv` would state the same reading at the invariant;
+nothing here claims it.
 
 **The boundary.**  The runs' *starts* — the index after the sign, after the
 `.`, after the `e` and its sign — are the inlined scan's dispatch, and they are
@@ -59,6 +63,13 @@ namespace LeanLLVM.Refinement
 open LeanLLVM
 open LeanLLVM.Refinement.BlockEval
 open LeanLLVM.JSON
+
+-- The scan's region is call-free: every block between the dispatch and the run's
+-- exit is arithmetic and loads, so the environment's answers cannot reach it.
+-- The runs are therefore stated at an arbitrary `calls`, which is what lets a
+-- caller append its own prefix — the fast paths answer `num_d8_el1` — to a run
+-- proved once.
+variable {calls : Calls}
 
 /-! ### The digit test, as the emitted byte rule
 
@@ -533,7 +544,7 @@ theorem intBody_step_taken {env : Env} {s : State} {idig : BitVec 64}
     (hpc : s.pc = "while.body52")
     (hid : lookupName env "%idig.3574" = some (.int 64 idig))
     (hlt : idig.ult (19#64) = true) :
-    step s2HelperCalls numFastBody (stateAt env s) =
+    step calls numFastBody (stateAt env s) =
       .jump (stateAt (intBodyEnv env idig)
         { s with pc := "if.then55", pre := some "while.body52" }) := by
   refine numFast_step_at (s' := stateAt (intBodyEnv env idig) s)
@@ -555,7 +566,7 @@ theorem intBody_step_skip {env : Env} {s : State} {idig : BitVec 64}
     (hpc : s.pc = "while.body52")
     (hid : lookupName env "%idig.3574" = some (.int 64 idig))
     (hlt : idig.ult (19#64) = false) :
-    step s2HelperCalls numFastBody (stateAt env s) =
+    step calls numFastBody (stateAt env s) =
       .jump (stateAt (intBodyEnv env idig)
         { s with pc := "if.end62", pre := some "while.body52" }) := by
   refine numFast_step_at (s' := stateAt (intBodyEnv env idig) s)
@@ -614,7 +625,7 @@ theorem intIfThen_step {env : Env} {s : State} {ip : BitVec 64} {b : UInt8}
     (hpc : s.pc = "if.then55")
     (hip : lookupName env "%ip.3573" = some (.int 64 ip))
     (h8 : lookupName env "%8" = some (.int 8 (JsonScanLane.vByte b))) :
-    step s2HelperCalls numFastBody (stateAt env s) =
+    step calls numFastBody (stateAt env s) =
       .jump (stateAt (intIfThenEnv env ip b)
         { s with pc := "if.end62", pre := some "if.then55" }) := by
   refine numFast_step_at (s' := stateAt (intIfThenEnv env ip b) s)
@@ -682,7 +693,7 @@ theorem intIfEnd_step_exit {env : Env} {s : State} {idig i n : BitVec 64}
     (hi : lookupName env "%i.4575" = some (.int 64 i))
     (hn : lookupName env "%n" = some (.int 64 n))
     (heq : evalICmp .eq (i + 1#64) n = 1) :
-    step s2HelperCalls numFastBody (stateAt env s) =
+    step calls numFastBody (stateAt env s) =
       .jump (stateAt (intIfEndEnv env ipv idig i n)
         { s with pc := "if.end230", pre := some "if.end62" }) := by
   refine numFast_step_at (s' := stateAt (intIfEndEnv env ipv idig i n) s)
@@ -709,7 +720,7 @@ theorem intIfEnd_step_loop {env : Env} {s : State} {idig i n : BitVec 64}
     (hi : lookupName env "%i.4575" = some (.int 64 i))
     (hn : lookupName env "%n" = some (.int 64 n))
     (heq : evalICmp .eq (i + 1#64) n = 0) :
-    step s2HelperCalls numFastBody (stateAt env s) =
+    step calls numFastBody (stateAt env s) =
       .jump (stateAt (intIfEndEnv env ipv idig i n)
         { s with pc := "land.lhs.true41", pre := some "if.end62" }) := by
   refine numFast_step_at (s' := stateAt (intIfEndEnv env ipv idig i n) s)
@@ -736,7 +747,7 @@ theorem intHead_step_entry_digit {env : Env} {s : State} {a j : Nat} {b : UInt8}
     (hhp : evalOperand (stateAt env s) (.reg "%ip.0562") = some (.int 64 ip))
     (hj : j < 2 ^ 63) (hread : readByte s.mem (a + j) = some b)
     (hdigit : IsDigitB b = true) :
-    step s2HelperCalls numFastBody (stateAt env s) =
+    step calls numFastBody (stateAt env s) =
       .jump (stateAt (intHeadEnv env a j b idig ip)
         { s with pc := "while.body52", pre := some "land.lhs.true41" }) := by
   refine numFast_step_at (s' := stateAt (intHeadEnv env a j b idig ip) s)
@@ -763,7 +774,7 @@ theorem intHead_step_entry_nondigit {env : Env} {s : State} {a j : Nat} {b : UIn
     (hhp : evalOperand (stateAt env s) (.reg "%ip.0562") = some (.int 64 ip))
     (hj : j < 2 ^ 63) (hread : readByte s.mem (a + j) = some b)
     (hdigit : IsDigitB b = false) :
-    step s2HelperCalls numFastBody (stateAt env s) =
+    step calls numFastBody (stateAt env s) =
       .jump (stateAt (intHeadEnv env a j b idig ip)
         { s with pc := "if.end68", pre := some "land.lhs.true41" }) := by
   refine numFast_step_at (s' := stateAt (intHeadEnv env a j b idig ip) s)
@@ -790,7 +801,7 @@ theorem intHead_step_back_digit {env : Env} {s : State} {a j : Nat} {b : UInt8}
     (hhp : evalOperand (stateAt env s) (.reg "%ip.4") = some (.int 64 ip))
     (hj : j < 2 ^ 63) (hread : readByte s.mem (a + j) = some b)
     (hdigit : IsDigitB b = true) :
-    step s2HelperCalls numFastBody (stateAt env s) =
+    step calls numFastBody (stateAt env s) =
       .jump (stateAt (intHeadEnv env a j b idig ip)
         { s with pc := "while.body52", pre := some "land.lhs.true41" }) := by
   refine numFast_step_at (s' := stateAt (intHeadEnv env a j b idig ip) s)
@@ -817,7 +828,7 @@ theorem intHead_step_back_nondigit {env : Env} {s : State} {a j : Nat} {b : UInt
     (hhp : evalOperand (stateAt env s) (.reg "%ip.4") = some (.int 64 ip))
     (hj : j < 2 ^ 63) (hread : readByte s.mem (a + j) = some b)
     (hdigit : IsDigitB b = false) :
-    step s2HelperCalls numFastBody (stateAt env s) =
+    step calls numFastBody (stateAt env s) =
       .jump (stateAt (intHeadEnv env a j b idig ip)
         { s with pc := "if.end68", pre := some "land.lhs.true41" }) := by
   refine numFast_step_at (s' := stateAt (intHeadEnv env a j b idig ip) s)
@@ -944,8 +955,8 @@ theorem intRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
     (hb : intRunAtBound mem0 p n i0 s c = false) :
     ∃ (e : State) (c' : Nat) (j : Nat), j ≤ 4 ∧ e.pc = "land.lhs.true41" ∧ c < c' ∧
       intRunInv mem0 p n i0 d0 bs r e c' ∧
-      ∀ k, runFuel s2HelperCalls (j + k) numFastBody s =
-        runFuel s2HelperCalls k numFastBody e := by
+      ∀ k, runFuel calls (j + k) numFastBody s =
+        runFuel calls k numFastBody e := by
   obtain ⟨hpc, hmem, hsum, hltn, hnlt, hd0le, hp, hn, hread, h7, hpre⟩ := hinv
   have hblen : bs.length = n := JsonEntrySteps.readBytes_length mem0 p n hread
   unfold intRunAtBound at hb
@@ -974,7 +985,7 @@ theorem intRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
     let e0 : State := stateAt (intHeadEnv s.env p (i0 + c) b
         (BitVec.ofNat 64 (d0 + c)) ip)
       { s with pc := "while.body52", pre := some "land.lhs.true41" }
-    have hstep1 : step s2HelperCalls numFastBody s = .jump e0 :=
+    have hstep1 : step calls numFastBody s = .jump e0 :=
       intHead_step_entry_digit (env := s.env) (s := s) (a := p) (j := i0 + c) (b := b)
         (idig := BitVec.ofNat 64 (d0 + c)) (ip := ip) hpc hpre0 hp
         (BlockEval.evalOperand_reg_of s.env s "%i.1558" _ hi)
@@ -988,7 +999,7 @@ theorem intRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
     · -- the accumulator guard holds
       let e1 : State := stateAt (intBodyEnv e0.env (BitVec.ofNat 64 (d0 + c)))
           { e0 with pc := "if.then55", pre := some "while.body52" }
-      have hstep2 : step s2HelperCalls numFastBody e0 = .jump e1 :=
+      have hstep2 : step calls numFastBody e0 = .jump e1 :=
         intBody_step_taken (env := e0.env) (s := e0) (idig := BitVec.ofNat 64 (d0 + c))
           (by simp only [e0, stateAt]) hidig0 hguard
       have hip1 : lookupName e1.env "%ip.3573" = some (.int 64 ip) := by
@@ -999,7 +1010,7 @@ theorem intRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
         block_lk
       let e2 : State := stateAt (intIfThenEnv e1.env ip b)
           { e1 with pc := "if.end62", pre := some "if.then55" }
-      have hstep3 : step s2HelperCalls numFastBody e1 = .jump e2 :=
+      have hstep3 : step calls numFastBody e1 = .jump e2 :=
         intIfThen_step (env := e1.env) (s := e1) (by simp only [e1, stateAt]) hip1 h8
       have hphi : phiIncoming "if.then55"
           [("if.then55", (Operand.reg "%add61")),
@@ -1034,7 +1045,7 @@ theorem intRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
             (BitVec.ofNat 64 (d0 + c)) (BitVec.ofNat 64 (i0 + c))
             (BitVec.ofNat 64 n))
           { e2 with pc := "land.lhs.true41", pre := some "if.end62" }
-      have hstep4 : step s2HelperCalls numFastBody e2 = .jump e3 :=
+      have hstep4 : step calls numFastBody e2 = .jump e3 :=
         intIfEnd_step_loop (env := e2.env) (s := e2) (by simp only [e2, stateAt])
           (idig := BitVec.ofNat 64 (d0 + c))
           (i := BitVec.ofNat 64 (i0 + c)) (n := BitVec.ofNat 64 n)
@@ -1095,7 +1106,7 @@ theorem intRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
         · exact absurd h hguard
       let e1 : State := stateAt (intBodyEnv e0.env (BitVec.ofNat 64 (d0 + c)))
           { e0 with pc := "if.end62", pre := some "while.body52" }
-      have hstep2 : step s2HelperCalls numFastBody e0 = .jump e1 :=
+      have hstep2 : step calls numFastBody e0 = .jump e1 :=
         intBody_step_skip (env := e0.env) (s := e0) (idig := BitVec.ofNat 64 (d0 + c))
           (by simp only [e0, stateAt]) hidig0 hguard'
       have hphi : phiIncoming "while.body52"
@@ -1127,7 +1138,7 @@ theorem intRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
           (intIfEndEnv e1.env ip (BitVec.ofNat 64 (d0 + c))
             (BitVec.ofNat 64 (i0 + c)) (BitVec.ofNat 64 n))
           { e1 with pc := "land.lhs.true41", pre := some "if.end62" }
-      have hstep3 : step s2HelperCalls numFastBody e1 = .jump e2 :=
+      have hstep3 : step calls numFastBody e1 = .jump e2 :=
         intIfEnd_step_loop (env := e1.env) (s := e1) (by simp only [e1, stateAt])
           (idig := BitVec.ofNat 64 (d0 + c))
           (i := BitVec.ofNat 64 (i0 + c)) (n := BitVec.ofNat 64 n)
@@ -1178,7 +1189,7 @@ theorem intRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
     let e0 : State := stateAt (intHeadEnv s.env p (i0 + c) b
         (BitVec.ofNat 64 (d0 + c)) ip)
       { s with pc := "while.body52", pre := some "land.lhs.true41" }
-    have hstep1 : step s2HelperCalls numFastBody s = .jump e0 :=
+    have hstep1 : step calls numFastBody s = .jump e0 :=
       intHead_step_back_digit (env := s.env) (s := s) (a := p) (j := i0 + c) (b := b)
         (idig := BitVec.ofNat 64 (d0 + c)) (ip := ip) hpc hpre0 hp
         (BlockEval.evalOperand_reg_of s.env s "%inc64" _ hi)
@@ -1192,7 +1203,7 @@ theorem intRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
     · -- the accumulator guard holds
       let e1 : State := stateAt (intBodyEnv e0.env (BitVec.ofNat 64 (d0 + c)))
           { e0 with pc := "if.then55", pre := some "while.body52" }
-      have hstep2 : step s2HelperCalls numFastBody e0 = .jump e1 :=
+      have hstep2 : step calls numFastBody e0 = .jump e1 :=
         intBody_step_taken (env := e0.env) (s := e0) (idig := BitVec.ofNat 64 (d0 + c))
           (by simp only [e0, stateAt]) hidig0 hguard
       have hip1 : lookupName e1.env "%ip.3573" = some (.int 64 ip) := by
@@ -1203,7 +1214,7 @@ theorem intRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
         block_lk
       let e2 : State := stateAt (intIfThenEnv e1.env ip b)
           { e1 with pc := "if.end62", pre := some "if.then55" }
-      have hstep3 : step s2HelperCalls numFastBody e1 = .jump e2 :=
+      have hstep3 : step calls numFastBody e1 = .jump e2 :=
         intIfThen_step (env := e1.env) (s := e1) (by simp only [e1, stateAt]) hip1 h8
       have hphi : phiIncoming "if.then55"
           [("if.then55", (Operand.reg "%add61")),
@@ -1238,7 +1249,7 @@ theorem intRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
             (BitVec.ofNat 64 (d0 + c)) (BitVec.ofNat 64 (i0 + c))
             (BitVec.ofNat 64 n))
           { e2 with pc := "land.lhs.true41", pre := some "if.end62" }
-      have hstep4 : step s2HelperCalls numFastBody e2 = .jump e3 :=
+      have hstep4 : step calls numFastBody e2 = .jump e3 :=
         intIfEnd_step_loop (env := e2.env) (s := e2) (by simp only [e2, stateAt])
           (idig := BitVec.ofNat 64 (d0 + c))
           (i := BitVec.ofNat 64 (i0 + c)) (n := BitVec.ofNat 64 n)
@@ -1298,7 +1309,7 @@ theorem intRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
         · exact absurd h hguard
       let e1 : State := stateAt (intBodyEnv e0.env (BitVec.ofNat 64 (d0 + c)))
           { e0 with pc := "if.end62", pre := some "while.body52" }
-      have hstep2 : step s2HelperCalls numFastBody e0 = .jump e1 :=
+      have hstep2 : step calls numFastBody e0 = .jump e1 :=
         intBody_step_skip (env := e0.env) (s := e0) (idig := BitVec.ofNat 64 (d0 + c))
           (by simp only [e0, stateAt]) hidig0 hguard'
       have hphi : phiIncoming "while.body52"
@@ -1330,7 +1341,7 @@ theorem intRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
           (intIfEndEnv e1.env ip (BitVec.ofNat 64 (d0 + c))
             (BitVec.ofNat 64 (i0 + c)) (BitVec.ofNat 64 n))
           { e1 with pc := "land.lhs.true41", pre := some "if.end62" }
-      have hstep3 : step s2HelperCalls numFastBody e1 = .jump e2 :=
+      have hstep3 : step calls numFastBody e1 = .jump e2 :=
         intIfEnd_step_loop (env := e1.env) (s := e1) (by simp only [e1, stateAt])
           (idig := BitVec.ofNat 64 (d0 + c))
           (i := BitVec.ofNat 64 (i0 + c)) (n := BitVec.ofNat 64 n)
@@ -1429,8 +1440,8 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
     (hb : intRunAtBound mem0 p n i0 s c = true) :
     ∃ (e : State) (j : Nat), j ≤ 4 ∧ intRunExitBlock e ∧
       intRunExit mem0 bs p n i0 d0 e ∧
-      ∀ k, runFuel s2HelperCalls (j + k) numFastBody s =
-        runFuel s2HelperCalls k numFastBody e := by
+      ∀ k, runFuel calls (j + k) numFastBody s =
+        runFuel calls k numFastBody e := by
   obtain ⟨hpc, hmem, hsum, hltn, hnlt, hd0le, hp, hn, hread, h7, hpre⟩ := hinv
   have hblen : bs.length = n := JsonEntrySteps.readBytes_length mem0 p n hread
   have hd0next64 : d0 + c + 1 < 2 ^ 64 := by omega
@@ -1454,7 +1465,7 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
         let e0 : State := stateAt (intHeadEnv s.env p (i0 + c) b
             (BitVec.ofNat 64 (d0 + c)) ip)
           { s with pc := "while.body52", pre := some "land.lhs.true41" }
-        have hstep1 : step s2HelperCalls numFastBody s = .jump e0 :=
+        have hstep1 : step calls numFastBody s = .jump e0 :=
           intHead_step_entry_digit (env := s.env) (s := s) (a := p) (j := i0 + c)
             (b := b) (idig := BitVec.ofNat 64 (d0 + c)) (ip := ip) hpc hpre0 hp
             (BlockEval.evalOperand_reg_of s.env s "%i.1558" _ hi)
@@ -1467,7 +1478,7 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
         by_cases hguard : (BitVec.ofNat 64 (d0 + c)).ult (19#64) = true
         · let e1 : State := stateAt (intBodyEnv e0.env (BitVec.ofNat 64 (d0 + c)))
               { e0 with pc := "if.then55", pre := some "while.body52" }
-          have hstep2 : step s2HelperCalls numFastBody e0 = .jump e1 :=
+          have hstep2 : step calls numFastBody e0 = .jump e1 :=
             intBody_step_taken (env := e0.env) (s := e0)
               (idig := BitVec.ofNat 64 (d0 + c)) (by simp only [e0, stateAt])
               hidig0 hguard
@@ -1479,7 +1490,7 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
             block_lk
           let e2 : State := stateAt (intIfThenEnv e1.env ip b)
               { e1 with pc := "if.end62", pre := some "if.then55" }
-          have hstep3 : step s2HelperCalls numFastBody e1 = .jump e2 :=
+          have hstep3 : step calls numFastBody e1 = .jump e2 :=
             intIfThen_step (env := e1.env) (s := e1) (by simp only [e1, stateAt])
               hip1 h8
           have hphi : phiIncoming "if.then55"
@@ -1513,7 +1524,7 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
                 (BitVec.ofNat 64 (d0 + c)) (BitVec.ofNat 64 (i0 + c))
                 (BitVec.ofNat 64 n))
               { e2 with pc := "if.end230", pre := some "if.end62" }
-          have hstep4 : step s2HelperCalls numFastBody e2 = .jump e3 :=
+          have hstep4 : step calls numFastBody e2 = .jump e3 :=
             intIfEnd_step_exit (env := e2.env) (s := e2)
               (idig := BitVec.ofNat 64 (d0 + c))
               (i := BitVec.ofNat 64 (i0 + c)) (n := BitVec.ofNat 64 n)
@@ -1568,7 +1579,7 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
             · exact absurd h hguard
           let e1 : State := stateAt (intBodyEnv e0.env (BitVec.ofNat 64 (d0 + c)))
               { e0 with pc := "if.end62", pre := some "while.body52" }
-          have hstep2 : step s2HelperCalls numFastBody e0 = .jump e1 :=
+          have hstep2 : step calls numFastBody e0 = .jump e1 :=
             intBody_step_skip (env := e0.env) (s := e0)
               (idig := BitVec.ofNat 64 (d0 + c)) (by simp only [e0, stateAt])
               hidig0 hguard'
@@ -1598,7 +1609,7 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               (intIfEndEnv e1.env ip (BitVec.ofNat 64 (d0 + c))
                 (BitVec.ofNat 64 (i0 + c)) (BitVec.ofNat 64 n))
               { e1 with pc := "if.end230", pre := some "if.end62" }
-          have hstep3 : step s2HelperCalls numFastBody e1 = .jump e2 :=
+          have hstep3 : step calls numFastBody e1 = .jump e2 :=
             intIfEnd_step_exit (env := e1.env) (s := e1)
               (idig := BitVec.ofNat 64 (d0 + c))
               (i := BitVec.ofNat 64 (i0 + c)) (n := BitVec.ofNat 64 n)
@@ -1644,7 +1655,7 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
         let e0 : State := stateAt (intHeadEnv s.env p (i0 + c) b
             (BitVec.ofNat 64 (d0 + c)) ip)
           { s with pc := "while.body52", pre := some "land.lhs.true41" }
-        have hstep1 : step s2HelperCalls numFastBody s = .jump e0 :=
+        have hstep1 : step calls numFastBody s = .jump e0 :=
           intHead_step_back_digit (env := s.env) (s := s) (a := p) (j := i0 + c)
             (b := b) (idig := BitVec.ofNat 64 (d0 + c)) (ip := ip) hpc hpre0 hp
             (BlockEval.evalOperand_reg_of s.env s "%inc64" _ hi)
@@ -1657,7 +1668,7 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
         by_cases hguard : (BitVec.ofNat 64 (d0 + c)).ult (19#64) = true
         · let e1 : State := stateAt (intBodyEnv e0.env (BitVec.ofNat 64 (d0 + c)))
               { e0 with pc := "if.then55", pre := some "while.body52" }
-          have hstep2 : step s2HelperCalls numFastBody e0 = .jump e1 :=
+          have hstep2 : step calls numFastBody e0 = .jump e1 :=
             intBody_step_taken (env := e0.env) (s := e0)
               (idig := BitVec.ofNat 64 (d0 + c)) (by simp only [e0, stateAt])
               hidig0 hguard
@@ -1669,7 +1680,7 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
             block_lk
           let e2 : State := stateAt (intIfThenEnv e1.env ip b)
               { e1 with pc := "if.end62", pre := some "if.then55" }
-          have hstep3 : step s2HelperCalls numFastBody e1 = .jump e2 :=
+          have hstep3 : step calls numFastBody e1 = .jump e2 :=
             intIfThen_step (env := e1.env) (s := e1) (by simp only [e1, stateAt])
               hip1 h8
           have hphi : phiIncoming "if.then55"
@@ -1703,7 +1714,7 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
                 (BitVec.ofNat 64 (d0 + c)) (BitVec.ofNat 64 (i0 + c))
                 (BitVec.ofNat 64 n))
               { e2 with pc := "if.end230", pre := some "if.end62" }
-          have hstep4 : step s2HelperCalls numFastBody e2 = .jump e3 :=
+          have hstep4 : step calls numFastBody e2 = .jump e3 :=
             intIfEnd_step_exit (env := e2.env) (s := e2)
               (idig := BitVec.ofNat 64 (d0 + c))
               (i := BitVec.ofNat 64 (i0 + c)) (n := BitVec.ofNat 64 n)
@@ -1758,7 +1769,7 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
             · exact absurd h hguard
           let e1 : State := stateAt (intBodyEnv e0.env (BitVec.ofNat 64 (d0 + c)))
               { e0 with pc := "if.end62", pre := some "while.body52" }
-          have hstep2 : step s2HelperCalls numFastBody e0 = .jump e1 :=
+          have hstep2 : step calls numFastBody e0 = .jump e1 :=
             intBody_step_skip (env := e0.env) (s := e0)
               (idig := BitVec.ofNat 64 (d0 + c)) (by simp only [e0, stateAt])
               hidig0 hguard'
@@ -1788,7 +1799,7 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               (intIfEndEnv e1.env ip (BitVec.ofNat 64 (d0 + c))
                 (BitVec.ofNat 64 (i0 + c)) (BitVec.ofNat 64 n))
               { e1 with pc := "if.end230", pre := some "if.end62" }
-          have hstep3 : step s2HelperCalls numFastBody e1 = .jump e2 :=
+          have hstep3 : step calls numFastBody e1 = .jump e2 :=
             intIfEnd_step_exit (env := e1.env) (s := e1)
               (idig := BitVec.ofNat 64 (d0 + c))
               (i := BitVec.ofNat 64 (i0 + c)) (n := BitVec.ofNat 64 n)
@@ -1840,7 +1851,7 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
           let e0 : State := stateAt (intHeadEnv s.env p (i0 + c) b
               (BitVec.ofNat 64 (d0 + c)) ip)
             { s with pc := "if.end68", pre := some "land.lhs.true41" }
-          have hstep1 : step s2HelperCalls numFastBody s = .jump e0 :=
+          have hstep1 : step calls numFastBody s = .jump e0 :=
             intHead_step_entry_nondigit (env := s.env) (s := s) (a := p) (j := i0 + c)
               (b := b) (idig := BitVec.ofNat 64 (d0 + c)) (ip := ip) hpc hpre0 hp
               (BlockEval.evalOperand_reg_of s.env s "%i.1558" _ hi)
@@ -1870,7 +1881,7 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
           let e0 : State := stateAt (intHeadEnv s.env p (i0 + c) b
               (BitVec.ofNat 64 (d0 + c)) ip)
             { s with pc := "if.end68", pre := some "land.lhs.true41" }
-          have hstep1 : step s2HelperCalls numFastBody s = .jump e0 :=
+          have hstep1 : step calls numFastBody s = .jump e0 :=
             intHead_step_back_nondigit (env := s.env) (s := s) (a := p) (j := i0 + c)
               (b := b) (idig := BitVec.ofNat 64 (d0 + c)) (ip := ip) hpc hpre0 hp
               (BlockEval.evalOperand_reg_of s.env s "%inc64" _ hi)
@@ -1907,7 +1918,7 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
       let e0 : State := stateAt (intHeadEnv s.env p (i0 + c) b
           (BitVec.ofNat 64 (d0 + c)) ip)
         { s with pc := "if.end68", pre := some "land.lhs.true41" }
-      have hstep1 : step s2HelperCalls numFastBody s = .jump e0 :=
+      have hstep1 : step calls numFastBody s = .jump e0 :=
         intHead_step_entry_nondigit (env := s.env) (s := s) (a := p) (j := i0 + c)
           (b := b) (idig := BitVec.ofNat 64 (d0 + c)) (ip := ip) hpc hpre0 hp
           (BlockEval.evalOperand_reg_of s.env s "%i.1558" _ hi)
@@ -1937,7 +1948,7 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
       let e0 : State := stateAt (intHeadEnv s.env p (i0 + c) b
           (BitVec.ofNat 64 (d0 + c)) ip)
         { s with pc := "if.end68", pre := some "land.lhs.true41" }
-      have hstep1 : step s2HelperCalls numFastBody s = .jump e0 :=
+      have hstep1 : step calls numFastBody s = .jump e0 :=
         intHead_step_back_nondigit (env := s.env) (s := s) (a := p) (j := i0 + c)
           (b := b) (idig := BitVec.ofNat 64 (d0 + c)) (ip := ip) hpc hpre0 hp
           (BlockEval.evalOperand_reg_of s.env s "%inc64" _ hi)
@@ -1968,7 +1979,7 @@ start `i0`, the bound is the distance to the lexeme's end, and one iteration is
 at most four control steps.  The arms are `intRun_step_exit` and
 `intRun_step_loop`, and the exit carries the counters. -/
 def intRunBoundLoop (mem0 : Mem) (p n i0 d0 : Nat) (bs : List UInt8) (cost : Nat)
-    (hcost : 4 ≤ cost) : BoundLoop s2HelperCalls numFastBody where
+    (hcost : 4 ≤ cost) : BoundLoop calls numFastBody where
   head := "land.lhs.true41"
   exitBlock := "if.end68"
   N := n - i0
@@ -2006,8 +2017,8 @@ theorem intRun_run (mem0 : Mem) (p n i0 d0 : Nat) (bs : List UInt8) (cost : Nat)
     (hinv : intRunInv mem0 p n i0 d0 bs (n - i0) s c) (k : Nat) :
     ∃ (e : State) (j : Nat), j ≤ (n - i0 + 1) * cost ∧ intRunExitBlock e ∧
       intRunExit mem0 bs p n i0 d0 e ∧
-      runFuel s2HelperCalls (j + k) numFastBody s =
-        runFuel s2HelperCalls k numFastBody e :=
+      runFuel calls (j + k) numFastBody s =
+        runFuel calls k numFastBody e :=
   (intRunBoundLoop mem0 p n i0 d0 bs cost hcost).run s c hinv k
 
 /-- **The run's end-of-lexeme exit when every remaining byte is a digit.**  The
@@ -2020,8 +2031,8 @@ theorem intRun_step_end230 {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
     (hb : intRunAtBound mem0 p n i0 s c = true)
     (hdigits : ∀ k, i0 ≤ k → k < n → IsDigitB (bs.getD k 0) = true) :
     ∃ (e : State) (j : Nat), j ≤ 4 ∧ intRunEndWord bs p n i0 d0 e ∧
-      ∀ k, runFuel s2HelperCalls (j + k) numFastBody s =
-        runFuel s2HelperCalls k numFastBody e := by
+      ∀ k, runFuel calls (j + k) numFastBody s =
+        runFuel calls k numFastBody e := by
   obtain ⟨e, j, hj, _, hexit, hrun⟩ := intRun_step_exit hinv hb
   obtain ⟨_, _, _, _, _, _, _, _, hread, _, _⟩ := hinv
   rcases hexit with ⟨_, _, _, _, i1, hi0, hi1lt, _, _, _, b, hbytei, hbd⟩ | hend
@@ -2037,7 +2048,7 @@ its exit is the end-of-lexeme one and the exit word is `intRunEndWord`. -/
 def intRunEndBoundLoop (mem0 : Mem) (p n i0 d0 : Nat) (bs : List UInt8) (cost : Nat)
     (hcost : 4 ≤ cost)
     (hdigits : ∀ k, i0 ≤ k → k < n → IsDigitB (bs.getD k 0) = true) :
-    BoundLoop s2HelperCalls numFastBody where
+    BoundLoop calls numFastBody where
   head := "land.lhs.true41"
   exitBlock := "if.end230"
   N := n - i0
@@ -2076,8 +2087,8 @@ theorem intRun_end_run (mem0 : Mem) (p n i0 d0 : Nat) (bs : List UInt8) (cost : 
     (hinv : intRunInv mem0 p n i0 d0 bs (n - i0) s c) (k : Nat) :
     ∃ (e : State) (j : Nat), j ≤ (n - i0 + 1) * cost ∧ e.pc = "if.end230" ∧
       intRunEndWord bs p n i0 d0 e ∧
-      runFuel s2HelperCalls (j + k) numFastBody s =
-        runFuel s2HelperCalls k numFastBody e :=
+      runFuel calls (j + k) numFastBody s =
+        runFuel calls k numFastBody e :=
   (intRunEndBoundLoop mem0 p n i0 d0 bs cost hcost hdigits).run s c hinv k
 
 /-! ### The fraction run: `land.lhs.true119`
@@ -2279,7 +2290,7 @@ theorem fracBody_step_taken {env : Env} {s : State} {fdig : BitVec 64}
     (hpc : s.pc = "while.body130")
     (hf : lookupName env "%fdig.3594" = some (.int 64 fdig))
     (hlt : fdig.ult (19#64) = true) :
-    step s2HelperCalls numFastBody (stateAt env s) =
+    step calls numFastBody (stateAt env s) =
       .jump (stateAt (fracBodyEnv env fdig)
         { s with pc := "if.then133", pre := some "while.body130" }) := by
   refine numFast_step_at (s' := stateAt (fracBodyEnv env fdig) s)
@@ -2300,7 +2311,7 @@ theorem fracBody_step_skip {env : Env} {s : State} {fdig : BitVec 64}
     (hpc : s.pc = "while.body130")
     (hf : lookupName env "%fdig.3594" = some (.int 64 fdig))
     (hlt : fdig.ult (19#64) = false) :
-    step s2HelperCalls numFastBody (stateAt env s) =
+    step calls numFastBody (stateAt env s) =
       .jump (stateAt (fracBodyEnv env fdig)
         { s with pc := "if.end140", pre := some "while.body130" }) := by
   refine numFast_step_at (s' := stateAt (fracBodyEnv env fdig) s)
@@ -2358,7 +2369,7 @@ theorem fracIfThen_step {env : Env} {s : State} {fr : BitVec 64} {b : UInt8}
     (hpc : s.pc = "if.then133")
     (hfr : lookupName env "%fr.3593" = some (.int 64 fr))
     (h8 : lookupName env "%18" = some (.int 8 (JsonScanLane.vByte b))) :
-    step s2HelperCalls numFastBody (stateAt env s) =
+    step calls numFastBody (stateAt env s) =
       .jump (stateAt (fracIfThenEnv env fr b)
         { s with pc := "if.end140", pre := some "if.then133" }) := by
   refine numFast_step_at (s' := stateAt (fracIfThenEnv env fr b) s)
@@ -2427,7 +2438,7 @@ theorem fracIfEnd_step_exit {env : Env} {s : State} {fdig i n : BitVec 64}
     (hi : lookupName env "%i.9595" = some (.int 64 i))
     (hn : lookupName env "%n" = some (.int 64 n))
     (heq : evalICmp .eq (i + 1#64) n = 1) :
-    step s2HelperCalls numFastBody (stateAt env s) =
+    step calls numFastBody (stateAt env s) =
       .jump (stateAt (fracIfEndEnv env frv fdig i n)
         { s with pc := "if.end230", pre := some "if.end140" }) := by
   refine numFast_step_at (s' := stateAt (fracIfEndEnv env frv fdig i n) s)
@@ -2454,7 +2465,7 @@ theorem fracIfEnd_step_loop {env : Env} {s : State} {fdig i n : BitVec 64}
     (hi : lookupName env "%i.9595" = some (.int 64 i))
     (hn : lookupName env "%n" = some (.int 64 n))
     (heq : evalICmp .eq (i + 1#64) n = 0) :
-    step s2HelperCalls numFastBody (stateAt env s) =
+    step calls numFastBody (stateAt env s) =
       .jump (stateAt (fracIfEndEnv env frv fdig i n)
         { s with pc := "land.lhs.true119", pre := some "if.end140" }) := by
   refine numFast_step_at (s' := stateAt (fracIfEndEnv env frv fdig i n) s)
@@ -2480,7 +2491,7 @@ theorem fracHead_step_entry_digit {env : Env} {s : State} {a j : Nat} {b : UInt8
     (hhf : evalOperand (stateAt env s) (.reg "%fr.0556") = some (.int 64 fr))
     (hj : j < 2 ^ 63) (hread : readByte s.mem (a + j) = some b)
     (hdigit : IsDigitB b = true) :
-    step s2HelperCalls numFastBody (stateAt env s) =
+    step calls numFastBody (stateAt env s) =
       .jump (stateAt (fracHeadEnv env a j b fdig fr)
         { s with pc := "while.body130", pre := some "land.lhs.true119" }) := by
   refine numFast_step_at (s' := stateAt (fracHeadEnv env a j b fdig fr) s)
@@ -2508,7 +2519,7 @@ theorem fracHead_step_entry_nondigit {env : Env} {s : State} {a j : Nat} {b : UI
     (hhf : evalOperand (stateAt env s) (.reg "%fr.0556") = some (.int 64 fr))
     (hj : j < 2 ^ 63) (hread : readByte s.mem (a + j) = some b)
     (hdigit : IsDigitB b = false) :
-    step s2HelperCalls numFastBody (stateAt env s) =
+    step calls numFastBody (stateAt env s) =
       .jump (stateAt (fracHeadEnv env a j b fdig fr)
         { s with pc := "if.end144", pre := some "land.lhs.true119" }) := by
   refine numFast_step_at (s' := stateAt (fracHeadEnv env a j b fdig fr) s)
@@ -2536,7 +2547,7 @@ theorem fracHead_step_back_digit {env : Env} {s : State} {a j : Nat} {b : UInt8}
     (hhf : evalOperand (stateAt env s) (.reg "%fr.4") = some (.int 64 fr))
     (hj : j < 2 ^ 63) (hread : readByte s.mem (a + j) = some b)
     (hdigit : IsDigitB b = true) :
-    step s2HelperCalls numFastBody (stateAt env s) =
+    step calls numFastBody (stateAt env s) =
       .jump (stateAt (fracHeadEnv env a j b fdig fr)
         { s with pc := "while.body130", pre := some "land.lhs.true119" }) := by
   refine numFast_step_at (s' := stateAt (fracHeadEnv env a j b fdig fr) s)
@@ -2564,7 +2575,7 @@ theorem fracHead_step_back_nondigit {env : Env} {s : State} {a j : Nat} {b : UIn
     (hhf : evalOperand (stateAt env s) (.reg "%fr.4") = some (.int 64 fr))
     (hj : j < 2 ^ 63) (hread : readByte s.mem (a + j) = some b)
     (hdigit : IsDigitB b = false) :
-    step s2HelperCalls numFastBody (stateAt env s) =
+    step calls numFastBody (stateAt env s) =
       .jump (stateAt (fracHeadEnv env a j b fdig fr)
         { s with pc := "if.end144", pre := some "land.lhs.true119" }) := by
   refine numFast_step_at (s' := stateAt (fracHeadEnv env a j b fdig fr) s)
@@ -2679,8 +2690,8 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
     (hb : fracRunAtBound mem0 p n i0 s c = false) :
     ∃ (e : State) (c' : Nat) (j : Nat), j ≤ 4 ∧ e.pc = "land.lhs.true119" ∧ c < c' ∧
       fracRunInv mem0 p n i0 d0 bs r e c' ∧
-      ∀ k, runFuel s2HelperCalls (j + k) numFastBody s =
-        runFuel s2HelperCalls k numFastBody e := by
+      ∀ k, runFuel calls (j + k) numFastBody s =
+        runFuel calls k numFastBody e := by
   obtain ⟨hpc, hmem, hsum, hltn, hnlt, hd0le, hp, hn, hread, h17,
     ⟨idig5, ip5, hidig5, hip5⟩, hpre⟩ := hinv
   have hblen : bs.length = n := JsonEntrySteps.readBytes_length mem0 p n hread
@@ -2710,7 +2721,7 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
     let e0 : State := stateAt (fracHeadEnv s.env p (i0 + c) b
         (BitVec.ofNat 64 (d0 + c)) fr)
       { s with pc := "while.body130", pre := some "land.lhs.true119" }
-    have hstep1 : step s2HelperCalls numFastBody s = .jump e0 :=
+    have hstep1 : step calls numFastBody s = .jump e0 :=
       fracHead_step_entry_digit (env := s.env) (s := s) (a := p) (j := i0 + c)
         (b := b) (fdig := BitVec.ofNat 64 (d0 + c)) (fr := fr) hpc hpre0 hp
         (BlockEval.evalOperand_reg_of s.env s "%i.6552" _ hi)
@@ -2723,7 +2734,7 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
     by_cases hguard : (BitVec.ofNat 64 (d0 + c)).ult (19#64) = true
     · let e1 : State := stateAt (fracBodyEnv e0.env (BitVec.ofNat 64 (d0 + c)))
           { e0 with pc := "if.then133", pre := some "while.body130" }
-      have hstep2 : step s2HelperCalls numFastBody e0 = .jump e1 :=
+      have hstep2 : step calls numFastBody e0 = .jump e1 :=
         fracBody_step_taken (env := e0.env) (s := e0)
           (fdig := BitVec.ofNat 64 (d0 + c)) (by simp only [e0, stateAt])
           hidig0 hguard
@@ -2735,7 +2746,7 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
         block_lk
       let e2 : State := stateAt (fracIfThenEnv e1.env fr b)
           { e1 with pc := "if.end140", pre := some "if.then133" }
-      have hstep3 : step s2HelperCalls numFastBody e1 = .jump e2 :=
+      have hstep3 : step calls numFastBody e1 = .jump e2 :=
         fracIfThen_step (env := e1.env) (s := e1) (by simp only [e1, stateAt])
           hfr1 h8
       have hphi : phiIncoming "if.then133"
@@ -2771,7 +2782,7 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
             (BitVec.ofNat 64 (d0 + c)) (BitVec.ofNat 64 (i0 + c))
             (BitVec.ofNat 64 n))
           { e2 with pc := "land.lhs.true119", pre := some "if.end140" }
-      have hstep4 : step s2HelperCalls numFastBody e2 = .jump e3 :=
+      have hstep4 : step calls numFastBody e2 = .jump e3 :=
         fracIfEnd_step_loop (env := e2.env) (s := e2)
           (fdig := BitVec.ofNat 64 (d0 + c))
           (i := BitVec.ofNat 64 (i0 + c)) (n := BitVec.ofNat 64 n)
@@ -2839,7 +2850,7 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
         · exact absurd h hguard
       let e1 : State := stateAt (fracBodyEnv e0.env (BitVec.ofNat 64 (d0 + c)))
           { e0 with pc := "if.end140", pre := some "while.body130" }
-      have hstep2 : step s2HelperCalls numFastBody e0 = .jump e1 :=
+      have hstep2 : step calls numFastBody e0 = .jump e1 :=
         fracBody_step_skip (env := e0.env) (s := e0)
           (fdig := BitVec.ofNat 64 (d0 + c)) (by simp only [e0, stateAt])
           hidig0 hguard'
@@ -2872,7 +2883,7 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
           (fracIfEndEnv e1.env fr (BitVec.ofNat 64 (d0 + c))
             (BitVec.ofNat 64 (i0 + c)) (BitVec.ofNat 64 n))
           { e1 with pc := "land.lhs.true119", pre := some "if.end140" }
-      have hstep3 : step s2HelperCalls numFastBody e1 = .jump e2 :=
+      have hstep3 : step calls numFastBody e1 = .jump e2 :=
         fracIfEnd_step_loop (env := e1.env) (s := e1)
           (fdig := BitVec.ofNat 64 (d0 + c))
           (i := BitVec.ofNat 64 (i0 + c)) (n := BitVec.ofNat 64 n)
@@ -2931,7 +2942,7 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
     let e0 : State := stateAt (fracHeadEnv s.env p (i0 + c) b
         (BitVec.ofNat 64 (d0 + c)) fr)
       { s with pc := "while.body130", pre := some "land.lhs.true119" }
-    have hstep1 : step s2HelperCalls numFastBody s = .jump e0 :=
+    have hstep1 : step calls numFastBody s = .jump e0 :=
       fracHead_step_back_digit (env := s.env) (s := s) (a := p) (j := i0 + c)
         (b := b) (fdig := BitVec.ofNat 64 (d0 + c)) (fr := fr) hpc hpre0 hp
         (BlockEval.evalOperand_reg_of s.env s "%inc142" _ hi)
@@ -2944,7 +2955,7 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
     by_cases hguard : (BitVec.ofNat 64 (d0 + c)).ult (19#64) = true
     · let e1 : State := stateAt (fracBodyEnv e0.env (BitVec.ofNat 64 (d0 + c)))
           { e0 with pc := "if.then133", pre := some "while.body130" }
-      have hstep2 : step s2HelperCalls numFastBody e0 = .jump e1 :=
+      have hstep2 : step calls numFastBody e0 = .jump e1 :=
         fracBody_step_taken (env := e0.env) (s := e0)
           (fdig := BitVec.ofNat 64 (d0 + c)) (by simp only [e0, stateAt])
           hidig0 hguard
@@ -2956,7 +2967,7 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
         block_lk
       let e2 : State := stateAt (fracIfThenEnv e1.env fr b)
           { e1 with pc := "if.end140", pre := some "if.then133" }
-      have hstep3 : step s2HelperCalls numFastBody e1 = .jump e2 :=
+      have hstep3 : step calls numFastBody e1 = .jump e2 :=
         fracIfThen_step (env := e1.env) (s := e1) (by simp only [e1, stateAt])
           hfr1 h8
       have hphi : phiIncoming "if.then133"
@@ -2992,7 +3003,7 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
             (BitVec.ofNat 64 (d0 + c)) (BitVec.ofNat 64 (i0 + c))
             (BitVec.ofNat 64 n))
           { e2 with pc := "land.lhs.true119", pre := some "if.end140" }
-      have hstep4 : step s2HelperCalls numFastBody e2 = .jump e3 :=
+      have hstep4 : step calls numFastBody e2 = .jump e3 :=
         fracIfEnd_step_loop (env := e2.env) (s := e2)
           (fdig := BitVec.ofNat 64 (d0 + c))
           (i := BitVec.ofNat 64 (i0 + c)) (n := BitVec.ofNat 64 n)
@@ -3060,7 +3071,7 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
         · exact absurd h hguard
       let e1 : State := stateAt (fracBodyEnv e0.env (BitVec.ofNat 64 (d0 + c)))
           { e0 with pc := "if.end140", pre := some "while.body130" }
-      have hstep2 : step s2HelperCalls numFastBody e0 = .jump e1 :=
+      have hstep2 : step calls numFastBody e0 = .jump e1 :=
         fracBody_step_skip (env := e0.env) (s := e0)
           (fdig := BitVec.ofNat 64 (d0 + c)) (by simp only [e0, stateAt])
           hidig0 hguard'
@@ -3093,7 +3104,7 @@ theorem fracRun_step_loop {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
           (fracIfEndEnv e1.env fr (BitVec.ofNat 64 (d0 + c))
             (BitVec.ofNat 64 (i0 + c)) (BitVec.ofNat 64 n))
           { e1 with pc := "land.lhs.true119", pre := some "if.end140" }
-      have hstep3 : step s2HelperCalls numFastBody e1 = .jump e2 :=
+      have hstep3 : step calls numFastBody e1 = .jump e2 :=
         fracIfEnd_step_loop (env := e1.env) (s := e1)
           (fdig := BitVec.ofNat 64 (d0 + c))
           (i := BitVec.ofNat 64 (i0 + c)) (n := BitVec.ofNat 64 n)
@@ -3172,8 +3183,8 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
     (hb : fracRunAtBound mem0 p n i0 s c = true) :
     ∃ (e : State) (j : Nat), j ≤ 4 ∧ fracRunExitBlock e ∧
       fracRunExit mem0 bs p n i0 d0 e ∧
-      ∀ k, runFuel s2HelperCalls (j + k) numFastBody s =
-        runFuel s2HelperCalls k numFastBody e := by
+      ∀ k, runFuel calls (j + k) numFastBody s =
+        runFuel calls k numFastBody e := by
   obtain ⟨hpc, hmem, hsum, hltn, hnlt, hd0le, hp, hn, hread, h17,
     ⟨idig5, ip5, hidig5, hip5⟩, hpre⟩ := hinv
   have hblen : bs.length = n := JsonEntrySteps.readBytes_length mem0 p n hread
@@ -3196,7 +3207,7 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
         let e0 : State := stateAt (fracHeadEnv s.env p (i0 + c) b
             (BitVec.ofNat 64 (d0 + c)) fr)
           { s with pc := "while.body130", pre := some "land.lhs.true119" }
-        have hstep1 : step s2HelperCalls numFastBody s = .jump e0 :=
+        have hstep1 : step calls numFastBody s = .jump e0 :=
           fracHead_step_entry_digit (env := s.env) (s := s) (a := p) (j := i0 + c)
             (b := b) (fdig := BitVec.ofNat 64 (d0 + c)) (fr := fr) hpc hpre0 hp
             (BlockEval.evalOperand_reg_of s.env s "%i.6552" _ hi)
@@ -3209,7 +3220,7 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
         by_cases hguard : (BitVec.ofNat 64 (d0 + c)).ult (19#64) = true
         · let e1 : State := stateAt (fracBodyEnv e0.env (BitVec.ofNat 64 (d0 + c)))
               { e0 with pc := "if.then133", pre := some "while.body130" }
-          have hstep2 : step s2HelperCalls numFastBody e0 = .jump e1 :=
+          have hstep2 : step calls numFastBody e0 = .jump e1 :=
             fracBody_step_taken (env := e0.env) (s := e0)
               (fdig := BitVec.ofNat 64 (d0 + c)) (by simp only [e0, stateAt])
               hidig0 hguard
@@ -3221,7 +3232,7 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
             block_lk
           let e2 : State := stateAt (fracIfThenEnv e1.env fr b)
               { e1 with pc := "if.end140", pre := some "if.then133" }
-          have hstep3 : step s2HelperCalls numFastBody e1 = .jump e2 :=
+          have hstep3 : step calls numFastBody e1 = .jump e2 :=
             fracIfThen_step (env := e1.env) (s := e1) (by simp only [e1, stateAt])
               hfr1 h8
           have hphi : phiIncoming "if.then133"
@@ -3255,7 +3266,7 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
                 (BitVec.ofNat 64 (d0 + c)) (BitVec.ofNat 64 (i0 + c))
                 (BitVec.ofNat 64 n))
               { e2 with pc := "if.end230", pre := some "if.end140" }
-          have hstep4 : step s2HelperCalls numFastBody e2 = .jump e3 :=
+          have hstep4 : step calls numFastBody e2 = .jump e3 :=
             fracIfEnd_step_exit (env := e2.env) (s := e2)
               (fdig := BitVec.ofNat 64 (d0 + c))
               (i := BitVec.ofNat 64 (i0 + c)) (n := BitVec.ofNat 64 n)
@@ -3317,7 +3328,7 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
             · exact absurd h hguard
           let e1 : State := stateAt (fracBodyEnv e0.env (BitVec.ofNat 64 (d0 + c)))
               { e0 with pc := "if.end140", pre := some "while.body130" }
-          have hstep2 : step s2HelperCalls numFastBody e0 = .jump e1 :=
+          have hstep2 : step calls numFastBody e0 = .jump e1 :=
             fracBody_step_skip (env := e0.env) (s := e0)
               (fdig := BitVec.ofNat 64 (d0 + c)) (by simp only [e0, stateAt])
               hidig0 hguard'
@@ -3347,7 +3358,7 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               (fracIfEndEnv e1.env fr (BitVec.ofNat 64 (d0 + c))
                 (BitVec.ofNat 64 (i0 + c)) (BitVec.ofNat 64 n))
               { e1 with pc := "if.end230", pre := some "if.end140" }
-          have hstep3 : step s2HelperCalls numFastBody e1 = .jump e2 :=
+          have hstep3 : step calls numFastBody e1 = .jump e2 :=
             fracIfEnd_step_exit (env := e1.env) (s := e1)
               (fdig := BitVec.ofNat 64 (d0 + c))
               (i := BitVec.ofNat 64 (i0 + c)) (n := BitVec.ofNat 64 n)
@@ -3400,7 +3411,7 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
         let e0 : State := stateAt (fracHeadEnv s.env p (i0 + c) b
             (BitVec.ofNat 64 (d0 + c)) fr)
           { s with pc := "while.body130", pre := some "land.lhs.true119" }
-        have hstep1 : step s2HelperCalls numFastBody s = .jump e0 :=
+        have hstep1 : step calls numFastBody s = .jump e0 :=
           fracHead_step_back_digit (env := s.env) (s := s) (a := p) (j := i0 + c)
             (b := b) (fdig := BitVec.ofNat 64 (d0 + c)) (fr := fr) hpc hpre0 hp
             (BlockEval.evalOperand_reg_of s.env s "%inc142" _ hi)
@@ -3413,7 +3424,7 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
         by_cases hguard : (BitVec.ofNat 64 (d0 + c)).ult (19#64) = true
         · let e1 : State := stateAt (fracBodyEnv e0.env (BitVec.ofNat 64 (d0 + c)))
               { e0 with pc := "if.then133", pre := some "while.body130" }
-          have hstep2 : step s2HelperCalls numFastBody e0 = .jump e1 :=
+          have hstep2 : step calls numFastBody e0 = .jump e1 :=
             fracBody_step_taken (env := e0.env) (s := e0)
               (fdig := BitVec.ofNat 64 (d0 + c)) (by simp only [e0, stateAt])
               hidig0 hguard
@@ -3425,7 +3436,7 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
             block_lk
           let e2 : State := stateAt (fracIfThenEnv e1.env fr b)
               { e1 with pc := "if.end140", pre := some "if.then133" }
-          have hstep3 : step s2HelperCalls numFastBody e1 = .jump e2 :=
+          have hstep3 : step calls numFastBody e1 = .jump e2 :=
             fracIfThen_step (env := e1.env) (s := e1) (by simp only [e1, stateAt])
               hfr1 h8
           have hphi : phiIncoming "if.then133"
@@ -3459,7 +3470,7 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
                 (BitVec.ofNat 64 (d0 + c)) (BitVec.ofNat 64 (i0 + c))
                 (BitVec.ofNat 64 n))
               { e2 with pc := "if.end230", pre := some "if.end140" }
-          have hstep4 : step s2HelperCalls numFastBody e2 = .jump e3 :=
+          have hstep4 : step calls numFastBody e2 = .jump e3 :=
             fracIfEnd_step_exit (env := e2.env) (s := e2)
               (fdig := BitVec.ofNat 64 (d0 + c))
               (i := BitVec.ofNat 64 (i0 + c)) (n := BitVec.ofNat 64 n)
@@ -3521,7 +3532,7 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
             · exact absurd h hguard
           let e1 : State := stateAt (fracBodyEnv e0.env (BitVec.ofNat 64 (d0 + c)))
               { e0 with pc := "if.end140", pre := some "while.body130" }
-          have hstep2 : step s2HelperCalls numFastBody e0 = .jump e1 :=
+          have hstep2 : step calls numFastBody e0 = .jump e1 :=
             fracBody_step_skip (env := e0.env) (s := e0)
               (fdig := BitVec.ofNat 64 (d0 + c)) (by simp only [e0, stateAt])
               hidig0 hguard'
@@ -3551,7 +3562,7 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               (fracIfEndEnv e1.env fr (BitVec.ofNat 64 (d0 + c))
                 (BitVec.ofNat 64 (i0 + c)) (BitVec.ofNat 64 n))
               { e1 with pc := "if.end230", pre := some "if.end140" }
-          have hstep3 : step s2HelperCalls numFastBody e1 = .jump e2 :=
+          have hstep3 : step calls numFastBody e1 = .jump e2 :=
             fracIfEnd_step_exit (env := e1.env) (s := e1)
               (fdig := BitVec.ofNat 64 (d0 + c))
               (i := BitVec.ofNat 64 (i0 + c)) (n := BitVec.ofNat 64 n)
@@ -3609,7 +3620,7 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
         let e0 : State := stateAt (fracHeadEnv s.env p (i0 + c) b
             (BitVec.ofNat 64 (d0 + c)) fr)
           { s with pc := "if.end144", pre := some "land.lhs.true119" }
-        have hstep1 : step s2HelperCalls numFastBody s = .jump e0 :=
+        have hstep1 : step calls numFastBody s = .jump e0 :=
           fracHead_step_entry_nondigit (env := s.env) (s := s) (a := p) (j := i0 + c)
             (b := b) (fdig := BitVec.ofNat 64 (d0 + c)) (fr := fr) hpc hpre0 hp
             (BlockEval.evalOperand_reg_of s.env s "%i.6552" _ hi)
@@ -3639,7 +3650,7 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
         let e0 : State := stateAt (fracHeadEnv s.env p (i0 + c) b
             (BitVec.ofNat 64 (d0 + c)) fr)
           { s with pc := "if.end144", pre := some "land.lhs.true119" }
-        have hstep1 : step s2HelperCalls numFastBody s = .jump e0 :=
+        have hstep1 : step calls numFastBody s = .jump e0 :=
           fracHead_step_back_nondigit (env := s.env) (s := s) (a := p) (j := i0 + c)
             (b := b) (fdig := BitVec.ofNat 64 (d0 + c)) (fr := fr) hpc hpre0 hp
             (BlockEval.evalOperand_reg_of s.env s "%inc142" _ hi)
@@ -3674,7 +3685,7 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
       let e0 : State := stateAt (fracHeadEnv s.env p (i0 + c) b
           (BitVec.ofNat 64 (d0 + c)) fr)
         { s with pc := "if.end144", pre := some "land.lhs.true119" }
-      have hstep1 : step s2HelperCalls numFastBody s = .jump e0 :=
+      have hstep1 : step calls numFastBody s = .jump e0 :=
         fracHead_step_entry_nondigit (env := s.env) (s := s) (a := p) (j := i0 + c)
           (b := b) (fdig := BitVec.ofNat 64 (d0 + c)) (fr := fr) hpc hpre0 hp
           (BlockEval.evalOperand_reg_of s.env s "%i.6552" _ hi)
@@ -3704,7 +3715,7 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
       let e0 : State := stateAt (fracHeadEnv s.env p (i0 + c) b
           (BitVec.ofNat 64 (d0 + c)) fr)
         { s with pc := "if.end144", pre := some "land.lhs.true119" }
-      have hstep1 : step s2HelperCalls numFastBody s = .jump e0 :=
+      have hstep1 : step calls numFastBody s = .jump e0 :=
         fracHead_step_back_nondigit (env := s.env) (s := s) (a := p) (j := i0 + c)
           (b := b) (fdig := BitVec.ofNat 64 (d0 + c)) (fr := fr) hpc hpre0 hp
           (BlockEval.evalOperand_reg_of s.env s "%inc142" _ hi)
@@ -3731,7 +3742,7 @@ theorem fracRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
         rw [runFuel_jump_prefix hstep1 k]
 
 def fracRunBoundLoop (mem0 : Mem) (p n i0 d0 : Nat) (bs : List UInt8) (cost : Nat)
-    (hcost : 4 ≤ cost) : BoundLoop s2HelperCalls numFastBody where
+    (hcost : 4 ≤ cost) : BoundLoop calls numFastBody where
   head := "land.lhs.true119"
   exitBlock := "if.end144"
   N := n - i0
@@ -3765,8 +3776,8 @@ theorem fracRun_run (mem0 : Mem) (p n i0 d0 : Nat) (bs : List UInt8) (cost : Nat
     (hinv : fracRunInv mem0 p n i0 d0 bs (n - i0) s c) (k : Nat) :
     ∃ (e : State) (j : Nat), j ≤ (n - i0 + 1) * cost ∧ fracRunExitBlock e ∧
       fracRunExit mem0 bs p n i0 d0 e ∧
-      runFuel s2HelperCalls (j + k) numFastBody s =
-        runFuel s2HelperCalls k numFastBody e :=
+      runFuel calls (j + k) numFastBody s =
+        runFuel calls k numFastBody e :=
   (fracRunBoundLoop mem0 p n i0 d0 bs cost hcost).run s c hinv k
 
 /-- **The fraction run's end-of-lexeme exit when every remaining byte is a
@@ -3780,8 +3791,8 @@ theorem fracRun_step_end230 {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
     (hb : fracRunAtBound mem0 p n i0 s c = true)
     (hdigits : ∀ k, i0 ≤ k → k < n → IsDigitB (bs.getD k 0) = true) :
     ∃ (e : State) (j : Nat), j ≤ 4 ∧ fracRunEndWord bs p n i0 d0 e ∧
-      ∀ k, runFuel s2HelperCalls (j + k) numFastBody s =
-        runFuel s2HelperCalls k numFastBody e := by
+      ∀ k, runFuel calls (j + k) numFastBody s =
+        runFuel calls k numFastBody e := by
   obtain ⟨e, j, hj, _, hexit, hrun⟩ := fracRun_step_exit hinv hb
   obtain ⟨_, _, _, _, _, _, _, _, hread, _, _, _⟩ := hinv
   rcases hexit with ⟨_, _, _, _, i1, hi0, hi1lt, _, _, _, b, hbytei, hbd⟩ | hend
@@ -3797,7 +3808,7 @@ its exit is the end-of-lexeme one and the exit word is `fracRunEndWord`. -/
 def fracRunEndBoundLoop (mem0 : Mem) (p n i0 d0 : Nat) (bs : List UInt8) (cost : Nat)
     (hcost : 4 ≤ cost)
     (hdigits : ∀ k, i0 ≤ k → k < n → IsDigitB (bs.getD k 0) = true) :
-    BoundLoop s2HelperCalls numFastBody where
+    BoundLoop calls numFastBody where
   head := "land.lhs.true119"
   exitBlock := "if.end230"
   N := n - i0
@@ -3836,8 +3847,8 @@ theorem fracRun_end_run (mem0 : Mem) (p n i0 d0 : Nat) (bs : List UInt8) (cost :
     (hinv : fracRunInv mem0 p n i0 d0 bs (n - i0) s c) (k : Nat) :
     ∃ (e : State) (j : Nat), j ≤ (n - i0 + 1) * cost ∧ e.pc = "if.end230" ∧
       fracRunEndWord bs p n i0 d0 e ∧
-      runFuel s2HelperCalls (j + k) numFastBody s =
-        runFuel s2HelperCalls k numFastBody e :=
+      runFuel calls (j + k) numFastBody s =
+        runFuel calls k numFastBody e :=
   (fracRunEndBoundLoop mem0 p n i0 d0 bs cost hcost hdigits).run s c hinv k
 
 /-! ### The exponent run: `land.lhs.true195`
@@ -4021,7 +4032,7 @@ theorem expBody_step_taken {env : Env} {s : State} {v : BitVec 64}
     (hpc : s.pc = "while.body206")
     (hv : lookupName env "%exp10.0603" = some (.int 64 v))
     (hlt : evalICmp .slt v (100000#64) = 1) :
-    step s2HelperCalls numFastBody (stateAt env s) =
+    step calls numFastBody (stateAt env s) =
       .jump (stateAt (expBodyEnv env v)
         { s with pc := "if.then209", pre := some "while.body206" }) := by
   refine numFast_step_at (s' := stateAt (expBodyEnv env v) s)
@@ -4040,7 +4051,7 @@ theorem expBody_step_skip {env : Env} {s : State} {v : BitVec 64}
     (hpc : s.pc = "while.body206")
     (hv : lookupName env "%exp10.0603" = some (.int 64 v))
     (hlt : evalICmp .slt v (100000#64) = 0) :
-    step s2HelperCalls numFastBody (stateAt env s) =
+    step calls numFastBody (stateAt env s) =
       .jump (stateAt (expBodyEnv env v)
         { s with pc := "if.end216", pre := some "while.body206" }) := by
   refine numFast_step_at (s' := stateAt (expBodyEnv env v) s)
@@ -4096,7 +4107,7 @@ theorem expIfThen_step {env : Env} {s : State} {v : BitVec 64} {b : UInt8}
     (hpc : s.pc = "if.then209")
     (hv : lookupName env "%exp10.0603" = some (.int 64 v))
     (h8 : lookupName env "%25" = some (.int 8 (JsonScanLane.vByte b))) :
-    step s2HelperCalls numFastBody (stateAt env s) =
+    step calls numFastBody (stateAt env s) =
       .jump (stateAt (expIfThenEnv env v b)
         { s with pc := "if.end216", pre := some "if.then209" }) := by
   refine numFast_step_at (s' := stateAt (expIfThenEnv env v b) s)
@@ -4159,7 +4170,7 @@ theorem expIfEnd_step_exit {env : Env} {s : State} {i n : BitVec 64}
     (hi : lookupName env "%i.12604" = some (.int 64 i))
     (hn : lookupName env "%n" = some (.int 64 n))
     (heq : evalICmp .eq (i + 1#64) n = 1) :
-    step s2HelperCalls numFastBody (stateAt env s) =
+    step calls numFastBody (stateAt env s) =
       .jump (stateAt (expIfEndEnv env vv i n)
         { s with pc := "cleanup223.thread", pre := some "if.end216" }) := by
   refine numFast_step_at (s' := stateAt (expIfEndEnv env vv i n) s)
@@ -4185,7 +4196,7 @@ theorem expIfEnd_step_loop {env : Env} {s : State} {i n : BitVec 64}
     (hi : lookupName env "%i.12604" = some (.int 64 i))
     (hn : lookupName env "%n" = some (.int 64 n))
     (heq : evalICmp .eq (i + 1#64) n = 0) :
-    step s2HelperCalls numFastBody (stateAt env s) =
+    step calls numFastBody (stateAt env s) =
       .jump (stateAt (expIfEndEnv env vv i n)
         { s with pc := "land.lhs.true195", pre := some "if.end216" }) := by
   refine numFast_step_at (s' := stateAt (expIfEndEnv env vv i n) s)
@@ -4208,7 +4219,7 @@ theorem expHead_step_entry_digit {env : Env} {s : State} {a j : Nat} {b : UInt8}
       = some (.int 64 (BitVec.ofNat 64 j)))
     (hj : j < 2 ^ 63) (hread : readByte s.mem (a + j) = some b)
     (hdigit : IsDigitB b = true) :
-    step s2HelperCalls numFastBody (stateAt env s) =
+    step calls numFastBody (stateAt env s) =
       .jump (stateAt (expHeadEnv env a j b 0)
         { s with pc := "while.body206", pre := some "land.lhs.true195" }) := by
   refine numFast_step_at (s' := stateAt (expHeadEnv env a j b 0) s)
@@ -4233,7 +4244,7 @@ theorem expHead_step_entry_nondigit {env : Env} {s : State} {a j : Nat} {b : UIn
       = some (.int 64 (BitVec.ofNat 64 j)))
     (hj : j < 2 ^ 63) (hread : readByte s.mem (a + j) = some b)
     (hdigit : IsDigitB b = false) :
-    step s2HelperCalls numFastBody (stateAt env s) =
+    step calls numFastBody (stateAt env s) =
       .jump (stateAt (expHeadEnv env a j b 0)
         { s with pc := "cleanup223.thread", pre := some "land.lhs.true195" }) := by
   refine numFast_step_at (s' := stateAt (expHeadEnv env a j b 0) s)
@@ -4260,7 +4271,7 @@ theorem expHead_step_back_digit {env : Env} {s : State} {a j : Nat} {b : UInt8}
     (hhv : evalOperand (stateAt env s) (.reg "%exp10.1") = some (.int 64 v))
     (hj : j < 2 ^ 63) (hread : readByte s.mem (a + j) = some b)
     (hdigit : IsDigitB b = true) :
-    step s2HelperCalls numFastBody (stateAt env s) =
+    step calls numFastBody (stateAt env s) =
       .jump (stateAt (expHeadEnv env a j b v)
         { s with pc := "while.body206", pre := some "land.lhs.true195" }) := by
   refine numFast_step_at (s' := stateAt (expHeadEnv env a j b v) s)
@@ -4287,7 +4298,7 @@ theorem expHead_step_back_nondigit {env : Env} {s : State} {a j : Nat} {b : UInt
     (hhv : evalOperand (stateAt env s) (.reg "%exp10.1") = some (.int 64 v))
     (hj : j < 2 ^ 63) (hread : readByte s.mem (a + j) = some b)
     (hdigit : IsDigitB b = false) :
-    step s2HelperCalls numFastBody (stateAt env s) =
+    step calls numFastBody (stateAt env s) =
       .jump (stateAt (expHeadEnv env a j b v)
         { s with pc := "cleanup223.thread", pre := some "land.lhs.true195" }) := by
   refine numFast_step_at (s' := stateAt (expHeadEnv env a j b v) s)
@@ -4377,8 +4388,8 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
     (hb : expRunAtBound mem0 p n i0 s c = false) :
     ∃ (e : State) (c' : Nat) (j : Nat), j ≤ 4 ∧ e.pc = "land.lhs.true195" ∧ c < c' ∧
       expRunInv mem0 p n i0 bs r e c' ∧
-      ∀ k, runFuel s2HelperCalls (j + k) numFastBody s =
-        runFuel s2HelperCalls k numFastBody e := by
+      ∀ k, runFuel calls (j + k) numFastBody s =
+        runFuel calls k numFastBody e := by
   obtain ⟨hpc, hmem, hsum, hltn, hnlt, hp, hn, hread, hpre, hesign, hcarry⟩ := hinv
   unfold expRunAtBound at hb
   obtain ⟨hnoD, hdig⟩ := Bool.or_eq_false_iff.mp hb
@@ -4407,7 +4418,7 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
   · obtain ⟨hpre0, hi⟩ := hent
     let e0 : State := stateAt (expHeadEnv s.env p (i0 + c) b 0)
       { s with pc := "while.body206", pre := some "land.lhs.true195" }
-    have hstep1 : step s2HelperCalls numFastBody s = .jump e0 :=
+    have hstep1 : step calls numFastBody s = .jump e0 :=
       expHead_step_entry_digit (env := s.env) (s := s) (a := p) (j := i0 + c)
         (b := b) hpc hpre0 hp
         (BlockEval.evalOperand_reg_of s.env s "%i.11" _ hi) hj hbyte_s hdigitB
@@ -4417,7 +4428,7 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
     by_cases hguard : evalICmp .slt (0 : BitVec 64) (100000#64) = 1
     · let e1 : State := stateAt (expBodyEnv e0.env 0)
           { e0 with pc := "if.then209", pre := some "while.body206" }
-      have hstep2 : step s2HelperCalls numFastBody e0 = .jump e1 :=
+      have hstep2 : step calls numFastBody e0 = .jump e1 :=
         expBody_step_taken (env := e0.env) (s := e0) (v := 0)
           (by simp only [e0, stateAt]) hexp0 hguard
       have hexp1 : lookupName e1.env "%exp10.0603" = some (.int 64 0) := by
@@ -4428,7 +4439,7 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
         block_lk
       let e2 : State := stateAt (expIfThenEnv e1.env 0 b)
           { e1 with pc := "if.end216", pre := some "if.then209" }
-      have hstep3 : step s2HelperCalls numFastBody e1 = .jump e2 :=
+      have hstep3 : step calls numFastBody e1 = .jump e2 :=
         expIfThen_step (env := e1.env) (s := e1) (by simp only [e1, stateAt])
           hexp1 h8
       have hphi : phiIncoming "if.then209"
@@ -4455,7 +4466,7 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
             (0 * 10 + BitVec.ofNat 64 (JsonScanLane.vByte b &&& 0x0f#8).toNat)
             (BitVec.ofNat 64 (i0 + c)) (BitVec.ofNat 64 n))
           { e2 with pc := "land.lhs.true195", pre := some "if.end216" }
-      have hstep4 : step s2HelperCalls numFastBody e2 = .jump e3 :=
+      have hstep4 : step calls numFastBody e2 = .jump e3 :=
         expIfEnd_step_loop (env := e2.env) (s := e2)
           (i := BitVec.ofNat 64 (i0 + c)) (n := BitVec.ofNat 64 n)
           (p := "if.then209") (op := Operand.reg "%add215")
@@ -4512,7 +4523,7 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
           exact absurd rfl hguard
       let e1 : State := stateAt (expBodyEnv e0.env 0)
           { e0 with pc := "if.end216", pre := some "while.body206" }
-      have hstep2 : step s2HelperCalls numFastBody e0 = .jump e1 :=
+      have hstep2 : step calls numFastBody e0 = .jump e1 :=
         expBody_step_skip (env := e0.env) (s := e0) (v := 0)
           (by simp only [e0, stateAt]) hexp0 hguard'
       have hphi : phiIncoming "while.body206"
@@ -4536,7 +4547,7 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
       let e2 : State := stateAt
           (expIfEndEnv e1.env 0 (BitVec.ofNat 64 (i0 + c)) (BitVec.ofNat 64 n))
           { e1 with pc := "land.lhs.true195", pre := some "if.end216" }
-      have hstep3 : step s2HelperCalls numFastBody e1 = .jump e2 :=
+      have hstep3 : step calls numFastBody e1 = .jump e2 :=
         expIfEnd_step_loop (env := e1.env) (s := e1)
           (i := BitVec.ofNat 64 (i0 + c)) (n := BitVec.ofNat 64 n)
           (p := "while.body206") (op := Operand.reg "%exp10.0603") (vv := 0)
@@ -4583,7 +4594,7 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
   · obtain ⟨hpre0, hi, v, hvv⟩ := hback
     let e0 : State := stateAt (expHeadEnv s.env p (i0 + c) b v)
       { s with pc := "while.body206", pre := some "land.lhs.true195" }
-    have hstep1 : step s2HelperCalls numFastBody s = .jump e0 :=
+    have hstep1 : step calls numFastBody s = .jump e0 :=
       expHead_step_back_digit (env := s.env) (s := s) (a := p) (j := i0 + c)
         (b := b) (v := v) hpc hpre0 hp
         (BlockEval.evalOperand_reg_of s.env s "%inc217" _ hi)
@@ -4594,7 +4605,7 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
     by_cases hguard : evalICmp .slt v (100000#64) = 1
     · let e1 : State := stateAt (expBodyEnv e0.env v)
           { e0 with pc := "if.then209", pre := some "while.body206" }
-      have hstep2 : step s2HelperCalls numFastBody e0 = .jump e1 :=
+      have hstep2 : step calls numFastBody e0 = .jump e1 :=
         expBody_step_taken (env := e0.env) (s := e0) (v := v)
           (by simp only [e0, stateAt]) hexp0 hguard
       have hexp1 : lookupName e1.env "%exp10.0603" = some (.int 64 v) := by
@@ -4605,7 +4616,7 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
         block_lk
       let e2 : State := stateAt (expIfThenEnv e1.env v b)
           { e1 with pc := "if.end216", pre := some "if.then209" }
-      have hstep3 : step s2HelperCalls numFastBody e1 = .jump e2 :=
+      have hstep3 : step calls numFastBody e1 = .jump e2 :=
         expIfThen_step (env := e1.env) (s := e1) (by simp only [e1, stateAt])
           hexp1 h8
       have hphi : phiIncoming "if.then209"
@@ -4632,7 +4643,7 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
             (v * 10 + BitVec.ofNat 64 (JsonScanLane.vByte b &&& 0x0f#8).toNat)
             (BitVec.ofNat 64 (i0 + c)) (BitVec.ofNat 64 n))
           { e2 with pc := "land.lhs.true195", pre := some "if.end216" }
-      have hstep4 : step s2HelperCalls numFastBody e2 = .jump e3 :=
+      have hstep4 : step calls numFastBody e2 = .jump e3 :=
         expIfEnd_step_loop (env := e2.env) (s := e2)
           (i := BitVec.ofNat 64 (i0 + c)) (n := BitVec.ofNat 64 n)
           (p := "if.then209") (op := Operand.reg "%add215")
@@ -4689,7 +4700,7 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
           exact absurd rfl hguard
       let e1 : State := stateAt (expBodyEnv e0.env v)
           { e0 with pc := "if.end216", pre := some "while.body206" }
-      have hstep2 : step s2HelperCalls numFastBody e0 = .jump e1 :=
+      have hstep2 : step calls numFastBody e0 = .jump e1 :=
         expBody_step_skip (env := e0.env) (s := e0) (v := v)
           (by simp only [e0, stateAt]) hexp0 hguard'
       have hphi : phiIncoming "while.body206"
@@ -4713,7 +4724,7 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
       let e2 : State := stateAt
           (expIfEndEnv e1.env v (BitVec.ofNat 64 (i0 + c)) (BitVec.ofNat 64 n))
           { e1 with pc := "land.lhs.true195", pre := some "if.end216" }
-      have hstep3 : step s2HelperCalls numFastBody e1 = .jump e2 :=
+      have hstep3 : step calls numFastBody e1 = .jump e2 :=
         expIfEnd_step_loop (env := e1.env) (s := e1)
           (i := BitVec.ofNat 64 (i0 + c)) (n := BitVec.ofNat 64 n)
           (p := "while.body206") (op := Operand.reg "%exp10.0603") (vv := v)
@@ -4764,8 +4775,8 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
     (hinv : expRunInv mem0 p n i0 bs r s c)
     (hb : expRunAtBound mem0 p n i0 s c = true) :
     ∃ (e : State) (j : Nat), j ≤ 4 ∧ e.pc = "cleanup223.thread" ∧ expRunExit e ∧
-      ∀ k, runFuel s2HelperCalls (j + k) numFastBody s =
-        runFuel s2HelperCalls k numFastBody e := by
+      ∀ k, runFuel calls (j + k) numFastBody s =
+        runFuel calls k numFastBody e := by
   obtain ⟨hpc, hmem, hsum, hltn, hnlt, hp, hn, hread, hpre, hesign, hcarry⟩ := hinv
   obtain ⟨b, hbyte⟩ := readByte_of_readBytes_lt hread hltn
   have hbyte_s : readByte s.mem (p + (i0 + c)) = some b := by rw [hmem]; exact hbyte
@@ -4782,7 +4793,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
       · obtain ⟨hpre0, hi⟩ := hent
         let e0 : State := stateAt (expHeadEnv s.env p (i0 + c) b 0)
           { s with pc := "while.body206", pre := some "land.lhs.true195" }
-        have hstep1 : step s2HelperCalls numFastBody s = .jump e0 :=
+        have hstep1 : step calls numFastBody s = .jump e0 :=
           expHead_step_entry_digit (env := s.env) (s := s) (a := p) (j := i0 + c)
             (b := b) hpc hpre0 hp
             (BlockEval.evalOperand_reg_of s.env s "%i.11" _ hi) hj hbyte_s hdigit
@@ -4792,7 +4803,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
         by_cases hguard : evalICmp .slt (0 : BitVec 64) (100000#64) = 1
         · let e1 : State := stateAt (expBodyEnv e0.env 0)
               { e0 with pc := "if.then209", pre := some "while.body206" }
-          have hstep2 : step s2HelperCalls numFastBody e0 = .jump e1 :=
+          have hstep2 : step calls numFastBody e0 = .jump e1 :=
             expBody_step_taken (env := e0.env) (s := e0) (v := 0)
               (by simp only [e0, stateAt]) hexp0 hguard
           have hexp1 : lookupName e1.env "%exp10.0603" = some (.int 64 0) := by
@@ -4803,7 +4814,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
             block_lk
           let e2 : State := stateAt (expIfThenEnv e1.env 0 b)
               { e1 with pc := "if.end216", pre := some "if.then209" }
-          have hstep3 : step s2HelperCalls numFastBody e1 = .jump e2 :=
+          have hstep3 : step calls numFastBody e1 = .jump e2 :=
             expIfThen_step (env := e1.env) (s := e1) (by simp only [e1, stateAt])
               hexp1 h8
           have hphi : phiIncoming "if.then209"
@@ -4831,7 +4842,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
                 (0 * 10 + BitVec.ofNat 64 (JsonScanLane.vByte b &&& 0x0f#8).toNat)
                 (BitVec.ofNat 64 (i0 + c)) (BitVec.ofNat 64 n))
               { e2 with pc := "cleanup223.thread", pre := some "if.end216" }
-          have hstep4 : step s2HelperCalls numFastBody e2 = .jump e3 :=
+          have hstep4 : step calls numFastBody e2 = .jump e3 :=
             expIfEnd_step_exit (env := e2.env) (s := e2)
               (i := BitVec.ofNat 64 (i0 + c)) (n := BitVec.ofNat 64 n)
               (p := "if.then209") (op := Operand.reg "%add215")
@@ -4873,7 +4884,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
               exact absurd rfl hguard
           let e1 : State := stateAt (expBodyEnv e0.env 0)
               { e0 with pc := "if.end216", pre := some "while.body206" }
-          have hstep2 : step s2HelperCalls numFastBody e0 = .jump e1 :=
+          have hstep2 : step calls numFastBody e0 = .jump e1 :=
             expBody_step_skip (env := e0.env) (s := e0) (v := 0)
               (by simp only [e0, stateAt]) hexp0 hguard'
           have hphi : phiIncoming "while.body206"
@@ -4898,7 +4909,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
           let e2 : State := stateAt
               (expIfEndEnv e1.env 0 (BitVec.ofNat 64 (i0 + c)) (BitVec.ofNat 64 n))
               { e1 with pc := "cleanup223.thread", pre := some "if.end216" }
-          have hstep3 : step s2HelperCalls numFastBody e1 = .jump e2 :=
+          have hstep3 : step calls numFastBody e1 = .jump e2 :=
             expIfEnd_step_exit (env := e1.env) (s := e1)
               (i := BitVec.ofNat 64 (i0 + c)) (n := BitVec.ofNat 64 n)
               (p := "while.body206") (op := Operand.reg "%exp10.0603") (vv := 0)
@@ -4930,7 +4941,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
       · obtain ⟨hpre0, hi, v, hvv⟩ := hback
         let e0 : State := stateAt (expHeadEnv s.env p (i0 + c) b v)
           { s with pc := "while.body206", pre := some "land.lhs.true195" }
-        have hstep1 : step s2HelperCalls numFastBody s = .jump e0 :=
+        have hstep1 : step calls numFastBody s = .jump e0 :=
           expHead_step_back_digit (env := s.env) (s := s) (a := p) (j := i0 + c)
             (b := b) (v := v) hpc hpre0 hp
             (BlockEval.evalOperand_reg_of s.env s "%inc217" _ hi)
@@ -4941,7 +4952,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
         by_cases hguard : evalICmp .slt v (100000#64) = 1
         · let e1 : State := stateAt (expBodyEnv e0.env v)
               { e0 with pc := "if.then209", pre := some "while.body206" }
-          have hstep2 : step s2HelperCalls numFastBody e0 = .jump e1 :=
+          have hstep2 : step calls numFastBody e0 = .jump e1 :=
             expBody_step_taken (env := e0.env) (s := e0) (v := v)
               (by simp only [e0, stateAt]) hexp0 hguard
           have hexp1 : lookupName e1.env "%exp10.0603" = some (.int 64 v) := by
@@ -4952,7 +4963,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
             block_lk
           let e2 : State := stateAt (expIfThenEnv e1.env v b)
               { e1 with pc := "if.end216", pre := some "if.then209" }
-          have hstep3 : step s2HelperCalls numFastBody e1 = .jump e2 :=
+          have hstep3 : step calls numFastBody e1 = .jump e2 :=
             expIfThen_step (env := e1.env) (s := e1) (by simp only [e1, stateAt])
               hexp1 h8
           have hphi : phiIncoming "if.then209"
@@ -4980,7 +4991,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
                 (v * 10 + BitVec.ofNat 64 (JsonScanLane.vByte b &&& 0x0f#8).toNat)
                 (BitVec.ofNat 64 (i0 + c)) (BitVec.ofNat 64 n))
               { e2 with pc := "cleanup223.thread", pre := some "if.end216" }
-          have hstep4 : step s2HelperCalls numFastBody e2 = .jump e3 :=
+          have hstep4 : step calls numFastBody e2 = .jump e3 :=
             expIfEnd_step_exit (env := e2.env) (s := e2)
               (i := BitVec.ofNat 64 (i0 + c)) (n := BitVec.ofNat 64 n)
               (p := "if.then209") (op := Operand.reg "%add215")
@@ -5022,7 +5033,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
               exact absurd rfl hguard
           let e1 : State := stateAt (expBodyEnv e0.env v)
               { e0 with pc := "if.end216", pre := some "while.body206" }
-          have hstep2 : step s2HelperCalls numFastBody e0 = .jump e1 :=
+          have hstep2 : step calls numFastBody e0 = .jump e1 :=
             expBody_step_skip (env := e0.env) (s := e0) (v := v)
               (by simp only [e0, stateAt]) hexp0 hguard'
           have hphi : phiIncoming "while.body206"
@@ -5047,7 +5058,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
           let e2 : State := stateAt
               (expIfEndEnv e1.env v (BitVec.ofNat 64 (i0 + c)) (BitVec.ofNat 64 n))
               { e1 with pc := "cleanup223.thread", pre := some "if.end216" }
-          have hstep3 : step s2HelperCalls numFastBody e1 = .jump e2 :=
+          have hstep3 : step calls numFastBody e1 = .jump e2 :=
             expIfEnd_step_exit (env := e1.env) (s := e1)
               (i := BitVec.ofNat 64 (i0 + c)) (n := BitVec.ofNat 64 n)
               (p := "while.body206") (op := Operand.reg "%exp10.0603") (vv := v)
@@ -5084,7 +5095,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
       · obtain ⟨hpre0, hi⟩ := hent
         let e0 : State := stateAt (expHeadEnv s.env p (i0 + c) b 0)
           { s with pc := "cleanup223.thread", pre := some "land.lhs.true195" }
-        have hstep1 : step s2HelperCalls numFastBody s = .jump e0 :=
+        have hstep1 : step calls numFastBody s = .jump e0 :=
           expHead_step_entry_nondigit (env := s.env) (s := s) (a := p) (j := i0 + c)
             (b := b) hpc hpre0 hp
             (BlockEval.evalOperand_reg_of s.env s "%i.11" _ hi) hj hbyte_s hdigit'
@@ -5109,7 +5120,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
       · obtain ⟨hpre0, hi, v, hvv⟩ := hback
         let e0 : State := stateAt (expHeadEnv s.env p (i0 + c) b v)
           { s with pc := "cleanup223.thread", pre := some "land.lhs.true195" }
-        have hstep1 : step s2HelperCalls numFastBody s = .jump e0 :=
+        have hstep1 : step calls numFastBody s = .jump e0 :=
           expHead_step_back_nondigit (env := s.env) (s := s) (a := p) (j := i0 + c)
             (b := b) (v := v) hpc hpre0 hp
             (BlockEval.evalOperand_reg_of s.env s "%inc217" _ hi)
@@ -5140,7 +5151,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
     · obtain ⟨hpre0, hi⟩ := hent
       let e0 : State := stateAt (expHeadEnv s.env p (i0 + c) b 0)
         { s with pc := "cleanup223.thread", pre := some "land.lhs.true195" }
-      have hstep1 : step s2HelperCalls numFastBody s = .jump e0 :=
+      have hstep1 : step calls numFastBody s = .jump e0 :=
         expHead_step_entry_nondigit (env := s.env) (s := s) (a := p) (j := i0 + c)
           (b := b) hpc hpre0 hp
           (BlockEval.evalOperand_reg_of s.env s "%i.11" _ hi) hj hbyte'_s hdigit'
@@ -5165,7 +5176,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
     · obtain ⟨hpre0, hi, v, hvv⟩ := hback
       let e0 : State := stateAt (expHeadEnv s.env p (i0 + c) b v)
         { s with pc := "cleanup223.thread", pre := some "land.lhs.true195" }
-      have hstep1 : step s2HelperCalls numFastBody s = .jump e0 :=
+      have hstep1 : step calls numFastBody s = .jump e0 :=
         expHead_step_back_nondigit (env := s.env) (s := s) (a := p) (j := i0 + c)
           (b := b) (v := v) hpc hpre0 hp
           (BlockEval.evalOperand_reg_of s.env s "%inc217" _ hi)
@@ -5190,7 +5201,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
         rw [runFuel_jump_prefix hstep1 k]
 
 def expRunBoundLoop (mem0 : Mem) (p n i0 : Nat) (bs : List UInt8) (cost : Nat)
-    (hcost : 4 ≤ cost) : BoundLoop s2HelperCalls numFastBody where
+    (hcost : 4 ≤ cost) : BoundLoop calls numFastBody where
   head := "land.lhs.true195"
   exitBlock := "cleanup223.thread"
   N := n - i0
@@ -5224,8 +5235,8 @@ theorem expRun_run (mem0 : Mem) (p n i0 : Nat) (bs : List UInt8) (cost : Nat)
     (hinv : expRunInv mem0 p n i0 bs (n - i0) s c) (k : Nat) :
     ∃ (e : State) (j : Nat), j ≤ (n - i0 + 1) * cost ∧ e.pc = "cleanup223.thread" ∧
       expRunExit e ∧
-      runFuel s2HelperCalls (j + k) numFastBody s =
-        runFuel s2HelperCalls k numFastBody e :=
+      runFuel calls (j + k) numFastBody s =
+        runFuel calls k numFastBody e :=
   (expRunBoundLoop mem0 p n i0 bs cost hcost).run s c hinv k
 
 /-! ### Axiom footprints -/

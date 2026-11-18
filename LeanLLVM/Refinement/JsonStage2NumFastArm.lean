@@ -96,10 +96,10 @@ the other two only in part:
    * `expRun_start`: from the digit gate at `lor.lhs.false180`, one step reaches
      `land.lhs.true195` with `expRunInv … i11 bs … 0`.
 
-   What remains of the scan, and is *not* claimed here: the two eight-digit fast
-   paths (`while.body`/`cleanup` at `if.then22` and
+   What those starts do *not* include, and what is composed around them: the two
+   eight-digit fast paths (`while.body`/`cleanup` at `if.then22` and
    `while.body100`/`cleanup112` at `while.cond91.preheader`), whose registers
-   the starts above are proved *behind* the guard of — the integer one's entry is
+   the starts are proved *behind* the guard of — the integer one's entry is
    `JsonStage2NumFastTaken.fpIfThen22_entry` and the fraction's is
    `JsonStage2NumFastTaken.fracWhileCond91_entry`, the four reader answers at
    each guard's zero; and the exponent's marker nest between `if.end144` and `lor.lhs.false180`
@@ -210,14 +210,14 @@ is `ifEnd230_denote_end62`/`ifEnd230_step_end62`.  Of item 1's mantissa, the
 word-level ties are `ip_word_digitsNat`/`fr_word_digitsNat`, fed by
 `intRunExit_end230`/`fracRunExit_end230`; at the merge they are
 `JsonStage2NumFastSeams.t1_intRun_tie` and `t1_fracRun_tie`, with `t1_headTie`
-the `if.end68` seam and `t1_fracCount_tie` the fraction's count preheader.  Still
-open on this list: the
-eight-digit fast paths' `runFuel` composition.  Both are now composed at their
-guards' taken edges.  The integer one is `JsonStage2NumFastTaken.fpIfThen22_entry`:
-the guard's zero through `while.body.preheader` and the loop's four branches to
-`intRunInv`, at `(start + 1, 1)`, `(start + 9, 9)` or `(start + 17, 17)`.  The
-fraction's is `JsonStage2NumFastTaken.fracWhileCond91_entry`, the same four
-answers at `while.cond91.preheader`'s zero and the counts `0`, `8`, `8` and `16`.
+the `if.end68` seam and `t1_fracCount_tie` the fraction's count preheader.  The
+eight-digit fast paths' `runFuel` composition is closed.  Both are composed at
+their guards' taken edges.  The integer one is
+`JsonStage2NumFastTaken.fpIfThen22_entry`: the guard's zero through
+`while.body.preheader` and the loop's four branches to `intRunInv`, at
+`(start + 1, 1)`, `(start + 9, 9)` or `(start + 17, 17)`.  The fraction's is
+`JsonStage2NumFastTaken.fracWhileCond91_entry`, the same four answers at
+`while.cond91.preheader`'s zero and the counts `0`, `8`, `8` and `16`.
 The guard's *two* answers are one statement in `JsonStage2NumFastJoin.guard_join`:
 `if.then22`'s `condbr` splits on `%add563` and `%n`, the refusal reaches
 `intRunInv` at `(start + 1, 1)` in three steps — given the successor's presence,
@@ -256,10 +256,34 @@ charged at the final row's scale.  Both loops are now complete at their pins: th
 heads' jumps (`t3_mulHead_step_*`, `t3_divHead_step_*`), each row block's
 per-edge step in both directions (`t3_mulBody_step`, `t3_divBody_step`), and each
 loop's two `BoundLoop` arms with its run at the emitted rows
-(`t3MulLoop_run_t3Rows`, `t3DivLoop_run_t3Rows`).  What the arm needs beyond that
-is the run itself: the ladder's join under the exponent's sign case, the copy's
-four-way unrolled main loop as a `BoundLoop`, the seam steps above, and the
-exponent nest's tie of `%exp10.4` to `expVal d`.  No theorem below claims
+(`t3MulLoop_run_t3Rows`, `t3DivLoop_run_t3Rows`).
+
+**The `Calls` seam, and the append.**  The scan's blocks call nothing, so the
+runs and the seams that reach them are stated at an arbitrary `Calls`
+(`JsonStage2NumFastDigitRuns`' `intRun_run`/`fracRun_run`/`expRun_run` and their
+`BoundLoop`s, `JsonStage2NumFastScanRun`'s `intScan_run`/`intScan_end230`/
+`fracScan_run`, `JsonStage2NumFastSeams`' seams), and the fast paths' shapes —
+stated at `stage2NumFastCalls epow` because they answer `num_d8_el1` — append to
+them without a change of environment: `JsonStage2NumFastScanFast.runFuel_append`
+is the composition law, `intRun_end_append`/`fracRun_end_append` are the runs at
+their end-of-lexeme exits, and `intScan_fastEnd_run`/`fracScan_fastEnd_run` are
+the append at the dispatch's own edges (`entry`, `land.lhs.true71`).  So a
+composition no longer owes a `re-proved arm at another environment`.
+
+The exponent's own tie is closed at the merge: `JsonStage2NumFastSeams`
+`expSelect_tie` reads the block's select `if %esign.0 = 1 then %exp10 else
+0 - %exp10` as `BitVec.ofInt 64 (expVal d)`, and `expExit_merge` carries it
+through `cleanup223.thread`/`if.end226` into `mergeEntry`'s `%exp10.4`, with the
+exit's accumulator reading (`expAcc` of the exponent's digits) and the sign's
+polarity as the seam's hypotheses.  Both carry `[propext, Quot.sound]`.
+
+What the arm needs beyond that is the run itself: the ladder's join at the
+invariant level (its block is stepped — `JsonStage2NumFastTier3Ladder`'s
+`t3_join_*` and `t3_ladder_join_spent` — so what remains is deciding which of the
+two loops' invariants holds where their runs are appended), the copy's four-way
+unrolled main loop as a `BoundLoop`, and the tie of the copy loop's entry to the
+peel epilogue's exit (whose `while.cond.preheader.i.i577.i.i` successors are the
+outer loop's and `stk_mul_u64`'s, not `for.body87.i.i`'s directly).  No theorem below claims
 the arm, and none is instantiated at the walk's own `s2HelperCalls`; the kernel's
 `w < 2 ^ 64` bound is met at the body's own word
 (`JsonStage2NumFastTier3.numFast_ifEnd268_domain`), so the bound is not what stops

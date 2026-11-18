@@ -47,8 +47,11 @@ a term of the arguments, not of the trip count — carrying the counters and the
 accumulator's fold.  `intScan_end230` is the same trace with the arm fixed: for a
 lexeme whose bytes from the run's start to its end are all digits, the exit is
 the end-of-lexeme one and the body reaches `if.end230` within the same bound.
-`intScan_run`'s calls are the walk's own `s2HelperCalls`, because the run
-instances it composes are stated there; the blocks it crosses call nothing.
+`intScan_run`'s calls are arbitrary, because the blocks it crosses call nothing:
+the run instance it composes is stated at an arbitrary `Calls`
+(`JsonStage2NumFastDigitRuns.intRunBoundLoop`) and the dispatch's steps are too,
+so the trace instantiates at the walk's `s2HelperCalls` and at the conversion's
+`stage2NumFastCalls epow` alike.
 
 **The exit's cells, and the transport.**  The runs' exit predicates hand what a
 composition reads past them, because the exit state is existential to that
@@ -123,6 +126,13 @@ open LeanLLVM.JSON
 named `NodeBlock`/`if.end` too, and their lemmas are already in
 `LeanLLVM.Refinement`. -/
 namespace NumFastScanRun
+
+-- The scan's seams run through the digit runs' region, which calls nothing:
+-- the dispatch's blocks are the sign and lead-digit reads, the `.` test and the
+-- marker nest, and the nest's blocks are byte loads and comparisons.  A seam is
+-- therefore a statement about an arbitrary `Calls`, which is what lets a caller
+-- at `stage2NumFastCalls epow` compose it with a run proved once.
+variable {calls : Calls}
 
 /-! ### `if.end144`: the integer part's four exits
 
@@ -1907,8 +1917,8 @@ theorem intScan_run {env : Env} {s : State} {a n : Nat}
     (hfast : n < NumFastStarts.negIndex b + 9) (hnlt : n < 2 ^ 63) :
     ∃ (e : State) (j : Nat), j ≤ 8 + (n - (NumFastStarts.negIndex b + 1) + 1) * 4 ∧
       intRunExit s.mem bs a n (NumFastStarts.negIndex b + 1) 1 e ∧
-      ∀ k, runFuel s2HelperCalls (j + k) numFastBody (stateAt env s) =
-        runFuel s2HelperCalls k numFastBody e := by
+      ∀ k, runFuel calls (j + k) numFastBody (stateAt env s) =
+        runFuel calls k numFastBody e := by
   have hn64 : n < 2 ^ 64 := by omega
   have hne : BitVec.ofNat 64 n ≠ 0x0000000000000000#64 := by
     intro h
@@ -1919,11 +1929,11 @@ theorem intScan_run {env : Env} {s : State} {a n : Nat}
   let cmp : BitVec 1 := evalICmp .eq (BitVec.ofNat 64 n) 0x0000000000000000#64
   have hbit0 : cmp = 0 := NumFastStarts.eq_zero_iff _ _ |>.mpr hne
   let s1 : State := { s with next := s.next + 768 + 1568 + 4 + 4 + 8, pc := "land.lhs.true", pre := some "entry" }
-  have h1 : step s2HelperCalls numFastBody (stateAt env s) =
+  have h1 : step calls numFastBody (stateAt env s) =
       .jump (stateAt (numFastEntryEnv env s.next cmp) s1) :=
-    entry_step_land (calls := s2HelperCalls) hpc hn hbit0
+    entry_step_land (calls := calls) hpc hn hbit0
   obtain ⟨e0, hinv0, hrun0⟩ :=
-    NumFastStarts.intRun_start (calls := s2HelperCalls)
+    NumFastStarts.intRun_start (calls := calls)
       (env := numFastEntryEnv env s.next cmp) (s := s1)
       rfl rfl
       (entry_env_lookup_p hp) (entry_env_lookup_n hn)
@@ -2078,8 +2088,8 @@ theorem intScan_end230 {env : Env} {s : State} {a n : Nat}
       IsDigitB (bs.getD k 0) = true) :
     ∃ (e : State) (j : Nat), j ≤ 8 + (n - (NumFastStarts.negIndex b + 1) + 1) * 4 ∧
       intRunEndWord bs a n (NumFastStarts.negIndex b + 1) 1 e ∧
-      ∀ k, runFuel s2HelperCalls (j + k) numFastBody (stateAt env s) =
-        runFuel s2HelperCalls k numFastBody e := by
+      ∀ k, runFuel calls (j + k) numFastBody (stateAt env s) =
+        runFuel calls k numFastBody e := by
   have hn64 : n < 2 ^ 64 := by omega
   have hne : BitVec.ofNat 64 n ≠ 0x0000000000000000#64 := by
     intro h
@@ -2090,11 +2100,11 @@ theorem intScan_end230 {env : Env} {s : State} {a n : Nat}
   let cmp : BitVec 1 := evalICmp .eq (BitVec.ofNat 64 n) 0x0000000000000000#64
   have hbit0 : cmp = 0 := NumFastStarts.eq_zero_iff _ _ |>.mpr hne
   let s1 : State := { s with next := s.next + 768 + 1568 + 4 + 4 + 8, pc := "land.lhs.true", pre := some "entry" }
-  have h1 : step s2HelperCalls numFastBody (stateAt env s) =
+  have h1 : step calls numFastBody (stateAt env s) =
       .jump (stateAt (numFastEntryEnv env s.next cmp) s1) :=
-    entry_step_land (calls := s2HelperCalls) hpc hn hbit0
+    entry_step_land (calls := calls) hpc hn hbit0
   obtain ⟨e0, hinv0, hrun0⟩ :=
-    NumFastStarts.intRun_start (calls := s2HelperCalls)
+    NumFastStarts.intRun_start (calls := calls)
       (env := numFastEntryEnv env s.next cmp) (s := s1)
       rfl rfl
       (entry_env_lookup_p hp) (entry_env_lookup_n hn)
@@ -2246,10 +2256,10 @@ theorem fracScan_run {env : Env} {s : State} {a n : Nat} {bs : List UInt8}
     (hltn : i5 + 1 < n) (hfast : n < i5 + 9) (hnlt : n < 2 ^ 63) :
     ∃ (e : State) (j : Nat), j ≤ 6 + (n - (i5 + 1) + 1) * 4 ∧
       fracRunExit s.mem bs a n (i5 + 1) 0 e ∧
-      ∀ k, runFuel s2HelperCalls (j + k) numFastBody (stateAt env s) =
-        runFuel s2HelperCalls k numFastBody e := by
+      ∀ k, runFuel calls (j + k) numFastBody (stateAt env s) =
+        runFuel calls k numFastBody e := by
   obtain ⟨e0, hinv0, hrun0⟩ :=
-    NumFastStarts.fracRun_start (calls := s2HelperCalls) hpc hp hn hread hi5 hparts
+    NumFastStarts.fracRun_start (calls := calls) hpc hp hn hread hi5 hparts
       hdot hdoteq hd2 hd2digit hltn hfast hnlt
   obtain ⟨e1, j1, hj1, _hexitb, hexitw, hrun1⟩ :=
     (fracRunBoundLoop s.mem a n (i5 + 1) 0 bs 4 (by omega)).run_from

@@ -105,6 +105,13 @@ open LeanLLVM.JSON
 
 namespace NumFastSeams
 
+-- The seams below are steps of the dispatch's own blocks and of the digit runs'
+-- exits, none of which calls anything; the reader's model is the one place the
+-- conversion's environment enters, and it enters as a value.  Stating the seams
+-- at an arbitrary `Calls` is what lets the route be composed at
+-- `stage2NumFastCalls epow`.
+variable {calls : Calls}
+
 /-! ### The unsigned tests at `Nat` indices
 
 The dispatch's tests compare `BitVec.ofNat 64` readings of `Nat` counters, so the
@@ -512,15 +519,15 @@ theorem intRunExit_gate {mem0 : Mem} {bs : List UInt8} {p n i0 d0 : Nat} {e : St
       lookupName o.env "%fr.5718728" = some (.int 64 0) ∧
       lookupName o.env "%fdig.4719727" = some (.int 64 0) ∧
       lookupName o.env "%exp10.4731" = some (.int 64 0) ∧
-      ∀ k, runFuel s2HelperCalls (1 + k) numFastBody (stateAt e.env e) =
-        runFuel s2HelperCalls k numFastBody o := by
+      ∀ k, runFuel calls (1 + k) numFastBody (stateAt e.env e) =
+        runFuel calls k numFastBody o := by
   rcases he with hleft | ⟨h230, hpre, _, _, _, _, _, hip, h7⟩
   · rw [hleft.1] at hpc; exact absurd hpc (by decide)
   have h7i : lookupName e.env "%7"
       = some (.int 64 (BitVec.ofNat 64 (d0 + (n - i0)))) := by
     rw [h7, seven_tie hi0 hbn]
   obtain ⟨o, hpc', hpre', hmem', hip', hid', hfr, hfd, hexp, hrun⟩ :=
-    intExit_gate (calls := s2HelperCalls) (env := e.env) (s := e) (n := n) (i0 := i0)
+    intExit_gate (calls := calls) (env := e.env) (s := e) (n := n) (i0 := i0)
       (d0 := d0) hpc hpre h7i hip hdig
   exact ⟨o, hpc', hpre', hmem', hip', hid', hfr, hfd, hexp, hrun⟩
 
@@ -557,8 +564,8 @@ theorem intScan_merge {env : Env} {s : State} {a n : Nat} {bs : List UInt8}
       lookupName o.env "%fr.5718728" = some (.int 64 0) ∧
       lookupName o.env "%fdig.4719727" = some (.int 64 0) ∧
       lookupName o.env "%exp10.4731" = some (.int 64 0) ∧
-      ∀ k, runFuel s2HelperCalls (j + k) numFastBody (stateAt env s) =
-        runFuel s2HelperCalls k numFastBody o := by
+      ∀ k, runFuel calls (j + k) numFastBody (stateAt env s) =
+        runFuel calls k numFastBody o := by
   obtain ⟨e, j, hj, hend, hrun⟩ :=
     NumFastScanRun.intScan_end230 hpc hp hn hread hsign hbyte hlead hnpos hltn hnext
       hfast hnlt hdigits
@@ -569,7 +576,7 @@ theorem intScan_merge {env : Env} {s : State} {a n : Nat} {bs : List UInt8}
       = some (.int 64 (BitVec.ofNat 64 (1 + (n - (NumFastStarts.negIndex b + 1))))) := by
     rw [h7, seven_tie hi0 hbn]
   obtain ⟨o, hpc', hpre', _, hip', hid', hfr, hfd, hexp, ho_run⟩ :=
-    intExit_gate (calls := s2HelperCalls) (env := e.env) (s := e) (n := n)
+    intExit_gate (calls := calls) (env := e.env) (s := e) (n := n)
       (i0 := NumFastStarts.negIndex b + 1) (d0 := 1) h230 hpre h7i hip hdig
   refine ⟨o, j + 1, ?_, hpc', hpre', hip', hid', hfr, hfd, hexp, ?_⟩
   · omega
@@ -601,11 +608,14 @@ edges carry.
 
 The third edge into `if.end230`, the exponent path `if.end226`, is
 `JsonStage2NumFastTier1.t1_store_run`'s own hypotheses: the five cells it reads
-are the digit parts' ties carried through `if.end144`, plus `%exp10.4`.  What
-the exponent accumulator's own tie to `expVal d` needs is the marker nest's exit
-(`JsonStage2NumFastScanRun.nestFrom157_nosign`/`_sign` fix `%i.11`, and the run
-reads `%exp10.0603` at `land.lhs.true195`), which this module does not yet read
-as `expVal`.
+are the digit parts' ties carried through `if.end144`, plus `%exp10.4`.  That
+cell's tie to `expVal d` is `expExit_merge`: the exponent run's exit hands the
+accumulator's register (from `land.lhs.true195`'s `%exp10.0603` or the back
+edge's `%exp10.1`) and `%esign.0`, the marker nest's sign (`nestFrom157_nosign`/
+`_sign` fix `%i.11`), and the block's own select is `expSelect_tie`'s
+`BitVec.ofInt 64 (expVal d)` once the accumulator reads as `expAcc` of the
+exponent's digits.  The exit is existential, so that reading is a hypothesis of
+the seam (`hacc`, `hesign`) rather than a field of the exit predicate.
 
 Each is the block's own `step` plus the fold's reading, so each hands the
 successor state's registers, the memory and the `runFuel` prefix. -/
@@ -2852,8 +2862,8 @@ theorem land71_fracScan {mem : Mem} {e : State} {a n i1 : Nat} {bs : List UInt8}
     (hltn : i1 + 1 < n) (hfast : n < i1 + 9) (hnlt : n < 2 ^ 63) :
     ∃ (e' : State) (j : Nat), j ≤ 6 + (n - (i1 + 1) + 1) * 4 ∧
       fracRunExit mem bs a n (i1 + 1) 0 e' ∧
-      ∀ k, runFuel s2HelperCalls (j + k) numFastBody e =
-        runFuel s2HelperCalls k numFastBody e' := by
+      ∀ k, runFuel calls (j + k) numFastBody e =
+        runFuel calls k numFastBody e' := by
   rcases h with ⟨hpc, _, hmem, hp, hn, hi5, hparts⟩
   obtain ⟨e', j, hj, hexit, hrun⟩ :=
     NumFastScanRun.fracScan_run (env := e.env) (s := e) hpc hp hn
@@ -2903,11 +2913,11 @@ theorem fracScan_end230 {mem : Mem} {e : State} {a n i1 : Nat} {bs : List UInt8}
     (hdigits : ∀ k, i1 + 1 ≤ k → k < n → IsDigitB (bs.getD k 0) = true) :
     ∃ (e' : State) (j : Nat), j ≤ 6 + (n - (i1 + 1) + 1) * 4 ∧
       fracRunEndWord bs a n (i1 + 1) 0 e' ∧
-      ∀ k, runFuel s2HelperCalls (j + k) numFastBody e =
-        runFuel s2HelperCalls k numFastBody e' := by
+      ∀ k, runFuel calls (j + k) numFastBody e =
+        runFuel calls k numFastBody e' := by
   rcases h with ⟨hpc, _, hmem, hp, hn, hi5, hparts⟩
   obtain ⟨e0, hinv0, hrun0⟩ :=
-    NumFastStarts.fracRun_start (calls := s2HelperCalls) (env := e.env) (s := e)
+    NumFastStarts.fracRun_start (calls := calls) (env := e.env) (s := e)
       hpc hp hn (by rw [hmem]; exact hread) hi5 hparts
       (by rw [hmem]; exact hdot) hdoteq (by rw [hmem]; exact hd2) hd2digit
       hltn hfast hnlt
@@ -2941,16 +2951,16 @@ theorem nest_marker_start {e : State} {a n i10 : Nat} {b1 b2 : UInt8}
       lookupName e'.env "%i.11" = some (.int 64 (BitVec.ofNat 64 i11)) ∧
       lookupName e'.env "%esign.0" = some (.int 1 esign) ∧
       (i11 = i10 + 1 ∨ i11 = i10 + 2) ∧
-      ∀ k, runFuel s2HelperCalls (j + k) numFastBody e =
-        runFuel s2HelperCalls k numFastBody e' := by
+      ∀ k, runFuel calls (j + k) numFastBody e =
+        runFuel calls k numFastBody e' := by
   rcases hmarker with rfl | rfl
   · -- `'e'`: the pivot takes `LeafBlock1`
     let env1 : Env := NumFastScanRun.leafBlock1Env
       (NumFastScanRun.nodeBlockEnv (NumFastScanRun.t147Env e.env a i10 0x65) 0x65) 0x65
-    have hrun3 : ∀ k, runFuel s2HelperCalls (3 + k) numFastBody e =
-        runFuel s2HelperCalls k numFastBody
+    have hrun3 : ∀ k, runFuel calls (3 + k) numFastBody e =
+        runFuel calls k numFastBody
           (stateAt env1 { e with pc := "if.then157", pre := some "LeafBlock1" }) :=
-      NumFastScanRun.nestTo157_e (calls := s2HelperCalls) hpc hp hi (by omega) hread
+      NumFastScanRun.nestTo157_e (calls := calls) hpc hp hi (by omega) hread
     have hp' : lookupName env1 "%p" = some (.ptr a) := by
       simp only [env1, NumFastScanRun.leafBlock1Env, NumFastScanRun.nodeBlockEnv,
         NumFastScanRun.t147Env]
@@ -2966,7 +2976,7 @@ theorem nest_marker_start {e : State} {a n i10 : Nat} {b1 b2 : UInt8}
     by_cases hsign : b2 = 0x2b ∨ b2 = 0x2d
     · have hread2 : readByte e.mem (a + (i10 + 1)) = some b2 := hread2
       obtain ⟨e', hpc', hmem', hp2, hn2, hi11, hes, hrun6⟩ :=
-        NumFastScanRun.nestFrom157_sign (calls := s2HelperCalls) (env := env1)
+        NumFastScanRun.nestFrom157_sign (calls := calls) (env := env1)
           (s := { e with pc := "if.then157", pre := some "LeafBlock1" })
           rfl hp' hi' hn' hnlt (by omega) hread2 hsign
       refine ⟨i10 + 2, _, e', 9, by omega, hpc', hmem', hp2, hn2, hi11, hes, Or.inr rfl, ?_⟩
@@ -2976,7 +2986,7 @@ theorem nest_marker_start {e : State} {a n i10 : Nat} {b1 b2 : UInt8}
     · have hnosign : b2 ≠ 0x2b ∧ b2 ≠ 0x2d :=
         ⟨fun h => hsign (Or.inl h), fun h => hsign (Or.inr h)⟩
       obtain ⟨e', hpc', hmem', hp2, hn2, hi11, hes, hrun5⟩ :=
-        NumFastScanRun.nestFrom157_nosign (calls := s2HelperCalls) (env := env1)
+        NumFastScanRun.nestFrom157_nosign (calls := calls) (env := env1)
           (s := { e with pc := "if.then157", pre := some "LeafBlock1" })
           rfl hp' hi' hn' hnlt (by omega) hread2 hnosign
       refine ⟨i10 + 1, _, e', 8, by omega, hpc', hmem', hp2, hn2, hi11, hes, Or.inl rfl, ?_⟩
@@ -2986,10 +2996,10 @@ theorem nest_marker_start {e : State} {a n i10 : Nat} {b1 b2 : UInt8}
   · -- `'E'`: the pivot takes `LeafBlock`
     let env1 : Env := NumFastScanRun.leafBlockEnv
       (NumFastScanRun.nodeBlockEnv (NumFastScanRun.t147Env e.env a i10 0x45) 0x45) 0x45
-    have hrun3 : ∀ k, runFuel s2HelperCalls (3 + k) numFastBody e =
-        runFuel s2HelperCalls k numFastBody
+    have hrun3 : ∀ k, runFuel calls (3 + k) numFastBody e =
+        runFuel calls k numFastBody
           (stateAt env1 { e with pc := "if.then157", pre := some "LeafBlock" }) :=
-      NumFastScanRun.nestTo157_E (calls := s2HelperCalls) hpc hp hi (by omega) hread
+      NumFastScanRun.nestTo157_E (calls := calls) hpc hp hi (by omega) hread
     have hp' : lookupName env1 "%p" = some (.ptr a) := by
       simp only [env1, NumFastScanRun.leafBlockEnv, NumFastScanRun.nodeBlockEnv,
         NumFastScanRun.t147Env]
@@ -3004,7 +3014,7 @@ theorem nest_marker_start {e : State} {a n i10 : Nat} {b1 b2 : UInt8}
       block_lk
     by_cases hsign : b2 = 0x2b ∨ b2 = 0x2d
     · obtain ⟨e', hpc', hmem', hp2, hn2, hi11, hes, hrun6⟩ :=
-        NumFastScanRun.nestFrom157_sign (calls := s2HelperCalls) (env := env1)
+        NumFastScanRun.nestFrom157_sign (calls := calls) (env := env1)
           (s := { e with pc := "if.then157", pre := some "LeafBlock" })
           rfl hp' hi' hn' hnlt (by omega) hread2 hsign
       refine ⟨i10 + 2, _, e', 9, by omega, hpc', hmem', hp2, hn2, hi11, hes, Or.inr rfl, ?_⟩
@@ -3014,7 +3024,7 @@ theorem nest_marker_start {e : State} {a n i10 : Nat} {b1 b2 : UInt8}
     · have hnosign : b2 ≠ 0x2b ∧ b2 ≠ 0x2d :=
         ⟨fun h => hsign (Or.inl h), fun h => hsign (Or.inr h)⟩
       obtain ⟨e', hpc', hmem', hp2, hn2, hi11, hes, hrun5⟩ :=
-        NumFastScanRun.nestFrom157_nosign (calls := s2HelperCalls) (env := env1)
+        NumFastScanRun.nestFrom157_nosign (calls := calls) (env := env1)
           (s := { e with pc := "if.then157", pre := some "LeafBlock" })
           rfl hp' hi' hn' hnlt (by omega) hread2 hnosign
       refine ⟨i10 + 1, _, e', 8, by omega, hpc', hmem', hp2, hn2, hi11, hes, Or.inl rfl, ?_⟩
@@ -3032,36 +3042,91 @@ carried cells cannot be recovered from the exit — they have to be named at the
 start, which a caller holding the dispatch's `fracPartCells` and the fraction
 run's `%fr.5`/`%fdig.4` can do. -/
 
-/-- **The merge at the exponent run's exit.**  `cleanup223.thread` folds the
-run's accumulator with its sign and `if.end226`'s equality test opens `if.end230`:
-two control steps from either exit edge, with the merge's five registers.  The
-sign is the exit's (`%esign.0`), the accumulator is the arm's (`%exp10.0603` at
-the head, `%exp10.1` at the back edge), and the head arm needs its index at the
-length — the back edge's `%inc217` is `%n` there — so `hhead` names that. -/
-theorem expExit_merge {calls : Calls} {e : State} {n : Nat}
+/-- A negative integer literal as a `BitVec`: `ofInt` of `-n` is the two's
+complement negation of `ofNat`. -/
+theorem ofInt_negNat (n : Nat) :
+    (BitVec.ofInt 64 (-(n : Int))) = 0 - BitVec.ofNat 64 n := by
+  rw [BitVec.ofInt_neg]
+  have h : -BitVec.ofInt 64 ((n : Nat) : Int) = -BitVec.ofNat 64 n :=
+    congrArg Neg.neg (BitVec.ofInt_ofNat 64 n)
+  rw [h]
+  exact (BitVec.zero_sub (BitVec.ofNat 64 n)).symm
+
+/-- **The emitted exponent select is the model's exponent.**  `cleanup223.thread`
+computes `%spec.select446 = if %esign.0 = 1 then %exp10 else 0 - %exp10`, with
+`%esign.0` the exponent's sign (`1` for `+`) and `%exp10` its accumulator.  At a
+lexeme whose exponent is `(sign, ds)` and an accumulator that is `expAcc ds`, the
+select is `expVal d` — the model's signed exponent, whose magnitude is the
+saturating fold the accumulator holds. -/
+theorem expSelect_tie {d : Decimal} {sign : Bool} {ds : Bytes} {v : BitVec 64}
+    {esign : BitVec 1}
+    (hx : d.ex = some (sign, ds))
+    (hv : v = BitVec.ofNat 64 (expAcc ds))
+    (hs : esign = (if sign then (0 : BitVec 1) else 1)) :
+    (if esign = 1 then v else 0 - v) = BitVec.ofInt 64 (expVal d) := by
+  subst hv
+  have hval : expVal d
+      = (if sign then -((expAcc ds : Nat) : Int) else ((expAcc ds : Nat) : Int)) := by
+    simp only [expVal, hx]
+  rw [hval]
+  cases sign
+  · have hs1 : esign = 1 := by simpa using hs
+    rw [hs1]
+    simp only [reduceIte]
+    exact BitVec.ofInt_ofNat 64 (expAcc ds)
+  · have hs0 : esign = 0 := by simpa using hs
+    rw [hs0]
+    simp only [reduceIte]
+    exact (ofInt_negNat (expAcc ds)).symm
+
+/-- **The merge at the exponent run's exit, with the model's exponent.**
+`cleanup223.thread` folds the run's accumulator with its sign and `if.end226`'s
+equality test opens `if.end230`: two control steps from either exit edge, with
+the merge's five registers and `%exp10.4` the model's signed exponent.  The sign
+is the exit's (`%esign.0`), the accumulator is the arm's (`%exp10.0603` at the
+head, `%exp10.1` at the back edge), and the head arm needs its index at the
+length — the back edge's `%inc217` is `%n` there — so `hhead` names that.
+
+The exit is an `∃`-state, so the two readings that make the select the model's
+are hypotheses rather than fields: `hacc` fixes whichever accumulator cell the
+exit carries at `expAcc ds`, and `hesign` fixes the sign bit's polarity. -/
+theorem expExit_merge {calls : Calls} {e : State} {n : Nat} {d : Decimal}
+    {sign : Bool} {ds : Bytes}
     (he : expRunExit e)
     (hn : lookupName e.env "%n" = some (.int 64 (BitVec.ofNat 64 n)))
     (hhead : ∀ i1, lookupName e.env "%i.12604"
-      = some (.int 64 (BitVec.ofNat 64 i1)) → i1 = n) :
-    ∃ (idig ip fr fdig : BitVec 64) (e' : State) (esign : BitVec 1) (v : BitVec 64),
-      NumFastScanRun.mergeEntry e.mem (if esign = 1 then v else 0 - v)
+      = some (.int 64 (BitVec.ofNat 64 i1)) → i1 = n)
+    (hx : d.ex = some (sign, ds))
+    (hacc : ∀ v, (lookupName e.env "%exp10.0603" = some (.int 64 v) ∨
+        lookupName e.env "%exp10.1" = some (.int 64 v)) →
+        v = BitVec.ofNat 64 (expAcc ds))
+    (hesign : ∀ esg, lookupName e.env "%esign.0" = some (.int 1 esg) →
+        esg = (if sign then (0 : BitVec 1) else 1)) :
+    ∃ (idig ip fr fdig : BitVec 64) (e' : State),
+      NumFastScanRun.mergeEntry e.mem (BitVec.ofInt 64 (expVal d))
         idig ip fr fdig e' ∧
       ∀ k, runFuel calls (2 + k) numFastBody e = runFuel calls k numFastBody e' := by
-  obtain ⟨hpc, hdisj, hesign, hcarry⟩ := he
-  obtain ⟨esign, hes⟩ := hesign
+  obtain ⟨hpc, hdisj, hesign', hcarry⟩ := he
+  obtain ⟨esg, hes⟩ := hesign'
   obtain ⟨idig, ip, fr, fdig, hid, hip, hfr, hfd⟩ := hcarry
-  rcases hdisj with ⟨hpre, i1, v, hi1, hacc⟩ | ⟨hpre, i1, v, hi1, hacc⟩
+  rcases hdisj with ⟨hpre, i1, v, hi1, haccv⟩ | ⟨hpre, i1, v, hi1, haccv⟩
   · have hi1n : i1 = n := hhead i1 hi1
     have hi : lookupName e.env "%i.12604" = some (.int 64 (BitVec.ofNat 64 n)) := by
       rw [hi1, hi1n]
+    have hsel : (if esg = 1 then v else 0 - v) = BitVec.ofInt 64 (expVal d) :=
+      expSelect_tie hx (hacc v (Or.inl haccv)) (hesign esg hes)
     obtain ⟨e', hmerge, hrun⟩ :=
-      NumFastScanRun.expMerge_run_head (calls := calls) hpc hpre hacc hi hn hes
+      NumFastScanRun.expMerge_run_head (calls := calls) hpc hpre haccv hi hn hes
         hid hip hfr hfd
-    exact ⟨idig, ip, fr, fdig, e', esign, v, hmerge, hrun⟩
-  · obtain ⟨e', hmerge, hrun⟩ :=
-      NumFastScanRun.expMerge_run_inc (calls := calls) hpc hpre hacc hn hes
+    rw [hsel] at hmerge
+    exact ⟨idig, ip, fr, fdig, e', hmerge, hrun⟩
+  · have hsel : (if esg = 1 then v else 0 - v) = BitVec.ofInt 64 (expVal d) :=
+      expSelect_tie hx (hacc v (Or.inr haccv)) (hesign esg hes)
+    obtain ⟨e', hmerge, hrun⟩ :=
+      NumFastScanRun.expMerge_run_inc (calls := calls) hpc hpre haccv hn hes
         hid hip hfr hfd
-    exact ⟨idig, ip, fr, fdig, e', esign, v, hmerge, hrun⟩
+    rw [hsel] at hmerge
+    exact ⟨idig, ip, fr, fdig, e', hmerge, hrun⟩
 
 /-! ### What the routes leave open
 
@@ -3175,6 +3240,8 @@ steps are at `stage2NumFastCalls`, whose reader answer is the model's. -/
 #print axioms NumFastSeams.fracScan_end230
 #print axioms NumFastSeams.nest_marker_start
 #print axioms NumFastSeams.expExit_merge
+#print axioms NumFastSeams.ofInt_negNat
+#print axioms NumFastSeams.expSelect_tie
 
 end NumFastSeams
 

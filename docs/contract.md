@@ -668,15 +668,18 @@ read.
 Two further inputs are outside the contract's staging, and `NumFastBodyArm`
 carries them as hypotheses rather than silently taking them.  The first is the
 inlined scan's counters: `JsonStage2NumFastScan` fixes the digit run's
-`BoundLoop` shape and states its two arms as per-iteration facts, the arms are
-not discharged, and the fraction and exponent runs have no instance at all, so
-the model's `digitCount`/`numEff` are not yet the body's counters.  The second is
-the two tables: the tier-1 expression reads `@NUMF_EL1_P10[fdig]` and
-`@NUMF_EL1_POW10[eff]`, both `Operand.global` and both loaded from memory, and
-`s2NumFastPre` fixes four arguments and a lexeme and stages no global —
-`NumFastTables` is the staging a proof must add (twenty integer powers and
-twenty-three binary64 ones, each stated as the encoding `uitofpBits` gives a
-value below `2 ^ 53`).  The decimal-to-binary64 equivalence §8 places outside the
+`BoundLoop` shape, `JsonStage2NumFastDigitRuns` discharges all three instances
+(`intRun_run`, `fracRun_run`, `expRun_run`) with their exits carrying the
+counters, `JsonStage2NumFastStarts` supplies the runs' starts at the dispatch's
+edges, and the fast paths append by
+`JsonStage2NumFastScanFast.intScan_fastEnd_run`/`fracScan_fastEnd_run` — so the
+model's `digitCount`/`numEff` are the body's counters at a lexeme the scan reads
+whole.  The second is the two tables: the tier-1 expression reads
+`@NUMF_EL1_P10[fdig]` and `@NUMF_EL1_POW10[eff]`, both `Operand.global` and both
+loaded from memory, and `s2NumFastPre` fixes four arguments and a lexeme and
+stages no global — `NumFastTables` is the staging a proof must add (twenty
+integer powers and twenty-three binary64 ones, each stated as the encoding
+`uitofpBits` gives a value below `2 ^ 53`).  The decimal-to-binary64 equivalence §8 places outside the
 first contract is what remains above those three inputs, so row f's basis stays
 off *proved (body)*.
 The literal spelling rows used to be refused at, `-0.000000e+00`, is read now:
@@ -1298,13 +1301,18 @@ or twelve control steps, and `fracScan_fastTaken` reads the `.` at `%i.5`, takes
 `while.cond91.preheader`'s zero and reaches `fracRunInv` in eight or ten; the
 fraction guard's other answer is `whileCond91_refused_run`, and
 `fracGuard_join` is that guard's two answers at one predicate, the analogue of
-the integer's `guard_join`.  What a composition that *appends* a run still owes
-is a seam of `Calls`, named rather than assumed: the shapes' steps are at
-`stage2NumFastCalls epow`, where the reader is answered, and the runs'
-`BoundLoop` instances (`intRun_end_run`, `fracRun_end_run`) are at
-`s2HelperCalls`; the blocks on both sides of the seam are call-free, but the two
-sides' lemmas are not yet parameterised in `Calls`, so no theorem composes a
-shape with a run.  The accumulator's tie at
+the integer's `guard_join`.  Appending a run to a shape is now a `Calls`-free
+composition: the scan's blocks call nothing, so the runs' `BoundLoop` instances
+(`intRun_run`, `fracRun_run`, `expRun_run`) and the scans and seams that reach
+them are stated at an arbitrary `Calls`, and they instantiate at
+`stage2NumFastCalls epow` as readily as at `s2HelperCalls`.
+`JsonStage2NumFastScanFast.runFuel_append` is the composition law,
+`intRun_end_append`/`fracRun_end_append` (and the general `intRun_append`/
+`fracRun_append`/`expRun_append`) are the runs appended at their exits, and
+`intScan_fastEnd_run`/`fracScan_fastEnd_run` are the append at the dispatch's own
+edges (`entry`, `land.lhs.true71`): from the sign read and the reader's refusal,
+with every remaining byte a digit, `if.end230` with `intRunEndWord` — and the
+fraction's mirror with `fracRunEndWord`.  The accumulator's tie at
 `if.end230` is stated: `intRunEndWord` carries the length as the index, the count
 `d0 + (n - i0)` and `%7` in the preheader's raw form, and `intRunExit_gate` reads
 `%ip.4` and `%7` as the merge's `%ip.5708717729` and `%idig.4709716730` — the
@@ -1319,8 +1327,13 @@ with `%fr.5718728` the fraction's `digitsNat` and `%fdig.4719727` its
 seam) and `t1_fracCount_tie` (the fraction's count preheader).  What the store
 chain still takes as its entry is the exponent edge's incoming cells
 (`t1_store_run`'s hypotheses): the digit parts' cells carried through `if.end144`
-are the same ties, while `%exp10.4`'s reading as `expVal d` is the exponent
-nest's exit.  Tier 3's
+are the same ties, while `%exp10.4`'s reading as `expVal d` is
+`JsonStage2NumFastSeams.expExit_merge`, which folds the exponent run's exit
+through `cleanup223.thread`'s select and `if.end226`'s test with
+`expSelect_tie`: the block's `if %esign.0 = 1 then %exp10 else 0 - %exp10` is
+`BitVec.ofInt 64 (expVal d)` once the accumulator reads as the exponent digits'
+`expAcc` and `%esign.0` is the sign's bit (both as the seam's hypotheses, since
+the run's exit is existential).  Tier 3's
 three links are stated and proved at their statements
 (`JsonStage2NumFastTier3`): the traversal with the trip count
 (`t3_traversal_counts_1_3`, two `runFuel` steps from the peeled entry at a count

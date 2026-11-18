@@ -29,15 +29,16 @@ caller must reconstruct.
 
 **What the composition is stated at.**  Every step is at
 `stage2NumFastCalls epow`, the selection that answers the reader the fast path
-calls; the statements therefore carry `epow`.  The runs these shapes enter are
-stated at `s2HelperCalls` (`JsonStage2NumFastDigitRuns.intRun_end_run`,
-`fracRun_end_run`), because the run's blocks call nothing.  Appending a run to
-these shapes is therefore a change of `Calls` at a seam where both sides are
-call-free but their *lemmas* are not yet parameterised: the fast path's reader is
-answered only at `stage2NumFastCalls`, and the run's `BoundLoop` instance is
-instantiated at `s2HelperCalls`.  That seam is named rather than assumed, and it
-is what the arm's composition still owes — not the arithmetic, which is at the
-runs' exits.
+calls; the statements therefore carry `epow`.  The runs these shapes enter
+(`JsonStage2NumFastDigitRuns.intRun_end_run`, `fracRun_end_run`) are stated at an
+arbitrary `Calls`, because the run's blocks — the head's byte load and digit
+test, the accumulator's guard, the two arms and the index's increment — call
+nothing and no environment's answer can reach them.  The append is therefore a
+`Calls`-free composition: the shape's prefix fuel and the run's `BoundLoop`
+budget meet at the invariant state (`runFuel_append`, `intRun_end_append`,
+`fracRun_end_append`), and `intScan_fastEnd_run`/`fracScan_fastEnd_run` are that
+composition at the dispatch's own edges.  What the arm's composition still owes
+is the arithmetic at the runs' exits, not the `Calls`.
 -/
 import LeanLLVM.Refinement.JsonStage2NumFastJoin
 import LeanLLVM.Refinement.JsonStage2NumFastScanRun
@@ -450,12 +451,171 @@ theorem fracScan_fastTaken {epow : Int → Option EPow} {env : Env} {s : State}
         runFuel_jump_prefix h1, runFuel_jump_prefix h2, runFuel_jump_prefix h3]
       exact hcont k⟩
 
+/-! ### Appending the runs: the seam closed
+
+The shapes above reach each run's invariant at `stage2NumFastCalls epow`.  The
+runs are `JsonStage2NumFastDigitRuns`', and their blocks — the head's byte load
+and digit test, the accumulator's guard, the `if.then`, the `if.end` — call
+nothing, so those statements are at an arbitrary `Calls` and instantiate at the
+same `stage2NumFastCalls epow` the shapes are stated at.  What remains is the
+append: a shape hands a prefix's fuel together with an invariant state, and the
+run's `BoundLoop` budget continues from that state.
+
+`runFuel_append` is the composition law.  The three `*Run_append` lemmas are the
+runs at their general exit — the head's non-digit branch or the end-of-lexeme
+one — and the `*RunEnd_append` pair is the end-of-lexeme exit, the one a scan
+that reads to the lexeme's end takes.  The two `*Scan_fastEnd_run` theorems are
+the append at the dispatch's own edges: `entry` and `land.lhs.true71`, with the
+reader refused, the remainder digits, and the run's end-of-lexeme exit as the
+conclusion. -/
+
+/-- **A prefix's fuel composes with a run's.**  Two `runFuel` prefix identities
+at a shared state append: the first's fuel is spent before the second's, and the
+result is a prefix identity for the sum. -/
+theorem runFuel_append {calls : Calls} {f : Function} {s e e' : State} {j j' : Nat}
+    (h1 : ∀ k, runFuel calls (j + k) f s = runFuel calls k f e)
+    (h2 : ∀ k, runFuel calls (j' + k) f e = runFuel calls k f e') :
+    ∀ k, runFuel calls (j + j' + k) f s = runFuel calls k f e' := by
+  intro k
+  rw [show j + j' + k = j + (j' + k) from by omega, h1 (j' + k), h2 k]
+
+/-- **The integer run appended to a prefix.**  From a prefix identity into the
+run's invariant at the whole distance, the run reaches one of its two exits
+within the prefix's fuel plus `(n - i0 + 1) * 4`. -/
+theorem intRun_append {calls : Calls} {mem0 : Mem} {p n i0 d0 : Nat}
+    {bs : List UInt8} {s e : State} {j : Nat}
+    (hpre : ∀ k, runFuel calls (j + k) numFastBody s = runFuel calls k numFastBody e)
+    (hinv : intRunInv mem0 p n i0 d0 bs (n - i0) e 0) :
+    ∃ (e' : State) (j' : Nat), j' ≤ j + (n - i0 + 1) * 4 ∧
+      intRunExitBlock e' ∧ intRunExit mem0 bs p n i0 d0 e' ∧
+      ∀ k, runFuel calls (j' + k) numFastBody s = runFuel calls k numFastBody e' := by
+  obtain ⟨e', j1, hj1, hexit, hword, hrun⟩ :=
+    (intRunBoundLoop mem0 p n i0 d0 bs 4 (by omega)).run_from (n - i0) e 0 hinv
+  have hj1' : j1 ≤ (n - i0 + 1) * 4 := hj1
+  exact ⟨e', j + j1, by omega, hexit, hword, runFuel_append hpre hrun⟩
+
+/-- **The integer run appended, at its end-of-lexeme exit.**  With every byte
+from the run's start to the lexeme's end a digit, the append's exit is
+`if.end230` with `intRunEndWord`. -/
+theorem intRun_end_append {calls : Calls} {mem0 : Mem} {p n i0 d0 : Nat}
+    {bs : List UInt8} {s e : State} {j : Nat}
+    (hpre : ∀ k, runFuel calls (j + k) numFastBody s = runFuel calls k numFastBody e)
+    (hinv : intRunInv mem0 p n i0 d0 bs (n - i0) e 0)
+    (hdigits : ∀ k, i0 ≤ k → k < n → IsDigitB (bs.getD k 0) = true) :
+    ∃ (e' : State) (j' : Nat), j' ≤ j + (n - i0 + 1) * 4 ∧ e'.pc = "if.end230" ∧
+      intRunEndWord bs p n i0 d0 e' ∧
+      ∀ k, runFuel calls (j' + k) numFastBody s = runFuel calls k numFastBody e' := by
+  obtain ⟨e', j1, hj1, hexit, hword, hrun⟩ :=
+    (intRunEndBoundLoop mem0 p n i0 d0 bs 4 (by omega) hdigits).run_from (n - i0) e 0 hinv
+  have hj1' : j1 ≤ (n - i0 + 1) * 4 := hj1
+  exact ⟨e', j + j1, by omega, hexit, hword, runFuel_append hpre hrun⟩
+
+/-- **The fraction run appended to a prefix.** -/
+theorem fracRun_append {calls : Calls} {mem0 : Mem} {p n i0 d0 : Nat}
+    {bs : List UInt8} {s e : State} {j : Nat}
+    (hpre : ∀ k, runFuel calls (j + k) numFastBody s = runFuel calls k numFastBody e)
+    (hinv : fracRunInv mem0 p n i0 d0 bs (n - i0) e 0) :
+    ∃ (e' : State) (j' : Nat), j' ≤ j + (n - i0 + 1) * 4 ∧
+      fracRunExitBlock e' ∧ fracRunExit mem0 bs p n i0 d0 e' ∧
+      ∀ k, runFuel calls (j' + k) numFastBody s = runFuel calls k numFastBody e' := by
+  obtain ⟨e', j1, hj1, hexit, hword, hrun⟩ :=
+    (fracRunBoundLoop mem0 p n i0 d0 bs 4 (by omega)).run_from (n - i0) e 0 hinv
+  have hj1' : j1 ≤ (n - i0 + 1) * 4 := hj1
+  exact ⟨e', j + j1, by omega, hexit, hword, runFuel_append hpre hrun⟩
+
+/-- **The fraction run appended, at its end-of-lexeme exit.** -/
+theorem fracRun_end_append {calls : Calls} {mem0 : Mem} {p n i0 d0 : Nat}
+    {bs : List UInt8} {s e : State} {j : Nat}
+    (hpre : ∀ k, runFuel calls (j + k) numFastBody s = runFuel calls k numFastBody e)
+    (hinv : fracRunInv mem0 p n i0 d0 bs (n - i0) e 0)
+    (hdigits : ∀ k, i0 ≤ k → k < n → IsDigitB (bs.getD k 0) = true) :
+    ∃ (e' : State) (j' : Nat), j' ≤ j + (n - i0 + 1) * 4 ∧ e'.pc = "if.end230" ∧
+      fracRunEndWord bs p n i0 d0 e' ∧
+      ∀ k, runFuel calls (j' + k) numFastBody s = runFuel calls k numFastBody e' := by
+  obtain ⟨e', j1, hj1, hexit, hword, hrun⟩ :=
+    (fracRunEndBoundLoop mem0 p n i0 d0 bs 4 (by omega) hdigits).run_from (n - i0) e 0 hinv
+  have hj1' : j1 ≤ (n - i0 + 1) * 4 := hj1
+  exact ⟨e', j + j1, by omega, hexit, hword, runFuel_append hpre hrun⟩
+
+/-- **The exponent run appended to a prefix.** -/
+theorem expRun_append {calls : Calls} {mem0 : Mem} {p n i0 : Nat}
+    {bs : List UInt8} {s e : State} {j : Nat}
+    (hpre : ∀ k, runFuel calls (j + k) numFastBody s = runFuel calls k numFastBody e)
+    (hinv : expRunInv mem0 p n i0 bs (n - i0) e 0) :
+    ∃ (e' : State) (j' : Nat), j' ≤ j + (n - i0 + 1) * 4 ∧
+      e'.pc = "cleanup223.thread" ∧ expRunExit e' ∧
+      ∀ k, runFuel calls (j' + k) numFastBody s = runFuel calls k numFastBody e' := by
+  obtain ⟨e', j1, hj1, hexit, hword, hrun⟩ :=
+    (expRunBoundLoop mem0 p n i0 bs 4 (by omega)).run_from (n - i0) e 0 hinv
+  have hj1' : j1 ≤ (n - i0 + 1) * 4 := hj1
+  exact ⟨e', j + j1, by omega, hexit, hword, runFuel_append hpre hrun⟩
+
+/-- **The integer fast path appended: `entry` to the run's end-of-lexeme exit.**
+The reader's refusal plus the run's whole distance: from `entry` the body reaches
+`if.end230` with `intRunEndWord` when the eight-digit guard is taken, the reader
+refuses, and every byte after the lead is a digit. -/
+theorem intScan_fastEnd_run {epow : Int → Option EPow} {env : Env} {s : State}
+    {a n : Nat} {bs : List UInt8} {b b0 : UInt8}
+    (hpc : s.pc = "entry")
+    (hp : lookupName env "%p" = some (.ptr a))
+    (hn : lookupName env "%n" = some (.int 64 (BitVec.ofNat 64 n)))
+    (hread : readBytes s.mem a n = some bs)
+    (hsign : readByte s.mem a = some b)
+    (hbyte : readByte s.mem (a + negIndex b) = some b0)
+    (hlead : 0x31 ≤ b0 ∧ b0 ≤ 0x39)
+    (hnpos : 0 < n) (hltn : negIndex b < n)
+    (hfast : negIndex b + 9 ≤ n) (hnlt : n < 2 ^ 63)
+    (hsep : s.next + 768 + 1568 + 4 ≤ a ∨ a + n ≤ s.next + 768 + 1568)
+    (hnone : d8Value ((bs.drop (negIndex b + 1)).take 8) = none)
+    (hdigits : ∀ k, negIndex b + 1 ≤ k → k < n →
+      IsDigitB (bs.getD k 0) = true) :
+    ∃ (e : State) (j : Nat), j ≤ 10 + (n - (negIndex b + 1) + 1) * 4 ∧
+      e.pc = "if.end230" ∧ intRunEndWord bs a n (negIndex b + 1) 1 e ∧
+      ∀ k, runFuel (stage2NumFastCalls epow) (j + k) numFastBody (stateAt env s) =
+        runFuel (stage2NumFastCalls epow) k numFastBody e := by
+  obtain ⟨e0, hinv0, hrun0⟩ :=
+    (intScan_fastTaken (epow := epow) hpc hp hn hread hsign hbyte hlead hnpos hltn
+      hfast hnlt hsep).1 hnone
+  exact intRun_end_append hrun0 hinv0 hdigits
+
+/-- **The fraction fast path appended: the `.` to the run's end-of-lexeme
+exit.**  The same append from `land.lhs.true71`, with the fraction's guard taken
+and the reader refused. -/
+theorem fracScan_fastEnd_run {epow : Int → Option EPow} {env : Env} {s : State}
+    {a v8a i5 n : Nat} {bs : List UInt8} {bd bd2 : UInt8}
+    (hpc : s.pc = "land.lhs.true71")
+    (hparts : fracPartCells env)
+    (hp : lookupName env "%p" = some (.ptr a))
+    (hv8 : lookupName env "%v8101" = some (.ptr v8a))
+    (hi5 : lookupName env "%i.5" = some (.int 64 (BitVec.ofNat 64 i5)))
+    (hn : lookupName env "%n" = some (.int 64 (BitVec.ofNat 64 n)))
+    (hread : readBytes s.mem a n = some bs)
+    (hdot : readByte s.mem (a + i5) = some bd) (hdoteq : bd = 0x2E)
+    (hd2 : readByte s.mem (a + (i5 + 1)) = some bd2)
+    (hd2digit : IsDigitB bd2 = true)
+    (hltn : i5 + 1 < n) (hfast : i5 + 9 ≤ n) (hnlt : n < 2 ^ 63)
+    (hsep : v8a + 4 ≤ a ∨ a + n ≤ v8a)
+    (hsep2 : v8a + 4 ≤ a + (i5 + 1 + 8) ∨ a + (i5 + 1 + 8) + 8 ≤ v8a)
+    (hnone : d8Value ((bs.drop (i5 + 1)).take 8) = none)
+    (hdigits : ∀ k, i5 + 1 ≤ k → k < n → IsDigitB (bs.getD k 0) = true) :
+    ∃ (e : State) (j : Nat), j ≤ 8 + (n - (i5 + 1) + 1) * 4 ∧
+      e.pc = "if.end230" ∧ fracRunEndWord bs a n (i5 + 1) 0 e ∧
+      ∀ k, runFuel (stage2NumFastCalls epow) (j + k) numFastBody (stateAt env s) =
+        runFuel (stage2NumFastCalls epow) k numFastBody e := by
+  obtain ⟨e0, hinv0, hrun0⟩ :=
+    (fracScan_fastTaken (epow := epow) hpc hparts hp hv8 hi5 hn hread hdot hdoteq hd2
+      hd2digit hltn hfast hnlt hsep hsep2).1 hnone
+  exact fracRun_end_append hrun0 hinv0 hdigits
+
 /-! ### Axiom footprints
 
 `#print axioms` on the four statements, pinned with `#guard_msgs` so the build
 checks the footprint rather than printing it: the two compositions carry
 `Classical.choice` through `fpIfThen22_entry`/`fracWhileCond91_entry`'s digit
-windows, and the refused run is `[propext, Quot.sound]`. -/
+windows, and the refused run is `[propext, Quot.sound]`.  The appends carry the
+runs' own footprints: `runFuel_append` is a rewriting law over `runFuel`
+(`[propext, Quot.sound]`), and each `*_append` inherits `Classical.choice` from
+the `BoundLoop` instance it consumes. -/
 
 /-- info: 'LeanLLVM.Refinement.NumFastScanFast.intScan_fastTaken' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -472,6 +632,38 @@ windows, and the refused run is `[propext, Quot.sound]`. -/
 /-- info: 'LeanLLVM.Refinement.NumFastScanFast.fracScan_fastTaken' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms fracScan_fastTaken
+
+/-- info: 'LeanLLVM.Refinement.NumFastScanFast.runFuel_append' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms runFuel_append
+
+/-- info: 'LeanLLVM.Refinement.NumFastScanFast.intRun_append' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms intRun_append
+
+/-- info: 'LeanLLVM.Refinement.NumFastScanFast.intRun_end_append' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms intRun_end_append
+
+/-- info: 'LeanLLVM.Refinement.NumFastScanFast.fracRun_append' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms fracRun_append
+
+/-- info: 'LeanLLVM.Refinement.NumFastScanFast.fracRun_end_append' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms fracRun_end_append
+
+/-- info: 'LeanLLVM.Refinement.NumFastScanFast.expRun_append' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms expRun_append
+
+/-- info: 'LeanLLVM.Refinement.NumFastScanFast.intScan_fastEnd_run' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms intScan_fastEnd_run
+
+/-- info: 'LeanLLVM.Refinement.NumFastScanFast.fracScan_fastEnd_run' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms fracScan_fastEnd_run
 
 end NumFastScanFast
 
