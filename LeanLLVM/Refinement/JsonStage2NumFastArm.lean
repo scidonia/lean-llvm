@@ -278,10 +278,13 @@ exit's accumulator reading (`expAcc` of the exponent's digits) and the sign's
 polarity as the seam's hypotheses.  Both carry `[propext, Quot.sound]`.
 
 What the arm needs beyond that is the run itself: the copy's four-way unrolled
-main loop's *visits* — its `BoundLoop` shape and budget are fixed
-(`JsonStage2NumFastTier3CopyUnroll.t3MainLoopOf`/`t3MainLoop_run_at`), and what
-it still takes are the two arms `t3MainLoopOf` names — and the handoff of that
-loop's exit block's `phi`s into the residual loop's invariant.  Two items this
+main loop's *visits* were the first of the two items, and they are now closed —
+its `BoundLoop` shape and budget are fixed
+(`JsonStage2NumFastTier3CopyUnroll.t3MainLoopOf`/`t3MainLoop_run_at`) and the two
+arms it names are proved (`t3Visit`, `t3Main_step_exit`/`t3Main_step_loop`, hence
+`t3MainLoop`/`t3MainLoop_run_at'`) — so what that loop still owes is the handoff
+of its exit block's `phi`s into the residual loop's invariant, one step at
+`for.end100.i.i.loopexit.unr-lcssa`'s pin.  Two items this
 list used to carry are closed: the ladder's join **at the invariant level**
 (`JsonStage2NumFastTier3LadderRun.t3_join_divInv`/`t3_ladder_run`: the join's
 state is the negative loop's invariant at counter zero with the empty row list),

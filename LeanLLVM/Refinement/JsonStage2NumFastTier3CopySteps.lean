@@ -24,7 +24,13 @@ latch; `for.inc98.i.i` reads `%add96.i.i` after a store and its own carried valu
 after a refused test; `for.inc98.i.i.epil` reads `%add96.i.i.epil` or
 `%e.0734.i.i.epil` the same way.  Each block therefore has one `denote` per edge
 and one `step` per test outcome, and the arms of the two `BoundLoop` instances
-(`JsonStage2NumFastTier3CopyLoop`) are those steps in sequence.
+(`JsonStage2NumFastTier3CopyLoop` for the residual loop,
+`JsonStage2NumFastTier3CopyUnroll` for the unrolled nest) are those steps in
+sequence.  Two of the main latch's four edge-and-outcome pairs are not
+specialised here — `t3_latch_step_taken`/`t3_latch_step_back` are their generic
+form — and the nest's arms reach them through
+`JsonStage2NumFastTier3CopyUnroll.t3_latch3_step_exit_pre`/`t3_latch3_step_back_pre`,
+which state each arm at the accumulator `phi`'s two in-edges at once.
 
 **The shapes are shared.**  The three unrolled tests differ from `for.inc98.i.i`
 only in the names of their cells, and the stores likewise, so the test's and the
