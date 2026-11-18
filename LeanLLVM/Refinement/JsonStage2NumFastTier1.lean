@@ -1307,6 +1307,906 @@ theorem t1_cleanup282_thread_step (calls : Calls) (env : Env) (s : State)
       using t1_cleanup282_thread_denote calls env s hpre hc hs ho
   · simp only [execTerm, stateAt, hpc]
 
+/-! ### The store path's three middle blocks
+
+`if.then253` tests the scale's sign and converts the mantissa; `cond.true`
+multiplies by the power table's row and `cond.false` divides by it.  Each block
+is its own pin, and each step is one `step` at the environment its statement
+names, so the chain below is the pins' composition and not a re-reading of the
+body's block list. -/
+
+/-- `if.then253`, from its `findBlock` pin. -/
+def t1IfThen253Instrs : List Instr :=
+  [Instr.icmp "%cmp254" (IPred.sgt) 64 (Operand.reg "%sub231")
+     (Operand.imm (Const.int 64 0xffffffffffffffff#64)),
+   Instr.uitofp "%conv256" 64 (Operand.reg "%add244")]
+
+theorem t1_findBlock_ifThen253 :
+    numFastBody.findBlock "if.then253" =
+      some ⟨"if.then253", t1IfThen253Instrs,
+        Term.condbr (Operand.reg "%cmp254") "cond.true" "cond.false"⟩ := by
+  simpa only [t1IfThen253Instrs] using numFast_findBlock_if_then253
+
+/-- The block's environment: the scale's sign test and the mantissa's
+conversion. -/
+def t1ConvEnv (env : Env) (sub231 add244 : BitVec 64) : Env :=
+  ("%conv256", .float (uitofpBits add244.toNat)) ::
+  ("%cmp254", .int 1 (evalICmp .sgt sub231 0xffffffffffffffff#64)) :: env
+
+theorem t1_ifThen253_denote (calls : Calls) (env : Env) (s : State)
+    {sub231 add244 : BitVec 64}
+    (hsu : lookupName env "%sub231" = some (.int 64 sub231))
+    (had : lookupName env "%add244" = some (.int 64 add244)) :
+    denoteCode calls t1IfThen253Instrs (stateAt env s) =
+      some (stateAt (t1ConvEnv env sub231 add244) s) := by
+  unfold t1IfThen253Instrs
+  rw [denoteCode_icmp_sgt_imm _ _ _ "%cmp254" "%sub231" (by block_lk) _]
+  rw [denoteCode_uitofp _ _ _ "%conv256" "%add244" 64 (by block_lk) _]
+  rw [denoteCode_nil]
+  rfl
+
+theorem t1_ifThen253_step_true (calls : Calls) (env : Env) (s : State)
+    {sub231 add244 : BitVec 64}
+    (hpc : s.pc = "if.then253")
+    (hsu : lookupName env "%sub231" = some (.int 64 sub231))
+    (had : lookupName env "%add244" = some (.int 64 add244))
+    (hbit : evalICmp .sgt sub231 0xffffffffffffffff#64 = 1) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (t1ConvEnv env sub231 add244)
+        { s with pc := "cond.true", pre := some "if.then253" }) := by
+  refine numFast_step_at (s' := stateAt (t1ConvEnv env sub231 add244) s)
+    (b := ⟨"if.then253", t1IfThen253Instrs,
+      Term.condbr (Operand.reg "%cmp254") "cond.true" "cond.false"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc, t1IfThen253Instrs] using t1_findBlock_ifThen253
+  · simpa only [denoteCode_nil] using t1_ifThen253_denote calls env s hsu had
+  · have hlk : lookupName (t1ConvEnv env sub231 add244) "%cmp254"
+        = some (.int 1 (evalICmp .sgt sub231 0xffffffffffffffff#64)) := by
+      simp only [t1ConvEnv]; block_lk
+    rw [numFast_execTerm_condbr_one _ "%cmp254" _ _ hlk hbit]
+    simp only [stateAt, hpc]
+
+theorem t1_ifThen253_step_false (calls : Calls) (env : Env) (s : State)
+    {sub231 add244 : BitVec 64}
+    (hpc : s.pc = "if.then253")
+    (hsu : lookupName env "%sub231" = some (.int 64 sub231))
+    (had : lookupName env "%add244" = some (.int 64 add244))
+    (hbit : evalICmp .sgt sub231 0xffffffffffffffff#64 = 0) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (t1ConvEnv env sub231 add244)
+        { s with pc := "cond.false", pre := some "if.then253" }) := by
+  refine numFast_step_at (s' := stateAt (t1ConvEnv env sub231 add244) s)
+    (b := ⟨"if.then253", t1IfThen253Instrs,
+      Term.condbr (Operand.reg "%cmp254") "cond.true" "cond.false"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc, t1IfThen253Instrs] using t1_findBlock_ifThen253
+  · simpa only [denoteCode_nil] using t1_ifThen253_denote calls env s hsu had
+  · have hlk : lookupName (t1ConvEnv env sub231 add244) "%cmp254"
+        = some (.int 1 (evalICmp .sgt sub231 0xffffffffffffffff#64)) := by
+      simp only [t1ConvEnv]; block_lk
+    rw [numFast_execTerm_condbr_zero _ "%cmp254" _ _ hlk hbit]
+    simp only [stateAt, hpc]
+
+/-- `cond.true`, from its `findBlock` pin. -/
+def t1CondTrueInstrs : List Instr :=
+  [Instr.gep "%arrayidx257" Ty.double (Operand.global "@NUMF_EL1_POW10")
+     (Operand.reg "%sub231"),
+   Instr.load "%33" Ty.double (Operand.reg "%arrayidx257"),
+   Instr.fmul "%mul258" (Operand.reg "%33") (Operand.reg "%conv256")]
+
+theorem t1_findBlock_cond_true :
+    numFastBody.findBlock "cond.true" =
+      some ⟨"cond.true", t1CondTrueInstrs, Term.br "cleanup282.thread"⟩ := by
+  simpa only [t1CondTrueInstrs] using numFast_findBlock_cond_true
+
+/-- The product arm's environment: the table row, the load and the product. -/
+def t1MulEnv (env : Env) (pd : Nat) (sub231 ten conv : BitVec 64) : Env :=
+  ("%mul258", .float (fmulBits ten conv)) ::
+  ("%33", .float ten) ::
+  ("%arrayidx257", .ptr (pd + (sub231.signExtend 64).toNat * 8)) :: env
+
+theorem t1_cond_true_denote (calls : Calls) (env : Env) (s : State)
+    {pd : Nat} {sub231 ten conv : BitVec 64}
+    (hg : lookupName env "@NUMF_EL1_POW10" = some (.ptr pd))
+    (hsu : lookupName env "%sub231" = some (.int 64 sub231))
+    (hconv : lookupName env "%conv256" = some (.float conv))
+    (hpos : (sub231.signExtend 64).toNat < 2 ^ 63)
+    (hread : readBytes s.mem (pd + (sub231.signExtend 64).toNat * 8) 8
+      = some (natToBytes ten.toNat 8)) :
+    denoteCode calls t1CondTrueInstrs (stateAt env s) =
+      some (stateAt (t1MulEnv env pd sub231 ten conv) s) := by
+  unfold t1CondTrueInstrs
+  rw [denoteCode_gep_double_global _ _ _ "%arrayidx257" "@NUMF_EL1_POW10" "%sub231"
+    (by simpa only [stateAt] using hg) (by simpa only [stateAt] using hsu) hpos _]
+  rw [denoteCode_load_double _ _ _ "%33" "%arrayidx257" (by block_lk)
+    (by simpa only [stateAt] using hread) _]
+  rw [denoteCode_fmul _ _ _ "%mul258" "%33" "%conv256" (by block_lk) (by block_lk) _]
+  rw [denoteCode_nil]
+  rfl
+
+theorem t1_cond_true_step (calls : Calls) (env : Env) (s : State)
+    {pd : Nat} {sub231 ten conv : BitVec 64}
+    (hpc : s.pc = "cond.true")
+    (hg : lookupName env "@NUMF_EL1_POW10" = some (.ptr pd))
+    (hsu : lookupName env "%sub231" = some (.int 64 sub231))
+    (hconv : lookupName env "%conv256" = some (.float conv))
+    (hpos : (sub231.signExtend 64).toNat < 2 ^ 63)
+    (hread : readBytes s.mem (pd + (sub231.signExtend 64).toNat * 8) 8
+      = some (natToBytes ten.toNat 8)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (t1MulEnv env pd sub231 ten conv)
+        { s with pc := "cleanup282.thread", pre := some "cond.true" }) := by
+  refine numFast_step_at (s' := stateAt (t1MulEnv env pd sub231 ten conv) s)
+    (b := ⟨"cond.true", t1CondTrueInstrs, Term.br "cleanup282.thread"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc, t1CondTrueInstrs] using t1_findBlock_cond_true
+  · simpa only [denoteCode_nil] using t1_cond_true_denote calls env s hg hsu hconv hpos hread
+  · simp only [execTerm, stateAt, hpc]
+
+/-- `cond.false`, from its `findBlock` pin. -/
+def t1CondFalseInstrs : List Instr :=
+  [Instr.binop "%sub260" (BinOp.sub) 64 (Operand.imm (Const.int 64 0x0000000000000000#64))
+     (Operand.reg "%sub231"),
+   Instr.gep "%arrayidx261" Ty.double (Operand.global "@NUMF_EL1_POW10")
+     (Operand.reg "%sub260"),
+   Instr.load "%34" Ty.double (Operand.reg "%arrayidx261"),
+   Instr.fdiv "%div" (Operand.reg "%conv256") (Operand.reg "%34")]
+
+theorem t1_findBlock_cond_false :
+    numFastBody.findBlock "cond.false" =
+      some ⟨"cond.false", t1CondFalseInstrs, Term.br "cleanup282.thread"⟩ := by
+  simpa only [t1CondFalseInstrs] using numFast_findBlock_cond_false
+
+/-- The quotient arm's environment: the negated scale, the table row, the load
+and the quotient. -/
+def t1DivEnv (env : Env) (pd : Nat) (sub231 ten conv : BitVec 64) : Env :=
+  ("%div", .float (fdivBits conv ten)) ::
+  ("%34", .float ten) ::
+  ("%arrayidx261",
+    .ptr (pd + (((0x0000000000000000#64 : BitVec 64) - sub231).signExtend 64).toNat * 8)) ::
+  ("%sub260", .int 64 ((0x0000000000000000#64 : BitVec 64) - sub231)) :: env
+
+theorem t1_cond_false_denote (calls : Calls) (env : Env) (s : State)
+    {pd : Nat} {sub231 ten conv : BitVec 64}
+    (hg : lookupName env "@NUMF_EL1_POW10" = some (.ptr pd))
+    (hsu : lookupName env "%sub231" = some (.int 64 sub231))
+    (hconv : lookupName env "%conv256" = some (.float conv))
+    (hpos : (((0x0000000000000000#64 : BitVec 64) - sub231).signExtend 64).toNat < 2 ^ 63)
+    (hread : readBytes s.mem
+        (pd + (((0x0000000000000000#64 : BitVec 64) - sub231).signExtend 64).toNat * 8) 8
+      = some (natToBytes ten.toNat 8)) :
+    denoteCode calls t1CondFalseInstrs (stateAt env s) =
+      some (stateAt (t1DivEnv env pd sub231 ten conv) s) := by
+  unfold t1CondFalseInstrs
+  rw [denoteCode_sub_imm_reg _ _ _ "%sub260" "%sub231" (by block_lk) _]
+  rw [denoteCode_gep_double_global _ _ _ "%arrayidx261" "@NUMF_EL1_POW10" "%sub260"
+    (by block_lk) (by block_lk) hpos _]
+  rw [denoteCode_load_double _ _ _ "%34" "%arrayidx261" (by block_lk)
+    (by simpa only [stateAt] using hread) _]
+  rw [denoteCode_fdiv _ _ _ "%div" "%conv256" "%34" (by block_lk) (by block_lk) _]
+  rw [denoteCode_nil]
+  rfl
+
+theorem t1_cond_false_step (calls : Calls) (env : Env) (s : State)
+    {pd : Nat} {sub231 ten conv : BitVec 64}
+    (hpc : s.pc = "cond.false")
+    (hg : lookupName env "@NUMF_EL1_POW10" = some (.ptr pd))
+    (hsu : lookupName env "%sub231" = some (.int 64 sub231))
+    (hconv : lookupName env "%conv256" = some (.float conv))
+    (hpos : (((0x0000000000000000#64 : BitVec 64) - sub231).signExtend 64).toNat < 2 ^ 63)
+    (hread : readBytes s.mem
+        (pd + (((0x0000000000000000#64 : BitVec 64) - sub231).signExtend 64).toNat * 8) 8
+      = some (natToBytes ten.toNat 8)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (t1DivEnv env pd sub231 ten conv)
+        { s with pc := "cleanup282.thread", pre := some "cond.false" }) := by
+  refine numFast_step_at (s' := stateAt (t1DivEnv env pd sub231 ten conv) s)
+    (b := ⟨"cond.false", t1CondFalseInstrs, Term.br "cleanup282.thread"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc, t1CondFalseInstrs] using t1_findBlock_cond_false
+  · simpa only [denoteCode_nil] using t1_cond_false_denote calls env s hg hsu hconv hpos hread
+  · simp only [execTerm, stateAt, hpc]
+
+/-- The merge block's `cond.false` arm: the same block as
+`t1_cleanup282_thread_denote`, with the `phi` taking `%div` instead of
+`%mul258`. -/
+theorem t1_cleanup282_thread_denote_false (calls : Calls) (env : Env) (s : State)
+    {c : BitVec 64} {sign : BitVec 1} {out : Nat}
+    (hpre : s.pre = some "cond.false")
+    (hc : lookupName env "%div" = some (.float c))
+    (hs : lookupName env "%tobool274.not" = some (.int 1 sign))
+    (ho : lookupName env "%out" = some (.ptr out)) :
+    denoteCode calls t1Cleanup282ThreadInstrs (stateAt env s) =
+      some (stateAt (t1StoreEnv env c sign) ({ s with mem := writeBytes s.mem out (natToBytes (if sign = 1 then c else fnegBits c).toNat 8) })) := by
+  unfold t1Cleanup282ThreadInstrs
+  block_phi_run
+  rotate_left 1
+  · exact hpre
+  · rfl
+  · simp only [phiIncoming]; rfl
+  · exact evalOperand_reg_of env s "%div" _ hc
+  · simp only [runCells]
+    rw [denoteCode_fneg _ _ _ "%fneg" "%cond" (by block_lk) _]
+    rw [denoteCode_select_double _ _ _ "%cond266" "%tobool274.not" "%cond" "%fneg"
+      (by block_lk) (by block_lk) (by block_lk) _]
+    rw [denoteCode_store_double _ _ _ "%cond266" "%out" (by block_lk) (by block_lk) _]
+    rw [denoteCode_nil]
+    rfl
+
+theorem t1_cleanup282_thread_step_false (calls : Calls) (env : Env) (s : State)
+    {c : BitVec 64} {sign : BitVec 1} {out : Nat}
+    (hpc : s.pc = "cleanup282.thread") (hpre : s.pre = some "cond.false")
+    (hc : lookupName env "%div" = some (.float c))
+    (hs : lookupName env "%tobool274.not" = some (.int 1 sign))
+    (ho : lookupName env "%out" = some (.ptr out)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (t1StoreEnv env c sign) ({ s with mem := writeBytes s.mem out (natToBytes (if sign = 1 then c else fnegBits c).toNat 8), pc := "cleanup300", pre := some "cleanup282.thread" })) := by
+  refine numFast_step_at
+    (s' := stateAt (t1StoreEnv env c sign) ({ s with mem := writeBytes s.mem out (natToBytes (if sign = 1 then c else fnegBits c).toNat 8) }))
+    (b := ⟨"cleanup282.thread", t1Cleanup282ThreadInstrs, Term.br "cleanup300"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc, t1Cleanup282ThreadInstrs]
+      using t1_findBlock_cleanup282_thread
+  · simpa only [denoteCode_nil]
+      using t1_cleanup282_thread_denote_false calls env s hpre hc hs ho
+  · simp only [execTerm, stateAt, hpc]
+
+/-- `if.then241`'s step: the gate's environment at `if.then253`, with the
+mantissa word built and the second range test read. -/
+theorem t1_ifThen241_step (calls : Calls) (env : Env) (s : State)
+    {p10 : Nat} {fdig ip fr add232 sub231 ten : BitVec 64}
+    (hpc : s.pc = "if.then241")
+    (hg : lookupName env "@NUMF_EL1_P10" = some (.ptr p10))
+    (hfd : lookupName env "%fdig.4719727" = some (.int 64 fdig))
+    (hip : lookupName env "%ip.5708717729" = some (.int 64 ip))
+    (hfr : lookupName env "%fr.5718728" = some (.int 64 fr))
+    (had : lookupName env "%add232" = some (.int 64 add232))
+    (hsu : lookupName env "%sub231" = some (.int 64 sub231))
+    (hpos : (fdig.signExtend 64).toNat < 2 ^ 63)
+    (hread : readBytes s.mem (p10 + (fdig.signExtend 64).toNat * 8) 8
+      = some (natToBytes ten.toNat 8))
+    (hbit : (if evalICmp .ult add232 (16#64) = 1 then
+        evalICmp .ult (sub231 + (22#64)) (45#64) else 0) = 1) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (t1MantEnv env p10 fdig ip fr add232 sub231 ten)
+        { s with pc := "if.then253", pre := some "if.then241" }) := by
+  refine numFast_step_at
+    (s' := stateAt (t1MantEnv env p10 fdig ip fr add232 sub231 ten) s)
+    (b := ⟨"if.then241", t1IfThen241Instrs,
+      Term.condbr (Operand.reg "%or.cond306") "if.then253" "if.end268"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc, t1IfThen241Instrs] using t1_findBlock_ifThen241
+  · simpa only [denoteCode_nil] using t1_ifThen241_denote calls env s hg hfd hip hfr had hsu hpos hread
+  · have hlk : lookupName (t1MantEnv env p10 fdig ip fr add232 sub231 ten) "%or.cond306"
+        = some (.int 1 (if evalICmp .ult add232 (16#64) = 1 then
+            evalICmp .ult (sub231 + (22#64)) (45#64) else 0)) :=
+      lookupName_cons_self ..
+    rw [numFast_execTerm_condbr_one _ "%or.cond306" _ _ hlk hbit]
+    simp only [stateAt, hpc]
+
+/-! ### The chain's states
+
+The four intermediate states of the store path, named so the chain's statement
+is four builders and not a nest of them, and so a consumer reads the state it
+needs instead of re-deriving the nest.  Each is the state one block leaves: the
+gate's environment at `if.then241`, the mantissa's at `if.then253`, the
+conversion's at the arm's block, and the arm's at the merge.
+
+`ten` is the `NUMF_EL1_P10` row the mantissa reads, `pv` the `NUMF_EL1_POW10`
+row the arm reads, and `sign` the sign the merge's select reads from the base
+environment. -/
+
+/-- The state `if.end230` leaves. -/
+def t1AtMant (env : Env) (s : State) (exp10 idig ip fr fdig : BitVec 64) : State :=
+  stateAt (t1GateEnv env exp10 idig ip fr fdig)
+    { s with pc := "if.then241", pre := some "if.end230" }
+
+/-- The mantissa's environment: the gate's, with `if.then241`'s cells. -/
+def t1AtMantEnv (env : Env) (exp10 idig ip fr fdig : BitVec 64) (p10 : Nat)
+    (ten : BitVec 64) : Env :=
+  t1MantEnv (t1GateEnv env exp10 idig ip fr fdig) p10 fdig ip fr (fdig + idig)
+    (exp10 - fdig) ten
+
+/-- The state `if.then241` leaves. -/
+def t1AtConv (env : Env) (s : State) (exp10 idig ip fr fdig : BitVec 64)
+    (p10 : Nat) (ten : BitVec 64) : State :=
+  stateAt (t1AtMantEnv env exp10 idig ip fr fdig p10 ten)
+    { s with pc := "if.then253", pre := some "if.then241" }
+
+/-- The conversion arm's environment: the mantissa's word converted and the
+scale's sign bit. -/
+def t1ArmConv (env : Env) (exp10 idig ip fr fdig : BitVec 64) (p10 : Nat)
+    (ten : BitVec 64) : Env :=
+  t1ConvEnv (t1AtMantEnv env exp10 idig ip fr fdig p10 ten) (exp10 - fdig)
+    (ten * ip + fr)
+
+/-- The state `if.then253` leaves, taking the product arm. -/
+def t1AtMul (env : Env) (s : State) (exp10 idig ip fr fdig : BitVec 64)
+    (p10 : Nat) (ten : BitVec 64) : State :=
+  stateAt (t1ArmConv env exp10 idig ip fr fdig p10 ten)
+    { s with pc := "cond.true", pre := some "if.then253" }
+
+/-- The state `if.then253` leaves, taking the quotient arm. -/
+def t1AtDiv (env : Env) (s : State) (exp10 idig ip fr fdig : BitVec 64)
+    (p10 : Nat) (ten : BitVec 64) : State :=
+  stateAt (t1ArmConv env exp10 idig ip fr fdig p10 ten)
+    { s with pc := "cond.false", pre := some "if.then253" }
+
+/-- The mantissa word the arm converts: `%30 * %ip + %fr`. -/
+def t1MantWord (ten ip fr : BitVec 64) : BitVec 64 := ten * ip + fr
+
+/-- The product arm's sign-selected value: `%cond266` from `%mul258`. -/
+def t1SelMul (pv conv : BitVec 64) (sign : BitVec 1) : BitVec 64 :=
+  if sign = 1 then fmulBits pv conv else fnegBits (fmulBits pv conv)
+
+/-- The quotient arm's sign-selected value: `%cond266` from `%div`. -/
+def t1SelDiv (conv pv : BitVec 64) (sign : BitVec 1) : BitVec 64 :=
+  if sign = 1 then fdivBits conv pv else fnegBits (fdivBits conv pv)
+
+/-- The state `cond.true` leaves: the product's environment at the merge. -/
+def t1AtMergeMul (env : Env) (s : State) (exp10 idig ip fr fdig : BitVec 64)
+    (p10 pd : Nat) (ten pv : BitVec 64) : State :=
+  stateAt (t1MulEnv (t1ArmConv env exp10 idig ip fr fdig p10 ten)
+      pd (exp10 - fdig) pv (uitofpBits (t1MantWord ten ip fr).toNat))
+    { s with pc := "cleanup282.thread", pre := some "cond.true" }
+
+/-- The state `cond.false` leaves: the quotient's environment at the merge. -/
+def t1AtMergeDiv (env : Env) (s : State) (exp10 idig ip fr fdig : BitVec 64)
+    (p10 pd : Nat) (ten pv : BitVec 64) : State :=
+  stateAt (t1DivEnv (t1ArmConv env exp10 idig ip fr fdig p10 ten)
+      pd (exp10 - fdig) pv (uitofpBits (t1MantWord ten ip fr).toNat))
+    { s with pc := "cleanup282.thread", pre := some "cond.false" }
+
+/-- The state the product arm leaves: the merge's environment at `cleanup300`,
+with the selected value's eight bytes written at `%out`. -/
+def t1AtStoredMul (env : Env) (s : State) (exp10 idig ip fr fdig : BitVec 64)
+    (p10 pd : Nat) (ten pv : BitVec 64) (sign : BitVec 1) (out : Nat) : State :=
+  stateAt (t1StoreEnv (t1MulEnv (t1ArmConv env exp10 idig ip fr fdig p10 ten)
+      pd (exp10 - fdig) pv (uitofpBits (t1MantWord ten ip fr).toNat))
+      (fmulBits pv (uitofpBits (t1MantWord ten ip fr).toNat)) sign)
+    { s with
+        mem := writeBytes s.mem out
+          (natToBytes (t1SelMul pv (uitofpBits (t1MantWord ten ip fr).toNat) sign).toNat 8),
+        pc := "cleanup300", pre := some "cleanup282.thread" }
+
+/-- The state the quotient arm leaves. -/
+def t1AtStoredDiv (env : Env) (s : State) (exp10 idig ip fr fdig : BitVec 64)
+    (p10 pd : Nat) (ten pv : BitVec 64) (sign : BitVec 1) (out : Nat) : State :=
+  stateAt (t1StoreEnv (t1DivEnv (t1ArmConv env exp10 idig ip fr fdig p10 ten)
+      pd (exp10 - fdig) pv (uitofpBits (t1MantWord ten ip fr).toNat))
+      (fdivBits (uitofpBits (t1MantWord ten ip fr).toNat) pv) sign)
+    { s with
+        mem := writeBytes s.mem out
+          (natToBytes (t1SelDiv (uitofpBits (t1MantWord ten ip fr).toNat) pv sign).toNat 8),
+        pc := "cleanup300", pre := some "cleanup282.thread" }
+
+/-- **The product arm's chain.**  Five control steps from the merge block to the
+store's output, with the gate bits one and the two table rows staged. -/
+theorem t1_store_chain_mul {calls : Calls} {env : Env} {s : State}
+    {exp10 idig ip fr fdig : BitVec 64} {p10 pd : Nat} {ten pv : BitVec 64}
+    {sign : BitVec 1} {out : Nat}
+    (hpc : s.pc = "if.end230") (hpre : s.pre = some "if.end226")
+    (he : lookupName env "%exp10.4" = some (.int 64 exp10))
+    (hi : lookupName env "%idig.4" = some (.int 64 idig))
+    (hip : lookupName env "%ip.5" = some (.int 64 ip))
+    (hfr : lookupName env "%fr.5" = some (.int 64 fr))
+    (hfd : lookupName env "%fdig.4" = some (.int 64 fdig))
+    (hg304 : evalICmp .ult ((exp10 - fdig) + (45#64)) (91#64) = 1)
+    (hg233 : evalICmp .ult (fdig + idig) (20#64) = 1)
+    (hp10 : lookupName env "@NUMF_EL1_P10" = some (.ptr p10))
+    (hpwt : lookupName env "@NUMF_EL1_POW10" = some (.ptr pd))
+    (hsig : lookupName env "%tobool274.not" = some (.int 1 sign))
+    (hout : lookupName env "%out" = some (.ptr out))
+    (hposfd : (fdig.signExtend 64).toNat < 2 ^ 63)
+    (hpossu : ((exp10 - fdig).signExtend 64).toNat < 2 ^ 63)
+    (hrow10 : readBytes s.mem (p10 + (fdig.signExtend 64).toNat * 8) 8
+      = some (natToBytes ten.toNat 8))
+    (hrowP : readBytes s.mem (pd + ((exp10 - fdig).signExtend 64).toNat * 8) 8
+      = some (natToBytes pv.toNat 8))
+    (hb306 : (if evalICmp .ult (fdig + idig) (16#64) = 1 then
+        evalICmp .ult ((exp10 - fdig) + (22#64)) (45#64) else 0) = 1)
+    (hcmp254 : evalICmp .sgt (exp10 - fdig) 0xffffffffffffffff#64 = 1) :
+    ∀ k, runFuel calls (5 + k) numFastBody (stateAt env s) =
+      runFuel calls k numFastBody
+        (t1AtStoredMul env s exp10 idig ip fr fdig p10 pd ten pv sign out) := by
+  have h1s : step calls numFastBody (stateAt env s) =
+      .jump (t1AtMant env s exp10 idig ip fr fdig) :=
+    t1_ifEnd230_step calls env s hpc hpre he hi hip hfr hfd ⟨hg304, hg233⟩
+  have h2s : step calls numFastBody (t1AtMant env s exp10 idig ip fr fdig) =
+      .jump (t1AtConv env s exp10 idig ip fr fdig p10 ten) := by
+    refine t1_ifThen241_step calls (t1GateEnv env exp10 idig ip fr fdig)
+      { s with pc := "if.then241", pre := some "if.end230" } rfl ?_ ?_ ?_ ?_ ?_ ?_ hposfd ?_ hb306
+    · simp only [t1GateEnv]; block_lk
+    · simp only [t1GateEnv]; block_lk
+    · simp only [t1GateEnv]; block_lk
+    · simp only [t1GateEnv]; block_lk
+    · simp only [t1GateEnv]; block_lk
+    · simp only [t1GateEnv]; block_lk
+    · exact hrow10
+  have h3s : step calls numFastBody (t1AtConv env s exp10 idig ip fr fdig p10 ten) =
+      .jump (t1AtMul env s exp10 idig ip fr fdig p10 ten) := by
+    refine t1_ifThen253_step_true calls (t1AtMantEnv env exp10 idig ip fr fdig p10 ten)
+      { s with pc := "if.then253", pre := some "if.then241" } rfl ?_ ?_ hcmp254
+    · simp only [t1AtMantEnv, t1MantEnv]; block_lk
+    · simp only [t1AtMantEnv, t1MantEnv]; block_lk
+  have h4s : step calls numFastBody (t1AtMul env s exp10 idig ip fr fdig p10 ten) =
+      .jump (t1AtMergeMul env s exp10 idig ip fr fdig p10 pd ten pv) := by
+    refine t1_cond_true_step calls (t1ArmConv env exp10 idig ip fr fdig p10 ten)
+      { s with pc := "cond.true", pre := some "if.then253" } rfl ?_ ?_ ?_ hpossu ?_
+    · simp only [t1ArmConv, t1ConvEnv, t1AtMantEnv, t1MantEnv, t1GateEnv]; block_lk
+    · simp only [t1ArmConv, t1ConvEnv, t1AtMantEnv, t1MantEnv, t1GateEnv]; block_lk
+    · simp only [t1ArmConv, t1ConvEnv, t1MantWord]; block_lk
+    · exact hrowP
+  have h5s : step calls numFastBody (t1AtMergeMul env s exp10 idig ip fr fdig p10 pd ten pv) =
+      .jump (t1AtStoredMul env s exp10 idig ip fr fdig p10 pd ten pv sign out) := by
+    refine t1_cleanup282_thread_step calls
+      (t1MulEnv (t1ArmConv env exp10 idig ip fr fdig p10 ten) pd (exp10 - fdig) pv
+        (uitofpBits (t1MantWord ten ip fr).toNat))
+      { s with pc := "cleanup282.thread", pre := some "cond.true" } rfl rfl ?_ ?_ ?_
+    · simp only [t1MulEnv]; block_lk
+    · simp only [t1MulEnv, t1ArmConv, t1ConvEnv, t1AtMantEnv, t1MantEnv, t1GateEnv]; block_lk
+    · simp only [t1MulEnv, t1ArmConv, t1ConvEnv, t1AtMantEnv, t1MantEnv, t1GateEnv]; block_lk
+  intro k
+  rw [show 5 + k = 1 + (1 + (1 + (1 + (1 + k)))) from by omega,
+    runFuel_jump_prefix h1s, runFuel_jump_prefix h2s, runFuel_jump_prefix h3s,
+    runFuel_jump_prefix h4s, runFuel_jump_prefix h5s]
+
+/-- **The quotient arm's chain.**  The `eff < 0` mirror, at `cond.false`. -/
+theorem t1_store_chain_div {calls : Calls} {env : Env} {s : State}
+    {exp10 idig ip fr fdig : BitVec 64} {p10 pd : Nat} {ten pv : BitVec 64}
+    {sign : BitVec 1} {out : Nat}
+    (hpc : s.pc = "if.end230") (hpre : s.pre = some "if.end226")
+    (he : lookupName env "%exp10.4" = some (.int 64 exp10))
+    (hi : lookupName env "%idig.4" = some (.int 64 idig))
+    (hip : lookupName env "%ip.5" = some (.int 64 ip))
+    (hfr : lookupName env "%fr.5" = some (.int 64 fr))
+    (hfd : lookupName env "%fdig.4" = some (.int 64 fdig))
+    (hg304 : evalICmp .ult ((exp10 - fdig) + (45#64)) (91#64) = 1)
+    (hg233 : evalICmp .ult (fdig + idig) (20#64) = 1)
+    (hp10 : lookupName env "@NUMF_EL1_P10" = some (.ptr p10))
+    (hpwt : lookupName env "@NUMF_EL1_POW10" = some (.ptr pd))
+    (hsig : lookupName env "%tobool274.not" = some (.int 1 sign))
+    (hout : lookupName env "%out" = some (.ptr out))
+    (hposfd : (fdig.signExtend 64).toNat < 2 ^ 63)
+    (hposneg : (((0x0000000000000000#64 : BitVec 64) - (exp10 - fdig)).signExtend 64).toNat
+      < 2 ^ 63)
+    (hrow10 : readBytes s.mem (p10 + (fdig.signExtend 64).toNat * 8) 8
+      = some (natToBytes ten.toNat 8))
+    (hrowP : readBytes s.mem
+        (pd + (((0x0000000000000000#64 : BitVec 64) - (exp10 - fdig)).signExtend 64).toNat * 8) 8
+      = some (natToBytes pv.toNat 8))
+    (hb306 : (if evalICmp .ult (fdig + idig) (16#64) = 1 then
+        evalICmp .ult ((exp10 - fdig) + (22#64)) (45#64) else 0) = 1)
+    (hcmp254 : evalICmp .sgt (exp10 - fdig) 0xffffffffffffffff#64 = 0) :
+    ∀ k, runFuel calls (5 + k) numFastBody (stateAt env s) =
+      runFuel calls k numFastBody
+        (t1AtStoredDiv env s exp10 idig ip fr fdig p10 pd ten pv sign out) := by
+  have h1s : step calls numFastBody (stateAt env s) =
+      .jump (t1AtMant env s exp10 idig ip fr fdig) :=
+    t1_ifEnd230_step calls env s hpc hpre he hi hip hfr hfd ⟨hg304, hg233⟩
+  have h2s : step calls numFastBody (t1AtMant env s exp10 idig ip fr fdig) =
+      .jump (t1AtConv env s exp10 idig ip fr fdig p10 ten) := by
+    refine t1_ifThen241_step calls (t1GateEnv env exp10 idig ip fr fdig)
+      { s with pc := "if.then241", pre := some "if.end230" } rfl ?_ ?_ ?_ ?_ ?_ ?_ hposfd ?_ hb306
+    · simp only [t1GateEnv]; block_lk
+    · simp only [t1GateEnv]; block_lk
+    · simp only [t1GateEnv]; block_lk
+    · simp only [t1GateEnv]; block_lk
+    · simp only [t1GateEnv]; block_lk
+    · simp only [t1GateEnv]; block_lk
+    · exact hrow10
+  have h3s : step calls numFastBody (t1AtConv env s exp10 idig ip fr fdig p10 ten) =
+      .jump (t1AtDiv env s exp10 idig ip fr fdig p10 ten) := by
+    refine t1_ifThen253_step_false calls (t1AtMantEnv env exp10 idig ip fr fdig p10 ten)
+      { s with pc := "if.then253", pre := some "if.then241" } rfl ?_ ?_ hcmp254
+    · simp only [t1AtMantEnv, t1MantEnv]; block_lk
+    · simp only [t1AtMantEnv, t1MantEnv]; block_lk
+  have h4s : step calls numFastBody (t1AtDiv env s exp10 idig ip fr fdig p10 ten) =
+      .jump (t1AtMergeDiv env s exp10 idig ip fr fdig p10 pd ten pv) := by
+    refine t1_cond_false_step calls (t1ArmConv env exp10 idig ip fr fdig p10 ten)
+      { s with pc := "cond.false", pre := some "if.then253" } rfl ?_ ?_ ?_ hposneg ?_
+    · simp only [t1ArmConv, t1ConvEnv, t1AtMantEnv, t1MantEnv, t1GateEnv]; block_lk
+    · simp only [t1ArmConv, t1ConvEnv, t1AtMantEnv, t1MantEnv, t1GateEnv]; block_lk
+    · simp only [t1ArmConv, t1ConvEnv, t1MantWord]; block_lk
+    · exact hrowP
+  have h5s : step calls numFastBody (t1AtMergeDiv env s exp10 idig ip fr fdig p10 pd ten pv) =
+      .jump (t1AtStoredDiv env s exp10 idig ip fr fdig p10 pd ten pv sign out) := by
+    refine t1_cleanup282_thread_step_false calls
+      (t1DivEnv (t1ArmConv env exp10 idig ip fr fdig p10 ten) pd (exp10 - fdig) pv
+        (uitofpBits (t1MantWord ten ip fr).toNat))
+      { s with pc := "cleanup282.thread", pre := some "cond.false" } rfl rfl ?_ ?_ ?_
+    · simp only [t1DivEnv]; block_lk
+    · simp only [t1DivEnv, t1ArmConv, t1ConvEnv, t1AtMantEnv, t1MantEnv, t1GateEnv]; block_lk
+    · simp only [t1DivEnv, t1ArmConv, t1ConvEnv, t1AtMantEnv, t1MantEnv, t1GateEnv]; block_lk
+  intro k
+  rw [show 5 + k = 1 + (1 + (1 + (1 + (1 + k)))) from by omega,
+    runFuel_jump_prefix h1s, runFuel_jump_prefix h2s, runFuel_jump_prefix h3s,
+    runFuel_jump_prefix h4s, runFuel_jump_prefix h5s]
+
+/-! ### The store at the lexeme
+
+The chains above are at the body's registers.  This section reads those
+registers as the model's: `t1_add244_eq_mantissa` makes `%add244` the mantissa,
+`t1_orCond304_bits`/`t1_orCond306_bits` make both range gates one at `Tier1`,
+the two table rows are the staged `NUMF_EL1_P10`/`NUMF_EL1_POW10`, and the sign
+select's tie is `(sign = 1) ↔ ¬d.neg`.  Under those, the five steps write
+`strtodSpec`'s eight bytes at `%out`.
+
+The mantissa's two cases are the model's, not a proof device: `0` is a tier-1
+lexeme (`"0"`, `"0.0e5"`), and the expression is `+0` on either arm, so the zero
+case is `fmulBits_fin_zero`/`fdivBits_zero_fin` and the positive one is
+`t1_fmul_value`/`t1_fdiv_value`. -/
+
+/-- `BitVec.ofNat`'s truncation is inert below the modulus. -/
+theorem ofNat64_toNat_lt {v : Nat} (h : v < 2 ^ 64) : (BitVec.ofNat 64 v).toNat = v := by
+  simp only [BitVec.toNat_ofNat, Nat.mod_eq_of_lt h]
+
+/-- A nonnegative `Int` below `2 ^ 63` reads back as its own `Nat` in `BitVec`
+form. -/
+theorem ofInt64_toNat_of_nonneg {e : Int} (h0 : 0 ≤ e) (hlt : e < 2 ^ 63) :
+    (BitVec.ofInt 64 e).toNat = e.toNat := by
+  rw [BitVec.toNat_ofInt,
+    Int.emod_eq_of_lt h0 (by
+      have h64 : (2 : Int) ^ 63 < (2 : Int) ^ 64 := by decide
+      omega)]
+
+/-- The index `%fdig` sign-extends to itself, and so does a nonnegative scale. -/
+theorem sExt_ofInt64_of_nonneg {e : Int} (h0 : 0 ≤ e) (hlt : e < 2 ^ 63) :
+    ((BitVec.ofInt 64 e).signExtend 64).toNat = e.toNat := by
+  have hb : e.toNat < 2 ^ 63 := by
+    have h : (e.toNat : Int) = e := Int.toNat_of_nonneg h0
+    omega
+  rw [show (BitVec.ofInt 64 e : BitVec 64) = BitVec.ofNat 64 e.toNat from
+    BitVec.eq_of_toNat_eq (by
+      rw [ofInt64_toNat_of_nonneg h0 hlt, ofNat64_toNat_lt (by omega)])]
+  exact sExt_ofNat64 hb
+
+/-- A negative scale's negation sign-extends to the scale's magnitude. -/
+theorem sExt_ofInt64_neg {e : Int} (he : e < 0) (hlo : -(2 ^ 63 : Int) < e) :
+    (((0x0000000000000000#64 : BitVec 64) - BitVec.ofInt 64 e).signExtend 64).toNat
+      = (-e).toNat := by
+  have hneg : ((0x0000000000000000#64 : BitVec 64) - BitVec.ofInt 64 e)
+      = BitVec.ofInt 64 (-e) := by bv_omega
+  rw [hneg]
+  exact sExt_ofInt64_of_nonneg (by omega) (by omega)
+
+/-- The signed compare against `-1` is the scale's sign bit. -/
+theorem evalICmp_sgt_negone (e : Int) (hlo : -(2 ^ 63 : Int) ≤ e) (hhi : e < 2 ^ 63) :
+    evalICmp .sgt (BitVec.ofInt 64 e) (0xffffffffffffffff#64)
+      = (if 0 ≤ e then 1 else 0) := by
+  have hneg : ((0xffffffffffffffff#64 : BitVec 64)).toInt = -1 := by decide
+  have hiff : ((0xffffffffffffffff#64 : BitVec 64).slt (BitVec.ofInt 64 e)) = true ↔
+      (-1 : Int) < e := by
+    rw [BitVec.slt_iff_toInt_lt, hneg, BitVec.toInt_ofInt_eq_self (by decide) hlo hhi]
+  rw [show evalICmp .sgt (BitVec.ofInt 64 e) (0xffffffffffffffff#64)
+      = BitVec.ofBool ((0xffffffffffffffff#64 : BitVec 64).slt
+          (BitVec.ofInt 64 e)) from rfl]
+  by_cases h : 0 ≤ e
+  · rw [show ((0xffffffffffffffff#64 : BitVec 64).slt (BitVec.ofInt 64 e)) = true from
+      hiff.mpr (by omega), if_pos h]
+    rfl
+  · have hf : ((0xffffffffffffffff#64 : BitVec 64).slt (BitVec.ofInt 64 e)) = false := by
+      cases hs : ((0xffffffffffffffff#64 : BitVec 64).slt (BitVec.ofInt 64 e))
+      · rfl
+      · exact absurd (hiff.mp hs) (by omega)
+    rw [hf, if_neg h]
+    rfl
+
+/-- `+0`'s fields: the sign is clear, the exponent is zero and the significand is
+zero. -/
+theorem ofBits_zero_bits : F64.ofBits (0 : BitVec 64) = F64.mk false 0 0 := by decide
+
+/-- The zero mantissa's product with a positive table entry is `+0`. -/
+theorem fmulBits_fin_zero {c : Code} (hc : c.IsMag) :
+    fmulBits (packMag (.fin c) false) 0 = packMag (.fin ⟨0, 0⟩) false := by
+  have hz : (F64.mk false 0 0 : F64).isNaN = false := by decide
+  have hzi : (F64.mk false 0 0 : F64).isInf = false := by decide
+  have hzz : (F64.mk false 0 0 : F64).isZero = true := by decide
+  have hzt : (F64.mk false 0 0 : F64).magTicks = 0 := by decide
+  have hzn : (F64.mk false 0 0 : F64).neg = false := rfl
+  simp only [fmulBits, ofBits_zero_bits, hz, hzi, hzz, hzt, hzn,
+    isNaN_ofBits_packMag_false hc, isInf_ofBits_packMag_false hc,
+    neg_ofBits_packMag_false hc,
+    Bool.not_false, Bool.false_or, Bool.false_and, Bool.and_false, Bool.true_and,
+    Bool.and_true, Bool.false_bne, Bool.false_eq_true, reduceIte,
+    Nat.mul_zero, roundMag_zero (by decide : 0 < 2 ^ 1074)]
+
+/-- The zero mantissa's quotient by a positive table entry is `+0`. -/
+theorem fdivBits_zero_fin {c : Code} (hc : c.IsMag) (hpos : 0 < c.ticks) :
+    fdivBits 0 (packMag (.fin c) false) = packMag (.fin ⟨0, 0⟩) false := by
+  have hz : (F64.mk false 0 0 : F64).isNaN = false := by decide
+  have hzi : (F64.mk false 0 0 : F64).isInf = false := by decide
+  have hzz : (F64.mk false 0 0 : F64).isZero = true := by decide
+  have hzt : (F64.mk false 0 0 : F64).magTicks = 0 := by decide
+  have hzn : (F64.mk false 0 0 : F64).neg = false := rfl
+  simp only [fdivBits, ofBits_zero_bits, hz, hzi, hzz, hzt, hzn,
+    isNaN_ofBits_packMag_false hc, isInf_ofBits_packMag_false hc,
+    isZero_ofBits_packMag_false hc hpos, magTicks_ofBits_packMag_false hc,
+    neg_ofBits_packMag_false hc,
+    Bool.not_false, Bool.false_or, Bool.false_and, Bool.and_false, Bool.true_and,
+    Bool.and_true, Bool.false_bne, Bool.false_eq_true, reduceIte,
+    Nat.mul_zero, Nat.zero_mul, roundMag_zero hpos]
+
+/-- **The product's bit value at any mantissa.**  At a nonnegative scale the
+product is the one rounding of the exact value; at a zero mantissa both sides are
+`+0`. -/
+theorem t1_fmul_value_any {d : Decimal} {mant k : Nat}
+    (hwf : d.wellFormed) (h1 : Tier1 d)
+    (hmant : mant = d.mantissa) (hk : k = (eff d).toNat) (heff : 0 ≤ eff d) :
+    fmulBits (uitofpBits (10 ^ k)) (uitofpBits mant)
+      = packMag (roundMag (opP d) (opD d)) false := by
+  by_cases hm1 : 0 < mant
+  · exact t1_fmul_value hwf h1 hmant hk heff hm1
+  · have hm0 : mant = 0 := by omega
+    have hd0 : d.mantissa = 0 := by omega
+    have hk22 : k ≤ 22 := by rw [hk]; exact toNat_le_of_le heff h1.2.2
+    have hP : opP d = 0 := by
+      unfold opP
+      rw [if_pos heff, hd0]
+      simp only [Nat.zero_mul]
+    have hD : 0 < opD d := by
+      unfold opD
+      split <;> first | exact Nat.one_pos | exact Nat.pow_pos (by decide : 0 < 10)
+    obtain ⟨c₁, h₁, h₁M, -⟩ := pow10_uitofp_spec hk22
+    rw [hm0, uitofpBits_zero, h₁, fmulBits_fin_zero h₁M, hP, roundMag_zero hD]
+
+/-- **The quotient's bit value at any mantissa.**  The negative-scale mirror. -/
+theorem t1_fdiv_value_any {d : Decimal} {mant k : Nat}
+    (hwf : d.wellFormed) (h1 : Tier1 d)
+    (hmant : mant = d.mantissa) (hk : k = (eff d).natAbs) (heff : eff d < 0) :
+    fdivBits (uitofpBits mant) (uitofpBits (10 ^ k))
+      = packMag (roundMag (opP d) (opD d)) false := by
+  by_cases hm1 : 0 < mant
+  · exact t1_fdiv_value hwf h1 hmant hk heff hm1
+  · have hm0 : mant = 0 := by omega
+    have hd0 : d.mantissa = 0 := by omega
+    have hk22 : k ≤ 22 := by
+      rw [hk]; exact natAbs_le_of_between h1.2.1 h1.2.2
+    have hP : opP d = 0 := by
+      unfold opP
+      rw [if_neg (by omega), hd0]
+      simp only [Nat.zero_mul]
+    have hD : 0 < opD d := by
+      unfold opD
+      split <;> first | exact Nat.one_pos | exact Nat.pow_pos (by decide : 0 < 10)
+    obtain ⟨c₁, h₁, h₁M, ht₁⟩ := pow10_uitofp_spec hk22
+    have hpos : 0 < c₁.ticks := by
+      rw [ht₁]
+      exact Nat.mul_pos (Nat.pow_pos (by decide : 0 < 10)) (two_pow_pos 1074)
+    rw [hm0, uitofpBits_zero, h₁, fdivBits_zero_fin h₁M hpos, hP, roundMag_zero hD]
+
+/-- The eight bytes of a finite double are below `2 ^ 64`. -/
+theorem toBits_lt_of_isCode {f : Binary64} (h : f.IsCode) : f.toBits < 2 ^ 64 := by
+  have h52 : (2 : Nat) ^ 53 = 2 * 2 ^ 52 := by
+    rw [show (53 : Nat) = 52 + 1 from rfl, Nat.pow_add]; rfl
+  have h64 : (2 : Nat) ^ 64 = 2 * 2 ^ 63 := by
+    rw [show (64 : Nat) = 63 + 1 from rfl, Nat.pow_add]; rfl
+  have h2047 : (2047 : Nat) * 2 ^ 52 ≤ 2 ^ 63 := by decide
+  cases f with
+  | inf neg =>
+      simp only [Binary64.toBits]
+      have hinf : (0x7FF0000000000000 : Nat) = 2047 * 2 ^ 52 := by decide
+      rw [hinf]
+      split <;> omega
+  | fin neg E m =>
+      simp only [Binary64.toBits]
+      rcases h with ⟨hE, hm⟩ | ⟨hE1, hE2, hm1, hm2⟩
+      · subst hE
+        rw [if_pos rfl]
+        split <;> omega
+      · have hEne : ¬ E = 0 := by omega
+        rw [if_neg hEne]
+        split <;> omega
+
+/-- `strtodSpec`'s eight bytes are below `2 ^ 64`. -/
+theorem strtodSpec_toBits_lt (d : Decimal) : (strtodSpec d).toBits < 2 ^ 64 :=
+  toBits_lt_of_isCode (strtodSpec_isCode d)
+
+/-- The product arm's stored memory: the selected value's eight bytes at `%out`. -/
+theorem t1AtStoredMul_mem (env : Env) (s : State) (exp10 idig ip fr fdig : BitVec 64)
+    (p10 pd : Nat) (ten pv : BitVec 64) (sign : BitVec 1) (out : Nat) :
+    (t1AtStoredMul env s exp10 idig ip fr fdig p10 pd ten pv sign out).mem
+      = writeBytes s.mem out
+          (natToBytes (t1SelMul pv (uitofpBits (t1MantWord ten ip fr).toNat) sign).toNat 8) :=
+  rfl
+
+/-- The quotient arm's stored memory. -/
+theorem t1AtStoredDiv_mem (env : Env) (s : State) (exp10 idig ip fr fdig : BitVec 64)
+    (p10 pd : Nat) (ten pv : BitVec 64) (sign : BitVec 1) (out : Nat) :
+    (t1AtStoredDiv env s exp10 idig ip fr fdig p10 pd ten pv sign out).mem
+      = writeBytes s.mem out
+          (natToBytes (t1SelDiv (uitofpBits (t1MantWord ten ip fr).toNat) pv sign).toNat 8) :=
+  rfl
+
+/-- **The store at the merge block.**  At `if.end230`'s own environment, with the
+five counters the lexeme's, the sign's tie and the two table rows staged, five
+control steps reach `cleanup300` with `strtodSpec`'s eight bytes written at
+`%out`. -/
+theorem t1_store_run {calls : Calls} {env : Env} {s : State} {d : Decimal} {fs : Bytes}
+    {sign : BitVec 1} {out : Nat} {p10 pd : Nat} {ten : BitVec 64} {c : Code}
+    (hpc : s.pc = "if.end230") (hpre : s.pre = some "if.end226")
+    (hE : lookupName env "%exp10.4" = some (.int 64 (BitVec.ofInt 64 (expVal d))))
+    (hI : lookupName env "%idig.4" = some (.int 64 (BitVec.ofNat 64 (intDigits d))))
+    (hip : lookupName env "%ip.5" = some (.int 64 (BitVec.ofNat 64 (Decimal.digitsNat d.ip))))
+    (hfr : lookupName env "%fr.5" = some (.int 64 (BitVec.ofNat 64 (Decimal.digitsNat fs))))
+    (hfd : lookupName env "%fdig.4" = some (.int 64 (BitVec.ofNat 64 (fracDigits d))))
+    (hfs : d.fr = some fs)
+    (hsig : lookupName env "%tobool274.not" = some (.int 1 sign))
+    (hout : lookupName env "%out" = some (.ptr out))
+    (hp10 : lookupName env "@NUMF_EL1_P10" = some (.ptr p10))
+    (hpwt : lookupName env "@NUMF_EL1_POW10" = some (.ptr pd))
+    (hten : ten = BitVec.ofNat 64 (10 ^ fs.length))
+    (hrow10 : readBytes s.mem (p10 + fracDigits d * 8) 8 = some (natToBytes ten.toNat 8))
+    (hrowP : ∀ j, j ≤ 22 → readBytes s.mem (pd + j * 8) 8
+      = some (natToBytes (uitofpBits (10 ^ j)).toNat 8))
+    (hwf : d.wellFormed) (h1 : Tier1 d)
+    (hsign : (sign = 1) ↔ d.neg = false)
+    (hrc : roundMag (opP d) (opD d) = .fin c) (hcM : c.IsMag) :
+    ∃ e : State, e.pc = "cleanup300" ∧
+      e.mem = writeBytes s.mem out (wordBytes 8 (strtodSpec d).toBits) ∧
+      ∀ k, runFuel calls (5 + k) numFastBody (stateAt env s)
+        = runFuel calls k numFastBody e := by
+  obtain ⟨hadd, hsub⟩ := numFast_ifEnd230_counts (d := d)
+    (exp10 := BitVec.ofInt 64 (expVal d)) (fdig := BitVec.ofNat 64 (fracDigits d))
+    (idig := BitVec.ofNat 64 (intDigits d)) rfl rfl rfl
+  have hnd : digitCount d ≤ 19 := by have := h1.1; omega
+  have hrange : -45 ≤ eff d ∧ eff d ≤ 45 := by
+    have := h1.2; exact ⟨by omega, by omega⟩
+  have hneff : numEff d = eff d := numEff_eq_eff_of_specRange hnd hrange
+  have hsubE : BitVec.ofInt 64 (expVal d) - BitVec.ofNat 64 (fracDigits d)
+      = BitVec.ofInt 64 (eff d) := by rw [hsub, hneff]
+  -- the mantissa word is the lexeme's
+  have hb := mantissa_lt hwf h1.1
+  have hfslen : fs.length ≤ 15 := by
+    have h := h1.1
+    rw [digitCount, intDigits, fracDigits, hfs, Option.getD_some] at h
+    omega
+  have hiplen : d.ip.length ≤ 15 := by
+    have h := h1.1
+    rw [digitCount, intDigits, fracDigits, hfs, Option.getD_some] at h
+    omega
+  have h10 : 10 ^ fs.length < 2 ^ 64 := by
+    have hle : 10 ^ fs.length ≤ 10 ^ 15 :=
+      Nat.pow_le_pow_right (by decide) hfslen
+    have h15 : (10 : Nat) ^ 15 < 2 ^ 64 := by decide
+    omega
+  have hipb : Decimal.digitsNat d.ip < 2 ^ 64 := by
+    have hle : 10 ^ d.ip.length ≤ 10 ^ 15 :=
+      Nat.pow_le_pow_right (by decide) hiplen
+    have hlt := digitsNat_lt (intPart_digit hwf.1)
+    have h15 : (10 : Nat) ^ 15 < 2 ^ 64 := by decide
+    omega
+  have hfsb : Decimal.digitsNat fs < 2 ^ 64 := by
+    have hle : 10 ^ fs.length ≤ 10 ^ 15 :=
+      Nat.pow_le_pow_right (by decide) hfslen
+    have hlt := digitsNat_lt (digits_digit (hwf.2.1 fs hfs))
+    have h15 : (10 : Nat) ^ 15 < 2 ^ 64 := by decide
+    omega
+  have hmword : ten * (BitVec.ofNat 64 (Decimal.digitsNat d.ip))
+      + BitVec.ofNat 64 (Decimal.digitsNat fs) = BitVec.ofNat 64 d.mantissa :=
+    t1_add244_eq_mantissa hfs rfl rfl hten hipb hfsb h10 (by omega)
+  have hrc' : roundMag d.ticks.1 d.ticks.2 = .fin c := by
+    rw [← opP_eq_ticks, ← opD_eq_ticks]; exact hrc
+  have hsel := t1_store_bits hcM hrc' hsign
+  have hg304 := t1_orCond304_bits (d := d) (exp10 := BitVec.ofInt 64 (expVal d))
+    (fdig := BitVec.ofNat 64 (fracDigits d)) (idig := BitVec.ofNat 64 (intDigits d))
+    rfl rfl rfl h1
+  have hg6 := t1_orCond306_bits (d := d) (add := BitVec.ofNat 64 (digitCount d))
+    (sub := BitVec.ofInt 64 (eff d)) rfl rfl h1
+  have hb306 : (if evalICmp .ult
+        ((BitVec.ofNat 64 (fracDigits d)) + (BitVec.ofNat 64 (intDigits d))) (16#64) = 1 then
+      evalICmp .ult ((BitVec.ofInt 64 (expVal d) - BitVec.ofNat 64 (fracDigits d))
+        + (22#64)) (45#64) else 0) = 1 := by
+    rw [hadd, hsubE]
+    exact t1_gate306_one hg6.1 hg6.2
+  have hfd15 : fracDigits d ≤ 15 := by
+    have h := h1.1
+    rw [digitCount, intDigits] at h
+    omega
+  have hrow10' : readBytes s.mem
+      (p10 + ((BitVec.ofNat 64 (fracDigits d)).signExtend 64).toNat * 8) 8
+      = some (natToBytes ten.toNat 8) := by
+    rw [sExt_ofNat64 (by omega)]
+    exact hrow10
+  have hposfd : ((BitVec.ofNat 64 (fracDigits d)).signExtend 64).toNat < 2 ^ 63 := by
+    rw [sExt_ofNat64 (by omega)]; omega
+  have hkna : (eff d).natAbs ≤ 22 := natAbs_le_of_between h1.2.1 h1.2.2
+  by_cases heff : 0 ≤ eff d
+  · -- the product arm
+    have hk22 : (eff d).toNat ≤ 22 := toNat_le_of_le heff h1.2.2
+    have hj : ((BitVec.ofInt 64 (expVal d) - BitVec.ofNat 64 (fracDigits d)).signExtend 64).toNat
+        = (eff d).toNat := by
+      rw [hsubE]
+      exact sExt_ofInt64_of_nonneg heff (by omega)
+    have hcmp : evalICmp .sgt (BitVec.ofInt 64 (expVal d) - BitVec.ofNat 64 (fracDigits d))
+        (0xffffffffffffffff#64) = 1 := by
+      rw [hsubE, evalICmp_sgt_negone (eff d) (by omega) (by omega), if_pos heff]
+    have hrowPm : readBytes s.mem
+        (pd + ((BitVec.ofInt 64 (expVal d) - BitVec.ofNat 64 (fracDigits d)).signExtend 64).toNat
+          * 8) 8
+        = some (natToBytes (uitofpBits (10 ^
+            ((BitVec.ofInt 64 (expVal d) - BitVec.ofNat 64 (fracDigits d)).signExtend 64).toNat)).toNat 8) := by
+      rw [hj]
+      exact hrowP _ hk22
+    have hpossu : ((BitVec.ofInt 64 (expVal d) - BitVec.ofNat 64 (fracDigits d)).signExtend 64).toNat
+        < 2 ^ 63 := by rw [hj]; omega
+    have hfmul : fmulBits (uitofpBits (10 ^ (eff d).toNat)) (uitofpBits d.mantissa)
+        = packMag (.fin c) false := by
+      rw [t1_fmul_value_any hwf h1 rfl rfl heff, hrc]
+    refine ⟨t1AtStoredMul env s (BitVec.ofInt 64 (expVal d)) (BitVec.ofNat 64 (intDigits d))
+      (BitVec.ofNat 64 (Decimal.digitsNat d.ip)) (BitVec.ofNat 64 (Decimal.digitsNat fs))
+      (BitVec.ofNat 64 (fracDigits d)) p10 pd ten
+      (uitofpBits (10 ^ ((BitVec.ofInt 64 (expVal d)
+        - BitVec.ofNat 64 (fracDigits d)).signExtend 64).toNat)) sign out,
+      rfl, ?_, ?_⟩
+    · rw [t1AtStoredMul_mem]
+      have hconv : uitofpBits (t1MantWord ten (BitVec.ofNat 64 (Decimal.digitsNat d.ip))
+            (BitVec.ofNat 64 (Decimal.digitsNat fs))).toNat = uitofpBits d.mantissa := by
+        simp only [t1MantWord]
+        rw [hmword, ofNat64_toNat_lt (by omega)]
+      rw [hconv]
+      simp only [t1SelMul]
+      rw [hj, hfmul, hsel, ofNat64_toNat_lt (strtodSpec_toBits_lt d)]
+      rfl
+    · exact t1_store_chain_mul (exp10 := BitVec.ofInt 64 (expVal d))
+        (idig := BitVec.ofNat 64 (intDigits d))
+        (ip := BitVec.ofNat 64 (Decimal.digitsNat d.ip))
+        (fr := BitVec.ofNat 64 (Decimal.digitsNat fs))
+        (fdig := BitVec.ofNat 64 (fracDigits d)) (ten := ten)
+        (pv := uitofpBits (10 ^ ((BitVec.ofInt 64 (expVal d)
+          - BitVec.ofNat 64 (fracDigits d)).signExtend 64).toNat))
+        (sign := sign) (out := out)
+        hpc hpre hE hI hip hfr hfd hg304.2 hg304.1 hp10 hpwt hsig hout hposfd hpossu
+        hrow10' hrowPm hb306 hcmp
+  · -- the quotient arm
+    have hlt : eff d < 0 := by omega
+    have hj : (((0x0000000000000000#64 : BitVec 64)
+          - (BitVec.ofInt 64 (expVal d) - BitVec.ofNat 64 (fracDigits d))).signExtend 64).toNat
+        = (eff d).natAbs := by
+      rw [hsubE]
+      rw [sExt_ofInt64_neg hlt (by omega)]
+      have h := Int.toNat_add_toNat_neg_eq_natAbs (eff d)
+      have hz : (eff d).toNat = 0 := by omega
+      omega
+    have hcmp : evalICmp .sgt (BitVec.ofInt 64 (expVal d) - BitVec.ofNat 64 (fracDigits d))
+        (0xffffffffffffffff#64) = 0 := by
+      rw [hsubE, evalICmp_sgt_negone (eff d) (by omega) (by omega), if_neg heff]
+    have hrowPm : readBytes s.mem
+        (pd + (((0x0000000000000000#64 : BitVec 64)
+          - (BitVec.ofInt 64 (expVal d) - BitVec.ofNat 64 (fracDigits d))).signExtend 64).toNat
+          * 8) 8
+        = some (natToBytes (uitofpBits (10 ^
+            (((0x0000000000000000#64 : BitVec 64)
+              - (BitVec.ofInt 64 (expVal d) - BitVec.ofNat 64 (fracDigits d))).signExtend 64).toNat)).toNat 8) := by
+      rw [hj]
+      exact hrowP _ hkna
+    have hposneg : (((0x0000000000000000#64 : BitVec 64)
+        - (BitVec.ofInt 64 (expVal d) - BitVec.ofNat 64 (fracDigits d))).signExtend 64).toNat
+        < 2 ^ 63 := by rw [hj]; omega
+    have hfdiv : fdivBits (uitofpBits d.mantissa) (uitofpBits (10 ^ (eff d).natAbs))
+        = packMag (.fin c) false := by
+      rw [t1_fdiv_value_any hwf h1 rfl rfl hlt, hrc]
+    refine ⟨t1AtStoredDiv env s (BitVec.ofInt 64 (expVal d)) (BitVec.ofNat 64 (intDigits d))
+      (BitVec.ofNat 64 (Decimal.digitsNat d.ip)) (BitVec.ofNat 64 (Decimal.digitsNat fs))
+      (BitVec.ofNat 64 (fracDigits d)) p10 pd ten
+      (uitofpBits (10 ^ (((0x0000000000000000#64 : BitVec 64)
+        - (BitVec.ofInt 64 (expVal d) - BitVec.ofNat 64 (fracDigits d))).signExtend 64).toNat))
+      sign out,
+      rfl, ?_, ?_⟩
+    · rw [t1AtStoredDiv_mem]
+      have hconv : uitofpBits (t1MantWord ten (BitVec.ofNat 64 (Decimal.digitsNat d.ip))
+            (BitVec.ofNat 64 (Decimal.digitsNat fs))).toNat = uitofpBits d.mantissa := by
+        simp only [t1MantWord]
+        rw [hmword, ofNat64_toNat_lt (by omega)]
+      rw [hconv]
+      simp only [t1SelDiv]
+      rw [hj, hfdiv, hsel, ofNat64_toNat_lt (strtodSpec_toBits_lt d)]
+      rfl
+    · exact t1_store_chain_div (exp10 := BitVec.ofInt 64 (expVal d))
+        (idig := BitVec.ofNat 64 (intDigits d))
+        (ip := BitVec.ofNat 64 (Decimal.digitsNat d.ip))
+        (fr := BitVec.ofNat 64 (Decimal.digitsNat fs))
+        (fdig := BitVec.ofNat 64 (fracDigits d)) (ten := ten)
+        (pv := uitofpBits (10 ^ (((0x0000000000000000#64 : BitVec 64)
+          - (BitVec.ofInt 64 (expVal d) - BitVec.ofNat 64 (fracDigits d))).signExtend 64).toNat))
+        (sign := sign) (out := out)
+        hpc hpre hE hI hip hfr hfd hg304.2 hg304.1 hp10 hpwt hsig hout hposfd hposneg
+        hrow10' hrowPm hb306 hcmp
+
 /-! ### The residual, named
 
 Link 3 is stated at `%ip` and `%fr`; the tree proves the runs' *counts* and
