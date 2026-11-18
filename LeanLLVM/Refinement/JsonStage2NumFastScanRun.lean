@@ -2087,7 +2087,7 @@ theorem intScan_end230 {env : Env} {s : State} {a n : Nat}
     (hdigits : ∀ k, NumFastStarts.negIndex b + 1 ≤ k → k < n →
       IsDigitB (bs.getD k 0) = true) :
     ∃ (e : State) (j : Nat), j ≤ 8 + (n - (NumFastStarts.negIndex b + 1) + 1) * 4 ∧
-      intRunEndWord bs a n (NumFastStarts.negIndex b + 1) 1 e ∧
+      intRunEndWord s.mem bs a n (NumFastStarts.negIndex b + 1) 1 e ∧
       ∀ k, runFuel calls (j + k) numFastBody (stateAt env s) =
         runFuel calls k numFastBody e := by
   have hn64 : n < 2 ^ 64 := by omega
@@ -2159,7 +2159,7 @@ theorem intRunExit_end230 {mem0 : Mem} {bs : List UInt8} {p n i0 d0 : Nat} {e : 
         = some (.int 64 (BitVec.ofNat 64 (d0 + (n - i0)))) ∧
       lookupName e.env "%ip.4" = some (.int 64
         (BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + (n - i0)) 19)))) := by
-  rcases he with hleft | ⟨h230, _, _, _, _, hi, hid, hip, _⟩
+  rcases he with hleft | ⟨h230, _, _, _, _, _, hi, hid, hip, _⟩
   · rw [hleft.1] at hpc; exact absurd hpc (by decide)
   · exact ⟨hi, hid, hip⟩
 

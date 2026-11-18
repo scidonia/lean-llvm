@@ -501,6 +501,83 @@ shape they accept, the block's chain is defined and its control step is a jump.
 Each proof reads the callee's outcome explicitly — accepted or declined — so the
 bit the block computes is the kernel's or the reader's own return test. -/
 
+/-! ### The site's two answers, as their own statements
+
+The block's chain at a given callee outcome, then the two outcomes the kernel
+admits.  Naming them separately is what lets a caller read the block's bit — and
+the memory the acceptance writes — off the model's decision rather than off an
+existential. -/
+
+/-- The block's chain at a callee outcome: the marker, the kernel, the decision's
+bit. -/
+theorem numFast_ifEnd268_denote_answer (epow : Int → Option EPow) {env : Env}
+    {s : State} {a b : BitVec 64} {q : Nat} {r : CallOutcome} {x : BitVec 32}
+    (ha : lookupName env "%add244" = some (.int 64 a))
+    (hb : lookupName env "%sub231" = some (.int 64 b))
+    (hd : lookupName env "%d269" = some (.ptr q))
+    (hx : r.ret = .int 32 x)
+    (hsome : stage2NumFastCalls epow "num_el_el1"
+      [.int 64 a, .int 64 b, .ptr q] s.mem s.next = some r) :
+    denoteCode (stage2NumFastCalls epow) numFastIfEnd268Instrs (stateAt env s) =
+      some (stateAt
+        (("%tobool271.not", .int 1 (evalICmp .eq x 0)) ::
+         ("%call270", .int 32 x) :: env)
+        { s with mem := r.mem, next := r.next }) := by
+  have hargs : evalOperands (stateAt env { s with mem := s.mem, next := s.next })
+      [((Ty.int 64), (Operand.reg "%add244")),
+       ((Ty.int 64), (Operand.reg "%sub231")),
+       (Ty.ptr, (Operand.reg "%d269"))]
+      = some [.int 64 a, .int 64 b, .ptr q] := by
+    simp only [evalOperands, evalOperand, stateAt, ha, hb, hd]
+  unfold numFastIfEnd268Instrs
+  rw [denoteCode_callVoid_some _ _ _ _ _ _ _
+    (evalOperands_lifetimeMark (s := s) hd) (stage2NumFastCalls_lifetime _ _ _ _) _]
+  rw [denoteCode_call_some _ _ _ _ _ _ _ _ r hargs hsome _]
+  simp only [hx]
+  rw [denoteCode_cons_of _ _ _ _ _ (step_icmp_eq_imm_w (stage2NumFastCalls epow)
+    (("%call270", .int 32 x) :: env) { s with mem := r.mem, next := r.next }
+    "%tobool271.not" "%call270" 32
+    (lookupName_cons_self "%call270" (.int 32 x) env))]
+  rw [denoteCode_nil]
+  rfl
+
+/-- The kernel's refusal: the block binds zero and the decision's bit is one, and
+the memory is the caller's. -/
+theorem numFast_ifEnd268_denote_refused (epow : Int → Option EPow) {env : Env}
+    {s : State} {a b : BitVec 64} {q : Nat}
+    (ha : lookupName env "%add244" = some (.int 64 a))
+    (hb : lookupName env "%sub231" = some (.int 64 b))
+    (hd : lookupName env "%d269" = some (.ptr q))
+    (hdec : numElEl1 epow a.toNat b.toInt = none) :
+    denoteCode (stage2NumFastCalls epow) numFastIfEnd268Instrs (stateAt env s) =
+      some (stateAt
+        (("%tobool271.not", .int 1 1) ::
+         ("%call270", .int 32 0) :: env)
+        { s with mem := s.mem, next := s.next }) := by
+  refine numFast_ifEnd268_denote_answer epow ha hb hd
+    (r := { ret := .int 32 0, mem := s.mem, next := s.next }) (x := 0) rfl ?_
+  rw [stage2NumFastCalls_num_el]
+  simp only [numElAnswer, hdec]
+
+/-- The kernel's acceptance: the block binds one, the decision's bit is zero, and
+the answer's eight bytes are written at the output. -/
+theorem numFast_ifEnd268_denote_accepted (epow : Int → Option EPow) {env : Env}
+    {s : State} {a b : BitVec 64} {q bits : Nat}
+    (ha : lookupName env "%add244" = some (.int 64 a))
+    (hb : lookupName env "%sub231" = some (.int 64 b))
+    (hd : lookupName env "%d269" = some (.ptr q))
+    (hdec : numElEl1 epow a.toNat b.toInt = some bits) :
+    denoteCode (stage2NumFastCalls epow) numFastIfEnd268Instrs (stateAt env s) =
+      some (stateAt
+        (("%tobool271.not", .int 1 0) ::
+         ("%call270", .int 32 1) :: env)
+        { s with mem := writeBytes s.mem q (natToBytes bits 8), next := s.next }) := by
+  refine numFast_ifEnd268_denote_answer epow ha hb hd
+    (r := { ret := .int 32 1, mem := writeBytes s.mem q (natToBytes bits 8),
+            next := s.next }) (x := 1) rfl ?_
+  rw [stage2NumFastCalls_num_el]
+  simp only [numElAnswer, hdec]
+
 /-- `if.end268`'s run: the marker, the kernel, the decision's bit. -/
 theorem numFast_ifEnd268_denote_some (epow : Int → Option EPow) {env : Env}
     {s : State} {a b : BitVec 64} {q : Nat}
@@ -513,40 +590,13 @@ theorem numFast_ifEnd268_denote_some (epow : Int → Option EPow) {env : Env}
           (("%tobool271.not", .int 1 (evalICmp .eq x 0)) ::
            ("%call270", .int 32 x) :: env)
           { s with mem := r.mem, next := r.next }) := by
-  have hargs : evalOperands (stateAt env { s with mem := s.mem, next := s.next })
-      [((Ty.int 64), (Operand.reg "%add244")),
-       ((Ty.int 64), (Operand.reg "%sub231")),
-       (Ty.ptr, (Operand.reg "%d269"))]
-      = some [.int 64 a, .int 64 b, .ptr q] := by
-    simp only [evalOperands, evalOperand, stateAt, ha, hb, hd]
-  have hstep : ∀ (r : CallOutcome) (x : BitVec 32), r.ret = .int 32 x →
-      stage2NumFastCalls epow "num_el_el1"
-        [.int 64 a, .int 64 b, .ptr q] s.mem s.next = some r →
-      denoteCode (stage2NumFastCalls epow) numFastIfEnd268Instrs (stateAt env s) =
-        some (stateAt
-          (("%tobool271.not", .int 1 (evalICmp .eq x 0)) ::
-           ("%call270", .int 32 x) :: env)
-          { s with mem := r.mem, next := r.next }) := by
-    intro r x hx hsome
-    unfold numFastIfEnd268Instrs
-    rw [denoteCode_callVoid_some _ _ _ _ _ _ _
-      (evalOperands_lifetimeMark (s := s) hd) (stage2NumFastCalls_lifetime _ _ _ _) _]
-    rw [denoteCode_call_some _ _ _ _ _ _ _ _ r hargs hsome _]
-    simp only [hx]
-    rw [denoteCode_cons_of _ _ _ _ _ (step_icmp_eq_imm_w (stage2NumFastCalls epow)
-      (("%call270", .int 32 x) :: env) { s with mem := r.mem, next := r.next }
-      "%tobool271.not" "%call270" 32
-      (lookupName_cons_self "%call270" (.int 32 x) env))]
-    rw [denoteCode_nil]
-    rfl
   cases hdec : numElEl1 epow a.toNat b.toInt with
   | none =>
-      refine ⟨{ ret := .int 32 0, mem := s.mem, next := s.next }, 0, rfl, ?_⟩
-      exact hstep _ 0 rfl (by rw [stage2NumFastCalls_num_el]; simp only [numElAnswer, hdec])
+      exact ⟨{ ret := .int 32 0, mem := s.mem, next := s.next }, 0, rfl,
+        numFast_ifEnd268_denote_refused epow ha hb hd hdec⟩
   | some bits =>
-      refine ⟨{ ret := .int 32 1, mem := writeBytes s.mem q (natToBytes bits 8),
-                next := s.next }, 1, rfl, ?_⟩
-      exact hstep _ 1 rfl (by rw [stage2NumFastCalls_num_el]; simp only [numElAnswer, hdec])
+      exact ⟨{ ret := .int 32 1, mem := writeBytes s.mem q (natToBytes bits 8), next := s.next },
+        1, rfl, numFast_ifEnd268_denote_accepted epow ha hb hd hdec⟩
 
 /-- The tier-2 site's control step, at the answered environment: a jump. -/
 theorem numFast_step_ifEnd268_jump (epow : Int → Option EPow) {env : Env} {s : State}

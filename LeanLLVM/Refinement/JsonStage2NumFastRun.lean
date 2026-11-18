@@ -6,9 +6,25 @@ the return, and the boundary the scan's seams still leave.
 entered from the exponent merge, to the store at `%out` (`t1_store_run`), and
 `JsonStage2NumFastArm` states the arm that chain is part of.  This module adds
 the body's last step — `cleanup300`'s return at the edge every accepting arm
-takes — and states the arm's own conclusion at the merge: six control steps to
-the returned word, `1` in the answer's value slot, `strtodSpec`'s eight bytes at
-`out`, and every byte outside the two slots the caller's.
+takes — the chain entered from the integer run's own exit (`t1_end230_run`), and
+the arm's own conclusion at the merge: six control steps to the returned word,
+`1` in the answer's value slot, `strtodSpec`'s eight bytes at `out`, and every
+byte outside the two slots the caller's.
+
+**The chain from the run's exit.**  `t1_end230_run` is tier 1's arithmetic as
+one `runFuel` identity: the integer run's end-of-lexeme exit word
+(`JsonStage2NumFastDigitRuns.intRunEndWord`, which now carries the run's memory)
+supplies the merge's predecessor, the accumulator and the digit count; the
+gate's step, the mantissa block's four and the returning edge are the five
+remaining steps.  The registers are read as the model's — `ip_word_digitsNat`
+for the folded integer part, `intDigits d` for the count, the lexeme's zeros for
+the fraction and the exponent — so the conclusion is `strtodSpec`'s bytes and not
+the body's expression.  What the exit word does not carry is the three cells no
+block on the path writes (`%out`, `%tobool274.not`, the two table symbols): they
+are the caller's environment, and `JsonStage2NumFastSign`'s `NumFastChain` is the
+transport that reads them at a later state, one the scan's run has to be read as
+a chain of steps to use.
+
 
 **The returning edge is shared by all three accepting arms.**  Tier 1's store
 block `cleanup282.thread`, the kernel's `cleanup282` and the fallback's
@@ -45,6 +61,7 @@ tier-1 statement below is `numFast_step_cleanup300_one`.
 -/
 import LeanLLVM.Refinement.JsonStage2NumFastArm
 import LeanLLVM.Refinement.JsonStage2NumFastTier1
+import LeanLLVM.Refinement.JsonStage2NumFastScanFast
 
 set_option autoImplicit false
 set_option maxRecDepth 20000
@@ -55,6 +72,7 @@ namespace LeanLLVM.Refinement
 open LeanLLVM
 open LeanLLVM.Refinement.BlockEval
 open LeanLLVM.JSON
+open ByteString
 open LeanLLVM.StrtodRefine
 open LeanLLVM.StrtodTier1
 
@@ -192,6 +210,119 @@ theorem numFastArm_tier1_at_merge {calls : Calls} {env : Env} {s : State}
     writeBytes s.mem out (wordBytes 8 (strtodSpec d).toBits), s.next⟩,
     hrun, rfl, rfl, rfl, hframe⟩
 
+/-! ### The tier-1 conversion from the run's own exit
+
+`t1_arm_run` enters at the merge block with the five counters as hypotheses; the
+scan's exit word is what supplies them.  This theorem is that seam: from the
+integer run's end-of-lexeme exit (`intRunEndWord`), the gate's step, the
+mantissa block's four steps and the returning edge are one `runFuel` chain of six
+control steps, and the registers the gate reads are the model's — the folded
+integer part, its digit count, and the fraction's and exponent's zeros.
+
+**What the exit word supplies, and what it does not.**  `intRunEndWord` carries
+the cursor, the length, the count, the accumulator, `%7`, the predecessor and
+the run's memory, which is what the gate and the store need.  The three cells the
+store *reads* but no block on the path writes — `%out`, `%tobool274.not` and the
+two table symbols — are not in it: they are the caller's environment, and the
+scan's `runFuel` prefix does not expose the environment it leaves.  They are
+therefore hypotheses of this seam, and closing them at the entry state is the
+transport `JsonStage2NumFastSign`'s `NumFastChain` states for a chain of steps
+(one the scan's run must be read as, since a `runFuel` prefix alone does not name
+the blocks it crossed). -/
+
+/-- **The tier-1 conversion from the run's exit.**  At the integer run's
+end-of-lexeme exit, with the fraction absent and the exponent absent, the
+gate's step and the conversion's five reach `cleanup300` and the return: one
+chain of six control steps writes `strtodSpec`'s eight bytes at `%out` and leaves
+every byte outside the two slots as it was. -/
+theorem t1_end230_run {calls : Calls} {s : State} {bs : List UInt8} {d : Decimal}
+    {sign : BitVec 1} {out p10 pd err : Nat} {ten : BitVec 64} {c : Code}
+    {a n i0 d0 : Nat}
+    (he : intRunEndWord s.mem bs a n i0 d0 s)
+    (hi0 : i0 ≤ n) (hbn : d0 + n < 2 ^ 64)
+    (hshape : d.ip.data.toList = (bs.drop (i0 - d0)).take (d0 + (n - i0)))
+    (hint : intDigits d = d0 + (n - i0))
+    (hfr0 : d.fr = none) (hex0 : d.ex = none)
+    (hsig : lookupName s.env "%tobool274.not" = some (.int 1 sign))
+    (hout : lookupName s.env "%out" = some (.ptr out))
+    (hp10 : lookupName s.env "@NUMF_EL1_P10" = some (.ptr p10))
+    (hpwt : lookupName s.env "@NUMF_EL1_POW10" = some (.ptr pd))
+    (hten : ten = BitVec.ofNat 64 (10 ^ (d.fr.getD empty).length))
+    (hrow10 : readBytes s.mem (p10 + fracDigits d * 8) 8
+      = some (natToBytes ten.toNat 8))
+    (hrowP : ∀ j, j ≤ 22 → readBytes s.mem (pd + j * 8) 8
+      = some (natToBytes (uitofpBits (10 ^ j)).toNat 8))
+    (hwf : d.wellFormed) (h1 : Tier1 d)
+    (hsign : (sign = 1) ↔ d.neg = false)
+    (hrc : roundMag (opP d) (opD d) = .fin c) (hcM : c.IsMag) :
+    ∃ (k : Nat) (o : CallOutcome),
+      runFuel calls k numFastBody (stateAt s.env s) = some (.ret (some o.ret) o.mem) ∧
+      o.ret = .int 32 1 ∧
+      o.mem = writeBytes s.mem out (wordBytes 8 (strtodSpec d).toBits) ∧
+      UnchangedOutside s.mem o.mem [(out, 8), (err, 8)] := by
+  obtain ⟨hpc, hpre, hn64, hmem, hp, hn, hinc64, hinc63, hip4, h7⟩ := he
+  have hfd0 : fracDigits d = 0 := by rw [fracDigits, hfr0]; rfl
+  have hnd : digitCount d ≤ 19 := by have := h1.1; omega
+  have hnd_eq : digitCount d = d0 + (n - i0) := by
+    rw [digitCount, fracDigits, hfr0]
+    simp only [Option.getD_none, ByteString.length_empty, Nat.add_zero]
+    exact hint
+  have hlen : d0 + (n - i0) ≤ 19 := by omega
+  have hdig : d0 + (n - i0) < 20 := by omega
+  -- the accumulator is the model's integer part
+  have hipv : BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + (n - i0)) 19))
+      = BitVec.ofNat 64 (Decimal.digitsNat d.ip) :=
+    NumFastScanRun.ip_word_digitsNat hshape hlen rfl
+  have h7' : lookupName s.env "%7"
+      = some (.int 64 (BitVec.ofNat 64 (d0 + (n - i0)))) := by
+    rw [h7, NumFastSeams.seven_tie hi0 hbn]
+  have hzero : (0 : BitVec 64) + BitVec.ofNat 64 (d0 + (n - i0))
+      = BitVec.ofNat 64 (d0 + (n - i0)) := by bv_omega
+  have hbit1 : evalICmp .ult (0 + BitVec.ofNat 64 (d0 + (n - i0))) (20#64) = 1 := by
+    rw [NumFastStarts.ult_iff_one, hzero, BitVec.toNat_ofNat,
+      Nat.mod_eq_of_lt (by omega), show (20#64).toNat = 20 from by decide]
+    exact hdig
+  have hbit2 : evalICmp .ult ((0 - 0) + (45#64)) (91#64) = 1 := by decide
+  have hgate : step calls numFastBody (stateAt s.env s) =
+      .jump (stateAt (NumFastTier1.t1GateEnv s.env 0
+          (BitVec.ofNat 64 (d0 + (n - i0)))
+          (BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + (n - i0)) 19)))
+          0 0)
+        { s with pc := "if.then241", pre := some "if.end230" }) :=
+    NumFastScanRun.ifEnd230_step_end62 hpc hpre h7' hip4 ⟨hbit1, hbit2⟩
+  -- the mantissa block's five
+  have hE' : (0 : BitVec 64) = BitVec.ofInt 64 (expVal d) := by
+    rw [show expVal d = 0 from by simp only [expVal, hex0]]
+    rfl
+  have hI' : BitVec.ofNat 64 (d0 + (n - i0)) = BitVec.ofNat 64 (intDigits d) := by
+    rw [hint]
+  have hfr' : (0 : BitVec 64) = BitVec.ofNat 64 (Decimal.digitsNat (d.fr.getD empty)) := by
+    rw [hfr0]; rfl
+  have hfd' : (0 : BitVec 64) = BitVec.ofNat 64 (fracDigits d) := by rw [hfd0]; rfl
+  have hrow10' : readBytes s.mem (p10 + fracDigits d * 8) 8
+      = some (natToBytes ten.toNat 8) := hrow10
+  obtain ⟨e, hepc, hepre, hemem, hrun⟩ :=
+    NumFastTier1.t1_then241_store_run (calls := calls) (env := s.env)
+      (s := { s with pc := "if.then241", pre := some "if.end230" })
+      (d := d) (sign := sign) (out := out) (p10 := p10) (pd := pd)
+      (ten := ten) (c := c)
+      (exp10 := 0) (idig := BitVec.ofNat 64 (d0 + (n - i0)))
+      (ip := BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + (n - i0)) 19)))
+      (fr := 0) (fdig := 0)
+      rfl rfl hE' hI' hipv hfr' hfd' hsig hout hp10 hpwt hten hrow10' hrowP hwf h1 hsign hrc hcM
+  have hret : step calls numFastBody e =
+      .ret (some (.int 32 1)) (stateAt (("%retval.8", .int 32 1) :: e.env) e) :=
+    numFast_step_cleanup300_one (calls := calls) (env := e.env) (s := e) hepc hepre
+  refine ⟨6, ⟨.int 32 1, writeBytes s.mem out (wordBytes 8 (strtodSpec d).toBits),
+      e.next⟩, ?_, rfl, rfl, ?_⟩
+  · rw [show (6 : Nat) = 1 + (4 + 1) from rfl, runFuel_jump_prefix hgate, hrun 1]
+    simp only [runFuel, hret, stateAt]
+    rw [hemem]
+  · exact (UnchangedOutside.refl' s.mem [(out, 8), (err, 8)]).write_le
+      (a := out) (w := 8) (bs := wordBytes 8 (strtodSpec d).toBits)
+      ⟨(out, 8), by simp, le_rfl, by omega⟩
+      (by simp only [wordBytes, natToBytes_length, le_refl])
+
 /-! ### The merge block's non-exponent edges read earlier cells
 
 Two controls on the seam.  The block's `phi`s at `if.end62` and `if.end140`
@@ -286,6 +417,10 @@ construction, as `StrtodTier1` records. -/
 /-- info: 'LeanLLVM.Refinement.numFastArm_tier1_at_merge' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms numFastArm_tier1_at_merge
+
+/-- info: 'LeanLLVM.Refinement.t1_end230_run' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms t1_end230_run
 
 /-- info: 'LeanLLVM.Refinement.numFast_merge_end62_needs_seven' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in

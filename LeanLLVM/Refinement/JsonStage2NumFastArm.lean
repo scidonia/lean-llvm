@@ -292,10 +292,29 @@ merge block fixes: the tier-1 conversion from `if.end230` to the return, as the
 arm's own conclusion at that block, and the returning edge the kernel's and the
 fallback's store blocks share with it.  The scan's seam to the merge is closed on
 the integer part's route: the run-exit predicates hand the merge's predecessor,
-`%7`, the cursor and the length (`intRunEndWord`, `fracRunEndWord`), and
+`%7`, the cursor, the length and the run's memory (`intRunEndWord`,
+`fracRunEndWord`), and
 `intScan_end230` together with `JsonStage2NumFastSeams.intScan_merge` threads
-`entry` to `if.then241` as one `runFuel` chain.  The fraction and exponent routes
+`entry` to `if.then241` as one `runFuel` chain.  `JsonStage2NumFastRun`'s
+`t1_end230_run` is the other end of that seam: from the exit word, the gate, the
+mantissa block, the scale's arm, the store and the return are one six-step
+`runFuel` chain concluding at `strtodSpec`'s bytes.  What the chain takes as
+hypotheses is the three cells no block on the path writes — `%out`,
+`%tobool274.not` and the two table symbols — because a `runFuel` prefix does not
+expose the environment it leaves; the transport that closes them at `entry` is
+`JsonStage2NumFastSign`'s `NumFastChain`, which a caller has to supply a chain
+of steps for.  The fraction and exponent routes
 are still composed one seam at a time.
+
+**The kernel's site after the tie.**  `%add244` and `%sub231` are now read as the
+model's `(d.mantissa, eff d)` at `if.end268`:
+`JsonStage2NumFastTier2.numFast_ifEnd268_value` is the guard's decision at the
+site's two arguments (the word bound is the register's own,
+`numFast_ifEnd268_word`), and `numFast_ifEnd268_accept`/`_refuse` read the block's
+bit — and the bytes an acceptance writes — off that decision
+(`numFast_ifEnd268_decision` states both cases).  So the kernel's obligation is
+the guard's `ElGuardRefinesOn`, composed by the tier-2 module, and not a
+correspondence the arm still owes.
 
 There is no `sorry`, `admit` or `native_decide` below.
 -/

@@ -1333,8 +1333,41 @@ through `cleanup223.thread`'s select and `if.end226`'s test with
 `expSelect_tie`: the block's `if %esign.0 = 1 then %exp10 else 0 - %exp10` is
 `BitVec.ofInt 64 (expVal d)` once the accumulator reads as the exponent digits'
 `expAcc` and `%esign.0` is the sign's bit (both as the seam's hypotheses, since
-the run's exit is existential).  Tier 3's
-three links are stated and proved at their statements
+the run's exit is existential).  The run's exit word also carries its memory
+(`intRunEndWord`'s `e.mem = mem0`), which is what lets a reader of the two
+staged tables read them at the store block rather than at the entry state.
+
+**Tier 1's chain from the run's exit, and the gate's value tie.**  The tier-1
+arithmetic is now one chain from the run's own exit:
+`JsonStage2NumFastRun.t1_end230_run` steps the end-of-lexeme exit's registers
+through `if.end230`'s gate, the mantissa block, the scale's arm and the store,
+and returns `1` with `strtodSpec`'s eight bytes at `out` and the two-slot frame —
+six control steps, one `runFuel` identity, with the folded integer part and its
+digit count read as `Decimal.digitsNat d.ip` and `intDigits d` and the fraction's
+and exponent's cells as the lexeme's zeros (`d.fr = none`, `d.ex = none`).  The
+gate, the two range tests, the mantissa link, the tick algebra and the store's
+own step are the tier-1 module's `t1_then241_store_run`, which is now entered at
+the mantissa block (`t1_then241_chain_mul`/`_div` are its four steps) and
+`t1_store_run` composes it behind the gate.  What that chain takes as hypotheses
+is the three cells no block on the path writes — `%out`, `%tobool274.not` and the
+two table symbols — because the scan's `runFuel` prefix does not expose the
+environment it leaves; closing them at `entry` is the transport
+`JsonStage2NumFastSign`'s `NumFastChain` states, one the scan's run has to be
+read as a chain of steps to use.
+
+The tier-2 gate's value tie is at its own site:
+`JsonStage2NumFastTier2.numFast_ifEnd268_value` reads `if.end268`'s two
+arguments — `%add244`, the mantissa word, and `%sub231`, the emitted `eff` — as
+the model's `(d.mantissa, eff d)`, so `num_el_el1`'s decision there is the
+guard's encoding; the mantissa's `w < 2 ^ 64` domain is the register's own
+(`numFast_ifEnd268_word`, and `JsonStage2NumFastTier3.numFast_ifEnd268_domain`
+for the site's run), and the exponent's `Int` reading is the caller's side
+condition.  `numFast_ifEnd268_accept`/`_refuse` then read the block's own bit and
+the memory its acceptance writes off the guard's decision (`numFast_ifEnd268_decision`
+states both), and `JsonStage2NumFastCalls` factors the site's two answers as
+`numFast_ifEnd268_denote_accepted`/`_refused`.
+
+Tier 3's three links are stated and proved at their statements
 (`JsonStage2NumFastTier3`): the traversal with the trip count
 (`t3_traversal_counts_1_3`, two `runFuel` steps from the peeled entry at a count
 in `0 < k < 4`, with the reached state's two `poison` cells holding the marker and
@@ -1782,13 +1815,22 @@ the body's own word — `JsonStage2NumFastTier3.numFast_ifEnd268_domain` — and
 arm's statement carries the entry state
 (`JsonStage2NumFastArm.numFastArm_entry_necessary` is why the entry condition is
 load-bearing), so what `NumFastBodyArm` still owes is the conversion's run: its
-tier-1 tail from the merge block is
-`JsonStage2NumFastRun.numFastArm_tier1_at_merge`, and the scan reaches the merge
-on the integer part's route by
+tier-1 arithmetic is one chain from the integer run's own end-of-lexeme exit
+(`JsonStage2NumFastRun.t1_end230_run`: the gate, the mantissa block, the scale's
+arm, the store and the return, six control steps, with `intRunEndWord` now
+carrying the run's memory), and the scan reaches that exit on the integer part's
+route by
 `JsonStage2NumFastScanRun.intScan_end230` and
 `JsonStage2NumFastSeams.intScan_merge` (the fraction and exponent routes are
 threaded one seam at a time; `numFast_merge_end62_needs_seven` keeps the
-merge's cell requirement on the record).  Tier 3's three links
+merge's cell requirement on the record).  What the chain still takes as
+hypotheses are the three cells no block on the path writes (`%out`,
+`%tobool274.not`, the two table symbols), which close at `entry` through
+`JsonStage2NumFastSign`'s chain transport.  The kernel's site is tied to the
+model's own args: `JsonStage2NumFastTier2.numFast_ifEnd268_value` reads
+`%add244`/`%sub231` as `(d.mantissa, eff d)` so the call's decision is the
+guard's encoding, and `numFast_ifEnd268_accept`/`_refuse` read the block's bit
+and the bytes its acceptance writes off that decision.  Tier 3's three links
 are stated in `JsonStage2NumFastTier3`, with the emitted ladder's charging and
 its two loops' shapes closed in `JsonStage2NumFastTier3Ladder` and both loops —
 the positive one and the negative one — closed at the emitted rows in

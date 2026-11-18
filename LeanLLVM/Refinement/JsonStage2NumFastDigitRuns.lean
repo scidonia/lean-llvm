@@ -852,9 +852,11 @@ It carries the cursor, the length, the count `d0 + (n - i0)` the count cell read
 the accumulator's value at those digits, and the count `%7` the digit head's
 preheader formed: `if.end230`'s `%idig.4709716730` phi reads it on this edge, so
 a composed run exit has to hand it on.  The cursor and the length are the cells
-every later block reads. -/
-def intRunEndWord (bs : List UInt8) (p n i0 d0 : Nat) (e : State) : Prop :=
-  e.pc = "if.end230" ∧ e.pre = some "if.end62" ∧ n < 2 ^ 64 ∧
+every later block reads, and the memory is the run's own: a composition that
+reads the two staged tables at the store block reads them here, so the exit
+records it. -/
+def intRunEndWord (mem0 : Mem) (bs : List UInt8) (p n i0 d0 : Nat) (e : State) : Prop :=
+  e.pc = "if.end230" ∧ e.pre = some "if.end62" ∧ n < 2 ^ 64 ∧ e.mem = mem0 ∧
   lookupName e.env "%p" = some (.ptr p) ∧
   lookupName e.env "%n" = some (.int 64 (BitVec.ofNat 64 n)) ∧
   lookupName e.env "%inc64" = some (.int 64 (BitVec.ofNat 64 n)) ∧
@@ -887,7 +889,7 @@ def intRunExit (mem0 : Mem) (bs : List UInt8) (p n i0 d0 : Nat) (e : State) : Pr
           = some (.int 64
             (BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + (i1 - i0)) 19)))) ∧
         ∃ b, readByte mem0 (p + i1) = some b ∧ IsDigitB b = false)
-  ∨ intRunEndWord bs p n i0 d0 e
+  ∨ intRunEndWord mem0 bs p n i0 d0 e
 
 /-- The head's test, at the run's own start: the remaining length is one short
 of the counter, or the byte at the counter is not a digit. -/
@@ -1409,7 +1411,7 @@ theorem intRunExit_count (mem0 : Mem) (bs : List UInt8) (p n i0 d0 : Nat) (e : S
       lookupName e.env "%inc63"
         = some (.int 64 (BitVec.ofNat 64 (d0 + (n - i0))))) := by
   rcases h with ⟨hpc, _, _, _, i1, _, _, _, hcnt, _, _, _, _⟩
-    | ⟨hpc, _, _, _, _, _, hcnt, _, _⟩
+    | ⟨hpc, _, _, _, _, _, _, hcnt, _, _⟩
   · exact Or.inl ⟨i1, hpc, hcnt⟩
   · exact Or.inr ⟨hpc, hcnt⟩
 
@@ -1535,7 +1537,9 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               hidig2 hi2 hn2 hbits
           refine ⟨e3, 4, by omega, Or.inr (by simp only [e3, stateAt]), ?_, ?_⟩
           · refine Or.inr ⟨by simp only [e3, stateAt], by simp only [e3, stateAt], ?_⟩
-            refine ⟨by omega, ?_, ?_, ?_, ?_, ?_, ?_⟩
+            refine ⟨by omega, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+            · have h : e3.mem = s.mem := rfl
+              rw [h]; exact hmem
             · simp only [e3, e2, e1, e0, stateAt, intIfEndEnv, intIfThenEnv, intBodyEnv,
                 intHeadEnv, intHeadPhiEnv]
               block_lk
@@ -1618,7 +1622,9 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               hidig1 hi1 hn1 hbits
           refine ⟨e2, 3, by omega, Or.inr (by simp only [e2, stateAt]), ?_, ?_⟩
           · refine Or.inr ⟨by simp only [e2, stateAt], by simp only [e2, stateAt], ?_⟩
-            refine ⟨by omega, ?_, ?_, ?_, ?_, ?_, ?_⟩
+            refine ⟨by omega, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+            · have h : e2.mem = s.mem := rfl
+              rw [h]; exact hmem
             · simp only [e2, e1, e0, stateAt, intIfEndEnv, intBodyEnv, intHeadEnv,
                 intHeadPhiEnv]
               block_lk
@@ -1725,7 +1731,9 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               hidig2 hi2 hn2 hbits
           refine ⟨e3, 4, by omega, Or.inr (by simp only [e3, stateAt]), ?_, ?_⟩
           · refine Or.inr ⟨by simp only [e3, stateAt], by simp only [e3, stateAt], ?_⟩
-            refine ⟨by omega, ?_, ?_, ?_, ?_, ?_, ?_⟩
+            refine ⟨by omega, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+            · have h : e3.mem = s.mem := rfl
+              rw [h]; exact hmem
             · simp only [e3, e2, e1, e0, stateAt, intIfEndEnv, intIfThenEnv, intBodyEnv,
                 intHeadEnv, intHeadPhiEnv]
               block_lk
@@ -1808,7 +1816,9 @@ theorem intRun_step_exit {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
               hidig1 hi1 hn1 hbits
           refine ⟨e2, 3, by omega, Or.inr (by simp only [e2, stateAt]), ?_, ?_⟩
           · refine Or.inr ⟨by simp only [e2, stateAt], by simp only [e2, stateAt], ?_⟩
-            refine ⟨by omega, ?_, ?_, ?_, ?_, ?_, ?_⟩
+            refine ⟨by omega, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+            · have h : e2.mem = s.mem := rfl
+              rw [h]; exact hmem
             · simp only [e2, e1, e0, stateAt, intIfEndEnv, intBodyEnv, intHeadEnv,
                 intHeadPhiEnv]
               block_lk
@@ -2030,7 +2040,7 @@ theorem intRun_step_end230 {mem0 : Mem} {p n i0 d0 r : Nat} {bs : List UInt8}
     (hinv : intRunInv mem0 p n i0 d0 bs r s c)
     (hb : intRunAtBound mem0 p n i0 s c = true)
     (hdigits : ∀ k, i0 ≤ k → k < n → IsDigitB (bs.getD k 0) = true) :
-    ∃ (e : State) (j : Nat), j ≤ 4 ∧ intRunEndWord bs p n i0 d0 e ∧
+    ∃ (e : State) (j : Nat), j ≤ 4 ∧ intRunEndWord mem0 bs p n i0 d0 e ∧
       ∀ k, runFuel calls (j + k) numFastBody s =
         runFuel calls k numFastBody e := by
   obtain ⟨e, j, hj, _, hexit, hrun⟩ := intRun_step_exit hinv hb
@@ -2056,7 +2066,7 @@ def intRunEndBoundLoop (mem0 : Mem) (p n i0 d0 : Nat) (bs : List UInt8) (cost : 
   Inv := intRunInv mem0 p n i0 d0 bs
   atBound := intRunAtBound mem0 p n i0
   Exit := fun e => e.pc = "if.end230"
-  ExitWord := intRunEndWord bs p n i0 d0
+  ExitWord := intRunEndWord mem0 bs p n i0 d0
   step_exit := by
     intro r s c hinv hb
     obtain ⟨e, j, hj, hword, hrun⟩ := intRun_step_end230 hinv hb hdigits
@@ -2086,7 +2096,7 @@ theorem intRun_end_run (mem0 : Mem) (p n i0 d0 : Nat) (bs : List UInt8) (cost : 
     (s : State) (c : Nat)
     (hinv : intRunInv mem0 p n i0 d0 bs (n - i0) s c) (k : Nat) :
     ∃ (e : State) (j : Nat), j ≤ (n - i0 + 1) * cost ∧ e.pc = "if.end230" ∧
-      intRunEndWord bs p n i0 d0 e ∧
+      intRunEndWord mem0 bs p n i0 d0 e ∧
       runFuel calls (j + k) numFastBody s =
         runFuel calls k numFastBody e :=
   (intRunEndBoundLoop mem0 p n i0 d0 bs cost hcost hdigits).run s c hinv k

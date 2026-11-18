@@ -60,6 +60,7 @@ namespace LeanLLVM.Refinement
 open LeanLLVM
 open LeanLLVM.Refinement.BlockEval
 open LeanLLVM.JSON
+open ByteString
 open LeanLLVM.StrtodTier1
 open LeanLLVM.StrtodRefine
 
@@ -953,20 +954,20 @@ the fraction's, `%fdig` their count and `%30` the table's `10 ^ fdig`; then the
 block's sum is `Decimal.mantissa d`, in `i64` and as a `Nat`.  The three
 premises are the ones the arm's boundary names: `%ip`/`%fr`'s tie to
 `digitsNat`, and the table row. -/
-theorem t1_add244_eq_mantissa {d : Decimal} {fs : Bytes} {ip ten fr : BitVec 64}
-    (hf : d.fr = some fs)
+theorem t1_add244_eq_mantissa {d : Decimal} {ip ten fr : BitVec 64}
     (hip : ip = BitVec.ofNat 64 (Decimal.digitsNat d.ip))
-    (hfr : fr = BitVec.ofNat 64 (Decimal.digitsNat fs))
-    (hten : ten = BitVec.ofNat 64 (10 ^ fs.length))
+    (hfr : fr = BitVec.ofNat 64 (Decimal.digitsNat (d.fr.getD empty)))
+    (hten : ten = BitVec.ofNat 64 (10 ^ (d.fr.getD empty).length))
     (hipb : Decimal.digitsNat d.ip < 2 ^ 64)
-    (hfsb : Decimal.digitsNat fs < 2 ^ 64)
-    (h10 : 10 ^ fs.length < 2 ^ 64)
+    (hfsb : Decimal.digitsNat (d.fr.getD empty) < 2 ^ 64)
+    (h10 : 10 ^ (d.fr.getD empty).length < 2 ^ 64)
     (hbound : d.mantissa < 2 ^ 64) :
     ten * ip + fr = BitVec.ofNat 64 d.mantissa := by
   have hm : d.mantissa
-      = Decimal.digitsNat d.ip * 10 ^ fs.length + Decimal.digitsNat fs := by
-    simp only [Decimal.mantissa, hf, Option.getD_some]
-  have hsum : Decimal.digitsNat d.ip * 10 ^ fs.length + Decimal.digitsNat fs < 2 ^ 64 := by
+      = Decimal.digitsNat d.ip * 10 ^ (d.fr.getD empty).length
+        + Decimal.digitsNat (d.fr.getD empty) := rfl
+  have hsum : Decimal.digitsNat d.ip * 10 ^ (d.fr.getD empty).length
+      + Decimal.digitsNat (d.fr.getD empty) < 2 ^ 64 := by
     rw [← hm]; exact hbound
   subst hip
   subst hfr
@@ -974,16 +975,42 @@ theorem t1_add244_eq_mantissa {d : Decimal} {fs : Bytes} {ip ten fr : BitVec 64}
   rw [hm]
   apply BitVec.eq_of_toNat_eq
   simp only [BitVec.toNat_add, BitVec.toNat_mul, BitVec.toNat_ofNat]
-  rw [show 10 ^ fs.length % 2 ^ 64 = 10 ^ fs.length from Nat.mod_eq_of_lt h10,
+  rw [show 10 ^ (d.fr.getD empty).length % 2 ^ 64 = 10 ^ (d.fr.getD empty).length
+      from Nat.mod_eq_of_lt h10,
     show Decimal.digitsNat d.ip % 2 ^ 64 = Decimal.digitsNat d.ip
       from Nat.mod_eq_of_lt hipb,
-    show Decimal.digitsNat fs % 2 ^ 64 = Decimal.digitsNat fs
+    show Decimal.digitsNat (d.fr.getD empty) % 2 ^ 64
+      = Decimal.digitsNat (d.fr.getD empty)
       from Nat.mod_eq_of_lt hfsb]
-  rw [show 10 ^ fs.length * Decimal.digitsNat d.ip = Decimal.digitsNat d.ip * 10 ^ fs.length
+  rw [show 10 ^ (d.fr.getD empty).length * Decimal.digitsNat d.ip
+      = Decimal.digitsNat d.ip * 10 ^ (d.fr.getD empty).length
       from Nat.mul_comm _ _]
-  rw [show Decimal.digitsNat d.ip * 10 ^ fs.length % 2 ^ 64
-      = Decimal.digitsNat d.ip * 10 ^ fs.length
+  rw [show Decimal.digitsNat d.ip * 10 ^ (d.fr.getD empty).length % 2 ^ 64
+      = Decimal.digitsNat d.ip * 10 ^ (d.fr.getD empty).length
       from Nat.mod_eq_of_lt (by omega)]
+
+/-- **The fraction's digits are sixty-four-bit**, present or absent: at fifteen
+fraction digits they are below `10 ^ 15`, and an absent fraction's value is
+zero. -/
+theorem fracDigits_getD_lt {d : Decimal} (hwf : d.wellFormed)
+    (h15 : fracDigits d ≤ 15) :
+    Decimal.digitsNat (d.fr.getD empty) < 2 ^ 64 := by
+  have hlen : fracDigits d = (d.fr.getD empty).length := rfl
+  rcases hf : d.fr with _ | fs
+  · simp only [Option.getD_none, Decimal.digitsNat, ByteString.data_toList_empty,
+      List.foldl_nil]
+    omega
+  · have hd : Digits fs := hwf.2.1 fs hf
+    have hlt := digitsNat_lt (digits_digit hd)
+    have hle : fs.length ≤ 15 := by
+      have h := hlen
+      rw [hf] at h
+      simp only [Option.getD_some] at h
+      omega
+    have hpow : 10 ^ fs.length ≤ 10 ^ 15 := Nat.pow_le_pow_right (by decide) hle
+    have h15lt : (10 : Nat) ^ 15 < 2 ^ 64 := by decide
+    simp only [Option.getD_some]
+    omega
 
 /-! ### Link 2, proved: the gates are one at `Tier1`
 
@@ -1681,19 +1708,15 @@ def t1AtStoredDiv (env : Env) (s : State) (exp10 idig ip fr fdig : BitVec 64)
           (natToBytes (t1SelDiv (uitofpBits (t1MantWord ten ip fr).toNat) pv sign).toNat 8),
         pc := "cleanup300", pre := some "cleanup282.thread" }
 
-/-- **The product arm's chain.**  Five control steps from the merge block to the
-store's output, with the gate bits one and the two table rows staged. -/
-theorem t1_store_chain_mul {calls : Calls} {env : Env} {s : State}
+/-- **The product arm's chain, from the mantissa block.**  Four control steps
+from `if.then241` to the store's output, with the second range test read and the
+two table rows staged.  The state is the gate's: its environment is
+`t1GateEnv`'s, and its predecessor is `if.end230`, the edge `if.then241`'s own
+`phi` run selects. -/
+theorem t1_then241_chain_mul {calls : Calls} {env : Env} {s : State}
     {exp10 idig ip fr fdig : BitVec 64} {p10 pd : Nat} {ten pv : BitVec 64}
     {sign : BitVec 1} {out : Nat}
-    (hpc : s.pc = "if.end230") (hpre : s.pre = some "if.end226")
-    (he : lookupName env "%exp10.4" = some (.int 64 exp10))
-    (hi : lookupName env "%idig.4" = some (.int 64 idig))
-    (hip : lookupName env "%ip.5" = some (.int 64 ip))
-    (hfr : lookupName env "%fr.5" = some (.int 64 fr))
-    (hfd : lookupName env "%fdig.4" = some (.int 64 fdig))
-    (hg304 : evalICmp .ult ((exp10 - fdig) + (45#64)) (91#64) = 1)
-    (hg233 : evalICmp .ult (fdig + idig) (20#64) = 1)
+    (hpc : s.pc = "if.then241") (hpre : s.pre = some "if.end230")
     (hp10 : lookupName env "@NUMF_EL1_P10" = some (.ptr p10))
     (hpwt : lookupName env "@NUMF_EL1_POW10" = some (.ptr pd))
     (hsig : lookupName env "%tobool274.not" = some (.int 1 sign))
@@ -1707,14 +1730,18 @@ theorem t1_store_chain_mul {calls : Calls} {env : Env} {s : State}
     (hb306 : (if evalICmp .ult (fdig + idig) (16#64) = 1 then
         evalICmp .ult ((exp10 - fdig) + (22#64)) (45#64) else 0) = 1)
     (hcmp254 : evalICmp .sgt (exp10 - fdig) 0xffffffffffffffff#64 = 1) :
-    ∀ k, runFuel calls (5 + k) numFastBody (stateAt env s) =
+    ∀ k, runFuel calls (4 + k) numFastBody
+        (stateAt (t1GateEnv env exp10 idig ip fr fdig) s) =
       runFuel calls k numFastBody
         (t1AtStoredMul env s exp10 idig ip fr fdig p10 pd ten pv sign out) := by
-  have h1s : step calls numFastBody (stateAt env s) =
-      .jump (t1AtMant env s exp10 idig ip fr fdig) :=
-    t1_ifEnd230_step calls env s hpc hpre he hi hip hfr hfd ⟨hg304, hg233⟩
-  have h2s : step calls numFastBody (t1AtMant env s exp10 idig ip fr fdig) =
+  have h1s : step calls numFastBody (stateAt (t1GateEnv env exp10 idig ip fr fdig) s) =
       .jump (t1AtConv env s exp10 idig ip fr fdig p10 ten) := by
+    have hs : stateAt (t1GateEnv env exp10 idig ip fr fdig)
+        ({ s with pc := "if.then241", pre := some "if.end230" } : State) =
+        stateAt (t1GateEnv env exp10 idig ip fr fdig) s := by
+      simp only [stateAt]
+      rw [← hpc, ← hpre]
+    rw [← hs]
     refine t1_ifThen241_step calls (t1GateEnv env exp10 idig ip fr fdig)
       { s with pc := "if.then241", pre := some "if.end230" } rfl ?_ ?_ ?_ ?_ ?_ ?_ hposfd ?_ hb306
     · simp only [t1GateEnv]; block_lk
@@ -1724,13 +1751,13 @@ theorem t1_store_chain_mul {calls : Calls} {env : Env} {s : State}
     · simp only [t1GateEnv]; block_lk
     · simp only [t1GateEnv]; block_lk
     · exact hrow10
-  have h3s : step calls numFastBody (t1AtConv env s exp10 idig ip fr fdig p10 ten) =
+  have h2s : step calls numFastBody (t1AtConv env s exp10 idig ip fr fdig p10 ten) =
       .jump (t1AtMul env s exp10 idig ip fr fdig p10 ten) := by
     refine t1_ifThen253_step_true calls (t1AtMantEnv env exp10 idig ip fr fdig p10 ten)
       { s with pc := "if.then253", pre := some "if.then241" } rfl ?_ ?_ hcmp254
     · simp only [t1AtMantEnv, t1MantEnv]; block_lk
     · simp only [t1AtMantEnv, t1MantEnv]; block_lk
-  have h4s : step calls numFastBody (t1AtMul env s exp10 idig ip fr fdig p10 ten) =
+  have h3s : step calls numFastBody (t1AtMul env s exp10 idig ip fr fdig p10 ten) =
       .jump (t1AtMergeMul env s exp10 idig ip fr fdig p10 pd ten pv) := by
     refine t1_cond_true_step calls (t1ArmConv env exp10 idig ip fr fdig p10 ten)
       { s with pc := "cond.true", pre := some "if.then253" } rfl ?_ ?_ ?_ hpossu ?_
@@ -1738,7 +1765,7 @@ theorem t1_store_chain_mul {calls : Calls} {env : Env} {s : State}
     · simp only [t1ArmConv, t1ConvEnv, t1AtMantEnv, t1MantEnv, t1GateEnv]; block_lk
     · simp only [t1ArmConv, t1ConvEnv, t1MantWord]; block_lk
     · exact hrowP
-  have h5s : step calls numFastBody (t1AtMergeMul env s exp10 idig ip fr fdig p10 pd ten pv) =
+  have h4s : step calls numFastBody (t1AtMergeMul env s exp10 idig ip fr fdig p10 pd ten pv) =
       .jump (t1AtStoredMul env s exp10 idig ip fr fdig p10 pd ten pv sign out) := by
     refine t1_cleanup282_thread_step calls
       (t1MulEnv (t1ArmConv env exp10 idig ip fr fdig p10 ten) pd (exp10 - fdig) pv
@@ -1748,22 +1775,16 @@ theorem t1_store_chain_mul {calls : Calls} {env : Env} {s : State}
     · simp only [t1MulEnv, t1ArmConv, t1ConvEnv, t1AtMantEnv, t1MantEnv, t1GateEnv]; block_lk
     · simp only [t1MulEnv, t1ArmConv, t1ConvEnv, t1AtMantEnv, t1MantEnv, t1GateEnv]; block_lk
   intro k
-  rw [show 5 + k = 1 + (1 + (1 + (1 + (1 + k)))) from by omega,
+  rw [show 4 + k = 1 + (1 + (1 + (1 + k))) from by omega,
     runFuel_jump_prefix h1s, runFuel_jump_prefix h2s, runFuel_jump_prefix h3s,
-    runFuel_jump_prefix h4s, runFuel_jump_prefix h5s]
+    runFuel_jump_prefix h4s]
 
-/-- **The quotient arm's chain.**  The `eff < 0` mirror, at `cond.false`. -/
-theorem t1_store_chain_div {calls : Calls} {env : Env} {s : State}
+/-- **The quotient arm's chain, from the mantissa block.**  The `eff < 0`
+mirror at `cond.false`. -/
+theorem t1_then241_chain_div {calls : Calls} {env : Env} {s : State}
     {exp10 idig ip fr fdig : BitVec 64} {p10 pd : Nat} {ten pv : BitVec 64}
     {sign : BitVec 1} {out : Nat}
-    (hpc : s.pc = "if.end230") (hpre : s.pre = some "if.end226")
-    (he : lookupName env "%exp10.4" = some (.int 64 exp10))
-    (hi : lookupName env "%idig.4" = some (.int 64 idig))
-    (hip : lookupName env "%ip.5" = some (.int 64 ip))
-    (hfr : lookupName env "%fr.5" = some (.int 64 fr))
-    (hfd : lookupName env "%fdig.4" = some (.int 64 fdig))
-    (hg304 : evalICmp .ult ((exp10 - fdig) + (45#64)) (91#64) = 1)
-    (hg233 : evalICmp .ult (fdig + idig) (20#64) = 1)
+    (hpc : s.pc = "if.then241") (hpre : s.pre = some "if.end230")
     (hp10 : lookupName env "@NUMF_EL1_P10" = some (.ptr p10))
     (hpwt : lookupName env "@NUMF_EL1_POW10" = some (.ptr pd))
     (hsig : lookupName env "%tobool274.not" = some (.int 1 sign))
@@ -1779,14 +1800,18 @@ theorem t1_store_chain_div {calls : Calls} {env : Env} {s : State}
     (hb306 : (if evalICmp .ult (fdig + idig) (16#64) = 1 then
         evalICmp .ult ((exp10 - fdig) + (22#64)) (45#64) else 0) = 1)
     (hcmp254 : evalICmp .sgt (exp10 - fdig) 0xffffffffffffffff#64 = 0) :
-    ∀ k, runFuel calls (5 + k) numFastBody (stateAt env s) =
+    ∀ k, runFuel calls (4 + k) numFastBody
+        (stateAt (t1GateEnv env exp10 idig ip fr fdig) s) =
       runFuel calls k numFastBody
         (t1AtStoredDiv env s exp10 idig ip fr fdig p10 pd ten pv sign out) := by
-  have h1s : step calls numFastBody (stateAt env s) =
-      .jump (t1AtMant env s exp10 idig ip fr fdig) :=
-    t1_ifEnd230_step calls env s hpc hpre he hi hip hfr hfd ⟨hg304, hg233⟩
-  have h2s : step calls numFastBody (t1AtMant env s exp10 idig ip fr fdig) =
+  have h1s : step calls numFastBody (stateAt (t1GateEnv env exp10 idig ip fr fdig) s) =
       .jump (t1AtConv env s exp10 idig ip fr fdig p10 ten) := by
+    have hs : stateAt (t1GateEnv env exp10 idig ip fr fdig)
+        ({ s with pc := "if.then241", pre := some "if.end230" } : State) =
+        stateAt (t1GateEnv env exp10 idig ip fr fdig) s := by
+      simp only [stateAt]
+      rw [← hpc, ← hpre]
+    rw [← hs]
     refine t1_ifThen241_step calls (t1GateEnv env exp10 idig ip fr fdig)
       { s with pc := "if.then241", pre := some "if.end230" } rfl ?_ ?_ ?_ ?_ ?_ ?_ hposfd ?_ hb306
     · simp only [t1GateEnv]; block_lk
@@ -1796,13 +1821,13 @@ theorem t1_store_chain_div {calls : Calls} {env : Env} {s : State}
     · simp only [t1GateEnv]; block_lk
     · simp only [t1GateEnv]; block_lk
     · exact hrow10
-  have h3s : step calls numFastBody (t1AtConv env s exp10 idig ip fr fdig p10 ten) =
+  have h2s : step calls numFastBody (t1AtConv env s exp10 idig ip fr fdig p10 ten) =
       .jump (t1AtDiv env s exp10 idig ip fr fdig p10 ten) := by
     refine t1_ifThen253_step_false calls (t1AtMantEnv env exp10 idig ip fr fdig p10 ten)
       { s with pc := "if.then253", pre := some "if.then241" } rfl ?_ ?_ hcmp254
     · simp only [t1AtMantEnv, t1MantEnv]; block_lk
     · simp only [t1AtMantEnv, t1MantEnv]; block_lk
-  have h4s : step calls numFastBody (t1AtDiv env s exp10 idig ip fr fdig p10 ten) =
+  have h3s : step calls numFastBody (t1AtDiv env s exp10 idig ip fr fdig p10 ten) =
       .jump (t1AtMergeDiv env s exp10 idig ip fr fdig p10 pd ten pv) := by
     refine t1_cond_false_step calls (t1ArmConv env exp10 idig ip fr fdig p10 ten)
       { s with pc := "cond.false", pre := some "if.then253" } rfl ?_ ?_ ?_ hposneg ?_
@@ -1810,7 +1835,7 @@ theorem t1_store_chain_div {calls : Calls} {env : Env} {s : State}
     · simp only [t1ArmConv, t1ConvEnv, t1AtMantEnv, t1MantEnv, t1GateEnv]; block_lk
     · simp only [t1ArmConv, t1ConvEnv, t1MantWord]; block_lk
     · exact hrowP
-  have h5s : step calls numFastBody (t1AtMergeDiv env s exp10 idig ip fr fdig p10 pd ten pv) =
+  have h4s : step calls numFastBody (t1AtMergeDiv env s exp10 idig ip fr fdig p10 pd ten pv) =
       .jump (t1AtStoredDiv env s exp10 idig ip fr fdig p10 pd ten pv sign out) := by
     refine t1_cleanup282_thread_step_false calls
       (t1DivEnv (t1ArmConv env exp10 idig ip fr fdig p10 ten) pd (exp10 - fdig) pv
@@ -1820,17 +1845,17 @@ theorem t1_store_chain_div {calls : Calls} {env : Env} {s : State}
     · simp only [t1DivEnv, t1ArmConv, t1ConvEnv, t1AtMantEnv, t1MantEnv, t1GateEnv]; block_lk
     · simp only [t1DivEnv, t1ArmConv, t1ConvEnv, t1AtMantEnv, t1MantEnv, t1GateEnv]; block_lk
   intro k
-  rw [show 5 + k = 1 + (1 + (1 + (1 + (1 + k)))) from by omega,
+  rw [show 4 + k = 1 + (1 + (1 + (1 + k))) from by omega,
     runFuel_jump_prefix h1s, runFuel_jump_prefix h2s, runFuel_jump_prefix h3s,
-    runFuel_jump_prefix h4s, runFuel_jump_prefix h5s]
+    runFuel_jump_prefix h4s]
 
-/-! ### The store at the lexeme
+/-! ### The conversion from the mantissa block
 
 The chains above are at the body's registers.  This section reads those
 registers as the model's: `t1_add244_eq_mantissa` makes `%add244` the mantissa,
-`t1_orCond304_bits`/`t1_orCond306_bits` make both range gates one at `Tier1`,
-the two table rows are the staged `NUMF_EL1_P10`/`NUMF_EL1_POW10`, and the sign
-select's tie is `(sign = 1) ↔ ¬d.neg`.  Under those, the five steps write
+`t1_orCond306_bits` makes the narrow range test one at `Tier1`, the two table
+rows are the staged `NUMF_EL1_P10`/`NUMF_EL1_POW10`, and the sign select's tie
+is `(sign = 1) ↔ ¬d.neg`.  Under those, four steps from `if.then241` write
 `strtodSpec`'s eight bytes at `%out`.
 
 The mantissa's two cases are the model's, not a proof device: `0` is a tier-1
@@ -2019,25 +2044,26 @@ theorem t1AtStoredDiv_mem (env : Env) (s : State) (exp10 idig ip fr fdig : BitVe
           (natToBytes (t1SelDiv (uitofpBits (t1MantWord ten ip fr).toNat) pv sign).toNat 8) :=
   rfl
 
-/-- **The store at the merge block.**  At `if.end230`'s own environment, with the
-five counters the lexeme's, the sign's tie and the two table rows staged, five
-control steps reach `cleanup300` — entered from the store block, so the return
-block reads its accepting edge — with `strtodSpec`'s eight bytes written at
-`%out`. -/
-theorem t1_store_run {calls : Calls} {env : Env} {s : State} {d : Decimal} {fs : Bytes}
-    {sign : BitVec 1} {out : Nat} {p10 pd : Nat} {ten : BitVec 64} {c : Code}
-    (hpc : s.pc = "if.end230") (hpre : s.pre = some "if.end226")
-    (hE : lookupName env "%exp10.4" = some (.int 64 (BitVec.ofInt 64 (expVal d))))
-    (hI : lookupName env "%idig.4" = some (.int 64 (BitVec.ofNat 64 (intDigits d))))
-    (hip : lookupName env "%ip.5" = some (.int 64 (BitVec.ofNat 64 (Decimal.digitsNat d.ip))))
-    (hfr : lookupName env "%fr.5" = some (.int 64 (BitVec.ofNat 64 (Decimal.digitsNat fs))))
-    (hfd : lookupName env "%fdig.4" = some (.int 64 (BitVec.ofNat 64 (fracDigits d))))
-    (hfs : d.fr = some fs)
+/-- **The conversion from the mantissa block.**  At `if.then241`'s own
+environment, with the five registers the lexeme's, the sign's tie and the two
+table rows staged, four control steps reach `cleanup300` — entered from the
+store block, so the return block reads its accepting edge — with `strtodSpec`'s
+eight bytes written at `%out`.  The five registers are the gate's fields, so a
+composition that arrives from the scan hands them as equalities. -/
+theorem t1_then241_store_run {calls : Calls} {env : Env} {s : State} {d : Decimal}
+    {sign : BitVec 1} {out p10 pd : Nat} {ten : BitVec 64} {c : Code}
+    {exp10 idig ip fr fdig : BitVec 64}
+    (hpc : s.pc = "if.then241") (hpre : s.pre = some "if.end230")
+    (hE : exp10 = BitVec.ofInt 64 (expVal d))
+    (hI : idig = BitVec.ofNat 64 (intDigits d))
+    (hip : ip = BitVec.ofNat 64 (Decimal.digitsNat d.ip))
+    (hfr : fr = BitVec.ofNat 64 (Decimal.digitsNat (d.fr.getD empty)))
+    (hfd : fdig = BitVec.ofNat 64 (fracDigits d))
     (hsig : lookupName env "%tobool274.not" = some (.int 1 sign))
     (hout : lookupName env "%out" = some (.ptr out))
     (hp10 : lookupName env "@NUMF_EL1_P10" = some (.ptr p10))
     (hpwt : lookupName env "@NUMF_EL1_POW10" = some (.ptr pd))
-    (hten : ten = BitVec.ofNat 64 (10 ^ fs.length))
+    (hten : ten = BitVec.ofNat 64 (10 ^ (d.fr.getD empty).length))
     (hrow10 : readBytes s.mem (p10 + fracDigits d * 8) 8 = some (natToBytes ten.toNat 8))
     (hrowP : ∀ j, j ≤ 22 → readBytes s.mem (pd + j * 8) 8
       = some (natToBytes (uitofpBits (10 ^ j)).toNat 8))
@@ -2046,8 +2072,10 @@ theorem t1_store_run {calls : Calls} {env : Env} {s : State} {d : Decimal} {fs :
     (hrc : roundMag (opP d) (opD d) = .fin c) (hcM : c.IsMag) :
     ∃ e : State, e.pc = "cleanup300" ∧ e.pre = some "cleanup282.thread" ∧
       e.mem = writeBytes s.mem out (wordBytes 8 (strtodSpec d).toBits) ∧
-      ∀ k, runFuel calls (5 + k) numFastBody (stateAt env s)
+      ∀ k, runFuel calls (4 + k) numFastBody
+        (stateAt (t1GateEnv env exp10 idig ip fr fdig) s)
         = runFuel calls k numFastBody e := by
+  subst hE; subst hI; subst hip; subst hfr; subst hfd
   obtain ⟨hadd, hsub⟩ := numFast_ifEnd230_counts (d := d)
     (exp10 := BitVec.ofInt 64 (expVal d)) (fdig := BitVec.ofNat 64 (fracDigits d))
     (idig := BitVec.ofNat 64 (intDigits d)) rfl rfl rfl
@@ -2059,16 +2087,20 @@ theorem t1_store_run {calls : Calls} {env : Env} {s : State} {d : Decimal} {fs :
       = BitVec.ofInt 64 (eff d) := by rw [hsub, hneff]
   -- the mantissa word is the lexeme's
   have hb := mantissa_lt hwf h1.1
-  have hfslen : fs.length ≤ 15 := by
+  have hfd15 : fracDigits d ≤ 15 := by
     have h := h1.1
-    rw [digitCount, intDigits, fracDigits, hfs, Option.getD_some] at h
+    rw [digitCount, intDigits] at h
     omega
+  have hfslen : (d.fr.getD empty).length ≤ 15 := by
+    have h := hfd15
+    rw [fracDigits] at h
+    exact h
   have hiplen : d.ip.length ≤ 15 := by
     have h := h1.1
-    rw [digitCount, intDigits, fracDigits, hfs, Option.getD_some] at h
+    rw [digitCount, intDigits, fracDigits] at h
     omega
-  have h10 : 10 ^ fs.length < 2 ^ 64 := by
-    have hle : 10 ^ fs.length ≤ 10 ^ 15 :=
+  have h10 : 10 ^ (d.fr.getD empty).length < 2 ^ 64 := by
+    have hle : 10 ^ (d.fr.getD empty).length ≤ 10 ^ 15 :=
       Nat.pow_le_pow_right (by decide) hfslen
     have h15 : (10 : Nat) ^ 15 < 2 ^ 64 := by decide
     omega
@@ -2078,21 +2110,15 @@ theorem t1_store_run {calls : Calls} {env : Env} {s : State} {d : Decimal} {fs :
     have hlt := digitsNat_lt (intPart_digit hwf.1)
     have h15 : (10 : Nat) ^ 15 < 2 ^ 64 := by decide
     omega
-  have hfsb : Decimal.digitsNat fs < 2 ^ 64 := by
-    have hle : 10 ^ fs.length ≤ 10 ^ 15 :=
-      Nat.pow_le_pow_right (by decide) hfslen
-    have hlt := digitsNat_lt (digits_digit (hwf.2.1 fs hfs))
-    have h15 : (10 : Nat) ^ 15 < 2 ^ 64 := by decide
-    omega
+  have hfsb : Decimal.digitsNat (d.fr.getD empty) < 2 ^ 64 :=
+    fracDigits_getD_lt hwf hfd15
   have hmword : ten * (BitVec.ofNat 64 (Decimal.digitsNat d.ip))
-      + BitVec.ofNat 64 (Decimal.digitsNat fs) = BitVec.ofNat 64 d.mantissa :=
-    t1_add244_eq_mantissa hfs rfl rfl hten hipb hfsb h10 (by omega)
+      + BitVec.ofNat 64 (Decimal.digitsNat (d.fr.getD empty))
+      = BitVec.ofNat 64 d.mantissa :=
+    t1_add244_eq_mantissa rfl rfl hten hipb hfsb h10 (by omega)
   have hrc' : roundMag d.ticks.1 d.ticks.2 = .fin c := by
     rw [← opP_eq_ticks, ← opD_eq_ticks]; exact hrc
   have hsel := t1_store_bits hcM hrc' hsign
-  have hg304 := t1_orCond304_bits (d := d) (exp10 := BitVec.ofInt 64 (expVal d))
-    (fdig := BitVec.ofNat 64 (fracDigits d)) (idig := BitVec.ofNat 64 (intDigits d))
-    rfl rfl rfl h1
   have hg6 := t1_orCond306_bits (d := d) (add := BitVec.ofNat 64 (digitCount d))
     (sub := BitVec.ofInt 64 (eff d)) rfl rfl h1
   have hb306 : (if evalICmp .ult
@@ -2101,10 +2127,6 @@ theorem t1_store_run {calls : Calls} {env : Env} {s : State} {d : Decimal} {fs :
         + (22#64)) (45#64) else 0) = 1 := by
     rw [hadd, hsubE]
     exact t1_gate306_one hg6.1 hg6.2
-  have hfd15 : fracDigits d ≤ 15 := by
-    have h := h1.1
-    rw [digitCount, intDigits] at h
-    omega
   have hrow10' : readBytes s.mem
       (p10 + ((BitVec.ofNat 64 (fracDigits d)).signExtend 64).toNat * 8) 8
       = some (natToBytes ten.toNat 8) := by
@@ -2136,30 +2158,31 @@ theorem t1_store_run {calls : Calls} {env : Env} {s : State} {d : Decimal} {fs :
         = packMag (.fin c) false := by
       rw [t1_fmul_value_any hwf h1 rfl rfl heff, hrc]
     refine ⟨t1AtStoredMul env s (BitVec.ofInt 64 (expVal d)) (BitVec.ofNat 64 (intDigits d))
-      (BitVec.ofNat 64 (Decimal.digitsNat d.ip)) (BitVec.ofNat 64 (Decimal.digitsNat fs))
+      (BitVec.ofNat 64 (Decimal.digitsNat d.ip))
+      (BitVec.ofNat 64 (Decimal.digitsNat (d.fr.getD empty)))
       (BitVec.ofNat 64 (fracDigits d)) p10 pd ten
       (uitofpBits (10 ^ ((BitVec.ofInt 64 (expVal d)
         - BitVec.ofNat 64 (fracDigits d)).signExtend 64).toNat)) sign out,
       rfl, rfl, ?_, ?_⟩
     · rw [t1AtStoredMul_mem]
       have hconv : uitofpBits (t1MantWord ten (BitVec.ofNat 64 (Decimal.digitsNat d.ip))
-            (BitVec.ofNat 64 (Decimal.digitsNat fs))).toNat = uitofpBits d.mantissa := by
+            (BitVec.ofNat 64 (Decimal.digitsNat (d.fr.getD empty)))).toNat
+          = uitofpBits d.mantissa := by
         simp only [t1MantWord]
         rw [hmword, ofNat64_toNat_lt (by omega)]
       rw [hconv]
       simp only [t1SelMul]
       rw [hj, hfmul, hsel, ofNat64_toNat_lt (strtodSpec_toBits_lt d)]
       rfl
-    · exact t1_store_chain_mul (exp10 := BitVec.ofInt 64 (expVal d))
+    · exact t1_then241_chain_mul (exp10 := BitVec.ofInt 64 (expVal d))
         (idig := BitVec.ofNat 64 (intDigits d))
         (ip := BitVec.ofNat 64 (Decimal.digitsNat d.ip))
-        (fr := BitVec.ofNat 64 (Decimal.digitsNat fs))
+        (fr := BitVec.ofNat 64 (Decimal.digitsNat (d.fr.getD empty)))
         (fdig := BitVec.ofNat 64 (fracDigits d)) (ten := ten)
         (pv := uitofpBits (10 ^ ((BitVec.ofInt 64 (expVal d)
           - BitVec.ofNat 64 (fracDigits d)).signExtend 64).toNat))
         (sign := sign) (out := out)
-        hpc hpre hE hI hip hfr hfd hg304.2 hg304.1 hp10 hpwt hsig hout hposfd hpossu
-        hrow10' hrowPm hb306 hcmp
+        hpc hpre hp10 hpwt hsig hout hposfd hpossu hrow10' hrowPm hb306 hcmp
   · -- the quotient arm
     have hlt : eff d < 0 := by omega
     have hj : (((0x0000000000000000#64 : BitVec 64)
@@ -2189,7 +2212,8 @@ theorem t1_store_run {calls : Calls} {env : Env} {s : State} {d : Decimal} {fs :
         = packMag (.fin c) false := by
       rw [t1_fdiv_value_any hwf h1 rfl rfl hlt, hrc]
     refine ⟨t1AtStoredDiv env s (BitVec.ofInt 64 (expVal d)) (BitVec.ofNat 64 (intDigits d))
-      (BitVec.ofNat 64 (Decimal.digitsNat d.ip)) (BitVec.ofNat 64 (Decimal.digitsNat fs))
+      (BitVec.ofNat 64 (Decimal.digitsNat d.ip))
+      (BitVec.ofNat 64 (Decimal.digitsNat (d.fr.getD empty)))
       (BitVec.ofNat 64 (fracDigits d)) p10 pd ten
       (uitofpBits (10 ^ (((0x0000000000000000#64 : BitVec 64)
         - (BitVec.ofInt 64 (expVal d) - BitVec.ofNat 64 (fracDigits d))).signExtend 64).toNat))
@@ -2197,23 +2221,77 @@ theorem t1_store_run {calls : Calls} {env : Env} {s : State} {d : Decimal} {fs :
       rfl, rfl, ?_, ?_⟩
     · rw [t1AtStoredDiv_mem]
       have hconv : uitofpBits (t1MantWord ten (BitVec.ofNat 64 (Decimal.digitsNat d.ip))
-            (BitVec.ofNat 64 (Decimal.digitsNat fs))).toNat = uitofpBits d.mantissa := by
+            (BitVec.ofNat 64 (Decimal.digitsNat (d.fr.getD empty)))).toNat
+          = uitofpBits d.mantissa := by
         simp only [t1MantWord]
         rw [hmword, ofNat64_toNat_lt (by omega)]
       rw [hconv]
       simp only [t1SelDiv]
       rw [hj, hfdiv, hsel, ofNat64_toNat_lt (strtodSpec_toBits_lt d)]
       rfl
-    · exact t1_store_chain_div (exp10 := BitVec.ofInt 64 (expVal d))
+    · exact t1_then241_chain_div (exp10 := BitVec.ofInt 64 (expVal d))
         (idig := BitVec.ofNat 64 (intDigits d))
         (ip := BitVec.ofNat 64 (Decimal.digitsNat d.ip))
-        (fr := BitVec.ofNat 64 (Decimal.digitsNat fs))
+        (fr := BitVec.ofNat 64 (Decimal.digitsNat (d.fr.getD empty)))
         (fdig := BitVec.ofNat 64 (fracDigits d)) (ten := ten)
         (pv := uitofpBits (10 ^ (((0x0000000000000000#64 : BitVec 64)
           - (BitVec.ofInt 64 (expVal d) - BitVec.ofNat 64 (fracDigits d))).signExtend 64).toNat))
         (sign := sign) (out := out)
-        hpc hpre hE hI hip hfr hfd hg304.2 hg304.1 hp10 hpwt hsig hout hposfd hposneg
-        hrow10' hrowPm hb306 hcmp
+        hpc hpre hp10 hpwt hsig hout hposfd hposneg hrow10' hrowPm hb306 hcmp
+
+/-- **The store at the merge block.**  At `if.end230`'s own environment, with the
+five counters the lexeme's, the sign's tie and the two table rows staged, five
+control steps reach `cleanup300` — the gate's step and the conversion's four —
+with `strtodSpec`'s eight bytes written at `%out`. -/
+theorem t1_store_run {calls : Calls} {env : Env} {s : State} {d : Decimal} {fs : Bytes}
+    {sign : BitVec 1} {out : Nat} {p10 pd : Nat} {ten : BitVec 64} {c : Code}
+    (hpc : s.pc = "if.end230") (hpre : s.pre = some "if.end226")
+    (hE : lookupName env "%exp10.4" = some (.int 64 (BitVec.ofInt 64 (expVal d))))
+    (hI : lookupName env "%idig.4" = some (.int 64 (BitVec.ofNat 64 (intDigits d))))
+    (hip : lookupName env "%ip.5" = some (.int 64 (BitVec.ofNat 64 (Decimal.digitsNat d.ip))))
+    (hfr : lookupName env "%fr.5" = some (.int 64 (BitVec.ofNat 64 (Decimal.digitsNat fs))))
+    (hfd : lookupName env "%fdig.4" = some (.int 64 (BitVec.ofNat 64 (fracDigits d))))
+    (hfs : d.fr = some fs)
+    (hsig : lookupName env "%tobool274.not" = some (.int 1 sign))
+    (hout : lookupName env "%out" = some (.ptr out))
+    (hp10 : lookupName env "@NUMF_EL1_P10" = some (.ptr p10))
+    (hpwt : lookupName env "@NUMF_EL1_POW10" = some (.ptr pd))
+    (hten : ten = BitVec.ofNat 64 (10 ^ fs.length))
+    (hrow10 : readBytes s.mem (p10 + fracDigits d * 8) 8 = some (natToBytes ten.toNat 8))
+    (hrowP : ∀ j, j ≤ 22 → readBytes s.mem (pd + j * 8) 8
+      = some (natToBytes (uitofpBits (10 ^ j)).toNat 8))
+    (hwf : d.wellFormed) (h1 : Tier1 d)
+    (hsign : (sign = 1) ↔ d.neg = false)
+    (hrc : roundMag (opP d) (opD d) = .fin c) (hcM : c.IsMag) :
+    ∃ e : State, e.pc = "cleanup300" ∧ e.pre = some "cleanup282.thread" ∧
+      e.mem = writeBytes s.mem out (wordBytes 8 (strtodSpec d).toBits) ∧
+      ∀ k, runFuel calls (5 + k) numFastBody (stateAt env s)
+        = runFuel calls k numFastBody e := by
+  have hg := t1_orCond304_bits (d := d) (exp10 := BitVec.ofInt 64 (expVal d))
+    (fdig := BitVec.ofNat 64 (fracDigits d)) (idig := BitVec.ofNat 64 (intDigits d))
+    rfl rfl rfl h1
+  have hgetD : d.fr.getD empty = fs := by rw [hfs]; rfl
+  have h1s : step calls numFastBody (stateAt env s) =
+      .jump (t1AtMant env s (BitVec.ofInt 64 (expVal d))
+        (BitVec.ofNat 64 (intDigits d)) (BitVec.ofNat 64 (Decimal.digitsNat d.ip))
+        (BitVec.ofNat 64 (Decimal.digitsNat fs)) (BitVec.ofNat 64 (fracDigits d))) :=
+    t1_ifEnd230_step calls env s hpc hpre hE hI hip hfr hfd ⟨hg.2, hg.1⟩
+  obtain ⟨e, hepc, hepre, hemem, hrun⟩ :=
+    t1_then241_store_run (calls := calls) (env := env)
+      (s := { s with pc := "if.then241", pre := some "if.end230" })
+      (d := d) (sign := sign) (out := out) (p10 := p10) (pd := pd)
+      (ten := ten) (c := c)
+      (exp10 := BitVec.ofInt 64 (expVal d)) (idig := BitVec.ofNat 64 (intDigits d))
+      (ip := BitVec.ofNat 64 (Decimal.digitsNat d.ip))
+      (fr := BitVec.ofNat 64 (Decimal.digitsNat fs))
+      (fdig := BitVec.ofNat 64 (fracDigits d))
+      rfl rfl rfl rfl rfl (by simp only [hgetD]) rfl hsig hout hp10 hpwt
+      (by rw [hgetD]; exact hten) hrow10 hrowP hwf h1 hsign hrc hcM
+  refine ⟨e, hepc, hepre, ?_, ?_⟩
+  · exact hemem
+  · intro k
+    rw [show 5 + k = 1 + (4 + k) from by omega, runFuel_jump_prefix h1s]
+    exact hrun k
 
 /-! ### The residual, named
 
@@ -2251,6 +2329,10 @@ adapter's `Rat` construction, as `StrtodTier1` records. -/
 #print axioms fdivBits_uitofp
 #print axioms fdivBits_uitofp_pow
 #print axioms pow10_uitofp_spec
+#print axioms t1_then241_chain_mul
+#print axioms t1_then241_chain_div
+#print axioms t1_then241_store_run
+#print axioms t1_store_run
 
 end NumFastTier1
 

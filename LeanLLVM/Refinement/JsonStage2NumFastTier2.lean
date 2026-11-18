@@ -52,6 +52,9 @@ namespace LeanLLVM.Refinement
 
 open LeanLLVM
 open LeanLLVM.Refinement
+open LeanLLVM.Refinement.BlockEval
+open LeanLLVM.JSON
+open LeanLLVM.StrtodRefine
 
 /-! ### The two tables
 
@@ -456,6 +459,133 @@ theorem numElEl1_34_neg36 :
       = (LeanLLVM.ElGuardRefine.elTier2Code 34 (-36)).map tier2Bits := by
   decide
 
+/-! ### The gate's value tie at `if.end268`
+
+The bridge above is a statement about the model's two arguments.  The body's
+site hands them as `%add244` and `%sub231`: the mantissa word the tier-1 block
+formed and the emitted `eff`, both sixty-four-bit registers.  This section reads
+the site's arguments as the model's, so `num_el_el1`'s decision at the call is
+the guard's decision on the lexeme's own mantissa and exponent, and the block's
+own bit is that decision's answer.
+
+`if.end268` is reached only outside tier 1, so the lexeme's digit count is inside
+`19` (`JsonStage2NumFastArm`'s item 3 supplies it); the mantissa is then inside
+the emitted `uint64_t` (`mantissa_lt_two_pow_64`), which is `NumFastElAgrees`'s
+domain.  The exponent's `Int` reading is the caller's: the register is
+`BitVec.ofInt 64 (eff d)`, and `toInt` is `eff d` exactly when the value is in
+the signed range. -/
+
+/-- **The site's argument is the kernel's domain.**  At `if.end268` the mantissa
+register is a sixty-four-bit word — a `BitVec 64` — so the bound the kernel's
+`uint64_t` parameter imposes is the register's own. -/
+theorem numFast_ifEnd268_word {d : Decimal} {a : BitVec 64}
+    (hmant : a = BitVec.ofNat 64 d.mantissa) :
+    a.toNat < 2 ^ 64 := by
+  rw [hmant, BitVec.toNat_ofNat]
+  exact Nat.mod_lt _ (by decide)
+
+/-- **The gate's value tie.**  At `if.end268`, with `%add244` the lexeme's
+mantissa and `%sub231` its emitted `eff`, the model's decision at the site's two
+arguments is the guard's encoding at the lexeme's mantissa and exponent: the
+block hands `num_el_el1` exactly the word `NumFastElAgrees` is stated on. -/
+theorem numFast_ifEnd268_value {d : Decimal} {a b : BitVec 64}
+    (hmant : a = BitVec.ofNat 64 d.mantissa)
+    (hexp : b = BitVec.ofInt 64 (eff d))
+    (hwf : d.wellFormed) (hnd : digitCount d ≤ 19)
+    (heffr : -(2 ^ 63 : Int) ≤ eff d ∧ eff d < 2 ^ 63) :
+    numElEl1 guardTable a.toNat b.toInt
+      = (LeanLLVM.ElGuardRefine.elTier2Code d.mantissa (eff d)).map tier2Bits := by
+  have hm64 : d.mantissa < 2 ^ 64 := mantissa_lt_two_pow_64 hwf hnd
+  have ha : a.toNat = d.mantissa := by
+    rw [hmant, BitVec.toNat_ofNat, Nat.mod_eq_of_lt hm64]
+  have hb : b.toInt = eff d := by
+    rw [hexp]
+    exact BitVec.toInt_ofInt_eq_self (by decide) heffr.1 heffr.2
+  rw [ha, hb]
+  exact numFastElAgrees d.mantissa (eff d) hm64
+
+/-- **The gate's acceptance at the site.**  When the guard's decision is the code
+`c`, the block's kernel call accepts: `%call270` binds one, the decision's bit is
+zero, and the eight bytes written are the guard's encoding `c`. -/
+theorem numFast_ifEnd268_accept {env : Env} {s : State} {d : Decimal}
+    {a b : BitVec 64} {q : Nat} {c : LeanLLVM.Code}
+    (ha : lookupName env "%add244" = some (.int 64 a))
+    (hb : lookupName env "%sub231" = some (.int 64 b))
+    (hd : lookupName env "%d269" = some (.ptr q))
+    (hmant : a = BitVec.ofNat 64 d.mantissa)
+    (hexp : b = BitVec.ofInt 64 (eff d))
+    (hwf : d.wellFormed) (hnd : digitCount d ≤ 19)
+    (heffr : -(2 ^ 63 : Int) ≤ eff d ∧ eff d < 2 ^ 63)
+    (hcode : LeanLLVM.ElGuardRefine.elTier2Code d.mantissa (eff d) = some c) :
+    denoteCode (stage2NumFastCalls guardTable) numFastIfEnd268Instrs (stateAt env s) =
+      some (stateAt
+        (("%tobool271.not", .int 1 0) ::
+         ("%call270", .int 32 1) :: env)
+        { s with mem := writeBytes s.mem q (natToBytes (tier2Bits c) 8), next := s.next }) := by
+  have hvalue : numElEl1 guardTable a.toNat b.toInt
+      = (LeanLLVM.ElGuardRefine.elTier2Code d.mantissa (eff d)).map tier2Bits := by
+    subst hmant; subst hexp
+    exact numFast_ifEnd268_value rfl rfl hwf hnd heffr
+  refine numFast_ifEnd268_denote_accepted guardTable ha hb hd ?_
+  rw [hvalue, hcode]
+  rfl
+
+/-- **The gate's refusal at the site.**  When the guard has no decision, the
+block's kernel call declines: `%call270` binds zero, the decision's bit is one,
+and the memory is the caller's. -/
+theorem numFast_ifEnd268_refuse {env : Env} {s : State} {d : Decimal}
+    {a b : BitVec 64} {q : Nat}
+    (ha : lookupName env "%add244" = some (.int 64 a))
+    (hb : lookupName env "%sub231" = some (.int 64 b))
+    (hd : lookupName env "%d269" = some (.ptr q))
+    (hmant : a = BitVec.ofNat 64 d.mantissa)
+    (hexp : b = BitVec.ofInt 64 (eff d))
+    (hwf : d.wellFormed) (hnd : digitCount d ≤ 19)
+    (heffr : -(2 ^ 63 : Int) ≤ eff d ∧ eff d < 2 ^ 63)
+    (hcode : LeanLLVM.ElGuardRefine.elTier2Code d.mantissa (eff d) = none) :
+    denoteCode (stage2NumFastCalls guardTable) numFastIfEnd268Instrs (stateAt env s) =
+      some (stateAt
+        (("%tobool271.not", .int 1 1) ::
+         ("%call270", .int 32 0) :: env)
+        { s with mem := s.mem, next := s.next }) := by
+  have hvalue : numElEl1 guardTable a.toNat b.toInt
+      = (LeanLLVM.ElGuardRefine.elTier2Code d.mantissa (eff d)).map tier2Bits := by
+    subst hmant; subst hexp
+    exact numFast_ifEnd268_value rfl rfl hwf hnd heffr
+  refine numFast_ifEnd268_denote_refused guardTable ha hb hd ?_
+  rw [hvalue, hcode]
+  rfl
+
+/-- **The gate's decision at its own bit.**  The block's `%call270` answer is
+`1` exactly when the guard decides the lexeme's `(mantissa, eff)`, so the branch
+`if.end268` takes is the model's decision and the site's word is the guard's. -/
+theorem numFast_ifEnd268_decision {env : Env} {s : State} {d : Decimal}
+    {a b : BitVec 64} {q : Nat}
+    (ha : lookupName env "%add244" = some (.int 64 a))
+    (hb : lookupName env "%sub231" = some (.int 64 b))
+    (hd : lookupName env "%d269" = some (.ptr q))
+    (hmant : a = BitVec.ofNat 64 d.mantissa)
+    (hexp : b = BitVec.ofInt 64 (eff d))
+    (hwf : d.wellFormed) (hnd : digitCount d ≤ 19)
+    (heffr : -(2 ^ 63 : Int) ≤ eff d ∧ eff d < 2 ^ 63) :
+    (∀ c : LeanLLVM.Code,
+        LeanLLVM.ElGuardRefine.elTier2Code d.mantissa (eff d) = some c →
+          denoteCode (stage2NumFastCalls guardTable) numFastIfEnd268Instrs
+            (stateAt env s) =
+            some (stateAt
+              (("%tobool271.not", .int 1 0) ::
+               ("%call270", .int 32 1) :: env)
+              { s with mem := writeBytes s.mem q (natToBytes (tier2Bits c) 8), next := s.next })) ∧
+    (LeanLLVM.ElGuardRefine.elTier2Code d.mantissa (eff d) = none →
+          denoteCode (stage2NumFastCalls guardTable) numFastIfEnd268Instrs
+            (stateAt env s) =
+            some (stateAt
+              (("%tobool271.not", .int 1 1) ::
+               ("%call270", .int 32 0) :: env)
+              { s with mem := s.mem, next := s.next })) :=
+  ⟨fun _ hc => numFast_ifEnd268_accept ha hb hd hmant hexp hwf hnd heffr hc,
+   fun hc => numFast_ifEnd268_refuse ha hb hd hmant hexp hwf hnd heffr hc⟩
+
 /-! ### Axiom footprints -/
 
 #print axioms numFastElAgrees
@@ -469,5 +599,13 @@ theorem numElEl1_34_neg36 :
 #print axioms low_sum_overflows_at_34_neg36
 
 #print axioms numElEl1_34_neg36
+
+#print axioms numFast_ifEnd268_word
+
+#print axioms numFast_ifEnd268_value
+
+#print axioms numFast_ifEnd268_accept
+
+#print axioms numFast_ifEnd268_refuse
 
 end LeanLLVM.Refinement

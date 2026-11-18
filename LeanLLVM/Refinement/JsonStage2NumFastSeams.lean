@@ -521,7 +521,7 @@ theorem intRunExit_gate {mem0 : Mem} {bs : List UInt8} {p n i0 d0 : Nat} {e : St
       lookupName o.env "%exp10.4731" = some (.int 64 0) ∧
       ∀ k, runFuel calls (1 + k) numFastBody (stateAt e.env e) =
         runFuel calls k numFastBody o := by
-  rcases he with hleft | ⟨h230, hpre, _, _, _, _, _, hip, h7⟩
+  rcases he with hleft | ⟨h230, hpre, _, _, _, _, _, _, hip, h7⟩
   · rw [hleft.1] at hpc; exact absurd hpc (by decide)
   have h7i : lookupName e.env "%7"
       = some (.int 64 (BitVec.ofNat 64 (d0 + (n - i0)))) := by
@@ -569,7 +569,7 @@ theorem intScan_merge {env : Env} {s : State} {a n : Nat} {bs : List UInt8}
   obtain ⟨e, j, hj, hend, hrun⟩ :=
     NumFastScanRun.intScan_end230 hpc hp hn hread hsign hbyte hlead hnpos hltn hnext
       hfast hnlt hdigits
-  obtain ⟨h230, hpre, _, _, _, _, _, hip, h7⟩ := hend
+  obtain ⟨h230, hpre, _, _, _, _, _, _, hip, h7⟩ := hend
   have hi0 : NumFastStarts.negIndex b + 1 ≤ n := by omega
   have hbn : 1 + n < 2 ^ 64 := by omega
   have h7i : lookupName e.env "%7"
@@ -642,7 +642,7 @@ theorem t1_intRun_tie {calls : Calls} {d : Decimal} {bs : List UInt8}
       lookupName o.env "%fdig.4719727" = some (.int 64 0) ∧
       ∀ k, runFuel calls (1 + k) numFastBody (stateAt e.env e) =
         runFuel calls k numFastBody o := by
-  rcases he with hleft | ⟨h230, hpre, _, _, _, _, _, hip4, h7⟩
+  rcases he with hleft | ⟨h230, hpre, _, _, _, _, _, _, hip4, h7⟩
   · rw [hleft.1] at hpc; exact absurd hpc (by decide)
   have hlen : d0 + (n - i0) ≤ 19 := by
     have h := hdig; rw [digitCount, hint] at h; omega

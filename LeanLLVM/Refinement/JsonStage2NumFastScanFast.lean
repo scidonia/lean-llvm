@@ -503,7 +503,7 @@ theorem intRun_end_append {calls : Calls} {mem0 : Mem} {p n i0 d0 : Nat}
     (hinv : intRunInv mem0 p n i0 d0 bs (n - i0) e 0)
     (hdigits : ∀ k, i0 ≤ k → k < n → IsDigitB (bs.getD k 0) = true) :
     ∃ (e' : State) (j' : Nat), j' ≤ j + (n - i0 + 1) * 4 ∧ e'.pc = "if.end230" ∧
-      intRunEndWord bs p n i0 d0 e' ∧
+      intRunEndWord mem0 bs p n i0 d0 e' ∧
       ∀ k, runFuel calls (j' + k) numFastBody s = runFuel calls k numFastBody e' := by
   obtain ⟨e', j1, hj1, hexit, hword, hrun⟩ :=
     (intRunEndBoundLoop mem0 p n i0 d0 bs 4 (by omega) hdigits).run_from (n - i0) e 0 hinv
@@ -553,7 +553,18 @@ theorem expRun_append {calls : Calls} {mem0 : Mem} {p n i0 : Nat}
 /-- **The integer fast path appended: `entry` to the run's end-of-lexeme exit.**
 The reader's refusal plus the run's whole distance: from `entry` the body reaches
 `if.end230` with `intRunEndWord` when the eight-digit guard is taken, the reader
-refuses, and every byte after the lead is a digit. -/
+refuses, and every byte after the lead is a digit.
+
+**The two hypotheses on the reader do not hold together.**  The guard taken is
+`negIndex b + 9 ≤ n`, and `hdigits` asks every byte from `negIndex b + 1` to the
+lexeme's end to be a digit; the eight bytes `hnone` reads are inside that range,
+and eight ASCII digits make `d8Value` a `some`.  So this statement has no
+inhabitant, and it says nothing about the lexeme it names: the route a
+nine-or-more-digit integer takes is the reader's *acceptance* —
+`intScan_fastTaken`'s second shape, appended by `intRun_end_append` — and that is
+what a composition of that route uses.  The short lexeme's reader-refused route
+is `JsonStage2NumFastScanRun.intScan_end230`, whose guard is refused
+(`n < negIndex b + 9`). -/
 theorem intScan_fastEnd_run {epow : Int → Option EPow} {env : Env} {s : State}
     {a n : Nat} {bs : List UInt8} {b b0 : UInt8}
     (hpc : s.pc = "entry")
@@ -570,7 +581,7 @@ theorem intScan_fastEnd_run {epow : Int → Option EPow} {env : Env} {s : State}
     (hdigits : ∀ k, negIndex b + 1 ≤ k → k < n →
       IsDigitB (bs.getD k 0) = true) :
     ∃ (e : State) (j : Nat), j ≤ 10 + (n - (negIndex b + 1) + 1) * 4 ∧
-      e.pc = "if.end230" ∧ intRunEndWord bs a n (negIndex b + 1) 1 e ∧
+      e.pc = "if.end230" ∧ intRunEndWord s.mem bs a n (negIndex b + 1) 1 e ∧
       ∀ k, runFuel (stage2NumFastCalls epow) (j + k) numFastBody (stateAt env s) =
         runFuel (stage2NumFastCalls epow) k numFastBody e := by
   obtain ⟨e0, hinv0, hrun0⟩ :=
