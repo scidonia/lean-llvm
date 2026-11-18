@@ -1,0 +1,149 @@
+lean-llvm: Lean (version 4.35.0, Release)
+command: nix develop -c bash tests/json-units-bench/bench-route-simdjson.sh
+harness: bench-route-simdjson.sh sha256=9188ce9587a007f9184ba312dd6427e8e58eacca590ee78b826c0420f0eaec7c
+baseline source: simdjson-baseline.cc sha256=87f92ed4c8b5af0a60cfcec44c0526ef214aad274acd34ac42be7165a6f6716e
+simdjson: 5.0.5 (header); dev: /nix/store/m2i8165bayxxgzj3fbvdg6gihz6na93d-simdjson-5.0.5-dev
+simdjson lib: /nix/store/jglxdk9y0yfk3mc9dbr675pfmv42a89y-simdjson-5.0.5; libsimdjson.so.34.0.0 sha256=9b2368aaa42dbfbf125cedea26c86914b622899c4ebeaf3f9fc7fd7bbcdd7184
+header: simdjson.h sha256=869e8a4ff285cec36bc79d4a671a433158391a4f1898bb1c3b1f6e654b9547ae
+provenance: nix build --no-link --print-out-paths 'nixpkgs#simdjson.dev'
+provenance: nix build --no-link --print-out-paths 'nixpkgs#simdjson'
+compiler: clang++ (clang version 21.1.8)
+harness flags: -O3 -march=x86-64-v3 -mpclmul -std=c++17 -falign-loops=64 -falign-functions=64
+library note: the shared library is the realised nix build, not recompiled at
+              these flags; stage1 is the library's code, the traversal in
+              parse is compiled here at the flags above.
+route binary: /home/gavin/dev/Scidonia/lean-llvm/probes/json/route/build/leanllvm-json-route
+route sha256: a9e37c684223fb0d9950c67c8c91723997bfc5212205c4ce595f6e1df7714a37; mtime: 2026-11-18 00:17:20.061016427 +0100
+route note: the binary is `probes/json/route/build.sh`'s default build
+            (TIMING=0); `--stages` needs TIMING=1 and is not used, so the
+            adapter's copy-in/copy-out slots are absent and the route rows
+            carry its own staging, native and consumer intervals.
+host: Linux 6.17.0-1033-oem x86_64
+cpu: Intel(R) Core(TM) Ultra 7 268V
+cpus online: 8; pinned to: 0 4
+scaling governor: powersave
+load average at start: 1.10 1.37 1.73 1/3228 757045
+trials: 3; reps in every row: 51
+cpu0 Cpus_allowed_list under the pin: Cpus_allowed_list:	0
+cpu4 Cpus_allowed_list under the pin: Cpus_allowed_list:	4
+
+corpus: /home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build/corpus
+file                    bytes sha256
+route-s1-64k.json       65536 41f918853d55dad0e05d3ec03682e037925759031632f045a755db5a5173535c
+route-u8-64k.json       65536 d14a6a6842610aaaf2bdd13a292730f156cf5c6c5724eddae93effa9b697f18c
+syn-dense-4m.json     4194304 243e8f36f14e1acb5694d8c873c18f46a86a073c768944abaa94cfb57883accd
+syn-dense-64k.json      65536 3d9e0237ec66adb2d77848a24f1998fa4b56b4dbe77a11431b02176fcd162995
+syn-strings-4m.json    4194304 3ce71d559eef1d11e83272b999fe944f49cb5bef656b5ec863044ed8f1b5cd27
+syn-strings-64k.json      65536 bd007090d7a5ab09a1fc69c0b96879f101dbf8b3f13a300d7d3e46127d26fb12
+syn-utf8-4m.json      4194304 2091fc28bf071e8a7311f43754d8bb82cb2ddef54360be8570c46b7a94d298f2
+syn-utf8-64k.json       65536 f95f4aeaac083d5d97ff98f9ad6aa09e4ed8c905d89e1bf3a3177179533400a4
+
+refusal syn-dense-4m exit=0 row doc=syn-dense-4m.json size=4194304 path=fallback reps=1 read_ns=714111 admission_ns=5096 staging_ns=- route_ns=- copyout_ns=- consume_fold_ns=- consume_values_ns=- verdict=0 ndst=0 nev=0 tokens=0 values=0 walked=1 foldsum=0 valuessum=0
+refusal syn-strings-4m exit=0 row doc=syn-strings-4m.json size=4194304 path=fallback reps=1 read_ns=564070 admission_ns=4771 staging_ns=- route_ns=- copyout_ns=- consume_fold_ns=- consume_values_ns=- verdict=0 ndst=0 nev=0 tokens=0 values=0 walked=1 foldsum=0 valuessum=0
+refusal syn-utf8-4m exit=0 row doc=syn-utf8-4m.json size=4194304 path=fallback reps=1 read_ns=632667 admission_ns=4140 staging_ns=- route_ns=- copyout_ns=- consume_fold_ns=- consume_values_ns=- verdict=0 ndst=0 nev=0 tokens=0 values=0 walked=1 foldsum=0 valuessum=0
+
+trial cpu=0 trial=1/3
+trial cpu=0 trial=2/3
+trial cpu=0 trial=3/3
+trial cpu=4 trial=1/3
+trial cpu=4 trial=2/3
+trial cpu=4 trial=3/3
+
+load average after the sweep: 1.16 1.38 1.73 1/3232 758792
+
+## the composed route (unit: ns; median of the three trial medians, min-max of those medians)
+cpu    doc                   bytes path verdict  admission    staging     native      consume      end2end   ns/byte     GB/s
+0      route-s1-64k          65536 fast  refuse 162562-166232 164097-182706  69265-71956     720-731    396945-420923      6.36    0.157
+0      route-u8-64k          65536 fast  refuse 118486-119369 162738-168147  65548-66856     168-186    348248-353495      5.36    0.187
+0      syn-dense-64k         65536 fast  accept  63888-65811   41899-45414  139897-144302 267751-293483 516950-546678      8.13    0.123
+0      syn-strings-64k       65536 fast  accept 231173-241518 163154-207782  86163-90534   93015-98366  574534-638200      9.46    0.106
+0      syn-utf8-64k          65536 fast  accept 372596-387088 164486-211488  73725-77680   35787-37099  661027-694362     10.23    0.098
+4      route-s1-64k          65536 fast  refuse 298752-306704 273438-283925 140892-150520   1987-2080   723114-738498     11.20    0.089
+4      route-u8-64k          65536 fast  refuse 216109-225327 283348-291485 154443-176252    382-591    662628-676578     10.19    0.098
+4      syn-dense-64k         65536 fast  accept 103957-105079 142027-156342 286749-293458 509237-564323 1053705-1097056     16.24    0.062
+4      syn-strings-64k       65536 fast  accept 416583-426842 272674-279537 165980-185119  96040-96454  961966-977693     14.69    0.068
+4      syn-utf8-64k          65536 fast  accept 561964-563159 270024-279059 154219-169935  68051-69275  1059857-1079747     16.22    0.062
+
+## simdjson 5.0.5 (same discipline; GB/s at the median of the trial medians)
+cpu    doc                arm        bytes   ns_median   ns_min-max   ns/byte     GB/s status  
+0      route-s1-64k       pad        65536         942    841-1052       0.014   69.571 ok      
+0      route-s1-64k       stage1     65536       12074  12072-13387      0.184    5.428 ok      
+0      route-s1-64k       parse      65536       12538  12127-13175      0.191    5.227 refused 
+0      route-u8-64k       pad        65536         871    868-914        0.013   75.242 ok      
+0      route-u8-64k       stage1     65536        6897   6877-7777       0.105    9.502 rejected
+0      route-u8-64k       parse      65536        7133   6856-9576       0.109    9.188 refused 
+0      syn-dense-4m       pad      4194304      183216 183107-191983     0.044   22.893 ok      
+0      syn-dense-4m       stage1   4194304      853290 838481-858340     0.203    4.915 ok      
+0      syn-dense-4m       parse    4194304     5605746 5533136-5631642     1.337    0.748 ok      
+0      syn-dense-64k      pad        65536         918    855-928        0.014   71.390 ok      
+0      syn-dense-64k      stage1     65536        9938   9903-11553      0.152    6.594 ok      
+0      syn-dense-64k      parse      65536       83923  83471-86349      1.281    0.781 ok      
+0      syn-strings-4m     pad      4194304      198262 185994-206775     0.047   21.155 ok      
+0      syn-strings-4m     stage1   4194304      449311 440035-452732     0.107    9.335 ok      
+0      syn-strings-4m     parse    4194304     2321509 2257856-2328370     0.553    1.807 ok      
+0      syn-strings-64k    pad        65536         875    873-1039       0.013   74.898 ok      
+0      syn-strings-64k    stage1     65536        4094   4039-4104       0.062   16.008 ok      
+0      syn-strings-64k    parse      65536       14857  12325-15147      0.227    4.411 ok      
+0      syn-utf8-4m        pad      4194304      189604 183436-196095     0.045   22.121 ok      
+0      syn-utf8-4m        stage1   4194304      408705 407654-417678     0.097   10.262 ok      
+0      syn-utf8-4m        parse    4194304     1540526 1537689-1625825     0.367    2.723 ok      
+0      syn-utf8-64k       pad        65536         874    871-985        0.013   74.984 ok      
+0      syn-utf8-64k       stage1     65536        6184   5660-7808       0.094   10.598 ok      
+0      syn-utf8-64k       parse      65536       17779  16487-18746      0.271    3.686 ok      
+4      route-s1-64k       pad        65536        1190   1186-1191       0.018   55.072 ok      
+4      route-s1-64k       stage1     65536       30379  30172-30489      0.464    2.157 ok      
+4      route-s1-64k       parse      65536       30347  30202-31176      0.463    2.160 refused 
+4      route-u8-64k       pad        65536        1186   1183-1189       0.018   55.258 ok      
+4      route-u8-64k       stage1     65536       15674  15619-15879      0.239    4.181 rejected
+4      route-u8-64k       parse      65536       15743  15621-16051      0.240    4.163 refused 
+4      syn-dense-4m       pad      4194304      201121 195449-202639     0.048   20.855 ok      
+4      syn-dense-4m       stage1   4194304     2008484 1993485-2106009     0.479    2.088 ok      
+4      syn-dense-4m       parse    4194304     8430304 8357224-8609356     2.010    0.498 ok      
+4      syn-dense-64k      pad        65536        1185   1180-1188       0.018   55.305 ok      
+4      syn-dense-64k      stage1     65536       27877  27618-27952      0.425    2.351 ok      
+4      syn-dense-64k      parse      65536      127744 119583-128403     1.949    0.513 ok      
+4      syn-strings-4m     pad      4194304      199997 193922-214490     0.048   20.972 ok      
+4      syn-strings-4m     stage1   4194304      759766 754160-761484     0.181    5.521 ok      
+4      syn-strings-4m     parse    4194304     3366785 3347373-3396020     0.803    1.246 ok      
+4      syn-strings-64k    pad        65536        1191   1190-1196       0.018   55.026 ok      
+4      syn-strings-64k    stage1     65536        6823   6806-6870       0.104    9.605 ok      
+4      syn-strings-64k    parse      65536       20343  20097-24633      0.310    3.222 ok      
+4      syn-utf8-4m        pad      4194304      199484 194216-203660     0.048   21.026 ok      
+4      syn-utf8-4m        stage1   4194304      920223 909234-929308     0.219    4.558 ok      
+4      syn-utf8-4m        parse    4194304     2821077 2548858-2865450     0.673    1.487 ok      
+4      syn-utf8-64k       pad        65536        1197   1194-1223       0.018   54.750 ok      
+4      syn-utf8-64k       stage1     65536       11957  11957-11959      0.182    5.481 ok      
+4      syn-utf8-64k       parse      65536       32597  32479-34169      0.497    2.010 ok      
+
+## the comparison (unit: a multiplier; per-trial quotients, median with min-max)
+Each quotient is one arm over the other inside one trial, both on the same CPU and
+bytes.  A value above 1 means the route costs more.  A cell is `-` when the
+simdjson arm it divides by is not `ok` for that document: a `rejected` stage 1 or
+a `refused` parse times an error, not the stage, and prices a different amount of
+work.
+
+cpu    doc                     native/stage1     native/parse    staging/pad  end2end/(pad+parse)    route
+0      route-s1-64k       5.74 (5.38-5.76) - 193.96 (171.52-195.12) -   refuse
+0      route-u8-64k       - - 191.46 (178.05-193.05) -   refuse
+0      syn-dense-64k      14.49 (12.11-14.57) 1.68 (1.67-1.72) 49.00 (46.78-49.47) 6.26 (6.13-6.28)   accept
+0      syn-strings-64k    21.15 (20.99-22.41) 5.98 (5.83-6.99) 199.17 (186.89-237.47) 39.83 (39.02-43.53)   accept
+0      syn-utf8-64k       11.92 (9.85-13.72) 4.32 (4.14-4.47) 193.86 (166.99-241.98) 35.23 (34.19-40.00)   accept
+4      route-s1-64k       4.83 (4.64-4.99) - 237.34 (230.55-238.39) -   refuse
+4      route-u8-64k       - - 240.58 (239.52-245.15) -   refuse
+4      syn-dense-64k      10.43 (10.26-10.63) 2.29 (2.28-2.40) 120.36 (119.81-131.93) 8.21 (8.17-9.08)   accept
+4      syn-strings-64k    24.45 (24.33-26.95) 8.16 (6.76-9.21) 233.73 (229.14-233.84) 44.72 (37.25-45.92)   accept
+4      syn-utf8-64k       13.26 (12.90-14.21) 4.88 (4.73-4.97) 228.18 (226.15-231.71) 31.45 (30.51-31.47)   accept
+
+ok: 5 document(s) x 2 CPU(s) x 3 trial(s) at 51 repetition(s) for the route;
+    the same documents and discipline for simdjson, with the three 4 MiB
+    documents refused at the route's admission and recorded above
+note: `native/stage1` is an upper bound, not a stage ratio: the route's native
+      call runs stage 1 and stage 2 in one function
+note: `native/parse` is the like-for-like full-parse pair; `parse` rows whose
+      status is `refused` time a refusal and are not full-parse figures, so the
+      quotient cells that divide by them are `-`
+note: a route row whose verdict is `refuse` (the route corpora, which simdjson
+      also refuses) prices the pipeline up to its refusal, not an accepted run;
+      the route column of the comparison states it
+note: the route rows carry no calibrated core clock, so GB/s is wall time per
+      byte and no cycles-per-byte figure is derived for them

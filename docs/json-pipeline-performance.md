@@ -1,12 +1,14 @@
 # Native SIMD JSON pipeline: measured performance record
 
-Status: **measurement record, with stage 1's three units in the tree**. The
-pipeline was built and measured in a scratch tree outside the checkout, and the
-numbers below are a record of observed runs, not an artefact reproducible from
-this tree — re-measuring requires rebuilding the harness, whose structure, arms
-and controls are described in §7 so that a rebuild can repeat the same
-comparisons. Stage 1's units are the exception. The classification-mask
-kernel is extracted as `kernel/json/s1_block.c`, its emitted IR is committed as
+Status: **measurement record, with stage 1's three units and the assembled
+pipeline in the tree**. The pipeline was built and measured in a scratch tree
+outside the checkout, and the numbers below are a record of observed runs, not
+an artefact reproducible from this tree — re-measuring requires rebuilding the
+harness, whose structure, arms and controls are described in §7 so that a
+rebuild can repeat the same comparisons. Stage 1's units, and the assembled
+pipeline after them, are the exceptions: each has its own measured section
+below, reproducible from this tree. The classification-mask kernel is extracted
+as `kernel/json/s1_block.c`, its emitted IR is committed as
 `probes/install/ir/json-s1-masks.candidate.ll`, and `s1_masks_refines`
 (`LeanLLVM/Refinement/JsonS1MasksSteps.lean`) proves that pinned body stores the six
 masks and the carry `LeanLLVM/Refinement/JsonScanSpec.lean` specifies. The entry
@@ -23,15 +25,20 @@ committed as `probes/install/ir/json-utf8.candidate.ll`,
 `LeanLLVM/Refinement/JsonUtf8Spec.lean` states the specification the verdict is
 judged against, and `utf8_stage_refines` (`LeanLLVM/Refinement/JsonUtf8Steps.lean`)
 proves the pinned body returns zero exactly when the staged window is a valid
-prefix. Everything else — the selection that fills the entry stream, the exit
-and escape stages, the assembled pipeline, and the parser's own refinement —
-remains outside the tree. The three units have a measurement of their own,
+prefix. The assembled pipeline is in the tree too: `kernel/json/pipeline.c`
+runs the mask unit, the entry emitter, the escape list, the UTF-8 stage and
+stage 2 (`kernel/json/stage2.c`) in one call, with its refinement development
+under `LeanLLVM/Refinement/JsonPipeline*.lean`; §"The composed route, against
+simdjson 5.0.5" measures it as the route binary calls it, on the units' corpus.
+The three units have a measurement of their own,
 separate from every ratio in this note: §"Stage 1's three units, measured in this
 tree" records the instrument, corpus, flags, host and the numbers with their
 variance, and the subsection after it records simdjson 5.0.5's stage 1 and full
 parse from the same session over the same corpus, with its own provenance, the
 stage ratio that pairing supports and its variance, and the comparisons it does
-and does not support.
+and does not support. §"The composed route, against simdjson 5.0.5" then
+measures the assembled route beside the same simdjson arms over that corpus,
+with its own instrument, cost split, quotients and limits.
 
 The note answers one question: **can a byte-mask JSON parser, in the shape the
 Lean development would lower to, be competitive with a mature native parser on
@@ -326,7 +333,11 @@ validity), each called at the ABI its header states and each proved against its
 specification (`s1_masks_refines`, `entry_pos8_refines`, `entry_b8_refines`,
 `utf8_stage_refines`). What they are not is a parser: the selection that fills
 the entry stream, the escape and exit stages, stage 2, and the assembled
-pipeline are not in this tree, so no figure here is an end-to-end one.
+pipeline are not measured here, so no figure here is an end-to-end one. (When
+this section was written those stages were not in the tree; the assembled
+pipeline is there now -- `kernel/json/pipeline.c` -- and §"The composed route,
+against simdjson 5.0.5" measures it. No row below is re-derived from that
+section.)
 
 ### The instrument
 
@@ -938,10 +949,12 @@ with the paired tables above.
 
 - **Not a parser.** The three units are stage-1 units at their own ABIs. The
   entry stream's selection, the escape and exit stages, stage 2 and the assembled
-  pipeline are absent, so the unit GB/s rows are not end-to-end JSON throughput.
-  The simdjson `parse` rows after them are a parser, but they are not this
-  pipeline, and they do not turn the units into one; no unit row above is
-  re-derived or confirmed by them.
+  pipeline are not priced here, so the unit GB/s rows are not end-to-end JSON
+  throughput. The assembled pipeline is in this tree and is measured in
+  §"The composed route, against simdjson 5.0.5"; no unit row is re-derived from
+  that section. The simdjson `parse` rows after them are a parser, but they are
+  not this pipeline, and they do not turn the units into one; no unit row above
+  is re-derived or confirmed by them.
 - **Nothing about another host.** One machine, two core classes, one compiler,
   one `powersave` setting, one staging alignment (64 bytes), one corpus seed.
   The same row can differ by a factor from 0.95 to 3.1 between the classes -- the
@@ -972,3 +985,296 @@ with the paired tables above.
   measured only through the unit's verdict (the corpus's rejecting document
   returns 1 under both gate values); no separate row measures the tail term, and
   the units' correctness rests on their routes, not on these timings.
+
+## The composed route, against simdjson 5.0.5
+
+The units' section measures three stage-1 units at their own ABIs. This section
+measures the other end of the same assembly: the composed route, the Lean caller
+that admits a document, stages it in the pipeline's shape, calls
+`leanllvm_json_pipeline` and reads the event stream it produced, run beside
+simdjson 5.0.5's stage 1 and full parse over the same eight documents. It is one
+harness, one corpus, one session, and it does not re-measure the units or the
+stage-for-stage figure in §"The simdjson row, measured".
+
+### The instrument
+
+`tests/json-units-bench/bench-route-simdjson.sh`:
+
+```bash
+nix develop -c bash tests/json-units-bench/bench-route-simdjson.sh
+```
+
+It builds `tests/json-units-bench/simdjson-baseline.cc` at the units' compiler
+line (`-O3 -march=x86-64-v3 -mpclmul -std=c++17 -falign-loops=64
+-falign-functions=64`) against the same realised 5.0.5 header and library, and
+runs two arms over the units' eight documents, checking every file against the
+size and sha256 `tests/json-units-bench/transcript.txt` records. The route arm is
+the binary `probes/json/route/build.sh` produces -- this run's is sha256
+`a9e37c684223fb0d9950c67c8c91723997bfc5212205c4ce595f6e1df7714a37`, the default
+`TIMING=0` build -- invoked as `leanllvm-json-route --consume <doc> 51`.
+
+The two arms alternate which goes first inside each trial, so a drift across the
+trial does not become a quotient; each document is warmed outside the clock
+before its measured rows -- one pass for the route's row, one per arm for
+simdjson's, whose checksum every timed pass is also gated against; each row is
+51 repetitions; the whole pair runs three times per CPU, `taskset`-pinned to
+cpu0 and cpu4. A row is the median of its three trial medians, with the minimum
+and maximum of those medians beside it; a quotient is taken inside one trial on
+the same CPU and bytes, then reduced the same way. The aggregation gates the
+rows before it prints any: 10 route and 16 simdjson (CPU, document) rows,
+exactly one row per trial, one path/verdict/token identity per route document,
+one status/checksum pair per (document, arm), and `path=fast` on every route
+row. A row that misses one of those is reported on stderr and the run exits 1;
+the tables are printed either way, so the status and the stderr lines, not a
+missing table, are what distinguish a record from a run whose gates did not
+hold. The transcript is
+`tests/json-units-bench/route-simdjson-transcript-paired.txt`; it carries the
+harness's own sha256, the binary's sha256 and mtime, the corpus's hashes, the
+host, and the load average at each end of the sweep.
+
+**Provenance and the store.** The header and library are the realised nix builds
+of nixpkgs' 5.0.5, the same two outputs the units' section records:
+`/nix/store/m2i8165bayxxgzj3fbvdg6gihz6na93d-simdjson-5.0.5-dev` (header sha256
+`869e8a4f…`) and `/nix/store/jglxdk9y0yfk3mc9dbr675pfmv42a89y-simdjson-5.0.5`
+(`libsimdjson.so.34.0.0`, sha256 `9b2368aa…`). They were present in the store
+and this run did not re-derive them; the two sha256s the harness printed are the
+ones that section records, so it is the same library and not a rebuild beside
+it. A store that has garbage-collected them makes the harness refuse with exit 3
+and the absent path named; it verifies and never fetches. Realise them again
+with
+
+```bash
+nix build --no-link --print-out-paths 'nixpkgs#simdjson.dev'
+nix build --no-link --print-out-paths 'nixpkgs#simdjson'
+```
+
+and note that the harness pins the two output paths it names: a re-realisation
+that produced a different path (a nixpkgs bump, a changed derivation) is passed
+in with `SIMDJSON_DEV`/`SIMDJSON_LIB`, and the 5.0.5 header-version gate still
+applies, so the release the rows belong to is checked rather than assumed. The
+library is the realised build, not recompiled at these flags: `stage1` and the
+library's stage-2 helpers are its code, while the on-demand traversal in `parse`
+is compiled here. The route binary is not rebuilt by the harness (the link needs
+Lean); it is refused if absent, and its sha256 and mtime in the transcript tie
+the numbers to the build that produced them.
+
+**The clock.** The simdjson arm calibrates its core clock before every row: this
+run read 4.657 GHz mean (4.324-4.841) on cpu0 and 3.662 (3.608-3.675) on cpu4,
+against the units' paired run's 4.49 and 3.67 and the simdjson run's 4.56 and
+3.66. The GB/s columns of this section are therefore in the same clock regime as
+those two, and the corroboration is visible in the rows: `stage1` on
+`syn-dense-64k` is 6.594 GB/s here against 6.617 there. The route's rows carry
+no calibrated clock, so no cycles-per-byte figure is derived for them and their
+GB/s is bytes over wall time. The load average was 1.10 at the start of the
+sweep and 1.16 after it.
+
+### The route's cost split
+
+The route's own intervals, from `--consume`: `admission` is the two-phase domain
+decision, `staging` is the caller's buffers built in the pipeline record's
+shape, `native` is the call to `leanllvm_json_pipeline` (classification, the
+entry emitter, escape positions, UTF-8 validity and stage 2 in one function),
+and `consume` is `consume_values_ns`, a reading that materialises one record per
+event and sums the decoded-string arena. The document read (`read_ns`) is in no
+stage. `end2end` is their sum per trial. The adapter's copy-in and copy-out are
+inside `native` and not separated, because this is the `TIMING=0` build.
+
+**P core (cpu0), ns, median of the three trial medians with their minimum and
+maximum:**
+
+|document|verdict|admission|staging|native|consume|end2end|GB/s|
+|---|---|---:|---:|---:|---:|---:|---:|
+|`route-s1-64k`|refused|162562 (162562-166232)|164097 (164097-182706)|69265 (69265-71956)|720 (720-731)|396945 (396945-420923)|0.157|
+|`route-u8-64k`|refused|118486 (118486-119369)|162738 (162738-168147)|65548 (65548-66856)|168 (168-186)|348248 (348248-353495)|0.187|
+|`syn-dense-64k`|accepted|63888 (63888-65811)|41899 (41899-45414)|139897 (139897-144302)|267751 (267751-293483)|516950 (516950-546678)|0.123|
+|`syn-strings-64k`|accepted|231173 (231173-241518)|163154 (163154-207782)|86163 (86163-90534)|93015 (93015-98366)|574534 (574534-638200)|0.106|
+|`syn-utf8-64k`|accepted|372596 (372596-387088)|164486 (164486-211488)|73725 (73725-77680)|35787 (35787-37099)|661027 (661027-694362)|0.098|
+
+**E core (cpu4), same units and reduction:**
+
+|document|verdict|admission|staging|native|consume|end2end|GB/s|
+|---|---|---:|---:|---:|---:|---:|---:|
+|`route-s1-64k`|refused|298752 (298752-306704)|273438 (273438-283925)|140892 (140892-150520)|1987 (1987-2080)|723114 (723114-738498)|0.089|
+|`route-u8-64k`|refused|216109 (216109-225327)|283348 (283348-291485)|154443 (154443-176252)|382 (382-591)|662628 (662628-676578)|0.098|
+|`syn-dense-64k`|accepted|103957 (103957-105079)|142027 (142027-156342)|286749 (286749-293458)|509237 (509237-564323)|1053705 (1053705-1097056)|0.062|
+|`syn-strings-64k`|accepted|416583 (416583-426842)|272674 (272674-279537)|165980 (165980-185119)|96040 (96040-96454)|961966 (961966-977693)|0.068|
+|`syn-utf8-64k`|accepted|561964 (561964-563159)|270024 (270024-279059)|154219 (154219-169935)|68051 (68051-69275)|1059857 (1059857-1079747)|0.062|
+
+Three things the split says, and one it does not.
+
+- **The route's non-native stages are the larger part of it.** Admission plus
+  staging against the native call is 105787/139897 on `syn-dense-64k`,
+  394327/86163 on `syn-strings-64k` and 537082/73725 on `syn-utf8-64k` on the P
+  core: from 0.76x to 7.3x. The consumer is a fourth stage with no counterpart;
+  on `syn-dense-64k` it is 267751 ns for 16182 event records, more than the
+  native call itself.
+- **Admission is content-dependent.** It is one native admission/depth scan,
+  then the character-policy scan when the walk saw a candidate byte
+  (`RouteMain.lean`'s `decide2`). On this corpus the second scan is not
+  occasional: the route's `--admit` mode reports `candidate=1` and `policy=1`
+  for all five admitted documents, so every row here takes both scans, and the
+  spread is in the scans' own cost rather than in whether they ran. The three
+  synthetic documents take 63888, 231173 and 372596 ns on the P core, a 5.8x
+  spread at one size; which of the two scans accounts for it is not something
+  this harness separates, and the `--admit` transcript prices them apart in its
+  own rows.
+- **Staging is not explained by its own buffer arithmetic.** For every
+  65,536-byte document `stage` allocates and fills the same buffers -- the
+  window (`[0,0,0] ++ doc ++ pad ++ 32` bytes) plus the ABI's scratch and output
+  arrays, about 1.44 MiB per repetition of which the 13n+128-byte event buffer
+  is 852096 bytes -- so the code it runs is the same size for all five. Its
+  measured cost is not: 41899 ns on `syn-dense-64k` against 163154 on
+  `syn-strings-64k` and 164486 on `syn-utf8-64k` on the P core. That spread is
+  not established by this harness. The likely cause is allocator and collector
+  state carried from the previous repetition, whose live result differs by
+  document; it is named as an inference, not measured, and the staging row
+  should be read as this build's staging cost per document rather than as a
+  constant per byte.
+- **What the split does not say.** It is not a claim that the route's stages are
+  the cheapest order, and admission and the consumer are work simdjson does not
+  do at all, so no part of this table is compared with a simdjson row stage by
+  stage.
+
+### The refusal rows
+
+The route's input bound is one mebibyte (`LeanLLVM.JSON.Limits.default`), so the
+three 4 MiB documents are refused at admission before the pipeline is called.
+Each is probed once outside the timed sweep: exit 0, `path=fallback`,
+`verdict=0`, `admission_ns` 4140-5096 ns, `read_ns` 564070-714111 ns, no staging
+or native interval. simdjson is measured on those same bytes, and the table's
+columns are simdjson's alone -- there is no route row to divide them by:
+
+|document|cpu|`pad` ns|`stage1` ns|`parse` ns|`parse` GB/s|
+|---|---|---:|---:|---:|---:|
+|`syn-dense-4m`|0|183216|853290|5605746|0.748|
+|`syn-strings-4m`|0|198262|449311|2321509|1.807|
+|`syn-utf8-4m`|0|189604|408705|1540526|2.723|
+|`syn-dense-4m`|4|201121|2008484|8430304|0.498|
+|`syn-strings-4m`|4|199997|759766|3366785|1.246|
+|`syn-utf8-4m`|4|199484|920223|2821077|1.487|
+
+Two of the five admitted documents are refusals too, and they are refusals of
+the pipeline rather than of its domain. `route-s1-64k` (a tiled concatenation
+rather than one document) is admitted, reaches stage 2 and stops there with 19
+event records; `route-u8-64k` (invalid UTF-8) is admitted and refused by the
+UTF-8 stage before any event is emitted. Their native and consumer intervals
+price the pipeline up to its refusal, not an accepted run, and the comparison
+table below marks them. simdjson refuses both at parse: `route-s1-64k` with
+`INCOMPLETE_ARRAY_OR_OBJECT`, `route-u8-64k` with `UTF8_ERROR`, and its `stage1`
+row on `route-u8-64k` is `rejected` -- the same dispositions §"The simdjson row,
+measured" records for these two files. The two arms therefore agree on the
+documents' disposition, and neither has an accepted-pipeline figure for them.
+
+### The like-for-like pairs
+
+Every quotient below is one arm over the other inside one trial on the same CPU
+and bytes, reduced across the three trials to its median with the minimum and
+maximum of the three quotients. A cell is `-` where the simdjson arm it divides
+by is not `ok` for that document: a `rejected` stage 1 or a `refused` parse
+times an error path and prices a different amount of work. The last column is
+the route's own verdict.
+
+|document|cpu|native/`stage1`|native/`parse`|staging/`pad`|end2end/(`pad`+`parse`)|route|
+|---|---|---:|---:|---:|---:|---|
+|`route-s1-64k`|0|5.74 (5.38-5.76)|-|193.96 (171.52-195.12)|-|refused|
+|`route-u8-64k`|0|-|-|191.46 (178.05-193.05)|-|refused|
+|`syn-dense-64k`|0|14.49 (12.11-14.57)|1.68 (1.67-1.72)|49.00 (46.78-49.47)|6.26 (6.13-6.28)|accepted|
+|`syn-strings-64k`|0|21.15 (20.99-22.41)|5.98 (5.83-6.99)|199.17 (186.89-237.47)|39.83 (39.02-43.53)|accepted|
+|`syn-utf8-64k`|0|11.92 (9.85-13.72)|4.32 (4.14-4.47)|193.86 (166.99-241.98)|35.23 (34.19-40.00)|accepted|
+|`route-s1-64k`|4|4.83 (4.64-4.99)|-|237.34 (230.55-238.39)|-|refused|
+|`route-u8-64k`|4|-|-|240.58 (239.52-245.15)|-|refused|
+|`syn-dense-64k`|4|10.43 (10.26-10.63)|2.29 (2.28-2.40)|120.36 (119.81-131.93)|8.21 (8.17-9.08)|accepted|
+|`syn-strings-64k`|4|24.45 (24.33-26.95)|8.16 (6.76-9.21)|233.73 (229.14-233.84)|44.72 (37.25-45.92)|accepted|
+|`syn-utf8-64k`|4|13.26 (12.90-14.21)|4.88 (4.73-4.97)|228.18 (226.15-231.71)|31.45 (30.51-31.47)|accepted|
+
+**`native ÷ parse` is the like-for-like full-parse pair**, and it is the only
+column here that compares the same kind of work: two full parses of the same
+bytes. It is 1.68 (1.67-1.72) on `syn-dense-64k`, 5.98 (5.83-6.99) on
+`syn-strings-64k` and 4.32 (4.14-4.47) on `syn-utf8-64k` on the P core, and 2.29,
+8.16 and 4.88 on the E core. The route's native call is 1.7-6.0x simdjson's full
+parse on the P core and 2.3-8.2x on the E core, over these three documents. The
+end-to-end pair, which adds admission, staging and the consumer, is 6.3-39.8x on
+the P core and 8.2-44.7x on the E core: the pipeline's own factor is the smaller
+part of the route's cost. Both figures are per 65,536-byte document; nothing
+here says what the factors do at another size.
+
+**`native ÷ stage1` is an upper bound, not a stage ratio.** The route's native
+call has no stage-1 stop -- `kernel/json/pipeline.c` runs classification, the
+entry emitter, escape positions, the UTF-8 stage and stage 2 in one function --
+so the quotient divides the whole composed pipeline by the cost of simdjson's
+first stage. It says how much more the route's native call costs than simdjson's
+stage 1 over the same bytes, and it does not price stage 1 against stage 1. That
+stage-for-stage figure is §"The simdjson row, measured", where the three proved
+units' composite is divided by `stage1` per trial: 0.49-1.23 on the P core and
+0.53-2.21 on the E core over that corpus, with `route-u8-64k` excluded there for
+the same `UTF8_ERROR` reason. This run does not re-measure, adjust or confirm
+that column, and its `native ÷ stage1` numbers (4.83-24.45) are not comparable
+with it: different subject, different divisor's work. `route-u8-64k` carries no
+cell in this column, because its `stage1` is `rejected` and the divisor would
+price a scan that stops at the first invalid sequence. `route-s1-64k` does carry
+one -- its stage 1 accepts, so the divisor is a stage-1 pass -- but its native
+interval ends in a refusal at stage 2, so neither route corpus has an upper
+bound for an accepted pipeline. The three synthetic documents' cells are that
+bound.
+
+**`staging ÷ pad` prices two different stagings.** `pad` is one
+`padded_string` construction: one allocation and one copy of the 65,536-byte
+document, 871-942 ns on the P core and 1185-1197 on the E core. The route's
+staging is the ABI's caller-staged buffers as well as the window: about 1.44 MiB
+allocated and filled per repetition, as the split above sets out. The quotient
+-- 49-199 on the P core and 120-241 on the E core -- is therefore a fact about
+what each side's staging contains, not evidence that the route's copy is slower
+per byte. It also inherits the unexplained per-document spread of the staging
+row, and `syn-dense-64k`'s 49.00 is the visible end of that.
+
+**`end2end ÷ (pad + parse)` is the end-to-end pair.** The numerator is
+admission + staging + native + the consumer's read, the denominator simdjson's
+staging plus its full parse. It is the closest thing here to "this route against
+a parser" for one document, and it is not an equal-work comparison: admission
+and the consumer are route-only, and the consumer is this harness's own event
+materialisation, not a user's.
+
+### What this does not establish
+
+- **Nothing about sizes the route refuses.** The route's domain stops at one
+  mebibyte, so there is no route figure for the 4 MiB class: the simdjson rows
+  for those bytes are in the refusal table above, and the route has no row to
+  pair them with. The refusal itself is measured (4-5 µs at admission).
+- **Nothing about an accepted pipeline on the two route corpora.** Both are
+  refused, by stage 2 and by the UTF-8 stage respectively, so their native and
+  consumer intervals price a refusal. Only the three synthetic documents have an
+  accepted-pipeline figure.
+- **Nothing end to end at a system boundary.** The subject is
+  `leanllvm-json-route --consume`, a probe binary, and the consumer is the
+  harness's reading of the event stream. The adapter's copy-in and copy-out are
+  inside `native` and not separated, and the `TIMING=1` dissection (`--stages`)
+  was not used.
+- **Nothing about the parity of the two artifacts.** The route emits an event
+  stream into the caller's buffer; simdjson's `parse` traverses an on-demand
+  DOM. `native ÷ parse` compares two full parses of the same bytes that produce
+  different things, so it is a cost ratio for a job both do, not a demonstration
+  that they do the same job.
+- **Nothing about another host, another clock, or another corpus.** One machine,
+  two core classes, one `powersave` setting, one seed and one tiling of the route
+  documents. The E core is 1.9-2.4x the P core on the native stage, 1.5-1.8x on
+  admission and 1.0-1.9x on the consumer, so a single figure without its class
+  would be misleading. The route rows have no calibrated clock and no
+  cycles-per-byte column. The run's load average was 1.1, and the min-max beside
+  each number, not a noise-floor section, is where its spread is read.
+- **Nothing about the earlier 4.6.11 ratios.** The simdjson rows here are 5.0.5,
+  the same release as the units' paired run, and they do not re-derive any
+  §3 row.
+
+### Cadence
+
+Each headline row is re-measured -- not adjusted, and not re-derived from a row
+taken in another session -- when one of these happens:
+
+|headline row|re-measure when|
+|---|---|
+|the route's stage split and end2end rows|the route binary changes -- `RouteMain.lean`, the adapter, or any kernel source it links (`pipeline.c`, stage 2, `entry.c`, `s1_block.c`, `utf8.c`, `escape.c`, `policy.c`); the corpus changes (route documents, seed, tiling, size classes); the host changes (core class, governor); or the harness changes|
+|`native ÷ parse` and `staging ÷ pad`|any route trigger, and a change of simdjson release, of the realised store outputs (their sha256s are in the transcript), or of the harness's compiler line|
+|admission and consumer, and the refusal rows|any route trigger; they have no simdjson counterpart and are not re-derived from one|
+
+The route rows are tied to a binary by the sha256 the transcript prints, so a
+reader can tell whether the build they have is the one these numbers belong to.

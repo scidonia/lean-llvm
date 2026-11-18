@@ -7,3 +7,4 @@
 /probes/json/route/build/
 /tests/json-units-bench/build/
 /tests/json-units-bench/build-simdjson/
+/tests/json-units-bench/build-route-simdjson/
