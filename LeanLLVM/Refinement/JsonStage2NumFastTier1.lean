@@ -2021,7 +2021,8 @@ theorem t1AtStoredDiv_mem (env : Env) (s : State) (exp10 idig ip fr fdig : BitVe
 
 /-- **The store at the merge block.**  At `if.end230`'s own environment, with the
 five counters the lexeme's, the sign's tie and the two table rows staged, five
-control steps reach `cleanup300` with `strtodSpec`'s eight bytes written at
+control steps reach `cleanup300` — entered from the store block, so the return
+block reads its accepting edge — with `strtodSpec`'s eight bytes written at
 `%out`. -/
 theorem t1_store_run {calls : Calls} {env : Env} {s : State} {d : Decimal} {fs : Bytes}
     {sign : BitVec 1} {out : Nat} {p10 pd : Nat} {ten : BitVec 64} {c : Code}
@@ -2043,7 +2044,7 @@ theorem t1_store_run {calls : Calls} {env : Env} {s : State} {d : Decimal} {fs :
     (hwf : d.wellFormed) (h1 : Tier1 d)
     (hsign : (sign = 1) ↔ d.neg = false)
     (hrc : roundMag (opP d) (opD d) = .fin c) (hcM : c.IsMag) :
-    ∃ e : State, e.pc = "cleanup300" ∧
+    ∃ e : State, e.pc = "cleanup300" ∧ e.pre = some "cleanup282.thread" ∧
       e.mem = writeBytes s.mem out (wordBytes 8 (strtodSpec d).toBits) ∧
       ∀ k, runFuel calls (5 + k) numFastBody (stateAt env s)
         = runFuel calls k numFastBody e := by
@@ -2139,7 +2140,7 @@ theorem t1_store_run {calls : Calls} {env : Env} {s : State} {d : Decimal} {fs :
       (BitVec.ofNat 64 (fracDigits d)) p10 pd ten
       (uitofpBits (10 ^ ((BitVec.ofInt 64 (expVal d)
         - BitVec.ofNat 64 (fracDigits d)).signExtend 64).toNat)) sign out,
-      rfl, ?_, ?_⟩
+      rfl, rfl, ?_, ?_⟩
     · rw [t1AtStoredMul_mem]
       have hconv : uitofpBits (t1MantWord ten (BitVec.ofNat 64 (Decimal.digitsNat d.ip))
             (BitVec.ofNat 64 (Decimal.digitsNat fs))).toNat = uitofpBits d.mantissa := by
@@ -2193,7 +2194,7 @@ theorem t1_store_run {calls : Calls} {env : Env} {s : State} {d : Decimal} {fs :
       (uitofpBits (10 ^ (((0x0000000000000000#64 : BitVec 64)
         - (BitVec.ofInt 64 (expVal d) - BitVec.ofNat 64 (fracDigits d))).signExtend 64).toNat))
       sign out,
-      rfl, ?_, ?_⟩
+      rfl, rfl, ?_, ?_⟩
     · rw [t1AtStoredDiv_mem]
       have hconv : uitofpBits (t1MantWord ten (BitVec.ofNat 64 (Decimal.digitsNat d.ip))
             (BitVec.ofNat 64 (Decimal.digitsNat fs))).toNat = uitofpBits d.mantissa := by

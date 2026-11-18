@@ -1255,15 +1255,24 @@ from its measured C text), `stage2NumFastCalls` composes it with the walk's
 (`numFast_*_denote_some`/`_step_jump`), and `numFastTables_holds` is
 `NumFastTables` at a concrete twenty-row/twenty-three-row staging.  What remains
 open is the conversion's *run*, not its environment: the three digit runs' arms,
-their starts, the inlined tier-1 arithmetic, and tier 3's region.  And the arm's
-statement takes one repair before that run can be appended to anything: its
-hypotheses are facts about the environment and the memory alone, so the state it
-quantifies is at no particular block — `JsonStage2NumFastArm.numFastBodyArm_at_pc`
-reads the arm's conclusion at an arbitrary program counter, and
-`numFastBodyArm_false_at_divBody` refutes it at `while.body232.i.i` with the
-residual cell unbound, where the block's chain is `none` and the step `ub`
-(`numFast_step_divBody_ub`, `numFast_runFuel_divBody_ub`).  An entry hypothesis
-(`s.pc = "entry"`) is therefore part of the arm's statement, not a proof step.
+their starts, the inlined tier-1 arithmetic, and tier 3's region.  The arm's
+statement now carries the entry state — `s.pc = "entry"` with `s.pre = none` —
+as hypotheses, so it is the obligation at the state a caller stages rather than
+at every block: `JsonStage2NumFastArm.numFastBodyArm_at_entry` reads it at a
+staged state, and `numFastArm_entry_necessary` is the control that the condition
+is load-bearing (at `while.body232.i.i` with the residual cell unbound the
+block's chain is `none` and the step `ub` — `numFast_step_divBody_ub`,
+`numFast_runFuel_divBody_ub` — for every `Calls`, so the shape without the
+condition had no witness).  The run's tail is
+`JsonStage2NumFastRun.numFastArm_tier1_at_merge`: at the merge block with the
+model's five counters, the two tables and the tier-1 window, six control steps
+return `1` with `strtodSpec`'s eight bytes at `out` and the two-slot frame, via
+`t1_store_run` and the returning edge `numFast_step_cleanup300_one` that the
+kernel's and the fallback's store blocks share.  The scan's seam to the merge is
+that module's boundary, stated there: the run-exit predicates do not name the
+merge's predecessor or the earlier parts' cells, and
+`numFast_merge_end62_needs_seven` shows the integer part's edge does not denote
+without `%7`.
 Two pieces of
 the run are now supplies rather than obligations.  The eight-digit fast path's
 blocks are chained (`JsonStage2NumFastSeams`): `fpCleanup_denote_pre`/
@@ -1700,11 +1709,14 @@ value; that an emitted conversion computes it is owed, and
 own `Calls` its three conversion callees are absent, so the conversion's
 arithmetic is stuck there, while at the supplied `stage2NumFastCalls` and table
 staging the three sites are jumps and the kernel's `w < 2 ^ 64` domain is met by
-the body's own word — `JsonStage2NumFastTier3.numFast_ifEnd268_domain` — so what
-`NumFastBodyArm` still owes, once its statement carries an entry hypothesis, is
-the conversion's run
-(`JsonStage2NumFastArm.numFastBodyArm_false_at_divBody` is why the entry
-hypothesis is needed at all), and tier 3's three links
+the body's own word — `JsonStage2NumFastTier3.numFast_ifEnd268_domain` — and the
+arm's statement carries the entry state
+(`JsonStage2NumFastArm.numFastArm_entry_necessary` is why the entry condition is
+load-bearing), so what `NumFastBodyArm` still owes is the conversion's run: its
+tier-1 tail from the merge block is
+`JsonStage2NumFastRun.numFastArm_tier1_at_merge`, and the scan's seam to the
+merge is that module's boundary
+(`numFast_merge_end62_needs_seven`).  Tier 3's three links
 are stated in `JsonStage2NumFastTier3`, with the emitted ladder's charging and
 its two loops' shapes closed in `JsonStage2NumFastTier3Ladder` and both loops —
 the positive one and the negative one — closed at the emitted rows in
