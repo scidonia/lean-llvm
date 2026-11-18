@@ -56,11 +56,13 @@ four.  The loops are therefore stated at those blocks: `t3MulLoopOf`/`t3DivLoopO
 fix each loop's head, exit, bound, cost, invariant and exit test there, and both
 of each head's edges — the ladder's start and the back edge — are proved
 (`t3_mulHead_step_one`/`_zero` with `_entry`, `t3_divHead_step_one`/`_zero` with
-`_entry`).  What the shapes still take as an arm is each row block's per-edge step
-— the charge of one row by `fmul`/`fdiv` at the table's row, with its
-`%cmp221`/`%cmp246` overflow test — and the invariant's arithmetic (`t3Rows`'s
-first row is `min` of its sum, its sum splits at that row, and `take`/`drop` at
-the counter) is the piece those arms share.
+`_entry`).  What the shapes still take as an arm is the negative row block's
+per-edge step — one row's `fdiv` at the table's row, the `%cmp246` zero test, and
+the `ult`/`mul`/`ashr` index that recovers `min (-e) 22` — while the positive
+block's step, with its `%cmp221` overflow test, and the invariant's arithmetic
+(`t3Rows`'s first row is `min` of its sum, its sum splits at that row, and
+`take`/`drop` at the counter) are `JsonStage2NumFastTier3Rows`', which also
+instantiates `t3MulLoopOf` at the emitted rows.
 -/
 import LeanLLVM.Refinement.JsonStage2NumFastTier3Fold
 

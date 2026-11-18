@@ -1333,11 +1333,16 @@ row's.  The ladder's two loops are stated at their own pins —
 `while.cond203.i.i`/`while.cond229.i.i` and their row blocks are pinned in
 `JsonStage2HelperIRNumFast`, so the earlier reading that those blocks were
 unpinned was wrong.  `t3MulLoopOf`/`t3DivLoopOf` fix each loop's shape there,
-with both of each head's edges proved; each row block's per-edge step is the arm
-those shapes still take.
+with both of each head's edges proved.  The positive row block's per-edge step
+and the rows' arithmetic are `JsonStage2NumFastTier3Rows`': `t3_mulBody_step` is
+`while.body206.i.i`'s chain at its pin, the `t3Rows` split lemmas name the row a
+residual applies, and `t3MulLoop_t3Rows` is `t3MulLoopOf` at the emitted rows,
+with its run at the rows' own count.  The negative row block's step — the
+`ult`/`mul`/`ashr` index that recovers `min (-e) 22`, the `fdiv` at the table's
+row and the `fcmp` against zero — is the arm still open.
 What the region still owes is the unrolled nest's `BoundLoop` shape (the copy's
-four-way unrolled main loop) and those row-block steps, each named in the module
-that states the nearest thing to it.
+four-way unrolled main loop) and the negative row block's step, each named in the
+module that states the nearest thing to it.
 The kernel's bound is not among the obstructions: `num_el_el1`'s mantissa is a
 `uint64_t`, and the body's own argument at `if.end268` is `%add244`, a 64-bit
 word, so `NumFastElAgrees`'s `w < 2 ^ 64` domain is met at the body
@@ -1679,7 +1684,8 @@ staging the three sites are jumps and the kernel's `w < 2 ^ 64` domain is met by
 the body's own word — `JsonStage2NumFastTier3.numFast_ifEnd268_domain` — so what
 `NumFastBodyArm` still owes is the conversion's run, and tier 3's three links
 are stated in `JsonStage2NumFastTier3`, with the emitted ladder's charging and
-its two loops' shapes closed in `JsonStage2NumFastTier3Ladder`), NDJSON, incremental
+its two loops' shapes closed in `JsonStage2NumFastTier3Ladder` and the positive
+loop closed at the emitted rows in `JsonStage2NumFastTier3Rows`), NDJSON, incremental
 input, concurrent parsing, diagnostic text or positions,
 and any vector operation the semantics does not model. The modelled vector
 forms — `Ty.vec` with integer lanes, `Const.splat`, a vector `load`, lane-wise
