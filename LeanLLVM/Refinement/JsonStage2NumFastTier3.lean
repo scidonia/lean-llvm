@@ -362,10 +362,13 @@ supplies for each, and what is left:
   rows is `JsonStage2NumFastTier3Ladder`'s: the rows `min e 22` at a time compose
   exactly to the model's one row (`t3Rows_prod`), each row is one `roundMag`
   (`t3Row_mul_step`/`t3Row_div_step`), the count is at most sixteen at the
-  emitted exponent (`t3Rows_length_le`), and the bracket composes at the ladder's
-  own step count (`t3Ladder_two_step`/`t3Ladder_steps`); what the ladder does not
-  compose is charging each row's step at the final row's scale, and the loops'
-  `while.cond203.i.i`/`while.cond229.i.i` have no `findBlock` pin in this tree.
+  emitted exponent (`t3Rows_length_le`), the bracket composes at the ladder's
+  own step count (`t3Ladder_two_step`/`t3Ladder_steps`), and the rows' steps are
+  charged at the final row's scale (`t3RoundStep_mono`, `t3RoundStep_mul_le`,
+  `t3Ladder_charge`).  The loops `while.cond203.i.i`/`while.cond229.i.i` are
+  pinned in `JsonStage2HelperIRNumFast` and are stated there
+  (`t3MulLoopOf`/`t3DivLoopOf`, with each head's jumps proved); what remains is
+  each row block's per-edge step.
 
 None of the three is a `sorry`; each is stated, and what remains is named above
 rather than assumed. -/

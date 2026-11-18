@@ -169,9 +169,13 @@ the other two only in part:
    `t3_scale_of_ulp`, which concludes `shift_of_near`'s premise from the tree's
    own rounding, with the fold's two blocks and its two-step error now in
    `JsonStage2NumFastTier3Fold` and the ladder's repetition at the emitted rows
-   in `JsonStage2NumFastTier3Ladder` (the rows compose to the model's one row,
-   one rounding each, at most sixteen, with the bracket at that many steps; what
-   is not composed is charging the rows' steps at the final row's scale).
+   in `JsonStage2NumFastTier3Ladder`: the rows compose to the model's one row,
+   one rounding each, at most sixteen, the bracket composes at that many steps,
+   and the rows' steps are charged at the final row's scale
+   (`t3RoundStep_mono`, `t3RoundStep_mul_le`, `t3Ladder_charge`).  The ladder's
+   two loops are stated at their own blocks — their `findBlock` pins exist in
+   `JsonStage2HelperIRNumFast` — with each head's jumps proved and each row
+   block's per-edge step the arm still to supply.
 
    Neither boundary is a `sorry`, and neither is a paragraph: each is a
    statement in the module named above, with what it leaves open named there.
@@ -227,12 +231,16 @@ estimate are at their statements, the residual copy loop is now an induction at 
 emitted blocks (`JsonStage2NumFastTier3CopyLoop.t3EpilLoop`, with
 `t3EpilLoop_run_at'` its budget), and the emitted ladder's repetition is
 `JsonStage2NumFastTier3Ladder`'s: the rows compose to the model's one row, each is
-one rounding, and the bracket composes at the row count, with the charging of the
-rows' steps at the final row's scale and the two loops' own `runFuel` simulation
-(the blocks have no pin here) named there.  What the arm still needs is the run
+one rounding, the bracket composes at the row count, and the rows' steps are
+charged at the final row's scale.  The loops themselves are stated at their pins
+(`t3MulLoopOf`/`t3DivLoopOf`, with each head's jumps proved); the arm they still
+omit is each row block's per-edge step.  What the arm needs beyond that is the run
 itself: the copy's four-way unrolled main loop as a `BoundLoop`, the seam steps
 above, and tier 1's store chain from the exponent edge.  No theorem below claims
-the arm, and none is instantiated at the walk's own `s2HelperCalls`.
+the arm, and none is instantiated at the walk's own `s2HelperCalls`; the kernel's
+`w < 2 ^ 64` bound is met at the body's own word
+(`JsonStage2NumFastTier3.numFast_ifEnd268_domain`), so the bound is not what stops
+the arm — the run's composition is.
 
 There is no `sorry`, `admit` or `native_decide` below.
 -/

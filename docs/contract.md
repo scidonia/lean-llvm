@@ -1319,13 +1319,25 @@ model's single scaling row (`t3Rows_prod`), their count is at most sixteen at th
 emitted range `|e10| ≤ 342` (`t3Rows_length_le`), each row is one `roundMag`
 (`t3Row_mul_step`/`t3Row_div_step` at a row with `ticks = 10 ^ c * 2 ^ 1074`), and
 the fold's bracket has the same form at the ladder's own step count
-(`t3Ladder_two_step`/`t3Ladder_steps`/`t3Ladder_scale`).  What the region still
-owes is the unrolled nest's `BoundLoop` shape (the copy's four-way unrolled main
-loop), the ladder's charging of each row's step at the final row's scale — the
-accumulation `E_{k+1} ≤ 10 ^ c * E_k + 2 ^ 1074 * step_k` needs the monotonicity
-of `t3RoundStep` along the rows — and the ladder loops' own `runFuel` simulation:
-`while.cond203.i.i` and `while.cond229.i.i` have no `findBlock` pin in this tree.
-Each of those is named in the module that states the nearest thing to it.
+(`t3Ladder_two_step`/`t3Ladder_steps`/`t3Ladder_scale`).  The ladder's charging
+is proved at the final row's scale: `t3RoundStep` is monotone in the numerator
+(`binade_mono`, `t3RoundStep_mono`) and scales by at most its factor up to two
+(`t3RoundStep_mul_le`), so a row's step carried to the last row's scale is within
+two of the last row's own (`t3RoundStep_weighted`); the recurrence
+`E_{k+1} ≤ 10 ^ c * E_k + 2 ^ 1074 * step_k` expands to its weighted sum
+(`t3ErrStep_eq`), folds at the row count (`t3ErrWeight_le`), and is charged at
+`2 * n` final steps (`t3Ladder_charge`, `t3Ladder_charge_sixteen`).  The normal
+case is a hypothesis, not an assumption about the data: in the subnormal region
+the step is one tick regardless of magnitude, and the charge is not the final
+row's.  The ladder's two loops are stated at their own pins —
+`while.cond203.i.i`/`while.cond229.i.i` and their row blocks are pinned in
+`JsonStage2HelperIRNumFast`, so the earlier reading that those blocks were
+unpinned was wrong.  `t3MulLoopOf`/`t3DivLoopOf` fix each loop's shape there,
+with both of each head's edges proved; each row block's per-edge step is the arm
+those shapes still take.
+What the region still owes is the unrolled nest's `BoundLoop` shape (the copy's
+four-way unrolled main loop) and those row-block steps, each named in the module
+that states the nearest thing to it.
 The kernel's bound is not among the obstructions: `num_el_el1`'s mantissa is a
 `uint64_t`, and the body's own argument at `if.end268` is `%add244`, a 64-bit
 word, so `NumFastElAgrees`'s `w < 2 ^ 64` domain is met at the body
@@ -1666,7 +1678,8 @@ arithmetic is stuck there, while at the supplied `stage2NumFastCalls` and table
 staging the three sites are jumps and the kernel's `w < 2 ^ 64` domain is met by
 the body's own word — `JsonStage2NumFastTier3.numFast_ifEnd268_domain` — so what
 `NumFastBodyArm` still owes is the conversion's run, and tier 3's three links
-are stated in `JsonStage2NumFastTier3`), NDJSON, incremental
+are stated in `JsonStage2NumFastTier3`, with the emitted ladder's charging and
+its two loops' shapes closed in `JsonStage2NumFastTier3Ladder`), NDJSON, incremental
 input, concurrent parsing, diagnostic text or positions,
 and any vector operation the semantics does not model. The modelled vector
 forms — `Ty.vec` with integer lanes, `Const.splat`, a vector `load`, lane-wise
