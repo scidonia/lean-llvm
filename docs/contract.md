@@ -1291,8 +1291,20 @@ its edges, `fpBody_denote_ok`/`_denote_refuse` and `fpBody_step_ok`/
 reads the exit's three `phi`s, and `fpCleanup112Instrs`/`fpBody100Instrs`/
 `fpWhileEnd115Instrs` are the fraction's copies with
 `fpWhileEnd115_denote_cleanup`/`_denote_thread` at the two edges a fraction byte
-leaves by; the loop's own `runFuel` composition and the taken guard's entry into
-`intRunInv` are what the fast path still owes.  The accumulator's tie at
+leaves by.  Both fast paths are now carried from their *dispatch's* edges rather
+than from their guards (`JsonStage2NumFastScanFast`): `intScan_fastTaken` reads
+the sign at position `0`, takes `if.then22`'s zero and reaches `intRunInv` in ten
+or twelve control steps, and `fracScan_fastTaken` reads the `.` at `%i.5`, takes
+`while.cond91.preheader`'s zero and reaches `fracRunInv` in eight or ten; the
+fraction guard's other answer is `whileCond91_refused_run`, and
+`fracGuard_join` is that guard's two answers at one predicate, the analogue of
+the integer's `guard_join`.  What a composition that *appends* a run still owes
+is a seam of `Calls`, named rather than assumed: the shapes' steps are at
+`stage2NumFastCalls epow`, where the reader is answered, and the runs'
+`BoundLoop` instances (`intRun_end_run`, `fracRun_end_run`) are at
+`s2HelperCalls`; the blocks on both sides of the seam are call-free, but the two
+sides' lemmas are not yet parameterised in `Calls`, so no theorem composes a
+shape with a run.  The accumulator's tie at
 `if.end230` is stated: `intRunEndWord` carries the length as the index, the count
 `d0 + (n - i0)` and `%7` in the preheader's raw form, and `intRunExit_gate` reads
 `%ip.4` and `%7` as the merge's `%ip.5708717729` and `%idig.4709716730` — the
@@ -1377,9 +1389,28 @@ double, the staging asserts each of those is a positive finite code — not the
 zero encoding (`packMag_fin_false_ne_zero`) — and the comparison is false.  That
 assertion has to be a hypothesis: a code divided by a larger one's tick value
 rounds to `⟨0, 0⟩`, so no arithmetic alone gives the refusal.
-What the region still owes is the unrolled nest's `BoundLoop` shape (the copy's
-four-way unrolled main loop) and the ladder's join under the exponent's sign
-case, each named in the module that states the nearest thing to it.
+The peel epilogue's own loop is now an induction at the body
+(`JsonStage2NumFastTier3Peel`): `t3_epil_denote_self` is
+`for.body.i.i566.i.i.epil`'s chain at its *back* edge, where the three `phi`s
+take the previous visit's `%indvars.iv.next.i.i575.i.i.epil`,
+`%shr.i.i574.i.i.epil` and `%epil.iter1084.next`; `T3PeelInv` carries the residue
+counter, its distance to `%xtraiter1083` and the one table row each remaining
+visit reads; a visit is one control step (the block's own `step`), so
+`t3PeelLoop`'s cost is one; and `t3_peel_step_loop`/`t3_peel_step_exit` are its
+two arms.  A visit writes its own row and no later one
+(`readBytes_writeBytes_above'`), so the staging that remains is the staging at
+the next index.  `t3_traversal_peel_run` composes the traversal's trip count
+with that induction: from the peel's entry at a count `0 < k < 4`, two control
+steps reach the epilogue and the loop spends the residue, so the region past the
+poison edge is one `runFuel` chain to
+`while.cond.preheader.i.i577.i.i.epilog-lcssa` within `2 + (k + 1) * 1` control
+steps, carrying the shifted sum the truncation block reads.  The residual edge
+zeroes the epilogue's two carried words, so the first visit reads the table's
+row `0`, and `%xtraiter1083` at a count below four is the count itself
+(`and_three_ofNat`).  What the region still owes is the unrolled nest's
+`BoundLoop` shape (the copy's four-way unrolled main loop), the ladder's join
+under the exponent's sign case, and the tie of the copy loop's entry to the peel
+epilogue's exit, each named in the module that states the nearest thing to it.
 The kernel's bound is not among the obstructions: `num_el_el1`'s mantissa is a
 `uint64_t`, and the body's own argument at `if.end268` is `%add244`, a 64-bit
 word, so `NumFastElAgrees`'s `w < 2 ^ 64` domain is met at the body
@@ -1400,6 +1431,22 @@ eight-digit fast-path guards, and the exponent's marker nest between `if.end144`
 and `lor.lhs.false180` is the piece of the scan that still fixes an index
 (`%i.11`) rather than being fixed by this module; both are named at the block in
 `JsonStage2NumFastArm`.
+**The arm's status.**  `NumFastBodyArm` is stated and not claimed.  The kernel's
+bound is *not* what stops it: `num_el_el1`'s mantissa is a `uint64_t` and the
+body's own argument at `if.end268` is a 64-bit word, so `NumFastElAgrees`'s
+`w < 2 ^ 64` domain is met at the body.  What stops it is the run's composition:
+the `Calls` seam named above (appending a run to a fast path's shapes), tier 1's
+four links (a)–(d), tier 3's three named gaps, and the exponent nest's tie of
+`%exp10.4` to `expVal d`.  The statements added by the two modules above are
+pinned: `intScan_fastTaken` and `fracGuard_join` at `[propext, Classical.choice,
+Quot.sound]`, `whileCond91_refused_run` at `[propext, Quot.sound]`,
+`t3_epil_denote_self` and `readBytes_writeBytes_above'` at `[propext,
+Quot.sound]`, and `t3_peel_step_loop`/`t3_peel_step_exit`/`t3PeelLoop_run`/
+`t3_traversal_peel_run` at `[propext, Classical.choice, Quot.sound]`.  Where a
+module header still reads that a route is threaded one seam at a time, this
+ledger is the current statement: the fraction and exponent routes to the merge
+are threaded, and the fast paths are composed from their dispatch's edges.
+
 The conversion's arithmetic is not in question, and the relation's number
 clause is discharged at the model.  No theorem here uses `sorry`, `admit` or
 `native_decide`; the §7.10 environment and reachability theorems are pinned at

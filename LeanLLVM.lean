@@ -97,6 +97,7 @@ import LeanLLVM.Refinement.JsonStage2NumFastTier3CopyLoop
 import LeanLLVM.Refinement.JsonStage2NumFastTier3Fold
 import LeanLLVM.Refinement.JsonStage2NumFastTier3Ladder
 import LeanLLVM.Refinement.JsonStage2NumFastTier3Rows
+import LeanLLVM.Refinement.JsonStage2NumFastTier3Peel
 import LeanLLVM.Refinement.JsonStage2Hsem
 import LeanLLVM.Refinement.JsonStage2TokenCorrespondence
 import LeanLLVM.Refinement.JsonStage2NumFastBody
@@ -106,6 +107,7 @@ import LeanLLVM.Refinement.JsonStage2NumFastSeams
 import LeanLLVM.Refinement.JsonStage2NumFastSign
 import LeanLLVM.Refinement.JsonStage2NumFastTaken
 import LeanLLVM.Refinement.JsonStage2NumFastJoin
+import LeanLLVM.Refinement.JsonStage2NumFastScanFast
 import LeanLLVM.Refinement.JsonStage2NumFastRun
 import LeanLLVM.Refinement.JsonStage2StringBody
 import LeanLLVM.Refinement.JsonStage2WalkAlignment
