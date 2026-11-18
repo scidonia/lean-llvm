@@ -3394,8 +3394,8 @@ theorem walkIfThen413I_denote {sub : Calls} (env : Env) (s : State)
       (d := "%tobool417.not.i") (a := "%call416.i") (w := 32)
       (x := x) (c := BitVec.ofNat 32 0) (by simp [lookupName])]
     rfl
-  · refine walkArgs_valuePos (("%38", .int 32 rdv) :: ("%.sink372", .int 32 c) :: env) s
-      ?_ ?_ ?_ ?_
+  · refine walkArgs_valuePos (("%38", .int 32 rdv) :: ("%.sink372", .int 32 c) :: env)
+      { s with mem := writeBytes s.mem kind (natToBytes c.toNat 4) } ?_ ?_ ?_ ?_
     · simpa [lookupName] using hsp
     · rfl
     · simpa [lookupName] using hct
@@ -3672,7 +3672,7 @@ theorem walkCondEnd349_denote {sub : Calls} (env : Env) (s : State)
     (inc := [("cond.true345.i", Operand.reg "%conv347.i"),
       ("sw.default.i", Operand.reg "%4")])
     (p := p) (op := .reg reg) (v := .int 64 c)
-    hpre hinc (by simpa [evalOperand, stateAt] using hav) _ (by decide)]
+    hpre hinc (by exact LeanLLVM.evalOperand_reg_of hav) _ (by decide)]
   rw [walkDenoteCode_lifetimeStart (sub := sub)
     (env := ("%cond350.i", .int 64 c) :: env) (s := s) (size := 24) (obj := "%t352.i")
     (by simpa [lookupName] using htok)]
@@ -3691,7 +3691,12 @@ theorem walkCondEnd349_denote {sub : Calls} (env : Env) (s : State)
     (d := "%cmp355.i") (w := 64) (p := IPred.ugt)
     (oa := .reg "%cond350.i") (ob := .reg "%idxprom.i") (x := c) (y := ix)
     (by simp [evalOperand, stateAt, lookupName])
-    (by simpa [evalOperand, stateAt, lookupName] using hidx)]
+    (by
+      have h : lookupName (("%cond350.i", .int 64 c) :: env) "%idxprom.i" =
+          some (.int 64 ix) := by
+        rw [lookupName_cons_ne _ _ (by decide)]
+        exact hidx
+      exact LeanLLVM.evalOperand_reg_of h)]
   rfl
 
 /-- **`cond.end349.i` is a link.**  The token's two stores are inside its staged

@@ -1016,7 +1016,7 @@ theorem hlastTailSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
   obtain ⟨s₁₁, hl₁₁, hs₁₁⟩ :=
     WalkLink.if_end372_i_at (calls := stage2Calls stage2SubCalls) (G := G) (C := HeadAC₆ C)
       (s := hlastP35 C s x inc nep v ix b35) hl₁₀'.inv' rfl (p := "LeafBlock35") rfl
-      hlast_phiSeam hconds hends h8s hbit6
+      hlast_phiSeam hconds hends (lookupName_of_evalOperand_reg h8s) hbit6
   have hl₁₁' : WalkLink (stage2Calls stage2SubCalls) G (HeadAC₆ C)
       (hlastP35 C s x inc nep v ix b35) (HeadSeamC C)
       (hlastSeam C s x inc nep v ix b35) := by
@@ -1477,7 +1477,7 @@ theorem hlastByteSegScanFree {m0 : Mem} {G : WalkGeom m0}
         some (.int 8 (head35 b35)) := by
       simp only [evalOperand]
       rw [hlastP41Out_env35]
-      simpa only [evalOperand] using h35
+      walk_read using h35
     obtain ⟨s₆, hl₆, hs₆⟩ :=
       WalkLink.NodeBlock39_at (calls := stage2Calls stage2SubCalls) G
         { Ca with block := "NodeBlock39" } (hlastP41Out q4 b35) hl₅'.inv' rfl h35b
@@ -1496,7 +1496,7 @@ theorem hlastByteSegScanFree {m0 : Mem} {G : WalkGeom m0}
       simp only [hlastP39Out, evalOperand, State.bind,
         lookupName_cons_ne (k := "%Pivot40") (n := "%35") _ _ (by decide)]
       rw [hlastP41Out_env35]
-      simpa only [evalOperand] using h35
+      walk_read using h35
     obtain ⟨s₇, hl₇, hs₇⟩ :=
       WalkLink.LeafBlock35_at (calls := stage2Calls stage2SubCalls) G
         { { Ca with block := "NodeBlock39" } with block := "LeafBlock35" }
@@ -1570,7 +1570,7 @@ theorem hlastByteSegLow {m0 : Mem} {G : WalkGeom m0}
     have h35l : lookupName (hlastP41Low q4 b35).env "%35" =
         some (.int 8 (head35 b35)) := by
       rw [hlastP41Low_35]
-      simpa only [evalOperand] using h35
+      walk_read using h35
     obtain ⟨s₆, hl₆, hs₆⟩ :=
       WalkLink.LeafBlock33_at (calls := stage2Calls stage2SubCalls) G
         { Ca with block := "LeafBlock33" } (hlastP41Low q4 b35) hl₅'.inv' rfl h35l
@@ -1642,7 +1642,7 @@ theorem hlastByteSegHigh {m0 : Mem} {G : WalkGeom m0}
         some (.int 8 (head35 b35)) := by
       simp only [evalOperand]
       rw [hlastP41Out_env35]
-      simpa only [evalOperand] using h35
+      walk_read using h35
     obtain ⟨s₆, hl₆, hs₆⟩ :=
       WalkLink.NodeBlock39_at (calls := stage2Calls stage2SubCalls) G
         { Ca with block := "NodeBlock39" } (hlastP41Out q4 b35) hl₅'.inv' rfl h35b
@@ -1661,7 +1661,7 @@ theorem hlastByteSegHigh {m0 : Mem} {G : WalkGeom m0}
       simp only [hlastP39High, evalOperand, State.bind,
         lookupName_cons_ne (k := "%Pivot40") (n := "%35") _ _ (by decide)]
       rw [hlastP41Out_env35]
-      simpa only [evalOperand] using h35
+      walk_read using h35
     obtain ⟨s₇, hl₇, hs₇⟩ :=
       WalkLink.LeafBlock37_at (calls := stage2Calls stage2SubCalls) G
         { { Ca with block := "NodeBlock39" } with block := "LeafBlock37" }
@@ -1833,7 +1833,7 @@ theorem hlastTailSegByte {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : Sta
         rw [hlastLand_envEnd]
         exact (Seg.measure hA).inv'.regs ("%end.i", .ptr (C.stage.tok + 8))
           (by simp [walkStaticRegs]))
-      (by rw [hlastLand_env8]; exact h8) hbit6 hb
+      (by rw [hlastLand_env8]; exact lookupName_of_evalOperand_reg h8) hbit6 hb
   -- the class-C span, five links, at the class's seam
   have h8c : evalOperand
       (hlastSeamByte (hlastLand C s x inc nep v ix b35) v C.stage.tok b35 x hb)

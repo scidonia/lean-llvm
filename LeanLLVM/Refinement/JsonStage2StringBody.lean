@@ -776,7 +776,7 @@ theorem sb_step_load32 (calls : Calls) (env : Env) (s : State) (d p : String)
     (hv : readBytes s.mem a 4 = some bs) :
     evalInstr calls (stateAt env s) (.load d (Ty.int 32) (.reg p)) =
       some (stateAt ((d, .int 32 (BitVec.ofNat 32 (bytesToNat bs))) :: env) s) := by
-  have h1 : evalOperand (stateAt env s) (.reg p) = some (.ptr a) := hp
+  have h1 := BlockEval.evalOperand_reg_of env s p (.ptr a) hp
   have hv' : loadValue (stateAt env s).mem (.int 32) a =
       some (.int 32 (BitVec.ofNat 32 (bytesToNat bs))) := by
     change loadValue s.mem (.int 32) a =
@@ -794,7 +794,7 @@ theorem sb_step_ptrtoint (calls : Calls) (env : Env) (s : State) (d v : String)
     {a : Nat} (hv : lookupName env v = some (.ptr a)) (ha : a < 2 ^ 64) :
     evalInstr calls (stateAt env s) (.ptrtoint d (.reg v)) =
       some (stateAt ((d, .int 64 (BitVec.ofNat 64 a)) :: env) s) := by
-  have h1 : evalOperand (stateAt env s) (.reg v) = some (.ptr a) := hv
+  have h1 := BlockEval.evalOperand_reg_of env s v (.ptr a) hv
   unfold evalInstr
   dsimp only
   rw [h1]
@@ -809,8 +809,8 @@ theorem sb_step_gep32 (calls : Calls) (env : Env) (s : State) (d base off : Stri
     (hpos : (idx.signExtend 64).toNat < 2 ^ 63) :
     evalInstr calls (stateAt env s) (.gep d (Ty.int 32) (.reg base) (.reg off)) =
       some (stateAt ((d, .ptr (a + (idx.signExtend 64).toNat * 4)) :: env) s) := by
-  have h1 : evalOperand (stateAt env s) (.reg base) = some (.ptr a) := hb
-  have h2 : evalOperand (stateAt env s) (.reg off) = some (.int 64 idx) := ho
+  have h1 := BlockEval.evalOperand_reg_of env s base (.ptr a) hb
+  have h2 := BlockEval.evalOperand_reg_of env s off (.int 64 idx) ho
   unfold evalInstr
   dsimp only
   rw [h1, h2]
@@ -823,7 +823,7 @@ theorem sb_step_gep8_lit (calls : Calls) (env : Env) (s : State) (d base : Strin
     (hb : lookupName env base = some (.ptr a)) (hpos : n.toNat < 2 ^ 63) :
     evalInstr calls (stateAt env s) (.gep d (Ty.int 8) (.reg base) (.imm (.int 64 n))) =
       some (stateAt ((d, .ptr (a + n.toNat)) :: env) s) := by
-  have h1 : evalOperand (stateAt env s) (.reg base) = some (.ptr a) := hb
+  have h1 := BlockEval.evalOperand_reg_of env s base (.ptr a) hb
   have h2 : evalOperand (stateAt env s) (.imm (.int 64 n)) = some (.int 64 n) := rfl
   unfold evalInstr
   dsimp only
@@ -837,8 +837,8 @@ theorem sb_step_icmp_rr (calls : Calls) (env : Env) (s : State) (d a b : String)
     (ha : lookupName env a = some (.int 64 x)) (hb : lookupName env b = some (.int 64 y)) :
     evalInstr calls (stateAt env s) (.icmp d pr 64 (.reg a) (.reg b)) =
       some (stateAt ((d, .int 1 (evalICmpNat pr 64 x.toNat y.toNat)) :: env) s) := by
-  have h1 : evalOperand (stateAt env s) (.reg a) = some (.int 64 x) := ha
-  have h2 : evalOperand (stateAt env s) (.reg b) = some (.int 64 y) := hb
+  have h1 := BlockEval.evalOperand_reg_of env s a (.int 64 x) ha
+  have h2 := BlockEval.evalOperand_reg_of env s b (.int 64 y) hb
   unfold evalInstr
   dsimp only
   rw [h1, h2]
@@ -849,7 +849,7 @@ theorem sb_step_store64_imm (calls : Calls) (env : Env) (s : State) (p : String)
     evalInstr calls (stateAt env s) (.store (Ty.int 64) (.imm (.int 64 x)) (.reg p)) =
       some (stateAt env { s with mem := writeBytes s.mem a (natToBytes x.toNat 8) }) := by
   have h1 : evalOperand (stateAt env s) (.imm (.int 64 x)) = some (.int 64 x) := rfl
-  have h2 : evalOperand (stateAt env s) (.reg p) = some (.ptr a) := hp
+  have h2 := BlockEval.evalOperand_reg_of env s p (.ptr a) hp
   unfold evalInstr
   dsimp only
   rw [h1, h2]
@@ -887,7 +887,7 @@ theorem sb_step_store32_imm (calls : Calls) (env : Env) (s : State) (p : String)
     evalInstr calls (stateAt env s) (.store (Ty.int 32) (.imm (.int 32 x)) (.reg p)) =
       some (stateAt env { s with mem := writeBytes s.mem a (natToBytes x.toNat 4) }) := by
   have h1 : evalOperand (stateAt env s) (.imm (.int 32 x)) = some (.int 32 x) := rfl
-  have h2 : evalOperand (stateAt env s) (.reg p) = some (.ptr a) := hp
+  have h2 := BlockEval.evalOperand_reg_of env s p (.ptr a) hp
   unfold evalInstr
   dsimp only
   rw [h1, h2]
@@ -1266,7 +1266,15 @@ theorem s2StringBody_ifEnd_denote {env : Env} {s : State}
     (sb_step_call8 s2StringBodyCalls env _ "%call" "leanllvm_json_escape_expand"
       (.reg "%p") (.reg "%len") (.reg "%dst") (.reg "%ei") (.reg "%xp")
       (.reg "%xj") (.reg "%nxp") (.reg "%sub.ptr.sub")
-      hp hlen hdst hei hxp hxj hnxp hsub hc)]
+      (BlockEval.evalOperand_reg_of env _ "%p" (.ptr p) hp)
+      (BlockEval.evalOperand_reg_of env _ "%len" (.int 64 len) hlen)
+      (BlockEval.evalOperand_reg_of env _ "%dst" (.ptr dst) hdst)
+      (BlockEval.evalOperand_reg_of env _ "%ei" (.ptr ei) hei)
+      (BlockEval.evalOperand_reg_of env _ "%xp" (.ptr xp) hxp)
+      (BlockEval.evalOperand_reg_of env _ "%xj" (.ptr xj) hxj)
+      (BlockEval.evalOperand_reg_of env _ "%nxp" (.int 64 nxp) hnxp)
+      (BlockEval.evalOperand_reg_of env _ "%sub.ptr.sub" (.int 64 sub) hsub)
+      hc)]
   rw [denoteCode_icmp_eq_imm s2StringBodyCalls _ _ "%cmp9" "%call" (by s2_lk) []]
   simp only [denoteCode_nil, s2StringBodyIfEndEnv]
 

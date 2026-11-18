@@ -62,11 +62,15 @@ def constOperand (σ : Subst) : Operand → Option Const
       | .vector _ _ => none
       | _ => some c
 
-/-- Replace a register by its literal, when the substitution knows one.  A global
-symbol is left as it is: its address is the run's, not the substitution's. -/
+/-- Substitute an operand.  A register the substitution mentions becomes the
+literal it was folded to — except the poison literal, which is not a value a
+read can yield: replacing a register by `poison` would turn a selection that
+fails today into one that binds the marker, so the register is left alone and
+the pass stays conservative. -/
 def substOperand (σ : Subst) : Operand → Operand
   | .reg n =>
       match σ n with
+      | some .poison => .reg n
       | some c => .imm c
       | none => .reg n
   | .global n => .global n
@@ -234,14 +238,24 @@ to the literal value the substitution gives it. -/
 def EnvEmbeds (env : Env) (σ : Subst) : Prop :=
   ∀ x c, σ x = some c → lookupName env x = Const.toValue c
 
+/-- A cell bound to the literal a constant denotes reads as that literal. -/
+theorem evalOperand_reg_eq_imm {s : State} {n : String} {c : Const}
+    (h : lookupName s.env n = Const.toValue c) :
+    evalOperand s (.reg n) = evalOperand s (.imm c) := by
+  simp only [evalOperand, h]
+  cases c <;> rfl
+
 theorem evalOperand_subst {σ : Subst} {s : State} (h : EnvEmbeds s.env σ) (o : Operand) :
     evalOperand s (substOperand σ o) = evalOperand s o := by
   cases o with
   | reg n =>
-      simp only [substOperand, evalOperand]
+      simp only [substOperand]
       cases hσ : σ n with
       | none => rfl
-      | some c => exact (h n c hσ).symm
+      | some c =>
+          cases c <;> first
+            | rfl
+            | exact (evalOperand_reg_eq_imm (h n _ hσ)).symm
   | global n => rfl
   | imm c => rfl
 
@@ -267,7 +281,23 @@ theorem phiSelect_subst {σ : Subst} {s : State} (h : EnvEmbeds s.env σ)
       rw [phiIncoming_map]
       cases hinc : phiIncoming p inc with
       | none => rfl
-      | some op => simp only [Option.map_some]; exact evalOperand_subst h op
+      | some op =>
+          -- The picked operand is the substituted one on the left and the
+          -- original on the right.  A `poison` literal is selected identically
+          -- on both sides, and a register is never rewritten to one
+          -- (`substOperand` leaves it alone), so the selection agrees.
+          simp only [Option.map_some]
+          cases op with
+          | imm c => rfl
+          | global n => rfl
+          | reg n =>
+              simp only [substOperand]
+              cases hσ : σ n with
+              | none => rfl
+              | some c =>
+                  cases c <;> first
+                    | rfl
+                    | exact (evalOperand_reg_eq_imm (h n _ hσ)).symm
 
 /-- Substituting inside a `phi`'s incoming list does not change the state the
 instruction reaches. -/
@@ -298,9 +328,9 @@ theorem evalOperand_const {σ : Subst} {s : State} {o : Operand} {c : Const}
       | some c' =>
           simp only [hσ] at hc
           cases c' with
-          | int w v => simp at hc; cases hc; exact h n (.int w v) hσ
-          | null => simp at hc; cases hc; exact h n .null hσ
-          | float b => simp at hc; cases hc; exact h n (.float b) hσ
+          | int w v => simp at hc; cases hc; exact evalOperand_reg_eq_imm (h n (.int w v) hσ)
+          | null => simp at hc; cases hc; exact evalOperand_reg_eq_imm (h n .null hσ)
+          | float b => simp at hc; cases hc; exact evalOperand_reg_eq_imm (h n (.float b) hσ)
           | undef => simp at hc
           | poison => simp at hc
           | splat _ _ _ => simp at hc

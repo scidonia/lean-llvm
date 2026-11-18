@@ -774,8 +774,7 @@ theorem openTailSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
   -- 6. `if.end.i`: the depth guard is clear below `520`
   have hstep₆ : evalOperand (openS₅ s r rd) (.reg "%sp.i.0248") =
       some (.int 32 (BitVec.ofNat 32 C.sp)) := by
-    simp only [evalOperand]
-    exact hl₅.inv'.depth_reg
+    exact LeanLLVM.evalOperand_reg_of hl₅.inv'.depth_reg
   obtain ⟨s₆, hl₆, hs₆⟩ :=
     WalkLink.if_end_i_at G (openC₅ C) (openS₅ s r rd) hl₅.inv' rfl hstep₆
   have hbit₆ : (if evalICmp .ugt (BitVec.ofNat 32 C.sp) (BitVec.ofNat 32 519) = 1 then
@@ -917,7 +916,7 @@ theorem containerOpenSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : Sta
       evalOperand sd (.reg "%inc.i") = some (.int 64 (BitVec.ofNat 64 (C.k + 1))) ∧
       lookupName sd.env "%nep" = some (.int 64 (BitVec.ofNat 64 G.nep)) := by
   -- the byte, at the head and at the entry the head's index reads
-  have h8' : lookupName s.env "%8" = some (.int 8 b) := by simpa [evalOperand] using h8
+  have h8' : lookupName s.env "%8" = some (.int 8 b) := lookupName_of_evalOperand_reg h8
   have hbe0 : b = BitVec.ofNat 8 (entryByte G C.k).toNat := by
     have h := Option.some.inj (h8'.symm.trans hInv.iter.reg8)
     simpa using h
@@ -938,7 +937,7 @@ theorem containerOpenSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : Sta
       exact openS₉_inc33 (openHeadC C) (openBrS₄ s) r rd b
     · simp only [evalOperand]
       rw [openS₉_inc (openHeadC C) (openBrS₄ s) r rd b]
-      exact hh.inv'.inc_reg
+      exact LeanLLVM.evalOperand_reg_of hh.inv'.inc_reg
     · rw [openS₉_nep (openHeadC C) (openBrS₄ s) r rd b]
       exact hh.inv'.regs ("%nep", .int 64 (BitVec.ofNat 64 G.nep))
         (by simp [walkStaticRegs])
@@ -957,7 +956,7 @@ theorem containerOpenSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : Sta
       exact openS₉_inc33 (openHeadC C) (openBcS₄ s) r rd b
     · simp only [evalOperand]
       rw [openS₉_inc (openHeadC C) (openBcS₄ s) r rd b]
-      exact hh.inv'.inc_reg
+      exact LeanLLVM.evalOperand_reg_of hh.inv'.inc_reg
     · rw [openS₉_nep (openHeadC C) (openBcS₄ s) r rd b]
       exact hh.inv'.regs ("%nep", .int 64 (BitVec.ofNat 64 G.nep))
         (by simp [walkStaticRegs])

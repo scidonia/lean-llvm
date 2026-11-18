@@ -300,12 +300,11 @@ noncomputable def hcontRunHeadCells_of_prefix {m0 : Mem} {G : WalkGeom m0}
     (hPrefix : WalkSegment (stage2Calls stage2SubCalls) G C s (HeadAC₄ C) q5 nq)
     (hmem : q5.mem = s.mem) : HcontRunHeadCells G C s r q5 := by
   have hInv5 : WalkInv G (HeadAC₄ C) q5 := hPrefix.inv'
-  have hinc : evalOperand q5 (.reg "%inc.i") = some (.int 64 (hlastIncV C)) := by
-    simp only [evalOperand, hlastIncV]
-    exact hInv5.inc_reg
-  have hnep : evalOperand q5 (.reg "%nep") = some (.int 64 (hlastNepV G)) := by
-    simp only [evalOperand, hlastNepV]
-    exact hInv5.regs ("%nep", .int 64 (BitVec.ofNat 64 G.nep)) (by simp [walkStaticRegs])
+  have hinc : evalOperand q5 (.reg "%inc.i") = some (.int 64 (hlastIncV C)) :=
+    LeanLLVM.evalOperand_reg_of hInv5.inc_reg
+  have hnep : evalOperand q5 (.reg "%nep") = some (.int 64 (hlastNepV G)) :=
+    LeanLLVM.evalOperand_reg_of (hInv5.regs ("%nep", .int 64 (BitVec.ofNat 64 G.nep))
+      (by simp [walkStaticRegs]))
   have hnext : evalICmp .ult (hlastIncV C) (hlastNepV G) = 1 := cont_ult_one G C hk
   have h5 : lookupName (contSwOut q5 (hlastIncV C) (hlastNepV G)).env "%5" =
       some (.ptr G.ep) := by
@@ -374,9 +373,7 @@ noncomputable def hcontRunCheckCells_of_head {m0 : Mem} {G : WalkGeom m0}
   exact
     { hInvC := hseg.inv'
       h35 := by
-        show evalOperand (contRunCheck G C q5 (hlastIncV C) (hlastNepV G) G.ep r.v
-          (contIx G C) (contB35 G r.v)) (.reg "%35") = _
-        simp only [evalOperand]
+        refine LeanLLVM.evalOperand_reg_of ?_
         exact contLandOut_35 (contMidS C q5 (hlastIncV C) (hlastNepV G) G.ep r.v
           (contIx G C)) r.v.toNat (contB35 G r.v)
       hidx := by
@@ -525,7 +522,8 @@ theorem hcontRunSeamByte {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : Sta
       (wsSlAt G (contRunCheck G C q5 (hlastIncV C) (hlastNepV G) G.ep r.v (contIx G C)
         (contB35 G r.v)) (contB35 G r.v) (contIx G C) r.v k) k (hlastByte G C))
       (.reg "%8") = some (.int 8 (hlastByte G C)) := by
-  simp only [evalOperand, contWsSeamS]
+  refine LeanLLVM.evalOperand_reg_of ?_
+  simp only [contWsSeamS]
   rw [seamS_env8, wsSlAt_env8, contRunCheck_env8]
   exact h8q
 
@@ -635,7 +633,7 @@ theorem hcontArm_run_defaultValueLow {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry
       show lookupName (lowS₃ s x).env "%8" = some (.int 8 x)
       simp only [lowS₃, lowS₂, lowS₁, State.bind]
       repeat rw [lookupName_cons_ne _ _ (by decide)]
-      simpa only [evalOperand] using h8
+      walk_read using h8
     rw [h, hx]
   let skip := hc.runSkip C s hInv hblock hk r hws
   let ba := hcontRunBodyAt hInv hk r hws hbit skip q5 3 hPrefix hmem h8q
@@ -701,7 +699,7 @@ theorem hcontArm_run_defaultValueMid {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry
       show lookupName (midS₄ s x).env "%8" = some (.int 8 x)
       simp only [midS₄, midS₃, midS₂, midS₁, State.bind]
       repeat rw [lookupName_cons_ne _ _ (by decide)]
-      simpa only [evalOperand] using h8
+      walk_read using h8
     rw [h, hx]
   let skip := hc.runSkip C s hInv hblock hk r hws
   let ba := hcontRunBodyAt hInv hk r hws hbit skip q5 4 hPrefix hmem h8q
@@ -764,7 +762,7 @@ theorem hcontArm_run_otherValue {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
       show lookupName (othS₄ s x).env "%8" = some (.int 8 x)
       simp only [othS₄, othS₃, othS₂, othS₁, State.bind]
       repeat rw [lookupName_cons_ne _ _ (by decide)]
-      simpa only [evalOperand] using h8
+      walk_read using h8
     rw [h, hx]
   let skip := hc.runSkip C s hInv hblock hk r hws
   let ba := hcontRunBodyAt hInv hk r hws hbit skip q5 4 hPrefix hmem h8q
@@ -826,7 +824,7 @@ theorem hcontArm_run_defaultValueBracket {m0 : Mem} {G : WalkGeom m0} {C : WalkC
       show lookupName (brkS₄ s x).env "%8" = some (.int 8 x)
       simp only [brkS₄, brkS₃, brkS₂, brkS₁, State.bind]
       repeat rw [lookupName_cons_ne _ _ (by decide)]
-      simpa only [evalOperand] using h8
+      walk_read using h8
     rw [h, hx]
   let skip := hc.runSkip C s hInv hblock hk r hws
   let ba := hcontRunBodyAt hInv hk r hws hbit skip q5 4 hPrefix hmem h8q
@@ -893,7 +891,7 @@ theorem hcontArm_run_defaultValueBrace {m0 : Mem} {G : WalkGeom m0} {C : WalkCar
       show lookupName (brcS₄ s x).env "%8" = some (.int 8 x)
       simp only [brcS₄, brcS₃, brcS₂, brcS₁, State.bind]
       repeat rw [lookupName_cons_ne _ _ (by decide)]
-      simpa only [evalOperand] using h8
+      walk_read using h8
     rw [h, hx]
   let skip := hc.runSkip C s hInv hblock hk r hws
   let ba := hcontRunBodyAt hInv hk r hws hbit skip q5 4 hPrefix hmem h8q
@@ -958,7 +956,7 @@ theorem hcontArm_run_defaultValueBracketHigh {m0 : Mem} {G : WalkGeom m0}
       show lookupName (bhS₄ s x).env "%8" = some (.int 8 x)
       simp only [bhS₄, bhS₃, bhS₂, bhS₁, State.bind]
       repeat rw [lookupName_cons_ne _ _ (by decide)]
-      simpa only [evalOperand] using h8
+      walk_read using h8
     rw [h, hx]
   let skip := hc.runSkip C s hInv hblock hk r hws
   let ba := hcontRunBodyAt hInv hk r hws hbit skip q5 4 hPrefix hmem h8q

@@ -223,8 +223,8 @@ noncomputable def contSwHeadLeafSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
     contMidLand_env8 C q5 inc nep ep v ix b35 h8end5
   have h35 : evalOperand (contLandOut (G := G) (contMidS C q5 inc nep ep v ix)
       v.toNat b35) (.reg "%35") = some (.int 8 (cont35 b35)) := by
-    simp only [evalOperand]
-    exact contLandOut_35 (s := contMidS C q5 inc nep ep v ix) (v := v.toNat) b35
+    exact LeanLLVM.evalOperand_reg_of
+      (contLandOut_35 (G := G) (s := contMidS C q5 inc nep ep v ix) (v := v.toNat) b35)
   let q4 : State := contLandOut (G := G) (contMidS C q5 inc nep ep v ix) v.toNat b35
   rcases hb with ⟨hb13, hb32, hbne13⟩ | ⟨hb13, hbns⟩ | ⟨hb13, hb32, hbne32⟩
   · have hsegB : Seg (stage2Calls stage2SubCalls) G (ContAC₄ C) q4
@@ -248,11 +248,11 @@ noncomputable def contSwHeadLeafSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
           (.scanFree hb13 hb32 hbne13)
         hcond := ?_
         hroot := ?_ }
-    · show evalOperand (contSeamByte q4 v.toNat (ContAC₄ C).stage.tok b35 x
-        (.scanFree hb13 hb32 hbne13)) (.reg "%8") = some (.int 8 x)
-      simp only [evalOperand]
-      rw [contSeamByte_env8]
-      exact h8q4
+    · have hlk : lookupName (contSeamByte q4 v.toNat (ContAC₄ C).stage.tok b35 x
+        (.scanFree hb13 hb32 hbne13)).env "%8" = some (.int 8 x) := by
+        rw [contSeamByte_env8]
+        exact h8q4
+      exact LeanLLVM.evalOperand_reg_of hlk
     · show lookupName (contSeamByte q4 v.toNat (ContAC₄ C).stage.tok b35 x
         (.scanFree hb13 hb32 hbne13)).env "%cond350.i" =
         some (.int 64 (BitVec.ofNat 64 v.toNat))
@@ -279,11 +279,11 @@ noncomputable def contSwHeadLeafSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
         hee := contSeamByte_ee q4 v.toNat (ContAC₄ C).stage.tok b35 x (.lowLeaf hb13 hbns)
         hcond := ?_
         hroot := ?_ }
-    · show evalOperand (contSeamByte q4 v.toNat (ContAC₄ C).stage.tok b35 x
-        (.lowLeaf hb13 hbns)) (.reg "%8") = some (.int 8 x)
-      simp only [evalOperand]
-      rw [contSeamByte_env8]
-      exact h8q4
+    · have hlk : lookupName (contSeamByte q4 v.toNat (ContAC₄ C).stage.tok b35 x
+        (.lowLeaf hb13 hbns)).env "%8" = some (.int 8 x) := by
+        rw [contSeamByte_env8]
+        exact h8q4
+      exact LeanLLVM.evalOperand_reg_of hlk
     · show lookupName (contSeamByte q4 v.toNat (ContAC₄ C).stage.tok b35 x
         (.lowLeaf hb13 hbns)).env "%cond350.i" =
         some (.int 64 (BitVec.ofNat 64 v.toNat))
@@ -313,11 +313,11 @@ noncomputable def contSwHeadLeafSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
           (.highLeaf hb13 hb32 hbne32)
         hcond := ?_
         hroot := ?_ }
-    · show evalOperand (contSeamByte q4 v.toNat (ContAC₄ C).stage.tok b35 x
-        (.highLeaf hb13 hb32 hbne32)) (.reg "%8") = some (.int 8 x)
-      simp only [evalOperand]
-      rw [contSeamByte_env8]
-      exact h8q4
+    · have hlk : lookupName (contSeamByte q4 v.toNat (ContAC₄ C).stage.tok b35 x
+        (.highLeaf hb13 hb32 hbne32)).env "%8" = some (.int 8 x) := by
+        rw [contSeamByte_env8]
+        exact h8q4
+      exact LeanLLVM.evalOperand_reg_of hlk
     · show lookupName (contSeamByte q4 v.toNat (ContAC₄ C).stage.tok b35 x
         (.highLeaf hb13 hb32 hbne32)).env "%cond350.i" =
         some (.int 64 (BitVec.ofNat 64 v.toNat))
@@ -615,7 +615,7 @@ theorem hcontHeadLeafSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : Sta
         headAS₃, headAS₂, headAS₁, stateAt, cells, State.bind]
       repeat rw [lookupName_cons_ne _ _ (by decide)]
     rw [hcell]
-    simpa only [evalOperand] using h8
+    walk_read using h8
   have h35 : evalOperand (contLandS C s x inc nep ep v ix b35) (.reg "%35") =
       some (.int 8 (cont35 b35)) := by
     simp only [evalOperand]

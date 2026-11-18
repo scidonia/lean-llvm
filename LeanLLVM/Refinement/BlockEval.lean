@@ -111,10 +111,20 @@ theorem stateAt_pre (env : Env) (s : State) : (stateAt env s).pre = s.pre := rfl
 
 /-- A register read at the state's environment, from the environment's own
 lookup: the hypothesis a step lemma consumes, in the one shape every wrapper
-below names. -/
+below names.  A cell bound to `Value.poison` has no value — reading it is a use
+— so the read is stated for a value that is not the marker; the value argument
+at a call site is the constructor the hypothesis names, so the side condition is
+solved by the default tactic rather than at each use. -/
 theorem evalOperand_reg_of (env : Env) (s : State) (n : String) (v : Value)
-    (h : lookupName env n = some v) : evalOperand (stateAt env s) (.reg n) = some v := by
+    (h : lookupName env n = some v) (hv : v ≠ .poison := by intro hh; cases hh) :
+    evalOperand (stateAt env s) (.reg n) = some v := by
   simp only [stateAt, evalOperand, h]
+  cases v with
+  | poison => exact absurd rfl hv
+  | int w x => rfl
+  | ptr a => rfl
+  | vec n w l => rfl
+  | float b => rfl
 
 /-- A literal integer operand reads to its value. -/
 theorem evalOperand_lit_of (s : State) (w : Nat) (c : BitVec w) :
@@ -1006,6 +1016,7 @@ macro "block_close" : tactic => `(tactic|
    all_goals (try
      (first
       | assumption
+      | exact evalOperand_reg_of _ _ _ _ (by assumption)
       | block_lk
       | (simp only [phiIncoming]; rfl)
       | rfl

@@ -29,6 +29,25 @@ The estimate was about *phi selection*. The actual change is about **the meaning
 
 So the blast radius is not "phi selection plus `evalOperand`"; it is **every lemma whose statement mentions `evalOperand`, `evalOperands`, or `Const.toValue`**, plus the proofs that consume them.
 
+## The idiom that died
+
+While `evalOperand` read a cell directly, `simpa only [evalOperand] using h` was
+how a proof crossed between a read and a binding: unfolding both sides landed on
+`lookupName s.env n = some v`. With the marker able to sit in a cell the read is
+partial, so the same unfold leaves a `match` on one side and a `lookupName` on the
+other, and the idiom closes nothing. Its occurrences are the tell the estimate
+missed: 145 sites across 31 modules crossed between a read and a binding this way,
+so the fallout is not confined to the modules whose *statements* mention
+`evalOperand`; it reaches every proof that crossed the two through defeq.
+
+The repair is the converse of `evalOperand_reg_of`:
+`lookupName_of_evalOperand_reg` states that a read of `some v` names a cell bound
+to `v`, because a cell holding the marker has no read. It sits at the walk cone
+(`JsonStage2WalkScope`) rather than beside the semantics, so the modules already
+green keep their oleans, and a site writes `walk_read using h`, which closes the
+pair in the direction the goal faces and keeps the unfold for the operand shapes
+where both sides are still reads.
+
 ## What would bound the next one
 
 1. **Enumerate the value-reading surface *before* editing.** `grep` for every lemma whose statement mentions `evalOperand`, `evalOperands`, or `Const.toValue`, and for every `Value` pattern match. That list *is* the blast radius, and it can be produced before the first edit instead of discovered by the build.

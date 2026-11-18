@@ -323,8 +323,17 @@ theorem walkScanChain457_ws {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
   obtain ⟨s₃, hl₃⟩ := WalkLink.LeafBlock96 (G := G) (C := ScanC₉₆ C)
     (s := ScanS₉₆ s idx a q x) hl₂.inv' rfl
     (by
-      simpa only [ScanS₉₆, stateAt, evalOperand,
-        lookupName_cons_ne (k := "%Pivot106") (n := "%47") _ _ (by decide)] using h47)
+      have hlk47 : lookupName (landRhs457OutAt s idx a q).env "%47" =
+          some (.int 8 (BitVec.ofNat 8 q)) := by
+        simp only [landRhs457OutAt, stateAt, cells, lookupName_cons_self]
+      have h47' : some (Value.int 8 (BitVec.ofNat 8 q)) = some (Value.int 8 x) := by
+        have h := h47
+        simp only [evalOperand] at h
+        rw [hlk47] at h
+        exact h
+      simp only [stateAt,
+        lookupName_cons_ne (k := "%Pivot106") (n := "%47") _ _ (by decide), hlk47]
+      exact h47')
     hlatch
   rw [if_pos hws] at hl₃
   exact ⟨s₃, WalkChain.tail hl₁ (WalkChain.tail hl₂ (WalkChain.tail hl₃ (WalkChain.nil hl₃.inv')))⟩

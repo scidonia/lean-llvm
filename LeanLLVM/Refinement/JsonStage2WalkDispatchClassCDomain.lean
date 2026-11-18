@@ -55,7 +55,7 @@ theorem cHead_110 {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
   have hreg := seed_head_byte G S s (hc := h.entryByte_zero) hInv
   have ht : ((110 : UInt8)).toNat = 110 := by decide
   rw [ht] at hreg
-  simpa only [evalOperand] using hreg
+  exact LeanLLVM.evalOperand_reg_of hreg
 
 /-- **`111`'s head byte**. -/
 theorem cHead_111 {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
@@ -64,7 +64,7 @@ theorem cHead_111 {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
   have hreg := seed_head_byte G S s (hc := h.entryByte_zero) hInv
   have ht : ((111 : UInt8)).toNat = 111 := by decide
   rw [ht] at hreg
-  simpa only [evalOperand] using hreg
+  exact LeanLLVM.evalOperand_reg_of hreg
 
 /-- **`116`'s head byte**. -/
 theorem cHead_116 {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
@@ -73,7 +73,7 @@ theorem cHead_116 {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
   have hreg := seed_head_byte G S s (hc := h.entryByte_zero) hInv
   have ht : ((116 : UInt8)).toNat = 116 := by decide
   rw [ht] at hreg
-  simpa only [evalOperand] using hreg
+  exact LeanLLVM.evalOperand_reg_of hreg
 
 /-- **`117`'s head byte**. -/
 theorem cHead_117 {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
@@ -82,7 +82,7 @@ theorem cHead_117 {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
   have hreg := seed_head_byte G S s (hc := h.entryByte_zero) hInv
   have ht : ((117 : UInt8)).toNat = 117 := by decide
   rw [ht] at hreg
-  simpa only [evalOperand] using hreg
+  exact LeanLLVM.evalOperand_reg_of hreg
 
 /-- **`110`'s head byte at the last entry's document.** -/
 theorem cHead_last_110 {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
@@ -91,7 +91,7 @@ theorem cHead_last_110 {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State
   have hreg := seed_reg8 G S s h hInv
   have ht : ((110 : UInt8)).toNat = 110 := by decide
   rw [ht] at hreg
-  simpa only [evalOperand] using hreg
+  exact LeanLLVM.evalOperand_reg_of hreg
 
 /-- **`117`'s head byte at the last entry's document.** -/
 theorem cHead_last_117 {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
@@ -100,7 +100,7 @@ theorem cHead_last_117 {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State
   have hreg := seed_reg8 G S s h hInv
   have ht : ((117 : UInt8)).toNat = 117 := by decide
   rw [ht] at hreg
-  simpa only [evalOperand] using hreg
+  exact LeanLLVM.evalOperand_reg_of hreg
 
 /-! ### The head class, at the four bytes -/
 

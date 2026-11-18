@@ -54,6 +54,16 @@ open LeanLLVM.Refinement.JsonS1MasksSteps
    nibbleLanes_eq and15_eq_mod packLanes_shr4_mod lane_shr4 shr4Lanes_getD
    unpackLanes_getElem unpackLanes_getElem_toNat mod_mul_div pshufbLanes_length)
 
+/-- A register read in the run's environment: the cells the block has installed
+so far, then the cell it names.  The steps below are stated at `withEnv`, so this
+is the read their hypotheses spell.  The read is the lookup with the poison
+marker filtered out, so it names the cell's value only when the cell holds a
+value other than the marker. -/
+theorem evalOperand_reg_of (env : Env) (s : State) (n : String) (v : Value)
+    (h : lookupName env n = some v) (hv : v ≠ .poison := by intro hh; cases hh) :
+    evalOperand (withEnv env s) (.reg n) = some v :=
+  JsonEntrySteps.evalOperand_reg_of env s n v h hv
+
 /-! ### The fuel, and the run's own step relation -/
 
 /-- `fuelOf` is the block count's budget: at most three control steps per gated
@@ -2627,7 +2637,7 @@ theorem utf8Reduce (env : Env) (s : State) (p : String) (op : Operand)
     rw [denoteCode_phi1 _ _ _ _ _ _ _ hpre hinc hop]
     all_goals (first | rfl | decide | skip)
     ent_step (utf8_step_ptestz _ _ "%36" "%u8k.0.lcssa" (.reg "%u8k.0.lcssa") u8k u8k
-      (by simp only [withEnv, evalOperand]; ent_auto) hu8klen (by ent_auto) hu8klen)
+      (by ent_auto) hu8klen (by ent_auto) hu8klen)
     ent_step (utf8_step_icmp_eq_imm _ _ "%tobool16.not" "%36" 32 _ (BitVec.ofInt 32 0)
       (by ent_auto))
     ent_step (utf8_step_icmp_ne_imm _ _ "%tobool17.not" "%n" 64 (BitVec.ofNat 64 n)
@@ -3693,7 +3703,7 @@ theorem utf8Ungated_loop_run (bs : List UInt8) (n nb b : Nat) (mem : Mem)
       have hexit' : evalOperand (withEnv env'' s) (.reg "%exitcond.not")
           = some (.int 1 (BitVec.ofBool
               (BitVec.ofNat 64 i + BitVec.ofInt 64 1 = BitVec.ofNat 64 nb))) := by
-        simpa only [withEnv, evalOperand] using hexit
+        exact evalOperand_reg_of _ _ _ _ hexit
       have hone : (BitVec.ofInt 64 1 : BitVec 64) = BitVec.ofNat 64 1 := by decide
       have hnext : BitVec.ofNat 64 i + BitVec.ofInt 64 1 = BitVec.ofNat 64 (i + 1) := by
         rw [hone, ofNat64_add_ofNat i 1 (by omega)]
@@ -4398,10 +4408,6 @@ theorem withEnv_setJmp (env : Env) (s : State) (pc : String) (pre : Option Strin
     ({ (withEnv env s) with pc := pc, pre := pre })
       = withEnv env { s with pc := pc, pre := pre } := rfl
 
-/-- A register operand under `withEnv` reads the environment's cell. -/
-theorem evalOperand_reg_withEnv (env : Env) (s : State) (n : String) :
-    evalOperand (withEnv env s) (.reg n) = lookupName env n := rfl
-
 /-- The emission's lane order does not change the packed word: the outer `|||`s
 associate and commute lane by lane, so the gated body's
 `(%lower ||| %upper) ||| u8k` packs to the natural the accumulator step is stated
@@ -4556,8 +4562,7 @@ theorem utf8Gated_loop_run (bs : List UInt8) (n nb b : Nat) (mem : Mem)
         step_of_utf8 _ "for.body.us" utf8ForBodyUs (withEnv env1 s) hpc findBlock_utf8ForBodyUs hrun1
       have hev1 : evalOperand (withEnv env1 s) (.reg "%or.cond.us")
           = some (.int 1 (utf8GateBit ((S.drop 3).take 32) ((S.drop 35).take 32) prev)) := by
-        rw [evalOperand_reg_withEnv]
-        exact hcond1
+        exact evalOperand_reg_of _ _ _ _ hcond1
       have hpc1 : (withEnv env1 s).pc = "for.body.us" := hpc
       -- the block's own bytes, and the next block's `prev_ascii`
       have hklBlk : klBlk (utf8Window bs n nb) i
@@ -4609,7 +4614,7 @@ theorem utf8Gated_loop_run (bs : List UInt8) (n nb b : Nat) (mem : Mem)
         obtain ⟨env2, hrun2, hU2, hI2, hE2⟩ :=
           utf8EndUs_run env1 { s with pc := "if.end14.us", pre := some "for.body.us" }
             "for.body.us" (.reg "%u8k.076.us") u8k i nb rfl rfl
-            (by rw [evalOperand_reg_withEnv]; exact hU1) hB1 hdiv1
+            (evalOperand_reg_of _ _ _ _ hU1) hB1 hdiv1
         have hstep2 : step utf8Calls utf8Function
             (withEnv env1 { s with pc := "if.end14.us", pre := some "for.body.us" })
             = execTerm (withEnv env2 { s with pc := "if.end14.us", pre := some "for.body.us" })
@@ -4620,8 +4625,7 @@ theorem utf8Gated_loop_run (bs : List UInt8) (n nb b : Nat) (mem : Mem)
             (.reg "%exitcond79.not")
             = some (.int 1 (BitVec.ofBool
                 (BitVec.ofNat 64 i + BitVec.ofInt 64 1 = BitVec.ofNat 64 nb))) := by
-          rw [evalOperand_reg_withEnv]
-          exact hE2
+          exact evalOperand_reg_of _ _ _ _ hE2
         have hframe2 := fun (nm : String) (hm : nm ∈ utf8Kept) =>
           denoteCode_kept utf8EndUs.instrs env1 env2
             { s with pc := "if.end14.us", pre := some "for.body.us" } hrun2 utf8Kept_end nm hm
@@ -4668,16 +4672,16 @@ theorem utf8Gated_loop_run (bs : List UInt8) (n nb b : Nat) (mem : Mem)
                 ((S.drop 35).take 32))) (BitVec.ofNat 256 (packLanes highLanes64)))
               hr' (by omega) rfl rfl hmem rfl rfl rfl
               (by
-                rw [evalOperand_reg_withEnv,
-                  latch_keeps_two env1 env2
-                    { s with pc := "if.end14.us", pre := some "for.body.us" } hrun2]
-                exact h21)
+                exact evalOperand_reg_of _ _ _ _
+                  ((latch_keeps_two env1 env2
+                    { s with pc := "if.end14.us", pre := some "for.body.us" } hrun2).trans h21))
               (by
-                rw [evalOperand_reg_withEnv, lookupName_cons_ne _ _ (by decide)]
-                exact hU2)
+                exact evalOperand_reg_of _ _ _ _
+                  (by rw [lookupName_cons_ne _ _ (by decide)]; exact hU2))
               (by
-                rw [evalOperand_reg_withEnv, lookupName_cons_ne _ _ (by decide),
-                  lookupName_cons_ne _ _ (by decide), hI2, hnext])
+                exact evalOperand_reg_of _ _ _ _
+                  (by rw [lookupName_cons_ne _ _ (by decide),
+                    lookupName_cons_ne _ _ (by decide), hI2, hnext]))
               ((hframe2 "%b" (by decide)).trans hb1)
               ((hframe2 "%div44" (by decide)).trans hdiv1)
               ((hframe2 "%n" (by decide)).trans hn1)
@@ -4781,7 +4785,7 @@ theorem utf8Gated_loop_run (bs : List UInt8) (n nb b : Nat) (mem : Mem)
         obtain ⟨env2, hrun2, hU2, hI2, hE2⟩ :=
           utf8EndUs_run envB { s with pc := "if.end14.us", pre := some "if.then11.us" }
             "if.then11.us" (.reg "%or.i.us") G i nb rfl rfl
-            (by rw [evalOperand_reg_withEnv]; exact hvalG) hbiB hdivB
+            (evalOperand_reg_of _ _ _ _ hvalG) hbiB hdivB
         have hstep2 : step utf8Calls utf8Function
             (withEnv envB { s with pc := "if.end14.us", pre := some "if.then11.us" })
             = execTerm (withEnv env2 { s with pc := "if.end14.us", pre := some "if.then11.us" })
@@ -4796,8 +4800,7 @@ theorem utf8Gated_loop_run (bs : List UInt8) (n nb b : Nat) (mem : Mem)
             (.reg "%exitcond79.not")
             = some (.int 1 (BitVec.ofBool
                 (BitVec.ofNat 64 i + BitVec.ofInt 64 1 = BitVec.ofNat 64 nb))) := by
-          rw [evalOperand_reg_withEnv]
-          exact hE2
+          exact evalOperand_reg_of _ _ _ _ hE2
         have hframe2 := fun (nm : String) (hm : nm ∈ utf8Kept) =>
           denoteCode_kept utf8EndUs.instrs envB env2
             { s with pc := "if.end14.us", pre := some "if.then11.us" } hrun2 utf8Kept_end nm hm
@@ -4845,19 +4848,19 @@ theorem utf8Gated_loop_run (bs : List UInt8) (n nb b : Nat) (mem : Mem)
                 ((S.drop 35).take 32))) (BitVec.ofNat 256 (packLanes highLanes64)))
               hr' (by omega) rfl rfl hmem rfl rfl rfl
               (by
-                rw [evalOperand_reg_withEnv,
-                  latch_keeps_two envB env2
-                    { s with pc := "if.end14.us", pre := some "if.then11.us" } hrun2,
-                  denoteCode_lookupName_of_not_dst utf8ThenUs.instrs env1 envB
-                    { s with pc := "if.then11.us", pre := some "for.body.us" } "%2"
-                    (by decide) hrunB]
-                exact h21)
+                exact evalOperand_reg_of _ _ _ _
+                  (((latch_keeps_two envB env2
+                    { s with pc := "if.end14.us", pre := some "if.then11.us" } hrun2).trans
+                    (denoteCode_lookupName_of_not_dst utf8ThenUs.instrs env1 envB
+                      { s with pc := "if.then11.us", pre := some "for.body.us" } "%2"
+                      (by decide) hrunB)).trans h21))
               (by
-                rw [evalOperand_reg_withEnv, lookupName_cons_ne _ _ (by decide)]
-                exact hU2)
+                exact evalOperand_reg_of _ _ _ _
+                  (by rw [lookupName_cons_ne _ _ (by decide)]; exact hU2))
               (by
-                rw [evalOperand_reg_withEnv, lookupName_cons_ne _ _ (by decide),
-                  lookupName_cons_ne _ _ (by decide), hI2, hnext])
+                exact evalOperand_reg_of _ _ _ _
+                  (by rw [lookupName_cons_ne _ _ (by decide),
+                    lookupName_cons_ne _ _ (by decide), hI2, hnext]))
               ((hframe2 "%b" (by decide)).trans hbB)
               ((hframe2 "%div44" (by decide)).trans hdivB)
               ((hframe2 "%n" (by decide)).trans hnB)
@@ -5077,7 +5080,7 @@ theorem utf8Ungated_reach (nb b i : Nat) (mem : Mem) (W : List UInt8)
       have hexit' : evalOperand (withEnv env'' s) (.reg "%exitcond.not")
           = some (.int 1 (BitVec.ofBool
               (BitVec.ofNat 64 j + BitVec.ofInt 64 1 = BitVec.ofNat 64 nb))) := by
-        simpa only [withEnv, evalOperand] using hexit
+        exact evalOperand_reg_of _ _ _ _ hexit
       have hone : (BitVec.ofInt 64 1 : BitVec 64) = BitVec.ofNat 64 1 := by decide
       have hnext : BitVec.ofNat 64 j + BitVec.ofInt 64 1 = BitVec.ofNat 64 (j + 1) := by
         rw [hone, ofNat64_add_ofNat j 1 (by omega)]
@@ -5244,8 +5247,7 @@ theorem utf8Gated_reach (nb b i : Nat) (mem : Mem) (W : List UInt8)
         step_of_utf8 _ "for.body.us" utf8ForBodyUs (withEnv env1 s) hpc findBlock_utf8ForBodyUs hrun1
       have hev1 : evalOperand (withEnv env1 s) (.reg "%or.cond.us")
           = some (.int 1 (utf8GateBit ((S.drop 3).take 32) ((S.drop 35).take 32) prev)) := by
-        rw [evalOperand_reg_withEnv]
-        exact hcond1
+        exact evalOperand_reg_of _ _ _ _ hcond1
       have hpc1 : (withEnv env1 s).pc = "for.body.us" := hpc
       have hone : (BitVec.ofInt 64 1 : BitVec 64) = BitVec.ofNat 64 1 := by decide
       have hnext : BitVec.ofNat 64 j + BitVec.ofInt 64 1 = BitVec.ofNat 64 (j + 1) := by
@@ -5265,7 +5267,7 @@ theorem utf8Gated_reach (nb b i : Nat) (mem : Mem) (W : List UInt8)
         obtain ⟨env2, hrun2, hU2, hI2, hE2⟩ :=
           utf8EndUs_run env1 { s with pc := "if.end14.us", pre := some "for.body.us" }
             "for.body.us" (.reg "%u8k.076.us") u8k j nb rfl rfl
-            (by rw [evalOperand_reg_withEnv]; exact hU1) hB1 hdiv1
+            (evalOperand_reg_of _ _ _ _ hU1) hB1 hdiv1
         have hstep2 : step utf8Calls utf8Function
             (withEnv env1 { s with pc := "if.end14.us", pre := some "for.body.us" })
             = execTerm (withEnv env2 { s with pc := "if.end14.us", pre := some "for.body.us" })
@@ -5276,8 +5278,7 @@ theorem utf8Gated_reach (nb b i : Nat) (mem : Mem) (W : List UInt8)
             (.reg "%exitcond79.not")
             = some (.int 1 (BitVec.ofBool
                 (BitVec.ofNat 64 j + BitVec.ofInt 64 1 = BitVec.ofNat 64 nb))) := by
-          rw [evalOperand_reg_withEnv]
-          exact hE2
+          exact evalOperand_reg_of _ _ _ _ hE2
         have hframe2 := fun (nm : String) (hm : nm ∈ utf8Kept) =>
           denoteCode_kept utf8EndUs.instrs env1 env2
             { s with pc := "if.end14.us", pre := some "for.body.us" } hrun2 utf8Kept_end nm hm
@@ -5317,13 +5318,14 @@ theorem utf8Gated_reach (nb b i : Nat) (mem : Mem) (W : List UInt8)
                 (unpackLanes 64 4 (bytesToNat ((S.drop 3).take 32))))))
                 (BitVec.ofNat 256 (packLanes highLanes64)))
               acc (by omega) (by omega) rfl rfl hmem rfl rfl rfl
-              (by rw [evalOperand_reg_withEnv]; exact hP2)
+              (evalOperand_reg_of _ _ _ _ hP2)
               (by
-                rw [evalOperand_reg_withEnv, lookupName_cons_ne _ _ (by decide)]
-                exact hU2)
+                exact evalOperand_reg_of _ _ _ _
+                  (by rw [lookupName_cons_ne _ _ (by decide)]; exact hU2))
               (by
-                rw [evalOperand_reg_withEnv, lookupName_cons_ne _ _ (by decide),
-                  lookupName_cons_ne _ _ (by decide), hI2, hnext])
+                exact evalOperand_reg_of _ _ _ _
+                  (by rw [lookupName_cons_ne _ _ (by decide),
+                    lookupName_cons_ne _ _ (by decide), hI2, hnext]))
               ((hframe2 "%b" (by decide)).trans hb1)
               ((hframe2 "%div44" (by decide)).trans hdiv1)
               hacc hu8klen hu8kpack
@@ -5404,7 +5406,7 @@ theorem utf8Gated_reach (nb b i : Nat) (mem : Mem) (W : List UInt8)
         obtain ⟨env2, hrun2, hU2, hI2, hE2⟩ :=
           utf8EndUs_run envB { s with pc := "if.end14.us", pre := some "if.then11.us" }
             "if.then11.us" (.reg "%or.i.us") G j nb rfl rfl
-            (by rw [evalOperand_reg_withEnv]; exact hvalG) hbiB hdivB
+            (evalOperand_reg_of _ _ _ _ hvalG) hbiB hdivB
         have hstep2 : step utf8Calls utf8Function
             (withEnv envB { s with pc := "if.end14.us", pre := some "if.then11.us" })
             = execTerm (withEnv env2 { s with pc := "if.end14.us", pre := some "if.then11.us" })
@@ -5419,8 +5421,7 @@ theorem utf8Gated_reach (nb b i : Nat) (mem : Mem) (W : List UInt8)
             (.reg "%exitcond79.not")
             = some (.int 1 (BitVec.ofBool
                 (BitVec.ofNat 64 j + BitVec.ofInt 64 1 = BitVec.ofNat 64 nb))) := by
-          rw [evalOperand_reg_withEnv]
-          exact hE2
+          exact evalOperand_reg_of _ _ _ _ hE2
         have hframe2 := fun (nm : String) (hm : nm ∈ utf8Kept) =>
           denoteCode_kept utf8EndUs.instrs envB env2
             { s with pc := "if.end14.us", pre := some "if.then11.us" } hrun2 utf8Kept_end nm hm
@@ -5464,13 +5465,14 @@ theorem utf8Gated_reach (nb b i : Nat) (mem : Mem) (W : List UInt8)
                 (unpackLanes 64 4 (bytesToNat ((S.drop 3).take 32))))))
                 (BitVec.ofNat 256 (packLanes highLanes64)))
               accG (by omega) (by omega) rfl rfl hmem rfl rfl rfl
-              (by rw [evalOperand_reg_withEnv]; exact hP2)
+              (evalOperand_reg_of _ _ _ _ hP2)
               (by
-                rw [evalOperand_reg_withEnv, lookupName_cons_ne _ _ (by decide)]
-                exact hU2)
+                exact evalOperand_reg_of _ _ _ _
+                  (by rw [lookupName_cons_ne _ _ (by decide)]; exact hU2))
               (by
-                rw [evalOperand_reg_withEnv, lookupName_cons_ne _ _ (by decide),
-                  lookupName_cons_ne _ _ (by decide), hI2, hnext])
+                exact evalOperand_reg_of _ _ _ _
+                  (by rw [lookupName_cons_ne _ _ (by decide),
+                    lookupName_cons_ne _ _ (by decide), hI2, hnext]))
               ((hframe2 "%b" (by decide)).trans hbB)
               ((hframe2 "%div44" (by decide)).trans hdivB)
               haccG hglen hpackG
@@ -5551,8 +5553,7 @@ theorem utf8_stage_undefined_of_no_read : utf8StageUndefinedStatement := by
   have hev0 : evalOperand (withEnv env1 s0) (.reg "%cmp74.not")
       = some (.int 1 (BitVec.ofBool
           ((BitVec.ofNat 64 n + BitVec.ofInt 64 63).ult (BitVec.ofInt 64 64)))) := by
-    rw [evalOperand_reg_withEnv]
-    exact hcmp1
+    exact evalOperand_reg_of _ _ _ _ hcmp1
   have hguard : BitVec.ofBool
       ((BitVec.ofNat 64 n + BitVec.ofInt 64 63).ult (BitVec.ofInt 64 64)) = 0 := by
     rw [ofNat64_add63 n hlen,
@@ -5576,8 +5577,7 @@ theorem utf8_stage_undefined_of_no_read : utf8StageUndefinedStatement := by
   have hev1 : evalOperand (withEnv env2 s1) (.reg "%tobool.not")
       = some (.int 1 (BitVec.ofBool
           (BitVec.ofNat 32 (if ungated then 1 else 0) = BitVec.ofInt 32 0))) := by
-    rw [evalOperand_reg_withEnv]
-    exact htb
+    exact evalOperand_reg_of _ _ _ _ htb
   have hbi64 : 64 * i < 2 ^ 63 := by
     have h1 : i ≤ nb - 1 := by omega
     have h2 := Nat.mul_le_mul_left 64 h1
@@ -5638,10 +5638,10 @@ theorem utf8_stage_undefined_of_no_read : utf8StageUndefinedStatement := by
         exact hbadbyte
       have hnone := utf8ForBody_denote_none env3 s3 b i u8k3 "for.body"
         (.reg "%or.i47") (.reg "%inc") hpre3 rfl rfl
-        (by rw [evalOperand_reg_withEnv]; exact hval3)
+        (evalOperand_reg_of _ _ _ _ hval3)
         (by
-          rw [evalOperand_reg_withEnv, lookupName_cons_ne _ _ (by decide)]
-          exact hinc3)
+          exact evalOperand_reg_of _ _ _ _
+            (by rw [lookupName_cons_ne _ _ (by decide)]; exact hinc3))
         hb3 hbad3 hbi64
       have hub : step utf8Calls utf8Function (withEnv env3 s3) = .ub :=
         step_ub_utf8 (withEnv env3 s3) "for.body" utf8ForBody
@@ -5710,14 +5710,14 @@ theorem utf8_stage_undefined_of_no_read : utf8StageUndefinedStatement := by
         exact hbadbyte
       have hnone := utf8ForBodyUs_denote_none env3 s3 "if.end14.us"
         (.reg "%2") (.reg "%u8k.2.us") (.reg "%inc.us") b i prev3 u8k3 hpre3 rfl rfl rfl
-        (by rw [evalOperand_reg_withEnv]; exact hP3)
+        (evalOperand_reg_of _ _ _ _ hP3)
         (by
-          rw [evalOperand_reg_withEnv, lookupName_cons_ne _ _ (by decide)]
-          exact hU3)
+          exact evalOperand_reg_of _ _ _ _
+            (by rw [lookupName_cons_ne _ _ (by decide)]; exact hU3))
         (by
-          rw [evalOperand_reg_withEnv, lookupName_cons_ne _ _ (by decide),
-            lookupName_cons_ne _ _ (by decide)]
-          exact hinc3)
+          exact evalOperand_reg_of _ _ _ _
+            (by rw [lookupName_cons_ne _ _ (by decide),
+              lookupName_cons_ne _ _ (by decide)]; exact hinc3))
         hb3 hbad3 hbi64
       have hub : step utf8Calls utf8Function (withEnv env3 s3) = .ub :=
         step_ub_utf8 (withEnv env3 s3) "for.body.us" utf8ForBodyUs
@@ -6609,10 +6609,6 @@ theorem klByte_window_tail (bs : List UInt8) (n nb : Nat) (hn : 1 ≤ n) :
   rw [show n + 2 = 3 + (n - 1) from by omega, klByte_drop]
   rfl
 
-theorem evalOperand_reg_utf8 (env : Env) (s : State) (n : String) :
-    evalOperand (withEnv env s) (.reg n) = lookupName env n := by
-  simp only [withEnv, evalOperand]
-
 theorem utf8_cleanup_run
     (bs : List UInt8) (n nb b : Nat) (mem : Mem) (gate : Bool)
     (env : Env) (s : State) (p : String) (op : Operand) (u8k : List (BitVec 64))
@@ -6708,7 +6704,7 @@ theorem utf8_cleanup_run
         = some (.int 1 (BitVec.ofBool (decide (BitVec.ofNat 64 n
             ≠ BitVec.ofInt 64 0)) &&& BitVec.ofBool (decide (BitVec.ofNat 64 n
               &&& BitVec.ofInt 64 63 = BitVec.ofInt 64 0)))) := by
-      rw [evalOperand_reg_utf8]; exact hcond
+      exact evalOperand_reg_of _ _ _ _ hcond
     have hjump1 : step utf8Calls utf8Function (withEnv env s) = .jump (withEnv env1 s1) := by
       rw [hstep1]
       simpa only [s1, withEnv, hpc] using execTerm_condbr_true heval hguard
@@ -6722,13 +6718,13 @@ theorem utf8_cleanup_run
       simpa only [utf8Then20, s1, s2, withEnv] using execTerm_br (withEnv env2 s1) "if.end24"
     have hret := utf8Return env2 s2 "if.then20" (.reg "%or2373") (t16 ||| utf8TailBit x.toBitVec)
       (by simp only [s2]) (by simp [phiIncoming])
-      (by rw [evalOperand_reg_utf8]
-          show lookupName env2 "%or2373" = some (.int 1 (t16 ||| utf8TailBit x.toBitVec))
-          exact hval)
+      (evalOperand_reg_of _ _ _ _
+        (by show lookupName env2 "%or2373" = some (.int 1 (t16 ||| utf8TailBit x.toBitVec))
+            exact hval))
     obtain ⟨env3, hrun3, hval3⟩ := hret
     have hevret : evalOperand (withEnv env3 s2) (.reg "%err.0")
         = some (.int 64 (BitVec.ofNat 64 (t16 ||| utf8TailBit x.toBitVec).toNat)) := by
-      rw [evalOperand_reg_utf8]; exact hval3
+      exact evalOperand_reg_of _ _ _ _ hval3
     have hstep3 : step utf8Calls utf8Function (withEnv env2 s2)
         = .ret (some (.int 64 (BitVec.ofNat 64 (t16 ||| utf8TailBit x.toBitVec).toNat)))
           (withEnv env3 s2) := by
@@ -6783,19 +6779,19 @@ theorem utf8_cleanup_run
         = some (.int 1 (BitVec.ofBool (decide (BitVec.ofNat 64 n
             ≠ BitVec.ofInt 64 0)) &&& BitVec.ofBool (decide (BitVec.ofNat 64 n
               &&& BitVec.ofInt 64 63 = BitVec.ofInt 64 0)))) := by
-      rw [evalOperand_reg_utf8]; exact hcond
+      exact evalOperand_reg_of _ _ _ _ hcond
     have hjump1 : step utf8Calls utf8Function (withEnv env s) = .jump (withEnv env1 s3) := by
       rw [hstep1]
       simpa only [s3, withEnv, hpc] using execTerm_condbr_false heval hguard
     have hret := utf8Return env1 s3 "for.cond.cleanup" (.reg "%tobool16.not") t16
       (by simp only [s3]) (by simp [phiIncoming])
-      (by rw [evalOperand_reg_utf8]
-          show lookupName env1 "%tobool16.not" = some (.int 1 t16)
-          exact ht16')
+      (evalOperand_reg_of _ _ _ _
+        (by show lookupName env1 "%tobool16.not" = some (.int 1 t16)
+            exact ht16'))
     obtain ⟨env3, hrun3, hval3⟩ := hret
     have hevret : evalOperand (withEnv env3 s3) (.reg "%err.0")
         = some (.int 64 (BitVec.ofNat 64 t16.toNat)) := by
-      rw [evalOperand_reg_utf8]; exact hval3
+      exact evalOperand_reg_of _ _ _ _ hval3
     have hstep3 : step utf8Calls utf8Function (withEnv env1 s3)
         = .ret (some (.int 64 (BitVec.ofNat 64 t16.toNat))) (withEnv env3 s3) := by
       rw [step_of_utf8 _ "if.end24" utf8End24 _ (by simp only [withEnv, s3]) findBlock_utf8End24 hrun3]
@@ -6976,7 +6972,7 @@ theorem utf8_stage_refines
     have hev : evalOperand (withEnv env1 S0) (.reg "%cmp74.not")
         = some (.int 1 (BitVec.ofBool (BitVec.ult (BitVec.ofNat 64 n
             + BitVec.ofInt 64 63) (BitVec.ofInt 64 64)))) := by
-      rw [evalOperand_reg_utf8]; exact hcmp
+      exact evalOperand_reg_of _ _ _ _ hcmp
     rw [execTerm_condbr_false hev hbitE]
     simp only [withEnv, hS0pc]
   -- the gate selection
@@ -7020,7 +7016,7 @@ theorem utf8_stage_refines
         have hev : evalOperand (withEnv env2 S1) (.reg "%tobool.not")
             = some (.int 1 (BitVec.ofBool (decide (BitVec.ofNat 32 0
                 = (BitVec.ofInt 32 0 : BitVec 32))))) := by
-          rw [evalOperand_reg_utf8]; exact htobool
+          exact evalOperand_reg_of _ _ _ _ htobool
         rw [execTerm_condbr_true hev hbitL]
         simp only [withEnv, S1]
       let S2 : State := { S1 with pc := "for.body.us", pre := some "for.body.lr.ph" }
@@ -7056,7 +7052,7 @@ theorem utf8_stage_refines
         utf8_cleanup_run bs.toList n nb b mem false env' s' "if.end14.us"
           (.reg "%u8k.2.us") u8k' hnlist hnb hb haddr hpos hread
           (by rw [← hpc']) (by rw [← hpre']) hmem'
-          (by simp [phiIncoming]) (by rw [evalOperand_reg_utf8]; exact hU')
+          (by simp [phiIncoming]) (evalOperand_reg_of _ _ _ _ hU')
           hlen' hpack' hn' hb'
       have hloop : runFuel utf8Calls (t + 3) utf8Function (withEnv env2 S2)
           = some (.ret (some (.int 64 err')) mem') := by
@@ -7091,7 +7087,7 @@ theorem utf8_stage_refines
         have hev : evalOperand (withEnv env2 S1) (.reg "%tobool.not")
             = some (.int 1 (BitVec.ofBool (decide (BitVec.ofNat 32 1
                 = (BitVec.ofInt 32 0 : BitVec 32))))) := by
-          rw [evalOperand_reg_utf8]; exact htobool
+          exact evalOperand_reg_of _ _ _ _ htobool
         rw [execTerm_condbr_false hev hbitL]
         simp only [withEnv, S1]
       let S2 : State := { S1 with pc := "for.body", pre := some "for.body.lr.ph" }
@@ -7111,7 +7107,7 @@ theorem utf8_stage_refines
         utf8_cleanup_run bs.toList n nb b mem false env' s' "for.body"
           (.reg "%or.i47") u8k' hnlist hnb hb haddr hpos hread
           (by rw [← hpc']) (by rw [← hpre']) hmem'
-          (by simp [phiIncoming]) (by rw [evalOperand_reg_utf8]; exact hU')
+          (by simp [phiIncoming]) (evalOperand_reg_of _ _ _ _ hU')
           hlen' hpack' hn' hb'
       have hloop : runFuel utf8Calls (nb + 3) utf8Function (withEnv env2 S2)
           = some (.ret (some (.int 64 err')) mem') := by
@@ -7266,7 +7262,7 @@ theorem utf8_stage_refines_zero
     have hev : evalOperand (withEnv env1 S0) (.reg "%cmp74.not")
         = some (.int 1 (BitVec.ofBool (BitVec.ult (BitVec.ofNat 64 0
             + BitVec.ofInt 64 63) (BitVec.ofInt 64 64)))) := by
-      rw [evalOperand_reg_utf8]; exact hcmp
+      exact evalOperand_reg_of _ _ _ _ hcmp
     rw [execTerm_condbr_true hev hbitE]
     simp only [withEnv, S1, hS0pc]
   let u8k0 : List (BitVec 64) := List.replicate 4 (BitVec.ofInt 64 0)
@@ -7311,15 +7307,14 @@ theorem utf8_stage_refines_zero
     show execTerm (withEnv env2 S1) (.condbr (.reg "%or.cond45") "if.then20" "if.end24") = _
     have hev : evalOperand (withEnv env2 S1) (.reg "%or.cond45")
         = some (.int 1 (0 : BitVec 1)) := by
-      rw [evalOperand_reg_utf8]; exact hcondz
+      exact evalOperand_reg_of _ _ _ _ hcondz
     rw [execTerm_condbr_false hev rfl]
     simp only [withEnv, S2, S1]
   obtain ⟨env3, hrunR, hval⟩ := utf8Return env2 S2 "for.cond.cleanup"
     (.reg "%tobool16.not") (0 : BitVec 1) (by simp only [S2]) (by decide)
-    (by rw [evalOperand_reg_utf8]; exact ht16z)
+    (evalOperand_reg_of _ _ _ _ ht16z)
   have hevret : evalOperand (withEnv env3 S2) (.reg "%err.0") = some (.int 64 0) := by
-    rw [evalOperand_reg_utf8]
-    exact hval
+    exact evalOperand_reg_of _ _ _ _ hval
   have hstepR : step utf8Calls utf8Function (withEnv env2 S2)
       = .ret (some (.int 64 0)) (withEnv env3 S2) := by
     rw [step_of_utf8 _ "if.end24" utf8End24 _ (by simp only [withEnv, S2]) findBlock_utf8End24 hrunR]

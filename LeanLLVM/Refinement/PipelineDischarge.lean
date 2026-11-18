@@ -1936,7 +1936,7 @@ theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}
     hnb32, hwin32, hpos32, hm32⟩ := hpost30
   have hsel : evalOperand (BlockEval.stateAt e.env e) (.reg S.arm.countReg) =
       some (.int 64 S.kw) :=
-    hcountReg
+    BlockEval.evalOperand_reg_of e.env e S.arm.countReg (.int 64 S.kw) hcountReg
   -- the cells, as the tail's three steps read them
   have hnk : lookupName e.env "%nk" = some (.ptr S.nk) := hcells.1
   have hdstC : lookupName e.env "%dst" = some (.ptr S.dst) := hcells.2.1
@@ -2222,6 +2222,7 @@ theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}
       S.b S.nk S.xp S.nxp S.ep S.dst S.ndst S.ev S.nev S.err
       S.n S.armSel S.dstcap S.evcap (BitVec.ofNat 64 S.xn)
       (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8)) n30 ⟨v35, m35, n35⟩
+      (by rw [hveq₂]; simp)
       hpc hpre (phiIncoming_cleanupPhi S.arm) hsel hnk hbC hnC harmC hxpC hnxpC hepC
       hdstC hdcap hndstC hevC hecap hnevC herrC hcall30' hld hcall2
     -- stage two's frame, at the run's whole extent: the five ABI write regions,

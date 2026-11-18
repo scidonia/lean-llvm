@@ -643,7 +643,7 @@ theorem walkChain_extend_nodeBlock52 {calls : Calls} {m0 : Mem} {G : WalkGeom m0
     {x : BitVec 8} (h36 : lookupName s.env "%36" = some (.int 8 x))
     (hlt : evalICmp .slt x (BitVec.ofNat 8 13) = 1) :
     WalkChain calls G C₀ s₀ { C with block := "LeafBlock43" } (nodeBlock52OutAt s x) := by
-  have h1 : evalOperand s (.reg "%36") = some (.int 8 x) := h36
+  have h1 : evalOperand s (.reg "%36") = some (.int 8 x) := LeanLLVM.evalOperand_reg_of h36
   have hres : (if evalICmp .slt x (BitVec.ofNat 8 13) = 1
       then "LeafBlock43" else "NodeBlock50") = "LeafBlock43" := if_pos hlt
   obtain ⟨s', hl, hs⟩ :=

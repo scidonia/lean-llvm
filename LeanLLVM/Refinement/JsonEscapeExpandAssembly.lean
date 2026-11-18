@@ -2973,9 +2973,12 @@ theorem ifThen17I_zero_to_cleanup32 (env : Env) (s : State) (addr : Nat)
       (.reg "%and27.i") (.imm (.int 64 (BitVec.ofInt 64 6))) cp
       (BitVec.ofInt 64 6) add15 daddr k rfl rfl (by decide) (by decide)
       (by
+        have hlk : lookupName (udIfThen17IEnv env addr bs2) "%and27.i" =
+            some (.int 32 cp) := by
+          simp only [udIfThen17IEnv]; ud_lk_h hcpcell
         show evalOperand (withEnv (udIfThen17IEnv env addr bs2) s) (.reg "%and27.i") =
           some (.int 32 cp)
-        simp only [udIfThen17IEnv]; ud_lk_h hcpcell)
+        exact LeanLLVM.evalOperand_reg_of hlk)
       (by
         show evalOperand (withEnv (("%cp.i.3", .int 32 cp) ::
           udIfThen17IEnv env addr bs2) s) (.imm (.int 64 (BitVec.ofInt 64 6))) =
@@ -3056,9 +3059,12 @@ theorem landLhsTrue22I_zero_to_cleanup32 (env : Env) (s : State)
       "land.lhs.true22.i" (.reg "%and27.i") (.imm (.int 64 (BitVec.ofInt 64 6))) cp
       (BitVec.ofInt 64 6) add15 daddr k rfl rfl (by decide) (by decide)
       (by
+        have hlk : lookupName (udLandLhsTrue22IEnv env bs2 cl) "%and27.i" =
+            some (.int 32 cp) := by
+          simp only [udLandLhsTrue22IEnv]; ud_lk_h hcpcell
         show evalOperand (withEnv (udLandLhsTrue22IEnv env bs2 cl) s)
           (.reg "%and27.i") = some (.int 32 cp)
-        simp only [udLandLhsTrue22IEnv]; ud_lk_h hcpcell)
+        exact LeanLLVM.evalOperand_reg_of hlk)
       (by
         show evalOperand (withEnv (("%cp.i.3", .int 32 cp) ::
           udLandLhsTrue22IEnv env bs2 cl) s) (.imm (.int 64 (BitVec.ofInt 64 6))) =

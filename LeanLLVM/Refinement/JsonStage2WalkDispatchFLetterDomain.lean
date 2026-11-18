@@ -56,7 +56,7 @@ theorem fHead_cont {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
   have hreg := seed_head_byte G S s (hc := h.entryByte_zero) hInv
   have ht : ((102 : UInt8)).toNat = 102 := by decide
   rw [ht] at hreg
-  simpa only [evalOperand] using hreg
+  walk_read using hreg
 
 /-- **`"f"`'s head byte is `102`**, in the last entry's form. -/
 theorem fHead_last {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
@@ -65,7 +65,7 @@ theorem fHead_last {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
   have hreg := seed_reg8 G S s h hInv
   have ht : ((102 : UInt8)).toNat = 102 := by decide
   rw [ht] at hreg
-  simpa only [evalOperand] using hreg
+  walk_read using hreg
 
 /-! ### The head class, and the arm's three class premises -/
 

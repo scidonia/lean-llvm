@@ -88,7 +88,7 @@ theorem hlastByte_of_reg8 {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : St
     (hInv : WalkInv G C s) {x : BitVec 8}
     (h8 : evalOperand s (.reg "%8") = some (.int 8 x)) : x = hlastByte G C := by
   have h1 : lookupName s.env "%8" = some (.int 8 x) := by
-    simpa only [evalOperand] using h8
+    walk_read using h8
   have h := Option.some.inj (hInv.iter.reg8.symm.trans h1)
   simpa using h.symm
 

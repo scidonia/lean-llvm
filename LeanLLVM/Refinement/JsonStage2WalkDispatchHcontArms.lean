@@ -749,19 +749,21 @@ theorem HcontArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
   | .stringOpenAboveZeroMerge h8 hsp hmark hstate hpreV r hcall Cd sd p k2 nepv hseg
       hblockD hkC prev hprev hpreD hincD hnepD hadvance hcap hprice => by
     have hspv : evalOperand sd (.reg "%sp.i.0248") =
-        some (.int 32 (BitVec.ofNat 32 Cd.sp)) := hseg.inv'.depth_reg
+        some (.int 32 (BitVec.ofNat 32 Cd.sp)) := LeanLLVM.evalOperand_reg_of hseg.inv'.depth_reg
     cases hprev with
     | inl h =>
       subst h
       exact WalkDispatchResult.merge Cd sd p Cd.sp k2 "if.then330.i"
         (Operand.reg "%sp.i.0248") (Operand.reg "%inc208.i") nepv
-        hseg hblockD hkC hpreD (by decide) hspv (by decide) hincD hnepD
+        hseg hblockD hkC hpreD (by decide) hspv (by decide)
+        (LeanLLVM.evalOperand_reg_of hincD) hnepD
         hadvance hcap hseg.inv'.depth_cap hseg.inv'.sp_le_wlen hprice
     | inr h =>
       subst h
       exact WalkDispatchResult.merge Cd sd p Cd.sp k2 "if.else334.i"
         (Operand.reg "%sp.i.0248") (Operand.reg "%inc208.i") nepv
-        hseg hblockD hkC hpreD (by decide) hspv (by decide) hincD hnepD
+        hseg hblockD hkC hpreD (by decide) hspv (by decide)
+        (LeanLLVM.evalOperand_reg_of hincD) hnepD
         hadvance hcap hseg.inv'.depth_cap hseg.inv'.sp_le_wlen hprice
   | .stringOpenAboveZeroRefuse h8 hsp hmark hstate hpreV r hcall href =>
     WalkDispatchResult.ofRefuseAt href
@@ -829,7 +831,7 @@ theorem HcontArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
       lettersCleanupMerge_at G C s hInv hblock h8 hbit h110 hne102 hHead hm hmk h8m
         hTail ht htk htok hnH (by omega)
     have hspv : evalOperand sd (Operand.reg "%sp.i.0248") =
-        some (.int 32 (BitVec.ofNat 32 Cd.sp)) := hseg.inv'.depth_reg
+        some (.int 32 (BitVec.ofNat 32 Cd.sp)) := LeanLLVM.evalOperand_reg_of hseg.inv'.depth_reg
     have hnep64 : G.nep < 2 ^ 64 := by
       have h := G.nep_le
       have h2 := G.maxDoc
@@ -843,13 +845,13 @@ theorem HcontArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
       hseg hblockD hkD hpreD (by decide) hspv (by decide) ?_ hnepD
       (by omega) hcap hseg.inv'.depth_cap hseg.inv'.sp_le_wlen hpriceD
     · -- the merge's index cell is the header's increment, at the entry's successor
-      simpa only [evalOperand] using hincD
+      walk_read using hincD
   | .fLetter h8 hbit h110 h102 hHead hnH hm hmk h8m hTail ht htk htok => by
     obtain ⟨Cd, sd, p, hseg, hblockD, hkD, hpreD, hincD, hnepD, hpriceD⟩ :=
       fCleanupMerge_at G C s hInv hblock h8 hbit h110 h102 hHead hm hmk h8m
         hTail ht htk htok hnH (by omega)
     have hspv : evalOperand sd (Operand.reg "%sp.i.0248") =
-        some (.int 32 (BitVec.ofNat 32 Cd.sp)) := hseg.inv'.depth_reg
+        some (.int 32 (BitVec.ofNat 32 Cd.sp)) := LeanLLVM.evalOperand_reg_of hseg.inv'.depth_reg
     have hnep64 : G.nep < 2 ^ 64 := by
       have h := G.nep_le
       have h2 := G.maxDoc
@@ -863,13 +865,13 @@ theorem HcontArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
       hseg hblockD hkD hpreD (by decide) hspv (by decide) ?_ hnepD
       (by omega) hcap hseg.inv'.depth_cap hseg.inv'.sp_le_wlen hpriceD
     · -- the merge's index cell is the header's increment, at the entry's successor
-      simpa only [evalOperand] using hincD
+      walk_read using hincD
   | .classC h8 h110 h125 hHead hnH hm hmk h8m hSpan hs hnS hTail ht htk htok => by
     obtain ⟨Cd, sd, p, hseg, hblockD, hkD, hpreD, hincD, hnepD, hpriceD⟩ :=
       classCMerge_at G C s hInv hblock h8 h110 h125 hHead hm hmk h8m hSpan hs hnS
         hTail ht htk htok hnH (by omega)
     have hspv : evalOperand sd (Operand.reg "%sp.i.0248") =
-        some (.int 32 (BitVec.ofNat 32 Cd.sp)) := hseg.inv'.depth_reg
+        some (.int 32 (BitVec.ofNat 32 Cd.sp)) := LeanLLVM.evalOperand_reg_of hseg.inv'.depth_reg
     have hnep64 : G.nep < 2 ^ 64 := by
       have h := G.nep_le
       have h2 := G.maxDoc
@@ -883,12 +885,13 @@ theorem HcontArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
       hseg hblockD hkD hpreD (by decide) hspv (by decide) ?_ hnepD
       (by omega) hcap hseg.inv'.depth_cap hseg.inv'.sp_le_wlen hpriceD
     · -- the merge's index cell is the header's increment, at the entry's successor
-      simpa only [evalOperand] using hincD
+      walk_read using hincD
   | .run f => by
     obtain ⟨Cm, sm, nSc, hseg, hInvD, hblockD, hpreD, hkD, hincD, hnepD, _hnR, hprice⟩ :=
       runScanMerge_at G C s hInv hblock hk f
     have hspv : evalOperand (revMergeS sm f.c) (Operand.reg "%sp.i.0248") =
-        some (.int 32 (BitVec.ofNat 32 (revMergeC Cm).sp)) := hInvD.depth_reg
+        some (.int 32 (BitVec.ofNat 32 (revMergeC Cm).sp)) :=
+      LeanLLVM.evalOperand_reg_of hInvD.depth_reg
     have hnep64 : G.nep < 2 ^ 64 := by
       have h := G.nep_le
       have h2 := G.maxDoc
@@ -903,7 +906,7 @@ theorem HcontArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
       hseg hblockD hkD hpreD (by decide) hspv (by decide) ?_ hnepD
       (by omega) hcap hInvD.depth_cap hInvD.sp_le_wlen hprice
     · -- the merge's index cell is the header's increment, at the entry's successor
-      simpa only [evalOperand] using hincD
+      walk_read using hincD
 
 /-! ### The instrument -/
 

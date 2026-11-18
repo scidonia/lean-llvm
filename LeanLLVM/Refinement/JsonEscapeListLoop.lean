@@ -344,7 +344,7 @@ def lstLanesLoop (bs : BitVec 64) (prevb prevs : Bool) (env0 : Env) :
     · show evalOperand (withEnv (ld5 s.env bs w)
         { s with pc := (if stepWord bs w = w then "xl_lanes.exit" else "do.body.i"),
                  pre := some "do.body.i" }) (.reg "%or23.i") = some (.int 64 (stepWord bs w))
-      simpa only [withEnv, evalOperand] using hor
+      simp only [withEnv, evalOperand, hor]
     · rw [hiter, stepN_succ]
   word_iterate := by
     intro i s w h
@@ -376,7 +376,7 @@ theorem lstLanesInv_entry (bs : BitVec 64) (prevb prevs : Bool) (σ : State)
   refine ⟨hpc, hmask, ⟨"if.end.i", .reg "%or13.i", hpre, by decide, ?_⟩, rfl, by omega, ?_⟩
   · show evalOperand σ (.reg "%or13.i") =
       some (.int 64 (stepN bs 2 (escapeSeed bs prevb prevs)))
-    simpa only [evalOperand] using hseed
+    simp only [evalOperand, hseed]
   · exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- **The lanes loop closes on the fuel induction.**  From the head at iteration

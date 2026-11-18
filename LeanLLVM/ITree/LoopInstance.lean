@@ -112,7 +112,7 @@ theorem cond_silent (x : BitVec 64) (fuel : Nat) (s : State) (m acc : BitVec 64)
     lookup_bind_self s1 "%c" _
   have e1 : evalInstr noCalls s (.load "%i1" (.int 64) (.reg "%i")) = some s1 := by
     have h := eval_load_64 noCalls s "%i1" (.reg "%i") 9 (BitVec.ofNat 64 k)
-      hf.iPtr hf.iLoad
+      (evalOperand_reg_of hf.iPtr) hf.iLoad
     simpa [s1] using h
   have e2 : evalInstr noCalls (s.bind "%i1" (.int 64 (BitVec.ofNat 64 k)))
       (.icmp "%c" .ult 64 (.reg "%i1") (.imm (.int 64 (8 : BitVec 64)))) = some s2 := by
@@ -214,9 +214,13 @@ theorem body_silent (x : BitVec 64) (fuel : Nat) (s : State) (m acc : BitVec 64)
     simp [s6, s5, s4, s3, s2, s1, State.bind, lookupName]
   have hl_bit : lookupName s6.env "%bit" = some (.int 64 bitv) := by
     simp [s6, State.bind, bitv]
+  have ha0 : evalOperand s6 (.reg "%a0") = some (.int 64 acc) :=
+    evalOperand_reg_of hl_a0
+  have hbit : evalOperand s6 (.reg "%bit") = some (.int 64 bitv) :=
+    evalOperand_reg_of hl_bit
   have e7 : evalInstr noCalls s6 (.binop "%a1" .or 64 (.reg "%a0") (.reg "%bit")) = some s7 := by
     have h := evalInstr_or_reg noCalls s6 "%a1" "%a0" "%bit"
-    simp only [hl_a0, hl_bit] at h
+    simp only [ha0, hbit] at h
     simpa [s7, a1v] using h
   have hl_z : lookupName s7.env "%z" = some (.int 1 zv) := by
     simp [s7, s6, s5, s4, State.bind, lookupName, zv]
@@ -224,9 +228,15 @@ theorem body_silent (x : BitVec 64) (fuel : Nat) (s : State) (m acc : BitVec 64)
     simp [s7, State.bind, a1v]
   have hl_a0b : lookupName s7.env "%a0" = some (.int 64 acc) := by
     simp [s7, s6, s5, s4, s3, s2, s1, State.bind, lookupName]
+  have hz_e : evalOperand s7 (.reg "%z") = some (.int 1 zv) :=
+    evalOperand_reg_of hl_z
+  have ha1_e : evalOperand s7 (.reg "%a1") = some (.int 64 a1v) :=
+    evalOperand_reg_of hl_a1
+  have ha0b_e : evalOperand s7 (.reg "%a0") = some (.int 64 acc) :=
+    evalOperand_reg_of hl_a0b
   have e8 : evalInstr noCalls s7 (.select "%a2" (.int 64) (.reg "%z") (.reg "%a1") (.reg "%a0")) = some s8 := by
     have h := evalInstr_select_reg noCalls s7 "%a2" "%z" "%a1" "%a0"
-    simp only [hl_z, hl_a1, hl_a0b] at h
+    simp only [hz_e, ha1_e, ha0b_e] at h
     simp only [ite_int] at h
     simpa [s8, a2v] using h
   have hl_a2 : lookupName s8.env "%a2" = some (.int 64 a2v) := by
@@ -333,7 +343,7 @@ theorem cond_done_silent (x : BitVec 64) (fuel : Nat) (s : State) (m acc : BitVe
     lookup_bind_self s1 "%c" _
   have e1 : evalInstr noCalls s (.load "%i1" (.int 64) (.reg "%i")) = some s1 := by
     have h := eval_load_64 noCalls s "%i1" (.reg "%i") 9 (BitVec.ofNat 64 8)
-      hf.iPtr hf.iLoad
+      (evalOperand_reg_of hf.iPtr) hf.iLoad
     simpa [s1] using h
   have e2 : evalInstr noCalls (s.bind "%i1" (.int 64 (BitVec.ofNat 64 8)))
       (.icmp "%c" .ult 64 (.reg "%i1") (.imm (.int 64 (8 : BitVec 64)))) = some s2 := by

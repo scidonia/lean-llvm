@@ -1010,14 +1010,14 @@ theorem strPath5 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
       lookupName_cons_ne (k := "%SwitchLeaf") (n := "%inc.i") _ _ (by decide),
       lookupName_cons_ne (k := "%Pivot6") (n := "%inc.i") _ _ (by decide),
       lookupName_cons_ne (k := "%Pivot22") (n := "%inc.i") _ _ (by decide)]
-    exact f.hinc
+    exact LeanLLVM.evalOperand_reg_of f.hinc
   have hnep₄ : evalOperand (strS₃ s) (.reg "%nep") =
       some (.int 64 (BitVec.ofNat 64 G.nep)) := by
     simp only [strS₃, strS₂, strS₁, State.bind, evalOperand,
       lookupName_cons_ne (k := "%SwitchLeaf") (n := "%nep") _ _ (by decide),
       lookupName_cons_ne (k := "%Pivot6") (n := "%nep") _ _ (by decide),
       lookupName_cons_ne (k := "%Pivot22") (n := "%nep") _ _ (by decide)]
-    exact f.hnep
+    exact LeanLLVM.evalOperand_reg_of f.hnep
   obtain ⟨s4, hl4, hs4⟩ :=
     WalkLink.sw_bb202_i_at (calls := stage2Calls stage2SubCalls) G (strC₃ C) (strS₃ s)
       hl3'.inv' rfl hinc₄ hnep₄
@@ -2807,11 +2807,11 @@ theorem WalkDispatchResult.ofStringMerge {m0 : Mem} (G : WalkGeom m0) (C : WalkC
   · -- the merge's depth `phi` takes `%sp.i.0248` on the `if.else334.i` edge
     exact stringCleanupSpIncoming_at
   · -- and that register is the depth the endpoint's invariant carries
-    exact hInvD.depth_reg
+    exact LeanLLVM.evalOperand_reg_of hInvD.depth_reg
   · -- the merge's index `phi` takes `%inc208.i` on the same edge
     exact stringCleanupKIncoming_at
   · -- the two-entry advance, at the word `if.end207.i` wrote
-    exact hinc208
+    exact LeanLLVM.evalOperand_reg_of hinc208
   · -- the index advanced
     omega
   · rw [hnepv]

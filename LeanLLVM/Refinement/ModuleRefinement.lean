@@ -127,6 +127,7 @@ theorem loop_seam_callRefines :
         | ptr a => simp [envFor]
         | vec n' w' lanes => simp [envFor]
         | float b => simp [envFor]
+        | poison => simp [envFor]
   · simp [envFor, h]
 
 /-- The contextual replacement: the caller under the memory-backed loop's
@@ -187,7 +188,7 @@ undefined. -/
 theorem candidate_envForBody_none_of_head (a : Value) (rest : List Value) (mem : Mem)
     (next : Nat) (hne : ∀ y, a ≠ .int 64 y) :
     envForBody 10000 16 candidateFunction seamSymbol (a :: rest) mem next = none := by
-  obtain ⟨w, v⟩ | ⟨p⟩ | ⟨n', w', lanes⟩ | ⟨bits⟩ := a
+  obtain ⟨w, v⟩ | ⟨p⟩ | ⟨n', w', lanes⟩ | ⟨bits⟩ | rfl := a
   · have hw : w ≠ 64 := by
       intro hw
       subst hw
@@ -208,6 +209,11 @@ theorem candidate_envForBody_none_of_head (a : Value) (rest : List Value) (mem :
   · simp [envForBody, runFuel, step, candidateFunction, candidateBody, Function.findBlock,
       findBlockList, Function.entry?, List.map, List.zip, List.zipWith, denoteCode, denoteRun, State.bindAll,
       candidateInstrs, evalInstr, evalOperand, Const.toValue, Value.intToNat, lit, c,
+      argName]
+
+  · simp [envForBody, runFuel, step, candidateFunction, candidateBody, Function.findBlock,
+      findBlockList, Function.entry?, List.map, List.zip, List.zipWith, denoteCode, denoteRun, State.bindAll,
+      candidateInstrs, evalInstr, evalOperand, Const.toValue, lit, c,
       argName]
 
 /-- The candidate's selection refuses the empty argument list in the same way:
@@ -296,6 +302,10 @@ theorem loop_seam_within_refines (x : BitVec 64) :
       exact Or.inl (candidate_envForBody_none_of_head (.float bits) rest mem next (by
         intro y hy
         cases hy))
+    | .poison =>
+      exact Or.inl (candidate_envForBody_none_of_head .poison rest mem next (by
+        intro y hy
+        cases hy))
 
 /-- The emitted caller (`probes/install/ir/caller.ll`, `SeamContext.callerFunction`)
 observes the loop's selection at the loop's own footprint.  Its call is its first
@@ -372,6 +382,11 @@ theorem caller_replaces_loop_within (x : BitVec 64) :
     | .float bits =>
       exact ⟨o, caller_beh_of_unresolved 10000 16 candidateFunction (.float bits) rest o
         (candidate_envForBody_none_of_head (.float bits) rest [] 1 (by
+          intro y hy
+          cases hy)), Outcome.agreesOutside_refl o _⟩
+    | .poison =>
+      exact ⟨o, caller_beh_of_unresolved 10000 16 candidateFunction .poison rest o
+        (candidate_envForBody_none_of_head .poison rest [] 1 (by
           intro y hy
           cases hy)), Outcome.agreesOutside_refl o _⟩
 
@@ -456,10 +471,27 @@ theorem memCaller_beh_of_unresolved (calls : Calls) (a : Value) (rest : List Val
     Beh calls memCaller (a :: rest) o := by
   refine Or.inl ⟨1, ?_⟩
   have hstep : step calls memCaller (initState memCaller (a :: rest)) = .ub := by
-    simp only [initState_cons_memCaller]
-    simp [step, memCaller, Function.findBlock, findBlockList, Function.entry?, List.head?,
-      Option.getD, Option.map, initState, List.map, List.zip, List.zipWith, denoteCode, denoteRun, State.bindAll,
-      evalInstr, evalOperands, evalOperand, Ty.sizeBytes, lookupName, h]
+    cases a with
+    | poison =>
+      simp [step, memCaller, Function.findBlock, findBlockList, Function.entry?, List.head?,
+        Option.getD, Option.map, initState, List.map, List.zip, List.zipWith, denoteCode, denoteRun,
+        State.bindAll, evalInstr, evalOperands, evalOperand, Ty.sizeBytes, lookupName]
+    | int w v =>
+      simp [step, memCaller, Function.findBlock, findBlockList, Function.entry?, List.head?,
+        Option.getD, Option.map, initState, List.map, List.zip, List.zipWith, denoteCode, denoteRun,
+        State.bindAll, evalInstr, evalOperands, evalOperand, Ty.sizeBytes, lookupName, h]
+    | ptr p =>
+      simp [step, memCaller, Function.findBlock, findBlockList, Function.entry?, List.head?,
+        Option.getD, Option.map, initState, List.map, List.zip, List.zipWith, denoteCode, denoteRun,
+        State.bindAll, evalInstr, evalOperands, evalOperand, Ty.sizeBytes, lookupName, h]
+    | vec n' w' lanes =>
+      simp [step, memCaller, Function.findBlock, findBlockList, Function.entry?, List.head?,
+        Option.getD, Option.map, initState, List.map, List.zip, List.zipWith, denoteCode, denoteRun,
+        State.bindAll, evalInstr, evalOperands, evalOperand, Ty.sizeBytes, lookupName, h]
+    | float bits =>
+      simp [step, memCaller, Function.findBlock, findBlockList, Function.entry?, List.head?,
+        Option.getD, Option.map, initState, List.map, List.zip, List.zipWith, denoteCode, denoteRun,
+        State.bindAll, evalInstr, evalOperands, evalOperand, Ty.sizeBytes, lookupName, h]
   simp only [runFuel, hstep]
 
 /-- With no argument the caller's parameter is unbound, so its call is undefined
@@ -569,6 +601,12 @@ theorem memCaller_replaces_loop_within (x : BitVec 64) :
       exact ⟨o, memCaller_beh_of_unresolved (envForBody 10000 16 candidateFunction)
         (.float bits) rest o
         (candidate_envForBody_none_of_head (.float bits) rest [] 9 (by
+          intro y hy
+          cases hy)), Outcome.agreesOutside_refl o _⟩
+    | .poison =>
+      exact ⟨o, memCaller_beh_of_unresolved (envForBody 10000 16 candidateFunction)
+        .poison rest o
+        (candidate_envForBody_none_of_head .poison rest [] 9 (by
           intro y hy
           cases hy)), Outcome.agreesOutside_refl o _⟩
 

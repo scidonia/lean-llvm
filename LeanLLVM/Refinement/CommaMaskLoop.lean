@@ -257,6 +257,7 @@ theorem evalInstr_mul_imm (calls : Calls) (s : State) (d r : String) (b : BitVec
       · simp [Value.intToNat, hw]
     | ptr a => simp [Value.intToNat]
     | vec n' w' lanes => simp [Value.intToNat]
+    | poison => simp
 
 theorem evalInstr_lshr_reg (calls : Calls) (s : State) (d r₁ r₂ : String) :
     evalInstr calls s (.binop d .lshr 64 (.reg r₁) (.reg r₂)) =
@@ -272,7 +273,7 @@ theorem evalInstr_lshr_reg (calls : Calls) (s : State) (d r₁ r₂ : String) :
     | some v₂ =>
       cases v₁ with
       | float b =>
-        simp [Value.intToNat]
+        cases v₂ <;> simp [Value.intToNat]
       | int w a =>
         cases v₂ with
         | float b =>
@@ -286,8 +287,10 @@ theorem evalInstr_lshr_reg (calls : Calls) (s : State) (d r₁ r₂ : String) :
           · simp [Value.intToNat, hw]
         | ptr b => simp [Value.intToNat]
         | vec n' w' lanes => simp [Value.intToNat]
-      | ptr a => simp [Value.intToNat]
-      | vec n' w' lanes => simp [Value.intToNat]
+        | poison => simp
+      | ptr a => cases v₂ <;> simp [Value.intToNat]
+      | vec n' w' lanes => cases v₂ <;> simp [Value.intToNat]
+      | poison => cases v₂ <;> simp
 
 theorem evalInstr_shl_imm_reg (calls : Calls) (s : State) (d r : String) (a : BitVec 64) :
     evalInstr calls s (.binop d .shl 64 (.imm (.int 64 a)) (.reg r)) =
@@ -308,6 +311,7 @@ theorem evalInstr_shl_imm_reg (calls : Calls) (s : State) (d r : String) (a : Bi
       · simp [Value.intToNat, hw]
     | ptr a => simp [Value.intToNat]
     | vec n' w' lanes => simp [Value.intToNat]
+    | poison => simp
 
 theorem c_eight : c 8 = (BitVec.ofNat 64 8 : BitVec 64) := by decide
 theorem eight_lit : (8 : BitVec 64) = BitVec.ofNat 64 8 := rfl
@@ -373,6 +377,7 @@ theorem evalInstr_icmp_ult_imm (calls : Calls) (s : State) (d r : String) (b : B
       · simp [Value.intToNat, hw]
     | ptr a => simp [Value.intToNat]
     | vec n' w' lanes => simp [Value.intToNat]
+    | poison => simp
 
 theorem lookup_bind_self (s : State) (d : String) (v : Value) :
     lookupName (s.bind d v).env d = some v := by
@@ -397,7 +402,7 @@ theorem cond_step (initMem : Mem) (base : Nat) (s : State) (m acc : BitVec 64) (
     lookup_bind_self s1 "%c" _
   have e1 : evalInstr noCalls s (.load "%i1" (.int 64) (.reg "%i")) = some s1 := by
     have h := eval_load_64 noCalls s "%i1" (.reg "%i") (base + 8) (BitVec.ofNat 64 k)
-      hf.iPtr hf.iLoad
+      (evalOperand_reg_of hf.iPtr) hf.iLoad
     simpa [s1] using h
   have e2 : evalInstr noCalls s1 (.icmp "%c" .ult 64 (.reg "%i1") (.imm (.int 64 (8 : BitVec 64)))) =
       some s2 := by
@@ -500,7 +505,8 @@ theorem body_step (initMem : Mem) (base : Nat) (s : State) (m acc : BitVec 64) (
   have hl_acc : lookupName s4.env "%acc" = some (.ptr base) := by
     simp [s4, s3, s2, s1, State.bind, lookupName, hf.accPtr]
   have e5 : evalInstr noCalls s4 (.load "%a0" (.int 64) (.reg "%acc")) = some s5 := by
-    have h := eval_load_64 noCalls s4 "%a0" (.reg "%acc") base acc hl_acc (by simpa [s4, s3, s2, s1, State.bind] using hf.accLoad)
+    have h := eval_load_64 noCalls s4 "%a0" (.reg "%acc") base acc
+      (evalOperand_reg_of hl_acc) (by simpa [s4, s3, s2, s1, State.bind] using hf.accLoad)
     simpa [s5] using h
   have hl_sh2 : lookupName s5.env "%sh" = some (.int 64 shv) := by
     simp [s5, s4, s3, s2, s1, State.bind, lookupName, shv]
@@ -512,9 +518,13 @@ theorem body_step (initMem : Mem) (base : Nat) (s : State) (m acc : BitVec 64) (
     simp [s6, s5, s4, s3, s2, s1, State.bind, lookupName]
   have hl_bit : lookupName s6.env "%bit" = some (.int 64 bitv) := by
     simp [s6, State.bind, bitv]
+  have ha0 : evalOperand s6 (.reg "%a0") = some (.int 64 acc) := by
+    exact evalOperand_reg_of hl_a0
+  have hbit : evalOperand s6 (.reg "%bit") = some (.int 64 bitv) := by
+    exact evalOperand_reg_of hl_bit
   have e7 : evalInstr noCalls s6 (.binop "%a1" .or 64 (.reg "%a0") (.reg "%bit")) = some s7 := by
     have h := evalInstr_or_reg noCalls s6 "%a1" "%a0" "%bit"
-    simp only [hl_a0, hl_bit] at h
+    simp only [ha0, hbit] at h
     simpa [s7, a1v] using h
   have hl_z : lookupName s7.env "%z" = some (.int 1 zv) := by
     simp [s7, s6, s5, s4, State.bind, lookupName, zv]
@@ -522,9 +532,15 @@ theorem body_step (initMem : Mem) (base : Nat) (s : State) (m acc : BitVec 64) (
     simp [s7, State.bind, a1v]
   have hl_a0b : lookupName s7.env "%a0" = some (.int 64 acc) := by
     simp [s7, s6, s5, s4, s3, s2, s1, State.bind, lookupName]
+  have hz_e : evalOperand s7 (.reg "%z") = some (.int 1 zv) := by
+    exact evalOperand_reg_of hl_z
+  have ha1_e : evalOperand s7 (.reg "%a1") = some (.int 64 a1v) := by
+    exact evalOperand_reg_of hl_a1
+  have ha0b_e : evalOperand s7 (.reg "%a0") = some (.int 64 acc) := by
+    exact evalOperand_reg_of hl_a0b
   have e8 : evalInstr noCalls s7 (.select "%a2" (.int 64) (.reg "%z") (.reg "%a1") (.reg "%a0")) = some s8 := by
     have h := evalInstr_select_reg noCalls s7 "%a2" "%z" "%a1" "%a0"
-    simp only [hl_z, hl_a1, hl_a0b] at h
+    simp only [hz_e, ha1_e, ha0b_e] at h
     simp only [ite_int] at h
     simpa [s8, a2v] using h
   have hl_a2 : lookupName s8.env "%a2" = some (.int 64 a2v) := by
@@ -532,7 +548,8 @@ theorem body_step (initMem : Mem) (base : Nat) (s : State) (m acc : BitVec 64) (
   have hl_acc8 : lookupName s8.env "%acc" = some (.ptr base) := by
     simp [s8, s7, s6, s5, s4, s3, s2, s1, State.bind, lookupName, hf.accPtr]
   have e9 : evalInstr noCalls s8 (.store (.int 64) (.reg "%a2") (.reg "%acc")) = some s9 := by
-    have h := eval_store_64 noCalls s8 (.reg "%a2") (.reg "%acc") a2v base hl_a2 hl_acc8
+    have h := eval_store_64 noCalls s8 (.reg "%a2") (.reg "%acc") a2v base
+      (evalOperand_reg_of hl_a2) (evalOperand_reg_of hl_acc8)
     rw [h, hstore1]
   have hl_i1_9 : lookupName s9.env "%i1" = some (.int 64 (BitVec.ofNat 64 k)) := by
     simp [s9, s8, s7, s6, s5, s4, s3, s2, s1, State.bind, lookupName, hi1]
@@ -545,7 +562,8 @@ theorem body_step (initMem : Mem) (base : Nat) (s : State) (m acc : BitVec 64) (
   have hl_i10 : lookupName s10.env "%i" = some (.ptr (base + 8)) := by
     simp [s10, s9, s8, s7, s6, s5, s4, s3, s2, s1, State.bind, lookupName, hf.iPtr]
   have e11 : evalInstr noCalls s10 (.store (.int 64) (.reg "%i2") (.reg "%i")) = some s11 := by
-    have h := eval_store_64 noCalls s10 (.reg "%i2") (.reg "%i") i2v (base + 8) hl_i2 hl_i10
+    have h := eval_store_64 noCalls s10 (.reg "%i2") (.reg "%i") i2v (base + 8)
+      (evalOperand_reg_of hl_i2) (evalOperand_reg_of hl_i10)
     rw [h, hstore2]
   refine ⟨s12, ?_, rfl, ?_⟩
   · have hfind : loopFunction.findBlock s.pc = some bodyBlock := by
@@ -639,7 +657,7 @@ theorem cond_done_step (initMem : Mem) (base : Nat) (s : State) (m acc : BitVec 
     lookup_bind_self s1 "%c" _
   have e1 : evalInstr noCalls s (.load "%i1" (.int 64) (.reg "%i")) = some s1 := by
     have h := eval_load_64 noCalls s "%i1" (.reg "%i") (base + 8) (BitVec.ofNat 64 8)
-      hf.iPtr hf.iLoad
+      (evalOperand_reg_of hf.iPtr) hf.iLoad
     simpa [s1] using h
   have e2 : evalInstr noCalls s1 (.icmp "%c" .ult 64 (.reg "%i1") (.imm (.int 64 8))) = some s2 := by
     have h := evalInstr_icmp_ult_imm noCalls s1 "%c" "%i1" (8 : BitVec 64)
@@ -671,7 +689,8 @@ theorem done_step (initMem : Mem) (base : Nat) (s : State) (m acc : BitVec 64)
   let s1 : State := s.bind "%r" (.int 64 acc)
   have hl_acc : lookupName s.env "%acc" = some (.ptr base) := hf.accPtr
   have e1 : evalInstr noCalls s (.load "%r" (.int 64) (.reg "%acc")) = some s1 := by
-    have h := eval_load_64 noCalls s "%r" (.reg "%acc") base acc hl_acc hf.accLoad
+    have h := eval_load_64 noCalls s "%r" (.reg "%acc") base acc
+      (evalOperand_reg_of hl_acc) hf.accLoad
     simpa [s1] using h
   have hl_r : lookupName s1.env "%r" = some (.int 64 acc) := by
     simp [s1, State.bind]

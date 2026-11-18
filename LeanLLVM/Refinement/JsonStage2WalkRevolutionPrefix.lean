@@ -836,7 +836,7 @@ theorem contPrefixLand {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
     exact hl₅
   -- 6. the next entry's position lane
   have hinc4 : lookupName (headAS₄ s x).env "%inc.i" = some (.int 64 inc) := by
-    simpa only [evalOperand] using hinc
+    walk_read using hinc
   have hinc5 : lookupName (contAS₅ s x inc nep).env "%inc.i" = some (.int 64 inc) :=
     contAS₅_envInc s x inc nep hinc4
   obtain ⟨s₆, hl₆, hs₆⟩ :=
@@ -1478,7 +1478,7 @@ theorem contByteSegScanFree {m0 : Mem} {G : WalkGeom m0}
         some (.int 8 (cont35 b35)) := by
       simp only [evalOperand]
       rw [contP41Out_env35]
-      simpa only [evalOperand] using h35
+      walk_read using h35
     obtain ⟨s₆, hl₆, hs₆⟩ :=
       WalkLink.NodeBlock39_at (calls := stage2Calls stage2SubCalls) G
         { Ca with block := "NodeBlock39" } (contP41Out q4 b35) hl₅'.inv' rfl h35b
@@ -1497,7 +1497,7 @@ theorem contByteSegScanFree {m0 : Mem} {G : WalkGeom m0}
       simp only [contP39Out, evalOperand, State.bind,
         lookupName_cons_ne (k := "%Pivot40") (n := "%35") _ _ (by decide)]
       rw [contP41Out_env35]
-      simpa only [evalOperand] using h35
+      walk_read using h35
     obtain ⟨s₇, hl₇, hs₇⟩ :=
       WalkLink.LeafBlock35_at (calls := stage2Calls stage2SubCalls) G
         { { Ca with block := "NodeBlock39" } with block := "LeafBlock35" }
@@ -1572,7 +1572,7 @@ theorem contByteSegLow {m0 : Mem} {G : WalkGeom m0}
     have h35l : lookupName (contP41Low q4 b35).env "%35" =
         some (.int 8 (cont35 b35)) := by
       rw [contP41Low_35]
-      simpa only [evalOperand] using h35
+      walk_read using h35
     obtain ⟨s₆, hl₆, hs₆⟩ :=
       WalkLink.LeafBlock33_at (calls := stage2Calls stage2SubCalls) G
         { Ca with block := "LeafBlock33" } (contP41Low q4 b35) hl₅'.inv' rfl h35l
@@ -1645,7 +1645,7 @@ theorem contByteSegHigh {m0 : Mem} {G : WalkGeom m0}
         some (.int 8 (cont35 b35)) := by
       simp only [evalOperand]
       rw [contP41Out_env35]
-      simpa only [evalOperand] using h35
+      walk_read using h35
     obtain ⟨s₆, hl₆, hs₆⟩ :=
       WalkLink.NodeBlock39_at (calls := stage2Calls stage2SubCalls) G
         { Ca with block := "NodeBlock39" } (contP41Out q4 b35) hl₅'.inv' rfl h35b
@@ -1664,7 +1664,7 @@ theorem contByteSegHigh {m0 : Mem} {G : WalkGeom m0}
       simp only [contP39High, evalOperand, State.bind,
         lookupName_cons_ne (k := "%Pivot40") (n := "%35") _ _ (by decide)]
       rw [contP41Out_env35]
-      simpa only [evalOperand] using h35
+      walk_read using h35
     obtain ⟨s₇, hl₇, hs₇⟩ :=
       WalkLink.LeafBlock37_at (calls := stage2Calls stage2SubCalls) G
         { { Ca with block := "NodeBlock39" } with block := "LeafBlock37" }

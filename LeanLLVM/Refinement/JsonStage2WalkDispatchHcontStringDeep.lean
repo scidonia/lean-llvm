@@ -314,7 +314,8 @@ theorem stringDeepRefuse_at {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : 
     rfl
   -- the second link's hypotheses are the first link's own invariant
   have hidx : evalOperand s₁ (.reg "%idxprom.i")
-      = some (.int 64 (BitVec.ofNat 64 (entryPos G C.k))) := hl₁.inv'.idx_reg
+      = some (.int 64 (BitVec.ofNat 64 (entryPos G C.k))) :=
+    LeanLLVM.evalOperand_reg_of hl₁.inv'.idx_reg
   have he : lookupName s₁.env "%e" = some (.ptr C.stage.e) :=
     hl₁.inv'.regs ("%e", .ptr C.stage.e) (by simp [walkStaticRegs])
   obtain ⟨s₂, hl₂, hs₂⟩ :=

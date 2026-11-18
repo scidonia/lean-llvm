@@ -3368,10 +3368,10 @@ theorem walkExitFalseEdge {calls : Calls} {m0 : Mem} {G : WalkGeom m0} {C : Walk
   have hguard : nepv.toNat ≤ C.k + 1 := by omega
   have hspv' : evalOperand s (.reg "%sp.i.0248") =
       some (.int 32 (BitVec.ofNat 32 spv)) := by
-    simp only [evalOperand]; exact hspv
+    exact LeanLLVM.evalOperand_reg_of hspv
   have hkv' : evalOperand s (.reg "%inc.i") =
       some (.int 64 (BitVec.ofNat 64 (C.k + 1))) := by
-    simp only [evalOperand]; exact hinc
+    exact LeanLLVM.evalOperand_reg_of hinc
   exact ⟨_, walkBackFalse_step s hpc hpre hsp hspv' hk hkv' hnep hk2 hguard, rfl⟩
 
 /-- **`if.then485.i`'s test, with the destination named.**  `%sp.i.1` is the value the previous

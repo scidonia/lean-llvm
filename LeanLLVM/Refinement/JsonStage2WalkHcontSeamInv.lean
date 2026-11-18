@@ -114,7 +114,8 @@ theorem scSeamInv_of_cells {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : S
     exact sLand_35 C s f.x f.inc f.nep f.ep f.v f.ix f.b35
   have h8q : lookupName (sLand C s f.x f.inc f.nep f.ep f.v f.ix f.b35).env "%8" =
       some (.int 8 f.x) := by
-    rw [sLand_env8]; exact f.h8
+    rw [sLand_env8]
+    exact lookupName_of_evalOperand_reg f.h8
   have hcond : lookupName (sLand C s f.x f.inc f.nep f.ep f.v f.ix f.b35).env
       "%cond350.i" = some (.int 64 (BitVec.ofNat 64 f.v.toNat)) :=
     sLand_cond C s f.x f.inc f.nep f.ep f.v f.ix f.b35

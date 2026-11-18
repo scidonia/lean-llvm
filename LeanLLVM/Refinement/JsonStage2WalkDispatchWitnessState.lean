@@ -161,12 +161,13 @@ theorem stateStackSeg₂a {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : Walk
   have hsp₆ : lookupName (ssNest s).env "%sp.i.0248" =
       some (.int 32 (BitVec.ofNat 32 C.sp)) := hInv.depth_reg
   have h8₆ : lookupName (ssNest s).env "%8" = some (.int 8 (BitVec.ofNat 8 93)) := by
-    simpa only [ssNest, mlS₅, refuseS₄, refuseS₃, refuseS₂, refuseS₁, State.bind, evalOperand,
+    have hb := lookupName_of_evalOperand_reg h8
+    simpa only [ssNest, mlS₅, refuseS₄, refuseS₃, refuseS₂, refuseS₁, State.bind,
       lookupName_cons_ne (k := "%cmp54.i") (n := "%8") _ _ (by decide),
       lookupName_cons_ne (k := "%SwitchLeaf10") (n := "%8") _ _ (by decide),
       lookupName_cons_ne (k := "%Pivot12") (n := "%8") _ _ (by decide),
       lookupName_cons_ne (k := "%Pivot20") (n := "%8") _ _ (by decide),
-      lookupName_cons_ne (k := "%Pivot22") (n := "%8") _ _ (by decide)] using h8
+      lookupName_cons_ne (k := "%Pivot22") (n := "%8") _ _ (by decide)] using hb
   have hct₆ : lookupName (ssNest s).env "%ctype.i" = some (.ptr C.stage.ctype) :=
     hInv.ptrs.2.2.2.1
   have hsub : (BitVec.ofNat 32 C.sp + BitVec.ofNat 32 4294967295).toNat = C.sp - 1 := by

@@ -540,12 +540,12 @@ theorem scalarHeadSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
   have hinc₄ : evalOperand (scalarS₄ s x) (.reg "%inc.i") =
       some (.int 64 (BitVec.ofNat 64 (C.k + 1))) := by
     rw [show (ScalarC₄ C).k = C.k from rfl]
-    exact hl₄'.inv'.inc_reg
+    exact LeanLLVM.evalOperand_reg_of hl₄'.inv'.inc_reg
   have hnep₄ : evalOperand (scalarS₄ s x) (.reg "%nep") =
       some (.int 64 (BitVec.ofNat 64 G.nep)) := by
-    simp only [evalOperand]
-    exact hl₄'.inv'.regs ("%nep", .int 64 (BitVec.ofNat 64 G.nep))
-      (by simp [walkStaticRegs])
+    exact LeanLLVM.evalOperand_reg_of
+      (hl₄'.inv'.regs ("%nep", .int 64 (BitVec.ofNat 64 G.nep))
+        (by simp [walkStaticRegs]))
   obtain ⟨s₅, hl₅, hs₅⟩ :=
     WalkLink.sw_default_i_at (calls := stage2Calls stage2SubCalls) G (ScalarC₄ C)
       (scalarS₄ s x) hl₄'.inv' rfl hinc₄ hnep₄
@@ -734,7 +734,7 @@ theorem scalarPrefixSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : Stat
       some (.int 8 x) := by
     rw [scalarP37_env8 C s x (BitVec.ofNat 64 (C.k + 1)) (BitVec.ofNat 64 G.nep) G.n
       (BitVec.ofNat 64 (entryPos G C.k)) b35]
-    exact h8
+    exact lookupName_of_evalOperand_reg h8
   have hC := scalarSeamSeg (G := G) (C := C) (s := s) (x := x)
     (inc := BitVec.ofNat 64 (C.k + 1)) (nep := BitVec.ofNat 64 G.nep) (v := G.n)
     (ix := BitVec.ofNat 64 (entryPos G C.k)) (b35 := b35) (Seg.measure hB).inv' h8p hbit

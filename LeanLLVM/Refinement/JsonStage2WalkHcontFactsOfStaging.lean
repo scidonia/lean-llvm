@@ -674,8 +674,7 @@ def hcontFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
   { x := hlastByte G C
     h8 := by
       show evalOperand s (.reg "%8") = some (.int 8 (hlastByte G C))
-      simp only [evalOperand]
-      exact hInv.iter.reg8
+      exact LeanLLVM.evalOperand_reg_of hInv.iter.reg8
     hlt91 := hlast_slt_zero_of_toInt_le (by decide) hlt125
     hlt123 := hlast_slt_zero_of_toInt_le (by decide) hlt125
     hlt125 := hlt125
@@ -687,13 +686,14 @@ def hcontFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
         some (.int 64 (hlastIncV C))
       simp only [evalOperand]
       rw [headAS4_envInc s (hlastByte G C)]
-      exact hInv.inc_reg
+      exact LeanLLVM.evalOperand_reg_of hInv.inc_reg
     hnep := by
       show evalOperand (headAS₄ s (hlastByte G C)) (.reg "%nep") =
         some (.int 64 (hlastNepV G))
       simp only [evalOperand]
       rw [headAS4_envNep s (hlastByte G C)]
-      exact hInv.regs ("%nep", .int 64 (BitVec.ofNat 64 G.nep)) (by simp [walkStaticRegs])
+      exact LeanLLVM.evalOperand_reg_of
+        (hInv.regs ("%nep", .int 64 (BitVec.ofNat 64 G.nep)) (by simp [walkStaticRegs]))
     hnext := cont_ult_one G C hk
     ep := G.ep
     v := v

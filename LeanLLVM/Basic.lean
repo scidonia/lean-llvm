@@ -87,21 +87,33 @@ and lane width, and its lanes are a list of exactly that many lanes; a list of
 another length is a value the semantics does not produce, and `Value.vecLanes`
 rejects it by shape.  A binary64 value is its 64-bit pattern: the pattern is the
 value, so two spellings of a number that differ in bits (`+0` and `-0`) are
-distinct, and a NaN keeps its payload. -/
+distinct, and a NaN keeps its payload.  `poison` is not a value a use observes:
+a `phi` whose taken edge supplies a `poison` operand binds it into its
+destination, and a read of that destination is undefined behaviour (`ub`) —
+which is where `Const.toValue` already puts a `poison` immediate read directly.
+The constructor is therefore what a cell holds between the edge's write and the
+first read, and no other source produces it. -/
 inductive Value where
   | int (w : Nat) (v : BitVec w)
   | ptr (addr : Nat)
   | vec (n w : Nat) (lanes : List (BitVec w))
   /-- A binary64 value, as its 64-bit pattern. -/
   | float (bits : BitVec 64)
+  /-- The value a `phi` binds from a `poison` incoming: present in the cell,
+  unreadable by any use. -/
+  | poison
   deriving DecidableEq, Repr
 
 /-- The value of a literal.  `undef` and `poison` are modelled as undefined
-behaviour: the first slice has no nondeterministic or poison semantics, so a
-program that reads one is `ub`.  That is an over-approximation of LLVM's poison,
-not a refinement-direction guarantee: `Beh` has a run that reaches `ub` admit
-every outcome, so where LLVM's poison is never observed this model is more
-permissive than LLVM, not less.  A splat is the
+behaviour: the first slice has no nondeterministic semantics, so a program that
+reads one — an operand the instruction reads directly — is `ub`.  That is an
+over-approximation of LLVM's poison, not a refinement-direction guarantee: `Beh`
+has a run that reaches `ub` admit every outcome, so where LLVM's poison is never
+observed this model is more permissive than LLVM, not less.  The one place a
+`poison` literal is not itself a use is a `phi`'s taken incoming, which binds
+`Value.poison` into the destination instead of failing the selection: the use is
+the read of that destination, and the literal stays `ub` when an instruction
+reads it directly.  A splat is the
 same value in every lane, and it is total: its element is an integer by
 construction.  A lane list is the vector it writes, with the list's length as the
 lane count. -/

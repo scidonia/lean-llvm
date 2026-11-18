@@ -100,7 +100,7 @@ def hcontArm_commaZero_of_staging {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G)
       rw [← eq_bit_value hclass]
       exact cont_reg8 hInv)
     hsp
-    (by simpa only [evalOperand] using hInv.idx_reg)
+    (by walk_read using hInv.idx_reg)
     (hInv.regs ("%e", .ptr C.stage.e) (by simp [walkStaticRegs]))
     (entryPos_le G C.k)
     (entryPos_lt_64 G C.k)
@@ -117,7 +117,7 @@ def hcontArm_colonZero_of_staging {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G)
       rw [← eq_bit_value hclass]
       exact cont_reg8 hInv)
     hsp
-    (by simpa only [evalOperand] using hInv.idx_reg)
+    (by walk_read using hInv.idx_reg)
     (hInv.regs ("%e", .ptr C.stage.e) (by simp [walkStaticRegs]))
     (entryPos_le G C.k)
     (entryPos_lt_64 G C.k)
@@ -135,7 +135,7 @@ def lastEntryArm_commaZero_of_staging {m0 : Mem} {G : WalkGeom m0} (C : WalkCarr
       rw [← eq_bit_value hclass]
       exact cont_reg8 hInv)
     hsp
-    (by simpa only [evalOperand] using hInv.idx_reg)
+    (by walk_read using hInv.idx_reg)
     (hInv.regs ("%e", .ptr C.stage.e) (by simp [walkStaticRegs]))
     (entryPos_le G C.k)
     (entryPos_lt_64 G C.k)
@@ -151,7 +151,7 @@ def lastEntryArm_colonZero_of_staging {m0 : Mem} {G : WalkGeom m0} (C : WalkCarr
       rw [← eq_bit_value hclass]
       exact cont_reg8 hInv)
     hsp
-    (by simpa only [evalOperand] using hInv.idx_reg)
+    (by walk_read using hInv.idx_reg)
     (hInv.regs ("%e", .ptr C.stage.e) (by simp [walkStaticRegs]))
     (entryPos_le G C.k)
     (entryPos_lt_64 G C.k)

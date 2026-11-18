@@ -117,6 +117,7 @@ theorem envFor_eq : envFor byteLoop = envFor swar := by
         | ptr a => rfl
         | vec n' w' lanes => rfl
         | float b => rfl
+        | poison => rfl
   · simp only [envFor, h, ite_false]
 
 /-! ### Execution -/
@@ -204,9 +205,25 @@ theorem caller_runFuel_body_succ (fuel reserve : Nat) (f : Function) (x : BitVec
     runFuel (envForBody fuel reserve f) (n + 1) callerFunction
         (initState callerFunction [.int 64 x]) = some (.ret (some r.ret) r.mem) := by
   have h0 := lookupName_initState_caller x
+  -- A body's run returns a read, so the value the caller binds is not the
+  -- poison marker: the caller's own `ret` reads it.
+  have hr : r.ret ≠ .poison := by
+    have h' : (match runFuel noCalls fuel f
+        { env := (f.params.zip [Value.int 64 x]).map fun p => (p.1.1, p.2),
+          mem := [], next := 1, pc := f.entry?.getD "", pre := none } with
+        | some (.ret (some v) m) => some { ret := v, mem := m, next := 1 + reserve }
+        | _ => none) = some r := by
+      rw [envForBody] at h
+      simpa using h
+    split at h'
+    · rename_i hrun
+      simp only [Option.some.injEq] at h'
+      subst h'
+      exact runFuel_ret_ne_poison hrun
+    · cases h'
   simp only [runFuel, step, caller_findBlock, callerBody]
   rw [caller_block_body fuel reserve f _ x h0 h]
-  simp [execTerm, evalOperand]
+  simp [execTerm, evalOperand, hr]
 
 theorem caller_runFuel_body_none_or (fuel reserve : Nat) (f : Function) (x : BitVec 64)
     {r : CallOutcome}
@@ -265,8 +282,15 @@ theorem caller_block_unresolved (fuel reserve : Nat) (f : Function) (s : State)
     (hm : s.mem = []) (hn : s.next = 1)
     (h : envForBody fuel reserve f seamSymbol [a] [] 1 = none) :
     denoteCode (envForBody fuel reserve f) callerInstrs s = none := by
-  simp only [callerInstrs, denoteCode, denoteRun, State.bindAll, evalInstr, evalOperands, evalOperand, h0]
-  rw [hm, hn, h]
+  by_cases hpoison : a = .poison
+  · subst hpoison
+    simp [callerInstrs, denoteCode, denoteRun, State.bindAll, evalInstr, evalOperands,
+      evalOperand, h0]
+  · have hread : evalOperand s (.reg "%arg") = some a :=
+      evalOperand_reg_of h0 hpoison
+    simp only [callerInstrs, denoteCode, denoteRun, State.bindAll, evalInstr,
+      evalOperands, hread]
+    rw [hm, hn, h]
 
 /-- The caller reaches `ub` at its call whenever the selection leaves that call
 undefined, and `ub` admits every outcome, so every outcome is one of its

@@ -4262,16 +4262,18 @@ theorem b_icmp_reg (env : Env) (s : State) (d a b : String) (p : IPred) (w : Nat
     (hb := evalOperand_reg_of env s b (.int w y) hb)]
   simp only [withEnv, State.bind, evalICmpNat, BitVec.ofNat_toNat, BitVec.setWidth_eq]
 
-/-- A scalar select whose condition register holds `cb`. -/
+/-- A scalar select whose condition register holds `cb` and whose arms are read
+as `va` and `vb`.  The arms are taken as successful reads: the marker
+`Value.poison` is refused by the read, so a select over a poison arm is
+undefined and no `some`-valued statement about it holds. -/
 theorem b_select_reg (env : Env) (s : State) (d c a b : String) (ty : Ty)
     (cb : BitVec 1) (va vb : Value)
     (hc : lookupName env c = some (.int 1 cb))
-    (ha : lookupName env a = some va) (hb : lookupName env b = some vb) :
+    (ha : evalOperand (withEnv env s) (.reg a) = some va)
+    (hb : evalOperand (withEnv env s) (.reg b) = some vb) :
     evalInstr escapeCalls (withEnv env s) (.select d ty (.reg c) (.reg a) (.reg b)) =
       some (withEnv ((d, if cb = (1 : BitVec 1) then va else vb) :: env) s) := by
-  rw [evalInstr, show (evalOperand (withEnv env s) (.reg c)) = some (.int 1 cb) from hc,
-    show (evalOperand (withEnv env s) (.reg a)) = some va from ha,
-    show (evalOperand (withEnv env s) (.reg b)) = some vb from hb]
+  rw [evalInstr, evalOperand_reg_of env s c (.int 1 cb) hc, ha, hb]
   rcases bv1_cases cb with h | h <;> simp [h, withEnv, State.bind]
 
 /-- A lane read out of a vector register. -/
@@ -4323,7 +4325,8 @@ theorem b_select_vec (env : Env) (s : State) (d c : String)
         (.select d (.vec 16 (.int 8)) (.reg c) (.imm (.vector 8 a)) (.imm (.vector 8 b))) =
       some (withEnv ((d, .vec 16 8 (selectLanes cs a b)) :: env) s) := by
   rw [evalInstr,
-    show evalOperand (withEnv env s) (.reg c) = some (.vec 16 1 cs) from hc,
+    show evalOperand (withEnv env s) (.reg c) = some (.vec 16 1 cs) from
+      evalOperand_reg_of env s c (.vec 16 1 cs) hc,
     show evalOperand (withEnv env s) (.imm (.vector 8 a)) = some (.vec 16 8 a) from
       evalOperand_vector_of (withEnv env s) 8 16 a hlena,
     show evalOperand (withEnv env s) (.imm (.vector 8 b)) = some (.vec 16 8 b) from
@@ -5413,9 +5416,12 @@ theorem b_select_i32 (env : Env) (s : State) (d c a b : String) (cb : BitVec 1)
         (.select d (.int 32) (.reg c) (.reg a) (.reg b)) =
       some (withEnv ((d, .int 32 (if cb = (1 : BitVec 1) then x else y)) :: env) s) := by
   rw [evalInstr,
-    show evalOperand (withEnv env s) (.reg c) = some (.int 1 cb) from hc,
-    show evalOperand (withEnv env s) (.reg a) = some (.int 32 x) from ha,
-    show evalOperand (withEnv env s) (.reg b) = some (.int 32 y) from hb]
+    show evalOperand (withEnv env s) (.reg c) = some (.int 1 cb) from
+      evalOperand_reg_of env s c (.int 1 cb) hc,
+    show evalOperand (withEnv env s) (.reg a) = some (.int 32 x) from
+      evalOperand_reg_of env s a (.int 32 x) ha,
+    show evalOperand (withEnv env s) (.reg b) = some (.int 32 y) from
+      evalOperand_reg_of env s b (.int 32 y) hb]
   rcases bv1_cases cb with h | h <;> simp [h, withEnv, State.bind]
 
 /-- `%d = select i1 %c, i64 <x>, i64 <y>`, at whatever the arms read as. -/
@@ -5427,7 +5433,8 @@ theorem b_select_i64_op (env : Env) (s : State) (d c : String) (a b : Operand)
     evalInstr escapeCalls (withEnv env s) (.select d (.int 64) (.reg c) a b) =
       some (withEnv ((d, .int 64 (if cb = (1 : BitVec 1) then x else y)) :: env) s) := by
   rw [evalInstr,
-    show evalOperand (withEnv env s) (.reg c) = some (.int 1 cb) from hc, ha, hb]
+    show evalOperand (withEnv env s) (.reg c) = some (.int 1 cb) from
+      evalOperand_reg_of env s c (.int 1 cb) hc, ha, hb]
   rcases bv1_cases cb with h | h <;> simp [h, withEnv, State.bind]
 
 /-- `%d = zext i1 %src to i64`, in the environment shape the block builds. -/

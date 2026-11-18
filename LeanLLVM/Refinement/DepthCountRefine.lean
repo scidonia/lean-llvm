@@ -394,10 +394,12 @@ theorem evalInstr_phi_reg (s : State) {calls : Calls} {d : String} {ty : Ty}
     {inc : List (String × Operand)} {pre : String}
     (op : String) (v : Value)
     (hpre : s.pre = some pre) (hinc : phiIncoming pre inc = some (.reg op))
-    (hop : lookupName s.env op = some v) :
+    (hop : lookupName s.env op = some v) (hv : v ≠ .poison := by intro hh; cases hh) :
     evalInstr calls s (.phi d ty inc) = some (s.bind d v) := by
-  rw [evalInstr_phi hpre hinc]
-  simp [evalOperand, hop]
+  simp only [evalInstr, phiSelect, hpre, hinc, evalOperand, hop]
+  cases v <;> first
+    | rfl
+    | exact absurd rfl hv
 
 theorem evalInstr_phi_imm (s : State) {calls : Calls} {d : String} {ty : Ty}
     {inc : List (String × Operand)} {pre : String}

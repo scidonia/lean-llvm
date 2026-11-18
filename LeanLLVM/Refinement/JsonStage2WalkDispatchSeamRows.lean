@@ -89,23 +89,16 @@ theorem hcontSpan17_of_doc {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     contPrefixLand (G := G) (C := C) (s := s) hInv hblock
       (x := hlastByte G C) (inc := hlastIncV C) (nep := hlastNepV G) (ep := G.ep)
       (v := doc.v) (ix := contIx G C) (b35 := contB35 G doc.v)
-      (by
-        show evalOperand s (.reg "%8") = some (.int 8 (hlastByte G C))
-        simp only [evalOperand]
-        exact hInv.iter.reg8)
+      (LeanLLVM.evalOperand_reg_of hInv.iter.reg8)
       (hlast_slt_zero_of_toInt_le (by decide) hlt125)
       (hlast_slt_zero_of_toInt_le (by decide) hlt125)
       hlt125 hne125
       (by
-        show evalOperand (headAS₄ s (hlastByte G C)) (.reg "%inc.i") =
-          some (.int 64 (hlastIncV C))
-        simp only [evalOperand]
+        refine LeanLLVM.evalOperand_reg_of ?_
         rw [headAS4_envInc s (hlastByte G C)]
         exact hInv.inc_reg)
       (by
-        show evalOperand (headAS₄ s (hlastByte G C)) (.reg "%nep") =
-          some (.int 64 (hlastNepV G))
-        simp only [evalOperand]
+        refine LeanLLVM.evalOperand_reg_of ?_
         rw [headAS4_envNep s (hlastByte G C)]
         exact hInv.regs ("%nep", .int 64 (BitVec.ofNat 64 G.nep))
           (by simp [walkStaticRegs]))
@@ -174,7 +167,7 @@ theorem hcontSpan17_of_doc {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
       (hlastNepV G) G.ep doc.v (contIx G C) (contB35 G doc.v)) doc.v.toNat C.stage.tok
       (contB35 G doc.v) (hlastByte G C) doc.hb) (.reg "%8") =
       some (.int 8 (hlastByte G C)) := by
-    simp only [evalOperand]
+    refine LeanLLVM.evalOperand_reg_of ?_
     rw [contSeamByte_env8, contLandS_env8]
     exact hInv.iter.reg8
   have hspan5 : Seg (stage2Calls stage2SubCalls) G (ContSeamC C)

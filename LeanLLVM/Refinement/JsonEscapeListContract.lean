@@ -1286,7 +1286,7 @@ def lstLanesLoopC (Γ : MemContract) (bs : BitVec 64) (prevb prevs : Bool) (env0
         { s with pc := (if stepWord bs w = w then "xl_lanes.exit" else "do.body.i"),
                  pre := some "do.body.i" }) (.reg "%or23.i") =
         some (.int 64 (stepWord bs w))
-      simpa only [withEnv, evalOperand] using hor
+      exact evalOperand_reg_of (ld5 s.env bs w) _ "%or23.i" (.int 64 (stepWord bs w)) hor
     · rw [hiter, stepN_succ]
     · show lookupName (ld5 s.env bs w) "%arrayidx1" = lookupName env0 "%arrayidx1"
       rw [ld5_arrayidx1]; exact harr
@@ -1424,8 +1424,9 @@ theorem runFromSeed (σ : State) (mem0 : Mem) (bs ctl im blk0 : BitVec 64)
       ⟨hpc', rfl, hmemσ,
         ⟨"if.end.i", .reg "%or13.i", hpre, by decide, by
           show evalOperand σ (.reg "%or13.i") = some (.int 64 (specRunStarts bs (prevb && prevs)))
-          show lookupName σ.env "%or13.i" = _
-          rw [hseed, hspec]⟩,
+          rw [show σ = withEnv σ.env σ from (withEnv_self σ).symm]
+          exact evalOperand_reg_of σ.env σ "%or13.i"
+            (.int 64 (specRunStarts bs (prevb && prevs))) (by rw [hseed, hspec])⟩,
         hbsσ, hctlσ, himσ, hblkσ, hxpσ, hxnσ, hcarryσ, harrσ, by
           rw [hmemσ]; exact fun a _ => rfl⟩
     exact ⟨k, M, by omega, hrun, hreach⟩
@@ -1441,7 +1442,9 @@ theorem runFromSeed (σ : State) (mem0 : Mem) (bs ctl im blk0 : BitVec 64)
       ⟨hpcE, rfl, hexitE.2.1,
         ⟨"do.body.i", .reg "%e.1.i", hexitE.2.2.1, by decide, by
           show evalOperand e (.reg "%e.1.i") = some (.int 64 (specRunStarts bs (prevb && prevs)))
-          exact hexitE.1.1⟩,
+          rw [show e = withEnv e.env e from (withEnv_self e).symm]
+          exact evalOperand_reg_of e.env e "%e.1.i"
+            (.int 64 (specRunStarts bs (prevb && prevs))) hexitE.1.1⟩,
         hexitE.1.2.bsReg.trans hbsσ, hexitE.1.2.ctlReg.trans hctlσ,
         hexitE.1.2.imReg.trans himσ, hexitE.1.2.blk0Reg.trans hblkσ,
         hexitE.1.2.xpReg.trans hxpσ, hexitE.1.2.xnReg.trans hxnσ,
@@ -2150,7 +2153,7 @@ run's own `k` bound rather than the `omega` case splits that reach
 #guard_msgs in
 #print axioms em11_stepN
 
-/-- info: 'LeanLLVM.Refinement.AtExit' does not depend on any axioms -/
+/-- info: 'LeanLLVM.Refinement.AtExit' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms AtExit
 

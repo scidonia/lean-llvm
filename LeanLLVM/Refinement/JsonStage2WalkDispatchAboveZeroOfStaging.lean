@@ -105,8 +105,7 @@ its byte premise in this shape. -/
 theorem cont_reg8 {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     (hInv : WalkInv G C s) :
     evalOperand s (.reg "%8") = some (.int 8 (hlastByte G C)) := by
-  simp only [evalOperand]
-  exact hInv.iter.reg8
+  exact LeanLLVM.evalOperand_reg_of hInv.iter.reg8
 
 /-- **A byte-equality test pins its value.**  The census's `eq` arms — `HcontClass`'s
 `stringOpener` (34), the comma's and the colon's byte tests, the bracket's and the brace's,
@@ -132,7 +131,7 @@ theorem hclass_of_reg8 {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State
     evalICmp .eq (hlastByte G C) x = 1 := by
   have hval : hlastByte G C = x := by
     have h1 : lookupName s.env "%8" = some (.int 8 x) := by
-      simpa only [evalOperand] using h8
+      walk_read using h8
     have h := Option.some.inj (hInv.iter.reg8.symm.trans h1)
     simpa using h
   rw [hval]

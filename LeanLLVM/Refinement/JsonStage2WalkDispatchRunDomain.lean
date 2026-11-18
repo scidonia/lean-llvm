@@ -55,7 +55,7 @@ theorem runHead_a {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
   have hreg := seed_head_byte G S s (hc := h.entryByte_zero) hInv
   have ht : ((97 : UInt8)).toNat = 97 := by decide
   rw [ht] at hreg
-  simpa only [evalOperand] using hreg
+  walk_read using hreg
 
 /-- **`97`'s head class is `defaultValueBracketHigh`**, the default arm's. -/
 theorem runClass_a : HcontClass (BitVec.ofNat 8 97) :=

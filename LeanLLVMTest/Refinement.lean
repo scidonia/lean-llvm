@@ -9391,9 +9391,9 @@ carries `Classical.choice` that the statement does not need. -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonUtf8Steps.withEnv_setJmp
 
-/-- info: 'LeanLLVM.Refinement.JsonUtf8Steps.evalOperand_reg_withEnv' does not depend on any axioms -/
+/-- info: 'LeanLLVM.Refinement.JsonUtf8Steps.evalOperand_reg_of' depends on axioms: [propext] -/
 #guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonUtf8Steps.evalOperand_reg_withEnv
+#print axioms LeanLLVM.Refinement.JsonUtf8Steps.evalOperand_reg_of
 
 /-- info: 'LeanLLVM.Refinement.JsonUtf8Steps.packLanes_zipWith_or_reorder' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
@@ -10393,7 +10393,7 @@ contiguous to the end of this file. -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.PipelineBodyFacts.AgreeOn.alloca
 
-/-- info: 'LeanLLVM.Refinement.PipelineBodyFacts.evalOperand_agree' does not depend on any axioms -/
+/-- info: 'LeanLLVM.Refinement.PipelineBodyFacts.evalOperand_agree' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.PipelineBodyFacts.evalOperand_agree
 

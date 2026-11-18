@@ -773,7 +773,7 @@ theorem scPrefixLand {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     exact hl₅
   -- 6. the next entry's position lane
   have hincL : lookupName (scS₄ s x).env "%inc.i" = some (.int 64 inc) := by
-    simpa only [evalOperand] using hinc
+    walk_read using hinc
   have hinc5 : lookupName (scS₅ s x inc nep).env "%inc.i" = some (.int 64 inc) := by
     simp only [scS₅, State.bind]
     rw [lookupName_cons_ne (k := "%cmp343.i") (n := "%inc.i") _ _ (by decide)]
@@ -942,7 +942,7 @@ theorem sPivotSegScanFree {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
   have h35b : evalOperand (sP41Out q4 b35) (.reg "%35") = some (.int 8 (cont35 b35)) := by
     simp only [evalOperand]
     rw [sP41Out_35]
-    simpa only [evalOperand] using h35
+    walk_read using h35
   obtain ⟨s₆, hl₆, hs₆⟩ :=
     WalkLink.NodeBlock39_at (calls := calls) G { Ca with block := "NodeBlock39" }
       (sP41Out q4 b35) hl₅'.inv' rfl h35b
@@ -960,7 +960,7 @@ theorem sPivotSegScanFree {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
     simp only [sP39Out, evalOperand, State.bind,
       lookupName_cons_ne (k := "%Pivot40") (n := "%35") _ _ (by decide)]
     rw [sP41Out_35]
-    simpa only [evalOperand] using h35
+    walk_read using h35
   obtain ⟨s₇, hl₇, hs₇⟩ :=
     WalkLink.LeafBlock35_at (calls := calls) G
       { { Ca with block := "NodeBlock39" } with block := "LeafBlock35" }
@@ -1002,7 +1002,7 @@ theorem sPivotSegLow {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
     exact hl₅
   have h35l : lookupName (sP41Low q4 b35).env "%35" = some (.int 8 (cont35 b35)) := by
     rw [sP41Low_35]
-    simpa only [evalOperand] using h35
+    walk_read using h35
   obtain ⟨s₆, hl₆, hs₆⟩ :=
     WalkLink.LeafBlock33_at (calls := calls) G { Ca with block := "LeafBlock33" }
       (sP41Low q4 b35) hl₅'.inv' rfl h35l
@@ -1043,7 +1043,7 @@ theorem sPivotSegHigh {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
   have h35b : evalOperand (sP41Out q4 b35) (.reg "%35") = some (.int 8 (cont35 b35)) := by
     simp only [evalOperand]
     rw [sP41Out_35]
-    simpa only [evalOperand] using h35
+    walk_read using h35
   obtain ⟨s₆, hl₆, hs₆⟩ :=
     WalkLink.NodeBlock39_at (calls := calls) G { Ca with block := "NodeBlock39" }
       (sP41Out q4 b35) hl₅'.inv' rfl h35b
@@ -1061,7 +1061,7 @@ theorem sPivotSegHigh {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
     simp only [sP39High, evalOperand, State.bind,
       lookupName_cons_ne (k := "%Pivot40") (n := "%35") _ _ (by decide)]
     rw [sP41Out_35]
-    simpa only [evalOperand] using h35
+    walk_read using h35
   obtain ⟨s₇, hl₇, hs₇⟩ :=
     WalkLink.LeafBlock37_at (calls := calls) G
       { { Ca with block := "NodeBlock39" } with block := "LeafBlock37" }
@@ -1106,8 +1106,7 @@ theorem sSeamByteSegScanFree {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
       (scSeamByte q4 vN x Ca.stage.tok b35 (.scanFree hb13 hb32 hbne13)) 1 := by
   have hcondv : evalOperand (sP35Any q4 b35) (.reg "%cond350.i") =
       some (.int 64 (BitVec.ofNat 64 vN)) := by
-    simp only [evalOperand]
-    exact hcond
+    exact LeanLLVM.evalOperand_reg_of hcond
   obtain ⟨s', hl, hs'⟩ :=
     WalkLink.if_end372_i_true_at (calls := calls) (G := G) (C := Ca)
       (s := sP35Any q4 b35) hInv hl_blk (p := "LeafBlock35") rfl hlast_phiSeam hcondv hend
@@ -1132,8 +1131,7 @@ theorem sSeamByteSegLow {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
       (scSeamByte q4 vN x Ca.stage.tok b35 (.lowLeaf hb13 hbns)) 1 := by
   have hcondv : evalOperand (sP33Any q4 b35) (.reg "%cond350.i") =
       some (.int 64 (BitVec.ofNat 64 vN)) := by
-    simp only [evalOperand]
-    exact hcond
+    exact LeanLLVM.evalOperand_reg_of hcond
   obtain ⟨s', hl, hs'⟩ :=
     WalkLink.if_end372_i_true_at (calls := calls) (G := G) (C := Ca)
       (s := sP33Any q4 b35) hInv hl_blk (p := "LeafBlock33") rfl hlastPhiSeam33 hcondv hend
@@ -1159,8 +1157,7 @@ theorem sSeamByteSegHigh {calls : Calls} {m0 : Mem} {G : WalkGeom m0}
       (scSeamByte q4 vN x Ca.stage.tok b35 (.highLeaf hb13 hb32 hbne32)) 1 := by
   have hcondv : evalOperand (sP37Any q4 b35) (.reg "%cond350.i") =
       some (.int 64 (BitVec.ofNat 64 vN)) := by
-    simp only [evalOperand]
-    exact hcond
+    exact LeanLLVM.evalOperand_reg_of hcond
   obtain ⟨s', hl, hs'⟩ :=
     WalkLink.if_end372_i_true_at (calls := calls) (G := G) (C := Ca)
       (s := sP37Any q4 b35) hInv hl_blk (p := "LeafBlock37") rfl hlastPhiSeam37 hcondv hend
@@ -1272,7 +1269,8 @@ theorem walkRevolutionMergeSegScalar {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
     exact sLand_35 C s f.x f.inc f.nep f.ep f.v f.ix f.b35
   have h8q : lookupName (sLand C s f.x f.inc f.nep f.ep f.v f.ix f.b35).env "%8" =
       some (.int 8 f.x) := by
-    rw [sLand_env8]; exact f.h8
+    rw [sLand_env8]
+    exact lookupName_of_evalOperand_reg f.h8
   have hcond : lookupName (sLand C s f.x f.inc f.nep f.ep f.v f.ix f.b35).env
       "%cond350.i" = some (.int 64 (BitVec.ofNat 64 f.v.toNat)) :=
     sLand_cond C s f.x f.inc f.nep f.ep f.v f.ix f.b35
@@ -1356,9 +1354,10 @@ theorem walkDispatch_at_continue_scalar {m0 : Mem} {G : WalkGeom m0} (C : WalkCa
   obtain ⟨hseg, hInvD, hblockD, hpre, hkC, hinc, hnep, hprice⟩ :=
     walkRevolutionMergeSegScalar G C s hInv hhead hk hcont
   have hdepth : evalOperand (scMergeF hcont) (Operand.reg "%sp.i.0248") =
-      some (.int 32 (BitVec.ofNat 32 (scMergeC C hcont.ev).sp)) := hInvD.depth_reg
+      some (.int 32 (BitVec.ofNat 32 (scMergeC C hcont.ev).sp)) :=
+    LeanLLVM.evalOperand_reg_of hInvD.depth_reg
   have hincv : evalOperand (scMergeF hcont) (Operand.reg "%inc.i") =
-      some (.int 64 (BitVec.ofNat 64 (C.k + 1))) := hinc
+      some (.int 64 (BitVec.ofNat 64 (C.k + 1))) := LeanLLVM.evalOperand_reg_of hinc
   have hnep64 : G.nep < 2 ^ 64 := by
     have h := G.nep_le
     have h2 := G.maxDoc

@@ -571,6 +571,7 @@ theorem step_ret_isSome {calls : Calls} {f : Function} (hf : retsValued f = true
                           | succ w => simp only [hc] at h; simp at h
                   | ptr a => rw [hc] at h; simp at h
                   | vec n w l => rw [hc] at h; simp at h
+                  | poison => simp [evalOperand_ne_poison] at hc
           | unreachable => rw [ht] at h; simp [execTerm] at h
 
 /-- A completed run of a `retsValued` body carries a value.  `execTerm` decides

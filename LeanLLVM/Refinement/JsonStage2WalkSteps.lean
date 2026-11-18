@@ -1722,7 +1722,7 @@ theorem WalkLink.if_then16_i_at {calls : Calls} {m0 : Mem}
   have hstep := walkRefusalStoreStep (calls := calls) (s := s) (b := walkIf_then16_i)
     (off := "%off1.i.i") (v := "%idxprom.i") (dest := "if.then") (e := C.stage.e) (j := j)
     (by decide) (by rw [hInv.pc_eq, hblock]; exact walkIf_then16_i_find) rfl rfl he
-    (by simpa only [evalOperand] using hv) hj64
+    (by exact lookupName_of_evalOperand_reg hv) hj64
   exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
 
 /-- **`if.then21.i`'s target, named.**  `gep %e, 8` and `store %idxprom.i`;
@@ -1744,7 +1744,7 @@ theorem WalkLink.if_then21_i_at {calls : Calls} {m0 : Mem}
   have hstep := walkRefusalStoreStep (calls := calls) (s := s) (b := walkIf_then21_i)
     (off := "%off1.i.i38") (v := "%idxprom.i") (dest := "if.then") (e := C.stage.e) (j := j)
     (by decide) (by rw [hInv.pc_eq, hblock]; exact walkIf_then21_i_find) rfl rfl he
-    (by simpa only [evalOperand] using hv) hj64
+    (by exact lookupName_of_evalOperand_reg hv) hj64
   exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
 
 /-- **`if.then56.i`'s target, named.**  `gep %e, 8` and `store %idxprom.i`;
@@ -1766,7 +1766,7 @@ theorem WalkLink.if_then56_i_at {calls : Calls} {m0 : Mem}
   have hstep := walkRefusalStoreStep (calls := calls) (s := s) (b := walkIf_then56_i)
     (off := "%off1.i.i41") (v := "%idxprom.i") (dest := "if.then") (e := C.stage.e) (j := j)
     (by decide) (by rw [hInv.pc_eq, hblock]; exact walkIf_then56_i_find) rfl rfl he
-    (by simpa only [evalOperand] using hv) hj64
+    (by exact lookupName_of_evalOperand_reg hv) hj64
   exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
 
 /-- **`if.then71.i`'s target, named.**  `gep %e, 8` and `store %idxprom.i`;
@@ -1788,7 +1788,7 @@ theorem WalkLink.if_then71_i_at {calls : Calls} {m0 : Mem}
   have hstep := walkRefusalStoreStep (calls := calls) (s := s) (b := walkIf_then71_i)
     (off := "%off1.i.i43") (v := "%idxprom.i") (dest := "if.then") (e := C.stage.e) (j := j)
     (by decide) (by rw [hInv.pc_eq, hblock]; exact walkIf_then71_i_find) rfl rfl he
-    (by simpa only [evalOperand] using hv) hj64
+    (by exact lookupName_of_evalOperand_reg hv) hj64
   exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
 
 /-- **`cleanup104.i`'s target, named.**  `gep %e, 8` and `store %idxprom.i`;
@@ -1810,7 +1810,7 @@ theorem WalkLink.cleanup104_i_at {calls : Calls} {m0 : Mem}
   have hstep := walkRefusalStoreStep (calls := calls) (s := s) (b := walkCleanup104_i)
     (off := "%off1.i.i45") (v := "%idxprom.i") (dest := "if.then") (e := C.stage.e) (j := j)
     (by decide) (by rw [hInv.pc_eq, hblock]; exact walkCleanup104_i_find) rfl rfl he
-    (by simpa only [evalOperand] using hv) hj64
+    (by exact lookupName_of_evalOperand_reg hv) hj64
   exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
 
 /-- **`if.then130.i`'s target, named.**  `gep %e, 8` and `store %idxprom.i`;
@@ -1832,7 +1832,7 @@ theorem WalkLink.if_then130_i_at {calls : Calls} {m0 : Mem}
   have hstep := walkRefusalStoreStep (calls := calls) (s := s) (b := walkIf_then130_i)
     (off := "%off1.i.i66") (v := "%idxprom.i") (dest := "if.then") (e := C.stage.e) (j := j)
     (by decide) (by rw [hInv.pc_eq, hblock]; exact walkIf_then130_i_find) rfl rfl he
-    (by simpa only [evalOperand] using hv) hj64
+    (by exact lookupName_of_evalOperand_reg hv) hj64
   exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
 
 /-- **`if.then147.i`'s target, named.**  `gep %e, 8` and `store %idxprom.i`;
@@ -1854,7 +1854,7 @@ theorem WalkLink.if_then147_i_at {calls : Calls} {m0 : Mem}
   have hstep := walkRefusalStoreStep (calls := calls) (s := s) (b := walkIf_then147_i)
     (off := "%off1.i.i68") (v := "%idxprom.i") (dest := "if.then") (e := C.stage.e) (j := j)
     (by decide) (by rw [hInv.pc_eq, hblock]; exact walkIf_then147_i_find) rfl rfl he
-    (by simpa only [evalOperand] using hv) hj64
+    (by exact lookupName_of_evalOperand_reg hv) hj64
   exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
 
 /-- **`if.then159.i`'s target, named.**  `gep %e, 8` and `store %idxprom.i`;
@@ -1876,7 +1876,7 @@ theorem WalkLink.if_then159_i_at {calls : Calls} {m0 : Mem}
   have hstep := walkRefusalStoreStep (calls := calls) (s := s) (b := walkIf_then159_i)
     (off := "%off1.i.i70") (v := "%idxprom.i") (dest := "if.then") (e := C.stage.e) (j := j)
     (by decide) (by rw [hInv.pc_eq, hblock]; exact walkIf_then159_i_find) rfl rfl he
-    (by simpa only [evalOperand] using hv) hj64
+    (by exact lookupName_of_evalOperand_reg hv) hj64
   exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
 
 /-- **`if.then176.i`'s target, named.**  `gep %e, 8` and `store %idxprom.i`;
@@ -1898,7 +1898,7 @@ theorem WalkLink.if_then176_i_at {calls : Calls} {m0 : Mem}
   have hstep := walkRefusalStoreStep (calls := calls) (s := s) (b := walkIf_then176_i)
     (off := "%off1.i.i72") (v := "%idxprom.i") (dest := "if.then") (e := C.stage.e) (j := j)
     (by decide) (by rw [hInv.pc_eq, hblock]; exact walkIf_then176_i_find) rfl rfl he
-    (by simpa only [evalOperand] using hv) hj64
+    (by exact lookupName_of_evalOperand_reg hv) hj64
   exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
 
 /-- **`if.then192.i`'s target, named.**  `gep %e, 8` and `store %idxprom.i`;
@@ -1920,7 +1920,7 @@ theorem WalkLink.if_then192_i_at {calls : Calls} {m0 : Mem}
   have hstep := walkRefusalStoreStep (calls := calls) (s := s) (b := walkIf_then192_i)
     (off := "%off1.i.i74") (v := "%idxprom.i") (dest := "if.then") (e := C.stage.e) (j := j)
     (by decide) (by rw [hInv.pc_eq, hblock]; exact walkIf_then192_i_find) rfl rfl he
-    (by simpa only [evalOperand] using hv) hj64
+    (by exact lookupName_of_evalOperand_reg hv) hj64
   exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
 
 /-- **`if.then205.i`'s target, named.**  `gep %e, 8` and `store %4`;
@@ -1942,7 +1942,7 @@ theorem WalkLink.if_then205_i_at {calls : Calls} {m0 : Mem}
   have hstep := walkRefusalStoreStep (calls := calls) (s := s) (b := walkIf_then205_i)
     (off := "%off1.i.i76") (v := "%4") (dest := "if.then") (e := C.stage.e) (j := j)
     (by decide) (by rw [hInv.pc_eq, hblock]; exact walkIf_then205_i_find) rfl rfl he
-    (by simpa only [evalOperand] using hv) hj64
+    (by exact lookupName_of_evalOperand_reg hv) hj64
   exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
 
 /-- **`if.then214.i`'s target, named.**  `gep %e, 8` and `store %4`;
@@ -1964,7 +1964,7 @@ theorem WalkLink.if_then214_i_at {calls : Calls} {m0 : Mem}
   have hstep := walkRefusalStoreStep (calls := calls) (s := s) (b := walkIf_then214_i)
     (off := "%off1.i.i78") (v := "%4") (dest := "if.then") (e := C.stage.e) (j := j)
     (by decide) (by rw [hInv.pc_eq, hblock]; exact walkIf_then214_i_find) rfl rfl he
-    (by simpa only [evalOperand] using hv) hj64
+    (by exact lookupName_of_evalOperand_reg hv) hj64
   exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
 
 /-- **`if.then249.i`'s target, named.**  `gep %e, 8` and `store %idxprom.i`;
@@ -1986,7 +1986,7 @@ theorem WalkLink.if_then249_i_at {calls : Calls} {m0 : Mem}
   have hstep := walkRefusalStoreStep (calls := calls) (s := s) (b := walkIf_then249_i)
     (off := "%off1.i.i80") (v := "%idxprom.i") (dest := "if.then") (e := C.stage.e) (j := j)
     (by decide) (by rw [hInv.pc_eq, hblock]; exact walkIf_then249_i_find) rfl rfl he
-    (by simpa only [evalOperand] using hv) hj64
+    (by exact lookupName_of_evalOperand_reg hv) hj64
   exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
 
 /-- **`if.then418.i`'s target, named.**  `gep %e, 8` and `store %idxprom.i`;
@@ -2008,7 +2008,7 @@ theorem WalkLink.if_then418_i_at {calls : Calls} {m0 : Mem}
   have hstep := walkRefusalStoreStep (calls := calls) (s := s) (b := walkIf_then418_i)
     (off := "%off1.i.i91") (v := "%idxprom.i") (dest := "cleanup474.i") (e := C.stage.e) (j := j)
     (by decide) (by rw [hInv.pc_eq, hblock]; exact walkIf_then418_i_find) rfl rfl he
-    (by simpa only [evalOperand] using hv) hj64
+    (by exact lookupName_of_evalOperand_reg hv) hj64
   exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
 
 /-- **`if.else43.i`'s target, named.**  `gep %e, 8` and `store %idxprom.i`;
@@ -2030,7 +2030,7 @@ theorem WalkLink.if_else43_i_at {calls : Calls} {m0 : Mem}
   have hstep := walkRefusalStoreStep (calls := calls) (s := s) (b := walkIf_else43_i)
     (off := "%off1.i129.i") (v := "%idxprom.i") (dest := "cleanup474.i") (e := C.stage.e) (j := j)
     (by decide) (by rw [hInv.pc_eq, hblock]; exact walkIf_else43_i_find) rfl rfl he
-    (by simpa only [evalOperand] using hv) hj64
+    (by exact lookupName_of_evalOperand_reg hv) hj64
   exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
 
 /-- **`if.then467.i`'s target, named.**  `gep %e, 8` and `store %q.0.i246`;
@@ -2052,7 +2052,7 @@ theorem WalkLink.if_then467_i_at {calls : Calls} {m0 : Mem}
   have hstep := walkRefusalStoreStep (calls := calls) (s := s) (b := walkIf_then467_i)
     (off := "%off1.i.i113") (v := "%q.0.i246") (dest := "cleanup474.i") (e := C.stage.e) (j := j)
     (by decide) (by rw [hInv.pc_eq, hblock]; exact walkIf_then467_i_find) rfl rfl he
-    (by simpa only [evalOperand] using hv) hj64
+    (by exact lookupName_of_evalOperand_reg hv) hj64
   exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
 
 /-- The class-C blocks this module states, in the census's order. -/

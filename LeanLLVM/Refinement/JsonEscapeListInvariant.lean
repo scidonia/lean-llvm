@@ -230,6 +230,7 @@ theorem xl_batch_post_unpack {args mem next out} (h : Γ_xl_batch.post args mem 
               · simp [hw] at h
           | ptr a => simp at h
           | vec n w l => simp at h
+          | poison => simp at h
 
 /-- The count and the memory `@xl_batch` leaves, at an argument list its record
 admits: the population count against eight, and the eight-entry batch written at

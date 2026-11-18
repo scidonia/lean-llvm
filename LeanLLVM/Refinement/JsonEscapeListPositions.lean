@@ -320,7 +320,7 @@ def lstLanesLoopCalls (Γ : MemContract) (bs : BitVec 64) (prevb prevs : Bool) (
     · show evalOperand (withEnv (ld5 s.env bs w)
         { s with pc := (if stepWord bs w = w then "xl_lanes.exit" else "do.body.i"),
                  pre := some "do.body.i" }) (.reg "%or23.i") = some (.int 64 (stepWord bs w))
-      simpa only [withEnv, evalOperand] using hor
+      simp only [withEnv, evalOperand, hor]
     · rw [hiter, stepN_succ]
   word_iterate := by
     intro i s w h

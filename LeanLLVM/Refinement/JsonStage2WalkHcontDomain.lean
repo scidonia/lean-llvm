@@ -143,9 +143,9 @@ theorem hcontWitness_eq {m0 : Mem} (G : WalkGeom m0) (_S : WalkStage G) {C : Wal
     {s : State} (hInv : WalkInv G C s) {x : BitVec 8}
     (h8 : evalOperand s (.reg "%8") = some (.int 8 x)) :
     x = hlastByte G C := by
-  have hcell : lookupName s.env "%8" = some (.int 8 x) := h8
-  have hiter := hInv.iter.reg8
-  rw [hcell] at hiter
+  have hiter : evalOperand s (.reg "%8") = some (.int 8 (hlastByte G C)) :=
+    LeanLLVM.evalOperand_reg_of hInv.iter.reg8
+  rw [h8] at hiter
   have h2 := Option.some.inj hiter
   simp only [Value.int.injEq] at h2
   exact eq_of_heq h2.2

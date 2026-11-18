@@ -152,8 +152,7 @@ noncomputable def runLastFacts_of_seam {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
   { x := hlastByte G C
     h8 := by
       show evalOperand s (.reg "%8") = some (.int 8 (hlastByte G C))
-      simp only [evalOperand]
-      exact hInv.iter.reg8
+      exact LeanLLVM.evalOperand_reg_of hInv.iter.reg8
     hbit := hbit
     N := N
     Cm := Cm
@@ -165,10 +164,9 @@ noncomputable def runLastFacts_of_seam {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
     hmk := hmk
     h8m := by
       show evalOperand sm (.reg "%8") = some (.int 8 (hlastByte G C))
-      simp only [evalOperand]
       have hcell := hHead.inv'.iter.reg8
       rw [hmk] at hcell
-      simpa only [hlastByte] using hcell
+      exact LeanLLVM.evalOperand_reg_of hcell
     Cs := TailStartC C
     ss := hlastRunSeam C sl k b8
     nS := nS

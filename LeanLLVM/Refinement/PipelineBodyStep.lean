@@ -7086,9 +7086,17 @@ theorem tailCleanup_step (calls : Calls) (e : State) (p : String) (op : Operand)
   · rw [show (stateAt e.env e).pc = "cleanup" from hpce]; exact PipelineBodyFacts.findBlock_cleanup
   · exact cleanup_denote_value hpre hinc hop
   · rw [pCleanup_term]
+    have hv : v ≠ .poison := by
+      intro h
+      subst h
+      exact evalOperand_ne_poison (stateAt e.env e) op hop
+    have hcell : lookupName (("%retval.0", v) :: e.env) "%retval.0" = some v := by
+      simp
+    have hread := evalOperand_reg_of (("%retval.0", v) :: e.env) (stateAt e.env e)
+      "%retval.0" v hcell hv
     refine execTerm_ret_value (s := (stateAt e.env e).bind "%retval.0" v)
       (o := Operand.reg "%retval.0") (v := v) ?_
-    simp [evalOperand, State.bind]
+    exact hread
 
 
 /-- The stage-2 call's argument list, at the exit block's own count. -/
@@ -7105,7 +7113,7 @@ theorem pipelineExit_accept_at (tab base : Nat) (s2 : Calls)
     (e : State) (p sel : String) (kv : BitVec 64)
     (b nk xp nxp ep dst ndst ev nev err : Nat)
     (n arm dstcap evcap x37 : BitVec 64) (m30 : Mem) (n30 : Nat)
-    (r35 : CallOutcome)
+    (r35 : CallOutcome) (hret : r35.ret ≠ .poison)
     (hpce : e.pc = "for.cond.cleanup")
     (hpre : e.pre = some p)
     (hinc : phiIncoming p cleanupPhi = some (.reg sel))
@@ -7159,8 +7167,16 @@ theorem pipelineExit_accept_at (tab base : Nat) (s2 : Calls)
   have hstep3 := tailCleanup_step (calls := pipelineCalls tab base s2)
     { e with env := ifEndTail (condOutTail e.env arm kv (0 : BitVec 64)) r35.ret x37, mem := r35.mem, next := r35.next, pc := "cleanup", pre := some "if.end34" }
     "if.end34" (Operand.reg "%call35") r35.ret (by rfl) (by rfl) (by rfl)
-    (by show lookupName (("%call35", r35.ret) :: ("%37", .int 64 x37) :: condOutTail e.env arm kv (0 : BitVec 64)) "%call35" = some r35.ret
-        simp)
+    (by
+      have hcell : lookupName
+          (ifEndTail (condOutTail e.env arm kv (0 : BitVec 64)) r35.ret x37) "%call35"
+          = some r35.ret := by
+        simp [ifEndTail, cells]
+      exact
+        evalOperand_reg_of (ifEndTail (condOutTail e.env arm kv (0 : BitVec 64)) r35.ret x37)
+          { e with env := ifEndTail (condOutTail e.env arm kv (0 : BitVec 64)) r35.ret x37,
+                   mem := r35.mem, next := r35.next, pc := "cleanup", pre := some "if.end34" }
+          "%call35" r35.ret hcell hret)
   exact runFuel_three hstep1 hstep2 hstep3
 
 /-- **The tail on the acceptance branch.**  UTF-8 passes, so the exit block's
@@ -7203,10 +7219,13 @@ theorem pipelineExit_accept (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
   obtain ⟨r35, hcall2, hpost2, -⟩ := units.stage2 _ m30 n30 hpre2
   obtain ⟨k, hk', hv⟩ :=
     units.stage2_verdict_bounded _ m30 n30 r35.ret r35.mem hpost2
+  have hret : r35.ret ≠ .poison := by
+    rw [hk']
+    simp
   refine ⟨k, r35.mem, ?_, hv⟩
   rw [← hk']
   exact pipelineExit_accept_at tab base s2 e p sel kv b nk xp nxp ep dst ndst ev nev
-    err n arm dstcap evcap x37 m30 n30 r35 hpce hpre hinc hsel hnk hb hn harm hxp
+    err n arm dstcap evcap x37 m30 n30 r35 hret hpce hpre hinc hsel hnk hb hn harm hxp
     hnxp hep hdst hdcap hndst hev hecap hnev herr hcall hld hcall2
 
 /-- **The tail on the refusal branch.**  UTF-8 fails, so the exit block's

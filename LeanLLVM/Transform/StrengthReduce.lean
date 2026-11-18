@@ -114,6 +114,7 @@ theorem evalInstr_strengthReduce (calls : Calls) (s : State) (i : Instr) :
                               · simp [evalOperand, Const.toValue, Value.intToNat, hw]
                           | vec n' w' lanes =>
                               simp [evalOperand, Const.toValue, Value.intToNat]
+                          | poison => simp [evalOperand_ne_poison] at hx
                     · rw [ite_eq_right hv]
                   · rw [dite_eq_right h]
               | null => rfl

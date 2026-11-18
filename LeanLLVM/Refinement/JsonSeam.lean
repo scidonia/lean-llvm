@@ -283,6 +283,9 @@ theorem classify32_step_nonptr (calls : Calls) (s : State) (v : Value)
   | float b =>
       simp only [step, hfind, classify32Body, classify32Instrs, denoteCode, denoteRun, State.bindAll, evalInstr,
         evalOperand, harg]
+  | poison =>
+      simp only [step, hfind, classify32Body, classify32Instrs, denoteCode, denoteRun, State.bindAll, evalInstr,
+        evalOperand, harg]
 
 /-- The classifier body run from a state whose argument is not a pointer is
 undefined. -/
@@ -333,6 +336,9 @@ theorem envForBodySym_eq_envForMask (v : Value) (mem : Mem) (next : Nat) :
   | float b =>
       simp only [envForBodySym, classify32_run_ub_of_head (.float b) [] mem next
         (by intro p h; cases h), ↓reduceIte, envForMask]
+  | poison =>
+      simp only [envForBodySym, classify32_run_ub_of_head .poison [] mem next
+        (by intro p h; cases h), ↓reduceIte, envForMask]
 
 /-- `classifySeam_refines`: the installed candidate refines the reference
 selection at every symbol, outside an empty frame.  `replaceScanner_sound`
@@ -369,9 +375,24 @@ theorem classifySeam_refines :
     | .int w x :: _ => exact Or.inl (by simp [envForMask])
     | .vec n w l :: _ => exact Or.inl (by simp [envForMask])
     | .float b :: _ => exact Or.inl (by simp [envForMask])
+    | .poison :: _ => exact Or.inl (by simp [envForMask])
   · exact Or.inl (by simp [envForMask, hs])
 
 /-! ### The caller's step equivalence -/
+
+/-- Two selections that agree at every singleton argument list step through a
+call whose argument list is one operand to the same result.  `evalOperands` of a
+one-operand list is a singleton list, so the agreement is consumed at exactly the
+list the step passes. -/
+theorem evalInstr_call_one_eq {c₁ c₂ : Calls} (s : State) (d : String) (retTy : Ty)
+    (sym : String) (ty : Ty) (op : Operand)
+    (h : ∀ (v : Value) (mem : Mem) (next : Nat), c₁ sym [v] mem next = c₂ sym [v] mem next) :
+    evalInstr c₁ s (.call d retTy sym [(ty, op)]) =
+      evalInstr c₂ s (.call d retTy sym [(ty, op)]) := by
+  simp only [evalInstr, evalOperands]
+  cases evalOperand s op with
+  | none => rfl
+  | some v => simp only [h v s.mem s.next]
 
 /-- The two selections agree at the caller's one call: it passes a single
 argument, and the candidate and the reference agree at every single-argument
@@ -379,11 +400,9 @@ list. -/
 theorem evalInstr_call_eq (s : State) (d : String) (retTy : Ty) :
     evalInstr (envForBodySym jsonSeamSymbol 10000 0 classify32Function) s
         (.call d retTy jsonSeamSymbol [(.ptr, .reg "%b0")]) =
-      evalInstr envForMask s (.call d retTy jsonSeamSymbol [(.ptr, .reg "%b0")]) := by
-  simp only [evalInstr, evalOperands, evalOperand]
-  cases hb : lookupName s.env "%b0" with
-  | none => rfl
-  | some v => simp only [envForBodySym_eq_envForMask v s.mem s.next]
+      evalInstr envForMask s (.call d retTy jsonSeamSymbol [(.ptr, .reg "%b0")]) :=
+  evalInstr_call_one_eq s d retTy jsonSeamSymbol .ptr (.reg "%b0")
+    (fun v mem next => envForBodySym_eq_envForMask v mem next)
 
 /-- The caller's control step is the same under the two selections.  The call is
 the only environment-dependent instruction, and the two selections agree on the
@@ -467,7 +486,7 @@ call gave back.  The selection and the call's outcome are parameters, because
 `replaceScanner_sound` reads the caller's run off the relation's two call
 outcomes. -/
 theorem scanCaller_step_of_call (calls : Calls) (w0 w1 w2 w3 : BitVec 64)
-    (v : Value) (m : Mem) (next : Nat)
+    (v : Value) (m : Mem) (next : Nat) (hv : v ≠ .poison)
     (h : calls jsonSeamSymbol [.ptr 1] (stagedMem w0 w1 w2 w3) 33 = some ⟨v, m, next⟩) :
     step calls scanCaller
         (initState scanCaller [.int 64 w0, .int 64 w1, .int 64 w2, .int 64 w3]) =
@@ -484,25 +503,25 @@ theorem scanCaller_step_of_call (calls : Calls) (w0 w1 w2 w3 : BitVec 64)
   simp [step, scanCaller, Function.findBlock, findBlockList, Function.entry?, List.head?,
     Option.getD, Option.map, initState, List.map, List.zip, List.zipWith, denoteCode, denoteRun, State.bindAll,
     evalInstr, evalOperands, evalOperand, execTerm, Ty.sizeBytes, lookupName,
-    storeValue, h']
+    storeValue, h', hv]
 
 /-- The caller's run under a selection that resolves its call completes in one
 step, for any fuel. -/
 theorem scanCaller_runFuel_succ_of_call (calls : Calls) (w0 w1 w2 w3 : BitVec 64)
-    (v : Value) (m : Mem) (next : Nat)
+    (v : Value) (m : Mem) (next : Nat) (hv : v ≠ .poison)
     (h : calls jsonSeamSymbol [.ptr 1] (stagedMem w0 w1 w2 w3) 33 = some ⟨v, m, next⟩)
     (n : Nat) :
     runFuel calls (n + 1) scanCaller
         (initState scanCaller [.int 64 w0, .int 64 w1, .int 64 w2, .int 64 w3]) =
       some (.ret (some v) m) := by
-  simp only [runFuel, scanCaller_step_of_call calls w0 w1 w2 w3 v m next h]
+  simp only [runFuel, scanCaller_step_of_call calls w0 w1 w2 w3 v m next hv h]
 
 /-- The caller has exactly one behaviour under any selection that resolves its
 call: the call's value, with the call's memory.  `replaceScanner_sound` consumes
 this at the two call outcomes the relation relates, and `scanCaller_beh` is its
 reference-selection instance. -/
 theorem scanCaller_beh_of_call (calls : Calls) (w0 w1 w2 w3 : BitVec 64)
-    (v : Value) (m : Mem) (next : Nat)
+    (v : Value) (m : Mem) (next : Nat) (hv : v ≠ .poison)
     (h : calls jsonSeamSymbol [.ptr 1] (stagedMem w0 w1 w2 w3) 33 = some ⟨v, m, next⟩)
     (o : Outcome) :
     Beh calls scanCaller [.int 64 w0, .int 64 w1, .int 64 w2, .int 64 w3] o ↔
@@ -513,16 +532,16 @@ theorem scanCaller_beh_of_call (calls : Calls) (w0 w1 w2 w3 : BitVec 64)
     · cases n with
       | zero => simp [runFuel] at hn
       | succ k =>
-          rw [scanCaller_runFuel_succ_of_call calls w0 w1 w2 w3 v m next h k] at hn
+          rw [scanCaller_runFuel_succ_of_call calls w0 w1 w2 w3 v m next hv h k] at hn
           simp at hn
     · cases n with
       | zero => simp [runFuel] at hn
       | succ k =>
-          rw [scanCaller_runFuel_succ_of_call calls w0 w1 w2 w3 v m next h k] at hn
+          rw [scanCaller_runFuel_succ_of_call calls w0 w1 w2 w3 v m next hv h k] at hn
           exact (Option.some.inj hn).symm
   · intro ho
     subst ho
-    exact Or.inr ⟨1, scanCaller_runFuel_succ_of_call calls w0 w1 w2 w3 v m next h 0⟩
+    exact Or.inr ⟨1, scanCaller_runFuel_succ_of_call calls w0 w1 w2 w3 v m next hv h 0⟩
 
 /-- The caller has exactly one behaviour under the reference selection, for any
 four words: the mask of the bytes they stage, with the caller's memory intact.
@@ -534,7 +553,7 @@ theorem scanCaller_beh (w0 w1 w2 w3 : BitVec 64) (o : Outcome) :
         (stagedMem w0 w1 w2 w3) :=
   scanCaller_beh_of_call envForMask w0 w1 w2 w3
     (.int 32 (maskOfList (blockOf w0 w1 w2 w3))) (stagedMem w0 w1 w2 w3) 33
-    (envForMask_scanCaller_call w0 w1 w2 w3) o
+    (by simp) (envForMask_scanCaller_call w0 w1 w2 w3) o
 
 /-! ### The contextual replacement -/
 
@@ -568,17 +587,26 @@ theorem replaceScanner_sound :
       rcases classifySeam_refines jsonSeamSymbol [.ptr 1] (stagedMem w0 w1 w2 w3) 33 with
         hunresolved | ⟨r', r, hr', hr, hret, _hle, _hnext, hmem⟩
       · exact absurd hunresolved hresolved
-      · have ho4 : Beh (envForBodySym jsonSeamSymbol 10000 0 classify32Function)
+      · have hrval : r = { ret := .int 32 (maskOfList (blockOf w0 w1 w2 w3)),
+                           mem := stagedMem w0 w1 w2 w3, next := 33 } :=
+          Option.some.inj (hr.symm.trans (envForMask_scanCaller_call w0 w1 w2 w3))
+        have hrne : r.ret ≠ .poison := by
+          rw [hrval]
+          simp
+        have hr'ne : r'.ret ≠ .poison := by
+          rw [hret]
+          exact hrne
+        have ho4 : Beh (envForBodySym jsonSeamSymbol 10000 0 classify32Function)
             scanCaller [.int 64 w0, .int 64 w1, .int 64 w2, .int 64 w3] o := by
           simpa only [Beh, initState_scanCaller_cons w0 w1 w2 w3 rest] using ho
         have hot : o = .ret (some r'.ret) r'.mem :=
           (scanCaller_beh_of_call (envForBodySym jsonSeamSymbol 10000 0 classify32Function)
-            w0 w1 w2 w3 r'.ret r'.mem r'.next hr' o).1 ho4
+            w0 w1 w2 w3 r'.ret r'.mem r'.next hr'ne hr' o).1 ho4
         refine ⟨.ret (some r.ret) r.mem, ?hsource, ?hagree⟩
         · have hsource' : Beh envForMask scanCaller
               [.int 64 w0, .int 64 w1, .int 64 w2, .int 64 w3]
               (.ret (some r.ret) r.mem) :=
-            (scanCaller_beh_of_call envForMask w0 w1 w2 w3 r.ret r.mem r.next hr
+            (scanCaller_beh_of_call envForMask w0 w1 w2 w3 r.ret r.mem r.next hrne hr
               (.ret (some r.ret) r.mem)).2 rfl
           simpa only [Beh, initState_scanCaller_cons w0 w1 w2 w3 rest] using hsource'
         · rw [hot]

@@ -194,8 +194,7 @@ def runFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : Stat
   { x := hlastByte G C
     h8 := by
       show evalOperand s (.reg "%8") = some (.int 8 (hlastByte G C))
-      simp only [evalOperand]
-      exact hInv.iter.reg8
+      exact LeanLLVM.evalOperand_reg_of hInv.iter.reg8
     hbit := hbit
     N := N
     Cm := Cm
@@ -207,10 +206,9 @@ def runFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : Stat
     hmk := hmk
     h8m := by
       show evalOperand sm (.reg "%8") = some (.int 8 (hlastByte G C))
-      simp only [evalOperand]
       have hcell := hHead.inv'.iter.reg8
       rw [hmk] at hcell
-      simpa only [hlastByte] using hcell
+      exact LeanLLVM.evalOperand_reg_of hcell
     Cs := Cs
     ss := ss
     nS := nS
@@ -325,8 +323,7 @@ def runLastFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : 
   { x := hlastByte G C
     h8 := by
       show evalOperand s (.reg "%8") = some (.int 8 (hlastByte G C))
-      simp only [evalOperand]
-      exact hInv.iter.reg8
+      exact LeanLLVM.evalOperand_reg_of hInv.iter.reg8
     hbit := hbit
     N := N
     Cm := Cm
@@ -338,10 +335,9 @@ def runLastFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : 
     hmk := hmk
     h8m := by
       show evalOperand sm (.reg "%8") = some (.int 8 (hlastByte G C))
-      simp only [evalOperand]
       have hcell := hHead.inv'.iter.reg8
       rw [hmk] at hcell
-      simpa only [hlastByte] using hcell
+      exact LeanLLVM.evalOperand_reg_of hcell
     Cs := Cs
     ss := ss
     nS := nS

@@ -136,9 +136,15 @@ theorem evalInstr_next_irr {calls : Calls} (hcalls : CallsNextIrr calls)
           cases hinc : phiIncoming p inc with
           | none => simp [evalInstr, phiSelect, htp, hinc, hpre]
           | some op =>
-              simp only [evalInstr, phiSelect, htp, hinc, hpre]
-              rw [evalOperand_env_eq henv op]
-              cases evalOperand t op <;>
+              have hsel : phiSelect s inc = phiSelect t inc := by
+                simp only [phiSelect, htp, hinc, hpre]
+                cases op with
+                | reg n => exact evalOperand_env_eq henv (.reg n)
+                | global n => exact evalOperand_env_eq henv (.global n)
+                | imm c => cases c <;> rfl
+              simp only [evalInstr]
+              rw [hsel]
+              cases phiSelect t inc <;>
                 simp [OptStateRel, SameApartFromNext, State.bind, henv, hmem, hpc, hpre]
   | ptrtoint d v =>
       simp only [evalInstr]
@@ -213,11 +219,14 @@ theorem evalInstr_next_irr {calls : Calls} (hcalls : CallsNextIrr calls)
               cases vb <;> simp [OptStateRel, SameApartFromNext, State.bind, henv, hmem, hpc, hpre]
           | float z =>
               cases vb <;> simp [OptStateRel, SameApartFromNext, State.bind, henv, hmem, hpc, hpre]
+          | poison =>
+              cases vb <;> simp [OptStateRel, SameApartFromNext, State.bind, henv, hmem, hpc, hpre]
           | ptr x =>
               cases vb with
               | int w y => simp [OptStateRel, SameApartFromNext, State.bind, henv, hmem, hpc, hpre]
               | vec n w l => simp [OptStateRel, SameApartFromNext, State.bind, henv, hmem, hpc, hpre]
               | float z => simp [OptStateRel, SameApartFromNext, State.bind, henv, hmem, hpc, hpre]
+              | poison => simp [OptStateRel, SameApartFromNext, State.bind, henv, hmem, hpc, hpre]
               | ptr y =>
                   cases hic : evalICmpPtr pred x y with
                   | none => simp [hic, OptStateRel]
@@ -262,6 +271,7 @@ theorem evalInstr_next_irr {calls : Calls} (hcalls : CallsNextIrr calls)
           | int w x => exact trivial
           | vec n w l => exact trivial
           | float b => exact trivial
+          | poison => exact trivial
           | ptr addr => exact storeValue_next ⟨henv, hmem, hpc, hpre⟩ ty vv addr
   | gep d elemTy base off =>
       simp only [evalInstr]
@@ -425,6 +435,7 @@ theorem execTerm_next_irr {s t : State} (h : SameApartFromNext s t) (term : Term
           | ptr a => simp [hc, CtrlSameApartFromNext]
           | vec n w l => simp [hc, CtrlSameApartFromNext]
           | float b => simp [hc, CtrlSameApartFromNext]
+          | poison => simp [hc, CtrlSameApartFromNext]
   | unreachable => simp [execTerm, CtrlSameApartFromNext]
 
 set_option linter.unusedSimpArgs false in
@@ -452,7 +463,10 @@ theorem phiSelect_sameApartFromNext {s t : State} (h : SameApartFromNext s t)
       | none => simp only [phiSelect, hsp, htp, hinc]
       | some op =>
           simp only [phiSelect, hsp, htp, hinc]
-          exact evalOperand_env_eq henv op
+          cases op with
+          | reg n => exact evalOperand_env_eq henv (.reg n)
+          | global n => exact evalOperand_env_eq henv (.global n)
+          | imm c => cases c <;> rfl
 
 /-- Installing the same bindings on two states that agree installs them on
 states that agree: only the environment moves, and it moves the same way. -/

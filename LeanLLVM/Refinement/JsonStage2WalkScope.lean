@@ -4224,13 +4224,16 @@ theorem whileBody_find : stage2Body.findBlock "while.body.i" = some whileBodyBlo
 
 macro "walk_close" : tactic => `(tactic|
   (all_goals (try (simp (config := { failIfUnchanged := false })
-    only [cells, evalOperand, denoteCode, State.bindAll]))
+    only [cells, denoteCode, State.bindAll]))
    all_goals (try rfl)
-   all_goals (try assumption)
-   all_goals (try block_lk)
-   all_goals (try (simp only [phiIncoming]; rfl))
-   all_goals (try rfl)
-   all_goals (try (exact evalOperand_lit_of _ _ _))
+   all_goals (try
+     (first
+      | assumption
+      | exact LeanLLVM.Refinement.BlockEval.evalOperand_reg_of _ _ _ _ (by assumption)
+      | block_lk
+      | (simp only [phiIncoming]; rfl)
+      | rfl
+      | (exact evalOperand_lit_of _ _ _)))
    all_goals (try rfl)))
 
 macro "walk_eval" : tactic => `(tactic|
@@ -6770,6 +6773,38 @@ theorem walkDenoteCode_gep8_imm {calls : Calls} (s : State) (d base : String)
       denoteCode calls is (s.bind d (.ptr (a + c))) :=
   denoteCode_cons_of _ _ _ _ _ (walkEvalInstr_gep8_imm calls s d base a c hb hc)
 
+/-- A register read that succeeds names a cell bound to the value it returned.
+`evalOperand` refuses a cell holding the marker, so a read of `some v` also says
+the cell's value is not `poison`: this is the converse of `evalOperand_reg_of`,
+and the way a read at a later environment recovers the binding.  It replaces the
+`simpa only [evalOperand]` bridge that held while `evalOperand` was a lookup. -/
+theorem lookupName_of_evalOperand_reg {s : State} {n : String} {v : Value}
+    (h : evalOperand s (.reg n) = some v) : lookupName s.env n = some v := by
+  cases hlk : lookupName s.env n with
+  | none =>
+      simp only [evalOperand, hlk] at h
+      exact h
+  | some w =>
+      simp only [evalOperand, hlk] at h
+      cases w with
+      | poison => simp at h
+      | int a b => simpa using h
+      | ptr a => simpa using h
+      | vec a b c => simpa using h
+      | float a => simpa using h
+
+/-- Close a read against the binding that holds it, in whichever direction the
+goal names: a binding from a read, a read from a binding, or the read itself
+when both sides already agree.  One name for the three shapes a
+`simpa only [evalOperand]` site carried while `evalOperand` read a cell directly;
+a read and a binding are no longer the same term, so the direction is said here
+rather than at every site. -/
+macro "walk_read" "using" h:term : tactic => `(tactic|
+  (first
+   | exact lookupName_of_evalOperand_reg $h
+   | exact LeanLLVM.evalOperand_reg_of $h
+   | simpa only [evalOperand] using $h))
+
 /-- **Class C: the refusal store.**  One `getelementptr` at `%e + 8`, one
 eight-byte store, and the edge to the refusal's exit.  The memory clauses that
 survive are the ones whose addresses lie outside those eight bytes; `e_z_sep` and
@@ -6783,7 +6818,7 @@ theorem WalkLink.refusalStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
        Instr.store (.int 64) (.reg v) (.reg d)])
     (hterm : B.term = Term.br t)
     (he : lookupName s.env "%e" = some (.ptr C.stage.e))
-    (hv : lookupName s.env v = some (.int 64 (BitVec.ofNat 64 j)))
+    (hv : evalOperand s (.reg v) = some (.int 64 (BitVec.ofNat 64 j)))
     (hj : j ≤ G.n) (hj64 : j < 2 ^ 64)
     (hvd : d ≠ v)
     (hd : d ≠ "%k.0.i249") (hds : d ≠ "%sp.i.0248")
@@ -6807,7 +6842,7 @@ theorem WalkLink.refusalStore {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
         [Instr.store (.int 64) (.reg v) (.reg d)]]
     exact denoteCode_store64_ofNat (calls := calls)
       (env := (d, .ptr (C.stage.e + 8)) :: s.env) s v d
-      (by rw [lookupName_cons_ne _ _ hvd]; exact hv) hj64
+      (by rw [lookupName_cons_ne _ _ hvd]; exact lookupName_of_evalOperand_reg hv) hj64
       (lookupName_cons_self d (.ptr (C.stage.e + 8)) s.env) []
   have hfind' : stage2Body.findBlock s.pc = some B := by rw [hpc]; exact hfind
   have hstep : LeanLLVM.step calls stage2Body s = Ctrl.jump s' := by
@@ -7392,7 +7427,7 @@ theorem WalkLink.condBr {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
     {B : Block} (hfind : stage2Body.findBlock C.block = some B)
     (hinstrs : B.instrs = []) {d tl fl : String} {bit : BitVec 1}
     (hterm : B.term = Term.condbr (.reg d) tl fl)
-    (hd : lookupName s.env d = some (.int 1 bit))
+    (hd : evalOperand s (.reg d) = some (.int 1 bit))
     (hl : WalkLocal { C with block := tl } { s with pc := tl, pre := some s.pc })
     (hf : WalkLocal { C with block := fl } { s with pc := fl, pre := some s.pc }) :
     ∃ s', WalkLink calls G C s
@@ -7400,9 +7435,10 @@ theorem WalkLink.condBr {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
   have hpc : s.pc = C.block := hInv.pc_eq
   let s' : State := { s with pc := (if bit = 1 then tl else fl), pre := some s.pc }
   have hden : denoteCode calls B.instrs s = some s := by rw [hinstrs]; rfl
+  have hdl : lookupName s.env d = some (.int 1 bit) := lookupName_of_evalOperand_reg hd
   have hstep : LeanLLVM.step calls stage2Body s = Ctrl.jump s' := by
     simp only [LeanLLVM.step, hpc, hfind, hden, hterm]
-    exact walkExecTerm_condbr (bit := bit) hd
+    exact walkExecTerm_condbr (bit := bit) hdl
   refine ⟨s', ⟨hInv, hstep, ?_, ?_, rfl⟩⟩
   · have hnm : B.name = C.block := findBlockList_name hfind
     have hle := walkEmitC_condbr_le (findBlockList_mem hfind) hterm

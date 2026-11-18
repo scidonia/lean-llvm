@@ -280,8 +280,8 @@ theorem scalarMerge_at {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
     rw [show sE.pc = "if.end473.i" from
       scalarEntry_pc C s x (BitVec.ofNat 64 (C.k + 1)) (BitVec.ofNat 64 G.nep) G.n
         (BitVec.ofNat 64 (entryPos G C.k)) b35 r₁ r₂ r₃ (BitVec.ofNat 32 7) rdv xA]
-  · exact hinvE.depth_reg
-  · exact hinvE.inc_reg
+  · exact LeanLLVM.evalOperand_reg_of hinvE.depth_reg
+  · exact LeanLLVM.evalOperand_reg_of hinvE.inc_reg
   · exact hinvE.regs ("%nep", .int 64 (BitVec.ofNat 64 G.nep)) (by simp [walkStaticRegs])
   · have hne : G.nep < 2 ^ 64 := by
       have h1 := G.nep_le

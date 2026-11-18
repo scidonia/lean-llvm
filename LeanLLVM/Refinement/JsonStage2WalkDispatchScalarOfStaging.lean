@@ -205,13 +205,12 @@ def hcontScalarPrefix_of_inv {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
       nep := hlastNepV G
       hinc := by
         show evalOperand (scS₄ s x) (.reg "%inc.i") = some (.int 64 (hlastIncV C))
-        simp only [evalOperand]
-        exact scS4_envInc s x (hlastIncV C) hInv.inc_reg
+        exact LeanLLVM.evalOperand_reg_of (scS4_envInc s x (hlastIncV C) hInv.inc_reg)
       hnep := by
         show evalOperand (scS₄ s x) (.reg "%nep") = some (.int 64 (hlastNepV G))
-        simp only [evalOperand]
-        exact scS4_envNep s x (hlastNepV G)
-          (hInv.regs ("%nep", .int 64 (BitVec.ofNat 64 G.nep)) (by simp [walkStaticRegs]))
+        exact LeanLLVM.evalOperand_reg_of
+          (scS4_envNep s x (hlastNepV G)
+            (hInv.regs ("%nep", .int 64 (BitVec.ofNat 64 G.nep)) (by simp [walkStaticRegs])))
       hnext := cont_ult_one G C hk
       ep := G.ep
       v := v

@@ -134,13 +134,13 @@ def lastEntryArm_stringOpener_of_staging {m0 : Mem} {G : WalkGeom m0} (C : WalkC
     (by
       rw [← eq_bit_value hclass]
       exact cont_reg8 hInv)
-    (by simpa only [evalOperand] using hInv.inc_reg)
+    (by walk_read using hInv.inc_reg)
     (by
-      simpa only [evalOperand] using
+      walk_read using
         hInv.regs ("%nep", .int 64 (BitVec.ofNat 64 G.nep)) (by simp [walkStaticRegs]))
     (quoteCount_ge hInv hnot)
     (by
-      simpa only [evalOperand] using
+      walk_read using
         hInv.regs ("%4", .int 64 (BitVec.ofNat 64 G.n)) (by simp [walkStaticRegs]))
     (hInv.regs ("%e", .ptr C.stage.e) (by simp [walkStaticRegs]))
 
@@ -158,7 +158,7 @@ def hcontArm_closeBracketZero_of_staging {m0 : Mem} {G : WalkGeom m0} (C : WalkC
       rw [← eq_bit_value hclass]
       exact cont_reg8 hInv)
     hsp
-    (by simpa only [evalOperand] using hInv.idx_reg)
+    (by walk_read using hInv.idx_reg)
     (hInv.regs ("%e", .ptr C.stage.e) (by simp [walkStaticRegs]))
     (entryPos_le G C.k)
     (entryPos_lt_64 G C.k)
@@ -176,7 +176,7 @@ def lastEntryArm_closeBracketZero_of_staging {m0 : Mem} {G : WalkGeom m0}
       rw [← eq_bit_value hclass]
       exact cont_reg8 hInv)
     hsp
-    (by simpa only [evalOperand] using hInv.idx_reg)
+    (by walk_read using hInv.idx_reg)
     (hInv.regs ("%e", .ptr C.stage.e) (by simp [walkStaticRegs]))
     (entryPos_le G C.k)
     (entryPos_lt_64 G C.k)
@@ -196,7 +196,7 @@ def hcontArm_closeBraceZero_of_staging {m0 : Mem} {G : WalkGeom m0} (C : WalkCar
       rw [← eq_bit_value hclass]
       exact cont_reg8 hInv)
     hsp
-    (by simpa only [evalOperand] using hInv.idx_reg)
+    (by walk_read using hInv.idx_reg)
     (hInv.regs ("%e", .ptr C.stage.e) (by simp [walkStaticRegs]))
     (entryPos_le G C.k)
     (entryPos_lt_64 G C.k)
@@ -214,7 +214,7 @@ def lastEntryArm_closeBraceZero_of_staging {m0 : Mem} {G : WalkGeom m0}
       rw [← eq_bit_value hclass]
       exact cont_reg8 hInv)
     hsp
-    (by simpa only [evalOperand] using hInv.idx_reg)
+    (by walk_read using hInv.idx_reg)
     (hInv.regs ("%e", .ptr C.stage.e) (by simp [walkStaticRegs]))
     (entryPos_le G C.k)
     (entryPos_lt_64 G C.k)

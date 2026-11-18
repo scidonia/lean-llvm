@@ -1060,7 +1060,7 @@ theorem WalkLink.for_body_i_i {calls : Calls} {m0 : Mem}
     have hsel : lookupName s.env "%inc.i.i" = some (.int 64 iv) := by
       have h := hv
       rw [hop] at h
-      simpa [evalOperand] using h
+      exact lookupName_of_evalOperand_reg h
     have hiv : iv = BitVec.ofNat 64 i0 := by
       rw [hsel] at hinc
       have h2 : (Value.int 64 iv : Value) = Value.int 64 (BitVec.ofNat 64 i0) :=

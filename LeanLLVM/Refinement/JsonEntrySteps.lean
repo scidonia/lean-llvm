@@ -196,8 +196,15 @@ macro "ent_lk " h:term : tactic =>
 
 /-- The value a register reads, as the hypothesis a step consumes. -/
 theorem evalOperand_reg_of (env : Env) (s : State) (n : String) (v : Value)
-    (h : lookupName env n = some v) : evalOperand (withEnv env s) (.reg n) = some v := by
+    (h : lookupName env n = some v) (hv : v ≠ .poison := by intro hh; cases hh) :
+    evalOperand (withEnv env s) (.reg n) = some v := by
   simp only [withEnv, evalOperand, h]
+  cases v with
+  | poison => exact absurd rfl hv
+  | int w x => rfl
+  | ptr a => rfl
+  | vec n w l => rfl
+  | float b => rfl
 
 /-- The eight-lane vector `x` broadcast: the shape `insertelement` + `shufflevector`
 produces for a group's block base. -/
@@ -1193,8 +1200,20 @@ theorem shr56_toNat (w : BitVec 64) : (w >>> 56).toNat = byteOf w 7 := by
   unfold byteOf
   rw [Nat.mod_eq_of_lt (by omega : w.toNat / 2 ^ (8 * 7) < 256)]
 
+/-- Close an environment side condition against the run's environment: a
+`lookupName` down the list, or the read of that cell, which is the lookup
+filtered by the poison marker and so equals it whenever the cell holds a value
+other than the marker.  The read is closed outright, because a caller that goes
+on to rewrite the `lookupName` itself supplies the read shape; a goal already in
+that shape is left to the caller. -/
 macro "ent_auto" : tactic =>
-  `(tactic| ((repeat rw [lookupName_cons_ne _ _ (by decide)]); (try exact lookupName_cons_self _ _ _); (try assumption)))
+  `(tactic| first
+    | (refine JsonEntrySteps.evalOperand_reg_of _ _ _ _ ?_
+       repeat rw [lookupName_cons_ne _ _ (by decide)]
+       first | exact lookupName_cons_self _ _ _ | assumption)
+    | ((repeat rw [lookupName_cons_ne _ _ (by decide)])
+       (try exact lookupName_cons_self _ _ _)
+       (try assumption)))
 
 macro "ent_step " l:term : tactic =>
   `(tactic| rw [denoteCode_cons_of _ _ _ _ _ $l])

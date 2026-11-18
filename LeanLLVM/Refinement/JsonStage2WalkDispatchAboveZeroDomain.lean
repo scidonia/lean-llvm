@@ -222,8 +222,8 @@ theorem depthOne_last_reachable {args : List Value} {m0 : Mem} {next : Nat}
   have hInv := seededInv (S := S) hargs hnext hn
   have h8s : evalOperand (openerHead G S args next) (.reg "%8") =
       some (.int 8 (BitVec.ofNat 8 c.toNat)) := by
-    simpa only [evalOperand] using
-      seed_head_byte G S (openerHead G S args next) h.entryByte_zero hInv
+    exact LeanLLVM.evalOperand_reg_of
+      (seed_head_byte G S (openerHead G S args next) h.entryByte_zero hInv)
   have hopen : BitVec.ofNat 8 c.toNat = BitVec.ofNat 8 91 ∨
       BitVec.ofNat 8 c.toNat = BitVec.ofNat 8 123 := by
     rcases hc with rfl | rfl
@@ -240,7 +240,7 @@ theorem depthOne_last_reachable {args : List Value} {m0 : Mem} {next : Nat}
   refine ⟨C', s', hInv', hblock', hsp1, hk1, ?_⟩
   have hreg := hInv'.iter.reg8
   rw [hk1, h.entryByte_one] at hreg
-  simpa only [evalOperand] using hreg
+  exact LeanLLVM.evalOperand_reg_of hreg
 
 /-- **`[,0`/`[:0`'s depth-one head is the delimiter's, with an entry left.**  The
 three-entry document's opener is entry zero at depth zero, so the head is one level
@@ -273,8 +273,8 @@ theorem depthOne_cont_reachable {args : List Value} {m0 : Mem} {next : Nat}
   have hInv := seededInv (S := S) hargs hnext hn
   have h8s : evalOperand (openerHead G S args next) (.reg "%8") =
       some (.int 8 (BitVec.ofNat 8 c.toNat)) := by
-    simpa only [evalOperand] using
-      seed_head_byte G S (openerHead G S args next) h.entryByte_zero hInv
+    exact LeanLLVM.evalOperand_reg_of
+      (seed_head_byte G S (openerHead G S args next) h.entryByte_zero hInv)
   have hopen : BitVec.ofNat 8 c.toNat = BitVec.ofNat 8 91 ∨
       BitVec.ofNat 8 c.toNat = BitVec.ofNat 8 123 := by
     rcases hc with rfl | rfl
@@ -292,7 +292,7 @@ theorem depthOne_cont_reachable {args : List Value} {m0 : Mem} {next : Nat}
   refine ⟨C', s', hInv', hblock', hsp1, hk1, hguard, ?_⟩
   have hreg := hInv'.iter.reg8
   rw [hk1, h.entryByte_one] at hreg
-  simpa only [evalOperand] using hreg
+  exact LeanLLVM.evalOperand_reg_of hreg
 
 /-! ### The arms, through the real dispatch
 
@@ -454,7 +454,7 @@ theorem depthZero_no_commaAbove {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (
   · have hreg := seed_reg8 G S s h hInv
     have htoNat : ((44 : UInt8)).toNat = 44 := by decide
     rw [htoNat] at hreg
-    simpa only [evalOperand] using hreg
+    exact LeanLLVM.evalOperand_reg_of hreg
   · simp [walkSeed]
 
 /-- **The document `:` carries the colon's byte but the seed's depth is zero**, so the
@@ -467,7 +467,7 @@ theorem depthZero_no_colonAbove {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (
   · have hreg := seed_reg8 G S s h hInv
     have htoNat : ((58 : UInt8)).toNat = 58 := by decide
     rw [htoNat] at hreg
-    simpa only [evalOperand] using hreg
+    exact LeanLLVM.evalOperand_reg_of hreg
   · simp [walkSeed]
 
 /-! ### The instrument -/

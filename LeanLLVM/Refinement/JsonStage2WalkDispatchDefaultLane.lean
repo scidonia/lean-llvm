@@ -95,18 +95,24 @@ noncomputable def lowHeadChain_of_lane {m0 : Mem} {G : WalkGeom m0} {C : WalkCar
   have h8q : lookupName (lowS₃ s x).env "%8" = some (.int 8 x) := by
     simp only [lowS₃, lowS₂, lowS₁, State.bind]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
-    simpa only [evalOperand] using h8
-  have hincq : evalOperand (lowS₃ s x) (.reg "%inc.i") =
+    walk_read using h8
+  have hincCell : lookupName (lowS₃ s x).env "%inc.i" =
       some (.int 64 (hlastIncV C)) := by
-    simp only [evalOperand, lowS₃, lowS₂, lowS₁, State.bind]
+    simp only [lowS₃, lowS₂, lowS₁, State.bind]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
     simpa only [hlastIncV] using hInv.inc_reg
-  have hnepq : evalOperand (lowS₃ s x) (.reg "%nep") =
+  have hincq : evalOperand (lowS₃ s x) (.reg "%inc.i") =
+      some (.int 64 (hlastIncV C)) :=
+    LeanLLVM.evalOperand_reg_of hincCell
+  have hnepCell : lookupName (lowS₃ s x).env "%nep" =
       some (.int 64 (hlastNepV G)) := by
-    simp only [evalOperand, lowS₃, lowS₂, lowS₁, State.bind]
+    simp only [lowS₃, lowS₂, lowS₁, State.bind]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
     simpa only [hlastNepV] using
       hInv.regs ("%nep", .int 64 (hlastNepV G)) (by simp [walkStaticRegs])
+  have hnepq : evalOperand (lowS₃ s x) (.reg "%nep") =
+      some (.int 64 (hlastNepV G)) :=
+    LeanLLVM.evalOperand_reg_of hnepCell
   have h5q : lookupName (lowS₃ s x).env "%5" = some (.ptr G.ep) := by
     simp only [lowS₃, lowS₂, lowS₁, State.bind]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
@@ -189,18 +195,24 @@ noncomputable def midHeadChain_of_lane {m0 : Mem} {G : WalkGeom m0} {C : WalkCar
   have h8q : lookupName (midS₄ s x).env "%8" = some (.int 8 x) := by
     simp only [midS₄, midS₃, midS₂, midS₁, State.bind]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
-    simpa only [evalOperand] using h8
-  have hincq : evalOperand (midS₄ s x) (.reg "%inc.i") =
+    walk_read using h8
+  have hincCell : lookupName (midS₄ s x).env "%inc.i" =
       some (.int 64 (hlastIncV C)) := by
-    simp only [evalOperand, midS₄, midS₃, midS₂, midS₁, State.bind]
+    simp only [midS₄, midS₃, midS₂, midS₁, State.bind]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
     simpa only [hlastIncV] using hInv.inc_reg
-  have hnepq : evalOperand (midS₄ s x) (.reg "%nep") =
+  have hincq : evalOperand (midS₄ s x) (.reg "%inc.i") =
+      some (.int 64 (hlastIncV C)) :=
+    LeanLLVM.evalOperand_reg_of hincCell
+  have hnepCell : lookupName (midS₄ s x).env "%nep" =
       some (.int 64 (hlastNepV G)) := by
-    simp only [evalOperand, midS₄, midS₃, midS₂, midS₁, State.bind]
+    simp only [midS₄, midS₃, midS₂, midS₁, State.bind]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
     simpa only [hlastNepV] using
       hInv.regs ("%nep", .int 64 (hlastNepV G)) (by simp [walkStaticRegs])
+  have hnepq : evalOperand (midS₄ s x) (.reg "%nep") =
+      some (.int 64 (hlastNepV G)) :=
+    LeanLLVM.evalOperand_reg_of hnepCell
   have h5q : lookupName (midS₄ s x).env "%5" = some (.ptr G.ep) := by
     simp only [midS₄, midS₃, midS₂, midS₁, State.bind]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
@@ -279,18 +291,24 @@ noncomputable def othHeadChain_of_lane {m0 : Mem} {G : WalkGeom m0} {C : WalkCar
   have h8q : lookupName (othS₄ s x).env "%8" = some (.int 8 x) := by
     simp only [othS₄, othS₃, othS₂, othS₁, State.bind]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
-    simpa only [evalOperand] using h8
-  have hincq : evalOperand (othS₄ s x) (.reg "%inc.i") =
+    walk_read using h8
+  have hincCell : lookupName (othS₄ s x).env "%inc.i" =
       some (.int 64 (hlastIncV C)) := by
-    simp only [evalOperand, othS₄, othS₃, othS₂, othS₁, State.bind]
+    simp only [othS₄, othS₃, othS₂, othS₁, State.bind]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
     simpa only [hlastIncV] using hInv.inc_reg
-  have hnepq : evalOperand (othS₄ s x) (.reg "%nep") =
+  have hincq : evalOperand (othS₄ s x) (.reg "%inc.i") =
+      some (.int 64 (hlastIncV C)) :=
+    LeanLLVM.evalOperand_reg_of hincCell
+  have hnepCell : lookupName (othS₄ s x).env "%nep" =
       some (.int 64 (hlastNepV G)) := by
-    simp only [evalOperand, othS₄, othS₃, othS₂, othS₁, State.bind]
+    simp only [othS₄, othS₃, othS₂, othS₁, State.bind]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
     simpa only [hlastNepV] using
       hInv.regs ("%nep", .int 64 (hlastNepV G)) (by simp [walkStaticRegs])
+  have hnepq : evalOperand (othS₄ s x) (.reg "%nep") =
+      some (.int 64 (hlastNepV G)) :=
+    LeanLLVM.evalOperand_reg_of hnepCell
   have h5q : lookupName (othS₄ s x).env "%5" = some (.ptr G.ep) := by
     simp only [othS₄, othS₃, othS₂, othS₁, State.bind]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
@@ -369,18 +387,24 @@ noncomputable def brkHeadChain_of_lane {m0 : Mem} {G : WalkGeom m0} {C : WalkCar
   have h8q : lookupName (brkS₄ s x).env "%8" = some (.int 8 x) := by
     simp only [brkS₄, brkS₃, brkS₂, brkS₁, State.bind]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
-    simpa only [evalOperand] using h8
-  have hincq : evalOperand (brkS₄ s x) (.reg "%inc.i") =
+    walk_read using h8
+  have hincCell : lookupName (brkS₄ s x).env "%inc.i" =
       some (.int 64 (hlastIncV C)) := by
-    simp only [evalOperand, brkS₄, brkS₃, brkS₂, brkS₁, State.bind]
+    simp only [brkS₄, brkS₃, brkS₂, brkS₁, State.bind]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
     simpa only [hlastIncV] using hInv.inc_reg
-  have hnepq : evalOperand (brkS₄ s x) (.reg "%nep") =
+  have hincq : evalOperand (brkS₄ s x) (.reg "%inc.i") =
+      some (.int 64 (hlastIncV C)) :=
+    LeanLLVM.evalOperand_reg_of hincCell
+  have hnepCell : lookupName (brkS₄ s x).env "%nep" =
       some (.int 64 (hlastNepV G)) := by
-    simp only [evalOperand, brkS₄, brkS₃, brkS₂, brkS₁, State.bind]
+    simp only [brkS₄, brkS₃, brkS₂, brkS₁, State.bind]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
     simpa only [hlastNepV] using
       hInv.regs ("%nep", .int 64 (hlastNepV G)) (by simp [walkStaticRegs])
+  have hnepq : evalOperand (brkS₄ s x) (.reg "%nep") =
+      some (.int 64 (hlastNepV G)) :=
+    LeanLLVM.evalOperand_reg_of hnepCell
   have h5q : lookupName (brkS₄ s x).env "%5" = some (.ptr G.ep) := by
     simp only [brkS₄, brkS₃, brkS₂, brkS₁, State.bind]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
@@ -460,18 +484,24 @@ noncomputable def bhHeadChain_of_lane {m0 : Mem} {G : WalkGeom m0} {C : WalkCarr
   have h8q : lookupName (bhS₄ s x).env "%8" = some (.int 8 x) := by
     simp only [bhS₄, bhS₃, bhS₂, bhS₁, State.bind]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
-    simpa only [evalOperand] using h8
-  have hincq : evalOperand (bhS₄ s x) (.reg "%inc.i") =
+    walk_read using h8
+  have hincCell : lookupName (bhS₄ s x).env "%inc.i" =
       some (.int 64 (hlastIncV C)) := by
-    simp only [evalOperand, bhS₄, bhS₃, bhS₂, bhS₁, State.bind]
+    simp only [bhS₄, bhS₃, bhS₂, bhS₁, State.bind]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
     simpa only [hlastIncV] using hInv.inc_reg
-  have hnepq : evalOperand (bhS₄ s x) (.reg "%nep") =
+  have hincq : evalOperand (bhS₄ s x) (.reg "%inc.i") =
+      some (.int 64 (hlastIncV C)) :=
+    LeanLLVM.evalOperand_reg_of hincCell
+  have hnepCell : lookupName (bhS₄ s x).env "%nep" =
       some (.int 64 (hlastNepV G)) := by
-    simp only [evalOperand, bhS₄, bhS₃, bhS₂, bhS₁, State.bind]
+    simp only [bhS₄, bhS₃, bhS₂, bhS₁, State.bind]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
     simpa only [hlastNepV] using
       hInv.regs ("%nep", .int 64 (hlastNepV G)) (by simp [walkStaticRegs])
+  have hnepq : evalOperand (bhS₄ s x) (.reg "%nep") =
+      some (.int 64 (hlastNepV G)) :=
+    LeanLLVM.evalOperand_reg_of hnepCell
   have h5q : lookupName (bhS₄ s x).env "%5" = some (.ptr G.ep) := by
     simp only [bhS₄, bhS₃, bhS₂, bhS₁, State.bind]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
@@ -552,18 +582,24 @@ noncomputable def brcHeadChain_of_lane {m0 : Mem} {G : WalkGeom m0} {C : WalkCar
   have h8q : lookupName (brcS₄ s x).env "%8" = some (.int 8 x) := by
     simp only [brcS₄, brcS₃, brcS₂, brcS₁, State.bind]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
-    simpa only [evalOperand] using h8
-  have hincq : evalOperand (brcS₄ s x) (.reg "%inc.i") =
+    walk_read using h8
+  have hincCell : lookupName (brcS₄ s x).env "%inc.i" =
       some (.int 64 (hlastIncV C)) := by
-    simp only [evalOperand, brcS₄, brcS₃, brcS₂, brcS₁, State.bind]
+    simp only [brcS₄, brcS₃, brcS₂, brcS₁, State.bind]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
     simpa only [hlastIncV] using hInv.inc_reg
-  have hnepq : evalOperand (brcS₄ s x) (.reg "%nep") =
+  have hincq : evalOperand (brcS₄ s x) (.reg "%inc.i") =
+      some (.int 64 (hlastIncV C)) :=
+    LeanLLVM.evalOperand_reg_of hincCell
+  have hnepCell : lookupName (brcS₄ s x).env "%nep" =
       some (.int 64 (hlastNepV G)) := by
-    simp only [evalOperand, brcS₄, brcS₃, brcS₂, brcS₁, State.bind]
+    simp only [brcS₄, brcS₃, brcS₂, brcS₁, State.bind]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
     simpa only [hlastNepV] using
       hInv.regs ("%nep", .int 64 (hlastNepV G)) (by simp [walkStaticRegs])
+  have hnepq : evalOperand (brcS₄ s x) (.reg "%nep") =
+      some (.int 64 (hlastNepV G)) :=
+    LeanLLVM.evalOperand_reg_of hnepCell
   have h5q : lookupName (brcS₄ s x).env "%5" = some (.ptr G.ep) := by
     simp only [brcS₄, brcS₃, brcS₂, brcS₁, State.bind]
     repeat rw [lookupName_cons_ne _ _ (by decide)]

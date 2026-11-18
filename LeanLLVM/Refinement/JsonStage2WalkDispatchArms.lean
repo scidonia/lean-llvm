@@ -722,7 +722,7 @@ theorem LastEntryArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
       lettersCleanupMerge_at G C s hInv hblock h8 hbit h110 hne102 hHead hm hmk h8m
         hTail ht htk htok (by omega) (by omega)
     have hspv : evalOperand sd (Operand.reg "%sp.i.0248") =
-        some (.int 32 (BitVec.ofNat 32 Cd.sp)) := hseg.inv'.depth_reg
+        some (.int 32 (BitVec.ofNat 32 Cd.sp)) := LeanLLVM.evalOperand_reg_of hseg.inv'.depth_reg
     have hguard : C.k < G.nep :=
       WalkInv.head_lt hInv (by simpa only [walkLoopHead] using hblock)
     have hnep64 : G.nep < 2 ^ 64 := by
@@ -738,13 +738,13 @@ theorem LastEntryArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
       hseg hblockD hkD hpreD (by decide) hspv (by decide) ?_ hnepD
       (by omega) hcap hseg.inv'.depth_cap hseg.inv'.sp_le_wlen hpriceD
     · -- the merge's index cell is the header's increment, at the entry's successor
-      simpa only [evalOperand] using hincD
+      walk_read using hincD
   | .fLetter h8 hbit h110 h102 hHead hnH hm hmk h8m hTail ht htk htok => by
     obtain ⟨Cd, sd, p, hseg, hblockD, hkD, hpreD, hincD, hnepD, hpriceD⟩ :=
       fCleanupMerge_at G C s hInv hblock h8 hbit h110 h102 hHead hm hmk h8m
         hTail ht htk htok (by omega) (by omega)
     have hspv : evalOperand sd (Operand.reg "%sp.i.0248") =
-        some (.int 32 (BitVec.ofNat 32 Cd.sp)) := hseg.inv'.depth_reg
+        some (.int 32 (BitVec.ofNat 32 Cd.sp)) := LeanLLVM.evalOperand_reg_of hseg.inv'.depth_reg
     have hguard : C.k < G.nep :=
       WalkInv.head_lt hInv (by simpa only [walkLoopHead] using hblock)
     have hnep64 : G.nep < 2 ^ 64 := by
@@ -760,13 +760,13 @@ theorem LastEntryArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
       hseg hblockD hkD hpreD (by decide) hspv (by decide) ?_ hnepD
       (by omega) hcap hseg.inv'.depth_cap hseg.inv'.sp_le_wlen hpriceD
     · -- the merge's index cell is the header's increment, at the entry's successor
-      simpa only [evalOperand] using hincD
+      walk_read using hincD
   | .classC h8 h110 h125 hHead hnH hm hmk h8m hSpan hs hnS hTail ht htk htok => by
     obtain ⟨Cd, sd, p, hseg, hblockD, hkD, hpreD, hincD, hnepD, hpriceD⟩ :=
       classCMerge_at G C s hInv hblock h8 h110 h125 hHead hm hmk h8m hSpan hs hnS
         hTail ht htk htok (by omega) (by omega)
     have hspv : evalOperand sd (Operand.reg "%sp.i.0248") =
-        some (.int 32 (BitVec.ofNat 32 Cd.sp)) := hseg.inv'.depth_reg
+        some (.int 32 (BitVec.ofNat 32 Cd.sp)) := LeanLLVM.evalOperand_reg_of hseg.inv'.depth_reg
     have hguard : C.k < G.nep :=
       WalkInv.head_lt hInv (by simpa only [walkLoopHead] using hblock)
     have hnep64 : G.nep < 2 ^ 64 := by
@@ -782,12 +782,13 @@ theorem LastEntryArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
       hseg hblockD hkD hpreD (by decide) hspv (by decide) ?_ hnepD
       (by omega) hcap hseg.inv'.depth_cap hseg.inv'.sp_le_wlen hpriceD
     · -- the merge's index cell is the header's increment, at the entry's successor
-      simpa only [evalOperand] using hincD
+      walk_read using hincD
   | .run f => by
     obtain ⟨Cm, sm, nSc, hseg, hInvD, hblockD, hpreD, hkD, hincD, hnepD, _hnR, hprice⟩ :=
       runLastMerge_at G C s hInv hblock f
     have hspv : evalOperand (revMergeS sm f.c) (Operand.reg "%sp.i.0248") =
-        some (.int 32 (BitVec.ofNat 32 (revMergeC Cm).sp)) := hInvD.depth_reg
+        some (.int 32 (BitVec.ofNat 32 (revMergeC Cm).sp)) :=
+      LeanLLVM.evalOperand_reg_of hInvD.depth_reg
     have hlast : C.k + 1 = G.nep := by
       -- the head's guard gives `C.k < G.nep`, and `hnot` closes the successor
       have hlt := WalkInv.head_lt hInv (by simpa only [walkLoopHead] using hblock)
@@ -807,7 +808,7 @@ theorem LastEntryArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
       hInvD.depth_cap hInvD.sp_le_wlen ?_
     · -- the merge's index cell is the header's increment, at the stream's end
       rw [← hlast]
-      simpa only [evalOperand] using hincD
+      walk_read using hincD
     · -- the price: the composition's own, read at the credit boundary
       exact hprice
 

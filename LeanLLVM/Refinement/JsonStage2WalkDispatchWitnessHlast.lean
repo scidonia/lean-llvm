@@ -1283,8 +1283,7 @@ noncomputable def hlastFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
   -- the head's cells, derived once: the prefix's segment reads them and the bundle
   -- records them, so neither is stated here twice
   have h8 : evalOperand s (.reg "%8") = some (.int 8 (hlastByte G C)) := by
-    simp only [evalOperand]
-    exact hInv.iter.reg8
+    exact LeanLLVM.evalOperand_reg_of hInv.iter.reg8
   -- the class's other six bits, from the two that name it: the byte is 126 or 127
   have hlt91 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 91) = 0 :=
     hlast_slt_zero_of_toInt_le (by decide) hlt125
@@ -1303,12 +1302,13 @@ noncomputable def hlastFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
       some (.int 64 (hlastIncV C)) := by
     simp only [evalOperand]
     rw [headAS4_envInc s (hlastByte G C)]
-    exact hInv.inc_reg
+    exact LeanLLVM.evalOperand_reg_of hInv.inc_reg
   have hnepE : evalOperand (headAS₄ s (hlastByte G C)) (.reg "%nep") =
       some (.int 64 (hlastNepV G)) := by
     simp only [evalOperand]
     rw [headAS4_envNep s (hlastByte G C)]
-    exact hInv.regs ("%nep", .int 64 (BitVec.ofNat 64 G.nep)) (by simp [walkStaticRegs])
+    exact LeanLLVM.evalOperand_reg_of
+      (hInv.regs ("%nep", .int 64 (BitVec.ofNat 64 G.nep)) (by simp [walkStaticRegs]))
   have hgeE : evalICmp .ult (hlastIncV C) (hlastNepV G) = 0 := by
     show evalICmp .ult (BitVec.ofNat 64 (C.k + 1)) (BitVec.ofNat 64 G.nep) = 0
     rw [hk]
@@ -1419,7 +1419,7 @@ noncomputable def hlastFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
       simp only [evalOperand]
       rw [(hlastMergeByte_envs C s (hlastByte G C) (hlastIncV C) (hlastNepV G) v ix b35 hb
         r₁ r₂ r₃ cA rdv xA).1]
-      exact hInv.inc_reg
+      exact LeanLLVM.evalOperand_reg_of hInv.inc_reg
     hnepM := by
       show lookupName (hlastMergeAt C s v ix b35 hb r₁ r₂ r₃ cA rdv xA).env "%nep" =
         some (.int 64 (hlastNepV G))
@@ -1437,7 +1437,7 @@ noncomputable def hlastFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
       simp only [evalOperand]
       rw [(hlastMergeByte_envs C s (hlastByte G C) (hlastIncV C) (hlastNepV G) v ix b35 hb
         r₁ r₂ r₃ cA rdv xA).2.2.2.2]
-      exact hInv.depth_reg
+      exact LeanLLVM.evalOperand_reg_of hInv.depth_reg
     heM := by
       show lookupName (hlastMergeAt C s v ix b35 hb r₁ r₂ r₃ cA rdv xA).env "%e" =
         some (.ptr C.stage.e)

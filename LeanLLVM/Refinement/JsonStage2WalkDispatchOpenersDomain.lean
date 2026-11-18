@@ -196,7 +196,7 @@ theorem bracketHead_opener {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : S
   have hreg := seed_head_byte G S s h.entryByte_zero hInv
   have ht : ((91 : UInt8)).toNat = 91 := by decide
   rw [ht] at hreg
-  exact Or.inl hreg
+  exact Or.inl (LeanLLVM.evalOperand_reg_of hreg)
 
 /-- **`{"a":1}`'s head byte is an opener**: `%8` is `{`. -/
 theorem braceHead_opener {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
@@ -206,7 +206,7 @@ theorem braceHead_opener {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : Sta
   have hreg := seed_head_byte G S s h.entryByte_zero hInv
   have ht : ((123 : UInt8)).toNat = 123 := by decide
   rw [ht] at hreg
-  exact Or.inr hreg
+  exact Or.inr (LeanLLVM.evalOperand_reg_of hreg)
 
 /-- **The scalar `0`'s head byte is not an opener.**  The same detector at the digit
 `48`: the head's `%8` is that byte, and it is neither `91` nor `123`, so neither disjunct
@@ -218,12 +218,15 @@ theorem digitHead_not_opener {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s :
   have hreg0 := seed_reg8 G S s h hInv
   have ht : ((48 : UInt8)).toNat = 48 := by decide
   rw [ht] at hreg0
+  have hregE : evalOperand s (.reg "%8") =
+      some (.int 8 (BitVec.ofNat 8 48)) :=
+    LeanLLVM.evalOperand_reg_of hreg0
   rintro (h8 | h8)
   · have hbad : some (Value.int 8 (BitVec.ofNat 8 91)) =
-        some (Value.int 8 (BitVec.ofNat 8 48)) := h8.symm.trans hreg0
+        some (Value.int 8 (BitVec.ofNat 8 48)) := h8.symm.trans hregE
     exact absurd hbad (by decide)
   · have hbad : some (Value.int 8 (BitVec.ofNat 8 123)) =
-        some (Value.int 8 (BitVec.ofNat 8 48)) := h8.symm.trans hreg0
+        some (Value.int 8 (BitVec.ofNat 8 48)) := h8.symm.trans hregE
     exact absurd hbad (by decide)
 
 /-! ### The arms at the documents -/
@@ -745,12 +748,15 @@ theorem secondValue_second_entry_not_opener {m0 : Mem} {G : WalkGeom m0}
     rw [hk, secondValue_second_entryByte h] at hiter
     have ht : ((48 : UInt8)).toNat = 48 := by decide
     rwa [ht] at hiter
+  have hregE : evalOperand s (.reg "%8") =
+      some (.int 8 (BitVec.ofNat 8 48)) :=
+    LeanLLVM.evalOperand_reg_of hreg
   rintro (h8 | h8)
   · have hbad : some (Value.int 8 (BitVec.ofNat 8 91)) =
-        some (Value.int 8 (BitVec.ofNat 8 48)) := h8.symm.trans hreg
+        some (Value.int 8 (BitVec.ofNat 8 48)) := h8.symm.trans hregE
     exact absurd hbad (by decide)
   · have hbad : some (Value.int 8 (BitVec.ofNat 8 123)) =
-        some (Value.int 8 (BitVec.ofNat 8 48)) := h8.symm.trans hreg
+        some (Value.int 8 (BitVec.ofNat 8 48)) := h8.symm.trans hregE
     exact absurd hbad (by decide)
 
 /-! ### The instrument -/

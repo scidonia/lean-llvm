@@ -346,7 +346,7 @@ theorem WalkDispatchResult.ofHlastMerge {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
   refine WalkDispatchResult.merge (hlastMergeCF f) (hlastMergeF f)
     (((12 + hlastByteCount f.hb) + 3) + 1) (hlastMergeCF f).sp f.k2 "if.end473.i"
     (Operand.reg "%sp.i.0248") (Operand.reg "%inc.i") f.nepv seg rfl rfl rfl (by decide)
-    hinv.depth_reg (by decide) f.hk2 f.hnepM ?_ ?_ hinv.depth_cap hinv.sp_le_wlen ?_
+    (LeanLLVM.evalOperand_reg_of hinv.depth_reg) (by decide) f.hk2 f.hnepM ?_ ?_ hinv.depth_cap hinv.sp_le_wlen ?_
   · have h1 := f.hlastK
     have h2 := f.hk2nep
     show C.k < f.k2

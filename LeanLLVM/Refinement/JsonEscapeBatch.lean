@@ -42,8 +42,15 @@ theorem denoteCode_cons_of (calls : Calls) (i : Instr) (is : List Instr) (s s' :
   LeanLLVM.denoteCode_cons_of calls i is s s' h hi
 
 theorem evalOperand_reg_of (env : Env) (s : State) (n : String) (v : Value)
-    (h : lookupName env n = some v) : evalOperand (withEnv env s) (.reg n) = some v := by
+    (h : lookupName env n = some v) (hv : v ≠ .poison := by intro hh; cases hh) :
+    evalOperand (withEnv env s) (.reg n) = some v := by
   simp only [withEnv, evalOperand, h]
+  cases v with
+  | poison => exact absurd rfl hv
+  | int w x => rfl
+  | ptr a => rfl
+  | vec n w l => rfl
+  | float b => rfl
 
 /-- A `phi` in a run reads the snapshot, not a cell a sibling just bound: a
 binding the run has not installed yet cannot shadow its operand. -/
@@ -485,7 +492,7 @@ theorem xl_batch_satisfies : Satisfies escapeCalls xlBatchFunction Γ_xl_batch :
 #guard_msgs in
 #print axioms evalOperand_reg_of
 
-/-- info: 'LeanLLVM.Refinement.evalOperand_lit_of' does not depend on any axioms -/
+/-- info: 'LeanLLVM.Refinement.evalOperand_lit_of' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms evalOperand_lit_of
 

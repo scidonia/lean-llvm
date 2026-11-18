@@ -226,7 +226,9 @@ theorem refuseStep₅ {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarr
     (hsp : C.sp = 0) :
     WalkLink calls G C s { C with block := "if.then56.i" } (refuseS₅ s) := by
   have h1 : evalOperand s (.reg "%sp.i.0248") = some (.int 32 (BitVec.ofNat 32 0)) := by
-    simpa only [evalOperand, hsp] using hInv.depth_reg
+    have hd := hInv.depth_reg
+    rw [hsp] at hd
+    exact LeanLLVM.evalOperand_reg_of hd
   obtain ⟨s', hl, hs'⟩ := WalkLink.if_then53_i_at G C s hInv hblock h1
   have hbit : evalICmp .eq (BitVec.ofNat 32 0) (BitVec.ofNat 32 0) = 1 := by decide
   have hstate : s' = refuseS₅ s := hs'.trans (by simp [refuseS₅, hbit])
@@ -658,7 +660,9 @@ theorem colStep₅ {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
     (hsp : C.sp = 0) :
     WalkLink calls G C s { C with block := "if.then176.i" } (colS₅ s) := by
   have h1 : evalOperand s (.reg "%sp.i.0248") = some (.int 32 (BitVec.ofNat 32 0)) := by
-    simpa only [evalOperand, hsp] using hInv.depth_reg
+    have hd := hInv.depth_reg
+    rw [hsp] at hd
+    exact LeanLLVM.evalOperand_reg_of hd
   obtain ⟨s', hl, hs'⟩ := WalkLink.if_then173_i_at G C s hInv hblock h1
   have hbit : evalICmp .eq (BitVec.ofNat 32 0) (BitVec.ofNat 32 0) = 1 := by decide
   have hstate : s' = colS₅ s := hs'.trans (by simp [colS₅, hbit])
@@ -860,7 +864,9 @@ theorem comStep₅ {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
     (hsp : C.sp = 0) :
     WalkLink calls G C s { C with block := "if.then130.i" } (comS₅ s) := by
   have h1 : evalOperand s (.reg "%sp.i.0248") = some (.int 32 (BitVec.ofNat 32 0)) := by
-    simpa only [evalOperand, hsp] using hInv.depth_reg
+    have hd := hInv.depth_reg
+    rw [hsp] at hd
+    exact LeanLLVM.evalOperand_reg_of hd
   obtain ⟨s', hl, hs'⟩ := WalkLink.if_then127_i_at G C s hInv hblock h1
   have hbit : evalICmp .eq (BitVec.ofNat 32 0) (BitVec.ofNat 32 0) = 1 := by decide
   have hstate : s' = comS₅ s := hs'.trans (by simp [comS₅, hbit])
@@ -1038,7 +1044,7 @@ theorem smStep₅ {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
     simp only [stage2StackExtent] at h
     omega
   have h1 : evalOperand s (.reg "%sp.i.0248") = some (.int 32 (BitVec.ofNat 32 C.sp)) := by
-    simpa only [evalOperand] using hInv.depth_reg
+    walk_read using hInv.depth_reg
   have hne : BitVec.ofNat 32 C.sp ≠ BitVec.ofNat 32 0 := by
     intro h
     have h' := congrArg BitVec.toNat h
@@ -1352,7 +1358,7 @@ theorem mlStep₅ {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
     simp only [stage2StackExtent] at h
     omega
   have h1 : evalOperand s (.reg "%sp.i.0248") = some (.int 32 (BitVec.ofNat 32 C.sp)) := by
-    simpa only [evalOperand] using hInv.depth_reg
+    walk_read using hInv.depth_reg
   have hne : BitVec.ofNat 32 C.sp ≠ BitVec.ofNat 32 0 := by
     intro h
     have h' := congrArg BitVec.toNat h
@@ -1450,12 +1456,13 @@ theorem mismatchedRefuse_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : Wa
     L₅.inv'.depth_reg
   have h8₆ : lookupName (mlS₅ (refuseS₄ (refuseS₃ (refuseS₂ (refuseS₁ s))))).env "%8" =
       some (.int 8 (BitVec.ofNat 8 93)) := by
-    simpa only [mlS₅, refuseS₄, refuseS₃, refuseS₂, refuseS₁, State.bind, evalOperand,
+    have hb := lookupName_of_evalOperand_reg h8
+    simpa only [mlS₅, refuseS₄, refuseS₃, refuseS₂, refuseS₁, State.bind,
       lookupName_cons_ne (k := "%cmp54.i") (n := "%8") _ _ (by decide),
       lookupName_cons_ne (k := "%SwitchLeaf10") (n := "%8") _ _ (by decide),
       lookupName_cons_ne (k := "%Pivot12") (n := "%8") _ _ (by decide),
       lookupName_cons_ne (k := "%Pivot20") (n := "%8") _ _ (by decide),
-      lookupName_cons_ne (k := "%Pivot22") (n := "%8") _ _ (by decide)] using h8
+      lookupName_cons_ne (k := "%Pivot22") (n := "%8") _ _ (by decide)] using hb
   have hct₆ : lookupName (mlS₅ (refuseS₄ (refuseS₃ (refuseS₂ (refuseS₁ s))))).env
       "%ctype.i" = some (.ptr C.stage.ctype) :=
     L₅.inv'.ptrs.2.2.2.1

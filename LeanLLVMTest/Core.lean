@@ -931,7 +931,7 @@ narrowed to a special case — changes this file rather than passing unnoticed.
 #guard_msgs in
 #print axioms LeanLLVM.evalInstr_pre_of_not_phi
 
-/-- info: 'LeanLLVM.evalOperand_setPre' does not depend on any axioms -/
+/-- info: 'LeanLLVM.evalOperand_setPre' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms LeanLLVM.evalOperand_setPre
 

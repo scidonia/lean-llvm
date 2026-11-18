@@ -137,18 +137,60 @@ def noCalls : Calls := fun _ _ _ _ => none
 /-- Read an operand.  A register and a global symbol are both read from the
 environment, under their own spellings; a symbol the environment does not bind
 has no value, which the instruction reading it turns into `ub` — the same
-reading an unresolved call gets.  A literal is read by `Const.toValue`, which
-does not consult the state: a constant's value is a function of the constant,
-and that is why a global symbol is not one. -/
+reading an unresolved call gets.  A cell bound to `Value.poison` is a use of a
+poison value and has no value either: poison reaches a cell only from a `phi`'s
+taken poison incoming, and the read is where it becomes `ub`, so every
+instruction reaches values through here and cannot observe the marker.  A block
+that does not read the cell is therefore unaffected by it.  A literal is read by
+`Const.toValue`, which does not consult the state: a constant's value is a
+function of the constant, and that is why a global symbol is not one. -/
 def evalOperand (s : State) : Operand → Option Value
-  | .reg n => lookupName s.env n
-  | .global n => lookupName s.env n
+  | .reg n =>
+      match lookupName s.env n with
+      | some .poison => none
+      | v => v
+  | .global n =>
+      match lookupName s.env n with
+      | some .poison => none
+      | v => v
   | .imm c => Const.toValue c
 
 /-- Reading an operand does not consult the predecessor field. -/
 theorem evalOperand_setPre (s : State) (p : Option String) (o : Operand) :
     evalOperand (s.setPre p) o = evalOperand s o := by
   cases o <;> rfl
+
+/-- A register read at a cell that holds a value other than the marker: the one
+shape a step lemma consumes.  The value argument is the constructor the lookup's
+hypothesis names, so the side condition is closed by the default tactic at a
+call site rather than restated there. -/
+theorem evalOperand_reg_of {s : State} {n : String} {v : Value}
+    (h : lookupName s.env n = some v) (hv : v ≠ .poison := by intro hh; cases hh) :
+    evalOperand s (.reg n) = some v := by
+  simp only [evalOperand, h]
+  cases v with
+  | poison => exact absurd rfl hv
+  | int w x => rfl
+  | ptr a => rfl
+  | vec n w l => rfl
+  | float b => rfl
+
+/-- No read yields the poison marker: `Value.poison` reaches a cell only from a
+`phi`'s poison incoming, and `evalOperand` refuses it at the read.  A proof that
+has split a read's result into its constructors closes the marker's alternative
+with this, because that alternative is empty. -/
+theorem evalOperand_ne_poison (s : State) (o : Operand) :
+    evalOperand s o ≠ some .poison := by
+  cases o with
+  | reg n =>
+      cases h : lookupName s.env n with
+      | none => simp [evalOperand, h]
+      | some v => cases v <;> simp [evalOperand, h]
+  | global n =>
+      cases h : lookupName s.env n with
+      | none => simp [evalOperand, h]
+      | some v => cases v <;> simp [evalOperand, h]
+  | imm c => cases c <;> simp [evalOperand, Const.toValue]
 
 /-- The value a `phi` selects in the state `s`: the incoming operand whose label
 is the block the edge came from, read from `s`'s own environment.
@@ -160,6 +202,14 @@ predecessor the edge actually came from.  A `phi` whose predecessor *is* listed
 and whose selected operand reads is defined; it is valid LLVM, and the value it
 selects is the incoming operand's value.
 
+A `poison` literal is the one selected operand that is defined without reading:
+LLVM's `phi` over a poison incoming yields poison, not undefined behaviour, and
+an unread `phi` result has no use to make it one.  Selection therefore binds
+`Value.poison` — the marker `evalOperand` refuses, so the block's *read* of the
+destination is where the poison becomes `ub`, and a block that does not read it
+never does.  A poison operand reached through a register is already a use, and
+`evalOperand` refuses it there, so it stays `none`.
+
 Selection is a pure function of the state it is given.  `denoteCode` gives every
 member of a block's leading `phi` run the same state, which is what makes the
 run read one snapshot of the environment the edge carried in. -/
@@ -169,6 +219,7 @@ def phiSelect (s : State) (inc : List (String × Operand)) : Option Value :=
   | some p =>
       match phiIncoming p inc with
       | none => none
+      | some (.imm Const.poison) => some .poison
       | some op => evalOperand s op
 
 /-- Binary integer operations.  Division and remainder by zero are undefined
@@ -201,6 +252,7 @@ def Value.intToNat (w : Nat) : Value → Option Nat
   | .ptr _ => none
   | .vec .. => none
   | .float _ => none
+  | .poison => none
 
 /-- The integer value an address converts to, at the model's pointer width.
 `BitVec.ofNat 64` is the identity on the addresses a 64-bit pointer holds, and
@@ -655,9 +707,10 @@ def evalInstr (calls : Calls) (s : State) : Instr → Option State
   | .extractelement d n w v idx =>
       -- A lane read.  The index is read as an unsigned count — the width it was
       -- written at is not part of the instruction — and one outside the vector's
-      -- lane range is `none`.  LLVM calls that poison, and this model has no
-      -- poison: `Const.toValue` answers a `poison` or `undef` literal the same
-      -- way, so an out-of-range read is undefined behaviour rather than a lane
+      -- lane range is `none`.  LLVM calls that poison; this model binds
+      -- `Value.poison` only from a `phi`'s poison incoming, and answers an
+      -- out-of-range lane read with `none` as it answers a `poison` or `undef`
+      -- literal read directly: undefined behaviour at the use rather than a lane
       -- the compiler may choose.
       match evalOperand s v, evalOperand s idx with
       | some vv, some (.int _ k) =>
@@ -727,6 +780,11 @@ def evalInstr (calls : Calls) (s : State) : Instr → Option State
       -- bound.  `evalInstr` remains the instruction's meaning for a `phi` that
       -- is not part of such a run — a list the parser refuses — and the
       -- semantics of a well-formed block's run is `denoteCode`'s, below.
+      --
+      -- A poisoned incoming is selected, not refused: the destination binds
+      -- `Value.poison`, and the use that reads it is `ub` (`evalOperand`).  A
+      -- `phi` whose result is never read therefore cannot make its block `ub`,
+      -- which is the case LLVM leaves defined.
       (phiSelect s inc).map fun v => s.bind d v
 
 /-! ### Pointer comparison
@@ -854,6 +912,7 @@ theorem evalInstr_gep_none_of_base {calls : Calls} {s : State} {d : String}
   | int w x => rfl
   | vec n w l => rfl
   | float b => rfl
+  | poison => rfl
 
 /-- An index that is not an integer is refused, a pointer base or not: a pointer
 offset by a pointer has no meaning here. -/
@@ -866,6 +925,7 @@ theorem evalInstr_gep_none_of_off {calls : Calls} {s : State} {d : String}
   | ptr b => simp only [evalInstr, hb, ho]
   | vec n w l => simp only [evalInstr, hb, ho]
   | float b => simp only [evalInstr, hb, ho]
+  | poison => simp only [evalInstr, hb, ho]
 
 /-- An operand that does not read — an unbound register, an `undef` or `poison`
 literal — is refused before either value shape is examined. -/
@@ -895,7 +955,8 @@ The accepting case of each lane instruction and the refusal its out-of-range
 index gets.  Together they are the statement that a lane read returns *that*
 lane, and that an index the vector does not have is undefined behaviour rather
 than a lane the compiler may pick: LLVM calls the latter poison, and this model
-has no poison, so it answers `none`, exactly as it does for a `poison` literal.
+answers `none` — as it does for a `poison` literal read directly — rather than
+binding the marker a `phi` binds.
 -/
 
 /-- A lane index at or past the list's length names no lane.  This is the step
@@ -947,7 +1008,7 @@ theorem evalInstr_inttoptr_ptrtoint {calls : Calls} {s : State} {d e : String}
     evalInstr calls (s.bind d (.ofAddr a)) (.inttoptr e (.reg d)) =
       some ((s.bind d (.ofAddr a)).bind e (.ptr a)) := by
   have hlookup : evalOperand (s.bind d (.ofAddr a)) (.reg d) = some (.ofAddr a) := by
-    simp [evalOperand, State.bind]
+    simp [evalOperand, State.bind, Value.ofAddr]
   rw [evalInstr_inttoptr hlookup]
   simp [Value.ofAddr, Nat.mod_eq_of_lt ha]
 
@@ -1095,7 +1156,22 @@ theorem phiSelect_eq {s : State} {p : String} {inc : List (String × Operand)}
     {op : Operand} {v : Value} (hpre : s.pre = some p)
     (hinc : phiIncoming p inc = some op) (hop : evalOperand s op = some v) :
     phiSelect s inc = some v := by
-  simp [phiSelect, hpre, hinc, hop]
+  simp only [phiSelect, hpre, hinc]
+  cases op with
+  | reg n => simpa only [evalOperand] using hop
+  | global n => simpa only [evalOperand] using hop
+  | imm c =>
+      -- A `poison` literal selects the marker, so a hypothesis that the read
+      -- *yields a value* rules it out; every other literal is read by
+      -- `Const.toValue`, which both sides share.
+      cases c with
+      | poison => simp [evalOperand, Const.toValue] at hop
+      | int w x => simpa only [evalOperand, Const.toValue] using hop
+      | null => simpa only [evalOperand, Const.toValue] using hop
+      | undef => simpa only [evalOperand, Const.toValue] using hop
+      | splat n w x => simpa only [evalOperand, Const.toValue] using hop
+      | vector w l => simpa only [evalOperand, Const.toValue] using hop
+      | float b => simpa only [evalOperand, Const.toValue] using hop
 
 /-- A block's leading `phi` run is one step: one snapshot in, all bindings out. -/
 theorem denoteRun_phiRun {calls : Calls} {s : State} {p : String}
@@ -1333,6 +1409,127 @@ def runFuel (calls : Calls) : Nat → Function → State → Option Outcome
       | .ret v s' => some (.ret v s'.mem)
       | .jump s' => runFuel calls n f s'
 
+/-- A `ret`'s value is read through `evalOperand`, so it is never the marker. -/
+theorem step_ret_ne_poison {calls : Calls} {f : Function} {s : State} {v : Value}
+    {s' : State} (h : step calls f s = .ret (some v) s') : v ≠ .poison := by
+  unfold step at h
+  cases hfind : f.findBlock s.pc with
+  | none => simp only [hfind] at h; cases h
+  | some b =>
+    simp only [hfind] at h
+    cases hcode : denoteCode calls b.instrs s with
+    | none => simp only [hcode] at h; cases h
+    | some s'' =>
+      simp only [hcode] at h
+      cases ht : b.term with
+      | ret ty op =>
+          rw [ht] at h
+          cases ty with
+          | void =>
+              cases op with
+              | none => simp [execTerm] at h
+              | some o => simp [execTerm] at h
+          | int w =>
+              cases op with
+              | none => simp [execTerm] at h
+              | some o =>
+                  simp only [execTerm] at h
+                  split at h
+                  · rename_i x hx
+                    have hne : x ≠ .poison := by
+                      intro hh
+                      exact evalOperand_ne_poison s'' o (by rw [hx, hh])
+                    cases h
+                    exact hne
+                  · cases h
+          | ptr =>
+              cases op with
+              | none => simp [execTerm] at h
+              | some o =>
+                  simp only [execTerm] at h
+                  split at h
+                  · rename_i x hx
+                    have hne : x ≠ .poison := by
+                      intro hh
+                      exact evalOperand_ne_poison s'' o (by rw [hx, hh])
+                    cases h
+                    exact hne
+                  · cases h
+          | vec n e =>
+              cases op with
+              | none => simp [execTerm] at h
+              | some o =>
+                  simp only [execTerm] at h
+                  split at h
+                  · rename_i x hx
+                    have hne : x ≠ .poison := by
+                      intro hh
+                      exact evalOperand_ne_poison s'' o (by rw [hx, hh])
+                    cases h
+                    exact hne
+                  · cases h
+          | array n e =>
+              cases op with
+              | none => simp [execTerm] at h
+              | some o =>
+                  simp only [execTerm] at h
+                  split at h
+                  · rename_i x hx
+                    have hne : x ≠ .poison := by
+                      intro hh
+                      exact evalOperand_ne_poison s'' o (by rw [hx, hh])
+                    cases h
+                    exact hne
+                  · cases h
+          | struct nm bytes =>
+              cases op with
+              | none => simp [execTerm] at h
+              | some o =>
+                  simp only [execTerm] at h
+                  split at h
+                  · rename_i x hx
+                    have hne : x ≠ .poison := by
+                      intro hh
+                      exact evalOperand_ne_poison s'' o (by rw [hx, hh])
+                    cases h
+                    exact hne
+                  · cases h
+          | double =>
+              cases op with
+              | none => simp [execTerm] at h
+              | some o =>
+                  simp only [execTerm] at h
+                  split at h
+                  · rename_i x hx
+                    have hne : x ≠ .poison := by
+                      intro hh
+                      exact evalOperand_ne_poison s'' o (by rw [hx, hh])
+                    cases h
+                    exact hne
+                  · cases h
+      | br d => rw [ht] at h; simp [execTerm] at h
+      | condbr c t e =>
+          rw [ht] at h
+          simp only [execTerm] at h
+          repeat' split at h
+          all_goals (cases h)
+      | unreachable => rw [ht] at h; simp [execTerm] at h
+
+/-- No completed run returns the marker: a return's value is a read. -/
+theorem runFuel_ret_ne_poison {calls : Calls} {f : Function} :
+    ∀ {n : Nat} {s : State} {v : Value} {m : Mem},
+      runFuel calls n f s = some (.ret (some v) m) → v ≠ .poison
+  | 0, s, v, m, h => by simp [runFuel] at h
+  | n + 1, s, v, m, h => by
+      simp only [runFuel] at h
+      split at h
+      · cases h
+      · rename_i v' s' hs
+        cases h
+        exact step_ret_ne_poison hs
+      · rename_i s' hs
+        exact runFuel_ret_ne_poison (n := n) (s := s') h
+
 /-- A completed run keeps its outcome with one more step of fuel: the outcome
 was produced by a prefix, and the extra step is never taken. -/
 theorem runFuel_succ_some {calls : Calls} {f : Function} {s : State} {o : Outcome} :
@@ -1492,6 +1689,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
       | none => rfl
       | some va =>
         cases va with
+        | poison => rfl
         | float b => rfl
         | int w x =>
             cases evalOperand s b <;> dsimp only <;> rfl
@@ -1502,6 +1700,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
             | none => rfl
             | some vb =>
               cases vb with
+              | poison => rfl
               | float b => rfl
               | int w y => dsimp only; rfl
               | vec n w l => dsimp only; rfl
@@ -1516,6 +1715,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
       | none => rfl
       | some vc =>
         cases vc with
+        | poison => rfl
         | float b => rfl
         | int w cbit =>
           cases w with
@@ -1586,6 +1786,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
       | some vv =>
         try dsimp only
         cases vv with
+        | poison => rfl
         | float b => rfl
         | int w' x =>
           try dsimp only
@@ -1603,6 +1804,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
       | some vv =>
         try dsimp only
         cases vv with
+        | poison => rfl
         | float b => rfl
         | int w' x =>
           try dsimp only
@@ -1620,6 +1822,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
       | some vv =>
         try dsimp only
         cases vv with
+        | poison => rfl
         | float b => rfl
         | int w' x =>
           try dsimp only
@@ -1637,6 +1840,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
       | some vv =>
         try dsimp only
         cases vv with
+        | poison => rfl
         | int w' x => rfl
         | ptr a =>
           try dsimp only
@@ -1654,6 +1858,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
       | some vv =>
         try dsimp only
         cases vv with
+        | poison => rfl
         | int w' x =>
           simp only [Value.toAddr]
           repeat' split
@@ -1668,6 +1873,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
       | some vv =>
         try dsimp only
         cases vv with
+        | poison => rfl
         | int w' x =>
           try dsimp only
           by_cases hw : w' = wIn
@@ -1685,6 +1891,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
       | some va =>
         try dsimp only
         cases va with
+        | poison => rfl
         | float x =>
           try dsimp only
           cases evalOperand s b with
@@ -1692,6 +1899,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
           | some vb =>
             try dsimp only
             cases vb with
+            | poison => rfl
             | float y => rfl
             | int w z => rfl
             | ptr p => rfl
@@ -1706,6 +1914,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
       | some va =>
         try dsimp only
         cases va with
+        | poison => rfl
         | float x =>
           try dsimp only
           cases evalOperand s b with
@@ -1713,6 +1922,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
           | some vb =>
             try dsimp only
             cases vb with
+            | poison => rfl
             | float y => rfl
             | int w z => rfl
             | ptr p => rfl
@@ -1727,6 +1937,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
       | some vv =>
         try dsimp only
         cases vv with
+        | poison => rfl
         | float x => rfl
         | int w z => rfl
         | ptr p => rfl
@@ -1740,6 +1951,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
         | some va =>
           try dsimp only
           cases va with
+          | poison => rfl
           | float x =>
             try dsimp only
             cases evalOperand s b with
@@ -1747,6 +1959,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
             | some vb =>
               try dsimp only
               cases vb with
+              | poison => rfl
               | float y => rfl
               | int w z => rfl
               | ptr p => rfl
@@ -1761,6 +1974,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
       | some vv =>
         try dsimp only
         cases vv with
+        | poison => rfl
         | float x => rfl
         | int w z => rfl
         | ptr p => rfl
@@ -1772,6 +1986,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
       | some vv =>
         try dsimp only
         cases vv with
+        | poison => rfl
         | float x => rfl
         | int w z =>
           try dsimp only
@@ -1788,6 +2003,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
       | some pv =>
         try dsimp only
         cases pv with
+        | poison => rfl
         | float b => rfl
         | int w x => rfl
         | ptr addr =>
@@ -1807,6 +2023,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
         | some pv =>
           try dsimp only
           cases pv with
+          | poison => rfl
           | float b => rfl
           | int w x => rfl
           | ptr addr => rfl
@@ -1817,6 +2034,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
       | none => rfl
       | some bv =>
         cases bv with
+        | poison => rfl
         | float b => rfl
         | int w x => rfl
         | ptr a =>
@@ -1826,6 +2044,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
           | some ov =>
             try dsimp only
             cases ov with
+            | poison => rfl
             | float b => rfl
             | int w n =>
               try dsimp only
@@ -1922,6 +2141,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
       | some vv =>
         try dsimp only
         cases vv with
+        | poison => rfl
         | float b => rfl
         | int w x => rfl
         | ptr a => rfl
@@ -1945,6 +2165,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
         | some iv =>
           try dsimp only
           cases iv with
+          | poison => rfl
           | float b => rfl
           | int wi k =>
             try dsimp only
@@ -1972,6 +2193,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
           | some iv =>
             try dsimp only
             cases iv with
+            | poison => rfl
             | float b => rfl
             | int wi k =>
               try dsimp only
@@ -2369,12 +2591,11 @@ theorem evalOperand_agree {s t : State} {op : Operand}
     evalOperand s op = evalOperand t op := by
   cases op with
   | reg n =>
-      simpa only [evalOperand] using h n (by simp only [Operand.regs]; exact List.mem_singleton_self n)
+      simp only [evalOperand, h n (by simp only [Operand.regs]; exact List.mem_singleton_self n)]
   -- A global symbol is read from the environment under its key, which is in the
   -- operand's read set, so the same transport that carries a register carries it.
   | global n =>
-      simpa only [evalOperand] using
-        h n (by simp only [Operand.regs]; exact List.mem_singleton_self n)
+      simp only [evalOperand, h n (by simp only [Operand.regs]; exact List.mem_singleton_self n)]
   | imm c => rfl
 
 /-- An operand the instruction evaluates reads the same at two states that agree
@@ -2439,9 +2660,23 @@ theorem phiSelect_agree {ns : List String} {s t : State} {d : String} {ty : Ty}
       | none => simp only [phiSelect, hsp, htp, hinc]
       | some op =>
           simp only [phiSelect, hsp, htp, hinc]
-          exact evalOperand_agree_of_uses
-            (hl := fun n hmem => hl n (hread n hmem))
-            (hsub := fun n hn' => phi_operand_regs_uses hinc hn')
+          cases op with
+          | reg n =>
+              exact evalOperand_agree_of_uses
+                (hl := fun n hmem => hl n (hread n hmem))
+                (hsub := fun n hn' => phi_operand_regs_uses hinc hn')
+          | global n =>
+              exact evalOperand_agree_of_uses
+                (hl := fun n hmem => hl n (hread n hmem))
+                (hsub := fun n hn' => phi_operand_regs_uses hinc hn')
+          | imm c =>
+              -- A `poison` literal selects the marker, which is the same on both
+              -- sides; every other literal is read by `Const.toValue`.
+              cases c <;> first
+                | rfl
+                | exact evalOperand_agree_of_uses
+                    (hl := fun n hmem => hl n (hread n hmem))
+                    (hsub := fun n hn' => phi_operand_regs_uses hinc hn')
 
 /-- **A store's success and its written bytes depend only on the memory.**  The
 shape tests `storeValue` performs read the type and the value, never the state,
@@ -2470,6 +2705,7 @@ theorem storeValue_agree {ns : List String} {s t s' : State} {ty : Ty} {v : Valu
         cases hs
     | ptr a => simp only [storeValue] at hs; cases hs
     | vec n' w' lanes => simp only [storeValue] at hs; cases hs
+    | poison => simp only [storeValue] at hs; cases hs
   | ptr =>
     cases v with
     | float b => simp only [storeValue] at hs; cases hs
@@ -2481,6 +2717,7 @@ theorem storeValue_agree {ns : List String} {s t s' : State} {ty : Ty} {v : Valu
       simp only [storeValue, t']
     | int w x => simp only [storeValue] at hs; cases hs
     | vec n' w' lanes => simp only [storeValue] at hs; cases hs
+    | poison => simp only [storeValue] at hs; cases hs
   | void => simp only [storeValue] at hs; cases hs
   | double =>
     cases v with
@@ -2493,6 +2730,7 @@ theorem storeValue_agree {ns : List String} {s t s' : State} {ty : Ty} {v : Valu
     | int w x => simp only [storeValue] at hs; cases hs
     | ptr a => simp only [storeValue] at hs; cases hs
     | vec n' w' lanes => simp only [storeValue] at hs; cases hs
+    | poison => simp only [storeValue] at hs; cases hs
   | array n elem => cases v <;> simp only [storeValue] at hs <;> cases hs
   | struct name bytes => cases v <;> simp only [storeValue] at hs <;> cases hs
   | vec n elem =>
@@ -2512,6 +2750,7 @@ theorem storeValue_agree {ns : List String} {s t s' : State} {ty : Ty} {v : Valu
           cases hs
       | int w' x => simp only [storeValue] at hs; cases hs
       | ptr a => simp only [storeValue] at hs; cases hs
+      | poison => simp only [storeValue] at hs; cases hs
     | ptr => cases v <;> simp only [storeValue] at hs <;> cases hs
     | void => cases v <;> simp only [storeValue] at hs <;> cases hs
     | vec n2 e2 => cases v <;> simp only [storeValue] at hs <;> cases hs
@@ -2616,6 +2855,7 @@ theorem select_int (calls : Calls) {ns : List String} {d : String} {wt : Nat}
   rcases hcv : evalOperand t c with _ | vc
   · simp [evalInstr, hc, hcv] at hs
   · cases vc with
+    | poison => simp [evalOperand_ne_poison] at hcv
     | float b => simp [evalInstr, hc, hcv] at hs
     | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
     | ptr a' => simp [evalInstr, hc, hcv] at hs
@@ -2649,6 +2889,7 @@ theorem select_ptr (calls : Calls) {ns : List String} {d : String}
   rcases hcv : evalOperand t c with _ | vc
   · simp [evalInstr, hc, hcv] at hs
   · cases vc with
+    | poison => simp [evalOperand_ne_poison] at hcv
     | float b => simp [evalInstr, hc, hcv] at hs
     | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
     | ptr a' => simp [evalInstr, hc, hcv] at hs
@@ -2682,6 +2923,7 @@ theorem select_void (calls : Calls) {ns : List String} {d : String}
   rcases hcv : evalOperand t c with _ | vc
   · simp [evalInstr, hc, hcv] at hs
   · cases vc with
+    | poison => simp [evalOperand_ne_poison] at hcv
     | float b => simp [evalInstr, hc, hcv] at hs
     | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
     | ptr a' => simp [evalInstr, hc, hcv] at hs
@@ -2715,6 +2957,7 @@ theorem select_vecI (calls : Calls) {ns : List String} {d : String} {nv wi : Nat
   rcases hcv : evalOperand t c with _ | vc
   · simp [evalInstr, hc, hcv] at hs
   · cases vc with
+    | poison => simp [evalOperand_ne_poison] at hcv
     | float b => simp [evalInstr, hc, hcv] at hs
     | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
     | ptr a' => simp [evalInstr, hc, hcv] at hs
@@ -2742,6 +2985,7 @@ theorem select_vecP (calls : Calls) {ns : List String} {d : String} {nv : Nat}
   rcases hcv : evalOperand t c with _ | vc
   · simp [evalInstr, hc, hcv] at hs
   · cases vc with
+    | poison => simp [evalOperand_ne_poison] at hcv
     | float b => simp [evalInstr, hc, hcv] at hs
     | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
     | ptr a' => simp [evalInstr, hc, hcv] at hs
@@ -2775,6 +3019,7 @@ theorem select_vecV (calls : Calls) {ns : List String} {d : String} {nv : Nat}
   rcases hcv : evalOperand t c with _ | vc
   · simp [evalInstr, hc, hcv] at hs
   · cases vc with
+    | poison => simp [evalOperand_ne_poison] at hcv
     | float b => simp [evalInstr, hc, hcv] at hs
     | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
     | ptr a' => simp [evalInstr, hc, hcv] at hs
@@ -2808,6 +3053,7 @@ theorem select_vecVv (calls : Calls) {ns : List String} {d : String} {nv n2 : Na
   rcases hcv : evalOperand t c with _ | vc
   · simp [evalInstr, hc, hcv] at hs
   · cases vc with
+    | poison => simp [evalOperand_ne_poison] at hcv
     | float b => simp [evalInstr, hc, hcv] at hs
     | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
     | ptr a' => simp [evalInstr, hc, hcv] at hs
@@ -2841,6 +3087,7 @@ theorem select_double (calls : Calls) {ns : List String} {d : String}
   rcases hcv : evalOperand t c with _ | vc
   · simp [evalInstr, hc, hcv] at hs
   · cases vc with
+    | poison => simp [evalOperand_ne_poison] at hcv
     | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
     | ptr a' => simp [evalInstr, hc, hcv] at hs
     | float c' => simp [evalInstr, hc, hcv] at hs
@@ -2874,6 +3121,7 @@ theorem select_array (calls : Calls) {ns : List String} {d : String}
   rcases hcv : evalOperand t c with _ | vc
   · simp [evalInstr, hc, hcv] at hs
   · cases vc with
+    | poison => simp [evalOperand_ne_poison] at hcv
     | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
     | ptr a' => simp [evalInstr, hc, hcv] at hs
     | float c' => simp [evalInstr, hc, hcv] at hs
@@ -2907,6 +3155,7 @@ theorem select_struct (calls : Calls) {ns : List String} {d : String}
   rcases hcv : evalOperand t c with _ | vc
   · simp [evalInstr, hc, hcv] at hs
   · cases vc with
+    | poison => simp [evalOperand_ne_poison] at hcv
     | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
     | ptr a' => simp [evalInstr, hc, hcv] at hs
     | float c' => simp [evalInstr, hc, hcv] at hs
@@ -2940,6 +3189,7 @@ theorem select_vecD (calls : Calls) {ns : List String} {d : String}
   rcases hcv : evalOperand t c with _ | vc
   · simp [evalInstr, hc, hcv] at hs
   · cases vc with
+    | poison => simp [evalOperand_ne_poison] at hcv
     | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
     | ptr a' => simp [evalInstr, hc, hcv] at hs
     | float c' => simp [evalInstr, hc, hcv] at hs
@@ -2973,6 +3223,7 @@ theorem select_vecA (calls : Calls) {ns : List String} {d : String}
   rcases hcv : evalOperand t c with _ | vc
   · simp [evalInstr, hc, hcv] at hs
   · cases vc with
+    | poison => simp [evalOperand_ne_poison] at hcv
     | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
     | ptr a' => simp [evalInstr, hc, hcv] at hs
     | float c' => simp [evalInstr, hc, hcv] at hs
@@ -3006,6 +3257,7 @@ theorem select_vecS (calls : Calls) {ns : List String} {d : String}
   rcases hcv : evalOperand t c with _ | vc
   · simp [evalInstr, hc, hcv] at hs
   · cases vc with
+    | poison => simp [evalOperand_ne_poison] at hcv
     | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
     | ptr a' => simp [evalInstr, hc, hcv] at hs
     | float c' => simp [evalInstr, hc, hcv] at hs
@@ -3090,8 +3342,10 @@ theorem evalInstr_agree (calls : Calls) {ns : List String} {i : Instr} {s t : St
     · rcases hvb : evalOperand t b with _ | vb
       · simp [hva, hvb] at hs
       · cases va with
+        | poison => simp [evalOperand_ne_poison] at hva
         | ptr x =>
           cases vb with
+          | poison => simp [evalOperand_ne_poison] at hvb
           | ptr y =>
             cases hr : evalICmpPtr pred x y with
             | none => simp [hva, hvb, hr] at hs
@@ -3270,11 +3524,13 @@ theorem evalInstr_agree (calls : Calls) {ns : List String} {i : Instr} {s t : St
     · rcases hov : evalOperand t off with _ | vo
       · simp [hbv, hov] at hs
       · cases vb with
+        | poison => simp [evalOperand_ne_poison] at hbv
         | int wb y => simp [hbv, hov] at hs
         | vec n w l => simp [hbv, hov] at hs
         | float z => simp [hbv, hov] at hs
         | ptr addr =>
           cases vo with
+          | poison => simp [evalOperand_ne_poison] at hov
           | ptr z => simp [hbv, hov] at hs
           | vec n w l => simp [hbv, hov] at hs
           | float z => simp [hbv, hov] at hs

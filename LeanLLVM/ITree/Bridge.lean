@@ -350,6 +350,7 @@ theorem handled_instrT_load (calls : Calls) (frame : Nat → Prop) (s : State) (
       exact handled_ubT calls frame s.mem
   | some v =>
       cases v with
+      | poison => exact absurd hOp (evalOperand_ne_poison s p)
       | int w x =>
           have hE : evalInstr calls s (.load d ty p) = none := by simp [evalInstr, hOp]
           rw [hub hE]
@@ -408,6 +409,7 @@ theorem handled_instrT_store (calls : Calls) (frame : Nat → Prop) (s : State) 
           exact handled_ubT calls frame s.mem
       | some pv =>
           cases pv with
+          | poison => exact absurd hp (evalOperand_ne_poison s p)
           | float b =>
               have hE : evalInstr calls s (.store ty v p) = none := by
                 simp [evalInstr, hv, hp]

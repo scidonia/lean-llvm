@@ -129,9 +129,10 @@ noncomputable def wsRunHeadSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s
   have hcell := hseg.inv'.iter.reg8
   have h8 : evalOperand (contWsSeamS C (wsSlS G C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.k)
       f.k f.x1) (.reg "%8") = some (.int 8 (hlastByte G C)) := by
-    show lookupName (contWsSeamS C (wsSlS G C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.k)
-      f.k f.x1).env "%8" = some (.int 8 (hlastByte G C))
-    simpa only [hlastByte] using hcell
+    have hlk : lookupName (contWsSeamS C (wsSlS G C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.k)
+        f.k f.x1).env "%8" = some (.int 8 (hlastByte G C)) := by
+      simpa only [hlastByte] using hcell
+    exact LeanLLVM.evalOperand_reg_of hlk
   exact ⟨N, by omega, hseg, rfl, rfl, h8, hcond,
     contWsPriceAt G C (contLandS C s f.x f.inc f.nep f.ep f.v f.ix f.b35)
       (hcontRunFacts_of_contFacts G C s f hseg8.inv') hN⟩
@@ -181,8 +182,7 @@ noncomputable def runFacts_of_wsFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarr
     { x := hlastByte G C
       h8 := by
         show evalOperand s (.reg "%8") = some (.int 8 (hlastByte G C))
-        simp only [evalOperand]
-        exact hInv.iter.reg8
+        exact LeanLLVM.evalOperand_reg_of hInv.iter.reg8
       hbit := by
         rw [← hlastByte_of_reg8 hInv f.h8]
         exact hlast_bit6_of_class f.hlt125 f.hne125
@@ -264,8 +264,7 @@ noncomputable def runFacts_of_runBundle {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
     { x := hlastByte G C
       h8 := by
         show evalOperand s (.reg "%8") = some (.int 8 (hlastByte G C))
-        simp only [evalOperand]
-        exact hInv.iter.reg8
+        exact LeanLLVM.evalOperand_reg_of hInv.iter.reg8
       hbit := by
         rw [← hcontRunFacts_x1 f]
         exact f.hbit

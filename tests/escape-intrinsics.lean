@@ -43,8 +43,15 @@ def withEnv (env : Env) (s : State) : State := { s with env := env }
 
 /-- A register reads the value its name is bound to. -/
 theorem evalOperand_reg_of (env : Env) (s : State) (n : String) (v : Value)
-    (h : lookupName env n = some v) : evalOperand (withEnv env s) (.reg n) = some v := by
+    (h : lookupName env n = some v) (hv : v ≠ .poison := by intro hh; cases hh) :
+    evalOperand (withEnv env s) (.reg n) = some v := by
   simp only [withEnv, evalOperand, h]
+  cases v with
+  | poison => exact absurd rfl hv
+  | int w x => rfl
+  | ptr a => rfl
+  | vec n w l => rfl
+  | float b => rfl
 
 /-- A two-operand argument list reads to the two values its operands do.  Every
 call in this unit's emission takes two operands. -/

@@ -773,9 +773,9 @@ theorem closeMarkerTailSeg {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : Wal
     mlStep₆ (calls := calls) G C s₅ hInv hblock f.sp h8 f.ct f.q63 hreadT hbit
   have hv' : evalOperand (stackSelOut s₅ C.sp C.stage.ctype db b1
       (stackSelBit db b1)) (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)) := by
-    simpa only [evalOperand] using
-      (closeSel_other s₅ C.sp C.stage.ctype db b1 (stackSelBit db b1) "%idxprom.i"
-        (by decide)).trans hv
+    exact LeanLLVM.evalOperand_reg_of
+      ((closeSel_other s₅ C.sp C.stage.ctype db b1 (stackSelBit db b1) "%idxprom.i"
+        (by decide)).trans hv)
   have he' : lookupName (stackSelOut s₅ C.sp C.stage.ctype db b1
       (stackSelBit db b1)).env "%e" = some (.ptr C.stage.e) := by
     rw [closeSel_other s₅ C.sp C.stage.ctype db b1 (stackSelBit db b1) "%e" (by decide)]
@@ -813,14 +813,14 @@ theorem closeMarkerBrace_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
       some (.int 64 (BitVec.ofNat 64 j)) := by
     simp only [evalOperand]
     rw [closeBraceS₅_other s "%idxprom.i" (by decide)]
-    simpa only [evalOperand] using hv
+    walk_read using hv
   have he₅ : lookupName (closeBraceS₅ s).env "%e" = some (.ptr C.stage.e) := by
     rw [closeBraceS₅_other s "%e" (by decide)]
     exact he
   have htail := closeMarkerTailSeg (calls := calls) G (closeC₂ C) (closeBraceS₅ s) hInv₅ rfl f
     h8₅ (b1 := (closeC₂ C).tyMap ((closeC₂ C).sp - 1)) rfl
     (closeDisagree_125 (by simpa only [closeC₂] using hq))
-    (by simpa only [evalOperand] using hv₅) he₅ hj hj64
+    (by exact lookupName_of_evalOperand_reg hv₅) he₅ hj hj64
   have htot : WalkSegment calls G C s (closeCR C j)
       (mlS₇ C j (stackSelOut (closeBraceS₅ s) C.sp C.stage.ctype (BitVec.ofNat 8 125)
         (C.tyMap (C.sp - 1)) (stackSelBit (BitVec.ofNat 8 125) (C.tyMap (C.sp - 1))))) 7 :=
@@ -843,15 +843,16 @@ theorem closeStateTailSeg {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : Walk
     (he : lookupName s₆.env "%e" = some (.ptr C.stage.e))
     (hj : j ≤ G.n) (hj64 : j < 2 ^ 64) :
     WalkSegment calls G C s₆ (closeCR C j) (clS₉ C j (clS₈ s₆)) 2 := by
-  have hv' : evalOperand s₆ (.reg "%15") = some (.int 8 (BitVec.ofNat 8 b2.toNat)) := by
-    simpa only [evalOperand] using h15
+  have hv' : evalOperand s₆ (.reg "%15") = some (.int 8 (BitVec.ofNat 8 b2.toNat)) :=
+    BlockEval.evalOperand_reg_of s₆.env s₆ "%15" (.int 8 (BitVec.ofNat 8 b2.toNat)) h15
   have L₁ : WalkLink calls G C s₆ { C with block := "cleanup104.i" } (clS₈ s₆) :=
     clStep₈ (calls := calls) G C s₆ hInv hblock hv' hbit
   have hv₈ : evalOperand (clS₈ s₆) (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)) := by
-    simp only [evalOperand]
-    show lookupName (s₆.bind "%16" (.int 1 (0 : BitVec 1))).env "%idxprom.i" = _
-    exact (closeBind_ne (s := s₆) (a := "%16") (n := "%idxprom.i") (v := .int 1 0)
-      (by decide)).trans hv
+    show evalOperand (s₆.bind "%16" (.int 1 (0 : BitVec 1))) (.reg "%idxprom.i") =
+      some (.int 64 (BitVec.ofNat 64 j))
+    exact LeanLLVM.evalOperand_reg_of
+      ((closeBind_ne (s := s₆) (a := "%16") (n := "%idxprom.i") (v := .int 1 0)
+        (by decide)).trans hv)
   have he₈ : lookupName (clS₈ s₆).env "%e" = some (.ptr C.stage.e) := by
     show lookupName (s₆.bind "%16" (.int 1 (0 : BitVec 1))).env "%e" = _
     exact (closeBind_ne (s := s₆) (a := "%16") (n := "%e") (v := .int 1 0)
@@ -1324,7 +1325,7 @@ theorem closeAfterValueSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : S
         (s := close109S s r c8) (nl := BitVec.ofNat 64 C.evlen)
         (nc := BitVec.ofNat 64 G.evcap) (n := "%inc.i") (by decide),
       close109S_other (s := s) (r := r) (c8 := c8) (n := "%inc.i") (by decide)]
-    exact hInv.inc_reg
+    exact LeanLLVM.evalOperand_reg_of hInv.inc_reg
   · rw [closeEmitRun_other (C := closeC₁₂ C
         (BitVec.ofNat 32 C.sp + BitVec.ofNat 32 4294967295)) (s := closeEndIIS (closeAfter109 C
         (BitVec.ofNat 32 C.sp + BitVec.ofNat 32 4294967295))
@@ -1654,8 +1655,7 @@ theorem closeBracketMerge_at {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
       closeSub_eq (Nat.pos_of_ne_zero hsp) (depth_lt_32 hInv.depth_cap)]
   · show phiIncoming "out_reserve.exit.i.i60" cleanupKIncoming = some (.reg "%inc.i")
     decide
-  · simp only [evalOperand]
-    exact L11.inv'.inc_reg
+  · exact LeanLLVM.evalOperand_reg_of L11.inv'.inc_reg
   · exact L11.inv'.regs ("%nep", .int 64 (BitVec.ofNat 64 G.nep))
       (by simp [walkStaticRegs])
   · omega
@@ -2005,7 +2005,10 @@ theorem closeStateBracket_at {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
       (BitVec.ofNat 8 93) b1 (stackSelBit (BitVec.ofNat 8 93) b1)) C.stage.cst
       (BitVec.ofNat 32 C.sp + BitVec.ofNat 32 4294967295).toNat b2 0).env "%15" =
       some (.int 8 (BitVec.ofNat 8 b2.toNat)) :=
-    closeByte_val _ _ _ b2 0
+    lookupName_of_evalOperand_reg
+      (closeByte_val (stackSelOut (closeBracketS₅ s) C.sp C.stage.ctype
+        (BitVec.ofNat 8 93) b1 (stackSelBit (BitVec.ofNat 8 93) b1)) C.stage.cst
+        (BitVec.ofNat 32 C.sp + BitVec.ofNat 32 4294967295).toNat b2 0)
   have hult : evalICmp .ult (BitVec.ofNat 8 b2.toNat) (BitVec.ofNat 8 2) = 0 :=
     closeUlt_zero (UInt8.toNat_lt b2) (by decide) hb2
   have hv' : lookupName (ifEnd74Out (stackSelOut (closeBracketS₅ s) C.sp C.stage.ctype
@@ -2019,7 +2022,7 @@ theorem closeStateBracket_at {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
     rw [closeSel_other (closeBracketS₅ s) C.sp C.stage.ctype (BitVec.ofNat 8 93) b1
       (stackSelBit (BitVec.ofNat 8 93) b1) "%idxprom.i" (by decide)]
     rw [closeBracketS₅_other s "%idxprom.i" (by decide)]
-    simpa only [evalOperand] using hv
+    exact lookupName_of_evalOperand_reg hv
   have he' : lookupName (ifEnd74Out (stackSelOut (closeBracketS₅ s) C.sp C.stage.ctype
       (BitVec.ofNat 8 93) b1 (stackSelBit (BitVec.ofNat 8 93) b1)) C.stage.cst
       (BitVec.ofNat 32 C.sp + BitVec.ofNat 32 4294967295).toNat b2 0).env "%e" =
@@ -2178,7 +2181,7 @@ theorem closeStateBrace_at {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : S
       rw [closeSel_other (closeBraceS₅ s) C.sp C.stage.ctype (BitVec.ofNat 8 125) b1
         (stackSelBit (BitVec.ofNat 8 125) b1) "%idxprom.i" (by decide)]
       rw [closeBraceS₅_other s "%idxprom.i" (by decide)]
-      simpa only [evalOperand] using hv
+      exact hv
     have he₁₀ : lookupName s₁₀.env "%e" = some (.ptr C.stage.e) := by
       rw [hs₁₀', hs₉]
       simp only [closeJump, State.bind,
@@ -2239,7 +2242,7 @@ theorem closeStateBrace_at {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : S
       rw [closeSel_other (closeBraceS₅ s) C.sp C.stage.ctype (BitVec.ofNat 8 125) b1
         (stackSelBit (BitVec.ofNat 8 125) b1) "%idxprom.i" (by decide)]
       rw [closeBraceS₅_other s "%idxprom.i" (by decide)]
-      simpa only [evalOperand] using hv
+      exact hv
     have he₁₀ : lookupName s₁₀.env "%e" = some (.ptr C.stage.e) := by
       rw [hs₁₀', hs₉]
       simp only [closeJump, State.bind,
@@ -2285,8 +2288,7 @@ theorem closeWithOpen_at {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : Sta
   have hklt : C.k < G.nep :=
     WalkInv.head_lt hInv (by simpa only [walkLoopHead] using hhead)
   have hbe0 : v = BitVec.ofNat 8 (entryByte G C.k).toNat := by
-    have h8' : lookupName s.env "%8" = some (.int 8 v) := by
-      simpa only [evalOperand] using h8
+    have h8' : lookupName s.env "%8" = some (.int 8 v) := lookupName_of_evalOperand_reg h8
     have h := Option.some.inj (h8'.symm.trans hInv.iter.reg8)
     simpa using h
   rcases hv with rfl | rfl
@@ -2343,8 +2345,7 @@ theorem containerOpen_depth_one_stacks {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
         Cd'.k = C.k + 1 ∧ Cd'.tyMap C.sp = ifEnd24TyByte b ∧
         Cd'.stMap C.sp = ifEnd24StByte := by
   have hbe0 : b = BitVec.ofNat 8 (entryByte G C.k).toNat := by
-    have h8' : lookupName s.env "%8" = some (.int 8 b) := by
-      simpa only [evalOperand] using h8
+    have h8' : lookupName s.env "%8" = some (.int 8 b) := lookupName_of_evalOperand_reg h8
     have h := Option.some.inj (h8'.symm.trans hInv.iter.reg8)
     simpa using h
   have hklt : C.k < G.nep :=
@@ -2409,7 +2410,7 @@ theorem containerOpen_depth_one_stacks {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
       exact openS₉_inc33 (openHeadC C) (openBrS₄ s) r rd b
     · simp only [evalOperand]
       rw [openS₉_inc (openHeadC C) (openBrS₄ s) r rd b]
-      exact hh.inv'.inc_reg
+      exact LeanLLVM.evalOperand_reg_of hh.inv'.inc_reg
     · rw [openS₉_nep (openHeadC C) (openBrS₄ s) r rd b]
       exact hh.inv'.regs ("%nep", .int 64 (BitVec.ofNat 64 G.nep))
         (by simp [walkStaticRegs])
@@ -2425,7 +2426,7 @@ theorem containerOpen_depth_one_stacks {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
       exact openS₉_inc33 (openHeadC C) (openBcS₄ s) r rd b
     · simp only [evalOperand]
       rw [openS₉_inc (openHeadC C) (openBcS₄ s) r rd b]
-      exact hh.inv'.inc_reg
+      exact LeanLLVM.evalOperand_reg_of hh.inv'.inc_reg
     · rw [openS₉_nep (openHeadC C) (openBcS₄ s) r rd b]
       exact hh.inv'.regs ("%nep", .int 64 (BitVec.ofNat 64 G.nep))
         (by simp [walkStaticRegs])
@@ -2489,7 +2490,7 @@ theorem openCapStoreLink {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkC
     walkRefusalStoreStep (calls := calls) (s := s) (b := walkIf_then21_i)
       (off := "%off1.i.i38") (v := "%idxprom.i") (dest := "if.then") (e := C.stage.e)
       (j := j) (by decide) (by rw [hInv.pc_eq, hblock]; exact walkIf_then21_i_find) rfl rfl
-      he (by simpa only [evalOperand] using hv) hj64
+      he (by exact lookupName_of_evalOperand_reg hv) hj64
   have hs' : s' = openCapS₇ C j s := Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
   rw [hs'] at hlink
   exact hlink
@@ -2577,8 +2578,7 @@ theorem openCapTailSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
   -- the depth guard, taken at `520`
   have hstep₅' : evalOperand (openS₅ s r rd) (.reg "%sp.i.0248") =
       some (.int 32 (BitVec.ofNat 32 C.sp)) := by
-    simp only [evalOperand]
-    exact hl₅.inv'.depth_reg
+    exact LeanLLVM.evalOperand_reg_of hl₅.inv'.depth_reg
   obtain ⟨s₆, hl₆, hs₆⟩ :=
     WalkLink.if_end_i_at (calls := stage2Calls stage2SubCalls) G (openC₅ C) (openS₅ s r rd)
       hl₅.inv' rfl hstep₅'
@@ -2736,8 +2736,7 @@ theorem containerOpenCap_at {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : 
     WalkRefuseAt (stage2Calls stage2SubCalls) G C s := by
   have hklt : C.k < G.nep :=
     WalkInv.head_lt hInv (by simpa only [walkLoopHead] using hhead)
-  have h8' : lookupName s.env "%8" = some (.int 8 b) := by
-    simpa only [evalOperand] using h8
+  have h8' : lookupName s.env "%8" = some (.int 8 b) := lookupName_of_evalOperand_reg h8
   have hbe0 : b = BitVec.ofNat 8 (entryByte G C.k).toNat := by
     have h := Option.some.inj (h8'.symm.trans hInv.iter.reg8)
     simpa using h
@@ -2810,8 +2809,7 @@ theorem containerOpenRefuse_at {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s
     WalkRefuseAt (stage2Calls stage2SubCalls) G C s := by
   have hklt : C.k < G.nep :=
     WalkInv.head_lt hInv (by simpa only [walkLoopHead] using hhead)
-  have h8' : lookupName s.env "%8" = some (.int 8 b) := by
-    simpa only [evalOperand] using h8
+  have h8' : lookupName s.env "%8" = some (.int 8 b) := lookupName_of_evalOperand_reg h8
   have hbe0 : b = BitVec.ofNat 8 (entryByte G C.k).toNat := by
     have h := Option.some.inj (h8'.symm.trans hInv.iter.reg8)
     simpa using h

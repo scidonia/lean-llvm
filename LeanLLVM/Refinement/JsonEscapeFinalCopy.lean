@@ -344,8 +344,9 @@ def copyPreLoop (src dst sub : Nat) (B : List UInt8) (dst0 j : Nat) (out : List 
           k + BitVec.ofInt 64 64, rfl, rfl, copyBodyNNames_head_phi, ?_, ?_, ?_, ?_, ?_,
           ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
         · rw [he]
-          simp only [evalOperand, CopyStepState_env]
-          exact copyNEnv_knext s.env src dst k _ _ (BitVec.ofNat 64 sub)
+          exact LeanLLVM.evalOperand_reg_of (by
+            rw [CopyStepState_env]
+            exact copyNEnv_knext s.env src dst k _ _ (BitVec.ofNat 64 sub))
         · exact copyNext_counter hkval
         · rw [he, CopyStepState_env, copyNEnv_src s.env src dst k _ _ (BitVec.ofNat 64 sub)]
           exact hsrc
@@ -663,8 +664,9 @@ def copyBodyPrefixLoop (src dst sub : Nat) (B : List UInt8) (pb dst0 j : Nat)
       · refine ⟨copyBodyNames.head, .reg copyBodyNames.knext, k + BitVec.ofInt 64 64, rfl, rfl,
           copyBodyNames_head_phi, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
         · rw [he]
-          simp only [evalOperand, CopyStepState_env]
-          exact copyBodyEnv_knext s.env src dst k _ _ (BitVec.ofNat 64 sub)
+          exact LeanLLVM.evalOperand_reg_of (by
+            rw [CopyStepState_env]
+            exact copyBodyEnv_knext s.env src dst k _ _ (BitVec.ofNat 64 sub))
         · exact copyNext_counter hkval
         · rw [he, CopyStepState_env,
             copyBodyEnv_src s.env src dst k _ _ (BitVec.ofNat 64 sub)]
@@ -2433,21 +2435,15 @@ theorem whileEnd35_run
         (k := BitVec.ofNat 64 (64 * copyIterBound (n - iN) + 64))
         (subB := BitVec.ofNat 64 ((n - iN) - (64 * copyIterBound (n - iN) + 64)))
         hexit' hprevw (by decide)
-        (by
-          show evalOperand (withEnv e'.env e') (.reg "%add.i") =
-            some (.int 64 (BitVec.ofNat 64 (64 * copyIterBound (n - iN) + 64)))
-          rw [show withEnv e'.env e' = e' from rfl]
-          exact hknext')
+        (LeanLLVM.evalOperand_reg_of hknext')
         (by decide)
-        (by
-          show evalOperand (withEnv (("%k.0.i.lcssa",
-            .int 64 (BitVec.ofNat 64 (64 * copyIterBound (n - iN) + 64))) :: e'.env) e')
-            (.reg "%sub.i") =
+        (LeanLLVM.evalOperand_reg_of (by
+          show lookupName (("%k.0.i.lcssa",
+            .int 64 (BitVec.ofNat 64 (64 * copyIterBound (n - iN) + 64))) :: e'.env) "%sub.i" =
             some (.int 64 (BitVec.ofNat 64
               ((n - iN) - (64 * copyIterBound (n - iN) + 64))))
-          simp only [withEnv, evalOperand]
           rw [lookupName_cons_ne _ _ (by decide)]
-          exact hsnext')
+          exact hsnext'))
         hsrcw hdstw hsubw hjcellw hkcellw hxjcellw hkres hsub64 hprefw hdstread'
         hsrcwfull hframew hdisj
     refine ⟨o, 1 + (j' + jt), ?_, ?_, hpost⟩
@@ -2606,22 +2602,26 @@ theorem expandExit_satisfied
       rw [hadd28c, hc, BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)]
     have hopj : evalOperand (withEnv e.env e) (.reg "%j.3") =
         some (.int 64 (BitVec.ofNat 64 out.length)) := by
-      show lookupName e.env "%j.3" = some (.int 64 (BitVec.ofNat 64 out.length))
-      rw [← hjEq]; exact hj3
+      have hlook : lookupName e.env "%j.3" =
+          some (.int 64 (BitVec.ofNat 64 out.length)) := by
+        rw [← hjEq]; exact hj3
+      exact LeanLLVM.evalOperand_reg_of hlook
     have hopi : evalOperand (withEnv (("%j.0.lcssa", .int 64 (BitVec.ofNat 64 out.length)) ::
         e.env) e) (.reg "%add24") = some (.int 64 (BitVec.ofNat 64 i)) := by
-      show lookupName (("%j.0.lcssa", .int 64 (BitVec.ofNat 64 out.length)) :: e.env)
-        "%add24" = some (.int 64 (BitVec.ofNat 64 i))
-      rw [lookupName_cons_ne _ _ (by decide), ← hiEq]
-      exact hadd24
+      have hlook : lookupName (("%j.0.lcssa", .int 64 (BitVec.ofNat 64 out.length)) :: e.env)
+          "%add24" = some (.int 64 (BitVec.ofNat 64 i)) := by
+        rw [lookupName_cons_ne _ _ (by decide), ← hiEq]
+        exact hadd24
+      exact LeanLLVM.evalOperand_reg_of hlook
     have hopk : evalOperand (withEnv (("%i.0.lcssa", .int 64 (BitVec.ofNat 64 i)) ::
         ("%j.0.lcssa", .int 64 (BitVec.ofNat 64 out.length)) :: e.env) e)
         (.reg "%add28") = some (.int 64 (BitVec.ofNat 64 nps)) := by
-      show lookupName (("%i.0.lcssa", .int 64 (BitVec.ofNat 64 i)) ::
+      have hlook : lookupName (("%i.0.lcssa", .int 64 (BitVec.ofNat 64 i)) ::
         ("%j.0.lcssa", .int 64 (BitVec.ofNat 64 out.length)) :: e.env)
-        "%add28" = some (.int 64 (BitVec.ofNat 64 nps))
-      rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide), ← hkEq]
-      exact hadd28
+        "%add28" = some (.int 64 (BitVec.ofNat 64 nps)) := by
+        rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide), ← hkEq]
+        exact hadd28
+      exact LeanLLVM.evalOperand_reg_of hlook
     obtain ⟨o, jf, hjf, hrun, hpost⟩ :=
       whileEnd35_run (iN := i) (jN := out.length) hstaging hile rfl hji hnpsle
         hbodyE hextraE hgoal hpc hprevL
@@ -2651,11 +2651,12 @@ theorem expandExit_satisfied
     have hopk : evalOperand (withEnv (("%i.0.lcssa", .int 64 (BitVec.ofNat 64 0)) ::
         ("%j.0.lcssa", .int 64 (BitVec.ofNat 64 0)) :: e.env) e)
         (.reg "%k.0.lcssa") = some (.int 64 (BitVec.ofNat 64 nps)) := by
-      show lookupName (("%i.0.lcssa", .int 64 (BitVec.ofNat 64 0)) ::
+      have hlook : lookupName (("%i.0.lcssa", .int 64 (BitVec.ofNat 64 0)) ::
         ("%j.0.lcssa", .int 64 (BitVec.ofNat 64 0)) :: e.env) "%k.0.lcssa" =
-        some (.int 64 (BitVec.ofNat 64 nps))
-      rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
-      exact hkcell
+        some (.int 64 (BitVec.ofNat 64 nps)) := by
+        rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
+        exact hkcell
+      exact LeanLLVM.evalOperand_reg_of hlook
     obtain ⟨o, jf, hjf, hrun, hpost⟩ :=
       whileEnd35_run (iN := 0) (jN := 0) (out := []) hstaging (by omega) rfl (by omega)
         hnpsle hbodyE hextraE hgoal hpc hprevE

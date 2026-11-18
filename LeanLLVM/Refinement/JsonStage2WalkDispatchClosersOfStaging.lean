@@ -70,7 +70,7 @@ def hcontArm_closeWithOpen93_of_staging {m0 : Mem} {G : WalkGeom m0} (C : WalkCa
       rw [← eq_bit_value hclass]
       exact cont_reg8 hInv)
     (Or.inl rfl) hsp rfl rfl hpreA
-    (by simpa only [evalOperand] using hInv.idx_reg)
+    (by walk_read using hInv.idx_reg)
     (hInv.regs ("%e", .ptr C.stage.e) (by simp [walkStaticRegs]))
     (entryPos_le G C.k)
     (entryPos_lt_64 G C.k)
@@ -91,7 +91,7 @@ def hcontArm_closeWithOpen125_of_staging {m0 : Mem} {G : WalkGeom m0} (C : WalkC
       rw [← eq_bit_value hclass]
       exact cont_reg8 hInv)
     (Or.inr rfl) hsp rfl rfl hpreA
-    (by simpa only [evalOperand] using hInv.idx_reg)
+    (by walk_read using hInv.idx_reg)
     (hInv.regs ("%e", .ptr C.stage.e) (by simp [walkStaticRegs]))
     (entryPos_le G C.k)
     (entryPos_lt_64 G C.k)
@@ -141,7 +141,7 @@ def lastEntryArm_closeWithOpen93_of_staging {m0 : Mem} {G : WalkGeom m0} (C : Wa
       rw [← eq_bit_value hclass]
       exact cont_reg8 hInv)
     (Or.inl rfl) hsp rfl rfl hpreA
-    (by simpa only [evalOperand] using hInv.idx_reg)
+    (by walk_read using hInv.idx_reg)
     (hInv.regs ("%e", .ptr C.stage.e) (by simp [walkStaticRegs]))
     (entryPos_le G C.k)
     (entryPos_lt_64 G C.k)
@@ -161,7 +161,7 @@ def lastEntryArm_closeWithOpen125_of_staging {m0 : Mem} {G : WalkGeom m0}
       rw [← eq_bit_value hclass]
       exact cont_reg8 hInv)
     (Or.inr rfl) hsp rfl rfl hpreA
-    (by simpa only [evalOperand] using hInv.idx_reg)
+    (by walk_read using hInv.idx_reg)
     (hInv.regs ("%e", .ptr C.stage.e) (by simp [walkStaticRegs]))
     (entryPos_le G C.k)
     (entryPos_lt_64 G C.k)

@@ -729,9 +729,10 @@ theorem walkDispatch_at_continue_cells {m0 : Mem} {G : WalkGeom m0} (C : WalkCar
   obtain ⟨p, _hp, hseg, hInvD, hblock, hpre, hkC, hinc, hnep, hprice⟩ :=
     walkRevolutionMergeSeg G C s hInv hhead hcont
   have hdepth : evalOperand (clnMergeS hcont) (Operand.reg "%sp.i.0248") =
-      some (.int 32 (BitVec.ofNat 32 (clnMergeC C hcont.ev).sp)) := hInvD.depth_reg
+      some (.int 32 (BitVec.ofNat 32 (clnMergeC C hcont.ev).sp)) :=
+    LeanLLVM.evalOperand_reg_of hInvD.depth_reg
   have hincv : evalOperand (clnMergeS hcont) (Operand.reg "%inc.i") =
-      some (.int 64 (BitVec.ofNat 64 (C.k + 1))) := hinc
+      some (.int 64 (BitVec.ofNat 64 (C.k + 1))) := LeanLLVM.evalOperand_reg_of hinc
   have hnep64 : G.nep < 2 ^ 64 := by
     have h := G.nep_le
     have h2 := G.maxDoc
@@ -933,9 +934,10 @@ theorem walkDispatch_at_continue_cells_ws {m0 : Mem} {G : WalkGeom m0} (C : Walk
   obtain ⟨Cm, sm, N, nSc, hseg, hInvD, hblock, hpre, hkC, hinc, hnep, -, hprice⟩ :=
     walkRevolutionMergeSegWs G C s hInv hhead hk hcont
   have hdepth : evalOperand (revMergeS sm hcont.v.toNat) (Operand.reg "%sp.i.0248") =
-      some (.int 32 (BitVec.ofNat 32 (revMergeC Cm).sp)) := hInvD.depth_reg
+      some (.int 32 (BitVec.ofNat 32 (revMergeC Cm).sp)) :=
+    LeanLLVM.evalOperand_reg_of hInvD.depth_reg
   have hincv : evalOperand (revMergeS sm hcont.v.toNat) (Operand.reg "%inc.i") =
-      some (.int 64 (BitVec.ofNat 64 (C.k + 1))) := hinc
+      some (.int 64 (BitVec.ofNat 64 (C.k + 1))) := LeanLLVM.evalOperand_reg_of hinc
   have hnep64 : G.nep < 2 ^ 64 := by
     have h := G.nep_le
     have h2 := G.maxDoc

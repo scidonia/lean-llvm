@@ -618,7 +618,7 @@ theorem walkChain_extend_nodeBlock50 {calls : Calls} {m0 : Mem} {G : WalkGeom m0
     {x : BitVec 8} (h36 : lookupName s.env "%36" = some (.int 8 x))
     (hge13 : evalICmp .slt x (BitVec.ofNat 8 13) = 0) :
     WalkChain calls G C₀ s₀ (scanCarryNodeBlock50 C) (scanNodeBlock50In s x) := by
-  have h1 : evalOperand s (.reg "%36") = some (.int 8 x) := h36
+  have h1 : evalOperand s (.reg "%36") = some (.int 8 x) := LeanLLVM.evalOperand_reg_of h36
   have hres : (if evalICmp .slt x (BitVec.ofNat 8 13) = 1
       then "LeafBlock43" else "NodeBlock50") = "NodeBlock50" := if_neg (by rw [hge13]; decide)
   obtain ⟨s', hl, hs⟩ :=
@@ -638,7 +638,7 @@ theorem walkChain_extend_nodeBlock50Out {calls : Calls} {m0 : Mem} {G : WalkGeom
     {x : BitVec 8} (h36 : lookupName s.env "%36" = some (.int 8 x))
     (hlt32 : evalICmp .slt x (BitVec.ofNat 8 32) = 1) :
     WalkChain calls G C₀ s₀ { C with block := "LeafBlock46" } (scanNodeBlock50Out s x) := by
-  have h1 : evalOperand s (.reg "%36") = some (.int 8 x) := h36
+  have h1 : evalOperand s (.reg "%36") = some (.int 8 x) := LeanLLVM.evalOperand_reg_of h36
   have hres : (if evalICmp .slt x (BitVec.ofNat 8 32) = 1
       then "LeafBlock46" else "LeafBlock48") = "LeafBlock46" := if_pos hlt32
   obtain ⟨s', hl, hs⟩ :=
@@ -658,7 +658,7 @@ theorem walkChain_extend_nodeBlock48 {calls : Calls} {m0 : Mem} {G : WalkGeom m0
     {x : BitVec 8} (h36 : lookupName s.env "%36" = some (.int 8 x))
     (hge32 : evalICmp .slt x (BitVec.ofNat 8 32) = 0) :
     WalkChain calls G C₀ s₀ (scanCarryLeafBlock48 C) (scanNodeBlock48Out s x) := by
-  have h1 : evalOperand s (.reg "%36") = some (.int 8 x) := h36
+  have h1 : evalOperand s (.reg "%36") = some (.int 8 x) := LeanLLVM.evalOperand_reg_of h36
   have hres : (if evalICmp .slt x (BitVec.ofNat 8 32) = 1
       then "LeafBlock46" else "LeafBlock48") = "LeafBlock48" := if_neg (by rw [hge32]; decide)
   obtain ⟨s', hl, hs⟩ :=
@@ -679,7 +679,7 @@ theorem walkChain_extend_leafBlock46 {calls : Calls} {m0 : Mem} {G : WalkGeom m0
     (hne13 : evalICmp .eq x (BitVec.ofNat 8 13) = 0)
     (hsc : ScanCount (scanLeafBlock46Out s x) "%ee.0.i238" "%cond350.i" C.inner) :
     WalkChain calls G C₀ s₀ { C with block := "while.body370.i" } (scanLeafBlock46Out s x) := by
-  have h1 : evalOperand s (.reg "%36") = some (.int 8 x) := h36
+  have h1 : evalOperand s (.reg "%36") = some (.int 8 x) := LeanLLVM.evalOperand_reg_of h36
   have hres : (if evalICmp .eq x (BitVec.ofNat 8 13) = 1
       then "if.end372.i" else "while.body370.i") = "while.body370.i" :=
     if_neg (by rw [hne13]; decide)
@@ -706,7 +706,7 @@ theorem walkChain_extend_leafBlock48 {calls : Calls} {m0 : Mem} {G : WalkGeom m0
     (hne32 : evalICmp .eq x (BitVec.ofNat 8 32) = 0)
     (hsc : ScanCount (scanLeafBlock48Out s x) "%ee.0.i238" "%cond350.i" C.inner) :
     WalkChain calls G C₀ s₀ (scanCarryLatchOf C) (scanLeafBlock48Out s x) := by
-  have h1 : evalOperand s (.reg "%36") = some (.int 8 x) := h36
+  have h1 : evalOperand s (.reg "%36") = some (.int 8 x) := LeanLLVM.evalOperand_reg_of h36
   have hres : (if evalICmp .eq x (BitVec.ofNat 8 32) = 1
       then "if.end372.i" else "while.body370.i") = "while.body370.i" :=
     if_neg (by rw [hne32]; decide)
@@ -2617,8 +2617,17 @@ theorem walkScanLinks457 {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
   obtain ⟨s₃, hl₃, hs₃⟩ := WalkLink.LeafBlock96_at (G := G) (C := ScanC₉₆ C)
     (s := ScanS₉₆ s idx a q x) hl₂.inv' rfl
     (by
-      simpa only [ScanS₉₆, stateAt, evalOperand,
-        lookupName_cons_ne (k := "%Pivot106") (n := "%47") _ _ (by decide)] using h47)
+      have hlk47 : lookupName (landRhs457OutAt s idx a q).env "%47" =
+          some (.int 8 (BitVec.ofNat 8 q)) := by
+        simp only [landRhs457OutAt, stateAt, cells, lookupName_cons_self]
+      have h47' : some (Value.int 8 (BitVec.ofNat 8 q)) = some (Value.int 8 x) := by
+        have h := h47
+        simp only [evalOperand] at h
+        rw [hlk47] at h
+        exact h
+      simp only [stateAt,
+        lookupName_cons_ne (k := "%Pivot106") (n := "%47") _ _ (by decide), hlk47]
+      exact h47')
     hlatch
   rw [if_pos hws] at hl₃
   refine ⟨s₃, ?_, Seg.measure (Seg.tail hl₁ (Seg.tail hl₂ (Seg.tail hl₃ (Seg.nil hl₃.inv'))))⟩

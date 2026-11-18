@@ -788,8 +788,8 @@ def copyBoundLoop
     · refine ⟨nm.head, .reg nm.knext, k + BitVec.ofInt 64 64, rfl, rfl, phiHead,
         ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
       · rw [he]
-        simp only [evalOperand, CopyStepState_env]
-        exact envKnext s.env src dst k _ _ (BitVec.ofNat 64 sub)
+        exact LeanLLVM.evalOperand_reg_of
+          (envKnext s.env src dst k _ _ (BitVec.ofNat 64 sub))
       · exact copyNext_counter hkval
       · rw [he, CopyStepState_env, envSrc s.env src dst k _ _ (BitVec.ofNat 64 sub)]
         exact hsrc
@@ -1102,7 +1102,10 @@ the development's ceiling.
 #guard_msgs in
 #print axioms emitterTest_of_table
 
-/-- info: 'LeanLLVM.Refinement.CopyInv' does not depend on any axioms -/
+-- `CopyInv`'s statement mentions `evalOperand`, whose definition matches the
+-- marker and so carries `propext`; the footprint is the definition's shape, not
+-- a proof's, and it arrived with the read's poison arm.
+/-- info: 'LeanLLVM.Refinement.CopyInv' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms CopyInv
 

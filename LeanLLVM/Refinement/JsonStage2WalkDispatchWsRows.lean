@@ -346,7 +346,7 @@ noncomputable def hcontFacts_of_rows {m0 : Mem} {G : WalkGeom m0} (hp : HcontPay
         (hlastByte G C)) (.reg "%8") = some (.int 8 (hlastByte G C)) := by
     simp only [evalOperand, contWsSeamS, contWsSlStaging]
     rw [seamS_env8, wsSlS_env8]
-    exact hInv.iter.reg8
+    exact LeanLLVM.evalOperand_reg_of hInv.iter.reg8
   -- the tail: the seam group from the run's rows and the class's bits, then the three
   -- links.  The group's own tail is at exactly those states, so no state is transported.
   have hc110 : evalICmp .slt bG.x1 (BitVec.ofNat 8 110) = 0 :=

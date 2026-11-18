@@ -741,8 +741,10 @@ theorem lstIfEnd4_step (env : Env) (s : State) (esc : BitVec 64) (base : BitVec 
   rw [hstep, lstIfEnd4_term]
   have hval : evalOperand st (.reg "%cmp.i.i") =
       some (.int 1 (evalICmp .ugt (BitVec.ofNat 64 (ctpop esc)) (BitVec.ofInt 64 8))) := by
-    show lookupName st.env "%cmp.i.i" = _
-    simpa only [hst, Option.bind_some] using hcmp
+    have hcmp' : lookupName st.env "%cmp.i.i" =
+        some (.int 1 (evalICmp .ugt (BitVec.ofNat 64 (ctpop esc)) (BitVec.ofInt 64 8))) := by
+      simpa only [hst, Option.bind_some] using hcmp
+    simp only [evalOperand, hcmp']
   have h8 : (BitVec.ofInt 64 8 : BitVec 64).toNat = 8 := by decide
   have hct : (BitVec.ofNat 64 (ctpop esc)).toNat = ctpop esc := by
     rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt]
@@ -1672,8 +1674,7 @@ theorem lstWhileBody_step (env : Env) (s : State) (w : BitVec 64) (base : BitVec
     step_of_calls _ _ _ _ _ hpc findBlock_whileBody hst
   have hval : evalOperand st (.reg "%tobool6.not.i.i") =
       some (.int 1 (evalICmp .eq (cSt8 w) (BitVec.ofInt 64 0))) := by
-    show lookupName st.env "%tobool6.not.i.i" = _
-    exact hcmp'
+    simp only [evalOperand, hcmp']
   have hof : (BitVec.ofInt 64 0 : BitVec 64) = 0 := by decide
   rw [hstep, lstWhileBody_term]
   by_cases hz : clearLow w 8 = 0
@@ -1971,8 +1972,8 @@ theorem lstWriter_step_loop (blk0 : BitVec 64) (xp xn xn0 : Nat) (position : Lis
       ?_, ?_, Or.inl rfl⟩
     · decide
     · decide
-    · simpa only [evalOperand] using haddrE
-    · simpa only [evalOperand] using handE
+    · simp only [evalOperand, haddrE]
+    · simp only [evalOperand, handE]
   · refine ⟨?_, ?_, ?_, ?_, ?_⟩
     · intro j hj
       exact lane_mem_of_setLanes hset (fun a ha => hplt a (List.mem_of_mem_drop ha)) j hj

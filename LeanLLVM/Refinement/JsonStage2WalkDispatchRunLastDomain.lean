@@ -128,7 +128,7 @@ theorem runLastHead_a {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
   rw [h0] at hiter
   have ht : ((97 : UInt8)).toNat = 97 := by decide
   rw [ht] at hiter
-  simpa only [evalOperand] using hiter
+  walk_read using hiter
 
 /-- **`97`'s head class is the default arm's**: `91 ≤ 97 < 123`, `93 ≤ 97` and `97 ≠ 93` —
 the `NodeBlock19 → NodeBlock11 → LeafBlock9 → sw.default.i` route. -/

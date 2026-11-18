@@ -294,10 +294,19 @@ false arm is one control step.  The arm composes `udCleanup32_step_zero` at the
 two edges the latch admits and carries the walk and the cells into the exit
 predicate. -/
 
-/-- `evalOperand` at a register the environment binds. -/
+/-- `evalOperand` at a register the environment binds to a value other than the
+poison marker: a cell holding the marker is a use and has no value, so the
+hypothesis is what the read's success means. -/
 theorem evalOperand_reg_eq (env : Env) (s : State) (n : String) (v : Value)
-    (h : lookupName env n = some v) : evalOperand (withEnv env s) (.reg n) = some v := by
+    (h : lookupName env n = some v) (hv : v ≠ .poison := by intro hh; cases hh) :
+    evalOperand (withEnv env s) (.reg n) = some v := by
   simp only [withEnv, evalOperand, h]
+  cases v with
+  | poison => exact absurd rfl hv
+  | int w x => rfl
+  | ptr a => rfl
+  | vec n w l => rfl
+  | float b => rfl
 
 theorem latch_phi_operand_emitter :
     phiIncoming "if.end32.i" udCleanup32IncomingJ = some (.reg "%add.i125") := by

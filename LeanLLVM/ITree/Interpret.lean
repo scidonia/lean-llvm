@@ -389,6 +389,7 @@ theorem storeValue_mem (s : State) (ty : Ty) (v : Value) (addr : Nat) (s' : Stat
       | ptr a => simp [storeValue] at h
       | vec n' w' lanes => simp [storeValue] at h
       | float b => simp [storeValue] at h
+      | poison => simp [storeValue] at h
   | ptr =>
       cases v with
       | int w x => simp [storeValue] at h
@@ -398,6 +399,7 @@ theorem storeValue_mem (s : State) (ty : Ty) (v : Value) (addr : Nat) (s' : Stat
           simp only [storeMem]
       | vec n' w' lanes => simp [storeValue] at h
       | float b => simp [storeValue] at h
+      | poison => simp [storeValue] at h
   | vec n elem =>
       cases elem with
       | int w =>
@@ -414,6 +416,7 @@ theorem storeValue_mem (s : State) (ty : Ty) (v : Value) (addr : Nat) (s' : Stat
           | int w' x => simp [storeValue] at h
           | ptr a => simp [storeValue] at h
           | float b => simp [storeValue] at h
+          | poison => simp [storeValue] at h
       | ptr => cases v <;> simp [storeValue] at h
       | void => cases v <;> simp [storeValue] at h
       | vec m e => cases v <;> simp [storeValue] at h
@@ -432,6 +435,7 @@ theorem storeValue_mem (s : State) (ty : Ty) (v : Value) (addr : Nat) (s' : Stat
       | int w x => simp [storeValue] at h
       | ptr a => simp [storeValue] at h
       | vec n' w' lanes => simp [storeValue] at h
+      | poison => simp [storeValue] at h
 
 theorem exec_pureInstrT (calls : Calls) (s : State) (i : Instr)
     (k : State → Tree Ev Outcome) (r : Option Outcome)
@@ -464,6 +468,7 @@ theorem exec_instrT_load (calls : Calls) (s : State) (d : String) (ty : Ty) (p :
       exact Exec.ub
   | some v =>
       cases v with
+      | poison => simp [evalOperand_ne_poison] at hOp
       | int w x =>
           have hE : evalInstr calls s (.load d ty p) = none := by simp [evalInstr, hOp]
           rw [hub hE]
@@ -519,6 +524,7 @@ theorem exec_instrT_store (calls : Calls) (s : State) (ty : Ty) (v p : Operand)
           exact Exec.ub
       | some pv =>
           cases pv with
+          | poison => simp [evalOperand_ne_poison] at hp
           | float b =>
               have hE : evalInstr calls s (.store ty v p) = none := by
                 simp [evalInstr, hv, hp]
@@ -860,6 +866,7 @@ theorem execTerm_jump_mem (s : State) (t : Term) (s' : State)
       | none => simp [execTerm, hOp] at h
       | some v =>
           cases v with
+          | poison => simp [evalOperand_ne_poison] at hOp
           | ptr a => simp [execTerm, hOp] at h
           | float b => simp [execTerm, hOp] at h
           | vec n w x => simp [execTerm, hOp] at h

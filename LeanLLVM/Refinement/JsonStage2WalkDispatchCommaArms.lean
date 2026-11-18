@@ -109,12 +109,13 @@ theorem commaPairSeg {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
       lookupName_cons_ne (k := "%Pivot22") (n := "%8") _ _ (by decide)] using h8
   have hsp₄ : evalOperand (comS₄ (comS₃ (comS₂ (comS₁ s)))) (.reg "%sp.i.0248") =
       some (.int 32 (BitVec.ofNat 32 C.sp)) := by
+    have hd := LeanLLVM.evalOperand_reg_of hInv.depth_reg
     simpa only [comS₄, comS₃, comS₂, comS₁, evalOperand, State.bind,
       lookupName_cons_ne (k := "%SwitchLeaf2") (n := "%sp.i.0248") _ _ (by decide),
       lookupName_cons_ne (k := "%Pivot") (n := "%sp.i.0248") _ _ (by decide),
       lookupName_cons_ne (k := "%Pivot6") (n := "%sp.i.0248") _ _ (by decide),
       lookupName_cons_ne (k := "%Pivot22") (n := "%sp.i.0248") _ _ (by decide)]
-      using hInv.depth_reg
+      using hd
   have hbit : evalICmp .eq (BitVec.ofNat 32 C.sp) (BitVec.ofNat 32 0) = 0 :=
     depthEqZero_bit hpos hsp32
   have hct : lookupName (comS₄ (comS₃ (comS₂ (comS₁ s)))).env "%ctype.i" =
@@ -124,7 +125,7 @@ theorem commaPairSeg {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
       some (.ptr C.stage.cst) :=
     hInv.ptrs.2.2.2.2.1
   have hsp₄' : lookupName (comS₄ (comS₃ (comS₂ (comS₁ s)))).env "%sp.i.0248" =
-      some (.int 32 (BitVec.ofNat 32 C.sp)) := hsp₄
+      some (.int 32 (BitVec.ofNat 32 C.sp)) := lookupName_of_evalOperand_reg hsp₄
   have L₁ := comStep₁ (calls := calls) G C s hInv hhead h8
   have L₂ := comStep₂ (calls := calls) G { C with block := "NodeBlock5" } (comS₁ s)
     L₁.inv' rfl h8₁
@@ -134,7 +135,7 @@ theorem commaPairSeg {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
     (comS₃ (comS₂ (comS₁ s))) L₃.inv' rfl h8₃
   obtain ⟨s₅, hl₅, hs₅⟩ := WalkLink.if_then127_i_at (calls := calls) G
     { C with block := "if.then127.i" } (comS₄ (comS₃ (comS₂ (comS₁ s)))) L₄.inv' rfl
-    (x1 := BitVec.ofNat 32 C.sp) hsp₄'
+    (x1 := BitVec.ofNat 32 C.sp) hsp₄
   have L₅ : WalkLink calls G { C with block := "if.then127.i" }
       (comS₄ (comS₃ (comS₂ (comS₁ s)))) { C with block := "if.end133.i" }
       (commaOut (comS₄ (comS₃ (comS₂ (comS₁ s))))) := by
@@ -238,7 +239,7 @@ theorem commaBraceMerge_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : Wal
   have hseg := commaBraceSeg (calls := calls) G C s hInv hhead h8 hsp hmark hstate
   have h22 : evalOperand (commaTarget C s 1 b2) (.reg "%22") =
       some (.int 8 (BitVec.ofNat 8 b2.toNat)) := by
-    simpa only [evalOperand] using commaTarget_22 C s 1 b2
+    walk_read using commaTarget_22 C s 1 b2
   obtain ⟨s₆, hl₆, hs₆⟩ := WalkLink.if_then141_i_at (calls := calls) G
     { C with block := "if.then141.i" } (commaTarget C s 1 b2) hseg.measure.inv' rfl
     (x1 := BitVec.ofNat 8 b2.toNat) h22
@@ -276,10 +277,10 @@ theorem commaBraceMerge_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : Wal
     simp only [if_pos hb2]
   · show phiIncoming "if.end150.i" cleanupSpIncoming = some (.reg "%sp.i.0248")
     decide
-  · simpa only [evalOperand] using hseg8.inv'.depth_reg
+  · walk_read using hseg8.inv'.depth_reg
   · show phiIncoming "if.end150.i" cleanupKIncoming = some (.reg "%inc.i")
     decide
-  · simpa only [evalOperand] using hseg8.inv'.inc_reg
+  · walk_read using hseg8.inv'.inc_reg
   · exact hseg8.inv'.regs ("%nep", .int 64 (BitVec.ofNat 64 G.nep)) (by simp [walkStaticRegs])
   · omega
   · exact commaCap G hklt
@@ -318,7 +319,7 @@ theorem commaBraceRefuse_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : Wa
   have hInvSeg := hseg.measure.inv'
   have h22 : evalOperand (commaTarget C s 1 b2) (.reg "%22") =
       some (.int 8 (BitVec.ofNat 8 b2.toNat)) := by
-    simpa only [evalOperand] using commaTarget_22 C s 1 b2
+    walk_read using commaTarget_22 C s 1 b2
   obtain ⟨s₆, hl₆, hs₆⟩ := WalkLink.if_then141_i_at (calls := calls) G
     { C with block := "if.then141.i" } (commaTarget C s 1 b2) hInvSeg rfl
     (x1 := BitVec.ofNat 8 b2.toNat) h22
@@ -329,9 +330,10 @@ theorem commaBraceRefuse_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : Wa
   have hv₆ : evalOperand s₆ (.reg "%idxprom.i") =
       some (.int 64 (BitVec.ofNat 64 (entryPos G C.k))) := by
     rw [hs₆]
+    have hd := LeanLLVM.evalOperand_reg_of hInvSeg.idx_reg
     simpa only [State.bind, evalOperand,
       lookupName_cons_ne (k := "%cmp145.not.i") (n := "%idxprom.i") _ _ (by decide)]
-      using hInvSeg.idx_reg
+      using hd
   have he₆ : lookupName s₆.env "%e" = some (.ptr C.stage.e) := by
     rw [hs₆]
     simpa only [State.bind,
@@ -365,7 +367,7 @@ theorem commaBracketMerge_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : W
   have hseg := commaBracketSeg (calls := calls) G C s hInv hhead h8 hsp hmark hstate hbit
   have h22 : evalOperand (commaTarget C s b1 b2) (.reg "%22") =
       some (.int 8 (BitVec.ofNat 8 b2.toNat)) := by
-    simpa only [evalOperand] using commaTarget_22 C s b1 b2
+    walk_read using commaTarget_22 C s b1 b2
   obtain ⟨s₆, hl₆, hs₆⟩ := WalkLink.if_else153_i_at (calls := calls) G
     { C with block := "if.else153.i" } (commaTarget C s b1 b2) hseg.measure.inv' rfl
     (x1 := BitVec.ofNat 8 b2.toNat) h22
@@ -403,10 +405,10 @@ theorem commaBracketMerge_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : W
     simp only [if_pos hb2]
   · show phiIncoming "if.end162.i" cleanupSpIncoming = some (.reg "%sp.i.0248")
     decide
-  · simpa only [evalOperand] using hseg8.inv'.depth_reg
+  · walk_read using hseg8.inv'.depth_reg
   · show phiIncoming "if.end162.i" cleanupKIncoming = some (.reg "%inc.i")
     decide
-  · simpa only [evalOperand] using hseg8.inv'.inc_reg
+  · walk_read using hseg8.inv'.inc_reg
   · exact hseg8.inv'.regs ("%nep", .int 64 (BitVec.ofNat 64 G.nep)) (by simp [walkStaticRegs])
   · omega
   · exact commaCap G hklt
@@ -429,7 +431,7 @@ theorem commaBracketRefuse_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : 
   have hInvSeg := hseg.measure.inv'
   have h22 : evalOperand (commaTarget C s b1 b2) (.reg "%22") =
       some (.int 8 (BitVec.ofNat 8 b2.toNat)) := by
-    simpa only [evalOperand] using commaTarget_22 C s b1 b2
+    walk_read using commaTarget_22 C s b1 b2
   obtain ⟨s₆, hl₆, hs₆⟩ := WalkLink.if_else153_i_at (calls := calls) G
     { C with block := "if.else153.i" } (commaTarget C s b1 b2) hInvSeg rfl
     (x1 := BitVec.ofNat 8 b2.toNat) h22
@@ -440,9 +442,10 @@ theorem commaBracketRefuse_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : 
   have hv₆ : evalOperand s₆ (.reg "%idxprom.i") =
       some (.int 64 (BitVec.ofNat 64 (entryPos G C.k))) := by
     rw [hs₆]
+    have hd := LeanLLVM.evalOperand_reg_of hInvSeg.idx_reg
     simpa only [State.bind, evalOperand,
       lookupName_cons_ne (k := "%cmp157.not.i") (n := "%idxprom.i") _ _ (by decide)]
-      using hInvSeg.idx_reg
+      using hd
   have he₆ : lookupName s₆.env "%e" = some (.ptr C.stage.e) := by
     rw [hs₆]
     simpa only [State.bind,

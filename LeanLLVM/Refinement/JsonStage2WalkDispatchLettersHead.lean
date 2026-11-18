@@ -294,7 +294,7 @@ theorem contSwToLandSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (q5 : Sta
   have hinc' : lookupName (contSwOut q5 inc nep).env "%inc.i" = some (.int 64 inc) := by
     simp only [contSwOut, State.bind, lookupName_cons_ne (k := "%cmp343.i") (n := "%inc.i")
       _ _ (by decide)]
-    simpa only [evalOperand] using hinc
+    walk_read using hinc
   obtain ⟨s₂, hl₂, hs₂⟩ :=
     WalkLink.cond_true345_i_at (calls := stage2Calls stage2SubCalls) G (ContAC₁ C)
       (contSwOut q5 inc nep) hl₁'.inv' rfl h5 hinc' hi63 hread
@@ -395,7 +395,7 @@ theorem contDefaultSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (q5 : Stat
   have hinc' : lookupName (contSwOut q5 inc nep).env "%inc.i" = some (.int 64 inc) := by
     simp only [contSwOut, State.bind, lookupName_cons_ne (k := "%cmp343.i") (n := "%inc.i")
       _ _ (by decide)]
-    simpa only [evalOperand] using hinc
+    walk_read using hinc
   obtain ⟨s₂, hl₂, hs₂⟩ :=
     WalkLink.cond_true345_i_at (calls := stage2Calls stage2SubCalls) G (ContAC₁ C)
       (contSwOut q5 inc nep) hl₁'.inv' rfl h5 hinc' hi63 hread
@@ -442,8 +442,8 @@ theorem contDefaultSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (q5 : Stat
   -- 5. the byte's first pivot
   have h35a : evalOperand (contLandOut (G := G) (contMidS C q5 inc nep ep v ix) v.toNat b35)
       (.reg "%35") = some (.int 8 (cont35 b35)) := by
-    simp only [evalOperand]
-    exact contLandOut_35 (s := contMidS C q5 inc nep ep v ix) (v := v.toNat) b35
+    exact LeanLLVM.evalOperand_reg_of
+      (contLandOut_35 (G := G) (s := contMidS C q5 inc nep ep v ix) (v := v.toNat) b35)
   obtain ⟨s₅, hl₅, hs₅⟩ :=
     WalkLink.NodeBlock41_at (calls := stage2Calls stage2SubCalls) G (ContAC₄ C)
       (contLandOut (G := G) (contMidS C q5 inc nep ep v ix) v.toNat b35) hl₄'.inv' rfl h35a
@@ -461,8 +461,8 @@ theorem contDefaultSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (q5 : Stat
   have h35b : evalOperand
       (contP41Out (contLandOut (G := G) (contMidS C q5 inc nep ep v ix) v.toNat b35) b35)
       (.reg "%35") = some (.int 8 (cont35 b35)) := by
-    simp only [evalOperand]
-    exact contP41Out_35 (s := contMidS C q5 inc nep ep v ix) (v := v.toNat) b35
+    exact LeanLLVM.evalOperand_reg_of
+      (contP41Out_35 (G := G) (s := contMidS C q5 inc nep ep v ix) (v := v.toNat) b35)
   obtain ⟨s₆, hl₆, hs₆⟩ :=
     WalkLink.NodeBlock39_at (calls := stage2Calls stage2SubCalls) G (ContAC₅ C)
       (contP41Out (contLandOut (G := G) (contMidS C q5 inc nep ep v ix) v.toNat b35) b35)
@@ -484,8 +484,8 @@ theorem contDefaultSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (q5 : Stat
   have h35c : evalOperand
       (contP39Out (contP41Out (contLandOut (G := G) (contMidS C q5 inc nep ep v ix) v.toNat b35)
         b35) b35) (.reg "%35") = some (.int 8 (cont35 b35)) := by
-    simp only [evalOperand]
-    exact contP39Out_35 (s := contMidS C q5 inc nep ep v ix) (v := v.toNat) b35
+    exact LeanLLVM.evalOperand_reg_of
+      (contP39Out_35 (G := G) (s := contMidS C q5 inc nep ep v ix) (v := v.toNat) b35)
   obtain ⟨s₇, hl₇, hs₇⟩ :=
     WalkLink.LeafBlock35_at (calls := stage2Calls stage2SubCalls) G (ContAC₆ C)
       (contP39Out (contP41Out (contLandOut (G := G) (contMidS C q5 inc nep ep v ix) v.toNat b35)
@@ -504,8 +504,7 @@ theorem contDefaultSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (q5 : Stat
   -- 8. the token's end
   have hcond35 : evalOperand (contP35Mid C q5 inc nep ep v ix b35) (.reg "%cond350.i") =
       some (.int 64 (BitVec.ofNat 64 v.toNat)) := by
-    simp only [evalOperand]
-    exact contP35Mid_cond C q5 inc nep ep v ix b35
+    exact LeanLLVM.evalOperand_reg_of (contP35Mid_cond C q5 inc nep ep v ix b35)
   obtain ⟨s₈, hl₈, hs₈⟩ :=
     WalkLink.if_end372_i_at (calls := stage2Calls stage2SubCalls) (G := G) (C := ContAC₇ C)
       (s := contP35Mid C q5 inc nep ep v ix b35) hl₇'.inv' rfl (p := "LeafBlock35") rfl
@@ -1992,8 +1991,8 @@ theorem contDefLastSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (q5 : Stat
   -- 4. the byte's first pivot
   have h35a : evalOperand (contLandOut (G := G) (contEndFailS C q5 inc nep v ix) v b35)
       (.reg "%35") = some (.int 8 (cont35 b35)) := by
-    simp only [evalOperand]
-    exact contLandOut_35 (s := contEndFailS C q5 inc nep v ix) v b35
+    exact LeanLLVM.evalOperand_reg_of
+      (contLandOut_35 (G := G) (s := contEndFailS C q5 inc nep v ix) (v := v) b35)
   obtain ⟨s₄, hl₄, hs₄⟩ :=
     WalkLink.NodeBlock41_at (calls := stage2Calls stage2SubCalls) G (HlastAC₂ C)
       (contLandOut (G := G) (contEndFailS C q5 inc nep v ix) v b35) hl₃'.inv' rfl h35a
@@ -2012,8 +2011,8 @@ theorem contDefLastSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (q5 : Stat
   have h35b : evalOperand
       (contP41Out (contLandOut (G := G) (contEndFailS C q5 inc nep v ix) v b35) b35)
       (.reg "%35") = some (.int 8 (cont35 b35)) := by
-    simp only [evalOperand]
-    exact contP41Out_35 (s := contEndFailS C q5 inc nep v ix) v b35
+    exact LeanLLVM.evalOperand_reg_of
+      (contP41Out_35 (G := G) (s := contEndFailS C q5 inc nep v ix) (v := v) b35)
   obtain ⟨s₅, hl₅, hs₅⟩ :=
     WalkLink.NodeBlock39_at (calls := stage2Calls stage2SubCalls) G (HlastAC₃ C)
       (contP41Out (contLandOut (G := G) (contEndFailS C q5 inc nep v ix) v b35) b35)
@@ -2035,8 +2034,8 @@ theorem contDefLastSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (q5 : Stat
   have h35c : evalOperand
       (contP39Out (contP41Out (contLandOut (G := G) (contEndFailS C q5 inc nep v ix) v b35)
         b35) b35) (.reg "%35") = some (.int 8 (cont35 b35)) := by
-    simp only [evalOperand]
-    exact contP39Out_35 (s := contEndFailS C q5 inc nep v ix) v b35
+    exact LeanLLVM.evalOperand_reg_of
+      (contP39Out_35 (G := G) (s := contEndFailS C q5 inc nep v ix) (v := v) b35)
   obtain ⟨s₆, hl₆, hs₆⟩ :=
     WalkLink.LeafBlock35_at (calls := stage2Calls stage2SubCalls) G (HlastAC₄ C)
       (contP39Out (contP41Out (contLandOut (G := G) (contEndFailS C q5 inc nep v ix) v b35)
@@ -2055,8 +2054,7 @@ theorem contDefLastSeg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (q5 : Stat
   -- 7. the token's end
   have hcond35 : evalOperand (contP35MidFail C q5 inc nep v ix b35) (.reg "%cond350.i") =
       some (.int 64 (BitVec.ofNat 64 v)) := by
-    simp only [evalOperand]
-    exact contP35MidFail_cond C q5 inc nep v ix b35
+    exact LeanLLVM.evalOperand_reg_of (contP35MidFail_cond C q5 inc nep v ix b35)
   obtain ⟨s₇, hl₇, hs₇⟩ :=
     WalkLink.if_end372_i_at (calls := stage2Calls stage2SubCalls) (G := G) (C := HeadAC₆ C)
       (s := contP35MidFail C q5 inc nep v ix b35) hl₆'.inv' rfl (p := "LeafBlock35") rfl

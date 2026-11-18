@@ -108,8 +108,8 @@ theorem depthOne_stacks_last_reachable {args : List Value} {m0 : Mem} {next : Na
   have hInv := seededInv (S := S) hargs hnext hn
   have h8s : evalOperand (openerHead G S args next) (.reg "%8") =
       some (.int 8 (BitVec.ofNat 8 c.toNat)) := by
-    simpa only [evalOperand] using
-      seed_head_byte G S (openerHead G S args next) h.entryByte_zero hInv
+    exact LeanLLVM.evalOperand_reg_of
+      (seed_head_byte G S (openerHead G S args next) h.entryByte_zero hInv)
   have hopen : BitVec.ofNat 8 c.toNat = BitVec.ofNat 8 91 ∨
       BitVec.ofNat 8 c.toNat = BitVec.ofNat 8 123 := by
     rcases hc with hc | hc
@@ -127,7 +127,7 @@ theorem depthOne_stacks_last_reachable {args : List Value} {m0 : Mem} {next : Na
   refine ⟨C', s', hInv', hblock', hsp1, hk1, ?_, ?_, ?_⟩
   · have hreg := hInv'.iter.reg8
     rw [hk1, h.entryByte_one] at hreg
-    simpa only [evalOperand] using hreg
+    walk_read using hreg
   · rw [hsub]; exact hty
   · rw [hsub]; exact hst
 
@@ -164,8 +164,8 @@ theorem depthOne_stacks_cont_reachable {args : List Value} {m0 : Mem} {next : Na
   have hInv := seededInv (S := S) hargs hnext hn
   have h8s : evalOperand (openerHead G S args next) (.reg "%8") =
       some (.int 8 (BitVec.ofNat 8 c.toNat)) := by
-    simpa only [evalOperand] using
-      seed_head_byte G S (openerHead G S args next) h.entryByte_zero hInv
+    exact LeanLLVM.evalOperand_reg_of
+      (seed_head_byte G S (openerHead G S args next) h.entryByte_zero hInv)
   have hopen : BitVec.ofNat 8 c.toNat = BitVec.ofNat 8 91 ∨
       BitVec.ofNat 8 c.toNat = BitVec.ofNat 8 123 := by
     rcases hc with hc | hc
@@ -184,7 +184,7 @@ theorem depthOne_stacks_cont_reachable {args : List Value} {m0 : Mem} {next : Na
   refine ⟨C', s', hInv', hblock', hsp1, hk1, hguard, ?_, ?_, ?_⟩
   · have hreg := hInv'.iter.reg8
     rw [hk1, h.entryByte_one] at hreg
-    simpa only [evalOperand] using hreg
+    walk_read using hreg
   · rw [hsub]; exact hty
   · rw [hsub]; exact hst
 
@@ -593,7 +593,7 @@ theorem bracketMerge_route_at_document {args : List Value} {m0 : Mem} {next : Na
     rw [hstate']; decide
   have hbe : BitVec.ofNat 8 (entryByte G C'.k).toNat = BitVec.ofNat 8 93 := by
     have h1 : lookupName s'.env "%8" = some (.int 8 (BitVec.ofNat 8 93)) := by
-      simpa only [evalOperand] using h8c
+      exact lookupName_of_evalOperand_reg h8c
     have h := Option.some.inj (hInv'.iter.reg8.symm.trans h1)
     simpa using h
   refine ⟨C', s', hInv', hblock', hsp1, hk1, h8c, hmark2, hstate0, ?_⟩
@@ -640,7 +640,7 @@ theorem braceMerge_route_at_document {args : List Value} {m0 : Mem} {next : Nat}
     rw [hstate']; decide
   have hbe : BitVec.ofNat 8 (entryByte G C'.k).toNat = BitVec.ofNat 8 125 := by
     have h1 : lookupName s'.env "%8" = some (.int 8 (BitVec.ofNat 8 125)) := by
-      simpa only [evalOperand] using h8c
+      exact lookupName_of_evalOperand_reg h8c
     have h := Option.some.inj (hInv'.iter.reg8.symm.trans h1)
     simpa using h
   refine ⟨C', s', hInv', hblock', hsp1, hk1, h8c, hmark1, hstate0, ?_⟩
@@ -687,7 +687,7 @@ theorem bracketMerge_route_cont_at_document {args : List Value} {m0 : Mem} {next
     rw [hstate']; decide
   have hbe : BitVec.ofNat 8 (entryByte G C'.k).toNat = BitVec.ofNat 8 93 := by
     have h1 : lookupName s'.env "%8" = some (.int 8 (BitVec.ofNat 8 93)) := by
-      simpa only [evalOperand] using h8c
+      exact lookupName_of_evalOperand_reg h8c
     have h := Option.some.inj (hInv'.iter.reg8.symm.trans h1)
     simpa using h
   refine ⟨C', s', hInv', hblock', hsp1, hk1, h8c, hmark2, hstate0, ?_⟩
@@ -734,7 +734,7 @@ theorem braceMerge_route_cont_at_document {args : List Value} {m0 : Mem} {next :
     rw [hstate']; decide
   have hbe : BitVec.ofNat 8 (entryByte G C'.k).toNat = BitVec.ofNat 8 125 := by
     have h1 : lookupName s'.env "%8" = some (.int 8 (BitVec.ofNat 8 125)) := by
-      simpa only [evalOperand] using h8c
+      exact lookupName_of_evalOperand_reg h8c
     have h := Option.some.inj (hInv'.iter.reg8.symm.trans h1)
     simpa using h
   refine ⟨C', s', hInv', hblock', hsp1, hk1, h8c, hmark1, hstate0, ?_⟩
@@ -758,7 +758,7 @@ theorem depthZero_no_closeBracketAbove {m0 : Mem} (G : WalkGeom m0) (S : WalkSta
   · have hreg := seed_reg8 G S s h hInv
     have htoNat : ((93 : UInt8)).toNat = 93 := by decide
     rw [htoNat] at hreg
-    simpa only [evalOperand] using hreg
+    walk_read using hreg
   · simp [walkSeed]
 
 /-- **The document `}` carries the closing brace's byte but the seed's depth is zero**, so
@@ -771,7 +771,7 @@ theorem depthZero_no_closeBraceAbove {m0 : Mem} (G : WalkGeom m0) (S : WalkStage
   · have hreg := seed_reg8 G S s h hInv
     have htoNat : ((125 : UInt8)).toNat = 125 := by decide
     rw [htoNat] at hreg
-    simpa only [evalOperand] using hreg
+    walk_read using hreg
   · simp [walkSeed]
 
 /-- **`{}` reaches the closing brace's byte at depth one**, so the *zero-depth* arm's

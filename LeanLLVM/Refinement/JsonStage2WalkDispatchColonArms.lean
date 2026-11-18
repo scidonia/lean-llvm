@@ -80,18 +80,19 @@ theorem colonHeadSeg {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
       lookupName_cons_ne (k := "%Pivot22") (n := "%8") _ _ (by decide)] using h8
   have hsp₄ : evalOperand (colS₄ (colS₃ (colS₂ (colS₁ s)))) (.reg "%sp.i.0248") =
       some (.int 32 (BitVec.ofNat 32 C.sp)) := by
+    have hd := LeanLLVM.evalOperand_reg_of hInv.depth_reg
     simpa only [colS₄, colS₃, colS₂, colS₁, evalOperand, State.bind,
       lookupName_cons_ne (k := "%SwitchLeaf4") (n := "%sp.i.0248") _ _ (by decide),
       lookupName_cons_ne (k := "%Pivot") (n := "%sp.i.0248") _ _ (by decide),
       lookupName_cons_ne (k := "%Pivot6") (n := "%sp.i.0248") _ _ (by decide),
       lookupName_cons_ne (k := "%Pivot22") (n := "%sp.i.0248") _ _ (by decide)]
-      using hInv.depth_reg
+      using hd
   have hbit : evalICmp .eq (BitVec.ofNat 32 C.sp) (BitVec.ofNat 32 0) = 0 :=
     depthEqZero_bit hpos hsp32
   have hct : lookupName (colS₄ (colS₃ (colS₂ (colS₁ s)))).env "%ctype.i" =
       some (.ptr C.stage.ctype) := hInv.ptrs.2.2.2.1
   have hsp₄' : lookupName (colS₄ (colS₃ (colS₂ (colS₁ s)))).env "%sp.i.0248" =
-      some (.int 32 (BitVec.ofNat 32 C.sp)) := hsp₄
+      some (.int 32 (BitVec.ofNat 32 C.sp)) := lookupName_of_evalOperand_reg hsp₄
   have L₁ := colStep₁ (calls := calls) G C s hInv hhead h8
   have L₂ := colStep₂ (calls := calls) G { C with block := "NodeBlock5" } (colS₁ s)
     L₁.inv' rfl h8₁
@@ -101,7 +102,7 @@ theorem colonHeadSeg {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry
     (colS₃ (colS₂ (colS₁ s))) L₃.inv' rfl h8₃
   obtain ⟨s₅, hl₅, hs₅⟩ := WalkLink.if_then173_i_at (calls := calls) G
     { C with block := "if.then173.i" } (colS₄ (colS₃ (colS₂ (colS₁ s)))) L₄.inv' rfl
-    (x1 := BitVec.ofNat 32 C.sp) hsp₄'
+    (x1 := BitVec.ofNat 32 C.sp) hsp₄
   have L₅ : WalkLink calls G { C with block := "if.then173.i" }
       (colS₄ (colS₃ (colS₂ (colS₁ s)))) { C with block := "if.end179.i" }
       (colonOut (colS₄ (colS₃ (colS₂ (colS₁ s))))) := by
@@ -257,10 +258,10 @@ theorem colonBraceMerge_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : Wal
     simp only [lorNext, ite_eq_left hb2]
   · show phiIncoming "if.end195.i" cleanupSpIncoming = some (.reg "%sp.i.0248")
     decide
-  · simpa only [evalOperand] using hseg8.inv'.depth_reg
+  · walk_read using hseg8.inv'.depth_reg
   · show phiIncoming "if.end195.i" cleanupKIncoming = some (.reg "%inc.i")
     decide
-  · simpa only [evalOperand] using hseg8.inv'.inc_reg
+  · walk_read using hseg8.inv'.inc_reg
   · exact hseg8.inv'.regs ("%nep", .int 64 (BitVec.ofNat 64 G.nep)) (by simp [walkStaticRegs])
   · omega
   · exact commaCap G hklt
@@ -291,7 +292,7 @@ theorem colonBraceRefuse_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : Wa
       (BitVec.ofNat 32 C.sp + BitVec.ofNat 32 4294967295).toNat b2) (.reg "%idxprom.i") =
       some (.int 64 (BitVec.ofNat 64 (entryPos G C.k))) := by
     have h := hseg7'.inv'.idx_reg
-    simpa only [evalOperand] using h
+    walk_read using h
   have he : lookupName (lorNext (colonMarker C s b1) C.stage.cst
       (BitVec.ofNat 32 C.sp + BitVec.ofNat 32 4294967295).toNat b2).env "%e" =
       some (.ptr C.stage.e) := by
@@ -333,7 +334,7 @@ theorem colonMarkerRefuse_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : W
     rwa [hmark]
   have hv : evalOperand s (.reg "%idxprom.i") =
       some (.int 64 (BitVec.ofNat 64 (entryPos G C.k))) := by
-    simpa only [evalOperand] using hInv.idx_reg
+    walk_read using hInv.idx_reg
   have he : lookupName s.env "%e" = some (.ptr C.stage.e) :=
     hInv.regs ("%e", .ptr C.stage.e) (by simp [walkStaticRegs])
   obtain ⟨Cd, sd, p, hseg, herr, hprice⟩ :=

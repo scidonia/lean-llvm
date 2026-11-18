@@ -30,6 +30,14 @@ open LeanLLVM.Refinement.JsonS1MasksIR
   (evalInstr_load evalInstr_binop evalInstr_binopVec evalInstr_icmp evalInstr_zext
    evalInstr_store evalInstr_call evalOperands_cons vecLanes_self)
 
+/-- A register read in the run's environment: the cells the block has installed
+so far, then the cell it names.  The steps below are stated at `withEnv`, so this
+is the read their hypotheses spell. -/
+theorem evalOperand_reg_of (env : Env) (s : State) (n : String) (v : Value)
+    (h : lookupName env n = some v) (hv : v ≠ .poison := by intro hh; cases hh) :
+    evalOperand (withEnv env s) (.reg n) = some v :=
+  JsonEntrySteps.evalOperand_reg_of env s n v h hv
+
 /-! ### Whether a number has a set bit below a bound -/
 
 /-- `below n i`: whether `n` has a set bit below `i`.  This is the "some set

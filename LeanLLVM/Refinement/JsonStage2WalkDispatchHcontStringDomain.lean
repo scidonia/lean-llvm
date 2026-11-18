@@ -71,7 +71,7 @@ theorem stringOpenAboveZero_reachable {args : List Value} {m0 : Mem} {next : Nat
     depthOne_stacks_cont_reachable hargs hnext h hc hrd hpreV r hcall hret
   have hbyte : hlastByte G C' = BitVec.ofNat 8 34 := by
     have h1 : lookupName s'.env "%8" = some (.int 8 (BitVec.ofNat 8 d.toNat)) := by
-      simpa only [evalOperand] using h8m
+      walk_read using h8m
     have h2 := hInv'.iter.reg8
     rw [h1] at h2
     have h3 : hlastByte G C' = BitVec.ofNat 8 d.toNat :=

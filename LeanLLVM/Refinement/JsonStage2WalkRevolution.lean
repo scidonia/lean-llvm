@@ -1703,7 +1703,7 @@ theorem wsSeamSeg {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
     WalkSegment calls G { C with block := "if.end372.i" } sl (ContSeamC C)
       (contWsSeamS C sl k b8) 1 := by
   have hv : evalOperand sl (.reg "%ee.0.i238") =
-      some (.int 64 (BitVec.ofNat 64 k)) := hi
+      some (.int 64 (BitVec.ofNat 64 k)) := LeanLLVM.evalOperand_reg_of hi
   obtain ⟨s', hl, hs⟩ :=
     WalkLink.if_end372_i_at (calls := calls) (G := G)
       (C := { C with block := "if.end372.i" }) (s := sl) hInv rfl hpre hin hv hend h8 hbit
@@ -2924,13 +2924,28 @@ theorem contWsAfterPreAt {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkC
         (wsLeafS G (landRhsPreheaderOutAt pre) ix.toNat) first := by
     rcases hcontI with ⟨h13, hws0⟩ | ⟨h13, h32, hq13⟩ | ⟨h13, h32, hq32⟩
     · exact ⟨4, by omega, wsFirstSeg43 G C pre hEntry.inv' hpc hscan
-        (by simpa only [evalOperand, landRhsPreheaderOutAt, hie] using hidx)
+        (by
+          have hlk : lookupName (landRhsPreheaderOutAt pre).env "%idxprom.i" =
+              some (.int 64 ix) := by
+            simpa only [landRhsPreheaderOutAt] using hidx
+          rw [hie]
+          exact LeanLLVM.evalOperand_reg_of hlk)
         rfl hi63 hgn halen hevlen h13 hws0 hsc2⟩
     · exact ⟨5, by omega, wsFirstSeg46 G C pre hEntry.inv' hpc hscan
-        (by simpa only [evalOperand, landRhsPreheaderOutAt, hie] using hidx)
+        (by
+          have hlk : lookupName (landRhsPreheaderOutAt pre).env "%idxprom.i" =
+              some (.int 64 ix) := by
+            simpa only [landRhsPreheaderOutAt] using hidx
+          rw [hie]
+          exact LeanLLVM.evalOperand_reg_of hlk)
         rfl hi63 hgn halen hevlen h13 h32 hq13 hsc2⟩
     · exact ⟨5, by omega, wsFirstSeg48 G C pre hEntry.inv' hpc hscan
-        (by simpa only [evalOperand, landRhsPreheaderOutAt, hie] using hidx)
+        (by
+          have hlk : lookupName (landRhsPreheaderOutAt pre).env "%idxprom.i" =
+              some (.int 64 ix) := by
+            simpa only [landRhsPreheaderOutAt] using hidx
+          rw [hie]
+          exact LeanLLVM.evalOperand_reg_of hlk)
         rfl hi63 hgn halen hevlen h13 h32 hq32 hsc2⟩
   obtain ⟨first, hfirst, hsegFirst⟩ := hFirst
   -- the run from the latch the first visit reaches
@@ -3154,7 +3169,7 @@ theorem wsEntryAt33 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
     show lookupName (("%Pivot42", .int 1 (evalICmp .slt (cont35 b35)
       (BitVec.ofNat 8 13))) :: sl.env) "%35" = some (.int 8 (cont35 b35))
     rw [lookupName_cons_ne _ _ (by decide)]
-    simpa only [evalOperand] using h35
+    walk_read using h35
   obtain ⟨s₂, hl₂, hs₂⟩ :=
     WalkLink.LeafBlock33_at (calls := calls) G { ContAC₄ C with block := "LeafBlock33" }
       (nodeBlock41OutAt sl (cont35 b35)) hl₁.inv' rfl h35'
@@ -3178,7 +3193,7 @@ theorem wsEntryAt35 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
     WalkSegment calls G (ContAC₄ C) sl { C with block := "land.rhs.i.preheader" }
       (leafBlock35OutAt (wsP39Out (wsP41Out sl b35) b35) (cont35 b35)) 3 := by
   have h35l : lookupName sl.env "%35" = some (.int 8 (cont35 b35)) := by
-    simpa only [evalOperand] using h35
+    walk_read using h35
   obtain ⟨s₁, hl₁, hs₁⟩ :=
     WalkLink.NodeBlock41_at (calls := calls) G (ContAC₄ C) sl hInv rfl h35
   have hres : (if evalICmp .slt (cont35 b35) (BitVec.ofNat 8 13) = 1 then
@@ -3189,8 +3204,7 @@ theorem wsEntryAt35 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
   rw [hres] at hl₁
   have h35b : evalOperand (wsP41Out sl b35) (.reg "%35") =
       some (.int 8 (cont35 b35)) := by
-    simp only [evalOperand]
-    exact wsP41Out_35 sl b35 h35l
+    exact LeanLLVM.evalOperand_reg_of (wsP41Out_35 sl b35 h35l)
   obtain ⟨s₂, hl₂, hs₂⟩ :=
     WalkLink.NodeBlock39_at (calls := calls) G (ContAC₅ C) (wsP41Out sl b35) hl₁.inv' rfl h35b
   have hres2 : (if evalICmp .slt (cont35 b35) (BitVec.ofNat 8 32) = 1 then
@@ -3201,8 +3215,8 @@ theorem wsEntryAt35 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
   rw [hres2] at hl₂
   have h35c : evalOperand (wsP39Out (wsP41Out sl b35) b35) (.reg "%35") =
       some (.int 8 (cont35 b35)) := by
-    simp only [evalOperand]
-    exact wsP39Out_35 (wsP41Out sl b35) b35 (wsP41Out_35 sl b35 h35l)
+    exact LeanLLVM.evalOperand_reg_of
+      (wsP39Out_35 (wsP41Out sl b35) b35 (wsP41Out_35 sl b35 h35l))
   obtain ⟨s₃, hl₃, hs₃⟩ :=
     WalkLink.LeafBlock35_at (calls := calls) G (ContAC₆ C)
       (wsP39Out (wsP41Out sl b35) b35) hl₂.inv' rfl h35c
@@ -3227,7 +3241,7 @@ theorem wsEntryAt37 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
     WalkSegment calls G (ContAC₄ C) sl { C with block := "land.rhs.i.preheader" }
       (leafBlock37OutAt (wsP37Out (wsP41Out sl b35) b35) (cont35 b35)) 3 := by
   have h35l : lookupName sl.env "%35" = some (.int 8 (cont35 b35)) := by
-    simpa only [evalOperand] using h35
+    walk_read using h35
   obtain ⟨s₁, hl₁, hs₁⟩ :=
     WalkLink.NodeBlock41_at (calls := calls) G (ContAC₄ C) sl hInv rfl h35
   have hres : (if evalICmp .slt (cont35 b35) (BitVec.ofNat 8 13) = 1 then
@@ -3238,8 +3252,7 @@ theorem wsEntryAt37 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
   rw [hres] at hl₁
   have h35b : evalOperand (wsP41Out sl b35) (.reg "%35") =
       some (.int 8 (cont35 b35)) := by
-    simp only [evalOperand]
-    exact wsP41Out_35 sl b35 h35l
+    exact LeanLLVM.evalOperand_reg_of (wsP41Out_35 sl b35 h35l)
   obtain ⟨s₂, hl₂, hs₂⟩ :=
     WalkLink.NodeBlock39_at (calls := calls) G (ContAC₅ C) (wsP41Out sl b35) hl₁.inv' rfl h35b
   have hres2 : (if evalICmp .slt (cont35 b35) (BitVec.ofNat 8 32) = 1 then
@@ -3250,8 +3263,8 @@ theorem wsEntryAt37 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
   rw [hres2] at hl₂
   have h35c : evalOperand (wsP37Out (wsP41Out sl b35) b35) (.reg "%35") =
       some (.int 8 (cont35 b35)) := by
-    simp only [evalOperand]
-    exact wsP37Out_35 (wsP41Out sl b35) b35 (wsP41Out_35 sl b35 h35l)
+    exact LeanLLVM.evalOperand_reg_of
+      (wsP37Out_35 (wsP41Out sl b35) b35 (wsP41Out_35 sl b35 h35l))
   obtain ⟨s₃, hl₃, hs₃⟩ :=
     WalkLink.LeafBlock37_at (calls := calls) G { ContAC₅ C with block := "LeafBlock37" }
       (wsP37Out (wsP41Out sl b35) b35) hl₂.inv' rfl h35c
@@ -3326,9 +3339,10 @@ theorem contWsSeamS_env8 {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (sl : St
     (k : Nat) (b8 : BitVec 8)
     (h : evalOperand (contWsSeamS C sl k b8) (.reg "%8") = some (.int 8 b8)) :
     lookupName sl.env "%8" = some (.int 8 b8) := by
-  simp only [contWsSeamS, seamS, seamFin, stateAt, evalOperand] at h
-  repeat rw [lookupName_cons_ne _ _ (by decide)] at h
-  exact h
+  have hh := lookupName_of_evalOperand_reg h
+  simp only [contWsSeamS, seamS, seamFin, stateAt] at hh
+  repeat rw [lookupName_cons_ne _ _ (by decide)] at hh
+  exact hh
 
 /-- **The skip keeps `%8`**: every state it passes binds its own cells, and `%8` is not
 one of them.  So the byte the seam tests is the check state's byte, which the invariant
@@ -4046,7 +4060,7 @@ theorem contWsEntryAt_hopS {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {sl : 
   simp only [evalOperand, contWsEntryAt, ScanEntry, TailS₃, TailS₂, TailS₁, stateAt, cells,
     State.bind]
   repeat rw [lookupName_cons_ne _ _ (by decide)]
-  exact f.hssEe
+  exact LeanLLVM.evalOperand_reg_of f.hssEe
 
 /-- `%inc.i` at the bundle's latch is the leaf's: the tail's steps and the scan's three
 bind no cell of that name, so it is the endpoint's word, which the chain kept. -/
@@ -4140,9 +4154,11 @@ noncomputable def wsRunHeadAt {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
     hPre.trans hrun
   have h8 : evalOperand (contWsSeamS C (wsSlAt G sl f.b35 f.ix f.v f.k) f.k f.x1)
       (.reg "%8") = some (.int 8 (hlastByte G C)) := by
-    show lookupName (contWsSeamS C (wsSlAt G sl f.b35 f.ix f.v f.k) f.k f.x1).env "%8" =
-      some (.int 8 (hlastByte G C))
-    simpa only [hlastByte] using hseg.inv'.iter.reg8
+    have hlk : lookupName
+        (contWsSeamS C (wsSlAt G sl f.b35 f.ix f.v f.k) f.k f.x1).env "%8" =
+        some (.int 8 (hlastByte G C)) := by
+      simpa only [hlastByte] using hseg.inv'.iter.reg8
+    exact LeanLLVM.evalOperand_reg_of hlk
   exact ⟨N, hseg, by omega, h8, hcond, contWsPriceAt G C sl f hN⟩
 
 /-! ### The instrument -/

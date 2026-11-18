@@ -178,7 +178,7 @@ theorem scWsSeamSeg {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry 
     WalkSegment calls G { C with block := "if.end372.i" } sl
       { C with block := "if.then413.i" } (scWsSeam C sl k x) 1 := by
   have hv : evalOperand sl (.reg "%ee.0.i238") =
-      some (.int 64 (BitVec.ofNat 64 k)) := hi
+      some (.int 64 (BitVec.ofNat 64 k)) := LeanLLVM.evalOperand_reg_of hi
   obtain ⟨s', hl, hs⟩ :=
     WalkLink.if_end372_i_true_at (calls := calls) (G := G)
       (C := { C with block := "if.end372.i" }) (s := sl) hInv rfl hpre hin hv hend h8 hbit
@@ -256,13 +256,28 @@ theorem scWsAfterPreAt {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
         (wsLeafS G (landRhsPreheaderOutAt pre) ix.toNat) first := by
     rcases hcontI with ⟨h13, hws0⟩ | ⟨h13, h32, hq13⟩ | ⟨h13, h32, hq32⟩
     · exact ⟨4, by omega, wsFirstSeg43 G C pre hEntry.inv' hpc hscan
-        (by simpa only [evalOperand, landRhsPreheaderOutAt, hie] using hidx)
+        (by
+          have hlk : lookupName (landRhsPreheaderOutAt pre).env "%idxprom.i" =
+              some (.int 64 ix) := by
+            simpa only [landRhsPreheaderOutAt] using hidx
+          rw [hie]
+          exact LeanLLVM.evalOperand_reg_of hlk)
         rfl hi63 hgn halen hevlen h13 hws0 hsc2⟩
     · exact ⟨5, by omega, wsFirstSeg46 G C pre hEntry.inv' hpc hscan
-        (by simpa only [evalOperand, landRhsPreheaderOutAt, hie] using hidx)
+        (by
+          have hlk : lookupName (landRhsPreheaderOutAt pre).env "%idxprom.i" =
+              some (.int 64 ix) := by
+            simpa only [landRhsPreheaderOutAt] using hidx
+          rw [hie]
+          exact LeanLLVM.evalOperand_reg_of hlk)
         rfl hi63 hgn halen hevlen h13 h32 hq13 hsc2⟩
     · exact ⟨5, by omega, wsFirstSeg48 G C pre hEntry.inv' hpc hscan
-        (by simpa only [evalOperand, landRhsPreheaderOutAt, hie] using hidx)
+        (by
+          have hlk : lookupName (landRhsPreheaderOutAt pre).env "%idxprom.i" =
+              some (.int 64 ix) := by
+            simpa only [landRhsPreheaderOutAt] using hidx
+          rw [hie]
+          exact LeanLLVM.evalOperand_reg_of hlk)
         rfl hi63 hgn halen hevlen h13 h32 hq32 hsc2⟩
   obtain ⟨first, hfirst, hsegFirst⟩ := hFirst
   -- the run from the latch the first visit reaches
@@ -950,8 +965,8 @@ theorem walkDispatch_at_continue_scalarWs {m0 : Mem} {G : WalkGeom m0} {C : Walk
   have hkvF : f.k < f.v.toNat := f.heicd
   have h8sl : lookupName (scWsSlF f).env "%8" = some (.int 8 f.x) := by
     have h := scWsSeam_env8 C (scWsSlF f) f.k f.x
-    have h2 : evalOperand (scWsSeamF f) (.reg "%8") = some (.int 8 f.x) := f.h8m
-    rw [evalOperand] at h2
+    have h2 : lookupName (scWsSeamF f).env "%8" = some (.int 8 f.x) :=
+      lookupName_of_evalOperand_reg f.h8m
     rw [← h]
     exact h2
   have hendsl : lookupName (scWsSlF f).env "%end.i" = some (.ptr (C.stage.tok + 8)) := by
@@ -1070,7 +1085,7 @@ theorem walkDispatch_at_continue_scalarWs {m0 : Mem} {G : WalkGeom m0} {C : Walk
       (.reg "%inc.i") = some (.int 64 (BitVec.ofNat 64 (C.k + 1))) := by
     have h := hInvD.inc_reg
     rw [hkD] at h
-    exact h
+    exact LeanLLVM.evalOperand_reg_of h
   have hnepvD : lookupName ({ s₁ with pc := "cleanup478.i", pre := some s₁.pc } : State).env
       "%nep" = some (.int 64 (BitVec.ofNat 64 G.nep)) :=
     hInvD.regs ("%nep", .int 64 (BitVec.ofNat 64 G.nep)) (by simp [walkStaticRegs])
@@ -1084,7 +1099,7 @@ theorem walkDispatch_at_continue_scalarWs {m0 : Mem} {G : WalkGeom m0} {C : Walk
   have hspvD : evalOperand ({ s₁ with pc := "cleanup478.i", pre := some s₁.pc } : State)
       (.reg "%sp.i.0248") =
       some (.int 32 (BitVec.ofNat 32 ({ Cm with block := "cleanup478.i" } : WalkCarry G).sp)) :=
-    hInvD.depth_reg
+    LeanLLVM.evalOperand_reg_of hInvD.depth_reg
   have hpriceD : (N + 3 + 3 + nSc + 1 + 1) + 2 ≤
       stage2EntryAllowance * (C.k + 1 - C.k) +
         stage2ByteAllowance * (entryPos G (C.k + 1) - entryPos G C.k) := by

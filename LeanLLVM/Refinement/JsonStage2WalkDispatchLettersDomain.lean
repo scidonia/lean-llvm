@@ -69,7 +69,7 @@ theorem lettersHead_a {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
   have hreg := seed_head_byte G S s (hc := h.entryByte_zero) hInv
   have ht : ((97 : UInt8)).toNat = 97 := by decide
   rw [ht] at hreg
-  simpa only [evalOperand] using hreg
+  walk_read using hreg
 
 /-- The high byte `200`'s document's head byte is `200`. -/
 theorem lettersHead_high {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State)
@@ -78,7 +78,7 @@ theorem lettersHead_high {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : Sta
   have hreg := seed_head_byte G S s (hc := h.entryByte_zero) hInv
   have ht : ((200 : UInt8)).toNat = 200 := by decide
   rw [ht] at hreg
-  simpa only [evalOperand] using hreg
+  walk_read using hreg
 
 /-! ### The two head classes -/
 
@@ -293,7 +293,7 @@ def letters_last_arm_a {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : State
   have ht' : ((97 : UInt8)).toNat = 97 := by decide
   rw [ht'] at hreg
   have h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 97)) := by
-    simpa only [evalOperand] using hreg
+    walk_read using hreg
   exact lastEntryArm_letters_of_staging (walkSeed G S) s hInv
     (hlastByte_of_reg8 hInv h8) (lettersPrem_a).1 (lettersPrem_a).2.1 (lettersPrem_a).2.2
     hHead (by omega) hm hmk h8m hTail ht htk htok
@@ -315,7 +315,7 @@ def letters_last_arm_high {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) (s : St
   have ht' : ((200 : UInt8)).toNat = 200 := by decide
   rw [ht'] at hreg
   have h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 200)) := by
-    simpa only [evalOperand] using hreg
+    walk_read using hreg
   exact lastEntryArm_letters_of_staging (walkSeed G S) s hInv
     (hlastByte_of_reg8 hInv h8) (lettersPrem_high).1 (lettersPrem_high).2.1
     (lettersPrem_high).2.2 hHead (by omega) hm hmk h8m hTail ht htk htok
