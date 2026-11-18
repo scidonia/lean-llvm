@@ -367,11 +367,13 @@ supplies for each, and what is left:
   charged at the final row's scale (`t3RoundStep_mono`, `t3RoundStep_mul_le`,
   `t3Ladder_charge`).  The loops `while.cond203.i.i`/`while.cond229.i.i` are
   pinned in `JsonStage2HelperIRNumFast` and are stated there
-  (`t3MulLoopOf`/`t3DivLoopOf`, with each head's jumps proved).  The positive
-  row block's per-edge step and the rows' arithmetic are
-  `JsonStage2NumFastTier3Rows`', which also instantiates `t3MulLoopOf` at the
-  emitted rows and states its run; what remains is the negative row block's
-  per-edge step.
+  (`t3MulLoopOf`/`t3DivLoopOf`, with each head's jumps proved).  Both row
+  blocks' per-edge steps and the rows' arithmetic are
+  `JsonStage2NumFastTier3Rows`', which instantiates `t3MulLoopOf` at the emitted
+  rows and states its run (`t3MulLoop_step`, `t3MulLoop_exit`,
+  `t3MulLoop_run_t3Rows`), and does the same for `t3DivLoopOf`
+  (`t3DivLoop_step`, `t3DivLoop_exit`, `t3DivLoop_run_t3Rows`), whose zero test
+  it refuses structurally rather than by a magnitude bound.
 
 None of the three is a `sorry`; each is stated, and what remains is named above
 rather than assumed. -/

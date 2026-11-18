@@ -42,11 +42,32 @@ the magnitude conditions under which no row overflows (`hno`, and its consequenc
 **The instruction vocabulary the blocks need.**  `icmp ugt`
 (`step_icmp_ugt_imm`) and the `double`-to-`i64` bitcast (`step_bitcastToInt`)
 for the multiply's overflow test, `ashr` (`step_ashr_imm`) for the division's
-index, and `fcmp oeq` (`step_fcmp_oeq`) for its zero test, each with its
-`denoteCode` form.  The negative row block's own chain — its `ult` test against
-`-22`, the negation and `ashr` that recover `min (-e) 22`, the `fdiv` and the
-`fcmp` against zero — is not stated here; `t3DivLoopOf`'s two arms remain open
-and are named at the end of `JsonStage2NumFastTier3`.
+index, and `fcmp oeq` against a register (`step_fcmp_oeq`) or the zero literal
+the division's test names (`step_fcmp_oeq_imm`), each with its `denoteCode` form.
+
+**The negative row block.**  `t3_divBody_denote` is `while.body232.i.i`'s chain
+at its pin: the `ult` test against `-22`, the negation and `ashr` that recover
+`min (-e) 22` (`t3DivIndex`, `t3DivUlt`, `select_ult_min_neg`), the table read at
+the recovered index, the `fdiv`, the residual's addition (`ofNat_add_ofInt_neg`),
+and the `fcmp` against zero.  `t3_divBody_step` is the block's terminator at
+`t3DivBodyEnv`.  The zero test's refusal reads the carried double's shape rather
+than a magnitude bound: the quotient's value is the *next* carried double
+(`t3DivCarried_succ`), and the staging asserts each of those is a positive
+finite code (`hpack`), so the pattern is not the zero encoding
+(`packMag_fin_false_ne_zero`) and the comparison is false
+(`fcmpOeqBits_packMag_fin_false`).  Nothing weaker would do — a code divided by a
+larger one's tick value rounds to `⟨0, 0⟩` — so what the arm supplies is that
+hypothesis, not an underflow inequality.
+
+**The negative loop at the emitted rows.**  `t3DivLoop_step` discharges
+`t3DivLoopOf`'s `step_loop` at `rows = t3Rows E`, `t3DivLoop_exit` its
+`step_exit`, and `t3DivLoop_t3Rows` is the loop itself, with its run
+`t3DivLoop_run_t3Rows` at the rows' own count.  The two facts the emitted code
+reads but does not compute are the same two the positive loop takes, at the
+negative block's registers: the staging's table bytes (`hstage`) and the carried
+double's shape (`hpack`, every carried double a positive finite code).  No
+magnitude inequality joins them: the branch is the zero test, and `hpack` at the
+next counter is the whole of what refuses it.
 -/
 import LeanLLVM.Refinement.JsonStage2NumFastTier3Ladder
 
@@ -144,6 +165,20 @@ theorem denoteCode_fcmp_oeq (calls : Calls) (env : Env) (s : State) (d a b : Str
       denoteCode calls is
         (stateAt ((d, .int 1 (if fcmpOeqBits x y then 1 else 0)) :: env) s) := by
   rw [denoteCode_cons_of _ _ _ _ _ (step_fcmp_oeq calls env s d a b ha hb)]
+
+/-- `%d = fcmp oeq double %a, <c>`. -/
+theorem step_fcmp_oeq_imm (calls : Calls) (env : Env) (s : State) (d a : String)
+    {x y : BitVec 64} (ha : lookupName env a = some (.float x)) :
+    evalInstr calls (stateAt env s) (.fcmp d .oeq (.reg a) (.imm (.float y))) =
+      some (stateAt ((d, .int 1 (if fcmpOeqBits x y then 1 else 0)) :: env) s) := by
+  simp only [evalInstr, evalOperand, Const.toValue, stateAt, ha, State.bind]
+
+theorem denoteCode_fcmp_oeq_imm (calls : Calls) (env : Env) (s : State) (d a : String)
+    {x y : BitVec 64} (ha : lookupName env a = some (.float x)) (is : List Instr) :
+    denoteCode calls (.fcmp d .oeq (.reg a) (.imm (.float y)) :: is) (stateAt env s) =
+      denoteCode calls is
+        (stateAt ((d, .int 1 (if fcmpOeqBits x y then 1 else 0)) :: env) s) := by
+  rw [denoteCode_cons_of _ _ _ _ _ (step_fcmp_oeq_imm calls env s d a ha)]
 
 /-! ### The positive row block
 
@@ -463,8 +498,11 @@ theorem t3MulBodyEnv_mul217 {env : Env} {e d p : BitVec 64} {m address : Nat} :
 `while.body232.i.i` divides the carried double by one table row.  Its index is
 not the residual directly: the block tests `%e10.2.i.i <u -22`, negates the
 residual by `* -2 ^ 32` and shifts the high word back, so `%126` is `-e`; the
-select then takes the clamp, exactly `min (-e) 22`.  The index's arithmetic is
-stated below; the block's chain and terminator are not yet composed. -/
+select then takes the clamp, exactly `min (-e) 22`.  The block's chain
+(`t3_divBody_denote`) and its terminator (`t3_divBody_step`) are the same shape
+as the positive block's, at the negative index arithmetic; the zero test's
+refusal is `fcmpOeqBits_packMag_fin_false`, at the next carried double's shape,
+so `t3DivLoopOf`'s two arms are the loop below. -/
 
 /-- The emitted index's recovery: at a negative residual `-k` the negate-and-shift
 is `k`. -/
@@ -604,15 +642,169 @@ def t3DivBodyEnv (env : Env) (ev d p : BitVec 64) (k m address : Nat) : Env :=
   ("%.neg.i.i", .int 64 (ev * 0xffffffff00000000#64)) ::
   ("%cmp234.i.i", .int 1 (evalICmp .ult ev 0xffffffffffffffea#64)) :: env
 
-/-! The negative row block's chain is not composed here.  The index's
-recovery (`t3DivIndex`), the test's bit (`t3DivUlt`), the clamp's select
-(`select_ult_min_neg`), the block's instruction list and the environment it
-leaves (`t3DivBodyInstrs`, `t3DivBodyEnv`) are stated, and the five chain steps it
-needs exist (`denoteCode_icmp_ult_imm`, `denoteCode_mul_imm`,
-`denoteCode_ashr_imm`, `denoteCode_select_imm_reg_ite`,
-`denoteCode_fcmp_oeq`); what is not yet written is the `denoteCode` composition
-that threads them — the same shape as `t3_mulBody_denote` above — and its
-terminator step, hence `t3DivLoopOf`'s two arms. -/
+/-- The residual's addition at a negative exponent: the row's index plus `-k`. -/
+theorem ofNat_add_ofInt_neg {m k : Nat} (hmk : m ≤ k) (hk : k < 2 ^ 64) :
+    BitVec.ofNat 64 m + BitVec.ofInt 64 (-(k : Int)) =
+      BitVec.ofInt 64 (-((k - m : Nat) : Int)) := by
+  bv_omega
+
+/-- The negative head's test at a residual `-k` below the sign bit. -/
+theorem evalICmp_slt_ofInt_neg {k : Nat} (h0 : 0 < k) (hk : k < 2 ^ 63) :
+    evalICmp .slt (BitVec.ofInt 64 (-(k : Int))) (0 : BitVec 64) = (1 : BitVec 1) := by
+  have htoInt : (BitVec.ofInt 64 (-(k : Int))).toInt = -(k : Int) := by
+    refine BitVec.toInt_ofInt_eq_self (by decide) ?_ ?_ <;> omega
+  rw [show evalICmp .slt (BitVec.ofInt 64 (-(k : Int))) (0 : BitVec 64)
+      = BitVec.ofBool ((BitVec.ofInt 64 (-(k : Int))).slt (0 : BitVec 64)) from rfl]
+  have hz : BitVec.toInt (0 : BitVec 64) = 0 := by decide
+  rw [BitVec.slt_eq_decide, htoInt, hz]
+  rw [show decide (-(k : Int) < 0) = true from by rw [decide_eq_true_eq]; omega]
+  rfl
+
+/-- The same test at a spent residual: the exponent is zero. -/
+theorem evalICmp_slt_ofInt_neg_zero :
+    evalICmp .slt (BitVec.ofInt 64 (-((0 : Nat) : Int))) (0 : BitVec 64) =
+      (0 : BitVec 1) := by
+  decide
+
+/-- A positive finite code's pattern is not the zero pattern.  The zero pattern
+is the code `⟨0, 0⟩`, whose magnitude is zero ticks. -/
+theorem packMag_fin_false_ne_zero {c : Code} (hc : c.IsMag) (hpos : 0 < c.ticks) :
+    packMag (.fin c) false ≠ (0 : BitVec 64) := by
+  intro h
+  have h1 := NumFastTier1.magTicks_ofBits_packMag_false hc
+  rw [h] at h1
+  have h2 : F64.magTicks (F64.ofBits (0 : BitVec 64)) = 0 := by decide
+  omega
+
+/-- **The zero test refuses at a positive finite code's pattern.**  The quotient
+`fdivBits` answers is `packMag` of a code (`fdivBits_pack`), and a code with a
+positive tick value is not the zero pattern, so `fcmp oeq` against zero reads
+false there. -/
+theorem fcmpOeqBits_packMag_fin_false {c : Code} (hc : c.IsMag) (hpos : 0 < c.ticks) :
+    fcmpOeqBits (packMag (.fin c) false) (0 : BitVec 64) = false := by
+  have hnan := NumFastTier1.isNaN_ofBits_packMag_false hc
+  have hzero := NumFastTier1.isZero_ofBits_packMag_false hc hpos
+  have hne := packMag_fin_false_ne_zero hc hpos
+  have hnan0 : (F64.ofBits (0 : BitVec 64)).isNaN = false := by decide
+  have hzero0 : (F64.ofBits (0 : BitVec 64)).isZero = true := by decide
+  unfold fcmpOeqBits
+  dsimp only
+  rw [hnan, hnan0, hzero, hzero0]
+  rw [show (packMag (.fin c) false == (0 : BitVec 64)) = false from by
+    rw [beq_eq_false_iff_ne]; exact hne]
+  rfl
+
+/-- **The negative row block's chain.**  The `ult` test against `-22`, the
+negate-and-shift index, the clamp, the table's row, one `fdiv`, the residual's
+addition and the zero test. -/
+theorem t3_divBody_denote {calls : Calls} {env : Env} {s : State}
+    {k : Nat} {d p : BitVec 64} {address : Nat}
+    (he : lookupName env "%e10.2.i.i"
+      = some (.int 64 (BitVec.ofInt 64 (-(k : Int)))))
+    (hd : lookupName env "%d201.2.i.i" = some (.float d))
+    (hb : lookupName env "@NUMF_EL1_POW10" = some (.ptr address))
+    (h0 : 0 < k) (hk : k < 2 ^ 31)
+    (hread : readBytes s.mem (address + min k 22 * 8) 8
+      = some (natToBytes p.toNat 8)) :
+    denoteCode calls t3DivBodyInstrs (stateAt env s) =
+      some (stateAt (t3DivBodyEnv env (BitVec.ofInt 64 (-(k : Int))) d p k
+        (min k 22) address) s) := by
+  have hm64 : min k 22 < 2 ^ 64 := by omega
+  have hpos : (BitVec.signExtend 64 (BitVec.ofNat 64 (min k 22))).toNat < 2 ^ 63 := by
+    rw [BitVec.signExtend_eq, BitVec.toNat_ofNat, Nat.mod_eq_of_lt hm64]
+    omega
+  have hread' : readBytes s.mem
+      (address + (BitVec.signExtend 64 (BitVec.ofNat 64 (min k 22))).toNat * 8)
+        8 = some (natToBytes p.toNat 8) := by
+    simpa only [BitVec.signExtend_eq, BitVec.toNat_ofNat,
+      Nat.mod_eq_of_lt hm64] using hread
+  unfold t3DivBodyInstrs
+  rw [BlockEval.denoteCode_icmp_ult_imm calls env s "%cmp234.i.i" "%e10.2.i.i" he]
+  rw [denoteCode_mul_imm calls _ s "%.neg.i.i" "%e10.2.i.i" (by block_lk)]
+  rw [denoteCode_ashr_imm calls _ s "%126" "%.neg.i.i" (by block_lk)]
+  rw [show (0x0000000000000020#64 : BitVec 64).toNat = 32 from by
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by decide)]]
+  rw [t3DivIndex h0 hk]
+  rw [denoteCode_select_imm_reg_ite calls _ s "%idxprom242.i.i" "%cmp234.i.i" "%126"
+    (by block_lk) (by block_lk)]
+  rw [select_ult_min_neg (k := k) h0 (by omega)]
+  rw [NumFastTier1.denoteCode_gep_double_global calls _ s "%arrayidx243.i.i"
+    "@NUMF_EL1_POW10" "%idxprom242.i.i" (by block_lk) (by block_lk) hpos]
+  rw [NumFastTier1.denoteCode_load_double calls _ s "%127" "%arrayidx243.i.i"
+    (by block_lk) hread']
+  rw [NumFastTier1.denoteCode_fdiv calls _ s "%div.i.i" "%d201.2.i.i" "%127"
+    (by block_lk) (by block_lk)]
+  rw [BlockEval.denoteCode_add_reg calls _ s "%add245.i.i" "%idxprom242.i.i"
+    "%e10.2.i.i" (by block_lk) (by block_lk)]
+  rw [denoteCode_fcmp_oeq_imm calls _ s "%cmp246.i.i" "%div.i.i" (by block_lk)]
+  simp only [denoteCode_nil, stateAt, t3DivBodyEnv, BitVec.signExtend_eq,
+    BitVec.toNat_ofNat, Nat.mod_eq_of_lt hm64]
+  all_goals rfl
+
+/-- **The negative row block's step.**  The block reads its row, divides, and
+jumps back to the head; the zero test's bit is the caller's, since the terminator
+branches on it. -/
+theorem t3_divBody_step {calls : Calls} {env : Env} {s : State}
+    {k : Nat} {d p : BitVec 64} {address : Nat}
+    (hpc : s.pc = t3DivBody)
+    (he : lookupName env "%e10.2.i.i"
+      = some (.int 64 (BitVec.ofInt 64 (-(k : Int)))))
+    (hd : lookupName env "%d201.2.i.i" = some (.float d))
+    (hb : lookupName env "@NUMF_EL1_POW10" = some (.ptr address))
+    (h0 : 0 < k) (hk : k < 2 ^ 31)
+    (hread : readBytes s.mem (address + min k 22 * 8) 8
+      = some (natToBytes p.toNat 8))
+    (hbit : fcmpOeqBits (fdivBits d p) (0 : BitVec 64) = false) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (t3DivBodyEnv env (BitVec.ofInt 64 (-(k : Int))) d p k
+        (min k 22) address)
+        { s with pc := t3DivHead, pre := some t3DivBody }) := by
+  refine numFast_step_at
+    (s' := stateAt (t3DivBodyEnv env (BitVec.ofInt 64 (-(k : Int))) d p k
+      (min k 22) address) s)
+    (b := ⟨t3DivBody, t3DivBodyInstrs,
+      Term.condbr (Operand.reg "%cmp246.i.i") "while.end253.i.i" t3DivHead⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using t3_divBody_find
+  · simpa only [stateAt] using t3_divBody_denote he hd hb h0 hk hread
+  · have hlk : lookupName (t3DivBodyEnv env (BitVec.ofInt 64 (-(k : Int))) d p k
+        (min k 22) address) "%cmp246.i.i"
+        = some (.int 1 (if fcmpOeqBits (fdivBits d p) (0 : BitVec 64) then 1 else 0)) :=
+      lookupName_cons_self ..
+    have hbit0 : (if fcmpOeqBits (fdivBits d p) (0 : BitVec 64) then
+        (1 : BitVec 1) else 0) = (0 : BitVec 1) := by
+      rw [hbit]
+      rfl
+    rw [numFast_execTerm_condbr_zero _ "%cmp246.i.i" _ _ hlk hbit0]
+    simp only [stateAt, hpc]
+
+/-! ### The negative row block's registers
+
+The head's two `phi`s and the row block's two residual registers, read out of
+the environment builders the two blocks leave. -/
+
+theorem t3DivHeadEnv_e10 {env : Env} {e d : BitVec 64} :
+    lookupName (t3DivHeadEnv env e d) "%e10.2.i.i" = some (.int 64 e) := by
+  simp only [t3DivHeadEnv]
+  rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+    lookupName_cons_self]
+
+theorem t3DivHeadEnv_d201 {env : Env} {e d : BitVec 64} :
+    lookupName (t3DivHeadEnv env e d) "%d201.2.i.i" = some (.float d) := by
+  simp only [t3DivHeadEnv]
+  rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_self]
+
+theorem t3DivBodyEnv_add245 {env : Env} {ev d p : BitVec 64} {k m address : Nat} :
+    lookupName (t3DivBodyEnv env ev d p k m address) "%add245.i.i"
+      = some (.int 64 (BitVec.ofNat 64 m + ev)) := by
+  simp only [t3DivBodyEnv]
+  rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_self]
+
+theorem t3DivBodyEnv_div {env : Env} {ev d p : BitVec 64} {k m address : Nat} :
+    lookupName (t3DivBodyEnv env ev d p k m address) "%div.i.i"
+      = some (.float (fdivBits d p)) := by
+  simp only [t3DivBodyEnv]
+  rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+    lookupName_cons_self]
 
 /-! ### The rows at a counter
 
@@ -967,6 +1159,232 @@ theorem t3MulLoop_run_t3Rows (calls : Calls) (d0 : BitVec 64) (E address : Nat)
     runFuel calls (((t3Rows E).length + 1) * 2 + k) numFastBody s = some o :=
   (t3MulLoop_t3Rows calls d0 E address hE hpack hstage hno).run_at s c h k hcont
 
+/-! ### The negative loop's back edge, at the emitted rows
+
+The negative loop's iteration is the mirror of the positive one at the division
+block: the head's test reads the residual `-resid` as negative, the block applies
+the row `min resid 22` and adds `-resid` to it, and the head is re-entered.
+
+Two facts are the emitted code's rather than arithmetic's, and both are stated
+for the whole run: the staging's table bytes at the row's address (`hstage`, at
+the negative block's own registers) and the carried double's shape
+(`hpack`, which here says every carried double is a positive finite code).  The
+second is what refuses the row's zero test: the quotient's value is the *next*
+carried double, and the row's zero test compares that value with zero — so the
+positive-code assertion at `c + 1` is the whole of the refusal, and no underflow
+inequality is needed beside it.  A code divided by a larger one's tick value does
+round to the zero encoding, which is why the assertion is a hypothesis of the
+step and not a theorem of the arithmetic. -/
+
+/-- **The negative loop's step at the emitted rows.**  One iteration from the
+head reaches the head again with the counter advanced, one row applied, within
+two control steps. -/
+theorem t3DivLoop_step (calls : Calls) (d0 : BitVec 64) (E address : Nat) (hE : E ≤ 342)
+    (hpack : ∀ c, c ≤ (t3Rows E).length →
+      ∃ k : Code, t3DivCarried d0 (t3Rows E) c = packMag (.fin k) false ∧
+        k.IsMag ∧ 0 < k.ticks)
+    (hstage : ∀ (env : Env) (s : State) (k : Nat) (d : BitVec 64),
+      lookupName env "%e10.2.i.i" = some (.int 64 (BitVec.ofInt 64 (-(k : Int)))) →
+      lookupName env "%d201.2.i.i" = some (.float d) →
+        lookupName env "@NUMF_EL1_POW10" = some (.ptr address) ∧
+        readBytes s.mem (address + min k 22 * 8) 8
+          = some (natToBytes (uitofpBits (10 ^ min k 22)).toNat 8)) :
+    ∀ (r : Nat) (s : State) (c : Nat),
+      t3DivInv d0 (t3Rows E) (r + 1) s c → t3DivAtBound (t3Rows E) s c = false →
+      ∃ (e' : State) (c' : Nat) (j : Nat), j ≤ 2 ∧ e'.pc = t3DivHead ∧ c < c' ∧
+        t3DivInv d0 (t3Rows E) r e' c' ∧
+        ∀ k, runFuel calls (j + k) numFastBody s = runFuel calls k numFastBody e' := by
+  intro r s c hinv hbound
+  obtain ⟨hpc, hcr, hpre, hc0, hcpos⟩ := hinv
+  have hc_lt : c < (t3Rows E).length := by omega
+  have hc_le : c ≤ (t3Rows E).length := Nat.le_of_lt hc_lt
+  have hresid_ne : t3Resid E c ≠ 0 := by
+    intro h0
+    have htrue : decide (t3Resid E c = 0) = true := by simp [h0]
+    have hfalse : decide (t3Resid E c = 0) = false := hbound
+    rw [htrue] at hfalse
+    exact Bool.noConfusion hfalse
+  have hresid_pos : 0 < t3Resid E c := Nat.pos_of_ne_zero hresid_ne
+  have hresid_le : t3Resid E c ≤ 342 := by
+    have h1 : t3Resid E c = E - 22 * c := t3Rows_drop_sum hc_le
+    omega
+  have hresid_lt : t3Resid E c < 2 ^ 31 := by omega
+  have hbit_slt : evalICmp .slt
+      (BitVec.ofInt 64 (-((t3Resid E c : Nat) : Int))) (0 : BitVec 64) = (1 : BitVec 1) :=
+    evalICmp_slt_ofInt_neg hresid_pos (by omega)
+  have hrow : (t3Rows E)[c] = min (t3Resid E c) 22 := t3Rows_getElem_eq_min hc_lt
+  -- The head's step: the carried double and the state it leaves at the row block.
+  obtain ⟨d, hd_eq, hstep1⟩ :
+      ∃ d : BitVec 64, d = t3DivCarried d0 (t3Rows E) c ∧
+        step calls numFastBody s =
+          .jump (stateAt (t3DivHeadEnv s.env
+            (BitVec.ofInt 64 (-((t3Resid E c : Nat) : Int))) d)
+            { s with pc := t3DivBody, pre := some t3DivHead }) := by
+    rcases Nat.eq_zero_or_pos c with hc_eq | hc_gt
+    · subst hc_eq
+      obtain ⟨hph, hdph⟩ := hc0 rfl
+      have hpre0 : s.pre = some "while.cond229.i.i.preheader" := by
+        rw [hpre, ite_eq_left rfl]
+      exact ⟨t3DivCarried d0 (t3Rows E) 0, rfl,
+        t3_divHead_step_one_entry (calls := calls) (env := s.env) (s := s)
+          hpc hpre0 hph hdph hbit_slt⟩
+    · obtain ⟨hadd, hdiv⟩ := hcpos hc_gt
+      have hpre0 : s.pre = some t3DivBody := by
+        rw [hpre, ite_eq_right (by omega : ¬ c = 0)]
+      exact ⟨t3DivCarried d0 (t3Rows E) c, rfl,
+        t3_divHead_step_one (calls := calls) (env := s.env) (s := s)
+          hpc hpre0 hadd hdiv hbit_slt⟩
+  -- The quotient's value is the next row's carried double, so the test is refused.
+  have hq : fdivBits d (uitofpBits (10 ^ min (t3Resid E c) 22))
+      = t3DivCarried d0 (t3Rows E) (c + 1) := by
+    rw [hd_eq, ← hrow]
+    exact (t3DivCarried_succ (d0 := d0) (rows := t3Rows E) hc_lt).symm
+  have hbit_body : fcmpOeqBits
+      (fdivBits d (uitofpBits (10 ^ min (t3Resid E c) 22))) (0 : BitVec 64) = false := by
+    rw [hq]
+    obtain ⟨kk, hkk, hkkM, hkkpos⟩ := hpack (c + 1) (by omega)
+    rw [hkk]
+    exact fcmpOeqBits_packMag_fin_false hkkM hkkpos
+  -- The staging's two facts, at the row block's own environment.
+  have he1 : lookupName (t3DivHeadEnv s.env
+      (BitVec.ofInt 64 (-((t3Resid E c : Nat) : Int))) d) "%e10.2.i.i"
+      = some (.int 64 (BitVec.ofInt 64 (-((t3Resid E c : Nat) : Int)))) :=
+    t3DivHeadEnv_e10
+  have hd1 : lookupName (t3DivHeadEnv s.env
+      (BitVec.ofInt 64 (-((t3Resid E c : Nat) : Int))) d) "%d201.2.i.i"
+      = some (.float d) := t3DivHeadEnv_d201
+  obtain ⟨htbl, hread⟩ := hstage _ _ (t3Resid E c) d he1 hd1
+  let e' : State := stateAt
+    (t3DivBodyEnv (t3DivHeadEnv s.env
+      (BitVec.ofInt 64 (-((t3Resid E c : Nat) : Int))) d)
+      (BitVec.ofInt 64 (-((t3Resid E c : Nat) : Int))) d
+      (uitofpBits (10 ^ min (t3Resid E c) 22)) (t3Resid E c)
+      (min (t3Resid E c) 22) address)
+    { s with pc := t3DivHead, pre := some t3DivBody }
+  have hstep2 : step calls numFastBody
+      (stateAt (t3DivHeadEnv s.env
+        (BitVec.ofInt 64 (-((t3Resid E c : Nat) : Int))) d)
+        { s with pc := t3DivBody, pre := some t3DivHead }) = .jump e' := by
+    exact t3_divBody_step (calls := calls)
+      (env := t3DivHeadEnv s.env (BitVec.ofInt 64 (-((t3Resid E c : Nat) : Int))) d)
+      (s := { s with pc := t3DivBody, pre := some t3DivHead })
+      (k := t3Resid E c) (d := d)
+      (p := uitofpBits (10 ^ min (t3Resid E c) 22)) (address := address)
+      rfl he1 hd1 htbl hresid_pos hresid_lt hread hbit_body
+  refine ⟨e', c + 1, 2, by omega, rfl, by omega, ?_, ?_⟩
+  · -- the invariant at the row block's exit
+    refine ⟨rfl, by omega, rfl, ?_, ?_⟩
+    · intro h0
+      omega
+    · intro _
+      refine ⟨?_, ?_⟩
+      · simp only [e', stateAt]
+        rw [t3DivBodyEnv_add245]
+        have hsum : t3Resid E c = (t3Rows E)[c] + t3Resid E (c + 1) := by
+          have hs := congrArg List.sum (t3Rows_drop_split hc_lt)
+          simp only [t3Resid] at hs hrow
+          rw [← hrow] at hs
+          simp only [List.sum_cons] at hs
+          simpa only [t3Resid] using hs
+        have hi : min (t3Resid E c) 22 ≤ t3Resid E c := Nat.min_le_left _ _
+        have hsub : t3Resid E c - min (t3Resid E c) 22 = t3Resid E (c + 1) := by omega
+        rw [ofNat_add_ofInt_neg hi (by omega), hsub]
+        rfl
+      · simp only [e', stateAt]
+        rw [t3DivBodyEnv_div, hq]
+  · intro k
+    rw [show 2 + k = 1 + (1 + k) from by omega]
+    rw [runFuel_jump_prefix hstep1 (1 + k)]
+    exact runFuel_jump_prefix hstep2 k
+
+/-- **The negative loop's exit.**  At the bound the residual is zero, so the
+head's test is refused and the loop leaves for `while.end253.i.i` in one control
+step. -/
+theorem t3DivLoop_exit (calls : Calls) (d0 : BitVec 64) (E : Nat) :
+    ∀ (r : Nat) (s : State) (c : Nat),
+      t3DivInv d0 (t3Rows E) r s c → t3DivAtBound (t3Rows E) s c = true →
+      ∃ (e : State) (j : Nat), j ≤ 2 ∧ e.pc = "while.end253.i.i" ∧ t3DivExitWord e ∧
+        ∀ k, runFuel calls (j + k) numFastBody s = runFuel calls k numFastBody e := by
+  intro r s c hinv hbound
+  obtain ⟨hpc, hcr, hpre, hc0, hcpos⟩ := hinv
+  have hresid : ((t3Rows E).drop c).sum = 0 := by
+    simpa only [t3DivAtBound, decide_eq_true_eq] using hbound
+  have hbit : evalICmp .slt (BitVec.ofInt 64 (-((((t3Rows E).drop c).sum : Nat) : Int)))
+      (0 : BitVec 64) = (0 : BitVec 1) := by
+    simpa only [hresid] using evalICmp_slt_ofInt_neg_zero
+  rcases Nat.eq_zero_or_pos c with hc_eq | hc_gt
+  · subst hc_eq
+    obtain ⟨hph, hdph⟩ := hc0 rfl
+    have hpre0 : s.pre = some "while.cond229.i.i.preheader" := by
+      rw [hpre, ite_eq_left rfl]
+    refine ⟨stateAt (t3DivHeadEnv s.env
+        (BitVec.ofInt 64 (-((((t3Rows E).drop 0).sum : Nat) : Int)))
+        (t3DivCarried d0 (t3Rows E) 0))
+        { s with pc := "while.end253.i.i", pre := some t3DivHead },
+      1, by omega, rfl, ⟨rfl, ?_, ?_⟩, ?_⟩
+    · simp only [stateAt]
+      rw [t3DivHeadEnv_e10]
+      simp
+    · simp only [stateAt]
+      rw [t3DivHeadEnv_d201]
+      simp
+    · intro k
+      exact runFuel_jump_prefix
+        (t3_divHead_step_zero_entry (calls := calls) (env := s.env) (s := s)
+          hpc hpre0 hph hdph hbit) k
+  · obtain ⟨hadd, hdiv⟩ := hcpos hc_gt
+    have hpre0 : s.pre = some t3DivBody := by
+      rw [hpre, ite_eq_right (by omega : ¬ c = 0)]
+    refine ⟨stateAt (t3DivHeadEnv s.env
+        (BitVec.ofInt 64 (-((((t3Rows E).drop c).sum : Nat) : Int)))
+        (t3DivCarried d0 (t3Rows E) c))
+        { s with pc := "while.end253.i.i", pre := some t3DivHead },
+      1, by omega, rfl, ⟨rfl, ?_, ?_⟩, ?_⟩
+    · simp only [stateAt]
+      rw [t3DivHeadEnv_e10]
+      simp
+    · simp only [stateAt]
+      rw [t3DivHeadEnv_d201]
+      simp
+    · intro k
+      exact runFuel_jump_prefix
+        (t3_divHead_step_zero (calls := calls) (env := s.env) (s := s)
+          hpc hpre0 hadd hdiv hbit) k
+
+/-- **The negative loop at the emitted rows.** -/
+def t3DivLoop_t3Rows (calls : Calls) (d0 : BitVec 64) (E address : Nat) (hE : E ≤ 342)
+    (hpack : ∀ c, c ≤ (t3Rows E).length →
+      ∃ k : Code, t3DivCarried d0 (t3Rows E) c = packMag (.fin k) false ∧
+        k.IsMag ∧ 0 < k.ticks)
+    (hstage : ∀ (env : Env) (s : State) (k : Nat) (d : BitVec 64),
+      lookupName env "%e10.2.i.i" = some (.int 64 (BitVec.ofInt 64 (-(k : Int)))) →
+      lookupName env "%d201.2.i.i" = some (.float d) →
+        lookupName env "@NUMF_EL1_POW10" = some (.ptr address) ∧
+        readBytes s.mem (address + min k 22 * 8) 8
+          = some (natToBytes (uitofpBits (10 ^ min k 22)).toNat 8)) :
+    BoundLoop calls numFastBody :=
+  t3DivLoopOf calls d0 (t3Rows E) (t3DivLoop_exit calls d0 E)
+    (t3DivLoop_step calls d0 E address hE hpack hstage)
+
+/-- **The negative loop's run at the emitted rows.** -/
+theorem t3DivLoop_run_t3Rows (calls : Calls) (d0 : BitVec 64) (E address : Nat)
+    (hE : E ≤ 342)
+    (hpack : ∀ c, c ≤ (t3Rows E).length →
+      ∃ k : Code, t3DivCarried d0 (t3Rows E) c = packMag (.fin k) false ∧
+        k.IsMag ∧ 0 < k.ticks)
+    (hstage : ∀ (env : Env) (s : State) (k : Nat) (d : BitVec 64),
+      lookupName env "%e10.2.i.i" = some (.int 64 (BitVec.ofInt 64 (-(k : Int)))) →
+      lookupName env "%d201.2.i.i" = some (.float d) →
+        lookupName env "@NUMF_EL1_POW10" = some (.ptr address) ∧
+        readBytes s.mem (address + min k 22 * 8) 8
+          = some (natToBytes (uitofpBits (10 ^ min k 22)).toNat 8))
+    (s : State) (c : Nat) (h : t3DivInv d0 (t3Rows E) (t3Rows E).length s c) (k : Nat)
+    {o : Outcome}
+    (hcont : ∀ (e : State), e.pc = "while.end253.i.i" → t3DivExitWord e →
+      runFuel calls k numFastBody e = some o) :
+    runFuel calls (((t3Rows E).length + 1) * 2 + k) numFastBody s = some o :=
+  (t3DivLoop_t3Rows calls d0 E address hE hpack hstage).run_at s c h k hcont
+
 /-! ### Axiom footprints -/
 
 #print axioms t3Rows_eq_cons
@@ -1005,6 +1423,23 @@ theorem t3MulLoop_run_t3Rows (calls : Calls) (d0 : BitVec 64) (E address : Nat)
 #print axioms step_mul_imm
 #print axioms denoteCode_mul_imm
 #print axioms t3_divBody_find
+#print axioms step_fcmp_oeq_imm
+#print axioms denoteCode_fcmp_oeq_imm
+#print axioms ofNat_add_ofInt_neg
+#print axioms evalICmp_slt_ofInt_neg
+#print axioms evalICmp_slt_ofInt_neg_zero
+#print axioms packMag_fin_false_ne_zero
+#print axioms fcmpOeqBits_packMag_fin_false
+#print axioms t3_divBody_denote
+#print axioms t3_divBody_step
+#print axioms t3DivHeadEnv_e10
+#print axioms t3DivHeadEnv_d201
+#print axioms t3DivBodyEnv_add245
+#print axioms t3DivBodyEnv_div
+#print axioms t3DivLoop_step
+#print axioms t3DivLoop_exit
+#print axioms t3DivLoop_t3Rows
+#print axioms t3DivLoop_run_t3Rows
 
 end NumFastTier3Rows
 

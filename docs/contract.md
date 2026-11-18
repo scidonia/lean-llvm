@@ -1255,7 +1255,16 @@ from its measured C text), `stage2NumFastCalls` composes it with the walk's
 (`numFast_*_denote_some`/`_step_jump`), and `numFastTables_holds` is
 `NumFastTables` at a concrete twenty-row/twenty-three-row staging.  What remains
 open is the conversion's *run*, not its environment: the three digit runs' arms,
-their starts, the inlined tier-1 arithmetic, and tier 3's region.  Two pieces of
+their starts, the inlined tier-1 arithmetic, and tier 3's region.  And the arm's
+statement takes one repair before that run can be appended to anything: its
+hypotheses are facts about the environment and the memory alone, so the state it
+quantifies is at no particular block — `JsonStage2NumFastArm.numFastBodyArm_at_pc`
+reads the arm's conclusion at an arbitrary program counter, and
+`numFastBodyArm_false_at_divBody` refutes it at `while.body232.i.i` with the
+residual cell unbound, where the block's chain is `none` and the step `ub`
+(`numFast_step_divBody_ub`, `numFast_runFuel_divBody_ub`).  An entry hypothesis
+(`s.pc = "entry"`) is therefore part of the arm's statement, not a proof step.
+Two pieces of
 the run are now supplies rather than obligations.  The eight-digit fast path's
 blocks are chained (`JsonStage2NumFastSeams`): `fpCleanup_denote_pre`/
 `_denote_body` and `fpCleanup_step_body`/`_step_end` are the fold block at both
@@ -1337,12 +1346,22 @@ with both of each head's edges proved.  The positive row block's per-edge step
 and the rows' arithmetic are `JsonStage2NumFastTier3Rows`': `t3_mulBody_step` is
 `while.body206.i.i`'s chain at its pin, the `t3Rows` split lemmas name the row a
 residual applies, and `t3MulLoop_t3Rows` is `t3MulLoopOf` at the emitted rows,
-with its run at the rows' own count.  The negative row block's step — the
-`ult`/`mul`/`ashr` index that recovers `min (-e) 22`, the `fdiv` at the table's
-row and the `fcmp` against zero — is the arm still open.
+with its run at the rows' own count.  The negative row block is the same shape at
+the negative index arithmetic: `t3_divBody_denote` is `while.body232.i.i`'s chain
+at its pin — the `ult`/`mul`/`ashr` index that recovers `min (-e) 22`
+(`t3DivIndex`, `t3DivUlt`, `select_ult_min_neg`), the `fdiv` at the table's row
+and the `fcmp` against zero — and `t3_divBody_step` its terminator;
+`t3DivLoop_t3Rows` is `t3DivLoopOf` at the emitted rows, with
+`t3DivLoop_run_t3Rows` its run and `t3DivLoop_exit` its exit.  Its zero test is
+refused from the carried double's shape rather than from a magnitude bound
+(`fcmpOeqBits_packMag_fin_false`): the quotient's value is the next carried
+double, the staging asserts each of those is a positive finite code — not the
+zero encoding (`packMag_fin_false_ne_zero`) — and the comparison is false.  That
+assertion has to be a hypothesis: a code divided by a larger one's tick value
+rounds to `⟨0, 0⟩`, so no arithmetic alone gives the refusal.
 What the region still owes is the unrolled nest's `BoundLoop` shape (the copy's
-four-way unrolled main loop) and the negative row block's step, each named in the
-module that states the nearest thing to it.
+four-way unrolled main loop) and the ladder's join under the exponent's sign
+case, each named in the module that states the nearest thing to it.
 The kernel's bound is not among the obstructions: `num_el_el1`'s mantissa is a
 `uint64_t`, and the body's own argument at `if.end268` is `%add244`, a 64-bit
 word, so `NumFastElAgrees`'s `w < 2 ^ 64` domain is met at the body
@@ -1682,10 +1701,14 @@ own `Calls` its three conversion callees are absent, so the conversion's
 arithmetic is stuck there, while at the supplied `stage2NumFastCalls` and table
 staging the three sites are jumps and the kernel's `w < 2 ^ 64` domain is met by
 the body's own word — `JsonStage2NumFastTier3.numFast_ifEnd268_domain` — so what
-`NumFastBodyArm` still owes is the conversion's run, and tier 3's three links
+`NumFastBodyArm` still owes, once its statement carries an entry hypothesis, is
+the conversion's run
+(`JsonStage2NumFastArm.numFastBodyArm_false_at_divBody` is why the entry
+hypothesis is needed at all), and tier 3's three links
 are stated in `JsonStage2NumFastTier3`, with the emitted ladder's charging and
-its two loops' shapes closed in `JsonStage2NumFastTier3Ladder` and the positive
-loop closed at the emitted rows in `JsonStage2NumFastTier3Rows`), NDJSON, incremental
+its two loops' shapes closed in `JsonStage2NumFastTier3Ladder` and both loops —
+the positive one and the negative one — closed at the emitted rows in
+`JsonStage2NumFastTier3Rows`), NDJSON, incremental
 input, concurrent parsing, diagnostic text or positions,
 and any vector operation the semantics does not model. The modelled vector
 forms — `Ty.vec` with integer lanes, `Const.splat`, a vector `load`, lane-wise

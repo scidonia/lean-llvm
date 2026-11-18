@@ -87,7 +87,12 @@ boundary rather than a numeric defect:
   rather than `ub`, and `numFastTables_holds` is `NumFastTables` at a concrete
   staging.  What `NumFastBodyArm` still needs is the conversion's *run* — the
   three digit runs' arms, the inlined tier-1 arithmetic, and the tier-2
-  kernel's exactness bound — not its environment; and
+  kernel's exactness bound — not its environment; and the arm's statement
+  itself needs an entry hypothesis first, since its hypotheses are facts about
+  the environment and the memory only: `numFastBodyArm_at_pc` reads the arm at
+  an arbitrary program counter and `numFastBodyArm_false_at_divBody` refutes it
+  at `while.body232.i.i` with the residual cell unbound, so `s.pc = "entry"` is
+  the statement's repair; and
 * at the walk's own selection the slot is answered by the model instead
   (`stage2Calls stage2SubCalls "num_fast_el1"` is `stage2NumFast`), which is why
   the number *class* is covered here while the conversion's body is not.
