@@ -1701,9 +1701,12 @@ theorem expRunInv_entry {mem : Mem} {p n i0 : Nat} {bs : List UInt8} {s : State}
     (hp : lookupName s.env "%p" = some (.ptr p))
     (hn : lookupName s.env "%n" = some (.int 64 (BitVec.ofNat 64 n)))
     (hread : readBytes mem p n = some bs)
-    (hi : lookupName s.env "%i.11" = some (.int 64 (BitVec.ofNat 64 i0))) :
+    (hi : lookupName s.env "%i.11" = some (.int 64 (BitVec.ofNat 64 i0)))
+    (hesign : ∃ esign : BitVec 1, lookupName s.env "%esign.0" = some (.int 1 esign))
+    (hcarry : expRunCarried s.env) :
     expRunInv mem p n i0 bs (n - i0) s 0 :=
-  ⟨hpc, hmem, by omega, by omega, hnlt, hp, hn, hread, Or.inl ⟨hpre, by simpa using hi⟩⟩
+  ⟨hpc, hmem, by omega, by omega, hnlt, hp, hn, hread,
+    Or.inl ⟨hpre, by simpa using hi⟩, hesign, hcarry⟩
 
 macro "lk_exp" : tactic => `(tactic|
   (first
@@ -1726,6 +1729,8 @@ theorem expRun_start {calls : Calls} {env : Env} {s : State} {a n : Nat}
     (hn : lookupName env "%n" = some (.int 64 (BitVec.ofNat 64 n)))
     (hread : readBytes s.mem a n = some bs)
     (hi11 : lookupName env "%i.11" = some (.int 64 (BitVec.ofNat 64 i11)))
+    (hsign : ∃ esign : BitVec 1, lookupName env "%esign.0" = some (.int 1 esign))
+    (hcarry : expRunCarried env)
     (hd : readByte s.mem (a + i11) = some bd)
     (hdigit : IsDigitB bd = true)
     (hltn : i11 < n) (hnlt : n < 2 ^ 63) :
@@ -1745,7 +1750,13 @@ theorem expRun_start {calls : Calls} {env : Env} {s : State} {a n : Nat}
     lorLhsFalse180_step_digit (calls := calls) hpc hp hi11 hi63 hd hbit
   exact ⟨stateAt (lorLhsFalse180Env env a i11 bd)
       { s with pc := "land.lhs.true195", pre := some "lor.lhs.false180" },
-    expRunInv_entry rfl rfl rfl (by omega) hnlt (by lk_exp) (by lk_exp) hread (by lk_exp),
+    expRunInv_entry rfl rfl rfl (by omega) hnlt (by lk_exp) (by lk_exp) hread (by lk_exp)
+      (by
+        obtain ⟨esgn, hesg⟩ := hsign
+        exact ⟨esgn, by lk_exp⟩)
+      (by
+        obtain ⟨idig5, ip5, fr5, fd5, h1, h2, h3, h4⟩ := hcarry
+        exact ⟨idig5, ip5, fr5, fd5, by lk_exp, by lk_exp, by lk_exp, by lk_exp⟩),
     fun k => by
       rw [runFuel_jump_prefix h1s k]⟩
 

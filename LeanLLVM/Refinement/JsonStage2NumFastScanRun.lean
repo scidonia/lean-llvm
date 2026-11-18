@@ -2263,7 +2263,8 @@ theorem fracScan_run {env : Env} {s : State} {a n : Nat} {bs : List UInt8}
 /-- **The nest's entry from the fraction run's exit.**  The `if.end144` edge that
 the fraction run leaves by reads `%fr.3593`, `%fdig.3594` and `%i.9595`, and the
 block's own test then takes the marker's block: one control step from
-`if.end144` to `land.lhs.true147` with `%i.10` fixed at the run's stop index. -/
+`if.end144` to `land.lhs.true147` with `%i.10` fixed at the run's stop index and
+the run's two cells carried as `if.end144`'s phis. -/
 theorem nestEntry_run {calls : Calls} {env : Env} {s : State} {a : Nat}
     {fr fdig i10 nv : BitVec 64}
     (hpc : s.pc = "if.end144")
@@ -2274,17 +2275,24 @@ theorem nestEntry_run {calls : Calls} {env : Env} {s : State} {a : Nat}
     (hi : lookupName env "%i.9595" = some (.int 64 i10))
     (hn : lookupName env "%n" = some (.int 64 nv))
     (hbit : evalICmp .ult i10 nv = 1) :
-    ∃ e : State, e.pc = "land.lhs.true147" ∧ e.mem = s.mem ∧
+    ∃ e : State, e.pc = "land.lhs.true147" ∧ e.pre = some "if.end144" ∧
+      e.mem = s.mem ∧
       lookupName e.env "%i.10" = some (.int 64 i10) ∧
       lookupName e.env "%p" = some (.ptr a) ∧
       lookupName e.env "%n" = some (.int 64 nv) ∧
+      lookupName e.env "%fr.5" = some (.int 64 fr) ∧
+      lookupName e.env "%fdig.4" = some (.int 64 fdig) ∧
       ∀ k, runFuel calls (1 + k) numFastBody (stateAt env s) =
         runFuel calls k numFastBody e := by
   have hden := ifEnd144_denote_frac (calls := calls) (s := s) hpre hfr hfd hi hn
   have hstep := ifEnd144_step (calls := calls) hpc hden hbit
   refine ⟨stateAt (ifEnd144Env env fr fdig i10 nv)
     { s with pc := "land.lhs.true147", pre := some "if.end144" },
-    rfl, rfl, ?_, ?_, ?_, ?_⟩
+    rfl, rfl, rfl, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · simp only [stateAt, ifEnd144Env, ifEnd144PhiEnv]
+    block_lk
+  · simp only [stateAt, ifEnd144Env, ifEnd144PhiEnv]
+    block_lk
   · simp only [stateAt, ifEnd144Env, ifEnd144PhiEnv]
     block_lk
   · simp only [stateAt, ifEnd144Env, ifEnd144PhiEnv]

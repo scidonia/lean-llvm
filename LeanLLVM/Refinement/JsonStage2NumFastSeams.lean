@@ -37,8 +37,24 @@ accumulated word's tie (`intRunExit_end230`) as the other half.
 with the arm fixed — the integer part running to the lexeme's end — and
 `intScan_merge` below appends the gate's own step, so the body reaches
 `if.then241` from `entry` as one `runFuel` chain within `9 + (n - i0 + 1) * 4`
-control steps, with the merge's five registers.  The fraction's and the
-exponent's routes are still the one-block seams above.
+control steps, with the merge's five registers.
+
+**The fraction's and the exponent's routes.**  The dispatch's entry is a value
+now (`land71Entry`), `intRunExit_land71` is the run's non-digit exit stepped into
+it, and the two edges from it are composed: `land71_nodot` takes a byte that is
+not `.` to the marker's block with the fraction's cells zeroed, `land71_fracScan`
+runs the fraction from a `.`, `fracExit_nest` carries the fraction run's
+non-digit exit into the nest, and `fracScan_end230` is the whole fraction route
+at a lexeme that ends on its digits — the run stops at `if.end140`'s
+end-of-lexeme edge, which *is* the merge's fraction edge.  The exponent is
+`nest_marker_start` (the marker and its optional sign to `lor.lhs.false180` with
+`%i.11` and `%esign.0`) and `expExit_merge` (the merge's two steps at the run's
+exit).  The exit predicate hands the edge it left by, the sign and the four cells
+`if.end230`'s `phi`s read, so the merge's registers are the exit's.  The run
+itself is `expRun_start` and the run instance, chained at the two statements
+rather than as one: the nest's exit state is existential, so the four cells have
+to be named at the run's start.  What the routes leave open is named at the end
+of the module.
 
 **The two eight-digit fast paths.**  `if.then22`'s taken edge leads to
 `while.body.preheader`, whose `@num_d8_el1` call reads eight digits into the
@@ -2714,6 +2730,359 @@ theorem fpWhileEnd115_step_merge {epow : Int → Option EPow} {env : Env} {s : S
     rw [numFast_execTerm_condbr_zero _ "%cmp117592" _ _ hlk hbit]
     simp only [stateAt, hpc]
 
+/-! ### The fraction and exponent routes to the merge
+
+The scan's other entries to the merge start at the dispatch
+(`land.lhs.true71`), so the integer run's non-digit exit has to be carried one
+block further than `intScan_run` leaves it: `if.end68`'s three `phi`s are the
+run's own cells, its test is the index against the length, and its taken edge is
+`land.lhs.true71`.  `land71Entry` is that state and `intRunExit_land71` is the
+step.
+
+At the dispatch the `.` test splits.  A byte that is not one takes `if.end144`,
+whose three `phi`s read the dispatch's zeroes, and that block's own test takes
+the marker's block when the index is inside the lexeme (`land71_nodot`); a `.`
+takes the fraction dispatch and the run (`land71_fracScan`), and the run's
+non-digit exit lands in the same `if.end144` with the fraction's own cells
+(`fracExit_nest`).  A lexeme whose bytes from the `.` to the end are digits never
+leaves `if.end140`'s end-of-lexeme edge, so the run ends *at the merge*
+(`fracScan_end230`), and `intScan_frac_end230` is that trace from `entry`: the
+sign at position 0, the integer run to the `.`, and the fraction run to
+`if.end230`.
+
+Past the marker's block the exponent is read.  `nest_marker_start` is the marker
+and its optional sign to `lor.lhs.false180` with `%i.11` and `%esign.0`,
+`nest_exp_run` appends the exponent run, and `expExit_merge` is the merge's two
+steps at the run's exit.  The exit predicate names which edge the run left by, so
+the merge's block is decided there; what it does not name is the four cells the
+merge's `phi`s read (`%idig.4`, `%ip.5`, `%fr.5`, `%fdig.4`), which a composition
+past it therefore takes as hypotheses — the run's blocks only cons onto the
+head's environment, so the cells are at the exit, but `expRunExit` does not say
+so. -/
+
+/-- The dispatch's entry: what `if.end68`'s step hands the `.` test — the run's
+stop index, the cursor, the length, the memory the test reads, and the fraction's
+two cells `if.end68`'s phis installed. -/
+def land71Entry (mem : Mem) (p n i1 : Nat) (e : State) : Prop :=
+  e.pc = "land.lhs.true71" ∧ e.pre = some "if.end68" ∧ e.mem = mem ∧
+  lookupName e.env "%p" = some (.ptr p) ∧
+  lookupName e.env "%n" = some (.int 64 (BitVec.ofNat 64 n)) ∧
+  lookupName e.env "%i.5" = some (.int 64 (BitVec.ofNat 64 i1)) ∧
+  fracPartCells e.env
+
+/-- **Seam: the integer run's non-digit exit reaches the `.` test.**  `if.end68`
+re-reads the run's three `phi` sources on the head's non-digit edge and tests the
+index against the length; one control step takes the dispatch to
+`land.lhs.true71` with the run's stop index. -/
+theorem intRunExit_land71 {calls : Calls} {mem0 : Mem} {bs : List UInt8}
+    {p n i0 d0 : Nat} {e : State}
+    (hpc : e.pc = "if.end68") (he : intRunExit mem0 bs p n i0 d0 e)
+    (hnlt : n < 2 ^ 63) :
+    ∃ (i1 : Nat) (e' : State), land71Entry e.mem p n i1 e' ∧
+      ∀ k, runFuel calls (1 + k) numFastBody e = runFuel calls k numFastBody e' := by
+  rcases he with ⟨_, hpre, _, hn, i1, _, hi1n, hi, hid, hip, _, _, _⟩ | hend
+  · have hbit : evalICmp .ult (BitVec.ofNat 64 i1) (BitVec.ofNat 64 n) = 1 :=
+      ult_ofNat_one hi1n (by omega)
+    let i5 : BitVec 64 := BitVec.ofNat 64 i1
+    let idig5 : BitVec 64 := BitVec.ofNat 64 (d0 + (i1 - i0))
+    let ip5 : BitVec 64 :=
+      BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + (i1 - i0)) 19))
+    let nv : BitVec 64 := BitVec.ofNat 64 n
+    have hden : denoteCode calls numFastIfEnd68Instrs (stateAt e.env e) =
+        some (stateAt (NumFastStarts.ifEnd68Env e.env i5 ip5 idig5 nv) e) :=
+      ifEnd68_denote_head (calls := calls) (s := e) hpre hip hid hi hn
+    have hstep : step calls numFastBody (stateAt e.env e) =
+        .jump (stateAt (NumFastStarts.ifEnd68Env e.env i5 ip5 idig5 nv)
+          { e with pc := "land.lhs.true71", pre := some "if.end68" }) :=
+      NumFastStarts.ifEnd68_step (calls := calls) hpc hden hbit
+    refine ⟨i1, stateAt (NumFastStarts.ifEnd68Env e.env i5 ip5 idig5 nv)
+      { e with pc := "land.lhs.true71", pre := some "if.end68" },
+      ⟨rfl, rfl, rfl, ?_, ?_, ?_, ?_⟩, ?_⟩
+    · simp only [stateAt, NumFastStarts.ifEnd68Env, NumFastStarts.ifEnd68PhiEnv]
+      block_lk
+    · simp only [stateAt, NumFastStarts.ifEnd68Env, NumFastStarts.ifEnd68PhiEnv]
+      block_lk
+    · simp only [stateAt, NumFastStarts.ifEnd68Env, NumFastStarts.ifEnd68PhiEnv]
+      block_lk
+    · refine ⟨idig5, ip5, ?_, ?_⟩
+      · simp only [stateAt, NumFastStarts.ifEnd68Env, NumFastStarts.ifEnd68PhiEnv]
+        block_lk
+      · simp only [stateAt, NumFastStarts.ifEnd68Env, NumFastStarts.ifEnd68PhiEnv]
+        block_lk
+    · intro k
+      exact runFuel_jump_prefix hstep k
+  · rw [hend.1] at hpc
+    exact absurd hpc (by decide)
+
+/-- **Seam: the `.` refused reaches the marker's block.**  A byte that is not `.`
+at an index inside the lexeme leaves the dispatch for `if.end144`, and that
+block's test takes the marker's block with the fraction's cells zeroed — two
+control steps. -/
+theorem land71_nodot {calls : Calls} {mem : Mem} {e : State} {a n i1 : Nat}
+    {bd : UInt8}
+    (h : land71Entry mem a n i1 e)
+    (hread : readByte mem (a + i1) = some bd) (hne : bd ≠ 0x2E)
+    (hlt : i1 < n) (hnlt : n < 2 ^ 63) :
+    ∃ e' : State,
+      e'.pc = "land.lhs.true147" ∧ e'.pre = some "if.end144" ∧ e'.mem = e.mem ∧
+      lookupName e'.env "%i.10" = some (.int 64 (BitVec.ofNat 64 i1)) ∧
+      lookupName e'.env "%p" = some (.ptr a) ∧
+      lookupName e'.env "%n" = some (.int 64 (BitVec.ofNat 64 n)) ∧
+      lookupName e'.env "%fr.5" = some (.int 64 0) ∧
+      lookupName e'.env "%fdig.4" = some (.int 64 0) ∧
+      ∀ k, runFuel calls (2 + k) numFastBody e = runFuel calls k numFastBody e' := by
+  rcases h with ⟨hpc, _, hmem, hp, hn, hi5, _⟩
+  have hj : i1 < 2 ^ 63 := by omega
+  obtain ⟨e', hpc', hpre', hmem', hi10, hp', hn', hfr, hfd, hrun⟩ :=
+    nodot_seam (calls := calls) (env := e.env) (s := e) hpc hp hi5 hn hj hlt hnlt
+      (by rw [hmem]; exact hread) hne
+  exact ⟨e', hpc', hpre', hmem', hi10, hp', hn', hfr, hfd, hrun⟩
+
+/-- **Seam: the `.` taken runs the fraction.**  From the dispatch's entry with a
+`.` at the stop index, a digit after it, the length past it and the eight-digit
+guard refused, the fraction dispatch and the run reach the run's own exit
+predicate within `6 + (n - i0 + 1) * 4` control steps, the run's start
+`i0 = i1 + 1` the index after the decimal point. -/
+theorem land71_fracScan {mem : Mem} {e : State} {a n i1 : Nat} {bs : List UInt8}
+    {bd bd2 : UInt8}
+    (h : land71Entry mem a n i1 e)
+    (hread : readBytes mem a n = some bs)
+    (hdot : readByte mem (a + i1) = some bd) (hdoteq : bd = 0x2E)
+    (hd2 : readByte mem (a + (i1 + 1)) = some bd2) (hd2digit : IsDigitB bd2 = true)
+    (hltn : i1 + 1 < n) (hfast : n < i1 + 9) (hnlt : n < 2 ^ 63) :
+    ∃ (e' : State) (j : Nat), j ≤ 6 + (n - (i1 + 1) + 1) * 4 ∧
+      fracRunExit mem bs a n (i1 + 1) 0 e' ∧
+      ∀ k, runFuel s2HelperCalls (j + k) numFastBody e =
+        runFuel s2HelperCalls k numFastBody e' := by
+  rcases h with ⟨hpc, _, hmem, hp, hn, hi5, hparts⟩
+  obtain ⟨e', j, hj, hexit, hrun⟩ :=
+    NumFastScanRun.fracScan_run (env := e.env) (s := e) hpc hp hn
+      (by rw [hmem]; exact hread) hi5 hparts
+      (by rw [hmem]; exact hdot) hdoteq (by rw [hmem]; exact hd2) hd2digit
+      hltn hfast hnlt
+  exact ⟨e', j, hj, hmem ▸ hexit, hrun⟩
+
+/-- **Seam: the fraction run's non-digit exit enters the nest.**  `if.end144`'s
+three `phi`s are the run's `%fr.3593`, `%fdig.3594` and `%i.9595`, and the block's
+own test takes the marker's block: one control step, with the run's stop index as
+`%i.10`. -/
+theorem fracExit_nest {calls : Calls} {mem : Mem} {e : State} {a n i0 d0 : Nat}
+    {bs : List UInt8}
+    (he : fracRunExit mem bs a n i0 d0 e) (hpc : e.pc = "if.end144")
+    (hnlt : n < 2 ^ 63) :
+    ∃ (i1 : Nat) (fr fdig : BitVec 64) (e' : State),
+      i0 ≤ i1 ∧ i1 < n ∧
+      e'.pc = "land.lhs.true147" ∧ e'.pre = some "if.end144" ∧ e'.mem = e.mem ∧
+      lookupName e'.env "%i.10" = some (.int 64 (BitVec.ofNat 64 i1)) ∧
+      lookupName e'.env "%p" = some (.ptr a) ∧
+      lookupName e'.env "%n" = some (.int 64 (BitVec.ofNat 64 n)) ∧
+      lookupName e'.env "%fr.5" = some (.int 64 fr) ∧
+      lookupName e'.env "%fdig.4" = some (.int 64 fdig) ∧
+      ∀ k, runFuel calls (1 + k) numFastBody e = runFuel calls k numFastBody e' := by
+  rcases he with ⟨_, hpre, hp, hn, i1, hi0, hi1n, hi, hfd, hfr, _, _, _⟩ | hend
+  · obtain ⟨e', hpc', hpre', hmem', hi10, hp', hn', hfr', hfd', hrun⟩ :=
+      NumFastScanRun.nestEntry_run (calls := calls) (env := e.env) (s := e)
+        hpc hpre hp hfr hfd hi hn (ult_ofNat_one hi1n (by omega))
+    exact ⟨i1, _, _, e', hi0, hi1n, hpc', hpre', hmem', hi10, hp', hn', hfr', hfd', hrun⟩
+  · rw [hend.1] at hpc
+    exact absurd hpc (by decide)
+
+/-- **The fraction route ends at the merge.**  At a lexeme whose integer part
+stops on the `.` and whose bytes from the index after it to the end are digits,
+the dispatch and the fraction run reach `if.end230` with the run's end-of-lexeme
+exit word — the merge's fraction edge — within
+`6 + (n - i0 + 1) * 4` control steps, `i0 = i1 + 1` the index after the decimal
+point. -/
+theorem fracScan_end230 {mem : Mem} {e : State} {a n i1 : Nat} {bs : List UInt8}
+    {bd bd2 : UInt8}
+    (h : land71Entry mem a n i1 e)
+    (hread : readBytes mem a n = some bs)
+    (hdot : readByte mem (a + i1) = some bd) (hdoteq : bd = 0x2E)
+    (hd2 : readByte mem (a + (i1 + 1)) = some bd2) (hd2digit : IsDigitB bd2 = true)
+    (hltn : i1 + 1 < n) (hfast : n < i1 + 9) (hnlt : n < 2 ^ 63)
+    (hdigits : ∀ k, i1 + 1 ≤ k → k < n → IsDigitB (bs.getD k 0) = true) :
+    ∃ (e' : State) (j : Nat), j ≤ 6 + (n - (i1 + 1) + 1) * 4 ∧
+      fracRunEndWord bs a n (i1 + 1) 0 e' ∧
+      ∀ k, runFuel s2HelperCalls (j + k) numFastBody e =
+        runFuel s2HelperCalls k numFastBody e' := by
+  rcases h with ⟨hpc, _, hmem, hp, hn, hi5, hparts⟩
+  obtain ⟨e0, hinv0, hrun0⟩ :=
+    NumFastStarts.fracRun_start (calls := s2HelperCalls) (env := e.env) (s := e)
+      hpc hp hn (by rw [hmem]; exact hread) hi5 hparts
+      (by rw [hmem]; exact hdot) hdoteq (by rw [hmem]; exact hd2) hd2digit
+      hltn hfast hnlt
+  obtain ⟨e1, j1, hj1, _, hend, hrun1⟩ :=
+    (fracRunEndBoundLoop e.mem a n (i1 + 1) 0 bs 4 (by omega) hdigits).run_from
+      (n - (i1 + 1)) e0 0 hinv0
+  refine ⟨e1, 6 + j1, Nat.add_le_add_left hj1 6, hend, ?_⟩
+  intro k
+  rw [show 6 + j1 + k = 6 + (j1 + k) from by omega]
+  exact (hrun0 (j1 + k)).trans (hrun1 k)
+
+/-- **The marker and its optional sign.**  From the marker's block with the byte
+at `%i.10` an `'e'` or an `'E'`, the nest reads the sign byte at `%i.10 + 1` and
+reaches `lor.lhs.false180` — the exponent run's start — within nine control
+steps, with `%i.11` the exponent's first index and `%esign.0` the sign the merge
+selects on.  The two shapes are the marker's leaf and the sign's presence. -/
+theorem nest_marker_start {e : State} {a n i10 : Nat} {b1 b2 : UInt8}
+    (hpc : e.pc = "land.lhs.true147")
+    (hp : lookupName e.env "%p" = some (.ptr a))
+    (hi : lookupName e.env "%i.10" = some (.int 64 (BitVec.ofNat 64 i10)))
+    (hn : lookupName e.env "%n" = some (.int 64 (BitVec.ofNat 64 n)))
+    (hnlt : n < 2 ^ 63)
+    (hread : readByte e.mem (a + i10) = some b1)
+    (hmarker : b1 = 0x65 ∨ b1 = 0x45)
+    (hin : i10 + 3 ≤ n)
+    (hread2 : readByte e.mem (a + (i10 + 1)) = some b2) :
+    ∃ (i11 : Nat) (esign : BitVec 1) (e' : State) (j : Nat), j ≤ 9 ∧
+      e'.pc = "lor.lhs.false180" ∧ e'.mem = e.mem ∧
+      lookupName e'.env "%p" = some (.ptr a) ∧
+      lookupName e'.env "%n" = some (.int 64 (BitVec.ofNat 64 n)) ∧
+      lookupName e'.env "%i.11" = some (.int 64 (BitVec.ofNat 64 i11)) ∧
+      lookupName e'.env "%esign.0" = some (.int 1 esign) ∧
+      (i11 = i10 + 1 ∨ i11 = i10 + 2) ∧
+      ∀ k, runFuel s2HelperCalls (j + k) numFastBody e =
+        runFuel s2HelperCalls k numFastBody e' := by
+  rcases hmarker with rfl | rfl
+  · -- `'e'`: the pivot takes `LeafBlock1`
+    let env1 : Env := NumFastScanRun.leafBlock1Env
+      (NumFastScanRun.nodeBlockEnv (NumFastScanRun.t147Env e.env a i10 0x65) 0x65) 0x65
+    have hrun3 : ∀ k, runFuel s2HelperCalls (3 + k) numFastBody e =
+        runFuel s2HelperCalls k numFastBody
+          (stateAt env1 { e with pc := "if.then157", pre := some "LeafBlock1" }) :=
+      NumFastScanRun.nestTo157_e (calls := s2HelperCalls) hpc hp hi (by omega) hread
+    have hp' : lookupName env1 "%p" = some (.ptr a) := by
+      simp only [env1, NumFastScanRun.leafBlock1Env, NumFastScanRun.nodeBlockEnv,
+        NumFastScanRun.t147Env]
+      block_lk
+    have hi' : lookupName env1 "%i.10" = some (.int 64 (BitVec.ofNat 64 i10)) := by
+      simp only [env1, NumFastScanRun.leafBlock1Env, NumFastScanRun.nodeBlockEnv,
+        NumFastScanRun.t147Env]
+      block_lk
+    have hn' : lookupName env1 "%n" = some (.int 64 (BitVec.ofNat 64 n)) := by
+      simp only [env1, NumFastScanRun.leafBlock1Env, NumFastScanRun.nodeBlockEnv,
+        NumFastScanRun.t147Env]
+      block_lk
+    by_cases hsign : b2 = 0x2b ∨ b2 = 0x2d
+    · have hread2 : readByte e.mem (a + (i10 + 1)) = some b2 := hread2
+      obtain ⟨e', hpc', hmem', hp2, hn2, hi11, hes, hrun6⟩ :=
+        NumFastScanRun.nestFrom157_sign (calls := s2HelperCalls) (env := env1)
+          (s := { e with pc := "if.then157", pre := some "LeafBlock1" })
+          rfl hp' hi' hn' hnlt (by omega) hread2 hsign
+      refine ⟨i10 + 2, _, e', 9, by omega, hpc', hmem', hp2, hn2, hi11, hes, Or.inr rfl, ?_⟩
+      intro k
+      rw [show 9 + k = 3 + (6 + k) from by omega]
+      exact (hrun3 (6 + k)).trans (hrun6 k)
+    · have hnosign : b2 ≠ 0x2b ∧ b2 ≠ 0x2d :=
+        ⟨fun h => hsign (Or.inl h), fun h => hsign (Or.inr h)⟩
+      obtain ⟨e', hpc', hmem', hp2, hn2, hi11, hes, hrun5⟩ :=
+        NumFastScanRun.nestFrom157_nosign (calls := s2HelperCalls) (env := env1)
+          (s := { e with pc := "if.then157", pre := some "LeafBlock1" })
+          rfl hp' hi' hn' hnlt (by omega) hread2 hnosign
+      refine ⟨i10 + 1, _, e', 8, by omega, hpc', hmem', hp2, hn2, hi11, hes, Or.inl rfl, ?_⟩
+      intro k
+      rw [show 8 + k = 3 + (5 + k) from by omega]
+      exact (hrun3 (5 + k)).trans (hrun5 k)
+  · -- `'E'`: the pivot takes `LeafBlock`
+    let env1 : Env := NumFastScanRun.leafBlockEnv
+      (NumFastScanRun.nodeBlockEnv (NumFastScanRun.t147Env e.env a i10 0x45) 0x45) 0x45
+    have hrun3 : ∀ k, runFuel s2HelperCalls (3 + k) numFastBody e =
+        runFuel s2HelperCalls k numFastBody
+          (stateAt env1 { e with pc := "if.then157", pre := some "LeafBlock" }) :=
+      NumFastScanRun.nestTo157_E (calls := s2HelperCalls) hpc hp hi (by omega) hread
+    have hp' : lookupName env1 "%p" = some (.ptr a) := by
+      simp only [env1, NumFastScanRun.leafBlockEnv, NumFastScanRun.nodeBlockEnv,
+        NumFastScanRun.t147Env]
+      block_lk
+    have hi' : lookupName env1 "%i.10" = some (.int 64 (BitVec.ofNat 64 i10)) := by
+      simp only [env1, NumFastScanRun.leafBlockEnv, NumFastScanRun.nodeBlockEnv,
+        NumFastScanRun.t147Env]
+      block_lk
+    have hn' : lookupName env1 "%n" = some (.int 64 (BitVec.ofNat 64 n)) := by
+      simp only [env1, NumFastScanRun.leafBlockEnv, NumFastScanRun.nodeBlockEnv,
+        NumFastScanRun.t147Env]
+      block_lk
+    by_cases hsign : b2 = 0x2b ∨ b2 = 0x2d
+    · obtain ⟨e', hpc', hmem', hp2, hn2, hi11, hes, hrun6⟩ :=
+        NumFastScanRun.nestFrom157_sign (calls := s2HelperCalls) (env := env1)
+          (s := { e with pc := "if.then157", pre := some "LeafBlock" })
+          rfl hp' hi' hn' hnlt (by omega) hread2 hsign
+      refine ⟨i10 + 2, _, e', 9, by omega, hpc', hmem', hp2, hn2, hi11, hes, Or.inr rfl, ?_⟩
+      intro k
+      rw [show 9 + k = 3 + (6 + k) from by omega]
+      exact (hrun3 (6 + k)).trans (hrun6 k)
+    · have hnosign : b2 ≠ 0x2b ∧ b2 ≠ 0x2d :=
+        ⟨fun h => hsign (Or.inl h), fun h => hsign (Or.inr h)⟩
+      obtain ⟨e', hpc', hmem', hp2, hn2, hi11, hes, hrun5⟩ :=
+        NumFastScanRun.nestFrom157_nosign (calls := s2HelperCalls) (env := env1)
+          (s := { e with pc := "if.then157", pre := some "LeafBlock" })
+          rfl hp' hi' hn' hnlt (by omega) hread2 hnosign
+      refine ⟨i10 + 1, _, e', 8, by omega, hpc', hmem', hp2, hn2, hi11, hes, Or.inl rfl, ?_⟩
+      intro k
+      rw [show 8 + k = 3 + (5 + k) from by omega]
+      exact (hrun3 (5 + k)).trans (hrun5 k)
+
+/-! ### The exponent run's start, after the nest
+
+`expRun_start` takes the run's head state, the index `%i.11`, the sign and the
+four carried cells; `nest_marker_start` hands exactly those at
+`lor.lhs.false180`.  The two are not chained here: the nest's exit state is
+existential, so its environment is not a term a caller can rewrite, and the
+carried cells cannot be recovered from the exit — they have to be named at the
+start, which a caller holding the dispatch's `fracPartCells` and the fraction
+run's `%fr.5`/`%fdig.4` can do. -/
+
+/-- **The merge at the exponent run's exit.**  `cleanup223.thread` folds the
+run's accumulator with its sign and `if.end226`'s equality test opens `if.end230`:
+two control steps from either exit edge, with the merge's five registers.  The
+sign is the exit's (`%esign.0`), the accumulator is the arm's (`%exp10.0603` at
+the head, `%exp10.1` at the back edge), and the head arm needs its index at the
+length — the back edge's `%inc217` is `%n` there — so `hhead` names that. -/
+theorem expExit_merge {calls : Calls} {e : State} {n : Nat}
+    (he : expRunExit e)
+    (hn : lookupName e.env "%n" = some (.int 64 (BitVec.ofNat 64 n)))
+    (hhead : ∀ i1, lookupName e.env "%i.12604"
+      = some (.int 64 (BitVec.ofNat 64 i1)) → i1 = n) :
+    ∃ (idig ip fr fdig : BitVec 64) (e' : State) (esign : BitVec 1) (v : BitVec 64),
+      NumFastScanRun.mergeEntry e.mem (if esign = 1 then v else 0 - v)
+        idig ip fr fdig e' ∧
+      ∀ k, runFuel calls (2 + k) numFastBody e = runFuel calls k numFastBody e' := by
+  obtain ⟨hpc, hdisj, hesign, hcarry⟩ := he
+  obtain ⟨esign, hes⟩ := hesign
+  obtain ⟨idig, ip, fr, fdig, hid, hip, hfr, hfd⟩ := hcarry
+  rcases hdisj with ⟨hpre, i1, v, hi1, hacc⟩ | ⟨hpre, i1, v, hi1, hacc⟩
+  · have hi1n : i1 = n := hhead i1 hi1
+    have hi : lookupName e.env "%i.12604" = some (.int 64 (BitVec.ofNat 64 n)) := by
+      rw [hi1, hi1n]
+    obtain ⟨e', hmerge, hrun⟩ :=
+      NumFastScanRun.expMerge_run_head (calls := calls) hpc hpre hacc hi hn hes
+        hid hip hfr hfd
+    exact ⟨idig, ip, fr, fdig, e', esign, v, hmerge, hrun⟩
+  · obtain ⟨e', hmerge, hrun⟩ :=
+      NumFastScanRun.expMerge_run_inc (calls := calls) hpc hpre hacc hn hes
+        hid hip hfr hfd
+    exact ⟨idig, ip, fr, fdig, e', esign, v, hmerge, hrun⟩
+
+/-! ### What the routes leave open
+
+*The nest's exit environment.*  `nest_marker_start` and the fraction run's exit
+are `∃`-states: their environments are not terms a caller can rewrite, so a
+composition that needs a cell past them has to receive it from the predicate.
+`expRunExit` now hands the four carried cells (and the sign and the edge), which
+is what `expExit_merge` reads; `nest_marker_start` hands `%i.11` and `%esign.0`,
+which is what `expRun_start` reads, but not the four cells — so the exponent run
+is appended to the nest at the two statements, with the cells named at the run's
+start, rather than as one chain.  Handing them from the nest is the same edit the
+sign took: one conjunct on each nest lemma's conclusion and on `nestEntry_run` /
+`nodot_seam`.
+
+*The exit-arm decisions.*  `intScan_run`, `fracRun_run` and `expRun_run` all
+conclude an exit predicate whose arms are the two ways out of the loop, so a
+composition from `entry` splits at the exit.  `intScan_end230` fixes the integer
+run's end-of-lexeme arm and `fracScan_end230` the fraction's, and `expExit_merge`
+splits the exponent's; a single chain from `entry` through all four is the arm's
+work, not a seam's. -/
+
 /-! ### Axiom footprints
 
 The seams and the transport are instruction chains over the blocks' pins, so
@@ -2799,6 +3168,13 @@ steps are at `stage2NumFastCalls`, whose reader answer is the model's. -/
 #print axioms NumFastSeams.fracCount_denote
 #print axioms NumFastSeams.fracCount_step
 #print axioms NumFastSeams.t1_fracCount_tie
+#print axioms NumFastSeams.intRunExit_land71
+#print axioms NumFastSeams.land71_nodot
+#print axioms NumFastSeams.land71_fracScan
+#print axioms NumFastSeams.fracExit_nest
+#print axioms NumFastSeams.fracScan_end230
+#print axioms NumFastSeams.nest_marker_start
+#print axioms NumFastSeams.expExit_merge
 
 end NumFastSeams
 
