@@ -277,24 +277,34 @@ through `cleanup223.thread`/`if.end226` into `mergeEntry`'s `%exp10.4`, with the
 exit's accumulator reading (`expAcc` of the exponent's digits) and the sign's
 polarity as the seam's hypotheses.  Both carry `[propext, Quot.sound]`.
 
-What the arm needs beyond that is the run itself: the copy's four-way unrolled
-main loop's *visits* were the first of the two items, and they are now closed —
-its `BoundLoop` shape and budget are fixed
+What the arm needs beyond that is the run itself.  The copy's four-way unrolled
+main loop's visits are closed — its `BoundLoop` shape and budget
 (`JsonStage2NumFastTier3CopyUnroll.t3MainLoopOf`/`t3MainLoop_run_at`) and the two
-arms it names are proved (`t3Visit`, `t3Main_step_exit`/`t3Main_step_loop`, hence
-`t3MainLoop`/`t3MainLoop_run_at'`) — so what that loop still owes is the handoff
-of its exit block's `phi`s into the residual loop's invariant, one step at
-`for.end100.i.i.loopexit.unr-lcssa`'s pin.  Two items this
-list used to carry are closed: the ladder's join **at the invariant level**
+arms it names (`t3Visit`, `t3Main_step_exit`/`t3Main_step_loop`, hence
+`t3MainLoop`/`t3MainLoop_run_at'`) — and the handoff of its exit block's `phi`s
+into the residual loop's invariant is `JsonStage2NumFastTier3Handoff`'s:
+`t3_exit_denote` is `for.end100.i.i.loopexit.unr-lcssa`'s chain at its pin — the
+three `phi`s, and `%lcmp.mod.not = (%xtraiter == 0)` — with `t3_exit_step_pos` and
+`t3_exit_step_zero` its two edges, and `t3_exit_handoff` the residual head's
+entry: one control step, `T3EpilInv` at the whole residue with no visit counted.
+The handoff's inequality is strict, and the strict form is the true one:
+`t3MainExitWord` carries `i.toNat + xt ≤ Nd` while the invariant's store bound is
+`i < Nd`, which follows only from `1 ≤ xt`; and `T3EpilInv` is inhabited only
+with a visit left (`1 ≤ r` with `c + r = xtraiter`), so at `xtraiter = 0` there is
+no invariant state at all (`t3EpilInv_zero_uninhabited`) and the exit block's own
+test is what finishes the copy (`t3_exit_zero_branch`, which reaches
+`for.end100.i.i` with no residual visit).  Both branches are stated, so the
+`xt = 0` case is argued rather than excluded.  Two items this list used to carry
+are closed: the ladder's join **at the invariant level**
 (`JsonStage2NumFastTier3LadderRun.t3_join_divInv`/`t3_ladder_run`: the join's
 state is the negative loop's invariant at counter zero with the empty row list),
 and the peel epilogue's exit tie — proved at `while.cond.preheader.i.i577.i.i`,
 whose successors are the outer loop's and `stk_mul_u64`'s, not `for.body87.i.i`'s
-directly (`JsonStage2NumFastTier3PeelTie.t3_peel_exit_tie`).  No theorem below claims
-the arm, and none is instantiated at the walk's own `s2HelperCalls`; the kernel's
-`w < 2 ^ 64` bound is met at the body's own word
-(`JsonStage2NumFastTier3.numFast_ifEnd268_domain`), so the bound is not what stops
-the arm — the run's composition is.  `JsonStage2NumFastRun` composes the part the
+directly (`JsonStage2NumFastTier3PeelTie.t3_peel_exit_tie`).  No theorem below
+claims the arm, and none is instantiated at the walk's own `s2HelperCalls`; the
+kernel's `w < 2 ^ 64` bound is met at the body's own word
+(`JsonStage2NumFastTier3.numFast_ifEnd268_domain`), so the bound is not what
+stops the arm.  `JsonStage2NumFastRun` composes the part the
 merge block fixes: the tier-1 conversion from `if.end230` to the return, as the
 arm's own conclusion at that block, and the returning edge the kernel's and the
 fallback's store blocks share with it.  The scan's seam to the merge is closed on
@@ -310,8 +320,26 @@ hypotheses is the three cells no block on the path writes — `%out`,
 `%tobool274.not` and the two table symbols — because a `runFuel` prefix does not
 expose the environment it leaves; the transport that closes them at `entry` is
 `JsonStage2NumFastSign`'s `NumFastChain`, which a caller has to supply a chain
-of steps for.  The fraction and exponent routes
-are still composed one seam at a time.
+of steps for.  `JsonStage2NumFastEntry` joins the scan to the model: `intScan_tie_merge` is
+`entry` to `if.then241` as one `runFuel` chain whose five registers are
+`Decimal`'s — the folded integer part, its digit count, and the fraction's and
+exponent's zeroes — composing `intScan_end230` with
+`JsonStage2NumFastSeams.t1_intRun_tie`; `intScan_to_dot` is the dispatch's other
+answer, the `.` test or the integer part's end at the lexeme's end; and
+`fracRunEndWord_tie` reads the fraction run's end-of-lexeme exit word into the
+merge's five registers as the model's, with the integer part's two carried cells
+as hypotheses because `fracPartCells` binds their names without their values.
+
+**Where the composition stops.**  `%out`, `%tobool274.not`, the two table symbols
+and `fracPartCells`'s two integer cells are the caller's (or an earlier block's),
+and no block on these routes writes them.  A `runFuel` prefix does not expose the
+environments it crosses, so a composition that spans a digit run cannot re-read
+them at the run's exit, and the exit predicates name only what a successor reads:
+the cursor, the length, the predecessor, `%7` and the residues.  That boundary is
+what `t1_end230_run` and `intScan_tie_merge` take as hypotheses, and its transport
+is `JsonStage2NumFastSign`'s `NumFastChain` — supplied by a caller — or a run
+invariant that carries the cells.  The arm's instance at the entry waits on that
+transport, not on a seam.
 
 **The kernel's site after the tie.**  `%add244` and `%sub231` are now read as the
 model's `(d.mantissa, eff d)` at `if.end268`:

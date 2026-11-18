@@ -112,6 +112,8 @@ import LeanLLVM.Refinement.JsonStage2NumFastTaken
 import LeanLLVM.Refinement.JsonStage2NumFastJoin
 import LeanLLVM.Refinement.JsonStage2NumFastScanFast
 import LeanLLVM.Refinement.JsonStage2NumFastRun
+import LeanLLVM.Refinement.JsonStage2NumFastEntry
+import LeanLLVM.Refinement.JsonStage2NumFastTier3Handoff
 import LeanLLVM.Refinement.JsonStage2StringBody
 import LeanLLVM.Refinement.JsonStage2WalkAlignment
 import LeanLLVM.Refinement.JsonStage2TraceRow

@@ -21,9 +21,10 @@ That is the tie this module proves, in three pieces.
 3. **The tie at the model.**  `sign_tie` reads a well-formed lexeme's first byte
    as `d.neg`: `-` exactly at a negative sign, so `%tobool274.not = 1 ↔ ¬d.neg`.
 
-The composite at the end is the tier-1 store of `JsonStage2NumFastTier1` at a
-lexeme: the table staging `NumFastTables` and the sign tie supply
-`t1_store_run`'s hypotheses, and its five steps write `strtodSpec`'s bytes.
+The transport is what a composite reads, not the composite: the tier-1 store of
+`JsonStage2NumFastTier1` takes the sign's cell at its own state
+(`JsonStage2NumFastRun.t1_end230_run`'s `hsig`), and the staging `NumFastTables`
+is a hypothesis of that theorem rather than a value read at `entry`.
 -/
 import LeanLLVM.Refinement.JsonStage2NumFastTier1
 import LeanLLVM.Refinement.JsonStage2NumFastArm

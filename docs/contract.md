@@ -1337,6 +1337,53 @@ the run's exit is existential).  The run's exit word also carries its memory
 (`intRunEndWord`'s `e.mem = mem0`), which is what lets a reader of the two
 staged tables read them at the store block rather than at the entry state.
 
+**The scan's two joins at the model, and the boundary between them.**
+`JsonStage2NumFastEntry` composes what the ties left as separate seams.
+`intScan_tie_merge` is `entry` to `if.then241` as one `runFuel` chain whose five
+registers are `Decimal`'s — the folded integer part, its `intDigits`, and the
+fraction's and exponent's zeroes — within `9 + (n - i0 + 1) * 4` control steps, by
+appending `JsonStage2NumFastScanRun.intScan_end230` to
+`JsonStage2NumFastSeams.t1_intRun_tie`; the shape hypotheses the tie reads (`d.ip`
+inside the lexeme, `intDigits d`) are the theorem's because they are the
+lexeme's decomposition, not the scan's.  `intScan_to_dot` is the dispatch's other
+answer: the same chain reaches either the `.` test (`land71Entry`, with the run's
+stop index) or the integer part's end at the lexeme's end (`intRunEndWord`), and
+the disjunction is the run's own because which exit it takes is a byte fact its
+exit predicate names.  `fracRunEndWord_tie` reads the fraction run's
+end-of-lexeme exit word into the merge's five registers as the model's; the
+integer part's two carried cells are its hypotheses, because `fracPartCells`
+binds `%idig.4`/`%ip.5` without their values.
+
+**Where the composition stops, and why it is not a seam.**  `%out`,
+`%tobool274.not`, the two table symbols and `fracPartCells`'s two integer cells
+are the caller's (or an earlier block's), and no block on these routes writes
+them.  A `runFuel` prefix does not expose the environments it crosses, so a
+composition spanning a digit run cannot re-read them at the run's exit; the exit
+predicates name only what a successor's `phi`s read — the cursor, the length,
+the predecessor, `%7`, the residues and the run's memory.  The arm's instance at
+`entry` therefore waits on a transport (`JsonStage2NumFastSign`'s `NumFastChain`,
+supplied by a caller, or a run invariant that carries the cells), not on an
+unwritten seam.  The kernel's `w < 2 ^ 64` bound is not the stopper either: it is
+met at the body's own word (`numFast_ifEnd268_domain`).
+
+**Tier 3's copy: the nest's exit into the residual loop.**  The four-way unrolled
+nest's visits and the residual loop's induction met at
+`for.end100.i.i.loopexit.unr-lcssa`, and
+`JsonStage2NumFastTier3Handoff` is that meeting.  `t3_exit_denote` is the block's
+chain at its pin — the three `phi`s (`%e.1.i.i.lcssa.ph`, `%i.3735.i.i.unr`,
+`%e.0734.i.i.unr`) and `%lcmp.mod.not = (%xtraiter == 0)` — and
+`t3_exit_step_pos`/`t3_exit_step_zero` are its two edges.  The handoff's
+inequality is **strict, and the strict form is the true one**: `t3MainExitWord`
+carries `i.toNat + xt ≤ Nd`, the invariant's store bound is `i < Nd`, and the
+latter follows only from `1 ≤ xt`; `T3EpilInv` is inhabited only with a visit
+left (`1 ≤ r` with `c + r = xtraiter`), so at `xtraiter = 0` there is no
+invariant state at all (`t3EpilInv_zero_uninhabited`) and the exit block's own
+test is what finishes the copy (`t3_exit_zero_branch`, which reaches
+`for.end100.i.i` with no residual visit).  Both branches are stated:
+`t3_exit_handoff` is the residual head's entry in one control step with the
+invariant at the whole residue, and the spent-residue branch is the block's own
+jump, so the `xt = 0` case is argued rather than excluded by a hypothesis.
+
 **Tier 1's chain from the run's exit, and the gate's value tie.**  The tier-1
 arithmetic is now one chain from the run's own exit:
 `JsonStage2NumFastRun.t1_end230_run` steps the end-of-lexeme exit's registers
