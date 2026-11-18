@@ -1,0 +1,590 @@
+import LeanLLVM.Refinement.JsonStage2StringBodyAST
+
+set_option autoImplicit false
+
+namespace LeanLLVM.Refinement
+
+open LeanLLVM
+open LeanLLVM.Refinement.BlockEval
+open LeanLLVM.Refinement.JsonEntryIR (readLanes32)
+
+/-! ### Axiom footprints
+
+The clause and the two arm lemmas print their footprints with `#guard_msgs`, so
+the build checks them rather than printing them.  The instrument's
+discriminating control is the one §7.6 records: a throwaway declaration proved
+with `sorry` prints `sorryAx` under the same command.  No `sorry` is in this
+module. -/
+/-- info: 'LeanLLVM.Refinement.escapeExpand8_decoded' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms escapeExpand8_decoded
+
+/-- info: 'LeanLLVM.Refinement.escapeExpand8_refused' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms escapeExpand8_refused
+
+/-- info: 'LeanLLVM.Refinement.s2StringBodyCalls_expand_eq' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms s2StringBodyCalls_expand_eq
+
+/-- `store i32 <c>, ptr %p`: the refusal record's first field. -/
+theorem sb_step_store32_imm (calls : Calls) (env : Env) (s : State) (p : String)
+    {x : BitVec 32} {a : Nat} (hp : lookupName env p = some (.ptr a)) :
+    evalInstr calls (stateAt env s) (.store (Ty.int 32) (.imm (.int 32 x)) (.reg p)) =
+      some (stateAt env { s with mem := writeBytes s.mem a (natToBytes x.toNat 4) }) := by
+  have h1 : evalOperand (stateAt env s) (.imm (.int 32 x)) = some (.int 32 x) := rfl
+  have h2 := BlockEval.evalOperand_reg_of env s p (.ptr a) hp
+  unfold evalInstr
+  dsimp only
+  rw [h1, h2]
+  simp [State.bind, stateAt, storeValue]
+
+/-- A void call at two arguments: the lifetime marker's emitted form. -/
+theorem sb_step_callVoid2 (calls : Calls) (env : Env) (s : State) (callee : String)
+    (o1 o2 : Operand) {v1 v2 : Value} {r : CallOutcome}
+    (h1 : evalOperand (stateAt env s) o1 = some v1)
+    (h2 : evalOperand (stateAt env s) o2 = some v2)
+    (hc : calls callee [v1, v2] s.mem s.next = some r) :
+    evalInstr calls (stateAt env s)
+        (.callVoid callee [(Ty.int 64, o1), (Ty.ptr, o2)]) =
+      some (stateAt env { s with mem := r.mem, next := r.next }) := by
+  have hargs : evalOperands (stateAt env s)
+      [(Ty.int 64, o1), (Ty.ptr, o2)] = some [v1, v2] := by
+    simp only [evalOperands, h1, h2]
+  have hc' : calls callee [v1, v2] (stateAt env s).mem (stateAt env s).next = some r := hc
+  simp only [evalInstr, hargs, hc']
+  rfl
+
+/-- A call at eight arguments binding its `i64` result: the expander's emitted
+form.  Its outcome is the clause's (`escapeExpand8_decoded`/`_refused`). -/
+theorem sb_step_call8 (calls : Calls) (env : Env) (s : State) (d callee : String)
+    (o1 o2 o3 o4 o5 o6 o7 o8 : Operand)
+    {v1 v2 v3 v4 v5 v6 v7 v8 : Value} {r : CallOutcome}
+    (h1 : evalOperand (stateAt env s) o1 = some v1)
+    (h2 : evalOperand (stateAt env s) o2 = some v2)
+    (h3 : evalOperand (stateAt env s) o3 = some v3)
+    (h4 : evalOperand (stateAt env s) o4 = some v4)
+    (h5 : evalOperand (stateAt env s) o5 = some v5)
+    (h6 : evalOperand (stateAt env s) o6 = some v6)
+    (h7 : evalOperand (stateAt env s) o7 = some v7)
+    (h8 : evalOperand (stateAt env s) o8 = some v8)
+    (hc : calls callee [v1, v2, v3, v4, v5, v6, v7, v8] s.mem s.next = some r) :
+    evalInstr calls (stateAt env s) (.call d (Ty.int 64) callee
+        [(Ty.ptr, o1), (Ty.int 64, o2), (Ty.ptr, o3), (Ty.ptr, o4), (Ty.ptr, o5),
+         (Ty.ptr, o6), (Ty.int 64, o7), (Ty.int 64, o8)]) =
+      some (stateAt ((d, r.ret) :: env) { s with mem := r.mem, next := r.next }) := by
+  have hargs : evalOperands (stateAt env s)
+      [(Ty.ptr, o1), (Ty.int 64, o2), (Ty.ptr, o3), (Ty.ptr, o4), (Ty.ptr, o5),
+       (Ty.ptr, o6), (Ty.int 64, o7), (Ty.int 64, o8)] =
+      some [v1, v2, v3, v4, v5, v6, v7, v8] := by
+    simp only [evalOperands, h1, h2, h3, h4, h5, h6, h7, h8]
+  have hc' : calls callee [v1, v2, v3, v4, v5, v6, v7, v8]
+      (stateAt env s).mem (stateAt env s).next = some r := hc
+  simp only [evalInstr, hargs, hc']
+  rfl
+
+/-- **The entry block's run.**  The seven instructions, each applied at the
+**cons** environment the previous step built — the named `Env` definitions are
+the statement's spelling and are reconciled at the end — with the allocator cell
+carried as `(Ty.int 64).sizeBytes` and each one-cell-deep lookup peeled by
+`s2_lk`.  The two address cells are the instructions' own values, `ptrtoint` and
+`sub` at `i64`, which is what the model's `Nat` arithmetic is bridged to at the
+closing rather than here. -/
+theorem s2StringBody_entry_denote {calls : Calls} {env : Env} {s : State}
+    {c p xj base j0 : Nat} {nxp : BitVec 64}
+    (hc : lookupName env "%c" = some (.ptr c))
+    (hp : lookupName env "%p" = some (.ptr p))
+    (hxj : lookupName env "%xj" = some (.ptr xj))
+    (hnxp : lookupName env "%nxp" = some (.int 64 nxp))
+    (hbase : readBytes s.mem c 8 = some (wordBytes 8 base)) (hb64 : base < 2 ^ 64)
+    (hp64 : p < 2 ^ 64)
+    (hj0 : readBytes s.mem xj 8 = some (wordBytes 8 j0)) (hj64 : j0 < 2 ^ 64) :
+    denoteCode calls s2StringBodyEntryInstrs (stateAt env s) =
+      denoteCode calls []
+        (stateAt (s2StringBodyEnv7 (s2StringBodyEnv6 (s2StringBodyEnv5
+          (s2StringBodyEnv4 (s2StringBodyEnv3 (s2StringBodyEnv2
+            (s2StringBodyEnv1 env s.next) base) p) base) p base) j0) j0 nxp)
+          { s with next := s.next + (Ty.int 64).sizeBytes }) := by
+  dsimp only [s2StringBodyEntryInstrs]
+  rw [denoteCode_cons_of _ _ _ _ _ (sb_step_alloca calls env s "%ei" (Ty.int 64) 0)]
+  rw [denoteCode_cons_of _ _ _ _ _
+    (sb_step_loadPtr calls (("%ei", .ptr s.next) :: env)
+      { s with next := s.next + (Ty.int 64).sizeBytes }
+      "%0" "%c" (by s2_lk) hbase hb64)]
+  rw [denoteCode_cons_of _ _ _ _ _
+    (sb_step_ptrtoint calls (("%0", .ptr base) :: ("%ei", .ptr s.next) :: env)
+      { s with next := s.next + (Ty.int 64).sizeBytes }
+      "%sub.ptr.lhs.cast" "%p" (by s2_lk) hp64)]
+  rw [denoteCode_cons_of _ _ _ _ _
+    (sb_step_ptrtoint calls
+      (("%sub.ptr.lhs.cast", .int 64 (BitVec.ofNat 64 p)) :: ("%0", .ptr base) ::
+        ("%ei", .ptr s.next) :: env)
+      { s with next := s.next + (Ty.int 64).sizeBytes }
+      "%sub.ptr.rhs.cast" "%0" (by s2_lk) hb64)]
+  rw [denoteCode_sub_reg calls
+    (("%sub.ptr.rhs.cast", .int 64 (BitVec.ofNat 64 base)) ::
+      ("%sub.ptr.lhs.cast", .int 64 (BitVec.ofNat 64 p)) :: ("%0", .ptr base) ::
+      ("%ei", .ptr s.next) :: env) { s with next := s.next + (Ty.int 64).sizeBytes }
+    "%sub.ptr.sub" "%sub.ptr.lhs.cast" "%sub.ptr.rhs.cast" (by s2_lk) (by s2_lk) _]
+  rw [denoteCode_load64 (v := BitVec.ofNat 64 j0) calls
+    (("%sub.ptr.sub", .int 64 (BitVec.ofNat 64 p - BitVec.ofNat 64 base)) ::
+      ("%sub.ptr.rhs.cast", .int 64 (BitVec.ofNat 64 base)) ::
+      ("%sub.ptr.lhs.cast", .int 64 (BitVec.ofNat 64 p)) :: ("%0", .ptr base) ::
+      ("%ei", .ptr s.next) :: env) { s with next := s.next + (Ty.int 64).sizeBytes }
+    "%xj.promoted" "%xj" (by s2_lk)
+    (by rw [hj0]; simp only [wordBytes]; rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hj64]) _]
+  rw [denoteCode_icmp_ult_reg calls
+    (("%xj.promoted", .int 64 (BitVec.ofNat 64 j0)) ::
+      ("%sub.ptr.sub", .int 64 (BitVec.ofNat 64 p - BitVec.ofNat 64 base)) ::
+      ("%sub.ptr.rhs.cast", .int 64 (BitVec.ofNat 64 base)) ::
+      ("%sub.ptr.lhs.cast", .int 64 (BitVec.ofNat 64 p)) :: ("%0", .ptr base) ::
+      ("%ei", .ptr s.next) :: env) { s with next := s.next + (Ty.int 64).sizeBytes }
+    "%cmp3" "%xj.promoted" "%nxp" (by s2_lk) (by s2_lk) []]
+  rw [denoteCode_nil, denoteCode_nil]
+  simp only [s2StringBodyEnv1, s2StringBodyEnv2, s2StringBodyEnv3, s2StringBodyEnv4,
+    s2StringBodyEnv5, s2StringBodyEnv6, s2StringBodyEnv7]
+
+/-- The `if.then` arm's one instruction: the body-itself form's length word. -/
+theorem s2StringBodyIfThenInstrs_eq :
+    (s2StringBodyBody.findBlock "if.then").map (·.instrs) =
+      some [Instr.store (Ty.int 64) (Operand.reg "%len") (Operand.reg "%outn")] := by
+  decide
+
+/-- **The `if.then` arm's run**: `outn` takes the body's extent, and the memory is
+the caller's everywhere else. -/
+theorem s2StringBody_ifThen_denote {calls : Calls} {env : Env} {s : State}
+    {len : BitVec 64} {outn : Nat}
+    (hlen : lookupName env "%len" = some (.int 64 len))
+    (houtn : lookupName env "%outn" = some (.ptr outn)) :
+    denoteCode calls [Instr.store (Ty.int 64) (Operand.reg "%len") (Operand.reg "%outn")]
+        (stateAt env s) =
+      denoteCode calls []
+        (stateAt env { s with mem := writeBytes s.mem outn (natToBytes len.toNat 8) }) := by
+  rw [denoteCode_store64 calls env s "%len" "%outn" hlen houtn []]
+
+/-- The `if.end14` arm's one instruction: the decoded length at `outn`. -/
+theorem s2StringBodyIfEnd14Instrs_eq :
+    (s2StringBodyBody.findBlock "if.end14").map (·.instrs) =
+      some [Instr.store (Ty.int 64) (Operand.reg "%call") (Operand.reg "%outn")] := by
+  decide
+
+/-- **The `if.end14` arm's run**: the expander's returned word at `outn`, which is
+the decoded length on the accepting arm. -/
+theorem s2StringBody_ifEnd14_denote {calls : Calls} {env : Env} {s : State}
+    {call : BitVec 64} {outn : Nat}
+    (hcall : lookupName env "%call" = some (.int 64 call))
+    (houtn : lookupName env "%outn" = some (.ptr outn)) :
+    denoteCode calls
+        [Instr.store (Ty.int 64) (Operand.reg "%call") (Operand.reg "%outn")]
+        (stateAt env s) =
+      denoteCode calls []
+        (stateAt env { s with mem := writeBytes s.mem outn (natToBytes call.toNat 8) }) := by
+  rw [denoteCode_store64 calls env s "%call" "%outn" hcall houtn []]
+
+/-- The `while.body` block's instruction list. -/
+def s2StringBodyWhileBodyInstrs : List Instr :=
+  [Instr.binop "%inc" (BinOp.add) 64 (Operand.reg "%inc24")
+     (Operand.imm (Const.int 64 0x0000000000000001#64)),
+   Instr.store (Ty.int 64) (Operand.reg "%inc") (Operand.reg "%xj"),
+   Instr.icmp "%exitcond.not" (IPred.eq) 64 (Operand.reg "%inc")
+     (Operand.reg "%nxp")]
+
+/-- The `while.body` block's three instructions: the counter's increment, its
+write-back to the cursor word, and the exit test. -/
+theorem s2StringBodyWhileBodyInstrs_eq :
+    (s2StringBodyBody.findBlock "while.body").map (·.instrs) =
+      some [Instr.binop "%inc" (BinOp.add) 64 (Operand.reg "%inc24")
+              (Operand.imm (Const.int 64 0x0000000000000001#64)),
+            Instr.store (Ty.int 64) (Operand.reg "%inc") (Operand.reg "%xj"),
+            Instr.icmp "%exitcond.not" (IPred.eq) 64 (Operand.reg "%inc")
+              (Operand.reg "%nxp")] := by
+  decide
+
+/-- The `if.then11` block's environment and memory, named: the record's pointer,
+its three fields, and the offset word the expander returned. -/
+def s2StringBodyIfThen11Env (env : Env) (off sub : BitVec 64) (c e : Nat) : Env :=
+  ("%msg2.i.i", .ptr (e + (16#64).toNat)) ::
+    ("%off1.i.i", .ptr (e + (8#64).toNat)) ::
+    ("%c.val", .ptr e) :: ("%3", .ptr (c + (1112#64).toNat)) ::
+    ("%add12", .int 64 (off + sub)) :: ("%2", .int 64 off) :: env
+
+def s2StringBodyIfThen11Mem (mem : Mem) (e : Nat) (off sub : BitVec 64) : Mem :=
+  writeBytes
+    (writeBytes (writeBytes mem e (natToBytes (0#32).toNat 4))
+      (e + (8#64).toNat) (natToBytes (off + sub).toNat 8))
+    (e + (16#64).toNat) (natToBytes 0 8)
+
+/-- The `if.then11` block's instruction list: the expander's offset word, the
+record's pointer, and the record's three fields. -/
+def s2StringBodyIfThen11Instrs : List Instr :=
+  [Instr.load "%2" (Ty.int 64) (Operand.reg "%ei"),
+   Instr.binop "%add12" (BinOp.add) 64 (Operand.reg "%2") (Operand.reg "%sub.ptr.sub"),
+   Instr.gep "%3" (Ty.int 8) (Operand.reg "%c")
+     (Operand.imm (Const.int 64 0x0000000000000458#64)),
+   Instr.load "%c.val" (Ty.ptr) (Operand.reg "%3"),
+   Instr.store (Ty.int 32) (Operand.imm (Const.int 32 0x0000000000000000#32))
+     (Operand.reg "%c.val"),
+   Instr.gep "%off1.i.i" (Ty.int 8) (Operand.reg "%c.val")
+     (Operand.imm (Const.int 64 0x0000000000000008#64)),
+   Instr.store (Ty.int 64) (Operand.reg "%add12") (Operand.reg "%off1.i.i"),
+   Instr.gep "%msg2.i.i" (Ty.int 8) (Operand.reg "%c.val")
+     (Operand.imm (Const.int 64 0x0000000000000010#64)),
+   Instr.store (Ty.ptr) (Operand.imm (Const.null)) (Operand.reg "%msg2.i.i")]
+
+theorem s2StringBodyIfThen11Instrs_eq :
+    (s2StringBodyBody.findBlock "if.then11").map (·.instrs) =
+      some s2StringBodyIfThen11Instrs := by decide
+
+theorem s2StringBody_ifThen11_denote {calls : Calls} {env : Env} {s : State}
+    {c ei e : Nat} {off sub : BitVec 64}
+    (hc : lookupName env "%c" = some (.ptr c))
+    (hei : lookupName env "%ei" = some (.ptr ei))
+    (hsub : lookupName env "%sub.ptr.sub" = some (.int 64 sub))
+    (hoff : readBytes s.mem ei 8 = some (natToBytes off.toNat 8))
+    (hcval : readBytes s.mem (c + (1112#64).toNat) 8 = some (wordBytes 8 e))
+    (he64 : e < 2 ^ 64) :
+    denoteCode calls s2StringBodyIfThen11Instrs (stateAt env s) =
+      denoteCode calls []
+        (stateAt (s2StringBodyIfThen11Env env off sub c e)
+          { s with mem := s2StringBodyIfThen11Mem s.mem e off sub }) := by
+  dsimp only [s2StringBodyIfThen11Instrs]
+  rw [denoteCode_load64 (v := off) calls env s "%2" "%ei"
+    (by simpa [lookupName] using hei) hoff _]
+  rw [denoteCode_add_reg calls (("%2", .int 64 off) :: env) s "%add12" "%2"
+    "%sub.ptr.sub" (by s2_lk) (by s2_lk) _]
+  rw [denoteCode_cons_of _ _ _ _ _
+    (sb_step_gep8_lit calls
+      (("%add12", .int 64 (off + sub)) :: ("%2", .int 64 off) :: env) s "%3" "%c"
+      (1112#64) (by s2_lk) (by decide))]
+  rw [denoteCode_cons_of _ _ _ _ _
+    (sb_step_loadPtr calls
+      (("%3", .ptr (c + (1112#64).toNat)) ::
+        ("%add12", .int 64 (off + sub)) :: ("%2", .int 64 off) :: env) s
+      "%c.val" "%3" (by s2_lk) hcval he64)]
+  rw [denoteCode_cons_of _ _ _ _ _
+    (sb_step_store32_imm calls
+      (("%c.val", .ptr e) :: ("%3", .ptr (c + (1112#64).toNat)) ::
+        ("%add12", .int 64 (off + sub)) :: ("%2", .int 64 off) :: env) s
+      "%c.val" (by s2_lk))]
+  rw [denoteCode_cons_of _ _ _ _ _
+    (sb_step_gep8_lit calls
+      (("%c.val", .ptr e) :: ("%3", .ptr (c + (1112#64).toNat)) ::
+        ("%add12", .int 64 (off + sub)) :: ("%2", .int 64 off) :: env)
+      { s with mem := writeBytes s.mem e (natToBytes (0#32).toNat 4) }
+      "%off1.i.i" "%c.val" (8#64) (by s2_lk) (by decide))]
+  rw [denoteCode_store64 calls
+    (("%off1.i.i", .ptr (e + (8#64).toNat)) ::
+      ("%c.val", .ptr e) :: ("%3", .ptr (c + (1112#64).toNat)) ::
+      ("%add12", .int 64 (off + sub)) :: ("%2", .int 64 off) :: env)
+    { s with mem := writeBytes s.mem e (natToBytes (0#32).toNat 4) }
+    "%add12" "%off1.i.i" (by s2_lk) (by s2_lk) _]
+  rw [denoteCode_cons_of _ _ _ _ _
+    (sb_step_gep8_lit calls
+      (("%off1.i.i", .ptr (e + (8#64).toNat)) ::
+        ("%c.val", .ptr e) :: ("%3", .ptr (c + (1112#64).toNat)) ::
+        ("%add12", .int 64 (off + sub)) :: ("%2", .int 64 off) :: env)
+      { s with mem := (writeBytes (writeBytes s.mem e (natToBytes (0#32).toNat 4))
+          (e + (8#64).toNat) (natToBytes (off + sub).toNat 8)) }
+      "%msg2.i.i" "%c.val" (16#64) (by s2_lk) (by decide))]
+  rw [denoteCode_cons_of _ _ _ _ _
+    (sb_step_storePtr_null calls
+      (("%msg2.i.i", .ptr (e + (16#64).toNat)) ::
+        ("%off1.i.i", .ptr (e + (8#64).toNat)) ::
+        ("%c.val", .ptr e) :: ("%3", .ptr (c + (1112#64).toNat)) ::
+        ("%add12", .int 64 (off + sub)) :: ("%2", .int 64 off) :: env)
+      { s with mem := (writeBytes (writeBytes s.mem e (natToBytes (0#32).toNat 4))
+          (e + (8#64).toNat) (natToBytes (off + sub).toNat 8)) }
+      "%msg2.i.i" (by s2_lk))]
+  simp only [denoteCode_nil, s2StringBodyIfThen11Env, s2StringBodyIfThen11Mem]
+
+/-- **The `while.body` block's run**: the counter advances by one, the cursor
+word takes it, and the exit test compares it with the count.  This is the scan's
+per-iteration effect, the write the `BoundLoop`'s invariant carries. -/
+theorem s2StringBody_whileBody_denote {calls : Calls} {env : Env} {s : State}
+    {inc24 nxp : BitVec 64} {xj : Nat}
+    (hinc24 : lookupName env "%inc24" = some (.int 64 inc24))
+    (hxj : lookupName env "%xj" = some (.ptr xj))
+    (hnxp : lookupName env "%nxp" = some (.int 64 nxp)) :
+    denoteCode calls s2StringBodyWhileBodyInstrs (stateAt env s) =
+      denoteCode calls []
+        (stateAt
+          (("%exitcond.not", .int 1 (evalICmp .eq (inc24 + 1#64) nxp)) ::
+            ("%inc", .int 64 (inc24 + 1#64)) :: env)
+          { s with mem := writeBytes s.mem xj (natToBytes (inc24 + 1#64).toNat 8) }) := by
+  dsimp only [s2StringBodyWhileBodyInstrs]
+  rw [denoteCode_add_imm calls env s "%inc" "%inc24" hinc24 _]
+  rw [denoteCode_store64 calls (("%inc", .int 64 (inc24 + 1#64)) :: env) s "%inc" "%xj"
+    (by s2_lk) (by s2_lk) _]
+  rw [denoteCode_icmp_eq_reg calls (("%inc", .int 64 (inc24 + 1#64)) :: env)
+    { s with mem := writeBytes s.mem xj (natToBytes (inc24 + 1#64).toNat 8) }
+    "%exitcond.not" "%inc" "%nxp" (by s2_lk) (by s2_lk) []]
+
+/-! ### The `if.end` block: the expander's call, and the test of its answer
+
+The block marks `%ei` live, clears the offset word, calls the expander at eight
+arguments, and compares the returned word with all-ones.  Its two call shapes are
+the model's: the lifetime marker is an identity (`stage2Calls` selects it by the
+callee's name — no value read, no byte written, no allocation), and the expander
+is `s2StringBodyCalls`'s own clause.
+
+**The marker's step is stated, not rewritten through `sb_step_callVoid2`.**  That
+step takes the argument values and the outcome as parameters, so a chain that
+supplies only the operands leaves `v2`, `r`, and the `r.mem`/`r.next` in the goal
+as metavariables.  The side goal the compiler then reports is
+
+    ⊢ s2StringBodyCalls callee [v1, ?v2] s.mem s.next = some ?r
+
+— a goal *about* the call, whose visible form names its operands, not the
+marker's answer — and a chain that keeps answering it by rewriting the argument
+alone leaves it unchanged, because the missing piece is `hc`, not `h1`/`h2`.  At
+this environment the answer is not a parameter: `stage2Calls` selects it by the
+callee's name, so the marker writes nothing and allocates nothing, and the step's
+conclusion is the state unchanged.  The form to write from is the produced one. -/
+theorem sb_step_lifetime (env : Env) (s : State) (ei : Nat) (callee : String)
+    (hname : callee = "llvm.lifetime.start.p0" ∨ callee = "llvm.lifetime.end.p0")
+    (hei : lookupName env "%ei" = some (.ptr ei)) :
+    evalInstr s2StringBodyCalls (stateAt env s)
+        (.callVoid callee [(Ty.int 64, .imm (.int 64 (8#64))), (Ty.ptr, .reg "%ei")]) =
+      some (stateAt env s) := by
+  have hargs : evalOperands (stateAt env s)
+      [(Ty.int 64, .imm (.int 64 (8#64))), (Ty.ptr, .reg "%ei")] =
+      some [.int 64 (8#64), .ptr ei] := by
+    simp only [evalOperands, evalOperand, Const.toValue, stateAt, hei]
+  rcases hname with rfl | rfl <;>
+    simp only [evalInstr, hargs, s2StringBodyCalls, JsonStage2IR.stage2Calls]
+
+/-- The `if.end` block's environment: the expander's returned word and the
+branch test over it. -/
+def s2StringBodyIfEndEnv (env : Env) (call : BitVec 64) : Env :=
+  ("%cmp9", .int 1 (evalICmp .eq call 0xffffffffffffffff#64)) ::
+    ("%call", .int 64 call) :: env
+
+/-- The `if.end` block's instruction list: the marker, the cleared offset word,
+the expander at eight arguments, and the test of its answer. -/
+def s2StringBodyIfEndInstrs : List Instr :=
+  [Instr.callVoid "llvm.lifetime.start.p0"
+     [(Ty.int 64, Operand.imm (Const.int 64 0x0000000000000008#64)),
+      (Ty.ptr, Operand.reg "%ei")],
+   Instr.store (Ty.int 64) (Operand.imm (Const.int 64 0x0000000000000000#64))
+     (Operand.reg "%ei"),
+   Instr.call "%call" (Ty.int 64) "leanllvm_json_escape_expand"
+     [(Ty.ptr, Operand.reg "%p"), (Ty.int 64, Operand.reg "%len"),
+      (Ty.ptr, Operand.reg "%dst"), (Ty.ptr, Operand.reg "%ei"),
+      (Ty.ptr, Operand.reg "%xp"), (Ty.ptr, Operand.reg "%xj"),
+      (Ty.int 64, Operand.reg "%nxp"), (Ty.int 64, Operand.reg "%sub.ptr.sub")],
+   Instr.icmp "%cmp9" (IPred.eq) 64 (Operand.reg "%call")
+     (Operand.imm (Const.int 64 0xffffffffffffffff#64))]
+
+-- The list is the block the pin resolves to: the run is the block's own body.
+theorem s2StringBodyIfEndInstrs_eq :
+    (s2StringBodyBody.findBlock "if.end").map (·.instrs) =
+      some s2StringBodyIfEndInstrs := by decide
+
+/-- **The `if.end` block's run**: the marker, the cleared offset word, the
+expander at the eight registers the entry block left, and the test of the
+returned word against all-ones.  The callee's answer is the arm's own literal —
+its returned word, its memory and its cursor — so the chain's state is named
+rather than existentially bound: no step of it leaves a metavariable in the
+conclusion. -/
+theorem s2StringBody_ifEnd_denote {env : Env} {s : State}
+    {p dst ei xp xj : Nat} {len nxp sub call : BitVec 64} {m : Mem} {nx : Nat}
+    (hp : lookupName env "%p" = some (.ptr p))
+    (hlen : lookupName env "%len" = some (.int 64 len))
+    (hdst : lookupName env "%dst" = some (.ptr dst))
+    (hei : lookupName env "%ei" = some (.ptr ei))
+    (hxp : lookupName env "%xp" = some (.ptr xp))
+    (hxj : lookupName env "%xj" = some (.ptr xj))
+    (hnxp : lookupName env "%nxp" = some (.int 64 nxp))
+    (hsub : lookupName env "%sub.ptr.sub" = some (.int 64 sub))
+    (hc : s2StringBodyCalls "leanllvm_json_escape_expand"
+      [.ptr p, .int 64 len, .ptr dst, .ptr ei, .ptr xp, .ptr xj, .int 64 nxp,
+       .int 64 sub] (writeBytes s.mem ei (natToBytes (0#64).toNat 8)) s.next =
+      some { ret := .int 64 call, mem := m, next := nx }) :
+    denoteCode s2StringBodyCalls s2StringBodyIfEndInstrs (stateAt env s) =
+      denoteCode s2StringBodyCalls []
+        (stateAt (s2StringBodyIfEndEnv env call) { s with mem := m, next := nx }) := by
+  dsimp only [s2StringBodyIfEndInstrs]
+  rw [denoteCode_cons_of _ _ _ _ _
+    (sb_step_lifetime env s ei "llvm.lifetime.start.p0" (Or.inl rfl) hei)]
+  rw [denoteCode_cons_of _ _ _ _ _
+    (sb_step_store64_imm s2StringBodyCalls env s "%ei" (x := 0#64) hei)]
+  rw [denoteCode_cons_of _ _ _ _ _
+    (sb_step_call8 s2StringBodyCalls env _ "%call" "leanllvm_json_escape_expand"
+      (.reg "%p") (.reg "%len") (.reg "%dst") (.reg "%ei") (.reg "%xp")
+      (.reg "%xj") (.reg "%nxp") (.reg "%sub.ptr.sub")
+      (BlockEval.evalOperand_reg_of env _ "%p" (.ptr p) hp)
+      (BlockEval.evalOperand_reg_of env _ "%len" (.int 64 len) hlen)
+      (BlockEval.evalOperand_reg_of env _ "%dst" (.ptr dst) hdst)
+      (BlockEval.evalOperand_reg_of env _ "%ei" (.ptr ei) hei)
+      (BlockEval.evalOperand_reg_of env _ "%xp" (.ptr xp) hxp)
+      (BlockEval.evalOperand_reg_of env _ "%xj" (.ptr xj) hxj)
+      (BlockEval.evalOperand_reg_of env _ "%nxp" (.int 64 nxp) hnxp)
+      (BlockEval.evalOperand_reg_of env _ "%sub.ptr.sub" (.int 64 sub) hsub)
+      hc)]
+  rw [denoteCode_icmp_eq_imm s2StringBodyCalls _ _ "%cmp9" "%call" (by s2_lk) []]
+  simp only [denoteCode_nil, s2StringBodyIfEndEnv]
+
+/-! ### The scan's head, its inside test, and the two cleanup blocks
+
+`land.rhs` is the scan's head: a `phi` naming the counter, the lane's address,
+the lane, its zero-extension and the test against the body's extent.
+`land.lhs.true` adds the extent to the base offset and tests the lane against it.
+`cleanup` and `cleanup16` select the returned form — a `phi` each, and the
+marker's identity step on the way out.
+
+**The `phi` steps are the leading run, as one step.**  `denoteCode_phi` reads the
+edge's label out of `s.pre` and selects the operand that label names, at the
+state the edge delivered; that is why each of these runs carries the predecessor
+as a hypothesis, and why the two blocks that name a `phi` have no other way to
+state the step: `evalInstr`'s own `phi` arm binds through `s.bind`, while
+`denoteCode`'s run installs every member at one snapshot (`denoteCode_phiRun`). -/
+
+/-- The `land.rhs` block's instruction list. -/
+def s2StringBodyLandRhsInstrs : List Instr :=
+  [Instr.phi "%inc24" (Ty.int 64)
+     [("while.body", Operand.reg "%inc"), ("entry", Operand.reg "%xj.promoted")],
+   Instr.gep "%arrayidx" (Ty.int 32) (Operand.reg "%xp") (Operand.reg "%inc24"),
+   Instr.load "%1" (Ty.int 32) (Operand.reg "%arrayidx"),
+   Instr.zext "%conv" 32 64 (Operand.reg "%1"),
+   Instr.icmp "%cmp1" (IPred.ugt) 64 (Operand.reg "%sub.ptr.sub")
+     (Operand.reg "%conv")]
+
+theorem s2StringBodyLandRhsInstrs_eq :
+    (s2StringBodyBody.findBlock "land.rhs").map (·.instrs) =
+      some s2StringBodyLandRhsInstrs := by decide
+
+/-- The `land.rhs` block's environment: the counter, the lane's address, the lane
+and its zero-extension, and the test over the body's extent — each in the form
+its step produced. -/
+def s2StringBodyLandRhsEnv (env : Env) (inc24 : BitVec 64) (xp : Nat)
+    (bs : List UInt8) (sub : BitVec 64) : Env :=
+  ("%cmp1", .int 1 (evalICmpNat .ugt 64 sub.toNat
+      (BitVec.ofNat 64 (BitVec.ofNat 32 (bytesToNat bs)).toNat).toNat)) ::
+    ("%conv", .int 64 (BitVec.ofNat 64 (BitVec.ofNat 32 (bytesToNat bs)).toNat)) ::
+    ("%1", .int 32 (BitVec.ofNat 32 (bytesToNat bs))) ::
+    ("%arrayidx", .ptr (xp + (inc24.signExtend 64).toNat * 4)) ::
+    ("%inc24", .int 64 inc24) :: env
+
+/-- **The `land.rhs` block's run**, at the predecessor the edge delivered: the
+counter's `phi`, the lane at the position, its zero-extension and the test. -/
+theorem s2StringBody_landRhs_denote {calls : Calls} {env : Env} {s : State}
+    {p : String} {op : Operand} {inc24 : BitVec 64} {xp : Nat} {bs : List UInt8}
+    {sub : BitVec 64}
+    (hpre : s.pre = some p)
+    (hinc : phiIncoming p [("while.body", Operand.reg "%inc"),
+      ("entry", Operand.reg "%xj.promoted")] = some op)
+    (hop : evalOperand (stateAt env s) op = some (.int 64 inc24))
+    (hxp : lookupName env "%xp" = some (.ptr xp))
+    (hsub : lookupName env "%sub.ptr.sub" = some (.int 64 sub))
+    (hpos : (inc24.signExtend 64).toNat < 2 ^ 63)
+    (hlane : readBytes s.mem (xp + (inc24.signExtend 64).toNat * 4) 4 = some bs) :
+    denoteCode calls s2StringBodyLandRhsInstrs (stateAt env s) =
+      denoteCode calls [] (stateAt (s2StringBodyLandRhsEnv env inc24 xp bs sub) s) := by
+  dsimp only [s2StringBodyLandRhsInstrs]
+  rw [denoteCode_phi calls env s "%inc24" (Ty.int 64) _ hpre hinc hop _ (by decide)]
+  rw [denoteCode_cons_of _ _ _ _ _
+    (sb_step_gep32 calls (("%inc24", .int 64 inc24) :: env) s "%arrayidx" "%xp"
+      "%inc24" (by s2_lk) (by s2_lk) hpos)]
+  rw [denoteCode_cons_of _ _ _ _ _
+    (sb_step_load32 calls
+      (("%arrayidx", .ptr (xp + (inc24.signExtend 64).toNat * 4)) ::
+        ("%inc24", .int 64 inc24) :: env) s "%1" "%arrayidx" (by s2_lk) hlane)]
+  rw [denoteCode_zext calls
+    (("%1", .int 32 (BitVec.ofNat 32 (bytesToNat bs))) ::
+      ("%arrayidx", .ptr (xp + (inc24.signExtend 64).toNat * 4)) ::
+      ("%inc24", .int 64 inc24) :: env) s "%conv" "%1" 32 64 (by s2_lk) _]
+  rw [denoteCode_cons_of _ _ _ _ _
+    (sb_step_icmp_rr calls
+      (("%conv", .int 64 (BitVec.ofNat 64 (BitVec.ofNat 32 (bytesToNat bs)).toNat)) ::
+        ("%1", .int 32 (BitVec.ofNat 32 (bytesToNat bs))) ::
+        ("%arrayidx", .ptr (xp + (inc24.signExtend 64).toNat * 4)) ::
+        ("%inc24", .int 64 inc24) :: env) s "%cmp1" "%sub.ptr.sub" "%conv" .ugt
+      (by s2_lk) (by s2_lk))]
+  simp only [denoteCode_nil, s2StringBodyLandRhsEnv]
+
+/-- The `land.lhs.true` block's instruction list: the extent's end and the test
+of the lane against it. -/
+def s2StringBodyLandLhsTrueInstrs : List Instr :=
+  [Instr.binop "%add" (BinOp.add) 64 (Operand.reg "%sub.ptr.sub")
+     (Operand.reg "%len"),
+   Instr.icmp "%cmp7" (IPred.ugt) 64 (Operand.reg "%add") (Operand.reg "%conv")]
+
+theorem s2StringBodyLandLhsTrueInstrs_eq :
+    (s2StringBodyBody.findBlock "land.lhs.true").map (·.instrs) =
+      some s2StringBodyLandLhsTrueInstrs := by decide
+
+/-- **The `land.lhs.true` block's run**: the body's extent as an end address, and
+the lane tested against it. -/
+theorem s2StringBody_landLhsTrue_denote {calls : Calls} {env : Env} {s : State}
+    {sub len conv : BitVec 64}
+    (hsub : lookupName env "%sub.ptr.sub" = some (.int 64 sub))
+    (hlen : lookupName env "%len" = some (.int 64 len))
+    (hconv : lookupName env "%conv" = some (.int 64 conv)) :
+    denoteCode calls s2StringBodyLandLhsTrueInstrs (stateAt env s) =
+      denoteCode calls []
+        (stateAt
+          (("%cmp7", .int 1 (evalICmpNat .ugt 64 (sub + len).toNat conv.toNat)) ::
+            ("%add", .int 64 (sub + len)) :: env) s) := by
+  dsimp only [s2StringBodyLandLhsTrueInstrs]
+  rw [denoteCode_add_reg calls env s "%add" "%sub.ptr.sub" "%len" hsub hlen _]
+  rw [denoteCode_cons_of _ _ _ _ _
+    (sb_step_icmp_rr calls (("%add", .int 64 (sub + len)) :: env) s "%cmp7"
+      "%add" "%conv" .ugt (by s2_lk) hconv)]
+
+/-- The `cleanup` block's instruction list: the returned form's `phi` and the
+slot's end marker. -/
+def s2StringBodyCleanupInstrs : List Instr :=
+  [Instr.phi "%retval.0" (Ty.int 32)
+     [("if.then11", Operand.imm (Const.int 32 0x00000000#32)),
+      ("if.end14", Operand.imm (Const.int 32 0x00000002#32))],
+   Instr.callVoid "llvm.lifetime.end.p0"
+     [(Ty.int 64, Operand.imm (Const.int 64 0x0000000000000008#64)),
+      (Ty.ptr, Operand.reg "%ei")]]
+
+theorem s2StringBodyCleanupInstrs_eq :
+    (s2StringBodyBody.findBlock "cleanup").map (·.instrs) =
+      some s2StringBodyCleanupInstrs := by decide
+
+/-- **The `cleanup` block's run**: the form's `phi`, and the marker — an identity
+step at this environment, so the block's memory and cursor are the edge's. -/
+theorem s2StringBody_cleanup_denote {env : Env} {s : State}
+    {p : String} {op : Operand} {form : BitVec 32} {ei : Nat}
+    (hpre : s.pre = some p)
+    (hinc : phiIncoming p [("if.then11", Operand.imm (Const.int 32 0x00000000#32)),
+      ("if.end14", Operand.imm (Const.int 32 0x00000002#32))] = some op)
+    (hop : evalOperand (stateAt env s) op = some (.int 32 form))
+    (hei : lookupName env "%ei" = some (.ptr ei)) :
+    denoteCode s2StringBodyCalls s2StringBodyCleanupInstrs (stateAt env s) =
+      denoteCode s2StringBodyCalls [] (stateAt (("%retval.0", .int 32 form) :: env) s) := by
+  dsimp only [s2StringBodyCleanupInstrs]
+  rw [denoteCode_phi s2StringBodyCalls env s "%retval.0" (Ty.int 32) _ hpre hinc hop _
+    (by decide)]
+  rw [denoteCode_cons_of _ _ _ _ _
+    (sb_step_lifetime (("%retval.0", .int 32 form) :: env) s ei
+      "llvm.lifetime.end.p0" (Or.inr rfl) (by s2_lk))]
+
+/-- The `cleanup16` block's instruction list: the returned form's second `phi`,
+which reads the first's cell on one edge and the body's own constant on the
+other. -/
+def s2StringBodyCleanup16Instrs : List Instr :=
+  [Instr.phi "%retval.1" (Ty.int 32)
+     [("cleanup", Operand.reg "%retval.0"),
+      ("if.then", Operand.imm (Const.int 32 0x00000001#32))]]
+
+theorem s2StringBodyCleanup16Instrs_eq :
+    (s2StringBodyBody.findBlock "cleanup16").map (·.instrs) =
+      some s2StringBodyCleanup16Instrs := by decide
+
+/-- **The `cleanup16` block's run**: the second `phi`, and nothing else. -/
+theorem s2StringBody_cleanup16_denote {calls : Calls} {env : Env} {s : State}
+    {p : String} {op : Operand} {form : BitVec 32}
+    (hpre : s.pre = some p)
+    (hinc : phiIncoming p [("cleanup", Operand.reg "%retval.0"),
+      ("if.then", Operand.imm (Const.int 32 0x00000001#32))] = some op)
+    (hop : evalOperand (stateAt env s) op = some (.int 32 form)) :
+    denoteCode calls s2StringBodyCleanup16Instrs (stateAt env s) =
+      denoteCode calls [] (stateAt (("%retval.1", .int 32 form) :: env) s) := by
+  dsimp only [s2StringBodyCleanup16Instrs]
+  rw [denoteCode_phi calls env s "%retval.1" (Ty.int 32) _ hpre hinc hop _ (by decide)]
+
+end LeanLLVM.Refinement
