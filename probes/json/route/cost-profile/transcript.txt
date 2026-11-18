@@ -1,0 +1,894 @@
+# command: probes/json/route/cost-profile/run.sh 
+# build directory: /tmp/cost-profile-build
+# install: Linux 6.17.0-1033-oem x86_64
+# cpu: Intel(R) Core(TM) Ultra 7 268V
+# cpus online: 8; pinned to: cpu0
+# scaling governor (cpu0): powersave
+# load average at start: 0.77 1.20 1.32 1/3367 1443423
+# document: /home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build/corpus/syn-strings-64k.json size=65536 sha256=bd007090d7a5ab09a1fc69c0b96879f101dbf8b3f13a300d7d3e46127d26fb12
+
+## the build
+build: /tmp/cost-profile-build
+kernel flags: -O2 -march=x86-64-v3 -mpclmul -std=gnu11 -falign-loops=64 -falign-functions=64 -I /home/gavin/dev/Scidonia/lean-llvm/kernel/json -I /home/gavin/dev/Scidonia/lean-llvm/probes/json/route
+harness flags: -O3 -march=x86-64-v3 -mpclmul -std=gnu11 -falign-loops=64 -falign-functions=64 -I /home/gavin/dev/Scidonia/lean-llvm/kernel/json -I /home/gavin/dev/Scidonia/lean-llvm/probes/json/route
+compiler: clang (clang version 21.1.8)
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:118:13: warning: initializer overrides prior initialization of this subobject [-Winitializer-overrides]
+  118 |     ['"'] = '"', ['\\'] = '\\', ['/'] = '/', ['b'] = 8,
+      |             ^~~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:117:19: note: previous initialization is here
+  117 |     [0 ... 255] = -1,
+      |                   ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:118:27: warning: initializer overrides prior initialization of this subobject [-Winitializer-overrides]
+  118 |     ['"'] = '"', ['\\'] = '\\', ['/'] = '/', ['b'] = 8,
+      |                           ^~~~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:117:19: note: previous initialization is here
+  117 |     [0 ... 255] = -1,
+      |                   ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:118:41: warning: initializer overrides prior initialization of this subobject [-Winitializer-overrides]
+  118 |     ['"'] = '"', ['\\'] = '\\', ['/'] = '/', ['b'] = 8,
+      |                                         ^~~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:117:19: note: previous initialization is here
+  117 |     [0 ... 255] = -1,
+      |                   ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:118:54: warning: initializer overrides prior initialization of this subobject [-Winitializer-overrides]
+  118 |     ['"'] = '"', ['\\'] = '\\', ['/'] = '/', ['b'] = 8,
+      |                                                      ^
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:117:19: note: previous initialization is here
+  117 |     [0 ... 255] = -1,
+      |                   ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:119:13: warning: initializer overrides prior initialization of this subobject [-Winitializer-overrides]
+  119 |     ['f'] = 12, ['n'] = 10, ['r'] = 13, ['t'] = 9
+      |             ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:117:19: note: previous initialization is here
+  117 |     [0 ... 255] = -1,
+      |                   ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:119:25: warning: initializer overrides prior initialization of this subobject [-Winitializer-overrides]
+  119 |     ['f'] = 12, ['n'] = 10, ['r'] = 13, ['t'] = 9
+      |                         ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:117:19: note: previous initialization is here
+  117 |     [0 ... 255] = -1,
+      |                   ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:119:37: warning: initializer overrides prior initialization of this subobject [-Winitializer-overrides]
+  119 |     ['f'] = 12, ['n'] = 10, ['r'] = 13, ['t'] = 9
+      |                                     ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:117:19: note: previous initialization is here
+  117 |     [0 ... 255] = -1,
+      |                   ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:119:49: warning: initializer overrides prior initialization of this subobject [-Winitializer-overrides]
+  119 |     ['f'] = 12, ['n'] = 10, ['r'] = 13, ['t'] = 9
+      |                                                 ^
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:117:19: note: previous initialization is here
+  117 |     [0 ... 255] = -1,
+      |                   ^~
+8 warnings generated.
+clang: warning: argument unused during compilation: '-U _FORTIFY_SOURCE' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-U _FORTIFY_SOURCE' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-idirafter /nix/store/3zlgjcfm8j3nscrldjv8izxciybg0nh3-glibc-2.44-57-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-fmacro-prefix-map=/nix/store/3zlgjcfm8j3nscrldjv8izxciybg0nh3-glibc-2.44-57-dev/include=/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-glibc-2.44-57-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/vighs4x0sw8yhpbyqy1jszwzvlz6cabq-file-5.48-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/vighs4x0sw8yhpbyqy1jszwzvlz6cabq-file-5.48-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/h96s16mjssibkvk62pvmfm3lwfc3wnwp-gawk-5.4.1/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/h96s16mjssibkvk62pvmfm3lwfc3wnwp-gawk-5.4.1/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/l9f17m3j280r2gmb7gksl4r1dycxylin-zstd-1.5.7-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/l9f17m3j280r2gmb7gksl4r1dycxylin-zstd-1.5.7-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/yg3r0wzp22jg3gyhwccnivs6iphkn51y-llvm-21.1.8-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/yg3r0wzp22jg3gyhwccnivs6iphkn51y-llvm-21.1.8-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/8awcq8rqlfmrk2qp202fbv09zpvr6bh4-ncurses-6.6-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/8awcq8rqlfmrk2qp202fbv09zpvr6bh4-ncurses-6.6-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/a76rmqrp6l3w6h9pppfwzb3s6dzi0y4g-zlib-1.3.2-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/a76rmqrp6l3w6h9pppfwzb3s6dzi0y4g-zlib-1.3.2-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/49r7ql9sypb1f1x3i41dsw9kcl2nax88-compiler-rt-libc-21.1.8-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/49r7ql9sypb1f1x3i41dsw9kcl2nax88-compiler-rt-libc-21.1.8-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/vighs4x0sw8yhpbyqy1jszwzvlz6cabq-file-5.48-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/vighs4x0sw8yhpbyqy1jszwzvlz6cabq-file-5.48-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/h96s16mjssibkvk62pvmfm3lwfc3wnwp-gawk-5.4.1/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/h96s16mjssibkvk62pvmfm3lwfc3wnwp-gawk-5.4.1/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/l9f17m3j280r2gmb7gksl4r1dycxylin-zstd-1.5.7-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/l9f17m3j280r2gmb7gksl4r1dycxylin-zstd-1.5.7-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/yg3r0wzp22jg3gyhwccnivs6iphkn51y-llvm-21.1.8-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/yg3r0wzp22jg3gyhwccnivs6iphkn51y-llvm-21.1.8-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/8awcq8rqlfmrk2qp202fbv09zpvr6bh4-ncurses-6.6-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/8awcq8rqlfmrk2qp202fbv09zpvr6bh4-ncurses-6.6-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/a76rmqrp6l3w6h9pppfwzb3s6dzi0y4g-zlib-1.3.2-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/a76rmqrp6l3w6h9pppfwzb3s6dzi0y4g-zlib-1.3.2-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/49r7ql9sypb1f1x3i41dsw9kcl2nax88-compiler-rt-libc-21.1.8-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/49r7ql9sypb1f1x3i41dsw9kcl2nax88-compiler-rt-libc-21.1.8-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-cxx-isystem /nix/store/xpaz3fi6ibqxb9sla4gjlp0c82v566y8-gcc-16.2.0/include/c++/16.2.0' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-fmacro-prefix-map=/nix/store/xpaz3fi6ibqxb9sla4gjlp0c82v566y8-gcc-16.2.0/include/c++/16.2.0=/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-gcc-16.2.0/include/c++/16.2.0' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-cxx-isystem /nix/store/xpaz3fi6ibqxb9sla4gjlp0c82v566y8-gcc-16.2.0/include/c++/16.2.0/x86_64-unknown-linux-gnu' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-fmacro-prefix-map=/nix/store/xpaz3fi6ibqxb9sla4gjlp0c82v566y8-gcc-16.2.0/include/c++/16.2.0/x86_64-unknown-linux-gnu=/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-gcc-16.2.0/include/c++/16.2.0/x86_64-unknown-linux-gnu' [-Wunused-command-line-argument]
+warning: overriding the module target triple with x86_64-unknown-linux-gnu [-Woverride-module]
+1 warning generated.
+filler: 0 byte(s)
+
+source digests:
+  kernel/json/pipeline.c                                       c88f9de1ba8f6b6718b0a0c6bcc77ae075cb84cb7b9aaa430d7ddcdbdff6baf0
+  kernel/json/s1_block.c                                       c358ee6e330f1b514374c6454520d6fcf59921627d9eb104526346d88be7b7bc
+  kernel/json/entry.c                                          25700a712c206083884e9933b649a16a5b2f2f24ff37ba4dad50c65b15e3e90e
+  kernel/json/escape.c                                         9ce8bb4ccb705d938fa73e779d7d7ef064561d00c9e30e061f3052b242581dff
+  kernel/json/utf8.c                                           382a933422f19c36e54f24f260af6ce9a347cea8763639d95e99d75b15221793
+  kernel/json/stage2.c                                         08809fd4a9228c7c4b4ef4d41d27bcca9ec1f045e459a2b9f0a645e51a1cd5bc
+  probes/json/route/policy.c                                   c8673bfabaa3a848847d1d9ecddab95f9dff385f46eded3fbdc2a90b522873cf
+  tests/v16/depth_count.ll                                     3cfd5d9f5fc78655eaecc8c81df72246ad9b780e7d2436e2ef90a515ba964d54
+  probes/json/route/cost-profile/cost-profile.c                aafa94aa7f90981b5bf8c8f935eff846678fb5a0305f351e4dd9e130ed3da509
+  probes/json/route/cost-profile/build.sh                      d751e21d744450eef3009358e29f476ec70329f17b3d355c41abc0f9167c7e9e
+  probes/json/route/cost-profile/run.sh                        1c65b5a6e97347d2d9505b69457268da49ddd4aff0b0bc943de7eaeb82bcebb2
+object digests:
+  pipeline.o                                                   689305064425063bb0226e4d467e7f9283aa616712ea018a66da090543706431
+  s1_block.o                                                   80d29a5b5aed7902163adf10d5094fbb2a2db6f38afe3839a04abee9477cb149
+  entry.o                                                      384f710b27a7829b515d842586a2a0f217e23ebc563eca931957d76b007be7aa
+  escape.o                                                     7a71222e3ff700f4c3e5b47a24b227cea96c17382e61ee80fb41d0c1104a249b
+  utf8.o                                                       6f9e3ca0b7f012b1c04d2d5dbeda8b711d3706ee5b392563dac7ecc4b846d86c
+  stage2.o                                                     c92d304058d789f0b72143634f97c5c610a4ac7713528e443e4365b54b09e088
+  policy.o                                                     92dd13bb9ca8477817f349ebe2a2963b1df40fce20a6c29846d9b3ddb9c2fa24
+  depth_count.o                                                5596182569b3e4b27891f4f10478c0b8410d25e6cdd88f4acf08ce76a14faa69
+binary: /tmp/cost-profile-build/cost-profile sha256=45c0b5616c841cd511b64dca2731c15b09a83a73f6e21837e5603629d24e7e6c
+ok: /tmp/cost-profile-build/cost-profile
+
+route binary: /home/gavin/dev/Scidonia/lean-llvm/probes/json/route/build/leanllvm-json-route sha256=a9e37c684223fb0d9950c67c8c91723997bfc5212205c4ce595f6e1df7714a37 status=0
+route row: row doc=syn-strings-64k.json size=65536 path=fast reps=3 read_ns=16404 admission_ns=270044 staging_ns=169777 route_ns=561589 copyout_ns=- consume_fold_ns=99697 consume_values_ns=103792 verdict=1 ndst=55931 nev=8907 tokens=687 values=687 walked=1 foldsum=9223372036880353449 valuessum=9223372036880353449
+
+## the Lean gate (immediately before this sweep)
+ 460954 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Refinement/JsonStage2WalkDispatchClosers.lean
+ 477867 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/JSON/TapeCorrect.lean
+ 486643 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Refinement/JsonStage2WalkDispatchDepthStates.lean
+ 497922 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/JSON/ScanBlocks.lean
+ 504948 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Refinement/JsonStage2WalkDispatchDepthStores.lean
+ 516598 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Refinement/JsonStage2WalkDispatchClassCLeaves.lean
+2663339 lake            /nix/store/2vmnq5k9hm3v7rgrrfbchh94cp6gbcbw-lean4-4.35.0-rc3/bin/lake serve
+2663387 .lean-wrapped   /nix/store/2vmnq5k9hm3v7rgrrfbchh94cp6gbcbw-lean4-4.35.0-rc3/bin/lean --server
+2663397 .lean-wrapped   /nix/store/2vmnq5k9hm3v7rgrrfbchh94cp6gbcbw-lean4-4.35.0-rc3/bin/lean --worker file:///home/gavin/dev/Scidonia/ownership/Cap/Surface.lean
+3235921 lake            lake serve
+3236007 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --server
+3236012 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Refinement/JsonStage2WalkDispatchRefusalsOfStaging.lean
+3248278 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Refinement/JsonStage2WalkTraverse.lean
+3261002 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Basic.lean
+3261656 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Semantics.lean
+lean-cpu ticks: before=52123 after=52123 delta=0 (HZ=100; threshold=5 ticks/s)
+load average: 0.95 1.23 1.33 1/3375 1446250
+gate: no Lean build or compile active; timing may start
+
+reference doc=syn-strings-64k.json size=65536 verdict=1 nk=2056 nxp=1772 ndst=55931 nev=8907 err=0 arena_fnv=802d2b86cf9965d7 event_fnv=9f6cc1cf74087659
+identity stage2=ok entry_stream=identical escape_list=identical arena=identical events=identical
+bodies total=685 escaped=620 positions=1772 expanded_bytes=55931
+identity expand=calls=620 xj=1772 bytes=55931 arena=identical arena_fnv=802d2b86cf9965d7
+consumer tokens=687 values=687 foldsum=9223372036880353449 walked=1
+identity ablations=streams_identical (stage2_plain is a cost probe and is not read through a gate)
+
+instrument cost-profile=1 arm=2 context=route compiler=Clang 21.1.8 core_class=0x40 window_offset=3 rounds=15 reps=21
+clock: chain=424302 ns / 2000000 iterations -> 4.714 GHz (per-round range 4.447-4.889)
+statistic: median of the round medians, min-max of those medians; cycles use each round's chain
+
+act                  median_ns       min_ns       max_ns   median_cyc         us
+masks                     6422         5922         6730        29926      6.422
+entry                     6083         5718         6322        28421      6.083
+escape                    5812         5273         6039        27278      5.812
+s1_no_escape             17439        16084        18186        81532     17.439
+s1_fused                 21051        19579        22002        99226     21.051
+pipe_nostage2            21164        19963        22432        99043     21.164
+utf8                       719          658          727         3369      0.719
+stage2                   11445        10954        12278        54605     11.445
+stage2_plain              2501         2311         2628        11866      2.501
+expand                   15738        15065        16502        74698     15.738
+pipeline                 31621        30643        35541       149369     31.621
+native                   31607        29438        32697       149654     31.607
+copy_total                2752         2549         2870        13093      2.752
+copy_dst                  2397         2239         2477        11065      2.397
+copy_ev                    447          428          476         2128      0.447
+chain                   424302       409097       449772      2000000    424.302
+
+paired differences (ns; each round's difference of that round's act medians, then the median of the differences)
+copy                       386            0         1782
+stage2                   10559         9334        13777
+utf8                       159            0         1287
+escape                    3816         1933         5184
+entry                    10951         9663        11771
+masks (base)              6422
+sum                      32293  (per round the chain telescopes exactly to the pipeline; this row is the sum of the terms' medians, so it need not equal the pipeline row)
+
+isolated acts: masks+entry+escape+utf8+stage2 = 30481 pipeline = 31621
+de-fusion (pipeline - isolated) = 1140
+stage2 - stage2_plain (list-driven decode) = 8944 expand (620 calls) = 15738
+
+copy bytes: arena=55931 events=8907 memcpy_total=64838 header=80 result_total=64918
+throughput: pipeline=2.073 GB/s native=2.073 GB/s
+shares_of_native (paired chain): masks=20.3% entry=34.6% escape=12.1% utf8=0.5% stage2=33.4% copy=1.2%
+shares_of_native (standalone acts): pipeline=100.0% copy_total=8.7% stage2=36.2% expand=49.8% utf8=2.3% masks+entry+escape=58.0%
+
+# sweep context=route exit status: 0
+# load average after the sweep: 0.96 1.23 1.33 3/3333 1446435
+
+## the Lean gate (immediately before this sweep)
+ 460954 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Refinement/JsonStage2WalkDispatchClosers.lean
+ 477867 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/JSON/TapeCorrect.lean
+ 486643 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Refinement/JsonStage2WalkDispatchDepthStates.lean
+ 497922 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/JSON/ScanBlocks.lean
+ 504948 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Refinement/JsonStage2WalkDispatchDepthStores.lean
+ 516598 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Refinement/JsonStage2WalkDispatchClassCLeaves.lean
+2663339 lake            /nix/store/2vmnq5k9hm3v7rgrrfbchh94cp6gbcbw-lean4-4.35.0-rc3/bin/lake serve
+2663387 .lean-wrapped   /nix/store/2vmnq5k9hm3v7rgrrfbchh94cp6gbcbw-lean4-4.35.0-rc3/bin/lean --server
+2663397 .lean-wrapped   /nix/store/2vmnq5k9hm3v7rgrrfbchh94cp6gbcbw-lean4-4.35.0-rc3/bin/lean --worker file:///home/gavin/dev/Scidonia/ownership/Cap/Surface.lean
+3235921 lake            lake serve
+3236007 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --server
+3236012 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Refinement/JsonStage2WalkDispatchRefusalsOfStaging.lean
+3248278 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Refinement/JsonStage2WalkTraverse.lean
+3261002 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Basic.lean
+3261656 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Semantics.lean
+lean-cpu ticks: before=52126 after=52127 delta=1 (HZ=100; threshold=5 ticks/s)
+load average: 0.96 1.23 1.33 3/3344 1448948
+gate: no Lean build or compile active; timing may start
+
+reference doc=syn-strings-64k.json size=65536 verdict=1 nk=2056 nxp=1772 ndst=55931 nev=8907 err=0 arena_fnv=802d2b86cf9965d7 event_fnv=9f6cc1cf74087659
+identity stage2=ok entry_stream=identical escape_list=identical arena=identical events=identical
+bodies total=685 escaped=620 positions=1772 expanded_bytes=55931
+identity expand=calls=620 xj=1772 bytes=55931 arena=identical arena_fnv=802d2b86cf9965d7
+consumer tokens=687 values=687 foldsum=9223372036880353449 walked=1
+identity ablations=streams_identical (stage2_plain is a cost probe and is not read through a gate)
+
+instrument cost-profile=1 arm=2 context=none compiler=Clang 21.1.8 core_class=0x40 window_offset=3 rounds=15 reps=21
+clock: chain=423553 ns / 2000000 iterations -> 4.722 GHz (per-round range 4.317-4.872)
+statistic: median of the round medians, min-max of those medians; cycles use each round's chain
+
+act                  median_ns       min_ns       max_ns   median_cyc         us
+masks                     5928         5907         7347        28120      5.928
+entry                     4025         3705         4944        19502      4.025
+escape                    4237         3744         5046        20123      4.237
+s1_no_escape             12581        11789        13134        58138     12.581
+s1_fused                 14623        13908        18510        68802     14.623
+pipe_nostage2            15024        14652        18702        71332     15.024
+utf8                       647          631          760         3006      0.647
+stage2                    8012         7693         9606        37408      8.012
+stage2_plain              1764         1721         2063         8335      1.764
+expand                    5918         5664         7392        28783      5.918
+pipeline                 23518        22139        26851       110734     23.518
+native                   24620        23373        27164       116935     24.620
+copy_total                 912          901         1275         4403      0.912
+copy_dst                   756          742         1044         3655      0.756
+copy_ev                     64           63           88          305      0.064
+chain                   423553       410479       463246      2000000    423.553
+
+paired differences (ns; each round's difference of that round's act medians, then the median of the differences)
+copy                       798            0         4735
+stage2                    7890         6023        11057
+utf8                       667            0         3961
+escape                    1999         1091         6245
+entry                     6336         5395         7216
+masks (base)              5928
+sum                      23618  (per round the chain telescopes exactly to the pipeline; this row is the sum of the terms' medians, so it need not equal the pipeline row)
+
+isolated acts: masks+entry+escape+utf8+stage2 = 22849 pipeline = 23518
+de-fusion (pipeline - isolated) = 669
+stage2 - stage2_plain (list-driven decode) = 6248 expand (620 calls) = 5918
+
+copy bytes: arena=55931 events=8907 memcpy_total=64838 header=80 result_total=64918
+throughput: pipeline=2.787 GB/s native=2.662 GB/s
+shares_of_native (paired chain): masks=24.1% entry=25.7% escape=8.1% utf8=2.7% stage2=32.0% copy=3.2%
+shares_of_native (standalone acts): pipeline=95.5% copy_total=3.7% stage2=32.5% expand=24.0% utf8=2.6% masks+entry+escape=57.6%
+
+# sweep context=none exit status: 0
+# load average after the sweep: 0.96 1.23 1.33 2/3345 1448952
+
+## the route's workspace harness (same session, same kernel flags)
+## the Lean gate (immediately before this sweep)
+ 460954 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Refinement/JsonStage2WalkDispatchClosers.lean
+ 477867 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/JSON/TapeCorrect.lean
+ 486643 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Refinement/JsonStage2WalkDispatchDepthStates.lean
+ 497922 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/JSON/ScanBlocks.lean
+ 504948 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Refinement/JsonStage2WalkDispatchDepthStores.lean
+ 516598 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Refinement/JsonStage2WalkDispatchClassCLeaves.lean
+2663339 lake            /nix/store/2vmnq5k9hm3v7rgrrfbchh94cp6gbcbw-lean4-4.35.0-rc3/bin/lake serve
+2663387 .lean-wrapped   /nix/store/2vmnq5k9hm3v7rgrrfbchh94cp6gbcbw-lean4-4.35.0-rc3/bin/lean --server
+2663397 .lean-wrapped   /nix/store/2vmnq5k9hm3v7rgrrfbchh94cp6gbcbw-lean4-4.35.0-rc3/bin/lean --worker file:///home/gavin/dev/Scidonia/ownership/Cap/Surface.lean
+3235921 lake            lake serve
+3236007 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --server
+3236012 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Refinement/JsonStage2WalkDispatchRefusalsOfStaging.lean
+3248278 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Refinement/JsonStage2WalkTraverse.lean
+3261002 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Basic.lean
+3261656 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Semantics.lean
+lean-cpu ticks: before=52127 after=52127 delta=0 (HZ=100; threshold=5 ticks/s)
+load average: 0.96 1.22 1.32 3/3350 1451422
+gate: no Lean build or compile active; timing may start
+
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:118:13: warning: initializer overrides prior initialization of this subobject [-Winitializer-overrides]
+  118 |     ['"'] = '"', ['\\'] = '\\', ['/'] = '/', ['b'] = 8,
+      |             ^~~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:117:19: note: previous initialization is here
+  117 |     [0 ... 255] = -1,
+      |                   ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:118:27: warning: initializer overrides prior initialization of this subobject [-Winitializer-overrides]
+  118 |     ['"'] = '"', ['\\'] = '\\', ['/'] = '/', ['b'] = 8,
+      |                           ^~~~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:117:19: note: previous initialization is here
+  117 |     [0 ... 255] = -1,
+      |                   ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:118:41: warning: initializer overrides prior initialization of this subobject [-Winitializer-overrides]
+  118 |     ['"'] = '"', ['\\'] = '\\', ['/'] = '/', ['b'] = 8,
+      |                                         ^~~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:117:19: note: previous initialization is here
+  117 |     [0 ... 255] = -1,
+      |                   ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:118:54: warning: initializer overrides prior initialization of this subobject [-Winitializer-overrides]
+  118 |     ['"'] = '"', ['\\'] = '\\', ['/'] = '/', ['b'] = 8,
+      |                                                      ^
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:117:19: note: previous initialization is here
+  117 |     [0 ... 255] = -1,
+      |                   ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:119:13: warning: initializer overrides prior initialization of this subobject [-Winitializer-overrides]
+  119 |     ['f'] = 12, ['n'] = 10, ['r'] = 13, ['t'] = 9
+      |             ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:117:19: note: previous initialization is here
+  117 |     [0 ... 255] = -1,
+      |                   ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:119:25: warning: initializer overrides prior initialization of this subobject [-Winitializer-overrides]
+  119 |     ['f'] = 12, ['n'] = 10, ['r'] = 13, ['t'] = 9
+      |                         ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:117:19: note: previous initialization is here
+  117 |     [0 ... 255] = -1,
+      |                   ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:119:37: warning: initializer overrides prior initialization of this subobject [-Winitializer-overrides]
+  119 |     ['f'] = 12, ['n'] = 10, ['r'] = 13, ['t'] = 9
+      |                                     ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:117:19: note: previous initialization is here
+  117 |     [0 ... 255] = -1,
+      |                   ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:119:49: warning: initializer overrides prior initialization of this subobject [-Winitializer-overrides]
+  119 |     ['f'] = 12, ['n'] = 10, ['r'] = 13, ['t'] = 9
+      |                                                 ^
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:117:19: note: previous initialization is here
+  117 |     [0 ... 255] = -1,
+      |                   ^~
+8 warnings generated.
+clang: warning: argument unused during compilation: '-U _FORTIFY_SOURCE' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-U _FORTIFY_SOURCE' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-idirafter /nix/store/3zlgjcfm8j3nscrldjv8izxciybg0nh3-glibc-2.44-57-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-fmacro-prefix-map=/nix/store/3zlgjcfm8j3nscrldjv8izxciybg0nh3-glibc-2.44-57-dev/include=/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-glibc-2.44-57-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/vighs4x0sw8yhpbyqy1jszwzvlz6cabq-file-5.48-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/vighs4x0sw8yhpbyqy1jszwzvlz6cabq-file-5.48-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/h96s16mjssibkvk62pvmfm3lwfc3wnwp-gawk-5.4.1/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/h96s16mjssibkvk62pvmfm3lwfc3wnwp-gawk-5.4.1/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/l9f17m3j280r2gmb7gksl4r1dycxylin-zstd-1.5.7-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/l9f17m3j280r2gmb7gksl4r1dycxylin-zstd-1.5.7-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/yg3r0wzp22jg3gyhwccnivs6iphkn51y-llvm-21.1.8-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/yg3r0wzp22jg3gyhwccnivs6iphkn51y-llvm-21.1.8-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/8awcq8rqlfmrk2qp202fbv09zpvr6bh4-ncurses-6.6-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/8awcq8rqlfmrk2qp202fbv09zpvr6bh4-ncurses-6.6-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/a76rmqrp6l3w6h9pppfwzb3s6dzi0y4g-zlib-1.3.2-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/a76rmqrp6l3w6h9pppfwzb3s6dzi0y4g-zlib-1.3.2-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/49r7ql9sypb1f1x3i41dsw9kcl2nax88-compiler-rt-libc-21.1.8-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/49r7ql9sypb1f1x3i41dsw9kcl2nax88-compiler-rt-libc-21.1.8-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/vighs4x0sw8yhpbyqy1jszwzvlz6cabq-file-5.48-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/vighs4x0sw8yhpbyqy1jszwzvlz6cabq-file-5.48-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/h96s16mjssibkvk62pvmfm3lwfc3wnwp-gawk-5.4.1/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/h96s16mjssibkvk62pvmfm3lwfc3wnwp-gawk-5.4.1/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/l9f17m3j280r2gmb7gksl4r1dycxylin-zstd-1.5.7-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/l9f17m3j280r2gmb7gksl4r1dycxylin-zstd-1.5.7-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/yg3r0wzp22jg3gyhwccnivs6iphkn51y-llvm-21.1.8-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/yg3r0wzp22jg3gyhwccnivs6iphkn51y-llvm-21.1.8-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/8awcq8rqlfmrk2qp202fbv09zpvr6bh4-ncurses-6.6-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/8awcq8rqlfmrk2qp202fbv09zpvr6bh4-ncurses-6.6-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/a76rmqrp6l3w6h9pppfwzb3s6dzi0y4g-zlib-1.3.2-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/a76rmqrp6l3w6h9pppfwzb3s6dzi0y4g-zlib-1.3.2-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/49r7ql9sypb1f1x3i41dsw9kcl2nax88-compiler-rt-libc-21.1.8-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/49r7ql9sypb1f1x3i41dsw9kcl2nax88-compiler-rt-libc-21.1.8-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-cxx-isystem /nix/store/xpaz3fi6ibqxb9sla4gjlp0c82v566y8-gcc-16.2.0/include/c++/16.2.0' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-fmacro-prefix-map=/nix/store/xpaz3fi6ibqxb9sla4gjlp0c82v566y8-gcc-16.2.0/include/c++/16.2.0=/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-gcc-16.2.0/include/c++/16.2.0' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-cxx-isystem /nix/store/xpaz3fi6ibqxb9sla4gjlp0c82v566y8-gcc-16.2.0/include/c++/16.2.0/x86_64-unknown-linux-gnu' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-fmacro-prefix-map=/nix/store/xpaz3fi6ibqxb9sla4gjlp0c82v566y8-gcc-16.2.0/include/c++/16.2.0/x86_64-unknown-linux-gnu=/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-gcc-16.2.0/include/c++/16.2.0/x86_64-unknown-linux-gnu' [-Wunused-command-line-argument]
+warning: overriding the module target triple with x86_64-unknown-linux-gnu [-Woverride-module]
+1 warning generated.
+command: nix develop -c bash probes/json/route/workspace.sh --rounds 15 --reps 21 --core 0
+harness: probes/json/route/workspace.cc sha256=b27fc9a908c234c8eee404016b0e99eb768d7e967529e491c7a730b50d8ec80f
+script: probes/json/route/workspace.sh sha256=cda20d25bd46f5cadff37ada041e5ecefade5def00617f1c5fc99e085d5afcba
+admission source: probes/json/route/admission.h sha256=167b21241b8881498132831bea4df91a8366f08c5fa5007275ad447b2a766440
+guard source: probes/json/route/escape_guard.h sha256=34d733ea8c79b173d7f31324722a424a1a1ccaf9c7f4d9806a003e0b1353702d
+policy source: probes/json/route/policy.c sha256=c8673bfabaa3a848847d1d9ecddab95f9dff385f46eded3fbdc2a90b522873cf
+simdjson: 5.0.5; dev: /nix/store/m2i8165bayxxgzj3fbvdg6gihz6na93d-simdjson-5.0.5-dev
+simdjson lib: libsimdjson.so.34.0.0 sha256=9b2368aaa42dbfbf125cedea26c86914b622899c4ebeaf3f9fc7fd7bbcdd7184
+header: simdjson.h sha256=869e8a4ff285cec36bc79d4a671a433158391a4f1898bb1c3b1f6e654b9547ae
+route binary: /home/gavin/dev/Scidonia/lean-llvm/probes/json/route/build/leanllvm-json-route sha256=a9e37c684223fb0d9950c67c8c91723997bfc5212205c4ce595f6e1df7714a37 mtime=2026-11-18 00:17:20.061016427 +0100
+compiler: clang++ (clang version 21.1.8)
+kernel flags: -O2 -march=x86-64-v3 -mpclmul -std=gnu11 -falign-loops=64 -falign-functions=64 -I /home/gavin/dev/Scidonia/lean-llvm/kernel/json
+harness flags: -O3 -march=x86-64-v3 -mpclmul -std=c++17 -falign-loops=64 -falign-functions=64
+host: Linux 6.17.0-1033-oem x86_64
+cpu: Intel(R) Core(TM) Ultra 7 268V
+cpus online: 8; pinned to: cpu0
+scaling governor: powersave
+load average at start: 0.96 1.22 1.32 1/3361 1451622
+rounds: 15; repetitions per arm per round: 21
+build directory: /tmp/nix-shell.VAqvmo/json-cost-workspace.Aygxda
+
+corpus: /home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build/corpus
+file                      bytes sha256
+syn-dense-64k.json        65536 3d9e0237ec66adb2d77848a24f1998fa4b56b4dbe77a11431b02176fcd162995
+syn-strings-64k.json      65536 bd007090d7a5ab09a1fc69c0b96879f101dbf8b3f13a300d7d3e46127d26fb12
+syn-utf8-64k.json         65536 f95f4aeaac083d5d97ff98f9ad6aa09e4ed8c905d89e1bf3a3177179533400a4
+route-s1-64k.json         65536 41f918853d55dad0e05d3ec03682e037925759031632f045a755db5a5173535c
+
+## the route binary's own `--consume` rows (unit ns; repetitions: 1, for the identities)
+row doc=syn-dense-64k.json size=65536 path=fast reps=1 read_ns=40400 admission_ns=86507 staging_ns=434804 route_ns=868512 copyout_ns=- consume_fold_ns=166271 consume_values_ns=374523 verdict=1 ndst=0 nev=132638 tokens=16182 values=16182 walked=1 foldsum=6121954025005732784 valuessum=6121954025005732784
+row doc=syn-strings-64k.json size=65536 path=fast reps=1 read_ns=24060 admission_ns=296581 staging_ns=390096 route_ns=730415 copyout_ns=- consume_fold_ns=116523 consume_values_ns=104112 verdict=1 ndst=55931 nev=8907 tokens=687 values=687 walked=1 foldsum=9223372036880353449 valuessum=9223372036880353449
+row doc=syn-utf8-64k.json size=65536 path=fast reps=1 read_ns=27215 admission_ns=450721 staging_ns=376821 route_ns=688695 copyout_ns=- consume_fold_ns=29354 consume_values_ns=168579 verdict=1 ndst=0 nev=24143 tokens=1859 values=1859 walked=1 foldsum=9223372036915455257 valuessum=9223372036915455257
+
+instrument workspace=1 simdjson=5.0.5 implementation=haswell rounds=15 reps=21
+compiler: Clang 21.1.8
+reference doc=syn-dense-64k size=65536 verdict=1 nk=37215 nxp=0 ndst=0 nev=132638 err=0 tokens=16182 values=16182 foldsum=6121954025005732784 valuessum=6121954025005732784 walked=1
+reference doc=syn-strings-64k size=65536 verdict=1 nk=2056 nxp=1772 ndst=55931 nev=8907 err=0 tokens=687 values=687 foldsum=9223372036880353449 valuessum=9223372036880353449 walked=1
+reference doc=syn-utf8-64k size=65536 verdict=1 nk=5572 nxp=0 ndst=0 nev=24143 err=0 tokens=1859 values=1859 foldsum=9223372036915455257 valuessum=9223372036915455257 walked=1
+refusal-reference doc=route-s1-64k verdict=0 nk=39276 nxp=1551 ndst=0 nev=159 err=63
+round=0 doc=syn-dense-64k fresh_first=1 admission=67919 staging=482896 native=702026 consumer=52219 reused_admission=64543 reused_staging=1425 reused_native=95691 reused_consumer=44167 simdjson_parse=72152
+round=0 doc=syn-strings-64k fresh_first=1 admission=250070 staging=491436 native=589454 consumer=4774 reused_admission=261487 reused_staging=1611 reused_native=40382 reused_consumer=3510 simdjson_parse=11763
+round=0 doc=syn-utf8-64k fresh_first=1 admission=378151 staging=487072 native=551747 consumer=5738 reused_admission=407893 reused_staging=1478 reused_native=21282 reused_consumer=4377 simdjson_parse=20407
+round=1 doc=syn-dense-64k fresh_first=0 admission=67109 staging=467661 native=675217 consumer=52319 reused_admission=72445 reused_staging=1500 reused_native=100875 reused_consumer=44426 simdjson_parse=72454
+round=1 doc=syn-strings-64k fresh_first=0 admission=246306 staging=489820 native=587390 consumer=4969 reused_admission=251843 reused_staging=1541 reused_native=42735 reused_consumer=3606 simdjson_parse=13042
+round=1 doc=syn-utf8-64k fresh_first=0 admission=375403 staging=487985 native=547843 consumer=5667 reused_admission=397312 reused_staging=1464 reused_native=22981 reused_consumer=4289 simdjson_parse=20461
+round=2 doc=syn-dense-64k fresh_first=1 admission=70506 staging=492155 native=668963 consumer=52051 reused_admission=68495 reused_staging=1476 reused_native=94357 reused_consumer=42036 simdjson_parse=73110
+round=2 doc=syn-strings-64k fresh_first=1 admission=242688 staging=491668 native=582710 consumer=4686 reused_admission=259613 reused_staging=1663 reused_native=42904 reused_consumer=3728 simdjson_parse=12295
+round=2 doc=syn-utf8-64k fresh_first=1 admission=376841 staging=488910 native=568892 consumer=5872 reused_admission=400962 reused_staging=1535 reused_native=21423 reused_consumer=4352 simdjson_parse=21629
+round=3 doc=syn-dense-64k fresh_first=0 admission=65303 staging=485312 native=689350 consumer=53984 reused_admission=74515 reused_staging=1506 reused_native=101261 reused_consumer=45169 simdjson_parse=74533
+round=3 doc=syn-strings-64k fresh_first=0 admission=249821 staging=486675 native=594001 consumer=4610 reused_admission=255088 reused_staging=1680 reused_native=42452 reused_consumer=3700 simdjson_parse=12016
+round=3 doc=syn-utf8-64k fresh_first=0 admission=366721 staging=476901 native=533081 consumer=5691 reused_admission=392983 reused_staging=1403 reused_native=21141 reused_consumer=4264 simdjson_parse=20417
+round=4 doc=syn-dense-64k fresh_first=1 admission=68424 staging=477644 native=684469 consumer=53305 reused_admission=70856 reused_staging=1478 reused_native=98341 reused_consumer=44005 simdjson_parse=74128
+round=4 doc=syn-strings-64k fresh_first=1 admission=244221 staging=494060 native=595047 consumer=4897 reused_admission=265002 reused_staging=1688 reused_native=42958 reused_consumer=3476 simdjson_parse=12420
+round=4 doc=syn-utf8-64k fresh_first=1 admission=380051 staging=498712 native=554301 consumer=5794 reused_admission=403255 reused_staging=1452 reused_native=21254 reused_consumer=4320 simdjson_parse=18611
+round=5 doc=syn-dense-64k fresh_first=0 admission=69530 staging=482968 native=700906 consumer=56807 reused_admission=77275 reused_staging=1578 reused_native=107257 reused_consumer=46995 simdjson_parse=74443
+round=5 doc=syn-strings-64k fresh_first=0 admission=254905 staging=508714 native=600684 consumer=4633 reused_admission=262557 reused_staging=1655 reused_native=43766 reused_consumer=3645 simdjson_parse=12121
+round=5 doc=syn-utf8-64k fresh_first=0 admission=385796 staging=509351 native=558654 consumer=5975 reused_admission=414778 reused_staging=1444 reused_native=21258 reused_consumer=4414 simdjson_parse=17398
+round=6 doc=syn-dense-64k fresh_first=1 admission=67854 staging=475967 native=668740 consumer=49279 reused_admission=65014 reused_staging=1376 reused_native=90862 reused_consumer=41676 simdjson_parse=67787
+round=6 doc=syn-strings-64k fresh_first=1 admission=246267 staging=489344 native=589914 consumer=4591 reused_admission=263341 reused_staging=1607 reused_native=41516 reused_consumer=3472 simdjson_parse=11319
+round=6 doc=syn-utf8-64k fresh_first=1 admission=390665 staging=485901 native=553104 consumer=5918 reused_admission=406039 reused_staging=1409 reused_native=21137 reused_consumer=4307 simdjson_parse=20800
+round=7 doc=syn-dense-64k fresh_first=0 admission=69760 staging=481756 native=673159 consumer=53557 reused_admission=73428 reused_staging=1520 reused_native=99880 reused_consumer=45438 simdjson_parse=73015
+round=7 doc=syn-strings-64k fresh_first=0 admission=252645 staging=492592 native=600217 consumer=4588 reused_admission=260129 reused_staging=1528 reused_native=40616 reused_consumer=3345 simdjson_parse=13141
+round=7 doc=syn-utf8-64k fresh_first=0 admission=386851 staging=486334 native=539809 consumer=5704 reused_admission=399452 reused_staging=1424 reused_native=21212 reused_consumer=4262 simdjson_parse=21884
+round=8 doc=syn-dense-64k fresh_first=1 admission=67081 staging=477804 native=666356 consumer=54226 reused_admission=70839 reused_staging=1493 reused_native=97410 reused_consumer=44029 simdjson_parse=74708
+round=8 doc=syn-strings-64k fresh_first=1 admission=249528 staging=493819 native=603832 consumer=4628 reused_admission=262338 reused_staging=1566 reused_native=41904 reused_consumer=3453 simdjson_parse=13848
+round=8 doc=syn-utf8-64k fresh_first=1 admission=389962 staging=483812 native=553972 consumer=5809 reused_admission=396622 reused_staging=1439 reused_native=21225 reused_consumer=4322 simdjson_parse=24018
+round=9 doc=syn-dense-64k fresh_first=0 admission=65497 staging=483961 native=670921 consumer=52035 reused_admission=73821 reused_staging=1531 reused_native=100887 reused_consumer=44983 simdjson_parse=72355
+round=9 doc=syn-strings-64k fresh_first=0 admission=244886 staging=502325 native=592971 consumer=4633 reused_admission=252325 reused_staging=1533 reused_native=40513 reused_consumer=3336 simdjson_parse=12139
+round=9 doc=syn-utf8-64k fresh_first=0 admission=383506 staging=479707 native=548850 consumer=5936 reused_admission=404295 reused_staging=1407 reused_native=21143 reused_consumer=4282 simdjson_parse=20360
+round=10 doc=syn-dense-64k fresh_first=1 admission=67079 staging=469938 native=651409 consumer=52000 reused_admission=70769 reused_staging=1460 reused_native=93113 reused_consumer=42960 simdjson_parse=80513
+round=10 doc=syn-strings-64k fresh_first=1 admission=245327 staging=487238 native=572139 consumer=4630 reused_admission=259651 reused_staging=1571 reused_native=39852 reused_consumer=3463 simdjson_parse=13841
+round=10 doc=syn-utf8-64k fresh_first=1 admission=374626 staging=483819 native=543615 consumer=5772 reused_admission=394077 reused_staging=1414 reused_native=21176 reused_consumer=4298 simdjson_parse=19635
+round=11 doc=syn-dense-64k fresh_first=0 admission=66175 staging=477375 native=664953 consumer=52730 reused_admission=72992 reused_staging=1524 reused_native=100797 reused_consumer=44853 simdjson_parse=71789
+round=11 doc=syn-strings-64k fresh_first=0 admission=242686 staging=482080 native=573791 consumer=4592 reused_admission=244996 reused_staging=1527 reused_native=40812 reused_consumer=3341 simdjson_parse=11519
+round=11 doc=syn-utf8-64k fresh_first=0 admission=389931 staging=492612 native=550281 consumer=5744 reused_admission=414892 reused_staging=1415 reused_native=23054 reused_consumer=4551 simdjson_parse=19496
+round=12 doc=syn-dense-64k fresh_first=1 admission=66737 staging=466383 native=651451 consumer=52254 reused_admission=70308 reused_staging=1396 reused_native=96462 reused_consumer=42844 simdjson_parse=83887
+round=12 doc=syn-strings-64k fresh_first=1 admission=242925 staging=487244 native=580088 consumer=4682 reused_admission=258069 reused_staging=1532 reused_native=39232 reused_consumer=3443 simdjson_parse=11888
+round=12 doc=syn-utf8-64k fresh_first=1 admission=374422 staging=476205 native=530046 consumer=5652 reused_admission=400937 reused_staging=1419 reused_native=21195 reused_consumer=4368 simdjson_parse=19816
+round=13 doc=syn-dense-64k fresh_first=0 admission=65788 staging=483739 native=665688 consumer=52160 reused_admission=72501 reused_staging=1493 reused_native=99452 reused_consumer=45106 simdjson_parse=71725
+round=13 doc=syn-strings-64k fresh_first=0 admission=238698 staging=482623 native=579664 consumer=4599 reused_admission=245135 reused_staging=1488 reused_native=39949 reused_consumer=3305 simdjson_parse=11962
+round=13 doc=syn-utf8-64k fresh_first=0 admission=381793 staging=478476 native=544174 consumer=5652 reused_admission=401322 reused_staging=1419 reused_native=21210 reused_consumer=4298 simdjson_parse=17192
+round=14 doc=syn-dense-64k fresh_first=1 admission=67181 staging=472379 native=653154 consumer=53882 reused_admission=66462 reused_staging=1379 reused_native=93987 reused_consumer=42410 simdjson_parse=73889
+round=14 doc=syn-strings-64k fresh_first=1 admission=240628 staging=487504 native=570823 consumer=4631 reused_admission=259053 reused_staging=1543 reused_native=40015 reused_consumer=3464 simdjson_parse=11466
+round=14 doc=syn-utf8-64k fresh_first=1 admission=371221 staging=468451 native=531621 consumer=5740 reused_admission=398769 reused_staging=1421 reused_native=21151 reused_consumer=4378 simdjson_parse=19178
+
+## absolute, unit ns (median of the round medians; min-max of those)
+document             arm               admission            staging             native           consumer
+syn-dense-64k        fresh      67109 ( 65303-70506)  477804 (466383-492155)  668963 (651409-702026)   52319 ( 49279-56807)
+                     reused     70856 ( 64543-77275)    1493 (  1376-1578)   98341 ( 90862-107257)   44167 ( 41676-46995)
+syn-strings-64k      fresh     245327 (238698-254905)  489820 (482080-508714)  589454 (570823-603832)    4631 (  4588-4969)
+                     reused    259613 (244996-265002)    1566 (  1488-1688)   40812 ( 39232-43766)    3464 (  3305-3728)
+syn-utf8-64k         fresh     380051 (366721-390665)  485901 (468451-509351)  548850 (530046-568892)    5744 (  5652-5975)
+                     reused    400962 (392983-414892)    1421 (  1403-1535)   21212 ( 21137-23054)    4320 (  4262-4551)
+
+## the paired ratios (unit: multiplier; per-round quotients, median with min-max)
+reused/fresh above 1 means the reused workspace costs more; native/parse divides the route's native interval by simdjson's full parse in the same round.
+document                       admission             staging              native            consumer    fresh native/parse   reused native/parse
+syn-dense-64k         1.055 ( 0.950- 1.141)  0.003 ( 0.003- 0.003)  0.147 ( 0.136- 0.153)  0.837 ( 0.787- 0.865)   9.249 (  7.766-  9.865)   1.340 (  1.150-  1.441)
+syn-strings-64k       1.046 ( 1.010- 1.085)  0.003 ( 0.003- 0.003)  0.070 ( 0.068- 0.074)  0.735 ( 0.710- 0.803)  48.796 ( 41.337- 52.117)   3.433 (  2.879-  3.668)
+syn-utf8-64k          1.061 ( 1.017- 1.079)  0.003 ( 0.003- 0.003)  0.039 ( 0.038- 0.042)  0.747 ( 0.721- 0.792)  26.957 ( 23.065- 32.110)   1.069 (  0.884-  1.234)
+
+## simdjson's full parse (unit ns; median of the round medians, min-max)
+doc=syn-dense-64k parse=73110 (67787-83887) walked=53898807
+doc=syn-strings-64k parse=12121 (11319-13848) walked=60837
+doc=syn-utf8-64k parse=20360 (17192-24018) walked=61552
+
+## the stale-tail control
+stale_bytes=38604072 transitions_with_nonzero_stale=412
+
+## the refusal control
+doc=route-s1-64k verdict=0 err=63 fresh_err=63 reused_err=63
+
+ok: 3 documents x 15 rounds x 21 repetitions per arm; every act's header, bytes and consumer readings equal the reference
+
+## the cross-check (the C harness's reading against the route binary's)
+syn-dense-64k      verdict=1 ndst=0 nev=132638 tokens=16182 values=16182
+syn-strings-64k    verdict=1 ndst=55931 nev=8907 tokens=687 values=687
+syn-utf8-64k       verdict=1 ndst=0 nev=24143 tokens=1859 values=1859
+
+load average after the sweep: 0.96 1.22 1.32 3/3368 1451877
+ok: the paired run completed; the reference observation and the route binary agree
+# workspace exit status: 0; build directory: /tmp/nix-shell.VAqvmo/json-cost-workspace.Aygxda
+syn-strings-64k      fresh     245327 (238698-254905)  489820 (482080-508714)  589454 (570823-603832)    4631 (  4588-4969)
+                     reused    259613 (244996-265002)    1566 (  1488-1688)   40812 ( 39232-43766)    3464 (  3305-3728)
+
+## the placement measurement
+placement: route harness leanllvm_json_pipeline at 000000000000ef80
+build: /tmp/cost-profile-build/placement-natural
+kernel flags: -O2 -march=x86-64-v3 -mpclmul -std=gnu11 -falign-loops=64 -falign-functions=64 -I /home/gavin/dev/Scidonia/lean-llvm/kernel/json -I /home/gavin/dev/Scidonia/lean-llvm/probes/json/route
+harness flags: -O3 -march=x86-64-v3 -mpclmul -std=gnu11 -falign-loops=64 -falign-functions=64 -I /home/gavin/dev/Scidonia/lean-llvm/kernel/json -I /home/gavin/dev/Scidonia/lean-llvm/probes/json/route
+compiler: clang (clang version 21.1.8)
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:118:13: warning: initializer overrides prior initialization of this subobject [-Winitializer-overrides]
+  118 |     ['"'] = '"', ['\\'] = '\\', ['/'] = '/', ['b'] = 8,
+      |             ^~~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:117:19: note: previous initialization is here
+  117 |     [0 ... 255] = -1,
+      |                   ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:118:27: warning: initializer overrides prior initialization of this subobject [-Winitializer-overrides]
+  118 |     ['"'] = '"', ['\\'] = '\\', ['/'] = '/', ['b'] = 8,
+      |                           ^~~~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:117:19: note: previous initialization is here
+  117 |     [0 ... 255] = -1,
+      |                   ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:118:41: warning: initializer overrides prior initialization of this subobject [-Winitializer-overrides]
+  118 |     ['"'] = '"', ['\\'] = '\\', ['/'] = '/', ['b'] = 8,
+      |                                         ^~~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:117:19: note: previous initialization is here
+  117 |     [0 ... 255] = -1,
+      |                   ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:118:54: warning: initializer overrides prior initialization of this subobject [-Winitializer-overrides]
+  118 |     ['"'] = '"', ['\\'] = '\\', ['/'] = '/', ['b'] = 8,
+      |                                                      ^
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:117:19: note: previous initialization is here
+  117 |     [0 ... 255] = -1,
+      |                   ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:119:13: warning: initializer overrides prior initialization of this subobject [-Winitializer-overrides]
+  119 |     ['f'] = 12, ['n'] = 10, ['r'] = 13, ['t'] = 9
+      |             ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:117:19: note: previous initialization is here
+  117 |     [0 ... 255] = -1,
+      |                   ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:119:25: warning: initializer overrides prior initialization of this subobject [-Winitializer-overrides]
+  119 |     ['f'] = 12, ['n'] = 10, ['r'] = 13, ['t'] = 9
+      |                         ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:117:19: note: previous initialization is here
+  117 |     [0 ... 255] = -1,
+      |                   ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:119:37: warning: initializer overrides prior initialization of this subobject [-Winitializer-overrides]
+  119 |     ['f'] = 12, ['n'] = 10, ['r'] = 13, ['t'] = 9
+      |                                     ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:117:19: note: previous initialization is here
+  117 |     [0 ... 255] = -1,
+      |                   ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:119:49: warning: initializer overrides prior initialization of this subobject [-Winitializer-overrides]
+  119 |     ['f'] = 12, ['n'] = 10, ['r'] = 13, ['t'] = 9
+      |                                                 ^
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:117:19: note: previous initialization is here
+  117 |     [0 ... 255] = -1,
+      |                   ^~
+8 warnings generated.
+clang: warning: argument unused during compilation: '-U _FORTIFY_SOURCE' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-U _FORTIFY_SOURCE' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-idirafter /nix/store/3zlgjcfm8j3nscrldjv8izxciybg0nh3-glibc-2.44-57-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-fmacro-prefix-map=/nix/store/3zlgjcfm8j3nscrldjv8izxciybg0nh3-glibc-2.44-57-dev/include=/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-glibc-2.44-57-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/vighs4x0sw8yhpbyqy1jszwzvlz6cabq-file-5.48-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/vighs4x0sw8yhpbyqy1jszwzvlz6cabq-file-5.48-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/h96s16mjssibkvk62pvmfm3lwfc3wnwp-gawk-5.4.1/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/h96s16mjssibkvk62pvmfm3lwfc3wnwp-gawk-5.4.1/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/l9f17m3j280r2gmb7gksl4r1dycxylin-zstd-1.5.7-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/l9f17m3j280r2gmb7gksl4r1dycxylin-zstd-1.5.7-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/yg3r0wzp22jg3gyhwccnivs6iphkn51y-llvm-21.1.8-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/yg3r0wzp22jg3gyhwccnivs6iphkn51y-llvm-21.1.8-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/8awcq8rqlfmrk2qp202fbv09zpvr6bh4-ncurses-6.6-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/8awcq8rqlfmrk2qp202fbv09zpvr6bh4-ncurses-6.6-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/a76rmqrp6l3w6h9pppfwzb3s6dzi0y4g-zlib-1.3.2-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/a76rmqrp6l3w6h9pppfwzb3s6dzi0y4g-zlib-1.3.2-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/49r7ql9sypb1f1x3i41dsw9kcl2nax88-compiler-rt-libc-21.1.8-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/49r7ql9sypb1f1x3i41dsw9kcl2nax88-compiler-rt-libc-21.1.8-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/vighs4x0sw8yhpbyqy1jszwzvlz6cabq-file-5.48-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/vighs4x0sw8yhpbyqy1jszwzvlz6cabq-file-5.48-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/h96s16mjssibkvk62pvmfm3lwfc3wnwp-gawk-5.4.1/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/h96s16mjssibkvk62pvmfm3lwfc3wnwp-gawk-5.4.1/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/l9f17m3j280r2gmb7gksl4r1dycxylin-zstd-1.5.7-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/l9f17m3j280r2gmb7gksl4r1dycxylin-zstd-1.5.7-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/yg3r0wzp22jg3gyhwccnivs6iphkn51y-llvm-21.1.8-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/yg3r0wzp22jg3gyhwccnivs6iphkn51y-llvm-21.1.8-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/8awcq8rqlfmrk2qp202fbv09zpvr6bh4-ncurses-6.6-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/8awcq8rqlfmrk2qp202fbv09zpvr6bh4-ncurses-6.6-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/a76rmqrp6l3w6h9pppfwzb3s6dzi0y4g-zlib-1.3.2-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/a76rmqrp6l3w6h9pppfwzb3s6dzi0y4g-zlib-1.3.2-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/49r7ql9sypb1f1x3i41dsw9kcl2nax88-compiler-rt-libc-21.1.8-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/49r7ql9sypb1f1x3i41dsw9kcl2nax88-compiler-rt-libc-21.1.8-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-cxx-isystem /nix/store/xpaz3fi6ibqxb9sla4gjlp0c82v566y8-gcc-16.2.0/include/c++/16.2.0' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-fmacro-prefix-map=/nix/store/xpaz3fi6ibqxb9sla4gjlp0c82v566y8-gcc-16.2.0/include/c++/16.2.0=/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-gcc-16.2.0/include/c++/16.2.0' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-cxx-isystem /nix/store/xpaz3fi6ibqxb9sla4gjlp0c82v566y8-gcc-16.2.0/include/c++/16.2.0/x86_64-unknown-linux-gnu' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-fmacro-prefix-map=/nix/store/xpaz3fi6ibqxb9sla4gjlp0c82v566y8-gcc-16.2.0/include/c++/16.2.0/x86_64-unknown-linux-gnu=/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-gcc-16.2.0/include/c++/16.2.0/x86_64-unknown-linux-gnu' [-Wunused-command-line-argument]
+warning: overriding the module target triple with x86_64-unknown-linux-gnu [-Woverride-module]
+1 warning generated.
+filler: 0 byte(s)
+
+source digests:
+  kernel/json/pipeline.c                                       c88f9de1ba8f6b6718b0a0c6bcc77ae075cb84cb7b9aaa430d7ddcdbdff6baf0
+  kernel/json/s1_block.c                                       c358ee6e330f1b514374c6454520d6fcf59921627d9eb104526346d88be7b7bc
+  kernel/json/entry.c                                          25700a712c206083884e9933b649a16a5b2f2f24ff37ba4dad50c65b15e3e90e
+  kernel/json/escape.c                                         9ce8bb4ccb705d938fa73e779d7d7ef064561d00c9e30e061f3052b242581dff
+  kernel/json/utf8.c                                           382a933422f19c36e54f24f260af6ce9a347cea8763639d95e99d75b15221793
+  kernel/json/stage2.c                                         08809fd4a9228c7c4b4ef4d41d27bcca9ec1f045e459a2b9f0a645e51a1cd5bc
+  probes/json/route/policy.c                                   c8673bfabaa3a848847d1d9ecddab95f9dff385f46eded3fbdc2a90b522873cf
+  tests/v16/depth_count.ll                                     3cfd5d9f5fc78655eaecc8c81df72246ad9b780e7d2436e2ef90a515ba964d54
+  probes/json/route/cost-profile/cost-profile.c                aafa94aa7f90981b5bf8c8f935eff846678fb5a0305f351e4dd9e130ed3da509
+  probes/json/route/cost-profile/build.sh                      d751e21d744450eef3009358e29f476ec70329f17b3d355c41abc0f9167c7e9e
+  probes/json/route/cost-profile/run.sh                        1c65b5a6e97347d2d9505b69457268da49ddd4aff0b0bc943de7eaeb82bcebb2
+object digests:
+  pipeline.o                                                   689305064425063bb0226e4d467e7f9283aa616712ea018a66da090543706431
+  s1_block.o                                                   80d29a5b5aed7902163adf10d5094fbb2a2db6f38afe3839a04abee9477cb149
+  entry.o                                                      384f710b27a7829b515d842586a2a0f217e23ebc563eca931957d76b007be7aa
+  escape.o                                                     7a71222e3ff700f4c3e5b47a24b227cea96c17382e61ee80fb41d0c1104a249b
+  utf8.o                                                       6f9e3ca0b7f012b1c04d2d5dbeda8b711d3706ee5b392563dac7ecc4b846d86c
+  stage2.o                                                     c92d304058d789f0b72143634f97c5c610a4ac7713528e443e4365b54b09e088
+  policy.o                                                     92dd13bb9ca8477817f349ebe2a2963b1df40fce20a6c29846d9b3ddb9c2fa24
+  depth_count.o                                                5596182569b3e4b27891f4f10478c0b8410d25e6cdd88f4acf08ce76a14faa69
+binary: /tmp/cost-profile-build/placement-natural/cost-profile sha256=45c0b5616c841cd511b64dca2731c15b09a83a73f6e21837e5603629d24e7e6c
+ok: /tmp/cost-profile-build/placement-natural/cost-profile
+build: /tmp/cost-profile-build/placement-aligned
+kernel flags: -O2 -march=x86-64-v3 -mpclmul -std=gnu11 -falign-loops=64 -falign-functions=64 -I /home/gavin/dev/Scidonia/lean-llvm/kernel/json -I /home/gavin/dev/Scidonia/lean-llvm/probes/json/route
+harness flags: -O3 -march=x86-64-v3 -mpclmul -std=gnu11 -falign-loops=64 -falign-functions=64 -I /home/gavin/dev/Scidonia/lean-llvm/kernel/json -I /home/gavin/dev/Scidonia/lean-llvm/probes/json/route
+compiler: clang (clang version 21.1.8)
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:118:13: warning: initializer overrides prior initialization of this subobject [-Winitializer-overrides]
+  118 |     ['"'] = '"', ['\\'] = '\\', ['/'] = '/', ['b'] = 8,
+      |             ^~~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:117:19: note: previous initialization is here
+  117 |     [0 ... 255] = -1,
+      |                   ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:118:27: warning: initializer overrides prior initialization of this subobject [-Winitializer-overrides]
+  118 |     ['"'] = '"', ['\\'] = '\\', ['/'] = '/', ['b'] = 8,
+      |                           ^~~~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:117:19: note: previous initialization is here
+  117 |     [0 ... 255] = -1,
+      |                   ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:118:41: warning: initializer overrides prior initialization of this subobject [-Winitializer-overrides]
+  118 |     ['"'] = '"', ['\\'] = '\\', ['/'] = '/', ['b'] = 8,
+      |                                         ^~~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:117:19: note: previous initialization is here
+  117 |     [0 ... 255] = -1,
+      |                   ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:118:54: warning: initializer overrides prior initialization of this subobject [-Winitializer-overrides]
+  118 |     ['"'] = '"', ['\\'] = '\\', ['/'] = '/', ['b'] = 8,
+      |                                                      ^
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:117:19: note: previous initialization is here
+  117 |     [0 ... 255] = -1,
+      |                   ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:119:13: warning: initializer overrides prior initialization of this subobject [-Winitializer-overrides]
+  119 |     ['f'] = 12, ['n'] = 10, ['r'] = 13, ['t'] = 9
+      |             ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:117:19: note: previous initialization is here
+  117 |     [0 ... 255] = -1,
+      |                   ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:119:25: warning: initializer overrides prior initialization of this subobject [-Winitializer-overrides]
+  119 |     ['f'] = 12, ['n'] = 10, ['r'] = 13, ['t'] = 9
+      |                         ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:117:19: note: previous initialization is here
+  117 |     [0 ... 255] = -1,
+      |                   ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:119:37: warning: initializer overrides prior initialization of this subobject [-Winitializer-overrides]
+  119 |     ['f'] = 12, ['n'] = 10, ['r'] = 13, ['t'] = 9
+      |                                     ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:117:19: note: previous initialization is here
+  117 |     [0 ... 255] = -1,
+      |                   ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:119:49: warning: initializer overrides prior initialization of this subobject [-Winitializer-overrides]
+  119 |     ['f'] = 12, ['n'] = 10, ['r'] = 13, ['t'] = 9
+      |                                                 ^
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:117:19: note: previous initialization is here
+  117 |     [0 ... 255] = -1,
+      |                   ^~
+8 warnings generated.
+clang: warning: argument unused during compilation: '-U _FORTIFY_SOURCE' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-U _FORTIFY_SOURCE' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-idirafter /nix/store/3zlgjcfm8j3nscrldjv8izxciybg0nh3-glibc-2.44-57-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-fmacro-prefix-map=/nix/store/3zlgjcfm8j3nscrldjv8izxciybg0nh3-glibc-2.44-57-dev/include=/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-glibc-2.44-57-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/vighs4x0sw8yhpbyqy1jszwzvlz6cabq-file-5.48-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/vighs4x0sw8yhpbyqy1jszwzvlz6cabq-file-5.48-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/h96s16mjssibkvk62pvmfm3lwfc3wnwp-gawk-5.4.1/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/h96s16mjssibkvk62pvmfm3lwfc3wnwp-gawk-5.4.1/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/l9f17m3j280r2gmb7gksl4r1dycxylin-zstd-1.5.7-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/l9f17m3j280r2gmb7gksl4r1dycxylin-zstd-1.5.7-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/yg3r0wzp22jg3gyhwccnivs6iphkn51y-llvm-21.1.8-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/yg3r0wzp22jg3gyhwccnivs6iphkn51y-llvm-21.1.8-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/8awcq8rqlfmrk2qp202fbv09zpvr6bh4-ncurses-6.6-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/8awcq8rqlfmrk2qp202fbv09zpvr6bh4-ncurses-6.6-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/a76rmqrp6l3w6h9pppfwzb3s6dzi0y4g-zlib-1.3.2-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/a76rmqrp6l3w6h9pppfwzb3s6dzi0y4g-zlib-1.3.2-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/49r7ql9sypb1f1x3i41dsw9kcl2nax88-compiler-rt-libc-21.1.8-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/49r7ql9sypb1f1x3i41dsw9kcl2nax88-compiler-rt-libc-21.1.8-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/vighs4x0sw8yhpbyqy1jszwzvlz6cabq-file-5.48-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/vighs4x0sw8yhpbyqy1jszwzvlz6cabq-file-5.48-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/h96s16mjssibkvk62pvmfm3lwfc3wnwp-gawk-5.4.1/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/h96s16mjssibkvk62pvmfm3lwfc3wnwp-gawk-5.4.1/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/l9f17m3j280r2gmb7gksl4r1dycxylin-zstd-1.5.7-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/l9f17m3j280r2gmb7gksl4r1dycxylin-zstd-1.5.7-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/yg3r0wzp22jg3gyhwccnivs6iphkn51y-llvm-21.1.8-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/yg3r0wzp22jg3gyhwccnivs6iphkn51y-llvm-21.1.8-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/8awcq8rqlfmrk2qp202fbv09zpvr6bh4-ncurses-6.6-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/8awcq8rqlfmrk2qp202fbv09zpvr6bh4-ncurses-6.6-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/a76rmqrp6l3w6h9pppfwzb3s6dzi0y4g-zlib-1.3.2-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/a76rmqrp6l3w6h9pppfwzb3s6dzi0y4g-zlib-1.3.2-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/49r7ql9sypb1f1x3i41dsw9kcl2nax88-compiler-rt-libc-21.1.8-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-isystem /nix/store/49r7ql9sypb1f1x3i41dsw9kcl2nax88-compiler-rt-libc-21.1.8-dev/include' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-cxx-isystem /nix/store/xpaz3fi6ibqxb9sla4gjlp0c82v566y8-gcc-16.2.0/include/c++/16.2.0' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-fmacro-prefix-map=/nix/store/xpaz3fi6ibqxb9sla4gjlp0c82v566y8-gcc-16.2.0/include/c++/16.2.0=/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-gcc-16.2.0/include/c++/16.2.0' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-cxx-isystem /nix/store/xpaz3fi6ibqxb9sla4gjlp0c82v566y8-gcc-16.2.0/include/c++/16.2.0/x86_64-unknown-linux-gnu' [-Wunused-command-line-argument]
+clang: warning: argument unused during compilation: '-fmacro-prefix-map=/nix/store/xpaz3fi6ibqxb9sla4gjlp0c82v566y8-gcc-16.2.0/include/c++/16.2.0/x86_64-unknown-linux-gnu=/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-gcc-16.2.0/include/c++/16.2.0/x86_64-unknown-linux-gnu' [-Wunused-command-line-argument]
+warning: overriding the module target triple with x86_64-unknown-linux-gnu [-Woverride-module]
+1 warning generated.
+filler: 27840 byte(s)
+
+source digests:
+  kernel/json/pipeline.c                                       c88f9de1ba8f6b6718b0a0c6bcc77ae075cb84cb7b9aaa430d7ddcdbdff6baf0
+  kernel/json/s1_block.c                                       c358ee6e330f1b514374c6454520d6fcf59921627d9eb104526346d88be7b7bc
+  kernel/json/entry.c                                          25700a712c206083884e9933b649a16a5b2f2f24ff37ba4dad50c65b15e3e90e
+  kernel/json/escape.c                                         9ce8bb4ccb705d938fa73e779d7d7ef064561d00c9e30e061f3052b242581dff
+  kernel/json/utf8.c                                           382a933422f19c36e54f24f260af6ce9a347cea8763639d95e99d75b15221793
+  kernel/json/stage2.c                                         08809fd4a9228c7c4b4ef4d41d27bcca9ec1f045e459a2b9f0a645e51a1cd5bc
+  probes/json/route/policy.c                                   c8673bfabaa3a848847d1d9ecddab95f9dff385f46eded3fbdc2a90b522873cf
+  tests/v16/depth_count.ll                                     3cfd5d9f5fc78655eaecc8c81df72246ad9b780e7d2436e2ef90a515ba964d54
+  probes/json/route/cost-profile/cost-profile.c                aafa94aa7f90981b5bf8c8f935eff846678fb5a0305f351e4dd9e130ed3da509
+  probes/json/route/cost-profile/build.sh                      d751e21d744450eef3009358e29f476ec70329f17b3d355c41abc0f9167c7e9e
+  probes/json/route/cost-profile/run.sh                        1c65b5a6e97347d2d9505b69457268da49ddd4aff0b0bc943de7eaeb82bcebb2
+object digests:
+  pipeline.o                                                   689305064425063bb0226e4d467e7f9283aa616712ea018a66da090543706431
+  s1_block.o                                                   80d29a5b5aed7902163adf10d5094fbb2a2db6f38afe3839a04abee9477cb149
+  entry.o                                                      384f710b27a7829b515d842586a2a0f217e23ebc563eca931957d76b007be7aa
+  escape.o                                                     7a71222e3ff700f4c3e5b47a24b227cea96c17382e61ee80fb41d0c1104a249b
+  utf8.o                                                       6f9e3ca0b7f012b1c04d2d5dbeda8b711d3706ee5b392563dac7ecc4b846d86c
+  stage2.o                                                     c92d304058d789f0b72143634f97c5c610a4ac7713528e443e4365b54b09e088
+  policy.o                                                     92dd13bb9ca8477817f349ebe2a2963b1df40fce20a6c29846d9b3ddb9c2fa24
+  depth_count.o                                                5596182569b3e4b27891f4f10478c0b8410d25e6cdd88f4acf08ce76a14faa69
+binary: /tmp/cost-profile-build/placement-aligned/cost-profile sha256=5659194c98b62b80fa680684139cc77113070bcc8a385417120e7516977ae603
+ok: /tmp/cost-profile-build/placement-aligned/cost-profile
+placement: natural=00000000000082c0 aligned=000000000000ef80 filler=27840 target=000000000000ef80
+## the Lean gate (immediately before this sweep)
+ 460954 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Refinement/JsonStage2WalkDispatchClosers.lean
+ 477867 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/JSON/TapeCorrect.lean
+ 486643 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Refinement/JsonStage2WalkDispatchDepthStates.lean
+ 497922 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/JSON/ScanBlocks.lean
+ 504948 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Refinement/JsonStage2WalkDispatchDepthStores.lean
+ 516598 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Refinement/JsonStage2WalkDispatchClassCLeaves.lean
+2663339 lake            /nix/store/2vmnq5k9hm3v7rgrrfbchh94cp6gbcbw-lean4-4.35.0-rc3/bin/lake serve
+2663387 .lean-wrapped   /nix/store/2vmnq5k9hm3v7rgrrfbchh94cp6gbcbw-lean4-4.35.0-rc3/bin/lean --server
+2663397 .lean-wrapped   /nix/store/2vmnq5k9hm3v7rgrrfbchh94cp6gbcbw-lean4-4.35.0-rc3/bin/lean --worker file:///home/gavin/dev/Scidonia/ownership/Cap/Surface.lean
+3235921 lake            lake serve
+3236007 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --server
+3236012 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Refinement/JsonStage2WalkDispatchRefusalsOfStaging.lean
+3248278 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Refinement/JsonStage2WalkTraverse.lean
+3261002 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Basic.lean
+3261656 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Semantics.lean
+lean-cpu ticks: before=52132 after=52132 delta=0 (HZ=100; threshold=5 ticks/s)
+load average: 1.05 1.23 1.33 1/3351 1454797
+gate: no Lean build or compile active; timing may start
+
+reference doc=syn-strings-64k.json size=65536 verdict=1 nk=2056 nxp=1772 ndst=55931 nev=8907 err=0 arena_fnv=802d2b86cf9965d7 event_fnv=9f6cc1cf74087659
+identity stage2=ok entry_stream=identical escape_list=identical arena=identical events=identical
+bodies total=685 escaped=620 positions=1772 expanded_bytes=55931
+identity expand=calls=620 xj=1772 bytes=55931 arena=identical arena_fnv=802d2b86cf9965d7
+consumer tokens=687 values=687 foldsum=9223372036880353449 walked=1
+identity ablations=streams_identical (stage2_plain is a cost probe and is not read through a gate)
+
+instrument cost-profile=1 arm=2 context=route compiler=Clang 21.1.8 core_class=0x40 window_offset=3 rounds=15 reps=21
+clock: chain=414962 ns / 2000000 iterations -> 4.820 GHz (per-round range 4.557-4.869)
+statistic: median of the round medians, min-max of those medians; cycles use each round's chain
+
+act                  median_ns       min_ns       max_ns   median_cyc         us
+masks                     6417         5909         6601        30922      6.417
+entry                     5936         5594         6081        28116      5.936
+escape                    5697         5525         5833        27565      5.697
+s1_no_escape             17038        15680        17355        80055     17.038
+s1_fused                 19859        18844        21349        95000     19.859
+pipe_nostage2            20378        19163        22131        96493     20.378
+utf8                       717          654          728         3378      0.717
+stage2                   11367        10879        13540        54519     11.367
+stage2_plain              2509         2319         2774        11871      2.509
+expand                   15942        15090        17153        76155     15.942
+pipeline                 31350        28565        32908       150824     31.350
+native                   31491        28946        34993       147336     31.491
+copy_total                2692         2483         2740        12851      2.692
+copy_dst                  2298         2165         2419        10998      2.298
+copy_ev                    461          433          496         2211      0.461
+chain                   414962       410787       438858      2000000    414.962
+
+paired differences (ns; each round's difference of that round's act medians, then the median of the differences)
+copy                       148            0         3260
+stage2                   11474         7987        12430
+utf8                         9            0         1945
+escape                    2567         1729         5669
+entry                    10560         9148        11194
+masks (base)              6417
+sum                      31175  (per round the chain telescopes exactly to the pipeline; this row is the sum of the terms' medians, so it need not equal the pipeline row)
+
+isolated acts: masks+entry+escape+utf8+stage2 = 30134 pipeline = 31350
+de-fusion (pipeline - isolated) = 1216
+stage2 - stage2_plain (list-driven decode) = 8858 expand (620 calls) = 15942
+
+copy bytes: arena=55931 events=8907 memcpy_total=64838 header=80 result_total=64918
+throughput: pipeline=2.090 GB/s native=2.081 GB/s
+shares_of_native (paired chain): masks=20.4% entry=33.5% escape=8.2% utf8=0.0% stage2=36.4% copy=0.5%
+shares_of_native (standalone acts): pipeline=99.6% copy_total=8.5% stage2=36.1% expand=50.6% utf8=2.3% masks+entry+escape=57.3%
+# placement placement-natural exit status: 0
+
+## the Lean gate (immediately before this sweep)
+ 460954 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Refinement/JsonStage2WalkDispatchClosers.lean
+ 477867 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/JSON/TapeCorrect.lean
+ 486643 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Refinement/JsonStage2WalkDispatchDepthStates.lean
+ 497922 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/JSON/ScanBlocks.lean
+ 504948 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Refinement/JsonStage2WalkDispatchDepthStores.lean
+ 516598 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Refinement/JsonStage2WalkDispatchClassCLeaves.lean
+2663339 lake            /nix/store/2vmnq5k9hm3v7rgrrfbchh94cp6gbcbw-lean4-4.35.0-rc3/bin/lake serve
+2663387 .lean-wrapped   /nix/store/2vmnq5k9hm3v7rgrrfbchh94cp6gbcbw-lean4-4.35.0-rc3/bin/lean --server
+2663397 .lean-wrapped   /nix/store/2vmnq5k9hm3v7rgrrfbchh94cp6gbcbw-lean4-4.35.0-rc3/bin/lean --worker file:///home/gavin/dev/Scidonia/ownership/Cap/Surface.lean
+3235921 lake            lake serve
+3236007 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --server
+3236012 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Refinement/JsonStage2WalkDispatchRefusalsOfStaging.lean
+3248278 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Refinement/JsonStage2WalkTraverse.lean
+3261002 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Basic.lean
+3261656 .lean-wrapped   /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Semantics.lean
+lean-cpu ticks: before=52133 after=52134 delta=1 (HZ=100; threshold=5 ticks/s)
+load average: 1.11 1.24 1.33 1/3334 1457372
+gate: no Lean build or compile active; timing may start
+
+reference doc=syn-strings-64k.json size=65536 verdict=1 nk=2056 nxp=1772 ndst=55931 nev=8907 err=0 arena_fnv=802d2b86cf9965d7 event_fnv=9f6cc1cf74087659
+identity stage2=ok entry_stream=identical escape_list=identical arena=identical events=identical
+bodies total=685 escaped=620 positions=1772 expanded_bytes=55931
+identity expand=calls=620 xj=1772 bytes=55931 arena=identical arena_fnv=802d2b86cf9965d7
+consumer tokens=687 values=687 foldsum=9223372036880353449 walked=1
+identity ablations=streams_identical (stage2_plain is a cost probe and is not read through a gate)
+
+instrument cost-profile=1 arm=2 context=route compiler=Clang 21.1.8 core_class=0x40 window_offset=3 rounds=15 reps=21
+clock: chain=422093 ns / 2000000 iterations -> 4.738 GHz (per-round range 4.190-4.859)
+statistic: median of the round medians, min-max of those medians; cycles use each round's chain
+
+act                  median_ns       min_ns       max_ns   median_cyc         us
+masks                     6429         5930         6550        30002      6.429
+entry                     5945         5658         6090        27914      5.945
+escape                    5754         5360         5960        27254      5.754
+s1_no_escape             17192        16027        18048        79968     17.192
+s1_fused                 20571        19322        22088        98078     20.571
+pipe_nostage2            20612        19267        21463        96794     20.612
+utf8                       714          648          743         3345      0.714
+stage2                   12100        11372        13163        55934     12.100
+stage2_plain              2513         2305         2755        12009      2.513
+expand                   15886        15445        16630        75272     15.886
+pipeline                 31830        28986        32646       144604     31.830
+native                   31276        29413        32357       149820     31.276
+copy_total                2854         2612         2955        13113      2.854
+copy_dst                  2445         2301         2638        11386      2.445
+copy_ev                    450          398          481         2082      0.450
+chain                   422093       411617       477342      2000000    422.093
+
+paired differences (ns; each round's difference of that round's act medians, then the median of the differences)
+copy                         0            0         1961
+stage2                   10802         8374        13379
+utf8                       135            0         2141
+escape                    3586         2274         4607
+entry                    10772         9477        12018
+masks (base)              6429
+sum                      31724  (per round the chain telescopes exactly to the pipeline; this row is the sum of the terms' medians, so it need not equal the pipeline row)
+
+isolated acts: masks+entry+escape+utf8+stage2 = 30942 pipeline = 31830
+de-fusion (pipeline - isolated) = 888
+stage2 - stage2_plain (list-driven decode) = 9587 expand (620 calls) = 15886
+
+copy bytes: arena=55931 events=8907 memcpy_total=64838 header=80 result_total=64918
+throughput: pipeline=2.059 GB/s native=2.095 GB/s
+shares_of_native (paired chain): masks=20.6% entry=34.4% escape=11.5% utf8=0.4% stage2=34.5% copy=0.0%
+shares_of_native (standalone acts): pipeline=101.8% copy_total=9.1% stage2=38.7% expand=50.8% utf8=2.3% masks+entry+escape=58.0%
+# placement placement-aligned exit status: 0
+
+
+cross-check: ok (verdict, ndst, nev, tokens, values, foldsum, walked)
+
+transcript: /home/gavin/dev/Scidonia/lean-llvm/probes/json/route/cost-profile/transcript.txt
