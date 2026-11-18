@@ -33,12 +33,19 @@ instruction lists.
    the tick shift cancel.
 
 **What the links do not close.**  Link 3 is stated at the registers the merge
-block carries; no theorem in the tree ties `%ip.5708717729` and `%fr.5718728` at
-`if.end230` to `Decimal.digitsNat d.ip` and `Decimal.digitsNat fs`.  The digit
-runs (`JsonStage2NumFastDigitRuns`) carry the accumulator existentially and prove
-the *counts*; `JsonStage2NumFastArm`'s list already names this as the residual.
-So `NumFastBodyArm`'s tier-1 obligation is discharged up to that register tie,
-and the block it stops at is `if.end230`'s `%ip`/`%fr` phi values.
+block carries.  Those registers are now tied to the model at the two digit
+edges: `JsonStage2NumFastSeams.t1_intRun_tie` reads the integer run's
+end-of-lexeme exit (`%7` and `%ip.4`) as `intDigits d` and `digitsNat d.ip`,
+`t1_fracRun_tie` reads the fraction run's exit (`%fr.4` and `%17`) as
+`digitsNat fs` and `fracDigits d`, and `t1_headTie`/`t1_fracCount_tie` are the
+`if.end68` seam and the fraction's count preheader that feed them.  What the
+store chain still takes as its entry is the exponent edge's incoming cells
+(`t1_store_run`'s hypotheses): `%exp10.4`'s tie to `expVal d` is the exponent
+nest's exit, and the two digit parts' carried cells through `if.end144` are the
+same ties the seam proves at the head.  So `NumFastBodyArm`'s tier-1 obligation
+is the merge's registers supplied, and the chain after `if.end230` entered from
+the gate states the two digit edges leave — the same blocks `t1_store_run`
+composes from `if.end226`.
 -/
 import LeanLLVM.Refinement.JsonStage2NumFastStarts
 import LeanLLVM.Refinement.JsonStage2NumFastCounters

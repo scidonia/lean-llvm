@@ -527,6 +527,364 @@ theorem intRunExit_gate {bs : List UInt8} {i0 d0 n : Nat} {e : State}
   · rw [← hi1n]
     exact hid'
 
+section Tier1Tie
+
+open LeanLLVM.StrtodRefine
+
+/-! ### The tier-1 tie: the merge's registers as the model's
+
+`JsonStage2NumFastTier1` states its chain at the merge block's five carried
+registers — `%ip.5708717729` the integer part's value, `%fr.5718728` the
+fraction's, `%idig.4709716730`/`%fdig.4719727` the two counts and `%exp10.4731`
+the exponent's — and `t1_add244_eq_mantissa` is its mantissa link.  What the tier
+module takes as a statement, the scan supplies: each run's exit carries the
+accumulator as `digitFold` over the lexeme's bytes (`intRunExit_end230`,
+`fracRunExit_end230`), and `digitFold` over a part's own bytes is that part's
+`Decimal.digitsNat` (`ip_word_digitsNat`, `fr_word_digitsNat`).
+
+`t1_intRun_tie` and `t1_fracRun_tie` are that reading at the two digit edges.
+The integer run's end-of-lexeme edge (`if.end62`) carries `%7` and `%ip.4`; the
+fraction run's (`if.end140`) carries `%idig.4`, `%ip.5`, `%fr.4` and `%17`.
+`t1_headTie` is the `if.end68` seam between them: the integer run's non-digit
+exit merged into `%ip.5`/`%idig.4`, the two cells the fraction and exponent
+edges carry.
+
+The third edge into `if.end230`, the exponent path `if.end226`, is
+`JsonStage2NumFastTier1.t1_store_run`'s own hypotheses: the five cells it reads
+are the digit parts' ties carried through `if.end144`, plus `%exp10.4`.  What
+the exponent accumulator's own tie to `expVal d` needs is the marker nest's exit
+(`JsonStage2NumFastScanRun.nestFrom157_nosign`/`_sign` fix `%i.11`, and the run
+reads `%exp10.0603` at `land.lhs.true195`), which this module does not yet read
+as `expVal`.
+
+Each is the block's own `step` plus the fold's reading, so each hands the
+successor state's registers, the memory and the `runFuel` prefix. -/
+
+/-- **The integer edge's tie.**  At `if.end230` from the run's end-of-lexeme
+exit, `%7` is the digit count and `%ip.4` the part's fold; the gate's two tests
+are the tier-1 window's, so the block takes its `if.then241` edge with the
+merge's registers the model's and the fraction's two cells zero. -/
+theorem t1_intRun_tie {calls : Calls} {d : Decimal} {bs : List UInt8}
+    {i0 d0 n : Nat} {e : State}
+    (hpc : e.pc = "if.end230") (hpre : e.pre = some "if.end62")
+    (h7 : lookupName e.env "%7" = some (.int 64
+      (BitVec.ofNat 64 d0 + BitVec.ofNat 64 n - BitVec.ofNat 64 i0)))
+    (hip4 : lookupName e.env "%ip.4" = some (.int 64
+      (BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + (n - i0)) 19)))))
+    (hi0 : i0 ≤ n) (hbn : d0 + n < 2 ^ 64)
+    (hint : intDigits d = d0 + (n - i0))
+    (hshape : d.ip.data.toList = (bs.drop (i0 - d0)).take (d0 + (n - i0)))
+    (hdig : digitCount d ≤ 15) :
+    ∃ o : State, o.pc = "if.then241" ∧ o.pre = some "if.end230" ∧ o.mem = e.mem ∧
+      lookupName o.env "%exp10.4731" = some (.int 64 0) ∧
+      lookupName o.env "%idig.4709716730"
+        = some (.int 64 (BitVec.ofNat 64 (intDigits d))) ∧
+      lookupName o.env "%ip.5708717729"
+        = some (.int 64 (BitVec.ofNat 64 (Decimal.digitsNat d.ip))) ∧
+      lookupName o.env "%fr.5718728" = some (.int 64 0) ∧
+      lookupName o.env "%fdig.4719727" = some (.int 64 0) ∧
+      ∀ k, runFuel calls (1 + k) numFastBody (stateAt e.env e) =
+        runFuel calls k numFastBody o := by
+  have hlen : d0 + (n - i0) ≤ 19 := by
+    have h := hdig; rw [digitCount, hint] at h; omega
+  have hlt : intDigits d < 20 := by
+    have h := hdig; rw [digitCount] at h; omega
+  have h7' : lookupName e.env "%7"
+      = some (.int 64 (BitVec.ofNat 64 (intDigits d))) := by
+    rw [h7, seven_tie hi0 hbn, hint]
+  have hip' : lookupName e.env "%ip.4"
+      = some (.int 64 (BitVec.ofNat 64 (Decimal.digitsNat d.ip))) := by
+    rw [hip4, NumFastScanRun.ip_word_digitsNat (start := i0 - d0)
+      (len := d0 + (n - i0)) hshape hlen rfl]
+  have hbit : evalICmp .ult (0 + BitVec.ofNat 64 (intDigits d)) (20#64) = 1 ∧
+      evalICmp .ult ((0 - 0) + (45#64)) (91#64) = 1 := by
+    refine ⟨?_, by decide⟩
+    simpa using ult_ofNat_one (i := intDigits d) (n := 20) hlt (by decide)
+  have hstep := NumFastScanRun.ifEnd230_step_end62 (calls := calls) hpc hpre h7' hip' hbit
+  refine ⟨stateAt (NumFastTier1.t1GateEnv e.env 0 (BitVec.ofNat 64 (intDigits d))
+      (BitVec.ofNat 64 (Decimal.digitsNat d.ip)) 0 0)
+      { e with pc := "if.then241", pre := some "if.end230" }, rfl, rfl, rfl,
+    ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · simp only [stateAt, NumFastTier1.t1GateEnv]; block_lk
+  · simp only [stateAt, NumFastTier1.t1GateEnv]; block_lk
+  · simp only [stateAt, NumFastTier1.t1GateEnv]; block_lk
+  · simp only [stateAt, NumFastTier1.t1GateEnv]; block_lk
+  · simp only [stateAt, NumFastTier1.t1GateEnv]; block_lk
+  · intro k
+    rw [runFuel_jump_prefix hstep]
+
+/-- **The integer part's cells at `if.end68`.**  The run's non-digit exit merges
+into `%ip.5` and `%idig.4` — the two cells the fraction and exponent edges carry
+— and the merged index is still inside the lexeme, so the dispatch's `.` test is
+reached.  This is the integer part's tie at the head: `%ip.5` is the part's
+`digitsNat` and `%idig.4` its digit count. -/
+theorem t1_headTie {calls : Calls} {d : Decimal} {bs : List UInt8}
+    {i0 d0 i1 n : Nat} {e : State}
+    (hpc : e.pc = "if.end68") (hpre : e.pre = some "land.lhs.true41")
+    (hi : lookupName e.env "%i.4575" = some (.int 64 (BitVec.ofNat 64 i1)))
+    (hid : lookupName e.env "%idig.3574"
+      = some (.int 64 (BitVec.ofNat 64 (d0 + (i1 - i0)))))
+    (hip : lookupName e.env "%ip.3573" = some (.int 64
+      (BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + (i1 - i0)) 19)))))
+    (hn : lookupName e.env "%n" = some (.int 64 (BitVec.ofNat 64 n)))
+    (hi1 : i1 < n) (hnlt : n < 2 ^ 63)
+    (hint : intDigits d = d0 + (i1 - i0))
+    (hshape : d.ip.data.toList = (bs.drop (i0 - d0)).take (d0 + (i1 - i0)))
+    (hlen : d0 + (i1 - i0) ≤ 19) :
+    ∃ o : State, o.pc = "land.lhs.true71" ∧ o.pre = some "if.end68" ∧
+      o.mem = e.mem ∧
+      lookupName o.env "%ip.5"
+        = some (.int 64 (BitVec.ofNat 64 (Decimal.digitsNat d.ip))) ∧
+      lookupName o.env "%idig.4"
+        = some (.int 64 (BitVec.ofNat 64 (intDigits d))) ∧
+      lookupName o.env "%i.5" = some (.int 64 (BitVec.ofNat 64 i1)) ∧
+      ∀ k, runFuel calls (1 + k) numFastBody (stateAt e.env e) =
+        runFuel calls k numFastBody o := by
+  have hid' : lookupName e.env "%idig.3574"
+      = some (.int 64 (BitVec.ofNat 64 (intDigits d))) := by
+    rw [hid, hint]
+  have hip' : lookupName e.env "%ip.3573"
+      = some (.int 64 (BitVec.ofNat 64 (Decimal.digitsNat d.ip))) := by
+    rw [hip, NumFastScanRun.ip_word_digitsNat (start := i0 - d0)
+      (len := d0 + (i1 - i0)) hshape hlen rfl]
+  have hbit : evalICmp .ult (BitVec.ofNat 64 i1) (BitVec.ofNat 64 n) = 1 :=
+    ult_ofNat_one hi1 (by omega)
+  have hden := ifEnd68_denote_head (calls := calls) (s := e) hpre hip' hid' hi hn
+  have hstep := NumFastStarts.ifEnd68_step (calls := calls) hpc hden hbit
+  refine ⟨stateAt (NumFastStarts.ifEnd68Env e.env (BitVec.ofNat 64 i1)
+      (BitVec.ofNat 64 (Decimal.digitsNat d.ip)) (BitVec.ofNat 64 (intDigits d))
+      (BitVec.ofNat 64 n))
+      { e with pc := "land.lhs.true71", pre := some "if.end68" },
+    rfl, rfl, rfl, ?_, ?_, ?_, ?_⟩
+  · simp only [stateAt, NumFastStarts.ifEnd68Env, NumFastStarts.ifEnd68PhiEnv]; block_lk
+  · simp only [stateAt, NumFastStarts.ifEnd68Env, NumFastStarts.ifEnd68PhiEnv]; block_lk
+  · simp only [stateAt, NumFastStarts.ifEnd68Env, NumFastStarts.ifEnd68PhiEnv]; block_lk
+  · intro k
+    rw [runFuel_jump_prefix hstep]
+
+/-- `if.end230` from the fraction run's end-of-lexeme edge: its five `phi`s read
+the integer part's cells (zero exponent, `%idig.4`, `%ip.5`), the run's
+accumulator `%fr.4` and the fraction's count `%17`. -/
+theorem ifEnd230_denote_end140 {calls : Calls} {env : Env} {s : State}
+    {idig ip fr fd : BitVec 64}
+    (hpre : s.pre = some "if.end140")
+    (hi : lookupName env "%idig.4" = some (.int 64 idig))
+    (hip : lookupName env "%ip.5" = some (.int 64 ip))
+    (hfr : lookupName env "%fr.4" = some (.int 64 fr))
+    (hfd : lookupName env "%17" = some (.int 64 fd)) :
+    denoteCode calls numFastIfEnd230Instrs (stateAt env s) =
+      some (stateAt (NumFastTier1.t1GateEnv env 0 idig ip fr fd) s) := by
+  unfold numFastIfEnd230Instrs
+  block_phi_run
+  rotate_left 1
+  · exact hpre
+  · rfl
+  · simp only [phiIncoming]; rfl
+  · rfl
+  · simp only [phiIncoming]; rfl
+  · exact evalOperand_reg_of env s "%idig.4" _ hi
+  · simp only [phiIncoming]; rfl
+  · exact evalOperand_reg_of env s "%ip.5" _ hip
+  · simp only [phiIncoming]; rfl
+  · exact evalOperand_reg_of env s "%fr.4" _ hfr
+  · simp only [phiIncoming]; rfl
+  · exact evalOperand_reg_of env s "%17" _ hfd
+  · rw [denoteCode_sub_reg _ _ _ "%sub231" "%exp10.4731" "%fdig.4719727"
+      (by block_lk) (by block_lk) _]
+    rw [denoteCode_add_reg _ _ _ "%add232" "%fdig.4719727" "%idig.4709716730"
+      (by block_lk) (by block_lk) _]
+    rw [denoteCode_icmp_ult_imm _ _ _ "%cmp233" "%add232" (by block_lk) _]
+    rw [denoteCode_add_imm _ _ _ "%28" "%sub231" (by block_lk) _]
+    rw [denoteCode_icmp_ult_imm _ _ _ "%29" "%28" (by block_lk) _]
+    rw [NumFastTier1.denoteCode_select_bit1_imm _ _ _ "%or.cond304" "%cmp233" "%29"
+      (by block_lk) (by block_lk) _]
+    rw [denoteCode_nil]
+    rfl
+
+/-- The fraction edge's step: the gate's two tests at the counters `%fd`/`%idig`
+are one, so the block takes `if.then241`. -/
+theorem ifEnd230_step_end140 {calls : Calls} {env : Env} {s : State}
+    {idig ip fr fd : BitVec 64}
+    (hpc : s.pc = "if.end230")
+    (hpre : s.pre = some "if.end140")
+    (hi : lookupName env "%idig.4" = some (.int 64 idig))
+    (hip : lookupName env "%ip.5" = some (.int 64 ip))
+    (hfr : lookupName env "%fr.4" = some (.int 64 fr))
+    (hfd : lookupName env "%17" = some (.int 64 fd))
+    (hbit : evalICmp .ult (fd + idig) (20#64) = 1 ∧
+      evalICmp .ult ((0 - fd) + (45#64)) (91#64) = 1) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (NumFastTier1.t1GateEnv env 0 idig ip fr fd)
+        { s with pc := "if.then241", pre := some "if.end230" }) := by
+  refine numFast_step_at (s' := stateAt (NumFastTier1.t1GateEnv env 0 idig ip fr fd) s)
+    (b := ⟨"if.end230", numFastIfEnd230Instrs,
+      Term.condbr (Operand.reg "%or.cond304") "if.then241" "if.end285"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc, numFastIfEnd230Instrs] using numFast_findBlock_if_end230
+  · simpa only [denoteCode_nil]
+      using ifEnd230_denote_end140 (calls := calls) hpre hi hip hfr hfd
+  · have hlk : lookupName (NumFastTier1.t1GateEnv env 0 idig ip fr fd) "%or.cond304"
+        = some (.int 1
+          (if evalICmp .ult (fd + idig) (20#64) = 1 then
+            evalICmp .ult ((0 - fd) + (45#64)) (91#64) else 0)) := by
+      simp only [NumFastTier1.t1GateEnv]
+      block_lk
+    have hone : (if evalICmp .ult (fd + idig) (20#64) = 1 then
+        evalICmp .ult ((0 - fd) + (45#64)) (91#64) else 0) = 1 := by
+      rw [ite_eq_left hbit.1]
+      exact hbit.2
+    rw [numFast_execTerm_condbr_one _ "%or.cond304" _ _ hlk hone]
+    simp only [stateAt, hpc]
+
+/-- `land.lhs.true119.preheader`: the fraction's total count, precomputed as
+`%fdig.0554 + %n - %i.6552`.  `if.end140`'s end-of-lexeme edge reads it as the
+fraction's digit count at `if.end230`. -/
+def fracCountInstrs : List Instr :=
+  [Instr.binop "%16" (BinOp.add) 64 (Operand.reg "%fdig.0554") (Operand.reg "%n"),
+   Instr.binop "%17" (BinOp.sub) 64 (Operand.reg "%16") (Operand.reg "%i.6552")]
+
+theorem fracCount_findBlock :
+    numFastBody.findBlock "land.lhs.true119.preheader" =
+      some ⟨"land.lhs.true119.preheader", fracCountInstrs, Term.br "land.lhs.true119"⟩ := by
+  simpa only [fracCountInstrs] using numFast_findBlock_land_lhs_true119_preheader
+
+/-- The preheader's environment: the total count and the sum it is formed
+from. -/
+def fracCountEnv (env : Env) (fdig i nv : BitVec 64) : Env :=
+  ("%17", .int 64 (fdig + nv - i)) :: ("%16", .int 64 (fdig + nv)) :: env
+
+theorem fracCount_denote {calls : Calls} {env : Env} {s : State}
+    {fdig i nv : BitVec 64}
+    (hf : lookupName env "%fdig.0554" = some (.int 64 fdig))
+    (hn : lookupName env "%n" = some (.int 64 nv))
+    (hi : lookupName env "%i.6552" = some (.int 64 i)) :
+    denoteCode calls fracCountInstrs (stateAt env s) =
+      some (stateAt (fracCountEnv env fdig i nv) s) := by
+  unfold fracCountInstrs
+  rw [denoteCode_add_reg _ _ _ "%16" "%fdig.0554" "%n" hf hn _]
+  rw [denoteCode_sub_reg _ _ _ "%17" "%16" "%i.6552"
+    (lookupName_cons_self ..) (lookupName_cons_tail (by decide) hi) _]
+  simp only [denoteCode_nil, fracCountEnv, stateAt]
+
+/-- The preheader's step: the block's two instructions, then the branch to the
+run's head. -/
+theorem fracCount_step {calls : Calls} {env : Env} {s : State}
+    {fdig i nv : BitVec 64}
+    (hpc : s.pc = "land.lhs.true119.preheader")
+    (hf : lookupName env "%fdig.0554" = some (.int 64 fdig))
+    (hn : lookupName env "%n" = some (.int 64 nv))
+    (hi : lookupName env "%i.6552" = some (.int 64 i)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (fracCountEnv env fdig i nv)
+        { s with pc := "land.lhs.true119",
+                 pre := some "land.lhs.true119.preheader" }) := by
+  refine numFast_step_at (s' := stateAt (fracCountEnv env fdig i nv) s)
+    (b := ⟨"land.lhs.true119.preheader", fracCountInstrs, Term.br "land.lhs.true119"⟩)
+    ?_ ?_ ?_
+  · simpa only [stateAt, hpc, fracCountInstrs] using fracCount_findBlock
+  · simpa only [denoteCode_nil]
+      using fracCount_denote (calls := calls) (s := s) hf hn hi
+  · simp only [execTerm, stateAt, hpc]
+
+/-- **The fraction's count at its head.**  The preheader's `%17` is
+`%fdig + %n - %i`, which `seven_tie` reads as the model's `fracDigits d` when the
+two counters are the run's start: the count the run's end-of-lexeme edge hands
+`if.end230`. -/
+theorem t1_fracCount_tie {calls : Calls} {d : Decimal} {bs : List UInt8}
+    {i0 d0 n : Nat} {e : State}
+    (hpc : e.pc = "land.lhs.true119.preheader")
+    (hf : lookupName e.env "%fdig.0554" = some (.int 64 (BitVec.ofNat 64 d0)))
+    (hi : lookupName e.env "%i.6552" = some (.int 64 (BitVec.ofNat 64 i0)))
+    (hn : lookupName e.env "%n" = some (.int 64 (BitVec.ofNat 64 n)))
+    (hi0 : i0 ≤ n) (hbn : d0 + n < 2 ^ 64)
+    (hintF : fracDigits d = d0 + (n - i0)) :
+    ∃ o : State, o.pc = "land.lhs.true119" ∧
+      o.pre = some "land.lhs.true119.preheader" ∧ o.mem = e.mem ∧
+      lookupName o.env "%17" = some (.int 64 (BitVec.ofNat 64 (fracDigits d))) ∧
+      ∀ k, runFuel calls (1 + k) numFastBody (stateAt e.env e) =
+        runFuel calls k numFastBody o := by
+  have hstep := fracCount_step (calls := calls) hpc hf hn hi
+  refine ⟨stateAt (fracCountEnv e.env (BitVec.ofNat 64 d0) (BitVec.ofNat 64 i0)
+      (BitVec.ofNat 64 n))
+      { e with pc := "land.lhs.true119", pre := some "land.lhs.true119.preheader" },
+    rfl, rfl, rfl, ?_, ?_⟩
+  · simp only [stateAt, fracCountEnv]
+    rw [seven_tie hi0 hbn, hintF]
+    block_lk
+  · intro k
+    rw [runFuel_jump_prefix hstep]
+
+/-- **The fraction edge's tie.**  At `if.end230` from the fraction run's
+end-of-lexeme exit, `%fr.4` is the run's fold over the fraction's bytes and
+`%17` its count; with the integer part's two cells carried from `if.end68`
+(`t1_headTie`), the merge's registers are the model's and the gate takes
+`if.then241`. -/
+theorem t1_fracRun_tie {calls : Calls} {d : Decimal} {bs : List UInt8} {fs : Bytes}
+    {i0 d0 n : Nat} {e : State}
+    (hpc : e.pc = "if.end230") (hpre : e.pre = some "if.end140")
+    (hid : lookupName e.env "%idig.4"
+      = some (.int 64 (BitVec.ofNat 64 (intDigits d))))
+    (hip : lookupName e.env "%ip.5"
+      = some (.int 64 (BitVec.ofNat 64 (Decimal.digitsNat d.ip))))
+    (hfr4 : lookupName e.env "%fr.4" = some (.int 64
+      (BitVec.ofNat 64 (digitFold bs (i0 - d0) (min (d0 + (n - i0)) 19)))))
+    (h17 : lookupName e.env "%17"
+      = some (.int 64 (BitVec.ofNat 64 (d0 + (n - i0)))))
+    (hfs : d.fr = some fs)
+    (hintF : fracDigits d = d0 + (n - i0))
+    (hshape : fs.data.toList = (bs.drop (i0 - d0)).take (d0 + (n - i0)))
+    (hdig : digitCount d ≤ 15) :
+    ∃ o : State, o.pc = "if.then241" ∧ o.pre = some "if.end230" ∧ o.mem = e.mem ∧
+      lookupName o.env "%exp10.4731" = some (.int 64 0) ∧
+      lookupName o.env "%idig.4709716730"
+        = some (.int 64 (BitVec.ofNat 64 (intDigits d))) ∧
+      lookupName o.env "%ip.5708717729"
+        = some (.int 64 (BitVec.ofNat 64 (Decimal.digitsNat d.ip))) ∧
+      lookupName o.env "%fr.5718728"
+        = some (.int 64 (BitVec.ofNat 64 (Decimal.digitsNat fs))) ∧
+      lookupName o.env "%fdig.4719727"
+        = some (.int 64 (BitVec.ofNat 64 (fracDigits d))) ∧
+      ∀ k, runFuel calls (1 + k) numFastBody (stateAt e.env e) =
+        runFuel calls k numFastBody o := by
+  have hlen : d0 + (n - i0) ≤ 19 := by
+    have h := hdig; rw [digitCount, hintF] at h; omega
+  have hfd' : lookupName e.env "%17"
+      = some (.int 64 (BitVec.ofNat 64 (fracDigits d))) := by
+    rw [h17, hintF]
+  have hfr' : lookupName e.env "%fr.4"
+      = some (.int 64 (BitVec.ofNat 64 (Decimal.digitsNat fs))) := by
+    rw [hfr4, NumFastScanRun.fr_word_digitsNat (start := i0 - d0)
+      (len := d0 + (n - i0)) hshape hlen rfl]
+  have hsum : BitVec.ofNat 64 (fracDigits d) + BitVec.ofNat 64 (intDigits d)
+      = BitVec.ofNat 64 (digitCount d) := by
+    rw [digitCount]; bv_omega
+  have hbit1 : evalICmp .ult
+      (BitVec.ofNat 64 (fracDigits d) + BitVec.ofNat 64 (intDigits d)) (20#64) = 1 := by
+    rw [hsum]
+    simpa using ult_ofNat_one (i := digitCount d) (n := 20) (by omega) (by decide)
+  have hbit2 : evalICmp .ult
+      ((0 - BitVec.ofNat 64 (fracDigits d)) + (45#64)) (91#64) = 1 := by
+    have hsub : (0 - BitVec.ofNat 64 (fracDigits d)) + (45#64)
+        = BitVec.ofNat 64 (45 - fracDigits d) := by
+      have h := hdig; rw [digitCount] at h; bv_omega
+    rw [hsub]
+    simpa using ult_ofNat_one (i := 45 - fracDigits d) (n := 91) (by omega) (by decide)
+  have hstep := ifEnd230_step_end140 (calls := calls) hpc hpre hid hip hfr' hfd'
+    ⟨hbit1, hbit2⟩
+  refine ⟨stateAt (NumFastTier1.t1GateEnv e.env 0 (BitVec.ofNat 64 (intDigits d))
+      (BitVec.ofNat 64 (Decimal.digitsNat d.ip))
+      (BitVec.ofNat 64 (Decimal.digitsNat fs)) (BitVec.ofNat 64 (fracDigits d)))
+      { e with pc := "if.then241", pre := some "if.end230" }, rfl, rfl, rfl,
+    ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · simp only [stateAt, NumFastTier1.t1GateEnv]; block_lk
+  · simp only [stateAt, NumFastTier1.t1GateEnv]; block_lk
+  · simp only [stateAt, NumFastTier1.t1GateEnv]; block_lk
+  · simp only [stateAt, NumFastTier1.t1GateEnv]; block_lk
+  · simp only [stateAt, NumFastTier1.t1GateEnv]; block_lk
+  · intro k
+    rw [runFuel_jump_prefix hstep]
+
+end Tier1Tie
+
 /-! ### `num_d8_el1`'s agreement with the bytes at its pointer
 
 The reader's model folds the eight bytes it is given; the digit runs fold the
@@ -2399,6 +2757,14 @@ steps are at `stage2NumFastCalls`, whose reader answer is the model's. -/
 #print axioms NumFastSeams.fpBodyEnv2r_v8
 #print axioms NumFastSeams.fpFastSecond_run
 #print axioms NumFastSeams.fpFastSecond_run_refuse
+#print axioms NumFastSeams.t1_intRun_tie
+#print axioms NumFastSeams.t1_headTie
+#print axioms NumFastSeams.ifEnd230_denote_end140
+#print axioms NumFastSeams.ifEnd230_step_end140
+#print axioms NumFastSeams.t1_fracRun_tie
+#print axioms NumFastSeams.fracCount_denote
+#print axioms NumFastSeams.fracCount_step
+#print axioms NumFastSeams.t1_fracCount_tie
 
 end NumFastSeams
 

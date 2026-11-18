@@ -1270,7 +1270,18 @@ leaves by; the loop's own `runFuel` composition and the taken guard's entry into
 length's cell beside the incremented index (both `BitVec.ofNat 64 i1`), and
 `intRunExit_gate` reads `%ip.4` and `%7` as the merge's `%ip.5708717729` and
 `%idig.4709716730` — the fold's word and the digit count `d0 + (n - i0)` — so the
-tie `ip_word_digitsNat` takes is available from the run's own exit.  Tier 3's
+tie `ip_word_digitsNat` takes is available from the run's own exit.  The merge's
+registers are then read as the model's at the two digit edges:
+`JsonStage2NumFastSeams.t1_intRun_tie` (the integer run's end-of-lexeme exit
+reaches `if.then241` with `%ip.5708717729` the part's `digitsNat` and
+`%idig.4709716730` its `intDigits`), `t1_fracRun_tie` (the fraction run's exit,
+with `%fr.5718728` the fraction's `digitsNat` and `%fdig.4719727` its
+`fracDigits`), and the two cells that feed them, `t1_headTie` (the `if.end68`
+seam) and `t1_fracCount_tie` (the fraction's count preheader).  What the store
+chain still takes as its entry is the exponent edge's incoming cells
+(`t1_store_run`'s hypotheses): the digit parts' cells carried through `if.end144`
+are the same ties, while `%exp10.4`'s reading as `expVal d` is the exponent
+nest's exit.  Tier 3's
 three links are stated and proved at their statements
 (`JsonStage2NumFastTier3`): the traversal with the trip count
 (`t3_traversal_counts_1_3`, two `runFuel` steps from the peeled entry at a count

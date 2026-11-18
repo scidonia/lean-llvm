@@ -180,7 +180,10 @@ is `cleanup223.thread`'s two edges, `if.end226`'s four, and
 `expMerge_run_inc`/`expMerge_run_head` into `mergeEntry`; `if.end230`'s bound edge
 is `ifEnd230_denote_end62`/`ifEnd230_step_end62`.  Of item 1's mantissa, the
 word-level ties are `ip_word_digitsNat`/`fr_word_digitsNat`, fed by
-`intRunExit_end230`/`fracRunExit_end230`.  Still open on this list: the
+`intRunExit_end230`/`fracRunExit_end230`; at the merge they are
+`JsonStage2NumFastSeams.t1_intRun_tie` and `t1_fracRun_tie`, with `t1_headTie`
+the `if.end68` seam and `t1_fracCount_tie` the fraction's count preheader.  Still
+open on this list: the
 eight-digit fast paths' `runFuel` composition.  Both are now composed at their
 guards' taken edges.  The integer one is `JsonStage2NumFastTaken.fpIfThen22_entry`:
 the guard's zero through `while.body.preheader` and the loop's four branches to
@@ -193,12 +196,15 @@ The guard's *two* answers are one statement in `JsonStage2NumFastJoin.guard_join
 which `intScan_run` also carries — and the taken answer is
 `fpIfThen22_entry`'s four shapes, so `intScan_run`'s refused-guard dispatch and
 the guarded run continue at the same predicate.  Also open: the seam steps that
-would thread one theorem from `entry` to `if.end230`, and tier 3's region beyond
+would thread one theorem from `entry` to `if.end230` — the merge's registers are
+tied, but the scan's blocks are composed one seam at a time rather than as one
+run from `entry` — and tier 3's region beyond
 its poison edge (`JsonStage2NumFastTier3` states the edge's traversal, the window
-tie and the proximity estimate).  The accumulator's tie at `if.end230` is now
+tie and the proximity estimate).  The accumulator's tie at `if.end230` is
 stated: `intRunExit_gate` reads the run's `%ip.4` and `%7` as the merge's
-`%ip.5708717729` and `%idig.4709716730`, and the exit's own `%n` cell fixes the
-run's stop index as the lexeme's end.
+`%ip.5708717729` and `%idig.4709716730`, the exit's own `%n` cell fixes the
+run's stop index as the lexeme's end, and `t1_intRun_tie`/`t1_fracRun_tie` read
+the merged registers as `Decimal.digitsNat`.
 
 
 There is no `sorry`, `admit` or `native_decide` below.

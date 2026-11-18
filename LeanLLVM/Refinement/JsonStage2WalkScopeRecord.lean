@@ -457,6 +457,10 @@ theorem head_lt (h : WalkInv G C s) (hhead : C.block = "NodeBlock21") : C.k < G.
   repeat rw [ite_eq_right (by decide)] at hb
   exact hb
 
+/-- info: 'LeanLLVM.Refinement.WalkInv.head_lt' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkInv.head_lt
+
 /-- The arena's bound, from the carried extents: this is
 `Stage2SpansInside`'s content and `arenaLe_of_spans`'s conclusion, so the report's
 `alen ≤ ndst0 + n` is downstream of the carry rather than assumed. -/

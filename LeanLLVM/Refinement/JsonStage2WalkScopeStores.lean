@@ -652,10 +652,6 @@ theorem walkIter_measure {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (k2 : Na
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.WalkGeom.nonempty
 
-/-- info: 'LeanLLVM.Refinement.WalkInv.head_lt' depends on axioms: [propext] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.WalkInv.head_lt
-
 /-- info: 'LeanLLVM.Refinement.WalkInv.alen_le' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.WalkInv.alen_le
