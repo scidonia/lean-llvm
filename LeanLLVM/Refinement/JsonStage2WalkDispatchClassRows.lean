@@ -797,13 +797,16 @@ noncomputable def hcontClassRows_cleanup_of_payload {m0 : Mem} {G : WalkGeom m0}
     HcontCleanupDoc G C s :=
   hcontCleanupDoc_of_lane hk (hp.lane.defaultLane C s hInv hblock hk) hb
 
-/-! ### The last entry's last byte, with its three calls
+/-! ### The last entry's last byte, with its seam
 
-`HlastTailLane` (`JsonStage2WalkDispatchSupply`) is the last byte's class and
-`HlastHighByteAbi` is the three calls at its argument lists; the payload already carries
-both.  What the last level's remaining classes read is the same pair at the last entry's
-seam — the `.scalar` route's three calls there — so the group below names the seam's calls
-at the last entry's tail start, which is `HcontSeamAbi.last`'s instance. -/
+`HlastTailLane` (`JsonStage2WalkDispatchSupply`) is the last byte's class; the payload
+carries it as `lane.tail`.  The last level's seam is the **sum** `HlastSeam`
+(`JsonStage2WalkDispatchSeams`): the value-position answer's two arms crossed with the
+kind literal.  At `%8 ∈ {126, 127}` the literal is `if.else405.i`'s `0` and the three-call
+group does not exist (`hcontSeamCalls_no_kind_zero`), so the class's rows are
+`HlastSeam.answerOneRefuse`'s — the two leading calls and the derived refusal answer and
+record — with `HlastSeam.answerZero` naming the other answer.  The producer is
+`JsonStage2WalkDispatchHlastSupply`'s. -/
 
 /-- **The last entry's document row**: the last byte's route, one group.  It is
 `HlastTailLane`'s content, which the payload's `lane.tail` states at the high-byte route's
@@ -814,27 +817,23 @@ abbrev HlastClassDoc {m0 : Mem} (G : WalkGeom m0) : Type :=
     evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 125) = 0 →
     evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 125) = 0 → HlastTailLane G
 
-/-- **The last entry's class rows**: the last byte's document row and the seam's three
-calls at the last entry's tail start, at the route the document's byte selects. -/
+/-- **The last entry's class rows**: the last byte's document row and the last level's
+seam, at the route the document's byte selects. -/
 structure HlastClassRows {m0 : Mem} (G : WalkGeom m0) : Type where
   /-- The last byte's class (`126`/`127` at the exhausted count). -/
   tail : HlastClassDoc G
-  /-- The seam's three calls at the last entry's tail start, for the `.scalar` route and
-  the `.run` class beside it.  The seam is the class's: its source is
-  `hlastTailByte … hb`, so a caller carries the route it read from `tail`.
-
-  **This is not `HcontSeamAbi.last`'s instance.**  That field is stated at `hlastTail`,
-  the route's seam without the byte's route refinement, and this row's state is
-  `hlastTailByte … hb`, so the two are different states of the same tail: the byte's
-  route fixes the memory's token stores, and a cast from one to the other is not available
-  (the route changes the memory, not only the cells).  The producer target is the same one
-  `HcontSeamAbi.last` reads: `JsonStage2WalkDispatchSeamCalls.hcontSeamCallsAt` at an
-  `HcontSeamEmitStage` on this state — the `.scalar` route's `7`, the `.run` class's
-  literal, at its own staged words. -/
+  /-- **The last level's seam**, at the byte route's tail: `HlastSeam`'s sum.  The literal
+  the seam's store writes is the byte's class, so the class's `0` takes
+  `HlastSeam.answerOneRefuse` and `s2_value_pos`'s own `0` answer takes
+  `HlastSeam.answerZero`; a nonzero literal takes the emit arm.  The state is
+  `hlastTailByte … hb` (the routed tail, whose memory differs from `hlastTail`'s at the
+  token record), so this is not `HcontSeamAbi.last`'s instance — that field is stated at
+  `hlastTail`, and the producer here is `hlastSeamRefusal_of_stage` /
+  `hlastSeamZero_of_call` (`JsonStage2WalkDispatchHlastSupply`). -/
   seam : ∀ (C : WalkCarry G) (s : State) (x : BitVec 8) (inc nep : BitVec 64)
     (v : Nat) (ix : BitVec 64) (b35 : UInt8)
     (hb : HcontByteRoute (head35 b35)),
-    HcontSeamCalls G (TailStartC C) (hlastTailByte C s x inc nep v ix b35 hb)
+    HlastSeam G (TailStartC C) (hlastTailByte C s x inc nep v ix b35 hb)
 
 /-! ### The instrument -/
 

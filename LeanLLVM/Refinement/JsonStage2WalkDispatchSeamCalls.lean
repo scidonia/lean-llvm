@@ -748,7 +748,7 @@ noncomputable def hcontSeamAbi {m0 : Mem} (G : WalkGeom m0) (hs : HcontSeamStagi
   scan56True := fun C sl b35 ix v k x1 => hcontSeamKindOf (hs.scan56True C sl b35 ix v k x1)
   scan58True := fun C sl b35 ix v k x1 => hcontSeamKindOf (hs.scan58True C sl b35 ix v k x1)
   last := fun C s x inc nep v ix b35 =>
-    (hcontSeamCallsOf (hs.last C s x inc nep v ix b35).2).1
+    HlastSeam.answerOneEmit (hcontSeamCallsOf (hs.last C s x inc nep v ix b35).2).1
 
 /-! ### The kind-`0` edge has no group
 

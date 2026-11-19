@@ -29,6 +29,7 @@ answer `0`, the refusal record, and the class's route to the refusal copy.
 | `HlastAbi.highByte`'s two leading calls | `hlastHighByteRefusal_of_stage`: `hcontSeamMidAt` at a `HcontSeamStage` derives the value-position and scalar rows (the first call's staging from the invariant, the second's from the stage's `hpreS`). |
 | `HlastAbi.highByte`'s answer and record | the same producer: the kind word is the store's own `0` (`seamKindStore_word`), so `s2ScalarValue_refused` names both `hret₂` and `hmem` — they are derived from the model, not fields. |
 | `HlastAbi.highByte`'s root word and log word | `hlastTailRoute_rootSlot_word`, `hlastTailRoute_logBase` (the payload group's flat forms). |
+| **the last level's seam** (`HlastClassRows.seam` and `HcontSeamAbi.last`) | `hlastSeamRefusal_of_stage` / `hlastSeam_nonempty`: `HlastSeam.answerOneRefuse` at the class's literal `0` (`HlastSeamRefusal`, answer and record derived by `s2ScalarValue_refused`; `hcontSeamMidAt` gives the two leading calls).  The other answer is `HlastSeam.answerZero` via `hlastSeamZero_of_call` (the first call's row with answer `0`, routing through `if.then418.i` and `cleanup474.i`). |
 
 ## Not produced, and why
 
@@ -53,10 +54,12 @@ answer `0`, the refusal record, and the class's route to the refusal copy.
 * **The class's answer-zero sub-route.**  `s2_value_pos` can answer `0` at the class too
   (a depth-zero head whose root slot is already flagged), and that arm is
   `if.then418.i → cleanup474.i → if.then` — three links after the head, and no scalar call.
-  The refusal group above is the answer-`1` branch, so a complete census needs a second
-  arm (or a sum over the model's answer) for it; the statement it needs is the same
-  `HlastRefuseRoute` with the answer-`0` link chain.  This is recorded as the remaining
-  census gap, not silently dropped.
+  It is named, not collapsed: the last level's seam is the sum `HlastSeam`
+  (`JsonStage2WalkDispatchSeams`), whose `answerZero` arm is `HlastSeamZero` (produced by
+  `hlastSeamZero_of_call` from the first call's row and its zero answer) and whose
+  `answerOneRefuse` arm is `HlastSeamRefusal` (produced here).  What the zero arm still
+  takes is the same class route, with the `if.then418.i` link chain rather than the error
+  path's.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkDispatchSupply
 import LeanLLVM.Refinement.JsonStage2WalkDispatchSeamCalls
@@ -328,49 +331,43 @@ theorem s2ScalarValue_kind_zero {mem : Mem} {c t o next base e pos endp : Nat}
   simp only [hb, he, hp, hend, hk, ↓reduceIte]
   exact ⟨_, rfl⟩
 
-/-! ### The refusal arm's row, from the staged words
+/-! ### The last level's seam rows, from the staged words
 
-The row's two leading calls are `hcontSeamMidAt`'s at a `HcontSeamStage`; the kind word is
+The seam's two leading calls are `hcontSeamMidAt`'s at a `HcontSeamStage`; the kind word is
 the store's `0`; and the answer and the record are `s2ScalarValue_refused`'s — the model's
-first arm, not a supplied fact.
+first arm, not a supplied fact.  The row is stated at the state, so the class's seam
+(`HlastSeam.answerOneRefuse`) and the arm's payload (`HlastHighByteRefusal.rows`) read the
+same theorem.
 -/
 
 set_option maxHeartbeats 1000000 in
-/-- **The class's refusal row, from the staged words.** -/
-theorem hlastHighByteRefusal_nonempty {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
-    {s : State} (hb : HcontByteRoute (head35 (G.bs.getD (G.n - 1) 0)))
-    (st : HcontSeamStage G (TailStartC C) (hlastTailRoute C s hb) (BitVec.ofNat 32 0))
-    (route : HlastRefuseRoute G C s) :
-    Nonempty (HlastHighByteRefusal G C s hb) := by
-  obtain ⟨mid, hcA, hrdv⟩ := hcontSeamMidAt (Cs := TailStartC C) st
-  -- the kind word at the class's store is zero
-  have hkind0 : stage2ReadWord (seamKindStore (TailStartC C) (hlastTailRoute C s hb)
-      (BitVec.ofNat 32 0)) ((TailStartC C).stage.tok + 16) 4 = some 0 := by
-    simpa using seamKindStore_word (Cs := TailStartC C) (s := hlastTailRoute C s hb)
-      (cA := (BitVec.ofNat 32 0)) (by decide)
+/-- **The refusal seam's rows, from the staged words.** -/
+theorem hlastSeamRefusal_nonempty {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {s : State} (st : HcontSeamStage G C s (BitVec.ofNat 32 0)) :
+    Nonempty (HlastSeamRefusal G C s) := by
+  obtain ⟨mid, hcA, hrdv⟩ := hcontSeamMidAt st
+  -- the kind word at the seam's store is zero
+  have hkind0 : stage2ReadWord (seamKindStore C s (BitVec.ofNat 32 0))
+      (C.stage.tok + 16) 4 = some 0 := by
+    simpa using seamKindStore_word (Cs := C) (s := s) (cA := (BitVec.ofNat 32 0)) (by decide)
   -- the value-position call hands the kind store's memory back
   obtain ⟨_, _, _, hmem₁, hnext₁⟩ := s2ValuePos_sound mid.hpre₁ mid.hcall₁
-  have hmem₁' : mid.r₁.mem = seamKindStore (TailStartC C) (hlastTailRoute C s hb)
-      (BitVec.ofNat 32 0) := by rw [hmem₁, hcA]
+  have hmem₁' : mid.r₁.mem = seamKindStore C s (BitVec.ofNat 32 0) := by rw [hmem₁, hcA]
   have hpre₂ : s2ScalarValuePre
-      [.ptr (TailCarry₂ (TailStartC C)).stage.c, .ptr (TailCarry₂ (TailStartC C)).stage.tok,
-       .ptr (TailCarry₂ (TailStartC C)).stage.z]
-      (seamKindStore (TailStartC C) (hlastTailRoute C s hb) (BitVec.ofNat 32 0))
-      (hlastTailRoute C s hb).next := by
+      [.ptr C.stage.c, .ptr C.stage.tok, .ptr C.stage.z]
+      (seamKindStore C s (BitVec.ofNat 32 0)) s.next := by
     have h := mid.hpre₂
     rw [hmem₁', hnext₁] at h
     exact h
   have hcall₂ : stage2Calls stage2SubCalls "od_scalar_value"
-      [.ptr (TailCarry₂ (TailStartC C)).stage.c, .ptr (TailCarry₂ (TailStartC C)).stage.tok,
-       .ptr (TailCarry₂ (TailStartC C)).stage.z]
-      (seamKindStore (TailStartC C) (hlastTailRoute C s hb) (BitVec.ofNat 32 0))
-      (hlastTailRoute C s hb).next = some mid.r₂ := by
+      [.ptr C.stage.c, .ptr C.stage.tok, .ptr C.stage.z]
+      (seamKindStore C s (BitVec.ofNat 32 0)) s.next = some mid.r₂ := by
     have h := mid.hcall₂
     rw [hmem₁', hnext₁] at h
     exact h
   -- the answer and the record are the model's
   obtain ⟨pos, hret₂, hmem₂⟩ :=
-    s2ScalarValue_refused (e0 := (TailStartC C).stage.e) hpre₂ st.heErr hkind0 hcall₂
+    s2ScalarValue_refused (e0 := C.stage.e) hpre₂ st.heErr hkind0 hcall₂
   exact ⟨{ cA := mid.cA
            hcA := hcA
            rdv := mid.rdv
@@ -381,7 +378,6 @@ theorem hlastHighByteRefusal_nonempty {m0 : Mem} {G : WalkGeom m0} {C : WalkCarr
            r₂ := mid.r₂
            hret₂ := hret₂
            pos := pos
-           route := route
            hroot := by rw [hrdv]; exact st.hroot
            hpre₁ := mid.hpre₁
            hcall₁ := mid.hcall₁
@@ -390,12 +386,38 @@ theorem hlastHighByteRefusal_nonempty {m0 : Mem} {G : WalkGeom m0} {C : WalkCarr
            hcall₂ := mid.hcall₂
            hmem := by rw [hmem₁']; exact hmem₂ }⟩
 
-/-- **The class's refusal row**, at the seam's staged words and the class's own route. -/
+/-- **The refusal seam's rows**, at the staged words. -/
+noncomputable def hlastSeamRefusal_of_stage {m0 : Mem} {G : WalkGeom m0}
+    {C : WalkCarry G} {s : State} (st : HcontSeamStage G C s (BitVec.ofNat 32 0)) :
+    HlastSeamRefusal G C s :=
+  Classical.choice (hlastSeamRefusal_nonempty st)
+
+/-- **The last level's seam is inhabited at the class's literal `0`**: the refusal arm, the
+one `%8 ∈ {126, 127}` takes.  The second arm is `hlastSeamZero_of_call`'s. -/
+theorem hlastSeam_nonempty {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (st : HcontSeamStage G C s (BitVec.ofNat 32 0)) : Nonempty (HlastSeam G C s) :=
+  ⟨HlastSeam.answerOneRefuse (hlastSeamRefusal_of_stage st)⟩
+
+/-- **The other answer's seam**: `s2_value_pos` answered `0`, so no scalar call is made and
+the walk leaves `if.then413.i` for `if.then418.i`, `cleanup474.i` and the copy. -/
+def hlastSeamZero_of_call {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (rows : HcontOpenCall G C s) (h0 : rows.r.ret = .int 32 (BitVec.ofNat 32 0)) :
+    HlastSeamZero G C s :=
+  { rdv := rows.rdv
+    hread := rows.hread
+    hpre := rows.hpreV
+    r := rows.r
+    hcall := rows.hcall
+    hret := h0 }
+
+/-- **The class's refusal payload**: the seam's rows at the routed tail and the class's
+route to the copy. -/
 noncomputable def hlastHighByteRefusal_of_stage {m0 : Mem} {G : WalkGeom m0}
     {C : WalkCarry G} {s : State} (hb : HcontByteRoute (head35 (G.bs.getD (G.n - 1) 0)))
     (st : HcontSeamStage G (TailStartC C) (hlastTailRoute C s hb) (BitVec.ofNat 32 0))
     (route : HlastRefuseRoute G C s) : HlastHighByteRefusal G C s hb :=
-  Classical.choice (hlastHighByteRefusal_nonempty hb st route)
+  { rows := hlastSeamRefusal_of_stage st
+    route := route }
 
 /-- **`HlastAbi`'s high-byte group, produced**: the seam's staged words and the class's
 route, at every last-entry state with the class bits.  The answer and the record are the
@@ -490,7 +512,10 @@ theorem hlastResidue_empty {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : S
 #print axioms LeanLLVM.Refinement.WalkScope.hlastTailRoute_rootSlot_word
 #print axioms LeanLLVM.Refinement.WalkScope.hlastKindStore_word
 #print axioms LeanLLVM.Refinement.WalkScope.s2ScalarValue_kind_zero
-#print axioms LeanLLVM.Refinement.WalkScope.hlastHighByteRefusal_nonempty
+#print axioms LeanLLVM.Refinement.WalkScope.hlastSeamRefusal_nonempty
+#print axioms LeanLLVM.Refinement.WalkScope.hlastSeamRefusal_of_stage
+#print axioms LeanLLVM.Refinement.WalkScope.hlastSeam_nonempty
+#print axioms LeanLLVM.Refinement.WalkScope.hlastSeamZero_of_call
 #print axioms LeanLLVM.Refinement.WalkScope.hlastHighByteRefusal_of_stage
 #print axioms LeanLLVM.Refinement.WalkScope.hlastAbi_highByte
 #print axioms LeanLLVM.Refinement.WalkScope.hlastResidue_empty

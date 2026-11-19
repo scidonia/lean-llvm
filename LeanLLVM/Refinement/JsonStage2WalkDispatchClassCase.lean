@@ -78,13 +78,19 @@ the bracket-high class's `'f'`/letters/class-C split.  So the class case's defau
 half needs no further bit transport — only the class case's assembly and the leaf
 bundle above.
 
-**The last level's leaf bundle is closed.**  `HlastFacts` and `HlastResidue` carry the
-last byte's route (`hb : HcontByteRoute (head35 (G.bs.getD (G.n - 1) 0))`) in place of
-the three scan-free bits, `hlastTail_of_calls` (`JsonStage2WalkDispatchWitnessHlast`)
-produces `hTail` at the class's own seam, `hlast_toMerge` states the path at the route's
-count (`12 + hlastByteCount hb + 3 + 1 ≤ 20`) and `hlast_finish`/`hlast_refuse` price it
-at `22 ≤ 32` and `25 ≤ 32`, so `.highByte` selects `.lowLeaf`/`.highLeaf` rather than
-assuming the scan-free leaf.
+**The last level's leaf bundle is closed, and the class does not emit.**  `HlastFacts`
+carries the last byte's route (`hb : HcontByteRoute (head35 (G.bs.getD (G.n - 1) 0))`) in
+place of the three scan-free bits, and `hlastTail_of_calls` produces `hTail` at the class's
+own seam; `hlast_toMerge`, `hlast_finish` and `hlast_refuse` state and price that *emitting*
+path (`22 ≤ 32`, `25 ≤ 32`).  But the high-byte class takes `if.else405.i` into
+`if.then413.i`, whose kind literal is `0`, so `od_scalar_value` answers `0` and the walk
+takes the error path to the refusal copy: the emission residue `HlastResidue` is empty on
+the class (`hlastResidue_empty`), and the arm is `LastEntryArm.highByte` carrying
+`HlastHighByteRefusal` — the refusal rows plus the class's route — which `.dispatch` turns
+into `WalkDispatchResult.refuse`.  The last level's seam is the sum `HlastSeam`
+(`HlastSeam.answerOneRefuse` at the literal `0`, `HlastSeam.answerZero` for
+`s2_value_pos`'s own `0`), and it is not the emit group: `hcontSeamCalls_no_kind_zero`
+proves that group has no inhabitant at the class's literal.
 
 **What the two class cases still need is a payload item, not a proof.**  Each branch
 exists, but the continuing case is two-dimensional — the head class does not fix the next

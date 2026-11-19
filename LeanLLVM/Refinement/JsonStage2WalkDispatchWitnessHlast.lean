@@ -107,6 +107,7 @@ import LeanLLVM.Refinement.JsonStage2WalkHeadChainScan
 import LeanLLVM.Refinement.JsonStage2WalkFinishPath
 import LeanLLVM.Refinement.JsonStage2WalkDispatchWitnessFinish
 import LeanLLVM.Refinement.JsonStage2WalkPrefixCount
+import LeanLLVM.Refinement.JsonStage2WalkDispatchSeamRow
 
 set_option autoImplicit false
 
@@ -503,9 +504,10 @@ the merge is reached on both — and that is why nothing here branches on it.
 The use site is `walkLoopStep_of_staging` (`JsonStage2WalkPremisesOfStaging`), which
 builds a `WalkDispatchResult` at each head state — the `merge` arm from the continuing
 premise's own evidence, or the last entry's arm (`WalkLoopEnd.dispatch`) — and feeds
-`walkLoopStepThree_of_dispatchResult`.  The bundle is now one *arm* of that dispatch
-(`LastEntryArm.highByte`), so `HlastFacts.hlastK` says which states it describes and the
-dispatch, not the bundle, is the last entry's shape. -/
+`walkLoopStepThree_of_dispatchResult`.  **This bundle is not the last entry's arm**: the
+high-byte class refuses (`HlastHighByteRefusal`, `LastEntryArm.highByte`), and `HlastFacts`
+here is the conditional emitting path the last level's other classes take, reached through
+`hlast_finish`/`hlast_refuse` and the credit theorems rather than the dispatch. -/
 
 /-! ### The bundle's producer
 
@@ -541,8 +543,8 @@ supplied as a named premise:
 **The map's counted shape, per row: 13 produced, 1 premised correctly** — fourteen rows
 in all, so **13 of 14 produced** (12 of 14 before this round, 9 of 16 before the repair).
 What the count buys is unchanged: **the bundle is inhabited at a real last entry**, and it
-is now reached through the dispatch's `.highByte` arm (`LastEntryArm.highByte`,
-`JsonStage2WalkDispatchArms`) rather than as the last entry's universal shape.
+is the conditional emitting path's — not the high-byte class's arm, which refuses
+(`LastEntryArm.highByte` carries `HlastHighByteRefusal`, `JsonStage2WalkDispatchArms`).
 
 Nothing above is a field weakened to make a proof go through: every produced witness is a
 consequence of the invariant, the staging's addresses or the model's own values, and the
@@ -1572,49 +1574,13 @@ structure HlastRefuseRoute {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : S
   hprice : n + 2 ≤ stage2EntryAllowance * (G.nep - C.k) +
     stage2ByteAllowance * (G.n - entryPos G C.k)
 
-/-- **The high-byte class's refusal evidence**: the two leading calls of the
-`if.then413.i`/`if.then425.i` edge (the value-position call with a nonzero answer, the
-scalar call), the answer `0`, the refusal record the scalar call wrote, and the class's
-route to the refusal copy. -/
+/-- **The high-byte class's refusal evidence**: the seam's refusal rows
+(`HlastSeamRefusal` at the routed tail — the two leading calls, the literal `0`, the
+derived answer and record) and the class's route to the refusal copy. -/
 structure HlastHighByteRefusal {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     (hb : HcontByteRoute (head35 (G.bs.getD (G.n - 1) 0))) : Type where
-  /-- The kind literal `if.then413.i`'s `phi` selected, read at its own store: the class's
-  incoming is `if.else405.i`'s `0`. -/
-  cA : BitVec 32
-  hcA : cA = BitVec.ofNat 32 0
-  /-- The root-done slot's word, as the first call's argument list carries it, and the
-  read that names it at the tail's own memory. -/
-  rdv : BitVec 32
-  hroot : readBytes (hlastTailRoute C s hb).mem (G.next0 + 8) 4 =
-    some (natToBytes rdv.toNat 4)
-  /-- The value-position call at the kind-stored memory, and its nonzero answer. -/
-  r₁ : CallOutcome
-  xA : BitVec 32
-  hpre₁ : s2ValuePosPre
-    [.int 32 (BitVec.ofNat 32 (TailStartC C).sp), .int 32 rdv,
-     .ptr (TailStartC C).stage.ctype, .ptr (TailStartC C).stage.cst]
-    (hlastKindStoreAt C s hb cA) (hlastTailRoute C s hb).next
-  hcall₁ : stage2Calls stage2SubCalls "s2_value_pos"
-    [.int 32 (BitVec.ofNat 32 (TailStartC C).sp), .int 32 rdv,
-     .ptr (TailStartC C).stage.ctype, .ptr (TailStartC C).stage.cst]
-    (hlastKindStoreAt C s hb cA) (hlastTailRoute C s hb).next = some r₁
-  hret₁ : r₁.ret = .int 32 xA
-  hbit0 : evalICmp .eq xA (BitVec.ofNat 32 0) = 0
-  /-- The log's base word at the kind-stored memory. -/
-  hzread : readBytes (hlastKindStoreAt C s hb cA) C.stage.z 8 = some (wordBytes 8 G.ev)
-  /-- The scalar call and the refusal it wrote: the answer `0` and the error record's
-  memory (`stage2ErrSetMsg`'s `ok` word, its offset and its null message). -/
-  r₂ : CallOutcome
-  hpre₂ : s2ScalarValuePre
-    [.ptr (TailCarry₂ (TailStartC C)).stage.c, .ptr (TailCarry₂ (TailStartC C)).stage.tok,
-     .ptr (TailCarry₂ (TailStartC C)).stage.z] r₁.mem r₁.next
-  hcall₂ : stage2Calls stage2SubCalls "od_scalar_value"
-    [.ptr (TailCarry₂ (TailStartC C)).stage.c, .ptr (TailCarry₂ (TailStartC C)).stage.tok,
-     .ptr (TailCarry₂ (TailStartC C)).stage.z] r₁.mem r₁.next = some r₂
-  hret₂ : r₂.ret = .int 32 (BitVec.ofNat 32 0)
-  /-- The token's position, the refusal record's offset word. -/
-  pos : Nat
-  hmem : r₂.mem = stage2ErrSetMsg r₁.mem C.stage.e pos 0
+  /-- The rows at the routed tail, whose kind literal is `if.else405.i`'s `0`. -/
+  rows : HlastSeamRefusal G (TailStartC C) (hlastTailRoute C s hb)
   /-- **The class's route to the refusal copy.** -/
   route : HlastRefuseRoute G C s
 

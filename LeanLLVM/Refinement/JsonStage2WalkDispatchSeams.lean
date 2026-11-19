@@ -395,6 +395,26 @@ def HcontSeamRefusal.cast {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s s' :
       pos := rows.refuse.pos
       hmem := rows.refuse.hmem }
 
+/-- **The last entry's seam, at its class**: the value-position answer's two arms, crossed
+with the kind literal.  The shape is the same as the continuing seams' — the call's answer
+and the literal decide which rows exist — but the last level's seam is *not* one
+`HcontSeamCalls`: at `%8 ∈ {126, 127}` the literal is `if.else405.i`'s `0`, and
+`hcontSeamCalls_no_kind_zero` proves no three-call group exists there.  So the sum is
+stated, and the two refusal arms are named: the scalar call's refusal
+(`s2ScalarValue_refused`) and, when `s2_value_pos` itself answers `0`, the first call alone
+with the short route through `if.then418.i` and `cleanup474.i`. -/
+inductive HlastSeam {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : Type
+  /-- **`s2_value_pos` answered `0`**: no scalar call is made.  The walk leaves
+  `if.then413.i` for `if.then418.i`, stores the entry's position at `%e + 8`, and reaches
+  the refusal copy through `cleanup474.i`. -/
+  | answerZero (rows : HlastSeamZero G C s) : HlastSeam G C s
+  /-- **`s2_value_pos` answered `1` at the literal `0`**: the refusal rows (the two
+  leading calls, the answer `0` and `stage2ErrSetMsg`'s record), and the walk leaves for
+  `if.then432.i` and the error path. -/
+  | answerOneRefuse (rows : HlastSeamRefusal G C s) : HlastSeam G C s
+  /-- **`s2_value_pos` answered `1` at a nonzero literal**: the emitting group. -/
+  | answerOneEmit (rows : HcontSeamCalls G C s) : HlastSeam G C s
+
 /-- **The seam's rows at every seam**: one `∀`-field each.  The continuing seams are the
 run class's own `if.then413.i` — `ContTailStartC C` at the state `contWsTailStart` builds
 from the check state's stop and byte — and the last entry's is `TailStartC C` at
@@ -412,14 +432,20 @@ The edge decides the field, because the kind literal is `if.then413.i`'s `phi` a
   seams (`scanF`, `scan56True`, `scan58True`), one per leaf, because a cast preserves `cA`
   and the leaf's `hval` pins it.
 
-The last entry's field states the calls alone: `hlastTailByte`'s route fixes the literal at
-its own class, and `HlastClassRows.seam` is where the last level's rows are grouped (it is
-*not* this field's instance — its state carries the byte's route, so it names its own
-producer).
+The last entry's field is the **sum** `HlastSeam`, not one group: `hlastTail`'s literal is
+the last entry's byte class, so at `%8 ∈ {126, 127}` it is `if.else405.i`'s `0` and the
+three-call group does not exist there (`hcontSeamCalls_no_kind_zero`); the class's rows are
+`HlastSeam.answerOneRefuse`'s, and `s2_value_pos`'s own zero answer is the third arm
+(`HlastSeamZero`, the short route through `if.then418.i` and `cleanup474.i`).
+`HlastClassRows.seam` is where the last level's rows are grouped, at the byte-route tail;
+its producer is `hlastSeamRefusal_of_stage` and `hlastSeamZero_of_call`
+(`JsonStage2WalkDispatchHlastSupply`).
 
 Every field here has an inhabitant at its leaf: `hcontSeamRefusalOf` for `scanRefuse`
-(from the staged words alone, the answer and the record being derived) and
-`hcontSeamKindOf` for the emit fields (whose extra supply is the single row `hemit`). -/
+(from the staged words alone, the answer and the record being derived),
+`hcontSeamKindOf` for the emit fields (whose extra supply is the single row `hemit`), and
+`HlastSeam`'s refusal arm for the last level, which is the arm the class's literal `0`
+takes. -/
 structure HcontSeamAbi {m0 : Mem} (G : WalkGeom m0) : Type where
   /-- **The `if.else405.i` edge's seam, which is the refusal arm.**  That edge writes the
   literal `0`, and `od_scalar_value` answers `0` at a zero kind (`stage2ScalarValue`'s
@@ -448,10 +474,13 @@ structure HcontSeamAbi {m0 : Mem} (G : WalkGeom m0) : Type where
     (v : BitVec 32) (k : Nat) (x1 : BitVec 8),
     HcontSeamKind G (ContTailStartC C)
       (ClsS58T (contWsSeamS C (wsSlAt G sl b35 ix v k) k x1) x1) (BitVec.ofNat 32 8)
-  /-- The last entry's seam: the same three calls at the last entry's tail start. -/
+  /-- **The last entry's seam, at its class**: the value-position answer's sum
+  (`HlastSeam`).  The literal is the last entry's byte class, so the field does not name
+  one group: the class's `0` takes the refusal arm, a nonzero literal the emit arm, and
+  the call's `0` answer the short refusal at any literal. -/
   last : ∀ (C : WalkCarry G) (s : State) (x : BitVec 8) (inc nep : BitVec 64)
     (v : Nat) (ix : BitVec 64) (b35 : UInt8),
-    HcontSeamCalls G (TailStartC C) (hlastTail C s x inc nep v ix b35)
+    HlastSeam G (TailStartC C) (hlastTail C s x inc nep v ix b35)
 
 /-! ### The scan arm's three links, from the rows
 
