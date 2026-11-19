@@ -72,7 +72,132 @@ theorem WalkLink.landRhsI103_at {calls : Calls} {m0 : Mem}
   exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
 
 
+/-- `NodeBlock73`'s target, named: the first pivot's bit and the edge it names. -/
+theorem WalkLink.nodeBlock73_at {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "NodeBlock73")
+    {x : BitVec 8} (h40 : lookupName s.env "%40" = some (.int 8 x)) :
+    ∃ (s' : State), WalkLink calls G C s
+        { C with block := (if evalICmp .slt x (BitVec.ofNat 8 13) = 1 then "LeafBlock64" else "NodeBlock71") } s' ∧
+      s' = { s.bind "%Pivot74" (.int 1 (evalICmp .slt x (BitVec.ofNat 8 13))) with
+        pc := (if evalICmp .slt x (BitVec.ofNat 8 13) = 1 then "LeafBlock64" else "NodeBlock71")
+        pre := some s.pc } := by
+  obtain ⟨s', hlink⟩ :=
+    WalkLink.NodeBlock73 G C s hInv hblock
+      (evalOperand_reg_of s.env s "%40" (.int 8 x) h40)
+  refine ⟨s', hlink, ?_⟩
+  have hstep := walkIcmpBrStep (calls := calls) (s := s) (b := walkNodeBlock73)
+    (d := "%Pivot74") (pred := IPred.slt) (w := 8)
+    (a₁ := .reg "%40") (a₂ := .imm (.int 8 (BitVec.ofNat 8 13)))
+    (t := "LeafBlock64") (f := "NodeBlock71") (x := x) (y := BitVec.ofNat 8 13)
+    (by rw [hInv.pc_eq, hblock]; exact walkNodeBlock73_find) rfl rfl
+    (evalOperand_reg_of s.env s "%40" (.int 8 x) h40) rfl
+    (walkBitVec1_zero_or_one _)
+  exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
+
+/-- `NodeBlock71`'s target, named: the second pivot's bit and the edge it names. -/
+theorem WalkLink.nodeBlock71_at {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "NodeBlock71")
+    {x : BitVec 8} (h40 : lookupName s.env "%40" = some (.int 8 x)) :
+    ∃ (s' : State), WalkLink calls G C s
+        { C with block := (if evalICmp .slt x (BitVec.ofNat 8 32) = 1 then "LeafBlock67" else "LeafBlock69") } s' ∧
+      s' = { s.bind "%Pivot72" (.int 1 (evalICmp .slt x (BitVec.ofNat 8 32))) with
+        pc := (if evalICmp .slt x (BitVec.ofNat 8 32) = 1 then "LeafBlock67" else "LeafBlock69")
+        pre := some s.pc } := by
+  obtain ⟨s', hlink⟩ :=
+    WalkLink.NodeBlock71 G C s hInv hblock
+      (evalOperand_reg_of s.env s "%40" (.int 8 x) h40)
+  refine ⟨s', hlink, ?_⟩
+  have hstep := walkIcmpBrStep (calls := calls) (s := s) (b := walkNodeBlock71)
+    (d := "%Pivot72") (pred := IPred.slt) (w := 8)
+    (a₁ := .reg "%40") (a₂ := .imm (.int 8 (BitVec.ofNat 8 32)))
+    (t := "LeafBlock67") (f := "LeafBlock69") (x := x) (y := BitVec.ofNat 8 32)
+    (by rw [hInv.pc_eq, hblock]; exact walkNodeBlock71_find) rfl rfl
+    (evalOperand_reg_of s.env s "%40" (.int 8 x) h40) rfl
+    (walkBitVec1_zero_or_one _)
+  exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
+
+/-- `LeafBlock64`'s target, named: the range leaf, stop or continue. -/
+theorem WalkLink.leafBlock64_at {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "LeafBlock64")
+    {x : BitVec 8} (h40 : lookupName s.env "%40" = some (.int 8 x))
+    (hf : WalkLocal { C with block := "while.body.i104" }
+      { stateAt (cells [("%SwitchLeaf66", .int 1 (evalICmp .ule (x + BitVec.ofNat 8 247)
+          (BitVec.ofNat 8 1))), ("%.off65", .int 8 (x + BitVec.ofNat 8 247))] s.env) s with
+        pc := "while.body.i104", pre := some s.pc }) :
+    ∃ (s' : State), WalkLink calls G C s
+        { C with block := (if evalICmp .ule (x + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 1
+            then "while.end.i" else "while.body.i104") } s' ∧
+      s' = { stateAt (cells [("%SwitchLeaf66", .int 1 (evalICmp .ule (x + BitVec.ofNat 8 247)
+            (BitVec.ofNat 8 1))), ("%.off65", .int 8 (x + BitVec.ofNat 8 247))] s.env) s with
+        pc := (if evalICmp .ule (x + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 1
+          then "while.end.i" else "while.body.i104")
+        pre := some s.pc } := by
+  obtain ⟨s', hlink⟩ := WalkLink.LeafBlock64 G C s hInv hblock h40 hf
+  refine ⟨s', hlink, ?_⟩
+  have hstep := walkAddIcmpBrStep (calls := calls) (s := s) (b := walkLeafBlock64)
+    (reg := "%40") (off := "%.off65") (d := "%SwitchLeaf66")
+    (c := BitVec.ofNat 8 247) (one := BitVec.ofNat 8 1)
+    (tl := "while.end.i") (fl := "while.body.i104") (x := x)
+    (by rw [hInv.pc_eq, hblock]; exact walkLeafBlock64_find) rfl rfl h40
+    (walkBitVec1_zero_or_one _)
+  exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
+
+/-- `LeafBlock67`'s target, named: the `13` leaf, stop or continue. -/
+theorem WalkLink.leafBlock67_at {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "LeafBlock67")
+    {x : BitVec 8} (h40 : lookupName s.env "%40" = some (.int 8 x))
+    (hf : WalkLocal { C with block := "while.body.i104" }
+      { stateAt (("%SwitchLeaf68", .int 1 (evalICmp .eq x (BitVec.ofNat 8 13))) :: s.env) s with
+        pc := "while.body.i104", pre := some s.pc }) :
+    ∃ (s' : State), WalkLink calls G C s
+        { C with block := (if evalICmp .eq x (BitVec.ofNat 8 13) = 1 then "while.end.i" else "while.body.i104") } s' ∧
+      s' = { s.bind "%SwitchLeaf68" (.int 1 (evalICmp .eq x (BitVec.ofNat 8 13))) with
+        pc := (if evalICmp .eq x (BitVec.ofNat 8 13) = 1 then "while.end.i" else "while.body.i104")
+        pre := some s.pc } := by
+  obtain ⟨s', hlink⟩ := WalkLink.LeafBlock67 G C s hInv hblock
+      (evalOperand_reg_of s.env s "%40" (.int 8 x) h40) hf
+  refine ⟨s', hlink, ?_⟩
+  have hstep := walkIcmpBrStep (calls := calls) (s := s) (b := walkLeafBlock67)
+    (d := "%SwitchLeaf68") (pred := IPred.eq) (w := 8)
+    (a₁ := .reg "%40") (a₂ := .imm (.int 8 (BitVec.ofNat 8 13)))
+    (t := "while.end.i") (f := "while.body.i104") (x := x) (y := BitVec.ofNat 8 13)
+    (by rw [hInv.pc_eq, hblock]; exact walkLeafBlock67_find) rfl rfl
+    (evalOperand_reg_of s.env s "%40" (.int 8 x) h40) rfl
+    (walkBitVec1_zero_or_one _)
+  exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
+
+/-- `LeafBlock69`'s target, named: the `32` leaf, stop or continue. -/
+theorem WalkLink.leafBlock69_at {calls : Calls} {m0 : Mem}
+    (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
+    (hblock : C.block = "LeafBlock69")
+    {x : BitVec 8} (h40 : lookupName s.env "%40" = some (.int 8 x))
+    (hf : WalkLocal { C with block := "while.body.i104" }
+      { stateAt (("%SwitchLeaf70", .int 1 (evalICmp .eq x (BitVec.ofNat 8 32))) :: s.env) s with
+        pc := "while.body.i104", pre := some s.pc }) :
+    ∃ (s' : State), WalkLink calls G C s
+        { C with block := (if evalICmp .eq x (BitVec.ofNat 8 32) = 1 then "while.end.i" else "while.body.i104") } s' ∧
+      s' = { s.bind "%SwitchLeaf70" (.int 1 (evalICmp .eq x (BitVec.ofNat 8 32))) with
+        pc := (if evalICmp .eq x (BitVec.ofNat 8 32) = 1 then "while.end.i" else "while.body.i104")
+        pre := some s.pc } := by
+  obtain ⟨s', hlink⟩ := WalkLink.LeafBlock69 G C s hInv hblock
+      (evalOperand_reg_of s.env s "%40" (.int 8 x) h40) hf
+  refine ⟨s', hlink, ?_⟩
+  have hstep := walkIcmpBrStep (calls := calls) (s := s) (b := walkLeafBlock69)
+    (d := "%SwitchLeaf70") (pred := IPred.eq) (w := 8)
+    (a₁ := .reg "%40") (a₂ := .imm (.int 8 (BitVec.ofNat 8 32)))
+    (t := "while.end.i") (f := "while.body.i104") (x := x) (y := BitVec.ofNat 8 32)
+    (by rw [hInv.pc_eq, hblock]; exact walkLeafBlock69_find) rfl rfl
+    (evalOperand_reg_of s.env s "%40" (.int 8 x) h40) rfl
+    (walkBitVec1_zero_or_one _)
+  exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
+
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.landRhsI103_at
+#print axioms LeanLLVM.Refinement.WalkScope.WalkLink.nodeBlock73_at
+#print axioms LeanLLVM.Refinement.WalkScope.WalkLink.leafBlock64_at
 
 end WalkScope
 end LeanLLVM.Refinement
