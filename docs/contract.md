@@ -1285,9 +1285,10 @@ and `JsonStage2NumFastSeams.intScan_merge` appends the merge block's own step:
 exponent's cells zero, within `9 + (n - i0 + 1) * 4` control steps.  The fraction
 and exponent routes are one trace each now (`JsonStage2NumFastGate`):
 `t1_fracEnd230_run` is the fraction run's end-of-lexeme exit through the gate and
-`t1_then241_store_run` to the return, and `nest_expRun_run` is the marker's block
-through the nest and the exponent run to `cleanup223.thread` with the four cells
-and the stop word.  The decimal point
+`t1_then241_store_run` to the return, and
+`JsonStage2NumFastExponent.nest_expRun_run_carried` is the marker's block
+through the nest and the exponent run to `cleanup223.thread` with the four cells,
+the caller's kept cells and sign, the staging memory and the stop word.  The decimal point
 is not read on the route above because the lexeme ends at the integer part.
 Two pieces of
 the run are now supplies rather than obligations.  The eight-digit fast path's

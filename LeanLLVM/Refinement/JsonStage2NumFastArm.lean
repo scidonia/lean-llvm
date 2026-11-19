@@ -408,11 +408,12 @@ polarities (`if %esign.0 = 1 then %exp10 else 0 - %exp10` as
 index at `%err` and returns zero rather than demanding the unreachable
 `%i.12604 = n` premise the retired merge carried.
 
-What the arm still waits on is the nest handoff and accumulator tie into that
-merge, the routes below tier 1, and tier 3's region.  The nest's own nine steps
-(`nest_marker_start`) hand `%i.11` and `%esign.0` but not the four cells or the
-caller's kept cells, so the exponent run is appended to the nest at the two
-statements; the accumulator's reading as `expAcc` remains a merge hypothesis;
+What the arm still waits on is the accumulator tie into the back merge, the
+routes below tier 1, and tier 3's region.  The nest's carrying seams hand the
+four cells and the caller's kept cells through the marker, and
+`JsonStage2NumFastExponent.nest_expRun_run_carried` composes them with the run:
+it reaches `cleanup223.thread` with the exit word, stop word, sign and staging
+memory.  The accumulator's reading as `expAcc` remains a merge hypothesis;
 and tier 1's four links are proved (`JsonStage2NumFastTier1`,
 with `t1_store_run` the body's chain from `if.end230`), while tier 3's region is
 stated edge by edge:

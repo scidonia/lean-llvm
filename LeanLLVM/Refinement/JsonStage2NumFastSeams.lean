@@ -2888,11 +2888,13 @@ theorem land71_fracScan {mem : Mem} {e : State} {a n i1 : Nat} {bs : List UInt8}
 /-- **Seam: the fraction run's non-digit exit enters the nest.**  `if.end144`'s
 three `phi`s are the run's `%fr.3593`, `%fdig.3594` and `%i.9595`, and the block's
 own test takes the marker's block: one control step, with the run's stop index as
-`%i.10`. -/
+`%i.10`.  The other two cells `if.end230`'s `phi`s read and the caller's kept
+registers and sign are the exit state's, carried by `nestEntry_run`. -/
 theorem fracExit_nest {calls : Calls} {mem : Mem} {e : State} {a n i0 d0 : Nat}
-    {bs : List UInt8}
+    {bs : List UInt8} {idig ip : BitVec 64} {env0 : Env} {sign : BitVec 1}
     (he : fracRunExit mem bs a n i0 d0 e) (hpc : e.pc = "if.end144")
-    (hnlt : n < 2 ^ 63) :
+    (hnlt : n < 2 ^ 63)
+    (hpart : NumFastIntPart idig ip e) (hcarried : NumFastCarried env0 sign e) :
     ∃ (i1 : Nat) (fr fdig : BitVec 64) (e' : State),
       i0 ≤ i1 ∧ i1 < n ∧
       e'.pc = "land.lhs.true147" ∧ e'.pre = some "if.end144" ∧ e'.mem = e.mem ∧
@@ -2901,12 +2903,14 @@ theorem fracExit_nest {calls : Calls} {mem : Mem} {e : State} {a n i0 d0 : Nat}
       lookupName e'.env "%n" = some (.int 64 (BitVec.ofNat 64 n)) ∧
       lookupName e'.env "%fr.5" = some (.int 64 fr) ∧
       lookupName e'.env "%fdig.4" = some (.int 64 fdig) ∧
+      ExpRunCells idig ip fr fdig e' ∧ NumFastCarried env0 sign e' ∧
       ∀ k, runFuel calls (1 + k) numFastBody e = runFuel calls k numFastBody e' := by
   rcases he with ⟨_, hpre, hp, hn, i1, hi0, hi1n, hi, hfd, hfr, _, _, _⟩ | hend
-  · obtain ⟨e', hpc', hpre', hmem', hi10, hp', hn', hfr', hfd', hrun⟩ :=
+  · obtain ⟨e', hpc', hpre', hmem', hi10, hp', hn', hfr', hfd', hcell', hcar', hrun⟩ :=
       NumFastScanRun.nestEntry_run (calls := calls) (env := e.env) (s := e)
-        hpc hpre hp hfr hfd hi hn (ult_ofNat_one hi1n (by omega))
-    exact ⟨i1, _, _, e', hi0, hi1n, hpc', hpre', hmem', hi10, hp', hn', hfr', hfd', hrun⟩
+        hpc hpre hp hfr hfd hi hn (ult_ofNat_one hi1n (by omega)) hpart hcarried
+    exact ⟨i1, _, _, e', hi0, hi1n, hpc', hpre', hmem', hi10, hp', hn', hfr', hfd',
+      hcell', hcar', hrun⟩
   · rw [hend.1] at hpc
     exact absurd hpc (by decide)
 
@@ -3008,7 +3012,7 @@ theorem nest_marker_start {e : State} {a n i10 : Nat} {b1 b2 : UInt8}
     have hrun3 : ∀ k, runFuel calls (3 + k) numFastBody e =
         runFuel calls k numFastBody
           (stateAt env1 { e with pc := "if.then157", pre := some "LeafBlock1" }) :=
-      NumFastScanRun.nestTo157_e (calls := calls) hpc hp hi (by omega) hread
+      (NumFastScanRun.nestTo157_e (calls := calls) hpc hp hi (by omega) hread).2.2
     have hp' : lookupName env1 "%p" = some (.ptr a) := by
       simp only [env1, NumFastScanRun.leafBlock1Env, NumFastScanRun.nodeBlockEnv,
         NumFastScanRun.t147Env]
@@ -3023,7 +3027,7 @@ theorem nest_marker_start {e : State} {a n i10 : Nat} {b1 b2 : UInt8}
       block_lk
     by_cases hsign : b2 = 0x2b ∨ b2 = 0x2d
     · have hread2 : readByte e.mem (a + (i10 + 1)) = some b2 := hread2
-      obtain ⟨e', hpc', hmem', hp2, hn2, hi11, hes, _hc, hrun6⟩ :=
+      obtain ⟨e', hpc', hmem', hp2, hn2, hi11, hes, _hc, _hcar, hrun6⟩ :=
         NumFastScanRun.nestFrom157_sign (calls := calls) (env := env1)
           (s := { e with pc := "if.then157", pre := some "LeafBlock1" })
           rfl hp' hi' hn' hnlt (by omega) hread2 hsign
@@ -3033,7 +3037,7 @@ theorem nest_marker_start {e : State} {a n i10 : Nat} {b1 b2 : UInt8}
       exact (hrun3 (6 + k)).trans (hrun6 k)
     · have hnosign : b2 ≠ 0x2b ∧ b2 ≠ 0x2d :=
         ⟨fun h => hsign (Or.inl h), fun h => hsign (Or.inr h)⟩
-      obtain ⟨e', hpc', hmem', hp2, hn2, hi11, hes, _hc, hrun5⟩ :=
+      obtain ⟨e', hpc', hmem', hp2, hn2, hi11, hes, _hc, _hcar, hrun5⟩ :=
         NumFastScanRun.nestFrom157_nosign (calls := calls) (env := env1)
           (s := { e with pc := "if.then157", pre := some "LeafBlock1" })
           rfl hp' hi' hn' hnlt (by omega) hread2 hnosign
@@ -3047,7 +3051,7 @@ theorem nest_marker_start {e : State} {a n i10 : Nat} {b1 b2 : UInt8}
     have hrun3 : ∀ k, runFuel calls (3 + k) numFastBody e =
         runFuel calls k numFastBody
           (stateAt env1 { e with pc := "if.then157", pre := some "LeafBlock" }) :=
-      NumFastScanRun.nestTo157_E (calls := calls) hpc hp hi (by omega) hread
+      (NumFastScanRun.nestTo157_E (calls := calls) hpc hp hi (by omega) hread).2.2
     have hp' : lookupName env1 "%p" = some (.ptr a) := by
       simp only [env1, NumFastScanRun.leafBlockEnv, NumFastScanRun.nodeBlockEnv,
         NumFastScanRun.t147Env]
@@ -3061,7 +3065,7 @@ theorem nest_marker_start {e : State} {a n i10 : Nat} {b1 b2 : UInt8}
         NumFastScanRun.t147Env]
       block_lk
     by_cases hsign : b2 = 0x2b ∨ b2 = 0x2d
-    · obtain ⟨e', hpc', hmem', hp2, hn2, hi11, hes, _hc, hrun6⟩ :=
+    · obtain ⟨e', hpc', hmem', hp2, hn2, hi11, hes, _hc, _hcar, hrun6⟩ :=
         NumFastScanRun.nestFrom157_sign (calls := calls) (env := env1)
           (s := { e with pc := "if.then157", pre := some "LeafBlock" })
           rfl hp' hi' hn' hnlt (by omega) hread2 hsign
@@ -3071,7 +3075,7 @@ theorem nest_marker_start {e : State} {a n i10 : Nat} {b1 b2 : UInt8}
       exact (hrun3 (6 + k)).trans (hrun6 k)
     · have hnosign : b2 ≠ 0x2b ∧ b2 ≠ 0x2d :=
         ⟨fun h => hsign (Or.inl h), fun h => hsign (Or.inr h)⟩
-      obtain ⟨e', hpc', hmem', hp2, hn2, hi11, hes, _hc, hrun5⟩ :=
+      obtain ⟨e', hpc', hmem', hp2, hn2, hi11, hes, _hc, _hcar, hrun5⟩ :=
         NumFastScanRun.nestFrom157_nosign (calls := calls) (env := env1)
           (s := { e with pc := "if.then157", pre := some "LeafBlock" })
           rfl hp' hi' hn' hnlt (by omega) hread2 hnosign

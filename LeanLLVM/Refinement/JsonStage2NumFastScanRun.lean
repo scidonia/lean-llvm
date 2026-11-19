@@ -978,14 +978,29 @@ byte is a parameter, and the two marker shapes are the two lemmas: the pivot's
 signedness decides which leaf is reached, and that is what makes `'E'` a
 `LeafBlock` byte and `'e'` a `LeafBlock1` one. -/
 
+/-- A state's environment is the one it is denoted at. -/
+theorem stateAt_env (env : Env) (s : State) : (stateAt env s).env = env := rfl
+
 /-- **The `'e'` shape.**  From `land.lhs.true147` with the byte at `%i.10` a
-`'e'`, three steps reach `if.then157`. -/
+`'e'`, three steps reach `if.then157`.  None of the blocks the path crosses
+writes the four cells `if.end230`'s `phi`s read nor the caller's kept registers
+and sign, so the endpoint carries both from the state the argument names. -/
 theorem nestTo157_e {calls : Calls} {env : Env} {s : State} {a i10 : Nat}
     (hpc : s.pc = "land.lhs.true147")
     (hp : lookupName env "%p" = some (.ptr a))
     (hi : lookupName env "%i.10" = some (.int 64 (BitVec.ofNat 64 i10)))
     (hj : i10 < 2 ^ 63)
     (hread : readByte s.mem (a + i10) = some 0x65) :
+    (∀ (idig5 ip5 fr5 fd5 : BitVec 64),
+      ExpRunCells idig5 ip5 fr5 fd5 (stateAt env s) →
+        ExpRunCells idig5 ip5 fr5 fd5
+          (stateAt (leafBlock1Env (nodeBlockEnv (t147Env env a i10 0x65) 0x65) 0x65)
+            { s with pc := "if.then157", pre := some "LeafBlock1" })) ∧
+    (∀ (env0 : Env) (sign : BitVec 1),
+      NumFastCarried env0 sign (stateAt env s) →
+        NumFastCarried env0 sign
+          (stateAt (leafBlock1Env (nodeBlockEnv (t147Env env a i10 0x65) 0x65) 0x65)
+            { s with pc := "if.then157", pre := some "LeafBlock1" })) ∧
     ∀ k, runFuel calls (3 + k) numFastBody (stateAt env s) =
       runFuel calls k numFastBody
         (stateAt (leafBlock1Env (nodeBlockEnv (t147Env env a i10 0x65) 0x65) 0x65)
@@ -1008,17 +1023,54 @@ theorem nestTo157_e {calls : Calls} {env : Env} {s : State} {a i10 : Nat}
     leafBlock1_step_marker (calls := calls) rfl
       (by simp only [nodeBlockEnv, t147Env, lookupName_cons_self,
         Function.comp_apply]; rfl) eq_e_65
-  intro k
-  rw [show 3 + k = 1 + (1 + (1 + k)) from by omega,
-    runFuel_jump_prefix h1, runFuel_jump_prefix h2, runFuel_jump_prefix h3]
+  refine ⟨?_, ?_, ?_⟩
+  · intro idig5 ip5 fr5 fd5 hcells
+    obtain ⟨h1', h2', h3', h4'⟩ := hcells
+    simp only [stateAt_env] at h1' h2' h3' h4'
+    refine ⟨?_, ?_, ?_, ?_⟩
+    all_goals
+      simp only [stateAt, leafBlock1Env, nodeBlockEnv, t147Env]
+      block_lk
+  · intro env0 sign hc
+    have hk : ∀ m ∈ numFastKept, lookupName
+        (leafBlock1Env (nodeBlockEnv (t147Env env a i10 0x65) 0x65) 0x65) m
+        = lookupName env m := by
+      intro m hm
+      have hm' : m = "%out" ∨ m = "@NUMF_EL1_P10" ∨ m = "@NUMF_EL1_POW10" := by
+        simpa only [numFastKept, List.mem_cons, List.mem_singleton, List.not_mem_nil,
+          or_false] using hm
+      rcases hm' with rfl | rfl | rfl
+      all_goals
+        simp only [leafBlock1Env, nodeBlockEnv, t147Env]
+        repeat rw [lookupName_cons_ne _ _ (by decide)]
+    have hs : lookupName
+        (leafBlock1Env (nodeBlockEnv (t147Env env a i10 0x65) 0x65) 0x65)
+        "%tobool274.not" = lookupName env "%tobool274.not" := by
+      simp only [leafBlock1Env, nodeBlockEnv, t147Env]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+    exact ⟨fun m hm => (hk m hm).trans (hc.1 m hm), hs.trans hc.2⟩
+  · intro k
+    rw [show 3 + k = 1 + (1 + (1 + k)) from by omega,
+      runFuel_jump_prefix h1, runFuel_jump_prefix h2, runFuel_jump_prefix h3]
 
-/-- **The `'E'` shape.** -/
+/-- **The `'E'` shape.**  The same three steps and the same carries as `nestTo157_e`,
+at the pivot's `LeafBlock` side. -/
 theorem nestTo157_E {calls : Calls} {env : Env} {s : State} {a i10 : Nat}
     (hpc : s.pc = "land.lhs.true147")
     (hp : lookupName env "%p" = some (.ptr a))
     (hi : lookupName env "%i.10" = some (.int 64 (BitVec.ofNat 64 i10)))
     (hj : i10 < 2 ^ 63)
     (hread : readByte s.mem (a + i10) = some 0x45) :
+    (∀ (idig5 ip5 fr5 fd5 : BitVec 64),
+      ExpRunCells idig5 ip5 fr5 fd5 (stateAt env s) →
+        ExpRunCells idig5 ip5 fr5 fd5
+          (stateAt (leafBlockEnv (nodeBlockEnv (t147Env env a i10 0x45) 0x45) 0x45)
+            { s with pc := "if.then157", pre := some "LeafBlock" })) ∧
+    (∀ (env0 : Env) (sign : BitVec 1),
+      NumFastCarried env0 sign (stateAt env s) →
+        NumFastCarried env0 sign
+          (stateAt (leafBlockEnv (nodeBlockEnv (t147Env env a i10 0x45) 0x45) 0x45)
+            { s with pc := "if.then157", pre := some "LeafBlock" })) ∧
     ∀ k, runFuel calls (3 + k) numFastBody (stateAt env s) =
       runFuel calls k numFastBody
         (stateAt (leafBlockEnv (nodeBlockEnv (t147Env env a i10 0x45) 0x45) 0x45)
@@ -1041,9 +1093,35 @@ theorem nestTo157_E {calls : Calls} {env : Env} {s : State} {a i10 : Nat}
     leafBlock_step_marker (calls := calls) rfl
       (by simp only [nodeBlockEnv, t147Env, lookupName_cons_self,
         Function.comp_apply]; rfl) eq_E_45
-  intro k
-  rw [show 3 + k = 1 + (1 + (1 + k)) from by omega,
-    runFuel_jump_prefix h1, runFuel_jump_prefix h2, runFuel_jump_prefix h3]
+  refine ⟨?_, ?_, ?_⟩
+  · intro idig5 ip5 fr5 fd5 hcells
+    obtain ⟨h1', h2', h3', h4'⟩ := hcells
+    simp only [stateAt_env] at h1' h2' h3' h4'
+    refine ⟨?_, ?_, ?_, ?_⟩
+    all_goals
+      simp only [stateAt, leafBlockEnv, nodeBlockEnv, t147Env]
+      block_lk
+  · intro env0 sign hc
+    have hk : ∀ m ∈ numFastKept, lookupName
+        (leafBlockEnv (nodeBlockEnv (t147Env env a i10 0x45) 0x45) 0x45) m
+        = lookupName env m := by
+      intro m hm
+      have hm' : m = "%out" ∨ m = "@NUMF_EL1_P10" ∨ m = "@NUMF_EL1_POW10" := by
+        simpa only [numFastKept, List.mem_cons, List.mem_singleton, List.not_mem_nil,
+          or_false] using hm
+      rcases hm' with rfl | rfl | rfl
+      all_goals
+        simp only [leafBlockEnv, nodeBlockEnv, t147Env]
+        repeat rw [lookupName_cons_ne _ _ (by decide)]
+    have hs : lookupName
+        (leafBlockEnv (nodeBlockEnv (t147Env env a i10 0x45) 0x45) 0x45)
+        "%tobool274.not" = lookupName env "%tobool274.not" := by
+      simp only [leafBlockEnv, nodeBlockEnv, t147Env]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+    exact ⟨fun m hm => (hk m hm).trans (hc.1 m hm), hs.trans hc.2⟩
+  · intro k
+    rw [show 3 + k = 1 + (1 + (1 + k)) from by omega,
+      runFuel_jump_prefix h1, runFuel_jump_prefix h2, runFuel_jump_prefix h3]
 
 /-- **The byte is no marker.**  Whichever leaf the pivot reaches, its equality
 is read on the same byte, so the block leaves for the merge that carries no
@@ -1133,8 +1211,9 @@ sign's own comparison, `%22 != 0x2d`. -/
 
 /-- **No exponent sign.**  From `if.then157`, five steps reach
 `lor.lhs.false180` with `%i.11 = %i.10 + 1` and `%esign.0 = 1`.  None of the
-blocks the path crosses writes the four cells `if.end230`'s `phi`s read, so the
-endpoint carries them (`ExpRunCells`) from the state the argument names. -/
+blocks the path crosses writes the four cells `if.end230`'s `phi`s read nor the
+caller's kept registers and sign, so the endpoint carries both from the state
+the argument names. -/
 theorem nestFrom157_nosign {calls : Calls} {env : Env} {s : State} {a i10 n : Nat}
     {b2 : UInt8}
     (hpc : s.pc = "if.then157")
@@ -1152,6 +1231,8 @@ theorem nestFrom157_nosign {calls : Calls} {env : Env} {s : State} {a i10 n : Na
       (∀ (idig5 ip5 fr5 fd5 : BitVec 64),
         ExpRunCells idig5 ip5 fr5 fd5 (stateAt env s) →
           ExpRunCells idig5 ip5 fr5 fd5 e) ∧
+      (∀ (env0 : Env) (sign : BitVec 1),
+        NumFastCarried env0 sign (stateAt env s) → NumFastCarried env0 sign e) ∧
       ∀ k, runFuel calls (5 + k) numFastBody (stateAt env s) =
         runFuel calls k numFastBody e := by
   have h4 : step calls numFastBody (stateAt env s) =
@@ -1227,7 +1308,7 @@ theorem nestFrom157_nosign {calls : Calls} {env : Env} {s : State} {a i10 n : Na
       rw [show 5 + k = 1 + (1 + (1 + (1 + (1 + k)))) from by omega,
         runFuel_jump_prefix h4, runFuel_jump_prefix h5, runFuel_jump_prefix h6,
         runFuel_jump_prefix h7, runFuel_jump_prefix h8]
-    refine ⟨eF, rfl, rfl, ?_, ?_, ?_, ?_, ?_, huniv⟩
+    refine ⟨eF, rfl, rfl, ?_, ?_, ?_, ?_, ?_, ?_, huniv⟩
     · simp only [eF, end177Env, leafBlock3Env, nodeBlock7Env, t161Env, then157Env]
       first
        | (simp only [stateAt]; block_lk)
@@ -1247,6 +1328,30 @@ theorem nestFrom157_nosign {calls : Calls} {env : Env} {s : State} {a i10 n : Na
         first
          | (simp only [stateAt]; block_lk)
          | block_lk
+    · intro env0 sign hc
+      have hk : ∀ m ∈ numFastKept, lookupName
+          (end177Env
+            (leafBlock3Env
+              (nodeBlock7Env (t161Env (then157Env env i10 (BitVec.ofNat 64 n)) a i10 b2) b2) b2)
+            1 (BitVec.ofNat 64 i10 + 0x1#64) (BitVec.ofNat 64 n)) m
+          = lookupName env m := by
+        intro m hm
+        have hm' : m = "%out" ∨ m = "@NUMF_EL1_P10" ∨ m = "@NUMF_EL1_POW10" := by
+          simpa only [numFastKept, List.mem_cons, List.mem_singleton, List.not_mem_nil,
+            or_false] using hm
+        rcases hm' with rfl | rfl | rfl
+        all_goals
+          simp only [end177Env, leafBlock3Env, nodeBlock7Env, t161Env, then157Env]
+          repeat rw [lookupName_cons_ne _ _ (by decide)]
+      have hs : lookupName
+          (end177Env
+            (leafBlock3Env
+              (nodeBlock7Env (t161Env (then157Env env i10 (BitVec.ofNat 64 n)) a i10 b2) b2) b2)
+            1 (BitVec.ofNat 64 i10 + 0x1#64) (BitVec.ofNat 64 n)) "%tobool274.not"
+          = lookupName env "%tobool274.not" := by
+        simp only [end177Env, leafBlock3Env, nodeBlock7Env, t161Env, then157Env]
+        repeat rw [lookupName_cons_ne _ _ (by decide)]
+      exact ⟨fun m hm => (hk m hm).trans (hc.1 m hm), hs.trans hc.2⟩
   · -- `LeafBlock5`, whose `'-'` equality fails
     have hpiv0 : evalICmp .slt (JsonScanLane.vByte b2) 0x2d#8 = 0 := by
       rcases bitVec1_eq_zero_or_one (evalICmp .slt (JsonScanLane.vByte b2) 0x2d#8) with h | h
@@ -1309,7 +1414,7 @@ theorem nestFrom157_nosign {calls : Calls} {env : Env} {s : State} {a i10 n : Na
       rw [show 5 + k = 1 + (1 + (1 + (1 + (1 + k)))) from by omega,
         runFuel_jump_prefix h4, runFuel_jump_prefix h5, runFuel_jump_prefix h6,
         runFuel_jump_prefix h7, runFuel_jump_prefix h8]
-    refine ⟨eF, rfl, rfl, ?_, ?_, ?_, ?_, ?_, huniv⟩
+    refine ⟨eF, rfl, rfl, ?_, ?_, ?_, ?_, ?_, ?_, huniv⟩
     · simp only [eF, end177Env, leafBlock5Env, nodeBlock7Env, t161Env, then157Env]
       first
        | (simp only [stateAt]; block_lk)
@@ -1329,11 +1434,36 @@ theorem nestFrom157_nosign {calls : Calls} {env : Env} {s : State} {a i10 n : Na
         first
          | (simp only [stateAt]; block_lk)
          | block_lk
+    · intro env0 sign hc
+      have hk : ∀ m ∈ numFastKept, lookupName
+          (end177Env
+            (leafBlock5Env
+              (nodeBlock7Env (t161Env (then157Env env i10 (BitVec.ofNat 64 n)) a i10 b2) b2) b2)
+            1 (BitVec.ofNat 64 i10 + 0x1#64) (BitVec.ofNat 64 n)) m
+          = lookupName env m := by
+        intro m hm
+        have hm' : m = "%out" ∨ m = "@NUMF_EL1_P10" ∨ m = "@NUMF_EL1_POW10" := by
+          simpa only [numFastKept, List.mem_cons, List.mem_singleton, List.not_mem_nil,
+            or_false] using hm
+        rcases hm' with rfl | rfl | rfl
+        all_goals
+          simp only [end177Env, leafBlock5Env, nodeBlock7Env, t161Env, then157Env]
+          repeat rw [lookupName_cons_ne _ _ (by decide)]
+      have hs : lookupName
+          (end177Env
+            (leafBlock5Env
+              (nodeBlock7Env (t161Env (then157Env env i10 (BitVec.ofNat 64 n)) a i10 b2) b2) b2)
+            1 (BitVec.ofNat 64 i10 + 0x1#64) (BitVec.ofNat 64 n)) "%tobool274.not"
+          = lookupName env "%tobool274.not" := by
+        simp only [end177Env, leafBlock5Env, nodeBlock7Env, t161Env, then157Env]
+        repeat rw [lookupName_cons_ne _ _ (by decide)]
+      exact ⟨fun m hm => (hk m hm).trans (hc.1 m hm), hs.trans hc.2⟩
 
 /-- **With an exponent sign.**  The sign's byte is `'+'` or `'-'`, six steps
 reach `lor.lhs.false180` with `%i.11 = %i.10 + 2` and `%esign.0` the sign's
 comparison `%22 != 0x2d` — one for `'+'` and zero for `'-'`.  The four cells
-`if.end230`'s `phi`s read survive the path as they do without a sign. -/
+`if.end230`'s `phi`s read and the caller's kept registers and sign survive the
+path as they do without a sign. -/
 theorem nestFrom157_sign {calls : Calls} {env : Env} {s : State} {a i10 n : Nat}
     {b2 : UInt8}
     (hpc : s.pc = "if.then157")
@@ -1352,6 +1482,8 @@ theorem nestFrom157_sign {calls : Calls} {env : Env} {s : State} {a i10 n : Nat}
       (∀ (idig5 ip5 fr5 fd5 : BitVec 64),
         ExpRunCells idig5 ip5 fr5 fd5 (stateAt env s) →
           ExpRunCells idig5 ip5 fr5 fd5 e) ∧
+      (∀ (env0 : Env) (sign : BitVec 1),
+        NumFastCarried env0 sign (stateAt env s) → NumFastCarried env0 sign e) ∧
       ∀ k, runFuel calls (6 + k) numFastBody (stateAt env s) =
         runFuel calls k numFastBody e := by
   let nv : BitVec 64 := BitVec.ofNat 64 n
@@ -1443,7 +1575,7 @@ theorem nestFrom157_sign {calls : Calls} {env : Env} {s : State} {a i10 n : Nat}
       rw [show 6 + k = 1 + (1 + (1 + (1 + (1 + (1 + k))))) from by omega,
         runFuel_jump_prefix h4, runFuel_jump_prefix h5, runFuel_jump_prefix h6,
         runFuel_jump_prefix h7, runFuel_jump_prefix h8, runFuel_jump_prefix h9]
-    refine ⟨eF, rfl, rfl, ?_, ?_, ?_, ?_, ?_, huniv⟩
+    refine ⟨eF, rfl, rfl, ?_, ?_, ?_, ?_, ?_, ?_, huniv⟩
     · simp only [eF, end177Env, then171Env, leafBlock3Env, nodeBlock7Env, t161Env, then157Env]
       first
        | (simp only [stateAt]; block_lk)
@@ -1463,6 +1595,31 @@ theorem nestFrom157_sign {calls : Calls} {env : Env} {s : State} {a i10 n : Nat}
         first
          | (simp only [stateAt]; block_lk)
          | block_lk
+    · intro env0 sign hc
+      have hk : ∀ m ∈ numFastKept, lookupName
+          (end177Env (then171Env (leafBlock3Env
+              (nodeBlock7Env (t161Env (then157Env env i10 nv) a i10 0x2b) 0x2b) 0x2b) 0x2b i10)
+            (evalICmp .ne (JsonScanLane.vByte 0x2b) 0x2d#8)
+            (BitVec.ofNat 64 i10 + 0x2#64) nv) m = lookupName env m := by
+        intro m hm
+        have hm' : m = "%out" ∨ m = "@NUMF_EL1_P10" ∨ m = "@NUMF_EL1_POW10" := by
+          simpa only [numFastKept, List.mem_cons, List.mem_singleton, List.not_mem_nil,
+            or_false] using hm
+        rcases hm' with rfl | rfl | rfl
+        all_goals
+          simp only [end177Env, then171Env, leafBlock3Env, nodeBlock7Env, t161Env,
+            then157Env]
+          repeat rw [lookupName_cons_ne _ _ (by decide)]
+      have hs : lookupName
+          (end177Env (then171Env (leafBlock3Env
+              (nodeBlock7Env (t161Env (then157Env env i10 nv) a i10 0x2b) 0x2b) 0x2b) 0x2b i10)
+            (evalICmp .ne (JsonScanLane.vByte 0x2b) 0x2d#8)
+            (BitVec.ofNat 64 i10 + 0x2#64) nv) "%tobool274.not"
+          = lookupName env "%tobool274.not" := by
+        simp only [end177Env, then171Env, leafBlock3Env, nodeBlock7Env, t161Env,
+          then157Env]
+        repeat rw [lookupName_cons_ne _ _ (by decide)]
+      exact ⟨fun m hm => (hk m hm).trans (hc.1 m hm), hs.trans hc.2⟩
   · -- the `'-'` leaf: `NodeBlock7` pivots to `LeafBlock5`
     have h6 : step calls numFastBody
         (stateAt (t161Env (then157Env env i10 nv) a i10 0x2d)
@@ -1536,7 +1693,7 @@ theorem nestFrom157_sign {calls : Calls} {env : Env} {s : State} {a i10 n : Nat}
       rw [show 6 + k = 1 + (1 + (1 + (1 + (1 + (1 + k))))) from by omega,
         runFuel_jump_prefix h4, runFuel_jump_prefix h5, runFuel_jump_prefix h6,
         runFuel_jump_prefix h7, runFuel_jump_prefix h8, runFuel_jump_prefix h9]
-    refine ⟨eF, rfl, rfl, ?_, ?_, ?_, ?_, ?_, huniv⟩
+    refine ⟨eF, rfl, rfl, ?_, ?_, ?_, ?_, ?_, ?_, huniv⟩
     · simp only [eF, end177Env, then171Env, leafBlock5Env, nodeBlock7Env, t161Env, then157Env]
       first
        | (simp only [stateAt]; block_lk)
@@ -1556,6 +1713,31 @@ theorem nestFrom157_sign {calls : Calls} {env : Env} {s : State} {a i10 n : Nat}
         first
          | (simp only [stateAt]; block_lk)
          | block_lk
+    · intro env0 sign hc
+      have hk : ∀ m ∈ numFastKept, lookupName
+          (end177Env (then171Env (leafBlock5Env
+              (nodeBlock7Env (t161Env (then157Env env i10 nv) a i10 0x2d) 0x2d) 0x2d) 0x2d i10)
+            (evalICmp .ne (JsonScanLane.vByte 0x2d) 0x2d#8)
+            (BitVec.ofNat 64 i10 + 0x2#64) nv) m = lookupName env m := by
+        intro m hm
+        have hm' : m = "%out" ∨ m = "@NUMF_EL1_P10" ∨ m = "@NUMF_EL1_POW10" := by
+          simpa only [numFastKept, List.mem_cons, List.mem_singleton, List.not_mem_nil,
+            or_false] using hm
+        rcases hm' with rfl | rfl | rfl
+        all_goals
+          simp only [end177Env, then171Env, leafBlock5Env, nodeBlock7Env, t161Env,
+            then157Env]
+          repeat rw [lookupName_cons_ne _ _ (by decide)]
+      have hs : lookupName
+          (end177Env (then171Env (leafBlock5Env
+              (nodeBlock7Env (t161Env (then157Env env i10 nv) a i10 0x2d) 0x2d) 0x2d) 0x2d i10)
+            (evalICmp .ne (JsonScanLane.vByte 0x2d) 0x2d#8)
+            (BitVec.ofNat 64 i10 + 0x2#64) nv) "%tobool274.not"
+          = lookupName env "%tobool274.not" := by
+        simp only [end177Env, then171Env, leafBlock5Env, nodeBlock7Env, t161Env,
+          then157Env]
+        repeat rw [lookupName_cons_ne _ _ (by decide)]
+      exact ⟨fun m hm => (hk m hm).trans (hc.1 m hm), hs.trans hc.2⟩
 
 /-! ### The merge: `cleanup223.thread`, `if.end226`, `if.end230`
 
@@ -2321,9 +2503,12 @@ theorem fracScan_run {env : Env} {s : State} {a n : Nat} {bs : List UInt8}
 the fraction run leaves by reads `%fr.3593`, `%fdig.3594` and `%i.9595`, and the
 block's own test then takes the marker's block: one control step from
 `if.end144` to `land.lhs.true147` with `%i.10` fixed at the run's stop index and
-the run's two cells carried as `if.end144`'s phis. -/
+the run's two cells carried as `if.end144`'s phis.  The phis bind neither the
+integer part's two cells nor any kept register, so the four cells
+`if.end230`'s `phi`s read and the caller's kept registers and sign are the
+argument state's at the exit. -/
 theorem nestEntry_run {calls : Calls} {env : Env} {s : State} {a : Nat}
-    {fr fdig i10 nv : BitVec 64}
+    {fr fdig i10 nv : BitVec 64} {idig ip : BitVec 64} {env0 : Env} {sign : BitVec 1}
     (hpc : s.pc = "if.end144")
     (hpre : s.pre = some "land.lhs.true119")
     (hp : lookupName env "%p" = some (.ptr a))
@@ -2331,7 +2516,9 @@ theorem nestEntry_run {calls : Calls} {env : Env} {s : State} {a : Nat}
     (hfd : lookupName env "%fdig.3594" = some (.int 64 fdig))
     (hi : lookupName env "%i.9595" = some (.int 64 i10))
     (hn : lookupName env "%n" = some (.int 64 nv))
-    (hbit : evalICmp .ult i10 nv = 1) :
+    (hbit : evalICmp .ult i10 nv = 1)
+    (hpart : NumFastIntPart idig ip (stateAt env s))
+    (hcarried : NumFastCarried env0 sign (stateAt env s)) :
     ∃ e : State, e.pc = "land.lhs.true147" ∧ e.pre = some "if.end144" ∧
       e.mem = s.mem ∧
       lookupName e.env "%i.10" = some (.int 64 i10) ∧
@@ -2339,13 +2526,14 @@ theorem nestEntry_run {calls : Calls} {env : Env} {s : State} {a : Nat}
       lookupName e.env "%n" = some (.int 64 nv) ∧
       lookupName e.env "%fr.5" = some (.int 64 fr) ∧
       lookupName e.env "%fdig.4" = some (.int 64 fdig) ∧
+      ExpRunCells idig ip fr fdig e ∧ NumFastCarried env0 sign e ∧
       ∀ k, runFuel calls (1 + k) numFastBody (stateAt env s) =
         runFuel calls k numFastBody e := by
   have hden := ifEnd144_denote_frac (calls := calls) (s := s) hpre hfr hfd hi hn
   have hstep := ifEnd144_step (calls := calls) hpc hden hbit
   refine ⟨stateAt (ifEnd144Env env fr fdig i10 nv)
     { s with pc := "land.lhs.true147", pre := some "if.end144" },
-    rfl, rfl, rfl, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    rfl, rfl, rfl, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · simp only [stateAt, ifEnd144Env, ifEnd144PhiEnv]
     block_lk
   · simp only [stateAt, ifEnd144Env, ifEnd144PhiEnv]
@@ -2356,6 +2544,29 @@ theorem nestEntry_run {calls : Calls} {env : Env} {s : State} {a : Nat}
     block_lk
   · simp only [stateAt, ifEnd144Env, ifEnd144PhiEnv]
     block_lk
+  · have h1 : lookupName env "%idig.4" = some (.int 64 idig) := by
+      simpa only [stateAt] using hpart.1
+    have h2 : lookupName env "%ip.5" = some (.int 64 ip) := by
+      simpa only [stateAt] using hpart.2
+    refine ⟨?_, ?_, ?_, ?_⟩
+    all_goals
+      simp only [stateAt, ifEnd144Env, ifEnd144PhiEnv]
+      block_lk
+  · have hk : ∀ m ∈ numFastKept, lookupName (ifEnd144Env env fr fdig i10 nv) m
+        = lookupName env m := by
+      intro m hm
+      have hm' : m = "%out" ∨ m = "@NUMF_EL1_P10" ∨ m = "@NUMF_EL1_POW10" := by
+        simpa only [numFastKept, List.mem_cons, List.mem_singleton, List.not_mem_nil,
+          or_false] using hm
+      rcases hm' with rfl | rfl | rfl
+      all_goals
+        simp only [ifEnd144Env, ifEnd144PhiEnv]
+        repeat rw [lookupName_cons_ne _ _ (by decide)]
+    have hs : lookupName (ifEnd144Env env fr fdig i10 nv) "%tobool274.not"
+        = lookupName env "%tobool274.not" := by
+      simp only [ifEnd144Env, ifEnd144PhiEnv]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+    exact ⟨fun m hm => (hk m hm).trans (hcarried.1 m hm), hs.trans hcarried.2⟩
   · intro k
     rw [runFuel_jump_prefix hstep k]
 
