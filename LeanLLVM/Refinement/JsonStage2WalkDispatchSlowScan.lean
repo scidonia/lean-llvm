@@ -51,8 +51,9 @@ The error-path links all exist except the two loop-body links; the class's own r
 `land.rhs71.i`, `while.body76.i`, `while.end78.i` are on *other* literals' paths.
 `while_body76_i` is therefore not added — this class's route needs `while_body_i104` only.
 -/
-import LeanLLVM.Refinement.JsonStage2WalkDispatchLastSeamRoute
 import LeanLLVM.Refinement.JsonStage2WalkScopeClassAB
+import LeanLLVM.Refinement.JsonStage2WalkRevolution
+import LeanLLVM.Refinement.JsonStage2WalkCall
 import LeanLLVM.Refinement.JsonStage2WalkPhi
 import LeanLLVM.Refinement.JsonStage2WalkRest
 

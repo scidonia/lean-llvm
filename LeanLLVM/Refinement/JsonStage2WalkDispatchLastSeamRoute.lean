@@ -58,6 +58,7 @@ on this class's; their presence is needed for a general `badToken` route, not fo
 `HlastSeam.answerOneRefuse`'s inhabitant.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkDispatchSeamRow
+import LeanLLVM.Refinement.JsonStage2WalkDispatchSlowRound
 import LeanLLVM.Refinement.JsonStage2WalkDispatchSeams
 import LeanLLVM.Refinement.JsonStage2WalkDispatchThreeOfRun
 import LeanLLVM.Refinement.JsonStage2WalkDispatchZeroOfStaging
@@ -72,37 +73,6 @@ open LeanLLVM.Refinement.BlockEval
 open LeanLLVM.Refinement.JsonStage2IR
 
 namespace WalkScope
-
-/-- **`cleanup474.i`'s target, named**: the release is a `lifetime.end` and a branch, so
-its target is the source's memory at the copy's block. -/
-theorem cleanup474_i_at {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
-    (s : State) (hInv : WalkInv G C s) (hblock : C.block = "cleanup474.i")
-    (htok : lookupName s.env "%t352.i" = some (.ptr C.stage.tok)) :
-    ∃ s', WalkLink (stage2Calls stage2SubCalls) G C s { C with block := "if.then" } s' ∧
-      s' = { stateAt s.env s with pc := "if.then", pre := some s.pc } := by
-  obtain ⟨s', hl⟩ := WalkLink.cleanup474_i G C s hInv hblock htok
-  refine ⟨s', hl, ?_⟩
-  have hpc : s.pc = C.block := hInv.pc_eq
-  have hden : denoteCode (stage2Calls stage2SubCalls)
-      [Instr.callVoid "llvm.lifetime.end.p0"
-        [(Ty.int 64, Operand.imm (.int 64 (BitVec.ofNat 64 24))),
-         (Ty.ptr, Operand.reg "%t352.i")]] s = some (stateAt s.env s) := by
-    change denoteCode (stage2Calls stage2SubCalls)
-      [Instr.callVoid "llvm.lifetime.end.p0"
-        [(Ty.int 64, Operand.imm (.int 64 (BitVec.ofNat 64 24))),
-         (Ty.ptr, Operand.reg "%t352.i")]] (stateAt s.env s) = some (stateAt s.env s)
-    rw [walkDenoteCode_lifetimeEnd (sub := stage2SubCalls) (env := s.env) (s := s)
-      (size := 24) (obj := "%t352.i") htok ([] : List Instr)]
-    rfl
-  have hstep : LeanLLVM.step (stage2Calls stage2SubCalls) stage2Body s =
-      Ctrl.jump { stateAt s.env s with pc := "if.then", pre := some s.pc } := by
-    simp only [LeanLLVM.step, hpc, hblock, walkCleanup474_find, hden, walkCleanup474,
-      execTerm]
-    have hpc' : (stateAt s.env s).pc = "cleanup474.i" := by
-      show s.pc = "cleanup474.i"
-      rw [hpc, hblock]
-    rw [hpc']
-  exact Ctrl.jump.inj ((WalkLink.step hl).symm.trans hstep)
 
 /-! ### The three links, from a state at `if.then413.i`
 
@@ -235,9 +205,74 @@ theorem hlastAnswerZeroRefuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
 
 #print axioms LeanLLVM.Refinement.WalkScope.cleanup474_i_at
 #print axioms LeanLLVM.Refinement.WalkScope.hlastAnswerZeroRoute
-#print axioms LeanLLVM.Refinement.WalkScope.hlastAnswerZeroRefuseRoute
+#print axioms LeanLLVM.Refinement.WalkScope.hlastAnswerZeroRefuse
 #print axioms LeanLLVM.Refinement.WalkScope.hlastSeamAnswerZero_nonempty
 #print axioms LeanLLVM.Refinement.WalkScope.hlastAnswerZeroRefuse
+
+
+/-! ### The answer-`1` arm's refusal route
+
+`HlastSeam.answerOneRefuse`'s arm reaches the copy through the error path: the seam's
+three links (`if.then413.i`, `if.then425.i_refuse`, `if.then432.i`), the bound `phi` at
+`cond.end.i96`, the slow scan's round (`slowRun`) to `cleanup474.i` and the release.  The
+class's prefix to the scan's landing is `hlastTailSegByte` plus those four links; the
+round is the scan's own segment, so the route is the prefix composed with it. -/
+
+/-- **The answer-`1` refusal route, at the head.**  The prefix is the class's (the tail
+begins at `if.then413.i` and the seam's three links and the bound `phi` place the scan's
+landing), and the scan's segment is `slowRun`'s. -/
+noncomputable def hlastAnswerOneRefuseRoute {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    {C1 : WalkCarry G} {s1 : State} {n1 k : Nat}
+    (hprefix : WalkSegment (stage2Calls stage2SubCalls) G C s C1 s1 n1)
+    (hn1 : n1 ≤ 20)
+    (hblock1 : C1.block = "land.rhs.i103") (hInv1 : WalkInv G C1 s1)
+    (hpre1 : s1.pre = some "cond.end.i96")
+    (hcnt1 : evalOperand s1 (slowOp (some "cond.end.i96"))
+      = some (.int 64 (BitVec.ofNat 64 (entryPos G C1.k))))
+    (hcond1 : lookupName s1.env "%cond.i" = some (.int 64 (BitVec.ofNat 64 G.n)))
+    (hqn : entryPos G C1.k < G.n)
+    (hbit : (evalICmp .eq (BitVec.ofNat 8 (G.bs.getD (entryPos G C1.k) 0).toNat)
+      (BitVec.ofNat 8 45) ||| evalICmp .ult
+        (BitVec.ofNat 8 (G.bs.getD (entryPos G C1.k) 0).toNat + BitVec.ofNat 8 208)
+        (BitVec.ofNat 8 10)) = 0)
+    (h110 : evalICmp .slt (BitVec.ofNat 8 (G.bs.getD (entryPos G C1.k) 0).toNat)
+      (BitVec.ofNat 8 110) = 0)
+    (h116 : evalICmp .slt (BitVec.ofNat 8 (G.bs.getD (entryPos G C1.k) 0).toNat)
+      (BitVec.ofNat 8 116) = 0)
+    (h116eq : evalICmp .eq (BitVec.ofNat 8 (G.bs.getD (entryPos G C1.k) 0).toNat)
+      (BitVec.ofNat 8 116) = 0)
+    (halen : C1.alen ≤ G.ndst0 + G.n + stage2ArenaReserve)
+    (hevlen : C1.evlen ≤ G.evcap)
+    (hword1 : readBytes s1.mem (C1.stage.e + 8) 8 = some (wordBytes 8 k)) (hk : k ≤ G.n)
+    (heoff1 : C1.eoff ≤ G.n)
+    (hinner : G.n - entryPos G C1.k ≤ C1.inner)
+    (hΔ : 1 ≤ G.n - entryPos G C1.k)
+    (hklt : C1.k < G.nep) (hkC : C1.k = C.k) :
+    HlastRefuseRoute G C s := by
+  let h := slowRun G C1 s1 k hInv1 hblock1 hpre1 hcnt1 hcond1 hqn hbit h110 h116 h116eq
+    halen hevlen hword1 hk heoff1 hinner
+  let Cd : WalkCarry G := Classical.choose h
+  let h1 := Classical.choose_spec h
+  let sd : State := Classical.choose h1
+  let h2 := Classical.choose_spec h1
+  let n : Nat := Classical.choose h2
+  let h3 := Classical.choose_spec h2
+  exact ⟨Cd, sd, n1 + n, hprefix.trans h3.1, h3.2.1, Classical.choose h3.2.2.2.1,
+    (Classical.choose_spec h3.2.2.2.1).1,
+    (Classical.choose_spec h3.2.2.2.1).2,
+    h3.2.2.2.2, by rw [← hkC]; exact slowAnswerOnePrice G C1 hn1 h3.2.2.1 hΔ hklt⟩
+
+/-- **The answer-`1` arm is inhabited**, its route being the class's: the seam's refusal
+rows and the priced route to the copy. -/
+theorem hlastSeamAnswerOne_nonempty {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {s : State} (rows : HlastSeamRefusal G C s) (_route : HlastRefuseRoute G C s) :
+    Nonempty (HlastSeam G C s) :=
+  ⟨HlastSeam.answerOneRefuse rows⟩
+
+/-! ### The instrument -/
+
+#print axioms LeanLLVM.Refinement.WalkScope.hlastAnswerOneRefuseRoute
+#print axioms LeanLLVM.Refinement.WalkScope.hlastSeamAnswerOne_nonempty
 
 end WalkScope
 end LeanLLVM.Refinement
