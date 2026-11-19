@@ -408,7 +408,13 @@ polarities (`if %esign.0 = 1 then %exp10 else 0 - %exp10` as
 index at `%err` and returns zero rather than demanding the unreachable
 `%i.12604 = n` premise the retired merge carried.
 
-What the arm still waits on is the routes below tier 1 and tier 3's region.
+What the arm still waits on is the fallback's tier-3 region and the arm's final
+composition.  The class dispatch and the kernel's route are proved:
+`JsonStage2NumFastClass.numFast_gate304_iff`/`numFast_gate306_iff` read the outer
+and tier-1 windows as the model's, `numFast_tier2_accept_run` reaches the return in
+five steps with the guard's bytes at `%d269`, the counter's successor and
+`strtodSpec`'s bytes at `%out`, and `numFast_tier2_refuse_run` reaches `if.end285`
+in four with the fallback's class.
 `JsonStage2NumFastExponent.expScan_t1_arm` completes the exponent's tier-1 route:
 the nest's carrying seams hand the four cells and caller's kept cells through
 the marker, `expRun_acc_tie` reads the back exit's accumulator as the model's

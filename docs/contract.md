@@ -1650,10 +1650,12 @@ and `lor.lhs.false180` is the piece of the scan that still fixes an index
 **The arm's status.**  `NumFastBodyArm` is stated and not claimed.  The kernel's
 bound is *not* what stops it: `num_el_el1`'s mantissa is a `uint64_t` and the
 body's own argument at `if.end268` is a 64-bit word, so `NumFastElAgrees`'s
-`w < 2 ^ 64` domain is met at the body.  What stops it is the run's composition:
-the `Calls` seam named above (appending a run to a fast path's shapes), tier 1's
-four links (a)–(d), tier 3's three named gaps, and the exponent nest's tie of
-`%exp10.4` to `expVal d`.  The statements added by the two modules above are
+`w < 2 ^ 64` domain is met at the body.  What stops it is the fallback's tier-3
+region — the second reader's chain, the ladder's dual state-level join and the
+fallback arm — and then the arm's composition of the three tier-1 shapes, the
+class dispatch and both kernel routes.  Tier 1's four links are proved, the class
+ties and the kernel's accept/refuse routes are proved, and the exponent nest's
+tie of `%exp10.4` to `expVal d` is discharged by `expRun_acc_tie`.  The statements added by the two modules above are
 pinned: `intScan_fastTaken` and `fracGuard_join` at `[propext, Classical.choice,
 Quot.sound]`, `whileCond91_refused_run` at `[propext, Quot.sound]`,
 `t3_epil_denote_self` and `readBytes_writeBytes_above'` at `[propext,
