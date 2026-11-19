@@ -180,9 +180,15 @@ for fn in leanllvm_bench_inline_pos8 leanllvm_bench_inline_b8; do
   dis=$(objdump -dr --no-show-raw-insn --disassemble="$fn" "$bin/inline.o")
   targets=$(printf '%s\n' "$dis" |
     sed -n 's/.*R_X86_64_PLT32[[:space:]]*\([^+-]*\).*/\1/p' | sort -u | tr '\n' ' ')
-  [ "$targets" = "__stack_chk_fail leanllvm_json_s1_masks " ] ||
+  # The loop may call the classifier and the compiler's own stack-protector
+  # helper; any kernel call means the row is measuring the un-inlined shape.
+  # The canary call appears on some hosts' codegen and not others, so strip it
+  # rather than pin the whole list to one host's object.
+  kernel_targets=$(printf '%s\n' "$targets" | tr ' ' '\n' |
+    grep -v '^$' | grep -v '^__stack_chk_fail' | tr '\n' ' ')
+  [ "$kernel_targets" = "leanllvm_json_s1_masks " ] ||
     { printf 'FAIL: %s calls [%s]; only the classifier may be called\n' \
-        "$fn" "$targets" >&2; exit 1; }
+        "$fn" "$kernel_targets" >&2; exit 1; }
   nmasks=$(printf '%s\n' "$dis" | grep -c 'R_X86_64_PLT32.*leanllvm_json_s1_masks')
   [ "$nmasks" -eq 1 ] ||
     { printf 'FAIL: %s has %s classifier call sites, one per block was expected\n' \
