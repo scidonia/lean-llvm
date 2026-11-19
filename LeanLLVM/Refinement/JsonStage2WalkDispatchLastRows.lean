@@ -10,7 +10,7 @@ the run's seam states — so they cannot be fields of that payload or of `HlastC
 naming them there would close an import cycle.  This module is their home, above every
 producer, and the closure theorem takes it as its third premise.
 
-## Why five groups, and not eighteen
+## Why six groups, and not eighteen
 
 The head switch has thirteen classes at the last entry, but eleven of them derive their
 premises: the openers read `HlastAbi.openCall` and `WalkInv.depth_cap`, the refusals and
@@ -20,7 +20,8 @@ refusal row (`HlastHighByteRefusal`) is the whole of its supply.  A group for an
 would be a field with no consumer.  What is left
 is the five classes whose producers take supply the invariant cannot give: the document's
 last byte's scalar route and its three calls, the default arm's three leaf routes with
-their chains, and the run's own body.
+their chains, and the run's own body.  The class-C range splits by its kind literal — the
+two emitting leaves (`110`, `116`) beside the refusing ones — so it is two fields, not one.
 
 Each group is exactly one producer's argument list after the invariant, the guard and the
 class's bits, and each is guarded by its class — the bits that name the class are
@@ -28,10 +29,28 @@ arguments of the row, not of the structure — so no field is stated at every he
 
 ## The segments a group carries
 
-`.letters`, `.fLetter` and `.classC` carry a head chain, a span and a tail.  Those are the
-arm's own routes: the arm (`LastEntryArm.letters` …) carries them too, and no producer
-claims to establish them.  A row that carried something the producer proves would be the
-defect the ledger's c2 entry is written against; these are its premises.
+`.fLetter` and `.classCTrue` carry a head chain, a span and an emitting tail.  Those are
+the arm's own routes: the arm (`LastEntryArm.fLetter`, `.classC`) carries them too, and no
+producer claims to establish them.  A row that carried something the producer proves would
+be the defect the ledger's c2 entry is written against; these are its premises.
+
+`.letters` and `.classC` carry no emitting tail: their seams take `if.else405.i`'s literal
+`0`, where the walk refuses, so those rows carry the seam's refusal group
+(`HlastSeamRefusal`) and the class's counted route to the refusal copy
+(`HlastRefuseRoute`).  The route is supply, as `HcontClassRows.refuseSeg` is, because the
+error path's blocks have no composed segment in the tree.
+
+## The class-C range's two guards
+
+The class-C range is the only class whose guard splits, and the split is a **partition**,
+not two overlapping readings of one guard.  `.classCTrue` takes exactly the emitting leaves
+— `%8 = 110` (`ClsS413T`, `if.then403.i`'s literal `10`) and `%8 = 116` (`ClsS58T`,
+`LeafBlock58`'s own `8`) — because only there does `od_scalar_value` answer `1` and the
+tail reach `if.end473.i`.  `.classC` takes the class range with `%8 ≠ 110`, `%8 ≠ 116`, and
+the brace exclusions, i.e. the leaves `111 … 115` and `117 … 125`, whose `if.else405.i`
+literal is `0` and whose arm is `LastEntryArm.refuse`.  The class case decides the two
+equalities first and calls exactly one field; neither field is inhabited at the other's
+bytes.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkDispatchClassRows
 import LeanLLVM.Refinement.JsonStage2WalkDispatchScalarOfStaging
@@ -111,13 +130,21 @@ structure HlastScalarRows {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
      .ptr (ScalarC₁₁ C).stage.ctype, .ptr (ScalarC₁₁ C).stage.cst] r₂.mem r₂.next =
       some r₃
 
-/-! ### The default arm's three leaf rows
+/-! ### The default arm's leaf rows
 
 Each carries the head chain to `if.else387.i` (the class's own prefix, which the case
-builds from the lane row and the head bits), the endpoint's `%8`, and the leaf's span and
-tail.  The span and the tail are the arm's own routes. -/
+builds from the lane row and the head bits) and the endpoint's `%8`; the class-C rows add
+the byte's span.  The span is the arm's own route.  The letters and the class-C refusing
+leaves end at `if.else405.i`'s literal `0`, so their payload is the seam's refusal group
+and the class's route; the `'f'` leaf and the two class-C emitting leaves keep the emitting
+tail. -/
 
-/-- **The letters class's row.**  Consumed by `lastEntryArm_letters_of_staging`. -/
+/-- **The letters class's row.**  Consumed by `lastEntryArm_letters_of_staging`'s refusal
+twin: the head chain's endpoint, whose seam `LetS413` takes `if.else405.i`'s kind literal
+`0` — so the tail's rows are the **refusal group** (`HlastSeamRefusal`: the two leading
+calls, the literal `0`, the derived answer `0` and the record) and the arm is the class's
+route to the refusal copy (`HlastRefuseRoute`, from the head state).  No three-call tail
+exists at that literal, so the row carries no emitting segment. -/
 structure HlastLettersRows {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) :
     Type where
   Cm : WalkCarry G
@@ -128,14 +155,11 @@ structure HlastLettersRows {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : S
   hm : Cm.block = "if.else387.i"
   hmk : Cm.k = C.k
   h8m : evalOperand sm (.reg "%8") = some (.int 8 (hlastByte G C))
-  Ct : WalkCarry G
-  st : State
-  tok : Nat
-  hTail : WalkSegment (stage2Calls stage2SubCalls) G (HeadC₄₁₃ (LetC₄₀₅ Cm))
-    (LetS413 sm (hlastByte G C)) Ct st 3
-  ht : Ct.block = "if.end473.i"
-  htk : Ct.k = C.k
-  htok : lookupName st.env "%t352.i" = some (.ptr tok)
+  /-- The seam's refusal rows at `LetS413` — the letters span's target, whose predecessor
+  is `if.else405.i`. -/
+  seam : HlastSeamRefusal G (HeadC₄₁₃ (LetC₄₀₅ Cm)) (LetS413 sm (hlastByte G C))
+  /-- The class's counted, priced route from the head state to the refusal copy. -/
+  route : HlastRefuseRoute G C s
 
 /-- **The `'f'` leaf's row.**  Consumed by `lastEntryArm_fLetter_of_staging`. -/
 structure HlastFLetterRows {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) :
@@ -157,9 +181,37 @@ structure HlastFLetterRows {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : S
   htk : Ct.k = C.k
   htok : lookupName st.env "%t352.i" = some (.ptr tok)
 
-/-- **The class-C class's row.**  Consumed by `lastEntryArm_classC_of_staging`: the same
-head chain with the byte's own span below `if.else387.i` beside the tail. -/
+/-- **The class-C class's row at the refusing leaves.**  Consumed by the class case's
+refusal branches: the bytes `111 … 115` (`LeafBlock56`'s else arm) and `117 … 125`
+(`LeafBlock58`'s else arm) reach `if.else405.i`, whose kind literal is `0`, so the tail's
+rows are the **refusal group** (`HlastSeamRefusal` at the span's endpoint) and the arm is
+the class's route to the refusal copy.  No three-call tail exists at that literal. -/
 structure HlastClassCRows {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) :
+    Type where
+  Cm : WalkCarry G
+  sm : State
+  nH : Nat
+  hHead : WalkSegment (stage2Calls stage2SubCalls) G C s Cm sm nH
+  hnH : nH ≤ 11
+  hm : Cm.block = "if.else387.i"
+  hmk : Cm.k = C.k
+  h8m : evalOperand sm (.reg "%8") = some (.int 8 (hlastByte G C))
+  Cs : WalkCarry G
+  ss : State
+  nS : Nat
+  hSpan : Seg (stage2Calls stage2SubCalls) G Cm sm Cs ss nS
+  hs : Cs.block = "if.then413.i"
+  hnS : nS ≤ 5
+  /-- The seam's refusal rows at the span's endpoint. -/
+  seam : HlastSeamRefusal G Cs ss
+  /-- The class's counted, priced route from the head state to the refusal copy. -/
+  route : HlastRefuseRoute G C s
+
+/-- **The class-C class's row at the emitting leaves.**  `110` (`LeafBlock56`'s true arm,
+kind `10`) and `116` (`LeafBlock58` itself, kind `8`) reach `if.then413.i` with a nonzero
+literal, so `od_scalar_value` answers `1` and the tail's three calls reach `if.end473.i`.
+The row carries the byte's own span and the arm's tail, as `HlastFLetterRows` does. -/
+structure HlastClassCTrueRows {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) :
     Type where
   Cm : WalkCarry G
   sm : State
@@ -222,7 +274,7 @@ structure HlastRunRows {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
   hN : N = i - entryPos G C.k
   hc : c = G.n
 
-/-! ### The five groups, as one structure
+/-! ### The six groups, as one structure
 
 Each field's guard is its class's own bits at the last entry's byte, and each field's
 consumer is the producer named in its docstring.  The thirteen other classes of the head
@@ -231,18 +283,25 @@ payload's `openCall`/`highByte` groups — a field for any of them would have no
 
 /-- **The last entry's per-class rows.**  The third premise of a `WalkLoopEnd` producer
 beside `HlastPayload`'s openers/high-byte groups and `HlastClassRows`' document and seam
-rows: what the staging supplies for the five classes the invariant cannot reach.
+rows: what the staging supplies for the classes the invariant cannot reach.
 
 Every field is guarded by the class bits that name it — so no field is stated at every
 head — and no field is a segment a producer is meant to establish: the chain, span and tail
 segments are the arms' own routes.
 
+The default arm's kind literal splits three of the classes.  `.letters` and the class-C
+refusal row (`.classC`, the leaves `111 … 115` and `117 … 125`) reach `if.else405.i`, whose
+literal is `0`: their seams carry the refusal group (`HlastSeamRefusal`), no three-call
+tail exists there, and their arms are the class's route to the refusal copy
+(`LastEntryArm.refuse`).  The two class-C emitting leaves (`110` and `116`) are
+`.classCTrue`, whose seam literal is `10` and `8`.
+
 Three guards also exclude the bytes the head switch sends elsewhere before the default arm:
-`.letters` and `.run` exclude the standalone opener's `34`, and `.classC` excludes the
-braces `123` and `125`.  `.letters`' guard still admits the comma, the colon and the two
-brackets (`44`, `58`, `91`, `93`), which the class case dispatches to their own arms; those
-exclusions are not stated, and `JsonStage2WalkDispatchLastArmRows` records the byte facts
-they would rest on. -/
+`.letters` and `.run` exclude the standalone opener's `34`, and `.classC`/`.classCTrue`
+exclude the braces `123` and `125`.  `.letters`' guard still admits the comma, the colon
+and the two brackets (`44`, `58`, `91`, `93`), which the class case dispatches to their own
+arms; those exclusions are not stated, and `JsonStage2WalkDispatchLastArmRows` records the
+byte facts they would rest on. -/
 structure HlastArmRows {m0 : Mem} (G : WalkGeom m0) : Type where
   /-- The scalar class's row (`HlastScalarRows`); consumer
   `lastEntryArm_scalar_of_staging`. -/
@@ -254,10 +313,10 @@ structure HlastArmRows {m0 : Mem} (G : WalkGeom m0) : Type where
     (hbit : (evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 45) |||
       evalICmp .ult (hlastByte G C + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 1) →
     HlastScalarRows G C s
-  /-- The letters class's row (`HlastLettersRows`); consumer
-  `lastEntryArm_letters_of_staging`.  The guard excludes the standalone opener's byte
-  (`%8 = 34`), which the head switch sends to its own arm, so the row is quantified only
-  over the bytes the class case dispatches to it. -/
+  /-- The letters class's row (`HlastLettersRows`): the class case's refusal branch reads
+  its `route`.  The guard excludes the standalone opener's byte (`%8 = 34`), which the
+  head switch sends to its own arm, so the row is quantified only over the bytes the class
+  case dispatches to it. -/
   letters : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     ¬ (C.k + 1 < G.nep) →
     (hbit : (evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 45) |||
@@ -275,10 +334,11 @@ structure HlastArmRows {m0 : Mem} (G : WalkGeom m0) : Type where
     (h110 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 110) = 1) →
     (h102 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 102) = 1) →
     HlastFLetterRows G C s
-  /-- The class-C class's row (`HlastClassCRows`); consumer
-  `lastEntryArm_classC_of_staging`.  The guard excludes the two brace bytes (`%8 = 123`,
-  `%8 = 125`), which the head switch sends to the container open and close arms, so the
-  row is quantified only over the bytes the class case dispatches to it. -/
+  /-- The class-C class's row at the refusing leaves (`HlastClassCRows`): the class case's
+  refusal branch reads its `route`.  The guard is the class's range with the two brace
+  bytes (`%8 = 123`, `%8 = 125`, the container arms') and the two emitting leaves
+  (`%8 = 110`, `%8 = 116`, `classCTrue`'s) excluded; `111 … 115` and `117 … 125` reach
+  `if.else405.i`. -/
   classC : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     ¬ (C.k + 1 < G.nep) →
     (h110 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 110) = 0) →
@@ -286,7 +346,22 @@ structure HlastArmRows {m0 : Mem} (G : WalkGeom m0) : Type where
       evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 125) = 1) →
     (hne123 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 123) = 0) →
     (hne125 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 125) = 0) →
+    (hne110 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 110) = 0) →
+    (hne116 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 116) = 0) →
     HlastClassCRows G C s
+  /-- The class-C class's row at the emitting leaves (`HlastClassCTrueRows`): `110` and
+  `116`, whose seams write `if.then403.i`'s `10` and `LeafBlock58`'s `8`.  Its consumer is
+  `lastEntryArm_classC_of_staging`, and the class case takes it only at those two bytes. -/
+  classCTrue : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
+    ¬ (C.k + 1 < G.nep) →
+    (h110 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 110) = 0) →
+    (h125 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 125) = 1 ∨
+      evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 125) = 1) →
+    (hne123 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 123) = 0) →
+    (hne125 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 125) = 0) →
+    (hleaf : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 110) = 1 ∨
+      evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 116) = 1) →
+    HlastClassCTrueRows G C s
   /-- The run class's row (`HlastRunRows`); consumer `lastEntryArm_run_of_staging`.  Its
   guard is the class's own: the byte before the token's end is whitespace, which is what
   sends the walk into the run's scan rather than straight to the seam — beside the tag

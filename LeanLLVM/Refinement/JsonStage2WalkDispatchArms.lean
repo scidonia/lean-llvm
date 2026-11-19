@@ -35,6 +35,14 @@ turns it into the actual `WalkDispatchResult`:
   leading calls, the derived answer and record, and the class's own route to `if.then`.
   Its byte-class restriction is stated here and nowhere else; it is one arm, not the
   last entry's shape.
+* `.refuse` — **the default arm's kind-`0` edge at any other byte**: the byte's own span
+  below `if.else387.i` reaches `if.else405.i`, whose `phi` literal is `0`, so
+  `od_scalar_value` answers `0` and the walk takes the error path through `if.then432.i`
+  and `cleanup474.i` to the refusal copy.  The evidence is the class's counted, priced
+  route (`HlastRefuseRoute`) — the error path's blocks have no composed segment in the
+  tree, so it is carried as the class's row, and the class's seam rows
+  (`HlastSeamRefusal`) are stated beside it.  The arm refuses
+  (`WalkDispatchResult.refuse`), reading only the route as `.highByte` does.
 * `.stringOpener` — `sw.bb202.i` with no entry left: a bare opener is refused
   (`quoteRefuse_at`'s five links).
 * `.closingZero` — `if.then53.i` at depth zero: `]` with nothing open is refused
@@ -89,7 +97,10 @@ turns it into the actual `WalkDispatchResult`:
   and the seam) and the tail's three calls on their empty arm — at most `19`,
   `lettersCleanupMerge_at`.  On the no-run class the seam's `%ee.1.i` is the entry's end,
   so the copy call's test is `ult v v` and no scan is entered; the run class's scan is
-  `.run`'s, which is the continuing level's (see below).
+  `.run`'s, which is the continuing level's (see below).  `LetS413`'s predecessor is
+  `if.else405.i`, whose literal `0` answers the scalar call `0`, so this arm's three-link
+  premise exists only on a nonzero literal; at the last entry's letters bytes the edge
+  takes `.refuse`.
 * `.fLetter` — the byte `102` (`'f'`) on the scan-free class: the letters span's sibling,
   `LeafBlock54`'s *true* arm at `if.then397.i` (kind `9`), composed by `fSpan` and
   `fCleanupMerge_at` — nineteen links at the last entry, no byte term.
@@ -98,7 +109,9 @@ turns it into the actual `WalkDispatchResult`:
   arm, `116` from `LeafBlock58` itself (kind `8`) and `117 … 125` via its else arm.  The
   span is the byte's own `Seg` at `nS ≤ 5` (`c56TrueSpan`, `c56ElseSpan`, `c58TrueSpan`,
   `c58ElseSpan`) and `classCMerge_at` composes the tail and the merge — `nH + nS + 4 ≤ 20`
-  at `nH ≤ 11`, `nS ≤ 5`.
+  at `nH ≤ 11`, `nS ≤ 5`.  Only `110` and `116` write a nonzero literal; the two else
+  arms reach `if.else405.i`'s `0`, where the walk refuses and the last entry's class case
+  takes `.refuse` instead of this arm.
 * `.run` — **the last entry's run class**, at the default arm's spans, proved against the
   terminal price: the byte before the entry's end is whitespace, so the token's own scan
   traverses `[k, G.n)`.  The path's fixed part is twenty-four links and the price's own two
@@ -372,6 +385,14 @@ inductive LastEntryArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
   to `if.then`. -/
   | highByte {hb : HcontByteRoute (head35 (G.bs.getD (G.n - 1) 0))}
       (r : HlastHighByteRefusal G C s hb) : LastEntryArm calls G C s
+  /-- **The default arm's kind-`0` edge at the last entry**: the walk refuses.  The edge
+  writes `if.else405.i`'s literal `0`, so `od_scalar_value` answers `0` and the walk takes
+  the error path to the refusal copy.  The class's route is `HlastRefuseRoute` — the
+  counted, priced segment to `if.then`, whose word the copy reads — and the arm reads that
+  route as `.highByte` does, because the error path's blocks have no composed segment in
+  the tree.  The class's seam rows (`HlastSeamRefusal`) are stated beside it in the class's
+  own row, where the answer and the record the call wrote are named. -/
+  | refuse (route : HlastRefuseRoute G C s) : LastEntryArm calls G C s
   /-- **A bare string opener with no entry left**: refused at `if.then205.i`. -/
   | stringOpener {inc nep : BitVec 64}
       (h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 34)))
@@ -665,6 +686,9 @@ theorem LastEntryArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
   | .highByte r =>
     WalkDispatchResult.refuse r.route.Cd r.route.sd r.route.n r.route.seg r.route.hblock
       ⟨r.route.k, r.route.hk, r.route.hword⟩ r.route.herr r.route.hprice
+  | .refuse route =>
+    WalkDispatchResult.refuse route.Cd route.sd route.n route.seg route.hblock
+      ⟨route.k, route.hk, route.hword⟩ route.herr route.hprice
   | .stringOpener h8 hinc hnep hge hv he =>
     (fun ⟨Cd, sd, p, hseg, herr, hprice⟩ =>
       WalkDispatchResult.refuse Cd sd p hseg.seg hseg.block hseg.word herr hprice)

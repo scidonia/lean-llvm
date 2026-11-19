@@ -201,7 +201,11 @@ knows the answer (the head's byte and its tests), and this is where it is answer
 they are has its branch (`JsonStage2WalkDispatchClassCase`: `hcontArm_scalar_of_class`,
 `hcontArm_letters_of_class`, `hcontArm_fLetter_of_class`, the four
 `hcontArm_classC_*_of_class`, `hcontArm_cleanup_of_class` and
-`hcontArm_stringOpenAboveZero_of_class`).  `.run` is armed as well: the class rows'
+`hcontArm_stringOpenAboveZero_of_class`).  The letters, `111 … 115`, `117 … 125` and
+`126`/`127` branches reach `if.else405.i`'s literal-`0` kind, so they build the refusal
+(`hcontArm_badToken_of_row` at the class's `refuseSeg`) and their seam rows state the
+refusal group; the `'f'`, `110` and `116` leaves project their emit row.  `.run` is
+armed as well: the class rows'
 `run` field produces a `Nonempty HcontArm` from a `HcontRunRow` (`hcontRunRow_of_rows`
 joined to `RunFacts` at the class's prefix, with `runSkip`'s stop and `runTail`'s rows),
 and `walkContinueArm_of_payload` (`JsonStage2WalkDispatchContinuing`) carries the `.run`
@@ -470,6 +474,11 @@ classes take the `HlastArmRows` groups — `.scalar` on the tag test's true arm,
 false one `.run` when the byte before the entry's end is whitespace, else `letters`/
 `'f'`/class C by the head byte's own two pivots.
 
+The default arm's kind literal decides the arm.  `.letters` and the class-C leaves whose
+span reaches `if.else405.i` (`111 … 115`, `117 … 125`) take the refusal group's route and
+build `LastEntryArm.refuse`; `.fLetter` and the class-C leaves `110`/`116` write a nonzero
+literal and keep their emitting arms.
+
 No branch assumes a segment: the chains, spans and tails are the groups' fields, and the
 segments the derived classes need are the producers' own compositions. -/
 noncomputable def walkLoopEnd_of_payload {m0 : Mem} {G : WalkGeom m0}
@@ -498,15 +507,29 @@ noncomputable def walkLoopEnd_of_payload {m0 : Mem} {G : WalkGeom m0}
             htok⟩ := ha.fLetter C s hInv hblock hnot hbit h110 h102
           exact lastEntryArm_fLetter_of_staging C s hInv rfl hbit h110 h102 hHead hnH hm
             hmk h8m hTail ht htk htok
-        · obtain ⟨Cm, sm, nH, hHead, hnH, hm, hmk, h8m, Ct, st, tok, hTail, ht, htk,
-            htok⟩ := ha.letters C s hInv hblock hnot hbit h110 (bitZeroOfNeOne h102) hne34
-          exact lastEntryArm_letters_of_staging C s hInv rfl hbit h110 (bitZeroOfNeOne h102)
-            hHead hnH hm hmk h8m hTail ht htk htok
-      · obtain ⟨Cm, sm, nH, hHead, hnH, hm, hmk, h8m, Cs, ss, nS, hSpan, hs, hnS, Ct, st,
-          tok, hTail, ht, htk, htok⟩ :=
-          ha.classC C s hInv hblock hnot (bitZeroOfNeOne h110) h125 hne123 hne125
-        exact lastEntryArm_classC_of_staging C s hInv rfl (bitZeroOfNeOne h110) h125 hHead
-          hnH hm hmk h8m hSpan hs hnS hTail ht htk htok
+        · obtain ⟨Cm, sm, nH, hHead, hnH, hm, hmk, h8m, seam, route⟩ :=
+            ha.letters C s hInv hblock hnot hbit h110 (bitZeroOfNeOne h102) hne34
+          exact LastEntryArm.refuse route
+      · -- the class-C range: `110` and `116` emit, the other leaves refuse
+        by_cases h110eq : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 110) = 1
+        · obtain ⟨Cm, sm, nH, hHead, hnH, hm, hmk, h8m, Cs, ss, nS, hSpan, hs, hnS, Ct,
+            st, tok, hTail, ht, htk, htok⟩ :=
+            ha.classCTrue C s hInv hblock hnot (bitZeroOfNeOne h110) h125 hne123 hne125
+              (Or.inl h110eq)
+          exact lastEntryArm_classC_of_staging C s hInv rfl (bitZeroOfNeOne h110) h125
+            hHead hnH hm hmk h8m hSpan hs hnS hTail ht htk htok
+        · by_cases h116eq : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 116) = 1
+          · obtain ⟨Cm, sm, nH, hHead, hnH, hm, hmk, h8m, Cs, ss, nS, hSpan, hs, hnS, Ct,
+              st, tok, hTail, ht, htk, htok⟩ :=
+              ha.classCTrue C s hInv hblock hnot (bitZeroOfNeOne h110) h125 hne123 hne125
+                (Or.inr h116eq)
+            exact lastEntryArm_classC_of_staging C s hInv rfl (bitZeroOfNeOne h110) h125
+              hHead hnH hm hmk h8m hSpan hs hnS hTail ht htk htok
+          · obtain ⟨_Cm, _sm, _nH, _hHead, _hnH, _hm, _hmk, _h8m, _Cs, _ss, _nS, _hSpan,
+              _hs, _hnS, _seam, route⟩ :=
+              ha.classC C s hInv hblock hnot (bitZeroOfNeOne h110) h125 hne123 hne125
+                (bitZeroOfNeOne h110eq) (bitZeroOfNeOne h116eq)
+            exact LastEntryArm.refuse route
   by_cases h34 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 34) = 1
   · exact lastEntryArm_stringOpener_of_staging C s hInv h34 hnot
   · by_cases h44 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 44) = 1

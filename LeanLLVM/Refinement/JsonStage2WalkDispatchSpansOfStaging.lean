@@ -132,7 +132,12 @@ def hcontArm_letters_of_staging {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G)
 
 /-- **The letters arm at the last entry, from the staging.**  The same class and the same
 fields at the level whose head chain is one link shorter; which side of the count the state
-is on is the dispatch's hypothesis, so the arm itself is the continuing one's shape. -/
+is on is the dispatch's hypothesis, so the arm itself is the continuing one's shape.
+
+The last entry's letters bytes do not take this arm: their span ends at `LetS413`, whose
+predecessor `if.else405.i` writes the literal `0`, so the walk refuses and the class case
+builds `LastEntryArm.refuse` from the class's row.  This producer is the emit shape's, at a
+nonzero literal. -/
 def lastEntryArm_letters_of_staging {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G)
     (s : State) (hInv : WalkInv G C s) {x : BitVec 8} (hx : x = hlastByte G C)
     (hbit : (evalICmp .eq x (BitVec.ofNat 8 45) |||
@@ -327,7 +332,10 @@ def hcontArm_classC_of_staging {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G)
   .classC (cont_reg8_at hInv hx) h110 h125 hHead hnH hm hmk h8m hSpan hs hnS
     hTail ht htk htok
 
-/-- **The class-C arm at the last entry, from the staging.** -/
+/-- **The class-C arm at the last entry, from the staging.**  The two leaves whose seam
+writes a nonzero literal — `110` (`ClsS413T`, `10`) and `116` (`ClsS58T`, `8`) — take this
+arm; the else arms reach `if.else405.i`'s `0`, where the class case builds
+`LastEntryArm.refuse` from the class's refusal row instead. -/
 def lastEntryArm_classC_of_staging {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G)
     (s : State) (hInv : WalkInv G C s) {x : BitVec 8} (hx : x = hlastByte G C)
     (h110 : evalICmp .slt x (BitVec.ofNat 8 110) = 0)

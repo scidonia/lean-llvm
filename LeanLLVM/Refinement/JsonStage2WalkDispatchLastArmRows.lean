@@ -1,9 +1,9 @@
 /-
 # The last entry's arm rows: what is produced, and what is still supply
 
-`HlastArmRows` (`JsonStage2WalkDispatchLastRows`) carries five rows, each one a
-`lastEntryArm_*_of_staging` producer's argument list after the invariant, the guard and the
-class's bits.  This module settles which of the five the tree can *produce* and which it can
+`HlastArmRows` (`JsonStage2WalkDispatchLastRows`) carries six rows, each one a
+`lastEntryArm_*` producer's argument list after the invariant, the guard and the
+class's bits.  This module settles which of the six the tree can *produce* and which it can
 only take.
 
 ## The rows, and what each one is
@@ -11,15 +11,16 @@ only take.
 | row | fields | what the tree supplies |
 |---|---|---|
 | `.scalar` | the last byte's three class bits, one root-slot read, the three calls at `scalarSeam` | **nothing**: the document's last byte's class and the three callees' rows are the supply itself |
-| `.letters` | a head chain to `if.else387.i`, a tail at `LetS413 sm x` | **the tail**, from the three calls (`lettersSpan` + `emptyTailSeg_of_calls`); the head chain is the row's input |
-| `.fLetter` | the same at `FS413 sm x` | **the tail**, from the same three calls (`fSpan` + `emptyTailSeg_of_calls`) |
-| `.classC` | a head chain, a span, a tail | **the span** (`classCSpan_at`, from the head's `%8 < 110` bit) and **the tail**; the head chain and the span's endpoint are the row's input |
+| `.letters` | a head chain to `if.else387.i`, the refusal seam at `LetS413 sm x`, the class's route | **nothing**: `if.else405.i`'s literal is `0`, so the seam's rows are the refusal group (`HlastSeamRefusal`) and the arm is `.refuse`'s |
+| `.fLetter` | the same at `FS413 sm x` | **the tail**, from the same three calls (`fSpan` + `emptyTailSeg_of_calls`); the head chain is the row's input |
+| `.classC` | a head chain, a span, the refusal seam at the span's endpoint, the class's route | **nothing**: the leaves `111 … 115` and `117 … 125` take `if.else405.i`'s `0`, so the arm is `.refuse`'s |
+| `.classCTrue` | a head chain, a span, a tail (the two emitting leaves `110`/`116`) | **the tail** (`emptyTailSeg_of_calls`, from the seam's three call rows and their cells); the head chain and the span's endpoint are the row's input |
 | `.run` | a head chain, a span, a tail, a latch, the scan's counters and `ScanVisits` | **nothing**: the head is the same missing chain as `.letters`, and the remainder is the run's seam group and traversal |
 
-So the two default-arm leaves' tails and the class-C row's span and tail are theorems here:
-a row no longer assumes a tail segment, only the three callees' rows at the seam.  The
-rows themselves are `hlastLettersRows_of_head`, `hlastFLetterRows_of_head` and
-`hlastClassCRows_of_span`, with the class-C span's producer `hlastClassCSpan_of_head`
+So the `'f'` leaf's tail and the two emitting class-C leaves' tails are theorems here: a row
+no longer assumes a tail segment where the edge writes `0`.  The rows themselves are
+`hlastLettersRows_of_head`, `hlastFLetterRows_of_head`, `hlastClassCRows_of_span` and
+`hlastClassCTrueRows_of_span`, with the class-C span's producer `hlastClassCSpan_of_head`
 beside them; `.scalar` and `.run` have no producer here.  The three things that remain,
 and that no theorem in this tree produces, are:
 
@@ -31,12 +32,12 @@ and that no theorem in this tree produces, are:
   `if.end372.i` through `LeafBlock33`/`LeafBlock37` (`contByteSegScanFree`/`Low`/`High`,
   `JsonStage2WalkDispatchLeafBytes`), which is stated at the *continuing* count only;
   their last-entry twins are the producer the head chains above are waiting on;
-* **the three callees' rows at the seam each class reaches** — `.scalar`'s at `scalarSeam`
-  with the scalar route's kind literal, the letters and `'f'` routes' at `LetS413`/`FS413`
-  (kinds `0`, `9`), and the class-C leaves' at `ClsS413T`/`ClsS413F`/`ClsS58T`/`HeadS413`
-  (kinds `10`, `10`, `8`, `7`).  `HlastClassRows.seam` states the group at the byte-route
-  seam with one kind literal, its `cA`; the letters and class-C routes read their own
-  literal, so that field does not supply their tails;
+* **the callees' rows at the seam each class reaches** — `.scalar`'s at `scalarSeam`
+  with the scalar route's kind literal, the `'f'` route's at `FS413` (kind `9`), the
+  class-C emitting leaves' at `ClsS413T`/`ClsS58T` (kinds `10`, `8`), and the refusal
+  groups at `LetS413`/`ClsS413F`/`HeadS413` (literal `0`).  `HlastClassRows.seam` states
+  the group at the byte-route seam with one kind literal, its `cA`; the default arm's
+  routes read their own literal, so that field does not supply their rows;
 * **the run's own traversal** — its stop, the landing's byte and the scan's visits — which
   `HlastWsSeam`/`runLastFacts_of_seam` (`JsonStage2WalkDispatchRunLastSeam`) state but do
   not produce at a variable geometry.
@@ -46,10 +47,12 @@ and that no theorem in this tree produces, are:
 `HlastArmRows`' fields are `∀`-fields, so a row is demanded at every byte its guard admits.
 Three guards admitted a byte the head switch sends to another arm, and `HlastArmRows` now
 excludes the ones the case decides first: `.letters` and `.run` carry `%8 ≠ 34` (the
-standalone opener) and `.classC` carries `%8 ≠ 123`, `%8 ≠ 125` (the container braces).
-The theorems below witness both halves — the bits that still hold at those bytes, and the
-exclusion that now fails there — so the exclusion is what closes the overlap and not a
-changed conclusion.
+standalone opener) and `.classC`/`.classCTrue` carry `%8 ≠ 123`, `%8 ≠ 125` (the container
+braces).  The class-C range is then split by its kind literal: `.classCTrue` takes the two
+emitting leaves (`%8 = 110` or `%8 = 116`) and `.classC` the rest, which is why the refusal
+field carries `%8 ≠ 110` and `%8 ≠ 116` as well.  The theorems below witness both halves —
+the bits that still hold at those bytes, and the exclusion that now fails there — so the
+exclusion is what closes the overlap and not a changed conclusion.
 
 Two residual overlaps remain, and they are recorded rather than repaired:
 
@@ -169,53 +172,20 @@ head segment's invariant, and `emptyTailSeg_of_calls` composes the three calls a
 endpoint.  So the row's `hTail`, its target's block and index, and the token cell are
 theorems given the head segment and the seam's supply. -/
 
-/-- **The letters row, from the head segment and the seam's supply.**  The head chain is
-the row's input — the tree's last-entry chains are stated for a scan-free document byte
-only, so a producer of the chain at every byte does not exist yet — and everything else in
-the row is produced here. -/
-noncomputable def hlastLettersRows_of_head {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+/-- **The letters row, from the head segment and the seam's refusal rows.**  The head chain
+is the row's input — the tree's last-entry chains are stated for a scan-free document byte
+only, so a producer of the chain at every byte does not exist yet — and the seam's rows and
+the class's route are the edge's own supply: `LetS413`'s predecessor is `if.else405.i`, whose
+literal `0` admits no three-call group (`HlastSeamTailSupply.not_nonempty_of_else405`). -/
+def hlastLettersRows_of_head {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     {Cm : WalkCarry G} {sm : State} {nH : Nat}
     (hHead : WalkSegment (stage2Calls stage2SubCalls) G C s Cm sm nH) (hnH : nH ≤ 11)
     (hm : Cm.block = "if.else387.i") (hmk : Cm.k = C.k)
     (h8m : evalOperand sm (.reg "%8") = some (.int 8 (hlastByte G C)))
-    (h110 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 110) = 1)
-    (hne102 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 102) = 0)
-    (sup : HlastSeamTailSupply G (HeadC₄₁₃ (LetC₄₀₅ Cm))
-      (LetS413 sm (hlastByte G C))) :
-    HlastLettersRows G C s := by
-  have hspan : Seg (stage2Calls stage2SubCalls) G Cm sm
-      (HeadC₄₁₃ (LetC₄₀₅ Cm)) (LetS413 sm (hlastByte G C)) 4 :=
-    lettersSpan (calls := stage2Calls stage2SubCalls) (G := G) (C := Cm) (s := sm)
-      hHead.inv' hm h8m h110 hne102
-  have hInv : WalkInv G (HeadC₄₁₃ (LetC₄₀₅ Cm)) (LetS413 sm (hlastByte G C)) :=
-    (Seg.measure hspan).inv'
-  have hblock : (HeadC₄₁₃ (LetC₄₀₅ Cm)).block = "if.then413.i" := rfl
-  have hEx : ∃ ev : EventRecord,
-      WalkSegment (stage2Calls stage2SubCalls) G (HeadC₄₁₃ (LetC₄₀₅ Cm))
-        (LetS413 sm (hlastByte G C)) (TailCarryEnd (HeadC₄₁₃ (LetC₄₀₅ Cm)) ev)
-        (ScanEntry (LetS413 sm (hlastByte G C)) sup.r₁ sup.r₂ sup.r₃ sup.cd sup.cd sup.cA
-          sup.rdv sup.xA) 3 :=
-    emptyTailSeg_of_calls G (HeadC₄₁₃ (LetC₄₀₅ Cm)) (LetS413 sm (hlastByte G C))
-      sup.r₁ sup.r₂ sup.r₃ sup.cd hInv hblock (p := sup.p) (reg := "%8") (op := sup.op)
-      sup.hpre sup.hphi sup.hop
-      sup.hkind sup.hrd sup.hread sup.hpre₁ sup.hcall₁ sup.hret₁ sup.hbit0 sup.hzread sup.hc
-      sup.ht sup.ho sup.hpre₂ sup.hcall₂ sup.hret₂ sup.hev64 sup.htight sup.hklt sup.hpre₃
-      sup.hcall₃ sup.hei sup.hcd sup.hcd64
-  let ev : EventRecord := Classical.choose hEx
-  have hseg : WalkSegment (stage2Calls stage2SubCalls) G (HeadC₄₁₃ (LetC₄₀₅ Cm))
-      (LetS413 sm (hlastByte G C)) (TailCarryEnd (HeadC₄₁₃ (LetC₄₀₅ Cm)) ev)
-      (ScanEntry (LetS413 sm (hlastByte G C)) sup.r₁ sup.r₂ sup.r₃ sup.cd sup.cd sup.cA
-        sup.rdv sup.xA) 3 :=
-    Classical.choose_spec hEx
-  refine ⟨Cm, sm, nH, hHead, hnH, hm, hmk, h8m,
-    TailCarryEnd (HeadC₄₁₃ (LetC₄₀₅ Cm)) ev,
-    ScanEntry (LetS413 sm (hlastByte G C)) sup.r₁ sup.r₂ sup.r₃ sup.cd sup.cd sup.cA sup.rdv
-      sup.xA,
-    (TailCarry₂ (HeadC₄₁₃ (LetC₄₀₅ Cm))).stage.tok, hseg, rfl, ?_, ?_⟩
-  · show Cm.k = C.k
-    exact hmk
-  · rw [lastArmScanEntry_envTok]
-    exact sup.ht
+    (seam : HlastSeamRefusal G (HeadC₄₁₃ (LetC₄₀₅ Cm)) (LetS413 sm (hlastByte G C)))
+    (route : HlastRefuseRoute G C s) :
+    HlastLettersRows G C s :=
+  ⟨Cm, sm, nH, hHead, hnH, hm, hmk, h8m, seam, route⟩
 
 /-! ### The `'f'` row's tail -/
 
@@ -280,14 +250,31 @@ theorem hlastClassCSpan_of_head {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (
         Cs.block = "if.then413.i" ∧ nS ≤ 5 :=
   classCSpan_at (G := G) (C := Cm) (s := sm) hHead.inv' hm h8m h110z
 
-/-- **The class-C row, from the span and the seam's supply.**  `classCSpan_at` produces the
-byte's span (`hlastClassCSpan_of_head` states it at the head segment), so a caller has one;
-what the span's *type* does not carry is its endpoint carry's index, `Cs.k = C.k`, which
-each of the four concrete endpoints satisfies by `rfl` (`{ClsC₄₀₃ Cm with block := …}`,
-`HeadC₄₁₃ (ClsC₄₀₅ Cm)`, `{HeadC₅₈ Cm with block := …}`, `HeadC₄₁₃ Cm`).  The supply is a
-function of the endpoint because the four leaves reach four different seams. -/
-noncomputable def hlastClassCRows_of_span {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+/-- **The class-C row at a refusing leaf, from the span and the seam's refusal rows.**
+`classCSpan_at` produces the byte's span (`hlastClassCSpan_of_head` states it at the head
+segment), so a caller has one; the span's *type* does not carry its endpoint carry's index,
+`Cs.k = C.k`, which each of the four concrete endpoints satisfies by `rfl`
+(`{ClsC₄₀₃ Cm with block := …}`, `HeadC₄₁₃ (ClsC₄₀₅ Cm)`, `{HeadC₅₈ Cm with block := …}`,
+`HeadC₄₁₃ Cm`).  At `ClsS413F` and `HeadS413` the seam's kind literal is `0`, so the tail's
+rows are the refusal group's and the class's route to the refusal copy is the arm's. -/
+def hlastClassCRows_of_span {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
     (s : State) {Cm : WalkCarry G} {sm : State} {nH : Nat}
+    {Cs : WalkCarry G} {ss : State} {nS : Nat}
+    (hHead : WalkSegment (stage2Calls stage2SubCalls) G C s Cm sm nH) (hnH : nH ≤ 11)
+    (hm : Cm.block = "if.else387.i") (hmk : Cm.k = C.k)
+    (h8m : evalOperand sm (.reg "%8") = some (.int 8 (hlastByte G C)))
+    (hSpan : Seg (stage2Calls stage2SubCalls) G Cm sm Cs ss nS)
+    (hs : Cs.block = "if.then413.i") (hnS : nS ≤ 5)
+    (seam : HlastSeamRefusal G Cs ss) (route : HlastRefuseRoute G C s) :
+    HlastClassCRows G C s :=
+  ⟨Cm, sm, nH, hHead, hnH, hm, hmk, h8m, Cs, ss, nS, hSpan, hs, hnS, seam, route⟩
+
+/-- **The class-C row at an emitting leaf, from the span and the seam's supply.**
+`110`'s `ClsS413T` and `116`'s `ClsS58T` take nonzero literals, so the tail's three calls
+are `emptyTailSeg_of_calls`'s at the endpoint; the supply is a function of the endpoint
+because the two leaves reach different seams. -/
+noncomputable def hlastClassCTrueRows_of_span {m0 : Mem} (G : WalkGeom m0)
+    (C : WalkCarry G) (s : State) {Cm : WalkCarry G} {sm : State} {nH : Nat}
     {Cs : WalkCarry G} {ss : State} {nS : Nat}
     (hHead : WalkSegment (stage2Calls stage2SubCalls) G C s Cm sm nH) (hnH : nH ≤ 11)
     (hm : Cm.block = "if.else387.i") (hmk : Cm.k = C.k)
@@ -295,7 +282,7 @@ noncomputable def hlastClassCRows_of_span {m0 : Mem} (G : WalkGeom m0) (C : Walk
     (hSpan : Seg (stage2Calls stage2SubCalls) G Cm sm Cs ss nS)
     (hs : Cs.block = "if.then413.i") (hnS : nS ≤ 5) (hkCs : Cs.k = C.k)
     (sup : HlastSeamTailSupply G Cs ss) :
-    HlastClassCRows G C s := by
+    HlastClassCTrueRows G C s := by
   have hInv : WalkInv G Cs ss := (Seg.measure hSpan).inv'
   have hEx : ∃ ev : EventRecord,
       WalkSegment (stage2Calls stage2SubCalls) G Cs ss (TailCarryEnd Cs ev)
@@ -413,18 +400,20 @@ theorem hlast_scalar_guard_excludes_openBrace :
 
 /-! ### The group, from its residual supply
 
-`HlastArmRows` is five `∀`-fields and nothing in the tree inhabits it whole.  Two of the
-five rows are partly produced: the `'f'` leaf's tail is `hlastFLetterRows_of_head`'s from
-the head chain and the seam's rows at `FS413` (literal `9`), and the class-C row is
-`hlastClassCRows_of_span`'s from the byte's span — whose existence is
-`hlastClassCSpan_of_head`'s — at an emit leaf.  Every row's token cell is
-`lastArmScanEntry_envTok`'s.  The rest is supply, named below at each field's own type.
+`HlastArmRows` is six `∀`-fields and nothing in the tree inhabits it whole.  Three of the
+rows are partly produced: the `'f'` leaf's tail is `hlastFLetterRows_of_head`'s from the
+head chain and the seam's rows at `FS413` (literal `9`), and the two emitting class-C
+leaves' tails are `hlastClassCTrueRows_of_span`'s from the byte's span — whose existence is
+`hlastClassCSpan_of_head`'s — at `ClsS413T`/`ClsS58T` (literals `10` and `8`).  Every row's
+token cell is `lastArmScanEntry_envTok`'s.  The rest is supply, named below at each field's
+own type.
 
-Two of the residuals are not merely unwritten but **empty** as the structures stand, and
-the next subsection records it: the letters leaf `LetS413` and the class-C leaves
-`ClsS413F`/`HeadS413` are `if.else405.i`'s, whose `phi` literal is `0`, where no emit
-group exists.  So the letters row, and the class-C row at the bytes those two leaves
-take, enter the group as supply themselves rather than through the producers.
+Three of the seams are `if.else405.i`'s, whose `phi` literal is `0` — the letters leaf
+`LetS413` and the class-C leaves `ClsS413F`/`HeadS413` — and no emit group exists there, so
+the three-call tail cannot be a premise.  The rows those seams carry are the **refusal
+group** (`HlastSeamRefusal`: the two leading calls, the literal `0`, the answer `0` and the
+record) the class's route to the refusal copy (`HlastRefuseRoute`), and their arm is
+`LastEntryArm.refuse`; the next subsection records the refutation the restatement rests on.
 
 The residual's fields, and what each one's word is:
 
@@ -435,7 +424,8 @@ The residual's fields, and what each one's word is:
 | `HlastScalarRows`' `r₁`/`r₂`/`r₃` and their pre/call/ret rows | the three callees' contracts: a precondition becomes an answer by `stage2Calls` |
 | `HlastFLetterSupply`'s `hHead` | the walk's own path below the head, at the document byte's route (`HlastFacts.hb`); the chains the tree has (`contLastLowHeadSeg` … `contLastBrcHeadSeg`) are stated at a scan-free document byte, while the rows' guards name the *entry's* byte |
 | `HlastFLetterSupply`'s `seam` | the emit group's rows at `FS413`, whose `phi` literal is `9`; carrier: the staged words at the seam (`HcontSeamStage`), which the tree does not state at `FS413` for the last entry |
-| `HlastLettersRows`/`HlastClassCRows` | the rows themselves: the head chain, span and tail are the arm's own route, and the producers above take an emit group the `0` literal does not have |
+| `HlastLettersRows`/`HlastClassCRows` | the rows themselves: the head chain and span are the arm's own route, and the seam's refusal rows and the class's route are the edge's supply at `if.else405.i`'s literal `0` |
+| `HlastClassCTrueRows` | the two emitting leaves' rows: the head chain and span the arm's own route, and the seam's three call rows at `ClsS413T`/`ClsS58T` the supply whose tail `emptyTailSeg_of_calls` composes |
 | `HlastRunRows`' `hcounter`/`hbound` | the scan's staged cells in `tl.env` (the walk's own blocks write them) |
 | `HlastRunRows`' `hbyte`, `hstop`, `hN` | the document's scan: `ScanVisits G c i` and `terminalStop` on `G.bs` |
 -/
@@ -469,15 +459,11 @@ noncomputable def HlastFLetterSupply.rows {m0 : Mem} {G : WalkGeom m0} {C : Walk
 `od_scalar_value` gives at a nonzero kind.  Three of the endpoint states the default arm's
 rows reach are `if.else405.i`'s, whose `phi` literal is `0` — the letters leaf's
 `LetS413`, the class-C leaves `ClsS413F` and `HeadS413` — and at `0` the callee answers
-`0` (`s2ScalarValue_refused`), so no such group exists there.  The consequence is that the
-tree's producers cannot build those rows' tails: the letters row's everywhere, and the
-class-C row's at the bytes whose spans reach those two leaves.  Both rows therefore enter
-the group as supply; a repair — a refusal-group constructor for the tail, or the row
-stated at the sum `HlastSeam` — is a change to the structure's field type, so it is left
-to the structure's owner and recorded here.
-
-The theorem below records the refutation at `if.else405.i`; it is the fact any repair
-rests on. -/
+`0` (`s2ScalarValue_refused`), so no such group exists there.  The rows those seams carry
+are the refusal group (`HlastSeamRefusal`: the two leading calls, the literal `0`, the
+derived answer and the record) and the class's route to the refusal copy
+(`HlastRefuseRoute`), and the arm those classes take is `LastEntryArm.refuse`.  The theorem
+below records the refutation the restatement rests on. -/
 
 /-- **A seam group cannot exist at `if.else405.i`.**  Its `phi` selects the literal `0`,
 and `od_scalar_value` answers `0` at a zero kind, contradicting the group's emit answer
@@ -540,10 +526,12 @@ theorem HlastSeamTailSupply.not_nonempty_of_else405 {m0 : Mem} {G : WalkGeom m0}
   exact absurd (eq_of_heq (Value.int.inj h1).2) (by decide)
 
 /-- **The group's residual supply**: one field per row, each stated at the row's own
-parameters and guard.  `.scalar`, `.letters`, `.classC` and `.run` are the rows
-themselves — no theorem in the tree produces their fields, and for `.letters` and
-`.classC` the producer that would is refuted at the `0` literal above — while the `'f'`
-leaf's row is named by its residual (`HlastFLetterSupply`), whose tail is produced. -/
+parameters and guard.  `.scalar`, `.letters`, `.classC`, `.classCTrue` and `.run` are the
+rows themselves — no theorem in the tree produces their fields — while the `'f'` leaf's row
+is named by its residual (`HlastFLetterSupply`), whose tail is produced.  `.letters` and
+`.classC` are the refusal group at `if.else405.i`'s literal `0`, where the emit group has no
+inhabitant (`HlastSeamTailSupply.not_nonempty_of_else405`); `.classCTrue` is the two
+emitting class-C leaves' row. -/
 structure HlastArmSupply {m0 : Mem} (G : WalkGeom m0) : Type where
   scalar : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     ¬ (C.k + 1 < G.nep) →
@@ -575,7 +563,19 @@ structure HlastArmSupply {m0 : Mem} (G : WalkGeom m0) : Type where
       evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 125) = 1) →
     (hne123 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 123) = 0) →
     (hne125 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 125) = 0) →
+    (hne110 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 110) = 0) →
+    (hne116 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 116) = 0) →
     HlastClassCRows G C s
+  classCTrue : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
+    ¬ (C.k + 1 < G.nep) →
+    (h110 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 110) = 0) →
+    (h125 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 125) = 1 ∨
+      evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 125) = 1) →
+    (hne123 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 123) = 0) →
+    (hne125 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 125) = 0) →
+    (hleaf : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 110) = 1 ∨
+      evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 116) = 1) →
+    HlastClassCTrueRows G C s
   run : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     ¬ (C.k + 1 < G.nep) →
     (hbit : (evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 45) |||
@@ -585,7 +585,7 @@ structure HlastArmSupply {m0 : Mem} (G : WalkGeom m0) : Type where
     HlastRunRows G C s
 
 /-- **`HlastArmRows`, from its residual supply.**  The `'f'` leaf's row is built by the
-tree's producer; the other four are the supply itself. -/
+tree's producer; the other six are the supply itself. -/
 noncomputable def hlastArmRows_of_supply {m0 : Mem} {G : WalkGeom m0}
     (h : HlastArmSupply G) : HlastArmRows G where
   scalar := h.scalar
@@ -593,6 +593,7 @@ noncomputable def hlastArmRows_of_supply {m0 : Mem} {G : WalkGeom m0}
   fLetter := fun C s hInv hblock hnot hbit h110 h102 =>
     (h.fLetter C s hInv hblock hnot hbit h110 h102).rows h110 h102
   classC := h.classC
+  classCTrue := h.classCTrue
   run := h.run
 
 /-- **The group as the closure theorem takes it** — one value per geometry — from a supply
@@ -609,6 +610,7 @@ noncomputable def hlastArmRows_of_supply_family
 #print axioms LeanLLVM.Refinement.WalkScope.hlastFLetterRows_of_head
 #print axioms LeanLLVM.Refinement.WalkScope.hlastClassCSpan_of_head
 #print axioms LeanLLVM.Refinement.WalkScope.hlastClassCRows_of_span
+#print axioms LeanLLVM.Refinement.WalkScope.hlastClassCTrueRows_of_span
 #print axioms LeanLLVM.Refinement.WalkScope.hlast_letters_bits_at_stringOpener
 #print axioms LeanLLVM.Refinement.WalkScope.hlast_letters_exclusion_at_stringOpener
 #print axioms LeanLLVM.Refinement.WalkScope.hlast_classC_bits_at_openBrace
