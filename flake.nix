@@ -15,43 +15,9 @@
       devShells = forAllSystems (
         pkgs:
         let
-          # The toolchain and mathlib come from nixpkgs' `leanPackages` set, not
-          # from Lake's fetch: a checkout elaborates this project's modules and
-          # nothing else.  The set's own `lean4` is the one whose Lake treats a
-          # `/nix/store` package directory as up to date (`pkgs.lean4` does not
-          # carry that patch), and its mathlib is the revision `lakefile.toml`
-          # pins, which is tag `v4.35.0` of `leanprover-community/mathlib4`.
-          lean = pkgs.leanPackages.lean4;
-          mathlib = pkgs.leanPackages.mathlib;
-          leanDeps = mathlib.passthru.allLeanDeps;
-
-          # Lake otherwise resolves each manifest entry by fetching it.  These
-          # path entries replace every one -- mathlib and the libraries mathlib
-          # requires -- with its store package, so no git fetch and no mathlib
-          # elaboration happens locally.
-          lakePackages = pkgs.writeText "lake-overrides.json" (
-            builtins.toJSON {
-              schemaVersion = "1.2.0";
-              packages = map (dep: {
-                type = "path";
-                name = dep.passthru.lakePackageName;
-                inherited = false;
-                dir = "${dep}";
-              }) (leanDeps ++ [ mathlib ]);
-            }
-          );
-
-          # `--packages` is a global Lake option, so one wrapper covers `build`,
-          # `exe`, `env` and the rest of the surface the repository uses.
-          # `--version` is only accepted as Lake's first argument, so it is
-          # forwarded without the override.
-          lake = pkgs.writeShellScriptBin "lake" ''
-            if [ "''${1-}" = "--version" ]; then
-              exec ${lean}/bin/lake "$@"
-            fi
-            exec ${lean}/bin/lake --packages=${lakePackages} "$@"
-          '';
-
+          # `pkgs.lean4` is the released toolchain at this nixpkgs pin and comes
+          # from the binary cache, so no Lean build happens on a fresh store.
+          # Mathlib's tag names the same version; see `lakefile.toml`.
           llvm = pkgs.llvmPackages;
         in
         {
@@ -59,11 +25,7 @@
             name = "lean-llvm";
 
             packages = [
-              lean
-              mathlib
-            ]
-            ++ leanDeps
-            ++ [
+              pkgs.lean4
               pkgs.git
               pkgs.coreutils
               pkgs.file
@@ -80,12 +42,6 @@
 
             shellHook = ''
               unset -f lake lean
-              # The wrapper takes precedence over the toolchain's own `lake`, and
-              # Lake's own caches are off: the store packages are the only source
-              # of dependency artifacts.
-              export PATH=${lake}/bin:$PATH
-              export LAKE_NO_CACHE=1
-              export RESERVOIR_API_URL=""
               printf 'lean-llvm: %s\n' "$(lean --version)"
             '';
           };
