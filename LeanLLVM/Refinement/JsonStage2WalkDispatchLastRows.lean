@@ -70,7 +70,9 @@ abbrev hlastScalarSeam {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State
 byte's route bits, the three callees' answers and their rows at the scalar route's seam. -/
 structure HlastScalarRows {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) :
     Type where
-  /-- The last byte is the low leaf's: `LeafBlock33`, its offset test clearing. -/
+  /-- The last byte is the high leaf's: `LeafBlock33`'s test clearing, `LeafBlock35`'s
+  clearing, and `LeafBlock37`'s `eq 32` test clearing.  The byte is the *document's* last,
+  not the entry's, so no guard of this row pins it. -/
   hb13 : evalICmp .slt (head35 (G.bs.getD (G.n - 1) 0)) (BitVec.ofNat 8 13) = 0
   hb32 : evalICmp .slt (head35 (G.bs.getD (G.n - 1) 0)) (BitVec.ofNat 8 32) = 0
   hbne32 : evalICmp .eq (head35 (G.bs.getD (G.n - 1) 0)) (BitVec.ofNat 8 32) = 0

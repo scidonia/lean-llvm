@@ -67,6 +67,7 @@ walk's path, not about this module, and the byte facts above are the evidence th
 rests on.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkDispatchLastRows
+import LeanLLVM.Refinement.JsonStage2WalkDispatchSeamCalls
 
 set_option autoImplicit false
 
@@ -410,6 +411,197 @@ theorem hlast_scalar_guard_excludes_openBrace :
     evalICmp .slt (BitVec.ofNat 8 123) (BitVec.ofNat 8 58) = 0 := by
   decide
 
+/-! ### The group, from its residual supply
+
+`HlastArmRows` is five `∀`-fields and nothing in the tree inhabits it whole.  Two of the
+five rows are partly produced: the `'f'` leaf's tail is `hlastFLetterRows_of_head`'s from
+the head chain and the seam's rows at `FS413` (literal `9`), and the class-C row is
+`hlastClassCRows_of_span`'s from the byte's span — whose existence is
+`hlastClassCSpan_of_head`'s — at an emit leaf.  Every row's token cell is
+`lastArmScanEntry_envTok`'s.  The rest is supply, named below at each field's own type.
+
+Two of the residuals are not merely unwritten but **empty** as the structures stand, and
+the next subsection records it: the letters leaf `LetS413` and the class-C leaves
+`ClsS413F`/`HeadS413` are `if.else405.i`'s, whose `phi` literal is `0`, where no emit
+group exists.  So the letters row, and the class-C row at the bytes those two leaves
+take, enter the group as supply themselves rather than through the producers.
+
+The residual's fields, and what each one's word is:
+
+| field | carrier |
+|---|---|
+| `HlastScalarRows`' `hb13`/`hb32`/`hbne32` | the document's last byte, `G.bs.getD (G.n - 1) 0`.  Its three pivots select `LeafBlock33`, `LeafBlock35` or `LeafBlock37`; these three bits are `LeafBlock37`'s `eq 32` test clearing, the high leaf — not the low one. |
+| `HlastScalarRows`' `rdv` and its read | the root-done slot's word at `G.next0 + 8`, which `WalkInv.root_slot` presents without pinning (`rdv` is a witness) |
+| `HlastScalarRows`' `r₁`/`r₂`/`r₃` and their pre/call/ret rows | the three callees' contracts: a precondition becomes an answer by `stage2Calls` |
+| `HlastFLetterSupply`'s `hHead` | the walk's own path below the head, at the document byte's route (`HlastFacts.hb`); the chains the tree has (`contLastLowHeadSeg` … `contLastBrcHeadSeg`) are stated at a scan-free document byte, while the rows' guards name the *entry's* byte |
+| `HlastFLetterSupply`'s `seam` | the emit group's rows at `FS413`, whose `phi` literal is `9`; carrier: the staged words at the seam (`HcontSeamStage`), which the tree does not state at `FS413` for the last entry |
+| `HlastLettersRows`/`HlastClassCRows` | the rows themselves: the head chain, span and tail are the arm's own route, and the producers above take an emit group the `0` literal does not have |
+| `HlastRunRows`' `hcounter`/`hbound` | the scan's staged cells in `tl.env` (the walk's own blocks write them) |
+| `HlastRunRows`' `hbyte`, `hstop`, `hN` | the document's scan: `ScanVisits G c i` and `terminalStop` on `G.bs` |
+-/
+
+/-- **The `'f'` field's residual supply**: the chain from the head to `if.else387.i` (the
+arm's own route) and the seam's three call rows at `FS413`.  The row's tail, its target's
+block and index, and its token cell are produced from these. -/
+structure HlastFLetterSupply {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) :
+    Type where
+  Cm : WalkCarry G
+  sm : State
+  nH : Nat
+  hHead : WalkSegment (stage2Calls stage2SubCalls) G C s Cm sm nH
+  hnH : nH ≤ 11
+  hm : Cm.block = "if.else387.i"
+  hmk : Cm.k = C.k
+  h8m : evalOperand sm (.reg "%8") = some (.int 8 (hlastByte G C))
+  seam : HlastSeamTailSupply G (FC₄₁₃ Cm) (FS413 sm (hlastByte G C))
+
+/-- The `'f'` row, from its residual supply and the class's own bits. -/
+noncomputable def HlastFLetterSupply.rows {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {s : State} (sup : HlastFLetterSupply G C s)
+    (h110 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 110) = 1)
+    (h102 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 102) = 1) :
+    HlastFLetterRows G C s :=
+  hlastFLetterRows_of_head G C s sup.hHead sup.hnH sup.hm sup.hmk sup.h8m h110 h102 sup.seam
+
+/-! ### The zero-literal seams carry no three-call group
+
+`HlastSeamTailSupply` states the **emit** group: `hret₂` is `r₂.ret = 1`, the answer
+`od_scalar_value` gives at a nonzero kind.  Three of the endpoint states the default arm's
+rows reach are `if.else405.i`'s, whose `phi` literal is `0` — the letters leaf's
+`LetS413`, the class-C leaves `ClsS413F` and `HeadS413` — and at `0` the callee answers
+`0` (`s2ScalarValue_refused`), so no such group exists there.  The consequence is that the
+tree's producers cannot build those rows' tails: the letters row's everywhere, and the
+class-C row's at the bytes whose spans reach those two leaves.  Both rows therefore enter
+the group as supply; a repair — a refusal-group constructor for the tail, or the row
+stated at the sum `HlastSeam` — is a change to the structure's field type, so it is left
+to the structure's owner and recorded here.
+
+The theorem below records the refutation at `if.else405.i`; it is the fact any repair
+rests on. -/
+
+/-- **A seam group cannot exist at `if.else405.i`.**  Its `phi` selects the literal `0`,
+and `od_scalar_value` answers `0` at a zero kind, contradicting the group's emit answer
+`hret₂`. -/
+theorem HlastSeamTailSupply.not_nonempty_of_else405 {m0 : Mem} {G : WalkGeom m0}
+    {C : WalkCarry G} {s : State} (hpre : s.pre = some "if.else405.i") :
+    ¬ Nonempty (HlastSeamTailSupply G C s) := by
+  rintro ⟨sup⟩
+  -- the predecessor is `if.else405.i`, so the `phi`'s literal is `0`
+  have hp : sup.p = "if.else405.i" := by
+    have h := sup.hpre
+    rw [hpre] at h
+    exact (Option.some.inj h).symm
+  have hop : sup.op = .imm (.int 32 (BitVec.ofNat 32 0)) := by
+    have h := sup.hphi
+    rw [hp] at h
+    simp only [phiIncoming, ↓reduceIte] at h
+    exact (Option.some.inj h).symm
+  have hcA : sup.cA = BitVec.ofNat 32 0 := by
+    have h := sup.hop
+    rw [hop] at h
+    simp only [evalOperand, Const.toValue] at h
+    have h2 : Value.int 32 sup.cA = Value.int 32 (BitVec.ofNat 32 0) :=
+      Option.some.inj h.symm
+    exact eq_of_heq (Value.int.inj h2).2
+  -- the first call leaves its memory alone, and the kind word in it is the zero written
+  obtain ⟨_, _, _, hmem₁, _⟩ := s2ValuePos_sound sup.hpre₁ sup.hcall₁
+  have hmem : sup.r₁.mem =
+      writeBytes s.mem (C.stage.tok + 16) (natToBytes sup.cA.toNat 4) := hmem₁
+  have hkind0 : stage2ReadWord
+      (writeBytes s.mem (C.stage.tok + 16) (natToBytes sup.cA.toNat 4))
+      (C.stage.tok + 16) 4 = some 0 := by
+    rw [hcA]
+    show (readBytes (writeBytes s.mem (C.stage.tok + 16)
+      (natToBytes (BitVec.ofNat 32 0).toNat 4)) (C.stage.tok + 16) 4).map bytesToNat =
+        some 0
+    have hread : readBytes (writeBytes s.mem (C.stage.tok + 16)
+        (natToBytes (BitVec.ofNat 32 0).toNat 4)) (C.stage.tok + 16) 4 =
+        some (natToBytes (BitVec.ofNat 32 0).toNat 4) := by
+      have h := readBytes_writeBytes_same s.mem (natToBytes (BitVec.ofNat 32 0).toNat 4)
+        (addr := C.stage.tok + 16)
+      rwa [natToBytes_length] at h
+    rw [hread]
+    rw [show (BitVec.ofNat 32 0).toNat = 0 from by decide]
+    simp only [Option.map_some, Option.some.injEq]
+    decide
+  -- the scalar call's staging reads that word as its kind
+  obtain ⟨c, t, o, hargs, base, e, pos, endp, kind, buf, len, cap, win, hbase, he, hpos,
+    hend, hkind, hbuf, hlen, hcap, hroom, hwin⟩ := sup.hpre₂
+  simp only [List.cons.injEq, and_true, Value.ptr.injEq] at hargs
+  obtain ⟨rfl, rfl, rfl⟩ := hargs
+  have hkind0' : stage2ReadWord sup.r₁.mem ((TailCarry₂ C).stage.tok + 16) 4 = some 0 := by
+    rw [hmem]
+    exact hkind0
+  -- so the callee's answer is `0`, not the emit group's `1`
+  obtain ⟨_, hret₂, _⟩ :=
+    s2ScalarValue_refused sup.hpre₂ he hkind0' sup.hcall₂
+  have h1 : sup.r₂.ret = .int 32 (BitVec.ofNat 32 1) := sup.hret₂
+  rw [hret₂] at h1
+  exact absurd (eq_of_heq (Value.int.inj h1).2) (by decide)
+
+/-- **The group's residual supply**: one field per row, each stated at the row's own
+parameters and guard.  `.scalar`, `.letters`, `.classC` and `.run` are the rows
+themselves — no theorem in the tree produces their fields, and for `.letters` and
+`.classC` the producer that would is refuted at the `0` literal above — while the `'f'`
+leaf's row is named by its residual (`HlastFLetterSupply`), whose tail is produced. -/
+structure HlastArmSupply {m0 : Mem} (G : WalkGeom m0) : Type where
+  scalar : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
+    ¬ (C.k + 1 < G.nep) →
+    (h44 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 44) = 0) →
+    (h58 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 58) = 1) →
+    (hne44 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 44) = 0) →
+    (hbit : (evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 45) |||
+      evalICmp .ult (hlastByte G C + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 1) →
+    HlastScalarRows G C s
+  letters : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
+    ¬ (C.k + 1 < G.nep) →
+    (hbit : (evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 45) |||
+      evalICmp .ult (hlastByte G C + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0) →
+    (h110 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 110) = 1) →
+    (hne102 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 102) = 0) →
+    (hne34 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 34) = 0) →
+    HlastLettersRows G C s
+  fLetter : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
+    ¬ (C.k + 1 < G.nep) →
+    (hbit : (evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 45) |||
+      evalICmp .ult (hlastByte G C + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0) →
+    (h110 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 110) = 1) →
+    (h102 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 102) = 1) →
+    HlastFLetterSupply G C s
+  classC : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
+    ¬ (C.k + 1 < G.nep) →
+    (h110 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 110) = 0) →
+    (h125 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 125) = 1 ∨
+      evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 125) = 1) →
+    (hne123 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 123) = 0) →
+    (hne125 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 125) = 0) →
+    HlastClassCRows G C s
+  run : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
+    ¬ (C.k + 1 < G.nep) →
+    (hbit : (evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 45) |||
+      evalICmp .ult (hlastByte G C + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0) →
+    (hne34 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 34) = 0) →
+    wsStop G (G.n - 1) →
+    HlastRunRows G C s
+
+/-- **`HlastArmRows`, from its residual supply.**  The `'f'` leaf's row is built by the
+tree's producer; the other four are the supply itself. -/
+noncomputable def hlastArmRows_of_supply {m0 : Mem} {G : WalkGeom m0}
+    (h : HlastArmSupply G) : HlastArmRows G where
+  scalar := h.scalar
+  letters := h.letters
+  fLetter := fun C s hInv hblock hnot hbit h110 h102 =>
+    (h.fLetter C s hInv hblock hnot hbit h110 h102).rows h110 h102
+  classC := h.classC
+  run := h.run
+
+/-- **The group as the closure theorem takes it** — one value per geometry — from a supply
+that is itself a family over geometries. -/
+noncomputable def hlastArmRows_of_supply_family
+    (h : ∀ {m0 : Mem} (G : WalkGeom m0), HlastArmSupply G) :
+    ∀ {m0 : Mem} (G : WalkGeom m0), HlastArmRows G :=
+  fun {m0 : Mem} (G : WalkGeom m0) => hlastArmRows_of_supply (h G)
+
 /-! ### The instrument -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.lastArmScanEntry_envTok
@@ -429,6 +621,10 @@ theorem hlast_scalar_guard_excludes_openBrace :
 #print axioms LeanLLVM.Refinement.WalkScope.hlast_run_guard_residual
 #print axioms LeanLLVM.Refinement.WalkScope.hlast_scalar_guard_excludes_stringOpener
 #print axioms LeanLLVM.Refinement.WalkScope.hlast_scalar_guard_excludes_openBrace
+#print axioms LeanLLVM.Refinement.WalkScope.HlastSeamTailSupply.not_nonempty_of_else405
+#print axioms LeanLLVM.Refinement.WalkScope.HlastFLetterSupply.rows
+#print axioms LeanLLVM.Refinement.WalkScope.hlastArmRows_of_supply
+#print axioms LeanLLVM.Refinement.WalkScope.hlastArmRows_of_supply_family
 
 end WalkScope
 end LeanLLVM.Refinement
