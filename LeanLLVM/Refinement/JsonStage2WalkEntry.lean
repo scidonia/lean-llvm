@@ -189,10 +189,14 @@ theorem WalkLink.if_end67_i_entry {calls : Calls} {m0 : Mem}
   · rw [hInv.pc_eq, hblock]
   · simp only [stateAt, evalOperand]
     rw [lookupName_cons_ne _ _ (by decide)]
-    simpa [evalOperand] using h1
+    cases hlk : lookupName s.env "%ee.0.lcssa.i" with
+    | none => simp_all [evalOperand, hlk]
+    | some w => cases w <;> simp_all [evalOperand, hlk]
   · simp only [stateAt, evalOperand]
     rw [lookupName_cons_ne _ _ (by decide)]
-    simpa [evalOperand] using h2
+    cases hlk : lookupName s.env "%cond.i" with
+    | none => simp_all [evalOperand, hlk]
+    | some w => cases w <;> simp_all [evalOperand, hlk]
 
 /-- `cond.end.i96`: the string scan's bound `phi` and the test that enters the scan. -/
 def walkCond_end_i96 : Block :=
@@ -255,7 +259,7 @@ theorem WalkLink.cond_end_i96 {calls : Calls} {m0 : Mem}
     (bit := evalICmp .ugt cvv ivv)
     (by simp [stateAt, lookupName]) ?_ (by simp [WalkLocal])
   rw [WalkLocal.stringScanLanded rfl]
-  refine Or.inr ⟨ivv.toNat, cvv.toNat, hbudget, hlt, cvv.isLt, ?_, ?_, ?_⟩
+  refine Or.inr (Or.inl ⟨ivv.toNat, cvv.toNat, hbudget, hlt, cvv.isLt, ?_, ?_, ?_⟩)
   · rw [hInv.pc_eq, hblock]
   · simp only [stateAt, evalOperand]
     rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]

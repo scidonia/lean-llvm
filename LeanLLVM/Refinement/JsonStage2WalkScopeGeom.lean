@@ -731,8 +731,12 @@ than claiming a bound it does not have.
 with `%ee.1.i = %cond350.i` — the arm whose byte before the entry's end is not
 whitespace reaches it with the token ending exactly at the entry's end — and there the
 scan is not entered at all, so neither `ScanLanded` nor `ScanEntered` holds.  That state
-is why `ScanEmpty` exists; the other landings have not been shown to need it, and adding
-it only where a reachable state requires it keeps the change additive.
+is why `ScanEmpty` exists.  `land.rhs.i103` needs it for a second reason: its latch
+(`while.body.i104`) branches *out of the loop* to `cleanup474.i` on the increment that
+reaches the bound, and a condbr link must carry `WalkLocal` at the untaken arm too, so
+at `%inc.i105 = %cond.i` the landing's clause would otherwise be uninhabited and the
+scan's bound exit — the visit whose byte is the entry's last — would have no link.  The
+remaining landings are reached only on the loop's continuing edge and do not need it.
 
 **The loop head carries its own guard.**  `NodeBlock21` is entered only with an entry
 left — `%k.0.i249 < %nep` is the test that sends the walk into the body — so the head's
@@ -764,7 +768,8 @@ def WalkLocal {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State) : Prop 
     ScanCount s "%ee.011.i" "%cond.i" C.inner
   else if C.block = "land.rhs.i103" then
     (ScanLanded s "while.body.i104" "%inc.i105" "%cond.i" C.inner ∨
-      ScanEntered s "cond.end.i96" "%idxprom.i" "%cond.i" C.inner)
+      ScanEntered s "cond.end.i96" "%idxprom.i" "%cond.i" C.inner ∨
+      ScanEmpty s "%inc.i105" "%cond.i")
   else if C.block = "while.body76.i" then
     ScanCount s "%s2.020.i" "%cond.i" C.inner
   else if C.block = "land.rhs71.i" then

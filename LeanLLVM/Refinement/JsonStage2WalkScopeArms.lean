@@ -354,11 +354,15 @@ theorem WalkLocal.stringScan {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s :
     WalkLocal C s = ScanCount s "%ee.011.i" "%cond.i" C.inner := by
   simp [WalkLocal, h]
 
-/-- `WalkLocal` at the string scan's landing block. -/
+/-- `WalkLocal` at the string scan's landing block.  The third disjunct is `ScanEmpty`:
+the scan's latch branches out of the loop on the increment that reaches the bound, and a
+condbr link needs `WalkLocal` at the untaken arm, so at `%inc.i105 = %cond.i` this
+clause would otherwise be uninhabited — see the definition's docstring. -/
 theorem WalkLocal.stringScanLanded {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     {s : State} (h : C.block = "land.rhs.i103") :
     WalkLocal C s = (ScanLanded s "while.body.i104" "%inc.i105" "%cond.i" C.inner ∨
-      ScanEntered s "cond.end.i96" "%idxprom.i" "%cond.i" C.inner) := by
+      ScanEntered s "cond.end.i96" "%idxprom.i" "%cond.i" C.inner ∨
+      ScanEmpty s "%inc.i105" "%cond.i") := by
   simp [WalkLocal, h]
 
 /-- `WalkLocal` at the escape scan's latch. -/

@@ -24,9 +24,13 @@ two, and which one the walk takes is the byte's class at the stop index.
 ## What is here, and what is not
 
 This module states the model (the visit predicate and the three named states) and adds the
-one missing link, `while_body_i104`.  The run — the induction from `land.rhs.i103` to both
-exits with its per-byte price — is **not** here: it is the next module, split by phase, and
-its statement is
+one missing link, `while_body_i104`.  The link needed a vocabulary addition first:
+`land.rhs.i103`'s `WalkLocal` now carries `ScanEmpty`, because the latch's bound exit
+branches out of the loop and a condbr link must supply the untaken arm's `WalkLocal`
+(`WalkLocal`, `JsonStage2WalkScopeGeom`, and `WalkLocal.stringScanLanded`,
+`JsonStage2WalkScopeArms`, say why).  The run — the induction from `land.rhs.i103` to
+both exits with its per-byte price — is **not** here: it is the next module, split by
+phase, and its statement is
 
 ```
 theorem slowRun (hInv) (hcells) (hcls : ∀ q, i < q → q < c → slowCont G q)
@@ -110,7 +114,7 @@ link is `callQuietBr` at the test's cell. -/
 def walkWhileBodyI104 : Block :=
   { name := "while.body.i104",
     instrs := [
-      Instr.binop "%inc.i105" BinOp.add 64 (.reg "%ee.011.i") (.imm (.int 64 (1 : BitVec 64))),
+      Instr.binop "%inc.i105" BinOp.add 64 (.reg "%ee.011.i") (.imm (.int 64 (BitVec.ofNat 64 1))),
       Instr.icmp "%exitcond.not.i" IPred.eq 64 (.reg "%inc.i105") (.reg "%cond.i")],
     term := Term.condbr (.reg "%exitcond.not.i") "cleanup474.i" "land.rhs.i103" }
 
@@ -118,31 +122,78 @@ theorem walkWhileBodyI104_find : stage2Body.findBlock "while.body.i104" =
     some walkWhileBodyI104 := by
   simp [stage2Body, Function.findBlock, findBlockList, walkWhileBodyI104]
 
-/-! **`while.body.i104`'s link is not landed.**  The statement is
-
-```
-theorem WalkLink.while_body_i104 (hInv) (hblock : C.block = "while.body.i104")
-    (hinc : %ee.011.i = p) (hcond : %cond.i = c) :
-    ∃ s', WalkLink … G C s
-      { C with block := (if evalICmp .eq (ofNat 64 (p+1)) (ofNat 64 c) = 1
-          then "cleanup474.i" else "land.rhs.i103") } s'
-```
-
-and its proof is the `callQuietBr` recipe with the block step `denoteCode_cons_of` over
-`step_add_imm` and `walkDenoteCode_icmp`.  Three kernel-level mismatches remain and are the
-exact blockers, not a modelling gap: (i) `step_add_imm`'s conclusion spells the immediate as
-`Const.int 64 1#64` while the block's `Instr.binop … (.imm (.int 64 1))` spells it
-`Const.int 64 1`, so the two `Option State` equalities are not syntactically the same term
-for `rw`; (ii) the same for the `icmp`'s operands; (iii) the empty tail
-`denoteCode calls [] s = some s` is not closed by `rfl`/`simp only` at the state the
-`icmp` step leaves.  These are notation agree-ments, not facts about the walk; the next
-pass should state the block's instructions through the same `Const.int` constructors the
-step lemmas produce (or add `step_add_imm`/`step_icmp_reg` corollaries at the block's own
-spelling) and re-run. -/
+/-- **`while.body.i104`'s link**: the scan's back edge and its bound exit.  The block's
+two instructions are stated at the `Const.int` spelling the step lemmas produce, so the
+block step is one `rw` chain, and the link is `callQuietBr` at `%exitcond.not.i`.  The two
+arm facts are the caller's: on the continuing visit the landing's clause is `ScanLanded`
+with the budget `c - (p + 1) ≤ C.inner`; on the bound visit it is `ScanEmpty`
+(`%inc.i105 = %cond.i`), which is why the landing's clause carries that third disjunct. -/
+theorem WalkLink.while_body_i104 {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hblock : C.block = "while.body.i104") {p c : Nat}
+    (hinc : lookupName s.env "%ee.011.i" = some (.int 64 (BitVec.ofNat 64 p)))
+    (hcond : lookupName s.env "%cond.i" = some (.int 64 (BitVec.ofNat 64 c)))
+    (hl : WalkLocal { C with block := "cleanup474.i" }
+      { stateAt (("%exitcond.not.i",
+          .int 1 (evalICmp .eq (BitVec.ofNat 64 p + BitVec.ofNat 64 1)
+            (BitVec.ofNat 64 c))) ::
+        ("%inc.i105", .int 64 (BitVec.ofNat 64 p + BitVec.ofNat 64 1)) :: s.env) s with
+        pc := "cleanup474.i", pre := some s.pc })
+    (hf : WalkLocal { C with block := "land.rhs.i103" }
+      { stateAt (("%exitcond.not.i",
+          .int 1 (evalICmp .eq (BitVec.ofNat 64 p + BitVec.ofNat 64 1)
+            (BitVec.ofNat 64 c))) ::
+        ("%inc.i105", .int 64 (BitVec.ofNat 64 p + BitVec.ofNat 64 1)) :: s.env) s with
+        pc := "land.rhs.i103", pre := some s.pc }) :
+    ∃ s', WalkLink (stage2Calls stage2SubCalls) G C s
+      { C with block := (if evalICmp .eq (BitVec.ofNat 64 p + BitVec.ofNat 64 1)
+          (BitVec.ofNat 64 c) = 1 then "cleanup474.i" else "land.rhs.i103") } s' := by
+  have hinc' : lookupName (("%inc.i105", .int 64 (BitVec.ofNat 64 p + BitVec.ofNat 64 1))
+      :: s.env) "%inc.i105" =
+      some (.int 64 (BitVec.ofNat 64 p + BitVec.ofNat 64 1)) :=
+    lookupName_cons_self _ _ _
+  have hcond' : lookupName (("%inc.i105", .int 64 (BitVec.ofNat 64 p + BitVec.ofNat 64 1))
+      :: s.env) "%cond.i" = some (.int 64 (BitVec.ofNat 64 c)) :=
+    (lookupName_cons_ne _ _ (by decide)).trans hcond
+  have hstep : denoteCode (stage2Calls stage2SubCalls) walkWhileBodyI104.instrs
+      (stateAt s.env s) =
+      some (stateAt (("%exitcond.not.i",
+          .int 1 (evalICmp .eq (BitVec.ofNat 64 p + BitVec.ofNat 64 1)
+            (BitVec.ofNat 64 c))) ::
+        ("%inc.i105", .int 64 (BitVec.ofNat 64 p + BitVec.ofNat 64 1)) :: s.env) s) := by
+    simp only [walkWhileBodyI104]
+    rw [denoteCode_cons_of (calls := stage2Calls stage2SubCalls)
+      (i := Instr.binop "%inc.i105" BinOp.add 64 (.reg "%ee.011.i")
+        (.imm (.int 64 (BitVec.ofNat 64 1))))
+      (is := [Instr.icmp "%exitcond.not.i" IPred.eq 64 (.reg "%inc.i105") (.reg "%cond.i")])
+      (s := stateAt s.env s)
+      (s' := stateAt (("%inc.i105", .int 64 (BitVec.ofNat 64 p + BitVec.ofNat 64 1))
+        :: s.env) s)
+      (step_add_imm (calls := stage2Calls stage2SubCalls) s.env s "%inc.i105" "%ee.011.i"
+        (x := BitVec.ofNat 64 p) (c := BitVec.ofNat 64 1) hinc)]
+    rw [walkDenoteCode_icmp (calls := stage2Calls stage2SubCalls)
+      (env := ("%inc.i105", .int 64 (BitVec.ofNat 64 p + BitVec.ofNat 64 1)) :: s.env)
+      (s := s) (d := "%exitcond.not.i") (w := 64) (p := IPred.eq)
+      (oa := .reg "%inc.i105") (ob := .reg "%cond.i")
+      (x := BitVec.ofNat 64 p + BitVec.ofNat 64 1) (y := BitVec.ofNat 64 c)
+      (ha := evalOperand_reg_of _ _ _ _ hinc')
+      (hb := evalOperand_reg_of _ _ _ _ hcond') (is := [])]
+    rfl
+  exact WalkLink.callQuietBr (G := G) (C := C) (s := s) hInv
+    (B := walkWhileBodyI104) (by rw [hblock]; exact walkWhileBodyI104_find)
+    hstep (by unfold walkCarried; decide) rfl hInv.next_ge hInv.frame hInv.owned
+    hInv.root_slot (fun _ _ _ => rfl) rfl
+    (TM := C.tyMap) (SM := C.stMap)
+    (by simpa only [stateAt] using hInv.tyBytes)
+    (by simpa only [stateAt] using hInv.stBytes)
+    (d := "%exitcond.not.i") (tl := "cleanup474.i") (fl := "land.rhs.i103")
+    (by simp only [walkWhileBodyI104])
+    (bit := evalICmp .eq (BitVec.ofNat 64 p + BitVec.ofNat 64 1) (BitVec.ofNat 64 c))
+    (by simp only [stateAt]; exact lookupName_cons_self _ _ _) hl hf
 
 /-! ### The instrument -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.walkWhileBodyI104_find
+#print axioms LeanLLVM.Refinement.WalkScope.WalkLink.while_body_i104
 
 end WalkScope
 end LeanLLVM.Refinement

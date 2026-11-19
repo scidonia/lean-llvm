@@ -130,6 +130,7 @@ import LeanLLVM.Refinement.JsonStage2WalkAlignment
 import LeanLLVM.Refinement.JsonStage2TraceRow
 import LeanLLVM.Refinement.JsonStage2WalkChain
 import LeanLLVM.Refinement.JsonStage2WalkInduce
+import LeanLLVM.Refinement.JsonStage2WalkEntry
 import LeanLLVM.Refinement.JsonStage2WalkSteps
 import LeanLLVM.Refinement.JsonStage2WalkStepsPath
 import LeanLLVM.Refinement.PipelineDischarge
