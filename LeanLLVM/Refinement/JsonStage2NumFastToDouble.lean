@@ -35,11 +35,14 @@ its residual loop and the handoff) are composed from
 `JsonStage2NumFastTier3CopyUnroll`/`JsonStage2NumFastTier3Handoff`, not
 restated here.
 
-The big multiply (`for.body132.i.i`'s chunk loop, the `10 ^ 19` nest and the
-`stk_mul_u64` sites) and the epilogue's blocks (`for.cond255.i.i` and
-`for.end359.i.i`) are not stated here yet, and the parse's loop traversals are
-the steps above composed by their caller rather than an induction here.  There
-is no `sorry`, `admit` or `native_decide` below.
+The big multiply's layer is begun (`for.body132.i.i`'s staging edge and the
+chunk loop's back edge, `stk_mul_u64.exit.i.i`'s three sites, `while.end.i.i`)
+and the epilogue's blocks (`for.cond255.i.i`, `for.end359.i.i`) are not stated
+here yet.  The peel loop (`for.body.i.i`, entered from the peel and re-entered
+from its latch) is an induction here (`peelRunAux`, `peelRun`); the main parse
+loop's traversal (`for.body.outer.i.i` with its latch and dot back edges) and
+the composition from the outer entry to the copy's entry are not stated yet.
+There is no `sorry`, `admit` or `native_decide` below.
 -/
 import LeanLLVM.Refinement.JsonStage2NumFastFallback
 import LeanLLVM.Refinement.JsonStage2NumFastTier3CopyUnroll
@@ -4192,6 +4195,1501 @@ theorem whileEnd_step_ladder {calls : Calls} {env : Env} {s : State}
     · simp only [whileEndState, whileEndEnv, stateAt, hpc]
     · simp only [whileEndState, whileEndEnv, stateAt]
       exact lookupName_cons_self ..
+
+/-! ### The edges the composition reads that the block map did not yet state
+
+`for.end100.i.i`'s accumulator arrives from three blocks: `if.end83.i.i`'s zero
+(stated above), the copy's unrolled exit `%e.1.i.i.lcssa.ph`, and its peeled
+residue `%e.1.i.i.epil`.  `if.end104.i.i` merges the counters from the copy's
+exit and from the parse's counted exit `for.end.thread.i.i`, whose edge carries
+the exponent from the accumulator's place as the zero.  The big multiply's chunk
+loop re-enters its head from `for.inc143.i.i`, and `stk_mul_u64.exit.i.i` merges
+its counter from the three `stk_mul_u64` sites.  Each statement below is the
+block's already-proved chain at the predecessor the edge names. -/
+
+/-- The copy exit's chain at the unrolled exit. -/
+theorem end100_denote_loopexit {calls : Calls} {env : Env} {s : State}
+    {esign : BitVec 1} {e : BitVec 64}
+    (hpre : s.pre = some "for.end100.i.i.loopexit.unr-lcssa")
+    (he : lookupName env "%esign.0.i.i" = some (.int 1 esign))
+    (hl : lookupName env "%e.1.i.i.lcssa.ph" = some (.int 64 e)) :
+    denoteCode calls end100Instrs (stateAt env s) =
+      some (stateAt (end100Env env esign e) s) := by
+  have hsel : PhiSelects (stateAt env s) "for.end100.i.i.loopexit.unr-lcssa"
+      end100Specs [("%e.0.lcssa.i.i", .int 64 e)] := by
+    simp only [end100Specs]
+    constructor
+    · simp [phiIncoming]; rfl
+    · exact evalOperand_reg_of env s "%e.1.i.i.lcssa.ph" (.int 64 e) hl
+    exact PhiSelects.nil
+  have h := denoteCode_phiRun_at (calls := calls) (env := env) (s := s)
+    (p := "for.end100.i.i.loopexit.unr-lcssa") (specs := end100Specs)
+    (vs := [("%e.0.lcssa.i.i", .int 64 e)]) (rest := end100Rest) hpre hsel (by decide)
+  unfold end100Instrs
+  rw [h]
+  unfold end100Rest
+  simp only [end100Env]
+  inner_step
+  inner_step
+  block_close
+
+/-- The copy exit's step into the clamps at the unrolled exit. -/
+theorem end100_step_loopexit {calls : Calls} {env : Env} {s : State}
+    {esign : BitVec 1} {e : BitVec 64}
+    (hpc : s.pc = "for.end100.i.i")
+    (hpre : s.pre = some "for.end100.i.i.loopexit.unr-lcssa")
+    (he : lookupName env "%esign.0.i.i" = some (.int 1 esign))
+    (hl : lookupName env "%e.1.i.i.lcssa.ph" = some (.int 64 e)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (end100Env env esign e)
+        { s with pc := "if.end104.i.i", pre := some "for.end100.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (end100Env env esign e) s)
+    (b := ⟨"for.end100.i.i", end100Instrs, Term.br "if.end104.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using end100_find
+  · exact end100_denote_loopexit hpre he hl
+  · simp only [execTerm, stateAt, hpc]
+
+/-- The copy exit's chain at the peeled residue. -/
+theorem end100_denote_epil {calls : Calls} {env : Env} {s : State}
+    {esign : BitVec 1} {e : BitVec 64}
+    (hpre : s.pre = some "for.inc98.i.i.epil")
+    (he : lookupName env "%esign.0.i.i" = some (.int 1 esign))
+    (hl : lookupName env "%e.1.i.i.epil" = some (.int 64 e)) :
+    denoteCode calls end100Instrs (stateAt env s) =
+      some (stateAt (end100Env env esign e) s) := by
+  have hsel : PhiSelects (stateAt env s) "for.inc98.i.i.epil"
+      end100Specs [("%e.0.lcssa.i.i", .int 64 e)] := by
+    simp only [end100Specs]
+    constructor
+    · simp [phiIncoming]; rfl
+    · exact evalOperand_reg_of env s "%e.1.i.i.epil" (.int 64 e) hl
+    exact PhiSelects.nil
+  have h := denoteCode_phiRun_at (calls := calls) (env := env) (s := s)
+    (p := "for.inc98.i.i.epil") (specs := end100Specs)
+    (vs := [("%e.0.lcssa.i.i", .int 64 e)]) (rest := end100Rest) hpre hsel (by decide)
+  unfold end100Instrs
+  rw [h]
+  unfold end100Rest
+  simp only [end100Env]
+  inner_step
+  inner_step
+  block_close
+
+/-- The copy exit's step into the clamps at the peeled residue. -/
+theorem end100_step_epil {calls : Calls} {env : Env} {s : State}
+    {esign : BitVec 1} {e : BitVec 64}
+    (hpc : s.pc = "for.end100.i.i")
+    (hpre : s.pre = some "for.inc98.i.i.epil")
+    (he : lookupName env "%esign.0.i.i" = some (.int 1 esign))
+    (hl : lookupName env "%e.1.i.i.epil" = some (.int 64 e)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (end100Env env esign e)
+        { s with pc := "if.end104.i.i", pre := some "for.end100.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (end100Env env esign e) s)
+    (b := ⟨"for.end100.i.i", end100Instrs, Term.br "if.end104.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using end100_find
+  · exact end100_denote_epil hpre he hl
+  · simp only [execTerm, stateAt, hpc]
+
+/-- The clamp head's chain at the parse's counted exit. -/
+theorem end104_denote_thread {calls : Calls} {env : Env} {s : State}
+    {lead : BitVec 64} {sticky : BitVec 32} {topn top F T R : BitVec 64}
+    (hpre : s.pre = some "for.end.thread.i.i")
+    (hlead : lookupName env "%lead.0721.i287.i" = some (.int 64 lead))
+    (hsticky : lookupName env "%sticky.4.ph.i.i" = some (.int 32 sticky))
+    (htopn : lookupName env "%topn.4.ph.i.i" = some (.int 64 topn))
+    (htop : lookupName env "%top.4.ph.i.i" = some (.int 64 top))
+    (hF : lookupName env "%F.3.ph.i.i" = some (.int 64 F))
+    (hT : lookupName env "%T.2.ph.i.i" = some (.int 64 T))
+    (hR : lookupName env "%R.4.ph.i.i" = some (.int 64 R)) :
+    denoteCode calls end104Instrs (stateAt env s) =
+      some (stateAt (end104Env env lead sticky topn top F T R 0) s) := by
+  have hsel : PhiSelects (stateAt env s) "for.end.thread.i.i" end104Specs
+      [("%lead.0721.i286.i", .int 64 lead), ("%sticky.0714.i.i", .int 32 sticky),
+       ("%topn.0711.i.i", .int 64 topn), ("%top.0709.i.i", .int 64 top),
+       ("%F.0705.i.i", .int 64 F), ("%T.0703.i.i", .int 64 T),
+       ("%R.0701.i.i", .int 64 R), ("%exp10.0.i.i", .int 64 0)] := by
+    simp only [end104Specs]
+    constructor
+    · simp [phiIncoming]; rfl
+    · exact evalOperand_reg_of env s "%lead.0721.i287.i" (.int 64 lead) hlead
+    constructor
+    · simp [phiIncoming]; rfl
+    · exact evalOperand_reg_of env s "%sticky.4.ph.i.i" (.int 32 sticky) hsticky
+    constructor
+    · simp [phiIncoming]; rfl
+    · exact evalOperand_reg_of env s "%topn.4.ph.i.i" (.int 64 topn) htopn
+    constructor
+    · simp [phiIncoming]; rfl
+    · exact evalOperand_reg_of env s "%top.4.ph.i.i" (.int 64 top) htop
+    constructor
+    · simp [phiIncoming]; rfl
+    · exact evalOperand_reg_of env s "%F.3.ph.i.i" (.int 64 F) hF
+    constructor
+    · simp [phiIncoming]; rfl
+    · exact evalOperand_reg_of env s "%T.2.ph.i.i" (.int 64 T) hT
+    constructor
+    · simp [phiIncoming]; rfl
+    · exact evalOperand_reg_of env s "%R.4.ph.i.i" (.int 64 R) hR
+    constructor
+    · simp [phiIncoming]; rfl
+    · exact evalOperand_lit_of _ 64 _
+    exact PhiSelects.nil
+  have h := denoteCode_phiRun_at (calls := calls) (env := env) (s := s)
+    (p := "for.end.thread.i.i") (specs := end104Specs)
+    (vs := [("%lead.0721.i286.i", .int 64 lead), ("%sticky.0714.i.i", .int 32 sticky),
+      ("%topn.0711.i.i", .int 64 topn), ("%top.0709.i.i", .int 64 top),
+      ("%F.0705.i.i", .int 64 F), ("%T.0703.i.i", .int 64 T),
+      ("%R.0701.i.i", .int 64 R), ("%exp10.0.i.i", .int 64 0)])
+    (rest := end104Rest) hpre hsel (by decide)
+  unfold end104Instrs
+  rw [h]
+  unfold end104Rest
+  simp only [end104Env]
+  inner_step
+  inner_step
+  inner_step
+  inner_step
+  inner_step
+  inner_step
+  inner_step
+  block_close
+
+/-- The clamp head's step to the infinity clamp at the parse's counted exit. -/
+theorem end104_step_thread_over {calls : Calls} {env : Env} {s : State}
+    {lead : BitVec 64} {sticky : BitVec 32} {topn top F T R : BitVec 64}
+    (hpc : s.pc = "if.end104.i.i")
+    (hpre : s.pre = some "for.end.thread.i.i")
+    (hlead : lookupName env "%lead.0721.i287.i" = some (.int 64 lead))
+    (hsticky : lookupName env "%sticky.4.ph.i.i" = some (.int 32 sticky))
+    (htopn : lookupName env "%topn.4.ph.i.i" = some (.int 64 topn))
+    (htop : lookupName env "%top.4.ph.i.i" = some (.int 64 top))
+    (hF : lookupName env "%F.3.ph.i.i" = some (.int 64 F))
+    (hT : lookupName env "%T.2.ph.i.i" = some (.int 64 T))
+    (hR : lookupName env "%R.4.ph.i.i" = some (.int 64 R))
+    (hbit : evalICmp .sgt
+      ((R + 0xffffffffffffffff#64)
+        + ((T - (lead + R)) + (0x0000000000000000#64 - F)))
+      0x0000000000000134#64 = (1 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (end104Env env lead sticky topn top F T R 0)
+        { s with pc := "if.then113.i.i", pre := some "if.end104.i.i" }) := by
+  refine numFast_step_at
+    (s' := stateAt (end104Env env lead sticky topn top F T R 0) s)
+    (b := ⟨"if.end104.i.i", end104Instrs,
+      Term.condbr (Operand.reg "%cmp111.i.i") "if.then113.i.i" "if.end120.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using end104_find
+  · exact end104_denote_thread hpre hlead hsticky htopn htop hF hT hR
+  · rw [numFast_execTerm_condbr_one
+      (s := stateAt (end104Env env lead sticky topn top F T R 0) s)
+      "%cmp111.i.i" "if.then113.i.i" "if.end120.i.i" (lookupName_cons_self ..) hbit]
+    simp only [stateAt, hpc]
+
+/-- The clamp head's step to the underflow test at the parse's counted exit. -/
+theorem end104_step_thread_under {calls : Calls} {env : Env} {s : State}
+    {lead : BitVec 64} {sticky : BitVec 32} {topn top F T R : BitVec 64}
+    (hpc : s.pc = "if.end104.i.i")
+    (hpre : s.pre = some "for.end.thread.i.i")
+    (hlead : lookupName env "%lead.0721.i287.i" = some (.int 64 lead))
+    (hsticky : lookupName env "%sticky.4.ph.i.i" = some (.int 32 sticky))
+    (htopn : lookupName env "%topn.4.ph.i.i" = some (.int 64 topn))
+    (htop : lookupName env "%top.4.ph.i.i" = some (.int 64 top))
+    (hF : lookupName env "%F.3.ph.i.i" = some (.int 64 F))
+    (hT : lookupName env "%T.2.ph.i.i" = some (.int 64 T))
+    (hR : lookupName env "%R.4.ph.i.i" = some (.int 64 R))
+    (hbit : evalICmp .sgt
+      ((R + 0xffffffffffffffff#64)
+        + ((T - (lead + R)) + (0x0000000000000000#64 - F)))
+      0x0000000000000134#64 = (0 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (end104Env env lead sticky topn top F T R 0)
+        { s with pc := "if.end120.i.i", pre := some "if.end104.i.i" }) := by
+  refine numFast_step_at
+    (s' := stateAt (end104Env env lead sticky topn top F T R 0) s)
+    (b := ⟨"if.end104.i.i", end104Instrs,
+      Term.condbr (Operand.reg "%cmp111.i.i") "if.then113.i.i" "if.end120.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using end104_find
+  · exact end104_denote_thread hpre hlead hsticky htopn htop hF hT hR
+  · rw [numFast_execTerm_condbr_zero
+      (s := stateAt (end104Env env lead sticky topn top F T R 0) s)
+      "%cmp111.i.i" "if.then113.i.i" "if.end120.i.i" (lookupName_cons_self ..) hbit]
+    simp only [stateAt, hpc]
+
+/-- The chunk loop's chain on its latch's back edge: the four carried cells are
+the latch's, so the block's product is the latch's chunk times ten plus the
+digit at the index it names. -/
+theorem body132_denote_back {calls : Calls} {env : Env} {s : State}
+    {j chunk : BitVec 64} {cn v70 : BitVec 32}
+    {a0 : Nat} {b71 : BitVec 8}
+    (hpre : s.pre = some "for.inc143.i.i")
+    (hj : lookupName env "%inc144.i.i" = some (.int 64 j))
+    (hcn : lookupName env "%cn.1.i.i" = some (.int 32 cn))
+    (hchunk : lookupName env "%chunk.1.i.i" = some (.int 64 chunk))
+    (h70 : lookupName env "%78" = some (.int 32 v70))
+    (hdig : lookupName env "%dig.i.i" = some (.ptr a0))
+    (hpos : (j.signExtend 64).toNat < 2 ^ 63)
+    (hb : readBytes s.mem (a0 + (j.signExtend 64).toNat) 1
+      = some (natToBytes b71.toNat 1)) :
+    denoteCode calls body132Block (stateAt env s) =
+      some (stateAt (body132Env env j chunk cn v70 a0 b71) s) := by
+  have hsel : PhiSelects (stateAt env s) "for.inc143.i.i" body132Specs
+      [("%j.0740.i.i", .int 64 j), ("%cn.0739.i.i", .int 32 cn),
+       ("%chunk.0738.i.i", .int 64 chunk), ("%70", .int 32 v70)] := by
+    simp only [body132Specs]
+    constructor
+    · simp [phiIncoming]; rfl
+    · exact evalOperand_reg_of env s "%inc144.i.i" (.int 64 j) hj
+    constructor
+    · simp [phiIncoming]; rfl
+    · exact evalOperand_reg_of env s "%cn.1.i.i" (.int 32 cn) hcn
+    constructor
+    · simp [phiIncoming]; rfl
+    · exact evalOperand_reg_of env s "%chunk.1.i.i" (.int 64 chunk) hchunk
+    constructor
+    · simp [phiIncoming]; rfl
+    · exact evalOperand_reg_of env s "%78" (.int 32 v70) h70
+    exact PhiSelects.nil
+  have h := denoteCode_phiRun_at (calls := calls) (env := env) (s := s)
+    (p := "for.inc143.i.i") (specs := body132Specs)
+    (vs := [("%j.0740.i.i", .int 64 j), ("%cn.0739.i.i", .int 32 cn),
+      ("%chunk.0738.i.i", .int 64 chunk), ("%70", .int 32 v70)]) (rest := body132Instrs)
+    hpre hsel (by decide)
+  unfold body132Block
+  rw [h]
+  unfold body132Instrs
+  simp only [body132Env]
+  inner_step
+  inner_step
+  inner_step
+  inner_step
+  inner_step
+  inner_step
+  inner_step
+  block_close
+
+/-- The chunk loop's step into the `10 ^ 19` nest's test on the back edge. -/
+theorem body132_step_back_nest {calls : Calls} {env : Env} {s : State}
+    {j chunk : BitVec 64} {cn v70 : BitVec 32}
+    {a0 : Nat} {b71 : BitVec 8}
+    (hpc : s.pc = "for.body132.i.i")
+    (hpre : s.pre = some "for.inc143.i.i")
+    (hj : lookupName env "%inc144.i.i" = some (.int 64 j))
+    (hcn : lookupName env "%cn.1.i.i" = some (.int 32 cn))
+    (hchunk : lookupName env "%chunk.1.i.i" = some (.int 64 chunk))
+    (h70 : lookupName env "%78" = some (.int 32 v70))
+    (hdig : lookupName env "%dig.i.i" = some (.ptr a0))
+    (hpos : (j.signExtend 64).toNat < 2 ^ 63)
+    (hb : readBytes s.mem (a0 + (j.signExtend 64).toNat) 1
+      = some (natToBytes b71.toNat 1))
+    (hbit : evalICmp .eq (cn + 0x00000001#32) 0x00000013#32 = (1 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (body132Env env j chunk cn v70 a0 b71)
+        { s with pc := "if.then140.i.i", pre := some "for.body132.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (body132Env env j chunk cn v70 a0 b71) s)
+    (b := ⟨"for.body132.i.i", body132Block,
+      Term.condbr (Operand.reg "%cmp138.i.i") "if.then140.i.i" "for.inc143.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using body132_find
+  · exact body132_denote_back hpre hj hcn hchunk h70 hdig hpos hb
+  · rw [numFast_execTerm_condbr_one (s := stateAt (body132Env env j chunk cn v70 a0 b71) s)
+      "%cmp138.i.i" "if.then140.i.i" "for.inc143.i.i" (lookupName_cons_self ..) hbit]
+    simp only [stateAt, hpc]
+
+/-- The chunk loop's step into its latch on the back edge. -/
+theorem body132_step_back_latch {calls : Calls} {env : Env} {s : State}
+    {j chunk : BitVec 64} {cn v70 : BitVec 32}
+    {a0 : Nat} {b71 : BitVec 8}
+    (hpc : s.pc = "for.body132.i.i")
+    (hpre : s.pre = some "for.inc143.i.i")
+    (hj : lookupName env "%inc144.i.i" = some (.int 64 j))
+    (hcn : lookupName env "%cn.1.i.i" = some (.int 32 cn))
+    (hchunk : lookupName env "%chunk.1.i.i" = some (.int 64 chunk))
+    (h70 : lookupName env "%78" = some (.int 32 v70))
+    (hdig : lookupName env "%dig.i.i" = some (.ptr a0))
+    (hpos : (j.signExtend 64).toNat < 2 ^ 63)
+    (hb : readBytes s.mem (a0 + (j.signExtend 64).toNat) 1
+      = some (natToBytes b71.toNat 1))
+    (hbit : evalICmp .eq (cn + 0x00000001#32) 0x00000013#32 = (0 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (body132Env env j chunk cn v70 a0 b71)
+        { s with pc := "for.inc143.i.i", pre := some "for.body132.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (body132Env env j chunk cn v70 a0 b71) s)
+    (b := ⟨"for.body132.i.i", body132Block,
+      Term.condbr (Operand.reg "%cmp138.i.i") "if.then140.i.i" "for.inc143.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using body132_find
+  · exact body132_denote_back hpre hj hcn hchunk h70 hdig hpos hb
+  · rw [numFast_execTerm_condbr_zero (s := stateAt (body132Env env j chunk cn v70 a0 b71) s)
+      "%cmp138.i.i" "if.then140.i.i" "for.inc143.i.i" (lookupName_cons_self ..) hbit]
+    simp only [stateAt, hpc]
+
+/-- The `stk_mul_u64` exit's chain at the `while.cond` site. -/
+theorem stkExit_denote_cond {calls : Calls} {env : Env} {s : State}
+    {inc12 : BitVec 32} {k : BitVec 64}
+    (hpre : s.pre = some "while.cond.preheader.i.i.i.i")
+    (hinc : lookupName env "%inc12.us.i.i745747.i.i" = some (.int 32 inc12))
+    (hk : lookupName env "%k.0748.i.i" = some (.int 64 k)) :
+    denoteCode calls stkExitBlock (stateAt env s) =
+      some (stateAt (stkExitEnv env inc12 k) s) := by
+  have hsel : PhiSelects (stateAt env s) "while.cond.preheader.i.i.i.i" stkExitSpecs
+      [("%inc12.us.i.i744.i.i", .int 32 inc12)] := by
+    simp only [stkExitSpecs]
+    constructor
+    · simp [phiIncoming]; rfl
+    · exact evalOperand_reg_of env s "%inc12.us.i.i745747.i.i" (.int 32 inc12) hinc
+    exact PhiSelects.nil
+  have h := denoteCode_phiRun_at (calls := calls) (env := env) (s := s)
+    (p := "while.cond.preheader.i.i.i.i") (specs := stkExitSpecs)
+    (vs := [("%inc12.us.i.i744.i.i", .int 32 inc12)]) (rest := stkExitInstrs)
+    hpre hsel (by decide)
+  unfold stkExitBlock
+  rw [h]
+  unfold stkExitInstrs
+  simp only [stkExitEnv]
+  inner_step
+  inner_step
+  block_close
+
+/-- The `stk_mul_u64` exit's chain at the `while.body.us` site. -/
+theorem stkExit_denote_us {calls : Calls} {env : Env} {s : State}
+    {inc12 : BitVec 32} {k : BitVec 64}
+    (hpre : s.pre = some "while.body.us.i.i.i.i")
+    (hinc : lookupName env "%inc12.us.i.i.i.i" = some (.int 32 inc12))
+    (hk : lookupName env "%k.0748.i.i" = some (.int 64 k)) :
+    denoteCode calls stkExitBlock (stateAt env s) =
+      some (stateAt (stkExitEnv env inc12 k) s) := by
+  have hsel : PhiSelects (stateAt env s) "while.body.us.i.i.i.i" stkExitSpecs
+      [("%inc12.us.i.i744.i.i", .int 32 inc12)] := by
+    simp only [stkExitSpecs]
+    constructor
+    · simp [phiIncoming]; rfl
+    · exact evalOperand_reg_of env s "%inc12.us.i.i.i.i" (.int 32 inc12) hinc
+    exact PhiSelects.nil
+  have h := denoteCode_phiRun_at (calls := calls) (env := env) (s := s)
+    (p := "while.body.us.i.i.i.i") (specs := stkExitSpecs)
+    (vs := [("%inc12.us.i.i744.i.i", .int 32 inc12)]) (rest := stkExitInstrs)
+    hpre hsel (by decide)
+  unfold stkExitBlock
+  rw [h]
+  unfold stkExitInstrs
+  simp only [stkExitEnv]
+  inner_step
+  inner_step
+  block_close
+
+/-- The exit's step back into the chunk loop at the `while.cond` site. -/
+theorem stkExit_step_cond_body {calls : Calls} {env : Env} {s : State}
+    {inc12 : BitVec 32} {k : BitVec 64}
+    (hpc : s.pc = "stk_mul_u64.exit.i.i")
+    (hpre : s.pre = some "while.cond.preheader.i.i.i.i")
+    (hinc : lookupName env "%inc12.us.i.i745747.i.i" = some (.int 32 inc12))
+    (hk : lookupName env "%k.0748.i.i" = some (.int 64 k))
+    (hbit : evalICmp .sgt k 0x0000000000000035#64 = (1 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (stkExitEnv env inc12 k)
+        { s with pc := "while.body.i.i", pre := some "stk_mul_u64.exit.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (stkExitEnv env inc12 k) s)
+    (b := ⟨"stk_mul_u64.exit.i.i", stkExitBlock,
+      Term.condbr (Operand.reg "%cmp155.i.i") "while.body.i.i" "while.end.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using stkExit_find
+  · exact stkExit_denote_cond hpre hinc hk
+  · rw [numFast_execTerm_condbr_one (s := stateAt (stkExitEnv env inc12 k) s)
+      "%cmp155.i.i" "while.body.i.i" "while.end.i.i" (lookupName_cons_self ..) hbit]
+    simp only [stateAt, hpc]
+
+/-- The exit's step into the merge at the `while.cond` site. -/
+theorem stkExit_step_cond_end {calls : Calls} {env : Env} {s : State}
+    {inc12 : BitVec 32} {k : BitVec 64}
+    (hpc : s.pc = "stk_mul_u64.exit.i.i")
+    (hpre : s.pre = some "while.cond.preheader.i.i.i.i")
+    (hinc : lookupName env "%inc12.us.i.i745747.i.i" = some (.int 32 inc12))
+    (hk : lookupName env "%k.0748.i.i" = some (.int 64 k))
+    (hbit : evalICmp .sgt k 0x0000000000000035#64 = (0 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (stkExitEnv env inc12 k)
+        { s with pc := "while.end.i.i", pre := some "stk_mul_u64.exit.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (stkExitEnv env inc12 k) s)
+    (b := ⟨"stk_mul_u64.exit.i.i", stkExitBlock,
+      Term.condbr (Operand.reg "%cmp155.i.i") "while.body.i.i" "while.end.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using stkExit_find
+  · exact stkExit_denote_cond hpre hinc hk
+  · rw [numFast_execTerm_condbr_zero (s := stateAt (stkExitEnv env inc12 k) s)
+      "%cmp155.i.i" "while.body.i.i" "while.end.i.i" (lookupName_cons_self ..) hbit]
+    simp only [stateAt, hpc]
+
+/-- The exit's step back into the chunk loop at the `while.body.us` site. -/
+theorem stkExit_step_us_body {calls : Calls} {env : Env} {s : State}
+    {inc12 : BitVec 32} {k : BitVec 64}
+    (hpc : s.pc = "stk_mul_u64.exit.i.i")
+    (hpre : s.pre = some "while.body.us.i.i.i.i")
+    (hinc : lookupName env "%inc12.us.i.i.i.i" = some (.int 32 inc12))
+    (hk : lookupName env "%k.0748.i.i" = some (.int 64 k))
+    (hbit : evalICmp .sgt k 0x0000000000000035#64 = (1 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (stkExitEnv env inc12 k)
+        { s with pc := "while.body.i.i", pre := some "stk_mul_u64.exit.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (stkExitEnv env inc12 k) s)
+    (b := ⟨"stk_mul_u64.exit.i.i", stkExitBlock,
+      Term.condbr (Operand.reg "%cmp155.i.i") "while.body.i.i" "while.end.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using stkExit_find
+  · exact stkExit_denote_us hpre hinc hk
+  · rw [numFast_execTerm_condbr_one (s := stateAt (stkExitEnv env inc12 k) s)
+      "%cmp155.i.i" "while.body.i.i" "while.end.i.i" (lookupName_cons_self ..) hbit]
+    simp only [stateAt, hpc]
+
+/-- The exit's step into the merge at the `while.body.us` site. -/
+theorem stkExit_step_us_end {calls : Calls} {env : Env} {s : State}
+    {inc12 : BitVec 32} {k : BitVec 64}
+    (hpc : s.pc = "stk_mul_u64.exit.i.i")
+    (hpre : s.pre = some "while.body.us.i.i.i.i")
+    (hinc : lookupName env "%inc12.us.i.i.i.i" = some (.int 32 inc12))
+    (hk : lookupName env "%k.0748.i.i" = some (.int 64 k))
+    (hbit : evalICmp .sgt k 0x0000000000000035#64 = (0 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (stkExitEnv env inc12 k)
+        { s with pc := "while.end.i.i", pre := some "stk_mul_u64.exit.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (stkExitEnv env inc12 k) s)
+    (b := ⟨"stk_mul_u64.exit.i.i", stkExitBlock,
+      Term.condbr (Operand.reg "%cmp155.i.i") "while.body.i.i" "while.end.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using stkExit_find
+  · exact stkExit_denote_us hpre hinc hk
+  · rw [numFast_execTerm_condbr_zero (s := stateAt (stkExitEnv env inc12 k) s)
+      "%cmp155.i.i" "while.body.i.i" "while.end.i.i" (lookupName_cons_self ..) hbit]
+    simp only [stateAt, hpc]
+
+/-! ### The parse head's phi block, and its thread edge
+
+`for.body.outer.i.outer.i` is the parse head's phi block: ten carried cells
+selected from `if.then143.i` or the outer latch `for.inc.i.i`, and a branch to the
+head.  The head reads the block's cells on that edge, so the outer loop's back
+edge is this block's own step.  The head's other edge,
+`if.else46.i.thread.i`, is the inner loop's dot exit: the head's `phi`s select the
+thread's cells and the two constants (`in_frac` set, `seen` cleared), so the head
+has a chain at that predecessor too. -/
+
+/-- The head's values on the parse phi block's two edges. -/
+def outerPhiValues (i R T F lead top topn : BitVec 64) (inFrac seen sticky : BitVec 32) :
+    List (String × Value) :=
+  [("%i.1725.ph.i.ph.i", .int 64 i), ("%R.0724.ph.i.ph.i", .int 64 R),
+   ("%T.0723.ph.i.ph.i", .int 64 T), ("%F.0722.ph.i.ph.i", .int 64 F),
+   ("%lead.0721.ph.i.ph.i", .int 64 lead), ("%top.0720.ph.i.ph.i", .int 64 top),
+   ("%topn.0719.ph.i.ph.i", .int 64 topn), ("%in_frac.0718.ph.i.ph.i", .int 32 inFrac),
+   ("%seen.0717.ph.i.ph.i", .int 32 seen), ("%sticky.0716.ph.i.ph.i", .int 32 sticky)]
+
+/-- The parse phi block's ten `phi`s, in the pin's order. -/
+def outerPhiSpecs : List PhiSpec :=
+  [{ dst := "%i.1725.ph.i.ph.i", ty := Ty.int 64,
+     incoming := [("if.then143.i", (Operand.reg "%i.0.i")),
+                  ("for.inc.i.i", (Operand.reg "%inc57.i.i"))] },
+   { dst := "%R.0724.ph.i.ph.i", ty := Ty.int 64,
+     incoming := [("if.then143.i", (Operand.imm (Const.int 64 0x0000000000000000#64))),
+                  ("for.inc.i.i", (Operand.reg "%R.4.ph.i.i"))] },
+   { dst := "%T.0723.ph.i.ph.i", ty := Ty.int 64,
+     incoming := [("if.then143.i", (Operand.imm (Const.int 64 0x0000000000000000#64))),
+                  ("for.inc.i.i", (Operand.reg "%T.2.ph.i.i"))] },
+   { dst := "%F.0722.ph.i.ph.i", ty := Ty.int 64,
+     incoming := [("if.then143.i", (Operand.imm (Const.int 64 0x0000000000000000#64))),
+                  ("for.inc.i.i", (Operand.reg "%F.3.ph.i.i"))] },
+   { dst := "%lead.0721.ph.i.ph.i", ty := Ty.int 64,
+     incoming := [("if.then143.i", (Operand.imm (Const.int 64 0x0000000000000000#64))),
+                  ("for.inc.i.i", (Operand.reg "%lead.0721.i287.i"))] },
+   { dst := "%top.0720.ph.i.ph.i", ty := Ty.int 64,
+     incoming := [("if.then143.i", (Operand.imm (Const.int 64 0x0000000000000000#64))),
+                  ("for.inc.i.i", (Operand.reg "%top.4.ph.i.i"))] },
+   { dst := "%topn.0719.ph.i.ph.i", ty := Ty.int 64,
+     incoming := [("if.then143.i", (Operand.imm (Const.int 64 0x0000000000000000#64))),
+                  ("for.inc.i.i", (Operand.reg "%topn.4.ph.i.i"))] },
+   { dst := "%in_frac.0718.ph.i.ph.i", ty := Ty.int 32,
+     incoming := [("if.then143.i", (Operand.imm (Const.int 32 0x00000000#32))),
+                  ("for.inc.i.i", (Operand.reg "%in_frac.2.ph.i.i"))] },
+   { dst := "%seen.0717.ph.i.ph.i", ty := Ty.int 32,
+     incoming := [("if.then143.i", (Operand.imm (Const.int 32 0x00000000#32))),
+                  ("for.inc.i.i", (Operand.reg "%seen.4.ph.i.i"))] },
+   { dst := "%sticky.0716.ph.i.ph.i", ty := Ty.int 32,
+     incoming := [("if.then143.i", (Operand.imm (Const.int 32 0x00000000#32))),
+                  ("for.inc.i.i", (Operand.reg "%sticky.4.ph.i.i"))] }]
+
+/-- The phi block, from its pin. -/
+def outerPhiBlock : List Instr := outerPhiSpecs.map PhiSpec.instr
+
+theorem outerPhi_find :
+    numFastBody.findBlock "for.body.outer.i.outer.i" =
+      some ⟨"for.body.outer.i.outer.i", outerPhiBlock, Term.br "for.body.outer.i.i"⟩ := by
+  simp only [outerPhiBlock, outerPhiSpecs, PhiSpec.instr,
+    List.map_cons, List.map_nil]
+  exact numFast_findBlock_for_body_outer_i_outer_i
+
+/-- The phi block's environment: the ten cells it selects. -/
+def outerPhiEnv (env : Env) (i R T F lead top topn : BitVec 64)
+    (inFrac seen sticky : BitVec 32) : Env :=
+  runCells (outerPhiValues i R T F lead top topn inFrac seen sticky) env
+
+/-- The phi block's chain on the outer latch's back edge. -/
+theorem outerPhi_denote_back {calls : Calls} {env : Env} {s : State}
+    {i R T F lead top topn : BitVec 64} {inFrac seen sticky : BitVec 32}
+    (hpre : s.pre = some "for.inc.i.i")
+    (hi : lookupName env "%inc57.i.i" = some (.int 64 i))
+    (hR : lookupName env "%R.4.ph.i.i" = some (.int 64 R))
+    (hT : lookupName env "%T.2.ph.i.i" = some (.int 64 T))
+    (hF : lookupName env "%F.3.ph.i.i" = some (.int 64 F))
+    (hlead : lookupName env "%lead.0721.i287.i" = some (.int 64 lead))
+    (htop : lookupName env "%top.4.ph.i.i" = some (.int 64 top))
+    (htopn : lookupName env "%topn.4.ph.i.i" = some (.int 64 topn))
+    (hin : lookupName env "%in_frac.2.ph.i.i" = some (.int 32 inFrac))
+    (hseen : lookupName env "%seen.4.ph.i.i" = some (.int 32 seen))
+    (hsticky : lookupName env "%sticky.4.ph.i.i" = some (.int 32 sticky)) :
+    denoteCode calls outerPhiBlock (stateAt env s) =
+      some (stateAt (outerPhiEnv env i R T F lead top topn inFrac seen sticky) s) := by
+  have hsel : PhiSelects (stateAt env s) "for.inc.i.i" outerPhiSpecs
+      (outerPhiValues i R T F lead top topn inFrac seen sticky) := by
+    simp only [outerPhiSpecs, outerPhiValues]
+    constructor
+    · simp [phiIncoming]; rfl
+    · exact evalOperand_reg_of env s "%inc57.i.i" (.int 64 i) hi
+    constructor
+    · simp [phiIncoming]; rfl
+    · exact evalOperand_reg_of env s "%R.4.ph.i.i" (.int 64 R) hR
+    constructor
+    · simp [phiIncoming]; rfl
+    · exact evalOperand_reg_of env s "%T.2.ph.i.i" (.int 64 T) hT
+    constructor
+    · simp [phiIncoming]; rfl
+    · exact evalOperand_reg_of env s "%F.3.ph.i.i" (.int 64 F) hF
+    constructor
+    · simp [phiIncoming]; rfl
+    · exact evalOperand_reg_of env s "%lead.0721.i287.i" (.int 64 lead) hlead
+    constructor
+    · simp [phiIncoming]; rfl
+    · exact evalOperand_reg_of env s "%top.4.ph.i.i" (.int 64 top) htop
+    constructor
+    · simp [phiIncoming]; rfl
+    · exact evalOperand_reg_of env s "%topn.4.ph.i.i" (.int 64 topn) htopn
+    constructor
+    · simp [phiIncoming]; rfl
+    · exact evalOperand_reg_of env s "%in_frac.2.ph.i.i" (.int 32 inFrac) hin
+    constructor
+    · simp [phiIncoming]; rfl
+    · exact evalOperand_reg_of env s "%seen.4.ph.i.i" (.int 32 seen) hseen
+    constructor
+    · simp [phiIncoming]; rfl
+    · exact evalOperand_reg_of env s "%sticky.4.ph.i.i" (.int 32 sticky) hsticky
+    exact PhiSelects.nil
+  rw [outerPhiBlock]
+  rw [show List.map PhiSpec.instr outerPhiSpecs
+      = List.map PhiSpec.instr outerPhiSpecs ++ [] from (List.append_nil _).symm]
+  rw [denoteCode_phiRun_at (calls := calls) (env := env) (s := s)
+    (p := "for.inc.i.i") (specs := outerPhiSpecs)
+    (vs := outerPhiValues i R T F lead top topn inFrac seen sticky) (rest := [])
+    hpre hsel (by decide)]
+  simp only [denoteCode_nil, outerPhiEnv]
+
+/-- The phi block's step from the outer latch into the head. -/
+theorem outerPhi_step_back {calls : Calls} {env : Env} {s : State}
+    {i R T F lead top topn : BitVec 64} {inFrac seen sticky : BitVec 32}
+    (hpc : s.pc = "for.body.outer.i.outer.i")
+    (hpre : s.pre = some "for.inc.i.i")
+    (hi : lookupName env "%inc57.i.i" = some (.int 64 i))
+    (hR : lookupName env "%R.4.ph.i.i" = some (.int 64 R))
+    (hT : lookupName env "%T.2.ph.i.i" = some (.int 64 T))
+    (hF : lookupName env "%F.3.ph.i.i" = some (.int 64 F))
+    (hlead : lookupName env "%lead.0721.i287.i" = some (.int 64 lead))
+    (htop : lookupName env "%top.4.ph.i.i" = some (.int 64 top))
+    (htopn : lookupName env "%topn.4.ph.i.i" = some (.int 64 topn))
+    (hin : lookupName env "%in_frac.2.ph.i.i" = some (.int 32 inFrac))
+    (hseen : lookupName env "%seen.4.ph.i.i" = some (.int 32 seen))
+    (hsticky : lookupName env "%sticky.4.ph.i.i" = some (.int 32 sticky)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (outerPhiEnv env i R T F lead top topn inFrac seen sticky)
+        { s with pc := "for.body.outer.i.i", pre := some "for.body.outer.i.outer.i" }) := by
+  refine numFast_step_at
+    (s' := stateAt (outerPhiEnv env i R T F lead top topn inFrac seen sticky) s)
+    (b := ⟨"for.body.outer.i.outer.i", outerPhiBlock, Term.br "for.body.outer.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using outerPhi_find
+  · exact outerPhi_denote_back hpre hi hR hT hF hlead htop htopn hin hseen hsticky
+  · simp only [execTerm, stateAt, hpc]
+
+/-- The head's chain on the inner loop's dot edge: the `phi`s select the thread's
+cells, with `in_frac` set and `seen` cleared. -/
+theorem outer_denote_thread {calls : Calls} {env : Env} {s : State}
+    {i T F lead : BitVec 64} {b : BitVec 8} {a : Nat}
+    (hpre : s.pre = some "if.else46.i.thread.i")
+    (hi : lookupName env "%inc57.i344.i" = some (.int 64 i))
+    (hT : lookupName env "%T.0723.i.i" = some (.int 64 T))
+    (hF : lookupName env "%F.0722.i.i" = some (.int 64 F))
+    (hlead : lookupName env "%lead.0721.i.i" = some (.int 64 lead))
+    (hp : lookupName env "%p" = some (.ptr a))
+    (hi63 : i.toNat < 2 ^ 63)
+    (hb : readBytes s.mem (a + i.toNat) 1 = some (natToBytes b.toNat 1)) :
+    denoteCode calls outerInstrs (stateAt env s) =
+      some (stateAt (outerEnv env i T F lead 0x00000001#32 0x00000000#32
+        (a + i.toNat) b) s) := by
+  have hsel : PhiSelects (stateAt env s) "if.else46.i.thread.i" outerSpecs
+      (outerValues i T F lead 0x00000001#32 0x00000000#32) := by
+    simp only [outerSpecs, outerValues]
+    constructor
+    · simp [phiIncoming]; rfl
+    · exact evalOperand_reg_of env s "%inc57.i344.i" (.int 64 i) hi
+    constructor
+    · simp [phiIncoming]; rfl
+    · exact evalOperand_reg_of env s "%T.0723.i.i" (.int 64 T) hT
+    constructor
+    · simp [phiIncoming]; rfl
+    · exact evalOperand_reg_of env s "%F.0722.i.i" (.int 64 F) hF
+    constructor
+    · simp [phiIncoming]; rfl
+    · exact evalOperand_reg_of env s "%lead.0721.i.i" (.int 64 lead) hlead
+    constructor
+    · simp [phiIncoming]; rfl
+    · exact evalOperand_lit_of _ 32 _
+    constructor
+    · simp [phiIncoming]; rfl
+    · exact evalOperand_lit_of _ 32 _
+    exact PhiSelects.nil
+  have h := denoteCode_phiRun_at (calls := calls) (env := env) (s := s)
+    (p := "if.else46.i.thread.i") (specs := outerSpecs)
+    (vs := outerValues i T F lead 0x00000001#32 0x00000000#32) (rest := outerRest)
+    hpre hsel (by decide)
+  unfold outerInstrs
+  rw [h]
+  unfold outerRest
+  simp only [outerEnv]
+  inner_step
+  inner_step
+  inner_step
+  inner_step
+  inner_step
+  inner_step
+  block_close
+  all_goals (first
+    | (simpa only [signExtend64_toNat] using hb)
+    | (simpa only [signExtend64_toNat] using hi63)
+    | (simp only [outerValues, runCells, denoteRun, State.bindAll, signExtend64_toNat]))
+
+/-- The head's step onto its digit edge, on the inner loop's dot edge. -/
+theorem outer_step_thread_digit {calls : Calls} {env : Env} {s : State}
+    {i T F lead : BitVec 64} {b : BitVec 8} {a : Nat}
+    (hpc : s.pc = "for.body.outer.i.i")
+    (hpre : s.pre = some "if.else46.i.thread.i")
+    (hi : lookupName env "%inc57.i344.i" = some (.int 64 i))
+    (hT : lookupName env "%T.0723.i.i" = some (.int 64 T))
+    (hF : lookupName env "%F.0722.i.i" = some (.int 64 F))
+    (hlead : lookupName env "%lead.0721.i.i" = some (.int 64 lead))
+    (hp : lookupName env "%p" = some (.ptr a))
+    (hi63 : i.toNat < 2 ^ 63)
+    (hb : readBytes s.mem (a + i.toNat) 1 = some (natToBytes b.toNat 1))
+    (hbit : evalICmp .ult (b + 0xd0#8) 0x0a#8 = (1 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (outerEnv env i T F lead 0x00000001#32 0x00000000#32
+          (a + i.toNat) b)
+        { s with pc := "if.then13.i.peel.i", pre := some "for.body.outer.i.i" }) := by
+  refine numFast_step_at
+    (s' := stateAt (outerEnv env i T F lead 0x00000001#32 0x00000000#32 (a + i.toNat) b) s)
+    (b := ⟨"for.body.outer.i.i", outerInstrs,
+      Term.condbr (Operand.reg "%or.cond.i.peel.i") "if.then13.i.peel.i" "if.else46.i.i"⟩)
+    ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using outer_find
+  · simpa only [stateAt] using outer_denote_thread hpre hi hT hF hlead hp hi63 hb
+  · rw [numFast_execTerm_condbr_one
+      (s := stateAt (outerEnv env i T F lead 0x00000001#32 0x00000000#32
+        (a + i.toNat) b) s) "%or.cond.i.peel.i" "if.then13.i.peel.i" "if.else46.i.i"
+      (lookupName_cons_self "%or.cond.i.peel.i"
+        (Value.int 1 (evalICmp .ult (b + 0xd0#8) 0x0a#8)) _) hbit]
+    simp only [stateAt, hpc]
+
+/-- The head's step onto its non-digit edge, on the inner loop's dot edge. -/
+theorem outer_step_thread_nondigit {calls : Calls} {env : Env} {s : State}
+    {i T F lead : BitVec 64} {b : BitVec 8} {a : Nat}
+    (hpc : s.pc = "for.body.outer.i.i")
+    (hpre : s.pre = some "if.else46.i.thread.i")
+    (hi : lookupName env "%inc57.i344.i" = some (.int 64 i))
+    (hT : lookupName env "%T.0723.i.i" = some (.int 64 T))
+    (hF : lookupName env "%F.0722.i.i" = some (.int 64 F))
+    (hlead : lookupName env "%lead.0721.i.i" = some (.int 64 lead))
+    (hp : lookupName env "%p" = some (.ptr a))
+    (hi63 : i.toNat < 2 ^ 63)
+    (hb : readBytes s.mem (a + i.toNat) 1 = some (natToBytes b.toNat 1))
+    (hbit : evalICmp .ult (b + 0xd0#8) 0x0a#8 = (0 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (outerEnv env i T F lead 0x00000001#32 0x00000000#32
+          (a + i.toNat) b)
+        { s with pc := "if.else46.i.i", pre := some "for.body.outer.i.i" }) := by
+  refine numFast_step_at
+    (s' := stateAt (outerEnv env i T F lead 0x00000001#32 0x00000000#32 (a + i.toNat) b) s)
+    (b := ⟨"for.body.outer.i.i", outerInstrs,
+      Term.condbr (Operand.reg "%or.cond.i.peel.i") "if.then13.i.peel.i" "if.else46.i.i"⟩)
+    ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using outer_find
+  · simpa only [stateAt] using outer_denote_thread hpre hi hT hF hlead hp hi63 hb
+  · rw [numFast_execTerm_condbr_zero
+      (s := stateAt (outerEnv env i T F lead 0x00000001#32 0x00000000#32
+        (a + i.toNat) b) s) "%or.cond.i.peel.i" "if.then13.i.peel.i" "if.else46.i.i"
+      (lookupName_cons_self "%or.cond.i.peel.i"
+        (Value.int 1 (evalICmp .ult (b + 0xd0#8) 0x0a#8)) _) hbit]
+    simp only [stateAt, hpc]
+
+/-! ### The peel loop's traversal: `for.body.i.i`
+
+The inner loop is entered from the peel (`for.inc.thread.i.peel.i`) and re-entered
+from its latch (`for.inc.thread.i.i`).  A visit loads the byte at the cursor: a
+nonzero digit leaves for `if.end28.i.i`, a non-digit leaves for the thread block
+(which refuses or hands the outer head the dot's edge), and a zero digit steps the
+cursor and re-enters unless the cursor reaches `%n`.  The measure is the distance
+to `%n`: a visit advances the cursor by one, so the loop's cost is four control
+steps per unit of the length. -/
+
+open LeanLLVM.JSON
+
+/-- The peel loop's byte at an index: the read's `UInt8` as the register form the
+chain steps take. -/
+def peelByteAt (bs : List UInt8) (j : Nat) : BitVec 8 :=
+  JsonScanLane.vByte (bs.getD j 0)
+
+/-- The equality test of two `ofNat` words is the equality of their values. -/
+theorem parse_evalICmp_eq_ofNat {a b : Nat} (ha : a < 2 ^ 64) (hb : b < 2 ^ 64) :
+    evalICmp .eq (BitVec.ofNat 64 a) (BitVec.ofNat 64 b) = (1 : BitVec 1) ↔ a = b := by
+  by_cases h : a = b
+  · subst h
+    rw [evalICmp_eq_refl]
+    exact ⟨fun _ => rfl, fun _ => rfl⟩
+  · have hne : BitVec.ofNat 64 a ≠ BitVec.ofNat 64 b := by
+      intro hh
+      have h2 := congrArg BitVec.toNat hh
+      simp only [BitVec.toNat_ofNat] at h2
+      rw [Nat.mod_eq_of_lt ha, Nat.mod_eq_of_lt hb] at h2
+      exact h h2
+    rw [evalICmp_eq_ne hne]
+    exact ⟨fun hh => absurd hh (by decide), fun hh => absurd hh h⟩
+
+/-- A byte's one-byte encoding is the byte. -/
+theorem parse_natToBytes_one (u : UInt8) : natToBytes u.toNat 1 = [u] := by
+  simp [natToBytes]
+
+/-- A one-byte read of a present byte, in the chain steps' form. -/
+theorem parse_readBytes_one {m : Mem} {a : Nat} {u : UInt8}
+    (h : readByte m a = some u) :
+    readBytes m a 1 = some (natToBytes (JsonScanLane.vByte u).toNat 1) := by
+  rw [readBytes_one_some.mpr h, JsonScanLane.vByte_toNat, parse_natToBytes_one]
+
+/-- The byte at an index inside a readable range, in the chain steps' form. -/
+theorem parse_readBytes_one_at {m : Mem} {p n j : Nat} {bs : List UInt8}
+    (h : readBytes m p n = some bs) (hj : j < n) :
+    readBytes m (p + j) 1 = some (natToBytes (peelByteAt bs j).toNat 1) :=
+  parse_readBytes_one (readByte_of_readBytes h hj)
+
+/-- Whether the byte at the cursor is a digit, read from the loop's own memory. -/
+def peelDigit (mem0 : Mem) (p j : Nat) : Bool :=
+  match readByte mem0 (p + j) with
+  | some b => IsDigitB b
+  | none => false
+
+theorem peelDigit_eq_true {mem0 : Mem} {p j : Nat} :
+    peelDigit mem0 p j = true ↔
+      ∃ b : UInt8, readByte mem0 (p + j) = some b ∧ IsDigitB b = true := by
+  unfold peelDigit
+  cases h : readByte mem0 (p + j) with
+  | none => simp [h]
+  | some b => simp [h]
+
+/-- The peel loop's exit test: the cursor reaches the end, the byte is not a
+digit, or the digit is not zero. -/
+def peelAtBound (mem0 : Mem) (p n : Nat) (bs : List UInt8) : State → Nat → Bool :=
+  fun _ j => decide (n ≤ j + 1) || !peelDigit mem0 p j ||
+    decide (peelByteAt bs j + 0xd0#8 ≠ 0x00#8)
+
+/-- The peel loop's edge: the four `phi` cells the head reads, at either
+predecessor it can have. -/
+def PeelEdge (s : State) (i T F lead : BitVec 64) : Prop :=
+  (s.pre = some "for.inc.thread.i.peel.i" ∧
+    lookupName s.env "%inc57798.i.peel.i" = some (.int 64 i) ∧
+    lookupName s.env "%inc16.i.peel.i" = some (.int 64 T) ∧
+    lookupName s.env "%spec.select.i.peel.i" = some (.int 64 F) ∧
+    lookupName s.env "%lead.0721.ph.i.i" = some (.int 64 lead))
+  ∨ (s.pre = some "for.inc.thread.i.i" ∧
+    lookupName s.env "%inc57798.i.i" = some (.int 64 i) ∧
+    lookupName s.env "%inc16.i.i" = some (.int 64 T) ∧
+    lookupName s.env "%spec.select.i.i" = some (.int 64 F) ∧
+    lookupName s.env "%lead.0721.i.i" = some (.int 64 lead))
+
+/-- The peel loop's state at its head. -/
+def PeelInv (mem0 : Mem) (p n digA : Nat) (bs : List UInt8)
+    (i T F lead inc18 R top topn : BitVec 64) (sticky seen inFrac : BitVec 32)
+    (r : Nat) (s : State) (j : Nat) : Prop :=
+  s.pc = "for.body.i.i" ∧
+  s.mem = mem0 ∧
+  n < 2 ^ 63 ∧
+  j < n ∧
+  n ≤ j + r ∧
+  readBytes mem0 p n = some bs ∧
+  lookupName s.env "%p" = some (.ptr p) ∧
+  lookupName s.env "%n" = some (.int 64 (BitVec.ofNat 64 n)) ∧
+  lookupName s.env "%dig.i.i" = some (.ptr digA) ∧
+  lookupName s.env "%inc18.i.i" = some (.int 64 inc18) ∧
+  lookupName s.env "%R.0724.ph.i.ph.i" = some (.int 64 R) ∧
+  lookupName s.env "%top.0720.ph.i.ph.i" = some (.int 64 top) ∧
+  lookupName s.env "%topn.0719.ph.i.ph.i" = some (.int 64 topn) ∧
+  lookupName s.env "%sticky.0716.ph.i.ph.i" = some (.int 32 sticky) ∧
+  lookupName s.env "%seen.0717.ph.i.ph.i" = some (.int 32 seen) ∧
+  lookupName s.env "%in_frac.0718.ph.i.ph.i" = some (.int 32 inFrac) ∧
+  i.toNat = j ∧
+  PeelEdge s i T F lead
+
+/-- The peel loop's exit states. -/
+def PeelExit (s : State) : Prop :=
+  (s.pc = "if.end28.i.i" ∧ s.pre = some "if.then13.i.i") ∨
+  s.pc = "if.then59.i.i" ∨
+  (s.pc = "for.body.outer.i.i" ∧ s.pre = some "if.else46.i.thread.i")
+
+/-- The peel loop's exit word: the parse's carried cells, and the cells the
+continuation reads at whichever exit it left by. -/
+def PeelOut (p n digA : Nat) (R top topn : BitVec 64) (sticky seen inFrac : BitVec 32)
+    (s : State) : Prop :=
+  lookupName s.env "%p" = some (.ptr p) ∧
+  lookupName s.env "%n" = some (.int 64 (BitVec.ofNat 64 n)) ∧
+  lookupName s.env "%dig.i.i" = some (.ptr digA) ∧
+  lookupName s.env "%R.0724.ph.i.ph.i" = some (.int 64 R) ∧
+  lookupName s.env "%top.0720.ph.i.ph.i" = some (.int 64 top) ∧
+  lookupName s.env "%topn.0719.ph.i.ph.i" = some (.int 64 topn) ∧
+  lookupName s.env "%sticky.0716.ph.i.ph.i" = some (.int 32 sticky) ∧
+  lookupName s.env "%seen.0717.ph.i.ph.i" = some (.int 32 seen) ∧
+  lookupName s.env "%in_frac.0718.ph.i.ph.i" = some (.int 32 inFrac) ∧
+  (∃ (i T F lead : BitVec 64) (d : BitVec 8),
+      (s.pc = "if.end28.i.i" ∧ s.pre = some "if.then13.i.i" ∧
+        lookupName s.env "%inc16.i.i" = some (.int 64 T) ∧
+        lookupName s.env "%spec.select.i.i" = some (.int 64 F) ∧
+        lookupName s.env "%i.1725.i.i" = some (.int 64 i) ∧
+        lookupName s.env "%lead.0721.i.i" = some (.int 64 lead) ∧
+        lookupName s.env "%57" = some (.int 8 d))
+    ∨ (s.pc = "if.then59.i.i")
+    ∨ (s.pc = "for.body.outer.i.i" ∧ s.pre = some "if.else46.i.thread.i" ∧
+        lookupName s.env "%inc57.i344.i" = some (.int 64 i) ∧
+        lookupName s.env "%T.0723.i.i" = some (.int 64 T) ∧
+        lookupName s.env "%F.0722.i.i" = some (.int 64 F) ∧
+        lookupName s.env "%lead.0721.i.i" = some (.int 64 lead) ∧
+        lookupName s.env "%56" = some (.int 8 d)))
+
+/-- Resolve a cell through the parse's environment builders. -/
+macro "parse_lk" : tactic => `(tactic|
+  (first
+   | assumption
+   | (simp (config := { failIfUnchanged := false }) only
+        [bodyEnv, thenEnv, incThreadEnv, threadEnv, incPeelEnv, end28Env, t3CopyEnv,
+         mulEnv, latchEnv, outerPhiEnv, outerEnv, peelEnv, peelExitEnv, parseEndEnv,
+         dotEnv, runCells]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+      first
+       | rw [lookupName_cons_self]
+       | assumption
+       | rfl)))
+
+/-- **The peel loop's exit arm.**  The cursor reaches the end, the byte is not a
+digit, or the digit is not zero; each leaves the loop in at most three control
+steps, and the exit word names the cells the continuation reads. -/
+theorem peelStepExit {calls : Calls} {mem0 : Mem} {p n digA : Nat} {bs : List UInt8}
+    {i T F lead inc18 R top topn : BitVec 64} {sticky seen inFrac : BitVec 32}
+    {r : Nat} {s : State} {j : Nat}
+    (hinv : PeelInv mem0 p n digA bs i T F lead inc18 R top topn sticky seen inFrac r s j)
+    (hb : peelAtBound mem0 p n bs s j = true) :
+    ∃ (e : State) (steps : Nat), steps ≤ 4 ∧ PeelExit e ∧
+      PeelOut p n digA R top topn sticky seen inFrac e ∧
+      ∀ k, runFuel calls (steps + k) numFastBody (stateAt s.env s) =
+        runFuel calls k numFastBody e := by
+  obtain ⟨hpc, hmem, hn63, hjn, hbud, hread, hp, hn, hdig, hinc18, hR, htop, htopn,
+    hsticky, hseen, hin, hi, hedge⟩ := hinv
+  have hby : readBytes mem0 (p + j) 1 = some (natToBytes (peelByteAt bs j).toNat 1) :=
+    parse_readBytes_one_at hread hjn
+  have hb' : readBytes s.mem (p + (i.signExtend 64).toNat) 1
+      = some (natToBytes (peelByteAt bs j).toNat 1) := by
+    rw [hmem, signExtend64_toNat, hi]; exact hby
+  have hi63 : i.toNat < 2 ^ 63 := by omega
+  by_cases hdigB : IsDigitB (bs.getD j 0) = true
+  · -- the byte is a digit
+    have hult : evalICmp .ult (JsonScanLane.vByte (bs.getD j 0) + 0xd0#8) 0x0a#8
+        = (1 : BitVec 1) := by
+      have h := evalICmp_ult_digit (bs.getD j 0)
+      rw [h, hdigB]; rfl
+    -- the body's step onto the digit edge
+    rcases hedge with ⟨hpre, hc1, hc2, hc3, hc4⟩ | ⟨hpre, hc1, hc2, hc3, hc4⟩
+    · have hstep1 : step calls numFastBody (stateAt s.env s) =
+          .jump (stateAt (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+              (peelByteAt bs j)) { s with pc := "if.then13.i.i", pre := some "for.body.i.i" }) := by
+        simpa only [stateAt] using body_step_peel_digit (calls := calls) (env := s.env) (s := s)
+          hpc hpre hc1 hc2 hc3 hc4 hp hi63 hb' hult
+      have hT' : lookupName (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+          (peelByteAt bs j)) "%T.0723.i.i" = some (.int 64 T) := by parse_lk
+      have hF' : lookupName (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+          (peelByteAt bs j)) "%F.0722.i.i" = some (.int 64 F) := by parse_lk
+      have h57' : lookupName (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+          (peelByteAt bs j)) "%57" = some (.int 8 (peelByteAt bs j + 0xd0#8)) := by parse_lk
+      have hii' : lookupName (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+          (peelByteAt bs j)) "%i.1725.i.i" = some (.int 64 i) := by parse_lk
+      have hll' : lookupName (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+          (peelByteAt bs j)) "%lead.0721.i.i"
+          = some (.int 64 (lead + 0x1#64)) := by parse_lk
+      have hb56 : lookupName (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+          (peelByteAt bs j)) "%56" = some (.int 8 (peelByteAt bs j)) := by parse_lk
+      by_cases hz : peelByteAt bs j + 0xd0#8 = 0x00#8
+      · -- a zero digit: the cursor's step ends the loop only at `%n`
+        have hpeelDig : peelDigit mem0 p j = true := by
+          rw [peelDigit_eq_true]
+          exact ⟨bs.getD j 0, readByte_of_readBytes hread hjn, hdigB⟩
+        have hbnd : n ≤ j + 1 := by
+          unfold peelAtBound at hb
+          simp only [Bool.or_eq_true_iff, decide_eq_true_eq] at hb
+          rcases hb with (h | h) | h
+          · exact h
+          · have hd : peelDigit mem0 p j = false := by simpa using h
+            exact absurd hpeelDig (by rw [hd]; decide)
+          · exact absurd hz h
+        have hjeq : j + 1 = n := by omega
+        have hzero1 : evalICmp .eq (peelByteAt bs j + 0xd0#8) 0x00#8 = (1 : BitVec 1) := by
+          rw [hz]
+          exact evalICmp_eq_refl _
+        have hstep2 : step calls numFastBody
+            (stateAt (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+              (peelByteAt bs j)) { s with pc := "if.then13.i.i", pre := some "for.body.i.i" }) =
+            .jump (stateAt (thenEnv (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+                (peelByteAt bs j)) T F inc18 (peelByteAt bs j + 0xd0#8))
+              { s with pc := "for.inc.thread.i.i", pre := some "if.then13.i.i" }) := by
+          simpa only [stateAt] using then_step_continue (calls := calls)
+            (env := bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat) (peelByteAt bs j))
+            (s := { s with pc := "if.then13.i.i", pre := some "for.body.i.i" })
+            (T := T) (F := F) (inc18 := inc18) (b57 := peelByteAt bs j + 0xd0#8)
+            rfl hT' hF' hinc18 h57' hzero1
+        have hlatch1 : evalICmp .eq (i + 0x1#64) (BitVec.ofNat 64 n) = (1 : BitVec 1) := by
+          have hi' : i = BitVec.ofNat 64 j := by
+            apply BitVec.eq_of_toNat_eq
+            rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega), hi]
+          have hadd : i + 0x1#64 = BitVec.ofNat 64 (j + 1) := by
+            rw [hi']; exact ofNat64_add_one (by omega)
+          rw [hadd]
+          exact (parse_evalICmp_eq_ofNat (by omega) (by omega)).mpr hjeq
+        have hinc' : lookupName (thenEnv (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+            (peelByteAt bs j)) T F inc18 (peelByteAt bs j + 0xd0#8)) "%i.1725.i.i"
+            = some (.int 64 i) := by parse_lk
+        have hnn' : lookupName (thenEnv (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+            (peelByteAt bs j)) T F inc18 (peelByteAt bs j + 0xd0#8)) "%n"
+            = some (.int 64 (BitVec.ofNat 64 n)) := by parse_lk
+        have hstep3 : step calls numFastBody
+            (stateAt (thenEnv (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+              (peelByteAt bs j)) T F inc18 (peelByteAt bs j + 0xd0#8))
+              { s with pc := "for.inc.thread.i.i", pre := some "if.then13.i.i" }) =
+            .jump (stateAt (incThreadEnv (thenEnv (bodyEnv s.env i T F lead
+                (p + (i.signExtend 64).toNat) (peelByteAt bs j)) T F inc18
+                (peelByteAt bs j + 0xd0#8)) i (BitVec.ofNat 64 n))
+              { s with pc := "if.then59.i.i", pre := some "for.inc.thread.i.i" }) := by
+          simpa only [stateAt] using incThread_step_exit (calls := calls)
+            (env := thenEnv (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+              (peelByteAt bs j)) T F inc18 (peelByteAt bs j + 0xd0#8))
+            (s := { s with pc := "for.inc.thread.i.i", pre := some "if.then13.i.i" })
+            (i := i) (n := BitVec.ofNat 64 n) rfl hinc' hnn' hlatch1
+        refine ⟨stateAt (incThreadEnv (thenEnv (bodyEnv s.env i T F lead
+            (p + (i.signExtend 64).toNat) (peelByteAt bs j)) T F inc18
+            (peelByteAt bs j + 0xd0#8)) i (BitVec.ofNat 64 n))
+            { s with pc := "if.then59.i.i", pre := some "for.inc.thread.i.i" },
+          3, by decide, ?_, ?_, ?_⟩
+        · exact Or.inr (Or.inl rfl)
+        · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+            ⟨0, 0, 0, 0, 0, Or.inr (Or.inl rfl)⟩⟩
+          all_goals parse_lk
+        · intro k
+          rw [show 3 + k = ((k + 1) + 1) + 1 from by omega]
+          simp only [runFuel, hstep1, hstep2, hstep3]
+      · -- a nonzero digit: the digit is counted and the loop is left
+        have hzero0 : evalICmp .eq (peelByteAt bs j + 0xd0#8) 0x00#8 = (0 : BitVec 1) := by
+          apply evalICmp_eq_ne
+          intro hc
+          exact hz hc
+        have hstep2 : step calls numFastBody
+            (stateAt (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+              (peelByteAt bs j)) { s with pc := "if.then13.i.i", pre := some "for.body.i.i" }) =
+            .jump (stateAt (thenEnv (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+                (peelByteAt bs j)) T F inc18 (peelByteAt bs j + 0xd0#8))
+              { s with pc := "if.end28.i.i", pre := some "if.then13.i.i" }) := by
+          simpa only [stateAt] using then_step_exit (calls := calls)
+            (env := bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat) (peelByteAt bs j))
+            (s := { s with pc := "if.then13.i.i", pre := some "for.body.i.i" })
+            (T := T) (F := F) (inc18 := inc18) (b57 := peelByteAt bs j + 0xd0#8)
+            rfl hT' hF' hinc18 h57' hzero0
+        refine ⟨stateAt (thenEnv (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+            (peelByteAt bs j)) T F inc18 (peelByteAt bs j + 0xd0#8))
+            { s with pc := "if.end28.i.i", pre := some "if.then13.i.i" },
+          2, by decide, ?_, ?_, ?_⟩
+        · exact Or.inl ⟨rfl, rfl⟩
+        · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+            ⟨i, T + 0x1#64, F + inc18, lead + 0x1#64,
+              peelByteAt bs j + 0xd0#8,
+              Or.inl ⟨rfl, rfl, ?_, ?_, ?_, ?_, ?_⟩⟩⟩
+          all_goals parse_lk
+        · intro k
+          rw [show 2 + k = (k + 1) + 1 from by omega]
+          simp only [runFuel, hstep1, hstep2]
+    · have hstep1 : step calls numFastBody (stateAt s.env s) =
+          .jump (stateAt (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+              (peelByteAt bs j)) { s with pc := "if.then13.i.i", pre := some "for.body.i.i" }) := by
+        simpa only [stateAt] using body_step_back_digit (calls := calls) (env := s.env) (s := s)
+          hpc hpre hc1 hc2 hc3 hc4 hp hi63 hb' hult
+      have hT' : lookupName (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+          (peelByteAt bs j)) "%T.0723.i.i" = some (.int 64 T) := by parse_lk
+      have hF' : lookupName (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+          (peelByteAt bs j)) "%F.0722.i.i" = some (.int 64 F) := by parse_lk
+      have h57' : lookupName (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+          (peelByteAt bs j)) "%57" = some (.int 8 (peelByteAt bs j + 0xd0#8)) := by parse_lk
+      have hii' : lookupName (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+          (peelByteAt bs j)) "%i.1725.i.i" = some (.int 64 i) := by parse_lk
+      have hll' : lookupName (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+          (peelByteAt bs j)) "%lead.0721.i.i" = some (.int 64 (lead + 0x1#64)) := by parse_lk
+      by_cases hz : peelByteAt bs j + 0xd0#8 = 0x00#8
+      · have hpeelDig : peelDigit mem0 p j = true := by
+          rw [peelDigit_eq_true]
+          exact ⟨bs.getD j 0, readByte_of_readBytes hread hjn, hdigB⟩
+        have hbnd : n ≤ j + 1 := by
+          unfold peelAtBound at hb
+          simp only [Bool.or_eq_true_iff, decide_eq_true_eq] at hb
+          rcases hb with (h | h) | h
+          · exact h
+          · have hd : peelDigit mem0 p j = false := by simpa using h
+            exact absurd hpeelDig (by rw [hd]; decide)
+          · exact absurd hz h
+        have hjeq : j + 1 = n := by omega
+        have hzero1 : evalICmp .eq (peelByteAt bs j + 0xd0#8) 0x00#8 = (1 : BitVec 1) := by
+          rw [hz]
+          exact evalICmp_eq_refl _
+        have hstep2 : step calls numFastBody
+            (stateAt (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+              (peelByteAt bs j)) { s with pc := "if.then13.i.i", pre := some "for.body.i.i" }) =
+            .jump (stateAt (thenEnv (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+                (peelByteAt bs j)) T F inc18 (peelByteAt bs j + 0xd0#8))
+              { s with pc := "for.inc.thread.i.i", pre := some "if.then13.i.i" }) := by
+          simpa only [stateAt] using then_step_continue (calls := calls)
+            (env := bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat) (peelByteAt bs j))
+            (s := { s with pc := "if.then13.i.i", pre := some "for.body.i.i" })
+            (T := T) (F := F) (inc18 := inc18) (b57 := peelByteAt bs j + 0xd0#8)
+            rfl hT' hF' hinc18 h57' hzero1
+        have hlatch1 : evalICmp .eq (i + 0x1#64) (BitVec.ofNat 64 n) = (1 : BitVec 1) := by
+          have hi' : i = BitVec.ofNat 64 j := by
+            apply BitVec.eq_of_toNat_eq
+            rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega), hi]
+          have hadd : i + 0x1#64 = BitVec.ofNat 64 (j + 1) := by
+            rw [hi']; exact ofNat64_add_one (by omega)
+          rw [hadd]
+          exact (parse_evalICmp_eq_ofNat (by omega) (by omega)).mpr hjeq
+        have hinc' : lookupName (thenEnv (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+            (peelByteAt bs j)) T F inc18 (peelByteAt bs j + 0xd0#8)) "%i.1725.i.i"
+            = some (.int 64 i) := by parse_lk
+        have hnn' : lookupName (thenEnv (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+            (peelByteAt bs j)) T F inc18 (peelByteAt bs j + 0xd0#8)) "%n"
+            = some (.int 64 (BitVec.ofNat 64 n)) := by parse_lk
+        have hstep3 : step calls numFastBody
+            (stateAt (thenEnv (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+              (peelByteAt bs j)) T F inc18 (peelByteAt bs j + 0xd0#8))
+              { s with pc := "for.inc.thread.i.i", pre := some "if.then13.i.i" }) =
+            .jump (stateAt (incThreadEnv (thenEnv (bodyEnv s.env i T F lead
+                (p + (i.signExtend 64).toNat) (peelByteAt bs j)) T F inc18
+                (peelByteAt bs j + 0xd0#8)) i (BitVec.ofNat 64 n))
+              { s with pc := "if.then59.i.i", pre := some "for.inc.thread.i.i" }) := by
+          simpa only [stateAt] using incThread_step_exit (calls := calls)
+            (env := thenEnv (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+              (peelByteAt bs j)) T F inc18 (peelByteAt bs j + 0xd0#8))
+            (s := { s with pc := "for.inc.thread.i.i", pre := some "if.then13.i.i" })
+            (i := i) (n := BitVec.ofNat 64 n) rfl hinc' hnn' hlatch1
+        refine ⟨stateAt (incThreadEnv (thenEnv (bodyEnv s.env i T F lead
+            (p + (i.signExtend 64).toNat) (peelByteAt bs j)) T F inc18
+            (peelByteAt bs j + 0xd0#8)) i (BitVec.ofNat 64 n))
+            { s with pc := "if.then59.i.i", pre := some "for.inc.thread.i.i" },
+          3, by decide, ?_, ?_, ?_⟩
+        · exact Or.inr (Or.inl rfl)
+        · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+            ⟨0, 0, 0, 0, 0, Or.inr (Or.inl rfl)⟩⟩
+          all_goals parse_lk
+        · intro k
+          rw [show 3 + k = ((k + 1) + 1) + 1 from by omega]
+          simp only [runFuel, hstep1, hstep2, hstep3]
+      · have hzero0 : evalICmp .eq (peelByteAt bs j + 0xd0#8) 0x00#8 = (0 : BitVec 1) := by
+          apply evalICmp_eq_ne
+          intro hc
+          exact hz hc
+        have hstep2 : step calls numFastBody
+            (stateAt (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+              (peelByteAt bs j)) { s with pc := "if.then13.i.i", pre := some "for.body.i.i" }) =
+            .jump (stateAt (thenEnv (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+                (peelByteAt bs j)) T F inc18 (peelByteAt bs j + 0xd0#8))
+              { s with pc := "if.end28.i.i", pre := some "if.then13.i.i" }) := by
+          simpa only [stateAt] using then_step_exit (calls := calls)
+            (env := bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat) (peelByteAt bs j))
+            (s := { s with pc := "if.then13.i.i", pre := some "for.body.i.i" })
+            (T := T) (F := F) (inc18 := inc18) (b57 := peelByteAt bs j + 0xd0#8)
+            rfl hT' hF' hinc18 h57' hzero0
+        refine ⟨stateAt (thenEnv (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+            (peelByteAt bs j)) T F inc18 (peelByteAt bs j + 0xd0#8))
+            { s with pc := "if.end28.i.i", pre := some "if.then13.i.i" },
+          2, by decide, ?_, ?_, ?_⟩
+        · exact Or.inl ⟨rfl, rfl⟩
+        · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+            ⟨i, T + 0x1#64, F + inc18, lead + 0x1#64,
+              peelByteAt bs j + 0xd0#8,
+              Or.inl ⟨rfl, rfl, ?_, ?_, ?_, ?_, ?_⟩⟩⟩
+          all_goals parse_lk
+        · intro k
+          rw [show 2 + k = (k + 1) + 1 from by omega]
+          simp only [runFuel, hstep1, hstep2]
+  · -- the byte is not a digit
+    have hdigB0 : IsDigitB (bs.getD j 0) = false := by
+      cases h : IsDigitB (bs.getD j 0) <;> simp_all
+    have hult : evalICmp .ult (JsonScanLane.vByte (bs.getD j 0) + 0xd0#8) 0x0a#8
+        = (0 : BitVec 1) := by
+      have h := evalICmp_ult_digit (bs.getD j 0)
+      rw [h, hdigB0]; rfl
+    rcases hedge with ⟨hpre, hc1, hc2, hc3, hc4⟩ | ⟨hpre, hc1, hc2, hc3, hc4⟩
+    · have hstep1 : step calls numFastBody (stateAt s.env s) =
+          .jump (stateAt (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+              (peelByteAt bs j)) { s with pc := "if.else46.i.thread.i", pre := some "for.body.i.i" }) := by
+        simpa only [stateAt] using body_step_peel_nondigit (calls := calls) (env := s.env)
+          (s := s) hpc hpre hc1 hc2 hc3 hc4 hp hi63 hb' hult
+      have h56' : lookupName (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+          (peelByteAt bs j)) "%56" = some (.int 8 (peelByteAt bs j)) := by parse_lk
+      have hii' : lookupName (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+          (peelByteAt bs j)) "%i.1725.i.i" = some (.int 64 i) := by parse_lk
+      have hnn' : lookupName (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+          (peelByteAt bs j)) "%n" = some (.int 64 (BitVec.ofNat 64 n)) := by parse_lk
+      have hor : evalICmp .eq (i + 0x1#64) (BitVec.ofNat 64 n) |||
+            evalICmp .ne (peelByteAt bs j) 0x2e#8 = (1 : BitVec 1) ∨
+          evalICmp .eq (i + 0x1#64) (BitVec.ofNat 64 n) |||
+            evalICmp .ne (peelByteAt bs j) 0x2e#8 = (0 : BitVec 1) := by
+        rcases bitVec1_eq_zero_or_one
+          (evalICmp .eq (i + 0x1#64) (BitVec.ofNat 64 n) |||
+            evalICmp .ne (peelByteAt bs j) 0x2e#8) with h | h
+        · exact Or.inr h
+        · exact Or.inl h
+      rcases hor with hor | hor
+      · have hstep2 : step calls numFastBody
+            (stateAt (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+              (peelByteAt bs j)) { s with pc := "if.else46.i.thread.i", pre := some "for.body.i.i" }) =
+            .jump (stateAt (threadEnv (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+                (peelByteAt bs j)) (peelByteAt bs j) i (BitVec.ofNat 64 n))
+              { s with pc := "if.then59.i.i", pre := some "if.else46.i.thread.i" }) := by
+          simpa only [stateAt] using thread_step_refuse (calls := calls)
+            (env := bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat) (peelByteAt bs j))
+            (s := { s with pc := "if.else46.i.thread.i", pre := some "for.body.i.i" })
+            (b56 := peelByteAt bs j) (i := i) (n := BitVec.ofNat 64 n) rfl h56' hii' hnn' hor
+        refine ⟨stateAt (threadEnv (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+            (peelByteAt bs j)) (peelByteAt bs j) i (BitVec.ofNat 64 n))
+            { s with pc := "if.then59.i.i", pre := some "if.else46.i.thread.i" },
+          2, by decide, ?_, ?_, ?_⟩
+        · exact Or.inr (Or.inl rfl)
+        · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+            ⟨0, 0, 0, 0, 0, Or.inr (Or.inl rfl)⟩⟩
+          all_goals parse_lk
+        · intro k
+          rw [show 2 + k = (k + 1) + 1 from by omega]
+          simp only [runFuel, hstep1, hstep2]
+      · have hstep2 : step calls numFastBody
+            (stateAt (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+              (peelByteAt bs j)) { s with pc := "if.else46.i.thread.i", pre := some "for.body.i.i" }) =
+            .jump (stateAt (threadEnv (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+                (peelByteAt bs j)) (peelByteAt bs j) i (BitVec.ofNat 64 n))
+              { s with pc := "for.body.outer.i.i", pre := some "if.else46.i.thread.i" }) := by
+          simpa only [stateAt] using thread_step_outer (calls := calls)
+            (env := bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat) (peelByteAt bs j))
+            (s := { s with pc := "if.else46.i.thread.i", pre := some "for.body.i.i" })
+            (b56 := peelByteAt bs j) (i := i) (n := BitVec.ofNat 64 n) rfl h56' hii' hnn' hor
+        refine ⟨stateAt (threadEnv (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+            (peelByteAt bs j)) (peelByteAt bs j) i (BitVec.ofNat 64 n))
+            { s with pc := "for.body.outer.i.i", pre := some "if.else46.i.thread.i" },
+          2, by decide, ?_, ?_, ?_⟩
+        · exact Or.inr (Or.inr ⟨rfl, rfl⟩)
+        · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+            ⟨i + 0x1#64, T, F, lead + 0x1#64, peelByteAt bs j,
+              Or.inr (Or.inr ⟨rfl, rfl, ?_, ?_, ?_, ?_, ?_⟩)⟩⟩
+          all_goals parse_lk
+        · intro k
+          rw [show 2 + k = (k + 1) + 1 from by omega]
+          simp only [runFuel, hstep1, hstep2]
+    · have hstep1 : step calls numFastBody (stateAt s.env s) =
+          .jump (stateAt (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+              (peelByteAt bs j)) { s with pc := "if.else46.i.thread.i", pre := some "for.body.i.i" }) := by
+        simpa only [stateAt] using body_step_back_nondigit (calls := calls) (env := s.env)
+          (s := s) hpc hpre hc1 hc2 hc3 hc4 hp hi63 hb' hult
+      have h56' : lookupName (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+          (peelByteAt bs j)) "%56" = some (.int 8 (peelByteAt bs j)) := by parse_lk
+      have hii' : lookupName (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+          (peelByteAt bs j)) "%i.1725.i.i" = some (.int 64 i) := by parse_lk
+      have hnn' : lookupName (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+          (peelByteAt bs j)) "%n" = some (.int 64 (BitVec.ofNat 64 n)) := by parse_lk
+      have hor : evalICmp .eq (i + 0x1#64) (BitVec.ofNat 64 n) |||
+            evalICmp .ne (peelByteAt bs j) 0x2e#8 = (1 : BitVec 1) ∨
+          evalICmp .eq (i + 0x1#64) (BitVec.ofNat 64 n) |||
+            evalICmp .ne (peelByteAt bs j) 0x2e#8 = (0 : BitVec 1) := by
+        rcases bitVec1_eq_zero_or_one
+          (evalICmp .eq (i + 0x1#64) (BitVec.ofNat 64 n) |||
+            evalICmp .ne (peelByteAt bs j) 0x2e#8) with h | h
+        · exact Or.inr h
+        · exact Or.inl h
+      rcases hor with hor | hor
+      · have hstep2 : step calls numFastBody
+            (stateAt (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+              (peelByteAt bs j)) { s with pc := "if.else46.i.thread.i", pre := some "for.body.i.i" }) =
+            .jump (stateAt (threadEnv (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+                (peelByteAt bs j)) (peelByteAt bs j) i (BitVec.ofNat 64 n))
+              { s with pc := "if.then59.i.i", pre := some "if.else46.i.thread.i" }) := by
+          simpa only [stateAt] using thread_step_refuse (calls := calls)
+            (env := bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat) (peelByteAt bs j))
+            (s := { s with pc := "if.else46.i.thread.i", pre := some "for.body.i.i" })
+            (b56 := peelByteAt bs j) (i := i) (n := BitVec.ofNat 64 n) rfl h56' hii' hnn' hor
+        refine ⟨stateAt (threadEnv (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+            (peelByteAt bs j)) (peelByteAt bs j) i (BitVec.ofNat 64 n))
+            { s with pc := "if.then59.i.i", pre := some "if.else46.i.thread.i" },
+          2, by decide, ?_, ?_, ?_⟩
+        · exact Or.inr (Or.inl rfl)
+        · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+            ⟨0, 0, 0, 0, 0, Or.inr (Or.inl rfl)⟩⟩
+          all_goals parse_lk
+        · intro k
+          rw [show 2 + k = (k + 1) + 1 from by omega]
+          simp only [runFuel, hstep1, hstep2]
+      · have hstep2 : step calls numFastBody
+            (stateAt (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+              (peelByteAt bs j)) { s with pc := "if.else46.i.thread.i", pre := some "for.body.i.i" }) =
+            .jump (stateAt (threadEnv (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+                (peelByteAt bs j)) (peelByteAt bs j) i (BitVec.ofNat 64 n))
+              { s with pc := "for.body.outer.i.i", pre := some "if.else46.i.thread.i" }) := by
+          simpa only [stateAt] using thread_step_outer (calls := calls)
+            (env := bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat) (peelByteAt bs j))
+            (s := { s with pc := "if.else46.i.thread.i", pre := some "for.body.i.i" })
+            (b56 := peelByteAt bs j) (i := i) (n := BitVec.ofNat 64 n) rfl h56' hii' hnn' hor
+        refine ⟨stateAt (threadEnv (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+            (peelByteAt bs j)) (peelByteAt bs j) i (BitVec.ofNat 64 n))
+            { s with pc := "for.body.outer.i.i", pre := some "if.else46.i.thread.i" },
+          2, by decide, ?_, ?_, ?_⟩
+        · exact Or.inr (Or.inr ⟨rfl, rfl⟩)
+        · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+            ⟨i + 0x1#64, T, F, lead + 0x1#64, peelByteAt bs j,
+              Or.inr (Or.inr ⟨rfl, rfl, ?_, ?_, ?_, ?_, ?_⟩)⟩⟩
+          all_goals parse_lk
+        · intro k
+          rw [show 2 + k = (k + 1) + 1 from by omega]
+          simp only [runFuel, hstep1, hstep2]
+
+/-- **The peel loop's back edge.**  The byte is a zero digit inside the lexeme, so
+the cursor's step does not reach `%n`: the visit re-enters the head in three
+control steps carrying the counted digit and the advanced cursor. -/
+theorem peelStepLoop {calls : Calls} {mem0 : Mem} {p n digA : Nat} {bs : List UInt8}
+    {i T F lead inc18 R top topn : BitVec 64} {sticky seen inFrac : BitVec 32}
+    {r : Nat} {s : State} {j : Nat}
+    (hinv : PeelInv mem0 p n digA bs i T F lead inc18 R top topn sticky seen inFrac (r + 1) s j)
+    (hb : peelAtBound mem0 p n bs s j = false) :
+    ∃ (e : State) (j' : Nat) (steps : Nat), steps ≤ 4 ∧ e.pc = "for.body.i.i" ∧
+      j < j' ∧
+      PeelInv mem0 p n digA bs (i + 0x1#64) (T + 0x1#64) (F + inc18) (lead + 0x1#64)
+        inc18 R top topn sticky seen inFrac r e j' ∧
+      ∀ k, runFuel calls (steps + k) numFastBody (stateAt s.env s) =
+        runFuel calls k numFastBody e := by
+  obtain ⟨hpc, hmem, hn63, hjn, hbud, hread, hp, hn, hdig, hinc18, hR, htop, htopn,
+    hsticky, hseen, hin, hi, hedge⟩ := hinv
+  unfold peelAtBound at hb
+  rw [Bool.or_eq_false_iff] at hb
+  obtain ⟨hb1, hB⟩ := hb
+  rw [Bool.or_eq_false_iff] at hb1
+  obtain ⟨hA, hd⟩ := hb1
+  have hle : ¬(n ≤ j + 1) := by simpa using hA
+  have hpeel' : peelDigit mem0 p j = true := by simpa using hd
+  have hB' : ¬(peelByteAt bs j + 0xd0#8 ≠ 0x00#8) := by simpa using hB
+  obtain ⟨b5, hb5, hd5⟩ := peelDigit_eq_true.mp hpeel'
+  rw [readByte_of_readBytes hread hjn] at hb5
+  have hb5' : b5 = bs.getD j 0 := (Option.some.inj hb5).symm
+  have hdigB : IsDigitB (bs.getD j 0) = true := by rw [← hb5']; exact hd5
+  have hlt : j + 1 < n := by omega
+  have hult : evalICmp .ult (JsonScanLane.vByte (bs.getD j 0) + 0xd0#8) 0x0a#8
+      = (1 : BitVec 1) := by
+    have h := evalICmp_ult_digit (bs.getD j 0)
+    rw [h, hdigB]; rfl
+  have hby : readBytes mem0 (p + j) 1 = some (natToBytes (peelByteAt bs j).toNat 1) :=
+    parse_readBytes_one_at hread hjn
+  have hb' : readBytes s.mem (p + (i.signExtend 64).toNat) 1
+      = some (natToBytes (peelByteAt bs j).toNat 1) := by
+    rw [hmem, signExtend64_toNat, hi]; exact hby
+  have hi63 : i.toNat < 2 ^ 63 := by omega
+  have hzero1 : evalICmp .eq (peelByteAt bs j + 0xd0#8) 0x00#8 = (1 : BitVec 1) := by
+    have hz : peelByteAt bs j + 0xd0#8 = 0x00#8 := by
+      by_contra hc
+      exact hB' hc
+    rw [hz]
+    exact evalICmp_eq_refl _
+  have hnext : readBytes mem0 (p + (j + 1)) 1
+      = some (natToBytes (peelByteAt bs (j + 1)).toNat 1) :=
+    parse_readBytes_one_at hread hlt
+  have hi' : i = BitVec.ofNat 64 j := by
+    apply BitVec.eq_of_toNat_eq
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega), hi]
+  have hadd : i + 0x1#64 = BitVec.ofNat 64 (j + 1) := by
+    rw [hi']; exact ofNat64_add_one (by omega)
+  have hlatch0 : evalICmp .eq (i + 0x1#64) (BitVec.ofNat 64 n) = (0 : BitVec 1) := by
+    apply evalICmp_eq_ne
+    rw [hadd]
+    intro hc
+    have h2 := congrArg BitVec.toNat hc
+    simp only [BitVec.toNat_ofNat] at h2
+    rw [Nat.mod_eq_of_lt (by omega : j + 1 < 2 ^ 64),
+      Nat.mod_eq_of_lt (by omega : n < 2 ^ 64)] at h2
+    omega
+  have hi1 : (i + 0x1#64).toNat = j + 1 := by rw [hadd, BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)]
+  rcases hedge with ⟨hpre, hc1, hc2, hc3, hc4⟩ | ⟨hpre, hc1, hc2, hc3, hc4⟩
+  · -- the peeled entry
+    have hstep1 : step calls numFastBody (stateAt s.env s) =
+        .jump (stateAt (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+            (peelByteAt bs j)) { s with pc := "if.then13.i.i", pre := some "for.body.i.i" }) := by
+      simpa only [stateAt] using body_step_peel_digit (calls := calls) (env := s.env) (s := s)
+        hpc hpre hc1 hc2 hc3 hc4 hp hi63 hb' hult
+    have hT' : lookupName (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+        (peelByteAt bs j)) "%T.0723.i.i" = some (.int 64 T) := by parse_lk
+    have hF' : lookupName (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+        (peelByteAt bs j)) "%F.0722.i.i" = some (.int 64 F) := by parse_lk
+    have h57' : lookupName (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+        (peelByteAt bs j)) "%57" = some (.int 8 (peelByteAt bs j + 0xd0#8)) := by parse_lk
+    have hstep2 : step calls numFastBody
+        (stateAt (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+          (peelByteAt bs j)) { s with pc := "if.then13.i.i", pre := some "for.body.i.i" }) =
+        .jump (stateAt (thenEnv (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+            (peelByteAt bs j)) T F inc18 (peelByteAt bs j + 0xd0#8))
+          { s with pc := "for.inc.thread.i.i", pre := some "if.then13.i.i" }) := by
+      simpa only [stateAt] using then_step_continue (calls := calls)
+        (env := bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat) (peelByteAt bs j))
+        (s := { s with pc := "if.then13.i.i", pre := some "for.body.i.i" })
+        (T := T) (F := F) (inc18 := inc18) (b57 := peelByteAt bs j + 0xd0#8)
+        rfl hT' hF' hinc18 h57' hzero1
+    have hinc' : lookupName (thenEnv (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+        (peelByteAt bs j)) T F inc18 (peelByteAt bs j + 0xd0#8)) "%i.1725.i.i"
+        = some (.int 64 i) := by parse_lk
+    have hnn' : lookupName (thenEnv (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+        (peelByteAt bs j)) T F inc18 (peelByteAt bs j + 0xd0#8)) "%n"
+        = some (.int 64 (BitVec.ofNat 64 n)) := by parse_lk
+    have hstep3 : step calls numFastBody
+        (stateAt (thenEnv (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+          (peelByteAt bs j)) T F inc18 (peelByteAt bs j + 0xd0#8))
+          { s with pc := "for.inc.thread.i.i", pre := some "if.then13.i.i" }) =
+        .jump (stateAt (incThreadEnv (thenEnv (bodyEnv s.env i T F lead
+            (p + (i.signExtend 64).toNat) (peelByteAt bs j)) T F inc18
+            (peelByteAt bs j + 0xd0#8)) i (BitVec.ofNat 64 n))
+          { s with pc := "for.body.i.i", pre := some "for.inc.thread.i.i" }) := by
+      simpa only [stateAt] using incThread_step_body (calls := calls)
+        (env := thenEnv (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+          (peelByteAt bs j)) T F inc18 (peelByteAt bs j + 0xd0#8))
+        (s := { s with pc := "for.inc.thread.i.i", pre := some "if.then13.i.i" })
+        (i := i) (n := BitVec.ofNat 64 n) rfl hinc' hnn' hlatch0
+    refine ⟨stateAt (incThreadEnv (thenEnv (bodyEnv s.env i T F lead
+        (p + (i.signExtend 64).toNat) (peelByteAt bs j)) T F inc18
+        (peelByteAt bs j + 0xd0#8)) i (BitVec.ofNat 64 n))
+        { s with pc := "for.body.i.i", pre := some "for.inc.thread.i.i" },
+      j + 1, 3, by decide, rfl, by omega, ?_, ?_⟩
+    · refine ⟨rfl, ?_, ?_, ?_, by omega, hread, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+        hi1, Or.inr ⟨rfl, ?_, ?_, ?_, ?_⟩⟩
+      all_goals parse_lk
+    · intro k
+      rw [show 3 + k = ((k + 1) + 1) + 1 from by omega]
+      simp only [runFuel, hstep1, hstep2, hstep3]
+  · -- the latch's back edge
+    have hstep1 : step calls numFastBody (stateAt s.env s) =
+        .jump (stateAt (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+            (peelByteAt bs j)) { s with pc := "if.then13.i.i", pre := some "for.body.i.i" }) := by
+      simpa only [stateAt] using body_step_back_digit (calls := calls) (env := s.env) (s := s)
+        hpc hpre hc1 hc2 hc3 hc4 hp hi63 hb' hult
+    have hT' : lookupName (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+        (peelByteAt bs j)) "%T.0723.i.i" = some (.int 64 T) := by parse_lk
+    have hF' : lookupName (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+        (peelByteAt bs j)) "%F.0722.i.i" = some (.int 64 F) := by parse_lk
+    have h57' : lookupName (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+        (peelByteAt bs j)) "%57" = some (.int 8 (peelByteAt bs j + 0xd0#8)) := by parse_lk
+    have hstep2 : step calls numFastBody
+        (stateAt (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+          (peelByteAt bs j)) { s with pc := "if.then13.i.i", pre := some "for.body.i.i" }) =
+        .jump (stateAt (thenEnv (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+            (peelByteAt bs j)) T F inc18 (peelByteAt bs j + 0xd0#8))
+          { s with pc := "for.inc.thread.i.i", pre := some "if.then13.i.i" }) := by
+      simpa only [stateAt] using then_step_continue (calls := calls)
+        (env := bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat) (peelByteAt bs j))
+        (s := { s with pc := "if.then13.i.i", pre := some "for.body.i.i" })
+        (T := T) (F := F) (inc18 := inc18) (b57 := peelByteAt bs j + 0xd0#8)
+        rfl hT' hF' hinc18 h57' hzero1
+    have hinc' : lookupName (thenEnv (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+        (peelByteAt bs j)) T F inc18 (peelByteAt bs j + 0xd0#8)) "%i.1725.i.i"
+        = some (.int 64 i) := by parse_lk
+    have hnn' : lookupName (thenEnv (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+        (peelByteAt bs j)) T F inc18 (peelByteAt bs j + 0xd0#8)) "%n"
+        = some (.int 64 (BitVec.ofNat 64 n)) := by parse_lk
+    have hstep3 : step calls numFastBody
+        (stateAt (thenEnv (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+          (peelByteAt bs j)) T F inc18 (peelByteAt bs j + 0xd0#8))
+          { s with pc := "for.inc.thread.i.i", pre := some "if.then13.i.i" }) =
+        .jump (stateAt (incThreadEnv (thenEnv (bodyEnv s.env i T F lead
+            (p + (i.signExtend 64).toNat) (peelByteAt bs j)) T F inc18
+            (peelByteAt bs j + 0xd0#8)) i (BitVec.ofNat 64 n))
+          { s with pc := "for.body.i.i", pre := some "for.inc.thread.i.i" }) := by
+      simpa only [stateAt] using incThread_step_body (calls := calls)
+        (env := thenEnv (bodyEnv s.env i T F lead (p + (i.signExtend 64).toNat)
+          (peelByteAt bs j)) T F inc18 (peelByteAt bs j + 0xd0#8))
+        (s := { s with pc := "for.inc.thread.i.i", pre := some "if.then13.i.i" })
+        (i := i) (n := BitVec.ofNat 64 n) rfl hinc' hnn' hlatch0
+    refine ⟨stateAt (incThreadEnv (thenEnv (bodyEnv s.env i T F lead
+        (p + (i.signExtend 64).toNat) (peelByteAt bs j)) T F inc18
+        (peelByteAt bs j + 0xd0#8)) i (BitVec.ofNat 64 n))
+        { s with pc := "for.body.i.i", pre := some "for.inc.thread.i.i" },
+      j + 1, 3, by decide, rfl, by omega, ?_, ?_⟩
+    · refine ⟨rfl, ?_, ?_, ?_, by omega, hread, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+        hi1, Or.inr ⟨rfl, ?_, ?_, ?_, ?_⟩⟩
+      all_goals parse_lk
+    · intro k
+      rw [show 3 + k = ((k + 1) + 1) + 1 from by omega]
+      simp only [runFuel, hstep1, hstep2, hstep3]
+
+/-- **The peel loop's traversal, by induction on the remaining distance.**  From
+the body head with `r` visits left (the cursor is `n - r` short of the length),
+the run reaches one of the loop's three exits within `4 * (r + 1)` control steps,
+with the exit word the continuation reads.  An exit spends at most three steps; a
+visit spends three and re-enters with one unit fewer. -/
+theorem peelRunAux {calls : Calls} {mem0 : Mem} {p n digA : Nat} {bs : List UInt8} :
+    ∀ (r : Nat) (s : State) (j : Nat)
+      (i T F lead inc18 R top topn : BitVec 64) (sticky seen inFrac : BitVec 32),
+      PeelInv mem0 p n digA bs i T F lead inc18 R top topn sticky seen inFrac r s j →
+      ∃ (e : State) (steps : Nat), steps ≤ 4 * (r + 1) ∧ PeelExit e ∧
+        PeelOut p n digA R top topn sticky seen inFrac e ∧
+        ∀ k, runFuel calls (steps + k) numFastBody (stateAt s.env s) =
+          runFuel calls k numFastBody e
+  | 0, s, j, i, T, F, lead, inc18, R, top, topn, sticky, seen, inFrac, h => by
+      obtain ⟨-, -, -, hjn, hbud, -⟩ := h
+      exact absurd hbud (by omega)
+  | r + 1, s, j, i, T, F, lead, inc18, R, top, topn, sticky, seen, inFrac, h => by
+      by_cases hb : peelAtBound mem0 p n bs s j = true
+      · obtain ⟨e, steps, hj, hexit, hout, hrun⟩ := peelStepExit h hb
+        exact ⟨e, steps, by omega, hexit, hout, hrun⟩
+      · have hb' : peelAtBound mem0 p n bs s j = false := by
+          cases h' : peelAtBound mem0 p n bs s j
+          · rfl
+          · exact absurd h' hb
+        obtain ⟨e, j', steps, hj, hpc, hlt, hinv', hrun⟩ := peelStepLoop h hb'
+        obtain ⟨e', steps', hj', hexit', hout', hrun'⟩ :=
+          peelRunAux r e j' (i + 0x1#64) (T + 0x1#64) (F + inc18) (lead + 0x1#64)
+            inc18 R top topn sticky seen inFrac hinv'
+        refine ⟨e', steps + steps', by omega, hexit', hout', fun k => ?_⟩
+        rw [show steps + steps' + k = steps + (steps' + k) from by omega]
+        rw [hrun (steps' + k)]
+        exact hrun' k
+
+/-- **The peel loop's traversal.**  From the body head with the cursor at `j`, the
+run reaches one of the loop's three exits within `4 * (n - j + 1)` control steps,
+with the exit word the continuation reads. -/
+theorem peelRun {calls : Calls} (mem0 : Mem) (p n digA : Nat) (bs : List UInt8)
+    (i T F lead inc18 R top topn : BitVec 64) (sticky seen inFrac : BitVec 32)
+    (s : State) (j : Nat)
+    (hinv : PeelInv mem0 p n digA bs i T F lead inc18 R top topn sticky seen inFrac
+      (n - j) s j)
+    (k : Nat) {o : Outcome}
+    (hcont : ∀ (e : State), PeelExit e →
+      PeelOut p n digA R top topn sticky seen inFrac e →
+      runFuel calls k numFastBody e = some o) :
+    runFuel calls (4 * (n - j + 1) + k) numFastBody (stateAt s.env s) = some o := by
+  obtain ⟨e, steps, hj, hexit, hout, hrun⟩ :=
+    peelRunAux (n - j) s j i T F lead inc18 R top topn sticky seen inFrac hinv
+  have hone : runFuel calls (steps + k) numFastBody (stateAt s.env s) = some o := by
+    rw [hrun]
+    exact hcont e hexit hout
+  exact runFuel_mono_le (by omega) hone
 
 end NumFastToDouble
 
