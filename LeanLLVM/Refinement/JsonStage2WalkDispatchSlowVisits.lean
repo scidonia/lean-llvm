@@ -195,7 +195,21 @@ theorem WalkLink.leafBlock69_at {calls : Calls} {m0 : Mem}
     (walkBitVec1_zero_or_one _)
   exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
 
-#print axioms LeanLLVM.Refinement.WalkScope.WalkLink.landRhsI103_at
+/-- The byte's value at the landing: `%40` is the loaded byte. -/
+theorem landRhsI103OutAt_byte {m0 : Mem} {G : WalkGeom m0} (s : State) (e : BitVec 64) (b : UInt8) :
+    lookupName (landRhsI103OutAt s e G.b b.toNat).env "%40" =
+      some (.int 8 (BitVec.ofNat 8 b.toNat)) := by
+  simp [landRhsI103OutAt, stateAt, cells, lookupName_cons_self]
+
+
+/-! **The composed dispatch is the next step, and it needs named successor states.**  The
+first attempt stated the leaves' `WalkLocal` hypotheses at inline `s.bind`/`cells` states
+and does not elaborate: `WalkLocal`'s `{m0} {G}` are not inferable from such a term, which
+is why the `land.rhs457.i` precedent names every intermediate (`ScanS₉₆`, `Latch462S`,
+`landRhs457OutAt`).  The fix is three `def`s (`landRhsI103Leaf64S`, `…67S`, `…69S`) and
+the node states, then the four-link chain; the five `_at` lemmas above are the pieces it
+composes. -/
+
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.nodeBlock73_at
 #print axioms LeanLLVM.Refinement.WalkScope.WalkLink.leafBlock64_at
 
