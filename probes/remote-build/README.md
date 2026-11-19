@@ -8,7 +8,8 @@ Nothing here is committed from the worker: it is a build lane, not a committer.
 
 - `gcloud` under `nix shell nixpkgs#google-cloud-sdk`, `bun`, and the `agents`
   configuration (`gcloud auth print-access-token --configuration=agents`).
-- A worker leased for the session, from the pack checkout:
+- A worker leased for the session, from the pack checkout (the Lean image is
+  chosen automatically in a Lean project; `--lean` forces it):
 
   ```bash
   bun scripts/gcloud-worker.ts create --purpose lean-prover --cores 8 \
@@ -20,37 +21,39 @@ Nothing here is committed from the worker: it is a build lane, not a committer.
 
 ## Provisioning (once per worker)
 
-The worker has no internet, so tools arrive as Nix closures and the repository
-arrives as a cache bundle.  Use the pack transport
-(`scripts/gcloud-remote.ts`); `--to` names the local path and the positional
-argument the remote path.
+The Lean image (`nixos-lean-x86-64`) already carries Lean 4.35.0 and Lake
+5.0.0-src from `/run/current-system/sw/bin`.  At the revision this lane was
+validated against, the image's `lake` and the dev shell's resolved to the same
+store path, so no toolchain closure is copied; only the repository and the Lake
+cache travel.  The worker has no internet.
 
 ```bash
 R=/home/gavin/dev/Scidonia/lean-llvm
 # same absolute path on the worker, owned by the OS Login user
 <remote> run -- "sudo -n mkdir -p $R && sudo -n chown -R $(id -un):$(id -gn) /home/gavin"
-# tool closures: lake/lean, clang, git, coreutils, zstd, tar, bash
-<remote> closure <lean> <clang> <git> <coreutils> <zstd> <tar> <bash>
 ```
 
-Then transfer the source tree and the Lake cache from a **quiescent** checkout,
-so oleans, traces and sources describe the same revision:
+Transfer from a **quiescent** checkout, so oleans, traces and sources describe
+the same revision.  Exclude executables (`.lake/build/bin`); keep `.ir`, oleans,
+ileans, `.hash` and `.trace` — dropping `.ir` invalidates modules and forces a
+full re-elaboration.  The excluded executables are relinked on the worker from
+the transferred `.ir` tree's `.c.o.export` bitcode; no mathlib module is
+recompiled.
 
 ```bash
 tar -C "$R" -cf - --exclude=./.git --exclude=./.direnv \
-  --exclude=./.lake/build --exclude=./.lake/install-certificate.lock . \
-  | zstd -T0 -3 -o /tmp/repo.tar.zst
-<remote> copy --to /tmp/repo.tar.zst /tmp/repo.tar.zst
-<remote> run -- "cd $R && zstd -d -c /tmp/repo.tar.zst | tar -xf -"
-
-tar -C "$R" -cf - ./.lake/build | zstd -T0 -3 -o /tmp/build.tar.zst
-<remote> copy --to /tmp/build.tar.zst /tmp/build.tar.zst
-<remote> run -- "cd $R && zstd -d -c /tmp/build.tar.zst | tar -xf -"
+  --exclude=./.lake/build/bin --exclude=./.lake/install-certificate.lock . \
+  | zstd -T0 -3 -o /tmp/repo-cache.tar.zst
+<remote> copy --to /tmp/repo-cache.tar.zst /tmp/repo-cache.tar.zst
+<remote> run -- "cd $R && zstd -d -c /tmp/repo-cache.tar.zst | tar -xf -"
 ```
 
-Measured at `550c03611c` on an `e2-highmem-8`: 2.0 GiB source+cache bundle,
-556 MiB build bundle, roughly six minutes of transfer; the module target
-elaborated in 104 s and the full target replayed in 2 s.
+Measured at `35b9d40` on the 8-vCPU worker: the source and cache tree is
+8.6 GB and 155,415 files; zstd at level 3 packs it to **2.18 GiB in 25 s**, the
+tunnel carries **2.34 GB in 3m46s**, and extraction takes **28.8 s**.  The
+default `lake build` then finishes in **22 s** (2,186 jobs, links `leanllvm`),
+a replayed cone takes 5 s, and an explicit relink after removing
+`.lake/build/bin` takes 9 s.  No project or mathlib module re-elaborated.
 
 ## Building a cone
 
@@ -68,9 +71,16 @@ the worker, so name every changed source the target reads.
 
 ## Limits
 
-- The worker's paths and Nix store paths must match the local ones; the script
-  names the store paths it was provisioned with.
-- Do not tar `.lake/build` while a build is running: a stale snapshot silently
-  pairs new sources with old oleans.
+- The worker's repository path must equal the local one; `remote-lean.sh` uses
+  the same absolute path on both sides.  The recorded toolchain store paths need
+  not exist on the worker: a replay hashes the toolchain from its version
+  string, but a re-elaboration names the running sysroot.
+- A cancelled client does not stop the remote build.  Run a build expected to
+  outlive the tunnel under `setsid` with a pid and status file, and kill it by
+  that pid; `pkill -f` from inside `run` matches the ssh command string and
+  kills its own shell.
+- Do not tar `.lake/build` while a build or a `lake serve` is running: a stale
+  snapshot silently pairs new sources with old oleans, or omits a module's
+  output entirely.
 - Do not time benchmarks here; the hardware differs from the measurement host.
 - A spot worker can be preempted mid-build; that is a rerun, not a result.

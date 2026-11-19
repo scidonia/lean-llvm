@@ -20,13 +20,17 @@ pack=${PACK:-/home/gavin/.omp/plugins/node_modules/@scidonia/omp-tools}
 sid=${SID:?set SID to the OMP session id whose worker to use}
 remote_root=${REMOTE_ROOT:-$repo}
 
-# Tool store paths copied to the worker by the provisioning recipe.  A change
-# here is a provisioning change: copy the new closure first (README.md).
-lean_store=${LEAN_STORE:-/nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0}
-clang_store=${CLANG_STORE:-/nix/store/i52d7j6ma8bh4ggg4r2hl4af7bychdpa-clang-wrapper-21.1.8}
-git_store=${GIT_STORE:-/nix/store/xgw813vgzl2q0696sq45adpj0xd690jq-git-2.56.0}
-coreutils_store=${COREUTILS_STORE:-/nix/store/cb987zkxvsv0490753ilrvn5yk7ylgxi-coreutils-9.12}
-bash_store=${BASH_STORE:-/nix/store/nnm9gdr70ihc6zc9298mzz8jpcgaciql-bash-5.3p20}
+# A worker image that already carries the dev shell's Lean and Lake needs no
+# store variables: builds resolve them from the image's profile.  Set a
+# variable only when the worker lacks that tool and the closure was copied to
+# it; the repository's own `.lake/packages` supplies mathlib and the Lake
+# dependencies, so no dependency store path is needed here.
+lake_store=${LAKE_STORE:-}
+lean_store=${LEAN_STORE:-}
+clang_store=${CLANG_STORE:-}
+git_store=${GIT_STORE:-}
+coreutils_store=${COREUTILS_STORE:-}
+bash_store=${BASH_STORE:-}
 # zstd/tar are only needed by the provisioning recipe, not by builds.
 
 remote() {
@@ -52,7 +56,16 @@ for f in "${files[@]}"; do
   remote copy --session "$sid" --to "$repo/$f" "$remote_root/$f" >/dev/null
 done
 
-path="$lean_store/bin:$clang_store/bin:$git_store/bin:$coreutils_store/bin:$bash_store/bin"
+path=""
+for d in "$lake_store" "$lean_store" "$clang_store" "$git_store" "$coreutils_store" "$bash_store"; do
+  [ -n "$d" ] && path="$path$d/bin:"
+done
+path="${path%:}"
+if [ -n "$path" ]; then
+  prefix="export PATH=$path:\$PATH; "
+else
+  prefix=""
+fi
 echo "remote-lean: building on worker: lake $*" >&2
 remote run --session "$sid" -- \
-  "export PATH=$path:\$PATH; cd $remote_root && bash probes/install/lake-locked.sh $*"
+  "${prefix}cd $remote_root && bash probes/install/lake-locked.sh $*"
