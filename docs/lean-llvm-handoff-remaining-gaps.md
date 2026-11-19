@@ -470,10 +470,28 @@ supply.
   (`JsonStage2WalkFlushPost:934`); `WalkPremises` is not yet derived from the ABI preconditions.
   `walkPremises_of_staging` (`JsonStage2WalkPremisesOfStaging:967`) takes the five groups,
   so the five above are the whole distance between the staging and the ABI.
-- **E — open, and partly outside Lean.**  The native route lacks the semantics-to-object
-  step: `missingBridgePieces` (`JsonCallRoute:1478-1500`) names it beside the in-`lake`
-  adapter, the staging copy, the link step and the table initialisation, and nothing
-  connects a run of the linked object to `pipelineUnitsPost`.
+- **E — open as a theorem, now measured; partly outside Lean.**  The native route
+  lacks the semantics-to-object step: `missingBridgePieces` (`JsonCallRoute:1478-1500`)
+  names it beside the in-`lake` adapter, the staging copy, the link step and the table
+  initialisation.  No theorem connects a run of the linked object to
+  `pipelineUnitsPost`.  A finite differential now stands beside that gap:
+  `probes/json/route/model-differential.sh` (`f8419a6`) runs the proved fixture body at
+  `pipelineBody` as `leanllvm-json-pipeline-model` and requires its projection — verdict,
+  four cursors, refusal word, the arena's used prefix and the event stream, byte for
+  byte — to equal the object's `RouteCall` on the manifest plus nine boundary rows.  The
+  recorded run (`model-differential-transcript.txt`) reports 139 rows, 122 compared, 17
+  outside the route's domain with both decisions agreeing, 0 mismatches, and three
+  controls red (uninitialised `pos8` traps by SIGILL, a mutated fixture body diverges, a
+  tampered `stage2.c` object diverges).  Its first run found three model defects,
+  repaired in the model with the scalar statements unchanged: literal validation over
+  `lit.length` instead of the token's extent (`trail-nul`), the refusal at `pos` instead
+  of `pos + i` (`lit-nul`, `lit-tru`), and an eager `kernelDecides` on a 30-digit
+  mantissa overflowing `Nat.pow` (`num-long`).  Recommendation: record the assumption
+  with the differential as its evidence — finite agreement on the tested rows — and
+  treat a proved IR-level relation between a run of the linked object and
+  `pipelineUnitsPost` as a later, larger step.  The universal claim remains the rows 8/9
+  assumption, not proved and not an axiom; whether it gets a ledger row of its own or a
+  certificate field is an open decision.
 
 ---
 

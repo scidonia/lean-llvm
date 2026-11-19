@@ -194,10 +194,11 @@ pairing; they do not prove importer or exporter correctness.
 What a result here inherits when it is read as a claim about an installed
 artifact. The rows were written at revision `a706a17`. The Lean-caller entries —
 row 9, §7.1 item 5 and the runtime clause of §7.2 — are corrected against
-`dedbf66`, where the native JSON route exists; no other row was re-measured, and
-they stand as written at `a706a17`. One row per trusted step, with the basis it
-rests on and the artifact in this tree that carries it. The bases are a closed
-vocabulary:
+`dedbf66`, where the native JSON route exists, and §7.1 item 5 and §7.14 also
+record the object-versus-model differential added at `f8419a6`; no other row was
+re-measured, and they stand as written at `a706a17`. One row per trusted step,
+with the basis it rests on and the artifact in this tree that carries it. The
+bases are a closed vocabulary:
 
 - **proved** — a kernel-checked theorem in this repository.
 - **assumed** — a definition or a fact outside the kernel: reviewed, not proved.
@@ -265,13 +266,32 @@ claim over the rows may assert.
    `admission` decision, `shim.c` copies the staged bytes into the ABI, and
    `check.sh` compares the route's observations with an independent C caller's
    on every admitted default-profile row. That is a source build of an opaque
-   extern plus an observed agreement, not a theorem: nothing in the kernel says
-   the linked object implements the body the stage-2 and pipeline theorems are
-   about, and the route does not establish that the object executes the pinned
-   body. What *is* proved is the document side: the decision is `admission`'s and
-   the record's document clauses follow from it (§7.5), so a document on the fast
-   path is inside `pipelineSpecPre`'s domain by proof, and every other document
-   is answered by the reference parser rather than by the object.
+   extern plus an observed agreement, not a theorem: nothing in the kernel
+   proves that the linked object implements the body the stage-2 and pipeline
+   theorems are about, and no theorem states that the object executes the
+   pinned body. A finite differential now measures that relation without
+   proving it: `probes/json/route/model-differential.sh` (`f8419a6`) runs the
+   pinned body at `pipelineBody` as `leanllvm-json-pipeline-model` and compares
+   its projection — verdict, four cursors, refusal word, the arena's used
+   prefix and the event stream, byte for byte — with the object's `RouteCall`
+   on the manifest plus nine boundary rows. The recorded run
+   (`model-differential-transcript.txt`) reports 139 rows, 122 compared, 17
+   outside the route's domain with both sides' decisions agreeing, and 0
+   mismatches; three controls are required red (uninitialised `pos8` traps by
+   SIGILL, a mutated fixture body diverges, a tampered `stage2.c` object
+   diverges). Its first run found three model defects, repaired in the model
+   with the scalar statements unchanged: literal validation over `lit.length`
+   instead of the token's extent (`trail-nul`), the refusal written at `pos`
+   instead of `pos + i` (`lit-nul`, `lit-tru`), and an eager `kernelDecides`
+   on a 30-digit mantissa overflowing `Nat.pow` (`num-long`). The universal
+   claim stays the rows 8/9 assumption — the differential is finite observed
+   agreement, not a proof about lowering, linking or the loader — and whether
+   that assumption is a ledger row of its own or a certificate field is an open
+   decision. What *is* proved is the document side: the decision is
+   `admission`'s and the record's document clauses follow from it (§7.5), so a
+   document on the fast path is inside `pipelineSpecPre`'s domain by proof, and
+   every other document is answered by the reference parser rather than by the
+   object.
 6. **Installation covers four units, none of them JSON.** `select.sh` knows
    `json_scan`, but `JsonScanIR.scanWindowLLVM_refines` is a name no theorem
    inhabits (the instruction-level step of `scanWindowStatement` is open), so the
@@ -1979,9 +1999,30 @@ The caller's side is `LeanLLVM/JsonCallRoute.lean`: `routePre` and
 `decodeRecords` and `routeView_decodes` are its reader, stated at
 `Stage2EventRel` and the record-for-record `TokenRecord` correspondence, with
 the arena at the used extent `ndstU` and the event stream at the reported
-cursor.  What neither page claims is a relation between a run of the linked
-object and `pipelineUnitsPost`; that is row 9's step, and the route's evidence
-for it is the observation `check.sh` makes.
+cursor.  `check.sh` compares two callers of the same object, so its agreement
+cannot test the model; `probes/json/route/model-differential.sh` (`f8419a6`)
+compares the two answers instead. It runs the pinned body at `pipelineBody` as
+`leanllvm-json-pipeline-model` and requires the object's `RouteCall` to equal
+the model's projection — verdict, four cursors, refusal word, the arena's used
+prefix and the event stream, byte for byte — on the manifest plus nine
+boundary rows. The recorded run
+(`probes/json/route/model-differential-transcript.txt`) reports 139 rows, 122
+compared, 17 outside the route's domain with both sides' decisions agreeing,
+and 0 mismatches; three controls are required red (uninitialised `pos8` traps
+by SIGILL, a mutated fixture body diverges, a tampered `stage2.c` object
+diverges), and the first run found three model defects, repaired in the model
+with the scalar statements unchanged (`trail-nul`: literal validation over
+`lit.length` rather than the token's extent; `lit-nul`/`lit-tru`: the refusal
+at `pos` rather than `pos + i`; `num-long`: eager `kernelDecides` on a 30-digit
+mantissa overflowing `Nat.pow`).
+
+That differential is evidence about the model, not a relation between a run of
+the linked object and `pipelineUnitsPost`. The universal native-agreement
+claim remains the rows 8/9 assumption — not proved, and not an axiom: 122
+compared rows of observed agreement say nothing about rows the run does not
+touch, nor about lowering, linking or the loader. Whether the assumption is
+recorded as a ledger row of its own or as a certificate field is an open
+decision; no row is added here.
 
 ## 8. Out of scope for the first contract
 

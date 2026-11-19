@@ -96,6 +96,30 @@ proofs run has to carry the trust ledger's rows 8 and 9 — native compilation,
 and the Lean execution bridge — plus the helper contracts for the bodies that
 differ here.
 
+The gap measured above is now also measured from the answers' side.
+`probes/json/route/model-differential.sh` (`f8419a6`) runs the pinned body at
+`pipelineBody` as `leanllvm-json-pipeline-model` and requires its projection —
+verdict, four cursors, refusal word, the arena's used prefix and the event
+stream, byte for byte — to equal the object's `RouteCall` on the manifest plus
+nine boundary rows.  The recorded run
+(`probes/json/route/model-differential-transcript.txt`) reports 139 rows, 122
+compared, 17 outside the route's domain with both sides' decisions agreeing, 0
+mismatches, and three controls required red: uninitialised `pos8` traps by
+SIGILL, a mutated fixture body diverges, and a tampered `stage2.c` object
+diverges.  Its first run found three model defects, repaired in the model with
+the scalar statements unchanged — literal validation over `lit.length` instead
+of the token's extent (`trail-nul`), the refusal at `pos` instead of `pos + i`
+(`lit-nul`, `lit-tru`), and an eager `kernelDecides` on a 30-digit mantissa
+overflowing `Nat.pow` (`num-long`).
+
+That differential is finite observed agreement between two answers; it does not
+close the gap this page records.  The five statements above are static
+measurements of the two artifacts, and neither the compiler/backend trust row
+nor the helper-contract transfer follows from the differential.  The relation
+between a run of the linked object and `pipelineUnitsPost` remains the rows 8/9
+assumption — not proved, and not an axiom — and whether it is recorded as a
+ledger row of its own or as a certificate field is an open decision.
+
 That is why the correspondence is recorded rather than unified.  Linking the
 fixture would make the route call a twenty-one-argument body while the driver
 calls the thirteen-argument ABI, so the route and the driver would stop being
