@@ -49,10 +49,12 @@ The two bundle theorems (`walkContinueFacts_of_payload`
 (`JsonStage2WalkPremisesOfStaging`)) are stated from the rows this module's seams produce,
 and what stood in their way was not a segment: every segment an arm carries is
 produced per class from rows that already exist — the head chain by
-`JsonStage2WalkDispatchDefaultLane`'s `lowHeadChain_of_lane` … `bhHeadChain_of_lane` (from
-the lane's `defaultLane`), the class-C span by `classCSpan_at` (from the class's `slt %8 110`
-bit), the default classes' shared four by `contSwToLandSeg`, the empty tail by
-`emptyTailSeg_of_calls`, and the scan arm's tail by `hcontScanTail_at` below.
+`JsonStage2WalkDispatchDefaultLane`'s `bhHeadChain_of_lane` (from the lane's
+`defaultLane`, at `.defaultValueBracketHigh`, the one default class whose leaves emit), the
+refusal arm by `hcontArm_badToken_of_row` at the class's `refuseSeg` (the other five
+default classes' `if.else405.i` leaves), the class-C span by `classCSpan_at` (from the
+class's `slt %8 110` bit), the default classes' shared four by `contSwToLandSeg`, the empty
+tail by `emptyTailSeg_of_calls`, and the scan arm's tail by `hcontScanTail_at` below.
 
 What the class case reads is **per-class document rows the payload does not carry**: the
 producers for `.ws` and `.scalar` take their bundle's document facts — the byte before the
