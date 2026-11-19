@@ -744,6 +744,13 @@ not equal the sum of the three cyc/B cells to the last digit (0.735 against a
 0.749 sum on `route-s1-64k`, P core: the three rows calibrate at slightly
 different clocks).
 
+The sum is three separate sweeps — classification once per block, entry
+emission over the stored mask stream, UTF-8 over the document — and not the
+shape the assembled pipeline runs: `kernel/json/pipeline.c:48-61` composes the
+entry word inside the classification loop and calls the emitter per block. The
+quotient below prices three passes; §"The fused masks-and-entry loop, measured"
+prices the loop the pipeline actually runs, and the two are not interchangeable.
+
 **P core (cpu0):**
 
 |document|entry|units GB/s|units cyc/B|`stage1` GB/s|`stage1` cyc/B|`stage1` ÷ units|
@@ -844,13 +851,189 @@ together it is 0.49-1.23 on the P core and 0.53-2.21 on the E core: the fused
 pass wins on the string- and UTF-8-heavy documents, the three units win on the
 dense ones.
 
+### The fused masks-and-entry loop, measured
+
+The 0.49 on `syn-strings-64k` above is the three-pass composite defined in the
+subsection above, not the shape the assembled pipeline runs.
+`kernel/json/pipeline.c:48-61` runs the classification unit and the entry
+emitter in one loop over the blocks: it composes one entry word per block and
+calls the emitter with `nblk = 1`, threading the cursor from block to block.
+This subsection prices that loop against the same work split into two passes,
+and it is the only row set here that isolates the masks-and-entry part of that
+loop.
+
+**The rows.** `tests/json-units-bench/bench.c` adds four rows to the harness of
+§"The instrument": `fused_pos8` and `fused_b8` (`bench.c:348`) copy the
+pipeline's loop verbatim — the classification unit, `S`, `ent`, the tail clamp
+and one emitter call per block — while `split_ent_pos8` and `split_ent_b8`
+(`bench.c:413`) run the same mask-and-entry composition into a whole-document
+stream and call the same emitter once over that stream (`bench.c:714-718`). The
+document, the mask stream, the output buffer and the POS8/B8 selection are
+identical; fusion is the only difference. The split arm reads more memory
+(73,728 bytes against 65,536, because it reads back the whole entry stream it
+writes), so it is not given a smaller working set. The `entry_pos8` and
+`entry_b8` rows in the tables above are not this comparison: they read the
+structural-byte stream, which is a different stream from the pipeline's entry
+mask.
+
+The fused rows have their own gate. The harness derives the pipeline's entry
+word independently, from the classification unit's output with its own
+`S`/`prevS` composition and tail clamp (`bench.c:387-405`), requires the entry
+unit over that stream to return its total set lanes, and requires each fused
+row's final cursor to equal the same total (`bench.c:662-689`). A fused row whose
+cursor does not reach that total — a skipped block with entries, a dropped
+carry, a different last-block clamp — exits rather than printing a number.
+
+**The builds.** `bench.sh` compiles these rows three ways from the same sources
+and labels every row with its variant (`bench.sh:89-110`, `bench.sh:188-195`):
+`default`, unit objects and harness as separate translation units, the units at
+the measured compiler line; `lto`, the same objects at `-flto`; and `unity`, the
+two stage-1 units and the harness in one translation unit at the measured flags,
+the shape the pipeline build has. The corpus, compiler line, harness flags and
+host are those of §"Corpus", §"Host and build" and §"The noise floor"; this is a
+separate session from the paired unit and simdjson runs, and no row here is
+divided by a row from that pair. The run recorded a one-minute load average of
+2.35-2.50 and non-pinned cores 13-17% busy; every row's checksum held across its
+trials, across the three variants and across both core classes. The default-only
+run is `tests/json-units-bench/build-fused-transcript.txt` (432 rows); the
+three-build run is `tests/json-units-bench/build-fused-lto-transcript.txt`
+(1,296 rows), and the numbers quoted here are that run's. The row set is
+reproduced by `nix develop -c bash tests/json-units-bench/bench.sh`, the command
+in §"The instrument", which writes the binaries and the transcript under
+`tests/json-units-bench/build/`.
+
+**The result.** One cell is one (build, core, document, emitter) pair, taken as
+the median of the three trial medians. All 96 cells have the fused arm above its
+same-stream split in cycles per byte, and all 288 trial-level pairs keep the
+sign in both the cycles-per-byte and the wall-clock GB/s columns.
+
+|build|cells|fused ÷ split, cycles/byte|reading|
+|---|---:|---|---|
+|`default`|32|1.20-1.76 (+20% to +76%)|the loop costs 20-76% more per byte|
+|`lto`|32|1.19-1.82 (+19% to +82%)|cross-unit compilation does not change the sign|
+|`unity`|32|1.27-2.21 (+27% to +121%)|the pipeline build's shape does not change the sign|
+
+The wall-clock GB/s quotient agrees in sign and approximately in size: on the
+`default` line the fused row reaches 0.54-0.84 of the split row's GB/s, and its
+extremes are two different cells from the cycles column because each row
+normalises by its own calibrated clock. On the P core's `syn-strings-64k` the
+POS8 rows read 3.986 (fused) against 6.192 (split) GB/s, and the B8 rows 0.931
+against 0.528 cycles per byte — the widest `default` cell at +76%. No build and
+no emitter reverses the direction, and the 96 cells are not carried by one
+document:
+
+|document|`default` fused ÷ split, cycles/byte (2 cores × 2 emitters)|
+|---|---:|
+|`route-s1-64k`|1.21-1.56|
+|`route-u8-64k`|1.25-1.58|
+|`syn-dense-4m`|1.20-1.49|
+|`syn-dense-64k`|1.28-1.63|
+|`syn-strings-4m`|1.44-1.70|
+|`syn-strings-64k`|1.39-1.76|
+|`syn-utf8-4m`|1.21-1.67|
+|`syn-utf8-64k`|1.28-1.69|
+
+**Variance.** The 3-trial spread of a cell's paired ratio has a median of 6.7%
+on GB/s and 6.8% on cycles per byte, and is at worst 21.6% and 39.6%. The
+weakest single trial is +6.6% (`default`, P core, `syn-strings-64k`, POS8),
+whose table cell is +62% and whose three trial ratios have a median of +40%:
+that one reading is inside the row's noise, and the headline rests on 32 cell
+medians per build rather than on any single trial. The
+rows' own within-row p10-p90 spread has a median of 10.9% for the fused rows and
+12.8% for the split rows, consistent with the noise floor above. The earlier
+default-only fused run is the reason the trial-level check is stated: its 32
+cell medians are also all above 1 (+15% to +75%), but one of its 96 trials reads
+0.89 in cycles per byte because the two rows calibrated 36% apart, while the
+same trial's wall-clock ratio stayed below 1. The three-build run is quoted
+because its 288 trials agree in both columns.
+
+**The mechanism.** The per-block call is not inlined in any build in this tree,
+and the `noinline` attribute is what keeps it. `S1F_DEFINE_KERNEL` declares
+`s1f_k_pos8` and `s1f_k_b8` `noinline`
+(`kernel/json/entry.c:98-110`), and the exported ABI functions are wrappers that
+tail-jump to them (`kernel/json/entry.c:116-124`). The binaries a run leaves in
+`tests/json-units-bench/build/bin/` show the three cases: `bench` and
+`bench-lto` each call the wrapper from `pass_fused`, and the wrapper's body is
+`jmp s1f_k_pos8`; LTO internalises the wrapper (it is a local symbol) but leaves
+the body and the call intact; `bench-unity` inlines the wrapper, so `pass_fused`
+calls `s1f_k_pos8` directly. In every build the per-block path still contains a
+call into the kernel body, so these rows price the unit boundary, not an emitter
+inlined into the block loop. They also price the loop's other per-block work;
+the binaries establish that the call survives, not how much of the 20-76% is the
+call against the rest of the block loop. The direction agrees with §4's
+two-phase entry rule, which was measured on the scratch pipeline (7-8 ns/block
+on `canonical`) and is not re-derived here.
+
+**What a genuinely fused unit would cost.** The fused row is the pipeline's
+loop, not an inlined emitter. Removing the per-block call would be new text in
+`kernel/json/pipeline.c`; that body would not be the body the entry unit's proof
+is about. The entry refinement pins the IR at
+`probes/install/ir/json-entry.candidate.ll` and proves `entry_pos8_refines`
+(`LeanLLVM/Refinement/JsonEntrySteps.lean`) and `entry_b8_refines`
+(`LeanLLVM/Refinement/JsonB8Steps.lean`) against the entry word
+`LeanLLVM/Refinement/JsonEntSpec.lean` specifies — for the extracted kernel
+called over its stream. A fused form would need a new pinned fixture and a new
+refinement theorem before any number could be attached to it. No such unit is in
+the tree: this measurement prices keeping the unit boundary, and nothing here
+adopts a fused unit or proves one.
+
+**The string case, and the lever.** The composite on `syn-strings-64k` is 0.521
+cycles per byte against simdjson's stage 1 at 0.278 — the 0.49 in the table
+above — and its parts are approximately 0.333 classification, 0.142 entry and
+0.047 UTF-8 on the P core; the E core's three cells are 0.452, 0.215 and 0.057,
+against its composite 0.723 and stage 1 0.383. Even if entry emission and UTF-8
+cost nothing, the classifier alone remains above simdjson's entire stage 1:
+0.333 against 0.278 on the paired rows. The earlier run's classifier readings —
+0.342 in its table, 0.359 in its raw `syn-strings-64k` row at 4.04 GHz — are
+also above 0.278, which is the lower of this note's two stage-1 readings (the
+earlier run's is 0.317), so the floor holds against the most favourable
+reference figure here. Entry fusion therefore cannot close the string-document
+gap however the per-block call is arranged; what remains is the classifier's
+escape and quote work, the part of the composite that neither the entry emitter
+nor the UTF-8 gate owns. That is an implication of the row decomposition, not a
+measurement of a changed classifier.
+
+**What this does and does not establish.**
+
+- **It establishes the sign of this loop's cost in this tree.** With this
+  compiler line, these flags, this corpus and this host, the pipeline's
+  masks-and-entry loop, as written, spends 1.20-1.76 times the cycles per byte
+  of the same work split into two passes on the `default` line; LTO and the
+  unity shape do not change the sign. The gate fixes that each fused cursor
+  reaches the independently derived stream's lane count, and both the
+  calibrated and the wall-clock columns agree.
+- **It does not price an inlined-emitter fused unit.** That unit is not built.
+  The cost of removing the boundary is a new body, fixture and theorem, not a
+  row in this table.
+- **It is not an end-to-end row and not the stage ratio.** The split arm here is
+  a two-pass arrangement of the units, not simdjson's stage 1; the quotient
+  above (§"The simdjson row, measured") remains a three-pass comparison and is
+  not re-derived from these cells.
+- **Nothing about another compiler, flag set or host, and no PMU.** Cycles per
+  byte is a calibrated-clock column; one earlier trial shows a calibration
+  disagreement large enough to invert that column while the wall-clock ratio
+  held, so the GB/s sign is the one that cannot be moved by the clock. Row
+  levels drift 5-10% between processes, and only these within-run paired deltas
+  are claimed.
+- **Nothing about refinement of a fused body.** The units' existing proofs and
+  the pipeline's own refinement are unchanged, and none of them is a theorem
+  about an emitter-inlined body, which does not exist in the tree.
+
+**Cadence.** Re-measure when `kernel/json/pipeline.c`'s block loop changes; when
+`kernel/json/entry.c`'s kernel, its `noinline` attribute or its wrappers change;
+when `bench.c`'s fused or split rows or the reference-entry gate change; when
+the measured compiler line or the flags in `bench.sh` change; when the corpus or
+the host changes; or when an emitter-inlined fused body is added, at which point
+the row must be replaced rather than compared.
+
 ### The earlier run, kept as history
 
-The two readings before this pair were taken in different sessions, and they are
-kept rather than deleted because the paired numbers above are only interpretable
-against them. The units' run is `tests/json-units-bench/transcript.txt` (240
-rows); its calibrated clock was 4.62 GHz median on cpu0 (4.08-4.84 over its
-rows) and 3.66 on cpu4 (3.61-3.68). The simdjson run is
+The two readings before the paired run were taken in different sessions, and
+they are kept rather than deleted because the paired numbers above are only
+interpretable against them. The units' run is
+`tests/json-units-bench/transcript.txt` (240 rows); its calibrated clock was
+4.62 GHz median on cpu0 (4.08-4.84 over its rows) and 3.66 on cpu4 (3.61-3.68).
+The simdjson run is
 `tests/json-units-bench/simdjson-transcript.txt`; the earlier text recorded that
 run as taken while the host was also running five Lean builds, at a one-minute
 load average of 10.6, and its transcript's calibrated clock is 2.77 GHz median
