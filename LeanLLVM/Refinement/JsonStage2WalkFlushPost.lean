@@ -891,7 +891,7 @@ the payload groups, and the bundles are produced from them.
 
 **The two bundles are produced, and what their producers still read.**  `hcont` and
 `hend` are no longer hypotheses of this theorem: the premises are the payload groups
-(`HcontPayload`, `HcontClassRows`, `HcontWsRows`, `HlastPayload`, `HlastClassRows`,
+(`HcontPayload`, `HcontClassRows`, `HlastPayload`, `HlastClassRows`,
 `HlastArmRows`), and the bundles are `walkContinueFacts_of_payload`
 (`JsonStage2WalkDispatchContinuing`) and `walkLoopEnd_of_payload`
 (`JsonStage2WalkPremisesOfStaging`) applied to them.  So the hypothesis this theorem once
@@ -934,13 +934,12 @@ premises. -/
 theorem stage2WalkObligation_of_staging {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
     (hcont : ∀ {m0 : Mem} (G : WalkGeom m0), HcontPayload G)
     (hrows : ∀ {m0 : Mem} (G : WalkGeom m0), HcontClassRows G)
-    (hws : ∀ {m0 : Mem} (G : WalkGeom m0), HcontWsRows G)
     (hlast : ∀ {m0 : Mem} (G : WalkGeom m0), HlastPayload G)
     (hlastRows : ∀ {m0 : Mem} (G : WalkGeom m0), HlastClassRows G)
     (hlastArms : ∀ {m0 : Mem} (G : WalkGeom m0), HlastArmRows G) :
     Stage2WalkObligation d c ctype cst tok s z e nkSlot nxpSlot := by
   refine stage2WalkObligation_of_premises
-    (walkPremises_of_staging hcont hrows hws hlast hlastRows hlastArms) ?_
+    (walkPremises_of_staging hcont hrows hlast hlastRows hlastArms) ?_
   intro args mem next hpre o hb
   obtain ⟨a13, rfl, hpre13, hstaged⟩ := hpre
   obtain ⟨G, S, hnext, hSc, hSct, hScs, hStok, hSs, hSz, hSe, hSd, hargs⟩ :=
@@ -952,7 +951,7 @@ theorem stage2WalkObligation_of_staging {d c ctype cst tok s z e nkSlot nxpSlot 
       hargs hnext
       (Nat.pos_of_ne_zero hzero)
       (walkLoopStep_of_staging (G := G)
-        (walkContinueFacts_of_payload (hcont G) (hrows G) (hws G))
+        (walkContinueFacts_of_payload (hcont G) (hrows G))
         (walkLoopEnd_of_payload (hlast G) (hlastRows G) (hlastArms G))) o hb
 
 /-! ### The fixed adapter record, and its closure
@@ -973,13 +972,12 @@ def Γ_stage2work (d c ctype cst tok s z e : Nat) : MemContract where
   post := fun args mem next o =>
     Stage2PostFixed c ctype cst tok s z e d (args.take 13) mem next o
 
-/-- **The walk, at the fixed adapter record.**  The premises are the six payload
+/-- **The walk, at the fixed adapter record.**  The premises are the five payload
 groups; the pre supplies the adapter's staging, the seed and the loop's step do
 the work, and the post is the fixed boundary at the appended arguments. -/
 theorem stage2WalkWork_of_staging {d c ctype cst tok s z e : Nat}
     (hcont : ∀ {m0 : Mem} (G : WalkGeom m0), HcontPayload G)
     (hrows : ∀ {m0 : Mem} (G : WalkGeom m0), HcontClassRows G)
-    (hws : ∀ {m0 : Mem} (G : WalkGeom m0), HcontWsRows G)
     (hlast : ∀ {m0 : Mem} (G : WalkGeom m0), HlastPayload G)
     (hlastRows : ∀ {m0 : Mem} (G : WalkGeom m0), HlastClassRows G)
     (hlastArms : ∀ {m0 : Mem} (G : WalkGeom m0), HlastArmRows G) :
@@ -994,7 +992,7 @@ theorem stage2WalkWork_of_staging {d c ctype cst tok s z e : Nat}
   refine ⟨?_,
     fun o hb => ?_⟩
   · obtain ⟨v, m, hrun⟩ :=
-      stage2WalkCompletes_of_staging hcont hrows hws hlast hlastRows hlastArms
+      stage2WalkCompletes_of_staging hcont hrows hlast hlastRows hlastArms
         a13 mem next hpre13 hstaged
     exact ⟨v, m, by simpa only [Γ_stage2work, Γ_stage2, htake] using hrun⟩
   · obtain ⟨G, S, hnext, hSc, hSct, hScs, hStok, hSs, hSz, hSe, hSd, hargs⟩ :=
@@ -1010,7 +1008,7 @@ theorem stage2WalkWork_of_staging {d c ctype cst tok s z e : Nat}
         (by simpa only [walkFinishArgs, walkTargetArgs] using hargs) hnext
         (Nat.pos_of_ne_zero hzero)
         (walkLoopStep_of_staging (G := G)
-          (walkContinueFacts_of_payload (hcont G) (hrows G) (hws G))
+          (walkContinueFacts_of_payload (hcont G) (hrows G))
           (walkLoopEnd_of_payload (hlast G) (hlastRows G) (hlastArms G))) o
         (by simpa only [walkTargetArgs] using hb)
 

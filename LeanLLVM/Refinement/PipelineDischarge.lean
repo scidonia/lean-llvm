@@ -2851,7 +2851,7 @@ def pipelineBodyFacts_of_exitStage2 {tab base : Nat} {s2 : Calls}
 /-- **The assembled pipeline satisfies its unit-level record.**  The bundle is
 built at `Γ_stage2fixed`, the record the pipeline's own stage-2 selection runs
 under: `satisfies_calls_stage2_fixed` turns the walk's closure (`stage2WalkWork_of_staging`,
-from the six payload groups) into the call-site guarantee, and the fixed record's
+from the five payload groups) into the call-site guarantee, and the fixed record's
 verdict clause is `stage2fixed_verdict_bounded`.  `pipeline_satisfies_of_units`
 then consumes `pipelineBodyFacts_of_exitStage2`, whose pre supplies the staging,
 the cursor bound and the work space's staging, and whose tail is
@@ -2859,7 +2859,6 @@ the cursor bound and the work space's staging, and whose tail is
 theorem pipeline_satisfies_at_stage2_of_exitStage2 (tab : Nat)
     (hcont : ∀ {m0 : Mem} (G : WalkGeom m0), WalkScope.HcontPayload G)
     (hrows : ∀ {m0 : Mem} (G : WalkGeom m0), WalkScope.HcontClassRows G)
-    (hws : ∀ {m0 : Mem} (G : WalkGeom m0), WalkScope.HcontWsRows G)
     (hlast : ∀ {m0 : Mem} (G : WalkGeom m0), WalkScope.HlastPayload G)
     (hlastRows : ∀ {m0 : Mem} (G : WalkGeom m0), WalkScope.HlastClassRows G)
     (hlastArms : ∀ {m0 : Mem} (G : WalkGeom m0), WalkScope.HlastArmRows G) :
@@ -2872,7 +2871,7 @@ theorem pipeline_satisfies_at_stage2_of_exitStage2 (tab : Nat)
     (fun b => pipelineUnits_of_records tab b
       (WalkScope.envForStage2Work tab stage2SubCalls) (WalkScope.Γ_stage2fixed tab)
       (WalkScope.satisfies_calls_stage2_fixed
-        (WalkScope.stage2WalkWork_of_staging hcont hrows hws hlast hlastRows
+        (WalkScope.stage2WalkWork_of_staging hcont hrows hlast hlastRows
           hlastArms))
       (WalkScope.stage2fixed_verdict_bounded (tab := tab))) ?_
   intro base args mem next hpre units

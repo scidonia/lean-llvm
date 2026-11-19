@@ -185,10 +185,11 @@ premise of another's:
   the payload tier — the document's content and the callee's staging — not a class
   without an arm.
 
-**The high-byte route is proved, not supplied.**  `126` and `127` are the class
-`HcontArm.ws`/`.cleanup` carry (`HcontFacts`, `HcontCleanupFacts`), with the counted
-segments `walkRevolutionMergeSegWs` and `walkRevolutionMergeSeg`; an earlier revision of
-this row named that route as owed, and that was stale.
+**The high-byte route refuses.**  `126` and `127` reach `if.then413.i` through
+`if.else405.i`, whose `phi` literal is `0`: `od_scalar_value` answers `0` there, so the
+walk takes `if.then432.i` and the arm is `HcontArm.badToken` at the class's `refuseSeg`,
+whatever the byte before the entry's end is.  The route is proved; nothing about it is
+supplied and no scan runs on it.
 
 The case is a value and not a second conjoined premise.  Two premises would be jointly
 uninhabited at exactly the input the walk handles: at `C.k = 0`, `G.nep = 2` the head's
@@ -212,8 +213,7 @@ and `walkContinueArm_of_payload` (`JsonStage2WalkDispatchContinuing`) carries th
 branches (`hcontArm_run_otherValue`, and
 `hcontArm_run_defaultValueLow`/`_Mid`/`_Bracket`/`_BracketHigh`/`_Brace`) at the
 whitespace classes.  What remains supplied is the producer tier those arms read — the
-class rows' `runSkip`/`runTail` for `.run`, and `HcontWsRows` for the whitespace arm `.ws`
-beside it — not a branch.  The two arms' constructors are stated
+class rows' `runSkip`/`runTail` for `.run` — not a branch.  The two arms' constructors are stated
 at the state's own root word (`HcontArm.stringOpenAboveZeroMerge`/`.Refuse`,
 `hcontArm_cleanup_of_rows`), so the class is not narrowed to the states where that slot
 holds `0`.
@@ -943,7 +943,7 @@ record's, and the fields' equalities are the construction's.
 
 The two bundles the loop's step reads are **produced here**, one per level: the continuing
 entry's class is `walkContinueFacts_of_payload` (`JsonStage2WalkDispatchContinuing`) at the
-payload, the class rows and the whitespace rows, and the last entry's arm with the
+payload and the class rows, and the last entry's arm with the
 finalisation's two log words is `walkLoopEnd_of_payload` at the last payload and its two
 row groups.  So this theorem's premises are the payload groups, not the bundles.  The
 two-entry token's residue is not a third: it is `HcontArm.twoEntry`'s field.  The merge's
@@ -967,7 +967,6 @@ and the post rule and no bundle; this theorem is the producer of its first premi
 theorem walkPremises_of_staging {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
     (hcont : ∀ {m0 : Mem} (G : WalkGeom m0), HcontPayload G)
     (hrows : ∀ {m0 : Mem} (G : WalkGeom m0), HcontClassRows G)
-    (hws : ∀ {m0 : Mem} (G : WalkGeom m0), HcontWsRows G)
     (hlast : ∀ {m0 : Mem} (G : WalkGeom m0), HlastPayload G)
     (hlastRows : ∀ {m0 : Mem} (G : WalkGeom m0), HlastClassRows G)
     (hlastArms : ∀ {m0 : Mem} (G : WalkGeom m0), HlastArmRows G) :
@@ -1021,7 +1020,7 @@ theorem walkPremises_of_staging {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
         simp [lookupName]
     · -- the loop's step, from the two bundles the payload groups produce
       exact walkLoopStep_of_staging (G := G)
-        (walkContinueFacts_of_payload (hcont G) (hrows G) (hws G))
+        (walkContinueFacts_of_payload (hcont G) (hrows G))
         (walkLoopEnd_of_payload (hlast G) (hlastRows G) (hlastArms G))
 
 /-! ### The loop's post, from the staging
@@ -1200,7 +1199,7 @@ there — the state's post is not the walk's statement.
 
 /-- **The completion, at the payload groups.**  `stage2WalkCompletes_of_premises` at
 `walkPremises_of_staging`: the body's run reaches an outcome inside the record's budget
-whenever the record's pre and the adapter's staging hold.  Its premises are the six groups,
+whenever the record's pre and the adapter's staging hold.  Its premises are the five groups,
 and the two bundles are produced from them, so no bundle enters as a hypothesis — the
 `WalkLoopEnd` the last entry's arm yields has its log words from `WalkInv.log_alen`'s
 witness, which is what makes the implication say something about a document rather than
@@ -1208,13 +1207,12 @@ about a refutable bundle. -/
 theorem stage2WalkCompletes_of_staging {d c ctype cst tok s z e nkSlot nxpSlot : Nat}
     (hcont : ∀ {m0 : Mem} (G : WalkGeom m0), HcontPayload G)
     (hrows : ∀ {m0 : Mem} (G : WalkGeom m0), HcontClassRows G)
-    (hws : ∀ {m0 : Mem} (G : WalkGeom m0), HcontWsRows G)
     (hlast : ∀ {m0 : Mem} (G : WalkGeom m0), HlastPayload G)
     (hlastRows : ∀ {m0 : Mem} (G : WalkGeom m0), HlastClassRows G)
     (hlastArms : ∀ {m0 : Mem} (G : WalkGeom m0), HlastArmRows G) :
     Stage2WalkCompletes d c ctype cst tok s z e nkSlot nxpSlot stage2SubCalls :=
   stage2WalkCompletes_of_premises
-    (walkPremises_of_staging hcont hrows hws hlast hlastRows hlastArms)
+    (walkPremises_of_staging hcont hrows hlast hlastRows hlastArms)
 
  /-! **The walk's obligation: the completion half here, the post half one module up.**
 `Stage2WalkObligation` is `Satisfies` at `Γ_stage2at`, and its two conjuncts are the
@@ -1254,7 +1252,6 @@ The top-level theorem in the tree, `stage2WalkObligation_of_staging`
 ```
 (hcont     : ∀ {m0 : Mem} (G : WalkGeom m0), HcontPayload G)
 (hrows     : ∀ {m0 : Mem} (G : WalkGeom m0), HcontClassRows G)
-(hws       : ∀ {m0 : Mem} (G : WalkGeom m0), HcontWsRows G)
 (hlast     : ∀ {m0 : Mem} (G : WalkGeom m0), HlastPayload G)
 (hlastRows : ∀ {m0 : Mem} (G : WalkGeom m0), HlastClassRows G)
 (hlastArms : ∀ {m0 : Mem} (G : WalkGeom m0), HlastArmRows G)
@@ -1280,11 +1277,10 @@ so `HcontPayload` is inhabited at every head state with an entry left and
 `HcontScanFree.not_wsStop` records the exclusion the old row had asserted; the visited-byte
 row is stated at the visits' span (`k < p + 1`) in `hcontFacts_of_staging`, in
 `scanByteField`, in every `hbyte` and in `ScanVisits`, which `cont_hbyteClass_not_wsCont`
-(`JsonStage2WalkHcontFactsOfStaging`) certifies as the only consistent range; and the
-whitespace seam's invariant and cells are the state group `HcontWsSeam` /
-`hcontWsSeam_of_body` (`JsonStage2WalkDispatchSeams`), produced from `HcontRunBody` /
-`contWsRunBody` (`JsonStage2WalkRevolution`) and the class-C span, so the tail follows
-(`hcontScanTail_of_seam`) without the bundle's own `hTail`.
+(`JsonStage2WalkHcontFactsOfStaging`) certifies as the only consistent range.  The
+high-byte class `126`/`127` is the refusal's: its edge is `if.else405.i`'s literal `0`, so
+the continuing case builds `hcontArm_badToken_of_row` at the class's `refuseSeg` for every
+byte class, and no whitespace bundle is stated there.
 Neither bundle's *statement* is false, and the terminal post's numbers are the
 invariant's own — the log's arena word is `log_alen`'s witness, reported as the decoded
 extent, while the frame, presence and capacity clauses stay at the reserved extent.  The

@@ -43,14 +43,15 @@ answer `0`, the refusal record, and the class's route to the refusal copy.
   entry's on such a document.  The group's producer therefore needs a premise on the
   geometry (`¬ wsStop G (G.n - 1)`); `hlastLane_of_not_wsStop` is that.
 * **`HlastAbi.highByte`'s route (`HlastRefuseRoute`).**  The error path's blocks from
-  `if.then432.i` to `cleanup474.i` have no composed segment: `WalkLink.if_then432_i`,
-  `WalkLink.if_then418_i` and `WalkLink.cleanup474_i` exist, the scan
-  (`cond.end.i96`/`land.rhs.i103`/`while.end.i`), `if.end.i97` and the escape tree
-  (`if.else.i` … `if.else43.i`) do not, and the scan's length is the entry's own.  The
-  producer owed is a priced segment `if.then432.i → … → cleanup474.i → if.then` with the
-  stored word (`stage2ErrSetMsg`'s `%e + 8`, which is the token's `pos`) and a count inside
-  the last entry's credit.  The payload carries the route rather than assuming it, exactly
-  as `HlastArmRows`' rows carry the arms' own segments.
+  `if.then432.i` to `cleanup474.i` have no standalone composed segment in the tree:
+  `WalkLink.if_then432_i`, `WalkLink.if_then418_i` and `WalkLink.cleanup474_i` exist, and
+  `hlastAnswerOneRefuseRoute` (`JsonStage2WalkDispatchLastSeamRoute`) composes the priced
+  route from a prefix segment to `land.rhs.i103` and the slow scan's run (`slowRun`,
+  `slowVisit_at`, `slowAnswerOnePrice`) into a `HlastRefuseRoute` with the stored word
+  (`stage2ErrSetMsg`'s `%e + 8`, the token's `pos`) inside the last entry's credit.  What
+  the payload supplies is the refusal evidence (`HlastHighByteRefusal`), not the route; the
+  route is the class's row, and `HlastArmRows`' `.letters`/`.classC` rows carry the same
+  shape — the refusal group (`HlastSeamRefusal`) plus the class's route.
 * **The class's answer-zero sub-route.**  `s2_value_pos` can answer `0` at the class too
   (a depth-zero head whose root slot is already flagged), and that arm is
   `if.then418.i → cleanup474.i → if.then` — three links after the head, and no scalar call.

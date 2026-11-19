@@ -1121,14 +1121,16 @@ are `JsonStage2WalkHcontSeamInv`'s: `contTailStartInv_of_cleanup`,
 4. **The census is exhaustive and the arms are total.**  `HeadArm.complete` gives
 every byte exactly one head arm, so the byte census is exhaustive by theorem,
 and the dispatch arms are total over the states the invariant admits.  The
-continuing enumeration is `HcontArm`, nineteen constructors: the string opener is
+continuing enumeration is `HcontArm`, twenty-three constructors: the string opener is
 one class with three arms (`.twoEntry`, `.stringOpenAboveZeroMerge`,
-`.stringOpenAboveZeroRefuse`), the high bytes `126`/`127` one class with two
-(`.ws`, `.cleanup`), and the two openers one class with two (`.containerOpen`,
-`.openAtCap`).  The last entry's enumeration is `LastEntryArm`, sixteen
-constructors.  Where a class's route is a counted chain of its own, the arm takes
-that chain as a row: `.letters`, `.fLetter` and `.classC` their head and tail
-segments, `.stringOpenAboveZeroMerge` its segment to the merge.  The document and
+`.stringOpenAboveZeroRefuse`), the high bytes `126`/`127` take the refusal arm
+(`.badToken`) at every byte class, and the two openers one class with two
+(`.containerOpen`, `.openAtCap`).  The last entry's enumeration is `LastEntryArm`,
+eighteen constructors.  Where a class's route is a counted chain of its own, the arm takes
+that chain as a row: `.fLetter`, and class C's `110`/`116` leaves through `.classC`, take
+their head and tail segments; `.stringOpenAboveZeroMerge` its segment to the merge.  The
+letters and class C's other leaves reach `if.else405.i`'s literal `0`, so they carry the
+refusal group and its class route and dispatch to `.refuse`.  The document and
 seam rows are `JsonStage2WalkDispatchClassRows`', one row per class, and the
 seam state's invariant is produced by the transports above rather than carried as
 a row. -/

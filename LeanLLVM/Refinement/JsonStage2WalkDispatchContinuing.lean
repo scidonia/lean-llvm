@@ -20,8 +20,7 @@ names its row's consumer:
 | `.openBracket`, `.openBrace` | any | the payload's `abi.openCall` and the opener producers |
 | `.value` | `wsByte` | `hcontArm_scalarRun_of_class` (the class's `scalarRun` row) |
 | `.value` | the three leaves | `hcontArm_value_of_lane` (the payload's default lane) |
-| `.defaultValueHigh` | `wsByte` | `hcontArm_ws_of_rows` (the whitespace group, at the class's two clear bits — the guard the group's `run` field now carries) |
-| `.defaultValueHigh` | the three leaves | `hcontArm_cleanup_of_class` (the refusal arm at the class's `refuseSeg`; `126`/`127` take `if.else405.i`, whose kind literal is `0`) |
+| `.defaultValueHigh` | any | `hcontArm_cleanup_of_class` (the refusal arm at the class's `refuseSeg`; `126`/`127` take `if.else405.i`, whose kind literal is `0`, so the scalar call answers `0` and no document byte class reaches a scan) |
 | the six tag-clear default classes | any | **the refusal arm** (`HcontArm.badToken`, from `HcontClassRows.refuseSeg`): those bytes are never value bytes (`%8 < 44`, `59 … 90`, `92`, `94 … 122` minus the three literals, `124`), so the edge takes `if.then432.i` and refuses.  The three literal bytes inside `94 … 122` keep the run arm (`.defaultValueBracketHigh`'s `f`/`n`/`t` sub-branches) |
 | the six tag-clear default classes | the three leaves | `hcontArm_defaultValueLow` … `_defaultValueBrace`: the same refusal arm, with the byte facts derived from each class's range |
 
@@ -35,13 +34,12 @@ elimination is legal, and the bundle is `Classical.choice` of it — the same es
 `Nonempty`-valued producer in the head-switch modules takes, and one that adds no
 assumption about the walk: the `Nonempty` is derived from the rows alone.
 
-**The three groups.**  `HcontPayload` is the payload's document row and its call rows,
-`HcontClassRows` is the bytes' rows at each head class, and `HcontWsRows` is the
-whitespace class's own document rows (`HcontFacts`' run, tail and traversal), which the
-head class `126`/`127` splits on.  All three are `∀`s over the states their rows are read
-at, and none of them is an arm.
+**The two groups.**  `HcontPayload` is the payload's document row and its call rows, and
+`HcontClassRows` is the bytes' rows at each head class.  Both are `∀`s over the states
+their rows are read at, and neither is an arm.  The high-byte class's document byte makes
+no difference: `126`/`127` reach `if.else405.i`, whose literal `0` refuses, like the three
+non-whitespace byte classes beside them.
 -/
-import LeanLLVM.Refinement.JsonStage2WalkDispatchWsRows
 import LeanLLVM.Refinement.JsonStage2WalkDispatchRunRow
 import LeanLLVM.Refinement.JsonStage2WalkDispatchClassTransport
 import LeanLLVM.Refinement.JsonStage2WalkDispatchWitnessString
@@ -359,12 +357,12 @@ noncomputable def hcontArm_stringOpenZeroRefuse_of_staging {m0 : Mem} {G : WalkG
 
 /-! ### The arm at one head state -/
 
-/-- **The continuing entry's arm, from the three groups.**  `HcontClass.complete` decides
+/-- **The continuing entry's arm, from the two groups.**  `HcontClass.complete` decides
 the head switch's class, and the payload's `defaultLane` row decides the byte before the
 entry's end; the branch is the cell's producer.  `h8` is the head's `%8` cell
 (`cont_reg8`), which the default arm's producers take in place of a byte hypothesis. -/
 theorem walkContinueArm_of_payload {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
-    {s : State} (hp : HcontPayload G) (hc : HcontClassRows G) (hw : HcontWsRows G)
+    {s : State} (hp : HcontPayload G) (hc : HcontClassRows G)
     (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep) :
     Nonempty (HcontArm (stage2Calls stage2SubCalls) G C s) := by
   have h8 : evalOperand s (.reg "%8") = some (.int 8 (hlastByte G C)) := cont_reg8 hInv
@@ -539,8 +537,8 @@ theorem walkContinueArm_of_payload {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G
           simp only [toInt_8_116]
           omega)
       cases r.hclass with
-      | wsByte hws =>
-          exact ⟨hcontArm_ws_of_rows hp hw hInv hblock hk h125 hne125 r hws⟩
+      | wsByte _ =>
+          exact hcontArm_cleanup_of_class hInv hblock hk h8 hbit hne102 hne110 hne116 hc
       | scanFree _ =>
           exact hcontArm_cleanup_of_class hInv hblock hk h8 hbit hne102 hne110 hne116 hc
       | lowLeaf _ _ =>
@@ -548,14 +546,14 @@ theorem walkContinueArm_of_payload {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G
       | highLeaf _ _ _ =>
           exact hcontArm_cleanup_of_class hInv hblock hk h8 hbit hne102 hne110 hne116 hc
 
-/-- **The continuing bundle, from the three groups.**  `WalkContinueFacts` is data, so the
+/-- **The continuing bundle, from the two groups.**  `WalkContinueFacts` is data, so the
 class case's `Nonempty` is read by `Classical.choice`: every cell's arm is the producer's
 conclusion from the rows, and the choice adds no hypothesis about the walk. -/
 noncomputable def walkContinueFacts_of_payload {m0 : Mem} {G : WalkGeom m0}
-    (hp : HcontPayload G) (hc : HcontClassRows G) (hw : HcontWsRows G) :
+    (hp : HcontPayload G) (hc : HcontClassRows G) :
     WalkContinueFacts G :=
   fun C s hInv hblock hk =>
-    Classical.choice (walkContinueArm_of_payload hp hc hw (C := C) (s := s) hInv hblock hk)
+    Classical.choice (walkContinueArm_of_payload hp hc (C := C) (s := s) hInv hblock hk)
 
 /-! ### The instrument -/
 
