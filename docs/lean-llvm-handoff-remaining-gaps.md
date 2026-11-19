@@ -14,11 +14,11 @@ This documentation pass ran no build.  Every anchor below was re-read at `e268d1
 uncommitted edits to), and each line number is that tree's; a declaration named where it no
 longer lives has been re-pointed or its disappearance recorded.
 
-At the moment of this pass the working tree also carried another change in progress — the
-guard narrowing in `JsonStage2WalkDispatchWsRows`/`…WsRowsProduce` and one line of
-`…Continuing` (see the whitespace section).  This document describes `e268d1c`, so a
-declaration or line number there is the committed one, and that change is *not* part of the
-state described here.
+At the moment of this pass the working tree also carried the guard narrowing in
+`JsonStage2WalkDispatchWsRows`/`…WsRowsProduce` and `…Continuing`; it has since been
+committed as `816cf737`.  This document describes `e268d1c` plus that commit: the
+1,102-job build predates the narrowing and no default-target build of the narrowed tree is
+recorded.
 
 The three module-target builds recorded earlier in the session — each `LAKE_EXIT=0`, each
 covering one module and its cone — are
@@ -294,8 +294,8 @@ None has an unconditional `∀ G` producer: the one full producer,
 Three groups are produced in part; the class rows and the seam's own staged-words supply
 are still outstanding.  The anchors are at `e268d1c`, the declarations this document once
 marked *in flight* are committed in that tree and inside the 1,102-job build, and every
-line number below is that tree's — the worktree's in-progress guard narrowing is not
-described here.
+line number below is that tree's; the guard narrowing committed in `816cf737` is described
+in the whitespace section and postdates that build.
 
 | group | declaration | state |
 |---|---|---|
@@ -462,9 +462,9 @@ byte is `9` or `10`".
 `:214`).  Its hypotheses never name the head's byte, but `HcontRunBody.hbit` is about `x1`,
 which `h8c` binds to the loop head's `%8`, so at a head whose entry byte is `-` no
 inhabitant exists.  The field needs the class's two bits (`hlt125`/`hne125`, the pair
-`hcontFacts_of_rows` already takes) beside the span and the skip; **`e268d1c` does not
-carry that narrowing**, and no statement is edited here.  A change in progress in the
-worktree moves the two bits into `run`'s hypotheses, and the module header
+`hcontFacts_of_rows` already takes) beside the span and the skip; **the narrowing is
+committed in `816cf737`** — `run` carries the two bits, and `hcontFacts_of_rows` and the
+class case pass them — so the field is no longer false at `-`, and the module header
 (`JsonStage2WalkDispatchWsRows`) records the finding where the structure is stated.
 
 
