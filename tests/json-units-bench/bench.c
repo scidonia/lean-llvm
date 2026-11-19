@@ -1,9 +1,10 @@
 /* bench.c -- the measurement harness for the three proved stage-1 units.
 
    `bench.sh` compiles this against objects built from `kernel/json/` at the
-   measured compiler line, the two bench-only mask copies in `bench-ablate.c`
-   and the bench-only mask unit in `bench-fastesc.c`, and runs it once per CPU
-   and trial.  Each document
+   measured compiler line, the two bench-only mask copies in `bench-ablate.c`,
+   the bench-only mask unit in `bench-fastesc.c` and the fused loop with the
+   entry emitter inlined in `bench-inline.c`, and runs it once per CPU and
+   trial.  Each document
    is read once, staged once, and then swept from the same warm buffer: every
    repetition re-runs the unit over bytes that were just read, so no repetition
    pays a first-touch page fault or a cold-cache fill of its own.
@@ -33,6 +34,11 @@
                    into an array first and then emitted by one pos8 call: the
                    split shape on the fused row's own stream
      split_ent_b8  the same with the b8 emitter
+     fused_inl_pos8  the same fused loop as fused_pos8, with the entry kernel's
+                   `noinline` dropped and the emitter inlined
+                   (`bench-inline.c`): the per-block call is the only
+                   difference from fused_pos8
+     fused_inl_b8  the same with the b8 emitter
      utf8_gated    leanllvm_json_utf8 with `ungated = 0`
      utf8_ungated  leanllvm_json_utf8 with `ungated = 1`
 
@@ -66,7 +72,9 @@
    is not a measurement: entry_pos8's and entry_b8's cursors must both equal the
    stream's total set lanes; the fused rows' final cursors must equal the total
    set lanes of the pipeline's entry mask composed independently here, which
-   the entry unit must also return over that staged stream; the gated and
+   the entry unit must also return over that staged stream; the fused_inl rows'
+   final cursors and every one of their emitted position words must equal the
+   entry unit's over that same staged stream; the gated and
    ungated UTF-8 words must be equal; s1_fastesc must equal s1_masks in every
    mask word and in the carry state on every block of every document; and every
    timed pass's checksum must equal the warm-up pass's checksum.  A disagreement exits 3 (the instrument is not
@@ -120,7 +128,26 @@ extern uint64_t leanllvm_json_entry_b8(const uint64_t *ent, uint64_t blk0,
                                        uint64_t nblk, uint32_t *out,
                                        uint64_t k);
 extern void leanllvm_json_entry_table(uint32_t *dst);
+/* The fused loop with the entry kernel inlined (`bench-inline.c`): the same
+   per-block loop, the same emitter text, with `entry.c`'s `noinline` removed.
+   The pass is the whole fused loop, because the emitter can only be inlined
+   into a loop in its own translation unit. */
+extern uint64_t leanllvm_bench_inline_pos8(const uint8_t *buf, uint64_t n,
+                                          uint32_t *pos, int full,
+                                          uint64_t *k_out);
+extern uint64_t leanllvm_bench_inline_b8(const uint8_t *buf, uint64_t n,
+                                         uint32_t *pos, int full,
+                                         uint64_t *k_out);
+extern void leanllvm_bench_inline_table(void);
 extern uint64_t leanllvm_json_utf8(const uint8_t *b, uint64_t n, int ungated);
+
+/* In the unity build (`bench-unity.c`) this harness and the bench-only copies
+   share one translation unit, which is the shape the inlined rows exist to
+   measure; including the copy here keeps the unity binary built from the same
+   files as before without a second object defining its symbols. */
+#ifdef BENCH_UNITY_STAGE1
+#include "bench-inline.c"
+#endif
 
 #define MAX_DOCS 64
 #define BLOCK 64
@@ -197,6 +224,8 @@ typedef struct {
   uint64_t *ent;     /* nb mask words, structural bytes only (entry rows) */
   uint64_t *pent;    /* nblk words, the pipeline's own per-block entry mask */
   uint32_t *pos;     /* nb * 64 + 16 words of output slack */
+  uint32_t *gpos;    /* the inlined rows' gate: the entry unit's own stream,
+                        per arm, over the pipeline's staged `ent` */
   uint64_t structural;   /* total set lanes of ent */
   uint64_t pipeline_ent; /* total set lanes of pent, the gate's reference */
   uint64_t ascii_vectors;
@@ -283,6 +312,7 @@ static void stage_doc(doc *d) {
   /* The entry unit's output buffer: the ABI asks for eight words of slack past
      the largest count the stream can reach. */
   d->pos = xaligned(((size_t)d->nb * BLOCK + 16) * sizeof *d->pos);
+  d->gpos = xaligned(((size_t)d->nb * BLOCK + 16) * sizeof *d->gpos);
 
   /* The UTF-8 unit's staging: three zero bytes before the document and zero
      padding to the next block boundary, both of which its ABI requires.  The
@@ -506,6 +536,50 @@ static uint64_t derive_pipeline_ent(const doc *d) {
   return total;
 }
 
+/* The inlined fused rows' gate.  The entry unit over the pipeline's staged
+   `ent` stream is the reference in both senses: its cursor is the row gate's
+   total, and its position words are compared one by one with what the fused
+   loop with the emitter inlined wrote.  Running the candidate into `d->pos` and
+   the unit into `d->gpos` keeps the comparison to the `k` words that are the
+   stream; the slack past `k` is each emitter's own and not part of it.  A row
+   that reordered, dropped or duplicated a position fails here instead of being
+   timed. */
+static void gate_inline(const doc *d, uint64_t nblk) {
+  for (int b8 = 0; b8 < 2; b8++) {
+    const char *arm = b8 ? "b8" : "pos8";
+    uint64_t ref = b8 ? leanllvm_json_entry_b8(d->pent, 0, nblk, d->gpos, 0)
+                      : leanllvm_json_entry_pos8(d->pent, 0, nblk, d->gpos, 0);
+    uint64_t k = 0;
+    if (b8)
+      (void)leanllvm_bench_inline_b8(d->buf, d->n, d->pos, 0, &k);
+    else
+      (void)leanllvm_bench_inline_pos8(d->buf, d->n, d->pos, 0, &k);
+    if (ref != d->pipeline_ent) {
+      fprintf(stderr,
+              "bench: %s: reference stream %s cursor %" PRIu64
+              ", the pipeline stream has %" PRIu64 " set lanes\n",
+              d->name, arm, ref, d->pipeline_ent);
+      exit(3);
+    }
+    if (k != ref) {
+      fprintf(stderr,
+              "bench: %s: fused_inl_%s cursor %" PRIu64
+              ", reference entry cursor %" PRIu64 "\n",
+              d->name, arm, k, ref);
+      exit(3);
+    }
+    for (uint64_t i = 0; i < ref; i++) {
+      if (d->pos[i] != d->gpos[i]) {
+        fprintf(stderr,
+                "bench: %s: fused_inl_%s position %" PRIu64
+                " is %" PRIu32 ", the entry unit emitted %" PRIu32 "\n",
+                d->name, arm, i, d->pos[i], d->gpos[i]);
+        exit(3);
+      }
+    }
+  }
+}
+
 /* The split shape on the stream the fused rows use: one whole-document pass
    that runs the masks and composes the pipeline's entry mask into `d->pent`,
    then one entry call over that array.  Only the presence or absence of the
@@ -643,6 +717,17 @@ static uint64_t row_split_ent(void *ctx) {
   return pass_split_ent(c->d, c->b8, c->full, &k);
 }
 
+/* The inlined fused row: the same context as the fused row, and the same call
+   shape -- the whole fused loop per call, so the row is not what changes
+   between them. */
+static uint64_t row_inline(void *ctx) {
+  const fused_ctx *c = ctx;
+  uint64_t k;
+  return c->b8
+    ? leanllvm_bench_inline_b8(c->d->buf, c->d->n, c->d->pos, c->full, &k)
+    : leanllvm_bench_inline_pos8(c->d->buf, c->d->n, c->d->pos, c->full, &k);
+}
+
 static uint64_t row_utf8_gated(void *ctx) {
   return pass_utf8((const doc *)ctx, 0);
 }
@@ -750,6 +835,8 @@ int main(int argc, char **argv) {
      it, and nothing else calls that initialiser. */
   static uint32_t table[256 * 8];
   leanllvm_json_entry_table(table);
+  /* The inlined copy's own table, once: its passes read it and never fill it. */
+  leanllvm_bench_inline_table();
 
   /* One table entry per mask row, read back through a volatile pointer by each
      pass so the call stays indirect in every build. */
@@ -814,6 +901,9 @@ int main(int argc, char **argv) {
               d->name, f8, fb, e8, eb);
       exit(3);
     }
+    /* The inlined fused rows' gate: the same reference stream, and the entry
+       unit's own position words. */
+    gate_inline(d, nblk);
     d->utf8_gated = leanllvm_json_utf8(d->b, d->n, 0);
     d->utf8_ungated = leanllvm_json_utf8(d->b, d->n, 1);
     if (d->utf8_gated != d->utf8_ungated) {
@@ -852,6 +942,10 @@ int main(int argc, char **argv) {
                   d->nb * BLOCK + d->nb * 8 };
     row r_sb8 = { d, "split_ent_b8", row_split_ent, d->nb * BLOCK,
                   d->nb * BLOCK + d->nb * 8 };
+    row r_ip8 = { d, "fused_inl_pos8", row_inline, d->nb * BLOCK,
+                  d->nb * BLOCK };
+    row r_ib8 = { d, "fused_inl_b8", row_inline, d->nb * BLOCK,
+                  d->nb * BLOCK };
     row r_utf8_g = { d, "utf8_gated", row_utf8_gated, d->n,
                      d->u8_blocks * BLOCK };
     row r_utf8_u = { d, "utf8_ungated", row_utf8_ungated, d->n,
@@ -877,6 +971,8 @@ int main(int argc, char **argv) {
       run_row(&r_fb8, &fb8_full, &fb8_cheap, reps, samples, cpu);
       run_row(&r_sp8, &fp8_full, &fp8_cheap, reps, samples, cpu);
       run_row(&r_sb8, &fb8_full, &fb8_cheap, reps, samples, cpu);
+      run_row(&r_ip8, &fp8_full, &fp8_cheap, reps, samples, cpu);
+      run_row(&r_ib8, &fb8_full, &fb8_cheap, reps, samples, cpu);
     }
     if (d->n > 0) {
       run_row(&r_utf8_g, d, d, reps, samples, cpu);
