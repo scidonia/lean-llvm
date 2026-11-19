@@ -825,8 +825,8 @@ re-derived from rows taken in another session — when one of these happens:
   cross-build band is the floor under it.
 - `stage1` and `parse`: the same binary, the same process and the same staged
   buffer, so `parse` is the full parser over the same bytes. It includes
-  `stage1`; the difference is stage 1 plus the lazy stage 2, not a separately
-  measured stage 2.
+  `stage1`; the difference is stage 1 plus simdjson's lazy stage 2, not a
+  separately measured stage 2.
 - `parse` and the units: a parser against three units. This is not a
   like-for-like claim, and no unit row above is a full-parse row.
 - `pad` and the units: staging against compute. The units stage once outside
@@ -1971,19 +1971,103 @@ and neither is evidence for the other. The stage table above states the same
 direction literally: 0.49 is stage 1's time over the composite's.
 
 The direct profile in `probes/json/route/cost-profile/` supersedes the earlier
-arithmetic estimate of a 7.5 µs stage-1 share. In its route-shaped harness,
-stage 1's three calls cost **21.189 µs (67%)** of the reproduced **31.607 µs**
-native interval: masks 6.422, entry emission 10.951 and escape-list
-construction 3.816. Stage 2 costs **10.559 µs (33%)**, including 8.944 µs of
-list-driven decode, and UTF-8 0.159 µs. The route's own same-session native
-interval is **40.812 µs**, leaving **9.205 µs** unreproduced at harness level;
+arithmetic estimate of a 7.5 µs stage-1 share. It runs two sweeps of one binary:
+a route-context sweep, which precedes every act with the route's fresh and
+reused calls, and a context=none sweep, which runs the acts back to back. In the
+route-context sweep, stage 1's three calls cost **21.189 µs (67%)** of the
+reproduced **31.607 µs** native interval: masks 6.422, entry emission 10.951 and
+escape-list construction 3.816, and stage 2's paired interval is **10.559 µs
+(33%)**. That sweep's `expand` row (15.738 µs) contradicts its own 8.944 µs
+stage-2 marginal; neither is used. The stage-2 figure this record takes is the
+context=none sweep, on the same binary and the local Intel 268V host at
+4.722 GHz (not the AMD host of §"Stage 1 on a quiet AMD host: a paired
+units-and-simdjson run"): stage 2 **8.012 µs**, `stage2_plain` 1.764, the
+list-driven marginal **6.248 µs**, `expand` **5.918 µs**, a **23.518 µs**
+pipeline and a **24.620 µs** native interval; stage 2's paired interval is
+**7.890 µs (32.0%)**, and UTF-8 is 0.647 µs. The route's own same-session
+native interval, from the route-context session, is **40.812 µs**, leaving
+**9.205 µs** unreproduced at harness level;
 matching the pipeline's exact code address does not remove that remainder.
 Whole-binary rebuilds also span 23.8–41.2 µs at the same calibrated clock, so
-the ratio is not a pure algorithmic-cost measurement. The supported
-optimisation target is stage 1 first, particularly entry emission, with the
-harness remainder named rather than assigned to a stage. The instrument's
-transcript and README carry the identity gates, the 620-call/55,931-byte
-expansion control and the placement limits.
+the ratio is not a pure algorithmic-cost measurement. The remaining levers are
+the decoder and stage 1: the 620 per-body decodes cost 5.918 µs by the direct
+expander and 6.248 µs by the marginal, and stage 1 is the 21.189 µs
+route-context term with entry emission the largest single call. Stage 2's
+list-driven work is not a lever unless its decode gets cheaper; skipping it is
+rejected in §"The lazy stage-2 measurement, and why it is rejected". The
+instrument's transcript and README carry the identity gates, the
+620-call/55,931-byte expansion control and the placement limits.
+
+### The lazy stage-2 measurement, and why it is rejected
+
+The profile above leaves stage 2's list-driven decode as the largest term after
+stage 1, and "do not materialise the decoded strings" is the obvious
+hypothesis. `probes/json/route/lazy-stage2/` prices it. It is bench-only: six
+acts in one binary and one session, rotated within each round, over
+`syn-strings-64k` (65,536 bytes, sha256 `bd007090d7a5ab09`, 620 escaped bodies,
+1,772 positions, 55,931 decoded bytes, arm 2). `stage2` is the committed walk;
+`stage2_plain` is the committed ABI with `nxp=0`, the lower bound of a lazy
+walk; `expand_arena` and `expand_l1` decode the same 620 bodies into the arena
+and into one reused 4 KiB scratch; `copy_arena` is a `memcpy` of the arena
+extent; `pipeline` is the native call. The gates hold the reference (`nk=2056`,
+`nxp=1772`, `ndst=55931`, `nev=8907`, `err=0`), the plain walk's record shape
+(same tags and record count, the same bytes for every non-string record; only
+the 685 string records' length and field differ), the expander's arena and
+cursor, and every L1 body against its arena slice.
+
+**The result.** Act medians: `stage2` 13.704 µs, `stage2_plain` 2.745,
+`expand_l1` 8.609, `expand_arena` 9.461, `copy_arena` 1.186, `pipeline` 36.049.
+The list-driven decode is 10.96 µs (30.4% of the pipeline; paired 10.79). The
+materialisation is at most 1.19 µs (3.3%): decoding into the L1 scratch is
+within 0.81 µs of decoding into the 55,931-byte arena, and a plain `memcpy` of
+that extent is 1.186 µs. The cost is the 1,772 escapes and 620 per-body
+decodes, not the stores.
+
+A lazy stage 2 that keeps the list-driven validation saves 1.3-2.4 µs of the
+36.0 µs pipeline (3.6-6.5%). Removing the list's work entirely saves 28-30%,
+and is not a lazy stage 2: with the list withheld, stage 2 accepts
+`{"a":"x<0x01>y"}` and `{"a":"x\qy"}` that the reference parser and the
+committed pipeline refuse (`verdict=0 err=7` with the list; `verdict=1` with it
+withheld), while the structural refusal stays refused. That is a correctness
+regression. Even with stage 2 free, the pipeline is about 1.2-1.4× simdjson's
+recorded full parse on this document, clock-normalised; that comparison is
+cross-binary and is labelled in the prototype's README.
+
+**The committed cost-profile agrees on the shape.** The context=none sweep of
+`probes/json/route/cost-profile/` on the local Intel 268V at 4.722 GHz gives
+stage 2 8.012 µs, `stage2_plain` 1.764, the list-driven marginal 6.248,
+`expand` 5.918, pipeline 23.518, native 24.620, and a paired stage 2 of
+7.890 µs (32.0% of native); the expander is 95% of the marginal. The
+route-context sweep's `expand` row (15.738 µs) contradicts its own 8.944 µs
+marginal; neither is used, and the context=none sweep and the prototype's
+paired probe agree.
+
+**What a lazy record would cost in the contract.**
+`Stage2EventRel.strPlain`'s body premise is `escapeCodePoints` over the record's
+span, and that function reads a raw span byte-wise as code points (a `\` reads
+as U+005C) rather than through the escape rules, so a lazy record cannot reuse
+that constructor. It needs one rule-based decode constructor whose premise is
+the escape list and the decode relation — `escapePositions`, `escapeDecode` and
+`escapeDecodeGo` supply the theory — and the rest of `JsonStage2Spec` follows by
+subtraction. No such constructor is in the tree.
+
+**Limits.** One document, one arm, one host; `syn-strings-64k` is the
+escape-heavy shape (620 of 685 bodies carry a listed position), so the share is
+a bound for this document class, not the corpus. The prototype's chain
+calibrated at 3.256 GHz and the cost profile's at 4.722 GHz, and the prototype
+ran at a one-minute load average of 2.27, so its absolute rows are not the
+profile's and only its same-session paired differences and shares are read with
+it. The absolute rows belong to the prototype binary, and whole-binary rebuilds
+span 23.8-41.2 µs at one clock, so the paired differences are the evidence and
+the pipeline row is an anchor.
+`expand_l1` prices decode-with-validation; a validator that decoded logically
+but stored nothing would be cheaper by at most the store side, which
+`copy_arena` bounds at 1.19 µs for the whole extent, and no row claims such a
+validator's exact cost because none is implemented.
+
+**Cadence.** Re-measure when `kernel/json/stage2.c`, `escape.c`, `pipeline.c` or
+the streams they read change; when `lazy-bench.c`, its gates or the document
+change; or when the cost-profile sweeps or the host change.
 
 ### Alternation, cursor reset and stale bytes
 
