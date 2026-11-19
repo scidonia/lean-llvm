@@ -187,9 +187,12 @@ structure HcontWsTail {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
 run's own rows at the check state (`run`), the tail's rows (`tail`) and the traversal's
 per-index class (`trav`).  The class is `.defaultValueHigh` × `wsByte` — the head's two
 clear bits (`slt %8 125 = 0`, `eq %8 125 = 0`, the arm's own class) and the document
-byte's whitespace disjunct (`wsStop G (v.toNat - 1)`) — and the group is guarded by
-exactly that: the head's invariant, the continuing count's inequality, the lane row and
-the disjunct.  The group carries no arm, no bundle and no segment.
+byte's whitespace disjunct (`wsStop G (v.toNat - 1)`) — and each field is guarded by the
+head's invariant, the continuing count's inequality and the lane row.  The head's two
+clear bits are **not** among the fields' hypotheses, and `run` needs them: its conclusion
+is `HcontRunBody`, whose tag bit (`hbit`) is the seam's byte, i.e. the loop head's `%8`.
+`JsonStage2WalkDispatchWsRowsProduce` states that gap and the producer at the class's
+guard.  The group carries no arm, no bundle and no segment.
 
 * `run`'s consumer is `hcontWsSeam_of_body`'s run segment (`contWsRunBody`), and through it
   `hcontFacts_of_staging`'s `hClass'` and `heicd`;
@@ -201,7 +204,24 @@ the disjunct.  The group carries no arm, no bundle and no segment.
 The two fields the payload cannot reach are named here rather than weakened: the stop's
 run and the visits' class are the document's content at windows the payload's row (one
 byte at `v - 1`) does not cover, and the landing's class is the scan's first visit and not
-the stop's three-way disjunct. -/
+the stop's three-way disjunct.
+
+## What the tree produces of the group, and what it does not
+
+`JsonStage2WalkDispatchWsRowsProduce` reduces each field to its remaining supply:
+
+* `run` — `hcontRunBody_wsCheck` produces the conclusion from the class's two bits
+  (`hlt125`/`hne125`), the entry stream's span and the skip's four document rows, with the
+  check state's invariant from `contPrefixLand`; `contWsRunBody_at_wsCheck` is the landed
+  counted run (`contWsRunBody`) at the body it produces.  The field's own hypotheses lack
+  the class bits, the span and the skip, and `hcontRunBody_dash_false` shows the tag bit
+  cannot clear at a head byte of `-`, so `run` is stronger than its premises;
+* `tail` — `hcontWsTail_of_landing` derives the landing's `%47`, `hbit47` and `hws47` from
+  the visited byte being `9` or `10`; the seam's calls, its literal, the root word, the
+  record, the read and the latch stay supply;
+* `trav` — `hcontWsTravRow_of_bytes` states the field's whole content as the document row
+  "every visited byte is `9` or `10`", which is what no producer can supply at a variable
+  `G`; the stop's own class does not imply it (`wsVisit_13_false`). -/
 structure HcontWsRows {m0 : Mem} (G : WalkGeom m0) : Type where
   /-- The run's own rows at the check state the class's prefix reaches (`HcontRunBody`):
   the stop with its per-index class and budget, the stop's byte, and the seam's byte.  Its
