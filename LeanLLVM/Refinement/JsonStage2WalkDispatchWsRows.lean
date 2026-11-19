@@ -188,11 +188,11 @@ run's own rows at the check state (`run`), the tail's rows (`tail`) and the trav
 per-index class (`trav`).  The class is `.defaultValueHigh` × `wsByte` — the head's two
 clear bits (`slt %8 125 = 0`, `eq %8 125 = 0`, the arm's own class) and the document
 byte's whitespace disjunct (`wsStop G (v.toNat - 1)`) — and each field is guarded by the
-head's invariant, the continuing count's inequality and the lane row.  The head's two
-clear bits are **not** among the fields' hypotheses, and `run` needs them: its conclusion
-is `HcontRunBody`, whose tag bit (`hbit`) is the seam's byte, i.e. the loop head's `%8`.
-`JsonStage2WalkDispatchWsRowsProduce` states that gap and the producer at the class's
-guard.  The group carries no arm, no bundle and no segment.
+head's invariant, the continuing count's inequality and the lane row.  **`run` carries the
+head byte's two clear bits beside those three**, because its conclusion is `HcontRunBody`,
+whose tag bit (`hbit`) is the seam's byte, i.e. the loop head's `%8`: at another byte the
+field is false (`hcontRunBody_dash_false`), so the guard is part of its statement.  The
+group carries no arm, no bundle and no segment.
 
 * `run`'s consumer is `hcontWsSeam_of_body`'s run segment (`contWsRunBody`), and through it
   `hcontFacts_of_staging`'s `hClass'` and `heicd`;
@@ -210,12 +210,14 @@ the stop's three-way disjunct.
 
 `JsonStage2WalkDispatchWsRowsProduce` reduces each field to its remaining supply:
 
-* `run` — `hcontRunBody_wsCheck` produces the conclusion from the class's two bits
-  (`hlt125`/`hne125`), the entry stream's span and the skip's four document rows, with the
-  check state's invariant from `contPrefixLand`; `contWsRunBody_at_wsCheck` is the landed
-  counted run (`contWsRunBody`) at the body it produces.  The field's own hypotheses lack
-  the class bits, the span and the skip, and `hcontRunBody_dash_false` shows the tag bit
-  cannot clear at a head byte of `-`, so `run` is stronger than its premises;
+* `run` — the field carries the class's guard (`hlt125`/`hne125`), so
+  `hcontRunBody_wsCheck` produces its conclusion from exactly that guard, the entry
+  stream's span and the skip's four document rows, with the check state's invariant from
+  `contPrefixLand`; `contWsRunBody_at_wsCheck` is the landed counted run (`contWsRunBody`)
+  at the body it produces.  The span and the skip are the document's supply — the field's
+  own content — while the tag bit and the check state's invariant are derived; the guard is
+  load-bearing because at another byte the tag bit cannot clear
+  (`hcontRunBody_dash_false`);
 * `tail` — `hcontWsTail_of_landing` derives the landing's `%47`, `hbit47` and `hws47` from
   the visited byte being `9` or `10`; the seam's calls, its literal, the root word, the
   record, the read and the latch stay supply;
@@ -224,10 +226,16 @@ the stop's three-way disjunct.
   `G`; the stop's own class does not imply it (`wsVisit_13_false`). -/
 structure HcontWsRows {m0 : Mem} (G : WalkGeom m0) : Type where
   /-- The run's own rows at the check state the class's prefix reaches (`HcontRunBody`):
-  the stop with its per-index class and budget, the stop's byte, and the seam's byte.  Its
-  consumer is `hcontWsSeam_of_body`, which derives the run's segment from it. -/
+  the stop with its per-index class and budget, the stop's byte, and the seam's byte.  The
+  guard is the class's own — the head byte's two clear bits (`slt %8 125 = 0`,
+  `eq %8 125 = 0`) — because `HcontRunBody`'s tag bit (`hbit`) is the loop head's `%8` and
+  cannot clear at another byte (`hcontRunBody_dash_false`): without the guard the field is
+  false.  Its consumer is `hcontWsSeam_of_body`, which derives the run's segment from it. -/
   run : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
-    C.k + 1 < G.nep → ∀ (v : BitVec 32),
+    C.k + 1 < G.nep →
+    evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 125) = 0 →
+    evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 125) = 0 →
+    ∀ (v : BitVec 32),
     readBytes s.mem (G.ep + (C.k + 1) * 4) 4 = some (natToBytes v.toNat 4) →
     evalICmp .ugt (BitVec.ofNat 64 v.toNat) (contIx G C) = 1 →
     wsStop G (v.toNat - 1) → HcontRunBody G C (wsCheckS G C s v)
@@ -265,7 +273,8 @@ noncomputable def hcontFacts_of_rows {m0 : Mem} {G : WalkGeom m0} (hp : HcontPay
     (r : HcontDefaultRow G C s) (hws : wsStop G (r.v.toNat - 1)) :
     HcontFacts G C s := by
   let sl := wsCheckS G C s r.v
-  let b : HcontRunBody G C sl := hw.run C s hInv hblock hk r.v r.hread r.hugt hws
+  let b : HcontRunBody G C sl :=
+    hw.run C s hInv hblock hk hlt125 hne125 r.v r.hread r.hugt hws
   let tl := hw.tail C s hInv hblock hk r.v b.k
   -- the check state's cells, as the body states them
   have hv : b.v = r.v := by

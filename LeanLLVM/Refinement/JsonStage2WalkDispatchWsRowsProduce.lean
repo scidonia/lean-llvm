@@ -12,35 +12,37 @@ of each the tree supports and which part is supply.
 `run` states
 
 ```
-∀ C s, WalkInv G C s → C.block = walkLoopHead → C.k + 1 < G.nep → ∀ v,
+∀ C s, WalkInv G C s → C.block = walkLoopHead → C.k + 1 < G.nep →
+  evalICmp .slt (hlastByte G C) (ofNat 8 125) = 0 →
+  evalICmp .eq (hlastByte G C) (ofNat 8 125) = 0 → ∀ v,
   readBytes s.mem (G.ep + (C.k + 1) * 4) 4 = some (natToBytes v.toNat 4) →
   evalICmp .ugt (ofNat 64 v.toNat) (contIx G C) = 1 →
   wsStop G (v.toNat - 1) → HcontRunBody G C (wsCheckS G C s v)
 ```
 
-and four of `HcontRunBody`'s clauses are **not** consequences of those hypotheses:
+The guard is the class's own two clear bits, and it is load-bearing: `HcontRunBody.h8c`
+binds `x1` to the seam's `%8`, which at `wsCheckS` is the loop head's (`wsSlAt_env8`,
+`contLandS_env8`, `WalkInv.iter.reg8` — `hlastByte G C`), and at a head whose entry byte
+is `-` the tag bit cannot clear (`hcontRunBody_dash_false`).  With the guard the two
+clauses that were missing from the earlier statement are derived:
 
-* `hbit` — the seam's tag test clears at the head's byte.  The row's hypotheses never
-  name the head's byte, while `HcontRunBody.h8c` binds `x1` to the seam's `%8`, which at
-  `wsCheckS` is the loop head's (`wsSlAt_env8`, `contLandS_env8`, `WalkInv.iter.reg8` —
-  `hlastByte G C`), so at a head whose entry byte is `-` no inhabitant exists
-  (`hcontRunBody_dash_false`);
-* `hInv` — `WalkInv G (ContAC₄ C) (wsCheckS G C s v)`.  The check state's memory is
-  `contEndS`'s, i.e. two token-record stores past `s.mem`, and its *carry* is
-  `ContAC₄ C`; the invariant at it is what the head's eight links produce
-  (`contPrefixLand`), whose arms need the head byte's class;
+* `hbit` — `hlast_bit6_of_class` at the two bits, as in the scan-free producer;
+* `hInv` — `WalkInv G (ContAC₄ C) (wsCheckS G C s v)`: the check state's memory is
+  `contEndS`'s (two token-record stores past `s.mem`) and its carry is `ContAC₄ C`, and
+  the head's eight links produce the invariant (`contPrefixLand`, whose arms the bits
+  resolve).
+
+What remains in the field is the document's content, and that is what it supplies:
+
 * `hClass`'s document part — the stop `k`, the per-index class on `[contIx G C, k)`, the
   stop's byte and the budget.  These are the skip's rows, the content
   `HcontClassRows.runSkip` supplies (`HcontRunSkip`); the lane word at `v - 1` says
   nothing about the bytes before it;
 * `hspan` — `v.toNat ≤ entryPos G (C.k + 1)`, the entry stream's order.
 
-`hcontRunBody_wsCheck` below is the row's conclusion from the class's guard
-(`hlt125`/`hne125`), the entry stream's span and the skip's four document rows; `hbit`
-follows from the guard, as in the scan-free producer, and the check state's invariant is
-`contPrefixLand`'s.  So `run` as stated is **stronger than its hypotheses**; the
-difference is the supply above, and the class guard is the same pair `hcontFacts_of_rows`
-already takes.
+`hcontRunBody_wsCheck` below is the row's conclusion from exactly the guard, the entry
+stream's span and the skip's four document rows; so the field is a supply row for the
+document, not a claim stronger than its premises.
 
 ## The tail's row
 
@@ -207,10 +209,10 @@ noncomputable def hcontRunBody_wsCheck {m0 : Mem} {G : WalkGeom m0} {C : WalkCar
       hbit := hlast_bit6_of_class hlt125 hne125
       hspan := hspan }
 
-/-- **The `run` row's conclusion is false at a `-` head**, so the row needs the class's
-guard: `hlastByte G C` is `WalkInv.iter.reg8`'s cell, and at `45` the seam's tag test
-does not clear.  This is the statement-level gap the module header records, checked at the
-byte rather than argued. -/
+/-- **The `run` row's conclusion is false at a `-` head**, which is why the row carries
+the class's guard: `hlastByte G C` is `WalkInv.iter.reg8`'s cell, and at `45` the seam's
+tag test does not clear.  The narrowing this justifies is the field's statement, checked
+at the byte rather than argued. -/
 theorem hcontRunBody_dash_false :
     ¬ ((evalICmp .eq (BitVec.ofNat 8 45) (BitVec.ofNat 8 45) |||
         evalICmp .ult ((BitVec.ofNat 8 45) + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0) := by
