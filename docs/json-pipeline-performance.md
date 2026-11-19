@@ -8,7 +8,8 @@ harness, whose structure, arms and controls are described in §7 so that a
 rebuild can repeat the same comparisons. Stage 1's units, and the assembled
 pipeline after them, are the exceptions: each has its own measured section
 below, reproducible from this tree. The classification-mask kernel is extracted
-as `kernel/json/s1_block.c`, its emitted IR is committed as
+as `kernel/json/s1_block.c` with its escape derivation in the adopted arithmetic
+form (no `pext`/`pdep`/`lzcnt`), its regenerated IR is committed as
 `probes/install/ir/json-s1-masks.candidate.ll`, and `s1_masks_refines`
 (`LeanLLVM/Refinement/JsonS1MasksSteps.lean`) proves that pinned body stores the six
 masks and the carry `LeanLLVM/Refinement/JsonScanSpec.lean` specifies. The entry
@@ -476,6 +477,11 @@ row was measured.
 Both cores are reported, because the classes differ and the difference is not a
 constant ratio. Each cell is GB/s at the median of the three trial medians, with
 the minimum and maximum of those three medians in parentheses.
+
+The `s1_masks` rows in this section are the pre-adoption `pext`/`pdep`/`clz`
+kernel: this pair predates the arithmetic substitution. The adopted kernel's own
+rows are in §"The classifier's escape derivation: ablated, replaced, adopted";
+the entry and UTF-8 units are unchanged by the adoption.
 
 These rows and the simdjson rows in §"The simdjson row, measured" are one
 session's pair. The units ran at 09:50:34-09:50:44Z and simdjson at
@@ -1030,16 +1036,17 @@ above — and its parts are approximately 0.333 classification, 0.142 entry and
 0.047 UTF-8 on the P core; the E core's three cells are 0.452, 0.215 and 0.057,
 against its composite 0.723 and stage 1 0.383. Even if entry emission and UTF-8
 cost nothing, the classifier alone remains above simdjson's entire stage 1:
-0.333 against 0.278 on the paired rows. The earlier run's classifier readings —
+0.333 against 0.278 on the paired rows (the adopted classifier's own row is
+0.3111, still above 0.278). The earlier run's classifier readings —
 0.342 in its table, 0.359 in its raw `syn-strings-64k` row at 4.04 GHz — are
 also above 0.278, which is the lower of this note's two stage-1 readings (the
 earlier run's is 0.317), so the floor holds against the most favourable
 reference figure here. Entry fusion therefore cannot close the string-document
 gap however the per-block call is arranged; what remains is the classifier's
-escape and quote work, the part of the composite that neither the entry emitter
-nor the UTF-8 gate owns. §"The classifier's escape derivation, ablated and
-replaced" measures that part; even its fastest variant leaves the classifier
-above simdjson's stage 1 on this document.
+mask work, the part of the composite that neither the entry emitter nor the
+UTF-8 gate owns. §"The classifier's escape derivation: ablated, replaced,
+adopted" measures it; the adopted arithmetic escape leaves the classifier above
+simdjson's stage 1 on this document.
 
 **What this does and does not establish.**
 
@@ -1079,19 +1086,33 @@ the host changes; when `bench-inline.c`'s inlined body or `bench.sh:168-199`'s
 disassembly gate changes; or when a production emitter-inlined fused body is
 added, at which point the row must be replaced rather than compared.
 
-### The classifier's escape derivation, ablated and replaced
+### The classifier's escape derivation: ablated, replaced, adopted
 
-The string case above leaves the classifier's escape and quote work as the
-residue. `s1f_escaped` (`kernel/json/s1_block.c:35-51`) derives the unescaped
-quotes from the raw quote and backslash masks with two `pext`, one `pdep` and a
-`clz` parity step, and `s1f_masks` applies it at `s1_block.c:115`. The
-quantities are the ones `LeanLLVM/Refinement/QuoteDerive.lean` pins:
-`kernelEscape_eq`, `kernelQuote64` and `ppn64`. Two bench-only files price that
-work: `bench-ablate.c` removes the derivation (`s1_noesc`, parity kept) and then
-the in-string parity too (`s1_noesc_noparity`), and `bench-fastesc.c` replaces
-the derivation with carry-propagating sums while keeping every output. Their
-rows are in `bench.c`, `bench.sh` compiles them at the measured line, and
-`kernel/json/` is untouched.
+The string case above left the classifier's escape and quote work as the
+residue. `s1f_escaped` (`kernel/json/s1_block.c:51-67`) now derives the
+unescaped quotes and the outgoing run parity from two carry-propagating sums: a
+run's odd length is a fact about its ends, so adding a run's start bit to the
+backslash mask carries through the run and marks the lane after it, with the
+sums separated by the start's parity. `s1f_masks` applies it at
+`s1_block.c:130`. The form has no `pext`, `pdep` or `lzcnt`; the object the
+adopted run recorded (`s1_block.o` sha256
+`288fb42237c9d5e42940155037ddc1026302e50888e60154b12c006bc7f82991`) contains
+none of the three. The quantities are still the ones `JsonScanSpec` specifies —
+`kernelEscape_eq`, `kernelQuote64` and `ppn64` in
+`LeanLLVM/Refinement/QuoteDerive.lean` — and `fastEscape_eq_kernelEscape` and
+`fastPpar_eq_runParity` there prove the arithmetic escape word and outgoing
+parity equal the kernel's. `s1_masks_refines` (`JsonS1MasksSteps.lean`) carries
+those identities into the mask step, so the six mask words and the three carry
+fields are byte-identical block for block.
+
+The measurements that chose the form predate the adoption. `bench-ablate.c`
+removes the old derivation (`s1_noesc`, parity kept) and then the in-string
+parity too (`s1_noesc_noparity`); `bench-fastesc.c` is the arithmetic prototype.
+Their rows are in `bench.c`, `bench.sh` compiles them at the measured line, and
+`kernel/json/` was untouched by those bench files. In the two runs quoted below,
+`s1_masks` is the pre-adoption `pext`/`pdep`/`clz` kernel, not the current one:
+the ablation run and the prototype run both predate the substitution. The
+adoption's own same-harness measurement is the three-column run after them.
 
 **The instrument.** The ablation rows reach their copy through the shared
 `volatile` function-pointer table (`bench.c:357`), so no build inlines a copy
@@ -1103,18 +1124,18 @@ rows are cost bounds, not classifiers: their mask words describe no JSON
 document, and the harness checks only that a row's checksum is stable across its
 trials, variants and cores.
 
-The candidate has a byte-identity gate. `bench.c:391-429` requires all six mask
-words and the three carry fields to equal `s1_masks`'s on every block of every
-corpus document, in the default, LTO and unity builds, and exits 3 instead of
-printing a row on a mismatch; the candidate run's transcript records `s1_fastesc
-returned every mask word and the carry state s1_masks returned on every block of
-every document`. The object that run recorded (`fastesc.o=002939062f1be791`)
-disassembles to shifts, ands, xors, adds and one `vpclmullqlqdq`; it has no
-`pext`, `pdep` or `lzcnt`. That is a reading of the built object, not a harness
-gate. A scratch checker compared the candidate's arithmetic with the kernel's
-`pext`/`pdep`/`clz` text over an exhaustive sweep of low patterns, every fill
-and carry state, and random blocks; it is recorded in `b23f074` and is not part
-of the harness.
+The prototype has a byte-identity gate. `bench.c:391-429` requires all six mask
+words and the three carry fields to equal the then-current kernel's on every
+block of every corpus document, in the default, LTO and unity builds, and exits
+3 instead of printing a row on a mismatch; the prototype run's transcript
+records `s1_fastesc returned every mask word and the carry state s1_masks
+returned on every block of every document`. The object that run recorded
+(`fastesc.o=002939062f1be791`) disassembles to shifts, ands, xors, adds and one
+`vpclmullqlqdq`; it has no `pext`, `pdep` or `lzcnt`. That is a reading of the
+built object, not a harness gate. A scratch checker compared the prototype's
+arithmetic with the kernel's `pext`/`pdep`/`clz` text over an exhaustive sweep
+of low patterns, every fill and carry state, and random blocks; it is recorded
+in `b23f074` and is not part of the harness.
 
 **The derivation's share.** In the ablation session's `default` arm, the
 difference between `s1_masks` and `s1_noesc` is 22.3-33.3% of the classifier's
@@ -1130,14 +1151,15 @@ ablation session's one-minute load average was 1.29/1.36/1.82 at its start and
 1.75/1.50/1.84 at its end; the host was not idle, and only that run's paired
 deltas are claimed.
 
-**The replacement.** The candidate session measured `s1_masks`, `s1_noesc` and
-`s1_fastesc` in one run (`fastesc-transcript.txt`, 2,581 rows), so the table is
-one session's medians of the three trial medians for the `default` arm. It is a
-different session from the paired unit table above, whose rows differ on the
-same document (its `s1_masks` on `syn-strings-64k` is 0.333, this one 0.3475),
-and nothing here divides a row by a row from that table.
+**The prototype result, before adoption.** The prototype session measured
+`s1_masks` (the then-current `pext` kernel), `s1_noesc` and `s1_fastesc` in one
+run (`fastesc-transcript.txt`, 2,581 rows), so the table is one session's
+medians of the three trial medians for the `default` arm. It is a different
+session from the paired unit table above, whose rows differ on the same document
+(its `s1_masks` on `syn-strings-64k` is 0.333, this one 0.3475), and nothing
+here divides a row by a row from that table.
 
-|document|P `s1_masks`|P `s1_noesc`|P `s1_fastesc`|E `s1_masks`|E `s1_noesc`|E `s1_fastesc`|
+|document|P `s1_masks` (old)|P `s1_noesc`|P `s1_fastesc` (proto)|E `s1_masks` (old)|E `s1_noesc`|E `s1_fastesc` (proto)|
 |---|---:|---:|---:|---:|---:|---:|
 |`route-s1-64k`|0.3475|0.2610|0.3371|0.4509|0.3768|0.4116|
 |`route-u8-64k`|0.3898|0.2585|0.3029|0.4504|0.3759|0.4106|
@@ -1148,58 +1170,119 @@ and nothing here divides a row by a row from that table.
 |`syn-utf8-4m`|0.3398|0.2334|0.2968|0.5009|0.4088|0.4496|
 |`syn-utf8-64k`|0.3450|0.2711|0.3190|0.4515|0.3771|0.4091|
 
-The candidate moves the classifier from 0.3475 to 0.3041 cycles per byte on
+The prototype moved the classifier from 0.3475 to 0.3041 cycles per byte on
 `syn-strings-64k` (−12.5%) and 0.4515 to 0.4116 (−8.8%) on the E core. Across
 the eight documents the change is −3.0% to −22.3% on P (median −12.6%) and
 −7.9% to −10.2% on E (median −8.9%). The full-removal bound in the same session
-is 0.2688 cycles per byte, so the candidate recovers 55% of the derivation's
+is 0.2688 cycles per byte, so the prototype recovered 55% of the derivation's
 cost on this document, not all of it. The smallest change is `route-s1-64k` at
 −3.0%; the ablation session put the derivation's share on that document at
-26.9%, so the candidate's recovery there is 12% and the two sessions are not
+26.9%, so the prototype's recovery there is 12% and the two sessions are not
 reconciled on that cell — the median, not any single cell, is the claim. The
 run's one-minute load average was 1.08-1.66 (mean 1.42), and only its
 same-session paired deltas are claimed.
 
-**What it does not close.** The candidate at 0.3041 is still 9.4% above
-simdjson's stage 1 at 0.278 on `syn-strings-64k`, before the composite's entry
-(0.142) and UTF-8 (0.047) shares from §"The string case, and the lever" are
-added. Neither the inlined fused loop above nor this derivation replacement
-closes the strings gap by itself: while the classifier alone stays above stage
-1's whole figure, no arrangement of the other shares can bring the composite
-below it. The gap is the classifier's total work against a fused simdjson stage
-1, not an emitter-call artifact and not the unrecovered part of this
-derivation.
+**The adoption measurement.** The adopted unit's comparison was taken as three
+columns in seven interleaved trials on the local Intel 268V, pinned to CPU 0,
+101 repetitions per row (`adopted-escape-transcript.txt`, 148 lines; clocks
+4.463-4.840 GHz, largest row calibration spread 5.36%). Both binaries link the
+same adopted `s1_block.o` (the sha256 above). `bench-old` adds the old form as
+its own object: the vendored measured `s1f_escaped` from
+`kernel/json/measured/s1fuse.h:351-368`, renamed, compiled to
+`old-fastesc.o` (sha256 `4aa3424c...`, four `pext`/`pdep`/`lzcnt`
+instructions); its `s1_masks` row is the adopted kernel and its `s1_fastesc`
+row is the old text. `bench` adds `fastesc.o` (sha256 `002939...`); its
+`s1_masks` row is the adopted kernel and its `s1_fastesc` row is the prototype.
+Both harnesses gate the six mask words and three carry fields before the clock,
+and every row carries the same checksum per document.
 
-**Adoption.** Nothing here adopts the candidate. `kernel/json/s1_block.c` is
-unchanged, and `s1_masks_refines` is about the pinned body in
-`probes/install/ir/json-s1-masks.candidate.ll`, whose committed text still
-carries the two `pext` calls, the `pdep` and the `ctlz`. Adopting the fast
-derivation would need a new pinned fixture for the classifier and a re-proof of
-the mask step against the same `JsonScanSpec`.
+|document|old (`bench-old` `s1_fastesc`)|adopted (`bench-old` `s1_masks`)|prototype (`bench` `s1_fastesc`)|adopted vs old|prototype vs old|
+|---|---:|---:|---:|---:|---:|
+|`syn-strings-64k`|0.3522|0.3111|0.3189|11.67%|9.45%|
+|`syn-dense-64k`|0.3483|0.3136|0.3173|9.96%|8.90%|
+
+The adopted-vs-old pair is within `bench-old` — one process, one round, the same
+data — so it is the paired comparison. The prototype cross-check pairs `bench`'s
+prototype row with `bench-old`'s old row, across the interleaved processes. The
+same adopted kernel reads 0.3184 on `syn-strings-64k` and 0.3170 on
+`syn-dense-64k` inside `bench`, against that harness's prototype rows 0.3189 and
+0.3173: −0.16% and −0.09% relative to the adopted row, which is the same
+arithmetic within measurement noise. The prototype is a separate `noinline`
+translation unit; the adopted form is inlined into `s1f_masks`. Absolute rows
+differ between the two harnesses, so only within-harness pairs are quoted. The
+prototype's own earlier session measured 12.5% on `syn-strings-64k` against the
+then-current kernel; this run's cross-check is 9.45%, and the between-session
+difference is larger than the adopted-versus-prototype difference, which is why
+only the within-run pairs above are claims.
+
+**What it does not close.** The adopted classifier at 0.3111 — the faster of
+the two harnesses' adopted rows — is still 11.9% above simdjson's stage 1 at
+0.278 on `syn-strings-64k`, before the composite's entry (0.142) and UTF-8
+(0.047) shares from §"The string case, and the lever" are added. The adoption
+does not close the strings gap: while the classifier alone stays above stage 1's
+whole figure, no arrangement of the other shares can bring the composite below
+it. The remaining levers stay the decoder and stage 1's contract; the escape
+derivation is no longer one of them.
+
+**The adopted state.** `kernel/json/s1_block.c` now carries the arithmetic
+`s1f_escaped`; the old text is gone. The classifier fixture was regenerated
+(`probes/install/ir/json-s1-masks.candidate.ll`, with its strip, rewrite and
+inventory files), and `LeanLLVM/Refinement/JsonS1MasksIR.lean` pins the new AST.
+The step proofs in `JsonS1MasksSteps.lean` were re-derived against the unchanged
+`JsonScanSpec` quantities, `QuoteDerive.lean` now states the arithmetic form and
+its two identities, and `s1_masks_refines` is proved for the adopted body. The
+committed fixture carries no `llvm.x86.bmi.pext`, `llvm.x86.bmi.pdep` or
+`llvm.ctlz.i64`, matching the object.
+
+Two ledger consequences are recorded rather than absorbed. First, the
+measured-source/IR identity claim is narrowed: `s1f_escaped` is the unit's own
+text, named by the `s1-extra:` row in `kernel/json/README.md`, and both
+`kernel/json/identity/source-identity.sh` and `ir-identity.sh` report the
+exclusion by name, compare the six other entities byte for byte, and exit 0; the
+identity controls bite. Second, nine mask-step pins — `andQuoteW_spec`,
+`carry64_inside_eq`, `escapedWord_eq_kernelEscape`, `s1Slot_instring_spec`,
+`s1Slot_quote_spec`, `s1_and_eq`, `s1_escaped_eq`, `s1_instring_eq` and
+`s1_ppar_spec` — now print `[propext, Classical.choice, Quot.sound]` through
+`BitVec.carry_succ`, which is the repository ceiling; the narrower run-parity
+recurrence `carry64_oddRun_eq` remains at `[propext, Quot.sound]`.
+
+The merged tree was verified at `a3065c6`: the default build target is 2,208
+jobs; `tests/json-s1-masks/check.sh` compares the object (`s1_block.o` sha256
+`288fb422...`) with the Lean body on 688,824 rows, the table-mutation detector
+disagrees on exactly the 128,248 comma rows, and the tampered expectation is
+caught; `probes/json/route/model-differential.sh` reports 139 rows, 122
+compared, 17 outside the route's domain and 0 mismatches, with all three
+controls red, and the pipeline object it links now contains the adopted
+classifier.
 
 **What this does and does not establish.**
 
 - **It charges the derivation, and bounds it.** The ablation rows remove code
   from a copy; they are not classifiers, and their margin is an upper bound on
-  what the derivation costs in this unit, not a prediction for any document's
-  parse.
-- **It establishes one replaced derivation's byte identity and speed.** The
-  candidate returns the kernel's six masks and three carry fields on every
-  complete corpus block in three builds, and its cycles-per-byte column falls
-  by the stated amount. It is a bench candidate with no refinement statement.
-- **Nothing about adoption, another compiler, flag set or host, and no PMU.**
-  Cycles per byte is a calibrated clock; the two sessions' row levels drift, so
-  the ablation and candidate figures are not mixed into a single quotient.
-  Nothing here is a full-parse or stage-1 ratio.
-- **Nothing about the proofs.** `QuoteDerive.lean`'s statements and
-  `s1_masks_refines` remain about the pinned kernel body; no theorem is stated
-  for either bench copy.
+  what the old derivation cost in this unit, not a prediction for any
+  document's parse.
+- **It records the adoption's speed and its identity.** The adopted kernel is
+  11.67% faster on `syn-strings-64k` and 9.96% on `syn-dense-64k` within
+  `bench-old`; the prototype cross-checks at 9.45% and 8.90%, and inside `bench`
+  the adopted and prototype rows are within 0.16% and 0.09%. The six masks and
+  three carry fields are byte-identical by the harness gate and by
+  `fastEscape_eq_kernelEscape`/`fastPpar_eq_runParity`.
+- **Nothing about another compiler, flag set or host, and no PMU.** The
+  adoption run is one host, one session and CPU 0; cycles per byte is a
+  calibrated clock. The ablation, prototype and adoption sessions' absolute
+  rows drift, so only same-session pairs are quoted. Nothing here is a
+  full-parse or stage-1 quotient.
+- **Nothing about a lower axiom footprint.** The nine widened pins are at the
+  repository ceiling. The narrower run-parity recurrence is available
+  (`carry64_oddRun_eq`) but is not the adopted step's pin.
 
 **Cadence.** Re-measure when `kernel/json/s1_block.c`'s `s1f_escaped` or its
-call site changes; when `bench-ablate.c`, `bench-fastesc.c`, their rows or their
-gates change; when `QuoteDerive.lean`'s pinned quantities change; when the
-measured compiler line or the flags in `bench.sh` change; or when the corpus or
-the host changes.
+call site changes; when `probes/install/ir/json-s1-masks.candidate.ll` is
+re-pinned or the mask-step proofs are re-derived; when
+`adopted-escape-transcript.txt`'s harness or its old/prototype columns change;
+when `bench-ablate.c`, `bench-fastesc.c`, their rows or gates change; when
+`QuoteDerive.lean`'s identities change; when the measured compiler line, the
+flags in `bench.sh`, the corpus or the host changes.
 
 ### The earlier run, kept as history
 
@@ -1406,11 +1489,12 @@ same library and header were measured on both hosts. Stage 1 selected its
 `haswell` (AVX2) kernel on every trial. Both transcripts carry this section's
 host header.
 
-**What repeats on the unit side.** The fast escape improves every one of the
-16 (document, core) cells on this host, by a median of 7.1% in cycles per byte
-and a range of 5.2-9.4% (`s1_fastesc` against `s1_masks`, `default` arm). The
-local eight-document medians were 12.6% on the P core and 8.9% on the E core;
-the direction is the same and the size is smaller here.
+**What repeats on the unit side.** In that pre-adoption run the fast escape
+improved every one of the 16 (document, core) cells on this host, by a median of
+7.1% in cycles per byte and a range of 5.2-9.4% (`s1_fastesc` against the
+then-current `s1_masks`, `default` arm). The local eight-document medians were
+12.6% on the P core and 8.9% on the E core; the direction is the same and the
+size is smaller here.
 
 The split is ahead of both fused shapes in 78 of 96 GB/s cells and 74 of 96
 cycles cells, against 89 and 88 locally: the sign of the fused-versus-split
@@ -1450,10 +1534,10 @@ Every string and UTF-8 document keeps simdjson ahead. The quotients are
 0.47-0.48 on `syn-strings-64k`, 0.66-0.67 on `syn-strings-4m`, 0.52-0.54 on
 `syn-utf8-64k` and 0.58 on `syn-utf8-4m`, against the local P/E pairs' 0.49/0.53,
 0.79/0.74, 0.62/0.69 and 0.69/0.73. The direction is the same on all four, the
-quotient is lower here, and the fast classifier is still above stage 1 on
-`syn-strings-64k` (0.461/0.463 against 0.370/0.366, 25-27% above). The string
-conclusion is therefore not a local-host artifact: it survives, and the fast
-escape does not close it on this host either.
+quotient is lower here, and the prototype's fast classifier is still above stage
+1 on `syn-strings-64k` (0.461/0.463 against 0.370/0.366, 25-27% above). The
+string conclusion is therefore not a local-host artifact: it survives, and the
+fast escape does not close it on this host either.
 
 The dense and route quotients do not simply repeat. `syn-dense-4m` is 1.90/1.81
 here against 1.12 on the local P core and 1.56 on the E core; `syn-dense-64k` is
@@ -1990,8 +2074,8 @@ native interval, from the route-context session, is **40.812 µs**, leaving
 matching the pipeline's exact code address does not remove that remainder.
 Whole-binary rebuilds also span 23.8–41.2 µs at the same calibrated clock, so
 the ratio is not a pure algorithmic-cost measurement. The remaining levers are
-the decoder and stage 1: the 620 per-body decodes cost 5.918 µs by the direct
-expander and 6.248 µs by the marginal, and stage 1 is the 21.189 µs
+the decoder and stage 1's contract: the 620 per-body decodes cost 5.918 µs by
+the direct expander and 6.248 µs by the marginal, and stage 1 is the 21.189 µs
 route-context term with entry emission the largest single call. Stage 2's
 list-driven work is not a lever unless its decode gets cheaper; skipping it is
 rejected in §"The lazy stage-2 measurement, and why it is rejected". The
