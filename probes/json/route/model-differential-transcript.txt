@@ -1,0 +1,163 @@
+Object-versus-model differential — final run transcript
+
+Command
+  nix develop -c bash probes/json/route/model-differential.sh
+  Exit status 0.
+
+Corpus
+  tests/json/manifest.tsv (130 rows) resolved against tests/json/corpus, plus
+  nine generated boundary/malformed documents created inside the run's
+  temporary directory: 63-, 64- and 65-byte valid strings, a lone "]",
+  "0 0", whitespace-only, the empty string, the empty document, and a
+  1,048,577-byte over-bound document.  A row the route does not admit is
+  printed by name with both decisions; rows are not skipped silently.
+
+Host
+  Linux pleiades 6.17.0-1033-oem #33-Ubuntu SMP PREEMPT_DYNAMIC x86_64,
+  Intel(R) Core(TM) Ultra 7 268V, 8 CPUs.
+
+What the pre-repair run found, and why the model files changed
+
+  The first run of the same script (before the model repair) compared 118 rows
+  and reported three corpus divergences.  Each was a model-side defect, not an
+  object-side one: the reference parser and the object agree with each other on
+  these rows.
+
+  trail-nul.json ("null" followed by a NUL byte)
+    The object refused at 4; the model accepted and emitted the null record.
+    The literal arm of JsonStage2Body.stage2ScalarValue read the literal's
+    length from the token start and compared those bytes, so a token whose
+    prefix matched "null" but whose extent was longer passed.  Corrected to
+    read the token's own extent, endp - pos, through litCheck: a longer token
+    whose prefix matches the literal is refused at the literal's width.
+
+  lit-nul.json ("nul") and lit-tru.json ("tru")
+    Verdict and payloads agreed, but the object's refusal offset was 3 and the
+    model's was 0.  The same arm wrote the refusal at the token start rather
+    than at the first differing position lit_check returns.  Corrected to
+    pos + i.
+
+  num-long.json (a 30-digit integer)
+    The object accepted with the double's bits; the model aborted with
+    "INTERNAL PANIC: Nat.pow exponent is too big" (exit 1).
+    JsonStage2Body.numFastEmitted evaluates kernelDecides before numClassOf's
+    class gate; for a mantissa at or above 2^64, ElGuardRefine's lz underflows
+    and the slice shift exponent (10 + ub) leaves the range Nat.pow accepts.
+    Corrected by guarding kernelDecides on the emitted uint64_t argument's
+    domain (mantissa < 2^64), with kernelDecides_of_lt recovering the unguarded
+    decision inside it.
+
+  Files changed for the repair: LeanLLVM/Refinement/JsonStage2Body.lean
+  (litCheck, the literal arm, the kernelDecides guard), and the affected
+  proofs in LeanLLVM/Refinement/JsonStage2Helpers.lean and
+  LeanLLVM/Refinement/JsonStage2NumFastClass.lean.  The native object, the
+  document corpus and the pinned fixture are unchanged.
+
+Pre-repair observations, quoted (the run that preceded the repair)
+
+  FAIL: num-long.json: the model exited 1
+  INTERNAL PANIC: Nat.pow exponent is too big
+  FAIL: lit-nul.json: observation disagreement
+    route: verdict=0 nk=1 nxp=0 ndst=0 nev=0 err=3
+    model: verdict=0 nk=1 nxp=0 ndst=0 nev=0 err=0
+  FAIL: lit-tru.json: observation disagreement
+    route: verdict=0 nk=1 nxp=0 ndst=0 nev=0 err=3
+    model: verdict=0 nk=1 nxp=0 ndst=0 nev=0 err=0
+  FAIL: trail-nul.json: observation disagreement
+    route: verdict=0 nk=1 nxp=0 ndst=0 nev=0 err=4
+    model: verdict=1 nk=1 nxp=0 ndst=0 nev=1 err=0
+  rows=139 compared=118 outside=17 mismatches=3
+
+Final run — full standard output
+
+```
+lean-llvm: Lean (version 4.35.0, Release)
+object: /home/gavin/dev/Scidonia/lean-llvm/probes/json/route/build/leanllvm-json-route
+object sha256: 82bbaebe6aafd970fb4236426565d241c0c54f29b097788554676f25f092f1fd
+object flags: kernel -O2 -march=x86-64-v3 -mpclmul -std=gnu11 -falign-loops=64 -falign-functions=64; adapter -O2
+model: /home/gavin/dev/Scidonia/lean-llvm/.lake/build/bin/leanllvm-json-pipeline-model
+model sha256: bbc606bb078948ed44250f63d4d2f56beb890cf17cf01d064a0be2c942a5b50b
+model target: leanllvm-json-pipeline-model (lean toolchain: leanprover/lean4:v4.35.0)
+fixture: /home/gavin/dev/Scidonia/lean-llvm/probes/install/ir/json-pipeline.candidate.ll
+fixture sha256: 63100fb5f93ea62ca0e7764c9a3bcc5c73ee741078bc6fb0272ec82e25695eac
+outside: lone-dead.json route=refused model=refused
+outside: lone-d800.json route=refused model=refused
+outside: lone-dc00.json route=refused model=refused
+outside: double-high.json route=refused model=refused
+outside: high-char.json route=refused model=refused
+outside: reversed-pair.json route=refused model=refused
+outside: nc-fdd0.json route=refused model=refused
+outside: nc-fffe.json route=refused model=refused
+outside: nc-ffff.json route=refused model=refused
+outside: nc-pair-max.json route=refused model=refused
+outside: nc-raw-fdd0.json route=refused model=refused
+outside: nc-raw-fffe.json route=refused model=refused
+outside: nc-raw-10ffff.json route=refused model=refused
+outside: nc-raw-1fffe.json route=refused model=refused
+outside: empty-zero.json route=refused model=refused
+outside: empty.json route=refused model=refused
+outside: over-bound.json route=refused model=refused
+control uninitialised-pos8: red (uninitialised pos8 died by SIGILL; no object row)
+control mutated-body: fixture sha256: 734784652d78a980171eaf50cf7c5c7b3f767cee167669888d3d524c6bf0fede
+control mutated-body: red (num-zero.json: object/model verdict=1 nk=1 nxp=0 ndst=0 nev=9 err=0, mutated verdict=0 nk=1 nxp=0 ndst=0 nev=9 err=0)
+control tampered-object: source sha256: 621167c86ec74910db16bf810965352e7d50d7026ce4814bd96075afd4d7ea18
+control tampered-object: driver sha256: 05ddd18a186fb2d78b19b59bd0813bf01d5c0bdc07e293ada4960e3af9e8d3c4
+control tampered-object: red (num-zero.json: model verdict=1 nk=1 nxp=0 ndst=0 nev=9 err=0, tampered object verdict=0 nk=1 nxp=0 ndst=0 nev=9 err=0)
+rows=139 compared=122 outside=17 mismatches=0
+ok: 122 admitted row(s) agree with the model; each control went red
+```
+
+Standard error (the only line)
+
+```
+warning: Git tree '/home/gavin/dev/Scidonia/lean-llvm' is dirty
+```
+
+Identities, read off the final run
+
+  Object      probes/json/route/build/leanllvm-json-route
+              sha256 82bbaebe6aafd970fb4236426565d241c0c54f29b097788554676f25f092f1fd
+              kernel flags -O2 -march=x86-64-v3 -mpclmul -std=gnu11
+                           -falign-loops=64 -falign-functions=64
+              adapter flags -O2
+  Model       .lake/build/bin/leanllvm-json-pipeline-model
+              sha256 bbc606bb078948ed44250f63d4d2f56beb890cf17cf01d064a0be2c942a5b50b
+              target leanllvm-json-pipeline-model, leanprover/lean4:v4.35.0
+  Fixture     probes/install/ir/json-pipeline.candidate.ll
+              sha256 63100fb5f93ea62ca0e7764c9a3bcc5c73ee741078bc6fb0272ec82e25695eac
+  Mutated fixture (control b, temporary copy)
+              sha256 734784652d78a980171eaf50cf7c5c7b3f767cee167669888d3d524c6bf0fede
+  Tampered stage2.c (control c, temporary copy)
+              sha256 621167c86ec74910db16bf810965352e7d50d7026ce4814bd96075afd4d7ea18
+  Tampered driver (control c)
+              sha256 05ddd18a186fb2d78b19b59bd0813bf01d5c0bdc07e293ada4960e3af9e8d3c4
+
+Controls, as observed
+
+  a. Uninitialised POS8 table.  init-guard.sh's bare pos8 process died by
+     SIGILL (status 132): there is no plausible object row to compare, which
+     is the red in its strongest form.  Its initialised pos8 and b8 arms agree.
+  b. Mutated fixture body.  The temporary copy's final `ret i64 %retval.0`
+     became `ret i64 0`; on num-zero.json the object and the unmodified model
+     print verdict=1, and the mutated body prints verdict=0.
+  c. Tampered object.  The temporary stage2.c copy's `return r ? 1 : 0;`
+     became `return r ? 0 : 1;`; on num-zero.json the model prints verdict=1
+     and the tampered driver prints verdict=0.
+
+Route scenario, run against the same objects after the repair
+
+  nix develop -c bash probes/json/route/check.sh
+  Exit status 0.
+
+```
+ok: 122 default-profile rows: 107 fast-path row(s) agree with the driver on the observation, arena and events (22 arena byte(s) over 9 row(s), 1138 event byte(s) over 70 row(s)); fast path accept 59, invalid 48; fallback refusals 14, fallback accepts 0; divergence 0; empty excluded 1; 8 non-default-profile rows skipped; depth 128 fast, 129/520/521 fall back with depthExceeded; the opener-rich string takes the fast path; 14 policy rows fall back with the reference reasons; two-phase admission agrees with `admission` on 265 row(s), the measured depth compared wherever the walk ran (policy candidate 181, policy scan run 181; control failures 0); the depth gate carries 11 hand-written row(s) and 120 swept document(s) agree with `docDepth`, the proved counter and the accumulator ending at the same depth on every row; 2 consumer-mode fixture read as 5 tokens at ndst=1 nev=25 with agreeing readings
+```
+
+Limits
+
+  This is finite observed agreement on the tested rows, not a universal claim:
+  the object-to-post relation remains the recorded native-agreement assumption
+  (docs/contract.md rows 8 and 9), and the AST-to-model relation for
+  od_scalar_value remains unproved (docs/contract.md row e).  The differential
+  is the evidence that the model now agrees with the object on every row it
+  admits here; it is not a proof of that relation.

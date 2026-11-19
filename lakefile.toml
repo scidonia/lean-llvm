@@ -98,3 +98,10 @@ root = "DepthMain"
 [[lean_exe]]
 name = "leanllvm-json-utf8"
 root = "JsonUtf8Main"
+
+# Runs the pipeline's model body at the route's arguments and prints the post's
+# caller-visible projection; JsonPipelineModelMain.lean, compared with the
+# native route by probes/json/route/model-differential.sh.
+[[lean_exe]]
+name = "leanllvm-json-pipeline-model"
+root = "JsonPipelineModelMain"

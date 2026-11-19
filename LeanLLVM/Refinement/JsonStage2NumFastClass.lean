@@ -1233,7 +1233,7 @@ theorem numFast_tier2_refuse_chain {env : Env} {s : State} {d : Decimal} {fs : B
   have hexp : exp10 - fdig = BitVec.ofInt 64 (eff d) := by rw [hsub, hneff]
   have hks : LeanLLVM.ElGuardRefine.elTier2Code d.mantissa (eff d) = none := by
     have hs := hk
-    unfold kernelDecides at hs
+    rw [kernelDecides_of_lt hmbound] at hs
     rw [← StrtodTier1.eff_eq_exponent] at hs
     cases hh : LeanLLVM.ElGuardRefine.elTier2Code d.mantissa (eff d) with
     | none => rfl

@@ -1198,11 +1198,7 @@ theorem s2ScalarValue_answers {args : List Value} {mem : Mem} {next : Nat}
       cases hlit : stage2Literal kind with
       | none => exact ⟨_, rfl⟩
       | some lit =>
-          have hlit5 := stage2Literal_length hlit
-          have hgot : readBytes mem (base + pos) lit.length =
-              some (win.take lit.length) :=
-            readBytes_take_prefix (le_trans hlit5 (Nat.le_max_right _ _)) hwin
-          simp only [hgot]
+          simp only [hlex]
           split
           · simp only [hbuf, hlen, hcap]
             obtain ⟨p, hp⟩ := outBlob_complete (mem := mem) (ev := buf) (len := len) (cap := cap)
@@ -1275,11 +1271,7 @@ theorem s2ScalarValue_shape {args : List Value} {mem : Mem} {next : Nat} {r : Ca
           exact ⟨_, 0, (Option.some.inj h).symm,
             stage2ErrSetMsg_frame ⟨(e, stage2ErrorExtent), by simp, le_rfl, le_rfl⟩⟩
       | some lit =>
-          have hlit5 := stage2Literal_length hlit
-          have hgot : readBytes mem (base + pos) lit.length =
-              some (win.take lit.length) :=
-            readBytes_take_prefix (le_trans hlit5 (Nat.le_max_right _ _)) hwin
-          simp only [hlit, hgot] at h
+          simp only [hlit, hlex] at h
           split at h
           · simp only [hbuf, hlen, hcap] at h
             obtain ⟨p, hp⟩ := outBlob_complete (mem := mem) (ev := buf) (len := len) (cap := cap)
@@ -1358,11 +1350,7 @@ theorem s2ScalarValue_appended {c t o : Nat} {mem : Mem} {next : Nat}
             rw [(Option.some.inj h).symm] at hok
             simpa using hok) h01
       | some lit =>
-          have hlit5 := stage2Literal_length hlit
-          have hgot : readBytes mem (base + pos) lit.length =
-              some (win.take lit.length) :=
-            readBytes_take_prefix (le_trans hlit5 (Nat.le_max_right _ _)) hwin
-          simp only [hlit, hgot] at h
+          simp only [hlit, hlex] at h
           split at h
           · simp only [hbuf, hlen, hcap] at h
             obtain ⟨p, hp⟩ := outBlob_complete (mem := mem) (ev := buf) (len := len) (cap := cap)

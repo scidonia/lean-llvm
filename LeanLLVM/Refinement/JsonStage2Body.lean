@@ -2074,9 +2074,26 @@ theorem numClassOf_fallback_at (nd : Nat) (e : Int) (k : Bool)
 
 /-- The emitted kernel's decision, as the guard model's: `num_el_el1` returned
 `some` code.  `ElGuardRefine` defines `elTier2Code` as the fields that call
-returns, so this is the same decision at the model. -/
+returns, so this is the same decision at the model.
+
+The guard is on `uint64_t w`'s domain.  `elTier2Code`'s arithmetic normalises
+the mantissa with `lz` and shifts by `10 + ub`; for a mantissa at or above
+`2 ^ 64` — outside the type the emitted call takes — `lz` underflows and the
+shift's exponent leaves the range `Nat.pow` accepts.  `numClassOf`'s gate is
+what excludes that mantissa from the kernel arm, but its third argument is
+evaluated before the gate, so the domain is checked here: outside it the
+decision is `false` and the guard's code is never evaluated. -/
 def kernelDecides (d : Decimal) : Bool :=
-  (LeanLLVM.ElGuardRefine.elTier2Code d.mantissa d.exponent).isSome
+  if d.mantissa < 2 ^ 64 then
+    (LeanLLVM.ElGuardRefine.elTier2Code d.mantissa d.exponent).isSome
+  else false
+
+/-- Inside the emitted argument's domain the guard is the unguarded decision. -/
+theorem kernelDecides_of_lt {d : Decimal} (h : d.mantissa < 2 ^ 64) :
+    kernelDecides d =
+      (LeanLLVM.ElGuardRefine.elTier2Code d.mantissa d.exponent).isSome := by
+  unfold kernelDecides
+  rw [if_pos h]
 
 /-- **The emitted tests select tier 1 exactly where the specification's tier 1
 is.** -/
@@ -2179,7 +2196,7 @@ zero on both sides. -/
 theorem numTier2Binary_eq_strtodSpec {d : Decimal} (hwf : d.wellFormed)
     (hnd : digitCount d ≤ 19) (h : kernelDecides d = true) :
     numTier2Binary d = strtodSpec d := by
-  unfold kernelDecides at h
+  rw [kernelDecides_of_lt (mantissa_lt_two_pow_64 hwf hnd)] at h
   obtain ⟨c, hc⟩ := Option.isSome_iff_exists.mp h
   unfold numTier2Binary
   rw [hc]
@@ -2685,6 +2702,18 @@ def stage2Literal (kind : Nat) : Option (List UInt8) :=
   else if kind = 10 then some [0x6E, 0x75, 0x6C, 0x6C]  -- "null"
   else none
 
+/-- `lit_check`'s reading of a token's bytes against a literal: `none` when they
+are exactly equal, `some i` at the first position that differs or — where the
+token's extent is longer and its prefix matches — at the literal's width.  The
+extent checked is the token's, so a longer token is refused rather than read as
+its literal prefix. -/
+def litCheck : List UInt8 → List UInt8 → Option Nat
+  | [], [] => none
+  | [], _ :: _ => some 0
+  | _ :: _, [] => some 0
+  | a :: as, b :: bs =>
+      if a = b then (litCheck as bs).map (· + 1) else some 0
+
 /-- **`od_scalar_value`**, at the emitted call's three arguments: the cursor, the
 token and the event stream's `Out` record.  A number's lexeme is the token's
 `[pos, end)` window, and its record is `numberRecord` of the conversion this
@@ -2734,21 +2763,22 @@ def stage2ScalarValue (mem : Mem) (c t o next : Nat) : Option CallOutcome :=
             some { ret := .int 32 (BitVec.ofNat 32 0), mem := stage2ErrSetMsg mem e pos 0,
                    next := next }
         | some lit =>
-            match readBytes mem (base + pos) lit.length with
+            match readBytes mem (base + pos) (endp - pos) with
             | some got =>
-                if got = lit then
-                  match stage2ReadWord mem o 8, stage2ReadWord mem (o + 8) 8,
-                        stage2ReadWord mem (o + 16) 8 with
-                  | some buf, some len, some cap =>
-                      match outTag mem buf len cap kind with
-                      | some p => some { ret := .int 32 (BitVec.ofNat 32 1),
-                                         mem := writeBytes p.1 (o + 8) (wordBytes 8 p.2),
-                                         next := next }
-                      | none => none
-                  | _, _, _ => none
-                else
-                  some { ret := .int 32 (BitVec.ofNat 32 0), mem := stage2ErrSetMsg mem e pos 0,
-                         next := next }
+                match litCheck got lit with
+                | none =>
+                    match stage2ReadWord mem o 8, stage2ReadWord mem (o + 8) 8,
+                          stage2ReadWord mem (o + 16) 8 with
+                    | some buf, some len, some cap =>
+                        match outTag mem buf len cap kind with
+                        | some p => some { ret := .int 32 (BitVec.ofNat 32 1),
+                                           mem := writeBytes p.1 (o + 8) (wordBytes 8 p.2),
+                                           next := next }
+                        | none => none
+                    | _, _, _ => none
+                | some i =>
+                    some { ret := .int 32 (BitVec.ofNat 32 0),
+                           mem := stage2ErrSetMsg mem e (pos + i) 0, next := next }
             | none => none
   | _, _, _, _, _ => none
 
