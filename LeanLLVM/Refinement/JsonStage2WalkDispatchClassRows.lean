@@ -98,6 +98,17 @@ leaf is the row's argument, so every leaf's cell is in the case: the six produce
 own producers do *not* supply is its three call answers and the landing built on them —
 those are the payload's tail rows (`runTail`), and the row is `hcontRunRow_of_rows`'
 (`JsonStage2WalkDispatchRunRow`).
+
+## The groups' producers
+
+`JsonStage2WalkDispatchClassRowsProduce` builds both structures at the geometry's own
+parameters: `cleanup`, `run` and `seam` are produced (`hcontCleanupDoc_of_lane`,
+`hcontArm_run_of_row`, and `hcontSeamAbi` from `HcontSeamStaging`), the last entry's `tail`
+is the payload's `lane.tail`, and the remaining fields are stated there as supply.  Four of
+them — `cleanupRow`, `letters`, `c56Else`, `c58Else` — are stated at the literal `0`, where
+`HcontSeamCalls` has no inhabitant (`hcontSeamCalls_no_literal_zero`): they cannot be
+supplied as written, and the rows those seams carry are the refusal group's
+(`HcontSeamRefusal`) with the route `refuseSeg`'s.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkDispatchSupply
 import LeanLLVM.Refinement.JsonStage2WalkDispatchSeams
