@@ -168,12 +168,15 @@ nix develop -c lake exe leanllvm tests/constfold.ll
 ```
 
 The flake also provides `llvm-as`, `llvm-dis`, `opt`, `llc` and `clang` for
-checking emitted IR.  A cold build also resolves
-`leanprover-community/mathlib4` at the revision pinned in `lakefile.toml` into
-`.lake/packages`, which the `ITree` library depends on; mathlib's oleans have to
-be present before the tree modules build, so expect a mathlib build unless its
-prebuilt cache is already there.  That pin, `lean-toolchain` and the flake's
-Lean source are upgraded together.
+checking emitted IR.  `leanprover-community/mathlib4` and the libraries it
+requires come from nixpkgs' `leanPackages` set at the revision pinned in
+`lakefile.toml` (tag `v4.35.0`), completed by the flake's
+`leanPackagesWithExports`: a dummy `import Mathlib` build against a writable
+symlink farm makes Lake emit the `.c.o.export` objects an executable links, and
+a shell `lake` wrapper resolves every dependency to that tree.  A build
+elaborates this repository's modules only — no dependency fetch, no mathlib
+build and no `.lake/packages`.  The mathlib pin, `lean-toolchain` and the flake's
+`leanPackages` are upgraded together.
 
 ## Use
 

@@ -22,10 +22,10 @@ Nothing here is committed from the worker: it is a build lane, not a committer.
 ## Provisioning (once per worker)
 
 The Lean image (`nixos-lean-x86-64`) already carries Lean 4.35.0 and Lake
-5.0.0-src from `/run/current-system/sw/bin`.  At the revision this lane was
-validated against, the image's `lake` and the dev shell's resolved to the same
-store path, so no toolchain closure is copied; only the repository and the Lake
-cache travel.  The worker has no internet.
+5.0.0-src from `/run/current-system/sw/bin`; the flake uses the same toolchain.
+Mathlib and every Lean library it requires come from the flake's
+`leanPackagesWithExports`, whose closure is copied to the worker once (11 GiB
+over the tunnel, 9m55s) or baked into the image.  The worker has no internet.
 
 ```bash
 R=/home/gavin/dev/Scidonia/lean-llvm
@@ -38,9 +38,12 @@ the same revision.  Exclude executables (`.lake/build/bin`); keep `.ir`, oleans,
 ileans, `.hash` and `.trace` — dropping `.ir` invalidates modules and forces a
 full re-elaboration.  The excluded executables are relinked on the worker from
 the transferred `.ir` tree's `.c.o.export` bitcode; no mathlib module is
-recompiled.
+recompiled.  The repository carries no `.lake/packages`.
 
 ```bash
+W=$(nix develop -c bash -c 'command -v lake')
+<remote> closure "$(readlink -f "$W")"
+
 tar -C "$R" -cf - --exclude=./.git --exclude=./.direnv \
   --exclude=./.lake/build/bin --exclude=./.lake/install-certificate.lock . \
   | zstd -T0 -3 -o /tmp/repo-cache.tar.zst
@@ -48,12 +51,11 @@ tar -C "$R" -cf - --exclude=./.git --exclude=./.direnv \
 <remote> run -- "cd $R && zstd -d -c /tmp/repo-cache.tar.zst | tar -xf -"
 ```
 
-Measured at `35b9d40` on the 8-vCPU worker: the source and cache tree is
-8.6 GB and 155,415 files; zstd at level 3 packs it to **2.18 GiB in 25 s**, the
-tunnel carries **2.34 GB in 3m46s**, and extraction takes **28.8 s**.  The
-default `lake build` then finishes in **22 s** (2,186 jobs, links `leanllvm`),
-a replayed cone takes 5 s, and an explicit relink after removing
-`.lake/build/bin` takes 9 s.  No project or mathlib module re-elaborated.
+Measured on the 8-vCPU worker: the package closure is 11 GiB and takes 9m55s
+through the tunnel once per worker; the repository bundle is 1,017 MiB packed to
+251.6 MB in 1 s and uploaded in 21 s.  The first full build after extraction
+takes **78 s** over 2,186 jobs, 24 s of it the `leanllvm` relink; its trace names
+768 exports under the store packages and none under `.lake/packages`.
 
 ## Building a cone
 
@@ -72,9 +74,10 @@ the worker, so name every changed source the target reads.
 ## Limits
 
 - The worker's repository path must equal the local one; `remote-lean.sh` uses
-  the same absolute path on both sides.  The recorded toolchain store paths need
-  not exist on the worker: a replay hashes the toolchain from its version
-  string, but a re-elaboration names the running sysroot.
+  the same absolute path on both sides.  The store package tree must exist at
+  its recorded paths (copied once or baked into the image); a replay hashes the
+  toolchain from its version string, but a re-elaboration names the running
+  sysroot.
 - A cancelled client does not stop the remote build.  Run a build expected to
   outlive the tunnel under `setsid` with a pid and status file, and kill it by
   that pid; `pkill -f` from inside `run` matches the ssh command string and
