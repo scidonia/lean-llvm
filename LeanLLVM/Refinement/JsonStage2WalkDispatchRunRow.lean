@@ -602,7 +602,7 @@ the leaf's pivots and the span need them. -/
 
 /-- **`.defaultValueLow`'s `.run` continuation.**  The byte's signed reading is below `44`, so
 the leaf is the letters one (`slt %8 110` and `%8 ≠ 102` follow) and the span is
-`lettersSpan`'s. -/
+`lettersSpan`'s. **Vacuous cell.**  `%8 < 44` (and `%8 ≠ 34`) is on the `if.else405.i` edge: `od_scalar_value` answers `0` there, so the walk leaves for `if.then432.i` and this `.run` bundle — whose leaf's `calls` are the emit group — has no inhabitant (`JsonStage2WalkDispatchSeamCalls.hcontSeamCalls_no_literal_zero`).  The rows the leaf really carries are `HcontSeamAbi.scanRefuse`'s, wired by `hcontSeamRefuseAt_letters`.  The cell is proved only through `HcontClassRows.seamScan` and is the count to drop with it. -/
 theorem hcontArm_run_defaultValueLow {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     {s : State} (hc : HcontClassRows G) (hInv : WalkInv G C s)
     (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)
@@ -667,7 +667,7 @@ theorem hcontArm_run_defaultValueLow {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry
 
 /-! The remaining default classes' `.run` cells, one theorem each -/
 
-/-- **`.defaultValueMid`'s `.run` continuation** — `58 < %8 < 91`, so the letters leaf. -/
+/-- **`.defaultValueMid`'s `.run` continuation** — `58 < %8 < 91`, so the letters leaf. **Vacuous cell.**  `59 ≤ %8 < 91` is on the `if.else405.i` edge (no value byte), so the leaf's emit group has no inhabitant (`hcontSeamCalls_no_literal_zero`); the refusal rows for the same leaf are `hcontSeamRefuseAt_letters`'s. -/
 theorem hcontArm_run_defaultValueMid {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     {s : State} (hc : HcontClassRows G) (hInv : WalkInv G C s)
     (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)
@@ -730,7 +730,7 @@ theorem hcontArm_run_defaultValueMid {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry
     hSpan (by decide)
 
 /-- **`.otherValue`'s `.run` continuation** — `44 ≤ %8 < 58` and the tag test clear, so the
-letters leaf.  The tag bit is the constructor's own field. -/
+letters leaf.  The tag bit is the constructor's own field. **Vacuous cell.**  This class's bytes are `46` and `47` (`46`/`47` with the tag bit clear), on the `if.else405.i` edge, so the leaf's emit group has no inhabitant (`hcontSeamCalls_no_literal_zero`); the refusal rows for the same leaf are `hcontSeamRefuseAt_letters`'s. -/
 theorem hcontArm_run_otherValue {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     {s : State} (hc : HcontClassRows G) (hInv : WalkInv G C s)
     (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)
@@ -792,7 +792,7 @@ theorem hcontArm_run_otherValue {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
   exact hcontRunArmAt hc hInv hblock hk r hws skip q5 4 hPrefix (by decide) hmem ba.b leaf
     hSpan (by decide)
 
-/-- **`.defaultValueBracket`'s `.run` continuation** — the byte `92`, so the letters leaf. -/
+/-- **`.defaultValueBracket`'s `.run` continuation** — the byte `92`, so the letters leaf. **Vacuous cell.**  The class's byte is `92` (`\`), on the `if.else405.i` edge, so the leaf's emit group has no inhabitant (`hcontSeamCalls_no_literal_zero`); the refusal rows for the same leaf are `hcontSeamRefuseAt_letters`'s. -/
 theorem hcontArm_run_defaultValueBracket {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     {s : State} (hc : HcontClassRows G) (hInv : WalkInv G C s)
     (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)
@@ -855,7 +855,7 @@ theorem hcontArm_run_defaultValueBracket {m0 : Mem} {G : WalkGeom m0} {C : WalkC
     hSpan (by decide)
 
 /-- **`.defaultValueBrace`'s `.run` continuation** — the byte `124`, so the class-C span's
-last leaf (`117 … 125`'s else arm). -/
+last leaf (`117 … 125`'s else arm). **Vacuous cell.**  The class's byte is `124` (`|`), on the `if.else405.i` edge, so the leaf's emit group has no inhabitant (`hcontSeamCalls_no_literal_zero`); the refusal rows for the same leaf are `hcontSeamRefuseAt_58Else`'s. -/
 theorem hcontArm_run_defaultValueBrace {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     {s : State} (hc : HcontClassRows G) (hInv : WalkInv G C s)
     (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)
@@ -926,7 +926,7 @@ theorem hcontArm_run_defaultValueBrace {m0 : Mem} {G : WalkGeom m0} {C : WalkCar
 /-- **`.defaultValueBracketHigh`'s `.run` continuation** — `93 … 122`, the one default class
 whose byte spans the four routes below `if.else387.i`: `'f'` at `102`, the letters span
 below `110` and not `102`, and the class-C span from `110` on, split by the same pivots the
-emitted pair performs. -/
+emitted pair performs. **Mixed, and its kind-0 part is vacuous.**  `94 … 122` includes the three literals (`102`, `110`, `116`), whose emit rows are real (`scanF`/`scan56True`/`scan58True`), and every other byte of the range, which is on the `if.else405.i` edge: that sub-branch reads the empty `HcontClassRows.seamScan` and has no inhabitant (`hcontSeamCalls_no_literal_zero`).  Separating the two needs `WalkContinueFacts` restricted to the byte disjunction, which this case cannot supply; the refusal rows for the letters sub-branch are `hcontSeamRefuseAt_letters`'s. -/
 theorem hcontArm_run_defaultValueBracketHigh {m0 : Mem} {G : WalkGeom m0}
     {C : WalkCarry G} {s : State} (hc : HcontClassRows G) (hInv : WalkInv G C s)
     (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)

@@ -21,7 +21,7 @@ names its row's consumer:
 | `.value` | the three leaves | `hcontArm_value_of_lane` (the payload's default lane) |
 | `.defaultValueHigh` | `wsByte` | `hcontArm_ws_of_rows` (the whitespace group) |
 | `.defaultValueHigh` | the three leaves | `hcontArm_cleanup_of_class` (the class's `cleanup`/`cleanupRow`) |
-| the six tag-clear default classes | `wsByte` | `hcontArm_run_defaultValueLow` … `_defaultValueBrace` (the class's run rows) |
+| the six tag-clear default classes | `wsByte` | **vacuous, and the cell is the count to drop**: those bytes are never value bytes (`%8 < 44`, `59 … 90`, `92`, `94 … 122`, `124`), so no `if.then447.i` and no emit group — `hcontSeamCalls_no_literal_zero` refutes the run rows' leaf at that literal, and the six `hcontArm_run_*` arms are proved only through `HcontClassRows.seamScan`, which is empty. Dropping the cells needs `WalkContinueFacts` (`JsonStage2WalkDispatchHcontArms`, the abbreviation at `:718`) to lose the states it cannot arm |
 | the six tag-clear default classes | the three leaves | `hcontArm_defaultValueLow` … `_defaultValueBrace` (the class's seam rows) |
 
 No branch holds an arm, a bundle or a segment: the groups are rows about the document and
@@ -119,6 +119,10 @@ theorem walkContinueArm_of_payload {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G
   | otherValue h91 h44 h58 hne44 hbit =>
       cases r.hclass with
       | wsByte hws =>
+          -- Vacuous cell: `%8 ∈ {46, 47}` is on the kind-0 edge, so the emit-run group has
+          -- no inhabitant (`hcontSeamCalls_no_literal_zero`) and the arm is proved
+          -- only from the class row's empty `seamScan`.  Dropping it needs
+          -- `WalkContinueFacts` restricted.
           exact hcontArm_run_otherValue hc hInv hblock hk r hws h8 h91 h44 h58 hne44 hbit
       | scanFree f =>
           exact hcontArm_otherValue hInv hblock hk h8 h91 h44 h58 hne44 hbit r
@@ -132,6 +136,10 @@ theorem walkContinueArm_of_payload {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G
   | defaultValueLow h91 h44 hne34 =>
       cases r.hclass with
       | wsByte hws =>
+          -- Vacuous cell: `%8 < 44` is on the kind-0 edge, so the emit-run group has
+          -- no inhabitant (`hcontSeamCalls_no_literal_zero`) and the arm is proved
+          -- only from the class row's empty `seamScan`.  Dropping it needs
+          -- `WalkContinueFacts` restricted.
           exact hcontArm_run_defaultValueLow hc hInv hblock hk r hws h8 h91 h44 hne34
       | scanFree f =>
           exact hcontArm_defaultValueLow hInv hblock hk h8 h91 h44 hne34 r
@@ -145,6 +153,10 @@ theorem walkContinueArm_of_payload {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G
   | defaultValueMid h91 h44 h58 hne58 =>
       cases r.hclass with
       | wsByte hws =>
+          -- Vacuous cell: `59 ≤ %8 < 91` is on the kind-0 edge, so the emit-run group has
+          -- no inhabitant (`hcontSeamCalls_no_literal_zero`) and the arm is proved
+          -- only from the class row's empty `seamScan`.  Dropping it needs
+          -- `WalkContinueFacts` restricted.
           exact hcontArm_run_defaultValueMid hc hInv hblock hk r hws h8 h91 h44 h58 hne58
       | scanFree f =>
           exact hcontArm_defaultValueMid hInv hblock hk h8 h91 h44 h58 hne58 r
@@ -158,6 +170,10 @@ theorem walkContinueArm_of_payload {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G
   | defaultValueBracket h91 h123 h93 hne91 =>
       cases r.hclass with
       | wsByte hws =>
+          -- Vacuous cell: `%8 = 92` is on the kind-0 edge, so the emit-run group has
+          -- no inhabitant (`hcontSeamCalls_no_literal_zero`) and the arm is proved
+          -- only from the class row's empty `seamScan`.  Dropping it needs
+          -- `WalkContinueFacts` restricted.
           exact hcontArm_run_defaultValueBracket hc hInv hblock hk r hws h8 h91 h123 h93
             hne91
       | scanFree f =>
@@ -172,6 +188,10 @@ theorem walkContinueArm_of_payload {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G
   | defaultValueBracketHigh h91 h123 h93 hne93 =>
       cases r.hclass with
       | wsByte hws =>
+          -- Vacuous when the byte is on the kind-0 edge (`94 … 122` minus the three
+          -- literals): that sub-branch reads the empty `seamScan`.  The f/n/t
+          -- sub-branches are real; separating them needs `WalkContinueFacts`
+          -- restricted to the byte disjunction, which this case cannot supply.
           exact hcontArm_run_defaultValueBracketHigh hc hInv hblock hk r hws h8 h91 h123
             h93 hne93
       | scanFree f =>
@@ -186,6 +206,10 @@ theorem walkContinueArm_of_payload {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G
   | defaultValueBrace h91 h123 h125 hne123 =>
       cases r.hclass with
       | wsByte hws =>
+          -- Vacuous cell: `%8 = 124` is on the kind-0 edge, so the emit-run group has
+          -- no inhabitant (`hcontSeamCalls_no_literal_zero`) and the arm is proved
+          -- only from the class row's empty `seamScan`.  Dropping it needs
+          -- `WalkContinueFacts` restricted.
           exact hcontArm_run_defaultValueBrace hc hInv hblock hk r hws h8 h91 h123 h125
             hne123
       | scanFree f =>
