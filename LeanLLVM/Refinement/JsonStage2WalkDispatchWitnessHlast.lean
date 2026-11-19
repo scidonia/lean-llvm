@@ -1462,9 +1462,12 @@ stages, the log's base word and the event stream's width.  It
 is a `Type` because `rdv` and `xA` are witnesses the later fields are stated at,
 exactly as the bundle is.
 
-The structure exists so that the dispatch can carry *evidence* rather than the producer's
-conclusion: `LastEntryArm.highByte` carries this supply, `LastEntryArm.dispatch` applies
-the producer to it, and the field it replaced was the conclusion itself. -/
+The structure is the *emission* arm's old evidence, and it is no longer the class's: at the
+high-byte class's own route the kind literal is `if.else405.i`'s `0`, so `od_scalar_value`
+answers `0` and the emission arm's `hret₂ = 1` has no inhabitant (`hlastResidue_empty`,
+`JsonStage2WalkDispatchHlastSupply`).  The class's evidence is `HlastHighByteRefusal` below;
+this structure stays for the conditional emission statement and its refutations
+(`JsonStage2WalkHlastDomain`). -/
 structure HlastResidue {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : Type where
   /-- The head byte's class: the two pivots that name it. -/
   hlt125 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 125) = 0
@@ -1519,6 +1522,101 @@ structure HlastResidue {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
     [.int 32 (BitVec.ofNat 32 (TailStartC C).sp), .ptr (G.next0 + 8),
      .ptr (TailStartC C).stage.ctype,
      .ptr (TailStartC C).stage.cst] r₂.mem r₂.next = some r₃
+
+/-! ### The class's refusal evidence
+
+`%8 ∈ {126, 127}` is not a value class: `if.then413.i`'s `phi` takes its
+`if.else405.i` incoming for those bytes, so the kind word the block stores is `0`, and
+`od_scalar_value` answers `0` at a zero kind (`stage2ScalarValue`'s first arm, which
+writes `stage2ErrSetMsg`).  The walk leaves `if.then425.i` for `if.then432.i` and takes
+the error path to `cleanup474.i` and the refusal copy — it never calls `s2_after_value`.
+
+So the emission residue above is not this class's evidence: its `hret₂` asks for the
+emit answer `1`, which the class cannot produce.  This structure is the refusal arm's
+supply instead, and its answer and record are *derived* by the producer
+(`JsonStage2WalkDispatchHlastSupply`) from the staged words and the model — the kind
+word is the store's own `0`, so `s2ScalarValue_refused` names both `hret₂` and `hmem`.
+
+The continuation is the class's own route, as the arm rows' segments are: the error
+path's blocks (`if.then432.i`, `cond.end.i96`, the scan, `if.end.i97`, the escape tree,
+`cleanup474.i`) have no composed segment in the tree, so the route to `if.then` is
+carried rather than proved, and the producer of it is named where it is owed. -/
+/-- The memory the tail's first call reads, at a kind literal: the token record's kind word
+is the store's literal. -/
+abbrev hlastKindStoreAt {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (hb : HcontByteRoute (head35 (G.bs.getD (G.n - 1) 0))) (cA : BitVec 32) : Mem :=
+  writeBytes (hlastTailRoute C s hb).mem (C.stage.tok + 16) (natToBytes cA.toNat 4)
+
+/-- **The class's kind store**: the `if.else405.i` incoming is `0`. -/
+abbrev hlastKindStore {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
+    (hb : HcontByteRoute (head35 (G.bs.getD (G.n - 1) 0))) : Mem :=
+  hlastKindStoreAt C s hb (BitVec.ofNat 32 0)
+
+/-- **The class's route to the refusal copy.**  The error path from `if.then432.i` through
+`cleanup474.i` to `if.then`, the word the copy's `%off` load reads, the carry's refusal
+offset and the price inside the last entry's credit.  It is the arm's own route: the blocks
+between `if.then432.i` and `cleanup474.i` have no composed segment in the tree, so the
+route is carried and its producer is owed (`JsonStage2WalkDispatchHlastSupply`'s header
+names the links that exist). -/
+structure HlastRefuseRoute {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) :
+    Type where
+  Cd : WalkCarry G
+  sd : State
+  n : Nat
+  seg : WalkSegment (stage2Calls stage2SubCalls) G C s Cd sd n
+  hblock : Cd.block = "if.then"
+  k : Nat
+  hk : k ≤ G.n
+  hword : readBytes sd.mem (Cd.stage.e + 8) 8 = some (wordBytes 8 k)
+  herr : Cd.eoff ≤ G.n
+  hprice : n + 2 ≤ stage2EntryAllowance * (G.nep - C.k) +
+    stage2ByteAllowance * (G.n - entryPos G C.k)
+
+/-- **The high-byte class's refusal evidence**: the two leading calls of the
+`if.then413.i`/`if.then425.i` edge (the value-position call with a nonzero answer, the
+scalar call), the answer `0`, the refusal record the scalar call wrote, and the class's
+route to the refusal copy. -/
+structure HlastHighByteRefusal {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (hb : HcontByteRoute (head35 (G.bs.getD (G.n - 1) 0))) : Type where
+  /-- The kind literal `if.then413.i`'s `phi` selected, read at its own store: the class's
+  incoming is `if.else405.i`'s `0`. -/
+  cA : BitVec 32
+  hcA : cA = BitVec.ofNat 32 0
+  /-- The root-done slot's word, as the first call's argument list carries it, and the
+  read that names it at the tail's own memory. -/
+  rdv : BitVec 32
+  hroot : readBytes (hlastTailRoute C s hb).mem (G.next0 + 8) 4 =
+    some (natToBytes rdv.toNat 4)
+  /-- The value-position call at the kind-stored memory, and its nonzero answer. -/
+  r₁ : CallOutcome
+  xA : BitVec 32
+  hpre₁ : s2ValuePosPre
+    [.int 32 (BitVec.ofNat 32 (TailStartC C).sp), .int 32 rdv,
+     .ptr (TailStartC C).stage.ctype, .ptr (TailStartC C).stage.cst]
+    (hlastKindStoreAt C s hb cA) (hlastTailRoute C s hb).next
+  hcall₁ : stage2Calls stage2SubCalls "s2_value_pos"
+    [.int 32 (BitVec.ofNat 32 (TailStartC C).sp), .int 32 rdv,
+     .ptr (TailStartC C).stage.ctype, .ptr (TailStartC C).stage.cst]
+    (hlastKindStoreAt C s hb cA) (hlastTailRoute C s hb).next = some r₁
+  hret₁ : r₁.ret = .int 32 xA
+  hbit0 : evalICmp .eq xA (BitVec.ofNat 32 0) = 0
+  /-- The log's base word at the kind-stored memory. -/
+  hzread : readBytes (hlastKindStoreAt C s hb cA) C.stage.z 8 = some (wordBytes 8 G.ev)
+  /-- The scalar call and the refusal it wrote: the answer `0` and the error record's
+  memory (`stage2ErrSetMsg`'s `ok` word, its offset and its null message). -/
+  r₂ : CallOutcome
+  hpre₂ : s2ScalarValuePre
+    [.ptr (TailCarry₂ (TailStartC C)).stage.c, .ptr (TailCarry₂ (TailStartC C)).stage.tok,
+     .ptr (TailCarry₂ (TailStartC C)).stage.z] r₁.mem r₁.next
+  hcall₂ : stage2Calls stage2SubCalls "od_scalar_value"
+    [.ptr (TailCarry₂ (TailStartC C)).stage.c, .ptr (TailCarry₂ (TailStartC C)).stage.tok,
+     .ptr (TailCarry₂ (TailStartC C)).stage.z] r₁.mem r₁.next = some r₂
+  hret₂ : r₂.ret = .int 32 (BitVec.ofNat 32 0)
+  /-- The token's position, the refusal record's offset word. -/
+  pos : Nat
+  hmem : r₂.mem = stage2ErrSetMsg r₁.mem C.stage.e pos 0
+  /-- **The class's route to the refusal copy.** -/
+  route : HlastRefuseRoute G C s
 
 /-! ### The instrument -/
 

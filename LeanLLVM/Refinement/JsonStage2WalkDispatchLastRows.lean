@@ -15,8 +15,9 @@ producer, and the closure theorem takes it as its third premise.
 The head switch has thirteen classes at the last entry, but eleven of them derive their
 premises: the openers read `HlastAbi.openCall` and `WalkInv.depth_cap`, the refusals and
 the delimiter classes read the class bit and the invariant's own cells, the string opener
-reads the class bit alone, and the high-byte class is `HlastLane`/`HlastAbi.highByte` plus
-`HlastResidue`.  A group for any of those would be a field with no consumer.  What is left
+reads the class bit alone, and the high-byte class is `HlastLane`/`HlastAbi.highByte`, whose
+refusal row (`HlastHighByteRefusal`) is the whole of its supply.  A group for any of those
+would be a field with no consumer.  What is left
 is the five classes whose producers take supply the invariant cannot give: the document's
 last byte's scalar route and its three calls, the default arm's three leaf routes with
 their chains, and the run's own body.

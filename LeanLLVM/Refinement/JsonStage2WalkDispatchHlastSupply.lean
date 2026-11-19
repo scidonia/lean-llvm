@@ -1,21 +1,34 @@
 /-
 # The last entry's payload, at the fields its own rows produce
 
-`HlastPayload` (`JsonStage2WalkDispatchSupply:1008`) is `HlastLane` beside `HlastAbi`.
-This module produces every field of that payload the tree's own lemmas reach, and records
-the ones it does not, with the premise each still needs.  Nothing here weakens a field's
-type: the structures are the ones the supply module states.
+`HlastPayload` (`JsonStage2WalkDispatchSupply`) is `HlastLane` beside `HlastAbi`.  This
+module produces every field of that payload the tree's own lemmas reach, records the ones
+it does not with the premise each still needs, and states the high-byte class as the
+refusal it is.
+
+## The class is a refusal, not an emission
+
+`%8 ∈ {126, 127}` is what the head switch's `slt 125`/`eq 125` bits name.  Those bytes take
+`if.end372.i`'s tag test's false arm, so `if.then413.i`'s `%.sink372` `phi` selects its
+`if.else405.i` incoming — the literal `0` — and `od_scalar_value` answers `0` at a zero
+kind (`stage2ScalarValue`'s first arm, which writes `stage2ErrSetMsg`).  The walk leaves
+`if.then425.i` for `if.then432.i` and takes the error path through `cleanup474.i` to the
+refusal copy; it never calls `s2_after_value`.
+
+So the emission bundle the payload used to carry is empty on this class
+(`hlastResidue_empty`, and the same argument at its three-call form), and the payload's
+high-byte field is now `HlastHighByteRefusal`: the two leading calls, the scalar call's
+answer `0`, the refusal record, and the class's route to the refusal copy.
 
 ## Produced
 
 | field | producer |
 |---|---|
 | `HlastLane.tail`'s `hb` | `HcontByteRoute_of_not_wsStop`: the document's last byte has a route **exactly when it is not one of the four whitespace bytes**.  `hlastLane_of_not_wsStop` is the group at that premise. |
-| `HlastAbi.openCall` | `hlastAbi_openCall`: the root slot's word is `walkReadBytes_rootSlot_word`, the precondition is `s2ValuePosPre_of_inv` (the stack bytes are `WalkInv.tyBytes`/`stBytes` at `C.sp - 1`), and the answer is `s2ValuePos_answers` at that precondition. |
-| `HlastHighByteAbi.hreadT` | `hlastTailRoute_rootSlot_word`: `hlastTail_rootSlot_word` at the class's kind literal `0`, transported to the routed tail by `hlastTailByte_mem`. |
-| `HlastHighByteAbi.hzread` | `hlastTailRoute_logBase`: `WalkInv.log_base` carried across the tail's four token-record stores (`token_log_sep`). |
-| `HlastHighByteAbi.hev64` | `WalkGeom.evLt`, the staging's own clause — no lemma needed. |
-| `HlastHighByteAbi.hcall₁`/`hret₁` | follow from the tail's `s2ValuePosPre` (`s2ValuePos_answers`, `s2ValuePos_reply`): the answer is the model's bit and `xA` is that bit's word.  The precondition at the routed memory is not produced here (see below), and the group is empty at any state, so no structure is assembled from these rows. |
+| `HlastAbi.openCall` — fully produced, no premise | `hlastAbi_openCall`: the root slot's word is `walkReadBytes_rootSlot_word`, the precondition is `s2ValuePosPre_of_inv` (the stack bytes are `WalkInv.tyBytes`/`stBytes` at `C.sp - 1`), and the answer is `s2ValuePos_answers` at that precondition. |
+| `HlastAbi.highByte`'s two leading calls | `hlastHighByteRefusal_of_stage`: `hcontSeamMidAt` at a `HcontSeamStage` derives the value-position and scalar rows (the first call's staging from the invariant, the second's from the stage's `hpreS`). |
+| `HlastAbi.highByte`'s answer and record | the same producer: the kind word is the store's own `0` (`seamKindStore_word`), so `s2ScalarValue_refused` names both `hret₂` and `hmem` — they are derived from the model, not fields. |
+| `HlastAbi.highByte`'s root word and log word | `hlastTailRoute_rootSlot_word`, `hlastTailRoute_logBase` (the payload group's flat forms). |
 
 ## Not produced, and why
 
@@ -26,38 +39,27 @@ type: the structures are the ones the supply module states.
   `WalkGeom` or `WalkInv` excludes it: `HlastArmRows.run`'s guard (`wsStop G (G.n - 1)`,
   `JsonStage2WalkDispatchLastRows`) is the run class at exactly that byte, and no clause
   excludes a head state with the high-byte bits (`%8 ∈ {126, 127}`) from being the last
-  entry's on such a document.  The group's producer therefore needs one of two things the
-  tree does not have: a premise on the geometry (`¬ wsStop G (G.n - 1)`), or an exclusion
-  of the high-byte class where the last byte is whitespace.  `hlastLane_of_not_wsStop` is the first.
-* **`HlastHighByteAbi.hbit0T`.**  It requires the value-position call's answer to be
-  nonzero (`xA ≠ 0`), and no clause supplies that: `hlastHighByteAbi_answer_ne_zero` shows
-  that the residue *forces* a nonzero answer, and `stage2ValuePos_some_zero` shows the
-  model answering `0` (an object's colon state, say).  So the structure is empty at every
-  state whose value-position call answers `0`; its producer needs the answer's bit as a
-  guard (the emitting arm's), which the structure does not state.
-* **`HlastHighByteAbi` itself, on its own class.**  `hlastHighByteAbi_empty` proves the
-  structure has **no inhabitant at all**: its `hret₂` asks the scalar call for the emit bit
-  `1`, and the class's own route supplies the kind word `0` (`hlastTailRoute_kindWord` —
-  `if.then413.i`'s `%.sink372` incoming from `if.else405.i`), at which
-  `od_scalar_value` answers `0` (`s2ScalarValue_kind_zero`).  This is a statement-level
-  defect, not a missing premise: the residue describes the emitting tail, while `%8 ∈
-  {126, 127}` reaches `if.else405.i` and the error path at `if.then432.i`, not
-  `if.then447.i` and the copy call.  The class's real arm is a refusal, and
-  `LastEntryArm` has none for it, so the payload's `abi.highByte` and the arm behind it
-  cannot be produced by any premise.  `hlastResidue_empty` is the same refutation at the
-  structure the arm actually carries (`HlastResidue`: `HlastResidue.toAbi` forgets the
-  class bits), so `LastEntryArm.highByte` has no inhabitant either.
-* **`HlastHighByteAbi.hpre₁`.**  Derivable from `WalkInv` (`WalkStackBytes.at` at
-  `%ctype.i`/`%cst.i`), but not by any existing declaration: it needs a `s2ValuePosPre`
-  transport across the tail's token-record stores, which is the `s2ValuePosPre_of_inv`
-  shape at `hlastTailRoute`'s memory.
-* **`HlastHighByteAbi.hpre₂`, `hpre₃`** (and the calls they answer).  These are the seam's
-  groups at the last entry's tail: `HcontSeamAbi.last` / `hcontSeamCallsAt` at
-  `hlastTailByte`, whose producer is `JsonStage2WalkDispatchSeamCalls`.  Their words are
-  the staging's (`%c`, `%c + 1112`, `%t352.i`, the log's three words and the window read),
-  not `WalkInv`'s.
+  entry's on such a document.  The group's producer therefore needs a premise on the
+  geometry (`¬ wsStop G (G.n - 1)`); `hlastLane_of_not_wsStop` is that.
+* **`HlastAbi.highByte`'s route (`HlastRefuseRoute`).**  The error path's blocks from
+  `if.then432.i` to `cleanup474.i` have no composed segment: `WalkLink.if_then432_i`,
+  `WalkLink.if_then418_i` and `WalkLink.cleanup474_i` exist, the scan
+  (`cond.end.i96`/`land.rhs.i103`/`while.end.i`), `if.end.i97` and the escape tree
+  (`if.else.i` … `if.else43.i`) do not, and the scan's length is the entry's own.  The
+  producer owed is a priced segment `if.then432.i → … → cleanup474.i → if.then` with the
+  stored word (`stage2ErrSetMsg`'s `%e + 8`, which is the token's `pos`) and a count inside
+  the last entry's credit.  The payload carries the route rather than assuming it, exactly
+  as `HlastArmRows`' rows carry the arms' own segments.
+* **The class's answer-zero sub-route.**  `s2_value_pos` can answer `0` at the class too
+  (a depth-zero head whose root slot is already flagged), and that arm is
+  `if.then418.i → cleanup474.i → if.then` — three links after the head, and no scalar call.
+  The refusal group above is the answer-`1` branch, so a complete census needs a second
+  arm (or a sum over the model's answer) for it; the statement it needs is the same
+  `HlastRefuseRoute` with the answer-`0` link chain.  This is recorded as the remaining
+  census gap, not silently dropped.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkDispatchSupply
+import LeanLLVM.Refinement.JsonStage2WalkDispatchSeamCalls
 
 set_option autoImplicit false
 
@@ -215,11 +217,11 @@ noncomputable def hlastAbi_openCall {m0 : Mem} (G : WalkGeom m0) :
       ¬ (C.k + 1 < G.nep) → HcontOpenCall G C s :=
   fun _ _ hInv _ _ => hcontOpenCall_of_inv hInv
 
-/-! ### The high-byte class's reads
+/-! ### The high-byte class's staged reads
 
 The routed tail's memory is the plain tail's: the byte's route binds comparison cells and
 the seam's stores are the same three.  So the root slot's word and the log's base word are
-the plain tail's, and both are theorems.
+the plain tail's, and both are theorems; the kind word is the class's store.
 -/
 
 /-- **The route changes cells, not memory.** -/
@@ -296,68 +298,20 @@ theorem hlastTailRoute_rootSlot_word {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry
   rw [hmem]
   exact hread
 
-/-! ### The high-byte class's answer bit
-
-`HlastHighByteAbi` states `hbit0T : xA ≠ 0`, i.e. that the value-position call answered a
-nonzero bit.  That is the emitting arm's selector, not a consequence: the model answers
-`0` at a non-value position (`stage2ValuePos_some_zero`), so the structure has no
-inhabitant at such a state.  This pair is the record of that, not a repair.
--/
-
-/-- **The residue forces a nonzero answer.**  Its `hcall₁` and `hret₁` name the reply's
-word, and `hbit0T` says it is not `0`; so the model's answer at the structure's own word is
-not `some 0`. -/
-theorem hlastHighByteAbi_answer_ne_zero {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
-    {s : State} (hb : HcontByteRoute (head35 (G.bs.getD (G.n - 1) 0)))
-    (h : HlastHighByteAbi G C s hb) :
-    stage2ValuePos
-      (writeBytes (hlastTailRoute C s hb).mem (C.stage.tok + 16)
-        (natToBytes ((0 : BitVec 32)).toNat 4))
-      ((BitVec.ofNat 32 (TailStartC C).sp).toNat) h.rdv.toNat
-      (TailStartC C).stage.ctype (TailStartC C).stage.cst ≠ some 0 := by
-  intro h0
-  have hcall := h.hcall₁
-  rw [s2ValuePos_reply, h0] at hcall
-  have hr₁ := Option.some.inj hcall
-  have hxA : h.xA = BitVec.ofNat 32 0 := by
-    have hh := h.hret₁
-    rw [← hr₁] at hh
-    simpa using hh.symm
-  have hbit := h.hbit0T
-  rw [hxA] at hbit
-  exact absurd hbit (by decide)
-
-/-- **The model answers `0` at a non-value position.**  A depth-one state inside an object
-after its colon (type byte `1`, state byte `1`) is not a value position, and an empty
-memory with those two bytes staged is a memory the call can be made in. -/
-theorem stage2ValuePos_some_zero :
-    ∃ mem : Mem, stage2ValuePos mem 1 0 0 5 = some 0 :=
-  ⟨[(0, 1), (5, 1)], by decide⟩
-
-/-! ### The scalar call's kind at the byte route's tail
-
-`if.then413.i` stores the `%.sink372` `phi` at `%kind404.i` before it calls
-`s2_value_pos`, and the byte route's tail is the state that block is entered at from
-`if.else405.i` (`HeadS413`'s `pre`), whose incoming is the literal `0`.  So the word
-`od_scalar_value` reads is `0`, the model's kind-zero arm answers `0`, and
-`HlastHighByteAbi`'s `hret₂ = 1` has no inhabitant — the structure is empty on the
-class it is stated for, and so is the arm that carries it.
--/
-
 /-- **The kind word at the byte route's tail is `0`.**  The `if.then413.i` store wrote
 `%.sink372`, whose `if.else405.i` incoming is `0`; the route's span enters the block from
 that incoming. -/
-theorem hlastTailRoute_kindWord {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+theorem hlastKindStore_word {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
     (hb : HcontByteRoute (head35 (G.bs.getD (G.n - 1) 0))) :
-    stage2ReadWord (writeBytes (hlastTailRoute C s hb).mem (C.stage.tok + 16)
-      (natToBytes ((0 : BitVec 32)).toNat 4)) (C.stage.tok + 16) 4 = some 0 := by
-  unfold stage2ReadWord
-  have h := readBytes_writeBytes_same (hlastTailRoute C s hb).mem
-    (natToBytes ((0 : BitVec 32)).toNat 4) (addr := C.stage.tok + 16)
-  rw [show (natToBytes ((0 : BitVec 32)).toNat 4).length = 4 from natToBytes_length _ _] at h
+    stage2ReadWord (hlastKindStore C s hb) (C.stage.tok + 16) 4 = some 0 := by
+  unfold stage2ReadWord hlastKindStore hlastKindStoreAt
+  rw [show (BitVec.ofNat 32 0).toNat = 0 from walkToNat_ofNat32 (by decide)]
+  have h := readBytes_writeBytes_same (hlastTailRoute C s hb).mem (natToBytes 0 4)
+    (addr := C.stage.tok + 16)
+  rw [show (natToBytes 0 4).length = 4 from natToBytes_length 0 4] at h
   rw [h]
-  show some (bytesToNat (natToBytes ((0 : BitVec 32)).toNat 4)) = some 0
-  rw [show bytesToNat (natToBytes ((0 : BitVec 32)).toNat 4) = 0 by decide]
+  show some (bytesToNat (natToBytes 0 4)) = some 0
+  rw [show bytesToNat (natToBytes 0 4) = 0 by decide]
 
 /-- **`od_scalar_value` at a kind-zero token answers `0`**: the model's first arm, which
 sets the error message and returns the refusal bit. -/
@@ -374,32 +328,122 @@ theorem s2ScalarValue_kind_zero {mem : Mem} {c t o next base e pos endp : Nat}
   simp only [hb, he, hp, hend, hk, ↓reduceIte]
   exact ⟨_, rfl⟩
 
-/-- **`HlastHighByteAbi` is empty on its own class.**  The structure's `hret₂` asks the
-scalar call for the emit bit `1`, and the class's own route supplies the kind word `0`, at
-which the model answers `0`. -/
-theorem hlastHighByteAbi_empty {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
-    (hb : HcontByteRoute (head35 (G.bs.getD (G.n - 1) 0))) :
-    ¬ Nonempty (HlastHighByteAbi G C s hb) := by
-  rintro ⟨r₁, r₂, r₃, rdv, xA, -, hpre₁, hcall₁, -, -, -, hpre₂, hcall₂, hret₂, -,
-    -, -⟩
+/-! ### The refusal arm's row, from the staged words
+
+The row's two leading calls are `hcontSeamMidAt`'s at a `HcontSeamStage`; the kind word is
+the store's `0`; and the answer and the record are `s2ScalarValue_refused`'s — the model's
+first arm, not a supplied fact.
+-/
+
+set_option maxHeartbeats 1000000 in
+/-- **The class's refusal row, from the staged words.** -/
+theorem hlastHighByteRefusal_nonempty {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {s : State} (hb : HcontByteRoute (head35 (G.bs.getD (G.n - 1) 0)))
+    (st : HcontSeamStage G (TailStartC C) (hlastTailRoute C s hb) (BitVec.ofNat 32 0))
+    (route : HlastRefuseRoute G C s) :
+    Nonempty (HlastHighByteRefusal G C s hb) := by
+  obtain ⟨mid, hcA, hrdv⟩ := hcontSeamMidAt (Cs := TailStartC C) st
+  -- the kind word at the class's store is zero
+  have hkind0 : stage2ReadWord (seamKindStore (TailStartC C) (hlastTailRoute C s hb)
+      (BitVec.ofNat 32 0)) ((TailStartC C).stage.tok + 16) 4 = some 0 := by
+    simpa using seamKindStore_word (Cs := TailStartC C) (s := hlastTailRoute C s hb)
+      (cA := (BitVec.ofNat 32 0)) (by decide)
+  -- the value-position call hands the kind store's memory back
+  obtain ⟨_, _, _, hmem₁, hnext₁⟩ := s2ValuePos_sound mid.hpre₁ mid.hcall₁
+  have hmem₁' : mid.r₁.mem = seamKindStore (TailStartC C) (hlastTailRoute C s hb)
+      (BitVec.ofNat 32 0) := by rw [hmem₁, hcA]
+  have hpre₂ : s2ScalarValuePre
+      [.ptr (TailCarry₂ (TailStartC C)).stage.c, .ptr (TailCarry₂ (TailStartC C)).stage.tok,
+       .ptr (TailCarry₂ (TailStartC C)).stage.z]
+      (seamKindStore (TailStartC C) (hlastTailRoute C s hb) (BitVec.ofNat 32 0))
+      (hlastTailRoute C s hb).next := by
+    have h := mid.hpre₂
+    rw [hmem₁', hnext₁] at h
+    exact h
+  have hcall₂ : stage2Calls stage2SubCalls "od_scalar_value"
+      [.ptr (TailCarry₂ (TailStartC C)).stage.c, .ptr (TailCarry₂ (TailStartC C)).stage.tok,
+       .ptr (TailCarry₂ (TailStartC C)).stage.z]
+      (seamKindStore (TailStartC C) (hlastTailRoute C s hb) (BitVec.ofNat 32 0))
+      (hlastTailRoute C s hb).next = some mid.r₂ := by
+    have h := mid.hcall₂
+    rw [hmem₁', hnext₁] at h
+    exact h
+  -- the answer and the record are the model's
+  obtain ⟨pos, hret₂, hmem₂⟩ :=
+    s2ScalarValue_refused (e0 := (TailStartC C).stage.e) hpre₂ st.heErr hkind0 hcall₂
+  exact ⟨{ cA := mid.cA
+           hcA := hcA
+           rdv := mid.rdv
+           r₁ := mid.r₁
+           xA := mid.xA
+           hret₁ := mid.hret₁
+           hbit0 := mid.hbit0
+           r₂ := mid.r₂
+           hret₂ := hret₂
+           pos := pos
+           route := route
+           hroot := by rw [hrdv]; exact st.hroot
+           hpre₁ := mid.hpre₁
+           hcall₁ := mid.hcall₁
+           hzread := mid.hzread
+           hpre₂ := mid.hpre₂
+           hcall₂ := mid.hcall₂
+           hmem := by rw [hmem₁']; exact hmem₂ }⟩
+
+/-- **The class's refusal row**, at the seam's staged words and the class's own route. -/
+noncomputable def hlastHighByteRefusal_of_stage {m0 : Mem} {G : WalkGeom m0}
+    {C : WalkCarry G} {s : State} (hb : HcontByteRoute (head35 (G.bs.getD (G.n - 1) 0)))
+    (st : HcontSeamStage G (TailStartC C) (hlastTailRoute C s hb) (BitVec.ofNat 32 0))
+    (route : HlastRefuseRoute G C s) : HlastHighByteRefusal G C s hb :=
+  Classical.choice (hlastHighByteRefusal_nonempty hb st route)
+
+/-- **`HlastAbi`'s high-byte group, produced**: the seam's staged words and the class's
+route, at every last-entry state with the class bits.  The answer and the record are the
+producer's, not the caller's. -/
+noncomputable def hlastAbi_highByte {m0 : Mem} (G : WalkGeom m0)
+    (hstage : ∀ (C : WalkCarry G) (s : State),
+      (hb : HcontByteRoute (head35 (G.bs.getD (G.n - 1) 0))) →
+      HcontSeamStage G (TailStartC C) (hlastTailRoute C s hb) (BitVec.ofNat 32 0))
+    (hroute : ∀ (C : WalkCarry G) (s : State), HlastRefuseRoute G C s) :
+    ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
+      ¬ (C.k + 1 < G.nep) →
+      evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 125) = 0 →
+      evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 125) = 0 →
+      (hb : HcontByteRoute (head35 (G.bs.getD (G.n - 1) 0))) →
+      HlastHighByteRefusal G C s hb :=
+  fun _ _ _ _ _ _ _ hb => hlastHighByteRefusal_of_stage hb (hstage _ _ hb) (hroute _ _)
+
+/-! ### The emission residue is empty on this class
+
+`HlastResidue` is the emission arm's old evidence: its `hret₂` asks the scalar call for
+the emit answer `1`.  At the class's own route the kind word is `0`, so the model answers
+`0` — the residue has no inhabitant.  Same argument as the old three-call form, stated at
+the structure the tree still carries. -/
+
+/-- **`HlastResidue` is empty**: its `hret₂ = 1` contradicts the kind-`0` model. -/
+theorem hlastResidue_empty {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State} :
+    ¬ Nonempty (HlastResidue G C s) := by
+  rintro ⟨r⟩
   -- the value-position reply fixes the scalar call's memory
-  have hcall₁' := hcall₁
-  rw [s2ValuePos_reply] at hcall₁'
+  have hcall₁ := r.hcall₁
+  rw [s2ValuePos_reply] at hcall₁
   cases hv : stage2ValuePos
-      (writeBytes (hlastTailRoute C s hb).mem (C.stage.tok + 16)
+      (writeBytes (hlastTailRoute C s r.hb).mem (C.stage.tok + 16)
         (natToBytes ((0 : BitVec 32)).toNat 4))
-      ((BitVec.ofNat 32 (TailStartC C).sp).toNat) rdv.toNat
+      ((BitVec.ofNat 32 (TailStartC C).sp).toNat) r.rdv.toNat
       (TailStartC C).stage.ctype (TailStartC C).stage.cst with
   | none =>
-      rw [hv] at hcall₁'
-      cases hcall₁'
+      rw [hv] at hcall₁
+      cases hcall₁
   | some v =>
-      rw [hv] at hcall₁'
-      rw [Option.map_some] at hcall₁'
-      have hr₁ : r₁ = (⟨.int 32 (BitVec.ofNat 32 v),
-          (writeBytes (hlastTailRoute C s hb).mem (C.stage.tok + 16)
+      rw [hv] at hcall₁
+      rw [Option.map_some] at hcall₁
+      have hr₁ : r.r₁ = (⟨.int 32 (BitVec.ofNat 32 v),
+          (writeBytes (hlastTailRoute C s r.hb).mem (C.stage.tok + 16)
             (natToBytes ((0 : BitVec 32)).toNat 4)),
-          (hlastTailRoute C s hb).next⟩ : CallOutcome) := Option.some.inj hcall₁'.symm
+          (hlastTailRoute C s r.hb).next⟩ : CallOutcome) := Option.some.inj hcall₁.symm
+      have hpre₂ := r.hpre₂
+      have hcall₂ := r.hcall₂
       rw [hr₁] at hpre₂ hcall₂
       -- the scalar precondition's five reads, at the same memory
       obtain ⟨c, t, o, hargs, base, e, pos, endp, kind, buf, len, cap, win,
@@ -409,40 +453,27 @@ theorem hlastHighByteAbi_empty {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s
       -- ... whose kind word is the store's `0`
       have hk0 : kind = 0 := by
         have hk' : stage2ReadWord
-            (writeBytes (hlastTailRoute C s hb).mem (C.stage.tok + 16)
+            (writeBytes (hlastTailRoute C s r.hb).mem (C.stage.tok + 16)
               (natToBytes ((0 : BitVec 32)).toNat 4))
             ((TailCarry₂ (TailStartC C)).stage.tok + 16) 4 = some 0 :=
-          hlastTailRoute_kindWord hb
+          hlastKindStore_word C s r.hb
         rw [hkind] at hk'
         exact Option.some.inj hk'
       rw [hk0] at hkind
       obtain ⟨m, hm⟩ := s2ScalarValue_kind_zero (mem :=
-          writeBytes (hlastTailRoute C s hb).mem (C.stage.tok + 16)
+          writeBytes (hlastTailRoute C s r.hb).mem (C.stage.tok + 16)
             (natToBytes ((0 : BitVec 32)).toNat 4))
         (c := (TailCarry₂ (TailStartC C)).stage.c)
         (t := (TailCarry₂ (TailStartC C)).stage.tok)
         (o := (TailCarry₂ (TailStartC C)).stage.z)
-        (next := (hlastTailRoute C s hb).next) hbase he hpos hend hkind
+        (next := (hlastTailRoute C s r.hb).next) hbase he hpos hend hkind
       rw [hm] at hcall₂
       have hr₂ := Option.some.inj hcall₂
-      have hret0 : r₂.ret = .int 32 (BitVec.ofNat 32 0) := by
+      have hret0 : r.r₂.ret = .int 32 (BitVec.ofNat 32 0) := by
         rw [← hr₂]
+      have hret₂ := r.hret₂
       rw [hret0] at hret₂
       exact absurd hret₂ (by decide)
-
-/-- **The payload's high-byte group forgets the class bits**: `HlastResidue` is the same
-rows at the byte's own route. -/
-def HlastResidue.toAbi {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
-    (r : HlastResidue G C s) : HlastHighByteAbi G C s r.hb :=
-  ⟨r.r₁, r.r₂, r.r₃, r.rdv, r.xA, r.hreadT, r.hpre₁, r.hcall₁, r.hret₁, r.hbit0T,
-    r.hzread, r.hpre₂, r.hcall₂, r.hret₂, r.hev64, r.hpre₃, r.hcall₃⟩
-
-/-- **The residue the last entry's `.highByte` arm carries is empty too**, so no state
-supplies `LastEntryArm.highByte` on the class it is stated for. -/
-theorem hlastResidue_empty {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State} :
-    ¬ Nonempty (HlastResidue G C s) := by
-  rintro ⟨r⟩
-  exact hlastHighByteAbi_empty r.hb ⟨r.toAbi⟩
 
 /-! ### The instrument -/
 
@@ -457,11 +488,11 @@ theorem hlastResidue_empty {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : S
 #print axioms LeanLLVM.Refinement.WalkScope.hlastTail_logBase
 #print axioms LeanLLVM.Refinement.WalkScope.hlastTailRoute_logBase
 #print axioms LeanLLVM.Refinement.WalkScope.hlastTailRoute_rootSlot_word
-#print axioms LeanLLVM.Refinement.WalkScope.hlastHighByteAbi_answer_ne_zero
-#print axioms LeanLLVM.Refinement.WalkScope.stage2ValuePos_some_zero
-#print axioms LeanLLVM.Refinement.WalkScope.hlastTailRoute_kindWord
+#print axioms LeanLLVM.Refinement.WalkScope.hlastKindStore_word
 #print axioms LeanLLVM.Refinement.WalkScope.s2ScalarValue_kind_zero
-#print axioms LeanLLVM.Refinement.WalkScope.hlastHighByteAbi_empty
+#print axioms LeanLLVM.Refinement.WalkScope.hlastHighByteRefusal_nonempty
+#print axioms LeanLLVM.Refinement.WalkScope.hlastHighByteRefusal_of_stage
+#print axioms LeanLLVM.Refinement.WalkScope.hlastAbi_highByte
 #print axioms LeanLLVM.Refinement.WalkScope.hlastResidue_empty
 
 end WalkScope

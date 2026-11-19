@@ -45,7 +45,7 @@ does not hold and the reason:
 | `.letters`, `.fLetter` | the head's chain to `if.else387.i` | **per head-switch class, and now one theorem per class**: `JsonStage2WalkDispatchLettersHead` factors the chain into the **suffix** every default class shares — `sw.default.i`, the count test's succeeding arm, the bound's `phi`, the whitespace check, the byte's three pivots and the token's end, eight links at *any* state at `sw.default.i` (`contDefaultSeg`) — and the class's **prefix**: `.defaultValueLow`'s three links (`contLowHeadSeg`, eleven in all — the low bytes and every byte above `127`), and `.defaultValueMid`/`.otherValue`/`.defaultValueBracket`/`.defaultValueBracketHigh`'s four (`contMidHeadSeg`, `contOthHeadSeg`, `contBrkHeadSeg`, `contBhHeadSeg`, twelve each).  The arm's field is the class's **count**: `HcontArm.letters`/`.fLetter`/`.classC` take `{nH}` with `hnH : nH ≤ 12` (and the `LastEntryArm` twins `hnH : nH ≤ 11`), which the compositions (`lettersCleanupMerge_at`, `fCleanupMerge_at`, `classCMerge_at`) already took, so the class's chain feeds the constructor at every class.  The chain's *cells* are the payload's now: `HcontLane.defaultLane` carries the next lane's word and read, the bound's compare and the byte before the entry's end with its class, and `JsonStage2WalkDispatchDefaultLane` derives the chain at five of the six head-switch classes (`lowHeadChain_of_lane`, `midHeadChain_of_lane`, `othHeadChain_of_lane`, `brkHeadChain_of_lane`, `bhHeadChain_of_lane`; the sixth, `.defaultValueBrace`/`124`, has its chain `contBrcHeadSeg` and still owes its `_of_lane` producer); the three-link tail is produced by `JsonStage2WalkDispatchLettersRows`: the seam's invariant is `lettersSeamInv_of_chain`/`fLetterSeamInv_of_chain`, its cells `lettersSeamCells_of_chain`/`fLetterSeamCells_of_chain` (the pair `contSeamMid_ee`/`contSeamMid_cond`, the root word `contSeamMid_rootRead`), and the tail `emptyTail_of_cells`, so `hcontArm_letters_of_rows`/`hcontArm_fLetter_of_rows` take the call rows and the kind-literal agreement alone |
 | `.classC` | the byte's own span | **exposed**: `classCSpan_at` produces a span at the arm's endpoint from the class's `slt %8 110` bit alone (the upper bound is not a premise: `126`/`127` take the same leaf), and `classCHeadSpan_at` composes it with the head's twelve at `12 + nS`.  The arm's `hTail` is stated at the span's *endpoint*, and the endpoint is one of four named states (`ClsS413T`/`ClsS413F`/`ClsS58T`/`HeadS413`), so its seam cells (`HcontSeamCells`: the `phi`, the four pointers, the root word and the two test cells) are **produced** at each (`classCSeamCells_56True` … `…_58Else`, `JsonStage2WalkDispatchClassCLeaves`) and the three-link tail from them; the four arms take the chain, the leaf's bits, its call group and the root word's agreement.  The span is derivable where the endpoint is named, and is the arm's field otherwise.  Its bytes' head-switch classes are `.defaultValueBracketHigh` (`110 … 122`, `contBhHeadSeg`'s twelve) and `.defaultValueBrace` (`124`, `contBrcHeadSeg`'s twelve: `NodeBlock19 → NodeBlock17 → LeafBlock13 → sw.default.i` then the suffix's eight), so every byte of `[110, 125]` the letters arm does not take has its chain and `.classC`'s `hHead` takes it at `nH ≤ 12`. |
 | `.run` | `RunFacts` and its four segments | **composed at the whitespace class, and now at any class's check state**: `HcontRunFacts` is the run's bundle stated at the check state itself — the stop, the landing byte and its seam test, the tail, the landing and the traversal — and `contWsRunF` derives the segment at **any** such state, so the class-C route's `contLandS` is its instance (`hcontRunFacts_of_contFacts`) and no longer its only one.  `JsonStage2WalkDispatchRunHead`'s `wsRunHeadAt`/`wsLandingSegAt` build the head and the landing from the bundle, and `runFacts_of_runBundle` the **whole** `RunFacts`, at `nPre ≤ 8`; `runFacts_of_defaultClass` is the six default classes' producer — the class's prefix to `sw.default.i` plus `contSwToLandSeg`'s four, the bundle, and the class's own span.  At `126`/`127` `runFacts_of_wsFacts` remains the instance, and no `RunFacts` field is a supply there.  What remains is the bundle's *fields* at each class (the payload's document and traversal rows), not a composition |
-| the last entry's `.highByte` | none — `HlastLane.tail` and `HlastAbi.highByte` | proved below: the residue `HlastResidue` is *built* from the two groups (`lastEntryArm_highByte_of_payload`), so the bundle is constructed, not assumed |
+| the last entry's `.highByte` | none — `HlastLane.tail` and `HlastAbi.highByte` | proved below: the class does not emit (`if.else405.i`'s kind literal is `0`), so `HlastAbi.highByte` carries `HlastHighByteRefusal` — the two leading calls, the answer `0`, the refusal record and the class's route to the copy — and `lastEntryArm_highByte_of_payload` builds the refusing arm from it.  The emission bundle `HlastResidue` is empty on this class (`hlastResidue_empty`). |
 | the last entry's `.scalar` | the three calls at the scalar route's seam | `JsonStage2WalkDispatchScalarOfStaging` states the producer; its call rows are at the scalar route's own seam state, which the payload's last-level `abi` group does not reach |
 | the last entry's `.letters`, `.fLetter`, `.classC`, `.run` | the head's eleven links and the listed spans | **closed**: `contDefLastSeg` (`JsonStage2WalkDispatchLettersHead`) states the last entry's seven-link suffix at any state at `sw.default.i` — the failing count test, the bound's `%4`, the whitespace check, the byte's three pivots and the token's end — and `contLastLowHeadSeg` … `contLastBrcHeadSeg` join it to each class's prefix (`contLowToDefault` … `contBrcToDefault`, counted chains of three or four links), giving **ten** links at `.defaultValueLow` and **eleven** at the other five classes.  `hlastTailSeg` is the high-byte class's sixteen links and is not any of them |
 
@@ -946,53 +946,6 @@ own byte. -/
 structure HlastTailLane {m0 : Mem} (G : WalkGeom m0) : Type where
   hb : HcontByteRoute (head35 (G.bs.getD (G.n - 1) 0))
 
-/-- **The high-byte class's three calls**, at their staged argument lists: the
-value-position call, the scalar call with the append's record, and the copy call.  These
-are the rows `JsonStage2WalkDispatchWitnessHlast`'s `HlastResidue` carries, restated as one
-group. -/
-structure HlastHighByteAbi {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
-    (hb : HcontByteRoute (head35 (G.bs.getD (G.n - 1) 0))) : Type where
-  r₁ : CallOutcome
-  r₂ : CallOutcome
-  r₃ : CallOutcome
-  rdv : BitVec 32
-  xA : BitVec 32
-  hreadT : readBytes
-    (writeBytes (hlastTailRoute C s hb).mem (C.stage.tok + 16)
-      (natToBytes ((0 : BitVec 32)).toNat 4)) (G.next0 + 8) 4 =
-      some (natToBytes rdv.toNat 4)
-  hpre₁ : s2ValuePosPre
-    [.int 32 (BitVec.ofNat 32 (TailStartC C).sp), .int 32 rdv,
-     .ptr (TailStartC C).stage.ctype, .ptr (TailStartC C).stage.cst]
-    (writeBytes (hlastTailRoute C s hb).mem (C.stage.tok + 16)
-      (natToBytes ((0 : BitVec 32)).toNat 4)) (hlastTailRoute C s hb).next
-  hcall₁ : stage2Calls stage2SubCalls "s2_value_pos"
-    [.int 32 (BitVec.ofNat 32 (TailStartC C).sp), .int 32 rdv,
-     .ptr (TailStartC C).stage.ctype, .ptr (TailStartC C).stage.cst]
-    (writeBytes (hlastTailRoute C s hb).mem (C.stage.tok + 16)
-      (natToBytes ((0 : BitVec 32)).toNat 4)) (hlastTailRoute C s hb).next = some r₁
-  hret₁ : r₁.ret = .int 32 xA
-  hbit0T : evalICmp .eq xA (BitVec.ofNat 32 0) = 0
-  hzread : readBytes
-    (writeBytes (hlastTailRoute C s hb).mem (C.stage.tok + 16)
-      (natToBytes ((0 : BitVec 32)).toNat 4)) C.stage.z 8 = some (wordBytes 8 G.ev)
-  hpre₂ : s2ScalarValuePre
-    [.ptr (TailCarry₂ (TailStartC C)).stage.c, .ptr (TailCarry₂ (TailStartC C)).stage.tok,
-     .ptr (TailCarry₂ (TailStartC C)).stage.z] r₁.mem r₁.next
-  hcall₂ : stage2Calls stage2SubCalls "od_scalar_value"
-    [.ptr (TailCarry₂ (TailStartC C)).stage.c, .ptr (TailCarry₂ (TailStartC C)).stage.tok,
-     .ptr (TailCarry₂ (TailStartC C)).stage.z] r₁.mem r₁.next = some r₂
-  hret₂ : r₂.ret = .int 32 (BitVec.ofNat 32 1)
-  hev64 : G.ev < 2 ^ 64
-  hpre₃ : s2AfterValuePre
-    [.int 32 (BitVec.ofNat 32 (TailStartC C).sp), .ptr (G.next0 + 8),
-     .ptr (TailStartC C).stage.ctype,
-     .ptr (TailStartC C).stage.cst] r₂.mem r₂.next
-  hcall₃ : stage2Calls stage2SubCalls "s2_after_value"
-    [.int 32 (BitVec.ofNat 32 (TailStartC C).sp), .ptr (G.next0 + 8),
-     .ptr (TailStartC C).stage.ctype,
-     .ptr (TailStartC C).stage.cst] r₂.mem r₂.next = some r₃
-
 /-- **The document's lane facts at the last entry.**  The root slot's value is not a
 field here either: the last entry's openers read it through `HcontOpenCall`'s witness, the
 same row the continuing head takes, and the callee's zero at that word is what the refusal
@@ -1008,13 +961,18 @@ structure HlastLane {m0 : Mem} (G : WalkGeom m0) : Type where
 structure HlastAbi {m0 : Mem} (G : WalkGeom m0) : Type where
   openCall : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     ¬ (C.k + 1 < G.nep) → HcontOpenCall G C s
-  /-- The high-byte class's three calls, at the route the document's last byte selects. -/
+  /-- **The high-byte class's refusal evidence**, at the route the document's last byte
+  selects: `HlastHighByteRefusal`'s two leading calls, the scalar call's answer `0` and
+  the refusal record, and the class's route to the refusal copy.  The class does not emit
+  (`if.else405.i`'s kind literal is `0`), so this replaces the three-call group the
+  payload used to carry; the answer and the record are derived by
+  `hlastHighByteRefusal_of_stage` (`JsonStage2WalkDispatchHlastSupply`). -/
   highByte : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     ¬ (C.k + 1 < G.nep) →
     evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 125) = 0 →
     evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 125) = 0 →
     (hb : HcontByteRoute (head35 (G.bs.getD (G.n - 1) 0))) →
-    HlastHighByteAbi G C s hb
+    HlastHighByteRefusal G C s hb
 
 /-- **The last entry's payload**: the residual table's rows at the exhausted count,
 grouped by kind. -/
@@ -1066,12 +1024,13 @@ theorem walkDispatch_at_open123_last_of_payload {m0 : Mem} {G : WalkGeom m0}
 
 /-! ### The last entry's high-byte class, from the payload
 
-The class's row is `HlastResidue` — the head's bits, the last byte's class and the three
-calls — and this is that structure built from the payload's groups: `lane.tail` supplies
-the document's last byte's class and `abi.highByte` the three calls.  The arm then runs
-`hlastFacts_of_staging` through `LastEntryArm.dispatch`. -/
+The class is a refusal, not an emission: `%8 ∈ {126, 127}` takes `if.else405.i` into
+`if.then413.i`, whose stored kind literal is `0`, and `od_scalar_value` answers `0` at it.
+The payload's group is `HlastHighByteRefusal` — the two leading calls, the answer `0`,
+the refusal record and the class's route to the copy — and this is the arm built from it:
+`lane.tail` supplies the document's last byte's class and `abi.highByte` the row. -/
 
-/-- **The high-byte class's last-entry arm, from the payload's rows.** -/
+/-- **The high-byte class's last-entry refusal arm, from the payload's rows.** -/
 def lastEntryArm_highByte_of_payload {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     {s : State} (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead)
     (hnot : ¬ (C.k + 1 < G.nep))
@@ -1080,30 +1039,7 @@ def lastEntryArm_highByte_of_payload {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry
     (hp : HlastPayload G) :
     LastEntryArm (stage2Calls stage2SubCalls) G C s := by
   obtain ⟨hb⟩ := hp.lane.tail C s hInv hblock hnot hlt125 hne125
-  obtain ⟨r₁, r₂, r₃, rdv, xA, hreadT, hpre₁, hcall₁, hret₁, hbit0T, hzread, hpre₂, hcall₂,
-    hret₂, hev64, hpre₃, hcall₃⟩ :=
-    hp.abi.highByte C s hInv hblock hnot hlt125 hne125 hb
-  exact .highByte
-    { hlt125 := hlt125
-      hne125 := hne125
-      hb := hb
-      r₁ := r₁
-      r₂ := r₂
-      r₃ := r₃
-      rdv := rdv
-      xA := xA
-      hreadT := hreadT
-      hpre₁ := hpre₁
-      hcall₁ := hcall₁
-      hret₁ := hret₁
-      hbit0T := hbit0T
-      hzread := hzread
-      hpre₂ := hpre₂
-      hcall₂ := hcall₂
-      hret₂ := hret₂
-      hev64 := hev64
-      hpre₃ := hpre₃
-      hcall₃ := hcall₃ }
+  exact .highByte (hp.abi.highByte C s hInv hblock hnot hlt125 hne125 hb)
 
 /-- **The high-byte class's last-entry dispatch, from the payload's rows.** -/
 theorem walkDispatch_at_highByte_last_of_payload {m0 : Mem} {G : WalkGeom m0}

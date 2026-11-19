@@ -28,8 +28,11 @@ turns it into the actual `WalkDispatchResult`:
   This is the arm that covers the one-byte document `0`, and it is the one the old
   universal residue excluded.
 * `.highByte` — the same default arm through `NodeBlock19 → NodeBlock17 → LeafBlock15`,
-  i.e. the bytes 126 and 127 and the class-C span's `'t'`-and-above route: the preserved
-  long default-path proof, `hlastFacts_of_staging` → `WalkDispatchResult.ofHlastMerge`.
+  i.e. the bytes 126 and 127: the class's kind literal is `if.else405.i`'s `0`, so
+  `od_scalar_value` answers `0` and the walk takes the error path through `if.then432.i`
+  and `cleanup474.i` to the refusal copy.  The arm refuses
+  (`WalkDispatchResult.refuse`) and its evidence is `HlastHighByteRefusal`: the two
+  leading calls, the derived answer and record, and the class's own route to `if.then`.
   Its byte-class restriction is stated here and nowhere else; it is one arm, not the
   last entry's shape.
 * `.stringOpener` — `sw.bb202.i` with no entry left: a bare opener is refused
@@ -362,9 +365,13 @@ inductive LastEntryArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
         [.int 32 (BitVec.ofNat 32 (ScalarC₁₁ C).sp), .ptr (G.next0 + 8),
          .ptr (ScalarC₁₁ C).stage.ctype, .ptr (ScalarC₁₁ C).stage.cst] r₂.mem r₂.next =
         some r₃) : LastEntryArm calls G C s
-  /-- **The high-byte default arm**: the bytes 126 and 127, the preserved
-  class-restricted path. -/
-  | highByte (r : HlastResidue G C s) : LastEntryArm calls G C s
+  /-- **The high-byte class's refusal arm**: the bytes `126` and `127` reach
+  `if.else405.i` and `if.then413.i` with the kind literal `0`, so `od_scalar_value` answers
+  `0` and the walk takes the error path to the refusal copy.  The evidence is
+  `HlastHighByteRefusal` — the two leading calls, the refusal record and the class's route
+  to `if.then`. -/
+  | highByte {hb : HcontByteRoute (head35 (G.bs.getD (G.n - 1) 0))}
+      (r : HlastHighByteRefusal G C s hb) : LastEntryArm calls G C s
   /-- **A bare string opener with no entry left**: refused at `if.then205.i`. -/
   | stringOpener {inc nep : BitVec 64}
       (h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 34)))
@@ -643,8 +650,8 @@ inductive LastEntryArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
   | run (f : RunLastFacts G C s) : LastEntryArm calls G C s
 
 /-- **The dispatch, from the arm.**  Each proved arm runs its own theorem; the preserved
-high-byte arm is `hlastFacts_of_staging` → `ofHlastMerge`; the last entry's run arm is
-`runLastMerge_at`'s composition, at the terminal price. -/
+high-byte arm refuses at its class's own route (`HlastHighByteRefusal`); the last entry's
+run arm is `runLastMerge_at`'s composition, at the terminal price. -/
 theorem LastEntryArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     {s : State} (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead)
     (hnot : ¬ (C.k + 1 < G.nep)) :
@@ -656,11 +663,8 @@ theorem LastEntryArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
       hbit r₁ r₂ r₃ hreadT hpre₁ hcall₁ hret₁ hbit0T hzread hpre₂ hcall₂ hret₂ hev64 hpre₃
       hcall₃
   | .highByte r =>
-    WalkDispatchResult.ofHlastMerge G C s hInv hblock
-      (hlastFacts_of_staging (rdv := r.rdv) (xA := r.xA) G C s hInv hblock hnot
-        r.hlt125 r.hne125 r.hb r.r₁ r.r₂ r.r₃
-        r.hreadT r.hpre₁ r.hcall₁ r.hret₁ r.hbit0T r.hzread
-        r.hpre₂ r.hcall₂ r.hret₂ r.hev64 r.hpre₃ r.hcall₃)
+    WalkDispatchResult.refuse r.route.Cd r.route.sd r.route.n r.route.seg r.route.hblock
+      ⟨r.route.k, r.route.hk, r.route.hword⟩ r.route.herr r.route.hprice
   | .stringOpener h8 hinc hnep hge hv he =>
     (fun ⟨Cd, sd, p, hseg, herr, hprice⟩ =>
       WalkDispatchResult.refuse Cd sd p hseg.seg hseg.block hseg.word herr hprice)
