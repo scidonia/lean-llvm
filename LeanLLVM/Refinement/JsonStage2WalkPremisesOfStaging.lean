@@ -176,9 +176,14 @@ premise of another's:
   bounds), dispatched at `"a "` (`JsonStage2WalkDispatchRunLastDomain`).  Every
   other class at the last entry is proved as well — `.letters`, `.fLetter`, `.classC`, the
   refusal arms and `.highByte` — so the last entry's arm has no `supplied` constructor at
-  its level.  The continuing level's one hole is the opener at positive depth: its arm at
-  depth zero is `HcontArm.twoEntry`, and the positive-depth route is not a constructor
-  (`JsonStage2WalkDispatchHcontArms`'s census paragraph).
+  its level.  The continuing level has no hole there either: the opener's depth-zero arm is
+  `HcontArm.twoEntry`, and the same byte at positive depth is
+  `HcontArm.stringOpenAboveZeroMerge`/`.stringOpenAboveZeroRefuse`, whose producer is
+  `hcontArm_stringOpenAboveZero_of_class` (`JsonStage2WalkDispatchClassCase`) from the
+  payload's `abi.openCall` and the class rows' `deep` split, over the two staging
+  producers in `JsonStage2WalkDispatchHcontStringDeep`.  What the census still reads is
+  the payload tier — the document's content and the callee's staging — not a class
+  without an arm.
 
 **The high-byte route is proved, not supplied.**  `126` and `127` are the class
 `HcontArm.ws`/`.cleanup` carry (`HcontFacts`, `HcontCleanupFacts`), with the counted
@@ -191,15 +196,20 @@ test `0 + 1 < 2` is true, so the continuing branch runs, and each class's eviden
 different bundle.  The class question therefore has to be answered where the producer
 knows the answer (the head's byte and its tests), and this is where it is answered.
 
-**What the class case has, and what it lacks.**  The per-class rows are
+**What the class case has, and what it still reads.**  The per-class rows are
 `HcontClassRows`' (`JsonStage2WalkDispatchClassRows`) and each of the classes whose rows
 they are has its branch (`JsonStage2WalkDispatchClassCase`: `hcontArm_scalar_of_class`,
 `hcontArm_letters_of_class`, `hcontArm_fLetter_of_class`, the four
 `hcontArm_classC_*_of_class`, `hcontArm_cleanup_of_class` and
-`hcontArm_stringOpenAboveZero_of_class`).  The class the rows do not reach is `.run`: its
-arm takes `RunFacts`, and no producer joins the check state's rows and the seam's state
-group to that bundle at the class's short prefix, so `walkContinueFacts_of_payload` has no
-`.run` branch to run at a whitespace document byte.  The two arms' constructors are stated
+`hcontArm_stringOpenAboveZero_of_class`).  `.run` is armed as well: the class rows'
+`run` field produces a `Nonempty HcontArm` from a `HcontRunRow` (`hcontRunRow_of_rows`
+joined to `RunFacts` at the class's prefix, with `runSkip`'s stop and `runTail`'s rows),
+and `walkContinueArm_of_payload` (`JsonStage2WalkDispatchContinuing`) carries the `.run`
+branches (`hcontArm_run_otherValue`, and
+`hcontArm_run_defaultValueLow`/`_Mid`/`_Bracket`/`_BracketHigh`/`_Brace`) at the
+whitespace classes.  What remains supplied is the producer tier those arms read — the
+class rows' `runSkip`/`runTail` for `.run`, and `HcontWsRows` for the whitespace arm `.ws`
+beside it — not a branch.  The two arms' constructors are stated
 at the state's own root word (`HcontArm.stringOpenAboveZeroMerge`/`.Refuse`,
 `hcontArm_cleanup_of_rows`), so the class is not narrowed to the states where that slot
 holds `0`.
@@ -414,9 +424,14 @@ head switch: the plain-value numeral route (`scalar`), the high-byte route's whi
 scan-free one-entry classes, the standalone string (`twoEntry`, carrying its own
 `HstringResidue`), the container openers (`containerOpen`), and the default arm's spans on
 the scan-free and run classes (`letters`, `fLetter`, `classC`, `run`) — every one proved,
-with no `supplied` constructor left.  The one class without an arm at every state is the
-standalone string's above depth zero: `twoEntry`'s bundle pins `C.sp = 0`, and
-`land.lhs.true.i`'s route at positive depth has no constructor.  The class question is
+with no `supplied` constructor left.  The standalone string's two depths are two arms:
+`twoEntry`'s bundle pins `C.sp = 0` for the depth-zero half, and `land.lhs.true.i`'s
+route at positive depth is `HcontArm.stringOpenAboveZeroMerge`/`.stringOpenAboveZeroRefuse`,
+produced by `hcontArm_stringOpenAboveZero_of_class` (`JsonStage2WalkDispatchClassCase`)
+from the payload's `abi.openCall` and the class rows' `deep` split.  So no class is
+unarmed — the positive-depth opener this paragraph once named as the one class without an
+arm has its pair of constructors and their producers (`JsonStage2WalkDispatchResidual`
+records the history) — and what the census still reads is the payload's rows, not a hole.  The class question is
 answered where the producer knows it — the head's byte and its tag test — and
 `HcontClass.complete` proves the *byte* census exhaustive.  So the loop's step takes
 no `WalkStringResidue` beside the continuing premise: the residue is the string arm's
