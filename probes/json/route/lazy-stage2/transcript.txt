@@ -1,0 +1,55 @@
+# command: probes/json/route/lazy-stage2/run.sh 
+# install: Linux 6.17.0-1033-oem x86_64
+# cpu: Intel(R) Core(TM) Ultra 7 268V
+# cpus online: 8; pinned to: cpu2
+# load average: 2.27 5.03 8.53 3/2941 3611133
+# document: /home/gavin/.omp/wt/lazy-stage2-f451b17/tests/json-units-bench/build/corpus/syn-strings-64k.json size=65536 sha256=bd007090d7a5ab09a1fc69c0b96879f101dbf8b3f13a300d7d3e46127d26fb12
+# build: /tmp/nix-shell.22YxOT/json-lazy-stage2.AwVdvo
+
+#   kernel/json/pipeline.c                                       c88f9de1ba8f6b6718b0a0c6bcc77ae075cb84cb7b9aaa430d7ddcdbdff6baf0
+#   kernel/json/s1_block.c                                       c358ee6e330f1b514374c6454520d6fcf59921627d9eb104526346d88be7b7bc
+#   kernel/json/entry.c                                          25700a712c206083884e9933b649a16a5b2f2f24ff37ba4dad50c65b15e3e90e
+#   kernel/json/escape.c                                         9ce8bb4ccb705d938fa73e779d7d7ef064561d00c9e30e061f3052b242581dff
+#   kernel/json/utf8.c                                           382a933422f19c36e54f24f260af6ce9a347cea8763639d95e99d75b15221793
+#   kernel/json/stage2.c                                         08809fd4a9228c7c4b4ef4d41d27bcca9ec1f045e459a2b9f0a645e51a1cd5bc
+#   probes/json/route/lazy-stage2/lazy-bench.c                   43d5513ec6e696093ed4077e86fddf78fdf93d611aeb9181048db0bcf5475cfd
+
+reference verdict=1 nk=2056 nxp=1772 ndst=55931 nev=8907 err=0 arena_fnv=802d2b86cf9965d7
+shape records=687 str_records=685 (tag sequence identical; only their length and field differ)
+bodies total=685 escaped=620 positions=1772 expanded_bytes=55931 max_body=151
+
+instrument lazy-bench=1 arm=2 compiler=Clang 21.1.8 rounds=21 reps=21 core=2
+clock: chain=614331 ns / 2000000 iterations -> 3.256 GHz
+statistic: median of the round medians, min-max of those medians
+
+act                  median_ns       min_ns       max_ns         us
+stage2                   13704        11808        15172     13.704
+stage2_plain              2745         2563         3378      2.745
+expand_arena              9461         8418        13768      9.461
+expand_l1                 8609         8404        11555      8.609
+copy_arena                1186         1150         1419      1.186
+pipeline                 36049        34333        40347     36.049
+chain                   614331       609675       961551    614.331
+
+paired differences (ns; each round's difference of that round's act medians, then median/min/max)
+stage2-plain                10794       9188      12091
+expand_l1-plain              5886       5220       8474
+expand_arena-plain           6604       5724      10689
+expand_arena-l1               809          0       3851
+copy                            0          0          0
+
+lazy pipeline, per round: pipeline - stage2 + plain (+ L1 decode)
+lazy pipeline (no validation)           26008      23368      28672
+lazy pipeline (validation kept)         34767      32190      38798
+
+save fraction of the pipeline, from the same rounds: no-validation=30.4% validation-kept=6.5%
+
+# the verdict control: the same walk with the escape list withheld
+control-byte   n=11 nk=7 nxp=1  pipeline: verdict=0 err=7
+control-byte   same walk, list withheld (nxp=0): verdict=1 err=0 nev=28
+bad-escape     n=12 nk=7 nxp=1  pipeline: verdict=0 err=7
+bad-escape     same walk, list withheld (nxp=0): verdict=1 err=0 nev=28
+structural     n=6 nk=5 nxp=0  pipeline: verdict=0 err=5
+structural     same walk, list withheld (nxp=0): verdict=0 err=5 nev=14
+observation: the string-body refusals become acceptances when the list
+             is withheld; the structural refusal does not
