@@ -86,15 +86,18 @@ the committed bytes on exit.
 
 ### JS1 — the admitted spellings parse, and their neighbours are refused by name
 
-The admission set here is the inventory the emission actually has, not the
-seven-form closure an earlier draft assumed — that closure was falsified by the
-emission itself.  The fixture's text contains `shufflevector`, a vector `store`,
-a non-mask vector `bitcast` at equal total width, the two-argument `pshuf.b`,
-`pclmulqdq` at immediate 0, `pext.64`, `pdep.64`, `ctlz.i64` with `i1 false`,
-and a vector `lshr`; vector `shl` is admitted as the widening's other direction
-and is exercised as an accepted test text in `tests/json-s1-parser.lean`, not
-emitted by this body.  The refused texts are the neighbouring unmodelled
-spellings, one per form — vector `ashr` among them.  Changing element size is
+The admission set here is the spellings the parser admits and the emission has
+used, not the seven-form closure an earlier draft assumed — that closure was
+falsified by the emission itself.  The current fixture's text contains
+`shufflevector`, a vector `store`, a non-mask vector `bitcast` at equal total
+width, the two-argument `pshuf.b`, `pclmulqdq` at immediate 0, a scalar `add i64`
+in the escape arithmetic, and a vector `lshr`; `pext.64`, `pdep.64` and
+`ctlz.i64` with `i1 false` remain admitted spellings and are exercised as
+accepted parser texts below, but the regenerated fixture no longer emits them.
+Vector `shl` is admitted as the widening's other direction and is exercised as
+an accepted test text in `tests/json-s1-parser.lean`, not emitted by this body.
+The refused texts are the neighbouring unmodelled spellings, one per form —
+vector `ashr` among them.  Changing element size is
 **not** a refusal here: the emitted widening changes element size
 (`<4 x i64>` → `<32 x i8>`) and equal *total* width is the criterion, so
 refusing a changed element size would refuse the emitted form itself.

@@ -1,14 +1,22 @@
 /* s1_block.c -- the stage-1 classification mask unit of the measured SIMD JSON
    pipeline.
 
-   The four helpers, the two tables and `s1f_masks` are the measured text of
-   kernel/json/measured/s1fuse.h, at the line ranges README.md's identity list
-   records, with the arms the measured build did not take deleted (README.md's
-   deletion list; `identity/source-identity.sh` applies it and diffs).  Nothing
-   else of the measured header is here: not the UTF-8 machinery, not the entry
-   emitter, not the pipeline loop.
+   Three of the four helpers, the two tables and `s1f_masks` are the measured
+   text of kernel/json/measured/s1fuse.h, at the line ranges README.md's
+   identity list records, with the arms the measured build did not take deleted
+   (README.md's deletion list; `identity/source-identity.sh` applies it and
+   diffs).  Nothing else of the measured header is here: not the UTF-8 machinery,
+   not the entry emitter, not the pipeline loop.
 
-   The only new text is `leanllvm_json_s1_masks`, the wrapper that stages a
+   `s1f_escaped` is this unit's own text, not the measured text: it derives the
+   escape word with two carry-propagating sums, the boundary lane and the carry
+   out of the top lane, and is proved the same function of the backslash word
+   and the carry as the measured form (`LeanLLVM/Refinement/QuoteDerive.lean`,
+   `fastEscape_eq_kernelEscape` and `fastPpar_eq_runParity`).  README.md records
+   the substitution and its evidence; both identity arms name it as the one
+   exclusion.
+
+   The other new text is `leanllvm_json_s1_masks`, the wrapper that stages a
    64-byte block at the ABI of s1_block.h.  `s1f_masks` keeps its measured name,
    its measured parameter type `S1F *` and its measured signature, so the token
    diff and the IR diff both compare the measured function rather than a
@@ -32,22 +40,29 @@ static inline uint64_t s1f_prefix_xor(uint64_t x) {
         _mm_clmulepi64_si128(v, _mm_set1_epi8((char)0xFF), 0x00));
 }
 
+/* The escape mask from the backslash mask and the incoming carry.  A run whose
+   first lane is `s` and last lane is `e` escapes the lane after it exactly when
+   `e + 1 - s` is odd, so adding the run's start bit to the backslash mask carries
+   through the run and marks that lane; the sums are separated by the start's
+   parity, because a carry stops on the non-backslash lane after a run.  A run
+   that opens in the previous block has its start parity in `open & ppar`, which
+   also gives lane zero's boundary escape.  The carry out of bit 63 of the
+   odd-class sum is the outgoing run parity. */
 static inline uint64_t s1f_escaped(uint64_t bs, uint64_t *open, uint64_t *ppar) {
-    const uint64_t even_slots = 0x5555555555555555ULL;
-    uint64_t bs1 = bs << 1;
-    uint64_t starts = bs & ~(bs1 | *open);
-    uint64_t bs0 = bs & 1;
-    starts |= bs0 & *open;
-    uint64_t lasts = bs & ~(bs >> 1);
-    uint64_t after = lasts << 1;
-    uint64_t alt = even_slots ^ (*open & *ppar);
-    uint64_t dd = _pext_u64(alt, starts) ^ _pext_u64(even_slots, lasts);
-    uint64_t esc = _pdep_u64(~dd, after) | (*open & ~bs0 & *ppar);
-    uint64_t top = bs >> 63;
-    uint64_t lzp = ((bs == ~0ULL) ? 64u : (unsigned)__builtin_clzll(~bs)) & 1u;
-    uint64_t pp = (((bs == ~0ULL) && *open) ? *ppar : 0) ^ lzp;
-    *ppar = top & pp;
-    *open = top;
+    const uint64_t even_lanes = 0x5555555555555555ULL;
+    uint64_t odd_open = *open & *ppar;
+    uint64_t starts = bs & ~(bs << 1);
+    uint64_t alt = even_lanes ^ odd_open;
+    uint64_t even_class = starts & alt;
+    uint64_t odd_class = starts ^ even_class;
+    uint64_t notbs = ~bs;
+    uint64_t sum_even = bs + even_class;
+    uint64_t sum_odd = bs + odd_class;
+    uint64_t esc = ((sum_even & notbs) & ~even_lanes) |
+                   ((sum_odd & notbs) & even_lanes) |
+                   (odd_open & (notbs & 1));
+    *ppar = (uint64_t)(sum_odd < bs);
+    *open = bs >> 63;
     return esc;
 }
 

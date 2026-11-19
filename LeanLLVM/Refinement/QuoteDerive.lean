@@ -1349,5 +1349,540 @@ parity itself: a nonzero parity is then an open run by construction. -/
 theorem classState_self_open (st : ClassState) : st.oddRun = (st.oddRun && st.oddRun) :=
   (Bool.and_self st.oddRun).symm
 
+/-! ### The arithmetic form of the escape derivation
+
+The extracted unit's `s1f_escaped` (`kernel/json/s1_block.c`) derives the escape
+word from two carry-propagating sums rather than from `pext`, `pdep` and `ctlz`.
+This section states that arithmetic and proves it is the same word: a run's odd
+length is a fact about its two ends, so adding the run's start bit to the
+backslash mask carries through the run and marks the lane after its end, while
+the carry out of the top lane is the outgoing run parity.  `fastStarts` is the
+run-start mask the sums use, `fastEscape` the escape word and `fastPpar` the
+outgoing parity; `fastEscape_eq_kernelEscape` and `fastPpar_eq_runParity` are the
+two identities the step module reads at the emitted body's own registers. -/
+
+/-- The run starts the arithmetic sums use: `bs & ~(bs << 1)`. -/
+def fastStarts {w : Nat} (bs : BitVec w) : BitVec w := bs &&& ~~~(bs <<< 1)
+
+/-- The incoming run parity word, `open & ppar` in lane zero. -/
+def fastOddOpen (w : Nat) (runOpen ppar : Bool) : BitVec w := oneLane w (runOpen && ppar)
+
+/-- The run starts whose start parity is even. -/
+def fastEvenClass {w : Nat} (bs : BitVec w) (runOpen ppar : Bool) : BitVec w :=
+  fastStarts bs &&& altLanes w runOpen ppar
+
+/-- The run starts whose start parity is odd. -/
+def fastOddClass {w : Nat} (bs : BitVec w) (runOpen ppar : Bool) : BitVec w :=
+  fastStarts bs ^^^ fastEvenClass bs runOpen ppar
+
+/-- The escape word the arithmetic form computes. -/
+def fastEscape {w : Nat} (bs : BitVec w) (runOpen ppar : Bool) : BitVec w :=
+  ((bs + fastEvenClass bs runOpen ppar) &&& (~~~bs) &&& ~~~evenLanes w) |||
+  ((bs + fastOddClass bs runOpen ppar) &&& (~~~bs) &&& evenLanes w) |||
+  (fastOddOpen w runOpen ppar &&& ((~~~bs) &&& oneLane w true))
+
+/-- The outgoing run parity the arithmetic takes from the odd-class sum. -/
+def fastPpar {w : Nat} (bs : BitVec w) (runOpen ppar : Bool) : Bool :=
+  decide ((bs + fastOddClass bs runOpen ppar) < bs)
+
+theorem fastStarts_zero {w : Nat} (bs : BitVec w) (hw : 0 < w) :
+    (fastStarts bs).getLsbD 0 = bs.getLsbD 0 := by
+  unfold fastStarts
+  rw [BitVec.getLsbD_and, getLsbD_not_of_lt (bs <<< 1) hw]
+  have hshift : (bs <<< 1).getLsbD 0 = false := by
+    rw [BitVec.getLsbD_shiftLeft, decide_eq_true hw,
+      decide_eq_true (by decide : 0 < 1)]
+    rfl
+  rw [hshift]
+  cases bs.getLsbD 0 <;> rfl
+
+theorem fastStarts_succ {w : Nat} (bs : BitVec w) {i : Nat} (hi : i + 1 < w) :
+    (fastStarts bs).getLsbD (i + 1) = (bs.getLsbD (i + 1) && !bs.getLsbD i) := by
+  unfold fastStarts
+  rw [BitVec.getLsbD_and, getLsbD_not_of_lt (bs <<< 1) hi]
+  have hshift : (bs <<< 1).getLsbD (i + 1) = bs.getLsbD i := by
+    rw [BitVec.getLsbD_shiftLeft, decide_eq_true hi,
+      decide_eq_false (by omega), Bool.not_false, Bool.true_and,
+      Bool.true_and, show i + 1 - 1 = i from by omega]
+  rw [hshift]
+
+theorem fastStarts_eq_runStarts {w : Nat} (bs : BitVec w) (runOpen : Bool) :
+    fastStarts bs = runStarts bs runOpen := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro i hi
+  cases i with
+  | zero =>
+      rw [fastStarts_zero bs hi, runStarts_getLsbD bs runOpen hi]
+      unfold startLane
+      simp
+  | succ k =>
+      rw [fastStarts_succ bs hi, runStarts_getLsbD bs runOpen hi]
+      unfold startLane
+      rw [decide_eq_false (by omega), show k + 1 - 1 = k from by omega]
+      simp
+
+theorem fastStarts_sub {w : Nat} (bs : BitVec w) :
+    fastStarts bs &&& bs = fastStarts bs := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro i hi
+  unfold fastStarts
+  rw [BitVec.getLsbD_and, BitVec.getLsbD_and, getLsbD_not_of_lt (bs <<< 1) hi]
+  cases bs.getLsbD i <;>
+    simp only [Bool.true_and, Bool.and_true, Bool.false_and, Bool.and_false]
+
+theorem and_and_sub {w : Nat} {s a b : BitVec w} (h : s &&& b = s) :
+    (s &&& a) &&& b = s &&& a := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro i hi
+  rw [BitVec.getLsbD_and, BitVec.getLsbD_and]
+  simp only [Bool.and_assoc]
+  have hs := congrArg (fun x : BitVec w => x.getLsbD i) h
+  rw [BitVec.getLsbD_and] at hs
+  cases hb : s.getLsbD i with
+  | false => simp
+  | true =>
+      have hbi : b.getLsbD i = true := by
+        rw [hb, Bool.true_and] at hs
+        exact hs
+      simp [hbi]
+
+theorem starts_odd_eq {w : Nat} (s a : BitVec w) :
+    s ^^^ (s &&& a) = s &&& ~~~a := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro i hi
+  rw [BitVec.getLsbD_xor, BitVec.getLsbD_and, BitVec.getLsbD_and,
+    getLsbD_not_of_lt a hi]
+  cases s.getLsbD i <;> cases a.getLsbD i <;> rfl
+
+
+theorem carry_succ_of_sub {w : Nat} {bs sel : BitVec w} (hsub : sel &&& bs = sel) (i : Nat) :
+    BitVec.carry (i + 1) bs sel false
+      = (sel.getLsbD i || (BitVec.carry i bs sel false && bs.getLsbD i)) := by
+  rw [BitVec.carry_succ]
+  unfold Bool.atLeastTwo
+  have h : (bs.getLsbD i && sel.getLsbD i) = sel.getLsbD i := by
+    have hh := congrArg (fun x : BitVec w => x.getLsbD i) hsub
+    rw [BitVec.getLsbD_and, Bool.and_comm] at hh
+    exact hh
+  rw [h]
+  cases hs : sel.getLsbD i <;> cases hb : bs.getLsbD i <;>
+    cases hc : BitVec.carry i bs sel false <;> rfl
+
+theorem carry_of_prev_clear {w : Nat} {bs sel : BitVec w} (hsub : sel &&& bs = sel)
+    {i : Nat} (hi0 : i ≠ 0) (h : bs.getLsbD (i - 1) = false) :
+    BitVec.carry i bs sel false = false := by
+  cases i with
+  | zero => exact absurd rfl hi0
+  | succ k =>
+      rw [show k + 1 - 1 = k from by omega] at h
+      rw [carry_succ_of_sub hsub k]
+      have hs : sel.getLsbD k = false := by
+        have hh := congrArg (fun x : BitVec w => x.getLsbD k) hsub
+        rw [BitVec.getLsbD_and, h] at hh
+        simpa using hh
+      rw [hs, h]
+      simp
+
+theorem runStarts_sub {w : Nat} (bs : BitVec w) (runOpen : Bool) :
+    runStarts bs runOpen &&& bs = runStarts bs runOpen := by
+  rw [← fastStarts_eq_runStarts]
+  exact fastStarts_sub bs
+
+/-- The carry into a run-start lane is clear. -/
+theorem carry_at_start {w : Nat} (bs sel m : BitVec w) (runOpen : Bool)
+    (hsel : sel = runStarts bs runOpen &&& m) {s : Nat} (hs : s < w)
+    (hstart : startLane bs s = true) :
+    BitVec.carry s bs sel false = false := by
+  cases s with
+  | zero => exact BitVec.carry_zero
+  | succ k =>
+      rw [carry_succ_of_sub (by rw [hsel]; exact and_and_sub (runStarts_sub bs runOpen)) k]
+      have hbk : bs.getLsbD k = false := by
+        unfold startLane at hstart
+        rw [show k + 1 - 1 = k from by omega, Bool.and_eq_true] at hstart
+        obtain ⟨_, hprev⟩ := hstart
+        rw [decide_eq_false (by omega)] at hprev
+        simpa using hprev
+      have hsk : sel.getLsbD k = false := by
+        rw [hsel, BitVec.getLsbD_and, runStarts_getLsbD bs runOpen (by omega)]
+        unfold startLane
+        rw [hbk]
+        simp
+      rw [hsk, hbk]
+      simp
+
+/-- **The carry out of a run's last lane is its start's class bit.** -/
+theorem carry_after_run {w : Nat} (bs sel m : BitVec w) (runOpen : Bool)
+    (hsel : sel = runStarts bs runOpen &&& m) {s e : Nat} (he : e < w) (hse : s ≤ e)
+    (hstart : startLane bs s = true)
+    (hall : ∀ t, s ≤ t → t ≤ e → bs.getLsbD t = true) :
+    BitVec.carry (e + 1) bs sel false = m.getLsbD s := by
+  have hsub : sel &&& bs = sel := by
+    rw [hsel]; exact and_and_sub (runStarts_sub bs runOpen)
+  have hbase : BitVec.carry (s + 1) bs sel false = m.getLsbD s := by
+    rw [carry_succ_of_sub hsub s, carry_at_start bs sel m runOpen hsel (by omega) hstart]
+    have hss : sel.getLsbD s = m.getLsbD s := by
+      rw [hsel, BitVec.getLsbD_and, runStarts_getLsbD bs runOpen (by omega), hstart]
+      simp
+    rw [hss]
+    simp
+  have hstep : ∀ j, s ≤ j → j ≤ e →
+      BitVec.carry (j + 1) bs sel false = m.getLsbD s := by
+    intro j
+    induction j using Nat.strongRecOn with
+    | _ j ih =>
+      intro hsj hje
+      rcases Nat.eq_or_lt_of_le hsj with h | h
+      · rw [← h]; exact hbase
+      · have hk : s ≤ j - 1 := by omega
+        have hke : j - 1 < e := by omega
+        rw [carry_succ_of_sub hsub j]
+        have hselj : sel.getLsbD j = false := by
+          rw [hsel, BitVec.getLsbD_and, runStarts_getLsbD bs runOpen (by omega)]
+          unfold startLane
+          rw [show j - 1 = j - 1 from rfl, hall (j - 1) hk (by omega),
+            hall j hsj hje, decide_eq_false (by omega)]
+          simp
+        have hbj : bs.getLsbD j = true := hall j hsj hje
+        have hcarryj : BitVec.carry j bs sel false = m.getLsbD s := by
+          rw [show j = (j - 1) + 1 from by omega]
+          exact ih (j - 1) (by omega) hk (by omega)
+        rw [hselj, hbj, hcarryj]
+        simp
+  exact hstep e hse (by omega)
+
+
+theorem fastOddClass_eq_not {w : Nat} (bs : BitVec w) (runOpen ppar : Bool) :
+    fastOddClass bs runOpen ppar = fastStarts bs &&& ~~~(altLanes w runOpen ppar) := by
+  unfold fastOddClass fastEvenClass
+  exact starts_odd_eq (fastStarts bs) (altLanes w runOpen ppar)
+
+theorem fastEvenClass_sub {w : Nat} (bs : BitVec w) (runOpen ppar : Bool) :
+    fastEvenClass bs runOpen ppar &&& bs = fastEvenClass bs runOpen ppar := by
+  unfold fastEvenClass
+  exact and_and_sub (fastStarts_sub bs)
+
+theorem fastOddClass_sub {w : Nat} (bs : BitVec w) (runOpen ppar : Bool) :
+    fastOddClass bs runOpen ppar &&& bs = fastOddClass bs runOpen ppar := by
+  rw [fastOddClass_eq_not]
+  exact and_and_sub (fastStarts_sub bs)
+
+/-- At a clear lane, the sum's low word below the mask is exactly its carry. -/
+theorem getLsbD_add_clear {w : Nat} {bs sel : BitVec w} (hsub : sel &&& bs = sel)
+    {i : Nat} (hi : i < w) (hbi : bs.getLsbD i = false) :
+    ((bs + sel) &&& ~~~bs).getLsbD i = BitVec.carry i bs sel false := by
+  rw [BitVec.getLsbD_and, BitVec.getLsbD_add hi, getLsbD_not_of_lt bs hi, hbi]
+  have hsel0 : sel.getLsbD i = false := by
+    have h := congrArg (fun x : BitVec w => x.getLsbD i) hsub
+    rw [BitVec.getLsbD_and, hbi] at h
+    simpa using h
+  rw [hsel0]
+  cases BitVec.carry i bs sel false <;> simp
+
+theorem bool_xor_split (a b : Bool) : ((a && !b) || (!a && b)) = (a ^^ b) := by
+  cases a <;> cases b <;> rfl
+
+theorem bool_eq_split (a b : Bool) : ((a && b) || (!a && !b)) = !(a ^^ b) := by
+  cases a <;> cases b <;> rfl
+
+/-- The run-end facts: a run ending at `e` has an aligned start `s`. -/
+theorem run_end_start {w : Nat} (bs : BitVec w) (runOpen : Bool) {e : Nat}
+    (he : e < w) (hbe : bs.getLsbD e = true) (hclear : bs.getLsbD (e + 1) = false) :
+    ∃ (j s : Nat), rank (afterRuns bs) (e + 1) = j ∧ j < w ∧
+      (setLanes (runStarts bs runOpen))[j]? = some s ∧ startLane bs s = true ∧
+      s ≤ e ∧ (∀ t, s ≤ t → t ≤ e → bs.getLsbD t = true) ∧
+      j < (setLanes (runStarts bs runOpen)).length ∧
+      j < (setLanes (runEnds bs)).length ∧
+      (setLanes (runEnds bs))[j]? = some e := by
+  obtain ⟨j, hjdef⟩ : ∃ j, endsBelow bs e = j := ⟨_, rfl⟩
+  have hrankj : rank (afterRuns bs) (e + 1) = j := by
+    rw [rank_afterRuns bs (by omega), show e + 1 - 1 = e from by omega, hjdef]
+  have hjend : (setLanes (runEnds bs))[j]? = some e := by
+    have h := setLanes_getElem?_rank (runEnds bs) he
+      (by rw [runEnds_getLsbD bs he]; unfold endLane; rw [hbe, hclear]; rfl)
+    rwa [rank_runEnds bs (by omega), hjdef] at h
+  have hje : j < (setLanes (runEnds bs)).length :=
+    (List.getElem?_eq_some_iff.mp hjend).1
+  have hendlane : (setLanes (runEnds bs))[j] = e := by
+    have h := hjend
+    rw [List.getElem?_eq_getElem hje] at h
+    exact Option.some.inj h
+  have hinv : startsBelow bs runOpen (e + 1) = j + 1 := by
+    rw [startsUpTo_end bs runOpen e he, hbe, hjdef]
+    rfl
+  have hjstarts : j < (setLanes (runStarts bs runOpen)).length := by
+    have hle : countBelow (runStarts bs runOpen) (e + 1)
+        ≤ countBelow (runStarts bs runOpen) w := countBelow_mono _ (by omega)
+    have htop : countBelow (runStarts bs runOpen) w
+        = (setLanes (runStarts bs runOpen)).length := rfl
+    rw [htop] at hle
+    have hinv' := hinv
+    unfold startsBelow at hinv'
+    omega
+  let s := (setLanes (runStarts bs runOpen))[j]'hjstarts
+  have hsdef : (setLanes (runStarts bs runOpen))[j]'hjstarts = s := rfl
+  have hsdef? : (setLanes (runStarts bs runOpen))[j]? = some s := by
+    rw [List.getElem?_eq_getElem hjstarts]
+  have hsstart : startLane bs s = true := by
+    rw [← hsdef]
+    have h := setLanes_getElem_true (runStarts bs runOpen) hjstarts
+    rwa [runStarts_getLsbD bs runOpen (setLanes_getElem_lt _ hjstarts)] at h
+  have hsbs : bs.getLsbD s = true := startLane_backslash bs hsstart
+  have hrankstart : rank (runStarts bs runOpen) s = j := by
+    rw [← hsdef]
+    exact rank_setLanes_getElem (runStarts bs runOpen) hjstarts
+  have hslt : s < e + 1 := by
+    rcases Nat.lt_or_ge s (e + 1) with h | h
+    · exact h
+    · exfalso
+      have hmono : rank (runStarts bs runOpen) (e + 1)
+          ≤ rank (runStarts bs runOpen) s := rank_mono _ h
+      rw [hrankstart, rank_runStarts bs runOpen (by omega)] at hmono
+      have hinv' := hinv
+      unfold startsBelow at hinv'
+      omega
+  have hscount : startsBelow bs runOpen (s + 1) = j + 1 := by
+    unfold startsBelow
+    rw [countBelow_succ, countBelow_eq_rank (runStarts bs runOpen) (by omega),
+      hrankstart, runStarts_getLsbD bs runOpen (by omega), hsstart]
+    rfl
+  have hsend : endsBelow bs s = j := by
+    have hinv2 := startsUpTo_end bs runOpen s (by omega)
+    rw [hscount, hsbs] at hinv2
+    simp at hinv2
+    omega
+  have hallset : ∀ t, s ≤ t → t ≤ e → bs.getLsbD t = true := by
+    intro t
+    induction t using Nat.strongRecOn with
+    | _ t ih =>
+      intro hst hti
+      rcases Nat.lt_or_ge s t with hlt | hge
+      · cases hbt : bs.getLsbD t with
+        | true => rfl
+        | false =>
+          exfalso
+          have hpt : bs.getLsbD (t - 1) = true :=
+            ih (t - 1) (by omega) (by omega) (by omega)
+          have hendl : endLane bs (t - 1) = true := by
+            unfold endLane
+            rw [show t - 1 + 1 = t from by omega, hpt, hbt]
+            rfl
+          have hstep : endsBelow bs t = endsBelow bs (t - 1) + 1 := by
+            rw [show t = (t - 1) + 1 from by omega, endsBelow_succ bs (by omega), hendl]
+            simp
+          have hmono1 : endsBelow bs s ≤ endsBelow bs (t - 1) := countBelow_mono _ (by omega)
+          have hmono2 : endsBelow bs t ≤ endsBelow bs e := countBelow_mono _ (by omega)
+          have hendi : endsBelow bs e = j := hjdef
+          omega
+      · have hst' : s = t := by omega
+        rw [← hst']
+        exact hsbs
+  have hjw : j < w := Nat.lt_of_lt_of_le hjstarts (setLanes_length_le _)
+  exact ⟨j, s, hrankj, hjw, hsdef?, hsstart, by omega, hallset, hjstarts, hje, hjend⟩
+
+
+theorem fastTerm1 {w : Nat} (bs sel : BitVec w) {i : Nat}
+    (hsub : sel &&& bs = sel) (hi : i < w) (hbi : bs.getLsbD i = false) :
+    (((bs + sel) &&& ~~~bs) &&& ~~~evenLanes w).getLsbD i
+      = (BitVec.carry i bs sel false && !(evenLanes w).getLsbD i) := by
+  rw [BitVec.getLsbD_and, getLsbD_add_clear hsub hi hbi,
+    getLsbD_not_of_lt (evenLanes w) hi]
+
+theorem fastTerm2 {w : Nat} (bs sel : BitVec w) {i : Nat}
+    (hsub : sel &&& bs = sel) (hi : i < w) (hbi : bs.getLsbD i = false) :
+    (((bs + sel) &&& ~~~bs) &&& evenLanes w).getLsbD i
+      = (BitVec.carry i bs sel false && (evenLanes w).getLsbD i) := by
+  rw [BitVec.getLsbD_and, getLsbD_add_clear hsub hi hbi]
+
+theorem fastTerm3 {w : Nat} (bs : BitVec w) (o p : Bool) {i : Nat}
+    (hi : i < w) (hbi : bs.getLsbD i = false) :
+    (fastOddOpen w o p &&& ((~~~bs) &&& oneLane w true)).getLsbD i
+      = ((o && p) && decide (i = 0)) := by
+  rw [BitVec.getLsbD_and, BitVec.getLsbD_and, getLsbD_not_of_lt bs hi, hbi]
+  unfold fastOddOpen
+  rw [oneLane_getLsbD (b := o && p) hi, oneLane_getLsbD (b := true) hi]
+  simp [Bool.and_assoc, Bool.and_comm, Bool.and_left_comm]
+
+/-- **The arithmetic escape word is the kernel's.** -/
+theorem fastEscape_getLsbD {w : Nat} (bs : BitVec w) (o p : Bool) {i : Nat} (hi : i < w) :
+    (fastEscape bs o p).getLsbD i = (kernelEscape bs o p).getLsbD i := by
+  unfold fastEscape kernelEscape
+  rw [BitVec.getLsbD_or, BitVec.getLsbD_or, BitVec.getLsbD_or,
+    escapedRuns_getLsbD bs o p hi, boundaryEscape_getLsbD bs o p hi,
+    afterRuns_getLsbD bs hi]
+  cases hbi : bs.getLsbD i with
+  | true =>
+      have hnot : (~~~bs).getLsbD i = false := by
+        rw [getLsbD_not_of_lt bs hi, hbi]
+        rfl
+      have hafter : (decide (1 ≤ i) && endLane bs (i - 1)) = false := by
+        by_cases hi0 : i = 0
+        · subst hi0; simp
+        · rw [decide_eq_true (by omega)]
+          unfold endLane
+          rw [show i - 1 + 1 = i from by omega, hbi]
+          simp
+      have hbnd : (decide (i = 0) && (o && !bs.getLsbD 0 && p)) = false := by
+        by_cases hi0 : i = 0
+        · subst hi0; rw [hbi]; simp
+        · simp [hi0]
+      rw [hafter, hbnd]
+      simp [hnot]
+  | false =>
+      have hT1 : (((bs + fastEvenClass bs o p) &&& ~~~bs) &&& ~~~evenLanes w).getLsbD i
+          = (BitVec.carry i bs (fastEvenClass bs o p) false
+              && !(evenLanes w).getLsbD i) :=
+        fastTerm1 bs (fastEvenClass bs o p) (fastEvenClass_sub bs o p) hi hbi
+      have hT2 : (((bs + fastOddClass bs o p) &&& ~~~bs) &&& evenLanes w).getLsbD i
+          = (BitVec.carry i bs (fastOddClass bs o p) false
+              && (evenLanes w).getLsbD i) :=
+        fastTerm2 bs (fastOddClass bs o p) (fastOddClass_sub bs o p) hi hbi
+      have hT3 : (fastOddOpen w o p &&& ((~~~bs) &&& oneLane w true)).getLsbD i
+          = ((o && p) && decide (i = 0)) := fastTerm3 bs o p hi hbi
+      rw [hT1, hT2, hT3]
+      cases i with
+      | zero =>
+          rw [BitVec.carry_zero, BitVec.carry_zero]
+          have hb0 : bs.getLsbD 0 = false := hbi
+          simp [hb0, evenLanes_getLsbD (k := 0) hi]
+      | succ k =>
+          have hbk : bs.getLsbD k = false ∨ bs.getLsbD k = true := by
+            cases bs.getLsbD k <;> simp
+          rcases hbk with hbk | hbk
+          · -- no run ends below, both carries clear
+            rw [carry_of_prev_clear (fastEvenClass_sub bs o p) (by omega)
+                (by rwa [show k + 1 - 1 = k from by omega]),
+              carry_of_prev_clear (fastOddClass_sub bs o p) (by omega)
+                (by rwa [show k + 1 - 1 = k from by omega])]
+            have hafter : (decide (1 ≤ k + 1) && endLane bs ((k + 1) - 1)) = false := by
+              rw [decide_eq_true (by omega)]
+              unfold endLane
+              rw [show k + 1 - 1 = k from by omega, hbk]
+              simp
+            rw [hafter]
+            have hbnd : (decide (k + 1 = 0) && (o && !bs.getLsbD 0 && p)) = false := by
+              simp
+            rw [hbnd]
+            simp
+          · -- the run ends at k
+            obtain ⟨j, s, hrankj, hjw, hsdef?, hsstart, hse, hallset, hjstarts, hje, hjend?⟩ :=
+              run_end_start bs o (e := k) (by omega) hbk hbi
+            have hsdef : (setLanes (runStarts bs o))[j]'hjstarts = s := by
+              have h := hsdef?
+              rw [List.getElem?_eq_getElem hjstarts] at h
+              exact Option.some.inj h
+            have hend : (setLanes (runEnds bs))[j]'hje = k := by
+              have h := hjend?
+              rw [List.getElem?_eq_getElem hje] at h
+              exact Option.some.inj h
+            have hsw : s < w := by omega
+            have hfastStarts : (fastStarts bs).getLsbD s = true := by
+              rw [fastStarts_eq_runStarts, runStarts_getLsbD bs o hsw]
+              exact hsstart
+            have hEC : (fastEvenClass bs o p).getLsbD s = (altLanes w o p).getLsbD s := by
+              rw [fastEvenClass, BitVec.getLsbD_and, hfastStarts, Bool.true_and]
+            have hOC : (fastOddClass bs o p).getLsbD s
+                = !(altLanes w o p).getLsbD s := by
+              rw [fastOddClass_eq_not, BitVec.getLsbD_and, hfastStarts, Bool.true_and,
+                getLsbD_not_of_lt (altLanes w o p) hsw]
+            have hcE : BitVec.carry (k + 1) bs (fastEvenClass bs o p) false
+                = (altLanes w o p).getLsbD s := by
+              rw [carry_after_run bs (fastEvenClass bs o p) (altLanes w o p) o
+                (by rw [fastEvenClass, fastStarts_eq_runStarts]) (by omega) hse hsstart hallset]
+            have hcO : BitVec.carry (k + 1) bs (fastOddClass bs o p) false
+                = !(altLanes w o p).getLsbD s := by
+              rw [carry_after_run bs (fastOddClass bs o p) (~~~(altLanes w o p)) o
+                (by rw [fastOddClass_eq_not, fastStarts_eq_runStarts]) (by omega) hse hsstart hallset]
+              exact getLsbD_not_of_lt (altLanes w o p) hsw
+            rw [hcE, hcO]
+            -- the kernel side's after lane and its odd-run scatter
+            have hafterT : (decide (1 ≤ k + 1) && endLane bs ((k + 1) - 1)) = true := by
+              rw [decide_eq_true (by omega)]
+              unfold endLane
+              rw [show k + 1 - 1 = k from by omega, hbk, hbi]
+              simp
+            have hone : decide (k + 1 = 0) = false := decide_eq_false (by omega)
+            rw [hafterT, hrankj, oddRuns_getLsbD bs o p hjw,
+              startPara_getLsbD bs o p hjstarts, endPara_getLsbD bs (j := j) hje]
+            rw [hsdef, hend, ← altLanes_getLsbD o p hsw]
+            rw [show (k % 2 == 0) = (evenLanes w).getLsbD k from by
+              rw [evenLanes_getLsbD (by omega)]]
+            have heven_i : (evenLanes w).getLsbD (k + 1) = !((k % 2 == 0)) := by
+              rw [evenLanes_getLsbD (by omega)]
+              exact mod_two_succ_eq_zero k
+            rw [heven_i]
+            simp only [Bool.not_not]
+            rw [show (k % 2 == 0) = (evenLanes w).getLsbD k from by
+              rw [evenLanes_getLsbD (by omega)]]
+            rw [hone]
+            simpa using bool_eq_split ((altLanes w o p).getLsbD s)
+              ((evenLanes w).getLsbD k)
+
+
+/-- An addition wraps exactly when the carry leaves the word. -/
+theorem decide_add_lt_self {w : Nat} (x y : BitVec w) :
+    decide (x + y < x) = BitVec.carry w x y false := by
+  unfold BitVec.carry
+  simp only [BitVec.lt_def, BitVec.toNat_add, Nat.mod_eq_of_lt x.isLt,
+    Nat.mod_eq_of_lt y.isLt, Bool.toNat_false, Nat.add_zero]
+  by_cases h : x.toNat + y.toNat < 2 ^ w
+  · rw [Nat.mod_eq_of_lt h]
+    rw [decide_eq_false (by omega), decide_eq_false (by omega)]
+  · have hge : 2 ^ w ≤ x.toNat + y.toNat := by omega
+    have hsum : x.toNat + y.toNat < 2 ^ w + 2 ^ w := by
+      have hx := x.isLt
+      have hy := y.isLt
+      omega
+    have hlt : (x.toNat + y.toNat) % 2 ^ w = x.toNat + y.toNat - 2 ^ w := by
+      rw [Nat.mod_eq_sub_mod hge, Nat.mod_eq_of_lt (by omega)]
+    have hleft : x.toNat + y.toNat - 2 ^ w < x.toNat := by
+      have hy := y.isLt
+      omega
+    rw [hlt, decide_eq_true hleft, decide_eq_true hge]
+
+theorem fastPpar_eq_carry {w : Nat} (bs : BitVec w) (o p : Bool) :
+    fastPpar bs o p = BitVec.carry w bs (fastOddClass bs o p) false := by
+  unfold fastPpar
+  exact decide_add_lt_self bs (fastOddClass bs o p)
+
+/-- The arithmetic escape word is the kernel's, over the same masks. -/
+theorem fastEscape_eq_kernelEscape {w : Nat} (bs : BitVec w) (o p : Bool) :
+    fastEscape bs o p = kernelEscape bs o p :=
+  BitVec.eq_of_getLsbD_eq (fun _ hi => fastEscape_getLsbD bs o p hi)
+
+/-- The arithmetic's outgoing parity is the specification's, at sixty-four lanes. -/
+theorem fastPpar_eq_runParity (bs : BitVec 64) (o p : Bool) :
+    fastPpar bs o p = runParityBefore bs o p 64 := by
+  rw [fastPpar_eq_carry]
+  cases hb : bs.getLsbD 63 with
+  | false =>
+      rw [carry_of_prev_clear (fastOddClass_sub bs o p) (by omega)
+        (by rw [show 64 - 1 = 63 from by omega]; exact hb)]
+      show false = runParityBefore bs o p (63 + 1)
+      rw [runParityBefore, hb]
+      simp
+  | true =>
+      have hclear : bs.getLsbD (63 + 1) = false := by
+        rw [show 63 + 1 = 64 from by omega]
+        exact BitVec.getLsbD_of_ge bs 64 (by omega)
+      obtain ⟨j, s, hrankj, hjw, hsdef?, hsstart, hse, hallset, hjstarts, hje, hjend?⟩ :=
+        run_end_start bs o (e := 63) (by omega) hb hclear
+      have hsw : s < 64 := by omega
+      have hsdef : (setLanes (runStarts bs o))[j]'hjstarts = s := by
+        have h := hsdef?
+        rw [List.getElem?_eq_getElem hjstarts] at h
+        exact Option.some.inj h
+      have hcarry := carry_after_run bs (fastOddClass bs o p) (~~~(altLanes 64 o p)) o
+        (by rw [fastOddClass_eq_not, fastStarts_eq_runStarts]) (by omega) hse hsstart hallset
+      rw [hcarry, getLsbD_not_of_lt (altLanes 64 o p) hsw]
+      have hparity := escape_at_run_end bs o p (s := s) (e := 63) (by omega) hse hsstart hallset
+      rw [show (63 % 2 == 0) = false from by decide] at hparity
+      rw [show runParityBefore bs o p 64 = runParityBefore bs o p (63 + 1) from by
+        rw [show 63 + 1 = 64 from by omega]]
+      rw [← hparity]
+      rw [← altLanes_getLsbD o p hsw]
+      simp
+
+
 end LeanLLVM.Refinement.QuoteDerive
 

@@ -13,8 +13,12 @@
 #          over a 64-byte block and a three-word carry: `oracle.c` includes the
 #          vendored measured header and calls the measured `s1f_masks`;
 #          `kernel_probe.c` includes `s1_block.c` and calls the extracted one.
-#          The probe is lifted out of each module with `llvm-extract` and
-#          `llvm-diff` compares the two single-function modules.
+#          The measured side's `s1f_escaped` is replaced by the unit's own
+#          arithmetic before compiling — the one named exclusion, recorded in
+#          README.md's `s1-extra:` row and reported by this arm — so the
+#          comparison covers every other entity byte for byte.  The probe is
+#          lifted out of each module with `llvm-extract` and `llvm-diff`
+#          compares the two single-function modules.
 #   entry  the entry unit.  `entry_oracle.c` includes the vendored headers and
 #          calls the measured `s1f_k_pos8` and `s1f_k_b8`; `entry_probe.c`
 #          includes `entry.c` and calls the same two names.  Both are lifted
@@ -290,6 +294,54 @@ compile_probe() {
   # emitted code and makes the two digests comparable.
   sed -i -e '/^; ModuleID = /d' -e '/^source_filename = /d' "$lifted"
   printf '%s' "$lifted"
+}
+
+# build_s1_substituted_oracle -- the measured side with the one named exclusion.
+#
+# The mask unit's `s1f_escaped` is the unit's own arithmetic rather than the
+# measured text (README.md's `s1-extra:` row).  The measured side is therefore
+# the vendored header with that one definition replaced by the unit's text; the
+# substitution is asserted to land exactly once, and the rest of the header is
+# copied unchanged.  Every other entity is compared byte for byte.
+s1_oracle_src=""
+s1_header_sub=""
+build_s1_substituted_oracle() {
+  local newf=$work/s1f_escaped.unit.c n
+  awk '/^static inline uint64_t s1f_escaped\(/ { on = 1 }
+       on { print }
+       on && /^}$/ { exit }' "$kernel" > "$newf"
+  if [ ! -s "$newf" ] || ! grep -q 'sum_odd' "$newf"; then
+    printf 'SETUP: the unit has no s1f_escaped arithmetic to substitute\n' >&2
+    return 3
+  fi
+  s1_header_sub=$work/s1fuse.sub.h
+  awk 'NR == FNR { new = new $0 "\n"; next }
+       { if (!skip) {
+           if ($0 ~ /^static inline uint64_t s1f_escaped\(/) {
+             skip = 1; printf "%s", new; next }
+           print
+         } else if ($0 == "}") { skip = 0 } }' \
+    "$newf" "$measured/s1fuse.h" > "$s1_header_sub"
+  n=$(grep -c '^static inline uint64_t s1f_escaped(' "$s1_header_sub")
+  if [ "$n" -ne 1 ]; then
+    printf 'SETUP: the substitution left %s s1f_escaped definition(s)\n' "$n" >&2
+    return 3
+  fi
+  if cmp -s "$measured/s1fuse.h" "$s1_header_sub"; then
+    printf 'SETUP: the substitution changed nothing\n' >&2
+    return 3
+  fi
+  if ! grep -q 'sum_odd' "$s1_header_sub"; then
+    printf 'SETUP: the substituted header does not carry the unit arithmetic\n' >&2
+    return 3
+  fi
+  s1_oracle_src=$work/oracle.sub.c
+  sed 's|#include "../measured/s1fuse.h"|#include "s1fuse.sub.h"|' \
+    "$oracle" > "$s1_oracle_src"
+  if ! grep -q '#include "s1fuse.sub.h"' "$s1_oracle_src"; then
+    printf 'SETUP: the substituted oracle still includes the measured header\n' >&2
+    return 3
+  fi
 }
 
 # compare <expected:identical|different|report> <a.ll> <b.ll> <label>
@@ -708,7 +760,14 @@ arm_identity() {
     metadata_graph "$a" "$b" || return 1
     return 0
   fi
-  a=$(compile_probe oracle "$oracle" "$here") || return 3
+  local oracle_src=$oracle oracle_inc=$here
+  if [ "$unit" = s1 ]; then
+    build_s1_substituted_oracle || return 3
+    oracle_src=$s1_oracle_src
+    oracle_inc=$work
+    printf '   exclusion: s1f_escaped (the unit'"'"'s own arithmetic replaces the measured pext/pdep form on the measured side; every other entity is compared byte for byte)\n'
+  fi
+  a=$(compile_probe oracle "$oracle_src" "$oracle_inc" -I "$measured") || return 3
   b=$(compile_probe kernel "$probe_src" "$repo/kernel/json") || return 3
   if [ "$by_name" -eq 1 ]; then
     assert_lifted_shape "$a" measured || return $?

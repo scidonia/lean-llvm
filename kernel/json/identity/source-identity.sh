@@ -12,8 +12,11 @@
 # Units (`--unit s1` is the default, so every existing invocation keeps its
 # meaning and its exit codes):
 #
-#   s1     the mask unit, `kernel/json/s1_block.c`, against the seven entities
-#          `README.md`'s `entities:` line names in `measured/s1fuse.h`.
+#   s1     the mask unit, `kernel/json/s1_block.c`, against the six measured
+#          entities `README.md`'s `entities:` line names in `measured/s1fuse.h`.
+#          `s1f_escaped` is the unit's own arithmetic, not measured text, and is
+#          named by the `s1-extra:` row: the report states the exclusion by
+#          name and every other entity is compared token for token.
 #   entry  the entry unit, `kernel/json/entry.c`, against the seven entities
 #          `README.md`'s `entry-entities:` line names across `measured/s1fuse.h`
 #          and `measured/xlist.h`, with that unit's own deletion list.
@@ -358,7 +361,7 @@ case "$unit" in
     deletion_specs=$(printf '%s\n' "$list_block" | sed -n 's/^delete:[[:space:]]*//p' \
       | sed 's/^/s1fuse:/' | tr '\n' ' ')
     deletion_specs=${deletion_specs% }
-    extra_specs="s1fuse:leanllvm_json_s1_masks"
+    extra_specs=$(list_field s1-extra)
     defs_re="s1f_[a-z0-9_]+|leanllvm_json_s1_masks"
     xl_exempt=""
     detector_unit=$detector
@@ -428,6 +431,9 @@ if [ "$run_stage_tu" -eq 0 ]; then
   else
     printf 'identity list: %s\n' "$entity_specs"
     printf 'delete list:   %s\n' "$deletion_specs"
+    if [ "$unit" = s1 ]; then
+      printf 'excluded:      s1f_escaped (the unit'"'"'s own arithmetic; not compared with measured text)\n'
+    fi
   fi
 fi
 
@@ -1732,7 +1738,8 @@ preprocess_entities() { # <label>
 arm_preprocess() {
   local spec entity rc=0
   printf '\n== --preprocess: the mask region is invariant to the macro set\n'
-  printf '   claim: the seven entities are the same text under each macro set;\n'
+  printf '   claim: the six measured entities are the same text under each macro set;\n'
+  printf '   s1f_escaped is the unit'"'"'s own text and is excluded by name;\n'
   printf '   this is not a claim that a full measured build was compiled here.\n'
 
   mkdir -p "$work/stub"
