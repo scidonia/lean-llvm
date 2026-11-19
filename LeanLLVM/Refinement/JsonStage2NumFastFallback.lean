@@ -281,14 +281,81 @@ theorem fb_store_word {m : Nat} (hm : m < 2 ^ 64) :
     (BitVec.ofNat 64 m).toNat = m :=
   NumFastTier1.ofNat64_toNat_lt hm
 
+/-! ### The model ties the two boundaries consume
+
+The boundaries' statements pin the cells the ladder's head and the epilogue's
+rounding loop read, but those cells are computed from the lexeme's bytes rather
+than named by the entry's carried registers.  The two predicates below are the
+ties that make the pinned values a statement about the input: at the copy's
+entry the lexeme's bytes, read by the model's reader, and at the ladder's exit
+the model's pre-round word.
+
+`fbEInt` is the residual `if.end198.i.i` forms: `%add110.i.i` is
+`(R - 1) + S` at the window and `%sub200.i.i` subtracts the retained count
+`min nsig 19` and adds one.  `fbHeadNat` is the retained head `%top.0709.i.i`
+— the first `min nsig 19` digits — whose `uitofp` is `%conv202.i.i`. -/
+
+/-- The residual exponent the ladder's head receives: `(R - 1 + S) - topn + 1`. -/
+def fbEInt (d : Decimal) : Int :=
+  ((min (StrtodTier3.ndig d.mantissa) 768 : Nat) : Int) - 1
+    + (StrtodTier3.windowOf d.mantissa d.exponent).S
+    - ((min (StrtodTier3.ndig d.mantissa) 19 : Nat) : Int) + 1
+
+/-- The retained head's integer: the first `min nsig 19` digits. -/
+def fbHeadNat (d : Decimal) : Nat :=
+  d.mantissa / 10 ^ (StrtodTier3.ndig d.mantissa
+    - min (StrtodTier3.ndig d.mantissa) 19)
+
+/-- The model's residual magnitude at the entry's lexeme bytes. -/
+def fbE (bs : List UInt8) : Nat :=
+  match StrtodReader.reader ⟨bs.toArray⟩ with
+  | some d => (fbEInt d).natAbs
+  | none => 0
+
+/-- The model's widened head at the entry's lexeme bytes: `uitofp` of the
+retained head. -/
+def fbD0 (bs : List UInt8) : BitVec 64 :=
+  match StrtodReader.reader ⟨bs.toArray⟩ with
+  | some d => uitofpBits (fbHeadNat d)
+  | none => 0
+
+/-- The entry's model tie: the lexeme's `%n` bytes at `%p` model `E` and `d0`. -/
+def fbEntryModel (e : State) (E : Nat) (d0 : BitVec 64) : Prop :=
+  ∃ (p n : Nat) (bs : List UInt8),
+    lookupName e.env "%p" = some (.ptr p) ∧
+    lookupName e.env "%n" = some (.int 64 (BitVec.ofNat 64 n)) ∧
+    readBytes e.mem p n = some bs ∧
+    E = fbE bs ∧ d0 = fbD0 bs
+
+/-- The model's pre-round word at the ladder's exit: the carried fold over the
+rows the residual spends, the multiplication's for a nonnegative residual and
+the division's for a negative one. -/
+def fbPreRound (d : Decimal) : BitVec 64 :=
+  let bs := d.lexeme.data.toList
+  let E := fbE bs
+  let d0 := fbD0 bs
+  if fbEInt d < 0 then t3DivCarried d0 (t3Rows E) (t3Rows E).length
+  else t3MulCarried d0 (t3Rows E) (t3Rows E).length
+
+/-- The epilogue's model tie at `while.end253.i.i`: the ladder's two exit cells
+are the model's pre-round word, and the window is the one the rounding loop
+reads. -/
+def fbEpilogueModel (d : Decimal) (e : State) : Prop :=
+  ∃ (v : Nat),
+    lookupName e.env "%v.i.i" = some (.ptr v) ∧
+    lookupName e.env "%.cast.i629.i.i" = some (.int 64 (fbPreRound d)) ∧
+    lookupName e.env "%d201.3.i.i" = some (.float (fbPreRound d))
+
 /-! ### The epilogue boundary and the `cleanup300` tail -/
 
 /-- The epilogue's boundary: from the ladder's exit, the run reaches
 `if.end291`'s inlet with the model's rounded bits, within `J` control steps.
 This is the rounding loop `for.cond255.i.i` and the sign select at
-`for.end359.i.i`. -/
+`for.end359.i.i`; the exit's cells are the model's pre-round word
+(`fbEpilogueModel`). -/
 def FbEpilogue (calls : Calls) (d : Decimal) (digA out J : Nat) : Prop :=
   ∀ (e : State), e.pc = "while.end253.i.i" → t3DivExitWord e →
+    fbEpilogueModel d e →
     ∃ (f : State) (j : Nat), j ≤ J ∧
       f.pc = "if.end291" ∧ f.pre = some "for.end359.i.i" ∧
       lookupName f.env "%cond366.i.i"
@@ -313,7 +380,8 @@ theorem fb_tail {calls : Calls} {d : Decimal} {out err digA J : Nat}
     (hd : d.wellFormed)
     (hEpi : FbEpilogue calls d digA out J)
     (hStart : FbStart291 calls digA)
-    (e : State) (hpc : e.pc = "while.end253.i.i") (hword : t3DivExitWord e) :
+    (e : State) (hpc : e.pc = "while.end253.i.i") (hword : t3DivExitWord e)
+    (hmodel : fbEpilogueModel d e) :
     ∃ (o : CallOutcome) (r : CallOutcome),
       runFuel calls (J + 2) numFastBody (stateAt e.env e) =
         some (.ret (some o.ret) o.mem) ∧
@@ -321,7 +389,7 @@ theorem fb_tail {calls : Calls} {d : Decimal} {out err digA J : Nat}
       o.next = r.next ∧
       o.mem = writeBytes r.mem out (wordBytes 8 (strtodSpec d).toBits) ∧
       UnchangedOutside r.mem o.mem [(out, 8), (err, 8)] := by
-  obtain ⟨f, j, hjJ, hfpc, hfpre, hfbits, hfdig, hfout, hrun⟩ := hEpi e hpc hword
+  obtain ⟨f, j, hjJ, hfpc, hfpre, hfbits, hfdig, hfout, hrun⟩ := hEpi e hpc hword hmodel
   obtain ⟨r, hr⟩ := hStart f hfpc hfpre
   have hbitsEq : (StrtodTier3.tier3Emitted StrtodReader.reader d.lexeme).toBits
       = (strtodSpec d).toBits := fb_model_bits hd
@@ -390,13 +458,15 @@ def FbReader (calls : Calls) (p n g : Nat) (b0 : UInt8) (digA : Nat) : Prop :=
 
 /-- The interior from the copy's entry to the positive ladder's head: the copy,
 the lead clamps and the big multiply, reaching `while.cond203.i.i` from
-`if.end198.i.i` with the model's residual exponent and widened head. -/
+`if.end198.i.i` with the model's residual exponent and widened head.  The
+model tie `fbEntryModel` names the lexeme the entry's bytes hold. -/
 def FbCopyEntryPos (calls : Calls) (p n g digA : Nat) (b0 : UInt8)
     (E : Nat) (d0 : BitVec 64) : Prop :=
   ∀ (e : State), e.pc = "for.body.outer.i.i" →
     e.pre = some "for.body.outer.i.outer.i" →
     slEntryFields e.env (slSignIdx b0) →
     fbScanCarry e.env p n g (slSignIdx b0) (slSignBit b0) digA →
+    fbEntryModel e E d0 →
     ∃ (f : State) (j : Nat),
       f.pc = t3MulHead ∧ f.pre = some "if.end198.i.i" ∧
       lookupName f.env "%sub200.i.i" = some (.int 64 (BitVec.ofNat 64 E)) ∧
@@ -412,6 +482,7 @@ def FbCopyEntryNeg (calls : Calls) (p n g digA : Nat) (b0 : UInt8)
     e.pre = some "for.body.outer.i.outer.i" →
     slEntryFields e.env (slSignIdx b0) →
     fbScanCarry e.env p n g (slSignIdx b0) (slSignBit b0) digA →
+    fbEntryModel e E d0 →
     ∃ (f : State) (j : Nat),
       f.pc = t3MulHead ∧ f.pre = some "if.end198.i.i" ∧
       lookupName f.env "%sub200.i.i" = some (.int 64 (BitVec.ofInt 64 (-(E : Int)))) ∧
@@ -446,6 +517,13 @@ theorem fb_seam_pos {calls : Calls} {env : Env} {s : State} {d : Decimal}
     (hclass : LeanLLVM.StrtodRefine.Fallback d kernelDecides)
     (hreader : FbReader calls p n g b0 digA)
     (hcopyEntry : FbCopyEntryPos calls p n g digA b0 E d0)
+    (hentryTie : ∀ (e : State), e.pc = "for.body.outer.i.i" →
+      e.pre = some "for.body.outer.i.outer.i" →
+      slEntryFields e.env (slSignIdx b0) →
+      fbScanCarry e.env p n g (slSignIdx b0) (slSignBit b0) digA →
+      fbEntryModel e E d0)
+    (hepiTie : ∀ (e : State), e.pc = "while.end253.i.i" → t3DivExitWord e →
+      fbEpilogueModel d e)
     (hE : E ≤ 342)
     (hpack : ∀ c, c ≤ (t3Rows E).length →
       ∃ k : Code, t3MulCarried d0 (t3Rows E) c = packMag (.fin k) false ∧ k.IsMag)
@@ -497,14 +575,14 @@ theorem fb_seam_pos {calls : Calls} {env : Env} {s : State} {d : Decimal}
     simpa only [e1, stateAt] using fbScanCarry_slEntry he'carry
   -- the interior to the ladder's head
   obtain ⟨f, jc, hfpc, hfpre, hsub, hconv, hcarryf, hrunc⟩ :=
-    hcopyEntry e1 rfl rfl hfields hcarry1
+    hcopyEntry e1 rfl rfl hfields hcarry1 (hentryTie e1 rfl rfl hfields hcarry1)
   -- the ladder
   obtain ⟨el, jl, hjl, helpc, hword, hrunl⟩ :=
     t3_ladder_run_pos_exit calls d0 E address hE hpack hstage hno f hfpc hfpre hsub hconv (J + 2)
   -- the epilogue and the return
   obtain ⟨o, r, hrun_tail, hret, hnext, hmem, hframe⟩ :=
     fb_tail (calls := calls) (d := d) (out := out) (err := err) (digA := digA)
-      (J := J) hd hEpi hStart el helpc hword
+      (J := J) hd hEpi hStart el helpc hword (hepiTie el helpc hword)
   have htail : runFuel calls (jl + (J + 2)) numFastBody f =
       some (.ret (some o.ret) o.mem) := by
     rw [hrunl]
@@ -551,6 +629,13 @@ theorem fb_seam_neg {calls : Calls} {env : Env} {s : State} {d : Decimal}
     (hclass : LeanLLVM.StrtodRefine.Fallback d kernelDecides)
     (hreader : FbReader calls p n g b0 digA)
     (hcopyEntry : FbCopyEntryNeg calls p n g digA b0 E d0)
+    (hentryTie : ∀ (e : State), e.pc = "for.body.outer.i.i" →
+      e.pre = some "for.body.outer.i.outer.i" →
+      slEntryFields e.env (slSignIdx b0) →
+      fbScanCarry e.env p n g (slSignIdx b0) (slSignBit b0) digA →
+      fbEntryModel e E d0)
+    (hepiTie : ∀ (e : State), e.pc = "while.end253.i.i" → t3DivExitWord e →
+      fbEpilogueModel d e)
     (hE : E ≤ 342) (hpos : 0 < E)
     (hpack : ∀ c, c ≤ (t3Rows E).length →
       ∃ k : Code, t3DivCarried d0 (t3Rows E) c = packMag (.fin k) false ∧
@@ -595,12 +680,12 @@ theorem fb_seam_neg {calls : Calls} {env : Env} {s : State} {d : Decimal}
   have hcarry1 : fbScanCarry e1.env p n g (slSignIdx b0) (slSignBit b0) digA := by
     simpa only [e1, stateAt] using fbScanCarry_slEntry he'carry
   obtain ⟨f, jc, hfpc, hfpre, hsub, hconv, hcarryf, hrunc⟩ :=
-    hcopyEntry e1 rfl rfl hfields hcarry1
+    hcopyEntry e1 rfl rfl hfields hcarry1 (hentryTie e1 rfl rfl hfields hcarry1)
   obtain ⟨el, jl, hjl, helpc, hword, hrunl⟩ :=
     t3_ladder_run_neg_exit calls d0 E address hE hpos hpack hstage f hfpc hfpre hsub hconv (J + 2)
   obtain ⟨o, r, hrun_tail, hret, hnext, hmem, hframe⟩ :=
     fb_tail (calls := calls) (d := d) (out := out) (err := err) (digA := digA)
-      (J := J) hd hEpi hStart el helpc hword
+      (J := J) hd hEpi hStart el helpc hword (hepiTie el helpc hword)
   have htail : runFuel calls (jl + (J + 2)) numFastBody f =
       some (.ret (some o.ret) o.mem) := by
     rw [hrunl]

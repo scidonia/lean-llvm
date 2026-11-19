@@ -104,6 +104,7 @@ import LeanLLVM.Refinement.JsonStage2NumFastTier3Rows
 import LeanLLVM.Refinement.JsonStage2NumFastTier3LadderRun
 import LeanLLVM.Refinement.JsonStage2NumFastTier3Peel
 import LeanLLVM.Refinement.JsonStage2NumFastTier3PeelTie
+import LeanLLVM.Refinement.JsonStage2NumFastToDouble
 import LeanLLVM.Refinement.JsonStage2Hsem
 import LeanLLVM.Refinement.JsonStage2TokenCorrespondence
 import LeanLLVM.Refinement.JsonStage2NumFastBody
