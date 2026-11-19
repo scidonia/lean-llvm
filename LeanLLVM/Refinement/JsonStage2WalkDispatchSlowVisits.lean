@@ -202,6 +202,50 @@ theorem landRhsI103OutAt_byte {m0 : Mem} {G : WalkGeom m0} (s : State) (e : BitV
   simp [landRhsI103OutAt, stateAt, cells, lookupName_cons_self]
 
 
+/-- The first dispatch node's state: `%Pivot74` and the class edge it names. -/
+def landRhsI103Node73S (s : State) (e : BitVec 64) (a : Nat) (b : UInt8) : State :=
+  { (landRhsI103OutAt s e a b.toNat).bind "%Pivot74"
+      (.int 1 (evalICmp .slt (BitVec.ofNat 8 b.toNat) (BitVec.ofNat 8 13))) with
+    pc := (if evalICmp .slt (BitVec.ofNat 8 b.toNat) (BitVec.ofNat 8 13) = 1
+      then "LeafBlock64" else "NodeBlock71")
+    pre := some (landRhsI103OutAt s e a b.toNat).pc }
+
+/-- The second dispatch node's state: `%Pivot72` and the class edge it names. -/
+def landRhsI103Node71S (s : State) (e : BitVec 64) (a : Nat) (b : UInt8) : State :=
+  { (landRhsI103Node73S s e a b).bind "%Pivot72"
+      (.int 1 (evalICmp .slt (BitVec.ofNat 8 b.toNat) (BitVec.ofNat 8 32))) with
+    pc := (if evalICmp .slt (BitVec.ofNat 8 b.toNat) (BitVec.ofNat 8 32) = 1
+      then "LeafBlock67" else "LeafBlock69")
+    pre := some (landRhsI103Node73S s e a b).pc }
+
+/-- `LeafBlock64`'s state: the range leaf's bit and the edge it names. -/
+def landRhsI103Leaf64S (s : State) (e : BitVec 64) (a : Nat) (b : UInt8) : State :=
+  { stateAt (cells [("%SwitchLeaf66", .int 1 (evalICmp .ule
+        (BitVec.ofNat 8 b.toNat + BitVec.ofNat 8 247) (BitVec.ofNat 8 1))),
+      ("%.off65", .int 8 (BitVec.ofNat 8 b.toNat + BitVec.ofNat 8 247))]
+      (landRhsI103Node73S s e a b).env) (landRhsI103Node73S s e a b) with
+    pc := (if evalICmp .ule (BitVec.ofNat 8 b.toNat + BitVec.ofNat 8 247)
+      (BitVec.ofNat 8 1) = 1 then "while.end.i" else "while.body.i104")
+    pre := some (landRhsI103Node73S s e a b).pc }
+
+/-- `LeafBlock67`'s state: the `13` leaf's bit and the edge it names. -/
+def landRhsI103Leaf67S (s : State) (e : BitVec 64) (a : Nat) (b : UInt8) : State :=
+  { stateAt (("%SwitchLeaf68", .int 1 (evalICmp .eq (BitVec.ofNat 8 b.toNat)
+        (BitVec.ofNat 8 13))) :: (landRhsI103Node71S s e a b).env)
+      (landRhsI103Node71S s e a b) with
+    pc := (if evalICmp .eq (BitVec.ofNat 8 b.toNat) (BitVec.ofNat 8 13) = 1
+      then "while.end.i" else "while.body.i104")
+    pre := some (landRhsI103Node71S s e a b).pc }
+
+/-- `LeafBlock69`'s state: the `32` leaf's bit and the edge it names. -/
+def landRhsI103Leaf69S (s : State) (e : BitVec 64) (a : Nat) (b : UInt8) : State :=
+  { stateAt (("%SwitchLeaf70", .int 1 (evalICmp .eq (BitVec.ofNat 8 b.toNat)
+        (BitVec.ofNat 8 32))) :: (landRhsI103Node71S s e a b).env)
+      (landRhsI103Node71S s e a b) with
+    pc := (if evalICmp .eq (BitVec.ofNat 8 b.toNat) (BitVec.ofNat 8 32) = 1
+      then "while.end.i" else "while.body.i104")
+    pre := some (landRhsI103Node71S s e a b).pc }
+
 /-! **The composed dispatch is the next step, and it needs named successor states.**  The
 first attempt stated the leaves' `WalkLocal` hypotheses at inline `s.bind`/`cells` states
 and does not elaborate: `WalkLocal`'s `{m0} {G}` are not inferable from such a term, which
