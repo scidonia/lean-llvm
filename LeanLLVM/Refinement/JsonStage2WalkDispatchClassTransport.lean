@@ -241,108 +241,116 @@ theorem tag_zero_of_toInt_lt_44 {x : BitVec 8} (h : x.toInt < 44) :
 /-! ### The default-value branches
 
 Each branch takes one `HcontClass` constructor's fields (as `HcontClass.complete` produces
-them), the payload's default document row and a non-whitespace byte class, and returns the
-arm.  The route facts are derived from the class's range bits by the readings above.
+them) and returns the arm.  The byte facts the arm needs are derived from the class's range
+bits by the readings above.
 
-The classes are the **tag-clear** default arms: `defaultValueLow`, `defaultValueMid`,
-`otherValue`, `defaultValueBracket`, `defaultValueBracketHigh` and `defaultValueBrace`.
-`value` is the tag-set arm and is `.scalar`'s (its `HcontScalarPrefix` is the relevant
-row); `defaultValueHigh` is the `.ws`/`.cleanup` pair's class.  Neither is a route below
-`if.else387.i`, so neither appears here. -/
+Every tag-clear default class reaches `if.then413.i` through a leaf whose predecessor is
+`if.else405.i` except `102`, `110` and `116`: `defaultValueLow`, `defaultValueMid`,
+`otherValue`, `defaultValueBracket`, `defaultValueBrace` and the other bytes of
+`defaultValueBracketHigh` are on that edge, whose kind literal is `0`.  Their arm is
+therefore the refusal (`HcontArm.badToken`, from the class's `refuseSeg`), and the branch
+supplies the bytes it names — the tag test clear and the byte unequal to the three literal
+pivots.  Only `defaultValueBracketHigh`'s `'f'`, `110` and `116` sub-branches are the emit
+route, and those build the head chain (`bhHeadChain_of_lane`) and read the class's
+`fLetter`/`c56True`/`c58True` rows.  The classes are the tag-clear default arms: `value` is
+the tag-set arm and is `.scalar`'s (its `HcontScalarPrefix` is the relevant row);
+`defaultValueHigh` is the refusal class too (`hcontArm_cleanup_of_class`), handled by the
+class case rather than here. -/
 
-/-- **`.defaultValueLow`** — the byte's signed reading is below `44`, so its route is the
-letters span and its tag test is clear. -/
+/-- **`.defaultValueLow`** — the byte's signed reading is below `44`, so its tag test is
+clear and it is on `if.else405.i`'s edge: the arm is the refusal (`HcontArm.badToken`, from
+the class's `refuseSeg`).  The signed bound supplies every byte fact the refusal names. -/
 theorem hcontArm_defaultValueLow {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     {s : State} {x : BitVec 8}
     (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)
     (h8 : evalOperand s (.reg "%8") = some (.int 8 x))
-    (h91 : evalICmp .slt x (BitVec.ofNat 8 91) = 1)
     (h44 : evalICmp .slt x (BitVec.ofNat 8 44) = 1)
-    (hne34 : evalICmp .eq x (BitVec.ofNat 8 34) = 0)
-    (r : HcontDefaultRow G C s) (hb : HcontHeadByte G r.v) (hc : HcontClassRows G) :
+    (hc : HcontClassRows G) :
     Nonempty (HcontArm (stage2Calls stage2SubCalls) G C s) := by
   have hx44 : x.toInt < 44 := by simpa using toInt_lt_of_slt_one h44
   have hbit := tag_zero_of_toInt_lt_44 (x := x) hx44
-  have h110 : evalICmp .slt x (BitVec.ofNat 8 110) = 1 :=
-    slt_one_of_toInt_lt (x := x) (a := BitVec.ofNat 8 110)
-      (by simp only [toInt_8_110]; omega)
   have hne102 : evalICmp .eq x (BitVec.ofNat 8 102) = 0 :=
     eq_zero_of_toInt_ne (x := x) (c := BitVec.ofNat 8 102)
       (by simp only [toInt_8_102]; omega)
-  let ch := lowHeadChain_of_lane hInv hblock hk h8 h91 h44 hne34 hbit r hb
-  exact hcontArm_letters_of_class hInv hk h8 hbit h110 hne102 ch hc
+  have hne110 : evalICmp .eq x (BitVec.ofNat 8 110) = 0 :=
+    eq_zero_of_toInt_ne (x := x) (c := BitVec.ofNat 8 110)
+      (by simp only [toInt_8_110]; omega)
+  have hne116 : evalICmp .eq x (BitVec.ofNat 8 116) = 0 :=
+    eq_zero_of_toInt_ne (x := x) (c := BitVec.ofNat 8 116)
+      (by simp only [toInt_8_116]; omega)
+  exact hcontArm_letters_of_class hInv hblock hk h8 hbit hne102 hne110 hne116 hc
 
-/-- **`.defaultValueMid`** — `58 < %8 < 91`, so the route is the letters span. -/
+/-- **`.defaultValueMid`** — `58 ≤ %8 < 91`, so its tag test is clear and it is on
+`if.else405.i`'s edge: the arm is the refusal, and the signed bounds supply its bytes. -/
 theorem hcontArm_defaultValueMid {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     {s : State} {x : BitVec 8}
     (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)
     (h8 : evalOperand s (.reg "%8") = some (.int 8 x))
     (h91 : evalICmp .slt x (BitVec.ofNat 8 91) = 1)
-    (h44 : evalICmp .slt x (BitVec.ofNat 8 44) = 0)
     (h58 : evalICmp .slt x (BitVec.ofNat 8 58) = 0)
-    (hne58 : evalICmp .eq x (BitVec.ofNat 8 58) = 0)
-    (r : HcontDefaultRow G C s) (hb : HcontHeadByte G r.v) (hc : HcontClassRows G) :
+    (hc : HcontClassRows G) :
     Nonempty (HcontArm (stage2Calls stage2SubCalls) G C s) := by
   have hx91 : x.toInt < 91 := by simpa using toInt_lt_of_slt_one h91
   have hge58 : 58 ≤ x.toInt := by simpa using toInt_ge_of_slt_zero h58
   have hbit := tag_zero_of_toInt_ge_58 (x := x) (by omega)
-  have h110 : evalICmp .slt x (BitVec.ofNat 8 110) = 1 :=
-    slt_one_of_toInt_lt (x := x) (a := BitVec.ofNat 8 110)
-      (by simp only [toInt_8_110]; omega)
   have hne102 : evalICmp .eq x (BitVec.ofNat 8 102) = 0 :=
     eq_zero_of_toInt_ne (x := x) (c := BitVec.ofNat 8 102)
       (by simp only [toInt_8_102]; omega)
-  let ch := midHeadChain_of_lane hInv hblock hk h8 h91 h44 h58 hne58 hbit r hb
-  exact hcontArm_letters_of_class hInv hk h8 hbit h110 hne102 ch hc
+  have hne110 : evalICmp .eq x (BitVec.ofNat 8 110) = 0 :=
+    eq_zero_of_toInt_ne (x := x) (c := BitVec.ofNat 8 110)
+      (by simp only [toInt_8_110]; omega)
+  have hne116 : evalICmp .eq x (BitVec.ofNat 8 116) = 0 :=
+    eq_zero_of_toInt_ne (x := x) (c := BitVec.ofNat 8 116)
+      (by simp only [toInt_8_116]; omega)
+  exact hcontArm_letters_of_class hInv hblock hk h8 hbit hne102 hne110 hne116 hc
 
-/-- **`.otherValue`** — the tag-clear half of `HeadArm.defaultValue`: `44 ≤ %8 < 58` and
-`%8 ≠ 44`, which excludes the tag-set bytes, so the route is the letters span.  The tag
-bit is the constructor's own field. -/
+/-- **`.otherValue`** — the tag-clear half of `HeadArm.defaultValue`: `%8 < 58`, which puts
+the byte on `if.else405.i`'s edge.  The arm is the refusal; the tag bit is the
+constructor's own field and the signed bound supplies the three pivots' inequalities. -/
 theorem hcontArm_otherValue {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     {s : State} {x : BitVec 8}
     (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)
     (h8 : evalOperand s (.reg "%8") = some (.int 8 x))
-    (h91 : evalICmp .slt x (BitVec.ofNat 8 91) = 1)
-    (h44 : evalICmp .slt x (BitVec.ofNat 8 44) = 0)
     (h58 : evalICmp .slt x (BitVec.ofNat 8 58) = 1)
-    (hne44 : evalICmp .eq x (BitVec.ofNat 8 44) = 0)
     (hbit : (evalICmp .eq x (BitVec.ofNat 8 45) |||
       evalICmp .ult (x + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
-    (r : HcontDefaultRow G C s) (hb : HcontHeadByte G r.v) (hc : HcontClassRows G) :
+    (hc : HcontClassRows G) :
     Nonempty (HcontArm (stage2Calls stage2SubCalls) G C s) := by
   have hx58 : x.toInt < 58 := by simpa using toInt_lt_of_slt_one h58
-  have h110 : evalICmp .slt x (BitVec.ofNat 8 110) = 1 :=
-    slt_one_of_toInt_lt (x := x) (a := BitVec.ofNat 8 110)
-      (by simp only [toInt_8_110]; omega)
   have hne102 : evalICmp .eq x (BitVec.ofNat 8 102) = 0 :=
     eq_zero_of_toInt_ne (x := x) (c := BitVec.ofNat 8 102)
       (by simp only [toInt_8_102]; omega)
-  let ch := othHeadChain_of_lane hInv hblock hk h8 h91 h44 h58 hne44 hbit r hb
-  exact hcontArm_letters_of_class hInv hk h8 hbit h110 hne102 ch hc
+  have hne110 : evalICmp .eq x (BitVec.ofNat 8 110) = 0 :=
+    eq_zero_of_toInt_ne (x := x) (c := BitVec.ofNat 8 110)
+      (by simp only [toInt_8_110]; omega)
+  have hne116 : evalICmp .eq x (BitVec.ofNat 8 116) = 0 :=
+    eq_zero_of_toInt_ne (x := x) (c := BitVec.ofNat 8 116)
+      (by simp only [toInt_8_116]; omega)
+  exact hcontArm_letters_of_class hInv hblock hk h8 hbit hne102 hne110 hne116 hc
 
-/-- **`.defaultValueBracket`** — the byte `92`, whose route is the letters span. -/
+/-- **`.defaultValueBracket`** — the byte `92`, on `if.else405.i`'s edge: the arm is the
+refusal, and the two signed bounds supply its bytes. -/
 theorem hcontArm_defaultValueBracket {m0 : Mem} {G : WalkGeom m0}
     {C : WalkCarry G} {s : State} {x : BitVec 8}
     (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)
     (h8 : evalOperand s (.reg "%8") = some (.int 8 x))
     (h91 : evalICmp .slt x (BitVec.ofNat 8 91) = 0)
-    (h123 : evalICmp .slt x (BitVec.ofNat 8 123) = 1)
     (h93 : evalICmp .slt x (BitVec.ofNat 8 93) = 1)
-    (hne91 : evalICmp .eq x (BitVec.ofNat 8 91) = 0)
-    (r : HcontDefaultRow G C s) (hb : HcontHeadByte G r.v) (hc : HcontClassRows G) :
+    (hc : HcontClassRows G) :
     Nonempty (HcontArm (stage2Calls stage2SubCalls) G C s) := by
   have hx93 : x.toInt < 93 := by simpa using toInt_lt_of_slt_one h93
   have hge91 : 91 ≤ x.toInt := by simpa using toInt_ge_of_slt_zero h91
-  have hne91' : x.toInt ≠ 91 := by simpa using toInt_ne_of_eq_zero hne91
   have hbit := tag_zero_of_toInt_ge_58 (x := x) (by omega)
-  have h110 : evalICmp .slt x (BitVec.ofNat 8 110) = 1 :=
-    slt_one_of_toInt_lt (x := x) (a := BitVec.ofNat 8 110)
-      (by simp only [toInt_8_110]; omega)
   have hne102 : evalICmp .eq x (BitVec.ofNat 8 102) = 0 :=
     eq_zero_of_toInt_ne (x := x) (c := BitVec.ofNat 8 102)
       (by simp only [toInt_8_102]; omega)
-  let ch := brkHeadChain_of_lane hInv hblock hk h8 h91 h123 h93 hne91 hbit r hb
-  exact hcontArm_letters_of_class hInv hk h8 hbit h110 hne102 ch hc
+  have hne110 : evalICmp .eq x (BitVec.ofNat 8 110) = 0 :=
+    eq_zero_of_toInt_ne (x := x) (c := BitVec.ofNat 8 110)
+      (by simp only [toInt_8_110]; omega)
+  have hne116 : evalICmp .eq x (BitVec.ofNat 8 116) = 0 :=
+    eq_zero_of_toInt_ne (x := x) (c := BitVec.ofNat 8 116)
+      (by simp only [toInt_8_116]; omega)
+  exact hcontArm_letters_of_class hInv hblock hk h8 hbit hne102 hne110 hne116 hc
 
 /-- **`.defaultValueBracketHigh`** — `94 … 122`, the one default class whose byte spans two
 routes: `'f'` at `102`, the letters span below `110` (and not `102`), and the class-C span
@@ -370,7 +378,14 @@ theorem hcontArm_defaultValueBracketHigh {m0 : Mem} {G : WalkGeom m0}
   · by_cases h102one : evalICmp .eq x (BitVec.ofNat 8 102) = 1
     · exact hcontArm_fLetter_of_class hInv hk h8 hbit h110one h102one ch hc
     · have hne102 : evalICmp .eq x (BitVec.ofNat 8 102) = 0 := bitZeroOfNeOne h102one
-      exact hcontArm_letters_of_class hInv hk h8 hbit h110one hne102 ch hc
+      have hx110 : x.toInt < 110 := by simpa using toInt_lt_of_slt_one h110one
+      have hne110 : evalICmp .eq x (BitVec.ofNat 8 110) = 0 :=
+        eq_zero_of_toInt_ne (x := x) (c := BitVec.ofNat 8 110)
+          (by simp only [toInt_8_110]; omega)
+      have hne116 : evalICmp .eq x (BitVec.ofNat 8 116) = 0 :=
+        eq_zero_of_toInt_ne (x := x) (c := BitVec.ofNat 8 116)
+          (by simp only [toInt_8_116]; omega)
+      exact hcontArm_letters_of_class hInv hblock hk h8 hbit hne102 hne110 hne116 hc
   · have h110zero : evalICmp .slt x (BitVec.ofNat 8 110) = 0 := bitZeroOfNeOne h110one
     have h125 : evalICmp .slt x (BitVec.ofNat 8 125) = 1 ∨
         evalICmp .eq x (BitVec.ofNat 8 125) = 1 := Or.inl h125one
@@ -385,41 +400,51 @@ theorem hcontArm_defaultValueBracketHigh {m0 : Mem} {G : WalkGeom m0}
       exact hcontArm_classC_56True_of_class hInv hk h8 h110zero h116one h110eq h125 ch hc
     · have h110eqz : evalICmp .eq x (BitVec.ofNat 8 110) = 0 := bitZeroOfNeOne h110eq
       by_cases h116one : evalICmp .slt x (BitVec.ofNat 8 116) = 1
-      · exact hcontArm_classC_56Else_of_class hInv hk h8 h110zero h116one h110eqz h125 ch hc
+      · have hge110 : 110 ≤ x.toInt := by simpa using toInt_ge_of_slt_zero h110zero
+        have hx116 : x.toInt < 116 := by simpa using toInt_lt_of_slt_one h116one
+        have hne102 : evalICmp .eq x (BitVec.ofNat 8 102) = 0 :=
+          eq_zero_of_toInt_ne (x := x) (c := BitVec.ofNat 8 102)
+            (by simp only [toInt_8_102]; omega)
+        have hne116 : evalICmp .eq x (BitVec.ofNat 8 116) = 0 :=
+          eq_zero_of_toInt_ne (x := x) (c := BitVec.ofNat 8 116)
+            (by simp only [toInt_8_116]; omega)
+        exact hcontArm_classC_56Else_of_class hInv hblock hk h8 hbit hne102 h110eqz hne116 hc
       · have h116zero : evalICmp .slt x (BitVec.ofNat 8 116) = 0 := bitZeroOfNeOne h116one
         by_cases h116eq : evalICmp .eq x (BitVec.ofNat 8 116) = 1
         · exact hcontArm_classC_58True_of_class hInv hk h8 h110zero h116zero h116eq h125 ch hc
-        · exact hcontArm_classC_58Else_of_class hInv hk h8 h110zero h116zero (bitZeroOfNeOne h116eq) h125 ch hc
+        · have hge116 : 116 ≤ x.toInt := by simpa using toInt_ge_of_slt_zero h116zero
+          have hne102 : evalICmp .eq x (BitVec.ofNat 8 102) = 0 :=
+            eq_zero_of_toInt_ne (x := x) (c := BitVec.ofNat 8 102)
+              (by simp only [toInt_8_102]; omega)
+          have hne110 : evalICmp .eq x (BitVec.ofNat 8 110) = 0 :=
+            eq_zero_of_toInt_ne (x := x) (c := BitVec.ofNat 8 110)
+              (by simp only [toInt_8_110]; omega)
+          exact hcontArm_classC_58Else_of_class hInv hblock hk h8 hbit hne102 hne110
+            (bitZeroOfNeOne h116eq) hc
 
 /-- **`.defaultValueBrace`** — the byte `124`, whose route is the class-C span's last
-leaf (`117 … 125`'s else arm, kind `0`). -/
+leaf (`117 … 125`'s else arm, kind `0`): the arm is the refusal. -/
 theorem hcontArm_defaultValueBrace {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     {s : State} {x : BitVec 8}
     (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)
     (h8 : evalOperand s (.reg "%8") = some (.int 8 x))
-    (h91 : evalICmp .slt x (BitVec.ofNat 8 91) = 0)
     (h123 : evalICmp .slt x (BitVec.ofNat 8 123) = 0)
     (h125 : evalICmp .slt x (BitVec.ofNat 8 125) = 1)
-    (hne123 : evalICmp .eq x (BitVec.ofNat 8 123) = 0)
-    (r : HcontDefaultRow G C s) (hb : HcontHeadByte G r.v) (hc : HcontClassRows G) :
+    (hc : HcontClassRows G) :
     Nonempty (HcontArm (stage2Calls stage2SubCalls) G C s) := by
   have hge123 : 123 ≤ x.toInt := by simpa using toInt_ge_of_slt_zero h123
   have hx125 : x.toInt < 125 := by simpa using toInt_lt_of_slt_one h125
-  have hne123' : x.toInt ≠ 123 := by simpa using toInt_ne_of_eq_zero hne123
   have hbit := tag_zero_of_toInt_ge_58 (x := x) (by omega)
-  have h110zero : evalICmp .slt x (BitVec.ofNat 8 110) = 0 :=
-    slt_zero_of_toInt_ge (x := x) (a := BitVec.ofNat 8 110)
+  have hne102 : evalICmp .eq x (BitVec.ofNat 8 102) = 0 :=
+    eq_zero_of_toInt_ne (x := x) (c := BitVec.ofNat 8 102)
+      (by simp only [toInt_8_102]; omega)
+  have hne110 : evalICmp .eq x (BitVec.ofNat 8 110) = 0 :=
+    eq_zero_of_toInt_ne (x := x) (c := BitVec.ofNat 8 110)
       (by simp only [toInt_8_110]; omega)
-  have h116zero : evalICmp .slt x (BitVec.ofNat 8 116) = 0 :=
-    slt_zero_of_toInt_ge (x := x) (a := BitVec.ofNat 8 116)
-      (by simp only [toInt_8_116]; omega)
-  have h116eq : evalICmp .eq x (BitVec.ofNat 8 116) = 0 :=
+  have hne116 : evalICmp .eq x (BitVec.ofNat 8 116) = 0 :=
     eq_zero_of_toInt_ne (x := x) (c := BitVec.ofNat 8 116)
       (by simp only [toInt_8_116]; omega)
-  have h125' : evalICmp .slt x (BitVec.ofNat 8 125) = 1 ∨
-      evalICmp .eq x (BitVec.ofNat 8 125) = 1 := Or.inl h125
-  let ch := brcHeadChain_of_lane hInv hblock hk h8 h91 h123 h125 hne123 hbit r hb
-  exact hcontArm_classC_58Else_of_class hInv hk h8 h110zero h116zero h116eq h125' ch hc
+  exact hcontArm_classC_58Else_of_class hInv hblock hk h8 hbit hne102 hne110 hne116 hc
 
 /-! ### The instrument -/
 

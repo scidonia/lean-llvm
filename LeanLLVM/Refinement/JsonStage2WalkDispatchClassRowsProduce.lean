@@ -24,34 +24,35 @@ caller-supplied staged word, or a route the tree has not composed:
 
 | field | what it is, and the structure/section that carries it |
 |---|---|
-| `cleanupRow` | the scan-free class's seam row.  No producer: `HcontSeamStaging`'s fields are the *run* class's seams (`contWsTailStart`, `FS413`, `ClsS413T`, `ClsS58T`) and the last entry's, not `contTailStartByte`'s.  **And the field is uninhabited as stated**: its literal is `0` (`contTailStartOfDoc_pre`'s predecessor `if.else405.i`, `contTailStart_phi`), where no three-call group exists (`HcontSeamRow.not_nonempty_zero` below).  The rows that edge carries are the refusal group's (`HcontSeamRefusal`, `hcontSeamRefusalOf`) and the route is `refuseSeg`'s. |
+| `cleanupRow` | the scan-free class's seam rows, as the **refusal group** (`HcontSeamRefusal`): `contTailStartByte`'s predecessor is `if.else405.i` (`contTailStartOfDoc_pre`, `contTailStart_phi`), whose literal `0` admits no three-call group.  No producer: `HcontSeamStaging`'s fields are the *run* class's seams (`contWsTailStart`, `FS413`, `ClsS413T`, `ClsS58T`) and the last entry's, not `contTailStartByte`'s.  The arm's route is `refuseSeg`'s. |
 | `scalar` | the plain-value class's seam row at `scSeamByte … pre.hb`, literal `7`.  Carrier: the class's own staged words at that state (`HcontSeamStage`/`HcontSeamKind`), which the tree does not state at `scSeamByte`; the row's root word is stated at the *head* memory, one transport the staged words do not carry. |
 | `scalarRun` | `.value × wsByte`: `HcontScalarWsRow`'s document cells, the byte's class with the run's stop, the seam's cells and the three calls.  Carrier: the document (`JsonStage2WalkHcontWsScalar`'s bundle content); its consumer `hcontArm_scalarRun_of_row` builds the arm from it. |
-| `letters` | the letters leaf's seam row.  **Uninhabited as stated**: `LetS413`'s predecessor is `if.else405.i` (`letS413_pre`), the literal `0`, and no three-call group exists there (`HcontSeamRow.not_nonempty_zero`).  The edge's rows are the refusal group's; the route is `refuseSeg`'s. |
+| `letters` | the letters leaf's seam rows, as the **refusal group**: `LetS413`'s predecessor is `if.else405.i` (`letS413_pre`), whose literal `0` admits no three-call group.  The arm's route is `refuseSeg`'s. |
 | `fLetter` | the `'f'` leaf's seam row at `FS413`, literal `9`.  Carrier: the staged words at that seam (`HcontSeamEmitStage`, whose producer is `hcontSeamCallsOf`), less the head-memory root word. |
 | `c56True` | `110`'s leaf at `ClsS413T`, literal `10`.  Same carrier as `fLetter`. |
-| `c56Else` | `111 … 115`'s leaf at `ClsS413F`.  **Uninhabited as stated** (literal `0`, refusal edge); the rows are `HcontSeamRefusal`'s. |
+| `c56Else` | `111 … 115`'s leaf at `ClsS413F`, as the **refusal group** (literal `0`, `if.else405.i`'s edge). |
 | `c58True` | `116`'s leaf at `ClsS58T`, literal `8`.  Same carrier as `fLetter`. |
-| `c58Else` | `117 … 125`'s leaf at `HeadS413`.  **Uninhabited as stated** (literal `0`, refusal edge); the rows are `HcontSeamRefusal`'s. |
+| `c58Else` | `117 … 125`'s leaf at `HeadS413`, as the **refusal group** (literal `0`, `if.else405.i`'s edge). |
 | `deep` | the positive-depth opener's route: the merge's counted segment and endpoint, or the refusal's witness (`HcontDeepRow`).  No theorem states the merge's segment, so the arm carries it. |
 | `runSkip` | the whitespace skip's class (`HcontRunSkip`): the per-index run, the stop and the stop's place in the entry.  The document's content; `HcontRunBody`'s producer (`hcontRunBody_of_skip`) reads it. |
 | `runTail` | the run's tail rows (`HcontRunTail`): the landing's byte and reads, the traversal's `hround`/`hbyte`, the appended record.  `hcontRunRow_of_rows` joins it to the row. |
 | `refuseSeg` | the kind-`0` refusal route as a priced segment to `if.then` (`HcontClassRows.refuseSeg`'s own statement).  The links are proved individually (`if_then413_i`, `if_then425_i_refuse`, …, `cleanup474_i`); the composition is the class's route, spent by `hcontArm_badToken_of_row`. |
 | `HlastClassRows.seam` | the last level's seam at any byte-route tail (`HlastSeam`'s sum).  Carrier: `HcontSeamStage` at `hlastTailByte` and the class's `HlastRefuseRoute`; the producers `hlastSeamRefusal_of_stage`/`hlastSeamZero_of_calls` name the two arms (`JsonStage2WalkDispatchHlastSupply`). |
 
-## The four zero-literal fields cannot be carried as three-call rows
+## Why the four zero-literal fields are the refusal group
 
 `HcontSeamCalls`'s scalar row demands the emit answer (`hret₂ : r₂.ret = 1`), and
 `stage2ScalarValue` answers `0` at `kind = 0` (`s2ScalarValue_refused`;
 `hcontSeamCalls_no_kind_zero`, `hcontSeamCalls_no_literal_zero`,
 `JsonStage2WalkDispatchSeamCalls`).  So a `HcontSeamRow` whose literal is `0` has no
-inhabitant, which the theorem `HcontSeamRow.not_nonempty_zero` below records.  Four of the
-group's fields are stated at that literal — `cleanupRow`, `letters`, `c56Else`, `c58Else` —
-so they are not merely unwritten supply: as stated they cannot be supplied at all.  The
-rows those seams actually carry are the refusal group's (`HcontSeamRefusal`'s two leading
-calls, the derived answer and the record) and the class's route is `refuseSeg`'s; the arm
-they feed is `hcontArm_badToken_of_row`, not the emit tail.  Restating the four fields is
-a change to the frozen field types, so it is left to the structure's owner.
+inhabitant, which the theorem `HcontSeamRow.not_nonempty_zero` below records.  The four
+seams the class rows name at that literal — `cleanupRow`, `letters`, `c56Else`, `c58Else` —
+are therefore stated as the refusal group (`HcontSeamRefusal`), whose content the tree
+already names: the two leading calls (`HcontSeamMid`), the literal `0` and the root slot's
+word, and the scalar call's answer `0` with `stage2ErrSetMsg`'s record
+(`hcontSeamRefusalOf`, `JsonStage2WalkDispatchSeamCalls`).  The arm those classes take is
+`hcontArm_badToken_of_row`, from the class's `refuseSeg` route; the four fields state what
+the seam carries, and no arm reads them.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkDispatchClassRows
 import LeanLLVM.Refinement.JsonStage2WalkDispatchSeamCalls
@@ -73,12 +74,13 @@ fields — `cleanup`, `run` and `seam` — are not repeated. -/
 
 /-- **The continuing class rows' supply**: the fields of `HcontClassRows` the tree does not
 produce, stated at the structure's own parameters.  See the module header for each field's
-carrier; four of them (`cleanupRow`, `letters`, `c56Else`, `c58Else`) are stated at the
-literal `0` and are refuted by `HcontSeamRow.not_nonempty_zero`. -/
+carrier; the four fields `cleanupRow`, `letters`, `c56Else` and `c58Else` are the refusal
+group (`HcontSeamRefusal`) at `if.else405.i`'s literal `0`. -/
 structure HcontClassRowsSupply {m0 : Mem} (G : WalkGeom m0) : Type where
-  /-- The scan-free class's seam row, at the byte route's tail start. -/
+  /-- The scan-free class's seam rows, at the byte route's tail start: the refusal group
+  (`if.else405.i`'s literal `0`). -/
   cleanupRow : ∀ (C : WalkCarry G) (s : State) (doc : HcontCleanupDoc G C s),
-    HcontSeamRow G s (ContTailStartC C)
+    HcontSeamRefusal G (ContTailStartC C)
       (contTailStartByte C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep doc.v
         (contIx G C) (contB35 G doc.v) (hlastByte G C) (hlastByte G C) doc.hb)
       (BitVec.ofNat 32 0)
@@ -91,9 +93,9 @@ structure HcontClassRowsSupply {m0 : Mem} (G : WalkGeom m0) : Type where
   /-- The plain-value class's whitespace-run row. -/
   scalarRun : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     C.k + 1 < G.nep → HcontScalarWsRow G C s
-  /-- The letters class's seam row, at the head chain's endpoint. -/
+  /-- The letters class's seam rows, at the head chain's endpoint: the refusal group. -/
   letters : ∀ (C : WalkCarry G) (s : State) {x : BitVec 8} (ch : HcontHeadChain G C s x),
-    HcontSeamRow G s (HeadC₄₁₃ (LetC₄₀₅ ch.Cm)) (LetS413 ch.sm x) (BitVec.ofNat 32 0)
+    HcontSeamRefusal G (HeadC₄₁₃ (LetC₄₀₅ ch.Cm)) (LetS413 ch.sm x) (BitVec.ofNat 32 0)
   /-- The `'f'` leaf's seam row, at `FS413`. -/
   fLetter : ∀ (C : WalkCarry G) (s : State) {x : BitVec 8} (ch : HcontHeadChain G C s x),
     HcontSeamRow G s (FC₄₁₃ ch.Cm) (FS413 ch.sm x) (BitVec.ofNat 32 9)
@@ -101,16 +103,16 @@ structure HcontClassRowsSupply {m0 : Mem} (G : WalkGeom m0) : Type where
   c56True : ∀ (C : WalkCarry G) (s : State) {x : BitVec 8} (ch : HcontHeadChain G C s x),
     HcontSeamRow G s ({ ClsC₄₀₃ ch.Cm with block := "if.then413.i" }) (ClsS413T ch.sm x)
       (BitVec.ofNat 32 10)
-  /-- `111 … 115`'s leaf seam, at `ClsS413F`. -/
+  /-- `111 … 115`'s seam rows, at `ClsS413F`: the refusal group. -/
   c56Else : ∀ (C : WalkCarry G) (s : State) {x : BitVec 8} (ch : HcontHeadChain G C s x),
-    HcontSeamRow G s (HeadC₄₁₃ (ClsC₄₀₅ ch.Cm)) (ClsS413F ch.sm x) (BitVec.ofNat 32 0)
+    HcontSeamRefusal G (HeadC₄₁₃ (ClsC₄₀₅ ch.Cm)) (ClsS413F ch.sm x) (BitVec.ofNat 32 0)
   /-- `116`'s leaf seam, at `ClsS58T`. -/
   c58True : ∀ (C : WalkCarry G) (s : State) {x : BitVec 8} (ch : HcontHeadChain G C s x),
     HcontSeamRow G s ({ HeadC₅₈ ch.Cm with block := "if.then413.i" }) (ClsS58T ch.sm x)
       (BitVec.ofNat 32 8)
-  /-- `117 … 125`'s leaf seam, at `HeadS413`. -/
+  /-- `117 … 125`'s seam rows, at `HeadS413`: the refusal group. -/
   c58Else : ∀ (C : WalkCarry G) (s : State) {x : BitVec 8} (ch : HcontHeadChain G C s x),
-    HcontSeamRow G s (HeadC₄₁₃ ch.Cm) (HeadS413 ch.sm x) (BitVec.ofNat 32 0)
+    HcontSeamRefusal G (HeadC₄₁₃ ch.Cm) (HeadS413 ch.sm x) (BitVec.ofNat 32 0)
   /-- The positive-depth opener's route row. -/
   deep : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     C.k + 1 < G.nep → evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 34) = 1 →
@@ -212,8 +214,8 @@ def hlastClassRows_of_supply_all
 
 `HcontSeamCalls` carries the emit arm's answer, so no seam group exists at a store of `0`
 (`hcontSeamCalls_no_literal_zero`).  A `HcontSeamRow` names that group *and* the literal, so
-the structure is empty at `0`: this is the theorem that makes the four fields in the header
-uninhabited as stated rather than merely unwritten. -/
+the structure is empty at `0`: this is the theorem that makes a three-call row unavailable
+at the four seams the class rows state as the refusal group. -/
 
 /-- **No seam row exists at the literal `0`.**  The row's `hcA` fixes the calls' stored
 literal to `0`, and the scalar call's emit answer is impossible there

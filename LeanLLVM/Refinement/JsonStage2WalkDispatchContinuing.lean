@@ -21,9 +21,9 @@ names its row's consumer:
 | `.value` | `wsByte` | `hcontArm_scalarRun_of_class` (the class's `scalarRun` row) |
 | `.value` | the three leaves | `hcontArm_value_of_lane` (the payload's default lane) |
 | `.defaultValueHigh` | `wsByte` | `hcontArm_ws_of_rows` (the whitespace group, at the class's two clear bits — the guard the group's `run` field now carries) |
-| `.defaultValueHigh` | the three leaves | `hcontArm_cleanup_of_class` (the class's `cleanup`/`cleanupRow`) |
+| `.defaultValueHigh` | the three leaves | `hcontArm_cleanup_of_class` (the refusal arm at the class's `refuseSeg`; `126`/`127` take `if.else405.i`, whose kind literal is `0`) |
 | the six tag-clear default classes | any | **the refusal arm** (`HcontArm.badToken`, from `HcontClassRows.refuseSeg`): those bytes are never value bytes (`%8 < 44`, `59 … 90`, `92`, `94 … 122` minus the three literals, `124`), so the edge takes `if.then432.i` and refuses.  The three literal bytes inside `94 … 122` keep the run arm (`.defaultValueBracketHigh`'s `f`/`n`/`t` sub-branches) |
-| the six tag-clear default classes | the three leaves | `hcontArm_defaultValueLow` … `_defaultValueBrace` (the class's seam rows) |
+| the six tag-clear default classes | the three leaves | `hcontArm_defaultValueLow` … `_defaultValueBrace`: the same refusal arm, with the byte facts derived from each class's range |
 
 No branch holds an arm, a bundle or a segment: the groups are rows about the document and
 the call environment, and every segment the arms carry is a producer's conclusion.
@@ -517,18 +517,36 @@ theorem walkContinueArm_of_payload {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G
           simp only [toInt_8_116]
           omega))
   | defaultValueHigh _ _ h125 hne125 =>
+      -- `126`/`127`: the tag test is clear and the walk below `if.else387.i` reaches
+      -- `if.else405.i` (kind `0`), so the scan-free document's seam is the refusal
+      -- group and the arm is `HcontArm.badToken` at the class's `refuseSeg`.
+      have hge125 : 125 ≤ (hlastByte G C).toInt := by
+        simpa using toInt_ge_of_slt_zero h125
+      have hbit : (evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 45) |||
+          evalICmp .ult (hlastByte G C + BitVec.ofNat 8 208)
+            (BitVec.ofNat 8 10)) = 0 :=
+        tag_zero_of_toInt_ge_58 (by omega)
+      have hne102 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 102) = 0 :=
+        eq_zero_of_toInt_ne (x := hlastByte G C) (c := BitVec.ofNat 8 102) (by
+          simp only [toInt_8_102]
+          omega)
+      have hne110 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 110) = 0 :=
+        eq_zero_of_toInt_ne (x := hlastByte G C) (c := BitVec.ofNat 8 110) (by
+          simp only [toInt_8_110]
+          omega)
+      have hne116 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 116) = 0 :=
+        eq_zero_of_toInt_ne (x := hlastByte G C) (c := BitVec.ofNat 8 116) (by
+          simp only [toInt_8_116]
+          omega)
       cases r.hclass with
       | wsByte hws =>
           exact ⟨hcontArm_ws_of_rows hp hw hInv hblock hk h125 hne125 r hws⟩
-      | scanFree f =>
-          exact hcontArm_cleanup_of_class hInv hblock hk h125 hne125 r
-            (HcontHeadByte.toRoute rfl (HcontHeadByte.scanFree f)) hc
-      | lowLeaf h1 h2 =>
-          exact hcontArm_cleanup_of_class hInv hblock hk h125 hne125 r
-            (HcontHeadByte.toRoute rfl (HcontHeadByte.lowLeaf h1 h2)) hc
-      | highLeaf h1 h2 h3 =>
-          exact hcontArm_cleanup_of_class hInv hblock hk h125 hne125 r
-            (HcontHeadByte.toRoute rfl (HcontHeadByte.highLeaf h1 h2 h3)) hc
+      | scanFree _ =>
+          exact hcontArm_cleanup_of_class hInv hblock hk h8 hbit hne102 hne110 hne116 hc
+      | lowLeaf _ _ =>
+          exact hcontArm_cleanup_of_class hInv hblock hk h8 hbit hne102 hne110 hne116 hc
+      | highLeaf _ _ _ =>
+          exact hcontArm_cleanup_of_class hInv hblock hk h8 hbit hne102 hne110 hne116 hc
 
 /-- **The continuing bundle, from the three groups.**  `WalkContinueFacts` is data, so the
 class case's `Nonempty` is read by `Classical.choice`: every cell's arm is the producer's

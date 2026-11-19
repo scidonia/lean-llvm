@@ -17,8 +17,8 @@ and (for the positive-depth opener) the route the arm itself carries.
 | class | branch | the field it reads |
 |---|---|---|
 | `.value`, at a scan-free document byte | `hcontArm_scalar_of_class` | `scalar` — the prefix's seam row |
-| `.defaultValueHigh`, at a scan-free document byte | `hcontArm_cleanup_of_class` | `cleanupRow`, and `cleanup` for the document row |
-| the default arm's scan-free classes | `hcontArm_letters_of_class`, `hcontArm_fLetter_of_class`, `hcontArm_classC_56True_of_class` … `hcontArm_classC_58Else_of_class` | `letters`, `fLetter`, `c56True` … `c58Else` |
+| `.defaultValueHigh`, at a scan-free document byte | `hcontArm_cleanup_of_class` | the class's `refuseSeg` route; `cleanupRow` states the seam's refusal group |
+| the default arm's scan-free classes | `hcontArm_letters_of_class`, `hcontArm_fLetter_of_class`, `hcontArm_classC_56True_of_class` … `hcontArm_classC_58Else_of_class` | `fLetter`, `c56True`, `c58True` (the emit rows); the four `if.else405.i` classes take `refuseSeg`, and `letters`/`c56Else`/`c58Else` state their seams' refusal groups |
 | `.run`, the whitespace document byte | `hcontArm_run_of_class` | `run`, with the byte's own leaf below `if.else387.i` as the arm's span |
 | `.stringOpener` at `C.sp ≠ 0` | `hcontArm_stringOpenAboveZero_of_class` | `deep`, and the payload's `abi.openCall` |
 
@@ -70,13 +70,15 @@ literal (`HcontSeamKind`), so the three nonzero-kind leaves' supply cannot be ca
 
 The byte selection itself is **done**: `JsonStage2WalkDispatchClassTransport` derives the
 route's own bits (`slt %8 110`, `eq %8 116`, `slt %8 116`, `eq %8 116`, `slt %8 125` and
-the seam's tag test) from each default-value constructor's range bits, builds the
-head chain at them, and returns the arm.  Its six branches cover
+the seam's tag test) from each default-value constructor's range bits, builds the head
+chain at them where the class emits, and returns the arm.  Its six branches cover
 `.defaultValueLow`, `.defaultValueMid`, `.otherValue`, `.defaultValueBracket`,
 `.defaultValueBracketHigh` and `.defaultValueBrace`, including the brace class `124` and
-the bracket-high class's `'f'`/letters/class-C split.  So the class case's default-value
-half needs no further bit transport — only the class case's assembly and the leaf
-bundle above.
+the bracket-high class's `'f'`/letters/class-C split.  The bits that select a
+`if.else405.i` leaf are the refusal arm's — `hcontArm_badToken_of_row` at the class's
+`refuseSeg` — so those branches pass the bytes the refusal needs rather than a chain.
+So the class case's default-value half needs no further bit transport — only the class
+case's assembly and the leaf bundle above.
 
 **The last level's leaf bundle is closed, and the class does not emit.**  `HlastFacts`
 carries the last byte's route (`hb : HcontByteRoute (head35 (G.bs.getD (G.n - 1) 0))`) in
@@ -174,20 +176,26 @@ theorem hcontArm_scalarRun_of_class {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry 
 
 /-! ### The default arm's scan-free classes -/
 
-/-- **The letters class's continuing arm, from the class's row.**  The head chain is the
-caller's (the class's own count and endpoint); the seam's three callee rows, their kind
-literal `0` and the root slot's word are the row's. -/
+/-- **The letters class's continuing arm.**  `LetS413`'s predecessor is `if.else405.i`
+(`LetC₄₀₅`), whose kind literal is `0`, so the walk takes `if.then432.i` and the refusal
+copy: the arm is `HcontArm.badToken`, and its route is the class's `refuseSeg`.  The
+arguments are the bytes the refusal needs — the tag test clear and the byte unequal to the
+three literal pivots (`hbit`, `hne102`, `hne110`, `hne116`) — which the class's range
+supplies at each caller.  The seam's rows are the class's `letters` field, which states the
+refusal group at `LetS413`; the arm reads the route rather than those rows because the
+route names the block and the priced segment. -/
 theorem hcontArm_letters_of_class {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
-    {s : State} (hInv : WalkInv G C s) (hk : C.k + 1 < G.nep)
+    {s : State} (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead)
+    (hk : C.k + 1 < G.nep)
     {x : BitVec 8} (h8 : evalOperand s (.reg "%8") = some (.int 8 x))
     (hbit : (evalICmp .eq x (BitVec.ofNat 8 45) |||
       evalICmp .ult (x + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
-    (h110 : evalICmp .slt x (BitVec.ofNat 8 110) = 1)
     (hne102 : evalICmp .eq x (BitVec.ofNat 8 102) = 0)
-    (ch : HcontHeadChain G C s x) (hc : HcontClassRows G) :
-    Nonempty (HcontArm (stage2Calls stage2SubCalls) G C s) := by
-  obtain ⟨calls, hcA, hroot⟩ := hc.letters C s ch
-  exact hcontArm_letters_of_rows hInv hk h8 hbit h110 hne102 ch calls hcA hroot
+    (hne110 : evalICmp .eq x (BitVec.ofNat 8 110) = 0)
+    (hne116 : evalICmp .eq x (BitVec.ofNat 8 116) = 0)
+    (hc : HcontClassRows G) :
+    Nonempty (HcontArm (stage2Calls stage2SubCalls) G C s) :=
+  hcontArm_badToken_of_row hc hInv hblock hk h8 hbit hne102 hne110 hne116
 
 /-- **The `'f'` leaf's continuing arm, from the class's row.** -/
 theorem hcontArm_fLetter_of_class {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
@@ -216,19 +224,22 @@ theorem hcontArm_classC_56True_of_class {m0 : Mem} {G : WalkGeom m0} {C : WalkCa
   obtain ⟨calls, hcA, hroot⟩ := hc.c56True C s ch
   exact hcontArm_classC_56True_of_rows hInv hk h8 h110 h116 h110eq h125 ch calls hcA hroot
 
-/-- **`111 … 115`'s continuing arm, from the class's row.** -/
+/-- **`111 … 115`'s continuing arm.**  `LeafBlock56`'s else arm reaches `if.else405.i`
+(kind `0`), so the tail is the refusal route and the arm is `HcontArm.badToken`; the
+arguments are the bytes the refusal needs, and the seam's rows are the class's `c56Else`
+field (the refusal group at `ClsS413F`). -/
 theorem hcontArm_classC_56Else_of_class {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
-    {s : State} (hInv : WalkInv G C s) (hk : C.k + 1 < G.nep)
+    {s : State} (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead)
+    (hk : C.k + 1 < G.nep)
     {x : BitVec 8} (h8 : evalOperand s (.reg "%8") = some (.int 8 x))
-    (h110 : evalICmp .slt x (BitVec.ofNat 8 110) = 0)
-    (h116 : evalICmp .slt x (BitVec.ofNat 8 116) = 1)
-    (h110eq : evalICmp .eq x (BitVec.ofNat 8 110) = 0)
-    (h125 : evalICmp .slt x (BitVec.ofNat 8 125) = 1 ∨
-      evalICmp .eq x (BitVec.ofNat 8 125) = 1)
-    (ch : HcontHeadChain G C s x) (hc : HcontClassRows G) :
-    Nonempty (HcontArm (stage2Calls stage2SubCalls) G C s) := by
-  obtain ⟨calls, hcA, hroot⟩ := hc.c56Else C s ch
-  exact hcontArm_classC_56Else_of_rows hInv hk h8 h110 h116 h110eq h125 ch calls hcA hroot
+    (hbit : (evalICmp .eq x (BitVec.ofNat 8 45) |||
+      evalICmp .ult (x + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
+    (hne102 : evalICmp .eq x (BitVec.ofNat 8 102) = 0)
+    (hne110 : evalICmp .eq x (BitVec.ofNat 8 110) = 0)
+    (hne116 : evalICmp .eq x (BitVec.ofNat 8 116) = 0)
+    (hc : HcontClassRows G) :
+    Nonempty (HcontArm (stage2Calls stage2SubCalls) G C s) :=
+  hcontArm_badToken_of_row hc hInv hblock hk h8 hbit hne102 hne110 hne116
 
 /-- **`116`'s continuing arm, from the class's row.** -/
 theorem hcontArm_classC_58True_of_class {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
@@ -244,36 +255,43 @@ theorem hcontArm_classC_58True_of_class {m0 : Mem} {G : WalkGeom m0} {C : WalkCa
   obtain ⟨calls, hcA, hroot⟩ := hc.c58True C s ch
   exact hcontArm_classC_58True_of_rows hInv hk h8 h110 h116 h116eq h125 ch calls hcA hroot
 
-/-- **`117 … 125`'s continuing arm, from the class's row.** -/
+/-- **`117 … 125`'s continuing arm.**  `LeafBlock58`'s else arm reaches `if.else405.i`
+(kind `0`), so the tail is the refusal route and the arm is `HcontArm.badToken`; the
+arguments are the bytes the refusal needs, and the seam's rows are the class's `c58Else`
+field (the refusal group at `HeadS413`). -/
 theorem hcontArm_classC_58Else_of_class {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
-    {s : State} (hInv : WalkInv G C s) (hk : C.k + 1 < G.nep)
+    {s : State} (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead)
+    (hk : C.k + 1 < G.nep)
     {x : BitVec 8} (h8 : evalOperand s (.reg "%8") = some (.int 8 x))
-    (h110 : evalICmp .slt x (BitVec.ofNat 8 110) = 0)
-    (h116 : evalICmp .slt x (BitVec.ofNat 8 116) = 0)
-    (h116eq : evalICmp .eq x (BitVec.ofNat 8 116) = 0)
-    (h125 : evalICmp .slt x (BitVec.ofNat 8 125) = 1 ∨
-      evalICmp .eq x (BitVec.ofNat 8 125) = 1)
-    (ch : HcontHeadChain G C s x) (hc : HcontClassRows G) :
-    Nonempty (HcontArm (stage2Calls stage2SubCalls) G C s) := by
-  obtain ⟨calls, hcA, hroot⟩ := hc.c58Else C s ch
-  exact hcontArm_classC_58Else_of_rows hInv hk h8 h110 h116 h116eq h125 ch calls hcA hroot
+    (hbit : (evalICmp .eq x (BitVec.ofNat 8 45) |||
+      evalICmp .ult (x + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
+    (hne102 : evalICmp .eq x (BitVec.ofNat 8 102) = 0)
+    (hne110 : evalICmp .eq x (BitVec.ofNat 8 110) = 0)
+    (hne116 : evalICmp .eq x (BitVec.ofNat 8 116) = 0)
+    (hc : HcontClassRows G) :
+    Nonempty (HcontArm (stage2Calls stage2SubCalls) G C s) :=
+  hcontArm_badToken_of_row hc hInv hblock hk h8 hbit hne102 hne110 hne116
 
 /-! ### The default-value class -/
 
-/-- **The default-value route's arm, from the class's rows.**  The document row is produced
-from the payload's own default row (`hcontCleanupDoc_of_lane`) at the byte's route, and the
-seam's three callee rows are the class's; the root slot's word is the state's own, so the
-arm is total over it. -/
+/-- **The default-value route's arm at `126`/`127`.**  The head byte's tag test is clear
+there, so the walk below `if.else387.i` reaches `if.else405.i` and `if.then413.i` stores the
+kind `0` (`contTailStartOfDoc_pre`); the scan-free document's seam is therefore the refusal
+group (`cleanupRow`) and the arm is `HcontArm.badToken` from the class's `refuseSeg`.  The
+bytes the refusal needs are the arguments; they hold at `126`/`127` (`hbit`, and the byte's
+signed reading is at least `125`).  The document row and the byte's route are no longer the
+arm's inputs: no emit tail exists on this edge. -/
 theorem hcontArm_cleanup_of_class {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)
-    (hlt125 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 125) = 0)
-    (hne125 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 125) = 0)
-    (r : HcontDefaultRow G C s) (hb : HcontByteRoute (cont35 (contB35 G r.v)))
+    (h8 : evalOperand s (.reg "%8") = some (.int 8 (hlastByte G C)))
+    (hbit : (evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 45) |||
+      evalICmp .ult (hlastByte G C + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
+    (hne102 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 102) = 0)
+    (hne110 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 110) = 0)
+    (hne116 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 116) = 0)
     (hc : HcontClassRows G) :
-    Nonempty (HcontArm (stage2Calls stage2SubCalls) G C s) := by
-  let doc := hcontCleanupDoc_of_lane hk r hb
-  obtain ⟨calls, hcA, hroot⟩ := hc.cleanupRow C s doc
-  exact hcontArm_cleanup_of_rows hInv hblock hk hlt125 hne125 doc hroot calls hcA rfl
+    Nonempty (HcontArm (stage2Calls stage2SubCalls) G C s) :=
+  hcontArm_badToken_of_row hc hInv hblock hk h8 hbit hne102 hne110 hne116
 
 /-! ### The run class's leaves
 

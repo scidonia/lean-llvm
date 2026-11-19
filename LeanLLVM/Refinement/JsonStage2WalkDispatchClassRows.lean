@@ -105,10 +105,11 @@ those are the payload's tail rows (`runTail`), and the row is `hcontRunRow_of_ro
 parameters: `cleanup`, `run` and `seam` are produced (`hcontCleanupDoc_of_lane`,
 `hcontArm_run_of_row`, and `hcontSeamAbi` from `HcontSeamStaging`), the last entry's `tail`
 is the payload's `lane.tail`, and the remaining fields are stated there as supply.  Four of
-them — `cleanupRow`, `letters`, `c56Else`, `c58Else` — are stated at the literal `0`, where
-`HcontSeamCalls` has no inhabitant (`hcontSeamCalls_no_literal_zero`): they cannot be
-supplied as written, and the rows those seams carry are the refusal group's
-(`HcontSeamRefusal`) with the route `refuseSeg`'s.
+them — `cleanupRow`, `letters`, `c56Else`, `c58Else` — are the four seams whose kind literal
+is `if.else405.i`'s `0`, so they are stated as the refusal group (`HcontSeamRefusal`): the
+leading calls, the answer `0` that `stage2ScalarValue` gives at a zero kind, and the record
+it wrote.  No three-call row exists there (`hcontSeamCalls_no_literal_zero`); the arm those
+classes take is `hcontArm_badToken_of_row`, from the class's `refuseSeg` route.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkDispatchSupply
 import LeanLLVM.Refinement.JsonStage2WalkDispatchSeams
@@ -619,14 +620,18 @@ The fields are the producers' remaining argument lists:
 
 * `cleanup` — the scan-free class's document row, produced from the payload's own
   `defaultLane` (`hcontCleanupDoc_of_lane`), so it costs no new supply;
-* `cleanupRow` — the same class's seam row, at `contTailStart`'s own state; its root slot's
-  word is the state's, which the arm's producer takes freely (`rdv0`);
+* `cleanupRow` — the same class's seam rows, at `contTailStart`'s own state: the refusal
+  group (the leading calls, the derived answer `0` and the record), because that seam's
+  predecessor is `if.else405.i`;
 * `scalar` — the plain-value class's seam row, at the seam `scTailByte_of_calls` reads
   (`scSeamByte … pre.hb`, whose cells are the class's own peels);
 * `letters`, `fLetter` — the default arm's scan-free classes' seam rows, at the seams
-  `LetS413` and `FS413` that their head chains reach;
+  `LetS413` and `FS413` that their head chains reach; `letters` is the refusal group (that
+  seam's predecessor is `if.else405.i`), `fLetter` the emit group;
 * `c56True`, `c56Else`, `c58True`, `c58Else` — the class-C span's four leaves' seam rows,
-  at the four named seam states (`ClsS413T`/`ClsS413F`/`ClsS58T`/`HeadS413`);
+  at the four named seam states (`ClsS413T`/`ClsS413F`/`ClsS58T`/`HeadS413`); the two else
+  arms are the refusal group (they reach `if.else405.i`) and the two true arms the emit
+  group;
 * `deep` — the positive-depth opener's route row (`HcontDeepRow`): the merge's counted
   segment and endpoint, or the refusal's witness, named as the arm's own segment;
 * `runSkip` — the whitespace skip's class (`HcontRunSkip`): the per-index run, the stop and
@@ -651,12 +656,14 @@ structure HcontClassRows {m0 : Mem} (G : WalkGeom m0) : Type where
   cleanup : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     C.k + 1 < G.nep → (r : HcontDefaultRow G C s) →
     HcontByteRoute (cont35 (contB35 G r.v)) → HcontCleanupDoc G C s
-  /-- The default-value class's seam row: the three callee rows at the byte route's tail
-  start, whose kind literal is `if.else405.i`'s `0`.  Its root slot's word is the state's
-  own, so the arm is total over the slot's values (`hcontArm_cleanup_of_rows` takes
-  `rdv0` freely). -/
+  /-- The default-value class's seam rows at the byte route's tail start.  The edge that
+  reaches it is `if.else405.i`, whose kind literal is `0` (`contTailStartOfDoc_pre`), so
+  the rows are the **refusal group**: the value-position and scalar calls, the answer
+  `0` `stage2ScalarValue` gives at a zero kind, and the record it wrote.  No three-call
+  group exists there (`hcontSeamCalls_no_literal_zero`), and the arm's route from the head
+  is `refuseSeg`'s. -/
   cleanupRow : ∀ (C : WalkCarry G) (s : State) (doc : HcontCleanupDoc G C s),
-    HcontSeamRow G s (ContTailStartC C)
+    HcontSeamRefusal G (ContTailStartC C)
       (contTailStartByte C s (hlastByte G C) (hlastIncV C) (hlastNepV G) G.ep doc.v
         (contIx G C) (contB35 G doc.v) (hlastByte G C) (hlastByte G C) doc.hb)
       (BitVec.ofNat 32 0)
@@ -676,10 +683,11 @@ structure HcontClassRows {m0 : Mem} (G : WalkGeom m0) : Type where
   calls. -/
   scalarRun : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     C.k + 1 < G.nep → HcontScalarWsRow G C s
-  /-- The letters class's seam row: the head chain's endpoint's seam `LetS413`, whose
-  kind literal is `if.end372.i`'s `0`. -/
+  /-- The letters class's seam rows at the head chain's endpoint's seam `LetS413`.  The
+  chain reaches `if.then413.i` through `if.else405.i` (`LetC₄₀₅`), whose kind literal is
+  `0`, so the rows are the **refusal group** and the arm's route is `refuseSeg`'s. -/
   letters : ∀ (C : WalkCarry G) (s : State) {x : BitVec 8} (ch : HcontHeadChain G C s x),
-    HcontSeamRow G s (HeadC₄₁₃ (LetC₄₀₅ ch.Cm)) (LetS413 ch.sm x) (BitVec.ofNat 32 0)
+    HcontSeamRefusal G (HeadC₄₁₃ (LetC₄₀₅ ch.Cm)) (LetS413 ch.sm x) (BitVec.ofNat 32 0)
   /-- The `'f'` leaf's seam row: the head chain's endpoint's seam `FS413`, whose kind
   literal is `if.then397.i`'s `9`. -/
   fLetter : ∀ (C : WalkCarry G) (s : State) {x : BitVec 8} (ch : HcontHeadChain G C s x),
@@ -688,16 +696,20 @@ structure HcontClassRows {m0 : Mem} (G : WalkGeom m0) : Type where
   c56True : ∀ (C : WalkCarry G) (s : State) {x : BitVec 8} (ch : HcontHeadChain G C s x),
     HcontSeamRow G s ({ ClsC₄₀₃ ch.Cm with block := "if.then413.i" }) (ClsS413T ch.sm x)
       (BitVec.ofNat 32 10)
-  /-- `111 … 115`'s leaf seam: `LeafBlock56`'s else arm, kind `0`. -/
+  /-- `111 … 115`'s seam rows at `ClsS413F`.  `LeafBlock56`'s else arm reaches
+  `if.then413.i` through `if.else405.i` (kind `0`), so the rows are the **refusal group**
+  and the arm's route is `refuseSeg`'s. -/
   c56Else : ∀ (C : WalkCarry G) (s : State) {x : BitVec 8} (ch : HcontHeadChain G C s x),
-    HcontSeamRow G s (HeadC₄₁₃ (ClsC₄₀₅ ch.Cm)) (ClsS413F ch.sm x) (BitVec.ofNat 32 0)
+    HcontSeamRefusal G (HeadC₄₁₃ (ClsC₄₀₅ ch.Cm)) (ClsS413F ch.sm x) (BitVec.ofNat 32 0)
   /-- `116`'s leaf seam: `LeafBlock58` itself, kind `8`. -/
   c58True : ∀ (C : WalkCarry G) (s : State) {x : BitVec 8} (ch : HcontHeadChain G C s x),
     HcontSeamRow G s ({ HeadC₅₈ ch.Cm with block := "if.then413.i" }) (ClsS58T ch.sm x)
       (BitVec.ofNat 32 8)
-  /-- `117 … 125`'s leaf seam: `LeafBlock58`'s else arm, kind `0`. -/
+  /-- `117 … 125`'s seam rows at `HeadS413`.  `LeafBlock58`'s else arm reaches
+  `if.then413.i` through `if.else405.i` (kind `0`), so the rows are the **refusal group**
+  and the arm's route is `refuseSeg`'s. -/
   c58Else : ∀ (C : WalkCarry G) (s : State) {x : BitVec 8} (ch : HcontHeadChain G C s x),
-    HcontSeamRow G s (HeadC₄₁₃ ch.Cm) (HeadS413 ch.sm x) (BitVec.ofNat 32 0)
+    HcontSeamRefusal G (HeadC₄₁₃ ch.Cm) (HeadS413 ch.sm x) (BitVec.ofNat 32 0)
   /-- The positive-depth opener's route row: the merge's segment and endpoint, or the
   refusal's witness, at the class's own state. -/
   deep : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
