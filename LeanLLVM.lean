@@ -214,6 +214,7 @@ import LeanLLVM.Refinement.JsonStage2WalkDispatchLettersHead
 import LeanLLVM.Refinement.JsonStage2WalkDispatchLeafBytes
 import LeanLLVM.Refinement.JsonStage2WalkDispatchRunHead
 import LeanLLVM.Refinement.JsonStage2WalkDispatchDefaultLane
+import LeanLLVM.Refinement.JsonStage2WalkDispatchAbiOfInv
 import LeanLLVM.Refinement.JsonStage2WalkDispatchRunLastSeam
 import LeanLLVM.Refinement.JsonStage2WalkDispatchSeams
 import LeanLLVM.Refinement.JsonStage2WalkDispatchSeamCalls
