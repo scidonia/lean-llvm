@@ -33,12 +33,12 @@ claim about the byte rather than about the document being two long.
 ## The continuing high-byte class
 
 `126` and `127` are `HcontClass.defaultValueHigh`, and the arm that carries them is
-`HcontArm.ws`/`.cleanup` — the bundles' four class bits are `slt %8 91 = 0`,
+`HcontArm.cleanup` — the bundle's four class bits are `slt %8 91 = 0`,
 `slt %8 123 = 0`, `slt %8 125 = 0` and `%8 ≠ 125`, which leave exactly those two bytes.
 They are *not* the letters class: `slt 126 110 = 0`, so the span below `if.else387.i` is the
-longer `NodeBlock60 → LeafBlock58` one and not `lettersSpan`.  So the high-byte route's arm
-and its counted segment exist (`walkRevolutionMergeSegWs`, `walkRevolutionMergeSeg`); what
-this module adds is the class evidence at a staged document.
+longer `NodeBlock60 → LeafBlock58` one and not `lettersSpan`.  The high-byte route is the
+refusal's (`walkRevolutionMergeSeg`'s class); the old whitespace composition was retired
+with that route, and what this module adds is the class evidence at a staged document.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkDispatchOpenersDomain
 import LeanLLVM.Refinement.JsonStage2WalkDispatchSpansOfStaging

@@ -49,7 +49,8 @@ This module states the price at the object it is really about: the document's by
 ## 2. The residual premises, measured per arm
 
 **The producers are these.**  `hcontFacts_of_staging` (`JsonStage2WalkHcontFactsOfStaging`)
-produces `HcontFacts` for `HcontArm.ws`; `hlastFacts_of_staging`
+produces `HcontFacts`, the superseded whitespace bundle (its arm was retired with the
+route, and no live dispatch builds it); `hlastFacts_of_staging`
 (`JsonStage2WalkDispatchWitnessHlast`) produces `HlastFacts` for `LastEntryArm.highByte`;
 `JsonStage2WalkDispatchAboveZeroOfStaging` produces the two above-depth classes at both
 levels — `hcontArm_commaAboveZero_of_staging`, and `hcontArm_colonAboveZero_of_staging`

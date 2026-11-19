@@ -110,7 +110,6 @@ as a value; **traversal** is the scan's round, guard and byte facts.
 
 | level | class | producer | row that stops the derivation | kind |
 |---|---|---|---|---|
-| both | `.ws` (`126`/`127`, entry left) | `hcontFacts_of_staging` | `hlt125`/`hne125`; the stop's budget conjunct; `hTail`'s three calls | document, ABI |
 | both | `.cleanup` (`126`/`127`, last entry) | `hcontCleanupFacts_of_staging` | the class's head bits and `hb` (the route of the byte before the entry's end); `hTail` | document, ABI |
 | both | `.twoEntry` (`"`, entry left, `C.sp = 0`) | `hstringFacts_of_staging` | `s2_string_body`'s staging: the allocator cursor's placement, the log's arena word, the byte spacing, the escape count's sign bound; the next lane.  The row is the depth-zero edge's — `strPath8`'s `hsp0` parameter — and the bundle carries no depth field | ABI, document |
 | both | `.stringOpenAboveZeroMerge`, `.stringOpenAboveZeroRefuse` (`"`, entry left, `C.sp ≠ 0`) | `hcontArm_stringOpenAboveZeroMerge_of_staging`, `…Refuse_of_staging` | the class's own facts are derived (the byte from `cont_reg8`, the two stack bytes from the carry's maps, the value-position staging from `tyBytes`/`stBytes`); the **route's segment** is the row — the merge's, whose blocks are the reservation, the body's call, the answer's tests, the record and `if.then330.i`.  The refusal half is composed (`stringDeepRefuse_at`, two links from `if.end245.i`'s state) | ABI, segment |

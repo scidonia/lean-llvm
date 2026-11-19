@@ -24,7 +24,7 @@ tail `consumerTailSegAt` composes at kind `0`.
 `slt %8, 110 = 1` holds for `0 … 109` and for `128 … 255`: the letters and the high bytes.
 It does not hold for `110 … 127`, which is why the bytes `126` and `127` are *not* this
 class — they take the longer `NodeBlock60 → LeafBlock58` span that `walkHeadChainCSeg`
-composes, and are `HcontArm.ws`/`.cleanup`'s.  The byte `102` (`'f'`) satisfies the first
+composes, and are `HcontArm.cleanup`'s (the refusal's).  The byte `102` (`'f'`) satisfies the first
 pivot and takes `LeafBlock54`'s *true* arm (`if.then397.i`, kind `9`); it is the one byte of
 the class this module does not describe, and it is `JsonStage2WalkDispatchFLetter`'s
 (`LastEntryArm.fLetter`, `HcontArm.fLetter`).
@@ -63,9 +63,10 @@ Both arms this module's composition backs — `HcontArm.letters` and `LastEntryA
 are the **scan-free** class: `%35` is not whitespace, so the token's end is the entry's end
 (the seam's `%ee.1.i` is `%cond350.i` on the whitespace check's else arms) and the copy
 call's test `ult %ee.1.i %cond350.i` is `ult v v`, i.e. false.  So the scan contributes
-*nothing* to this arm's segment, and the class whose scan runs is `HcontFacts`'s — `.ws`'s,
-whose segment is `walkRevolutionMergeSegWs` and whose induction is `scanWsRounds`'s (the
-visit form at `4` steps) and the bundle's `walkScanToMerge`.
+*nothing* to this arm's segment, and the class whose scan runs is `.run`'s, whose traversal
+is `scanRoundsAt`'s (the visit form at `4` steps) and the bundle's `walkScanToMerge`.  The
+whitespace arm's own scan (`.ws`, `scanWsRounds`) was retired with its route: at `126`/`127`
+the class is the refusal's.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkRevolutionSeg
 

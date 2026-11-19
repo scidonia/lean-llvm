@@ -3,9 +3,11 @@
 
 `WalkContinueFacts` (`JsonStage2WalkDispatchHcontArms`) is the continuing entry's bundle:
 one arm per class at every head state with an entry left.  This module produces the
-**whitespace** class's — `HcontFacts` (`JsonStage2WalkRevolution`), the bundle
-`walkRevolutionMergeSegWs` consumes field for field.  The path it describes is the run
-class's: the four high-byte pivots, `sw.default.i`'s *succeeding* arm, the bound's `phi`,
+**whitespace** class's — `HcontFacts` (`JsonStage2WalkRevolution`).  That route is retired:
+at `126`/`127` the emitted dispatch is the refusal's, so no state the walk occupies builds
+the bundle, and its composition (`walkRevolutionMergeSegWs`) is deleted.  The bundle and its
+producer remain as the superseded premise's type, which `JsonStage2WalkHcontDomain`'s
+regression refutes.  The path the producer describes is the run class's: the four high-byte pivots, `sw.default.i`'s *succeeding* arm, the bound's `phi`,
 the whitespace check at the entry's end, the skip to the run's stop `k`, the token's end
 `if.end372.i`, the class-C span, the tail and the scan — and the module is the twin of
 `hlastFacts_of_staging`: the same three sources (the invariant's clauses, the document's
@@ -80,7 +82,7 @@ supplied as a named premise.
 | the tail's counted segment (`hTail`, `cA`, `rdv`, `xA`) | **supplied: a named premise, and now with a reachable producer.**  `consumerTailSegAt` composes the segment from the three calls' contracts.  Its third link's span bound (`v.toNat - k ≤ C.inner`) used to be the obstruction; it is now derived — `k < v.toNat` is `cont_heicd` and `v.toNat - ix.toNat ≤ C.inner` plus `ix.toNat < k` gives it.  What remains between this field and `consumerTailSegAt` is the three callees' own preconditions and answers, which are the staging's and no clause of `WalkInv` fixes at the callee's argument list (the same survivors `hlastTail_of_calls`'s map names).  So the field stays the named premise and its producer is `consumerTailSegAt` at the seam's landing |
 | the whitespace run (`k`, `x1`, `hClass`) | **the class is supplied, the run is derived.**  `hClass` is the one premise that makes the segment total: `%35` is one of the four whitespace bytes, so the leaf the pivots reach takes its true arm, the per-index `∀` continues the token to `k` and the stop is at `k`.  Its last two conjuncts are the inner budget the first visit's `ScanEntered` needs — the refill's, so supplied — and `entryPos C.k ≤ ix.toNat`, which is now `le_rfl` at the pinned `contIx G C`.  `contWsRunF` (`JsonStage2WalkRevolution`) derives the segment, its count `N ≤ 5·(k - i) + 10` and the stop's `%cond350.i` cell; `contWsPriceAt` derives `N + 8·(v - 1 - k) ≤ 8·ΔA + 5` |
 | the scan's landing (`q`, `bs`, `hreadS`, `hbsS`, `x47`, `h47`) | **premised correctly: the document's.**  The address is derived — `%3` at `contWsEntry` is `WalkPtrs`'s `some (.ptr G.b)`, which is the tail segment's own target invariant (`hTail.inv'.ptrs.1`), so `a := G.b`; and `hpos`, `hloc105`, `hloc96` are derived (`cont_hpos`, and the two `hlastLoc*` lemmas, which are generic in the state).  What stays supplied is the byte at `G.b + k` and its class — the input's — and the two index cells `q`/`x47` that name it |
-| the landing's selection (`hopS`) | **produced** (`contWsEntry_hopS`): the operand is `%ee.1.i` and the seam stored the run's stop `k` in it (`contWsEntry_ee`), so the landing's index *is* the run's stop.  This is the field that used to be supplied and that contradicted the stopper — the finding below |
+| the landing's selection (`hopS`) | **produced** from `contWsEntry_ee`: the operand is `%ee.1.i` and the seam stored the run's stop `k` in it, so the landing's index *is* the run's stop.  The composition's named form (`contWsEntry_hopS`) was retired with the route.  This is the field that used to be supplied and that contradicted the stopper — the finding below |
 | the run endpoint's two registers (`hinc_sl`, `hnep_sl`) | **retired: proved, not supplied.**  `%inc.i` is `WalkInv.inc_reg` and `%nep` is one of `walkStaticRegs`' pairs, and the seam binds neither (`seamS_env_inc`, `seamS_env_nep`), so the segment's target invariant reads both at the endpoint (`contWsSeamS_inc`, `contWsSeamS_nep`).  A `WalkSegment` carries the invariant at its target, and the run's target is the seam's source |
 | the run endpoint's bound (`hcond_sl`) | **retired: derived, not supplied.**  No `WalkInv` clause names `%cond350.i` at an arbitrary state, and a `WalkSegment` records a run and its target's invariant, not the blocks the run passed — so `contWsRunF` returns the cell as its third conjunct, carried through the arms' latch induction, and the bundle names it no longer.  The seam's `%end.i` cell is derived the same way: `wsSlS_envEnd` transports it from the head state's `WalkInv.regs` |
 | the span's two numbers and the run's stop (`hspan`, `hstart`, `heicd`) | **`hspan` is the document's; `hstart` and `heicd` are derived.**  `v.toNat ≤ entryPos G (C.k + 1)` is the entry stream's number, which the staging does not fix.  `hstart` is `entryPos C.k ≤ k`, i.e. the run's own `ix < k` at the pinned index; `heicd` is `k < v.toNat`, and it is the field that decides the bundle's inhabitation: the class disjunct is `wsStop G (v - 1)`, the per-index conjunct makes every index in `[ix, k)` a continuing byte, and `hugt` puts `v - 1` above `ix` — so `v - 1` below `k` would be both (`cont_heicd`, `wsCont_not_wsStop`) |
@@ -92,7 +94,7 @@ supplied as a named premise.
 test's value, the entry's index, the default arm's four cells, the byte before the entry's
 end and the read that fetches it, the landing's address and its two locals, the landing
 index's width, `hstart` and `heicd`.  *Produced from another field's cell*: `hopS`
-(`contWsEntry_hopS`).  *Named premises*, each with its producer or its reason: the two class
+(from `contWsEntry_ee`).  *Named premises*, each with its producer or its reason: the two class
 bits on the head's byte, the entry's word (`hread`) and its order (`hugt`), the whitespace
 class (`hClass`) — which is the document's content and the refill's budget — the tail's
 segment (the three callees' own preconditions), the landing's byte and its class, and the
@@ -143,15 +145,15 @@ this is the defect the split repairs.  The arithmetic, kept because it is the in
   on the `if.then447.i` edge — so `hopS` says `ei = v.toNat`;
 * `heicd` says `ei < v.toNat`.
 
-A consumer reads both (`contScanRounds` takes the stopper, the landing takes the index), so
-the bundle *was* uninhabited at that class.  **The prefix's class is the no-whitespace-run
+A consumer read both (`contScanRounds`, since retired with the route, took the stopper; the
+landing took the index), so the bundle *was* uninhabited at that class.  **The prefix's class is the no-whitespace-run
 one, where the extra-token scan is empty** — the run class, whose `%ee.1.i` is the run's
 stop `%ee.0.i238`, is the one `heicd` describes.
 
 **The repair is the split, and it is in the tree.**  `HcontFacts` is now the whitespace
 arm, stated at the run class's states (`contWsSeamS`, `contWsTailStart`, `contWsEntry`,
-`contWsLatch`): its seam stores the run's stop `k`, `hopS` is *produced*
-(`contWsEntry_hopS`, from `contWsEntry_ee`), and `heicd` says `k < v.toNat`, which is the
+`contWsLatch`): its seam stores the run's stop `k`, `hopS` is *produced* from
+`contWsEntry_ee`, and `heicd` says `k < v.toNat`, which is the
 scan's actual span.  The no-whitespace class's bundle is `HcontCleanupFacts`
 (`JsonStage2WalkRevolution`), whose seam stores the entry's end and whose walk reaches
 `if.end473.i` without a scan — so the class that made the fields contradict carries

@@ -132,7 +132,7 @@ A memory equation is available for a step **only where a block's lemma names its
 successor**: `walkIfEnd473_at` concludes `s' = { s with pc := …, pre := … }`, so its
 successor's memory is the source's, and that is the idiom the exit producer uses for its
 own blocks (`JsonStage2WalkExitProducer`, whose three tails are that route for the last
-entry).  The dispatch's composites — `hlastPrefixSeg`, `contScanRounds`, `walkScanToMerge` — and the
+entry).  The dispatch's composites — `hlastPrefixSeg`, `walkScanToMerge` — and the
 revolution's two closing steps (`walkBack_step_at`, `whileBody_step`) name no memory, so
 the predicate cannot be transported across them.
 

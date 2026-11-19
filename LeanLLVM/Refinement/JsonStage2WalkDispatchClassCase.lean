@@ -47,9 +47,9 @@ its chain (`hcontSpan17_of_doc`) are stated at the byte's route too, and the def
 branch passes `hb` rather than `.scanFree`.  The tail's calls bind no cell the seam's
 route changes (`contSeamByte_ee`, `contSeamByte_cond` are stated at every class), so this
 is the same producer re-pointed, not a new one.  At the high-byte head (`126`/`127`) the
-document byte's run class is `HcontFacts`, produced by `hcontFacts_of_staging`; the
-continuing case takes the class's refusal arm at every byte class there, so the payload
-row group that bundle once consumed is gone.  The six `.run` cells' document rows are
+whitespace bundle is `HcontFacts`, and `hcontFacts_of_staging` remains its producer of
+record; the continuing case takes the class's refusal arm at every byte class there, so no
+payload row group feeds that bundle.  The six `.run` cells' document rows are
 `HcontClassRows`' run rows
 (`JsonStage2WalkDispatchRunRow`), so the class case's assembly is
 `walkContinueFacts_of_payload` (`JsonStage2WalkDispatchContinuing`).
@@ -105,8 +105,8 @@ arm at all: `.value` × `wsByte`, the whitespace run after a numeral.
   `HcontByteClass` (from the payload's `defaultLane`).  At the high-byte head (`126`/`127`)
   the walk reaches `if.else405.i`, whose kind literal is `0`, so every document byte class
   — `wsByte` included — takes the class's refusal arm (`hcontArm_cleanup_of_class`).  The
-  run class's bundle there is `HcontFacts` (`hcontFacts_of_staging`); `.ws` keeps its
-  dispatch, but the continuing case does not build it.  At the
+  whitespace bundle there is `HcontFacts` (`hcontFacts_of_staging`); its `.ws` arm was
+  retired with the route, and the continuing case does not build the bundle.  At the
   default arm's classes (`tag = 0`) they partition it too: `wsByte` is `HcontArm.run`
   (the check state's row, `hcontRunRow_of_rows`, plus the byte's leaf composed from the
   row), and the three leaves are `letters`/`fLetter`/`classC` by the head byte's pivots,

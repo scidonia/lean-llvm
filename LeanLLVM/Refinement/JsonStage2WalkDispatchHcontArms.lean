@@ -32,10 +32,10 @@ theorem*, and no class borrows another's byte test.
 `HcontArm` is the dispatch's evidence, one constructor per class the layer proves or
 supplies, and `.dispatch` turns it into the actual `WalkDispatchResult`:
 
-* `.ws` — `HcontFacts`, the whitespace-run class: its run, seam, tail and scan compose
-  through `walkDispatch_at_continue_cells_ws` (the high-byte route).
-* `.cleanup` — `HcontCleanupFacts`, the same route's no-run class, through
-  `walkDispatch_at_continue_cells`.
+* `.cleanup` — `HcontCleanupFacts`, the high-byte route's class, through
+  `walkDispatch_at_continue_cells`.  The route is the refusal's at `126`/`127`: its kind
+  literal is `0`, so the class takes `hcontArm_cleanup_of_class`'s `badToken` branch and the
+  `HcontFacts` runner is not reachable from any state the walk occupies.
 * `.twoEntry` — `HstringFacts` beside its `HstringResidue` and the arm's own
   selector, the standalone string, through `WalkDispatchResult.ofStringMerge`.  The
   residue is the state's, so the loop's step no longer takes `WalkStringResidue` beside
@@ -133,18 +133,16 @@ supplies, and `.dispatch` turns it into the actual `WalkDispatchResult`:
 * `.run` — **the default arm's run class**, at every default span: the byte before the
   entry's end is whitespace, so the token's end is the run's stop and the extra-token scan
   is entered.  `RunFacts` carries the path's inputs and `runScanMerge_at` composes the
-  segment, the visits by `scanRoundsAt` — the rounds at the seam's own bound, which
-  `JsonStage2WalkRevolutionSeg`'s class-C-only `scanWsRounds` is not.
+  segment, the visits by `scanRoundsAt` — the rounds at the seam's own bound.
 
 **The byte census is exhaustive, and the arm is total over the invariant's states.**  The
 head switch's bytes are `HeadArm.complete`'s and the tag test's two values are
 `HcontClass.complete`'s: every byte has exactly one class, by theorem, and the
 run/scan-free split is carried by each arm's own tail
 (`.letters`/`.fLetter`/`.classC` end at `if.end473.i`, `.run` at `land.rhs457.i`, and
-`.ws`/`.cleanup` are `126`/`127`'s two).  `126` and `127` are
-`HcontClass.defaultValueHigh` and `HcontArm.ws`/`.cleanup`'s class: both bundles carry
-the four bits that leave exactly those two bytes, and both arms are proved with their
-counted segments (`walkRevolutionMergeSegWs`, `walkRevolutionMergeSeg`).
+`.cleanup` is `126`/`127`'s).  `126` and `127` are `HcontClass.defaultValueHigh` and
+`HcontArm.cleanup`'s class: the bundle carries the four bits that leave exactly those two
+bytes, and the arm is proved with its counted segment (`walkRevolutionMergeSeg`).
 
 The states the split once had no arm for are four, and all four are covered:
 
@@ -296,7 +294,7 @@ inductive HcontClass (x : BitVec 8) : Prop
 `HeadArm.defaultValue` is the only arm whose bytes can satisfy the tag test, and the bit's
 two values split it.  The other arms' tag values are not needed: they are each *one* class
 of the continuing dispatch, and the arm that carries them is the head route's — the two
-bytes `126`/`127` are `HcontArm.ws`/`.cleanup`'s class and the string opener, the
+bytes `126`/`127` are `HcontArm.cleanup`'s class and the string opener, the
 delimiters and the container openers are their own arms', whichever value the bit has. -/
 theorem HcontClass.complete (x : BitVec 8) : HcontClass x := by
   cases HeadArm.complete x with
@@ -340,9 +338,8 @@ head class and tail supply, the closing bracket's own cells, and — for the arm
 segments are still owed — that arm's counted segment and endpoint facts. -/
 inductive HcontArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
     (s : State) : Type
-  /-- The whitespace-run token on the high-byte route (`HcontFacts`). -/
-  | ws (f : HcontFacts G C s) : HcontArm calls G C s
-  /-- The scan-free token on the high-byte route (`HcontCleanupFacts`). -/
+  /-- The high-byte route's refusal token (`HcontCleanupFacts`): at `126`/`127` the
+  emitted dispatch reaches `if.then413.i` through `if.else405.i`'s literal-`0` kind. -/
   | cleanup (f : HcontCleanupFacts G C s) : HcontArm calls G C s
   /-- **The standalone string, with its residue, its depth split and its accepting-arm
   selector.**  `R` is the two words the walk layer does not carry, and `hR8` is
@@ -643,7 +640,7 @@ inductive HcontArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
   end at `if.end473.i`, i.e. the copy call's test `ult %ee.1.i %cond350.i` was false, which
   is the token-end class whose byte before the entry's end is not whitespace.  On the run
   class that test is true and the target is `land.rhs457.i`, the scan's landing, so that
-  class's segment is the scan's — `HcontFacts`'s, `.ws`'s — and not this one.
+  class's segment is the scan's — `.run`'s — and not this one.
 
   **The chain is counted, and its bound is the longest class's twelve.**  The bytes
   `0 … 43` and `128 … 255` (`.defaultValueLow`) take `NodeBlock5 → LeafBlock →
@@ -697,7 +694,7 @@ inductive HcontArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
   chain to the seam costs the class's own count (`nH ≤ 12`) and the tail's three calls
   end at `if.end473.i` on their empty arm, so `nH + nS + 3 + 1 ≤ 21` and the price
   `≤ 23 ≤ 32` with no byte term.
-  The class is `126`/`127`'s complement in `[110, 125]`, and `.ws`/`.cleanup` are theirs. -/
+  The class is `126`/`127`'s complement in `[110, 125]`, and `.cleanup` is theirs. -/
   | classC {x : BitVec 8} (h8 : evalOperand s (.reg "%8") = some (.int 8 x))
       (h110 : evalICmp .slt x (BitVec.ofNat 8 110) = 0)
       (h125 : evalICmp .slt x (BitVec.ofNat 8 125) = 1 ∨
@@ -721,7 +718,7 @@ inductive HcontArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
   chain with the run's count `N`, the byte's span at `nS ≤ 5`, the tail's *scan* arm, the
   landing, the visits' facts and the budget fact) and `runScanMerge_at` composes the
   segment with the merge's three cells at its endpoint, the visits by `scanRoundsAt` — the
-  rounds at the seam's own bound, which is what the class-C-only `scanWsRounds` is not.
+  rounds at the seam's own bound.
 
   **This is the continuing level's class.**  The last entry's run class is priced
   differently: past the last entry the `entryPos` form of the byte credit is zero
@@ -783,12 +780,6 @@ theorem HcontArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     (hk : C.k + 1 < G.nep) :
     HcontArm (stage2Calls stage2SubCalls) G C s →
       WalkDispatchResult (stage2Calls stage2SubCalls) G C s
-  | .ws f =>
-    (fun ⟨Cd, sd, p, spv, k2, prev, spOp, kOp, nepv, seg, hblk, hkC, hpre, hsp, hspv,
-        hkOp, hk2, hnepv, hbelow, _hnep, hadvance, hspcap, hspw, hprice⟩ =>
-      WalkDispatchResult.merge Cd sd p spv k2 prev spOp kOp nepv seg hblk hkC hpre hsp hspv
-        hkOp hk2 hnepv hadvance (le_of_lt hbelow) hspcap hspw hprice)
-      (walkDispatch_at_continue_cells_ws C s hInv hblock hk f)
   | .cleanup f =>
     (fun ⟨Cd, sd, p, spv, k2, prev, spOp, kOp, nepv, seg, hblk, hkC, hpre, hsp, hspv,
         hkOp, hk2, hnepv, hbelow, _hnep, hadvance, hspcap, hspw, hprice⟩ =>

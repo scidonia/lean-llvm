@@ -464,10 +464,11 @@ the call site is one line and the classification stays the merge's. -/
 cases are the whitespace scan's (`HcontFacts`) and the scan-free continuation's
 (`HcontCleanupFacts`, whose token ends at the entry's end so the extra-token scan is
 empty); the two-entry case is the standalone string's, whose merge index overshoots the
-head's test.  Every arm produces a `WalkDispatchResult` — the first through
-`walkRevolutionMergeSegWs`, the second through `walkRevolutionMergeSeg`, the third
-through `WalkDispatchResult.ofStringMerge` — so the case is named here rather than
-decided by the head's index.
+head's test.  Every arm produced a `WalkDispatchResult` — the first through the whitespace
+composition (since retired with that route), the second through `walkRevolutionMergeSeg`,
+the third through `WalkDispatchResult.ofStringMerge` — so the case is named here rather than
+decided by the head's index.  `HcontCase` is the *superseded* statement's type, not a live
+dispatch: `JsonStage2WalkHcontDomain` uses it as the premise its regression refutes.
 
 **The arms are disjoint at a state**, which is what makes this a class rather than a
 fan-out: `HcontFacts.hlt91` says the head's byte is *not* below `91`, and

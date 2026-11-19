@@ -28,8 +28,8 @@ they select:
 | `117 … 125` | the same three, `LeafBlock58`'s eq clear, `if.else405.i` | `5` | `0` |
 
 The last row is `walkHeadChainCSeg`'s, composed in `JsonStage2WalkPrefixCount`; the other
-three are this module's.  `126`/`127` take the last row's route and are `HcontArm.ws`/
-`.cleanup`'s class, which is why the class here stops at `125`.
+three are this module's.  `126`/`127` take the last row's route and are
+`HcontArm.cleanup`'s class, which is why the class here stops at `125`.
 
 ## Why one span theorem per leaf arm, and one merge
 

@@ -36,7 +36,7 @@ the test succeeds.
 | head: four pivots, `sw.default.i`, `cond.true345.i`, `cond.end349.i` | `hcontPrefixSeg` | head → `cond.end349.i` | `7` |
 | the whitespace check: `land.lhs.true357.i`, `NodeBlock41`, `NodeBlock39`, `LeafBlock35` | `hcontPrefixSeg` | → the token's end | `4` |
 | seam | `WalkLink.if_end372_i_at` | `if.end372.i` → the class-C span | `1` |
-| visits of the extra-token scan | `contScanRounds` | the latch → its last visit | `≤ 8·(v - 1 - ei)` |
+| visits of the extra-token scan | the round (`scanRoundSeg4`) | the latch → a visit | `4` per visit |
 | exit | `scanExitSeg` | the latch → `if.end473.i` | `1` |
 | merge | `walkIfEnd473_at` | `if.end473.i` → `cleanup478.i` | `1` |
 
@@ -44,9 +44,10 @@ the test succeeds.
 traversal rather than part of the prefix.  The visits are composed at
 `walkScanRounds457_of_cell`'s **round**, not at that lemma: its conclusion keeps only the counter
 at the target (`%q.0.i246 = c - 1`), and the exit test reads the bound (`%cond350.i = c`)
-as well, so the traversal's own aggregation cannot reach the exit.  `contScanRounds` is
-that aggregation with both registers kept; its measure, its price and its induction are
-`walkScanRounds457_of_cell`'s.  Its induction consumes one row, the visited byte's class at the
+as well, so the traversal's own aggregation cannot reach the exit.  The aggregation with
+both registers kept (`contScanRounds`) was retired with the whitespace route; the round it
+composed (`scanRoundSeg4`) is what `.run`'s `scanRoundsAt` reads, and its measure and price
+are `walkScanRounds457_of_cell`'s.  Its induction consumes one row, the visited byte's class at the
 indices the scan walks (`hbyte`); the round is a theorem of the visit's own premises
 (`scanRoundField`, `JsonStage2WalkRevolutionScanRound`) and no guard hypothesis enters.
 `ScanGuard`'s `∀` quantifies over every natural pair carrying the two register words, and
@@ -200,8 +201,8 @@ is **data**, and it is no longer the bundle's to carry:
   stop's `%cond350.i` cell beside it — the count existential because the three leaves differ
   in cost.  Its source and its endpoint are the total functions `wsPreS` and `wsSlS`, so the
   bundle's other fields state their states without carrying a state.
-* `hopS` is **produced** (`contWsEntry_hopS`: the seam stores `ofNat 64 k`, and the scan's
-  phi selects `%ee.1.i` on `if.then447.i`'s edge), so the bundle carries no landing index
+* `hopS` is **produced** (from `contWsEntry_ee`: the seam stores `ofNat 64 k`, and the
+  scan's phi selects `%ee.1.i` on `if.then447.i`'s edge), so the bundle carries no landing index
   and the contradiction with `heicd` is gone.
 * The class is a field rather than the run's business: a `Type` has to be inhabited at every
   head state with an entry left, and the run exists only where `%35` enters the skip.  The
@@ -2606,20 +2607,6 @@ theorem wsStopAt_cond {m0 : Mem} (G : WalkGeom m0) (l : State) (i v k : Nat) :
     rw [wsLeafS_cond, scanLatchOut_cond]
     exact wsLatchAt_cond G l i v _
 
-/-- The scan's entry, at the bundle's own terms.  Named for the same reason
-`hlastEntryF` is: the bundle's fields are the `def`s' arguments in order, so a lemma's
-statement at `contWsEntryF f` is the one its field types spell out. -/
-abbrev contWsEntryF {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
-    (f : HcontFacts G C s) : State :=
-  contWsEntry C (wsSlS G C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.k) f.k f.x1 f.x1
-    f.r₁ f.r₂ f.r₃ f.k f.v f.cA f.rdv f.xA
-
-/-- The scan's latch, at the bundle's own terms. -/
-abbrev contWsLatchF {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
-    (f : HcontFacts G C s) : State :=
-  contWsLatch C (wsSlS G C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.k) f.k f.x1 f.x1
-    f.r₁ f.r₂ f.r₃ f.k f.v f.cA f.rdv f.xA (BitVec.ofNat 64 f.k) f.a f.q f.x47
-
 /-! ### The no-run class's bundle
 
 `HcontFacts` describes the token that ends *inside* its entry, so the extra-token scan runs
@@ -2728,79 +2715,18 @@ abbrev contTailStartF {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
     (f : HcontCleanupFacts G C s) : State :=
   contTailStartByte C s f.x f.inc f.nep f.ep f.v f.ix f.b35 f.b8 f.x1 f.hb
 
-/-- **The scan's visits, counted with the registers kept.**  `walkScanRounds457_of_cell` counts
-the visits but keeps only the counter at its target; the exit test reads the bound too, so
-the recursion here is at the round's own granularity (`hround`, the traversal's own
-hypothesis) and its conclusion carries both registers.  The price bound is the traversal's
-own: one byte allowance per visit, `cd - 1 - ei` of them.
+/-! ### The composition, and where it is
 
-**This is the two-register twin of `walkScanRounds457_of_cell`, not a simplification of it, and it
-must not be folded back into that lemma.**  The committed traversal concludes
-`%q.0.i246 = c - 1` and nothing about `%cond350.i`, while the latch's exit test branches on
-the bound (`i + 1 = c`) — so the exit is unreachable from its conclusion by construction,
-whatever the induction does inside.  The extra register is not a strengthening for its own
-sake: it is what the exit consumes, and the price bound is unchanged. -/
-theorem contScanRounds {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
-    (f : HcontFacts G C s) {C' : WalkCarry G} {s' : State} {i : Nat}
-    (hInv : WalkInv G C' s') (hblock : C'.block = "while.body462.i")
-    (hi : lookupName s'.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 i)))
-    (hb : lookupName s'.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 f.v.toNat)))
-    (hc63 : f.v.toNat ≤ 2 ^ 63) (hic : i < f.v.toNat) (hik : f.k ≤ i) :
-    ∃ (C'' : WalkCarry G) (s'' : State) (n : Nat),
-      WalkSegment (stage2Calls stage2SubCalls) G C' s' C'' s'' n ∧ WalkInv G C'' s'' ∧
-      C''.block = "while.body462.i" ∧
-      lookupName s''.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 (f.v.toNat - 1))) ∧
-      lookupName s''.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 f.v.toNat)) ∧
-      n ≤ stage2ByteAllowance * (f.v.toNat - 1 - i) := by
-  have go : ∀ r, ∀ (j : Nat) (K : WalkCarry G) (t : State), f.v.toNat - 1 - j = r →
-      WalkInv G K t → K.block = "while.body462.i" →
-      lookupName t.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 j)) →
-      lookupName t.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 f.v.toNat)) →
-      j < f.v.toNat → f.k ≤ j →
-      ∃ (K' : WalkCarry G) (t' : State) (n : Nat),
-        WalkSegment (stage2Calls stage2SubCalls) G K t K' t' n ∧ WalkInv G K' t' ∧
-        K'.block = "while.body462.i" ∧
-        lookupName t'.env "%q.0.i246" = some (.int 64 (BitVec.ofNat 64 (f.v.toNat - 1))) ∧
-        lookupName t'.env "%cond350.i" = some (.int 64 (BitVec.ofNat 64 f.v.toNat)) ∧
-        n ≤ stage2ByteAllowance * r := by
-    intro r
-    induction r with
-    | zero =>
-        intro j K t _ hInv hblock hi hb hic _
-        have hie : j = f.v.toNat - 1 := by omega
-        exact ⟨K, t, 0, Seg.measure (Seg.nil hInv), hInv, hblock,
-          by rw [← hie]; exact hi, hb, by simp⟩
-    | succ r ih =>
-        intro j K t hr hInv hblock hi hb hic hlo
-        have hlt : j + 1 < f.v.toNat := by omega
-        have hpos : j + 1 < 2 ^ 63 := by omega
-        obtain ⟨a, bs, q, x, h3, hread, hbs, h47, hbit, hws, hl105, hl96, hll⟩ :=
-          f.hbyte K t j hInv hblock (by omega) hlt hi hb
-        obtain ⟨K₁, t₁, j₁, hseg, hInv₁, hb₁, hj, hi₁, hc₁⟩ :=
-          f.hround K t j a bs q x hInv hblock hi hb hlt hpos h3 hread hbs h47 hbit hws
-            hl105 hl96 hll
-        obtain ⟨K₂, t₂, m, hseg₂, hInv₂, hb₂, hi₂, hc₂, hm⟩ :=
-          ih (j + 1) K₁ t₁ (by omega) hInv₁ hb₁ hi₁ hc₁
-            (by omega) (by omega)
-        refine ⟨K₂, t₂, j₁ + m, hseg.trans hseg₂, hInv₂, hb₂, hi₂, hc₂, ?_⟩
-        rw [Nat.mul_succ]
-        omega
-  exact go (f.v.toNat - 1 - i) i C' s' rfl hInv hblock hi hb hic hik
-
-/-! ### The two arms' compositions, and where they are
-
-Neither arm's composition lives here.  The whitespace arm's goes through the run
-(`contWsRunF`), the seam, the class-C span, the tail and the scan's visits, and it
-records the merge's three cells; the scan-free arm's is `hcontPrefixCleanupSeg` plus the
-merge's step.  Both are `JsonStage2WalkRevolutionSeg`'s (`walkRevolutionMergeSegWs` and
-`walkRevolutionMergeSeg`), because the cells are read at the endpoint's named state and the
-traversal that carries the registers is that module's.
+The scan-free arm's composition is `JsonStage2WalkRevolutionSeg`'s
+(`walkRevolutionMergeSeg`) — `hcontPrefixCleanupSeg` plus the merge's step — because the
+cells are read at the endpoint's named state.  The whitespace arm's composition and its
+traversal (`walkRevolutionMergeSegWs`, `scanWsRounds`) were retired with that route: at
+`126`/`127` the class is the refusal's, so nothing the walk occupies builds the bundle.
 
 The composition this file used to state (`walkRevolution_seg`) is gone rather than kept
-beside them: its premise was the bundle at the *scan-free* states, so it named a path the
+beside it: its premise was the bundle at the *scan-free* states, so it named a path the
 walk does not take from a state the walk does reach — the vacuity this module's header
-records.  What survives here is the bundle, and the traversal lemma (`contScanRounds`) both
-arms' compositions share. -/
+records.  What survives here is the bundle and the run that derives it from the class. -/
 
 /-! ### The run's composition around `wsRun`
 
@@ -3886,21 +3812,11 @@ theorem contWsPriceAt {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (sl : State
       stage2ByteAllowance * (entryPos G (C.k + 1) - entryPos G C.k) + 5 :=
   wsPrice hN f.hClass.2.2.2.1 f.heicd f.hClass.2.2.2.2.2 f.hspan
 
-/-! #### The class-C route's check state's cells, and its bundle
+/-! #### The class-C route's check state's cell
 
-`contLandS`'s two cells the bundle states are the head state's: `%35` is the byte the
-check bound, `%idxprom.i` is the head switch's index and `%cond350.i` is
+`contLandS`'s `%cond350.i` cell is the head state's: `%cond350.i` is
 `cond.end349.i`'s store.  Peeling `contLandS` and `contEndS`'s own cells leaves the
 `contAS₅` state's. -/
-
-/-- `%idxprom.i` at the class-C route's check state is `cond.true345.i`'s. -/
-theorem contLandS_idx {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
-    (x : BitVec 8) (inc nep : BitVec 64) (ep : Nat) (v : BitVec 32) (ix : BitVec 64)
-    (b35 : UInt8) :
-    lookupName (contLandS C s x inc nep ep v ix b35).env "%idxprom.i" =
-      lookupName (contAS₅ s x inc nep).env "%idxprom.i" := by
-  simp only [contLandS, contEndS, condEnd349OutAt, cte345OutAt, stateAt, cells, State.bind]
-  repeat rw [lookupName_cons_ne _ _ (by decide)]
 
 /-- `%cond350.i` at the class-C route's check state is the entry's end. -/
 theorem contLandS_cond {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
@@ -3912,107 +3828,10 @@ theorem contLandS_cond {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State
   repeat rw [lookupName_cons_ne _ _ (by decide)]
   exact contEndS_cond C s x inc nep ep v ix
 
-/-- **The class-C route's bundle, from `HcontFacts` and its check state's invariant.**
-Every field is `HcontFacts`'s own, transported from `wsSlS` to `wsSlAt` at the check
-state; the check state's two cells are its peels. -/
-noncomputable def hcontRunFacts_of_contFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
-    (s : State) (f : HcontFacts G C s)
-    (hInv : WalkInv G (ContAC₄ C) (contLandS C s f.x f.inc f.nep f.ep f.v f.ix f.b35)) :
-    HcontRunFacts G C (contLandS C s f.x f.inc f.nep f.ep f.v f.ix f.b35) where
-  hInv := hInv
-  b35 := f.b35
-  h35 := by
-    simp only [evalOperand]
-    exact contLandS_35 C s f.x f.inc f.nep f.ep f.v f.ix f.b35
-  ix := f.ix
-  hidx := by
-    rw [contLandS_idx]
-    exact f.hidx5
-  v := f.v
-  hcond := contLandS_cond C s f.x f.inc f.nep f.ep f.v f.ix f.b35
-  hugt := f.hugt
-  k := f.k
-  x1 := f.x1
-  hClass := f.hClass
-  heicd := f.heicd
-  h8c := by
-    rw [wsSlAt_transport]
-    exact f.h8c
-  hbit := wsBit45 f.hc110
-  ss := contWsTailStart C (wsSlAt G (contLandS C s f.x f.inc f.nep f.ep f.v f.ix f.b35)
-    f.b35 f.ix f.v f.k) f.k f.x1 f.x1
-  hssEe := by
-    simp only [contWsTailStart, HeadS413, HeadS405, HeadS58, HeadS60, HeadS62,
-      contWsSeamS, seamS, seamFin, stateAt, cells, State.bind]
-    repeat rw [lookupName_cons_ne _ _ (by decide)]
-    exact lookupName_cons_self _ _ _
-  hssCond := by
-    simp only [contWsTailStart, HeadS413, HeadS405, HeadS58, HeadS60, HeadS62,
-      contWsSeamS, seamS, seamFin, stateAt, cells, State.bind]
-    repeat rw [lookupName_cons_ne _ _ (by decide)]
-    rw [wsSlAt_cond]
-    exact contLandS_cond C s f.x f.inc f.nep f.ep f.v f.ix f.b35
-  hssInc := by
-    have h := f.hTail.inv'.inc_reg
-    rw [wsSlAt_transport]
-    simp only [contWsEntry, ScanEntry, TailS₃, TailS₂, TailS₁, stateAt, cells,
-      State.bind] at h ⊢
-    repeat rw [lookupName_cons_ne _ _ (by decide)] at h ⊢
-    exact h
-  hssNep := by
-    have h := f.hTail.inv'.regs ("%nep", .int 64 (BitVec.ofNat 64 G.nep))
-      (by simp [walkStaticRegs])
-    rw [wsSlAt_transport]
-    simp only [contWsEntry, ScanEntry, TailS₃, TailS₂, TailS₁, stateAt, cells,
-      State.bind] at h ⊢
-    repeat rw [lookupName_cons_ne _ _ (by decide)] at h ⊢
-    exact h
-  r₁ := f.r₁
-  r₂ := f.r₂
-  r₃ := f.r₃
-  ev := f.ev
-  cA := f.cA
-  rdv := f.rdv
-  xA := f.xA
-  hTail := by
-    rw [wsSlAt_transport]
-    exact f.hTail
-  a := f.a
-  q := f.q
-  bs := f.bs
-  h3S := by
-    rw [wsSlAt_transport]
-    exact f.h3S
-  hpos := f.hpos
-  hreadS := by
-    rw [wsSlAt_transport]
-    exact f.hreadS
-  hbsS := f.hbsS
-  hloc105 := by
-    rw [wsSlAt_transport]
-    exact f.hloc105
-  x47 := f.x47
-  h47 := by
-    rw [wsSlAt_transport]
-    exact f.h47
-  hbit47 := f.hbit47
-  hws47 := f.hws47
-  hloc96 := by
-    rw [wsSlAt_transport]
-    exact f.hloc96
-  hlatch := by
-    rw [wsSlAt_transport]
-    exact f.hlatch
-  hspan := f.hspan
-  hstart := f.hstart
-  hround := f.hround
-  hbyte := f.hbyte
-  htok := f.htok
-
 /-! #### The bundle's own states, and the byte bridge
 
-The scan's entry and latch at the bundle's own terms (as `contWsEntryF`/`contWsLatchF` are
-at `HcontFacts`'s), the peels the landing and the scan's cells need, and the bridge that
+The scan's entry and latch at the run bundle's own terms, the peels the landing and the
+scan's cells need, and the bridge that
 makes the seam's byte the head's: `%8` is loaded once and the skip keeps it, so `x1` is
 `hlastByte G C`. -/
 
@@ -4188,7 +4007,6 @@ noncomputable def wsRunHeadAt {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
 #print axioms LeanLLVM.Refinement.WalkScope.wsLeafS_48_cond
 #print axioms LeanLLVM.Refinement.WalkScope.wsRun_go
 #print axioms LeanLLVM.Refinement.WalkScope.wsRun
-#print axioms LeanLLVM.Refinement.WalkScope.contScanRounds
 #print axioms LeanLLVM.Refinement.WalkScope.contWsEntry_ee
 #print axioms LeanLLVM.Refinement.WalkScope.seamS_env_inc
 #print axioms LeanLLVM.Refinement.WalkScope.seamS_env_nep
@@ -4227,9 +4045,7 @@ noncomputable def wsRunHeadAt {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
 #print axioms LeanLLVM.Refinement.WalkScope.contWsRunBody
 #print axioms LeanLLVM.Refinement.WalkScope.contWsRunF
 #print axioms LeanLLVM.Refinement.WalkScope.contWsPriceAt
-#print axioms LeanLLVM.Refinement.WalkScope.contLandS_idx
 #print axioms LeanLLVM.Refinement.WalkScope.contLandS_cond
-#print axioms LeanLLVM.Refinement.WalkScope.hcontRunFacts_of_contFacts
 
 end WalkScope
 end LeanLLVM.Refinement

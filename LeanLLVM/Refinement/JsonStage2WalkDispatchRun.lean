@@ -1,7 +1,7 @@
 /-
 The default arm's run class: the scan's rounds at the seam's own bound, and the segment.
 
-## The class, and why it is not `.ws`'s
+## The class
 
 Where the byte before the entry's end is whitespace the walk runs that run first, so the
 token's end `%ee.1.i` is the run's *stop* `k` and the copy call's test
@@ -9,25 +9,20 @@ token's end `%ee.1.i` is the run's *stop* `k` and the copy call's test
 `land.rhs457.i`.  The scan then visits `[k, v)` and the merge follows.  That is the run
 class, and it is a continuation *orthogonal* to the head switch's byte classes: every
 default-arm span (`lettersSpan`, `fSpan`, the class-C leaves' four) has a run and a
-scan-free arm, exactly as `126`/`127` have `.ws` and `.cleanup`.
+scan-free arm.
 
-`HcontArm.ws` carries this continuation **at `126`/`127` only**, because `HcontFacts`'s own
-class bits are those two bytes; its composition is `walkRevolutionMergeSegWs`.  This module
-is the arm for the same continuation at every other head class, so its span enters as a
+This module is the arm for that continuation at those head classes, so its span enters as a
 segment at `nS ≤ 5` — the byte's own proved span — and its head chain as a segment at
-`nH ≤ 12`.
+`nH ≤ 12`.  The high-byte class at `126`/`127` is the refusal's now: its former `.ws`
+carrier and `walkRevolutionMergeSegWs` composition are deleted with that route.
 
-## The bound, and why `scanWsRounds` is not it
+## The bound
 
-`scanWsRounds` (`JsonStage2WalkRevolutionSeg`) is stated over `HcontFacts` and reads the
-bound out of the bundle's `v` — the lane word `cond.true345.i` loaded.  A bundle can only be
-inhabited at its own head class, so a lemma stated over it cannot serve another class's
-states, and `HcontFacts`'s `v` is not a number the seam's own state carries.  What the
-rounds actually need is the word the **seam's bound cell** holds: `%cond350.i`, which the
-seam's path binds once (`cond.end349.i`) and no block from there to the latch rebinds, and
-which the landing's first edge reads.  `scanRoundsAt` states the traversal at that cell's
-value `c` — a parameter, not a bundle's projection — so it applies at any head state whose
-latch carries `%cond350.i = ofNat 64 c`:
+The rounds need the word the **seam's bound cell** holds: `%cond350.i`, which the seam's
+path binds once (`cond.end349.i`) and no block from there to the latch rebinds, and which
+the landing's first edge reads.  `scanRoundsAt` states the traversal at that cell's value
+`c` — a parameter, not a bundle's projection — so it applies at any head state whose latch
+carries `%cond350.i = ofNat 64 c`:
 
 | piece | lemma | count |
 |---|---|---|
@@ -36,8 +31,8 @@ latch carries `%cond350.i = ofNat 64 c`:
 
 The conclusion keeps what the merge reads and what the exit test reads: the counter at the
 last visit, the bound, `%inc.i`, `%nep` and the carry's index.  The price is four per visit,
-the round's own count, rather than the byte allowance's eight — `scanWsRounds`'s choice, and
-the reason the bound below is not widened.
+the round's own count rather than the byte allowance's eight, and that is the reason the
+bound below is not widened.
 
 ## The composition
 
@@ -85,10 +80,11 @@ namespace WalkScope
 
 /-! ### The visits, at the seam's bound
 
-`scanWsRounds`'s induction with the bundle's `v.toNat` replaced by the bound cell's value
-`c`, and its per-visit hypothesis taken as a hypothesis rather than read off a bundle.  The
-round is `scanRoundSeg4`, which was already stated at a plain bound; what this lemma adds is
-the aggregation over the visits with the three registers the merge reads carried across. -/
+The traversal at the seam's bound cell: the induction carries the bound cell's value `c`
+rather than a bundle's `v.toNat`, and its per-visit hypothesis is a hypothesis rather than
+read off a bundle.  The round is `scanRoundSeg4`, which was already stated at a plain bound;
+what this lemma adds is the aggregation over the visits with the three registers the merge
+reads carried across. -/
 theorem scanRoundsAt {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     {K : WalkCarry G} {t : State} {i c : Nat} {inc0 nep0 : BitVec 64}
     {k0 : Nat} (hInv : WalkInv G K t) (hblock : K.block = "while.body462.i")
