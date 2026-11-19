@@ -2,11 +2,7 @@
   description = "lean-llvm — certified LLVM transformations and refinement in Lean 4";
 
   inputs = {
-    # Pinned to a `nixos-unstable` revision whose `lean4` is the released
-    # toolchain, so the shell substitutes a binary from `cache.nixos.org`
-    # instead of building Lean from source.  Mathlib's tag `v4.35.0` names the
-    # same version, so `lake` sees one toolchain on both sides.
-    nixpkgs.url = "github:NixOS/nixpkgs/1c89083e451e891152365b799595cf7790a43325";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   };
 
   outputs =
