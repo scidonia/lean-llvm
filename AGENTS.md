@@ -38,11 +38,19 @@ executable), the generic tree library, and every pin in `LeanLLVMTest/`.  The
 generic library depends on `leanprover-community/mathlib4` at the revision
 pinned in `lakefile.toml`, which is tag `v4.35.0`.  The shell supplies mathlib
 and every library it requires prebuilt from nixpkgs' `leanPackages` set, and its
-`lake` wrapper passes `--packages` overrides that resolve them all to their store
-paths, so a checkout elaborates only this project's modules: no git fetch, no
-mathlib elaboration, and no `.lake/packages`.  The mathlib revision,
-`lean-toolchain` and the flake's `leanPackages` are one unit: moving one needs
-the other two to match.  `pkgs.lean4` is not interchangeable with
+`lake` wrapper passes `--packages` overrides that resolve them all to a writable
+copy of those packages under `${XDG_CACHE_HOME:-$HOME/.cache}/lean-llvm/packages`,
+so a checkout elaborates only this project's modules: no git fetch, no mathlib
+elaboration, and no `.lake/packages`.  The copy is what makes linking work: Lake
+writes the C objects it needs for an executable into each dependency package's
+own `.lake/build/ir`, and a package taken straight from the read-only store
+cannot receive them.  It is made once per user with `cp -r --reflink=auto` and
+reused while the store path is unchanged; a fresh cache costs the copy plus the
+compilation of the objects for the modules an executable actually imports.
+`packages.<system>.lake` is that wrapper on its own, for a consumer such as a
+machine image that needs the same resolution without the shell.  The mathlib
+revision, `lean-toolchain` and the flake's `leanPackages` are one unit: moving
+one needs the other two to match.  `pkgs.lean4` is not interchangeable with
 `leanPackages.lean4` — only the latter's Lake accepts a `/nix/store` package
 directory as up to date — and nixpkgs' mathlib is at `v4.35.0`, so a mathlib
 revision that is not that tag has to be built, not substituted.

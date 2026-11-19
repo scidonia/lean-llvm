@@ -31,6 +31,14 @@ globs = ["ITree.*"]
 [[lean_lib]]
 name = "LeanLLVMTest"
 
+# `LeanLLVMTest.Json` imports the `leanllvm-json` executable's root for its
+# rendering helpers.  An executable root is not a module of the package's
+# library facet, so without this declaration nothing produces `JsonMain.olean`
+# and the import fails with "unknown module prefix 'JsonMain'".  Declaring the
+# root here builds it as a library module as well.
+[[lean_lib]]
+name = "JsonMain"
+
 [[lean_exe]]
 name = "leanllvm"
 root = "Main"
