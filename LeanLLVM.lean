@@ -215,6 +215,7 @@ import LeanLLVM.Refinement.JsonStage2WalkDispatchRunHead
 import LeanLLVM.Refinement.JsonStage2WalkDispatchDefaultLane
 import LeanLLVM.Refinement.JsonStage2WalkDispatchRunLastSeam
 import LeanLLVM.Refinement.JsonStage2WalkDispatchSeams
+import LeanLLVM.Refinement.JsonStage2WalkDispatchSeamCalls
 import LeanLLVM.Refinement.JsonStage2WalkDispatchClassRows
 import LeanLLVM.Refinement.JsonStage2WalkDispatchLastArmRows
 import LeanLLVM.Refinement.JsonStage2WalkHcontSeamInv
