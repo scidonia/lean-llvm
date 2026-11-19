@@ -1,7 +1,9 @@
 /* bench.c -- the measurement harness for the three proved stage-1 units.
 
-   `bench.sh` compiles this against three objects built from `kernel/json/` at
-   the measured compiler line and runs it once per CPU and trial.  Each document
+   `bench.sh` compiles this against objects built from `kernel/json/` at the
+   measured compiler line, the two bench-only mask copies in `bench-ablate.c`
+   and the bench-only mask unit in `bench-fastesc.c`, and runs it once per CPU
+   and trial.  Each document
    is read once, staged once, and then swept from the same warm buffer: every
    repetition re-runs the unit over bytes that were just read, so no repetition
    pays a first-touch page fault or a cold-cache fill of its own.
@@ -9,6 +11,10 @@
    Rows, one per unit (or per arm of a unit), each over the whole document:
 
      s1_masks      leanllvm_json_s1_masks once per complete 64-byte block
+     s1_fastesc    the mask unit's copy in `bench-fastesc.c`, with the
+                   escape/quote derivation computed without pext, pdep or clz;
+                   it runs every block beside `s1_masks` and must return the
+                   same six mask words and carry state before it is timed
      s1_noesc      the mask unit's copy in `bench-ablate.c` with the escape
                    correction and escape carry removed: a cost bound for that
                    derivation, not a classifier
@@ -61,8 +67,9 @@
    stream's total set lanes; the fused rows' final cursors must equal the total
    set lanes of the pipeline's entry mask composed independently here, which
    the entry unit must also return over that staged stream; the gated and
-   ungated UTF-8 words must be equal; and every timed pass's checksum must equal
-   the warm-up pass's checksum.  A disagreement exits 3 (the instrument is not
+   ungated UTF-8 words must be equal; s1_fastesc must equal s1_masks in every
+   mask word and in the carry state on every block of every document; and every
+   timed pass's checksum must equal the warm-up pass's checksum.  A disagreement exits 3 (the instrument is not
    usable), never as a number.
 
      bench --doc <name>=<path> [--doc ...] [--reps <n>] [--samples]
@@ -102,6 +109,10 @@ extern void leanllvm_json_s1_masks_noesc(const uint8_t *p, s1_carry *carry,
 extern void leanllvm_json_s1_masks_noesc_noparity(const uint8_t *p,
                                                   s1_carry *carry,
                                                   s1_masks *out);
+/* The bench-only mask unit whose escape/quote derivation uses no gather,
+   scatter or count-leading-zeros instruction (`bench-fastesc.c`). */
+extern void leanllvm_json_s1_fastesc(const uint8_t *p, s1_carry *carry,
+                                     s1_masks *out);
 extern uint64_t leanllvm_json_entry_pos8(const uint64_t *ent, uint64_t blk0,
                                          uint64_t nblk, uint32_t *out,
                                          uint64_t k);
@@ -307,15 +318,16 @@ static uint64_t mix(uint64_t h, uint64_t v) {
 
 typedef void (*s1_kernel)(const uint8_t *, s1_carry *, s1_masks *);
 
-/* The three mask rows reach their kernels through this table, loaded through a
+/* The four mask rows reach their kernels through this table, loaded through a
    volatile pointer at the start of each pass.  The indirect call is one call
    per block in every build: at unity the plain `leanllvm_json_s1_masks` would
    inline into `pass_s1` and have its unread outputs deleted, which would make
-   the baseline a shorter function than the ablations it is compared with. */
-static s1_kernel volatile s1_kernels[3];
+   the baseline a shorter function than the ablations and the candidate it is
+   compared with. */
+static s1_kernel volatile s1_kernels[4];
 
-static uint64_t pass_s1(const doc *d, int full) {
-  s1_kernel fn = s1_kernels[0];
+static uint64_t pass_s1(const doc *d, int which, int full) {
+  s1_kernel fn = s1_kernels[which];
   s1_carry carry = { 0, 0, 0 };
   s1_masks out;
   uint64_t h = 0x84222325CBF29CE4ull;
@@ -341,6 +353,47 @@ static uint64_t pass_s1(const doc *d, int full) {
     }
   }
   return h;
+}
+
+/* The candidate's byte-identity gate: every one of the six mask words and the
+   carry state must equal the kernel's on every block of the document.  A
+   mismatch fails the run instead of producing a timing row. */
+static void gate_fastesc(const doc *d) {
+  s1_carry kc = { 0, 0, 0 }, fc = { 0, 0, 0 };
+  s1_masks km, fm;
+  for (uint64_t i = 0; i < d->nb; i++) {
+    leanllvm_json_s1_masks(d->buf + i * BLOCK, &kc, &km);
+    leanllvm_json_s1_fastesc(d->buf + i * BLOCK, &fc, &fm);
+    const char *field = NULL;
+    uint64_t k = 0, f = 0;
+    if (km.quote != fm.quote) {
+      field = "quote"; k = km.quote; f = fm.quote;
+    } else if (km.delim != fm.delim) {
+      field = "delim"; k = km.delim; f = fm.delim;
+    } else if (km.in_string != fm.in_string) {
+      field = "in_string"; k = km.in_string; f = fm.in_string;
+    } else if (km.ws != fm.ws) {
+      field = "ws"; k = km.ws; f = fm.ws;
+    } else if (km.backslash != fm.backslash) {
+      field = "backslash"; k = km.backslash; f = fm.backslash;
+    } else if (km.ctl != fm.ctl) {
+      field = "ctl"; k = km.ctl; f = fm.ctl;
+    } else if (kc.esc_open != fc.esc_open) {
+      field = "esc_open"; k = kc.esc_open; f = fc.esc_open;
+    } else if (kc.esc_ppar != fc.esc_ppar) {
+      field = "esc_ppar"; k = kc.esc_ppar; f = fc.esc_ppar;
+    } else if (kc.im_carry != fc.im_carry) {
+      field = "im_carry"; k = kc.im_carry; f = fc.im_carry;
+    }
+    if (field != NULL) {
+      fprintf(stderr,
+              "bench: %s: s1_fastesc %s %016" PRIx64
+              ", s1_masks %016" PRIx64 " at block %" PRIu64
+              " (byte %" PRIu64 ")\n",
+              d->name, field, f, k, i, i * BLOCK);
+      exit(3);
+    }
+  }
 }
 
 /* The ablated-mask rows.  `which` selects the copied kernel.  The reference
@@ -534,16 +587,17 @@ typedef struct {
   uint64_t touch;   /* bytes the unit reads */
 } row;
 
-/* The s1 row's context: `full` computes the reference checksum, its absence
-   computes the one-step checksum the timed loop can afford. */
+/* The s1 row's context: which mask kernel, and whether this call is the
+   reference pass. */
 typedef struct {
   const doc *d;
+  int which;
   int full;
 } s1_ctx;
 
 static uint64_t row_s1(void *ctx) {
   const s1_ctx *c = ctx;
-  return pass_s1(c->d, c->full);
+  return pass_s1(c->d, c->which, c->full);
 }
 
 /* The ablated row's context: which copy, and whether this call is the
@@ -702,6 +756,7 @@ int main(int argc, char **argv) {
   s1_kernels[0] = leanllvm_json_s1_masks;
   s1_kernels[1] = leanllvm_json_s1_masks_noesc;
   s1_kernels[2] = leanllvm_json_s1_masks_noesc_noparity;
+  s1_kernels[3] = leanllvm_json_s1_fastesc;
 
   int cpu = -1;
 #if defined(__linux__)
@@ -715,6 +770,10 @@ int main(int argc, char **argv) {
     doc *d = &docs[i];
     d->buf = read_file(d->path, &d->n);
     stage_doc(d);
+
+    /* The candidate's byte-identity gate, before any timing: every mask word
+       and the carry state must match the kernel's on every block. */
+    gate_fastesc(d);
 
     /* The row gates, taken once per document before any timing. */
     uint64_t k8, kb;
@@ -774,9 +833,13 @@ int main(int argc, char **argv) {
            d->pipeline_ent,
            d->vectors, d->ascii_vectors, d->utf8_gated, d->structural);
 
-    s1_ctx s1_full = { d, 1 };
-    s1_ctx s1_cheap = { d, 0 };
+    s1_ctx s1_full = { d, 0, 1 };
+    s1_ctx s1_cheap = { d, 0, 0 };
+    s1_ctx fe_full = { d, 3, 1 };
+    s1_ctx fe_cheap = { d, 3, 0 };
     row r_s1 = { d, "s1_masks", row_s1, d->nb * BLOCK, d->nb * BLOCK };
+    row r_fastesc = { d, "s1_fastesc", row_s1, d->nb * BLOCK,
+                      d->nb * BLOCK };
     row r_noesc = { d, "s1_noesc", row_ablate, d->nb * BLOCK,
                     d->nb * BLOCK };
     row r_nopar = { d, "s1_noesc_noparity", row_ablate, d->nb * BLOCK,
@@ -805,6 +868,7 @@ int main(int argc, char **argv) {
 
     if (d->nb > 0) {
       run_row(&r_s1, &s1_full, &s1_cheap, reps, samples, cpu);
+      run_row(&r_fastesc, &fe_full, &fe_cheap, reps, samples, cpu);
       run_row(&r_noesc, &ab_noesc_full, &ab_noesc_cheap, reps, samples, cpu);
       run_row(&r_nopar, &ab_nopar_full, &ab_nopar_cheap, reps, samples, cpu);
       run_row(&r_pos8, d, d, reps, samples, cpu);

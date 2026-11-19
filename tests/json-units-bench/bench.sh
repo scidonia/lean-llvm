@@ -7,12 +7,17 @@
 # `kernel/json/utf8.c` are compiled at the measured compiler line the unit routes
 # compile them with, and called through `tests/json-units-bench/bench.c` with
 # their own ABIs.  No kernel source is edited.  The rows are `s1_masks`,
-# `s1_noesc`, `s1_noesc_noparity`, `entry_pos8`, `entry_b8`, `fused_pos8`,
-# `fused_b8`, `split_ent_pos8`, `split_ent_b8`, `utf8_gated` and
-# `utf8_ungated`.  `s1_noesc` and `s1_noesc_noparity` call the bench-only
-# ablations in `tests/json-units-bench/bench-ablate.c`: the mask unit with the
-# escape/quote derivation partly removed, so their difference from `s1_masks`
-# is that derivation's cost.  They are cost bounds and not classifiers.
+# `s1_fastesc`, `s1_noesc`, `s1_noesc_noparity`, `entry_pos8`, `entry_b8`,
+# `fused_pos8`, `fused_b8`, `split_ent_pos8`, `split_ent_b8`, `utf8_gated` and
+# `utf8_ungated`.  `s1_fastesc` calls the bench-only candidate in
+# `tests/json-units-bench/bench-fastesc.c`: the same six mask words and carry
+# state as `s1_masks`, with the escape/quote derivation computed without pext,
+# pdep or clz.  It is gated block for block against `s1_masks` on every document
+# before it is timed, and a mismatch fails the run.  `s1_noesc` and
+# `s1_noesc_noparity` call the bench-only ablations in
+# `tests/json-units-bench/bench-ablate.c`: the mask unit with the escape/quote
+# derivation partly removed, so their difference from `s1_masks` is that
+# derivation's cost.  They are cost bounds and not classifiers.
 # `entry_pos8`/`entry_b8`
 # measure the unit's own structural-byte stream; `fused_*`/`split_ent_*` measure
 # the pipeline's own per-block entry mask over the same document, so the
@@ -67,6 +72,7 @@ die() { printf 'SETUP: %s\n' "$*" >&2; exit 3; }
 [ -n "$work" ] && [ "$work" != "/" ] || die "refusing work directory '$work'"
 for src in kernel/json/s1_block.c kernel/json/entry.c kernel/json/utf8.c \
            tests/json-units-bench/bench.c tests/json-units-bench/bench-ablate.c \
+           tests/json-units-bench/bench-fastesc.c \
            tests/json-units-bench/gen.c \
            tests/json-units-bench/bench-unity.c; do
   [ -f "$repo/$src" ] || die "absent: $src"
@@ -94,8 +100,15 @@ done
   2>"$work/ablate.cc.err" ||
   { cat "$work/ablate.cc.err" >&2; die "bench-ablate did not compile at the measured flags"; }
 
+# The candidate mask unit, at the same compiler line and as its own object.
+"$cc" "${kflags[@]}" -I "$repo/kernel/json" \
+  -c "$repo/tests/json-units-bench/bench-fastesc.c" -o "$bin/fastesc.o" \
+  2>"$work/fastesc.cc.err" ||
+  { cat "$work/fastesc.cc.err" >&2; die "bench-fastesc did not compile at the measured flags"; }
+
 "$cc" -O2 -std=gnu11 -o "$bin/bench" "$repo/tests/json-units-bench/bench.c" \
   "$bin/s1_block.o" "$bin/entry.o" "$bin/utf8.o" "$bin/ablate.o" \
+  "$bin/fastesc.o" \
   2>"$work/bench.cc.err" ||
   { cat "$work/bench.cc.err" >&2; die "bench did not build"; }
 
@@ -113,8 +126,13 @@ done
   -c "$repo/tests/json-units-bench/bench-ablate.c" -o "$bin/lto/ablate.o" \
   2>"$work/lto-ablate.cc.err" ||
   { cat "$work/lto-ablate.cc.err" >&2; die "bench-ablate did not compile at the measured flags with -flto"; }
+"$cc" "${kflags[@]}" -flto -I "$repo/kernel/json" \
+  -c "$repo/tests/json-units-bench/bench-fastesc.c" -o "$bin/lto/fastesc.o" \
+  2>"$work/lto-fastesc.cc.err" ||
+  { cat "$work/lto-fastesc.cc.err" >&2; die "bench-fastesc did not compile at the measured flags with -flto"; }
 "$cc" -O2 -std=gnu11 -flto -o "$bin/bench-lto" "$repo/tests/json-units-bench/bench.c" \
   "$bin/lto/s1_block.o" "$bin/lto/entry.o" "$bin/lto/utf8.o" "$bin/lto/ablate.o" \
+  "$bin/lto/fastesc.o" \
   2>"$work/bench-lto.cc.err" ||
   { cat "$work/bench-lto.cc.err" >&2; die "LTO bench did not build"; }
 
@@ -123,12 +141,14 @@ done
 # has, where the block loop calls local functions.  UTF-8 stays a linked object.
 "$cc" "${kflags[@]}" -o "$bin/bench-unity" \
   "$repo/tests/json-units-bench/bench-unity.c" "$bin/utf8.o" "$bin/ablate.o" \
+  "$bin/fastesc.o" \
   2>"$work/bench-unity.cc.err" ||
   { cat "$work/bench-unity.cc.err" >&2; die "unity bench did not build"; }
 
 kernel_sha=$(sha256sum "$bin/s1_block.o" "$bin/entry.o" "$bin/utf8.o" |
   awk '{ n = split($2, a, "/"); printf "%s=%s ", a[n], substr($1, 1, 16) }')
 ablate_sha="default=$(sha256sum "$bin/ablate.o" | cut -c1-16) lto=$(sha256sum "$bin/lto/ablate.o" | cut -c1-16)"
+fastesc_sha="default=$(sha256sum "$bin/fastesc.o" | cut -c1-16) lto=$(sha256sum "$bin/lto/fastesc.o" | cut -c1-16)"
 lto_sha=$(sha256sum "$bin/lto/s1_block.o" "$bin/lto/entry.o" "$bin/lto/utf8.o" |
   awk '{ n = split($2, a, "/"); printf "%s=%s ", a[n], substr($1, 1, 16) }')
 
@@ -179,6 +199,7 @@ printf 'command: nix develop -c bash tests/json-units-bench/bench.sh\n'
 printf 'objects: %s\n' "$kernel_sha"
 printf 'objects lto: %s\n' "$lto_sha"
 printf 'objects ablate: %s\n' "$ablate_sha"
+printf 'objects fastesc: %s\n' "$fastesc_sha"
 printf 'compiler: %s (%s)\n' "$cc" "$("$cc" --version | head -1)"
 printf 'unit flags: %s\n' "${kflags[*]}"
 printf 'harness flags: -O2 -std=gnu11\n'
@@ -312,8 +333,8 @@ awk '
       if (nd == 0) {
         printf "FAIL: variant %s produced no rows\n", v > "/dev/stderr"
         bad = 1
-      } else if (vnkeys[v] != nd * 11 * ncpu) {
-        printf "FAIL: variant %s: %d row(s) for %d document(s) x 11 units x %d CPU(s)\n",
+      } else if (vnkeys[v] != nd * 12 * ncpu) {
+        printf "FAIL: variant %s: %d row(s) for %d document(s) x 12 units x %d CPU(s)\n",
           v, vnkeys[v], nd, ncpu > "/dev/stderr"
         bad = 1
       }
@@ -373,5 +394,6 @@ printf 'ok: %s row(s) measured across the default, LTO and unity variants, over 
   "$(grep -h '^row ' "$work"/bench*.out | wc -l)" \
   "$(printf '%s' "$cpus" | wc -w)" "$trials" "$reps"
 printf 'ok: every row checksum is stable across its trials, and across variants and both core classes\n'
+printf 'ok: s1_fastesc returned every mask word and the carry state s1_masks returned on every block of every document\n'
 printf 'ok: entry_pos8 and entry_b8 returned the structural stream total on every document; fused_pos8 and fused_b8 returned the pipeline entry stream total; the gated and ungated UTF-8 words agree\n'
 printf 'note: cycles/byte = median ns/byte x the core clock calibrated immediately before the row; no PMU on this host\n'
