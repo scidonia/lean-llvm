@@ -284,6 +284,15 @@ with `if.then403.i`'s `10`, `if.then397.i`'s `9` or `LeafBlock58`'s `8` has its 
 `HcontSeamAbi.scan56True`/`scanF`/`scan58True`.  A cast that kept the seam's `0` could not
 discharge the leaf's own `phi` (`hop`: the operand the leaf's edge selects *is* the kind).
 
+**The three `0`-leaves are not the emit arm's at all.**  That edge's literal makes
+`od_scalar_value` answer `0` (`stage2ScalarValue`'s first arm), so the walk leaves for
+`if.then432.i` and no third call exists; their rows are the refusal group
+(`HcontSeamRefusal`, `HcontSeamAbi.scanRefuse`) and the producers at the end of this module
+(`hcontSeamRefuseAt_letters`/`_56Else`/`_58Else`) wire them.  The `HcontSeamCalls` arguments
+of this section's `0`-leaf producers are therefore empty at that literal
+(`hcontSeamCalls_no_literal_zero`); they stay until `JsonStage2WalkDispatchRunRow`'s wrappers
+— whose `HcontRunLeaf` is the emit group's shape — are removed.
+
 Each producer is stated at the run's own terms, so the state is
 `contWsSeamS C (wsSlAt G sl b35 ix v k) k x1` — the seam `if.end372.i` leaves. -/
 
@@ -468,6 +477,57 @@ noncomputable def hcontRunLeaf_58Else {m0 : Mem} (G : WalkGeom m0) (C : WalkCarr
     hInvS hk calls hroot0 "if.else405.i" rfl
     (.imm (.int 32 (BitVec.ofNat 32 0))) clsC_phi_else405
     (by simp only [hcA, evalOperand, Const.toValue])
+
+/-! ### The kind-`0` leaves: the refusal arm's rows
+
+The three leaves whose predecessor is `if.else405.i` do not reach `if.then447.i`: that edge
+writes the literal `0` as the token's kind, and `od_scalar_value` answers `0` at a zero kind
+(`stage2ScalarValue`'s first arm writes `od_fail`'s record), so the walk leaves `if.then425.i`
+for `if.then432.i`.  The rows those leaves carry are therefore `HcontSeamRefusal`'s — the two
+leading calls, the answer `0` and the refusal record's memory — not the emit group's, whose
+`hret₂` is `1` and which has no inhabitant at this literal
+(`JsonStage2WalkDispatchSeamCalls.hcontSeamCalls_no_literal_zero`).
+
+The producers below are the leaves' wiring: the seam's refusal group cast across the leaf's
+binds (`HcontSeamRefusal.cast`), the same move `hcontRunLeaf_letters` and its siblings make
+for the emit group.  A `.run` bundle (`HcontRunLeaf`) is *not* what these rows build: its
+`calls` field is the emit group's, so the `.run` cells at these three bytes are vacuous and
+the refusal arm is what replaces them. -/
+
+/-- **The letters leaf's kind-`0` rows**: `LetS413`'s seam is the shared one, cast across the
+leaf's binds. -/
+noncomputable def hcontSeamRefuseAt_letters {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (sl : State) (b35 : UInt8) (ix : BitVec 64) (v : BitVec 32) (k : Nat) (x1 : BitVec 8)
+    (rows : HcontSeamRefusal G (ContTailStartC C)
+      (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1) (BitVec.ofNat 32 0)) :
+    HcontSeamRefusal G (ContTailStartC C)
+      (LetS413 (contRunLeafS G C sl b35 ix v k x1) x1) (BitVec.ofNat 32 0) :=
+  rows.cast (s := contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1)
+    (s' := LetS413 (contRunLeafS G C sl b35 ix v k x1) x1) rfl rfl
+
+/-- **`111 … 115`'s leaf's kind-`0` rows**: `ClsS413F`'s seam. -/
+noncomputable def hcontSeamRefuseAt_56Else {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (sl : State) (b35 : UInt8) (ix : BitVec 64) (v : BitVec 32) (k : Nat) (x1 : BitVec 8)
+    (rows : HcontSeamRefusal G (ContTailStartC C)
+      (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1) (BitVec.ofNat 32 0)) :
+    HcontSeamRefusal G (ContTailStartC C)
+      (ClsS413F (contRunLeafS G C sl b35 ix v k x1) x1) (BitVec.ofNat 32 0) :=
+  rows.cast (s := contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1)
+    (s' := ClsS413F (contRunLeafS G C sl b35 ix v k x1) x1) rfl rfl
+
+/-- **`117 … 125`'s leaf's kind-`0` rows**: `HeadS413`'s seam. -/
+noncomputable def hcontSeamRefuseAt_58Else {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (sl : State) (b35 : UInt8) (ix : BitVec 64) (v : BitVec 32) (k : Nat) (x1 : BitVec 8)
+    (rows : HcontSeamRefusal G (ContTailStartC C)
+      (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1) (BitVec.ofNat 32 0)) :
+    HcontSeamRefusal G (ContTailStartC C)
+      (HeadS413 (contRunLeafS G C sl b35 ix v k x1) x1) (BitVec.ofNat 32 0) :=
+  rows.cast (s := contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1)
+    (s' := HeadS413 (contRunLeafS G C sl b35 ix v k x1) x1) rfl rfl
+
+#print axioms LeanLLVM.Refinement.WalkScope.hcontSeamRefuseAt_letters
+#print axioms LeanLLVM.Refinement.WalkScope.hcontSeamRefuseAt_56Else
+#print axioms LeanLLVM.Refinement.WalkScope.hcontSeamRefuseAt_58Else
 
 /-! ### The run class -/
 

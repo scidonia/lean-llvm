@@ -625,7 +625,8 @@ The fields are the producers' remaining argument lists:
   with the appended record; the body it is stated at is `hcontRunBody_of_skip`'s;
 * `run` — the run class's arm from a row, which the class case feeds with
   `hcontRunRow_of_rows` at the leaf the head byte's bits select;
-* `seam` — the two seams `HcontSeamAbi` names.
+* `seam` — the seams `HcontSeamAbi` names: the `if.else405.i` edge's refusal group and the
+  four emit groups.
 
 The run class's leaf is an argument of both producers rather than a field of the payload:
 the segment below `if.else387.i` belongs to the head byte's class, and the case's branch
@@ -723,7 +724,10 @@ structure HcontClassRows {m0 : Mem} (G : WalkGeom m0) : Type where
     Seg (stage2Calls stage2SubCalls) G (ContSeamC C) row.seamS (ContTailStartC C)
       row.tailS nS → nS ≤ 5 →
     Nonempty (HcontArm (stage2Calls stage2SubCalls) G C s)
-  /-- The seam's three calls, at the run class's seam and the last entry's. -/
+  /-- The seam's rows, at the run class's seams: the `if.else405.i` edge's refusal group
+  (`scanRefuse`) and the four emit groups.  The kind literal each field fixes is part of
+  the memory the first call reads, so the edge decides which field a leaf can read
+  (`JsonStage2WalkDispatchRunRow`'s table). -/
   seam : HcontSeamAbi G
 
 /-- **The continuing class rows hold what the payload holds.**  The default-value class's
@@ -761,7 +765,16 @@ structure HlastClassRows {m0 : Mem} (G : WalkGeom m0) : Type where
   tail : HlastClassDoc G
   /-- The seam's three calls at the last entry's tail start, for the `.scalar` route and
   the `.run` class beside it.  The seam is the class's: its source is
-  `hlastTailByte … hb`, so a caller carries the route it read from `tail`. -/
+  `hlastTailByte … hb`, so a caller carries the route it read from `tail`.
+
+  **This is not `HcontSeamAbi.last`'s instance.**  That field is stated at `hlastTail`,
+  the route's seam without the byte's route refinement, and this row's state is
+  `hlastTailByte … hb`, so the two are different states of the same tail: the byte's
+  route fixes the memory's token stores, and a cast from one to the other is not available
+  (the route changes the memory, not only the cells).  The producer target is the same one
+  `HcontSeamAbi.last` reads: `JsonStage2WalkDispatchSeamCalls.hcontSeamCallsAt` at an
+  `HcontSeamEmitStage` on this state — the `.scalar` route's `7`, the `.run` class's
+  literal, at its own staged words. -/
   seam : ∀ (C : WalkCarry G) (s : State) (x : BitVec 8) (inc nep : BitVec 64)
     (v : Nat) (ix : BitVec 64) (b35 : UInt8)
     (hb : HcontByteRoute (head35 b35)),

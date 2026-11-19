@@ -166,6 +166,175 @@ def HcontSeamCalls.cast {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
   hpre₃ := rows.hpre₃
   hcall₃ := rows.hcall₃
 
+/-- **The seam's two leading calls**: the value-position call and the scalar call, at the
+memory and counter the first one hands back.  Both arms of the seam share them — the emit
+arm (`od_scalar_value` answered `1`) adds `s2_after_value`, and the refusal arm
+(`od_scalar_value` answered `0`) adds the refusal record — so this is the part of the group
+that is not arm-dependent, stated once.
+
+The kind literal `cA` is here because the first call's argument list is read at the memory
+the store of it leaves; the scalar call's answer is *not* constrained: `hret₁` is the
+value-position answer's word, and the scalar answer `r₂` carries only its precondition and
+its resolution.  Which word it answered is the arm's (`HcontSeamEmit`/`HcontSeamRefuse`). -/
+structure HcontSeamMid {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : Type where
+  /-- The kind literal `if.then413.i`'s `phi` selects, read at its own store. -/
+  cA : BitVec 32
+  /-- The root-done slot's word, as the first call's argument list carries it. -/
+  rdv : BitVec 32
+  /-- The value-position call. -/
+  r₁ : CallOutcome
+  xA : BitVec 32
+  hpre₁ : s2ValuePosPre
+    [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
+     .ptr C.stage.ctype, .ptr C.stage.cst]
+    (writeBytes s.mem (C.stage.tok + 16) (natToBytes cA.toNat 4)) s.next
+  hcall₁ : stage2Calls stage2SubCalls "s2_value_pos"
+    [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
+     .ptr C.stage.ctype, .ptr C.stage.cst]
+    (writeBytes s.mem (C.stage.tok + 16) (natToBytes cA.toNat 4)) s.next = some r₁
+  hret₁ : r₁.ret = .int 32 xA
+  /-- The call's zero test: the arm that continues at `if.then425.i`. -/
+  hbit0 : evalICmp .eq xA (BitVec.ofNat 32 0) = 0
+  /-- The log's base word, read at the post-store memory. -/
+  hzread : readBytes
+    (writeBytes s.mem (C.stage.tok + 16) (natToBytes cA.toNat 4)) C.stage.z 8 =
+      some (wordBytes 8 G.ev)
+  /-- The scalar call, at the memory the first one left. -/
+  r₂ : CallOutcome
+  hpre₂ : s2ScalarValuePre
+    [.ptr (TailCarry₂ C).stage.c, .ptr (TailCarry₂ C).stage.tok,
+     .ptr (TailCarry₂ C).stage.z] r₁.mem r₁.next
+  hcall₂ : stage2Calls stage2SubCalls "od_scalar_value"
+    [.ptr (TailCarry₂ C).stage.c, .ptr (TailCarry₂ C).stage.tok,
+     .ptr (TailCarry₂ C).stage.z] r₁.mem r₁.next = some r₂
+
+/-- **The emit arm's third step.**  The scalar call answered `1` — the token produced a
+record — so the walk takes `if.then447.i` and calls `s2_after_value` at the root slot.  This
+is the arm the scan tail's three links are stated on. -/
+structure HcontSeamEmit {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (mid : HcontSeamMid G C s) : Type where
+  /-- The scalar call's emitted answer. -/
+  hret₂ : mid.r₂.ret = .int 32 (BitVec.ofNat 32 1)
+  hev64 : G.ev < 2 ^ 64
+
+/-- **The refusal arm.**  The scalar call answered `0` — `stage2ScalarValue`'s first arm,
+`od_fail`'s record — so the walk leaves `if.then425.i` for `if.then432.i` and calls nothing:
+the arm's content is the answer and the record the answer wrote.  `stage2ErrSetMsg` is the
+model's refusal record (its `ok` word at `%e`, its offset at `%e + 8` and a null message at
+`%e + 16`), so `hmem` names the memory the walk's next block starts from.
+
+The token's position `pos` is the model's own reading of the token record (the scalar
+staging's `pos`), which is why the field is data rather than a hypothesis: the refusal's
+`%e + 8` word is that number. -/
+structure HcontSeamRefuse {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (mid : HcontSeamMid G C s) : Type where
+  /-- The scalar call's refused answer. -/
+  hret₂ : mid.r₂.ret = .int 32 (BitVec.ofNat 32 0)
+  /-- The token's position, the refusal record's offset word. -/
+  pos : Nat
+  /-- The memory the refusal left. -/
+  hmem : mid.r₂.mem = stage2ErrSetMsg mid.r₁.mem C.stage.e pos 0
+
+/-- **The seam's two leading calls transport across the byte's leaf**: the leaves bind cells
+only, so the memory and the counter are the seam's and everything stated at them moves. -/
+def HcontSeamMid.cast {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s s' : State}
+    (hmem : s'.mem = s.mem) (hnext : s'.next = s.next)
+    (mid : HcontSeamMid G C s) : HcontSeamMid G C s' where
+  cA := mid.cA
+  rdv := mid.rdv
+  r₁ := mid.r₁
+  xA := mid.xA
+  hpre₁ := by rw [hmem, hnext]; exact mid.hpre₁
+  hcall₁ := by rw [hmem, hnext]; exact mid.hcall₁
+  hret₁ := mid.hret₁
+  hbit0 := mid.hbit0
+  hzread := by rw [hmem]; exact mid.hzread
+  r₂ := mid.r₂
+  hpre₂ := mid.hpre₂
+  hcall₂ := mid.hcall₂
+
+/-- **The emit group, as the shared prefix and its third step.**  `HcontSeamCalls` is the
+same data at the same fields; this pair is what lets the two arms share the leading calls
+without restating them. -/
+def HcontSeamCalls.toMid {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (rows : HcontSeamCalls G C s) : HcontSeamMid G C s where
+  cA := rows.cA
+  rdv := rows.rdv
+  r₁ := rows.r₁
+  xA := rows.xA
+  hpre₁ := rows.hpre₁
+  hcall₁ := rows.hcall₁
+  hret₁ := rows.hret₁
+  hbit0 := rows.hbit0
+  hzread := rows.hzread
+  r₂ := rows.r₂
+  hpre₂ := rows.hpre₂
+  hcall₂ := rows.hcall₂
+
+/-- **The emit group, from the shared prefix, the emit step and the copy call.**  The
+third call's precondition and answer are the producer's (`s2_after_value` resolves there and
+the copy's byte is the invariant's carried across the scalar call), so the step is the arm's
+fact and the call is the contract's. -/
+def HcontSeamCalls.ofMid {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (mid : HcontSeamMid G C s) (emit : HcontSeamEmit G C s mid) (r₃ : CallOutcome)
+    (hpre₃ : s2AfterValuePre
+      [.int 32 (BitVec.ofNat 32 C.sp), .ptr (G.next0 + 8),
+       .ptr C.stage.ctype, .ptr C.stage.cst] mid.r₂.mem mid.r₂.next)
+    (hcall₃ : stage2Calls stage2SubCalls "s2_after_value"
+      [.int 32 (BitVec.ofNat 32 C.sp), .ptr (G.next0 + 8),
+       .ptr C.stage.ctype, .ptr C.stage.cst] mid.r₂.mem mid.r₂.next = some r₃) :
+    HcontSeamCalls G C s where
+  cA := mid.cA
+  rdv := mid.rdv
+  r₁ := mid.r₁
+  xA := mid.xA
+  hpre₁ := mid.hpre₁
+  hcall₁ := mid.hcall₁
+  hret₁ := mid.hret₁
+  hbit0 := mid.hbit0
+  hzread := mid.hzread
+  r₂ := mid.r₂
+  hpre₂ := mid.hpre₂
+  hcall₂ := mid.hcall₂
+  hret₂ := emit.hret₂
+  hev64 := emit.hev64
+  r₃ := r₃
+  hpre₃ := hpre₃
+  hcall₃ := hcall₃
+
+/-- The prefix's literal survives the emit group: the two views are one memory. -/
+theorem HcontSeamCalls.toMid_cA {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (rows : HcontSeamCalls G C s) : rows.toMid.cA = rows.cA := rfl
+
+/-- The group's literal survives the two-step view. -/
+theorem HcontSeamCalls.ofMid_cA {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    {mid : HcontSeamMid G C s} (emit : HcontSeamEmit G C s mid) (r₃ : CallOutcome)
+    (hpre₃ : s2AfterValuePre
+      [.int 32 (BitVec.ofNat 32 C.sp), .ptr (G.next0 + 8),
+       .ptr C.stage.ctype, .ptr C.stage.cst] mid.r₂.mem mid.r₂.next)
+    (hcall₃ : stage2Calls stage2SubCalls "s2_after_value"
+      [.int 32 (BitVec.ofNat 32 C.sp), .ptr (G.next0 + 8),
+       .ptr C.stage.ctype, .ptr C.stage.cst] mid.r₂.mem mid.r₂.next = some r₃) :
+    (HcontSeamCalls.ofMid mid emit r₃ hpre₃ hcall₃).cA = mid.cA := rfl
+
+/-- The group's root word survives the two-step view. -/
+theorem HcontSeamCalls.ofMid_rdv {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    {mid : HcontSeamMid G C s} (emit : HcontSeamEmit G C s mid) (r₃ : CallOutcome)
+    (hpre₃ : s2AfterValuePre
+      [.int 32 (BitVec.ofNat 32 C.sp), .ptr (G.next0 + 8),
+       .ptr C.stage.ctype, .ptr C.stage.cst] mid.r₂.mem mid.r₂.next)
+    (hcall₃ : stage2Calls stage2SubCalls "s2_after_value"
+      [.int 32 (BitVec.ofNat 32 C.sp), .ptr (G.next0 + 8),
+       .ptr C.stage.ctype, .ptr C.stage.cst] mid.r₂.mem mid.r₂.next = some r₃) :
+    (HcontSeamCalls.ofMid mid emit r₃ hpre₃ hcall₃).rdv = mid.rdv := rfl
+
+#print axioms LeanLLVM.Refinement.WalkScope.HcontSeamMid
+#print axioms LeanLLVM.Refinement.WalkScope.HcontSeamEmit
+#print axioms LeanLLVM.Refinement.WalkScope.HcontSeamRefuse
+#print axioms LeanLLVM.Refinement.WalkScope.HcontSeamMid.cast
+#print axioms LeanLLVM.Refinement.WalkScope.HcontSeamCalls.toMid
+#print axioms LeanLLVM.Refinement.WalkScope.HcontSeamCalls.ofMid
+
 /-- **A seam's three call rows with the kind literal they store.**  The rows are
 `HcontSeamCalls`' — the three callees' preconditions and answers at one seam — and the
 literal is separate because it is *about* them: the first call's argument list and the
@@ -189,6 +358,40 @@ structure HcontSeamKind {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : Stat
   one form, two states. -/
   hroot : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes calls.rdv.toNat 4)
 
+/-- **A seam's kind-`0` rows with the literal they store**: the two leading calls, the
+literal, the root slot's word and the *refusal* arm.  This is `HcontSeamKind`'s twin at the
+`if.else405.i` edge, and it is the group that edge can carry: `od_scalar_value` answers `0`
+there (`stage2ScalarValue`'s first arm), so the walk leaves for `if.then432.i` and never
+reaches `s2_after_value`.  `HcontSeamKind`'s third call is therefore not weakened here but
+replaced by the refusal record's memory.
+
+The root word is stated at the seam's own memory, as in `HcontSeamKind`: it is what a
+leaf's `hroot` transports across the kind store. -/
+structure HcontSeamRefusal {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
+    (cA0 : BitVec 32) : Type where
+  /-- The two leading calls at the seam. -/
+  mid : HcontSeamMid G C s
+  /-- The kind literal the seam's store writes: the `phi`'s selected incoming. -/
+  hcA : mid.cA = cA0
+  /-- The root slot's word before the kind store. -/
+  hroot : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes mid.rdv.toNat 4)
+  /-- The refusal arm: the scalar answer and the record it wrote. -/
+  refuse : HcontSeamRefuse G C s mid
+
+/-- **The refusal group transports across a leaf's binds.**  The mid moves by
+`HcontSeamMid.cast` and the refusal arm's statements name `r₁`/`r₂`, which the cast leaves
+alone; the root word is at the state's memory. -/
+def HcontSeamRefusal.cast {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s s' : State}
+    {cA0 : BitVec 32} (hmem : s'.mem = s.mem) (hnext : s'.next = s.next)
+    (rows : HcontSeamRefusal G C s cA0) : HcontSeamRefusal G C s' cA0 where
+  mid := rows.mid.cast hmem hnext
+  hcA := rows.hcA
+  hroot := by rw [hmem]; exact rows.hroot
+  refuse :=
+    { hret₂ := rows.refuse.hret₂
+      pos := rows.refuse.pos
+      hmem := rows.refuse.hmem }
+
 /-- **The seam's call rows at every seam**: one `∀`-field each.  The continuing scan arm's
 seam is the run class's own `if.then413.i` — `ContTailStartC C` at the state
 `contWsTailStart` builds from the check state's stop and byte — and the last entry's seam is
@@ -207,7 +410,24 @@ producer genuinely adds (`scanF`, `scan56True`, `scan58True`).
 The last entry's field states the calls alone: `hlastTailByte`'s route fixes the literal at
 its own class, and `HlastClassRows.seam` is where the last level's rows are grouped. -/
 structure HcontSeamAbi {m0 : Mem} (G : WalkGeom m0) : Type where
-  /-- The continuing run class's seam: the scan arm's `if.then413.i`, `if.else405.i`'s `0`. -/
+  /-- **The `if.else405.i` edge's seam, which is the refusal arm.**  That edge writes the
+  literal `0`, and `od_scalar_value` answers `0` at a zero kind (`|stage2ScalarValue|`'s
+  first arm, `stage2ErrSetMsg`), so the walk leaves `if.then425.i` for `if.then432.i` and
+  no third call exists: the rows are the two leading calls, the answer `0` and the refusal
+  record's memory.  This is the field the three leaves whose predecessor is `if.else405.i`
+  (`LetS413`, `ClsS413F`, `HeadS413`) read.
+
+  `scan` below is the *emit* group at the same literal, and it has no inhabitant
+  (`hcontSeamCalls_no_literal_zero`): a zero kind cannot reach `if.then447.i`.  It is kept
+  because `JsonStage2WalkDispatchRunRow`'s three cast-leaf wrappers still read it; removing
+  it is that module's edit, and until then `HcontSeamAbi` as a whole is uninhabited. -/
+  scanRefuse : ∀ (C : WalkCarry G) (sl : State) (b35 : UInt8) (ix : BitVec 64) (v : BitVec 32)
+    (k : Nat) (x1 : BitVec 8),
+    HcontSeamRefusal G (ContTailStartC C)
+      (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1) (BitVec.ofNat 32 0)
+  /-- The continuing run class's seam as the emit group: the scan arm's `if.then413.i` at
+  `if.else405.i`'s literal `0`.  Refuted at that literal (`hcontSeamCalls_no_literal_zero`);
+  the edge's real rows are `scanRefuse`'s. -/
   scan : ∀ (C : WalkCarry G) (sl : State) (b35 : UInt8) (ix : BitVec 64) (v : BitVec 32)
     (k : Nat) (x1 : BitVec 8),
     HcontSeamKind G (ContTailStartC C)
@@ -966,6 +1186,8 @@ noncomputable def hcontRunFacts_of_seam {m0 : Mem} (G : WalkGeom m0) (C : WalkCa
 #print axioms LeanLLVM.Refinement.WalkScope.hcontScanTailAt_leaf
 #print axioms LeanLLVM.Refinement.WalkScope.hcontRunLeaf_of_seam
 #print axioms LeanLLVM.Refinement.WalkScope.hcontWsSeam_of_body
+#print axioms LeanLLVM.Refinement.WalkScope.HcontSeamRefusal
+#print axioms LeanLLVM.Refinement.WalkScope.HcontSeamRefusal.cast
 #print axioms LeanLLVM.Refinement.WalkScope.hcontScanTail_of_seam
 
 end WalkScope
