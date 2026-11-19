@@ -65,7 +65,11 @@ is grammatical), `reader_sound` (accepted input is a number lexeme),
 (the decision is the tree's), and the field facts: the `0`-alone rule, the
 refusals (empty input, a lone `-`, a bare `.`, an empty fraction or exponent, a
 trailing byte, a leading `+`, `00`), `-0`, exponent sign and magnitude with its
-leading zeros, and the mantissa/digit correspondence.
+leading zeros, and the mantissa/digit correspondence.  The consumed spans —
+`reader_ip_span`, `reader_fr_span`, `reader_ex_span` — name the bytes of
+`int`, the fraction and the exponent in an accepted lexeme, which is what a
+tie between the emitted parse's retained-digit stores and this decomposition
+reads.
 
 **Assumed.**  The two tier modules' own statements (`EmittedRefinesOn` at
 `tier1Emitted`/`tier3Emitted`), which this module instantiates rather than
@@ -1110,6 +1114,438 @@ theorem reader_digit_counts :
     (bytes [0x31, 0x32] : Bytes).length = 2 ∧ (bytes [0x33, 0x34] : Bytes).length = 2 := by
   decide
 
+/-! ### The consumed spans
+
+`reader` returns the decomposition, but the parse's tie needs the *bytes* it
+consumed: which span of `bs` is `int`, which is the fraction, and where the
+exponent's digits sit.  The lemmas below read `reader bs = some d` back to those
+spans, so a tie between the emitted parse's retained-digit stores and the
+reader's decomposition can name the offsets.  The mantissa those stores hold is
+`d.ip ++ d.fr.getD empty`, whose value is `Decimal.mantissa` by
+`StrtodTier3.digitsNat_append`.
+
+The helper lemmas read the same spans out of the three loops one level down:
+`suffix` and `body` are where the bytes are cut, and the reader's sign byte is
+prepended at the top. -/
+
+/-- A suffix read keeps the `int` bytes and sign it was given.
+`body_neg_ip` and the fraction/exponent span lemmas read this to keep `d.ip`'s
+bytes fixed across the suffix. -/
+theorem suffix_neg_ip {neg : Bool} {ip bs : Bytes} {d : Decimal}
+    (h : suffix neg ip bs = some d) : d.neg = neg ∧ d.ip = ip := by
+  rcases ByteString.eq_empty_or_cons bs with rfl | ⟨b, rest, rfl⟩
+  · rw [suffix_end] at h
+    simp only [Option.some.injEq] at h
+    subst h
+    exact ⟨rfl, rfl⟩
+  · by_cases hdot : b = 0x2E
+    · subst hdot
+      rw [suffix_cons_dot] at h
+      by_cases hne : rest.takeWhile IsDigitB = empty
+      · rw [ite_eq_left hne] at h
+        exact absurd h (by simp)
+      · rw [ite_eq_right hne] at h
+        cases hex : expTail (rest.dropWhile IsDigitB) with
+        | none => rw [hex] at h; exact absurd h (by simp)
+        | some ex =>
+            rw [hex, Option.map_some] at h
+            simp only [Option.some.injEq] at h
+            subst h
+            exact ⟨rfl, rfl⟩
+    · by_cases he : b = 0x65 ∨ b = 0x45
+      · rcases he with rfl | rfl
+        · rw [suffix_cons_e] at h
+          cases hpart : expPart rest with
+          | none => rw [hpart] at h; exact absurd h (by simp)
+          | some ex =>
+              rw [hpart, Option.map_some] at h
+              simp only [Option.some.injEq] at h
+              subst h
+              exact ⟨rfl, rfl⟩
+        · rw [suffix_cons_E] at h
+          cases hpart : expPart rest with
+          | none => rw [hpart] at h; exact absurd h (by simp)
+          | some ex =>
+              rw [hpart, Option.map_some] at h
+              simp only [Option.some.injEq] at h
+              subst h
+              exact ⟨rfl, rfl⟩
+      · rw [suffix_cons_other rest hdot (fun hh => he (Or.inl hh))
+          (fun hh => he (Or.inr hh))] at h
+        exact absurd h (by simp)
+
+/-- A body read keeps the sign it was given and consumes exactly `int`'s bytes
+as a prefix: the emitted `idig` run starts at the first byte after the sign.
+`reader_ip_span` reads this at the reader's sign byte. -/
+theorem body_neg_ip {neg : Bool} {bs : Bytes} {d : Decimal}
+    (h : body neg bs = some d) : d.neg = neg ∧ ∃ rest, bs = d.ip ++ rest := by
+  rcases ByteString.eq_empty_or_cons bs with rfl | ⟨b, rest, rfl⟩
+  · rw [body_empty] at h
+    exact absurd h (by simp)
+  · by_cases h0 : b = 0x30
+    · subst h0
+      rw [body_cons_zero] at h
+      obtain ⟨hneg, hip⟩ := suffix_neg_ip h
+      refine ⟨hneg, rest, ?_⟩
+      rw [hip, ByteString.cons_append, ByteString.empty_append]
+    · by_cases hl : 0x31 ≤ b ∧ b ≤ 0x39
+      · obtain ⟨h1, h2⟩ := hl
+        rw [body_cons_lead neg rest h1 h2] at h
+        obtain ⟨hneg, hip⟩ := suffix_neg_ip h
+        refine ⟨hneg, rest.dropWhile IsDigitB, ?_⟩
+        rw [hip, ByteString.cons_append, ByteString.takeWhile_append_dropWhile]
+      · rw [body_cons_other rest h0 hl] at h
+        exact absurd h (by simp)
+
+/-- A suffix read whose decomposition has a fraction consumes its digits as the
+span after the `.`: the emitted `fdig` run.  `body_fr_span` lifts this past
+`int`. -/
+theorem suffix_fr_span {neg : Bool} {ip bs : Bytes} {d : Decimal}
+    (h : suffix neg ip bs = some d) {fs : Bytes} (hf : d.fr = some fs) :
+    ∃ rest, bs = 0x2E +: (fs ++ rest) := by
+  rcases ByteString.eq_empty_or_cons bs with rfl | ⟨b, rest, rfl⟩
+  · rw [suffix_end] at h
+    simp only [Option.some.injEq] at h
+    subst h
+    exact absurd hf (by simp)
+  · by_cases hdot : b = 0x2E
+    · subst hdot
+      rw [suffix_cons_dot] at h
+      by_cases hne : rest.takeWhile IsDigitB = empty
+      · rw [ite_eq_left hne] at h
+        exact absurd h (by simp)
+      · rw [ite_eq_right hne] at h
+        cases hex : expTail (rest.dropWhile IsDigitB) with
+        | none => rw [hex] at h; exact absurd h (by simp)
+        | some ex =>
+            rw [hex, Option.map_some] at h
+            simp only [Option.some.injEq] at h
+            subst h
+            simp only [Option.some.injEq] at hf
+            subst hf
+            exact ⟨rest.dropWhile IsDigitB,
+              by rw [ByteString.takeWhile_append_dropWhile rest IsDigitB]⟩
+    · by_cases he : b = 0x65 ∨ b = 0x45
+      · rcases he with rfl | rfl
+        · rw [suffix_cons_e] at h
+          cases hpart : expPart rest with
+          | none => rw [hpart] at h; exact absurd h (by simp)
+          | some ex =>
+              rw [hpart, Option.map_some] at h
+              simp only [Option.some.injEq] at h
+              subst h
+              exact absurd hf (by simp)
+        · rw [suffix_cons_E] at h
+          cases hpart : expPart rest with
+          | none => rw [hpart] at h; exact absurd h (by simp)
+          | some ex =>
+              rw [hpart, Option.map_some] at h
+              simp only [Option.some.injEq] at h
+              subst h
+              exact absurd hf (by simp)
+      · rw [suffix_cons_other rest hdot (fun hh => he (Or.inl hh))
+          (fun hh => he (Or.inr hh))] at h
+        exact absurd h (by simp)
+
+/-- A body read with a fraction consumes it after the `int` span: the emitted
+`idig` and `fdig` runs are the two stores `Decimal.mantissa` joins.
+`reader_fr_span` reads this at the reader's sign byte. -/
+theorem body_fr_span {neg : Bool} {bs : Bytes} {d : Decimal}
+    (h : body neg bs = some d) {fs : Bytes} (hf : d.fr = some fs) :
+    ∃ rest, bs = d.ip ++ (0x2E +: (fs ++ rest)) := by
+  rcases ByteString.eq_empty_or_cons bs with rfl | ⟨b, rest, rfl⟩
+  · rw [body_empty] at h
+    exact absurd h (by simp)
+  · by_cases h0 : b = 0x30
+    · subst h0
+      rw [body_cons_zero] at h
+      obtain ⟨_, hip⟩ := suffix_neg_ip h
+      obtain ⟨rest0, hspan⟩ := suffix_fr_span h hf
+      refine ⟨rest0, ?_⟩
+      rw [hip, hspan, ByteString.cons_append, ByteString.empty_append]
+    · by_cases hl : 0x31 ≤ b ∧ b ≤ 0x39
+      · obtain ⟨h1, h2⟩ := hl
+        rw [body_cons_lead neg rest h1 h2] at h
+        obtain ⟨_, hip⟩ := suffix_neg_ip h
+        obtain ⟨rest0, hspan⟩ := suffix_fr_span h hf
+        refine ⟨rest0, ?_⟩
+        rw [hip, ByteString.cons_append, ← hspan, ByteString.takeWhile_append_dropWhile]
+      · rw [body_cons_other rest h0 hl] at h
+        exact absurd h (by simp)
+
+/-- An exponent part's bytes are `[sign] digits`, and the sign byte the reader
+consumed is the recorded one: `-` is `true`, and an absent byte or `+` is
+`false`.  `expTail_span` reads this after the marker. -/
+theorem expPart_span {bs : Bytes} {r : Bool × Bytes} (h : expPart bs = some r) :
+    ∃ sign : Bytes,
+      (sign = empty ∨ sign = 0x2B +: empty ∨ sign = 0x2D +: empty) ∧
+      bs = sign ++ r.2 ∧ (r.1 = true ↔ sign = 0x2D +: empty) := by
+  rcases ByteString.eq_empty_or_cons bs with rfl | ⟨b, rest, rfl⟩
+  · rw [expPart_empty] at h
+    exact absurd h (by simp)
+  · by_cases hp : b = 0x2B
+    · subst hp
+      rw [expPart_cons_plus] at h
+      obtain ⟨hr1, hr2, _⟩ := expDigits_spec h
+      refine ⟨0x2B +: empty, Or.inr (Or.inl rfl), ?_, ?_⟩
+      · rw [hr2, ByteString.cons_append, ByteString.empty_append]
+      · rw [hr1]; decide
+    · by_cases hm : b = 0x2D
+      · subst hm
+        rw [expPart_cons_minus] at h
+        obtain ⟨hr1, hr2, _⟩ := expDigits_spec h
+        refine ⟨0x2D +: empty, Or.inr (Or.inr rfl), ?_, ?_⟩
+        · rw [hr2, ByteString.cons_append, ByteString.empty_append]
+        · rw [hr1]; decide
+      · rw [expPart_cons_digit rest hp hm] at h
+        obtain ⟨hr1, hr2, _⟩ := expDigits_spec h
+        refine ⟨empty, Or.inl rfl, ?_, ?_⟩
+        · rw [hr2, ByteString.empty_append]
+        · rw [hr1]; decide
+
+/-- An exponent tail's bytes are `e`/`E` followed by `[sign] digits`, and the
+recorded sign is the consumed sign byte's.  `suffix_ex_span` reads this past
+the fraction. -/
+theorem expTail_span {bs : Bytes} {ex : Option (Bool × Bytes)}
+    (h : expTail bs = some ex) {s : Bool} {ds : Bytes} (he : ex = some (s, ds)) :
+    ∃ (m : UInt8) (sign : Bytes),
+      (m = 0x65 ∨ m = 0x45) ∧
+      (sign = empty ∨ sign = 0x2B +: empty ∨ sign = 0x2D +: empty) ∧
+      bs = m +: (sign ++ ds) ∧ (s = true ↔ sign = 0x2D +: empty) := by
+  rcases ByteString.eq_empty_or_cons bs with rfl | ⟨b, rest, rfl⟩
+  · rw [expTail_empty] at h
+    simp only [Option.some.injEq] at h
+    subst h
+    exact absurd he (by simp)
+  · by_cases he65 : b = 0x65 ∨ b = 0x45
+    · rcases he65 with rfl | rfl
+      · rw [expTail_cons_e] at h
+        cases hpart : expPart rest with
+        | none => rw [hpart] at h; exact absurd h (by simp)
+        | some r =>
+            obtain ⟨r1, r2⟩ := r
+            rw [hpart, Option.map_some] at h
+            simp only [Option.some.injEq] at h
+            have hsr : some (r1, r2) = some (s, ds) := h.trans he
+            simp only [Option.some.injEq, Prod.mk.injEq] at hsr
+            obtain ⟨hs, hds⟩ := hsr
+            subst hs
+            subst hds
+            obtain ⟨sign, hshape, hbytes, hiff⟩ := expPart_span hpart
+            exact ⟨0x65, sign, Or.inl rfl, hshape, by rw [hbytes], hiff⟩
+      · rw [expTail_cons_E] at h
+        cases hpart : expPart rest with
+        | none => rw [hpart] at h; exact absurd h (by simp)
+        | some r =>
+            obtain ⟨r1, r2⟩ := r
+            rw [hpart, Option.map_some] at h
+            simp only [Option.some.injEq] at h
+            have hsr : some (r1, r2) = some (s, ds) := h.trans he
+            simp only [Option.some.injEq, Prod.mk.injEq] at hsr
+            obtain ⟨hs, hds⟩ := hsr
+            subst hs
+            subst hds
+            obtain ⟨sign, hshape, hbytes, hiff⟩ := expPart_span hpart
+            exact ⟨0x45, sign, Or.inr rfl, hshape, by rw [hbytes], hiff⟩
+    · rw [expTail_cons_other rest (fun hh => he65 (Or.inl hh))
+        (fun hh => he65 (Or.inr hh))] at h
+      exact absurd h (by simp)
+
+/-- A suffix read with an exponent consumes the marker, its optional sign byte
+and its digit run after the `int` and fraction spans.  `body_ex_span` lifts this
+past `int`. -/
+theorem suffix_ex_span {neg : Bool} {ip bs : Bytes} {d : Decimal}
+    (h : suffix neg ip bs = some d) {s : Bool} {ds : Bytes} (he : d.ex = some (s, ds)) :
+    ∃ (pre : Bytes) (m : UInt8) (sign : Bytes),
+      (m = 0x65 ∨ m = 0x45) ∧
+      (sign = empty ∨ sign = 0x2B +: empty ∨ sign = 0x2D +: empty) ∧
+      bs = pre ++ (m +: (sign ++ ds)) ∧
+      (s = true ↔ sign = 0x2D +: empty) := by
+  rcases ByteString.eq_empty_or_cons bs with rfl | ⟨b, rest, rfl⟩
+  · rw [suffix_end] at h
+    simp only [Option.some.injEq] at h
+    subst h
+    exact absurd he (by simp)
+  · by_cases hdot : b = 0x2E
+    · subst hdot
+      rw [suffix_cons_dot] at h
+      by_cases hne : rest.takeWhile IsDigitB = empty
+      · rw [ite_eq_left hne] at h
+        exact absurd h (by simp)
+      · rw [ite_eq_right hne] at h
+        cases hex : expTail (rest.dropWhile IsDigitB) with
+        | none => rw [hex] at h; exact absurd h (by simp)
+        | some ex =>
+            rw [hex, Option.map_some] at h
+            simp only [Option.some.injEq] at h
+            subst h
+            obtain ⟨m, sign, hm, hshape, hbytes, hiff⟩ := expTail_span hex he
+            exact ⟨0x2E +: rest.takeWhile IsDigitB, m, sign, hm, hshape,
+              by rw [ByteString.cons_append, ← hbytes,
+                ByteString.takeWhile_append_dropWhile], hiff⟩
+    · by_cases he65 : b = 0x65 ∨ b = 0x45
+      · rcases he65 with rfl | rfl
+        · rw [suffix_cons_e] at h
+          cases hpart : expPart rest with
+          | none => rw [hpart] at h; exact absurd h (by simp)
+          | some r =>
+              obtain ⟨r1, r2⟩ := r
+              rw [hpart, Option.map_some] at h
+              simp only [Option.some.injEq] at h
+              subst h
+              simp only [Option.some.injEq, Prod.mk.injEq] at he
+              obtain ⟨hs, hds⟩ := he
+              subst hs
+              subst hds
+              obtain ⟨sign, hshape, hbytes, hiff⟩ := expPart_span hpart
+              exact ⟨empty, 0x65, sign, Or.inl rfl, hshape,
+                by rw [ByteString.empty_append, hbytes], hiff⟩
+        · rw [suffix_cons_E] at h
+          cases hpart : expPart rest with
+          | none => rw [hpart] at h; exact absurd h (by simp)
+          | some r =>
+              obtain ⟨r1, r2⟩ := r
+              rw [hpart, Option.map_some] at h
+              simp only [Option.some.injEq] at h
+              subst h
+              simp only [Option.some.injEq, Prod.mk.injEq] at he
+              obtain ⟨hs, hds⟩ := he
+              subst hs
+              subst hds
+              obtain ⟨sign, hshape, hbytes, hiff⟩ := expPart_span hpart
+              exact ⟨empty, 0x45, sign, Or.inr rfl, hshape,
+                by rw [ByteString.empty_append, hbytes], hiff⟩
+      · rw [suffix_cons_other rest hdot (fun hh => he65 (Or.inl hh))
+          (fun hh => he65 (Or.inr hh))] at h
+        exact absurd h (by simp)
+
+/-- A body read with an exponent consumes it after the `int` span and the
+fraction's: the emitted `exp10` accumulator's digits are the reader's `ex`
+store.  `reader_ex_span` reads this at the reader's sign byte. -/
+theorem body_ex_span {neg : Bool} {bs : Bytes} {d : Decimal}
+    (h : body neg bs = some d) {s : Bool} {ds : Bytes} (he : d.ex = some (s, ds)) :
+    ∃ (pre : Bytes) (m : UInt8) (sign : Bytes),
+      (m = 0x65 ∨ m = 0x45) ∧
+      (sign = empty ∨ sign = 0x2B +: empty ∨ sign = 0x2D +: empty) ∧
+      bs = d.ip ++ (pre ++ (m +: (sign ++ ds))) ∧
+      (s = true ↔ sign = 0x2D +: empty) := by
+  rcases ByteString.eq_empty_or_cons bs with rfl | ⟨b, rest, rfl⟩
+  · rw [body_empty] at h
+    exact absurd h (by simp)
+  · by_cases h0 : b = 0x30
+    · subst h0
+      rw [body_cons_zero] at h
+      obtain ⟨_, hip⟩ := suffix_neg_ip h
+      obtain ⟨pre, m, sign, hm, hshape, hbytes, hiff⟩ := suffix_ex_span h he
+      refine ⟨pre, m, sign, hm, hshape, ?_, hiff⟩
+      rw [hip, hbytes, ByteString.cons_append, ByteString.empty_append]
+    · by_cases hl : 0x31 ≤ b ∧ b ≤ 0x39
+      · obtain ⟨h1, h2⟩ := hl
+        rw [body_cons_lead neg rest h1 h2] at h
+        obtain ⟨_, hip⟩ := suffix_neg_ip h
+        obtain ⟨pre, m, sign, hm, hshape, hbytes, hiff⟩ := suffix_ex_span h he
+        refine ⟨pre, m, sign, hm, hshape, ?_, hiff⟩
+        rw [hip, ByteString.cons_append, ← hbytes, ByteString.takeWhile_append_dropWhile]
+      · rw [body_cons_other rest h0 hl] at h
+        exact absurd h (by simp)
+
+/-- **The reader's `int` span.**  An accepted lexeme begins with its sign byte
+and then `d.ip`'s bytes: the emitted parse's first retained-digit store. -/
+theorem reader_ip_span {bs : Bytes} {d : Decimal} (h : reader bs = some d) :
+    ∃ rest, bs = Decimal.signBytes d.neg ++ d.ip ++ rest := by
+  rcases ByteString.eq_empty_or_cons bs with rfl | ⟨b, rest, rfl⟩
+  · rw [reader_empty] at h
+    exact absurd h (by simp)
+  · by_cases hm : b = 0x2D
+    · subst hm
+      rw [reader_cons_minus] at h
+      obtain ⟨hneg, rest0, hbytes⟩ := body_neg_ip h
+      refine ⟨rest0, ?_⟩
+      rw [hbytes, hneg, Decimal.signBytes_true, ByteString.cons_append,
+        ByteString.empty_append, ByteString.cons_append]
+    · rw [reader_cons_other hm] at h
+      obtain ⟨hneg, rest0, hbytes⟩ := body_neg_ip h
+      refine ⟨rest0, ?_⟩
+      rw [hbytes, hneg, Decimal.signBytes_false, ByteString.empty_append]
+
+/-- **The reader's fraction span.**  An accepted lexeme with a fraction has
+`d.fr`'s digits after the `.` that follows `int`: the emitted parse's second
+retained-digit store, and with the first, `Decimal.mantissa`'s bytes. -/
+theorem reader_fr_span {bs : Bytes} {d : Decimal} (h : reader bs = some d)
+    {fs : Bytes} (hf : d.fr = some fs) :
+    ∃ rest, bs = Decimal.signBytes d.neg ++ d.ip ++ (0x2E +: (fs ++ rest)) := by
+  rcases ByteString.eq_empty_or_cons bs with rfl | ⟨b, rest, rfl⟩
+  · rw [reader_empty] at h
+    exact absurd h (by simp)
+  · by_cases hm : b = 0x2D
+    · subst hm
+      rw [reader_cons_minus] at h
+      obtain ⟨hneg, _⟩ := body_neg_ip h
+      obtain ⟨rest0, hbytes⟩ := body_fr_span h hf
+      refine ⟨rest0, ?_⟩
+      rw [hbytes, hneg, Decimal.signBytes_true, ByteString.cons_append,
+        ByteString.empty_append, ByteString.cons_append]
+    · rw [reader_cons_other hm] at h
+      obtain ⟨hneg, _⟩ := body_neg_ip h
+      obtain ⟨rest0, hbytes⟩ := body_fr_span h hf
+      refine ⟨rest0, ?_⟩
+      rw [hbytes, hneg, Decimal.signBytes_false, ByteString.empty_append]
+
+/-- **The reader's exponent span.**  An accepted lexeme with an exponent ends
+with `e`/`E`, its optional sign byte, and `d.ex`'s digits — the run the emitted
+parse accumulates into `exp10`, with the sign its `esign`. -/
+theorem reader_ex_span {bs : Bytes} {d : Decimal} (h : reader bs = some d)
+    {s : Bool} {ds : Bytes} (he : d.ex = some (s, ds)) :
+    ∃ (pre : Bytes) (m : UInt8) (sign : Bytes),
+      (m = 0x65 ∨ m = 0x45) ∧
+      (sign = empty ∨ sign = 0x2B +: empty ∨ sign = 0x2D +: empty) ∧
+      bs = pre ++ (m +: (sign ++ ds)) ∧
+      (s = true ↔ sign = 0x2D +: empty) := by
+  rcases ByteString.eq_empty_or_cons bs with rfl | ⟨b, rest, rfl⟩
+  · rw [reader_empty] at h
+    exact absurd h (by simp)
+  · by_cases hm : b = 0x2D
+    · subst hm
+      rw [reader_cons_minus] at h
+      obtain ⟨hneg, _⟩ := body_neg_ip h
+      obtain ⟨pre, m, sign, hmk, hshape, hbytes, hiff⟩ := body_ex_span h he
+      refine ⟨Decimal.signBytes d.neg ++ d.ip ++ pre, m, sign, hmk, hshape, ?_, hiff⟩
+      rw [hbytes, hneg, Decimal.signBytes_true, ByteString.cons_append,
+        ByteString.empty_append, ByteString.cons_append, ByteString.cons_append,
+        ByteString.append_assoc]
+    · rw [reader_cons_other hm] at h
+      obtain ⟨hneg, _⟩ := body_neg_ip h
+      obtain ⟨pre, m, sign, hmk, hshape, hbytes, hiff⟩ := body_ex_span h he
+      refine ⟨Decimal.signBytes d.neg ++ d.ip ++ pre, m, sign, hmk, hshape, ?_, hiff⟩
+      rw [hbytes, hneg, Decimal.signBytes_false, ByteString.empty_append,
+        ByteString.append_assoc]
+
+/-- Control: the shortest `int` — the `0`-alone boundary — is its own `int`
+span, so the reader's first store is the whole lexeme. -/
+theorem reader_ip_span_control :
+    ∃ rest, (bytes [0x30] : Bytes) = Decimal.signBytes false ++ (bytes [0x30]) ++ rest :=
+  reader_ip_span (bs := bytes [0x30])
+    (d := ⟨false, bytes [0x30], none, none⟩) (by decide)
+
+/-- Control: `1.5`'s fraction is the single byte after the `.`, which is the
+second mantissa store. -/
+theorem reader_fr_span_control :
+    ∃ rest, (bytes [0x31, 0x2E, 0x35] : Bytes) =
+      Decimal.signBytes false ++ (bytes [0x31]) ++ (0x2E +: (bytes [0x35] ++ rest)) :=
+  reader_fr_span (d := ⟨false, bytes [0x31], some (bytes [0x35]), none⟩)
+    (by decide) (fs := bytes [0x35]) rfl
+
+/-- Control: `1e-5`'s exponent is the recorded `-` byte and the digit after it,
+the sign field the parse's `esign` reads. -/
+theorem reader_ex_span_control :
+    ∃ (pre : Bytes) (m : UInt8) (sign : Bytes),
+      (m = 0x65 ∨ m = 0x45) ∧
+      (sign = empty ∨ sign = 0x2B +: empty ∨ sign = 0x2D +: empty) ∧
+      (bytes [0x31, 0x65, 0x2D, 0x35] : Bytes) = pre ++ (m +: (sign ++ bytes [0x35])) ∧
+      (true = true ↔ sign = 0x2D +: empty) :=
+  reader_ex_span (d := ⟨false, bytes [0x31], none, some (true, bytes [0x35])⟩)
+    (by decide) (s := true) (ds := bytes [0x35]) rfl
+
 /-! ### Checks -/
 
 #guard reader (bytes [0x30]) = some ⟨false, bytes [0x30], none, none⟩
@@ -1237,5 +1673,19 @@ a change that introduces an axiom is visible in the build log. -/
 #print axioms LeanLLVM.StrtodReader.reader_exp_spellings_agree
 #print axioms LeanLLVM.StrtodReader.reader_mantissa
 #print axioms LeanLLVM.StrtodReader.reader_digit_counts
+#print axioms LeanLLVM.StrtodReader.suffix_neg_ip
+#print axioms LeanLLVM.StrtodReader.body_neg_ip
+#print axioms LeanLLVM.StrtodReader.suffix_fr_span
+#print axioms LeanLLVM.StrtodReader.body_fr_span
+#print axioms LeanLLVM.StrtodReader.expPart_span
+#print axioms LeanLLVM.StrtodReader.expTail_span
+#print axioms LeanLLVM.StrtodReader.suffix_ex_span
+#print axioms LeanLLVM.StrtodReader.body_ex_span
+#print axioms LeanLLVM.StrtodReader.reader_ip_span
+#print axioms LeanLLVM.StrtodReader.reader_fr_span
+#print axioms LeanLLVM.StrtodReader.reader_ex_span
+#print axioms LeanLLVM.StrtodReader.reader_ip_span_control
+#print axioms LeanLLVM.StrtodReader.reader_fr_span_control
+#print axioms LeanLLVM.StrtodReader.reader_ex_span_control
 
 end LeanLLVM.StrtodReader

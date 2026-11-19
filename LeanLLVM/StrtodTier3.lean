@@ -438,6 +438,373 @@ theorem leadM_nonneg_form {m : Nat} {E : Int} (hE : 0 ≤ E) :
     Int.natCast_sub (Nat.succ_le_of_lt (ndig_pos m))
   rw [Int.natCast_add, h2, h1]
 
+/-! ### The reader's digit runs at the window's coordinates
+
+`Decimal.digitsNat` is the integer a run of digit bytes denotes, and the emitted
+reader's `int` and fraction stores are exactly such runs.  The tier-3 parse
+(`to_double`) counts those bytes into `%T`/`%F`, keeps a leading-zero count
+`%lead`, and forms the retained head, the exponent window's `S`, and the
+leading exponent `f` from the counts.  The lemmas here rewrite those counts to
+`ndig`, `stkDrop`, `windowOf` and `leadM` on the run itself, so a tie between
+the parse's cells and `StrtodReader`'s decomposition never has to reason about
+unbounded decimal values.
+
+The shape each statement is written against is a run whose first byte is
+`1`–`9` followed by `Digits0` bytes: the reader's `int` leads and the
+significant part after its leading zeros.  `ndig_digitsNat_zeros` is the
+leading-zero case, `head_digitsNat` the retained-head case the parse forms at
+its `19`-digit guard (and `windowOf` at `stkDigits`), and the window lemmas
+below carry the run's length to `S`, `M` and the lead.  Their consumers are
+`fbEInt`, `fbE` and `fbD0` in the fallback's model, and the emitted `to_double`
+parse's `%T`/`%F`/`%R`/`%lead`/`%exp10` cells. -/
+
+/-- A digit run's value, split at any byte boundary: the prefix scaled by the
+suffix's length.  `Decimal.mantissa` is this lemma's `int ++ frac` instance. -/
+theorem digitsNat_append (bs cs : Bytes) :
+    Decimal.digitsNat (bs ++ cs)
+      = Decimal.digitsNat bs * 10 ^ cs.length + Decimal.digitsNat cs := by
+  have hdata : (bs ++ cs).data.toList = bs.data.toList ++ cs.data.toList := by
+    rw [← ByteString.toList_eq_data_toList (bs ++ cs), ByteString.toList_append,
+      ByteString.toList_eq_data_toList bs, ByteString.toList_eq_data_toList cs]
+  have hlen : cs.data.toList.length = cs.length := by
+    rw [Array.length_toList]
+    rfl
+  have key : ∀ (l : List UInt8) (a : Nat),
+      l.foldl (fun acc b => acc * 10 + (b.toNat - 0x30)) a
+        = a * 10 ^ l.length
+          + l.foldl (fun acc b => acc * 10 + (b.toNat - 0x30)) 0 := by
+    intro l
+    induction l with
+    | nil => intro a; simp
+    | cons b rest ih =>
+        intro a
+        rw [List.foldl_cons, List.foldl_cons, List.length_cons, Nat.pow_succ]
+        rw [Nat.zero_mul, Nat.zero_add]
+        rw [ih (a * 10 + (b.toNat - 0x30)), ih (b.toNat - 0x30)]
+        rw [Nat.add_mul, Nat.mul_assoc, Nat.mul_comm 10, Nat.add_assoc]
+  unfold Decimal.digitsNat
+  rw [hdata, List.foldl_append, key, hlen]
+
+/-- A digit run's value, one byte at a time: the head digit scaled by the tail's
+length.  The step `digitsNat_lt_pow_length` and `ndig_digitsNat` induct on. -/
+theorem digitsNat_cons (b : UInt8) (bs : Bytes) :
+    Decimal.digitsNat (b +: bs)
+      = (b.toNat - 0x30) * 10 ^ bs.length + Decimal.digitsNat bs := by
+  have h := digitsNat_append (b +: empty) bs
+  rw [ByteString.cons_append, ByteString.empty_append] at h
+  have h1 : Decimal.digitsNat (b +: (empty : Bytes)) = b.toNat - 0x30 := by
+    unfold Decimal.digitsNat
+    rw [ByteString.data_toList_cons, ByteString.data_toList_empty, List.foldl_cons,
+      List.foldl_nil]
+    simp
+  rw [h1] at h
+  exact h
+
+/-- A digit byte's value is at most nine: the bound `digitsNat_lt_pow_length`
+and `ndig_digitsNat` consume. -/
+theorem isDigitB_toNat_sub_le {b : UInt8} (h : IsDigitB b = true) :
+    b.toNat - 0x30 ≤ 9 := by
+  unfold IsDigitB at h
+  rw [Bool.and_eq_true] at h
+  have h1 : (0x30 : UInt8) ≤ b := of_decide_eq_true h.1
+  have h2 : b ≤ 0x39 := of_decide_eq_true h.2
+  have h1' : (0x30 : Nat) ≤ b.toNat := UInt8.le_iff_toNat_le.mp h1
+  have h2' : b.toNat ≤ (0x39 : Nat) := UInt8.le_iff_toNat_le.mp h2
+  omega
+
+/-- A run of zero bytes denotes zero, whatever its length: the emitted `%lead`
+skips exactly these before the significant digits begin, and
+`ndig_digitsNat_zeros` drops them from the digit count. -/
+theorem digitsNat_of_zeros {zs : Bytes} (h : ∀ c ∈ zs, c = 0x30) :
+    Decimal.digitsNat zs = 0 := by
+  refine ByteString.induction_on
+    (C := fun x => (∀ c ∈ x, c = 0x30) → Decimal.digitsNat x = 0) zs ?_ ?_ h
+  · intro _
+    unfold Decimal.digitsNat
+    rw [ByteString.data_toList_empty]
+    rfl
+  · intro c rest ih hx
+    have hc : c = 0x30 := hx c (by rw [ByteString.mem_cons]; exact Or.inl rfl)
+    rw [digitsNat_cons, hc]
+    have hd : (0x30 : UInt8).toNat - 0x30 = 0 := by decide
+    rw [hd, Nat.zero_mul, Nat.zero_add]
+    exact ih fun d hd' => hx d (by rw [ByteString.mem_cons]; exact Or.inr hd')
+
+/-- A lead digit is a digit byte: the hypothesis form `ndig_digitsNat` and
+`head_digitsNat` take on the significant run's first byte. -/
+theorem isDigitB_of_lead {b : UInt8} (h1 : 0x31 ≤ b) (h2 : b ≤ 0x39) :
+    IsDigitB b = true := by
+  simp only [IsDigitB, decide_eq_true_eq, Bool.and_eq_true]
+  exact ⟨UInt8.le_trans (by decide) h1, h2⟩
+
+/-- A digit run's value is below its place value: `1*DIGIT` bytes never carry a
+digit above nine.  `head_digitsNat` cancels the dropped tail with this bound,
+and `ndig_digitsNat` uses it as the decade's upper bracket. -/
+theorem digitsNat_lt_pow_length {bs : Bytes} (h : Digits0 bs) :
+    Decimal.digitsNat bs < 10 ^ bs.length := by
+  induction h with
+  | nil =>
+      unfold Decimal.digitsNat
+      rw [ByteString.data_toList_empty, List.foldl_nil, ByteString.length_empty]
+      decide
+  | more hb hr ih =>
+      rename_i b rest
+      rw [digitsNat_cons, ByteString.length_cons, Nat.pow_succ]
+      have hd9 : b.toNat - 0x30 ≤ 9 := isDigitB_toNat_sub_le hb
+      have hstep : (b.toNat - 0x30) * 10 ^ rest.length + Decimal.digitsNat rest
+          < ((b.toNat - 0x30) + 1) * 10 ^ rest.length := by
+        rw [Nat.add_mul, Nat.one_mul]
+        exact Nat.add_lt_add_left ih ((b.toNat - 0x30) * 10 ^ rest.length)
+      have hle : ((b.toNat - 0x30) + 1) * 10 ^ rest.length
+          ≤ 10 * 10 ^ rest.length := Nat.mul_le_mul_right _ (by omega)
+      have hcomm : 10 * 10 ^ rest.length = 10 ^ rest.length * 10 := Nat.mul_comm _ _
+      exact Nat.lt_of_lt_of_le (Nat.lt_of_lt_of_le hstep hle) (le_of_eq hcomm)
+
+/-- Every byte of a run a digit is a `Digits0` byte: the membership form
+`digits0_take` and `digits0_drop` read the sub-runs through. -/
+theorem digits0_of_all {bs : Bytes} (h : ∀ b ∈ bs, IsDigitB b = true) : Digits0 bs := by
+  refine ByteString.induction_on
+    (C := fun x => (∀ b ∈ x, IsDigitB b = true) → Digits0 x) bs ?_ ?_ h
+  · intro _
+    exact .nil
+  · intro b rest ih hx
+    refine .more (hx b ?_) (ih ?_)
+    · rw [ByteString.mem_cons]; exact Or.inl rfl
+    · intro c hc
+      exact hx c (by rw [ByteString.mem_cons]; exact Or.inr hc)
+
+/-- A member of a digit run is a digit byte, which `digits0_take` and
+`digits0_drop` feed to `digits0_of_all`. -/
+theorem digits0_mem : ∀ {bs : Bytes}, Digits0 bs → ∀ {b : UInt8}, b ∈ bs →
+    IsDigitB b = true
+  | _, .nil, b, hb => by simp [ByteString.mem_def] at hb
+  | _, .more hd hr, b, hb => by
+      rw [ByteString.mem_cons] at hb
+      rcases hb with rfl | hb
+      · exact hd
+      · exact digits0_mem hr hb
+
+/-- Two digit runs concatenate to a digit run: the mantissa's `int ++ frac` run
+is this lemma at the reader's two digit stores. -/
+theorem digits0_append {bs cs : Bytes} (hb : Digits0 bs) (hc : Digits0 cs) :
+    Digits0 (bs ++ cs) := by
+  refine digits0_of_all fun b hb' => ?_
+  rw [ByteString.mem_append] at hb'
+  rcases hb' with h | h
+  · exact digits0_mem hb h
+  · exact digits0_mem hc h
+
+/-- A prefix of a digit run is a digit run: the retained head's side of
+`head_digitsNat`'s split. -/
+theorem digits0_take {bs : Bytes} (h : Digits0 bs) (n : Nat) : Digits0 (bs.take n) := by
+  refine digits0_of_all (fun b hb => digits0_mem h ?_)
+  rw [ByteString.mem_def, ByteString.toList_take] at hb
+  rw [ByteString.mem_def]
+  exact List.mem_of_mem_take hb
+
+/-- A suffix of a digit run is a digit run: the dropped tail `head_digitsNat`
+bounds below the retained places. -/
+theorem digits0_drop {bs : Bytes} (h : Digits0 bs) (n : Nat) : Digits0 (bs.drop n) := by
+  refine digits0_of_all (fun b hb => digits0_mem h ?_)
+  rw [ByteString.mem_def, ByteString.toList_drop] at hb
+  rw [ByteString.mem_def]
+  exact List.mem_of_mem_drop hb
+
+/-- A leading-nonzero digit run's value has the run's length as its digit
+count.  This is the tie the parse's `%T - %lead` makes: the significant digits
+of the reader's `int ++ frac` store are `ndig` of the mantissa. -/
+theorem ndig_digitsNat {b : UInt8} {bs : Bytes}
+    (h1 : 0x31 ≤ b) (h2 : b ≤ 0x39) (hr : Digits0 bs) :
+    ndig (Decimal.digitsNat (b +: bs)) = (b +: bs).length := by
+  have hbdigit : IsDigitB b = true := isDigitB_of_lead h1 h2
+  have hlead : 10 ^ bs.length ≤ Decimal.digitsNat (b +: bs) ∧
+      Decimal.digitsNat (b +: bs) < 10 ^ (bs.length + 1) := by
+    have hd1 : 1 ≤ b.toNat - 0x30 := by
+      have h1' : (0x31 : Nat) ≤ b.toNat := UInt8.le_iff_toNat_le.mp h1
+      omega
+    have hd9 : b.toNat - 0x30 ≤ 9 := isDigitB_toNat_sub_le hbdigit
+    have hrest := digitsNat_lt_pow_length hr
+    rw [digitsNat_cons]
+    constructor
+    · calc 10 ^ bs.length = 1 * 10 ^ bs.length := (Nat.one_mul _).symm
+        _ ≤ (b.toNat - 0x30) * 10 ^ bs.length := Nat.mul_le_mul_right _ hd1
+        _ ≤ (b.toNat - 0x30) * 10 ^ bs.length + Decimal.digitsNat bs :=
+            Nat.le_add_right _ _
+    · have hstep : (b.toNat - 0x30) * 10 ^ bs.length + Decimal.digitsNat bs
+            < ((b.toNat - 0x30) + 1) * 10 ^ bs.length := by
+        rw [Nat.add_mul, Nat.one_mul]
+        exact Nat.add_lt_add_left hrest ((b.toNat - 0x30) * 10 ^ bs.length)
+      have hle : ((b.toNat - 0x30) + 1) * 10 ^ bs.length
+          ≤ 10 * 10 ^ bs.length := Nat.mul_le_mul_right _ (by omega)
+      have hcomm : 10 * 10 ^ bs.length = 10 ^ bs.length * 10 := Nat.mul_comm _ _
+      exact Nat.lt_of_lt_of_le (Nat.lt_of_lt_of_le hstep hle) (le_of_eq hcomm)
+  have hpos : 0 < Decimal.digitsNat (b +: bs) :=
+    Nat.lt_of_lt_of_le (Nat.pow_pos (by decide)) hlead.1
+  refine ndig_eq_of_bounds (x := Decimal.digitsNat (b +: bs))
+    (t := (b +: bs).length) hpos ?_ ?_
+  · simpa only [ByteString.length_cons, Nat.add_sub_cancel] using hlead.1
+  · simpa only [ByteString.length_cons] using hlead.2
+
+/-- The leading-zero shape: a run's value ignores any zero prefix, so the digit
+count is the significant run's length.  This is the tie the parse's `%lead`
+counter makes against `ndig`, with `zs` the bytes it skipped. -/
+theorem ndig_digitsNat_zeros {zs : Bytes} {b : UInt8} {bs : Bytes}
+    (hz : ∀ c ∈ zs, c = 0x30) (h1 : 0x31 ≤ b) (h2 : b ≤ 0x39) (hr : Digits0 bs) :
+    ndig (Decimal.digitsNat (zs ++ (b +: bs))) = bs.length + 1 := by
+  rw [digitsNat_append, digitsNat_of_zeros hz, Nat.zero_mul, Nat.zero_add,
+    ndig_digitsNat h1 h2 hr, ByteString.length_cons]
+
+/-- The retained head of a leading-nonzero run: the value divided by the
+places the last `k` digits carry is the run's first `k` digits as an integer.
+`fbHeadNat` is the `k = 19` instance and `windowOf`'s `M` the `k = stkDigits`
+one. -/
+theorem head_digitsNat {b : UInt8} {bs : Bytes}
+    (h1 : 0x31 ≤ b) (h2 : b ≤ 0x39) (hr : Digits0 bs) (k : Nat) :
+    Decimal.digitsNat (b +: bs) /
+        10 ^ (ndig (Decimal.digitsNat (b +: bs))
+              - min (ndig (Decimal.digitsNat (b +: bs))) k)
+      = Decimal.digitsNat ((b +: bs).take (min (b +: bs).length k)) := by
+  have hbdigit : IsDigitB b = true := isDigitB_of_lead h1 h2
+  let r : Bytes := b +: bs
+  let K : Nat := min r.length k
+  have hr0 : Digits0 r := by
+    change Digits0 (b +: bs)
+    exact .more hbdigit hr
+  have hndig : ndig (Decimal.digitsNat r) = r.length := by
+    rw [show r = b +: bs from rfl]
+    exact ndig_digitsNat h1 h2 hr
+  have hdec : Decimal.digitsNat r
+      = Decimal.digitsNat (r.take K) * 10 ^ (r.length - K)
+        + Decimal.digitsNat (r.drop K) := by
+    have hsplit : r = r.take K ++ r.drop K := (ByteString.take_append_drop r K).symm
+    calc Decimal.digitsNat r
+        = Decimal.digitsNat (r.take K ++ r.drop K) := congrArg Decimal.digitsNat hsplit
+      _ = Decimal.digitsNat (r.take K) * 10 ^ (r.drop K).length
+            + Decimal.digitsNat (r.drop K) := digitsNat_append _ _
+      _ = Decimal.digitsNat (r.take K) * 10 ^ (r.length - K)
+            + Decimal.digitsNat (r.drop K) := by rw [ByteString.length_drop]
+  have hlt : Decimal.digitsNat (r.drop K) < 10 ^ (r.length - K) := by
+    simpa only [ByteString.length_drop] using
+      digitsNat_lt_pow_length (digits0_drop hr0 K)
+  change Decimal.digitsNat r /
+      10 ^ (ndig (Decimal.digitsNat r) - min (ndig (Decimal.digitsNat r)) k)
+    = Decimal.digitsNat (r.take (min r.length k))
+  rw [hndig]
+  change Decimal.digitsNat r / 10 ^ (r.length - K) = Decimal.digitsNat (r.take K)
+  rw [hdec]
+  rw [Nat.mul_comm (Decimal.digitsNat (r.take K)) (10 ^ (r.length - K)),
+    Nat.mul_add_div (Nat.pow_pos (by decide : 0 < 10)),
+    Nat.div_eq_of_lt hlt, Nat.add_zero]
+
+/-- The mantissa is one digit run: `int`'s bytes followed by the fraction's.
+The reader's span lemmas and the parse's per-store ties read this to name
+`d.mantissa` as the value of the reader's two digit stores. -/
+theorem mantissa_digitsNat (d : Decimal) :
+    d.mantissa = Decimal.digitsNat (d.ip ++ d.fr.getD empty) := by
+  unfold Decimal.mantissa
+  rw [digitsNat_append]
+
+/-- The dropped-digit count is the run's length past `stkDigits`: the window's
+`S` is the run's length's, with the emitted saturation at zero. -/
+theorem stkDrop_digitsNat {b : UInt8} {bs : Bytes}
+    (h1 : 0x31 ≤ b) (h2 : b ≤ 0x39) (hr : Digits0 bs) :
+    stkDrop (Decimal.digitsNat (b +: bs)) = (b +: bs).length - stkDigits := by
+  unfold stkDrop
+  rw [ndig_digitsNat h1 h2 hr]
+
+/-- The saturation boundary: a run no longer than the window drops nothing.
+`windowOf_S_digitsNat_of_le` reads this to keep a short run's `S` at its
+exponent. -/
+theorem stkDrop_digitsNat_of_le {b : UInt8} {bs : Bytes}
+    (h1 : 0x31 ≤ b) (h2 : b ≤ 0x39) (hr : Digits0 bs)
+    (hle : (b +: bs).length ≤ stkDigits) :
+    stkDrop (Decimal.digitsNat (b +: bs)) = 0 := by
+  rw [stkDrop_digitsNat h1 h2 hr, Nat.sub_eq_zero_of_le hle]
+
+/-- The window's `S` is the run's length less the retained window: `fbEInt`'s
+`windowOf d.mantissa d.exponent` reads this. -/
+theorem windowOf_S_digitsNat {b : UInt8} {bs : Bytes}
+    (h1 : 0x31 ≤ b) (h2 : b ≤ 0x39) (hr : Digits0 bs) (E : Int) :
+    (windowOf (Decimal.digitsNat (b +: bs)) E).S
+      = E + (((b +: bs).length - stkDigits : Nat) : Int) := by
+  rw [windowOf_S, stkDrop_digitsNat h1 h2 hr]
+
+/-- The window's `S` at its saturation boundary: a short run's weight is its
+exponent, unchanged. -/
+theorem windowOf_S_digitsNat_of_le {b : UInt8} {bs : Bytes}
+    (h1 : 0x31 ≤ b) (h2 : b ≤ 0x39) (hr : Digits0 bs)
+    (hle : (b +: bs).length ≤ stkDigits) (E : Int) :
+    (windowOf (Decimal.digitsNat (b +: bs)) E).S = E := by
+  rw [windowOf_S_digitsNat h1 h2 hr, Nat.sub_eq_zero_of_le hle, Int.ofNat_zero,
+    Int.add_zero]
+
+/-- The window's retained digits `M` are the run's first `stkDigits` digits:
+`windowOf m E`'s `M` is `head_digitsNat` at `k = stkDigits`. -/
+theorem windowOf_M_digitsNat {b : UInt8} {bs : Bytes}
+    (h1 : 0x31 ≤ b) (h2 : b ≤ 0x39) (hr : Digits0 bs) (E : Int) :
+    (windowOf (Decimal.digitsNat (b +: bs)) E).M
+      = Decimal.digitsNat ((b +: bs).take (min (b +: bs).length stkDigits)) := by
+  rw [windowOf_M]
+  show Decimal.digitsNat (b +: bs) /
+      10 ^ (ndig (Decimal.digitsNat (b +: bs)) - stkDigits)
+    = Decimal.digitsNat ((b +: bs).take (min (b +: bs).length stkDigits))
+  rw [show ndig (Decimal.digitsNat (b +: bs)) - stkDigits
+        = ndig (Decimal.digitsNat (b +: bs))
+          - min (ndig (Decimal.digitsNat (b +: bs))) stkDigits from by omega]
+  rw [head_digitsNat h1 h2 hr stkDigits]
+
+/-- The window's retained digits have the run's digit count at the window: the
+first `stkDigits` digits, or all of a short run.  `fbEInt`'s
+`min (ndig d.mantissa) stkDigits` term reads this equality's right side, so the
+parse's retained count rewrites to the window it computes. -/
+theorem windowOf_M_ndig {b : UInt8} {bs : Bytes}
+    (h1 : 0x31 ≤ b) (h2 : b ≤ 0x39) (hr : Digits0 bs) (E : Int) :
+    ndig (windowOf (Decimal.digitsNat (b +: bs)) E).M
+      = min (b +: bs).length stkDigits := by
+  have hpos : 0 < Decimal.digitsNat (b +: bs) := by
+    rw [digitsNat_cons]
+    have hd : (0 : Nat) < b.toNat - 0x30 := by
+      have h1' : (0x31 : Nat) ≤ b.toNat := UInt8.le_iff_toNat_le.mp h1
+      omega
+    exact Nat.lt_of_lt_of_le
+      (Nat.mul_pos hd (Nat.pow_pos (by decide : 0 < 10))) (Nat.le_add_right _ _)
+  rw [windowOf_M, ndig_window_M hpos, stkDrop_digitsNat h1 h2 hr,
+    ndig_digitsNat h1 h2 hr]
+  omega
+
+/-- The lead the window records is the run's length's: the parse's `%lead` cell
+at `stkDigits` is `leadM`'s own `ndig` sum. -/
+theorem leadM_digitsNat {b : UInt8} {bs : Bytes}
+    (h1 : 0x31 ≤ b) (h2 : b ≤ 0x39) (hr : Digits0 bs) (E : Int) :
+    leadM (Decimal.digitsNat (b +: bs)) E
+      = (((b +: bs).length : Nat) : Int) - 1 + E := by
+  unfold leadM
+  rw [ndig_digitsNat h1 h2 hr]
+
+/- Controls: the significant run's digit count, the leading-zero boundary, the
+`19`-digit retained head and the window's saturation seam, each evaluated. -/
+#guard ndig (Decimal.digitsNat (ByteString.literal [0x31, 0x32, 0x33])) = 3
+#guard ndig (Decimal.digitsNat
+  (ByteString.literal [0x30, 0x30, 0x31, 0x32, 0x33])) = 3
+#guard (windowOf (Decimal.digitsNat (ByteString.literal [0x31, 0x32, 0x33])) 5).S = 5
+#guard (windowOf (Decimal.digitsNat
+  (ByteString.literal (List.replicate 768 0x31))) 0).S = 0
+#guard (windowOf (Decimal.digitsNat
+  (ByteString.literal (List.replicate 769 0x31))) 0).S = 1
+#guard Decimal.digitsNat
+    (ByteString.literal [0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39,
+      0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x30]) = 1234567891234567890
+#guard Decimal.digitsNat
+    (ByteString.literal [0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39,
+      0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x30, 0x30])
+    / 10 ^ (ndig (Decimal.digitsNat
+        (ByteString.literal [0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39,
+          0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x30, 0x30]))
+      - min (ndig (Decimal.digitsNat
+          (ByteString.literal [0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39,
+            0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x30, 0x30]))) 19)
+    = 1234567891234567890
+
 /-- A negative exponent's magnitude: `↑E.natAbs = -E`. -/
 theorem natAbs_of_neg {E : Int} (hE : E < 0) :
     ((E.natAbs : Nat) : Int) = -E := by
@@ -4607,6 +4974,28 @@ statement of record is a proposition over `strtodSpec`'s own definitions. -/
 #print axioms LeanLLVM.StrtodTier3.leadM
 #print axioms LeanLLVM.StrtodTier3.window_leadM
 #print axioms LeanLLVM.StrtodTier3.leadM_nonneg_form
+#print axioms LeanLLVM.StrtodTier3.digitsNat_append
+#print axioms LeanLLVM.StrtodTier3.digitsNat_cons
+#print axioms LeanLLVM.StrtodTier3.isDigitB_toNat_sub_le
+#print axioms LeanLLVM.StrtodTier3.digitsNat_of_zeros
+#print axioms LeanLLVM.StrtodTier3.isDigitB_of_lead
+#print axioms LeanLLVM.StrtodTier3.digitsNat_lt_pow_length
+#print axioms LeanLLVM.StrtodTier3.digits0_of_all
+#print axioms LeanLLVM.StrtodTier3.digits0_mem
+#print axioms LeanLLVM.StrtodTier3.digits0_append
+#print axioms LeanLLVM.StrtodTier3.digits0_take
+#print axioms LeanLLVM.StrtodTier3.digits0_drop
+#print axioms LeanLLVM.StrtodTier3.ndig_digitsNat
+#print axioms LeanLLVM.StrtodTier3.ndig_digitsNat_zeros
+#print axioms LeanLLVM.StrtodTier3.head_digitsNat
+#print axioms LeanLLVM.StrtodTier3.mantissa_digitsNat
+#print axioms LeanLLVM.StrtodTier3.stkDrop_digitsNat
+#print axioms LeanLLVM.StrtodTier3.stkDrop_digitsNat_of_le
+#print axioms LeanLLVM.StrtodTier3.windowOf_S_digitsNat
+#print axioms LeanLLVM.StrtodTier3.windowOf_S_digitsNat_of_le
+#print axioms LeanLLVM.StrtodTier3.windowOf_M_digitsNat
+#print axioms LeanLLVM.StrtodTier3.windowOf_M_ndig
+#print axioms LeanLLVM.StrtodTier3.leadM_digitsNat
 #print axioms LeanLLVM.StrtodTier3.natAbs_of_neg
 #print axioms LeanLLVM.StrtodTier3.ticks_ge_of_lead_ge
 #print axioms LeanLLVM.StrtodTier3.two_pow_2044_lt_2098
