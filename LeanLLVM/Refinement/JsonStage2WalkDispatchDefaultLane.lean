@@ -3,7 +3,10 @@
 
 `HcontLane.defaultLane` (`JsonStage2WalkDispatchSupply`) carries the default arm's document
 facts: the next entry's position word and the read that fetches it, the bound's compare,
-and the byte before the entry's end with its class (`HcontByteClass`).  The class is a
+and the byte before the entry's end with its class (`HcontByteClass`).  **This module
+produces that row** (`hcontLane_defaultLane`, and `hcontLane_of_string` fills the group
+from its other field): every one of its fields is the invariant's and the entry stream's,
+not the document's content.  The class is a
 disjunction; this module consumes its three non-whitespace disjuncts (`HcontHeadByte`) and
 turns the row into the arm's head chain at each head-switch class the default arm admits.
 The `.wsByte` disjunct is the run class's, consumed by `JsonStage2WalkDispatchSeams`' seam
@@ -73,6 +76,96 @@ theorem contMidS_docByte {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s q : S
     (v := natToBytes ix.toNat 8) (by rw [h8]; rcases hsep with h | h <;> omega)]
   exact walkDoc_byte G C s hInv (by have h := hInv.alen_le; omega)
     (le_trans hInv.evlen_le G.evRoom) hidx
+
+/-! ### `HcontLane.defaultLane`, produced
+
+The lane group's last row without a producer is `defaultLane`: the next entry's position
+word with its read, the bound's compare, and the byte before the entry's end with its
+class.  Every field follows from the invariant at a continuing head; none is the
+document's content beyond the geometry's own clauses.
+
+| field | producer |
+|---|---|
+| `hread` | `walkReadBytes_entryPos_word` (the stream's word at the state) and `JsonEntrySteps.natToBytes_bytesToNat` (its four bytes are its value's encoding) |
+| `hvle` | the same word is the entry's position, so the inequality is `le_rfl` |
+| `hv1` | `entryPos_strict`: the stream's order makes the position positive |
+| `hugt` | `entryPos_strict` again, through `contIx_toNat`: the next entry's position is above this entry's |
+| `hclass` | `HcontByteClass.complete`: the four classes cover every byte, so the row is inhabited at every head with an entry left |
+
+The word is taken as the read's own bytes' number (`walkReadBytes_rootSlot_word`'s shape),
+so no width premise on the position enters: four bytes are below `2 ^ 32`
+(`bytesToNat_lt_32`), and the `ugt`'s two words are the positions' 64-bit encodings. -/
+
+/-- **The stream's positions advance strictly**, at an index with a successor: `G.order`
+read at the two `getElem`s (`entryPos` is the stream's `getD`). -/
+theorem entryPos_strict {m0 : Mem} (G : WalkGeom m0) {k : Nat} (hk : k + 1 < G.nep) :
+    entryPos G k < entryPos G (k + 1) := by
+  have hlen : G.ent.length = G.nep := by
+    rw [← readLanes32_length m0 G.ep G.nep G.ent G.entries]
+  have hk' : k + 1 < G.ent.length := by omega
+  have hk0 : k < G.ent.length := by omega
+  have e1 : entryPos G k = G.ent[k] := by
+    simp only [entryPos, List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hk0,
+      Option.getD_some]
+  have e2 : entryPos G (k + 1) = G.ent[k + 1] := by
+    simp only [entryPos, List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hk',
+      Option.getD_some]
+  rw [e1, e2]
+  exact List.pairwise_iff_getElem.mp G.order k (k + 1) hk0 hk' (by omega)
+
+/-- **The default arm's document row, produced.**  The word is the read's own bytes'
+number, so the row is inhabited at every continuing head state that carries the
+invariant; the class is `HcontByteClass.complete`'s. -/
+noncomputable def hcontDefaultRow_of_inv {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {s : State} (hInv : WalkInv G C s) (hk : C.k + 1 < G.nep) :
+    HcontDefaultRow G C s := by
+  have hex : ∃ bs : List UInt8,
+      readBytes s.mem (G.ep + (C.k + 1) * 4) 4 = some bs ∧
+        bytesToNat bs = entryPos G (C.k + 1) :=
+    walkReadBytes_entryPos_word hInv (k := C.k + 1) hk
+  let bs : List UInt8 := Classical.choose hex
+  have hread : readBytes s.mem (G.ep + (C.k + 1) * 4) 4 = some bs :=
+    (Classical.choose_spec hex).1
+  have hbs : bytesToNat bs = entryPos G (C.k + 1) := (Classical.choose_spec hex).2
+  have hlen : bs.length = 4 := walkReadBytes_length hread
+  have htoNat : (BitVec.ofNat 32 (bytesToNat bs)).toNat = bytesToNat bs :=
+    walkToNat_ofNat32 (bytesToNat_lt_32 hlen)
+  have hlt : entryPos G C.k < entryPos G (C.k + 1) := entryPos_strict G hk
+  have hi64 : entryPos G (C.k + 1) < 2 ^ 64 := entryPos_lt_64 G (C.k + 1)
+  have hk64 : entryPos G C.k < 2 ^ 64 := entryPos_lt_64 G C.k
+  refine
+    { v := BitVec.ofNat 32 (bytesToNat bs)
+      hread := ?_
+      hv1 := ?_
+      hvle := ?_
+      hugt := ?_
+      hclass := HcontByteClass.complete G _ }
+  · rw [htoNat, ← hlen, JsonEntrySteps.natToBytes_bytesToNat, hlen]
+    exact hread
+  · rw [htoNat, hbs]
+    omega
+  · rw [htoNat, hbs]
+  · rw [htoNat, hbs, contIx]
+    refine (evalICmp_ugt_one_iff_toNat _ _).2 ?_
+    rw [BitVec.toNat_ofNat, BitVec.toNat_ofNat,
+      Nat.mod_eq_of_lt hi64, Nat.mod_eq_of_lt hk64]
+    exact hlt
+
+/-- **The lane group's `defaultLane` field, produced**: the row at every state that
+carries the invariant and has an entry left.  The block hypothesis is not read. -/
+noncomputable def hcontLane_defaultLane {m0 : Mem} (G : WalkGeom m0) :
+    ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
+      C.k + 1 < G.nep → HcontDefaultRow G C s :=
+  fun _C _s hInv _hblock hk => hcontDefaultRow_of_inv hInv hk
+
+/-- **The lane group, from its other field.**  `defaultLane` is produced above, so the
+group is inhabited by `string`'s row alone: the default arm no longer costs a payload
+field. -/
+noncomputable def hcontLane_of_string {m0 : Mem} {G : WalkGeom m0}
+    (hs : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
+      C.k + 1 < G.nep → C.sp = 0 → HcontStringLane G C s) :
+    HcontLane G :=
+  { string := hs, defaultLane := hcontLane_defaultLane G }
 
 /-! ### `.defaultValueLow`: three links, then the shared eight -/
 
@@ -786,6 +879,10 @@ theorem walkDispatch_at_classC_of_lane {m0 : Mem} {G : WalkGeom m0} {C : WalkCar
 
 /-! ### The instrument -/
 
+#print axioms LeanLLVM.Refinement.WalkScope.entryPos_strict
+#print axioms LeanLLVM.Refinement.WalkScope.hcontDefaultRow_of_inv
+#print axioms LeanLLVM.Refinement.WalkScope.hcontLane_defaultLane
+#print axioms LeanLLVM.Refinement.WalkScope.hcontLane_of_string
 #print axioms LeanLLVM.Refinement.WalkScope.contMidS_docByte
 #print axioms LeanLLVM.Refinement.WalkScope.lowHeadChain_of_lane
 #print axioms LeanLLVM.Refinement.WalkScope.midHeadChain_of_lane
