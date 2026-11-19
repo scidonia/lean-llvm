@@ -17,10 +17,9 @@ seam's ends are proved:
   at `%out`, and the return block's `phi` selects `1` from `if.end291`'s edge.
 
 **The two boundaries.**  The seam does not restate the copy or the epilogue.
-Two hypotheses name what it does not prove, and `JsonStage2NumFastFallback`'s
-seam takes them as its only interior boundaries:
+Two hypotheses name what it does not prove:
 
-* `fbCopyEntry` (positive) and `fbCopyEntryNeg` (negative): from the copy's
+* `FbCopyEntryPos` (positive) and `FbCopyEntryNeg` (negative): from the copy's
   entry — the ten cells `slEntry` binds, the scan's carried lexeme, digit array
   and counter — the run reaches the ladder's head `while.cond203.i.i` with
   `%sub200.i.i` and `%conv202.i.i` at the model's residual and widened head.
@@ -35,17 +34,21 @@ seam takes them as its only interior boundaries:
 
 The second reader's traversal is `JsonStage2NumFastScanSlow`'s per-edge chain
 composed at the arm's "scan's shape": a single `runFuel` prefix from
-`if.end6.i` to the handoff, supplied as a hypothesis because the digit loops'
-induction over those edges is the arm's, not this module's.  The per-edge steps
-and the handoff step are `NumFastScanSlow`'s and are used unchanged.
+`if.end6.i` to the handoff, supplied as a hypothesis (`FbReader`) because the
+digit loops' induction over those edges is the arm's, not this module's.  The
+per-edge steps and the handoff step are `NumFastScanSlow`'s and are used
+unchanged.  `FbStart291` is the calls selection's answer to `if.end291`'s
+lifetime marker.  Neither is an interior: the scan's traversal is the arm's
+hypothesis and the lifetime marker is the selection's, as on every route that
+starts one.
 
 **The conclusion.**  The seam returns `1`, writes the model's `strtodSpec`
 bytes at `%out`, leaves `%err` and the bytes outside the two slots, and carries
 the fallback class: `numFastEmitted`'s fallback clause is
 `StrtodTier3.tier3Emitted` (`numFastEmitted_eq_fallback`), and that model's bits
 are `strtodSpec`'s (`StrtodTier3.tier3Binary_eq_strtodSpec`).  The model's sign
-tie is `NumFastScanSlow`'s: the reader's `%cmp1.i` and `%i.0.i` are the
-decomposition's sign and sign index on a well-formed lexeme.
+tie is `JsonStage2NumFastScanSlow`'s: the reader's `%cmp1.i` and `%i.0.i` are
+the decomposition's sign and sign index on a well-formed lexeme.
 
 There is no `sorry`, `admit` or `native_decide` below.
 -/
@@ -64,7 +67,9 @@ open LeanLLVM.Refinement.BlockEval
 open LeanLLVM.Refinement.JsonScanLane
 open LeanLLVM.Refinement.NumFastScanSlow
 open LeanLLVM.Refinement.NumFastTier3Ladder
+open LeanLLVM.Refinement.NumFastTier3Rows
 open LeanLLVM.Refinement.NumFastTier3Join
+open LeanLLVM.StrtodRefine
 
 namespace NumFastFallback
 
@@ -113,12 +118,15 @@ macro "fb_lk" : tactic => `(tactic|
    | (repeat rw [lookupName_cons_ne _ _ (by decide)]
       first | rw [lookupName_cons_self] | assumption | rfl)))
 
-/-- The scan's cells through `if.end285`'s environment. -/
+/-- `if.end285` rebuilds the sign's index and test: the carry the reader's later
+blocks hold is `slSignIdx b0` and `slSignBit b0`, and the lexeme's cells pass
+through unchanged. -/
 theorem fbScanCarry_slEnv285 {env : Env} {p n g : Nat} {i0 : BitVec 64}
     {sgn : BitVec 1} {digA : Nat} {gv : BitVec 64} {b0 : UInt8}
-    (h : fbScanCarry env p n g i0 sgn digA) :
-    fbScanCarry (slEnv285 env p n i0 sgn digA gv b0) p n g i0 sgn digA := by
-  obtain ⟨h1, h2, h3, h4, h5, h6⟩ := h
+    (_h : fbScanCarry env p n g i0 sgn digA) :
+    fbScanCarry (slEnv285 env p n i0 sgn digA gv b0) p n g
+      (slSignIdx b0) (slSignBit b0) digA := by
+  obtain ⟨h1, h2, _, _, h5, h6⟩ := _h
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
   all_goals
     (simp only [slEnv285, slCarry]
@@ -170,7 +178,19 @@ theorem fb_291_denote {calls : Calls} {env : Env} {s : State} {bits : BitVec 64}
         { s with mem := writeBytes r.mem out (natToBytes bits.toNat 8),
                  next := r.next }) := by
   unfold fbInstrs291
-  block_phi_run
+  rw [denoteCode_phi calls env s "%retval.1.i.i" Ty.double
+    [("if.then59.i.i", (Operand.reg "%cond.i.i")),
+     ("if.then123.i.i", (Operand.reg "%cond125.i.i")),
+     ("for.end359.i.i", (Operand.reg "%cond366.i.i")),
+     ("if.then113.i.i", (Operand.reg "%spec.select694.i.i"))]
+    (p := "for.end359.i.i") (op := .reg "%cond366.i.i") (v := .float bits)
+    hpre (by simp [phiIncoming])
+    (evalOperand_reg_of env s "%cond366.i.i" (.float bits) hbits)
+    [Instr.callVoid "llvm.lifetime.end.p0"
+       [((Ty.int 64), (Operand.imm (Const.int 64 0x0000000000000300#64))),
+        (Ty.ptr, (Operand.reg "%dig.i.i"))],
+     Instr.store Ty.double (Operand.reg "%retval.1.i.i") (Operand.reg "%out")]
+    (by rfl)]
   have hdig' : lookupName (("%retval.1.i.i", .float bits) :: env) "%dig.i.i"
       = some (.ptr digA) := by
     rw [lookupName_cons_ne _ _ (by decide)]
@@ -193,7 +213,6 @@ theorem fb_291_denote {calls : Calls} {env : Env} {s : State} {bits : BitVec 64}
     (("%retval.1.i.i", .float bits) :: env) { s with mem := r.mem, next := r.next }
     "%retval.1.i.i" "%out" hv' hout']
   simp only [denoteCode_nil, stateAt]
-  all_goals block_close
 
 /-- **`if.end291`'s step.**  At the epilogue's edge the block ends the digit
 array's lifetime and stores the converted double at `%out`, leaving for
@@ -256,6 +275,12 @@ theorem fb_model_bits {d : Decimal} (hd : d.wellFormed) :
     simp only [StrtodTier3.tier3Emitted, StrtodReader.reader_lexeme hd]
   rw [h1, StrtodTier3.tier3Binary_eq_strtodSpec]
 
+/-- The model's bits as the store's word: the pattern's `Nat` is below the
+word's modulus. -/
+theorem fb_store_word {m : Nat} (hm : m < 2 ^ 64) :
+    (BitVec.ofNat 64 m).toNat = m :=
+  NumFastTier1.ofNat64_toNat_lt hm
+
 /-! ### The epilogue boundary and the `cleanup300` tail -/
 
 /-- The epilogue's boundary: from the ladder's exit, the run reaches
@@ -267,7 +292,8 @@ def FbEpilogue (calls : Calls) (d : Decimal) (digA out J : Nat) : Prop :=
     ∃ (f : State) (j : Nat), j ≤ J ∧
       f.pc = "if.end291" ∧ f.pre = some "for.end359.i.i" ∧
       lookupName f.env "%cond366.i.i"
-        = some (.float (StrtodTier3.tier3Emitted StrtodReader.reader d.lexeme).toBits) ∧
+        = some (.float (BitVec.ofNat 64
+            (StrtodTier3.tier3Emitted StrtodReader.reader d.lexeme).toBits)) ∧
       lookupName f.env "%dig.i.i" = some (.ptr digA) ∧
       lookupName f.env "%out" = some (.ptr out) ∧
       ∀ k, runFuel calls (j + k) numFastBody e = runFuel calls k numFastBody f
@@ -299,41 +325,48 @@ theorem fb_tail {calls : Calls} {d : Decimal} {out err digA J : Nat}
   obtain ⟨r, hr⟩ := hStart f hfpc hfpre
   have hbitsEq : (StrtodTier3.tier3Emitted StrtodReader.reader d.lexeme).toBits
       = (strtodSpec d).toBits := fb_model_bits hd
+  have hstoreNat : (BitVec.ofNat 64
+      (StrtodTier3.tier3Emitted StrtodReader.reader d.lexeme).toBits).toNat
+      = (strtodSpec d).toBits := by
+    rw [hbitsEq]
+    exact fb_store_word (NumFastTier1.strtodSpec_toBits_lt d)
   have hstep1 := fb_291_step (calls := calls) (env := f.env) (s := f)
-    (bits := (StrtodTier3.tier3Emitted StrtodReader.reader d.lexeme).toBits)
+    (bits := BitVec.ofNat 64
+      (StrtodTier3.tier3Emitted StrtodReader.reader d.lexeme).toBits)
     (digA := digA) (out := out) (r := r) hfpc hfpre hfbits hfdig hfout hr
   have hstep2 := fb_cleanup300_step (calls := calls)
-    (env := ("%retval.1.i.i",
-      .float (StrtodTier3.tier3Emitted StrtodReader.reader d.lexeme).toBits) :: f.env)
+    (env := ("%retval.1.i.i", .float (BitVec.ofNat 64
+      (StrtodTier3.tier3Emitted StrtodReader.reader d.lexeme).toBits)) :: f.env)
     (s := { f with
       mem := writeBytes r.mem out
-        (natToBytes ((StrtodTier3.tier3Emitted StrtodReader.reader d.lexeme).toBits).toNat 8),
+        (natToBytes (BitVec.ofNat 64
+          (StrtodTier3.tier3Emitted StrtodReader.reader d.lexeme).toBits).toNat 8),
       next := r.next, pc := "cleanup300", pre := some "if.end291" }) rfl rfl
-  have hrun2 : runFuel calls 2 numFastBody (stateAt f.env f) =
+  have hrun2 : runFuel calls 2 numFastBody f =
       some (.ret (some (.int 32 1))
         (writeBytes r.mem out
-          (natToBytes ((StrtodTier3.tier3Emitted StrtodReader.reader d.lexeme).toBits).toNat 8))) := by
+          (natToBytes (BitVec.ofNat 64
+            (StrtodTier3.tier3Emitted StrtodReader.reader d.lexeme).toBits).toNat 8))) := by
+    change runFuel calls 2 numFastBody (stateAt f.env f) = _
     rw [show (2 : Nat) = 1 + 1 from rfl, runFuel_jump_prefix hstep1 1]
     simp only [runFuel, hstep2]
-  have hmemEq :
-      writeBytes r.mem out
-          (natToBytes ((StrtodTier3.tier3Emitted StrtodReader.reader d.lexeme).toBits).toNat 8)
-        = writeBytes r.mem out (wordBytes 8 (strtodSpec d).toBits) := by
-    rw [hbitsEq]
     rfl
-  have hrun3 : runFuel calls 2 numFastBody (stateAt f.env f) =
+  have hrest : runFuel calls 2 numFastBody f =
       some (.ret (some (.int 32 1))
         (writeBytes r.mem out (wordBytes 8 (strtodSpec d).toBits))) := by
-    rw [hrun2, hmemEq]
-  have hprefix : runFuel calls (j + 2) numFastBody (stateAt e.env e) =
+    have h := hrun2
+    rw [hstoreNat] at h
+    simpa only [wordBytes] using h
+  have hprefix : runFuel calls (j + 2) numFastBody e =
       some (.ret (some (.int 32 1))
         (writeBytes r.mem out (wordBytes 8 (strtodSpec d).toBits))) := by
     rw [hrun 2]
-    exact hrun3
+    exact hrest
   have hfull : runFuel calls (J + 2) numFastBody (stateAt e.env e) =
       some (.ret (some (.int 32 1))
-        (writeBytes r.mem out (wordBytes 8 (strtodSpec d).toBits))) :=
-    runFuel_mono_le (by omega) hprefix
+        (writeBytes r.mem out (wordBytes 8 (strtodSpec d).toBits))) := by
+    rw [show stateAt e.env e = e from rfl]
+    exact runFuel_mono_le (by omega) hprefix
   refine ⟨⟨.int 32 1, writeBytes r.mem out (wordBytes 8 (strtodSpec d).toBits),
     r.next⟩, r, hfull, rfl, rfl, rfl, ?_⟩
   exact (UnchangedOutside.refl' r.mem [(out, 8), (err, 8)]).write_le
@@ -347,42 +380,43 @@ theorem fb_tail {calls : Calls} {d : Decimal} {out err digA J : Nat}
 handoff `for.body.outer.i.outer.i` with the carried cells.  This is the arm's
 "scan's shape" — the digit loops' induction over `NumFastScanSlow`'s per-edge
 steps. -/
-def FbReader (calls : Calls) (p n g : Nat) (i0 : BitVec 64) (sgn : BitVec 1)
-    (digA : Nat) : Prop :=
+def FbReader (calls : Calls) (p n g : Nat) (b0 : UInt8) (digA : Nat) : Prop :=
   ∀ (e : State), e.pc = "if.end6.i" → e.pre = some "if.end285" →
-    fbScanCarry e.env p n g i0 sgn digA →
+    fbScanCarry e.env p n g (slSignIdx b0) (slSignBit b0) digA →
     ∃ (e' : State) (j : Nat),
       e'.pc = "for.body.outer.i.outer.i" ∧ e'.pre = some "if.then143.i" ∧
-      fbScanCarry e'.env p n g i0 sgn digA ∧
+      fbScanCarry e'.env p n g (slSignIdx b0) (slSignBit b0) digA ∧
       ∀ k, runFuel calls (j + k) numFastBody e = runFuel calls k numFastBody e'
 
 /-- The interior from the copy's entry to the positive ladder's head: the copy,
 the lead clamps and the big multiply, reaching `while.cond203.i.i` from
 `if.end198.i.i` with the model's residual exponent and widened head. -/
-def FbCopyEntryPos (calls : Calls) (p n g digA : Nat) (i0 : BitVec 64)
-    (sgn : BitVec 1) (E : Nat) (d0 : BitVec 64) : Prop :=
+def FbCopyEntryPos (calls : Calls) (p n g digA : Nat) (b0 : UInt8)
+    (E : Nat) (d0 : BitVec 64) : Prop :=
   ∀ (e : State), e.pc = "for.body.outer.i.i" →
-    e.pre = some "for.body.outer.i.outer.i" → slEntryFields e.env i0 →
-    fbScanCarry e.env p n g i0 sgn digA →
+    e.pre = some "for.body.outer.i.outer.i" →
+    slEntryFields e.env (slSignIdx b0) →
+    fbScanCarry e.env p n g (slSignIdx b0) (slSignBit b0) digA →
     ∃ (f : State) (j : Nat),
       f.pc = t3MulHead ∧ f.pre = some "if.end198.i.i" ∧
       lookupName f.env "%sub200.i.i" = some (.int 64 (BitVec.ofNat 64 E)) ∧
       lookupName f.env "%conv202.i.i" = some (.float d0) ∧
-      fbScanCarry f.env p n g i0 sgn digA ∧
+      fbScanCarry f.env p n g (slSignIdx b0) (slSignBit b0) digA ∧
       ∀ k, runFuel calls (j + k) numFastBody e = runFuel calls k numFastBody f
 
 /-- The interior to the negative ladder's head: the same state, with
 `%sub200.i.i` the exponent's own negative value. -/
-def FbCopyEntryNeg (calls : Calls) (p n g digA : Nat) (i0 : BitVec 64)
-    (sgn : BitVec 1) (E : Nat) (d0 : BitVec 64) : Prop :=
+def FbCopyEntryNeg (calls : Calls) (p n g digA : Nat) (b0 : UInt8)
+    (E : Nat) (d0 : BitVec 64) : Prop :=
   ∀ (e : State), e.pc = "for.body.outer.i.i" →
-    e.pre = some "for.body.outer.i.outer.i" → slEntryFields e.env i0 →
-    fbScanCarry e.env p n g i0 sgn digA →
+    e.pre = some "for.body.outer.i.outer.i" →
+    slEntryFields e.env (slSignIdx b0) →
+    fbScanCarry e.env p n g (slSignIdx b0) (slSignBit b0) digA →
     ∃ (f : State) (j : Nat),
       f.pc = t3MulHead ∧ f.pre = some "if.end198.i.i" ∧
       lookupName f.env "%sub200.i.i" = some (.int 64 (BitVec.ofInt 64 (-(E : Int)))) ∧
       lookupName f.env "%conv202.i.i" = some (.float d0) ∧
-      fbScanCarry f.env p n g i0 sgn digA ∧
+      fbScanCarry f.env p n g (slSignIdx b0) (slSignBit b0) digA ∧
       ∀ k, runFuel calls (j + k) numFastBody e = runFuel calls k numFastBody f
 
 /-! ### The seam, positive residual first -/
@@ -394,7 +428,7 @@ the store return `1` with `strtodSpec`'s bytes at `%out`.  The interior and the
 epilogue are the two named boundaries; the scan's traversal is the arm's
 scan's shape. -/
 theorem fb_seam_pos {calls : Calls} {env : Env} {s : State} {d : Decimal}
-    {p n g gv digA out err : Nat} {i0 : BitVec 64} {sgn : BitVec 1} {b0 : UInt8}
+    {p n g digA out err : Nat} {gv : BitVec 64} {i0 : BitVec 64} {sgn : BitVec 1} {b0 : UInt8}
     {E : Nat} {d0 : BitVec 64} {address J : Nat}
     (hpc : s.pc = "if.end285") (hpre : s.pre = some "cleanup282.thread462")
     (hg : lookupName env "@g_nume1_slow" = some (.ptr g))
@@ -405,13 +439,13 @@ theorem fb_seam_pos {calls : Calls} {env : Env} {s : State} {d : Decimal}
     (hn : lookupName env "%n" = some (.int 64 n))
     (hbit : evalICmp .ugt n (slSignIdx b0) = (1 : BitVec 1))
     (hcarry : fbScanCarry env p n g i0 sgn digA)
-    (hout : lookupName env "%out" = some (.ptr out))
-    (herr : lookupName env "%err" = some (.ptr err))
+    (_hout : lookupName env "%out" = some (.ptr out))
+    (_herr : lookupName env "%err" = some (.ptr err))
     (hd : d.wellFormed) (hb0 : d.lexeme.toList.head? = some b0)
     (hsgn : sgn = slSignBit b0) (hi0 : i0 = slSignIdx b0)
     (hclass : LeanLLVM.StrtodRefine.Fallback d kernelDecides)
-    (hreader : FbReader calls p n g i0 sgn digA)
-    (hcopyEntry : FbCopyEntryPos calls p n g digA i0 sgn E d0)
+    (hreader : FbReader calls p n g b0 digA)
+    (hcopyEntry : FbCopyEntryPos calls p n g digA b0 E d0)
     (hE : E ≤ 342)
     (hpack : ∀ c, c ≤ (t3Rows E).length →
       ∃ k : Code, t3MulCarried d0 (t3Rows E) c = packMag (.fin k) false ∧ k.IsMag)
@@ -428,11 +462,13 @@ theorem fb_seam_pos {calls : Calls} {env : Env} {s : State} {d : Decimal}
     (hEpi : FbEpilogue calls d digA out J)
     (hStart : FbStart291 calls digA) :
     ∃ (k : Nat) (o : CallOutcome) (r : CallOutcome),
-      runFuel calls k numFastBody (stateAt env s) = some (.ret (some o.ret) o.mem) ∧
+      runFuel calls k numFastBody (stateAt (slCarry env p n i0 sgn digA) s) = some (.ret (some o.ret) o.mem) ∧
       o.ret = .int 32 1 ∧
       o.next = r.next ∧
       o.mem = writeBytes r.mem out (wordBytes 8 (strtodSpec d).toBits) ∧
       UnchangedOutside r.mem o.mem [(out, 8), (err, 8)] ∧
+      sgn = (if d.neg then (1 : BitVec 1) else 0) ∧
+      i0 = (if d.neg then 1#64 else 0#64) ∧
       numFastEmitted d.lexeme
         = StrtodTier3.tier3Emitted StrtodReader.reader d.lexeme ∧
       numFastEmitted d.lexeme = strtodSpec d ∧
@@ -443,23 +479,21 @@ theorem fb_seam_pos {calls : Calls} {env : Env} {s : State} {d : Decimal}
       { s with mem := writeBytes s.mem g (natToBytes (gv + 1).toNat 8),
                pc := "if.end6.i", pre := some "if.end285" }
   have h285 := sl_285_step (calls := calls) (env := env) (s := s)
+    (i0 := i0) (sgn := sgn) (digA := digA)
     hpc hpre hg hgv hp hb hbw hn hbit
-  have hcarry6 : fbScanCarry s6.env p n g i0 sgn digA :=
+  have hcarry6 : fbScanCarry s6.env p n g (slSignIdx b0) (slSignBit b0) digA :=
     fbScanCarry_slEnv285 hcarry
   -- the second reader's traversal
   obtain ⟨e', jr, he'pc, he'pre, he'carry, hrunr⟩ := hreader s6 rfl rfl hcarry6
-  -- the terminal edge's counter
-  have hbit' : evalICmp .ugt n (slSignIdx b0)
-      = (1 : BitVec 1) := hbit
   -- the ten-`phi` handoff
   have hientry := sl_entry_step (calls := calls) (env := e'.env) (s := e')
     he'pc he'pre he'carry.i0
   let e1 : State :=
-    stateAt (slEntry e'.env i0)
+    stateAt (slEntry e'.env (slSignIdx b0))
       { e' with pc := "for.body.outer.i.i", pre := some "for.body.outer.i.outer.i" }
-  have hfields : slEntryFields e1.env i0 := by
-    simpa only [e1, stateAt] using sl_entry_fields e'.env i0
-  have hcarry1 : fbScanCarry e1.env p n g i0 sgn digA := by
+  have hfields : slEntryFields e1.env (slSignIdx b0) := by
+    simpa only [e1, stateAt] using sl_entry_fields e'.env (slSignIdx b0)
+  have hcarry1 : fbScanCarry e1.env p n g (slSignIdx b0) (slSignBit b0) digA := by
     simpa only [e1, stateAt] using fbScanCarry_slEntry he'carry
   -- the interior to the ladder's head
   obtain ⟨f, jc, hfpc, hfpre, hsub, hconv, hcarryf, hrunc⟩ :=
@@ -476,18 +510,22 @@ theorem fb_seam_pos {calls : Calls} {env : Env} {s : State} {d : Decimal}
     rw [hrunl]
     exact hrun_tail
   refine ⟨1 + (jr + (1 + (jc + (jl + (J + 2))))), o, r, ?_, hret, hnext,
-    hmem, hframe, numFastEmitted_eq_fallback hd hclass,
+    hmem, hframe, ?_, ?_, numFastEmitted_eq_fallback hd hclass,
     numFastEmitted_strtodSpec d hd, numClassOf_fallback hclass⟩
-  have h1 : runFuel calls
-      (1 + (jr + (1 + (jc + (jl + (J + 2)))))) numFastBody (stateAt env s) =
-      runFuel calls (jr + (1 + (jc + (jl + (J + 2))))) numFastBody s6 :=
-    runFuel_jump_prefix h285 _
-  rw [h1, hrunr (1 + (jc + (jl + (J + 2))))]
-  have h2 : runFuel calls (1 + (jc + (jl + (J + 2)))) numFastBody e'
-      = runFuel calls (jc + (jl + (J + 2))) numFastBody e1 :=
-    runFuel_jump_prefix hientry _
-  rw [h2, hrunc (jl + (J + 2))]
-  exact htail
+  · have h1 : runFuel calls
+        (1 + (jr + (1 + (jc + (jl + (J + 2)))))) numFastBody (stateAt (slCarry env p n i0 sgn digA) s) =
+        runFuel calls (jr + (1 + (jc + (jl + (J + 2))))) numFastBody s6 :=
+      runFuel_jump_prefix h285 _
+    rw [h1, hrunr (1 + (jc + (jl + (J + 2))))]
+    have h2 : runFuel calls (1 + (jc + (jl + (J + 2)))) numFastBody e'
+        = runFuel calls (jc + (jl + (J + 2))) numFastBody e1 :=
+      runFuel_jump_prefix hientry _
+    rw [h2, hrunc (jl + (J + 2))]
+    exact htail
+  · rw [hsgn]
+    exact sl_sign_tie hd hb0
+  · rw [hi0]
+    exact sl_signIdx_tie hd hb0
 
 /-! ### The seam, negative residual first -/
 
@@ -495,7 +533,7 @@ theorem fb_seam_pos {calls : Calls} {env : Env} {s : State} {d : Decimal}
 ladder's negative shape: the positive loop is entered at no rows and the
 negative loop spends the exponent. -/
 theorem fb_seam_neg {calls : Calls} {env : Env} {s : State} {d : Decimal}
-    {p n g gv digA out err : Nat} {i0 : BitVec 64} {sgn : BitVec 1} {b0 : UInt8}
+    {p n g digA out err : Nat} {gv : BitVec 64} {i0 : BitVec 64} {sgn : BitVec 1} {b0 : UInt8}
     {E : Nat} {d0 : BitVec 64} {address J : Nat}
     (hpc : s.pc = "if.end285") (hpre : s.pre = some "cleanup282.thread462")
     (hg : lookupName env "@g_nume1_slow" = some (.ptr g))
@@ -506,13 +544,13 @@ theorem fb_seam_neg {calls : Calls} {env : Env} {s : State} {d : Decimal}
     (hn : lookupName env "%n" = some (.int 64 n))
     (hbit : evalICmp .ugt n (slSignIdx b0) = (1 : BitVec 1))
     (hcarry : fbScanCarry env p n g i0 sgn digA)
-    (hout : lookupName env "%out" = some (.ptr out))
-    (herr : lookupName env "%err" = some (.ptr err))
+    (_hout : lookupName env "%out" = some (.ptr out))
+    (_herr : lookupName env "%err" = some (.ptr err))
     (hd : d.wellFormed) (hb0 : d.lexeme.toList.head? = some b0)
     (hsgn : sgn = slSignBit b0) (hi0 : i0 = slSignIdx b0)
     (hclass : LeanLLVM.StrtodRefine.Fallback d kernelDecides)
-    (hreader : FbReader calls p n g i0 sgn digA)
-    (hcopyEntry : FbCopyEntryNeg calls p n g digA i0 sgn E d0)
+    (hreader : FbReader calls p n g b0 digA)
+    (hcopyEntry : FbCopyEntryNeg calls p n g digA b0 E d0)
     (hE : E ≤ 342) (hpos : 0 < E)
     (hpack : ∀ c, c ≤ (t3Rows E).length →
       ∃ k : Code, t3DivCarried d0 (t3Rows E) c = packMag (.fin k) false ∧
@@ -526,11 +564,13 @@ theorem fb_seam_neg {calls : Calls} {env : Env} {s : State} {d : Decimal}
     (hEpi : FbEpilogue calls d digA out J)
     (hStart : FbStart291 calls digA) :
     ∃ (k : Nat) (o : CallOutcome) (r : CallOutcome),
-      runFuel calls k numFastBody (stateAt env s) = some (.ret (some o.ret) o.mem) ∧
+      runFuel calls k numFastBody (stateAt (slCarry env p n i0 sgn digA) s) = some (.ret (some o.ret) o.mem) ∧
       o.ret = .int 32 1 ∧
       o.next = r.next ∧
       o.mem = writeBytes r.mem out (wordBytes 8 (strtodSpec d).toBits) ∧
       UnchangedOutside r.mem o.mem [(out, 8), (err, 8)] ∧
+      sgn = (if d.neg then (1 : BitVec 1) else 0) ∧
+      i0 = (if d.neg then 1#64 else 0#64) ∧
       numFastEmitted d.lexeme
         = StrtodTier3.tier3Emitted StrtodReader.reader d.lexeme ∧
       numFastEmitted d.lexeme = strtodSpec d ∧
@@ -540,18 +580,19 @@ theorem fb_seam_neg {calls : Calls} {env : Env} {s : State} {d : Decimal}
       { s with mem := writeBytes s.mem g (natToBytes (gv + 1).toNat 8),
                pc := "if.end6.i", pre := some "if.end285" }
   have h285 := sl_285_step (calls := calls) (env := env) (s := s)
+    (i0 := i0) (sgn := sgn) (digA := digA)
     hpc hpre hg hgv hp hb hbw hn hbit
-  have hcarry6 : fbScanCarry s6.env p n g i0 sgn digA :=
+  have hcarry6 : fbScanCarry s6.env p n g (slSignIdx b0) (slSignBit b0) digA :=
     fbScanCarry_slEnv285 hcarry
   obtain ⟨e', jr, he'pc, he'pre, he'carry, hrunr⟩ := hreader s6 rfl rfl hcarry6
   have hientry := sl_entry_step (calls := calls) (env := e'.env) (s := e')
     he'pc he'pre he'carry.i0
   let e1 : State :=
-    stateAt (slEntry e'.env i0)
+    stateAt (slEntry e'.env (slSignIdx b0))
       { e' with pc := "for.body.outer.i.i", pre := some "for.body.outer.i.outer.i" }
-  have hfields : slEntryFields e1.env i0 := by
-    simpa only [e1, stateAt] using sl_entry_fields e'.env i0
-  have hcarry1 : fbScanCarry e1.env p n g i0 sgn digA := by
+  have hfields : slEntryFields e1.env (slSignIdx b0) := by
+    simpa only [e1, stateAt] using sl_entry_fields e'.env (slSignIdx b0)
+  have hcarry1 : fbScanCarry e1.env p n g (slSignIdx b0) (slSignBit b0) digA := by
     simpa only [e1, stateAt] using fbScanCarry_slEntry he'carry
   obtain ⟨f, jc, hfpc, hfpre, hsub, hconv, hcarryf, hrunc⟩ :=
     hcopyEntry e1 rfl rfl hfields hcarry1
@@ -565,28 +606,55 @@ theorem fb_seam_neg {calls : Calls} {env : Env} {s : State} {d : Decimal}
     rw [hrunl]
     exact hrun_tail
   refine ⟨1 + (jr + (1 + (jc + (jl + (J + 2))))), o, r, ?_, hret, hnext,
-    hmem, hframe, numFastEmitted_eq_fallback hd hclass,
+    hmem, hframe, ?_, ?_, numFastEmitted_eq_fallback hd hclass,
     numFastEmitted_strtodSpec d hd, numClassOf_fallback hclass⟩
-  have h1 : runFuel calls
-      (1 + (jr + (1 + (jc + (jl + (J + 2)))))) numFastBody (stateAt env s) =
-      runFuel calls (jr + (1 + (jc + (jl + (J + 2))))) numFastBody s6 :=
-    runFuel_jump_prefix h285 _
-  rw [h1, hrunr (1 + (jc + (jl + (J + 2))))]
-  have h2 : runFuel calls (1 + (jc + (jl + (J + 2)))) numFastBody e'
-      = runFuel calls (jc + (jl + (J + 2))) numFastBody e1 :=
-    runFuel_jump_prefix hientry _
-  rw [h2, hrunc (jl + (J + 2))]
-  exact htail
+  · have h1 : runFuel calls
+        (1 + (jr + (1 + (jc + (jl + (J + 2)))))) numFastBody (stateAt (slCarry env p n i0 sgn digA) s) =
+        runFuel calls (jr + (1 + (jc + (jl + (J + 2))))) numFastBody s6 :=
+      runFuel_jump_prefix h285 _
+    rw [h1, hrunr (1 + (jc + (jl + (J + 2))))]
+    have h2 : runFuel calls (1 + (jc + (jl + (J + 2)))) numFastBody e'
+        = runFuel calls (jc + (jl + (J + 2))) numFastBody e1 :=
+      runFuel_jump_prefix hientry _
+    rw [h2, hrunc (jl + (J + 2))]
+    exact htail
+  · rw [hsgn]
+    exact sl_sign_tie hd hb0
+  · rw [hi0]
+    exact sl_signIdx_tie hd hb0
 
 /-! ### Axiom footprints -/
 
+/-- info: 'LeanLLVM.Refinement.NumFastFallback.fb_291_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
 #print axioms fb_291_step
+
+/-- info: 'LeanLLVM.Refinement.NumFastFallback.fb_291_denote' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
 #print axioms fb_291_denote
+
+/-- info: 'LeanLLVM.Refinement.NumFastFallback.fb_cleanup300_step' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
 #print axioms fb_cleanup300_step
+
+/-- info: 'LeanLLVM.Refinement.NumFastFallback.fb_cleanup300_denote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
 #print axioms fb_cleanup300_denote
+
+/-- info: 'LeanLLVM.Refinement.NumFastFallback.fb_model_bits' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
 #print axioms fb_model_bits
+
+/-- info: 'LeanLLVM.Refinement.NumFastFallback.fb_tail' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
 #print axioms fb_tail
+
+/-- info: 'LeanLLVM.Refinement.NumFastFallback.fb_seam_pos' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
 #print axioms fb_seam_pos
+
+/-- info: 'LeanLLVM.Refinement.NumFastFallback.fb_seam_neg' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
 #print axioms fb_seam_neg
 
 end NumFastFallback
