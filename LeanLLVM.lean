@@ -120,6 +120,7 @@ import LeanLLVM.Refinement.JsonStage2NumFastGate
 import LeanLLVM.Refinement.JsonStage2NumFastExponent
 import LeanLLVM.Refinement.JsonStage2NumFastFraction
 import LeanLLVM.Refinement.JsonStage2NumFastTier3Handoff
+import LeanLLVM.Refinement.JsonStage2NumFastClass
 import LeanLLVM.Refinement.JsonStage2StringBody
 import LeanLLVM.Refinement.JsonStage2WalkAlignment
 import LeanLLVM.Refinement.JsonStage2TraceRow
