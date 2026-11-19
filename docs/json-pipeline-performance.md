@@ -863,11 +863,11 @@ and it is the only row set here that isolates the masks-and-entry part of that
 loop.
 
 **The rows.** `tests/json-units-bench/bench.c` adds four rows to the harness of
-§"The instrument": `fused_pos8` and `fused_b8` (`bench.c:348`) copy the
+§"The instrument": `fused_pos8` and `fused_b8` (`bench.c:939-940`) copy the
 pipeline's loop verbatim — the classification unit, `S`, `ent`, the tail clamp
 and one emitter call per block — while `split_ent_pos8` and `split_ent_b8`
-(`bench.c:413`) run the same mask-and-entry composition into a whole-document
-stream and call the same emitter once over that stream (`bench.c:714-718`). The
+(`bench.c:941-944`) run the same mask-and-entry composition into a whole-document
+stream and call the same emitter once over that stream (`bench.c:617-618`). The
 document, the mask stream, the output buffer and the POS8/B8 selection are
 identical; fusion is the only difference. The split arm reads more memory
 (73,728 bytes against 65,536, because it reads back the whole entry stream it
@@ -878,14 +878,14 @@ mask.
 
 The fused rows have their own gate. The harness derives the pipeline's entry
 word independently, from the classification unit's output with its own
-`S`/`prevS` composition and tail clamp (`bench.c:387-405`), requires the entry
+`S`/`prevS` composition and tail clamp (`bench.c:519-536`), requires the entry
 unit over that stream to return its total set lanes, and requires each fused
-row's final cursor to equal the same total (`bench.c:662-689`). A fused row whose
+row's final cursor to equal the same total (`bench.c:876-891`). A fused row whose
 cursor does not reach that total — a skipped block with entries, a dropped
 carry, a different last-block clamp — exits rather than printing a number.
 
 **The builds.** `bench.sh` compiles these rows three ways from the same sources
-and labels every row with its variant (`bench.sh:89-110`, `bench.sh:188-195`):
+and labels every row with its variant (`bench.sh:96-129`, `bench.sh:236-262`):
 `default`, unit objects and harness as separate translation units, the units at
 the measured compiler line; `lto`, the same objects at `-flto`; and `unity`, the
 two stage-1 units and the harness in one translation unit at the measured flags,
@@ -962,7 +962,47 @@ inlined into the block loop. They also price the loop's other per-block work;
 the binaries establish that the call survives, not how much of the 20-76% is the
 call against the rest of the block loop. The direction agrees with §4's
 two-phase entry rule, which was measured on the scratch pipeline (7-8 ns/block
-on `canonical`) and is not re-derived here.
+on `canonical`) and is not re-derived here. The bench-only copy below removes
+the call and separates the two.
+
+**The emitter inlined into the block loop.** A bench-only copy removes the call
+the paragraph above established. `tests/json-units-bench/bench-inline.c` is
+`kernel/json/entry.c`'s table, initialiser, both emitters and block-loop macro
+with `noinline` removed and `always_inline` added, under its own names, and the
+loop at its end is the pipeline's fused loop block for block
+(`bench-inline.c:1-29`, with the fused passes at `bench-inline.c:118-157`).
+`bench.c:945-948` adds `fused_inl_pos8` and
+`fused_inl_b8` beside the unchanged `fused_*` rows, so the arithmetic is held
+fixed and the call is the difference the rows isolate. `kernel/json/` is not
+edited.
+
+The claim is about generated code, so `bench.sh:168-199` reads it out of the
+object before any timing. It refuses the run if `inline.o` keeps an out-of-line
+emitter symbol, if either loop's only call targets are not
+`[__stack_chk_fail leanllvm_json_s1_masks]`, if either loop has more than one
+classifier call site, or if the pos8 table load and eight stores and the b8
+`tzcnt` slots are absent; the run printed `pos8 vector ops = 9, b8 tzcnt = 9`.
+The positions are gated too: `bench.c:547-584` compares the candidate's emitted
+words one by one with the entry unit's over the pipeline's staged `ent` stream
+and requires its cursor to equal the unit's. A row that reordered, dropped or
+duplicated a position exits 3 rather than printing a number. The transcript is
+`tests/json-units-bench/inline-emitter-transcript.txt` (2,978 rows); the
+one-minute load average was 0.96/1.10/1.31 at assembly, after the run, and the
+run did not sample load between trials, so process-to-process movement is the
+harness's own second layer.
+
+**The result.** On the `default` build's `syn-strings-64k` the inlined fused
+loop reads 6.524 (POS8) and 7.142 (B8) GB/s against the split arm's 6.981 and
+7.614 — 6.5% and 6.2% behind on the P core — and 4.006 and 4.881 against 4.723
+and 4.920 on the E core, 15.2% and 0.8% behind. The call boundary is most of the
+fused penalty: in the same P-core cells the un-inlined fused rows read 4.085 and
+4.854 GB/s, so inlining recovers 84% and 83% of the gap to the split arm. It
+does not reverse the sign. Across the 96 cells (3 builds × 2 cores × 8 documents
+× 2 emitters) the split arm's GB/s is the higher in 89, and its calibrated
+cycles per byte is the lower in 88 of the 96. Fusion with the boundary removed
+is still behind splitting, and what remains on the string document is the
+per-block entry-word composition and the loop's other block work, not the
+emitter call.
 
 **What a genuinely fused unit would cost.** The fused row is the pipeline's
 loop, not an inlined emitter. Removing the per-block call would be new text in
@@ -972,10 +1012,11 @@ is about. The entry refinement pins the IR at
 (`LeanLLVM/Refinement/JsonEntrySteps.lean`) and `entry_b8_refines`
 (`LeanLLVM/Refinement/JsonB8Steps.lean`) against the entry word
 `LeanLLVM/Refinement/JsonEntSpec.lean` specifies — for the extracted kernel
-called over its stream. A fused form would need a new pinned fixture and a new
-refinement theorem before any number could be attached to it. No such unit is in
-the tree: this measurement prices keeping the unit boundary, and nothing here
-adopts a fused unit or proves one.
+called over its stream. A production fused form would need a new pinned fixture
+and a new refinement theorem before its number could stand as a refinement
+claim. The bench-only copy above now prices removing the boundary, but no such
+unit is in `kernel/json/`: the fused/split rows price keeping the unit boundary,
+and nothing here adopts a fused unit or proves one.
 
 **The string case, and the lever.** The composite on `syn-strings-64k` is 0.521
 cycles per byte against simdjson's stage 1 at 0.278 — the 0.49 in the table
@@ -990,8 +1031,9 @@ earlier run's is 0.317), so the floor holds against the most favourable
 reference figure here. Entry fusion therefore cannot close the string-document
 gap however the per-block call is arranged; what remains is the classifier's
 escape and quote work, the part of the composite that neither the entry emitter
-nor the UTF-8 gate owns. That is an implication of the row decomposition, not a
-measurement of a changed classifier.
+nor the UTF-8 gate owns. §"The classifier's escape derivation, ablated and
+replaced" measures that part; even its fastest variant leaves the classifier
+above simdjson's stage 1 on this document.
 
 **What this does and does not establish.**
 
@@ -1002,9 +1044,10 @@ measurement of a changed classifier.
   unity shape do not change the sign. The gate fixes that each fused cursor
   reaches the independently derived stream's lane count, and both the
   calibrated and the wall-clock columns agree.
-- **It does not price an inlined-emitter fused unit.** That unit is not built.
-  The cost of removing the boundary is a new body, fixture and theorem, not a
-  row in this table.
+- **It prices the boundary's removal only through a bench-only copy.** The
+  inlined body above is a candidate, not a kernel: it has no pinned IR, fixture
+  or refinement theorem, and the 6.2-6.5% it leaves on `syn-strings-64k` is not
+  a claim about a proved unit.
 - **It is not an end-to-end row and not the stage ratio.** The split arm here is
   a two-pass arrangement of the units, not simdjson's stage 1; the quotient
   above (§"The simdjson row, measured") remains a three-pass comparison and is
@@ -1017,14 +1060,138 @@ measurement of a changed classifier.
   are claimed.
 - **Nothing about refinement of a fused body.** The units' existing proofs and
   the pipeline's own refinement are unchanged, and none of them is a theorem
-  about an emitter-inlined body, which does not exist in the tree.
+  about the emitter-inlined body in `bench-inline.c`, which has no refinement
+  statement.
 
 **Cadence.** Re-measure when `kernel/json/pipeline.c`'s block loop changes; when
 `kernel/json/entry.c`'s kernel, its `noinline` attribute or its wrappers change;
 when `bench.c`'s fused or split rows or the reference-entry gate change; when
 the measured compiler line or the flags in `bench.sh` change; when the corpus or
-the host changes; or when an emitter-inlined fused body is added, at which point
-the row must be replaced rather than compared.
+the host changes; when `bench-inline.c`'s inlined body or `bench.sh:168-199`'s
+disassembly gate changes; or when a production emitter-inlined fused body is
+added, at which point the row must be replaced rather than compared.
+
+### The classifier's escape derivation, ablated and replaced
+
+The string case above leaves the classifier's escape and quote work as the
+residue. `s1f_escaped` (`kernel/json/s1_block.c:35-51`) derives the unescaped
+quotes from the raw quote and backslash masks with two `pext`, one `pdep` and a
+`clz` parity step, and `s1f_masks` applies it at `s1_block.c:115`. The
+quantities are the ones `LeanLLVM/Refinement/QuoteDerive.lean` pins:
+`kernelEscape_eq`, `kernelQuote64` and `ppn64`. Two bench-only files price that
+work: `bench-ablate.c` removes the derivation (`s1_noesc`, parity kept) and then
+the in-string parity too (`s1_noesc_noparity`), and `bench-fastesc.c` replaces
+the derivation with carry-propagating sums while keeping every output. Their
+rows are in `bench.c`, `bench.sh` compiles them at the measured line, and
+`kernel/json/` is untouched.
+
+**The instrument.** The ablation rows reach their copy through the shared
+`volatile` function-pointer table (`bench.c:357`), so no build inlines a copy
+into a row loop; the timed pass touches one mask word per block while the
+reference pass mixes all six and prints that checksum (`bench.c:429-452`). One
+word is timed because a six-word fold would cost more than the derivation it
+isolates (`bench.c:431-435`, and the limit recorded in `d9bf73f`). The ablated
+rows are cost bounds, not classifiers: their mask words describe no JSON
+document, and the harness checks only that a row's checksum is stable across its
+trials, variants and cores.
+
+The candidate has a byte-identity gate. `bench.c:391-429` requires all six mask
+words and the three carry fields to equal `s1_masks`'s on every block of every
+corpus document, in the default, LTO and unity builds, and exits 3 instead of
+printing a row on a mismatch; the candidate run's transcript records `s1_fastesc
+returned every mask word and the carry state s1_masks returned on every block of
+every document`. The object that run recorded (`fastesc.o=002939062f1be791`)
+disassembles to shifts, ands, xors, adds and one `vpclmullqlqdq`; it has no
+`pext`, `pdep` or `lzcnt`. That is a reading of the built object, not a harness
+gate. A scratch checker compared the candidate's arithmetic with the kernel's
+`pext`/`pdep`/`clz` text over an exhaustive sweep of low patterns, every fill
+and carry state, and random blocks; it is recorded in `b23f074` and is not part
+of the harness.
+
+**The derivation's share.** In the ablation session's `default` arm, the
+difference between `s1_masks` and `s1_noesc` is 22.3-33.3% of the classifier's
+cycles per byte on the P core and 14.8-16.3% on the E core, as the minimum and
+maximum over the eight documents (`escape-ablation-transcript.txt`, 2,353
+rows). On `syn-strings-64k` removing it gives 0.2671 cycles per byte against
+simdjson's stage 1 at 0.278 from §"The simdjson row, measured": a classifier
+without the derivation stops being above the whole of stage 1. The
+`noesc_noparity` row does not separate the parity step reliably here — on
+`syn-strings-64k` it reads 0.2877, above `noesc`'s 0.2671 — so the `clmul`
+parity's own share is bounded with the rest rather than charged separately. The
+ablation session's one-minute load average was 1.29/1.36/1.82 at its start and
+1.75/1.50/1.84 at its end; the host was not idle, and only that run's paired
+deltas are claimed.
+
+**The replacement.** The candidate session measured `s1_masks`, `s1_noesc` and
+`s1_fastesc` in one run (`fastesc-transcript.txt`, 2,581 rows), so the table is
+one session's medians of the three trial medians for the `default` arm. It is a
+different session from the paired unit table above, whose rows differ on the
+same document (its `s1_masks` on `syn-strings-64k` is 0.333, this one 0.3475),
+and nothing here divides a row by a row from that table.
+
+|document|P `s1_masks`|P `s1_noesc`|P `s1_fastesc`|E `s1_masks`|E `s1_noesc`|E `s1_fastesc`|
+|---|---:|---:|---:|---:|---:|---:|
+|`route-s1-64k`|0.3475|0.2610|0.3371|0.4509|0.3768|0.4116|
+|`route-u8-64k`|0.3898|0.2585|0.3029|0.4504|0.3759|0.4106|
+|`syn-dense-4m`|0.3482|0.2313|0.3018|0.4942|0.4127|0.4553|
+|`syn-dense-64k`|0.3437|0.3007|0.3128|0.4502|0.3772|0.4100|
+|`syn-strings-4m`|0.3485|0.2245|0.3025|0.5035|0.4120|0.4560|
+|`syn-strings-64k`|0.3475|0.2688|0.3041|0.4515|0.3774|0.4116|
+|`syn-utf8-4m`|0.3398|0.2334|0.2968|0.5009|0.4088|0.4496|
+|`syn-utf8-64k`|0.3450|0.2711|0.3190|0.4515|0.3771|0.4091|
+
+The candidate moves the classifier from 0.3475 to 0.3041 cycles per byte on
+`syn-strings-64k` (−12.5%) and 0.4515 to 0.4116 (−8.8%) on the E core. Across
+the eight documents the change is −3.0% to −22.3% on P (median −12.6%) and
+−7.9% to −10.2% on E (median −8.9%). The full-removal bound in the same session
+is 0.2688 cycles per byte, so the candidate recovers 55% of the derivation's
+cost on this document, not all of it. The smallest change is `route-s1-64k` at
+−3.0%; the ablation session put the derivation's share on that document at
+26.9%, so the candidate's recovery there is 12% and the two sessions are not
+reconciled on that cell — the median, not any single cell, is the claim. The
+run's one-minute load average was 1.08-1.66 (mean 1.42), and only its
+same-session paired deltas are claimed.
+
+**What it does not close.** The candidate at 0.3041 is still 9.4% above
+simdjson's stage 1 at 0.278 on `syn-strings-64k`, before the composite's entry
+(0.142) and UTF-8 (0.047) shares from §"The string case, and the lever" are
+added. Neither the inlined fused loop above nor this derivation replacement
+closes the strings gap by itself: while the classifier alone stays above stage
+1's whole figure, no arrangement of the other shares can bring the composite
+below it. The gap is the classifier's total work against a fused simdjson stage
+1, not an emitter-call artifact and not the unrecovered part of this
+derivation.
+
+**Adoption.** Nothing here adopts the candidate. `kernel/json/s1_block.c` is
+unchanged, and `s1_masks_refines` is about the pinned body in
+`probes/install/ir/json-s1-masks.candidate.ll`, whose committed text still
+carries the two `pext` calls, the `pdep` and the `ctlz`. Adopting the fast
+derivation would need a new pinned fixture for the classifier and a re-proof of
+the mask step against the same `JsonScanSpec`.
+
+**What this does and does not establish.**
+
+- **It charges the derivation, and bounds it.** The ablation rows remove code
+  from a copy; they are not classifiers, and their margin is an upper bound on
+  what the derivation costs in this unit, not a prediction for any document's
+  parse.
+- **It establishes one replaced derivation's byte identity and speed.** The
+  candidate returns the kernel's six masks and three carry fields on every
+  complete corpus block in three builds, and its cycles-per-byte column falls
+  by the stated amount. It is a bench candidate with no refinement statement.
+- **Nothing about adoption, another compiler, flag set or host, and no PMU.**
+  Cycles per byte is a calibrated clock; the two sessions' row levels drift, so
+  the ablation and candidate figures are not mixed into a single quotient.
+  Nothing here is a full-parse or stage-1 ratio.
+- **Nothing about the proofs.** `QuoteDerive.lean`'s statements and
+  `s1_masks_refines` remain about the pinned kernel body; no theorem is stated
+  for either bench copy.
+
+**Cadence.** Re-measure when `kernel/json/s1_block.c`'s `s1f_escaped` or its
+call site changes; when `bench-ablate.c`, `bench-fastesc.c`, their rows or their
+gates change; when `QuoteDerive.lean`'s pinned quantities change; when the
+measured compiler line or the flags in `bench.sh` change; or when the corpus or
+the host changes.
 
 ### The earlier run, kept as history
 
