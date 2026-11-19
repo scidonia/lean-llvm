@@ -5858,89 +5858,13 @@ identities without a red pin of its own.
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.escNotW_eq
 
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.escAndStartsW_eq' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.escAndStartsW_eq
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.escAnd1W_eq' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.escAnd1W_eq
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.escAnd2W_eq' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.escAnd2W_eq
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.escOr3W_eq' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.escOr3W_eq
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.escShrW_eq' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.escShrW_eq
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.escNot4W_eq' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.escNot4W_eq
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.escAnd5W_eq' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.escAnd5W_eq
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.escShl6W_eq' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.escShl6W_eq
-
 /-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.escAnd7W_eq' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.escAnd7W_eq
 
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.escXorEvenW_eq' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.escXorEvenW_eq
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.escPext1W_eq' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.escPext1W_eq
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.escPext2W_eq' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.escPext2W_eq
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.escXor36W_eq' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.escXor36W_eq
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.escNot10W_eq' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.escNot10W_eq
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.escPdepW_eq' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.escPdepW_eq
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.escNot12W_eq' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.escNot12W_eq
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.escAnd39W_eq' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.escAnd39W_eq
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.escAnd14W_eq' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.escAnd14W_eq
-
 /-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.escapedWord_eq' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.escapedWord_eq
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.escXor25W_eq' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.escXor25W_eq
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.escAnd26W_eq' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.escAnd26W_eq
 
 /-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.openW_eq' depends on axioms: [propext] -/
 #guard_msgs in
@@ -5958,67 +5882,9 @@ identities without a red pin of its own.
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.loadValue_int64
 
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.bv1_zero_one' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.bv1_zero_one
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.nat32' depends on axioms: [propext] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.nat32
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.ofNat_conv9' depends on axioms: [propext] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.ofNat_conv9
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.ofNat_shl13' depends on axioms: [propext] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.ofNat_shl13
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.shl13_lane0' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.shl13_lane0
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.or14W_lane0' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.or14W_lane0
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.escAnd1W_lane' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.escAnd1W_lane
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.escAnd2W_lane' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.escAnd2W_lane
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.escRunStarts' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.escRunStarts
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.escRunEnds' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.escRunEnds
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.escAfterRuns' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.escAfterRuns
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.escAlt' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.escAlt
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.escOddRuns' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.escOddRuns
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.escEscapedRuns' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.escEscapedRuns
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.escBoundary' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.escBoundary
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.escapedWord_eq_kernelEscape' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.escapedWord_eq_kernelEscape' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.escapedWord_eq_kernelEscape
 
@@ -6026,7 +5892,7 @@ identities without a red pin of its own.
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.bsW_eq_spec
 
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_escaped_eq' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_escaped_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1_escaped_eq
 
@@ -6050,38 +5916,6 @@ identities without a red pin of its own.
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1_escNot
 
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_escAndStarts' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1_escAndStarts
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_escAnd1' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1_escAnd1
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_escAnd2' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1_escAnd2
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_escOr3' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1_escOr3
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_escShr' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1_escShr
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_escNot4' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1_escNot4
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_escAnd5' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1_escAnd5
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_escShl6' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1_escShl6
-
 /-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_escPparLoad' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1_escPparLoad
@@ -6090,81 +5924,13 @@ identities without a red pin of its own.
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1_escAnd7
 
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_escXorEven' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1_escXorEven
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_escPext1' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1_escPext1
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_escPext2' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1_escPext2
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_escXor36' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1_escXor36
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_escNot10' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1_escNot10
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_escPdep' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1_escPdep
-
 /-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_escCmp63' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1_escCmp63
 
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_escTobool' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1_escTobool
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_escOrCond' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1_escOrCond
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_escCond24' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1_escCond24
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_escNot17' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1_escNot17
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_escCtlz' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1_escCtlz
-
 /-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_escShr16' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1_escShr16
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_escNot12' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1_escNot12
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_escAnd39' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1_escAnd39
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_escAnd14' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1_escAnd14
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_escOr15' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1_escOr15
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_escXor25' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1_escXor25
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_escAnd26' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1_escAnd26
 
 /-! ### The unescaped-quote and in-string words
 
@@ -6198,11 +5964,11 @@ identities without a red pin of its own.
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.andQuoteW_eq
 
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_and_eq' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_and_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1_and_eq
 
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.andQuoteW_spec' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.andQuoteW_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.andQuoteW_spec
 
@@ -6246,7 +6012,7 @@ identities without a red pin of its own.
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1_imSign
 
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_instring_eq' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_instring_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1_instring_eq
 
@@ -6521,7 +6287,7 @@ a projection and carries no axiom at all.
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.packLanes_control
 
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1Slot_quote_spec' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1Slot_quote_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1Slot_quote_spec
 
@@ -6529,7 +6295,7 @@ a projection and carries no axiom at all.
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1Slot_delim_spec
 
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1Slot_instring_spec' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1Slot_instring_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1Slot_instring_spec
 
@@ -6563,7 +6329,7 @@ trailing run and the incoming parity are the only things it depends on.
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.carry64_oddRun_eq
 
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.carry64_inside_eq' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.carry64_inside_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.carry64_inside_eq
 
@@ -6598,38 +6364,6 @@ Quot.sound]` or narrower **except** the three that read the sign word, which car
 footprint rather than claiming the narrower one.
 -/
 
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.escCtlz_toNat' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.escCtlz_toNat
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.escShr16_toNat' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.escShr16_toNat
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.oneLane_toNat' does not depend on any axioms -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.oneLane_toNat
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.oneLane_eq_zero' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.oneLane_eq_zero
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.escCmp63L_one' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.escCmp63L_one
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.escToboolL_one' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.escToboolL_one
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.escOrCondL_one' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.escOrCondL_one
-
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.escCond24_toNat' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.escCond24_toNat
-
 /-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.suffixRun_full' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.suffixRun_full
@@ -6650,7 +6384,7 @@ footprint rather than claiming the narrower one.
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.flipBits_64
 
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_ppar_spec' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_ppar_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1_ppar_spec
 

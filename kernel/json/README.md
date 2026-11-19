@@ -41,9 +41,10 @@ as `quote_raw & ~quote` by the specification, not stored.
 `s1f_masks` keeps its measured name, its measured parameter type `S1F *` and its
 measured signature inside the translation unit; `S1F` is this unit's three-word
 carry (`typedef s1_carry S1F;`), so the hoist moves values and not arithmetic.
-The public wrapper is the only new function, and its two `_mm256_loadu_si256`
-loads are new code: the measured loads live in `s1f_build2`, which is the
-pipeline loop and not this unit.
+The public wrapper and `s1f_escaped` are the unit's new functions, and the
+wrapper's two `_mm256_loadu_si256` loads are new code: the measured loads live
+in `s1f_build2`, which is the pipeline loop and not this unit.  The escape
+function's substitution is recorded under "What is measured text" below.
 
 ### Build
 
@@ -58,22 +59,40 @@ bench scripts, not of the Lean library.
 
 ### What is measured text, and what is not
 
-Every function and table in `s1_block.c` except the wrapper is copied from
-`measured/s1fuse.h` unchanged, including names, signatures, formatting and
-comments.  `identity/source-identity.sh` extracts the entities below from the
-vendored header, applies the deletion list, and diffs the tokens against the
-same entities in `s1_block.c`; `identity/ir-identity.sh` compiles both sides and
-compares the emitted code.
+Every function and table in `s1_block.c` except the wrapper and `s1f_escaped` is
+copied from `measured/s1fuse.h` unchanged, including names, signatures,
+formatting and comments.  `identity/source-identity.sh` extracts the entities
+below from the vendored header, applies the deletion list, and diffs the tokens
+against the same entities in `s1_block.c`; `identity/ir-identity.sh` compiles
+both sides — with the measured `s1f_escaped` replaced by the unit's own text on
+the measured side — and compares the emitted code.
+
+`s1f_escaped` is the one function that is the unit's own text rather than the
+measured text.  The measured form derives the escape word with `_pext_u64`,
+`_pdep_u64` and `__builtin_clzll`; the unit's form derives the same word from
+two carry-propagating sums, the boundary lane and the carry out of the top lane,
+with no gather, scatter or count-leading-zeros instruction.  The two are the
+same function of the backslash word and the carry: the six mask words and the
+three carry fields are byte-identical block for block, exhaustively over every
+low pattern of the six mask words with the eight carry states and on the whole
+corpus, and the identity is proved in
+`LeanLLVM/Refinement/QuoteDerive.lean` (`fastEscape_eq_kernelEscape`,
+`fastPpar_eq_runParity`).  The form is faster in every measured cell on two
+hosts; the prototype and its transcripts are
+`tests/json-units-bench/bench-fastesc.c` and `fastesc-transcript.txt`.  Both
+identity arms name this exclusion in their report and compare every other
+entity byte for byte.
 
 The list below is **data**: the script reads it, so an entity or a deletion that
 is not recorded here shows up as a diff rather than being excused.
 
 <!-- identity-list:begin -->
-entities: s1f_prefix_xor s1f_escaped s1f_lo_tab s1f_hi_tab s1f_sw32 s1f_sm_ws s1f_masks
+entities: s1f_prefix_xor s1f_lo_tab s1f_hi_tab s1f_sw32 s1f_sm_ws s1f_masks
 delete: 434
 delete: 443-445
 delete: 446
 delete: 450-454
+s1-extra: s1f_escaped leanllvm_json_s1_masks
 carry-fields-deleted: prevS bs_prevb bs_prevs
 entry-entities: s1fuse:s1f_ke_pos8 s1fuse:s1f_ke_b8 s1fuse:S1F_DEFINE_KERNEL s1fuse:s1f_k_pos8 s1fuse:s1f_k_b8 xlist:xl_pos8 xlist:xl_pos8_init
 entry-delete: xlist:34-38
@@ -102,7 +121,9 @@ The four deletions are the two conditional arms inside `s1f_masks`, resolved to
 the measured build's values: `S1F_XS=5` (`build49.sh:21`) takes the arm that
 keeps both the control and backslash words, and `S1F_CTAB` keeps its default
 `1` (`measured/s1fuse.h:384-386`), which takes the table path.  The `#else`
-arms are deleted; nothing else inside the seven entities is touched.
+arms are deleted; nothing else inside the six measured entities is touched, and
+`s1f_escaped` is the unit's own text recorded by `s1-extra:` rather than a
+measured entity.
 
 The block also carries the **entry unit's** lists, and the entry section below
 reads them: `entry-entities:` names the seven entities `entry.c` copies, each

@@ -1,0 +1,148 @@
+The adopted stage-1 escape: the three-column benchmark transcript
+
+Command (run from the repository root, under the flake):
+
+  nix develop -c bash tests/json-units-bench/bench.sh          # builds the adopted kernel and prototype objects, and `bench`
+  taskset -c 0 tests/json-units-bench/build/bin/bench \
+      --doc syn-strings-64k=tests/json-units-bench/build/corpus/syn-strings-64k.json \
+      --doc syn-dense-64k=tests/json-units-bench/build/corpus/syn-dense-64k.json --reps 101
+  taskset -c 0 /tmp/bench-old \
+      --doc syn-strings-64k=tests/json-units-bench/build/corpus/syn-strings-64k.json \
+      --doc syn-dense-64k=tests/json-units-bench/build/corpus/syn-dense-64k.json --reps 101
+
+Seven trials of each binary, interleaved (prototype harness then old harness, per trial),
+pinned to CPU 0.  The `proto` prefix in the rows below is `bench`; the `old` prefix is
+`bench-old`.  Each harness times its two rows in the same round on the same data and gates
+their six mask words and three carry fields before the clock starts (all rows carry the same
+`checksum` per document).
+
+What each column is
+-------------------
+  `s1_masks`   the adopted kernel: kernel/json/s1_block.c as it now stands, compiled at
+               the measured line into tests/json-units-bench/build/bin/s1_block.o
+               (sha256 288fb42237c9d5e42940155037ddc1026302e50888e60154b12c006bc7f82991;
+               no pext/pdep/lzcnt in the object).
+  prototype    `bench`'s `s1_fastesc` row: tests/json-units-bench/bench-fastesc.c, the
+               noinline prototype copy of the same arithmetic
+               (fastesc.o sha256 002939062f1be791b7d4cbb33ddb384d31705ca2a64af138f7b95c1881fc225c).
+  old          `bench-old`'s `s1_fastesc` row: the same harness with `fe_escaped` replaced
+               by the vendored measured `s1f_escaped` (kernel/json/measured/s1fuse.h:351-368,
+               renamed), i.e. the pext/pdep/clz form the unit carried before this change
+               (old-fastesc.o sha256 4aa3424c602b4eb95be071da940d551719ca21be7a2574172ffa5cdc157ef8d4,
+               4 pext/pdep/lzcnt instructions; /tmp/bench-old sha256
+               4904be0094766dceb323e8dd1c46ff456a1692bbf8b268378bde2ff9bbca6a43).
+
+The kernel object is the same file in both binaries, so each harness's own two rows are a
+paired comparison: `old` gives adopted-vs-old, `proto` gives adopted-vs-prototype.
+
+Reconstructing the old column (the measured text is pinned by digest)
+---------------------------------------------------------------------
+The recipe below was executed verbatim; it reproduced both the object sha256 above and the
+measured rows.  It replaces the prototype's `fe_escaped` definition with the vendored
+`s1f_escaped` body, renamed.  The source path is part of the object's metadata, hence
+`/tmp/bench-oldesc.c`.
+
+  python3 - <<'EOF'
+  fe = open('tests/json-units-bench/bench-fastesc.c').read()
+  h  = open('kernel/json/measured/s1fuse.h').read()
+  body = h[h.index('static inline uint64_t s1f_escaped('):]
+  body = body[:body.index('\n}\n') + 3].replace('s1f_escaped', 'fe_escaped')
+  out = fe[:fe.index('static inline uint64_t fe_escaped(')] + body
+  out += fe[fe.index('/* Block masks:'):]
+  open('/tmp/bench-oldesc.c', 'w').write(out)
+  EOF
+  clang -O3 -march=x86-64-v3 -mpclmul -std=gnu11 -falign-loops=64 -falign-functions=64 \
+      -I kernel/json -c /tmp/bench-oldesc.c -o /tmp/old-fastesc.o
+  clang -O2 -std=gnu11 -o /tmp/bench-old tests/json-units-bench/bench.c \
+      tests/json-units-bench/build/bin/s1_block.o tests/json-units-bench/build/bin/entry.o \
+      tests/json-units-bench/build/bin/utf8.o tests/json-units-bench/build/bin/ablate.o \
+      /tmp/old-fastesc.o tests/json-units-bench/build/bin/inline.o
+
+Host and build
+--------------
+  host: Linux 6.17.0-1033-oem x86_64
+  cpu:  Intel(R) Core(TM) Ultra 7 268V; 8 CPUs online; pinned to 0
+  compiler: clang 21.1.8 (measured line: -O3 -march=x86-64-v3 -mpclmul -std=gnu11
+            -falign-loops=64 -falign-functions=64; harness -O2 -std=gnu11)
+  clocks observed: 4.463-4.840 GHz; largest row calibration spread 5.36 %
+  corpus: gen.c at seed 0x243F6A8885A308D3; syn-strings-64k checksum 0x0efff33f436b558a,
+          syn-dense-64k checksum 0x1f43c566f518b152 (equal across all three columns)
+
+Rows
+----
+proto row cpu=0 doc=syn-strings-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=4292 p10_ns=4308 median_ns=4442 p90_ns=5257 max_ns=6207 ns_per_byte=0.06778 gbps=14.754 cycles_per_byte=0.3225 core_ghz=4.758 calib_spread_pct=0.48 checksum=0x0efff33f436b558a
+proto row cpu=0 doc=syn-strings-64k unit=s1_fastesc bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=3807 p10_ns=4138 median_ns=4171 p90_ns=6051 max_ns=7117 ns_per_byte=0.06364 gbps=15.712 cycles_per_byte=0.2916 core_ghz=4.581 calib_spread_pct=2.12 checksum=0x0efff33f436b558a
+proto row cpu=0 doc=syn-dense-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=3803 p10_ns=3823 median_ns=4319 p90_ns=5052 max_ns=5960 ns_per_byte=0.06590 gbps=15.174 cycles_per_byte=0.3148 core_ghz=4.777 calib_spread_pct=2.56 checksum=0x1f43c566f518b152
+proto row cpu=0 doc=syn-dense-64k unit=s1_fastesc bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=3804 p10_ns=3828 median_ns=4320 p90_ns=5045 max_ns=8485 ns_per_byte=0.06592 gbps=15.170 cycles_per_byte=0.3168 core_ghz=4.806 calib_spread_pct=2.25 checksum=0x1f43c566f518b152
+old   row cpu=0 doc=syn-strings-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=3804 p10_ns=3829 median_ns=4320 p90_ns=5053 max_ns=6979 ns_per_byte=0.06592 gbps=15.170 cycles_per_byte=0.3065 core_ghz=4.649 calib_spread_pct=2.82 checksum=0x0efff33f436b558a
+old   row cpu=0 doc=syn-strings-64k unit=s1_fastesc bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=4241 p10_ns=4308 median_ns=4807 p90_ns=5213 max_ns=6134 ns_per_byte=0.07335 gbps=13.633 cycles_per_byte=0.3514 core_ghz=4.791 calib_spread_pct=0.78 checksum=0x0efff33f436b558a
+old   row cpu=0 doc=syn-dense-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=4439 p10_ns=5219 median_ns=5249 p90_ns=6089 max_ns=10680 ns_per_byte=0.08009 gbps=12.485 cycles_per_byte=0.3703 core_ghz=4.624 calib_spread_pct=1.17 checksum=0x1f43c566f518b152
+old   row cpu=0 doc=syn-dense-64k unit=s1_fastesc bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=4231 p10_ns=4244 median_ns=4848 p90_ns=6284 max_ns=7577 ns_per_byte=0.07397 gbps=13.518 cycles_per_byte=0.3404 core_ghz=4.601 calib_spread_pct=3.65 checksum=0x1f43c566f518b152
+proto row cpu=0 doc=syn-strings-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=4298 p10_ns=4324 median_ns=4808 p90_ns=5828 max_ns=8364 ns_per_byte=0.07336 gbps=13.631 cycles_per_byte=0.3472 core_ghz=4.732 calib_spread_pct=0.68 checksum=0x0efff33f436b558a
+proto row cpu=0 doc=syn-strings-64k unit=s1_fastesc bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=4133 p10_ns=4163 median_ns=4800 p90_ns=5550 max_ns=6769 ns_per_byte=0.07324 gbps=13.653 cycles_per_byte=0.3443 core_ghz=4.701 calib_spread_pct=2.02 checksum=0x0efff33f436b558a
+proto row cpu=0 doc=syn-dense-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=4296 p10_ns=4310 median_ns=4337 p90_ns=5065 max_ns=5906 ns_per_byte=0.06618 gbps=15.111 cycles_per_byte=0.3170 core_ghz=4.790 calib_spread_pct=1.49 checksum=0x1f43c566f518b152
+proto row cpu=0 doc=syn-dense-64k unit=s1_fastesc bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=3806 p10_ns=3824 median_ns=3850 p90_ns=5048 max_ns=6411 ns_per_byte=0.05875 gbps=17.022 cycles_per_byte=0.2764 core_ghz=4.705 calib_spread_pct=0.51 checksum=0x1f43c566f518b152
+old   row cpu=0 doc=syn-strings-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=3794 p10_ns=3811 median_ns=4294 p90_ns=5034 max_ns=5896 ns_per_byte=0.06552 gbps=15.262 cycles_per_byte=0.3111 core_ghz=4.748 calib_spread_pct=1.93 checksum=0x0efff33f436b558a
+old   row cpu=0 doc=syn-strings-64k unit=s1_fastesc bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=4343 p10_ns=4360 median_ns=4410 p90_ns=5319 max_ns=6286 ns_per_byte=0.06729 gbps=14.861 cycles_per_byte=0.3233 core_ghz=4.805 calib_spread_pct=0.75 checksum=0x0efff33f436b558a
+old   row cpu=0 doc=syn-dense-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=3802 p10_ns=3819 median_ns=4320 p90_ns=5060 max_ns=5926 ns_per_byte=0.06592 gbps=15.170 cycles_per_byte=0.3136 core_ghz=4.757 calib_spread_pct=4.89 checksum=0x1f43c566f518b152
+old   row cpu=0 doc=syn-dense-64k unit=s1_fastesc bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=4221 p10_ns=4240 median_ns=4939 p90_ns=6354 max_ns=12824 ns_per_byte=0.07536 gbps=13.269 cycles_per_byte=0.3607 core_ghz=4.786 calib_spread_pct=0.52 checksum=0x1f43c566f518b152
+proto row cpu=0 doc=syn-strings-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=3800 p10_ns=3812 median_ns=3853 p90_ns=5035 max_ns=5933 ns_per_byte=0.05879 gbps=17.009 cycles_per_byte=0.2804 core_ghz=4.769 calib_spread_pct=0.91 checksum=0x0efff33f436b558a
+proto row cpu=0 doc=syn-strings-64k unit=s1_fastesc bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=3810 p10_ns=3930 median_ns=4343 p90_ns=6053 max_ns=6875 ns_per_byte=0.06627 gbps=15.090 cycles_per_byte=0.3215 core_ghz=4.852 calib_spread_pct=0.81 checksum=0x0efff33f436b558a
+proto row cpu=0 doc=syn-dense-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=4297 p10_ns=4317 median_ns=4772 p90_ns=5550 max_ns=6911 ns_per_byte=0.07281 gbps=13.733 cycles_per_byte=0.3521 core_ghz=4.835 calib_spread_pct=0.19 checksum=0x1f43c566f518b152
+proto row cpu=0 doc=syn-dense-64k unit=s1_fastesc bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=3798 p10_ns=3930 median_ns=4323 p90_ns=5036 max_ns=5940 ns_per_byte=0.06596 gbps=15.160 cycles_per_byte=0.3173 core_ghz=4.810 calib_spread_pct=1.83 checksum=0x1f43c566f518b152
+old   row cpu=0 doc=syn-strings-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=3799 p10_ns=3808 median_ns=3827 p90_ns=5030 max_ns=7460 ns_per_byte=0.05840 gbps=17.125 cycles_per_byte=0.2817 core_ghz=4.824 calib_spread_pct=0.67 checksum=0x0efff33f436b558a
+old   row cpu=0 doc=syn-strings-64k unit=s1_fastesc bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=4234 p10_ns=4292 median_ns=4847 p90_ns=5246 max_ns=7290 ns_per_byte=0.07396 gbps=13.521 cycles_per_byte=0.3532 core_ghz=4.776 calib_spread_pct=2.66 checksum=0x0efff33f436b558a
+old   row cpu=0 doc=syn-dense-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=3787 p10_ns=3805 median_ns=4314 p90_ns=5545 max_ns=7273 ns_per_byte=0.06583 gbps=15.191 cycles_per_byte=0.3094 core_ghz=4.701 calib_spread_pct=2.71 checksum=0x1f43c566f518b152
+old   row cpu=0 doc=syn-dense-64k unit=s1_fastesc bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=4598 p10_ns=4661 median_ns=4839 p90_ns=5320 max_ns=8095 ns_per_byte=0.07384 gbps=13.543 cycles_per_byte=0.3531 core_ghz=4.782 calib_spread_pct=0.66 checksum=0x1f43c566f518b152
+proto row cpu=0 doc=syn-strings-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=3814 p10_ns=4307 median_ns=4806 p90_ns=5086 max_ns=6909 ns_per_byte=0.07333 gbps=13.636 cycles_per_byte=0.3432 core_ghz=4.680 calib_spread_pct=1.17 checksum=0x0efff33f436b558a
+proto row cpu=0 doc=syn-strings-64k unit=s1_fastesc bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=3798 p10_ns=3816 median_ns=3843 p90_ns=5067 max_ns=8536 ns_per_byte=0.05864 gbps=17.053 cycles_per_byte=0.2786 core_ghz=4.752 calib_spread_pct=0.40 checksum=0x0efff33f436b558a
+proto row cpu=0 doc=syn-dense-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=3807 p10_ns=3836 median_ns=4327 p90_ns=5035 max_ns=5955 ns_per_byte=0.06602 gbps=15.146 cycles_per_byte=0.3146 core_ghz=4.765 calib_spread_pct=0.98 checksum=0x1f43c566f518b152
+proto row cpu=0 doc=syn-dense-64k unit=s1_fastesc bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=3839 p10_ns=3851 median_ns=3878 p90_ns=5115 max_ns=5960 ns_per_byte=0.05917 gbps=16.899 cycles_per_byte=0.2799 core_ghz=4.730 calib_spread_pct=0.77 checksum=0x1f43c566f518b152
+old   row cpu=0 doc=syn-strings-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=3802 p10_ns=3835 median_ns=4322 p90_ns=5033 max_ns=5958 ns_per_byte=0.06595 gbps=15.163 cycles_per_byte=0.3150 core_ghz=4.777 calib_spread_pct=2.67 checksum=0x0efff33f436b558a
+old   row cpu=0 doc=syn-strings-64k unit=s1_fastesc bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=4238 p10_ns=4257 median_ns=4800 p90_ns=5298 max_ns=7428 ns_per_byte=0.07324 gbps=13.653 cycles_per_byte=0.3532 core_ghz=4.823 calib_spread_pct=1.00 checksum=0x0efff33f436b558a
+old   row cpu=0 doc=syn-dense-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=4307 p10_ns=4319 median_ns=4454 p90_ns=5061 max_ns=29919 ns_per_byte=0.06796 gbps=14.714 cycles_per_byte=0.3136 core_ghz=4.615 calib_spread_pct=6.33 checksum=0x1f43c566f518b152
+old   row cpu=0 doc=syn-dense-64k unit=s1_fastesc bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=4235 p10_ns=4256 median_ns=4810 p90_ns=5231 max_ns=7373 ns_per_byte=0.07339 gbps=13.625 cycles_per_byte=0.3483 core_ghz=4.745 calib_spread_pct=4.20 checksum=0x1f43c566f518b152
+proto row cpu=0 doc=syn-strings-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=4144 p10_ns=4169 median_ns=4471 p90_ns=5260 max_ns=7545 ns_per_byte=0.06822 gbps=14.658 cycles_per_byte=0.3156 core_ghz=4.626 calib_spread_pct=0.50 checksum=0x0efff33f436b558a
+proto row cpu=0 doc=syn-strings-64k unit=s1_fastesc bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=3787 p10_ns=3810 median_ns=3843 p90_ns=5066 max_ns=7097 ns_per_byte=0.05864 gbps=17.053 cycles_per_byte=0.2806 core_ghz=4.785 calib_spread_pct=0.78 checksum=0x0efff33f436b558a
+proto row cpu=0 doc=syn-dense-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=3882 p10_ns=4365 median_ns=5231 p90_ns=5285 max_ns=9031 ns_per_byte=0.07982 gbps=12.528 cycles_per_byte=0.3836 core_ghz=4.806 calib_spread_pct=2.28 checksum=0x1f43c566f518b152
+proto row cpu=0 doc=syn-dense-64k unit=s1_fastesc bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=3802 p10_ns=3830 median_ns=4334 p90_ns=5029 max_ns=6992 ns_per_byte=0.06613 gbps=15.121 cycles_per_byte=0.3176 core_ghz=4.802 calib_spread_pct=1.59 checksum=0x1f43c566f518b152
+old   row cpu=0 doc=syn-strings-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=3796 p10_ns=3824 median_ns=4317 p90_ns=5046 max_ns=6495 ns_per_byte=0.06587 gbps=15.181 cycles_per_byte=0.3128 core_ghz=4.748 calib_spread_pct=4.18 checksum=0x0efff33f436b558a
+old   row cpu=0 doc=syn-strings-64k unit=s1_fastesc bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=4240 p10_ns=4293 median_ns=4843 p90_ns=5204 max_ns=6136 ns_per_byte=0.07390 gbps=13.532 cycles_per_byte=0.3547 core_ghz=4.800 calib_spread_pct=1.46 checksum=0x0efff33f436b558a
+old   row cpu=0 doc=syn-dense-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=3799 p10_ns=3824 median_ns=4323 p90_ns=5033 max_ns=6597 ns_per_byte=0.06596 gbps=15.160 cycles_per_byte=0.3166 core_ghz=4.800 calib_spread_pct=0.42 checksum=0x1f43c566f518b152
+old   row cpu=0 doc=syn-dense-64k unit=s1_fastesc bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=4329 p10_ns=4346 median_ns=4408 p90_ns=5212 max_ns=6209 ns_per_byte=0.06726 gbps=14.868 cycles_per_byte=0.3265 core_ghz=4.854 calib_spread_pct=0.20 checksum=0x1f43c566f518b152
+proto row cpu=0 doc=syn-strings-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=4142 p10_ns=4176 median_ns=4336 p90_ns=5075 max_ns=9030 ns_per_byte=0.06616 gbps=15.114 cycles_per_byte=0.3104 core_ghz=4.692 calib_spread_pct=0.65 checksum=0x0efff33f436b558a
+proto row cpu=0 doc=syn-strings-64k unit=s1_fastesc bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=3797 p10_ns=3823 median_ns=5225 p90_ns=5281 max_ns=11006 ns_per_byte=0.07973 gbps=12.543 cycles_per_byte=0.3751 core_ghz=4.705 calib_spread_pct=1.75 checksum=0x0efff33f436b558a
+proto row cpu=0 doc=syn-dense-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=3790 p10_ns=3818 median_ns=4313 p90_ns=5042 max_ns=8054 ns_per_byte=0.06581 gbps=15.195 cycles_per_byte=0.3099 core_ghz=4.709 calib_spread_pct=1.80 checksum=0x1f43c566f518b152
+proto row cpu=0 doc=syn-dense-64k unit=s1_fastesc bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=3797 p10_ns=3823 median_ns=4785 p90_ns=5060 max_ns=10175 ns_per_byte=0.07301 gbps=13.696 cycles_per_byte=0.3486 core_ghz=4.774 calib_spread_pct=1.01 checksum=0x1f43c566f518b152
+old   row cpu=0 doc=syn-strings-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=3793 p10_ns=3824 median_ns=4322 p90_ns=5064 max_ns=5977 ns_per_byte=0.06595 gbps=15.163 cycles_per_byte=0.3072 core_ghz=4.658 calib_spread_pct=0.37 checksum=0x0efff33f436b558a
+old   row cpu=0 doc=syn-strings-64k unit=s1_fastesc bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=4241 p10_ns=4286 median_ns=4685 p90_ns=5737 max_ns=6944 ns_per_byte=0.07149 gbps=13.988 cycles_per_byte=0.3364 core_ghz=4.706 calib_spread_pct=2.89 checksum=0x0efff33f436b558a
+old   row cpu=0 doc=syn-dense-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=4132 p10_ns=4147 median_ns=4180 p90_ns=5561 max_ns=6620 ns_per_byte=0.06378 gbps=15.678 cycles_per_byte=0.3010 core_ghz=4.719 calib_spread_pct=1.15 checksum=0x1f43c566f518b152
+old   row cpu=0 doc=syn-dense-64k unit=s1_fastesc bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=4237 p10_ns=4260 median_ns=4638 p90_ns=5757 max_ns=7768 ns_per_byte=0.07077 gbps=14.130 cycles_per_byte=0.3347 core_ghz=4.730 calib_spread_pct=0.80 checksum=0x1f43c566f518b152
+proto row cpu=0 doc=syn-strings-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=3795 p10_ns=3825 median_ns=4321 p90_ns=5035 max_ns=6068 ns_per_byte=0.06593 gbps=15.167 cycles_per_byte=0.3184 core_ghz=4.829 calib_spread_pct=1.67 checksum=0x0efff33f436b558a
+proto row cpu=0 doc=syn-strings-64k unit=s1_fastesc bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=4291 p10_ns=4299 median_ns=4322 p90_ns=5043 max_ns=6098 ns_per_byte=0.06595 gbps=15.163 cycles_per_byte=0.3189 core_ghz=4.836 calib_spread_pct=1.45 checksum=0x0efff33f436b558a
+proto row cpu=0 doc=syn-dense-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=3893 p10_ns=3913 median_ns=4619 p90_ns=5666 max_ns=9017 ns_per_byte=0.07048 gbps=14.188 cycles_per_byte=0.3290 core_ghz=4.667 calib_spread_pct=0.29 checksum=0x1f43c566f518b152
+proto row cpu=0 doc=syn-dense-64k unit=s1_fastesc bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=3804 p10_ns=3821 median_ns=4318 p90_ns=5035 max_ns=5909 ns_per_byte=0.06589 gbps=15.177 cycles_per_byte=0.3202 core_ghz=4.861 calib_spread_pct=0.33 checksum=0x1f43c566f518b152
+old   row cpu=0 doc=syn-strings-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=3794 p10_ns=3820 median_ns=4322 p90_ns=5029 max_ns=5942 ns_per_byte=0.06595 gbps=15.163 cycles_per_byte=0.3156 core_ghz=4.785 calib_spread_pct=0.03 checksum=0x0efff33f436b558a
+old   row cpu=0 doc=syn-strings-64k unit=s1_fastesc bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=4256 p10_ns=4798 median_ns=4869 p90_ns=5240 max_ns=7573 ns_per_byte=0.07430 gbps=13.460 cycles_per_byte=0.3522 core_ghz=4.740 calib_spread_pct=0.53 checksum=0x0efff33f436b558a
+old   row cpu=0 doc=syn-dense-64k unit=s1_masks bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=3802 p10_ns=3813 median_ns=3840 p90_ns=5042 max_ns=5930 ns_per_byte=0.05859 gbps=17.067 cycles_per_byte=0.2756 core_ghz=4.703 calib_spread_pct=0.58 checksum=0x1f43c566f518b152
+old   row cpu=0 doc=syn-dense-64k unit=s1_fastesc bytes=65536 touch=65536 blocks=1024 reps=101 min_ns=4227 p10_ns=4349 median_ns=4926 p90_ns=5893 max_ns=7549 ns_per_byte=0.07516 gbps=13.304 cycles_per_byte=0.3606 core_ghz=4.797 calib_spread_pct=0.02 checksum=0x1f43c566f518b152
+
+Summary (cycles/byte; median of the seven per-trial medians)
+-------------------------------------------------------------
+  document         old (measured)   adopted kernel   prototype   adopted vs old   prototype vs old
+  syn-strings-64k  0.3522           0.3111           0.3189      11.67 %            9.45 %
+  syn-dense-64k    0.3483           0.3136           0.3173       9.96 %            8.90 %
+
+  adopted vs old = (old - adopted) / old * 100, both rows from the `old` harness (one process,
+  one round, same data): positive means the adopted kernel is faster.
+  prototype vs old = (old - prototype) / old * 100, the prototype row from `proto` and the old
+  row from `old` (interleaved processes); the prototype is the same arithmetic as the adopted
+  kernel, so this is the cross-check on the old column.
+
+Adopted kernel vs prototype copy (within the `proto` harness): strings
+0.3184 vs 0.3189 (-0.16 % relative to the adopted row),
+dense 0.3170 vs 0.3173 (-0.09 %).
+The prototype is a separate noinline translation unit; the adopted form is inlined into
+`s1f_masks`.  The per-trial percentages overlap zero and range from -11.3 % to +26.4 % on
+strings and -21.6 % to +4.4 % on dense, so the two are the same code within measurement
+noise; the old column is the one that differs systematically.

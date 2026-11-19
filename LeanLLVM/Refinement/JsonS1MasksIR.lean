@@ -24,8 +24,8 @@ parameters to the ABI's `%p`, `%c`, `%o`.
 
 ## What is proved here, and what the steps module proves
 
-`s1Calls` is the body's call environment — the five intrinsic targets resolved to
-`pshufbLanes`, `clmul` at immediate 0, and `BitLanes`' `pext`/`pdep`/`ctlz` — so
+`s1Calls` is the body's call environment — the two intrinsic targets resolved to
+`pshufbLanes` and `clmul` at immediate 0 — so
 a run of the body has a meaning: under `noCalls` the body's first call is `ub`
 and every statement about it is vacuous.
 
@@ -64,7 +64,6 @@ namespace LeanLLVM.Refinement.JsonS1MasksIR
 open LeanLLVM
 open LeanLLVM.JSON (Block32 IsQuoteB IsBackslashB IsSpaceB IsStructuralB IsStructOrSpaceB
   maskOfList maskOfListWith)
-open LeanLLVM.Refinement.BitLanes (pext pdep ctlz)
 open LeanLLVM.Refinement.Pclmul (clmul)
 open LeanLLVM.Refinement.JsonScanSpec
 
@@ -194,63 +193,47 @@ def s1MasksInstrs : List Instr := [
   .zext "%conv3.i.i" 32 64 (.reg "%not.i8.i.i"),
   .binop "%shl4.i.i" .shl 64 (.reg "%conv3.i.i") (lit 64 32),
   .binop "%or5.i.i" .or 64 (.reg "%shl4.i.i") (.reg "%conv2.i.i"),
-  -- `s1f_escaped`: the run starts and lasts, the two `pext`s, the `pdep` and the
-  -- outgoing run parity.
+  -- `s1f_escaped`: the two carry-propagating sums, the boundary lane and the
+  -- outgoing run parity, from the backslash word and the carry slot.
   .gep "%esc_ppar.i" (.int 8) (.reg "%c") (lit 64 8),
-  .binop "%shl.i61.i" .shl 64 (.reg "%or14.i") (lit 64 1),
   .load "%32" (.int 64) (.reg "%c"),
-  .binop "%or.i62.i" .or 64 (.reg "%shl.i61.i") (.reg "%32"),
-  .binop "%not.i.i" .xor 64 (.reg "%or.i62.i") (lit 64 (-1)),
-  .binop "%and.i.i" .and 64 (.reg "%or14.i") (.reg "%not.i.i"),
-  .binop "%and1.i.i" .and 64 (.reg "%conv9.i") (lit 64 1),
-  .binop "%and2.i.i" .and 64 (.reg "%32") (.reg "%and1.i.i"),
-  .binop "%or3.i.i" .or 64 (.reg "%and.i.i") (.reg "%and2.i.i"),
-  .binop "%shr.i.i" .lshr 64 (.reg "%or14.i") (lit 64 1),
-  .binop "%not4.i.i" .xor 64 (.reg "%shr.i.i") (lit 64 (-1)),
-  .binop "%and5.i.i" .and 64 (.reg "%or14.i") (.reg "%not4.i.i"),
-  .binop "%shl6.i.i" .shl 64 (.reg "%and5.i.i") (lit 64 1),
   .load "%33" (.int 64) (.reg "%esc_ppar.i"),
-  .binop "%and7.i.i" .and 64 (.reg "%33") (.reg "%32"),
-  .binop "%xor.i.i" .xor 64 (.reg "%and7.i.i") (lit 64 0x5555555555555555),
-  .call "%34" (.int 64) "llvm.x86.bmi.pext.64"
-    [(.int 64, .reg "%xor.i.i"), (.int 64, .reg "%or3.i.i")],
-  .call "%35" (.int 64) "llvm.x86.bmi.pext.64"
-    [(.int 64, lit 64 0x5555555555555555), (.int 64, .reg "%and5.i.i")],
-  .binop "%36" .xor 64 (.reg "%34") (.reg "%35"),
-  .binop "%not10.i.i" .xor 64 (.reg "%36") (lit 64 (-1)),
-  .call "%37" (.int 64) "llvm.x86.bmi.pdep.64"
-    [(.int 64, .reg "%not10.i.i"), (.int 64, .reg "%shl6.i.i")],
-  .icmp "%cmp.i63.i" .ne 64 (.reg "%or14.i") (lit 64 (-1)),
-  .icmp "%tobool.not.i.i" .eq 64 (.reg "%32") (lit 64 0),
-  .select "%or.cond.i.i" (.int 1) (.reg "%cmp.i63.i") (lit 1 1)
-    (.reg "%tobool.not.i.i"),
-  .select "%cond24.i.i" (.int 64) (.reg "%or.cond.i.i") (lit 64 0)
-    (.reg "%33"),
-  .binop "%not17.i.i" .xor 64 (.reg "%or14.i") (lit 64 (-1)),
-  .call "%38" (.int 64) "llvm.ctlz.i64"
-    [(.int 64, .reg "%not17.i.i"), (.int 1, lit 1 0)],
-  .binop "%shr16.i.i" .lshr 64 (.reg "%conv12.i") (lit 64 31),
-  .binop "%not12.i.i" .xor 64 (.reg "%and1.i.i") (lit 64 (-1)),
-  .binop "%39" .and 64 (.reg "%32") (.reg "%not12.i.i"),
-  .binop "%and14.i.i" .and 64 (.reg "%39") (.reg "%33"),
-  .binop "%or15.i.i" .or 64 (.reg "%37") (.reg "%and14.i.i"),
-  .binop "%xor25.i.i" .xor 64 (.reg "%cond24.i.i") (.reg "%38"),
-  .binop "%and26.i.i" .and 64 (.reg "%xor25.i.i") (.reg "%shr16.i.i"),
+  .binop "%and.i.i" .and 64 (.reg "%33") (.reg "%32"),
+  .binop "%shl.i61.i" .shl 64 (.reg "%or14.i") (lit 64 1),
+  .binop "%not.i.i" .xor 64 (.reg "%shl.i61.i") (lit 64 (-1)),
+  .binop "%and1.i.i" .and 64 (.reg "%or14.i") (.reg "%not.i.i"),
+  .binop "%xor.i.i" .xor 64 (.reg "%and.i.i") (lit 64 0x5555555555555555),
+  .binop "%and2.i.i" .and 64 (.reg "%xor.i.i") (.reg "%and1.i.i"),
+  .binop "%xor3.i.i" .xor 64 (.reg "%and2.i.i") (.reg "%and1.i.i"),
+  .binop "%not4.i.i" .xor 64 (.reg "%or14.i") (lit 64 (-1)),
+  .binop "%add.i.i" .add 64 (.reg "%and2.i.i") (.reg "%or14.i"),
+  .binop "%add5.i.i" .add 64 (.reg "%xor3.i.i") (.reg "%or14.i"),
+  .binop "%and6.i.i" .and 64 (.reg "%not4.i.i") (lit 64 (-6148914691236517206)),
+  .binop "%and7.i.i" .and 64 (.reg "%and6.i.i") (.reg "%add.i.i"),
+  .binop "%and8.i.i" .and 64 (.reg "%not4.i.i") (lit 64 0x5555555555555555),
+  .binop "%and9.i.i" .and 64 (.reg "%and8.i.i") (.reg "%add5.i.i"),
+  .binop "%and10.i.i" .and 64 (.reg "%not4.i.i") (lit 64 1),
+  .binop "%and11.i.i" .and 64 (.reg "%and10.i.i") (.reg "%and.i.i"),
+  .binop "%or.i62.i" .or 64 (.reg "%and7.i.i") (.reg "%and11.i.i"),
+  .binop "%or12.i.i" .or 64 (.reg "%or.i62.i") (.reg "%and9.i.i"),
+  .icmp "%cmp.i63.i" .ult 64 (.reg "%add5.i.i") (.reg "%or14.i"),
+  .zext "%conv13.i.i" 1 64 (.reg "%cmp.i63.i"),
   -- The carry, in place.
-  .store (.int 64) (.reg "%and26.i.i") (.reg "%esc_ppar.i"),
-  .store (.int 64) (.reg "%shr16.i.i") (.reg "%c"),
+  .store (.int 64) (.reg "%conv13.i.i") (.reg "%esc_ppar.i"),
+  .binop "%shr.i.i" .lshr 64 (.reg "%conv12.i") (lit 64 31),
+  .store (.int 64) (.reg "%shr.i.i") (.reg "%c"),
   -- `s1f_prefix_xor`: the clmul with an all-ones operand, lane 0 only.
-  .binop "%not.i" .xor 64 (.reg "%or15.i.i") (lit 64 (-1)),
+  .binop "%not.i" .xor 64 (.reg "%or12.i.i") (lit 64 (-1)),
   .binop "%and.i" .and 64 (.reg "%or.i") (.reg "%not.i"),
   .insertelement "%vecinit1.i.i.i" 2 64 (.imm (.splat 2 64 (BitVec.ofNat 64 0)))
     (.reg "%and.i") (lit 64 0),
-  .call "%40" (.vec 2 (.int 64)) "llvm.x86.pclmulqdq"
+  .call "%34" (.vec 2 (.int 64)) "llvm.x86.pclmulqdq"
     [(.vec 2 (.int 64), .reg "%vecinit1.i.i.i"),
      (.vec 2 (.int 64), lanesOf 64 [-1, 0]), (.int 8, lit 8 0)],
-  .extractelement "%vecext.i.i.i" 2 64 (.reg "%40") (lit 64 0),
+  .extractelement "%vecext.i.i.i" 2 64 (.reg "%34") (lit 64 0),
   .gep "%im_carry.i" (.int 8) (.reg "%c") (lit 64 16),
-  .load "%41" (.int 64) (.reg "%im_carry.i"),
-  .binop "%xor.i" .xor 64 (.reg "%vecext.i.i.i") (.reg "%41"),
+  .load "%35" (.int 64) (.reg "%im_carry.i"),
+  .binop "%xor.i" .xor 64 (.reg "%vecext.i.i.i") (.reg "%35"),
   .binop "%shr.i" .ashr 64 (.reg "%xor.i") (lit 64 63),
   .store (.int 64) (.reg "%shr.i") (.reg "%im_carry.i"),
   -- The six word stores at the output slot.
@@ -277,6 +260,8 @@ def s1MasksFunction : Function :=
     params := [("%p", .ptr), ("%c", .ptr), ("%o", .ptr)],
     blocks := [s1MasksBody] }
 
+
+
 /-! ### The pin -/
 
 -- The committed text parses to the AST above: the pin is that the two are one
@@ -295,22 +280,21 @@ def s1MasksFunction : Function :=
 
 /-! ### The call environment
 
-The body calls five intrinsic targets, and `evalInstr`'s `.call` case consults
+The body calls two intrinsic targets, and `evalInstr`'s `.call` case consults
 `Calls`; `noCalls` answers `none`, which `step` reads as `ub`, so a statement
 over `noCalls` says nothing about this body.  The environment below resolves
-exactly those five, each to the definition the fragment already has — the same
+exactly those two, each to the definition the fragment already has — the same
 shape `envForScanWindow` uses for the scanner's body — and nothing else: an
 unresolved call stays `ub`.
 
 The operand shapes are the parser's (`checkIntrinsicShape`): `pshuf.b` at two
-`<32 x i8>` operands, `pclmulqdq` at a `<2 x i64>` pair and immediate 0, `pext`
-and `pdep` at two `i64`, and `ctlz.i64` with the flag `i1 false`.  A call whose
-symbol or operands are any other shape is refused here rather than approximated.
+`<32 x i8>` operands and `pclmulqdq` at a `<2 x i64>` pair and immediate 0.  A
+call whose symbol or operands are any other shape is refused here rather than
+approximated.
 
 `pclmulqdq` at immediate 0 multiplies lane 0 of each operand and writes the
 product into lane 0 of the result, leaving lane 1 zero — the immediate selects
-the lanes, so the second lane is not a second product.  `ctlz` at the zero word
-is the width, which is the flag's `false` case. -/
+the lanes, so the second lane is not a second product. -/
 
 /-- The unit's reference call environment. -/
 def s1Calls : Calls :=
@@ -326,18 +310,10 @@ def s1Calls : Calls :=
                      mem := mem, next := next }
             else none
         | _, _ => none
-    | "llvm.x86.bmi.pext.64", [.int 64 a, .int 64 m] =>
-        some { ret := .int 64 (pext a m), mem := mem, next := next }
-    | "llvm.x86.bmi.pdep.64", [.int 64 a, .int 64 m] =>
-        some { ret := .int 64 (pdep a m), mem := mem, next := next }
-    | "llvm.ctlz.i64", [.int 64 x, .int 1 flag] =>
-        if flag.toNat = 0 then
-          some { ret := .int 64 (BitVec.ofNat 64 (ctlz x)), mem := mem, next := next }
-        else none
     | _, _ => none
 
 /-- **The mask unit's caller-visible footprint is empty.**  Every arm returns the
-caller's memory — the five spellings are register operations on their operands —
+caller's memory — the two spellings are register operations on their operands —
 so no address the caller holds can change across the call. -/
 def s1CallsFootprint : CallsFootprint s1Calls :=
   CallsFootprint.pure s1Calls (by
@@ -359,24 +335,6 @@ theorem s1Calls_pclmulqdq (a0 a1 b0 b1 : BitVec 64) (mem : Mem) (next : Nat) :
         [.vec 2 64 [a0, a1], .vec 2 64 [b0, b1], .int 8 (0 : BitVec 8)] mem next =
       some { ret := .vec 2 64 [clmul a0 b0, (0 : BitVec 64)],
              mem := mem, next := next } :=
-  rfl
-
-/-- The gather. -/
-theorem s1Calls_pext (a m : BitVec 64) (mem : Mem) (next : Nat) :
-    s1Calls "llvm.x86.bmi.pext.64" [.int 64 a, .int 64 m] mem next =
-      some { ret := .int 64 (pext a m), mem := mem, next := next } :=
-  rfl
-
-/-- The scatter. -/
-theorem s1Calls_pdep (a m : BitVec 64) (mem : Mem) (next : Nat) :
-    s1Calls "llvm.x86.bmi.pdep.64" [.int 64 a, .int 64 m] mem next =
-      some { ret := .int 64 (pdep a m), mem := mem, next := next } :=
-  rfl
-
-/-- The leading-zero count with the flag `false`. -/
-theorem s1Calls_ctlz (x : BitVec 64) (mem : Mem) (next : Nat) :
-    s1Calls "llvm.ctlz.i64" [.int 64 x, .int 1 (0 : BitVec 1)] mem next =
-      some { ret := .int 64 (BitVec.ofNat 64 (ctlz x)), mem := mem, next := next } :=
   rfl
 
 /-! ### The specification's vocabulary

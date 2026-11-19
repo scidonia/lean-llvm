@@ -23,5 +23,5 @@
 class	kind	from	to	line	reason
 -	rename	%carry	%c	1	parameter rename to the ABI's spelling: a register name is not part of the computation, and the capture shows it so by emitting the source with and without -fno-discard-value-names and comparing the two texts with every register name replaced by one placeholder
 -	rename	%out	%o	1	parameter rename to the ABI's spelling: a register name is not part of the computation, and the capture shows it so by emitting the source with and without -fno-discard-value-names and comparing the two texts with every register name replaced by one placeholder
-6	substituted	poison	zeroinitializer	99	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
-6	substituted	poison	0	100	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
+6	substituted	poison	zeroinitializer	89	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
+6	substituted	poison	0	90	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place

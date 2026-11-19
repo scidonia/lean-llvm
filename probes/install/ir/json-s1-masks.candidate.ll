@@ -26,7 +26,6 @@
 ;   target triple = "x86_64-unknown-linux-gnu"
 ;   attributes #0 = { mustprogress nofree norecurse nosync nounwind sspstrong willreturn memory(argmem: readwrite) uwtable "frame-pointer"="all" "min-legal-vector-width"="256" "no-trapping-math"="true" "probe-stack"="inline-asm" "stack-protector-buffer-size"="4" "target-cpu"="x86-64-v3" "target-features"="+avx,+avx2,+bmi,+bmi2,+cmov,+crc32,+cx16,+cx8,+f16c,+fma,+fxsr,+lzcnt,+mmx,+movbe,+pclmul,+popcnt,+sahf,+sse,+sse2,+sse3,+sse4.1,+sse4.2,+ssse3,+x87,+xsave" "zero-call-used-regs"="used-gpr" }
 ;   attributes #1 = { mustprogress nocallback nofree nosync nounwind willreturn memory(none) }
-;   attributes #2 = { mustprogress nocallback nofree nosync nounwind speculatable willreturn memory(none) }
 ;
 ; The fixture's own opcodes and call targets are in json-s1-masks.inventory.
 define void @leanllvm_json_s1_masks(ptr %p, ptr %c, ptr %o) {
@@ -90,49 +89,39 @@ entry:
   %shl4.i.i = shl i64 %conv3.i.i, 32
   %or5.i.i = or i64 %shl4.i.i, %conv2.i.i
   %esc_ppar.i = getelementptr inbounds i8, ptr %c, i64 8
-  %shl.i61.i = shl i64 %or14.i, 1
   %32 = load i64, ptr %c
-  %or.i62.i = or i64 %shl.i61.i, %32
-  %not.i.i = xor i64 %or.i62.i, -1
-  %and.i.i = and i64 %or14.i, %not.i.i
-  %and1.i.i = and i64 %conv9.i, 1
-  %and2.i.i = and i64 %32, %and1.i.i
-  %or3.i.i = or i64 %and.i.i, %and2.i.i
-  %shr.i.i = lshr i64 %or14.i, 1
-  %not4.i.i = xor i64 %shr.i.i, -1
-  %and5.i.i = and i64 %or14.i, %not4.i.i
-  %shl6.i.i = shl i64 %and5.i.i, 1
   %33 = load i64, ptr %esc_ppar.i
-  %and7.i.i = and i64 %33, %32
-  %xor.i.i = xor i64 %and7.i.i, 6148914691236517205
-  %34 = tail call i64 @llvm.x86.bmi.pext.64(i64 %xor.i.i, i64 %or3.i.i)
-  %35 = tail call i64 @llvm.x86.bmi.pext.64(i64 6148914691236517205, i64 %and5.i.i)
-  %36 = xor i64 %34, %35
-  %not10.i.i = xor i64 %36, -1
-  %37 = tail call i64 @llvm.x86.bmi.pdep.64(i64 %not10.i.i, i64 %shl6.i.i)
-  %cmp.i63.i = icmp ne i64 %or14.i, -1
-  %tobool.not.i.i = icmp eq i64 %32, 0
-  %or.cond.i.i = select i1 %cmp.i63.i, i1 true, i1 %tobool.not.i.i
-  %cond24.i.i = select i1 %or.cond.i.i, i64 0, i64 %33
-  %not17.i.i = xor i64 %or14.i, -1
-  %38 = tail call i64 @llvm.ctlz.i64(i64 %not17.i.i, i1 false)
-  %shr16.i.i = lshr i64 %conv12.i, 31
-  %not12.i.i = xor i64 %and1.i.i, -1
-  %39 = and i64 %32, %not12.i.i
-  %and14.i.i = and i64 %39, %33
-  %or15.i.i = or i64 %37, %and14.i.i
-  %xor25.i.i = xor i64 %cond24.i.i, %38
-  %and26.i.i = and i64 %xor25.i.i, %shr16.i.i
-  store i64 %and26.i.i, ptr %esc_ppar.i
-  store i64 %shr16.i.i, ptr %c
-  %not.i = xor i64 %or15.i.i, -1
+  %and.i.i = and i64 %33, %32
+  %shl.i61.i = shl i64 %or14.i, 1
+  %not.i.i = xor i64 %shl.i61.i, -1
+  %and1.i.i = and i64 %or14.i, %not.i.i
+  %xor.i.i = xor i64 %and.i.i, 6148914691236517205
+  %and2.i.i = and i64 %xor.i.i, %and1.i.i
+  %xor3.i.i = xor i64 %and2.i.i, %and1.i.i
+  %not4.i.i = xor i64 %or14.i, -1
+  %add.i.i = add i64 %and2.i.i, %or14.i
+  %add5.i.i = add i64 %xor3.i.i, %or14.i
+  %and6.i.i = and i64 %not4.i.i, -6148914691236517206
+  %and7.i.i = and i64 %and6.i.i, %add.i.i
+  %and8.i.i = and i64 %not4.i.i, 6148914691236517205
+  %and9.i.i = and i64 %and8.i.i, %add5.i.i
+  %and10.i.i = and i64 %not4.i.i, 1
+  %and11.i.i = and i64 %and10.i.i, %and.i.i
+  %or.i62.i = or i64 %and7.i.i, %and11.i.i
+  %or12.i.i = or i64 %or.i62.i, %and9.i.i
+  %cmp.i63.i = icmp ult i64 %add5.i.i, %or14.i
+  %conv13.i.i = zext i1 %cmp.i63.i to i64
+  store i64 %conv13.i.i, ptr %esc_ppar.i
+  %shr.i.i = lshr i64 %conv12.i, 31
+  store i64 %shr.i.i, ptr %c
+  %not.i = xor i64 %or12.i.i, -1
   %and.i = and i64 %or.i, %not.i
   %vecinit1.i.i.i = insertelement <2 x i64> zeroinitializer, i64 %and.i, i64 0
-  %40 = tail call <2 x i64> @llvm.x86.pclmulqdq(<2 x i64> %vecinit1.i.i.i, <2 x i64> <i64 -1, i64 0>, i8 0)
-  %vecext.i.i.i = extractelement <2 x i64> %40, i64 0
+  %34 = tail call <2 x i64> @llvm.x86.pclmulqdq(<2 x i64> %vecinit1.i.i.i, <2 x i64> <i64 -1, i64 0>, i8 0)
+  %vecext.i.i.i = extractelement <2 x i64> %34, i64 0
   %im_carry.i = getelementptr inbounds i8, ptr %c, i64 16
-  %41 = load i64, ptr %im_carry.i
-  %xor.i = xor i64 %vecext.i.i.i, %41
+  %35 = load i64, ptr %im_carry.i
+  %xor.i = xor i64 %vecext.i.i.i, %35
   %shr.i = ashr i64 %xor.i, 63
   store i64 %shr.i, ptr %im_carry.i
   store i64 %and.i, ptr %o

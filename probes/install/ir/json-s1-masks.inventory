@@ -1,8 +1,6 @@
-call @llvm.ctlz.i64
 call @llvm.x86.avx2.pshuf.b
-call @llvm.x86.bmi.pdep.64
-call @llvm.x86.bmi.pext.64
 call @llvm.x86.pclmulqdq
+opcode add
 opcode and
 opcode ashr
 opcode bitcast
@@ -15,7 +13,6 @@ opcode load
 opcode lshr
 opcode or
 opcode ret
-opcode select
 opcode shl
 opcode shufflevector
 opcode store

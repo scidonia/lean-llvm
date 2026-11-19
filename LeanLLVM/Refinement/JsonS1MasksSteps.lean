@@ -135,7 +135,7 @@ open LeanLLVM
 open LeanLLVM.JSON (Block32 IsQuoteB IsBackslashB IsSpaceB)
 open LeanLLVM.Refinement.JsonScanSpec
 open LeanLLVM.Refinement.JsonS1MasksIR
-open LeanLLVM.Refinement.BitLanes (pext pdep ctlz)
+open LeanLLVM.Refinement.BitLanes
 open LeanLLVM.Refinement.QuoteDerive
 open LeanLLVM.Refinement.Pclmul (clmul seedVec specInString64_eq_clmul)
 
@@ -1866,41 +1866,34 @@ def oneW : BitVec 64 := BitVec.ofInt 64 1
 /-- The even-lanes constant, as the emission writes it. -/
 def evenC : BitVec 64 := BitVec.ofInt 64 0x5555555555555555
 
+def escAnd00W (k : Ctx) : BitVec 64 := bv (pparW k &&& openW k)
 def escShlW (k : Ctx) : BitVec 64 := bv (bsW k <<< 1)
-def escOr62W (k : Ctx) : BitVec 64 := bv (escShlW k ||| openW k)
-def escNotW (k : Ctx) : BitVec 64 := bv (escOr62W k ^^^ BitVec.allOnes 64)
-def escAndStartsW (k : Ctx) : BitVec 64 := bv (bsW k &&& escNotW k)
-def escAnd1W (k : Ctx) : BitVec 64 := bv (conv9W k &&& oneW)
-def escAnd2W (k : Ctx) : BitVec 64 := bv (openW k &&& escAnd1W k)
-def escOr3W (k : Ctx) : BitVec 64 := bv (escAndStartsW k ||| escAnd2W k)
-def escShrW (k : Ctx) : BitVec 64 := bv (bsW k >>> 1)
-def escNot4W (k : Ctx) : BitVec 64 := bv (escShrW k ^^^ BitVec.allOnes 64)
-def escAnd5W (k : Ctx) : BitVec 64 := bv (bsW k &&& escNot4W k)
-def escShl6W (k : Ctx) : BitVec 64 := bv (escAnd5W k <<< 1)
-def escAnd7W (k : Ctx) : BitVec 64 := bv (pparW k &&& openW k)
-def escXorEvenW (k : Ctx) : BitVec 64 := bv (escAnd7W k ^^^ evenC)
-def escPext1W (k : Ctx) : BitVec 64 := bv (pext (escXorEvenW k) (escOr3W k))
-def escPext2W (k : Ctx) : BitVec 64 := bv (pext evenC (escAnd5W k))
-def escXor36W (k : Ctx) : BitVec 64 := bv (escPext1W k ^^^ escPext2W k)
-def escNot10W (k : Ctx) : BitVec 64 := bv (escXor36W k ^^^ BitVec.allOnes 64)
-def escPdepW (k : Ctx) : BitVec 64 := bv (pdep (escNot10W k) (escShl6W k))
-def escCmp63L (k : Ctx) : BitVec 1 := evalICmp .ne (bsW k) (BitVec.ofInt 64 (-1))
-def escToboolL (k : Ctx) : BitVec 1 := evalICmp .eq (openW k) (BitVec.ofInt 64 0)
-def selBit (c a b : BitVec 1) : BitVec 1 := if c = 1 then a else b
-def escOrCondL (k : Ctx) : BitVec 1 := selBit (escCmp63L k) 1 (escToboolL k)
-def sel64 (c : BitVec 1) (a b : BitVec 64) : BitVec 64 := if c = 1 then a else b
-def escCond24W (k : Ctx) : BitVec 64 := sel64 (escOrCondL k) 0 (pparW k)
-def escNot17W (k : Ctx) : BitVec 64 := bv (bsW k ^^^ BitVec.allOnes 64)
-def escCtlzW (k : Ctx) : BitVec 64 := BitVec.ofNat 64 (ctlz (escNot17W k))
-def escShr16W (k : Ctx) : BitVec 64 := bv (conv12W k >>> 31)
-def escNot12W (k : Ctx) : BitVec 64 := bv (escAnd1W k ^^^ BitVec.allOnes 64)
-def escAnd39W (k : Ctx) : BitVec 64 := bv (openW k &&& escNot12W k)
-def escAnd14W (k : Ctx) : BitVec 64 := bv (escAnd39W k &&& pparW k)
-def escXor25W (k : Ctx) : BitVec 64 := bv (escCond24W k ^^^ escCtlzW k)
-def escAnd26W (k : Ctx) : BitVec 64 := bv (escXor25W k &&& escShr16W k)
+def escNotW (k : Ctx) : BitVec 64 := bv (escShlW k ^^^ BitVec.allOnes 64)
+def escStartsW (k : Ctx) : BitVec 64 := bv (bsW k &&& escNotW k)
+def escEvenAltW (k : Ctx) : BitVec 64 := bv (escAnd00W k ^^^ evenC)
+def escEvenClassW (k : Ctx) : BitVec 64 := bv (escEvenAltW k &&& escStartsW k)
+def escOddClassW (k : Ctx) : BitVec 64 := bv (escEvenClassW k ^^^ escStartsW k)
+def escNotBsW (k : Ctx) : BitVec 64 := bv (bsW k ^^^ BitVec.allOnes 64)
+def escSumEvenW (k : Ctx) : BitVec 64 := bv (escEvenClassW k + bsW k)
+def escSumOddW (k : Ctx) : BitVec 64 := bv (escOddClassW k + bsW k)
 
-/-- `s1f_escaped`'s return: `%or15.i.i`. -/
-def escapedWord (k : Ctx) : BitVec 64 := bv (escPdepW k ||| escAnd14W k)
+/-- The odd-lane constant `~~~0x5555…`, as the emission writes it. -/
+def evenNotC : BitVec 64 := BitVec.ofInt 64 (-6148914691236517206)
+
+def escAnd6W (k : Ctx) : BitVec 64 := bv (escNotBsW k &&& evenNotC)
+def escAnd7W (k : Ctx) : BitVec 64 := bv (escAnd6W k &&& escSumEvenW k)
+def escAnd8W (k : Ctx) : BitVec 64 := bv (escNotBsW k &&& evenC)
+def escAnd9W (k : Ctx) : BitVec 64 := bv (escAnd8W k &&& escSumOddW k)
+def escAnd10W (k : Ctx) : BitVec 64 := bv (escNotBsW k &&& oneW)
+def escAnd11W (k : Ctx) : BitVec 64 := bv (escAnd10W k &&& escAnd00W k)
+def escOr62W (k : Ctx) : BitVec 64 := bv (escAnd7W k ||| escAnd11W k)
+
+/-- `s1f_escaped`'s return: `%or12.i.i`. -/
+def escapedWord (k : Ctx) : BitVec 64 := bv (escOr62W k ||| escAnd9W k)
+
+def escCmp63L (k : Ctx) : BitVec 1 := evalICmp .ult (escSumOddW k) (bsW k)
+def escConv13W (k : Ctx) : BitVec 64 := BitVec.ofNat 64 (escCmp63L k).toNat
+def escShr16W (k : Ctx) : BitVec 64 := bv (conv12W k >>> 31)
 
 theorem oneW_eq : oneW = oneLane 64 true := by
   unfold oneW
@@ -1916,53 +1909,50 @@ theorem evenC_eq : evenLanes 64 = evenC := by
   rw [evenLanes_literal]
   decide
 
+theorem evenNotC_eq : evenNotC = ~~~evenC := by
+  unfold evenNotC evenC
+  decide
+
 /-! The words without the truncation `evalInstr` binds them in. -/
 
 theorem bsW_eq (k : Ctx) : bsW k = or14W k := by rw [bsW, bv_eq]
+theorem escAnd00W_eq (k : Ctx) : escAnd00W k = pparW k &&& openW k := by
+  rw [escAnd00W, bv_eq]
 theorem escShlW_eq (k : Ctx) : escShlW k = bsW k <<< 1 := by rw [escShlW, bv_eq]
-theorem escOr62W_eq (k : Ctx) : escOr62W k = escShlW k ||| openW k := by
-  rw [escOr62W, bv_eq]
-theorem escNotW_eq (k : Ctx) : escNotW k = escOr62W k ^^^ BitVec.allOnes 64 := by
+theorem escNotW_eq (k : Ctx) : escNotW k = escShlW k ^^^ BitVec.allOnes 64 := by
   rw [escNotW, bv_eq]
-theorem escAndStartsW_eq (k : Ctx) : escAndStartsW k = bsW k &&& escNotW k := by
-  rw [escAndStartsW, bv_eq]
-theorem escAnd1W_eq (k : Ctx) : escAnd1W k = conv9W k &&& oneW := by rw [escAnd1W, bv_eq]
-theorem escAnd2W_eq (k : Ctx) : escAnd2W k = openW k &&& escAnd1W k := by
-  rw [escAnd2W, bv_eq]
-theorem escOr3W_eq (k : Ctx) : escOr3W k = escAndStartsW k ||| escAnd2W k := by
-  rw [escOr3W, bv_eq]
-theorem escShrW_eq (k : Ctx) : escShrW k = bsW k >>> 1 := by rw [escShrW, bv_eq]
-theorem escNot4W_eq (k : Ctx) : escNot4W k = escShrW k ^^^ BitVec.allOnes 64 := by
-  rw [escNot4W, bv_eq]
-theorem escAnd5W_eq (k : Ctx) : escAnd5W k = bsW k &&& escNot4W k := by
-  rw [escAnd5W, bv_eq]
-theorem escShl6W_eq (k : Ctx) : escShl6W k = escAnd5W k <<< 1 := by rw [escShl6W, bv_eq]
-theorem escAnd7W_eq (k : Ctx) : escAnd7W k = pparW k &&& openW k := by
+theorem escStartsW_eq (k : Ctx) : escStartsW k = bsW k &&& escNotW k := by
+  rw [escStartsW, bv_eq]
+theorem escEvenAltW_eq (k : Ctx) : escEvenAltW k = escAnd00W k ^^^ evenC := by
+  rw [escEvenAltW, bv_eq]
+theorem escEvenClassW_eq (k : Ctx) : escEvenClassW k = escEvenAltW k &&& escStartsW k := by
+  rw [escEvenClassW, bv_eq]
+theorem escOddClassW_eq (k : Ctx) : escOddClassW k = escEvenClassW k ^^^ escStartsW k := by
+  rw [escOddClassW, bv_eq]
+theorem escNotBsW_eq (k : Ctx) : escNotBsW k = bsW k ^^^ BitVec.allOnes 64 := by
+  rw [escNotBsW, bv_eq]
+theorem escSumEvenW_eq (k : Ctx) : escSumEvenW k = escEvenClassW k + bsW k := by
+  rw [escSumEvenW, bv_eq]
+theorem escSumOddW_eq (k : Ctx) : escSumOddW k = escOddClassW k + bsW k := by
+  rw [escSumOddW, bv_eq]
+theorem escAnd6W_eq (k : Ctx) : escAnd6W k = escNotBsW k &&& evenNotC := by
+  rw [escAnd6W, bv_eq]
+theorem escAnd7W_eq (k : Ctx) : escAnd7W k = escAnd6W k &&& escSumEvenW k := by
   rw [escAnd7W, bv_eq]
-theorem escXorEvenW_eq (k : Ctx) : escXorEvenW k = escAnd7W k ^^^ evenC := by
-  rw [escXorEvenW, bv_eq]
-theorem escPext1W_eq (k : Ctx) : escPext1W k = pext (escXorEvenW k) (escOr3W k) := by
-  rw [escPext1W, bv_eq]
-theorem escPext2W_eq (k : Ctx) : escPext2W k = pext evenC (escAnd5W k) := by
-  rw [escPext2W, bv_eq]
-theorem escXor36W_eq (k : Ctx) : escXor36W k = escPext1W k ^^^ escPext2W k := by
-  rw [escXor36W, bv_eq]
-theorem escNot10W_eq (k : Ctx) : escNot10W k = escXor36W k ^^^ BitVec.allOnes 64 := by
-  rw [escNot10W, bv_eq]
-theorem escPdepW_eq (k : Ctx) : escPdepW k = pdep (escNot10W k) (escShl6W k) := by
-  rw [escPdepW, bv_eq]
-theorem escNot12W_eq (k : Ctx) : escNot12W k = escAnd1W k ^^^ BitVec.allOnes 64 := by
-  rw [escNot12W, bv_eq]
-theorem escAnd39W_eq (k : Ctx) : escAnd39W k = openW k &&& escNot12W k := by
-  rw [escAnd39W, bv_eq]
-theorem escAnd14W_eq (k : Ctx) : escAnd14W k = escAnd39W k &&& pparW k := by
-  rw [escAnd14W, bv_eq]
-theorem escapedWord_eq (k : Ctx) : escapedWord k = escPdepW k ||| escAnd14W k := by
+theorem escAnd8W_eq (k : Ctx) : escAnd8W k = escNotBsW k &&& evenC := by
+  rw [escAnd8W, bv_eq]
+theorem escAnd9W_eq (k : Ctx) : escAnd9W k = escAnd8W k &&& escSumOddW k := by
+  rw [escAnd9W, bv_eq]
+theorem escAnd10W_eq (k : Ctx) : escAnd10W k = escNotBsW k &&& oneW := by
+  rw [escAnd10W, bv_eq]
+theorem escAnd11W_eq (k : Ctx) : escAnd11W k = escAnd10W k &&& escAnd00W k := by
+  rw [escAnd11W, bv_eq]
+theorem escOr62W_eq (k : Ctx) : escOr62W k = escAnd7W k ||| escAnd11W k := by
+  rw [escOr62W, bv_eq]
+theorem escapedWord_eq (k : Ctx) : escapedWord k = escOr62W k ||| escAnd9W k := by
   rw [escapedWord, bv_eq]
-theorem escXor25W_eq (k : Ctx) : escXor25W k = escCond24W k ^^^ escCtlzW k := by
-  rw [escXor25W, bv_eq]
-theorem escAnd26W_eq (k : Ctx) : escAnd26W k = escXor25W k &&& escShr16W k := by
-  rw [escAnd26W, bv_eq]
+theorem escShr16W_eq (k : Ctx) : escShr16W k = conv12W k >>> 31 := by
+  rw [escShr16W, bv_eq]
 
 /-! ### The step lemmas -/
 
@@ -1976,26 +1966,6 @@ theorem s1_escGep (env : Env) (s : State) (k : Ctx)
     (ho := by simp only [withEnv, evalOperand, lit, Const.toValue]) (hpos := by decide)]
   simp only [show (BitVec.signExtend 64 (BitVec.ofInt 64 8)).toNat = 8 from by decide,
     withEnv, State.bind]
-
-theorem s1_escShl (env : Env) (s : State) (k : Ctx)
-    (h : lookupName env "%or14.i" = some (.int 64 (bsW k))) :
-    evalInstr s1Calls (withEnv env s)
-        (.binop "%shl.i61.i" .shl 64 (.reg "%or14.i") (lit 64 1)) =
-      some (withEnv (("%shl.i61.i", .int 64 (escShlW k)) :: env) s) := by
-  rw [evalInstr_binop (x := bsW k) (y := (BitVec.ofInt 64 1))
-    (ha := by simp only [withEnv, evalOperand, h])
-    (hb := by simp only [withEnv, evalOperand, lit, Const.toValue])
-    (r := (escShlW k).toNat) (hr := by
-      show (some ((BitVec.ofNat 64 (bsW k).toNat).shiftLeft
-        (BitVec.ofNat 64 (BitVec.ofInt 64 1).toNat).toNat)).map BitVec.toNat
-        = some (escShlW k).toNat
-      rw [show (BitVec.ofNat 64 (BitVec.ofInt 64 1).toNat) = (1 : BitVec 64) from by decide,
-        show (1 : BitVec 64).toNat = 1 from by decide,
-        show (BitVec.ofNat 64 (bsW k).toNat) = bsW k from bv_eq _]
-      unfold escShlW
-      rw [bv_toNat]
-      rfl)]
-  simp only [withEnv, State.bind, ofNat_toNat]
 
 theorem loadValue_int64 {m : Mem} {addr : Nat} {bs : List UInt8}
     (hr : readBytes m addr 8 = some bs) :
@@ -2025,25 +1995,56 @@ theorem s1_escOpenLoad (env : Env) (s : State) (k : Ctx)
         rw [loadValue_int64 hr, natToBytes_bit, openW_eq])]
   rfl
 
-theorem s1_escOr62 (env : Env) (s : State) (k : Ctx)
-    (h : lookupName env "%shl.i61.i" = some (.int 64 (escShlW k)))
+theorem s1_escPparLoad (env : Env) (s : State) (k : Ctx)
+    (hc : lookupName env "%esc_ppar.i" = some (.ptr (k.c + 8)))
+    (hr : readBytes s.mem (k.c + 8) 8 = some (natToBytes (if k.ppar then 1 else 0) 8)) :
+    evalInstr s1Calls (withEnv env s) (.load "%33" (.int 64) (.reg "%esc_ppar.i")) =
+      some (withEnv (("%33", .int 64 (pparW k)) :: env) s) := by
+  rw [evalInstr_load (p := .reg "%esc_ppar.i") (a := k.c + 8)
+    (by simp only [withEnv, evalOperand, hc])
+    (by show loadValue s.mem (.int 64) (k.c + 8) = some (.int 64 (pparW k))
+        rw [loadValue_int64 hr, natToBytes_bit, pparW_eq])]
+  rfl
+
+theorem s1_escAnd00 (env : Env) (s : State) (k : Ctx)
+    (h : lookupName env "%33" = some (.int 64 (pparW k)))
     (h2 : lookupName env "%32" = some (.int 64 (openW k))) :
     evalInstr s1Calls (withEnv env s)
-        (.binop "%or.i62.i" .or 64 (.reg "%shl.i61.i") (.reg "%32")) =
-      some (withEnv (("%or.i62.i", .int 64 (escOr62W k)) :: env) s) := by
-  rw [evalInstr_binop (x := escShlW k) (y := openW k)
+        (.binop "%and.i.i" .and 64 (.reg "%33") (.reg "%32")) =
+      some (withEnv (("%and.i.i", .int 64 (escAnd00W k)) :: env) s) := by
+  rw [evalInstr_binop (x := pparW k) (y := openW k)
     (ha := by simp only [withEnv, evalOperand, h])
     (hb := by simp only [withEnv, evalOperand, h2])
-    (r := (escOr62W k).toNat) (hr := by
-      simp only [evalBinopNat, evalBinop, Option.map, bv_toNat, ofNat_toNat, escOr62W])]
+    (r := (escAnd00W k).toNat) (hr := by
+      simp only [evalBinopNat, evalBinop, Option.map, bv_toNat, ofNat_toNat, escAnd00W])]
+  simp only [withEnv, State.bind, ofNat_toNat]
+
+theorem s1_escShl (env : Env) (s : State) (k : Ctx)
+    (h : lookupName env "%or14.i" = some (.int 64 (bsW k))) :
+    evalInstr s1Calls (withEnv env s)
+        (.binop "%shl.i61.i" .shl 64 (.reg "%or14.i") (lit 64 1)) =
+      some (withEnv (("%shl.i61.i", .int 64 (escShlW k)) :: env) s) := by
+  rw [evalInstr_binop (x := bsW k) (y := (BitVec.ofInt 64 1))
+    (ha := by simp only [withEnv, evalOperand, h])
+    (hb := by simp only [withEnv, evalOperand, lit, Const.toValue])
+    (r := (escShlW k).toNat) (hr := by
+      show (some ((BitVec.ofNat 64 (bsW k).toNat).shiftLeft
+        (BitVec.ofNat 64 (BitVec.ofInt 64 1).toNat).toNat)).map BitVec.toNat
+        = some (escShlW k).toNat
+      rw [show (BitVec.ofNat 64 (BitVec.ofInt 64 1).toNat) = (1 : BitVec 64) from by decide,
+        show (1 : BitVec 64).toNat = 1 from by decide,
+        show (BitVec.ofNat 64 (bsW k).toNat) = bsW k from bv_eq _]
+      unfold escShlW
+      rw [bv_toNat]
+      rfl)]
   simp only [withEnv, State.bind, ofNat_toNat]
 
 theorem s1_escNot (env : Env) (s : State) (k : Ctx)
-    (h : lookupName env "%or.i62.i" = some (.int 64 (escOr62W k))) :
+    (h : lookupName env "%shl.i61.i" = some (.int 64 (escShlW k))) :
     evalInstr s1Calls (withEnv env s)
-        (.binop "%not.i.i" .xor 64 (.reg "%or.i62.i") (lit 64 (-1))) =
+        (.binop "%not.i.i" .xor 64 (.reg "%shl.i61.i") (lit 64 (-1))) =
       some (withEnv (("%not.i.i", .int 64 (escNotW k)) :: env) s) := by
-  rw [evalInstr_binop (x := escOr62W k) (y := (BitVec.ofInt 64 (-1)))
+  rw [evalInstr_binop (x := escShlW k) (y := (BitVec.ofInt 64 (-1)))
     (ha := by simp only [withEnv, evalOperand, h])
     (hb := by simp only [withEnv, evalOperand, lit, Const.toValue])
     (r := (escNotW k).toNat) (hr := by
@@ -2051,350 +2052,222 @@ theorem s1_escNot (env : Env) (s : State) (k : Ctx)
         show (BitVec.ofInt 64 (-1)) = BitVec.allOnes 64 from by decide])]
   simp only [withEnv, State.bind, ofNat_toNat]
 
-theorem s1_escAndStarts (env : Env) (s : State) (k : Ctx)
+theorem s1_escStarts (env : Env) (s : State) (k : Ctx)
     (h : lookupName env "%or14.i" = some (.int 64 (bsW k)))
     (h2 : lookupName env "%not.i.i" = some (.int 64 (escNotW k))) :
     evalInstr s1Calls (withEnv env s)
-        (.binop "%and.i.i" .and 64 (.reg "%or14.i") (.reg "%not.i.i")) =
-      some (withEnv (("%and.i.i", .int 64 (escAndStartsW k)) :: env) s) := by
+        (.binop "%and1.i.i" .and 64 (.reg "%or14.i") (.reg "%not.i.i")) =
+      some (withEnv (("%and1.i.i", .int 64 (escStartsW k)) :: env) s) := by
   rw [evalInstr_binop (x := bsW k) (y := escNotW k)
     (ha := by simp only [withEnv, evalOperand, h])
     (hb := by simp only [withEnv, evalOperand, h2])
-    (r := (escAndStartsW k).toNat) (hr := by
-      simp only [evalBinopNat, evalBinop, Option.map, bv_toNat, ofNat_toNat, escAndStartsW])]
+    (r := (escStartsW k).toNat) (hr := by
+      simp only [evalBinopNat, evalBinop, Option.map, bv_toNat, ofNat_toNat, escStartsW])]
   simp only [withEnv, State.bind, ofNat_toNat]
 
-theorem s1_escAnd1 (env : Env) (s : State) (k : Ctx)
-    (h : lookupName env "%conv9.i" = some (.int 64 (conv9W k))) :
+theorem s1_escEvenAlt (env : Env) (s : State) (k : Ctx)
+    (h : lookupName env "%and.i.i" = some (.int 64 (escAnd00W k))) :
     evalInstr s1Calls (withEnv env s)
-        (.binop "%and1.i.i" .and 64 (.reg "%conv9.i") (lit 64 1)) =
-      some (withEnv (("%and1.i.i", .int 64 (escAnd1W k)) :: env) s) := by
-  rw [evalInstr_binop (x := conv9W k) (y := (BitVec.ofInt 64 1))
+        (.binop "%xor.i.i" .xor 64 (.reg "%and.i.i") (lit 64 0x5555555555555555)) =
+      some (withEnv (("%xor.i.i", .int 64 (escEvenAltW k)) :: env) s) := by
+  rw [evalInstr_binop (x := escAnd00W k) (y := evenC)
     (ha := by simp only [withEnv, evalOperand, h])
-    (hb := by simp only [withEnv, evalOperand, lit, Const.toValue])
-    (r := (escAnd1W k).toNat) (hr := by
-      simp only [evalBinopNat, evalBinop, Option.map, bv_toNat, ofNat_toNat, escAnd1W, oneW])]
+    (hb := by simp only [withEnv, evalOperand, lit, Const.toValue, evenC])
+    (r := (escEvenAltW k).toNat) (hr := by
+      simp only [evalBinopNat, evalBinop, Option.map, bv_toNat, ofNat_toNat, escEvenAltW])]
   simp only [withEnv, State.bind, ofNat_toNat]
 
-theorem s1_escAnd2 (env : Env) (s : State) (k : Ctx)
-    (h : lookupName env "%32" = some (.int 64 (openW k)))
-    (h2 : lookupName env "%and1.i.i" = some (.int 64 (escAnd1W k))) :
+theorem s1_escEvenClass (env : Env) (s : State) (k : Ctx)
+    (h : lookupName env "%xor.i.i" = some (.int 64 (escEvenAltW k)))
+    (h2 : lookupName env "%and1.i.i" = some (.int 64 (escStartsW k))) :
     evalInstr s1Calls (withEnv env s)
-        (.binop "%and2.i.i" .and 64 (.reg "%32") (.reg "%and1.i.i")) =
-      some (withEnv (("%and2.i.i", .int 64 (escAnd2W k)) :: env) s) := by
-  rw [evalInstr_binop (x := openW k) (y := escAnd1W k)
-    (ha := by simp only [withEnv, evalOperand, h])
-    (hb := by simp only [withEnv, evalOperand, h2])
-    (r := (escAnd2W k).toNat) (hr := by
-      simp only [evalBinopNat, evalBinop, Option.map, bv_toNat, ofNat_toNat, escAnd2W])]
-  simp only [withEnv, State.bind, ofNat_toNat]
-
-theorem s1_escOr3 (env : Env) (s : State) (k : Ctx)
-    (h : lookupName env "%and.i.i" = some (.int 64 (escAndStartsW k)))
-    (h2 : lookupName env "%and2.i.i" = some (.int 64 (escAnd2W k))) :
-    evalInstr s1Calls (withEnv env s)
-        (.binop "%or3.i.i" .or 64 (.reg "%and.i.i") (.reg "%and2.i.i")) =
-      some (withEnv (("%or3.i.i", .int 64 (escOr3W k)) :: env) s) := by
-  rw [evalInstr_binop (x := escAndStartsW k) (y := escAnd2W k)
+        (.binop "%and2.i.i" .and 64 (.reg "%xor.i.i") (.reg "%and1.i.i")) =
+      some (withEnv (("%and2.i.i", .int 64 (escEvenClassW k)) :: env) s) := by
+  rw [evalInstr_binop (x := escEvenAltW k) (y := escStartsW k)
     (ha := by simp only [withEnv, evalOperand, h])
     (hb := by simp only [withEnv, evalOperand, h2])
-    (r := (escOr3W k).toNat) (hr := by
-      simp only [evalBinopNat, evalBinop, Option.map, bv_toNat, ofNat_toNat, escOr3W])]
+    (r := (escEvenClassW k).toNat) (hr := by
+      simp only [evalBinopNat, evalBinop, Option.map, bv_toNat, ofNat_toNat, escEvenClassW])]
   simp only [withEnv, State.bind, ofNat_toNat]
 
-theorem s1_escShr (env : Env) (s : State) (k : Ctx)
+theorem s1_escOddClass (env : Env) (s : State) (k : Ctx)
+    (h : lookupName env "%and2.i.i" = some (.int 64 (escEvenClassW k)))
+    (h2 : lookupName env "%and1.i.i" = some (.int 64 (escStartsW k))) :
+    evalInstr s1Calls (withEnv env s)
+        (.binop "%xor3.i.i" .xor 64 (.reg "%and2.i.i") (.reg "%and1.i.i")) =
+      some (withEnv (("%xor3.i.i", .int 64 (escOddClassW k)) :: env) s) := by
+  rw [evalInstr_binop (x := escEvenClassW k) (y := escStartsW k)
+    (ha := by simp only [withEnv, evalOperand, h])
+    (hb := by simp only [withEnv, evalOperand, h2])
+    (r := (escOddClassW k).toNat) (hr := by
+      simp only [evalBinopNat, evalBinop, Option.map, bv_toNat, ofNat_toNat, escOddClassW])]
+  simp only [withEnv, State.bind, ofNat_toNat]
+
+theorem s1_escNotBs (env : Env) (s : State) (k : Ctx)
     (h : lookupName env "%or14.i" = some (.int 64 (bsW k))) :
     evalInstr s1Calls (withEnv env s)
-        (.binop "%shr.i.i" .lshr 64 (.reg "%or14.i") (lit 64 1)) =
-      some (withEnv (("%shr.i.i", .int 64 (escShrW k)) :: env) s) := by
-  rw [evalInstr_binop (x := bsW k) (y := (BitVec.ofInt 64 1))
+        (.binop "%not4.i.i" .xor 64 (.reg "%or14.i") (lit 64 (-1))) =
+      some (withEnv (("%not4.i.i", .int 64 (escNotBsW k)) :: env) s) := by
+  rw [evalInstr_binop (x := bsW k) (y := (BitVec.ofInt 64 (-1)))
     (ha := by simp only [withEnv, evalOperand, h])
     (hb := by simp only [withEnv, evalOperand, lit, Const.toValue])
-    (r := (escShrW k).toNat) (hr := by
-      show (some ((BitVec.ofNat 64 (bsW k).toNat).ushiftRight
-        (BitVec.ofNat 64 (BitVec.ofInt 64 1).toNat).toNat)).map BitVec.toNat
-        = some (escShrW k).toNat
-      rw [show (BitVec.ofNat 64 (BitVec.ofInt 64 1).toNat) = (1 : BitVec 64) from by decide,
-        show (1 : BitVec 64).toNat = 1 from by decide,
-        show (BitVec.ofNat 64 (bsW k).toNat) = bsW k from bv_eq _]
-      unfold escShrW
-      rw [bv_toNat]
-      rfl)]
-  simp only [withEnv, State.bind, ofNat_toNat]
-
-theorem s1_escNot4 (env : Env) (s : State) (k : Ctx)
-    (h : lookupName env "%shr.i.i" = some (.int 64 (escShrW k))) :
-    evalInstr s1Calls (withEnv env s)
-        (.binop "%not4.i.i" .xor 64 (.reg "%shr.i.i") (lit 64 (-1))) =
-      some (withEnv (("%not4.i.i", .int 64 (escNot4W k)) :: env) s) := by
-  rw [evalInstr_binop (x := escShrW k) (y := (BitVec.ofInt 64 (-1)))
-    (ha := by simp only [withEnv, evalOperand, h])
-    (hb := by simp only [withEnv, evalOperand, lit, Const.toValue])
-    (r := (escNot4W k).toNat) (hr := by
-      simp only [evalBinopNat, evalBinop, Option.map, bv_toNat, ofNat_toNat, escNot4W,
+    (r := (escNotBsW k).toNat) (hr := by
+      simp only [evalBinopNat, evalBinop, Option.map, bv_toNat, ofNat_toNat, escNotBsW,
         show (BitVec.ofInt 64 (-1)) = BitVec.allOnes 64 from by decide])]
   simp only [withEnv, State.bind, ofNat_toNat]
 
-theorem s1_escAnd5 (env : Env) (s : State) (k : Ctx)
-    (h : lookupName env "%or14.i" = some (.int 64 (bsW k)))
-    (h2 : lookupName env "%not4.i.i" = some (.int 64 (escNot4W k))) :
+theorem s1_escSumEven (env : Env) (s : State) (k : Ctx)
+    (h : lookupName env "%and2.i.i" = some (.int 64 (escEvenClassW k)))
+    (h2 : lookupName env "%or14.i" = some (.int 64 (bsW k))) :
     evalInstr s1Calls (withEnv env s)
-        (.binop "%and5.i.i" .and 64 (.reg "%or14.i") (.reg "%not4.i.i")) =
-      some (withEnv (("%and5.i.i", .int 64 (escAnd5W k)) :: env) s) := by
-  rw [evalInstr_binop (x := bsW k) (y := escNot4W k)
+        (.binop "%add.i.i" .add 64 (.reg "%and2.i.i") (.reg "%or14.i")) =
+      some (withEnv (("%add.i.i", .int 64 (escSumEvenW k)) :: env) s) := by
+  rw [evalInstr_binop (x := escEvenClassW k) (y := bsW k)
     (ha := by simp only [withEnv, evalOperand, h])
     (hb := by simp only [withEnv, evalOperand, h2])
-    (r := (escAnd5W k).toNat) (hr := by
-      simp only [evalBinopNat, evalBinop, Option.map, bv_toNat, ofNat_toNat, escAnd5W])]
+    (r := (escSumEvenW k).toNat) (hr := by
+      simp only [evalBinopNat, evalBinop, Option.map, bv_toNat, ofNat_toNat, escSumEvenW])]
   simp only [withEnv, State.bind, ofNat_toNat]
 
-theorem s1_escShl6 (env : Env) (s : State) (k : Ctx)
-    (h : lookupName env "%and5.i.i" = some (.int 64 (escAnd5W k))) :
+theorem s1_escSumOdd (env : Env) (s : State) (k : Ctx)
+    (h : lookupName env "%xor3.i.i" = some (.int 64 (escOddClassW k)))
+    (h2 : lookupName env "%or14.i" = some (.int 64 (bsW k))) :
     evalInstr s1Calls (withEnv env s)
-        (.binop "%shl6.i.i" .shl 64 (.reg "%and5.i.i") (lit 64 1)) =
-      some (withEnv (("%shl6.i.i", .int 64 (escShl6W k)) :: env) s) := by
-  rw [evalInstr_binop (x := escAnd5W k) (y := (BitVec.ofInt 64 1))
+        (.binop "%add5.i.i" .add 64 (.reg "%xor3.i.i") (.reg "%or14.i")) =
+      some (withEnv (("%add5.i.i", .int 64 (escSumOddW k)) :: env) s) := by
+  rw [evalInstr_binop (x := escOddClassW k) (y := bsW k)
     (ha := by simp only [withEnv, evalOperand, h])
-    (hb := by simp only [withEnv, evalOperand, lit, Const.toValue])
-    (r := (escShl6W k).toNat) (hr := by
-      show (some ((BitVec.ofNat 64 (escAnd5W k).toNat).shiftLeft
-        (BitVec.ofNat 64 (BitVec.ofInt 64 1).toNat).toNat)).map BitVec.toNat
-        = some (escShl6W k).toNat
-      rw [show (BitVec.ofNat 64 (BitVec.ofInt 64 1).toNat) = (1 : BitVec 64) from by decide,
-        show (1 : BitVec 64).toNat = 1 from by decide,
-        show (BitVec.ofNat 64 (escAnd5W k).toNat) = escAnd5W k from bv_eq _]
-      unfold escShl6W
-      rw [bv_toNat]
-      rfl)]
+    (hb := by simp only [withEnv, evalOperand, h2])
+    (r := (escSumOddW k).toNat) (hr := by
+      simp only [evalBinopNat, evalBinop, Option.map, bv_toNat, ofNat_toNat, escSumOddW])]
   simp only [withEnv, State.bind, ofNat_toNat]
 
-theorem s1_escPparLoad (env : Env) (s : State) (k : Ctx)
-    (hp : lookupName env "%esc_ppar.i" = some (.ptr (k.c + 8)))
-    (hr : readBytes s.mem (k.c + 8) 8 = some (natToBytes (if k.ppar then 1 else 0) 8)) :
-    evalInstr s1Calls (withEnv env s) (.load "%33" (.int 64) (.reg "%esc_ppar.i")) =
-      some (withEnv (("%33", .int 64 (pparW k)) :: env) s) := by
-  rw [evalInstr_load (p := .reg "%esc_ppar.i") (a := k.c + 8)
-    (by simp only [withEnv, evalOperand, hp])
-    (by show loadValue s.mem (.int 64) (k.c + 8) = some (.int 64 (pparW k))
-        rw [loadValue_int64 hr, natToBytes_bit, pparW_eq])]
-  rfl
+theorem s1_escAnd6 (env : Env) (s : State) (k : Ctx)
+    (h : lookupName env "%not4.i.i" = some (.int 64 (escNotBsW k))) :
+    evalInstr s1Calls (withEnv env s)
+        (.binop "%and6.i.i" .and 64 (.reg "%not4.i.i") (lit 64 (-6148914691236517206))) =
+      some (withEnv (("%and6.i.i", .int 64 (escAnd6W k)) :: env) s) := by
+  rw [evalInstr_binop (x := escNotBsW k) (y := evenNotC)
+    (ha := by simp only [withEnv, evalOperand, h])
+    (hb := by simp only [withEnv, evalOperand, lit, Const.toValue, evenNotC])
+    (r := (escAnd6W k).toNat) (hr := by
+      simp only [evalBinopNat, evalBinop, Option.map, bv_toNat, ofNat_toNat, escAnd6W])]
+  simp only [withEnv, State.bind, ofNat_toNat]
 
 theorem s1_escAnd7 (env : Env) (s : State) (k : Ctx)
-    (h : lookupName env "%33" = some (.int 64 (pparW k)))
-    (h2 : lookupName env "%32" = some (.int 64 (openW k))) :
+    (h : lookupName env "%and6.i.i" = some (.int 64 (escAnd6W k)))
+    (h2 : lookupName env "%add.i.i" = some (.int 64 (escSumEvenW k))) :
     evalInstr s1Calls (withEnv env s)
-        (.binop "%and7.i.i" .and 64 (.reg "%33") (.reg "%32")) =
+        (.binop "%and7.i.i" .and 64 (.reg "%and6.i.i") (.reg "%add.i.i")) =
       some (withEnv (("%and7.i.i", .int 64 (escAnd7W k)) :: env) s) := by
-  rw [evalInstr_binop (x := pparW k) (y := openW k)
+  rw [evalInstr_binop (x := escAnd6W k) (y := escSumEvenW k)
     (ha := by simp only [withEnv, evalOperand, h])
     (hb := by simp only [withEnv, evalOperand, h2])
     (r := (escAnd7W k).toNat) (hr := by
       simp only [evalBinopNat, evalBinop, Option.map, bv_toNat, ofNat_toNat, escAnd7W])]
   simp only [withEnv, State.bind, ofNat_toNat]
 
-theorem s1_escXorEven (env : Env) (s : State) (k : Ctx)
-    (h : lookupName env "%and7.i.i" = some (.int 64 (escAnd7W k))) :
+theorem s1_escAnd8 (env : Env) (s : State) (k : Ctx)
+    (h : lookupName env "%not4.i.i" = some (.int 64 (escNotBsW k))) :
     evalInstr s1Calls (withEnv env s)
-        (.binop "%xor.i.i" .xor 64 (.reg "%and7.i.i") (lit 64 0x5555555555555555)) =
-      some (withEnv (("%xor.i.i", .int 64 (escXorEvenW k)) :: env) s) := by
-  rw [evalInstr_binop (x := escAnd7W k) (y := (BitVec.ofInt 64 0x5555555555555555))
+        (.binop "%and8.i.i" .and 64 (.reg "%not4.i.i") (lit 64 0x5555555555555555)) =
+      some (withEnv (("%and8.i.i", .int 64 (escAnd8W k)) :: env) s) := by
+  rw [evalInstr_binop (x := escNotBsW k) (y := evenC)
     (ha := by simp only [withEnv, evalOperand, h])
-    (hb := by simp only [withEnv, evalOperand, lit, Const.toValue])
-    (r := (escXorEvenW k).toNat) (hr := by
-      simp only [evalBinopNat, evalBinop, Option.map, bv_toNat, ofNat_toNat, escXorEvenW,
-        evenC])]
+    (hb := by simp only [withEnv, evalOperand, lit, Const.toValue, evenC])
+    (r := (escAnd8W k).toNat) (hr := by
+      simp only [evalBinopNat, evalBinop, Option.map, bv_toNat, ofNat_toNat, escAnd8W])]
   simp only [withEnv, State.bind, ofNat_toNat]
 
-theorem s1_escPext1 (env : Env) (s : State) (k : Ctx)
-    (h : lookupName env "%xor.i.i" = some (.int 64 (escXorEvenW k)))
-    (h2 : lookupName env "%or3.i.i" = some (.int 64 (escOr3W k))) :
+theorem s1_escAnd9 (env : Env) (s : State) (k : Ctx)
+    (h : lookupName env "%and8.i.i" = some (.int 64 (escAnd8W k)))
+    (h2 : lookupName env "%add5.i.i" = some (.int 64 (escSumOddW k))) :
     evalInstr s1Calls (withEnv env s)
-        (.call "%34" (.int 64) "llvm.x86.bmi.pext.64"
-          [(.int 64, .reg "%xor.i.i"), (.int 64, .reg "%or3.i.i")]) =
-      some (withEnv (("%34", .int 64 (escPext1W k)) :: env) s) := by
-  have ha : evalOperands (withEnv env s)
-      [(.int 64, .reg "%xor.i.i"), (.int 64, .reg "%or3.i.i")]
-      = some [.int 64 (escXorEvenW k), .int 64 (escOr3W k)] := by
-    rw [evalOperands_cons (v := .int 64 (escXorEvenW k)) (vs := [.int 64 (escOr3W k)])
-      (by simp only [withEnv, evalOperand, h])
-      (evalOperands_cons (by simp only [withEnv, evalOperand, h2]) rfl)]
-  rw [evalInstr_call ha (s1Calls_pext (escXorEvenW k) (escOr3W k) s.mem s.next)]
-  simp only [withEnv, State.bind]
-  rw [escPext1W_eq]
-
-theorem s1_escPext2 (env : Env) (s : State) (k : Ctx)
-    (h : lookupName env "%and5.i.i" = some (.int 64 (escAnd5W k))) :
-    evalInstr s1Calls (withEnv env s)
-        (.call "%35" (.int 64) "llvm.x86.bmi.pext.64"
-          [(.int 64, lit 64 0x5555555555555555), (.int 64, .reg "%and5.i.i")]) =
-      some (withEnv (("%35", .int 64 (escPext2W k)) :: env) s) := by
-  have ha : evalOperands (withEnv env s)
-      [(.int 64, lit 64 0x5555555555555555), (.int 64, .reg "%and5.i.i")]
-      = some [.int 64 (BitVec.ofInt 64 0x5555555555555555), .int 64 (escAnd5W k)] := by
-    rw [evalOperands_cons (v := .int 64 (BitVec.ofInt 64 0x5555555555555555))
-      (vs := [.int 64 (escAnd5W k)])
-      (by simp only [withEnv, evalOperand, lit, Const.toValue])
-      (evalOperands_cons (by simp only [withEnv, evalOperand, h]) rfl)]
-  rw [evalInstr_call ha (s1Calls_pext (BitVec.ofInt 64 0x5555555555555555) (escAnd5W k)
-    s.mem s.next)]
-  simp only [withEnv, State.bind]
-  rw [escPext2W_eq]
-  rfl
-
-theorem s1_escXor36 (env : Env) (s : State) (k : Ctx)
-    (h : lookupName env "%34" = some (.int 64 (escPext1W k)))
-    (h2 : lookupName env "%35" = some (.int 64 (escPext2W k))) :
-    evalInstr s1Calls (withEnv env s)
-        (.binop "%36" .xor 64 (.reg "%34") (.reg "%35")) =
-      some (withEnv (("%36", .int 64 (escXor36W k)) :: env) s) := by
-  rw [evalInstr_binop (x := escPext1W k) (y := escPext2W k)
+        (.binop "%and9.i.i" .and 64 (.reg "%and8.i.i") (.reg "%add5.i.i")) =
+      some (withEnv (("%and9.i.i", .int 64 (escAnd9W k)) :: env) s) := by
+  rw [evalInstr_binop (x := escAnd8W k) (y := escSumOddW k)
     (ha := by simp only [withEnv, evalOperand, h])
     (hb := by simp only [withEnv, evalOperand, h2])
-    (r := (escXor36W k).toNat) (hr := by
-      simp only [evalBinopNat, evalBinop, Option.map, bv_toNat, ofNat_toNat, escXor36W])]
+    (r := (escAnd9W k).toNat) (hr := by
+      simp only [evalBinopNat, evalBinop, Option.map, bv_toNat, ofNat_toNat, escAnd9W])]
   simp only [withEnv, State.bind, ofNat_toNat]
 
-theorem s1_escNot10 (env : Env) (s : State) (k : Ctx)
-    (h : lookupName env "%36" = some (.int 64 (escXor36W k))) :
+theorem s1_escAnd10 (env : Env) (s : State) (k : Ctx)
+    (h : lookupName env "%not4.i.i" = some (.int 64 (escNotBsW k))) :
     evalInstr s1Calls (withEnv env s)
-        (.binop "%not10.i.i" .xor 64 (.reg "%36") (lit 64 (-1))) =
-      some (withEnv (("%not10.i.i", .int 64 (escNot10W k)) :: env) s) := by
-  rw [evalInstr_binop (x := escXor36W k) (y := (BitVec.ofInt 64 (-1)))
+        (.binop "%and10.i.i" .and 64 (.reg "%not4.i.i") (lit 64 1)) =
+      some (withEnv (("%and10.i.i", .int 64 (escAnd10W k)) :: env) s) := by
+  rw [evalInstr_binop (x := escNotBsW k) (y := (BitVec.ofInt 64 1))
     (ha := by simp only [withEnv, evalOperand, h])
     (hb := by simp only [withEnv, evalOperand, lit, Const.toValue])
-    (r := (escNot10W k).toNat) (hr := by
-      simp only [evalBinopNat, evalBinop, Option.map, bv_toNat, ofNat_toNat, escNot10W,
-        show (BitVec.ofInt 64 (-1)) = BitVec.allOnes 64 from by decide])]
+    (r := (escAnd10W k).toNat) (hr := by
+      simp only [evalBinopNat, evalBinop, Option.map, bv_toNat, ofNat_toNat, escAnd10W,
+        oneW])]
   simp only [withEnv, State.bind, ofNat_toNat]
 
-theorem s1_escPdep (env : Env) (s : State) (k : Ctx)
-    (h : lookupName env "%not10.i.i" = some (.int 64 (escNot10W k)))
-    (h2 : lookupName env "%shl6.i.i" = some (.int 64 (escShl6W k))) :
+theorem s1_escAnd11 (env : Env) (s : State) (k : Ctx)
+    (h : lookupName env "%and10.i.i" = some (.int 64 (escAnd10W k)))
+    (h2 : lookupName env "%and.i.i" = some (.int 64 (escAnd00W k))) :
     evalInstr s1Calls (withEnv env s)
-        (.call "%37" (.int 64) "llvm.x86.bmi.pdep.64"
-          [(.int 64, .reg "%not10.i.i"), (.int 64, .reg "%shl6.i.i")]) =
-      some (withEnv (("%37", .int 64 (escPdepW k)) :: env) s) := by
-  have ha : evalOperands (withEnv env s)
-      [(.int 64, .reg "%not10.i.i"), (.int 64, .reg "%shl6.i.i")]
-      = some [.int 64 (escNot10W k), .int 64 (escShl6W k)] := by
-    rw [evalOperands_cons (v := .int 64 (escNot10W k)) (vs := [.int 64 (escShl6W k)])
-      (by simp only [withEnv, evalOperand, h])
-      (evalOperands_cons (by simp only [withEnv, evalOperand, h2]) rfl)]
-  rw [evalInstr_call ha (s1Calls_pdep (escNot10W k) (escShl6W k) s.mem s.next)]
-  simp only [withEnv, State.bind]
-  rw [escPdepW_eq]
+        (.binop "%and11.i.i" .and 64 (.reg "%and10.i.i") (.reg "%and.i.i")) =
+      some (withEnv (("%and11.i.i", .int 64 (escAnd11W k)) :: env) s) := by
+  rw [evalInstr_binop (x := escAnd10W k) (y := escAnd00W k)
+    (ha := by simp only [withEnv, evalOperand, h])
+    (hb := by simp only [withEnv, evalOperand, h2])
+    (r := (escAnd11W k).toNat) (hr := by
+      simp only [evalBinopNat, evalBinop, Option.map, bv_toNat, ofNat_toNat, escAnd11W])]
+  simp only [withEnv, State.bind, ofNat_toNat]
+
+theorem s1_escOr62 (env : Env) (s : State) (k : Ctx)
+    (h : lookupName env "%and7.i.i" = some (.int 64 (escAnd7W k)))
+    (h2 : lookupName env "%and11.i.i" = some (.int 64 (escAnd11W k))) :
+    evalInstr s1Calls (withEnv env s)
+        (.binop "%or.i62.i" .or 64 (.reg "%and7.i.i") (.reg "%and11.i.i")) =
+      some (withEnv (("%or.i62.i", .int 64 (escOr62W k)) :: env) s) := by
+  rw [evalInstr_binop (x := escAnd7W k) (y := escAnd11W k)
+    (ha := by simp only [withEnv, evalOperand, h])
+    (hb := by simp only [withEnv, evalOperand, h2])
+    (r := (escOr62W k).toNat) (hr := by
+      simp only [evalBinopNat, evalBinop, Option.map, bv_toNat, ofNat_toNat, escOr62W])]
+  simp only [withEnv, State.bind, ofNat_toNat]
+
+theorem s1_escOr12 (env : Env) (s : State) (k : Ctx)
+    (h : lookupName env "%or.i62.i" = some (.int 64 (escOr62W k)))
+    (h2 : lookupName env "%and9.i.i" = some (.int 64 (escAnd9W k))) :
+    evalInstr s1Calls (withEnv env s)
+        (.binop "%or12.i.i" .or 64 (.reg "%or.i62.i") (.reg "%and9.i.i")) =
+      some (withEnv (("%or12.i.i", .int 64 (escapedWord k)) :: env) s) := by
+  rw [evalInstr_binop (x := escOr62W k) (y := escAnd9W k)
+    (ha := by simp only [withEnv, evalOperand, h])
+    (hb := by simp only [withEnv, evalOperand, h2])
+    (r := (escapedWord k).toNat) (hr := by
+      simp only [evalBinopNat, evalBinop, Option.map, bv_toNat, ofNat_toNat, escapedWord])]
+  simp only [withEnv, State.bind, ofNat_toNat]
 
 theorem s1_escCmp63 (env : Env) (s : State) (k : Ctx)
-    (h : lookupName env "%or14.i" = some (.int 64 (bsW k))) :
+    (h : lookupName env "%add5.i.i" = some (.int 64 (escSumOddW k)))
+    (h2 : lookupName env "%or14.i" = some (.int 64 (bsW k))) :
     evalInstr s1Calls (withEnv env s)
-        (.icmp "%cmp.i63.i" .ne 64 (.reg "%or14.i") (lit 64 (-1))) =
+        (.icmp "%cmp.i63.i" .ult 64 (.reg "%add5.i.i") (.reg "%or14.i")) =
       some (withEnv (("%cmp.i63.i", .int 1 (escCmp63L k)) :: env) s) := by
-  rw [evalInstr_icmp (x := bsW k) (y := (BitVec.ofInt 64 (-1)))
+  rw [evalInstr_icmp (x := escSumOddW k) (y := bsW k)
     (ha := by simp only [withEnv, evalOperand, h])
-    (hb := by simp only [withEnv, evalOperand, lit, Const.toValue])]
+    (hb := by simp only [withEnv, evalOperand, h2])]
   simp only [withEnv, State.bind, escCmp63L]
 
-theorem s1_escTobool (env : Env) (s : State) (k : Ctx)
-    (h : lookupName env "%32" = some (.int 64 (openW k))) :
-    evalInstr s1Calls (withEnv env s)
-        (.icmp "%tobool.not.i.i" .eq 64 (.reg "%32") (lit 64 0)) =
-      some (withEnv (("%tobool.not.i.i", .int 1 (escToboolL k)) :: env) s) := by
-  rw [evalInstr_icmp (x := openW k) (y := (BitVec.ofInt 64 0))
-    (ha := by simp only [withEnv, evalOperand, h])
-    (hb := by simp only [withEnv, evalOperand, lit, Const.toValue])]
-  simp only [withEnv, State.bind, escToboolL]
+theorem s1_escConv13 (env : Env) (s : State) (k : Ctx)
+    (h : lookupName env "%cmp.i63.i" = some (.int 1 (escCmp63L k))) :
+    evalInstr s1Calls (withEnv env s) (.zext "%conv13.i.i" 1 64 (.reg "%cmp.i63.i")) =
+      some (withEnv (("%conv13.i.i", .int 64 (escConv13W k)) :: env) s) := by
+  rw [evalInstr_zext (x := escCmp63L k) (hv := by simp only [withEnv, evalOperand, h])]
+  rfl
 
-/-- A one-bit word is `1` or `0`: the comparison lanes are always one of the two,
-which is what `select` requires of its condition. -/
-theorem bv1_zero_one (x : BitVec 1) : x = 1 ∨ x = 0 := by
-  rcases Nat.eq_zero_or_pos x.toNat with h | h
-  · right
-    apply BitVec.eq_of_toNat_eq
-    rw [h]
-    rfl
-  · left
-    apply BitVec.eq_of_toNat_eq
-    rw [show x.toNat = 1 from by have := x.isLt; omega]
-    rfl
-
-theorem s1_escOrCond (env : Env) (s : State) (k : Ctx) (c : BitVec 1)
-    (hc : c = 1 ∨ c = 0)
-    (h : lookupName env "%cmp.i63.i" = some (.int 1 c))
-    (h2 : lookupName env "%tobool.not.i.i" = some (.int 1 (escToboolL k))) :
-    evalInstr s1Calls (withEnv env s)
-        (.select "%or.cond.i.i" (.int 1) (.reg "%cmp.i63.i") (lit 1 1)
-          (.reg "%tobool.not.i.i")) =
-      some (withEnv (("%or.cond.i.i", .int 1 (selBit c 1 (escToboolL k))) :: env) s) := by
-  rcases hc with hc | hc
-  · rw [evalInstr_select_true (va := .int 1 (1 : BitVec 1)) (vb := .int 1 (escToboolL k))
-      (hc := by simp only [withEnv, evalOperand, h, hc])
-      (ha := by simp only [withEnv, evalOperand, lit, Const.toValue]; rfl)
-      (hb := by simp only [withEnv, evalOperand, h2])]
-    simp [withEnv, State.bind, selBit, hc]
-  · rw [evalInstr_select_false (va := .int 1 (1 : BitVec 1)) (vb := .int 1 (escToboolL k))
-      (hc := by simp only [withEnv, evalOperand, h, hc])
-      (ha := by simp only [withEnv, evalOperand, lit, Const.toValue]; rfl)
-      (hb := by simp only [withEnv, evalOperand, h2])]
-    simp [withEnv, State.bind, selBit, hc]
-
-theorem s1_escCond24 (env : Env) (s : State) (k : Ctx) (c : BitVec 1)
-    (hc : c = 1 ∨ c = 0)
-    (h : lookupName env "%or.cond.i.i" = some (.int 1 c))
-    (h2 : lookupName env "%33" = some (.int 64 (pparW k))) :
-    evalInstr s1Calls (withEnv env s)
-        (.select "%cond24.i.i" (.int 64) (.reg "%or.cond.i.i") (lit 64 0) (.reg "%33")) =
-      some (withEnv (("%cond24.i.i", .int 64 (sel64 c 0 (pparW k))) :: env) s) := by
-  rcases hc with hc | hc
-  · have h0 : (BitVec.ofInt 64 0) = (0 : BitVec 64) := by decide
-    rw [evalInstr_select_true (va := .int 64 0) (vb := .int 64 (pparW k))
-      (hc := by simp only [withEnv, evalOperand, h, hc])
-      (ha := by simp only [withEnv, evalOperand, lit, Const.toValue, h0])
-      (hb := by simp only [withEnv, evalOperand, h2])]
-    simp [withEnv, State.bind, sel64, hc]
-  · have h0 : (BitVec.ofInt 64 0) = (0 : BitVec 64) := by decide
-    rw [evalInstr_select_false (va := .int 64 0) (vb := .int 64 (pparW k))
-      (hc := by simp only [withEnv, evalOperand, h, hc])
-      (ha := by simp only [withEnv, evalOperand, lit, Const.toValue, h0])
-      (hb := by simp only [withEnv, evalOperand, h2])]
-    simp [withEnv, State.bind, sel64, hc]
-
-/-- `%not17.i.i = xor i64 %or14.i, -1`. -/
-theorem s1_escNot17 (env : Env) (s : State) (k : Ctx)
-    (h : lookupName env "%or14.i" = some (.int 64 (bsW k))) :
-    evalInstr s1Calls (withEnv env s)
-        (.binop "%not17.i.i" .xor 64 (.reg "%or14.i") (lit 64 (-1))) =
-      some (withEnv (("%not17.i.i", .int 64 (escNot17W k)) :: env) s) := by
-  rw [evalInstr_binop (x := bsW k) (y := (BitVec.ofInt 64 (-1)))
-    (ha := by simp only [withEnv, evalOperand, h])
-    (hb := by simp only [withEnv, evalOperand, lit, Const.toValue])
-    (r := (escNot17W k).toNat) (hr := by
-      simp only [evalBinopNat, evalBinop, Option.map, bv_toNat, ofNat_toNat, escNot17W,
-        show (BitVec.ofInt 64 (-1)) = BitVec.allOnes 64 from by decide])]
-  simp only [withEnv, State.bind, ofNat_toNat]
-
-/-- `%38 = call llvm.ctlz.i64(%not17.i.i, false)`. -/
-theorem s1_escCtlz (env : Env) (s : State) (k : Ctx)
-    (h : lookupName env "%not17.i.i" = some (.int 64 (escNot17W k))) :
-    evalInstr s1Calls (withEnv env s)
-        (.call "%38" (.int 64) "llvm.ctlz.i64"
-          [(.int 64, .reg "%not17.i.i"), (.int 1, lit 1 0)]) =
-      some (withEnv (("%38", .int 64 (escCtlzW k)) :: env) s) := by
-  have h0 : (BitVec.ofInt 1 0) = (0 : BitVec 1) := by decide
-  have ha : evalOperands (withEnv env s)
-      [(.int 64, .reg "%not17.i.i"), (.int 1, lit 1 0)]
-      = some [.int 64 (escNot17W k), .int 1 (0 : BitVec 1)] := by
-    rw [evalOperands_cons (v := .int 64 (escNot17W k)) (vs := [.int 1 (0 : BitVec 1)])
-      (by simp only [withEnv, evalOperand, h])
-      (evalOperands_cons (by simp only [withEnv, evalOperand, lit, Const.toValue, h0]) rfl)]
-  rw [evalInstr_call ha (s1Calls_ctlz (escNot17W k) s.mem s.next)]
-  simp only [withEnv, State.bind, escCtlzW]
-
-/-- `%shr16.i.i = lshr i64 %conv12.i, 31`: the block's top lane. -/
+/-- `%shr.i.i = lshr i64 %conv12.i, 31`: the block's top lane. -/
 theorem s1_escShr16 (env : Env) (s : State) (k : Ctx)
     (h : lookupName env "%conv12.i" = some (.int 64 (conv12W k))) :
     evalInstr s1Calls (withEnv env s)
-        (.binop "%shr16.i.i" .lshr 64 (.reg "%conv12.i") (lit 64 31)) =
-      some (withEnv (("%shr16.i.i", .int 64 (escShr16W k)) :: env) s) := by
+        (.binop "%shr.i.i" .lshr 64 (.reg "%conv12.i") (lit 64 31)) =
+      some (withEnv (("%shr.i.i", .int 64 (escShr16W k)) :: env) s) := by
   rw [evalInstr_binop (x := conv12W k) (y := (BitVec.ofInt 64 31))
     (ha := by simp only [withEnv, evalOperand, h])
     (hb := by simp only [withEnv, evalOperand, lit, Const.toValue])
@@ -2410,181 +2283,72 @@ theorem s1_escShr16 (env : Env) (s : State) (k : Ctx)
       rfl)]
   simp only [withEnv, State.bind, ofNat_toNat]
 
-/-- `%not12.i.i = xor i64 %and1.i.i, -1`. -/
-theorem s1_escNot12 (env : Env) (s : State) (k : Ctx)
-    (h : lookupName env "%and1.i.i" = some (.int 64 (escAnd1W k))) :
-    evalInstr s1Calls (withEnv env s)
-        (.binop "%not12.i.i" .xor 64 (.reg "%and1.i.i") (lit 64 (-1))) =
-      some (withEnv (("%not12.i.i", .int 64 (escNot12W k)) :: env) s) := by
-  rw [evalInstr_binop (x := escAnd1W k) (y := (BitVec.ofInt 64 (-1)))
-    (ha := by simp only [withEnv, evalOperand, h])
-    (hb := by simp only [withEnv, evalOperand, lit, Const.toValue])
-    (r := (escNot12W k).toNat) (hr := by
-      simp only [evalBinopNat, evalBinop, Option.map, bv_toNat, ofNat_toNat, escNot12W,
-        show (BitVec.ofInt 64 (-1)) = BitVec.allOnes 64 from by decide])]
-  simp only [withEnv, State.bind, ofNat_toNat]
-
-/-- `%39 = and i64 %32, %not12.i.i`. -/
-theorem s1_escAnd39 (env : Env) (s : State) (k : Ctx)
-    (h : lookupName env "%32" = some (.int 64 (openW k)))
-    (h2 : lookupName env "%not12.i.i" = some (.int 64 (escNot12W k))) :
-    evalInstr s1Calls (withEnv env s)
-        (.binop "%39" .and 64 (.reg "%32") (.reg "%not12.i.i")) =
-      some (withEnv (("%39", .int 64 (escAnd39W k)) :: env) s) := by
-  rw [evalInstr_binop (x := openW k) (y := escNot12W k)
-    (ha := by simp only [withEnv, evalOperand, h])
-    (hb := by simp only [withEnv, evalOperand, h2])
-    (r := (escAnd39W k).toNat) (hr := by
-      simp only [evalBinopNat, evalBinop, Option.map, bv_toNat, ofNat_toNat, escAnd39W])]
-  simp only [withEnv, State.bind, ofNat_toNat]
-
-/-- `%and14.i.i = and i64 %39, %33`. -/
-theorem s1_escAnd14 (env : Env) (s : State) (k : Ctx)
-    (h : lookupName env "%39" = some (.int 64 (escAnd39W k)))
-    (h2 : lookupName env "%33" = some (.int 64 (pparW k))) :
-    evalInstr s1Calls (withEnv env s)
-        (.binop "%and14.i.i" .and 64 (.reg "%39") (.reg "%33")) =
-      some (withEnv (("%and14.i.i", .int 64 (escAnd14W k)) :: env) s) := by
-  rw [evalInstr_binop (x := escAnd39W k) (y := pparW k)
-    (ha := by simp only [withEnv, evalOperand, h])
-    (hb := by simp only [withEnv, evalOperand, h2])
-    (r := (escAnd14W k).toNat) (hr := by
-      simp only [evalBinopNat, evalBinop, Option.map, bv_toNat, ofNat_toNat, escAnd14W])]
-  simp only [withEnv, State.bind, ofNat_toNat]
-
-/-- `%or15.i.i = or i64 %37, %and14.i.i`: `s1f_escaped`'s return. -/
-theorem s1_escOr15 (env : Env) (s : State) (k : Ctx)
-    (h : lookupName env "%37" = some (.int 64 (escPdepW k)))
-    (h2 : lookupName env "%and14.i.i" = some (.int 64 (escAnd14W k))) :
-    evalInstr s1Calls (withEnv env s)
-        (.binop "%or15.i.i" .or 64 (.reg "%37") (.reg "%and14.i.i")) =
-      some (withEnv (("%or15.i.i", .int 64 (escapedWord k)) :: env) s) := by
-  rw [evalInstr_binop (x := escPdepW k) (y := escAnd14W k)
-    (ha := by simp only [withEnv, evalOperand, h])
-    (hb := by simp only [withEnv, evalOperand, h2])
-    (r := (escapedWord k).toNat) (hr := by
-      simp only [evalBinopNat, evalBinop, Option.map, bv_toNat, ofNat_toNat, escapedWord])]
-  simp only [withEnv, State.bind, ofNat_toNat]
-
-/-- `%xor25.i.i = xor i64 %cond24.i.i, %38`: the outgoing run parity. -/
-theorem s1_escXor25 (env : Env) (s : State) (k : Ctx)
-    (h : lookupName env "%cond24.i.i" = some (.int 64 (escCond24W k)))
-    (h2 : lookupName env "%38" = some (.int 64 (escCtlzW k))) :
-    evalInstr s1Calls (withEnv env s)
-        (.binop "%xor25.i.i" .xor 64 (.reg "%cond24.i.i") (.reg "%38")) =
-      some (withEnv (("%xor25.i.i", .int 64 (escXor25W k)) :: env) s) := by
-  rw [evalInstr_binop (x := escCond24W k) (y := escCtlzW k)
-    (ha := by simp only [withEnv, evalOperand, h])
-    (hb := by simp only [withEnv, evalOperand, h2])
-    (r := (escXor25W k).toNat) (hr := by
-      simp only [evalBinopNat, evalBinop, Option.map, bv_toNat, ofNat_toNat, escXor25W])]
-  simp only [withEnv, State.bind, ofNat_toNat]
-
-/-- `%and26.i.i = and i64 %xor25.i.i, %shr16.i.i`: the parity the carry slot takes. -/
-theorem s1_escAnd26 (env : Env) (s : State) (k : Ctx)
-    (h : lookupName env "%xor25.i.i" = some (.int 64 (escXor25W k)))
-    (h2 : lookupName env "%shr16.i.i" = some (.int 64 (escShr16W k))) :
-    evalInstr s1Calls (withEnv env s)
-        (.binop "%and26.i.i" .and 64 (.reg "%xor25.i.i") (.reg "%shr16.i.i")) =
-      some (withEnv (("%and26.i.i", .int 64 (escAnd26W k)) :: env) s) := by
-  rw [evalInstr_binop (x := escXor25W k) (y := escShr16W k)
-    (ha := by simp only [withEnv, evalOperand, h])
-    (hb := by simp only [withEnv, evalOperand, h2])
-    (r := (escAnd26W k).toNat) (hr := by
-      simp only [evalBinopNat, evalBinop, Option.map, bv_toNat, ofNat_toNat, escAnd26W])]
-  simp only [withEnv, State.bind, ofNat_toNat]
-
 /-! ### The escape word's identity
 
-`%or15.i.i` is `s1f_escaped`'s return, and `QuoteDerive`'s `kernelEscape` is the
-same arithmetic named after the registers.  The chain below reads each stage of the
-body into that name — the run starts, the run ends and the lane after them, the
-parity alternate, the run parity, the scatter, and the boundary lane — and then the
-identity is the disjunction `kernelEscape` is defined as. -/
+`%or12.i.i` is `s1f_escaped`'s return, and `QuoteDerive`'s `fastEscape` is the
+same arithmetic named after its parts.  The lemmas below read each register at
+the arithmetic's own definitions, then `fastEscape_eq_kernelEscape` turns the
+whole word into the kernel's `kernelEscape`. -/
 
-theorem nat32 : (BitVec.ofNat 64 (BitVec.ofInt 64 32).toNat).toNat = 32 := by decide
+theorem escAnd00_eq (k : Ctx) : escAnd00W k = oneLane 64 (k.opened && k.ppar) := by
+  rw [escAnd00W_eq]
+  simp only [openW, pparW]
+  rw [oneLane_and, Bool.and_comm]
 
-/-- The `i16`-view shift's word has lane zero clear: its first twelve bits are the
-low half's low nibble, and the shift carries it above lane zero. -/
-theorem shl13_lane0 (k : Ctx) : (shl13W k).getLsbD 0 = false := by
-  rw [shl13W, nat32, BitVec.getLsbD_shiftLeft]
+theorem escEvenAlt_eq (k : Ctx) : escEvenAltW k = altLanes 64 k.opened k.ppar := by
+  rw [escEvenAltW_eq, escAnd00_eq, ← evenC_eq, altLanes, BitVec.xor_comm]
+
+theorem escStarts_eq (k : Ctx) : escStartsW k = fastStarts (bsW k) := by
+  rw [escStartsW_eq, escNotW_eq, escShlW_eq, xor_allOnes_eq_not]
   rfl
 
-theorem ofNat_conv9 (k : Ctx) : (BitVec.ofNat 64 (conv9W k).toNat) = conv9W k := by
-  apply BitVec.eq_of_toNat_eq
-  rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (conv9W k).isLt]
+theorem escEvenClass_eq (k : Ctx) :
+    escEvenClassW k = fastEvenClass (bsW k) k.opened k.ppar := by
+  rw [escEvenClassW_eq, escEvenAlt_eq, escStarts_eq, fastEvenClass, BitVec.and_comm]
 
-theorem ofNat_shl13 (k : Ctx) :
-    (BitVec.ofNat 64 (BitVec.ofNat 64 (shl13W k).toNat).toNat) = shl13W k := by
-  apply BitVec.eq_of_toNat_eq
-  rw [BitVec.toNat_ofNat,
-    Nat.mod_eq_of_lt (show (BitVec.ofNat 64 (shl13W k).toNat).toNat < 2 ^ 64 from
-      (BitVec.ofNat 64 (shl13W k).toNat).isLt),
-    BitVec.toNat_ofNat, Nat.mod_eq_of_lt (shl13W k).isLt]
+theorem escOddClass_eq (k : Ctx) :
+    escOddClassW k = fastOddClass (bsW k) k.opened k.ppar := by
+  rw [escOddClassW_eq, escStarts_eq, escEvenClass_eq, BitVec.xor_comm]
+  rfl
 
-/-- Lane zero of the backslash word: the low half's lane zero. -/
-theorem or14W_lane0 (k : Ctx) : (or14W k).getLsbD 0 = (conv9W k).getLsbD 0 := by
-  rw [or14W_comm]
-  rw [BitVec.getLsbD_or, ofNat_conv9 k, ofNat_shl13 k, shl13_lane0, Bool.or_false]
+theorem escNotBs_eq (k : Ctx) : escNotBsW k = ~~~bsW k := by
+  rw [escNotBsW_eq, xor_allOnes_eq_not]
 
-/-- `%and1.i.i`'s word, at its only possible set lane. -/
-theorem escAnd1W_lane (k : Ctx) : escAnd1W k = oneLane 64 ((bsW k).getLsbD 0) := by
-  rw [escAnd1W_eq, and_oneW, bsW_eq, or14W_lane0]
+theorem escSumEven_eq (k : Ctx) :
+    escSumEvenW k = bsW k + fastEvenClass (bsW k) k.opened k.ppar := by
+  rw [escSumEvenW_eq, escEvenClass_eq, BitVec.add_comm]
 
-/-- `%and2.i.i`'s word is the block's own lane zero, masked with the run-open bit. -/
-theorem escAnd2W_lane (k : Ctx) : escAnd2W k = bsW k &&& oneLane 64 k.opened := by
-  rw [escAnd2W_eq, escAnd1W_lane]
-  simp only [openW]
-  rw [oneLane_and, and_oneLane,
-    show (k.opened && (bsW k).getLsbD 0) = ((bsW k).getLsbD 0 && k.opened) from
-      Bool.and_comm _ _]
+theorem escSumOdd_eq (k : Ctx) :
+    escSumOddW k = bsW k + fastOddClass (bsW k) k.opened k.ppar := by
+  rw [escSumOddW_eq, escOddClass_eq, BitVec.add_comm]
 
-/-- `%or3.i.i` is the kernel's run-start mask. -/
-theorem escRunStarts (k : Ctx) : escOr3W k = runStarts (bsW k) k.opened := by
-  rw [escOr3W_eq, escAndStartsW_eq, escNotW_eq, escOr62W_eq, escShlW_eq,
-    xor_allOnes_eq_not, escAnd2W_lane, runStarts, openedBackslashes]
-  simp only [openW]
+theorem escAnd6_eq (k : Ctx) : escAnd6W k = (~~~bsW k) &&& evenNotC := by
+  rw [escAnd6W_eq, escNotBs_eq]
 
-/-- `%and5.i.i` is the kernel's run-end mask. -/
-theorem escRunEnds (k : Ctx) : escAnd5W k = runEnds (bsW k) := by
-  rw [escAnd5W_eq, escNot4W_eq, escShrW_eq, xor_allOnes_eq_not, runEnds]
+theorem escAnd8_eq (k : Ctx) : escAnd8W k = (~~~bsW k) &&& evenC := by
+  rw [escAnd8W_eq, escNotBs_eq]
 
-/-- `%shl6.i.i` is the lane after each run's end. -/
-theorem escAfterRuns (k : Ctx) : escShl6W k = afterRuns (bsW k) := by
-  rw [escShl6W_eq, escRunEnds, afterRuns]
+theorem escAnd10_eq (k : Ctx) : escAnd10W k = (~~~bsW k) &&& oneW := by
+  rw [escAnd10W_eq, escNotBs_eq]
 
-/-- `%xor.i.i` is the kernel's parity alternate. -/
-theorem escAlt (k : Ctx) : escXorEvenW k = altLanes 64 k.opened k.ppar := by
-  rw [escXorEvenW_eq, escAnd7W_eq, altLanes, evenC_eq]
-  simp only [openW, pparW]
-  rw [oneLane_and, BitVec.xor_comm,
-    show (k.ppar && k.opened) = (k.opened && k.ppar) from Bool.and_comm _ _]
+theorem escAnd11_eq (k : Ctx) : escAnd11W k = ((~~~bsW k) &&& oneW) &&& escAnd00W k := by
+  rw [escAnd11W_eq, escAnd10_eq]
 
-/-- `%not10.i.i` is the kernel's odd-run mask. -/
-theorem escOddRuns (k : Ctx) :
-    escNot10W k = oddRuns (bsW k) k.opened k.ppar := by
-  rw [escNot10W_eq, escXor36W_eq, xor_allOnes_eq_not, escPext1W_eq, escPext2W_eq,
-    escAlt, escRunStarts, escRunEnds, oddRuns, startPara, endPara, ← evenC_eq]
+theorem escAnd7_eq (k : Ctx) : escAnd7W k = ((~~~bsW k) &&& evenNotC) &&& escSumEvenW k := by
+  rw [escAnd7W_eq, escAnd6_eq]
 
-/-- `%37` is the kernel's scattered run parity. -/
-theorem escEscapedRuns (k : Ctx) :
-    escPdepW k = escapedRuns (bsW k) k.opened k.ppar := by
-  rw [escPdepW_eq, escOddRuns, escAfterRuns, escapedRuns]
+theorem escAnd9_eq (k : Ctx) : escAnd9W k = ((~~~bsW k) &&& evenC) &&& escSumOddW k := by
+  rw [escAnd9W_eq, escAnd8_eq]
 
-/-- `%and14.i.i` is the kernel's boundary lane: lane zero escaped when the block
-enters in the middle of an odd run. -/
-theorem escBoundary (k : Ctx) :
-    escAnd14W k = boundaryEscape (bsW k) k.opened k.ppar := by
-  rw [escAnd14W_eq, escAnd39W_eq, escNot12W_eq, escAnd1W_lane, xor_allOnes_eq_not,
-    boundaryEscape]
-  simp only [openW, pparW]
-  rw [oneLane_and_not, oneLane_and]
-
-/-- `%or15.i.i` is `kernelEscape`: the scatter of the odd runs' parity onto the
-lanes after their ends, or the boundary lane. -/
-theorem escapedWord_eq_kernelEscape (k : Ctx) :
-    escapedWord k = kernelEscape (bsW k) k.opened k.ppar := by
-  rw [escapedWord_eq, escEscapedRuns, escBoundary, kernelEscape]
+/-- The emitted escape word is the arithmetic form's. -/
+theorem escapedWord_eq_fast (k : Ctx) :
+    escapedWord k = fastEscape (bsW k) k.opened k.ppar := by
+  unfold fastEscape fastEvenClass fastOddClass fastStarts fastOddOpen
+  rw [escapedWord_eq, escOr62W_eq, escAnd7_eq, escAnd11_eq, escAnd9_eq,
+    escAnd00_eq, escSumEven_eq, escSumOdd_eq,
+    evenNotC_eq, ← evenC_eq, oneW_eq]
+  simp only [fastEvenClass, fastOddClass, fastStarts]
+  ac_rfl
 
 /-- The block's backslash word is the specification's sixty-four-lane
 `IsBackslashB` mask. -/
@@ -2595,8 +2359,13 @@ theorem bsW_eq_spec (k : Ctx) : bsW k = specMask64 IsBackslashB k.lo k.hi := by
   rfl
 
 /-- **The escape word's identity.**  `s1f_escaped`'s return — the body's
-`%or15.i.i` — is the specification's `kernelEscape` over the block's backslash mask
-and the carry slot's two bits. -/
+`%or12.i.i` — is the specification's `kernelEscape` over the block's backslash
+mask and the carry slot's two bits. -/
+theorem escapedWord_eq_kernelEscape (k : Ctx) :
+    escapedWord k = kernelEscape (bsW k) k.opened k.ppar := by
+  rw [escapedWord_eq_fast, fastEscape_eq_kernelEscape]
+
+/-- **The escape word's identity, as a natural.** -/
 theorem s1_escaped_eq (k : Ctx) :
     (escapedWord k).toNat =
       (kernelEscape (specMask64 IsBackslashB k.lo k.hi) k.opened k.ppar).toNat := by
@@ -2693,9 +2462,9 @@ def imSignW (k : Ctx) : BitVec 64 := bv (BitVec.sshiftRight (inStringWord k) 63)
 
 /-- `%not.i = xor i64 %or15.i.i, -1`. -/
 theorem s1_andNotEsc (env : Env) (s : State) (k : Ctx)
-    (h : lookupName env "%or15.i.i" = some (.int 64 (escapedWord k))) :
+    (h : lookupName env "%or12.i.i" = some (.int 64 (escapedWord k))) :
     evalInstr s1Calls (withEnv env s)
-        (.binop "%not.i" .xor 64 (.reg "%or15.i.i") (lit 64 (-1))) =
+        (.binop "%not.i" .xor 64 (.reg "%or12.i.i") (lit 64 (-1))) =
       some (withEnv (("%not.i", .int 64 (notEscW k)) :: env) s) := by
   rw [evalInstr_binop (x := escapedWord k) (y := (BitVec.ofInt 64 (-1)))
     (ha := by simp only [withEnv, evalOperand, h])
@@ -2746,10 +2515,10 @@ theorem s1_vecInit (env : Env) (s : State) (k : Ctx)
 theorem s1_pclmul (env : Env) (s : State) (k : Ctx)
     (h : lookupName env "%vecinit1.i.i.i" = some (.vec 2 64 (vecInitLanes k))) :
     evalInstr s1Calls (withEnv env s)
-        (.call "%40" (.vec 2 (.int 64)) "llvm.x86.pclmulqdq"
+        (.call "%34" (.vec 2 (.int 64)) "llvm.x86.pclmulqdq"
           [(.vec 2 (.int 64), .reg "%vecinit1.i.i.i"),
            (.vec 2 (.int 64), lanesOf 64 [-1, 0]), (.int 8, lit 8 0)]) =
-      some (withEnv (("%40", .vec 2 64 (pclmulLanes k)) :: env) s) := by
+      some (withEnv (("%34", .vec 2 64 (pclmulLanes k)) :: env) s) := by
   have hneg : (BitVec.ofInt 64 (-1) : BitVec 64) = BitVec.allOnes 64 := by decide
   have ha : evalOperands (withEnv env s)
       [(.vec 2 (.int 64), .reg "%vecinit1.i.i.i"),
@@ -2769,9 +2538,9 @@ theorem s1_pclmul (env : Env) (s : State) (k : Ctx)
 
 /-- `%vecext.i.i.i = extractelement <2 x i64> %40, i64 0`. -/
 theorem s1_vecext (env : Env) (s : State) (k : Ctx)
-    (h : lookupName env "%40" = some (.vec 2 64 (pclmulLanes k))) :
+    (h : lookupName env "%34" = some (.vec 2 64 (pclmulLanes k))) :
     evalInstr s1Calls (withEnv env s)
-        (.extractelement "%vecext.i.i.i" 2 64 (.reg "%40") (lit 64 0)) =
+        (.extractelement "%vecext.i.i.i" 2 64 (.reg "%34") (lit 64 0)) =
       some (withEnv (("%vecext.i.i.i", .int 64 (vecextW k)) :: env) s) := by
   rw [evalInstr_extractelement
     (vv := .vec 2 64 (pclmulLanes k)) (lanes := pclmulLanes k)
@@ -2803,8 +2572,8 @@ theorem s1_imLoad (env : Env) (s : State) (k : Ctx)
     (hp : lookupName env "%im_carry.i" = some (.ptr (k.c + 16)))
     (hr : readBytes s.mem (k.c + 16) 8
       = some (natToBytes (if k.st.inside then 0xFFFFFFFFFFFFFFFF else 0) 8)) :
-    evalInstr s1Calls (withEnv env s) (.load "%41" (.int 64) (.reg "%im_carry.i")) =
-      some (withEnv (("%41", .int 64 (seedW k)) :: env) s) := by
+    evalInstr s1Calls (withEnv env s) (.load "%35" (.int 64) (.reg "%im_carry.i")) =
+      some (withEnv (("%35", .int 64 (seedW k)) :: env) s) := by
   rw [evalInstr_load (p := .reg "%im_carry.i") (a := k.c + 16)
     (by simp only [withEnv, evalOperand, hp])
     (by show loadValue s.mem (.int 64) (k.c + 16) = some (.int 64 (seedW k))
@@ -2816,9 +2585,9 @@ theorem s1_imLoad (env : Env) (s : State) (k : Ctx)
 /-- `%xor.i = xor i64 %vecext.i.i.i, %41`: the in-string word. -/
 theorem s1_inString (env : Env) (s : State) (k : Ctx)
     (h : lookupName env "%vecext.i.i.i" = some (.int 64 (vecextW k)))
-    (h2 : lookupName env "%41" = some (.int 64 (seedW k))) :
+    (h2 : lookupName env "%35" = some (.int 64 (seedW k))) :
     evalInstr s1Calls (withEnv env s)
-        (.binop "%xor.i" .xor 64 (.reg "%vecext.i.i.i") (.reg "%41")) =
+        (.binop "%xor.i" .xor 64 (.reg "%vecext.i.i.i") (.reg "%35")) =
       some (withEnv (("%xor.i", .int 64 (inStringWord k)) :: env) s) := by
   rw [evalInstr_binop (x := vecextW k) (y := seedW k)
     (ha := by simp only [withEnv, evalOperand, h])
@@ -3259,14 +3028,14 @@ step's operand lookups resolved by `s1_lk` — peel the cells bound after the
 register, then take the cell, or the caller's environment for `%p`, `%c` and `%o`.
 
 The conclusion is about the **memory** and nothing else: the environment the run
-leaves is 115 cells of intermediate values, and no later clause reads it.
+leaves is 105 cells of intermediate values, and no later clause reads it.
 
-The list is **115** instructions, not 114: the count is the pinned list's own, and
+The list is **105** instructions: the count is the pinned list's own, and
 one `denoteCode_cons_of` per entry is what closes.
 
 The projection is measured rather than preferred.  Stated with the environment
 existential — `∃ env', denoteCode … = some (withEnv env' …)` — the closing `rfl` has
-to compare two 115-deep record-update stacks field by field, and
+to compare two 105-deep record-update stacks field by field, and
 `set_option diagnostics true` attributed **604 256 `State.mem` unfoldings** to that
 one check: 400 k heartbeats and 16 s, and 2 M heartbeats and 64 s, both still timing
 out.  At the memory level the writes are syntactic: the same file composes and
@@ -3304,13 +3073,13 @@ theorem controlLanes_length (k : Ctx) : (controlLanes k).length = 64 := by
 /-- The `%41` load still sees the carry slot's in-string word: the two carry
 words the body has already written are below it. -/
 theorem readImCarry_after_stores (k : Ctx) (m : Mem) :
-    readBytes (writeBytes (writeBytes m (k.c + 8) (natToBytes (escAnd26W k).toNat 8))
+    readBytes (writeBytes (writeBytes m (k.c + 8) (natToBytes (escConv13W k).toNat 8))
         k.c (natToBytes (escShr16W k).toNat 8)) (k.c + 16) 8
       = readBytes m (k.c + 16) 8 :=
-  (readBytes_writeBytes_above (writeBytes m (k.c + 8) (natToBytes (escAnd26W k).toNat 8))
+  (readBytes_writeBytes_above (writeBytes m (k.c + 8) (natToBytes (escConv13W k).toNat 8))
       (natToBytes (escShr16W k).toNat 8) 8 (k.c + 16) k.c
       (by rw [natToBytes_length]; omega)).trans
-    (readBytes_writeBytes_above m (natToBytes (escAnd26W k).toNat 8) 8 (k.c + 16) (k.c + 8)
+    (readBytes_writeBytes_above m (natToBytes (escConv13W k).toNat 8) 8 (k.c + 16) (k.c + 8)
       (by rw [natToBytes_length]; omega))
 
 /-- The memory the unit leaves: the two carry words and the in-string word at the
@@ -3325,7 +3094,7 @@ def s1SlotMem (k : Ctx) (m : Mem) : Mem :=
             (writeBytes
               (writeBytes
                 (writeBytes
-                  (writeBytes m (k.c + 8) (natToBytes (escAnd26W k).toNat 8))
+                  (writeBytes m (k.c + 8) (natToBytes (escConv13W k).toNat 8))
                   k.c (natToBytes (escShr16W k).toNat 8))
                 (k.c + 16) (natToBytes (imSignW k).toNat 8))
               k.o (natToBytes (andQuoteW k).toNat 8))
@@ -3411,41 +3180,31 @@ theorem s1_run (env : Env) (s : State) (k : Ctx)
   rw [denoteCode_cons_of _ _ _ _ _ (s1_shlJoin _ _ "%conv3.i.i" "%shl4.i.i" (zext64W (bv32 (delimHiW k))) (by s1_lk hp))]
   rw [denoteCode_cons_of _ _ _ _ _ (s1_orJoin _ _ "%shl4.i.i" "%conv2.i.i" "%or5.i.i" (bv (shlUpW (zext64W (bv32 (delimHiW k))))) (zext64W (bv32 (delimLoW k))) (by s1_lk hp) (by s1_lk hp))]
   rw [denoteCode_cons_of _ _ _ _ _ (s1_escGep _ _ k (by s1_lk hc))]
-  rw [denoteCode_cons_of _ _ _ _ _ (s1_escShl _ _ k (by s1_lk hp))]
   rw [denoteCode_cons_of _ _ _ _ _ (s1_escOpenLoad _ _ k (by s1_lk hc) hd0)]
-  rw [denoteCode_cons_of _ _ _ _ _ (s1_escOr62 _ _ k (by s1_lk hp) (by s1_lk hp))]
+  rw [denoteCode_cons_of _ _ _ _ _ (s1_escPparLoad _ _ k (by s1_lk hc) hd1)]
+  rw [denoteCode_cons_of _ _ _ _ _ (s1_escAnd00 _ _ k (by s1_lk hp) (by s1_lk hp))]
+  rw [denoteCode_cons_of _ _ _ _ _ (s1_escShl _ _ k (by s1_lk hp))]
   rw [denoteCode_cons_of _ _ _ _ _ (s1_escNot _ _ k (by s1_lk hp))]
-  rw [denoteCode_cons_of _ _ _ _ _ (s1_escAndStarts _ _ k (by s1_lk hp) (by s1_lk hp))]
-  rw [denoteCode_cons_of _ _ _ _ _ (s1_escAnd1 _ _ k (by s1_lk hp))]
-  rw [denoteCode_cons_of _ _ _ _ _ (s1_escAnd2 _ _ k (by s1_lk hp) (by s1_lk hp))]
-  rw [denoteCode_cons_of _ _ _ _ _ (s1_escOr3 _ _ k (by s1_lk hp) (by s1_lk hp))]
-  rw [denoteCode_cons_of _ _ _ _ _ (s1_escShr _ _ k (by s1_lk hp))]
-  rw [denoteCode_cons_of _ _ _ _ _ (s1_escNot4 _ _ k (by s1_lk hp))]
-  rw [denoteCode_cons_of _ _ _ _ _ (s1_escAnd5 _ _ k (by s1_lk hp) (by s1_lk hp))]
-  rw [denoteCode_cons_of _ _ _ _ _ (s1_escShl6 _ _ k (by s1_lk hp))]
-  rw [denoteCode_cons_of _ _ _ _ _ (s1_escPparLoad _ _ k (by s1_lk hp) hd1)]
+  rw [denoteCode_cons_of _ _ _ _ _ (s1_escStarts _ _ k (by s1_lk hp) (by s1_lk hp))]
+  rw [denoteCode_cons_of _ _ _ _ _ (s1_escEvenAlt _ _ k (by s1_lk hp))]
+  rw [denoteCode_cons_of _ _ _ _ _ (s1_escEvenClass _ _ k (by s1_lk hp) (by s1_lk hp))]
+  rw [denoteCode_cons_of _ _ _ _ _ (s1_escOddClass _ _ k (by s1_lk hp) (by s1_lk hp))]
+  rw [denoteCode_cons_of _ _ _ _ _ (s1_escNotBs _ _ k (by s1_lk hp))]
+  rw [denoteCode_cons_of _ _ _ _ _ (s1_escSumEven _ _ k (by s1_lk hp) (by s1_lk hp))]
+  rw [denoteCode_cons_of _ _ _ _ _ (s1_escSumOdd _ _ k (by s1_lk hp) (by s1_lk hp))]
+  rw [denoteCode_cons_of _ _ _ _ _ (s1_escAnd6 _ _ k (by s1_lk hp))]
   rw [denoteCode_cons_of _ _ _ _ _ (s1_escAnd7 _ _ k (by s1_lk hp) (by s1_lk hp))]
-  rw [denoteCode_cons_of _ _ _ _ _ (s1_escXorEven _ _ k (by s1_lk hp))]
-  rw [denoteCode_cons_of _ _ _ _ _ (s1_escPext1 _ _ k (by s1_lk hp) (by s1_lk hp))]
-  rw [denoteCode_cons_of _ _ _ _ _ (s1_escPext2 _ _ k (by s1_lk hp))]
-  rw [denoteCode_cons_of _ _ _ _ _ (s1_escXor36 _ _ k (by s1_lk hp) (by s1_lk hp))]
-  rw [denoteCode_cons_of _ _ _ _ _ (s1_escNot10 _ _ k (by s1_lk hp))]
-  rw [denoteCode_cons_of _ _ _ _ _ (s1_escPdep _ _ k (by s1_lk hp) (by s1_lk hp))]
-  rw [denoteCode_cons_of _ _ _ _ _ (s1_escCmp63 _ _ k (by s1_lk hp))]
-  rw [denoteCode_cons_of _ _ _ _ _ (s1_escTobool _ _ k (by s1_lk hp))]
-  rw [denoteCode_cons_of _ _ _ _ _ (s1_escOrCond _ _ k (escCmp63L k) (bv1_zero_one _) (by s1_lk hp) (by s1_lk hp))]
-  rw [denoteCode_cons_of _ _ _ _ _ (s1_escCond24 _ _ k (escOrCondL k) (bv1_zero_one _) (by s1_lk hp) (by s1_lk hp))]
-  rw [denoteCode_cons_of _ _ _ _ _ (s1_escNot17 _ _ k (by s1_lk hp))]
-  rw [denoteCode_cons_of _ _ _ _ _ (s1_escCtlz _ _ k (by s1_lk hp))]
+  rw [denoteCode_cons_of _ _ _ _ _ (s1_escAnd8 _ _ k (by s1_lk hp))]
+  rw [denoteCode_cons_of _ _ _ _ _ (s1_escAnd9 _ _ k (by s1_lk hp) (by s1_lk hp))]
+  rw [denoteCode_cons_of _ _ _ _ _ (s1_escAnd10 _ _ k (by s1_lk hp))]
+  rw [denoteCode_cons_of _ _ _ _ _ (s1_escAnd11 _ _ k (by s1_lk hp) (by s1_lk hp))]
+  rw [denoteCode_cons_of _ _ _ _ _ (s1_escOr62 _ _ k (by s1_lk hp) (by s1_lk hp))]
+  rw [denoteCode_cons_of _ _ _ _ _ (s1_escOr12 _ _ k (by s1_lk hp) (by s1_lk hp))]
+  rw [denoteCode_cons_of _ _ _ _ _ (s1_escCmp63 _ _ k (by s1_lk hp) (by s1_lk hp))]
+  rw [denoteCode_cons_of _ _ _ _ _ (s1_escConv13 _ _ k (by s1_lk hp))]
+  rw [denoteCode_cons_of _ _ _ _ _ (s1_storeInt64 _ _ "%conv13.i.i" "%esc_ppar.i" (escConv13W k) (k.c + 8) (by s1_lk hp) (by s1_lk hp))]
   rw [denoteCode_cons_of _ _ _ _ _ (s1_escShr16 _ _ k (by s1_lk hp))]
-  rw [denoteCode_cons_of _ _ _ _ _ (s1_escNot12 _ _ k (by s1_lk hp))]
-  rw [denoteCode_cons_of _ _ _ _ _ (s1_escAnd39 _ _ k (by s1_lk hp) (by s1_lk hp))]
-  rw [denoteCode_cons_of _ _ _ _ _ (s1_escAnd14 _ _ k (by s1_lk hp) (by s1_lk hp))]
-  rw [denoteCode_cons_of _ _ _ _ _ (s1_escOr15 _ _ k (by s1_lk hp) (by s1_lk hp))]
-  rw [denoteCode_cons_of _ _ _ _ _ (s1_escXor25 _ _ k (by s1_lk hp) (by s1_lk hp))]
-  rw [denoteCode_cons_of _ _ _ _ _ (s1_escAnd26 _ _ k (by s1_lk hp) (by s1_lk hp))]
-  rw [denoteCode_cons_of _ _ _ _ _ (s1_storeInt64 _ _ "%and26.i.i" "%esc_ppar.i" (escAnd26W k) (k.c + 8) (by s1_lk hp) (by s1_lk hp))]
-  rw [denoteCode_cons_of _ _ _ _ _ (s1_storeInt64 _ _ "%shr16.i.i" "%c" (escShr16W k) k.c (by s1_lk hp) (by s1_lk hc))]
+  rw [denoteCode_cons_of _ _ _ _ _ (s1_storeInt64 _ _ "%shr.i.i" "%c" (escShr16W k) k.c (by s1_lk hp) (by s1_lk hc))]
   rw [denoteCode_cons_of _ _ _ _ _ (s1_andNotEsc _ _ k (by s1_lk hp))]
   rw [denoteCode_cons_of _ _ _ _ _ (s1_andQuote _ _ k (by s1_lk hp) (by s1_lk hp))]
   rw [denoteCode_cons_of _ _ _ _ _ (s1_vecInit _ _ k (by s1_lk hp))]
@@ -3572,7 +3331,7 @@ theorem s1Slot_open (k : Ctx) (m : Mem) (hdisj : k.c + 24 ≤ k.o) :
 
 /-- `%and26.i.i`'s word at `%esc_ppar.i`, the outgoing run parity. -/
 theorem s1Slot_ppar (k : Ctx) (m : Mem) (hdisj : k.c + 24 ≤ k.o) :
-    readBytes (s1SlotMem k m) (k.c + 8) 8 = some (natToBytes (escAnd26W k).toNat 8) := by
+    readBytes (s1SlotMem k m) (k.c + 8) 8 = some (natToBytes (escConv13W k).toNat 8) := by
   simp only [s1SlotMem]
   rw [readBytes_slot_below _ (k.o + 40) (k.c + 8) _ (by omega),
     readBytes_slot_below _ (k.o + 32) (k.c + 8) _ (by omega),
@@ -3600,9 +3359,9 @@ theorem s1Slot_im (k : Ctx) (m : Mem) (hdisj : k.c + 24 ≤ k.o) :
 theorem s1Slot_carry (k : Ctx) (m : Mem) (hdisj : k.c + 24 ≤ k.o) :
     readBytes (s1SlotMem k m) k.c 24
       = some (natToBytes (escShr16W k).toNat 8 ++
-          (natToBytes (escAnd26W k).toNat 8 ++ natToBytes (imSignW k).toNat 8)) := by
+          (natToBytes (escConv13W k).toNat 8 ++ natToBytes (imSignW k).toNat 8)) := by
   have h16 : readBytes (s1SlotMem k m) (k.c + 8) 16
-      = some (natToBytes (escAnd26W k).toNat 8 ++ natToBytes (imSignW k).toNat 8) := by
+      = some (natToBytes (escConv13W k).toNat 8 ++ natToBytes (imSignW k).toNat 8) := by
     rw [show (16 : Nat) = 8 + 8 from by decide]
     rw [readBytes_app _ 8 8 (k.c + 8) (s1Slot_ppar k m hdisj)]
     rw [show (k.c + 8) + 8 = k.c + 16 from by omega]
@@ -3909,75 +3668,6 @@ theorem s1_inside_spec (k : Ctx) (hst : k.st.oddRun = (k.opened && k.ppar)) :
     rw [hg]
     rfl
 
-/-- `%38`: the trailing run of the backslash mask. -/
-theorem escCtlz_toNat (k : Ctx) : (escCtlzW k).toNat = BitLanes.trailingRun (bsW k) := by
-  have hb : BitLanes.trailingRun (bsW k) < 2 ^ 64 := by
-    have := BitLanes.trailingRun_le (bsW k)
-    omega
-  rw [escCtlzW, BitVec.toNat_ofNat,
-    show escNot17W k = ~~~(bsW k) from by rw [escNot17W, bv_eq, xor_allOnes_eq_not],
-    BitLanes.ctlz_not_eq_trailingRun, Nat.mod_eq_of_lt hb]
-
-/-- `%shr16.i.i`: bit 63 of the backslash mask. -/
-theorem escShr16_toNat (k : Ctx) :
-    (escShr16W k).toNat = (if (bsW k).getLsbD 63 then 1 else 0) := by
-  rw [s1_open_spec k, bsW_eq_spec k, show (63 : Nat) = 31 + 32 from by decide]
-  rw [specMask64_getLsbD_hi IsBackslashB k.lo k.hi (by decide)]
-
-theorem oneLane_toNat (b : Bool) : (oneLane 64 b).toNat = (if b then 1 else 0) := by
-  cases b <;> rfl
-
-theorem oneLane_eq_zero (b : Bool) : oneLane 64 b = (0 : BitVec 64) ↔ ¬ b := by
-  cases b <;> simp [oneLane]
-
-theorem escCmp63L_one (k : Ctx) :
-    escCmp63L k = 1 ↔ bsW k ≠ BitVec.ofInt 64 (-1) := by
-  rw [escCmp63L, evalICmp]
-  exact ofBool_eq_one
-
-theorem escToboolL_one (k : Ctx) : escToboolL k = 1 ↔ ¬ k.opened := by
-  rw [escToboolL, evalICmp, ofBool_eq_one, show BitVec.ofInt 64 0 = (0 : BitVec 64) from rfl,
-    openW, oneLane_eq_zero]
-
-theorem escOrCondL_one (k : Ctx) :
-    escOrCondL k = 1 ↔ (bsW k ≠ BitVec.ofInt 64 (-1) ∨ ¬ k.opened) := by
-  unfold escOrCondL selBit
-  by_cases h : escCmp63L k = 1
-  · rw [ite_eq_left h]
-    exact ⟨fun _ => Or.inl ((escCmp63L_one k).mp h), fun _ => rfl⟩
-  · rw [ite_eq_right h]
-    constructor
-    · intro hb
-      right
-      exact (escToboolL_one k).mp hb
-    · intro hb
-      rcases hb with hb | hb
-      · exact absurd ((escCmp63L_one k).mpr hb) h
-      · exact (escToboolL_one k).mpr hb
-
-theorem escCond24_toNat (k : Ctx) :
-    (escCond24W k).toNat =
-      (if (bsW k = BitVec.ofInt 64 (-1) ∧ k.opened) then (if k.ppar then 1 else 0) else 0) := by
-  unfold escCond24W sel64 pparW
-  by_cases h : escOrCondL k = 1
-  · rw [ite_eq_left h, show (0 : BitVec 64).toNat = 0 from rfl]
-    have hb : ¬ (bsW k = BitVec.ofInt 64 (-1) ∧ k.opened) := by
-      rintro ⟨h1, h2⟩
-      rcases (escOrCondL_one k).mp h with h' | h'
-      · exact h' h1
-      · exact h' h2
-    rw [ite_eq_right hb]
-  · rw [ite_eq_right h]
-    rw [oneLane_toNat]
-    have hb : bsW k = BitVec.ofInt 64 (-1) ∧ k.opened := by
-      by_cases h1 : bsW k = BitVec.ofInt 64 (-1)
-      · by_cases h2 : k.opened
-        · exact ⟨h1, h2⟩
-        · exact absurd ((escOrCondL_one k).mpr (Or.inr h2)) h
-      · exact absurd ((escOrCondL_one k).mpr (Or.inl h1)) h
-    rw [ite_eq_left hb]
-
-
 /-- A suffix run that reaches the lane count is every lane set. -/
 theorem suffixRun_full {w : Nat} (m : BitVec w) :
     ∀ n, BitLanes.suffixRun m n = n ↔ ∀ i, i < n → m.getLsbD i = true
@@ -4038,52 +3728,28 @@ theorem flipBits_64 (b : Bool) : flipBits 64 b = b := by
   unfold flipBits
   rw [show (64 : Nat) % 2 = 0 from by decide, ite_eq_left rfl]
 
-/-- **The outgoing run parity.**  `%and26.i.i` — the trailing backslash run's parity
-across the block boundary — is the carry the next block is entered with. -/
+/-- `BitVec.ofBool` read as a natural word. -/
+theorem ofNat_ofBool (b : Bool) :
+    BitVec.ofNat 64 (BitVec.ofBool b).toNat = (if b then 1 else 0) := by
+  cases b <;> rfl
+
+/-- `%conv13.i.i` is the arithmetic's outgoing parity, as a word. -/
+theorem escConv13_eq_fastPpar (k : Ctx) :
+    escConv13W k = (if fastPpar (bsW k) k.opened k.ppar then 1 else 0) := by
+  unfold escConv13W escCmp63L fastPpar
+  rw [escSumOdd_eq, evalICmp, BitVec.ult_eq_decide, ofNat_ofBool]
+  by_cases h : (bsW k + fastOddClass (bsW k) k.opened k.ppar).toNat < (bsW k).toNat
+  · rw [decide_eq_true h,
+      decide_eq_true (show (bsW k + fastOddClass (bsW k) k.opened k.ppar) < bsW k from h)]
+  · rw [decide_eq_false h,
+      decide_eq_false (show ¬((bsW k + fastOddClass (bsW k) k.opened k.ppar) < bsW k) from h)]
+
+/-- **The outgoing run parity.**  `%conv13.i.i` — the carry out of the odd-class
+sum — is the parity the next block is entered with. -/
 theorem s1_ppar_spec (k : Ctx) (hst : k.st.oddRun = (k.opened && k.ppar)) :
-    (escAnd26W k).toNat = (if (carry64 k.lo k.hi k.st).oddRun then 1 else 0) := by
-  -- the specification's carry, in closed form
-  have hR : (if (carry64 k.lo k.hi k.st).oddRun then 1 else 0)
-      = (if BitLanes.trailingRun (bsW k) = 64
-          then (if k.opened then (if k.ppar then 1 else 0) else 0)
-          else BitLanes.trailingRun (bsW k) % 2) := by
-    show (if (carry64 k.lo k.hi k.st).oddRun then 1 else 0)
-      = (if BitLanes.suffixRun (bsW k) 64 = 64
-          then (if k.opened then (if k.ppar then 1 else 0) else 0)
-          else BitLanes.suffixRun (bsW k) 64 % 2)
-    rw [carry64_oddRun_eq k hst, runParityBefore_eq, ← bsW_eq_spec k, flipBits_64]
-    by_cases h : BitLanes.suffixRun (bsW k) 64 = 64
-    · rw [ite_eq_left h, ite_eq_left h]
-      cases k.opened <;> cases k.ppar <;> rfl
-    · rw [ite_eq_right h, ite_eq_right h]
-      have := Nat.mod_lt (BitLanes.suffixRun (bsW k) 64) (by decide : 0 < 2)
-      cases hh : BitLanes.suffixRun (bsW k) 64 % 2 with
-      | zero => simp_all
-      | succ n =>
-          have hn : n = 0 := by omega
-          subst hn
-          rfl
-  rw [hR]
-  rw [escAnd26W_eq, BitVec.toNat_and, escXor25W_eq, BitVec.toNat_xor,
-    escCond24_toNat k, escCtlz_toNat k, escShr16_toNat k]
-  -- the two cases the carry boundary has: a trailing run, or none
-  by_cases hb : (bsW k).getLsbD 63 = true
-  · rw [ite_eq_left hb]
-    by_cases hT : BitLanes.trailingRun (bsW k) = 64
-    · -- all backslashes: every lane is set, so the incoming parity survives
-      have h1 : bsW k = BitVec.ofInt 64 (-1) := (trailingRun_eq_64_iff (bsW k)).mp hT
-      rw [ite_eq_left hT]
-      simp only [h1, true_and]
-      cases k.opened <;> cases k.ppar <;> decide
-    · have hH : ¬ (bsW k = BitVec.ofInt 64 (-1) ∧ k.opened) := by
-        rintro ⟨h1, _⟩
-        exact hT ((trailingRun_eq_64_iff (bsW k)).mpr h1)
-      rw [ite_eq_right hT, ite_eq_right hH, Nat.zero_xor, Nat.and_one_is_mod]
-  · have hg : (bsW k).getLsbD 63 = false := by
-      cases h : (bsW k).getLsbD 63 <;> simp_all
-    rw [ite_eq_right hb]
-    have hzero := trailingRun_eq_zero (bsW k) hg
-    rw [hzero, ite_eq_right (by decide : ¬ ((0 : Nat) = 64)), Nat.and_zero]
+    (escConv13W k).toNat = (if (carry64 k.lo k.hi k.st).oddRun then 1 else 0) := by
+  rw [escConv13_eq_fastPpar, fastPpar_eq_runParity, carry64_oddRun_eq k hst, ← bsW_eq_spec k]
+  cases runParityBefore (bsW k) k.opened k.ppar 64 <;> rfl
 
 theorem s1Slot_open_below (k : Ctx) (m : Mem) (hdisj : k.o + 48 ≤ k.c) :
     readBytes (s1SlotMem k m) k.c 8 = some (natToBytes (escShr16W k).toNat 8) := by
@@ -4098,7 +3764,7 @@ theorem s1Slot_open_below (k : Ctx) (m : Mem) (hdisj : k.o + 48 ≤ k.c) :
   exact readBytes_slot_same _ k.c _
 
 theorem s1Slot_ppar_below (k : Ctx) (m : Mem) (hdisj : k.o + 48 ≤ k.c) :
-    readBytes (s1SlotMem k m) (k.c + 8) 8 = some (natToBytes (escAnd26W k).toNat 8) := by
+    readBytes (s1SlotMem k m) (k.c + 8) 8 = some (natToBytes (escConv13W k).toNat 8) := by
   simp only [s1SlotMem]
   rw [readBytes_slot_above _ (k.o + 40) (k.c + 8) _ (by omega),
     readBytes_slot_above _ (k.o + 32) (k.c + 8) _ (by omega),
@@ -4124,9 +3790,9 @@ theorem s1Slot_im_below (k : Ctx) (m : Mem) (hdisj : k.o + 48 ≤ k.c) :
 theorem s1Slot_carry_below (k : Ctx) (m : Mem) (hdisj : k.o + 48 ≤ k.c) :
     readBytes (s1SlotMem k m) k.c 24
       = some (natToBytes (escShr16W k).toNat 8 ++
-          (natToBytes (escAnd26W k).toNat 8 ++ natToBytes (imSignW k).toNat 8)) := by
+          (natToBytes (escConv13W k).toNat 8 ++ natToBytes (imSignW k).toNat 8)) := by
   have h16 : readBytes (s1SlotMem k m) (k.c + 8) 16
-      = some (natToBytes (escAnd26W k).toNat 8 ++ natToBytes (imSignW k).toNat 8) := by
+      = some (natToBytes (escConv13W k).toNat 8 ++ natToBytes (imSignW k).toNat 8) := by
     rw [show (16 : Nat) = 8 + 8 from by decide]
     rw [readBytes_app _ 8 8 (k.c + 8) (s1Slot_ppar_below k m hdisj)]
     rw [show (k.c + 8) + 8 = k.c + 16 from by omega]
@@ -4257,7 +3923,7 @@ theorem s1_masks_refines (lo hi : Block32) (st : ClassState) (opened ppar : Bool
   · -- the carry slot
     have hc24 : readBytes (s1SlotMem k mem) k.c 24
         = some (natToBytes (escShr16W k).toNat 8 ++
-            (natToBytes (escAnd26W k).toNat 8 ++ natToBytes (imSignW k).toNat 8)) := by
+            (natToBytes (escConv13W k).toNat 8 ++ natToBytes (imSignW k).toNat 8)) := by
       rcases hdisj'' with h | h
       · exact s1Slot_carry k mem h
       · exact s1Slot_carry_below k mem h
