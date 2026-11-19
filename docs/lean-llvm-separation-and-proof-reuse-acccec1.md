@@ -1,0 +1,70 @@
+# Where to apply separation logic in the JSON proof
+
+**Captain’s handoff · 19 November 2026 · [lean-llvm at `acccec1`](https://github.com/scidonia/lean-llvm/commit/acccec11a99830fb01a5cbb95ec9c69fecf3988f)**
+
+**Give the fraction-to-return theorem first priority. Give the pipeline’s two caller-owned count slots to a second worker as the separation-logic pilot.** The first job advances numeric correctness and tests whether a caller can reuse an executed path. The second has an existing correct result to preserve and two nearly identical proofs to replace. They can proceed on separate branches.
+
+## How much of the algebra is in use?
+
+| Facility | What I found in the reviewed source | Best application |
+|---|---|---|
+| Counted `Path` and `BoundLoopPathFrame.toFrame` | The tier‑3 peel loop derives preservation of `%out` from its existing paths and a checked write set. The fraction loop uses `BoundLoopFrame` with preservation of two specific registers built into its arms. | Export paths for the fraction scan, then let the gate state which registers it needs. [Peel consumer](https://github.com/scidonia/lean-llvm/blob/acccec11a99830fb01a5cbb95ec9c69fecf3988f/LeanLLVM/Refinement/JsonStage2NumFastTier3Peel.lean#L531) · [Fraction frame](https://github.com/scidonia/lean-llvm/blob/acccec11a99830fb01a5cbb95ec9c69fecf3988f/LeanLLVM/Refinement/JsonStage2NumFastDigitRuns.lean#L3992) |
+| `UnchangedOutside`, `UnchangedOn`, `Owns` and interval separation | Stage 2 already uses spatial reasoning. The pipeline derives separation of the report writes from the caller slots, applies `stage2SlotKeeps_of_frame`, and recovers concrete reads in the returned memory. | Keep the existing call contract. Package the recurring interval argument once. [Pipeline proof](https://github.com/scidonia/lean-llvm/blob/acccec11a99830fb01a5cbb95ec9c69fecf3988f/LeanLLVM/Refinement/PipelineDischarge.lean#L2434) · [Frame conversion](https://github.com/scidonia/lean-llvm/blob/acccec11a99830fb01a5cbb95ec9c69fecf3988f/LeanLLVM/FramePredicate.lean#L290) |
+| `Rights`, memory-splitting `Star`, extent-based `star`, and `BytesAt` | The library proves composition, framing, concrete examples and overlap counterexamples. The umbrella imports `HeapLogic`. I found no direct application of its extent-star frame theorem in the JSON refinement modules. Their production proofs usually manipulate reads, lists of regions and inequalities directly. | Use `BytesAt` for a caller’s known byte contents. Use the extent-based `star` where callers already possess disjoint extents. [Permissions](https://github.com/scidonia/lean-llvm/blob/acccec11a99830fb01a5cbb95ec9c69fecf3988f/LeanLLVM/Permissions.lean#L158) · [Extent claims](https://github.com/scidonia/lean-llvm/blob/acccec11a99830fb01a5cbb95ec9c69fecf3988f/LeanLLVM/HeapLogic.lean#L325) · [Existing star frame rule](https://github.com/scidonia/lean-llvm/blob/acccec11a99830fb01a5cbb95ec9c69fecf3988f/LeanLLVM/HeapLogic.lean#L626) |
+
+There is a useful distinction between two kinds of frame here. A register frame says that a region of control flow preserves an environment lookup. A heap frame says that an execution changes memory only in a specified set and therefore preserves observations elsewhere. An output pointer can survive in its register while the bytes it points to change. A gate that reads a table needs both its base address and its contents.
+
+## First application — close the fraction route at the caller
+
+`fracScan_end230Cells` starts at the staged dot-dispatch state, reaches a particular exit within a fuel bound, and returns the integer accumulator cells there. `t1_fracEnd230_run` starts at that exit and can return the specified binary64 bytes for the covered fraction-only tier‑1 case. It also needs the sign, output pointer, two table bases and table reads in the exit memory. The missing composition is a useful test because every new fact has a consumer. [Scan producer](https://github.com/scidonia/lean-llvm/blob/acccec11a99830fb01a5cbb95ec9c69fecf3988f/LeanLLVM/Refinement/JsonStage2NumFastSeams.lean#L2941) · [Gate consumer](https://github.com/scidonia/lean-llvm/blob/acccec11a99830fb01a5cbb95ec9c69fecf3988f/LeanLLVM/Refinement/JsonStage2NumFastGate.lean#L63)
+
+1. **Keep one actual execution witness.** Have the fraction iteration arms expose their counted paths. Cover the six dispatch steps as well as the loop. Restrict the path to the blocks actually admitted when preservation depends on avoiding a register’s defining block. Use the same exit state for the fuel equation, the gate’s predecessor and the transported facts.
+2. **Ask for the gate’s registers at the consumer.** Combine the existing integer cells with `%out`, `%tobool274.not` and the two table symbols. Derive their preservation using the generic lookup rule and the appropriate write-set or block-exclusion facts. Apply the combined property through `toFrame`. Keep the old integer-only projection for its existing callers.
+3. **Expose the memory equality the scan already knows.** `fracRunInv` includes `s.mem = mem0`. `fracRunEndWord` omits that equality. Verify the exit edge and dispatch preserve memory, then return the equality at the same endpoint. Rewrite the staged table reads with it. This also lets the caller express the final output write relative to the original memory. A spatial proof buys little on this read-only stretch. [Invariant and exit word](https://github.com/scidonia/lean-llvm/blob/acccec11a99830fb01a5cbb95ec9c69fecf3988f/LeanLLVM/Refinement/JsonStage2NumFastDigitRuns.lean#L2702)
+4. **Compose through return.** Apply the gate with the supplied model ties, reuse the continuation fuel equation, and export a theorem from the staged dot-dispatch state to the returned result. Keep the tier‑1, digit-window and no-exponent conditions visible. Extending the start to function entry is a separate prefix composition.
+
+**Acceptance.** The composed theorem has no caller-supplied register lookup or table read *at an existential exit*. Demonstrate it on a fraction in the admitted window, such as `12.5`, with staging and table witnesses. Once the paths are exposed, request a further preserved lookup in a separate consumer commit. Record whether either iteration arm changed. That second commit measures the benefit of the interface.
+
+## Separation-logic pilot — frame the caller’s count slots once
+
+The tail of `pipelineTailTarget` already proves that stage 2 leaves the eight-byte slots `S.nk` and `S.nxp` unchanged. The proof separately constructs `hframeNk` and `hframeNxp`. Each decomposes the same report frame into output writes, scratch and the fresh allocation interval. The final theorem already consumes the two results. Replacing only the last two read conversions would leave the expensive duplication in place. [Repeated geometry and consumer](https://github.com/scidonia/lean-llvm/blob/acccec11a99830fb01a5cbb95ec9c69fecf3988f/LeanLLVM/Refinement/PipelineDischarge.lean#L2434)
+
+**Factor the geometry first.** Prove one local lemma for a caller interval with base `a` and width `w`. Give it the existing staging facts that place the interval apart from output and scratch and below the fresh allocator range. Split the report frame once and derive disjointness from the entire write footprint. Instantiate for each slot. Use each slot’s actual capacity and allocator bounds. Preserve the arena’s reserved extent and slack when computing the write footprint.
+
+**Then frame the read.** The intended reusable rule, in mathematical notation, is
+
+```text
+BytesAt a bs m₀
+∧ UnchangedOutside m₀ m₁ writes
+∧ Disjoint (atomExtent a bs) (inRegions writes)
+⇒ BytesAt a bs m₁
+```
+
+This follows from existing results. Convert the list frame with `unchangedOutside_iff_inRegions`, use disjointness to get agreement at each byte of the atom, and apply `BytesAt.frame`. The repository’s `UnchangedOn W` means agreement **outside** the allowed write set `W`. If staging already supplies `star (bytes a bs) Q` and the call changes only `Q.foot`, apply `frame_rule_of_star` directly. Preserve bytewise equality as a projection for consumers that do not know the bytes in advance. [List bridge](https://github.com/scidonia/lean-llvm/blob/acccec11a99830fb01a5cbb95ec9c69fecf3988f/LeanLLVM/FramePredicate.lean#L290) · [Atom frame](https://github.com/scidonia/lean-llvm/blob/acccec11a99830fb01a5cbb95ec9c69fecf3988f/LeanLLVM/HeapLogic.lean#L298) · [Star rule](https://github.com/scidonia/lean-llvm/blob/acccec11a99830fb01a5cbb95ec9c69fecf3988f/LeanLLVM/HeapLogic.lean#L626)
+
+**Preserve the public theorem.** Keep the current statement, including the same staging assumptions and the two exact returned words. Use the new proof at the present call site. Include a positive adjacent-interval example and a one-byte overlap in which a write actually changes a slot byte. The former catches an off-by-one error, and the latter shows why the side condition matters. Review the patch for one report-frame decomposition serving both slots. A new lemma with no client would leave maintenance cost unchanged.
+
+### One design constraint before generalising
+
+`Claim` contains `holds` and `foot` with no field proving that the former depends only on the latter. A claim could advertise an empty footprint while inspecting byte zero. An unrestricted frame rule for arbitrary claims would therefore be false. `BytesAt` already has a locality proof, `bytesAt_dependsOn`. If a second production client needs composite read assertions, add a separate predicate expressing `DependsOn C.foot C.holds`, prove it for the atoms and its closure under `star`, then frame those claims. This can be added without changing all existing claim constructors. [Locality definition](https://github.com/scidonia/lean-llvm/blob/acccec11a99830fb01a5cbb95ec9c69fecf3988f/LeanLLVM/HeapLogic.lean#L256) · [Claim representation](https://github.com/scidonia/lean-llvm/blob/acccec11a99830fb01a5cbb95ec9c69fecf3988f/LeanLLVM/HeapLogic.lean#L325)
+
+Retain legal aliasing. Two read-only observations may overlap. Using separating conjunction for every pair of table, input and scratch assertions can silently strengthen the ABI. Require separation precisely where a write threatens a kept observation or staging guarantees exclusive extents. The escape decoder supplies a concrete regression: its cursor may overwrite its destination if the extents overlap. The library already shows that simultaneous presence does not derive cursor/destination separation. Get that fact from caller layout. [Decoder’s four actual conditions](https://github.com/scidonia/lean-llvm/blob/acccec11a99830fb01a5cbb95ec9c69fecf3988f/LeanLLVM/Refinement/JsonEscapeDecodeRun.lean#L74) · [Overlap counterexample](https://github.com/scidonia/lean-llvm/blob/acccec11a99830fb01a5cbb95ec9c69fecf3988f/LeanLLVM/HeapLogic.lean#L689)
+
+## Other work likely to reduce turnaround
+
+- **Give updated values their own semantic invariant.** The exponent chain already returns four preserved cells and a stop word. The remaining `expAcc` fact describes a value changed by the digit recurrence. Give one worker the pure fold/update lemma, including the emitted saturation guard, and specify exactly how the entry, back edge and exit tie the machine word to it. Validate both sides of the guard. Register and heap framing can carry collateral facts around that proof. [Exponent chain](https://github.com/scidonia/lean-llvm/blob/acccec11a99830fb01a5cbb95ec9c69fecf3988f/LeanLLVM/Refinement/JsonStage2NumFastGate.lean#L225)
+- **Automate only the repetitive residual goals.** The repository already has `block_lk`. Capture the goals it leaves on the fraction prefix and two real predecessor-sensitive branches. Extend it or add a local companion only if the same lookup or phi step recurs. An altered incoming edge should fail a checked regression. [Existing tactic](https://github.com/scidonia/lean-llvm/blob/acccec11a99830fb01a5cbb95ec9c69fecf3988f/LeanLLVM/Refinement/BlockEval.lean#L166)
+- **Use consumer signatures to decide when to stop refactoring.** The pipeline’s unit-contract theorem at this revision still takes six walk suppliers. Count which of their fields can be produced from the actual staging and which require an executed path, a heap frame or a semantic invariant. Prioritise the field that blocks an inhabited caller application. The count-slot refactor is a maintenance improvement to a proof already used there. [Current pipeline signature](https://github.com/scidonia/lean-llvm/blob/acccec11a99830fb01a5cbb95ec9c69fecf3988f/LeanLLVM/Refinement/PipelineDischarge.lean#L2809)
+
+## Captain’s dispatch and decision
+
+| Assignment | Ownership | Evidence to merge |
+|---|---|---|
+| Fraction paths and caller | One owner for digit-run arm changes; a second owns a new caller module against the agreed endpoint signature. Captain owns shared import roots. | Staged dot-dispatch to tier‑1 return, then a second consumer-only lookup commit. |
+| Spatial pilot | One owner for the local geometry helper, atom adapter and the two-slot use site. | Existing pipeline theorem builds with the same assumptions, both slot reads follow, overlap control fails as expected, and the duplicated geometry is gone. |
+| Exponent arithmetic | Independent worker on a new arithmetic module; coordinate edits to digit-run files through their owner. | A recurrence lemma that the exponent exit proof can actually apply, with the remaining machine-to-model premise named if integration is pending. |
+
+Use the same pinned base for all workers. Measure warm elaboration on the same host, elapsed time to the integrated caller theorem, and files reopened when adding the next observation. Expand the spatial API after the pilot earns a second client. This programme targets proof development and maintenance; runtime performance needs its own benchmark.
+
+**Review scope.** Source inspection of the public revision above, checked against the attached November 18 handoff. The recommendations and their speedups have not been implemented or measured in this review. No independent Lean build was run.
+
