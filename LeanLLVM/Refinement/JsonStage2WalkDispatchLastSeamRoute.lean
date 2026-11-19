@@ -19,23 +19,43 @@ seam plus the class prefix (`12 + hlastByteCount hb ≤ 16`) is at most nineteen
 
 ## What the answer-`1` arm's continuation still lacks
 
-`HlastSeam.answerOneRefuse`'s route is `HlastRefuseRoute` with the error path after
-`if.then425.i`: `if.then432.i` → the scan/escape tree → `cleanup474.i` → `if.then`.  Its
-statement does not change here; what it needs is links the tree does not have, and this is
-the exact list (checked against `WalkLink`'s declarations):
+**Correction to this module's first report.**  The survey it carried used a word-boundary
+pattern that cannot match before `_`, so it listed `if_then432_i`, `if_else43_i`,
+`if_end48_i`, `if_end67_i`, `if_then19_i`, `if_then25_i`, `land_rhs71_i` and
+`while_end78_i` as absent.  They all exist (`JsonStage2WalkScopeClassC`,
+`JsonStage2WalkScopeClassAB`, `JsonStage2WalkEntry`, `JsonStage2WalkFinal`,
+`JsonStage2WalkCall`, `JsonStage2WalkPhi`).  The path's links are complete except two
+**loop-body** links, and those are not the real obstruction:
 
-* **no link at all** for `if.then432.i` itself (the `%cmp343.i` branch), `while.body.i104`
-  (the scan's increment and exit test), `if.end48.i`, `if.end67.criticiedge.i`/`if.end67.i`,
-  `if.then19.i` (the numeral arm: two `lifetime.start`s and the `num_fast_el1` call),
-  `if.then25.i`, `if.else43.i`, and the escape unit's own scan
-  (`land.rhs71.i`, `while.body76.i`, `while.end78.i`);
-* **present**: `cond.true.i106`, `cond.end.i96`, `land.rhs.i103`, `NodeBlock73`,
-  `NodeBlock71`, `LeafBlock64`/`67`/`69`, `while.end.i`, `if.end.i97`, `if.else.i`,
-  `NodeBlock83`/`81`, `LeafBlock75`/`77`/`79`, and `cleanup474.i`;
-* **the price**: the scan's length is the entry's own token, so the count is not the
-  constant `refusePrice_of_le` bounds — it must be charged per byte against
-  `8·(G.n − entryPos G C.k)`, which is the accounting `RunLastFacts`/`runLast_price_with_credit`
-  make for the merge endpoint and no segment makes for `if.then`.
+* `while_body_i104` — the slow scan's increment (`%inc.i105 = %ee.011.i + 1`), its exit test
+  (`%exitcond.not.i`) and its two edges (back to `land.rhs.i103`, out to `cleanup474.i`);
+* `while_body76_i` — the escape unit's scan's same shape, on `%exitcond24.not.i`.
+
+Both are two-instruction blocks (`add`, `icmp`) with a `condbr`; `denoteCode_cons_of` plus
+`step_add_reg` and `walkDenoteCode_icmp` give the block step, and `callQuietBr` gives the
+link, so each is a mechanical addition rather than a modelled gap.
+
+**What is missing is the scan's segment, not its links.**  `ScanVisits`
+(`JsonStage2WalkDispatchRunOfStaging`) models the *other* scan — `while.body462.i` at
+`land.rhs457.i` — not this one; `while.body.i104`'s loop has no visit model, no induction
+and no segment from `land.rhs.i103` to either exit (`while.end.i` on a whitespace byte, or
+`cleanup474.i` when the counter reaches `%cond.i`).  Such a segment is parametric in the
+number of visited bytes `G.bs[entryPos … %cond.i)` and must be priced by that number, in the
+shape `runLast_price_with_credit` gives the merge endpoint (`8·(G.n − entryPos G C.k)`
+for the byte term); the constant bound `refusePrice_of_le` is not applicable, as the
+instruction says.
+
+**The class's own path is narrower than the list.**  At `%8 ∈ {126, 127}`, `%cmp343.i` is
+`ult %inc.i %nep` with `%inc.i = C.k + 1 = G.nep`, so it is `0` and `if.then432.i` takes
+`cond.end.i96` with `%cond.i = %4 = G.n`; `%cmp310.i` is `ugt G.n (entryPos G C.k)`, i.e.
+`1`, so the scan is entered.  Its two exits then reach `cleanup474.i` directly (counter at
+the bound, `%cmp6.i`) or, on a whitespace stop, `if.end.i97` whose tag test on
+`%41 = %8 = 126/127` is clear, then `if.else.i` → `NodeBlock83` → `NodeBlock81` →
+`LeafBlock79` → `if.else43.i` → `cleanup474.i`.  So `if.end48.i`, `if.end67.critedge.i`,
+`if.end67.i`, `if.then19.i`, `if.then25.i`, `land.rhs71.i`, `while.body76.i` and
+`while.end78.i` are on *other* literals' paths (the numeral arm and the escape unit), not
+on this class's; their presence is needed for a general `badToken` route, not for
+`HlastSeam.answerOneRefuse`'s inhabitant.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkDispatchSeamRow
 import LeanLLVM.Refinement.JsonStage2WalkDispatchSeams
