@@ -590,3 +590,26 @@ as up to date.
 - Document a modelling simplification where it is made, not only in this file.
 - The driver's output is a toolchain artifact: canonical syntax, one instruction
   per line, block labels preserved.
+
+### Module granularity
+
+A module's cost is its **work cone**: elaborating it and every module that imports
+it.  That cone is also the unit of a parallel lane, so a coarse module is paid by
+every lane and serialises work that would otherwise be independent.
+
+- New facts go in the narrowest module that can state them.  A front-end module
+  imports and re-exports only what its callers name; `JsonStage2WalkScope` and
+  `JsonStage2StringBody` are front-ends over eleven and seven modules, and stay
+  that way.
+- A module in the hundreds of lines is the default.  A file past about a thousand
+  lines states in its header why it is one module — a generated arm family, one
+  long tactic block, or a single induction that cannot be split without restating
+  its motive — rather than a front-end plus leaves.
+- Split when a file holds two concerns whose lemmas never reference each other,
+  when a change to one concern re-elaborates the other, or when a doc-only edit
+  costs minutes.  Move a lemma down when a lower module cannot use it: import
+  direction decides the cone, not ownership.
+- Measure the cone after a change — modules re-elaborated and elapsed time — and
+  prefer the split that reduces both.
+- Reviewers flag a new large module that could be a front-end plus leaves, and a
+  lemma placed above the consumer that needs it.

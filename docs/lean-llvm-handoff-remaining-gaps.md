@@ -539,6 +539,10 @@ that quantifies over states nobody occupies is the failure mode both find.
   never from the commit you last read — a file rebuilt from an older base silently
   reverts whatever landed since.
 - **One file, one owner.** Two workers authorized on one file produced a red tree.
+- **A module is a cone; keep it small.** New facts go in the narrowest module that can
+  state them, front-ends stay thin, and a lemma moves down to the consumer's level.  The
+  cone is the unit of a parallel lane and the cost every later change pays; a doc-only
+  edit that costs minutes is a split signal, not a scheduling problem.
 - **Killing an agent does not kill its `systemd-run` scope children** — stop them
   with `pgrep -af 'lake build|bin/lean '` and `pkill`, or they compile for hours.
   **Do not kill a `lean` process that is writing an `.olean`**: `.lake` deletes the
