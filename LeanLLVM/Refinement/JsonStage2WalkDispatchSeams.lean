@@ -23,9 +23,12 @@ the state it is given — they are the same peels at every seam
 (`contTailStart_ee`/`contTailStart_cond`, `scSeamByte_ee`/`scSeamByte_cond`,
 `hlastTail_ee`/`hlastTail_cond`).
 
-`HcontSeamAbi` is that structure as one `∀`-field per seam: the scan arm's seam at the run
-class's `if.then413.i` (`ContTailStartC C` at `contWsTailStart …`), which is the one seam
-whose tail `emptyTailSeg_of_calls` does not cover.
+`HcontSeamAbi` is that structure as one `∀`-field per seam.  The edge fixes the field: the
+run class's `if.then413.i` at `if.else405.i`'s `0` is the *refusal* seam (the two leading
+calls, the answer `0` and the refusal record's memory), and `if.then397.i`'s `9`,
+`if.then403.i`'s `10` and `LeafBlock58`'s `8` are the three *emit* seams (the three call
+rows).  Every field has an inhabitant at its leaf, so the group costs the staged words plus
+the single emit row `hemit` at the three emit seams — nothing at the refusal one.
 
 ## The scan arm's tail, from the rows
 
@@ -392,49 +395,45 @@ def HcontSeamRefusal.cast {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s s' :
       pos := rows.refuse.pos
       hmem := rows.refuse.hmem }
 
-/-- **The seam's call rows at every seam**: one `∀`-field each.  The continuing scan arm's
-seam is the run class's own `if.then413.i` — `ContTailStartC C` at the state
-`contWsTailStart` builds from the check state's stop and byte — and the last entry's seam is
-`TailStartC C` at `hlastTail`.
+/-- **The seam's rows at every seam**: one `∀`-field each.  The continuing seams are the
+run class's own `if.then413.i` — `ContTailStartC C` at the state `contWsTailStart` builds
+from the check state's stop and byte — and the last entry's is `TailStartC C` at
+`hlastTail`.
 
-The four continuing fields carry their literal (`HcontSeamKind`), because the six leaves
-into `if.then413.i` do not share one: `if.else405.i`'s edge selects `0`, `if.then397.i`'s
-`9`, `if.then403.i`'s `10` and `LeafBlock58`'s `8`.  Three of the six leaves — the letters
-`LetS413`, `LeafBlock56`'s else arm `ClsS413F` and `LeafBlock58`'s else arm `HeadS413` —
-have `if.else405.i` as their predecessor, so they share the one `scan` item and
-`HcontSeamCalls.cast` moves its rows to each: they differ in the carry the span leaves, and
-the rows mention only the memory and the counter.  The other three cannot be cast from it,
-because a cast preserves `cA` and the leaf's `hval` pins it; those are the three items a
-producer genuinely adds (`scanF`, `scan56True`, `scan58True`).
+The edge decides the field, because the kind literal is `if.then413.i`'s `phi` and both the
+`phi`'s value and the memory the first call reads are fixed by it:
+
+* `if.else405.i`'s `0` is the **refusal** seam (`scanRefuse`): `od_scalar_value` answers `0`
+  at a zero kind, the walk leaves for `if.then432.i` and no third call exists.  The three
+  leaves whose predecessor is that edge — the letters `LetS413`, `LeafBlock56`'s else arm
+  `ClsS413F` and `LeafBlock58`'s else arm `HeadS413` — read it
+  (`HcontSeamRefusal.cast` moves it to each), and it is the field with no emit row;
+* `if.then397.i`'s `9`, `if.then403.i`'s `10` and `LeafBlock58`'s `8` are the three emit
+  seams (`scanF`, `scan56True`, `scan58True`), one per leaf, because a cast preserves `cA`
+  and the leaf's `hval` pins it.
 
 The last entry's field states the calls alone: `hlastTailByte`'s route fixes the literal at
-its own class, and `HlastClassRows.seam` is where the last level's rows are grouped. -/
+its own class, and `HlastClassRows.seam` is where the last level's rows are grouped (it is
+*not* this field's instance — its state carries the byte's route, so it names its own
+producer).
+
+Every field here has an inhabitant at its leaf: `hcontSeamRefusalOf` for `scanRefuse`
+(from the staged words alone, the answer and the record being derived) and
+`hcontSeamKindOf` for the emit fields (whose extra supply is the single row `hemit`). -/
 structure HcontSeamAbi {m0 : Mem} (G : WalkGeom m0) : Type where
   /-- **The `if.else405.i` edge's seam, which is the refusal arm.**  That edge writes the
-  literal `0`, and `od_scalar_value` answers `0` at a zero kind (`|stage2ScalarValue|`'s
+  literal `0`, and `od_scalar_value` answers `0` at a zero kind (`stage2ScalarValue`'s
   first arm, `stage2ErrSetMsg`), so the walk leaves `if.then425.i` for `if.then432.i` and
   no third call exists: the rows are the two leading calls, the answer `0` and the refusal
   record's memory.  This is the field the three leaves whose predecessor is `if.else405.i`
-  (`LetS413`, `ClsS413F`, `HeadS413`) read.
-
-  `scan` below is the *emit* group at the same literal, and it has no inhabitant
-  (`hcontSeamCalls_no_literal_zero`): a zero kind cannot reach `if.then447.i`.  It is kept
-  because `JsonStage2WalkDispatchRunRow`'s three cast-leaf wrappers still read it; removing
-  it is that module's edit, and until then `HcontSeamAbi` as a whole is uninhabited. -/
+  read. -/
   scanRefuse : ∀ (C : WalkCarry G) (sl : State) (b35 : UInt8) (ix : BitVec 64) (v : BitVec 32)
     (k : Nat) (x1 : BitVec 8),
     HcontSeamRefusal G (ContTailStartC C)
       (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1) (BitVec.ofNat 32 0)
-  /-- The continuing run class's seam as the emit group: the scan arm's `if.then413.i` at
-  `if.else405.i`'s literal `0`.  Refuted at that literal (`hcontSeamCalls_no_literal_zero`);
-  the edge's real rows are `scanRefuse`'s. -/
-  scan : ∀ (C : WalkCarry G) (sl : State) (b35 : UInt8) (ix : BitVec 64) (v : BitVec 32)
-    (k : Nat) (x1 : BitVec 8),
-    HcontSeamKind G (ContTailStartC C)
-      (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1) (BitVec.ofNat 32 0)
   /-- **The `'f'` leaf's seam**: `FS413`, whose `phi` incoming is `if.then397.i`'s `9`.
-  The rows are not the class-C else seam's: the kind literal is the memory the first call
-  reads, so each leaf whose predecessor is not `if.else405.i` has its own. -/
+  The rows are not any other leaf's: the kind literal is the memory the first call reads, so
+  each leaf whose predecessor is not `if.else405.i` has its own. -/
   scanF : ∀ (C : WalkCarry G) (sl : State) (b35 : UInt8) (ix : BitVec 64) (v : BitVec 32)
     (k : Nat) (x1 : BitVec 8),
     HcontSeamKind G (ContTailStartC C)

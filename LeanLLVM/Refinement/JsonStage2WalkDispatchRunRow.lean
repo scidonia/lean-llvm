@@ -21,22 +21,26 @@ that leaf's edge needs.
 
 | leaf | the seam's state | kind | supply item |
 |---|---|---|---|
-| the letters route (`LetS413`) | `contWsTailStart …` | `0` | `scan` |
-| `'f'` (`FS413`) | `FS413 (contWsSeamS …)` | `9` | `scanF` |
-| `110` (`ClsS413T`) | `ClsS413T (contWsSeamS …)` | `10` | `scan56True` |
-| `111 … 115` (`ClsS413F`) | `contWsTailStart …` | `0` | `scan`, cast |
-| `116` (`ClsS58T`) | `ClsS58T (contWsSeamS …)` | `8` | `scan58True` |
-| `117 … 125` (`HeadS413`) | `contWsTailStart …` | `0` | `scan`, cast |
+| the letters route (`LetS413`) | `contWsTailStart …` | `0` | `HcontClassRows.seamScan` (empty) |
+| `'f'` (`FS413`) | `FS413 (contWsSeamS …)` | `9` | `HcontSeamAbi.scanF` |
+| `110` (`ClsS413T`) | `ClsS413T (contWsSeamS …)` | `10` | `HcontSeamAbi.scan56True` |
+| `111 … 115` (`ClsS413F`) | `contWsTailStart …` | `0` | `HcontClassRows.seamScan` (empty) |
+| `116` (`ClsS58T`) | `ClsS58T (contWsSeamS …)` | `8` | `HcontSeamAbi.scan58True` |
+| `117 … 125` (`HeadS413`) | `contWsTailStart …` | `0` | `HcontClassRows.seamScan` (empty) |
 
-**Which of those items are genuinely new.**  `scanF`, `scan56True` and `scan58True` are:
-their leaves' predecessors are `if.then397.i`, `if.then403.i` and `LeafBlock58`, whose
-`phi` incomings are `9`, `10` and `8`, and a cast of the `0` seam's rows would keep `0`
-(`HcontSeamCalls.cast` preserves `cA`) and could not discharge the leaf's `hval`
-(`HcontRunLeaf.cA_of_imm` states exactly that the leaf pins its seam's literal).  The
-three kind-`0` leaves are **not** new supply: their seam is the one state
-`contWsTailStart` builds — `if.else405.i`'s edge — the leaf's span leaves that state for
-the carry the leaf binds, and the rows mention only the memory, the counter and the
-carry's stage, so one item serves all three by `HcontSeamCalls.cast`.
+**The three emit items are the supply, and the three kind-`0` cells have none.**  `scanF`,
+`scan56True` and `scan58True` are new rows: their leaves' predecessors are
+`if.then397.i`, `if.then403.i` and `LeafBlock58`, whose `phi` incomings are `9`, `10` and
+`8`, and no cast of another leaf's rows could discharge the leaf's `hval`
+(`HcontRunLeaf.cA_of_imm` states exactly that the leaf pins its seam's literal).  The three
+kind-`0` leaves read `HcontClassRows.seamScan`, the emit group at `if.else405.i`'s literal
+`0`, and **that group is empty**: `od_scalar_value` answers `0` at a zero kind, so the walk
+leaves for `if.then432.i` and never reaches `if.then447.i`
+(`JsonStage2WalkDispatchSeamCalls.hcontSeamCalls_no_literal_zero`).  The three wrappers are
+therefore the cells the coverage must stop claiming at those bytes; the field is stated
+rather than assumed so that the stop is visible, and the rows that edge really carries are
+`HcontSeamAbi.scanRefuse`'s (`JsonStage2WalkDispatchClassCase`'s
+`hcontSeamRefuseAt_letters`/`_56Else`/`_58Else`).
 
 ## The row: a producer now, not a field
 
@@ -85,24 +89,26 @@ theorem HcontRunLeaf.cA_of_imm {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     true_and] at hval
   exact hval.symm
 
-/-! ### The letters route's leaf: the seam's `scan` item -/
+/-! ### The letters route's leaf: the class row's empty `seamScan` item -/
 
-/-- **The letters route's leaf, from the seam's rows.**  `lettersSpan` ends at `LetS413`,
-whose predecessor is `if.else405.i` — `scan`'s own seam — so the item serves it directly
-and no new supply is taken. -/
+/-- **The letters route's leaf, from the class row's `seamScan`.**  `lettersSpan` ends at
+`LetS413`, whose predecessor is `if.else405.i`; the item it reads is that edge's emit group,
+which is empty, so this cell is vacuous.  It stays because
+`JsonStage2WalkDispatchContinuing`'s `hcontArm_run_defaultValueLow` call site still reaches
+it; the refusal rows for the same leaf are `hcontSeamRefuseAt_letters`'s. -/
 noncomputable def hcontRunLeafAt_letters {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
-    (hs : HcontSeamAbi G) (sl : State) (b35 : UInt8) (ix : BitVec 64) (v : BitVec 32)
+    (hc : HcontClassRows G) (sl : State) (b35 : UInt8) (ix : BitVec 64) (v : BitVec 32)
     (k : Nat) (x1 : BitVec 8)
     (hInvS : WalkInv G (ContSeamC C) (contRunLeafS G C sl b35 ix v k x1))
     (h8 : evalOperand (contRunLeafS G C sl b35 ix v k x1) (.reg "%8") = some (.int 8 x1))
     (hroot0 : readBytes (contRunLeafS G C sl b35 ix v k x1).mem (G.next0 + 8) 4 =
-      some (natToBytes (hs.scan C sl b35 ix v k x1).calls.rdv.toNat 4))
+      some (natToBytes (hc.seamScan C sl b35 ix v k x1).calls.rdv.toNat 4))
     (hk : C.k + 1 < G.nep)
     (h110 : evalICmp .slt x1 (BitVec.ofNat 8 110) = 1)
     (hne102 : evalICmp .eq x1 (BitVec.ofNat 8 102) = 0) :
     HcontRunLeaf G C :=
-  hcontRunLeaf_letters G C sl b35 ix v k x1 hInvS h8 (hs.scan C sl b35 ix v k x1).calls
-    (hs.scan C sl b35 ix v k x1).hcA hroot0 hk h110 hne102
+  hcontRunLeaf_letters G C sl b35 ix v k x1 hInvS h8 (hc.seamScan C sl b35 ix v k x1).calls
+    (hc.seamScan C sl b35 ix v k x1).hcA hroot0 hk h110 hne102
 
 /-! ### The `'f'` leaf: the `scanF` item, whose literal is `9` -/
 
@@ -143,25 +149,25 @@ noncomputable def hcontRunLeafAt_56True {m0 : Mem} {G : WalkGeom m0} {C : WalkCa
     (hs.scan56True C sl b35 ix v k x1).calls
     (hs.scan56True C sl b35 ix v k x1).hcA hroot0 hk h110 h116 h110eq
 
-/-! ### `111 … 115`'s leaf: the `scan` item, cast -/
+/-! ### `111 … 115`'s leaf: the class row's empty `seamScan` item, cast -/
 
-/-- **`111 … 115`'s leaf, from the shared seam rows.**  `c56ElseSpan` ends at `ClsS413F`,
-whose predecessor is `if.else405.i`; the rows are `scan`'s, cast across the leaf's binds by
-`hcontRunLeaf_56Else`, and no new supply is taken. -/
+/-- **`111 … 115`'s leaf, from the class row's `seamScan`.**  `c56ElseSpan` ends at
+`ClsS413F`, whose predecessor is `if.else405.i`; the item is that edge's emit group, which
+is empty, so this cell is vacuous (the refusal rows are `hcontSeamRefuseAt_56Else`'s). -/
 noncomputable def hcontRunLeafAt_56Else {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
-    (hs : HcontSeamAbi G) (sl : State) (b35 : UInt8) (ix : BitVec 64) (v : BitVec 32)
+    (hc : HcontClassRows G) (sl : State) (b35 : UInt8) (ix : BitVec 64) (v : BitVec 32)
     (k : Nat) (x1 : BitVec 8)
     (hInvS : WalkInv G (ContSeamC C) (contRunLeafS G C sl b35 ix v k x1))
     (h8 : evalOperand (contRunLeafS G C sl b35 ix v k x1) (.reg "%8") = some (.int 8 x1))
     (hroot0 : readBytes (contRunLeafS G C sl b35 ix v k x1).mem (G.next0 + 8) 4 =
-      some (natToBytes (hs.scan C sl b35 ix v k x1).calls.rdv.toNat 4))
+      some (natToBytes (hc.seamScan C sl b35 ix v k x1).calls.rdv.toNat 4))
     (hk : C.k + 1 < G.nep)
     (h110 : evalICmp .slt x1 (BitVec.ofNat 8 110) = 0)
     (h116 : evalICmp .slt x1 (BitVec.ofNat 8 116) = 1)
     (h110eq : evalICmp .eq x1 (BitVec.ofNat 8 110) = 0) :
     HcontRunLeaf G C :=
-  hcontRunLeaf_56Else G C sl b35 ix v k x1 hInvS h8 (hs.scan C sl b35 ix v k x1).calls
-    (hs.scan C sl b35 ix v k x1).hcA hroot0 hk h110 h116 h110eq
+  hcontRunLeaf_56Else G C sl b35 ix v k x1 hInvS h8 (hc.seamScan C sl b35 ix v k x1).calls
+    (hc.seamScan C sl b35 ix v k x1).hcA hroot0 hk h110 h116 h110eq
 
 /-! ### `116`'s leaf: the `scan58True` item, whose literal is `8` -/
 
@@ -183,26 +189,25 @@ noncomputable def hcontRunLeafAt_58True {m0 : Mem} {G : WalkGeom m0} {C : WalkCa
     (hs.scan58True C sl b35 ix v k x1).calls
     (hs.scan58True C sl b35 ix v k x1).hcA hroot0 hk h110 h116 h116eq
 
-/-! ### `117 … 125`'s leaf: the `scan` item, cast -/
+/-! ### `117 … 125`'s leaf: the class row's empty `seamScan` item, cast -/
 
-/-- **`117 … 125`'s leaf, from the shared seam rows.**  `c58ElseSpan` ends at `HeadS413`,
-whose predecessor is `if.else405.i`; the rows are `scan`'s, cast by
-`hcontRunLeaf_58Else`, and no new supply is taken.  This is the leaf the earlier revision
-pinned the whole bundle to. -/
+/-- **`117 … 125`'s leaf, from the class row's `seamScan`.**  `c58ElseSpan` ends at
+`HeadS413`, whose predecessor is `if.else405.i`; the item is that edge's emit group, which
+is empty, so this cell is vacuous (the refusal rows are `hcontSeamRefuseAt_58Else`'s). -/
 noncomputable def hcontRunLeafAt_58Else {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
-    (hs : HcontSeamAbi G) (sl : State) (b35 : UInt8) (ix : BitVec 64) (v : BitVec 32)
+    (hc : HcontClassRows G) (sl : State) (b35 : UInt8) (ix : BitVec 64) (v : BitVec 32)
     (k : Nat) (x1 : BitVec 8)
     (hInvS : WalkInv G (ContSeamC C) (contRunLeafS G C sl b35 ix v k x1))
     (h8 : evalOperand (contRunLeafS G C sl b35 ix v k x1) (.reg "%8") = some (.int 8 x1))
     (hroot0 : readBytes (contRunLeafS G C sl b35 ix v k x1).mem (G.next0 + 8) 4 =
-      some (natToBytes (hs.scan C sl b35 ix v k x1).calls.rdv.toNat 4))
+      some (natToBytes (hc.seamScan C sl b35 ix v k x1).calls.rdv.toNat 4))
     (hk : C.k + 1 < G.nep)
     (h110 : evalICmp .slt x1 (BitVec.ofNat 8 110) = 0)
     (h116 : evalICmp .slt x1 (BitVec.ofNat 8 116) = 0)
     (h116eq : evalICmp .eq x1 (BitVec.ofNat 8 116) = 0) :
     HcontRunLeaf G C :=
-  hcontRunLeaf_58Else G C sl b35 ix v k x1 hInvS h8 (hs.scan C sl b35 ix v k x1).calls
-    (hs.scan C sl b35 ix v k x1).hcA hroot0 hk h110 h116 h116eq
+  hcontRunLeaf_58Else G C sl b35 ix v k x1 hInvS h8 (hc.seamScan C sl b35 ix v k x1).calls
+    (hc.seamScan C sl b35 ix v k x1).hcA hroot0 hk h110 h116 h116eq
 
 /-! ### The run's row, from the class's prefix and the payload's two groups
 
@@ -648,9 +653,9 @@ theorem hcontArm_run_defaultValueLow {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry
     rw [ba.hx1]; exact h110
   have hne102b : evalICmp .eq ba.b.x1 (BitVec.ofNat 8 102) = 0 := by
     rw [ba.hx1]; exact hne102
-  let leaf := hcontRunLeafAt_letters hc.seam cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1
+  let leaf := hcontRunLeafAt_letters hc cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1
     hInvS ba.b.h8c
-    (hc.seam.scan C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1).hroot hk h110b hne102b
+    (hc.seamScan C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1).hroot hk h110b hne102b
   have hSpan : Seg (stage2Calls stage2SubCalls) G (ContSeamC C)
       (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1)
       (ContTailStartC C) leaf.ss 4 :=
@@ -712,9 +717,9 @@ theorem hcontArm_run_defaultValueMid {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry
     rw [ba.hx1]; exact h110
   have hne102b : evalICmp .eq ba.b.x1 (BitVec.ofNat 8 102) = 0 := by
     rw [ba.hx1]; exact hne102
-  let leaf := hcontRunLeafAt_letters hc.seam cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1
+  let leaf := hcontRunLeafAt_letters hc cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1
     hInvS ba.b.h8c
-    (hc.seam.scan C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1).hroot hk h110b hne102b
+    (hc.seamScan C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1).hroot hk h110b hne102b
   have hSpan : Seg (stage2Calls stage2SubCalls) G (ContSeamC C)
       (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1)
       (ContTailStartC C) leaf.ss 4 :=
@@ -775,9 +780,9 @@ theorem hcontArm_run_otherValue {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     rw [ba.hx1]; exact h110
   have hne102b : evalICmp .eq ba.b.x1 (BitVec.ofNat 8 102) = 0 := by
     rw [ba.hx1]; exact hne102
-  let leaf := hcontRunLeafAt_letters hc.seam cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1
+  let leaf := hcontRunLeafAt_letters hc cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1
     hInvS ba.b.h8c
-    (hc.seam.scan C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1).hroot hk h110b hne102b
+    (hc.seamScan C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1).hroot hk h110b hne102b
   have hSpan : Seg (stage2Calls stage2SubCalls) G (ContSeamC C)
       (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1)
       (ContTailStartC C) leaf.ss 4 :=
@@ -837,9 +842,9 @@ theorem hcontArm_run_defaultValueBracket {m0 : Mem} {G : WalkGeom m0} {C : WalkC
     rw [ba.hx1]; exact h110
   have hne102b : evalICmp .eq ba.b.x1 (BitVec.ofNat 8 102) = 0 := by
     rw [ba.hx1]; exact hne102
-  let leaf := hcontRunLeafAt_letters hc.seam cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1
+  let leaf := hcontRunLeafAt_letters hc cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1
     hInvS ba.b.h8c
-    (hc.seam.scan C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1).hroot hk h110b hne102b
+    (hc.seamScan C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1).hroot hk h110b hne102b
   have hSpan : Seg (stage2Calls stage2SubCalls) G (ContSeamC C)
       (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1)
       (ContTailStartC C) leaf.ss 4 :=
@@ -906,9 +911,9 @@ theorem hcontArm_run_defaultValueBrace {m0 : Mem} {G : WalkGeom m0} {C : WalkCar
     rw [ba.hx1]; exact h116
   have h116eqb : evalICmp .eq ba.b.x1 (BitVec.ofNat 8 116) = 0 := by
     rw [ba.hx1]; exact h116eq
-  let leaf := hcontRunLeafAt_58Else hc.seam cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1
+  let leaf := hcontRunLeafAt_58Else hc cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1
     hInvS ba.b.h8c
-    (hc.seam.scan C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1).hroot hk h110b h116b h116eqb
+    (hc.seamScan C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1).hroot hk h110b h116b h116eqb
   have hSpan : Seg (stage2Calls stage2SubCalls) G (ContSeamC C)
       (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1)
       (ContTailStartC C) leaf.ss 5 :=
@@ -967,8 +972,8 @@ theorem hcontArm_run_defaultValueBracketHigh {m0 : Mem} {G : WalkGeom m0}
       (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1) := hrun.inv'
   have root0 : readBytes (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1).mem
       (G.next0 + 8) 4 =
-      some (natToBytes (hc.seam.scan C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1).calls.rdv.toNat 4) :=
-    (hc.seam.scan C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1).hroot
+      some (natToBytes (hc.seamScan C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1).calls.rdv.toNat 4) :=
+    (hc.seamScan C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1).hroot
   have rootF : readBytes (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1).mem
       (G.next0 + 8) 4 =
       some (natToBytes (hc.seam.scanF C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1).calls.rdv.toNat 4) :=
@@ -1001,7 +1006,7 @@ theorem hcontArm_run_defaultValueBracketHigh {m0 : Mem} {G : WalkGeom m0}
         bitZeroOfNeOne h102one
       have hne102b : evalICmp .eq ba.b.x1 (BitVec.ofNat 8 102) = 0 := by
         rw [ba.hx1]; exact h102z
-      let leaf := hcontRunLeafAt_letters hc.seam cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1
+      let leaf := hcontRunLeafAt_letters hc cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1
         hInvS ba.b.h8c root0 hk h110b hne102b
       have hSpan : Seg (stage2Calls stage2SubCalls) G (ContSeamC C)
           (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1)
@@ -1041,7 +1046,7 @@ theorem hcontArm_run_defaultValueBracketHigh {m0 : Mem} {G : WalkGeom m0}
       by_cases h116one : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 116) = 1
       · have h116b : evalICmp .slt ba.b.x1 (BitVec.ofNat 8 116) = 1 := by
           rw [ba.hx1]; exact h116one
-        let leaf := hcontRunLeafAt_56Else hc.seam cl ba.b.b35 ba.b.ix ba.b.v ba.b.k
+        let leaf := hcontRunLeafAt_56Else hc cl ba.b.b35 ba.b.ix ba.b.v ba.b.k
           ba.b.x1 hInvS ba.b.h8c root0 hk h110b h116b h110eqb
         have hSpan : Seg (stage2Calls stage2SubCalls) G (ContSeamC C)
             (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1)
@@ -1072,7 +1077,7 @@ theorem hcontArm_run_defaultValueBracketHigh {m0 : Mem} {G : WalkGeom m0}
             bitZeroOfNeOne h116eq
           have h116eqb : evalICmp .eq ba.b.x1 (BitVec.ofNat 8 116) = 0 := by
             rw [ba.hx1]; exact h116eqz
-          let leaf := hcontRunLeafAt_58Else hc.seam cl ba.b.b35 ba.b.ix ba.b.v ba.b.k
+          let leaf := hcontRunLeafAt_58Else hc cl ba.b.b35 ba.b.ix ba.b.v ba.b.k
             ba.b.x1 hInvS ba.b.h8c root0 hk h110b h116b h116eqb
           have hSpan : Seg (stage2Calls stage2SubCalls) G (ContSeamC C)
               (contRunLeafS G C cl ba.b.b35 ba.b.ix ba.b.v ba.b.k ba.b.x1)

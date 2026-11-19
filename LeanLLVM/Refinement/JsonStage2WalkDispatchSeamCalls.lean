@@ -78,11 +78,11 @@ named so a class's document row can carry them where it is read:
 rather than about this module: `stage2ScalarValue` answers `0` at `kind = 0`
 (`stage2ErrSetMsg`'s refusal), and the kind word at the seam is the literal the `phi`
 selected.  `hcontSeamCalls_no_kind_zero` below proves that no `HcontSeamCalls` exists at a
-kind-`0` store, which is what that edge writes.  Since `HcontSeamKind.hcA` fixes `calls.cA`
-to the field's literal, `HcontSeamAbi.scan` — the field at `if.else405.i`'s `0` — is
-refuted by that theorem, so `HcontSeamAbi G` has no inhabitant and neither does
-`HcontSeamStaging`'s `scan` field.  The kind-`0` leaves need the refusal arm's rows
-(`r₂.ret = 0` and the `if.then432.i` continuation) rather than the emit arm's.
+kind-`0` store, which is what that edge writes.  The edge's group is therefore the refusal
+arm's — `HcontSeamAbi.scanRefuse`, produced by `hcontSeamRefusalOf` from the staged words
+alone — and the emit group at that literal is stated where the class row that claims the
+cells names it (`HcontClassRows.seamScan`), empty.  No field of `HcontSeamAbi` is
+uninhabited.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkDispatchSeams
 
@@ -702,22 +702,16 @@ emit fields carry the kind literal `HcontSeamAbi` fixes for them (`9`, `10`, `8`
 entry's seam is a `Σ` over the literal because `HcontSeamAbi.last` states the calls alone
 and the literal is the class's (the `.scalar` route's `7`, for instance).
 
-`scanRefuse` is the `if.else405.i` edge's real supply — the staged words with no emit row —
-and `scan` is the emit group at the same literal, which that edge cannot inhabit.  Both are
-stated because `HcontSeamAbi` keeps `scan` for the three cast-leaf wrappers in
-`JsonStage2WalkDispatchRunRow`; the removal is that module's edit. -/
+`scanRefuse` is the `if.else405.i` edge's supply: the staged words, with no emit row,
+because that edge's answer is the refusal's and is derived.  The four emit seams carry the
+emit row (`HcontSeamEmitStage`), and no field here is the emit group at the literal `0` — the
+class row's `seamScan` is where that (empty) group is named. -/
 structure HcontSeamStaging {m0 : Mem} (G : WalkGeom m0) : Type where
   /-- **The `if.else405.i` edge's seam**: the staged words at the literal `0`, whose rows
   are the refusal arm's. -/
   scanRefuse : ∀ (C : WalkCarry G) (sl : State) (b35 : UInt8) (ix : BitVec 64)
     (v : BitVec 32) (k : Nat) (x1 : BitVec 8),
     HcontSeamStage G (ContTailStartC C)
-      (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1) (BitVec.ofNat 32 0)
-  /-- The continuing run class's seam as the emit group, at the same literal.  Empty; kept
-  for `HcontSeamAbi.scan`. -/
-  scan : ∀ (C : WalkCarry G) (sl : State) (b35 : UInt8) (ix : BitVec 64) (v : BitVec 32)
-    (k : Nat) (x1 : BitVec 8),
-    HcontSeamEmitStage G (ContTailStartC C)
       (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1) (BitVec.ofNat 32 0)
   /-- The `'f'` leaf's seam: `FS413`, `if.then397.i`'s `9`. -/
   scanF : ∀ (C : WalkCarry G) (sl : State) (b35 : UInt8) (ix : BitVec 64) (v : BitVec 32)
@@ -743,11 +737,12 @@ structure HcontSeamStaging {m0 : Mem} (G : WalkGeom m0) : Type where
 /-- **`HcontSeamAbi`, from the seam's staged words.**  Each field is the group the staging
 row produces at the seam state the field names: `scanRefuse` is the refusal arm's
 (`hcontSeamRefusalOf`), the four emit fields are `hcontSeamKindOf`'s, and the last entry's
-is `hcontSeamCallsOf`'s at the literal its row selects. -/
+is `hcontSeamCallsOf`'s at the literal its row selects.  Every field is inhabited at its
+leaf: the refusal one from the staged words alone, the emit ones from the staged words plus
+the single row `hemit`. -/
 noncomputable def hcontSeamAbi {m0 : Mem} (G : WalkGeom m0) (hs : HcontSeamStaging G) :
     HcontSeamAbi G where
   scanRefuse := fun C sl b35 ix v k x1 => hcontSeamRefusalOf (hs.scanRefuse C sl b35 ix v k x1)
-  scan := fun C sl b35 ix v k x1 => hcontSeamKindOf (hs.scan C sl b35 ix v k x1)
   scanF := fun C sl b35 ix v k x1 => hcontSeamKindOf (hs.scanF C sl b35 ix v k x1)
   scan56True := fun C sl b35 ix v k x1 => hcontSeamKindOf (hs.scan56True C sl b35 ix v k x1)
   scan58True := fun C sl b35 ix v k x1 => hcontSeamKindOf (hs.scan58True C sl b35 ix v k x1)

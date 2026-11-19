@@ -626,7 +626,9 @@ The fields are the producers' remaining argument lists:
 * `run` — the run class's arm from a row, which the class case feeds with
   `hcontRunRow_of_rows` at the leaf the head byte's bits select;
 * `seam` — the seams `HcontSeamAbi` names: the `if.else405.i` edge's refusal group and the
-  four emit groups.
+  four emit groups (each inhabited at its leaf);
+* `seamScan` — the emit group at that edge's literal `0`, which is empty; the `.run` cells
+  it stops are the ones this row must stop claiming.
 
 The run class's leaf is an argument of both producers rather than a field of the payload:
 the segment below `if.else387.i` belongs to the head byte's class, and the case's branch
@@ -727,8 +729,25 @@ structure HcontClassRows {m0 : Mem} (G : WalkGeom m0) : Type where
   /-- The seam's rows, at the run class's seams: the `if.else405.i` edge's refusal group
   (`scanRefuse`) and the four emit groups.  The kind literal each field fixes is part of
   the memory the first call reads, so the edge decides which field a leaf can read
-  (`JsonStage2WalkDispatchRunRow`'s table). -/
+  (`JsonStage2WalkDispatchRunRow`'s table).  Every field is inhabited at its leaf. -/
   seam : HcontSeamAbi G
+  /-- **The emit group at `if.else405.i`'s literal `0` — empty.**  `if.then413.i` stores the
+  literal as the token's kind, `od_scalar_value` answers `0` at a zero kind, and the walk
+  leaves for `if.then432.i`: no third call and no `if.then447.i`, so no `HcontSeamCalls`
+  exists at this literal
+  (`JsonStage2WalkDispatchSeamCalls.hcontSeamCalls_no_literal_zero`).
+
+  It is stated here, beside the row it stops, rather than in `HcontSeamAbi`: the class row
+  is what claims the `.run` cells whose byte sits on this edge
+  (`JsonStage2WalkDispatchRunRow`'s three cast-leaf wrappers), and those cells are vacuous.
+  Dropping the field together with those wrappers and their `.run` cases
+  (`JsonStage2WalkDispatchContinuing`'s `hcontArm_run_defaultValueLow`/`_Mid`/`_Bracket`/
+  `_BracketHigh` call sites) is the coverage repair; until then the row is uninhabited at
+  those bytes, which is the truth about that edge. -/
+  seamScan : ∀ (C : WalkCarry G) (sl : State) (b35 : UInt8) (ix : BitVec 64) (v : BitVec 32)
+    (k : Nat) (x1 : BitVec 8),
+    HcontSeamKind G (ContTailStartC C)
+      (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1) (BitVec.ofNat 32 0)
 
 /-- **The continuing class rows hold what the payload holds.**  The default-value class's
 document row is `defaultLane`'s, so a payload with the default row and the seam's calls
