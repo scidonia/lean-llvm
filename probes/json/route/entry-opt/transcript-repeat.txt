@@ -1,0 +1,238 @@
+# command: probes/json/route/entry-opt/run.sh 
+# build directory: /tmp/nix-shell.IVCcBN/json-entry-opt.18UgLm
+# install: Linux 6.17.0-1033-oem x86_64
+# cpu: Intel(R) Core(TM) Ultra 7 268V
+# cpus online: 8; pinned to: cpu0
+# scaling governor (cpu0): powersave
+# load average at start: 1.18 1.43 1.30 1/3732 2085808
+# document: tests/json-units-bench/build/corpus/syn-strings-64k.json size=65536 sha256=bd007090d7a5ab09a1fc69c0b96879f101dbf8b3f13a300d7d3e46127d26fb12
+# document pin: recorded
+# revision: 9bb37623a1ea25e9a902917f7aeee911c4d5c2ce
+
+## the build
+corpus: tests/json-units-bench/build/corpus/syn-strings-64k.json size=65536 sha256=bd007090d7a5ab09a1fc69c0b96879f101dbf8b3f13a300d7d3e46127d26fb12 (not the pinned document)
+build: /tmp/nix-shell.IVCcBN/json-entry-opt.18UgLm
+kernel flags: -O2 -march=x86-64-v3 -mpclmul -std=gnu11 -falign-loops=64 -falign-functions=64 -I /home/gavin/dev/Scidonia/lean-llvm/kernel/json
+harness flags: -O3 -march=x86-64-v3 -mpclmul -std=gnu11 -falign-loops=64 -falign-functions=64 -I /home/gavin/dev/Scidonia/lean-llvm/kernel/json
+compiler: clang (clang version 21.1.8)
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:118:13: warning: initializer overrides prior initialization of this subobject [-Winitializer-overrides]
+  118 |     ['"'] = '"', ['\\'] = '\\', ['/'] = '/', ['b'] = 8,
+      |             ^~~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:117:19: note: previous initialization is here
+  117 |     [0 ... 255] = -1,
+      |                   ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:118:27: warning: initializer overrides prior initialization of this subobject [-Winitializer-overrides]
+  118 |     ['"'] = '"', ['\\'] = '\\', ['/'] = '/', ['b'] = 8,
+      |                           ^~~~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:117:19: note: previous initialization is here
+  117 |     [0 ... 255] = -1,
+      |                   ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:118:41: warning: initializer overrides prior initialization of this subobject [-Winitializer-overrides]
+  118 |     ['"'] = '"', ['\\'] = '\\', ['/'] = '/', ['b'] = 8,
+      |                                         ^~~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:117:19: note: previous initialization is here
+  117 |     [0 ... 255] = -1,
+      |                   ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:118:54: warning: initializer overrides prior initialization of this subobject [-Winitializer-overrides]
+  118 |     ['"'] = '"', ['\\'] = '\\', ['/'] = '/', ['b'] = 8,
+      |                                                      ^
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:117:19: note: previous initialization is here
+  117 |     [0 ... 255] = -1,
+      |                   ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:119:13: warning: initializer overrides prior initialization of this subobject [-Winitializer-overrides]
+  119 |     ['f'] = 12, ['n'] = 10, ['r'] = 13, ['t'] = 9
+      |             ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:117:19: note: previous initialization is here
+  117 |     [0 ... 255] = -1,
+      |                   ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:119:25: warning: initializer overrides prior initialization of this subobject [-Winitializer-overrides]
+  119 |     ['f'] = 12, ['n'] = 10, ['r'] = 13, ['t'] = 9
+      |                         ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:117:19: note: previous initialization is here
+  117 |     [0 ... 255] = -1,
+      |                   ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:119:37: warning: initializer overrides prior initialization of this subobject [-Winitializer-overrides]
+  119 |     ['f'] = 12, ['n'] = 10, ['r'] = 13, ['t'] = 9
+      |                                     ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:117:19: note: previous initialization is here
+  117 |     [0 ... 255] = -1,
+      |                   ^~
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:119:49: warning: initializer overrides prior initialization of this subobject [-Winitializer-overrides]
+  119 |     ['f'] = 12, ['n'] = 10, ['r'] = 13, ['t'] = 9
+      |                                                 ^
+/home/gavin/dev/Scidonia/lean-llvm/kernel/json/escape.c:117:19: note: previous initialization is here
+  117 |     [0 ... 255] = -1,
+      |                   ^~
+8 warnings generated.
+
+source digests:
+  kernel/json/pipeline.c                                       c88f9de1ba8f6b6718b0a0c6bcc77ae075cb84cb7b9aaa430d7ddcdbdff6baf0
+  kernel/json/s1_block.c                                       c358ee6e330f1b514374c6454520d6fcf59921627d9eb104526346d88be7b7bc
+  kernel/json/entry.c                                          25700a712c206083884e9933b649a16a5b2f2f24ff37ba4dad50c65b15e3e90e
+  kernel/json/escape.c                                         9ce8bb4ccb705d938fa73e779d7d7ef064561d00c9e30e061f3052b242581dff
+  kernel/json/utf8.c                                           382a933422f19c36e54f24f260af6ce9a347cea8763639d95e99d75b15221793
+  kernel/json/stage2.c                                         08809fd4a9228c7c4b4ef4d41d27bcca9ec1f045e459a2b9f0a645e51a1cd5bc
+  probes/json/route/entry-opt/entry-opt.c                      0f11d08875578a48a541c879db3cb889ec47435abce3fb91ef5003447fec156f
+  probes/json/route/entry-opt/entry_variants.c                 1d226e8d0e037ae5aa232c4ec18152e57225ff3833d31fa892a685dcbfc11838
+  probes/json/route/entry-opt/shape.c                          857553c0360f10471ccdc428a98ed9f22ffa18488ddd4547d1575d9e68b3d6e3
+  probes/json/route/entry-opt/build.sh                         6e7d779aff84eddaa4bf517144559335efe794d55a5a940bb93a583156c09d30
+  probes/json/route/entry-opt/run.sh                           ee721c26bc76862586723c124b4b2b50883df969d070577b28852e1ee9e0ca46
+binary: /tmp/nix-shell.IVCcBN/json-entry-opt.18UgLm/entry-opt sha256=e9beee534f2e7e170e685a25d4ffd6789dd9ce5adf0dbdf10d63a49737c3841e
+binary: /tmp/nix-shell.IVCcBN/json-entry-opt.18UgLm/entry-opt-shape sha256=656be75663f2f5421b6e4175d95421b49f7a6f08a3192fb03d058d706768f1fb
+ok: /tmp/nix-shell.IVCcBN/json-entry-opt.18UgLm/entry-opt
+ok: /tmp/nix-shell.IVCcBN/json-entry-opt.18UgLm/entry-opt-shape
+
+## preflight skipped (--no-preflight); the harness's in-process gates decide
+
+## the Lean gate (immediately before this run)
+processes matching 'lake build|bin/lean':
+460954 /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Refinement/JsonStage2WalkDispatchClosers.lean
+477867 /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/JSON/TapeCorrect.lean
+486643 /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Refinement/JsonStage2WalkDispatchDepthStates.lean
+497922 /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/JSON/ScanBlocks.lean
+504948 /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Refinement/JsonStage2WalkDispatchDepthStores.lean
+516598 /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Refinement/JsonStage2WalkDispatchClassCLeaves.lean
+2663387 /nix/store/2vmnq5k9hm3v7rgrrfbchh94cp6gbcbw-lean4-4.35.0-rc3/bin/lean --server
+2663397 /nix/store/2vmnq5k9hm3v7rgrrfbchh94cp6gbcbw-lean4-4.35.0-rc3/bin/lean --worker file:///home/gavin/dev/Scidonia/ownership/Cap/Surface.lean
+3236007 /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --server
+3236012 /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Refinement/JsonStage2WalkDispatchRefusalsOfStaging.lean
+3248278 /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Refinement/JsonStage2WalkTraverse.lean
+3261002 /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Basic.lean
+3261656 /nix/store/2kbz20qdy9vdnc0ilrnmpnd551dk0z09-lean4-4.35.0/bin/lean --worker file:///home/gavin/dev/Scidonia/lean-llvm/LeanLLVM/Semantics.lean
+install-certificate lock: absent
+lean-cpu ticks: before=70814 after=69302 delta=-1512 (HZ=100; threshold=5 ticks/s)
+load average: 1.24 1.44 1.30 1/3754 2088772
+gate: no Lean build or compile active; the clock may run
+
+entry-opt doc=tests/json-units-bench/build/corpus/syn-strings-64k.json size=65536 blocks=1024 arm=2 passes=8 rounds=21 reps=31
+gate table: identical to the rule
+reference doc-size=65536 blocks=1024 verdict=1 nk=2056 nxp=1772 ndst=55931 nev=8907 err=0 arena_fnv=802d2b86cf9965d7 event_fnv=9f6cc1cf74087659
+gate pipeline-vs-stage1 entry_stream=identical escape_list=identical stage2=identical
+shape blocks=1024 positions=2056 nonzero_blocks=679 zero_blocks=345
+shape group_stores_baseline=5432 group_stores_needed=860 empty_groups=4572 (84.2%)
+shape hist_positions_per_word: 0:345 1:24 2:21 3:600 4:4 5:6 6:24 7:0 8:0 >8:0
+shape hist_nonzero_bytes_per_word: 0:0 1:507 2:163 3:9 4:0 5:0 6:0 7:0 8:0 >8:0
+gate emitter/perblock         stream=identical bounds=ok downstream=identical
+gate emitter/batch            stream=identical bounds=ok downstream=identical
+gate emitter/perblock-skip    stream=identical bounds=ok downstream=identical
+gate emitter/batch-skip       stream=identical bounds=ok downstream=identical
+gate emitter/perblock-sparse  stream=identical bounds=ok downstream=identical
+gate emitter/batch-sparse     stream=identical bounds=ok downstream=identical
+gate s1/perblock              masks=identical stream=identical escape=identical downstream=identical
+gate s1/batch                 masks=identical stream=identical escape=identical downstream=identical
+gate s1/batch-skip            masks=identical stream=identical escape=identical downstream=identical
+gate s1/batch-sparse          masks=identical stream=identical escape=identical downstream=identical
+gate arms: 32768 streams
+gate arms: 65536 streams
+gate arms streams=66952 result=identical
+gates: all held before the clock
+
+clock: chain=436052 ns / 2000000 iterations -> 4.587 GHz (per-round range 4.189-4.877 GHz)
+context: the emitter rows are over the document's precomputed words; the stage-1 rows include the mask unit, the entry word and the escape list
+
+statistic: median of the round medians, min-max of those medians; cycles use each round's chain
+act                         median_ns     min_ns     max_ns   median_cyc        us
+emitter/perblock                 4214       4022       4358        19357     4.214
+emitter/batch                    3120       3060       3335        14484     3.120
+emitter/perblock-skip            3900       3559       4187        17760     3.900
+emitter/batch-skip               1735       1685       1833         8059     1.735
+emitter/perblock-sparse          2537       2375       2696        11789     2.537
+emitter/batch-sparse              762        737        787         3476     0.762
+s1/prologue                     10710      10339      11126        49779    10.710
+s1/perblock                     14545      14366      15277        67098    14.545
+s1/batch                        13705      13483      14336        63204    13.705
+s1/batch-skip                   12303      11932      12761        56442    12.303
+s1/batch-sparse                 11393      10964      11716        52516    11.393
+pipeline                        27269      26470      28105       124579    27.269
+
+paired deltas vs emitter/perblock (ns; each round's difference of the round's act medians, then the median of the differences)
+act                              median          min          max    median_us
+emitter/batch                     -1090        -1252         -847       -1.090
+emitter/perblock-skip              -354         -630          -69       -0.354
+emitter/batch-skip                -2509        -2589        -2260       -2.509
+emitter/perblock-sparse           -1677        -1917        -1467       -1.677
+emitter/batch-sparse              -3456        -3580        -3253       -3.456
+s1/prologue                       +6494        +6025        +7064       +6.494
+s1/perblock                      +10351       +10095       +11178      +10.351
+s1/batch                          +9529        +9212       +10058       +9.529
+s1/batch-skip                     +8102        +7684        +8662       +8.102
+s1/batch-sparse                   +7160        +6689        +7566       +7.160
+pipeline                         +22995       +22297       +23792      +22.995
+
+paired deltas vs emitter/batch (ns; each round's difference of the round's act medians, then the median of the differences)
+act                              median          min          max    median_us
+emitter/perblock                  +1090         +847        +1252       +1.090
+emitter/perblock-skip              +745         +398        +1067       +0.745
+emitter/batch-skip                -1384        -1533        -1228       -1.384
+emitter/perblock-sparse            -600         -831         -365       -0.600
+emitter/batch-sparse              -2356        -2548        -2283       -2.356
+s1/prologue                       +7604        +7093        +8019       +7.604
+s1/perblock                      +11466       +11189       +12025      +11.466
+s1/batch                         +10628       +10322       +11169      +10.628
+s1/batch-skip                     +9182        +8810        +9667       +9.182
+s1/batch-sparse                   +8237        +7869        +8653       +8.237
+pipeline                         +24063       +23403       +25044      +24.063
+
+paired deltas vs s1/prologue (ns; each round's difference of the round's act medians, then the median of the differences)
+act                              median          min          max    median_us
+emitter/perblock                  -6494        -7064        -6025       -6.494
+emitter/batch                     -7604        -8019        -7093       -7.604
+emitter/perblock-skip             -6896        -7451        -6266       -6.896
+emitter/batch-skip                -8987        -9379        -8614       -8.987
+emitter/perblock-sparse           -8251        -8709        -7747       -8.251
+emitter/batch-sparse              -9950       -10361        -9583       -9.950
+s1/perblock                       +3905        +3287        +4313       +3.905
+s1/batch                          +3000        +2568        +3783       +3.000
+s1/batch-skip                     +1613        +1146        +2063       +1.613
+s1/batch-sparse                    +610         +202        +1175       +0.610
+pipeline                         +16456       +15661       +17658      +16.456
+
+paired deltas vs s1/perblock (ns; each round's difference of the round's act medians, then the median of the differences)
+act                              median          min          max    median_us
+emitter/perblock                 -10351       -11178       -10095      -10.351
+emitter/batch                    -11466       -12025       -11189      -11.466
+emitter/perblock-skip            -10738       -11263       -10450      -10.738
+emitter/batch-skip               -12846       -13500       -12611      -12.846
+emitter/perblock-sparse          -12017       -12748       -11818      -12.017
+emitter/batch-sparse             -13803       -14522       -13604      -13.803
+s1/prologue                       -3905        -4313        -3287       -3.905
+s1/batch                           -883        -1120         -409       -0.883
+s1/batch-skip                     -2384        -2708        -1900       -2.384
+s1/batch-sparse                   -3258        -3736        -2863       -3.258
+pipeline                         +12531       +11570       +13466      +12.531
+
+paired deltas vs s1/batch (ns; each round's difference of the round's act medians, then the median of the differences)
+act                              median          min          max    median_us
+emitter/perblock                  -9529       -10058        -9212       -9.529
+emitter/batch                    -10628       -11169       -10322      -10.628
+emitter/perblock-skip             -9956       -10390        -9508       -9.956
+emitter/batch-skip               -11990       -12519       -11748      -11.990
+emitter/perblock-sparse          -11182       -11787       -11000      -11.182
+emitter/batch-sparse             -12958       -13549       -12730      -12.958
+s1/prologue                       -3000        -3783        -2568       -3.000
+s1/perblock                        +883         +409        +1120       +0.883
+s1/batch-skip                     -1453        -2135        -1034       -1.453
+s1/batch-sparse                   -2394        -3173        -1997       -2.394
+pipeline                         +13305       +12368       +14316      +13.305
+gate pipeline-again identical
+gate emitter/perblock         stream=identical bounds=ok downstream=identical
+gate emitter/batch            stream=identical bounds=ok downstream=identical
+gate emitter/perblock-skip    stream=identical bounds=ok downstream=identical
+gate emitter/batch-skip       stream=identical bounds=ok downstream=identical
+gate emitter/perblock-sparse  stream=identical bounds=ok downstream=identical
+gate emitter/batch-sparse     stream=identical bounds=ok downstream=identical
+gate s1/perblock              masks=identical stream=identical escape=identical downstream=identical
+gate s1/batch                 masks=identical stream=identical escape=identical downstream=identical
+gate s1/batch-skip            masks=identical stream=identical escape=identical downstream=identical
+gate s1/batch-sparse          masks=identical stream=identical escape=identical downstream=identical
+gate arms: 98304 streams
+gate arms: 131072 streams
+gate arms streams=133904 result=identical
+gates: all held after the clock
+
+# sweep exit status: 0
+# sweep wall: 623 ms
+# lean-cpu ticks across the sweep: before=69302 after=69302 delta=0
+# load average after the sweep: 1.24 1.44 1.30 1/3760 2091466
+
+transcript: probes/json/route/entry-opt/transcript-repeat.txt
