@@ -246,6 +246,105 @@ def landRhsI103Leaf69S (s : State) (e : BitVec 64) (a : Nat) (b : UInt8) : State
       then "while.end.i" else "while.body.i104")
     pre := some (landRhsI103Node71S s e a b).pc }
 
+/-- **The slow scan's dispatch, composed**: landing, both pivots and the class leaf, as one
+`WalkSegment` of 3 (range leaf) or 4 steps, ending at `while.body.i104` (continue) or
+`while.end.i` (stop).  The leaf's body arm takes the caller's `WalkLocal` at
+`while.body.i104` — `ScanCount` with the budget `c - p ≤ C.inner` and `p < c`. -/
+theorem walkScanLinksI103 {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hblock : C.block = "land.rhs.i103")
+    {p : String} {op : Operand} {e : BitVec 64} {b : UInt8}
+    (hpre : s.pre = some p)
+    (hin : phiIncoming p [("while.body.i104", (Operand.reg "%inc.i105")),
+      ("cond.end.i96", (Operand.reg "%idxprom.i"))] = some op)
+    (hv : evalOperand s op = some (.int 64 e))
+    (hpos : (e.signExtend 64).toNat < 2 ^ 63)
+    (hread : readBytes s.mem (G.b + (e.signExtend 64).toNat) 1 = some [b])
+    (hf64 : WalkLocal { C with block := "while.body.i104" } (landRhsI103Leaf64S s e G.b b))
+    (hf67 : WalkLocal { C with block := "while.body.i104" } (landRhsI103Leaf67S s e G.b b))
+    (hf69 : WalkLocal { C with block := "while.body.i104" } (landRhsI103Leaf69S s e G.b b)) :
+    ∃ (n : Nat) (s' : State), n ≤ 4 ∧
+      WalkSegment calls G C s
+        { C with block := (if evalICmp .slt (BitVec.ofNat 8 b.toNat) (BitVec.ofNat 8 13) = 1
+            then (if evalICmp .ule (BitVec.ofNat 8 b.toNat + BitVec.ofNat 8 247)
+              (BitVec.ofNat 8 1) = 1 then "while.end.i" else "while.body.i104")
+            else if evalICmp .slt (BitVec.ofNat 8 b.toNat) (BitVec.ofNat 8 32) = 1
+            then (if evalICmp .eq (BitVec.ofNat 8 b.toNat) (BitVec.ofNat 8 13) = 1
+              then "while.end.i" else "while.body.i104")
+            else (if evalICmp .eq (BitVec.ofNat 8 b.toNat) (BitVec.ofNat 8 32) = 1
+              then "while.end.i" else "while.body.i104")) } s' n := by
+  obtain ⟨s1, hl1, hs1⟩ :=
+    WalkLink.landRhsI103_at (calls := calls) (G := G) (C := C) (s := s) hInv hblock hpre hin hv hpos hread
+  rw [hs1] at hl1
+  obtain ⟨s2, hl2, hs2⟩ :=
+    WalkLink.nodeBlock73_at (calls := calls) (G := G) (C := { C with block := "NodeBlock73" })
+      (s := landRhsI103OutAt s e G.b b.toNat) hl1.inv' rfl (landRhsI103OutAt_byte s e b)
+  have hs2' : s2 = landRhsI103Node73S s e G.b b := by rw [hs2]; rfl
+  have h40₂ : lookupName (landRhsI103Node73S s e G.b b).env "%40" =
+      some (.int 8 (BitVec.ofNat 8 b.toNat)) := by
+    dsimp only [landRhsI103Node73S, State.bind]
+    rw [lookupName_cons_ne (n := "%40") _ _ (by decide)]
+    exact landRhsI103OutAt_byte s e b
+  rw [hs2'] at hl2
+  by_cases h13 : evalICmp .slt (BitVec.ofNat 8 b.toNat) (BitVec.ofNat 8 13) = 1
+  · rw [if_pos h13] at hl2
+    obtain ⟨s3, hl3, hs3⟩ :=
+      WalkLink.leafBlock64_at (calls := calls) (G := G) (C := { C with block := "LeafBlock64" })
+        (s := landRhsI103Node73S s e G.b b) hl2.inv' rfl h40₂ hf64
+    have hs3' : s3 = landRhsI103Leaf64S s e G.b b := by rw [hs3]; rfl
+    have hseg := ((WalkSegment.of_link hl1).trans (WalkSegment.of_link hl2)).trans
+      (WalkSegment.of_link hl3)
+    rw [hs3'] at hseg
+    refine ⟨3, s3, by omega, ?_⟩
+    rw [hs3']
+    simpa only [if_pos h13] using hseg
+  · rw [if_neg h13] at hl2
+    by_cases h32 : evalICmp .slt (BitVec.ofNat 8 b.toNat) (BitVec.ofNat 8 32) = 1
+    · obtain ⟨s3, hl3, hs3⟩ :=
+        WalkLink.nodeBlock71_at (calls := calls) (G := G) (C := { C with block := "NodeBlock71" })
+          (s := landRhsI103Node73S s e G.b b) hl2.inv' rfl h40₂
+      have hs3' : s3 = landRhsI103Node71S s e G.b b := by rw [hs3]; rfl
+      have h40₃ : lookupName (landRhsI103Node71S s e G.b b).env "%40" =
+          some (.int 8 (BitVec.ofNat 8 b.toNat)) := by
+        dsimp only [landRhsI103Node71S, landRhsI103Node73S, State.bind]
+        rw [lookupName_cons_ne (n := "%40") _ _ (by decide),
+          lookupName_cons_ne (n := "%40") _ _ (by decide)]
+        exact landRhsI103OutAt_byte s e b
+      rw [hs3'] at hl3
+      rw [if_pos h32] at hl3
+      obtain ⟨s4, hl4, hs4⟩ :=
+        WalkLink.leafBlock67_at (calls := calls) (G := G) (C := { C with block := "LeafBlock67" })
+          (s := landRhsI103Node71S s e G.b b) hl3.inv' rfl h40₃ hf67
+      have hs4' : s4 = landRhsI103Leaf67S s e G.b b := by rw [hs4]; rfl
+      have hseg := (((WalkSegment.of_link hl1).trans (WalkSegment.of_link hl2)).trans
+        (WalkSegment.of_link hl3)).trans (WalkSegment.of_link hl4)
+      rw [hs4'] at hseg
+      refine ⟨4, s4, by omega, ?_⟩
+      rw [hs4']
+      simpa only [if_neg h13, if_pos h32] using hseg
+    · obtain ⟨s3, hl3, hs3⟩ :=
+        WalkLink.nodeBlock71_at (calls := calls) (G := G) (C := { C with block := "NodeBlock71" })
+          (s := landRhsI103Node73S s e G.b b) hl2.inv' rfl h40₂
+      have hs3' : s3 = landRhsI103Node71S s e G.b b := by rw [hs3]; rfl
+      have h40₃ : lookupName (landRhsI103Node71S s e G.b b).env "%40" =
+          some (.int 8 (BitVec.ofNat 8 b.toNat)) := by
+        dsimp only [landRhsI103Node71S, landRhsI103Node73S, State.bind]
+        rw [lookupName_cons_ne (n := "%40") _ _ (by decide),
+          lookupName_cons_ne (n := "%40") _ _ (by decide)]
+        exact landRhsI103OutAt_byte s e b
+      rw [hs3'] at hl3
+      rw [if_neg h32] at hl3
+      obtain ⟨s4, hl4, hs4⟩ :=
+        WalkLink.leafBlock69_at (calls := calls) (G := G) (C := { C with block := "LeafBlock69" })
+          (s := landRhsI103Node71S s e G.b b) hl3.inv' rfl h40₃ hf69
+      have hs4' : s4 = landRhsI103Leaf69S s e G.b b := by rw [hs4]; rfl
+      have hseg := (((WalkSegment.of_link hl1).trans (WalkSegment.of_link hl2)).trans
+        (WalkSegment.of_link hl3)).trans (WalkSegment.of_link hl4)
+      rw [hs4'] at hseg
+      refine ⟨4, s4, by omega, ?_⟩
+      rw [hs4']
+      simpa only [if_neg h13, if_neg h32] using hseg
+
+
 /-! **The composed dispatch is the next step, and it needs named successor states.**  The
 first attempt stated the leaves' `WalkLocal` hypotheses at inline `s.bind`/`cells` states
 and does not elaborate: `WalkLocal`'s `{m0} {G}` are not inferable from such a term, which
