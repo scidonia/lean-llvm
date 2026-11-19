@@ -86,14 +86,15 @@ behind their guard: the compositions are the branch on which
 nine or more digits left takes the other branch, and that branch's loop is the
 eight-digit reader's.
 
-*The exponent run's exit shape* is not decided by any theorem in the tree:
-`expRunExit` names the two exits' registers, not which exit the run took.  On the
+*The exponent run's exit shape* has two cases: `expRunExit` names the two
+exits' registers, not which exit the run took.  On the
 back edge `if.end216`'s `%i.12.lcssa.ph` is `%n` by construction and the test is
 its reflexivity; the head edge's index is the run's own counter, short of the
 length, and its tail is
 the refusal (`ifThen229_step_refuse`, `cleanup300_step_refuse`).  A well-formed
 lexeme's exponent digits are maximal by the grammar, so the run's exit is the
-back edge's; that argument is the arm's, not this module's.
+back edge's; `JsonStage2NumFastExponent.expScan_t1_arm` proves that route and
+refutes the head exit from the digit and sign facts.
 
 *The scan's middle* is one run on the integer part's route and pieces elsewhere:
 `intScan_run` reaches the integer run's exit, `intScan_end230` fixes the arm and
