@@ -9,6 +9,10 @@
    Rows, one per unit (or per arm of a unit), each over the whole document:
 
      s1_masks      leanllvm_json_s1_masks once per complete 64-byte block
+     s1_noesc      the mask unit's copy in `bench-ablate.c` with the escape
+                   correction and escape carry removed: a cost bound for that
+                   derivation, not a classifier
+     s1_noesc_noparity  the same copy with the in-string parity removed too
      entry_pos8    leanllvm_json_entry_pos8 once over the document's mask
                    stream, derived the way the entry route derives its corpus:
                    lane t of block i is set iff byte 64*i + t is one of the
@@ -91,6 +95,13 @@ typedef struct { uint64_t quote, delim, in_string, ws, backslash, ctl; } s1_mask
 
 extern void leanllvm_json_s1_masks(const uint8_t *p, s1_carry *carry,
                                    s1_masks *out);
+/* Bench-only ablations of the mask unit (`bench-ablate.c`): cost bounds, not
+   classifiers. */
+extern void leanllvm_json_s1_masks_noesc(const uint8_t *p, s1_carry *carry,
+                                         s1_masks *out);
+extern void leanllvm_json_s1_masks_noesc_noparity(const uint8_t *p,
+                                                  s1_carry *carry,
+                                                  s1_masks *out);
 extern uint64_t leanllvm_json_entry_pos8(const uint64_t *ent, uint64_t blk0,
                                          uint64_t nblk, uint32_t *out,
                                          uint64_t k);
@@ -294,12 +305,22 @@ static uint64_t mix(uint64_t h, uint64_t v) {
   return (h ^ v) * 0x100000001B3ull;
 }
 
+typedef void (*s1_kernel)(const uint8_t *, s1_carry *, s1_masks *);
+
+/* The three mask rows reach their kernels through this table, loaded through a
+   volatile pointer at the start of each pass.  The indirect call is one call
+   per block in every build: at unity the plain `leanllvm_json_s1_masks` would
+   inline into `pass_s1` and have its unread outputs deleted, which would make
+   the baseline a shorter function than the ablations it is compared with. */
+static s1_kernel volatile s1_kernels[3];
+
 static uint64_t pass_s1(const doc *d, int full) {
+  s1_kernel fn = s1_kernels[0];
   s1_carry carry = { 0, 0, 0 };
   s1_masks out;
   uint64_t h = 0x84222325CBF29CE4ull;
   for (uint64_t i = 0; i < d->nb; i++) {
-    leanllvm_json_s1_masks(d->buf + i * BLOCK, &carry, &out);
+    fn(d->buf + i * BLOCK, &carry, &out);
     if (full) {
       /* The reference pass mixes every word, once per block. */
       h = mix(h, out.quote);
@@ -316,6 +337,34 @@ static uint64_t pass_s1(const doc *d, int full) {
          row: the quote mask already carries the escape and in-string state, so
          a unit that skipped a block or diverged would change it.  Every other
          word is checked by the reference pass. */
+      h ^= out.quote;
+    }
+  }
+  return h;
+}
+
+/* The ablated-mask rows.  `which` selects the copied kernel.  The reference
+   pass mixes all six output words, so the printed checksum is a function of
+   every mask the ablation still writes.  The timed pass touches one word per
+   block, exactly as `pass_s1` does: the kernel is reached through the shared
+   volatile pointer table, so no build can inline it and drop an output the
+   caller does not read, and a six-word timed fold would cost more than the
+   derivation it is meant to isolate. */
+static uint64_t pass_ablate(const doc *d, int which, int full) {
+  s1_kernel fn = s1_kernels[1 + which];
+  s1_carry carry = { 0, 0, 0 };
+  s1_masks out;
+  uint64_t h = 0x84222325CBF29CE4ull;
+  for (uint64_t i = 0; i < d->nb; i++) {
+    fn(d->buf + i * BLOCK, &carry, &out);
+    if (full) {
+      h = mix(h, out.quote);
+      h = mix(h, out.delim);
+      h = mix(h, out.in_string);
+      h = mix(h, out.ws);
+      h = mix(h, out.backslash);
+      h = mix(h, out.ctl);
+    } else {
       h ^= out.quote;
     }
   }
@@ -497,6 +546,19 @@ static uint64_t row_s1(void *ctx) {
   return pass_s1(c->d, c->full);
 }
 
+/* The ablated row's context: which copy, and whether this call is the
+   reference pass. */
+typedef struct {
+  const doc *d;
+  int which;
+  int full;
+} ablate_ctx;
+
+static uint64_t row_ablate(void *ctx) {
+  const ablate_ctx *c = ctx;
+  return pass_ablate(c->d, c->which, c->full);
+}
+
 static uint64_t row_pos8(void *ctx) {
   uint64_t k;
   return pass_entry((const doc *)ctx, 1, &k);
@@ -635,6 +697,12 @@ int main(int argc, char **argv) {
   static uint32_t table[256 * 8];
   leanllvm_json_entry_table(table);
 
+  /* One table entry per mask row, read back through a volatile pointer by each
+     pass so the call stays indirect in every build. */
+  s1_kernels[0] = leanllvm_json_s1_masks;
+  s1_kernels[1] = leanllvm_json_s1_masks_noesc;
+  s1_kernels[2] = leanllvm_json_s1_masks_noesc_noparity;
+
   int cpu = -1;
 #if defined(__linux__)
   cpu = sched_getcpu();
@@ -709,6 +777,10 @@ int main(int argc, char **argv) {
     s1_ctx s1_full = { d, 1 };
     s1_ctx s1_cheap = { d, 0 };
     row r_s1 = { d, "s1_masks", row_s1, d->nb * BLOCK, d->nb * BLOCK };
+    row r_noesc = { d, "s1_noesc", row_ablate, d->nb * BLOCK,
+                    d->nb * BLOCK };
+    row r_nopar = { d, "s1_noesc_noparity", row_ablate, d->nb * BLOCK,
+                    d->nb * BLOCK };
     row r_pos8 = { d, "entry_pos8", row_pos8, d->nb * BLOCK, d->nb * 8 };
     row r_b8 = { d, "entry_b8", row_b8, d->nb * BLOCK, d->nb * 8 };
     row r_fp8 = { d, "fused_pos8", row_fused, d->nb * BLOCK, d->nb * BLOCK };
@@ -726,9 +798,15 @@ int main(int argc, char **argv) {
     fused_ctx fp8_cheap = { d, 0, 0 };
     fused_ctx fb8_full = { d, 1, 1 };
     fused_ctx fb8_cheap = { d, 1, 0 };
+    ablate_ctx ab_noesc_full = { d, 0, 1 };
+    ablate_ctx ab_noesc_cheap = { d, 0, 0 };
+    ablate_ctx ab_nopar_full = { d, 1, 1 };
+    ablate_ctx ab_nopar_cheap = { d, 1, 0 };
 
     if (d->nb > 0) {
       run_row(&r_s1, &s1_full, &s1_cheap, reps, samples, cpu);
+      run_row(&r_noesc, &ab_noesc_full, &ab_noesc_cheap, reps, samples, cpu);
+      run_row(&r_nopar, &ab_nopar_full, &ab_nopar_cheap, reps, samples, cpu);
       run_row(&r_pos8, d, d, reps, samples, cpu);
       run_row(&r_b8, d, d, reps, samples, cpu);
       run_row(&r_fp8, &fp8_full, &fp8_cheap, reps, samples, cpu);

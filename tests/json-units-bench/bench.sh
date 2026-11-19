@@ -7,8 +7,13 @@
 # `kernel/json/utf8.c` are compiled at the measured compiler line the unit routes
 # compile them with, and called through `tests/json-units-bench/bench.c` with
 # their own ABIs.  No kernel source is edited.  The rows are `s1_masks`,
-# `entry_pos8`, `entry_b8`, `fused_pos8`, `fused_b8`, `split_ent_pos8`,
-# `split_ent_b8`, `utf8_gated` and `utf8_ungated`.  `entry_pos8`/`entry_b8`
+# `s1_noesc`, `s1_noesc_noparity`, `entry_pos8`, `entry_b8`, `fused_pos8`,
+# `fused_b8`, `split_ent_pos8`, `split_ent_b8`, `utf8_gated` and
+# `utf8_ungated`.  `s1_noesc` and `s1_noesc_noparity` call the bench-only
+# ablations in `tests/json-units-bench/bench-ablate.c`: the mask unit with the
+# escape/quote derivation partly removed, so their difference from `s1_masks`
+# is that derivation's cost.  They are cost bounds and not classifiers.
+# `entry_pos8`/`entry_b8`
 # measure the unit's own structural-byte stream; `fused_*`/`split_ent_*` measure
 # the pipeline's own per-block entry mask over the same document, so the
 # fusion delta is the former pair against the latter.  `bench.c`'s header
@@ -61,7 +66,8 @@ die() { printf 'SETUP: %s\n' "$*" >&2; exit 3; }
 
 [ -n "$work" ] && [ "$work" != "/" ] || die "refusing work directory '$work'"
 for src in kernel/json/s1_block.c kernel/json/entry.c kernel/json/utf8.c \
-           tests/json-units-bench/bench.c tests/json-units-bench/gen.c \
+           tests/json-units-bench/bench.c tests/json-units-bench/bench-ablate.c \
+           tests/json-units-bench/gen.c \
            tests/json-units-bench/bench-unity.c; do
   [ -f "$repo/$src" ] || die "absent: $src"
 done
@@ -81,8 +87,16 @@ for unit in s1_block entry utf8; do
     { cat "$work/$unit.cc.err" >&2; die "$unit did not compile at the measured flags"; }
 done
 
+# The ablation copy of the mask unit, at the same compiler line as the kernel
+# it copies, as its own object so the kernel object's bytes are untouched.
+"$cc" "${kflags[@]}" -I "$repo/kernel/json" \
+  -c "$repo/tests/json-units-bench/bench-ablate.c" -o "$bin/ablate.o" \
+  2>"$work/ablate.cc.err" ||
+  { cat "$work/ablate.cc.err" >&2; die "bench-ablate did not compile at the measured flags"; }
+
 "$cc" -O2 -std=gnu11 -o "$bin/bench" "$repo/tests/json-units-bench/bench.c" \
-  "$bin/s1_block.o" "$bin/entry.o" "$bin/utf8.o" 2>"$work/bench.cc.err" ||
+  "$bin/s1_block.o" "$bin/entry.o" "$bin/utf8.o" "$bin/ablate.o" \
+  2>"$work/bench.cc.err" ||
   { cat "$work/bench.cc.err" >&2; die "bench did not build"; }
 
 # The LTO variant: the same harness and units, but each translation unit carries
@@ -95,20 +109,26 @@ for unit in s1_block entry utf8; do
     -o "$bin/lto/$unit.o" 2>"$work/lto-$unit.cc.err" ||
     { cat "$work/lto-$unit.cc.err" >&2; die "$unit did not compile at the measured flags with -flto"; }
 done
+"$cc" "${kflags[@]}" -flto -I "$repo/kernel/json" \
+  -c "$repo/tests/json-units-bench/bench-ablate.c" -o "$bin/lto/ablate.o" \
+  2>"$work/lto-ablate.cc.err" ||
+  { cat "$work/lto-ablate.cc.err" >&2; die "bench-ablate did not compile at the measured flags with -flto"; }
 "$cc" -O2 -std=gnu11 -flto -o "$bin/bench-lto" "$repo/tests/json-units-bench/bench.c" \
-  "$bin/lto/s1_block.o" "$bin/lto/entry.o" "$bin/lto/utf8.o" 2>"$work/bench-lto.cc.err" ||
+  "$bin/lto/s1_block.o" "$bin/lto/entry.o" "$bin/lto/utf8.o" "$bin/lto/ablate.o" \
+  2>"$work/bench-lto.cc.err" ||
   { cat "$work/bench-lto.cc.err" >&2; die "LTO bench did not build"; }
 
 # The unity variant: one translation unit holding the two stage-1 units and the
 # harness, at the measured flags.  This is the shape the measured pipeline build
 # has, where the block loop calls local functions.  UTF-8 stays a linked object.
 "$cc" "${kflags[@]}" -o "$bin/bench-unity" \
-  "$repo/tests/json-units-bench/bench-unity.c" "$bin/utf8.o" \
+  "$repo/tests/json-units-bench/bench-unity.c" "$bin/utf8.o" "$bin/ablate.o" \
   2>"$work/bench-unity.cc.err" ||
   { cat "$work/bench-unity.cc.err" >&2; die "unity bench did not build"; }
 
 kernel_sha=$(sha256sum "$bin/s1_block.o" "$bin/entry.o" "$bin/utf8.o" |
   awk '{ n = split($2, a, "/"); printf "%s=%s ", a[n], substr($1, 1, 16) }')
+ablate_sha="default=$(sha256sum "$bin/ablate.o" | cut -c1-16) lto=$(sha256sum "$bin/lto/ablate.o" | cut -c1-16)"
 lto_sha=$(sha256sum "$bin/lto/s1_block.o" "$bin/lto/entry.o" "$bin/lto/utf8.o" |
   awk '{ n = split($2, a, "/"); printf "%s=%s ", a[n], substr($1, 1, 16) }')
 
@@ -158,6 +178,7 @@ done
 printf 'command: nix develop -c bash tests/json-units-bench/bench.sh\n'
 printf 'objects: %s\n' "$kernel_sha"
 printf 'objects lto: %s\n' "$lto_sha"
+printf 'objects ablate: %s\n' "$ablate_sha"
 printf 'compiler: %s (%s)\n' "$cc" "$("$cc" --version | head -1)"
 printf 'unit flags: %s\n' "${kflags[*]}"
 printf 'harness flags: -O2 -std=gnu11\n'
@@ -291,8 +312,8 @@ awk '
       if (nd == 0) {
         printf "FAIL: variant %s produced no rows\n", v > "/dev/stderr"
         bad = 1
-      } else if (vnkeys[v] != nd * 9 * ncpu) {
-        printf "FAIL: variant %s: %d row(s) for %d document(s) x 9 units x %d CPU(s)\n",
+      } else if (vnkeys[v] != nd * 11 * ncpu) {
+        printf "FAIL: variant %s: %d row(s) for %d document(s) x 11 units x %d CPU(s)\n",
           v, vnkeys[v], nd, ncpu > "/dev/stderr"
         bad = 1
       }
