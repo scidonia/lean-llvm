@@ -30,7 +30,18 @@
 
    The buffer's slack is the caller's, and so is the 32-bit width: the base is
    `(uint32_t)((blk0 + i) << 6)`, so a document at or above 2^32 bytes
-   truncates.  See README.md for the unit's provenance and limits. */
+   truncates.
+
+   POS8 reads the unit's own static table, and that table is not part of this
+   ABI: `leanllvm_json_entry_table` fills it and nothing else does.  The pos8
+   wrapper checks the initialiser's ready word on every call, so a pos8 call
+   made before `leanllvm_json_entry_table` has run traps rather than emitting
+   positions from the zero-initialised table, which would be a well-formed
+   stream of wrong positions.  B8 reads no table and carries no such
+   obligation.  A caller that selects the emitter per document must
+   initialise before its first pos8 call; `pipeline.h`'s arm bit 0 states the
+   same obligation at the pipeline's boundary.  See README.md for the unit's
+   provenance and limits. */
 #ifndef LEANLLVM_KERNEL_JSON_ENTRY_H
 #define LEANLLVM_KERNEL_JSON_ENTRY_H
 
@@ -44,7 +55,8 @@ uint64_t leanllvm_json_entry_b8(const uint64_t *ent, uint64_t blk0,
 
 /* Fill the caller's 256 x 8 `uint32_t` (8 KiB) with the unit's own table,
    initialising it first if the process has not.  Row `m` holds the offsets of
-   `m`'s set bits in order, padded to eight entries with zeros. */
+   `m`'s set bits in order, padded to eight entries with zeros.  This is the
+   only function that fills the table the POS8 emitter reads. */
 void leanllvm_json_entry_table(uint32_t *dst);
 
 #endif

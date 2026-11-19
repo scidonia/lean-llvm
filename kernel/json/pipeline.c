@@ -58,6 +58,8 @@ uint64_t leanllvm_json_pipeline(const uint8_t *b, uint64_t n,
         if (arm & 1)
             k = leanllvm_json_entry_b8(entw, i, 1, ep, k);
         else
+            /* POS8 reads the entry unit's table; the emitter traps if
+               `leanllvm_json_entry_table` has not run (pipeline.h). */
             k = leanllvm_json_entry_pos8(entw, i, 1, ep, k);
         if (arm & 2)
             leanllvm_json_escape_list(m->backslash, m->ctl, m->in_string, i,

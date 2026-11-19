@@ -33,10 +33,13 @@
    the kernel is a body of its own rather than inlined into every caller.
 
    The new text is the three functions at the end of this file: the two wrappers,
-   which restate the block loop's parameters with `const` on `ent` and add no
-   instruction, and `leanllvm_json_entry_table`, which fills a caller's 8 KiB
-   from the unit's own table so a route can compare the table's content without
-   a second model of it. */
+   which restate the block loop's parameters with `const` on `ent`, and
+   `leanllvm_json_entry_table`, which fills a caller's 8 KiB from the unit's own
+   table so a route can compare the table's content without a second model of
+   it.  The pos8 wrapper also checks the table's ready word and traps when it is
+   clear: the table is filled only by `leanllvm_json_entry_table`, and a run
+   that skipped the fill would otherwise read zeros and emit a well-formed but
+   wrong position stream. */
 #include "entry.h"
 
 #include <immintrin.h>
@@ -112,9 +115,16 @@ S1F_DEFINE_KERNEL(s1f_k_b8, s1f_ke_b8)
 /* ------------------------------------------------------------------- ABI -- */
 /* The block loop's parameters, hoisted.  `const` on `ent` is a qualifier and
    not an instruction: the kernel reads the mask word and never writes it, and
-   the cast drops a `const` the body does not need to keep. */
+   the cast drops a `const` the body does not need to keep.
+
+   POS8 reads the unit's static table, so its wrapper checks the word the
+   initialiser sets before the kernel can read it: an unfilled table is all
+   zeros, which is a well-formed stream of wrong positions and a plausible
+   verdict.  The contract violation is therefore loud, as the stage-2 unit's
+   capacity violations are.  B8 reads no table and needs no check. */
 uint64_t leanllvm_json_entry_pos8(const uint64_t *ent, uint64_t blk0,
                                   uint64_t nblk, uint32_t *out, uint64_t k) {
+    if (!xl_pos8_ready) __builtin_trap();
     return s1f_k_pos8((uint64_t *)ent, blk0, nblk, out, k);
 }
 

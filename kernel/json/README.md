@@ -665,14 +665,16 @@ with the recorded tables is not assumed.
 ### The entry table is the caller's
 
 `pipeline.c` never initialises `xl_pos8`, the entry unit's table: the pos8
-emitter reads it, and a run whose table is not built produces an empty entry
-stream and refuses every document at offset 0.  Each side's table is
-file-static inside its own translation unit, so each side has one, and the
-caller fills both before the first pipeline call -- the constructor idiom
-`bench/paired-entry.c:79` uses.  `bench/paired-pipeline.c` does this for both
-forms, compares the two 8 KiB copies (they are the same table), and refuses the
-measurement if either is missing.  `pipeline.h` states the precondition where a
-caller reads it.
+emitter reads it, and its wrapper traps (SIGILL) when the table's ready word is
+clear, because the zero-initialised table would emit a well-formed stream of
+wrong positions.  Each side's table is file-static inside its own translation
+unit, so each side has one, and the caller fills both before the first pipeline
+call -- the constructor idiom `bench/paired-entry.c:79` uses.
+`bench/paired-pipeline.c` does this for both forms, compares the two 8 KiB
+copies (they are the same table), and refuses the measurement if either is
+missing.  `pipeline.h` states the precondition where a caller reads it, and
+`probes/json/route/init-guard.sh` checks both outcomes: uninitialised pos8
+traps, and initialised pos8 writes b8's stream.
 
 ### The timing arm
 

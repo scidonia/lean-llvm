@@ -42,7 +42,10 @@
 
      - bit 0: the entry emitter, `0` = `leanllvm_json_entry_pos8`,
        `1` = `leanllvm_json_entry_b8` (C99's selection theorem: either emitter's
-       stream is the other's, so the choice cannot change the document's class);
+       stream is the other's, so the choice cannot change the document's class).
+       Bit 0 clear is the only arm with a setup obligation: POS8 reads the entry
+       unit's file-static position table, and that table is filled only by
+       `leanllvm_json_entry_table` (`entry.h`); see below.
      - bit 1: the escape-list gate, `0` = no list, `1` = build it.  This is the
        measured density probe's decision, and it is an **arm selector**, not an
        escape-presence test: a document can carry escapes and still be given no
@@ -51,6 +54,22 @@
        on the verdict.
 
    Bits 3 and above are reserved and must be zero.
+
+   ## Bit 0 clear requires the entry table
+
+   `leanllvm_json_entry_pos8` reads `xl_pos8`, `entry.c`'s zero-initialised
+   static table.  Its only writer is `leanllvm_json_entry_table`, which fills
+   the unit's table and then the caller's 8 KiB slot; this pipeline does not
+   call it, the loader does not fill it, and the emitter has no lazy
+   initialiser of its own.  A caller that selects bit 0 clear must therefore
+   call `leanllvm_json_entry_table` before its first pipeline call -- once per
+   process, with an 8 KiB slot of its own.  If it does not, the pos8 wrapper
+   traps (SIGILL) before it can return: a zero table would yield positions
+   that are well formed and wrong, and the caller must not be able to mistake
+   that for a document refusal.  Bit 0 set reads no table, so a pipeline that
+   only ever runs b8 has no such obligation.  The trap is the enforced form of
+   this clause; a caller that initialises sees no change to the ABI, the arm
+   word, the return or `*err`.
 
    The return is the verdict, `1` for acceptance and `0` for refusal.  A refusal
    is one of: a non-zero UTF-8 stage word (`*err = n`, because that stage

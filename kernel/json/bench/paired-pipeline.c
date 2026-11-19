@@ -32,8 +32,8 @@
    ## The entry table is the caller's
 
    `pipeline.c` does not initialise `xl_pos8`, the entry unit's table: the
-   pos8 emitter reads it, and a run whose table is not built returns an empty
-   entry stream and refuses every document at offset 0.  Each side's table is
+   pos8 emitter reads it, and a run whose table is not built traps in the
+   emitter rather than producing a stream.  Each side's table is
    file-static inside its own translation unit, so each side has one, and the
    caller fills both here: the constructor below calls
    `leanllvm_json_entry_table` for the staged side and `probe_inl_entry_table`

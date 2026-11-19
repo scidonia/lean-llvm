@@ -191,7 +191,7 @@ typedef struct {
 
 /* The entry table is the caller's (`pipeline.h` states the precondition): the
    pos8 emitter reads a file-static table, and a run whose table is not built
-   refuses every document at offset 0. */
+   traps in the emitter rather than producing a stream. */
 static uint32_t entry_table[2048];
 
 __attribute__((constructor)) static void reference_arm_init(void) {
