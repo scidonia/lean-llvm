@@ -57,6 +57,29 @@ through the tunnel once per worker; the repository bundle is 1,017 MiB packed to
 takes **78 s** over 2,186 jobs, 24 s of it the `leanllvm` relink; its trace names
 768 exports under the store packages and none under `.lake/packages`.
 
+## Worker sizing
+
+The standard and its decision rule are in `AGENTS.md` ("Remote worker sizing").
+This file records the measurements that set them.
+
+| date | tree | shape | command | peak | note |
+|---|---|---|---|---|---|
+| 2026-11-19 | `d3a3d13` | `e2-highmem-8` | `lake env lean …/JsonStage2WalkScopeClassAB.lean` | **1,908 MB** / 15 s | single largest leaf; idle ~1.4 GB; 0.5 s sampling |
+| — | — | — | full default target | not yet recorded | the number that decides the shape |
+
+Measure on the worker with the shipped instrument, running the full default
+target (not one module):
+
+```bash
+<remote> copy --to /tmp/measure-peak.sh probes/remote-build/measure-peak.sh
+<remote> run -- "export PATH=<store-wrapper>/bin:\$PATH; cd $R && \
+  bash /tmp/measure-peak.sh -- bash probes/install/lake-locked.sh build"
+```
+
+Record a row here with the date, tree, command, peak and the shape chosen.
+`free` at a 0.5 s interval can miss a sub-second spike; a systemd
+`MemoryPeak` is the stronger instrument where a user manager exists.
+
 ## Building a cone
 
 `remote-lean.sh` copies the named files and runs one Lake command on the

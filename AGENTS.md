@@ -32,6 +32,28 @@ command without the ceiling.  The figure is a headroom decision, not a target:
 a single module's elaboration on this host has been measured above 6 GB, so
 the ceiling sits at 12 GB rather than at the smallest value that works.
 
+### Remote worker sizing
+
+A worker is sized from a measured build peak, not from idle use.  On
+2026-11-19 an 8-vCPU `e2-highmem-8` worker used ~1.4 GB idle, and the
+largest leaf module then in the tree (`JsonStage2WalkScopeClassAB`, 81 KB)
+peaked at ~1.9 GB over a 15 s elaboration; the 6 GB single-module figure
+above predates the module splits and is not the current sizing signal.  The
+full default target's peak is the number that decides the shape and has not
+yet been recorded.
+
+- RAM: 32 GB is the standard; 16 GB once a full-build peak is measured under
+  ~8 GB; 64 GB only if that peak exceeds ~24 GB.
+- Disk: 40 GB is the standard (11 GiB package closure, repository, builds,
+  slack); 80 GB only for several lanes or large artifacts on one disk.
+- vCPU: 8 for lane concurrency; 4 for a single cone.
+
+Measure with `probes/remote-build/measure-peak.sh` on a worker, running the
+**full default target**, not one module.  Record the date, tree, command,
+peak and chosen shape in `probes/remote-build/README.md`, and re-measure when
+a module split or merge changes the largest leaf materially, when the Lean or
+mathlib pin moves, or when a milestone closes.
+
 The default targets are the `leanllvm` executable, the `ITree` library and the
 `LeanLLVMTest` library, so `lake build` covers `LeanLLVM` (through the
 executable), the generic tree library, and every pin in `LeanLLVMTest/`.  The
