@@ -7,8 +7,9 @@
 starts from is further along the walk than the head: the whitespace run's stop `k`, the
 seam's environment and the token record's stores are all new.
 
-This module states that seam as a group — the analogue of `HcontWsSeam`
-(`JsonStage2WalkDispatchSeams`) at `TailStartC` — and derives the bundle from it:
+This module states that seam as a group — the analogue of `hcontRunFacts_of_seam`
+(`JsonStage2WalkDispatchSeams`), which derives the continuing run class's bundle from its
+seam — and derives the bundle from it:
 `hlastRunTail_of_seam` is `scanTailSeg_at` at the group's own invariant and cells, and
 `runLastFacts_of_seam` builds every field of `RunLastFacts` from the group and the
 remaining pieces, so the tail enters as the composition's result rather than as an input.

@@ -17,7 +17,7 @@ and (for the positive-depth opener) the route the arm itself carries.
 | class | branch | the field it reads |
 |---|---|---|
 | `.value`, at a scan-free document byte | `hcontArm_scalar_of_class` | `scalar` — the prefix's seam row |
-| `.defaultValueHigh`, at a scan-free document byte | `hcontArm_cleanup_of_class` | the class's `refuseSeg` route; `cleanupRow` states the seam's refusal group |
+| `.defaultValueHigh`, at any document byte class | `hcontArm_cleanup_of_class` | the class's `refuseSeg` route; `cleanupRow` states the seam's refusal group |
 | the default arm's scan-free classes | `hcontArm_letters_of_class`, `hcontArm_fLetter_of_class`, `hcontArm_classC_56True_of_class` … `hcontArm_classC_58Else_of_class` | `fLetter`, `c56True`, `c58True` (the emit rows); the four `if.else405.i` classes take `refuseSeg`, and `letters`/`c56Else`/`c58Else` state their seams' refusal groups |
 | `.run`, the whitespace document byte | `hcontArm_run_of_class` | `run`, with the byte's own leaf below `if.else387.i` as the arm's span |
 | `.stringOpener` at `C.sp ≠ 0` | `hcontArm_stringOpenAboveZero_of_class` | `deep`, and the payload's `abi.openCall` |
@@ -46,9 +46,11 @@ rows at `contTailStartByte … hb`, so the arm-level document row (`HcontCleanup
 its chain (`hcontSpan17_of_doc`) are stated at the byte's route too, and the default-value
 branch passes `hb` rather than `.scanFree`.  The tail's calls bind no cell the seam's
 route changes (`contSeamByte_ee`, `contSeamByte_cond` are stated at every class), so this
-is the same producer re-pointed, not a new one.  The `.ws` arm's `HcontFacts` is the
-whitespace group's (`.ws` × `.defaultValueHigh`, `JsonStage2WalkDispatchWsRows`) and the
-six `.run` cells' document rows are `HcontClassRows`' run rows
+is the same producer re-pointed, not a new one.  At the high-byte head (`126`/`127`) the
+document byte's run class is `HcontFacts`, produced by `hcontFacts_of_staging`; the
+continuing case takes the class's refusal arm at every byte class there, so the payload
+row group that bundle once consumed is gone.  The six `.run` cells' document rows are
+`HcontClassRows`' run rows
 (`JsonStage2WalkDispatchRunRow`), so the class case's assembly is
 `walkContinueFacts_of_payload` (`JsonStage2WalkDispatchContinuing`).
 
@@ -101,9 +103,10 @@ arm at all: `.value` × `wsByte`, the whitespace run after a numeral.
 
 * The head's byte class is `HcontClass`'s; the next entry's last byte's class is
   `HcontByteClass` (from the payload's `defaultLane`).  At the high-byte head (`126`/`127`)
-  the two partition the matrix: `HcontByteClass.wsByte` is `HcontArm.ws`'s run
-  (`HcontFacts`, whose prefix is that head's) and the three leaves are
-  `HcontArm.cleanup`'s (`HcontCleanupFacts` carries the route, so all three).  At the
+  the walk reaches `if.else405.i`, whose kind literal is `0`, so every document byte class
+  — `wsByte` included — takes the class's refusal arm (`hcontArm_cleanup_of_class`).  The
+  run class's bundle there is `HcontFacts` (`hcontFacts_of_staging`); `.ws` keeps its
+  dispatch, but the continuing case does not build it.  At the
   default arm's classes (`tag = 0`) they partition it too: `wsByte` is `HcontArm.run`
   (the check state's row, `hcontRunRow_of_rows`, plus the byte's leaf composed from the
   row), and the three leaves are `letters`/`fLetter`/`classC` by the head byte's pivots,
@@ -478,8 +481,8 @@ noncomputable def hcontRunLeaf_58True {m0 : Mem} (G : WalkGeom m0) (C : WalkCarr
     (by simp only [hcA, evalOperand, Const.toValue])
 
 /-- **`117 … 125`'s leaf's run data**: `HeadS413`, kind `0`, from the seam's rows.  This is
-the leaf the bundle was pinned to before the parameterisation; it stays as the instance the
-`HcontWsSeam` group feeds (`hcontRunLeaf_of_seam`). -/
+the leaf the bundle was pinned to before the parameterisation; it remains as the
+`if.else405.i` (kind `0`) instance, whose call rows are the seam's cast to its own state. -/
 noncomputable def hcontRunLeaf_58Else {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
     (sl : State) (b35 : UInt8) (ix : BitVec 64) (v : BitVec 32) (k : Nat) (x1 : BitVec 8)
     (hInvS : WalkInv G (ContSeamC C) (contRunLeafS G C sl b35 ix v k x1))

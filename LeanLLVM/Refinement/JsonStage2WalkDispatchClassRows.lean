@@ -222,9 +222,10 @@ merge follows its exit.  Its arm is `HcontArm.run (f : RunFacts G C s)`.
 The row is the class's evidence, not the bundle: the prefix segment to `sw.default.i` and
 the shared four's cells at its endpoint (the ten numbers `runFacts_of_defaultClass` reads),
 the check state's rows at `NodeBlock41` (`HcontRunRows`), the run's body there
-(`HcontRunBody`), and the seam's state group (`HcontWsSeam`) with its three calls.  Both
-groups are state data — a document's cells and a set of call rows — and neither is an arm,
-a bundle or a segment. -/
+(`HcontRunBody`), and the byte's own leaf below `if.else387.i` (`HcontRunLeaf`), whose three
+call answers and landing are the payload's tail rows.  The groups are state data — a
+document's cells, a body and a set of call rows — and none is an arm, a bundle or a
+segment. -/
 structure HcontRunRow {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : Type where
   /-- The class's prefix endpoint: `sw.default.i`'s state. -/
   q5 : State

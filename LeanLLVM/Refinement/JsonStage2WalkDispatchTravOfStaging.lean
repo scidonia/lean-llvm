@@ -33,9 +33,9 @@ and it cannot be assumed: it is the document-content supply that sits beside the
   `hcontTrav_visits_of_class`.  These are the producer target: the tree supports the
   *reduction* to this row, not a producer of the row.
 * **The consumer.**  In the tree, `HcontTrav.visits` is held only as `HcontPayload.trav`,
-  and no theorem reads it yet.  The whitespace group has its own per-index row
-  (`HcontWsRows.trav`, read at `JsonStage2WalkDispatchWsRows`:402 with the run's class as
-  its argument — a different `∀`, not this field).  So the payload's supplier is what must
+  and no theorem reads it yet.  The run class's traversal is stated inside its bundle, as
+  `HcontFacts`' two premises `hround`/`hbyte` that `hcontFacts_of_staging` produces — a
+  different `∀`, not this field.  So the payload's supplier is what must
   carry `ScanVisitsDoc`; a future consumer of `HcontPayload.trav` takes it from there, not
   from `WalkInv`.
 -/
