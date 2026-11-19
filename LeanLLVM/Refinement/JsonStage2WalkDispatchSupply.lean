@@ -837,10 +837,18 @@ structure HcontAbi {m0 : Mem} (G : WalkGeom m0) : Type where
   /-- The openers' value-position call. -/
   openCall : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     C.k + 1 < G.nep → HcontOpenCall G C s
-  /-- The standalone string's two calls, at the lane's own words. -/
+  /-- **The standalone string's two calls, at the lane's own words and on the accepting
+  arm.**  The words are the lane's: `L.rd` is the root slot's read and `L.A` the log's
+  arena read, so the field quantifies over neither.  The guard is load-bearing: at depth
+  zero the callee answers `1` only when the root word is `0` (`stage2ValuePos`), so
+  `HcontStringCalls` has no inhabitant at another word
+  (`hcontStringCalls_uninhabited_of_ne`), and `HcontStringCalls.hbranch` demands exactly
+  the accepting answer.  The arena's presence is `HcontStringCalls.hpreS` at
+  `G.dst + L.A.toNat`, the body's answer its `y`/`hy`, and its accepting test `hR8` — the
+  three the row still supplies (`hcontStringCalls_of_lane`). -/
   string : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
-    C.k + 1 < G.nep → C.sp = 0 → (rd : BitVec 32) → (A : BitVec 64) →
-    HcontStringCalls G C s rd A
+    C.k + 1 < G.nep → C.sp = 0 → (L : HcontStringLane G C s) → L.rd.toNat = 0 →
+    HcontStringCalls G C s L.rd L.A
 
 /-- **The traversal's row at a continuing head**: the document's own scan visits, whose
 bound is the next entry's position and whose start is this entry's position. -/
@@ -906,25 +914,45 @@ theorem walkDispatch_at_open123_of_payload {m0 : Mem} {G : WalkGeom m0} {C : Wal
 
 /-! ### The standalone string, from the payload
 
-The class's producer takes exactly the payload's two groups — the lane's words and the two
-calls' rows — plus the invariant, so this is the class the payload discharges without a
-segment or a residual. -/
+The class's producer takes exactly the payload's two groups — the lane's words and the
+two calls' rows, the latter at the arm's accepting root word — plus the invariant, so this
+is the class the payload discharges without a segment or a residual.  The root word is the
+arm's selector, not the payload's: at a nonzero word the value-position call refuses and
+`HcontArm.twoEntry` is not the arm (`hcontStringCalls_uninhabited_of_ne`). -/
+
+/-- **Equal four-byte words are equal numbers**: the read-back value is a function of the
+bytes, so two words whose stored bytes agree have the same `toNat`. -/
+theorem natToBytes4_eq {a b : Nat} (ha : a < 2 ^ 32) (hb : b < 2 ^ 32)
+    (h : natToBytes a 4 = natToBytes b 4) : a = b := by
+  have h1 : a % 256 ^ 4 = b % 256 ^ 4 := by
+    simpa only [natToBytes_toNat] using congrArg bytesToNat h
+  have h256 : (256 : Nat) ^ 4 = 2 ^ 32 := by decide
+  have ha' : a % 2 ^ 32 = a := Nat.mod_eq_of_lt ha
+  have hb' : b % 2 ^ 32 = b := Nat.mod_eq_of_lt hb
+  rw [h256, ha', hb'] at h1
+  exact h1
 
 /-- **The standalone string's continuing arm, from the payload's rows.**  `hsp0` is the
-class's selector (`if.then219.i`'s depth test) and the arm's own, not the payload's. -/
+class's selector (`if.then219.i`'s depth test) and `hroot0` the arm's: the root slot holds
+the accepting word `0`.  The lane's `rd` is a witness of that same read, so `hroot0`
+fixes it to `0` (`natToBytes4_eq`) and the payload's `string` row applies. -/
 def hcontArm_twoEntry_of_payload {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     {s : State} (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead)
     (hk : C.k + 1 < G.nep)
     (heq34 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 34) = 1)
-    (hsp0 : C.sp = 0) (hp : HcontPayload G) :
+    (hsp0 : C.sp = 0)
+    (hroot0 : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes 0 4))
+    (hp : HcontPayload G) :
     HcontArm (stage2Calls stage2SubCalls) G C s := by
-  obtain ⟨bs, hreadLane, hq, rd, hreadRoot, A, hreadA, Cc, hreadC, hcur, hwin⟩ :=
-    hp.lane.string C s hInv hblock hk hsp0
+  let L : HcontStringLane G C s := hp.lane.string C s hInv hblock hk hsp0
+  have hrd0 : L.rd.toNat = 0 := by
+    refine natToBytes4_eq L.rd.isLt (by decide) ?_
+    exact Option.some.inj (L.hreadRoot.symm.trans hroot0)
   obtain ⟨hpreV, xv, hxv, hbranch, hpreS, y, hy, hR8⟩ :=
-    hp.abi.string C s hInv hblock hk hsp0 rd A
+    hp.abi.string C s hInv hblock hk hsp0 L hrd0
   exact .twoEntry
-    (hstringFacts_of_staging G C s hInv hk heq34 hreadLane hq hreadRoot hpreV hxv
-      hbranch hcur hreadA hreadC hpreS hwin hy)
+    (hstringFacts_of_staging G C s hInv hk heq34 L.hreadLane L.hq L.hreadRoot hpreV hxv
+      hbranch L.hcur L.hreadA L.hreadC hpreS L.hwin hy)
     hsp0 ⟨⟩ hR8
 
 /-- **The standalone string's continuing dispatch, from the payload's rows.** -/
@@ -932,10 +960,12 @@ theorem walkDispatch_at_twoEntry_of_payload {m0 : Mem} {G : WalkGeom m0}
     {C : WalkCarry G} {s : State} (hInv : WalkInv G C s)
     (hblock : C.block = walkLoopHead) (hk : C.k + 1 < G.nep)
     (heq34 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 34) = 1)
-    (hsp0 : C.sp = 0) (hp : HcontPayload G) :
+    (hsp0 : C.sp = 0)
+    (hroot0 : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes 0 4))
+    (hp : HcontPayload G) :
     WalkDispatchResult (stage2Calls stage2SubCalls) G C s :=
   HcontArm.dispatch hInv hblock hk
-    (hcontArm_twoEntry_of_payload hInv hblock hk heq34 hsp0 hp)
+    (hcontArm_twoEntry_of_payload hInv hblock hk heq34 hsp0 hroot0 hp)
 
 /-! ### The last entry's rows and openers -/
 
@@ -1062,24 +1092,26 @@ byte.  The remaining classes are the module header's table. -/
 /-- **The continuing classes the payload reaches.**  The four delimiter bytes (their arms
 are derived from the invariant by `DerivedHcontClass`), the two container openers (their
 root word and call are `lane.root`/`abi.openCall`) and the standalone string at depth zero
-(its lane and calls are `lane.string`/`abi.string`). -/
-def HcontPayloadClass {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) : Prop :=
+on its accepting arm — the root slot holds `0`, which is what makes the value-position call
+answer `1` and what `abi.string` is stated at (`lane.string`/`abi.string`). -/
+def HcontPayloadClass {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : Prop :=
   DerivedHcontClass G C ∨
   evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 91) = 1 ∨
   evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 123) = 1 ∨
-  (evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 34) = 1 ∧ C.sp = 0)
+  (evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 34) = 1 ∧ C.sp = 0 ∧
+    readBytes s.mem (G.next0 + 8) 4 = some (natToBytes 0 4))
 
 /-- **The dispatch at every class the payload covers, from the payload.** -/
 theorem walkDispatch_of_payload_covered {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     {s : State} (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead)
     (hk : C.k + 1 < G.nep) (hp : HcontPayload G)
-    (hc : HcontPayloadClass G C) :
+    (hc : HcontPayloadClass G C s) :
     WalkDispatchResult (stage2Calls stage2SubCalls) G C s := by
-  rcases hc with hd | h91 | h123 | ⟨h34, hsp0⟩
+  rcases hc with hd | h91 | h123 | ⟨h34, hsp0, hroot0⟩
   · exact walkDispatch_of_derivedClass hInv hblock hk hd
   · exact walkDispatch_at_open91_of_payload hInv hblock hk h91 hp
   · exact walkDispatch_at_open123_of_payload hInv hblock hk h123 hp
-  · exact walkDispatch_at_twoEntry_of_payload hInv hblock hk h34 hsp0 hp
+  · exact walkDispatch_at_twoEntry_of_payload hInv hblock hk h34 hsp0 hroot0 hp
 
 /-! ### The payload is inhabited rather than assumed
 
@@ -1098,7 +1130,7 @@ theorem hcontPayload_of_nep_zero {m0 : Mem} (G : WalkGeom m0) (h : G.nep = 0) :
   · exact fun C s _ _ hk => absurd hk (by omega)
   · exact fun C s _ _ hk => absurd hk (by omega)
   · exact fun C s _ _ hk => absurd hk (by omega)
-  · exact fun C s _ _ hk => absurd hk (by omega)
+  · exact fun C s _ _ hk _ _ _ => absurd hk (by omega)
   · exact ⟨fun C s _ _ hk => absurd hk (by omega)⟩
 
 /-! ### The instrument -/
@@ -1114,6 +1146,7 @@ theorem hcontPayload_of_nep_zero {m0 : Mem} (G : WalkGeom m0) (h : G.nep = 0) :
 #print axioms LeanLLVM.Refinement.WalkScope.walkReadBytes_logCap_word
 #print axioms LeanLLVM.Refinement.WalkScope.walkDispatch_at_open91_of_payload
 #print axioms LeanLLVM.Refinement.WalkScope.walkDispatch_at_open123_of_payload
+#print axioms LeanLLVM.Refinement.WalkScope.natToBytes4_eq
 #print axioms LeanLLVM.Refinement.WalkScope.hcontArm_twoEntry_of_payload
 #print axioms LeanLLVM.Refinement.WalkScope.walkDispatch_at_twoEntry_of_payload
 #print axioms LeanLLVM.Refinement.WalkScope.walkDispatch_of_payload_covered

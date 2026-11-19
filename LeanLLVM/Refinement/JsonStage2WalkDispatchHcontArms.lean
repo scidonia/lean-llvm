@@ -43,10 +43,12 @@ supplies, and `.dispatch` turns it into the actual `WalkDispatchResult`:
   the residue's because the same call can refuse: a refusing body leaves `NodeBlock31`
   at `cleanup339.critedge.i`, which is not this merge.
 
-  **This arm is the string opener at depth zero**, and the depth split is now a parameter
-  of the theorems that read it rather than a field of the bundle: `strPath8`/`strPath9`/
-  `stringPath_seg`/`ofStringMerge` take `hsp0 : C.sp = 0`, which is what makes the
-  `if.then219.i` edge the `if.end245.i` one.  At positive depth the same byte's head leaves
+  **This arm is the string opener at depth zero, on its accepting arm** (the root word is
+  `0`, so the value-position call answers `1`); the same state with a nonzero root word is
+  `.stringOpenZeroRefuse`.  The depth split is a parameter of the theorems that read it
+  rather than a field of the bundle: `strPath8`/`strPath9`/`stringPath_seg`/`ofStringMerge`
+  take `hsp0 : C.sp = 0`, which is what makes the `if.then219.i` edge the `if.end245.i`
+  one.  At positive depth the same byte's head leaves
   that block for `land.lhs.true.i`, and the two marker bytes at `%sp - 1` (`%ctype.i`'s and
   `%cst.i`'s) decide the merge (`if.end256.i`, the key record's kind `5`) or the refusal at
   `if.then249.i` — that route is
@@ -409,6 +411,28 @@ inductive HcontArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
       (hsp : C.sp ≠ 0)
       (hmark : C.tyMap (C.sp - 1) = b1)
       (hstate : C.stMap (C.sp - 1) = b2)
+      (hpreV : s2ValuePosPre
+        [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
+         .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
+      (r : CallOutcome)
+      (hcall : stage2Calls stage2SubCalls "s2_value_pos"
+        [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
+         .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r)
+      (href : WalkRefuseAt (stage2Calls stage2SubCalls) G C s) :
+      HcontArm calls G C s
+  /-- **A string opener at depth zero whose root word is nonzero: the value-position call
+  refuses.**  `if.then219.i`'s call is `s2_value_pos` at the root slot's read, and at depth
+  zero the model answers `1` only when that word is `0` (`stage2ValuePos`); at another word
+  the answer is `0`, so `if.end245.i`'s `%or.cond523.i` is clear, the run leaves for
+  `if.then249.i` — the refusal word's store — and reaches the copy at `if.then`.  The
+  route is the class's head chain plus those links, and the arm carries it as one
+  `WalkRefuseAt`, the shape every refusing class uses; its producer is
+  `hcontArm_stringOpenZeroRefuse_of_staging` (`JsonStage2WalkDispatchContinuing`). -/
+  | stringOpenZeroRefuse {rdv : BitVec 32}
+      (h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 34)))
+      (hsp0 : C.sp = 0)
+      (hread : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes rdv.toNat 4))
+      (hrdv : rdv.toNat ≠ 0)
       (hpreV : s2ValuePosPre
         [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv,
          .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
@@ -793,6 +817,8 @@ theorem HcontArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
         (LeanLLVM.evalOperand_reg_of hincD) hnepD
         hadvance hcap hseg.inv'.depth_cap hseg.inv'.sp_le_wlen hprice
   | .stringOpenAboveZeroRefuse h8 hsp hmark hstate hpreV r hcall href =>
+    WalkDispatchResult.ofRefuseAt href
+  | .stringOpenZeroRefuse h8 hsp0 hread hrdv hpreV r hcall href =>
     WalkDispatchResult.ofRefuseAt href
   | .scalar f =>
     (fun ⟨Cd, sd, p, spv, k2, prev, spOp, kOp, nepv, seg, hblk, hkC, hpre, hsp, hspv,

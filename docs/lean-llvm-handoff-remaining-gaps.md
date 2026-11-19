@@ -64,12 +64,13 @@ the old "21 MB" and "7k lines / 12M heartbeats" figures describe the pre-split t
 **the last entry** | `hlast_toMerge`, `hlast_finish`, `hlast_refuse` (`JsonStage2WalkDispatchWitnessHlast:367`/`:406`/`:437`); the last entry's arm is produced from the three last-level groups by `walkLoopEnd_of_payload` (`JsonStage2WalkPremisesOfStaging:475`), and those groups are the remaining last-level supply (see the frontier below); the last payload's own fields are produced in part (`hlastAbi_openCall` `:218`, `hlastLane_of_not_wsStop` `:154`), its high-byte group now carries the refusal evidence `HlastHighByteRefusal` (`hlastHighByteRefusal_of_stage` `JsonStage2WalkDispatchHlastSupply:415`) rather than an empty form, and the emission residue **is** empty on that class (`hlastResidue_empty` `:446`); `hlastPrefixSeg` (`JsonStage2WalkPrefixCount:1049`) is 19 links (`hlast_toMerge` 20), so the price is `20 + 2 ≤ 32·1 + 8·0` |
 **the continuing seam at a kind-`0` byte** | `HcontClassRows.refuseSeg` (`JsonStage2WalkDispatchClassRows:753`) — the refusal route as a segment with the slow scan's stop named — feeds the arm `HcontArm.badToken` (`JsonStage2WalkDispatchHcontArms:725`) and its `WalkDispatchResult.refuse`; `hcontArm_badToken_of_row` (`ClassRows:774`) builds that arm from `HcontClassRows` plus the head state's byte facts (tag bit clear, byte outside the three literal pivots), and the answer `0` and record come from `HcontSeamAbi.scanRefuse` — nothing supplies an answer.  The six tag-clear default classes take it (`JsonStage2WalkDispatchContinuing:24`), and the rows `HcontClassRows.seamScan` and `RunRow`'s three cast-leaf wrappers are **deleted** — the five purely kind-`0` `.run` arms no longer have a group of their own.  Seams there are unmixable: `hcontSeamCalls_no_kind_zero` (`JsonStage2WalkDispatchSeamCalls:765`) and `hcontSeamCalls_no_literal_zero` (`:791`) refute the emit group outright |
 **the last level's seam** | `HlastSeam` (`JsonStage2WalkDispatchSeams:406`) is the answer's **sum**: `answerZero` (`:410`, `HlastSeamZero` `JsonStage2WalkDispatchSeamRow:76`), `answerOneRefuse` (`:414`, `HlastSeamRefusal` `SeamRow:40`), `answerOneEmit` (`:416`, the emit group).  Producers: `hlastSeamZero_of_call` (`JsonStage2WalkDispatchHlastSupply:403`), `hlastSeamRefusal_of_stage` (`:390`) and `HcontSeamAbi.last` (`JsonStage2WalkDispatchSeamCalls:751`); `hlastSeam_nonempty` (`HlastSupply:397`) keeps the sum inhabited.  The duplicate `scanEntry_envTok` is gone: `lastArmScanEntry_envTok` (`JsonStage2WalkDispatchLastArmRows:157`) is the one environment row, shared by the five long links |
+**the string opener's other depth-zero arm** | `HcontArm.stringOpenZeroRefuse` (`JsonStage2WalkDispatchHcontArms`) — the same byte and state as `.twoEntry` but a nonzero root word: the value-position call answers `0`, `if.end245.i`'s `%or.cond523.i` is clear and the walk takes `if.then249.i` to the copy; `hcontStringOpenZeroRefuseRoute` composes the byte-`34` head chain, the call and the refusal store as one `WalkRefuseAt` (`refusePrice_of_le`), and `hcontArm_stringOpenZeroRefuse_of_staging` (`JsonStage2WalkDispatchContinuing`) is the arm's producer.  `walkContinueArm_of_payload`'s string branch now splits on the lane's root word, so the depth-zero class has both arms |
 **the continue case** | `walkRevolutionMergeSeg`/`walkRevolutionMergeSegWs` (`JsonStage2WalkRevolutionSeg:618`/`:788`) — the scan-free and whitespace arms' priced segments to `cleanup478.i`, with the merge's three cells at the endpoint.  `walkRevolution_seg` is retired rather than kept: its premise named the scan-free bundle at a state whose path is the run's |
 **the dispatch, at its outcomes** | `WalkDispatchResult` + `WalkDispatchThree.ofResult` + `walkLoopStepThree_of_dispatchResult` |
 **the flush arm** | `walkFlushAt_of_staging` (the run), `stage2Boundary_of_flush` (the six facts), `stage2Post_of_staging_flush` (the `nep = 0` post) |
 **the emitted string body** | `s2StringBodyBody_contract` (`JsonStage2StringBodyDecoded:376`), axiom pin passing — and its precondition no longer asks the caller for the body's own slot (Gap 2) |
 **the two-entry token** | `HstringFacts` + `stringPath_seg` + `WalkDispatchResult.ofStringMerge` (`JsonStage2WalkDispatchWitnessString`), the arm at `C.k + 2`; `HcontCase` is the class the continuing premise now names. The fifteen-link segment is proved, and `HstringResidue` (`JsonStage2WalkDispatchWitnessString:1949`) is a field-less `Prop`: `WalkStringResidue` is not a premise — see Gap 1 |
-**the continuing payload's rows** | `HcontLane.defaultLane`'s row (`hcontDefaultRow_of_inv`, `JsonStage2WalkDispatchDefaultLane:119`; the field at `hcontLane_defaultLane`, `:156`), `HcontAbi.openCall` (`hcontAbi_openCall`, `JsonStage2WalkDispatchAbiOfInv:56`), and `HcontTrav.visits`' reduction (`hcontTrav_visits_of_class`, `:233`).  `HcontAbi.string` is refuted as stated (`hcontAbi_string_field_false`, `:132`) |
+**the continuing payload's rows** | `HcontLane.defaultLane`'s row (`hcontDefaultRow_of_inv`, `JsonStage2WalkDispatchDefaultLane:119`; the field at `hcontLane_defaultLane`, `:156`), `HcontAbi.openCall` (`hcontAbi_openCall`, `JsonStage2WalkDispatchAbiOfInv:56`), and `HcontTrav.visits`' reduction (`hcontTrav_visits_of_class`, `:233`).  `HcontAbi.string` is repaired: lane-anchored, guarded by the accepting arm's `L.rd.toNat = 0`, with `hcontStringCalls_of_lane` (`JsonStage2WalkDispatchAbiOfInv`) as the row's composition; the old universal's refutation is `hcontStringCalls_uninhabited_of_ne` (`:96`) |
 **the whitespace skip's run** | `wsRun` (`JsonStage2WalkRevolution:1646`) with `wsRun_go` (`:1541`) and `contWsRunF` (`:3869`) — the run, its stop and its price derived, and `HcontFacts` carries no run field |
 **the whitespace group's rows** | `HcontWsRows`' fields produced modulo supply: `hcontRunBody_wsCheck` (`JsonStage2WalkDispatchWsRowsProduce:93`) with the counted run at it (`contWsRunBody_at_wsCheck`, `:320`), three of the tail's fields (`hcontWsTail_of_landing`, `:231`) and the traversal's row (`hcontWsTravRow_of_bytes`, `:362`).  The `run` field as stated is false at a `-` head byte (`hcontRunBody_dash_false`, `:214`): the class guard is missing from its type |
 **the loop's exit, at its memories** | `JsonStage2WalkTargetPost`: the 25 conjuncts of `stage2Boundary` at the returned memory for all three terminal routes — `walkFinishPost_accept` (`:985`), `walkFinishPost_refuse` (`:1255`), `walkFinishPost_refuse488` (`:1446`), `walkFinishPost_copy` (`:1605`), composed by `walkFinishPost_merge` (`:1723`) and `walkFinishPost_refuseOfWords` (`:1765`) — and `WalkTargetPost` (`JsonStage2WalkTraverse:672`), the terminal predicate the loop's step carries |
@@ -299,7 +300,7 @@ in the whitespace section and postdates that build.
 
 | group | declaration | state |
 |---|---|---|
-| `HcontPayload` | `JsonStage2WalkDispatchSupply:852` | `abi.openCall` produced; `lane.defaultLane` produced; `lane.string` supply (the document's own post-store boundary word); `abi.string` **false as stated**; `trav.visits` reduces to a document row.  The only full producer is `hcontPayload_of_nep_zero` (`:1095`): `Nonempty (HcontPayload G)` at `G.nep = 0`, where no continuing head exists |
+| `HcontPayload` | `JsonStage2WalkDispatchSupply:852` | `abi.openCall` produced; `lane.defaultLane` produced; `lane.string` supply (the document's own post-store boundary word); `abi.string` repaired (lane-anchored and guarded; its supply is the body's side); `trav.visits` reduces to a document row.  The only full producer is `hcontPayload_of_nep_zero` (`:1095`): `Nonempty (HcontPayload G)` at `G.nep = 0`, where no continuing head exists |
 | `HcontClassRows` | `JsonStage2WalkDispatchClassRows:636` | unproduced; carries the seam (`seam : HcontSeamAbi`, `:733`) and the kind-`0` refusal segment (`refuseSeg`, `:753`), which `hcontArm_badToken_of_row` (`:774`) spends at the six tag-clear default classes |
 | `HcontWsRows` | `JsonStage2WalkDispatchWsRows:225` | produced modulo its supply, with a statement defect in `run` (see the whitespace section) |
 | `HlastPayload` | `JsonStage2WalkDispatchSupply:979` | `abi.openCall` produced (`hlastAbi_openCall`, `JsonStage2WalkDispatchHlastSupply:218`); `lane.tail`'s byte route produced at `¬ wsStop G (G.n - 1)` (`hlastLane_of_not_wsStop`, `:154`); `abi.highByte` carries the refusal evidence (`hlastHighByteRefusal_of_stage`, `:415`), and the emission residue is empty there (`hlastResidue_empty`, `:446`).  The one row still missing is `HlastRefuseRoute` — the class's route to the refusal copy, uncomposed |
@@ -326,15 +327,19 @@ them; `stage2Post_of_staging_flush` (`JsonStage2WalkFlushPost`) and
   `walkReadBytes_rootSlot_word`, the precondition `WalkInv.tyBytes`/`stBytes` at
   `C.sp - 1` (or nothing at depth zero), and the answer `s2ValuePos_answers`.  The same
   composition as `hlastAbi_openCall` (`JsonStage2WalkDispatchHlastSupply:218`).
-* **`abi.string` — false as stated** (`hcontAbi_string_field_false`
-  `JsonStage2WalkDispatchAbiOfInv:132`).  The field quantifies over every `rd : BitVec 32`;
-  at depth zero the callee's reply is `if rd = 0 then 1 else 0`
-  (`stage2ValuePos_zero_reply`), so `hbranch` fails at `rd ≠ 0` and `HcontStringCalls` is
-  uninhabited there (`hcontStringCalls_uninhabited_of_ne`, `:98`).  The four things the
-  field needs, none of them a `WalkInv` consequence, are: the **accepting arm's guard**
-  (`hbranch`), the **lane's own `rd`**, the **body's answer** (`hR8`, the model's
-  `.refused` arm returns `0`) and the **arena's presence** at `G.dst + A.toNat` (`hpreS`).
-  The repair is a statement change — guard the field by the accepting arm — not a proof.
+* **`abi.string` — repaired** (`JsonStage2WalkDispatchAbiOfInv`).  The field now takes the
+  lane's own words — `L.rd` (the root slot's read) and `L.A` (the log's arena read) — and
+  the accepting arm's guard `L.rd.toNat = 0`:
+  `∀ … → (L : HcontStringLane G C s) → L.rd.toNat = 0 → HcontStringCalls G C s L.rd L.A`.
+  `walkContinueArm_of_payload` splits on it: the zero word is `hcontArm_twoEntry_of_payload`,
+  the nonzero one is the refusal arm above.  The guard is load-bearing: at depth zero the
+  callee's reply is `if rd = 0 then 1 else 0`
+  (`stage2ValuePos_zero_reply`), so `HcontStringCalls` is uninhabited at every other word
+  (`hcontStringCalls_uninhabited_of_ne`, `:96`), which is why the old universal (every
+  `rd`, every `A`) could not be inhabited.  `hcontStringCalls_of_lane` composes what the
+  field carries — the value-position pre from the invariant, the answer `1` and `hbranch`
+  — so the row's remaining supply is exactly the body's side: `hpreS` (the arena's
+  presence at `G.dst + L.A.toNat`), the answer `y` and its accepting test `hR8`.
 * **`trav.visits` — a document row.**  `scanVisits_of_class` (`:181`) proves `ScanVisits`
   from one row: every index the extra-token scan visits reads a `9` or `10` byte.
   `hcontTrav_visits_of_class` (`:233`) is the field from it.  `WalkGeom`'s `doc`,
@@ -394,7 +399,7 @@ and remains outstanding).
   landed (`refuseSeg`/`badToken`), and the last level's seam is `HlastSeam`'s sum.  What the
   phase leaves is the per-class rows and the seam's supply: `HcontClassRows`,
   `HlastClassRows`, `HlastArmRows`, the payload's remaining rows (`lane.string`,
-  `abi.string`'s repaired statement, `trav.visits`' document row) and the last level's
+  `abi.string`'s body-side supply, `trav.visits`' document row) and the last level's
   `HlastRefuseRoute`.
 - **D — half landed.**  `hpost` is retired from `stage2WalkObligation_of_staging`
   (`:934`); `WalkPremises` is not yet derived from the ABI preconditions.

@@ -9,15 +9,15 @@ standalone string's read row; this module takes the callee side:
   (`walkReadBytes_rootSlot_word`), the callee's precondition (`s2ValuePosPre_of_inv`) and
   its answer (`s2ValuePos_answers`).  That is `hlastAbi_openCall`'s producer at the
   continuing head, and the field takes nothing the invariant does not carry;
-* `HcontAbi.string` — **false as stated** and reported rather than repaired: its
-  `hbranch` demands a nonzero value-position answer, which at depth zero the model gives
-  only when the root word is `0` (`stage2ValuePos`).  The field quantifies over every
-  `rd : BitVec 32` and every `A : BitVec 64`, so `HcontStringCalls` is uninhabited at
-  `rd = ofNat 32 1` (`hcontStringCalls_uninhabited_of_ne`).  `hR8` is a second,
-  independent row (the string body's acceptance, a `document` fact), and `hpreS`'s
-  arena-presence clause is the third: the field's intended use
-  (`hcontArm_twoEntry_of_payload`) asks it at the *lane's* `rd`/`A`, and the universal in
-  the field's type is what makes it fail;
+* `HcontAbi.string` — **repaired**: the field now names the lane's own `rd`/`A` and
+  carries the accepting arm's guard (`L.rd.toNat = 0`), so it is inhabitable and is
+  exactly what `hcontArm_twoEntry_of_payload` applies.  The old universal (`every rd`,
+  `every A`) was false — `hbranch` demands a nonzero value-position answer, which at
+  depth zero the model gives only when the root word is `0` (`stage2ValuePos`), so
+  `HcontStringCalls` is uninhabited at `rd = ofNat 32 1`
+  (`hcontStringCalls_uninhabited_of_ne`).  The row's remaining supply is the body's side:
+  `hpreS` (the arena's presence at `G.dst + L.A.toNat`), the answer `y` and its accepting
+  test `hR8` (`hcontStringCalls_of_lane`);
 * `HcontTrav.visits` — **not a consequence of the geometry**, and the row it needs is
   named: `ScanVisits G c i`'s `∃` carries the visited byte's class
   (`slt x 13 = 1 ∧ ule (x + 247) 1 = 1`, the `9`/`10` arm), which is the document's
@@ -79,13 +79,15 @@ noncomputable def hcontAbi_openCall {m0 : Mem} (G : WalkGeom m0) :
       s.mem s.next = some r := Classical.choose_spec (s2ValuePos_answers hpre)
   exact ⟨rdv, hread, hpre, r, hcall⟩
 
-/-! ### `HcontAbi.string`: the branch field is false at a nonzero root word
+/-! ### `HcontAbi.string`: the accepting arm, and why the field carries it
 
 `HcontStringCalls.hxv` pins every answer's return to one word `xv`, and `hbranch` asks
 that word to be nonzero.  At depth zero the callee's return is
 `if rd = 0 then 1 else 0` (`stage2ValuePos`), so at `rd ≠ 0` the two fields cannot both
-hold: the answer is `0`.  The field quantifies over every `rd`, so it is not merely
-unproduced — it is uninhabited at the `rd` the caller picks next. -/
+hold: the answer is `0`.  That is why the field names the lane's own word and takes
+`L.rd.toNat = 0` as its premise rather than quantifying over every word: the accepting
+arm is the only arm at which the calls exist.  The row's own composition is
+`hcontStringCalls_of_lane` below. -/
 
 /-- **The value-position callee at depth zero**: the model's return is `1` only for a
 zero root word. -/
@@ -125,18 +127,49 @@ theorem hcontStringCalls_uninhabited_of_ne {m0 : Mem} {G : WalkGeom m0} {C : Wal
   rw [hz] at hb
   exact absurd hb (by decide)
 
-/-- **The `string` field's statement is false**: at `rd = ofNat 32 1` — a word the
-caller may pass — the structure has no inhabitant, so no function of the field's type
-returns one there.  The row the arm actually reads is the *accepting* one
-(`hcontArm_twoEntry_of_payload` passes the lane's `rd`, whose word is the root slot's). -/
-theorem hcontAbi_string_field_false {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
-    {s : State} (hsp : C.sp = 0) (hcap : C.sp < 2 ^ 32) :
-    ¬ Nonempty (HcontStringCalls G C s (BitVec.ofNat 32 1) (BitVec.ofNat 64 0)) := by
-  refine hcontStringCalls_uninhabited_of_ne ?_ ?_
-  · rw [walkToNat_ofNat32 hcap]
+/-- **The standalone string's two calls, from the lane's words.**  On the accepting arm
+the value-position pre is the invariant's at depth zero (the callee reads nothing there),
+the answer is `1` (`stage2ValuePos`), and `hbranch` follows.  What the row still supplies
+is the body's side: `hpreS` (the arena's presence at the lane's `A`), the answer `y` and
+its accepting test `hR8`. -/
+noncomputable def hcontStringCalls_of_lane {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {s : State}
+    (hInv : WalkInv G C s) (hsp : C.sp = 0) (L : HcontStringLane G C s)
+    (hrd : L.rd.toNat = 0)
+    (hpreS : s2StringBodyPre
+      [.ptr C.stage.c, .ptr (G.b + (contIx G C).toNat + 1),
+       .int 64 (BitVec.ofNat 64 (entryPos G (C.k + 1) - (contIx G C).toNat - 1)),
+       .ptr (G.dst + L.A.toNat), .ptr (G.next0 + 20), .ptr G.xp, .ptr (G.next0 + 12),
+       .int 64 (BitVec.ofNat 64 G.nxp)] s.mem s.next)
+    {y : BitVec 32}
+    (hy : ∀ r, stage2Calls stage2SubCalls "s2_string_body"
+      [.ptr C.stage.c, .ptr (G.b + (contIx G C).toNat + 1),
+       .int 64 (BitVec.ofNat 64 (entryPos G (C.k + 1) - (contIx G C).toNat - 1)),
+       .ptr (G.dst + L.A.toNat), .ptr (G.next0 + 20), .ptr G.xp, .ptr (G.next0 + 12),
+       .int 64 (BitVec.ofNat 64 G.nxp)] s.mem s.next = some r →
+      r.ret = .int 32 y)
+    (hR8 : evalICmp .slt y (BitVec.ofNat 32 1) = 0) :
+    HcontStringCalls G C s L.rd L.A := by
+  have hcap : C.sp ≤ stage2StackExtent := hInv.depth_cap
+  have hspNat : (BitVec.ofNat 32 C.sp).toNat = 0 := by
+    rw [walkToNat_ofNat32 (by simp only [stage2StackExtent] at hcap; omega)]
     exact hsp
-  · rw [show (BitVec.ofNat 32 1).toNat = 1 from by decide]
-    decide
+  have hpreV : s2ValuePosPre
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 L.rd,
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next :=
+    ⟨BitVec.ofNat 32 C.sp, L.rd, C.stage.ctype, C.stage.cst, rfl, Or.inl hspNat⟩
+  have hcall : stage2Calls stage2SubCalls "s2_value_pos"
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 L.rd,
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next =
+      some ⟨.int 32 (BitVec.ofNat 32 1), s.mem, s.next⟩ := by
+    rw [s2ValuePos_reply, hspNat, stage2ValuePos_zero_reply, hrd]
+    rfl
+  refine ⟨hpreV, BitVec.ofNat 32 1, ?_, ?_, hpreS, y, hy, hR8⟩
+  · intro r hr
+    have hsame : r = ⟨.int 32 (BitVec.ofNat 32 1), s.mem, s.next⟩ :=
+      Option.some.inj (hr.symm.trans hcall)
+    rw [hsame]
+  · decide
 
 /-! ### `HcontTrav.visits`: the invariant's part, and the document row it needs
 
@@ -246,7 +279,7 @@ theorem hcontTrav_visits_of_class {m0 : Mem} (G : WalkGeom m0)
 #print axioms LeanLLVM.Refinement.WalkScope.hcontAbi_openCall
 #print axioms LeanLLVM.Refinement.WalkScope.stage2ValuePos_zero_reply
 #print axioms LeanLLVM.Refinement.WalkScope.hcontStringCalls_uninhabited_of_ne
-#print axioms LeanLLVM.Refinement.WalkScope.hcontAbi_string_field_false
+#print axioms LeanLLVM.Refinement.WalkScope.hcontStringCalls_of_lane
 #print axioms LeanLLVM.Refinement.WalkScope.scanLatchOut_env3
 #print axioms LeanLLVM.Refinement.WalkScope.scanLatchOut_envCond
 #print axioms LeanLLVM.Refinement.WalkScope.latch462S_envQ
