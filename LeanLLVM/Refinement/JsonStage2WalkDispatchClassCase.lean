@@ -80,10 +80,11 @@ bundle above.
 
 **The last level's leaf bundle is closed.**  `HlastFacts` and `HlastResidue` carry the
 last byte's route (`hb : HcontByteRoute (head35 (G.bs.getD (G.n - 1) 0))`) in place of
-the three scan-free bits, `hlastTailByte_of_calls` produces `hTail` at the class's own
-seam, `hlast_toMerge` states the path at the route's count (`12 + hlastByteCount hb + 3 +
-1 ≤ 20`) and `hlast_finish`/`hlast_refuse` price it at `22 ≤ 32` and `25 ≤ 32`, so
-`.highByte` selects `.lowLeaf`/`.highLeaf` rather than assuming the scan-free leaf.
+the three scan-free bits, `hlastTail_of_calls` (`JsonStage2WalkDispatchWitnessHlast`)
+produces `hTail` at the class's own seam, `hlast_toMerge` states the path at the route's
+count (`12 + hlastByteCount hb + 3 + 1 ≤ 20`) and `hlast_finish`/`hlast_refuse` price it
+at `22 ≤ 32` and `25 ≤ 32`, so `.highByte` selects `.lowLeaf`/`.highLeaf` rather than
+assuming the scan-free leaf.
 
 **What the two class cases still need is a payload item, not a proof.**  Each branch
 exists, but the continuing case is two-dimensional — the head class does not fix the next

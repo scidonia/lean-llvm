@@ -232,7 +232,14 @@ rows: what the staging supplies for the five classes the invariant cannot reach.
 
 Every field is guarded by the class bits that name it — so no field is stated at every
 head — and no field is a segment a producer is meant to establish: the chain, span and tail
-segments are the arms' own routes. -/
+segments are the arms' own routes.
+
+Three guards also exclude the bytes the head switch sends elsewhere before the default arm:
+`.letters` and `.run` exclude the standalone opener's `34`, and `.classC` excludes the
+braces `123` and `125`.  `.letters`' guard still admits the comma, the colon and the two
+brackets (`44`, `58`, `91`, `93`), which the class case dispatches to their own arms; those
+exclusions are not stated, and `JsonStage2WalkDispatchLastArmRows` records the byte facts
+they would rest on. -/
 structure HlastArmRows {m0 : Mem} (G : WalkGeom m0) : Type where
   /-- The scalar class's row (`HlastScalarRows`); consumer
   `lastEntryArm_scalar_of_staging`. -/
@@ -245,13 +252,16 @@ structure HlastArmRows {m0 : Mem} (G : WalkGeom m0) : Type where
       evalICmp .ult (hlastByte G C + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 1) →
     HlastScalarRows G C s
   /-- The letters class's row (`HlastLettersRows`); consumer
-  `lastEntryArm_letters_of_staging`. -/
+  `lastEntryArm_letters_of_staging`.  The guard excludes the standalone opener's byte
+  (`%8 = 34`), which the head switch sends to its own arm, so the row is quantified only
+  over the bytes the class case dispatches to it. -/
   letters : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     ¬ (C.k + 1 < G.nep) →
     (hbit : (evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 45) |||
       evalICmp .ult (hlastByte G C + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0) →
     (h110 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 110) = 1) →
     (hne102 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 102) = 0) →
+    (hne34 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 34) = 0) →
     HlastLettersRows G C s
   /-- The `'f'` leaf's row (`HlastFLetterRows`); consumer
   `lastEntryArm_fLetter_of_staging`. -/
@@ -263,20 +273,27 @@ structure HlastArmRows {m0 : Mem} (G : WalkGeom m0) : Type where
     (h102 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 102) = 1) →
     HlastFLetterRows G C s
   /-- The class-C class's row (`HlastClassCRows`); consumer
-  `lastEntryArm_classC_of_staging`. -/
+  `lastEntryArm_classC_of_staging`.  The guard excludes the two brace bytes (`%8 = 123`,
+  `%8 = 125`), which the head switch sends to the container open and close arms, so the
+  row is quantified only over the bytes the class case dispatches to it. -/
   classC : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     ¬ (C.k + 1 < G.nep) →
     (h110 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 110) = 0) →
     (h125 : evalICmp .slt (hlastByte G C) (BitVec.ofNat 8 125) = 1 ∨
       evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 125) = 1) →
+    (hne123 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 123) = 0) →
+    (hne125 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 125) = 0) →
     HlastClassCRows G C s
   /-- The run class's row (`HlastRunRows`); consumer `lastEntryArm_run_of_staging`.  Its
   guard is the class's own: the byte before the token's end is whitespace, which is what
-  sends the walk into the run's scan rather than straight to the seam. -/
+  sends the walk into the run's scan rather than straight to the seam — beside the tag
+  test and the exclusion of the standalone opener's byte (`%8 = 34`), which the head
+  switch sends to its own arm. -/
   run : ∀ (C : WalkCarry G) (s : State), WalkInv G C s → C.block = walkLoopHead →
     ¬ (C.k + 1 < G.nep) →
     (hbit : (evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 45) |||
       evalICmp .ult (hlastByte G C + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0) →
+    (hne34 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 34) = 0) →
     wsStop G (G.n - 1) →
     HlastRunRows G C s
 
