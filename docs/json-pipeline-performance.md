@@ -339,7 +339,9 @@ pipeline are not measured here, so no figure here is an end-to-end one. (When
 this section was written those stages were not in the tree; the assembled
 pipeline is there now -- `kernel/json/pipeline.c` -- and §"The composed route,
 against simdjson 5.0.5" measures it. No row below is re-derived from that
-section.)
+section.) A second host's same-session pairing is recorded separately in
+§"Stage 1 on a quiet AMD host: a paired units-and-simdjson run"; its rows are
+not comparable with these and none is divided by one of them.
 
 ### The instrument
 
@@ -849,7 +851,9 @@ against 0.452 on the E core), the one place its fused SIMD classifier beats the
 unit's mask pass on the clock-normalized column. Against all three units
 together it is 0.49-1.23 on the P core and 0.53-2.21 on the E core: the fused
 pass wins on the string- and UTF-8-heavy documents, the three units win on the
-dense ones.
+dense ones. The dense side of that sentence is host-dependent: on the quiet AMD
+host the composite is ahead on both dense documents and on `route-s1-64k`
+(§"Stage 1 on a quiet AMD host: a paired units-and-simdjson run").
 
 ### The fused masks-and-entry loop, measured
 
@@ -978,10 +982,10 @@ edited.
 
 The claim is about generated code, so `bench.sh:168-199` reads it out of the
 object before any timing. It refuses the run if `inline.o` keeps an out-of-line
-emitter symbol, if either loop's only call targets are not
-`[__stack_chk_fail leanllvm_json_s1_masks]`, if either loop has more than one
-classifier call site, or if the pos8 table load and eight stores and the b8
-`tzcnt` slots are absent; the run printed `pos8 vector ops = 9, b8 tzcnt = 9`.
+emitter symbol, if either loop calls anything besides the classifier and the
+compiler's stack-protector helper, if either loop has more than one classifier
+call site, or if the pos8 table load and eight stores and the b8 `tzcnt` slots
+are absent; the run printed `pos8 vector ops = 9, b8 tzcnt = 9`.
 The positions are gated too: `bench.c:547-584` compares the candidate's emitted
 words one by one with the entry unit's over the pipeline's staged `ent` stream
 and requires its cursor to equal the unit's. A row that reordered, dropped or
@@ -1002,7 +1006,9 @@ does not reverse the sign. Across the 96 cells (3 builds × 2 cores × 8 documen
 cycles per byte is the lower in 88 of the 96. Fusion with the boundary removed
 is still behind splitting, and what remains on the string document is the
 per-block entry-word composition and the loop's other block work, not the
-emitter call.
+emitter call. A second host repeats these fused-versus-split rows with the same
+sign and a smaller margin; §"Stage 1 on a quiet AMD host: a paired
+units-and-simdjson run" records it.
 
 **What a genuinely fused unit would cost.** The fused row is the pipeline's
 loop, not an inlined emitter. Removing the per-block call would be new text in
@@ -1057,7 +1063,9 @@ above simdjson's stage 1 on this document.
   disagreement large enough to invert that column while the wall-clock ratio
   held, so the GB/s sign is the one that cannot be moved by the clock. Row
   levels drift 5-10% between processes, and only these within-run paired deltas
-  are claimed.
+  are claimed. A second host repeats the comparison with the same sign and a
+  smaller margin (§"Stage 1 on a quiet AMD host: a paired units-and-simdjson
+  run").
 - **Nothing about refinement of a fused body.** The units' existing proofs and
   the pipeline's own refinement are unchanged, and none of them is a theorem
   about the emitter-inlined body in `bench-inline.c`, which has no refinement
@@ -1310,12 +1318,15 @@ with the paired tables above.
   that section. The simdjson `parse` rows after them are a parser, but they are
   not this pipeline, and they do not turn the units into one; no unit row above
   is re-derived or confirmed by them.
-- **Nothing about another host.** One machine, two core classes, one compiler,
-  one `powersave` setting, one staging alignment (64 bytes), one corpus seed.
-  The same row can differ by a factor from 0.95 to 3.1 between the classes -- the
-  E core is faster on `entry_pos8` over `syn-utf8-4m`, and about three times
-  slower on `utf8_ungated` over `syn-strings-4m` -- so a single figure without
-  its class would be misleading; the tables report both.
+- **One local host, and a second recorded separately.** These rows are one
+  machine, two core classes, one compiler, one `powersave` setting, one staging
+  alignment (64 bytes), one corpus seed. A second host's paired run is recorded
+  in §"Stage 1 on a quiet AMD host: a paired units-and-simdjson run"; it does
+  not re-derive these rows, and its dense and route quotients differ from the
+  local ones. The same row can differ by a factor from 0.95 to 3.1 between the
+  classes -- the E core is faster on `entry_pos8` over `syn-utf8-4m`, and about
+  three times slower on `utf8_ungated` over `syn-strings-4m` -- so a single
+  figure without its class would be misleading; the tables report both.
 - **Nothing about simdjson beyond these rows.** The simdjson rows are 5.0.5,
   active implementation `haswell`, this corpus and this host. The §3 ratios are
   against 4.6.11 and are not re-measured here. The 5.0.5 full parse is a parser
@@ -1340,6 +1351,176 @@ with the paired tables above.
   measured only through the unit's verdict (the corpus's rejecting document
   returns 1 under both gate values); no separate row measures the tail term, and
   the units' correctness rests on their routes, not on these timings.
+
+## Stage 1 on a quiet AMD host: a paired units-and-simdjson run
+
+The stage-1 record above is one machine: an Intel Core Ultra 7 268V with a P
+and an E class. This section is the same paired measurement on a leased AMD
+host, taken in one session, and it is recorded as its own host section: no local
+row and no row here is divided by a row from the other host, and only the
+same-host pair is evidence. Cycles per byte is clock-normalized, so the two
+hosts' rows can be read side by side where that is labelled; GB/s is not carried
+across hosts at all. What the pair is for is the sign of the stage ratio on a
+core whose 256-bit execution is split, and which conclusions survive it.
+
+**The host.** `json-bench-01a1dc59`, an `e2-standard-4` spot instance in
+`europe-west4-a`, image `nixos-x86-64-20261119`.
+
+|what|value|
+|---|---|
+|CPU|AMD EPYC 7B12 ("Rome"); AVX2, no AVX-512|
+|topology|4 vCPU = 2 physical cores × 2 SMT; siblings `(0,2)` and `(1,3)`|
+|pins|`BENCH_CPUS="0 1"`: one thread of each physical core, so the two pinned CPUs are distinct full cores of the same kind|
+|cache|L1d 32K, L2 512K, L3 16M per core, as the harness printed|
+|clocks|no `cpufreq` on this host. Unit rows: median 3.17 GHz, range 2.26-3.21, with 34 rows (the run's opening rows on cpu1) below 2.9. `stage1` rows: median 3.02, range 2.74-3.19. Every row carries its own calibration.|
+|PMU|`perf_event_paranoid` 2, still no PMU for the harness; cycles are calibrated|
+|kernel|Linux 6.18.63|
+|load|the unit run does not sample load average; the simdjson run in the same session read 0.25/0.26/0.13 before and 0.42/0.30/0.14 after (`remote-simdjson-transcript.txt`)|
+
+There is no E class here: the two pinned CPUs are full cores of the same kind,
+so the local P/E contrast has no counterpart and no E-core claim is made.
+
+**The method.** The units ran `tests/json-units-bench/bench.sh` from `986d51b`
+at the measured clang 21.1.8 line, with the same three variants, corpus, seed,
+trials and repetitions as §"The instrument"; the harness now carries the
+fast-escape, ablation and inlined rows as well, and every gate held. The one
+harness change since the local transcript is in the inlined-emitter gate, which
+now strips the compiler's stack-protector helper before requiring the classifier
+as the loop's only kernel call, and it changes no timed row. The transcript is
+`tests/json-units-bench/remote-unit-bench-transcript.txt` (2,016 rows) and its
+header records the objects, build digests, compiler line and host. The corpus
+hashes in that header are the eight files of §"Corpus".
+
+The simdjson arm is a worker-local copy of `tests/json-units-bench/bench-simdjson.sh`,
+differing in exactly two places, both recorded in
+`tests/json-units-bench/remote-simdjson-transcript.txt` (144 rows): the version
+is read from the copied dev output's path instead of `nix eval 'nixpkgs#simdjson.version'`
+(this host has no network or flake registry), and the printed `command:` line
+names the invocation actually used, followed by a `script:` line saying so. The
+compiler line, corpus hashes, gates, repetitions and aggregation are the
+repository script's, and the copy was byte-for-byte the script at `8d69028`
+outside those two places. simdjson 5.0.5 came from realised store outputs
+transplanted to the worker, not from a build there; the header and
+`libsimdjson.so.34.0.0` hashes are identical to the local transcript's, so the
+same library and header were measured on both hosts. Stage 1 selected its
+`haswell` (AVX2) kernel on every trial. Both transcripts carry this section's
+host header.
+
+**What repeats on the unit side.** The fast escape improves every one of the
+16 (document, core) cells on this host, by a median of 7.1% in cycles per byte
+and a range of 5.2-9.4% (`s1_fastesc` against `s1_masks`, `default` arm). The
+local eight-document medians were 12.6% on the P core and 8.9% on the E core;
+the direction is the same and the size is smaller here.
+
+The split is ahead of both fused shapes in 78 of 96 GB/s cells and 74 of 96
+cycles cells, against 89 and 88 locally: the sign of the fused-versus-split
+comparison survives the host, and its margin does not. On the `default` build
+the inlined fused cell on `syn-strings-64k` B8 is 0.7325 against the split's
+0.7373 cycles per byte on cpu0 (0.65% ahead) and 0.7526 against 0.7360 on cpu1
+(2.3% behind); by GB/s it is behind on both cores (4.169 against 4.300 and
+4.312). The cpu0 cycles sign is therefore one core's one column, not a second
+host's agreement.
+
+**The stage ratio.** The composite is the same three calls as above —
+`s1_masks` + the entry emitter the document selects (POS8 on route and dense,
+B8 on strings and UTF-8) + `utf8_gated`, summed per trial on ns/byte and
+converted with the three rows' median calibrated clock. The quotient is the
+median of the three trial quotients, with the range in parentheses; below 1,
+simdjson's stage 1 takes less time than the composite, and above 1 the composite
+is cheaper. The `units` and `stage1` columns are the per-cell medians of cycles
+per byte.
+
+|document|entry|units cyc/B (0 / 1)|`stage1` cyc/B (0 / 1)|`stage1` ÷ units (0 / 1)|
+|---|---|---:|---:|---:|
+|`route-s1-64k`|pos8|0.869 / 0.864|1.506 / 1.610|**1.77** (1.69-1.80) / **1.87** (1.79-1.94)|
+|`route-u8-64k`|pos8|0.987 / 0.956|0.765 / 0.770|—|
+|`syn-dense-4m`|pos8|0.845 / 0.877|1.611 / 1.586|**1.90** (1.83-1.93) / **1.81** (1.80-1.84)|
+|`syn-dense-64k`|pos8|0.870 / 0.853|1.335 / 1.368|**1.52** (1.49-1.58) / **1.59** (1.59-1.60)|
+|`syn-strings-4m`|b8|0.841 / 0.832|0.560 / 0.547|**0.67** (0.64-0.67) / **0.66** (0.64-0.68)|
+|`syn-strings-64k`|b8|0.763 / 0.758|0.370 / 0.366|**0.48** (0.48-0.50) / **0.47** (0.47-0.49)|
+|`syn-utf8-4m`|b8|0.896 / 0.925|0.532 / 0.544|**0.58** (0.55-0.59) / **0.58** (0.58-0.59)|
+|`syn-utf8-64k`|b8|0.899 / 0.898|0.482 / 0.476|**0.54** (0.50-0.55) / **0.52** (0.52-0.56)|
+
+`route-u8-64k` has no quotient: the `stage1` row rejects at the first invalid
+UTF-8 sequence and stops, while the units scan the whole document, so the ratio
+would price different amounts of work. The row is in the transcript, marked
+`rejected`, and is excluded from every ratio statement.
+
+Every string and UTF-8 document keeps simdjson ahead. The quotients are
+0.47-0.48 on `syn-strings-64k`, 0.66-0.67 on `syn-strings-4m`, 0.52-0.54 on
+`syn-utf8-64k` and 0.58 on `syn-utf8-4m`, against the local P/E pairs' 0.49/0.53,
+0.79/0.74, 0.62/0.69 and 0.69/0.73. The direction is the same on all four, the
+quotient is lower here, and the fast classifier is still above stage 1 on
+`syn-strings-64k` (0.461/0.463 against 0.370/0.366, 25-27% above). The string
+conclusion is therefore not a local-host artifact: it survives, and the fast
+escape does not close it on this host either.
+
+The dense and route quotients do not simply repeat. `syn-dense-4m` is 1.90/1.81
+here against 1.12 on the local P core and 1.56 on the E core; `syn-dense-64k` is
+1.52/1.59 against 0.88 and 1.99; `route-s1-64k` is 1.77/1.87 against 1.23 and
+2.21. Relative to the local P core, the composite is ahead by more on all three,
+and `syn-dense-64k`'s local P-core sign — simdjson faster, 0.88 — is not
+reproduced: both cores here put the composite ahead. Relative to the local E
+core, `syn-dense-4m` moves further toward the composite, `route-s1-64k` sits
+between the two classes, and `syn-dense-64k` is less composite-favourable than
+the E row.
+
+**Why the numbers move.** `stage1`'s cycles per byte is higher than the local P
+core's on every document — `syn-dense-4m` 0.934 → 1.611/1.586, `syn-dense-64k`
+0.707 → 1.335/1.368, `syn-strings-64k` 0.278 → 0.370/0.366, `syn-utf8-64k`
+0.457 → 0.482/0.476. Cycles per byte is the clock-normalized column, so the
+lower clock is not the explanation: simdjson runs its AVX2 `haswell` kernel on a
+core that splits each 256-bit operation into two 128-bit ones, as the
+transcript's header records. This host has no 256-bit-native class: both pinned
+cores pay that split. The composite moves by document. On
+`syn-dense-4m` it stays close to the local P row (0.845/0.877 against 0.829)
+because the classifier's higher cost (0.498 against 0.343) is offset by cheaper
+entry (0.289 against 0.404) and UTF-8 (0.066 against 0.083). On
+`syn-strings-64k` it rises 46% (0.763/0.758 against 0.521) as the classifier
+(0.501 against 0.333) and the B8 emitter (0.222 against 0.142) both slow while
+UTF-8 is unchanged (0.046 against 0.047). These cross-host row comparisons are
+observations about where the movement comes from; the evidence remains each
+host's same-session pair.
+
+**What changes in the conclusions.** The strings conclusion survives: on both
+hosts simdjson's stage 1 is ahead on the string and UTF-8 documents, and the
+classifier, with or without the fast derivation, remains above it. The dense and
+route conclusions are host-dependent and must be stated with the host: on the
+local P core the composite wins `syn-dense-4m` and `route-s1-64k` but loses
+`syn-dense-64k`; on this AMD host it wins all three on both cores. Nothing here
+licenses "the units win on the dense documents" without naming the host.
+
+**What this does and does not establish.**
+
+- **It is one host, one lease, one session.** A spot instance with no repeat
+  run; the dense and route quotients are stated for this machine and are not a
+  second sample of AMD Rome.
+- **The paired columns are the evidence.** GB/s is measured directly; cycles per
+  byte is a calibrated clock, and this host's unit calibrations include a
+  2.26-3.21 GHz range with the first 34 cpu1 rows below 2.9 GHz. Only
+  same-session paired deltas are claimed; no quotient is formed across hosts.
+- **"Quiet" rests on the simdjson run's record.** The unit harness does not
+  sample load average, so the absence of competing work is inferred from the
+  0.25-0.42 readings around the simdjson arm and the transcript's statement that
+  nothing else ran on the host of its own account, not from a sampled unit run.
+- **The simdjson arm is a copy with two recorded changes.** The version line is
+  read from the transplanted dev output rather than `nix eval`, and the printed
+  command names the real invocation. The library and header hashes match the
+  local run's, the compiler line and gates are the repository script's, and the
+  library was not rebuilt.
+- **It is a stage ratio across two binaries.** The cross-build band and the
+  trial spread above are the floor under it; it is not a same-binary arm, and
+  `stage1` and the composite do not do identical work.
+- **Nothing about the composed route or full parse.** Only the unit rows and
+  `stage1` are quoted. The `parse` rows are in the transcript but are not used
+  here, and no row here is an end-to-end route figure.
+
+**Cadence.** Re-measure this section as a pair on one host when the instance
+type, image or CPU changes; when the measured compiler line, flags, corpus or a
+harness gate changes; when the simdjson release or its store outputs change; or
+when the worker-local copy's two differences are removed or altered. A change to
+`bench.sh`'s unit rows or `bench-simdjson.sh`'s arms invalidates both halves
+together.
 
 ## The composed route, against simdjson 5.0.5
 
