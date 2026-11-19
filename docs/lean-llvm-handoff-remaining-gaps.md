@@ -1,11 +1,19 @@
 # Handoff: the walk's remaining gaps
 
-**Tree at `0dc2fff`.**  The last default-target green recorded in this document is the
+**Tree at `7d2e160`.**  The last default-target green recorded in this document is the
 **1915-job** build at `a82619f`, with `leanllvm`, `ITree` and `LeanLLVMTest` included and
 no `sorry`/`admit`/`native_decide`.  `LAKE_EXIT=0` was captured at the command, not
-through a pipe.  One hundred and ninety-one commits have landed since, including the two
-module splits noted below; the status in this file is read off the declarations at
-`0dc2fff`, and a green is not inherited across those commits.
+through a pipe.  The status below is read off the declarations at `7d2e160`; a green is
+not inherited across commits, and **no default-target build of this tree is recorded here**.
+
+What *is* recorded is three module-target builds on a worker, each `LAKE_EXIT=0` and each
+covering the module and its cone: `LeanLLVM.Refinement.JsonStage2WalkDispatchWsRowsProduce`
+(671 jobs), `…DispatchDefaultLane` (668 jobs) and `…DispatchAbiOfInv` (666 jobs), all with
+no `sorry`/`admit`/`native_decide` and each declaration pinned at
+`[propext, Classical.choice, Quot.sound]` or below.  The working tree additionally carries
+uncommitted rewrites of the class rows, the seam and the last payload as this is written;
+the declarations they add are called *in flight* below and are not covered by those
+builds.
 
 **Verify before trusting any claim below** — this session's own record is that
 *every* statement-level defect was found by something trying to *use* or *supply* a

@@ -154,7 +154,7 @@ structure HlastSeamTailSupply {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
 /-- `%t352.i` at the scan's entry is the tail's source's: the three tail blocks bind their
 own cells (`%.sink372`, `%38`, `%cmp451.i` and the four answer cells) and none of them is
 the token record's register. -/
-theorem scanEntry_envTok (s : State) (r₁ r₂ r₃ : CallOutcome) (ei cd : Nat)
+theorem lastArmScanEntry_envTok (s : State) (r₁ r₂ r₃ : CallOutcome) (ei cd : Nat)
     (c rdv xA : BitVec 32) :
     lookupName (ScanEntry s r₁ r₂ r₃ ei cd c rdv xA).env "%t352.i" =
       lookupName s.env "%t352.i" := by
@@ -213,7 +213,7 @@ noncomputable def hlastLettersRows_of_head {m0 : Mem} (G : WalkGeom m0) (C : Wal
     (TailCarry₂ (HeadC₄₁₃ (LetC₄₀₅ Cm))).stage.tok, hseg, rfl, ?_, ?_⟩
   · show Cm.k = C.k
     exact hmk
-  · rw [scanEntry_envTok]
+  · rw [lastArmScanEntry_envTok]
     exact sup.ht
 
 /-! ### The `'f'` row's tail -/
@@ -259,7 +259,7 @@ noncomputable def hlastFLetterRows_of_head {m0 : Mem} (G : WalkGeom m0) (C : Wal
     (TailCarry₂ (FC₄₁₃ Cm)).stage.tok, hseg, rfl, ?_, ?_⟩
   · show Cm.k = C.k
     exact hmk
-  · rw [scanEntry_envTok]
+  · rw [lastArmScanEntry_envTok]
     exact sup.ht
 
 /-! ### The class-C row's span
@@ -314,7 +314,7 @@ noncomputable def hlastClassCRows_of_span {m0 : Mem} (G : WalkGeom m0) (C : Walk
     (TailCarry₂ Cs).stage.tok, hseg, rfl, ?_, ?_⟩
   · show Cs.k = C.k
     exact hkCs
-  · rw [scanEntry_envTok]
+  · rw [lastArmScanEntry_envTok]
     exact sup.ht
 
 /-! ### The narrowed guards' witnesses
@@ -412,7 +412,7 @@ theorem hlast_scalar_guard_excludes_openBrace :
 
 /-! ### The instrument -/
 
-#print axioms LeanLLVM.Refinement.WalkScope.scanEntry_envTok
+#print axioms LeanLLVM.Refinement.WalkScope.lastArmScanEntry_envTok
 #print axioms LeanLLVM.Refinement.WalkScope.hlastLettersRows_of_head
 #print axioms LeanLLVM.Refinement.WalkScope.hlastFLetterRows_of_head
 #print axioms LeanLLVM.Refinement.WalkScope.hlastClassCSpan_of_head
