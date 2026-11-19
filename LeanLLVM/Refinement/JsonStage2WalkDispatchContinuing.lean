@@ -21,7 +21,7 @@ names its row's consumer:
 | `.value` | the three leaves | `hcontArm_value_of_lane` (the payload's default lane) |
 | `.defaultValueHigh` | `wsByte` | `hcontArm_ws_of_rows` (the whitespace group) |
 | `.defaultValueHigh` | the three leaves | `hcontArm_cleanup_of_class` (the class's `cleanup`/`cleanupRow`) |
-| the six tag-clear default classes | `wsByte` | **vacuous, and the cell is the count to drop**: those bytes are never value bytes (`%8 < 44`, `59 … 90`, `92`, `94 … 122`, `124`), so no `if.then447.i` and no emit group — `hcontSeamCalls_no_literal_zero` refutes the run rows' leaf at that literal, and the six `hcontArm_run_*` arms are proved only through `HcontClassRows.seamScan`, which is empty. Dropping the cells needs `WalkContinueFacts` (`JsonStage2WalkDispatchHcontArms`, the abbreviation at `:718`) to lose the states it cannot arm |
+| the six tag-clear default classes | any | **the refusal arm** (`HcontArm.badToken`, from `HcontClassRows.refuseSeg`): those bytes are never value bytes (`%8 < 44`, `59 … 90`, `92`, `94 … 122` minus the three literals, `124`), so the edge takes `if.then432.i` and refuses.  The three literal bytes inside `94 … 122` keep the run arm (`.defaultValueBracketHigh`'s `f`/`n`/`t` sub-branches) |
 | the six tag-clear default classes | the three leaves | `hcontArm_defaultValueLow` … `_defaultValueBrace` (the class's seam rows) |
 
 No branch holds an arm, a bundle or a segment: the groups are rows about the document and
@@ -116,82 +116,70 @@ theorem walkContinueArm_of_payload {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G
       | highLeaf h1 h2 h3 =>
           exact hcontArm_value_of_lane hInv hblock hk h8 h44 h58 hne44 hbit r
             (HcontHeadByte.highLeaf h1 h2 h3) hc
-  | otherValue h91 h44 h58 hne44 hbit =>
-      cases r.hclass with
-      | wsByte hws =>
-          -- Vacuous cell: `%8 ∈ {46, 47}` is on the kind-0 edge, so the emit-run group has
-          -- no inhabitant (`hcontSeamCalls_no_literal_zero`) and the arm is proved
-          -- only from the class row's empty `seamScan`.  Dropping it needs
-          -- `WalkContinueFacts` restricted.
-          exact hcontArm_run_otherValue hc hInv hblock hk r hws h8 h91 h44 h58 hne44 hbit
-      | scanFree f =>
-          exact hcontArm_otherValue hInv hblock hk h8 h91 h44 h58 hne44 hbit r
-            (HcontHeadByte.scanFree f) hc
-      | lowLeaf h1 h2 =>
-          exact hcontArm_otherValue hInv hblock hk h8 h91 h44 h58 hne44 hbit r
-            (HcontHeadByte.lowLeaf h1 h2) hc
-      | highLeaf h1 h2 h3 =>
-          exact hcontArm_otherValue hInv hblock hk h8 h91 h44 h58 hne44 hbit r
-            (HcontHeadByte.highLeaf h1 h2 h3) hc
+  | otherValue h91 _ _ _ hbit =>
+      -- the kind-`0` edge: the tag is clear and the byte is below the three pivots
+      have hx91 : (hlastByte G C).toInt < 91 := by simpa using toInt_lt_of_slt_one h91
+      exact hcontArm_badToken_of_row hc hInv hblock hk h8 hbit
+        (eq_zero_of_toInt_ne (x := hlastByte G C) (c := BitVec.ofNat 8 102) (by
+          simp only [toInt_8_102]
+          omega))
+        (eq_zero_of_toInt_ne (x := hlastByte G C) (c := BitVec.ofNat 8 110) (by
+          simp only [toInt_8_110]
+          omega))
+        (eq_zero_of_toInt_ne (x := hlastByte G C) (c := BitVec.ofNat 8 116) (by
+          simp only [toInt_8_116]
+          omega))
   | defaultValueLow h91 h44 hne34 =>
-      cases r.hclass with
-      | wsByte hws =>
-          -- Vacuous cell: `%8 < 44` is on the kind-0 edge, so the emit-run group has
-          -- no inhabitant (`hcontSeamCalls_no_literal_zero`) and the arm is proved
-          -- only from the class row's empty `seamScan`.  Dropping it needs
-          -- `WalkContinueFacts` restricted.
-          exact hcontArm_run_defaultValueLow hc hInv hblock hk r hws h8 h91 h44 hne34
-      | scanFree f =>
-          exact hcontArm_defaultValueLow hInv hblock hk h8 h91 h44 hne34 r
-            (HcontHeadByte.scanFree f) hc
-      | lowLeaf h1 h2 =>
-          exact hcontArm_defaultValueLow hInv hblock hk h8 h91 h44 hne34 r
-            (HcontHeadByte.lowLeaf h1 h2) hc
-      | highLeaf h1 h2 h3 =>
-          exact hcontArm_defaultValueLow hInv hblock hk h8 h91 h44 hne34 r
-            (HcontHeadByte.highLeaf h1 h2 h3) hc
+      -- `%8 < 44`: the tag is clear by the bound
+      have hx44 : (hlastByte G C).toInt < 44 := by simpa using toInt_lt_of_slt_one h44
+      exact hcontArm_badToken_of_row hc hInv hblock hk h8
+        (tag_zero_of_toInt_lt_44 hx44)
+        (eq_zero_of_toInt_ne (x := hlastByte G C) (c := BitVec.ofNat 8 102) (by
+          simp only [toInt_8_102]
+          omega))
+        (eq_zero_of_toInt_ne (x := hlastByte G C) (c := BitVec.ofNat 8 110) (by
+          simp only [toInt_8_110]
+          omega))
+        (eq_zero_of_toInt_ne (x := hlastByte G C) (c := BitVec.ofNat 8 116) (by
+          simp only [toInt_8_116]
+          omega))
   | defaultValueMid h91 h44 h58 hne58 =>
-      cases r.hclass with
-      | wsByte hws =>
-          -- Vacuous cell: `59 ≤ %8 < 91` is on the kind-0 edge, so the emit-run group has
-          -- no inhabitant (`hcontSeamCalls_no_literal_zero`) and the arm is proved
-          -- only from the class row's empty `seamScan`.  Dropping it needs
-          -- `WalkContinueFacts` restricted.
-          exact hcontArm_run_defaultValueMid hc hInv hblock hk r hws h8 h91 h44 h58 hne58
-      | scanFree f =>
-          exact hcontArm_defaultValueMid hInv hblock hk h8 h91 h44 h58 hne58 r
-            (HcontHeadByte.scanFree f) hc
-      | lowLeaf h1 h2 =>
-          exact hcontArm_defaultValueMid hInv hblock hk h8 h91 h44 h58 hne58 r
-            (HcontHeadByte.lowLeaf h1 h2) hc
-      | highLeaf h1 h2 h3 =>
-          exact hcontArm_defaultValueMid hInv hblock hk h8 h91 h44 h58 hne58 r
-            (HcontHeadByte.highLeaf h1 h2 h3) hc
+      -- `58 < %8 < 91`
+      have hx91 : (hlastByte G C).toInt < 91 := by simpa using toInt_lt_of_slt_one h91
+      have hge58 : 58 ≤ (hlastByte G C).toInt := by simpa using toInt_ge_of_slt_zero h58
+      exact hcontArm_badToken_of_row hc hInv hblock hk h8
+        (tag_zero_of_toInt_ge_58 hge58)
+        (eq_zero_of_toInt_ne (x := hlastByte G C) (c := BitVec.ofNat 8 102) (by
+          simp only [toInt_8_102]
+          omega))
+        (eq_zero_of_toInt_ne (x := hlastByte G C) (c := BitVec.ofNat 8 110) (by
+          simp only [toInt_8_110]
+          omega))
+        (eq_zero_of_toInt_ne (x := hlastByte G C) (c := BitVec.ofNat 8 116) (by
+          simp only [toInt_8_116]
+          omega))
   | defaultValueBracket h91 h123 h93 hne91 =>
-      cases r.hclass with
-      | wsByte hws =>
-          -- Vacuous cell: `%8 = 92` is on the kind-0 edge, so the emit-run group has
-          -- no inhabitant (`hcontSeamCalls_no_literal_zero`) and the arm is proved
-          -- only from the class row's empty `seamScan`.  Dropping it needs
-          -- `WalkContinueFacts` restricted.
-          exact hcontArm_run_defaultValueBracket hc hInv hblock hk r hws h8 h91 h123 h93
-            hne91
-      | scanFree f =>
-          exact hcontArm_defaultValueBracket hInv hblock hk h8 h91 h123 h93 hne91 r
-            (HcontHeadByte.scanFree f) hc
-      | lowLeaf h1 h2 =>
-          exact hcontArm_defaultValueBracket hInv hblock hk h8 h91 h123 h93 hne91 r
-            (HcontHeadByte.lowLeaf h1 h2) hc
-      | highLeaf h1 h2 h3 =>
-          exact hcontArm_defaultValueBracket hInv hblock hk h8 h91 h123 h93 hne91 r
-            (HcontHeadByte.highLeaf h1 h2 h3) hc
+      -- the byte is `92`
+      have hge91 : 91 ≤ (hlastByte G C).toInt := by simpa using toInt_ge_of_slt_zero h91
+      have hx93 : (hlastByte G C).toInt < 93 := by simpa using toInt_lt_of_slt_one h93
+      exact hcontArm_badToken_of_row hc hInv hblock hk h8
+        (tag_zero_of_toInt_ge_58 (by omega))
+        (eq_zero_of_toInt_ne (x := hlastByte G C) (c := BitVec.ofNat 8 102) (by
+          simp only [toInt_8_102]
+          omega))
+        (eq_zero_of_toInt_ne (x := hlastByte G C) (c := BitVec.ofNat 8 110) (by
+          simp only [toInt_8_110]
+          omega))
+        (eq_zero_of_toInt_ne (x := hlastByte G C) (c := BitVec.ofNat 8 116) (by
+          simp only [toInt_8_116]
+          omega))
   | defaultValueBracketHigh h91 h123 h93 hne93 =>
       cases r.hclass with
       | wsByte hws =>
           -- Vacuous when the byte is on the kind-0 edge (`94 … 122` minus the three
-          -- literals): that sub-branch reads the empty `seamScan`.  The f/n/t
-          -- sub-branches are real; separating them needs `WalkContinueFacts`
-          -- restricted to the byte disjunction, which this case cannot supply.
+          -- literals): that sub-branch is the refusal arm (`HcontArm.badToken`); the
+          -- f/n/t sub-branches are the emit run, whose rows are `scanF`/`scan56True`/
+          -- `scan58True`.
           exact hcontArm_run_defaultValueBracketHigh hc hInv hblock hk r hws h8 h91 h123
             h93 hne93
       | scanFree f =>
@@ -204,23 +192,20 @@ theorem walkContinueArm_of_payload {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G
           exact hcontArm_defaultValueBracketHigh hInv hblock hk h8 h91 h123 h93 hne93 r
             (HcontHeadByte.highLeaf h1 h2 h3) hc
   | defaultValueBrace h91 h123 h125 hne123 =>
-      cases r.hclass with
-      | wsByte hws =>
-          -- Vacuous cell: `%8 = 124` is on the kind-0 edge, so the emit-run group has
-          -- no inhabitant (`hcontSeamCalls_no_literal_zero`) and the arm is proved
-          -- only from the class row's empty `seamScan`.  Dropping it needs
-          -- `WalkContinueFacts` restricted.
-          exact hcontArm_run_defaultValueBrace hc hInv hblock hk r hws h8 h91 h123 h125
-            hne123
-      | scanFree f =>
-          exact hcontArm_defaultValueBrace hInv hblock hk h8 h91 h123 h125 hne123 r
-            (HcontHeadByte.scanFree f) hc
-      | lowLeaf h1 h2 =>
-          exact hcontArm_defaultValueBrace hInv hblock hk h8 h91 h123 h125 hne123 r
-            (HcontHeadByte.lowLeaf h1 h2) hc
-      | highLeaf h1 h2 h3 =>
-          exact hcontArm_defaultValueBrace hInv hblock hk h8 h91 h123 h125 hne123 r
-            (HcontHeadByte.highLeaf h1 h2 h3) hc
+      -- the byte is `124`
+      have hge123 : 123 ≤ (hlastByte G C).toInt := by simpa using toInt_ge_of_slt_zero h123
+      have hx125 : (hlastByte G C).toInt < 125 := by simpa using toInt_lt_of_slt_one h125
+      exact hcontArm_badToken_of_row hc hInv hblock hk h8
+        (tag_zero_of_toInt_ge_58 (by omega))
+        (eq_zero_of_toInt_ne (x := hlastByte G C) (c := BitVec.ofNat 8 102) (by
+          simp only [toInt_8_102]
+          omega))
+        (eq_zero_of_toInt_ne (x := hlastByte G C) (c := BitVec.ofNat 8 110) (by
+          simp only [toInt_8_110]
+          omega))
+        (eq_zero_of_toInt_ne (x := hlastByte G C) (c := BitVec.ofNat 8 116) (by
+          simp only [toInt_8_116]
+          omega))
   | defaultValueHigh _ _ h125 hne125 =>
       cases r.hclass with
       | wsByte hws =>

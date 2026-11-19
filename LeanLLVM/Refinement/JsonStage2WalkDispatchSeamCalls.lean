@@ -81,7 +81,8 @@ selected.  `hcontSeamCalls_no_kind_zero` below proves that no `HcontSeamCalls` e
 kind-`0` store, which is what that edge writes.  The edge's group is therefore the refusal
 arm's — `HcontSeamAbi.scanRefuse`, produced by `hcontSeamRefusalOf` from the staged words
 alone — and the emit group at that literal is stated where the class row that claims the
-cells names it (`HcontClassRows.seamScan`), empty.  No field of `HcontSeamAbi` is
+cells names it (`HcontClassRows.refuseSeg`), which is the refusal route's segment.  No
+field of `HcontSeamAbi` is
 uninhabited.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkDispatchSeams
@@ -705,7 +706,7 @@ and the literal is the class's (the `.scalar` route's `7`, for instance).
 `scanRefuse` is the `if.else405.i` edge's supply: the staged words, with no emit row,
 because that edge's answer is the refusal's and is derived.  The four emit seams carry the
 emit row (`HcontSeamEmitStage`), and no field here is the emit group at the literal `0` — the
-class row's `seamScan` is where that (empty) group is named. -/
+class row's `refuseSeg` is where that route's segment is stated. -/
 structure HcontSeamStaging {m0 : Mem} (G : WalkGeom m0) : Type where
   /-- **The `if.else405.i` edge's seam**: the staged words at the literal `0`, whose rows
   are the refusal arm's. -/

@@ -627,8 +627,8 @@ The fields are the producers' remaining argument lists:
   `hcontRunRow_of_rows` at the leaf the head byte's bits select;
 * `seam` — the seams `HcontSeamAbi` names: the `if.else405.i` edge's refusal group and the
   four emit groups (each inhabited at its leaf);
-* `seamScan` — the emit group at that edge's literal `0`, which is empty; the `.run` cells
-  it stops are the ones this row must stop claiming.
+* `refuseSeg` — the kind-`0` edge's refusal route as a segment, with the slow scan's stop
+  named; the arm it feeds is `HcontArm.badToken`.
 
 The run class's leaf is an argument of both producers rather than a field of the payload:
 the segment below `if.else387.i` belongs to the head byte's class, and the case's branch
@@ -731,23 +731,60 @@ structure HcontClassRows {m0 : Mem} (G : WalkGeom m0) : Type where
   the memory the first call reads, so the edge decides which field a leaf can read
   (`JsonStage2WalkDispatchRunRow`'s table).  Every field is inhabited at its leaf. -/
   seam : HcontSeamAbi G
-  /-- **The emit group at `if.else405.i`'s literal `0` — empty.**  `if.then413.i` stores the
-  literal as the token's kind, `od_scalar_value` answers `0` at a zero kind, and the walk
-  leaves for `if.then432.i`: no third call and no `if.then447.i`, so no `HcontSeamCalls`
-  exists at this literal
-  (`JsonStage2WalkDispatchSeamCalls.hcontSeamCalls_no_literal_zero`).
+  /-- **The kind-`0` refusal route, as a segment.**  From a head state whose byte is on
+  `if.else405.i`'s edge to the refusal copy: `if.then413.i`'s value-position call,
+  `if.then425.i`'s scalar call (answer `0`), `if.then432.i`, the slow scan
+  (`cond.end.i96` / `land.rhs.i103` ⟲ `while.body.i104`), `while.end.i`, `if.end.i97`,
+  `if.else.i`, `NodeBlock83`'s pivots, `if.else43.i`'s refusal store and `cleanup474.i`
+  into `if.then`.
 
-  It is stated here, beside the row it stops, rather than in `HcontSeamAbi`: the class row
-  is what claims the `.run` cells whose byte sits on this edge
-  (`JsonStage2WalkDispatchRunRow`'s three cast-leaf wrappers), and those cells are vacuous.
-  Dropping the field together with those wrappers and their `.run` cases
-  (`JsonStage2WalkDispatchContinuing`'s `hcontArm_run_defaultValueLow`/`_Mid`/`_Bracket`/
-  `_BracketHigh` call sites) is the coverage repair; until then the row is uninhabited at
-  those bytes, which is the truth about that edge. -/
-  seamScan : ∀ (C : WalkCarry G) (sl : State) (b35 : UInt8) (ix : BitVec 64) (v : BitVec 32)
-    (k : Nat) (x1 : BitVec 8),
-    HcontSeamKind G (ContTailStartC C)
-      (contWsTailStart C (wsSlAt G sl b35 ix v k) k x1 x1) (BitVec.ofNat 32 0)
+  **The scan's interior is named, not assumed.**  Its stop is the first position at or after
+  the entry's start whose byte is whitespace (`9`, `10`, `13`, `32`) or the token's bound
+  (`%cond.i`, written by `cond.end.i96`), and the loop's cell `%40` is the read that decides
+  it.  A token may carry whitespace inside — a string's interior is not whitespace-free —
+  and that is the case the route states as its *stop*: the scan halts there and the walk
+  continues from `while.end.i` exactly as it does at the bound, so the arm needs no
+  "the interior is non-whitespace" premise for the token.
+
+  The row is the arm's premise, as `twoEntry`'s segment is; every link it names is proved in
+  `JsonStage2Walk*` (`if_then413_i`, `if_then425_i_refuse`, `if_then432_i`, `land_rhs_i103`,
+  `while_end_i`, `if_end_i97`, `if_else_i`, `NodeBlock83`, `LeafBlock75`/`77`/`79`,
+  `if_else43_i`, `cleanup474_i`). -/
+  refuseSeg : ∀ (C : WalkCarry G) (s : State) (x : BitVec 8),
+    WalkInv G C s → C.block = walkLoopHead → C.k + 1 < G.nep →
+    evalOperand s (.reg "%8") = some (.int 8 x) →
+    (evalICmp .eq x (BitVec.ofNat 8 45) |||
+      evalICmp .ult (x + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0 →
+    evalICmp .eq x (BitVec.ofNat 8 102) = 0 →
+    evalICmp .eq x (BitVec.ofNat 8 110) = 0 →
+    evalICmp .eq x (BitVec.ofNat 8 116) = 0 →
+    ∃ (Cd : WalkCarry G) (sd : State) (p : Nat),
+      WalkSegment (stage2Calls stage2SubCalls) G C s Cd sd p ∧
+      Cd.block = "if.then" ∧
+      (∃ k, k ≤ G.n ∧ readBytes sd.mem (Cd.stage.e + 8) 8 = some (wordBytes 8 k)) ∧
+      Cd.eoff ≤ G.n ∧
+      p + 2 ≤ stage2EntryAllowance * (G.nep - C.k) +
+        stage2ByteAllowance * (G.n - entryPos G C.k)
+
+/-- **The kind-`0` edge's arm, from the class row.**  The refusal route is the row's
+(`refuseSeg`), and the answer `0` and the record the scalar call wrote are
+`HcontSeamAbi.scanRefuse`'s — `s2ScalarValue_refused` derives them from the zero kind, so
+nothing here supplies an answer.  The byte facts are the head class's: the tag bit clear
+and the byte outside the three literal pivots. -/
+theorem hcontArm_badToken_of_row {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (hc : HcontClassRows G) (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead)
+    (hk : C.k + 1 < G.nep) {x : BitVec 8}
+    (h8 : evalOperand s (.reg "%8") = some (.int 8 x))
+    (hbit : (evalICmp .eq x (BitVec.ofNat 8 45) |||
+      evalICmp .ult (x + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
+    (hne102 : evalICmp .eq x (BitVec.ofNat 8 102) = 0)
+    (hne110 : evalICmp .eq x (BitVec.ofNat 8 110) = 0)
+    (hne116 : evalICmp .eq x (BitVec.ofNat 8 116) = 0) :
+    Nonempty (HcontArm (stage2Calls stage2SubCalls) G C s) := by
+  obtain ⟨Cd, sd, p, seg, hblk, hword, herr, hprice⟩ :=
+    hc.refuseSeg C s x hInv hblock hk h8 hbit hne102 hne110 hne116
+  exact ⟨HcontArm.badToken h8 hbit hne102 hne110 hne116 Cd sd p seg hblk hword herr
+    hprice⟩
 
 /-- **The continuing class rows hold what the payload holds.**  The default-value class's
 document row is `defaultLane`'s, so a payload with the default row and the seam's calls
@@ -800,6 +837,8 @@ structure HlastClassRows {m0 : Mem} (G : WalkGeom m0) : Type where
     HcontSeamCalls G (TailStartC C) (hlastTailByte C s x inc nep v ix b35 hb)
 
 /-! ### The instrument -/
+
+#print axioms LeanLLVM.Refinement.WalkScope.hcontArm_badToken_of_row
 
 #print axioms LeanLLVM.Refinement.WalkScope.hcontCleanupDoc_of_lane
 #print axioms LeanLLVM.Refinement.WalkScope.hcontClassRows_cleanup_of_payload

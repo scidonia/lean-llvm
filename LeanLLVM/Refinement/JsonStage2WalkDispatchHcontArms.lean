@@ -708,6 +708,33 @@ inductive HcontArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G
   `LastEntryArm.run` beside `RunLastFacts`
   (`JsonStage2WalkDispatchRun`, `JsonStage2WalkDispatchArms`). -/
   | run (f : RunFacts G C s) : HcontArm calls G C s
+  /-- **The kind-`0` edge's refusal: the token the slow scanner rejects.**  `if.else405.i`'s
+  edge writes the literal `0` as the token's kind, so `od_scalar_value` answers `0`
+  (`stage2ScalarValue`'s first arm, `stage2ErrSetMsg`), the walk leaves `if.then425.i` for
+  `if.then432.i`, the slow scan trims the token, the classification finds neither a numeral
+  nor a literal, `if.else43.i` stores the refusal offset and `cleanup474.i` releases the
+  token into `if.then`.  So the outcome is the refusal copy, not a continuing run: this is
+  the arm the six tag-clear default classes' whitespace cells take.
+
+  The segment is the arm's premise, as `twoEntry`'s and the openers' is; its links are all
+  proved (`if_then413_i`, `if_then425_i_refuse`, `if_then432_i`, the slow scan at
+  `land.rhs.i103`/`while.body.i104`, `while_end_i`, `if_end_i97`, `if_else_i`,
+  `NodeBlock83`, `LeafBlock75`/`LeafBlock77`/`LeafBlock79`, `if_else43_i`,
+  `cleanup474_i`).  The other fields are the refusal copy's own: the offset word the
+  `%off` load reads, the carry's refusal offset and the price. -/
+  | badToken {x : BitVec 8} (h8 : evalOperand s (.reg "%8") = some (.int 8 x))
+      (hbit : (evalICmp .eq x (BitVec.ofNat 8 45) |||
+        evalICmp .ult (x + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0)
+      (hne102 : evalICmp .eq x (BitVec.ofNat 8 102) = 0)
+      (hne110 : evalICmp .eq x (BitVec.ofNat 8 110) = 0)
+      (hne116 : evalICmp .eq x (BitVec.ofNat 8 116) = 0)
+      (Cd : WalkCarry G) (sd : State) (p : Nat)
+      (seg : WalkSegment calls G C s Cd sd p)
+      (hblock : Cd.block = "if.then")
+      (hword : ∃ k, k ≤ G.n ∧ readBytes sd.mem (Cd.stage.e + 8) 8 = some (wordBytes 8 k))
+      (herr : Cd.eoff ≤ G.n)
+      (hprice : p + 2 ≤ stage2EntryAllowance * (G.nep - C.k) +
+        stage2ByteAllowance * (G.n - entryPos G C.k)) : HcontArm calls G C s
 
 /-- **The continuing entry's bundle**: the arm at every head state with an entry left.  A
 `Type`-valued abbreviation, so the bundle is the arm and not a proposition about it; the
@@ -908,7 +935,12 @@ theorem HcontArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     · -- the merge's index cell is the header's increment, at the entry's successor
       walk_read using hincD
 
+  | .badToken h8 hbit hne102 hne110 hne116 Cd sd p seg hblock hword herr hprice =>
+    WalkDispatchResult.refuse Cd sd p seg hblock hword herr hprice
+
 /-! ### The instrument -/
+
+#print axioms LeanLLVM.Refinement.WalkScope.HcontArm
 
 #print axioms LeanLLVM.Refinement.WalkScope.HcontClass.complete
 #print axioms LeanLLVM.Refinement.WalkScope.HcontClass.value_of_48
