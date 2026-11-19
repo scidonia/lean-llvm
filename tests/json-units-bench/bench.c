@@ -12,8 +12,17 @@
      entry_pos8    leanllvm_json_entry_pos8 once over the document's mask
                    stream, derived the way the entry route derives its corpus:
                    lane t of block i is set iff byte 64*i + t is one of the
-                   eight structural bytes
+                   eight structural bytes.  This is the unit's own stream, not
+                   the pipeline's, and is kept for the route comparison
      entry_b8      leanllvm_json_entry_b8 over the same stream
+     fused_pos8    the pipeline's own block loop: masks, the scalar word S,
+                   the entry word, its tail clamp, and one pos8 call per block
+                   with nblk = 1 and the cursor threaded between blocks
+     fused_b8      the same loop with the b8 emitter
+     split_ent_pos8  the same pipeline entry mask, but composed whole-document
+                   into an array first and then emitted by one pos8 call: the
+                   split shape on the fused row's own stream
+     split_ent_b8  the same with the b8 emitter
      utf8_gated    leanllvm_json_utf8 with `ungated = 0`
      utf8_ungated  leanllvm_json_utf8 with `ungated = 1`
 
@@ -45,9 +54,12 @@
 
    Gates held fixed across every row, because a row that did not reach the code
    is not a measurement: entry_pos8's and entry_b8's cursors must both equal the
-   stream's total set lanes; the gated and ungated UTF-8 words must be equal;
-   and every timed pass's checksum must equal the warm-up pass's checksum.  A
-   disagreement exits 3 (the instrument is not usable), never as a number.
+   stream's total set lanes; the fused rows' final cursors must equal the total
+   set lanes of the pipeline's entry mask composed independently here, which
+   the entry unit must also return over that staged stream; the gated and
+   ungated UTF-8 words must be equal; and every timed pass's checksum must equal
+   the warm-up pass's checksum.  A disagreement exits 3 (the instrument is not
+   usable), never as a number.
 
      bench --doc <name>=<path> [--doc ...] [--reps <n>] [--samples]
 
@@ -156,9 +168,11 @@ typedef struct {
   uint8_t *u8;       /* allocation: prefix, document, zero padding */
   uint8_t *b;        /* the document's first byte inside u8, 64-aligned */
   uint64_t u8_blocks;
-  uint64_t *ent;     /* nb mask words, structural bytes only */
+  uint64_t *ent;     /* nb mask words, structural bytes only (entry rows) */
+  uint64_t *pent;    /* nblk words, the pipeline's own per-block entry mask */
   uint32_t *pos;     /* nb * 64 + 16 words of output slack */
   uint64_t structural;   /* total set lanes of ent */
+  uint64_t pipeline_ent; /* total set lanes of pent, the gate's reference */
   uint64_t ascii_vectors;
   uint64_t vectors;
   uint64_t utf8_gated, utf8_ungated;
@@ -233,6 +247,12 @@ static void stage_doc(doc *d) {
     d->ent[i] = m;
     d->structural += (uint64_t)__builtin_popcountll(m);
   }
+
+  /* The pipeline's own per-block entry mask, composed the way `pipeline.c`
+     composes it.  The fused row builds it one word at a time on the stack; the
+     split-on-the-same-stream rows and the gate stage it here. */
+  uint64_t nblk = (d->n + BLOCK - 1) / BLOCK;
+  d->pent = xaligned((size_t)(nblk ? nblk : 1) * sizeof *d->pent);
 
   /* The entry unit's output buffer: the ABI asks for eight words of slack past
      the largest count the stream can reach. */
@@ -311,6 +331,115 @@ static uint64_t pass_entry(const doc *d, int pos8, uint64_t *k_out) {
   return h;
 }
 
+/* The pipeline's own per-block loop (`kernel/json/pipeline.c`): the mask unit
+   over the block, the scalar word and its run starts, the entry word's
+   composition, the tail clamp, and one emitter call with nblk = 1, with the
+   cursor threaded from block to block.  The reference pass mixes every mask
+   word and the final cursor; the timed pass touches one mask word per block and
+   the cursor once, so the accumulator is not what the row measures.
+
+   The document is swept to its last partial block, as the pipeline sweeps
+   `(n + 63) >> 6`, and the clamp keeps lanes past the end out of the entry
+   word.  `buf` is zero-padded by two blocks, so the last block is readable. */
+static uint64_t pass_fused(const doc *d, int b8, int full, uint64_t *k_out) {
+  s1_carry carry = { 0, 0, 0 };
+  s1_masks m;
+  uint64_t prevS = 0;
+  uint64_t k = 0;
+  uint64_t entw[1];
+  uint64_t h = 0x84222325CBF29CE4ull;
+  uint64_t nblk = (d->n + BLOCK - 1) / BLOCK;
+  for (uint64_t i = 0; i < nblk; i++) {
+    leanllvm_json_s1_masks(d->buf + (i << 6), &carry, &m);
+    uint64_t S = ~(m.quote | m.delim | m.in_string | m.ws);
+    uint64_t ent = m.quote | (m.delim & ~m.in_string);
+    ent |= S & ~((S << 1) | prevS);
+    prevS = S >> 63;
+    uint64_t lim = d->n - (i << 6);
+    if (lim < 64) ent &= (1ULL << lim) - 1ULL;
+    entw[0] = ent;
+    k = b8 ? leanllvm_json_entry_b8(entw, i, 1, d->pos, k)
+           : leanllvm_json_entry_pos8(entw, i, 1, d->pos, k);
+    if (full) {
+      h = mix(h, m.quote);
+      h = mix(h, m.delim);
+      h = mix(h, m.in_string);
+      h = mix(h, m.ws);
+      h = mix(h, m.backslash);
+      h = mix(h, m.ctl);
+    } else {
+      h ^= m.quote;
+    }
+  }
+  *k_out = k;
+  return mix(h, k);
+}
+
+/* The reference for the fused rows' gate: the pipeline's entry mask composed
+   here, block by block, from the mask unit's own output, with this file's
+   `S`/`prevS` and tail clamp rather than the fused pass's.  It stages the
+   stream in `d->pent` and returns its total set lanes, which the fused rows'
+   final cursor must reach.  It is not timed. */
+static uint64_t derive_pipeline_ent(const doc *d) {
+  s1_carry carry = { 0, 0, 0 };
+  s1_masks m;
+  uint64_t prevS = 0;
+  uint64_t total = 0;
+  uint64_t nblk = (d->n + BLOCK - 1) / BLOCK;
+  for (uint64_t i = 0; i < nblk; i++) {
+    leanllvm_json_s1_masks(d->buf + (i << 6), &carry, &m);
+    uint64_t S = ~(m.quote | m.delim | m.in_string | m.ws);
+    uint64_t ent = m.quote | (m.delim & ~m.in_string);
+    ent |= S & ~((S << 1) | prevS);
+    prevS = S >> 63;
+    uint64_t lim = d->n - (i << 6);
+    if (lim < 64) ent &= (1ULL << lim) - 1ULL;
+    d->pent[i] = ent;
+    total += (uint64_t)__builtin_popcountll(ent);
+  }
+  return total;
+}
+
+/* The split shape on the stream the fused rows use: one whole-document pass
+   that runs the masks and composes the pipeline's entry mask into `d->pent`,
+   then one entry call over that array.  Only the presence or absence of the
+   per-block fusion differs from `pass_fused`.  The reference pass mixes every
+   mask word and every `ent` word; the timed pass touches one mask word per
+   block, so the accumulator is not what the row measures. */
+static uint64_t pass_split_ent(const doc *d, int b8, int full,
+                               uint64_t *k_out) {
+  s1_carry carry = { 0, 0, 0 };
+  s1_masks m;
+  uint64_t prevS = 0;
+  uint64_t h = 0x84222325CBF29CE4ull;
+  uint64_t nblk = (d->n + BLOCK - 1) / BLOCK;
+  for (uint64_t i = 0; i < nblk; i++) {
+    leanllvm_json_s1_masks(d->buf + (i << 6), &carry, &m);
+    uint64_t S = ~(m.quote | m.delim | m.in_string | m.ws);
+    uint64_t ent = m.quote | (m.delim & ~m.in_string);
+    ent |= S & ~((S << 1) | prevS);
+    prevS = S >> 63;
+    uint64_t lim = d->n - (i << 6);
+    if (lim < 64) ent &= (1ULL << lim) - 1ULL;
+    d->pent[i] = ent;
+    if (full) {
+      h = mix(h, m.quote);
+      h = mix(h, m.delim);
+      h = mix(h, m.in_string);
+      h = mix(h, m.ws);
+      h = mix(h, m.backslash);
+      h = mix(h, m.ctl);
+      h = mix(h, ent);
+    } else {
+      h ^= m.quote;
+    }
+  }
+  uint64_t k = b8 ? leanllvm_json_entry_b8(d->pent, 0, nblk, d->pos, 0)
+                  : leanllvm_json_entry_pos8(d->pent, 0, nblk, d->pos, 0);
+  *k_out = k;
+  return mix(h, k);
+}
+
 static uint64_t pass_utf8(const doc *d, int ungated) {
   /* The unit returns one word for the whole document, so the checksum carries
      the document's length and structural census beside the verdict: dense and
@@ -372,6 +501,26 @@ static uint64_t row_pos8(void *ctx) {
 static uint64_t row_b8(void *ctx) {
   uint64_t k;
   return pass_entry((const doc *)ctx, 0, &k);
+}
+
+/* The fused row's context: the emitter arm, and whether this call is the
+   reference pass. */
+typedef struct {
+  const doc *d;
+  int b8;
+  int full;
+} fused_ctx;
+
+static uint64_t row_fused(void *ctx) {
+  const fused_ctx *c = ctx;
+  uint64_t k;
+  return pass_fused(c->d, c->b8, c->full, &k);
+}
+
+static uint64_t row_split_ent(void *ctx) {
+  const fused_ctx *c = ctx;
+  uint64_t k;
+  return pass_split_ent(c->d, c->b8, c->full, &k);
 }
 
 static uint64_t row_utf8_gated(void *ctx) {
@@ -506,6 +655,34 @@ int main(int argc, char **argv) {
               d->name, k8, kb, d->structural);
       exit(3);
     }
+    /* The fused rows' gate.  `derive_pipeline_ent` composes the pipeline's
+       entry mask in this file's own loop and stages it; the entry unit over
+       that stream must return its total, and the fused loop's final cursor must
+       equal the same total.  A fused row that skipped a block, dropped the
+       carry or clamped the last block differently fails here instead of being
+       timed. */
+    uint64_t nblk = (d->n + BLOCK - 1) / BLOCK;
+    d->pipeline_ent = derive_pipeline_ent(d);
+    uint64_t e8 = leanllvm_json_entry_pos8(d->pent, 0, nblk, d->pos, 0);
+    uint64_t eb = leanllvm_json_entry_b8(d->pent, 0, nblk, d->pos, 0);
+    if (e8 != d->pipeline_ent || eb != d->pipeline_ent) {
+      fprintf(stderr,
+              "bench: %s: pipeline-stream entry cursors pos8=%" PRIu64
+              " b8=%" PRIu64 ", reference stream has %" PRIu64 " set lanes\n",
+              d->name, e8, eb, d->pipeline_ent);
+      exit(3);
+    }
+    uint64_t f8, fb;
+    pass_fused(d, 0, 1, &f8);
+    pass_fused(d, 1, 1, &fb);
+    if (f8 != e8 || fb != eb) {
+      fprintf(stderr,
+              "bench: %s: fused cursors pos8=%" PRIu64 " b8=%" PRIu64
+              ", pipeline-stream entry cursors pos8=%" PRIu64 " b8=%" PRIu64
+              "\n",
+              d->name, f8, fb, e8, eb);
+      exit(3);
+    }
     d->utf8_gated = leanllvm_json_utf8(d->b, d->n, 0);
     d->utf8_ungated = leanllvm_json_utf8(d->b, d->n, 1);
     if (d->utf8_gated != d->utf8_ungated) {
@@ -517,10 +694,12 @@ int main(int argc, char **argv) {
 
     printf("doc name=%s bytes=%" PRIu64 " blocks=%" PRIu64
            " structural=%" PRIu64 " structural_per_block=%.2f"
+           " pipeline_ent=%" PRIu64
            " vectors=%" PRIu64 " ascii_vectors=%" PRIu64
            " utf8_word=%" PRIu64 " entry_positions=%" PRIu64 "\n",
            d->name, d->n, d->nb, d->structural,
            d->nb ? (double)d->structural / (double)d->nb : 0.0,
+           d->pipeline_ent,
            d->vectors, d->ascii_vectors, d->utf8_gated, d->structural);
 
     s1_ctx s1_full = { d, 1 };
@@ -528,15 +707,30 @@ int main(int argc, char **argv) {
     row r_s1 = { d, "s1_masks", row_s1, d->nb * BLOCK, d->nb * BLOCK };
     row r_pos8 = { d, "entry_pos8", row_pos8, d->nb * BLOCK, d->nb * 8 };
     row r_b8 = { d, "entry_b8", row_b8, d->nb * BLOCK, d->nb * 8 };
+    row r_fp8 = { d, "fused_pos8", row_fused, d->nb * BLOCK, d->nb * BLOCK };
+    row r_fb8 = { d, "fused_b8", row_fused, d->nb * BLOCK, d->nb * BLOCK };
+    row r_sp8 = { d, "split_ent_pos8", row_split_ent, d->nb * BLOCK,
+                  d->nb * BLOCK + d->nb * 8 };
+    row r_sb8 = { d, "split_ent_b8", row_split_ent, d->nb * BLOCK,
+                  d->nb * BLOCK + d->nb * 8 };
     row r_utf8_g = { d, "utf8_gated", row_utf8_gated, d->n,
                      d->u8_blocks * BLOCK };
     row r_utf8_u = { d, "utf8_ungated", row_utf8_ungated, d->n,
                      d->u8_blocks * BLOCK };
 
+    fused_ctx fp8_full = { d, 0, 1 };
+    fused_ctx fp8_cheap = { d, 0, 0 };
+    fused_ctx fb8_full = { d, 1, 1 };
+    fused_ctx fb8_cheap = { d, 1, 0 };
+
     if (d->nb > 0) {
       run_row(&r_s1, &s1_full, &s1_cheap, reps, samples, cpu);
       run_row(&r_pos8, d, d, reps, samples, cpu);
       run_row(&r_b8, d, d, reps, samples, cpu);
+      run_row(&r_fp8, &fp8_full, &fp8_cheap, reps, samples, cpu);
+      run_row(&r_fb8, &fb8_full, &fb8_cheap, reps, samples, cpu);
+      run_row(&r_sp8, &fp8_full, &fp8_cheap, reps, samples, cpu);
+      run_row(&r_sb8, &fb8_full, &fb8_cheap, reps, samples, cpu);
     }
     if (d->n > 0) {
       run_row(&r_utf8_g, d, d, reps, samples, cpu);

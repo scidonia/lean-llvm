@@ -7,7 +7,11 @@
 # `kernel/json/utf8.c` are compiled at the measured compiler line the unit routes
 # compile them with, and called through `tests/json-units-bench/bench.c` with
 # their own ABIs.  No kernel source is edited.  The rows are `s1_masks`,
-# `entry_pos8`, `entry_b8`, `utf8_gated` and `utf8_ungated`; `bench.c`'s header
+# `entry_pos8`, `entry_b8`, `fused_pos8`, `fused_b8`, `split_ent_pos8`,
+# `split_ent_b8`, `utf8_gated` and `utf8_ungated`.  `entry_pos8`/`entry_b8`
+# measure the unit's own structural-byte stream; `fused_*`/`split_ent_*` measure
+# the pipeline's own per-block entry mask over the same document, so the
+# fusion delta is the former pair against the latter.  `bench.c`'s header
 # states what each pass does, how the core clock is measured, and which gates
 # the rows hold fixed.
 #
@@ -205,9 +209,9 @@ awk '
     parse()
     if (!(kv["name"] in docseen)) {
       docseen[kv["name"]] = 1
-      printf "CORPUS name=%s bytes=%s blocks=%s structural_per_block=%s ascii_vectors=%s vectors=%s utf8_word=%s\n",
+      printf "CORPUS name=%s bytes=%s blocks=%s structural_per_block=%s pipeline_ent=%s ascii_vectors=%s vectors=%s utf8_word=%s\n",
         kv["name"], kv["bytes"], kv["blocks"], kv["structural_per_block"],
-        kv["ascii_vectors"], kv["vectors"], kv["utf8_word"]
+        kv["pipeline_ent"], kv["ascii_vectors"], kv["vectors"], kv["utf8_word"]
     }
     next
   }
@@ -238,8 +242,8 @@ awk '
     for (d in docseen) ndocs++
     ncpu = 0
     for (c2 in cpuset) ncpu++
-    if (nkeys != ndocs * 5 * ncpu) {
-      printf "FAIL: %d row(s) for %d document(s) x 5 units x %d CPU(s)\n",
+    if (nkeys != ndocs * 9 * ncpu) {
+      printf "FAIL: %d row(s) for %d document(s) x 9 units x %d CPU(s)\n",
         nkeys, ndocs, ncpu > "/dev/stderr"
       bad = 1
     }
@@ -295,5 +299,5 @@ printf 'ok: %s row(s) measured over %s CPU(s), %s trial(s), %s repetition(s) per
   "$(grep -h '^row ' "$work"/bench.*.out | wc -l)" \
   "$(printf '%s' "$cpus" | wc -w)" "$trials" "$reps"
 printf 'ok: every row checksum is stable across its trials, and across both core classes\n'
-printf 'ok: entry_pos8 and entry_b8 returned the stream total on every document; the gated and ungated UTF-8 words agree\n'
+printf 'ok: entry_pos8 and entry_b8 returned the structural stream total on every document; fused_pos8 and fused_b8 returned the pipeline entry stream total; the gated and ungated UTF-8 words agree\n'
 printf 'note: cycles/byte = median ns/byte x the core clock calibrated immediately before the row; no PMU on this host\n'
