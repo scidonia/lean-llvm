@@ -1321,6 +1321,67 @@ theorem readBytes_of_unchangedOutside {m0 m : Mem} {R : List (Nat × Nat)}
   exact h (a + k) (fun r hr hlt => by
     rcases hsep r hr with h' | h' <;> omega)
 
+/-- **The atom's frame.**  An atom is a range read, `readBytes m0 a bs.length =
+some bs`, and it survives a run whose frame's regions all end at or below `a` or
+start at or above `a + bs.length` — the region-list form of disjointness between
+the atom's extent and the run's writes.  The frame is converted to the predicate
+form, the atom's bytes are outside the predicate, and the read is kept.  The
+preservation is the one `LeanLLVM.HeapLogic.BytesAt.frame` states from a byte
+agreement hypothesis, reached here from the frame's region list, which is the
+form the pipeline has: a consumer holding a caller's known bytes never has to
+know how the run was built.
+
+The bytewise projection stays available for a consumer that does not know the
+bytes in advance: `readBytes_of_unchangedOutside` is the same side condition
+without a byte list. -/
+theorem readBytes_of_frame_atom {m0 m : Mem} {R : List (Nat × Nat)}
+    {a : Nat} {bs : List UInt8} (h : UnchangedOutside m0 m R)
+    (hsep : ∀ r ∈ R, r.1 + r.2 ≤ a ∨ a + bs.length ≤ r.1)
+    (hb : readBytes m0 a bs.length = some bs) :
+    readBytes m a bs.length = some bs := by
+  have hon : UnchangedOn (inRegions R) m0 m := unchangedOutside_iff_inRegions.mp h
+  have hagree : readBytes m a bs.length = readBytes m0 a bs.length :=
+    readBytes_eq_of_UnchangedOn hon (fun k hk => by
+      rintro ⟨r, hr, hlo, hhi⟩
+      rcases hsep r hr with h' | h' <;> omega)
+  rw [hagree]
+  exact hb
+
+/-- **The adjacent interval is outside the atom.**  A run that writes the single
+byte at `16 + 8`, immediately above the eight-byte atom at `16`, leaves the atom
+as it was; the side condition holds at equality, which is the clause an off-by-one
+in the extent would lose.  Checked on the concrete memories rather than stated. -/
+theorem atom_frame_adjacent_control :
+    readBytes (writeBytes (writeBytes [] 16 [1, 2, 3, 4, 5, 6, 7, 8]) 24 [9]) 16 8 =
+      some [1, 2, 3, 4, 5, 6, 7, 8] := by
+  refine readBytes_of_frame_atom
+    (unchangedOutside_writeBytes_own _ 24 [9]) ?_ (readBytes_writeBytes_same [] _)
+  intro r hr
+  simp only [List.mem_singleton] at hr
+  subst hr
+  decide
+
+/-- **A one-byte overlap breaks the atom.**  Writing the last byte of the
+eight-byte atom at `16` — the byte at `16 + 7` — changes the byte the atom names,
+so the read no longer returns the stamped bytes, and the side condition that
+would have allowed the region past the atom fails at that same address.  The first
+conjunct is the reason the second is not negotiable; both are checked on write
+sequences. -/
+theorem atom_frame_overlap_control :
+    readBytes (writeBytes (writeBytes [] 16 [1, 2, 3, 4, 5, 6, 7, 8]) 23 [9]) 16 8 ≠
+      some [1, 2, 3, 4, 5, 6, 7, 8] ∧
+    ¬ ((23 : Nat) + 1 ≤ 16 ∨ 16 + 8 ≤ 23) := by
+  constructor
+  · intro hbad
+    have hlast := readByte_of_readBytes hbad (k := 7) (by decide)
+    have hnew : readByte (writeBytes (writeBytes [] 16 [1, 2, 3, 4, 5, 6, 7, 8]) 23 [9])
+        23 = some 9 := by
+      simpa using readByte_writeBytes_at (writeBytes [] 16 [1, 2, 3, 4, 5, 6, 7, 8])
+        [9] 23 0 (by decide)
+    rw [show 16 + 7 = 23 from rfl, hnew] at hlast
+    exact absurd hlast (by decide)
+  · decide
+
 /-- The lane reader through a run that wrote outside the stream. -/
 theorem readLanes32_of_unchangedOutside {m0 m : Mem} {R : List (Nat × Nat)}
     {a k : Nat} (h : UnchangedOutside m0 m R)
@@ -1461,6 +1522,50 @@ theorem stage2WalkWrites_sep {S : PipelineLoopCarried} {alen evlen a N W : Nat}
   rcases List.mem_append.mp hr with hr | hr
   · exact stage2Writes_sep hk hDst hEv hNdst hNev hErr hwd hwe r hr
   · exact hSeven r hr
+
+
+/-- **An interval outside the report's parts is outside its whole frame.**
+`stage2ReportFrame` is four things: the five ABI write regions, the seven appended
+objects, `%d.i`'s slot and the fresh stack interval.  An interval `[a, a + w)` is
+outside it when
+
+* the walk's whole write footprint misses it (`hwalk`, at `stage2WalkWrites`,
+  which is the five and the seven at the arena's reserved extent and slack),
+* `%d.i`'s slot misses it (`hd`), and
+* it ends at or below the cursor the stack interval starts at (`hnext`).
+
+That is the entire decomposition, and both caller count slots read it: `a` is
+`S.nk` or `S.nxp` and `w` is the slot's width.  The fresh interval is where the
+allocator's monotonicity enters, so a slot is separated from the stack by the
+watermark rather than by a fixed bootstrap list. -/
+theorem stage2ReportFrame_sep {dst ndst' ev nev' ndst nev err c ctype cst tok s z e
+    d a w next nextEnd : Nat}
+    (hwalk : ∀ r ∈ stage2WalkWrites dst ndst' ev nev' ndst nev err c ctype cst tok s z e,
+      r.1 + r.2 ≤ a ∨ a + w ≤ r.1)
+    (hd : a + w ≤ d ∨ d + 8 ≤ a)
+    (hnext : a + w ≤ next) :
+    ∀ r ∈ stage2ReportFrame dst ndst' ev nev' ndst nev err c ctype cst tok s z e d
+      next nextEnd, r.1 + r.2 ≤ a ∨ a + w ≤ r.1 := by
+  intro r hr
+  have hr' : r ∈ ((stage2Writes dst ndst' ev nev' ndst nev err ++
+      (stage2StagedWrites c ctype cst tok s z e ++ [(d, 8)])) ++
+      [(next, nextEnd - next)]) := by
+    simpa [stage2ReportFrame, stage2ReportPresent, stage2ReportScratch] using hr
+  rcases List.mem_append.mp hr' with hr' | hr'
+  · rcases List.mem_append.mp hr' with hr' | hr'
+    · exact hwalk r (by
+        rw [stage2WalkWrites]
+        exact List.mem_append_left _ hr')
+    · rcases List.mem_append.mp hr' with hr' | hr'
+      · exact hwalk r (by
+          rw [stage2WalkWrites]
+          exact List.mem_append_right _ hr')
+      · rcases List.mem_cons.mp hr' with rfl | hnil
+        · exact Or.comm.mp hd
+        · exact absurd hnil (by simp)
+  · simp only [List.mem_singleton] at hr'
+    subst hr'
+    exact Or.inr hnext
 
 
 /-- **The retired watermark, kept so its refutation has a statement.**  It bounded
@@ -1963,16 +2068,26 @@ theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}
           CallOutcome) = ⟨v30, m30, n30⟩ := by simp only [hret32, hm32]
       rw [hr]
       exact hcall30
-    -- the escape count at the count-store memory
+    -- the escape count at the count-store memory: the staged word crosses the
+    -- exit block's store, whose one-region frame misses the escape count's slot
     have hld : readBytes (writeBytes e.mem S.nk (natToBytes S.kw.toNat 8)) S.nxp 8 =
         some (natToBytes (BitVec.ofNat 64 S.xn).toNat 8) := by
-      rw [hword]
-      refine ((readBytes_writeBytes_of_disjoint (m := e.mem) (start := S.nk)
-        (bs := natToBytes S.k 8) (a := S.nxp) (N := 8) ?_).trans hnxpslot).trans ?_
-      · rw [natToBytes_length]
-        exact Or.comm.mp (by
-          simpa using disjointRegions_pair _ 7 9 (by decide) _ _ rfl rfl hdisj)
-      · rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hxn64]; rfl
+      have hsep : ∀ r ∈ [(S.nk, (natToBytes S.kw.toNat 8).length)],
+          r.1 + r.2 ≤ S.nxp ∨ S.nxp + (wordBytes 8 S.xn).length ≤ r.1 := by
+        intro r hr
+        simp only [List.mem_singleton] at hr
+        subst hr
+        rw [natToBytes_length, wordBytes, natToBytes_length]
+        simpa using disjointRegions_pair _ 7 9 (by decide) _ _ rfl rfl hdisj
+      have hbase : readBytes e.mem S.nxp (wordBytes 8 S.xn).length =
+          some (wordBytes 8 S.xn) := by
+        simpa [wordBytes, natToBytes_length] using hnxpslot
+      have hframe := readBytes_of_frame_atom
+        (unchangedOutside_writeBytes_own e.mem S.nk (natToBytes S.kw.toNat 8)) hsep hbase
+      have hxnval : (BitVec.ofNat 64 S.xn).toNat = S.xn := by
+        rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hxn64]
+      rw [hxnval]
+      simpa [wordBytes, natToBytes_length] using hframe
     -- the watermark at the call's cursor: the exit's own record ends below the
     -- exiting cursor (`hcaps`, at the staged widths, read at the exit's counts by
     -- `stage2ExitRegions_le_caps`), and the UTF-8 call returned a cursor at or
@@ -2363,48 +2478,20 @@ theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}
       stage2WalkWrites_sep (S := S) (alen := alen) (evlen := evlen) (a := S.xp)
         (N := 4 * S.xn) (W := 4 * (nxp0 + 64 * pipelineBlocks S.n.toNat + 8))
         (by omega) sep8_11 sep8_13 sep8_12 sep8_14 sep8_15 hdstCapW hevCapW hsevenXp
-    -- the same separations at the callee's whole frame: the five and the seven
-    -- are `stage2WalkWrites`, `%d.i` is the record's `dSep`, and the stack
-    -- interval starts above the exiting cursor (the watermark) and hence above
-    -- both streams' extents
-    have hsepEpW : ∀ r ∈ (([(S.dst, alen + stage2ArenaReserve), (S.ndst, 8),
-        (S.ev, evlen), (S.nev, 8), (S.err, 8)] ++
-        stage2ReportScratch c₂ ctype₂ cst₂ tok₂ s₂ z₂ e₂ d₂) ++
-        [(n30, nend₂ - n30)]), r.1 + r.2 ≤ S.ep ∨ S.ep + 4 * S.k ≤ r.1 := by
-      intro r hr
-      rcases List.mem_append.mp hr with hr | hr
-      · rcases List.mem_append.mp hr with hr | hr
-        · exact hsepEp r (List.mem_append_left _ hr)
-        · rw [stage2ReportScratch] at hr
-          rcases List.mem_append.mp hr with hr | hr
-          · exact hsepEp r (List.mem_append_right _ hr)
-          · rcases List.mem_cons.mp hr with rfl | hnil
-            · exact Or.comm.mp hdEp
-            · exact absurd hnil (by simp)
-      · simp only [List.mem_singleton] at hr
-        subst hr
-        exact Or.inr (Nat.le_trans
-          (stage2ExitRegions_le_caps hkgr hib hxngr hcaps (S.ep, 4 * S.k)
-            (by simp [stage2ExitRegions])) hnext30)
-    have hsepXpW : ∀ r ∈ (([(S.dst, alen + stage2ArenaReserve), (S.ndst, 8),
-        (S.ev, evlen), (S.nev, 8), (S.err, 8)] ++
-        stage2ReportScratch c₂ ctype₂ cst₂ tok₂ s₂ z₂ e₂ d₂) ++
-        [(n30, nend₂ - n30)]), r.1 + r.2 ≤ S.xp ∨ S.xp + 4 * S.xn ≤ r.1 := by
-      intro r hr
-      rcases List.mem_append.mp hr with hr | hr
-      · rcases List.mem_append.mp hr with hr | hr
-        · exact hsepXp r (List.mem_append_left _ hr)
-        · rw [stage2ReportScratch] at hr
-          rcases List.mem_append.mp hr with hr | hr
-          · exact hsepXp r (List.mem_append_right _ hr)
-          · rcases List.mem_cons.mp hr with rfl | hnil
-            · exact Or.comm.mp hdXp
-            · exact absurd hnil (by simp)
-      · simp only [List.mem_singleton] at hr
-        subst hr
-        exact Or.inr (Nat.le_trans
-          (stage2ExitRegions_le_caps hkgr hib hxngr hcaps (S.xp, 4 * S.xn)
-            (by simp [stage2ExitRegions])) hnext30)
+    -- the same separation at the callee's whole frame, for the two streams: the
+    -- walk's footprint is `hsepEp`/`hsepXp`, `%d.i`'s slot is the record's
+    -- `dSep`, and the stack interval starts at or above the exiting cursor (the
+    -- watermark), which is at or above each stream's end
+    have hsepEpW : ∀ r ∈ stage2ReportFrame S.dst alen S.ev evlen S.ndst S.nev S.err
+        c₂ ctype₂ cst₂ tok₂ s₂ z₂ e₂ d₂ n30 nend₂,
+        r.1 + r.2 ≤ S.ep ∨ S.ep + 4 * S.k ≤ r.1 :=
+      stage2ReportFrame_sep hsepEp hdEp
+        (hwmExit (S.ep, 4 * S.k) (by simp [stage2ExitRegions]))
+    have hsepXpW : ∀ r ∈ stage2ReportFrame S.dst alen S.ev evlen S.ndst S.nev S.err
+        c₂ ctype₂ cst₂ tok₂ s₂ z₂ e₂ d₂ n30 nend₂,
+        r.1 + r.2 ≤ S.xp ∨ S.xp + 4 * S.xn ≤ r.1 :=
+      stage2ReportFrame_sep hsepXp hdXp
+        (hwmExit (S.xp, 4 * S.xn) (by simp [stage2ExitRegions]))
     -- the slot-keeps claim at the callee's frame: `%nk` and `%nxp` lie outside
     -- every region the run writes, so the caller reads the words it staged.
     -- The seven appended objects are separated from the slots by the staged
@@ -2440,62 +2527,25 @@ theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}
       stage2WalkWrites_sep (S := S) (alen := alen) (evlen := evlen) (a := S.nxp)
         (N := 8) (W := 8) (by omega) sep9_11 sep9_13 sep9_12 sep9_14 sep9_15
         hdstCapW hevCapW hsevenNxp
-    have hframeNk : ∀ r ∈ stage2ReportFrame S.dst alen S.ev evlen S.ndst S.nev
+    -- the same decomposition for the two count slots: the walk's footprint is
+    -- `hsepNkWalk`/`hsepNxpWalk` (the seven appended objects are separated from
+    -- the slots by the staged precondition), `%d.i`'s slot is separated by the
+    -- staged list, and the stack interval starts above the cursor the slots end
+    -- below (the staged-capacity bound)
+    have hsepNkFrame : ∀ r ∈ stage2ReportFrame S.dst alen S.ev evlen S.ndst S.nev
         S.err c₂ ctype₂ cst₂ tok₂ s₂ z₂ e₂ d₂ n30 nend₂,
-        r.1 + r.2 ≤ S.nk ∨ S.nk + 8 ≤ r.1 := by
-      intro r hr
-      have hr' : r ∈ (([(S.dst, alen + stage2ArenaReserve), (S.ndst, 8),
-          (S.ev, evlen), (S.nev, 8), (S.err, 8)] ++
-          stage2ReportScratch c₂ ctype₂ cst₂ tok₂ s₂ z₂ e₂ d₂) ++
-          [(n30, nend₂ - n30)]) := by
-        simpa [stage2ReportFrame, stage2ReportPresent, stage2Writes] using hr
-      rcases List.mem_append.mp hr' with hr' | hr'
-      · rcases List.mem_append.mp hr' with hr' | hr'
-        · have hm : r ∈ stage2Writes S.dst alen S.ev evlen S.ndst S.nev S.err := by
-            simpa [stage2Writes] using hr'
-          exact hsepNkWalk r (by
-            rw [stage2WalkWrites]
-            exact List.mem_append_left _ hm)
-        · rw [stage2ReportScratch] at hr'
-          rcases List.mem_append.mp hr' with hr' | hr'
-          · exact hsevenNk r hr'
-          · rcases List.mem_cons.mp hr' with rfl | hnil
-            · exact hdNk (stage2WorkD tab, 8)
-                (List.mem_append_right _ (List.mem_cons_self ..))
-            · exact absurd hnil (by simp)
-      · simp only [List.mem_singleton] at hr'
-        subst hr'
-        exact Or.inr (Nat.le_trans
-          (hcaps (S.nk, 8) (by simp [stage2StagedCaps])) hnext30)
-    have hframeNxp : ∀ r ∈ stage2ReportFrame S.dst alen S.ev evlen S.ndst S.nev
+        r.1 + r.2 ≤ S.nk ∨ S.nk + 8 ≤ r.1 :=
+      stage2ReportFrame_sep hsepNkWalk
+        (Or.comm.mp (hdNk (stage2WorkD tab, 8)
+          (List.mem_append_right _ (List.mem_cons_self ..))))
+        (Nat.le_trans (hcaps (S.nk, 8) (by simp [stage2StagedCaps])) hnext30)
+    have hsepNxpFrame : ∀ r ∈ stage2ReportFrame S.dst alen S.ev evlen S.ndst S.nev
         S.err c₂ ctype₂ cst₂ tok₂ s₂ z₂ e₂ d₂ n30 nend₂,
-        r.1 + r.2 ≤ S.nxp ∨ S.nxp + 8 ≤ r.1 := by
-      intro r hr
-      have hr' : r ∈ (([(S.dst, alen + stage2ArenaReserve), (S.ndst, 8),
-          (S.ev, evlen), (S.nev, 8), (S.err, 8)] ++
-          stage2ReportScratch c₂ ctype₂ cst₂ tok₂ s₂ z₂ e₂ d₂) ++
-          [(n30, nend₂ - n30)]) := by
-        simpa [stage2ReportFrame, stage2ReportPresent, stage2Writes] using hr
-      rcases List.mem_append.mp hr' with hr' | hr'
-      · rcases List.mem_append.mp hr' with hr' | hr'
-        · have hm : r ∈ stage2Writes S.dst alen S.ev evlen S.ndst S.nev S.err := by
-            simpa [stage2Writes] using hr'
-          exact hsepNxpWalk r (by
-            rw [stage2WalkWrites]
-            exact List.mem_append_left _ hm)
-        · rw [stage2ReportScratch] at hr'
-          rcases List.mem_append.mp hr' with hr' | hr'
-          · exact hsevenNxp r hr'
-          · rcases List.mem_cons.mp hr' with rfl | hnil
-            · exact hdNxp (stage2WorkD tab, 8)
-                (List.mem_append_right _ (List.mem_cons_self ..))
-            · exact absurd hnil (by simp)
-      · simp only [List.mem_singleton] at hr'
-        subst hr'
-        exact Or.inr (Nat.le_trans
-          (hcaps (S.nxp, 8) (by simp [stage2StagedCaps])) hnext30)
-    have hsepNkFrame := hframeNk
-    have hsepNxpFrame := hframeNxp
+        r.1 + r.2 ≤ S.nxp ∨ S.nxp + 8 ≤ r.1 :=
+      stage2ReportFrame_sep hsepNxpWalk
+        (Or.comm.mp (hdNxp (stage2WorkD tab, 8)
+          (List.mem_append_right _ (List.mem_cons_self ..))))
+        (Nat.le_trans (hcaps (S.nxp, 8) (by simp [stage2StagedCaps])) hnext30)
     obtain ⟨hkeepNk, hkeepNxp⟩ :=
       stage2SlotKeeps_of_frame hframeFix hsepNkFrame hsepNxpFrame
     -- the four reads at the memory stage two returns
