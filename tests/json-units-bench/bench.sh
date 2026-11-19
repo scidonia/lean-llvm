@@ -61,7 +61,8 @@ die() { printf 'SETUP: %s\n' "$*" >&2; exit 3; }
 
 [ -n "$work" ] && [ "$work" != "/" ] || die "refusing work directory '$work'"
 for src in kernel/json/s1_block.c kernel/json/entry.c kernel/json/utf8.c \
-           tests/json-units-bench/bench.c tests/json-units-bench/gen.c; do
+           tests/json-units-bench/bench.c tests/json-units-bench/gen.c \
+           tests/json-units-bench/bench-unity.c; do
   [ -f "$repo/$src" ] || die "absent: $src"
 done
 command -v "$cc" >/dev/null 2>&1 || die "no $cc on PATH; run this under nix develop"
@@ -84,7 +85,31 @@ done
   "$bin/s1_block.o" "$bin/entry.o" "$bin/utf8.o" 2>"$work/bench.cc.err" ||
   { cat "$work/bench.cc.err" >&2; die "bench did not build"; }
 
+# The LTO variant: the same harness and units, but each translation unit carries
+# bitcode so the linker can inline across objects.  The fused row and the
+# split_ent row are both built this way; the default-line binary above is kept
+# and measured alongside as its own variant.
+mkdir -p "$bin/lto"
+for unit in s1_block entry utf8; do
+  "$cc" "${kflags[@]}" -flto -I "$repo/kernel/json" -c "$repo/kernel/json/$unit.c" \
+    -o "$bin/lto/$unit.o" 2>"$work/lto-$unit.cc.err" ||
+    { cat "$work/lto-$unit.cc.err" >&2; die "$unit did not compile at the measured flags with -flto"; }
+done
+"$cc" -O2 -std=gnu11 -flto -o "$bin/bench-lto" "$repo/tests/json-units-bench/bench.c" \
+  "$bin/lto/s1_block.o" "$bin/lto/entry.o" "$bin/lto/utf8.o" 2>"$work/bench-lto.cc.err" ||
+  { cat "$work/bench-lto.cc.err" >&2; die "LTO bench did not build"; }
+
+# The unity variant: one translation unit holding the two stage-1 units and the
+# harness, at the measured flags.  This is the shape the measured pipeline build
+# has, where the block loop calls local functions.  UTF-8 stays a linked object.
+"$cc" "${kflags[@]}" -o "$bin/bench-unity" \
+  "$repo/tests/json-units-bench/bench-unity.c" "$bin/utf8.o" \
+  2>"$work/bench-unity.cc.err" ||
+  { cat "$work/bench-unity.cc.err" >&2; die "unity bench did not build"; }
+
 kernel_sha=$(sha256sum "$bin/s1_block.o" "$bin/entry.o" "$bin/utf8.o" |
+  awk '{ n = split($2, a, "/"); printf "%s=%s ", a[n], substr($1, 1, 16) }')
+lto_sha=$(sha256sum "$bin/lto/s1_block.o" "$bin/lto/entry.o" "$bin/lto/utf8.o" |
   awk '{ n = split($2, a, "/"); printf "%s=%s ", a[n], substr($1, 1, 16) }')
 
 # --- Corpus -----------------------------------------------------------------
@@ -132,9 +157,11 @@ done
 # --- Host and build record ---------------------------------------------------
 printf 'command: nix develop -c bash tests/json-units-bench/bench.sh\n'
 printf 'objects: %s\n' "$kernel_sha"
+printf 'objects lto: %s\n' "$lto_sha"
 printf 'compiler: %s (%s)\n' "$cc" "$("$cc" --version | head -1)"
 printf 'unit flags: %s\n' "${kflags[*]}"
 printf 'harness flags: -O2 -std=gnu11\n'
+printf 'variants: default (separate objects); lto (unit and harness objects at -flto); unity (stage-1 units and harness in one TU at the unit flags)\n'
 printf 'host: %s\n' "$(uname -srm)"
 printf 'cpu: %s\n' "$(awk -F: '/^model name/ { sub(/^ /, "", $2); print $2; exit }' /proc/cpuinfo)"
 printf 'cpus online: %s; pinned to: %s\n' "$(nproc)" "$cpus"
@@ -158,37 +185,45 @@ printf '\n'
 # --- Measure ----------------------------------------------------------------
 for cpu in $cpus; do
   for trial in $(seq 1 "$trials"); do
-    printf 'trial cpu=%s trial=%s/%s\n' "$cpu" "$trial" "$trials"
-    out=$work/bench.$cpu.$trial.out
-    err=$work/bench.$cpu.$trial.err
-    status=0
-    taskset -c "$cpu" "$bin/bench" --reps "$reps" "${docargs[@]}" \
-      >"$out" 2>"$err" || status=$?
-    cat "$out"
-    if [ -s "$err" ]; then cat "$err" >&2; fi
-    if [ "$status" -ne 0 ]; then
-      printf 'FAIL: bench exited %s on cpu %s trial %s\n' "$status" "$cpu" "$trial" >&2
-      exit 1
-    fi
-    observed=$(awk '$1 == "instrument" {
-        for (i = 2; i <= NF; i++) { split($i, a, "="); if (a[1] == "cpu") print a[2] }
-      }' "$out")
-    if [ "$observed" != "$cpu" ]; then
-      printf 'FAIL: pin asked for cpu%s, the harness observed cpu%s\n' "$cpu" "$observed" >&2
-      exit 1
-    fi
+    for variant in default lto unity; do
+      case $variant in
+        default) launcher=$bin/bench; tag=bench ;;
+        lto) launcher=$bin/bench-lto; tag=bench-lto ;;
+        unity) launcher=$bin/bench-unity; tag=bench-unity ;;
+      esac
+      printf 'variant=%s cpu=%s trial=%s/%s\n' "$variant" "$cpu" "$trial" "$trials"
+      out=$work/$tag.$cpu.$trial.out
+      err=$work/$tag.$cpu.$trial.err
+      status=0
+      taskset -c "$cpu" "$launcher" --reps "$reps" "${docargs[@]}" \
+        >"$out" 2>"$err" || status=$?
+      cat "$out"
+      if [ -s "$err" ]; then cat "$err" >&2; fi
+      if [ "$status" -ne 0 ]; then
+        printf 'FAIL: %s bench exited %s on cpu %s trial %s\n' "$variant" "$status" "$cpu" "$trial" >&2
+        exit 1
+      fi
+      observed=$(awk '$1 == "instrument" {
+          for (i = 2; i <= NF; i++) { split($i, a, "="); if (a[1] == "cpu") print a[2] }
+        }' "$out")
+      if [ "$observed" != "$cpu" ]; then
+        printf 'FAIL: %s bench asked for cpu%s, the harness observed cpu%s\n' "$variant" "$cpu" "$observed" >&2
+        exit 1
+      fi
+    done
   done
 done
 printf '\n'
 
 # --- Aggregate --------------------------------------------------------------
-# One summary row per (cpu, document, unit): the median and the minimum/maximum
-# of the trial medians, the median of the rows' own p10-p90 spread, and the
-# median calibrated core clock.  Checksums are asserted two ways: one per row
-# across trials, and one per document and unit across every trial and both core
-# classes, so a row that reached different code on another core fails rather
-# than printing a number.  The pin is asserted against the CPU the harness
-# reports.
+# One summary row per (variant, cpu, document, unit): the median and the
+# minimum/maximum of the trial medians, the median of the rows' own p10-p90
+# spread, and the median calibrated core clock.  The variant is taken from the
+# file the row came from (`bench.*` default, `bench-lto.*` LTO, `bench-unity.*`
+# unity).  Checksums are asserted two ways: one per row across trials, and one
+# per document and unit across every trial, variant and core class, so a row
+# that reached different code fails rather than printing a number.  The pin is
+# asserted against the CPU the harness reports.
 awk '
   function parse(   i, a) {
     delete kv
@@ -205,20 +240,28 @@ awk '
     if (n % 2) return arr[(n + 1) / 2]
     return 0.5 * (arr[n / 2] + arr[n / 2 + 1])
   }
+  function vlabel(f,   n, a) {
+    n = split(f, a, "/")
+    if (a[n] ~ /^bench-lto\./) return "lto"
+    if (a[n] ~ /^bench-unity\./) return "unity"
+    return "default"
+  }
+  { variant = vlabel(FILENAME) }
   $1 == "doc" {
     parse()
-    if (!(kv["name"] in docseen)) {
-      docseen[kv["name"]] = 1
-      printf "CORPUS name=%s bytes=%s blocks=%s structural_per_block=%s pipeline_ent=%s ascii_vectors=%s vectors=%s utf8_word=%s\n",
-        kv["name"], kv["bytes"], kv["blocks"], kv["structural_per_block"],
+    if (!((variant SUBSEP kv["name"]) in docseen)) {
+      docseen[variant SUBSEP kv["name"]] = 1
+      printf "CORPUS variant=%s name=%s bytes=%s blocks=%s structural_per_block=%s pipeline_ent=%s ascii_vectors=%s vectors=%s utf8_word=%s\n",
+        variant, kv["name"], kv["bytes"], kv["blocks"], kv["structural_per_block"],
         kv["pipeline_ent"], kv["ascii_vectors"], kv["vectors"], kv["utf8_word"]
     }
     next
   }
   $1 == "row" {
     parse()
-    key = kv["cpu"] SUBSEP kv["doc"] SUBSEP kv["unit"]
-    if (!(key in n)) { order[++nkeys] = key }
+    key = variant SUBSEP kv["cpu"] SUBSEP kv["doc"] SUBSEP kv["unit"]
+    if (!(key in n)) { order[++nkeys] = key; vnkeys[variant]++ }
+    vdocs[variant SUBSEP kv["doc"]] = 1
     cpuset[kv["cpu"]] = 1
     n[key]++
     t = n[key]
@@ -238,14 +281,21 @@ awk '
   }
   END {
     bad = 0
-    ndocs = 0
-    for (d in docseen) ndocs++
     ncpu = 0
     for (c2 in cpuset) ncpu++
-    if (nkeys != ndocs * 9 * ncpu) {
-      printf "FAIL: %d row(s) for %d document(s) x 9 units x %d CPU(s)\n",
-        nkeys, ndocs, ncpu > "/dev/stderr"
-      bad = 1
+    split("default lto unity", vr, " ")
+    for (vi = 1; vi <= 3; vi++) {
+      v = vr[vi]
+      nd = 0
+      for (d in vdocs) { split(d, p, SUBSEP); if (p[1] == v) nd++ }
+      if (nd == 0) {
+        printf "FAIL: variant %s produced no rows\n", v > "/dev/stderr"
+        bad = 1
+      } else if (vnkeys[v] != nd * 9 * ncpu) {
+        printf "FAIL: variant %s: %d row(s) for %d document(s) x 9 units x %d CPU(s)\n",
+          v, vnkeys[v], nd, ncpu > "/dev/stderr"
+        bad = 1
+      }
     }
     for (key in n) {
       m = n[key]
@@ -254,7 +304,7 @@ awk '
       cnt = 0
       for (c2 in localcs) {
         split(c2, p, SUBSEP)
-        if ((p[1] SUBSEP p[2] SUBSEP p[3]) == key) cnt++
+        if ((p[1] SUBSEP p[2] SUBSEP p[3] SUBSEP p[4]) == key) cnt++
       }
       if (cnt != 1) {
         printf "FAIL: %s printed %d distinct checksums across its trials\n", key, cnt > "/dev/stderr"
@@ -270,24 +320,27 @@ awk '
       }
       for (v in cs) cnt++
       if (cnt != 1) {
-        printf "FAIL: %s produced %d distinct checksums across trials and CPUs\n", r, cnt > "/dev/stderr"
+        printf "FAIL: %s produced %d distinct checksums across trials, variants and CPUs\n", r, cnt > "/dev/stderr"
         bad = 1
       }
     }
-    printf "SUMMARY cpu doc unit bytes trials gbps gbps_min gbps_max cycles_per_byte rep_spread_pct core_ghz\n"
-    for (k = 1; k <= nkeys; k++) {
-      key = order[k]
-      m = n[key]
-      for (i = 1; i <= m; i++) { g[i] = gbps[key, i]; c[i] = cyc[key, i]; s[i] = spread[key, i]; z[i] = ghz[key, i] }
-      sortn(g, m); sortn(c, m); sortn(s, m); sortn(z, m)
-      split(key, p, SUBSEP)
-      printf "%s %s %s %d %d %.3f %.3f %.3f %.4f %.2f %.3f\n",
-        p[1], p[2], p[3], bytes[key], m, med(g, m), g[1], g[m],
-        med(c, m), med(s, m), med(z, m)
+    printf "SUMMARY variant cpu doc unit bytes trials gbps gbps_min gbps_max cycles_per_byte rep_spread_pct core_ghz\n"
+    for (vi = 1; vi <= 3; vi++) {
+      for (k = 1; k <= nkeys; k++) {
+        key = order[k]
+        split(key, p, SUBSEP)
+        if (p[1] != vr[vi]) continue
+        m = n[key]
+        for (i = 1; i <= m; i++) { g[i] = gbps[key, i]; c[i] = cyc[key, i]; s[i] = spread[key, i]; z[i] = ghz[key, i] }
+        sortn(g, m); sortn(c, m); sortn(s, m); sortn(z, m)
+        printf "%s %s %s %s %d %d %.3f %.3f %.3f %.4f %.2f %.3f\n",
+          p[1], p[2], p[3], p[4], bytes[key], m, med(g, m), g[1], g[m],
+          med(c, m), med(s, m), med(z, m)
+      }
     }
     exit bad
   }
-' "$work"/bench.*.out
+' "$work"/bench*.out
 status=$?
 if [ "$status" -ne 0 ]; then
   printf 'FAIL: the aggregation gates did not hold\n' >&2
@@ -295,9 +348,9 @@ if [ "$status" -ne 0 ]; then
 fi
 
 # --- Report -----------------------------------------------------------------
-printf 'ok: %s row(s) measured over %s CPU(s), %s trial(s), %s repetition(s) per row\n' \
-  "$(grep -h '^row ' "$work"/bench.*.out | wc -l)" \
+printf 'ok: %s row(s) measured across the default, LTO and unity variants, over %s CPU(s), %s trial(s), %s repetition(s) per row\n' \
+  "$(grep -h '^row ' "$work"/bench*.out | wc -l)" \
   "$(printf '%s' "$cpus" | wc -w)" "$trials" "$reps"
-printf 'ok: every row checksum is stable across its trials, and across both core classes\n'
+printf 'ok: every row checksum is stable across its trials, and across variants and both core classes\n'
 printf 'ok: entry_pos8 and entry_b8 returned the structural stream total on every document; fused_pos8 and fused_b8 returned the pipeline entry stream total; the gated and ungated UTF-8 words agree\n'
 printf 'note: cycles/byte = median ns/byte x the core clock calibrated immediately before the row; no PMU on this host\n'

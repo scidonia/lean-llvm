@@ -81,9 +81,13 @@
 #include <x86intrin.h>
 #endif
 
-/* The three ABIs, declared rather than included. */
+/* The three ABIs, declared rather than included.  The unity build includes the
+   unit sources before this file, so their headers have already defined the two
+   stage-1 struct types and this file must not define them again. */
+#ifndef BENCH_UNITY_STAGE1
 typedef struct { uint64_t esc_open, esc_ppar, im_carry; } s1_carry;
 typedef struct { uint64_t quote, delim, in_string, ws, backslash, ctl; } s1_masks;
+#endif
 
 extern void leanllvm_json_s1_masks(const uint8_t *p, s1_carry *carry,
                                    s1_masks *out);
