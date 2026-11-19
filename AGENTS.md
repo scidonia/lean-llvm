@@ -35,12 +35,17 @@ the ceiling sits at 12 GB rather than at the smallest value that works.
 The default targets are the `leanllvm` executable, the `ITree` library and the
 `LeanLLVMTest` library, so `lake build` covers `LeanLLVM` (through the
 executable), the generic tree library, and every pin in `LeanLLVMTest/`.  The
-generic library depends on `leanprover-community/mathlib4` at the
-revision pinned in `lakefile.toml`, resolved into `.lake/packages`; mathlib's
-oleans must be present before the tree modules elaborate, so a cold checkout pays
-for a mathlib build unless its prebuilt cache is already in place.  The mathlib
-revision, `lean-toolchain` and the flake's Lean source are one unit: moving one
-needs the other two to match.
+generic library depends on `leanprover-community/mathlib4` at the revision
+pinned in `lakefile.toml`, which is tag `v4.35.0`.  The shell supplies mathlib
+and every library it requires prebuilt from nixpkgs' `leanPackages` set, and its
+`lake` wrapper passes `--packages` overrides that resolve them all to their store
+paths, so a checkout elaborates only this project's modules: no git fetch, no
+mathlib elaboration, and no `.lake/packages`.  The mathlib revision,
+`lean-toolchain` and the flake's `leanPackages` are one unit: moving one needs
+the other two to match.  `pkgs.lean4` is not interchangeable with
+`leanPackages.lean4` — only the latter's Lake accepts a `/nix/store` package
+directory as up to date — and nixpkgs' mathlib is at `v4.35.0`, so a mathlib
+revision that is not that tag has to be built, not substituted.
 
 ## Layout
 
