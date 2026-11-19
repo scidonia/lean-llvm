@@ -70,22 +70,45 @@ structure HlastSeamRefusal {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : S
   pos : Nat
   hmem : r₂.mem = stage2ErrSetMsg r₁.mem C.stage.e pos 0
 
-/-- **The value-position call's zero row**: the first call and the answer `0`.  The walk
-leaves `if.then413.i` for `if.then418.i`, which stores the entry's position at `%e + 8` and
-branches to `cleanup474.i` and the copy; no scalar call is made. -/
+/-- **A refusal route**: a counted segment to the refusal copy, the block it ends at, the
+word the copy's `%off` load reads, the carry's refusal offset and the price inside the
+remaining entries' and bytes' credit.  The word is a field beside the segment because a
+`WalkSegment` carries no memory clause (its docstring records why). -/
+structure HlastRefuseRoute {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) :
+    Type where
+  Cd : WalkCarry G
+  sd : State
+  n : Nat
+  seg : WalkSegment (stage2Calls stage2SubCalls) G C s Cd sd n
+  hblock : Cd.block = "if.then"
+  k : Nat
+  hk : k ≤ G.n
+  hword : readBytes sd.mem (Cd.stage.e + 8) 8 = some (wordBytes 8 k)
+  herr : Cd.eoff ≤ G.n
+  hprice : n + 2 ≤ stage2EntryAllowance * (G.nep - C.k) +
+    stage2ByteAllowance * (G.n - entryPos G C.k)
+
+/-- **The value-position call's zero row**: the first call (at the memory its kind store
+leaves), its answer `0`, and the route the walk takes from `if.then418.i` to the refusal
+copy.  The walk leaves `if.then413.i` for `if.then418.i`, which stores the entry's position
+at `%e + 8` and branches to `cleanup474.i`, then to `if.then`; no scalar call is made. -/
 structure HlastSeamZero {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) : Type where
+  /-- The kind literal `if.then413.i`'s store writes (the class's is `0`). -/
+  cA : BitVec 32
   /-- The root-done slot's word, as the first call's argument list carries it. -/
   rdv : BitVec 32
   hread : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes rdv.toNat 4)
-  /-- The first call at the tail's own memory — the kind store has not run yet. -/
+  /-- The first call at the kind-stored memory, and its answer `0`. -/
   hpre : s2ValuePosPre
     [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv, .ptr C.stage.ctype, .ptr C.stage.cst]
-    s.mem s.next
+    (hlastStoreAt C s cA) s.next
   r : CallOutcome
   hcall : stage2Calls stage2SubCalls "s2_value_pos"
     [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv, .ptr C.stage.ctype, .ptr C.stage.cst]
-    s.mem s.next = some r
+    (hlastStoreAt C s cA) s.next = some r
   hret : r.ret = .int 32 (BitVec.ofNat 32 0)
+  /-- **The route**: `if.then418.i`'s refusal store, `cleanup474.i`'s release, `if.then`. -/
+  route : HlastRefuseRoute G C s
 
 end WalkScope
 end LeanLLVM.Refinement

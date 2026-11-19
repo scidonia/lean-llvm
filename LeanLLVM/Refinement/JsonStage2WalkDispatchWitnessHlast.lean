@@ -1554,26 +1554,6 @@ abbrev hlastKindStore {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (s : State)
     (hb : HcontByteRoute (head35 (G.bs.getD (G.n - 1) 0))) : Mem :=
   hlastKindStoreAt C s hb (BitVec.ofNat 32 0)
 
-/-- **The class's route to the refusal copy.**  The error path from `if.then432.i` through
-`cleanup474.i` to `if.then`, the word the copy's `%off` load reads, the carry's refusal
-offset and the price inside the last entry's credit.  It is the arm's own route: the blocks
-between `if.then432.i` and `cleanup474.i` have no composed segment in the tree, so the
-route is carried and its producer is owed (`JsonStage2WalkDispatchHlastSupply`'s header
-names the links that exist). -/
-structure HlastRefuseRoute {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) :
-    Type where
-  Cd : WalkCarry G
-  sd : State
-  n : Nat
-  seg : WalkSegment (stage2Calls stage2SubCalls) G C s Cd sd n
-  hblock : Cd.block = "if.then"
-  k : Nat
-  hk : k ≤ G.n
-  hword : readBytes sd.mem (Cd.stage.e + 8) 8 = some (wordBytes 8 k)
-  herr : Cd.eoff ≤ G.n
-  hprice : n + 2 ≤ stage2EntryAllowance * (G.nep - C.k) +
-    stage2ByteAllowance * (G.n - entryPos G C.k)
-
 /-- **The high-byte class's refusal evidence**: the seam's refusal rows
 (`HlastSeamRefusal` at the routed tail — the two leading calls, the literal `0`, the
 derived answer and record) and the class's route to the refusal copy. -/

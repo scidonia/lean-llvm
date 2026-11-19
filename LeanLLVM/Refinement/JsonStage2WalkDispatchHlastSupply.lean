@@ -399,16 +399,29 @@ theorem hlastSeam_nonempty {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : S
   ⟨HlastSeam.answerOneRefuse (hlastSeamRefusal_of_stage st)⟩
 
 /-- **The other answer's seam**: `s2_value_pos` answered `0`, so no scalar call is made and
-the walk leaves `if.then413.i` for `if.then418.i`, `cleanup474.i` and the copy. -/
-def hlastSeamZero_of_call {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
-    (rows : HcontOpenCall G C s) (h0 : rows.r.ret = .int 32 (BitVec.ofNat 32 0)) :
-    HlastSeamZero G C s :=
-  { rdv := rows.rdv
-    hread := rows.hread
-    hpre := rows.hpreV
-    r := rows.r
-    hcall := rows.hcall
-    hret := h0 }
+the walk leaves `if.then413.i` for `if.then418.i`, `cleanup474.i` and the copy.  The route
+is the class's own — `hlastAnswerZeroRoute`
+(`JsonStage2WalkDispatchLastSeamRoute`) composes it from the three links, and
+`hlastAnswerZeroRefuseRoute` packs it as a `HlastRefuseRoute`. -/
+def hlastSeamZero_of_calls {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    {cA rdv : BitVec 32} (r : CallOutcome)
+    (hread : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes rdv.toNat 4))
+    (hpre : s2ValuePosPre
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv, .ptr C.stage.ctype, .ptr C.stage.cst]
+      (hlastStoreAt C s cA) s.next)
+    (hcall : stage2Calls stage2SubCalls "s2_value_pos"
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rdv, .ptr C.stage.ctype, .ptr C.stage.cst]
+      (hlastStoreAt C s cA) s.next = some r)
+    (hret : r.ret = .int 32 (BitVec.ofNat 32 0))
+    (route : HlastRefuseRoute G C s) : HlastSeamZero G C s :=
+  { cA := cA
+    rdv := rdv
+    hread := hread
+    hpre := hpre
+    r := r
+    hcall := hcall
+    hret := hret
+    route := route }
 
 /-- **The class's refusal payload**: the seam's rows at the routed tail and the class's
 route to the copy. -/
@@ -515,7 +528,7 @@ theorem hlastResidue_empty {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : S
 #print axioms LeanLLVM.Refinement.WalkScope.hlastSeamRefusal_nonempty
 #print axioms LeanLLVM.Refinement.WalkScope.hlastSeamRefusal_of_stage
 #print axioms LeanLLVM.Refinement.WalkScope.hlastSeam_nonempty
-#print axioms LeanLLVM.Refinement.WalkScope.hlastSeamZero_of_call
+#print axioms LeanLLVM.Refinement.WalkScope.hlastSeamZero_of_calls
 #print axioms LeanLLVM.Refinement.WalkScope.hlastHighByteRefusal_of_stage
 #print axioms LeanLLVM.Refinement.WalkScope.hlastAbi_highByte
 #print axioms LeanLLVM.Refinement.WalkScope.hlastResidue_empty
