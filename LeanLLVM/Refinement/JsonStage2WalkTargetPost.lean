@@ -34,7 +34,7 @@ the loop's terminal disjunct carries the returned memory and the boundary there.
 
 **Composed, not assumed.**  `walkFinishPost_merge` is the merge's three routes as one
 statement — the depth's zero test and the root-done test select among R1, R2 and R3 — and
-`WalkMergeWords`/`WalkRefuseWords` are the word bundles a caller supplies: one word, the
+`WalkMergeWords`/`WalkRefuseWords` are the word bundles the merge derives: one word, the
 log's arena cursor.  The registers, `%4` and `%nep` are the carrier's, the root-done slot
 is `WalkInv.root_slot` read as four bytes (`walkRootWord_of_hasBytes`), and the copy's
 `%off` word is the refusal segment's own store (`WalkRefuseSegment`), so what
