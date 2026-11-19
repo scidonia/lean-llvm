@@ -1738,7 +1738,7 @@ theorem expRunInv_entry {mem : Mem} {p n i0 : Nat} {bs : List UInt8} {s : State}
     (hcarry : expRunCarried s.env) :
     expRunInv mem p n i0 bs (n - i0) s 0 :=
   ⟨hpc, hmem, by omega, by omega, hnlt, hp, hn, hread,
-    Or.inl ⟨hpre, by simpa using hi⟩, hesign, hcarry⟩
+    Or.inl ⟨hpre, by simpa using hi⟩, hesign, hcarry, Or.inl ⟨hpre, rfl⟩⟩
 
 macro "lk_exp" : tactic => `(tactic|
   (first

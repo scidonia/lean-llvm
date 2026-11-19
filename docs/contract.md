@@ -1337,10 +1337,10 @@ are the same ties, while `%exp10.4`'s reading as `expVal d` is
 back-edge exit through `cleanup223.thread`'s select and `if.end226`'s test with
 `expSelect_tie`: the block's `if %esign.0 = 1 then %exp10 else 0 - %exp10` is
 `BitVec.ofInt 64 (expVal d)` once the accumulator reads as the exponent digits'
-`expAcc` and `%esign.0` is the sign's bit (both as the seam's hypotheses, since
-the run's exit is existential).  The run's exit word also carries its memory
-(`intRunEndWord`'s `e.mem = mem0`), which is what lets a reader of the two
-staged tables read them at the store block rather than at the entry state.
+`expAcc` and `%esign.0` is the sign's bit.  The back merge also transports the
+caller's kept cells and sign into the merge state.  The run's exit word carries
+its memory (`intRunEndWord`'s `e.mem = mem0`), which is what lets a reader of the
+two staged tables read them at the store block rather than at the entry state.
 
 **The scan's two joins at the model, and the boundary between them.**
 `JsonStage2NumFastEntry` composes what the ties left as separate seams.
@@ -1391,15 +1391,16 @@ the two cells `if.end68` installs (`1 + (i1 - i0)` and
 model's `intDigits`/`digitsNat d.ip`.  `intScan_to_dot`'s left disjunct is the
 dispatch's half of that composition, and it now carries those two cells.
 
-**What the two chains leave.**  The exponent exit's word names the four cells, the
-stop index and — through `expRunStop` — the cursor and the length, so the back
-edge's `expExit_merge_back` reads `%p`/`%n` off the chain's exit; what neither
-`expRunExit` nor the stop word supplies is `hacc`: the accumulator's reading as
-the exponent digits' `expAcc`, which no invariant in the tree states, so the
-  merge's select still takes it as that seam's hypothesis.  On the fraction side
-the composition from `entry` now carries the exit's memory and the dispatch's two
-integer cells (`fracPartCells`' values, which `t1_headTie` and the integer run
-supply) to `if.end230` itself: that is `fracScan_end230Carried` above.
+**The exponent route's one run.**  `expRunInv` now carries `expRunAcc`: the
+entry edge consumes no byte, and a back edge's `%exp10.1` is the saturating fold
+of the bytes consumed.  `expRunAccExit` hands that fold to the back exit and
+`JsonStage2NumFastExponent.expRun_acc_tie` identifies it with `expAcc ds`, so
+`expExit_merge_back`'s accumulator premise is discharged rather than supplied.
+`JsonStage2NumFastExponent.expScan_t1_arm` composes the carried nest, the tie,
+the back merge and `t1_arm_run`: both signed and unsigned exponent shapes reach
+the return with `strtodSpec`'s bytes at `%out`, the caller's cursor unchanged and
+the two-slot frame.  The head exit is `expExit_refuse_head`; the remaining
+conversion work is below tier 1 and tier 3.
 
 **Where the composition stops, and why it is not a seam.**  `%out`,
 `%tobool274.not` and the two table symbols are the caller's cells, and no block on

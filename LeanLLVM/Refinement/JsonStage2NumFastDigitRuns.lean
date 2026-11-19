@@ -26,14 +26,16 @@ and the `if.end`'s end-of-lexeme branch (one block for the integer run's
 the index it stopped at and the count it advanced to, `start + (stop - start)`.
 The instance's `run_from` therefore hands back the counters with the exit, and
 `*_counters` reads them.  The exponent run's carried register is its
-accumulator rather than a count, and its `Exit` states the accumulator's *cell*
-and not the fold's value: the accumulator is read at the merge by
-`JsonStage2NumFastSeams.expExit_merge_back`, which takes the cell's reading as
-`expAcc` of the exponent's digits as a hypothesis (`hacc`, since the exit state
-is existential) and `expSelect_tie` turns it into `expVal`.  The head exit does
-not reach a merge: `expExit_refuse_head` stores its counter at `%err` and returns
-zero.  A run-internal `fold` conjunct on `expRunInv` would state the same reading
-at the invariant; nothing here claims it.
+accumulator rather than a count, and `expRunInv` states it as a *value*: the
+back-edge head's `%exp10.1` is `BitVec.ofNat 64` of the saturating fold
+`expRunAcc`, whose bytes are the exponent's first `c` from its first index, and
+the entry edge's zero is the empty fold.  The exit word `expRunAccExit` hands the
+same reading on the back edge — the one edge that consumes the lexeme's last byte
+— and `JsonStage2NumFastExponent.expRun_acc_tie` turns it into the model's
+`expAcc` of the exponent's bytes, which `expSelect_tie` folds into `expVal`.  The
+head exit consumes nothing further and refuses, so it carries no tie:
+`expExit_refuse_head` stores its counter at `%err` and returns zero.  The fold is
+`satStep`'s, the block's own freeze at `100000`, not an unbounded decimal fold.
 
 **The cells the run crosses.**  A `runFuel` prefix does not expose the
 environments it crosses, so the exit predicates name only what a successor's
@@ -4624,6 +4626,118 @@ theorem expRun_step_cells {calls : Calls} {s s' : State}
       (fun b hb hbpc => expRun_fdig4_unwritten b hb (by rw [hbpc]; exact hpc))]
     exact h4
 
+/-! ### The accumulator's arithmetic
+
+The run's accumulator is the saturating fold
+`((bs.drop i0).take c).foldl satStep 0`.  Its step is the block's
+`%add215 = %exp10.0603 * 10 + zext (b &&& 15)` when the guard
+`%exp10.0603 slt 100000` is taken and the frozen `%exp10.0603` when it is
+refused.  Under the signed window the guard's `slt` is the natural comparison:
+the fold never leaves `2 ^ 63`, because below `100000` one step is
+`a * 10 + (b - '0') < 1000198` and at or above it the step holds `a`. -/
+
+/-- `slt`'s one bit, as the truth of the signed comparison. -/
+theorem ofBool_eq_one_bool {b : Bool} : BitVec.ofBool b = (1 : BitVec 1) ↔ b = true := by
+  cases b <;> simp [BitVec.ofBool]
+
+/-- **The signed `<` under the window is the natural `<`.**  Both operands below
+`2 ^ 63` read as themselves when signed, so the compare is `Nat`'s. -/
+theorem ofNat_slt_one_iff {a k : Nat} (ha : a < 2 ^ 63) (hk : k < 2 ^ 63) :
+    evalICmp .slt (BitVec.ofNat 64 a) (BitVec.ofNat 64 k) = (1 : BitVec 1) ↔ a < k := by
+  have ha' : (BitVec.ofNat 64 a).toNat = a := by
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)]
+  have hk' : (BitVec.ofNat 64 k).toNat = k := by
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)]
+  rw [show evalICmp .slt (BitVec.ofNat 64 a) (BitVec.ofNat 64 k)
+      = BitVec.ofBool ((BitVec.ofNat 64 a).slt (BitVec.ofNat 64 k)) from rfl,
+    ofBool_eq_one_bool, BitVec.slt_iff_toInt_lt]
+  have h1 : (BitVec.ofNat 64 a).toInt = ((BitVec.ofNat 64 a).toNat : Int) := by
+    rw [BitVec.toInt_eq_toNat_of_lt]
+    omega
+  have h2 : (BitVec.ofNat 64 k).toInt = ((BitVec.ofNat 64 k).toNat : Int) := by
+    rw [BitVec.toInt_eq_toNat_of_lt]
+    omega
+  rw [h1, h2, ha', hk']
+  constructor <;> intro h <;> omega
+
+/-- The same compare at zero. -/
+theorem ofNat_slt_zero_iff {a k : Nat} (ha : a < 2 ^ 63) (hk : k < 2 ^ 63) :
+    evalICmp .slt (BitVec.ofNat 64 a) (BitVec.ofNat 64 k) = (0 : BitVec 1) ↔ ¬ a < k := by
+  constructor
+  · intro h hlt
+    rw [(ofNat_slt_one_iff ha hk).mpr hlt] at h
+    exact absurd h (by decide)
+  · intro h
+    rcases BlockEval.bitVec1_eq_zero_or_one
+      (evalICmp .slt (BitVec.ofNat 64 a) (BitVec.ofNat 64 k)) with h0 | h1
+    · exact h0
+    · exact absurd ((ofNat_slt_one_iff ha hk).mp h1) h
+
+/-- The fold's successor: one more byte is one more `satStep`. -/
+theorem satFold_succ {bs : List UInt8} {start k : Nat} (hlen : start + k < bs.length) :
+    ((bs.drop start).take (k + 1)).foldl satStep 0
+      = satStep (((bs.drop start).take k).foldl satStep 0) (bs.getD (start + k) 0) := by
+  have hk : (bs.drop start)[k]? = some (bs.getD (start + k) 0) := by
+    rw [List.getElem?_drop, List.getD_eq_getElem?_getD,
+      List.getElem?_eq_getElem (by omega)]
+    rfl
+  simp only [List.take_succ, hk, Option.toList_some, List.foldl_append, List.foldl_cons,
+    List.foldl_nil]
+
+/-- **The saturating fold stays inside the signed window.**  Below `100000` the
+step is `a * 10 + (b - '0')`, below a million; at or above it the step holds `a`;
+so from any `a < 2 ^ 63` every fold is `< 2 ^ 63`. -/
+theorem foldl_satStep_lt (a : Nat) (ha : a < 2 ^ 63) (l : List UInt8) :
+    l.foldl satStep a < 2 ^ 63 := by
+  induction l generalizing a with
+  | nil => exact ha
+  | cons b t ih =>
+      simp only [List.foldl_cons]
+      exact ih _ (by
+        unfold satStep
+        split
+        · have hb : b.toNat < 256 := b.toNat_lt
+          omega
+        · exact ha)
+
+/-- The exponent route's fold from zero is inside the window. -/
+theorem satFold_lt (bs : List UInt8) (start k : Nat) :
+    ((bs.drop start).take k).foldl satStep 0 < 2 ^ 63 :=
+  foldl_satStep_lt 0 (by decide) _
+
+/-- The step with the guard taken. -/
+theorem satStep_taken {a : Nat} {b : UInt8} (h : a < 100000) :
+    satStep a b = a * 10 + (b.toNat - 0x30) := by
+  simp only [satStep, if_pos h]
+
+/-- The step with the guard refused. -/
+theorem satStep_frozen {a : Nat} {b : UInt8} (h : 100000 ≤ a) : satStep a b = a := by
+  have h' : ¬ a < 100000 := by omega
+  simp only [satStep, if_neg h']
+
+/-- **One accumulating iteration, taken.**  The register is the fold so far and
+below the guard, so the block's `v * 10 + (b &&& 15)` is the fold one longer. -/
+theorem expStep_taken {bs : List UInt8} {i0 c : Nat} {b : UInt8} {v : BitVec 64}
+    (hlen : i0 + c < bs.length) (hbyte : bs.getD (i0 + c) 0 = b)
+    (hdig : IsDigitB b = true)
+    (hv : v = BitVec.ofNat 64 (((bs.drop i0).take c).foldl satStep 0))
+    (hlt : ((bs.drop i0).take c).foldl satStep 0 < 100000) :
+    v * 10 + BitVec.ofNat 64 (JsonScanLane.vByte b &&& 0x0f#8).toNat
+      = BitVec.ofNat 64 (((bs.drop i0).take (c + 1)).foldl satStep 0) := by
+  subst hv
+  rw [satFold_succ hlen, hbyte, satStep_taken hlt, ← digit_and_toNat hdig]
+  exact ofNat_mul10_add _ _
+
+/-- **One accumulating iteration, refused.**  The register is already the fold
+and at or past the guard, so the block's frozen cell is still the fold. -/
+theorem expStep_frozen {bs : List UInt8} {i0 c : Nat} {b : UInt8} {v : BitVec 64}
+    (hlen : i0 + c < bs.length) (hbyte : bs.getD (i0 + c) 0 = b)
+    (hv : v = BitVec.ofNat 64 (((bs.drop i0).take c).foldl satStep 0))
+    (hge : 100000 ≤ ((bs.drop i0).take c).foldl satStep 0) :
+    v = BitVec.ofNat 64 (((bs.drop i0).take (c + 1)).foldl satStep 0) := by
+  subst hv
+  rw [satFold_succ hlen, hbyte, satStep_frozen hge]
+
 /-- The exponent run's exit: both branches land in `cleanup223.thread`, and the
 register carrying the accumulator is the head's `%exp10.0603` on the entry edge
 and the `if.end216` phi `%exp10.1` on the back edge.  Each disjunct names its
@@ -4662,6 +4776,28 @@ def expRunStop (p n i0 : Nat) (st : State) : Prop :=
         lookupName st.env "%exp10.1" = some (.int 64 v) ∧
         i1 = n))
 
+/-- The exponent run's accumulator: the digits it has consumed, folded by the
+block's own saturating step.  At the run's start nothing is consumed and the
+head's `phi` is the zero; at a back-edge head the register carrying the
+accumulator is the `if.end216` phi `%exp10.1`, and its value is the fold of the
+first `c` bytes from the exponent's first index.  The step is `satStep` and not
+an unbounded decimal fold: the block freezes at `100000`, which is the same fold
+`expAcc` states for the model. -/
+def expRunAcc (i0 : Nat) (bs : List UInt8) (s : State) (c : Nat) : Prop :=
+  (s.pre = some "lor.lhs.false180" ∧ c = 0) ∨
+  (s.pre = some "if.end216" ∧
+    ∃ v : BitVec 64, lookupName s.env "%exp10.1" = some (.int 64 v) ∧
+      v = BitVec.ofNat 64 (((bs.drop i0).take c).foldl satStep 0))
+
+/-- The exponent run's exit also hands its accumulator on the back edge: that
+exit fires only after the byte at the length's predecessor, so every byte from
+the exponent's first index to the length is consumed and the cell is the fold of
+the whole exponent.  The head exit stops on a non-digit before consuming it, so
+its accumulator is the fold at the head's count rather than the length;
+`expRunExit` names the edge and this disjunction names the back edge's value. -/
+def expRunAccExit (i0 n : Nat) (bs : List UInt8) (st : State) : Prop :=
+  st.pre = some "land.lhs.true195" ∨ expRunAcc i0 bs st (n - i0)
+
 def expRunAtBound (mem0 : Mem) (p n i0 : Nat) (s : State) (c : Nat) : Bool :=
   decide (n - i0 ≤ c + 1) || !numFastDigitAt mem0 p (i0 + c)
 
@@ -4678,7 +4814,8 @@ def expRunInv (mem0 : Mem) (p n i0 : Nat) (bs : List UInt8) (r : Nat)
       lookupName s.env "%inc217" = some (.int 64 (BitVec.ofNat 64 (i0 + c))) ∧
       ∃ v : BitVec 64, lookupName s.env "%exp10.1" = some (.int 64 v))) ∧
   (∃ esign : BitVec 1, lookupName s.env "%esign.0" = some (.int 1 esign)) ∧
-  expRunCarried s.env
+  expRunCarried s.env ∧
+  expRunAcc i0 bs s c
 
 theorem expRun_bound_nondigit {mem0 : Mem} {p n i0 : Nat} {bs : List UInt8}
     {s : State} {c : Nat} (hread : readBytes mem0 p n = some bs)
@@ -4709,7 +4846,7 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
       e.mem = s.mem ∧
       ∀ k, runFuel calls (j + k) numFastBody s =
         runFuel calls k numFastBody e := by
-  obtain ⟨hpc, hmem, hsum, hltn, hnlt, hp, hn, hread, hpre, hesign, hcarry⟩ := hinv
+  obtain ⟨hpc, hmem, hsum, hltn, hnlt, hp, hn, hread, hpre, hesign, hcarry, hacc0⟩ := hinv
   unfold expRunAtBound at hb
   obtain ⟨hnoD, hdig⟩ := Bool.or_eq_false_iff.mp hb
   have hno : ¬ (n - i0 ≤ c + 1) := of_decide_eq_false hnoD
@@ -4720,6 +4857,9 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
     unfold numFastDigitAt at hdigitAt
     rw [hbyte] at hdigitAt
     simpa using hdigitAt
+  have hblen : bs.length = n := JsonEntrySteps.readBytes_length mem0 p n hread
+  have hgetD : bs.getD (i0 + c) 0 = b := getD_of_readBytes hread hltn hbyte
+  have hfoldlt : ((bs.drop i0).take c).foldl satStep 0 < 2 ^ 63 := satFold_lt bs i0 c
   have hj : i0 + c < 2 ^ 63 := by omega
   have hnext : i0 + c + 1 < n := by omega
   have hnext64 : i0 + c + 1 < 2 ^ 64 := by omega
@@ -4735,6 +4875,13 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
     exact evalICmp_eq_ne hneqN
   rcases hpre with hent | hback
   · obtain ⟨hpre0, hi⟩ := hent
+    have hc0 : c = 0 := by
+      rcases hacc0 with ⟨_, hc⟩ | ⟨hpre', _⟩
+      · exact hc
+      · rw [hpre0] at hpre'
+        exact absurd hpre' (by simp)
+    have hfold0 : ((bs.drop i0).take c).foldl satStep 0 = 0 := by
+      rw [hc0]; rfl
     let e0 : State := stateAt (expHeadEnv s.env p (i0 + c) b 0)
       { s with pc := "while.body206", pre := some "land.lhs.true195" }
     have hstep1 : step calls numFastBody s = .jump e0 :=
@@ -4744,6 +4891,8 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
     have hexp0 : lookupName e0.env "%exp10.0603" = some (.int 64 0) := by
       simp only [e0, stateAt, expHeadEnv, expHeadPhiEnv]
       block_lk
+    have h0 : evalICmp .slt (0 : BitVec 64) (100000#64) = (1 : BitVec 1) :=
+      (ofNat_slt_one_iff (a := 0) (k := 100000) (by decide) (by decide)).mpr (by decide)
     by_cases hguard : evalICmp .slt (0 : BitVec 64) (100000#64) = 1
     · let e1 : State := stateAt (expBodyEnv e0.env 0)
           { e0 with pc := "if.then209", pre := some "while.body206" }
@@ -4795,7 +4944,7 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
           hi2 hn2 hbits
       refine ⟨e3, c + 1, 4, by omega, ?_, by omega, ?_, ?_, ?_, ?_, ?_⟩
       · simp only [e3, stateAt]
-      · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+      · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
         · simp only [e3, stateAt]
         · simp only [e3, stateAt]; exact hmem
         · omega
@@ -4828,6 +4977,12 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
             simp only [e3, e2, e1, e0, stateAt, expIfEndEnv, expIfThenEnv,
               expBodyEnv, expHeadEnv, expHeadPhiEnv]
             block_lk
+        · right
+          exact ⟨by simp only [e3, stateAt],
+            0 * 10 + BitVec.ofNat 64 (JsonScanLane.vByte b &&& 0x0f#8).toNat,
+            by simp only [e3, stateAt, expIfEndEnv]; block_lk,
+            expStep_taken (by rw [hblen]; exact hltn) hgetD hdigitB
+              (by rw [hfold0]; rfl) (by rw [hfold0]; decide)⟩
       · intro c1 c2 c3 c4 hcells
         exact expRun_step_cells (by simp only [e2, stateAt]; decide) hstep4
           (expRun_step_cells (by simp only [e1, stateAt]; decide) hstep3
@@ -4885,7 +5040,7 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
           hi1 hn1 hbits
       refine ⟨e2, c + 1, 3, by omega, ?_, by omega, ?_, ?_, ?_, ?_, ?_⟩
       · simp only [e2, stateAt]
-      · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+      · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
         · simp only [e2, stateAt]
         · simp only [e2, stateAt]; exact hmem
         · omega
@@ -4916,6 +5071,7 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
             simp only [e2, e1, e0, stateAt, expIfEndEnv, expBodyEnv, expHeadEnv,
               expHeadPhiEnv]
             block_lk
+        · exact absurd hguard (by rw [h0]; decide)
       · intro c1 c2 c3 c4 hcells
         exact expRun_step_cells (by simp only [e1, stateAt]; decide) hstep3
           (expRun_step_cells (by simp only [e0, stateAt]; decide) hstep2
@@ -4931,6 +5087,17 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
           runFuel_jump_prefix hstep2 (1 + k),
           runFuel_jump_prefix hstep3 k]
   · obtain ⟨hpre0, hi, v, hvv⟩ := hback
+    have hv : v = BitVec.ofNat 64 (((bs.drop i0).take c).foldl satStep 0) := by
+      rcases hacc0 with ⟨hpre', _⟩ | ⟨_, v', hv', hf⟩
+      · rw [hpre0] at hpre'
+        exact absurd hpre' (by simp)
+      · have h3 : v' = v := by
+          have h4 : Value.int 64 v' = Value.int 64 v :=
+            Option.some.inj (hv'.symm.trans hvv)
+          cases h4
+          rfl
+        rw [h3] at hf
+        exact hf
     let e0 : State := stateAt (expHeadEnv s.env p (i0 + c) b v)
       { s with pc := "while.body206", pre := some "land.lhs.true195" }
     have hstep1 : step calls numFastBody s = .jump e0 :=
@@ -4942,7 +5109,11 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
       simp only [e0, stateAt, expHeadEnv, expHeadPhiEnv]
       block_lk
     by_cases hguard : evalICmp .slt v (100000#64) = 1
-    · let e1 : State := stateAt (expBodyEnv e0.env v)
+    · have hltc : ((bs.drop i0).take c).foldl satStep 0 < 100000 := by
+        have hg := hguard
+        rw [hv] at hg
+        exact (ofNat_slt_one_iff hfoldlt (by decide)).mp hg
+      let e1 : State := stateAt (expBodyEnv e0.env v)
           { e0 with pc := "if.then209", pre := some "while.body206" }
       have hstep2 : step calls numFastBody e0 = .jump e1 :=
         expBody_step_taken (env := e0.env) (s := e0) (v := v)
@@ -4992,7 +5163,7 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
           hi2 hn2 hbits
       refine ⟨e3, c + 1, 4, by omega, ?_, by omega, ?_, ?_, ?_, ?_, ?_⟩
       · simp only [e3, stateAt]
-      · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+      · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
         · simp only [e3, stateAt]
         · simp only [e3, stateAt]; exact hmem
         · omega
@@ -5025,6 +5196,11 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
             simp only [e3, e2, e1, e0, stateAt, expIfEndEnv, expIfThenEnv,
               expBodyEnv, expHeadEnv, expHeadPhiEnv]
             block_lk
+        · right
+          exact ⟨by simp only [e3, stateAt],
+            v * 10 + BitVec.ofNat 64 (JsonScanLane.vByte b &&& 0x0f#8).toNat,
+            by simp only [e3, stateAt, expIfEndEnv]; block_lk,
+            expStep_taken (by rw [hblen]; exact hltn) hgetD hdigitB hv hltc⟩
       · intro c1 c2 c3 c4 hcells
         exact expRun_step_cells (by simp only [e2, stateAt]; decide) hstep4
           (expRun_step_cells (by simp only [e1, stateAt]; decide) hstep3
@@ -5048,6 +5224,11 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
         · rfl
         · rw [hs] at hguard
           exact absurd rfl hguard
+      have hge : 100000 ≤ ((bs.drop i0).take c).foldl satStep 0 := by
+        have hg := hguard'
+        rw [hv] at hg
+        have hnc := (ofNat_slt_zero_iff hfoldlt (by decide)).mp hg
+        omega
       let e1 : State := stateAt (expBodyEnv e0.env v)
           { e0 with pc := "if.end216", pre := some "while.body206" }
       have hstep2 : step calls numFastBody e0 = .jump e1 :=
@@ -5082,7 +5263,7 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
           hi1 hn1 hbits
       refine ⟨e2, c + 1, 3, by omega, ?_, by omega, ?_, ?_, ?_, ?_, ?_⟩
       · simp only [e2, stateAt]
-      · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+      · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
         · simp only [e2, stateAt]
         · simp only [e2, stateAt]; exact hmem
         · omega
@@ -5113,6 +5294,10 @@ theorem expRun_step_loop {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
             simp only [e2, e1, e0, stateAt, expIfEndEnv, expBodyEnv, expHeadEnv,
               expHeadPhiEnv]
             block_lk
+        · right
+          exact ⟨by simp only [e2, stateAt], v,
+            by simp only [e2, stateAt, expIfEndEnv]; block_lk,
+            expStep_frozen (by rw [hblen]; exact hltn) hgetD hv hge⟩
       · intro c1 c2 c3 c4 hcells
         exact expRun_step_cells (by simp only [e1, stateAt]; decide) hstep3
           (expRun_step_cells (by simp only [e0, stateAt]; decide) hstep2
@@ -5140,11 +5325,15 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
       (∀ (env0 : Env) (sign : BitVec 1), NumFastCarried env0 sign s →
         NumFastCarried env0 sign e) ∧
       e.mem = s.mem ∧
+      expRunAccExit i0 n bs e ∧
       ∀ k, runFuel calls (j + k) numFastBody s =
         runFuel calls k numFastBody e := by
-  obtain ⟨hpc, hmem, hsum, hltn, hnlt, hp, hn, hread, hpre, hesign, hcarry⟩ := hinv
+  obtain ⟨hpc, hmem, hsum, hltn, hnlt, hp, hn, hread, hpre, hesign, hcarry, hacc0⟩ := hinv
   obtain ⟨b, hbyte⟩ := readByte_of_readBytes_lt hread hltn
   have hbyte_s : readByte s.mem (p + (i0 + c)) = some b := by rw [hmem]; exact hbyte
+  have hblen : bs.length = n := JsonEntrySteps.readBytes_length mem0 p n hread
+  have hgetD : bs.getD (i0 + c) 0 = b := getD_of_readBytes hread hltn hbyte
+  have hfoldlt : ((bs.drop i0).take c).foldl satStep 0 < 2 ^ 63 := satFold_lt bs i0 c
   have hj : i0 + c < 2 ^ 63 := by omega
   by_cases hle : n - i0 ≤ c + 1
   · have hnext64 : i0 + c + 1 < 2 ^ 64 := by omega
@@ -5156,6 +5345,13 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
     by_cases hdigit : IsDigitB b = true
     · rcases hpre with hent | hback
       · obtain ⟨hpre0, hi⟩ := hent
+        have hc0 : c = 0 := by
+          rcases hacc0 with ⟨_, hc⟩ | ⟨hpre', _⟩
+          · exact hc
+          · rw [hpre0] at hpre'
+            exact absurd hpre' (by simp)
+        have hfold0 : ((bs.drop i0).take c).foldl satStep 0 = 0 := by
+          rw [hc0]; rfl
         let e0 : State := stateAt (expHeadEnv s.env p (i0 + c) b 0)
           { s with pc := "while.body206", pre := some "land.lhs.true195" }
         have hstep1 : step calls numFastBody s = .jump e0 :=
@@ -5165,6 +5361,8 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
         have hexp0 : lookupName e0.env "%exp10.0603" = some (.int 64 0) := by
           simp only [e0, stateAt, expHeadEnv, expHeadPhiEnv]
           block_lk
+        have h0 : evalICmp .slt (0 : BitVec 64) (100000#64) = (1 : BitVec 1) :=
+          (ofNat_slt_one_iff (a := 0) (k := 100000) (by decide) (by decide)).mpr (by decide)
         by_cases hguard : evalICmp .slt (0 : BitVec 64) (100000#64) = 1
         · let e1 : State := stateAt (expBodyEnv e0.env 0)
               { e0 with pc := "if.then209", pre := some "while.body206" }
@@ -5215,7 +5413,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
                 (JsonScanLane.vByte b &&& 0x0f#8).toNat)
               (by simp only [e2, stateAt]) (by simp only [e2, stateAt]) hphi hphiOp
               hi2 hn2 hbits
-          refine ⟨e3, 4, by omega, by simp only [e3, stateAt], ?_, ?_, ?_, ?_, ?_, ?_⟩
+          refine ⟨e3, 4, by omega, by simp only [e3, stateAt], ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
           · refine ⟨by simp only [e3, stateAt],
               Or.inr ⟨by simp only [e3, stateAt], i0 + c + 1,
                 (0 * 10 + BitVec.ofNat 64 (JsonScanLane.vByte b &&& 0x0f#8).toNat),
@@ -5259,6 +5457,16 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
                 (numFast_step_cells (by simp only [e0, stateAt]; decide) hstep2
                   (numFast_step_cells (by rw [hpc]; decide) hstep1 hcarried)))
           · simp only [e3, e2, e1, e0, stateAt]
+          · right
+            right
+            exact ⟨by simp only [e3, stateAt],
+              0 * 10 + BitVec.ofNat 64 (JsonScanLane.vByte b &&& 0x0f#8).toNat,
+              by simp only [e3, stateAt, expIfEndEnv]; block_lk,
+              by
+                have hnd : n - i0 = c + 1 := by omega
+                rw [hnd]
+                exact expStep_taken (by rw [hblen]; exact hltn) hgetD hdigit
+                  (by rw [hfold0]; rfl) (by rw [hfold0]; decide)⟩
           · intro k
             rw [show 4 + k = 1 + (1 + (1 + (1 + k))) from by omega,
               runFuel_jump_prefix hstep1 (1 + (1 + (1 + k))),
@@ -5304,7 +5512,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
               (p := "while.body206") (op := Operand.reg "%exp10.0603") (vv := 0)
               (by simp only [e1, stateAt]) (by simp only [e1, stateAt]) hphi hphiOp
               hi1 hn1 hbits
-          refine ⟨e2, 3, by omega, by simp only [e2, stateAt], ?_, ?_, ?_, ?_, ?_, ?_⟩
+          refine ⟨e2, 3, by omega, by simp only [e2, stateAt], ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
           · refine ⟨by simp only [e2, stateAt],
               Or.inr ⟨by simp only [e2, stateAt], i0 + c + 1, 0, ?_, ?_⟩, ?_, ?_⟩
             · simp only [e2, stateAt, expIfEndEnv]
@@ -5343,12 +5551,24 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
               (numFast_step_cells (by simp only [e0, stateAt]; decide) hstep2
                 (numFast_step_cells (by rw [hpc]; decide) hstep1 hcarried))
           · simp only [e2, e1, e0, stateAt]
+          · exact absurd hguard (by rw [h0]; decide)
           · intro k
             rw [show 3 + k = 1 + (1 + (1 + k)) from by omega,
               runFuel_jump_prefix hstep1 (1 + (1 + k)),
               runFuel_jump_prefix hstep2 (1 + k),
               runFuel_jump_prefix hstep3 k]
       · obtain ⟨hpre0, hi, v, hvv⟩ := hback
+        have hv : v = BitVec.ofNat 64 (((bs.drop i0).take c).foldl satStep 0) := by
+          rcases hacc0 with ⟨hpre', _⟩ | ⟨_, v', hv', hf⟩
+          · rw [hpre0] at hpre'
+            exact absurd hpre' (by simp)
+          · have h3 : v' = v := by
+              have h4 : Value.int 64 v' = Value.int 64 v :=
+                Option.some.inj (hv'.symm.trans hvv)
+              cases h4
+              rfl
+            rw [h3] at hf
+            exact hf
         let e0 : State := stateAt (expHeadEnv s.env p (i0 + c) b v)
           { s with pc := "while.body206", pre := some "land.lhs.true195" }
         have hstep1 : step calls numFastBody s = .jump e0 :=
@@ -5360,7 +5580,11 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
           simp only [e0, stateAt, expHeadEnv, expHeadPhiEnv]
           block_lk
         by_cases hguard : evalICmp .slt v (100000#64) = 1
-        · let e1 : State := stateAt (expBodyEnv e0.env v)
+        · have hltc : ((bs.drop i0).take c).foldl satStep 0 < 100000 := by
+            have hg := hguard
+            rw [hv] at hg
+            exact (ofNat_slt_one_iff hfoldlt (by decide)).mp hg
+          let e1 : State := stateAt (expBodyEnv e0.env v)
               { e0 with pc := "if.then209", pre := some "while.body206" }
           have hstep2 : step calls numFastBody e0 = .jump e1 :=
             expBody_step_taken (env := e0.env) (s := e0) (v := v)
@@ -5409,7 +5633,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
                 (JsonScanLane.vByte b &&& 0x0f#8).toNat)
               (by simp only [e2, stateAt]) (by simp only [e2, stateAt]) hphi hphiOp
               hi2 hn2 hbits
-          refine ⟨e3, 4, by omega, by simp only [e3, stateAt], ?_, ?_, ?_, ?_, ?_, ?_⟩
+          refine ⟨e3, 4, by omega, by simp only [e3, stateAt], ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
           · refine ⟨by simp only [e3, stateAt],
               Or.inr ⟨by simp only [e3, stateAt], i0 + c + 1,
                 (v * 10 + BitVec.ofNat 64 (JsonScanLane.vByte b &&& 0x0f#8).toNat),
@@ -5453,6 +5677,15 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
                 (numFast_step_cells (by simp only [e0, stateAt]; decide) hstep2
                   (numFast_step_cells (by rw [hpc]; decide) hstep1 hcarried)))
           · simp only [e3, e2, e1, e0, stateAt]
+          · right
+            right
+            exact ⟨by simp only [e3, stateAt],
+              v * 10 + BitVec.ofNat 64 (JsonScanLane.vByte b &&& 0x0f#8).toNat,
+              by simp only [e3, stateAt, expIfEndEnv]; block_lk,
+              by
+                have hnd : n - i0 = c + 1 := by omega
+                rw [hnd]
+                exact expStep_taken (by rw [hblen]; exact hltn) hgetD hdigit hv hltc⟩
           · intro k
             rw [show 4 + k = 1 + (1 + (1 + (1 + k))) from by omega,
               runFuel_jump_prefix hstep1 (1 + (1 + (1 + k))),
@@ -5465,6 +5698,11 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
             · rfl
             · rw [hs] at hguard
               exact absurd rfl hguard
+          have hge : 100000 ≤ ((bs.drop i0).take c).foldl satStep 0 := by
+            have hg := hguard'
+            rw [hv] at hg
+            have hnc := (ofNat_slt_zero_iff hfoldlt (by decide)).mp hg
+            omega
           let e1 : State := stateAt (expBodyEnv e0.env v)
               { e0 with pc := "if.end216", pre := some "while.body206" }
           have hstep2 : step calls numFastBody e0 = .jump e1 :=
@@ -5498,7 +5736,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
               (p := "while.body206") (op := Operand.reg "%exp10.0603") (vv := v)
               (by simp only [e1, stateAt]) (by simp only [e1, stateAt]) hphi hphiOp
               hi1 hn1 hbits
-          refine ⟨e2, 3, by omega, by simp only [e2, stateAt], ?_, ?_, ?_, ?_, ?_, ?_⟩
+          refine ⟨e2, 3, by omega, by simp only [e2, stateAt], ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
           · refine ⟨by simp only [e2, stateAt],
               Or.inr ⟨by simp only [e2, stateAt], i0 + c + 1, v, ?_, ?_⟩, ?_, ?_⟩
             · simp only [e2, stateAt, expIfEndEnv]
@@ -5537,6 +5775,14 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
               (numFast_step_cells (by simp only [e0, stateAt]; decide) hstep2
                 (numFast_step_cells (by rw [hpc]; decide) hstep1 hcarried))
           · simp only [e2, e1, e0, stateAt]
+          · right
+            right
+            exact ⟨by simp only [e2, stateAt], v,
+              by simp only [e2, stateAt, expIfEndEnv]; block_lk,
+              by
+                have hnd : n - i0 = c + 1 := by omega
+                rw [hnd]
+                exact expStep_frozen (by rw [hblen]; exact hltn) hgetD hv hge⟩
           · intro k
             rw [show 3 + k = 1 + (1 + (1 + k)) from by omega,
               runFuel_jump_prefix hstep1 (1 + (1 + k)),
@@ -5554,7 +5800,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
           expHead_step_entry_nondigit (env := s.env) (s := s) (a := p) (j := i0 + c)
             (b := b) hpc hpre0 hp
             (BlockEval.evalOperand_reg_of s.env s "%i.11" _ hi) hj hbyte_s hdigit'
-        refine ⟨e0, 1, by omega, by simp only [e0, stateAt], ?_, ?_, ?_, ?_, ?_, ?_⟩
+        refine ⟨e0, 1, by omega, by simp only [e0, stateAt], ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
         · refine ⟨by simp only [e0, stateAt],
             Or.inl ⟨by simp only [e0, stateAt], i0 + c, 0, ?_, ?_⟩, ?_, ?_⟩
           · simp only [e0, stateAt, expHeadEnv, expHeadPhiEnv]
@@ -5586,6 +5832,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
         · intro env0 sign hcarried
           exact numFast_step_cells (by rw [hpc]; decide) hstep1 hcarried
         · simp only [e0, stateAt]
+        · exact Or.inl (by simp only [e0, stateAt])
         · intro k
           rw [runFuel_jump_prefix hstep1 k]
       · obtain ⟨hpre0, hi, v, hvv⟩ := hback
@@ -5596,7 +5843,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
             (b := b) (v := v) hpc hpre0 hp
             (BlockEval.evalOperand_reg_of s.env s "%inc217" _ hi)
             (BlockEval.evalOperand_reg_of s.env s "%exp10.1" _ hvv) hj hbyte_s hdigit'
-        refine ⟨e0, 1, by omega, by simp only [e0, stateAt], ?_, ?_, ?_, ?_, ?_, ?_⟩
+        refine ⟨e0, 1, by omega, by simp only [e0, stateAt], ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
         · refine ⟨by simp only [e0, stateAt],
             Or.inl ⟨by simp only [e0, stateAt], i0 + c, v, ?_, ?_⟩, ?_, ?_⟩
           · simp only [e0, stateAt, expHeadEnv, expHeadPhiEnv]
@@ -5628,6 +5875,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
         · intro env0 sign hcarried
           exact numFast_step_cells (by rw [hpc]; decide) hstep1 hcarried
         · simp only [e0, stateAt]
+        · exact Or.inl (by simp only [e0, stateAt])
         · intro k
           rw [runFuel_jump_prefix hstep1 k]
   · obtain ⟨b', hbyte', hdigit'⟩ := expRun_bound_nondigit hread hltn hb hle
@@ -5642,7 +5890,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
         expHead_step_entry_nondigit (env := s.env) (s := s) (a := p) (j := i0 + c)
           (b := b) hpc hpre0 hp
           (BlockEval.evalOperand_reg_of s.env s "%i.11" _ hi) hj hbyte'_s hdigit'
-      refine ⟨e0, 1, by omega, by simp only [e0, stateAt], ?_, ?_, ?_, ?_, ?_, ?_⟩
+      refine ⟨e0, 1, by omega, by simp only [e0, stateAt], ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
       · refine ⟨by simp only [e0, stateAt],
           Or.inl ⟨by simp only [e0, stateAt], i0 + c, 0, ?_, ?_⟩, ?_, ?_⟩
         · simp only [e0, stateAt, expHeadEnv, expHeadPhiEnv]
@@ -5674,6 +5922,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
       · intro env0 sign hcarried
         exact numFast_step_cells (by rw [hpc]; decide) hstep1 hcarried
       · simp only [e0, stateAt]
+      · exact Or.inl (by simp only [e0, stateAt])
       · intro k
         rw [runFuel_jump_prefix hstep1 k]
     · obtain ⟨hpre0, hi, v, hvv⟩ := hback
@@ -5684,7 +5933,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
           (b := b) (v := v) hpc hpre0 hp
           (BlockEval.evalOperand_reg_of s.env s "%inc217" _ hi)
           (BlockEval.evalOperand_reg_of s.env s "%exp10.1" _ hvv) hj hbyte'_s hdigit'
-      refine ⟨e0, 1, by omega, by simp only [e0, stateAt], ?_, ?_, ?_, ?_, ?_, ?_⟩
+      refine ⟨e0, 1, by omega, by simp only [e0, stateAt], ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
       · refine ⟨by simp only [e0, stateAt],
           Or.inl ⟨by simp only [e0, stateAt], i0 + c, v, ?_, ?_⟩, ?_, ?_⟩
         · simp only [e0, stateAt, expHeadEnv, expHeadPhiEnv]
@@ -5716,6 +5965,7 @@ theorem expRun_step_exit {mem0 : Mem} {p n i0 r : Nat} {bs : List UInt8}
       · intro env0 sign hcarried
         exact numFast_step_cells (by rw [hpc]; decide) hstep1 hcarried
       · simp only [e0, stateAt]
+      · exact Or.inl (by simp only [e0, stateAt])
       · intro k
         rw [runFuel_jump_prefix hstep1 k]
 
@@ -5731,7 +5981,7 @@ def expRunBoundLoop (mem0 : Mem) (p n i0 : Nat) (bs : List UInt8) (cost : Nat)
   ExitWord := expRunExit
   step_exit := by
     intro r s c hinv hb
-    obtain ⟨e, j, hj, hpc, hword, _hstop, _hcell, _hcarried, _hmem, hrun⟩ :=
+    obtain ⟨e, j, hj, hpc, hword, _hstop, _hcell, _hcarried, _hmem, _haccx, hrun⟩ :=
       expRun_step_exit hinv hb
     exact ⟨e, j, by omega, hpc, hword, hrun⟩
   step_loop := by
@@ -5741,14 +5991,14 @@ def expRunBoundLoop (mem0 : Mem) (p n i0 : Nat) (bs : List UInt8) (cost : Nat)
     exact ⟨e, c', j, by omega, hpc, hlt, hinv', hrun⟩
   exit_at_zero := by
     intro s c h
-    obtain ⟨_, _, hsum, _, _, _, _, _, _, _, _⟩ := h
+    obtain ⟨_, _, hsum, _, _, _, _, _, _, _, _, _⟩ := h
     unfold expRunAtBound
     have hle : decide (n - i0 ≤ c + 1) = true := decide_eq_true (by omega)
     rw [hle]
     simp
   budget := by
     intro r s c h
-    obtain ⟨_, _, hsum, _, _, _, _, _, _, _, _⟩ := h
+    obtain ⟨_, _, hsum, _, _, _, _, _, _, _, _, _⟩ := h
     omega
 
 theorem expRun_run (mem0 : Mem) (p n i0 : Nat) (bs : List UInt8) (cost : Nat)
@@ -5771,7 +6021,7 @@ abbrev expRunEndFrameCells (mem0 : Mem) (p n i0 : Nat) (bs : List UInt8)
     P := ExpRunCells idig5 ip5 fr5 fd5
     step_exit := by
       intro r s c hinv hb
-      obtain ⟨e, j, hj, hpc, hword, _hstop, hcell, _hcarried, _hmem, hrun⟩ :=
+      obtain ⟨e, j, hj, hpc, hword, _hstop, hcell, _hcarried, _hmem, _haccx, hrun⟩ :=
         expRun_step_exit hinv hb
       exact ⟨e, j, by simp only [expRunBoundLoop]; omega, hpc, hword,
         hcell idig5 ip5 fr5 fd5, hrun⟩

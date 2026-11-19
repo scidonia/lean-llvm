@@ -20,9 +20,12 @@ starts.  `JsonStage2NumFastScanRun.nestFrom157_nosign`/`_sign` hand them back
 now, and `nest_expRun_run` composes the marker's two shapes and the sign's
 presence, the nest's steps, the gate's dispatch step and the run's loop,
 concluding `cleanup223.thread` with the exit word, the four cells by value and
-the stop word `expRunStop` — the index the run stopped at and the byte there.
-The back arm's index is the length, which is `expExit_merge_back`'s equality
-test; the head arm's is short of it, which is `expExit_refuse_head`'s refusal.
+the stop word `expRunStop` — the index the run stopped at and the byte there —
+and with the index shape-tied: two past the marker exactly when the byte after
+it is a sign, so the digit hypothesis admits that one sign byte and every later
+byte is a digit.  The back arm's index is the length, which is
+`expExit_merge_back`'s equality test; the head arm's is short of it, which is
+`expExit_refuse_head`'s refusal.
 
 There is no `sorry`, `admit` or `native_decide` below.
 -/
@@ -177,11 +180,12 @@ state whose environment is not a term, so a caller cannot re-read the four cells
 the gate's state.  `JsonStage2NumFastScanRun.nestFrom157_nosign`/`_sign` now hand
 the cells back, and the chain below names them at the marker's start. -/
 
-/-- The exponent run's loop with the four carried cells and the stop word.  The
-invariant carries `ExpRunCells` and the exit word carries both it and
-`expRunStop`, so a composition past the run reads `%idig.4`, `%ip.5`, `%fr.5`,
-`%fdig.4` and the stop index at the state the run leaves rather than through an
-existential. -/
+/-- The exponent run's loop with the four carried cells, the stop word and the
+accumulator.  The invariant carries `ExpRunCells` and the exit word carries both
+it, `expRunStop` and `expRunAccExit` — the accumulator's saturating fold on the
+back edge, the refusal on the head's — so a composition past the run reads
+`%idig.4`, `%ip.5`, `%fr.5`, `%fdig.4`, the stop index and the fold at the state
+the run leaves rather than through an existential. -/
 def expRunEndBoundLoopStop (calls : Calls) (mem0 : Mem) (p n i0 : Nat)
     (bs : List UInt8) (cost : Nat) (hcost : 4 ≤ cost)
     (idig5 ip5 fr5 fd5 : BitVec 64) : BoundLoop calls numFastBody where
@@ -193,13 +197,15 @@ def expRunEndBoundLoopStop (calls : Calls) (mem0 : Mem) (p n i0 : Nat)
   atBound := expRunAtBound mem0 p n i0
   Exit := fun e => e.pc = "cleanup223.thread"
   ExitWord := fun e =>
-    expRunExit e ∧ ExpRunCells idig5 ip5 fr5 fd5 e ∧ expRunStop p n i0 e
+    expRunExit e ∧ ExpRunCells idig5 ip5 fr5 fd5 e ∧ expRunStop p n i0 e ∧
+      expRunAccExit i0 n bs e
   step_exit := by
     intro r s c hinv hb
     obtain ⟨hinv, hcells⟩ := hinv
-    obtain ⟨e, j, hj, hpc, hword, hstop, hcell, _hcarried, _hmem, hrun⟩ :=
+    obtain ⟨e, j, hj, hpc, hword, hstop, hcell, _hcarried, _hmem, haccx, hrun⟩ :=
       expRun_step_exit hinv hb
-    exact ⟨e, j, by omega, hpc, ⟨hword, hcell idig5 ip5 fr5 fd5 hcells, hstop⟩, hrun⟩
+    exact ⟨e, j, by omega, hpc,
+      ⟨hword, hcell idig5 ip5 fr5 fd5 hcells, hstop, haccx⟩, hrun⟩
   step_loop := by
     intro r s c hinv hb
     obtain ⟨hinv, hcells⟩ := hinv
@@ -209,7 +215,7 @@ def expRunEndBoundLoopStop (calls : Calls) (mem0 : Mem) (p n i0 : Nat)
   exit_at_zero := by
     intro s c h
     obtain ⟨hinv, _⟩ := h
-    obtain ⟨_, _, hsum, _, _, _, _, _, _, _, _⟩ := hinv
+    obtain ⟨_, _, hsum, _, _, _, _, _, _, _, _, _⟩ := hinv
     unfold expRunAtBound
     have hle : decide (n - i0 ≤ c + 1) = true := decide_eq_true (by omega)
     rw [hle]
@@ -217,22 +223,24 @@ def expRunEndBoundLoopStop (calls : Calls) (mem0 : Mem) (p n i0 : Nat)
   budget := by
     intro r s c h
     obtain ⟨hinv, _⟩ := h
-    obtain ⟨_, _, hsum, _, _, _, _, _, _, _, _⟩ := hinv
+    obtain ⟨_, _, hsum, _, _, _, _, _, _, _, _, _⟩ := hinv
     omega
 
 /-- **The exponent route's chain.**  From the marker's block at `%i.10`, with the
-byte there an `'e'` or an `'E'`, the sign byte after it, every byte from the
-exponent's first index a digit, and the four cells `if.end230`'s `phi`s read
-carried at the marker's start, the nest's steps and the exponent run reach
-`cleanup223.thread` within `10 + (n - i11 + 1) * 4` control steps.  At the exit
-the chain hands the run's exit word, the four cells by value and the stop word:
-`%i.11` is the exponent's first index, one past the marker's byte or past a sign
-at it, and the stop index is the length on the back edge and a non-digit byte
+byte there an `'e'` or an `'E'`, the sign byte after it — a sign or the
+exponent's first digit — every byte after that a digit, and the four cells
+`if.end230`'s `phi`s read carried at the marker's start, the nest's steps and the
+exponent run reach `cleanup223.thread` within `10 + (n - i11 + 1) * 4` control
+steps.  At the exit the chain hands the run's exit word, the four cells by value
+and the stop word, and it fixes which shape the index took: `%i.11` is two past
+the marker's byte exactly when the byte after it is a sign, one past it
+otherwise.  The stop index is the length on the back edge and a non-digit byte
 inside the lexeme on the head's.  The stop word also names the cursor and the
 length, so a composition past this chain holds `expExit_merge_back`'s `%n`; the
-head exit's counter is the premise `expExit_refuse_head` reads.  What the chain
-does not supply is the accumulator's reading as the exponent digits' `expAcc`,
-which the back seam still takes as its own hypothesis. -/
+head exit's counter is the premise `expExit_refuse_head` reads.  The
+accumulator's fold at the exit is the carried chain's
+(`JsonStage2NumFastExponent.nest_expRun_run_carried`); this cells-and-stop
+statement does not carry it. -/
 theorem nest_expRun_run {calls : Calls} {e : State} {a n i10 : Nat} {b1 b2 : UInt8}
     {bs : List UInt8} {idig5 ip5 fr5 fd5 : BitVec 64}
     (hpc : e.pc = "land.lhs.true147")
@@ -245,14 +253,17 @@ theorem nest_expRun_run {calls : Calls} {e : State} {a n i10 : Nat} {b1 b2 : UIn
     (hmarkerAt : b1 = 0x65 ∨ b1 = 0x45)
     (hin : i10 + 3 ≤ n)
     (hread2 : readByte e.mem (a + (i10 + 1)) = some b2)
-    (hdigits : ∀ k, i10 + 1 ≤ k → k < n → IsDigitB (bs.getD k 0) = true)
+    (hdigits : ∀ k, i10 + 1 ≤ k → k < n →
+      (k = i10 + 1 ∧ (bs.getD k 0 = 0x2b ∨ bs.getD k 0 = 0x2d)) ∨
+        IsDigitB (bs.getD k 0) = true)
     (hcarry : ExpRunCells idig5 ip5 fr5 fd5 (stateAt e.env e)) :
     ∃ (i11 : Nat) (esign : BitVec 1) (e' : State) (j : Nat),
       j ≤ 10 + (n - i11 + 1) * 4 ∧
       e'.pc = "cleanup223.thread" ∧
       expRunExit e' ∧ ExpRunCells idig5 ip5 fr5 fd5 e' ∧ expRunStop a n i11 e' ∧
       lookupName e'.env "%esign.0" = some (.int 1 esign) ∧
-      (i11 = i10 + 1 ∨ i11 = i10 + 2) ∧
+      (((i11 = i10 + 2) ∧ (b2 = 0x2b ∨ b2 = 0x2d)) ∨
+        ((i11 = i10 + 1) ∧ ¬ (b2 = 0x2b ∨ b2 = 0x2d))) ∧
       ∀ k, runFuel calls (j + k) numFastBody (stateAt e.env e) =
         runFuel calls k numFastBody e' := by
   have hc0 : ExpRunCells idig5 ip5 fr5 fd5 e := by
@@ -303,20 +314,22 @@ theorem nest_expRun_run {calls : Calls} {e : State} {a n i10 : Nat} {b1 b2 : UIn
       have hd : readByte e'.mem (a + (i10 + 2)) = some (bs.getD (i10 + 2) 0) := by
         rw [hmemE]
         exact readByte_of_readBytes hread hjlt
-      have hdigB : IsDigitB (bs.getD (i10 + 2) 0) = true :=
-        hdigits (i10 + 2) (by omega) hjlt
+      have hdigB : IsDigitB (bs.getD (i10 + 2) 0) = true := by
+        rcases hdigits (i10 + 2) (by omega) hjlt with ⟨hk, _⟩ | hd
+        · omega
+        · exact hd
       obtain ⟨e'', hinv, hcellsT, _hcarriedT, hrun1⟩ :=
         NumFastStarts.expRun_start (calls := calls) (env := e'.env) (s := e')
           hpc' hp2 hn2 (by rw [hmemE]; exact hread) hi11 ⟨_, hes⟩ hcarry' hd hdigB
           (by omega) hnlt
       have hc2 : ExpRunCells idig5 ip5 fr5 fd5 e'' :=
         hcellsT idig5 ip5 fr5 fd5 (by rw [NumFastTaken.stateAt_env_self e']; exact hcE)
-      obtain ⟨e3, j3, hj3, hpc3, ⟨hword3, hcells3, hstop3⟩, hrun3'⟩ :=
+      obtain ⟨e3, j3, hj3, hpc3, ⟨hword3, hcells3, hstop3, _haccx3⟩, hrun3'⟩ :=
         (expRunEndBoundLoopStop calls e'.mem a n (i10 + 2) bs 4 (by omega)
             idig5 ip5 fr5 fd5).run_from (n - (i10 + 2)) e'' 0 ⟨hinv, hc2⟩
       obtain ⟨esign, hes'⟩ := hword3.2.2.1
       refine ⟨i10 + 2, esign, e3, (3 + 6 + 1) + j3, ?_, hpc3, hword3, hcells3,
-        hstop3, hes', Or.inr rfl, ?_⟩
+        hstop3, hes', Or.inl ⟨rfl, hsign⟩, ?_⟩
       · have hb := hj3
         simp only [expRunEndBoundLoopStop] at hb
         omega
@@ -342,20 +355,27 @@ theorem nest_expRun_run {calls : Calls} {e : State} {a n i10 : Nat} {b1 b2 : UIn
       have hd : readByte e'.mem (a + (i10 + 1)) = some (bs.getD (i10 + 1) 0) := by
         rw [hmemE]
         exact readByte_of_readBytes hread hjlt
-      have hdigB : IsDigitB (bs.getD (i10 + 1) 0) = true :=
-        hdigits (i10 + 1) (by omega) hjlt
+      have hdigB : IsDigitB (bs.getD (i10 + 1) 0) = true := by
+        have hnosign : b2 ≠ 0x2b ∧ b2 ≠ 0x2d :=
+          ⟨fun h => hsign (Or.inl h), fun h => hsign (Or.inr h)⟩
+        have hb2 : bs.getD (i10 + 1) 0 = b2 := getD_of_readBytes hread hjlt hread2
+        rcases hdigits (i10 + 1) (by omega) hjlt with ⟨_, hs⟩ | hd
+        · rcases hs with h | h
+          · exact absurd (hb2 ▸ h) hnosign.1
+          · exact absurd (hb2 ▸ h) hnosign.2
+        · exact hd
       obtain ⟨e'', hinv, hcellsT, _hcarriedT, hrun1⟩ :=
         NumFastStarts.expRun_start (calls := calls) (env := e'.env) (s := e')
           hpc' hp2 hn2 (by rw [hmemE]; exact hread) hi11 ⟨_, hes⟩ hcarry' hd hdigB
           (by omega) hnlt
       have hc2 : ExpRunCells idig5 ip5 fr5 fd5 e'' :=
         hcellsT idig5 ip5 fr5 fd5 (by rw [NumFastTaken.stateAt_env_self e']; exact hcE)
-      obtain ⟨e3, j3, hj3, hpc3, ⟨hword3, hcells3, hstop3⟩, hrun3'⟩ :=
+      obtain ⟨e3, j3, hj3, hpc3, ⟨hword3, hcells3, hstop3, _haccx3⟩, hrun3'⟩ :=
         (expRunEndBoundLoopStop calls e'.mem a n (i10 + 1) bs 4 (by omega)
             idig5 ip5 fr5 fd5).run_from (n - (i10 + 1)) e'' 0 ⟨hinv, hc2⟩
       obtain ⟨esign, hes'⟩ := hword3.2.2.1
       refine ⟨i10 + 1, esign, e3, (3 + 5 + 1) + j3, ?_, hpc3, hword3, hcells3,
-        hstop3, hes', Or.inl rfl, ?_⟩
+        hstop3, hes', Or.inr ⟨rfl, hsign⟩, ?_⟩
       · have hb := hj3
         simp only [expRunEndBoundLoopStop] at hb
         omega
@@ -406,20 +426,22 @@ theorem nest_expRun_run {calls : Calls} {e : State} {a n i10 : Nat} {b1 b2 : UIn
       have hd : readByte e'.mem (a + (i10 + 2)) = some (bs.getD (i10 + 2) 0) := by
         rw [hmemE]
         exact readByte_of_readBytes hread hjlt
-      have hdigB : IsDigitB (bs.getD (i10 + 2) 0) = true :=
-        hdigits (i10 + 2) (by omega) hjlt
+      have hdigB : IsDigitB (bs.getD (i10 + 2) 0) = true := by
+        rcases hdigits (i10 + 2) (by omega) hjlt with ⟨hk, _⟩ | hd
+        · omega
+        · exact hd
       obtain ⟨e'', hinv, hcellsT, _hcarriedT, hrun1⟩ :=
         NumFastStarts.expRun_start (calls := calls) (env := e'.env) (s := e')
           hpc' hp2 hn2 (by rw [hmemE]; exact hread) hi11 ⟨_, hes⟩ hcarry' hd hdigB
           (by omega) hnlt
       have hc2 : ExpRunCells idig5 ip5 fr5 fd5 e'' :=
         hcellsT idig5 ip5 fr5 fd5 (by rw [NumFastTaken.stateAt_env_self e']; exact hcE)
-      obtain ⟨e3, j3, hj3, hpc3, ⟨hword3, hcells3, hstop3⟩, hrun3'⟩ :=
+      obtain ⟨e3, j3, hj3, hpc3, ⟨hword3, hcells3, hstop3, _haccx3⟩, hrun3'⟩ :=
         (expRunEndBoundLoopStop calls e'.mem a n (i10 + 2) bs 4 (by omega)
             idig5 ip5 fr5 fd5).run_from (n - (i10 + 2)) e'' 0 ⟨hinv, hc2⟩
       obtain ⟨esign, hes'⟩ := hword3.2.2.1
       refine ⟨i10 + 2, esign, e3, (3 + 6 + 1) + j3, ?_, hpc3, hword3, hcells3,
-        hstop3, hes', Or.inr rfl, ?_⟩
+        hstop3, hes', Or.inl ⟨rfl, hsign⟩, ?_⟩
       · have hb := hj3
         simp only [expRunEndBoundLoopStop] at hb
         omega
@@ -444,20 +466,27 @@ theorem nest_expRun_run {calls : Calls} {e : State} {a n i10 : Nat} {b1 b2 : UIn
       have hd : readByte e'.mem (a + (i10 + 1)) = some (bs.getD (i10 + 1) 0) := by
         rw [hmemE]
         exact readByte_of_readBytes hread hjlt
-      have hdigB : IsDigitB (bs.getD (i10 + 1) 0) = true :=
-        hdigits (i10 + 1) (by omega) hjlt
+      have hdigB : IsDigitB (bs.getD (i10 + 1) 0) = true := by
+        have hnosign : b2 ≠ 0x2b ∧ b2 ≠ 0x2d :=
+          ⟨fun h => hsign (Or.inl h), fun h => hsign (Or.inr h)⟩
+        have hb2 : bs.getD (i10 + 1) 0 = b2 := getD_of_readBytes hread hjlt hread2
+        rcases hdigits (i10 + 1) (by omega) hjlt with ⟨_, hs⟩ | hd
+        · rcases hs with h | h
+          · exact absurd (hb2 ▸ h) hnosign.1
+          · exact absurd (hb2 ▸ h) hnosign.2
+        · exact hd
       obtain ⟨e'', hinv, hcellsT, _hcarriedT, hrun1⟩ :=
         NumFastStarts.expRun_start (calls := calls) (env := e'.env) (s := e')
           hpc' hp2 hn2 (by rw [hmemE]; exact hread) hi11 ⟨_, hes⟩ hcarry' hd hdigB
           (by omega) hnlt
       have hc2 : ExpRunCells idig5 ip5 fr5 fd5 e'' :=
         hcellsT idig5 ip5 fr5 fd5 (by rw [NumFastTaken.stateAt_env_self e']; exact hcE)
-      obtain ⟨e3, j3, hj3, hpc3, ⟨hword3, hcells3, hstop3⟩, hrun3'⟩ :=
+      obtain ⟨e3, j3, hj3, hpc3, ⟨hword3, hcells3, hstop3, _haccx3⟩, hrun3'⟩ :=
         (expRunEndBoundLoopStop calls e'.mem a n (i10 + 1) bs 4 (by omega)
             idig5 ip5 fr5 fd5).run_from (n - (i10 + 1)) e'' 0 ⟨hinv, hc2⟩
       obtain ⟨esign, hes'⟩ := hword3.2.2.1
       refine ⟨i10 + 1, esign, e3, (3 + 5 + 1) + j3, ?_, hpc3, hword3, hcells3,
-        hstop3, hes', Or.inl rfl, ?_⟩
+        hstop3, hes', Or.inr ⟨rfl, hsign⟩, ?_⟩
       · have hb := hj3
         simp only [expRunEndBoundLoopStop] at hb
         omega

@@ -408,15 +408,15 @@ polarities (`if %esign.0 = 1 then %exp10 else 0 - %exp10` as
 index at `%err` and returns zero rather than demanding the unreachable
 `%i.12604 = n` premise the retired merge carried.
 
-What the arm still waits on is the accumulator tie into the back merge, the
-routes below tier 1, and tier 3's region.  The nest's carrying seams hand the
-four cells and the caller's kept cells through the marker, and
-`JsonStage2NumFastExponent.nest_expRun_run_carried` composes them with the run:
-it reaches `cleanup223.thread` with the exit word, stop word, sign and staging
-memory.  The accumulator's reading as `expAcc` remains a merge hypothesis;
-and tier 1's four links are proved (`JsonStage2NumFastTier1`,
-with `t1_store_run` the body's chain from `if.end230`), while tier 3's region is
-stated edge by edge:
+What the arm still waits on is the routes below tier 1 and tier 3's region.
+`JsonStage2NumFastExponent.expScan_t1_arm` completes the exponent's tier-1 route:
+the nest's carrying seams hand the four cells and caller's kept cells through
+the marker, `expRun_acc_tie` reads the back exit's accumulator as the model's
+saturating fold, `expExit_merge_back` carries the caller's words into the merge,
+and `t1_arm_run` returns `strtodSpec`'s bytes.  Both signed and unsigned exponent
+shapes are covered; the head exit is the refusal.  Tier 1's four links are proved
+(`JsonStage2NumFastTier1`, with `t1_store_run` the body's chain from `if.end230`),
+while tier 3's region is stated edge by edge:
 the poison edge and its trip count (`t3_traversal_counts_1_3`), the epilogue
 (`t3_epil_denote`), the window tie (`copy_*_window`, `t3_copy_denote`), the
 proximity estimate at the tree's own rounding (`t3_scale_of_ulp`), the copy's

@@ -3134,9 +3134,11 @@ theorem expSelect_tie {d : Decimal} {sign : Bool} {ds : Bytes} {v : BitVec 64}
 /-- **The merge at the exponent run's back-edge exit.**  `cleanup223.thread`
 folds the run's accumulator with its sign and `if.end226`'s equality test opens
 `if.end230`: two control steps from the back edge, with the merge's five
-registers and `%exp10.4` the model's signed exponent.  The index the test reads
-is `%n` — `%i.12.lcssa.ph` selects `%n` at the `if.end216` ingress — so the test
-is its own reflexivity and needs no premise about the head's counter.
+registers and `%exp10.4` the model's signed exponent, and the caller's kept cells
+and sign carried over — neither block is `if.end`, so the caller's words survive
+the merge.  The index the test reads is `%n` — `%i.12.lcssa.ph` selects `%n` at
+the `if.end216` ingress — so the test is its own reflexivity and needs no premise
+about the head's counter.
 
 The exit is an `∃`-state, so the two readings that make the select the model's
 are hypotheses rather than fields: `hacc` fixes the run's accumulator cell at
@@ -3159,14 +3161,55 @@ theorem expExit_merge_back {calls : Calls} {e : State} {n : Nat} {d : Decimal}
     ∃ (e' : State),
       NumFastScanRun.mergeEntry e.mem (BitVec.ofInt 64 (expVal d))
         idig ip fr fdig e' ∧
+      (∀ (env0 : Env) (sign : BitVec 1), NumFastCarried env0 sign e →
+        NumFastCarried env0 sign e') ∧
       ∀ k, runFuel calls (2 + k) numFastBody e = runFuel calls k numFastBody e' := by
   have hsel : (if esign = 1 then v else 0 - v) = BitVec.ofInt 64 (expVal d) :=
     expSelect_tie hx hacc hes
-  obtain ⟨e', hmerge, hrun⟩ :=
-    NumFastScanRun.expMerge_run_inc (calls := calls) hpc hpre he hn hesign
-      hid hip hfr hfd
-  rw [hsel] at hmerge
-  exact ⟨e', hmerge, hrun⟩
+  have h1 : step calls numFastBody e =
+      .jump (stateAt (NumFastScanRun.cleanup223ThreadEnv e.env v
+          (BitVec.ofNat 64 n) esign)
+        { e with pc := "if.end226", pre := some "cleanup223.thread" }) :=
+    NumFastScanRun.cleanup223Thread_step_inc (calls := calls) hpc hpre he hn hesign
+  have h2 : step calls numFastBody
+      (stateAt (NumFastScanRun.cleanup223ThreadEnv e.env v
+          (BitVec.ofNat 64 n) esign)
+        { e with pc := "if.end226", pre := some "cleanup223.thread" }) =
+      .jump (stateAt
+        (NumFastScanRun.ifEnd226Env
+          (NumFastScanRun.cleanup223ThreadEnv e.env v (BitVec.ofNat 64 n) esign)
+          (if esign = 1 then v else 0 - v) (BitVec.ofNat 64 n) (BitVec.ofNat 64 n))
+        { e with pc := "if.end230", pre := some "if.end226" }) :=
+    NumFastScanRun.ifEnd226_step_merge (calls := calls) rfl
+      (NumFastScanRun.ifEnd226_denote_thread (calls := calls) rfl
+        (by simp only [NumFastScanRun.cleanup223ThreadEnv, lookupName_cons_self])
+        (by block_lk)
+        (by block_lk))
+      (NumFastStarts.eq_iff_one _ _ |>.mpr rfl)
+  refine ⟨stateAt
+      (NumFastScanRun.ifEnd226Env
+        (NumFastScanRun.cleanup223ThreadEnv e.env v (BitVec.ofNat 64 n) esign)
+        (if esign = 1 then v else 0 - v) (BitVec.ofNat 64 n) (BitVec.ofNat 64 n))
+      { e with pc := "if.end230", pre := some "if.end226" },
+    ⟨rfl, rfl, rfl, ?_, ?_, ?_, ?_, ?_⟩, ?_, ?_⟩
+  · simp only [stateAt, NumFastScanRun.ifEnd226Env,
+      NumFastScanRun.cleanup223ThreadEnv]
+    block_lk
+    rw [hsel]
+  · simp only [stateAt, NumFastScanRun.ifEnd226Env,
+      NumFastScanRun.cleanup223ThreadEnv]; block_lk
+  · simp only [stateAt, NumFastScanRun.ifEnd226Env,
+      NumFastScanRun.cleanup223ThreadEnv]; block_lk
+  · simp only [stateAt, NumFastScanRun.ifEnd226Env,
+      NumFastScanRun.cleanup223ThreadEnv]; block_lk
+  · simp only [stateAt, NumFastScanRun.ifEnd226Env,
+      NumFastScanRun.cleanup223ThreadEnv]; block_lk
+  · intro env0 sign hc
+    exact numFast_step_cells (by simp only [stateAt]; decide) h2
+      (numFast_step_cells (by rw [hpc]; decide) h1 hc)
+  · intro k
+    rw [show 2 + k = 1 + (1 + k) from by omega,
+      runFuel_jump_prefix h1, runFuel_jump_prefix h2]
 
 /-- **One store's frame.**  A write of `bs` at `a` leaves every byte outside its
 own extent as it found it. -/
@@ -3378,6 +3421,8 @@ steps are at `stage2NumFastCalls`, whose reader answer is the model's. -/
 #print axioms NumFastSeams.fracExit_nest
 #print axioms NumFastSeams.fracScan_end230
 #print axioms NumFastSeams.nest_marker_start
+/-- info: 'LeanLLVM.Refinement.NumFastSeams.expExit_merge_back' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
 #print axioms NumFastSeams.expExit_merge_back
 #print axioms NumFastSeams.expExit_refuse_head
 #print axioms NumFastSeams.ofInt_negNat
