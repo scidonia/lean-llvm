@@ -207,7 +207,7 @@ The repair is at the link, and the composition uses the repaired statement.
 | G5 | the callee-success bit | **supplied** — the bit `%call222.i ≠ 0` is read off the callee's return word (G4's `xv`) |
 | G6 | the arena reservation | **supplied**: `%idxprom.i`'s value and `%sub260.i`'s extent are the header's/`if.end207.i`'s cells, so the two tying equations and the cursor pin are the caller's; the log's arena word read and the capacity word are **produced** by `WalkInv.log_alen`/`log_acap` (as an inequality and a staged word) |
 | G7 | the string body's call | **supplied**: the string body's staging — `s2StringBodyPre` at this argument list — has no producer in the tree, and `C.alen + ext ≤ G.n` is the reservation's document room |
-| G8 | the verdict and the record | **supplied**: the callee's return word, `%outn.i`'s word (the decoded length, which `s2StringBodyPost` leaves free of the input length — `JsonStage2WalkArenaWord`); **produced** by the invariant for `%7` (`iter.reg7`) and the two log words (`log_len`, `log_cap`) |
+| G8 | the verdict and the record | **supplied**: the callee's return word; **produced** by the invariant for `%7` (`iter.reg7`) and the two log words (`log_len`, `log_cap`).  The decoded length the body wrote at `%outn.i` is **not** a field: no block of the walk reads the slot at a head, and the write-back that does (`if.else285.i`) reads the callee's answer, which `strPath9` derives at the call |
 | G9 | the merge's two cells | **proved** by `stringPath_seg`, which reads them off the endpoint state the segment reaches: `WalkSegment` records a run and an invariant, not the blocks it passed, so no lemma carries `%inc208.i` from `if.end207.i` to the merge across a *supplied* segment — and the composition reads it because the state is a `def` |
 
 Two of the supplied groups are supplied for a reason that is not a missing
@@ -228,8 +228,8 @@ run's writes are separated from the log's cursor slot and the document.
 the bundle's.**  `WalkSegment` (`JsonStage2WalkTraverse`) is a
 `run : ∀ n, runFuel … = runFuel …` and an `inv' : WalkInv G C' s'` — no memory, no
 allocator cursor, no intermediate state.  So `hpreS` (the string body's
-precondition at `s.mem`/`s.next`), `hreadA` (the log's arena word), `houtn` and
-the log's two words are statements about the **head's** memory, and each is
+precondition at `s.mem`/`s.next`), `hreadA` (the log's arena word) and the
+log's two words are statements about the **head's** memory, and each is
 transported to the block that reads it by the composition: the cursor's advance
 runs through `strPath8`, the record's store at `%z.val` and the log's two words
 are read off the invariant at the state that reads them (`log_len`, `log_cap`),
@@ -431,11 +431,17 @@ structure HstringFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
   hwin : C.alen + ext ≤ G.n
   /-- **G8 — the verdict and the record.**  The body's answer is `NodeBlock31`'s
   and `LeafBlock29`'s `%call272.i`; `%7` is the entry's position (the literal
-  arm's `%add283.i` reads it), `%outn.i`'s word is the decoded length the
-  write-back loads (`if.else285.i`), and the log's `%len`/`%cap` words are what
-  `if.end290.i` tests thirteen bytes against.  The answer, the decoded length
-  and the two words' *values* are supplied; `%7` and the two log words are the
-  invariant's clauses read at the head. -/
+  arm's `%add283.i` reads it), and the log's `%len`/`%cap` words are what
+  `if.end290.i` tests thirteen bytes against.  The answer and the two words'
+  *values* are supplied; `%7` and the two log words are the invariant's clauses
+  read at the head.
+
+  The decoded length the body wrote at `%outn.i` is **not** here.  The slot is
+  read once in the body, at `if.else285.i`, and the word that load receives is
+  the callee's answer: `strPath9` derives it at the call
+  (`s2StringBody_outn_le` with `s2StringBodyPre_next_outn`) and the segment
+  carries it to the merge.  No head state's bytes enter it, so a field stating
+  them would be a carried fact with no reader. -/
   y : BitVec 32
   hy : ∀ r, stage2Calls stage2SubCalls "s2_string_body"
     [.ptr C.stage.c, .ptr (G.b + ix.toNat + 1), .int 64 (BitVec.ofNat 64 ext),
@@ -443,8 +449,6 @@ structure HstringFacts {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
      .int 64 (BitVec.ofNat 64 G.nxp)] s.mem s.next = some r →
     r.ret = .int 32 y
   h7 : lookupName s.env "%7" = some (.int 32 (BitVec.ofNat 32 (entryPos G C.k)))
-  outn : Nat
-  houtn : readBytes s.mem (G.next0 + 20) 8 = some (wordBytes 8 outn)
   hnl : readBytes s.mem (C.stage.z + 8) 8 = some (wordBytes 8 C.evlen)
   hnc : readBytes s.mem (C.stage.z + 16) 8 = some (wordBytes 8 G.evcap)
 

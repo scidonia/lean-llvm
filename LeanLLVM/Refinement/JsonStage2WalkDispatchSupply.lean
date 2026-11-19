@@ -14,7 +14,7 @@ Each payload has three groups:
 
 * `lane` — the document's lane facts and the words the walk's own blocks have left at the
   head: the root slot's word, the next entry's position word and its read, the entry's
-  extent, the log's two words and the decoded length; and, as `defaultLane`, the default
+  extent and the log's two words; and, as `defaultLane`, the default
   arm's own row — the next entry's word and read, the bound's compare, and the byte before
   the entry's end with its three scan-free pivot bits, which every head-switch class's
   chain reads (`JsonStage2WalkDispatchDefaultLane`);
@@ -299,8 +299,13 @@ namespace WalkScope
 /-! ### The continuing level's rows -/
 
 /-- **The standalone string's lane facts**, at the class's own staging.  `A` is the log's
-arena-base word and `Cc` its base word; `outn` is the decoded length the body call writes
-at `%next0 + 20`. -/
+arena-base word and `Cc` its base word.
+
+The decoded length the body call writes at `%next0 + 20` is deliberately **not** a field:
+no block of the walk reads the slot at a head, and the one block that reads it
+(`if.else285.i`, the write-back) reads the callee's answer, which the path derives at the
+call (`strPath9`'s `houtnR`).  The slot's presence is the string body's precondition's own
+conjunct, so a field here would be a carried fact with no reader. -/
 structure HcontStringLane {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State) :
     Type where
   bs : List UInt8
@@ -312,8 +317,6 @@ structure HcontStringLane {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : St
   hreadA : readBytes s.mem (C.stage.z + 48) 8 = some (natToBytes A.toNat 8)
   Cc : BitVec 64
   hreadC : readBytes s.mem (C.stage.z + 56) 8 = some (natToBytes Cc.toNat 8)
-  outn : Nat
-  houtn : readBytes s.mem (G.next0 + 20) 8 = some (wordBytes 8 outn)
   hcur : C.alen ≤ G.ndst0 + (contIx G C).toNat
   hwin : C.alen + (entryPos G (C.k + 1) - (contIx G C).toNat - 1) ≤ G.n
 
@@ -343,10 +346,10 @@ structure HcontStringCalls {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : S
      .int 64 (BitVec.ofNat 64 G.nxp)] s.mem s.next = some r → r.ret = .int 32 y
   hR8 : evalICmp .slt y (BitVec.ofNat 32 1) = 0
 
-/-! ### The lane's five reads, and which of them the tree states
+/-! ### The lane's four reads, and where each comes from
 
-`HcontStringLane` reads five words at the head state.  Four follow from clauses `WalkInv`
-already carries, and the fifth does not:
+`HcontStringLane` reads four words at the head state, and every one of them follows from a
+clause `WalkInv` already carries:
 
 * the **next entry's position word** is the geometry's `entries` table transported to the
   state by the frame's silence over the entry stream and its `k + 1`-th lane
@@ -360,20 +363,30 @@ already carries, and the fifth does not:
 * the **log's capacity word** is `WalkInv.log_acap` read as `dstcap` outright
   (`walkReadBytes_logCap_word`).
 
-The fifth, the **decoded length** at `%outn.i`, is statable as a clause but not produced by
-this module.  The slot is one of the four `alloca` slots `WalkInv.owned` deliberately omits
-— its docstring records that their presence is false at the loop head — so the eight bytes
-at `G.next0 + 20` are named by no clause, and a clause naming them is an invariant edit
-carried through every construction site, not a dispatch row.  Its *value* is the previous
-iteration's body call: `s2StringBody_outn_le` (`JsonStage2Helpers`) turns the accepting
-forms of `stage2StringBody` into `∃ on, readBytes m outn 8 = some (wordBytes 8 on) ∧ on ≤
-len.toNat` at the answered memory, and `strPath9`/`strPath10`
-(`JsonStage2WalkDispatchWitnessString`) transport it across the private slot's write to
-`r.mem`.  What is missing is the carrier: neither `s2StringBodyPre` nor the body's answer
-(`HcontStringCalls.hy`) mentions the slot, so the word produced at the answer has no
-theorem carrying it to the next head where `HcontStringLane.houtn` is read.  So the lane's
-row is one slot's presence at the head and one postcondition at the call, and the other
-four reads are proofs.
+**The decoded length at `%outn.i` is not a fifth read**, and the lane does not state it.
+Two facts decide that, and neither is a weakened proof:
+
+* *No head reads the slot.*  The body's one load of it is `if.else285.i`'s `%32`, the
+  write-back, and the value it carries is the **callee's answer**: `strPath9`
+  (`JsonStage2WalkDispatchWitnessString`) derives the word at `r.mem` from
+  `s2StringBody_outn_le` and the pre's `RegionsApart next 8 outn 8`, and that is what
+  `if.end290.i`'s `phi` receives.  Every head's consumer takes the callee's answer or the
+  arena cursor, never the slot.  The bundle field the lane used to fill was the same
+  carried fact one level out: `HstringFacts` carried the slot's word and no theorem, link or
+  arm in the tree reads it, so it is gone too.
+* *No clause pins the slot, and the layer must not pretend one does.*  `%outn.i` is one of
+  the four `alloca` slots `WalkInv.owned` deliberately omits — its docstring records that
+  their presence is false at the loop head — and the only two writers are `if.end256.i`'s
+  zero (after the head) and the body call it leads to.  The entry run writes the other two
+  slots (`walkEntryMem`'s `walkSeg4PostMem (G.next0 + 8) (G.next0 + 12)`), so at the seeded
+  head the eight bytes at `G.next0 + 20` are the caller's, and a `∀`-over-heads row would
+  assert a fact about the caller's memory that no staging clause carries.
+
+What the class does need is the precondition's own presence of the slot, and that is
+satisfied where the pre is: `s2StringBodyPre` asserts `readBytes mem outn 8 ≠ none` at the
+call's own argument list, `if.end256.i`'s zero store re-establishes it at the call's memory,
+and the bundle (`HstringFacts`) carries no word for it at all.  So the lane carries neither
+the word nor its value, and no head state's memory enters the class's statement.
 -/
 
 /-- **The next entry's position word**, from the entry stream and the frame.  `G.entries`
@@ -905,13 +918,13 @@ def hcontArm_twoEntry_of_payload {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     (heq34 : evalICmp .eq (hlastByte G C) (BitVec.ofNat 8 34) = 1)
     (hsp0 : C.sp = 0) (hp : HcontPayload G) :
     HcontArm (stage2Calls stage2SubCalls) G C s := by
-  obtain ⟨bs, hreadLane, hq, rd, hreadRoot, A, hreadA, Cc, hreadC, outn, houtn, hcur,
-    hwin⟩ := hp.lane.string C s hInv hblock hk hsp0
+  obtain ⟨bs, hreadLane, hq, rd, hreadRoot, A, hreadA, Cc, hreadC, hcur, hwin⟩ :=
+    hp.lane.string C s hInv hblock hk hsp0
   obtain ⟨hpreV, xv, hxv, hbranch, hpreS, y, hy, hR8⟩ :=
     hp.abi.string C s hInv hblock hk hsp0 rd A
   exact .twoEntry
     (hstringFacts_of_staging G C s hInv hk heq34 hreadLane hq hreadRoot hpreV hxv
-      hbranch hcur hreadA hreadC hpreS hwin hy houtn)
+      hbranch hcur hreadA hreadC hpreS hwin hy)
     hsp0 ⟨⟩ hR8
 
 /-- **The standalone string's continuing dispatch, from the payload's rows.** -/

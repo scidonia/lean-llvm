@@ -50,7 +50,6 @@ The document's content is taken, each with what supplies it:
 | `hpreS` | **the string body's call**: its precondition at the argument list the walk stages — the staging's, which the tree does not yet produce |
 | `hwin` | **the window**: `C.alen + ext ≤ G.n` |
 | `y`, `hy` | **the body's answer** |
-| `outn`, `houtn` | **the decoded length**: the eight bytes at `%outn.i` |
 -/
 import LeanLLVM.Refinement.JsonStage2WalkDispatchLaneOfStaging
 import LeanLLVM.Refinement.JsonStage2WalkDispatchSpansOfStaging
@@ -104,9 +103,7 @@ def hstringFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : 
        .int 64 (BitVec.ofNat 64 (entryPos G (C.k + 1) - (contIx G C).toNat - 1)),
        .ptr (G.dst + A.toNat), .ptr (G.next0 + 20), .ptr G.xp, .ptr (G.next0 + 12),
        .int 64 (BitVec.ofNat 64 G.nxp)] s.mem s.next = some r →
-      r.ret = .int 32 y)
-    {outn : Nat}
-    (houtn : readBytes s.mem (G.next0 + 20) 8 = some (wordBytes 8 outn)) :
+      r.ret = .int 32 y) :
     HstringFacts G C s := by
   -- the next entry's position, and the two counts' width
   have hq' : bytesToNat bs = entryPos G (C.k + 1) := hq
@@ -171,8 +168,6 @@ def hstringFacts_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : 
       y := y
       hy := hy
       h7 := hInv.iter.reg7
-      outn := outn
-      houtn := houtn
       hnl := hInv.log_len
       hnc := hInv.log_cap }
 
@@ -214,12 +209,10 @@ def hcontArm_twoEntry_of_staging {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
        .ptr (G.dst + A.toNat), .ptr (G.next0 + 20), .ptr G.xp, .ptr (G.next0 + 12),
        .int 64 (BitVec.ofNat 64 G.nxp)] s.mem s.next = some r →
       r.ret = .int 32 y)
-    {outn : Nat}
-    (houtn : readBytes s.mem (G.next0 + 20) 8 = some (wordBytes 8 outn))
     (hR8 : evalICmp .slt y (BitVec.ofNat 32 1) = 0) :
     HcontArm (stage2Calls stage2SubCalls) G C s :=
   .twoEntry (hstringFacts_of_staging G C s hInv hk heq34 hreadLane hq hreadRoot hpreV
-    hxv hbranch hcur hreadA hreadC hpreS hwin hy houtn) hsp0 {} hR8
+    hxv hbranch hcur hreadA hreadC hpreS hwin hy) hsp0 {} hR8
 
 /-- **The standalone string's dispatch, from the staging.** -/
 theorem walkDispatch_at_twoEntry_of_staging {m0 : Mem} {G : WalkGeom m0}
@@ -259,13 +252,11 @@ theorem walkDispatch_at_twoEntry_of_staging {m0 : Mem} {G : WalkGeom m0}
        .ptr (G.dst + A.toNat), .ptr (G.next0 + 20), .ptr G.xp, .ptr (G.next0 + 12),
        .int 64 (BitVec.ofNat 64 G.nxp)] s.mem s.next = some r →
       r.ret = .int 32 y)
-    {outn : Nat}
-    (houtn : readBytes s.mem (G.next0 + 20) 8 = some (wordBytes 8 outn))
     (hR8 : evalICmp .slt y (BitVec.ofNat 32 1) = 0) :
     WalkDispatchResult (stage2Calls stage2SubCalls) G C s :=
   HcontArm.dispatch hInv hblock hk
     (hcontArm_twoEntry_of_staging G C s hInv hk heq34 hreadLane hq hreadRoot hsp0 hpreV
-      hxv hbranch hcur hreadA hreadC hpreS hwin hy houtn hR8)
+      hxv hbranch hcur hreadA hreadC hpreS hwin hy hR8)
 
 /-! ### The instrument -/
 
