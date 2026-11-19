@@ -1,0 +1,87 @@
+arr-bad-escape.json	invalid	-	default
+arr-bad-literal.json	invalid	-	default
+arr-bad-utf8.json	invalid	-	default
+arr-control.json	invalid	-	default
+arr-esc-trunc-u3.json	invalid	-	default
+arr-exp-empty.json	invalid	-	default
+arr-leading-zero.json	invalid	-	default
+arr-minus.json	invalid	-	default
+arr-trailing-nul.json	invalid	-	default
+arr-trailing.json	invalid	-	default
+arr-unclosed.json	invalid	-	default
+arr-unexpected-byte.json	invalid	-	default
+arr-unexpected-end.json	invalid	-	default
+arr-unterminated-escape.json	invalid	-	default
+arr-unterminated-surrogate.json	invalid	-	default
+arr-unterminated.json	invalid	-	default
+arr-win-escape-64.json	accept	["97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 34"]	default
+arr-win-utf8-invalid-split.json	invalid	-	default
+arr-win-utf8-split.json	accept	["97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 233"]	default
+bom-doc.json	invalid	-	default
+bom-only.json	invalid	-	default
+depth-127.json	accept	[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[#31]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]	default
+depth-128.json	accept	[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[#31]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]	default
+depth-129.json	depthExceeded	-	default
+dup-nested.json	accept	{"97":{"97":#31},"97":#32}	default
+dup-three.json	accept	{"97":#31,"98":#32,"97":#33}	default
+dup-two.json	accept	{"97":#31,"97":#32}	default
+empty-zero.json	invalid	-	default
+esc-trunc-u0.json	invalid	-	default
+esc-trunc-u3.json	invalid	-	default
+lit-bad-case.json	invalid	-	default
+lit-trunc.json	invalid	-	default
+noncharacter-10ffff.json	invalid	-	default
+noncharacter-fdd0.json	invalid	-	default
+noncharacter-fffe.json	invalid	-	default
+noncharacter-raw.json	invalid	-	default
+num-exp-empty.json	invalid	-	default
+num-huge-exp.json	accept	#3165393939393939	default
+num-huge-frac.json	accept	#302e313233343536373839303132333435363738393031323334353637383930313233343536373839303132333435363738393031323334353637383930313233343536373839303132333435363738393031323334353637383930313233343536373839303132333435363738393031323334353637383930313233343536373839303132333435363738393031323334353637383930313233343536373839303132333435363738393031323334353637383930313233343536373839303132333435363738393031323334353637383930313233343536373839303132333435363738393031323334353637383930313233343536373839303132333435363738393031323334353637383930313233343536373839303132333435363738393031323334353637383930	default
+num-huge-int.json	accept	#393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939393939	default
+num-leading-zero.json	invalid	-	default
+num-minus.json	invalid	-	default
+num-plus.json	invalid	-	default
+num-trailing-dot.json	invalid	-	default
+obj-bad-escape.json	invalid	-	default
+obj-expect-comma.json	invalid	-	default
+obj-noncharacter.json	invalid	-	default
+obj-unclosed.json	invalid	-	default
+obj-unpaired-surrogate.json	invalid	-	default
+obj-unterminated-key.json	invalid	-	default
+sep-missing-colon.json	invalid	-	default
+sep-missing-comma.json	invalid	-	default
+str-raw-control.json	invalid	-	default
+str-unterm-body.json	invalid	-	default
+str-unterm-escape.json	invalid	-	default
+str-unterm-quote.json	invalid	-	default
+str-unterm-surrogate.json	invalid	-	default
+str-unterm-u.json	invalid	-	default
+surrogate-double-high.json	invalid	-	default
+surrogate-lone-high.json	invalid	-	default
+surrogate-lone-low.json	invalid	-	default
+surrogate-raw.json	invalid	-	default
+surrogate-reversed.json	invalid	-	default
+trail-array.json	invalid	-	default
+trail-brace.json	invalid	-	default
+trail-nul.json	invalid	-	default
+trail-scalar.json	invalid	-	default
+trail-two.json	invalid	-	default
+trail-ws.json	invalid	-	default
+utf8-ff.json	invalid	-	default
+utf8-lone-cont.json	invalid	-	default
+utf8-outside.json	invalid	-	default
+utf8-overlong.json	invalid	-	default
+utf8-toobig.json	invalid	-	default
+utf8-trunc2.json	invalid	-	default
+utf8-trunc3.json	invalid	-	default
+win-backslash-62.json	accept	"97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 92"	default
+win-esc-trunc.json	invalid	-	default
+win-escape-63.json	accept	"97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 34"	default
+win-escape-64.json	accept	"97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 34"	default
+win-multibyte-end63.json	accept	"97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 233"	default
+win-multibyte-ok.json	accept	"97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 8364"	default
+win-multibyte-split.json	accept	"97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 233"	default
+win-string-close-63.json	accept	"97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97 97"	default
+win-utf8-invalid-split.json	invalid	-	default
+ws-mixed.json	invalid	-	default
+ws-spaces.json	invalid	-	default
