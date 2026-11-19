@@ -37,9 +37,10 @@ byte through `land.lhs.true147`/`NodeBlock`/`LeafBlock*` to `if.then157`;
 `lor.lhs.false180` with `%i.11 = %i.10 + 1`, `%esign.0 = 1` or
 `%i.11 = %i.10 + 2`, `%esign.0 = (%22 != 0x2d)` — the registers `expRun_start`
 consumes — and `nest_nomarker` takes the no-exponent branch to `if.end226`.
-`cleanup223.thread`'s step is stated at both of the run's exits,
-`expMerge_run_inc` composes the back edge's two-step merge into `mergeEntry`, the
-state `JsonStage2NumFastTier1`'s `t1_ifEnd230_denote` names, and the head edge —
+`cleanup223.thread`'s step is stated at both of the run's exits, and the back
+edge's two steps into `mergeEntry`, the state
+`JsonStage2NumFastTier1`'s `t1_ifEnd230_denote` names, are composed by
+`JsonStage2NumFastSeams.expExit_merge_back`; the head edge —
 whose index is short of the length — is the refusal: `ifThen229_step_refuse`
 stores it at `%err` and `cleanup300_step_refuse` returns zero.  The scan's own
 composition is `intScan_run`: from `entry` at a non-empty lexeme whose `int` part
@@ -86,10 +87,10 @@ nine or more digits left takes the other branch, and that branch's loop is the
 eight-digit reader's.
 
 *The exponent run's exit shape* is not decided by any theorem in the tree:
-`expRunExit` names the two exits' registers, not which exit the run took.
-`expMerge_run_inc` needs no index hypothesis, because `if.end216`'s
-`%i.12.lcssa.ph` is `%n` by construction and the test is its reflexivity; the
-head edge's index is the run's own counter, short of the length, and its tail is
+`expRunExit` names the two exits' registers, not which exit the run took.  On the
+back edge `if.end216`'s `%i.12.lcssa.ph` is `%n` by construction and the test is
+its reflexivity; the head edge's index is the run's own counter, short of the
+length, and its tail is
 the refusal (`ifThen229_step_refuse`, `cleanup300_step_refuse`).  A well-formed
 lexeme's exponent digits are maximal by the grammar, so the run's exit is the
 back edge's; that argument is the arm's, not this module's.
@@ -1983,8 +1984,8 @@ theorem cleanup300_step_refuse {calls : Calls} {env : Env} {s : State}
 back-edge exit the index is `%n` by construction (`%i.12.lcssa.ph` selects `%n`
 there), so the test is `n = n` and the merge is taken; the head exit's index is
 the run's own counter and is short of the length, so that edge is the refusal
-above rather than the merge.  `expMerge_run_inc` ends at the merge's entry, which
-is the state `JsonStage2NumFastTier1`'s `t1_ifEnd230_denote` names. -/
+above rather than the merge.  `mergeEntry` is the state
+`JsonStage2NumFastTier1`'s `t1_ifEnd230_denote` names. -/
 
 /-- **The merge's entry.**  The state at `if.end230` from the `if.end226` edge:
 its predecessor, its memory, and the five registers the merge reads.  The
@@ -1997,54 +1998,6 @@ def mergeEntry (mem : Mem) (exp10 idig ip fr fdig : BitVec 64) (e : State) : Pro
   lookupName e.env "%ip.5" = some (.int 64 ip) ∧
   lookupName e.env "%fr.5" = some (.int 64 fr) ∧
   lookupName e.env "%fdig.4" = some (.int 64 fdig)
-
-/-- **The merge, from the exponent run's back-edge exit.**  `%i.12.lcssa.ph` is
-`%n` there, so the index test is its own reflexivity and the merge is taken. -/
-theorem expMerge_run_inc {calls : Calls} {env : Env} {s : State}
-    {exp10 idig ip fr fdig : BitVec 64} {esign : BitVec 1} {n : Nat}
-    (hpc : s.pc = "cleanup223.thread")
-    (hpre : s.pre = some "if.end216")
-    (he : lookupName env "%exp10.1" = some (.int 64 exp10))
-    (hn : lookupName env "%n" = some (.int 64 (BitVec.ofNat 64 n)))
-    (hesign : lookupName env "%esign.0" = some (.int 1 esign))
-    (hid : lookupName env "%idig.4" = some (.int 64 idig))
-    (hip : lookupName env "%ip.5" = some (.int 64 ip))
-    (hfr : lookupName env "%fr.5" = some (.int 64 fr))
-    (hfd : lookupName env "%fdig.4" = some (.int 64 fdig)) :
-    ∃ e : State,
-      mergeEntry s.mem (if esign = 1 then exp10 else 0 - exp10) idig ip fr fdig e ∧
-      ∀ k, runFuel calls (2 + k) numFastBody (stateAt env s) = runFuel calls k numFastBody e := by
-  have h1 : step calls numFastBody (stateAt env s) =
-      .jump (stateAt (cleanup223ThreadEnv env exp10 (BitVec.ofNat 64 n) esign)
-        { s with pc := "if.end226", pre := some "cleanup223.thread" }) :=
-    cleanup223Thread_step_inc (calls := calls) hpc hpre he hn hesign
-  have h2 : step calls numFastBody
-      (stateAt (cleanup223ThreadEnv env exp10 (BitVec.ofNat 64 n) esign)
-        { s with pc := "if.end226", pre := some "cleanup223.thread" }) =
-      .jump (stateAt
-        (ifEnd226Env (cleanup223ThreadEnv env exp10 (BitVec.ofNat 64 n) esign)
-          (if esign = 1 then exp10 else 0 - exp10) (BitVec.ofNat 64 n) (BitVec.ofNat 64 n))
-        { s with pc := "if.end230", pre := some "if.end226" }) :=
-    ifEnd226_step_merge (calls := calls) rfl
-      (ifEnd226_denote_thread (calls := calls) rfl
-        (by simp only [cleanup223ThreadEnv, lookupName_cons_self])
-        (by block_lk)
-        (by block_lk))
-      (NumFastStarts.eq_iff_one _ _ |>.mpr rfl)
-  refine ⟨stateAt
-      (ifEnd226Env (cleanup223ThreadEnv env exp10 (BitVec.ofNat 64 n) esign)
-        (if esign = 1 then exp10 else 0 - exp10) (BitVec.ofNat 64 n) (BitVec.ofNat 64 n))
-      { s with pc := "if.end230", pre := some "if.end226" },
-    ⟨rfl, rfl, rfl, ?_, ?_, ?_, ?_, ?_⟩, ?_⟩
-  · simp only [stateAt, ifEnd226Env, cleanup223ThreadEnv]
-    block_lk
-  · simp only [stateAt, ifEnd226Env, cleanup223ThreadEnv]; block_lk
-  · simp only [stateAt, ifEnd226Env, cleanup223ThreadEnv]; block_lk
-  · simp only [stateAt, ifEnd226Env, cleanup223ThreadEnv]; block_lk
-  · simp only [stateAt, ifEnd226Env, cleanup223ThreadEnv]; block_lk
-  · intro k
-    rw [show 2 + k = 1 + (1 + k) from by omega,
-      runFuel_jump_prefix h1, runFuel_jump_prefix h2]
 
 /-! ### The accumulator's value, at the model's fold
 
@@ -2281,10 +2234,6 @@ the tie's arithmetic at `[propext]`. -/
 /-- info: 'LeanLLVM.Refinement.NumFastScanRun.cleanup223Thread_denote_head' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms cleanup223Thread_denote_head
-
-/-- info: 'LeanLLVM.Refinement.NumFastScanRun.expMerge_run_inc' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms expMerge_run_inc
 
 /-- info: 'LeanLLVM.Refinement.NumFastScanRun.intScan_run' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

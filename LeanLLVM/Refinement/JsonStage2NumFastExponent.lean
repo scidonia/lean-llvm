@@ -124,10 +124,13 @@ one composition from the marker's block. -/
 
 /-- **The exponent route's carried chain.**  From the marker's block at `%i.10`,
 with the byte there an `'e'` or an `'E'`, the sign byte after it — a sign or the
-exponent's first digit — every byte after that a digit, the four cells
-`if.end230`'s `phi`s read carried at the marker's start, and the caller's kept
-registers, sign and staging memory, the nest's steps and the exponent run reach
-`cleanup223.thread` within `10 + (n - i11 + 1) * 4` control steps.  At the exit
+exponent's first digit, and a sign carries the digit that follows it — every byte
+after that a digit, the four cells `if.end230`'s `phi`s read carried at the
+marker's start, and the caller's kept registers, sign and staging memory, the
+nest's steps and the exponent run reach `cleanup223.thread` within
+`10 + (n - i11 + 1) * 4` control steps.  The marker's bound `i10 + 2 ≤ n` admits
+a one-digit unsigned exponent; a sign is followed by a digit, so the signed shape
+reaches the run and the sign-only exponent is outside the domain.  At the exit
 the chain hands the run's exit word, the four cells by value, the stop word, the
 caller's kept cells and sign, the same memory, and — on the back edge — the
 accumulator's fold: the cell is `BitVec.ofNat 64` of the saturating fold of the
@@ -146,11 +149,11 @@ theorem nest_expRun_run_carried {calls : Calls} {e : State} {a n i10 : Nat}
     (hread : readBytes e.mem a n = some bs)
     (hmarker : readByte e.mem (a + i10) = some b1)
     (hmarkerAt : b1 = 0x65 ∨ b1 = 0x45)
-    (hin : i10 + 3 ≤ n)
+    (hin : i10 + 2 ≤ n)
     (hread2 : readByte e.mem (a + (i10 + 1)) = some b2)
     (hdigits : ∀ k, i10 + 1 ≤ k → k < n →
-      (k = i10 + 1 ∧ (bs.getD k 0 = 0x2b ∨ bs.getD k 0 = 0x2d)) ∨
-        IsDigitB (bs.getD k 0) = true)
+      (k = i10 + 1 ∧ (bs.getD k 0 = 0x2b ∨ bs.getD k 0 = 0x2d) ∧
+        IsDigitB (bs.getD (k + 1) 0) = true) ∨ IsDigitB (bs.getD k 0) = true)
     (hcarry : ExpRunCells idig5 ip5 fr5 fd5 (stateAt e.env e))
     (hcarried : NumFastCarried env0 sign (stateAt e.env e)) :
     ∃ (i11 : Nat) (esign : BitVec 1) (e' : State) (j : Nat),
@@ -193,6 +196,7 @@ theorem nest_expRun_run_carried {calls : Calls} {e : State} {a n i10 : Nat}
       block_lk
     by_cases hsign : b2 = 0x2b ∨ b2 = 0x2d
     · -- a sign follows the marker: `%i.11 = %i.10 + 2`
+      obtain ⟨hjlt, hdigB⟩ := signDigit hdigits hread hread2 hsign hin
       obtain ⟨e', hpc', hmem', hp2, hn2, hi11, hes, hcell', hcar', hrun6⟩ :=
         NumFastScanRun.nestFrom157_sign (calls := calls) (env := env1)
           (s := { e with pc := "if.then157", pre := some "LeafBlock1" })
@@ -203,14 +207,9 @@ theorem nest_expRun_run_carried {calls : Calls} {e : State} {a n i10 : Nat}
       have hcarry' : expRunCarried e'.env := by
         obtain ⟨h1, h2, h3, h4⟩ := hcE
         exact ⟨idig5, ip5, fr5, fd5, h1, h2, h3, h4⟩
-      have hjlt : i10 + 2 < n := by omega
       have hd : readByte e'.mem (a + (i10 + 2)) = some (bs.getD (i10 + 2) 0) := by
         rw [hmemE]
         exact readByte_of_readBytes hread hjlt
-      have hdigB : IsDigitB (bs.getD (i10 + 2) 0) = true := by
-        rcases hdigits (i10 + 2) (by omega) hjlt with ⟨hk, _⟩ | hd
-        · omega
-        · exact hd
       obtain ⟨e'', hinv, hcellsT, hcarriedT, hrun1⟩ :=
         NumFastStarts.expRun_start (calls := calls) (env := e'.env) (s := e')
           hpc' hp2 hn2 (by rw [hmemE]; exact hread) hi11 ⟨_, hes⟩ hcarry' hd hdigB
@@ -254,7 +253,7 @@ theorem nest_expRun_run_carried {calls : Calls} {e : State} {a n i10 : Nat}
         have hnosign : b2 ≠ 0x2b ∧ b2 ≠ 0x2d :=
           ⟨fun h => hsign (Or.inl h), fun h => hsign (Or.inr h)⟩
         have hb2 : bs.getD (i10 + 1) 0 = b2 := getD_of_readBytes hread hjlt hread2
-        rcases hdigits (i10 + 1) (by omega) hjlt with ⟨_, hs⟩ | hd
+        rcases hdigits (i10 + 1) (by omega) hjlt with ⟨_, hs, _⟩ | hd
         · rcases hs with h | h
           · exact absurd (hb2 ▸ h) hnosign.1
           · exact absurd (hb2 ▸ h) hnosign.2
@@ -308,7 +307,8 @@ theorem nest_expRun_run_carried {calls : Calls} {e : State} {a n i10 : Nat}
         NumFastScanRun.t147Env]
       block_lk
     by_cases hsign : b2 = 0x2b ∨ b2 = 0x2d
-    · obtain ⟨e', hpc', hmem', hp2, hn2, hi11, hes, hcell', hcar', hrun6⟩ :=
+    · obtain ⟨hjlt, hdigB⟩ := signDigit hdigits hread hread2 hsign hin
+      obtain ⟨e', hpc', hmem', hp2, hn2, hi11, hes, hcell', hcar', hrun6⟩ :=
         NumFastScanRun.nestFrom157_sign (calls := calls) (env := env1)
           (s := { e with pc := "if.then157", pre := some "LeafBlock" })
           rfl hp1 hi1 hn1 hnlt (by omega) hread2 hsign
@@ -318,14 +318,9 @@ theorem nest_expRun_run_carried {calls : Calls} {e : State} {a n i10 : Nat}
       have hcarry' : expRunCarried e'.env := by
         obtain ⟨h1, h2, h3, h4⟩ := hcE
         exact ⟨idig5, ip5, fr5, fd5, h1, h2, h3, h4⟩
-      have hjlt : i10 + 2 < n := by omega
       have hd : readByte e'.mem (a + (i10 + 2)) = some (bs.getD (i10 + 2) 0) := by
         rw [hmemE]
         exact readByte_of_readBytes hread hjlt
-      have hdigB : IsDigitB (bs.getD (i10 + 2) 0) = true := by
-        rcases hdigits (i10 + 2) (by omega) hjlt with ⟨hk, _⟩ | hd
-        · omega
-        · exact hd
       obtain ⟨e'', hinv, hcellsT, hcarriedT, hrun1⟩ :=
         NumFastStarts.expRun_start (calls := calls) (env := e'.env) (s := e')
           hpc' hp2 hn2 (by rw [hmemE]; exact hread) hi11 ⟨_, hes⟩ hcarry' hd hdigB
@@ -367,7 +362,7 @@ theorem nest_expRun_run_carried {calls : Calls} {e : State} {a n i10 : Nat}
         have hnosign : b2 ≠ 0x2b ∧ b2 ≠ 0x2d :=
           ⟨fun h => hsign (Or.inl h), fun h => hsign (Or.inr h)⟩
         have hb2 : bs.getD (i10 + 1) 0 = b2 := getD_of_readBytes hread hjlt hread2
-        rcases hdigits (i10 + 1) (by omega) hjlt with ⟨_, hs⟩ | hd
+        rcases hdigits (i10 + 1) (by omega) hjlt with ⟨_, hs, _⟩ | hd
         · rcases hs with h | h
           · exact absurd (hb2 ▸ h) hnosign.1
           · exact absurd (hb2 ▸ h) hnosign.2
@@ -447,11 +442,11 @@ theorem expScan_t1_arm {calls : Calls} {e : State} {a n i10 i11 : Nat}
     (hread : readBytes e.mem a n = some bs)
     (hmarker : readByte e.mem (a + i10) = some b1)
     (hmarkerAt : b1 = 0x65 ∨ b1 = 0x45)
-    (hin : i10 + 3 ≤ n)
+    (hin : i10 + 2 ≤ n)
     (hread2 : readByte e.mem (a + (i10 + 1)) = some b2)
     (hdigits : ∀ k, i10 + 1 ≤ k → k < n →
-      (k = i10 + 1 ∧ (bs.getD k 0 = 0x2b ∨ bs.getD k 0 = 0x2d)) ∨
-        IsDigitB (bs.getD k 0) = true)
+      (k = i10 + 1 ∧ (bs.getD k 0 = 0x2b ∨ bs.getD k 0 = 0x2d) ∧
+        IsDigitB (bs.getD (k + 1) 0) = true) ∨ IsDigitB (bs.getD k 0) = true)
     (hi11 : ((i11 = i10 + 2) ∧ (b2 = 0x2b ∨ b2 = 0x2d)) ∨
       ((i11 = i10 + 1) ∧ ¬ (b2 = 0x2b ∨ b2 = 0x2d)))
     (hcarry : ExpRunCells idig5 ip5 fr5 fd5 (stateAt e.env e))
@@ -511,7 +506,7 @@ theorem expScan_t1_arm {calls : Calls} {e : State} {a n i10 i11 : Nat}
       exact getD_of_readBytes hread hi1n hr
     have hi11lb : i10 + 1 ≤ i11 := by
       rcases hshape1 with ⟨h2, _⟩ | ⟨h1', _⟩ <;> omega
-    rcases hdigits i1 (by omega) hi1n with ⟨hk, hs⟩ | hd
+    rcases hdigits i1 (by omega) hi1n with ⟨hk, hs, _⟩ | hd
     · subst hk
       rcases hshape1 with ⟨h2, _⟩ | ⟨_, hns⟩
       · omega

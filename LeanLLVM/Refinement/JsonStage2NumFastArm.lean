@@ -204,8 +204,8 @@ reach `lor.lhs.false180` with `%i.11` and `%esign.0` — the registers
 `if.end226`.  `intScan_run` is the integer dispatch and its run from `entry`, and
 `fracScan_run` is the fraction dispatch and its run from `land.lhs.true71`; both
 are `runFuel` prefixes with the fuel as a term of the arguments.  Item 1's merge
-  is `cleanup223.thread`'s two edges, `if.end226`'s four, and the back edge's
-`expMerge_run_inc` into `mergeEntry`; the head edge is the refusal rather than a
+  is `cleanup223.thread`'s two edges and `if.end226`'s four, recomposed by
+`expExit_merge_back` into `mergeEntry`; the head edge is the refusal rather than a
 merge, with `ifThen229`'s error store and `cleanup300`'s zero return.  `if.end230`'s bound edge
 is `ifEnd230_denote_end62`/`ifEnd230_step_end62`.  Of item 1's mantissa, the
 word-level ties are `ip_word_digitsNat`/`fr_word_digitsNat`, fed by
@@ -277,8 +277,8 @@ The exponent's own tie is closed at the merge: `JsonStage2NumFastSeams`
 `expSelect_tie` reads the block's select `if %esign.0 = 1 then %exp10 else
 0 - %exp10` as `BitVec.ofInt 64 (expVal d)`, and the back edge's
 `expExit_merge_back` carries it through `cleanup223.thread`/`if.end226` into
-`mergeEntry`'s `%exp10.4`, with the exit's accumulator reading (`expAcc` of the
-exponent's digits) and the sign's polarity as the seam's hypotheses.  The head
+`mergeEntry`'s `%exp10.4`, with the exit's accumulator reading supplied by
+`expRun_acc_tie` and the sign's polarity as the remaining model hypothesis.  The head
 edge is `expExit_refuse_head`, which returns zero with the stop index at `%err`.
 
 What the arm needs beyond that is the run itself.  The copy's four-way unrolled
@@ -426,10 +426,12 @@ handoff into it (`t3_exit_handoff`), and the ladder's two loops at the emitted
 rows (`t3MulLoop_run_t3Rows`, `t3DivLoop_run_t3Rows`) with the join at the
 invariant level (`t3_ladder_run`).  What the arm still owes there is the region's
 blocks before the peeled nest — the inlined second reader's chain — and the join's
-state-level case.  `intScan_t1_arm_at_entry` and
-`NumFastFraction.fracScan_t1_arm_of_dispatch` are therefore the arm's conclusion
-on the tier-1 window's integer and fraction shapes, not `NumFastBodyArm` — and
-the kernel's bound is not the stopper (it is met at the body's own word).
+state-level case.  `intScan_t1_arm_at_entry`,
+`NumFastFraction.fracScan_t1_arm_of_dispatch` and
+`JsonStage2NumFastExponent.expScan_t1_arm` are therefore the arm's conclusions
+on the tier-1 window's integer, fraction and exponent shapes, not
+`NumFastBodyArm` — and the kernel's bound is not the stopper (it is met at the
+body's own word).
 
 **The kernel's site after the tie.**  `%add244` and `%sub231` are now read as the
 model's `(d.mantissa, eff d)` at `if.end268`:

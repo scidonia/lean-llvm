@@ -376,6 +376,36 @@ theorem getD_of_readBytes {m : Mem} {p n k : Nat} {bs : List UInt8} {b : UInt8}
   have hsome : readByte m (p + k) = some (bs.getD k 0) := readByte_of_readBytes h hk
   exact Option.some.inj (hsome.symm.trans hb)
 
+/-- **A sign is followed by a digit inside the lexeme.**  The composed exponent
+statements take the marker's bound `i10 + 2 ≤ n`; the signed shape needs the
+byte after the sign, which the restated digit hypothesis supplies: a sign at
+`i10 + 1` carries the digit at `i10 + 2`, and a digit is never `getD`'s default
+`0`, so that index is inside the lexeme `bs` of length `n`.  The no-sign shape
+uses the digit at `i10 + 1` instead and needs no such step. -/
+theorem signDigit {mem : Mem} {a n i10 : Nat} {bs : List UInt8} {b2 : UInt8}
+    (hdigits : ∀ k, i10 + 1 ≤ k → k < n →
+      (k = i10 + 1 ∧ (bs.getD k 0 = 0x2b ∨ bs.getD k 0 = 0x2d) ∧
+        IsDigitB (bs.getD (k + 1) 0) = true) ∨ IsDigitB (bs.getD k 0) = true)
+    (hread : readBytes mem a n = some bs)
+    (hread2 : readByte mem (a + (i10 + 1)) = some b2)
+    (hsign : b2 = 0x2b ∨ b2 = 0x2d) (hin : i10 + 2 ≤ n) :
+    i10 + 2 < n ∧ IsDigitB (bs.getD (i10 + 2) 0) = true := by
+  have hblen : bs.length = n := JsonEntrySteps.readBytes_length mem a n hread
+  have hb2 : bs.getD (i10 + 1) 0 = b2 := getD_of_readBytes hread (by omega) hread2
+  have hd1 := hdigits (i10 + 1) (by omega) (by omega)
+  have hdig2 : IsDigitB (bs.getD (i10 + 2) 0) = true := by
+    rcases hd1 with ⟨_, _, hd⟩ | hd
+    · exact hd
+    · rw [hb2] at hd
+      rcases hsign with h | h <;> (rw [h] at hd; exact absurd hd (by decide))
+  refine ⟨?_, hdig2⟩
+  by_contra hle
+  have hzero : bs.getD (i10 + 2) 0 = 0 := by
+    rw [List.getD_eq_getElem?_getD, List.getElem?_eq_none (by omega)]
+    rfl
+  rw [hzero] at hdig2
+  exact absurd hdig2 (by decide)
+
 /-! ### The integer run: `land.lhs.true41`
 
 The head's three `phi`s, its byte load and its test; the exit is `if.end68` at

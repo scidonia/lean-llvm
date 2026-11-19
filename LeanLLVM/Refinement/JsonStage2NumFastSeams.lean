@@ -2985,7 +2985,11 @@ theorem fracScan_end230Cells {calls : Calls} {mem : Mem} {e : State} {a n i1 : N
 at `%i.10` an `'e'` or an `'E'`, the nest reads the sign byte at `%i.10 + 1` and
 reaches `lor.lhs.false180` — the exponent run's start — within nine control
 steps, with `%i.11` the exponent's first index and `%esign.0` the sign the merge
-selects on.  The two shapes are the marker's leaf and the sign's presence. -/
+selects on.  The two shapes are the marker's leaf and the sign's presence.  The
+marker's bound is `i10 + 2 ≤ n`, which admits a one-digit unsigned exponent; the
+signed shape reaches the run only when the lexeme continues past the sign, so it
+takes the caller's `hsignlt` — the digit after a sign is what its caller reads
+from the lexeme, and a sign-only exponent is outside the domain. -/
 theorem nest_marker_start {e : State} {a n i10 : Nat} {b1 b2 : UInt8}
     (hpc : e.pc = "land.lhs.true147")
     (hp : lookupName e.env "%p" = some (.ptr a))
@@ -2994,8 +2998,9 @@ theorem nest_marker_start {e : State} {a n i10 : Nat} {b1 b2 : UInt8}
     (hnlt : n < 2 ^ 63)
     (hread : readByte e.mem (a + i10) = some b1)
     (hmarker : b1 = 0x65 ∨ b1 = 0x45)
-    (hin : i10 + 3 ≤ n)
-    (hread2 : readByte e.mem (a + (i10 + 1)) = some b2) :
+    (hin : i10 + 2 ≤ n)
+    (hread2 : readByte e.mem (a + (i10 + 1)) = some b2)
+    (hsignlt : (b2 = 0x2b ∨ b2 = 0x2d) → i10 + 3 ≤ n) :
     ∃ (i11 : Nat) (esign : BitVec 1) (e' : State) (j : Nat), j ≤ 9 ∧
       e'.pc = "lor.lhs.false180" ∧ e'.mem = e.mem ∧
       lookupName e'.env "%p" = some (.ptr a) ∧
@@ -3030,7 +3035,7 @@ theorem nest_marker_start {e : State} {a n i10 : Nat} {b1 b2 : UInt8}
       obtain ⟨e', hpc', hmem', hp2, hn2, hi11, hes, _hc, _hcar, hrun6⟩ :=
         NumFastScanRun.nestFrom157_sign (calls := calls) (env := env1)
           (s := { e with pc := "if.then157", pre := some "LeafBlock1" })
-          rfl hp' hi' hn' hnlt (by omega) hread2 hsign
+          rfl hp' hi' hn' hnlt (hsignlt hsign) hread2 hsign
       refine ⟨i10 + 2, _, e', 9, by omega, hpc', hmem', hp2, hn2, hi11, hes, Or.inr rfl, ?_⟩
       intro k
       rw [show 9 + k = 3 + (6 + k) from by omega]
@@ -3068,7 +3073,7 @@ theorem nest_marker_start {e : State} {a n i10 : Nat} {b1 b2 : UInt8}
     · obtain ⟨e', hpc', hmem', hp2, hn2, hi11, hes, _hc, _hcar, hrun6⟩ :=
         NumFastScanRun.nestFrom157_sign (calls := calls) (env := env1)
           (s := { e with pc := "if.then157", pre := some "LeafBlock" })
-          rfl hp' hi' hn' hnlt (by omega) hread2 hsign
+          rfl hp' hi' hn' hnlt (hsignlt hsign) hread2 hsign
       refine ⟨i10 + 2, _, e', 9, by omega, hpc', hmem', hp2, hn2, hi11, hes, Or.inr rfl, ?_⟩
       intro k
       rw [show 9 + k = 3 + (6 + k) from by omega]
@@ -3420,6 +3425,8 @@ steps are at `stage2NumFastCalls`, whose reader answer is the model's. -/
 #print axioms NumFastSeams.land71_fracScan
 #print axioms NumFastSeams.fracExit_nest
 #print axioms NumFastSeams.fracScan_end230
+/-- info: 'LeanLLVM.Refinement.NumFastSeams.nest_marker_start' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
 #print axioms NumFastSeams.nest_marker_start
 /-- info: 'LeanLLVM.Refinement.NumFastSeams.expExit_merge_back' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
