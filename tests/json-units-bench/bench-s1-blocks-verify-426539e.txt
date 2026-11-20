@@ -1,0 +1,111 @@
+# Verification record: contracted block unit, v2 fused body vs v1 probe composite
+# date: 2026-11-20 (UTC)
+# tree: main @ 426539e3ed27392cf0178d6d7a25ece347f35903; worktree clean before the run
+# host: builder-gate-01a1dc59, Linux 6.18.63 x86_64, AMD EPYC 7B12, 8 vCPU online, pinned to cpu0
+# settings: clang 21.1.8 from the dev-shell wrapper; -O3 -march=x86-64-v3 -mpclmul -std=gnu11 -falign-loops=64 -falign-functions=64
+# aggregation: one ratio line per (document, arm); the value is median(v2 11-round totals) / median(v1 11-round totals), each round a 41-repetition total; per-round ratios are not emitted
+# repeat: a second invocation on the same host read syn-utf8-64k arm0=0.909379, arm4=0.910974 (gated no-list range across the two invocations: 0.9094-0.9496)
+# ---- raw transcript begins ----
+command: nix develop -c bash tests/json-units-bench/bench-s1-blocks.sh
+compiler: clang (clang version 21.1.8)
+unit flags: -O3 -march=x86-64-v3 -mpclmul -std=gnu11 -falign-loops=64 -falign-functions=64
+v1 baseline: tests/json-units-bench/s1_blocks_v1.c (kernel/json/s1_blocks.c at 64c3efe)
+v2 subject: kernel/json/s1_blocks.c (worktree)
+v2 sha256: f7405dbaaacedce58c75562c7f2a5271f99223ceca5a8e1229e84e5980c34880
+v1 sha256: 40a29a6bb69154c365019ae74fc122baece7f47f889ac2c62f3739822f051a7f
+host: Linux 6.18.63 x86_64
+cpu: AMD EPYC 7B12
+cpus online: 8; pinned to: 0
+governor: unknown
+load average at start: 0.86 1.01 1.77
+rounds: 11 reps: 41 seed: 0x243F6A8885A308D3
+
+corpus:
+  route-s1-64k.json             65536 41f918853d55dad0e05d3ec03682e037925759031632f045a755db5a5173535c
+  route-u8-64k.json             65536 d14a6a6842610aaaf2bdd13a292730f156cf5c6c5724eddae93effa9b697f18c
+  syn-dense-4m.json           4194304 243e8f36f14e1acb5694d8c873c18f46a86a073c768944abaa94cfb57883accd
+  syn-dense-64k.json            65536 3d9e0237ec66adb2d77848a24f1998fa4b56b4dbe77a11431b02176fcd162995
+  syn-strings-4m.json         4194304 3ce71d559eef1d11e83272b999fe944f49cb5bef656b5ec863044ed8f1b5cd27
+  syn-strings-64k.json          65536 bd007090d7a5ab09a1fc69c0b96879f101dbf8b3f13a300d7d3e46127d26fb12
+  syn-utf8-4m.json            4194304 2091fc28bf071e8a7311f43754d8bb82cb2ddef54360be8570c46b7a94d298f2
+  syn-utf8-64k.json             65536 f95f4aeaac083d5d97ff98f9ad6aa09e4ed8c905d89e1bf3a3177179533400a4
+
+instrument bench=s1-blocks rounds=11 reps=41
+doc name=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-64k.json bytes=65536 blocks=1024
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-64k.json arm=0 actor=v1 ns=426650 ns_per_byte=0.158784 cycles_per_byte=0.1588 checksum=0x0
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-64k.json arm=0 actor=v2 ns=405150 ns_per_byte=0.150783 cycles_per_byte=0.1508 checksum=0x0
+ratio doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-64k.json arm=0 v2_over_v1=0.949607
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-64k.json arm=2 actor=v1 ns=637330 ns_per_byte=0.237192 cycles_per_byte=0.2372 checksum=0x0
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-64k.json arm=2 actor=v2 ns=609630 ns_per_byte=0.226883 cycles_per_byte=0.2269 checksum=0x0
+ratio doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-64k.json arm=2 v2_over_v1=0.956537
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-64k.json arm=4 actor=v1 ns=429500 ns_per_byte=0.159845 cycles_per_byte=0.1598 checksum=0x0
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-64k.json arm=4 actor=v2 ns=394300 ns_per_byte=0.146745 cycles_per_byte=0.1467 checksum=0x0
+ratio doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-64k.json arm=4 v2_over_v1=0.918044
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-64k.json arm=6 actor=v1 ns=629110 ns_per_byte=0.234133 cycles_per_byte=0.2341 checksum=0x0
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-64k.json arm=6 actor=v2 ns=610170 ns_per_byte=0.227084 cycles_per_byte=0.2271 checksum=0x0
+ratio doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-64k.json arm=6 v2_over_v1=0.969894
+doc name=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-4m.json bytes=4194304 blocks=65536
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-4m.json arm=0 actor=v1 ns=27846000 ns_per_byte=0.161927 cycles_per_byte=0.1619 checksum=0x0
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-4m.json arm=0 actor=v2 ns=25687720 ns_per_byte=0.149376 cycles_per_byte=0.1494 checksum=0x0
+ratio doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-4m.json arm=0 v2_over_v1=0.922492
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-4m.json arm=2 actor=v1 ns=41035730 ns_per_byte=0.238626 cycles_per_byte=0.2386 checksum=0x0
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-4m.json arm=2 actor=v2 ns=39111110 ns_per_byte=0.227435 cycles_per_byte=0.2274 checksum=0x0
+ratio doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-4m.json arm=2 v2_over_v1=0.953099
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-4m.json arm=4 actor=v1 ns=27582241 ns_per_byte=0.160393 cycles_per_byte=0.1604 checksum=0x0
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-4m.json arm=4 actor=v2 ns=25691060 ns_per_byte=0.149396 cycles_per_byte=0.1494 checksum=0x0
+ratio doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-4m.json arm=4 v2_over_v1=0.931435
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-4m.json arm=6 actor=v1 ns=40792990 ns_per_byte=0.237215 cycles_per_byte=0.2372 checksum=0x0
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-4m.json arm=6 actor=v2 ns=39105531 ns_per_byte=0.227402 cycles_per_byte=0.2274 checksum=0x0
+ratio doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-4m.json arm=6 v2_over_v1=0.958634
+doc name=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/route-u8-64k.json bytes=65536 blocks=1024
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/route-u8-64k.json arm=0 actor=v1 ns=433200 ns_per_byte=0.161222 cycles_per_byte=0.1612 checksum=0x0
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/route-u8-64k.json arm=0 actor=v2 ns=402160 ns_per_byte=0.149670 cycles_per_byte=0.1497 checksum=0x0
+ratio doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/route-u8-64k.json arm=0 v2_over_v1=0.928347
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/route-u8-64k.json arm=2 actor=v1 ns=638330 ns_per_byte=0.237564 cycles_per_byte=0.2376 checksum=0x0
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/route-u8-64k.json arm=2 actor=v2 ns=609070 ns_per_byte=0.226675 cycles_per_byte=0.2267 checksum=0x0
+ratio doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/route-u8-64k.json arm=2 v2_over_v1=0.954162
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/route-u8-64k.json arm=4 actor=v1 ns=425510 ns_per_byte=0.158360 cycles_per_byte=0.1584 checksum=0x0
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/route-u8-64k.json arm=4 actor=v2 ns=403450 ns_per_byte=0.150150 cycles_per_byte=0.1502 checksum=0x0
+ratio doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/route-u8-64k.json arm=4 v2_over_v1=0.948156
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/route-u8-64k.json arm=6 actor=v1 ns=630260 ns_per_byte=0.234561 cycles_per_byte=0.2346 checksum=0x0
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/route-u8-64k.json arm=6 actor=v2 ns=612180 ns_per_byte=0.227832 cycles_per_byte=0.2278 checksum=0x0
+ratio doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/route-u8-64k.json arm=6 v2_over_v1=0.971313
+doc name=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-dense-64k.json bytes=65536 blocks=1024
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-dense-64k.json arm=0 actor=v1 ns=293220 ns_per_byte=0.109126 cycles_per_byte=0.1091 checksum=0x0
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-dense-64k.json arm=0 actor=v2 ns=287080 ns_per_byte=0.106841 cycles_per_byte=0.1068 checksum=0x0
+ratio doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-dense-64k.json arm=0 v2_over_v1=0.979060
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-dense-64k.json arm=2 actor=v1 ns=500940 ns_per_byte=0.186433 cycles_per_byte=0.1864 checksum=0x0
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-dense-64k.json arm=2 actor=v2 ns=477640 ns_per_byte=0.177761 cycles_per_byte=0.1778 checksum=0x0
+ratio doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-dense-64k.json arm=2 v2_over_v1=0.953487
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-dense-64k.json arm=4 actor=v1 ns=294200 ns_per_byte=0.109491 cycles_per_byte=0.1095 checksum=0x0
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-dense-64k.json arm=4 actor=v2 ns=287240 ns_per_byte=0.106901 cycles_per_byte=0.1069 checksum=0x0
+ratio doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-dense-64k.json arm=4 v2_over_v1=0.976343
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-dense-64k.json arm=6 actor=v1 ns=496300 ns_per_byte=0.184706 cycles_per_byte=0.1847 checksum=0x0
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-dense-64k.json arm=6 actor=v2 ns=482230 ns_per_byte=0.179469 cycles_per_byte=0.1795 checksum=0x0
+ratio doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-dense-64k.json arm=6 v2_over_v1=0.971650
+doc name=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-strings-64k.json bytes=65536 blocks=1024
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-strings-64k.json arm=0 actor=v1 ns=293930 ns_per_byte=0.109391 cycles_per_byte=0.1094 checksum=0x0
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-strings-64k.json arm=0 actor=v2 ns=287240 ns_per_byte=0.106901 cycles_per_byte=0.1069 checksum=0x0
+ratio doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-strings-64k.json arm=0 v2_over_v1=0.977239
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-strings-64k.json arm=2 actor=v1 ns=681230 ns_per_byte=0.253530 cycles_per_byte=0.2535 checksum=0x0
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-strings-64k.json arm=2 actor=v2 ns=657000 ns_per_byte=0.244513 cycles_per_byte=0.2445 checksum=0x0
+ratio doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-strings-64k.json arm=2 v2_over_v1=0.964432
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-strings-64k.json arm=4 actor=v1 ns=294890 ns_per_byte=0.109748 cycles_per_byte=0.1097 checksum=0x0
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-strings-64k.json arm=4 actor=v2 ns=287020 ns_per_byte=0.106819 cycles_per_byte=0.1068 checksum=0x0
+ratio doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-strings-64k.json arm=4 v2_over_v1=0.973312
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-strings-64k.json arm=6 actor=v1 ns=683230 ns_per_byte=0.254275 cycles_per_byte=0.2543 checksum=0x0
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-strings-64k.json arm=6 actor=v2 ns=657750 ns_per_byte=0.244792 cycles_per_byte=0.2448 checksum=0x0
+ratio doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/syn-strings-64k.json arm=6 v2_over_v1=0.962707
+doc name=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/route-s1-64k.json bytes=65536 blocks=1024
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/route-s1-64k.json arm=0 actor=v1 ns=296529 ns_per_byte=0.110358 cycles_per_byte=0.1104 checksum=0x0
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/route-s1-64k.json arm=0 actor=v2 ns=289570 ns_per_byte=0.107768 cycles_per_byte=0.1078 checksum=0x0
+ratio doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/route-s1-64k.json arm=0 v2_over_v1=0.976532
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/route-s1-64k.json arm=2 actor=v1 ns=606150 ns_per_byte=0.225588 cycles_per_byte=0.2256 checksum=0x0
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/route-s1-64k.json arm=2 actor=v2 ns=575151 ns_per_byte=0.214051 cycles_per_byte=0.2141 checksum=0x0
+ratio doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/route-s1-64k.json arm=2 v2_over_v1=0.948859
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/route-s1-64k.json arm=4 actor=v1 ns=295180 ns_per_byte=0.109856 cycles_per_byte=0.1099 checksum=0x0
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/route-s1-64k.json arm=4 actor=v2 ns=286991 ns_per_byte=0.106808 cycles_per_byte=0.1068 checksum=0x0
+ratio doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/route-s1-64k.json arm=4 v2_over_v1=0.972258
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/route-s1-64k.json arm=6 actor=v1 ns=606620 ns_per_byte=0.225763 cycles_per_byte=0.2258 checksum=0x0
+row doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/route-s1-64k.json arm=6 actor=v2 ns=578320 ns_per_byte=0.215231 cycles_per_byte=0.2152 checksum=0x0
+ratio doc=/home/gavin/dev/Scidonia/lean-llvm/tests/json-units-bench/build-s1-blocks/corpus/route-s1-64k.json arm=6 v2_over_v1=0.953348

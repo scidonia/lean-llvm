@@ -16,9 +16,10 @@
    exits 3 rather than producing a number.
 
    The driver prints one row per (document, arm, actor) and one paired ratio
-   row.  Times are the median of `--rounds` round medians of `--reps`
-   repetitions, in ns/byte; the ratio is the fused row over the v1 row in the
-   same round.  This is a bench-only file; it is not part of any route. */
+   row.  Times are the median of `--rounds` round totals of `--reps`
+   repetitions, in ns/byte; the ratio is the fused row's median over the v1
+   row's median (not a per-round ratio).  This is a bench-only file; it is not
+   part of any route. */
 #define _GNU_SOURCE
 #include <stdint.h>
 #include <stdio.h>

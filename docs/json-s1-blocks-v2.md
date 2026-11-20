@@ -90,6 +90,18 @@ The UTF-8 classes keep the fused gain: `syn-utf8-64k` reads 0.914 (gated,
 list-free), 0.957 (gated, list), 0.931 (ungated, list-free) and 0.964 (ungated,
 list), and `syn-utf8-4m` reads 0.927–0.962 in every arm.
 
+On the merged tree (`main` at `426539e`) a second session ran the same
+instrument twice; the raw rows are
+`tests/json-units-bench/bench-s1-blocks-verify-426539e.txt`.  ASCII stayed at
+or below 0.9851 in every cell, and the gated `syn-utf8-64k` list-free reading
+was 0.9496 in the first invocation and 0.9094 in the second, so the
+two-invocation band is **0.9094–0.9496**; the shipped 0.9135 lies inside it.
+The list arms again read 0.953–0.971 and are reported separately.  That cell's
+run-level scatter is about ±2%, so a single reading within a few percent of
+0.95 is repeated before it is read as a pass or a regression: the band, not the
+point, is the claim.  Re-measure when the body, compiler line, host class or
+flags change.
+
 ## Proof delta
 
 The v1 traces are not re-proved.  The ASCII phase is a new loop, the fused loop
