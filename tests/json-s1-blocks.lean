@@ -12,15 +12,17 @@ final partial block clamped.
 
 The run is the semantics' (`runFuel` over the pinned AST), not a model of it: the
 classifier's two intrinsics are the mask unit's own call environment (`s1Calls`),
-and a `void` return with no escape list is what the gate-off arm asks for.  Every
-observation is a `#guard`, so a failed one stops elaboration with a nonzero exit
-status; no compiler, proof checker, service, clock or network is reached.
+`llvm.x86.avx.ptestz.256` is the ASCII probe's zero test bound to `BitLanes.ptestz`,
+and the gate-off arm asks for no escape list.  Every observation is a `#guard`, so
+a failed one stops elaboration with a nonzero exit status; no compiler, proof
+checker, service, clock or network is reached.
 
 The object half of the route — the same rows from `kernel/json/s1_blocks.c`
 compiled at the measured line, its controls and the corpus — is not this file.
 Elaborated by `nix develop -c lake env lean tests/json-s1-blocks.lean`.
 -/
 import LeanLLVM.Semantics
+import LeanLLVM.Refinement.BitLanes
 import LeanLLVM.Refinement.JsonS1MasksIR
 import LeanLLVM.Refinement.JsonS1BlocksIR
 import LeanLLVM.Refinement.JsonEntSpec
@@ -31,6 +33,18 @@ open LeanLLVM
 open LeanLLVM.Refinement.JsonS1BlocksIR
 open LeanLLVM.Refinement.JsonScanSpec
 open LeanLLVM.Refinement.JsonS1MasksIR (s1Calls)
+open LeanLLVM.Refinement.BitLanes (ptestz)
+
+/-- The block body's call environment: the mask unit's intrinsics and the ASCII
+probe's zero test, which the done block calls.  A symbol this environment does
+not describe stays `ub`. -/
+def blocksCalls : Calls :=
+  fun callee args mem next =>
+    match callee, args with
+    | "llvm.x86.avx.ptestz.256", [.vec 4 64 a, .vec 4 64 b] =>
+        some { ret := .int 32 (ptestz (BitVec.ofNat 256 (packLanes a))
+              (BitVec.ofNat 256 (packLanes b))), mem := mem, next := next }
+    | _, _ => s1Calls callee args mem next
 
 /-- `bs` laid out cell by cell from `addr`. -/
 def bytesAt (addr : Nat) (bs : List UInt8) : Mem :=
@@ -65,7 +79,7 @@ def staging (bs : List UInt8) : Mem :=
 /-- The body's run over a document, gate off: the bytes it leaves in `ent`, and
 its final memory. -/
 def runDoc (bs : List UInt8) : Option (List UInt8 × Mem) :=
-  match runFuel s1Calls 100000 s1BlocksFunction
+  match runFuel blocksCalls 100000 s1BlocksFunction
       { (initState s1BlocksFunction
           [.ptr docAddr, .int 64 bs.length, .ptr entAddr, .ptr xpAddr,
            .ptr nxpAddr, .ptr xcarryAddr, .int 64 0]) with

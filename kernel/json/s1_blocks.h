@@ -20,16 +20,18 @@
    for the mask unit).  `xcarry` is the escape list's carry (`escape.h`): the
    unit reads it only when `arm & 2`, and writes it only then.
 
-   Arm bits are the pipeline's: bit 1 selects the escape list, bit 0 selects the
-   entry emitter (the caller's, not this unit's), bit 2 the UTF-8 stage's
-   error arm.  Bits at and above 3 are reserved and ignored. */
+   Arm bits are the pipeline's.  This unit reads one of them: bit 1 selects the
+   escape list.  Bit 0 (the entry emitter) and bit 2 (the UTF-8 stage's error
+   arm) belong to the caller's stages and are ignored here; this unit computes
+   no UTF-8 and carries no `u8k` state.  Bits at and above 3 are reserved and
+   ignored. */
 #ifndef LEANLLVM_KERNEL_JSON_S1_BLOCKS_H
 #define LEANLLVM_KERNEL_JSON_S1_BLOCKS_H
 
 #include <stdint.h>
 
-void leanllvm_json_s1_blocks(const uint8_t *b, uint64_t n, uint64_t *ent,
-                             uint32_t *xp, uint64_t *nxp, uint64_t *xcarry,
-                             uint64_t arm);
+uint64_t leanllvm_json_s1_blocks(const uint8_t *b, uint64_t n, uint64_t *ent,
+                                 uint32_t *xp, uint64_t *nxp, uint64_t *xcarry,
+                                 uint64_t arm);
 
 #endif

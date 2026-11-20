@@ -1,4 +1,5 @@
 call @leanllvm_json_escape_list
+call @llvm.x86.avx.ptestz.256
 call @llvm.x86.avx2.pshuf.b
 call @llvm.x86.pclmulqdq
 opcode add

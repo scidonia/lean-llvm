@@ -22,6 +22,11 @@
    The control-byte word is only the escape list's input, so the list-free path
    does not compute it: the gate's arm computes it where the call is.
 
+   The return word is the ASCII probe: the body ORs every loaded lane into one
+   accumulator (two `vpor` per block) and tests its high bits once at the end;
+   `1` means every document byte is below `0x80`, and an empty document is
+   vacuously ASCII.
+
    The classifier carry lives in this body and starts at zero, so no caller
    stages it.  The mask words, the in-string carry and the previous block's
    scalar lane are registers; the unit has no stack and writes only `ent`, and
@@ -81,18 +86,20 @@ static inline uint64_t s1b_ctl(__m256i v0, __m256i v1) {
                _mm256_cmpeq_epi8(_mm256_min_epu8(v1, v19), v1)) << 32);
 }
 
-void leanllvm_json_s1_blocks(const uint8_t *b, uint64_t n, uint64_t *ent,
-                             uint32_t *xp, uint64_t *nxp, uint64_t *xcarry,
-                             uint64_t arm) {
+uint64_t leanllvm_json_s1_blocks(const uint8_t *b, uint64_t n, uint64_t *ent,
+                                 uint32_t *xp, uint64_t *nxp, uint64_t *xcarry,
+                                 uint64_t arm) {
     uint64_t nfull = n >> 6;            /* whole blocks, without the tail */
     uint64_t rem = n & 63;              /* tail bytes; zero on a block boundary */
     uint64_t prevS = 0;                 /* the previous block's top scalar lane */
     S1F st = {0, 0, 0};                 /* block-local classifier carry */
+    __m256i ascii = _mm256_setzero_si256();  /* every byte the document holds */
 
     for (uint64_t i = 0; i < nfull; i++) {
         const uint8_t *p = b + (i << 6);
         __m256i v0 = _mm256_loadu_si256((const __m256i *)(const void *)p);
         __m256i v1 = _mm256_loadu_si256((const __m256i *)(const void *)(p + 32));
+        ascii = _mm256_or_si256(ascii, _mm256_or_si256(v0, v1));
         uint64_t q, d, im, nn, bm;
         s1b_masks(v0, v1, &st, &q, &d, &im, &nn, &bm);
         uint64_t S = nn & ~q & ~im;
@@ -107,6 +114,7 @@ void leanllvm_json_s1_blocks(const uint8_t *b, uint64_t n, uint64_t *ent,
         const uint8_t *p = b + (nfull << 6);
         __m256i v0 = _mm256_loadu_si256((const __m256i *)(const void *)p);
         __m256i v1 = _mm256_loadu_si256((const __m256i *)(const void *)(p + 32));
+        ascii = _mm256_or_si256(ascii, _mm256_or_si256(v0, v1));
         uint64_t q, d, im, nn, bm;
         s1b_masks(v0, v1, &st, &q, &d, &im, &nn, &bm);
         uint64_t S = nn & ~q & ~im;
@@ -117,4 +125,8 @@ void leanllvm_json_s1_blocks(const uint8_t *b, uint64_t n, uint64_t *ent,
             leanllvm_json_escape_list(bm, s1b_ctl(v0, v1), im, nfull, xp, nxp,
                                       xcarry);
     }
+    /* The ASCII probe: every byte below 0x80 is exactly no high bit in the
+       document's OR.  `_mm256_testz_si256` answers `(ascii & highbits) == 0`,
+       and an empty document is vacuously ASCII. */
+    return (uint64_t)(_mm256_testz_si256(ascii, _mm256_set1_epi8((char)0x80)) != 0);
 }

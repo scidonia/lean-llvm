@@ -68,6 +68,13 @@ root = "JsonClassifyMain"
 name = "leanllvm-json-s1-masks"
 root = "JsonS1MasksMain"
 
+# Runs the stage-1 block body over corpus documents and the generated arms, on
+# both arms, so the object's rows can be compared with the body's; see
+# JsonS1BlocksMain.lean.
+[[lean_exe]]
+name = "leanllvm-json-s1-blocks"
+root = "JsonS1BlocksMain"
+
 # Runs the entry position bodies over corpus mask streams and the generated
 # arms, so the object's rows can be compared with the body's, and emits the
 # `ent` word's specification rows; see JsonEntryMain.lean.

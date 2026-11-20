@@ -21,11 +21,17 @@ composition, the loop induction and the escape-list calls — is not stated here
 -/
 import LeanLLVM.Refinement.JsonS1MasksSteps
 import LeanLLVM.Refinement.JsonEntSpec
+import LeanLLVM.Refinement.JsonEntryIR
+import LeanLLVM.Refinement.JsonEscapeSteps
+import LeanLLVM.Refinement.CallsFootprint
 
 namespace LeanLLVM.Refinement.JsonS1BlocksSteps
 
 open LeanLLVM
 open LeanLLVM.Refinement.JsonScanSpec
+open LeanLLVM.Refinement.JsonEntryIR (wordsOf)
+open LeanLLVM.Refinement (HasBytes UnchangedOutside wordBytes positionsBytes
+  carryPair flagBytes batchReserve)
 
 /-! ### The reduction to two masks -/
 
@@ -82,6 +88,51 @@ theorem entry_clamp_eq (lo hi : LeanLLVM.JSON.Block32) (st : ClassState) (prevS 
     entryMask64 lo hi st prevS &&& clampWord lim =
       entryMask64 lo hi st prevS &&& limMask lim :=
   entry_clamp _ lim h
+
+
+/-! ### The unit's boundary claim
+
+The post below is the plan's contract at the emitted body's arguments: the entry
+words are `stage1Words`, the return word is the ASCII probe, the escape list is
+claimed only on the gate's arm, and everything outside the four objects the unit
+may write is unchanged.  It is stated as a definition because the record and its
+`Satisfies` instance are stated over it; the theorem relating it to the run is
+`s1_blocks_refines`. -/
+
+/-- **The contracted block unit's post.**  From the caller's staging the run
+returns `0` or `1`; the word is `1` exactly when every document byte is below
+`0x80`; `ent` holds the document's entry words; the escape list's clause is
+present only when `arm & 2`; and every byte outside `ent`, `xp`, the count slot
+and the carry is the caller's. -/
+def s1BlocksPost (args : List Value) (mem : Mem) (_next : Nat) (o : Outcome) : Prop :=
+  match o with
+  | .ub => False
+  | .ret (some (.int 64 r)) m =>
+      match args with
+      | [.ptr b, .int 64 n, .ptr ent, .ptr xp, .ptr nxp, .ptr xcarry, .int 64 arm] =>
+          ∃ (bs : List UInt8) (xn nxp' : Nat) (ps : List Nat),
+            n = BitVec.ofNat 64 bs.length ∧
+            readBytes mem b (64 * blocksOf bs.length) = some (padded bs) ∧
+            readBytes mem nxp 8 = some (wordBytes 8 xn) ∧
+            (r = 0 ∨ r = 1) ∧
+            (r = 1 ↔ ∀ x ∈ bs, x.toNat < 0x80) ∧
+            readBytes m ent (8 * blocksOf bs.length) =
+              some (wordsOf (stage1Words bs)) ∧
+            (arm &&& 2 = (0 : BitVec 64) →
+              readBytes m nxp 8 = some (wordBytes 8 xn) ∧
+              readBytes m xp (4 * (xn + 64 * blocksOf bs.length + batchReserve)) =
+                readBytes mem xp (4 * (xn + 64 * blocksOf bs.length + batchReserve)) ∧
+              readBytes m xcarry 16 = some (flagBytes false ++ flagBytes false)) ∧
+            (arm &&& 2 ≠ (0 : BitVec 64) →
+              readBytes m nxp 8 = some (wordBytes 8 nxp') ∧
+              readBytes m xp (4 * nxp') = some (positionsBytes 4 ps) ∧
+              (∃ (st : ClassState) (prevb prevs : Bool),
+                carryPair m xcarry st prevb prevs)) ∧
+            UnchangedOutside mem m
+              [(ent, 8 * blocksOf bs.length),
+               (xp, 4 * (nxp' + batchReserve)), (nxp, 8), (xcarry, 16)]
+      | _ => False
+  | _ => False
 
 end LeanLLVM.Refinement.JsonS1BlocksSteps
 

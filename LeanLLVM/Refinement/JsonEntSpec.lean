@@ -167,6 +167,22 @@ theorem padded_length (bs : List UInt8) :
   have h := blocksOf_le bs.length
   omega
 
+/-- **The ASCII probe is a document property, not a window property.**  Every byte
+of the document is below `0x80` exactly when every byte of the padded window is:
+the padding bytes are zero, which is ASCII, so the census the unit runs over the
+window decides the document's claim. -/
+theorem ascii_padded_iff (bs : List UInt8) :
+    (∀ x ∈ bs, x.toNat < 0x80) ↔ (∀ x ∈ padded bs, x.toNat < 0x80) := by
+  unfold padded
+  constructor
+  · intro h x hx
+    rcases List.mem_append.mp hx with hb | hp
+    · exact h x hb
+    · obtain ⟨_, rfl⟩ := List.mem_replicate.mp hp
+      decide
+  · intro h x hx
+    exact h x (List.mem_append_left _ hx)
+
 /-- Every block of the padded window reads at its own offset. -/
 theorem padded_drop (bs : List UInt8) (i : Nat) :
     (padded bs).drop (64 * i) =
