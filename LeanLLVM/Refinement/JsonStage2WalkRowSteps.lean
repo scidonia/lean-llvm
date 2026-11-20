@@ -78,12 +78,17 @@ The three residuals `ParserRows` names, at their own vocabulary:
   reaches a separator (`row_commaBracket`, `row_colonBrace`): the arms' net effects at
   each link and the two payload revolutions are its premises, and the containers'
   records, the separator's silence and the last entry's reading are derived there.
-  What remains is the arms' own revolutions: the
-  number's and the string's, with their payload premises — the escape body's read-back
-  (`headTokenRecord_string_plain`/`_arena`) and the numeral's well-formed
-  decomposition (`headTokenRecord_number`) — and the closers' and the separators'
-  walk-level routes (`WalkRevolution` is stated and the openers inhabit it; the other
-  arms' `WalkSegment`s are the dispatch layer's);
+  The payload arms' revolutions are here as well: `payloadStep_of_segment` is the step
+  at a merge carry whose index and record are the arm's, `payloadStep_number` and
+  `payloadStep_string_plain`/`_arena` add the entry's record from the tape, and
+  `payloadRevolution_*` carry each arm's `WalkSegment` beside it.  The three documents
+  `row_numberDocument` (`[1,2]`) and `row_stringPlainDocument`/`row_stringArenaDocument`
+  (`["ab","cd"]`) instantiate the payload revolutions, proving the numerals'
+  decomposition and the strings' spans from the document's own bytes; the escape unit's
+  raw-body and arena-slice read-backs stay the arm's premise, as the string record's
+  statement says.  What remains is outside the row: the payload arms' `WalkSegment`s
+  (the dispatch layer composes them) and the closers' and the separators'
+  walk-level routes (`WalkRevolution` is stated and the openers inhabit it);
 * **the refusal bit** — `VerdictWord`'s two directions at the run's word.  The
   carry has `refusal` and the boundary has `verdict = 0 ∨ verdict = 1`, so the row
   is the two route families: at `1`, `verdictWord_one_of_valid`'s `ValidDocument`
@@ -1785,6 +1790,575 @@ theorem row_colonBrace {m0 : Mem} {G : WalkGeom m0} {t : Tape} {arena : List UIn
     hpay₁ hk₃ hev₃ hpay₂ hbytec hkM hevM
   simpa [WalkTracePrefix.events_eq_nil hpre₀ hk₀] using hrow
 
+/-! ### The payload arms' steps
+
+`row_separatedPayload` leaves two payload revolutions as premises.  An arm's run from
+the loop head ends at the merge carry `cleanup478.i`, which the dispatch layer states as
+a `WalkSegment`, and the merge's own reading of that carry is the arm's: the index it
+kept and the one record it appended.  The merge's `%k.2.i` is the header's `%inc.i`, so
+the carry the loop leaves carries the index one entry on, and the trace at it is
+`WalkTraceStep.emit`'s.
+
+The three payload classes are the number's and the string's two forms.  Beside its
+segment each takes the payload premise the header's residual list names — the numeral's
+decomposition and the string's read-back — because those are the arm's reading of the
+document rather than the row's: the numeral is the arm's `num_fast_el1` decomposition of
+the span's bytes, and the string's body is the escape unit's answer at the bytes it wrote.
+The span, the token and the record's relation are the row's, and they are derived here.
+-/
+
+/-- **A payload arm's step.**  The arm's segment reaches the merge carry with the index
+unmoved and the record appended; the entry's token is the one the head's byte names and
+the record is related to it.  The carry the header leaves is that merge carry one index
+on, which is `WalkTraceStep.emit`'s `hk` and `hev`. -/
+theorem payloadStep_of_segment {m0 : Mem} {G : WalkGeom m0} {arena : List UInt8}
+    {t : Tape} {C Cd : WalkCarry G} {r : EventRecord} {tok : Token}
+    (hpre : WalkTracePrefix G arena t C) (htok : t.tokens[C.k]? = some tok)
+    (hrec : TokenRecord G.bs arena r tok)
+    (hk : Cd.k = C.k) (hev : Cd.events = C.events ++ [r]) :
+    WalkPayloadStep G arena t C { Cd with k := Cd.k + 1 } r := by
+  have hk' : ({ Cd with k := Cd.k + 1 } : WalkCarry G).k = C.k + 1 := by rw [hk]
+  have hev' : ({ Cd with k := Cd.k + 1 } : WalkCarry G).events = C.events ++ [r] := hev
+  exact ⟨WalkTraceStep.emit (C' := { Cd with k := Cd.k + 1 }) hpre htok hrec hk' hev', hev'⟩
+
+/-- **A payload arm's revolution.**  The arm's counted run from the loop head to the
+merge carry, that carry's two facts at the merge, and the step the loop takes from them.
+The segment is the dispatch layer's (the number's and the two strings' paths compose
+their own); the two facts are its endpoint's, and the step is `payloadStep_of_segment`'s
+at the entry's record. -/
+structure WalkPayloadRevolution {m0 : Mem} (G : WalkGeom m0) (arena : List UInt8)
+    (t : Tape) (C : WalkCarry G) (s : State) (Cd : WalkCarry G) (sd : State) (p : Nat)
+    (r : EventRecord) : Prop where
+  /-- The arm's run, from the loop head to the merge carry. -/
+  seg : WalkScope.WalkSegment (stage2Calls stage2SubCalls) G C s Cd sd p
+  /-- The merge keeps the index. -/
+  k : Cd.k = C.k
+  /-- The arm appends exactly its one record. -/
+  events : Cd.events = C.events ++ [r]
+  /-- The step at those two facts: the merge carry's index advanced by the header. -/
+  step : WalkPayloadStep G arena t C { Cd with k := Cd.k + 1 } r
+
+/-- **The number arm's step.**  The head's byte is the numeral's (`-` or a digit), the
+tape's token is the span's, and the arm's decomposition of that span's bytes is
+`strtodSpec`'s.  The record is the one the arm appended, so the row reads the bits the
+parser's payload names. -/
+theorem payloadStep_number {m0 : Mem} {G : WalkGeom m0} {t : Tape}
+    {C Cd : WalkCarry G} {s : State} (arena : List UInt8) (hal : WalkAlign G t)
+    (hInv : WalkInv G C s) (hklt : C.k < G.nep) {v : JSON.Value}
+    (hdec : decodeTape t = some v) {b0 : UInt8} (hbyte : entryByte G C.k = b0)
+    (hb : b0 = 0x2D ∨ IsDigitB b0 = true) {d : Decimal} (hwf : d.wellFormed)
+    (hlex : ∀ sp : Span, t.tokens[C.k]? = some (.number sp) →
+      d.lexeme.data.toList = (G.bs.drop sp.start).take (sp.stop - sp.start))
+    (hpre : WalkTracePrefix G arena t C)
+    (hk : Cd.k = C.k)
+    (hev : Cd.events = C.events ++ [EventRecord.number (strtodSpec d).toBits]) :
+    WalkPayloadStep G arena t C { Cd with k := Cd.k + 1 }
+      (EventRecord.number (strtodSpec d).toBits) := by
+  obtain ⟨sp, htok, hrec⟩ :=
+    headTokenRecord_number hal hInv hklt hdec arena hbyte hb hwf hlex
+  exact payloadStep_of_segment hpre htok hrec hk hev
+
+/-- **A plain string's step.**  The head's byte is the quote, the token is the span's,
+and the arm's read of the raw body — the bytes before the closing quote — is the
+parser's body.  The record addresses that body through `plainSpan`. -/
+theorem payloadStep_string_plain {m0 : Mem} {G : WalkGeom m0} {t : Tape}
+    {C Cd : WalkCarry G} {s : State} (arena : List UInt8) (hal : WalkAlign G t)
+    (hInv : WalkInv G C s) (hklt : C.k < G.nep) {v : JSON.Value}
+    (hdec : decodeTape t = some v) (hbyte : entryByte G C.k = 0x22)
+    {sp : Span} (htokC : t.tokens[C.k]? = some (.string sp))
+    {key : Bool} {len : Nat}
+    (hspan : ∀ sp' : Span, t.tokens[C.k]? = some (.string sp') →
+      sp'.stop = sp'.start + 2 + len)
+    (hbody : ∀ (sp' : Span) (cs : List Nat), bodyCodePoints G.bs sp' = some cs →
+      escapeCodePoints ((G.bs.drop (sp'.start + 1)).take len) = some cs)
+    (hpre : WalkTracePrefix G arena t C)
+    (hk : Cd.k = C.k)
+    (hev : Cd.events = C.events ++ [EventRecord.str key len (plainSpan (sp.start + 1))]) :
+    WalkPayloadStep G arena t C { Cd with k := Cd.k + 1 }
+      (EventRecord.str key len (plainSpan (sp.start + 1))) := by
+  obtain ⟨sp', cs, htok', hcode, hrec⟩ :=
+    headTokenRecord_string_plain hal hInv hklt hdec arena hbyte hspan hbody
+  have hsp : sp' = sp := by
+    have h1 : Token.string sp = Token.string sp' :=
+      Option.some.inj (htokC.symm.trans htok')
+    exact ((Token.string.injEq sp sp').mp h1).symm
+  rw [hsp] at hrec
+  exact payloadStep_of_segment hpre htokC hrec hk hev
+
+/-- **An arena string's step.**  The head's byte is the quote, the span holds both its
+quotes, and the arm's read of the arena's slice at its offset is the parser's body.  The
+record names the slice by that offset, which the walk's cursor keeps below `2 ^ 63`. -/
+theorem payloadStep_string_arena {m0 : Mem} {G : WalkGeom m0} {t : Tape}
+    {C Cd : WalkCarry G} {s : State} (arena : List UInt8) (hal : WalkAlign G t)
+    (hInv : WalkInv G C s) (hklt : C.k < G.nep) {v : JSON.Value}
+    (hdec : decodeTape t = some v) (hbyte : entryByte G C.k = 0x22)
+    {key : Bool} {len off : Nat}
+    (hlen : ∀ sp : Span, t.tokens[C.k]? = some (.string sp) → sp.start + 2 ≤ sp.stop)
+    (hoff : off < 2 ^ 63)
+    (harena : ∀ (sp : Span) (cs : List Nat), bodyCodePoints G.bs sp = some cs →
+      escapeCodePoints ((arena.drop off).take len) = some cs)
+    (hpre : WalkTracePrefix G arena t C)
+    (hk : Cd.k = C.k)
+    (hev : Cd.events = C.events ++ [EventRecord.str key len off]) :
+    WalkPayloadStep G arena t C { Cd with k := Cd.k + 1 } (EventRecord.str key len off) := by
+  obtain ⟨sp, cs, htok, hcode, hrec⟩ :=
+    headTokenRecord_string_arena hal hInv hklt hdec arena hbyte hlen hoff harena
+  exact payloadStep_of_segment hpre htok hrec hk hev
+
+/-! The three producers: the arm's segment, the merge's two facts and its payload premise
+give the revolution.  `payloadStep_*` is the step they build. -/
+
+/-- **The number arm's revolution.** -/
+theorem payloadRevolution_number {m0 : Mem} {G : WalkGeom m0} {t : Tape}
+    {C Cd : WalkCarry G} {s sd : State} {p : Nat} (arena : List UInt8)
+    (hal : WalkAlign G t) (hInv : WalkInv G C s) (hklt : C.k < G.nep)
+    {v : JSON.Value} (hdec : decodeTape t = some v) {b0 : UInt8}
+    (hbyte : entryByte G C.k = b0) (hb : b0 = 0x2D ∨ IsDigitB b0 = true)
+    {d : Decimal} (hwf : d.wellFormed)
+    (hlex : ∀ sp : Span, t.tokens[C.k]? = some (.number sp) →
+      d.lexeme.data.toList = (G.bs.drop sp.start).take (sp.stop - sp.start))
+    (hpre : WalkTracePrefix G arena t C)
+    (hseg : WalkScope.WalkSegment (stage2Calls stage2SubCalls) G C s Cd sd p)
+    (hk : Cd.k = C.k)
+    (hev : Cd.events = C.events ++ [EventRecord.number (strtodSpec d).toBits]) :
+    WalkPayloadRevolution G arena t C s Cd sd p
+      (EventRecord.number (strtodSpec d).toBits) where
+  seg := hseg
+  k := hk
+  events := hev
+  step := payloadStep_number arena hal hInv hklt hdec hbyte hb hwf hlex hpre hk hev
+
+/-- **A plain string's revolution.** -/
+theorem payloadRevolution_string_plain {m0 : Mem} {G : WalkGeom m0} {t : Tape}
+    {C Cd : WalkCarry G} {s sd : State} {p : Nat} (arena : List UInt8)
+    (hal : WalkAlign G t) (hInv : WalkInv G C s) (hklt : C.k < G.nep)
+    {v : JSON.Value} (hdec : decodeTape t = some v) (hbyte : entryByte G C.k = 0x22)
+    {sp : Span} (htokC : t.tokens[C.k]? = some (.string sp))
+    {key : Bool} {len : Nat}
+    (hspan : ∀ sp' : Span, t.tokens[C.k]? = some (.string sp') →
+      sp'.stop = sp'.start + 2 + len)
+    (hbody : ∀ (sp' : Span) (cs : List Nat), bodyCodePoints G.bs sp' = some cs →
+      escapeCodePoints ((G.bs.drop (sp'.start + 1)).take len) = some cs)
+    (hpre : WalkTracePrefix G arena t C)
+    (hseg : WalkScope.WalkSegment (stage2Calls stage2SubCalls) G C s Cd sd p)
+    (hk : Cd.k = C.k)
+    (hev : Cd.events = C.events ++ [EventRecord.str key len (plainSpan (sp.start + 1))]) :
+    WalkPayloadRevolution G arena t C s Cd sd p
+      (EventRecord.str key len (plainSpan (sp.start + 1))) where
+  seg := hseg
+  k := hk
+  events := hev
+  step := payloadStep_string_plain arena hal hInv hklt hdec hbyte htokC hspan hbody hpre
+    hk hev
+
+/-- **An arena string's revolution.** -/
+theorem payloadRevolution_string_arena {m0 : Mem} {G : WalkGeom m0} {t : Tape}
+    {C Cd : WalkCarry G} {s sd : State} {p : Nat} (arena : List UInt8)
+    (hal : WalkAlign G t) (hInv : WalkInv G C s) (hklt : C.k < G.nep)
+    {v : JSON.Value} (hdec : decodeTape t = some v) (hbyte : entryByte G C.k = 0x22)
+    {key : Bool} {len off : Nat}
+    (hlen : ∀ sp : Span, t.tokens[C.k]? = some (.string sp) → sp.start + 2 ≤ sp.stop)
+    (hoff : off < 2 ^ 63)
+    (harena : ∀ (sp : Span) (cs : List Nat), bodyCodePoints G.bs sp = some cs →
+      escapeCodePoints ((arena.drop off).take len) = some cs)
+    (hpre : WalkTracePrefix G arena t C)
+    (hseg : WalkScope.WalkSegment (stage2Calls stage2SubCalls) G C s Cd sd p)
+    (hk : Cd.k = C.k)
+    (hev : Cd.events = C.events ++ [EventRecord.str key len off]) :
+    WalkPayloadRevolution G arena t C s Cd sd p (EventRecord.str key len off) where
+  seg := hseg
+  k := hk
+  events := hev
+  step := payloadStep_string_arena arena hal hInv hklt hdec hbyte hlen hoff harena hpre
+    hk hev
+
+/-! ### The payload documents
+
+The separator documents with their payload revolutions proved.  `[1,2]` is the number's
+document and `["ab","cd"]` the string's, in the plain and in the arena form.  Each
+theorem fixes the document's bytes and the entry stream's positions, derives every byte
+the containers and the payloads read, proves the numeral's decomposition of its own span
+(`decimalOne`, `decimalTwo`), and leaves exactly what the row cannot supply: the tape's
+acceptance, the walk's alignment, the opener's and the separator's carries, the two
+heads' invariants, the two arms' `WalkSegment`s with the merge carries they end at, and —
+for a string — the escape unit's raw-body and arena-slice read-backs. -/
+
+/-- The document `[1,2]`'s bytes. -/
+def numberDocumentBytes : List UInt8 := [0x5B, 0x31, 0x2C, 0x32, 0x5D]
+
+/-- The document `["ab","cd"]`'s bytes. -/
+def stringDocumentBytes : List UInt8 :=
+  [0x5B, 0x22, 0x61, 0x62, 0x22, 0x2C, 0x22, 0x63, 0x64, 0x22, 0x5D]
+
+/-- `1`'s decomposition: a one-digit `int` with no fraction and no exponent. -/
+def decimalOne : Decimal := ⟨false, ByteString.cons 0x31 ByteString.empty, none, none⟩
+
+/-- `2`'s decomposition. -/
+def decimalTwo : Decimal := ⟨false, ByteString.cons 0x32 ByteString.empty, none, none⟩
+
+/-- **`1`'s decomposition is the grammar's.** -/
+theorem decimalOne_wellFormed : decimalOne.wellFormed := by
+  refine ⟨?_, ?_, ?_⟩
+  · exact IntPart.lead (b := 0x31) (bs := ByteString.empty) (by decide) (by decide)
+      Digits0.nil
+  · intro fs h
+    simp only [decimalOne] at h
+    cases h
+  · intro s ds h
+    simp only [decimalOne] at h
+    cases h
+
+/-- **`2`'s decomposition is the grammar's.** -/
+theorem decimalTwo_wellFormed : decimalTwo.wellFormed := by
+  refine ⟨?_, ?_, ?_⟩
+  · exact IntPart.lead (b := 0x32) (bs := ByteString.empty) (by decide) (by decide)
+      Digits0.nil
+  · intro fs h
+    simp only [decimalTwo] at h
+    cases h
+  · intro s ds h
+    simp only [decimalTwo] at h
+    cases h
+
+/-- **`1`'s lexeme is its one byte.** -/
+theorem decimalOne_lexeme : decimalOne.lexeme.data.toList = [0x31] := by
+  simp only [decimalOne, Decimal.lexeme, Decimal.body, Decimal.signBytes_false,
+    ByteString.empty_append, ByteString.data_toList_cons, ByteString.data_toList_empty]
+
+/-- **`2`'s lexeme is its one byte.** -/
+theorem decimalTwo_lexeme : decimalTwo.lexeme.data.toList = [0x32] := by
+  simp only [decimalTwo, Decimal.lexeme, Decimal.body, Decimal.signBytes_false,
+    ByteString.empty_append, ByteString.data_toList_cons, ByteString.data_toList_empty]
+
+/-- **The document `[1,2]`'s row, its payloads proved.**  Both entries are numbers: at
+each head the byte is a digit and the arm's segment reaches the merge with the numeral's
+record appended.  The containers' records, the separator's silence and the row are
+`row_commaBracket`'s; the span's lexeme and the decomposition are the document's. -/
+theorem row_numberDocument {m0 : Mem} {G : WalkGeom m0} {t : Tape} {arena : List UInt8}
+    {C₀ C₁ C₃ Cd₁ Cd₂ : WalkCarry G} {s₁ s₃ sd₁ sd₂ : State} {p₁ p₂ : Nat}
+    {v : JSON.Value}
+    (hal : WalkAlign G t) (hspans : spansWellFormed t = true)
+    (hbs : G.bs = numberDocumentBytes) (hent : G.ent = [0, 1, 2, 3, 4])
+    (htokens : t.tokens = [.punct .openBracket ⟨0, 1⟩, .number ⟨1, 2⟩,
+      .punct .comma ⟨2, 3⟩, .number ⟨3, 4⟩, .punct .closeBracket ⟨4, 5⟩])
+    (hdec : decodeTape t = some v)
+    (hpre₀ : WalkTracePrefix G arena t C₀) (hk₀ : C₀.k = 0)
+    (hk₁ : C₁.k = C₀.k + 1) (hev₁ : C₁.events = C₀.events ++ [EventRecord.tag 3])
+    (hInv₁ : WalkInv G C₁ s₁)
+    (hseg₁ : WalkScope.WalkSegment (stage2Calls stage2SubCalls) G C₁ s₁ Cd₁ sd₁ p₁)
+    (hkc₁ : Cd₁.k = C₁.k)
+    (hevc₁ : Cd₁.events = C₁.events ++ [EventRecord.number (strtodSpec decimalOne).toBits])
+    (hk₃ : C₃.k = C₁.k + 2)
+    (hev₃ : C₃.events = C₁.events ++ [EventRecord.number (strtodSpec decimalOne).toBits])
+    (hInv₃ : WalkInv G C₃ s₃)
+    (hseg₂ : WalkScope.WalkSegment (stage2Calls stage2SubCalls) G C₃ s₃ Cd₂ sd₂ p₂)
+    (hkc₂ : Cd₂.k = C₃.k)
+    (hevc₂ : Cd₂.events = C₃.events ++ [EventRecord.number (strtodSpec decimalTwo).toBits]) :
+    WalkTraceRow G.bs arena t
+      ([EventRecord.tag 3, EventRecord.number (strtodSpec decimalOne).toBits,
+        EventRecord.number (strtodSpec decimalTwo).toBits,
+        EventRecord.tag 4] : List EventRecord) := by
+  let C₂ : WalkCarry G := { Cd₁ with k := Cd₁.k + 1 }
+  let C₄ : WalkCarry G := { Cd₂ with k := Cd₂.k + 1 }
+  have hk5 : G.nep = 5 := by simp [hal.tokens_length, htokens]
+  have hC₂k : C₂.k = C₁.k + 1 := by
+    show Cd₁.k + 1 = C₁.k + 1
+    rw [hkc₁]
+  have hC₄k : C₄.k = C₃.k + 1 := by
+    show Cd₂.k + 1 = C₃.k + 1
+    rw [hkc₂]
+  -- the opener's byte, its record, and the correspondence at the first payload
+  have hbyteo : entryByte G C₀.k = 0x5B := by
+    have hk : C₀.k = 0 := hk₀
+    simp only [entryByte, entryPos, hk, hent, hbs]
+    decide
+  have hpre₁ : WalkTracePrefix G arena t C₁ := by
+    have htok₀ : t.tokens[C₀.k]? = some (.punct .openBracket ⟨0, 1⟩) := by
+      rw [hk₀, htokens]
+      rfl
+    have hlt₀ : C₀.k < G.nep := by
+      rw [hk₀, hk5]
+      decide
+    exact WalkTracePrefix.emit_advance hpre₀ htok₀
+      (headTokenRecord_punct hal hlt₀ hspans arena (Or.inr (Or.inr (Or.inl rfl)))
+        htok₀ hbyteo) hk₁ hev₁
+  -- the first numeral
+  have hbyte₁ : entryByte G C₁.k = 0x31 := by
+    have hk : C₁.k = 1 := by omega
+    simp only [entryByte, entryPos, hk, hent, hbs]
+    decide
+  have hlex₁ : ∀ sp : Span, t.tokens[C₁.k]? = some (.number sp) →
+      decimalOne.lexeme.data.toList = (G.bs.drop sp.start).take (sp.stop - sp.start) := by
+    intro sp hsp
+    have hk : C₁.k = 1 := by omega
+    rw [hk, htokens] at hsp
+    simp only [List.getElem?_cons_zero, List.getElem?_cons_succ, Option.some.injEq,
+      Token.number.injEq] at hsp
+    subst hsp
+    rw [decimalOne_lexeme, hbs]
+    rfl
+  have hrev₁ := payloadRevolution_number arena hal hInv₁ (by rw [hk5]; omega) hdec hbyte₁
+    (Or.inr (by decide)) decimalOne_wellFormed hlex₁ hpre₁ hseg₁ hkc₁ hevc₁
+  have hpay₁ : WalkPayloadStep G arena t C₁ C₂
+      (EventRecord.number (strtodSpec decimalOne).toBits) := hrev₁.step
+  -- the separator's own step, and the correspondence at the second payload
+  have hC₂e : C₂.events = C₁.events ++ [EventRecord.number (strtodSpec decimalOne).toBits] :=
+    hevc₁
+  have htok₂ : t.tokens[C₂.k]? = some (.punct .comma ⟨2, 3⟩) := by
+    have hk : C₂.k = 2 := by omega
+    rw [hk, htokens]
+    rfl
+  have hevS : C₃.events = C₂.events := by rw [hev₃, hC₂e]
+  have hstepS : WalkTraceStep G arena t C₂ C₃ :=
+    WalkTraceStep.separator hpay₁.1.trace htok₂ (Or.inl rfl) (by omega) hevS
+  have hpre₃ : WalkTracePrefix G arena t C₃ := hstepS.trace
+  -- the second numeral
+  have hbyte₂ : entryByte G C₃.k = 0x32 := by
+    have hk : C₃.k = 3 := by omega
+    simp only [entryByte, entryPos, hk, hent, hbs]
+    decide
+  have hlex₂ : ∀ sp : Span, t.tokens[C₃.k]? = some (.number sp) →
+      decimalTwo.lexeme.data.toList = (G.bs.drop sp.start).take (sp.stop - sp.start) := by
+    intro sp hsp
+    have hk : C₃.k = 3 := by omega
+    rw [hk, htokens] at hsp
+    simp only [List.getElem?_cons_zero, List.getElem?_cons_succ, Option.some.injEq,
+      Token.number.injEq] at hsp
+    subst hsp
+    rw [decimalTwo_lexeme, hbs]
+    rfl
+  have hrev₂ := payloadRevolution_number arena hal hInv₃ (by rw [hk5]; omega) hdec hbyte₂
+    (Or.inr (by decide)) decimalTwo_wellFormed hlex₂ hpre₃ hseg₂ hkc₂ hevc₂
+  have hpay₂ : WalkPayloadStep G arena t C₃ C₄
+      (EventRecord.number (strtodSpec decimalTwo).toBits) := hrev₂.step
+  -- the closer's byte, and the row
+  have hbytec : entryByte G C₄.k = 0x5D := by
+    have hk : C₄.k = 4 := by omega
+    simp only [entryByte, entryPos, hk, hent, hbs]
+    decide
+  exact row_commaBracket (Cm := { C₄ with events := C₄.events ++ [EventRecord.tag 4] })
+    hal hspans htokens hpre₀ hk₀ hbyteo hk₁ hev₁ hpay₁ (by omega) hevS hpay₂ hbytec
+    rfl rfl
+
+/-- **The document `["ab","cd"]`'s row, its payloads plain.**  Each string's span is the
+token's and the body's length is the span's; the raw body's read-back — the escape
+unit's answer at the bytes it wrote — is the arm's premise.  The two records address the
+documents' bodies through `plainSpan`. -/
+theorem row_stringPlainDocument {m0 : Mem} {G : WalkGeom m0} {t : Tape}
+    {arena : List UInt8} {C₀ C₁ C₃ Cd₁ Cd₂ : WalkCarry G} {s₁ s₃ sd₁ sd₂ : State}
+    {p₁ p₂ : Nat} {v : JSON.Value}
+    (hal : WalkAlign G t) (hspans : spansWellFormed t = true)
+    (hbs : G.bs = stringDocumentBytes) (hent : G.ent = [0, 1, 5, 6, 10])
+    (htokens : t.tokens = [.punct .openBracket ⟨0, 1⟩, .string ⟨1, 5⟩,
+      .punct .comma ⟨5, 6⟩, .string ⟨6, 10⟩, .punct .closeBracket ⟨10, 11⟩])
+    (hdec : decodeTape t = some v)
+    (hpre₀ : WalkTracePrefix G arena t C₀) (hk₀ : C₀.k = 0)
+    (hk₁ : C₁.k = C₀.k + 1) (hev₁ : C₁.events = C₀.events ++ [EventRecord.tag 3])
+    (hInv₁ : WalkInv G C₁ s₁)
+    (hseg₁ : WalkScope.WalkSegment (stage2Calls stage2SubCalls) G C₁ s₁ Cd₁ sd₁ p₁)
+    (hkc₁ : Cd₁.k = C₁.k)
+    (hevc₁ : Cd₁.events = C₁.events ++ [EventRecord.str false 2 (plainSpan 2)])
+    (hbody₁ : ∀ (sp : Span) (cs : List Nat), bodyCodePoints G.bs sp = some cs →
+      escapeCodePoints ((G.bs.drop (sp.start + 1)).take 2) = some cs)
+    (hk₃ : C₃.k = C₁.k + 2)
+    (hev₃ : C₃.events = C₁.events ++ [EventRecord.str false 2 (plainSpan 2)])
+    (hInv₃ : WalkInv G C₃ s₃)
+    (hseg₂ : WalkScope.WalkSegment (stage2Calls stage2SubCalls) G C₃ s₃ Cd₂ sd₂ p₂)
+    (hkc₂ : Cd₂.k = C₃.k)
+    (hevc₂ : Cd₂.events = C₃.events ++ [EventRecord.str false 2 (plainSpan 7)])
+    (hbody₂ : ∀ (sp : Span) (cs : List Nat), bodyCodePoints G.bs sp = some cs →
+      escapeCodePoints ((G.bs.drop (sp.start + 1)).take 2) = some cs) :
+    WalkTraceRow G.bs arena t
+      ([EventRecord.tag 3, EventRecord.str false 2 (plainSpan 2),
+        EventRecord.str false 2 (plainSpan 7), EventRecord.tag 4] : List EventRecord) := by
+  let C₂ : WalkCarry G := { Cd₁ with k := Cd₁.k + 1 }
+  let C₄ : WalkCarry G := { Cd₂ with k := Cd₂.k + 1 }
+  have hk5 : G.nep = 5 := by simp [hal.tokens_length, htokens]
+  have hC₂k : C₂.k = C₁.k + 1 := by
+    show Cd₁.k + 1 = C₁.k + 1
+    rw [hkc₁]
+  have hC₄k : C₄.k = C₃.k + 1 := by
+    show Cd₂.k + 1 = C₃.k + 1
+    rw [hkc₂]
+  have hbyteo : entryByte G C₀.k = 0x5B := by
+    have hk : C₀.k = 0 := hk₀
+    simp only [entryByte, entryPos, hk, hent, hbs]
+    decide
+  have hpre₁ : WalkTracePrefix G arena t C₁ := by
+    have htok₀ : t.tokens[C₀.k]? = some (.punct .openBracket ⟨0, 1⟩) := by
+      rw [hk₀, htokens]
+      rfl
+    have hlt₀ : C₀.k < G.nep := by
+      rw [hk₀, hk5]
+      decide
+    exact WalkTracePrefix.emit_advance hpre₀ htok₀
+      (headTokenRecord_punct hal hlt₀ hspans arena (Or.inr (Or.inr (Or.inl rfl)))
+        htok₀ hbyteo) hk₁ hev₁
+  -- the first string
+  have hbyte₁ : entryByte G C₁.k = 0x22 := by
+    have hk : C₁.k = 1 := by omega
+    simp only [entryByte, entryPos, hk, hent, hbs]
+    decide
+  have htok₁ : t.tokens[C₁.k]? = some (.string ⟨1, 5⟩) := by
+    have hk : C₁.k = 1 := by omega
+    rw [hk, htokens]
+    rfl
+  have hspan₁ : ∀ sp : Span, t.tokens[C₁.k]? = some (.string sp) →
+      sp.stop = sp.start + 2 + 2 := by
+    intro sp hsp
+    have hk : C₁.k = 1 := by omega
+    rw [hk, htokens] at hsp
+    simp only [List.getElem?_cons_zero, List.getElem?_cons_succ, Option.some.injEq,
+      Token.string.injEq] at hsp
+    subst hsp
+    decide
+  have hrev₁ := payloadRevolution_string_plain arena hal hInv₁ (by rw [hk5]; omega) hdec
+    hbyte₁ (sp := ⟨1, 5⟩) htok₁ hspan₁ hbody₁ hpre₁ hseg₁ hkc₁ hevc₁
+  have hpay₁ : WalkPayloadStep G arena t C₁ C₂ (EventRecord.str false 2 (plainSpan 2)) :=
+    hrev₁.step
+  have hC₂e : C₂.events = C₁.events ++ [EventRecord.str false 2 (plainSpan 2)] := hevc₁
+  have htok₂ : t.tokens[C₂.k]? = some (.punct .comma ⟨5, 6⟩) := by
+    have hk : C₂.k = 2 := by omega
+    rw [hk, htokens]
+    rfl
+  have hevS : C₃.events = C₂.events := by rw [hev₃, hC₂e]
+  have hstepS : WalkTraceStep G arena t C₂ C₃ :=
+    WalkTraceStep.separator hpay₁.1.trace htok₂ (Or.inl rfl) (by omega) hevS
+  have hpre₃ : WalkTracePrefix G arena t C₃ := hstepS.trace
+  -- the second string
+  have hbyte₂ : entryByte G C₃.k = 0x22 := by
+    have hk : C₃.k = 3 := by omega
+    simp only [entryByte, entryPos, hk, hent, hbs]
+    decide
+  have htok₃ : t.tokens[C₃.k]? = some (.string ⟨6, 10⟩) := by
+    have hk : C₃.k = 3 := by omega
+    rw [hk, htokens]
+    rfl
+  have hspan₂ : ∀ sp : Span, t.tokens[C₃.k]? = some (.string sp) →
+      sp.stop = sp.start + 2 + 2 := by
+    intro sp hsp
+    have hk : C₃.k = 3 := by omega
+    rw [hk, htokens] at hsp
+    simp only [List.getElem?_cons_zero, List.getElem?_cons_succ, Option.some.injEq,
+      Token.string.injEq] at hsp
+    subst hsp
+    decide
+  have hrev₂ := payloadRevolution_string_plain arena hal hInv₃ (by rw [hk5]; omega) hdec
+    hbyte₂ (sp := ⟨6, 10⟩) htok₃ hspan₂ hbody₂ hpre₃ hseg₂ hkc₂ hevc₂
+  have hpay₂ : WalkPayloadStep G arena t C₃ C₄ (EventRecord.str false 2 (plainSpan 7)) :=
+    hrev₂.step
+  have hbytec : entryByte G C₄.k = 0x5D := by
+    have hk : C₄.k = 4 := by omega
+    simp only [entryByte, entryPos, hk, hent, hbs]
+    decide
+  exact row_commaBracket (Cm := { C₄ with events := C₄.events ++ [EventRecord.tag 4] })
+    hal hspans htokens hpre₀ hk₀ hbyteo hk₁ hev₁ hpay₁ (by omega) hevS hpay₂ hbytec
+    rfl rfl
+
+/-- **The document `["ab","cd"]`'s row, its payloads in the arena.**  The two offsets are
+the walk's: the first body at `0`, the second at `2`.  The arena's slices' read-back is
+the arm's premise, and the records name them by those offsets. -/
+theorem row_stringArenaDocument {m0 : Mem} {G : WalkGeom m0} {t : Tape}
+    {arena : List UInt8} {C₀ C₁ C₃ Cd₁ Cd₂ : WalkCarry G} {s₁ s₃ sd₁ sd₂ : State}
+    {p₁ p₂ : Nat} {v : JSON.Value}
+    (hal : WalkAlign G t) (hspans : spansWellFormed t = true)
+    (hbs : G.bs = stringDocumentBytes) (hent : G.ent = [0, 1, 5, 6, 10])
+    (htokens : t.tokens = [.punct .openBracket ⟨0, 1⟩, .string ⟨1, 5⟩,
+      .punct .comma ⟨5, 6⟩, .string ⟨6, 10⟩, .punct .closeBracket ⟨10, 11⟩])
+    (hdec : decodeTape t = some v)
+    (hpre₀ : WalkTracePrefix G arena t C₀) (hk₀ : C₀.k = 0)
+    (hk₁ : C₁.k = C₀.k + 1) (hev₁ : C₁.events = C₀.events ++ [EventRecord.tag 3])
+    (hInv₁ : WalkInv G C₁ s₁)
+    (hseg₁ : WalkScope.WalkSegment (stage2Calls stage2SubCalls) G C₁ s₁ Cd₁ sd₁ p₁)
+    (hkc₁ : Cd₁.k = C₁.k)
+    (hevc₁ : Cd₁.events = C₁.events ++ [EventRecord.str false 2 0])
+    (harena₁ : ∀ (sp : Span) (cs : List Nat), bodyCodePoints G.bs sp = some cs →
+      escapeCodePoints ((arena.drop 0).take 2) = some cs)
+    (hk₃ : C₃.k = C₁.k + 2)
+    (hev₃ : C₃.events = C₁.events ++ [EventRecord.str false 2 0])
+    (hInv₃ : WalkInv G C₃ s₃)
+    (hseg₂ : WalkScope.WalkSegment (stage2Calls stage2SubCalls) G C₃ s₃ Cd₂ sd₂ p₂)
+    (hkc₂ : Cd₂.k = C₃.k)
+    (hevc₂ : Cd₂.events = C₃.events ++ [EventRecord.str false 2 2])
+    (harena₂ : ∀ (sp : Span) (cs : List Nat), bodyCodePoints G.bs sp = some cs →
+      escapeCodePoints ((arena.drop 2).take 2) = some cs) :
+    WalkTraceRow G.bs arena t
+      ([EventRecord.tag 3, EventRecord.str false 2 0,
+        EventRecord.str false 2 2, EventRecord.tag 4] : List EventRecord) := by
+  let C₂ : WalkCarry G := { Cd₁ with k := Cd₁.k + 1 }
+  let C₄ : WalkCarry G := { Cd₂ with k := Cd₂.k + 1 }
+  have hk5 : G.nep = 5 := by simp [hal.tokens_length, htokens]
+  have hC₂k : C₂.k = C₁.k + 1 := by
+    show Cd₁.k + 1 = C₁.k + 1
+    rw [hkc₁]
+  have hC₄k : C₄.k = C₃.k + 1 := by
+    show Cd₂.k + 1 = C₃.k + 1
+    rw [hkc₂]
+  have hbyteo : entryByte G C₀.k = 0x5B := by
+    have hk : C₀.k = 0 := hk₀
+    simp only [entryByte, entryPos, hk, hent, hbs]
+    decide
+  have hpre₁ : WalkTracePrefix G arena t C₁ := by
+    have htok₀ : t.tokens[C₀.k]? = some (.punct .openBracket ⟨0, 1⟩) := by
+      rw [hk₀, htokens]
+      rfl
+    have hlt₀ : C₀.k < G.nep := by
+      rw [hk₀, hk5]
+      decide
+    exact WalkTracePrefix.emit_advance hpre₀ htok₀
+      (headTokenRecord_punct hal hlt₀ hspans arena (Or.inr (Or.inr (Or.inl rfl)))
+        htok₀ hbyteo) hk₁ hev₁
+  -- the first string's span, and its arena slice
+  have hbyte₁ : entryByte G C₁.k = 0x22 := by
+    have hk : C₁.k = 1 := by omega
+    simp only [entryByte, entryPos, hk, hent, hbs]
+    decide
+  have hlen₁ : ∀ sp : Span, t.tokens[C₁.k]? = some (.string sp) →
+      sp.start + 2 ≤ sp.stop := by
+    intro sp hsp
+    have hk : C₁.k = 1 := by omega
+    rw [hk, htokens] at hsp
+    simp only [List.getElem?_cons_zero, List.getElem?_cons_succ, Option.some.injEq,
+      Token.string.injEq] at hsp
+    subst hsp
+    decide
+  have hrev₁ := payloadRevolution_string_arena arena hal hInv₁ (by rw [hk5]; omega) hdec
+    hbyte₁ (len := 2) (off := 0) hlen₁ (by decide) harena₁ hpre₁ hseg₁ hkc₁ hevc₁
+  have hpay₁ : WalkPayloadStep G arena t C₁ C₂ (EventRecord.str false 2 0) := hrev₁.step
+  have hC₂e : C₂.events = C₁.events ++ [EventRecord.str false 2 0] := hevc₁
+  have htok₂ : t.tokens[C₂.k]? = some (.punct .comma ⟨5, 6⟩) := by
+    have hk : C₂.k = 2 := by omega
+    rw [hk, htokens]
+    rfl
+  have hevS : C₃.events = C₂.events := by rw [hev₃, hC₂e]
+  have hstepS : WalkTraceStep G arena t C₂ C₃ :=
+    WalkTraceStep.separator hpay₁.1.trace htok₂ (Or.inl rfl) (by omega) hevS
+  have hpre₃ : WalkTracePrefix G arena t C₃ := hstepS.trace
+  -- the second string's span, and its arena slice
+  have hbyte₂ : entryByte G C₃.k = 0x22 := by
+    have hk : C₃.k = 3 := by omega
+    simp only [entryByte, entryPos, hk, hent, hbs]
+    decide
+  have hlen₂ : ∀ sp : Span, t.tokens[C₃.k]? = some (.string sp) →
+      sp.start + 2 ≤ sp.stop := by
+    intro sp hsp
+    have hk : C₃.k = 3 := by omega
+    rw [hk, htokens] at hsp
+    simp only [List.getElem?_cons_zero, List.getElem?_cons_succ, Option.some.injEq,
+      Token.string.injEq] at hsp
+    subst hsp
+    decide
+  have hrev₂ := payloadRevolution_string_arena arena hal hInv₃ (by rw [hk5]; omega) hdec
+    hbyte₂ (len := 2) (off := 2) hlen₂ (by decide) harena₂ hpre₃ hseg₂ hkc₂ hevc₂
+  have hpay₂ : WalkPayloadStep G arena t C₃ C₄ (EventRecord.str false 2 2) := hrev₂.step
+  have hbytec : entryByte G C₄.k = 0x5D := by
+    have hk : C₄.k = 4 := by omega
+    simp only [entryByte, entryPos, hk, hent, hbs]
+    decide
+  exact row_commaBracket (Cm := { C₄ with events := C₄.events ++ [EventRecord.tag 4] })
+    hal hspans htokens hpre₀ hk₀ hbyteo hk₁ hev₁ hpay₁ (by omega) hevS hpay₂ hbytec
+    rfl rfl
+
 /-! ### Axiom footprints
 
 Both list lemmas and the two tag selects are axiom-free, as are the closer's
@@ -1803,7 +2377,15 @@ chain's index arithmetic and the induction (`k_eq`, `of_steps`,
 `omega`; and the two opener step producers are at the ceiling with the revolutions
 they package.  The separator documents' rows (`row_separatedPayload` and its two
 documents) are at `[propext, Quot.sound]`: they read the tape's token facts and the
-indices with `omega`, and no `WalkInv` enters them.  Measured rather than assumed. -/
+indices with `omega`, and no `WalkInv` enters them.
+
+The payload layer splits once more: `payloadStep_of_segment` is at `propext` alone (it
+is `WalkTraceStep.emit`'s pair), the two numerals' well-formedness is axiom-free (the
+`IntPart` and `Digits0` constructors), and everything that reads a tape's token facts —
+`payloadStep_number`, the two string steps, the three `payloadRevolution_*` producers
+and the three document rows — is at `[propext, Quot.sound]`; the numerals' lexeme
+equations are there too, from `ByteString`'s append and list views.  Measured rather
+than assumed. -/
 
 /-- info: 'LeanLLVM.Refinement.Token.recordTokens' depends on axioms: [propext] -/
 #guard_msgs in
@@ -2124,5 +2706,61 @@ indices with `omega`, and no `WalkInv` enters them.  Measured rather than assume
 /-- info: 'LeanLLVM.Refinement.row_colonBrace' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms row_colonBrace
+
+/-- info: 'LeanLLVM.Refinement.payloadStep_of_segment' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms payloadStep_of_segment
+
+/-- info: 'LeanLLVM.Refinement.payloadStep_number' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms payloadStep_number
+
+/-- info: 'LeanLLVM.Refinement.payloadStep_string_plain' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms payloadStep_string_plain
+
+/-- info: 'LeanLLVM.Refinement.payloadStep_string_arena' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms payloadStep_string_arena
+
+/-- info: 'LeanLLVM.Refinement.payloadRevolution_number' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms payloadRevolution_number
+
+/-- info: 'LeanLLVM.Refinement.payloadRevolution_string_plain' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms payloadRevolution_string_plain
+
+/-- info: 'LeanLLVM.Refinement.payloadRevolution_string_arena' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms payloadRevolution_string_arena
+
+/-- info: 'LeanLLVM.Refinement.decimalOne_wellFormed' does not depend on any axioms -/
+#guard_msgs in
+#print axioms decimalOne_wellFormed
+
+/-- info: 'LeanLLVM.Refinement.decimalTwo_wellFormed' does not depend on any axioms -/
+#guard_msgs in
+#print axioms decimalTwo_wellFormed
+
+/-- info: 'LeanLLVM.Refinement.decimalOne_lexeme' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms decimalOne_lexeme
+
+/-- info: 'LeanLLVM.Refinement.decimalTwo_lexeme' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms decimalTwo_lexeme
+
+/-- info: 'LeanLLVM.Refinement.row_numberDocument' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms row_numberDocument
+
+/-- info: 'LeanLLVM.Refinement.row_stringPlainDocument' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms row_stringPlainDocument
+
+/-- info: 'LeanLLVM.Refinement.row_stringArenaDocument' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms row_stringArenaDocument
 
 end LeanLLVM.Refinement
