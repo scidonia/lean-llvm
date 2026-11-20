@@ -7,6 +7,7 @@ import LeanLLVM.Refinement.JsonScanLane
 import LeanLLVM.Refinement.JsonScanSpec
 import LeanLLVM.Refinement.Pclmul
 import LeanLLVM.Refinement.JsonS1MasksSteps
+import LeanLLVM.Refinement.JsonS1BlocksRun
 import LeanLLVM.Refinement.JsonB8Steps
 import LeanLLVM.Refinement.JsonUnitContracts
 import LeanLLVM.Refinement.JsonEscapeSpec
@@ -10400,3 +10401,43 @@ entry. -/
 /-- info: 'LeanLLVM.Refinement.WalkScope.hlast_finish_boundary' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.WalkScope.hlast_finish_boundary
+
+/-- info: 'LeanLLVM.Refinement.JsonS1BlocksSteps.s1BlocksCallsFootprint' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonS1BlocksSteps.s1BlocksCallsFootprint
+
+/-- info: 'LeanLLVM.Refinement.JsonS1BlocksSteps.entry_step_tail' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonS1BlocksSteps.entry_step_tail
+
+/-- info: 'LeanLLVM.Refinement.JsonS1BlocksSteps.entry_step_blocks' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonS1BlocksSteps.entry_step_blocks
+
+/-- info: 'LeanLLVM.Refinement.JsonS1BlocksSteps.cleanup_step_tail' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonS1BlocksSteps.cleanup_step_tail
+
+/-- info: 'LeanLLVM.Refinement.JsonS1BlocksSteps.cleanup_step_done' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonS1BlocksSteps.cleanup_step_done
+
+/-- info: 'LeanLLVM.Refinement.JsonS1BlocksSteps.preheader_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonS1BlocksSteps.preheader_step
+
+/-- info: 'LeanLLVM.Refinement.JsonS1BlocksSteps.latch_step_exit' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonS1BlocksSteps.latch_step_exit
+
+/-- info: 'LeanLLVM.Refinement.JsonS1BlocksSteps.latch_step_loop' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonS1BlocksSteps.latch_step_loop
+
+/-- info: 'LeanLLVM.Refinement.JsonS1BlocksSteps.done_denote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonS1BlocksSteps.done_denote
+
+/-- info: 'LeanLLVM.Refinement.JsonS1BlocksSteps.done_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonS1BlocksSteps.done_step
