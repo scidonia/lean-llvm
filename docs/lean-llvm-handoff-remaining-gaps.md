@@ -828,6 +828,17 @@ that quantifies over states nobody occupies is the failure mode both find.
 
 ## Process rules this repository now needs
 
+- **A reasoning block ends in a tool call or a final answer — never in an intention
+  sentence.** `"Let me run it."` written instead of the call is a placeholder that
+  regenerates: the next sentence of the same shape is more likely than the call, and the
+  block becomes `"Let me go. Let me check. Let me write."` with no information in it.  The
+  transcript carries hundreds of these; they contained no decision, because the decision
+  had already been made one sentence earlier.  Two consecutive `Let me <verb>` sentences
+  mean the loop has started — emit the call.  Related: **never write "let me be
+  concise"** — be concise; meta-commentary about brevity is itself length.
+- **Waiting is not working.** When a job is backgrounded or a `wait` is pending, the moves
+  are: make a call, or end the turn. Never narrate the wait — narrating a wait produces
+  the same empty sentences as above, and the observation arrives on its own.
 - **A build piped to `tail` exits `0`.** `nix develop -c … lake-locked.sh build | tail`
   reports `tail`'s status, and the failure scrolls past. Capture the status where the
   command runs — `{ lake …; echo "LAKE_EXIT=$?"; } > log 2>&1` — and read the log; a
