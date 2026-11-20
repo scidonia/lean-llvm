@@ -13,12 +13,10 @@ duplicate a proof whose only varying part is the environment argument, and a new
 step would need a new wrapper before it could be used.
 
 `s1BlocksCalls` binds the classifier's two table intrinsics (the mask unit's
-`s1Calls`), the ASCII probe's 256-bit zero test, and the carry-less product at
-immediate zero.  It does not bind the escape list, whose calls write the caller's
-`xp` and count slot; a trace that runs those carries its own footprint.  Nor does
-it bind the fused loop's `llvm.usub.sat.v32i8`: that arm belongs to the fused
-DFA's environment, and an unbound symbol stays `ub` rather than being read as
-something it is not.
+`s1Calls`), the ASCII probe's 256-bit zero test, the carry-less product at
+immediate zero, and the fused loop's `llvm.usub.sat.v32i8` at the UTF-8 stage's
+own meaning.  It does not bind the escape list, whose calls write the caller's
+`xp` and count slot; a trace that runs those carries its own footprint.
 -/
 import LeanLLVM.Refinement.BlockEval
 import LeanLLVM.Refinement.JsonS1MasksSteps
@@ -39,14 +37,17 @@ set_option linter.unusedVariables false
 
 /-! ### The unit's call environment -/
 
-/-- The unit's call environment: the mask unit's two intrinsics, and the ASCII
-probe's 256-bit zero test. -/
+/-- The unit's call environment: the mask unit's two intrinsics, the ASCII
+probe's 256-bit zero test, and the fused DFA's saturating subtract. -/
 def s1BlocksCalls : Calls :=
   fun callee args mem next =>
     match callee, args with
     | "llvm.x86.avx.ptestz.256", [.vec 4 64 a, .vec 4 64 b] =>
         some { ret := .int 32 (ptestz (BitVec.ofNat 256 (packLanes a))
               (BitVec.ofNat 256 (packLanes b))), mem := mem, next := next }
+    | "llvm.usub.sat.v32i8", [.vec 32 8 a, .vec 32 8 b] =>
+        some { ret := .vec 32 8 (List.zipWith BitLanes.subsSat a b),
+               mem := mem, next := next }
     | _, _ => s1Calls callee args mem next
 
 /-- The probe's zero test: the two `<4 x i64>` operands packed little-endian into
@@ -71,7 +72,14 @@ theorem s1BlocksCalls_pclmulqdq (a0 a1 b0 b1 : BitVec 64) (mem : Mem) (next : Na
              mem := mem, next := next } :=
   rfl
 
-/-- **The footprint of the three intrinsic arms is empty.**  Each is a register
+/-- The saturating subtract: the UTF-8 stage's own meaning, lane by lane. -/
+theorem s1BlocksCalls_usubSat (a b : List (BitVec 8)) (mem : Mem) (next : Nat) :
+    s1BlocksCalls "llvm.usub.sat.v32i8" [.vec 32 8 a, .vec 32 8 b] mem next =
+      some { ret := .vec 32 8 (List.zipWith BitLanes.subsSat a b),
+             mem := mem, next := next } :=
+  rfl
+
+/-- **The footprint of the four intrinsic arms is empty.**  Each is a register
 operation on its operands, so no address the caller holds moves across one of
 these calls.
 

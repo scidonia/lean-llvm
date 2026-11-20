@@ -37,6 +37,8 @@ import LeanLLVM.Refinement.JsonAsciiSkip
 import LeanLLVM.Refinement.BlockEvalVector
 import LeanLLVM.Refinement.JsonS1BlocksReuse
 import LeanLLVM.Refinement.JsonS1BlocksIdentities
+import LeanLLVM.Refinement.JsonS1BlocksBlocks
+import LeanLLVM.Refinement.JsonS1BlocksRefine
 import LeanLLVM.Refinement.JsonEntryIR
 import LeanLLVM.Refinement.JsonEntrySteps
 import LeanLLVM.Refinement.JsonB8Steps
