@@ -83,11 +83,14 @@ theorem s1BlocksCalls_usubSat (a b : List (BitVec 8)) (mem : Mem) (next : Nat) :
 operation on its operands, so no address the caller holds moves across one of
 these calls.
 
-This is the footprint of `s1BlocksCalls` only.  The unit's two
+This is the footprint of `s1BlocksCalls` only.  The unit's
 `leanllvm_json_escape_list` calls write `xp` and the count slot, and they are not
-in this environment; their footprint is the escape environment's, which is what
-`s1BlocksPost`'s `UnchangedOutside` list records.  A trace that runs those calls
-therefore has to carry its own footprint, and this definition is not one. -/
+resolved here: they are the escape-parametric environment's arm
+(`s1BlocksCallsEsc`), whose footprint is the caller's selection's.  That
+selection is the escape unit's own record, whose post carries the
+`UnchangedOutside` its frame states, so no footprint bundle is stated for it
+here.  A trace that runs those calls therefore carries its own frame, and this
+definition is not one. -/
 def s1BlocksCallsFootprint : CallsFootprint s1BlocksCalls :=
   CallsFootprint.pure s1BlocksCalls (by
     intro sym args mem next r h
@@ -97,6 +100,93 @@ def s1BlocksCallsFootprint : CallsFootprint s1BlocksCalls :=
     all_goals (try (repeat' split at h))
     all_goals (try (cases h))
     all_goals rfl)
+
+/-! ### The escape-parametric environment
+
+`s1BlocksCalls` binds the four intrinsic arms and leaves
+`leanllvm_json_escape_list` unresolved: the escape call writes the caller's
+stream and count slot, so no intrinsic arm can stand for it, and a trace that
+reaches it is undefined there.  The unit's trace runs that call at the caller's
+own selection, so this is the same environment with the escape symbol resolved at
+`esc` and nothing else differing.
+
+A block that makes no escape call evaluates the same at either environment
+(`evalInstr_esc_agree`), and a run of such a block is the same run
+(`denoteCode_esc_of_free`): the phase's own blocks keep the traces they have at
+`s1BlocksCalls`, and only the escape arm is stated here. -/
+
+/-- The escape list's symbol, as the emitted body spells it. -/
+def escapeListCallee : String := "leanllvm_json_escape_list"
+
+/-- Whether an instruction calls the escape list. -/
+def callsEscape : Instr → Bool
+  | .call _ _ callee _ => decide (callee = escapeListCallee)
+  | .callVoid callee _ => decide (callee = escapeListCallee)
+  | _ => false
+
+/-- The unit's environment with the escape list resolved at the caller's
+selection. -/
+def s1BlocksCallsEsc (esc : Calls) : Calls :=
+  fun callee args mem next =>
+    if callee = escapeListCallee then esc callee args mem next
+    else s1BlocksCalls callee args mem next
+
+/-- At the escape list's symbol the environment is the caller's selection. -/
+theorem s1BlocksCallsEsc_escape (esc : Calls) (args : List Value) (mem : Mem) (next : Nat) :
+    s1BlocksCallsEsc esc escapeListCallee args mem next = esc escapeListCallee args mem next := by
+  simp only [s1BlocksCallsEsc, reduceIte]
+
+/-- At any other symbol it is the unit's own environment. -/
+theorem s1BlocksCallsEsc_other (esc : Calls) {callee : String}
+    (h : callee ≠ escapeListCallee) (args : List Value) (mem : Mem) (next : Nat) :
+    s1BlocksCallsEsc esc callee args mem next = s1BlocksCalls callee args mem next := by
+  simp only [s1BlocksCallsEsc, ite_eq_right h]
+
+/-- **An instruction that does not call the escape list evaluates the same at
+either environment.**  The two environments agree on every other symbol, and the
+call forms are the only arms that read the selection. -/
+theorem evalInstr_esc_agree (esc : Calls) (s : State) (i : Instr)
+    (h : callsEscape i = false) :
+    evalInstr (s1BlocksCallsEsc esc) s i = evalInstr s1BlocksCalls s i := by
+  cases i <;> simp_all [evalInstr, callsEscape, s1BlocksCallsEsc]
+
+/-- **A run of a block that never calls the escape list is the same at either
+environment.**  The leading `phi` run reads no call selection, and every other
+instruction is the single step above. -/
+theorem denoteRun_esc_of_free (esc : Calls) (pend : List (String × Value))
+    (is : List Instr) (s : State) (h : ∀ i ∈ is, callsEscape i = false) :
+    denoteRun (s1BlocksCallsEsc esc) pend is s = denoteRun s1BlocksCalls pend is s := by
+  induction is generalizing pend s with
+  | nil => rfl
+  | cons i rest ih =>
+      have hi : callsEscape i = false := h i (by simp)
+      have hrest : ∀ j ∈ rest, callsEscape j = false := fun j hj => h j (by simp [hj])
+      cases i <;>
+        first
+        | (simp only [denoteRun]
+           cases phiSelect s _ with
+           | none => rfl
+           | some v => exact ih (pend ++ [(_, v)]) s hrest)
+        | (rw [denoteRun_cons_of (calls := s1BlocksCallsEsc esc) (hi := by rfl),
+              denoteRun_cons_of (calls := s1BlocksCalls) (hi := by rfl)]
+           rw [evalInstr_esc_agree esc (s.bindAll pend) _ hi]
+           cases evalInstr s1BlocksCalls (s.bindAll pend) _ with
+           | none => rfl
+           | some s' => exact ih [] s' hrest)
+
+/-- The same at `denoteCode`, which is the empty pending run. -/
+theorem denoteCode_esc_of_free (esc : Calls) (is : List Instr) (s : State)
+    (h : ∀ i ∈ is, callsEscape i = false) :
+    denoteCode (s1BlocksCallsEsc esc) is s = denoteCode s1BlocksCalls is s :=
+  denoteRun_esc_of_free esc [] is s h
+
+/-- **A block that never calls the escape list has the same control step at
+either environment**, so a trace stated at the unit's environment is a trace at
+the escape-parametric one. -/
+theorem step_esc_of_free (esc : Calls) (f : Function) (s : State) (b : Block)
+    (hfind : f.findBlock s.pc = some b) (h : ∀ i ∈ b.instrs, callsEscape i = false) :
+    step (s1BlocksCallsEsc esc) f s = step s1BlocksCalls f s := by
+  simp only [step, hfind, denoteCode_esc_of_free esc b.instrs s h]
 
 /-! ### The reuse boundary
 
