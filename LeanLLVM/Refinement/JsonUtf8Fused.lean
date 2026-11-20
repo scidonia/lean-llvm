@@ -64,23 +64,23 @@ together with `fusedRun_word_eq_klAcc` here: the two agree at every block, so
 the body's accumulator at the end is the word this module's verdict is read
 from.
 
-A fixture for a *host* loop that fuses this step into a wider block loop — the
-contracted `s1_blocks` body with a UTF-8 arm — cannot be added yet: that body
-today writes every block's entry word and, at `arm & 2`, appends the escape
-list; it carries no `u8k`, and bit 2 of its arm word is the UTF-8 error arm its
-header assigns to the caller's stage, so there is no UTF-8 arm to capture.
-Capturing it now would pin a body that does not contain the step, and a
-refinement of it would say nothing about this module.  It waits for the block
-unit — or a caller-side fused body — to carry the arm.  Its refinement is also
-not this module's: the unit's own body is emitted and refined in
-`JsonUtf8Steps`, while the host body is the block unit's, which `JsonS1BlocksIR`
-pins.  What such a body must contain is fixed by the statements
-above and needs no new theorem: the two vectors it has already loaded, the
-three-byte carry at `p - 3`, the `prev_ascii` cell beside the accumulator, the
-gate branch, and the accumulator's lane count.  The load-form carry is why the
-host shape needs no cross-block DFA state: `pre` is the three bytes at `p - 3`,
-which are the three bytes before the block and, for block `bi + 1`, the previous
-block's last three (`klPre_succ`).
+A *host* loop that fuses this step into a wider block loop now exists: the
+contracted `s1_blocks` body carries `%u8k` and `%prev_ascii` beside the
+classifier's registers, and `probes/install/ir/json-s1-blocks.candidate.ll` is
+its committed emission, pinned by `JsonS1BlocksIR`.  The arm word's bit 2 is
+the stage's `ungated` selector; the gated form skips with
+`ascii && prev_ascii`, and the ungated form runs the DFA on every block, so the
+two paths are the ones `fusedStep`'s `gate` selects.  The body returns the
+stage's error word in bit 1 of its two-bit result, with the ASCII probe in bit
+0.  Its refinement is not this module's: the emitted loop's invariant is
+`JsonUtf8Steps`'s (`packLanes u8k = bytesToNat (klAcc bs i)`), and the host
+body's blocks are `JsonS1BlocksIR`'s.  What the host body must contain is fixed
+by the statements above and needs no new semantics: the two vectors it has
+already loaded, the three-byte carry at `p - 3`, the `prev_ascii` cell beside
+the accumulator, the gate branch, and the accumulator's lane count.  The
+load-form carry is why the host shape needs no cross-block DFA state: `pre` is
+the three bytes at `p - 3`, which are the three bytes before the block and, for
+block `bi + 1`, the previous block's last three (`klPre_succ`).
 -/
 import LeanLLVM.Refinement.JsonUtf8Steps
 

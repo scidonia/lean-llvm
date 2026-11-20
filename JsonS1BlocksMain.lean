@@ -1,9 +1,10 @@
 /-
-`leanllvm-json-s1-blocks`: the stage-1 block body over documents, both arms.
+`leanllvm-json-s1-blocks`: the stage-1 block body over documents, four arms.
 
 The kernel is not re-implemented here.  Each row stages a document padded to a
-whole number of sixty-four-byte blocks at **offset 1** of a buffer — a
-misaligned base — an `ent` array of `8 * blocks` bytes pre-filled with `0xA5`, a
+whole number of sixty-four-byte blocks at **offset 4** of a buffer — a
+misaligned base, with the three bytes before it zero (the UTF-8 DFA's load-form
+carry) — an `ent` array of `8 * blocks` bytes pre-filled with `0xA5`, a
 sixty-four-byte `xp` region pre-filled with `0xA5`, an eight-byte `nxp` word
 staged at zero (the cursor the first escape-list call reads) and a sixteen-byte
 `xcarry` pair staged at zero (the all-false carry), and runs `s1BlocksFunction` —
@@ -20,7 +21,8 @@ A row is tab-separated:
     <source> <label> <arm> <blocks> <touched> <ent words…> <nxp> <xp bytes>
     <xcarry lo> <xcarry hi> <ret>
 
-`arm` is `0` (gate off) or `2` (escape list selected); `blocks` is
+`arm` is one of `0` (ASCII-gated, no escape list), `2` (gated, escape list),
+`4` (ungated, no escape list) or `6` (ungated, escape list); `blocks` is
 `(length + 63) / 64` and there are that many `ent` words, one per block, each
 `0x` and sixteen lowercase hex digits; `nxp`, the two carry words and the
 return word are in the same form; `xp bytes` is the first sixty-four bytes of
@@ -28,11 +30,13 @@ the position stream as one hundred and twenty-eight lowercase hex digits.
 `touched` is `1` exactly when `xp` is still sixty-four `0xA5` bytes, `nxp` is
 still zero and both carry words are still zero — the staged state — so the
 gate-off arm's row must read `touched = 1`, and a gate-on row whose block has
-an escape position reads `0`.  `ret` is the unit's ASCII probe, read from the
-value the body returns: `1` when every document byte is below `0x80`, and `1`
-for an empty document.  It is the last column so that the `ent` words stay the
-first `0x` fields.  The label carries the document's length as `len<n>` so a
-run's row set can be checked against the documents it names.
+an escape position reads `0`.  `ret` is the unit's two-bit word, read from the
+value the body returns: bit 0 is the ASCII probe (`1` when every document byte
+is below `0x80`, and the empty document is vacuously ASCII) and bit 1 is the
+UTF-8 stage's error word (`1` when the staged window is not a valid prefix).  It
+is the last column so that the `ent` words stay the first `0x` fields.  The
+label carries the document's length as `len<n>` so a run's row set can be
+checked against the documents it names.
 
 The rows, in order, each document once per arm, arm ascending:
 
@@ -69,6 +73,7 @@ on a mismatch or a usage error, `2` when an input cannot be read.
 import LeanLLVM
 import LeanLLVM.Refinement.JsonS1BlocksIR
 import LeanLLVM.Refinement.JsonS1MasksIR
+import LeanLLVM.Refinement.JsonUtf8IR
 import LeanLLVM.Refinement.JsonEscapeListContract
 
 open LeanLLVM
@@ -81,10 +86,11 @@ namespace JsonS1BlocksMain
 
 /-! ### The call environment
 
-The block body calls the classifier's two intrinsics and `leanllvm_json_escape_list`.
-The first are `s1Calls`; the second is resolved to its own pinned body at the
-record's budget, which is the record's fuel function and depends only on the
-three masks the call passes. -/
+The block body calls the classifier's two intrinsics, the UTF-8 stage's lane
+test and saturating subtract, and `leanllvm_json_escape_list`.  The classifier's
+are `s1Calls`; the UTF-8 pair is bound here as `utf8.h`'s word; the escape list
+is resolved to its own pinned body at the record's budget, which is the record's
+fuel function and depends only on the three masks the call passes. -/
 
 /-- The block unit's call environment: the mask unit's intrinsics, the ASCII
 probe's zero test, and the escape list at `Γ_escape_positions`'s budget.
@@ -103,12 +109,16 @@ def blocksCalls : Calls :=
       | "llvm.x86.avx.ptestz.256", [.vec 4 64 a, .vec 4 64 b] =>
           some { ret := .int 32 (BitLanes.ptestz (BitVec.ofNat 256 (packLanes a))
                 (BitVec.ofNat 256 (packLanes b))), mem := mem, next := next }
+      | "llvm.usub.sat.v32i8", [.vec 32 8 a, .vec 32 8 b] =>
+          some { ret := .vec 32 8 (List.zipWith BitLanes.subsSat a b),
+                 mem := mem, next := next }
       | _, _ => s1Calls callee args mem next
 
 /-! ### Staging one row -/
 
-/-- The document's base: offset 1 of the staging buffer. -/
-def docAddr : Nat := 8193
+/-- The document's base: offset 4 of the staging buffer, so the three bytes the
+UTF-8 DFA reads before the document are staged and zero. -/
+def docAddr : Nat := 8196
 
 /-- The `ent` array's address. -/
 def entAddr : Nat := 16384
@@ -142,6 +152,7 @@ def bytesAt (addr : Nat) (bs : List UInt8) : Mem :=
 
 /-- The memory a row is run from. -/
 def stagingMem (bs : List UInt8) : Mem :=
+  bytesAt (docAddr - 3) [0, 0, 0] ++
   bytesAt docAddr (padded bs) ++
     bytesAt entAddr (List.replicate (8 * blocksOf bs.length) sentinel) ++
     bytesAt xpAddr (List.replicate 64 sentinel) ++
@@ -149,7 +160,7 @@ def stagingMem (bs : List UInt8) : Mem :=
     bytesAt xcarryAddr (List.replicate 16 0)
 
 /-- One row's observation, read back out of memory and the return value.  `ret`
-is the unit's ASCII probe: `1` when every document byte is below `0x80`. -/
+is the unit's two-bit word: bit 0 the ASCII probe, bit 1 the UTF-8 error. -/
 structure Obs where
   ent : List Nat
   xp : List UInt8
@@ -315,7 +326,7 @@ def Emitter.emit (e : Emitter) (source label line : String) : IO Unit := do
             IO.eprintln s!"mismatch: {source}\t{label}: expected {want}, got {line}"
             e.failures.modify (· + 1)
 
-/-- The line a row's observation prints.  The ASCII probe is the last column so
+/-- The line a row's observation prints.  The two-bit word is the last column so
 that the `ent` words stay the first `0x` fields of the row. -/
 def renderRow (source label : String) (arm blocks : Nat) (o : Obs) : String :=
   let flag (b : Bool) : String := if b then "1" else "0"
@@ -335,10 +346,13 @@ def Emitter.row (e : Emitter) (source label : String) (arm : Nat)
         valued result and leave every staged region"
       e.failures.modify (· + 1)
 
-/-- Print one document under both arms, gate off then gate on. -/
+/-- Print one document under all four arms, gated then ungated, and each with
+the escape list clear before it is selected. -/
 def Emitter.document (e : Emitter) (source label : String) (bs : List UInt8) : IO Unit := do
   e.row source label 0 bs
   e.row source label 2 bs
+  e.row source label 4 bs
+  e.row source label 6 bs
 
 /-- The regular files a path names: the file itself, or the files directly in
 a directory, in name order. -/

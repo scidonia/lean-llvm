@@ -1,11 +1,15 @@
 /-
 The ASCII shortcut's specification-level soundness.
 
-`leanllvm_json_s1_blocks` returns `1` exactly when every document byte is below
-`0x80` (`s1_blocks.h`).  The pipeline's planned consumer reads that word as "the
-staged window is a valid UTF-8 prefix, so the UTF-8 unit can be skipped", and the
-two facts that make that reading sound are stated here at the specification's own
-predicates, not by running the unit:
+The block unit's first body returned `1` exactly when every document byte is
+below `0x80` (`s1_blocks.h` at v1); its v2 body returns that answer in bit 0 and
+the UTF-8 stage's error word in bit 1, with the DFA fused into the block loop.
+The ASCII shortcut now runs inside that loop: an all-ASCII block whose
+predecessor is ASCII skips the DFA, and a document whose every byte is ASCII
+needs no DFA work at all.  The two facts that make the skip sound — and the
+v1 consumer's reading "the window is a valid UTF-8 prefix, so the UTF-8 unit can
+be skipped" — are stated here at the specification's own predicates, not by
+running the unit:
 
 * `utf8WinPrefix_of_ascii` — a window whose every byte is ASCII is a valid UTF-8
   prefix, because each byte is a one-byte `Utf8Char.one` and `ValidPrefix` admits
