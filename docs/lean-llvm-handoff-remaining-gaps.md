@@ -826,6 +826,42 @@ that quantifies over states nobody occupies is the failure mode both find.
 
 ---
 
+## The string lane — seven fields mechanical, two need new invariant, one may be false
+
+`HcontStringLane` (`JsonStage2WalkDispatchSupply:313-325`) has eleven fields and no
+inhabitant.  A field-by-field audit says the shape of the work is *not* eleven proofs:
+
+- **Seven are already settled** by four existing lemmas, verbatim:
+  `walkReadBytes_entryPos_word` (`Supply:399`, fields `bs`/`hreadLane`/`hq`),
+  `walkReadBytes_rootSlot_word` (`Supply:418`, `rd`/`hreadRoot`),
+  `walkReadBytes_logArena_word` (`Supply:616`, `A`/`hreadA`) and
+  `walkReadBytes_logCap_word` (`Supply:630`, `Cc`/`hreadC`).  A producer is the same
+  `Classical.choose` composition `hcontAbi_openCall` (`AbiOfInv:56-80`) uses — no new
+  mathematics.
+- **`hcur` (`Supply:324`) needs a new `WalkInv` field.**  The only clause of that shape,
+  `pending_cursor` (`Record:258`), is gated on `C.pending = some …`, and the walk sets
+  `pending` at the reserve exit and clears it at the body's exit — so at a loop head it
+  cannot fire.  The weaker `alen_le` (`Record:472`, `C.alen ≤ G.ndst0 + G.n`) is short by
+  `G.n` versus `entryPos G C.k`.  The tree states this obstruction itself
+  (`StringOfStaging:47`, `WitnessString:397-398`).  Home: `JsonStage2WalkScopeRecord`,
+  beside `alen_le_sum`/`pending_cursor`, with preservation at the merge links.
+- **`hwin` (`Supply:325`) may be false as written.**  It compares an arena-relative cursor
+  to the document length; `WalkGeom`'s only `ndst0` clause is `arenaRoom`
+  (`Geom:80`, about `dstcap`), and at the seed (`Assembly:1561-1576`) a head-state `hwin`
+  demands `ndst0 + ext ≤ G.n`.  The codebase records it as *supplied*, not derived
+  (`StringStageFacts:1052-1054`).  Restating it against `G.ndst0 + G.n`, or adding a
+  staging clause pinning `ndst0`, is a planner's decision.
+
+`HcontPayload.abi.string` stays open independently: its `hpreS` producer
+(`s2StringBodyPre_at_string_call`, `StringStageFacts:1236`) is stated at
+`C.pending = some …`, not at a loop head, and `hR8` (`Supply:351`) is an accepting-arm
+selector that `stage2StringBody` can refuse, so neither follows from the lane.
+
+**The pattern across both repairs**: a field is stated at a *head* state while the
+invariant only carries the fact at another state (the reserve exit), or at the bits alone
+while the fact needs the byte.  The missing work is therefore **statement repair first,
+composition second** — and the composition is cheap once the statements are right.
+
 ## The `wsStop` premise — decided, and why the theorem stays unconditional
 
 `HlastLane.tail` (`JsonStage2WalkDispatchSupply:989`) states the last byte's class at the
