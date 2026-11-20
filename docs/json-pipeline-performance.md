@@ -1031,6 +1031,59 @@ claim. The bench-only copy above now prices removing the boundary, but no such
 unit is in `kernel/json/`: the fused/split rows price keeping the unit boundary,
 and nothing here adopts a fused unit or proves one.
 
+### The fused block unit (v2), measured
+
+The rows above price the unit *boundary* around the emitter.  The contracted
+block unit's v2 body is a different shape: a leading phase classifies the
+all-ASCII blocks with no DFA state, then the UTF-8 stage's DFA runs inside the
+fused classification loop, and the unit returns the verdict beside the ASCII
+probe, so the separate `leanllvm_json_utf8` call disappears.  The first body (v1) was the
+probe-only shape plus that separate call; `tests/json-units-bench/s1_blocks_v1.c`
+freezes it at `64c3efe`, and `tests/json-units-bench/bench-s1-blocks.sh` times
+the two at one ABI.  Both are called on a document staged at offset four with
+the three bytes before it zero, the caller's entry array, escape stream, cursor
+and carry pair reset per call.  Four arms are measured — gated and ungated
+(`arm & 4`), each without and with the escape list (`arm & 2`) — and the driver
+gates the two actors' entry words, escape stream, carries and return words
+before any row is timed.
+
+The transcript is `tests/json-units-bench/bench-s1-blocks-transcript.txt`; the
+ratio is v2's time over v1's in the same round, so a drift inside a round
+cancels.  The acceptance document is `syn-utf8-64k`; `syn-utf8-4m` is the
+working-set control, `route-u8-64k` is the route's raw UTF-8 class,
+`syn-dense-64k` and `route-s1-64k` price the skip on ASCII documents, and
+`syn-strings-64k` is the string class.
+
+The run below is one AMD EPYC 7B12 session, 11 rounds of 41 repetitions,
+`taskset -c 0`; the corpus sha256s, the v1 and v2 sha256s, and the host are in
+the transcript.  Ratio is v2 ÷ v1, so below 1 means the fused body is faster.
+The one-minute load average was 1.09 on 8 vCPUs at start.
+
+|document|gated, no list|gated, list|ungated, no list|ungated, list|
+|---|---:|---:|---:|---:|
+|`syn-utf8-64k`|**0.914**|0.957|0.931|0.964|
+|`syn-utf8-4m`|0.927|0.941|0.928|0.962|
+|`route-u8-64k`|0.924|0.951|0.932|0.968|
+|`syn-dense-64k`|0.967|0.983|0.977|0.991|
+|`syn-strings-64k`|0.964|0.967|0.995|0.966|
+|`route-s1-64k`|0.961|0.953|0.973|0.949|
+
+On the UTF-8 classes the fused body takes 7–9% off the v1 composite in the
+list-free arms, and 4–6% with the escape list; the 4 MiB document is 0.93–0.96
+in every arm.  The ASCII phase removes the v2 regression: every ASCII-first
+document is at or below v1 in every arm (0.95–0.99), including the ungated list
+cell that read 1.198 before.  The phase costs the UTF-8 documents almost
+nothing — their first non-ASCII block is early, so at most one classified block
+is handed on before the fused loop — and it is what makes an all-ASCII document
+run the first body's shape with no DFA phis.
+
+No row here is a full-pipeline ratio, and the host is not the measurement host
+of the tables above: the paired construction prices the two bodies on one
+machine, not the route.  The driver's checksum sink read `0` on every row; the
+pre-timing gate, which compares both actors' entry words, escape streams,
+carries and return words on all four arms, is the correctness evidence and the
+checksum is not.
+
 **The string case, and the lever.** The composite on `syn-strings-64k` is 0.521
 cycles per byte against simdjson's stage 1 at 0.278 — the 0.49 in the table
 above — and its parts are approximately 0.333 classification, 0.142 entry and

@@ -32,6 +32,11 @@ import LeanLLVM.Refinement.JsonS1MasksSteps
 import LeanLLVM.Refinement.JsonS1BlocksIR
 import LeanLLVM.Refinement.JsonEntSpec
 import LeanLLVM.Refinement.JsonS1BlocksSteps
+import LeanLLVM.Refinement.JsonS1BlocksContract
+import LeanLLVM.Refinement.JsonAsciiSkip
+import LeanLLVM.Refinement.BlockEvalVector
+import LeanLLVM.Refinement.JsonS1BlocksReuse
+import LeanLLVM.Refinement.JsonS1BlocksIdentities
 import LeanLLVM.Refinement.JsonEntryIR
 import LeanLLVM.Refinement.JsonEntrySteps
 import LeanLLVM.Refinement.JsonB8Steps
@@ -39,6 +44,7 @@ import LeanLLVM.Refinement.JsonB3Steps
 import LeanLLVM.Refinement.JsonUtf8IR
 import LeanLLVM.Refinement.JsonUtf8Steps
 import LeanLLVM.Refinement.JsonUtf8Spec
+import LeanLLVM.Refinement.JsonUtf8Fused
 import LeanLLVM.Refinement.JsonUnitContracts
 import LeanLLVM.Refinement.JsonEscapeIntrinsics
 import LeanLLVM.Refinement.JsonEscapeIR

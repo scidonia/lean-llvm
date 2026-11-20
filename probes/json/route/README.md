@@ -571,3 +571,35 @@ they must agree.  The object itself still accepts the fourteen: `Sigma_pipeline`
 states the reference parser's predicate, and the object's verdict is the RFC
 one, which is why `Sigma_pipeline` remains a statement rather than a theorem
 about the linked object.
+
+## Running the stage-1 units' route outside the dev shell
+
+`tests/json-s1-blocks/check.sh` needs the runner
+(`nix develop -c lake build leanllvm-json-s1-blocks`) and a `clang` that emits
+the fixture's bytes.  The dev shell supplies both by putting the pinned
+`clang-wrapper` first on `PATH` and letting its setup hook map the unsuffixed
+flag channels; **a wrapper invoked directly, without that hook, reads only the
+target-suffixed channels**, so `NIX_CFLAGS_COMPILE` and `NIX_HARDENING_ENABLE`
+set in their unsuffixed spelling are ignored and the emission differs (no
+`sspstrong`, no `zero-call-used-regs`, and a `dso_local` the committed body does
+not carry).  Name the suffix instead — the wrapper here is
+`readlink -f "$(command -v clang)"` in the dev shell,
+`/nix/store/xjvnndnlp58385j5wvb55xzfyvh8zdmp-clang-wrapper-21.1.8/bin/clang`:
+
+```bash
+PATH=/nix/store/xjvnndnlp58385j5wvb55xzfyvh8zdmp-clang-wrapper-21.1.8/bin:$PATH \
+NIX_HARDENING_ENABLE_x86_64_unknown_linux_gnu="bindnow format fortify fortify3 \
+  libcxxhardeningfast pic relro stackclashprotection stackprotector \
+  strictflexarrays1 strictoverflow zerocallusedregs" \
+NIX_CFLAGS_COMPILE_x86_64_unknown_linux_gnu=" -frandom-seed=xcm3fy1i4q" \
+bash tests/json-s1-blocks/check.sh
+```
+
+The list is the dev shell's `NIX_HARDENING_ENABLE`: `pic` keeps `dso_local` off
+the definition, `stackprotector` emits `sspstrong` with buffer size 4,
+`zerocallusedregs` emits `"zero-call-used-regs"="used-gpr"`, and
+`stackclashprotection` emits `"probe-stack"="inline-asm"`; `-frandom-seed`
+fixes the register numbering.  With those channels the chain regenerates
+`probes/install/ir/json-s1-blocks.candidate.ll` at sha256
+`e7a54f06f734ffb1e1af7ca829e60a000a2bb999166316424cb635bd8b47707c` — the
+committed bytes — and `check.sh` exits 0 over its 84,252 rows.

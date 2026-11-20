@@ -291,7 +291,8 @@ normalise_header() {
     -e 's/ initializes\(\([^)]*\)\)//g' \
     -e 's/ local_unnamed_addr//g' \
     -e 's/ #[0-9]+//g' \
-    -e 's/ align [0-9]+//g'
+    -e 's/ align [0-9]+//g' \
+    -e 's/ range\(i64 [^)]*\)//g'
 }
 
 # Instruction rules: metadata (5), alignment (9), the constraining flags (4),
@@ -822,19 +823,22 @@ inventory_of "$work/fixture.ll" > "$work/inventory.txt"
 
 # --- the contracted body's shape, asserted at capture ---------------------
 
-# The body is stack-free: the classifier carry and the previous block's scalar
-# lane are registers, and no caller-staged scratch object survives.  An alloca
-# would put a frame on the caller that the unit's header does not name.
+# The body is stack-free: the classifier carry, the previous block's scalar
+# lane, the UTF-8 error vector and its gate cell are registers, and no
+# caller-staged scratch object survives.  An alloca would put a frame on the
+# caller that the unit's header does not name.
 if grep -qE '\balloca\b' "$work/body.ll"; then
   fail "the emission allocates; the contracted body is stack-free"
 fi
 
 # The call census: the classifier's two intrinsics (the same pair the mask unit
-# declares) and the escape list, in this fixture's sorted inventory spelling.
-expected_calls=$(printf 'call @leanllvm_json_escape_list\ncall @llvm.x86.avx2.pshuf.b\ncall @llvm.x86.pclmulqdq\n')
+# declares), the ASCII probe's and the UTF-8 stage's lane tests, the UTF-8
+# stage's saturating subtraction, and the escape list, in this fixture's sorted
+# inventory spelling.
+expected_calls=$(printf 'call @leanllvm_json_escape_list\ncall @llvm.usub.sat.v32i8\ncall @llvm.x86.avx.ptestz.256\ncall @llvm.x86.avx2.pshuf.b\ncall @llvm.x86.pclmulqdq\n')
 actual_calls=$(awk '$1 == "call"' "$work/inventory.txt")
 [ "$actual_calls" = "$expected_calls" ] ||
-  fail "the fixture's call census is not the classifier intrinsics plus the escape list: $(printf '%s' "$actual_calls" | tr '\n' ' ')"
+  fail "the fixture's call census is not the classifier's, the UTF-8 stage's and the escape list's: $(printf '%s' "$actual_calls" | tr '\n' ' ')"
 
 # --- write the four artefacts, together -----------------------------------
 
