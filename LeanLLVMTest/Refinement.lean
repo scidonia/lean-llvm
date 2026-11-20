@@ -6403,10 +6403,11 @@ trailing run and the incoming parity are the only things it depends on.
 The carry slot's three words are `s1_open_spec`, `s1_ppar_spec` and
 `s1_inside_spec`, and `s1_masks_refines` assembles the run, the six mask clauses,
 the carry triple and the outside sweep.  Every one of these is `[propext,
-Quot.sound]` or narrower **except** the three that read the sign word, which carry
-`Classical.choice` through this core's bit-to-magnitude bridge:
-`sshiftRight_63`, `s1_inside_spec`, and so `s1_masks_refines`.  The pins state that
-footprint rather than claiming the narrower one.
+Quot.sound]` or narrower.  The sign word's lemma `sshiftRight_63` reads the sign
+from `BitVec.getLsbD_last` and takes the division step with `Int.negSucc_ediv`,
+so it never crosses the bit-to-magnitude bridge whose lemmas carry
+`Classical.choice`; `s1_inside_spec` and `s1_masks_refines` inherit the same
+narrow footprint.
 -/
 
 /-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.suffixRun_full' depends on axioms: [propext, Quot.sound] -/
@@ -6465,15 +6466,15 @@ footprint rather than claiming the narrower one.
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.blockDrop
 
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.sshiftRight_63' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.sshiftRight_63' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.sshiftRight_63
 
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_inside_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_inside_spec' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1_inside_spec
 
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_masks_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_masks_refines' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1_masks_refines
 
@@ -6510,11 +6511,12 @@ it is. -/
 
 /-! ### The entry unit's step corpus
 
-**The `Classical.choice` these pins report is none of the three carriers the
-stage-1 pins name** (`sshiftRight_63`, `s1_inside_spec`, `s1_masks_refines`):
-none of them is consumed here. It is introduced by the entry lemmas' own proof
-terms, and the pins below name the declaration that introduced it rather than a
-single origin, because the entry corpus has more than one:
+**The `Classical.choice` these pins report does not come from the stage-1 mask
+unit**: `sshiftRight_63`, `s1_inside_spec` and `s1_masks_refines` are at
+`[propext, Quot.sound]` and none of them is consumed here. It is introduced by
+the entry lemmas' own proof terms, and the pins below name the declaration that
+introduced it rather than a single origin, because the entry corpus has more
+than one:
 
 * `step_gep64` widens in its own proof term — measured at
   `[propext, Classical.choice, Quot.sound]` while each of its dependencies
@@ -9323,7 +9325,7 @@ either place. -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.masks_written_extent
 
-/-- info: 'LeanLLVM.Refinement.masks_satisfies' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.masks_satisfies' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.masks_satisfies
 
@@ -9371,11 +9373,11 @@ either place. -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.utf8_post_not_implied
 
-/-- info: 'LeanLLVM.Refinement.masksStaged_satisfies' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.masksStaged_satisfies' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.masksStaged_satisfies
 
-/-- info: 'LeanLLVM.Refinement.masksStaged_calls' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.masksStaged_calls' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.masksStaged_calls
 
@@ -9458,7 +9460,7 @@ section above. -/
 
 -- The composition law's other half: the refutation and its witness.
 
-/-- info: 'LeanLLVM.Refinement.masksMispost_witness' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.masksMispost_witness' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.masksMispost_witness
 

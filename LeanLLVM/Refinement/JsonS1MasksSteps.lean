@@ -3638,55 +3638,62 @@ theorem runParityBefore_eq {w : Nat} (bs : BitVec w) (o p : Bool) :
 
 /-- `ashr` by the sign bit is one of two constants: the sign word.
 
-`Classical.choice` enters this module here and at `s1_inside_spec`, and nowhere
-else: both carry it, and every theorem whose footprint is wider than
-`[propext, Quot.sound]` above them — `s1_masks_refines` included — inherits it
-through one of these two.  The carrier is this core's
-*bit-to-magnitude* bridge — `BitVec.msb_eq_true_iff_two_mul_ge`,
-`msb_eq_false_iff_two_mul_lt` and `le_toNat_iff_getLsbD_eq_true` all carry it — and
-the other route (`BitVec.getLsbD_sshiftRight`, `toNat_sshiftRight`,
-`sshiftRight_eq_of_msb_false`) carries it too, so no route reaches the sign word
-without it.  The lemmas that *are* clean, and are what these rest on: `sshiftRight_eq`,
-`BitVec.toNat_ushiftRight` with `Nat.shiftRight_eq_div_pow`, `BitVec.toInt`'s
-definition, and `Int.negSucc 0 = -1`. -/
+The route is definitional.  `BitVec.sshiftRight_eq` puts the shift on `toInt`,
+`Int.shiftRight_eq_div_pow` turns it into division by `2 ^ 63`, and `BitVec.toInt`'s
+own conditional — the split `BitVec.toInt_eq_toNat_cond` exposes on
+`2 * x.toNat < 2 ^ 64` — decides the sign; the top lane gives the magnitude
+through `BitVec.getLsbD_last`.  Neither step crosses the bit-to-magnitude bridge.
+Inside the negative branch the floor division of `-[m+1]` is `Int.negSucc_ediv`
+(`[propext]`), and its quotient is zero because `m < 2 ^ 63`; the non-negative
+branch is `Int.ediv_eq_zero_of_lt` (`[propext]`).  Footprint:
+`[propext, Quot.sound]`.
+
+The route this avoids is the one whose lemmas carry `Classical.choice`:
+`BitVec.msb_eq_true_iff_two_mul_ge`, `BitVec.msb_eq_false_iff_two_mul_lt`,
+`BitVec.le_toNat_iff_getLsbD_eq_true`, `BitVec.getLsbD_sshiftRight`,
+`BitVec.toNat_sshiftRight` and `BitVec.sshiftRight_eq_of_msb_false` all do.
+`Int.ediv_eq_neg_one_of_neg_of_le` looks like the natural finish for the negative
+branch and carries it too, through `Nat.div_eq_zero_iff_lt`, so the quotient step
+is `Int.negSucc_ediv` instead of that lemma. -/
 theorem sshiftRight_63 (x : BitVec 64) :
     x.sshiftRight 63 = seedVec 64 (x.getLsbD 63) := by
-  rw [BitVec.sshiftRight_eq]
+  rw [BitVec.sshiftRight_eq, Int.shiftRight_eq_div_pow, BitVec.toInt_eq_toNat_cond]
+  have hlast : x.getLsbD 63 = decide (2 ^ 63 ≤ x.toNat) := BitVec.getLsbD_last x
+  have hisLt : x.toNat < 2 ^ 64 := x.isLt
+  have hpow : (2 : Nat) ^ 64 = 2 * 2 ^ 63 := by decide
+  have hpowpos : 0 < (2 : Nat) ^ 63 := Nat.two_pow_pos 63
   by_cases hb : x.getLsbD 63 = true
-  · have hmsb : x.msb = true := by rw [BitVec.msb_eq_getLsbD_last]; exact hb
-    have hge : 2 ^ 63 ≤ x.toNat := by
-      have := (BitVec.msb_eq_true_iff_two_mul_ge (x := x)).mp hmsb
+  · have hge : 2 ^ 63 ≤ x.toNat := by
+      rw [hlast] at hb
+      exact of_decide_eq_true hb
+    have hcond : ¬ (2 * x.toNat < 2 ^ 64) := by omega
+    rw [ite_eq_right hcond]
+    have hxle : x.toNat ≤ 2 ^ 64 - 1 := by omega
+    have hti : ((x.toNat : Int) - ((2 ^ 64 : Nat) : Int))
+        = Int.negSucc (2 ^ 64 - 1 - x.toNat) := by
+      rw [Int.negSucc_eq]
       omega
-    have hti : x.toInt = Int.negSucc (2 ^ 64 - 1 - x.toNat) := by
-      rw [show BitVec.toInt x
-          = if 2 * x.toNat < 2 ^ 64 then (x.toNat : Int)
-            else (x.toNat : Int) - ((2 ^ 64 : Nat) : Int) from rfl]
-      rw [ite_eq_right (by omega)]
-      omega
-    rw [show seedVec 64 (x.getLsbD 63) = BitVec.allOnes 64 from by rw [hb]; rfl, hti]
-    rw [show (Int.negSucc (2 ^ 64 - 1 - x.toNat) >>> 63)
-        = Int.negSucc ((2 ^ 64 - 1 - x.toNat) >>> 63) from rfl]
-    rw [show (2 ^ 64 - 1 - x.toNat) >>> 63 = 0 from by
-      rw [Nat.shiftRight_eq_div_pow]
-      exact Nat.div_eq_of_lt (by omega)]
+    rw [hti, Int.negSucc_ediv (2 ^ 64 - 1 - x.toNat) (by exact_mod_cast hpowpos)]
+    have hm0 : (((2 ^ 64 - 1 - x.toNat) : Nat) : Int).ediv ((2 ^ 63 : Nat) : Int) = 0 := by
+      apply Int.ediv_eq_zero_of_lt (by omega)
+      have hlt : (2 ^ 64 - 1 - x.toNat) < 2 ^ 63 := by omega
+      exact_mod_cast hlt
+    rw [hm0, hb]
     decide
-  · have hf : x.getLsbD 63 = false := by
-      cases h : x.getLsbD 63 <;> simp_all
-    have hmsbf : x.msb = false := by rw [BitVec.msb_eq_getLsbD_last]; exact hf
-    have hlt : 2 * x.toNat < 2 ^ 64 :=
-      (BitVec.msb_eq_false_iff_two_mul_lt (x := x)).mp hmsbf
-    have hlt63 : x.toNat < 2 ^ 63 := by omega
-    have hti : x.toInt = (x.toNat : Int) := by
-      rw [show BitVec.toInt x
-          = if 2 * x.toNat < 2 ^ 64 then (x.toNat : Int)
-            else (x.toNat : Int) - ((2 ^ 64 : Nat) : Int) from rfl]
-      rw [ite_eq_left hlt]
-    rw [show seedVec 64 (x.getLsbD 63) = (0 : BitVec 64) from by rw [hf]; rfl, hti]
-    rw [show ((x.toNat : Int) >>> 63) = ((x.toNat >>> 63 : Nat) : Int) from rfl]
-    rw [show x.toNat >>> 63 = 0 from by
-      rw [Nat.shiftRight_eq_div_pow]
-      exact Nat.div_eq_of_lt hlt63]
-    rfl
+  · have hgf : x.getLsbD 63 = false := by
+      cases h : x.getLsbD 63 with
+      | false => rfl
+      | true => exact absurd h hb
+    have hlt : x.toNat < 2 ^ 63 := by
+      rw [hlast] at hgf
+      have : ¬ (2 ^ 63 ≤ x.toNat) := of_decide_eq_false hgf
+      omega
+    have hcond : 2 * x.toNat < 2 ^ 64 := by omega
+    rw [ite_eq_left hcond]
+    have hpos : (0 : Int) ≤ (x.toNat : Int) := by exact_mod_cast Nat.zero_le _
+    have hltI : (x.toNat : Int) < ((2 ^ 63 : Nat) : Int) := by exact_mod_cast hlt
+    rw [Int.ediv_eq_zero_of_lt hpos hltI, hgf]
+    decide
 
 /-- `%shr.i`: the outgoing in-string word is the carry the next block inherits. -/
 theorem s1_inside_spec (k : Ctx) (hst : k.st.oddRun = (k.opened && k.ppar)) :
@@ -3867,11 +3874,12 @@ in-string, whitespace, backslash, control — the outgoing carry at `%c`, and ev
 outside the two slots unchanged.  The carry slot's three words are the identities
 `s1_open_spec`, `s1_ppar_spec` and `s1_inside_spec`.
 
-Footprint: `[propext, Classical.choice, Quot.sound]`.  The carrier is
-`s1_inside_spec`'s bit-to-magnitude bridge (see `sshiftRight_63`); every other
-clause is `[propext, Quot.sound]` or narrower, and `s1_ppar_spec` — the parity the
-carry slot holds — is narrower, since `BitLanes.allOnes_getLsbD_of_lt` supplies the
-extensionality this core's `BitVec.getLsbD_allOnes` does not.
+Footprint: `[propext, Quot.sound]`.  Every clause is at that footprint or
+narrower: `sshiftRight_63` takes the definitional route through
+`Int.negSucc_ediv` rather than the bit-to-magnitude bridge, and `s1_ppar_spec` —
+the parity the carry slot holds — is narrower, since
+`BitLanes.allOnes_getLsbD_of_lt` supplies the extensionality this core's
+`BitVec.getLsbD_allOnes` does not.
 
 The two premises about `%p` are not consumed by any clause: the body writes only to
 the two output slots, so the sweep for bytes outside them never needs the block's

@@ -1278,10 +1278,9 @@ classifier.
   rows drift, so only same-session pairs are quoted. Nothing here is a
   full-parse or stage-1 quotient.
 - **Nothing about any other unit's footprint.** The nine mask-step pins are at
-  `[propext, Quot.sound]`, but the sign-word carriers still print
-  `Classical.choice` (`sshiftRight_63`, `s1_inside_spec`, and so
-  `s1_masks_refines`), whose statements are unchanged. This says nothing about
-  any other stage's pins.
+  `[propext, Quot.sound]`, including the sign-word carriers (`sshiftRight_63`,
+  `s1_inside_spec`, and so `s1_masks_refines`), whose statements are unchanged.
+  This says nothing about any other stage's pins.
 
 **Cadence.** Re-measure when `kernel/json/s1_block.c`'s `s1f_escaped` or its
 call site changes; when `probes/install/ir/json-s1-masks.candidate.ll` is

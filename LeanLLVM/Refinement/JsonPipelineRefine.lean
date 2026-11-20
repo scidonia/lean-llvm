@@ -862,12 +862,12 @@ all at `[propext, Quot.sound]`, and `pipeline_satisfies_of_units` is too: the
 bundle is a hypothesis, so its own proof carries no unit.
 
 The two theorems that *build* the bundle from the units inherit the unit records'
-`Classical.choice`: each of `masks_satisfies`, `entry_pos8_satisfies`,
-`entry_b8_satisfies`, `utf8_satisfies` and `escape_positions_satisfies` is at
-`[propext, Classical.choice, Quot.sound]`, and `satisfies_calls`,
-`satisfies_calls_void` and `satisfies_calls_pos8` are not the source — they are at
-`[propext, Quot.sound]`.  The named carrier is therefore the unit records
-themselves, not this module. -/
+`Classical.choice`: `masks_satisfies` is at `[propext, Quot.sound]`, while
+`entry_pos8_satisfies`, `entry_b8_satisfies`, `utf8_satisfies` and
+`escape_positions_satisfies` are at `[propext, Classical.choice, Quot.sound]`;
+`satisfies_calls`, `satisfies_calls_void` and `satisfies_calls_pos8` are not the
+source — they are at `[propext, Quot.sound]`.  The named carrier is therefore the
+unit records themselves, not this module. -/
 
 /-- info: 'LeanLLVM.Refinement.PipelineLoop.run_from' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in

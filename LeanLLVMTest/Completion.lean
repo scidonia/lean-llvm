@@ -81,10 +81,11 @@ theorem escape_completes (base : Nat) :
 /-! ### Axiom footprints
 
 The vacuity and the completion predicate add no carrier: they sit at the
-development's `[propext, Quot.sound]` ceiling.  The five stage records and the
-pipeline certificate inherit `Classical.choice` from the unit `Satisfies`
-theorems and from `optimisationPipeline_sound`, exactly as their existing pins
-record; the completion requirement itself adds nothing.
+development's `[propext, Quot.sound]` ceiling.  Four of the five stage records
+and the pipeline certificate inherit `Classical.choice` from the unit
+`Satisfies` theorems and from `optimisationPipeline_sound`, exactly as their
+existing pins record; `masks_completes` is at `[propext, Quot.sound]` because
+its unit record is, and the completion requirement itself adds nothing.
 -/
 
 /-- info: 'LeanLLVM.Refinement.spinning_step' depends on axioms: [propext, Quot.sound] -/
@@ -163,7 +164,7 @@ record; the completion requirement itself adds nothing.
 #guard_msgs in
 #print axioms optimisationPipeline_soundCompleting
 
-/-- info: 'LeanLLVMTest.Completion.masks_completes' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVMTest.Completion.masks_completes' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms masks_completes
 

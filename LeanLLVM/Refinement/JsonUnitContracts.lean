@@ -1656,7 +1656,7 @@ later. -/
 #print axioms masks_written_extent
 
 -- The four wrappers, which are what the records are for.
-/-- info: 'LeanLLVM.Refinement.masks_satisfies' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.masks_satisfies' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms masks_satisfies
 
@@ -1751,11 +1751,11 @@ later. -/
 #guard_msgs in
 #print axioms masksStaged_valueIrrelevant
 
-/-- info: 'LeanLLVM.Refinement.masksStaged_satisfies' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.masksStaged_satisfies' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms masksStaged_satisfies
 
-/-- info: 'LeanLLVM.Refinement.masksStaged_calls' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.masksStaged_calls' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms masksStaged_calls
 
@@ -1764,7 +1764,7 @@ later. -/
 #print axioms masks_shifted_calls_refused
 
 -- The composition law's other half: the refutation and its witness.
-/-- info: 'LeanLLVM.Refinement.masksMispost_witness' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.masksMispost_witness' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms masksMispost_witness
 
