@@ -419,15 +419,15 @@ macro "block_step_v" : tactic => `(tactic|
    | rw [denoteCode_bitcastMask _ _ _ _ _ _ ?_ ?_ _]
    | rw [denoteCode_binopVec _ _ _ _ _ _ _ _ _ ?_ ?_ ?_ ?_ ?_ _]
    | rw [denoteCode_vecBitcast _ _ _ _ _ _ _ _ _ ?_ ?_ ?_ _]
-   | rw [denoteCode_shuffleVec _ _ _ _ _ _ _ ?_ ?_ ?_ ?_ ?_ _]
-   | rw [denoteCode_extractelement _ _ _ _ _ _ ?_ ?_ ?_ ?_ _]
-   | rw [denoteCode_insertelement _ _ _ _ _ _ _ ?_ ?_ ?_ ?_ ?_ ?_ _]
+   | rw [denoteCode_shuffleVec _ _ _ _ _ _ _ _ _ ?_ ?_ ?_ ?_ ?_ _]
+   | rw [denoteCode_extractelement _ _ _ _ _ _ _ _ ?_ ?_ ?_ ?_ _]
+   | rw [denoteCode_insertelement _ _ _ _ _ _ _ _ _ ?_ ?_ ?_ ?_ ?_ ?_ _]
    | rw [denoteCode_pshufb _ _ _ _ _ _ _ _ ?_ ?_ ?_ _]
    | rw [denoteCode_pclmul _ _ _ _ ?_ _]
    | rw [denoteCode_loadVec _ _ _ _ _ _ _ ?_ ?_ ?_ ?_ _]
    | rw [denoteCode_gep8_imm _ _ _ _ _ _ ?_ ?_ _]
-   | rw [denoteCode_call3 _ _ _ _ _ _ _ _ _ ?_ ?_ ?_ ?_ _]
-   | rw [denoteCode_callVoid7 _ _ _ _ _ _ _ _ _ _ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ _]))
+   | rw [denoteCode_call3]
+   | rw [denoteCode_callVoid7]))
 
 /-- The close phases: the integer close, then the vector reads' shape facts and
 the constant operands. -/
@@ -437,7 +437,8 @@ macro "block_close_v" : tactic => `(tactic|
      | assumption
      | exact evalOperand_reg_of _ _ _ _ (by assumption)
      | block_lk
-     | (simp only [Value.vecLanes]; split <;> (first | rfl | contradiction))
+     | (refine vecLanes_self ?_; simp_all [List.length_append])
+     | (simp only [Value.vecLanes]; repeat split; all_goals (first | rfl | contradiction))
      | (simp only [evalOperand, Const.toValue, lanesOf, splatOf]; rfl)
      | exact evalOperand_lit_of _ _ _))
    all_goals (try rfl)

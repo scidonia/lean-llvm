@@ -278,6 +278,259 @@ theorem denoteCode_ptestz_b (env : Env) (s : State) (dst : String)
     simp only [stateAt]
   rw [denoteCode_cons_of _ _ _ _ _ hstep]
 
+/-! ### The vector intrinsics, at the unit's call environment
+
+`BlockEvalVector` states the table lookup and the carry-less product at the mask
+unit's `s1Calls`, because that is where the mask unit's body runs.  The block
+unit's environment binds the same two arms, so a block run needs the same two
+steps at `s1BlocksCalls`; the arms are `s1BlocksCalls_pshufb` and
+`s1BlocksCalls_pclmulqdq` in `JsonS1BlocksReuse`. -/
+
+/-- `pshuf.b` at the block unit's environment: the 32-lane lookup at the literal
+table the body spells. -/
+theorem step_pshufb_b (env : Env) (s : State) (r dst : String) (tabInt : List Int)
+    (tab ctl : List (BitVec 8)) (htabLen : tabInt.length = 32)
+    (htab : tabInt.map (BitVec.ofInt 8) = tab)
+    (h : evalOperand (stateAt env s) (.reg r) = some (.vec 32 8 ctl)) :
+    evalInstr s1BlocksCalls (stateAt env s)
+        (.call dst v32i8 "llvm.x86.avx2.pshuf.b"
+          [(v32i8, lanesOf 8 tabInt), (v32i8, .reg r)]) =
+      some (stateAt ((dst, .vec 32 8 (pshufbLanes tab ctl)) :: env) s) := by
+  have hreg : lookupName env r = some (.vec 32 8 ctl) := by
+    simp only [evalOperand, stateAt] at h
+    split at h
+    · cases h
+    · exact h
+  have ha : evalOperands (stateAt env s) [(v32i8, lanesOf 8 tabInt), (v32i8, .reg r)]
+      = some [.vec 32 8 (tabInt.map (BitVec.ofInt 8)), .vec 32 8 ctl] := by
+    rw [evalOperands_cons
+      (v := .vec 32 8 (tabInt.map (BitVec.ofInt 8))) (vs := [.vec 32 8 ctl])
+      (by simp [evalOperand, stateAt, lanesOf, Const.toValue, List.length_map, htabLen])
+      (evalOperands_cons (by simp only [evalOperand, stateAt, hreg]) rfl)]
+  rw [evalInstr_call (s := stateAt env s) ha
+    (s1BlocksCalls_pshufb (tabInt.map (BitVec.ofInt 8)) ctl s.mem s.next), htab]
+  rfl
+
+/-- `pclmulqdq` at immediate zero, at the block unit's environment: lane zero is
+the carry-less product, lane one zero. -/
+theorem step_pclmul_b (env : Env) (s : State) (r dst : String) {a0 a1 : BitVec 64}
+    (h : evalOperand (stateAt env s) (.reg r) = some (.vec 2 64 [a0, a1])) :
+    evalInstr s1BlocksCalls (stateAt env s)
+        (.call dst (.vec 2 (.int 64)) "llvm.x86.pclmulqdq"
+          [(.vec 2 (.int 64), .reg r), (.vec 2 (.int 64), lanesOf 64 [-1, 0]),
+           (.int 8, lit 8 0)]) =
+      some (stateAt ((dst, .vec 2 64 [Pclmul.clmul a0 (BitVec.allOnes 64), 0]) :: env) s) := by
+  have hneg : (BitVec.ofInt 64 (-1) : BitVec 64) = BitVec.allOnes 64 := by decide
+  have hreg : lookupName env r = some (.vec 2 64 [a0, a1]) := by
+    simp only [evalOperand, stateAt] at h
+    split at h
+    · cases h
+    · exact h
+  have ha : evalOperands (stateAt env s)
+      [(.vec 2 (.int 64), .reg r), (.vec 2 (.int 64), lanesOf 64 [-1, 0]),
+       (.int 8, lit 8 0)] =
+      some [.vec 2 64 [a0, a1],
+        .vec 2 64 [BitVec.ofInt 64 (-1), BitVec.ofInt 64 0], .int 8 0] := by
+    rw [evalOperands_cons (v := .vec 2 64 [a0, a1])
+      (vs := [.vec 2 64 [BitVec.ofInt 64 (-1), BitVec.ofInt 64 0], .int 8 0])
+      (by simp only [evalOperand, stateAt, hreg])
+      (evalOperands_cons (v := .vec 2 64 [BitVec.ofInt 64 (-1), BitVec.ofInt 64 0])
+        (vs := [.int 8 0])
+        (by simp [evalOperand, stateAt, lanesOf, Const.toValue]) rfl)]
+  rw [evalInstr_call (s := stateAt env s) ha
+    (s1BlocksCalls_pclmulqdq a0 a1 (BitVec.ofInt 64 (-1)) (BitVec.ofInt 64 0)
+      s.mem s.next)]
+  simp only [hneg, stateAt]
+
+/-- The table lookup, as a chain step at the block unit's environment. -/
+theorem denoteCode_pshufb_b (env : Env) (s : State) (r dst : String) (tabInt : List Int)
+    (tab ctl : List (BitVec 8)) (htabLen : tabInt.length = 32)
+    (htab : tabInt.map (BitVec.ofInt 8) = tab)
+    (h : evalOperand (stateAt env s) (.reg r) = some (.vec 32 8 ctl))
+    (is : List Instr) :
+    denoteCode s1BlocksCalls
+        (.call dst v32i8 "llvm.x86.avx2.pshuf.b"
+          [(v32i8, lanesOf 8 tabInt), (v32i8, .reg r)] :: is) (stateAt env s) =
+      denoteCode s1BlocksCalls is
+        (stateAt ((dst, .vec 32 8 (pshufbLanes tab ctl)) :: env) s) := by
+  rw [denoteCode_cons_of _ _ _ _ _ (step_pshufb_b env s r dst tabInt tab ctl htabLen htab h)]
+
+/-- The carry-less product, as a chain step at the block unit's environment. -/
+theorem denoteCode_pclmul_b (env : Env) (s : State) (r dst : String) {a0 a1 : BitVec 64}
+    (h : evalOperand (stateAt env s) (.reg r) = some (.vec 2 64 [a0, a1]))
+    (is : List Instr) :
+    denoteCode s1BlocksCalls
+        (.call dst (.vec 2 (.int 64)) "llvm.x86.pclmulqdq"
+          [(.vec 2 (.int 64), .reg r), (.vec 2 (.int 64), lanesOf 64 [-1, 0]),
+           (.int 8, lit 8 0)] :: is) (stateAt env s) =
+      denoteCode s1BlocksCalls is
+        (stateAt ((dst, .vec 2 64 [Pclmul.clmul a0 (BitVec.allOnes 64), 0]) :: env) s) := by
+  rw [denoteCode_cons_of _ _ _ _ _ (step_pclmul_b env s r dst h)]
+
+/-! ### The remaining shapes the ASCII phase and the hand-off use
+
+The prologue's arithmetic shift, a `<32 x i8>` load (the lane width the generic
+vector load excludes), the saturating subtract, the `i64`-element register
+`getelementptr` the entry store indexes through, and the three backward `i8`
+offsets the hand-off's shifted windows read. -/
+
+/-- An arithmetic shift by an immediate. -/
+theorem denoteCode_ashr_imm (calls : Calls) (env : Env) (s : State) (d a : String)
+    (w : Nat) {x c : BitVec w} (ha : lookupName env a = some (.int w x))
+    (is : List Instr) :
+    denoteCode calls (.binop d .ashr w (.reg a) (.imm (.int w c)) :: is) (stateAt env s) =
+      denoteCode calls is (stateAt ((d, .int w (BitVec.sshiftRight x c.toNat)) :: env) s) := by
+  rw [denoteCode_cons_of _ _ _ _ _
+    (show evalInstr calls (stateAt env s) (.binop d .ashr w (.reg a) (.imm (.int w c))) =
+        some (stateAt ((d, .int w (BitVec.sshiftRight x c.toNat)) :: env) s) from by
+      simpa only [BitVec.ofNat_toNat, BitVec.setWidth_eq, stateAt, State.bind]
+        using evalInstr_binop (op := .ashr) (r := (BitVec.sshiftRight x c.toNat).toNat)
+          (ha := BlockEval.evalOperand_reg_of env s a (.int w x) ha)
+          (hb := BlockEval.evalOperand_lit_of _ w c)
+          (hr := by simp [evalBinopNat, evalBinop, BitVec.ofNat_toNat]))]
+
+/-- `%d = load <32 x i8>, ptr %p`: `loadValue`'s byte-lane arm maps the thirty-two
+bytes one for one. -/
+theorem step_load32_8 (calls : Calls) (env : Env) (s : State) (d p : String) (a : Nat)
+    (bs : List UInt8) (hp : lookupName env p = some (.ptr a))
+    (hr : readBytes s.mem a 32 = some bs) :
+    evalInstr calls (stateAt env s) (.load d v32i8 (.reg p)) =
+      some (stateAt ((d, .vec 32 8 (bs.map fun b => BitVec.ofNat 8 b.toNat)) :: env) s) := by
+  have hv : loadValue (stateAt env s).mem v32i8 a =
+      some (.vec 32 8 (bs.map fun b => BitVec.ofNat 8 b.toNat)) := by
+    simp only [stateAt, loadValue]
+    rw [hr]
+  rw [evalInstr_load (v := .vec 32 8 (bs.map fun b => BitVec.ofNat 8 b.toNat))
+    (hp := BlockEval.evalOperand_reg_of env s p (.ptr a) hp) hv]
+  rfl
+
+/-- The byte-lane load, as a chain step. -/
+theorem denoteCode_load32_8 (calls : Calls) (env : Env) (s : State) (d p : String) (a : Nat)
+    (bs : List UInt8) (hp : lookupName env p = some (.ptr a))
+    (hr : readBytes s.mem a 32 = some bs) (is : List Instr) :
+    denoteCode calls (.load d v32i8 (.reg p) :: is) (stateAt env s) =
+      denoteCode calls is
+        (stateAt ((d, .vec 32 8 (bs.map fun b => BitVec.ofNat 8 b.toNat)) :: env) s) := by
+  rw [denoteCode_cons_of _ _ _ _ _ (step_load32_8 calls env s d p a bs hp hr)]
+
+/-- The saturating subtract, as a chain step at the unit's environment. -/
+theorem denoteCode_usubSat_b (env : Env) (s : State) (dst : String)
+    (o1 o2 : Operand) {a b : List (BitVec 8)}
+    (h1 : evalOperand (stateAt env s) o1 = some (.vec 32 8 a))
+    (h2 : evalOperand (stateAt env s) o2 = some (.vec 32 8 b)) (is : List Instr) :
+    denoteCode s1BlocksCalls
+        (.call dst v32i8 "llvm.usub.sat.v32i8"
+          [(v32i8, o1), (v32i8, o2)] :: is) (stateAt env s) =
+      denoteCode s1BlocksCalls is
+        (stateAt ((dst, .vec 32 8 (List.zipWith BitLanes.subsSat a b)) :: env) s) := by
+  have hstep : evalInstr s1BlocksCalls (stateAt env s)
+      (.call dst v32i8 "llvm.usub.sat.v32i8" [(v32i8, o1), (v32i8, o2)]) =
+      some (stateAt ((dst, .vec 32 8 (List.zipWith BitLanes.subsSat a b)) :: env) s) := by
+    have ha : evalOperands (stateAt env s) [(v32i8, o1), (v32i8, o2)] =
+        some [.vec 32 8 a, .vec 32 8 b] := by
+      simp [evalOperands, h1, h2]
+    rw [evalInstr_call (s := stateAt env s) ha
+      (s1BlocksCalls_usubSat a b s.mem s.next)]
+    simp only [stateAt]
+  rw [denoteCode_cons_of _ _ _ _ _ hstep]
+
+/-- `%d = getelementptr <elem>, ptr %base, i64 %off`, at an index below `2 ^ 63`. -/
+theorem step_gep_reg_elem (calls : Calls) (env : Env) (s : State) (d base off : String)
+    (elem : Ty) {a : Nat} {idx : BitVec 64}
+    (hb : lookupName env base = some (.ptr a))
+    (ho : lookupName env off = some (.int 64 idx))
+    (hpos : (idx.signExtend 64).toNat < 2 ^ 63) :
+    evalInstr calls (stateAt env s) (.gep d elem (.reg base) (.reg off)) =
+      some (stateAt ((d, .ptr (a + (idx.signExtend 64).toNat * elem.sizeBytes)) :: env) s) := by
+  rw [evalInstr_gep (hb := BlockEval.evalOperand_reg_of env s base (.ptr a) hb)
+    (ho := BlockEval.evalOperand_reg_of env s off (.int 64 idx) ho) (hpos := hpos)]
+  simp only [stateAt, State.bind]
+
+/-- The `i64`-element register `getelementptr`, as a chain step. -/
+theorem denoteCode_gep_reg_elem (calls : Calls) (env : Env) (s : State) (d base off : String)
+    (elem : Ty) {a : Nat} {idx : BitVec 64}
+    (hb : lookupName env base = some (.ptr a))
+    (ho : lookupName env off = some (.int 64 idx))
+    (hpos : (idx.signExtend 64).toNat < 2 ^ 63) (is : List Instr) :
+    denoteCode calls (.gep d elem (.reg base) (.reg off) :: is) (stateAt env s) =
+      denoteCode calls is
+        (stateAt ((d, .ptr (a + (idx.signExtend 64).toNat * elem.sizeBytes)) :: env) s) := by
+  rw [denoteCode_cons_of _ _ _ _ _ (step_gep_reg_elem calls env s d base off elem hb ho hpos)]
+
+/-- A backward `i8` offset: the sign-extended index is at or above `2 ^ 63` and
+its magnitude does not exceed the base. -/
+theorem step_gep8_imm_back (calls : Calls) (env : Env) (s : State) (d base : String)
+    (c : BitVec 64) {a : Nat}
+    (hb : lookupName env base = some (.ptr a))
+    (hneg : ¬ (c.signExtend 64).toNat < 2 ^ 63)
+    (hk : (2 ^ 64 - (c.signExtend 64).toNat) ≤ a) :
+    evalInstr calls (stateAt env s) (.gep d (.int 8) (.reg base) (.imm (.int 64 c))) =
+      some (stateAt ((d, .ptr (a - (2 ^ 64 - (c.signExtend 64).toNat))) :: env) s) := by
+  have h1 : (8 + 7) / 8 = 1 := by decide
+  rw [evalInstr_gep_back (elemTy := .int 8)
+    (hb := BlockEval.evalOperand_reg_of env s base (.ptr a) hb)
+    (ho := BlockEval.evalOperand_lit_of _ 64 c) hneg (by simpa [Ty.sizeBytes] using hk)]
+  simp only [stateAt, State.bind, Ty.sizeBytes, h1, Nat.mul_one]
+
+/-- The backward `getelementptr i8` chain step, at the `-1` the hand-off reads. -/
+theorem denoteCode_gep8_imm_m1 (calls : Calls) (env : Env) (s : State) (d base : String)
+    {a : Nat} (hb : lookupName env base = some (.ptr a)) (hk : 1 ≤ a) (is : List Instr) :
+    denoteCode calls
+        (.gep d (.int 8) (.reg base) (.imm (.int 64 0xffffffffffffffff#64)) :: is)
+        (stateAt env s) =
+      denoteCode calls is (stateAt ((d, .ptr (a - 1)) :: env) s) := by
+  have hneg : ¬ ((0xffffffffffffffff#64).signExtend 64).toNat < 2 ^ 63 := by decide
+  have hk' : (2 ^ 64 - ((0xffffffffffffffff#64).signExtend 64).toNat) ≤ a := by simpa using hk
+  rw [denoteCode_cons_of _ _ _ _ _
+    (by simpa using step_gep8_imm_back calls env s d base 0xffffffffffffffff#64 hb hneg hk')]
+
+/-- The backward `getelementptr i8` chain step, at the `-2` the hand-off reads. -/
+theorem denoteCode_gep8_imm_m2 (calls : Calls) (env : Env) (s : State) (d base : String)
+    {a : Nat} (hb : lookupName env base = some (.ptr a)) (hk : 2 ≤ a) (is : List Instr) :
+    denoteCode calls
+        (.gep d (.int 8) (.reg base) (.imm (.int 64 0xfffffffffffffffe#64)) :: is)
+        (stateAt env s) =
+      denoteCode calls is (stateAt ((d, .ptr (a - 2)) :: env) s) := by
+  have hneg : ¬ ((0xfffffffffffffffe#64).signExtend 64).toNat < 2 ^ 63 := by decide
+  have hk' : (2 ^ 64 - ((0xfffffffffffffffe#64).signExtend 64).toNat) ≤ a := by simpa using hk
+  rw [denoteCode_cons_of _ _ _ _ _
+    (by simpa using step_gep8_imm_back calls env s d base 0xfffffffffffffffe#64 hb hneg hk')]
+
+/-- The backward `getelementptr i8` chain step, at the `-3` the hand-off reads. -/
+theorem denoteCode_gep8_imm_m3 (calls : Calls) (env : Env) (s : State) (d base : String)
+    {a : Nat} (hb : lookupName env base = some (.ptr a)) (hk : 3 ≤ a) (is : List Instr) :
+    denoteCode calls
+        (.gep d (.int 8) (.reg base) (.imm (.int 64 0xfffffffffffffffd#64)) :: is)
+        (stateAt env s) =
+      denoteCode calls is (stateAt ((d, .ptr (a - 3)) :: env) s) := by
+  have hneg : ¬ ((0xfffffffffffffffd#64).signExtend 64).toNat < 2 ^ 63 := by decide
+  have hk' : (2 ^ 64 - ((0xfffffffffffffffd#64).signExtend 64).toNat) ≤ a := by simpa using hk
+  rw [denoteCode_cons_of _ _ _ _ _
+    (by simpa using step_gep8_imm_back calls env s d base 0xfffffffffffffffd#64 hb hneg hk')]
+
+/-! ### The lane-wise sum, in the two shapes a splat operand produces
+
+`binopLanes` is a `mapM` over a `zip`, so a splat operand's value is stuck on a
+symbolic lane list.  These two lemmas are the lane-wise operations' values: the
+`zipWith` of two lists, or the map of the first against a constant. -/
+
+/-- Two lists' lane-wise operation, when the operation always answers. -/
+theorem binopLanes_zipWith {w : Nat} (op : BinOp) (f : BitVec w → BitVec w → BitVec w)
+    (hg : ∀ x y, evalBinop op x y = some (f x y)) (l1 l2 : List (BitVec w))
+    (h : l1.length = l2.length) :
+    binopLanes op l1 l2 = some (List.zipWith f l1 l2) :=
+  JsonUtf8Steps.zip_mapM_binop op f hg l1 l2 h
+
+/-- A lane-wise operation against a splatted constant. -/
+theorem binopLanes_replicate {w : Nat} (op : BinOp) (f : BitVec w → BitVec w → BitVec w)
+    (hg : ∀ x y, evalBinop op x y = some (f x y)) (l : List (BitVec w)) (n : Nat)
+    (hn : l.length = n) (c : BitVec w) :
+    binopLanes op l (List.replicate n c) = some (l.map fun x => f x c) := by
+  subst hn
+  exact zipReplicate_mapM l c (fun x y => evalBinop op x y) (fun x => f x c)
+    (fun x => hg x c)
+
+
 /-! ### The block tactic
 
 `block_step_v` covers the vector and `i64` shapes; the width-generic steps are
@@ -285,7 +538,17 @@ appended for the prologue's `i32` arithmetic. -/
 
 macro "block_step_b" : tactic => `(tactic|
   (first
+   | rw [denoteCode_callVoid7 _ _ _ _ _ _ _ _ _ _ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ _]
+   | rw [denoteCode_load32_8 _ _ _ _ _ _ _ ?_ ?_ _]
+   | rw [denoteCode_gep8_imm_m1 _ _ _ _ _ ?_ ?_ _]
+   | rw [denoteCode_gep8_imm_m2 _ _ _ _ _ ?_ ?_ _]
+   | rw [denoteCode_gep8_imm_m3 _ _ _ _ _ ?_ ?_ _]
    | block_step_v
+   | rw [denoteCode_pshufb_b _ _ _ _ _ _ _ _ ?_ ?_ ?_ _]
+   | rw [denoteCode_pclmul_b _ _ _ _ ?_ _]
+   | rw [denoteCode_usubSat_b _ _ _ _ _ ?_ ?_ _]
+   | rw [denoteCode_ashr_imm _ _ _ _ _ _ ?_ _]
+   | rw [denoteCode_gep_reg_elem _ _ _ _ _ _ _ ?_ ?_ ?_ _]
    | rw [denoteCode_and_imm_w _ _ _ _ _ _ ?_ _]
    | rw [denoteCode_or_imm_w _ _ _ _ _ _ ?_ _]
    | rw [denoteCode_xor_imm_w _ _ _ _ _ _ ?_ _]
@@ -301,9 +564,72 @@ macro "block_step_b" : tactic => `(tactic|
    | rw [denoteCode_ptestz_b _ _ _ _ _ ?_ ?_ _]
    | rw [denoteCode_call2t _ _ _ _ _ _ _ _ _ ?_ ?_ ?_ _]))
 
+/-- One close step for a semantic side goal.  Every alternative either closes
+its goal or fails, so `repeat` over it terminates. -/
+macro "block_close_step" : tactic => `(tactic|
+  (first
+   | (simp only [evalOperand, stateAt]; block_lk)
+   | exact BlockEval.evalOperand_reg_of _ _ _ _ (by assumption)
+   | (simp only [evalOperand, Const.toValue, lanesOf, splatOf]; rfl)
+   | exact BlockEval.evalOperand_lit_of _ _ _
+   | (refine vecLanes_self ?_; simp_all [List.length_append])
+   | (simp only [Value.vecLanes]; repeat split; all_goals (first | rfl | contradiction))
+   | (simp only [phiIncoming]; rfl)
+   | (rw [binopLanes_replicate]; all_goals (first | assumption | (intro x; rfl) | (simp; omega) | rfl))
+   | (rw [binopLanes_zipWith]; all_goals (first | assumption | (intro x y; rfl) | (simp; omega) | rfl))
+   | (rw [mapM_pick8 (by assumption) (by assumption)]; rfl)
+   | assumption
+   | rfl
+   | decide
+   | omega))
+
+open Lean Meta Elab Tactic in
+/-- The close that leaves the block's own equation for last: the semantic side
+goals fix the lane lists and lane-wise values from the operands, and only then is
+the statement's environment read.  A main equation closed first would assign a
+lane list from the statement instead of from the operand. -/
+elab "block_finish_b" : tactic => do
+  let gs ← getGoals
+  let mut main : Option MVarId := none
+  let mut sides : List MVarId := []
+  for g in gs do
+    let t ← instantiateMVars (← g.getType)
+    let isMain := match t.eq? with
+      | some (_, lhs, _) =>
+          lhs.getAppFn.isConstOf ``denoteCode || lhs.getAppFn.isConstOf ``denoteRun
+      | none => false
+    if isMain then main := some g else sides := sides ++ [g]
+  replaceMainGoal sides
+  evalTactic (← `(tactic| (all_goals (repeat block_close_step))))
+  match main with
+  | some m =>
+      replaceMainGoal [m]
+      evalTactic (← `(tactic| (first | rfl | (simp only [cells, denoteCode, State.bindAll]; rfl))))
+  | none => pure ()
+
 macro "block_eval_b" : tactic => `(tactic|
   (repeat block_step_b
    block_close_v))
+
+/-- The block run whose statement environment is inferred: the same steps, with
+the side-goal-first close. -/
+macro "block_eval_infer" : tactic => `(tactic|
+  (repeat block_step_b
+   block_finish_b))
+
+/-- The close for a statement whose environment is concrete: the phrase adds the
+shuffle mask `[0 … 7]`'s value, which the generic close leaves as the `mapM` it
+is. -/
+macro "block_close_c" : tactic => `(tactic|
+  (block_close_v
+   all_goals (try (rw [mapM_pick8 (by assumption) (by assumption)]; rfl))
+   all_goals (try rfl)
+   all_goals (try decide)
+   all_goals (try omega)))
+
+macro "block_eval_c" : tactic => `(tactic|
+  (repeat block_step_b
+   block_close_c))
 
 /-! ### `entry` -/
 
@@ -824,6 +1150,160 @@ theorem if_end170_step (env : Env) (s : State) (p : String)
   simp only [if_end170Term]
   rw [execTerm_ret_int64 (v := .reg "%or176") (x := .int 64 (verdictWord ascii err))
     (BlockEval.evalOperand_reg_of _ _ _ _ (by simp [ifEnd170Env, cells]))]
+
+
+/-! ### `if.then` — the escape arm
+
+The arm reads the block's two `<4 x i64>` words, joins them, packs the 64 lanes,
+and calls the escape list.  The block's run is stated at an arbitrary call
+selection: the escape call's outcome is the caller's, so the run is the block's
+own computation plus one `hc`. -/
+
+/-- The shuffle mask `[0 … 7]` at two four-lane operands: the bytes are the
+join of the two words, which is what `mapM_pick8` states. -/
+def ifThenJoin (a2 a3 : List (BitVec 64)) : List (BitVec 64) := a2 ++ a3
+
+/-- The escape call's four 64-bit mask arguments, as the block passes them. -/
+def ifThenQuoteWord (a2 a3 : List (BitVec 64)) : BitVec 64 :=
+  BitVec.ofNat 64 (lanesToNat
+    (icmpLanes .ult (bitcastVecLanes 8 64 (ifThenJoin a2 a3))
+      (List.replicate 64 (BitVec.ofInt 8 32))))
+
+/-- The four cells `if.then` binds before the call. -/
+def ifThenOut (env : Env) (a2 a3 : List (BitVec 64)) : Env :=
+  cells [("%or.i290", .int 64 (ifThenQuoteWord a2 a3)),
+         ("%37", .vec 64 1
+           (icmpLanes .ult (bitcastVecLanes 8 64 (ifThenJoin a2 a3))
+             (List.replicate 64 (BitVec.ofInt 8 32)))),
+         ("%36", .vec 64 8 (bitcastVecLanes 8 64 (ifThenJoin a2 a3))),
+         ("%35", .vec 8 64 (ifThenJoin a2 a3))] env
+
+/-- **`if.then`'s run.**  The join, the packed lanes, the zero-test lane mask and
+the escape call, which leaves the caller's memory and cursor at `r`. -/
+theorem if_then_denote (calls : Calls) (env : Env) (s : State)
+    (a2 a3 : List (BitVec 64)) (h2len : a2.length = 4) (h3len : a3.length = 4)
+    (or14 xs i : BitVec 64) (xp nxp xcarry : Nat) (r : CallOutcome)
+    (h2 : lookupName env "%2" = some (.vec 4 64 a2))
+    (h3 : lookupName env "%3" = some (.vec 4 64 a3))
+    (hor : lookupName env "%or14.i" = some (.int 64 or14))
+    (hxs : lookupName env "%xor.i" = some (.int 64 xs))
+    (hi : lookupName env "%i.0510" = some (.int 64 i))
+    (hxp : lookupName env "%xp" = some (.ptr xp))
+    (hnxp : lookupName env "%nxp" = some (.ptr nxp))
+    (hxcarry : lookupName env "%xcarry" = some (.ptr xcarry))
+    (hc : calls "leanllvm_json_escape_list"
+      [.int 64 or14, .int 64 (ifThenQuoteWord a2 a3), .int 64 xs, .int 64 i,
+       .ptr xp, .ptr nxp, .ptr xcarry] s.mem s.next = some r) :
+    denoteCode calls if_thenInstrs (stateAt env s) =
+      some (stateAt (ifThenOut env a2 a3) { s with mem := r.mem, next := r.next }) := by
+  simp only [if_thenInstrs]
+  -- the join: the shuffle's eight lanes are the two words
+  rw [denoteCode_shuffleVec (calls := calls) (env := env) (s := s) (d := "%35")
+      (n := 4) (w := 64) (a := .reg "%2") (b := .reg "%3")
+      (mask := [0, 1, 2, 3, 4, 5, 6, 7]) (l1 := a2) (l2 := a3) (ls := a2 ++ a3)
+      (ha := evalOperand_reg_of env s "%2" (.vec 4 64 a2) h2)
+      (hb := evalOperand_reg_of env s "%3" (.vec 4 64 a3) h3)
+      (h1 := vecLanes_self h2len) (h2 := vecLanes_self h3len)
+      (hm := mapM_pick8 h2len h3len)]
+  try simp only [List.length_cons, List.length_nil]
+  -- bitcast <8 x i64> to <64 x i8>
+  rw [denoteCode_vecBitcast (calls := calls)
+      (env := ("%35", .vec 8 64 (a2 ++ a3)) :: env) (s := s) (d := "%36")
+      (n := 8) (w := 64) (m := 64) (jw := 8) (v := .reg "%35")
+      (vv := .vec 8 64 (a2 ++ a3)) (lanes := a2 ++ a3)
+      (hv := evalOperand_reg_of _ _ _ _ (by block_lk))
+      (hl := vecLanes_self (by simp [List.length_append, h2len, h3len]))
+      (hwidth := by decide)]
+  try simp only [List.length_cons, List.length_nil]
+  -- the byte comparison against 0x20
+  rw [denoteCode_icmpVec (calls := calls)
+      (env := ("%36", .vec 64 8 (bitcastVecLanes 8 64 (a2 ++ a3)))
+        :: ("%35", .vec 8 64 (a2 ++ a3)) :: env) (s := s) (d := "%37")
+      (pred := .ult) (n := 64) (w := 8) (a := .reg "%36")
+      (b := .imm (.splat 64 8 0x20#8))
+      (va := .vec 64 8 (bitcastVecLanes 8 64 (a2 ++ a3)))
+      (vb := .vec 64 8 (List.replicate 64 0x20#8))
+      (l1 := bitcastVecLanes 8 64 (a2 ++ a3))
+      (l2 := List.replicate 64 0x20#8)
+      (ha := evalOperand_reg_of _ _ _ _ (by block_lk))
+      (hb := by simp [evalOperand, Const.toValue])
+      (h1 := vecLanes_self (by simp [bitcastVecLanes, unpackLanes_length]))
+      (h2 := vecLanes_self (by simp))]
+  try simp only [List.length_cons, List.length_nil]
+  -- pack the lane mask
+  rw [denoteCode_bitcastMask (calls := calls)
+      (env := ("%37", .vec 64 1 (icmpLanes .ult (bitcastVecLanes 8 64 (a2 ++ a3))
+          (List.replicate 64 0x20#8)))
+        :: ("%36", .vec 64 8 (bitcastVecLanes 8 64 (a2 ++ a3)))
+        :: ("%35", .vec 8 64 (a2 ++ a3)) :: env) (s := s) (d := "%or.i290")
+      (n := 64) (v := .reg "%37")
+      (l := icmpLanes .ult (bitcastVecLanes 8 64 (a2 ++ a3)) (List.replicate 64 0x20#8))
+      (hv := evalOperand_reg_of _ _ _ _ (by block_lk))
+      (hlen := by simp [icmpLanes, bitcastVecLanes, List.length_zip, List.length_map,
+        unpackLanes_length])]
+  try simp only [List.length_cons, List.length_nil]
+  -- the escape call
+  rw [denoteCode_callVoid7 (calls := calls)
+      (env := ("%or.i290", .int 64 (BitVec.ofNat 64
+          (lanesToNat (icmpLanes .ult (bitcastVecLanes 8 64 (a2 ++ a3))
+            (List.replicate 64 0x20#8)))))
+        :: ("%37", .vec 64 1 (icmpLanes .ult (bitcastVecLanes 8 64 (a2 ++ a3))
+          (List.replicate 64 0x20#8)))
+        :: ("%36", .vec 64 8 (bitcastVecLanes 8 64 (a2 ++ a3)))
+        :: ("%35", .vec 8 64 (a2 ++ a3)) :: env)
+      (s := s) (callee := "leanllvm_json_escape_list")
+      (o1 := .reg "%or14.i") (o2 := .reg "%or.i290") (o3 := .reg "%xor.i")
+      (o4 := .reg "%i.0510") (o5 := .reg "%xp") (o6 := .reg "%nxp") (o7 := .reg "%xcarry")
+      (v1 := .int 64 or14) (v2 := .int 64 (BitVec.ofNat 64
+          (lanesToNat (icmpLanes .ult (bitcastVecLanes 8 64 (a2 ++ a3))
+            (List.replicate 64 0x20#8)))))
+      (v3 := .int 64 xs) (v4 := .int 64 i)
+      (v5 := .ptr xp) (v6 := .ptr nxp) (v7 := .ptr xcarry) (r := r)
+      (h1 := evalOperand_reg_of _ _ _ _ (by block_lk))
+      (h2 := evalOperand_reg_of _ _ _ _ (by block_lk))
+      (h3 := evalOperand_reg_of _ _ _ _ (by block_lk))
+      (h4 := evalOperand_reg_of _ _ _ _ (by block_lk))
+      (h5 := evalOperand_reg_of _ _ _ _ (by block_lk))
+      (h6 := evalOperand_reg_of _ _ _ _ (by block_lk))
+      (h7 := evalOperand_reg_of _ _ _ _ (by block_lk))
+      (hc := hc)]
+  try simp only [List.length_cons, List.length_nil]
+  simp only [ifThenOut, ifThenQuoteWord, ifThenJoin, cells]
+  rfl
+
+/-! ### `if.end50` — the hand-off's join
+
+Eight phis select the carried DFA state and the two words, and the terminator's
+test is the next block's index bound. -/
+
+def ifEnd50Out (env : Env) (shr17 st0 st9 st15 : BitVec 64)
+    (oii or284 : List (BitVec 64)) (inc49 shr : BitVec 64) : Env :=
+  cells [("%cmp52516", .int 1 (evalICmp .ult inc49 shr)),
+         ("%i.1", .int 64 inc49),
+         ("%ascii.0", .vec 4 64 or284),
+         ("%u8k.0", .vec 4 64 oii),
+         ("%prev_ascii.0", .int 32 0),
+         ("%st.sroa.15.1485", .int 64 st15),
+         ("%st.sroa.9.1487", .int 64 st9),
+         ("%st.sroa.0.1489", .int 64 st0),
+         ("%prevS.1491", .int 64 shr17)] env
+
+theorem if_end50_denote (env : Env) (s : State)
+    (shr17 st0 st9 st15 : BitVec 64) (oii or284 : List (BitVec 64))
+    (inc49 shr : BitVec 64)
+    (hpre : s.pre = some "if.then38")
+    (hshr17 : lookupName env "%shr17" = some (.int 64 shr17))
+    (hst0 : lookupName env "%shr.i.i" = some (.int 64 st0))
+    (hst9 : lookupName env "%conv13.i.i" = some (.int 64 st9))
+    (hst15 : lookupName env "%shr.i" = some (.int 64 st15))
+    (hoii : lookupName env "%or.i.i291" = some (.vec 4 64 oii))
+    (hor284 : lookupName env "%or.i284" = some (.vec 4 64 or284))
+    (hinc : lookupName env "%inc49" = some (.int 64 inc49))
+    (hshr : lookupName env "%shr" = some (.int 64 shr)) :
+    denoteCode s1BlocksCalls if_end50Instrs (stateAt env s) =
+      some (stateAt (ifEnd50Out env shr17 st0 st9 st15 oii or284 inc49 shr) s) := by
+  simp only [if_end50Instrs, ifEnd50Out]
+  block_eval_c
 
 /-! ### Axiom footprints
 
