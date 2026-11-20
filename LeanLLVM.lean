@@ -65,6 +65,7 @@ import LeanLLVM.Refinement.JsonEscapeListMemo
 import LeanLLVM.Refinement.JsonEscapeListWriter
 import LeanLLVM.Refinement.JsonEscapeListPositions
 import LeanLLVM.Refinement.JsonEscapeListContract
+import LeanLLVM.Refinement.JsonEscapeCallFrame
 import LeanLLVM.Refinement.JsonEscapeExpandContract
 import LeanLLVM.Refinement.JsonEscapeFinalCopy
 import LeanLLVM.Refinement.JsonEscapeDecodeTrace
