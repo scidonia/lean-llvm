@@ -9,7 +9,10 @@
     { self, nixpkgs }:
     let
       lib = nixpkgs.lib;
-      systems = [ "x86_64-linux" ];
+      # aarch64-linux is declared so a consumer running on Arm gets a `lake`
+      # wrapper built for that architecture. Nothing under it is cached:
+      # nixpkgs' Lean packages compile from source there, mathlib included.
+      systems = [ "x86_64-linux" "aarch64-linux" ];
       forAllSystems = f: lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
 
       # The toolchain and mathlib come from nixpkgs' `leanPackages` set, not
