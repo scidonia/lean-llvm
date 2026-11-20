@@ -31,6 +31,10 @@ globs = ["ITree.*"]
 [[lean_lib]]
 name = "LeanLLVMTest"
 
+[[lean_lib]]
+name = "JsonReference"
+roots = ["JsonMain"]
+
 [[lean_exe]]
 name = "leanllvm"
 root = "Main"
