@@ -858,4 +858,51 @@ that quantifies over states nobody occupies is the failure mode both find.
   with `pgrep -af 'lake build|bin/lean '` and `pkill`, or they compile for hours.
   **Do not kill a `lean` process that is writing an `.olean`**: `.lake` deletes the
   old one first, and a kill there leaves every downstream module failing on a missing
-  file (recoverable, but a full rebuild).
+  file (recoverable, but a 20-minute rebuild).
+
+## Local memory discipline — this has already gone wrong once
+
+**The failure**: five concurrent `lake build`s at a 6 GB ceiling each, on a 30 GB
+host, with swap at 6.9 of 8 GB; builds then died at **exit 137** and reported it as a
+compile failure. Nothing in the toolchain says "you ran out of memory" — `Lean exited
+with code 137` is SIGKILL and looks like any other build error.
+
+**The two claimants, and the host has only one margin:**
+
+1. **Every `lake build` you start**, at whatever `MemoryMax` you pass it.
+2. **The editor's Lean LSP** — `lean --server` plus one `lean --worker` per file it
+   holds open. That is a *permanent resident* cost, not yours to schedule, and on this
+   host it has been observed holding four workers.
+
+**The rules, and they are hard:**
+
+- **One `lake build` at a time on the local host.** Not two, not "just a module
+  build" alongside a full one. `AGENTS.md` already forbids a concurrent build that
+  bypasses `probes/install/lake-locked.sh`; this extends that to every build.
+- **Remote first.** The local host is for reading, `git`, and *one* build. **Every
+  full-target build, every multi-module check, and every subagent that needs to
+  elaborate should run on a leased worker** — the repository has the sizing and the
+  instrument (`probes/remote-build/`, `AGENTS.md`'s "Remote worker sizing"), and the
+  skills carry the lease-and-run route. **A crash on a lease costs a lease; a crash
+  locally costs every subagent's in-flight work.**
+- **Ceiling on the one local build: the `AGENTS.md` figure,
+  `MemoryMax=12G`/`MemorySwapMax=4G`.** The ceiling is *not* the thing to shrink —
+  **the count is.** Twelve gigabytes is a headroom decision for a single elaboration;
+  five builds at six gigabytes was the mistake, because a ceiling does not reserve, it
+  only kills the process that exceeds its share.
+- **Total live local build demand ≤ ~12 GB** — which means exactly one build, at the
+  full ceiling. **If you find yourself lowering `MemoryMax` to fit another build, you
+  have already made the error.**
+- **Before starting one**: `free -g` and `pgrep -af 'bin/lean '`. If swap is above
+  ~4 GB used, **do not start a local build** — the machine is already borrowing.
+- **Subagents must not each build.** Their briefs should say: *close it in scratch,
+  report, and let the conductor run the one build.* Concurrent `lake` invocations from
+  several agents are indistinguishable, from the memory's point of view, from several
+  builds by one.
+- **A 137 is a memory symptom, not a proof failure.** Before treating it as a real
+  error: check `free -g`, check swap, check how many builds are live. **Then retry
+  alone.**
+
+**And the diagnostic that would have caught it:** `systemd-cgtop` or
+`awk '/VmRSS/{print $2/1048576" GB"}' /proc/<lean-pid>/status` — a module at 2.3 GB is
+normal; five of them at once is not.
