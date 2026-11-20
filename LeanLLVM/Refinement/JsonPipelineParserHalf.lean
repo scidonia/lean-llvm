@@ -52,6 +52,14 @@ at `0` the absence of such a witness refutes acceptance through `parseRef_sound`
 (`verdictWord_zero_of_noValid`).  So a per-route proof never has to run the parser:
 it supplies the witness or its absence, and the two theorems give the word.
 
+**The theorem at a document.**  `verdictWord_one_of_valid` is applied at `[]` — the
+two-entry container the walk's trace row covers (`row_openCloseBracket`) — so the
+accepting route's hypotheses are discharged from the document's bytes: the
+`ValidDocument` witness at `.array []`, the input's length, and the value's depth
+and token count (`emptyArrayValid`, `emptyArrayInput`, `emptyArrayDepth`,
+`emptyArrayTokens`), with the word (`emptyArrayWord`) and the parser's tape
+(`emptyArrayParses`) both named there.
+
 **What is not here, and why.**  The rows are not proved of any execution: the
 word row and the trace row are the walk's answer (its `refusal` bit and its
 emitted stream at the parser's token boundaries), and the refusal row is the
@@ -482,6 +490,87 @@ theorem bomRows :
     rw [hnone] at h
     cases h
 
+/-! ### The accepted container document `[]`
+
+The two instances above are a scalar and a refusal.  The smallest *container
+document* the walk's trace rows cover is `[]`: `JsonStage2WalkRowSteps`'
+`row_openCloseBracket` is the row at a `DelimiterLastDocument G 0x5B 0x5D`, whose
+bytes are `G.bs = [0x5B, 0x5D]` (`DelimiterLastDocument.bs`).  At those bytes the
+word's accepted value is `verdictWord_one_of_valid`'s, and its hypotheses are all
+about the document: the accepting route supplies the value, the depth, the token
+count and the input's length, and the theorem is the word.  Nothing in the route
+reads a run or runs the parser.
+
+Every hypothesis is proved from the bytes rather than assumed: the grammar's
+`array` production at `0` with the empty body at the byte after the opener and
+the closing bracket at `1`; the policy, vacuous on the empty element list; and the
+three limits, which the value's measures and the input's length make `1`, `2` and
+`2`.  The parser's tape is named as well (`emptyArrayParses`), so the word is not
+the only reading of the document here — it is the reading the accepted language
+gives. -/
+
+/-- The document `[]`. -/
+def emptyArrayDoc : List UInt8 := [0x5B, 0x5D]
+
+/-- **The accepted-language witness at `[]`.**  `RfcText` is the grammar's
+`array` production: the opener at `0`, the empty body at `1`, the closing bracket
+at `1`, and the text ending at `2`.  `Policy` has no element to check. -/
+theorem emptyArrayValid :
+    ValidDocument (ByteString.literal emptyArrayDoc) (.array ([] : List LeanLLVM.JSON.Value)) := by
+  have hclose : (ByteString.literal emptyArrayDoc)[1]? = some 0x5D := by decide
+  have hskip : skipFrom (ByteString.literal emptyArrayDoc) (0 + 1) = 1 := by decide
+  refine ⟨⟨0, 2, by decide, ?_, by decide⟩, ?_⟩
+  · have hb : ArrBody .rfc (ByteString.literal emptyArrayDoc)
+        (skipFrom (ByteString.literal emptyArrayDoc) (0 + 1)) [] 1 := by
+      rw [hskip]
+      exact ArrBody.empty hclose
+    exact ValueAt.array (i := 0) (k := 1) (vs := []) (by decide) hb (by decide)
+  · exact (charPolicy_array []).mpr (by simp)
+
+/-- The input limit at `[]`: two bytes. -/
+theorem emptyArrayInput : emptyArrayDoc.length ≤ Limits.default.maxInput := by
+  decide
+
+/-- The depth limit at `[]`: the empty array is one level. -/
+theorem emptyArrayDepth :
+    (Value.array ([] : List LeanLLVM.JSON.Value)).depth ≤ Limits.default.maxDepth := by
+  decide
+
+/-- The token limit at `[]`: the two container tokens. -/
+theorem emptyArrayTokens :
+    (Value.array ([] : List LeanLLVM.JSON.Value)).tokenCount ≤ Limits.default.maxTokens := by
+  decide
+
+/-- **The word at `[]`, through the parser's completeness theorem.**  The four
+document facts above are exactly `verdictWord_one_of_valid`'s hypotheses, so the
+accepted route's word row is one application. -/
+theorem emptyArrayWord : VerdictWord emptyArrayDoc 1 :=
+  verdictWord_one_of_valid emptyArrayValid emptyArrayInput emptyArrayDepth
+    emptyArrayTokens
+
+/-- **The parser's own answer at `[]`**: the tape `parseRef_complete` produces,
+its input, and its decode.  The word above and this tape are the same document's,
+so the accepting route's witness and the parser's reading agree by construction
+rather than by a second argument. -/
+theorem emptyArrayParses :
+    ∃ t : Tape,
+      parseBytes Limits.default (ByteString.literal emptyArrayDoc) = .ok t ∧
+      t.input = ByteString.literal emptyArrayDoc ∧
+      decodeTape t = some (.array ([] : List LeanLLVM.JSON.Value)) :=
+  parseRef_complete Limits.default (ByteString.literal emptyArrayDoc)
+    (.array ([] : List LeanLLVM.JSON.Value)) emptyArrayValid emptyArrayInput emptyArrayDepth
+    emptyArrayTokens
+
+/-- The acceptance `VerdictWord`'s `1` stands for, read from that tape. -/
+theorem emptyArrayAccepts : ParserAccepts emptyArrayDoc := by
+  obtain ⟨t, ht, -, -⟩ := emptyArrayParses
+  exact ⟨t, ht⟩
+
+/-- The same acceptance read back from the word (`verdictWord_one_iff`), so the
+word row and the tape are one answer at this document. -/
+theorem emptyArrayWord_accepts : ParserAccepts emptyArrayDoc :=
+  verdictWord_one_iff.mp emptyArrayWord
+
 /-! ### Axiom footprints
 
 The parser-side content is `decodeTape_correct`'s and `tape_valid`'s; the
@@ -580,6 +669,42 @@ the development's ceiling, `[propext, Quot.sound]`, measured rather than assumed
 /-- info: 'LeanLLVM.Refinement.bomRows' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms bomRows
+
+/-- info: 'LeanLLVM.Refinement.emptyArrayDoc' does not depend on any axioms -/
+#guard_msgs in
+#print axioms emptyArrayDoc
+
+/-- info: 'LeanLLVM.Refinement.emptyArrayValid' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms emptyArrayValid
+
+/-- info: 'LeanLLVM.Refinement.emptyArrayInput' does not depend on any axioms -/
+#guard_msgs in
+#print axioms emptyArrayInput
+
+/-- info: 'LeanLLVM.Refinement.emptyArrayDepth' does not depend on any axioms -/
+#guard_msgs in
+#print axioms emptyArrayDepth
+
+/-- info: 'LeanLLVM.Refinement.emptyArrayTokens' does not depend on any axioms -/
+#guard_msgs in
+#print axioms emptyArrayTokens
+
+/-- info: 'LeanLLVM.Refinement.emptyArrayWord' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms emptyArrayWord
+
+/-- info: 'LeanLLVM.Refinement.emptyArrayParses' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms emptyArrayParses
+
+/-- info: 'LeanLLVM.Refinement.emptyArrayAccepts' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms emptyArrayAccepts
+
+/-- info: 'LeanLLVM.Refinement.emptyArrayWord_accepts' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms emptyArrayWord_accepts
 
 /-- info: 'LeanLLVM.Refinement.verdictWord_one_iff' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
