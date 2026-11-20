@@ -11,21 +11,34 @@
 # measured compiler line.  `bench-contract.cc` stages each document once,
 # gates the prototype against the tree's own `leanllvm_json_pipeline` and the
 # prototype's classifier against `leanllvm_json_s1_masks` on every block, then
-# times eight arms from one warm buffer in one process:
+# times its arms from one warm buffer in one process.  The arm families are:
 #
-#   contract_core  the prototype, escape list off
-#   contract_list  the prototype, escape list on
-#   contract_full  the prototype, escape list on, UTF-8 unit after the loop
-#   staged_core    `kernel/json/pipeline.c`'s loop, escape list off
-#   staged_list    the same loop, escape list on
-#   staged_full    the same loop, escape list on, UTF-8 unit after the loop
-#   split_core     masks and entry word into an `ent` array, one emitter call
+#   contract_*     the fused contracted pass (escape list off/on, UTF-8)
+#   staged_*       `kernel/json/pipeline.c`'s loop as the reference
+#   split_*        masks six-wide into an `ent` array, one emitter call
+#   splitc_*       the contracted mask pass, one emitter call (the shape the
+#                  stage-1 output contract was measured on)
+#   mask_*, classify_*, emit_*, u8
+#                  component rows for the time split on the strings and UTF-8
+#                  classes: the classifier, its fast form, the mask pass with
+#                  and without the escape-list arm, each emitter, the UTF-8
+#                  unit alone
+#   emit3, mask_fast, splitfast3_*, splitfast_b8_u8
+#                  the candidate: 3-wide sparse emitter, no control mask, the
+#                  entry complement from `neither`, the peeled last block
+#   splitprobe3, splitprobe_b8, splitauto
+#                  the candidate with the document-level ASCII probe (skip the
+#                  UTF-8 unit on an all-ASCII document), and the class-selected
+#                  composite
+#   splitlag3*, splitfast2*
+#                  measured and rejected: the one-block-lagged single pass and
+#                  the in-string half skip
 #   stage1         simdjson 5.0.5's stage 1 (classification, strings, UTF-8,
 #                  structural indexes)
 #
 # The ratios are per-round pairs, so a drift inside a round cancels: below 1
-# the numerator takes less time.  `contract_full / stage1` is the parity row;
-# `contract_core / staged_core` is the fusion delta at the same contract.
+# the numerator takes less time.  A candidate's `ratio` is to `stage1`; its
+# `ratio2` is to the contracted `splitc_plain`/`splitc_core` row.
 #
 # Corpus.  The same eight documents `bench.sh` and `bench-simdjson.sh` use:
 # the stage-1 route's six documents and the UTF-8 route's raw documents, each
@@ -148,6 +161,8 @@ printf 'simdjson: %s header %s; library %s\n' "$ver" "$header" "$lib/lib/libsimd
 printf 'header sha256: %s\n' "$(sha256sum "$header" | cut -d' ' -f1)"
 printf 'library sha256: %s\n' "$(sha256sum "$lib/lib/libsimdjson.so.34.0.0" | cut -d' ' -f1)"
 printf 'prototype object sha256: %s\n' "$(sha256sum "$bin/bench-contract.o" | cut -d' ' -f1)"
+printf 'worktree HEAD: %s\n' "$(git -C "$repo" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+printf 'prototype classifier: adopted arithmetic escape (kernel/json/s1_block.c at main 2373c4a)\n'
 printf 'host: %s\n' "$(uname -srm)"
 printf 'cpu: %s\n' "$(awk -F: '/^model name/ { sub(/^ /, "", $2); print $2; exit }' /proc/cpuinfo)"
 printf 'cpus online: %s; pinned to: %s\n' "$(nproc)" "$cpus"

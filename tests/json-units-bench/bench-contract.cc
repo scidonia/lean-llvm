@@ -273,6 +273,16 @@ enum Arm {
   A_SPLITFAST2_CORE,
   A_SPLITFAST2_PLAIN,
   A_SPLITFAST2U_PLAIN,
+  A_EMIT3,
+  A_SPLITFAST3_CORE,
+  A_SPLITFAST_U8,
+  A_SPLITFAST3_U8,
+  A_SPLITLAG3,
+  A_SPLITLAG3_U8,
+  A_SPLITPROBE3,
+  A_SPLITPROBE_B8,
+  A_SPLITFAST_B8_U8,
+  A_SPLITAUTO,
   A_STAGE1,
   A_COUNT
 };
@@ -310,6 +320,16 @@ static const char *arm_name(int a) {
     case A_SPLITFAST2_CORE: return "splitfast2_core";
     case A_SPLITFAST2_PLAIN: return "splitfast2_plain";
     case A_SPLITFAST2U_PLAIN: return "splitfast2u_plain";
+    case A_EMIT3: return "emit3";
+    case A_SPLITFAST3_CORE: return "splitfast3_core";
+    case A_SPLITFAST_U8: return "splitfast_u8";
+    case A_SPLITFAST3_U8: return "splitfast3_u8";
+    case A_SPLITLAG3: return "splitlag3";
+    case A_SPLITLAG3_U8: return "splitlag3_u8";
+    case A_SPLITPROBE3: return "splitprobe3";
+    case A_SPLITPROBE_B8: return "splitprobe_b8";
+    case A_SPLITFAST_B8_U8: return "splitfast_b8_u8";
+    case A_SPLITAUTO: return "splitauto";
     default: return "stage1";
   }
 }
@@ -400,6 +420,29 @@ extern "C" uint64_t leanllvm_bench_contract_maskfast2_u8(
     const uint8_t *b, uint64_t n, uint64_t *ent);
 extern "C" uint64_t leanllvm_bench_contract_splitfast2_u8(
     const uint8_t *b, uint64_t n, uint32_t *ep, uint64_t *nk, uint64_t *ent);
+extern "C" void leanllvm_bench_contract_emit3(
+    const uint64_t *ent, uint64_t nblk, uint32_t *ep, uint64_t *nk);
+extern "C" void leanllvm_bench_contract_splitfast3(
+    const uint8_t *b, uint64_t n, uint32_t *ep, uint64_t *nk, uint64_t *ent);
+extern "C" uint64_t leanllvm_bench_contract_splitfast_u8(
+    const uint8_t *b, uint64_t n, uint32_t *ep, uint64_t *nk, uint64_t *ent);
+extern "C" uint64_t leanllvm_bench_contract_splitfast3_u8(
+    const uint8_t *b, uint64_t n, uint32_t *ep, uint64_t *nk, uint64_t *ent);
+extern "C" void leanllvm_bench_contract_splitlag3(
+    const uint8_t *b, uint64_t n, uint32_t *ep, uint64_t *nk);
+extern "C" uint64_t leanllvm_bench_contract_splitlag3_u8(
+    const uint8_t *b, uint64_t n, uint32_t *ep, uint64_t *nk);
+extern "C" int leanllvm_bench_contract_maskfast_probe(
+    const uint8_t *b, uint64_t n, uint64_t *ent);
+extern "C" uint64_t leanllvm_bench_contract_splitprobe3(
+    const uint8_t *b, uint64_t n, uint32_t *ep, uint64_t *nk, uint64_t *ent);
+extern "C" uint64_t leanllvm_bench_contract_splitprobe_b8(
+    const uint8_t *b, uint64_t n, uint32_t *ep, uint64_t *nk, uint64_t *ent);
+extern "C" uint64_t leanllvm_bench_contract_splitfast_b8_u8(
+    const uint8_t *b, uint64_t n, uint32_t *ep, uint64_t *nk, uint64_t *ent);
+extern "C" uint64_t leanllvm_bench_contract_splitauto(
+    const uint8_t *b, uint64_t n, int b8, uint32_t *ep, uint64_t *nk,
+    uint64_t *ent);
 
 static void splitc_pass(Doc *d, int list) {
   d->nk_act = 0;
@@ -481,6 +524,80 @@ static uint64_t splitfast2u_pass(Doc *d) {
   d->nk_act = 0;
   d->u8 = leanllvm_bench_contract_splitfast2_u8(
       d->b, d->n, d->ep_c.data(), &d->nk_act, d->ent_f.data());
+  d->nxp_act = 0;
+  return d->u8;
+}
+
+static void emit3_pass(Doc *d) {
+  leanllvm_bench_contract_emit3(d->ent_v.data(), d->blocks, d->ep_c.data(),
+                                &d->nk_act);
+  d->nxp_act = 0;
+}
+
+static void splitfast3_pass(Doc *d) {
+  leanllvm_bench_contract_splitfast3(d->b, d->n, d->ep_c.data(), &d->nk_act,
+                                     d->ent_f.data());
+  d->nxp_act = 0;
+}
+
+static uint64_t splitfast_u8_pass(Doc *d) {
+  d->nk_act = 0;
+  d->u8 = leanllvm_bench_contract_splitfast_u8(
+      d->b, d->n, d->ep_c.data(), &d->nk_act, d->ent_f.data());
+  d->nxp_act = 0;
+  return d->u8;
+}
+
+static uint64_t splitfast3_u8_pass(Doc *d) {
+  d->nk_act = 0;
+  d->u8 = leanllvm_bench_contract_splitfast3_u8(
+      d->b, d->n, d->ep_c.data(), &d->nk_act, d->ent_f.data());
+  d->nxp_act = 0;
+  return d->u8;
+}
+
+static void splitlag3_pass(Doc *d) {
+  d->nk_act = 0;
+  leanllvm_bench_contract_splitlag3(d->b, d->n, d->ep_c.data(), &d->nk_act);
+  d->nxp_act = 0;
+}
+
+static uint64_t splitlag3u_pass(Doc *d) {
+  d->nk_act = 0;
+  d->u8 = leanllvm_bench_contract_splitlag3_u8(d->b, d->n, d->ep_c.data(),
+                                               &d->nk_act);
+  d->nxp_act = 0;
+  return d->u8;
+}
+
+static uint64_t splitprobe3_pass(Doc *d) {
+  d->nk_act = 0;
+  d->u8 = leanllvm_bench_contract_splitprobe3(
+      d->b, d->n, d->ep_c.data(), &d->nk_act, d->ent_f.data());
+  d->nxp_act = 0;
+  return d->u8;
+}
+
+static uint64_t splitprobe_b8_pass(Doc *d) {
+  d->nk_act = 0;
+  d->u8 = leanllvm_bench_contract_splitprobe_b8(
+      d->b, d->n, d->ep_c.data(), &d->nk_act, d->ent_f.data());
+  d->nxp_act = 0;
+  return d->u8;
+}
+
+static uint64_t splitfast_b8_u8_pass(Doc *d) {
+  d->nk_act = 0;
+  d->u8 = leanllvm_bench_contract_splitfast_b8_u8(
+      d->b, d->n, d->ep_c.data(), &d->nk_act, d->ent_f.data());
+  d->nxp_act = 0;
+  return d->u8;
+}
+
+static uint64_t splitauto_pass(Doc *d) {
+  d->nk_act = 0;
+  d->u8 = leanllvm_bench_contract_splitauto(
+      d->b, d->n, d->b8, d->ep_c.data(), &d->nk_act, d->ent_f.data());
   d->nxp_act = 0;
   return d->u8;
 }
@@ -673,6 +790,61 @@ static void gate_streams(Doc *d) {
     if (d->ep_c[i] != d->ep_ref[i])
       die(3, "candidate2u entry position differs");
 
+  mask_pass(d, 0);
+  splitfast3_pass(d);
+  if (d->nk_act != nk_ref) die(3, "candidate3 entry cursor differs from pipeline");
+  for (uint64_t i = 0; i < nk_ref; i++)
+    if (d->ep_c[i] != d->ep_ref[i])
+      die(3, "candidate3 entry position differs");
+  uint64_t u8_ref = leanllvm_json_utf8(d->b, d->n, 0);
+  if (splitfast_u8_pass(d) != u8_ref)
+    die(3, "fused UTF-8 word differs from the unit (emit4)");
+  if (d->nk_act != nk_ref) die(3, "fused entry cursor differs (emit4)");
+  for (uint64_t i = 0; i < nk_ref; i++)
+    if (d->ep_c[i] != d->ep_ref[i])
+      die(3, "fused entry position differs (emit4)");
+  if (splitfast3_u8_pass(d) != u8_ref)
+    die(3, "fused UTF-8 word differs from the unit (emit3)");
+  if (d->nk_act != nk_ref) die(3, "fused entry cursor differs (emit3)");
+  for (uint64_t i = 0; i < nk_ref; i++)
+    if (d->ep_c[i] != d->ep_ref[i])
+      die(3, "fused entry position differs (emit3)");
+  splitlag3_pass(d);
+  if (d->nk_act != nk_ref) die(3, "lagged entry cursor differs from pipeline");
+  for (uint64_t i = 0; i < nk_ref; i++)
+    if (d->ep_c[i] != d->ep_ref[i])
+      die(3, "lagged entry position differs");
+  if (splitlag3u_pass(d) != u8_ref)
+    die(3, "lagged fused UTF-8 word differs from the unit");
+  if (d->nk_act != nk_ref) die(3, "lagged fused entry cursor differs");
+  for (uint64_t i = 0; i < nk_ref; i++)
+    if (d->ep_c[i] != d->ep_ref[i])
+      die(3, "lagged fused entry position differs");
+  if (splitprobe3_pass(d) != u8_ref)
+    die(3, "probe+emit3 UTF-8 word differs from the unit");
+  if (d->nk_act != nk_ref) die(3, "probe+emit3 entry cursor differs");
+  for (uint64_t i = 0; i < nk_ref; i++)
+    if (d->ep_c[i] != d->ep_ref[i])
+      die(3, "probe+emit3 entry position differs");
+  if (splitprobe_b8_pass(d) != u8_ref)
+    die(3, "probe+b8 UTF-8 word differs from the unit");
+  if (d->nk_act != nk_ref) die(3, "probe+b8 entry cursor differs");
+  for (uint64_t i = 0; i < nk_ref; i++)
+    if (d->ep_c[i] != d->ep_ref[i])
+      die(3, "probe+b8 entry position differs");
+  if (splitfast_b8_u8_pass(d) != u8_ref)
+    die(3, "fused+b8 UTF-8 word differs from the unit");
+  if (d->nk_act != nk_ref) die(3, "fused+b8 entry cursor differs");
+  for (uint64_t i = 0; i < nk_ref; i++)
+    if (d->ep_c[i] != d->ep_ref[i])
+      die(3, "fused+b8 entry position differs");
+  if (splitauto_pass(d) != u8_ref)
+    die(3, "selected UTF-8 word differs from the unit");
+  if (d->nk_act != nk_ref) die(3, "selected entry cursor differs");
+  for (uint64_t i = 0; i < nk_ref; i++)
+    if (d->ep_c[i] != d->ep_ref[i])
+      die(3, "selected entry position differs");
+
   /* The UTF-8 stage's two gate values. */
   if (leanllvm_json_utf8(d->b, d->n, 0) != leanllvm_json_utf8(d->b, d->n, 1))
     die(3, "UTF-8 gate values differ");
@@ -823,6 +995,27 @@ int main(int argc, char **argv) {
     ref[A_SPLITFAST2_PLAIN] = stream_check(d->ep_c.data(), d->nk_act, d->u8);
     splitfast2u_pass(d);
     ref[A_SPLITFAST2U_PLAIN] = stream_check(d->ep_c.data(), d->nk_act, d->u8);
+    mask_pass(d, 0);
+    emit3_pass(d);
+    ref[A_EMIT3] = stream_check(d->ep_c.data(), d->nk_act, 0);
+    splitfast3_pass(d);
+    ref[A_SPLITFAST3_CORE] = stream_check(d->ep_c.data(), d->nk_act, 0);
+    splitfast_u8_pass(d);
+    ref[A_SPLITFAST_U8] = stream_check(d->ep_c.data(), d->nk_act, d->u8);
+    splitfast3_u8_pass(d);
+    ref[A_SPLITFAST3_U8] = stream_check(d->ep_c.data(), d->nk_act, d->u8);
+    splitlag3_pass(d);
+    ref[A_SPLITLAG3] = stream_check(d->ep_c.data(), d->nk_act, 0);
+    splitlag3u_pass(d);
+    ref[A_SPLITLAG3_U8] = stream_check(d->ep_c.data(), d->nk_act, d->u8);
+    splitprobe3_pass(d);
+    ref[A_SPLITPROBE3] = stream_check(d->ep_c.data(), d->nk_act, d->u8);
+    splitprobe_b8_pass(d);
+    ref[A_SPLITPROBE_B8] = stream_check(d->ep_c.data(), d->nk_act, d->u8);
+    splitfast_b8_u8_pass(d);
+    ref[A_SPLITFAST_B8_U8] = stream_check(d->ep_c.data(), d->nk_act, d->u8);
+    splitauto_pass(d);
+    ref[A_SPLITAUTO] = stream_check(d->ep_c.data(), d->nk_act, d->u8);
     ref[A_STAGE1] = s1_ref_check;
 
     /* The acts.  Each updates `nk_act`/`nxp_act`/`u8`; `check_arm` reads them
@@ -891,6 +1084,16 @@ int main(int argc, char **argv) {
           d->u8 = leanllvm_json_utf8(d->b, d->n, 0);
           break;
         case A_SPLITFAST2U_PLAIN: splitfast2u_pass(d); break;
+        case A_EMIT3: emit3_pass(d); break;
+        case A_SPLITFAST3_CORE: splitfast3_pass(d); break;
+        case A_SPLITFAST_U8: splitfast_u8_pass(d); break;
+        case A_SPLITFAST3_U8: splitfast3_u8_pass(d); break;
+        case A_SPLITLAG3: splitlag3_pass(d); break;
+        case A_SPLITLAG3_U8: splitlag3u_pass(d); break;
+        case A_SPLITPROBE3: splitprobe3_pass(d); break;
+        case A_SPLITPROBE_B8: splitprobe_b8_pass(d); break;
+        case A_SPLITFAST_B8_U8: splitfast_b8_u8_pass(d); break;
+        case A_SPLITAUTO: splitauto_pass(d); break;
         default: s1_timed = stage1_act(dp, ps); break;
       }
     };
@@ -954,6 +1157,19 @@ int main(int argc, char **argv) {
         case A_SPLITFAST2_PLAIN:
         case A_SPLITFAST2U_PLAIN:
           return stream_check(d->ep_c.data(), d->nk_act, d->u8);
+        case A_EMIT3:
+        case A_SPLITFAST3_CORE:
+          return stream_check(d->ep_c.data(), d->nk_act, 0);
+        case A_SPLITFAST_U8:
+        case A_SPLITFAST3_U8:
+        case A_SPLITLAG3_U8:
+        case A_SPLITPROBE3:
+        case A_SPLITPROBE_B8:
+        case A_SPLITFAST_B8_U8:
+        case A_SPLITAUTO:
+          return stream_check(d->ep_c.data(), d->nk_act, d->u8);
+        case A_SPLITLAG3:
+          return stream_check(d->ep_c.data(), d->nk_act, 0);
         default: return stage1_check(dp, s1_timed);
       }
     };
@@ -1007,6 +1223,9 @@ int main(int argc, char **argv) {
       A_MASK_CORE, A_MASK_CORE, A_SPLITC_PLAIN, A_SPLITC_CORE,
       A_SPLITC_CORE, A_STAGE1,
       A_MASK_CORE, A_SPLITC_PLAIN, A_SPLITC_CORE, A_STAGE1, A_STAGE1,
+      A_SPLITC_CORE, A_SPLITC_CORE, A_STAGE1, A_STAGE1,
+      A_SPLITFAST3_CORE, A_STAGE1,
+      A_STAGE1, A_STAGE1, A_STAGE1, A_STAGE1,
       A_SPLITC_PLAIN
     };
     /* A second pair, for the rows whose adoption question is against the
@@ -1018,7 +1237,9 @@ int main(int argc, char **argv) {
       -1, -1, -1, -1, -1, -1,
       A_MASK_CORE, A_EMIT_B8, A_SPLITC_CORE, A_SPLITC_PLAIN,
       A_MASK_CORE, A_MASK_FAST, A_SPLITC_CORE, A_SPLITC_PLAIN,
-      A_SPLITC_PLAIN, -1
+      A_SPLITC_PLAIN, A_EMIT_B8, A_SPLITC_CORE, A_SPLITC_PLAIN,
+      A_SPLITC_PLAIN, A_SPLITFAST3_CORE, A_SPLITC_PLAIN,
+      A_SPLITC_PLAIN, A_SPLITC_PLAIN, A_SPLITC_PLAIN, A_SPLITC_PLAIN, -1
     };
     const char *status = s1_ref.err == simdjson::SUCCESS ? "ok" : "rejected";
 

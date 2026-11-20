@@ -21,15 +21,19 @@
    differences: the classifier is inlined into the loop instead of called per
    block, and the two intermediate slots are gone.
 
-   The classifier, the two entry emitters and the escape list are copies of
-   `kernel/json/s1_block.c`, `kernel/json/entry.c` and `kernel/json/escape.c`
-   at the measured compiler line, under this file's names and with the output
-   slot replaced by a struct returned by value.  `kernel/json/` is not edited.
-   The copies are gated: `leanllvm_bench_contract_masks` runs the copied
-   classifier over one block against `leanllvm_json_s1_masks`'s six words and
-   carry, and `bench.c`'s harness compares the fused loop's streams against
-   `leanllvm_json_pipeline`'s over every corpus document before a row is
-   timed.  A copy that drifts fails the gate; it does not produce a number.
+   The classifier, the two entry emitters and the escape list are copies at
+   the measured compiler line, under this file's names and with the output
+   slot replaced by a struct returned by value.  The two entry emitters and
+   the escape list are `kernel/json/entry.c`'s and `kernel/json/escape.c`'s
+   text.  The classifier is the **adopted** one: its escape mask is
+   `kernel/json/s1_block.c` as it stands at main's 2373c4a (the arithmetic
+   escape that replaced the pdep/pext/clz form; the rest of the function is
+   unchanged), not this worktree's pre-adoption copy.  `kernel/json/` is not
+   edited.  The copies are gated: `leanllvm_bench_contract_masks` runs the
+   copied classifier over one block against `leanllvm_json_s1_masks`'s six
+   words and carry, and `bench-contract.cc` compares every prototype's streams
+   against `leanllvm_json_pipeline`'s over every corpus document before a row
+   is timed.  A copy that drifts fails the gate; it does not produce a number.
 
    Not contracted, and therefore not present: `sc`, `mk`, `entw`, `xcarry`.
    The function takes the document, the entry stream and the escape list, and
@@ -52,22 +56,31 @@ static inline uint64_t bc_prefix_xor(uint64_t x) {
         _mm_clmulepi64_si128(v, _mm_set1_epi8((char)0xFF), 0x00));
 }
 
+/* The adopted kernel's escape mask, `s1f_escaped` as it stands at main's
+   2373c4a: a run whose first lane is `s` and last lane is `e` escapes the lane
+   after it exactly when `e + 1 - s` is odd, so adding the run's start bit to
+   the backslash mask carries through the run and marks that lane; the sums are
+   separated by the start's parity, because a carry stops on the non-backslash
+   lane after a run.  A run that opens in the previous block has its start
+   parity in `open & ppar`, which also gives lane zero's boundary escape.  The
+   carry out of bit 63 of the odd-class sum is the outgoing run parity.  This
+   is the classifier the tree ships; the prototype's arms differ from each
+   other, not from this. */
 static inline uint64_t bc_escaped(uint64_t bs, uint64_t *open, uint64_t *ppar) {
-    const uint64_t even_slots = 0x5555555555555555ULL;
-    uint64_t bs1 = bs << 1;
-    uint64_t starts = bs & ~(bs1 | *open);
-    uint64_t bs0 = bs & 1;
-    starts |= bs0 & *open;
-    uint64_t lasts = bs & ~(bs >> 1);
-    uint64_t after = lasts << 1;
-    uint64_t alt = even_slots ^ (*open & *ppar);
-    uint64_t dd = _pext_u64(alt, starts) ^ _pext_u64(even_slots, lasts);
-    uint64_t esc = _pdep_u64(~dd, after) | (*open & ~bs0 & *ppar);
-    uint64_t top = bs >> 63;
-    uint64_t lzp = ((bs == ~0ULL) ? 64u : (unsigned)__builtin_clzll(~bs)) & 1u;
-    uint64_t pp = (((bs == ~0ULL) && *open) ? *ppar : 0) ^ lzp;
-    *ppar = top & pp;
-    *open = top;
+    const uint64_t even_lanes = 0x5555555555555555ULL;
+    uint64_t odd_open = *open & *ppar;
+    uint64_t starts = bs & ~(bs << 1);
+    uint64_t alt = even_lanes ^ odd_open;
+    uint64_t even_class = starts & alt;
+    uint64_t odd_class = starts ^ even_class;
+    uint64_t notbs = ~bs;
+    uint64_t sum_even = bs + even_class;
+    uint64_t sum_odd = bs + odd_class;
+    uint64_t esc = ((sum_even & notbs) & ~even_lanes) |
+                   ((sum_odd & notbs) & even_lanes) |
+                   (odd_open & (notbs & 1));
+    *ppar = (uint64_t)(sum_odd < bs);
+    *open = bs >> 63;
     return esc;
 }
 
@@ -446,40 +459,21 @@ void leanllvm_bench_contract_maskpass(const uint8_t *b, uint64_t n,
 }
 
 /* ---------------------------------------------- candidate: fast mask pass -- */
-/* Two changes to the mask pass, both invisible to the contracted outputs.
+/* Changes to the mask pass, all invisible to the contracted outputs and all
+   on top of the adopted classifier (`bc_escaped` above is the shipped
+   `s1f_escaped`).
 
-   First, the escaped-quote mask is the arithmetic one simdjson's stage-1
-   escape scanner uses (`json_escape_scanner::next_escape_and_terminal_code`):
-   a shift, a subtract and two xors over the backslash word, carrying a single
-   "the previous block ended in an odd backslash run" bit, instead of the
-   pdep/pext/clz construction `s1f_escaped` uses.  The two agree on every
-   position that is a quote, because a byte is either `"` or `\\` and never
-   both; the arithmetic form needs no pdep, pext or clz, three operations that
-   are multi-uop on Intel (the host the split was measured on) and single-op
-   on the AMD parts the measured pipeline was tuned against.
-
-   Second, the composition asks the classifier for two masks it already
-   computes rather than four: `delim` (the six structural bytes) and
-   `neither` (neither structural nor whitespace).  `ws` is never needed on its
-   own -- `S = neither & ~quote & ~in_string` is the same complement the
-   staged loop builds from four masks -- and `ctl` is needed only by the escape
-   list, so the list-free body does not compute it at all.
+   The composition asks the classifier for two masks it already computes
+   rather than three: `delim` (the six structural bytes) and `neither` (neither
+   structural nor whitespace).  `ws` is never needed on its own --
+   `S = neither & ~quote & ~in_string` is the same complement the staged loop
+   builds from four masks -- and `ctl` is needed only by the escape list, so
+   the list-free body does not compute it at all.
 
    The block loop peels the final partial block so the `lim < 64` test is not
    in the full-block loop.  Everything else is the same loop, and the harness
    gates the entry stream and cursor against `leanllvm_json_pipeline` on every
    document before a row is timed. */
-typedef struct { uint64_t next_esc, im_carry; } bc_fast_carry;
-
-static inline uint64_t bc_escaped_arith(uint64_t bs, uint64_t *next) {
-    const uint64_t odd = 0xAAAAAAAAAAAAAAAAULL;
-    uint64_t potential = bs & ~*next;
-    uint64_t maybe = potential << 1;
-    uint64_t etc = ((maybe | odd) - potential) ^ odd;
-    uint64_t escaped = etc ^ (bs | *next);
-    *next = (etc & bs) >> 63;
-    return escaped;
-}
 
 static inline void bc_sw32_dn(__m256i v, uint32_t *d, uint32_t *n) {
     const __m256i m4 = _mm256_set1_epi8(0x0F), z = _mm256_setzero_si256();
@@ -494,7 +488,7 @@ static inline void bc_sw32_dn(__m256i v, uint32_t *d, uint32_t *n) {
 }
 
 static inline __attribute__((always_inline))
-void bc_fast_masks64(__m256i v0, __m256i v1, bc_fast_carry *st,
+void bc_fast_masks64(__m256i v0, __m256i v1, bc_carry *st,
                      uint64_t *q_o, uint64_t *d_o, uint64_t *im_o,
                      uint64_t *n_o) {
     __m256i q = _mm256_set1_epi8('"');
@@ -503,7 +497,7 @@ void bc_fast_masks64(__m256i v0, __m256i v1, bc_fast_carry *st,
                   ((uint64_t)(uint32_t)_mm256_movemask_epi8(_mm256_cmpeq_epi8(v1, q)) << 32);
     uint64_t bm = (uint64_t)(uint32_t)_mm256_movemask_epi8(_mm256_cmpeq_epi8(v0, bs)) |
                   ((uint64_t)(uint32_t)_mm256_movemask_epi8(_mm256_cmpeq_epi8(v1, bs)) << 32);
-    uint64_t qq = qm & ~bc_escaped_arith(bm, &st->next_esc);
+    uint64_t qq = qm & ~bc_escaped(bm, &st->esc_open, &st->esc_ppar);
     uint32_t d0, d1, n0, n1;
     bc_sw32_dn(v0, &d0, &n0);
     bc_sw32_dn(v1, &d1, &n1);
@@ -530,7 +524,7 @@ void leanllvm_bench_contract_classify(const uint8_t *b, uint64_t n,
 
 void leanllvm_bench_contract_classify_fast(const uint8_t *b, uint64_t n,
                                            uint64_t *sink) {
-    bc_fast_carry st = { 0, 0 };
+    bc_carry st = { 0, 0, 0 };
     uint64_t acc = 0, nblk = (n + 63) >> 6;
     for (uint64_t i = 0; i < nblk; i++) {
         __m256i v0 = _mm256_loadu_si256((const __m256i *)(const void *)(b + (i << 6)));
@@ -545,7 +539,7 @@ void leanllvm_bench_contract_classify_fast(const uint8_t *b, uint64_t n,
 /* The list-free mask pass: entry words only. */
 void leanllvm_bench_contract_maskfast(const uint8_t *b, uint64_t n,
                                       uint64_t *ent) {
-    bc_fast_carry st = { 0, 0 };
+    bc_carry st = { 0, 0, 0 };
     uint64_t prevS = 0;
     uint64_t nfull = n >> 6, rem = n & 63;
     for (uint64_t i = 0; i < nfull; i++) {
@@ -613,6 +607,49 @@ void leanllvm_bench_contract_splitfast(const uint8_t *b, uint64_t n,
     leanllvm_bench_contract_emit4(ent, (n + 63) >> 6, ep, nk);
 }
 
+/* ------------------------------------------- candidate: 3-wide emitter -- */
+/* The strings corpus's modal non-empty block carries three entry positions
+   (the two quotes of a string boundary and the comma), so three fixed slots
+   are the natural group; a block above three writes a second group of four
+   before the scalar tail. */
+static inline __attribute__((always_inline))
+uint64_t bc_emit3(uint64_t m, uint32_t base, uint32_t *o) {
+    if (!m) return 0;
+    uint64_t n = (uint64_t)__builtin_popcountll(m);
+    uint64_t c = m;
+    o[0] = base + (uint32_t)__builtin_ctzll(c); c &= c - 1;
+    o[1] = base + (uint32_t)__builtin_ctzll(c); c &= c - 1;
+    o[2] = base + (uint32_t)__builtin_ctzll(c); c &= c - 1;
+    if (n <= 3) return n;
+    o += 3;
+    o[0] = base + (uint32_t)__builtin_ctzll(c); c &= c - 1;
+    o[1] = base + (uint32_t)__builtin_ctzll(c); c &= c - 1;
+    o[2] = base + (uint32_t)__builtin_ctzll(c); c &= c - 1;
+    o[3] = base + (uint32_t)__builtin_ctzll(c); c &= c - 1;
+    if (n <= 7) return n;
+    o += 4;
+    uint64_t k = 7;
+    while (c) { *o++ = base + (uint32_t)__builtin_ctzll(c); k++; c &= c - 1; }
+    return k;
+}
+
+void leanllvm_bench_contract_emit3(const uint64_t *ent, uint64_t nblk,
+                                   uint32_t *ep, uint64_t *nk) {
+    uint64_t k = 0;
+    for (uint64_t i = 0; i < nblk; i++) {
+        uint64_t m = ent[i];
+        if (m) k += bc_emit3(m, (uint32_t)(i << 6), ep + k);
+    }
+    *nk = k;
+}
+
+void leanllvm_bench_contract_splitfast3(const uint8_t *b, uint64_t n,
+                                        uint32_t *ep, uint64_t *nk,
+                                        uint64_t *ent) {
+    leanllvm_bench_contract_maskfast(b, n, ent);
+    leanllvm_bench_contract_emit3(ent, (n + 63) >> 6, ep, nk);
+}
+
 /* ------------------------------------- candidate: in-string half fast path -- */
 /* A 32-byte half that begins inside a string and has no un-escaped quote is
    all string content: its structural, whitespace and scalar-start masks are
@@ -620,9 +657,15 @@ void leanllvm_bench_contract_splitfast(const uint8_t *b, uint64_t n,
    can be skipped.  The quote word decides it; the backslash word does not,
    because an escape may only hide a quote and there is none in the half.  The
    prefix xor is skipped too when the block's quote word is zero, which is the
-   same case with the carry choosing all-ones or all-zeros. */
+   same case with the carry choosing all-ones or all-zeros.
+
+   Measured and rejected.  The in-string pattern is irregular at 32-byte
+   granularity, so the two skips mispredict: on `syn-strings-64k` the classifier
+   costs 0.250 cycles per byte against `classify_fast`'s 0.204, and on
+   `syn-strings-4m` 0.692 against 0.211.  It stays in the harness as the
+   recorded negative result; the kept candidate is the branchless one below. */
 static inline __attribute__((always_inline))
-void bc_fast2_masks64(__m256i v0, __m256i v1, bc_fast_carry *st,
+void bc_fast2_masks64(__m256i v0, __m256i v1, bc_carry *st,
                       uint64_t *q_o, uint64_t *d_o, uint64_t *im_o,
                       uint64_t *n_o) {
     __m256i q = _mm256_set1_epi8('"');
@@ -631,7 +674,7 @@ void bc_fast2_masks64(__m256i v0, __m256i v1, bc_fast_carry *st,
                   ((uint64_t)(uint32_t)_mm256_movemask_epi8(_mm256_cmpeq_epi8(v1, q)) << 32);
     uint64_t bm = (uint64_t)(uint32_t)_mm256_movemask_epi8(_mm256_cmpeq_epi8(v0, bs)) |
                   ((uint64_t)(uint32_t)_mm256_movemask_epi8(_mm256_cmpeq_epi8(v1, bs)) << 32);
-    uint64_t qq = qm & ~bc_escaped_arith(bm, &st->next_esc);
+    uint64_t qq = qm & ~bc_escaped(bm, &st->esc_open, &st->esc_ppar);
     uint64_t carry = st->im_carry;
     uint32_t d0 = 0, d1 = 0, n0 = 0, n1 = 0;
     int lo_fast = (int)(carry & 1) && (uint32_t)qq == 0;
@@ -652,7 +695,7 @@ void bc_fast2_masks64(__m256i v0, __m256i v1, bc_fast_carry *st,
 
 void leanllvm_bench_contract_classify_fast2(const uint8_t *b, uint64_t n,
                                             uint64_t *sink) {
-    bc_fast_carry st = { 0, 0 };
+    bc_carry st = { 0, 0, 0 };
     uint64_t acc = 0, nblk = (n + 63) >> 6;
     for (uint64_t i = 0; i < nblk; i++) {
         __m256i v0 = _mm256_loadu_si256((const __m256i *)(const void *)(b + (i << 6)));
@@ -666,7 +709,7 @@ void leanllvm_bench_contract_classify_fast2(const uint8_t *b, uint64_t n,
 
 void leanllvm_bench_contract_maskfast2(const uint8_t *b, uint64_t n,
                                        uint64_t *ent) {
-    bc_fast_carry st = { 0, 0 };
+    bc_carry st = { 0, 0, 0 };
     uint64_t prevS = 0;
     uint64_t nfull = n >> 6, rem = n & 63;
     for (uint64_t i = 0; i < nfull; i++) {
@@ -761,7 +804,7 @@ static inline int bc_kl_tail_byte(uint8_t b) {
    the unit's error word, gated against `leanllvm_json_utf8`. */
 uint64_t leanllvm_bench_contract_maskfast2_u8(const uint8_t *b, uint64_t n,
                                               uint64_t *ent) {
-    bc_fast_carry st = { 0, 0 };
+    bc_carry st = { 0, 0, 0 };
     uint64_t prevS = 0;
     uint64_t nfull = n >> 6, rem = n & 63;
     __m256i u8k = _mm256_setzero_si256();
@@ -798,5 +841,281 @@ uint64_t leanllvm_bench_contract_splitfast2_u8(const uint8_t *b, uint64_t n,
                                                uint64_t *ent) {
     uint64_t err = leanllvm_bench_contract_maskfast2_u8(b, n, ent);
     leanllvm_bench_contract_emit4(ent, (n + 63) >> 6, ep, nk);
+    return err;
+}
+
+/* The fast mask pass with the UTF-8 gate fused, peeled into a full-block loop
+   and a partial last block.  The first form kept the partial-block test inside
+   the loop and paid about 0.05 cycles per byte for it on the all-ASCII string
+   corpus; peeling leaves the ASCII gate as the only added work. */
+uint64_t leanllvm_bench_contract_maskfast_u8(const uint8_t *b, uint64_t n,
+                                             uint64_t *ent) {
+    bc_carry st = { 0, 0, 0 };
+    uint64_t prevS = 0;
+    uint64_t nfull = n >> 6, rem = n & 63;
+    __m256i u8k = _mm256_setzero_si256();
+    const __m256i high = _mm256_set1_epi8((char)0x80);
+    int prev_ascii = 1;
+    for (uint64_t i = 0; i < nfull; i++) {
+        const uint8_t *p = b + (i << 6);
+        __m256i v0 = _mm256_loadu_si256((const __m256i *)(const void *)p);
+        __m256i v1 = _mm256_loadu_si256((const __m256i *)(const void *)(p + 32));
+        uint64_t q, d, im, nn;
+        bc_fast_masks64(v0, v1, &st, &q, &d, &im, &nn);
+        uint64_t S = nn & ~q & ~im;
+        uint64_t e = q | (d & ~im);
+        e |= S & ~((S << 1) | prevS);
+        prevS = S >> 63;
+        ent[i] = e;
+        __m256i any = _mm256_or_si256(v0, v1);
+        int ascii = _mm256_testz_si256(any, high);
+        if (!(ascii && prev_ascii))
+            u8k = _mm256_or_si256(u8k, bc_kl_err_vec(v0, v1, p));
+        prev_ascii = ascii;
+    }
+    if (rem) {
+        const uint8_t *p = b + (nfull << 6);
+        __m256i v0 = _mm256_loadu_si256((const __m256i *)(const void *)p);
+        __m256i v1 = _mm256_loadu_si256((const __m256i *)(const void *)(p + 32));
+        uint64_t q, d, im, nn;
+        bc_fast_masks64(v0, v1, &st, &q, &d, &im, &nn);
+        uint64_t S = nn & ~q & ~im;
+        uint64_t e = q | (d & ~im);
+        e |= S & ~((S << 1) | prevS);
+        ent[nfull] = e & ((1ULL << rem) - 1ULL);
+        __m256i any = _mm256_or_si256(v0, v1);
+        int ascii = _mm256_testz_si256(any, high);
+        if (!(ascii && prev_ascii))
+            u8k = _mm256_or_si256(u8k, bc_kl_err_vec(v0, v1, p));
+    }
+    uint64_t err = (uint64_t)!_mm256_testz_si256(u8k, u8k);
+    if (n && !(n & 63)) err |= (uint64_t)bc_kl_tail_byte(b[n - 1]);
+    return err;
+}
+
+uint64_t leanllvm_bench_contract_splitfast_u8(const uint8_t *b, uint64_t n,
+                                              uint32_t *ep, uint64_t *nk,
+                                              uint64_t *ent) {
+    uint64_t err = leanllvm_bench_contract_maskfast_u8(b, n, ent);
+    leanllvm_bench_contract_emit4(ent, (n + 63) >> 6, ep, nk);
+    return err;
+}
+
+uint64_t leanllvm_bench_contract_splitfast3_u8(const uint8_t *b, uint64_t n,
+                                               uint32_t *ep, uint64_t *nk,
+                                               uint64_t *ent) {
+    uint64_t err = leanllvm_bench_contract_maskfast_u8(b, n, ent);
+    leanllvm_bench_contract_emit3(ent, (n + 63) >> 6, ep, nk);
+    return err;
+}
+
+/* One pass with the emitter lagged one block: block `i`'s entry word is
+   emitted after block `i+1` is classified, so the emitter's serial tzcnt
+   chain overlaps the next block's vector work and no `ent` array is written.
+   The mask words are contracted exactly as in the two-pass shape; the emitter
+   is the same kernel, just called from the same loop.  This is the fused
+   shape, and its proof cost is stated with the recommendation. */
+uint64_t leanllvm_bench_contract_splitlag3(const uint8_t *b, uint64_t n,
+                                           uint32_t *ep, uint64_t *nk) {
+    bc_carry st = { 0, 0, 0 };
+    uint64_t prevS = 0;
+    uint64_t nfull = n >> 6, rem = n & 63;
+    uint64_t k = 0, prev_ent = 0, prev_base = 0;
+    int have = 0;
+    for (uint64_t i = 0; i < nfull; i++) {
+        const uint8_t *p = b + (i << 6);
+        __m256i v0 = _mm256_loadu_si256((const __m256i *)(const void *)p);
+        __m256i v1 = _mm256_loadu_si256((const __m256i *)(const void *)(p + 32));
+        uint64_t q, d, im, nn;
+        bc_fast_masks64(v0, v1, &st, &q, &d, &im, &nn);
+        uint64_t S = nn & ~q & ~im;
+        uint64_t e = q | (d & ~im);
+        e |= S & ~((S << 1) | prevS);
+        prevS = S >> 63;
+        if (have) k += bc_emit3(prev_ent, prev_base, ep + k);
+        prev_ent = e;
+        prev_base = (uint32_t)(i << 6);
+        have = 1;
+    }
+    if (rem) {
+        const uint8_t *p = b + (nfull << 6);
+        __m256i v0 = _mm256_loadu_si256((const __m256i *)(const void *)p);
+        __m256i v1 = _mm256_loadu_si256((const __m256i *)(const void *)(p + 32));
+        uint64_t q, d, im, nn;
+        bc_fast_masks64(v0, v1, &st, &q, &d, &im, &nn);
+        uint64_t S = nn & ~q & ~im;
+        uint64_t e = q | (d & ~im);
+        e |= S & ~((S << 1) | prevS);
+        e &= (1ULL << rem) - 1ULL;
+        if (have) k += bc_emit3(prev_ent, prev_base, ep + k);
+        prev_ent = e;
+        prev_base = (uint32_t)(nfull << 6);
+        have = 1;
+    }
+    if (have) k += bc_emit3(prev_ent, prev_base, ep + k);
+    *nk = k;
+}
+
+uint64_t leanllvm_bench_contract_splitlag3_u8(const uint8_t *b, uint64_t n,
+                                              uint32_t *ep, uint64_t *nk) {
+    bc_carry st = { 0, 0, 0 };
+    uint64_t prevS = 0;
+    uint64_t nfull = n >> 6, rem = n & 63;
+    uint64_t k = 0, prev_ent = 0, prev_base = 0;
+    int have = 0;
+    __m256i u8k = _mm256_setzero_si256();
+    const __m256i high = _mm256_set1_epi8((char)0x80);
+    int prev_ascii = 1;
+    for (uint64_t i = 0; i < nfull; i++) {
+        const uint8_t *p = b + (i << 6);
+        __m256i v0 = _mm256_loadu_si256((const __m256i *)(const void *)p);
+        __m256i v1 = _mm256_loadu_si256((const __m256i *)(const void *)(p + 32));
+        uint64_t q, d, im, nn;
+        bc_fast_masks64(v0, v1, &st, &q, &d, &im, &nn);
+        uint64_t S = nn & ~q & ~im;
+        uint64_t e = q | (d & ~im);
+        e |= S & ~((S << 1) | prevS);
+        prevS = S >> 63;
+        if (have) k += bc_emit3(prev_ent, prev_base, ep + k);
+        prev_ent = e;
+        prev_base = (uint32_t)(i << 6);
+        have = 1;
+        __m256i any = _mm256_or_si256(v0, v1);
+        int ascii = _mm256_testz_si256(any, high);
+        if (!(ascii && prev_ascii))
+            u8k = _mm256_or_si256(u8k, bc_kl_err_vec(v0, v1, p));
+        prev_ascii = ascii;
+    }
+    if (rem) {
+        const uint8_t *p = b + (nfull << 6);
+        __m256i v0 = _mm256_loadu_si256((const __m256i *)(const void *)p);
+        __m256i v1 = _mm256_loadu_si256((const __m256i *)(const void *)(p + 32));
+        uint64_t q, d, im, nn;
+        bc_fast_masks64(v0, v1, &st, &q, &d, &im, &nn);
+        uint64_t S = nn & ~q & ~im;
+        uint64_t e = q | (d & ~im);
+        e |= S & ~((S << 1) | prevS);
+        e &= (1ULL << rem) - 1ULL;
+        if (have) k += bc_emit3(prev_ent, prev_base, ep + k);
+        prev_ent = e;
+        prev_base = (uint32_t)(nfull << 6);
+        have = 1;
+        __m256i any = _mm256_or_si256(v0, v1);
+        int ascii = _mm256_testz_si256(any, high);
+        if (!(ascii && prev_ascii))
+            u8k = _mm256_or_si256(u8k, bc_kl_err_vec(v0, v1, p));
+    }
+    if (have) k += bc_emit3(prev_ent, prev_base, ep + k);
+    *nk = k;
+    uint64_t err = (uint64_t)!_mm256_testz_si256(u8k, u8k);
+    if (n && !(n & 63)) err |= (uint64_t)bc_kl_tail_byte(b[n - 1]);
+    return err;
+}
+
+/* The document-level ASCII class, accumulated in the mask pass: two `vpor`s
+   per block over the vectors already loaded, one test after the loop.  A
+   document whose bytes are all below 0x80 is valid UTF-8, so the UTF-8 unit's
+   word is zero on its staged window (three zero bytes before and zero padding
+   after are ASCII too, and its tail rule accepts every ASCII byte); the caller
+   can then skip the unit's sweep entirely.  Otherwise the unit is called at
+   its existing ABI, so its contract and theorem are unchanged. */
+extern uint64_t leanllvm_json_utf8(const uint8_t *b, uint64_t n, int ungated);
+
+int leanllvm_bench_contract_maskfast_probe(const uint8_t *b, uint64_t n,
+                                           uint64_t *ent) {
+    bc_carry st = { 0, 0, 0 };
+    uint64_t prevS = 0;
+    uint64_t nfull = n >> 6, rem = n & 63;
+    __m256i a0 = _mm256_setzero_si256(), a1 = _mm256_setzero_si256();
+    const __m256i high = _mm256_set1_epi8((char)0x80);
+    for (uint64_t i = 0; i < nfull; i++) {
+        __m256i v0 = _mm256_loadu_si256((const __m256i *)(const void *)(b + (i << 6)));
+        __m256i v1 = _mm256_loadu_si256((const __m256i *)(const void *)(b + (i << 6) + 32));
+        a0 = _mm256_or_si256(a0, v0);
+        a1 = _mm256_or_si256(a1, v1);
+        uint64_t q, d, im, nn;
+        bc_fast_masks64(v0, v1, &st, &q, &d, &im, &nn);
+        uint64_t S = nn & ~q & ~im;
+        uint64_t e = q | (d & ~im);
+        e |= S & ~((S << 1) | prevS);
+        prevS = S >> 63;
+        ent[i] = e;
+    }
+    if (rem) {
+        __m256i v0 = _mm256_loadu_si256((const __m256i *)(const void *)(b + (nfull << 6)));
+        __m256i v1 = _mm256_loadu_si256((const __m256i *)(const void *)(b + (nfull << 6) + 32));
+        a0 = _mm256_or_si256(a0, v0);
+        a1 = _mm256_or_si256(a1, v1);
+        uint64_t q, d, im, nn;
+        bc_fast_masks64(v0, v1, &st, &q, &d, &im, &nn);
+        uint64_t S = nn & ~q & ~im;
+        uint64_t e = q | (d & ~im);
+        e |= S & ~((S << 1) | prevS);
+        ent[nfull] = e & ((1ULL << rem) - 1ULL);
+    }
+    return _mm256_testz_si256(_mm256_or_si256(a0, a1), high);
+}
+
+uint64_t leanllvm_bench_contract_splitprobe3(const uint8_t *b, uint64_t n,
+                                             uint32_t *ep, uint64_t *nk,
+                                             uint64_t *ent) {
+    int ascii = leanllvm_bench_contract_maskfast_probe(b, n, ent);
+    leanllvm_bench_contract_emit3(ent, (n + 63) >> 6, ep, nk);
+    return ascii ? 0 : leanllvm_json_utf8(b, n, 0);
+}
+
+uint64_t leanllvm_bench_contract_splitprobe_b8(const uint8_t *b, uint64_t n,
+                                               uint32_t *ep, uint64_t *nk,
+                                               uint64_t *ent) {
+    int ascii = leanllvm_bench_contract_maskfast_probe(b, n, ent);
+    *nk = leanllvm_json_entry_b8(ent, 0, (n + 63) >> 6, ep, 0);
+    return ascii ? 0 : leanllvm_json_utf8(b, n, 0);
+}
+
+uint64_t leanllvm_bench_contract_splitfast_b8_u8(const uint8_t *b, uint64_t n,
+                                                 uint32_t *ep, uint64_t *nk,
+                                                 uint64_t *ent) {
+    uint64_t err = leanllvm_bench_contract_maskfast_u8(b, n, ent);
+    *nk = leanllvm_json_entry_b8(ent, 0, (n + 63) >> 6, ep, 0);
+    return err;
+}
+
+/* The class-selected composite.  `b8` is the pipeline's existing per-document
+   emitter arm (pos8 on the dense/route class, b8 on strings/UTF-8), and the
+   first block's ASCII class picks the UTF-8 mode: an ASCII-first document
+   runs the probe and pays the UTF-8 unit only if a later block is non-ASCII;
+   a document whose first block already carries a high byte runs the fused
+   gate, because its DFA work overlaps the classifier.  A wrong guess costs a
+   unit sweep, not a wrong answer: the probe mode still calls the unit when the
+   document is not all ASCII.
+   The emitter also follows the class: pos8 when the arm is dense, the 3-wide
+   emitter on a document that fits the 64 KiB working-set choice, b8 otherwise
+   (the 3-wide emitter's count branch costs more than its shorter group once
+   the output stream leaves the cache, which the 4 MiB rows show). */
+uint64_t leanllvm_bench_contract_splitauto(const uint8_t *b, uint64_t n,
+                                           int b8, uint32_t *ep, uint64_t *nk,
+                                           uint64_t *ent) {
+    const __m256i high = _mm256_set1_epi8((char)0x80);
+    __m256i v0 = _mm256_loadu_si256((const __m256i *)(const void *)b);
+    __m256i v1 = _mm256_loadu_si256((const __m256i *)(const void *)(b + 32));
+    int first_ascii = _mm256_testz_si256(_mm256_or_si256(v0, v1), high);
+    int small = n <= (1u << 16);
+    if (first_ascii) {
+        int ascii = leanllvm_bench_contract_maskfast_probe(b, n, ent);
+        if (!b8)
+            *nk = leanllvm_json_entry_pos8(ent, 0, (n + 63) >> 6, ep, 0);
+        else if (small)
+            leanllvm_bench_contract_emit3(ent, (n + 63) >> 6, ep, nk);
+        else
+            *nk = leanllvm_json_entry_b8(ent, 0, (n + 63) >> 6, ep, 0);
+        return ascii ? 0 : leanllvm_json_utf8(b, n, 0);
+    }
+    uint64_t err = leanllvm_bench_contract_maskfast_u8(b, n, ent);
+    if (!b8)
+        *nk = leanllvm_json_entry_pos8(ent, 0, (n + 63) >> 6, ep, 0);
+    else if (small)
+        leanllvm_bench_contract_emit3(ent, (n + 63) >> 6, ep, nk);
+    else
+        *nk = leanllvm_json_entry_b8(ent, 0, (n + 63) >> 6, ep, 0);
     return err;
 }
