@@ -65,7 +65,8 @@ This file records the measurements that set them.
 | date | tree | shape | command | peak | note |
 |---|---|---|---|---|---|
 | 2026-11-19 | `d3a3d13` | `e2-highmem-8` | `lake env lean …/JsonStage2WalkScopeClassAB.lean` | **1,908 MB** / 15 s | single largest leaf; idle ~1.4 GB; 0.5 s sampling |
-| 2026-11-20 | `986d7bc` | `e2-standard-8` | `bash probes/install/lake-locked.sh build` | **24,240 MB** / 1,690 s, 2,209 jobs | full default target, fresh tree with no `.lake`; `free -m` used, 0.5 s sampling; ~7 GB spare on 32 GB, so the standard shape holds |
+| 2026-11-20 | `986d7bc` | `e2-standard-8` | `bash probes/install/lake-locked.sh build` | **24,240 MB** / 1,690 s, 2,209 jobs | full default target, fresh tree with no `.lake`; `free -m` used, 0.5 s sampling; superseded by the `e3f8f2e` row once b3 and v2 merged |
+| 2026-11-20 | `e3f8f2e` | `e2-standard-8` | `lake --packages=…/overrides.json build` | **27,867 MB** / 1,888 s, 2,227 jobs | merged b3 + phase-split v2 tree; first full-build peak above the 24 GB line, so the full default target takes **64 GB**; 32 GB leaves only ~4 GB headroom |
 
 Measure on the worker with the shipped instrument, running the full default
 target (not one module):
