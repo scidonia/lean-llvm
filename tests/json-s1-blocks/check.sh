@@ -17,22 +17,25 @@
 #     compiler line and called through `probes/json/s1_blocks_driver.c`.
 #
 # Every document is padded with zeroes to a whole number of 64-byte blocks and
-# staged at **offset 1** of a buffer, so the object is called on a misaligned
-# pointer.  `ent` is pre-filled with `0xA5`; `xp` is 64 sentinel bytes; the
-# eight-byte count is staged at zero (the cursor the first escape-list call
-# reads) and the two carry words at zero (the all-false carry).  A row is
+# staged at **offset 4** of a buffer — a misaligned pointer with the three bytes
+# before it zero, the UTF-8 DFA's load-form carry.  `ent` is pre-filled with
+# `0xA5`; `xp` is 64 sentinel bytes; the eight-byte count is staged at zero (the
+# cursor the first escape-list call reads) and the two carry words at zero (the
+# all-false carry).  A row is
 #
 #   <source>\t<label>\t<arm>\t<blocks>\t<touched>\t<ent words…>
 #   \t<nxp>\t<xp bytes>\t<xcarry lo>\t<xcarry hi>\t<ret>
 #
-# with `arm` in {0, 2} (gate off / escape list selected), one `0x`-and-sixteen-
-# hex-digit `ent` word per block, the count, carry and return words the same
-# way, the first 64 `xp` bytes as 128 lowercase hex digits, `touched` set when
-# `xp`, `nxp` and `xcarry` are still the staged bytes, and `ret` the unit's
-# ASCII probe — `1` when every document byte is below `0x80`.  The label
-# carries the document's length as `len<n>`, which is what makes a moved row's
-# block boundary checkable from the row itself.  `ret` is last so the `ent`
-# words stay the first `0x` fields of the row.
+# with `arm` in {0, 2, 4, 6} (bit 1 the escape list, bit 2 the ungated UTF-8
+# gate), one `0x`-and-sixteen-hex-digit `ent` word per block, the count, carry
+# and return words the same way, the first 64 `xp` bytes as 128 lowercase hex
+# digits, `touched` set when `xp`, `nxp` and `xcarry` are still the staged
+# bytes, and `ret` the unit's two-bit word: bit 0 the ASCII probe (`1` when
+# every document byte is below `0x80`), bit 1 the UTF-8 stage's error word (`1`
+# when the staged window is not a valid prefix).  The label carries the
+# document's length as `len<n>`, which is what makes a moved row's block
+# boundary checkable from the row itself.  `ret` is last so the `ent` words
+# stay the first `0x` fields of the row.
 #
 # The object is compiled from the kernel source rather than from the fixture,
 # as in `tests/json-s1-masks/check.sh`: the fixture's loads carry no alignment
@@ -49,23 +52,30 @@
 #   1. The Lean body classifies every row and the row count is exactly the
 #      computed count: (1 mixed + corpus files + 64*256 byte + 65 short +
 #      8^4 alphabet + 512 random) documents, each once per arm.  Every row's
-#      field count, block count and `len<n>` label agree; arms alternate
-#      gate-off then gate-on for one document; the three boundary corpus files
-#      are asserted by name (63 → 1, 64 → 1, 65 → 2 blocks).  Every gate-off
-#      row is `touched = 1`, and the mixed gate-on row is `touched = 0` with a
-#      nonzero count, so the sentinel detector has an affirmative control in
-#      the same run.  Every row's `ret` word is `0` or `1`.
+#      field count, block count and `len<n>` label agree; the four arms are
+#      `0, 2, 4, 6` in that order for one document; the three boundary corpus
+#      files are asserted by name (63 → 1, 64 → 1, 65 → 2 blocks).  Every
+#      list-free row (arms 0 and 4) is `touched = 1`, and the mixed list rows
+#      (arms 2 and 6) are `touched = 0` with a nonzero count, so the sentinel
+#      detector has an affirmative control in the same run.  Every row's `ret`
+#      word is in `0…3`.
 #   1b. The ASCII probe is the document's own high bits, not a rehearsal: the
 #      driver's `--ascii-expected` mode recomputes `all b < 0x80` from the
-#      staged bytes of the same documents, and every row's `ret` must agree
-#      with that computed value on both arms.  The expectation stream must
+#      staged bytes of the same documents, and every row's bit 0 must agree
+#      with that computed value on all four arms.  The expectation stream must
 #      carry both answers, so the comparison has an affirmative control;
 #      `escapes.json` (control bytes, still ASCII) is asserted `1` and
 #      `utf8.json` (UTF-8 bytes) `0`, each computed from the file's bytes by a
 #      separate `od` reader, not from a list.
+#   1c. The UTF-8 error bit is the window's own validity, read by a scalar
+#      reference validator that shares no code with the object: the driver's
+#      `--utf8-expected` mode walks the three zero bytes, the document and the
+#      zero padding with a scalar UTF-8 prefix reader, and every row's bit 1
+#      must agree on all four arms.  The gate's two modes have the same verdict
+#      by construction, so the four arms are also a gate-invariance check.
 #   2. The object's rows equal the Lean body's rows line for line, in order,
-#      on both arms — the `ret` column included, so the two actors' ASCII
-#      probes are the same column.
+#      on all four arms — the `ret` column included, so the two actors' ASCII
+#      probes and UTF-8 verdicts are the same columns.
 #   3. The detector bites: a defect object built from a copy of the kernel
 #      whose peeled-tail clamp also sets lane `rem` — the one lane past the
 #      document's end — disagrees with the control on exactly the rows whose
@@ -252,7 +262,7 @@ short_docs=65
 alphabet_docs=$((8 * 8 * 8 * 8))
 random_docs=512
 docs=$((1 + ${#corpus_files[@]} + byte_docs + short_docs + alphabet_docs + random_docs))
-computed=$((2 * docs))
+computed=$((4 * docs))
 
 rows=$(wc -l < "$work/lean.out")
 if [ "$rows" -ne "$computed" ]; then
@@ -276,7 +286,9 @@ if ! awk -F '\t' '
     if (blocks < 1) { printf "FAIL: row %d has no block\n", NR > "/dev/stderr"; bad = 1; exit }
     if ($4 + 0 != blocks) { printf "FAIL: row %d says %s block(s), len%d needs %d\n", NR, $4, len, blocks > "/dev/stderr"; bad = 1; exit }
     if (NF != 10 + blocks) { printf "FAIL: row %d has %d field(s), len%d needs %d\n", NR, NF, len, 10 + blocks > "/dev/stderr"; bad = 1; exit }
-    if ($3 != 0 && $3 != 2) { printf "FAIL: row %d has arm %s\n", NR, $3 > "/dev/stderr"; bad = 1; exit }
+    if ($3 != 0 && $3 != 2 && $3 != 4 && $3 != 6) {
+      printf "FAIL: row %d has arm %s\n", NR, $3 > "/dev/stderr"; bad = 1; exit
+    }
     if ($5 != 0 && $5 != 1) { printf "FAIL: row %d has touched %s\n", NR, $5 > "/dev/stderr"; bad = 1; exit }
     for (i = 6; i <= 5 + blocks; i++)
       if (!word($i)) { printf "FAIL: row %d ent word %s\n", NR, $i > "/dev/stderr"; bad = 1; exit }
@@ -286,16 +298,19 @@ if ! awk -F '\t' '
       printf "FAIL: row %d carry words\n", NR > "/dev/stderr"; bad = 1; exit
     }
     if (!word($(10 + blocks)) || ($(10 + blocks) != "0x0000000000000000" && \
-        $(10 + blocks) != "0x0000000000000001")) {
+        $(10 + blocks) != "0x0000000000000001" && \
+        $(10 + blocks) != "0x0000000000000002" && \
+        $(10 + blocks) != "0x0000000000000003")) {
       printf "FAIL: row %d ret word %s\n", NR, $(10 + blocks) > "/dev/stderr"; bad = 1; exit
     }
-    if (NR % 2 == 1) {
-      if ($3 != 0) { printf "FAIL: row %d is not the gate-off arm\n", NR > "/dev/stderr"; bad = 1; exit }
+    if (NR % 4 == 1) {
+      if ($3 != 0) { printf "FAIL: row %d is not the gated list-free arm\n", NR > "/dev/stderr"; bad = 1; exit }
       prev_source = $1; prev_label = $2
     } else {
-      if ($3 != 2) { printf "FAIL: row %d is not the gate-on arm\n", NR > "/dev/stderr"; bad = 1; exit }
+      want = (NR % 4 == 2) ? 2 : ((NR % 4 == 3) ? 4 : 6)
+      if ($3 != want) { printf "FAIL: row %d has arm %s, want %s\n", NR, $3, want > "/dev/stderr"; bad = 1; exit }
       if ($1 != prev_source || $2 != prev_label) {
-        printf "FAIL: row %d does not pair with row %d\n", NR, NR - 1 > "/dev/stderr"; bad = 1; exit
+        printf "FAIL: row %d does not group with row %d\n", NR, NR - (NR % 4) + 1 > "/dev/stderr"; bad = 1; exit
       }
     }
   }
@@ -318,32 +333,32 @@ for spec in boundary-63.json:1 boundary-64.json:1 boundary-65.json:2; do
   fi
 done
 
-# The gate-off arm must leave the staged regions untouched; the mixed gate-on
-# row is the affirmative control, so `touched` is not a column that reads 1
+# The list-free arms must leave the staged regions untouched; the mixed list
+# rows are the affirmative control, so `touched` is not a column that reads 1
 # forever.
-gateoff_rows=$(awk -F '\t' '$3 == 0' "$work/lean.out" | wc -l)
+gateoff_rows=$(awk -F '\t' '$3 == 0 || $3 == 4' "$work/lean.out" | wc -l)
 if [ "$gateoff_rows" -ne "$((rows / 2))" ]; then
-  printf 'FAIL: %s gate-off row(s) among %s\n' "$gateoff_rows" "$rows" >&2
+  printf 'FAIL: %s list-free row(s) among %s\n' "$gateoff_rows" "$rows" >&2
   exit 1
 fi
 
 if ! awk -F '\t' '
-  $3 == 0 && $5 != 1 { printf "FAIL: a gate-off row moved: %s\n", $2 > "/dev/stderr"; bad = 1 }
-  $3 == 2 && $5 == 0 { moved++ }
-  NR == 2 {
-    if ($5 != 0) { printf "FAIL: the mixed gate-on row is untouched\n" > "/dev/stderr"; bad = 1 }
+  ($3 == 0 || $3 == 4) && $5 != 1 { printf "FAIL: a list-free row moved: %s\n", $2 > "/dev/stderr"; bad = 1 }
+  ($3 == 2 || $3 == 6) && $5 == 0 { moved++ }
+  (NR == 2 || NR == 4) {
+    if ($5 != 0) { printf "FAIL: the mixed list row %d is untouched\n", NR > "/dev/stderr"; bad = 1 }
     if ($(6 + $4) == "0x0000000000000000") {
-      printf "FAIL: the mixed gate-on row reports no position\n" > "/dev/stderr"; bad = 1
+      printf "FAIL: the mixed list row %d reports no position\n", NR > "/dev/stderr"; bad = 1
     }
   }
   END {
-    if (moved <= 0) { printf "FAIL: no gate-on row moved\n" > "/dev/stderr"; bad = 1 }
+    if (moved <= 0) { printf "FAIL: no list row moved\n" > "/dev/stderr"; bad = 1 }
     exit bad
   }
 ' "$work/lean.out"; then
   exit 1
 fi
-gateon_moved=$(awk -F '\t' '$3 == 2 && $5 == 0' "$work/lean.out" | wc -l)
+gateon_moved=$(awk -F '\t' '($3 == 2 || $3 == 6) && $5 == 0' "$work/lean.out" | wc -l)
 
 # --- 1b. The return word is the document's own ASCII probe. ---
 #
@@ -378,10 +393,14 @@ if ! awk -F '\t' '
   {
     key = $1 "\t" $2
     if (!(key in expectv)) { printf "FAIL: no expectation for %s\n", key > "/dev/stderr"; bad = 1; next }
-    wantword = (expectv[key] == 1) ? "0x0000000000000001" : "0x0000000000000000"
-    if ($(10 + $4) != wantword) {
-      printf "FAIL: row %d (%s) returns %s, %s is all-ASCII\n", FNR, key, $(10 + $4), \
-        (expectv[key] == 1) ? "the document" : "not" > "/dev/stderr"
+    ret = $(10 + $4)
+    if (expectv[key] == 1) {
+      if (ret != "0x0000000000000001") {
+        printf "FAIL: row %d (%s) returns %s, the document is all-ASCII\n", FNR, key, ret > "/dev/stderr"
+        bad = 1
+      }
+    } else if (ret != "0x0000000000000000" && ret != "0x0000000000000002") {
+      printf "FAIL: row %d (%s) returns %s, the document is not all-ASCII\n", FNR, key, ret > "/dev/stderr"
       bad = 1
     }
   }
@@ -415,6 +434,88 @@ if ! awk -v e="$escapes_ascii" -v u="$utf8_ascii" -F '\t' '
     exit bad
   }
 ' "$work/ascii.out"; then
+  exit 1
+fi
+
+# --- 1c. The UTF-8 error bit is the window's own validity. ---
+#
+# The expectation is a scalar reference reader of the staged window — three
+# zero bytes, the document, zero padding — that shares no code with the object.
+# `--utf8-expected` prints `1` when that reader rejects the window.  An invalid
+# window is never all-ASCII, so its row's word must be exactly `2`; a valid one
+# is `0` or `1`.
+
+if ! "$work/driver" "${corpus_args[@]}" --arms --utf8-expected \
+    >"$work/utf8.out" 2>"$work/utf8.err"; then
+  printf 'FAIL: the driver could not compute the expected UTF-8 word\n' >&2
+  cat "$work/utf8.err" >&2
+  exit 1
+fi
+
+utf8_docs=$(wc -l < "$work/utf8.out")
+if [ "$utf8_docs" -ne "$docs" ]; then
+  printf 'FAIL: %s expected-UTF-8 row(s), %s document(s)\n' "$utf8_docs" "$docs" >&2
+  exit 1
+fi
+
+if ! awk -F '\t' '
+  NR == FNR {
+    key = $1 "\t" $2
+    if (key in expectv) { printf "FAIL: duplicate UTF-8 expectation for %s\n", key > "/dev/stderr"; bad = 1 }
+    if ($3 != 0 && $3 != 1) { printf "FAIL: UTF-8 expectation %s is %s\n", key, $3 > "/dev/stderr"; bad = 1 }
+    expectv[key] = $3
+    ones += $3
+    zeros += (1 - $3)
+    next
+  }
+  {
+    key = $1 "\t" $2
+    if (!(key in expectv)) { printf "FAIL: no UTF-8 expectation for %s\n", key > "/dev/stderr"; bad = 1; next }
+    ret = $(10 + $4)
+    if (expectv[key] == 1) {
+      if (ret != "0x0000000000000002") {
+        printf "FAIL: row %d (%s) returns %s, the window is not a valid prefix\n", FNR, key, ret > "/dev/stderr"
+        bad = 1
+      }
+    } else if (ret != "0x0000000000000000" && ret != "0x0000000000000001") {
+      printf "FAIL: row %d (%s) returns %s, the window is a valid prefix\n", FNR, key, ret > "/dev/stderr"
+      bad = 1
+    }
+  }
+  END {
+    if (ones <= 0) { printf "FAIL: no invalid UTF-8 window, so error bit 1 is unexercised\n" > "/dev/stderr"; bad = 1 }
+    if (zeros <= 0) { printf "FAIL: no valid UTF-8 window, so error bit 0 is unexercised\n" > "/dev/stderr"; bad = 1 }
+    exit bad
+  }
+' "$work/utf8.out" "$work/lean.out"; then
+  exit 1
+fi
+
+# The two gate modes must answer the same word: a group of four rows differs
+# only in arm bits 1 and 2, and the verdict is not either of them.
+if ! awk -F '\t' '
+  NR % 4 == 1 { want = $(10 + $4); key = $1 "\t" $2; next }
+  $(10 + $4) != want {
+    printf "FAIL: the gate changed the word for %s: %s against %s\n", key, $(10 + $4), want > "/dev/stderr"
+    bad = 1
+  }
+  END { exit bad }
+' "$work/lean.out"; then
+  exit 1
+fi
+
+# The named corpus documents, read by the reference stream's own rows: the
+# UTF-8 file holds valid multi-byte sequences and the escape/control file is
+# ASCII, so both windows are valid prefixes.  The invalid case is exercised by
+# the generated stream, whose `ones > 0` above requires it.
+if ! awk -F '\t' '
+  $1 ~ /utf8\.json$/ { u++; if ($3 + 0 != 0) { printf "FAIL: utf8.json expected word %s\n", $3 > "/dev/stderr"; bad = 1 } }
+  $1 ~ /escapes\.json$/ { e++; if ($3 + 0 != 0) { printf "FAIL: escapes.json expected word %s\n", $3 > "/dev/stderr"; bad = 1 } }
+  END {
+    if (u != 1 || e != 1) { printf "FAIL: named UTF-8 corpus rows %d and %d\n", u, e > "/dev/stderr"; bad = 1 }
+    exit bad
+  }
+' "$work/utf8.out"; then
   exit 1
 fi
 
@@ -582,17 +683,21 @@ fi
 
 ascii_ones=$(awk -F '\t' '$3 == 1' "$work/ascii.out" | wc -l)
 ascii_zeros=$(awk -F '\t' '$3 == 0' "$work/ascii.out" | wc -l)
+utf8_ones=$(awk -F '\t' '$3 == 1' "$work/utf8.out" | wc -l)
+utf8_zeros=$(awk -F '\t' '$3 == 0' "$work/utf8.out" | wc -l)
 fixture_sha=$(sha256sum "$work/json-s1-blocks.candidate.ll" | cut -d' ' -f1)
 
 printf 'ok: the fixture is the kernel source emission at the pinned flags (sha256 %s)\n' \
   "$fixture_sha"
 printf 'ok: both actors stage the same mixed block (64 bytes)\n'
-printf 'ok: %s row(s) produced by the Lean body: %s document(s) x 2 arms, %s corpus file(s), %s byte, %s short, %s alphabet, %s random\n' \
+printf 'ok: %s row(s) produced by the Lean body: %s document(s) x 4 arms, %s corpus file(s), %s byte, %s short, %s alphabet, %s random\n' \
   "$rows" "$docs" "${#corpus_files[@]}" "$byte_docs" "$short_docs" "$alphabet_docs" "$random_docs"
-printf 'ok: the gate-off arm left every staged region untouched on %s row(s); the gate-on arm moved %s\n' \
+printf 'ok: the list-free arms left every staged region untouched on %s row(s); the list arms moved %s\n' \
   "$gateoff_rows" "$gateon_moved"
 printf 'ok: the ASCII probe agrees with the staged documents on %s document(s): %s all-ASCII, %s with a high byte; escapes.json 1, utf8.json 0\n' \
   "$ascii_docs" "$ascii_ones" "$ascii_zeros"
+printf 'ok: the UTF-8 error bit agrees with the scalar reference on %s document(s): %s invalid, %s valid; the gate does not move the word\n' \
+  "$utf8_docs" "$utf8_ones" "$utf8_zeros"
 printf 'ok: the object (s1_blocks.o sha256 %s) agrees with the Lean body on %s row(s), ret included\n' \
   "$kernel_sha" "$rows"
 printf 'ok: the detector bites: %s of %s row(s) moved, exactly the partial-tail documents; first is %s\n' \

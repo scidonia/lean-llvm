@@ -174,7 +174,13 @@ as up to date.
   both gate values — with the gate's invariance `klAll_gate_invariant`, the
   corollaries `utf8_stage_refines_chars` and `utf8_stage_refines_mod0`, the
   empty-document case `utf8_stage_refines_zero`, and the totality companion
-  `utf8_stage_undefined_of_no_read`.
+  `utf8_stage_undefined_of_no_read`.  `JsonUtf8Fused` states the two cells a
+  caller's block loop carries beside the block it already holds — the
+  accumulated word `u8k` and the previous block's `prev_ascii` — and proves its
+  step is `klStep`'s at the caller's own carry reads, its word at the document's
+  block count is `klAll` for either gate value, its verdict's zero set is
+  `utf8_stage_refines`' post, and that an all-ASCII document's verdict is zero,
+  so that call can be skipped.
   The theorems the refinement claims rest on are pinned in
   `LeanLLVMTest/Refinement.lean`, each at the ceiling `[propext, Quot.sound]` or with a
   `Classical.choice` carrier the pin names — the three `private` numeral lemmas of

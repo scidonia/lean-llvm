@@ -2,17 +2,20 @@
 The contracted stage-1 block unit's boundary record.
 
 `Γ_s1_blocks` is the record the pipeline's single call is resolved at: the
-caller stages the padded document, the entry array, the escape stream and its
-count slot, and the carry's sixteen bytes; the run returns the ASCII probe, the
-entry words, and — on the gate's arm — the escape list.  The post's substance is
-`s1BlocksPost`; this module fixes the pre, the budget and the two relations a
-call site needs (`ValueIrrelevant` is deliberately absent: the return word is
-observable, so the record's post reads it).
+caller stages the three zero bytes before the padded document, the entry array,
+the escape stream and its count slot, and the carry's sixteen bytes; the run
+returns a two-bit word (the ASCII probe in bit 0 and the UTF-8 stage's error word
+in bit 1), the entry words, and — on the gate's arm — the escape list.  The
+post's substance is `s1BlocksPost`; this module fixes the pre, the budget and
+the two relations a call site needs (`ValueIrrelevant` is deliberately absent:
+the return word is observable, so the record's post reads it).
 
-The budget is a term of the arguments: the loop's four control steps per block
-plus the entry, preheader, cleanup, the peeled block and the done block.  It is
-the plan's `4 * blocks + 8`; the peeled tail's own steps are inside the constant
-because the tail is one block whatever the document's length.
+The budget is a term of the arguments: eight control steps per block plus the
+entry, preheader, cleanup, the peeled block and the done block.  The fused loop's
+worst path adds the DFA arm and the escape arm to the latch, so the emitted
+CFG's per-block bound is five; the budget keeps slack and is stated at eight.
+The peeled tail's own steps are inside the constant because the tail is one
+block whatever the document's length.
 
 `s1_blocks_refines` states the body's run at this staging and
 `s1_blocks_satisfies` will be its record instance.  Neither is stated in this
@@ -35,21 +38,30 @@ def s1BlocksLength (args : List Value) : Option Nat :=
   | [.ptr _, .int 64 n, .ptr _, .ptr _, .ptr _, .ptr _, .int 64 _] => some n.toNat
   | _ => none
 
-/-- The run's fuel: four control steps per block plus the constant blocks around
-the loop. -/
+/-- The run's fuel: eight control steps per block plus the constant blocks
+around the loops.  A block's worst path is `for.body54` → the DFA arm (or
+`if.end93`) → the escape-list arm (or `if.end98`) → the latch: five control
+steps.  The leading ASCII phase is shorter per block, and the hand-off's DFA
+step and the tail's DFA and escape arms are the constant part.  Eight is that
+bound with slack, not a tight count; the emitted CFG is in `JsonS1BlocksIR`. -/
 def s1BlocksBudget (args : List Value) (_mem : Mem) : Nat :=
   match s1BlocksLength args with
-  | some n => 4 * blocksOf n + 8
+  | some n => 8 * blocksOf n + 32
   | none => 0
 
 /-- The caller's staging.  The document is the padded window the classifier
-reads; `ent` and the escape stream are the caller's; the count slot holds the
-stream's initial cursor; the carry is the all-false pair; and the four objects
-are separate. -/
+reads; the three bytes before it are the UTF-8 DFA's zero load-form carry;
+`ent` and the escape stream are the caller's; the count slot holds the stream's
+initial cursor; the carry is the all-false pair; and the four objects are
+separate.  `3 ≤ b` is what makes the three prefix bytes addressable, and
+`bs.length < 2 ^ 63` is `utf8.h`'s bound on the block count. -/
 def s1BlocksPre (args : List Value) (mem : Mem) (_next : Nat) : Prop :=
   ∃ (b ent xp nxp xcarry : Nat) (arm : BitVec 64) (bs : List UInt8) (xn : Nat),
     args = [.ptr b, .int 64 (BitVec.ofNat 64 bs.length), .ptr ent, .ptr xp,
             .ptr nxp, .ptr xcarry, .int 64 arm] ∧
+    3 ≤ b ∧
+    readBytes mem (b - 3) 3 = some [0, 0, 0] ∧
+    bs.length < 2 ^ 63 ∧
     readBytes mem b (64 * blocksOf bs.length) = some (padded bs) ∧
     HasBytes mem ent (8 * blocksOf bs.length) ∧
     readBytes mem nxp 8 = some (wordBytes 8 xn) ∧
@@ -57,9 +69,12 @@ def s1BlocksPre (args : List Value) (mem : Mem) (_next : Nat) : Prop :=
     HasBytes mem xp (4 * (xn + 64 * blocksOf bs.length + batchReserve)) ∧
     readBytes mem xcarry 16 = some (flagBytes false ++ flagBytes false) ∧
     blocksOf bs.length * 64 + 63 < 2 ^ 32 ∧
-    -- the four objects the run may write are pairwise separate, and the window
-    -- it reads is separate from all of them
-    (b + 64 * blocksOf bs.length ≤ ent ∨ ent + 8 * blocksOf bs.length ≤ b) ∧
+    -- the four objects the run may write are pairwise separate; the window it
+    -- reads is separate from all of them, and `ent` is separate from the three
+    -- bytes before the window too, because the first block's entry store
+    -- precedes its DFA arm
+    (b + 64 * blocksOf bs.length ≤ ent ∨
+      ent + 8 * blocksOf bs.length ≤ b - 3) ∧
     (ent + 8 * blocksOf bs.length ≤ xp ∨
       xp + 4 * (xn + 64 * blocksOf bs.length + batchReserve) ≤ ent) ∧
     (ent + 8 * blocksOf bs.length ≤ nxp ∨ nxp + 8 ≤ ent) ∧
