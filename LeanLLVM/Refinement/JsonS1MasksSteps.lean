@@ -2437,6 +2437,41 @@ theorem andQuoteW_spec (k : Ctx) (hst : k.st.oddRun = (k.opened && k.ppar)) :
     andQuoteW k = specQuote64 k.lo k.hi k.st := by
   rw [andQuoteW_eq, s1_and_eq k hst]
 
+/-- **The raw quote word without the arithmetic escape word is `specQuote64`.**
+The body's `%and.i` read through `fastEscape` alone: the raw quote and backslash
+words are disjoint, and `st.oddRun = (k.opened && k.ppar)` is the invariant the
+classifier keeps, so `fastQuote_eq` and `quote64_eq_and_not_escapeLanes` give the
+specification's unescaped-quote mask. -/
+theorem qraw_and_not_fastEscape_eq_specQuote64 (k : Ctx)
+    (hst : k.st.oddRun = (k.opened && k.ppar)) :
+    specMask64 IsQuoteB k.lo k.hi &&& ~~~fastEscape (bsW k) k.opened k.ppar
+      = specQuote64 k.lo k.hi k.st := by
+  rw [bsW_eq_spec,
+    fastQuote_eq (specMask64 IsQuoteB k.lo k.hi) (specMask64 IsBackslashB k.lo k.hi)
+      k.opened k.ppar (specQuote64_disjoint k.lo k.hi)]
+  exact quote64_eq_and_not_escapeLanes k.lo k.hi k.st k.opened k.ppar hst
+
+/-- **`specQuote64` is the raw quote mask without the escaped-quote mask**, at the
+block level: `specEscapedQuote64`'s complement inside `specMask64 IsQuoteB` is the
+unescaped half, the block form of `quoteMask_and_not_escaped`. -/
+theorem quote64_eq_and_not_escapedQuote (lo hi : Block32) (st : ClassState) :
+    specMask64 IsQuoteB lo hi &&& ~~~specEscapedQuote64 lo hi st = specQuote64 lo hi st := by
+  unfold specMask64 pack32 specQuote64 specEscapedQuote64 classMask64
+  rw [mask64_not, mask64_and,
+    quoteMask_and_not_escaped (List.ofFn lo) st (by rw [List.length_ofFn]; omega),
+    quoteMask_and_not_escaped (List.ofFn hi) _ (by rw [List.length_ofFn]; omega)]
+
+/-- **The arithmetic escape word is the specification's escaped-quote mask, read on
+the raw quote lanes.**  Both complements — `~~~fastEscape` on the body's backslash
+word and `~~~specEscapedQuote64` — leave `specQuote64`, so they agree wherever the
+raw quote mask is set.  The `st.oddRun = (k.opened && k.ppar)` hypothesis is the
+one `qraw_and_not_fastEscape_eq_specQuote64` carries. -/
+theorem qraw_and_not_fastEscape_eq_and_not_escapedQuote (k : Ctx)
+    (hst : k.st.oddRun = (k.opened && k.ppar)) :
+    specMask64 IsQuoteB k.lo k.hi &&& ~~~fastEscape (bsW k) k.opened k.ppar
+      = specMask64 IsQuoteB k.lo k.hi &&& ~~~specEscapedQuote64 k.lo k.hi k.st := by
+  rw [qraw_and_not_fastEscape_eq_specQuote64 k hst, quote64_eq_and_not_escapedQuote]
+
 /-! ### The in-string word: `%vecinit1.i.i.i` … `%xor.i` -/
 
 /-- `%vecinit1.i.i.i`'s lanes: the quote word in lane zero of a two-lane vector. -/

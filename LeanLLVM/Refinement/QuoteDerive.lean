@@ -59,7 +59,21 @@ expressions, and `kernelQuote` is the last line.  `evenLanes` is the kernel's
   because no byte is both a quote and a backslash.
 * `kernelQuote64` — **the derivation**: over a sixty-four-lane block, the kernel's
   `%qmc2 = %qrawc2 & ~%escc2` *is* `JsonScanSpec`'s `specQuote64`.
-* `oddRun_lo` and `oddRun_hi` — the bridges the last two need: the `classStep`
+* `fastEscape_eq_escapeLanes` — **the arithmetic's escape word, read directly
+  against the specification**: the two carry-propagating sums' masked lanes *are*
+  `escapeLanes bs o p &&& ~~~bs`, proved from the run arithmetic and
+  `runParityBefore` without naming `kernelEscape`.  `fastQuote_eq` is the quote
+  consequence: a raw quote mask disjoint from the backslash mask loses exactly the
+  odd-run lanes, and `quote64_eq_and_not_escapeLanes` is the block-level form
+  against `specQuote64`.
+* `fastEscape_eq_kernelEscape` and `fastPpar_eq_runParity` — the arithmetic read at
+  the kernel transcription's word and at the specification's outgoing parity.
+* `carry_succ_of_getLsbD` — the carry recurrence from `BitVec.carry`'s definition,
+  stated as `BitVec.carry_succ` is.  The core lemma's proof crosses
+  `Nat.mod_pow_succ`, whose proof term carries `Classical.choice`; this one does
+  not, so the lane-recursion proofs that read it stay at `propext` and
+  `Quot.sound`.
+* `oddRun_lo` and `oddRun_hi` — the bridges `kernelQuote64` needs: the `classStep`
   fold's `oddRun` at a lane of either half is this module's `runParityBefore`.
 * `lzParity_eq_suffixRun`, `parity_top`, `nextParity_eq` and `ppn64` — the kernel's
   outgoing parity `%ppnc2`, which it takes from `ctlz(~bs) & 1` and the
@@ -1023,6 +1037,18 @@ theorem quoteMask_hi {lo hi : Block32} {st : ClassState} {runOpen ppar : Bool}
     quoteMask_getLsbD hm32 (by rw [List.getElem?_ofFn, dite_eq_left hm32]),
     pack32_getLsbD IsQuoteB hi ⟨m, hm32⟩, isUnescapedQuote, oddRun_hi hst m (by omega)]
 
+/-- **The unescaped-quote mask is the raw quote mask without the odd-run lanes**,
+at the block level and in the specification's own words.  The two halves are
+`quoteMask_lo` and `quoteMask_hi`; the hypothesis is the one `kernelQuote64`
+carries, that a nonzero run parity implies an open run. -/
+theorem quote64_eq_and_not_escapeLanes (lo hi : Block32) (st : ClassState)
+    (runOpen ppar : Bool) (hst : st.oddRun = (runOpen && ppar)) :
+    specMask64 IsQuoteB lo hi &&& ~~~escapeLanes (specMask64 IsBackslashB lo hi) runOpen ppar
+      = specQuote64 lo hi st := by
+  rw [escapeLanes_eq_join]
+  unfold specMask64 specQuote64 classMask64
+  rw [mask64_not, mask64_and, ← quoteMask_lo hst, ← quoteMask_hi hst]
+
 /-- **The derivation the kernel performs.**  The kernel's `%qmc2 = %qrawc2 &
 ~%escc2` over a sixty-four-lane block is the specification's unescaped-quote mask
 for that block, under the invariant that a nonzero run parity implies an open run.
@@ -1035,9 +1061,8 @@ theorem kernelQuote64 (lo hi : Block32) (st : ClassState) (runOpen ppar : Bool)
     (hst : st.oddRun = (runOpen && ppar)) :
     kernelQuote (specMask64 IsQuoteB lo hi) (specMask64 IsBackslashB lo hi) runOpen ppar
       = specQuote64 lo hi st := by
-  rw [kernelQuote_eq _ _ _ _ (specQuote64_disjoint lo hi), escapeLanes_eq_join]
-  unfold specMask64 specQuote64 classMask64
-  rw [mask64_not, mask64_and, ← quoteMask_lo hst, ← quoteMask_hi hst]
+  rw [kernelQuote_eq _ _ _ _ (specQuote64_disjoint lo hi)]
+  exact quote64_eq_and_not_escapeLanes lo hi st runOpen ppar hst
 
 /-! ### `%lzpc2` and the outgoing run parity
 
@@ -1358,8 +1383,15 @@ length is a fact about its two ends, so adding the run's start bit to the
 backslash mask carries through the run and marks the lane after its end, while
 the carry out of the top lane is the outgoing run parity.  `fastStarts` is the
 run-start mask the sums use, `fastEscape` the escape word and `fastPpar` the
-outgoing parity; `fastEscape_eq_kernelEscape` and `fastPpar_eq_runParity` are the
-two identities the step module reads at the emitted body's own registers. -/
+outgoing parity.
+
+The escape word is read two ways.  `fastEscape_eq_escapeLanes` is the direct one:
+the sums' masked lanes are the parity mask on the lanes that are not backslashes,
+so the arithmetic alone is the specification's word and the argument never names
+`kernelEscape`.  `fastEscape_eq_kernelEscape` reads the same lane identity against
+`kernelEscape_eq`, giving the transcription's word.  `fastPpar_eq_runParity` is
+the parity half; the step module reads all three at the emitted body's own
+registers. -/
 
 /-- The run starts the arithmetic sums use: `bs & ~(bs << 1)`. -/
 def fastStarts {w : Nat} (bs : BitVec w) : BitVec w := bs &&& ~~~(bs <<< 1)
@@ -1454,11 +1486,69 @@ theorem starts_odd_eq {w : Nat} (s a : BitVec w) :
     getLsbD_not_of_lt a hi]
   cases s.getLsbD i <;> cases a.getLsbD i <;> rfl
 
+/-! ### The carry recurrence, from `carry`'s own definition
 
+`BitVec.carry_succ` states the recurrence, but its proof crosses the core's
+`Nat.mod_pow_succ`, whose proof term carries `Classical.choice`.  The lemmas below
+restate the step from `carry`'s definition — the decision
+`x % 2^i + y % 2^i + c ≥ 2^i` — so that a proof which recurses along a lane keeps
+the module's own footprint.  The one fact the core version takes from the choice-
+carrying `Nat` algebra, the decomposition of a modulus by `2^(i+1)`, is proved
+here from `Nat.div_add_mod` and the half of the mod algebra that carries
+`propext` alone. -/
+
+/-- `x % 2^(i+1) = 2^i * (x.testBit i).toNat + x % 2^i`, without the
+`Classical.choice` that `Nat.mod_pow_succ` carries. -/
+private theorem mod_two_pow_succ_testBit (x i : Nat) :
+    x % 2 ^ (i + 1) = 2 ^ i * (x.testBit i).toNat + x % 2 ^ i := by
+  have hM : 0 < 2 ^ i := Nat.two_pow_pos i
+  have hpow : 2 ^ (i + 1) = 2 ^ i * 2 := Nat.pow_succ 2 i
+  rw [hpow]
+  have hr : x % (2 ^ i * 2) < 2 * 2 ^ i := by
+    rw [Nat.mul_comm (2 ^ i) 2]
+    exact Nat.mod_lt _ (by omega)
+  have hd : x / 2 ^ i = x % (2 ^ i * 2) / 2 ^ i + 2 * (x / (2 ^ i * 2)) := by
+    conv => lhs; rw [← Nat.div_add_mod x (2 ^ i * 2)]
+    rw [Nat.mul_assoc, Nat.add_comm, Nat.add_mul_div_left _ _ hM]
+  have htest : (x.testBit i).toNat = x % (2 ^ i * 2) / 2 ^ i := by
+    rw [Nat.toNat_testBit, hd, Nat.mul_comm 2 (x / (2 ^ i * 2)),
+      Nat.add_mul_mod_self_right, Nat.mod_eq_of_lt ((Nat.div_lt_iff_lt_mul hM).mpr hr)]
+  rw [htest]
+  conv => lhs; rw [← Nat.div_add_mod (x % (2 ^ i * 2)) (2 ^ i)]
+  rw [Nat.mod_mul_right_mod]
+
+/-- The carry decision one lane up, as the two lanes and the carry below: the
+`Nat` arithmetic behind `BitVec.carry_succ`. -/
+private theorem decide_carry_shift {a b M c : Nat} (p q : Bool) (hc : c ≤ 1)
+    (ha : a < M) (hb : b < M) :
+    decide (M * p.toNat + a + (M * q.toNat + b) + c ≥ M + M)
+      = Bool.atLeastTwo p q (decide (a + b + c ≥ M)) := by
+  cases p <;> cases q <;>
+    simp only [Bool.toNat_false, Bool.toNat_true, Nat.mul_zero, Nat.mul_one,
+      Nat.zero_add, Bool.atLeastTwo, Bool.false_and, Bool.true_and, Bool.and_true,
+      Bool.and_false, Bool.and_self, Bool.false_or, Bool.or_false, Bool.true_or]
+  · rw [decide_eq_false (by omega)]
+  · exact decide_eq_decide.mpr (by constructor <;> intro h <;> omega)
+  · exact decide_eq_decide.mpr (by constructor <;> intro h <;> omega)
+  · rw [decide_eq_true (by omega)]
+
+/-- **The carry recurrence, read from `BitVec.carry`'s definition.**  The statement
+is `BitVec.carry_succ`'s; the proof stays inside `propext` and `Quot.sound`. -/
+theorem carry_succ_of_getLsbD {w : Nat} (i : Nat) (x y : BitVec w) (c : Bool) :
+    BitVec.carry (i + 1) x y c
+      = Bool.atLeastTwo (x.getLsbD i) (y.getLsbD i) (BitVec.carry i x y c) := by
+  simp only [BitVec.carry, BitVec.getLsbD]
+  rw [mod_two_pow_succ_testBit x.toNat i, mod_two_pow_succ_testBit y.toNat i,
+    Nat.two_pow_succ]
+  exact decide_carry_shift _ _ (Bool.toNat_le c)
+    (Nat.mod_lt _ (Nat.two_pow_pos i)) (Nat.mod_lt _ (Nat.two_pow_pos i))
+
+/-- The carry into the lane above a run's last lane, with the selection subset of
+the addend. -/
 theorem carry_succ_of_sub {w : Nat} {bs sel : BitVec w} (hsub : sel &&& bs = sel) (i : Nat) :
     BitVec.carry (i + 1) bs sel false
       = (sel.getLsbD i || (BitVec.carry i bs sel false && bs.getLsbD i)) := by
-  rw [BitVec.carry_succ]
+  rw [carry_succ_of_getLsbD]
   unfold Bool.atLeastTwo
   have h : (bs.getLsbD i && sel.getLsbD i) = sel.getLsbD i := by
     have hh := congrArg (fun x : BitVec w => x.getLsbD i) hsub
@@ -1703,121 +1793,80 @@ theorem fastTerm3 {w : Nat} (bs : BitVec w) (o p : Bool) {i : Nat}
   rw [oneLane_getLsbD (b := o && p) hi, oneLane_getLsbD (b := true) hi]
   simp [Bool.and_assoc, Bool.and_comm, Bool.and_left_comm]
 
-/-- **The arithmetic escape word is the kernel's.** -/
-theorem fastEscape_getLsbD {w : Nat} (bs : BitVec w) (o p : Bool) {i : Nat} (hi : i < w) :
-    (fastEscape bs o p).getLsbD i = (kernelEscape bs o p).getLsbD i := by
-  unfold fastEscape kernelEscape
-  rw [BitVec.getLsbD_or, BitVec.getLsbD_or, BitVec.getLsbD_or,
-    escapedRuns_getLsbD bs o p hi, boundaryEscape_getLsbD bs o p hi,
-    afterRuns_getLsbD bs hi]
+/-- Lane `i` of the arithmetic escape word, read against the parity mask.  The
+lane is `runParityBefore` exactly where the lane is not a backslash: the even-class
+sum's carry is the run start's alternate lane and the odd-class sum's is its
+negation, so the two sums' masked lanes pair to `runParityBefore` at a run's end,
+and every term is clear elsewhere. -/
+theorem fastEscape_getLsbD_escapeLanes {w : Nat} (bs : BitVec w) (o p : Bool) {i : Nat}
+    (hi : i < w) :
+    (fastEscape bs o p).getLsbD i = (escapeLanes bs o p &&& ~~~bs).getLsbD i := by
+  rw [BitVec.getLsbD_and, escapeLanes_getLsbD bs o p hi, getLsbD_not_of_lt bs hi]
+  unfold fastEscape
+  rw [BitVec.getLsbD_or, BitVec.getLsbD_or]
   cases hbi : bs.getLsbD i with
   | true =>
-      have hnot : (~~~bs).getLsbD i = false := by
+      have hbs : (~~~bs).getLsbD i = false := by
         rw [getLsbD_not_of_lt bs hi, hbi]
         rfl
-      have hafter : (decide (1 ≤ i) && endLane bs (i - 1)) = false := by
-        by_cases hi0 : i = 0
-        · subst hi0; simp
-        · rw [decide_eq_true (by omega)]
-          unfold endLane
-          rw [show i - 1 + 1 = i from by omega, hbi]
-          simp
-      have hbnd : (decide (i = 0) && (o && !bs.getLsbD 0 && p)) = false := by
-        by_cases hi0 : i = 0
-        · subst hi0; rw [hbi]; simp
-        · simp [hi0]
-      rw [hafter, hbnd]
-      simp [hnot]
+      simp only [BitVec.getLsbD_and, hbs, Bool.false_and, Bool.and_false,
+        Bool.false_or, Bool.not_true]
   | false =>
-      have hT1 : (((bs + fastEvenClass bs o p) &&& ~~~bs) &&& ~~~evenLanes w).getLsbD i
-          = (BitVec.carry i bs (fastEvenClass bs o p) false
-              && !(evenLanes w).getLsbD i) :=
-        fastTerm1 bs (fastEvenClass bs o p) (fastEvenClass_sub bs o p) hi hbi
-      have hT2 : (((bs + fastOddClass bs o p) &&& ~~~bs) &&& evenLanes w).getLsbD i
-          = (BitVec.carry i bs (fastOddClass bs o p) false
-              && (evenLanes w).getLsbD i) :=
-        fastTerm2 bs (fastOddClass bs o p) (fastOddClass_sub bs o p) hi hbi
-      have hT3 : (fastOddOpen w o p &&& ((~~~bs) &&& oneLane w true)).getLsbD i
-          = ((o && p) && decide (i = 0)) := fastTerm3 bs o p hi hbi
+      have hT1 := fastTerm1 bs (fastEvenClass bs o p) (fastEvenClass_sub bs o p) hi hbi
+      have hT2 := fastTerm2 bs (fastOddClass bs o p) (fastOddClass_sub bs o p) hi hbi
+      have hT3 := fastTerm3 bs o p hi hbi
       rw [hT1, hT2, hT3]
+      simp only [Bool.not_false, Bool.and_true]
       cases i with
       | zero =>
-          rw [BitVec.carry_zero, BitVec.carry_zero]
-          have hb0 : bs.getLsbD 0 = false := hbi
-          simp [hb0, evenLanes_getLsbD (k := 0) hi]
+          rw [BitVec.carry_zero, BitVec.carry_zero, runParityBefore]
+          have he0 : (evenLanes w).getLsbD 0 = true := by
+            rw [evenLanes_getLsbD (k := 0) hi]
+            rfl
+          rw [he0, Bool.not_true, Bool.and_true,
+            show decide (0 = 0) = true from rfl, Bool.and_true]
+          rfl
       | succ k =>
-          have hbk : bs.getLsbD k = false ∨ bs.getLsbD k = true := by
-            cases bs.getLsbD k <;> simp
-          rcases hbk with hbk | hbk
-          · -- no run ends below, both carries clear
-            rw [carry_of_prev_clear (fastEvenClass_sub bs o p) (by omega)
-                (by rwa [show k + 1 - 1 = k from by omega]),
-              carry_of_prev_clear (fastOddClass_sub bs o p) (by omega)
-                (by rwa [show k + 1 - 1 = k from by omega])]
-            have hafter : (decide (1 ≤ k + 1) && endLane bs ((k + 1) - 1)) = false := by
-              rw [decide_eq_true (by omega)]
-              unfold endLane
-              rw [show k + 1 - 1 = k from by omega, hbk]
-              simp
-            rw [hafter]
-            have hbnd : (decide (k + 1 = 0) && (o && !bs.getLsbD 0 && p)) = false := by
-              simp
-            rw [hbnd]
-            simp
-          · -- the run ends at k
-            obtain ⟨j, s, hrankj, hjw, hsdef?, hsstart, hse, hallset, hjstarts, hje, hjend?⟩ :=
-              run_end_start bs o (e := k) (by omega) hbk hbi
-            have hsdef : (setLanes (runStarts bs o))[j]'hjstarts = s := by
-              have h := hsdef?
-              rw [List.getElem?_eq_getElem hjstarts] at h
-              exact Option.some.inj h
-            have hend : (setLanes (runEnds bs))[j]'hje = k := by
-              have h := hjend?
-              rw [List.getElem?_eq_getElem hje] at h
-              exact Option.some.inj h
-            have hsw : s < w := by omega
-            have hfastStarts : (fastStarts bs).getLsbD s = true := by
-              rw [fastStarts_eq_runStarts, runStarts_getLsbD bs o hsw]
-              exact hsstart
-            have hEC : (fastEvenClass bs o p).getLsbD s = (altLanes w o p).getLsbD s := by
-              rw [fastEvenClass, BitVec.getLsbD_and, hfastStarts, Bool.true_and]
-            have hOC : (fastOddClass bs o p).getLsbD s
-                = !(altLanes w o p).getLsbD s := by
-              rw [fastOddClass_eq_not, BitVec.getLsbD_and, hfastStarts, Bool.true_and,
-                getLsbD_not_of_lt (altLanes w o p) hsw]
-            have hcE : BitVec.carry (k + 1) bs (fastEvenClass bs o p) false
-                = (altLanes w o p).getLsbD s := by
-              rw [carry_after_run bs (fastEvenClass bs o p) (altLanes w o p) o
-                (by rw [fastEvenClass, fastStarts_eq_runStarts]) (by omega) hse hsstart hallset]
-            have hcO : BitVec.carry (k + 1) bs (fastOddClass bs o p) false
-                = !(altLanes w o p).getLsbD s := by
-              rw [carry_after_run bs (fastOddClass bs o p) (~~~(altLanes w o p)) o
-                (by rw [fastOddClass_eq_not, fastStarts_eq_runStarts]) (by omega) hse hsstart hallset]
-              exact getLsbD_not_of_lt (altLanes w o p) hsw
-            rw [hcE, hcO]
-            -- the kernel side's after lane and its odd-run scatter
-            have hafterT : (decide (1 ≤ k + 1) && endLane bs ((k + 1) - 1)) = true := by
-              rw [decide_eq_true (by omega)]
-              unfold endLane
-              rw [show k + 1 - 1 = k from by omega, hbk, hbi]
-              simp
-            have hone : decide (k + 1 = 0) = false := decide_eq_false (by omega)
-            rw [hafterT, hrankj, oddRuns_getLsbD bs o p hjw,
-              startPara_getLsbD bs o p hjstarts, endPara_getLsbD bs (j := j) hje]
-            rw [hsdef, hend, ← altLanes_getLsbD o p hsw]
-            rw [show (k % 2 == 0) = (evenLanes w).getLsbD k from by
-              rw [evenLanes_getLsbD (by omega)]]
-            have heven_i : (evenLanes w).getLsbD (k + 1) = !((k % 2 == 0)) := by
-              rw [evenLanes_getLsbD (by omega)]
-              exact mod_two_succ_eq_zero k
-            rw [heven_i]
-            simp only [Bool.not_not]
-            rw [show (k % 2 == 0) = (evenLanes w).getLsbD k from by
-              rw [evenLanes_getLsbD (by omega)]]
-            rw [hone]
-            simpa using bool_eq_split ((altLanes w o p).getLsbD s)
-              ((evenLanes w).getLsbD k)
+          cases hbk : bs.getLsbD k with
+          | false =>
+              rw [runParityBefore, hbk,
+                  carry_of_prev_clear (fastEvenClass_sub bs o p) (by omega)
+                    (by rwa [show k + 1 - 1 = k from by omega]),
+                  carry_of_prev_clear (fastOddClass_sub bs o p) (by omega)
+                    (by rwa [show k + 1 - 1 = k from by omega]),
+                  decide_eq_false (by omega : ¬ (k + 1 = 0))]
+              simp only [Bool.false_and, Bool.and_false, Bool.false_or]
+              rfl
+          | true =>
+              obtain ⟨j, s, hrankj, hjw, hsdef?, hsstart, hse, hallset, hjstarts, hje, hjend?⟩ :=
+                run_end_start bs o (e := k) (by omega) hbk hbi
+              have hsw : s < w := by omega
+              have hcE : BitVec.carry (k + 1) bs (fastEvenClass bs o p) false
+                  = (altLanes w o p).getLsbD s := by
+                rw [carry_after_run bs (fastEvenClass bs o p) (altLanes w o p) o
+                  (by rw [fastEvenClass, fastStarts_eq_runStarts]) (by omega) hse hsstart hallset]
+              have hcO : BitVec.carry (k + 1) bs (fastOddClass bs o p) false
+                  = !(altLanes w o p).getLsbD s := by
+                rw [carry_after_run bs (fastOddClass bs o p) (~~~(altLanes w o p)) o
+                  (by rw [fastOddClass_eq_not, fastStarts_eq_runStarts]) (by omega) hse hsstart hallset]
+                exact getLsbD_not_of_lt (altLanes w o p) hsw
+              rw [hcE, hcO]
+              have hone : decide (k + 1 = 0) = false := decide_eq_false (by omega)
+              rw [hone]
+              have heven_i : (evenLanes w).getLsbD (k + 1) = !((k % 2 == 0)) := by
+                rw [evenLanes_getLsbD (by omega)]
+                exact mod_two_succ_eq_zero k
+              have hpar := escape_at_run_end bs o p (s := s) (e := k) (by omega) hse hsstart hallset
+              rw [← hpar, altLanes_getLsbD o p hsw, heven_i, Bool.not_not]
+              simp only [Bool.and_false, Bool.or_false]
+              exact bool_eq_split _ _
 
+/-- **The arithmetic escape word is the kernel's, lane by lane.**  Both words are
+the parity mask on the lanes that are not backslashes, so the lane identity reads
+`fastEscape_getLsbD_escapeLanes` against `kernelEscape_eq`. -/
+theorem fastEscape_getLsbD {w : Nat} (bs : BitVec w) (o p : Bool) {i : Nat} (hi : i < w) :
+    (fastEscape bs o p).getLsbD i = (kernelEscape bs o p).getLsbD i := by
+  rw [fastEscape_getLsbD_escapeLanes bs o p hi, kernelEscape_eq bs o p]
 
 /-- An addition wraps exactly when the carry leaves the word. -/
 theorem decide_add_lt_self {w : Nat} (x y : BitVec w) :
@@ -1849,6 +1898,37 @@ theorem fastPpar_eq_carry {w : Nat} (bs : BitVec w) (o p : Bool) :
 theorem fastEscape_eq_kernelEscape {w : Nat} (bs : BitVec w) (o p : Bool) :
     fastEscape bs o p = kernelEscape bs o p :=
   BitVec.eq_of_getLsbD_eq (fun _ hi => fastEscape_getLsbD bs o p hi)
+
+/-- **The arithmetic escape word is the specification's parity mask** on the lanes
+that are not backslashes, read from the sums alone — no `kernelEscape`, and neither
+`pext` nor `pdep`.  The statement is `kernelEscape_eq`'s with the arithmetic word
+on the left; `fastEscape_getLsbD_escapeLanes` is its lane form. -/
+theorem fastEscape_eq_escapeLanes {w : Nat} (bs : BitVec w) (o p : Bool) :
+    fastEscape bs o p = escapeLanes bs o p &&& ~~~bs :=
+  BitVec.eq_of_getLsbD_eq (fun _ hi => fastEscape_getLsbD_escapeLanes bs o p hi)
+
+/-- **The quote consequence, at the arithmetic's own words.**  A raw quote mask
+disjoint from the backslash mask loses exactly the odd-run lanes, whether the
+escape word is read through the sums or through the parity mask.  The disjointness
+hypothesis is discharged for the specification's masks by `specQuote64_disjoint`. -/
+theorem fastQuote_eq {w : Nat} (qraw bs : BitVec w) (o p : Bool)
+    (hdisj : qraw &&& bs = 0#w) :
+    qraw &&& ~~~fastEscape bs o p = qraw &&& ~~~escapeLanes bs o p := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro i hi
+  rw [BitVec.getLsbD_and, BitVec.getLsbD_and, fastEscape_eq_escapeLanes,
+    getLsbD_not_of_lt _ hi, getLsbD_not_of_lt _ hi, BitVec.getLsbD_and,
+    getLsbD_not_of_lt bs hi]
+  cases hb : bs.getLsbD i with
+  | false => simp only [Bool.not_false, Bool.and_true]
+  | true =>
+      simp only [Bool.not_true, Bool.and_false]
+      have hq : qraw.getLsbD i = false := by
+        have h := congrArg (fun x : BitVec w => x.getLsbD i) hdisj
+        rw [BitVec.getLsbD_and, hb, Bool.and_true, BitVec.getLsbD_zero] at h
+        exact h
+      rw [hq]
+      rfl
 
 /-- The arithmetic's outgoing parity is the specification's, at sixty-four lanes. -/
 theorem fastPpar_eq_runParity (bs : BitVec 64) (o p : Bool) :

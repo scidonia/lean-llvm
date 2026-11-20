@@ -1242,9 +1242,14 @@ exclusion by name, compare the six other entities byte for byte, and exit 0; the
 identity controls bite. Second, nine mask-step pins — `andQuoteW_spec`,
 `carry64_inside_eq`, `escapedWord_eq_kernelEscape`, `s1Slot_instring_spec`,
 `s1Slot_quote_spec`, `s1_and_eq`, `s1_escaped_eq`, `s1_instring_eq` and
-`s1_ppar_spec` — now print `[propext, Classical.choice, Quot.sound]` through
-`BitVec.carry_succ`, which is the repository ceiling; the narrower run-parity
-recurrence `carry64_oddRun_eq` remains at `[propext, Quot.sound]`.
+`s1_ppar_spec` — printed `[propext, Classical.choice, Quot.sound]` in the tree
+merged at `a3065c6`, through `BitVec.carry_succ`, which is the repository
+ceiling. They no longer do: `carry_succ_of_getLsbD` states that recurrence from
+`BitVec.carry`'s definition, so the lane recursions cross no choice-carrying
+`Nat` lemma, and all nine print `[propext, Quot.sound]`. The run-parity
+recurrence `carry64_oddRun_eq` was already at that footprint. The arithmetic
+escape is also proved on its own terms: `fastEscape_eq_escapeLanes` reads the two
+sums against `escapeLanes bs o p &&& ~~~bs` without naming `kernelEscape`.
 
 The merged tree was verified at `a3065c6`: the default build target is 2,208
 jobs; `tests/json-s1-masks/check.sh` compares the object (`s1_block.o` sha256
@@ -1272,9 +1277,11 @@ classifier.
   calibrated clock. The ablation, prototype and adoption sessions' absolute
   rows drift, so only same-session pairs are quoted. Nothing here is a
   full-parse or stage-1 quotient.
-- **Nothing about a lower axiom footprint.** The nine widened pins are at the
-  repository ceiling. The narrower run-parity recurrence is available
-  (`carry64_oddRun_eq`) but is not the adopted step's pin.
+- **Nothing about any other unit's footprint.** The nine mask-step pins are at
+  `[propext, Quot.sound]`, but the sign-word carriers still print
+  `Classical.choice` (`sshiftRight_63`, `s1_inside_spec`, and so
+  `s1_masks_refines`), whose statements are unchanged. This says nothing about
+  any other stage's pins.
 
 **Cadence.** Re-measure when `kernel/json/s1_block.c`'s `s1f_escaped` or its
 call site changes; when `probes/install/ir/json-s1-masks.candidate.ll` is
