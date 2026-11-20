@@ -142,6 +142,7 @@ import LeanLLVM.Refinement.JsonStage2StringBody
 import LeanLLVM.Refinement.JsonStage2WalkAlignment
 import LeanLLVM.Refinement.JsonStage2TraceRow
 import LeanLLVM.Refinement.JsonStage2WalkRowSteps
+import LeanLLVM.Refinement.JsonStage2WalkRowArms
 import LeanLLVM.Refinement.JsonStage2WalkChain
 import LeanLLVM.Refinement.JsonStage2WalkInduce
 import LeanLLVM.Refinement.JsonStage2WalkEntry
@@ -149,6 +150,7 @@ import LeanLLVM.Refinement.JsonStage2WalkSteps
 import LeanLLVM.Refinement.JsonStage2WalkStepsPath
 import LeanLLVM.Refinement.JsonStage2WalkRefusalOffset
 import LeanLLVM.Refinement.JsonStage2WalkRefusalOffsetBracket
+import LeanLLVM.Refinement.JsonStage2WalkRefusalOffsetBrace
 import LeanLLVM.Refinement.PipelineDischarge
 -- The route's wrapper contract, its document decision, and the caller's decode.
 import LeanLLVM.JsonCallRoute
