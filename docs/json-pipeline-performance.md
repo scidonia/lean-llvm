@@ -334,9 +334,10 @@ The units are `kernel/json/s1_block.c` (classification masks),
 `kernel/json/entry.c` (entry positions) and `kernel/json/utf8.c` (UTF-8
 validity), each called at the ABI its header states and each proved against its
 specification (`s1_masks_refines`, `entry_pos8_refines`, `entry_b8_refines`,
-`utf8_stage_refines`). What they are not is a parser: the selection that fills
-the entry stream, the escape and exit stages, stage 2, and the assembled
-pipeline are not measured here, so no figure here is an end-to-end one. (When
+`entry_b3_refines`, `utf8_stage_refines`). What they are not is a parser: the
+selection that fills the entry stream, the escape and exit stages, stage 2,
+and the assembled pipeline are not measured here, so no figure here is an
+end-to-end one. (When
 this section was written those stages were not in the tree; the assembled
 pipeline is there now -- `kernel/json/pipeline.c` -- and §"The composed route,
 against simdjson 5.0.5" measures it. No row below is re-derived from that
