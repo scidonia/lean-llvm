@@ -20,12 +20,17 @@ to `bodyBlock.instrs` by `rfl`, so a trace below is a proof about the fixture's
 own list.  The six leading `phi`s are traced (`phi_denote`); the twenty
 instructions of the quote/backslash prefix and the rest of the body are owed.
 
-The mask unit's step lemmas cannot be reused at this module's call environment
-directly: they are stated at `s1Calls` and `withEnv`, while the block unit runs
-`s1BlocksCalls` at `stateAt`.  A step whose instruction makes no call is the same
-`evalInstr` at both environments, but not definitionally in this term shape, so
-each reused step needs a `s1BlocksCalls` wrapper (or a generic
-`evalInstr`-ignores-calls lemma) before it can fire.
+## The reuse boundary
+
+The mask unit's step lemmas are stated at `s1Calls` and `withEnv`, while the block
+unit runs `s1BlocksCalls` at `stateAt`.  `evalInstr`'s only arms that consult the
+call environment are the two call forms, so an instruction that mentions no call
+evaluates identically at any pair of environments: `evalInstr_calls_irrelevance`,
+with `callsInstr` deciding the premise, and `evalInstr_blocks_of_masks` composing
+it with the environment bridge.  One lemma therefore covers every reused step,
+which is why the wrappers are not written: a wrapper per reused instruction would
+duplicate a proof whose only varying part is the environment argument, and a new
+step would need a new wrapper before it could be used.
 -/
 import LeanLLVM.Refinement.JsonS1BlocksRun
 import LeanLLVM.Refinement.JsonEntSpec
@@ -43,6 +48,39 @@ open LeanLLVM.Refinement.JsonScanSpec
 
 set_option autoImplicit false
 set_option linter.unusedVariables false
+
+/-! ### The reuse boundary
+
+The mask unit's steps are stated at its own call environment; these two lemmas
+move one to this unit's without restating it. -/
+
+/-- Whether evaluating an instruction consults the call environment.  Only the two
+call forms do; every other arm of `evalInstr` computes from the state alone. -/
+def callsInstr : Instr → Bool
+  | .call _ _ _ _ => true
+  | .callVoid _ _ => true
+  | _ => false
+
+/-- **Evaluation ignores the call environment** for an instruction that makes no
+call: the two environments differ only in the `calls` argument, which no other
+arm of `evalInstr` reads. -/
+theorem evalInstr_calls_irrelevance (c₁ c₂ : Calls) (s : State) (i : Instr)
+    (h : callsInstr i = false) : evalInstr c₁ s i = evalInstr c₂ s i := by
+  cases i <;> simp_all [evalInstr, callsInstr]
+
+/-- The two environment constructors are one: `withEnv` and `stateAt` both replace
+the state's environment and carry every other field through. -/
+theorem withEnv_eq_stateAt (env : Env) (s : State) : withEnv env s = stateAt env s := rfl
+
+/-- **A mask-unit step at this unit's environment.**  An instruction that mentions
+no call evaluates the same at `s1BlocksCalls`/`stateAt` as at
+`s1Calls`/`withEnv`, so a step lemma stated at the mask unit's environment is this
+unit's step. -/
+theorem evalInstr_blocks_of_masks (env : Env) (s : State) (i : Instr)
+    (h : callsInstr i = false) :
+    evalInstr s1BlocksCalls (stateAt env s) i = evalInstr s1Calls (withEnv env s) i := by
+  rw [← withEnv_eq_stateAt]
+  exact evalInstr_calls_irrelevance _ _ _ _ h
 
 /-! ### Instruction spelling -/
 
