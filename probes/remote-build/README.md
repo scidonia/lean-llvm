@@ -65,7 +65,7 @@ This file records the measurements that set them.
 | date | tree | shape | command | peak | note |
 |---|---|---|---|---|---|
 | 2026-11-19 | `d3a3d13` | `e2-highmem-8` | `lake env lean …/JsonStage2WalkScopeClassAB.lean` | **1,908 MB** / 15 s | single largest leaf; idle ~1.4 GB; 0.5 s sampling |
-| — | — | — | full default target | not yet recorded | the number that decides the shape |
+| 2026-11-20 | `986d7bc` | `e2-standard-8` | `bash probes/install/lake-locked.sh build` | **24,240 MB** / 1,690 s, 2,209 jobs | full default target, fresh tree with no `.lake`; `free -m` used, 0.5 s sampling; ~7 GB spare on 32 GB, so the standard shape holds |
 
 Measure on the worker with the shipped instrument, running the full default
 target (not one module):
