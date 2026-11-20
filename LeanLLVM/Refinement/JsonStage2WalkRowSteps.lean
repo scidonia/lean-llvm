@@ -47,6 +47,17 @@ premise the number and escape arms supply.  `headRow_openBrace` and
 (`WalkScope.ifEnd24St`) at the byte the head carries is the parser's tag, so the
 two opening containers need no record premise at all.
 
+Two layers sit on top of that.  The **step** a revolution makes is `WalkTraceStep`
+(the index past exactly one entry and the correspondence regained), produced by the
+arms' two forms (`WalkTraceStep.emit`, `WalkTraceStep.separator`) and read as a count
+by `gain_of_separator`/`gain_of_record`; `WalkRevolution` is the same step at `WalkInv`
+and the loop head, which `containerOpenRevolution_*_step` inhabit for the openers.  The
+**induction** is `WalkTraceChain` with `WalkTraceChain.of_steps` — a step at every head
+index composes for any number of entries — and `walkTraceRow_of_revolutions` reads it
+as the row at `G.nep`.  `row_separatedPayload` is the first document that needs it: the
+row of a five-entry document whose two payload revolutions are its only premises
+(`row_commaBracket`, `row_colonBrace`).
+
 ## What remains
 
 The three residuals `ParserRows` names, at their own vocabulary:
@@ -57,11 +68,22 @@ The three residuals `ParserRows` names, at their own vocabulary:
   exit.  The four containers' and the two separators' carries are read off
   `WalkScope`'s own definitions, and `containerOpenRevolution_*` runs the opener's
   nine links, the merge and the header's pass as one step from the seed — so `[`,
-  `{`, `[]` and `{}` have their rows (`row_open*`, `row_openClose*`).  What remains
-  is the induction over the walk's revolutions for the longer documents, and the
-  string and number arms' payload premises: the escape body's read-back
+  `{`, `[]` and `{}` have their rows (`row_open*`, `row_openClose*`).  The step those
+  rows are instances of is `WalkTraceStep` (its two producers are the arms' own forms,
+  and `gain_of_separator`/`gain_of_record` read it as a count), and the induction over
+  revolutions for longer documents is here too: `WalkTraceChain` composes the steps,
+  `WalkTraceChain.of_steps` is the induction for any number of entries, and
+  `walkTraceRow_of_revolutions` is the row at `G.nep` from a step at every head index.
+  Its first use at a document is `row_separatedPayload`, the row of a document that
+  reaches a separator (`row_commaBracket`, `row_colonBrace`): the arms' net effects at
+  each link and the two payload revolutions are its premises, and the containers'
+  records, the separator's silence and the last entry's reading are derived there.
+  What remains is the arms' own revolutions: the
+  number's and the string's, with their payload premises — the escape body's read-back
   (`headTokenRecord_string_plain`/`_arena`) and the numeral's well-formed
-  decomposition (`headTokenRecord_number`);
+  decomposition (`headTokenRecord_number`) — and the closers' and the separators'
+  walk-level routes (`WalkRevolution` is stated and the openers inhabit it; the other
+  arms' `WalkSegment`s are the dispatch layer's);
 * **the refusal bit** — `VerdictWord`'s two directions at the run's word.  The
   carry has `refusal` and the boundary has `verdict = 0 ∨ verdict = 1`, so the row
   is the two route families: at `1`, `verdictWord_one_of_valid`'s `ValidDocument`
@@ -1314,6 +1336,455 @@ theorem row_openCloseBrace {m0 : Mem} {G : WalkGeom m0} {t : Tape}
     (spz := BitVec.ofNat 32 0) (c8 := BitVec.ofNat 8 2) rfl hlast
   simpa [hev₁, WalkTracePrefix.events_eq_nil hpre₀ hk₀] using hrow
 
+/-! ### The per-revolution step
+
+Each row above is one arm at one index.  A document longer than two entries needs the
+step the loop takes *between* arms and the induction that composes those steps, and
+both are stated here at the level a row is read from.
+
+`WalkTraceStep` is one revolution's effect on the trace: the index past exactly one
+entry, and the correspondence regained.  Its two producers are the arms' own forms —
+`WalkTraceStep.emit` for a class that appends one record, `WalkTraceStep.separator` for
+the two that append none — and `gain_of_separator`/`gain_of_record` read the step as a
+count, so "appends exactly its entry's record" is a statement rather than a reading of
+the definition: the trace grows by one at a record-carrying entry and not at all at a
+separator.
+
+`WalkRevolution` is the same step at the walk's own state: `WalkInv` and the loop head
+at both ends, so the step is the loop's and not a carry chosen for the trace.
+`containerOpenRevolution_bracket_step`/`_brace_step` are its two inhabited instances
+today, and each carries the record it appended beside the relation; the other arms owe
+their own, with the payload premises the header's residual list names.
+
+`WalkTraceChain` composes steps, `WalkTraceChain.of_steps` is the induction for any
+number of entries — the step family supplies one revolution per head index — and
+`walkTraceRow_of_revolutions` is the row at `G.nep`. -/
+
+/-- **One revolution at the trace.**  The index moves past exactly the entry the
+revolution consumed, and the trace is still the records of the entries passed. -/
+structure WalkTraceStep {m0 : Mem} (G : WalkGeom m0) (arena : List UInt8) (t : Tape)
+    (C C' : WalkCarry G) : Prop where
+  /-- The index advances by exactly one entry. -/
+  k' : C'.k = C.k + 1
+  /-- The trace is the entries passed. -/
+  trace : WalkTracePrefix G arena t C'
+
+namespace WalkTraceStep
+
+/-- **An emitting arm's step.**  One record, related to the entry's token, and the
+index past that entry: `WalkTracePrefix.emit_advance` read as a resolution step. -/
+theorem emit {m0 : Mem} {G : WalkGeom m0} {arena : List UInt8} {t : Tape}
+    {C C' : WalkCarry G} {tok : Token} {r : EventRecord}
+    (h : WalkTracePrefix G arena t C) (htok : t.tokens[C.k]? = some tok)
+    (hrec : TokenRecord G.bs arena r tok) (hk : C'.k = C.k + 1)
+    (hev : C'.events = C.events ++ [r]) : WalkTraceStep G arena t C C' where
+  k' := hk
+  trace := h.emit_advance htok hrec hk hev
+
+/-- **A separator's step.**  A comma or a colon carries no record, so the trace is the
+predecessor's and only the index moves. -/
+theorem separator {m0 : Mem} {G : WalkGeom m0} {arena : List UInt8} {t : Tape}
+    {C C' : WalkCarry G} {p : Punct} {s : Span}
+    (h : WalkTracePrefix G arena t C) (htok : t.tokens[C.k]? = some (.punct p s))
+    (hp : p = .comma ∨ p = .colon) (hk : C'.k = C.k + 1)
+    (hev : C'.events = C.events) : WalkTraceStep G arena t C C' where
+  k' := hk
+  trace := h.advance_separator htok hp hk hev
+
+/-- **A separator moves the count by nothing.**  The step's trace has exactly the
+records the predecessor's had. -/
+theorem gain_of_separator {m0 : Mem} {G : WalkGeom m0} {arena : List UInt8} {t : Tape}
+    {C C' : WalkCarry G} {p : Punct} {s : Span} (h : WalkTraceStep G arena t C C')
+    (hpre : WalkTracePrefix G arena t C) (htok : t.tokens[C.k]? = some (.punct p s))
+    (hp : p = .comma ∨ p = .colon) : C'.events.length = C.events.length := by
+  have h1 : C'.events.length = (Token.recordTokens t.tokens C'.k).length :=
+    WalkTracePrefix.length h.trace
+  have h2 : C.events.length = (Token.recordTokens t.tokens C.k).length :=
+    WalkTracePrefix.length hpre
+  rw [h1, h2, h.k', Token.recordTokens_succ_of_separator htok hp]
+
+/-- **A record-carrying entry moves the count by one.**  The step's trace is exactly
+the predecessor's plus that one record. -/
+theorem gain_of_record {m0 : Mem} {G : WalkGeom m0} {arena : List UInt8} {t : Tape}
+    {C C' : WalkCarry G} {tok : Token} (h : WalkTraceStep G arena t C C')
+    (hpre : WalkTracePrefix G arena t C) (htok : t.tokens[C.k]? = some tok)
+    (hc : ∀ s : Span, tok ≠ .punct .comma s) (hd : ∀ s : Span, tok ≠ .punct .colon s) :
+    C'.events.length = C.events.length + 1 := by
+  have h1 : C'.events.length = (Token.recordTokens t.tokens C'.k).length :=
+    WalkTracePrefix.length h.trace
+  have h2 : C.events.length = (Token.recordTokens t.tokens C.k).length :=
+    WalkTracePrefix.length hpre
+  rw [h1, h2, h.k', Token.recordTokens_succ_of_record htok hc hd, List.length_append,
+    List.length_singleton]
+
+end WalkTraceStep
+
+/-- **One revolution at the walk's head.**  `WalkInv` at the loop head with the trace
+prefix, one revolution, and the loop head again with the prefix and the index past that
+entry: the step's premises are the arm's and its conclusion is the carry the loop
+reaches. -/
+structure WalkRevolution {m0 : Mem} (G : WalkGeom m0) (arena : List UInt8) (t : Tape)
+    (s : State) (C C' : WalkCarry G) : Prop where
+  /-- The invariant at the head the revolution starts from. -/
+  inv : WalkInv G C s
+  /-- That head is the loop's. -/
+  block : C.block = walkLoopHead
+  /-- The invariant at the head it leaves. -/
+  inv' : ∃ s' : State, WalkInv G C' s'
+  /-- That head is the loop's too. -/
+  block' : C'.block = walkLoopHead
+  /-- The index advances by exactly one entry. -/
+  k' : C'.k = C.k + 1
+  /-- The trace is the entries passed. -/
+  trace : WalkTracePrefix G arena t C'
+
+namespace WalkRevolution
+
+/-- The trace's own half of a revolution: the part the induction composes. -/
+theorem toTraceStep {m0 : Mem} {G : WalkGeom m0} {arena : List UInt8} {t : Tape}
+    {s : State} {C C' : WalkCarry G} (h : WalkRevolution G arena t s C C') :
+    WalkTraceStep G arena t C C' where
+  k' := h.k'
+  trace := h.trace
+
+end WalkRevolution
+
+/-- **The bracket opener's revolution is the loop's step.**  `containerOpenRevolution_
+bracket`'s conclusion is `WalkRevolution`'s fields; the two facts the trace reads from
+it are stated beside the relation — the entry is the parser's open bracket, and the
+record the arm appended is `T_ARR`. -/
+theorem containerOpenRevolution_bracket_step {m0 : Mem} (G : WalkGeom m0)
+    (C : WalkCarry G) (s : State) (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead)
+    {arena : List UInt8} {t : Tape} (h : WalkTracePrefix G arena t C)
+    (hal : WalkAlign G t) (hspans : spansWellFormed t = true)
+    (hbyte : entryByte G C.k = 0x5B) (hsp519 : C.sp ≤ 519)
+    {rd : BitVec 32}
+    (hread : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes rd.toNat 4))
+    (hpreV : s2ValuePosPre
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rd,
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
+    (r : CallOutcome)
+    (hcall : stage2Calls stage2SubCalls "s2_value_pos"
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rd,
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r)
+    (hret : r.ret = .int 32 (BitVec.ofNat 32 1)) (hcont : C.k + 1 < G.nep) :
+    ∃ (C' : WalkCarry G) (sp : Span),
+      WalkRevolution G arena t s C C' ∧
+        t.tokens[C.k]? = some (.punct .openBracket sp) ∧
+        C'.events = C.events ++ [EventRecord.tag 3] := by
+  obtain ⟨C', s', hInv', hblock', -, hk', hev', hpre'⟩ :=
+    containerOpenRevolution_bracket G C s hInv hblock h hal hspans hbyte hsp519
+      hread hpreV r hcall hret hcont
+  have hklt : C.k < G.nep :=
+    WalkInv.head_lt hInv (by simpa only [walkLoopHead] using hblock)
+  obtain ⟨sp, htok, -⟩ := hal.head_openBracket hInv hklt hbyte
+  refine ⟨C', sp, ?_, htok, hev'⟩
+  exact { inv := hInv, block := hblock, inv' := ⟨s', hInv'⟩, block' := hblock', k' := hk', trace := hpre' }
+
+/-- **The brace opener's revolution is the loop's step.**  The same at `{`, whose
+record is `T_OBJ`. -/
+theorem containerOpenRevolution_brace_step {m0 : Mem} (G : WalkGeom m0)
+    (C : WalkCarry G) (s : State) (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead)
+    {arena : List UInt8} {t : Tape} (h : WalkTracePrefix G arena t C)
+    (hal : WalkAlign G t) (hspans : spansWellFormed t = true)
+    (hbyte : entryByte G C.k = 0x7B) (hsp519 : C.sp ≤ 519)
+    {rd : BitVec 32}
+    (hread : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes rd.toNat 4))
+    (hpreV : s2ValuePosPre
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rd,
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
+    (r : CallOutcome)
+    (hcall : stage2Calls stage2SubCalls "s2_value_pos"
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rd,
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r)
+    (hret : r.ret = .int 32 (BitVec.ofNat 32 1)) (hcont : C.k + 1 < G.nep) :
+    ∃ (C' : WalkCarry G) (sp : Span),
+      WalkRevolution G arena t s C C' ∧
+        t.tokens[C.k]? = some (.punct .openBrace sp) ∧
+        C'.events = C.events ++ [EventRecord.tag 1] := by
+  obtain ⟨C', s', hInv', hblock', -, hk', hev', hpre'⟩ :=
+    containerOpenRevolution_brace G C s hInv hblock h hal hspans hbyte hsp519
+      hread hpreV r hcall hret hcont
+  have hklt : C.k < G.nep :=
+    WalkInv.head_lt hInv (by simpa only [walkLoopHead] using hblock)
+  obtain ⟨sp, htok, -⟩ := hal.head_openBrace hInv hklt hbyte
+  refine ⟨C', sp, ?_, htok, hev'⟩
+  exact { inv := hInv, block := hblock, inv' := ⟨s', hInv'⟩, block' := hblock', k' := hk', trace := hpre' }
+
+/-- **A payload entry's revolution.**  The entry's arm appends its one record and the
+index moves past the entry.  This is the shape the number's and the string's arms owe:
+`TokenRecord`'s `number`/`strPlain`/`strArena` constructor at the entry's token, whose
+premises are the payload premises the header's residual list names. -/
+def WalkPayloadStep {m0 : Mem} (G : WalkGeom m0) (arena : List UInt8) (t : Tape)
+    (C C' : WalkCarry G) (r : EventRecord) : Prop :=
+  WalkTraceStep G arena t C C' ∧ C'.events = C.events ++ [r]
+
+/-! ### The induction over revolutions
+
+`WalkTraceChain` is a list of steps — the run of the loop's revolutions, recorded one
+at a time — and `of_steps` is the induction for any number of entries.  The index is
+the chain's length (`k_eq`), the correspondence is carried by `carries`, and
+`traceRow` reads the chain's end as the row when its index reaches the whole token
+list. -/
+
+/-- **A run of revolutions.**  `WalkTraceChain G arena t n C C'` is `n` trace steps
+from `C` to `C'`. -/
+inductive WalkTraceChain {m0 : Mem} (G : WalkGeom m0) (arena : List UInt8) (t : Tape) :
+    Nat → WalkCarry G → WalkCarry G → Prop
+  /-- No revolutions: the carry stands. -/
+  | zero (C : WalkCarry G) : WalkTraceChain G arena t 0 C C
+  /-- One revolution, then the rest. -/
+  | succ {n : Nat} {C C' C'' : WalkCarry G} (h : WalkTraceStep G arena t C C')
+      (hs : WalkTraceChain G arena t n C' C'') :
+      WalkTraceChain G arena t (n + 1) C C''
+
+namespace WalkTraceChain
+
+/-- **The chain's index.**  `n` revolutions move the index by `n`. -/
+theorem k_eq {m0 : Mem} {G : WalkGeom m0} {arena : List UInt8} {t : Tape}
+    {n : Nat} {C C' : WalkCarry G} (h : WalkTraceChain G arena t n C C') :
+    C'.k = C.k + n := by
+  induction h with
+  | zero => simp
+  | succ hstep _ ih => rw [ih, hstep.k']; omega
+
+/-- **The chain carries the correspondence.** -/
+theorem carries {m0 : Mem} {G : WalkGeom m0} {arena : List UInt8} {t : Tape}
+    {n : Nat} {C C' : WalkCarry G} (h : WalkTraceChain G arena t n C C') :
+    WalkTracePrefix G arena t C → WalkTracePrefix G arena t C' := by
+  induction h with
+  | zero => exact id
+  | succ hstep _ ih => exact fun hpre => ih hstep.trace
+
+/-- **The row at the chain's end.**  A chain whose end index is the whole token list
+has the row as its trace. -/
+theorem traceRow {m0 : Mem} {G : WalkGeom m0} {arena : List UInt8} {t : Tape}
+    {n : Nat} {C C' : WalkCarry G} (h : WalkTraceChain G arena t n C C')
+    (hpre : WalkTracePrefix G arena t C) (hkend : C'.k = t.tokens.length) :
+    WalkTraceRow G.bs arena t C'.events :=
+  (carries h hpre).toTraceRow hkend
+
+/-- **The induction over revolutions.**  A step at every head index composes for any
+number of entries: from a carry at `C.k`, `m` revolutions reach a carry `m` further on,
+as long as the index stays inside the entry stream. -/
+theorem of_steps {m0 : Mem} {G : WalkGeom m0} {arena : List UInt8} {t : Tape}
+    (hstep : ∀ (C : WalkCarry G), C.k < G.nep → WalkTracePrefix G arena t C →
+      ∃ C', WalkTraceStep G arena t C C') :
+    ∀ (m : Nat) (C : WalkCarry G), C.k + m ≤ G.nep → WalkTracePrefix G arena t C →
+      ∃ C', WalkTraceChain G arena t m C C' := by
+  intro m
+  induction m with
+  | zero =>
+      intro C _ hpre
+      exact ⟨C, WalkTraceChain.zero C⟩
+  | succ m ih =>
+      intro C hle hpre
+      have hk : C.k < G.nep := by omega
+      obtain ⟨C', hstep'⟩ := hstep C hk hpre
+      have hle' : C'.k + m ≤ G.nep := by
+        have := hstep'.k'
+        omega
+      obtain ⟨C'', hchain⟩ := ih C' hle' hstep'.trace
+      exact ⟨C'', WalkTraceChain.succ hstep' hchain⟩
+
+end WalkTraceChain
+
+/-- **The row, for any number of entries.**  From the seed — index zero, the trace
+correspondence — a step at every head index gives a carry at the entry count and the
+whole document's row: `WalkAlign.traceRow_of_prefix` at the chain's end. -/
+theorem walkTraceRow_of_revolutions {m0 : Mem} {G : WalkGeom m0} {arena : List UInt8}
+    {t : Tape}
+    (hstep : ∀ (C : WalkCarry G), C.k < G.nep → WalkTracePrefix G arena t C →
+      ∃ C', WalkTraceStep G arena t C C')
+    (hal : WalkAlign G t) {C₀ : WalkCarry G} (hk₀ : C₀.k = 0)
+    (hpre₀ : WalkTracePrefix G arena t C₀) :
+    ∃ C : WalkCarry G, C.k = G.nep ∧ WalkTraceRow G.bs arena t C.events := by
+  have hle : C₀.k + G.nep ≤ G.nep := by omega
+  obtain ⟨C, hchain⟩ := WalkTraceChain.of_steps hstep G.nep C₀ hle hpre₀
+  have hk : C.k = G.nep := by
+    have := WalkTraceChain.k_eq hchain
+    omega
+  exact ⟨C, hk, WalkAlign.traceRow_of_prefix hal (WalkTraceChain.carries hchain hpre₀) hk⟩
+
+/-! ### The separator reached: a two-payload document's row
+
+The rows above are the separator's neighbours: `[]` and `{}` hold no separator between
+their entries.  A separator's arm is reached by a document with two value entries
+inside one container, and its row is the induction's first use at a document: the
+opener's revolution, a payload entry, the separator, a payload entry and the close.
+The two payload revolutions are the premises this layer cannot derive
+(`WalkPayloadStep`), because their records are their own arms' and those arms are the
+header's residual; everything else — the two containers' records, the separator's
+silence and the last entry's reading — is derived here, from the alignment, the tape's
+own token list and the arms' net effects.  The
+separator is named by its token rather than by a byte premise: this layer reads the
+tape, and only the containers' records need the byte (`headTokenRecord_punct`'s
+`hbyte`), which is why the two payload entries carry no byte either.
+
+The five entries' arms are stated once at `Punct`s and bytes, so the comma and the
+colon, and the bracket and the brace, are one theorem: `row_commaBracketPayload` and
+`row_colonBracePayload` are the two documents, and `row_commaBracket`/`row_colonBrace`
+are their rows at the seed. -/
+
+/-- **The row of a payload-separated document.**  Five entries: an opening container,
+a payload, the separator, a payload, and the closing container.  `C₀` is the seed,
+`C₁` the head the opener's revolution leaves, `C₂` the head after the first payload,
+`C₃` the head after the separator, `C₄` the head after the second payload, and `Cm` the
+closer's merge carry. -/
+theorem row_separatedPayload {m0 : Mem} {G : WalkGeom m0} {t : Tape} {arena : List UInt8}
+    {C₀ C₁ C₂ C₃ C₄ Cm : WalkCarry G} {so sm sc : Span} {tok₁ tok₂ : Token}
+    {r₁ r₂ : EventRecord} {po ps pc : Punct}
+    (hpo : po = .openBracket ∨ po = .openBrace)
+    (hps : ps = .comma ∨ ps = .colon)
+    (hpc : pc = .closeBracket ∨ pc = .closeBrace)
+    (hal : WalkAlign G t) (hspans : spansWellFormed t = true)
+    (htokens : t.tokens = [.punct po so, tok₁, .punct ps sm, tok₂, .punct pc sc])
+    (hpre₀ : WalkTracePrefix G arena t C₀) (hk₀ : C₀.k = 0)
+    (hbyteo : entryByte G C₀.k = punctByte po)
+    (hk₁ : C₁.k = C₀.k + 1)
+    (hev₁ : C₁.events = C₀.events ++ [EventRecord.tag (punctTag po)])
+    (hpay₁ : WalkPayloadStep G arena t C₁ C₂ r₁)
+    (hk₃ : C₃.k = C₂.k + 1) (hev₃ : C₃.events = C₂.events)
+    (hpay₂ : WalkPayloadStep G arena t C₃ C₄ r₂)
+    (hbytec : entryByte G C₄.k = punctByte pc)
+    (hkM : Cm.k = C₄.k)
+    (hevM : Cm.events = C₄.events ++ [EventRecord.tag (punctTag pc)]) :
+    WalkTraceRow G.bs arena t
+      (C₀.events ++ [EventRecord.tag (punctTag po), r₁, r₂,
+        EventRecord.tag (punctTag pc)]) := by
+  obtain ⟨hstep₁, hev₁'⟩ := hpay₁
+  obtain ⟨hstep₂, hev₂'⟩ := hpay₂
+  have hne : G.nep = 5 := by simp [hal.tokens_length, htokens]
+  have hk₂ : C₂.k = 2 := by
+    have := hstep₁.k'
+    omega
+  have hk₃' : C₃.k = 3 := by omega
+  have hk₄ : C₄.k = 4 := by
+    have := hstep₂.k'
+    omega
+  -- the opener's record, and its record-bearing step
+  have htok₀ : t.tokens[C₀.k]? = some (.punct po so) := by simp [hk₀, htokens]
+  have hlt₀ : C₀.k < G.nep := by omega
+  have hp₀ : po = .openBrace ∨ po = .closeBrace ∨ po = .openBracket ∨ po = .closeBracket := by
+    rcases hpo with h | h
+    · exact Or.inr (Or.inr (Or.inl h))
+    · exact Or.inl h
+  have hstepO : WalkTraceStep G arena t C₀ C₁ :=
+    WalkTraceStep.emit hpre₀ htok₀
+      (headTokenRecord_punct hal hlt₀ hspans arena hp₀ htok₀ hbyteo) hk₁ hev₁
+  -- the separator's own step
+  have htok₂ : t.tokens[C₂.k]? = some (.punct ps sm) := by simp [hk₂, htokens]
+  have hstepS : WalkTraceStep G arena t C₂ C₃ :=
+    WalkTraceStep.separator hstep₁.trace htok₂ hps hk₃ hev₃
+  -- the run up to the last payload
+  have hchain : WalkTraceChain G arena t 4 C₀ C₄ :=
+    WalkTraceChain.succ hstepO (WalkTraceChain.succ hstep₁
+      (WalkTraceChain.succ hstepS (WalkTraceChain.succ hstep₂
+        (WalkTraceChain.zero C₄))))
+  have hpre₄ : WalkTracePrefix G arena t C₄ := WalkTraceChain.carries hchain hpre₀
+  -- the closer's record at the merge, and the last entry's row
+  have htok₄ : t.tokens[C₄.k]? = some (.punct pc sc) := by simp [hk₄, htokens]
+  have hlt₄ : C₄.k < G.nep := by omega
+  have hpC : pc = .openBrace ∨ pc = .closeBrace ∨ pc = .openBracket ∨ pc = .closeBracket := by
+    rcases hpc with h | h
+    · exact Or.inr (Or.inr (Or.inr h))
+    · exact Or.inr (Or.inl h)
+  have hem : WalkTracePrefixEmit G arena t Cm (.punct pc sc) :=
+    WalkTracePrefix.emit hpre₄ (headTokenRecord_punct hal hlt₄ hspans arena hpC htok₄ hbytec)
+      hkM hevM
+  have htokM : t.tokens[Cm.k]? = some (.punct pc sc) := by simp [hkM, hk₄, htokens]
+  have hlast : Cm.k + 1 = t.tokens.length := by simp [hkM, hk₄, htokens]
+  have hrow := WalkTracePrefix.row_of_last hem htokM hlast
+  rw [hevM, hev₂', hev₃, hev₁', hev₁] at hrow
+  simpa using hrow
+
+/-- **The document `[p₁,p₂]`'s row.**  The separator between the two payloads is the
+comma and the container is the bracket. -/
+theorem row_commaBracketPayload {m0 : Mem} {G : WalkGeom m0} {t : Tape}
+    {arena : List UInt8} {C₀ C₁ C₂ C₃ C₄ Cm : WalkCarry G} {so sm sc : Span}
+    {tok₁ tok₂ : Token} {r₁ r₂ : EventRecord}
+    (hal : WalkAlign G t) (hspans : spansWellFormed t = true)
+    (htokens : t.tokens = [.punct .openBracket so, tok₁, .punct .comma sm, tok₂,
+      .punct .closeBracket sc])
+    (hpre₀ : WalkTracePrefix G arena t C₀) (hk₀ : C₀.k = 0)
+    (hbyteo : entryByte G C₀.k = 0x5B)
+    (hk₁ : C₁.k = C₀.k + 1) (hev₁ : C₁.events = C₀.events ++ [EventRecord.tag 3])
+    (hpay₁ : WalkPayloadStep G arena t C₁ C₂ r₁)
+    (hk₃ : C₃.k = C₂.k + 1) (hev₃ : C₃.events = C₂.events)
+    (hpay₂ : WalkPayloadStep G arena t C₃ C₄ r₂)
+    (hbytec : entryByte G C₄.k = 0x5D)
+    (hkM : Cm.k = C₄.k) (hevM : Cm.events = C₄.events ++ [EventRecord.tag 4]) :
+    WalkTraceRow G.bs arena t
+      (C₀.events ++ [EventRecord.tag 3, r₁, r₂, EventRecord.tag 4]) :=
+  row_separatedPayload (po := .openBracket) (ps := .comma) (pc := .closeBracket)
+    (Or.inl rfl) (Or.inl rfl) (Or.inl rfl) hal hspans htokens hpre₀ hk₀ hbyteo hk₁ hev₁
+    hpay₁ hk₃ hev₃ hpay₂ hbytec hkM hevM
+
+/-- **The document `[p₁,p₂]`'s row at the seed.**  The trace before the opener is empty
+(`WalkTracePrefix.events_eq_nil`), so the row is the four records alone. -/
+theorem row_commaBracket {m0 : Mem} {G : WalkGeom m0} {t : Tape} {arena : List UInt8}
+    {C₀ C₁ C₂ C₃ C₄ Cm : WalkCarry G} {so sm sc : Span} {tok₁ tok₂ : Token}
+    {r₁ r₂ : EventRecord}
+    (hal : WalkAlign G t) (hspans : spansWellFormed t = true)
+    (htokens : t.tokens = [.punct .openBracket so, tok₁, .punct .comma sm, tok₂,
+      .punct .closeBracket sc])
+    (hpre₀ : WalkTracePrefix G arena t C₀) (hk₀ : C₀.k = 0)
+    (hbyteo : entryByte G C₀.k = 0x5B)
+    (hk₁ : C₁.k = C₀.k + 1) (hev₁ : C₁.events = C₀.events ++ [EventRecord.tag 3])
+    (hpay₁ : WalkPayloadStep G arena t C₁ C₂ r₁)
+    (hk₃ : C₃.k = C₂.k + 1) (hev₃ : C₃.events = C₂.events)
+    (hpay₂ : WalkPayloadStep G arena t C₃ C₄ r₂)
+    (hbytec : entryByte G C₄.k = 0x5D)
+    (hkM : Cm.k = C₄.k) (hevM : Cm.events = C₄.events ++ [EventRecord.tag 4]) :
+    WalkTraceRow G.bs arena t
+      ([EventRecord.tag 3, r₁, r₂, EventRecord.tag 4] : List EventRecord) := by
+  have hrow := row_commaBracketPayload hal hspans htokens hpre₀ hk₀ hbyteo hk₁ hev₁
+    hpay₁ hk₃ hev₃ hpay₂ hbytec hkM hevM
+  simpa [WalkTracePrefix.events_eq_nil hpre₀ hk₀] using hrow
+
+/-- **The document `{p₁:p₂}`'s row.**  The same five entries at the colon and the
+brace: the separator's arm is reached by an object's second member. -/
+theorem row_colonBracePayload {m0 : Mem} {G : WalkGeom m0} {t : Tape}
+    {arena : List UInt8} {C₀ C₁ C₂ C₃ C₄ Cm : WalkCarry G} {so sm sc : Span}
+    {tok₁ tok₂ : Token} {r₁ r₂ : EventRecord}
+    (hal : WalkAlign G t) (hspans : spansWellFormed t = true)
+    (htokens : t.tokens = [.punct .openBrace so, tok₁, .punct .colon sm, tok₂,
+      .punct .closeBrace sc])
+    (hpre₀ : WalkTracePrefix G arena t C₀) (hk₀ : C₀.k = 0)
+    (hbyteo : entryByte G C₀.k = 0x7B)
+    (hk₁ : C₁.k = C₀.k + 1) (hev₁ : C₁.events = C₀.events ++ [EventRecord.tag 1])
+    (hpay₁ : WalkPayloadStep G arena t C₁ C₂ r₁)
+    (hk₃ : C₃.k = C₂.k + 1) (hev₃ : C₃.events = C₂.events)
+    (hpay₂ : WalkPayloadStep G arena t C₃ C₄ r₂)
+    (hbytec : entryByte G C₄.k = 0x7D)
+    (hkM : Cm.k = C₄.k) (hevM : Cm.events = C₄.events ++ [EventRecord.tag 2]) :
+    WalkTraceRow G.bs arena t
+      (C₀.events ++ [EventRecord.tag 1, r₁, r₂, EventRecord.tag 2]) :=
+  row_separatedPayload (po := .openBrace) (ps := .colon) (pc := .closeBrace)
+    (Or.inr rfl) (Or.inr rfl) (Or.inr rfl) hal hspans htokens hpre₀ hk₀ hbyteo hk₁ hev₁
+    hpay₁ hk₃ hev₃ hpay₂ hbytec hkM hevM
+
+/-- **The document `{p₁:p₂}`'s row at the seed.** -/
+theorem row_colonBrace {m0 : Mem} {G : WalkGeom m0} {t : Tape} {arena : List UInt8}
+    {C₀ C₁ C₂ C₃ C₄ Cm : WalkCarry G} {so sm sc : Span} {tok₁ tok₂ : Token}
+    {r₁ r₂ : EventRecord}
+    (hal : WalkAlign G t) (hspans : spansWellFormed t = true)
+    (htokens : t.tokens = [.punct .openBrace so, tok₁, .punct .colon sm, tok₂,
+      .punct .closeBrace sc])
+    (hpre₀ : WalkTracePrefix G arena t C₀) (hk₀ : C₀.k = 0)
+    (hbyteo : entryByte G C₀.k = 0x7B)
+    (hk₁ : C₁.k = C₀.k + 1) (hev₁ : C₁.events = C₀.events ++ [EventRecord.tag 1])
+    (hpay₁ : WalkPayloadStep G arena t C₁ C₂ r₁)
+    (hk₃ : C₃.k = C₂.k + 1) (hev₃ : C₃.events = C₂.events)
+    (hpay₂ : WalkPayloadStep G arena t C₃ C₄ r₂)
+    (hbytec : entryByte G C₄.k = 0x7D)
+    (hkM : Cm.k = C₄.k) (hevM : Cm.events = C₄.events ++ [EventRecord.tag 2]) :
+    WalkTraceRow G.bs arena t
+      ([EventRecord.tag 1, r₁, r₂, EventRecord.tag 2] : List EventRecord) := by
+  have hrow := row_colonBracePayload hal hspans htokens hpre₀ hk₀ hbyteo hk₁ hev₁
+    hpay₁ hk₃ hev₃ hpay₂ hbytec hkM hevM
+  simpa [WalkTracePrefix.events_eq_nil hpre₀ hk₀] using hrow
+
 /-! ### Axiom footprints
 
 Both list lemmas and the two tag selects are axiom-free, as are the closer's
@@ -1322,7 +1793,17 @@ The three counting lemmas sit at `[propext, Quot.sound]` because they run `omega
 the two opener revolutions and the two-entry rows sit at the development's ceiling,
 `[propext, Classical.choice, Quot.sound]`, because they are the walk's own steps;
 the rest of this layer sits at `propext` alone, and every row that reads a tape's
-token facts is at one of those two.  Measured rather than assumed. -/
+token facts is at one of those two.
+
+The step layer splits the same way: `WalkTraceStep`, its two producers and its two
+count readings, `WalkRevolution` with its projection, `WalkPayloadStep`, the chain,
+`WalkTraceChain.carries` and `WalkTraceChain.traceRow` are at `propext` alone; the
+chain's index arithmetic and the induction (`k_eq`, `of_steps`,
+`walkTraceRow_of_revolutions`) are at `[propext, Quot.sound]` because they run
+`omega`; and the two opener step producers are at the ceiling with the revolutions
+they package.  The separator documents' rows (`row_separatedPayload` and its two
+documents) are at `[propext, Quot.sound]`: they read the tape's token facts and the
+indices with `omega`, and no `WalkInv` enters them.  Measured rather than assumed. -/
 
 /-- info: 'LeanLLVM.Refinement.Token.recordTokens' depends on axioms: [propext] -/
 #guard_msgs in
@@ -1559,5 +2040,89 @@ token facts is at one of those two.  Measured rather than assumed. -/
 /-- info: 'LeanLLVM.Refinement.row_openCloseBracket' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms row_openCloseBracket
+
+/-- info: 'LeanLLVM.Refinement.WalkTraceStep' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms WalkTraceStep
+
+/-- info: 'LeanLLVM.Refinement.WalkTraceStep.emit' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms WalkTraceStep.emit
+
+/-- info: 'LeanLLVM.Refinement.WalkTraceStep.separator' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms WalkTraceStep.separator
+
+/-- info: 'LeanLLVM.Refinement.WalkTraceStep.gain_of_separator' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms WalkTraceStep.gain_of_separator
+
+/-- info: 'LeanLLVM.Refinement.WalkTraceStep.gain_of_record' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms WalkTraceStep.gain_of_record
+
+/-- info: 'LeanLLVM.Refinement.WalkRevolution' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms WalkRevolution
+
+/-- info: 'LeanLLVM.Refinement.WalkRevolution.toTraceStep' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms WalkRevolution.toTraceStep
+
+/-- info: 'LeanLLVM.Refinement.containerOpenRevolution_bracket_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms containerOpenRevolution_bracket_step
+
+/-- info: 'LeanLLVM.Refinement.containerOpenRevolution_brace_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms containerOpenRevolution_brace_step
+
+/-- info: 'LeanLLVM.Refinement.WalkPayloadStep' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms WalkPayloadStep
+
+/-- info: 'LeanLLVM.Refinement.WalkTraceChain' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms WalkTraceChain
+
+/-- info: 'LeanLLVM.Refinement.WalkTraceChain.k_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms WalkTraceChain.k_eq
+
+/-- info: 'LeanLLVM.Refinement.WalkTraceChain.carries' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms WalkTraceChain.carries
+
+/-- info: 'LeanLLVM.Refinement.WalkTraceChain.traceRow' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms WalkTraceChain.traceRow
+
+/-- info: 'LeanLLVM.Refinement.WalkTraceChain.of_steps' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms WalkTraceChain.of_steps
+
+/-- info: 'LeanLLVM.Refinement.walkTraceRow_of_revolutions' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms walkTraceRow_of_revolutions
+
+/-- info: 'LeanLLVM.Refinement.row_separatedPayload' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms row_separatedPayload
+
+/-- info: 'LeanLLVM.Refinement.row_commaBracketPayload' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms row_commaBracketPayload
+
+/-- info: 'LeanLLVM.Refinement.row_commaBracket' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms row_commaBracket
+
+/-- info: 'LeanLLVM.Refinement.row_colonBracePayload' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms row_colonBracePayload
+
+/-- info: 'LeanLLVM.Refinement.row_colonBrace' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms row_colonBrace
 
 end LeanLLVM.Refinement
