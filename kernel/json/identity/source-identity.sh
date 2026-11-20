@@ -233,7 +233,8 @@ case "$unit" in
   s1)
     kernel=$repo/kernel/json/s1_block.c
     oracle=$here/oracle.c
-    input_paths=("$kernel" "$repo/kernel/json/s1_block.h" "$header_src" "$readme" "$oracle")
+    input_paths=("$kernel" "$repo/kernel/json/s1_block.h" \
+                 "$repo/kernel/json/s1_block_impl.h" "$header_src" "$readme" "$oracle")
     ;;
   entry)
     kernel=$repo/kernel/json/entry.c

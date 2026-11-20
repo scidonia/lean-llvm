@@ -16,10 +16,8 @@ opcode lshr
 opcode or
 opcode phi
 opcode ret
-opcode select
 opcode shl
 opcode shufflevector
 opcode store
-opcode sub
 opcode xor
 opcode zext

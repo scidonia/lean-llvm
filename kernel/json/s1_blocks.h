@@ -4,9 +4,14 @@
    escape positions appended to `xp`/`*nxp` when the gate selects that arm.  The
    block words are the stage-1 composition (`JsonScanSpec.entryMask64`): the
    unescaped quote, the structural byte outside a string, and the run start
-   carried from the previous block, clamped past the document's end.  The six
-   mask words, both classifier carries and the entry word stay in registers, so
-   this unit has no caller-staged scratch object and no initialising store.
+   carried from the previous block, clamped past the document's end.  The masks
+   the composition reads, both classifier carries and the entry word stay in
+   registers, so this unit has no caller-staged scratch object and no
+   initialising store.  The composition's scalar word is the fast pass's
+   `neither & ~quote & ~in_string` — the classifier's whitespace word is not
+   computed — and the control-byte word is measured only on the escape list's
+   arm, which is the only reader it has.  The final partial block is peeled into
+   its own body, so the `lim < 64` clamp is not in the full-block loop.
 
    `ent` holds `(n + 63) >> 6` words; its extent is derived from `n`, as the
    entry stream's and the escape list's are, and the caller stages it.  The
@@ -15,8 +20,8 @@
    for the mask unit).  `xcarry` is the escape list's carry (`escape.h`): the
    unit reads it only when `arm & 2`, and writes it only then.
 
-   Arm bits are the pipeline's: bit 1 selects the escape list, bit 0 selects
-   the entry emitter (the caller's, not this unit's), bit 2 the UTF-8 stage's
+   Arm bits are the pipeline's: bit 1 selects the escape list, bit 0 selects the
+   entry emitter (the caller's, not this unit's), bit 2 the UTF-8 stage's
    error arm.  Bits at and above 3 are reserved and ignored. */
 #ifndef LEANLLVM_KERNEL_JSON_S1_BLOCKS_H
 #define LEANLLVM_KERNEL_JSON_S1_BLOCKS_H
