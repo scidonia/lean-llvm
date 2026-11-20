@@ -106,6 +106,16 @@ the worker, so name every changed source the target reads.
   outlive the tunnel under `setsid` with a pid and status file, and kill it by
   that pid; `pkill -f` from inside `run` matches the ssh command string and
   kills its own shell.
+- Lean's package overrides live at `$HOME/.cache/lean-llvm/packages/overrides.json`
+  on the worker; a host building outside `nix develop` finds the same tree at
+  `/nix/store/<hash>-lean-packages-with-exports/lake-overrides.json`.  Pass the
+  path that exists on the machine in hand; a missing overrides file is a setup
+  error, not a proof failure.
+- The image's `lake` shim runs `lean-llvm-overrides`, whose cleanup deletes the
+  cache's `stamps/` on every invocation, so two concurrent `lake` processes on
+  one worker race and can strip a package copy mid-build.  Run one `lake` per
+  worker, and invoke the store `lake` directly with the overrides path when the
+  shim's recopy cost or the race would otherwise dominate.
 - Do not tar `.lake/build` while a build or a `lake serve` is running: a stale
   snapshot silently pairs new sources with old oleans, or omits a module's
   output entirely.
