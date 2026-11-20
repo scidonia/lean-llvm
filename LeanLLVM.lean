@@ -41,6 +41,7 @@ import LeanLLVM.Refinement.JsonB8Steps
 import LeanLLVM.Refinement.JsonUtf8IR
 import LeanLLVM.Refinement.JsonUtf8Steps
 import LeanLLVM.Refinement.JsonUtf8Spec
+import LeanLLVM.Refinement.JsonUtf8Fused
 import LeanLLVM.Refinement.JsonUnitContracts
 import LeanLLVM.Refinement.JsonEscapeIntrinsics
 import LeanLLVM.Refinement.JsonEscapeIR
