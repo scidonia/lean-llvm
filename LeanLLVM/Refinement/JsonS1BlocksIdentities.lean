@@ -1,35 +1,85 @@
 /-
-The body's words against the classifier's: the identities that let the loop's
-composition be stated in the mask unit's vocabulary.
+The block unit's words against the classifier's: the identities that let the
+loop's composition be stated in the mask unit's vocabulary.
 
 The body computes the classifier's arithmetic at its own registers, and two of
 them differ in spelling rather than in value: the escape chain is the emitted
-shortcut (`%and11.i.i = carry & ~backslash` where the mask unit writes
+shortcut (`%and11.i.i = and00 & ~backslash` where the mask unit writes
 `(carry & ~backslash) & 1`), and the in-string word is taken from the register
 carry rather than the carry slot.  Each identity below is a `BitVec` equation
 between the body's word and the mask unit's; together they say the two units
 compute one word, so the entry word's specification (`entryMask64`) and the
 escape list's inputs are the body's own.
 
+The words are stated over `Ctx`, the mask unit's lane vocabulary, and their
+register spellings are the ones the fused loop still emits (`%and11.i.i`,
+`%or12.i.i`, `%vecext.i.i.i`, `%xor.i`, `%or19.i`), so nothing here reads the
+fixture: the module is the word algebra the emitted trace consumes, stated at the
+mask unit's own definitions.
+
 The shortcut's identity is the only one that needs a fact about a value rather
 than the shape of a term: `%and.i.i` is the conjunction of two one-bit words, so
 it is `0` or `1`, and `carry & ~backslash` keeps exactly the lanes
 `(carry & ~backslash) & 1` keeps.
 -/
-import LeanLLVM.Refinement.JsonS1BlocksBody
+import LeanLLVM.Refinement.JsonS1MasksSteps
+import LeanLLVM.Refinement.Pclmul
 
 namespace LeanLLVM.Refinement.JsonS1BlocksSteps
 
 open LeanLLVM
 open LeanLLVM.Refinement.QuoteDerive
 open LeanLLVM.Refinement.Pclmul (clmul)
-open LeanLLVM.Refinement.JsonS1BlocksIR
 open LeanLLVM.Refinement.JsonS1MasksIR
 open LeanLLVM.Refinement.JsonS1MasksSteps
-open LeanLLVM.Refinement.JsonScanSpec
 
 set_option autoImplicit false
 set_option linter.unusedVariables false
+
+/-! ### The body's word spellings
+
+These are the intermediate words the emitted escape chain and in-string chain
+leave, named at the register spelling the body uses.  Each is a definition over
+`Ctx`; the theorems below relate it to the mask unit's own word. -/
+
+/-- `%and11.i.i`: the emitted chain's shortcut, `and00 & ~backslash`. -/
+def blkAnd11W (k : Ctx) : BitVec 64 := bv (escAnd00W k &&& escNotBsW k)
+
+/-- `%or.i.i`: the emitted chain's `s1f_escaped` join. -/
+def blkOr62W (k : Ctx) : BitVec 64 := bv (escAnd7W k ||| blkAnd11W k)
+
+/-- `%or12.i.i`: the escape word the emitted chain leaves. -/
+def blkEscapedW (k : Ctx) : BitVec 64 := bv (blkOr62W k ||| escAnd9W k)
+
+/-- `%not.i`: the escape word's complement. -/
+def blkNotEscW (k : Ctx) : BitVec 64 := bv (blkEscapedW k ^^^ BitVec.allOnes 64)
+
+/-- `%and.i`: the unescaped quote word. -/
+def blkAndQuoteW (k : Ctx) : BitVec 64 := bv (qrawW k &&& blkNotEscW k)
+
+/-- `%vecinit1.i.i.i`. -/
+def blkVecInitLanes (k : Ctx) : List (BitVec 64) := [blkAndQuoteW k, 0]
+
+/-- `%29`. -/
+def blkPclmulLanes (k : Ctx) : List (BitVec 64) :=
+  [clmul (blkAndQuoteW k) (BitVec.allOnes 64), 0]
+
+/-- `%vecext.i.i.i`. -/
+def blkVecextW (k : Ctx) : BitVec 64 := clmul (blkAndQuoteW k) (BitVec.allOnes 64)
+
+/-- `%xor.i`'s word: the carry-less product against the incoming in-string word. -/
+def blkInStringW (k : Ctx) : BitVec 64 := bv (blkVecextW k ^^^ seedW k)
+
+/-- `%shr.i`'s word: the in-string word's sign, the next block's carry. -/
+def blkImSignW (k : Ctx) : BitVec 64 := bv (BitVec.sshiftRight (blkInStringW k) 63)
+
+/-- The low half's complement cell: `%not.i46.i`. -/
+def not46W (k : Ctx) : BitVec 32 :=
+  BitVec.ofNat 32 (complW (BitVec.ofNat 32 (lanesToNat (cmpWordLanes k)))).toNat
+
+/-- The high half's complement cell: `%not.i49.i`. -/
+def not49W (k : Ctx) : BitVec 32 :=
+  BitVec.ofNat 32 (complW (BitVec.ofNat 32 (lanesToNat (cmpWordLanesHi k)))).toNat
 
 /-! ### The carry word is a one-bit word -/
 
@@ -103,12 +153,6 @@ theorem blkVecextW_eq_vecextW (k : Ctx) : blkVecextW k = vecextW k := by
 
 /-! ### The in-string word -/
 
-/-- `%xor.i`'s word: the carry-less product against the incoming in-string word. -/
-def blkInStringW (k : Ctx) : BitVec 64 := bv (blkVecextW k ^^^ seedW k)
-
-/-- `%shr.i`'s word: the in-string word's sign, the next block's carry. -/
-def blkImSignW (k : Ctx) : BitVec 64 := bv (BitVec.sshiftRight (blkInStringW k) 63)
-
 /-- **The in-string word is the mask unit's.**  The body takes the carry from the
 register chain instead of the carry slot; the two words differ only in where the
 incoming word was read, and `seedW` is that word at this unit's carry. -/
@@ -120,14 +164,6 @@ theorem blkImSignW_eq_imSignW (k : Ctx) : blkImSignW k = imSignW k := by
   rw [blkImSignW, imSignW, blkInStringW_eq_inStringWord]
 
 /-! ### The entry chain's words -/
-
-/-- The low half's complement cell: `%not.i46.i`. -/
-def not46W (k : Ctx) : BitVec 32 :=
-  BitVec.ofNat 32 (complW (BitVec.ofNat 32 (lanesToNat (cmpWordLanes k)))).toNat
-
-/-- The high half's complement cell: `%not.i49.i`. -/
-def not49W (k : Ctx) : BitVec 32 :=
-  BitVec.ofNat 32 (complW (BitVec.ofNat 32 (lanesToNat (cmpWordLanesHi k)))).toNat
 
 theorem not46W_eq (k : Ctx) : not46W k = delimLoW k := by
   rw [not46W, delimLoW, ofNat32_toNat']

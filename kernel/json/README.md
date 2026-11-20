@@ -987,4 +987,7 @@ the staged ABI, the inlined versus out-of-line helper boundaries, the numeric
 conversion's obligation, and the trust boundary the route's numbers rest on —
 is recorded in [`docs/json-route-artifact-boundaries.md`](../../docs/json-route-artifact-boundaries.md).
 A change to a unit that moves its fixture should be read there before the
-route's numbers or its check are trusted.
+route's numbers or its check are trusted.  The stage-1 block unit's own route
+check (`tests/json-s1-blocks/check.sh`) and the cc-wrapper flag channels that
+reproduce its fixture outside the dev shell are recorded in
+[`probes/json/route/README.md`](../../probes/json/route/README.md#running-the-stage-1-units-route-outside-the-dev-shell).

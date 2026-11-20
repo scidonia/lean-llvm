@@ -419,14 +419,14 @@ macro "block_step_v" : tactic => `(tactic|
    | rw [denoteCode_bitcastMask _ _ _ _ _ _ ?_ ?_ _]
    | rw [denoteCode_binopVec _ _ _ _ _ _ _ _ _ ?_ ?_ ?_ ?_ ?_ _]
    | rw [denoteCode_vecBitcast _ _ _ _ _ _ _ _ _ ?_ ?_ ?_ _]
-   | rw [denoteCode_shuffleVec _ _ _ _ _ _ _ _ _ ?_ ?_ ?_ ?_ ?_ _]
-   | rw [denoteCode_extractelement _ _ _ _ _ _ _ ?_ ?_ ?_ ?_ _]
-   | rw [denoteCode_insertelement _ _ _ _ _ _ _ _ ?_ ?_ ?_ ?_ ?_ ?_ _]
-   | rw [denoteCode_pshufb_raw _ _ _ _ _ _ _ ?_ ?_ ?_ _]
-   | rw [denoteCode_pclmul_raw _ _ _ _ ?_ _]
+   | rw [denoteCode_shuffleVec _ _ _ _ _ _ _ ?_ ?_ ?_ ?_ ?_ _]
+   | rw [denoteCode_extractelement _ _ _ _ _ _ ?_ ?_ ?_ ?_ _]
+   | rw [denoteCode_insertelement _ _ _ _ _ _ _ ?_ ?_ ?_ ?_ ?_ ?_ _]
+   | rw [denoteCode_pshufb _ _ _ _ _ _ _ _ ?_ ?_ ?_ _]
+   | rw [denoteCode_pclmul _ _ _ _ ?_ _]
    | rw [denoteCode_loadVec _ _ _ _ _ _ _ ?_ ?_ ?_ ?_ _]
    | rw [denoteCode_gep8_imm _ _ _ _ _ _ ?_ ?_ _]
-   | rw [denoteCode_call3 _ _ _ _ _ _ _ _ ?_ ?_ ?_ ?_ _]
+   | rw [denoteCode_call3 _ _ _ _ _ _ _ _ _ ?_ ?_ ?_ ?_ _]
    | rw [denoteCode_callVoid7 _ _ _ _ _ _ _ _ _ _ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ _]))
 
 /-- The close phases: the integer close, then the vector reads' shape facts and
@@ -446,48 +446,5 @@ macro "block_close_v" : tactic => `(tactic|
 macro "block_eval_v" : tactic => `(tactic|
   (repeat block_step_v
    block_close_v))
-
-end LeanLLVM.Refinement.BlockEvalVector
-
-namespace LeanLLVM.Refinement.BlockEvalVector
-
-open LeanLLVM
-open LeanLLVM.Refinement.BlockEval
-open LeanLLVM.Refinement.JsonS1MasksIR
-open LeanLLVM.Refinement.Pclmul (clmul)
-
-/-! ### Raw-spelling forms of the two literal-bearing calls
-
-`block_eval_v` unfolds the fixture's operand helpers (`lit`, `lanesOf`) before it
-steps, so the goal's call operands are constructor terms while the chain lemmas
-above spell them through those helpers.  These two are the same lemmas at the
-constructor spelling the tactic actually meets.
--/
-
-theorem denoteCode_pshufb_raw (env : Env) (s : State) (r dst : String) (tabInt : List Int)
-    (tab ctl : List (BitVec 8)) (htabLen : tabInt.length = 32)
-    (htab : tabInt.map (BitVec.ofInt 8) = tab)
-    (h : evalOperand (stateAt env s) (.reg r) = some (.vec 32 8 ctl))
-    (is : List Instr) :
-    denoteCode s1Calls
-        (.call dst (.vec 32 (.int 8)) "llvm.x86.avx2.pshuf.b"
-          [(.vec 32 (.int 8), .imm (.vector 8 (tabInt.map (BitVec.ofInt 8)))),
-           (.vec 32 (.int 8), .reg r)] :: is)
-        (stateAt env s) =
-      denoteCode s1Calls is (stateAt ((dst, .vec 32 8 (pshufbLanes tab ctl)) :: env) s) := by
-  simpa [v32i8, lanesOf] using
-    denoteCode_pshufb env s r dst tabInt tab ctl htabLen htab h is
-
-theorem denoteCode_pclmul_raw (env : Env) (s : State) (r dst : String) {a0 a1 : BitVec 64}
-    (h : evalOperand (stateAt env s) (.reg r) = some (.vec 2 64 [a0, a1]))
-    (is : List Instr) :
-    denoteCode s1Calls
-        (.call dst (.vec 2 (.int 64)) "llvm.x86.pclmulqdq"
-          [(.vec 2 (.int 64), .reg r),
-           (.vec 2 (.int 64), .imm (.vector 64 [BitVec.ofInt 64 (-1), BitVec.ofInt 64 0])),
-           (.int 8, .imm (.int 8 0))] :: is) (stateAt env s) =
-      denoteCode s1Calls is
-        (stateAt ((dst, .vec 2 64 [clmul a0 (BitVec.allOnes 64), 0]) :: env) s) := by
-  simpa [lanesOf, lit] using denoteCode_pclmul env s r dst h is
 
 end LeanLLVM.Refinement.BlockEvalVector
