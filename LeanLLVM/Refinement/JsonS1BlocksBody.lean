@@ -16,9 +16,14 @@ the two table words, compares the join with zero, and calls the result `%or23.i`
 word's identity is not stated here yet.
 
 `bodyInstrs` is the body's instruction list at constructor spelling and is pinned
-to `bodyBlock.instrs` by `rfl`, so a trace below is a proof about the fixture's
-own list.  The six leading `phi`s are traced (`phi_denote`); the twenty
-instructions of the quote/backslash prefix and the rest of the body are owed.
+to `bodyBlock.instrs` by `rfl`, so a trace below is a proof about the literal
+list; the AST's own link to the fixture is `JsonS1BlocksIR`'s `#guard`, which
+parses the committed text and decides it equals the AST.  A change to the fixture
+without the AST fails the `#guard`; a change to the AST without this list fails
+the `rfl`.  The six leading `phi`s are traced (`phi_denote`), and the cell steps
+of the quote/backslash prefix and the rest of the body are present
+(`b_quote` … `b_andQuote`, `b_neither` onwards); what is owed is their
+composition into the body's `denoteCode` run.
 
 ## The reuse boundary
 
@@ -81,6 +86,14 @@ theorem evalInstr_blocks_of_masks (env : Env) (s : State) (i : Instr)
     evalInstr s1BlocksCalls (stateAt env s) i = evalInstr s1Calls (withEnv env s) i := by
   rw [← withEnv_eq_stateAt]
   exact evalInstr_calls_irrelevance _ _ _ _ h
+
+/-- The same bridge with `withEnv` on both sides: a run that a mask-unit step has
+already left in `withEnv` form continues at `s1BlocksCalls` the same way. -/
+theorem evalInstr_blocks_of_masks_w (env : Env) (s : State) (i : Instr)
+    (h : callsInstr i = false) :
+    evalInstr s1BlocksCalls (withEnv env s) i = evalInstr s1Calls (withEnv env s) i := by
+  rw [withEnv_eq_stateAt]
+  exact evalInstr_blocks_of_masks env s i h
 
 /-! ### Instruction spelling -/
 
@@ -298,8 +311,10 @@ def orQImW (k : Ctx) : BitVec 64 := bv (andQuoteW k ||| inStringWord k)
 /-- `%31`. -/
 def notQImW (k : Ctx) : BitVec 64 := bv (orQImW k ^^^ BitVec.allOnes 64)
 
-/-- `%and8`: the scalar word `S`, the lanes neither structural, quote nor in a
-string. -/
+/-- The scalar word `S`, the lanes neither structural, quote nor in a string, in
+the mask unit's words.  That these are the body's `%and8` is an owed value
+identity, not this definition: the body computes it from `neitherW`, and the
+definition states the word, not the register. -/
 def scalarW (k : Ctx) : BitVec 64 := bv (neitherW k &&& notQImW k)
 
 /-- `%and10`: the delimiter outside a string. -/
@@ -906,6 +921,32 @@ theorem phi_denote (env : Env) (s : State) (i prevS st0 st7 st11 : BitVec 64)
         ("%i.0178", .int 64 i) ::
         ("%ascii.0179", .vec 4 64 ascii) ::
         ("%prevS.0180", .int 64 prevS) :: env) s) := by
+  rw [phiInstrs_eq]
+  simp only [bodyInstrs, List.take, JsonS1BlocksIR.reg, lit64, splat64]
+  block_phi_run
+  · simp only [runCells]
+    rfl
+  · exact hpre
+  · decide
+  all_goals (try (first
+    | rfl
+    | (simp [phiIncoming])
+    | exact evalOperand_reg_of _ _ _ _ (by assumption)
+    | (simp only [evalOperand, Const.toValue])))
+
+/-- The six leading `phi`s, resolved at the loop's entry edge: every carried
+value is the loop's seed, so the index, the two carry words and the incoming
+in-string word are zero and the accumulator is the zero vector. -/
+theorem phi_denote_entry (env : Env) (s : State)
+    (hpre : s.pre = some "for.body.lr.ph") :
+    denoteCode s1BlocksCalls phiInstrs (stateAt env s) =
+      some (stateAt (
+        ("%st.sroa.11.0175", .int 64 0) ::
+        ("%st.sroa.7.0176", .int 64 0) ::
+        ("%st.sroa.0.0177", .int 64 0) ::
+        ("%i.0178", .int 64 0) ::
+        ("%ascii.0179", .vec 4 64 (List.replicate 4 0)) ::
+        ("%prevS.0180", .int 64 0) :: env) s) := by
   rw [phiInstrs_eq]
   simp only [bodyInstrs, List.take, JsonS1BlocksIR.reg, lit64, splat64]
   block_phi_run

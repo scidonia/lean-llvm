@@ -74,8 +74,15 @@ theorem s1BlocksCalls_pclmulqdq (a0 a1 b0 b1 : BitVec 64) (mem : Mem) (next : Na
              mem := mem, next := next } :=
   rfl
 
-/-- **The unit's caller-visible footprint is empty.**  Every arm is a register
-operation on its operands, so no address the caller holds moves across a call. -/
+/-- **The footprint of the three intrinsic arms is empty.**  Each is a register
+operation on its operands, so no address the caller holds moves across one of
+these calls.
+
+This is the footprint of `s1BlocksCalls` only.  The unit's two
+`leanllvm_json_escape_list` calls write `xp` and the count slot, and they are not
+in this environment; their footprint is the escape environment's, which is what
+`s1BlocksPost`'s `UnchangedOutside` list records.  A trace that runs those calls
+therefore has to carry its own footprint, and this definition is not one. -/
 def s1BlocksCallsFootprint : CallsFootprint s1BlocksCalls :=
   CallsFootprint.pure s1BlocksCalls (by
     intro sym args mem next r h
@@ -246,7 +253,7 @@ def cleanupInstrs : List Instr :=
 
 theorem cleanupInstrs_eq : cleanupInstrs = cleanupBlock.instrs := rfl
 
-/-- The cleanup's environment: the six `phi`s' cells and the partial-tail test. -/
+/-- The cleanup's environment: the five `phi`s' cells and the partial-tail test. -/
 def cleanupEnv (env : Env) (st11 st7 st0 prevS andW : BitVec 64)
     (ascii : List (BitVec 64)) : Env :=
   ("%tobool19.not", .int 1 (evalICmp .eq andW 0)) ::
