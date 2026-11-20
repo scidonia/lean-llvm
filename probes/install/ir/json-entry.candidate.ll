@@ -1,5 +1,6 @@
-; The entry unit as emitted, in the fragment the parser reads: the two position
-; emitters @s1f_k_pos8 and @s1f_k_b8, in the emission's order.  Regenerate with:
+; The entry unit as emitted, in the fragment the parser reads: the three
+; position emitters @s1f_k_pos8, @s1f_k_b8 and @s1f_k_b3, in the emission's
+; order.  Regenerate with:
 ;
 ;   nix develop -c bash probes/install/ir/capture-entry.sh
 ;
@@ -8,7 +9,7 @@
 ;   clang -S -emit-llvm -O3 -march=x86-64-v3 -mpclmul -std=gnu11 \
 ;         -falign-loops=64 -falign-functions=64 -fno-discard-value-names
 ;
-; and reduced to those two `define` blocks.  `-fno-discard-value-names` is a
+; and reduced to those three `define` blocks.  `-fno-discard-value-names` is a
 ; naming flag: it names values and labels the entry block, which the parser
 ; requires, and the capture checks that it changes no instruction by emitting
 ; the source with and without it and comparing the two texts with every
@@ -36,6 +37,13 @@
 ; %tab + idx * 32, so the offset from the base is 32 * idx on both sides and
 ; only the base differs.  `nuw` is class 4's removal, so it is gone before the
 ; rewrite.  Each site is recorded in json-entry.table.tsv.
+;
+; `@s1f_k_b3`'s scalar tail carries `#pragma clang loop unroll(disable)`, so the
+; emission holds a counted scalar loop where the bench candidate's partial
+; unroll would be.  The pragma is the emitter's own text and not a normalisation
+; step: it is in kernel/json/entry.c, and the loop it disables unrolling of is
+; the one entered only by a block with more than seven set lanes (none on the
+; sparse documents this emitter is selected for).
 ;
 ; Removed from the emission, each item with its class and the class's reason, in
 ; json-entry.strip.tsv; rewritten rather than removed — the `poison` lanes and
@@ -357,6 +365,111 @@ s1f_ke_b8.exit:
   br label %cleanup
 cleanup:
   %k.addr.1 = phi i64 [ %add1, %s1f_ke_b8.exit ], [ %k.addr.011, %for.body ]
+  %inc = add i64 %i.010, 1
+  %exitcond.not = icmp eq i64 %inc, %nblk
+  br i1 %exitcond.not, label %for.cond.cleanup, label %for.body
+}
+define internal fastcc i64 @s1f_k_b3(ptr %ent, i64 %blk0, i64 %nblk, ptr %out, i64 %k) {
+entry:
+  %cmp9.not = icmp eq i64 %nblk, 0
+  br i1 %cmp9.not, label %for.cond.cleanup, label %for.body
+for.cond.cleanup:
+  %k.addr.0.lcssa = phi i64 [ %k, %entry ], [ %k.addr.1, %cleanup ]
+  ret i64 %k.addr.0.lcssa
+for.body:
+  %k.addr.011 = phi i64 [ %k.addr.1, %cleanup ], [ %k, %entry ]
+  %i.010 = phi i64 [ %inc, %cleanup ], [ 0, %entry ]
+  %arrayidx = getelementptr inbounds i64, ptr %ent, i64 %i.010
+  %0 = load i64, ptr %arrayidx
+  %tobool.not = icmp eq i64 %0, 0
+  br i1 %tobool.not, label %cleanup, label %if.end
+if.end:
+  %add = add i64 %i.010, %blk0
+  %add.tr = trunc i64 %add to i32
+  %conv = shl i32 %add.tr, 6
+  %add.ptr = getelementptr inbounds i32, ptr %out, i64 %k.addr.011
+  %1 = tail call i64 @llvm.ctpop.i64(i64 %0)
+  %2 = tail call i64 @llvm.cttz.i64(i64 %0, i1 true)
+  %cast1.i = trunc i64 %2 to i32
+  %add.i = or i32 %conv, %cast1.i
+  store i32 %add.i, ptr %add.ptr
+  %sub.i = add i64 %0, -1
+  %and.i = and i64 %sub.i, %0
+  %3 = tail call i64 @llvm.cttz.i64(i64 %and.i, i1 true)
+  %cast2.i = trunc i64 %3 to i32
+  %add3.i = or i32 %conv, %cast2.i
+  %arrayidx4.i = getelementptr inbounds i8, ptr %add.ptr, i64 4
+  store i32 %add3.i, ptr %arrayidx4.i
+  %sub5.i = add i64 %and.i, -1
+  %and6.i = and i64 %sub5.i, %and.i
+  %4 = tail call i64 @llvm.cttz.i64(i64 %and6.i, i1 true)
+  %cast7.i = trunc i64 %4 to i32
+  %add8.i = or i32 %conv, %cast7.i
+  %arrayidx9.i = getelementptr inbounds i8, ptr %add.ptr, i64 8
+  store i32 %add8.i, ptr %arrayidx9.i
+  %cmp.i = icmp samesign ult i64 %1, 4
+  br i1 %cmp.i, label %s1f_ke_b3.exit, label %if.end14.i
+if.end14.i:
+  %sub10.i = add i64 %and6.i, -1
+  %and11.i = and i64 %sub10.i, %and6.i
+  %5 = tail call i64 @llvm.cttz.i64(i64 %and11.i, i1 true)
+  %cast15.i = trunc i64 %5 to i32
+  %add16.i = or i32 %conv, %cast15.i
+  %arrayidx17.i = getelementptr inbounds i8, ptr %add.ptr, i64 12
+  store i32 %add16.i, ptr %arrayidx17.i
+  %sub18.i = add i64 %and11.i, -1
+  %and19.i = and i64 %sub18.i, %and11.i
+  %6 = tail call i64 @llvm.cttz.i64(i64 %and19.i, i1 true)
+  %cast20.i = trunc i64 %6 to i32
+  %add21.i = or i32 %conv, %cast20.i
+  %arrayidx22.i = getelementptr inbounds i8, ptr %add.ptr, i64 16
+  store i32 %add21.i, ptr %arrayidx22.i
+  %sub23.i = add i64 %and19.i, -1
+  %and24.i = and i64 %sub23.i, %and19.i
+  %7 = tail call i64 @llvm.cttz.i64(i64 %and24.i, i1 true)
+  %cast25.i = trunc i64 %7 to i32
+  %add26.i = or i32 %conv, %cast25.i
+  %arrayidx27.i = getelementptr inbounds i8, ptr %add.ptr, i64 20
+  store i32 %add26.i, ptr %arrayidx27.i
+  %sub28.i = add i64 %and24.i, -1
+  %and29.i = and i64 %sub28.i, %and24.i
+  %8 = tail call i64 @llvm.cttz.i64(i64 %and29.i, i1 true)
+  %cast30.i = trunc i64 %8 to i32
+  %add31.i = or i32 %conv, %cast30.i
+  %arrayidx32.i = getelementptr inbounds i8, ptr %add.ptr, i64 24
+  store i32 %add31.i, ptr %arrayidx32.i
+  %cmp35.i = icmp samesign ult i64 %1, 8
+  br i1 %cmp35.i, label %s1f_ke_b3.exit, label %if.end38.i
+if.end38.i:
+  %sub33.i = add i64 %and29.i, -1
+  %and34.i = and i64 %sub33.i, %and29.i
+  %9 = tail call i64 @llvm.ctpop.i64(i64 %and34.i)
+  %10 = add i64 %9, 7
+  %11 = icmp eq i64 %and34.i, 0
+  br i1 %11, label %s1f_ke_b3.exit, label %while.body.preheader.i
+while.body.preheader.i:
+  %add.ptr.i = getelementptr inbounds i8, ptr %add.ptr, i64 28
+  br label %while.body.i
+while.body.i:
+  %k.093.i = phi i64 [ %inc.i, %while.body.i ], [ 7, %while.body.preheader.i ]
+  %c.092.i = phi i64 [ %and43.i, %while.body.i ], [ %and34.i, %while.body.preheader.i ]
+  %o.addr.091.i = phi ptr [ %incdec.ptr.i, %while.body.i ], [ %add.ptr.i, %while.body.preheader.i ]
+  %12 = tail call i64 @llvm.cttz.i64(i64 %c.092.i, i1 true)
+  %cast40.i = trunc i64 %12 to i32
+  %add41.i = or i32 %conv, %cast40.i
+  %incdec.ptr.i = getelementptr inbounds i8, ptr %o.addr.091.i, i64 4
+  store i32 %add41.i, ptr %o.addr.091.i
+  %inc.i = add i64 %k.093.i, 1
+  %sub42.i = add i64 %c.092.i, -1
+  %and43.i = and i64 %sub42.i, %c.092.i
+  %exitcond.i = icmp eq i64 %inc.i, %10
+  br i1 %exitcond.i, label %s1f_ke_b3.exit, label %while.body.i
+s1f_ke_b3.exit:
+  %retval.0.i = phi i64 [ %1, %if.end ], [ %1, %if.end14.i ], [ 7, %if.end38.i ], [ %10, %while.body.i ]
+  %add1 = add i64 %retval.0.i, %k.addr.011
+  br label %cleanup
+cleanup:
+  %k.addr.1 = phi i64 [ %add1, %s1f_ke_b3.exit ], [ %k.addr.011, %for.body ]
   %inc = add i64 %i.010, 1
   %exitcond.not = icmp eq i64 %inc, %nblk
   br i1 %exitcond.not, label %for.cond.cleanup, label %for.body

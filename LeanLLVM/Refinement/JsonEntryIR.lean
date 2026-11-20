@@ -2,12 +2,15 @@
 An emitted-IR bridge for the entry positions unit.
 
 `probes/install/ir/json-entry.candidate.ll` is the emission of
-`kernel/json/entry.c` at the measured compiler line, reduced to the two
+`kernel/json/entry.c` at the measured compiler line, reduced to the three
 functions the unit's wrappers call: `@s1f_k_pos8`, which turns a block's mask
-word into positions through the byte table, and `@s1f_k_b8`, which does it with
-eight fixed count-trailing-zeros slots and a scalar tail.  Both are `noinline`
-in the source, so the fixture holds one function per kernel rather than an
-inlined copy of each.
+word into positions through the byte table; `@s1f_k_b8`, which does it with
+eight fixed count-trailing-zeros slots and a scalar tail; and `@s1f_k_b3`,
+which does it with three slots, four more, and a counted scalar tail.  All are
+`noinline` in the source, so the fixture holds one function per kernel rather
+than an inlined copy of each.  `@s1f_k_b3`'s tail loop is emitted with clang's
+partial unroll disabled, so it is a counted loop rather than the eight-way
+unrolled shape the measured build emitted for the bench candidate.
 
 `probes/install/ir/capture-entry.sh` records the invocation and derives, by
 diffing its own clang emission against what it emits, every item the
@@ -580,16 +583,178 @@ def entryB8Function : Function :=
        b8Advance] }
 
 
+/-! #### `@s1f_k_b3` — three fixed slots, four more, then a counted scalar tail -/
+
+def b3Entry : Block :=
+  { name := "entry",
+    instrs := [
+      .icmp "%cmp9.not" .eq 64 (reg "%nblk") (lit 64 0)],
+    term := .condbr (reg "%cmp9.not") "for.cond.cleanup" "for.body" }
+
+def b3LoopExit : Block :=
+  { name := "for.cond.cleanup",
+    instrs := [
+      .phi "%k.addr.0.lcssa" (.int 64) [("entry", (reg "%k")), ("cleanup", (reg "%k.addr.1"))]],
+    term := .ret (.int 64) (some (reg "%k.addr.0.lcssa")) }
+
+def b3Body : Block :=
+  { name := "for.body",
+    instrs := [
+      .phi "%k.addr.011" (.int 64) [("cleanup", (reg "%k.addr.1")), ("entry", (reg "%k"))],
+      .phi "%i.010" (.int 64) [("cleanup", (reg "%inc")), ("entry", (lit 64 0))],
+      .gep "%arrayidx" (.int 64) (reg "%ent") (reg "%i.010"),
+      .load "%0" (.int 64) (reg "%arrayidx"),
+      .icmp "%tobool.not" .eq 64 (reg "%0") (lit 64 0)],
+    term := .condbr (reg "%tobool.not") "cleanup" "if.end" }
+
+/-- The first group of three slots, then the branch that returns three or
+fewer. -/
+def b3Kernel : Block :=
+  { name := "if.end",
+    instrs := [
+      .binop "%add" .add 64 (reg "%i.010") (reg "%blk0"),
+      .trunc "%add.tr" 64 32 (reg "%add"),
+      .binop "%conv" .shl 32 (reg "%add.tr") (lit 32 6),
+      .gep "%add.ptr" (.int 32) (reg "%out") (reg "%k.addr.011"),
+      .call "%1" (.int 64) "llvm.ctpop.i64" [((.int 64), (reg "%0"))],
+      .call "%2" (.int 64) "llvm.cttz.i64" [((.int 64), (reg "%0")), ((.int 1), (lit 1 (-1)))],
+      .trunc "%cast1.i" 64 32 (reg "%2"),
+      .binop "%add.i" .or 32 (reg "%conv") (reg "%cast1.i"),
+      .store (.int 32) (reg "%add.i") (reg "%add.ptr"),
+      .binop "%sub.i" .add 64 (reg "%0") (lit 64 (-1)),
+      .binop "%and.i" .and 64 (reg "%sub.i") (reg "%0"),
+      .call "%3" (.int 64) "llvm.cttz.i64" [((.int 64), (reg "%and.i")), ((.int 1), (lit 1 (-1)))],
+      .trunc "%cast2.i" 64 32 (reg "%3"),
+      .binop "%add3.i" .or 32 (reg "%conv") (reg "%cast2.i"),
+      .gep "%arrayidx4.i" (.int 8) (reg "%add.ptr") (lit 64 4),
+      .store (.int 32) (reg "%add3.i") (reg "%arrayidx4.i"),
+      .binop "%sub5.i" .add 64 (reg "%and.i") (lit 64 (-1)),
+      .binop "%and6.i" .and 64 (reg "%sub5.i") (reg "%and.i"),
+      .call "%4" (.int 64) "llvm.cttz.i64" [((.int 64), (reg "%and6.i")), ((.int 1), (lit 1 (-1)))],
+      .trunc "%cast7.i" 64 32 (reg "%4"),
+      .binop "%add8.i" .or 32 (reg "%conv") (reg "%cast7.i"),
+      .gep "%arrayidx9.i" (.int 8) (reg "%add.ptr") (lit 64 8),
+      .store (.int 32) (reg "%add8.i") (reg "%arrayidx9.i"),
+      .icmp "%cmp.i" .ult 64 (reg "%1") (lit 64 4)],
+    term := .condbr (reg "%cmp.i") "s1f_ke_b3.exit" "if.end14.i" }
+
+/-- Four more slots, and the branch that returns seven or fewer. -/
+def b3Kernel2 : Block :=
+  { name := "if.end14.i",
+    instrs := [
+      .binop "%sub10.i" .add 64 (reg "%and6.i") (lit 64 (-1)),
+      .binop "%and11.i" .and 64 (reg "%sub10.i") (reg "%and6.i"),
+      .call "%5" (.int 64) "llvm.cttz.i64" [((.int 64), (reg "%and11.i")), ((.int 1), (lit 1 (-1)))],
+      .trunc "%cast15.i" 64 32 (reg "%5"),
+      .binop "%add16.i" .or 32 (reg "%conv") (reg "%cast15.i"),
+      .gep "%arrayidx17.i" (.int 8) (reg "%add.ptr") (lit 64 12),
+      .store (.int 32) (reg "%add16.i") (reg "%arrayidx17.i"),
+      .binop "%sub18.i" .add 64 (reg "%and11.i") (lit 64 (-1)),
+      .binop "%and19.i" .and 64 (reg "%sub18.i") (reg "%and11.i"),
+      .call "%6" (.int 64) "llvm.cttz.i64" [((.int 64), (reg "%and19.i")), ((.int 1), (lit 1 (-1)))],
+      .trunc "%cast20.i" 64 32 (reg "%6"),
+      .binop "%add21.i" .or 32 (reg "%conv") (reg "%cast20.i"),
+      .gep "%arrayidx22.i" (.int 8) (reg "%add.ptr") (lit 64 16),
+      .store (.int 32) (reg "%add21.i") (reg "%arrayidx22.i"),
+      .binop "%sub23.i" .add 64 (reg "%and19.i") (lit 64 (-1)),
+      .binop "%and24.i" .and 64 (reg "%sub23.i") (reg "%and19.i"),
+      .call "%7" (.int 64) "llvm.cttz.i64" [((.int 64), (reg "%and24.i")), ((.int 1), (lit 1 (-1)))],
+      .trunc "%cast25.i" 64 32 (reg "%7"),
+      .binop "%add26.i" .or 32 (reg "%conv") (reg "%cast25.i"),
+      .gep "%arrayidx27.i" (.int 8) (reg "%add.ptr") (lit 64 20),
+      .store (.int 32) (reg "%add26.i") (reg "%arrayidx27.i"),
+      .binop "%sub28.i" .add 64 (reg "%and24.i") (lit 64 (-1)),
+      .binop "%and29.i" .and 64 (reg "%sub28.i") (reg "%and24.i"),
+      .call "%8" (.int 64) "llvm.cttz.i64" [((.int 64), (reg "%and29.i")), ((.int 1), (lit 1 (-1)))],
+      .trunc "%cast30.i" 64 32 (reg "%8"),
+      .binop "%add31.i" .or 32 (reg "%conv") (reg "%cast30.i"),
+      .gep "%arrayidx32.i" (.int 8) (reg "%add.ptr") (lit 64 24),
+      .store (.int 32) (reg "%add31.i") (reg "%arrayidx32.i"),
+      .icmp "%cmp35.i" .ult 64 (reg "%1") (lit 64 8)],
+    term := .condbr (reg "%cmp35.i") "s1f_ke_b3.exit" "if.end38.i" }
+
+/-- The tail's guard: clear the seventh lane, count the rest, and enter the
+scalar loop only when a lane remains. -/
+def b3TailGuard : Block :=
+  { name := "if.end38.i",
+    instrs := [
+      .binop "%sub33.i" .add 64 (reg "%and29.i") (lit 64 (-1)),
+      .binop "%and34.i" .and 64 (reg "%sub33.i") (reg "%and29.i"),
+      .call "%9" (.int 64) "llvm.ctpop.i64" [((.int 64), (reg "%and34.i"))],
+      .binop "%10" .add 64 (reg "%9") (lit 64 7),
+      .icmp "%11" .eq 64 (reg "%and34.i") (lit 64 0)],
+    term := .condbr (reg "%11") "s1f_ke_b3.exit" "while.body.preheader.i" }
+
+def b3TailPreheader : Block :=
+  { name := "while.body.preheader.i",
+    instrs := [
+      .gep "%add.ptr.i" (.int 8) (reg "%add.ptr") (lit 64 28)],
+    term := .br "while.body.i" }
+
+/-- The counted scalar tail: one position per remaining lane, from the cursor
+seven.  The loop's exit test compares the running cursor with `%10`, the
+population count plus seven, so the trip count is the remaining count rather
+than an unrolled group's. -/
+def b3TailLoop : Block :=
+  { name := "while.body.i",
+    instrs := [
+      .phi "%k.093.i" (.int 64) [("while.body.i", (reg "%inc.i")), ("while.body.preheader.i", (lit 64 7))],
+      .phi "%c.092.i" (.int 64) [("while.body.i", (reg "%and43.i")), ("while.body.preheader.i", (reg "%and34.i"))],
+      .phi "%o.addr.091.i" .ptr [("while.body.i", (reg "%incdec.ptr.i")), ("while.body.preheader.i", (reg "%add.ptr.i"))],
+      .call "%12" (.int 64) "llvm.cttz.i64" [((.int 64), (reg "%c.092.i")), ((.int 1), (lit 1 (-1)))],
+      .trunc "%cast40.i" 64 32 (reg "%12"),
+      .binop "%add41.i" .or 32 (reg "%conv") (reg "%cast40.i"),
+      .gep "%incdec.ptr.i" (.int 8) (reg "%o.addr.091.i") (lit 64 4),
+      .store (.int 32) (reg "%add41.i") (reg "%o.addr.091.i"),
+      .binop "%inc.i" .add 64 (reg "%k.093.i") (lit 64 1),
+      .binop "%sub42.i" .add 64 (reg "%c.092.i") (lit 64 (-1)),
+      .binop "%and43.i" .and 64 (reg "%sub42.i") (reg "%c.092.i"),
+      .icmp "%exitcond.i" .eq 64 (reg "%inc.i") (reg "%10")],
+    term := .condbr (reg "%exitcond.i") "s1f_ke_b3.exit" "while.body.i" }
+
+def b3Join : Block :=
+  { name := "s1f_ke_b3.exit",
+    instrs := [
+      .phi "%retval.0.i" (.int 64) [("if.end", (reg "%1")), ("if.end14.i", (reg "%1")), ("if.end38.i", (lit 64 7)), ("while.body.i", (reg "%10"))],
+      .binop "%add1" .add 64 (reg "%retval.0.i") (reg "%k.addr.011")],
+    term := .br "cleanup" }
+
+def b3Advance : Block :=
+  { name := "cleanup",
+    instrs := [
+      .phi "%k.addr.1" (.int 64) [("s1f_ke_b3.exit", (reg "%add1")), ("for.body", (reg "%k.addr.011"))],
+      .binop "%inc" .add 64 (reg "%i.010") (lit 64 1),
+      .icmp "%exitcond.not" .eq 64 (reg "%inc") (reg "%nblk")],
+    term := .condbr (reg "%exitcond.not") "for.cond.cleanup" "for.body" }
+
+/-- The B3 kernel: three slots, four more above three lanes, and a counted
+scalar loop above seven. -/
+def entryB3Function : Function :=
+  { name := "s1f_k_b3",
+    retTy := .int 64,
+    params := [("%ent", .ptr), ("%blk0", .int 64), ("%nblk", .int 64), ("%out", .ptr), ("%k", .int 64)],
+    blocks :=
+      [b3Entry,
+       b3LoopExit,
+       b3Body,
+       b3Kernel,
+       b3Kernel2,
+       b3TailGuard,
+       b3TailPreheader,
+       b3TailLoop,
+       b3Join,
+       b3Advance] }
+
 /-! ### The pin -/
 
 -- The committed text parses to the POS8 body above.
 #guard decide (firstFunction jsonEntrySrc = some entryPos8Function)
 
--- And to the B8 body, in the emission's order, so the one text is the subject of
--- both kernels rather than two texts that could drift apart.
+-- And to the B8 and B3 bodies, in the emission's order, so the one text is the
+-- subject of all three kernels rather than three texts that could drift apart.
 #guard
   match parseModule jsonEntrySrc with
-  | .ok m => m.functions = [entryPos8Function, entryB8Function]
+  | .ok m => m.functions = [entryPos8Function, entryB8Function, entryB3Function]
   | .error _ => false
 
 -- The POS8 fixture's ABI: the measured five parameters in their order, then the
@@ -602,15 +767,18 @@ def entryB8Function : Function :=
                   ("%out", Ty.ptr), ("%k", Ty.int 64), ("%tab", Ty.ptr)]
   | none => false
 
--- The B8 fixture's ABI: the measured five, and no table — the kernel reads
--- none, which is why its parameter list is the emission's own.
+-- The B8 and B3 fixtures' ABI: the measured five, and no table — neither
+-- kernel reads one, which is why their parameter lists are the emission's own.
 #guard
   match parseModule jsonEntrySrc with
   | .ok m =>
       match m.functions.drop 1 with
-      | [f] =>
+      | [f, g] =>
           f.name = "s1f_k_b8" ∧ f.retTy = Ty.int 64 ∧
           f.params = [("%ent", Ty.ptr), ("%blk0", Ty.int 64), ("%nblk", Ty.int 64),
+                      ("%out", Ty.ptr), ("%k", Ty.int 64)] ∧
+          g.name = "s1f_k_b3" ∧ g.retTy = Ty.int 64 ∧
+          g.params = [("%ent", Ty.ptr), ("%blk0", Ty.int 64), ("%nblk", Ty.int 64),
                       ("%out", Ty.ptr), ("%k", Ty.int 64)]
       | _ => false
   | .error _ => false
@@ -621,7 +789,7 @@ open LeanLLVM.Refinement.JsonScanSpec
 
 `evalInstr`'s `.call` case consults a `Calls` environment, and `noCalls` answers
 `none`, which `step` reads as `ub`; a statement over `noCalls` would therefore
-say nothing about either body.  The environment below resolves the three
+say nothing about any body.  The environment below resolves the three
 intrinsics the entry emission calls — `llvm.ctpop.i32`, `llvm.ctpop.i64` and
 `llvm.cttz.i64` — to the lane vocabulary in `BitLanes`, and nothing else: an
 unresolved symbol stays `ub`.

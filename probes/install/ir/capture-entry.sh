@@ -7,9 +7,9 @@
 #   nix develop -c bash probes/install/ir/capture-entry.sh
 #
 # Input
-#   kernel/json/entry.c               the entry unit: the two position emitters,
-#                                     the table they read and the three public
-#                                     entry points
+#   kernel/json/entry.c               the entry unit: the three position emitters,
+#                                     the table one of them reads and the four
+#                                     public entry points
 #
 # Output (all five in the same run, from the same compilation)
 #   json-entry.candidate.ll           the fixture: the `define` blocks of
@@ -195,7 +195,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../../.." && pwd)
 
 src=kernel/json/entry.c
-symbols=(s1f_k_pos8 s1f_k_b8)
+symbols=(s1f_k_pos8 s1f_k_b8 s1f_k_b3)
 abi_names=(ent blk0 nblk out k)
 fixture=$here/json-entry.candidate.ll
 strip=$here/json-entry.strip.tsv
@@ -986,8 +986,9 @@ module_config "$work/module.ll" > "$work/config.txt"
 
 {
   cat <<'PROVENANCE'
-; The entry unit as emitted, in the fragment the parser reads: the two position
-; emitters @s1f_k_pos8 and @s1f_k_b8, in the emission's order.  Regenerate with:
+; The entry unit as emitted, in the fragment the parser reads: the three
+; position emitters @s1f_k_pos8, @s1f_k_b8 and @s1f_k_b3, in the emission's
+; order.  Regenerate with:
 ;
 ;   nix develop -c bash probes/install/ir/capture-entry.sh
 ;
@@ -996,7 +997,7 @@ module_config "$work/module.ll" > "$work/config.txt"
 ;   clang -S -emit-llvm -O3 -march=x86-64-v3 -mpclmul -std=gnu11 \
 ;         -falign-loops=64 -falign-functions=64 -fno-discard-value-names
 ;
-; and reduced to those two `define` blocks.  `-fno-discard-value-names` is a
+; and reduced to those three `define` blocks.  `-fno-discard-value-names` is a
 ; naming flag: it names values and labels the entry block, which the parser
 ; requires, and the capture checks that it changes no instruction by emitting
 ; the source with and without it and comparing the two texts with every
@@ -1024,6 +1025,13 @@ module_config "$work/module.ll" > "$work/config.txt"
 ; %tab + idx * 32, so the offset from the base is 32 * idx on both sides and
 ; only the base differs.  `nuw` is class 4's removal, so it is gone before the
 ; rewrite.  Each site is recorded in json-entry.table.tsv.
+;
+; `@s1f_k_b3`'s scalar tail carries `#pragma clang loop unroll(disable)`, so the
+; emission holds a counted scalar loop where the bench candidate's partial
+; unroll would be.  The pragma is the emitter's own text and not a normalisation
+; step: it is in kernel/json/entry.c, and the loop it disables unrolling of is
+; the one entered only by a block with more than seven set lanes (none on the
+; sparse documents this emitter is selected for).
 ;
 ; Removed from the emission, each item with its class and the class's reason, in
 ; json-entry.strip.tsv; rewritten rather than removed — the `poison` lanes and

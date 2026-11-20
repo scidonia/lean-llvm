@@ -6,8 +6,8 @@
 #
 # Two actors must agree, row for row, on the same rows:
 #
-#   * the Lean body — `entryPos8Function` / `entryB8Function`, the ASTs
-#     `LeanLLVM/Refinement/JsonEntryIR.lean` pins to
+#   * the Lean body — `entryPos8Function`, `entryB8Function` and
+#     `entryB3Function`, the ASTs `LeanLLVM/Refinement/JsonEntryIR.lean` pins to
 #     `probes/install/ir/json-entry.candidate.ll` — run by
 #     `leanllvm-json-entry` under the repository's semantics;
 #   * the installed object — `kernel/json/entry.c` compiled with the measured
@@ -18,21 +18,22 @@
 #   <source>\t<label>\t<kernel>\t<count>\t<words>\t<multi>\t<sentinel>
 #
 # `source` is the corpus path as given, or `arm:<arm>`; `label` names the row
-# (below); `kernel` is `p` for POS8 and `b` for B8; `count` is the returned
-# cursor `k'`; `words` is the first `k'` `i32` words, `0x` and eight lowercase
-# hex digits each, comma-separated, or `-` when `k'` is 0; `multi` is 1 when a
-# block of the stream has more than eight set lanes; and `sentinel` is the word
-# at lane `k'+8`, the first lane neither kernel writes.  The output buffer is
-# pre-filled with `0xA5`, so a store the body does not make — and the word at
-# `k'+8` — read back as `0xa5a5a5a5`.  A row whose cursor starts at `k` therefore
-# begins with `k` sentinel words.
+# (below); `kernel` is `p` for POS8, `b` for B8 and `3` for B3; `count` is the
+# returned cursor `k'`; `words` is the first `k'` `i32` words, `0x` and exactly
+# eight lowercase hex digits each, comma-separated, or `-` when `k'` is 0;
+# `multi` is 1 when a block of the stream has more than eight set lanes; and
+# `sentinel` is the word at lane `k'+8`, one past every kernel's bound.  The
+# output buffer is pre-filled with `0xA5`, so a store the body does not make —
+# and the word at `k'+8` — read back as `0xa5a5a5a5`.  A row whose cursor starts
+# at `k` therefore begins with `k` sentinel words.
 #
 # The region `[k', k'+8)` is excluded from the comparison by construction: POS8's
 # eight group stores run unconditionally, so its last one writes eight lanes at
 # the final cursor and reaches `k'+7`; B8 writes eight fixed slots per block and
-# reaches `k'+6`.  Those lanes hold table-row padding and block bases rather than
-# positions.  The sentinel at `k'+8` is what proves the body stopped inside that
-# bound, and it is asserted on every row.
+# reaches `k'+6`; B3 writes three slots, four more above three lanes and its
+# count above seven, and reaches `k'+2`.  Those lanes hold table-row padding and
+# block bases rather than positions.  The sentinel at `k'+8` is what proves the
+# body stopped inside that bound, and it is asserted on every row.
 #
 # PROVENANCE — the mask streams under tests/json-entry/corpus/.
 #
@@ -260,38 +261,41 @@ for rel in "${corpus_rels[@]}"; do
         count += popcount(h)
         if (has2c(h)) two = 1
         if (popcount(h) > 8) multi = 1
+        if (popcount(h) > 7) dp = 1
         ind++
       }
       END {
         prefix = ""
         for (i = 0; i < k; i++) prefix = prefix "0xa5a5a5a5,"
         total = count + k
-        printf "%d\t%d\t%d\t%s\n", two + 0, multi + 0, total,
+        printf "%d\t%d\t%d\t%d\t%s\n", two + 0, multi + 0, dp + 0, total,
           (total == 0 ? "-" : prefix words)
       }')
   printf '%s\t%s\t%s\t%s\t%s\n' "$rel" "$blk0" "$kcur" "$nmasks" "$maprow" \
     >> "$work/corpus.map"
 done
-# Columns: rel, blk0, k, nmasks, has2c, multi, count, words
+# Columns: rel, blk0, k, nmasks, has2c, multi, deep, count, words
 
 # The `nblk` arm is the corpus masks concatenated in file order and repeated to
 # 1025; its derived columns are computed from the same committed bytes.
 nblk_row=$(for rel in "${corpus_rels[@]}"; do grep -o '0x[0-9a-f]\{16\}' "$rel"; done |
   awk "$hexlib"'
-    { h[NR - 1] = substr($0, 3); n = NR }
+    { mask[NR - 1] = substr($0, 3); n = NR }
     END {
       count = 0
       for (i = 0; i < 1025; i++) {
-        x = h[i % n]
+        x = mask[i % n]
         count += popcount(x)
         if (has2c(x)) two = 1
         if (popcount(x) > 8) multi = 1
+        if (popcount(x) > 7) dp = 1
       }
-      printf "%d\t%d\t%d\n", two + 0, multi + 0, count
+      printf "%d\t%d\t%d\t%d\n", two + 0, multi + 0, dp + 0, count
     }')
 nblk_2c=$(printf '%s\n' "$nblk_row" | cut -f1)
 nblk_multi=$(printf '%s\n' "$nblk_row" | cut -f2)
-nblk_count=$(printf '%s\n' "$nblk_row" | cut -f3)
+nblk_deep=$(printf '%s\n' "$nblk_row" | cut -f3)
+nblk_count=$(printf '%s\n' "$nblk_row" | cut -f4)
 
 if [ -z "$nblk_count" ]; then
   printf 'SETUP: the nblk arm has no derived count\n' >&2
@@ -314,10 +318,10 @@ random_streams=65536
 shape_streams=2        # the empty mask and the full mask
 nblk_streams=1         # the long-loop arm: one call, more blocks than a caller chunk
 arm_streams=$((lane_streams + byte_streams + random_streams + shape_streams + nblk_streams))
-computed=$((2 * (${#corpus_files[@]} + arm_streams)))
+computed=$((3 * (${#corpus_files[@]} + arm_streams)))
 
 if [ "$rows" -ne "$computed" ]; then
-  printf 'FAIL: %s row(s) printed, %s computed: 2 * (%s corpus + %s arm streams)\n' \
+  printf 'FAIL: %s row(s) printed, %s computed: 3 * (%s corpus + %s arm streams)\n' \
     "$rows" "$computed" "${#corpus_files[@]}" "$arm_streams" >&2
   exit 1
 fi
@@ -326,14 +330,14 @@ fi
 # count and words are the positions the stream's masks define.  The expectations
 # come from the corpus map and from each arm's own label, so a wrong label, a
 # wrong count or a wrong word fails here whatever the other actor says.  The
-# same pass emits the two detection predicates, one line per row.
+# same pass emits the three detection predicates, one line per row.
 if ! awk -F '\t' -v nblk_2c="$nblk_2c" -v nblk_multi="$nblk_multi" \
-    -v nblk_count="$nblk_count" "$hexlib"'
+    -v nblk_deep="$nblk_deep" -v nblk_count="$nblk_count" "$hexlib"'
   NR == FNR {
     n = FNR
     bypath[$1] = FNR
     blk0[FNR] = $2; kc[FNR] = $3; nm[FNR] = $4
-    two[FNR] = $5; mul[FNR] = $6; cnt[FNR] = $7; wds[FNR] = $8
+    two[FNR] = $5; mul[FNR] = $6; dp[FNR] = $7; cnt[FNR] = $8; wds[FNR] = $9
     next
   }
   {
@@ -342,7 +346,7 @@ if ! awk -F '\t' -v nblk_2c="$nblk_2c" -v nblk_multi="$nblk_multi" \
       printf "FAIL: duplicate row identity: %s\n", id > "/dev/stderr"; bad = 1
     }
     seen[id] = 1
-    if ($3 != "p" && $3 != "b") {
+    if ($3 != "p" && $3 != "b" && $3 != "3") {
       printf "FAIL: kernel %s on %s\n", $3, id > "/dev/stderr"; bad = 1
     }
     if ($7 != "0xa5a5a5a5") {
@@ -356,15 +360,17 @@ if ! awk -F '\t' -v nblk_2c="$nblk_2c" -v nblk_multi="$nblk_multi" \
         printf "FAIL: label %s, expected %s\n", $2, want > "/dev/stderr"; bad = 1
       }
       ecount = cnt[i]; ewords = wds[i]; emulti = mul[i]; e2c = (two[i] == 1)
+      edeep = (dp[i] == 1)
     } else if ($1 == "arm:lane") {
       nn = substr($2, 5) + 0
       h = ""
       for (j = 15; j >= 0; j--) h = h hexdig((j == int(nn / 4)) ? 2 ^ (nn % 4) : 0)
-      ecount = 1; ewords = lanes(h, 0); emulti = 0; e2c = 0
+      ecount = 1; ewords = lanes(h, 0); emulti = 0; e2c = 0; edeep = 0
     } else if ($1 == "arm:byte") {
       hh = substr($2, 4)
       h = "00000000000000" hh
-      ecount = popcount(h); ewords = (ecount == 0 ? "-" : lanes(h, 0)); emulti = 0; e2c = (hh == "2c")
+      ecount = popcount(h); ewords = (ecount == 0 ? "-" : lanes(h, 0)); emulti = 0
+      e2c = (hh == "2c"); edeep = (ecount > 7)
     } else if ($1 == "arm:random") {
       h = $2
       sub(/^idx[0-9]+\/mask/, "", h)
@@ -374,13 +380,15 @@ if ! awk -F '\t' -v nblk_2c="$nblk_2c" -v nblk_multi="$nblk_multi" \
         next
       }
       ecount = popcount(h); ewords = (ecount == 0 ? "-" : lanes(h, 0)); emulti = (ecount > 8)
-      e2c = (has2c(h) == 1)
+      e2c = (has2c(h) == 1); edeep = (ecount > 7)
     } else if ($1 == "arm:empty") {
-      ecount = 0; ewords = "-"; emulti = 0; e2c = 0
+      ecount = 0; ewords = "-"; emulti = 0; e2c = 0; edeep = 0
     } else if ($1 == "arm:full") {
       ecount = 64; ewords = lanes("ffffffffffffffff", 0); emulti = 1; e2c = 0
+      edeep = 1
     } else if ($1 == "arm:nblk") {
       ecount = nblk_count; ewords = "-"; emulti = nblk_multi; e2c = (nblk_2c == 1)
+      edeep = (nblk_deep == 1)
     } else {
       printf "FAIL: row from an unknown source: %s\n", $1 > "/dev/stderr"
       bad = 1
@@ -399,7 +407,9 @@ if ! awk -F '\t' -v nblk_2c="$nblk_2c" -v nblk_multi="$nblk_multi" \
       printf "FAIL: multi %s, expected %s, on %s\n", $6, emulti, id > "/dev/stderr"
       bad = 1
     }
-    print (($3 == "p" && e2c) ? 1 : 0) "\t" (($3 == "b" && emulti == 1) ? 1 : 0)
+    print (($3 == "p" && e2c) ? 1 : 0) "\t" \
+      (($3 == "b" && emulti == 1) ? 1 : 0) "\t" \
+      (($3 == "3" && edeep == 1) ? 1 : 0)
   }
   END { exit bad }
 ' "$work/corpus.map" "$work/lean.out" >"$work/annot.tsv" 2>"$work/annot.err"; then
@@ -465,43 +475,52 @@ if cmp -s "$kernel_src" "$work/entry.table.c"; then
   exit 3
 fi
 
-# The B8 defect: the tail loop — the epilogue that emits the positions past the
-# eight fixed slots — is cut, so a block with more than eight set lanes returns
-# eight where the measured body returns its population count.  The loop is
-# located by its own measured text inside `s1f_ke_b8`, and the number of cuts
-# that land is counted.
-if ! awk '
-  BEGIN {
-    pat = "while (c) { *o++ = base + (uint32_t)__builtin_ctzll(c); k++; c &= c - 1; }"
-    repl = "/* the tail loop is cut: the positions past the eight slots are not written */"
-  }
-  /s1f_ke_b8\(uint64_t m/ { inb8 = 1 }
-  {
-    line = $0
-    if (inb8 && index(line, pat) > 0) {
-      p = index(line, pat)
-      line = substr(line, 1, p - 1) repl substr(line, p + length(pat))
-      hits++
+# The B8 and B3 defects: each kernel's tail loop — the epilogue that emits the
+# positions past its fixed slots — is cut in its own function only, so a block
+# past the fixed slots returns the slot count where the shipped body returns
+# its population count.  B8's tail starts above eight lanes and B3's above
+# seven, so the two affected sets differ.  The loop is located by its own
+# measured text, the target function is selected by its own definition line,
+# and the number of cuts that land in each function is counted.
+for which in b8 b3; do
+  if ! awk -v which="$which" '
+    BEGIN {
+      pat = "while (c) { *o++ = base + (uint32_t)__builtin_ctzll(c); k++; c &= c - 1; }"
+      if (which == "b8")
+        repl = "/* the tail loop is cut: the positions past the eight slots are not written */"
+      else
+        repl = "/* the tail loop is cut: the positions past the seven slots are not written */ while (0) { }"
     }
-    print line
-  }
-  END {
-    if (hits != 1) {
-      printf "SETUP: the tail-loop cut applied to %d site(s), not 1\n", hits > "/dev/stderr"
-      exit 3
+    /^static / { fn = "" }
+    /s1f_ke_b8\(uint64_t m/ { fn = "b8" }
+    /s1f_ke_b3\(uint64_t m/ { fn = "b3" }
+    {
+      line = $0
+      if (fn == which && index(line, pat) > 0) {
+        p = index(line, pat)
+        line = substr(line, 1, p - 1) repl substr(line, p + length(pat))
+        hits++
+      }
+      print line
     }
-  }
-' "$kernel_src" > "$work/entry.b8.c"; then
-  printf 'SETUP: the tail-loop cut did not apply\n' >&2
-  exit 3
-fi
+    END {
+      if (hits != 1) {
+        printf "SETUP: the %s tail-loop cut applied to %d site(s), not 1\n", which, hits > "/dev/stderr"
+        exit 3
+      }
+    }
+  ' "$kernel_src" > "$work/entry.$which.c"; then
+    printf 'SETUP: the %s tail-loop cut did not apply\n' "$which" >&2
+    exit 3
+  fi
 
-if cmp -s "$kernel_src" "$work/entry.b8.c"; then
-  printf 'SETUP: the tail-loop cut changed nothing\n' >&2
-  exit 3
-fi
+  if cmp -s "$kernel_src" "$work/entry.$which.c"; then
+    printf 'SETUP: the %s tail-loop cut changed nothing\n' "$which" >&2
+    exit 3
+  fi
+done
 
-for which in table b8; do
+for which in table b8 b3; do
   if ! "$cc" "${cflags[@]}" -I "$repo/kernel/json" -c "$work/entry.$which.c" \
       -o "$work/kernel.$which.o" 2>"$work/cc.$which.err"; then
     printf 'FAIL: the %s defect object did not compile\n' "$which" >&2
@@ -518,9 +537,10 @@ done
 
 # Each defect's affected set is a predicate over the row's own label: POS8 rows
 # whose stream has a byte equal to `0x2c` for the table defect, B8 rows whose
-# stream has a block with more than eight set lanes for the cut.  Both are
-# checked in both directions against the annotations the row check derived.
-for which in table b8; do
+# stream has a block with more than eight set lanes, and B3 rows whose stream
+# has a block with more than seven.  All are checked in both directions against
+# the annotations the row check derived.
+for which in table b8 b3; do
   if ! "$work/driver_$which" "${corpus_args[@]}" --arms >"$work/defect.$which.out" \
       2>"$work/defect.$which.err"; then
     printf 'FAIL: the %s defect object did not emit every row\n' "$which" >&2
@@ -552,7 +572,11 @@ for which in table b8; do
     exit 1
   fi
 
-  if [ "$which" = table ]; then column=1; else column=2; fi
+  case "$which" in
+    table) column=1 ;;
+    b8) column=2 ;;
+    b3) column=3 ;;
+  esac
 
   if ! awk -F '\t' -v col="$column" -v which="$which" '
     NR == FNR { want[FNR] = $col; next }
@@ -598,9 +622,12 @@ for which in table b8; do
   if [ "$which" = table ]; then
     moved_table=$count
     first_table_line=$first_line
-  else
+  elif [ "$which" = b8 ]; then
     moved_b8=$count
     first_b8_line=$first_line
+  else
+    moved_b3=$count
+    first_b3_line=$first_line
   fi
 done
 
@@ -665,4 +692,6 @@ printf 'ok: the table detector bites: %s row(s) moved, exactly the POS8 rows who
   "$moved_table" "$first_table_line"
 printf 'ok: the B8 detector bites: %s row(s) moved, exactly the B8 rows with more than eight set lanes; first is %s\n' \
   "$moved_b8" "$first_b8_line"
+printf 'ok: the B3 detector bites: %s row(s) moved, exactly the B3 rows with more than seven set lanes; first is %s\n' \
+  "$moved_b3" "$first_b3_line"
 printf 'ok: a tampered expectation is a mismatch naming its row\n'

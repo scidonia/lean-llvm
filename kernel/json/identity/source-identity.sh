@@ -233,7 +233,8 @@ case "$unit" in
   s1)
     kernel=$repo/kernel/json/s1_block.c
     oracle=$here/oracle.c
-    input_paths=("$kernel" "$repo/kernel/json/s1_block.h" "$header_src" "$readme" "$oracle")
+    input_paths=("$kernel" "$repo/kernel/json/s1_block.h" \
+                 "$repo/kernel/json/s1_block_impl.h" "$header_src" "$readme" "$oracle")
     ;;
   entry)
     kernel=$repo/kernel/json/entry.c
@@ -1390,12 +1391,12 @@ EOF
     fi
     hits=$(nm -g --defined-only "$work/kernel.o" | awk '{ print $3 }' | LC_ALL=C sort | tr '\n' ' ')
     hits=${hits% }
-    if [ "$hits" != "leanllvm_json_entry_b8 leanllvm_json_entry_pos8 leanllvm_json_entry_table" ]; then
+    if [ "$hits" != "leanllvm_json_entry_b3 leanllvm_json_entry_b8 leanllvm_json_entry_pos8 leanllvm_json_entry_table" ]; then
       printf 'FAIL: the unit defines the public symbols {%s}\n' "$hits" >&2
-      printf 'FAIL: expected exactly leanllvm_json_entry_b8/pos8/table\n' >&2
+      printf 'FAIL: expected exactly leanllvm_json_entry_b3/b8/pos8/table\n' >&2
       return 1
     fi
-    printf 'ok: the unit defines exactly its three public symbols\n'
+    printf 'ok: the unit defines exactly its four public symbols\n'
   fi
 
   if [ "$unit" = utf8 ]; then

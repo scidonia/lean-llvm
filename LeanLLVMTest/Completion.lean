@@ -6,7 +6,7 @@ none.  `Refines` is inclusion of the target's behaviours in the source's, so it
 accepts a non-terminating target against a terminating source.  The first
 section pins that vacuity at concrete bodies, the record that rejects it, and the
 executable runs behind both.  The second pins the completion requirement at the
-five shipped stage records: each unit's `Satisfies` theorem already carries the
+six shipped stage records: each unit's `Satisfies` theorem already carries the
 run at its declared budget, so completion is derived from the unit's stronger
 statement rather than assumed.
 -/
@@ -68,6 +68,10 @@ theorem entry_pos8_completes :
 theorem entry_b8_completes :
     Completes entryCalls entryB8Function Γ_entry_b8 :=
   Satisfies.completes entry_b8_satisfies
+
+theorem entry_b3_completes :
+    Completes entryCalls entryB3Function Γ_entry_b3 :=
+  Satisfies.completes entry_b3_satisfies
 
 theorem utf8_completes :
     Completes utf8Calls utf8Function Γ_utf8 :=
@@ -175,6 +179,10 @@ its unit record is, and the completion requirement itself adds nothing.
 /-- info: 'LeanLLVMTest.Completion.entry_b8_completes' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms entry_b8_completes
+
+/-- info: 'LeanLLVMTest.Completion.entry_b3_completes' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms entry_b3_completes
 
 /-- info: 'LeanLLVMTest.Completion.utf8_completes' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

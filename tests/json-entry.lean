@@ -3,8 +3,8 @@ JE2, JE3, the fixture pin, and the four clause witnesses of the entry unit.
 
 The fixture is `probes/install/ir/json-entry.candidate.ll`, read through the
 module that pins it: `LeanLLVM/Refinement/JsonEntryIR.lean`.  `firstFunction` of the
-committed text is exactly `entryPos8Function`, and the module's two functions
-are the POS8 and B8 bodies the theorem is stated over.
+committed text is exactly `entryPos8Function`, and the module's three functions
+are the POS8, B8 and B3 bodies the theorems are stated over.
 
 JE2 runs the pinned POS8 body through `runFuel` over a mixed three-block mask
 stream — an empty block and two blocks with lanes 1 and 4, whose top group byte
@@ -39,11 +39,11 @@ open LeanLLVM.Refinement.JsonScanSpec
 -- The committed fixture parses to the POS8 body the module pins.
 #guard decide (firstFunction jsonEntrySrc = some entryPos8Function)
 
--- And its second function is the B8 body, so the one text is the subject of
--- both kernels rather than two texts that could drift apart.
+-- And its next two functions are the B8 and B3 bodies, so the one text is the
+-- subject of all three kernels rather than three texts that could drift apart.
 #guard
   match parseModule jsonEntrySrc with
-  | .ok m => m.functions = [entryPos8Function, entryB8Function]
+  | .ok m => m.functions = [entryPos8Function, entryB8Function, entryB3Function]
   | .error _ => false
 
 /-! ### One row, staged at the ABI
@@ -131,12 +131,17 @@ def b8Args : List LeanLLVM.Value :=
   [.ptr entAddr, .int 64 blk0, .int 64 (streamMasks.length), .ptr outAddr,
    .int 64 k0]
 
+/-- The B3 body's five measured parameters, which likewise read no table. -/
+def b3Args : List LeanLLVM.Value :=
+  [.ptr entAddr, .int 64 blk0, .int 64 (streamMasks.length), .ptr outAddr,
+   .int 64 k0]
+
 /-- Run a body over a staged row, and return the returned count, the first `k'`
-words, the eight words at `[k', k'+8)` and the word at `k'+8` — the first lane
-neither kernel writes, so a body that wrote one lane past its bound shows here.
-POS8 reaches `k'+7` (its last group stores eight lanes even at a zero byte) and
-B8 reaches `k'+6`, which is why the excluded region is eight lanes wide and the
-sentinel is the ninth. -/
+words, the eight words at `[k', k'+8)` and the word at `k'+8` — one past every
+kernel's bound, so a body that wrote one lane past its bound shows here.
+POS8 reaches `k'+7` (its last group stores eight lanes even at a zero byte),
+B8 reaches `k'+6` and B3 reaches `k'+2`, which is why the excluded region is
+eight lanes wide and the sentinel is the ninth. -/
 def runRow (f : Function) (args : List LeanLLVM.Value) (mem : Mem) :
     Option (Nat × List Nat × List Nat × Nat) :=
   match runFuel entryCalls 100000 f { (initState f args) with mem := mem } with
@@ -175,7 +180,7 @@ def lastLane (r : Nat × List Nat × List Nat × Nat) : Option Nat := r.2.2.1.ge
   (runRow entryPos8Function pos8Args (stagingMem pos8Table)).map
     (fun r => r.2.2.2) = some 0xA5A5A5A5
 
-/-! ### JE3 — the two kernels write one stream -/
+/-! ### JE3 — the three kernels write one stream -/
 
 -- B8 reads no table, and returns the same count over the same stream.
 #guard
@@ -187,9 +192,25 @@ def lastLane (r : Nat × List Nat × List Nat × Nat) : Option Nat := r.2.2.1.ge
   (runRow entryB8Function b8Args (stagingMem pos8Table)).map (fun r => r.2.1) =
     (runRow entryPos8Function pos8Args (stagingMem pos8Table)).map (fun r => r.2.1)
 
--- And the same sentinel at `k'+8`, the lane neither kernel writes.
+-- And the same sentinel at `k'+8`, the lane no kernel writes.
 #guard
   (runRow entryB8Function b8Args (stagingMem pos8Table)).map (fun r => r.2.2.2) =
+    (runRow entryPos8Function pos8Args (stagingMem pos8Table)).map (fun r => r.2.2.2)
+
+-- B3 reads no table either, and returns the same count.
+#guard
+  (runRow entryB3Function b3Args (stagingMem pos8Table)).map (fun r => r.1) =
+    (runRow entryPos8Function pos8Args (stagingMem pos8Table)).map (fun r => r.1)
+
+-- The same first `k'` words.
+#guard
+  (runRow entryB3Function b3Args (stagingMem pos8Table)).map (fun r => r.2.1) =
+    (runRow entryPos8Function pos8Args (stagingMem pos8Table)).map (fun r => r.2.1)
+
+-- And the same sentinel at `k'+8`; B3 leaves the lanes at `[k'+3, k'+8)` too,
+-- which is stricter than the shared bound and is asserted by its own theorem.
+#guard
+  (runRow entryB3Function b3Args (stagingMem pos8Table)).map (fun r => r.2.2.2) =
     (runRow entryPos8Function pos8Args (stagingMem pos8Table)).map (fun r => r.2.2.2)
 
 /-! ### the four clause witnesses

@@ -125,6 +125,7 @@ and a `Satisfies` theorem relating the pinned emitted body to them:
 mask constructor | `masks_satisfies`, and `masksStaged_satisfies` at the staged shape |
 entry position emitter | `entry_pos8_satisfies` (`entry_pos8_refines` at the IR level) |
 entry byte emitter | `entry_b8_satisfies` (`entry_b8_refines`) |
+entry sparse emitter | `entry_b3_satisfies` (`entry_b3_refines`) |
 UTF-8 verdict | `utf8_satisfies` (`utf8_stage_refines`, `_chars`, `_mod0`, `_zero`) |
 escape positions | `escape_positions_satisfies` |
 escape expansion | `escape_expand_satisfies`, conditional on three runs |

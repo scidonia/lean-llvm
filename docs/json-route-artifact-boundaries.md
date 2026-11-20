@@ -127,7 +127,7 @@ does:
 | Call in the installed object | Callee's theorem | Basis | Note |
 |---|---|---|---|
 | `leanllvm_json_s1_masks` | `s1_masks_refines` | proved (body) | six masks and the carry at the body's registers, under the five intrinsics' `Calls`; the intrinsic models are ledger row 4 |
-| `leanllvm_json_entry_pos8` / `_b8` | `entry_pos8_refines`, `entry_b8_refines` | proved (body) | the fixture takes the POS8 table as a parameter (`%tab`); the object reads its own `xl_pos8`, filled by `leanllvm_json_entry_table`; the two tables' identity is observed, not proved |
+| `leanllvm_json_entry_pos8` / `_b8` / `_b3` | `entry_pos8_refines`, `entry_b8_refines`, `entry_b3_refines` | proved (body) | the fixture takes the POS8 table as a parameter (`%tab`); the object reads its own `xl_pos8`, filled by `leanllvm_json_entry_table`; the two tables' identity is observed, not proved |
 | `leanllvm_json_escape_list` | `JsonEscapeListContract`'s theorem | proved (body) | the position-list body, per block |
 | `leanllvm_json_escape_expand` | `escape_expand_satisfies_unconditional` | proved (body) | the expander's decoded bytes and their length bound; called by stage 2 |
 | `leanllvm_json_utf8` | `utf8_stage_refines` | proved (body) | the unit's word under its `Calls` |
