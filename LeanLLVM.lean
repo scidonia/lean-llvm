@@ -29,6 +29,7 @@ import LeanLLVM.Refinement.QuoteDerive
 import LeanLLVM.Refinement.CallsFootprint
 import LeanLLVM.Refinement.JsonS1MasksIR
 import LeanLLVM.Refinement.JsonS1MasksSteps
+import LeanLLVM.Refinement.JsonS1BlocksIR
 import LeanLLVM.Refinement.JsonEntSpec
 import LeanLLVM.Refinement.JsonEntryIR
 import LeanLLVM.Refinement.JsonEntrySteps
