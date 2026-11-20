@@ -39,13 +39,14 @@ def s1BlocksLength (args : List Value) : Option Nat :=
   | _ => none
 
 /-- The run's fuel: eight control steps per block plus the constant blocks
-around the loop.  A block's worst path is `for.body` → the DFA arm (or
-`if.end`) → the escape-list arm (or `if.end31`) → the latch: five control
-steps, and the tail path's DFA and escape arms add the same two.  Eight is that
+around the loops.  A block's worst path is `for.body54` → the DFA arm (or
+`if.end93`) → the escape-list arm (or `if.end98`) → the latch: five control
+steps.  The leading ASCII phase is shorter per block, and the hand-off's DFA
+step and the tail's DFA and escape arms are the constant part.  Eight is that
 bound with slack, not a tight count; the emitted CFG is in `JsonS1BlocksIR`. -/
 def s1BlocksBudget (args : List Value) (_mem : Mem) : Nat :=
   match s1BlocksLength args with
-  | some n => 8 * blocksOf n + 16
+  | some n => 8 * blocksOf n + 32
   | none => 0
 
 /-- The caller's staging.  The document is the padded window the classifier

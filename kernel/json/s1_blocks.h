@@ -14,9 +14,13 @@
    is peeled into its own body, so the `lim < 64` clamp is not in the
    full-block loop.
 
-   The same loop runs the UTF-8 stage's Keiser-Lemire DFA over the block's own
-   vectors and the three bytes before the block, accumulating the stage's error
-   vector and the previous block's ASCII answer.  The three bytes at `b - 3`,
+   A leading phase classifies the all-ASCII blocks with no DFA state; on the
+   first block with a high bit it runs that block's DFA step and hands the rest
+   of the document to the fused loop, which runs the UTF-8 stage's
+   Keiser-Lemire DFA over the block's own vectors and the three bytes before
+   the block, accumulating the stage's error vector and the previous block's
+   ASCII answer.  The leading all-ASCII blocks contribute zero to the error
+   vector.  The three bytes at `b - 3`,
    `b - 2` and `b - 1` must be readable and zero, as `utf8.h` requires: the
    caller stages them.  `ent` holds `(n + 63) >> 6` words; its extent is derived
    from `n`, as the entry stream's and the escape list's are, and the caller
@@ -41,8 +45,9 @@
 
    Arm bits are the pipeline's.  Bit 1 selects the escape list and bit 2 selects
    the UTF-8 gate (`0` gated, `1` ungated), the same sense as `utf8.h`'s
-   `ungated` argument: ungated runs the DFA on every block, gated skips an
-   all-ASCII block whose predecessor is all-ASCII.  Bit 0 (the entry emitter)
+   `ungated` argument: in the fused loop ungated runs the DFA on every block it
+   reaches, gated skips an all-ASCII block whose predecessor is all-ASCII.  The
+   leading all-ASCII phase runs no DFA in either arm.  Bit 0 (the entry emitter)
    belongs to the caller's stage and is ignored here.  Bits at and above 3 are
    reserved and ignored. */
 #ifndef LEANLLVM_KERNEL_JSON_S1_BLOCKS_H

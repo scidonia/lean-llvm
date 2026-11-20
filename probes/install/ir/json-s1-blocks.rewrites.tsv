@@ -23,7 +23,9 @@
 # file must account for every substitution it made.  `line` is the line of the
 # emission, as in the strip inventory.
 class	kind	from	to	line	reason
-6	substituted	poison	zeroinitializer	116	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
-6	substituted	poison	0	117	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
-6	substituted	poison	zeroinitializer	280	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
-6	substituted	poison	0	281	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
+6	substituted	poison	zeroinitializer	94	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
+6	substituted	poison	0	95	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
+6	substituted	poison	zeroinitializer	301	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
+6	substituted	poison	0	302	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
+6	substituted	poison	zeroinitializer	476	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
+6	substituted	poison	0	477	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place

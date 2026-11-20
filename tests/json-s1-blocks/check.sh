@@ -505,9 +505,11 @@ if ! awk -F '\t' '
 fi
 
 # The named corpus documents, read by the reference stream's own rows: the
-# UTF-8 file is invalid and the escape/control file is valid.
+# UTF-8 file holds valid multi-byte sequences and the escape/control file is
+# ASCII, so both windows are valid prefixes.  The invalid case is exercised by
+# the generated stream, whose `ones > 0` above requires it.
 if ! awk -F '\t' '
-  $1 ~ /utf8\.json$/ { u++; if ($3 + 0 != 1) { printf "FAIL: utf8.json expected word %s\n", $3 > "/dev/stderr"; bad = 1 } }
+  $1 ~ /utf8\.json$/ { u++; if ($3 + 0 != 0) { printf "FAIL: utf8.json expected word %s\n", $3 > "/dev/stderr"; bad = 1 } }
   $1 ~ /escapes\.json$/ { e++; if ($3 + 0 != 0) { printf "FAIL: escapes.json expected word %s\n", $3 > "/dev/stderr"; bad = 1 } }
   END {
     if (u != 1 || e != 1) { printf "FAIL: named UTF-8 corpus rows %d and %d\n", u, e > "/dev/stderr"; bad = 1 }

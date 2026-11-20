@@ -1,22 +1,25 @@
 /* s1_blocks.c -- the contracted stage-1 mask pass, with the UTF-8 stage fused.
 
-   One loop over the document's 64-byte blocks runs the classifier and reduces
-   its masks to the block's entry word: the unescaped quote, the structural
-   byte outside a string, and the run start carried from the previous block's
-   top scalar lane.  The word is clamped past the document's end and stored at
-   `ent[i]`; when the gate selects the escape list, the block's backslash,
-   control and in-string words go to the escape unit by value and the list's
-   carry is the caller's `xcarry`.
+   The classifier runs in two loop shapes.  The first walks the leading blocks
+   while they are all ASCII: each block is classified and reduced to its entry
+   word, and when the gate selects the escape list its backslash, control and
+   in-string words go to the escape unit by value and the list's carry is the
+   caller's `xcarry`.  The word is clamped past the document's end and stored
+   at `ent[i]`.  That loop carries no DFA state.  On the first block with a
+   high bit it runs that block's DFA step and hands the rest of the document to
+   the fused loop.
 
-   The same loop carries the UTF-8 stage's state: the Keiser-Lemire error
+   The fused loop carries the UTF-8 stage's state: the Keiser-Lemire error
    vector `u8k` and the previous block's ASCII answer.  The block's two vectors
    are the ones the classifier already loaded, and the three bytes before the
    block (`p - 3`) are the DFA's load-form carry, which the caller stages as
    zero before the document.  When `arm & 4` is clear the stage is gated: a
    block whose predecessor was ASCII and which is itself ASCII skips the DFA,
    because the error vector `klErrBlk` is zero there (the `JsonUtf8Fused`
-   `utf8Skip_eq_zero`).  When `arm & 4` is set the DFA runs on every block,
-   which is `utf8.h`'s `ungated` path; the verdict is the same either way.
+   `utf8Skip_eq_zero`).  When `arm & 4` is set the loop runs the DFA on every
+   block it sees, which is `utf8.h`'s `ungated` path; the leading all-ASCII
+   blocks never reach it and contribute zero to `u8k`.  The verdict is the same
+   either way.
 
    Two shapes of the same body, both measured (`string-classifier-transcript.txt`):
 
@@ -48,8 +51,9 @@
 
    `r & 2 == 0` is therefore the verdict, `r & 1` the ASCII class, and the
    pipeline consumes those two bits.  The arm word's bit 2 selects the UTF-8
-   gate (`0` gated, `1` ungated) as `utf8.h` does; bits at and above 3 are
-   reserved and ignored.
+   gate (`0` gated, `1` ungated) as `utf8.h` does; it governs the fused loop
+   only, because the leading all-ASCII phase runs no DFA in either arm.  Bits
+   at and above 3 are reserved and ignored.
 
    The classifier carry lives in this body and starts at zero, so no caller
    stages it.  The mask words, the in-string carry, the previous block's
@@ -180,13 +184,54 @@ uint64_t leanllvm_json_s1_blocks(const uint8_t *b, uint64_t n, uint64_t *ent,
     uint64_t rem = n & 63;              /* tail bytes; zero on a block boundary */
     uint64_t prevS = 0;                 /* the previous block's top scalar lane */
     S1F st = {0, 0, 0};                 /* block-local classifier carry */
-    __m256i ascii = _mm256_setzero_si256();  /* every byte the document holds */
+    int ungated = (arm & 4) != 0;       /* bit 2: run the DFA on every non-prefix block */
+    const __m256i high = _mm256_set1_epi8((char)0x80);
+    uint64_t i;
+
+    /* The document's ASCII pre-scan, folded into the classifier: while every
+       block is ASCII the loop classifies it and carries no DFA or ASCII-probe
+       state, so an all-ASCII document never enters the fused loop and runs the
+       first body's shape.  The prefix is ASCII by construction, so its lanes
+       need not be accumulated; the accumulator below starts empty and the
+       hand-off block or the tail supplies the first high bit.  The block is
+       classified once, so its entry word and escape positions are not written
+       twice. */
+    for (i = 0; i < nfull; i++) {
+        const uint8_t *p = b + (i << 6);
+        __m256i v0 = _mm256_loadu_si256((const __m256i *)(const void *)p);
+        __m256i v1 = _mm256_loadu_si256((const __m256i *)(const void *)(p + 32));
+        uint64_t q, d, im, nn, bm;
+        s1b_masks(v0, v1, &st, &q, &d, &im, &nn, &bm);
+        uint64_t S = nn & ~q & ~im;
+        uint64_t e = q | (d & ~im);
+        e |= S & ~((S << 1) | prevS);
+        prevS = S >> 63;
+        ent[i] = e;
+        if (arm & 2)
+            leanllvm_json_escape_list(bm, s1b_ctl(v0, v1), im, i, xp, nxp, xcarry);
+        if (!_mm256_testz_si256(_mm256_or_si256(v0, v1), high))
+            break;
+    }
+
+    __m256i ascii = _mm256_setzero_si256();  /* every byte from the hand-off on */
     __m256i u8k = _mm256_setzero_si256();    /* the accumulated UTF-8 error vector */
     int prev_ascii = 1;                 /* the preheader's `%prev_ascii = 1` */
-    int ungated = (arm & 4) != 0;       /* bit 2: run the DFA on every block */
-    const __m256i high = _mm256_set1_epi8((char)0x80);
 
-    for (uint64_t i = 0; i < nfull; i++) {
+    /* The hand-off block: it is the first with a high bit, so it runs its own
+       DFA step and its predecessor's ASCII answer is 0.  Every earlier block
+       was ASCII and contributed zero to `u8k`, so this is the state the fused
+       loop would have carried, whatever the arm. */
+    if (i < nfull) {
+        const uint8_t *p = b + (i << 6);
+        __m256i v0 = _mm256_loadu_si256((const __m256i *)(const void *)p);
+        __m256i v1 = _mm256_loadu_si256((const __m256i *)(const void *)(p + 32));
+        ascii = _mm256_or_si256(v0, v1);
+        prev_ascii = 0;
+        u8k = s1b_kl_err_vec(v0, v1, p);
+        i++;
+    }
+
+    for (; i < nfull; i++) {
         const uint8_t *p = b + (i << 6);
         __m256i v0 = _mm256_loadu_si256((const __m256i *)(const void *)p);
         __m256i v1 = _mm256_loadu_si256((const __m256i *)(const void *)(p + 32));

@@ -3,14 +3,14 @@ compiler: clang (clang version 21.1.8)
 unit flags: -O3 -march=x86-64-v3 -mpclmul -std=gnu11 -falign-loops=64 -falign-functions=64
 v1 baseline: tests/json-units-bench/s1_blocks_v1.c (kernel/json/s1_blocks.c at 64c3efe)
 v2 subject: kernel/json/s1_blocks.c (worktree)
-v2 sha256: e21266457583526b0b3f6c697d6cccb7415976759d5593600da7d596b7c4890d
+v2 sha256: f7405dbaaacedce58c75562c7f2a5271f99223ceca5a8e1229e84e5980c34880
 v1 sha256: 40a29a6bb69154c365019ae74fc122baece7f47f889ac2c62f3739822f051a7f
 host: Linux 6.18.63 x86_64
 cpu: AMD EPYC 7B12
 cpus online: 8; pinned to: 0
 governor: unknown
-load average at start: 2.61 3.07 3.75
-rounds: 7 reps: 31 seed: 0x243F6A8885A308D3
+load average at start: 1.09 2.09 2.22
+rounds: 11 reps: 41 seed: 0x243F6A8885A308D3
 
 corpus:
   route-s1-64k.json             65536 41f918853d55dad0e05d3ec03682e037925759031632f045a755db5a5173535c
@@ -22,82 +22,82 @@ corpus:
   syn-utf8-4m.json            4194304 2091fc28bf071e8a7311f43754d8bb82cb2ddef54360be8570c46b7a94d298f2
   syn-utf8-64k.json             65536 f95f4aeaac083d5d97ff98f9ad6aa09e4ed8c905d89e1bf3a3177179533400a4
 
-instrument bench=s1-blocks rounds=7 reps=31
+instrument bench=s1-blocks rounds=11 reps=41
 doc name=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-64k.json bytes=65536 blocks=1024
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-64k.json arm=0 actor=v1 ns=362717 ns_per_byte=0.178536 cycles_per_byte=0.1785 checksum=0x0
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-64k.json arm=0 actor=v2 ns=327448 ns_per_byte=0.161176 cycles_per_byte=0.1612 checksum=0x0
-ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-64k.json arm=0 v2_over_v1=0.902764
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-64k.json arm=2 actor=v1 ns=530557 ns_per_byte=0.261150 cycles_per_byte=0.2612 checksum=0x0
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-64k.json arm=2 actor=v2 ns=573726 ns_per_byte=0.282399 cycles_per_byte=0.2824 checksum=0x0
-ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-64k.json arm=2 v2_over_v1=1.081365
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-64k.json arm=4 actor=v1 ns=337278 ns_per_byte=0.166015 cycles_per_byte=0.1660 checksum=0x0
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-64k.json arm=4 actor=v2 ns=321578 ns_per_byte=0.158287 cycles_per_byte=0.1583 checksum=0x0
-ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-64k.json arm=4 v2_over_v1=0.953451
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-64k.json arm=6 actor=v1 ns=547536 ns_per_byte=0.269508 cycles_per_byte=0.2695 checksum=0x0
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-64k.json arm=6 actor=v2 ns=749876 ns_per_byte=0.369103 cycles_per_byte=0.3691 checksum=0x0
-ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-64k.json arm=6 v2_over_v1=1.369546
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-64k.json arm=0 actor=v1 ns=436600 ns_per_byte=0.162487 cycles_per_byte=0.1625 checksum=0x0
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-64k.json arm=0 actor=v2 ns=398841 ns_per_byte=0.148435 cycles_per_byte=0.1484 checksum=0x0
+ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-64k.json arm=0 v2_over_v1=0.913516
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-64k.json arm=2 actor=v1 ns=636570 ns_per_byte=0.236909 cycles_per_byte=0.2369 checksum=0x0
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-64k.json arm=2 actor=v2 ns=609090 ns_per_byte=0.226682 cycles_per_byte=0.2267 checksum=0x0
+ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-64k.json arm=2 v2_over_v1=0.956831
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-64k.json arm=4 actor=v1 ns=426889 ns_per_byte=0.158873 cycles_per_byte=0.1589 checksum=0x0
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-64k.json arm=4 actor=v2 ns=397570 ns_per_byte=0.147962 cycles_per_byte=0.1480 checksum=0x0
+ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-64k.json arm=4 v2_over_v1=0.931319
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-64k.json arm=6 actor=v1 ns=630940 ns_per_byte=0.234814 cycles_per_byte=0.2348 checksum=0x0
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-64k.json arm=6 actor=v2 ns=608280 ns_per_byte=0.226381 cycles_per_byte=0.2264 checksum=0x0
+ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-64k.json arm=6 v2_over_v1=0.964085
 doc name=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-4m.json bytes=4194304 blocks=65536
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-4m.json arm=0 actor=v1 ns=24022982 ns_per_byte=0.184759 cycles_per_byte=0.1848 checksum=0x0
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-4m.json arm=0 actor=v2 ns=21847696 ns_per_byte=0.168029 cycles_per_byte=0.1680 checksum=0x0
-ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-4m.json arm=0 v2_over_v1=0.909450
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-4m.json arm=2 actor=v1 ns=31851053 ns_per_byte=0.244964 cycles_per_byte=0.2450 checksum=0x0
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-4m.json arm=2 actor=v2 ns=29481048 ns_per_byte=0.226736 cycles_per_byte=0.2267 checksum=0x0
-ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-4m.json arm=2 v2_over_v1=0.925591
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-4m.json arm=4 actor=v1 ns=21774986 ns_per_byte=0.167470 cycles_per_byte=0.1675 checksum=0x0
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-4m.json arm=4 actor=v2 ns=20466604 ns_per_byte=0.157407 cycles_per_byte=0.1574 checksum=0x0
-ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-4m.json arm=4 v2_over_v1=0.939914
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-4m.json arm=6 actor=v1 ns=31429556 ns_per_byte=0.241722 cycles_per_byte=0.2417 checksum=0x0
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-4m.json arm=6 actor=v2 ns=29089931 ns_per_byte=0.223728 cycles_per_byte=0.2237 checksum=0x0
-ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-4m.json arm=6 v2_over_v1=0.925560
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-4m.json arm=0 actor=v1 ns=27965414 ns_per_byte=0.162621 cycles_per_byte=0.1626 checksum=0x0
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-4m.json arm=0 actor=v2 ns=25928194 ns_per_byte=0.150775 cycles_per_byte=0.1508 checksum=0x0
+ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-4m.json arm=0 v2_over_v1=0.927152
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-4m.json arm=2 actor=v1 ns=41824886 ns_per_byte=0.243215 cycles_per_byte=0.2432 checksum=0x0
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-4m.json arm=2 actor=v2 ns=39353476 ns_per_byte=0.228844 cycles_per_byte=0.2288 checksum=0x0
+ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-4m.json arm=2 v2_over_v1=0.940911
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-4m.json arm=4 actor=v1 ns=27852064 ns_per_byte=0.161962 cycles_per_byte=0.1620 checksum=0x0
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-4m.json arm=4 actor=v2 ns=25853923 ns_per_byte=0.150343 cycles_per_byte=0.1503 checksum=0x0
+ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-4m.json arm=4 v2_over_v1=0.928259
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-4m.json arm=6 actor=v1 ns=40998466 ns_per_byte=0.238410 cycles_per_byte=0.2384 checksum=0x0
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-4m.json arm=6 actor=v2 ns=39436616 ns_per_byte=0.229327 cycles_per_byte=0.2293 checksum=0x0
+ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-utf8-4m.json arm=6 v2_over_v1=0.961905
 doc name=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-u8-64k.json bytes=65536 blocks=1024
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-u8-64k.json arm=0 actor=v1 ns=331808 ns_per_byte=0.163322 cycles_per_byte=0.1633 checksum=0x0
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-u8-64k.json arm=0 actor=v2 ns=310428 ns_per_byte=0.152799 cycles_per_byte=0.1528 checksum=0x0
-ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-u8-64k.json arm=0 v2_over_v1=0.935565
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-u8-64k.json arm=2 actor=v1 ns=483127 ns_per_byte=0.237804 cycles_per_byte=0.2378 checksum=0x0
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-u8-64k.json arm=2 actor=v2 ns=452777 ns_per_byte=0.222865 cycles_per_byte=0.2229 checksum=0x0
-ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-u8-64k.json arm=2 v2_over_v1=0.937180
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-u8-64k.json arm=4 actor=v1 ns=323808 ns_per_byte=0.159384 cycles_per_byte=0.1594 checksum=0x0
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-u8-64k.json arm=4 actor=v2 ns=305108 ns_per_byte=0.150180 cycles_per_byte=0.1502 checksum=0x0
-ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-u8-64k.json arm=4 v2_over_v1=0.942250
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-u8-64k.json arm=6 actor=v1 ns=462218 ns_per_byte=0.227512 cycles_per_byte=0.2275 checksum=0x0
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-u8-64k.json arm=6 actor=v2 ns=436708 ns_per_byte=0.214956 cycles_per_byte=0.2150 checksum=0x0
-ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-u8-64k.json arm=6 v2_over_v1=0.944810
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-u8-64k.json arm=0 actor=v1 ns=441751 ns_per_byte=0.164405 cycles_per_byte=0.1644 checksum=0x0
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-u8-64k.json arm=0 actor=v2 ns=408120 ns_per_byte=0.151888 cycles_per_byte=0.1519 checksum=0x0
+ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-u8-64k.json arm=0 v2_over_v1=0.923869
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-u8-64k.json arm=2 actor=v1 ns=636970 ns_per_byte=0.237058 cycles_per_byte=0.2371 checksum=0x0
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-u8-64k.json arm=2 actor=v2 ns=606000 ns_per_byte=0.225532 cycles_per_byte=0.2255 checksum=0x0
+ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-u8-64k.json arm=2 v2_over_v1=0.951379
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-u8-64k.json arm=4 actor=v1 ns=425140 ns_per_byte=0.158222 cycles_per_byte=0.1582 checksum=0x0
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-u8-64k.json arm=4 actor=v2 ns=396400 ns_per_byte=0.147526 cycles_per_byte=0.1475 checksum=0x0
+ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-u8-64k.json arm=4 v2_over_v1=0.932399
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-u8-64k.json arm=6 actor=v1 ns=624360 ns_per_byte=0.232365 cycles_per_byte=0.2324 checksum=0x0
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-u8-64k.json arm=6 actor=v2 ns=604360 ns_per_byte=0.224922 cycles_per_byte=0.2249 checksum=0x0
+ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-u8-64k.json arm=6 v2_over_v1=0.967967
 doc name=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-dense-64k.json bytes=65536 blocks=1024
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-dense-64k.json arm=0 actor=v1 ns=223119 ns_per_byte=0.109823 cycles_per_byte=0.1098 checksum=0x0
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-dense-64k.json arm=0 actor=v2 ns=249629 ns_per_byte=0.122872 cycles_per_byte=0.1229 checksum=0x0
-ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-dense-64k.json arm=0 v2_over_v1=1.118816
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-dense-64k.json arm=2 actor=v1 ns=362358 ns_per_byte=0.178359 cycles_per_byte=0.1784 checksum=0x0
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-dense-64k.json arm=2 actor=v2 ns=380658 ns_per_byte=0.187367 cycles_per_byte=0.1874 checksum=0x0
-ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-dense-64k.json arm=2 v2_over_v1=1.050503
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-dense-64k.json arm=4 actor=v1 ns=219429 ns_per_byte=0.108007 cycles_per_byte=0.1080 checksum=0x0
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-dense-64k.json arm=4 actor=v2 ns=304828 ns_per_byte=0.150042 cycles_per_byte=0.1500 checksum=0x0
-ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-dense-64k.json arm=4 v2_over_v1=1.389187
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-dense-64k.json arm=6 actor=v1 ns=366098 ns_per_byte=0.180200 cycles_per_byte=0.1802 checksum=0x0
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-dense-64k.json arm=6 actor=v2 ns=438737 ns_per_byte=0.215955 cycles_per_byte=0.2160 checksum=0x0
-ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-dense-64k.json arm=6 v2_over_v1=1.198414
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-dense-64k.json arm=0 actor=v1 ns=297000 ns_per_byte=0.110533 cycles_per_byte=0.1105 checksum=0x0
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-dense-64k.json arm=0 actor=v2 ns=287150 ns_per_byte=0.106867 cycles_per_byte=0.1069 checksum=0x0
+ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-dense-64k.json arm=0 v2_over_v1=0.966835
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-dense-64k.json arm=2 actor=v1 ns=489251 ns_per_byte=0.182082 cycles_per_byte=0.1821 checksum=0x0
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-dense-64k.json arm=2 actor=v2 ns=480870 ns_per_byte=0.178963 cycles_per_byte=0.1790 checksum=0x0
+ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-dense-64k.json arm=2 v2_over_v1=0.982870
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-dense-64k.json arm=4 actor=v1 ns=290110 ns_per_byte=0.107969 cycles_per_byte=0.1080 checksum=0x0
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-dense-64k.json arm=4 actor=v2 ns=283420 ns_per_byte=0.105479 cycles_per_byte=0.1055 checksum=0x0
+ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-dense-64k.json arm=4 v2_over_v1=0.976940
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-dense-64k.json arm=6 actor=v1 ns=487340 ns_per_byte=0.181371 cycles_per_byte=0.1814 checksum=0x0
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-dense-64k.json arm=6 actor=v2 ns=483160 ns_per_byte=0.179816 cycles_per_byte=0.1798 checksum=0x0
+ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-dense-64k.json arm=6 v2_over_v1=0.991423
 doc name=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-strings-64k.json bytes=65536 blocks=1024
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-strings-64k.json arm=0 actor=v1 ns=224659 ns_per_byte=0.110581 cycles_per_byte=0.1106 checksum=0x0
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-strings-64k.json arm=0 actor=v2 ns=249889 ns_per_byte=0.123000 cycles_per_byte=0.1230 checksum=0x0
-ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-strings-64k.json arm=0 v2_over_v1=1.112304
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-strings-64k.json arm=2 actor=v1 ns=510716 ns_per_byte=0.251384 cycles_per_byte=0.2514 checksum=0x0
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-strings-64k.json arm=2 actor=v2 ns=511387 ns_per_byte=0.251714 cycles_per_byte=0.2517 checksum=0x0
-ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-strings-64k.json arm=2 v2_over_v1=1.001314
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-strings-64k.json arm=4 actor=v1 ns=219638 ns_per_byte=0.108110 cycles_per_byte=0.1081 checksum=0x0
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-strings-64k.json arm=4 actor=v2 ns=304048 ns_per_byte=0.149658 cycles_per_byte=0.1497 checksum=0x0
-ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-strings-64k.json arm=4 v2_over_v1=1.384314
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-strings-64k.json arm=6 actor=v1 ns=509497 ns_per_byte=0.250784 cycles_per_byte=0.2508 checksum=0x0
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-strings-64k.json arm=6 actor=v2 ns=558856 ns_per_byte=0.275080 cycles_per_byte=0.2751 checksum=0x0
-ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-strings-64k.json arm=6 v2_over_v1=1.096878
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-strings-64k.json arm=0 actor=v1 ns=295800 ns_per_byte=0.110087 cycles_per_byte=0.1101 checksum=0x0
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-strings-64k.json arm=0 actor=v2 ns=285170 ns_per_byte=0.106130 cycles_per_byte=0.1061 checksum=0x0
+ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-strings-64k.json arm=0 v2_over_v1=0.964064
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-strings-64k.json arm=2 actor=v1 ns=677170 ns_per_byte=0.252019 cycles_per_byte=0.2520 checksum=0x0
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-strings-64k.json arm=2 actor=v2 ns=654910 ns_per_byte=0.243735 cycles_per_byte=0.2437 checksum=0x0
+ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-strings-64k.json arm=2 v2_over_v1=0.967128
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-strings-64k.json arm=4 actor=v1 ns=290461 ns_per_byte=0.108100 cycles_per_byte=0.1081 checksum=0x0
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-strings-64k.json arm=4 actor=v2 ns=289140 ns_per_byte=0.107608 cycles_per_byte=0.1076 checksum=0x0
+ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-strings-64k.json arm=4 v2_over_v1=0.995452
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-strings-64k.json arm=6 actor=v1 ns=680600 ns_per_byte=0.253296 cycles_per_byte=0.2533 checksum=0x0
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-strings-64k.json arm=6 actor=v2 ns=657540 ns_per_byte=0.244714 cycles_per_byte=0.2447 checksum=0x0
+ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/syn-strings-64k.json arm=6 v2_over_v1=0.966118
 doc name=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-s1-64k.json bytes=65536 blocks=1024
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-s1-64k.json arm=0 actor=v1 ns=220089 ns_per_byte=0.108332 cycles_per_byte=0.1083 checksum=0x0
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-s1-64k.json arm=0 actor=v2 ns=253718 ns_per_byte=0.124885 cycles_per_byte=0.1249 checksum=0x0
-ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-s1-64k.json arm=0 v2_over_v1=1.152797
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-s1-64k.json arm=2 actor=v1 ns=452487 ns_per_byte=0.222723 cycles_per_byte=0.2227 checksum=0x0
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-s1-64k.json arm=2 actor=v2 ns=457737 ns_per_byte=0.225307 cycles_per_byte=0.2253 checksum=0x0
-ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-s1-64k.json arm=2 v2_over_v1=1.011603
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-s1-64k.json arm=4 actor=v1 ns=222229 ns_per_byte=0.109385 cycles_per_byte=0.1094 checksum=0x0
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-s1-64k.json arm=4 actor=v2 ns=303248 ns_per_byte=0.149264 cycles_per_byte=0.1493 checksum=0x0
-ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-s1-64k.json arm=4 v2_over_v1=1.364574
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-s1-64k.json arm=6 actor=v1 ns=455087 ns_per_byte=0.224002 cycles_per_byte=0.2240 checksum=0x0
-row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-s1-64k.json arm=6 actor=v2 ns=508647 ns_per_byte=0.250366 cycles_per_byte=0.2504 checksum=0x0
-ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-s1-64k.json arm=6 v2_over_v1=1.117692
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-s1-64k.json arm=0 actor=v1 ns=295031 ns_per_byte=0.109800 cycles_per_byte=0.1098 checksum=0x0
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-s1-64k.json arm=0 actor=v2 ns=283550 ns_per_byte=0.105528 cycles_per_byte=0.1055 checksum=0x0
+ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-s1-64k.json arm=0 v2_over_v1=0.961085
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-s1-64k.json arm=2 actor=v1 ns=606651 ns_per_byte=0.225775 cycles_per_byte=0.2258 checksum=0x0
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-s1-64k.json arm=2 actor=v2 ns=578030 ns_per_byte=0.215123 cycles_per_byte=0.2151 checksum=0x0
+ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-s1-64k.json arm=2 v2_over_v1=0.952821
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-s1-64k.json arm=4 actor=v1 ns=291540 ns_per_byte=0.108501 cycles_per_byte=0.1085 checksum=0x0
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-s1-64k.json arm=4 actor=v2 ns=283531 ns_per_byte=0.105520 cycles_per_byte=0.1055 checksum=0x0
+ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-s1-64k.json arm=4 v2_over_v1=0.972529
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-s1-64k.json arm=6 actor=v1 ns=607300 ns_per_byte=0.226016 cycles_per_byte=0.2260 checksum=0x0
+row doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-s1-64k.json arm=6 actor=v2 ns=576430 ns_per_byte=0.214527 cycles_per_byte=0.2145 checksum=0x0
+ratio doc=/tmp/unit-v2/tests/json-units-bench/build-s1-blocks/corpus/route-s1-64k.json arm=6 v2_over_v1=0.949168
