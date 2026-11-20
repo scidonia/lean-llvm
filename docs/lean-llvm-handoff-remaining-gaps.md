@@ -826,6 +826,35 @@ that quantifies over states nobody occupies is the failure mode both find.
 
 ---
 
+## The `wsStop` premise — decided, and why the theorem stays unconditional
+
+`HlastLane.tail` (`JsonStage2WalkDispatchSupply:989`) states the last byte's class at the
+two `< 125` / `== 125` bits alone.  That is false at a document whose last byte is one of
+the four whitespace bytes: `HlastTailLane_not_of_wsByte` (`HlastSupply:163`) shows the
+codomain empty there, and the field's only producer `hlastLane_of_not_wsStop`
+(`HlastSupply:155`) carries `¬ wsStop G (G.n - 1)` beside the bits.  The field must carry
+that premise; the repair is written out at `/tmp/tailpremise-wsstop.patch` and is correct
+as far as it goes.
+
+It does not go far enough.  Threading it through exposes a fork at
+`JsonStage2WalkPremisesOfStaging:622`, the high-byte arm of `walkLoopEnd_of_payload`,
+which has no way to obtain `¬ wsStop G (G.n - 1)`.
+
+**Decision: the pipeline theorem stays unconditional, so the whitespace-ending document
+must be routed, not excluded.**  A JSON document may legitimately end in whitespace
+(`{"a":1} ` is valid), so adding the premise to
+`pipeline_satisfies_at_stage2_of_exitStage2` would narrow the advertised contract to a
+document class the parser does not actually exclude — a weakened theorem presented as the
+closure.  The arm therefore splits on `wsStop G (G.n - 1)`: the false branch takes
+`lane.tail` under the new premise, and the true branch is the `HlastArmRows.run` route,
+whose guard (tag test `0`, byte ≠ `34`) holds at the high-byte bytes.  That makes
+`HlastRunRows` — recorded as having no producer anywhere — the prerequisite of the split,
+and it is the genuinely hard core of the five groups.
+
+Nothing else in the obligation depends on this field: `HlastLane.tail` has one consumer
+(`ClassRowsProduce:203`) and `HcontPayload` never mentions it.  So the repair is a
+prerequisite for two fields, not for the north star.
+
 ## Process rules this repository now needs
 
 - **A reasoning block ends in a tool call or a final answer — never in an intention
