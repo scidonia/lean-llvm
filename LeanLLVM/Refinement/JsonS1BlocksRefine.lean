@@ -286,74 +286,75 @@ unit's environment binds the same two arms, so a block run needs the same two
 steps at `s1BlocksCalls`; the arms are `s1BlocksCalls_pshufb` and
 `s1BlocksCalls_pclmulqdq` in `JsonS1BlocksReuse`. -/
 
-/-- `pshuf.b` at the block unit's environment: the 32-lane lookup at the literal
-table the body spells. -/
-theorem step_pshufb_b (env : Env) (s : State) (r dst : String) (tabInt : List Int)
-    (tab ctl : List (BitVec 8)) (htabLen : tabInt.length = 32)
-    (htab : tabInt.map (BitVec.ofInt 8) = tab)
+/-- `pshuf.b` at the block unit's environment: the thirty-two-lane lookup at the
+table the parsed emission spells.  The emission carries the table as the literal
+lane list (`Const.vector`), not as the integer list the authored fixtures use, so
+the step takes the vector's lanes and the fact that there are thirty-two of
+them. -/
+theorem step_pshufb_b (env : Env) (s : State) (r dst : String)
+    (tab ctl : List (BitVec 8)) (htab : tab.length = 32)
     (h : evalOperand (stateAt env s) (.reg r) = some (.vec 32 8 ctl)) :
     evalInstr s1BlocksCalls (stateAt env s)
         (.call dst v32i8 "llvm.x86.avx2.pshuf.b"
-          [(v32i8, lanesOf 8 tabInt), (v32i8, .reg r)]) =
+          [(v32i8, .imm (.vector 8 tab)), (v32i8, .reg r)]) =
       some (stateAt ((dst, .vec 32 8 (pshufbLanes tab ctl)) :: env) s) := by
   have hreg : lookupName env r = some (.vec 32 8 ctl) := by
     simp only [evalOperand, stateAt] at h
     split at h
     · cases h
     · exact h
-  have ha : evalOperands (stateAt env s) [(v32i8, lanesOf 8 tabInt), (v32i8, .reg r)]
-      = some [.vec 32 8 (tabInt.map (BitVec.ofInt 8)), .vec 32 8 ctl] := by
-    rw [evalOperands_cons
-      (v := .vec 32 8 (tabInt.map (BitVec.ofInt 8))) (vs := [.vec 32 8 ctl])
-      (by simp [evalOperand, stateAt, lanesOf, Const.toValue, List.length_map, htabLen])
+  have ha : evalOperands (stateAt env s)
+      [(v32i8, .imm (.vector 8 tab)), (v32i8, .reg r)]
+      = some [.vec 32 8 tab, .vec 32 8 ctl] := by
+    rw [evalOperands_cons (v := .vec 32 8 tab) (vs := [.vec 32 8 ctl])
+      (by simp [evalOperand, stateAt, Const.toValue, htab])
       (evalOperands_cons (by simp only [evalOperand, stateAt, hreg]) rfl)]
   rw [evalInstr_call (s := stateAt env s) ha
-    (s1BlocksCalls_pshufb (tabInt.map (BitVec.ofInt 8)) ctl s.mem s.next), htab]
+    (s1BlocksCalls_pshufb tab ctl s.mem s.next)]
   rfl
 
 /-- `pclmulqdq` at immediate zero, at the block unit's environment: lane zero is
-the carry-less product, lane one zero. -/
+the carry-less product, lane one zero.  The emission spells both the multiplier
+and the selector as literals. -/
 theorem step_pclmul_b (env : Env) (s : State) (r dst : String) {a0 a1 : BitVec 64}
     (h : evalOperand (stateAt env s) (.reg r) = some (.vec 2 64 [a0, a1])) :
     evalInstr s1BlocksCalls (stateAt env s)
         (.call dst (.vec 2 (.int 64)) "llvm.x86.pclmulqdq"
-          [(.vec 2 (.int 64), .reg r), (.vec 2 (.int 64), lanesOf 64 [-1, 0]),
-           (.int 8, lit 8 0)]) =
+          [(.vec 2 (.int 64), .reg r),
+           (.vec 2 (.int 64), .imm (.vector 64 [BitVec.allOnes 64, 0])),
+           (.int 8, .imm (.int 8 0))]) =
       some (stateAt ((dst, .vec 2 64 [Pclmul.clmul a0 (BitVec.allOnes 64), 0]) :: env) s) := by
-  have hneg : (BitVec.ofInt 64 (-1) : BitVec 64) = BitVec.allOnes 64 := by decide
   have hreg : lookupName env r = some (.vec 2 64 [a0, a1]) := by
     simp only [evalOperand, stateAt] at h
     split at h
     · cases h
     · exact h
   have ha : evalOperands (stateAt env s)
-      [(.vec 2 (.int 64), .reg r), (.vec 2 (.int 64), lanesOf 64 [-1, 0]),
-       (.int 8, lit 8 0)] =
-      some [.vec 2 64 [a0, a1],
-        .vec 2 64 [BitVec.ofInt 64 (-1), BitVec.ofInt 64 0], .int 8 0] := by
+      [(.vec 2 (.int 64), .reg r),
+       (.vec 2 (.int 64), .imm (.vector 64 [BitVec.allOnes 64, 0])),
+       (.int 8, .imm (.int 8 0))] =
+      some [.vec 2 64 [a0, a1], .vec 2 64 [BitVec.allOnes 64, 0], .int 8 0] := by
     rw [evalOperands_cons (v := .vec 2 64 [a0, a1])
-      (vs := [.vec 2 64 [BitVec.ofInt 64 (-1), BitVec.ofInt 64 0], .int 8 0])
+      (vs := [.vec 2 64 [BitVec.allOnes 64, 0], .int 8 0])
       (by simp only [evalOperand, stateAt, hreg])
-      (evalOperands_cons (v := .vec 2 64 [BitVec.ofInt 64 (-1), BitVec.ofInt 64 0])
+      (evalOperands_cons (v := .vec 2 64 [BitVec.allOnes 64, 0])
         (vs := [.int 8 0])
-        (by simp [evalOperand, stateAt, lanesOf, Const.toValue]) rfl)]
+        (by simp [evalOperand, stateAt, Const.toValue]) rfl)]
   rw [evalInstr_call (s := stateAt env s) ha
-    (s1BlocksCalls_pclmulqdq a0 a1 (BitVec.ofInt 64 (-1)) (BitVec.ofInt 64 0)
-      s.mem s.next)]
-  simp only [hneg, stateAt]
+    (s1BlocksCalls_pclmulqdq a0 a1 (BitVec.allOnes 64) 0 s.mem s.next)]
+  rfl
 
 /-- The table lookup, as a chain step at the block unit's environment. -/
-theorem denoteCode_pshufb_b (env : Env) (s : State) (r dst : String) (tabInt : List Int)
-    (tab ctl : List (BitVec 8)) (htabLen : tabInt.length = 32)
-    (htab : tabInt.map (BitVec.ofInt 8) = tab)
+theorem denoteCode_pshufb_b (env : Env) (s : State) (r dst : String)
+    (tab ctl : List (BitVec 8)) (htab : tab.length = 32)
     (h : evalOperand (stateAt env s) (.reg r) = some (.vec 32 8 ctl))
     (is : List Instr) :
     denoteCode s1BlocksCalls
         (.call dst v32i8 "llvm.x86.avx2.pshuf.b"
-          [(v32i8, lanesOf 8 tabInt), (v32i8, .reg r)] :: is) (stateAt env s) =
+          [(v32i8, .imm (.vector 8 tab)), (v32i8, .reg r)] :: is) (stateAt env s) =
       denoteCode s1BlocksCalls is
         (stateAt ((dst, .vec 32 8 (pshufbLanes tab ctl)) :: env) s) := by
-  rw [denoteCode_cons_of _ _ _ _ _ (step_pshufb_b env s r dst tabInt tab ctl htabLen htab h)]
+  rw [denoteCode_cons_of _ _ _ _ _ (step_pshufb_b env s r dst tab ctl htab h)]
 
 /-- The carry-less product, as a chain step at the block unit's environment. -/
 theorem denoteCode_pclmul_b (env : Env) (s : State) (r dst : String) {a0 a1 : BitVec 64}
@@ -361,8 +362,9 @@ theorem denoteCode_pclmul_b (env : Env) (s : State) (r dst : String) {a0 a1 : Bi
     (is : List Instr) :
     denoteCode s1BlocksCalls
         (.call dst (.vec 2 (.int 64)) "llvm.x86.pclmulqdq"
-          [(.vec 2 (.int 64), .reg r), (.vec 2 (.int 64), lanesOf 64 [-1, 0]),
-           (.int 8, lit 8 0)] :: is) (stateAt env s) =
+          [(.vec 2 (.int 64), .reg r),
+           (.vec 2 (.int 64), .imm (.vector 64 [BitVec.allOnes 64, 0])),
+           (.int 8, .imm (.int 8 0))] :: is) (stateAt env s) =
       denoteCode s1BlocksCalls is
         (stateAt ((dst, .vec 2 64 [Pclmul.clmul a0 (BitVec.allOnes 64), 0]) :: env) s) := by
   rw [denoteCode_cons_of _ _ _ _ _ (step_pclmul_b env s r dst h)]
@@ -531,10 +533,84 @@ theorem binopLanes_replicate {w : Nat} (op : BinOp) (f : BitVec w → BitVec w �
     (fun x => hg x c)
 
 
+/-- `mapM` depends only on the values its function takes on the list. -/
+theorem mapM_congr_mem {m : Type → Type} [Monad m] [LawfulMonad m] {α β : Type} {l : List α}
+    {f g : α → m β} (h : ∀ a ∈ l, f a = g a) : l.mapM f = l.mapM g := by
+  induction l with
+  | nil => rfl
+  | cons a t ih =>
+      rw [List.mapM_cons, List.mapM_cons, h a (by simp),
+        ih (fun b hb => h b (by simp [hb]))]
+
+/-- A mask that copies `n` lanes from each of two `n`-lane operands: the join is
+the concatenation.  The index arithmetic of the copy is what the `0 … 2n - 1`
+masks state, and the range is the emission's spelling of that list. -/
+theorem mapM_range_split {w : Nat} {l1 l2 : List (BitVec w)} (n : Nat)
+    (h1 : l1.length = n) (h2 : l2.length = n) :
+    (List.range (2 * n)).mapM (fun k => if k < n then l1[k]? else l2[k - n]?) =
+      some (l1 ++ l2) := by
+  classical
+  let f : Nat → BitVec w := fun k => if k < n then l1.getD k 0 else l2.getD (k - n) 0
+  have hf : ∀ k ∈ List.range (2 * n), (if k < n then l1[k]? else l2[k - n]?) = some (f k) := by
+    intro k hk
+    have hk2 : k < 2 * n := List.mem_range.mp hk
+    by_cases h : k < n
+    · rw [ite_eq_left h]
+      rw [show f k = l1.getD k 0 from by simp only [f, ite_eq_left h]]
+      rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem (by omega), Option.getD_some]
+    · rw [ite_eq_right h]
+      rw [show f k = l2.getD (k - n) 0 from by simp only [f, ite_eq_right h]]
+      rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem (by omega), Option.getD_some]
+  rw [mapM_congr_mem hf,
+    show (fun a => some (f a)) = (fun a => pure (f a)) from rfl, List.mapM_pure]
+  congr 1
+  apply List.ext_getElem
+  · simp only [List.length_map, List.length_range, List.length_append, h1, h2]
+    omega
+  · intro k hk1 hk2
+    have hk2' : k < 2 * n := by simpa using hk1
+    simp only [List.getElem_map, List.getElem_range]
+    by_cases h : k < n
+    · rw [show f k = l1.getD k 0 from by simp only [f, ite_eq_left h]]
+      rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem (by omega), Option.getD_some]
+      exact (List.getElem_append_left (by omega)).symm
+    · rw [show f k = l2.getD (k - n) 0 from by simp only [f, ite_eq_right h]]
+      rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem (by omega), Option.getD_some]
+      rw [List.getElem_append_right (as := l1) (bs := l2) (i := k) (by omega)]
+      congr 1
+      omega
+
+/-- The mask `[0 … 63]` at two thirty-two-lane operands: the byte join of the two
+vectors, which is what the fused loop's `u8k` word is read off. -/
+theorem mapM_pick32 {w : Nat} {l1 l2 : List (BitVec w)} (h1 : l1.length = 32)
+    (h2 : l2.length = 32) :
+    ([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+      24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+      46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63] : List Nat).mapM
+      (fun k => if k < 32 then l1[k]? else l2[k - 32]?) = some (l1 ++ l2) := by
+  have hmask : ([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
+      22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43,
+      44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63] : List Nat)
+      = List.range (2 * 32) := by decide
+  rw [hmask]
+  exact mapM_range_split 32 h1 h2
+
+
 /-! ### The block tactic
 
 `block_step_v` covers the vector and `i64` shapes; the width-generic steps are
 appended for the prologue's `i32` arithmetic. -/
+
+/-- The lane-list length goals the shuffle and lane-wise steps leave.  The
+model's lane constructors have structural lengths (`unpackLanes` has `n` lanes,
+a table lookup has its control's, a `zipWith` has the shorter of the two), so a
+`simp` battery plus `omega` decides them without the statement restating each. -/
+macro "block_len" : tactic => `(tactic|
+  (first
+   | assumption
+   | (simp only [unpackLanes_length, pshufbLanes_length, List.length_zipWith,
+        List.length_map, List.length_append, List.length_replicate, List.length_cons,
+        List.length_nil, Nat.min_def, if_pos, if_neg] <;> omega)))
 
 macro "block_step_b" : tactic => `(tactic|
   (first
@@ -544,7 +620,7 @@ macro "block_step_b" : tactic => `(tactic|
    | rw [denoteCode_gep8_imm_m2 _ _ _ _ _ ?_ ?_ _]
    | rw [denoteCode_gep8_imm_m3 _ _ _ _ _ ?_ ?_ _]
    | block_step_v
-   | rw [denoteCode_pshufb_b _ _ _ _ _ _ _ _ ?_ ?_ ?_ _]
+   | rw [denoteCode_pshufb_b _ _ _ _ _ _ ?_ ?_ _]
    | rw [denoteCode_pclmul_b _ _ _ _ ?_ _]
    | rw [denoteCode_usubSat_b _ _ _ _ _ ?_ ?_ _]
    | rw [denoteCode_ashr_imm _ _ _ _ _ _ ?_ _]
@@ -564,20 +640,37 @@ macro "block_step_b" : tactic => `(tactic|
    | rw [denoteCode_ptestz_b _ _ _ _ _ ?_ ?_ _]
    | rw [denoteCode_call2t _ _ _ _ _ _ _ _ _ ?_ ?_ ?_ _]))
 
+/-- Resolve a register read against an environment the chain built one cell at a
+time.  The cells are a cons chain, not the `cells` builder, so peeling is
+`lookupName_cons_ne` per cell and nothing else: no `simp` walks the whole
+environment, which is what a ninety-cell block makes expensive. -/
+macro "block_lk_cons" : tactic => `(tactic|
+  (first
+   | assumption
+   | (repeat rw [lookupName_cons_ne _ _ (by decide)]
+      first
+       | exact lookupName_cons_self _ _ _
+       | assumption
+       | rfl)))
+
 /-- One close step for a semantic side goal.  Every alternative either closes
 its goal or fails, so `repeat` over it terminates. -/
 macro "block_close_step" : tactic => `(tactic|
   (first
+   | assumption
+   | (simp only [evalOperand, stateAt]; block_lk_cons)
+   | exact BlockEval.evalOperand_reg_of _ _ _ _ (by block_lk_cons)
    | (simp only [evalOperand, stateAt]; block_lk)
    | exact BlockEval.evalOperand_reg_of _ _ _ _ (by assumption)
    | (simp only [evalOperand, Const.toValue, lanesOf, splatOf]; rfl)
    | exact BlockEval.evalOperand_lit_of _ _ _
-   | (refine vecLanes_self ?_; simp_all [List.length_append])
+   | (refine vecLanes_self ?_; block_len)
    | (simp only [Value.vecLanes]; repeat split; all_goals (first | rfl | contradiction))
    | (simp only [phiIncoming]; rfl)
    | (rw [binopLanes_replicate]; all_goals (first | assumption | (intro x; rfl) | (simp; omega) | rfl))
    | (rw [binopLanes_zipWith]; all_goals (first | assumption | (intro x y; rfl) | (simp; omega) | rfl))
-   | (rw [mapM_pick8 (by assumption) (by assumption)]; rfl)
+   | (rw [mapM_pick8 (by block_len) (by block_len)]; rfl)
+   | (rw [mapM_pick32 (by block_len) (by block_len)]; rfl)
    | assumption
    | rfl
    | decide
@@ -623,6 +716,7 @@ is. -/
 macro "block_close_c" : tactic => `(tactic|
   (block_close_v
    all_goals (try (rw [mapM_pick8 (by assumption) (by assumption)]; rfl))
+   all_goals (try (rw [mapM_pick32 (by assumption) (by assumption)]; rfl))
    all_goals (try rfl)
    all_goals (try decide)
    all_goals (try omega)))
@@ -1270,6 +1364,123 @@ theorem if_then_denote (calls : Calls) (env : Env) (s : State)
   try simp only [List.length_cons, List.length_nil]
   simp only [ifThenOut, ifThenQuoteWord, ifThenJoin, cells]
   rfl
+
+/-! ### The caller's escape entry, and the arm's one step
+
+The arm's call is not the block's to decide.  The unit's environment leaves
+`leanllvm_json_escape_list` unresolved, so the trace runs it at the caller's own
+selection, and what that selection returns is the caller's: the escape unit's own
+record is what says the call is defined and what it leaves behind.
+
+The hypothesis below is that record read as a per-call fact.  `CallSatisfies`
+quantifies over the argument vectors the record's `pre` admits, so the record's
+pre is the hypothesis's *premise* rather than a clause of `s1BlocksPre`: the
+block's staging is unchanged, and the refinement statement carries the pre at the
+call's argument vector as its own premise.  The record's post is
+`escapePositionsPost`, whose `EscapeReach` conjunct is the frame —
+`escapeReach_frame` reads it out — so a refinement's memory clause about the
+bytes outside the escape regions is a consequence of the hypothesis, not a
+promise the block makes. -/
+
+/-- The escape-list selection the block's trace runs with, at the document base
+`base`: the caller's entry for `leanllvm_json_escape_list`, required to satisfy
+the escape unit's own record at the call site. -/
+def escapeEntryAt (esc : Calls) (base : Nat) : Prop :=
+  CallSatisfies esc (Γ_escape_positions base escapePositionsBudget) escapeListCallee
+
+/-- **The hypothesis at one call site.**  The premise is the record's own `pre`,
+stated at the block's argument vector; the conclusion is the selection's outcome,
+the post it satisfies and the cursor's monotonicity. -/
+theorem escapeEntry_call {esc : Calls} {base : Nat} (h : escapeEntryAt esc base)
+    {args : List Value} {mem : Mem} {next : Nat}
+    (hpre : (Γ_escape_positions base escapePositionsBudget).pre args mem next) :
+    ∃ r, esc escapeListCallee args mem next = some r ∧
+      (Γ_escape_positions base escapePositionsBudget).post args mem next
+        (.ret (some r.ret) r.mem) ∧ next ≤ r.next :=
+  h args mem next hpre
+
+/-- **The escape unit's frame**, read out of `EscapeReach`: the returned memory
+differs from the caller's only inside the three regions the run touched. -/
+theorem escapeReach_frame {blk0 : BitVec 64} {xp xn carry xn0 : Nat}
+    {position : List Nat} {carryBytes : List UInt8} {mem0 M : Mem}
+    (h : EscapeReach blk0 xp xn carry xn0 position carryBytes mem0 M) :
+    UnchangedOutside mem0 M
+      [(xp, 4 * touchedPositions xn0 position.length), (xn, 8), (carry, 16)] :=
+  h.2.2.2.2
+
+/-- **`if.then`'s step, at the caller's escape entry.**  The arm's own computation
+(the join, the packed zero-test mask and the four arguments) and the one call; the
+block hands `if.end` the escape unit's memory and cursor.  The call's outcome is
+the hypothesis's, which is why it is a parameter here. -/
+theorem if_then_step_at (esc : Calls) (env : Env) (s : State)
+    (a2 a3 : List (BitVec 64)) (h2len : a2.length = 4) (h3len : a3.length = 4)
+    (or14 xs i : BitVec 64) (xp nxp xcarry : Nat) (r : CallOutcome)
+    (hpc : s.pc = "if.then")
+    (h2 : lookupName env "%2" = some (.vec 4 64 a2))
+    (h3 : lookupName env "%3" = some (.vec 4 64 a3))
+    (hor : lookupName env "%or14.i" = some (.int 64 or14))
+    (hxs : lookupName env "%xor.i" = some (.int 64 xs))
+    (hi : lookupName env "%i.0510" = some (.int 64 i))
+    (hxp : lookupName env "%xp" = some (.ptr xp))
+    (hnxp : lookupName env "%nxp" = some (.ptr nxp))
+    (hxcarry : lookupName env "%xcarry" = some (.ptr xcarry))
+    (hc : esc escapeListCallee
+      [.int 64 or14, .int 64 (ifThenQuoteWord a2 a3), .int 64 xs, .int 64 i,
+       .ptr xp, .ptr nxp, .ptr xcarry] s.mem s.next = some r) :
+    step (s1BlocksCallsEsc esc) s1BlocksFunction (stateAt env s) =
+      .jump (stateAt (ifThenOut env a2 a3)
+        { s with pc := "if.end", pre := some "if.then", mem := r.mem, next := r.next }) := by
+  have hfind : s1BlocksFunction.findBlock (stateAt env s).pc = some if_thenBlock := by
+    rw [show (stateAt env s).pc = s.pc from rfl, hpc]
+    exact LeanLLVM.Refinement.JsonS1BlocksIR.findBlock_if_then
+  have hc' : s1BlocksCallsEsc esc "leanllvm_json_escape_list"
+      [.int 64 or14, .int 64 (ifThenQuoteWord a2 a3), .int 64 xs, .int 64 i,
+       .ptr xp, .ptr nxp, .ptr xcarry] s.mem s.next = some r := by
+    rw [show "leanllvm_json_escape_list" = escapeListCallee from rfl,
+      s1BlocksCallsEsc_escape]
+    exact hc
+  rw [step_at hfind (if_then_denote (s1BlocksCallsEsc esc) env s a2 a3 h2len h3len
+    or14 xs i xp nxp xcarry r h2 h3 hor hxs hi hxp hnxp hxcarry hc')]
+  rw [show if_thenBlock.term = if_thenTerm from rfl]
+  simp only [if_thenTerm, execTerm]
+  simp only [stateAt, hpc]
+
+/-- **`if.then`'s step under the hypothesis's premise.**  The escape record's
+`pre` at the block's argument vector resolves the call through
+`escapeEntry_call`; the step is then the one above at the outcome the selection
+returned.  This is the form a refinement statement consumes: it carries the
+escape pre as a premise and gets the arm's step, the unit's post and the cursor's
+monotonicity out of the one hypothesis. -/
+theorem if_then_step_of_pre (esc : Calls) (base : Nat) (hEsc : escapeEntryAt esc base)
+    (env : Env) (s : State)
+    (a2 a3 : List (BitVec 64)) (h2len : a2.length = 4) (h3len : a3.length = 4)
+    (or14 xs i : BitVec 64) (xp nxp xcarry : Nat)
+    (hpc : s.pc = "if.then")
+    (h2 : lookupName env "%2" = some (.vec 4 64 a2))
+    (h3 : lookupName env "%3" = some (.vec 4 64 a3))
+    (hor : lookupName env "%or14.i" = some (.int 64 or14))
+    (hxs : lookupName env "%xor.i" = some (.int 64 xs))
+    (hi : lookupName env "%i.0510" = some (.int 64 i))
+    (hxp : lookupName env "%xp" = some (.ptr xp))
+    (hnxp : lookupName env "%nxp" = some (.ptr nxp))
+    (hxcarry : lookupName env "%xcarry" = some (.ptr xcarry))
+    (hescPre : (Γ_escape_positions base escapePositionsBudget).pre
+      [.int 64 or14, .int 64 (ifThenQuoteWord a2 a3), .int 64 xs, .int 64 i,
+       .ptr xp, .ptr nxp, .ptr xcarry] s.mem s.next) :
+    ∃ r, esc escapeListCallee
+        [.int 64 or14, .int 64 (ifThenQuoteWord a2 a3), .int 64 xs, .int 64 i,
+         .ptr xp, .ptr nxp, .ptr xcarry] s.mem s.next = some r ∧
+      (Γ_escape_positions base escapePositionsBudget).post
+        [.int 64 or14, .int 64 (ifThenQuoteWord a2 a3), .int 64 xs, .int 64 i,
+         .ptr xp, .ptr nxp, .ptr xcarry] s.mem s.next (.ret (some r.ret) r.mem) ∧
+      s.next ≤ r.next ∧
+      step (s1BlocksCallsEsc esc) s1BlocksFunction (stateAt env s) =
+        .jump (stateAt (ifThenOut env a2 a3)
+          { s with pc := "if.end", pre := some "if.then", mem := r.mem, next := r.next }) := by
+  obtain ⟨r, hcall, hpost, hnext⟩ := escapeEntry_call hEsc hescPre
+  exact ⟨r, hcall, hpost, hnext,
+    if_then_step_at esc env s a2 a3 h2len h3len or14 xs i xp nxp xcarry r hpc
+      h2 h3 hor hxs hi hxp hnxp hxcarry hcall⟩
 
 /-! ### `if.end50` — the hand-off's join
 
