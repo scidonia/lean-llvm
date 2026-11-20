@@ -2140,10 +2140,41 @@ theorem row_numberDocument {m0 : Mem} {G : WalkGeom m0} {t : Tape} {arena : List
     hal hspans htokens hpre₀ hk₀ hbyteo hk₁ hev₁ hpay₁ (by omega) hevS hpay₂ hbytec
     rfl rfl
 
-/-- **The document `["ab","cd"]`'s row, its payloads plain.**  Each string's span is the
-token's and the body's length is the span's; the raw body's read-back — the escape
-unit's answer at the bytes it wrote — is the arm's premise.  The two records address the
-documents' bodies through `plainSpan`. -/
+/-! ### The string rows are stated at a token-start entry stream
+
+**These two rows are not the string arm's row.**  They fix `G.ent = [0, 1, 5, 6, 10]`
+(`nep = 5`), the parser's token starts, and that is not the entry stream the ABI hands the
+walk for a document with strings.  `kernel/json/stage2.h:60-61` defines `ep` as "quote
+characters, the structural bytes and the first byte of every scalar", so `["ab","cd"]`'s
+entries are `[0, 1, 4, 5, 6, 9, 10]` and `nep = 7`: the closing quote of each string is an
+entry of its own.
+
+The arm reads the *next* lane as that closing quote and advances two entries.  At
+`if.end207.i` the lane is `%5 + %inc.i` — index `k + 1` — and `%sub260.i` is
+`close - %idxprom.i - 1` (`JsonStage2IR:639-640`, `:691-692`); the next index
+`%inc208.i = %k.0.i249 + 2` (`:638`, `:641`) is the one the merge's `%k.2.i` phi takes
+on the `if.else334.i`/`if.then330.i` edges, in place of the header's `%inc.i`
+(`:1257`).  So at this row's entry stream the first string
+would read `close = 5`, write the body extent `3` where the row states `2`, and leave the
+index at `k + 2` — skipping the comma at entry `2`.  The row's `hevc` records and its
+`hk₃` separator step (and the payload steps built as `Cd.k + 1`) are therefore not what
+the arm produces: the string advances by two, the number by one.
+
+`WalkAlign` is where the two streams part: it states `G.nep = t.tokens.length` and a token
+starting at every entry, which a quote-inclusive stream cannot satisfy, because a closing
+quote is an entry and no token starts there.  So the string document's row awaits an
+alignment keyed to the strings' spans (their stops) as well as the token starts, and the
+arm's composition must expose the record it appends — `stringPath_seg` returns its
+endpoint existentially and states its block, index, predecessor and registers, but not
+the trace that endpoint carries.  Until then these are
+staging-specific statements about a token-start stream, proved from their premises, and
+not rows of the walk at the documents they name. -/
+
+/-- **The document `["ab","cd"]`'s row, its payloads plain, at a token-start entry
+stream.**  Each string's span is the token's and the body's length is the span's; the raw
+body's read-back — the escape unit's answer at the bytes it wrote — is the arm's premise.
+The two records address the documents' bodies through `plainSpan`.  The section above
+states why this staging is not the ABI's for a string document. -/
 theorem row_stringPlainDocument {m0 : Mem} {G : WalkGeom m0} {t : Tape}
     {arena : List UInt8} {C₀ C₁ C₃ Cd₁ Cd₂ : WalkCarry G} {s₁ s₃ sd₁ sd₂ : State}
     {p₁ p₂ : Nat} {v : JSON.Value}
@@ -2255,9 +2286,11 @@ theorem row_stringPlainDocument {m0 : Mem} {G : WalkGeom m0} {t : Tape}
     hal hspans htokens hpre₀ hk₀ hbyteo hk₁ hev₁ hpay₁ (by omega) hevS hpay₂ hbytec
     rfl rfl
 
-/-- **The document `["ab","cd"]`'s row, its payloads in the arena.**  The two offsets are
-the walk's: the first body at `0`, the second at `2`.  The arena's slices' read-back is
-the arm's premise, and the records name them by those offsets. -/
+/-- **The document `["ab","cd"]`'s row, its payloads in the arena, at a token-start entry
+stream.**  The two offsets are the walk's: the first body at `0`, the second at `2`.  The
+arena's slices' read-back is the arm's premise, and the records name them by those
+offsets.  The section above states why this staging is not the ABI's for a string
+document. -/
 theorem row_stringArenaDocument {m0 : Mem} {G : WalkGeom m0} {t : Tape}
     {arena : List UInt8} {C₀ C₁ C₃ Cd₁ Cd₂ : WalkCarry G} {s₁ s₃ sd₁ sd₂ : State}
     {p₁ p₂ : Nat} {v : JSON.Value}
