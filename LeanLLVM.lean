@@ -147,6 +147,7 @@ import LeanLLVM.Refinement.JsonStage2WalkInduce
 import LeanLLVM.Refinement.JsonStage2WalkEntry
 import LeanLLVM.Refinement.JsonStage2WalkSteps
 import LeanLLVM.Refinement.JsonStage2WalkStepsPath
+import LeanLLVM.Refinement.JsonStage2WalkRefusalOffset
 import LeanLLVM.Refinement.PipelineDischarge
 -- The route's wrapper contract, its document decision, and the caller's decode.
 import LeanLLVM.JsonCallRoute
