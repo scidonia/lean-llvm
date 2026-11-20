@@ -51,14 +51,17 @@ two opening containers need no record premise at all.
 
 The three residuals `ParserRows` names, at their own vocabulary:
 
-* **the trace row** — now the per-entry premise: `WalkTracePrefix.of_seed` at the
-  seed, one `emit`/`advance` pair per entry, and `WalkAlign.traceRow_of_prefix` at
-  the exit.  What this module does not do is execute the loop: `WalkLink` relates
-  two arbitrary carries, so it does not say that a link's carries differ by at most
-  one record and one index.  The induction over a `WalkChain` therefore needs each
-  link's own carry equation — the arms' `events := C.events ++ [r]` and the merge's
-  `k + 1` — read at the link that makes the step.  That is glue between theorems
-  that exist, not new mathematics;
+* **the trace row** — the per-entry premise, with the first link family's glue:
+  `WalkTracePrefix.of_seed` at the seed, `emit_merge`/`keep_merge` at each arm's
+  merge, `row_of_last` at the last entry, and `WalkAlign.traceRow_of_prefix` at the
+  exit.  The four containers' and the two separators' carries are read off
+  `WalkScope`'s own definitions, and `containerOpenRevolution_*` runs the opener's
+  nine links, the merge and the header's pass as one step from the seed — so `[`,
+  `{`, `[]` and `{}` have their rows (`row_open*`, `row_openClose*`).  What remains
+  is the induction over the walk's revolutions for the longer documents, and the
+  string and number arms' payload premises: the escape body's read-back
+  (`headTokenRecord_string_plain`/`_arena`) and the numeral's well-formed
+  decomposition (`headTokenRecord_number`);
 * **the refusal bit** — `VerdictWord`'s two directions at the run's word.  The
   carry has `refusal` and the boundary has `verdict = 0 ∨ verdict = 1`, so the row
   is the two route families: at `1`, `verdictWord_one_of_valid`'s `ValidDocument`
@@ -77,6 +80,9 @@ The three residuals `ParserRows` names, at their own vocabulary:
 There is no `sorry`, `admit` or `native_decide`; the axiom pins are at the end.
 -/
 import LeanLLVM.Refinement.JsonStage2TraceRow
+import LeanLLVM.Refinement.JsonStage2WalkDispatchOpeners
+import LeanLLVM.Refinement.JsonStage2WalkDispatchClosers
+import LeanLLVM.Refinement.JsonStage2WalkDispatchAboveZeroDomain
 
 set_option autoImplicit false
 
@@ -669,13 +675,654 @@ theorem headRow_openBracket {m0 : Mem} {G : WalkGeom m0} {t : Tape}
   exact headTokenRecord_punct hal hk hspans arena (Or.inr (Or.inr (Or.inl rfl))) htok
     (by rw [hbyte]; rfl)
 
+/-! ### The merge's carry, and the trace across it
+
+An arm's route ends at `cleanup478.i` with its record already appended — the opener's
+`WalkScope.openC₉` and the closer's `WalkScope.closeCEnd` — and the back edge at
+`while.body.i` then moves the index past the entry.  The append and the advance are
+different links, so a step's correspondence is the pair: the append read at the merge
+carry, the advance read at the head.  `emit_merge` and `keep_merge` are that pair; the
+four containers and the two separators then supply the carries' own equations from
+`WalkScope`'s definitions and the record from the parser's side
+(`headRow_openBrace`/`headRow_openBracket`, `headTokenRecord_punct` at the closing
+byte).
+
+The last entry is the arm with no head after it: its merge carry's index moves to the
+stream's end and the loop leaves, so `row_of_last` reads the emitted form as the whole
+row.  The four `*LastRow` theorems are that reading at each container's byte, and the
+opener's revolution ties them to the walk's own links so a `[]` or a `{}` reaches its
+closer's row from the seed. -/
+
+open LeanLLVM.Refinement.BlockEval
+open LeanLLVM.Refinement.JsonStage2IR
+open WalkScope
+
+/-- The opener's merge carry keeps the index. -/
+theorem WalkScope.openC₉_k {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) (b : BitVec 8) :
+    (WalkScope.openC₉ C b).k = C.k := rfl
+
+/-- The opener's merge carry appends the tag its byte selects. -/
+theorem WalkScope.openC₉_events {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G)
+    (b : BitVec 8) :
+    (WalkScope.openC₉ C b).events =
+      C.events ++ [EventRecord.tag (WalkScope.ifEnd24St b).toNat] := rfl
+
+/-- The closer's merge carry keeps the index. -/
+theorem WalkScope.closeCEnd_k {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G)
+    (spz : BitVec 32) (c8 : BitVec 8) : (WalkScope.closeCEnd C spz c8).k = C.k := rfl
+
+/-- The closer's merge carry appends its tag byte. -/
+theorem WalkScope.closeCEnd_events {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G)
+    (spz : BitVec 32) (c8 : BitVec 8) :
+    (WalkScope.closeCEnd C spz c8).events = C.events ++ [EventRecord.tag c8.toNat] := rfl
+
+namespace WalkTracePrefix
+
+/-- **One record across the merge, and the index beside it.**  A route whose merge
+carry appends the entry's record at the entry's own index, and whose back edge then
+moves the index past that entry, preserves the correspondence in one step. -/
+theorem emit_merge {m0 : Mem} {G : WalkGeom m0} {arena : List UInt8} {t : Tape}
+    {C Cd C' : WalkCarry G} {tok : Token} {r : EventRecord}
+    (h : WalkTracePrefix G arena t C) (htok : t.tokens[C.k]? = some tok)
+    (hrec : TokenRecord G.bs arena r tok)
+    (hkC : Cd.k = C.k) (hevC : Cd.events = C.events ++ [r])
+    (hk' : C'.k = Cd.k + 1) (hev' : C'.events = Cd.events) :
+    WalkTracePrefix G arena t C' := by
+  have htok' : t.tokens[Cd.k]? = some tok := by rw [hkC]; exact htok
+  exact advance (h.emit hrec hkC hevC) htok' hk' hev'
+
+/-- **A separator across the merge.**  The merge carry adds no record, so the
+correspondence is read at it unchanged, and the back edge's advance is
+`advance_separator`'s. -/
+theorem keep_merge {m0 : Mem} {G : WalkGeom m0} {arena : List UInt8} {t : Tape}
+    {C Cd C' : WalkCarry G} {p : Punct} {s : Span}
+    (h : WalkTracePrefix G arena t C)
+    (htok : t.tokens[C.k]? = some (.punct p s)) (hp : p = .comma ∨ p = .colon)
+    (hkC : Cd.k = C.k) (hevC : Cd.events = C.events)
+    (hk' : C'.k = Cd.k + 1) (hev' : C'.events = Cd.events) :
+    WalkTracePrefix G arena t C' := by
+  have htok' : t.tokens[Cd.k]? = some (.punct p s) := by rw [hkC]; exact htok
+  exact (h.congr hkC hevC).advance_separator htok' hp hk' hev'
+
+/-- **The row at the last entry.**  An arm that reaches the merge at the entry before
+the stream's end leaves the record trace complete once its index moves past that
+entry: the emitted form's row is already the whole `WalkTraceRow`. -/
+theorem row_of_last {m0 : Mem} {G : WalkGeom m0} {arena : List UInt8} {t : Tape}
+    {C : WalkCarry G} {tok : Token} (h : WalkTracePrefixEmit G arena t C tok)
+    (htok : t.tokens[C.k]? = some tok) (hk : C.k + 1 = t.tokens.length) :
+    WalkTraceRow G.bs arena t C.events := by
+  obtain ⟨hrow, hc, hd⟩ := h
+  unfold WalkTraceRow
+  rw [← Token.recordTokens_full t.tokens, ← hk,
+    Token.recordTokens_succ_of_record htok hc hd]
+  exact hrow
+
+end WalkTracePrefix
+
+/-! ### The four containers, at their own carries
+
+The opener's record is `WalkScope.ifEnd24St b` — the tag the push's select writes —
+and the closer's is the tag byte its `phi` holds.  At the document's bytes those are
+the parser's tags (`3`/`1` for `[`/`{`, `4`/`2` for `]`/`}`), so the arms' records are
+`TokenRecord`'s container constructor at the parser's token. -/
+
+/-- The bracket opener's byte, as the header's select reads it: the register holds
+`BitVec.ofNat 8 (entryByte G C.k).toNat`, and at the document's byte that is the
+literal the select's arms test. -/
+theorem bitVec_ofNat_entryByte_5B : BitVec.ofNat 8 ((0x5B : UInt8)).toNat = (0x5B : BitVec 8) :=
+  by decide
+
+/-- The brace opener's byte, at the header's select. -/
+theorem bitVec_ofNat_entryByte_7B : BitVec.ofNat 8 ((0x7B : UInt8)).toNat = (0x7B : BitVec 8) :=
+  by decide
+
+/-- The entry's byte read as the header's select does, from the document's byte. -/
+theorem bitVec_ofNat_entryByte {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G) {u : UInt8}
+    (h : entryByte G C.k = u) :
+    BitVec.ofNat 8 (entryByte G C.k).toNat = BitVec.ofNat 8 u.toNat := by rw [h]
+
+/-- **The bracket opener's tag at the document's byte**: the header's select on `[`
+is the parser's `T_ARR`. -/
+theorem ifEnd24St_entryByte_5B {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G)
+    (h : entryByte G C.k = 0x5B) :
+    (WalkScope.ifEnd24St (BitVec.ofNat 8 (entryByte G C.k).toNat)).toNat = 3 := by
+  rw [bitVec_ofNat_entryByte C h, bitVec_ofNat_entryByte_5B, ifEnd24St_openBracket]
+
+/-- **The brace opener's tag at the document's byte**: the header's select on `{`
+is the parser's `T_OBJ`. -/
+theorem ifEnd24St_entryByte_7B {m0 : Mem} {G : WalkGeom m0} (C : WalkCarry G)
+    (h : entryByte G C.k = 0x7B) :
+    (WalkScope.ifEnd24St (BitVec.ofNat 8 (entryByte G C.k).toNat)).toNat = 1 := by
+  rw [bitVec_ofNat_entryByte C h, bitVec_ofNat_entryByte_7B, ifEnd24St_openBrace]
+
+/-- **The bracket opener's record across its merge.** -/
+theorem containerOpenEmit_bracket {m0 : Mem} {G : WalkGeom m0} {t : Tape}
+    {C : WalkCarry G} {s : State} {arena : List UInt8}
+    (h : WalkTracePrefix G arena t C) (hal : WalkAlign G t) (hInv : WalkInv G C s)
+    (hk : C.k < G.nep) (hspans : spansWellFormed t = true)
+    (hbyte : entryByte G C.k = 0x5B) :
+    ∃ tok : Token, t.tokens[C.k]? = some tok ∧
+      WalkTracePrefixEmit G arena t
+        (WalkScope.openC₉ C (BitVec.ofNat 8 (entryByte G C.k).toNat)) tok := by
+  obtain ⟨sp, htok, hrec⟩ := headRow_openBracket hal hInv hk hspans arena hbyte
+  refine ⟨.punct .openBracket sp, htok, ?_⟩
+  have hb : BitVec.ofNat 8 (entryByte G C.k).toNat = (0x5B : BitVec 8) := by
+    rw [bitVec_ofNat_entryByte C hbyte]
+    exact bitVec_ofNat_entryByte_5B
+  rw [hb]
+  exact WalkTracePrefix.emit h hrec rfl rfl
+
+/-- **The brace opener's record across its merge.** -/
+theorem containerOpenEmit_brace {m0 : Mem} {G : WalkGeom m0} {t : Tape}
+    {C : WalkCarry G} {s : State} {arena : List UInt8}
+    (h : WalkTracePrefix G arena t C) (hal : WalkAlign G t) (hInv : WalkInv G C s)
+    (hk : C.k < G.nep) (hspans : spansWellFormed t = true)
+    (hbyte : entryByte G C.k = 0x7B) :
+    ∃ tok : Token, t.tokens[C.k]? = some tok ∧
+      WalkTracePrefixEmit G arena t
+        (WalkScope.openC₉ C (BitVec.ofNat 8 (entryByte G C.k).toNat)) tok := by
+  obtain ⟨sp, htok, hrec⟩ := headRow_openBrace hal hInv hk hspans arena hbyte
+  refine ⟨.punct .openBrace sp, htok, ?_⟩
+  have hb : BitVec.ofNat 8 (entryByte G C.k).toNat = (0x7B : BitVec 8) := by
+    rw [bitVec_ofNat_entryByte C hbyte]
+    exact bitVec_ofNat_entryByte_7B
+  rw [hb]
+  exact WalkTracePrefix.emit h hrec rfl rfl
+
+/-- The next head's carry, from the opener's merge.  The two field equations are the
+merge and the back edge's, which `WalkScope.containerOpenSeg`'s endpoint and
+`WalkLink.whileBody` supply. -/
+theorem containerOpenHead_bracket {m0 : Mem} {G : WalkGeom m0} {t : Tape}
+    {C C' : WalkCarry G} {s : State} {arena : List UInt8}
+    (h : WalkTracePrefix G arena t C) (hal : WalkAlign G t) (hInv : WalkInv G C s)
+    (hk : C.k < G.nep) (hspans : spansWellFormed t = true)
+    (hbyte : entryByte G C.k = 0x5B)
+    (hk' : C'.k = C.k + 1)
+    (hev' : C'.events =
+      (WalkScope.openC₉ C (BitVec.ofNat 8 (entryByte G C.k).toNat)).events) :
+    WalkTracePrefix G arena t C' := by
+  obtain ⟨tok, htok, hem⟩ := containerOpenEmit_bracket h hal hInv hk hspans hbyte
+  refine WalkTracePrefix.advance hem htok ?_ hev'
+  show C'.k = C.k + 1
+  exact hk'
+
+/-- **The brace opener's revolution, on the trace.** -/
+theorem containerOpenHead_brace {m0 : Mem} {G : WalkGeom m0} {t : Tape}
+    {C C' : WalkCarry G} {s : State} {arena : List UInt8}
+    (h : WalkTracePrefix G arena t C) (hal : WalkAlign G t) (hInv : WalkInv G C s)
+    (hk : C.k < G.nep) (hspans : spansWellFormed t = true)
+    (hbyte : entryByte G C.k = 0x7B)
+    (hk' : C'.k = C.k + 1)
+    (hev' : C'.events =
+      (WalkScope.openC₉ C (BitVec.ofNat 8 (entryByte G C.k).toNat)).events) :
+    WalkTracePrefix G arena t C' := by
+  obtain ⟨tok, htok, hem⟩ := containerOpenEmit_brace h hal hInv hk hspans hbyte
+  refine WalkTracePrefix.advance hem htok ?_ hev'
+  show C'.k = C.k + 1
+  exact hk'
+
+/-- **The closing bracket's record across its merge.**  The route's tag byte is the
+`phi`'s `4`, the parser's `T_ARR_END`, so the merge's record is the row's. -/
+theorem containerCloseEmit_bracket {m0 : Mem} {G : WalkGeom m0} {t : Tape}
+    {C : WalkCarry G} {s : State} {arena : List UInt8} {spz : BitVec 32} {c8 : BitVec 8}
+    (h : WalkTracePrefix G arena t C) (hal : WalkAlign G t) (hInv : WalkInv G C s)
+    (hk : C.k < G.nep) (hspans : spansWellFormed t = true)
+    (hbyte : entryByte G C.k = 0x5D) (hc8 : c8 = BitVec.ofNat 8 4) :
+    ∃ tok : Token, t.tokens[C.k]? = some tok ∧
+      WalkTracePrefixEmit G arena t (WalkScope.closeCEnd C spz c8) tok := by
+  obtain ⟨sp, htok, -⟩ := hal.head_closeBracket hInv hk hbyte
+  have hrec : TokenRecord G.bs arena (.tag (punctTag .closeBracket))
+      (.punct .closeBracket sp) :=
+    headTokenRecord_punct hal hk hspans arena (Or.inr (Or.inr (Or.inr rfl))) htok
+      (by rw [hbyte]; rfl)
+  refine ⟨.punct .closeBracket sp, htok, ?_⟩
+  have hev : (WalkScope.closeCEnd C spz c8).events =
+      C.events ++ [EventRecord.tag (punctTag .closeBracket)] := by
+    rw [WalkScope.closeCEnd_events, hc8]
+    rfl
+  exact WalkTracePrefix.emit h hrec rfl hev
+
+/-- **The closing brace's record across its merge.**  The route's tag byte is `2`,
+the parser's `T_OBJ_END`. -/
+theorem containerCloseEmit_brace {m0 : Mem} {G : WalkGeom m0} {t : Tape}
+    {C : WalkCarry G} {s : State} {arena : List UInt8} {spz : BitVec 32} {c8 : BitVec 8}
+    (h : WalkTracePrefix G arena t C) (hal : WalkAlign G t) (hInv : WalkInv G C s)
+    (hk : C.k < G.nep) (hspans : spansWellFormed t = true)
+    (hbyte : entryByte G C.k = 0x7D) (hc8 : c8 = BitVec.ofNat 8 2) :
+    ∃ tok : Token, t.tokens[C.k]? = some tok ∧
+      WalkTracePrefixEmit G arena t (WalkScope.closeCEnd C spz c8) tok := by
+  obtain ⟨sp, htok, -⟩ := hal.head_closeBrace hInv hk hbyte
+  have hrec : TokenRecord G.bs arena (.tag (punctTag .closeBrace))
+      (.punct .closeBrace sp) :=
+    headTokenRecord_punct hal hk hspans arena (Or.inr (Or.inl rfl)) htok
+      (by rw [hbyte]; rfl)
+  refine ⟨.punct .closeBrace sp, htok, ?_⟩
+  have hev : (WalkScope.closeCEnd C spz c8).events =
+      C.events ++ [EventRecord.tag (punctTag .closeBrace)] := by
+    rw [WalkScope.closeCEnd_events, hc8]
+    rfl
+  exact WalkTracePrefix.emit h hrec rfl hev
+
+/-- **The separators' merge keeps the correspondence.**  A comma or a colon carries
+no record, so the merge carry's trace is the entry's predecessor's and the back
+edge's advance is the empty one. -/
+theorem separatorHead {m0 : Mem} {G : WalkGeom m0} {t : Tape}
+    {C Cd C' : WalkCarry G} {s : State} {arena : List UInt8}
+    (h : WalkTracePrefix G arena t C) (hal : WalkAlign G t) (hInv : WalkInv G C s)
+    (hk : C.k < G.nep)
+    (hbyte : entryByte G C.k = 0x2C ∨ entryByte G C.k = 0x3A)
+    (hkC : Cd.k = C.k) (hevC : Cd.events = C.events)
+    (hk' : C'.k = Cd.k + 1) (hev' : C'.events = Cd.events) :
+    WalkTracePrefix G arena t C' := by
+  rcases hbyte with hb | hb
+  · obtain ⟨sp, htok, -⟩ := hal.head_comma hInv hk hb
+    exact WalkTracePrefix.keep_merge h htok (Or.inl rfl) hkC hevC hk' hev'
+  · obtain ⟨sp, htok, -⟩ := hal.head_colon hInv hk hb
+    exact WalkTracePrefix.keep_merge h htok (Or.inr rfl) hkC hevC hk' hev'
+
+/-! ### The container-only rows
+
+Each is the arm at the last entry: the record the merge appended and the entries
+before it.  `[` and `{` are one-entry documents and reach these from the seed
+directly; a `[]` or `{}` reaches the closer's row from the head the opener's
+revolution leaves, which is `containerOpenHead_*`'s. -/
+
+/-- **The row at a bracket opener's last entry.** -/
+theorem containerOpenLastRow_bracket {m0 : Mem} {G : WalkGeom m0} {t : Tape}
+    {C : WalkCarry G} {s : State} {arena : List UInt8}
+    (h : WalkTracePrefix G arena t C) (hal : WalkAlign G t) (hInv : WalkInv G C s)
+    (hk : C.k < G.nep) (hspans : spansWellFormed t = true)
+    (hbyte : entryByte G C.k = 0x5B) (hlast : C.k + 1 = t.tokens.length) :
+    WalkTraceRow G.bs arena t (C.events ++ [EventRecord.tag 3]) := by
+  obtain ⟨tok, htok, hem⟩ := containerOpenEmit_bracket h hal hInv hk hspans hbyte
+  have hrow := WalkTracePrefix.row_of_last hem htok (by
+    show (WalkScope.openC₉ C (BitVec.ofNat 8 (entryByte G C.k).toNat)).k + 1 =
+      t.tokens.length
+    rw [WalkScope.openC₉_k]
+    exact hlast)
+  rw [WalkScope.openC₉_events, ifEnd24St_entryByte_5B C hbyte] at hrow
+  exact hrow
+
+/-- **The row at a brace opener's last entry.** -/
+theorem containerOpenLastRow_brace {m0 : Mem} {G : WalkGeom m0} {t : Tape}
+    {C : WalkCarry G} {s : State} {arena : List UInt8}
+    (h : WalkTracePrefix G arena t C) (hal : WalkAlign G t) (hInv : WalkInv G C s)
+    (hk : C.k < G.nep) (hspans : spansWellFormed t = true)
+    (hbyte : entryByte G C.k = 0x7B) (hlast : C.k + 1 = t.tokens.length) :
+    WalkTraceRow G.bs arena t (C.events ++ [EventRecord.tag 1]) := by
+  obtain ⟨tok, htok, hem⟩ := containerOpenEmit_brace h hal hInv hk hspans hbyte
+  have hrow := WalkTracePrefix.row_of_last hem htok (by
+    show (WalkScope.openC₉ C (BitVec.ofNat 8 (entryByte G C.k).toNat)).k + 1 =
+      t.tokens.length
+    rw [WalkScope.openC₉_k]
+    exact hlast)
+  rw [WalkScope.openC₉_events, ifEnd24St_entryByte_7B C hbyte] at hrow
+  exact hrow
+
+/-- **The row at a closing bracket's last entry.** -/
+theorem containerCloseLastRow_bracket {m0 : Mem} {G : WalkGeom m0} {t : Tape}
+    {C : WalkCarry G} {s : State} {arena : List UInt8} {spz : BitVec 32} {c8 : BitVec 8}
+    (h : WalkTracePrefix G arena t C) (hal : WalkAlign G t) (hInv : WalkInv G C s)
+    (hk : C.k < G.nep) (hspans : spansWellFormed t = true)
+    (hbyte : entryByte G C.k = 0x5D) (hc8 : c8 = BitVec.ofNat 8 4)
+    (hlast : C.k + 1 = t.tokens.length) :
+    WalkTraceRow G.bs arena t (C.events ++ [EventRecord.tag 4]) := by
+  obtain ⟨tok, htok, hem⟩ := containerCloseEmit_bracket h hal hInv hk hspans hbyte hc8
+  have hrow := WalkTracePrefix.row_of_last hem htok (by
+    show (WalkScope.closeCEnd C spz c8).k + 1 = t.tokens.length
+    rw [WalkScope.closeCEnd_k]
+    exact hlast)
+  rw [WalkScope.closeCEnd_events, hc8] at hrow
+  simpa using hrow
+
+/-- **The row at a closing brace's last entry.** -/
+theorem containerCloseLastRow_brace {m0 : Mem} {G : WalkGeom m0} {t : Tape}
+    {C : WalkCarry G} {s : State} {arena : List UInt8} {spz : BitVec 32} {c8 : BitVec 8}
+    (h : WalkTracePrefix G arena t C) (hal : WalkAlign G t) (hInv : WalkInv G C s)
+    (hk : C.k < G.nep) (hspans : spansWellFormed t = true)
+    (hbyte : entryByte G C.k = 0x7D) (hc8 : c8 = BitVec.ofNat 8 2)
+    (hlast : C.k + 1 = t.tokens.length) :
+    WalkTraceRow G.bs arena t (C.events ++ [EventRecord.tag 2]) := by
+  obtain ⟨tok, htok, hem⟩ := containerCloseEmit_brace h hal hInv hk hspans hbyte hc8
+  have hrow := WalkTracePrefix.row_of_last hem htok (by
+    show (WalkScope.closeCEnd C spz c8).k + 1 = t.tokens.length
+    rw [WalkScope.closeCEnd_k]
+    exact hlast)
+  rw [WalkScope.closeCEnd_events, hc8] at hrow
+  simpa using hrow
+
+/-- **At no entries the trace is empty.**  At `k = 0` the correspondence relates the
+carry's records to the empty list, and only the empty list stands in that relation —
+so the seed's emptiness is read off the correspondence rather than assumed beside it. -/
+theorem WalkTracePrefix.events_eq_nil {m0 : Mem} {G : WalkGeom m0} {arena : List UInt8}
+    {t : Tape} {C : WalkCarry G} (h : WalkTracePrefix G arena t C) (hk : C.k = 0) :
+    C.events = [] := by
+  have hlen := forall₂_length h
+  rw [hk, Token.recordTokens_zero, List.length_nil] at hlen
+  exact List.eq_nil_of_length_eq_zero hlen
+
+/-- **The one-entry bracket document's row.**  The document's only token is the open
+bracket, the header's select on its byte is the parser's `T_ARR`, and the merge's
+index reaches the stream's end: the trace is the one record. -/
+theorem row_openBracketOnly {m0 : Mem} {G : WalkGeom m0} {t : Tape}
+    {C : WalkCarry G} {s : State} {arena : List UInt8}
+    (h : WalkTracePrefix G arena t C) (hal : WalkAlign G t) (hInv : WalkInv G C s)
+    (hspans : spansWellFormed t = true) (hk0 : C.k = 0)
+    (hbyte : entryByte G 0 = 0x5B) (hnep : G.nep = 1)
+    (htokens : t.tokens = [.punct .openBracket ⟨0, 1⟩]) :
+    WalkTraceRow G.bs arena t ([EventRecord.tag 3] : List EventRecord) := by
+  have hk : C.k < G.nep := by rw [hk0, hnep]; decide
+  have hbyte' : entryByte G C.k = 0x5B := by rw [hk0]; exact hbyte
+  have hlast : C.k + 1 = t.tokens.length := by rw [hk0, htokens]; rfl
+  have hrow := containerOpenLastRow_bracket h hal hInv hk hspans hbyte' hlast
+  rw [WalkTracePrefix.events_eq_nil h hk0, List.nil_append] at hrow
+  exact hrow
+
+/-- **The one-entry brace document's row.**  The same at `{`, whose select is the
+parser's `T_OBJ`. -/
+theorem row_openBraceOnly {m0 : Mem} {G : WalkGeom m0} {t : Tape}
+    {C : WalkCarry G} {s : State} {arena : List UInt8}
+    (h : WalkTracePrefix G arena t C) (hal : WalkAlign G t) (hInv : WalkInv G C s)
+    (hspans : spansWellFormed t = true) (hk0 : C.k = 0)
+    (hbyte : entryByte G 0 = 0x7B) (hnep : G.nep = 1)
+    (htokens : t.tokens = [.punct .openBrace ⟨0, 1⟩]) :
+    WalkTraceRow G.bs arena t ([EventRecord.tag 1] : List EventRecord) := by
+  have hk : C.k < G.nep := by rw [hk0, hnep]; decide
+  have hbyte' : entryByte G C.k = 0x7B := by rw [hk0]; exact hbyte
+  have hlast : C.k + 1 = t.tokens.length := by rw [hk0, htokens]; rfl
+  have hrow := containerOpenLastRow_brace h hal hInv hk hspans hbyte' hlast
+  rw [WalkTracePrefix.events_eq_nil h hk0, List.nil_append] at hrow
+  exact hrow
+
+/-! ### The opener's revolution, end to end
+
+The head's four links and the tail's five reach the merge carry `WalkScope.openC₉`,
+whose record is the parser's at the entry; the merge's step and the header's pass then
+move the index and the depth.  The two carries are the route's own, so the step is the
+walk's and not a carry chosen for the trace — which is what a `[]` or a `{}` needs to
+reach its closer's row from the seed. -/
+
+/-- **The bracket opener's revolution, with its record.** -/
+theorem containerOpenRevolution_bracket {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead)
+    {arena : List UInt8} {t : Tape} (h : WalkTracePrefix G arena t C)
+    (hal : WalkAlign G t) (hspans : spansWellFormed t = true)
+    (hbyte : entryByte G C.k = 0x5B) (hsp519 : C.sp ≤ 519)
+    {rd : BitVec 32}
+    (hread : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes rd.toNat 4))
+    (hpreV : s2ValuePosPre
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rd,
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
+    (r : CallOutcome)
+    (hcall : stage2Calls stage2SubCalls "s2_value_pos"
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rd,
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r)
+    (hret : r.ret = .int 32 (BitVec.ofNat 32 1)) (hcont : C.k + 1 < G.nep) :
+    ∃ (C' : WalkCarry G) (s' : State),
+      WalkInv G C' s' ∧ C'.block = walkLoopHead ∧ C'.sp = C.sp + 1 ∧
+      C'.k = C.k + 1 ∧ C'.events = C.events ++ [EventRecord.tag 3] ∧
+      WalkTracePrefix G arena t C' := by
+  have hklt : C.k < G.nep :=
+    WalkInv.head_lt hInv (by simpa only [walkLoopHead] using hblock)
+  have hbe : BitVec.ofNat 8 (entryByte G C.k).toNat = BitVec.ofNat 8 91 := by
+    rw [hbyte]; decide
+  have h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 91)) := by
+    rw [LeanLLVM.evalOperand_reg_of hInv.iter.reg8, hbe]
+  -- the head's four links, then the tail's five, to the merge carry
+  have hh := openBracketHead G C s hInv hblock h8 hbe
+  have hread' : readBytes (openBrS₄ s).mem (G.next0 + 8) 4 =
+      some (natToBytes rd.toNat 4) := by
+    rw [openBrS₄_mem]; exact hread
+  have hpreV' : s2ValuePosPre
+      [.int 32 (BitVec.ofNat 32 (openHeadC C).sp), .int 32 rd,
+       .ptr (openHeadC C).stage.ctype, .ptr (openHeadC C).stage.cst]
+      (openBrS₄ s).mem (openBrS₄ s).next := by
+    rw [openBrS₄_mem, openBrS₄_next]; exact hpreV
+  have ht := openTailSeg G (openHeadC C) (openBrS₄ s) hh.inv' rfl
+    (b := BitVec.ofNat 8 (entryByte G C.k).toNat) rfl hsp519 hread' hpreV' r hcall hret
+    hklt
+  have hseg := hh.trans ht
+  -- the merge's closing step, at its own two phis
+  have hguard : C.k + 1 < (BitVec.ofNat 64 G.nep).toNat := by
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (openNep_lt G)]
+    exact hcont
+  have hpre₉ : (openS₉ (openHeadC C) (openBrS₄ s) r rd
+      (BitVec.ofNat 8 (entryByte G C.k).toNat)).pre = some "out_reserve.exit.i.i" := rfl
+  obtain ⟨-, hinvB, -⟩ :=
+    walkBack_step_at (calls := stage2Calls stage2SubCalls) (G := G)
+      (C := openC₉ (openHeadC C) (BitVec.ofNat 8 (entryByte G C.k).toNat))
+      (s := openS₉ (openHeadC C) (openBrS₄ s) r rd
+        (BitVec.ofNat 8 (entryByte G C.k).toNat))
+      (spv := C.sp + 1) (k2 := C.k + 1)
+      hseg.inv' rfl hpre₉
+      (by show phiIncoming "out_reserve.exit.i.i" cleanupSpIncoming =
+          some (.reg "%inc33.i"); decide)
+      (by simp only [evalOperand]
+          exact openS₉_inc33 (openHeadC C) (openBrS₄ s) r rd
+            (BitVec.ofNat 8 (entryByte G C.k).toNat))
+      (by show phiIncoming "out_reserve.exit.i.i" cleanupKIncoming =
+          some (.reg "%inc.i"); decide)
+      (by simp only [evalOperand]
+          rw [openS₉_inc (openHeadC C) (openBrS₄ s) r rd
+            (BitVec.ofNat 8 (entryByte G C.k).toNat)]
+          exact LeanLLVM.evalOperand_reg_of hh.inv'.inc_reg)
+      (by
+        rw [openS₉_nep (openHeadC C) (openBrS₄ s) r rd
+          (BitVec.ofNat 8 (entryByte G C.k).toNat)]
+        exact hh.inv'.regs ("%nep", .int 64 (BitVec.ofNat 64 G.nep))
+          (by simp [walkStaticRegs]))
+      hguard
+  -- the header's pass, at the two phi values
+  obtain ⟨s'', hl''⟩ :=
+    WalkLink.whileBody (calls := stage2Calls stage2SubCalls) G
+      { openC₉ (openHeadC C) (BitVec.ofNat 8 (entryByte G C.k).toNat) with
+        block := "while.body.i", inner := walkInnerCap G }
+      (cleanup478Out (openS₉ (openHeadC C) (openBrS₄ s) r rd
+        (BitVec.ofNat 8 (entryByte G C.k).toNat)) (C.sp + 1) (C.k + 1)) hinvB rfl rfl
+      (cleanup478Out_k (s := openS₉ (openHeadC C) (openBrS₄ s) r rd
+        (BitVec.ofNat 8 (entryByte G C.k).toNat)) (spv := C.sp + 1) (k2 := C.k + 1))
+      (cleanup478Out_sp (s := openS₉ (openHeadC C) (openBrS₄ s) r rd
+        (BitVec.ofNat 8 (entryByte G C.k).toNat)) (spv := C.sp + 1) (k2 := C.k + 1))
+      (by show C.k < C.k + 1; omega)
+      (by show C.k + 1 < G.nep; exact hcont)
+      (by
+        show C.sp + 1 ≤ stage2StackExtent
+        have h520 : stage2StackExtent = 520 := rfl
+        omega)
+      (by
+        show C.sp + 1 ≤ (openC₉ (openHeadC C) (BitVec.ofNat 8 (entryByte G C.k).toNat)).wlen
+        show C.sp + 1 ≤ max C.wlen (C.sp + 1)
+        exact le_max_right _ _)
+  refine ⟨_, s'', hl''.inv', rfl, rfl, rfl, ?_, ?_⟩
+  · show (openC₉ (openHeadC C) (BitVec.ofNat 8 (entryByte G C.k).toNat)).events
+      = C.events ++ [EventRecord.tag 3]
+    rw [WalkScope.openC₉_events, ifEnd24St_entryByte_5B C hbyte]
+  · show WalkTracePrefix G arena t
+      { openC₉ (openHeadC C) (BitVec.ofNat 8 (entryByte G C.k).toNat) with
+        block := walkLoopHead, inner := walkInnerCap G, k := C.k + 1, sp := C.sp + 1 }
+    exact containerOpenHead_bracket h hal hInv hklt hspans hbyte rfl rfl
+
+/-- **The brace opener's revolution, with its record.** -/
+theorem containerOpenRevolution_brace {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
+    (s : State) (hInv : WalkInv G C s) (hblock : C.block = walkLoopHead)
+    {arena : List UInt8} {t : Tape} (h : WalkTracePrefix G arena t C)
+    (hal : WalkAlign G t) (hspans : spansWellFormed t = true)
+    (hbyte : entryByte G C.k = 0x7B) (hsp519 : C.sp ≤ 519)
+    {rd : BitVec 32}
+    (hread : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes rd.toNat 4))
+    (hpreV : s2ValuePosPre
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rd,
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next)
+    (r : CallOutcome)
+    (hcall : stage2Calls stage2SubCalls "s2_value_pos"
+      [.int 32 (BitVec.ofNat 32 C.sp), .int 32 rd,
+       .ptr C.stage.ctype, .ptr C.stage.cst] s.mem s.next = some r)
+    (hret : r.ret = .int 32 (BitVec.ofNat 32 1)) (hcont : C.k + 1 < G.nep) :
+    ∃ (C' : WalkCarry G) (s' : State),
+      WalkInv G C' s' ∧ C'.block = walkLoopHead ∧ C'.sp = C.sp + 1 ∧
+      C'.k = C.k + 1 ∧ C'.events = C.events ++ [EventRecord.tag 1] ∧
+      WalkTracePrefix G arena t C' := by
+  have hklt : C.k < G.nep :=
+    WalkInv.head_lt hInv (by simpa only [walkLoopHead] using hblock)
+  have hbe : BitVec.ofNat 8 (entryByte G C.k).toNat = BitVec.ofNat 8 123 := by
+    rw [hbyte]; decide
+  have h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 123)) := by
+    rw [LeanLLVM.evalOperand_reg_of hInv.iter.reg8, hbe]
+  have hh := openBraceHead G C s hInv hblock h8 hbe
+  have hread' : readBytes (openBcS₄ s).mem (G.next0 + 8) 4 =
+      some (natToBytes rd.toNat 4) := by
+    rw [openBcS₄_mem]; exact hread
+  have hpreV' : s2ValuePosPre
+      [.int 32 (BitVec.ofNat 32 (openHeadC C).sp), .int 32 rd,
+       .ptr (openHeadC C).stage.ctype, .ptr (openHeadC C).stage.cst]
+      (openBcS₄ s).mem (openBcS₄ s).next := by
+    rw [openBcS₄_mem, openBcS₄_next]; exact hpreV
+  have ht := openTailSeg G (openHeadC C) (openBcS₄ s) hh.inv' rfl
+    (b := BitVec.ofNat 8 (entryByte G C.k).toNat) rfl hsp519 hread' hpreV' r hcall hret
+    hklt
+  have hseg := hh.trans ht
+  have hguard : C.k + 1 < (BitVec.ofNat 64 G.nep).toNat := by
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (openNep_lt G)]
+    exact hcont
+  have hpre₉ : (openS₉ (openHeadC C) (openBcS₄ s) r rd
+      (BitVec.ofNat 8 (entryByte G C.k).toNat)).pre = some "out_reserve.exit.i.i" := rfl
+  obtain ⟨-, hinvB, -⟩ :=
+    walkBack_step_at (calls := stage2Calls stage2SubCalls) (G := G)
+      (C := openC₉ (openHeadC C) (BitVec.ofNat 8 (entryByte G C.k).toNat))
+      (s := openS₉ (openHeadC C) (openBcS₄ s) r rd
+        (BitVec.ofNat 8 (entryByte G C.k).toNat))
+      (spv := C.sp + 1) (k2 := C.k + 1)
+      hseg.inv' rfl hpre₉
+      (by show phiIncoming "out_reserve.exit.i.i" cleanupSpIncoming =
+          some (.reg "%inc33.i"); decide)
+      (by simp only [evalOperand]
+          exact openS₉_inc33 (openHeadC C) (openBcS₄ s) r rd
+            (BitVec.ofNat 8 (entryByte G C.k).toNat))
+      (by show phiIncoming "out_reserve.exit.i.i" cleanupKIncoming =
+          some (.reg "%inc.i"); decide)
+      (by simp only [evalOperand]
+          rw [openS₉_inc (openHeadC C) (openBcS₄ s) r rd
+            (BitVec.ofNat 8 (entryByte G C.k).toNat)]
+          exact LeanLLVM.evalOperand_reg_of hh.inv'.inc_reg)
+      (by
+        rw [openS₉_nep (openHeadC C) (openBcS₄ s) r rd
+          (BitVec.ofNat 8 (entryByte G C.k).toNat)]
+        exact hh.inv'.regs ("%nep", .int 64 (BitVec.ofNat 64 G.nep))
+          (by simp [walkStaticRegs]))
+      hguard
+  obtain ⟨s'', hl''⟩ :=
+    WalkLink.whileBody (calls := stage2Calls stage2SubCalls) G
+      { openC₉ (openHeadC C) (BitVec.ofNat 8 (entryByte G C.k).toNat) with
+        block := "while.body.i", inner := walkInnerCap G }
+      (cleanup478Out (openS₉ (openHeadC C) (openBcS₄ s) r rd
+        (BitVec.ofNat 8 (entryByte G C.k).toNat)) (C.sp + 1) (C.k + 1)) hinvB rfl rfl
+      (cleanup478Out_k (s := openS₉ (openHeadC C) (openBcS₄ s) r rd
+        (BitVec.ofNat 8 (entryByte G C.k).toNat)) (spv := C.sp + 1) (k2 := C.k + 1))
+      (cleanup478Out_sp (s := openS₉ (openHeadC C) (openBcS₄ s) r rd
+        (BitVec.ofNat 8 (entryByte G C.k).toNat)) (spv := C.sp + 1) (k2 := C.k + 1))
+      (by show C.k < C.k + 1; omega)
+      (by show C.k + 1 < G.nep; exact hcont)
+      (by
+        show C.sp + 1 ≤ stage2StackExtent
+        have h520 : stage2StackExtent = 520 := rfl
+        omega)
+      (by
+        show C.sp + 1 ≤ (openC₉ (openHeadC C) (BitVec.ofNat 8 (entryByte G C.k).toNat)).wlen
+        show C.sp + 1 ≤ max C.wlen (C.sp + 1)
+        exact le_max_right _ _)
+  refine ⟨_, s'', hl''.inv', rfl, rfl, rfl, ?_, ?_⟩
+  · show (openC₉ (openHeadC C) (BitVec.ofNat 8 (entryByte G C.k).toNat)).events
+      = C.events ++ [EventRecord.tag 1]
+    rw [WalkScope.openC₉_events, ifEnd24St_entryByte_7B C hbyte]
+  · show WalkTracePrefix G arena t
+      { openC₉ (openHeadC C) (BitVec.ofNat 8 (entryByte G C.k).toNat) with
+        block := walkLoopHead, inner := walkInnerCap G, k := C.k + 1, sp := C.sp + 1 }
+    exact containerOpenHead_brace h hal hInv hklt hspans hbyte rfl rfl
+
+/-! ### The two-entry container documents' rows
+
+`[]` and `{}` are the documents whose entry stream is one opener and its delimiter.
+The opener's revolution is a proved step from the seed (`containerOpenRevolution_*`),
+so the closer's row is read at the head it leaves: the trace is the two records, and
+nothing between them is a carry supplied by hand. -/
+
+/-- **The document `[]`'s row.**  Two entries, one record each: the bracket opener's
+`T_ARR` and the closing bracket's `T_ARR_END`. -/
+theorem row_openCloseBracket {m0 : Mem} {G : WalkGeom m0} {t : Tape}
+    {arena : List UInt8} {C₀ : WalkCarry G} {s : State}
+    (h : DelimiterLastDocument G (0x5B : UInt8) 0x5D)
+    (hal : WalkAlign G t) (hspans : spansWellFormed t = true)
+    (htokens : t.tokens = [.punct .openBracket ⟨0, 1⟩, .punct .closeBracket ⟨1, 2⟩])
+    (hpre₀ : WalkTracePrefix G arena t C₀) (hk₀ : C₀.k = 0) (hsp₀ : C₀.sp = 0)
+    (hblock₀ : C₀.block = walkLoopHead) (hInv : WalkInv G C₀ s)
+    {rd : BitVec 32}
+    (hread : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes rd.toNat 4))
+    (hpreV : s2ValuePosPre
+      [.int 32 (BitVec.ofNat 32 C₀.sp), .int 32 rd,
+       .ptr C₀.stage.ctype, .ptr C₀.stage.cst] s.mem s.next)
+    (r : CallOutcome)
+    (hcall : stage2Calls stage2SubCalls "s2_value_pos"
+      [.int 32 (BitVec.ofNat 32 C₀.sp), .int 32 rd,
+       .ptr C₀.stage.ctype, .ptr C₀.stage.cst] s.mem s.next = some r)
+    (hret : r.ret = .int 32 (BitVec.ofNat 32 1)) :
+    WalkTraceRow G.bs arena t ([EventRecord.tag 3, EventRecord.tag 4] : List EventRecord) := by
+  have hcont : C₀.k + 1 < G.nep := by rw [hk₀, h.count]; decide
+  have hbyte₀ : entryByte G C₀.k = 0x5B := by rw [hk₀]; exact h.entryByte_zero
+  obtain ⟨C₁, s₁, hInv₁, -, -, hk₁, hev₁, hpre₁⟩ :=
+    containerOpenRevolution_bracket G C₀ s hInv hblock₀ hpre₀ hal hspans hbyte₀
+      (by rw [hsp₀]; decide) (rd := rd) hread hpreV r hcall hret hcont
+  have hbyte₁ : entryByte G C₁.k = 0x5D := by
+    rw [hk₁, hk₀]
+    simpa using h.entryByte_one
+  have hklt₁ : C₁.k < G.nep := by rw [hk₁, hk₀, h.count]; decide
+  have hlast : C₁.k + 1 = t.tokens.length := by rw [hk₁, hk₀, htokens]; rfl
+  have hrow := containerCloseLastRow_bracket hpre₁ hal hInv₁ hklt₁ hspans hbyte₁
+    (spz := BitVec.ofNat 32 0) (c8 := BitVec.ofNat 8 4) rfl hlast
+  simpa [hev₁, WalkTracePrefix.events_eq_nil hpre₀ hk₀] using hrow
+
+/-- **The document `{}`'s row.**  The same two entries at the brace's bytes: `T_OBJ`
+and `T_OBJ_END`. -/
+theorem row_openCloseBrace {m0 : Mem} {G : WalkGeom m0} {t : Tape}
+    {arena : List UInt8} {C₀ : WalkCarry G} {s : State}
+    (h : DelimiterLastDocument G (0x7B : UInt8) 0x7D)
+    (hal : WalkAlign G t) (hspans : spansWellFormed t = true)
+    (htokens : t.tokens = [.punct .openBrace ⟨0, 1⟩, .punct .closeBrace ⟨1, 2⟩])
+    (hpre₀ : WalkTracePrefix G arena t C₀) (hk₀ : C₀.k = 0) (hsp₀ : C₀.sp = 0)
+    (hblock₀ : C₀.block = walkLoopHead) (hInv : WalkInv G C₀ s)
+    {rd : BitVec 32}
+    (hread : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes rd.toNat 4))
+    (hpreV : s2ValuePosPre
+      [.int 32 (BitVec.ofNat 32 C₀.sp), .int 32 rd,
+       .ptr C₀.stage.ctype, .ptr C₀.stage.cst] s.mem s.next)
+    (r : CallOutcome)
+    (hcall : stage2Calls stage2SubCalls "s2_value_pos"
+      [.int 32 (BitVec.ofNat 32 C₀.sp), .int 32 rd,
+       .ptr C₀.stage.ctype, .ptr C₀.stage.cst] s.mem s.next = some r)
+    (hret : r.ret = .int 32 (BitVec.ofNat 32 1)) :
+    WalkTraceRow G.bs arena t ([EventRecord.tag 1, EventRecord.tag 2] : List EventRecord) := by
+  have hcont : C₀.k + 1 < G.nep := by rw [hk₀, h.count]; decide
+  have hbyte₀ : entryByte G C₀.k = 0x7B := by rw [hk₀]; exact h.entryByte_zero
+  obtain ⟨C₁, s₁, hInv₁, -, -, hk₁, hev₁, hpre₁⟩ :=
+    containerOpenRevolution_brace G C₀ s hInv hblock₀ hpre₀ hal hspans hbyte₀
+      (by rw [hsp₀]; decide) (rd := rd) hread hpreV r hcall hret hcont
+  have hbyte₁ : entryByte G C₁.k = 0x7D := by
+    rw [hk₁, hk₀]
+    simpa using h.entryByte_one
+  have hklt₁ : C₁.k < G.nep := by rw [hk₁, hk₀, h.count]; decide
+  have hlast : C₁.k + 1 = t.tokens.length := by rw [hk₁, hk₀, htokens]; rfl
+  have hrow := containerCloseLastRow_brace hpre₁ hal hInv₁ hklt₁ hspans hbyte₁
+    (spz := BitVec.ofNat 32 0) (c8 := BitVec.ofNat 8 2) rfl hlast
+  simpa [hev₁, WalkTracePrefix.events_eq_nil hpre₀ hk₀] using hrow
+
 /-! ### Axiom footprints
 
-Both list lemmas and the two tag selects are axiom-free.  The three counting
-lemmas sit at the development's ceiling, `[propext, Quot.sound]`, because they
-run `omega`; the rest of the walk layer's own vocabulary sits at `propext` alone,
-and every row that reads a tape's token facts sits at the ceiling.  Measured
-rather than assumed. -/
+Both list lemmas and the two tag selects are axiom-free, as are the closer's
+merge-carry equation (`WalkScope.closeCEnd_events`) and the bracket's byte literal.
+The three counting lemmas sit at `[propext, Quot.sound]` because they run `omega`;
+the two opener revolutions and the two-entry rows sit at the development's ceiling,
+`[propext, Classical.choice, Quot.sound]`, because they are the walk's own steps;
+the rest of this layer sits at `propext` alone, and every row that reads a tape's
+token facts is at one of those two.  Measured rather than assumed. -/
 
 /-- info: 'LeanLLVM.Refinement.Token.recordTokens' depends on axioms: [propext] -/
 #guard_msgs in
@@ -840,5 +1487,77 @@ rather than assumed. -/
 /-- info: 'LeanLLVM.Refinement.headRow_openBracket' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms headRow_openBracket
+
+/-- info: 'LeanLLVM.Refinement.bitVec_ofNat_entryByte_5B' does not depend on any axioms -/
+#guard_msgs in
+#print axioms bitVec_ofNat_entryByte_5B
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.closeCEnd_events' does not depend on any axioms -/
+#guard_msgs in
+#print axioms WalkScope.closeCEnd_events
+
+/-- info: 'LeanLLVM.Refinement.WalkScope.openC₉_events' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms WalkScope.openC₉_events
+
+/-- info: 'LeanLLVM.Refinement.WalkTracePrefix.emit_merge' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms WalkTracePrefix.emit_merge
+
+/-- info: 'LeanLLVM.Refinement.WalkTracePrefix.keep_merge' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms WalkTracePrefix.keep_merge
+
+/-- info: 'LeanLLVM.Refinement.WalkTracePrefix.row_of_last' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms WalkTracePrefix.row_of_last
+
+/-- info: 'LeanLLVM.Refinement.WalkTracePrefix.events_eq_nil' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms WalkTracePrefix.events_eq_nil
+
+/-- info: 'LeanLLVM.Refinement.bitVec_ofNat_entryByte' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms bitVec_ofNat_entryByte
+
+/-- info: 'LeanLLVM.Refinement.ifEnd24St_entryByte_5B' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms ifEnd24St_entryByte_5B
+
+/-- info: 'LeanLLVM.Refinement.containerOpenEmit_bracket' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms containerOpenEmit_bracket
+
+/-- info: 'LeanLLVM.Refinement.containerCloseEmit_bracket' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms containerCloseEmit_bracket
+
+/-- info: 'LeanLLVM.Refinement.separatorHead' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms separatorHead
+
+/-- info: 'LeanLLVM.Refinement.containerOpenLastRow_bracket' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms containerOpenLastRow_bracket
+
+/-- info: 'LeanLLVM.Refinement.containerCloseLastRow_bracket' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms containerCloseLastRow_bracket
+
+/-- info: 'LeanLLVM.Refinement.row_openBracketOnly' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms row_openBracketOnly
+
+/-- info: 'LeanLLVM.Refinement.containerOpenRevolution_bracket' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms containerOpenRevolution_bracket
+
+/-- info: 'LeanLLVM.Refinement.containerOpenRevolution_brace' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms containerOpenRevolution_brace
+
+/-- info: 'LeanLLVM.Refinement.row_openCloseBracket' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms row_openCloseBracket
 
 end LeanLLVM.Refinement
