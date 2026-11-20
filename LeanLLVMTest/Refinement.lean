@@ -9283,6 +9283,99 @@ pack facts are `propext`-only or `[propext, Quot.sound]`, and no proof reaches
 #print axioms LeanLLVM.Refinement.JsonUtf8Steps.t16_zero_iff
 
 
+/-! ### The fused, ASCII-gated UTF-8 loop
+
+`JsonUtf8Fused` states the loop state a host block loop carries and proves its
+word and verdict are the stage's, for both gate values, and that an all-ASCII
+document's verdict is zero.  The footprints are the specification's own; the
+`#guard`s are the concrete instances that make the statements non-vacuous. -/
+
+/-- info: 'LeanLLVM.Refinement.JsonUtf8Fused.fusedStep_klStep' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonUtf8Fused.fusedStep_klStep
+
+/-- info: 'LeanLLVM.Refinement.JsonUtf8Fused.fusedRun_init_toPair' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonUtf8Fused.fusedRun_init_toPair
+
+/-- info: 'LeanLLVM.Refinement.JsonUtf8Fused.fusedRun_word_eq_klAcc' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonUtf8Fused.fusedRun_word_eq_klAcc
+
+/-- info: 'LeanLLVM.Refinement.JsonUtf8Fused.fusedStep_advances' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonUtf8Fused.fusedStep_advances
+
+/-- info: 'LeanLLVM.Refinement.JsonUtf8Fused.fusedRun_advance' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonUtf8Fused.fusedRun_advance
+
+/-- info: 'LeanLLVM.Refinement.JsonUtf8Fused.fusedRun_word_eq_klAll' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonUtf8Fused.fusedRun_word_eq_klAll
+
+/-- info: 'LeanLLVM.Refinement.JsonUtf8Fused.fusedVerdict_run_eq_klStage' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonUtf8Fused.fusedVerdict_run_eq_klStage
+
+/-- info: 'LeanLLVM.Refinement.JsonUtf8Fused.fusedVerdict_eq_zero_or_one' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonUtf8Fused.fusedVerdict_eq_zero_or_one
+
+/-- info: 'LeanLLVM.Refinement.JsonUtf8Fused.klStage_eq_zero_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonUtf8Fused.klStage_eq_zero_iff
+
+/-- info: 'LeanLLVM.Refinement.JsonUtf8Fused.fusedVerdict_zero_iff_unit_post' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonUtf8Fused.fusedVerdict_zero_iff_unit_post
+
+/-- info: 'LeanLLVM.Refinement.JsonUtf8Fused.fusedVerdict_eq_of_unit_post' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonUtf8Fused.fusedVerdict_eq_of_unit_post
+
+/-- info: 'LeanLLVM.Refinement.JsonUtf8Fused.fusedRun_ascii' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonUtf8Fused.fusedRun_ascii
+
+/-- info: 'LeanLLVM.Refinement.JsonUtf8Fused.fusedVerdict_ascii' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonUtf8Fused.fusedVerdict_ascii
+
+/-- info: 'LeanLLVM.Refinement.JsonUtf8Fused.klAll_ascii_zero' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonUtf8Fused.klAll_ascii_zero
+
+/-- info: 'LeanLLVM.Refinement.JsonUtf8Fused.klStage_ascii_zero' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonUtf8Fused.klStage_ascii_zero
+
+/-- info: 'LeanLLVM.Refinement.JsonUtf8Fused.ascii_window_prefix' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonUtf8Fused.ascii_window_prefix
+
+-- The fused loop's word and verdict at a concrete ASCII document: one block,
+-- every gate's skip taken, so the accumulator is the initial zero vector and
+-- the verdict is zero.
+#guard ((JsonUtf8Fused.fusedRun (0x00 :: 0x00 :: 0x00 :: [0x41, 0x42]) true 1
+    JsonUtf8Fused.FusedState.init).u8k = List.replicate 32 0x00)
+#guard (JsonUtf8Fused.fusedVerdict
+    (JsonUtf8Fused.fusedRun (0x00 :: 0x00 :: 0x00 :: [0x41, 0x42]) true 1
+      JsonUtf8Fused.FusedState.init).u8k 2 (JsonUtf8Spec.klByte [0x41, 0x42] 1) = 0)
+#guard (JsonUtf8Spec.klStage [0x41, 0x42] 2 true = 0)
+
+-- The same two words at a document whose first block carries a byte no
+-- character can begin with: the error vector is not clear and the verdict is
+-- one, on both paths, because the block is not ASCII and no skip is taken.
+#guard ((JsonUtf8Fused.fusedRun (0x00 :: 0x00 :: 0x00 :: [0xC0]) true 1
+    JsonUtf8Fused.FusedState.init).u8k = [0x00, 0x01] ++ List.replicate 30 0x00)
+#guard (JsonUtf8Fused.fusedVerdict
+    (JsonUtf8Fused.fusedRun (0x00 :: 0x00 :: 0x00 :: [0xC0]) true 1
+      JsonUtf8Fused.FusedState.init).u8k 1 (JsonUtf8Spec.klByte [0xC0] 0) = 1)
+#guard (JsonUtf8Spec.klStage [0xC0] 1 true = 1)
+#guard (JsonUtf8Spec.klStage [0xC0] 1 false = 1)
+
+
 /-! ### The memory-aware records and their calls
 
 `JsonUnitContracts.lean` states the three units' boundary records, proves each
