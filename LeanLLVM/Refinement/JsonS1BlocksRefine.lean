@@ -22,6 +22,7 @@ import LeanLLVM.Refinement.JsonS1BlocksReuse
 import LeanLLVM.Refinement.BlockEvalVector
 import LeanLLVM.Refinement.JsonUtf8IR
 import LeanLLVM.Refinement.JsonUtf8Steps
+import LeanLLVM.Refinement.JsonEntrySteps
 import LeanLLVM.Refinement.JsonEscapeListContract
 import LeanLLVM.Refinement.JsonEscapeIR
 import LeanLLVM.Refinement.LoopFuel
@@ -1516,6 +1517,1367 @@ theorem if_end50_denote (env : Env) (s : State)
   simp only [if_end50Instrs, ifEnd50Out]
   block_eval_c
 
+/-! ### `for.body` — the ASCII phase's per-block run
+
+The block is ninety-six instructions: five leading phis, the two word loads, the
+classifier's entry composition on the loaded words, the two byte-class table
+lookups, the DFA's state update and the store of the emitted word.  One close
+over the whole list leaves more side goals than a single invocation closes, so
+the run is split at seven points into one `denoteCode` equation each, at
+explicit intermediate environments; the segments compose by
+`denoteCode_append_apply`.
+
+Every value the block binds is a field of `ForBodyValues`, computed once by
+`forBodyValues` from the phis the edge selects, the two loaded words and the two
+pointers the block addresses.  A cell is stated as its own instruction's
+meaning applied to the cells it reads, so a segment's equation is the block's
+run and nothing re-derived. -/
+
+/-- The values `for.body` binds, one field per destination, in binding order.
+The first nine are the inputs: the five phis, the two loaded words' bytes, and
+the two pointers. -/
+structure ForBodyValues where
+  prevS : BitVec 64
+  i : BitVec 64
+  st0 : BitVec 64
+  st9 : BitVec 64
+  st15 : BitVec 64
+  bs2 : List UInt8
+  bs3 : List UInt8
+  b : Nat
+  ent : Nat
+  shl : BitVec 64
+  addPtr : Nat
+  addPtr5 : Nat
+  w2 : List (BitVec 64)
+  w3 : List (BitVec 64)
+  byte2 : List (BitVec 8)
+  byte3 : List (BitVec 8)
+  join : List (BitVec 64)
+  joinBytes : List (BitVec 8)
+  cmp8 : List (BitVec 1)
+  or286 : BitVec 64
+  cmp39 : List (BitVec 1)
+  mask9 : BitVec 32
+  conv9 : BitVec 64
+  cmpii : List (BitVec 1)
+  mask10 : BitVec 32
+  conv12 : BitVec 64
+  shl13 : BitVec 64
+  or14 : BitVec 64
+  andII : BitVec 64
+  shlII : BitVec 64
+  notII : BitVec 64
+  and1II : BitVec 64
+  xorII : BitVec 64
+  and2II : BitVec 64
+  xor3II : BitVec 64
+  not4II : BitVec 64
+  addII : BitVec 64
+  add5II : BitVec 64
+  and6II : BitVec 64
+  and7II : BitVec 64
+  and8II : BitVec 64
+  and9II : BitVec 64
+  and11II : BitVec 64
+  orII : BitVec 64
+  or12II : BitVec 64
+  cmp45 : BitVec 1
+  conv13II : BitVec 64
+  shrII : BitVec 64
+  notI : BitVec 64
+  andI : BitVec 64
+  half11 : List (BitVec 16)
+  shr12 : List (BitVec 16)
+  low13 : List (BitVec 8)
+  shuf14 : List (BitVec 8)
+  shuf15 : List (BitVec 8)
+  low16 : List (BitVec 8)
+  shuf17 : List (BitVec 8)
+  andClass1 : List (BitVec 8)
+  and18 : List (BitVec 8)
+  cmp21 : List (BitVec 1)
+  mask19 : BitVec 32
+  not46 : BitVec 32
+  half20 : List (BitVec 16)
+  shr21 : List (BitVec 16)
+  low22 : List (BitVec 8)
+  shuf23 : List (BitVec 8)
+  shuf24 : List (BitVec 8)
+  low25 : List (BitVec 8)
+  shuf26 : List (BitVec 8)
+  andClass2 : List (BitVec 8)
+  and27 : List (BitVec 8)
+  cmp48 : List (BitVec 1)
+  mask28 : BitVec 32
+  not49 : BitVec 32
+  conv16 : BitVec 64
+  conv17 : BitVec 64
+  shl18 : BitVec 64
+  or19 : BitVec 64
+  join64 : List (BitVec 8)
+  cmp30 : List (BitVec 1)
+  or23 : BitVec 64
+  vecinit : List (BitVec 64)
+  pclmul : List (BitVec 64)
+  vecext : BitVec 64
+  xorI : BitVec 64
+  shrI : BitVec 64
+  not8 : BitVec 64
+  v32 : BitVec 64
+  v33 : BitVec 64
+  and9 : BitVec 64
+  and11 : BitVec 64
+  shl12 : BitVec 64
+  or13 : BitVec 64
+  not14 : BitVec 64
+  and15 : BitVec 64
+  v34 : BitVec 64
+  or16 : BitVec 64
+  shr17 : BitVec 64
+  arrayidx : Nat
+
+/-- The first table the byte-class lookups read: per sixteen-byte lane, the
+sentinel bytes as `vpshufb`'s second operand expects them. -/
+def forBodyTableA : List (BitVec 8) :=
+  [0x40#8, 0x00#8, 0x00#8, 0x00#8, 0x00#8, 0x00#8, 0x00#8, 0x00#8,
+   0x00#8, 0x80#8, 0x82#8, 0x14#8, 0x01#8, 0xa8#8, 0x00#8, 0x00#8,
+   0x40#8, 0x00#8, 0x00#8, 0x00#8, 0x00#8, 0x00#8, 0x00#8, 0x00#8,
+   0x00#8, 0x80#8, 0x82#8, 0x14#8, 0x01#8, 0xa8#8, 0x00#8, 0x00#8]
+
+/-- The second table the byte-class lookups read. -/
+def forBodyTableB : List (BitVec 8) :=
+  [0x80#8, 0x00#8, 0x41#8, 0x02#8, 0x00#8, 0x30#8, 0x00#8, 0x0c#8,
+   0x00#8, 0x00#8, 0x00#8, 0x00#8, 0x00#8, 0x00#8, 0x00#8, 0x00#8,
+   0x80#8, 0x00#8, 0x41#8, 0x02#8, 0x00#8, 0x30#8, 0x00#8, 0x0c#8,
+   0x00#8, 0x00#8, 0x00#8, 0x00#8, 0x00#8, 0x00#8, 0x00#8, 0x00#8]
+
+/-- The block's computation, from the nine inputs. -/
+def forBodyValues (prevS i st0 st9 st15 : BitVec 64) (bs2 bs3 : List UInt8)
+    (b ent : Nat) : ForBodyValues :=
+  let shl := i <<< (0x0000000000000006#64).toNat
+  let addPtr := b + (shl.signExtend 64).toNat
+  let addPtr5 := addPtr + ((0x0000000000000020#64).signExtend 64).toNat
+  let w2 := unpackLanes 64 4 (bytesToNat bs2)
+  let w3 := unpackLanes 64 4 (bytesToNat bs3)
+  let byte2 := bitcastVecLanes 8 32 w2
+  let byte3 := bitcastVecLanes 8 32 w3
+  let join := w2 ++ w3
+  let joinBytes := bitcastVecLanes 8 64 join
+  let cmp8 := icmpLanes .eq joinBytes (List.replicate 64 0x22#8)
+  let or286 := BitVec.ofNat 64 (lanesToNat cmp8)
+  let cmp39 := icmpLanes .eq byte2 (List.replicate 32 0x5c#8)
+  let mask9 := BitVec.ofNat 32 (lanesToNat cmp39)
+  let conv9 := BitVec.ofNat 64 mask9.toNat
+  let cmpii := icmpLanes .eq byte3 (List.replicate 32 0x5c#8)
+  let mask10 := BitVec.ofNat 32 (lanesToNat cmpii)
+  let conv12 := BitVec.ofNat 64 mask10.toNat
+  let shl13 := conv12 <<< (0x0000000000000020#64).toNat
+  let or14 := shl13 ||| conv9
+  let andII := st0 &&& st9
+  let shlII := or14 <<< (0x0000000000000001#64).toNat
+  let notII := shlII ^^^ 0xffffffffffffffff#64
+  let and1II := or14 &&& notII
+  let xorII := andII ^^^ 0x5555555555555555#64
+  let and2II := and1II &&& xorII
+  let xor3II := and2II ^^^ and1II
+  let not4II := or14 ^^^ 0xffffffffffffffff#64
+  let addII := and2II + or14
+  let add5II := xor3II + or14
+  let and6II := not4II &&& 0xaaaaaaaaaaaaaaaa#64
+  let and7II := and6II &&& addII
+  let and8II := not4II &&& 0x5555555555555555#64
+  let and9II := and8II &&& add5II
+  let and11II := andII &&& not4II
+  let orII := and7II ||| and11II
+  let or12II := orII ||| and9II
+  let cmp45 := evalICmp .ult add5II or14
+  let conv13II := BitVec.ofNat 64 cmp45.toNat
+  let shrII := conv12 >>> (0x000000000000001f#64).toNat
+  let notI := or12II ^^^ 0xffffffffffffffff#64
+  let andI := or286 &&& notI
+  let half11 := bitcastVecLanes 16 16 w2
+  let shr12 := half11.map fun x : BitVec 16 => x >>> (0x0004#16).toNat
+  let low13 := byte2.map fun x => x &&& 0x0f#8
+  let shuf14 := pshufbLanes forBodyTableA low13
+  let shuf15 := bitcastVecLanes 8 32 shr12
+  let low16 := shuf15.map fun x => x &&& 0x0f#8
+  let shuf17 := pshufbLanes forBodyTableB low16
+  let andClass1 := List.zipWith (fun x y => x &&& y) shuf17 shuf14
+  let and18 := andClass1.map fun x => x &&& 0x3f#8
+  let cmp21 := icmpLanes .eq and18 (List.replicate 32 0x00#8)
+  let mask19 := BitVec.ofNat 32 (lanesToNat cmp21)
+  let not46 := mask19 ^^^ 0xffffffff#32
+  let half20 := bitcastVecLanes 16 16 w3
+  let shr21 := half20.map fun x : BitVec 16 => x >>> (0x0004#16).toNat
+  let low22 := byte3.map fun x => x &&& 0x0f#8
+  let shuf23 := pshufbLanes forBodyTableA low22
+  let shuf24 := bitcastVecLanes 8 32 shr21
+  let low25 := shuf24.map fun x => x &&& 0x0f#8
+  let shuf26 := pshufbLanes forBodyTableB low25
+  let andClass2 := List.zipWith (fun x y => x &&& y) shuf26 shuf23
+  let and27 := andClass2.map fun x => x &&& 0x3f#8
+  let cmp48 := icmpLanes .eq and27 (List.replicate 32 0x00#8)
+  let mask28 := BitVec.ofNat 32 (lanesToNat cmp48)
+  let not49 := mask28 ^^^ 0xffffffff#32
+  let conv16 := BitVec.ofNat 64 not46.toNat
+  let conv17 := BitVec.ofNat 64 not49.toNat
+  let shl18 := conv17 <<< (0x0000000000000020#64).toNat
+  let or19 := shl18 ||| conv16
+  let join64 := andClass1 ++ andClass2
+  let cmp30 := icmpLanes .eq join64 (List.replicate 64 0x00#8)
+  let or23 := BitVec.ofNat 64 (lanesToNat cmp30)
+  let vecinit := [BitVec.ofNat 64 andI.toNat, 0x0000000000000000#64]
+  let pclmul := [Pclmul.clmul (BitVec.ofNat 64 andI.toNat) (BitVec.allOnes 64),
+    0x0000000000000000#64]
+  let vecext := Pclmul.clmul (BitVec.ofNat 64 andI.toNat) (BitVec.allOnes 64)
+  let xorI := vecext ^^^ st15
+  let shrI := BitVec.sshiftRight xorI (0x000000000000003f#64).toNat
+  let not8 := xorI ^^^ 0xffffffffffffffff#64
+  let v32 := andI ||| xorI
+  let v33 := v32 ^^^ 0xffffffffffffffff#64
+  let and9 := or23 &&& v33
+  let and11 := or19 &&& not8
+  let shl12 := and9 <<< (0x0000000000000001#64).toNat
+  let or13 := shl12 ||| prevS
+  let not14 := or13 ^^^ 0xffffffffffffffff#64
+  let and15 := and9 &&& not14
+  let v34 := and11 ||| and15
+  let or16 := v34 ||| andI
+  let shr17 := and9 >>> (0x000000000000003f#64).toNat
+  let arrayidx := ent + (i.signExtend 64).toNat * (Ty.int 64).sizeBytes
+  { prevS, i, st0, st9, st15, bs2, bs3, b, ent, shl, addPtr, addPtr5, w2, w3,
+    byte2, byte3, join, joinBytes, cmp8, or286, cmp39, mask9, conv9, cmpii,
+    mask10, conv12, shl13, or14, andII, shlII, notII, and1II, xorII, and2II,
+    xor3II, not4II, addII, add5II, and6II, and7II, and8II, and9II, and11II,
+    orII, or12II, cmp45, conv13II, shrII, notI, andI, half11, shr12, low13,
+    shuf14, shuf15, low16, shuf17, andClass1, and18, cmp21, mask19, not46,
+    half20, shr21, low22, shuf23, shuf24, low25, shuf26, andClass2, and27,
+    cmp48, mask28, not49, conv16, conv17, shl18, or19, join64, cmp30, or23,
+    vecinit, pclmul, vecext, xorI, shrI, not8, v32, v33, and9, and11, shl12,
+    or13, not14, and15, v34, or16, shr17, arrayidx }
+
+/-- `for.body`'s leading `phi` run, as the specs the block writes. -/
+def forBodyPhis : List PhiSpec :=
+  [{ dst := "%prevS.0511", ty := .int 64,
+     incoming := [("for.body.lr.ph", .imm (.int 64 0x0000000000000000#64)),
+       ("for.inc", .reg "%shr17")] },
+   { dst := "%i.0510", ty := .int 64,
+     incoming := [("for.body.lr.ph", .imm (.int 64 0x0000000000000000#64)),
+       ("for.inc", .reg "%inc")] },
+   { dst := "%st.sroa.0.0509", ty := .int 64,
+     incoming := [("for.body.lr.ph", .imm (.int 64 0x0000000000000000#64)),
+       ("for.inc", .reg "%shr.i.i")] },
+   { dst := "%st.sroa.9.0508", ty := .int 64,
+     incoming := [("for.body.lr.ph", .imm (.int 64 0x0000000000000000#64)),
+       ("for.inc", .reg "%conv13.i.i")] },
+   { dst := "%st.sroa.15.0507", ty := .int 64,
+     incoming := [("for.body.lr.ph", .imm (.int 64 0x0000000000000000#64)),
+       ("for.inc", .reg "%shr.i")] }]
+
+/-- The bindings the run above installs, in the order the block writes them. -/
+def forBodyPhiCells (v : ForBodyValues) : List (String × Value) :=
+  [("%prevS.0511", .int 64 v.prevS),
+   ("%i.0510", .int 64 v.i),
+   ("%st.sroa.0.0509", .int 64 v.st0),
+   ("%st.sroa.9.0508", .int 64 v.st9),
+   ("%st.sroa.15.0507", .int 64 v.st15)]
+
+/-- The instructions after `for.body`'s leading `phi` run: the shifted index, the
+two pointer offsets and the two word loads. -/
+def forBodySeg1Tail : List Instr :=
+[
+                          LeanLLVM.Instr.binop
+                            "%shl"
+                            (LeanLLVM.BinOp.shl)
+                            64
+                            (LeanLLVM.Operand.reg "%i.0510")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.int 64 0x0000000000000006#64)),
+                          LeanLLVM.Instr.gep
+                            "%add.ptr"
+                            (LeanLLVM.Ty.int 8)
+                            (LeanLLVM.Operand.reg "%b")
+                            (LeanLLVM.Operand.reg "%shl"),
+                          LeanLLVM.Instr.load
+                            "%2"
+                            (LeanLLVM.Ty.vec 4 (LeanLLVM.Ty.int 64))
+                            (LeanLLVM.Operand.reg "%add.ptr"),
+                          LeanLLVM.Instr.gep
+                            "%add.ptr5"
+                            (LeanLLVM.Ty.int 8)
+                            (LeanLLVM.Operand.reg "%add.ptr")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.int 64 0x0000000000000020#64)),
+                          LeanLLVM.Instr.load
+                            "%3"
+                            (LeanLLVM.Ty.vec 4 (LeanLLVM.Ty.int 64))
+                            (LeanLLVM.Operand.reg "%add.ptr5"),]
+
+/-- The environment after the phi run and the two loads. -/
+def fbEnv1 (env : Env) (v : ForBodyValues) : Env :=
+  cells [("%3", .vec 4 64 v.w3),
+         ("%add.ptr5", .ptr v.addPtr5),
+         ("%2", .vec 4 64 v.w2),
+         ("%add.ptr", .ptr v.addPtr),
+         ("%shl", .int 64 v.shl)]
+    (cells [("%st.sroa.15.0507", .int 64 v.st15),
+            ("%st.sroa.9.0508", .int 64 v.st9),
+            ("%st.sroa.0.0509", .int 64 v.st0),
+            ("%i.0510", .int 64 v.i),
+            ("%prevS.0511", .int 64 v.prevS)] env)
+
+/-- The environment after the word join and the byte-mask compare. -/
+def fbEnv2 (env : Env) (v : ForBodyValues) : Env :=
+  cells [("%or14.i", .int 64 v.or14),
+         ("%shl13.i", .int 64 v.shl13),
+         ("%conv12.i", .int 64 v.conv12),
+         ("%10", .int 32 v.mask10),
+         ("%cmp.i.i", .vec 32 1 v.cmpii),
+         ("%conv9.i", .int 64 v.conv9),
+         ("%9", .int 32 v.mask9),
+         ("%cmp.i39.i", .vec 32 1 v.cmp39),
+         ("%or.i286", .int 64 v.or286),
+         ("%8", .vec 64 1 v.cmp8),
+         ("%7", .vec 64 8 v.joinBytes),
+         ("%6", .vec 8 64 v.join),
+         ("%5", .vec 32 8 v.byte3),
+         ("%4", .vec 32 8 v.byte2)] (fbEnv1 env v)
+
+/-- The environment after the byte-class arithmetic. -/
+def fbEnv3 (env : Env) (v : ForBodyValues) : Env :=
+  cells [("%and.i", .int 64 v.andI),
+         ("%not.i", .int 64 v.notI),
+         ("%shr.i.i", .int 64 v.shrII),
+         ("%conv13.i.i", .int 64 v.conv13II),
+         ("%cmp.i45.i", .int 1 v.cmp45),
+         ("%or12.i.i", .int 64 v.or12II),
+         ("%or.i.i", .int 64 v.orII),
+         ("%and11.i.i", .int 64 v.and11II),
+         ("%and9.i.i", .int 64 v.and9II),
+         ("%and8.i.i", .int 64 v.and8II),
+         ("%and7.i.i", .int 64 v.and7II),
+         ("%and6.i.i", .int 64 v.and6II),
+         ("%add5.i.i", .int 64 v.add5II),
+         ("%add.i.i", .int 64 v.addII),
+         ("%not4.i.i", .int 64 v.not4II),
+         ("%xor3.i.i", .int 64 v.xor3II),
+         ("%and2.i.i", .int 64 v.and2II),
+         ("%xor.i.i", .int 64 v.xorII),
+         ("%and1.i.i", .int 64 v.and1II),
+         ("%not.i.i", .int 64 v.notII),
+         ("%shl.i.i", .int 64 v.shlII),
+         ("%and.i.i", .int 64 v.andII)] (fbEnv2 env v)
+
+/-- The environment after the first table lookup and its zero test. -/
+def fbEnv4 (env : Env) (v : ForBodyValues) : Env :=
+  cells [("%not.i46.i", .int 32 v.not46),
+         ("%19", .int 32 v.mask19),
+         ("%cmp.i21.i.i", .vec 32 1 v.cmp21),
+         ("%18", .vec 32 8 v.and18),
+         ("%and.i2326.i.i", .vec 32 8 v.andClass1),
+         ("%17", .vec 32 8 v.shuf17),
+         ("%16", .vec 32 8 v.low16),
+         ("%15", .vec 32 8 v.shuf15),
+         ("%14", .vec 32 8 v.shuf14),
+         ("%13", .vec 32 8 v.low13),
+         ("%12", .vec 16 16 v.shr12),
+         ("%11", .vec 16 16 v.half11)] (fbEnv3 env v)
+
+/-- The environment after the second table lookup and the packed class word. -/
+def fbEnv5 (env : Env) (v : ForBodyValues) : Env :=
+  cells [("%or19.i", .int 64 v.or19),
+         ("%shl18.i", .int 64 v.shl18),
+         ("%conv17.i", .int 64 v.conv17),
+         ("%conv16.i", .int 64 v.conv16),
+         ("%not.i49.i", .int 32 v.not49),
+         ("%28", .int 32 v.mask28),
+         ("%cmp.i21.i48.i", .vec 32 1 v.cmp48),
+         ("%27", .vec 32 8 v.and27),
+         ("%and.i2326.i47.i", .vec 32 8 v.andClass2),
+         ("%26", .vec 32 8 v.shuf26),
+         ("%25", .vec 32 8 v.low25),
+         ("%24", .vec 32 8 v.shuf24),
+         ("%23", .vec 32 8 v.shuf23),
+         ("%22", .vec 32 8 v.low22),
+         ("%21", .vec 16 16 v.shr21),
+         ("%20", .vec 16 16 v.half20)] (fbEnv4 env v)
+
+/-- The environment after the sixty-four-lane join and the state update. -/
+def fbEnv6 (env : Env) (v : ForBodyValues) : Env :=
+  cells [("%and11", .int 64 v.and11),
+         ("%and9", .int 64 v.and9),
+         ("%33", .int 64 v.v33),
+         ("%32", .int 64 v.v32),
+         ("%not8", .int 64 v.not8),
+         ("%shr.i", .int 64 v.shrI),
+         ("%xor.i", .int 64 v.xorI),
+         ("%vecext.i.i.i", .int 64 v.vecext),
+         ("%31", .vec 2 64 v.pclmul),
+         ("%vecinit1.i.i.i", .vec 2 64 v.vecinit),
+         ("%or23.i", .int 64 v.or23),
+         ("%30", .vec 64 1 v.cmp30),
+         ("%29", .vec 64 8 v.join64)] (fbEnv5 env v)
+
+/-- The environment after the emit word, the array index and the store (the
+store leaves the environment alone, so the last cell is the index). -/
+def fbEnv7 (env : Env) (v : ForBodyValues) : Env :=
+  cells [("%arrayidx", .ptr v.arrayidx),
+         ("%shr17", .int 64 v.shr17),
+         ("%or16", .int 64 v.or16),
+         ("%34", .int 64 v.v34),
+         ("%and15", .int 64 v.and15),
+         ("%not14", .int 64 v.not14),
+         ("%or13", .int 64 v.or13),
+         ("%shl12", .int 64 v.shl12)] (fbEnv6 env v)
+
+/-- `for.body`'s environment: everything the block binds. -/
+abbrev forBodyOut (env : Env) (v : ForBodyValues) : Env := fbEnv7 env v
+/-- `for.body`'s run: the phi run and the two block loads (instructions 0-9). -/
+def forBodySeg1 : List Instr :=
+[LeanLLVM.Instr.phi
+                            "%prevS.0511"
+                            (LeanLLVM.Ty.int 64)
+                            [("for.body.lr.ph", LeanLLVM.Operand.imm (LeanLLVM.Const.int 64 0x0000000000000000#64)),
+                             ("for.inc", LeanLLVM.Operand.reg "%shr17")],
+                          LeanLLVM.Instr.phi
+                            "%i.0510"
+                            (LeanLLVM.Ty.int 64)
+                            [("for.body.lr.ph", LeanLLVM.Operand.imm (LeanLLVM.Const.int 64 0x0000000000000000#64)),
+                             ("for.inc", LeanLLVM.Operand.reg "%inc")],
+                          LeanLLVM.Instr.phi
+                            "%st.sroa.0.0509"
+                            (LeanLLVM.Ty.int 64)
+                            [("for.body.lr.ph", LeanLLVM.Operand.imm (LeanLLVM.Const.int 64 0x0000000000000000#64)),
+                             ("for.inc", LeanLLVM.Operand.reg "%shr.i.i")],
+                          LeanLLVM.Instr.phi
+                            "%st.sroa.9.0508"
+                            (LeanLLVM.Ty.int 64)
+                            [("for.body.lr.ph", LeanLLVM.Operand.imm (LeanLLVM.Const.int 64 0x0000000000000000#64)),
+                             ("for.inc", LeanLLVM.Operand.reg "%conv13.i.i")],
+                          LeanLLVM.Instr.phi
+                            "%st.sroa.15.0507"
+                            (LeanLLVM.Ty.int 64)
+                            [("for.body.lr.ph", LeanLLVM.Operand.imm (LeanLLVM.Const.int 64 0x0000000000000000#64)),
+                             ("for.inc", LeanLLVM.Operand.reg "%shr.i")],
+                          LeanLLVM.Instr.binop
+                            "%shl"
+                            (LeanLLVM.BinOp.shl)
+                            64
+                            (LeanLLVM.Operand.reg "%i.0510")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.int 64 0x0000000000000006#64)),
+                          LeanLLVM.Instr.gep
+                            "%add.ptr"
+                            (LeanLLVM.Ty.int 8)
+                            (LeanLLVM.Operand.reg "%b")
+                            (LeanLLVM.Operand.reg "%shl"),
+                          LeanLLVM.Instr.load
+                            "%2"
+                            (LeanLLVM.Ty.vec 4 (LeanLLVM.Ty.int 64))
+                            (LeanLLVM.Operand.reg "%add.ptr"),
+                          LeanLLVM.Instr.gep
+                            "%add.ptr5"
+                            (LeanLLVM.Ty.int 8)
+                            (LeanLLVM.Operand.reg "%add.ptr")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.int 64 0x0000000000000020#64)),
+                          LeanLLVM.Instr.load
+                            "%3"
+                            (LeanLLVM.Ty.vec 4 (LeanLLVM.Ty.int 64))
+                            (LeanLLVM.Operand.reg "%add.ptr5"),]
+
+/-- `for.body`'s run: the word join and the byte-mask compare (instructions 10-23). -/
+def forBodySeg2 : List Instr :=
+[                          LeanLLVM.Instr.vecBitcast "%4" 4 64 32 8 (LeanLLVM.Operand.reg "%2"),
+                          LeanLLVM.Instr.vecBitcast "%5" 4 64 32 8 (LeanLLVM.Operand.reg "%3"),
+                          LeanLLVM.Instr.shuffleVec
+                            "%6"
+                            4
+                            64
+                            (LeanLLVM.Operand.reg "%2")
+                            (LeanLLVM.Operand.reg "%3")
+                            [0, 1, 2, 3, 4, 5, 6, 7],
+                          LeanLLVM.Instr.vecBitcast "%7" 8 64 64 8 (LeanLLVM.Operand.reg "%6"),
+                          LeanLLVM.Instr.icmpVec
+                            "%8"
+                            (LeanLLVM.IPred.eq)
+                            64
+                            8
+                            (LeanLLVM.Operand.reg "%7")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.splat 64 8 0x22#8)),
+                          LeanLLVM.Instr.bitcastMask "%or.i286" 64 (LeanLLVM.Operand.reg "%8"),
+                          LeanLLVM.Instr.icmpVec
+                            "%cmp.i39.i"
+                            (LeanLLVM.IPred.eq)
+                            32
+                            8
+                            (LeanLLVM.Operand.reg "%4")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.splat 32 8 0x5c#8)),
+                          LeanLLVM.Instr.bitcastMask "%9" 32 (LeanLLVM.Operand.reg "%cmp.i39.i"),
+                          LeanLLVM.Instr.zext "%conv9.i" 32 64 (LeanLLVM.Operand.reg "%9"),
+                          LeanLLVM.Instr.icmpVec
+                            "%cmp.i.i"
+                            (LeanLLVM.IPred.eq)
+                            32
+                            8
+                            (LeanLLVM.Operand.reg "%5")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.splat 32 8 0x5c#8)),
+                          LeanLLVM.Instr.bitcastMask "%10" 32 (LeanLLVM.Operand.reg "%cmp.i.i"),
+                          LeanLLVM.Instr.zext "%conv12.i" 32 64 (LeanLLVM.Operand.reg "%10"),
+                          LeanLLVM.Instr.binop
+                            "%shl13.i"
+                            (LeanLLVM.BinOp.shl)
+                            64
+                            (LeanLLVM.Operand.reg "%conv12.i")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.int 64 0x0000000000000020#64)),
+                          LeanLLVM.Instr.binop
+                            "%or14.i"
+                            (LeanLLVM.BinOp.or)
+                            64
+                            (LeanLLVM.Operand.reg "%shl13.i")
+                            (LeanLLVM.Operand.reg "%conv9.i"),]
+
+/-- `for.body`'s run: the byte-class arithmetic and the DFA carry (instructions 24-45). -/
+def forBodySeg3 : List Instr :=
+[                          LeanLLVM.Instr.binop
+                            "%and.i.i"
+                            (LeanLLVM.BinOp.and)
+                            64
+                            (LeanLLVM.Operand.reg "%st.sroa.0.0509")
+                            (LeanLLVM.Operand.reg "%st.sroa.9.0508"),
+                          LeanLLVM.Instr.binop
+                            "%shl.i.i"
+                            (LeanLLVM.BinOp.shl)
+                            64
+                            (LeanLLVM.Operand.reg "%or14.i")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.int 64 0x0000000000000001#64)),
+                          LeanLLVM.Instr.binop
+                            "%not.i.i"
+                            (LeanLLVM.BinOp.xor)
+                            64
+                            (LeanLLVM.Operand.reg "%shl.i.i")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.int 64 0xffffffffffffffff#64)),
+                          LeanLLVM.Instr.binop
+                            "%and1.i.i"
+                            (LeanLLVM.BinOp.and)
+                            64
+                            (LeanLLVM.Operand.reg "%or14.i")
+                            (LeanLLVM.Operand.reg "%not.i.i"),
+                          LeanLLVM.Instr.binop
+                            "%xor.i.i"
+                            (LeanLLVM.BinOp.xor)
+                            64
+                            (LeanLLVM.Operand.reg "%and.i.i")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.int 64 0x5555555555555555#64)),
+                          LeanLLVM.Instr.binop
+                            "%and2.i.i"
+                            (LeanLLVM.BinOp.and)
+                            64
+                            (LeanLLVM.Operand.reg "%and1.i.i")
+                            (LeanLLVM.Operand.reg "%xor.i.i"),
+                          LeanLLVM.Instr.binop
+                            "%xor3.i.i"
+                            (LeanLLVM.BinOp.xor)
+                            64
+                            (LeanLLVM.Operand.reg "%and2.i.i")
+                            (LeanLLVM.Operand.reg "%and1.i.i"),
+                          LeanLLVM.Instr.binop
+                            "%not4.i.i"
+                            (LeanLLVM.BinOp.xor)
+                            64
+                            (LeanLLVM.Operand.reg "%or14.i")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.int 64 0xffffffffffffffff#64)),
+                          LeanLLVM.Instr.binop
+                            "%add.i.i"
+                            (LeanLLVM.BinOp.add)
+                            64
+                            (LeanLLVM.Operand.reg "%and2.i.i")
+                            (LeanLLVM.Operand.reg "%or14.i"),
+                          LeanLLVM.Instr.binop
+                            "%add5.i.i"
+                            (LeanLLVM.BinOp.add)
+                            64
+                            (LeanLLVM.Operand.reg "%xor3.i.i")
+                            (LeanLLVM.Operand.reg "%or14.i"),
+                          LeanLLVM.Instr.binop
+                            "%and6.i.i"
+                            (LeanLLVM.BinOp.and)
+                            64
+                            (LeanLLVM.Operand.reg "%not4.i.i")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.int 64 0xaaaaaaaaaaaaaaaa#64)),
+                          LeanLLVM.Instr.binop
+                            "%and7.i.i"
+                            (LeanLLVM.BinOp.and)
+                            64
+                            (LeanLLVM.Operand.reg "%and6.i.i")
+                            (LeanLLVM.Operand.reg "%add.i.i"),
+                          LeanLLVM.Instr.binop
+                            "%and8.i.i"
+                            (LeanLLVM.BinOp.and)
+                            64
+                            (LeanLLVM.Operand.reg "%not4.i.i")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.int 64 0x5555555555555555#64)),
+                          LeanLLVM.Instr.binop
+                            "%and9.i.i"
+                            (LeanLLVM.BinOp.and)
+                            64
+                            (LeanLLVM.Operand.reg "%and8.i.i")
+                            (LeanLLVM.Operand.reg "%add5.i.i"),
+                          LeanLLVM.Instr.binop
+                            "%and11.i.i"
+                            (LeanLLVM.BinOp.and)
+                            64
+                            (LeanLLVM.Operand.reg "%and.i.i")
+                            (LeanLLVM.Operand.reg "%not4.i.i"),
+                          LeanLLVM.Instr.binop
+                            "%or.i.i"
+                            (LeanLLVM.BinOp.or)
+                            64
+                            (LeanLLVM.Operand.reg "%and7.i.i")
+                            (LeanLLVM.Operand.reg "%and11.i.i"),
+                          LeanLLVM.Instr.binop
+                            "%or12.i.i"
+                            (LeanLLVM.BinOp.or)
+                            64
+                            (LeanLLVM.Operand.reg "%or.i.i")
+                            (LeanLLVM.Operand.reg "%and9.i.i"),
+                          LeanLLVM.Instr.icmp
+                            "%cmp.i45.i"
+                            (LeanLLVM.IPred.ult)
+                            64
+                            (LeanLLVM.Operand.reg "%add5.i.i")
+                            (LeanLLVM.Operand.reg "%or14.i"),
+                          LeanLLVM.Instr.zext "%conv13.i.i" 1 64 (LeanLLVM.Operand.reg "%cmp.i45.i"),
+                          LeanLLVM.Instr.binop
+                            "%shr.i.i"
+                            (LeanLLVM.BinOp.lshr)
+                            64
+                            (LeanLLVM.Operand.reg "%conv12.i")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.int 64 0x000000000000001f#64)),
+                          LeanLLVM.Instr.binop
+                            "%not.i"
+                            (LeanLLVM.BinOp.xor)
+                            64
+                            (LeanLLVM.Operand.reg "%or12.i.i")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.int 64 0xffffffffffffffff#64)),
+                          LeanLLVM.Instr.binop
+                            "%and.i"
+                            (LeanLLVM.BinOp.and)
+                            64
+                            (LeanLLVM.Operand.reg "%or.i286")
+                            (LeanLLVM.Operand.reg "%not.i"),]
+
+/-- `for.body`'s run: the first shift-and-mask half, through the negated zero test (instructions 46-57). -/
+def forBodySeg4 : List Instr :=
+[                          LeanLLVM.Instr.vecBitcast "%11" 4 64 16 16 (LeanLLVM.Operand.reg "%2"),
+                          LeanLLVM.Instr.binopVec
+                            "%12"
+                            (LeanLLVM.BinOp.lshr)
+                            16
+                            16
+                            (LeanLLVM.Operand.reg "%11")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.splat 16 16 0x0004#16)),
+                          LeanLLVM.Instr.binopVec
+                            "%13"
+                            (LeanLLVM.BinOp.and)
+                            32
+                            8
+                            (LeanLLVM.Operand.reg "%4")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.splat 32 8 0x0f#8)),
+                          LeanLLVM.Instr.call
+                            "%14"
+                            (LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8))
+                            "llvm.x86.avx2.pshuf.b"
+                            [(LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8),
+                              LeanLLVM.Operand.imm
+                                (LeanLLVM.Const.vector
+                                  8
+                                  [0x40#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x80#8,
+                                   0x82#8,
+                                   0x14#8,
+                                   0x01#8,
+                                   0xa8#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x40#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x80#8,
+                                   0x82#8,
+                                   0x14#8,
+                                   0x01#8,
+                                   0xa8#8,
+                                   0x00#8,
+                                   0x00#8])),
+                             (LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8), LeanLLVM.Operand.reg "%13")],
+                          LeanLLVM.Instr.vecBitcast "%15" 16 16 32 8 (LeanLLVM.Operand.reg "%12"),
+                          LeanLLVM.Instr.binopVec
+                            "%16"
+                            (LeanLLVM.BinOp.and)
+                            32
+                            8
+                            (LeanLLVM.Operand.reg "%15")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.splat 32 8 0x0f#8)),
+                          LeanLLVM.Instr.call
+                            "%17"
+                            (LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8))
+                            "llvm.x86.avx2.pshuf.b"
+                            [(LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8),
+                              LeanLLVM.Operand.imm
+                                (LeanLLVM.Const.vector
+                                  8
+                                  [0x80#8,
+                                   0x00#8,
+                                   0x41#8,
+                                   0x02#8,
+                                   0x00#8,
+                                   0x30#8,
+                                   0x00#8,
+                                   0x0c#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x80#8,
+                                   0x00#8,
+                                   0x41#8,
+                                   0x02#8,
+                                   0x00#8,
+                                   0x30#8,
+                                   0x00#8,
+                                   0x0c#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8])),
+                             (LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8), LeanLLVM.Operand.reg "%16")],
+                          LeanLLVM.Instr.binopVec
+                            "%and.i2326.i.i"
+                            (LeanLLVM.BinOp.and)
+                            32
+                            8
+                            (LeanLLVM.Operand.reg "%17")
+                            (LeanLLVM.Operand.reg "%14"),
+                          LeanLLVM.Instr.binopVec
+                            "%18"
+                            (LeanLLVM.BinOp.and)
+                            32
+                            8
+                            (LeanLLVM.Operand.reg "%and.i2326.i.i")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.splat 32 8 0x3f#8)),
+                          LeanLLVM.Instr.icmpVec
+                            "%cmp.i21.i.i"
+                            (LeanLLVM.IPred.eq)
+                            32
+                            8
+                            (LeanLLVM.Operand.reg "%18")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.splat 32 8 0x00#8)),
+                          LeanLLVM.Instr.bitcastMask "%19" 32 (LeanLLVM.Operand.reg "%cmp.i21.i.i"),
+                          LeanLLVM.Instr.binop
+                            "%not.i46.i"
+                            (LeanLLVM.BinOp.xor)
+                            32
+                            (LeanLLVM.Operand.reg "%19")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.int 32 0xffffffff#32)),]
+
+/-- `for.body`'s run: the second half through the packed class word (instructions 58-73). -/
+def forBodySeg5 : List Instr :=
+[                          LeanLLVM.Instr.vecBitcast "%20" 4 64 16 16 (LeanLLVM.Operand.reg "%3"),
+                          LeanLLVM.Instr.binopVec
+                            "%21"
+                            (LeanLLVM.BinOp.lshr)
+                            16
+                            16
+                            (LeanLLVM.Operand.reg "%20")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.splat 16 16 0x0004#16)),
+                          LeanLLVM.Instr.binopVec
+                            "%22"
+                            (LeanLLVM.BinOp.and)
+                            32
+                            8
+                            (LeanLLVM.Operand.reg "%5")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.splat 32 8 0x0f#8)),
+                          LeanLLVM.Instr.call
+                            "%23"
+                            (LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8))
+                            "llvm.x86.avx2.pshuf.b"
+                            [(LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8),
+                              LeanLLVM.Operand.imm
+                                (LeanLLVM.Const.vector
+                                  8
+                                  [0x40#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x80#8,
+                                   0x82#8,
+                                   0x14#8,
+                                   0x01#8,
+                                   0xa8#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x40#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x80#8,
+                                   0x82#8,
+                                   0x14#8,
+                                   0x01#8,
+                                   0xa8#8,
+                                   0x00#8,
+                                   0x00#8])),
+                             (LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8), LeanLLVM.Operand.reg "%22")],
+                          LeanLLVM.Instr.vecBitcast "%24" 16 16 32 8 (LeanLLVM.Operand.reg "%21"),
+                          LeanLLVM.Instr.binopVec
+                            "%25"
+                            (LeanLLVM.BinOp.and)
+                            32
+                            8
+                            (LeanLLVM.Operand.reg "%24")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.splat 32 8 0x0f#8)),
+                          LeanLLVM.Instr.call
+                            "%26"
+                            (LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8))
+                            "llvm.x86.avx2.pshuf.b"
+                            [(LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8),
+                              LeanLLVM.Operand.imm
+                                (LeanLLVM.Const.vector
+                                  8
+                                  [0x80#8,
+                                   0x00#8,
+                                   0x41#8,
+                                   0x02#8,
+                                   0x00#8,
+                                   0x30#8,
+                                   0x00#8,
+                                   0x0c#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x80#8,
+                                   0x00#8,
+                                   0x41#8,
+                                   0x02#8,
+                                   0x00#8,
+                                   0x30#8,
+                                   0x00#8,
+                                   0x0c#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8,
+                                   0x00#8])),
+                             (LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8), LeanLLVM.Operand.reg "%25")],
+                          LeanLLVM.Instr.binopVec
+                            "%and.i2326.i47.i"
+                            (LeanLLVM.BinOp.and)
+                            32
+                            8
+                            (LeanLLVM.Operand.reg "%26")
+                            (LeanLLVM.Operand.reg "%23"),
+                          LeanLLVM.Instr.binopVec
+                            "%27"
+                            (LeanLLVM.BinOp.and)
+                            32
+                            8
+                            (LeanLLVM.Operand.reg "%and.i2326.i47.i")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.splat 32 8 0x3f#8)),
+                          LeanLLVM.Instr.icmpVec
+                            "%cmp.i21.i48.i"
+                            (LeanLLVM.IPred.eq)
+                            32
+                            8
+                            (LeanLLVM.Operand.reg "%27")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.splat 32 8 0x00#8)),
+                          LeanLLVM.Instr.bitcastMask "%28" 32 (LeanLLVM.Operand.reg "%cmp.i21.i48.i"),
+                          LeanLLVM.Instr.binop
+                            "%not.i49.i"
+                            (LeanLLVM.BinOp.xor)
+                            32
+                            (LeanLLVM.Operand.reg "%28")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.int 32 0xffffffff#32)),
+                          LeanLLVM.Instr.zext "%conv16.i" 32 64 (LeanLLVM.Operand.reg "%not.i46.i"),
+                          LeanLLVM.Instr.zext "%conv17.i" 32 64 (LeanLLVM.Operand.reg "%not.i49.i"),
+                          LeanLLVM.Instr.binop
+                            "%shl18.i"
+                            (LeanLLVM.BinOp.shl)
+                            64
+                            (LeanLLVM.Operand.reg "%conv17.i")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.int 64 0x0000000000000020#64)),
+                          LeanLLVM.Instr.binop
+                            "%or19.i"
+                            (LeanLLVM.BinOp.or)
+                            64
+                            (LeanLLVM.Operand.reg "%shl18.i")
+                            (LeanLLVM.Operand.reg "%conv16.i"),]
+
+/-- `for.body`'s run: the sixty-four-lane join, the carry-less product and the state update (instructions 74-86). -/
+def forBodySeg6 : List Instr :=
+[                          LeanLLVM.Instr.shuffleVec
+                            "%29"
+                            32
+                            8
+                            (LeanLLVM.Operand.reg "%and.i2326.i.i")
+                            (LeanLLVM.Operand.reg "%and.i2326.i47.i")
+                            [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+                             25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47,
+                             48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63],
+                          LeanLLVM.Instr.icmpVec
+                            "%30"
+                            (LeanLLVM.IPred.eq)
+                            64
+                            8
+                            (LeanLLVM.Operand.reg "%29")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.splat 64 8 0x00#8)),
+                          LeanLLVM.Instr.bitcastMask "%or23.i" 64 (LeanLLVM.Operand.reg "%30"),
+                          LeanLLVM.Instr.insertelement
+                            "%vecinit1.i.i.i"
+                            2
+                            64
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.splat 2 64 0x0000000000000000#64))
+                            (LeanLLVM.Operand.reg "%and.i")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.int 64 0x0000000000000000#64)),
+                          LeanLLVM.Instr.call
+                            "%31"
+                            (LeanLLVM.Ty.vec 2 (LeanLLVM.Ty.int 64))
+                            "llvm.x86.pclmulqdq"
+                            [(LeanLLVM.Ty.vec 2 (LeanLLVM.Ty.int 64), LeanLLVM.Operand.reg "%vecinit1.i.i.i"),
+                             (LeanLLVM.Ty.vec 2 (LeanLLVM.Ty.int 64),
+                              LeanLLVM.Operand.imm
+                                (LeanLLVM.Const.vector 64 [0xffffffffffffffff#64, 0x0000000000000000#64])),
+                             (LeanLLVM.Ty.int 8, LeanLLVM.Operand.imm (LeanLLVM.Const.int 8 0x00#8))],
+                          LeanLLVM.Instr.extractelement
+                            "%vecext.i.i.i"
+                            2
+                            64
+                            (LeanLLVM.Operand.reg "%31")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.int 64 0x0000000000000000#64)),
+                          LeanLLVM.Instr.binop
+                            "%xor.i"
+                            (LeanLLVM.BinOp.xor)
+                            64
+                            (LeanLLVM.Operand.reg "%vecext.i.i.i")
+                            (LeanLLVM.Operand.reg "%st.sroa.15.0507"),
+                          LeanLLVM.Instr.binop
+                            "%shr.i"
+                            (LeanLLVM.BinOp.ashr)
+                            64
+                            (LeanLLVM.Operand.reg "%xor.i")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.int 64 0x000000000000003f#64)),
+                          LeanLLVM.Instr.binop
+                            "%not8"
+                            (LeanLLVM.BinOp.xor)
+                            64
+                            (LeanLLVM.Operand.reg "%xor.i")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.int 64 0xffffffffffffffff#64)),
+                          LeanLLVM.Instr.binop
+                            "%32"
+                            (LeanLLVM.BinOp.or)
+                            64
+                            (LeanLLVM.Operand.reg "%and.i")
+                            (LeanLLVM.Operand.reg "%xor.i"),
+                          LeanLLVM.Instr.binop
+                            "%33"
+                            (LeanLLVM.BinOp.xor)
+                            64
+                            (LeanLLVM.Operand.reg "%32")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.int 64 0xffffffffffffffff#64)),
+                          LeanLLVM.Instr.binop
+                            "%and9"
+                            (LeanLLVM.BinOp.and)
+                            64
+                            (LeanLLVM.Operand.reg "%or23.i")
+                            (LeanLLVM.Operand.reg "%33"),
+                          LeanLLVM.Instr.binop
+                            "%and11"
+                            (LeanLLVM.BinOp.and)
+                            64
+                            (LeanLLVM.Operand.reg "%or19.i")
+                            (LeanLLVM.Operand.reg "%not8"),]
+
+/-- `for.body`'s run: the emit word, the array index and the store (instructions 87-95). -/
+def forBodySeg7 : List Instr :=
+[                          LeanLLVM.Instr.binop
+                            "%shl12"
+                            (LeanLLVM.BinOp.shl)
+                            64
+                            (LeanLLVM.Operand.reg "%and9")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.int 64 0x0000000000000001#64)),
+                          LeanLLVM.Instr.binop
+                            "%or13"
+                            (LeanLLVM.BinOp.or)
+                            64
+                            (LeanLLVM.Operand.reg "%shl12")
+                            (LeanLLVM.Operand.reg "%prevS.0511"),
+                          LeanLLVM.Instr.binop
+                            "%not14"
+                            (LeanLLVM.BinOp.xor)
+                            64
+                            (LeanLLVM.Operand.reg "%or13")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.int 64 0xffffffffffffffff#64)),
+                          LeanLLVM.Instr.binop
+                            "%and15"
+                            (LeanLLVM.BinOp.and)
+                            64
+                            (LeanLLVM.Operand.reg "%and9")
+                            (LeanLLVM.Operand.reg "%not14"),
+                          LeanLLVM.Instr.binop
+                            "%34"
+                            (LeanLLVM.BinOp.or)
+                            64
+                            (LeanLLVM.Operand.reg "%and11")
+                            (LeanLLVM.Operand.reg "%and15"),
+                          LeanLLVM.Instr.binop
+                            "%or16"
+                            (LeanLLVM.BinOp.or)
+                            64
+                            (LeanLLVM.Operand.reg "%34")
+                            (LeanLLVM.Operand.reg "%and.i"),
+                          LeanLLVM.Instr.binop
+                            "%shr17"
+                            (LeanLLVM.BinOp.lshr)
+                            64
+                            (LeanLLVM.Operand.reg "%and9")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.int 64 0x000000000000003f#64)),
+                          LeanLLVM.Instr.gep
+                            "%arrayidx"
+                            (LeanLLVM.Ty.int 64)
+                            (LeanLLVM.Operand.reg "%ent")
+                            (LeanLLVM.Operand.reg "%i.0510"),
+                          LeanLLVM.Instr.store
+                            (LeanLLVM.Ty.int 64)
+                            (LeanLLVM.Operand.reg "%or16")
+                            (LeanLLVM.Operand.reg "%arrayidx")]
+
+
+/-! ### The lane write, the carry-less product and its lane read
+
+The block's `vpshufb`-based class masks end in a lane write, a `pclmulqdq` and a
+lane read.  The generic steps leave the written lane set and the read lane as
+side goals; these three state them at the spellings the block's own statement
+uses, so the segment's close never meets a lane list it cannot name. -/
+
+/-- `%vecinit1.i.i.i`: lane zero of a two-lane zero vector takes `%and.i`. -/
+theorem forBody_vecinit (env : Env) (s : State) (x : BitVec 64)
+    (h : lookupName env "%and.i" = some (.int 64 x)) (is : List Instr) :
+    denoteCode s1BlocksCalls
+        (.insertelement "%vecinit1.i.i.i" 2 64
+          (.imm (.splat 2 64 0x0000000000000000#64)) (.reg "%and.i")
+          (.imm (.int 64 0x0000000000000000#64)) :: is) (stateAt env s) =
+      denoteCode s1BlocksCalls is
+        (stateAt (("%vecinit1.i.i.i",
+          .vec 2 64 [BitVec.ofNat 64 x.toNat, 0x0000000000000000#64]) :: env) s) := by
+  rw [denoteCode_insertelement (calls := s1BlocksCalls) (env := env) (s := s)
+    (d := "%vecinit1.i.i.i") (n := 2) (w := 64)
+    (v := .imm (.splat 2 64 0x0000000000000000#64)) (elt := .reg "%and.i")
+    (idx := .imm (.int 64 0x0000000000000000#64))
+    (vv := .vec 2 64 (List.replicate 2 0x0000000000000000#64))
+    (lanes := List.replicate 2 0x0000000000000000#64)
+    (ev := .int 64 x) (x := x.toNat) (wi := 64) (k := 0x0000000000000000#64)
+    (hv := by simp [evalOperand, Const.toValue])
+    (hl := vecLanes_self (by simp))
+    (helt := evalOperand_reg_of env s "%and.i" (.int 64 x) h)
+    (hx := rfl) (hi := rfl) (hk := by decide)]
+  rfl
+
+/-- `%31`: the carry-less product of the written lane against all ones. -/
+theorem forBody_pclmul (env : Env) (s : State) (a : BitVec 64)
+    (h : lookupName env "%vecinit1.i.i.i" = some (.vec 2 64 [a, 0x0000000000000000#64]))
+    (is : List Instr) :
+    denoteCode s1BlocksCalls
+        (.call "%31" (.vec 2 (.int 64)) "llvm.x86.pclmulqdq"
+          [(.vec 2 (.int 64), .reg "%vecinit1.i.i.i"),
+           (.vec 2 (.int 64),
+             .imm (.vector 64 [0xffffffffffffffff#64, 0x0000000000000000#64])),
+           (.int 8, .imm (.int 8 0x00#8))] :: is) (stateAt env s) =
+      denoteCode s1BlocksCalls is
+        (stateAt (("%31",
+          .vec 2 64 [Pclmul.clmul a (BitVec.allOnes 64), 0x0000000000000000#64]) :: env) s) := by
+  exact denoteCode_pclmul_b env s "%vecinit1.i.i.i" "%31"
+    (a0 := a) (a1 := 0x0000000000000000#64)
+    (evalOperand_reg_of env s "%vecinit1.i.i.i" (.vec 2 64 [a, 0x0000000000000000#64]) h) is
+
+/-- `%vecext.i.i.i`: lane zero of the product, which is the product itself. -/
+theorem forBody_vecext (env : Env) (s : State) (a : BitVec 64)
+    (h : lookupName env "%31" = some (.vec 2 64 [a, 0x0000000000000000#64]))
+    (is : List Instr) :
+    denoteCode s1BlocksCalls
+        (.extractelement "%vecext.i.i.i" 2 64 (.reg "%31")
+          (.imm (.int 64 0x0000000000000000#64)) :: is) (stateAt env s) =
+      denoteCode s1BlocksCalls is (stateAt (("%vecext.i.i.i", .int 64 a) :: env) s) := by
+  exact denoteCode_extractelement (calls := s1BlocksCalls) (env := env) (s := s)
+    (d := "%vecext.i.i.i") (n := 2) (w := 64) (v := .reg "%31")
+    (idx := .imm (.int 64 0x0000000000000000#64))
+    (vv := .vec 2 64 [a, 0x0000000000000000#64])
+    (lanes := [a, 0x0000000000000000#64]) (wi := 64)
+    (k := 0x0000000000000000#64) (x := a)
+    (hv := evalOperand_reg_of env s "%31" (.vec 2 64 [a, 0x0000000000000000#64]) h)
+    (hl := vecLanes_self (by simp)) (hi := rfl) (hx := by simp) is
+
+/-- The block steps, with the three lane-shape steps of this block ahead of the
+generic battery so their lane lists come out named. -/
+macro "fb_step" : tactic => `(tactic|
+  (first
+   | rw [forBody_vecinit _ _ _ ?_ _]
+   | rw [forBody_pclmul _ _ _ ?_ _]
+   | rw [forBody_vecext _ _ _ ?_ _]
+   | block_step_b))
+
+/-- A segment's chain, closed by the block's close. -/
+macro "fb_eval" : tactic => `(tactic|
+  (repeat fb_step
+   block_close_v))
+
+
+/-- Splitting a straight-line sequence at a point whose state is already known:
+the second half runs from it, so the composition never puts a state under a
+`bind`. -/
+theorem denoteCode_append_apply {calls : Calls} {a b : List Instr} {s s' : State}
+    (h : denoteCode calls a s = some s') (hb : startsWithPhi b = false) :
+    denoteCode calls (a ++ b) s = denoteCode calls b s' := by
+  rw [LeanLLVM.Refinement.JsonEntrySteps.denoteCode_append (hb := hb), h]
+  rfl
+
+
+/-! ### The seven segments
+
+Each is one `denoteCode` equation at an explicit intermediate environment.  The
+first states the phi run and the two loads; the rest are straight-line and start
+from the environment the previous segment left. -/
+
+/-- **`for.body`'s first segment.**  The five leading phis select the carried
+values off the incoming edge, and the two `<4 x i64>` loads read the block's
+thirty-two-byte words. -/
+theorem for_body_seg1 (env : Env) (s : State) (p : String)
+    (op1 op2 op3 op4 op5 : Operand)
+    (prevS i st0 st9 st15 : BitVec 64) (bs2 bs3 : List UInt8) (b ent : Nat)
+    (hpre : s.pre = some p)
+    (hinc1 : phiIncoming p [("for.body.lr.ph", .imm (.int 64 0x0000000000000000#64)),
+      ("for.inc", .reg "%shr17")] = some op1)
+    (hop1 : evalOperand (stateAt env s) op1 = some (.int 64 prevS))
+    (hinc2 : phiIncoming p [("for.body.lr.ph", .imm (.int 64 0x0000000000000000#64)),
+      ("for.inc", .reg "%inc")] = some op2)
+    (hop2 : evalOperand (stateAt env s) op2 = some (.int 64 i))
+    (hinc3 : phiIncoming p [("for.body.lr.ph", .imm (.int 64 0x0000000000000000#64)),
+      ("for.inc", .reg "%shr.i.i")] = some op3)
+    (hop3 : evalOperand (stateAt env s) op3 = some (.int 64 st0))
+    (hinc4 : phiIncoming p [("for.body.lr.ph", .imm (.int 64 0x0000000000000000#64)),
+      ("for.inc", .reg "%conv13.i.i")] = some op4)
+    (hop4 : evalOperand (stateAt env s) op4 = some (.int 64 st9))
+    (hinc5 : phiIncoming p [("for.body.lr.ph", .imm (.int 64 0x0000000000000000#64)),
+      ("for.inc", .reg "%shr.i")] = some op5)
+    (hop5 : evalOperand (stateAt env s) op5 = some (.int 64 st15))
+    (hb : lookupName env "%b" = some (.ptr b))
+    (hshl63 : ((i <<< (0x0000000000000006#64).toNat).signExtend 64).toNat < 2 ^ 63)
+    (hread2 : readBytes s.mem
+      (b + ((i <<< (0x0000000000000006#64).toNat).signExtend 64).toNat) 32 = some bs2)
+    (hread3 : readBytes s.mem
+      ((b + ((i <<< (0x0000000000000006#64).toNat).signExtend 64).toNat)
+        + ((0x0000000000000020#64).signExtend 64).toNat) 32 = some bs3) :
+    let v := forBodyValues prevS i st0 st9 st15 bs2 bs3 b ent
+    denoteCode s1BlocksCalls forBodySeg1 (stateAt env s) =
+      some (stateAt (fbEnv1 env v) s) := by
+  intro v
+  unfold fbEnv1
+  rw [show forBodySeg1 = forBodyPhis.map PhiSpec.instr ++ forBodySeg1Tail from rfl]
+  rw [denoteCode_phiRun (calls := s1BlocksCalls) (s := stateAt env s) (p := p)
+    (specs := forBodyPhis) (vs := forBodyPhiCells v) (rest := forBodySeg1Tail)
+    hpre
+    (PhiSelects.cons hinc1 hop1
+      (PhiSelects.cons hinc2 hop2
+        (PhiSelects.cons hinc3 hop3
+          (PhiSelects.cons hinc4 hop4
+            (PhiSelects.cons hinc5 hop5 PhiSelects.nil)))))
+    (by rfl)]
+  rw [stateAt_bindAll_runCells]
+  unfold forBodySeg1Tail
+  block_eval_b
+
+/-- **`for.body`'s second segment.**  The word join, the byte masks and the two
+byte-class compares. -/
+theorem for_body_seg2 (env : Env) (s : State)
+    (prevS i st0 st9 st15 : BitVec 64) (bs2 bs3 : List UInt8) (b ent : Nat) :
+    let v := forBodyValues prevS i st0 st9 st15 bs2 bs3 b ent
+    denoteCode s1BlocksCalls forBodySeg2 (stateAt (fbEnv1 env v) s) =
+      some (stateAt (fbEnv2 env v) s) := by
+  intro v
+  unfold forBodySeg2 fbEnv1 fbEnv2
+  block_eval_b
+
+/-- **`for.body`'s third segment.**  The byte-class arithmetic and the DFA's
+carried state. -/
+theorem for_body_seg3 (env : Env) (s : State)
+    (prevS i st0 st9 st15 : BitVec 64) (bs2 bs3 : List UInt8) (b ent : Nat) :
+    let v := forBodyValues prevS i st0 st9 st15 bs2 bs3 b ent
+    denoteCode s1BlocksCalls forBodySeg3 (stateAt (fbEnv2 env v) s) =
+      some (stateAt (fbEnv3 env v) s) := by
+  intro v
+  unfold forBodySeg3 fbEnv2 fbEnv3
+  block_eval_b
+
+/-- **`for.body`'s fourth segment.**  The first shift-and-mask half, through the
+table lookup and its negated zero test. -/
+theorem for_body_seg4 (env : Env) (s : State)
+    (prevS i st0 st9 st15 : BitVec 64) (bs2 bs3 : List UInt8) (b ent : Nat) :
+    let v := forBodyValues prevS i st0 st9 st15 bs2 bs3 b ent
+    denoteCode s1BlocksCalls forBodySeg4 (stateAt (fbEnv3 env v) s) =
+      some (stateAt (fbEnv4 env v) s) := by
+  intro v
+  unfold forBodySeg4 fbEnv3 fbEnv4
+  block_eval_b
+
+/-- **`for.body`'s fifth segment.**  The second shift-and-mask half, through the
+packed class word and the two widened masks. -/
+theorem for_body_seg5 (env : Env) (s : State)
+    (prevS i st0 st9 st15 : BitVec 64) (bs2 bs3 : List UInt8) (b ent : Nat) :
+    let v := forBodyValues prevS i st0 st9 st15 bs2 bs3 b ent
+    denoteCode s1BlocksCalls forBodySeg5 (stateAt (fbEnv4 env v) s) =
+      some (stateAt (fbEnv5 env v) s) := by
+  intro v
+  unfold forBodySeg5 fbEnv4 fbEnv5
+  block_eval_b
+
+/-- **`for.body`'s sixth segment.**  The sixty-four-lane join, the carry-less
+product and the state update, through the two class words. -/
+theorem for_body_seg6 (env : Env) (s : State)
+    (prevS i st0 st9 st15 : BitVec 64) (bs2 bs3 : List UInt8) (b ent : Nat) :
+    let v := forBodyValues prevS i st0 st9 st15 bs2 bs3 b ent
+    denoteCode s1BlocksCalls forBodySeg6 (stateAt (fbEnv5 env v) s) =
+      some (stateAt (fbEnv6 env v) s) := by
+  intro v
+  unfold forBodySeg6 fbEnv5 fbEnv6
+  fb_eval
+
+/-- **`for.body`'s seventh segment.**  The emitted word, the array index and the
+store, which writes the word at the caller's selection. -/
+theorem for_body_seg7 (env : Env) (s : State)
+    (prevS i st0 st9 st15 : BitVec 64) (bs2 bs3 : List UInt8) (b ent : Nat)
+    (hent : lookupName env "%ent" = some (.ptr ent))
+    (hi63 : (i.signExtend 64).toNat < 2 ^ 63) :
+    let v := forBodyValues prevS i st0 st9 st15 bs2 bs3 b ent
+    denoteCode s1BlocksCalls forBodySeg7 (stateAt (fbEnv6 env v) s) =
+      some (stateAt (fbEnv7 env v)
+        { s with mem := writeBytes s.mem v.arrayidx (natToBytes v.or16.toNat 8) }) := by
+  intro v
+  unfold forBodySeg7 fbEnv6 fbEnv7
+  block_eval_b
+
+/-- The block's instruction list, split at the seven segment boundaries. -/
+theorem for_bodyInstrs_split :
+    for_bodyInstrs =
+      forBodySeg1 ++ (forBodySeg2 ++ (forBodySeg3 ++ (forBodySeg4 ++
+        (forBodySeg5 ++ (forBodySeg6 ++ forBodySeg7))))) := rfl
+
+/-- **`for.body`'s run.**  The seven segments compose: the phi run and the two
+loads hand their environment to the classifier's entry composition, which hands
+its own to the two table lookups, whose class words are the DFA's input, and the
+last segment stores the emitted word. -/
+theorem for_body_denote (env : Env) (s : State) (p : String)
+    (op1 op2 op3 op4 op5 : Operand)
+    (prevS i st0 st9 st15 : BitVec 64) (bs2 bs3 : List UInt8) (b ent : Nat)
+    (hpre : s.pre = some p)
+    (hinc1 : phiIncoming p [("for.body.lr.ph", .imm (.int 64 0x0000000000000000#64)),
+      ("for.inc", .reg "%shr17")] = some op1)
+    (hop1 : evalOperand (stateAt env s) op1 = some (.int 64 prevS))
+    (hinc2 : phiIncoming p [("for.body.lr.ph", .imm (.int 64 0x0000000000000000#64)),
+      ("for.inc", .reg "%inc")] = some op2)
+    (hop2 : evalOperand (stateAt env s) op2 = some (.int 64 i))
+    (hinc3 : phiIncoming p [("for.body.lr.ph", .imm (.int 64 0x0000000000000000#64)),
+      ("for.inc", .reg "%shr.i.i")] = some op3)
+    (hop3 : evalOperand (stateAt env s) op3 = some (.int 64 st0))
+    (hinc4 : phiIncoming p [("for.body.lr.ph", .imm (.int 64 0x0000000000000000#64)),
+      ("for.inc", .reg "%conv13.i.i")] = some op4)
+    (hop4 : evalOperand (stateAt env s) op4 = some (.int 64 st9))
+    (hinc5 : phiIncoming p [("for.body.lr.ph", .imm (.int 64 0x0000000000000000#64)),
+      ("for.inc", .reg "%shr.i")] = some op5)
+    (hop5 : evalOperand (stateAt env s) op5 = some (.int 64 st15))
+    (hb : lookupName env "%b" = some (.ptr b))
+    (hent : lookupName env "%ent" = some (.ptr ent))
+    (hi63 : (i.signExtend 64).toNat < 2 ^ 63)
+    (hshl63 : ((i <<< (0x0000000000000006#64).toNat).signExtend 64).toNat < 2 ^ 63)
+    (hread2 : readBytes s.mem
+      (b + ((i <<< (0x0000000000000006#64).toNat).signExtend 64).toNat) 32 = some bs2)
+    (hread3 : readBytes s.mem
+      ((b + ((i <<< (0x0000000000000006#64).toNat).signExtend 64).toNat)
+        + ((0x0000000000000020#64).signExtend 64).toNat) 32 = some bs3) :
+    let v := forBodyValues prevS i st0 st9 st15 bs2 bs3 b ent
+    denoteCode s1BlocksCalls for_bodyInstrs (stateAt env s) =
+      some (stateAt (forBodyOut env v)
+        { s with mem := writeBytes s.mem v.arrayidx (natToBytes v.or16.toNat 8) }) := by
+  intro v
+  have h1 := for_body_seg1 env s p op1 op2 op3 op4 op5 prevS i st0 st9 st15 bs2 bs3
+    b ent hpre hinc1 hop1 hinc2 hop2 hinc3 hop3 hinc4 hop4 hinc5 hop5 hb hshl63
+    hread2 hread3
+  have h2 := for_body_seg2 env s prevS i st0 st9 st15 bs2 bs3 b ent
+  have h3 := for_body_seg3 env s prevS i st0 st9 st15 bs2 bs3 b ent
+  have h4 := for_body_seg4 env s prevS i st0 st9 st15 bs2 bs3 b ent
+  have h5 := for_body_seg5 env s prevS i st0 st9 st15 bs2 bs3 b ent
+  have h6 := for_body_seg6 env s prevS i st0 st9 st15 bs2 bs3 b ent
+  have h7 := for_body_seg7 env s prevS i st0 st9 st15 bs2 bs3 b ent hent hi63
+  calc denoteCode s1BlocksCalls for_bodyInstrs (stateAt env s)
+      = denoteCode s1BlocksCalls
+          (forBodySeg1 ++ (forBodySeg2 ++ (forBodySeg3 ++ (forBodySeg4 ++
+            (forBodySeg5 ++ (forBodySeg6 ++ forBodySeg7)))))) (stateAt env s) := by
+        rw [for_bodyInstrs_split]
+    _ = denoteCode s1BlocksCalls
+          (forBodySeg2 ++ (forBodySeg3 ++ (forBodySeg4 ++
+            (forBodySeg5 ++ (forBodySeg6 ++ forBodySeg7)))))
+          (stateAt (fbEnv1 env v) s) := denoteCode_append_apply h1 (by rfl)
+    _ = denoteCode s1BlocksCalls
+          (forBodySeg3 ++ (forBodySeg4 ++ (forBodySeg5 ++
+            (forBodySeg6 ++ forBodySeg7))))
+          (stateAt (fbEnv2 env v) s) := denoteCode_append_apply h2 (by rfl)
+    _ = denoteCode s1BlocksCalls
+          (forBodySeg4 ++ (forBodySeg5 ++ (forBodySeg6 ++ forBodySeg7)))
+          (stateAt (fbEnv3 env v) s) := denoteCode_append_apply h3 (by rfl)
+    _ = denoteCode s1BlocksCalls (forBodySeg5 ++ (forBodySeg6 ++ forBodySeg7))
+          (stateAt (fbEnv4 env v) s) := denoteCode_append_apply h4 (by rfl)
+    _ = denoteCode s1BlocksCalls (forBodySeg6 ++ forBodySeg7)
+          (stateAt (fbEnv5 env v) s) := denoteCode_append_apply h5 (by rfl)
+    _ = denoteCode s1BlocksCalls forBodySeg7
+          (stateAt (fbEnv6 env v) s) := denoteCode_append_apply h6 (by rfl)
+    _ = some (stateAt (forBodyOut env v)
+          { s with mem := writeBytes s.mem v.arrayidx (natToBytes v.or16.toNat 8) }) := h7
+
 /-! ### Axiom footprints
 
 The block runs and the branch lemmas compute from the block's own literal lists;
@@ -1536,5 +2898,6 @@ intrinsic arms. -/
 #print axioms if_end153_denote
 #print axioms if_end170_denote
 #print axioms if_end170_step
+#print axioms for_body_denote
 
 end LeanLLVM.Refinement.JsonS1BlocksRefine
