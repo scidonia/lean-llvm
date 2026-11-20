@@ -4602,7 +4602,11 @@ parity, `ClassState` does not name it, and the two agree under that invariant,
 which the kernel maintains because `%ppnc2` implies `%topc2`.  `ppn64` is the same
 for the outgoing parity: the kernel's `ctlz(~~~bs) & 1`, corrected when the block
 is all backslashes and the run continues, is the `oddRun` the specification's
-`classStep` fold leaves.
+`classStep` fold leaves.  The arithmetic escape's own section is pinned here too:
+`fastEscape_eq_escapeLanes` reads the two carry-propagating sums against
+`escapeLanes` without naming `kernelEscape`, and `carry_succ_of_getLsbD` states
+`BitVec.carry_succ`'s recurrence from `carry`'s definition, so the lane recursions
+below avoid the `Classical.choice` that `Nat.mod_pow_succ` carries.
 
 Every public theorem is pinned below at `[propext, Quot.sound]` or narrower; the three
 `private` numeral lemmas of `BitLanes` cannot be named from another file and are not
@@ -5234,10 +5238,40 @@ info: 'LeanLLVM.Refinement.QuoteDerive.quoteMask_hi' depends on axioms: [propext
 #print axioms LeanLLVM.Refinement.QuoteDerive.quoteMask_hi
 
 /--
+info: 'LeanLLVM.Refinement.QuoteDerive.quote64_eq_and_not_escapeLanes' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.QuoteDerive.quote64_eq_and_not_escapeLanes
+
+/--
 info: 'LeanLLVM.Refinement.QuoteDerive.kernelQuote64' depends on axioms: [propext, Quot.sound]
 -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.QuoteDerive.kernelQuote64
+
+/--
+info: 'LeanLLVM.Refinement.QuoteDerive.fastEscape_getLsbD_escapeLanes' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.QuoteDerive.fastEscape_getLsbD_escapeLanes
+
+/--
+info: 'LeanLLVM.Refinement.QuoteDerive.fastEscape_eq_escapeLanes' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.QuoteDerive.fastEscape_eq_escapeLanes
+
+/--
+info: 'LeanLLVM.Refinement.QuoteDerive.fastQuote_eq' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.QuoteDerive.fastQuote_eq
+
+/--
+info: 'LeanLLVM.Refinement.QuoteDerive.carry_succ_of_getLsbD' depends on axioms: [propext, Quot.sound]
+-/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.QuoteDerive.carry_succ_of_getLsbD
 
 /--
 info: 'LeanLLVM.Refinement.QuoteDerive.not_xor' does not depend on any axioms
@@ -5882,9 +5916,7 @@ identities without a red pin of its own.
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.loadValue_int64
 
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.escapedWord_eq_kernelEscape' depends on axioms: [propext,
- Classical.choice,
- Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.escapedWord_eq_kernelEscape' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.escapedWord_eq_kernelEscape
 
@@ -5892,7 +5924,7 @@ identities without a red pin of its own.
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.bsW_eq_spec
 
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_escaped_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_escaped_eq' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1_escaped_eq
 
@@ -5964,13 +5996,26 @@ identities without a red pin of its own.
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.andQuoteW_eq
 
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_and_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_and_eq' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1_and_eq
 
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.andQuoteW_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.andQuoteW_spec' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.andQuoteW_spec
+
+/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.qraw_and_not_fastEscape_eq_specQuote64' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.qraw_and_not_fastEscape_eq_specQuote64
+
+/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.quote64_eq_and_not_escapedQuote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.quote64_eq_and_not_escapedQuote
+
+/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.qraw_and_not_fastEscape_eq_and_not_escapedQuote' depends on axioms: [propext,
+ Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonS1MasksSteps.qraw_and_not_fastEscape_eq_and_not_escapedQuote
 
 /-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_andNotEsc' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
@@ -6012,7 +6057,7 @@ identities without a red pin of its own.
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1_imSign
 
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_instring_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_instring_eq' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1_instring_eq
 
@@ -6287,7 +6332,7 @@ a projection and carries no axiom at all.
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.packLanes_control
 
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1Slot_quote_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1Slot_quote_spec' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1Slot_quote_spec
 
@@ -6295,7 +6340,7 @@ a projection and carries no axiom at all.
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1Slot_delim_spec
 
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1Slot_instring_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1Slot_instring_spec' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1Slot_instring_spec
 
@@ -6329,7 +6374,7 @@ trailing run and the incoming parity are the only things it depends on.
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.carry64_oddRun_eq
 
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.carry64_inside_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.carry64_inside_eq' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.carry64_inside_eq
 
@@ -6384,7 +6429,7 @@ footprint rather than claiming the narrower one.
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.flipBits_64
 
-/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_ppar_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.JsonS1MasksSteps.s1_ppar_spec' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonS1MasksSteps.s1_ppar_spec
 
