@@ -3,8 +3,9 @@
 word's specification rows.
 
 The kernel is not re-implemented here.  A position row stages a mask stream,
-the 8 KiB byte table and an output buffer in memory, runs `entryPos8Function`
-or `entryB8Function` — the ASTs `LeanLLVM/Refinement/JsonEntryIR.lean` pins to
+the 8 KiB byte table and an output buffer in memory, runs `entryPos8Function`,
+`entryB8Function` or `entryB3Function` — the ASTs
+`LeanLLVM/Refinement/JsonEntryIR.lean` pins to
 `probes/install/ir/json-entry.candidate.ll` — through `runFuel` under the
 repository's semantics, and reads what the body wrote back out of the buffer.
 The words printed are the body's, so a route that compares them with the
@@ -14,12 +15,12 @@ A row is one `(mask stream, blk0, nblk, k)` call under one kernel, printed as
 
     <source>\t<label>\t<kernel>\t<count>\t<words>\t<multi>\t<sentinel>
 
-`kernel` is `p` for POS8 and `b` for B8; `count` is the returned cursor `k'`;
-`words` is the first `k'` `i32` words, `0x` and exactly eight lowercase hex
-digits each, comma-separated, or `-` when `k'` is 0; `multi` is 1 when a block
-of the stream has more than eight set lanes; and `sentinel` is the word at lane
-`k'+8`, the first lane neither kernel writes (POS8's last written lane is
-`k'+7`, B8's `k'+6`).  The output buffer is staged with `0xA5`, so a lane the
+`kernel` is `p` for POS8, `b` for B8 and `3` for B3; `count` is the returned
+cursor `k'`; `words` is the first `k'` `i32` words, `0x` and exactly eight
+lowercase hex digits each, comma-separated, or `-` when `k'` is 0; `multi` is 1
+when a block of the stream has more than eight set lanes; and `sentinel` is the
+word at lane `k'+8`, one past every kernel's bound (POS8's last written lane is
+`k'+7`, B8's `k'+6`, B3's `k'+2`).  The output buffer is staged with `0xA5`, so a lane the
 body does not write reads back as `0xa5a5a5a5`, and a row whose cursor starts
 at `k` begins with `k` sentinel words.
 
@@ -222,19 +223,20 @@ def laneAt (arr : Array UInt8) (i : Nat) : Nat :=
 /-- Run one kernel over one stream.  Returns the returned count, the first `k'`
 words and the word at lane `k'+8`, or `none` when the body does not return a
 cursor inside the staged buffer. -/
-def runRow (b8 : Bool) (masks : List Nat) (blk0 : Nat) (k : Nat)
+def runRow (kernel : Char) (masks : List Nat) (blk0 : Nat) (k : Nat)
     (rows : List (List UInt8)) : Option (Nat × List Nat × Nat) :=
   let expected := derivedCount k masks
   let outN := outByteCount expected
   let mem := stagingMem expected masks rows
-  let f := if b8 then entryB8Function else entryPos8Function
+  let f := if kernel = 'p' then entryPos8Function
+    else if kernel = 'b' then entryB8Function else entryB3Function
   let args : List LeanLLVM.Value :=
-    if b8 then
-      [.ptr (entBase expected), .int 64 blk0, .int 64 masks.length,
-       .ptr 0, .int 64 k]
-    else
+    if kernel = 'p' then
       [.ptr (entBase expected), .int 64 blk0, .int 64 masks.length,
        .ptr 0, .int 64 k, .ptr (tabBase expected)]
+    else
+      [.ptr (entBase expected), .int 64 blk0, .int 64 masks.length,
+       .ptr 0, .int 64 k]
   let fuel := 10000 + 2000 * masks.length
   match runFuel entryCalls fuel f { (initState f args) with mem := mem } with
   | some (.ret (some (.int 64 kv)) mem') =>
@@ -275,16 +277,16 @@ def Emitter.emit (e : Emitter) (source label line : String) : IO Unit := do
             IO.eprintln s!"mismatch: {source}\t{label}: expected {want}, got {line}"
             e.failures.modify (· + 1)
 
-/-- Print both kernels' rows over one stream. -/
+/-- Print all three kernels' rows over one stream. -/
 def Emitter.row (e : Emitter) (source label : String) (masks : List Nat)
     (blk0 k : Nat) (rows : List (List UInt8)) : IO Unit := do
-  for b8 in [false, true] do
-    match runRow b8 masks blk0 k rows with
+  for kernel in ['p', 'b', '3'] do
+    match runRow kernel masks blk0 k rows with
     | some (count, words, sentinel) =>
         let rendered :=
           if count = 0 then "-" else String.intercalate "," (words.map (renderHex 8))
         let multi := if masks.any (fun m => popcount m > 8) then "1" else "0"
-        let line := s!"{source}\t{label}\t{if b8 then "b" else "p"}\t{count}\t\
+        let line := s!"{source}\t{label}\t{kernel}\t{count}\t\
           {rendered}\t{multi}\t{renderHex 8 sentinel}"
         e.emit source label line
     | none =>

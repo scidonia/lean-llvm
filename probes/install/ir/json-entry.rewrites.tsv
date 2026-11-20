@@ -35,19 +35,19 @@ class	kind	from	to	line	reason
 6	splat	<8 x i32> zeroinitializer	<8 x i32> <i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0>	96	splat vector constant written as its lane list: `<n x i32> zeroinitializer` is the n-lane zero vector, and the parser reads a shufflevector mask as a lane list, so the same value is written lane by lane
 6	splat	<8 x i32> zeroinitializer	<8 x i32> <i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0>	110	splat vector constant written as its lane list: `<n x i32> zeroinitializer` is the n-lane zero vector, and the parser reads a shufflevector mask as a lane list, so the same value is written lane by lane
 6	splat	<8 x i32> zeroinitializer	<8 x i32> <i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0>	121	splat vector constant written as its lane list: `<n x i32> zeroinitializer` is the n-lane zero vector, and the parser reads a shufflevector mask as a lane list, so the same value is written lane by lane
-6	substituted	poison	zeroinitializer	35	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
-6	substituted	poison	zeroinitializer	36	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
-6	substituted	poison	zeroinitializer	49	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
-6	substituted	poison	zeroinitializer	50	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
-6	substituted	poison	zeroinitializer	63	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
-6	substituted	poison	zeroinitializer	64	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
-6	substituted	poison	zeroinitializer	77	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
-6	substituted	poison	zeroinitializer	78	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
-6	substituted	poison	zeroinitializer	91	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
-6	substituted	poison	zeroinitializer	92	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
-6	substituted	poison	zeroinitializer	105	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
-6	substituted	poison	zeroinitializer	106	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
-6	substituted	poison	zeroinitializer	119	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
-6	substituted	poison	zeroinitializer	120	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
-6	substituted	poison	zeroinitializer	130	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
-6	substituted	poison	zeroinitializer	131	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
+6	substituted	poison	zeroinitializer	42	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
+6	substituted	poison	zeroinitializer	43	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
+6	substituted	poison	zeroinitializer	56	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
+6	substituted	poison	zeroinitializer	57	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
+6	substituted	poison	zeroinitializer	70	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
+6	substituted	poison	zeroinitializer	71	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
+6	substituted	poison	zeroinitializer	84	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
+6	substituted	poison	zeroinitializer	85	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
+6	substituted	poison	zeroinitializer	98	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
+6	substituted	poison	zeroinitializer	99	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
+6	substituted	poison	zeroinitializer	112	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
+6	substituted	poison	zeroinitializer	113	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
+6	substituted	poison	zeroinitializer	126	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
+6	substituted	poison	zeroinitializer	127	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
+6	substituted	poison	zeroinitializer	137	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place
+6	substituted	poison	zeroinitializer	138	poison replaced by a defined lane: no observable reads the lane, so the text stands a value the model represents in its place

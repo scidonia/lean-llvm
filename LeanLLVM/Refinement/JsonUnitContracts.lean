@@ -3,8 +3,9 @@ The memory-aware contracts of the proved JSON stage-1 units, and the call-level
 form the bridge gives each of them.
 
 Three units are proved here as `Satisfies` instances: the mask unit
-(`masks_satisfies`), the two entry emitters (`entry_pos8_satisfies`,
-`entry_b8_satisfies`) and the UTF-8 stage (`utf8_satisfies`).  Each record is
+(`masks_satisfies`), the three entry emitters (`entry_pos8_satisfies`,
+`entry_b8_satisfies`, `entry_b3_satisfies`) and the UTF-8 stage
+(`utf8_satisfies`).  Each record is
 read at the caller's memory and allocator, and each wrapper turns the unit's
 own headline theorem into the record's guarantee.  The next-independence
 lemmas are the bridge between the headline theorems (stated at the entry
@@ -23,6 +24,7 @@ this module does not have.
 import LeanLLVM.Refinement.JsonS1MasksSteps
 import LeanLLVM.Refinement.JsonEntrySteps
 import LeanLLVM.Refinement.JsonB8Steps
+import LeanLLVM.Refinement.JsonB3Steps
 import LeanLLVM.Refinement.JsonUtf8Steps
 import LeanLLVM.Refinement.Relation
 
@@ -34,6 +36,7 @@ open LeanLLVM.Refinement.JsonS1MasksSteps
 open LeanLLVM.Refinement.JsonEntryIR
 open LeanLLVM.Refinement.JsonEntrySteps
 open LeanLLVM.Refinement.JsonB8Steps
+open LeanLLVM.Refinement.JsonB3Steps
 open LeanLLVM.Refinement.JsonUtf8IR
 open LeanLLVM.Refinement.JsonUtf8Steps
 open LeanLLVM.Refinement.JsonScanSpec
@@ -645,6 +648,9 @@ theorem entryPos8_noAlloca : allocaFree entryPos8Function = true := by decide
 /-- The B8 entry emitter executes no `alloca`. -/
 theorem entryB8_noAlloca : allocaFree entryB8Function = true := by decide
 
+/-- The B3 entry emitter executes no `alloca`. -/
+theorem entryB3_noAlloca : allocaFree entryB3Function = true := by decide
+
 /-- The UTF-8 stage executes no `alloca`. -/
 theorem utf8_noAlloca : allocaFree utf8Function = true := by decide
 
@@ -682,6 +688,12 @@ theorem entry_b8_next_independent (args : List Value) (mem : Mem) (fuel : Nat) (
     runFuel entryCalls fuel entryB8Function (EntryState entryB8Function args mem n) =
       runFuel entryCalls fuel entryB8Function (EntryState entryB8Function args mem m) :=
   runFuel_next_irr entryCalls_nextIrr entryB8_noAlloca fuel ⟨rfl, rfl, rfl, rfl⟩
+
+/-- The B3 emitter's run does not depend on the allocator base. -/
+theorem entry_b3_next_independent (args : List Value) (mem : Mem) (fuel : Nat) (n m : Nat) :
+    runFuel entryCalls fuel entryB3Function (EntryState entryB3Function args mem n) =
+      runFuel entryCalls fuel entryB3Function (EntryState entryB3Function args mem m) :=
+  runFuel_next_irr entryCalls_nextIrr entryB3_noAlloca fuel ⟨rfl, rfl, rfl, rfl⟩
 
 /-- The UTF-8 stage's run does not depend on the allocator base. -/
 theorem utf8_next_independent (args : List Value) (mem : Mem) (fuel : Nat) (n m : Nat) :
@@ -885,6 +897,7 @@ terminator is `.ret .void none`, so it takes the void bridge instead. -/
 
 #guard retsValued entryPos8Function
 #guard retsValued entryB8Function
+#guard retsValued entryB3Function
 #guard retsValued utf8Function
 #guard !retsValued s1MasksFunction
 
@@ -969,6 +982,45 @@ def Γ_entry_b8 : MemContract where
   post := fun args mem _ o =>
     match o with
     | .ret (some v) m => entryB8Post args mem v m
+    | _ => False
+
+/-- The B3 emitter's claim about the memory it leaves.  Its frame is
+`o + 4 * (k' + 3)`: three fixed slots, a second group of four above three lanes
+and exactly its count above seven, so the last written lane is `k' + 2` and the
+first unwritten one is `k' + 3`. -/
+def entryB3Post (args : List Value) (mem : Mem) (v : Value) (m : Mem) : Prop :=
+  ∃ (e o : Nat) (blk0 nblk k : BitVec 64) (ent : List (BitVec 64)) (k' : Nat),
+    args = [.ptr e, .int 64 blk0, .int 64 nblk, .ptr o, .int 64 k] ∧
+    v = .int 64 (BitVec.ofNat 64 k') ∧
+    k' = k.toNat + (ent.map BitLanes.ctpop).sum ∧
+    readLanes32 m (o + 4 * k.toNat) (k' - k.toNat)
+      = streamPrefix ent blk0.toNat nblk.toNat ∧
+    -- the mask words the call read, named (see the POS8 post).
+    nblk.toNat = ent.length ∧
+    readBytes mem e (8 * ent.length) = some (wordsOf ent) ∧
+    -- the frame at the written extent's base (see the POS8 post).
+    (∀ a, a < o + 4 * k.toNat ∨ o + 4 * (k' + 3) ≤ a →
+      readByte m a = readByte mem a)
+
+/-- The B3 emitter's boundary record.  Its budget is the headline theorem's own
+`b3RunSteps ent + nblk + 2`, folded over the words read out of memory. -/
+def Γ_entry_b3 : MemContract where
+  budget := fun args mem =>
+    match args with
+    | [.ptr e, _, .int 64 nblk, _, _] =>
+        b3RunSteps (wordsAt mem e nblk.toNat) + nblk.toNat + 2
+    | _ => 0
+  pre := fun args mem _ =>
+    ∃ (e o : Nat) (blk0 nblk k : BitVec 64) (ent : List (BitVec 64)),
+      args = [.ptr e, .int 64 blk0, .int 64 nblk, .ptr o, .int 64 k] ∧
+      nblk.toNat = ent.length ∧
+      64 * (blk0.toNat + nblk.toNat) + 63 < 2 ^ 32 ∧
+      readBytes mem e (8 * ent.length) = some (wordsOf ent) ∧
+      (e + 8 * ent.length ≤ o ∨ o + 4 * (k.toNat + 64 * ent.length + 8) ≤ e) ∧
+      k.toNat + 64 * ent.length + 9 < 2 ^ 63
+  post := fun args mem _ o =>
+    match o with
+    | .ret (some v) m => entryB3Post args mem v m
     | _ => False
 
 /-! ### The UTF-8 stage's record -/
@@ -1138,6 +1190,65 @@ theorem entry_b8_satisfies : Satisfies entryCalls entryB8Function Γ_entry_b8 :=
       have h := hsingle n .ub hb
       cases h
     · rw [entry_b8_next_independent _ mem n next 1] at hr
+      have h := hsingle n out hr
+      subst h
+      exact ⟨e, o, blk0, nblk, k, ent, k', rfl, rfl, hk', hread, hnb, hent, hunch⟩
+
+/-- **The B3 emitter satisfies its record**, with its memory-indexed budget
+turned into the headline's own `ent` by `wordsAt_eq`. -/
+theorem entry_b3_satisfies : Satisfies entryCalls entryB3Function Γ_entry_b3 := by
+  intro args mem next hpre
+  obtain ⟨e, o, blk0, nblk, k, ent, hargs, hnb, hblk, hent, hdisj, hk63⟩ := hpre
+  subst args
+  obtain ⟨k', mem', hrun, hk', hread, hunch⟩ :=
+    entry_b3_refines ent blk0.toNat nblk.toNat k.toNat mem e o
+      hnb hblk hent hdisj hk63
+  have hwa : wordsAt mem e nblk.toNat = ent :=
+    wordsAt_eq hnb (by rw [hnb]; exact hent)
+  have hbudget : Γ_entry_b3.budget
+      [.ptr e, .int 64 blk0, .int 64 nblk, .ptr o, .int 64 k] mem
+      = b3RunSteps (wordsAt mem e nblk.toNat) + nblk.toNat + 2 := rfl
+  have hb0 : (↑blk0.toNat : BitVec 64) = blk0 := ofNat_toNat blk0
+  have hnb0 : (↑nblk.toNat : BitVec 64) = nblk := ofNat_toNat nblk
+  have hk0 : (↑k.toNat : BitVec 64) = k := ofNat_toNat k
+  have hstate : EntryState entryB3Function
+      [.ptr e, .int 64 blk0, .int 64 nblk, .ptr o, .int 64 k] mem 1
+      = { (initState entryB3Function
+          [.ptr e, .int 64 blk0.toNat, .int 64 nblk.toNat, .ptr o, .int 64 k.toNat])
+          with mem := mem } := by
+    simp only [EntryState, initState, hb0, hnb0, hk0]
+  have hrunE : runFuel entryCalls
+      (b3RunSteps (wordsAt mem e nblk.toNat) + nblk.toNat + 2) entryB3Function
+      (EntryState entryB3Function
+        [.ptr e, .int 64 blk0, .int 64 nblk, .ptr o, .int 64 k] mem 1)
+      = some (.ret (some (.int 64 (BitVec.ofNat 64 k'))) mem') := by
+    rw [hwa, hstate]
+    exact hrun
+  have hsingle : ∀ (n : Nat) (out : Outcome),
+      runFuel entryCalls n entryB3Function
+        (EntryState entryB3Function
+          [.ptr e, .int 64 blk0, .int 64 nblk, .ptr o, .int 64 k] mem 1)
+        = some out →
+      out = .ret (some (.int 64 (BitVec.ofNat 64 k'))) mem' := by
+    intro n out hn
+    rcases Nat.le_total n (b3RunSteps (wordsAt mem e nblk.toNat) + nblk.toNat + 2)
+      with hle | hge
+    · have h1 := runFuel_mono_le hle hn
+      rw [hrunE] at h1
+      exact (Option.some.inj h1).symm
+    · have h1 := runFuel_mono_le hge hrunE
+      rw [h1] at hn
+      exact (Option.some.inj hn).symm
+  refine ⟨?_, ?_⟩
+  · refine ⟨some (.int 64 (BitVec.ofNat 64 k')), mem', ?_⟩
+    rw [hbudget, entry_b3_next_independent _ mem (b3RunSteps (wordsAt mem e nblk.toNat)
+      + nblk.toNat + 2) next 1, hrunE]
+  · intro out hout
+    rcases hout with ⟨n, hb⟩ | ⟨n, hr⟩
+    · rw [entry_b3_next_independent _ mem n next 1] at hb
+      have h := hsingle n .ub hb
+      cases h
+    · rw [entry_b3_next_independent _ mem n next 1] at hr
       have h := hsingle n out hr
       subst h
       exact ⟨e, o, blk0, nblk, k, ent, k', rfl, rfl, hk', hread, hnb, hent, hunch⟩
@@ -1351,6 +1462,15 @@ theorem entry_b8_pre_inhabited :
   · exact Or.inl (by simp)
   · simp
 
+/-- Control (i), B3 record: `pre` is inhabited at the same concrete staged state
+as B8's, which the record also needs no table for. -/
+theorem entry_b3_pre_inhabited :
+    Γ_entry_b3.pre [.ptr 0, .int 64 0, .int 64 0, .ptr 128, .int 64 0] [] 1 := by
+  refine ⟨0, 128, 0, 0, 0, ([] : List (BitVec 64)), rfl, rfl, ?_, rfl, ?_, ?_⟩
+  · simp
+  · exact Or.inl (by simp)
+  · simp
+
 /-- The UTF-8 record's staged memory: the three zero prefix bytes and one
 sixty-four-byte window holding a single `A`, at `0`. -/
 def utf8Mem : Mem := writeBytes [] 0 (utf8Window [0x41] 1 1)
@@ -1407,6 +1527,15 @@ theorem entry_b8_post_not_implied :
   intro h
   exact h
 
+/-- Control (ii), B3 record: `pre` admits the staged state, and `post` refuses a
+void return. -/
+theorem entry_b3_post_not_implied :
+    ∃ args mem next o,
+      Γ_entry_b3.pre args mem next ∧ ¬ Γ_entry_b3.post args mem next o := by
+  refine ⟨_, [], 1, .ret none [], entry_b3_pre_inhabited, ?_⟩
+  intro h
+  exact h
+
 /-- Control (ii), UTF-8 record: `pre` admits the staged state, and `post` refuses
 a void return. -/
 theorem utf8_post_not_implied :
@@ -1426,6 +1555,11 @@ theorem entry_pos8_post_ub_false (args : List Value) (mem : Mem) (next : Nat) :
 /-- The B8 record refuses `ub`. -/
 theorem entry_b8_post_ub_false (args : List Value) (mem : Mem) (next : Nat) :
     ¬ Γ_entry_b8.post args mem next .ub := by
+  intro h; exact h
+
+/-- The B3 record refuses `ub`. -/
+theorem entry_b3_post_ub_false (args : List Value) (mem : Mem) (next : Nat) :
+    ¬ Γ_entry_b3.post args mem next .ub := by
   intro h; exact h
 
 /-- The UTF-8 record refuses `ub`. -/
@@ -1638,6 +1772,10 @@ later. -/
 #guard_msgs in
 #print axioms entry_b8_next_independent
 
+/-- info: 'LeanLLVM.Refinement.entry_b3_next_independent' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms entry_b3_next_independent
+
 /-- info: 'LeanLLVM.Refinement.utf8_next_independent' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms utf8_next_independent
@@ -1655,7 +1793,7 @@ later. -/
 #guard_msgs in
 #print axioms masks_written_extent
 
--- The four wrappers, which are what the records are for.
+-- The five wrappers, which are what the records are for.
 /-- info: 'LeanLLVM.Refinement.masks_satisfies' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms masks_satisfies
@@ -1667,6 +1805,10 @@ later. -/
 /-- info: 'LeanLLVM.Refinement.entry_b8_satisfies' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms entry_b8_satisfies
+
+/-- info: 'LeanLLVM.Refinement.entry_b3_satisfies' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms entry_b3_satisfies
 
 /-- info: 'LeanLLVM.Refinement.utf8_satisfies' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -1705,6 +1847,10 @@ later. -/
 #guard_msgs in
 #print axioms entry_b8_pre_inhabited
 
+/-- info: 'LeanLLVM.Refinement.entry_b3_pre_inhabited' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms entry_b3_pre_inhabited
+
 /-- info: 'LeanLLVM.Refinement.utf8Mem_window' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms utf8Mem_window
@@ -1726,6 +1872,10 @@ later. -/
 #guard_msgs in
 #print axioms entry_b8_post_not_implied
 
+/-- info: 'LeanLLVM.Refinement.entry_b3_post_not_implied' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms entry_b3_post_not_implied
+
 /-- info: 'LeanLLVM.Refinement.utf8_post_not_implied' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms utf8_post_not_implied
@@ -1737,6 +1887,10 @@ later. -/
 /-- info: 'LeanLLVM.Refinement.entry_b8_post_ub_false' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms entry_b8_post_ub_false
+
+/-- info: 'LeanLLVM.Refinement.entry_b3_post_ub_false' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms entry_b3_post_ub_false
 
 /-- info: 'LeanLLVM.Refinement.utf8_post_ub_false' depends on axioms: [propext] -/
 #guard_msgs in

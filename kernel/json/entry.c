@@ -1,14 +1,17 @@
 /* entry.c -- the entry unit of the measured SIMD JSON pipeline: the `ent` word's
-   two position emitters, and the table one of them reads.
+   three position emitters, and the table one of them reads.
 
-   The table, its initialiser and the two kernels are the measured text of
-   kernel/json/measured/xlist.h and kernel/json/measured/s1fuse.h, at the line
-   ranges README.md's identity list records, with the arms the measured build did
-   not take and the emitters this unit is not deleted (README.md's `entry`
-   deletion list; `identity/source-identity.sh --unit entry` applies it and
-   diffs).  Both kernels and both block loops keep their measured names,
-   signatures, formatting and comments, so the token diff and the IR diff
-   compare the measured functions rather than a re-spelling of them.
+   The table, its initialiser and the two measured kernels are the measured text
+   of kernel/json/measured/xlist.h and kernel/json/measured/s1fuse.h, at the
+   line ranges README.md's identity list records, with the arms the measured
+   build did not take and the emitters this unit is not deleted (README.md's
+   `entry` deletion list; `identity/source-identity.sh --unit entry` applies it
+   and diffs).  The two measured kernels and both block loops keep their
+   measured names, signatures, formatting and comments, so the token diff and
+   the IR diff compare the measured functions rather than a re-spelling of them.
+   The third kernel, `s1f_ke_b3`, is this unit's own text, derived from the
+   bench prototype `bc_emit3` (README.md records its provenance); it keeps the
+   shared block loop and nothing else, and the identity arm lists it as extra.
 
    What the measured header calls the entry emitter is a pipeline: the `ent`
    word is computed inline in three places (`s1f_ent_probe`, `s1f_build`,
@@ -16,16 +19,18 @@
    kernel per document, and a dispatcher calls it per chunk.  This unit is the
    emitters and nothing else: the word is not computed here, no selector is
    here, and neither the escape list nor the inline emitter of `s1f_build` is
-   here.  Both kernels are exported, because proving two emitters of one stream
-   is the point and the choice between them is not this unit's to make.
+   here.  All three kernels are exported, because proving three emitters of one
+   stream is the point and the choice between them is not this unit's to make.
 
-   The two kernels write the same position stream -- the gate compares the
+   The three kernels write the same position stream -- the gate compares the
    streams byte for byte -- and differ only in how a block's entry mask becomes
    positions:
 
      pos8  one 32-byte store per mask byte through the byte table: eight stores
            per block whatever its mask holds, and no serial advance chain.
      b8    eight fixed tzcnt/blsr slots, then a scalar tail.
+     b3    three fixed tzcnt/blsr slots, four more above three lanes, then a
+           scalar tail above seven; the sparse-document shape.
 
    `S1F_DEFINE_KERNEL` wraps a kernel into the block loop both share: one mask
    word per block, the base `(uint32_t)((blk0 + i) << 6)`, and the cursor `k`
@@ -98,6 +103,41 @@ static inline uint64_t s1f_ke_b8(uint64_t m, uint32_t base, uint32_t *o) {
     return k;
 }
 
+static inline uint64_t s1f_ke_b3(uint64_t m, uint32_t base, uint32_t *o) {
+    uint64_t n = (uint64_t)__builtin_popcountll(m);
+    if (!n) return 0;
+    uint64_t c = m;
+    o[0] = base + (uint32_t)__builtin_ctzll(c); c &= c - 1;
+    o[1] = base + (uint32_t)__builtin_ctzll(c); c &= c - 1;
+    o[2] = base + (uint32_t)__builtin_ctzll(c); c &= c - 1;
+    if (n <= 3) return n;
+    o[3] = base + (uint32_t)__builtin_ctzll(c); c &= c - 1;
+    o[4] = base + (uint32_t)__builtin_ctzll(c); c &= c - 1;
+    o[5] = base + (uint32_t)__builtin_ctzll(c); c &= c - 1;
+    o[6] = base + (uint32_t)__builtin_ctzll(c); c &= c - 1;
+    if (n <= 7) return n;
+    o += 7;
+    uint64_t k = 7;
+    /* The tail carries one position per remaining lane.  Its eight-way
+       unrolling is dead on the documents this emitter is selected for: on
+       `syn-strings-64k` no block holds more than seven set lanes, so the loop
+       is never entered, and on `syn-strings-4m` no block does either.  The
+       pragma keeps the loop a counted scalar walk -- the shape the refinement
+       proves -- instead of the measured build's partial unroll.
+
+       The decision was measured, not assumed: a paired rdtscp run of the bench
+       body `bc_emit3` against a character-identical twin carrying this pragma
+       (200 alternating rounds, the four `syn-*` documents) read ratios of
+       0.995 and 0.992 on the two selected documents -- within noise, as it must
+       be, because the loop is not entered there -- and 1.149 and 1.109 on the
+       dense pair, where the unrolled form is ahead and b3 is not selected.  So
+       the pragma moves nothing the selected rows execute, and costs nothing
+       where this emitter is not used. */
+#pragma clang loop unroll(disable)
+    while (c) { *o++ = base + (uint32_t)__builtin_ctzll(c); k++; c &= c - 1; }
+    return k;
+}
+
 #define S1F_DEFINE_KERNEL(NAME, BLOCK)                                        \
 static __attribute__((noinline)) uint64_t                                     \
 NAME(uint64_t *ent, uint64_t blk0, uint64_t nblk, uint32_t *out, uint64_t k) {\
@@ -110,6 +150,7 @@ NAME(uint64_t *ent, uint64_t blk0, uint64_t nblk, uint32_t *out, uint64_t k) {\
 }
 S1F_DEFINE_KERNEL(s1f_k_pos8, s1f_ke_pos8)
 S1F_DEFINE_KERNEL(s1f_k_b8, s1f_ke_b8)
+S1F_DEFINE_KERNEL(s1f_k_b3, s1f_ke_b3)
 #undef S1F_DEFINE_KERNEL
 
 /* ------------------------------------------------------------------- ABI -- */
@@ -131,6 +172,11 @@ uint64_t leanllvm_json_entry_pos8(const uint64_t *ent, uint64_t blk0,
 uint64_t leanllvm_json_entry_b8(const uint64_t *ent, uint64_t blk0,
                                 uint64_t nblk, uint32_t *out, uint64_t k) {
     return s1f_k_b8((uint64_t *)ent, blk0, nblk, out, k);
+}
+
+uint64_t leanllvm_json_entry_b3(const uint64_t *ent, uint64_t blk0,
+                                uint64_t nblk, uint32_t *out, uint64_t k) {
+    return s1f_k_b3((uint64_t *)ent, blk0, nblk, out, k);
 }
 
 void leanllvm_json_entry_table(uint32_t *dst) {

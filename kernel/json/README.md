@@ -97,7 +97,7 @@ carry-fields-deleted: prevS bs_prevb bs_prevs
 entry-entities: s1fuse:s1f_ke_pos8 s1fuse:s1f_ke_b8 s1fuse:S1F_DEFINE_KERNEL s1fuse:s1f_k_pos8 s1fuse:s1f_k_b8 xlist:xl_pos8 xlist:xl_pos8_init
 entry-delete: xlist:34-38
 entry-delete: xlist:49-52
-entry-extra: leanllvm_json_entry_pos8 leanllvm_json_entry_b8 leanllvm_json_entry_table
+entry-extra: leanllvm_json_entry_pos8 leanllvm_json_entry_b8 leanllvm_json_entry_b3 leanllvm_json_entry_table s1f_ke_b3 s1f_k_b3
 entry-xl-exempt: xl_pos8 xl_pos8_init xl_pos8_ready
 utf8-entities: u8kl:kl_t1 u8kl:kl_t2 u8kl:kl_t3 u8kl:kl_err32_ld u8kl:kl_err_vec_ld u8kl:kl_tail_byte
 utf8-stage: s1fuse:1833-1841
@@ -185,7 +185,7 @@ extracted at all.
 |`s1fuse.h:1832-1842, 1908-1918` the `S1F_KL_DOC` stage of `s1f_build2`|`S1F_KL_DOC=1`|the UTF-8 unit's stage statements (whole here — not a mask; that unit extracts them by line range)|
 |`s1fuse.h:505-543` `s1f_ent_probe`|`S1F_ENT_PROBE=1` (`build49.sh:19`)|the probe, a decision instrument rather than a mask (whole)|
 |`s1fuse.h:544-716` `s1f_emit` and its variants|—|the inline per-block emitter of `s1f_build` (whole; the entry unit extracts the two block kernels the selector dispatches to — `s1f_ke_pos8`/`s1f_ke_b8` below — and not this inline path)|
-|`s1fuse.h:1102-1333` expanders, kernel ids|—|the escape expanders and the kernel selector (whole; the entry unit exports both emitters instead)|
+|`s1fuse.h:1102-1333` expanders, kernel ids|—|the escape expanders and the kernel selector (whole; the entry unit exports all three emitters instead)|
 |`s1fuse.h:1614-1932` `s1f_build2`|—|the pipeline loop, the caller of this unit (whole)|
 |`S1F_STATS`/`S1F_XS_STATS` blocks|off|the histograms (whole)|
 |`SP_MODES`, `SP45_MODES`, `S1F_U8_MODES`, `DENS_PRINT`, `modes*.h`|off in `m49`|the per-process arm switches (whole)|
@@ -223,7 +223,7 @@ becomes positions in a 32-bit stream.  The word itself is not computed here and
 has no body here -- the measured header computes it inline in three places
 (`s1f_ent_probe`, `s1f_build`, `s1f_build2`), and hoisting them would be new C
 with no measured counterpart -- so this unit starts where the word ends and the
-two emitters begin.
+emitters begin.
 
 ### The ABI
 
@@ -232,14 +232,19 @@ uint64_t leanllvm_json_entry_pos8(const uint64_t *ent, uint64_t blk0,
                                   uint64_t nblk, uint32_t *out, uint64_t k);
 uint64_t leanllvm_json_entry_b8  (const uint64_t *ent, uint64_t blk0,
                                   uint64_t nblk, uint32_t *out, uint64_t k);
+uint64_t leanllvm_json_entry_b3  (const uint64_t *ent, uint64_t blk0,
+                                  uint64_t nblk, uint32_t *out, uint64_t k);
 void     leanllvm_json_entry_table(uint32_t *dst);   /* 256 x 8 i32, 8 KiB */
 ```
 
 `ent` holds `nblk` mask words, lane 0 of `ent[0]` being byte 0 of block `blk0`;
 the return value is the cursor after the last word the call appended, and the
 `k' - k` words at `out[k .. k')` are the set lanes' positions in block and lane
-order, each `64 * (blk0 + i) + lane` truncated to 32 bits.  `pos8` and `b8` are
-two emitters of the same stream and either one's output is the other's.
+order, each `64 * (blk0 + i) + lane` truncated to 32 bits.  `pos8`, `b8` and
+`b3` are three emitters of the same stream and any one's output is another's.
+`b3` is the sparse-document shape: three fixed slots, four more above three
+lanes, and a scalar tail above seven, so a block whose mask holds the modal
+three positions writes three stores and no loop.
 
 These are the measured block loop's parameters, hoisted: `S1F_DEFINE_KERNEL`
 already declares exactly `(uint64_t *ent, uint64_t blk0, uint64_t nblk,
@@ -266,7 +271,7 @@ unit rather than extracting it.
 
 ### What is measured text, and what is not
 
-The table, its initialiser, the two kernels and the block-loop macro are copied
+The table, its initialiser, the two measured kernels and the block-loop macro are copied
 from `measured/xlist.h` and `measured/s1fuse.h` unchanged, including names,
 signatures, formatting and comments; `identity/source-identity.sh --unit entry`
 extracts the seven `entry-entities:` from those two files, applies the two
@@ -301,12 +306,31 @@ the specification's word, row by row; it reads the specification route's
 model of the word, so `ent-identity.sh` with no flags exits `3` until that mode
 exists and `--text-only` is the half that runs here.
 
-The new text is the three ABI functions.  Everything else in the measured
-header is outside this unit and is not copied: the `ent` word's three inline
-computations, the kernel selection (`s1f_ent_probe`, `dens_pick_kernel`,
-`s1f_expand_k`) and its ids, the escape list and its expanders, `s1f_emit` and
-the buffer management.  The unit exports *both* emitters instead of choosing
-one, because the choice is a document-level decision and not this unit's.
+The new text is the four ABI functions.  For the two measured kernels that is
+the wrapper around measured text; `b3` is the unit's own emitter, the bench
+prototype `bc_emit3` of `tests/json-units-bench/bench-contract.c` (commit
+652bfdd), not measured text:
+no measured header carries a three-wide emitter, so `s1f_ke_b3`, `s1f_k_b3` and
+`leanllvm_json_entry_b3` are on the `entry-extra:` list and the source-identity
+arm treats them as the unit's own.  Their `#pragma clang loop unroll(disable)`
+on the scalar tail is likewise the unit's text: the bench candidate let clang
+unroll the tail eight ways, but on the documents this emitter is selected for
+(`syn-strings-64k`, `syn-strings-4m`) no block holds more than seven set lanes
+(`entry-opt`'s shape report: at most six positions per word on the 64 KiB
+document, and the 4 MiB sibling has the same shape), so the loop is never
+entered there.  The choice was measured against the bench body: a paired
+rdtscp run of `bc_emit3` against a character-identical pragma twin, 200
+alternating rounds on the four `syn-*` documents, read ratios of 0.995 and
+0.992 on the two selected documents — within noise, and the loop is unentered
+there — and 1.149 and 1.109 on the dense pair, where the unrolled form is ahead
+and `b3` is not selected.  The refinement is therefore the counted loop's, in
+`JsonB3Steps`.  Everything
+else in the measured header is outside this unit and is not copied: the `ent`
+word's three inline computations, the kernel selection (`s1f_ent_probe`,
+`dens_pick_kernel`, `s1f_expand_k`) and its ids, the escape list and its
+expanders, `s1f_emit` and the buffer management.  The unit exports all three
+emitters instead of choosing one, because the choice is a document-level
+decision and not this unit's.
 
 ### The deletion list
 
@@ -336,14 +360,17 @@ the measured header this unit is not.  Each row is a deletion, and a row marked
    above 2^32 bytes truncates; the specification states its clauses at the
    truncated value and its untruncated corollary under the bound that rules the
    truncation out.
-2. **The two emitters write different spans past the emitted count.**  `pos8`'s
+2. **The three emitters write different spans past the emitted count.**  `pos8`'s
    eight stores are unconditional and the cursor advances by each group's
    popcount, so a trailing group whose byte is empty still stores eight lanes at
    the final cursor: its last written lane is `k' + 7`.  `b8` writes eight slots
    for a block of one to seven entries and exactly its count above that, so its
-   last written lane is `k' + 6`.  The first lane neither writes is `k' + 8`.
-   Those lanes are the caller's: a buffer must carry eight words of slack past
-   the largest count its input can reach, and a reader reads only `k'` words.
+   last written lane is `k' + 6`.  `b3` writes three slots, four more above
+   three lanes, and exactly its count above seven; its worst case is a
+   four-lane block, whose second group reaches `k + 6 = k' + 2`, so its first
+   unwritten lane is `k' + 3`.  Those lanes are the caller's: a buffer must
+   carry eight words of slack past the largest count its input can reach, and a
+   reader reads only `k'` words.
 3. **`__builtin_ctzll` on a cleared word is undefined in C**, and the emission
    carries `llvm.cttz.i64` with its poison flag set (`i1 true`) for that reason.
    The model has no poison: the flag is admitted with a bound, and the bound is

@@ -10,11 +10,11 @@
  *
  *   <source>\t<label>\t<kernel>\t<count>\t<words>\t<multi>\t<sentinel>
  *
- * with `kernel` `p` for POS8 and `b` for B8, `count` the returned cursor `k'`,
- * `words` the first `k'` `i32` words as `0x` and exactly eight lowercase hex
- * digits each (comma-separated, `-` when `k'` is 0), `multi` 1 when a block of
- * the stream has more than eight set lanes, and `sentinel` the word at lane
- * `k'+8` — the first lane neither kernel writes.  The line is comparable,
+ * with `kernel` `p` for POS8, `b` for B8 and `3` for B3, `count` the returned
+ * cursor `k'`, `words` the first `k'` `i32` words as `0x` and exactly eight
+ * lowercase hex digits each (comma-separated, `-` when `k'` is 0), `multi` 1
+ * when a block of the stream has more than eight set lanes, and `sentinel` the
+ * word at lane `k'+8` — one past every kernel's bound.  The line is comparable,
  * line for line, with `leanllvm-json-entry`.
  *
  * Staging.  The mask stream is placed at **offset 1** of a heap buffer, so the
@@ -23,7 +23,7 @@
  * is filled with `0xA5` before the call, so a lane the body does not write —
  * and the word at `k'+8` — reads back as `0xa5a5a5a5`, and a row whose cursor
  * starts at `k` begins with `k` sentinel words.  The buffer holds `k' + 8`
- * lanes plus slack for the lanes POS8 and B8 write past `k'`.
+ * lanes plus slack for the lanes the three kernels write past `k'`.
  *
  * `leanllvm_json_entry_table` is called once before the first row: the POS8
  * kernel reads the unit's own static table, which only the unit's initialiser
@@ -34,11 +34,11 @@
  * masks seeded at 0x243F6A8885A308D3, the empty mask, the full mask, and the
  * 1025-mask long-loop stream built from the corpus masks concatenated in file
  * order and repeated.  Every arm starts at `blk0 = 0` and `k = 0`.  Each stream
- * contributes one row per kernel, POS8 first.
+ * contributes one row per kernel: POS8, then B8, then B3.
  *
  * This is test infrastructure: it calls the object and prints what the object
  * wrote.  It asserts nothing about the positions; the comparison against the
- * Lean body is what says the two agree.
+ * Lean body is what says the kernels agree.
  *
  * Exit status: 0 on success, 2 when an argument is missing or a file cannot be
  * read, so a setup fault is never read as a positions result.
@@ -52,6 +52,9 @@ extern uint64_t leanllvm_json_entry_pos8(const uint64_t *ent, uint64_t blk0,
                                          uint64_t nblk, uint32_t *out,
                                          uint64_t k);
 extern uint64_t leanllvm_json_entry_b8(const uint64_t *ent, uint64_t blk0,
+                                       uint64_t nblk, uint32_t *out,
+                                       uint64_t k);
+extern uint64_t leanllvm_json_entry_b3(const uint64_t *ent, uint64_t blk0,
                                        uint64_t nblk, uint32_t *out,
                                        uint64_t k);
 extern void leanllvm_json_entry_table(uint32_t *dst);
@@ -111,7 +114,7 @@ static int stream_multi(const uint64_t *masks, size_t n) {
 /* One row: stage the buffer, call the kernel, print what it wrote. */
 static void row(const char *source, const char *label, char kernel,
                 const stream *s, uint64_t blk0, uint64_t k) {
-  /* `k'` cannot exceed `k + 64 * n`, and both kernels may write up to eight
+  /* `k'` cannot exceed `k + 64 * n`, and each kernel may write up to eight
    * lanes past it; nine lanes past `k'` are read. */
   size_t lanes = (size_t)k + 64 * s->n + 16;
   size_t bytes = 4 * lanes;
@@ -121,8 +124,10 @@ static void row(const char *source, const char *label, char kernel,
   uint64_t count;
   if (kernel == 'p') {
     count = leanllvm_json_entry_pos8(stream_masks(s), blk0, s->n, out, k);
-  } else {
+  } else if (kernel == 'b') {
     count = leanllvm_json_entry_b8(stream_masks(s), blk0, s->n, out, k);
+  } else {
+    count = leanllvm_json_entry_b3(stream_masks(s), blk0, s->n, out, k);
   }
   if (count + 8 >= lanes) {
     fprintf(stderr, "entry_driver: %s\t%s\t%c: count %llu outside the buffer\n",
@@ -145,11 +150,12 @@ static void row(const char *source, const char *label, char kernel,
   free(out);
 }
 
-/* Both kernels over one stream: POS8 then B8. */
-static void row_pair(const char *source, const char *label, const stream *s,
-                     uint64_t blk0, uint64_t k) {
+/* The three kernels over one stream: POS8, then B8, then B3. */
+static void row_triple(const char *source, const char *label, const stream *s,
+                       uint64_t blk0, uint64_t k) {
   row(source, label, 'p', s, blk0, k);
   row(source, label, 'b', s, blk0, k);
+  row(source, label, '3', s, blk0, k);
 }
 
 /* --- The corpus files: `blk0`, `k` and the masks a committed file carries. --- */
@@ -260,7 +266,7 @@ static int emit_corpus(const char *path) {
            (unsigned long long)blk0, (unsigned long long)k,
            (unsigned long long)count);
   stream s = stream_new(masks, (size_t)count);
-  row_pair(path, label, &s, blk0, k);
+  row_triple(path, label, &s, blk0, k);
   stream_free(&s);
   free(masks);
   return 0;
@@ -274,7 +280,7 @@ static void emit_lane_arm(void) {
     uint64_t mask = UINT64_C(1) << nn;
     snprintf(label, sizeof label, "lane%02d", nn);
     stream s = stream_new(&mask, 1);
-    row_pair("arm:lane", label, &s, 0, 0);
+    row_triple("arm:lane", label, &s, 0, 0);
     stream_free(&s);
   }
 }
@@ -285,7 +291,7 @@ static void emit_byte_arm(void) {
     uint64_t mask = (uint64_t)hh;
     snprintf(label, sizeof label, "val%02x", hh);
     stream s = stream_new(&mask, 1);
-    row_pair("arm:byte", label, &s, 0, 0);
+    row_triple("arm:byte", label, &s, 0, 0);
     stream_free(&s);
   }
 }
@@ -311,7 +317,7 @@ static void emit_random_arm(void) {
     snprintf(label, sizeof label, "idx%llu/mask%016llx",
              (unsigned long long)i, (unsigned long long)mask);
     stream s = stream_new(&mask, 1);
-    row_pair("arm:random", label, &s, 0, 0);
+    row_triple("arm:random", label, &s, 0, 0);
     stream_free(&s);
   }
 }
@@ -319,7 +325,7 @@ static void emit_random_arm(void) {
 static void emit_shape_arm(const char *source, const char *label,
                            uint64_t mask) {
   stream s = stream_new(&mask, 1);
-  row_pair(source, label, &s, 0, 0);
+  row_triple(source, label, &s, 0, 0);
   stream_free(&s);
 }
 
@@ -334,7 +340,7 @@ static void emit_nblk_arm(uint64_t *all, size_t n) {
   }
   for (size_t i = 0; i < NBLK_COUNT; i++) masks[i] = all[i % n];
   stream s = stream_new(masks, NBLK_COUNT);
-  row_pair("arm:nblk", "masks1025", &s, 0, 0);
+  row_triple("arm:nblk", "masks1025", &s, 0, 0);
   stream_free(&s);
   free(masks);
 }

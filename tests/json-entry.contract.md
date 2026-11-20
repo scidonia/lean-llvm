@@ -1,22 +1,25 @@
-# Entry positions: the `ent` word and the two position emitters
+# Entry positions: the `ent` word and the three position emitters
 
 The entry unit is measured code, and what this file claims is about the object
 the measurement compiled: for a stream of 64-bit entry masks and a starting
 cursor it writes each mask's set lanes, as positions, into a caller's buffer.
 The headline theorems are stated over the emitted texts
 `probes/install/ir/json-entry.candidate.ll`, pinned to hand-written ASTs:
-`entry_pos8_refines` in `LeanLLVM/Refinement/JsonEntrySteps.lean`, and
+`entry_pos8_refines` in `LeanLLVM/Refinement/JsonEntrySteps.lean`,
 `entry_b8_refines`, `entry_pos8_b8_agree` and `entry_b8_undefined_of_no_read` in
-`LeanLLVM/Refinement/JsonB8Steps.lean`; `LeanLLVM/Refinement/JsonEntryIR.lean` holds the
-fixture pin, `entryCalls`, the `pos8Table` definition and `entry_tail_eq`.  These
+`LeanLLVM/Refinement/JsonB8Steps.lean`, and `entry_b3_refines` in
+`LeanLLVM/Refinement/JsonB3Steps.lean`; `LeanLLVM/Refinement/JsonEntryIR.lean`
+holds the fixture pin, `entryCalls`, the `pos8Table` definition and
+`entry_tail_eq`.  These
 scenarios are the other half of that claim, where the subject is reached from
 outside rather than read as a proposition.
 
 There are two actors both outside the subject:
 
 * the object arm — `probes/json/entry_driver.c`, a separate executable that calls
-  `leanllvm_json_entry_pos8` and `leanllvm_json_entry_b8` through the compiled
-  object and prints what the object wrote.  It calls `leanllvm_json_entry_table`
+  `leanllvm_json_entry_pos8`, `leanllvm_json_entry_b8` and
+  `leanllvm_json_entry_b3` through the compiled object and prints what the
+  object wrote.  It calls `leanllvm_json_entry_table`
   once before the first row, because the table the POS8 body reads is filled by
   the unit's own `xl_pos8_init` and nothing else calls it;
 * the runner `leanllvm-json-entry`, which executes the pinned ASTs through
@@ -30,11 +33,11 @@ actors print a row as
 ```
 
 `source` is the corpus path as given, or `arm:<arm>`; `label` names the row;
-`kernel` is `p` for POS8 and `b` for B8; `count` is the returned cursor `k'`;
-`words` is the first `k'` `i32` words, `0x` and exactly eight lowercase hex
-digits each, comma-separated, or `-` when `k'` is `0`; `multi` is `1` when a
-block of the stream has more than eight set lanes; and `sentinel` is the word at
-lane `k'+8`, the first lane neither kernel writes.  Two columns are
+`kernel` is `p` for POS8, `b` for B8 and `3` for B3; `count` is the returned
+cursor `k'`; `words` is the first `k'` `i32` words, `0x` and exactly eight
+lowercase hex digits each, comma-separated, or `-` when `k'` is `0`; `multi` is
+`1` when a block of the stream has more than eight set lanes; and `sentinel` is
+the word at lane `k'+8`, one past every kernel's bound.  Two columns are
 scaffolding, admitted for the reason this record gives: `multi` because JE3's
 set assertion must name the rows a cut tail loop can move, and `sentinel`
 because the bound clause is otherwise unobservable from the row stream.
@@ -46,8 +49,9 @@ make — and the word at `k'+8` — read back as `0xa5a5a5a5`; a row whose curso
 starts at `k` therefore begins with `k` sentinel words.  The region `[k', k'+8)`
 is deliberately **not** compared: POS8 stores eight lanes per group
 unconditionally, so its last store, at the final cursor, reaches `k'+7`, while
-B8's eight fixed slots per block reach `k'+6`; those lanes hold table-row
-padding and block bases rather than positions.  The sentinel at `k'+8` is what
+B8's eight fixed slots per block reach `k'+6` and B3's three-plus-four slots
+reach `k'+2`; those lanes hold table-row padding and block bases rather than
+positions.  The sentinel at `k'+8` is what
 proves the body stopped inside that bound.
 
 The Lean files are
@@ -149,8 +153,9 @@ families, not by adding a checker.
   emission contains; anything about a body's meaning.
 - **Where it lives:** `tests/vector-entry.lean`, which imports `LeanLLVM` only.
   The fixture-pin half — the text parses, `firstFunction` of it is exactly
-  `entryPos8Function`, and the module's two functions are `entryPos8Function`
-  and `entryB8Function` — stays in `tests/json-entry.lean`, which imports the
+  `entryPos8Function`, and the module's three functions are `entryPos8Function`,
+  `entryB8Function` and `entryB3Function` — stays in `tests/json-entry.lean`,
+  which imports the
   module and is therefore reachable only after the pinned AST exists.  Two
   files, one record.
 
@@ -174,11 +179,11 @@ families, not by adding a checker.
 - **When:** both actors are run over the same corpus files and the same arms, and
   the runner is also run with `--expect` over a tampered copy of its own rows.
 - **Then:** for every row the returned count equals, the first `k'` words equal,
-  and the word at lane `k'+8` — the first lane neither kernel writes — is still
-  the sentinel in both actors.  The region `[k', k'+8)` is not compared (the
-  overshoot bound: POS8 reaches `k'+7`, B8 `k'+6`); a body that wrote into lane
-  `k'+8` would be outside its bound and shows there.  The row count is
-  asserted, not printed: `2 * (corpus files + 65859)`, where 65859 is the arm
+  and the word at lane `k'+8` — one past every kernel's bound — is still the
+  sentinel in both actors.  The region `[k', k'+8)` is not compared (the
+  overshoot bound: POS8 reaches `k'+7`, B8 `k'+6`, B3 `k'+2`); a body that wrote
+  into lane `k'+8` would be outside its bound and shows there.  The row count is
+  asserted, not printed: `3 * (corpus files + 65859)`, where 65859 is the arm
   streams 64 + 256 + 65536 + 2 + 1.  In the same run, each row's count and words
   are compared against the positions its own masks define — computed by the
   route from the committed bytes and from the arm's label — so agreement of the
@@ -207,33 +212,36 @@ families, not by adding a checker.
   contain; the overshoot region's contents; the driver's or runner's row order
   beyond the two actors agreeing on it; the `nblk` row's words, as the Then
   states (its count, `multi` and sentinel are derived and asserted); the
-  pipeline that calls this unit, and the selection between the two kernels.
+  pipeline that calls this unit, and the selection among the three emitters.
 - **Where it lives:** `tests/json-entry.lean` (the Lean-side half, which asserts
   one row's count, words and sentinel by hand rather than by comparison) and
   `tests/json-entry/check.sh` (the route).
 
-### JE3 — the two kernels write one stream
+### JE3 — the three kernels write one stream
 
-- **Actor:** both objects through the driver, and both ASTs through the runner.
-- **Boundary:** the same two C ABI calls and the same two `runFuel` applications
-  as JE2, at the same rows.
+- **Actor:** the one object through the driver, and the three ASTs through the
+  runner.
+- **Boundary:** the same three C ABI calls and the same three `runFuel`
+  applications as JE2, at the same rows.
 - **Given:** the same mask streams, the same staging, and output buffers filled
   with the same sentinel.
-- **When:** both kernels are run over each stream and their rows are read.
-- **Then:** at every row both kernels return the same count and the same first
-  `k'` words, and leave the same sentinel at `k'+8` — the one lane neither of
-  them writes, so this is a claim about the shared untouched lane rather than
-  about a lane one kernel writes and the other does not (POS8 reaches `k'+7`, B8
-  `k'+6`); the header's claim that they "write the same position stream" is the
-  assertion.  Their overshoot regions are not compared.
-- **Expected failure:** the staged cut that replaces B8's object with a stub
-  returning `k` — which moves every row a B8 body with more than eight set lanes
-  reaches and no other.  Like JE2's, it is measured once its subject exists,
-  before the theorem is accepted; at the base revision the actors are absent, so
-  no red is claimed here.
-- **Why:** a milestone that proved both kernels but shipped one of them wrong
+- **When:** all three kernels are run over each stream and their rows are read.
+- **Then:** at every row the three kernels return the same count and the same
+  first `k'` words, and leave the same sentinel at `k'+8` — one past every
+  kernel's bound, so this is a claim about the shared untouched lane rather than
+  about a lane one kernel writes and the others do not (POS8 reaches `k'+7`, B8
+  `k'+6`, B3 `k'+2`); the header's claim that they "write the same position
+  stream" is the assertion.  Their overshoot regions are not compared.
+- **Expected failure:** three staged cuts, one per kernel, each measured as the
+  rows its predicate names and no others.  POS8's is the table defect (the rows
+  whose stream holds a `0x2c` byte); B8's and B3's cut each tail loop in its own
+  function, so the B8 cut moves every B8 row with more than eight set lanes and
+  the B3 cut every B3 row with more than seven.  Like JE2's, they are measured
+  once their subject exists, before the theorems are accepted; at the base
+  revision the actors are absent, so no red is claimed here.
+- **Why:** a milestone that proved the kernels but shipped one of them wrong
   would satisfy the theorems and violate the interface the header states.
-- **Not claimed:** that the two kernels are interchangeable in cost or in the
+- **Not claimed:** that the kernels are interchangeable in cost or in the
   overshoot they write; anything about which kernel a document is given.
 - **Where it lives:** `tests/json-entry.lean` (the Lean-side half) and
   `tests/json-entry/check.sh` (the route).
@@ -319,7 +327,7 @@ one group's byte to each value are what guarantees every table row is read,
 
 ## The route's detectors
 
-Two defect objects are built from `kernel/json/entry.c` itself, at the same
+Three defect objects are built from `kernel/json/entry.c` itself, at the same
 flags, in the same run, and each must disagree with the Lean body on exactly its
 own set:
 
@@ -330,12 +338,17 @@ own set:
 * **the B8 defect** cuts `s1f_ke_b8`'s tail loop, the epilogue that emits the
   positions past the eight fixed slots.  The disagreement set is exactly the B8
   rows whose stream has a block with more than eight set lanes, and no other
-  row moves.
+  row moves;
+* **the B3 defect** cuts `s1f_ke_b3`'s tail loop, the epilogue that emits the
+  positions past the seven fixed slots.  The disagreement set is exactly the B3
+  rows whose stream has a block with more than seven set lanes, and no other
+  row moves.  The two tail loops carry the same text, so each cut is scoped to
+  the function its own definition line opens.
 
-The first differing row is named and is the same row on two runs.  Both
-mutations are textual, count the substitutions that land, and fail as setup
-faults (exit 3) if the measured text they locate is not there exactly once — so
-a source that drifted is refused rather than silently passing.
+The first differing row is named and is the same row on two runs.  Every
+mutation is textual, counts the substitutions that land, and fails as a setup
+fault (exit 3) if the measured text it locates is not there exactly once — so a
+source that drifted is refused rather than silently passing.
 
 ## Which artefact the route compiles
 

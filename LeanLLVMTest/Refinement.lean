@@ -6883,6 +6883,10 @@ recurrence and the per-block step count it rests on. -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonB8Steps.entry_b8_refines
 
+/-- info: 'LeanLLVM.Refinement.JsonB3Steps.entry_b3_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonB3Steps.entry_b3_refines
+
 /-- info: 'LeanLLVM.Refinement.JsonB8Steps.entry_pos8_b8_agree' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonB8Steps.entry_pos8_b8_agree
@@ -9311,6 +9315,10 @@ either place. -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.entry_b8_next_independent
 
+/-- info: 'LeanLLVM.Refinement.entry_b3_next_independent' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.entry_b3_next_independent
+
 /-- info: 'LeanLLVM.Refinement.utf8_next_independent' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.utf8_next_independent
@@ -9335,6 +9343,10 @@ either place. -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.entry_b8_satisfies
 
+/-- info: 'LeanLLVM.Refinement.entry_b3_satisfies' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.entry_b3_satisfies
+
 /-- info: 'LeanLLVM.Refinement.utf8_satisfies' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.utf8_satisfies
@@ -9351,6 +9363,10 @@ either place. -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.entry_b8_pre_inhabited
 
+/-- info: 'LeanLLVM.Refinement.entry_b3_pre_inhabited' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.entry_b3_pre_inhabited
+
 /-- info: 'LeanLLVM.Refinement.utf8_pre_inhabited' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.utf8_pre_inhabited
@@ -9366,6 +9382,10 @@ either place. -/
 /-- info: 'LeanLLVM.Refinement.entry_b8_post_not_implied' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.entry_b8_post_not_implied
+
+/-- info: 'LeanLLVM.Refinement.entry_b3_post_not_implied' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.entry_b3_post_not_implied
 
 /-- info: 'LeanLLVM.Refinement.utf8_post_not_implied' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in

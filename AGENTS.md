@@ -157,10 +157,11 @@ as up to date.
   on a global, and proves the tail statement `entry_tail_eq`; `JsonEntrySteps`
   proves `entry_pos8_refines` — the returned cursor, the words below it read as
   the model's positions, and every byte outside the span the body's stores reach
-  unchanged — and `JsonB8Steps` proves `entry_b8_refines`, the two kernels'
+  unchanged — and `JsonB8Steps` proves `entry_b8_refines`, the two measured kernels'
   agreement `entry_pos8_b8_agree` and B8's totality companion
-  `entry_b8_undefined_of_no_read`, which are the statements the block layer asks
-  for.
+  `entry_b8_undefined_of_no_read`; `JsonB3Steps` proves `entry_b3_refines` for the
+  unit's own sparse emitter.  These are the statements the block layer asks for,
+  and `JsonUnitContracts` gives each emitter its `Satisfies` record.
   The UTF-8 unit is the third unit's chain: `JsonUtf8IR` pins
   `probes/install/ir/json-utf8.candidate.ll` by `#guard`, binds the three
   intrinsics the stage calls in `utf8Calls`, and states the window the body

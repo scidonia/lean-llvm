@@ -105,8 +105,9 @@ no cross-byte state.
 
 Missing: a scanner body that writes its index output (the widened vector
 `store` is modelled since the entry unit, and the entry unit is itself an
-index-emission body — `kernel/json/entry.c`'s two position kernels, proved by
-`entry_pos8_refines` and `entry_b8_refines` — but no body joins classification
+index-emission body — `kernel/json/entry.c`'s three position kernels, proved by
+`entry_pos8_refines`, `entry_b8_refines` and `entry_b3_refines` — but no body
+joins classification
 to emission: J3's model is Lean and emits none, and the loop that would call
 both units is the pipeline's, not this tree's),
 a baseline body for the pair, and an artifact-bound installation. The

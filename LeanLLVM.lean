@@ -35,6 +35,7 @@ import LeanLLVM.Refinement.JsonS1BlocksSteps
 import LeanLLVM.Refinement.JsonEntryIR
 import LeanLLVM.Refinement.JsonEntrySteps
 import LeanLLVM.Refinement.JsonB8Steps
+import LeanLLVM.Refinement.JsonB3Steps
 import LeanLLVM.Refinement.JsonUtf8IR
 import LeanLLVM.Refinement.JsonUtf8Steps
 import LeanLLVM.Refinement.JsonUtf8Spec
