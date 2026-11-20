@@ -1047,12 +1047,14 @@ and carry pair reset per call.  Four arms are measured — gated and ungated
 gates the two actors' entry words, escape stream, carries and return words
 before any row is timed.
 
-The transcript is `tests/json-units-bench/bench-s1-blocks-transcript.txt`; the
-ratio is v2's time over v1's in the same round, so a drift inside a round
-cancels.  The acceptance document is `syn-utf8-64k`; `syn-utf8-4m` is the
-working-set control, `route-u8-64k` is the route's raw UTF-8 class,
-`syn-dense-64k` and `route-s1-64k` price the skip on ASCII documents, and
-`syn-strings-64k` is the string class.
+The transcript is `tests/json-units-bench/bench-s1-blocks-transcript.txt`; each
+ratio is the fused body's 11-round median over v1's 11-round median at the same
+settings.  The driver does not emit per-round ratios, so drift between the two
+actors' rounds is not cancelled by construction; the two-invocation spread
+below is the honest error bar.  The acceptance document is `syn-utf8-64k`;
+`syn-utf8-4m` is the working-set control, `route-u8-64k` is the route's raw
+UTF-8 class, `syn-dense-64k` and `route-s1-64k` price the skip on ASCII
+documents, and `syn-strings-64k` is the string class.
 
 The run below is one AMD EPYC 7B12 session, 11 rounds of 41 repetitions,
 `taskset -c 0`; the corpus sha256s, the v1 and v2 sha256s, and the host are in
@@ -1076,6 +1078,16 @@ cell that read 1.198 before.  The phase costs the UTF-8 documents almost
 nothing — their first non-ASCII block is early, so at most one classified block
 is handed on before the fused loop — and it is what makes an all-ASCII document
 run the first body's shape with no DFA phis.
+
+On the merged tree (`main` at `426539e`) the same instrument ran twice; the
+rows are `tests/json-units-bench/bench-s1-blocks-verify-426539e.txt`.  ASCII
+stayed at or below 0.9851 in every cell, and the gated `syn-utf8-64k`
+list-free cell read 0.9496 and 0.9094, a two-invocation band of
+**0.9094–0.9496**; the shipped 0.9135 lies inside it, and the cell scatters
+about ±2% between runs.  A single reading within a few percent of 0.95 is
+therefore repeated before it is read as a pass or a regression; the band is
+the claim, and it is re-measured when the body, compiler line, host class or
+flags change.
 
 No row here is a full-pipeline ratio, and the host is not the measurement host
 of the tables above: the paired construction prices the two bodies on one
