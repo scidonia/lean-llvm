@@ -52,8 +52,9 @@ def s1BlocksBudget (args : List Value) (_mem : Mem) : Nat :=
 /-- The caller's staging.  The document is the padded window the classifier
 reads; the three bytes before it are the UTF-8 DFA's zero load-form carry;
 `ent` and the escape stream are the caller's; the count slot holds the stream's
-initial cursor; the carry is the all-false pair; and the four objects are
-separate.  `3 ≤ b` is what makes the three prefix bytes addressable, and
+initial cursor; the carry is the all-false pair; the four objects are pairwise
+separate; and the window, with the three bytes before it, is separate from all
+four.  `3 ≤ b` is what makes the three prefix bytes addressable, and
 `bs.length < 2 ^ 63` is `utf8.h`'s bound on the block count. -/
 def s1BlocksPre (args : List Value) (mem : Mem) (_next : Nat) : Prop :=
   ∃ (b ent xp nxp xcarry : Nat) (arm : BitVec 64) (bs : List UInt8) (xn : Nat),
@@ -70,11 +71,17 @@ def s1BlocksPre (args : List Value) (mem : Mem) (_next : Nat) : Prop :=
     readBytes mem xcarry 16 = some (flagBytes false ++ flagBytes false) ∧
     blocksOf bs.length * 64 + 63 < 2 ^ 32 ∧
     -- the four objects the run may write are pairwise separate; the window it
-    -- reads is separate from all of them, and `ent` is separate from the three
-    -- bytes before the window too, because the first block's entry store
-    -- precedes its DFA arm
+    -- reads, together with the three staged bytes before it, is separate from
+    -- all four, so the loop's entry stores and the escape call's stream, count
+    -- and carry writes cannot reach a document block or the staged zeroes.
+    -- `ent` is separate from the prefix too, because the first block's entry
+    -- store precedes its DFA arm
     (b + 64 * blocksOf bs.length ≤ ent ∨
       ent + 8 * blocksOf bs.length ≤ b - 3) ∧
+    (b + 64 * blocksOf bs.length ≤ xp ∨
+      xp + 4 * (xn + 64 * blocksOf bs.length + batchReserve) ≤ b - 3) ∧
+    (b + 64 * blocksOf bs.length ≤ nxp ∨ nxp + 8 ≤ b - 3) ∧
+    (b + 64 * blocksOf bs.length ≤ xcarry ∨ xcarry + 16 ≤ b - 3) ∧
     (ent + 8 * blocksOf bs.length ≤ xp ∨
       xp + 4 * (xn + 64 * blocksOf bs.length + batchReserve) ≤ ent) ∧
     (ent + 8 * blocksOf bs.length ≤ nxp ∨ nxp + 8 ≤ ent) ∧
