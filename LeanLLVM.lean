@@ -44,6 +44,7 @@ import LeanLLVM.Refinement.JsonS1BlocksTail
 import LeanLLVM.Refinement.JsonS1BlocksCompose
 import LeanLLVM.Refinement.JsonS1BlocksExit
 import LeanLLVM.Refinement.JsonS1BlocksStaging
+import LeanLLVM.Refinement.JsonS1BlocksLoop
 import LeanLLVM.Refinement.JsonEntryIR
 import LeanLLVM.Refinement.JsonEntrySteps
 import LeanLLVM.Refinement.JsonB8Steps
