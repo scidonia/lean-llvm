@@ -5501,6 +5501,300 @@ theorem asciiPhase_charge_le (args : List Value) (mem : Mem) (n : Nat)
   simp only [s1BlocksBudget, hn]
   omega
 
+/-! ### The entry's bound and the document's blocks
+
+The entry binds the phase's bound: `%shr = n >>> 6` is the document's whole-block
+count `n / 64`.  `blocksOf` counts one more block when the length is not a
+multiple of sixty-four, and that block is the peel's at `if.then103`, not the
+phase's; the phase's count is therefore at most `blocksOf`, with equality exactly
+when the length is block-aligned.  The staging reads the padded window in one go,
+and splitting that read at the block boundaries is the phase's document premise.
+
+`readBytes` at the window gives the blocks one at a time: the read is longer than
+any block, so a block's own sixty-four bytes are the window's at its offset. -/
+
+/-- The entry's shift, as a `Nat` division. -/
+theorem ushr_six_toNat (x : BitVec 64) : (x >>> 6).toNat = x.toNat / 64 := by
+  rw [BitVec.toNat_ushiftRight, Nat.shiftRight_eq_div_pow,
+    show (2 : Nat) ^ 6 = 64 from by decide]
+
+/-- A document below `2 ^ 63` bytes has fewer than `2 ^ 57` whole blocks. -/
+theorem ushr_six_lt (x : BitVec 64) (h : x.toNat < 2 ^ 63) : (x >>> 6).toNat < 2 ^ 57 := by
+  rw [ushr_six_toNat, Nat.div_lt_iff_lt_mul (by decide : 0 < 64)]
+  have h64 : (2 : Nat) ^ 57 * 64 = 2 ^ 63 := by decide
+  rw [h64]
+  exact h
+
+/-- The whole-block count is at most the padded window's block count. -/
+theorem ushr_six_le_blocksOf (n : Nat) : n / 64 ≤ JsonScanSpec.blocksOf n := by
+  unfold JsonScanSpec.blocksOf
+  exact Nat.div_le_div_right (by omega)
+
+/-- The two counts coincide when the length is block-aligned. -/
+theorem blocksOf_eq_div {n : Nat} (h : n % 64 = 0) : JsonScanSpec.blocksOf n = n / 64 := by
+  unfold JsonScanSpec.blocksOf
+  have hq : n = 64 * (n / 64) := by
+    have hdm := Nat.div_add_mod n 64
+    omega
+  rw [hq, Nat.mul_add_div (by decide : 0 < 64), Nat.div_eq_of_lt (by decide : 63 < 64)]
+  omega
+
+/-- The entry's bound is the window's block count on a block-aligned document. -/
+theorem ushr_six_eq_blocksOf (x : BitVec 64) (h : x.toNat % 64 = 0) :
+    (x >>> 6).toNat = JsonScanSpec.blocksOf x.toNat := by
+  rw [ushr_six_toNat, blocksOf_eq_div h]
+
+/-- The document's block at `j`, as the padded window holds it. -/
+def docBlock (bs : List UInt8) (j : Nat) : List UInt8 :=
+  ((JsonScanSpec.padded bs).drop (64 * j)).take 64
+
+/-- The window read gives each block its own sixty-four bytes. -/
+theorem readBytes_docBlock (m : Mem) (bs : List UInt8) (b : Nat) {j : Nat}
+    (h : readBytes m b (64 * JsonScanSpec.blocksOf bs.length) =
+      some (JsonScanSpec.padded bs))
+    (hj : j < JsonScanSpec.blocksOf bs.length) :
+    readBytes m (b + 64 * j) 64 = some (docBlock bs j) := by
+  have hle : 64 * j + 64 ≤ 64 * JsonScanSpec.blocksOf bs.length := by
+    have hstep : j + 1 ≤ JsonScanSpec.blocksOf bs.length := by omega
+    have hmul := Nat.mul_le_mul_left 64 hstep
+    omega
+  obtain ⟨k, hk⟩ := Nat.le.dest hle
+  rw [show 64 * JsonScanSpec.blocksOf bs.length = 64 * j + (64 + k) from by omega] at h
+  obtain ⟨-, h2⟩ := readBytes_split m b (64 * j) (64 + k) h
+  obtain ⟨h3, -⟩ := readBytes_split m (b + 64 * j) 64 k h2
+  simpa only [docBlock] using h3
+
+/-- The window read splits a block into its two thirty-two-byte words. -/
+theorem readBytes_docBlock_halves (m : Mem) (bs : List UInt8) (b : Nat) {j : Nat}
+    (h : readBytes m b (64 * JsonScanSpec.blocksOf bs.length) =
+      some (JsonScanSpec.padded bs))
+    (hj : j < JsonScanSpec.blocksOf bs.length) :
+    readBytes m (b + 64 * j) 32 = some ((docBlock bs j).take 32) ∧
+      readBytes m (b + 64 * j + 32) 32 = some ((docBlock bs j).drop 32) := by
+  have h64 := readBytes_docBlock m bs b h hj
+  exact readBytes_split m (b + 64 * j) 32 32 (by simpa using h64)
+
+/-- A document read through the entry's six cells. -/
+theorem lookupName_entryEnv_of (env : Env) (n arm : BitVec 64) {k : String} {v : Value}
+    (h : lookupName env k = some v)
+    (h1 : "%cmp2506.not" ≠ k) (h2 : "%conv" ≠ k) (h3 : "%1" ≠ k) (h4 : "%0" ≠ k)
+    (h5 : "%and" ≠ k) (h6 : "%shr" ≠ k) :
+    lookupName (entryEnv env n arm) k = some v := by
+  simp only [entryEnv, cells]
+  rw [lookupName_cons_ne _ _ h1, lookupName_cons_ne _ _ h2, lookupName_cons_ne _ _ h3,
+    lookupName_cons_ne _ _ h4, lookupName_cons_ne _ _ h5, lookupName_cons_ne _ _ h6]
+  exact h
+
+/-- The entry's bound, `%shr = n >>> 6`. -/
+theorem lookupName_entryEnv_shr (env : Env) (n arm : BitVec 64) :
+    lookupName (entryEnv env n arm) "%shr" = some (.int 64 (n >>> 6)) := by
+  simp only [entryEnv, cells]
+  rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+    lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+    lookupName_cons_ne _ _ (by decide), lookupName_cons_self]
+
+/-- The first pass's values: the padded window's first block, at the two pointers
+the entry hands the preheader. -/
+def firstBlockValues (bs : List UInt8) (b ent : Nat) : ForBodyValues :=
+  forBodyValues 0 0 0 0 0 ((docBlock bs 0).take 32) ((docBlock bs 0).drop 32) b ent
+
+/-- **The entry hands the phase its bound and its blocks.**  The entry branches to
+the preheader on a document of at least one block, and the shift it binds is the
+whole-block count.  The staging's window read splits into the phase's document
+premise and the first pass's two words, and the staging's gap between the window
+and the emit area gives the phase's.  The preheader's first pass enters the
+latch, and the phase runs from there to its terminal.  The charge is the entry's
+own step, the first pass's three, and the phase's `3 * (shr - 1) + 4`. -/
+theorem entry_ascii_phase (env : Env) (s : State) (n arm : BitVec 64)
+    (bs : List UInt8) (b ent : Nat)
+    (hpc : s.pc = "entry")
+    (hn : lookupName env "%n" = some (.int 64 n))
+    (harm : lookupName env "%arm" = some (.int 64 arm))
+    (hb : lookupName env "%b" = some (.ptr b))
+    (hent : lookupName env "%ent" = some (.ptr ent))
+    (hbs : n = BitVec.ofNat 64 bs.length)
+    (hlen : 64 ≤ bs.length)
+    (hbs63 : bs.length < 2 ^ 63)
+    (hgate : evalICmp .eq (arm &&& 2) 0 = 1)
+    (hread : readBytes s.mem b (64 * JsonScanSpec.blocksOf bs.length) =
+      some (JsonScanSpec.padded bs))
+    (hgap : b + 64 * JsonScanSpec.blocksOf bs.length ≤ ent)
+    (hbit : evalICmp .eq
+      (ifEndTest (firstBlockValues bs b ent).w2 (firstBlockValues bs b ent).w3) 0 = 0) :
+    ∃ (e : State) (j : Nat), j ≤ 3 * (bs.length / 64) + 5 ∧ AsciiTerm e ∧
+      ∀ k, runFuel s1BlocksCalls (j + k) s1BlocksFunction (stateAt env s) =
+        runFuel s1BlocksCalls k s1BlocksFunction e := by
+  have hnval : n.toNat = bs.length := by
+    rw [hbs, BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)]
+  have hshrEq : (n >>> 6).toNat = bs.length / 64 := by rw [ushr_six_toNat, hnval]
+  have hshrLe : (n >>> 6).toNat ≤ JsonScanSpec.blocksOf bs.length := by
+    rw [hshrEq]
+    exact ushr_six_le_blocksOf bs.length
+  have hshrPos : 0 < (n >>> 6).toNat := by
+    rw [hshrEq]
+    exact Nat.div_pos_iff.2 ⟨by decide, hlen⟩
+  have hshr57 : (n >>> 6).toNat < 2 ^ 57 :=
+    ushr_six_lt n (by rw [hnval]; exact hbs63)
+  have hblkPos : 0 < JsonScanSpec.blocksOf bs.length := by omega
+  have hread2 : readBytes s.mem b 32 = some ((docBlock bs 0).take 32) := by
+    have h := (readBytes_docBlock_halves s.mem bs b hread (j := 0) hblkPos).1
+    simpa using h
+  have hread3 : readBytes s.mem (b + 32) 32 = some ((docBlock bs 0).drop 32) := by
+    have h := (readBytes_docBlock_halves s.mem bs b hread (j := 0) hblkPos).2
+    simpa using h
+  have hdoc : ∀ j, j < (n >>> 6).toNat →
+      readBytes s.mem (b + 64 * j) 64 = some (docBlock bs j) := by
+    intro j hj
+    exact readBytes_docBlock s.mem bs b hread (by omega)
+  have hgapPhase : b + 64 * (n >>> 6).toNat ≤ ent := by
+    have hmul := Nat.mul_le_mul_left 64 hshrLe
+    omega
+  have hult : ¬ BitVec.ult n (64 : BitVec 64) := by
+    intro hlt
+    rw [BitVec.ult_iff_toNat_lt] at hlt
+    have h64 : (64 : BitVec 64).toNat = 64 := by decide
+    rw [h64, hnval] at hlt
+    omega
+  have hbitEntry : evalICmp .ult n (64 : BitVec 64) = 0 := by
+    show BitVec.ofBool (BitVec.ult n (64 : BitVec 64)) = (0 : BitVec 1)
+    cases h : BitVec.ult n (64 : BitVec 64) with
+    | false => rfl
+    | true => exact absurd h hult
+  have hstep := entry_step_blocks env s n arm hpc hn harm hbitEntry
+  obtain ⟨h01, h12, h23⟩ :=
+    for_body_lr_ph_page_ascii (entryEnv env n arm)
+      { s with pc := "for.body.lr.ph", pre := some "entry" } arm
+      ((docBlock bs 0).take 32) ((docBlock bs 0).drop 32) b ent rfl
+      (lookupName_entryEnv_of env n arm harm (by decide) (by decide) (by decide)
+        (by decide) (by decide) (by decide))
+      hgate
+      (lookupName_entryEnv_of env n arm hb (by decide) (by decide) (by decide)
+        (by decide) (by decide) (by decide))
+      (lookupName_entryEnv_of env n arm hent (by decide) (by decide) (by decide)
+        (by decide) (by decide) (by decide))
+      hread2 hread3 hbit
+  obtain ⟨e, j, hjle, hterm, hfuel⟩ :=
+    asciiPhase_from_seed (entryEnv env n arm)
+      { s with pc := "for.body.lr.ph", pre := some "entry" } arm
+      ((docBlock bs 0).take 32) ((docBlock bs 0).drop 32) b ent (n >>> 6) (docBlock bs)
+      (lookupName_entryEnv_of env n arm harm (by decide) (by decide) (by decide)
+        (by decide) (by decide) (by decide))
+      hgate (lookupName_entryEnv_shr env n arm)
+      (lookupName_entryEnv_of env n arm hb (by decide) (by decide) (by decide)
+        (by decide) (by decide) (by decide))
+      (lookupName_entryEnv_of env n arm hent (by decide) (by decide) (by decide)
+        (by decide) (by decide) (by decide))
+      hshrPos hshr57 hgapPhase hdoc
+  refine ⟨e, 1 + (3 + j), ?_, hterm, fun k => ?_⟩
+  · rw [hshrEq] at hjle
+    omega
+  · rw [show 1 + (3 + j) + k = 1 + (3 + (j + k)) from by omega]
+    rw [runFuel_jump_prefix hstep (3 + (j + k)), runFuel_jump3 h01 h12 h23 (j + k)]
+    exact hfuel k
+
+/-! ### The bound's arm at `for.end101`
+
+The phase leaves at the latch's bound; `for.end101` merges the seven words the
+loops carry and tests the document's length for a partial block.  Its `for.inc`
+arm is the invariant's own four words and the latch's store, and its branch is
+the peel: a block-aligned length has no partial block, so the exit goes straight
+to `if.end153`; otherwise `if.then103` peels the last block. -/
+
+/-- `for.end101`'s output: the seven merged words and the peel's test. -/
+def forEnd101Out (env : Env) (c : AsciiCarry) (andv : BitVec 64) : Env :=
+  cells [("%tobool102.not", .int 1 (evalICmp .eq andv 0)),
+         ("%prevS.2.lcssa", .int 64 c.prevS),
+         ("%ascii.1.lcssa", .vec 4 64 (List.replicate 4 0)),
+         ("%u8k.1.lcssa", .vec 4 64 (List.replicate 4 0)),
+         ("%prev_ascii.1.lcssa", .int 32 1),
+         ("%st.sroa.0.2.lcssa", .int 64 c.st0),
+         ("%st.sroa.9.2.lcssa", .int 64 c.st9),
+         ("%st.sroa.15.2.lcssa", .int 64 c.st15)] env
+
+/-- **`for.end101`'s run.**  The seven phis merge the loops' carried words —
+here the latch's four — and the block's own load of `%and` is the peel's test. -/
+theorem for_end101_denote (env : Env) (s : State) (c : AsciiCarry) (andv : BitVec 64)
+    (hpre : s.pre = some "for.inc")
+    (hprevS : lookupName env "%shr17" = some (.int 64 c.prevS))
+    (hst0 : lookupName env "%shr.i.i" = some (.int 64 c.st0))
+    (hst9 : lookupName env "%conv13.i.i" = some (.int 64 c.st9))
+    (hst15 : lookupName env "%shr.i" = some (.int 64 c.st15))
+    (hand : lookupName env "%and" = some (.int 64 andv)) :
+    denoteCode s1BlocksCalls for_end101Instrs (stateAt env s) =
+      some (stateAt (forEnd101Out env c andv) s) := by
+  simp only [for_end101Instrs, forEnd101Out]
+  block_eval_b
+
+/-- The exit terminal's `for.end101` run: `AsciiInv` supplies the latch's four
+carried words through the latch's own cells. -/
+theorem asciiExit_denote (env : Env) (s : State) (c : AsciiCarry) (andv : BitVec 64)
+    (hinv : AsciiInv env s c) (hand : lookupName env "%and" = some (.int 64 andv)) :
+    denoteCode s1BlocksCalls for_end101Instrs
+        (stateAt (forIncEnv env c.i c.shr)
+          { s with pc := "for.end101", pre := some "for.inc" }) =
+      some (stateAt (forEnd101Out (forIncEnv env c.i c.shr) c andv)
+        { s with pc := "for.end101", pre := some "for.inc" }) := by
+  have hprevS := lookupName_forIncEnv_of env c.i c.shr hinv.prevS (by decide) (by decide)
+  have hst0 := lookupName_forIncEnv_of env c.i c.shr hinv.st0 (by decide) (by decide)
+  have hst9 := lookupName_forIncEnv_of env c.i c.shr hinv.st9 (by decide) (by decide)
+  have hst15 := lookupName_forIncEnv_of env c.i c.shr hinv.st15 (by decide) (by decide)
+  have hand' := lookupName_forIncEnv_of env c.i c.shr hand (by decide) (by decide)
+  exact for_end101_denote (forIncEnv env c.i c.shr)
+    { s with pc := "for.end101", pre := some "for.inc" } c andv rfl
+    hprevS hst0 hst9 hst15 hand'
+
+/-- **The bound's arm, block-aligned.**  `%and = 0` means the length is a whole
+number of blocks, so there is no partial block: the exit leaves for `if.end153`. -/
+theorem asciiExit_step_aligned (env : Env) (s : State) (c : AsciiCarry) (andv : BitVec 64)
+    (hinv : AsciiInv env s c) (hand : lookupName env "%and" = some (.int 64 andv))
+    (hbit : evalICmp .eq andv 0 = 1) :
+    step s1BlocksCalls s1BlocksFunction (asciiExitState env s c) =
+      .jump (stateAt (forEnd101Out (forIncEnv env c.i c.shr) c andv)
+        { s with pc := "if.end153", pre := some "for.end101" }) := by
+  show step s1BlocksCalls s1BlocksFunction
+      (stateAt (forIncEnv env c.i c.shr)
+        { s with pc := "for.end101", pre := some "for.inc" }) =
+    .jump (stateAt (forEnd101Out (forIncEnv env c.i c.shr) c andv)
+      { s with pc := "if.end153", pre := some "for.end101" })
+  have hfind : s1BlocksFunction.findBlock
+      (stateAt (forIncEnv env c.i c.shr)
+        { s with pc := "for.end101", pre := some "for.inc" }).pc = some for_end101Block := by
+    rw [show (stateAt (forIncEnv env c.i c.shr)
+      { s with pc := "for.end101", pre := some "for.inc" }).pc = "for.end101" from rfl]
+    exact LeanLLVM.Refinement.JsonS1BlocksIR.findBlock_for_end101
+  rw [step_at hfind (asciiExit_denote env s c andv hinv hand)]
+  rw [show for_end101Block.term = for_end101Term from rfl]
+  simp only [for_end101Term]
+  rw [execTerm_condbr_true
+    (BlockEval.evalOperand_reg_of _ _ _ _ (by rw [forEnd101Out]; simp [cells])) hbit]
+  rfl
+
+/-- **The bound's arm, with a partial block.**  `%and ≠ 0` means the length
+leaves a partial block, so the exit leaves for the peel at `if.then103`. -/
+theorem asciiExit_step_peel (env : Env) (s : State) (c : AsciiCarry) (andv : BitVec 64)
+    (hinv : AsciiInv env s c) (hand : lookupName env "%and" = some (.int 64 andv))
+    (hbit : evalICmp .eq andv 0 = 0) :
+    step s1BlocksCalls s1BlocksFunction (asciiExitState env s c) =
+      .jump (stateAt (forEnd101Out (forIncEnv env c.i c.shr) c andv)
+        { s with pc := "if.then103", pre := some "for.end101" }) := by
+  show step s1BlocksCalls s1BlocksFunction
+      (stateAt (forIncEnv env c.i c.shr)
+        { s with pc := "for.end101", pre := some "for.inc" }) =
+    .jump (stateAt (forEnd101Out (forIncEnv env c.i c.shr) c andv)
+      { s with pc := "if.then103", pre := some "for.end101" })
+  have hfind : s1BlocksFunction.findBlock
+      (stateAt (forIncEnv env c.i c.shr)
+        { s with pc := "for.end101", pre := some "for.inc" }).pc = some for_end101Block := by
+    rw [show (stateAt (forIncEnv env c.i c.shr)
+      { s with pc := "for.end101", pre := some "for.inc" }).pc = "for.end101" from rfl]
+    exact LeanLLVM.Refinement.JsonS1BlocksIR.findBlock_for_end101
+  rw [step_at hfind (asciiExit_denote env s c andv hinv hand)]
+  rw [show for_end101Block.term = for_end101Term from rfl]
+  simp only [for_end101Term]
+  rw [execTerm_condbr_false
+    (BlockEval.evalOperand_reg_of _ _ _ _ (by rw [forEnd101Out]; simp [cells])) hbit]
+  rfl
+
 /-! ### Axiom footprints
 
 The block runs and the branch lemmas compute from the block's own literal lists;
@@ -5556,5 +5850,19 @@ intrinsic arms. -/
 #print axioms asciiInv_runFuel
 #print axioms asciiPhase_from_seed
 #print axioms asciiPhase_charge_le
+#print axioms ushr_six_toNat
+#print axioms ushr_six_lt
+#print axioms ushr_six_le_blocksOf
+#print axioms blocksOf_eq_div
+#print axioms ushr_six_eq_blocksOf
+#print axioms readBytes_docBlock
+#print axioms readBytes_docBlock_halves
+#print axioms lookupName_entryEnv_of
+#print axioms lookupName_entryEnv_shr
+#print axioms entry_ascii_phase
+#print axioms for_end101_denote
+#print axioms asciiExit_denote
+#print axioms asciiExit_step_aligned
+#print axioms asciiExit_step_peel
 
 end LeanLLVM.Refinement.JsonS1BlocksRefine
