@@ -30,7 +30,7 @@ this page's flag relation is cut `R8`.
 
 | | flags | source | derivation |
 |---|---|---|---|
-| the proofs' body (`probes/install/ir/stage2.candidate.ll`) | `-S -emit-llvm -O3 -march=x86-64-v3 -mpclmul -std=gnu11 -falign-loops=64 -falign-functions=64` | `kernel/json/stage2.c`, `noinline` on eleven helpers, `s2_walk` forced inline | `opt -passes=lower-switch`, the recorded token strip, eight staging allocas flattened to parameters, callees reduced to declarations |
+| the proofs' body (`probes/install/ir/stage2.candidate.ll`) | `-S -emit-llvm -O3 -march=x86-64-v3 -mpclmul -std=gnu11 -falign-loops=64 -falign-functions=64` | `kernel/json/stage2.c`, `noinline` on eleven helpers, `s2_walk` forced inline | `opt -passes=lower-switch`, the recorded token strip, the local names pinned to the fixture's spelling, eight staging allocas flattened to parameters, callees reduced to declarations |
 | the route's object (`probes/json/route/build.sh`) | `-O2 -march=x86-64-v3 -mpclmul -std=gnu11 -falign-loops=64 -falign-functions=64 -I "$repo/kernel/json"` | the same file, untransformed | none: `clang -c` |
 
 ## The flag relation
@@ -46,17 +46,17 @@ The naming flag changes no instruction at the route's own -O2 line: the emission
 
 ## The normalisation steps
 
-The fixture is derived, not transcribed.  In order: (1) the source transform above, whose counts are two `always_inline` occurrences (the comment's and `s2_walk`'s) and eleven `noinline` helper functions, plus the `EL_ENTRY` macro line; (2) `opt -passes=lower-switch`; (3) the token strip, by the classes `capture-stage2.sh` records in `stage2.strip.tsv`; (4) the eight staging allocas `%d.i %c.i %ctype.i %cst.i %t352.i %s %z %e` appended as `ptr` parameters (`stage2.staging.tsv`); (5) the three instruction rewrites and the callee definitions replaced by declarations (`stage2.rewrites.tsv`).  The comparison below applies steps (1)–(3) to both emissions and then replaces every virtual register with one placeholder and drops block labels, so the two texts are compared instruction by instruction.
+The fixture is derived, not transcribed.  In order: (1) the source transform above, whose counts are two `always_inline` occurrences (the comment's and `s2_walk`'s) and eleven `noinline` helper functions, plus the `EL_ENTRY` macro line; (2) `opt -passes=lower-switch`; (3) the token strip, by the classes `capture-stage2.sh` records in `stage2.strip.tsv`; (4) the local-name pin, which renames the emission's registers and block labels to the fixture's spelling (`stage2.rewrites.tsv` class r8); (5) the eight staging allocas `%d.i %c.i %ctype.i %cst.i %t352.i %s %z %e` appended as `ptr` parameters (`stage2.staging.tsv`); (6) the three instruction rewrites and the callee definitions replaced by declarations (`stage2.rewrites.tsv`).  The comparison below applies steps (1)–(3) to both emissions and then replaces every virtual register with one placeholder and drops block labels, so the two texts are compared instruction by instruction.
 
-The committed fixture is one exception to that derivation: its two quote
-refusal stores (`if.then205.i`, `if.then214.i`) carry `%idxprom.i`, the opening
-quote's position, rather than the captured `%4`, because the walk now reports
-the parser's `unterminatedString` position.  `JsonStage2IR`'s "What the body
-keeps" records the patch and the names a fresh capture would produce
-(`%t352.i`→`%t354.i`, `if.then214.i`→`if.then215.i`) when the walk's operand
-change shifts the emission's name counter; the five steps above reproduce
-neither the patched text nor those names until the fixture and the staged ABI
-are regenerated.
+The fixture is that derivation's output byte for byte.  The two quote refusal
+stores (`if.then205.i`, `if.then214.i`) carry `%idxprom.i`, the opening quote's
+position, because the walk now reports the parser's `unterminatedString`
+position; that operand was formerly patched into the fixture by hand, and the
+source emits it now, so the capture checks it instead.  The local-name pin
+(step 4 above) exists because `JsonStage2IR`'s `stage2Body` holds the parsed
+text by name and clang's counter shifts with an unrelated source edit: the
+emission's `%t354.i`/`if.then215.i` are renamed back to `%t352.i`/`if.then214.i`,
+and the capture refuses a stale, colliding or non-injective entry.
 
 ## What is identical, and what is not
 

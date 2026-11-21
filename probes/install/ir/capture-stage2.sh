@@ -33,8 +33,10 @@
 # `kernel/json/identity/inventory.sh` is the gate for the four stage-1 units;
 # this unit has no arm there, so this script's own checks are the derivation's
 # gate: it refuses (exit 3) on an unclassified removal, an unattributed rewrite,
-# a guard line that disappeared, a fixture that does not parse, and a second
-# derivation that is not byte-identical to the first.
+# a local name the pin table cannot place, a refusal store that does not carry
+# the opening quote's position, a guard line that disappeared, a fixture that
+# does not parse, and a second derivation that is not byte-identical to the
+# first.
 #
 # --- Why the measured compiler line, and the one flag beyond it -----------
 #
@@ -89,6 +91,32 @@
 # these helpers, and the distance between the two is the call composition, which
 # is the composition this development is built for.  The fixture says so in its
 # own header.
+#
+# --- The local names: the fixture's spelling, pinned ----------------------
+#
+# Clang names the walk's temporaries after the source's values and numbers the
+# ones it has to disambiguate; an edit elsewhere in the source changes those
+# numbers, so the same instruction stream is emitted under a different set of
+# local names.  The fixture is what `LeanLLVM/Refinement/JsonStage2IR.lean` pins
+# by text -- `stage2Body` compares the parsed registers and block labels as
+# strings -- so a shifted name is not free to adopt here.  The derivation
+# therefore renames the emission's local names to the fixture's spelling
+# (`%t354.i` back to `%t352.i`, `if.then215.i` back to `if.then214.i`, and the
+# rest of the table below) before any later step records a name.
+#
+# A local name is not part of the computation: the instruction stream is the
+# emission's, and a register or label rename is alpha-equivalence.  The naming
+# flag's check above is the same fact -- writing the names changes no
+# instruction.  The rename is a bijection applied under a token boundary, to
+# `%name` operands and `name:` label definitions in one pass, so a name that is
+# also another entry's target is never renamed twice.  The capture refuses
+# (exit 3) when a table source no longer occurs in the emission (a stale
+# entry), when the emission already carries a target that is not itself a
+# source (a collision), or when two sources share a target (not a bijection).
+# Every pair is a row in `stage2.rewrites.tsv`, and the row count is checked
+# against the table.  The pin's completeness is not this script's to check: a
+# name the table does not place stays in the fixture, and `stage2Body`'s
+# `#guard` refuses a fixture that does not parse to the pinned body.
 #
 # --- The staging objects become parameters: the one flattening -------------
 #
@@ -531,6 +559,161 @@ nstrip=$(wc -l < "$work/strip.rows" | tr -d ' ')
 [ "$nstrip" -gt 0 ] || fail "the strip removed nothing; the emission's surface is not the fixture's"
 
 # ---------------------------------------------------------------------------
+# The local names: renamed to the fixture's spelling
+# ---------------------------------------------------------------------------
+
+# The table's left column is what clang emits from the current source; the right
+# is what the fixture and `JsonStage2IR`'s `stage2Body` hold.  An entry is added
+# when an edit elsewhere in the source shifts clang's name counter.  The checks
+# below refuse a stale source, a collision and a shared target, so a shifted
+# emission fails loudly here rather than writing a differently-named fixture.
+cat > "$work/pin.tsv" <<'NAMES'
+add.ptr273.i	add.ptr271.i
+add.ptr299.i	add.ptr297.i
+add.ptr304.i	add.ptr302.i
+add.ptr306.i	add.ptr304.i
+add285.i	add283.i
+add291.i	add289.i
+arrayidx210.i	arrayidx209.i
+arrayidx229.i	arrayidx227.i
+arrayidx237.i	arrayidx235.i
+arrayidx335.i	arrayidx333.i
+arrayidx348.i	arrayidx346.i
+arrayidx369.i	arrayidx367.i
+arrayidx460.i	arrayidx458.i
+call224.i	call222.i
+call274.i	call272.i
+call418.i	call416.i
+call429.i	call427.i
+cleanup341.critedge.i	cleanup339.critedge.i
+cleanup476.i	cleanup474.i
+cleanup480.i	cleanup478.i
+cmp213.not.i	cmp212.not.i
+cmp225.not.i	cmp223.not.i
+cmp231.i	cmp229.i
+cmp345.i	cmp343.i
+cmp357.i	cmp355.i
+cmp378.i	cmp376.i
+cmp453.i	cmp451.i
+cond.end351.i	cond.end349.i
+cond.true347.i	cond.true345.i
+cond352.i	cond350.i
+conv212.i	conv211.i
+conv286.i	conv284.i
+conv288.i.sink	conv286.i.sink
+conv288.i.sink.in	conv286.i.sink.in
+conv302.i	conv300.i
+conv349.i	conv347.i
+idxprom228.i	idxprom226.i
+idxprom334.i	idxprom332.i
+if.else287.i	if.else285.i
+if.else336.i	if.else334.i
+if.else389.i	if.else387.i
+if.else407.i	if.else405.i
+if.end208.i	if.end207.i
+if.end247.i	if.end245.i
+if.end258.i	if.end256.i
+if.end292.i	if.end290.i
+if.end374.i	if.end372.i
+if.end475.i	if.end473.i
+if.end492.i	if.end490.i
+if.then215.i	if.then214.i
+if.then221.i	if.then219.i
+if.then233.i	if.then231.i
+if.then251.i	if.then249.i
+if.then283.i	if.then281.i
+if.then330.i	if.then328.i
+if.then332.i	if.then330.i
+if.then399.i	if.then397.i
+if.then405.i	if.then403.i
+if.then415.i	if.then413.i
+if.then420.i	if.then418.i
+if.then427.i	if.then425.i
+if.then434.i	if.then432.i
+if.then449.i	if.then447.i
+if.then469.i	if.then467.i
+if.then487.i	if.then485.i
+if.then490.i	if.then488.i
+if.then494.i	if.then492.i
+inc209.i	inc208.i
+inc373.i	inc371.i
+inc465.i	inc463.i
+kind406.i	kind404.i
+land.lhs.true359.i	land.lhs.true357.i
+land.rhs459.i	land.rhs457.i
+or.cond525.i	or.cond523.i
+or.cond526.i	or.cond524.i
+or.cond678.i	or.cond677.i
+sub227.i	sub225.i
+sub262.i	sub260.i
+sub333.i	sub331.i
+t354.i	t352.i
+tobool250.i	tobool248.i
+tobool419.not.i	tobool417.not.i
+tobool430.not.i	tobool428.not.i
+tobool493.not.i	tobool491.not.i
+while.body372.i	while.body370.i
+while.body464.i	while.body462.i
+NAMES
+npin=$(wc -l < "$work/pin.tsv" | tr -d ' ')
+
+# One pass over the text: a name that is another entry's target must not be
+# renamed twice, so the substitution is a lookup inside a single scan, not a
+# sequence of global substitutions.
+awk '
+FNR == NR {
+  split($0, p, "\t")
+  if (p[1] == "") next
+  if (p[1] in m) { printf "SETUP: %%%s is pinned twice\n", p[1] > "/dev/stderr"; bad = 1 }
+  if (p[2] in target) { printf "SETUP: two names pin to %%%s\n", p[2] > "/dev/stderr"; bad = 1 }
+  m[p[1]] = p[2]; target[p[2]] = p[1]; order[++n] = p[1]
+  next
+}
+{
+  line = $0
+  if (match(line, /^[A-Za-z0-9_.]+:/)) {
+    name = substr(line, 1, RLENGTH - 1)
+    if (name in m) { seen[name]++; line = m[name] substr(line, RLENGTH) }
+    else if (name in target) {
+      printf "SETUP: the emission already carries the pinned label %s\n", name > "/dev/stderr"
+      bad = 1
+    }
+  }
+  out = ""; rest = line
+  while (match(rest, /%[A-Za-z0-9_.]+/)) {
+    name = substr(rest, RSTART + 1, RLENGTH - 1)
+    if (name in m) { seen[name]++; name = m[name] }
+    else if (name in target) {
+      printf "SETUP: the emission already carries the pinned name %%%s\n", name > "/dev/stderr"
+      bad = 1
+    }
+    out = out substr(rest, 1, RSTART - 1) "%" name
+    rest = substr(rest, RSTART + RLENGTH)
+  }
+  print out rest
+}
+END {
+  for (k = 1; k <= n; k++) {
+    if (!(order[k] in seen)) {
+      printf "SETUP: the pin table names %%%s, which the emission no longer carries\n", order[k] > "/dev/stderr"
+      bad = 1
+    }
+  }
+  exit bad
+}' "$work/pin.tsv" "$work/stripped.ll" > "$work/pinned.ll" ||
+  fail "the emission's local names are not the pin table's"
+
+: > "$work/pin.rows"
+while IFS=$'\t' read -r from to; do
+  printf 'r8\tname pinning\t%%%s\t%%%s\t1\t%s\n' "$from" "$to" \
+    "a local name is not part of the computation, and the fixture's spelling is what JsonStage2IR's stage2Body pins; clang's name counter shifts whenever an unrelated source edit adds or removes an instruction, so the emission is renamed to the pinned spelling rather than the pin being re-transcribed" \
+    >> "$work/pin.rows"
+done < "$work/pin.tsv"
+[ "$(grep -c '^r8' "$work/pin.rows" || true)" -eq "$npin" ] ||
+  fail "the rename inventory holds $(grep -c '^r8' "$work/pin.rows" || true) row(s); the pin table has $npin entries"
+cat "$work/pin.rows" >> "$work/rewrite.rows"
+
+# ---------------------------------------------------------------------------
 # The rewrites: allocation flattening, array reads, messages, umin
 # ---------------------------------------------------------------------------
 
@@ -556,7 +739,7 @@ END {
   }
   for (k = 1; k <= nstage; k++) print stagerows[k] > (outfile)
   exit bad
-}' outfile="$work/staging.rows" "$work/stripped.ll" > "$work/nostaging.ll" ||
+}' outfile="$work/staging.rows" "$work/pinned.ll" > "$work/nostaging.ll" ||
   fail "the staging allocas are not the eight this script names"
 
 # The header gains the eight parameters, in the emission's order.
@@ -631,6 +814,24 @@ grep -qE 'add i64 [^,]+, 13$' "$work/body.ll" ||
 for slot in alen acap len cap; do
   grep -q "ptr %$slot" "$work/body.ll" ||
     fail "the walk no longer reads %$slot; a reserve check is not in the fixture"
+done
+
+# The two quote refusals store the opening quote's position, not the document
+# length: `kernel/json/stage2.c`'s quote arm passes the entry it is at, so both
+# refusal blocks carry `%idxprom.i` at the error record's offset word.  The
+# fixture used to be patched to this operand by hand while the source's build
+# stored the document length; the source now emits it, and the capture checks
+# the property the patch used to supply rather than assuming it.
+for blk in if.then205.i if.then214.i; do
+  grep -qE "^${blk//./\\.}:" "$work/body.ll" ||
+    fail "the fixture has no refusal block $blk"
+  awk -v b="$blk:" '
+    $1 == b { inblk = 1; next }
+    inblk && /^[A-Za-z0-9_.]+:/ { inblk = 0 }
+    inblk && /^  store i64 %idxprom\.i, ptr %off1\.i\.i7[68]$/ { found++ }
+    END { exit (found == 1 ? 0 : 1) }
+  ' "$work/body.ll" ||
+    fail "refusal block $blk does not store the opening quote's position %idxprom.i at its offset word"
 done
 
 # ---------------------------------------------------------------------------
@@ -844,6 +1045,8 @@ fi
   printf '# %s: what the derivation rewrote, and why the rewrite preserves the\n' "$(basename "$0")"
   printf '# value computed.  A rewrite that the fixture does not show is a setup fault\n'
   printf '# in the capture, and the capture checks each count.\n'
+  printf '# A name-pinning row (r8) has the emission'"'"'s spelling on the left and the\n'
+  printf '# fixture'"'"'s on the right: the local names are renamed, not the computation.\n'
   printf '# class\tkind\tbefore\tafter\tcount\treason\n'
   printf '%s\t%s\t%s\t%s\t%d\t%s\n' r1 "s2_walk forced inline" \
     "__attribute__((always_inline)) static inline uint64_t s2_walk(...)" \
