@@ -57,16 +57,19 @@ block count, through `acc_pack_of_klAcc`.
 
 ## What remains
 
-The invariant's own thread through the run — the induction that carries
-`AccCarry` alongside `JsonS1BlocksLoopRun.LoopCarry` from the preheader to
-`for.end101`.  `loopRun_carry` carries the model carry and takes the
-accumulator's pack as the caller's obligation at the exit; the four page shapes
-here are that induction's page step, and `accCarry_init` is its base at the
-entry's zero word.  The measure and the escape-answer plumbing live in
-`JsonS1BlocksLoopRun`, so the thread belongs there rather than being duplicated
-here.  Until it lands, the exit's obligation is discharged by
-`loopExitFacts_of_accCarry` from a terminal `AccCarry`, and the aligned arm's
-`acc_pack` is `acc_pack_of_alignedExit` at the same terminal.
+The thread through the run lives in `JsonS1BlocksAccRun`: `LoopInv` with
+`AccCarry` beside it (`AccInv`), the model's carry and the accumulator's
+advanced by one page per row (`loopRun_accCarry`), the terminal `AccTerm`, and
+the exit's facts at it.  `accCarry_init` is that induction's base at the entry's
+zero word and the four page shapes here are its page step; the exit's obligation
+is discharged by `loopExitFacts_of_accCarry` from a terminal `AccCarry`, and the
+aligned arm's `acc_pack` is `acc_pack_of_alignedExit` at the same terminal, the
+peel's `acc_pack_of_peelWord`.
+
+The run's inputs are its callers' staging facts: the page's `pre` at the call
+vectors (the escape record's answer and its keeps, `JsonS1BlocksAccRun`'s
+`hcallAll` and `hkeep`) and the entry's bounded prefix
+(`JsonS1BlocksLoopRun.OnePrefix`'s fuel).  Neither is a fold identity.
 -/
 import LeanLLVM.Refinement.JsonS1BlocksSpecWindow
 import LeanLLVM.Refinement.JsonS1BlocksWordIdentities
