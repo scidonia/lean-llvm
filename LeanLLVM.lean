@@ -59,6 +59,7 @@ import LeanLLVM.Refinement.JsonS1BlocksPrefixFuel
 import LeanLLVM.Refinement.JsonS1BlocksPeelStaging
 import LeanLLVM.Refinement.JsonS1BlocksLoopRun
 import LeanLLVM.Refinement.JsonS1BlocksConv
+import LeanLLVM.Refinement.JsonS1BlocksWordIdentities
 import LeanLLVM.Refinement.JsonS1BlocksShort
 import LeanLLVM.Refinement.JsonEntryIR
 import LeanLLVM.Refinement.JsonEntrySteps
