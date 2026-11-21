@@ -7940,6 +7940,717 @@ theorem lookupName_fb54Env8_tobool87 (env : Env) (v : ForBody54Values)
   simp only [cells]
   block_lk_cons
 
+/-! ### The join's edge into the fused loop
+
+`if.end50`'s eight phis are the preheader's incoming cells.  Each phi name is a
+cell the join wrote, read directly from the join's environment; the registers
+the preheader and the body read beneath them — `%b`, `%ent`, `%arm`, `%conv` —
+ride through the join's nine cells and the preheader's three.
+
+The first pass enters with `%prev_ascii.0` zero, so the carried-byte test is
+clear, the probe's conjunction is zero, and the escape decision is clear: the
+pass leaves for `if.then90`.  The decision's set form is stated for the iterations
+that enter from `if.end98` with a non-zero carried byte. -/
+
+/-- The shift register, as the join writes it. -/
+theorem lookupName_ifEnd50Out_prevS (env : Env) (shr17 st0 st9 st15 : BitVec 64)
+    (oii or284 : List (BitVec 64)) (inc49 shr : BitVec 64) :
+    lookupName (ifEnd50Out env shr17 st0 st9 st15 oii or284 inc49 shr) "%prevS.1491"
+      = some (.int 64 shr17) := by
+  simp only [ifEnd50Out, cells]
+  block_lk_cons
+
+/-- The successor index, as the join writes it. -/
+theorem lookupName_ifEnd50Out_i (env : Env) (shr17 st0 st9 st15 : BitVec 64)
+    (oii or284 : List (BitVec 64)) (inc49 shr : BitVec 64) :
+    lookupName (ifEnd50Out env shr17 st0 st9 st15 oii or284 inc49 shr) "%i.1"
+      = some (.int 64 inc49) := by
+  simp only [ifEnd50Out, cells]
+  block_lk_cons
+
+/-- The carried state mask, as the join writes it. -/
+theorem lookupName_ifEnd50Out_ascii (env : Env) (shr17 st0 st9 st15 : BitVec 64)
+    (oii or284 : List (BitVec 64)) (inc49 shr : BitVec 64) :
+    lookupName (ifEnd50Out env shr17 st0 st9 st15 oii or284 inc49 shr) "%ascii.0"
+      = some (.vec 4 64 or284) := by
+  simp only [ifEnd50Out, cells]
+  block_lk_cons
+
+/-- The carried accumulator, as the join writes it. -/
+theorem lookupName_ifEnd50Out_u8k (env : Env) (shr17 st0 st9 st15 : BitVec 64)
+    (oii or284 : List (BitVec 64)) (inc49 shr : BitVec 64) :
+    lookupName (ifEnd50Out env shr17 st0 st9 st15 oii or284 inc49 shr) "%u8k.0"
+      = some (.vec 4 64 oii) := by
+  simp only [ifEnd50Out, cells]
+  block_lk_cons
+
+/-- The carried byte, as the join writes it: the edge enters the fused loop at
+zero. -/
+theorem lookupName_ifEnd50Out_prevAscii (env : Env) (shr17 st0 st9 st15 : BitVec 64)
+    (oii or284 : List (BitVec 64)) (inc49 shr : BitVec 64) :
+    lookupName (ifEnd50Out env shr17 st0 st9 st15 oii or284 inc49 shr) "%prev_ascii.0"
+      = some (.int 32 0) := by
+  simp only [ifEnd50Out, cells]
+  block_lk_cons
+
+/-- The third carried word, as the join writes it. -/
+theorem lookupName_ifEnd50Out_st15 (env : Env) (shr17 st0 st9 st15 : BitVec 64)
+    (oii or284 : List (BitVec 64)) (inc49 shr : BitVec 64) :
+    lookupName (ifEnd50Out env shr17 st0 st9 st15 oii or284 inc49 shr)
+        "%st.sroa.15.1485" = some (.int 64 st15) := by
+  simp only [ifEnd50Out, cells]
+  block_lk_cons
+
+/-- The second carried word, as the join writes it. -/
+theorem lookupName_ifEnd50Out_st9 (env : Env) (shr17 st0 st9 st15 : BitVec 64)
+    (oii or284 : List (BitVec 64)) (inc49 shr : BitVec 64) :
+    lookupName (ifEnd50Out env shr17 st0 st9 st15 oii or284 inc49 shr)
+        "%st.sroa.9.1487" = some (.int 64 st9) := by
+  simp only [ifEnd50Out, cells]
+  block_lk_cons
+
+/-- The first carried word, as the join writes it. -/
+theorem lookupName_ifEnd50Out_st0 (env : Env) (shr17 st0 st9 st15 : BitVec 64)
+    (oii or284 : List (BitVec 64)) (inc49 shr : BitVec 64) :
+    lookupName (ifEnd50Out env shr17 st0 st9 st15 oii or284 inc49 shr)
+        "%st.sroa.0.1489" = some (.int 64 st0) := by
+  simp only [ifEnd50Out, cells]
+  block_lk_cons
+
+/-- A register read through the join's nine cells to the environment beneath
+them. -/
+theorem lookupName_ifEnd50Out_of (env : Env) (shr17 st0 st9 st15 : BitVec 64)
+    (oii or284 : List (BitVec 64)) (inc49 shr : BitVec 64) {n : String} {val : Value}
+    (h : lookupName env n = some val)
+    (h1 : "%cmp52516" ≠ n) (h2 : "%i.1" ≠ n) (h3 : "%ascii.0" ≠ n)
+    (h4 : "%u8k.0" ≠ n) (h5 : "%prev_ascii.0" ≠ n) (h6 : "%st.sroa.15.1485" ≠ n)
+    (h7 : "%st.sroa.9.1487" ≠ n) (h8 : "%st.sroa.0.1489" ≠ n)
+    (h9 : "%prevS.1491" ≠ n) :
+    lookupName (ifEnd50Out env shr17 st0 st9 st15 oii or284 inc49 shr) n = some val := by
+  simp only [ifEnd50Out, cells]
+  rw [lookupName_cons_ne _ _ h1, lookupName_cons_ne _ _ h2, lookupName_cons_ne _ _ h3,
+    lookupName_cons_ne _ _ h4, lookupName_cons_ne _ _ h5, lookupName_cons_ne _ _ h6,
+    lookupName_cons_ne _ _ h7, lookupName_cons_ne _ _ h8, lookupName_cons_ne _ _ h9]
+  exact h
+
+/-- The page's entry environment: the join's cells over the hand-off's. -/
+abbrev fb54PageEnv (env : Env) (c : AsciiCarry) (v : ForBodyValues)
+    (v38 : IfThen38Values) : Env :=
+  ifEnd50Out (ifThen38Out (asciiHandoffEnv env c v) v38)
+    v.shr17 v.shrII v.conv13II v.shrI v38.or291 v38.or284 v38.inc49 c.shr
+
+/-- `%b` through the hand-off's class test, the pass's body and the latch. -/
+theorem lookupName_asciiHandoffOut_b (env : Env) (c : AsciiCarry) (v : ForBodyValues)
+    (v38 : IfThen38Values) {b : Nat} (h : lookupName env "%b" = some (.ptr b)) :
+    lookupName (ifThen38Out (asciiHandoffEnv env c v) v38) "%b" = some (.ptr b) := by
+  have hInc : lookupName (forIncEnv env c.i c.shr) "%b" = some (.ptr b) :=
+    lookupName_forIncEnv_of env c.i c.shr h (by decide) (by decide)
+  have hBody : lookupName (forBodyOut (forIncEnv env c.i c.shr) v) "%b"
+      = some (.ptr b) := by
+    handoff_lk
+  have hEnd : lookupName (asciiHandoffEnv env c v) "%b" = some (.ptr b) :=
+    lookupName_ifEndEnv_of _ _ _ hBody (by decide) (by decide) (by decide)
+  ift_lk
+
+/-- `%ent` through the hand-off's class test, the pass's body and the latch. -/
+theorem lookupName_asciiHandoffOut_ent (env : Env) (c : AsciiCarry) (v : ForBodyValues)
+    (v38 : IfThen38Values) {ent : Nat} (h : lookupName env "%ent" = some (.ptr ent)) :
+    lookupName (ifThen38Out (asciiHandoffEnv env c v) v38) "%ent" = some (.ptr ent) := by
+  have hInc : lookupName (forIncEnv env c.i c.shr) "%ent" = some (.ptr ent) :=
+    lookupName_forIncEnv_of env c.i c.shr h (by decide) (by decide)
+  have hBody : lookupName (forBodyOut (forIncEnv env c.i c.shr) v) "%ent"
+      = some (.ptr ent) := by
+    handoff_lk
+  have hEnd : lookupName (asciiHandoffEnv env c v) "%ent" = some (.ptr ent) :=
+    lookupName_ifEndEnv_of _ _ _ hBody (by decide) (by decide) (by decide)
+  ift_lk
+
+/-- `%arm` through the hand-off's class test, the pass's body and the latch. -/
+theorem lookupName_asciiHandoffOut_arm (env : Env) (c : AsciiCarry) (v : ForBodyValues)
+    (v38 : IfThen38Values) {arm : BitVec 64}
+    (h : lookupName env "%arm" = some (.int 64 arm)) :
+    lookupName (ifThen38Out (asciiHandoffEnv env c v) v38) "%arm"
+      = some (.int 64 arm) := by
+  have hInc : lookupName (forIncEnv env c.i c.shr) "%arm" = some (.int 64 arm) :=
+    lookupName_forIncEnv_of env c.i c.shr h (by decide) (by decide)
+  have hBody : lookupName (forBodyOut (forIncEnv env c.i c.shr) v) "%arm"
+      = some (.int 64 arm) := by
+    handoff_lk
+  have hEnd : lookupName (asciiHandoffEnv env c v) "%arm" = some (.int 64 arm) :=
+    lookupName_ifEndEnv_of _ _ _ hBody (by decide) (by decide) (by decide)
+  ift_lk
+
+/-- `%conv` through the hand-off's class test, the pass's body and the latch. -/
+theorem lookupName_asciiHandoffOut_conv (env : Env) (c : AsciiCarry) (v : ForBodyValues)
+    (v38 : IfThen38Values) {conv : BitVec 32}
+    (h : lookupName env "%conv" = some (.int 32 conv)) :
+    lookupName (ifThen38Out (asciiHandoffEnv env c v) v38) "%conv"
+      = some (.int 32 conv) := by
+  have hInc : lookupName (forIncEnv env c.i c.shr) "%conv" = some (.int 32 conv) :=
+    lookupName_forIncEnv_of env c.i c.shr h (by decide) (by decide)
+  have hBody : lookupName (forBodyOut (forIncEnv env c.i c.shr) v) "%conv"
+      = some (.int 32 conv) := by
+    handoff_lk
+  have hEnd : lookupName (asciiHandoffEnv env c v) "%conv" = some (.int 32 conv) :=
+    lookupName_ifEndEnv_of _ _ _ hBody (by decide) (by decide) (by decide)
+  ift_lk
+
+/-- `%b` through the join's cells. -/
+theorem lookupName_fb54PageEnv_b (env : Env) (c : AsciiCarry) (v : ForBodyValues)
+    (v38 : IfThen38Values) {b : Nat} (h : lookupName env "%b" = some (.ptr b)) :
+    lookupName (fb54PageEnv env c v v38) "%b" = some (.ptr b) :=
+  lookupName_ifEnd50Out_of _ _ _ _ _ _ _ _ _
+    (lookupName_asciiHandoffOut_b env c v v38 h)
+    (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+    (by decide) (by decide) (by decide)
+
+/-- `%ent` through the join's cells. -/
+theorem lookupName_fb54PageEnv_ent (env : Env) (c : AsciiCarry) (v : ForBodyValues)
+    (v38 : IfThen38Values) {ent : Nat} (h : lookupName env "%ent" = some (.ptr ent)) :
+    lookupName (fb54PageEnv env c v v38) "%ent" = some (.ptr ent) :=
+  lookupName_ifEnd50Out_of _ _ _ _ _ _ _ _ _
+    (lookupName_asciiHandoffOut_ent env c v v38 h)
+    (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+    (by decide) (by decide) (by decide)
+
+/-- `%arm` through the join's cells. -/
+theorem lookupName_fb54PageEnv_arm (env : Env) (c : AsciiCarry) (v : ForBodyValues)
+    (v38 : IfThen38Values) {arm : BitVec 64}
+    (h : lookupName env "%arm" = some (.int 64 arm)) :
+    lookupName (fb54PageEnv env c v v38) "%arm" = some (.int 64 arm) :=
+  lookupName_ifEnd50Out_of _ _ _ _ _ _ _ _ _
+    (lookupName_asciiHandoffOut_arm env c v v38 h)
+    (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+    (by decide) (by decide) (by decide)
+
+/-- `%conv` through the join's cells. -/
+theorem lookupName_fb54PageEnv_conv (env : Env) (c : AsciiCarry) (v : ForBodyValues)
+    (v38 : IfThen38Values) {conv : BitVec 32}
+    (h : lookupName env "%conv" = some (.int 32 conv)) :
+    lookupName (fb54PageEnv env c v v38) "%conv" = some (.int 32 conv) :=
+  lookupName_ifEnd50Out_of _ _ _ _ _ _ _ _ _
+    (lookupName_asciiHandoffOut_conv env c v v38 h)
+    (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+    (by decide) (by decide) (by decide)
+
+/-- The terminator's condition cell, as the block's last segment leaves it. -/
+theorem lookupName_fb54Env9_cond189 (env : Env) (v : ForBody54Values)
+    (gate : BitVec 1) :
+    lookupName (fb54Env9 env v gate) "%or.cond189"
+      = some (.int 1 (fb54Select gate v.v107)) :=
+  lookupName_cons_self _ _ _
+
+/-- The decision taken: a set gate returns the conjunction, and a set conjunction
+is set. -/
+theorem fb54Select_one (gate x : BitVec 1) (hg : gate = 1) (hx : x = 1) :
+    fb54Select gate x = 1 := by
+  unfold fb54Select
+  rw [hg, if_pos rfl, hx]
+
+/-- The decision's set form, with the conjunction written out: the gate and both
+non-zero tests taken. -/
+theorem fb54Select_gate_conj_one (gate x89 x88 : BitVec 1)
+    (hg : gate = 1) (h89 : x89 = 1) (h88 : x88 = 1) :
+    fb54Select gate (x89 &&& x88) = 1 :=
+  fb54Select_one gate _ hg (by rw [h89, h88]; rfl)
+
+/-- The decision clear at a clear gate. -/
+theorem fb54Select_zero_gate (gate x : BitVec 1) (hg : gate = 0) :
+    fb54Select gate x = 0 := by
+  unfold fb54Select
+  rw [hg]
+  exact if_neg (by decide)
+
+/-- The decision clear at a clear conjunction, whatever the gate. -/
+theorem fb54Select_zero_conj (gate x : BitVec 1) (hx : x = 0) :
+    fb54Select gate x = 0 := by
+  rw [hx]
+  unfold fb54Select
+  split <;> rfl
+
+/-- The first pass's values: the join's cells at the preheader's zero carried
+byte. -/
+def fb54FirstPassValues (v : ForBodyValues) (v38 : IfThen38Values)
+    (bs73 bs74 : List UInt8) (b ent : Nat) : ForBody54Values :=
+  forBody54Values v.shr17 v38.inc49 v38.or284 v38.or291 0 v.shrII v.conv13II v.shrI
+    bs73 bs74 b ent
+
+/-- The first pass's carried-byte test is clear: the join hands the loop zero. -/
+theorem fb54FirstPassValues_tobool89 (v : ForBodyValues) (v38 : IfThen38Values)
+    (bs73 bs74 : List UInt8) (b ent : Nat) :
+    (fb54FirstPassValues v v38 bs73 bs74 b ent).tobool89 = 0 := by
+  unfold fb54FirstPassValues
+  show evalICmp .ne (0 : BitVec 32) 0 = 0
+  decide
+
+/-- With the carried byte zero the probe's conjunction is zero, whatever the
+probe found. -/
+theorem fb54FirstPassValues_v107 (v : ForBodyValues) (v38 : IfThen38Values)
+    (bs73 bs74 : List UInt8) (b ent : Nat) :
+    (fb54FirstPassValues v v38 bs73 bs74 b ent).v107 = 0 := by
+  unfold fb54FirstPassValues
+  show evalICmp .ne (0 : BitVec 32) 0 &&&
+      evalICmp .ne (fb54Probe (fb54Or (unpackLanes 64 4 (bytesToNat bs74))
+        (unpackLanes 64 4 (bytesToNat bs73)))) 0 = 0
+  have h : evalICmp .ne (0 : BitVec 32) 0 = (0 : BitVec 1) := by decide
+  rw [h]
+  simp
+
+/-- **The fused loop's first pass, to `if.then90`.**  The preheader's step, then
+the body's run from the join's eight cells and the two word reads, then the
+body's step at the cleared escape decision: the carried byte is zero, so the
+conjunction is zero and the gate cannot set it. -/
+theorem for_body54_lr_ph_page (env : Env) (s : State) (c : AsciiCarry)
+    (v : ForBodyValues) (v38 : IfThen38Values) (arm : BitVec 64) (conv : BitVec 32)
+    (bs73 bs74 : List UInt8) (b ent : Nat)
+    (hpc : s.pc = "for.body54.lr.ph")
+    (harm : lookupName env "%arm" = some (.int 64 arm))
+    (hconv : lookupName env "%conv" = some (.int 32 conv))
+    (hb : lookupName env "%b" = some (.ptr b))
+    (hent : lookupName env "%ent" = some (.ptr ent))
+    (hi63 : (v38.inc49.signExtend 64).toNat < 2 ^ 63)
+    (hshl63 : ((v38.inc49 <<< (0x0000000000000006#64).toNat).signExtend 64).toNat
+      < 2 ^ 63)
+    (hread73 : readBytes s.mem
+      (b + ((v38.inc49 <<< (0x0000000000000006#64).toNat).signExtend 64).toNat) 32
+      = some bs73)
+    (hread74 : readBytes s.mem
+      ((b + ((v38.inc49 <<< (0x0000000000000006#64).toNat).signExtend 64).toNat)
+        + ((0x0000000000000020#64).signExtend 64).toNat) 32 = some bs74)
+    (h73len : (unpackLanes 64 4 (bytesToNat bs73)).length = 4)
+    (h74len : (unpackLanes 64 4 (bytesToNat bs74)).length = 4)
+    (hascii : v38.or284.length = 4) :
+    step s1BlocksCalls s1BlocksFunction (stateAt (fb54PageEnv env c v v38) s) =
+      .jump (stateAt (forBody54LrPhEnv (fb54PageEnv env c v v38) arm conv)
+        { s with pc := "for.body54", pre := some "for.body54.lr.ph" }) ∧
+    step s1BlocksCalls s1BlocksFunction
+        (stateAt (forBody54LrPhEnv (fb54PageEnv env c v v38) arm conv)
+          { s with pc := "for.body54", pre := some "for.body54.lr.ph" }) =
+      .jump (stateAt
+        (fb54Env9 (forBody54LrPhEnv (fb54PageEnv env c v v38) arm conv)
+          (fb54FirstPassValues v v38 bs73 bs74 b ent) (evalICmp .eq conv 0))
+        { s with
+          pc := "if.then90",
+          pre := some "for.body54",
+          mem := writeBytes s.mem (fb54FirstPassValues v v38 bs73 bs74 b ent).arrayidx
+            (natToBytes (fb54FirstPassValues v v38 bs73 bs74 b ent).or84.toNat 8) }) := by
+  have harm' := lookupName_fb54PageEnv_arm env c v v38 harm
+  have hconv' := lookupName_fb54PageEnv_conv env c v v38 hconv
+  have hb' : lookupName (forBody54LrPhEnv (fb54PageEnv env c v v38) arm conv) "%b"
+      = some (.ptr b) :=
+    lookupName_forBody54LrPhEnv_of _ arm conv
+      (lookupName_fb54PageEnv_b env c v v38 hb) (by decide) (by decide) (by decide)
+  have hent' : lookupName (forBody54LrPhEnv (fb54PageEnv env c v v38) arm conv) "%ent"
+      = some (.ptr ent) :=
+    lookupName_forBody54LrPhEnv_of _ arm conv
+      (lookupName_fb54PageEnv_ent env c v v38 hent) (by decide) (by decide) (by decide)
+  have hop1 : evalOperand
+      (stateAt (forBody54LrPhEnv (fb54PageEnv env c v v38) arm conv)
+        { s with pc := "for.body54", pre := some "for.body54.lr.ph" })
+      (.reg "%prevS.1491") = some (.int 64 v.shr17) :=
+    evalOperand_reg_of _ _ _ _ (lookupName_forBody54LrPhEnv_of _ arm conv
+      (lookupName_ifEnd50Out_prevS _ _ _ _ _ _ _ _ _)
+      (by decide) (by decide) (by decide))
+  have hop2 : evalOperand
+      (stateAt (forBody54LrPhEnv (fb54PageEnv env c v v38) arm conv)
+        { s with pc := "for.body54", pre := some "for.body54.lr.ph" })
+      (.reg "%i.1") = some (.int 64 v38.inc49) :=
+    evalOperand_reg_of _ _ _ _ (lookupName_forBody54LrPhEnv_of _ arm conv
+      (lookupName_ifEnd50Out_i _ _ _ _ _ _ _ _ _)
+      (by decide) (by decide) (by decide))
+  have hop3 : evalOperand
+      (stateAt (forBody54LrPhEnv (fb54PageEnv env c v v38) arm conv)
+        { s with pc := "for.body54", pre := some "for.body54.lr.ph" })
+      (.reg "%ascii.0") = some (.vec 4 64 v38.or284) :=
+    evalOperand_reg_of _ _ _ _ (lookupName_forBody54LrPhEnv_of _ arm conv
+      (lookupName_ifEnd50Out_ascii _ _ _ _ _ _ _ _ _)
+      (by decide) (by decide) (by decide))
+  have hop4 : evalOperand
+      (stateAt (forBody54LrPhEnv (fb54PageEnv env c v v38) arm conv)
+        { s with pc := "for.body54", pre := some "for.body54.lr.ph" })
+      (.reg "%u8k.0") = some (.vec 4 64 v38.or291) :=
+    evalOperand_reg_of _ _ _ _ (lookupName_forBody54LrPhEnv_of _ arm conv
+      (lookupName_ifEnd50Out_u8k _ _ _ _ _ _ _ _ _)
+      (by decide) (by decide) (by decide))
+  have hop5 : evalOperand
+      (stateAt (forBody54LrPhEnv (fb54PageEnv env c v v38) arm conv)
+        { s with pc := "for.body54", pre := some "for.body54.lr.ph" })
+      (.reg "%prev_ascii.0") = some (.int 32 0) :=
+    evalOperand_reg_of _ _ _ _ (lookupName_forBody54LrPhEnv_of _ arm conv
+      (lookupName_ifEnd50Out_prevAscii _ _ _ _ _ _ _ _ _)
+      (by decide) (by decide) (by decide))
+  have hop6 : evalOperand
+      (stateAt (forBody54LrPhEnv (fb54PageEnv env c v v38) arm conv)
+        { s with pc := "for.body54", pre := some "for.body54.lr.ph" })
+      (.reg "%st.sroa.0.1489") = some (.int 64 v.shrII) :=
+    evalOperand_reg_of _ _ _ _ (lookupName_forBody54LrPhEnv_of _ arm conv
+      (lookupName_ifEnd50Out_st0 _ _ _ _ _ _ _ _ _)
+      (by decide) (by decide) (by decide))
+  have hop7 : evalOperand
+      (stateAt (forBody54LrPhEnv (fb54PageEnv env c v v38) arm conv)
+        { s with pc := "for.body54", pre := some "for.body54.lr.ph" })
+      (.reg "%st.sroa.9.1487") = some (.int 64 v.conv13II) :=
+    evalOperand_reg_of _ _ _ _ (lookupName_forBody54LrPhEnv_of _ arm conv
+      (lookupName_ifEnd50Out_st9 _ _ _ _ _ _ _ _ _)
+      (by decide) (by decide) (by decide))
+  have hop8 : evalOperand
+      (stateAt (forBody54LrPhEnv (fb54PageEnv env c v v38) arm conv)
+        { s with pc := "for.body54", pre := some "for.body54.lr.ph" })
+      (.reg "%st.sroa.15.1485") = some (.int 64 v.shrI) :=
+    evalOperand_reg_of _ _ _ _ (lookupName_forBody54LrPhEnv_of _ arm conv
+      (lookupName_ifEnd50Out_st15 _ _ _ _ _ _ _ _ _)
+      (by decide) (by decide) (by decide))
+  have hinc1 : phiIncoming "for.body54.lr.ph"
+      [("for.body54.lr.ph", .reg "%prevS.1491"), ("if.end98", .reg "%shr85")]
+      = some (.reg "%prevS.1491") := by simp [phiIncoming]
+  have hinc2 : phiIncoming "for.body54.lr.ph"
+      [("for.body54.lr.ph", .reg "%i.1"), ("if.end98", .reg "%inc100")]
+      = some (.reg "%i.1") := by simp [phiIncoming]
+  have hinc3 : phiIncoming "for.body54.lr.ph"
+      [("for.body54.lr.ph", .reg "%ascii.0"), ("if.end98", .reg "%or.i282")]
+      = some (.reg "%ascii.0") := by simp [phiIncoming]
+  have hinc4 : phiIncoming "for.body54.lr.ph"
+      [("for.body54.lr.ph", .reg "%u8k.0"), ("if.end98", .reg "%u8k.2")]
+      = some (.reg "%u8k.0") := by simp [phiIncoming]
+  have hinc5 : phiIncoming "for.body54.lr.ph"
+      [("for.body54.lr.ph", .reg "%prev_ascii.0"), ("if.end98", .reg "%75")]
+      = some (.reg "%prev_ascii.0") := by simp [phiIncoming]
+  have hinc6 : phiIncoming "for.body54.lr.ph"
+      [("for.body54.lr.ph", .reg "%st.sroa.0.1489"),
+        ("if.end98", .reg "%shr.i.i325")] = some (.reg "%st.sroa.0.1489") := by
+    simp [phiIncoming]
+  have hinc7 : phiIncoming "for.body54.lr.ph"
+      [("for.body54.lr.ph", .reg "%st.sroa.9.1487"),
+        ("if.end98", .reg "%conv13.i.i324")] = some (.reg "%st.sroa.9.1487") := by
+    simp [phiIncoming]
+  have hinc8 : phiIncoming "for.body54.lr.ph"
+      [("for.body54.lr.ph", .reg "%st.sroa.15.1485"),
+        ("if.end98", .reg "%shr.i348")] = some (.reg "%st.sroa.15.1485") := by
+    simp [phiIncoming]
+  have hgate : lookupName
+      (fb54Env8 (forBody54LrPhEnv (fb54PageEnv env c v v38) arm conv)
+        (fb54FirstPassValues v v38 bs73 bs74 b ent)) "%tobool87"
+      = some (.int 1 (evalICmp .eq conv 0)) :=
+    lookupName_fb54Env8_tobool87 _ _
+      (lookupName_forBody54LrPhEnv_tobool87 _ arm conv)
+  have hent8 : lookupName
+      (fb54Env8 (forBody54LrPhEnv (fb54PageEnv env c v v38) arm conv)
+        (fb54FirstPassValues v v38 bs73 bs74 b ent)) "%ent" = some (.ptr ent) :=
+    lookupName_fb54Env8_ent _ _ hent'
+  have hbody := for_body54_denote
+    (forBody54LrPhEnv (fb54PageEnv env c v v38) arm conv)
+    { s with pc := "for.body54", pre := some "for.body54.lr.ph" }
+    "for.body54.lr.ph"
+    (.reg "%prevS.1491") (.reg "%i.1") (.reg "%ascii.0") (.reg "%u8k.0")
+    (.reg "%prev_ascii.0") (.reg "%st.sroa.0.1489") (.reg "%st.sroa.9.1487")
+    (.reg "%st.sroa.15.1485")
+    v.shr17 v38.inc49 v38.or284 v38.or291 0 v.shrII v.conv13II v.shrI
+    bs73 bs74 b ent (evalICmp .eq conv 0) rfl
+    hinc1 hop1 hinc2 hop2 hinc3 hop3 hinc4 hop4 hinc5 hop5 hinc6 hop6 hinc7 hop7
+    hinc8 hop8 hb' hshl63 hread73 hread74 h73len h74len hascii
+  have hbit : lookupName
+      (fb54Env9 (forBody54LrPhEnv (fb54PageEnv env c v v38) arm conv)
+        (fb54FirstPassValues v v38 bs73 bs74 b ent) (evalICmp .eq conv 0))
+      "%or.cond189" = some (.int 1 0) := by
+    rw [lookupName_fb54Env9_cond189]
+    show some (Value.int 1 (fb54Select (evalICmp .eq conv 0)
+      (fb54FirstPassValues v v38 bs73 bs74 b ent).v107)) = some (Value.int 1 0)
+    rw [fb54FirstPassValues_v107]
+    show some (Value.int 1 (fb54Select (evalICmp .eq conv 0) 0)) = some (Value.int 1 0)
+    rw [fb54Select_zero_conj _ _ rfl]
+  refine ⟨?_, ?_⟩
+  · exact for_body54_lr_ph_step (fb54PageEnv env c v v38) s arm conv hpc harm' hconv'
+  · exact for_body54_step_escape
+      (forBody54LrPhEnv (fb54PageEnv env c v v38) arm conv)
+      { s with pc := "for.body54", pre := some "for.body54.lr.ph" }
+      (fb54FirstPassValues v v38 bs73 bs74 b ent) (evalICmp .eq conv 0) rfl hbit
+      (hbody hent8 hi63 hgate)
+
+/-! ### `if.then90` — the fused loop's escape arm
+
+The arm reads the six shifted windows the hand-off reads — three below the row's
+pointer and three above it — and runs the classifier's class masks on them.  The
+two lookups the body already made at `%88` and `%97` supply the low-nibble
+controls, so the arm binds only the masks' joins; its two saturating subtracts
+give the state word, and the combined mask joins the incoming accumulator at
+`%u8k.1521`.
+
+The values are stated once, in `IfThen90Values`; the environment is one cell list
+per instruction.  The four proved segments carry the six window loads, the two
+class-mask lookups and the subtracts' window values; the two low-table joins and
+the accumulator's join are not yet proved, so the arm's whole run is not composed
+here. -/
+
+/-- The values `if.then90` binds, one field per destination. -/
+structure IfThen90Values where
+  addPtrII : Nat
+  w41 : List (BitVec 64)
+  addPtr3II : Nat
+  byte42 : List (BitVec 8)
+  addPtr5II : Nat
+  byte43 : List (BitVec 8)
+  byte44 : List (BitVec 8)
+  low45 : List (BitVec 8)
+  shuf46 : List (BitVec 8)
+  half47 : List (BitVec 16)
+  shr48 : List (BitVec 16)
+  byte49 : List (BitVec 8)
+  low50 : List (BitVec 8)
+  shuf51 : List (BitVec 8)
+  and1 : List (BitVec 8)
+  shufLo1 : List (BitVec 8)
+  and2 : List (BitVec 8)
+  andHi : List (BitVec 64)
+  sat60 : List (BitVec 8)
+  sat70 : List (BitVec 8)
+  orSat : List (BitVec 8)
+  orVec : List (BitVec 64)
+  andMask : List (BitVec 64)
+  xor1 : List (BitVec 64)
+  addPtr4 : Nat
+  w57 : List (BitVec 64)
+  addPtr3_5 : Nat
+  byte58 : List (BitVec 8)
+  addPtr5_6 : Nat
+  byte59 : List (BitVec 8)
+  byte60 : List (BitVec 8)
+  low61 : List (BitVec 8)
+  shuf62 : List (BitVec 8)
+  half63 : List (BitVec 16)
+  shr64 : List (BitVec 16)
+  byte65 : List (BitVec 8)
+  low66 : List (BitVec 8)
+  shuf67 : List (BitVec 8)
+  and3 : List (BitVec 8)
+  shufLo2 : List (BitVec 8)
+  and4 : List (BitVec 8)
+  andHi2 : List (BitVec 64)
+  sat60b : List (BitVec 8)
+  sat70b : List (BitVec 8)
+  orSat2 : List (BitVec 8)
+  orVec2 : List (BitVec 64)
+  andMask2 : List (BitVec 64)
+  xor2 : List (BitVec 64)
+  or132 : List (BitVec 64)
+  or281 : List (BitVec 64)
+
+/-- The arm's computation, from the row's pointer, the two low-nibble controls
+the body left, the carried accumulator and the six loaded windows. -/
+def ifThen90Values (a : Nat) (low88 low97 : List (BitVec 8))
+    (u8k : List (BitVec 64)) (bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8) :
+    IfThen90Values :=
+  let addPtrII := a - 1
+  let w41 := unpackLanes 64 4 (bytesToNat bs41)
+  let addPtr3II := a - 2
+  let byte42 := bs42.map fun b => BitVec.ofNat 8 b.toNat
+  let addPtr5II := a - 3
+  let byte43 := bs43.map fun b => BitVec.ofNat 8 b.toNat
+  let byte44 := bitcastVecLanes 8 32 w41
+  let low45 := byte44.map fun x => x &&& 0x0f#8
+  let shuf46 := pshufbLanes ifThen38TableHi low45
+  let half47 := bitcastVecLanes 16 16 w41
+  let shr48 := half47.map fun x : BitVec 16 => x >>> (0x0004#16).toNat
+  let byte49 := bitcastVecLanes 8 32 shr48
+  let low50 := byte49.map fun x => x &&& 0x0f#8
+  let shuf51 := pshufbLanes ifThen38TableMid low50
+  let and1 := List.zipWith (fun x y => x &&& y) shuf51 shuf46
+  let shufLo1 := pshufbLanes ifThen38TableLo low88
+  let and2 := List.zipWith (fun x y => x &&& y) and1 shufLo1
+  let andHi := bitcastVecLanes 64 4 and2
+  let sat60 := List.zipWith BitLanes.subsSat byte42 (List.replicate 32 0x60#8)
+  let sat70 := List.zipWith BitLanes.subsSat byte43 (List.replicate 32 0x70#8)
+  let orSat := List.zipWith (fun x y => x ||| y) sat70 sat60
+  let orVec := bitcastVecLanes 64 4 orSat
+  let andMask := orVec.map fun x => x &&& 0x8080808080808080#64
+  let xor1 := List.zipWith (fun x y => x ^^^ y) andMask andHi
+  let addPtr4 := a + ((0x000000000000001f#64).signExtend 64).toNat
+  let w57 := unpackLanes 64 4 (bytesToNat bs57)
+  let addPtr3_5 := a + ((0x000000000000001e#64).signExtend 64).toNat
+  let byte58 := bs58.map fun b => BitVec.ofNat 8 b.toNat
+  let addPtr5_6 := a + ((0x000000000000001d#64).signExtend 64).toNat
+  let byte59 := bs59.map fun b => BitVec.ofNat 8 b.toNat
+  let byte60 := bitcastVecLanes 8 32 w57
+  let low61 := byte60.map fun x => x &&& 0x0f#8
+  let shuf62 := pshufbLanes ifThen38TableHi low61
+  let half63 := bitcastVecLanes 16 16 w57
+  let shr64 := half63.map fun x : BitVec 16 => x >>> (0x0004#16).toNat
+  let byte65 := bitcastVecLanes 8 32 shr64
+  let low66 := byte65.map fun x => x &&& 0x0f#8
+  let shuf67 := pshufbLanes ifThen38TableMid low66
+  let and3 := List.zipWith (fun x y => x &&& y) shuf67 shuf62
+  let shufLo2 := pshufbLanes ifThen38TableLo low97
+  let and4 := List.zipWith (fun x y => x &&& y) and3 shufLo2
+  let andHi2 := bitcastVecLanes 64 4 and4
+  let sat60b := List.zipWith BitLanes.subsSat byte58 (List.replicate 32 0x60#8)
+  let sat70b := List.zipWith BitLanes.subsSat byte59 (List.replicate 32 0x70#8)
+  let orSat2 := List.zipWith (fun x y => x ||| y) sat70b sat60b
+  let orVec2 := bitcastVecLanes 64 4 orSat2
+  let andMask2 := orVec2.map fun x => x &&& 0x8080808080808080#64
+  let xor2 := List.zipWith (fun x y => x ^^^ y) andMask2 andHi2
+  let or132 := List.zipWith (fun x y => x ||| y) xor1 xor2
+  let or281 := List.zipWith (fun x y => x ||| y) or132 u8k
+  { addPtrII, w41, addPtr3II, byte42, addPtr5II, byte43, byte44, low45, shuf46,
+    half47, shr48, byte49, low50, shuf51, and1, shufLo1, and2, andHi, sat60,
+    sat70, orSat, orVec, andMask, xor1, addPtr4, w57, addPtr3_5, byte58,
+    addPtr5_6, byte59, byte60, low61, shuf62, half63, shr64, byte65, low66,
+    shuf67, and3, shufLo2, and4, andHi2, sat60b, sat70b, orSat2, orVec2,
+    andMask2, xor2, or132, or281 }
+
+/-- The environment after the three windows below the pointer. -/
+def ift90Env1 (env : Env) (v : IfThen90Values) : Env :=
+  cells [("%110", .vec 32 8 v.byte43),
+         ("%add.ptr5.i.i351", .ptr v.addPtr5II),
+         ("%109", .vec 32 8 v.byte42),
+         ("%add.ptr3.i.i350", .ptr v.addPtr3II),
+         ("%108", .vec 4 64 v.w41),
+         ("%add.ptr.i.i349", .ptr v.addPtrII)] env
+
+/-- The environment after the first window's two table lookups and their join. -/
+def ift90Env2 (env : Env) (v : IfThen90Values) : Env :=
+  cells [("%and.i3741.i.i352", .vec 32 8 v.and1),
+         ("%118", .vec 32 8 v.shuf51),
+         ("%117", .vec 32 8 v.low50),
+         ("%116", .vec 32 8 v.byte49),
+         ("%115", .vec 16 16 v.shr48),
+         ("%114", .vec 16 16 v.half47),
+         ("%113", .vec 32 8 v.shuf46),
+         ("%112", .vec 32 8 v.low45),
+         ("%111", .vec 32 8 v.byte44)] (ift90Env1 env v)
+
+/-- The environment after the low-table join, the first window's subtracts and
+their high-bit mask. -/
+def ift90Env3 (env : Env) (v : IfThen90Values) : Env :=
+  cells [("%xor.i.i.i360", .vec 4 64 v.xor1),
+         ("%and.i.i.i359", .vec 4 64 v.andMask),
+         ("%or.i.i.i358", .vec 4 64 v.orVec),
+         ("%or.i43.i.i357", .vec 32 8 v.orSat),
+         ("%elt.sat.i.i.i356", .vec 32 8 v.sat70),
+         ("%elt.sat.i40.i.i355", .vec 32 8 v.sat60),
+         ("%and.i35.i.i354", .vec 4 64 v.andHi),
+         ("%and.i3542.i.i353", .vec 32 8 v.and2),
+         ("%119", .vec 32 8 v.shufLo1)] (ift90Env2 env v)
+
+/-- The environment after the three windows above the pointer are loaded. -/
+def ift90Env4 (env : Env) (v : IfThen90Values) : Env :=
+  cells [("%122", .vec 32 8 v.byte59),
+         ("%add.ptr5.i6.i363", .ptr v.addPtr5_6),
+         ("%121", .vec 32 8 v.byte58),
+         ("%add.ptr3.i5.i362", .ptr v.addPtr3_5),
+         ("%120", .vec 4 64 v.w57),
+         ("%add.ptr.i4.i361", .ptr v.addPtr4)] (ift90Env3 env v)
+
+/-- The environment after the second window's two table lookups and their
+join. -/
+def ift90Env5 (env : Env) (v : IfThen90Values) : Env :=
+  cells [("%and.i3741.i7.i364", .vec 32 8 v.and3),
+         ("%130", .vec 32 8 v.shuf67),
+         ("%129", .vec 32 8 v.low66),
+         ("%128", .vec 32 8 v.byte65),
+         ("%127", .vec 16 16 v.shr64),
+         ("%126", .vec 16 16 v.half63),
+         ("%125", .vec 32 8 v.shuf62),
+         ("%124", .vec 32 8 v.low61),
+         ("%123", .vec 32 8 v.byte60)] (ift90Env4 env v)
+
+/-- The environment after the second low-table join, the second window's
+subtracts, the two state masks and the accumulator's join. -/
+def ift90Env6 (env : Env) (v : IfThen90Values) : Env :=
+  cells [("%or.i281", .vec 4 64 v.or281),
+         ("%132", .vec 4 64 v.or132),
+         ("%xor.i.i15.i372", .vec 4 64 v.xor2),
+         ("%and.i.i14.i371", .vec 4 64 v.andMask2),
+         ("%or.i.i13.i370", .vec 4 64 v.orVec2),
+         ("%or.i43.i12.i369", .vec 32 8 v.orSat2),
+         ("%elt.sat.i.i11.i368", .vec 32 8 v.sat70b),
+         ("%elt.sat.i40.i10.i367", .vec 32 8 v.sat60b),
+         ("%and.i35.i9.i366", .vec 4 64 v.andHi2),
+         ("%and.i3542.i8.i365", .vec 32 8 v.and4),
+         ("%131", .vec 32 8 v.shufLo2)] (ift90Env5 env v)
+
+/-- `if.then90`'s environment: everything the arm binds. -/
+def ifThen90Out (env : Env) (v : IfThen90Values) : Env := ift90Env6 env v
+
+/-- `if.then90`'s run at its proven segment boundaries: the three windows below
+the pointer, the first window's class masks, the three windows above the
+pointer, and the second window's class masks.  The two remaining boundaries —
+the low-table joins and the accumulator's join — are stated but not yet
+proven. -/
+def ifThen90Seg1 : List Instr := if_then90Instrs.take 6
+def ifThen90Seg2 : List Instr := (if_then90Instrs.drop 6).take 9
+def ifThen90Seg4 : List Instr := (if_then90Instrs.drop 24).take 6
+def ifThen90Seg5 : List Instr := (if_then90Instrs.drop 30).take 9
+
+/-- `%add.ptr57` through the third segment's entry cells. -/
+theorem lookupName_ift90Env3_addptr57 (env : Env) (v : IfThen90Values) {a : Nat}
+    (h : lookupName env "%add.ptr57" = some (.ptr a)) :
+    lookupName (ift90Env3 env v) "%add.ptr57" = some (.ptr a) := by
+  unfold ift90Env3 ift90Env2 ift90Env1
+  simp only [cells]
+  block_lk_cons
+
+/-- **`if.then90`'s first segment.**  The row's `-1` word and the `-2` and `-3`
+byte windows. -/
+theorem if_then90_seg1 (env : Env) (s : State) (a : Nat)
+    (low88 low97 : List (BitVec 8)) (u8k : List (BitVec 64))
+    (bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8)
+    (hadd : lookupName env "%add.ptr57" = some (.ptr a))
+    (h1 : 1 ≤ a) (h41 : readBytes s.mem (a - 1) 32 = some bs41)
+    (h2 : 2 ≤ a) (h42 : readBytes s.mem (a - 2) 32 = some bs42)
+    (h3 : 3 ≤ a) (h43 : readBytes s.mem (a - 3) 32 = some bs43) :
+    let v := ifThen90Values a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59
+    denoteCode s1BlocksCalls ifThen90Seg1 (stateAt env s) =
+      some (stateAt (ift90Env1 env v) s) := by
+  intro v
+  unfold ifThen90Seg1 ift90Env1
+  simp only [if_then90Instrs, List.take, List.drop]
+  block_eval_b
+
+/-- **`if.then90`'s second segment.**  The first window's two table lookups and
+their join. -/
+theorem if_then90_seg2 (env : Env) (s : State) (a : Nat)
+    (low88 low97 : List (BitVec 8)) (u8k : List (BitVec 64))
+    (bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8) :
+    let v := ifThen90Values a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59
+    denoteCode s1BlocksCalls ifThen90Seg2 (stateAt (ift90Env1 env v) s) =
+      some (stateAt (ift90Env2 env v) s) := by
+  intro v
+  unfold ifThen90Seg2 ift90Env1 ift90Env2
+  simp only [if_then90Instrs, List.take, List.drop]
+  block_eval_b
+
+/-- **`if.then90`'s fourth segment.**  The word and the two byte windows above
+the pointer. -/
+theorem if_then90_seg4 (env : Env) (s : State) (a : Nat)
+    (low88 low97 : List (BitVec 8)) (u8k : List (BitVec 64))
+    (bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8)
+    (h57 : readBytes s.mem
+      (a + ((0x000000000000001f#64).signExtend 64).toNat) 32 = some bs57)
+    (h58 : readBytes s.mem
+      (a + ((0x000000000000001e#64).signExtend 64).toNat) 32 = some bs58)
+    (h59 : readBytes s.mem
+      (a + ((0x000000000000001d#64).signExtend 64).toNat) 32 = some bs59) :
+    let v := ifThen90Values a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59
+    lookupName (ift90Env3 env v) "%add.ptr57" = some (.ptr a) →
+    denoteCode s1BlocksCalls ifThen90Seg4 (stateAt (ift90Env3 env v) s) =
+      some (stateAt (ift90Env4 env v) s) := by
+  intro v hadd
+  unfold ifThen90Seg4 ift90Env3 ift90Env4
+  simp only [if_then90Instrs, List.take, List.drop]
+  block_eval_b
+
+/-- **`if.then90`'s fifth segment.**  The second window's two table lookups and
+their join. -/
+theorem if_then90_seg5 (env : Env) (s : State) (a : Nat)
+    (low88 low97 : List (BitVec 8)) (u8k : List (BitVec 64))
+    (bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8) :
+    let v := ifThen90Values a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59
+    denoteCode s1BlocksCalls ifThen90Seg5 (stateAt (ift90Env4 env v) s) =
+      some (stateAt (ift90Env5 env v) s) := by
+  intro v
+  unfold ifThen90Seg5 ift90Env4 ift90Env5
+  simp only [if_then90Instrs, List.take, List.drop]
+  block_eval_b
+
 /-! ### Axiom footprints
 
 The block runs and the branch lemmas compute from the block's own literal lists;
@@ -8042,5 +8753,20 @@ intrinsic arms. -/
 #print axioms for_body54_step_escape
 #print axioms lookupName_fb54Env8_ent
 #print axioms lookupName_fb54Env8_tobool87
+#print axioms lookupName_ifEnd50Out_prevS
+#print axioms lookupName_ifEnd50Out_of
+#print axioms lookupName_fb54PageEnv_b
+#print axioms lookupName_fb54PageEnv_arm
+#print axioms lookupName_fb54Env9_cond189
+#print axioms fb54Select_gate_conj_one
+#print axioms fb54Select_zero_conj
+#print axioms fb54FirstPassValues_tobool89
+#print axioms fb54FirstPassValues_v107
+#print axioms for_body54_lr_ph_page
+#print axioms lookupName_ift90Env3_addptr57
+#print axioms if_then90_seg1
+#print axioms if_then90_seg2
+#print axioms if_then90_seg4
+#print axioms if_then90_seg5
 
 end LeanLLVM.Refinement.JsonS1BlocksRefine
