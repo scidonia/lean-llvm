@@ -33,6 +33,7 @@ import LeanLLVM.Refinement.JsonS1BlocksIR
 import LeanLLVM.Refinement.JsonEntSpec
 import LeanLLVM.Refinement.JsonS1BlocksSteps
 import LeanLLVM.Refinement.JsonS1BlocksContract
+import LeanLLVM.Refinement.JsonS1BlocksSeparation
 import LeanLLVM.Refinement.JsonAsciiSkip
 import LeanLLVM.Refinement.BlockEvalVector
 import LeanLLVM.Refinement.JsonS1BlocksReuse
