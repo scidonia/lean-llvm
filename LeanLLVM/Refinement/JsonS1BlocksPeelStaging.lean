@@ -69,18 +69,16 @@ staging is not restated here: it is `JsonS1BlocksEntry.fused_end_staging`'s
 three carries (`packLanes %ascii`, `packLanes %u8k`, and the error bit), the
 loop's register-to-model identities, not the peel's.
 
-## What this module does not supply
+## What the module supplies
 
-`hstageByte` in `JsonS1BlocksRefines` is stated for every readable byte
-(`∀ last p, readBytes s.mem p 1 = some [last] → …`).  The peel can only supply
-it at the arm's own address, `b + n - 1`: it reads that byte and nothing else,
-and a byte of any other value sitting elsewhere in the caller's memory (the
-emit region above the document, the staged stream) would demand the same
-staging at that byte's value.  The statement here is therefore the one the arm
-can prove, `hstageByte_fusedExit`/`hstageByte_asciiExit`, with the byte's
-identity as the premise the call site has; narrowing the composition's
-hypothesis to the arm's read is a shape change in that file, which this module
-does not edit.
+`hstageByte` in `JsonS1BlocksRefines` is stated at the arm's own read,
+`readBytes s.mem (b + (n.signExtend 64).toNat - 1) 1 = some [last]` — the byte
+`if.then164` loads and the post's tail-byte clause is about; a byte of
+tail-byte value anywhere else in the caller's memory is not required to stage.
+That is the shape the peel proves: `hstageByte_fusedExit` and
+`hstageByte_asciiExit` are the hypothesis at the two exits' values, with the
+staging's remaining inputs — the document window, `%n`'s length and the
+non-zero remainder — as their premises.
 -/
 import LeanLLVM.Refinement.JsonS1BlocksRefines
 import LeanLLVM.Refinement.JsonS1BlocksStaging

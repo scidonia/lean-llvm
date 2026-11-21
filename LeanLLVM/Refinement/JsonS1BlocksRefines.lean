@@ -470,8 +470,8 @@ theorem s1BlocksFusedExit_run {esc : Calls} (env : Env) (s : State) (c : FusedCa
     (hstagePeel : ∀ (v : IfThen103Values), v = fusedPeelValues env c n andv bs136 bs137 conv →
       VerdictStaging v.or279 c.u8k bs bs.length nb gate
         (evalICmp .eq (ptestzU8k c.u8k) 0))
-    (hstageByte : ∀ (last : UInt8) (p : Nat),
-      readBytes s.mem p 1 = some [last] →
+    (hstageByte : ∀ (last : UInt8),
+      readBytes s.mem (c.b + (n.signExtend 64).toNat - 1) 1 = some [last] →
       VerdictStaging c.ascii c.u8k bs bs.length nb gate
         (evalICmp .eq (ptestzU8k c.u8k) 0 ||| lastByteBits (BitVec.ofNat 8 last.toNat))) :
     ∃ (N : Nat) (r : BitVec 64) (m : Mem),
@@ -533,7 +533,7 @@ theorem s1BlocksFusedExit_run {esc : Calls} (env : Env) (s : State) (c : FusedCa
         (lookupName_forEnd101OutOf_u8k env _ _ _ _ _ _ _ _)
         (lookupName_forEnd101OutOf_ascii env _ _ _ _ _ _ _ _) hb' hnz0 hposb hpb
         (by simpa only [stateAt] using hlastr)
-        (hstageByte last _ hlastr)
+        (hstageByte last hlastr)
       exact ⟨1 + 3, _, _, by
         rw [show (1 + 3 : Nat) = 1 + 3 from rfl, runFuel_jump_prefix hstep1 3]
         exact htail.1, htail.2⟩
@@ -650,8 +650,8 @@ theorem s1BlocksAsciiExit_run {esc : Calls} (env : Env) (s : State) (c : AsciiCa
       (List.replicate 4 0) c.st0 c.st9 c.st15 c.prevS andv c.shr c.ent conv 1 →
       VerdictStaging v.or279 (List.replicate 4 0) bs bs.length nb gate
         (evalICmp .eq (ptestzU8k (List.replicate 4 0)) 0))
-    (hstageByte : ∀ (last : UInt8) (p : Nat),
-      readBytes s.mem p 1 = some [last] →
+    (hstageByte : ∀ (last : UInt8),
+      readBytes s.mem (c.b + (n.signExtend 64).toNat - 1) 1 = some [last] →
       VerdictStaging (List.replicate 4 0) (List.replicate 4 0) bs bs.length nb gate
         (evalICmp .eq (ptestzU8k (List.replicate 4 0)) 0 |||
           lastByteBits (BitVec.ofNat 8 last.toNat))) :
@@ -731,7 +731,7 @@ theorem s1BlocksAsciiExit_run {esc : Calls} (env : Env) (s : State) (c : AsciiCa
         (List.replicate 4 0) (List.replicate 4 0) c.b last bs nb gate rfl hnOut
         hu8kOut hascOut hbOut hnz0 hposb hpb
         (by rw [← hp_eq]; exact hp_read)
-        (hstageByte last _ hp_read)
+        (hstageByte last (by rw [← hp_eq]; exact hp_read))
       exact ⟨1 + 3, _, _, by
         rw [show (1 + 3 : Nat) = 1 + 3 from rfl, runFuel_jump_prefix hstep1 3]
         exact (by simpa only [stateAt] using htail.1), htail.2⟩
