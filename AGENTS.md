@@ -18,22 +18,6 @@ nix develop -c lake exe leanllvm tests/constfold.ll
 `llvm-as`, `llvm-dis`, `opt`, `llc` and `clang` are provided by the shell.
 
 Run Lean and Lake under a **memory ceiling**, so a runaway elaboration dies
-inside its own cgroup instead of the session or the machine:
-
-```bash
-systemd-run --user --scope -p MemoryMax=12G -p MemorySwapMax=4G --quiet \
-  nix develop -c lake build
-systemd-run --user --scope -p MemoryMax=8G -p MemorySwapMax=2G --quiet \
-  nix develop -c lake env lean File.lean
-```
-
-A proof search whose memory is uncertain — an unbounded `simp`, a large
-`decide`, a reflection tactic — runs on a separate machine rather than on the
-development host, and every local invocation still carries the ceiling.  A
-build killed by the ceiling is a signal that the proof needs splitting, not a
-reason to rerun it uncapped.
-
-Run Lean and Lake under a **memory ceiling**, so a runaway elaboration dies
 inside its own cgroup instead of taking the session or the machine with it:
 
 ```bash
@@ -47,6 +31,10 @@ splitting or its `maxHeartbeats` raising — not a reason to run the same
 command without the ceiling.  The figure is a headroom decision, not a target:
 a single module's elaboration on this host has been measured above 6 GB, so
 the ceiling sits at 12 GB rather than at the smallest value that works.
+
+A proof search whose memory is uncertain — an unbounded `simp`, a large
+`decide`, a reflection tactic — runs on a separate machine rather than on the
+development host, and every local invocation still carries the ceiling.
 
 ### Remote worker sizing
 
