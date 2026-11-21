@@ -1,23 +1,27 @@
 /* escape.c -- the escape-position list and the list-driven escape expander:
    the two measured stages M4 states as one unit.
 
-   The list is `xlist.h`'s `xl_lanes` and `xl_emit` at the measured `XL_EMIT=1`
-   (`s1fuse.h:70-71`, selected by `S1F_XS=5`): the per-block gate in front of
-   spike 38's eight-entry batch.  `xl_lanes`'s masks are the classifier's
-   words, so the unit takes them through its ABI and does not recompute what
-   the mask unit produces.  The expander is `usdec.h`'s `us_dec_x` with its
-   kernels, at the measured `US_EMIT4=1` arm and the defaults the header gives
-   every other switch; `UJ_UNESC` and `uj_enc_word` are `uj.c`'s, which is the
-   measured chain's include and the only definition site.
+   The list is `xlist.h`'s `xl_lanes` and `xl_emit_batch` under the unit's own
+   `xl_emit`, whose stream and eight-entry batch are the measured `XL_EMIT=1`
+   selection's (`s1fuse.h:70-71`, selected by `S1F_XS=5`): the per-block gate in
+   front of spike 38's eight-entry batch, with the batch's lanes read off the
+   word in parallel.  `xl_lanes`'s masks are the classifier's words, so the unit
+   takes them through its ABI and does not recompute what the mask unit
+   produces.  The expander is `usdec.h`'s `us_dec_x` with its kernels, at the
+   measured `US_EMIT4=1` arm and the defaults the header gives every other
+   switch; `UJ_UNESC` and `uj_enc_word` are `uj.c`'s, which is the measured
+   chain's include and the only definition site.
 
    The arms the measured configuration does not take are deleted rather than
    kept behind a macro: this is the measured text, not a transcription of two
    configurations.  README.md's `escape-delete:` rows are the deletions the
    token arm applies to the measured side; the unit carries their result, so
    the two sides' tokens are the selected text.  What remains is exactly the
-   code the measured build compiles.
+   code the measured build compiles, except `xl_emit`: it is the unit's own
+   emitter, named by README.md's `escape-extra:` row, and the emitted-code arm
+   substitutes it into the measured side.
 
-   The two ABI functions at the end are the unit's only new definitions.  The
+   The two ABI functions and `xl_emit` are the unit's only new definitions.  The
    rest of the new text is the decoder's `US_XP_DIAG` default, the includes,
    and the two attribute selectors the deleted conditional blocks left outside
    the extracted spans (the inline `us_esc_u` and the `noinline` `us_dec_x`).
@@ -103,10 +107,48 @@ static inline void xl_emit_batch(uint64_t esc, uint32_t base, uint32_t *out,
     }
 }
 
+/* The emitter is the unit's own text rather than `xlist.h`'s at `XL_EMIT=1`
+   (README.md's `escape-extra:` row).  It appends the same stream and writes the
+   same eight-entry batch, and it does so without the measured batch's serial
+   `ctz`/`clear-lowest` chain: the slot's lane is read off the word with one
+   `pdep` and one `tzcnt` per slot, so the eight lanes are independent.
+
+   The batch's **claimed** entries are `min (popcount esc) 8` positions,
+   `base | lane` in increasing lane order; `pdep` deposits the j-th selector
+   bit at the j-th set lane of the word and an empty selector deposits nothing,
+   so a slot past the claim reads `tzcnt 0 = 64` and is `base | 64`.
+
+   The batch's **reserve**, the slots under `*xn` past the claim, is the
+   measured chain's and is reproduced rather than re-invented.  With
+   `c = esc | 2^63` the inlined first batch stores `base | tzcnt c` and then
+   clears that lane, so an unexhausted sentinel gives the slot after the claim
+   `base | 63`, and every later reserve slot is `base | 64` from the exhausted
+   chain; when the word itself holds lane 63 the chain is exhausted at the
+   claim's end and every reserve slot is `base | 64`.  A word with more than
+   eight set lanes keeps the measured `xl_emit_batch` unchanged, so the reserve
+   of its tail batches is the measured one. */
 static inline void xl_emit(uint64_t esc, uint32_t base, uint32_t *out,
                            uint64_t *k) {
     if (!esc) return;                       /* per-block gate */
-    xl_emit_batch(esc, base, out, k);
+    unsigned pc = (unsigned)__builtin_popcountll(esc);
+    if (__builtin_expect(pc > 8, 0)) {
+        xl_emit_batch(esc, base, out, k);
+        return;
+    }
+    uint32_t *o = out + *k;
+    _mm256_storeu_si256((__m256i *)o, _mm256_set1_epi32((int)(base | 64u)));
+    o[0] = base | (uint32_t)_tzcnt_u64(_pdep_u64(1ull << 0, esc));
+    o[1] = base | (uint32_t)_tzcnt_u64(_pdep_u64(1ull << 1, esc));
+    o[2] = base | (uint32_t)_tzcnt_u64(_pdep_u64(1ull << 2, esc));
+    o[3] = base | (uint32_t)_tzcnt_u64(_pdep_u64(1ull << 3, esc));
+    if (pc > 4) {
+        o[4] = base | (uint32_t)_tzcnt_u64(_pdep_u64(1ull << 4, esc));
+        o[5] = base | (uint32_t)_tzcnt_u64(_pdep_u64(1ull << 5, esc));
+        o[6] = base | (uint32_t)_tzcnt_u64(_pdep_u64(1ull << 6, esc));
+        o[7] = base | (uint32_t)_tzcnt_u64(_pdep_u64(1ull << 7, esc));
+    }
+    if (pc < 8 && !(esc & 0x8000000000000000ULL)) o[pc] = base | 63u;
+    *k += pc;
 }
 
 /* ------------------------------------------------ list-driven expander -- */

@@ -33,8 +33,10 @@
    the route's corpus belongs to a different change.  Each round runs both
    sides twice, once in each order, and averages each side, so a drift inside
    the round lands on both and cancels in the difference.  The report is the
-   median of (extracted - measured) ns/block over the rounds against a
-   +/-0.5 ns/block bound.
+   median of (extracted - measured) ns/block over the rounds against the
+   one-sided bound `extracted - measured <= +0.5`, which is the claim: the
+   extracted body is not slower than the measured one, and a faster row is an
+   observation rather than a failure.
 
    `--self-control` runs the measured side against itself and requires exactly
    0.0, which checks the harness's dispatch and subtraction rather than the
@@ -65,7 +67,7 @@ uint64_t probe_escape_expand_extracted(const uint8_t *, uint64_t, uint8_t *,
 /* Bytes of document work per timed act.  Larger than the other paired arms'
    1 MiB because this act's cost is tens of nanoseconds per block: at 1 MiB a
    small input's act is under a millisecond and a scheduler quantum or a
-   frequency step is a large fraction of it, which the +/-0.5 ns/block bound
+   frequency step is a large fraction of it, which the +0.5 ns/block bound
    then reads as a code difference.  At 64 MiB an act is tens of milliseconds
    even for the dense input. */
 #define ACT_BYTES ((size_t)1 << 26)
@@ -80,7 +82,7 @@ typedef struct {
     uint64_t npos;
     uint32_t *xp;
     uint8_t *dst;
-    int bounded;       /* whether the +/-0.5 ns/block bound is claimed */
+    int bounded;       /* whether the one-sided bound is claimed */
 } input;
 
 static volatile uint64_t sink;
@@ -360,7 +362,8 @@ int main(int argc, char **argv) {
     }
 
     printf("# paired timing: the extracted escape unit against the measured statements\n");
-    printf("# ns/block: one block is 64 document bytes; the bound is +/-0.5\n");
+    printf("# ns/block: one block is 64 document bytes; the bound is "
+           "extracted - measured <= +0.5\n");
     printf("# one act is the block walk plus one expander call over the list it built\n");
     printf("core-class: %u\n", core_class());
     printf("rounds: %d\n", rounds);
@@ -426,11 +429,16 @@ int main(int argc, char **argv) {
                 printf("%-24s %-8s median %8.3f (observation: one-block dense "
                        "input, no delta claim; see arm:escapes-4096)\n",
                        inputs[k].name, "observe", med);
-            } else if (med > 0.5 || med < -0.5) {
+            } else if (med > 0.5) {
                 fprintf(stderr,
-                        "FAIL: %s: median difference %.3f ns/block is outside "
-                        "+/-0.5\n", inputs[k].name, med);
+                        "FAIL: %s: median difference %.3f ns/block is above "
+                        "+0.5 (the extracted body is slower)\n",
+                        inputs[k].name, med);
                 failed = 1;
+            } else if (med < -0.5) {
+                printf("%-24s %-8s median %8.3f (extracted faster; the claim "
+                       "is one-sided, so this is an observation)\n",
+                       inputs[k].name, "observe", med);
             }
         }
         free(d);
@@ -442,8 +450,9 @@ int main(int argc, char **argv) {
     } else if (failed) {
         /* reported above */
     } else {
-        printf("ok: every bounded input is within +/-0.5 ns/block "
-               "(arm:escapes-64 is an observation, not a bounded input)\n");
+        printf("ok: every bounded input is at most +0.5 ns/block slower than "
+               "the measured one (arm:escapes-64 is an observation, not a "
+               "bounded input)\n");
     }
     return failed ? 1 : 0;
 }

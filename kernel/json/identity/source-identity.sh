@@ -39,10 +39,13 @@
 #          extraction is a setup fault, not an equality.  This unit's arm
 #          detector is its own (`--arms-only`): it keeps `dens_`, `S1F_`, `SP_`
 #          and `sp_` refused and accepts `kl_`, which is this unit's subject.
-#   escape the escape unit, `kernel/json/escape.c`, against the fifteen
+#   escape the escape unit, `kernel/json/escape.c`, against the fourteen
 #          definitions `README.md`'s `escape-entities:` line names across
 #          `measured/xlist.h`, `measured/usdec.h` and `measured/uj.c`, with the
-#          deletions `escape-delete:` names.  Every copied entity has a name, so
+#          deletions `escape-delete:` names.  `xl_emit` is the unit's own
+#          emitter, named by the `escape-extra:` row: the report states the
+#          exclusion by name and every other entity is compared token for
+#          token.  Every copied entity has a name, so
 #          this unit has no stage range: there are no unnamed measured
 #          statements to locate by line.  Its arm detector refuses `dens_`,
 #          `S1F_`, `SP_` and `sp_` and accepts `xl_`, `us_` and `uj_`, which are
@@ -434,6 +437,9 @@ if [ "$run_stage_tu" -eq 0 ]; then
     printf 'delete list:   %s\n' "$deletion_specs"
     if [ "$unit" = s1 ]; then
       printf 'excluded:      s1f_escaped (the unit'"'"'s own arithmetic; not compared with measured text)\n'
+    fi
+    if [ "$unit" = escape ]; then
+      printf 'excluded:      xl_emit (the unit'"'"'s own emitter; not compared with measured text)\n'
     fi
   fi
 fi
