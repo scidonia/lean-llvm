@@ -120,7 +120,16 @@ structure S1BlocksResiduals (esc : Calls) (args : List Value) (mem : Mem) (next 
     the entry's gate word, which is the interface the exit's per-arm lemmas are
     read at.
   * The exit segment runs from `e` to the return in at most `exitCharge` (`5`)
-    steps at `ret` and `M`.
+    steps at `ret` and `M`.  That is the silent merge's charge; a `for.end101`
+    terminal with `arm &&& 2 ≠ 0` costs `6`
+    (`JsonS1BlocksRunCharge.escapeExitCharge`), so no residual holds at the
+    calling arm.  `s1BlocksResiduals_of_parts` and `s1BlocksResiduals_of_atParts`
+    fill this field from `S1BlocksRunParts.exitBounded` /
+    `S1BlocksRunPartsAt.exitBounded`, which also demand one memory for every
+    terminal — distinct `FusedExit` carries have distinct memories — so neither
+    produces a residual there.  The calling arm's parts are
+    `JsonS1BlocksParts.S1BlocksRunPartsAt`, whose `runBounded` names one terminal
+    and charges it at `escapeExitCharge`.
   * The staging is `VerdictStaging` at the document's block count
     (`JsonS1BlocksLoopFacts.staging_of_exitFacts`,
     `JsonS1BlocksStaging.acc_pack`, and the in-flight
@@ -147,7 +156,13 @@ structure S1BlocksResiduals (esc : Calls) (args : List Value) (mem : Mem) (next 
 charge is inside the budget (`JsonS1BlocksPrefixFuel.prefixCharge_le_budget`) and
 the exit's charge is inside the room above it (`exitCharge_le_room`), so
 `JsonS1BlocksExitFuel.s1BlocksRun_at_budget_of_chargedStages` joins the segments
-at `s1BlocksBudget`. -/
+at `s1BlocksBudget`.
+
+The join is therefore the silent arm's: it carries the residual's `jE ≤
+exitCharge` unchanged, and `s1BlocksRun_at_budget_of_chargedStages` reads one
+terminal's charged run, so the calling arm's exit (`6`,
+`JsonS1BlocksRunCharge.escapeExitCharge`) is out of reach here.  The calling arm's
+composition is `JsonS1BlocksParts.s1BlocksRun_at_budget_of_chargedEscapeExit`. -/
 theorem run_of_residuals {esc : Calls} {args : List Value} {mem : Mem} {next : Nat}
     {b ent xp nxp xcarry xn : Nat} {arm : BitVec 64} {bs : List UInt8}
     (hargs : args = [.ptr b, .int 64 (BitVec.ofNat 64 bs.length), .ptr ent,
