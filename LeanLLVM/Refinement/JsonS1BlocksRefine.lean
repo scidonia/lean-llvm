@@ -4436,6 +4436,184 @@ theorem for_body_handoff (esc : Calls) (env : Env) (s : State) (p : String)
       (lookupName_handoffThen38_inc49 env v v38)
       (by rw [lookupName_handoffThen38_shr]; exact hshr)
 
+/-! ### The preheader's first page
+
+The preheader edge is the body's first iteration: its five phis select the
+preheader's zero arm, so the index, the carried DFA state and the word enter at
+`0`, and the two `<4 x i64>` loads read the block's words at `%b` and
+`%b + 32`.  The body's terminator is the escape gate, taken set here, so the
+iteration reaches the class test; the test either finds a high bit and hands the
+block to `if.then38`, or finds none and the latch takes it.  The page is one
+lemma and the arms are two more, each stated from the preheader so that an
+induction over the phase can consume either without re-deriving the body. -/
+
+/-- The escape gate's cell as the preheader leaves it: the body's terminator
+test. -/
+theorem lookupName_lrPhEnv_tobool (env : Env) (arm : BitVec 64) :
+    lookupName (lrPhEnv env arm) "%tobool.not"
+      = some (.int 1 (evalICmp .eq (arm &&& 2) 0)) := by
+  simp [lrPhEnv, cells]
+
+/-- A register read through the preheader's two cells to the environment beneath
+them. -/
+theorem lookupName_lrPhEnv_of (env : Env) (arm : BitVec 64) {n : String}
+    {v : Value} (h : lookupName env n = some v)
+    (h1 : "%tobool.not" ≠ n) (h2 : "%and18" ≠ n) :
+    lookupName (lrPhEnv env arm) n = some v := by
+  simp only [lrPhEnv, cells]
+  rw [lookupName_cons_ne _ _ h1, lookupName_cons_ne _ _ h2, h]
+
+/-- **The body's first iteration, to the class test.**  The preheader's step,
+then the body's run from the state its edge hands over — five zero phis, the two
+word reads at `%b` and `%b + 32` — then the body's step at the set escape
+gate. -/
+theorem for_body_lr_ph_page (env : Env) (s : State) (arm : BitVec 64)
+    (bs2 bs3 : List UInt8) (b ent : Nat)
+    (hpc : s.pc = "for.body.lr.ph")
+    (harm : lookupName env "%arm" = some (.int 64 arm))
+    (hgate : evalICmp .eq (arm &&& 2) 0 = 1)
+    (hb : lookupName env "%b" = some (.ptr b))
+    (hent : lookupName env "%ent" = some (.ptr ent))
+    (hread2 : readBytes s.mem b 32 = some bs2)
+    (hread3 : readBytes s.mem (b + 32) 32 = some bs3) :
+    let v := forBodyValues 0 0 0 0 0 bs2 bs3 b ent
+    let s1 := stateAt (lrPhEnv env arm)
+      { s with pc := "for.body", pre := some "for.body.lr.ph" }
+    let s2 := stateAt (forBodyOut (lrPhEnv env arm) v)
+      { s with
+        pc := "if.end",
+        pre := some "for.body",
+        mem := writeBytes s.mem v.arrayidx (natToBytes v.or16.toNat 8) }
+    step s1BlocksCalls s1BlocksFunction (stateAt env s) = .jump s1 ∧
+    step s1BlocksCalls s1BlocksFunction s1 = .jump s2 := by
+  intro v s1 s2
+  have hb' : lookupName (lrPhEnv env arm) "%b" = some (.ptr b) :=
+    lookupName_lrPhEnv_of env arm hb (by decide) (by decide)
+  have hent' : lookupName (lrPhEnv env arm) "%ent" = some (.ptr ent) :=
+    lookupName_lrPhEnv_of env arm hent (by decide) (by decide)
+  have htobool : lookupName (forBodyOut (lrPhEnv env arm) v) "%tobool.not"
+      = some (.int 1 1) := by
+    rw [lookupName_forBodyOut_tobool, lookupName_lrPhEnv_tobool, hgate]
+  have hoff : (((0x0000000000000000#64 : BitVec 64) <<<
+      (0x0000000000000006#64).toNat).signExtend 64).toNat = 0 := by decide
+  have hoff5 : ((0x0000000000000020#64).signExtend 64).toNat = 32 := by decide
+  have hread2' : readBytes s.mem
+      (b + (((0x0000000000000000#64 : BitVec 64) <<<
+        (0x0000000000000006#64).toNat).signExtend 64).toNat) 32 = some bs2 := by
+    rw [hoff, Nat.add_zero]
+    exact hread2
+  have hread3' : readBytes s.mem
+      ((b + (((0x0000000000000000#64 : BitVec 64) <<<
+        (0x0000000000000006#64).toNat).signExtend 64).toNat)
+        + ((0x0000000000000020#64).signExtend 64).toNat) 32 = some bs3 := by
+    rw [hoff, hoff5, Nat.add_zero]
+    exact hread3
+  refine ⟨for_body_lr_ph_step env s arm hpc harm, ?_⟩
+  exact for_body_step_end (lrPhEnv env arm)
+    { s with pc := "for.body", pre := some "for.body.lr.ph" } v rfl htobool
+    (for_body_denote (lrPhEnv env arm)
+      { s with pc := "for.body", pre := some "for.body.lr.ph" } "for.body.lr.ph"
+      (.imm (.int 64 0)) (.imm (.int 64 0)) (.imm (.int 64 0)) (.imm (.int 64 0))
+      (.imm (.int 64 0)) 0 0 0 0 0 bs2 bs3 b ent rfl
+      (by simp [phiIncoming]) (by rfl)
+      (by simp [phiIncoming]) (by rfl)
+      (by simp [phiIncoming]) (by rfl)
+      (by simp [phiIncoming]) (by rfl)
+      (by simp [phiIncoming]) (by rfl)
+      hb' hent' (by decide) (by decide) hread2' hread3')
+
+/-- **The first page at the latch.**  The body's run and the class test with no
+high bit in the block: `%tobool22.not` is clear, so its branch takes the latch
+and the iteration ends at `for.inc`. -/
+theorem for_body_lr_ph_page_ascii (env : Env) (s : State) (arm : BitVec 64)
+    (bs2 bs3 : List UInt8) (b ent : Nat)
+    (hpc : s.pc = "for.body.lr.ph")
+    (harm : lookupName env "%arm" = some (.int 64 arm))
+    (hgate : evalICmp .eq (arm &&& 2) 0 = 1)
+    (hb : lookupName env "%b" = some (.ptr b))
+    (hent : lookupName env "%ent" = some (.ptr ent))
+    (hread2 : readBytes s.mem b 32 = some bs2)
+    (hread3 : readBytes s.mem (b + 32) 32 = some bs3) :
+    let v := forBodyValues 0 0 0 0 0 bs2 bs3 b ent
+    let s1 := stateAt (lrPhEnv env arm)
+      { s with pc := "for.body", pre := some "for.body.lr.ph" }
+    let s2 := stateAt (forBodyOut (lrPhEnv env arm) v)
+      { s with
+        pc := "if.end",
+        pre := some "for.body",
+        mem := writeBytes s.mem v.arrayidx (natToBytes v.or16.toNat 8) }
+    let s3 := stateAt (ifEndEnv (forBodyOut (lrPhEnv env arm) v) v.w2 v.w3)
+      { s with
+        pc := "for.inc",
+        pre := some "if.end",
+        mem := writeBytes s.mem v.arrayidx (natToBytes v.or16.toNat 8) }
+    (hbit : evalICmp .eq (ifEndTest v.w2 v.w3) 0 = 0) →
+    step s1BlocksCalls s1BlocksFunction (stateAt env s) = .jump s1 ∧
+    step s1BlocksCalls s1BlocksFunction s1 = .jump s2 ∧
+    step s1BlocksCalls s1BlocksFunction s2 = .jump s3 := by
+  intro v s1 s2 s3 hbit
+  obtain ⟨h01, h12⟩ :=
+    for_body_lr_ph_page env s arm bs2 bs3 b ent hpc harm hgate hb hent hread2 hread3
+  refine ⟨h01, h12, ?_⟩
+  exact if_end_step_ascii (forBodyOut (lrPhEnv env arm) v)
+    { s with
+      pc := "if.end",
+      pre := some "for.body",
+      mem := writeBytes s.mem v.arrayidx (natToBytes v.or16.toNat 8) }
+    v.w2 v.w3
+    (unpackLanes_length 64 4 (bytesToNat bs2))
+    (unpackLanes_length 64 4 (bytesToNat bs3))
+    rfl
+    (lookupName_forBodyOut_2 (lrPhEnv env arm) v)
+    (lookupName_forBodyOut_3 (lrPhEnv env arm) v)
+    hbit
+
+/-- **The first page at the hand-off.**  The body's run and the class test with
+a high bit in the block: `%tobool22.not` is set, so its branch hands the block
+to `if.then38`. -/
+theorem for_body_lr_ph_page_handoff (env : Env) (s : State) (arm : BitVec 64)
+    (bs2 bs3 : List UInt8) (b ent : Nat)
+    (hpc : s.pc = "for.body.lr.ph")
+    (harm : lookupName env "%arm" = some (.int 64 arm))
+    (hgate : evalICmp .eq (arm &&& 2) 0 = 1)
+    (hb : lookupName env "%b" = some (.ptr b))
+    (hent : lookupName env "%ent" = some (.ptr ent))
+    (hread2 : readBytes s.mem b 32 = some bs2)
+    (hread3 : readBytes s.mem (b + 32) 32 = some bs3) :
+    let v := forBodyValues 0 0 0 0 0 bs2 bs3 b ent
+    let s1 := stateAt (lrPhEnv env arm)
+      { s with pc := "for.body", pre := some "for.body.lr.ph" }
+    let s2 := stateAt (forBodyOut (lrPhEnv env arm) v)
+      { s with
+        pc := "if.end",
+        pre := some "for.body",
+        mem := writeBytes s.mem v.arrayidx (natToBytes v.or16.toNat 8) }
+    let s3 := stateAt (ifEndEnv (forBodyOut (lrPhEnv env arm) v) v.w2 v.w3)
+      { s with
+        pc := "if.then38",
+        pre := some "if.end",
+        mem := writeBytes s.mem v.arrayidx (natToBytes v.or16.toNat 8) }
+    (hbit : evalICmp .eq (ifEndTest v.w2 v.w3) 0 = 1) →
+    step s1BlocksCalls s1BlocksFunction (stateAt env s) = .jump s1 ∧
+    step s1BlocksCalls s1BlocksFunction s1 = .jump s2 ∧
+    step s1BlocksCalls s1BlocksFunction s2 = .jump s3 := by
+  intro v s1 s2 s3 hbit
+  obtain ⟨h01, h12⟩ :=
+    for_body_lr_ph_page env s arm bs2 bs3 b ent hpc harm hgate hb hent hread2 hread3
+  refine ⟨h01, h12, ?_⟩
+  exact if_end_step_handoff (forBodyOut (lrPhEnv env arm) v)
+    { s with
+      pc := "if.end",
+      pre := some "for.body",
+      mem := writeBytes s.mem v.arrayidx (natToBytes v.or16.toNat 8) }
+    v.w2 v.w3
+    (unpackLanes_length 64 4 (bytesToNat bs2))
+    (unpackLanes_length 64 4 (bytesToNat bs3))
+    rfl
+    (lookupName_forBodyOut_2 (lrPhEnv env arm) v)
+    (lookupName_forBodyOut_3 (lrPhEnv env arm) v)
+    hbit
+
 /-! ### Axiom footprints
 
 The block runs and the branch lemmas compute from the block's own literal lists;
@@ -4465,5 +4643,9 @@ intrinsic arms. -/
 #print axioms if_then38_denote
 #print axioms if_then38_step
 #print axioms for_body_handoff
+#print axioms lookupName_lrPhEnv_of
+#print axioms for_body_lr_ph_page
+#print axioms for_body_lr_ph_page_ascii
+#print axioms for_body_lr_ph_page_handoff
 
 end LeanLLVM.Refinement.JsonS1BlocksRefine
