@@ -20,9 +20,10 @@ from it.
   preserve, plus the stream prefix and the block bound.  Two of `LoopExitFacts`'
   fields are *not* here: the run's own frame (`EntryFrame mem0 c.mem`) is a
   whole-run fact, since a page that takes the escape call writes the stream, and
-  the accumulator's fold and length are the two arms' own arithmetic, which no
-  module in the tree states.  The exit theorems take those three as the run's
-  obligations.
+  the accumulator's fold and length are carried by `AccCarry`
+  (`JsonS1BlocksAccFold`) and threaded through the run by
+  `JsonS1BlocksAccRun`.  The exit theorems take the frame as the run's
+  obligation; the accumulator is supplied by the terminal carry.
 * **`LoopInv`** — `FusedInv` together with the carry; **`LoopLatch`** — the
   same at the back edge.  **`LoopTerm`** — the exit terminal with the carry.
 * **`PageStep`** — one page's model identities: the two document windows and
@@ -80,10 +81,10 @@ conclusion:
   entry's `%shr = n >>> 6`), and the two windows being the block's halves (the
   run's read tie).
 * **The accumulator's fold and length** at the exit
-  (`packLanes c.u8k = bytesToNat (klAcc bs c.i.toNat)`, `c.u8k.length = 4`).
-  The loop's two arms hand on different words — the DFA arm's mask and the merge
-  arm's carried one — so the fold between them is the staging's carry, not the
-  invariant's; `JsonS1BlocksLoopFacts`'s header names this step too.
+  (`packLanes c.u8k = bytesToNat (klAcc bs c.i.toNat)`, `c.u8k.length = 4`) are
+  `AccCarry`'s two fields (`JsonS1BlocksAccFold`), threaded through the run by
+  `JsonS1BlocksAccRun`; the loop's two arms hand on different words, and the
+  fold between them is that carry, not this invariant's.
 * **The escape call's keeps** at the calling page: the call keeps the entry
   array read (its prefix at the successor index) and the stream's prefix.  The
   record's frame gives the call's own regions
@@ -162,11 +163,12 @@ structure LoopCarry (mem0 : Mem) (xp xn : Nat) (ps : List Nat) (bs : List UInt8)
   /-- The index is inside the document's block count. -/
   inside : c.i.toNat ≤ blocksOf bs.length
 
-/-- The carry's exit shape: `LoopExitFacts`, once the run's own frame and the
-accumulator's fold and length are at hand.  The accumulator is not part of the
-invariant: the loop's two arms hand on different words (the DFA arm's mask, the
-merge arm's carried one), and the fold identity between them is the loop's own
-arithmetic, which no module in the tree states. -/
+/-- The carry's exit shape: `LoopExitFacts`, once the run's own frame is at
+hand.  The accumulator is not part of this invariant: the loop's two arms hand
+on different words (the DFA arm's mask, the merge arm's carried one), and the
+fold identity between them is `AccCarry` (`JsonS1BlocksAccFold`), threaded
+through the run by `JsonS1BlocksAccRun`; `loopExitFacts_of_accCarry` consumes
+the terminal carry. -/
 theorem LoopCarry.toLoopExitFacts {mem0 : Mem} {xp xn : Nat} {ps : List Nat}
     {bs : List UInt8} {c : FusedCarry} (h : LoopCarry mem0 xp xn ps bs c)
     (hframe : EntryFrame mem0 c.mem c.ent (blocksOf bs.length))
