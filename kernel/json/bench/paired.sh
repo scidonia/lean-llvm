@@ -1251,8 +1251,9 @@ if [ "$status" -eq 0 ]; then
   if [ "$self_control" -eq 1 ]; then
     printf '\nok: the harness reports 0.0 against itself\n'
   elif [ "$unit" = escape ]; then
-    printf '\nok: every bounded input is within +/-0.5 ns/block of the measured one\n'
-    printf '    (arm:escapes-64 is reported as an observation with no delta claim)\n'
+    printf '\nok: every bounded input is at most +0.5 ns/block slower than the measured\n'
+    printf '    one (one-sided); a faster row is an observation, and arm:escapes-64 is\n'
+    printf '    reported with no delta claim\n'
   elif [ "$unit" = pipeline ]; then
     printf '\nthe four rows are reported above with their columns, d = first - second and\n'
     printf 'direction; the harness verdict is derived from that same d, and its\n'

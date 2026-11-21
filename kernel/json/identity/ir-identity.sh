@@ -37,11 +37,15 @@
 #          no wrapper can hide a difference.
 #   escape the escape unit.  `escape_oracle.c` includes the vendored measured
 #          text and defines the unit's two ABI entry points over the measured
-#          `xl_lanes`/`xl_emit` and `us_dec_x`; `escape_probe.c` includes
+#          `xl_lanes` and `us_dec_x`; `escape_probe.c` includes
 #          `kernel/json/escape.c`, whose own ABI functions are the same text.
-#          Both sides are lifted by name — the two entry points and the
-#          out-of-line `us_dec_x` — and the arm asserts each lifted module
-#          defines exactly those three and no other.
+#          `xl_emit` is the unit's own emitter (README.md's `escape-extra:`
+#          row), so the measured side is compiled against a substituted
+#          `xlist.h` carrying that one definition, the way the mask unit's
+#          `s1f_escaped` is substituted; every other measured statement is
+#          compared unchanged.  Both sides are lifted by name — the two entry
+#          points and the out-of-line `us_dec_x` — and the arm asserts each
+#          lifted module defines exactly those three and no other.
 #
 #   pipeline the assembled caller, `kernel/json/pipeline.c`.  It is not
 #          extracted text, so the arm's claim is the relation between the three
@@ -340,6 +344,66 @@ build_s1_substituted_oracle() {
     "$oracle" > "$s1_oracle_src"
   if ! grep -q '#include "s1fuse.sub.h"' "$s1_oracle_src"; then
     printf 'SETUP: the substituted oracle still includes the measured header\n' >&2
+    return 3
+  fi
+}
+
+# build_escape_substituted_oracle -- the measured side with this unit's one
+# named exclusion.
+#
+# The escape unit's `xl_emit` is the unit's own emitter rather than the measured
+# `XL_EMIT` selector (README.md's `escape-extra:` row).  The measured side is
+# therefore the vendored `xlist.h` with that one definition replaced by the
+# unit's text, reached through a copy of `s1fuse.h` that includes the
+# substituted list; the substitution is asserted to land exactly once and to
+# carry the unit's text, and every other statement of the measured pair is
+# copied unchanged.  Every other entity is compared byte for byte.
+escape_oracle_src=""
+build_escape_substituted_oracle() {
+  local newf=$work/xl_emit.unit.c xlist_sub=$work/xlist.sub.h n
+  awk '/^static inline void xl_emit\(/ { on = 1 }
+       on { print }
+       on && /^}$/ { exit }' "$kernel" > "$newf"
+  if [ ! -s "$newf" ] || ! grep -q '_pdep_u64' "$newf"; then
+    printf 'SETUP: the unit has no xl_emit emitter to substitute\n' >&2
+    return 3
+  fi
+  awk 'NR == FNR { new = new $0 "\n"; next }
+       { if (!skip) {
+           if ($0 ~ /^static inline void xl_emit\(/) {
+             skip = 1; printf "%s", new; next }
+           print
+         } else if ($0 == "}") { skip = 0 } }' \
+    "$newf" "$measured/xlist.h" > "$xlist_sub"
+  n=$(grep -c '^static inline void xl_emit(' "$xlist_sub")
+  if [ "$n" -ne 1 ]; then
+    printf 'SETUP: the substitution left %s xl_emit definition(s)\n' "$n" >&2
+    return 3
+  fi
+  if cmp -s "$measured/xlist.h" "$xlist_sub"; then
+    printf 'SETUP: the substitution changed nothing\n' >&2
+    return 3
+  fi
+  if ! grep -q '_pdep_u64' "$xlist_sub"; then
+    printf 'SETUP: the substituted list does not carry the unit emitter\n' >&2
+    return 3
+  fi
+  if ! sed 's|#include "xlist.h"|#include "xlist.sub.h"|' \
+      "$measured/s1fuse.h" > "$work/s1fuse.sub.h"; then
+    printf 'SETUP: the substituted s1fuse.h could not be written\n' >&2
+    return 3
+  fi
+  if ! grep -q '#include "xlist.sub.h"' "$work/s1fuse.sub.h"; then
+    printf 'SETUP: the substituted s1fuse.h does not include the substituted list\n' >&2
+    return 3
+  fi
+  escape_oracle_src=$work/oracle.escape.sub.c
+  sed -e "s|#include \"../measured/s1fuse.h\"|#include \"$work/s1fuse.sub.h\"|" \
+      -e "s|#include \"../measured/usdec.h\"|#include \"$measured/usdec.h\"|" \
+      -e "s|#include \"../measured/uj.c\"|#include \"$measured/uj.c\"|" \
+      "$oracle" > "$escape_oracle_src"
+  if ! grep -q 's1fuse.sub.h' "$escape_oracle_src"; then
+    printf 'SETUP: the substituted oracle still includes the measured s1fuse.h\n' >&2
     return 3
   fi
 }
@@ -766,6 +830,10 @@ arm_identity() {
     oracle_src=$s1_oracle_src
     oracle_inc=$work
     printf '   exclusion: s1f_escaped (the unit'"'"'s own arithmetic replaces the measured pext/pdep form on the measured side; every other entity is compared byte for byte)\n'
+  elif [ "$unit" = escape ]; then
+    build_escape_substituted_oracle || return 3
+    oracle_src=$escape_oracle_src
+    printf '   exclusion: xl_emit (the unit'"'"'s own emitter replaces the measured XL_EMIT selector on the measured side; every other entity is compared byte for byte)\n'
   fi
   a=$(compile_probe oracle "$oracle_src" "$oracle_inc" -I "$measured") || return 3
   b=$(compile_probe kernel "$probe_src" "$repo/kernel/json") || return 3
@@ -906,19 +974,19 @@ arm_controls_escape() {
   local base mut module rc=0
   base=$(compile_probe kernel "$probe_src" "$repo/kernel/json") || return 3
 
-  printf '\n== Control: one numeral in xl_batch changed\n'
-  mut=$work/escape.batch.c
+  printf '\n== Control: one numeral in xl_lanes changed\n'
+  mut=$work/escape.lanes.c
   awk '
-    { if (!done && index($0, "0x8000000000000000ULL") > 0) {
-        sub(/0x8000000000000000ULL/, "0x8000000000000001ULL"); done = 1 }
+    { if (!done && index($0, "e << 2") > 0) {
+        sub(/e << 2/, "e << 3"); done = 1 }
       print }
     END { if (!done) exit 1 }
   ' "$kernel" > "$mut" || {
-    printf 'SETUP: the batch control did not apply; the numeral is absent\n' >&2
+    printf 'SETUP: the lanes control did not apply; the numeral is absent\n' >&2
     return 3
   }
-  module=$(mutate_escape_probe kernel_batch "$mut") || return 3
-  compare different "$base" "$module" batch || rc=1
+  module=$(mutate_escape_probe kernel_lanes "$mut") || return 3
+  compare different "$base" "$module" lanes || rc=1
 
   printf '\n== Control: the decoder bound pos0 + n changed\n'
   mut=$work/escape.endp.c
