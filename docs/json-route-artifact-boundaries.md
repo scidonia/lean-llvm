@@ -68,34 +68,38 @@ documents, and no semantic claim rests on the two emissions being equal.
 ## The stage-2 fixture: rewrites, staged ABI, and what the object does instead
 
 `probes/install/ir/capture-stage2.sh` derives `stage2.candidate.ll` from
-`kernel/json/stage2.c` in five recorded steps:
+`kernel/json/stage2.c` in six recorded steps:
 
 1. the source transform: `noinline` on eleven helpers, `s2_walk` forced inline,
    and the `EL_ENTRY` macro line;
 2. `opt -passes=lower-switch`;
 3. the token strip (`stage2.strip.tsv`);
-4. the eight staging allocas `%d.i %c.i %ctype.i %cst.i %t352.i %s %z %e`
+4. the local-name pin: the emission's registers and block labels renamed to the
+   spelling the fixture holds (`stage2.rewrites.tsv` class r8);
+5. the eight staging allocas `%d.i %c.i %ctype.i %cst.i %t352.i %s %z %e`
    appended as `ptr` parameters (`stage2.staging.tsv`);
-5. three instruction rewrites, and every callee's definition replaced by a
+6. three instruction rewrites, and every callee's definition replaced by a
    declaration (`stage2.rewrites.tsv`).
 
-The committed fixture deviates from the derivation in two stores: `if.then205.i`
-and `if.then214.i` carry `%idxprom.i` (the opening quote's position) rather than
-the captured `%4`, because the walk now reports the parser's
-`unterminatedString` position.  `JsonStage2IR`'s "What the body keeps" records
-the patch and the names a fresh capture would produce (`%t352.i`→`%t354.i`,
-`if.then214.i`→`if.then215.i`); a regeneration therefore renames the staged ABI
-and the defensive block, and neither the five steps nor the capture's staging
-list reproduces the committed text until the fixture and that list are updated.
+The fixture is that derivation's output byte for byte.  The two quote refusal
+blocks (`if.then205.i`, `if.then214.i`) store `%idxprom.i`, the opening quote's
+position, because `kernel/json/stage2.c`'s quote arm now passes the entry it is
+at: the source emits the operand a patch used to supply by hand, and the capture
+checks the two stores rather than assuming them.  The pin exists because
+`JsonStage2IR`'s `stage2Body` holds the parsed fixture by text, so an unrelated
+source edit that shifts clang's name counter (`%t352.i`/`%t354.i`,
+`if.then214.i`/`if.then215.i`) must not rename the pinned body: the derivation
+renames the emission back to the fixture's spelling, and the capture refuses a
+stale, colliding or non-injective entry.
 
-Step 4 is the staged ABI: the body the proofs run takes its stack objects as
+Step 5 is the staged ABI: the body the proofs run takes its stack objects as
 parameters, so the walk's contracts are stated at a staging the caller supplies.
 The route's object has those objects as stack slots, and the adapter does not
 pass them.  The distance is not renamed away: it is the staging's own
 assumption, and `docs/contract.md` §7.7 and
 `docs/json-route-artifact-correspondence.md` record it.
 
-Step 5 is the helper call boundary: the fixture *declares* the six helpers
+Step 6 is the helper call boundary: the fixture *declares* the six helpers
 `s2_walk` calls and the proof's environment (`stage2SubCalls`) answers them as
 contracts.  The correspondence script measures what the installed object does
 instead: of the eleven helper bodies, three emit an identical body at `-O2` and

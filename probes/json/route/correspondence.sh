@@ -293,7 +293,7 @@ object_body_lines=$(wc -l <"$work/walk.o2.norm" | tr -d ' ')
 printf '## The two artifact paths\n\n'
 printf '| | flags | source | derivation |\n'
 printf '|---|---|---|---|\n'
-printf '| the proofs'"'"' body (`probes/install/ir/stage2.candidate.ll`) | `%s` | `kernel/json/stage2.c`, `noinline` on eleven helpers, `s2_walk` forced inline | `opt -passes=lower-switch`, the recorded token strip, eight staging allocas flattened to parameters, callees reduced to declarations |\n' "$(printf '%s' "$capture_flags" | sed 's/  */ /g')"
+printf '| the proofs'"'"' body (`probes/install/ir/stage2.candidate.ll`) | `%s` | `kernel/json/stage2.c`, `noinline` on eleven helpers, `s2_walk` forced inline | `opt -passes=lower-switch`, the recorded token strip, the local names pinned to the fixture'"'"'s spelling, eight staging allocas flattened to parameters, callees reduced to declarations |\n' "$(printf '%s' "$capture_flags" | sed 's/  */ /g')"
 printf '| the route'"'"'s object (`probes/json/route/build.sh`) | `%s` | the same file, untransformed | none: `clang -c` |\n\n' "$(printf '%s' "$build_flags" | sed 's/  */ /g')"
 
 printf '## The flag relation\n\n'
@@ -305,7 +305,7 @@ printf -- '- ignored as non-codegen: `-S -emit-llvm` (output mode), `-I` and its
 printf 'The naming flag changes no instruction at the route'"'"'s own -O2 line: the emission with and without it is identical after register names and block labels are neutralised.\n\n'
 
 printf '## The normalisation steps\n\n'
-printf 'The fixture is derived, not transcribed.  In order: (1) the source transform above, whose counts are two `always_inline` occurrences (the comment'"'"'s and `s2_walk`'"'"'s) and eleven `noinline` helper functions, plus the `EL_ENTRY` macro line; (2) `opt -passes=lower-switch`; (3) the token strip, by the classes `capture-stage2.sh` records in `stage2.strip.tsv`; (4) the eight staging allocas `%%d.i %%c.i %%ctype.i %%cst.i %%t352.i %%s %%z %%e` appended as `ptr` parameters (`stage2.staging.tsv`); (5) the three instruction rewrites and the callee definitions replaced by declarations (`stage2.rewrites.tsv`).  The comparison below applies steps (1)–(3) to both emissions and then replaces every virtual register with one placeholder and drops block labels, so the two texts are compared instruction by instruction.\n\n'
+printf 'The fixture is derived, not transcribed.  In order: (1) the source transform above, whose counts are two `always_inline` occurrences (the comment'"'"'s and `s2_walk`'"'"'s) and eleven `noinline` helper functions, plus the `EL_ENTRY` macro line; (2) `opt -passes=lower-switch`; (3) the token strip, by the classes `capture-stage2.sh` records in `stage2.strip.tsv`; (4) the local-name pin, which renames the emission's registers and block labels to the fixture's spelling (`stage2.rewrites.tsv` class r8); (5) the eight staging allocas `%%d.i %%c.i %%ctype.i %%cst.i %%t352.i %%s %%z %%e` appended as `ptr` parameters (`stage2.staging.tsv`); (6) the three instruction rewrites and the callee definitions replaced by declarations (`stage2.rewrites.tsv`).  The comparison below applies steps (1)–(3) to both emissions and then replaces every virtual register with one placeholder and drops block labels, so the two texts are compared instruction by instruction.\n\n'
 
 printf '## What is identical, and what is not\n\n'
 printf 'The eleven helpers, as emitted under the transform at each level:\n\n'
