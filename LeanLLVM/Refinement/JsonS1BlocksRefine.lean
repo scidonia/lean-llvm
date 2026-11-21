@@ -8570,15 +8570,167 @@ def ift90Env6 (env : Env) (v : IfThen90Values) : Env :=
 /-- `if.then90`'s environment: everything the arm binds. -/
 def ifThen90Out (env : Env) (v : IfThen90Values) : Env := ift90Env6 env v
 
-/-- `if.then90`'s run at its proven segment boundaries: the three windows below
-the pointer, the first window's class masks, the three windows above the
-pointer, and the second window's class masks.  The two remaining boundaries —
-the low-table joins and the accumulator's join — are stated but not yet
-proven. -/
+/-- `if.then90`'s run at its six segment boundaries: the three windows below the
+pointer, the first window's class masks, the row's low table joins and state
+mask, the three windows above the pointer, the second window's class masks, and
+the second low-table join through the accumulator's word. -/
 def ifThen90Seg1 : List Instr := if_then90Instrs.take 6
 def ifThen90Seg2 : List Instr := (if_then90Instrs.drop 6).take 9
+def ifThen90Seg3 : List Instr := (if_then90Instrs.drop 15).take 9
 def ifThen90Seg4 : List Instr := (if_then90Instrs.drop 24).take 6
 def ifThen90Seg5 : List Instr := (if_then90Instrs.drop 30).take 9
+def ifThen90Seg6 : List Instr := (if_then90Instrs.drop 39).take 11
+
+/-! ### `if.then90`'s lane-list lengths
+
+Each stored vector's lane count is structural from the loaded window or the
+carried control it was shuffled with, so these projections close from the two
+controls' and the four byte windows' lengths. -/
+
+/-- The first window's class-mask join. -/
+theorem ifThen90Values_and1_length (a : Nat) (low88 low97 : List (BitVec 8))
+    (u8k : List (BitVec 64)) (bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8) :
+    (ifThen90Values a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59).and1.length = 32 := by
+  simp [ifThen90Values, bitcastVecLanes, unpackLanes_length, JsonS1MasksSteps.pshufbLanes_length,
+    List.length_zipWith, List.length_map]
+
+/-- The first control's low-table lookup. -/
+theorem ifThen90Values_shufLo1_length (a : Nat) (low88 low97 : List (BitVec 8))
+    (u8k : List (BitVec 64)) (bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8)
+    (h88 : low88.length = 32) :
+    (ifThen90Values a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59).shufLo1.length = 32 := by
+  simp [ifThen90Values, JsonS1MasksSteps.pshufbLanes_length, h88]
+
+/-- The first window's join with the low-table lookup. -/
+theorem ifThen90Values_and2_length (a : Nat) (low88 low97 : List (BitVec 8))
+    (u8k : List (BitVec 64)) (bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8)
+    (h88 : low88.length = 32) :
+    (ifThen90Values a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59).and2.length = 32 := by
+  simp [ifThen90Values, bitcastVecLanes, unpackLanes_length, JsonS1MasksSteps.pshufbLanes_length,
+    List.length_zipWith, List.length_map, h88]
+
+/-- The first window's `- 0x60` subtract. -/
+theorem ifThen90Values_sat60_length (a : Nat) (low88 low97 : List (BitVec 8))
+    (u8k : List (BitVec 64)) (bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8)
+    (h42 : bs42.length = 32) :
+    (ifThen90Values a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59).sat60.length = 32 := by
+  simp [ifThen90Values, List.length_zipWith, List.length_map, h42]
+
+/-- The first window's `- 0x70` subtract. -/
+theorem ifThen90Values_sat70_length (a : Nat) (low88 low97 : List (BitVec 8))
+    (u8k : List (BitVec 64)) (bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8)
+    (h43 : bs43.length = 32) :
+    (ifThen90Values a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59).sat70.length = 32 := by
+  simp [ifThen90Values, List.length_zipWith, List.length_map, h43]
+
+/-- The two subtracts' union. -/
+theorem ifThen90Values_orSat_length (a : Nat) (low88 low97 : List (BitVec 8))
+    (u8k : List (BitVec 64)) (bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8)
+    (h42 : bs42.length = 32) (h43 : bs43.length = 32) :
+    (ifThen90Values a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59).orSat.length = 32 := by
+  simp [ifThen90Values, List.length_zipWith, List.length_map, h42, h43]
+
+/-- The first window's class-window bitcast. -/
+theorem ifThen90Values_andHi_length (a : Nat) (low88 low97 : List (BitVec 8))
+    (u8k : List (BitVec 64)) (bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8) :
+    (ifThen90Values a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59).andHi.length = 4 := by
+  simp [ifThen90Values, bitcastVecLanes, unpackLanes_length, List.length_zipWith,
+    List.length_map, List.length_replicate]
+
+/-- The subtracts' union's bitcast. -/
+theorem ifThen90Values_orVec_length (a : Nat) (low88 low97 : List (BitVec 8))
+    (u8k : List (BitVec 64)) (bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8) :
+    (ifThen90Values a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59).orVec.length = 4 := by
+  simp [ifThen90Values, bitcastVecLanes, unpackLanes_length, List.length_map, List.length_replicate]
+
+/-- The first window's high-bit mask. -/
+theorem ifThen90Values_andMask_length (a : Nat) (low88 low97 : List (BitVec 8))
+    (u8k : List (BitVec 64)) (bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8) :
+    (ifThen90Values a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59).andMask.length = 4 := by
+  simp [ifThen90Values, bitcastVecLanes, unpackLanes_length, List.length_map, List.length_replicate]
+
+/-- The first window's state word. -/
+theorem ifThen90Values_xor1_length (a : Nat) (low88 low97 : List (BitVec 8))
+    (u8k : List (BitVec 64)) (bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8) :
+    (ifThen90Values a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59).xor1.length = 4 := by
+  simp [ifThen90Values, bitcastVecLanes, unpackLanes_length, List.length_zipWith,
+    List.length_map, List.length_replicate]
+
+/-- The second window's class-mask join. -/
+theorem ifThen90Values_and3_length (a : Nat) (low88 low97 : List (BitVec 8))
+    (u8k : List (BitVec 64)) (bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8) :
+    (ifThen90Values a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59).and3.length = 32 := by
+  simp [ifThen90Values, bitcastVecLanes, unpackLanes_length, JsonS1MasksSteps.pshufbLanes_length,
+    List.length_zipWith, List.length_map]
+
+/-- The second control's low-table lookup. -/
+theorem ifThen90Values_shufLo2_length (a : Nat) (low88 low97 : List (BitVec 8))
+    (u8k : List (BitVec 64)) (bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8)
+    (h97 : low97.length = 32) :
+    (ifThen90Values a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59).shufLo2.length = 32 := by
+  simp [ifThen90Values, JsonS1MasksSteps.pshufbLanes_length, h97]
+
+/-- The second window's join with the low-table lookup. -/
+theorem ifThen90Values_and4_length (a : Nat) (low88 low97 : List (BitVec 8))
+    (u8k : List (BitVec 64)) (bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8)
+    (h97 : low97.length = 32) :
+    (ifThen90Values a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59).and4.length = 32 := by
+  simp [ifThen90Values, bitcastVecLanes, unpackLanes_length, JsonS1MasksSteps.pshufbLanes_length,
+    List.length_zipWith, List.length_map, h97]
+
+/-- The second window's `- 0x60` subtract. -/
+theorem ifThen90Values_sat60b_length (a : Nat) (low88 low97 : List (BitVec 8))
+    (u8k : List (BitVec 64)) (bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8)
+    (h58 : bs58.length = 32) :
+    (ifThen90Values a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59).sat60b.length = 32 := by
+  simp [ifThen90Values, List.length_zipWith, List.length_map, h58]
+
+/-- The second window's `- 0x70` subtract. -/
+theorem ifThen90Values_sat70b_length (a : Nat) (low88 low97 : List (BitVec 8))
+    (u8k : List (BitVec 64)) (bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8)
+    (h59 : bs59.length = 32) :
+    (ifThen90Values a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59).sat70b.length = 32 := by
+  simp [ifThen90Values, List.length_zipWith, List.length_map, h59]
+
+/-- The second window's subtracts' union. -/
+theorem ifThen90Values_orSat2_length (a : Nat) (low88 low97 : List (BitVec 8))
+    (u8k : List (BitVec 64)) (bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8)
+    (h58 : bs58.length = 32) (h59 : bs59.length = 32) :
+    (ifThen90Values a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59).orSat2.length = 32 := by
+  simp [ifThen90Values, List.length_zipWith, List.length_map, h58, h59]
+
+/-- The second window's class-window bitcast. -/
+theorem ifThen90Values_andHi2_length (a : Nat) (low88 low97 : List (BitVec 8))
+    (u8k : List (BitVec 64)) (bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8) :
+    (ifThen90Values a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59).andHi2.length = 4 := by
+  simp [ifThen90Values, bitcastVecLanes, unpackLanes_length, List.length_zipWith,
+    List.length_map, List.length_replicate]
+
+/-- The second window's subtracts' bitcast. -/
+theorem ifThen90Values_orVec2_length (a : Nat) (low88 low97 : List (BitVec 8))
+    (u8k : List (BitVec 64)) (bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8) :
+    (ifThen90Values a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59).orVec2.length = 4 := by
+  simp [ifThen90Values, bitcastVecLanes, unpackLanes_length, List.length_map, List.length_replicate]
+
+/-- The second window's high-bit mask. -/
+theorem ifThen90Values_andMask2_length (a : Nat) (low88 low97 : List (BitVec 8))
+    (u8k : List (BitVec 64)) (bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8) :
+    (ifThen90Values a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59).andMask2.length = 4 := by
+  simp [ifThen90Values, bitcastVecLanes, unpackLanes_length, List.length_map, List.length_replicate]
+
+/-- The second window's state word. -/
+theorem ifThen90Values_xor2_length (a : Nat) (low88 low97 : List (BitVec 8))
+    (u8k : List (BitVec 64)) (bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8) :
+    (ifThen90Values a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59).xor2.length = 4 := by
+  simp [ifThen90Values, bitcastVecLanes, unpackLanes_length, List.length_zipWith,
+    List.length_map, List.length_replicate]
+
+/-- The two state words' union. -/
+theorem ifThen90Values_or132_length (a : Nat) (low88 low97 : List (BitVec 8))
+    (u8k : List (BitVec 64)) (bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8) :
+    (ifThen90Values a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59).or132.length = 4 := by
+  simp [ifThen90Values, bitcastVecLanes, unpackLanes_length, List.length_zipWith,
+    List.length_map, List.length_replicate]
 
 /-- `%add.ptr57` through the third segment's entry cells. -/
 theorem lookupName_ift90Env3_addptr57 (env : Env) (v : IfThen90Values) {a : Nat}
@@ -8650,6 +8802,553 @@ theorem if_then90_seg5 (env : Env) (s : State) (a : Nat)
   unfold ifThen90Seg5 ift90Env4 ift90Env5
   simp only [if_then90Instrs, List.take, List.drop]
   block_eval_b
+
+/-- **`if.then90`'s third segment.**  The row's low table lookup at its first
+control, that lookup's join with the class masks, and the first window's two
+subtracts and state mask. -/
+theorem if_then90_seg3 (env : Env) (s : State) (a : Nat)
+    (low88 low97 : List (BitVec 8)) (u8k : List (BitVec 64))
+    (bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8)
+    (h88 : lookupName env "%88" = some (.vec 32 8 low88))
+    (h88len : low88.length = 32)
+    (h42len : bs42.length = 32) (h43len : bs43.length = 32) :
+    let v := ifThen90Values a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59
+    denoteCode s1BlocksCalls ifThen90Seg3 (stateAt (ift90Env2 env v) s) =
+      some (stateAt (ift90Env3 env v) s) := by
+  intro v
+  have htabFold : ifThen38TableLo =
+      [0x01#8, 0x01#8, 0x01#8, 0x01#8, 0x01#8, 0x01#8, 0x01#8, 0x01#8,
+       0xe6#8, 0xae#8, 0xba#8, 0xba#8, 0x01#8, 0x01#8, 0x01#8, 0x01#8,
+       0x01#8, 0x01#8, 0x01#8, 0x01#8, 0x01#8, 0x01#8, 0x01#8, 0x01#8,
+       0xe6#8, 0xae#8, 0xba#8, 0xba#8, 0x01#8, 0x01#8, 0x01#8, 0x01#8] := rfl
+  unfold ifThen90Seg3
+  simp only [if_then90Instrs, List.take, List.drop]
+  rw [← htabFold]
+  block_step_b
+  rw [denoteCode_binopVec s1BlocksCalls _ s "%and.i3542.i.i353" .and 32 8
+        (.reg "%and.i3741.i.i352") (.reg "%119")
+        (va := .vec 32 8 v.and1) (vb := .vec 32 8 (pshufbLanes ifThen38TableLo low88))
+        (l1 := v.and1) (l2 := pshufbLanes ifThen38TableLo low88) (ls := v.and2)
+        (BlockEval.evalOperand_reg_of _ _ "%and.i3741.i.i352" (.vec 32 8 v.and1)
+          (by simp only [ift90Env2, ift90Env1, cells]; block_lk_cons))
+        (BlockEval.evalOperand_reg_of _ _ "%119"
+          (.vec 32 8 (pshufbLanes ifThen38TableLo low88))
+          (lookupName_cons_self _ _ _))
+        (vecLanes_self (ifThen90Values_and1_length a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59))
+        (vecLanes_self (by rw [JsonS1MasksSteps.pshufbLanes_length]; omega))
+        (by rw [binopLanes_zipWith .and (fun x y => x &&& y) (fun x y => rfl)
+              v.and1 (pshufbLanes ifThen38TableLo low88) (by
+                rw [ifThen90Values_and1_length a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59,
+                  JsonS1MasksSteps.pshufbLanes_length]
+                omega)]
+            rfl)]
+  rw [denoteCode_vecBitcast s1BlocksCalls _ s "%and.i35.i.i354" 32 8 4 64
+        (.reg "%and.i3542.i.i353")
+        (BlockEval.evalOperand_reg_of _ _ "%and.i3542.i.i353" (.vec 32 8 v.and2)
+          (lookupName_cons_self _ _ _))
+        (vecLanes_self
+          (ifThen90Values_and2_length a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59 h88len))
+        (by decide)]
+  rw [denoteCode_usubSat_b _ s "%elt.sat.i40.i.i355" (.reg "%109")
+        (.imm (.splat 32 8 0x60#8))
+        (a := v.byte42) (b := List.replicate 32 0x60#8)
+        (BlockEval.evalOperand_reg_of _ _ "%109" (.vec 32 8 v.byte42)
+          (by simp only [ift90Env2, ift90Env1, cells]; block_lk_cons))
+        (by simp only [evalOperand, Const.toValue, lanesOf, splatOf])]
+  rw [denoteCode_usubSat_b _ s "%elt.sat.i.i.i356" (.reg "%110")
+        (.imm (.splat 32 8 0x70#8))
+        (a := v.byte43) (b := List.replicate 32 0x70#8)
+        (BlockEval.evalOperand_reg_of _ _ "%110" (.vec 32 8 v.byte43)
+          (by simp only [ift90Env2, ift90Env1, cells]; block_lk_cons))
+        (by simp only [evalOperand, Const.toValue, lanesOf, splatOf])]
+  rw [denoteCode_binopVec s1BlocksCalls _ s "%or.i43.i.i357" .or 32 8
+        (.reg "%elt.sat.i.i.i356") (.reg "%elt.sat.i40.i.i355")
+        (va := .vec 32 8 (List.zipWith BitLanes.subsSat v.byte43 (List.replicate 32 0x70#8)))
+        (vb := .vec 32 8 (List.zipWith BitLanes.subsSat v.byte42 (List.replicate 32 0x60#8)))
+        (l1 := List.zipWith BitLanes.subsSat v.byte43 (List.replicate 32 0x70#8))
+        (l2 := List.zipWith BitLanes.subsSat v.byte42 (List.replicate 32 0x60#8))
+        (ls := v.orSat)
+        (BlockEval.evalOperand_reg_of _ _ "%elt.sat.i.i.i356"
+          (.vec 32 8 (List.zipWith BitLanes.subsSat v.byte43 (List.replicate 32 0x70#8)))
+          (lookupName_cons_self _ _ _))
+        (BlockEval.evalOperand_reg_of _ _ "%elt.sat.i40.i.i355"
+          (.vec 32 8 (List.zipWith BitLanes.subsSat v.byte42 (List.replicate 32 0x60#8)))
+          (by block_lk_cons))
+        (vecLanes_self
+          (by simp (config := { zetaDelta := true }) only [ifThen90Values, List.length_zipWith,
+                List.length_map, List.length_replicate, h43len]; decide))
+        (vecLanes_self
+          (by simp (config := { zetaDelta := true }) only [ifThen90Values, List.length_zipWith,
+                List.length_map, List.length_replicate, h42len]; decide))
+        (by rw [binopLanes_zipWith .or (fun x y => x ||| y) (fun x y => rfl)
+              (List.zipWith BitLanes.subsSat v.byte43 (List.replicate 32 0x70#8))
+              (List.zipWith BitLanes.subsSat v.byte42 (List.replicate 32 0x60#8))
+              (by simp (config := { zetaDelta := true }) only [ifThen90Values,
+                    List.length_zipWith, List.length_map, List.length_replicate, h42len, h43len])]
+            rfl)]
+  rw [denoteCode_vecBitcast s1BlocksCalls _ s "%or.i.i.i358" 32 8 4 64
+        (.reg "%or.i43.i.i357")
+        (BlockEval.evalOperand_reg_of _ _ "%or.i43.i.i357" (.vec 32 8 v.orSat)
+          (lookupName_cons_self _ _ _))
+        (vecLanes_self
+          (ifThen90Values_orSat_length a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59
+            h42len h43len))
+        (by decide)]
+  rw [denoteCode_binopVec s1BlocksCalls _ s "%and.i.i.i359" .and 4 64
+        (.reg "%or.i.i.i358") (.imm (.splat 4 64 0x8080808080808080#64))
+        (va := .vec 4 64 (bitcastVecLanes 64 4 v.orSat))
+        (vb := .vec 4 64 (List.replicate 4 0x8080808080808080#64))
+        (l1 := bitcastVecLanes 64 4 v.orSat)
+        (l2 := List.replicate 4 0x8080808080808080#64)
+        (ls := v.andMask)
+        (BlockEval.evalOperand_reg_of _ _ "%or.i.i.i358"
+          (.vec 4 64 (bitcastVecLanes 64 4 v.orSat))
+          (lookupName_cons_self _ _ _))
+        (by simp only [evalOperand, Const.toValue, lanesOf, splatOf])
+        (vecLanes_self (by simp [bitcastVecLanes, unpackLanes_length]))
+        (vecLanes_self (by decide))
+        (by rw [binopLanes_replicate .and (fun x y => x &&& y) (fun x y => rfl)
+              (bitcastVecLanes 64 4 v.orSat) 4
+              (by simp [bitcastVecLanes, unpackLanes_length])
+              0x8080808080808080#64]
+            rfl)]
+  rw [denoteCode_binopVec s1BlocksCalls _ s "%xor.i.i.i360" .xor 4 64
+        (.reg "%and.i.i.i359") (.reg "%and.i35.i.i354")
+        (va := .vec 4 64 v.andMask)
+        (vb := .vec 4 64 (bitcastVecLanes 64 4 v.and2))
+        (l1 := v.andMask) (l2 := bitcastVecLanes 64 4 v.and2) (ls := v.xor1)
+        (BlockEval.evalOperand_reg_of _ _ "%and.i.i.i359" (.vec 4 64 v.andMask)
+          (lookupName_cons_self _ _ _))
+        (BlockEval.evalOperand_reg_of _ _ "%and.i35.i.i354"
+          (.vec 4 64 (bitcastVecLanes 64 4 v.and2))
+          (by block_lk_cons))
+        (vecLanes_self
+          (ifThen90Values_andMask_length a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59))
+        (vecLanes_self (by simp [bitcastVecLanes, unpackLanes_length]))
+        (by rw [binopLanes_zipWith .xor (fun x y => x ^^^ y) (fun x y => rfl)
+              v.andMask (bitcastVecLanes 64 4 v.and2) (by
+                rw [ifThen90Values_andMask_length a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59]
+                simp [bitcastVecLanes, unpackLanes_length])]
+            rfl)]
+  rfl
+  all_goals (first
+    | exact BlockEval.evalOperand_reg_of _ _ "%88" (.vec 32 8 low88) h88
+    | decide)
+
+/-- **`if.then90`'s sixth segment.**  The second window's low table lookup at
+the body's second control, its joins, and the accumulator's joins through the
+carried word. -/
+theorem if_then90_seg6 (env : Env) (s : State) (a : Nat)
+    (low88 low97 : List (BitVec 8)) (u8k : List (BitVec 64))
+    (bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8)
+    (h97 : lookupName env "%97" = some (.vec 32 8 low97))
+    (hu : lookupName env "%u8k.1521" = some (.vec 4 64 u8k))
+    (h97len : low97.length = 32)
+    (h58len : bs58.length = 32) (h59len : bs59.length = 32)
+    (huk : u8k.length = 4) :
+    let v := ifThen90Values a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59
+    denoteCode s1BlocksCalls ifThen90Seg6 (stateAt (ift90Env5 env v) s) =
+      some (stateAt (ift90Env6 env v) s) := by
+  intro v
+  have htabFold : ifThen38TableLo =
+      [0x01#8, 0x01#8, 0x01#8, 0x01#8, 0x01#8, 0x01#8, 0x01#8, 0x01#8,
+       0xe6#8, 0xae#8, 0xba#8, 0xba#8, 0x01#8, 0x01#8, 0x01#8, 0x01#8,
+       0x01#8, 0x01#8, 0x01#8, 0x01#8, 0x01#8, 0x01#8, 0x01#8, 0x01#8,
+       0xe6#8, 0xae#8, 0xba#8, 0xba#8, 0x01#8, 0x01#8, 0x01#8, 0x01#8] := rfl
+  unfold ifThen90Seg6
+  simp only [if_then90Instrs, List.take, List.drop]
+  rw [← htabFold]
+  block_step_b
+  rw [denoteCode_binopVec s1BlocksCalls _ s "%and.i3542.i8.i365" .and 32 8
+        (.reg "%and.i3741.i7.i364") (.reg "%131")
+        (va := .vec 32 8 v.and3) (vb := .vec 32 8 (pshufbLanes ifThen38TableLo low97))
+        (l1 := v.and3) (l2 := pshufbLanes ifThen38TableLo low97) (ls := v.and4)
+        (BlockEval.evalOperand_reg_of _ _ "%and.i3741.i7.i364" (.vec 32 8 v.and3)
+          (by simp only [ift90Env5, ift90Env4, ift90Env3, ift90Env2, ift90Env1, cells];
+              block_lk_cons))
+        (BlockEval.evalOperand_reg_of _ _ "%131"
+          (.vec 32 8 (pshufbLanes ifThen38TableLo low97))
+          (lookupName_cons_self _ _ _))
+        (vecLanes_self (ifThen90Values_and3_length a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59))
+        (vecLanes_self (by rw [JsonS1MasksSteps.pshufbLanes_length]; omega))
+        (by rw [binopLanes_zipWith .and (fun x y => x &&& y) (fun x y => rfl)
+              v.and3 (pshufbLanes ifThen38TableLo low97) (by
+                rw [ifThen90Values_and3_length a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59,
+                  JsonS1MasksSteps.pshufbLanes_length]
+                omega)]
+            rfl)]
+  rw [denoteCode_vecBitcast s1BlocksCalls _ s "%and.i35.i9.i366" 32 8 4 64
+        (.reg "%and.i3542.i8.i365")
+        (BlockEval.evalOperand_reg_of _ _ "%and.i3542.i8.i365" (.vec 32 8 v.and4)
+          (lookupName_cons_self _ _ _))
+        (vecLanes_self
+          (ifThen90Values_and4_length a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59 h97len))
+        (by decide)]
+  rw [denoteCode_usubSat_b _ s "%elt.sat.i40.i10.i367" (.reg "%121")
+        (.imm (.splat 32 8 0x60#8))
+        (a := v.byte58) (b := List.replicate 32 0x60#8)
+        (BlockEval.evalOperand_reg_of _ _ "%121" (.vec 32 8 v.byte58)
+          (by simp only [ift90Env5, ift90Env4, ift90Env3, ift90Env2, ift90Env1, cells];
+              block_lk_cons))
+        (by simp only [evalOperand, Const.toValue, lanesOf, splatOf])]
+  rw [denoteCode_usubSat_b _ s "%elt.sat.i.i11.i368" (.reg "%122")
+        (.imm (.splat 32 8 0x70#8))
+        (a := v.byte59) (b := List.replicate 32 0x70#8)
+        (BlockEval.evalOperand_reg_of _ _ "%122" (.vec 32 8 v.byte59)
+          (by simp only [ift90Env5, ift90Env4, ift90Env3, ift90Env2, ift90Env1, cells];
+              block_lk_cons))
+        (by simp only [evalOperand, Const.toValue, lanesOf, splatOf])]
+  rw [denoteCode_binopVec s1BlocksCalls _ s "%or.i43.i12.i369" .or 32 8
+        (.reg "%elt.sat.i.i11.i368") (.reg "%elt.sat.i40.i10.i367")
+        (va := .vec 32 8 (List.zipWith BitLanes.subsSat v.byte59 (List.replicate 32 0x70#8)))
+        (vb := .vec 32 8 (List.zipWith BitLanes.subsSat v.byte58 (List.replicate 32 0x60#8)))
+        (l1 := List.zipWith BitLanes.subsSat v.byte59 (List.replicate 32 0x70#8))
+        (l2 := List.zipWith BitLanes.subsSat v.byte58 (List.replicate 32 0x60#8))
+        (ls := v.orSat2)
+        (BlockEval.evalOperand_reg_of _ _ "%elt.sat.i.i11.i368"
+          (.vec 32 8 (List.zipWith BitLanes.subsSat v.byte59 (List.replicate 32 0x70#8)))
+          (lookupName_cons_self _ _ _))
+        (BlockEval.evalOperand_reg_of _ _ "%elt.sat.i40.i10.i367"
+          (.vec 32 8 (List.zipWith BitLanes.subsSat v.byte58 (List.replicate 32 0x60#8)))
+          (by block_lk_cons))
+        (vecLanes_self
+          (by simp (config := { zetaDelta := true }) only [ifThen90Values, List.length_zipWith,
+                List.length_map, List.length_replicate, h59len]; decide))
+        (vecLanes_self
+          (by simp (config := { zetaDelta := true }) only [ifThen90Values, List.length_zipWith,
+                List.length_map, List.length_replicate, h58len]; decide))
+        (by rw [binopLanes_zipWith .or (fun x y => x ||| y) (fun x y => rfl)
+              (List.zipWith BitLanes.subsSat v.byte59 (List.replicate 32 0x70#8))
+              (List.zipWith BitLanes.subsSat v.byte58 (List.replicate 32 0x60#8))
+              (by simp (config := { zetaDelta := true }) only [ifThen90Values,
+                    List.length_zipWith, List.length_map, List.length_replicate, h58len, h59len])]
+            rfl)]
+  rw [denoteCode_vecBitcast s1BlocksCalls _ s "%or.i.i13.i370" 32 8 4 64
+        (.reg "%or.i43.i12.i369")
+        (BlockEval.evalOperand_reg_of _ _ "%or.i43.i12.i369" (.vec 32 8 v.orSat2)
+          (lookupName_cons_self _ _ _))
+        (vecLanes_self
+          (by simp (config := { zetaDelta := true }) only [ifThen90Values, List.length_zipWith,
+                List.length_map, List.length_replicate, h58len, h59len]; decide))
+        (by decide)]
+  rw [denoteCode_binopVec s1BlocksCalls _ s "%and.i.i14.i371" .and 4 64
+        (.reg "%or.i.i13.i370") (.imm (.splat 4 64 0x8080808080808080#64))
+        (va := .vec 4 64 (bitcastVecLanes 64 4 v.orSat2))
+        (vb := .vec 4 64 (List.replicate 4 0x8080808080808080#64))
+        (l1 := bitcastVecLanes 64 4 v.orSat2)
+        (l2 := List.replicate 4 0x8080808080808080#64)
+        (ls := v.andMask2)
+        (BlockEval.evalOperand_reg_of _ _ "%or.i.i13.i370"
+          (.vec 4 64 (bitcastVecLanes 64 4 v.orSat2))
+          (lookupName_cons_self _ _ _))
+        (by simp only [evalOperand, Const.toValue, lanesOf, splatOf])
+        (vecLanes_self (by simp [bitcastVecLanes, unpackLanes_length]))
+        (vecLanes_self (by decide))
+        (by rw [binopLanes_replicate .and (fun x y => x &&& y) (fun x y => rfl)
+              (bitcastVecLanes 64 4 v.orSat2) 4
+              (by simp [bitcastVecLanes, unpackLanes_length])
+              0x8080808080808080#64]
+            rfl)]
+  rw [denoteCode_binopVec s1BlocksCalls _ s "%xor.i.i15.i372" .xor 4 64
+        (.reg "%and.i.i14.i371") (.reg "%and.i35.i9.i366")
+        (va := .vec 4 64 v.andMask2)
+        (vb := .vec 4 64 (bitcastVecLanes 64 4 v.and4))
+        (l1 := v.andMask2) (l2 := bitcastVecLanes 64 4 v.and4) (ls := v.xor2)
+        (BlockEval.evalOperand_reg_of _ _ "%and.i.i14.i371" (.vec 4 64 v.andMask2)
+          (lookupName_cons_self _ _ _))
+        (BlockEval.evalOperand_reg_of _ _ "%and.i35.i9.i366"
+          (.vec 4 64 (bitcastVecLanes 64 4 v.and4))
+          (by block_lk_cons))
+        (vecLanes_self
+          (ifThen90Values_andMask2_length a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59))
+        (vecLanes_self (by simp [bitcastVecLanes, unpackLanes_length]))
+        (by rw [binopLanes_zipWith .xor (fun x y => x ^^^ y) (fun x y => rfl)
+              v.andMask2 (bitcastVecLanes 64 4 v.and4) (by
+                rw [ifThen90Values_andMask2_length a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59]
+                simp [bitcastVecLanes, unpackLanes_length])]
+            rfl)]
+  rw [denoteCode_binopVec s1BlocksCalls _ s "%132" .or 4 64
+        (.reg "%xor.i.i.i360") (.reg "%xor.i.i15.i372")
+        (va := .vec 4 64 v.xor1) (vb := .vec 4 64 v.xor2)
+        (l1 := v.xor1) (l2 := v.xor2) (ls := v.or132)
+        (BlockEval.evalOperand_reg_of _ _ "%xor.i.i.i360" (.vec 4 64 v.xor1)
+          (by simp only [ift90Env5, ift90Env4, ift90Env3, ift90Env2, ift90Env1, cells];
+              block_lk_cons))
+        (BlockEval.evalOperand_reg_of _ _ "%xor.i.i15.i372" (.vec 4 64 v.xor2)
+          (lookupName_cons_self _ _ _))
+        (vecLanes_self
+          (ifThen90Values_xor1_length a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59))
+        (vecLanes_self
+          (ifThen90Values_xor2_length a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59))
+        (by rw [binopLanes_zipWith .or (fun x y => x ||| y) (fun x y => rfl)
+              v.xor1 v.xor2 (by
+                rw [ifThen90Values_xor1_length a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59,
+                  ifThen90Values_xor2_length a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59])]
+            rfl)]
+  rw [denoteCode_binopVec s1BlocksCalls _ s "%or.i281" .or 4 64
+        (.reg "%132") (.reg "%u8k.1521")
+        (va := .vec 4 64 v.or132) (vb := .vec 4 64 u8k)
+        (l1 := v.or132) (l2 := u8k) (ls := v.or281)
+        (BlockEval.evalOperand_reg_of _ _ "%132" (.vec 4 64 v.or132)
+          (lookupName_cons_self _ _ _))
+        (BlockEval.evalOperand_reg_of _ _ "%u8k.1521" (.vec 4 64 u8k)
+          (by simp only [ift90Env5, ift90Env4, ift90Env3, ift90Env2, ift90Env1, cells];
+              block_lk_cons))
+        (vecLanes_self
+          (ifThen90Values_or132_length a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59))
+        (vecLanes_self huk)
+        (by rw [binopLanes_zipWith .or (fun x y => x ||| y) (fun x y => rfl)
+              v.or132 u8k (by
+                rw [ifThen90Values_or132_length a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59,
+                  huk])]
+            rfl)]
+  rfl
+  all_goals (first
+    | exact BlockEval.evalOperand_reg_of _ _ "%97" (.vec 32 8 low97)
+        (by simp only [ift90Env5, ift90Env4, ift90Env3, ift90Env2, ift90Env1, cells];
+            block_lk_cons)
+    | decide)
+
+/-- `if.then90`'s six segments, in order. -/
+theorem if_then90Instrs_split :
+    if_then90Instrs =
+      ifThen90Seg1 ++ (ifThen90Seg2 ++ (ifThen90Seg3 ++
+        (ifThen90Seg4 ++ (ifThen90Seg5 ++ ifThen90Seg6)))) := rfl
+
+/-- **`if.then90`'s run.**  The three windows below the pointer and the first
+window's class masks hand their environment to the three windows above the
+pointer, whose class masks and the row's second control leave the accumulator's
+word. -/
+theorem if_then90_denote (env : Env) (s : State) (a : Nat)
+    (low88 low97 : List (BitVec 8)) (u8k : List (BitVec 64))
+    (bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8)
+    (hadd : lookupName env "%add.ptr57" = some (.ptr a))
+    (h1 : 1 ≤ a) (h41 : readBytes s.mem (a - 1) 32 = some bs41)
+    (h2 : 2 ≤ a) (h42 : readBytes s.mem (a - 2) 32 = some bs42)
+    (h3 : 3 ≤ a) (h43 : readBytes s.mem (a - 3) 32 = some bs43)
+    (h88 : lookupName env "%88" = some (.vec 32 8 low88))
+    (h88len : low88.length = 32)
+    (h97 : lookupName env "%97" = some (.vec 32 8 low97))
+    (h97len : low97.length = 32)
+    (hu : lookupName env "%u8k.1521" = some (.vec 4 64 u8k))
+    (huk : u8k.length = 4)
+    (h57 : readBytes s.mem
+      (a + ((0x000000000000001f#64).signExtend 64).toNat) 32 = some bs57)
+    (h58 : readBytes s.mem
+      (a + ((0x000000000000001e#64).signExtend 64).toNat) 32 = some bs58)
+    (h59 : readBytes s.mem
+      (a + ((0x000000000000001d#64).signExtend 64).toNat) 32 = some bs59) :
+    let v := ifThen90Values a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59
+    denoteCode s1BlocksCalls if_then90Instrs (stateAt env s) =
+      some (stateAt (ifThen90Out env v) s) := by
+  intro v
+  have h42len : bs42.length = 32 :=
+    LeanLLVM.Refinement.JsonEntrySteps.readBytes_length s.mem (a - 2) 32 h42
+  have h43len : bs43.length = 32 :=
+    LeanLLVM.Refinement.JsonEntrySteps.readBytes_length s.mem (a - 3) 32 h43
+  have h58len : bs58.length = 32 :=
+    LeanLLVM.Refinement.JsonEntrySteps.readBytes_length s.mem
+      (a + ((0x000000000000001e#64).signExtend 64).toNat) 32 h58
+  have h59len : bs59.length = 32 :=
+    LeanLLVM.Refinement.JsonEntrySteps.readBytes_length s.mem
+      (a + ((0x000000000000001d#64).signExtend 64).toNat) 32 h59
+  have hs1 := if_then90_seg1 env s a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59
+    hadd h1 h41 h2 h42 h3 h43
+  have hs2 := if_then90_seg2 env s a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59
+  have hs3 := if_then90_seg3 env s a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59
+    h88 h88len h42len h43len
+  have hs4 := if_then90_seg4 env s a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59
+    h57 h58 h59 (lookupName_ift90Env3_addptr57 env v hadd)
+  have hs5 := if_then90_seg5 env s a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59
+  have hs6 := if_then90_seg6 env s a low88 low97 u8k bs41 bs42 bs43 bs57 bs58 bs59
+    h97 hu h97len h58len h59len huk
+  calc denoteCode s1BlocksCalls if_then90Instrs (stateAt env s)
+      = denoteCode s1BlocksCalls
+          (ifThen90Seg1 ++ (ifThen90Seg2 ++ (ifThen90Seg3 ++
+            (ifThen90Seg4 ++ (ifThen90Seg5 ++ ifThen90Seg6)))))
+          (stateAt env s) := by rw [if_then90Instrs_split]
+    _ = denoteCode s1BlocksCalls
+          (ifThen90Seg2 ++ (ifThen90Seg3 ++ (ifThen90Seg4 ++
+            (ifThen90Seg5 ++ ifThen90Seg6))))
+          (stateAt (ift90Env1 env v) s) := denoteCode_append_apply hs1 (by rfl)
+    _ = denoteCode s1BlocksCalls
+          (ifThen90Seg3 ++ (ifThen90Seg4 ++ (ifThen90Seg5 ++ ifThen90Seg6)))
+          (stateAt (ift90Env2 env v) s) := denoteCode_append_apply hs2 (by rfl)
+    _ = denoteCode s1BlocksCalls
+          (ifThen90Seg4 ++ (ifThen90Seg5 ++ ifThen90Seg6))
+          (stateAt (ift90Env3 env v) s) := denoteCode_append_apply hs3 (by rfl)
+    _ = denoteCode s1BlocksCalls (ifThen90Seg5 ++ ifThen90Seg6)
+          (stateAt (ift90Env4 env v) s) := denoteCode_append_apply hs4 (by rfl)
+    _ = denoteCode s1BlocksCalls ifThen90Seg6
+          (stateAt (ift90Env5 env v) s) := denoteCode_append_apply hs5 (by rfl)
+    _ = some (stateAt (ifThen90Out env v) s) := hs6
+
+/-- **`if.then90`'s step.**  The arm's terminator is an unconditional branch to
+the accumulator merge. -/
+theorem if_then90_step (env : Env) (s : State) (v : IfThen90Values)
+    (hpc : s.pc = "if.then90")
+    (hout : denoteCode s1BlocksCalls if_then90Instrs (stateAt env s) =
+      some (stateAt (ifThen90Out env v) s)) :
+    step s1BlocksCalls s1BlocksFunction (stateAt env s) =
+      .jump (stateAt (ifThen90Out env v)
+        { s with pc := "if.end93", pre := some "if.then90" }) := by
+  have hfind : s1BlocksFunction.findBlock (stateAt env s).pc = some if_then90Block := by
+    rw [show (stateAt env s).pc = s.pc from rfl, hpc]
+    exact LeanLLVM.Refinement.JsonS1BlocksIR.findBlock_if_then90
+  rw [step_at hfind hout]
+  rw [show if_then90Block.term = if_then90Term from rfl]
+  simp only [if_then90Term]
+  rw [execTerm_br]
+  simp only [stateAt, hpc]
+
+/-! ### `if.then96` — the escape arm
+
+The arm joins the loop's two words, packs the byte comparison against `0x20` into
+a lane mask and hands the escape unit its seven arguments.  The call is the
+caller's selection, so the arm's run and step are stated at `s1BlocksCallsEsc`. -/
+
+/-- The packed lane mask the escape call receives. -/
+def ifThen96Mask (a2 a3 : List (BitVec 64)) : BitVec 64 :=
+  BitVec.ofNat 64 (lanesToNat
+    (icmpLanes .ult (bitcastVecLanes 8 64 (a2 ++ a3))
+      (List.replicate 64 0x20#8)))
+
+/-- The four cells `if.then96` binds before the call. -/
+def ifThen96Out (env : Env) (a2 a3 : List (BitVec 64)) : Env :=
+  cells [("%or.i379", .int 64 (ifThen96Mask a2 a3)),
+         ("%135", .vec 64 1
+           (icmpLanes .ult (bitcastVecLanes 8 64 (a2 ++ a3))
+             (List.replicate 64 0x20#8))),
+         ("%134", .vec 64 8 (bitcastVecLanes 8 64 (a2 ++ a3))),
+         ("%133", .vec 8 64 (a2 ++ a3))] env
+
+/-- **`if.then96`'s run.**  The join, the byte comparison, the packed lane mask
+and the escape call, which leaves the caller's memory and cursor at `r`. -/
+theorem if_then96_denote (calls : Calls) (env : Env) (s : State)
+    (a2 a3 : List (BitVec 64)) (h2len : a2.length = 4) (h3len : a3.length = 4)
+    (or14 xs i : BitVec 64) (xp nxp xcarry : Nat) (r : CallOutcome)
+    (h2 : lookupName env "%73" = some (.vec 4 64 a2))
+    (h3 : lookupName env "%74" = some (.vec 4 64 a3))
+    (hor : lookupName env "%or14.i303" = some (.int 64 or14))
+    (hxs : lookupName env "%xor.i347" = some (.int 64 xs))
+    (hi : lookupName env "%i.2523" = some (.int 64 i))
+    (hxp : lookupName env "%xp" = some (.ptr xp))
+    (hnxp : lookupName env "%nxp" = some (.ptr nxp))
+    (hxcarry : lookupName env "%xcarry" = some (.ptr xcarry))
+    (hc : calls "leanllvm_json_escape_list"
+      [.int 64 or14, .int 64 (ifThen96Mask a2 a3), .int 64 xs, .int 64 i,
+       .ptr xp, .ptr nxp, .ptr xcarry] s.mem s.next = some r) :
+    denoteCode calls if_then96Instrs (stateAt env s) =
+      some (stateAt (ifThen96Out env a2 a3)
+        { s with mem := r.mem, next := r.next }) := by
+  simp only [if_then96Instrs]
+  rw [denoteCode_shuffleVec (calls := calls) (env := env) (s := s) (d := "%133")
+      (n := 4) (w := 64) (a := .reg "%73") (b := .reg "%74")
+      (mask := [0, 1, 2, 3, 4, 5, 6, 7]) (l1 := a2) (l2 := a3) (ls := a2 ++ a3)
+      (ha := evalOperand_reg_of env s "%73" (.vec 4 64 a2) h2)
+      (hb := evalOperand_reg_of env s "%74" (.vec 4 64 a3) h3)
+      (h1 := vecLanes_self h2len) (h2 := vecLanes_self h3len)
+      (hm := mapM_pick8 h2len h3len)]
+  try simp only [List.length_cons, List.length_nil]
+  rw [denoteCode_vecBitcast (calls := calls)
+      (env := ("%133", .vec 8 64 (a2 ++ a3)) :: env) (s := s) (d := "%134")
+      (n := 8) (w := 64) (m := 64) (jw := 8) (v := .reg "%133")
+      (vv := .vec 8 64 (a2 ++ a3)) (lanes := a2 ++ a3)
+      (hv := evalOperand_reg_of _ _ _ _ (by block_lk))
+      (hl := vecLanes_self (by simp [List.length_append, h2len, h3len]))
+      (hwidth := by decide)]
+  try simp only [List.length_cons, List.length_nil]
+  rw [denoteCode_icmpVec (calls := calls)
+      (env := ("%134", .vec 64 8 (bitcastVecLanes 8 64 (a2 ++ a3)))
+        :: ("%133", .vec 8 64 (a2 ++ a3)) :: env) (s := s) (d := "%135")
+      (pred := .ult) (n := 64) (w := 8) (a := .reg "%134")
+      (b := .imm (.splat 64 8 0x20#8))
+      (va := .vec 64 8 (bitcastVecLanes 8 64 (a2 ++ a3)))
+      (vb := .vec 64 8 (List.replicate 64 0x20#8))
+      (l1 := bitcastVecLanes 8 64 (a2 ++ a3))
+      (l2 := List.replicate 64 0x20#8)
+      (ha := evalOperand_reg_of _ _ _ _ (by block_lk))
+      (hb := by simp [evalOperand, Const.toValue])
+      (h1 := vecLanes_self (by simp [bitcastVecLanes, unpackLanes_length]))
+      (h2 := vecLanes_self (by simp))]
+  try simp only [List.length_cons, List.length_nil]
+  rw [denoteCode_bitcastMask (calls := calls)
+      (env := ("%135", .vec 64 1
+          (icmpLanes .ult (bitcastVecLanes 8 64 (a2 ++ a3))
+            (List.replicate 64 0x20#8)))
+        :: ("%134", .vec 64 8 (bitcastVecLanes 8 64 (a2 ++ a3)))
+        :: ("%133", .vec 8 64 (a2 ++ a3)) :: env) (s := s) (d := "%or.i379")
+      (n := 64) (v := .reg "%135")
+      (l := icmpLanes .ult (bitcastVecLanes 8 64 (a2 ++ a3))
+        (List.replicate 64 0x20#8))
+      (hv := evalOperand_reg_of _ _ _ _ (by block_lk))
+      (hlen := by simp [icmpLanes, bitcastVecLanes, List.length_zip, List.length_map,
+        unpackLanes_length])]
+  try simp only [List.length_cons, List.length_nil]
+  rw [denoteCode_callVoid7 (calls := calls)
+      (env := ("%or.i379", .int 64 (BitVec.ofNat 64
+          (lanesToNat (icmpLanes .ult (bitcastVecLanes 8 64 (a2 ++ a3))
+            (List.replicate 64 0x20#8)))))
+        :: ("%135", .vec 64 1
+          (icmpLanes .ult (bitcastVecLanes 8 64 (a2 ++ a3))
+            (List.replicate 64 0x20#8)))
+        :: ("%134", .vec 64 8 (bitcastVecLanes 8 64 (a2 ++ a3)))
+        :: ("%133", .vec 8 64 (a2 ++ a3)) :: env)
+      (s := s) (callee := "leanllvm_json_escape_list")
+      (o1 := .reg "%or14.i303") (o2 := .reg "%or.i379") (o3 := .reg "%xor.i347")
+      (o4 := .reg "%i.2523") (o5 := .reg "%xp") (o6 := .reg "%nxp")
+      (o7 := .reg "%xcarry")
+      (v1 := .int 64 or14) (v2 := .int 64 (ifThen96Mask a2 a3))
+      (v3 := .int 64 xs) (v4 := .int 64 i)
+      (v5 := .ptr xp) (v6 := .ptr nxp) (v7 := .ptr xcarry) (r := r)
+      (h1 := evalOperand_reg_of _ _ _ _ (by block_lk))
+      (h2 := evalOperand_reg_of _ _ _ _ (by block_lk; rfl))
+      (h3 := evalOperand_reg_of _ _ _ _ (by block_lk))
+      (h4 := evalOperand_reg_of _ _ _ _ (by block_lk))
+      (h5 := evalOperand_reg_of _ _ _ _ (by block_lk))
+      (h6 := evalOperand_reg_of _ _ _ _ (by block_lk))
+      (h7 := evalOperand_reg_of _ _ _ _ (by block_lk))
+      (hc := hc)]
+  try simp only [List.length_cons, List.length_nil]
+  simp only [ifThen96Out, cells]
+  rfl
+
+/-- **`if.then96`'s step, at the caller's escape entry.**  The arm's computation
+and its one call; the block hands `if.end98` the escape unit's memory and
+cursor. -/
+theorem if_then96_step (esc : Calls) (env : Env) (s : State)
+    (a2 a3 : List (BitVec 64)) (h2len : a2.length = 4) (h3len : a3.length = 4)
+    (or14 xs i : BitVec 64) (xp nxp xcarry : Nat) (r : CallOutcome)
+    (hpc : s.pc = "if.then96")
+    (h2 : lookupName env "%73" = some (.vec 4 64 a2))
+    (h3 : lookupName env "%74" = some (.vec 4 64 a3))
+    (hor : lookupName env "%or14.i303" = some (.int 64 or14))
+    (hxs : lookupName env "%xor.i347" = some (.int 64 xs))
+    (hi : lookupName env "%i.2523" = some (.int 64 i))
+    (hxp : lookupName env "%xp" = some (.ptr xp))
+    (hnxp : lookupName env "%nxp" = some (.ptr nxp))
+    (hxcarry : lookupName env "%xcarry" = some (.ptr xcarry))
+    (hc : esc escapeListCallee
+      [.int 64 or14, .int 64 (ifThen96Mask a2 a3), .int 64 xs, .int 64 i,
+       .ptr xp, .ptr nxp, .ptr xcarry] s.mem s.next = some r) :
+    step (s1BlocksCallsEsc esc) s1BlocksFunction (stateAt env s) =
+      .jump (stateAt (ifThen96Out env a2 a3)
+        { s with pc := "if.end98", pre := some "if.then96", mem := r.mem, next := r.next }) := by
+  have hfind : s1BlocksFunction.findBlock (stateAt env s).pc = some if_then96Block := by
+    rw [show (stateAt env s).pc = s.pc from rfl, hpc]
+    exact LeanLLVM.Refinement.JsonS1BlocksIR.findBlock_if_then96
+  have hc' : s1BlocksCallsEsc esc "leanllvm_json_escape_list"
+      [.int 64 or14, .int 64 (ifThen96Mask a2 a3), .int 64 xs, .int 64 i,
+       .ptr xp, .ptr nxp, .ptr xcarry] s.mem s.next = some r := by
+    rw [show "leanllvm_json_escape_list" = escapeListCallee from rfl,
+      s1BlocksCallsEsc_escape]
+    exact hc
+  rw [step_at hfind (if_then96_denote (s1BlocksCallsEsc esc) env s a2 a3 h2len h3len
+    or14 xs i xp nxp xcarry r h2 h3 hor hxs hi hxp hnxp hxcarry hc')]
+  rw [show if_then96Block.term = if_then96Term from rfl]
+  simp only [if_then96Term]
+  rw [execTerm_br]
+  simp only [stateAt, hpc]
 
 /-! ### Axiom footprints
 
@@ -8766,7 +9465,13 @@ intrinsic arms. -/
 #print axioms lookupName_ift90Env3_addptr57
 #print axioms if_then90_seg1
 #print axioms if_then90_seg2
+#print axioms if_then90_seg3
 #print axioms if_then90_seg4
 #print axioms if_then90_seg5
+#print axioms if_then90_seg6
+#print axioms if_then90_denote
+#print axioms if_then90_step
+#print axioms if_then96_denote
+#print axioms if_then96_step
 
 end LeanLLVM.Refinement.JsonS1BlocksRefine
