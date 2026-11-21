@@ -67,6 +67,7 @@ import LeanLLVM.Refinement.JsonS1BlocksPeelWord
 import LeanLLVM.Refinement.JsonS1BlocksPeelWindows
 import LeanLLVM.Refinement.JsonS1BlocksSpecWindow
 import LeanLLVM.Refinement.JsonS1BlocksEscapeRun
+import LeanLLVM.Refinement.JsonS1BlocksFinal
 import LeanLLVM.Refinement.JsonS1BlocksShort
 import LeanLLVM.Refinement.JsonEntryIR
 import LeanLLVM.Refinement.JsonEntrySteps
