@@ -89,8 +89,12 @@ The three residuals `ParserRows` names, at their own vocabulary:
   entry index and the token count separately (`WalkTracePrefixAt`), take the arm's
   two readings of the stream (`close = lane k + 1`, the extent
   `close - idxprom - 1`) as the record's fields, and step the entry index by two at
-  each string.  The escape unit's raw-body and arena-slice read-backs stay the arm's
-  premise, as the string record's statement says.  What remains is outside the row: the
+  each string.  The plain row derives the raw-body read-back from the document's
+  bytes at the token's span; the arena row takes the decoded length and arena base as
+  parameters and the arena-slice read-back at the token's span (its literal instance
+  proves both from `stringDocumentArena`).  A read-back quantified over every span is
+  not a premise that can hold: `bodyCodePoints` returns `some` at spans that are not
+  tokens, so the earlier all-spans form was false.  What remains is outside the row: the
   payload arms' `WalkSegment`s (the dispatch layer composes them) and the closers' and
   the separators' walk-level routes (`WalkRevolution` is stated and the openers
   inhabit it);
@@ -636,7 +640,8 @@ theorem headTokenRecord_string_plain {m0 : Mem} {G : WalkGeom m0} {t : Tape}
     {key : Bool} {len : Nat}
     (hspan : ∀ sp : Span, t.tokens[C.k]? = some (.string sp) →
       sp.stop = sp.start + 2 + len)
-    (hbody : ∀ (sp : Span) (cs : List Nat), bodyCodePoints G.bs sp = some cs →
+    (hbody : ∀ sp : Span, t.tokens[C.k]? = some (.string sp) → ∀ cs : List Nat,
+      bodyCodePoints G.bs sp = some cs →
       escapeCodePoints ((G.bs.drop (sp.start + 1)).take len) = some cs) :
     ∃ (sp : Span) (cs : List Nat), t.tokens[C.k]? = some (.string sp) ∧
       bodyCodePoints G.bs sp = some cs ∧
@@ -645,7 +650,7 @@ theorem headTokenRecord_string_plain {m0 : Mem} {G : WalkGeom m0} {t : Tape}
   obtain ⟨cs, hcode⟩ := tape_bodyCodePoints hdec hal.input (List.mem_of_getElem? htok)
   refine ⟨sp, cs, htok, hcode, ?_⟩
   exact tokenRecord_string_plain_of_tape hdec hal.input (List.mem_of_getElem? htok)
-    (hspan sp htok) hcode (hbody sp cs hcode)
+    (hspan sp htok) hcode (hbody sp htok cs hcode)
 
 /-- **A string's record at the loop head, the body in the arena.**  The span's code
 points are the parser's; the arm supplies that the arena's slice at its offset reads
@@ -657,7 +662,8 @@ theorem headTokenRecord_string_arena {m0 : Mem} {G : WalkGeom m0} {t : Tape}
     {key : Bool} {len off : Nat}
     (hlen : ∀ sp : Span, t.tokens[C.k]? = some (.string sp) → sp.start + 2 ≤ sp.stop)
     (hoff : off < 2 ^ 63)
-    (harena : ∀ (sp : Span) (cs : List Nat), bodyCodePoints G.bs sp = some cs →
+    (harena : ∀ sp : Span, t.tokens[C.k]? = some (.string sp) → ∀ cs : List Nat,
+      bodyCodePoints G.bs sp = some cs →
       escapeCodePoints ((arena.drop off).take len) = some cs) :
     ∃ (sp : Span) (cs : List Nat), t.tokens[C.k]? = some (.string sp) ∧
       bodyCodePoints G.bs sp = some cs ∧
@@ -666,7 +672,7 @@ theorem headTokenRecord_string_arena {m0 : Mem} {G : WalkGeom m0} {t : Tape}
   obtain ⟨cs, hcode⟩ := tape_bodyCodePoints hdec hal.input (List.mem_of_getElem? htok)
   refine ⟨sp, cs, htok, hcode, ?_⟩
   exact tokenRecord_string_arena_of_tape hdec hal.input (List.mem_of_getElem? htok)
-    (hlen sp htok) hoff hcode (harena sp cs hcode)
+    (hlen sp htok) hoff hcode (harena sp htok cs hcode)
 
 /-! ### The openers' rows, end to end
 
@@ -1874,7 +1880,8 @@ theorem payloadStep_string_plain {m0 : Mem} {G : WalkGeom m0} {t : Tape}
     {key : Bool} {len : Nat}
     (hspan : ∀ sp' : Span, t.tokens[C.k]? = some (.string sp') →
       sp'.stop = sp'.start + 2 + len)
-    (hbody : ∀ (sp' : Span) (cs : List Nat), bodyCodePoints G.bs sp' = some cs →
+    (hbody : ∀ sp' : Span, t.tokens[C.k]? = some (.string sp') → ∀ cs : List Nat,
+      bodyCodePoints G.bs sp' = some cs →
       escapeCodePoints ((G.bs.drop (sp'.start + 1)).take len) = some cs)
     (hpre : WalkTracePrefix G arena t C)
     (hk : Cd.k = C.k)
@@ -1900,7 +1907,8 @@ theorem payloadStep_string_arena {m0 : Mem} {G : WalkGeom m0} {t : Tape}
     {key : Bool} {len off : Nat}
     (hlen : ∀ sp : Span, t.tokens[C.k]? = some (.string sp) → sp.start + 2 ≤ sp.stop)
     (hoff : off < 2 ^ 63)
-    (harena : ∀ (sp : Span) (cs : List Nat), bodyCodePoints G.bs sp = some cs →
+    (harena : ∀ sp : Span, t.tokens[C.k]? = some (.string sp) → ∀ cs : List Nat,
+      bodyCodePoints G.bs sp = some cs →
       escapeCodePoints ((arena.drop off).take len) = some cs)
     (hpre : WalkTracePrefix G arena t C)
     (hk : Cd.k = C.k)
@@ -1942,7 +1950,8 @@ theorem payloadRevolution_string_plain {m0 : Mem} {G : WalkGeom m0} {t : Tape}
     {key : Bool} {len : Nat}
     (hspan : ∀ sp' : Span, t.tokens[C.k]? = some (.string sp') →
       sp'.stop = sp'.start + 2 + len)
-    (hbody : ∀ (sp' : Span) (cs : List Nat), bodyCodePoints G.bs sp' = some cs →
+    (hbody : ∀ sp' : Span, t.tokens[C.k]? = some (.string sp') → ∀ cs : List Nat,
+      bodyCodePoints G.bs sp' = some cs →
       escapeCodePoints ((G.bs.drop (sp'.start + 1)).take len) = some cs)
     (hpre : WalkTracePrefix G arena t C)
     (hseg : WalkScope.WalkSegment (stage2Calls stage2SubCalls) G C s Cd sd p)
@@ -1964,7 +1973,8 @@ theorem payloadRevolution_string_arena {m0 : Mem} {G : WalkGeom m0} {t : Tape}
     {key : Bool} {len off : Nat}
     (hlen : ∀ sp : Span, t.tokens[C.k]? = some (.string sp) → sp.start + 2 ≤ sp.stop)
     (hoff : off < 2 ^ 63)
-    (harena : ∀ (sp : Span) (cs : List Nat), bodyCodePoints G.bs sp = some cs →
+    (harena : ∀ sp : Span, t.tokens[C.k]? = some (.string sp) → ∀ cs : List Nat,
+      bodyCodePoints G.bs sp = some cs →
       escapeCodePoints ((arena.drop off).take len) = some cs)
     (hpre : WalkTracePrefix G arena t C)
     (hseg : WalkScope.WalkSegment (stage2Calls stage2SubCalls) G C s Cd sd p)
@@ -1985,8 +1995,10 @@ theorem fixes the document's bytes and the entry stream's positions, derives eve
 the containers and the payloads read, proves the numeral's decomposition of its own span
 (`decimalOne`, `decimalTwo`), and leaves exactly what the row cannot supply: the tape's
 acceptance, the walk's alignment, the opener's and the separator's carries, the two
-heads' invariants, the two arms' `WalkSegment`s with the merge carries they end at, and —
-for a string — the escape unit's raw-body and arena-slice read-backs. -/
+heads' invariants, the two arms' `WalkSegment`s with the merge carries they end at.
+The plain string row derives its raw-body read-back from the document's bytes at the
+token's span; the arena row's slice read-back is a premise at that span, and its
+literal instance proves it from `stringDocumentArena`. -/
 
 /-- The document `[1,2]`'s bytes. -/
 def numberDocumentBytes : List UInt8 := [0x5B, 0x31, 0x2C, 0x32, 0x5D]
@@ -1994,6 +2006,11 @@ def numberDocumentBytes : List UInt8 := [0x5B, 0x31, 0x2C, 0x32, 0x5D]
 /-- The document `["ab","cd"]`'s bytes. -/
 def stringDocumentBytes : List UInt8 :=
   [0x5B, 0x22, 0x61, 0x62, 0x22, 0x2C, 0x22, 0x63, 0x64, 0x22, 0x5D]
+
+/-- The document `["ab","cd"]`'s arena contents: its two decoded bodies, `"ab"` then
+`"cd"`, at the offsets the literal record names.  Either body would sit here if the
+walk had decoded it; this is the list the literal arena row's slices read. -/
+def stringDocumentArena : List UInt8 := [0x61, 0x62, 0x63, 0x64]
 
 /-- `1`'s decomposition: a one-digit `int` with no fraction and no exponent. -/
 def decimalOne : Decimal := ⟨false, ByteString.cons 0x31 ByteString.empty, none, none⟩
@@ -2261,7 +2278,12 @@ theorem WalkTracePrefixAt.emit_two {m0 : Mem} {G : WalkGeom m0} {arena : List UI
 /-- **The document `["ab","cd"]`'s row, its payloads plain, at the staged stream.**
 The carries are at entries `0, 1, 3, 4, 6, 7` and the token counts `0, 1, 2, 3, 4, 5`;
 each string's record names its body by the arm's own readings, `close - start - 1` for
-the length and `start + 1` for the offset. -/
+the length and `start + 1` for the offset.
+
+Both raw-body read-backs are derived from `hbs` at the tokens' spans (`⟨1,5⟩` and
+`⟨6,10⟩`), so the row has no payload premise.  The earlier statement took them
+quantified over every span, which `bodyCodePoints` makes false at spans that are not
+tokens: `⟨3,5⟩` reads `some []` while the document's two bytes from `4` are `[34,44]`. -/
 theorem row_stringPlainDocument {m0 : Mem} {G : WalkGeom m0} {t : Tape}
     {arena : List UInt8} {C₀ C₁ C₂ C₃ C₄ C₅ Cd₁ Cd₂ : WalkCarry G}
     {v : JSON.Value}
@@ -2277,18 +2299,12 @@ theorem row_stringPlainDocument {m0 : Mem} {G : WalkGeom m0} {t : Tape}
         (plainSpan (entryPos G C₁.k + 1))])
     (hkc₁ : Cd₁.k = C₁.k)
     (hk₂ : C₂.k = Cd₁.k + 2) (hev₂ : C₂.events = Cd₁.events)
-    (hbody₁ : ∀ (sp : Span) (cs : List Nat), bodyCodePoints G.bs sp = some cs →
-      escapeCodePoints ((G.bs.drop (sp.start + 1)).take
-        (entryPos G (C₁.k + 1) - entryPos G C₁.k - 1)) = some cs)
     (hk₃ : C₃.k = C₂.k + 1) (hev₃ : C₃.events = C₂.events)
     (hevc₂ : Cd₂.events = C₃.events ++
       [EventRecord.str false (entryPos G (C₃.k + 1) - entryPos G C₃.k - 1)
         (plainSpan (entryPos G C₃.k + 1))])
     (hkc₂ : Cd₂.k = C₃.k)
     (hk₄ : C₄.k = Cd₂.k + 2) (hev₄ : C₄.events = Cd₂.events)
-    (hbody₂ : ∀ (sp : Span) (cs : List Nat), bodyCodePoints G.bs sp = some cs →
-      escapeCodePoints ((G.bs.drop (sp.start + 1)).take
-        (entryPos G (C₃.k + 1) - entryPos G C₃.k - 1)) = some cs)
     (hk₅ : C₅.k = C₄.k + 1) (hev₅ : C₅.events = C₄.events ++ [EventRecord.tag 4]) :
     WalkTraceRow G.bs arena t
       ([EventRecord.tag 3, EventRecord.str false 2 (plainSpan 2),
@@ -2312,6 +2328,30 @@ theorem row_stringPlainDocument {m0 : Mem} {G : WalkGeom m0} {t : Tape}
     simp [entryPos, hk, hent]
   have hlen₂ : entryPos G (C₃.k + 1) - entryPos G C₃.k - 1 = 2 := by
     rw [hp₃', hp₃]
+  -- the raw-body read-backs, at the token's own span: `hbs` fixes the bytes, so the
+  -- document's scan and its body slice are both decided.  (The earlier statement
+  -- quantified them over every span, which is false at spans that are not tokens —
+  -- `⟨3,5⟩` reads `some []` against the two bytes from `4`, `[34,44]`.)
+  have hbody₁ : ∀ cs : List Nat, bodyCodePoints G.bs ⟨1, 5⟩ = some cs →
+      escapeCodePoints ((G.bs.drop 2).take 2) = some cs := by
+    intro cs hcs
+    rw [hbs] at hcs
+    have h : bodyCodePoints stringDocumentBytes ⟨1, 5⟩ = some [97, 98] := by decide
+    rw [h] at hcs
+    have hcs' : ([97, 98] : List Nat) = cs := Option.some.inj hcs
+    subst cs
+    rw [hbs]
+    decide
+  have hbody₂ : ∀ cs : List Nat, bodyCodePoints G.bs ⟨6, 10⟩ = some cs →
+      escapeCodePoints ((G.bs.drop 7).take 2) = some cs := by
+    intro cs hcs
+    rw [hbs] at hcs
+    have h : bodyCodePoints stringDocumentBytes ⟨6, 10⟩ = some [99, 100] := by decide
+    rw [h] at hcs
+    have hcs' : ([99, 100] : List Nat) = cs := Option.some.inj hcs
+    subst cs
+    rw [hbs]
+    decide
   -- the seed, and the opener's step
   have hs₀ : WalkTracePrefixAt G arena t C₀ 0 :=
     (WalkTracePrefixAt.of_prefix hpre₀).congr hk₀.symm rfl
@@ -2330,7 +2370,8 @@ theorem row_stringPlainDocument {m0 : Mem} {G : WalkGeom m0} {t : Tape}
     refine tokenRecord_string_plain_of_tape (s := ⟨1, 5⟩) (key := false) (arena := arena)
       (len := entryPos G (C₁.k + 1) - entryPos G C₁.k - 1) hdec hal.input hmem₁ ?_ hcode₁ ?_
     · rw [hp₁', hp₁]
-    · exact hbody₁ ⟨1, 5⟩ cs₁ hcode₁
+    · rw [hlen₁]
+      exact hbody₁ cs₁ hcode₁
   have hevc₁' : Cd₁.events = C₁.events ++
       [EventRecord.str false (entryPos G (C₁.k + 1) - entryPos G C₁.k - 1) (plainSpan 2)] := by
     rw [hevc₁, hp₁]
@@ -2350,7 +2391,8 @@ theorem row_stringPlainDocument {m0 : Mem} {G : WalkGeom m0} {t : Tape}
     refine tokenRecord_string_plain_of_tape (s := ⟨6, 10⟩) (key := false) (arena := arena)
       (len := entryPos G (C₃.k + 1) - entryPos G C₃.k - 1) hdec hal.input hmem₂ ?_ hcode₂ ?_
     · rw [hp₃', hp₃]
-    · exact hbody₂ ⟨6, 10⟩ cs₂ hcode₂
+    · rw [hlen₂]
+      exact hbody₂ cs₂ hcode₂
   have hevc₂' : Cd₂.events = C₃.events ++
       [EventRecord.str false (entryPos G (C₃.k + 1) - entryPos G C₃.k - 1) (plainSpan 7)] := by
     rw [hevc₂, hp₃]
@@ -2375,12 +2417,38 @@ theorem row_stringPlainDocument {m0 : Mem} {G : WalkGeom m0} {t : Tape}
   rw [hC₅] at hrow
   exact hrow
 
+set_option linter.unusedVariables false in
 /-- **The document `["ab","cd"]`'s row, its payloads in the arena, at the staged
-stream.**  The two offsets are the walk's — the first body at `0`, the second at `2` —
-and the lengths are the arm's readings of the entry stream, as in the plain form. -/
+stream.**  The records' lengths and offsets are the arms' own readings — the decoded
+length `%outn.i` receives and the arena base `%z.val36` (`f.A.toNat`) — so the row
+takes them as parameters `L₁`/`O₁` and `L₂`/`O₂` beside the escape unit's two
+read-backs: the arena slice at the offset reads as the token's code points, and the
+offset is below `2 ^ 63`.  Those are the counterparts of the plain row's raw-body
+read-back and the number row's `f.ev`: what the walk cannot supply, because the body
+is the callee's.
+
+**The read-back is at the token's span, not over every span.**  `bodyCodePoints` is a
+function of the document alone and scans from `sp.start + 1`, so it returns `some` at
+spans that are not tokens: at `⟨3,5⟩` the document's scan is `some []` while the two
+bytes from `4` read `[34,44]`, so a read-back quantified over all spans is false and
+would state nothing.  The token's spans are the ones the row fixes (`⟨1,5⟩` and
+`⟨6,10⟩`), and they are the ones every consumer instantiates (`tape_bodyCodePoints`).
+
+**Why the fields are parameters and not the literal extent.**  The earlier statement
+fixed both lengths at the entry extent and the offsets at `0` and `2`, and no walk
+satisfies it: `LeafBlock29` selects the write-back arm only when the body's in-body
+escape list is non-empty (`stage2StringBody`), and every escape shortens the decoded
+length, so `L < extent`; and the record's offset is the arena's `%z.val36`, which
+`WalkInv.log_alen` bounds below only by `G.ndst0`, not by `0`.  The fixed values are
+the literal arm's instance, which the plain row states; they are kept as
+`row_stringArenaDocument_literal` beside this row rather than as the row itself.
+
+The entry positions and the carries' index equations are kept as the document's
+identity, which the arm supplies; the proof no longer reads them, because the
+records' fields are parameters rather than the lanes' extent. -/
 theorem row_stringArenaDocument {m0 : Mem} {G : WalkGeom m0} {t : Tape}
     {arena : List UInt8} {C₀ C₁ C₂ C₃ C₄ C₅ Cd₁ Cd₂ : WalkCarry G}
-    {v : JSON.Value}
+    {v : JSON.Value} {L₁ O₁ L₂ O₂ : Nat}
     (hal : WalkAlignQuoted G t)
     (hbs : G.bs = stringDocumentBytes) (hent : G.ent = [0, 1, 4, 5, 6, 9, 10])
     (htokens : t.tokens = [.punct .openBracket ⟨0, 1⟩, .string ⟨1, 5⟩,
@@ -2388,44 +2456,23 @@ theorem row_stringArenaDocument {m0 : Mem} {G : WalkGeom m0} {t : Tape}
     (hdec : decodeTape t = some v)
     (hpre₀ : WalkTracePrefix G arena t C₀) (hk₀ : C₀.k = 0)
     (hk₁ : C₁.k = C₀.k + 1) (hev₁ : C₁.events = C₀.events ++ [EventRecord.tag 3])
-    (hevc₁ : Cd₁.events = C₁.events ++
-      [EventRecord.str false (entryPos G (C₁.k + 1) - entryPos G C₁.k - 1) 0])
+    (hevc₁ : Cd₁.events = C₁.events ++ [EventRecord.str false L₁ O₁])
     (hkc₁ : Cd₁.k = C₁.k)
     (hk₂ : C₂.k = Cd₁.k + 2) (hev₂ : C₂.events = Cd₁.events)
-    (hoff₁ : (0 : Nat) < 2 ^ 63)
-    (harena₁ : ∀ (sp : Span) (cs : List Nat), bodyCodePoints G.bs sp = some cs →
-      escapeCodePoints ((arena.drop 0).take
-        (entryPos G (C₁.k + 1) - entryPos G C₁.k - 1)) = some cs)
+    (hoff₁ : O₁ < 2 ^ 63)
+    (harena₁ : ∀ cs : List Nat, bodyCodePoints G.bs ⟨1, 5⟩ = some cs →
+      escapeCodePoints ((arena.drop O₁).take L₁) = some cs)
     (hk₃ : C₃.k = C₂.k + 1) (hev₃ : C₃.events = C₂.events)
-    (hevc₂ : Cd₂.events = C₃.events ++
-      [EventRecord.str false (entryPos G (C₃.k + 1) - entryPos G C₃.k - 1) 2])
+    (hevc₂ : Cd₂.events = C₃.events ++ [EventRecord.str false L₂ O₂])
     (hkc₂ : Cd₂.k = C₃.k)
     (hk₄ : C₄.k = Cd₂.k + 2) (hev₄ : C₄.events = Cd₂.events)
-    (hoff₂ : (2 : Nat) < 2 ^ 63)
-    (harena₂ : ∀ (sp : Span) (cs : List Nat), bodyCodePoints G.bs sp = some cs →
-      escapeCodePoints ((arena.drop 2).take
-        (entryPos G (C₃.k + 1) - entryPos G C₃.k - 1)) = some cs)
+    (hoff₂ : O₂ < 2 ^ 63)
+    (harena₂ : ∀ cs : List Nat, bodyCodePoints G.bs ⟨6, 10⟩ = some cs →
+      escapeCodePoints ((arena.drop O₂).take L₂) = some cs)
     (hk₅ : C₅.k = C₄.k + 1) (hev₅ : C₅.events = C₄.events ++ [EventRecord.tag 4]) :
     WalkTraceRow G.bs arena t
-      ([EventRecord.tag 3, EventRecord.str false 2 0,
-        EventRecord.str false 2 2, EventRecord.tag 4] : List EventRecord) := by
-  have hk₁v : C₁.k = 1 := by omega
-  have hk₂v : C₂.k = 3 := by omega
-  have hk₃v : C₃.k = 4 := by omega
-  have hk₄v : C₄.k = 6 := by omega
-  have hk₅v : C₅.k = 7 := by omega
-  have hp₁ : entryPos G C₁.k = 1 := by simp [entryPos, hk₁v, hent]
-  have hp₁' : entryPos G (C₁.k + 1) = 4 := by
-    have hk : C₁.k + 1 = 2 := by omega
-    simp [entryPos, hk, hent]
-  have hlen₁ : entryPos G (C₁.k + 1) - entryPos G C₁.k - 1 = 2 := by
-    rw [hp₁', hp₁]
-  have hp₃ : entryPos G C₃.k = 6 := by simp [entryPos, hk₃v, hent]
-  have hp₃' : entryPos G (C₃.k + 1) = 9 := by
-    have hk : C₃.k + 1 = 5 := by omega
-    simp [entryPos, hk, hent]
-  have hlen₂ : entryPos G (C₃.k + 1) - entryPos G C₃.k - 1 = 2 := by
-    rw [hp₃', hp₃]
+      ([EventRecord.tag 3, EventRecord.str false L₁ O₁,
+        EventRecord.str false L₂ O₂, EventRecord.tag 4] : List EventRecord) := by
   have hs₀ : WalkTracePrefixAt G arena t C₀ 0 :=
     (WalkTracePrefixAt.of_prefix hpre₀).congr hk₀.symm rfl
   have htok₀ : t.tokens[0]? = some (.punct .openBracket ⟨0, 1⟩) := by rw [htokens]; rfl
@@ -2437,14 +2484,12 @@ theorem row_stringArenaDocument {m0 : Mem} {G : WalkGeom m0} {t : Tape}
   -- the first string: the span holds both quotes, and the arena's slice is its body
   have hmem₁ : Token.string ⟨1, 5⟩ ∈ t.tokens := by rw [htokens]; simp
   obtain ⟨cs₁, hcode₁⟩ := tape_bodyCodePoints hdec hal.input hmem₁
-  have hrec₁ : TokenRecord G.bs arena
-      (EventRecord.str false (entryPos G (C₁.k + 1) - entryPos G C₁.k - 1) 0)
+  have hrec₁ : TokenRecord G.bs arena (EventRecord.str false L₁ O₁)
         (.string ⟨1, 5⟩) := by
-    refine tokenRecord_string_arena_of_tape (s := ⟨1, 5⟩) (key := false) (off := 0)
-      (len := entryPos G (C₁.k + 1) - entryPos G C₁.k - 1) hdec hal.input hmem₁ ?_ hoff₁
-      hcode₁ ?_
+    refine tokenRecord_string_arena_of_tape (s := ⟨1, 5⟩) (key := false)
+      (off := O₁) (len := L₁) hdec hal.input hmem₁ ?_ hoff₁ hcode₁ ?_
     · decide
-    · exact harena₁ ⟨1, 5⟩ cs₁ hcode₁
+    · exact harena₁ cs₁ hcode₁
   have htok₁ : t.tokens[1]? = some (.string ⟨1, 5⟩) := by rw [htokens]; rfl
   obtain ⟨hpre₂, -⟩ :=
     WalkTracePrefixAt.emit_two hpre₁ htok₁ hrec₁ hkc₁ hevc₁ hk₂ hev₂
@@ -2453,14 +2498,12 @@ theorem row_stringArenaDocument {m0 : Mem} {G : WalkGeom m0} {t : Tape}
     WalkTracePrefixAt.advance_separator (j' := 3) hpre₂ htok₂ (Or.inl rfl) rfl hev₃
   have hmem₂ : Token.string ⟨6, 10⟩ ∈ t.tokens := by rw [htokens]; simp
   obtain ⟨cs₂, hcode₂⟩ := tape_bodyCodePoints hdec hal.input hmem₂
-  have hrec₂ : TokenRecord G.bs arena
-      (EventRecord.str false (entryPos G (C₃.k + 1) - entryPos G C₃.k - 1) 2)
+  have hrec₂ : TokenRecord G.bs arena (EventRecord.str false L₂ O₂)
         (.string ⟨6, 10⟩) := by
-    refine tokenRecord_string_arena_of_tape (s := ⟨6, 10⟩) (key := false) (off := 2)
-      (len := entryPos G (C₃.k + 1) - entryPos G C₃.k - 1) hdec hal.input hmem₂ ?_ hoff₂
-      hcode₂ ?_
+    refine tokenRecord_string_arena_of_tape (s := ⟨6, 10⟩) (key := false)
+      (off := O₂) (len := L₂) hdec hal.input hmem₂ ?_ hoff₂ hcode₂ ?_
     · decide
-    · exact harena₂ ⟨6, 10⟩ cs₂ hcode₂
+    · exact harena₂ cs₂ hcode₂
   have htok₃ : t.tokens[3]? = some (.string ⟨6, 10⟩) := by rw [htokens]; rfl
   obtain ⟨hpre₄, -⟩ :=
     WalkTracePrefixAt.emit_two hpre₃ htok₃ hrec₂ hkc₂ hevc₂ hk₄ hev₄
@@ -2472,13 +2515,63 @@ theorem row_stringArenaDocument {m0 : Mem} {G : WalkGeom m0} {t : Tape}
     WalkTracePrefixAt.emit_advance (j' := 5) hpre₄ htok₄ hrec₄ rfl hev₅
   have hrow : WalkTraceRow G.bs arena t C₅.events :=
     WalkTracePrefixAt.toTraceRow hpre₅ (by rw [htokens]; rfl)
-  have hC₅ : C₅.events = [EventRecord.tag 3, EventRecord.str false 2 0,
-      EventRecord.str false 2 2, EventRecord.tag 4] := by
+  have hC₅ : C₅.events = [EventRecord.tag 3, EventRecord.str false L₁ O₁,
+      EventRecord.str false L₂ O₂, EventRecord.tag 4] := by
     rw [hev₅, hev₄, hevc₂, hev₃, hev₂, hevc₁, hev₁,
-      WalkTracePrefix.events_eq_nil hpre₀ hk₀, hlen₂, hlen₁]
+      WalkTracePrefix.events_eq_nil hpre₀ hk₀]
     simp
   rw [hC₅] at hrow
   exact hrow
+
+/-- **The literal form of the arena row.**  The one instance the document's own
+readings give when its bodies are recorded as arena slices: both lengths are the
+entry extent (`2`) and both offsets are the arena's opening position (`0`, then `2`),
+with the arena's contents fixed to the document's two decoded bodies.  Both offsets
+are decided below `2 ^ 63` and both read-backs are decided at `stringDocumentArena` —
+`[97,98]` at `(2,0)` and `[99,100]` at `(2,2)` — so this row has no payload premise at
+all.  It is the literal instance of `row_stringArenaDocument`, not the arena row
+itself. -/
+theorem row_stringArenaDocument_literal {m0 : Mem} {G : WalkGeom m0} {t : Tape}
+    {C₀ C₁ C₂ C₃ C₄ C₅ Cd₁ Cd₂ : WalkCarry G} {v : JSON.Value}
+    (hal : WalkAlignQuoted G t)
+    (hbs : G.bs = stringDocumentBytes) (hent : G.ent = [0, 1, 4, 5, 6, 9, 10])
+    (htokens : t.tokens = [.punct .openBracket ⟨0, 1⟩, .string ⟨1, 5⟩,
+      .punct .comma ⟨5, 6⟩, .string ⟨6, 10⟩, .punct .closeBracket ⟨10, 11⟩])
+    (hdec : decodeTape t = some v)
+    (hpre₀ : WalkTracePrefix G stringDocumentArena t C₀) (hk₀ : C₀.k = 0)
+    (hk₁ : C₁.k = C₀.k + 1) (hev₁ : C₁.events = C₀.events ++ [EventRecord.tag 3])
+    (hevc₁ : Cd₁.events = C₁.events ++ [EventRecord.str false 2 0])
+    (hkc₁ : Cd₁.k = C₁.k)
+    (hk₂ : C₂.k = Cd₁.k + 2) (hev₂ : C₂.events = Cd₁.events)
+    (hk₃ : C₃.k = C₂.k + 1) (hev₃ : C₃.events = C₂.events)
+    (hevc₂ : Cd₂.events = C₃.events ++ [EventRecord.str false 2 2])
+    (hkc₂ : Cd₂.k = C₃.k)
+    (hk₄ : C₄.k = Cd₂.k + 2) (hev₄ : C₄.events = Cd₂.events)
+    (hk₅ : C₅.k = C₄.k + 1) (hev₅ : C₅.events = C₄.events ++ [EventRecord.tag 4]) :
+    WalkTraceRow G.bs stringDocumentArena t
+      ([EventRecord.tag 3, EventRecord.str false 2 0,
+        EventRecord.str false 2 2, EventRecord.tag 4] : List EventRecord) := by
+  have hb₁ : ∀ cs : List Nat, bodyCodePoints G.bs ⟨1, 5⟩ = some cs →
+      escapeCodePoints ((stringDocumentArena.drop 0).take 2) = some cs := by
+    intro cs hcs
+    rw [hbs] at hcs
+    have h : bodyCodePoints stringDocumentBytes ⟨1, 5⟩ = some [97, 98] := by decide
+    rw [h] at hcs
+    have hcs' : ([97, 98] : List Nat) = cs := Option.some.inj hcs
+    subst cs
+    decide
+  have hb₂ : ∀ cs : List Nat, bodyCodePoints G.bs ⟨6, 10⟩ = some cs →
+      escapeCodePoints ((stringDocumentArena.drop 2).take 2) = some cs := by
+    intro cs hcs
+    rw [hbs] at hcs
+    have h : bodyCodePoints stringDocumentBytes ⟨6, 10⟩ = some [99, 100] := by decide
+    rw [h] at hcs
+    have hcs' : ([99, 100] : List Nat) = cs := Option.some.inj hcs
+    subst cs
+    decide
+  exact row_stringArenaDocument (L₁ := 2) (O₁ := 0) (L₂ := 2) (O₂ := 2)
+    hal hbs hent htokens hdec hpre₀ hk₀ hk₁ hev₁ hevc₁ hkc₁ hk₂ hev₂
+    (by decide) hb₁ hk₃ hev₃ hevc₂ hkc₂ hk₄ hev₄ (by decide) hb₂ hk₅ hev₅
 
 /-- **The strings' arm readings at `["ab","cd"]`.**  The staged entries name each
 string's closing quote one lane past its start lane, so the arm's `close` and the body
@@ -2894,6 +2987,10 @@ than assumed. -/
 /-- info: 'LeanLLVM.Refinement.row_stringArenaDocument' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms row_stringArenaDocument
+
+/-- info: 'LeanLLVM.Refinement.row_stringArenaDocument_literal' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms row_stringArenaDocument_literal
 
 /-- info: 'LeanLLVM.Refinement.stringDocument_armReadings' depends on axioms: [propext] -/
 #guard_msgs in
