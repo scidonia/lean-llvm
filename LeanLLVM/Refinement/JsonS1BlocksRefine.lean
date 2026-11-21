@@ -1465,12 +1465,14 @@ theorem escapeEntry_call {esc : Calls} {base : Nat} (h : escapeEntryAt esc base)
   h args mem next hpre
 
 /-- **The escape unit's frame**, read out of `EscapeReach`: the returned memory
-differs from the caller's only inside the three regions the run touched. -/
+differs from the caller's only inside the regions the run touched, from the
+stream's cursor to the counted span plus the batch's reserve.  A caller that
+orders its own region against the stream's base or the capacity widens this frame
+with `touchedRegions_widen_touched` or `escapeFrame_capacity`. -/
 theorem escapeReach_frame {blk0 : BitVec 64} {xp xn carry xn0 : Nat}
     {position : List Nat} {carryBytes : List UInt8} {mem0 M : Mem}
     (h : EscapeReach blk0 xp xn carry xn0 position carryBytes mem0 M) :
-    UnchangedOutside mem0 M
-      [(xp, 4 * touchedPositions xn0 position.length), (xn, 8), (carry, 16)] :=
+    UnchangedOutside mem0 M (touchedRegions xp xn carry xn0 position.length) :=
   h.2.2.2.2
 
 /-- **`if.then`'s step, at the caller's escape entry.**  The arm's own computation

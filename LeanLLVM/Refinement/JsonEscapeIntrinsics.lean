@@ -63,9 +63,9 @@ poison while this model gives it the width.  It is admissible here because a
 cleared word's count reaches only the batch reserve past the emitted positions:
 `escapePositionsPost` (`JsonEscapeSteps.lean`) claims the positions up to
 `escapePositionsFrom`'s length, and its unchanged conjunct names the run's *touched*
-extent — those positions plus that reserve (`touchedPositions`), and not the
-capacity — so no clause of the list record reads a value the poison could have
-produced.  The three new spellings have no flag, so nothing is bounded for
+extent — from the stream's cursor, those positions plus that reserve
+(`touchedRegions`), and not the capacity — so no clause of the list record reads a
+value the poison could have produced.  The three new spellings have no flag, so nothing is bounded for
 them. -/
 def escapeCalls : Calls :=
   fun callee args mem next =>

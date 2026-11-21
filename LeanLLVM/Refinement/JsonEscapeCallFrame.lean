@@ -10,12 +10,20 @@ iteration reads, and the capacity the next call's `pre` consumes.  Each is a
 consequence of the record, and this module derives them once, at the shape a call
 site holds.
 
-**The regions are the unit's, in the block's spelling.**  The unit's frame names
-the touched extent `4 * touchedPositions xn0 len`; the block's post names the same
-extent as `4 * (nxp' + batchReserve)`, with `nxp'` the count read back out of its
-slot.  Those are one number — the post's count is `xn0 + len` — so the frame is
-restated once at the block's spelling (`escapeReach_callRegions`), and the block's
-four-region list follows from it by inclusion with no staging obligation added.
+**The regions are the unit's, in the block's spelling.**  The unit's frame starts
+at the stream's cursor, `xp + 4 * xn0`, and reaches the counted span plus the
+batch's reserve.  Its widening to the stream's base is the block's spelling,
+`4 * (nxp' + batchReserve)` with `nxp'` the count read back out of its slot: the
+sharp frame is restated once at the call's own numbers
+(`escapeReach_callTouched`), the widening once at the block's
+(`escapeReach_callRegions`), and the block's four-region list follows from it by
+inclusion with no staging obligation added.
+
+**The stream's prefix is a consequence of the frame.**  Because the frame starts
+at the cursor, the bytes below it are the caller's: `escapeReach_streamPrefix`
+reads the prefix below the cursor out of the record, with the caller's pre-state
+read as its only premise.  A consumer no longer has to supply the post-state
+prefix itself.
 
 **The entry words are kept by the frame, not by the post.**  `s1BlocksPost`'s
 entry clause is a value claim the block's own stores establish, so the call must
@@ -81,26 +89,45 @@ block's post claims and what the call has to preserve. -/
 def escapeCallWriteRegions (ent blocks xp xn xcarry nxp' : Nat) : List (Nat × Nat) :=
   (ent, 8 * blocks) :: escapeCallRegions xp xn xcarry nxp'
 
-/-- The unit's frame list and the block's three regions are one list: the unit's
-`touchedPositions xn0 len` is `xn0 + len + batchReserve`, so stating the frame at
-the count the block reads back names the same extent. -/
-theorem escapeRegions_eq_call (xp xn carry xn0 len : Nat) :
-    escapeRegions xp xn carry (touchedPositions xn0 len) =
-      escapeCallRegions xp xn carry (xn0 + len) := rfl
+/-- The block's three regions, in the unit's spelling: the stream's extent from
+its base to the counted span plus the reserve.  The unit's frame starts at the
+cursor; this list is that frame's widening to the stream's base, and it is what a
+consumer orders its own static regions against. -/
+theorem escapeCallRegions_eq_touched (xp xn xcarry xn0 len : Nat) :
+    escapeCallRegions xp xn xcarry (xn0 + len) =
+      [(xp, 4 * touchedPositions xn0 len), (xn, 8), (xcarry, 16)] := rfl
 
 /-! ### The frame, read out of the reach -/
 
+/-- **The escape unit's frame at the call's own numbers.**  `EscapeReach`'s last
+conjunct, at the cursor-based stream extent the run's stores actually reached. -/
+theorem escapeReach_callTouched {blk0 : BitVec 64} {xp xn carry xn0 : Nat}
+    {position : List Nat} {carryBytes : List UInt8} {mem0 M : Mem}
+    (h : EscapeReach blk0 xp xn carry xn0 position carryBytes mem0 M) :
+    UnchangedOutside mem0 M (touchedRegions xp xn carry xn0 position.length) :=
+  h.2.2.2.2
+
+/-- **The cursor-based frame widened to the block's spelling.**  The block's three
+regions name the stream from its base; the unit's frame names it from the cursor,
+and a byte outside the wide region is outside the narrow one too, so the widening
+is membership alone. -/
+theorem touchedRegions_to_callRegions {mem0 M : Mem} {xp xn xcarry xn0 len : Nat}
+    (h : UnchangedOutside mem0 M (touchedRegions xp xn xcarry xn0 len)) :
+    UnchangedOutside mem0 M (escapeCallRegions xp xn xcarry (xn0 + len)) := by
+  have h' : UnchangedOutside mem0 M
+      [(xp, 4 * touchedPositions xn0 len), (xn, 8), (xcarry, 16)] :=
+    touchedRegions_widen_touched h
+  simpa [escapeCallRegions_eq_touched] using h'
+
 /-- **The escape unit's frame at the block's extent.**  `EscapeReach`'s last
-conjunct is the silence outside the three regions, and the block's spelling of the
-stream's extent names the same number, so the frame is handed on unchanged. -/
+conjunct starts at the cursor; the block's post names the stream from its base,
+and the two extents are related by widening, so the frame is handed on at the
+block's spelling. -/
 theorem escapeReach_callRegions {blk0 : BitVec 64} {xp xn carry xn0 : Nat}
     {position : List Nat} {carryBytes : List UInt8} {mem0 M : Mem}
     (h : EscapeReach blk0 xp xn carry xn0 position carryBytes mem0 M) :
-    UnchangedOutside mem0 M (escapeCallRegions xp xn carry (xn0 + position.length)) := by
-  have hframe : UnchangedOutside mem0 M
-      (escapeRegions xp xn carry (touchedPositions xn0 position.length)) := h.2.2.2.2
-  rw [escapeRegions_eq_call] at hframe
-  exact hframe
+    UnchangedOutside mem0 M (escapeCallRegions xp xn carry (xn0 + position.length)) :=
+  touchedRegions_to_callRegions (escapeReach_callTouched h)
 
 /-! ### The entry words are outside the frame -/
 
@@ -161,6 +188,52 @@ theorem escapeReach_keepsEntry {blk0 : BitVec 64} {xp xn carry xn0 ent blocks : 
     exact outside_of_separated hentXn (by omega) (by omega)
   · intro k _
     exact outside_of_separated hentCarry (by omega) (by omega)
+
+/-! ### The stream's prefix is the caller's -/
+
+/-- **The stream's prefix below the cursor is the caller's.**  The record's frame
+starts at `xp + 4 * xn0`: every byte of the prefix `[xp, xp + 4 * xn0)` lies below
+that region, and the staging orders the count's slot and the carry's away from the
+stream, so none of the three regions reaches the prefix.  The prefix therefore
+reads back as it was handed in. -/
+theorem readBytes_prefix_of_touched {mem0 M : Mem} {xp xn carry xn0 len : Nat}
+    (h : UnchangedOutside mem0 M (touchedRegions xp xn carry xn0 len))
+    (hkeep : xn + 8 ≤ xp ∨ xp + 4 * blockMax xn0 ≤ xn)
+    (hcx : carry + 16 ≤ xp ∨ xp + 4 * blockMax xn0 ≤ carry) :
+    readBytes M xp (4 * xn0) = readBytes mem0 xp (4 * xn0) := by
+  have hframe : UnchangedOutside mem0 M
+      [(xp + 4 * xn0, 4 * (len + batchReserve)), (xn, 8), (carry, 16)] := by
+    simpa only [touchedRegions] using h
+  have hread := readBytes_of_outside_three (mem0 := mem0) (M := M)
+    (a := xp) (n := 4 * xn0) (xp := xp + 4 * xn0)
+    (w1 := 4 * (len + batchReserve)) (xn := xn) (w2 := 8)
+    (carry := carry) (w3 := 16) hframe ?_ ?_ ?_
+  · exact hread
+  · intro k hk
+    rintro ⟨h1, h2⟩
+    omega
+  · intro k hk
+    rintro ⟨h1, h2⟩
+    unfold blockMax batchReserve at *
+    rcases hkeep with h' | h' <;> omega
+  · intro k hk
+    rintro ⟨h1, h2⟩
+    unfold blockMax batchReserve at *
+    rcases hcx with h' | h' <;> omega
+
+/-- **The record keeps the stream's prefix**, in the shape the block module calls
+`StreamPrefix`: a read of the stream below the cursor at the caller's memory is
+still the read at the run's memory.  The pre-state read is the caller's staging;
+the post-state read is the record's, so no call site has to assume it. -/
+theorem escapeReach_streamPrefix {blk0 : BitVec 64} {xp xn carry xn0 : Nat}
+    {position ps0 : List Nat} {carryBytes : List UInt8} {mem0 M : Mem}
+    (h : EscapeReach blk0 xp xn carry xn0 position carryBytes mem0 M)
+    (hkeep : xn + 8 ≤ xp ∨ xp + 4 * blockMax xn0 ≤ xn)
+    (hcx : carry + 16 ≤ xp ∨ xp + 4 * blockMax xn0 ≤ carry)
+    (hprefix : readBytes mem0 xp (4 * xn0) = some (positionsBytes 4 ps0)) :
+    readBytes M xp (4 * xn0) = some (positionsBytes 4 ps0) := by
+  rw [readBytes_prefix_of_touched (escapeReach_callTouched h) hkeep hcx]
+  exact hprefix
 
 /-- **A staged-capacity separation is a separation at any smaller extent.**  The
 block's staging separates `ent` from the *whole* stream capacity; the call's frame
@@ -312,6 +385,9 @@ call resolves at the caller's selection and what comes back is:
 * the capacity the caller staged, restated;
 * **the frame**: every byte outside the block's write regions is the caller's, and
   the entry words themselves read back unchanged;
+* **the prefix**: the stream below this call's cursor is untouched, so it reads as
+  the caller staged it — the record's frame starts at the cursor, and the prefix is
+  outside it;
 * the allocator's cursor, which does not shrink.
 
 `position` is the block's own position list, taken as the lanes of the word the
@@ -353,6 +429,7 @@ theorem escape_call_at {sym : String} {esc : Calls} {base : Nat}
       UnchangedOutside mem r.mem
         (escapeCallWriteRegions ent blocks xp xn carry (xn0 + position.length)) ∧
       readBytes r.mem ent (8 * blocks) = readBytes mem ent (8 * blocks) ∧
+      readBytes r.mem xp (4 * xn0) = readBytes mem xp (4 * xn0) ∧
       next ≤ r.next := by
   -- the record's pre, at the call's argument list
   have hpre : (Γ_escape_positions base escapePositionsBudget).pre
@@ -423,17 +500,17 @@ theorem escape_call_at {sym : String} {esc : Calls} {base : Nat}
   have hlen64 : position.length ≤ 64 := by
     rw [← hctp]
     exact ctpop_le _
-  -- the frame, at the block's extent
-  have hframe : UnchangedOutside mem r.mem
-      (escapeCallRegions xp xn carry (xn0 + position.length)) := by
-    have h : UnchangedOutside mem r.mem
-        (escapeRegions xp xn carry (touchedPositions xn0'
-          (escapePositionsFrom (block64 lo' hi') st').length)) := by
-      rw [← hxpEq, ← hxnEq, ← hcarryEq]
-      exact hframeOut
-    rw [hxn0Eq, hlen', escapeRegions_eq_call] at h
+  -- the frame, at the cursor-based extent the run's stores reached
+  have hframeTouched : UnchangedOutside mem r.mem
+      (touchedRegions xp xn carry xn0 position.length) := by
+    have h := hframeOut
+    rw [hxn0Eq, hlen', hxpEq, hxnEq, hcarryEq] at h
     exact h
-  refine ⟨r, hcall, ?_, ?_, ?_, ?_, ?_, ?_, hnext⟩
+  -- and its widening, at the block's three regions
+  have hframe : UnchangedOutside mem r.mem
+      (escapeCallRegions xp xn carry (xn0 + position.length)) :=
+    touchedRegions_to_callRegions hframeTouched
+  refine ⟨r, hcall, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hnext⟩
   · -- the count, at the caller's count and the block's position count
     rw [← hxnEq, ← hxn0Eq, ← hlen']
     exact hcntOut
@@ -461,6 +538,8 @@ theorem escape_call_at {sym : String} {esc : Calls} {base : Nat}
       exact outside_of_separated hentXn (by omega) (by omega)
     · intro k _
       exact outside_of_separated hentCarry (by omega) (by omega)
+  · -- the stream's prefix, below the cursor
+    exact readBytes_prefix_of_touched hframeTouched hkeep hcx
 
 /-! ### At the pinned body -/
 
@@ -522,6 +601,7 @@ theorem escape_call_at_unit {base : Nat}
       UnchangedOutside mem r.mem
         (escapeCallWriteRegions ent blocks xp xn carry (xn0 + position.length)) ∧
       readBytes r.mem ent (8 * blocks) = readBytes mem ent (8 * blocks) ∧
+      readBytes r.mem xp (4 * xn0) = readBytes mem xp (4 * xn0) ∧
       next ≤ r.next :=
   escape_call_at (escapeListUnitCalls_callSatisfies base) hblock hbs hctl him hpair
     hcount hxn0 hkeep hcarr hcx hhas hblkcap hpos hentXp hentXn hentCarry
@@ -536,7 +616,11 @@ call's clauses read the unit's post, so they carry whatever
 `escape_positions_satisfies` carries; the parametric theorem adds nothing of its
 own. -/
 
+#print axioms escapeReach_callTouched
+#print axioms touchedRegions_to_callRegions
 #print axioms escapeReach_callRegions
+#print axioms readBytes_prefix_of_touched
+#print axioms escapeReach_streamPrefix
 #print axioms escapeReach_keepsEntry
 #print axioms readBytes_of_outside_three
 #print axioms hasBytes_of_outside_three

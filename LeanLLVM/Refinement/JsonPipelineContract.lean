@@ -687,11 +687,13 @@ the three extents below is the unit's own width and not a figure chosen here:
 the entry emitter's frame reaches `o + 4 * (k' + 8)`
 (`JsonEntrySteps.lean:31-34`, where the eight is its sentinel lane), giving
 `(ep, 4 * (nk' + 8))`; the escape batch reserves eight entries past its block's
-count (`batchReserve`), and the list record's frame names exactly the block's
-touched extent — `(xp, 4 * touchedPositions xn0 len)`, its incoming count, its own
-positions and that reserve — so composing the blocks' frames while the counts only
-grow reaches at most `nxp' + batchReserve` entries, giving
-`(xp, 4 * (nxp' + batchReserve))`; and the decoder writes `US_SLACK`,
+count (`batchReserve`), and the list record's frame starts at the stream's cursor —
+`(xp + 4 * xn0, 4 * (len + batchReserve))`, its own positions and that reserve —
+while a consumer orders its regions against the block's touched extent
+`(xp, 4 * touchedPositions xn0 len)`, the frame's widening to the stream's base.  So
+composing the blocks' frames while the counts only grow reaches at most
+`nxp' + batchReserve` entries, giving `(xp, 4 * (nxp' + batchReserve))`; and the
+decoder writes `US_SLACK`,
 sixty-four bytes, past the decoded extent (`kernel/json/stage2.h`), giving
 `(dst, ndst' + 64)`.
 
