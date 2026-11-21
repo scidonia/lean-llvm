@@ -139,9 +139,6 @@ def lastEntryArm_stringOpener_of_staging {m0 : Mem} {G : WalkGeom m0} (C : WalkC
       walk_read using
         hInv.regs ("%nep", .int 64 (BitVec.ofNat 64 G.nep)) (by simp [walkStaticRegs]))
     (quoteCount_ge hInv hnot)
-    (by
-      walk_read using
-        hInv.regs ("%4", .int 64 (BitVec.ofNat 64 G.n)) (by simp [walkStaticRegs]))
     (hInv.regs ("%e", .ptr C.stage.e) (by simp [walkStaticRegs]))
 
 /-- **The closing bracket's refusal on the continuing head, from the staging.**

@@ -79,6 +79,15 @@ documents, and no semantic claim rests on the two emissions being equal.
 5. three instruction rewrites, and every callee's definition replaced by a
    declaration (`stage2.rewrites.tsv`).
 
+The committed fixture deviates from the derivation in two stores: `if.then205.i`
+and `if.then214.i` carry `%idxprom.i` (the opening quote's position) rather than
+the captured `%4`, because the walk now reports the parser's
+`unterminatedString` position.  `JsonStage2IR`'s "What the body keeps" records
+the patch and the names a fresh capture would produce (`%t352.i`→`%t354.i`,
+`if.then214.i`→`if.then215.i`); a regeneration therefore renames the staged ABI
+and the defensive block, and neither the five steps nor the capture's staging
+list reproduces the committed text until the fixture and that list are updated.
+
 Step 4 is the staged ABI: the body the proofs run takes its stack objects as
 parameters, so the walk's contracts are stated at a staging the caller supplies.
 The route's object has those objects as stack slots, and the adapter does not

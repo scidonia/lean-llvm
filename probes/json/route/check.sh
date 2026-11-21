@@ -8,7 +8,7 @@
 # candidate -- and has three outcomes: the fast path (`verdict=` on stdout, the
 # native object's observation), the fallback's acceptance
 # (`fallback=accepted`), and the fallback's refusal (`refused: ...` on stderr,
-# exit 2).  Seven claims are asserted:
+# exit 2).  Nine claims are asserted:
 #
 #   1. fidelity on the fast path: for every default-profile corpus document the
 #      route admits, the Lean route and the C driver print the same three lines —
@@ -58,6 +58,14 @@
 #      bodies straddling a 64-byte block boundary are each asserted against a
 #      hand-written measurement as well as against `docDepth`, and a fixed-seed
 #      sweep of malformed documents is compared row by row.
+#   9. an unterminated string's refusal offset is the opening quote's byte, the
+#      position the reference parser's `rejectPos` reports.  Four admitted
+#      documents take the fast path and are compared with the reference
+#      fallback's own position (or, for a root string the depth bound cannot
+#      refuse, with the opening quote's byte offset); three controls whose
+#      document-end offset is already the parser's -- an unclosed brace, a
+#      whitespace-only document and a lone `]` -- must stay correct, so a
+#      detector returning the document length cannot pass.
 #
 # A comparison that fails names its class: a verdict disagreement, a value
 # disagreement (the arena or event bytes, with the first differing byte), or a
@@ -588,6 +596,106 @@ if [ "$depth_rows" -eq 0 ]; then
   failed=$((failed + 1))
 fi
 
+# ---------------------------------------------------------------------------
+# The unterminated string's refusal offset
+#
+# The reference parser reports the offending token's start: `rejectPos` reads
+# `Reject.unterminatedString`'s position, which `parseString` sets to the
+# opening quote.  The fast path must report the same byte.  Four documents are
+# inside the domain and take the fast path; their opening quotes stand at bytes
+# 5, 1, 0 and 1.  Three have a structural root, so `--doc <file> 0` puts the
+# native depth bound below the document's depth and the fallback prints the
+# parser's own position; the root string is not refused by any depth bound, so
+# its expectation is the opening quote's byte offset, read from the document.
+#
+# The controls are the refusals where the document-end offset is already the
+# parser's: an unclosed brace (`{"a":1`, at 6, the document's length), a
+# whitespace-only document (the flush route, at 3) and a lone `]` (at 0).  A
+# detector that returned the document length, or a constant, cannot satisfy the
+# quote rows and these controls together.
+# ---------------------------------------------------------------------------
+unterminated_rows=0
+offset_control_rows=0
+offset_failures=0
+parser_at() { # <file> -> the reference fallback's position, or empty
+  "$route" --doc "$1" 0 2>&1 >/dev/null |
+    sed -n 's/^refused: invalid: .* at \([0-9][0-9]*\)$/\1/p'
+}
+check_refusal_offset() { # <kind> <label> <bytes> <expected> <how>
+  local kind=$1 label=$2 bytes=$3 want=$4 how=$5
+  local file=$work/offset-$label.json parser got status
+  printf '%s' "$bytes" >"$file"
+  "$route" --doc "$file" >"$work/offset.out" 2>"$work/offset.err"
+  status=$?
+  if [ "$status" -ne 0 ] || [ -z "$(observation_of "$work/offset.out")" ] ||
+     [ -n "$(fallback_of "$work/offset.out")" ]; then
+    printf 'FAIL: %s: expected the fast path, exit %s:\n' "$label" "$status" >&2
+    cat "$work/offset.out" "$work/offset.err" >&2
+    offset_failures=$((offset_failures + 1))
+    return
+  fi
+  if [ "$kind" = quote ]; then
+    unterminated_rows=$((unterminated_rows + 1))
+    if [ "$(verdict_of "$work/offset.out")" != 0 ]; then
+      printf 'FAIL: %s: the object accepted an unterminated string\n' "$label" >&2
+      offset_failures=$((offset_failures + 1))
+    fi
+  else
+    offset_control_rows=$((offset_control_rows + 1))
+  fi
+  case $how in
+    verified) parser=$(parser_at "$file") ;;
+    opener)   parser=$(LC_ALL=C grep -abo '"' "$file" | head -1 | cut -d: -f1) ;;
+    end)      parser=$(wc -c <"$file") ;;
+    start)    parser=$(LC_ALL=C grep -abo '[^[:space:]]' "$file" |
+                        head -1 | cut -d: -f1) ;;
+    *) printf 'FAIL: %s: unknown offset derivation %s\n' "$label" "$how" >&2
+       offset_failures=$((offset_failures + 1)); return ;;
+  esac
+  if [ -z "$parser" ] || [ "$parser" != "$want" ]; then
+    printf 'FAIL: %s: the parser refuses at %s, the expectation says %s\n' \
+      "$label" "${parser:-<absent>}" "$want" >&2
+    offset_failures=$((offset_failures + 1))
+  fi
+  got=$(err_of "$work/offset.out")
+  if [ "$got" != "$want" ]; then
+    printf 'FAIL: %s: the fast path refuses at %s, the parser at %s\n' \
+      "$label" "${got:-<absent>}" "$want" >&2
+    offset_failures=$((offset_failures + 1))
+  fi
+}
+check_refusal_offset quote   obj-value       '{"a":"b' 5 verified
+check_refusal_offset quote   obj-key         '{"a'     1 verified
+check_refusal_offset quote   root-string     '"abc'    0 opener
+check_refusal_offset quote   arr-root-string '["abc'   1 verified
+check_refusal_offset control unclosed-brace  '{"a":1'  6 verified
+check_refusal_offset control whitespace-flush '   '    3 end
+check_refusal_offset control lone-close      ']'       0 start
+
+# A valid document is not a refusal: the offset gate must not turn the fast
+# path's acceptance into a failure.
+printf '%s' '{"a":1}' >"$work/offset-valid.json"
+"$route" --doc "$work/offset-valid.json" >"$work/offset.out" 2>"$work/offset.err"
+status=$?
+if [ "$status" -ne 0 ] || [ "$(verdict_of "$work/offset.out")" != 1 ] ||
+   [ "$(err_of "$work/offset.out")" != 0 ]; then
+  printf 'FAIL: valid-object: the fast path did not accept it with err=0 (exit %s):\n' "$status" >&2
+  cat "$work/offset.out" "$work/offset.err" >&2
+  offset_failures=$((offset_failures + 1))
+fi
+
+if [ "$unterminated_rows" -ne 4 ]; then
+  printf 'FAIL: %s unterminated row(s) were checked, expected 4; the offset gate is vacuous\n' \
+    "$unterminated_rows" >&2
+  offset_failures=$((offset_failures + 1))
+fi
+if [ "$offset_control_rows" -ne 3 ]; then
+  printf 'FAIL: %s offset control row(s) were checked, expected 3\n' \
+    "$offset_control_rows" >&2
+  offset_failures=$((offset_failures + 1))
+fi
+failed=$((failed + offset_failures))
+
 # The sweep: documents drawn from the bytes the depth rule branches on --
 # brackets in both directions, quotes, backslashes, escape letters, hex digits,
 # spaces and `:`.  A fixed-seed Lehmer generator draws them, so the row set is
@@ -859,7 +967,7 @@ if [ "$failed" -ne 0 ]; then
   printf 'FAIL: %s assertion(s) failed over %s default-profile rows\n' "$failed" "$rows" >&2
   exit 1
 fi
-printf 'ok: %s default-profile rows: %s fast-path row(s) agree with the driver on the observation, arena and events (%s arena byte(s) over %s row(s), %s event byte(s) over %s row(s)); fast path accept %s, invalid %s; fallback refusals %s, fallback accepts %s; divergence %s; empty excluded %s; %s non-default-profile rows skipped; depth 128 fast, 129/520/521 fall back with depthExceeded; the opener-rich string takes the fast path; 14 policy rows fall back with the reference reasons; two-phase admission agrees with `admission` on %s row(s), the measured depth compared wherever the walk ran (policy candidate %s, policy scan run %s; control failures %s); the depth gate carries %s hand-written row(s) and %s swept document(s) agree with `docDepth`, the proved counter and the accumulator ending at the same depth on every row; %s consumer-mode fixture read as 5 tokens at ndst=1 nev=25 with agreeing readings\n' \
+printf 'ok: %s default-profile rows: %s fast-path row(s) agree with the driver on the observation, arena and events (%s arena byte(s) over %s row(s), %s event byte(s) over %s row(s)); fast path accept %s, invalid %s; fallback refusals %s, fallback accepts %s; divergence %s; empty excluded %s; %s non-default-profile rows skipped; depth 128 fast, 129/520/521 fall back with depthExceeded; the opener-rich string takes the fast path; 14 policy rows fall back with the reference reasons; two-phase admission agrees with `admission` on %s row(s), the measured depth compared wherever the walk ran (policy candidate %s, policy scan run %s; control failures %s); the depth gate carries %s hand-written row(s) and %s swept document(s) agree with `docDepth`, the proved counter and the accumulator ending at the same depth on every row; the refusal-offset gate pins 4 unterminated-string rows against the parser with 3 document-end controls; %s consumer-mode fixture read as 5 tokens at ndst=1 nev=25 with agreeing readings\n' \
   "$rows" "$fast" "$compared_arena" "$rows_with_arena" "$compared_events" "$rows_with_events" \
   "$accepts" "$invalids" "$fallback_refusals" "$fallback_accepts" "$diverged" "$excluded" "$skipped" \
   "$agree_rows" "$candidate_rows" "$policy_rows" "$control_failures" "$depth_rows" "$sweep_rows" \

@@ -70,6 +70,19 @@ the number dispatch's counters.  The number conversion's two caps
 this body; they are stated at that callee's contract, and the call census below
 is what says so.
 
+**One store is patched, not captured.**  `kernel/json/stage2.c`'s quote arm
+refuses an unterminated string at the opening quote (`p`, the loop head's entry)
+rather than at the document's end, so its two refusal blocks store `%idxprom.i`
+where this fixture's build stored `%4` — the document's length.  Both blocks are
+written here at the operand the fixed source emits, which is the operand the
+refusal blocks that already reported an entry position (`if.then176.i`) store, and
+the route below reads the offset as that position.  The rest of the fixture is the
+pre-fix build's text: a fresh `capture-stage2.sh` run over the fixed source also
+renumbers the names it disambiguates after the change (`%t352.i` → `%t354.i`,
+`cleanup478.i` → `cleanup480.i`, `%inc208.i` → `%inc209.i`, `if.then214.i` →
+`if.then215.i`, ~690 lines of diff), and that regeneration has not been done; so
+the pin is not a capture output for those names until it is.
+
 ## The six sub-units, and their text
 
 The obligation names one `Function`: `stage2Body`, pinned above.  Its six
@@ -630,7 +643,7 @@ def stage2Body : Function :=
 { name := "if.then205.i",
     instrs := [
       Instr.gep "%off1.i.i76" (Ty.int 8) (Operand.reg "%e") (Operand.imm (.int 64 (BitVec.ofNat 64 8))),
-      Instr.store (Ty.int 64) (Operand.reg "%4") (Operand.reg "%off1.i.i76")
+      Instr.store (Ty.int 64) (Operand.reg "%idxprom.i") (Operand.reg "%off1.i.i76")
     ],
     term := Term.br "if.then" },
 { name := "if.end207.i",
@@ -646,7 +659,7 @@ def stage2Body : Function :=
 { name := "if.then214.i",
     instrs := [
       Instr.gep "%off1.i.i78" (Ty.int 8) (Operand.reg "%e") (Operand.imm (.int 64 (BitVec.ofNat 64 8))),
-      Instr.store (Ty.int 64) (Operand.reg "%4") (Operand.reg "%off1.i.i78")
+      Instr.store (Ty.int 64) (Operand.reg "%idxprom.i") (Operand.reg "%off1.i.i78")
     ],
     term := Term.br "if.then" },
 { name := "if.then219.i",
