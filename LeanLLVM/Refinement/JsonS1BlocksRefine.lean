@@ -5795,6 +5795,434 @@ theorem asciiExit_step_peel (env : Env) (s : State) (c : AsciiCarry) (andv : Bit
     (BlockEval.evalOperand_reg_of _ _ _ _ (by rw [forEnd101Out]; simp [cells])) hbit]
   rfl
 
+/-! ### The phase's hand-off arm
+
+The terminal `AsciiTerm.handoff` stands at `if.then38` with the pass's store in
+the memory.  The block's DFA step loads eight windows around `%add.ptr`: the
+block's own two words, three windows whose left bytes are the previous block's
+last bytes, and three more above the pointer.  Every byte those loads read is
+below the emit area, so the pass's store does not reach them and the document
+the phase reads is the caller's own.  The join at `if.end50` then selects the
+fused loop's carried state; its test asks whether a block follows the hand-off
+block, which is the fused loop's entry. -/
+
+/-- The hand-off's environment: the class test's cells over the pass's body. -/
+abbrev asciiHandoffEnv (env : Env) (c : AsciiCarry) (v : ForBodyValues) : Env :=
+  ifEndEnv (forBodyOut (forIncEnv env c.i c.shr) v) v.w2 v.w3
+
+/-- A read through the hand-off's cells and the block's own ones: the lookup
+peels the definitions and stops at whatever the base environment holds. -/
+macro "ift_lk" : tactic => `(tactic|
+  (first
+   | assumption
+   | (simp (config := { failIfUnchanged := false }) only [ifThen38Out, iftEnv1,
+        iftEnv2, iftEnv3, iftEnv4, iftEnv5, iftEnv6, iftEnv7, iftEnv8, iftEnv9,
+        cells]
+      all_goals
+        (repeat
+          (first
+           | exact lookupName_cons_self _ _ _
+           | assumption
+           | rfl
+           | rw [lookupName_cons_ne _ _ (by decide)])))))
+
+/-- The shift register, as the hand-off's class test leaves it. -/
+theorem lookupName_asciiHandoffEnv_shr17 (env : Env) (c : AsciiCarry)
+    (v : ForBodyValues) :
+    lookupName (asciiHandoffEnv env c v) "%shr17" = some (.int 64 v.shr17) :=
+  lookupName_ifEndEnv_of _ _ _ (lookupName_forBodyOut_shr17 _ _)
+    (by decide) (by decide) (by decide)
+
+/-- The DFA's first carried word, as the hand-off's class test leaves it. -/
+theorem lookupName_asciiHandoffEnv_shrII (env : Env) (c : AsciiCarry)
+    (v : ForBodyValues) :
+    lookupName (asciiHandoffEnv env c v) "%shr.i.i" = some (.int 64 v.shrII) :=
+  lookupName_ifEndEnv_of _ _ _ (lookupName_forBodyOut_shrII _ _)
+    (by decide) (by decide) (by decide)
+
+/-- The DFA's second carried word, as the hand-off's class test leaves it. -/
+theorem lookupName_asciiHandoffEnv_conv13 (env : Env) (c : AsciiCarry)
+    (v : ForBodyValues) :
+    lookupName (asciiHandoffEnv env c v) "%conv13.i.i" = some (.int 64 v.conv13II) :=
+  lookupName_ifEndEnv_of _ _ _ (lookupName_forBodyOut_conv13 _ _)
+    (by decide) (by decide) (by decide)
+
+/-- The DFA's third carried word, as the hand-off's class test leaves it. -/
+theorem lookupName_asciiHandoffEnv_shrI (env : Env) (c : AsciiCarry)
+    (v : ForBodyValues) :
+    lookupName (asciiHandoffEnv env c v) "%shr.i" = some (.int 64 v.shrI) :=
+  lookupName_ifEndEnv_of _ _ _ (lookupName_forBodyOut_shrI _ _)
+    (by decide) (by decide) (by decide)
+
+/-- The loop bound rides through the hand-off's class test. -/
+theorem lookupName_asciiHandoffEnv_shr (env : Env) (c : AsciiCarry)
+    (v : ForBodyValues) {shr : BitVec 64}
+    (h : lookupName env "%shr" = some (.int 64 shr)) :
+    lookupName (asciiHandoffEnv env c v) "%shr" = some (.int 64 shr) :=
+  lookupName_ifEndEnv_of _ _ _ (by
+    rw [lookupName_forBodyOut_shr]
+    exact lookupName_forIncEnv_of env c.i c.shr h (by decide) (by decide))
+    (by decide) (by decide) (by decide)
+
+/-- The shift register through the block's own cells. -/
+theorem lookupName_asciiHandoffOut_shr17 (env : Env) (c : AsciiCarry)
+    (v : ForBodyValues) (v38 : IfThen38Values) :
+    lookupName (ifThen38Out (asciiHandoffEnv env c v) v38) "%shr17"
+      = some (.int 64 v.shr17) := by
+  have h := lookupName_asciiHandoffEnv_shr17 env c v
+  ift_lk
+
+/-- The DFA's first carried word through the block's own cells. -/
+theorem lookupName_asciiHandoffOut_shrII (env : Env) (c : AsciiCarry)
+    (v : ForBodyValues) (v38 : IfThen38Values) :
+    lookupName (ifThen38Out (asciiHandoffEnv env c v) v38) "%shr.i.i"
+      = some (.int 64 v.shrII) := by
+  have h := lookupName_asciiHandoffEnv_shrII env c v
+  ift_lk
+
+/-- The DFA's second carried word through the block's own cells. -/
+theorem lookupName_asciiHandoffOut_conv13 (env : Env) (c : AsciiCarry)
+    (v : ForBodyValues) (v38 : IfThen38Values) :
+    lookupName (ifThen38Out (asciiHandoffEnv env c v) v38) "%conv13.i.i"
+      = some (.int 64 v.conv13II) := by
+  have h := lookupName_asciiHandoffEnv_conv13 env c v
+  ift_lk
+
+/-- The DFA's third carried word through the block's own cells. -/
+theorem lookupName_asciiHandoffOut_shrI (env : Env) (c : AsciiCarry)
+    (v : ForBodyValues) (v38 : IfThen38Values) :
+    lookupName (ifThen38Out (asciiHandoffEnv env c v) v38) "%shr.i"
+      = some (.int 64 v.shrI) := by
+  have h := lookupName_asciiHandoffEnv_shrI env c v
+  ift_lk
+
+/-- The loop bound through the block's own cells. -/
+theorem lookupName_asciiHandoffOut_shr (env : Env) (c : AsciiCarry)
+    (v : ForBodyValues) (v38 : IfThen38Values) {shr : BitVec 64}
+    (h : lookupName env "%shr" = some (.int 64 shr)) :
+    lookupName (ifThen38Out (asciiHandoffEnv env c v) v38) "%shr"
+      = some (.int 64 shr) := by
+  have hE := lookupName_asciiHandoffEnv_shr env c v h
+  ift_lk
+
+/-- The state mask's join, as the block binds it. -/
+theorem lookupName_asciiHandoffOut_or291 (env : Env) (c : AsciiCarry)
+    (v : ForBodyValues) (v38 : IfThen38Values) :
+    lookupName (ifThen38Out (asciiHandoffEnv env c v) v38) "%or.i.i291"
+      = some (.vec 4 64 v38.or291) := by
+  ift_lk
+
+/-- The block's two words, as the block binds them. -/
+theorem lookupName_asciiHandoffOut_or284 (env : Env) (c : AsciiCarry)
+    (v : ForBodyValues) (v38 : IfThen38Values) :
+    lookupName (ifThen38Out (asciiHandoffEnv env c v) v38) "%or.i284"
+      = some (.vec 4 64 v38.or284) := by
+  ift_lk
+
+/-- The successor index, as the block binds it. -/
+theorem lookupName_asciiHandoffOut_inc49 (env : Env) (c : AsciiCarry)
+    (v : ForBodyValues) (v38 : IfThen38Values) :
+    lookupName (ifThen38Out (asciiHandoffEnv env c v) v38) "%inc49"
+      = some (.int 64 v38.inc49) := by
+  ift_lk
+
+/-- **The join, taken to the fused loop.**  The eight phis select the carried
+state and the block's two words, the increment word and the successor index; the
+test taken true sends the run to the fused loop's preheader. -/
+theorem if_end50_step_loop (env : Env) (s : State)
+    (shr17 st0 st9 st15 : BitVec 64) (oii or284 : List (BitVec 64))
+    (inc49 shr : BitVec 64)
+    (hpc : s.pc = "if.end50")
+    (hpre : s.pre = some "if.then38")
+    (hshr17 : lookupName env "%shr17" = some (.int 64 shr17))
+    (hst0 : lookupName env "%shr.i.i" = some (.int 64 st0))
+    (hst9 : lookupName env "%conv13.i.i" = some (.int 64 st9))
+    (hst15 : lookupName env "%shr.i" = some (.int 64 st15))
+    (hoii : lookupName env "%or.i.i291" = some (.vec 4 64 oii))
+    (hor284 : lookupName env "%or.i284" = some (.vec 4 64 or284))
+    (hinc : lookupName env "%inc49" = some (.int 64 inc49))
+    (hshr : lookupName env "%shr" = some (.int 64 shr))
+    (hbit : evalICmp .ult inc49 shr = 1) :
+    step s1BlocksCalls s1BlocksFunction (stateAt env s) =
+      .jump (stateAt (ifEnd50Out env shr17 st0 st9 st15 oii or284 inc49 shr)
+        { s with pc := "for.body54.lr.ph", pre := some "if.end50" }) := by
+  have hfind : s1BlocksFunction.findBlock (stateAt env s).pc = some if_end50Block := by
+    rw [show (stateAt env s).pc = s.pc from rfl, hpc]
+    exact LeanLLVM.Refinement.JsonS1BlocksIR.findBlock_if_end50
+  rw [step_at hfind (if_end50_denote env s shr17 st0 st9 st15 oii or284 inc49 shr
+    hpre hshr17 hst0 hst9 hst15 hoii hor284 hinc hshr)]
+  rw [show if_end50Block.term = if_end50Term from rfl]
+  simp only [if_end50Term]
+  rw [execTerm_condbr_true
+    (BlockEval.evalOperand_reg_of _ _ _ _ (by
+      rw [ifEnd50Out]
+      simp [cells])) hbit]
+  simp only [stateAt, hpc]
+
+/-- A window inside a block: a sixty-four byte read gives the range read at any
+interior offset, by splitting twice. -/
+theorem readBytes_docBlock_inside {m : Mem} {addr : Nat} {blk : List UInt8}
+    (h : readBytes m addr 64 = some blk) {k n : Nat} (hkn : k + n ≤ 64) :
+    readBytes m (addr + k) n = some ((blk.drop k).take n) := by
+  obtain ⟨-, h2⟩ := readBytes_split m addr k (64 - k) (by
+    rw [show k + (64 - k) = 64 from by omega]; exact h)
+  obtain ⟨h3, -⟩ := readBytes_split m (addr + k) n (64 - k - n) (by
+    rw [show n + (64 - k - n) = 64 - k from by omega]; exact h2)
+  exact h3
+
+/-- A window that starts below a block boundary: the previous block's last `d`
+bytes, then the block's first `32 - d` bytes.  The DFA's load-form carry reads
+the three bytes at `p - 3` exactly this way. -/
+theorem readBytes_docBlock_carry {m : Mem} {addr : Nat} {prev blk : List UInt8}
+    {d : Nat} (haddr : 64 ≤ addr)
+    (hprev : readBytes m (addr - 64) 64 = some prev)
+    (hblk : readBytes m addr 64 = some blk) (hpos : 1 ≤ d) (hd : d ≤ 3) :
+    readBytes m (addr - d) 32
+      = some ((prev.drop (64 - d)) ++ (blk.take (32 - d))) := by
+  have h1 : readBytes m (addr - d) d = some (prev.drop (64 - d)) := by
+    obtain ⟨-, h2⟩ := readBytes_split m (addr - 64) (64 - d) d (by
+      rw [show 64 - d + d = 64 from by omega]; exact hprev)
+    rwa [show addr - 64 + (64 - d) = addr - d from by omega] at h2
+  have h3 : readBytes m addr (32 - d) = some (blk.take (32 - d)) := by
+    obtain ⟨h4, -⟩ := readBytes_split m addr (32 - d) (64 - (32 - d)) (by
+      rw [show 32 - d + (64 - (32 - d)) = 64 from by omega]; exact hblk)
+    exact h4
+  have h3' : readBytes m ((addr - d) + d) (32 - d) = some (blk.take (32 - d)) := by
+    rwa [show addr - d + d = addr from by omega]
+  have happ := LeanLLVM.Refinement.JsonEntrySteps.readBytes_append m d (addr - d)
+    (prev.drop (64 - d)) (32 - d) (blk.take (32 - d)) h1 h3'
+  rw [show d + (32 - d) = 32 from by omega] at happ
+  exact happ
+
+/-- **The hand-off's eight windows.**  The terminal's two words are the reads
+its own pass left at `%add.ptr`; the three windows below the pointer are the
+previous block's last bytes and the block's first ones; the three above it are
+interior windows of the block.  Every read ends below the emit area, so the
+pass's store does not reach it, and every block read is the document's own. -/
+theorem asciiHandoff_reads (env : Env) (s : State) (c : AsciiCarry)
+    (v : ForBodyValues) (bs2 bs3 : List UInt8) (doc : Nat → List UInt8)
+    (hinv : AsciiInv env s c) (hv : v = asciiValues c bs2 bs3)
+    (hread2 : readBytes c.mem (c.b + 64 * (c.i + 1).toNat) 32 = some bs2)
+    (hread3 : readBytes c.mem (c.b + 64 * (c.i + 1).toNat + 32) 32 = some bs3)
+    (hshr57 : c.shr.toNat < 2 ^ 57)
+    (hne : c.i + 1 ≠ c.shr)
+    (hgap : c.b + 64 * c.shr.toNat ≤ c.ent)
+    (hdoc : ∀ j, j < c.shr.toNat →
+      readBytes c.mem (c.b + 64 * j) 64 = some (doc j)) :
+    readBytes (asciiHandoffState env s c v).mem v.addPtr 32 = some bs2 ∧
+    readBytes (asciiHandoffState env s c v).mem
+        (v.addPtr + ((0x0000000000000020#64).signExtend 64).toNat) 32 = some bs3 ∧
+    1 ≤ v.addPtr ∧ 2 ≤ v.addPtr ∧ 3 ≤ v.addPtr ∧
+    readBytes (asciiHandoffState env s c v).mem (v.addPtr - 1) 32
+      = some ((doc ((c.i + 1).toNat - 1)).drop 63
+          ++ (doc ((c.i + 1).toNat)).take 31) ∧
+    readBytes (asciiHandoffState env s c v).mem (v.addPtr - 2) 32
+      = some ((doc ((c.i + 1).toNat - 1)).drop 62
+          ++ (doc ((c.i + 1).toNat)).take 30) ∧
+    readBytes (asciiHandoffState env s c v).mem (v.addPtr - 3) 32
+      = some ((doc ((c.i + 1).toNat - 1)).drop 61
+          ++ (doc ((c.i + 1).toNat)).take 29) ∧
+    readBytes (asciiHandoffState env s c v).mem
+        (v.addPtr + ((0x000000000000001f#64).signExtend 64).toNat) 32
+      = some (((doc ((c.i + 1).toNat)).drop 31).take 32) ∧
+    readBytes (asciiHandoffState env s c v).mem
+        (v.addPtr + ((0x000000000000001e#64).signExtend 64).toNat) 32
+      = some (((doc ((c.i + 1).toNat)).drop 30).take 32) ∧
+    readBytes (asciiHandoffState env s c v).mem
+        (v.addPtr + ((0x000000000000001d#64).signExtend 64).toNat) 32
+      = some (((doc ((c.i + 1).toNat)).drop 29).take 32) := by
+  have hlt : c.i.toNat < c.shr.toNat := hinv.index_lt
+  have hsucc : (c.i + 1).toNat = c.i.toNat + 1 := by
+    rw [BitVec.toNat_add, show (1 : BitVec 64).toNat = 1 from by decide]
+    omega
+  have hJpos : 1 ≤ (c.i + 1).toNat := by omega
+  have hJle : (c.i + 1).toNat ≤ c.shr.toNat := by
+    rw [hsucc]; omega
+  have hJne : (c.i + 1).toNat ≠ c.shr.toNat := fun h =>
+    hne (BitVec.eq_of_toNat_eq h)
+  have hJlt : (c.i + 1).toNat < c.shr.toNat := by omega
+  have hJ1 : (c.i + 1).toNat + 1 ≤ c.shr.toNat := by omega
+  have ha : v.addPtr = c.b + 64 * (c.i + 1).toNat := by
+    rw [hv]
+    show c.b + (((c.i + 1) <<< (0x0000000000000006#64).toNat).signExtend 64).toNat
+        = c.b + 64 * (c.i + 1).toNat
+    rw [for_body_offset_toNat _ (asciiPass_hj c hshr57 hinv.index_lt)]
+  have harr : v.arrayidx = c.ent + 8 * (c.i + 1).toNat := by
+    rw [hv]
+    exact asciiValues_arrayidx c bs2 bs3 (asciiPass_hj c hshr57 hinv.index_lt)
+  have hmem : (asciiHandoffState env s c v).mem
+      = writeBytes c.mem (c.ent + 8 * (c.i + 1).toNat)
+          (natToBytes v.or16.toNat 8) := by
+    show writeBytes s.mem v.arrayidx (natToBytes v.or16.toNat 8) = _
+    rw [hinv.mem, harr]
+  have hdocJ : readBytes c.mem (c.b + 64 * (c.i + 1).toNat) 64
+      = some (doc ((c.i + 1).toNat)) := hdoc _ hJlt
+  have hdocPrev : readBytes c.mem (c.b + 64 * ((c.i + 1).toNat - 1)) 64
+      = some (doc ((c.i + 1).toNat - 1)) := hdoc _ (by omega)
+  have hprevAddr : (c.b + 64 * (c.i + 1).toNat) - 64
+      = c.b + 64 * ((c.i + 1).toNat - 1) := by omega
+  have h39 : readBytes (asciiHandoffState env s c v).mem v.addPtr 32 = some bs2 := by
+    rw [hmem, ha]
+    rw [readBytes_writeBytes_below c.mem (natToBytes v.or16.toNat 8) 32
+      (c.b + 64 * (c.i + 1).toNat) (c.ent + 8 * (c.i + 1).toNat) (by omega)]
+    exact hread2
+  have h40 : readBytes (asciiHandoffState env s c v).mem
+      (v.addPtr + ((0x0000000000000020#64).signExtend 64).toNat) 32 = some bs3 := by
+    rw [hmem, ha, show ((0x0000000000000020#64).signExtend 64).toNat = 32 from by decide]
+    rw [readBytes_writeBytes_below c.mem (natToBytes v.or16.toNat 8) 32
+      ((c.b + 64 * (c.i + 1).toNat) + 32) (c.ent + 8 * (c.i + 1).toNat) (by omega)]
+    exact hread3
+  have h1 : 1 ≤ v.addPtr := by rw [ha]; omega
+  have h2 : 2 ≤ v.addPtr := by rw [ha]; omega
+  have h3 : 3 ≤ v.addPtr := by rw [ha]; omega
+  have h41 : readBytes (asciiHandoffState env s c v).mem (v.addPtr - 1) 32
+      = some ((doc ((c.i + 1).toNat - 1)).drop 63
+          ++ (doc ((c.i + 1).toNat)).take 31) := by
+    rw [hmem, ha]
+    rw [readBytes_writeBytes_below c.mem (natToBytes v.or16.toNat 8) 32
+      (c.b + 64 * (c.i + 1).toNat - 1) (c.ent + 8 * (c.i + 1).toNat) (by omega)]
+    have hcarry := readBytes_docBlock_carry (m := c.mem)
+      (addr := c.b + 64 * (c.i + 1).toNat)
+      (prev := doc ((c.i + 1).toNat - 1)) (blk := doc ((c.i + 1).toNat))
+      (d := 1) (by omega) (by rw [hprevAddr]; exact hdocPrev) hdocJ (by omega) (by omega)
+    simpa using hcarry
+  have h42 : readBytes (asciiHandoffState env s c v).mem (v.addPtr - 2) 32
+      = some ((doc ((c.i + 1).toNat - 1)).drop 62
+          ++ (doc ((c.i + 1).toNat)).take 30) := by
+    rw [hmem, ha]
+    rw [readBytes_writeBytes_below c.mem (natToBytes v.or16.toNat 8) 32
+      (c.b + 64 * (c.i + 1).toNat - 2) (c.ent + 8 * (c.i + 1).toNat) (by omega)]
+    have hcarry := readBytes_docBlock_carry (m := c.mem)
+      (addr := c.b + 64 * (c.i + 1).toNat)
+      (prev := doc ((c.i + 1).toNat - 1)) (blk := doc ((c.i + 1).toNat))
+      (d := 2) (by omega) (by rw [hprevAddr]; exact hdocPrev) hdocJ (by omega) (by omega)
+    simpa using hcarry
+  have h43 : readBytes (asciiHandoffState env s c v).mem (v.addPtr - 3) 32
+      = some ((doc ((c.i + 1).toNat - 1)).drop 61
+          ++ (doc ((c.i + 1).toNat)).take 29) := by
+    rw [hmem, ha]
+    rw [readBytes_writeBytes_below c.mem (natToBytes v.or16.toNat 8) 32
+      (c.b + 64 * (c.i + 1).toNat - 3) (c.ent + 8 * (c.i + 1).toNat) (by omega)]
+    have hcarry := readBytes_docBlock_carry (m := c.mem)
+      (addr := c.b + 64 * (c.i + 1).toNat)
+      (prev := doc ((c.i + 1).toNat - 1)) (blk := doc ((c.i + 1).toNat))
+      (d := 3) (by omega) (by rw [hprevAddr]; exact hdocPrev) hdocJ (by omega) (by omega)
+    simpa using hcarry
+  have h57 : readBytes (asciiHandoffState env s c v).mem
+      (v.addPtr + ((0x000000000000001f#64).signExtend 64).toNat) 32
+      = some (((doc ((c.i + 1).toNat)).drop 31).take 32) := by
+    rw [hmem, ha, show ((0x000000000000001f#64).signExtend 64).toNat = 31 from by decide]
+    rw [readBytes_writeBytes_below c.mem (natToBytes v.or16.toNat 8) 32
+      ((c.b + 64 * (c.i + 1).toNat) + 31) (c.ent + 8 * (c.i + 1).toNat) (by omega)]
+    exact readBytes_docBlock_inside hdocJ (k := 31) (n := 32) (by omega)
+  have h58 : readBytes (asciiHandoffState env s c v).mem
+      (v.addPtr + ((0x000000000000001e#64).signExtend 64).toNat) 32
+      = some (((doc ((c.i + 1).toNat)).drop 30).take 32) := by
+    rw [hmem, ha, show ((0x000000000000001e#64).signExtend 64).toNat = 30 from by decide]
+    rw [readBytes_writeBytes_below c.mem (natToBytes v.or16.toNat 8) 32
+      ((c.b + 64 * (c.i + 1).toNat) + 30) (c.ent + 8 * (c.i + 1).toNat) (by omega)]
+    exact readBytes_docBlock_inside hdocJ (k := 30) (n := 32) (by omega)
+  have h59 : readBytes (asciiHandoffState env s c v).mem
+      (v.addPtr + ((0x000000000000001d#64).signExtend 64).toNat) 32
+      = some (((doc ((c.i + 1).toNat)).drop 29).take 32) := by
+    rw [hmem, ha, show ((0x000000000000001d#64).signExtend 64).toNat = 29 from by decide]
+    rw [readBytes_writeBytes_below c.mem (natToBytes v.or16.toNat 8) 32
+      ((c.b + 64 * (c.i + 1).toNat) + 29) (c.ent + 8 * (c.i + 1).toNat) (by omega)]
+    exact readBytes_docBlock_inside hdocJ (k := 29) (n := 32) (by omega)
+  exact ⟨h39, h40, h1, h2, h3, h41, h42, h43, h57, h58, h59⟩
+
+/-- **The hand-off's two steps.**  The DFA block's run and its branch to the
+join, then the join's eight phis and its branch to the fused loop's preheader.
+The join's test is the successor index's bound, the block after the hand-off
+block being the one the fused loop starts on. -/
+theorem asciiHandoff_step (env : Env) (s : State) (c : AsciiCarry)
+    (v : ForBodyValues) (bs39 bs40 bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8)
+    (hinv : AsciiInv env s c)
+    (h39 : readBytes (asciiHandoffState env s c v).mem v.addPtr 32 = some bs39)
+    (h40 : readBytes (asciiHandoffState env s c v).mem
+      (v.addPtr + ((0x0000000000000020#64).signExtend 64).toNat) 32 = some bs40)
+    (h1 : 1 ≤ v.addPtr) (h2 : 2 ≤ v.addPtr) (h3 : 3 ≤ v.addPtr)
+    (h41 : readBytes (asciiHandoffState env s c v).mem (v.addPtr - 1) 32 = some bs41)
+    (h42 : readBytes (asciiHandoffState env s c v).mem (v.addPtr - 2) 32 = some bs42)
+    (h43 : readBytes (asciiHandoffState env s c v).mem (v.addPtr - 3) 32 = some bs43)
+    (h57 : readBytes (asciiHandoffState env s c v).mem
+      (v.addPtr + ((0x000000000000001f#64).signExtend 64).toNat) 32 = some bs57)
+    (h58 : readBytes (asciiHandoffState env s c v).mem
+      (v.addPtr + ((0x000000000000001e#64).signExtend 64).toNat) 32 = some bs58)
+    (h59 : readBytes (asciiHandoffState env s c v).mem
+      (v.addPtr + ((0x000000000000001d#64).signExtend 64).toNat) 32 = some bs59)
+    (hbit : evalICmp .ult (v.i + 1) c.shr = 1) :
+    (let v38 := ifThen38Values v.addPtr v.i bs39 bs40 bs41 bs42 bs43 bs57 bs58 bs59
+     let s4 := stateAt (ifThen38Out (asciiHandoffEnv env c v) v38)
+       { (asciiHandoffState env s c v) with pc := "if.end50", pre := some "if.then38" }
+     let s5 := stateAt (ifEnd50Out (ifThen38Out (asciiHandoffEnv env c v) v38)
+         v.shr17 v.shrII v.conv13II v.shrI v38.or291 v38.or284 v38.inc49 c.shr)
+       { s4 with pc := "for.body54.lr.ph", pre := some "if.end50" }
+     step s1BlocksCalls s1BlocksFunction (asciiHandoffState env s c v) = .jump s4 ∧
+     step s1BlocksCalls s1BlocksFunction s4 = .jump s5) := by
+  intro v38 s4 s5
+  have hbit' : evalICmp .ult v38.inc49 c.shr = 1 := by
+    show evalICmp .ult (v.i + 1) c.shr = 1
+    exact hbit
+  refine ⟨?_, ?_⟩
+  · exact if_then38_step (asciiHandoffEnv env c v) (asciiHandoffState env s c v)
+      v.addPtr v.i bs39 bs40 bs41 bs42 bs43 bs57 bs58 bs59 rfl
+      (lookupName_asciiHandoff_addPtr env s c v)
+      (lookupName_asciiHandoff_i env s c v)
+      h39 h40 h1 h41 h2 h3 h42 h43 h57 h58 h59
+  · exact if_end50_step_loop (ifThen38Out (asciiHandoffEnv env c v) v38) s4
+      v.shr17 v.shrII v.conv13II v.shrI v38.or291 v38.or284 v38.inc49 c.shr
+      rfl rfl
+      (lookupName_asciiHandoffOut_shr17 env c v v38)
+      (lookupName_asciiHandoffOut_shrII env c v v38)
+      (lookupName_asciiHandoffOut_conv13 env c v v38)
+      (lookupName_asciiHandoffOut_shrI env c v v38)
+      (lookupName_asciiHandoffOut_or291 env c v v38)
+      (lookupName_asciiHandoffOut_or284 env c v v38)
+      (lookupName_asciiHandoffOut_inc49 env c v v38)
+      (lookupName_asciiHandoffOut_shr env c v v38 hinv.bound)
+      hbit'
+
+/-- **The phase's hand-off, from its terminal to the fused loop's entry.**  The
+terminal's own two words and the document supply the DFA block's eight windows,
+the block's branch reaches the join, and the join's test — taken true — sends
+the run to `for.body54.lr.ph` at the carried state. -/
+theorem asciiHandoff_run (env : Env) (s : State) (c : AsciiCarry)
+    (v : ForBodyValues) (bs2 bs3 : List UInt8) (doc : Nat → List UInt8)
+    (hinv : AsciiInv env s c) (hv : v = asciiValues c bs2 bs3)
+    (hread2 : readBytes c.mem (c.b + 64 * (c.i + 1).toNat) 32 = some bs2)
+    (hread3 : readBytes c.mem (c.b + 64 * (c.i + 1).toNat + 32) 32 = some bs3)
+    (hshr57 : c.shr.toNat < 2 ^ 57)
+    (hne : c.i + 1 ≠ c.shr)
+    (hgap : c.b + 64 * c.shr.toNat ≤ c.ent)
+    (hdoc : ∀ j, j < c.shr.toNat →
+      readBytes c.mem (c.b + 64 * j) 64 = some (doc j))
+    (hbit : evalICmp .ult (v.i + 1) c.shr = 1) :
+    (let v38 := ifThen38Values v.addPtr v.i bs2 bs3
+        ((doc ((c.i + 1).toNat - 1)).drop 63 ++ (doc ((c.i + 1).toNat)).take 31)
+        ((doc ((c.i + 1).toNat - 1)).drop 62 ++ (doc ((c.i + 1).toNat)).take 30)
+        ((doc ((c.i + 1).toNat - 1)).drop 61 ++ (doc ((c.i + 1).toNat)).take 29)
+        (((doc ((c.i + 1).toNat)).drop 31).take 32)
+        (((doc ((c.i + 1).toNat)).drop 30).take 32)
+        (((doc ((c.i + 1).toNat)).drop 29).take 32)
+     let s4 := stateAt (ifThen38Out (asciiHandoffEnv env c v) v38)
+       { (asciiHandoffState env s c v) with pc := "if.end50", pre := some "if.then38" }
+     let s5 := stateAt (ifEnd50Out (ifThen38Out (asciiHandoffEnv env c v) v38)
+         v.shr17 v.shrII v.conv13II v.shrI v38.or291 v38.or284 v38.inc49 c.shr)
+       { s4 with pc := "for.body54.lr.ph", pre := some "if.end50" }
+     step s1BlocksCalls s1BlocksFunction (asciiHandoffState env s c v) = .jump s4 ∧
+     step s1BlocksCalls s1BlocksFunction s4 = .jump s5) := by
+  obtain ⟨h39, h40, h1, h2, h3, h41, h42, h43, h57, h58, h59⟩ :=
+    asciiHandoff_reads env s c v bs2 bs3 doc hinv hv hread2 hread3 hshr57 hne hgap hdoc
+  exact asciiHandoff_step env s c v bs2 bs3
+    ((doc ((c.i + 1).toNat - 1)).drop 63 ++ (doc ((c.i + 1).toNat)).take 31)
+    ((doc ((c.i + 1).toNat - 1)).drop 62 ++ (doc ((c.i + 1).toNat)).take 30)
+    ((doc ((c.i + 1).toNat - 1)).drop 61 ++ (doc ((c.i + 1).toNat)).take 29)
+    (((doc ((c.i + 1).toNat)).drop 31).take 32)
+    (((doc ((c.i + 1).toNat)).drop 30).take 32)
+    (((doc ((c.i + 1).toNat)).drop 29).take 32)
+    hinv h39 h40 h1 h2 h3 h41 h42 h43 h57 h58 h59 hbit
+
 /-! ### Axiom footprints
 
 The block runs and the branch lemmas compute from the block's own literal lists;
@@ -5864,5 +6292,12 @@ intrinsic arms. -/
 #print axioms asciiExit_denote
 #print axioms asciiExit_step_aligned
 #print axioms asciiExit_step_peel
+#print axioms lookupName_asciiHandoffOut_or291
+#print axioms if_end50_step_loop
+#print axioms readBytes_docBlock_inside
+#print axioms readBytes_docBlock_carry
+#print axioms asciiHandoff_reads
+#print axioms asciiHandoff_step
+#print axioms asciiHandoff_run
 
 end LeanLLVM.Refinement.JsonS1BlocksRefine
