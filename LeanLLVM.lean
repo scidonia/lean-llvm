@@ -72,6 +72,8 @@ import LeanLLVM.Refinement.JsonS1BlocksRunCharge
 import LeanLLVM.Refinement.JsonS1BlocksPrefixSplit
 import LeanLLVM.Refinement.JsonS1BlocksShort
 import LeanLLVM.Refinement.JsonS1BlocksUnitPost
+import LeanLLVM.Refinement.JsonS1BlocksFinalAt
+import LeanLLVM.Refinement.JsonS1BlocksHeadCompose
 import LeanLLVM.Refinement.JsonS1BlocksAccFold
 import LeanLLVM.Refinement.JsonEntryIR
 import LeanLLVM.Refinement.JsonEntrySteps
