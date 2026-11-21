@@ -4614,6 +4614,541 @@ theorem for_body_lr_ph_page_handoff (env : Env) (s : State) (arm : BitVec 64)
     (lookupName_forBodyOut_3 (lrPhEnv env arm) v)
     hbit
 
+/-! ### The ASCII phase's latch edge
+
+The latch closes the phase's iteration.  `for.inc` increments the index it reads
+and tests the successor against the loop bound, `for.body` runs the block the
+successor addresses, and `if.end` sends the iteration back to the latch when the
+block is all ASCII or to the hand-off when it is not.  The body's five `phi`s
+select the latch's register arm — `%shr17`, `%inc`, `%shr.i.i`, `%conv13.i.i` and
+`%shr.i` — so the iteration enters the block at the four words the previous
+iteration left, at the successor index, with the reads at `%b + 64*(i + 1)` and
+its `+32` word. -/
+
+/-- `%inc`, the latch's successor index. -/
+theorem lookupName_forIncEnv_inc (env : Env) (i shr : BitVec 64) :
+    lookupName (forIncEnv env i shr) "%inc" = some (.int 64 (i + 1)) := by
+  simp only [forIncEnv, cells]
+  rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_self]
+
+/-- A register read through the latch's two cells to the environment beneath
+them. -/
+theorem lookupName_forIncEnv_of (env : Env) (i shr : BitVec 64) {n : String}
+    {v : Value} (h : lookupName env n = some v)
+    (h1 : "%exitcond.not" ≠ n) (h2 : "%inc" ≠ n) :
+    lookupName (forIncEnv env i shr) n = some v := by
+  simp only [forIncEnv, cells]
+  rw [lookupName_cons_ne _ _ h1, lookupName_cons_ne _ _ h2]
+  exact h
+
+/-- A register read through `if.end`'s three cells to the environment beneath
+them. -/
+theorem lookupName_ifEndEnv_of (env : Env) (a2 a3 : List (BitVec 64)) {n : String}
+    {v : Value} (h : lookupName env n = some v)
+    (h1 : "%tobool22.not" ≠ n) (h2 : "%38" ≠ n) (h3 : "%or.i285" ≠ n) :
+    lookupName (ifEndEnv env a2 a3) n = some v := by
+  simp only [ifEndEnv, cells]
+  rw [lookupName_cons_ne _ _ h1, lookupName_cons_ne _ _ h2,
+    lookupName_cons_ne _ _ h3]
+  exact h
+
+/-- The shift register, as the body leaves it. -/
+theorem lookupName_forBodyOut_shr17 (env : Env) (v : ForBodyValues) :
+    lookupName (forBodyOut env v) "%shr17" = some (.int 64 v.shr17) := by
+  handoff_lk
+
+/-- The DFA's first carried word, as the body leaves it. -/
+theorem lookupName_forBodyOut_shrII (env : Env) (v : ForBodyValues) :
+    lookupName (forBodyOut env v) "%shr.i.i" = some (.int 64 v.shrII) := by
+  handoff_lk
+
+/-- The DFA's second carried word, as the body leaves it. -/
+theorem lookupName_forBodyOut_conv13 (env : Env) (v : ForBodyValues) :
+    lookupName (forBodyOut env v) "%conv13.i.i" = some (.int 64 v.conv13II) := by
+  handoff_lk
+
+/-- The DFA's third carried word, as the body leaves it. -/
+theorem lookupName_forBodyOut_shrI (env : Env) (v : ForBodyValues) :
+    lookupName (forBodyOut env v) "%shr.i" = some (.int 64 v.shrI) := by
+  handoff_lk
+
+/-- The block pointer rides through the body. -/
+theorem lookupName_forBodyOut_b (env : Env) (v : ForBodyValues) :
+    lookupName (forBodyOut env v) "%b" = lookupName env "%b" := by
+  handoff_lk
+
+/-- The emit pointer rides through the body. -/
+theorem lookupName_forBodyOut_ent (env : Env) (v : ForBodyValues) :
+    lookupName (forBodyOut env v) "%ent" = lookupName env "%ent" := by
+  handoff_lk
+
+/-- The loop bound rides through the body. -/
+theorem lookupName_forBodyOut_shr (env : Env) (v : ForBodyValues) :
+    lookupName (forBodyOut env v) "%shr" = lookupName env "%shr" := by
+  handoff_lk
+
+/-- **The block's own address.**  `for.body` shifts its index by six and reads at
+`%b` plus the sign-extended shift, so a successor index below `2 ^ 57` addresses
+`64 * i` bytes past `%b`.  The bound is what keeps the shift inside the
+sign-extension's non-negative range. -/
+theorem for_body_offset_toNat (j : BitVec 64) (hj : j.toNat < 2 ^ 57) :
+    ((j <<< (0x0000000000000006#64).toNat).signExtend 64).toNat = 64 * j.toNat := by
+  rw [BitVec.signExtend_eq, BitVec.toNat_shiftLeft,
+    show (0x0000000000000006#64 : BitVec 64).toNat = 6 from by decide,
+    Nat.shiftLeft_eq]
+  omega
+
+/-- **The latch's edge to the class test.**  The latch's increment and its exit
+test taken false, then the body's run from the state the back edge hands over —
+the five phis selecting the latch's register arm and the two word reads at
+`%b + 64*(i + 1)` — then the body's step at the set escape gate. -/
+theorem for_inc_page (env : Env) (s : State) (i shr : BitVec 64)
+    (prevS st0 st9 st15 : BitVec 64) (bs2 bs3 : List UInt8) (b ent : Nat)
+    (hpc : s.pc = "for.inc")
+    (hi : lookupName env "%i.0510" = some (.int 64 i))
+    (hshr : lookupName env "%shr" = some (.int 64 shr))
+    (hprevS : lookupName env "%shr17" = some (.int 64 prevS))
+    (hst0 : lookupName env "%shr.i.i" = some (.int 64 st0))
+    (hst9 : lookupName env "%conv13.i.i" = some (.int 64 st9))
+    (hst15 : lookupName env "%shr.i" = some (.int 64 st15))
+    (htobool : lookupName env "%tobool.not" = some (.int 1 1))
+    (hb : lookupName env "%b" = some (.ptr b))
+    (hent : lookupName env "%ent" = some (.ptr ent))
+    (hloop : evalICmp .eq (i + 1) shr = 0)
+    (hj : (i + 1).toNat < 2 ^ 57)
+    (hread2 : readBytes s.mem (b + 64 * (i + 1).toNat) 32 = some bs2)
+    (hread3 : readBytes s.mem (b + 64 * (i + 1).toNat + 32) 32 = some bs3) :
+    let v := forBodyValues prevS (i + 1) st0 st9 st15 bs2 bs3 b ent
+    let s1 := stateAt (forIncEnv env i shr)
+      { s with pc := "for.body", pre := some "for.inc" }
+    let s2 := stateAt (forBodyOut (forIncEnv env i shr) v)
+      { s with
+        pc := "if.end",
+        pre := some "for.body",
+        mem := writeBytes s.mem v.arrayidx (natToBytes v.or16.toNat 8) }
+    step s1BlocksCalls s1BlocksFunction (stateAt env s) = .jump s1 ∧
+    step s1BlocksCalls s1BlocksFunction s1 = .jump s2 := by
+  intro v s1 s2
+  have hinc : lookupName (forIncEnv env i shr) "%inc" = some (.int 64 (i + 1)) :=
+    lookupName_forIncEnv_inc env i shr
+  have hprevS' : lookupName (forIncEnv env i shr) "%shr17" = some (.int 64 prevS) :=
+    lookupName_forIncEnv_of env i shr hprevS (by decide) (by decide)
+  have hst0' : lookupName (forIncEnv env i shr) "%shr.i.i" = some (.int 64 st0) :=
+    lookupName_forIncEnv_of env i shr hst0 (by decide) (by decide)
+  have hst9' : lookupName (forIncEnv env i shr) "%conv13.i.i" = some (.int 64 st9) :=
+    lookupName_forIncEnv_of env i shr hst9 (by decide) (by decide)
+  have hst15' : lookupName (forIncEnv env i shr) "%shr.i" = some (.int 64 st15) :=
+    lookupName_forIncEnv_of env i shr hst15 (by decide) (by decide)
+  have hb' : lookupName (forIncEnv env i shr) "%b" = some (.ptr b) :=
+    lookupName_forIncEnv_of env i shr hb (by decide) (by decide)
+  have hent' : lookupName (forIncEnv env i shr) "%ent" = some (.ptr ent) :=
+    lookupName_forIncEnv_of env i shr hent (by decide) (by decide)
+  have htobool' : lookupName (forBodyOut (forIncEnv env i shr) v) "%tobool.not"
+      = some (.int 1 1) := by
+    rw [lookupName_forBodyOut_tobool]
+    exact lookupName_forIncEnv_of env i shr htobool (by decide) (by decide)
+  refine ⟨for_inc_step_loop env s i shr hpc hi hshr hloop, ?_⟩
+  exact for_body_step_end (forIncEnv env i shr)
+    { s with pc := "for.body", pre := some "for.inc" } v rfl htobool'
+    (for_body_denote (forIncEnv env i shr)
+      { s with pc := "for.body", pre := some "for.inc" } "for.inc"
+      (.reg "%shr17") (.reg "%inc") (.reg "%shr.i.i") (.reg "%conv13.i.i")
+      (.reg "%shr.i") prevS (i + 1) st0 st9 st15 bs2 bs3 b ent rfl
+      (by decide) (BlockEval.evalOperand_reg_of _ _ _ _ hprevS')
+      (by decide) (BlockEval.evalOperand_reg_of _ _ _ _ hinc)
+      (by decide) (BlockEval.evalOperand_reg_of _ _ _ _ hst0')
+      (by decide) (BlockEval.evalOperand_reg_of _ _ _ _ hst9')
+      (by decide) (BlockEval.evalOperand_reg_of _ _ _ _ hst15')
+      hb' hent'
+      (by rw [BitVec.signExtend_eq]; omega)
+      (by rw [for_body_offset_toNat _ hj]; omega)
+      (by rw [for_body_offset_toNat _ hj]; exact hread2)
+      (by
+        rw [for_body_offset_toNat _ hj,
+          show ((0x0000000000000020#64 : BitVec 64).signExtend 64).toNat = 32
+            from by decide]
+        exact hread3))
+
+/-- **The latch's edge at the class test, ASCII arm.**  The body's run and the
+class test with no high bit in the block: `%tobool22.not` is clear, so the test
+sends the iteration back to the latch. -/
+theorem for_inc_page_ascii (env : Env) (s : State) (i shr : BitVec 64)
+    (prevS st0 st9 st15 : BitVec 64) (bs2 bs3 : List UInt8) (b ent : Nat)
+    (hpc : s.pc = "for.inc")
+    (hi : lookupName env "%i.0510" = some (.int 64 i))
+    (hshr : lookupName env "%shr" = some (.int 64 shr))
+    (hprevS : lookupName env "%shr17" = some (.int 64 prevS))
+    (hst0 : lookupName env "%shr.i.i" = some (.int 64 st0))
+    (hst9 : lookupName env "%conv13.i.i" = some (.int 64 st9))
+    (hst15 : lookupName env "%shr.i" = some (.int 64 st15))
+    (htobool : lookupName env "%tobool.not" = some (.int 1 1))
+    (hb : lookupName env "%b" = some (.ptr b))
+    (hent : lookupName env "%ent" = some (.ptr ent))
+    (hloop : evalICmp .eq (i + 1) shr = 0)
+    (hj : (i + 1).toNat < 2 ^ 57)
+    (hread2 : readBytes s.mem (b + 64 * (i + 1).toNat) 32 = some bs2)
+    (hread3 : readBytes s.mem (b + 64 * (i + 1).toNat + 32) 32 = some bs3) :
+    let v := forBodyValues prevS (i + 1) st0 st9 st15 bs2 bs3 b ent
+    let s1 := stateAt (forIncEnv env i shr)
+      { s with pc := "for.body", pre := some "for.inc" }
+    let s2 := stateAt (forBodyOut (forIncEnv env i shr) v)
+      { s with
+        pc := "if.end",
+        pre := some "for.body",
+        mem := writeBytes s.mem v.arrayidx (natToBytes v.or16.toNat 8) }
+    let s3 := stateAt (ifEndEnv (forBodyOut (forIncEnv env i shr) v) v.w2 v.w3)
+      { s with
+        pc := "for.inc",
+        pre := some "if.end",
+        mem := writeBytes s.mem v.arrayidx (natToBytes v.or16.toNat 8) }
+    (hbit : evalICmp .eq (ifEndTest v.w2 v.w3) 0 = 0) →
+    step s1BlocksCalls s1BlocksFunction (stateAt env s) = .jump s1 ∧
+    step s1BlocksCalls s1BlocksFunction s1 = .jump s2 ∧
+    step s1BlocksCalls s1BlocksFunction s2 = .jump s3 := by
+  intro v s1 s2 s3 hbit
+  obtain ⟨h01, h12⟩ := for_inc_page env s i shr prevS st0 st9 st15 bs2 bs3 b ent
+    hpc hi hshr hprevS hst0 hst9 hst15 htobool hb hent hloop hj hread2 hread3
+  exact ⟨h01, h12,
+    if_end_step_ascii (forBodyOut (forIncEnv env i shr) v)
+      { s with
+        pc := "if.end",
+        pre := some "for.body",
+        mem := writeBytes s.mem v.arrayidx (natToBytes v.or16.toNat 8) }
+      v.w2 v.w3
+      (unpackLanes_length 64 4 (bytesToNat bs2))
+      (unpackLanes_length 64 4 (bytesToNat bs3))
+      rfl
+      (lookupName_forBodyOut_2 (forIncEnv env i shr) v)
+      (lookupName_forBodyOut_3 (forIncEnv env i shr) v)
+      hbit⟩
+
+/-- **The latch's edge at the class test, hand-off arm.**  The block has a high
+bit, so the class test hands it to `if.then38`. -/
+theorem for_inc_page_handoff (env : Env) (s : State) (i shr : BitVec 64)
+    (prevS st0 st9 st15 : BitVec 64) (bs2 bs3 : List UInt8) (b ent : Nat)
+    (hpc : s.pc = "for.inc")
+    (hi : lookupName env "%i.0510" = some (.int 64 i))
+    (hshr : lookupName env "%shr" = some (.int 64 shr))
+    (hprevS : lookupName env "%shr17" = some (.int 64 prevS))
+    (hst0 : lookupName env "%shr.i.i" = some (.int 64 st0))
+    (hst9 : lookupName env "%conv13.i.i" = some (.int 64 st9))
+    (hst15 : lookupName env "%shr.i" = some (.int 64 st15))
+    (htobool : lookupName env "%tobool.not" = some (.int 1 1))
+    (hb : lookupName env "%b" = some (.ptr b))
+    (hent : lookupName env "%ent" = some (.ptr ent))
+    (hloop : evalICmp .eq (i + 1) shr = 0)
+    (hj : (i + 1).toNat < 2 ^ 57)
+    (hread2 : readBytes s.mem (b + 64 * (i + 1).toNat) 32 = some bs2)
+    (hread3 : readBytes s.mem (b + 64 * (i + 1).toNat + 32) 32 = some bs3) :
+    let v := forBodyValues prevS (i + 1) st0 st9 st15 bs2 bs3 b ent
+    let s1 := stateAt (forIncEnv env i shr)
+      { s with pc := "for.body", pre := some "for.inc" }
+    let s2 := stateAt (forBodyOut (forIncEnv env i shr) v)
+      { s with
+        pc := "if.end",
+        pre := some "for.body",
+        mem := writeBytes s.mem v.arrayidx (natToBytes v.or16.toNat 8) }
+    let s3 := stateAt (ifEndEnv (forBodyOut (forIncEnv env i shr) v) v.w2 v.w3)
+      { s with
+        pc := "if.then38",
+        pre := some "if.end",
+        mem := writeBytes s.mem v.arrayidx (natToBytes v.or16.toNat 8) }
+    (hbit : evalICmp .eq (ifEndTest v.w2 v.w3) 0 = 1) →
+    step s1BlocksCalls s1BlocksFunction (stateAt env s) = .jump s1 ∧
+    step s1BlocksCalls s1BlocksFunction s1 = .jump s2 ∧
+    step s1BlocksCalls s1BlocksFunction s2 = .jump s3 := by
+  intro v s1 s2 s3 hbit
+  obtain ⟨h01, h12⟩ := for_inc_page env s i shr prevS st0 st9 st15 bs2 bs3 b ent
+    hpc hi hshr hprevS hst0 hst9 hst15 htobool hb hent hloop hj hread2 hread3
+  exact ⟨h01, h12,
+    if_end_step_handoff (forBodyOut (forIncEnv env i shr) v)
+      { s with
+        pc := "if.end",
+        pre := some "for.body",
+        mem := writeBytes s.mem v.arrayidx (natToBytes v.or16.toNat 8) }
+      v.w2 v.w3
+      (unpackLanes_length 64 4 (bytesToNat bs2))
+      (unpackLanes_length 64 4 (bytesToNat bs3))
+      rfl
+      (lookupName_forBodyOut_2 (forIncEnv env i shr) v)
+      (lookupName_forBodyOut_3 (forIncEnv env i shr) v)
+      hbit⟩
+
+/-! ### The phase's carried invariant
+
+One ASCII pass is `for.inc` → `for.body` → `if.end` → `for.inc`.  What it hands
+the next pass is the successor index, the four words the body left — the shift
+register `%prevS` and the DFA's three carried words — the two pointers the block
+addresses, the loop bound, and the memory the pass's store wrote.  `AsciiCarry`
+is that tuple and `AsciiInv` is its reading at the latch: the cells the next pass
+looks up, all of them in the state's own environment.  `asciiValues` is the
+block's computation at the pass's index and `asciiNext` the carry the pass hands
+on, so the successor invariant is the iteration's own definition rather than a
+re-derivation.
+
+The two arms of the pass are `asciiInv_step`, which takes the latch's back edge
+and proves the invariant at the next latch with the index advanced by one inside
+the bound, and `asciiInv_exit`, which is the bound `i + 1 = shr`: the latch's own
+exit test, read as its proposition by `for_inc_exitcond_iff`, which leaves the
+phase for `for.end101`.  The hand-off arm is `for_inc_page_handoff`, whose
+successor is the hand-off chain's `if.then38`, and `asciiInv_seed` is the
+invariant the preheader's first pass establishes.  An induction on the distance
+to the bound consumes those and the pass's two word reads at the carry's
+memory. -/
+
+/-- The ASCII phase's carried tuple at its latch. -/
+structure AsciiCarry where
+  /-- The index the latch reads: the block the last pass processed. -/
+  i : BitVec 64
+  /-- The shift register the last pass left. -/
+  prevS : BitVec 64
+  /-- The DFA's first carried word. -/
+  st0 : BitVec 64
+  /-- The DFA's second carried word. -/
+  st9 : BitVec 64
+  /-- The DFA's third carried word. -/
+  st15 : BitVec 64
+  /-- The base the block's words are read at. -/
+  b : Nat
+  /-- The base the pass's emit word is stored at. -/
+  ent : Nat
+  /-- The loop bound the latch's exit test compares the successor index with. -/
+  shr : BitVec 64
+  /-- The memory the pass reads at. -/
+  mem : Mem
+
+/-- **The phase's invariant at the latch.**  The state is at `for.inc` and its
+environment binds the cells the latch and the next block read: the index, the
+bound, the four words the last pass left, the two pointers, and the escape gate,
+which is set for the whole phase so that the body always reaches the class test.
+The index is inside the bound, so a pass that takes the back edge advances inside
+it. -/
+structure AsciiInv (env : Env) (s : State) (c : AsciiCarry) : Prop where
+  /-- The state is at the latch. -/
+  pc : s.pc = "for.inc"
+  /-- The state's memory is the one the pass's reads are stated at. -/
+  mem : s.mem = c.mem
+  /-- The index the latch increments. -/
+  index : lookupName env "%i.0510" = some (.int 64 c.i)
+  /-- The loop bound. -/
+  bound : lookupName env "%shr" = some (.int 64 c.shr)
+  /-- The shift register the last pass left. -/
+  prevS : lookupName env "%shr17" = some (.int 64 c.prevS)
+  /-- The DFA's first carried word. -/
+  st0 : lookupName env "%shr.i.i" = some (.int 64 c.st0)
+  /-- The DFA's second carried word. -/
+  st9 : lookupName env "%conv13.i.i" = some (.int 64 c.st9)
+  /-- The DFA's third carried word. -/
+  st15 : lookupName env "%shr.i" = some (.int 64 c.st15)
+  /-- The block's base. -/
+  base : lookupName env "%b" = some (.ptr c.b)
+  /-- The pass's emit base. -/
+  emit : lookupName env "%ent" = some (.ptr c.ent)
+  /-- The escape gate: set for the whole phase. -/
+  gate : lookupName env "%tobool.not" = some (.int 1 1)
+  /-- The index is inside the bound. -/
+  index_lt : c.i.toNat < c.shr.toNat
+
+/-- The values one ASCII pass binds: the block's own computation at the latch's
+successor index, from the four carried words and the two words the pass reads. -/
+def asciiValues (c : AsciiCarry) (bs2 bs3 : List UInt8) : ForBodyValues :=
+  forBodyValues c.prevS (c.i + 1) c.st0 c.st9 c.st15 bs2 bs3 c.b c.ent
+
+/-- The carry one ASCII pass hands the next latch: the successor index, the four
+words the body left, and the memory the pass's store wrote. -/
+def asciiNext (c : AsciiCarry) (bs2 bs3 : List UInt8) : AsciiCarry :=
+  { i := (asciiValues c bs2 bs3).i
+    prevS := (asciiValues c bs2 bs3).shr17
+    st0 := (asciiValues c bs2 bs3).shrII
+    st9 := (asciiValues c bs2 bs3).conv13II
+    st15 := (asciiValues c bs2 bs3).shrI
+    b := c.b
+    ent := c.ent
+    shr := c.shr
+    mem := writeBytes c.mem (asciiValues c bs2 bs3).arrayidx
+      (natToBytes (asciiValues c bs2 bs3).or16.toNat 8) }
+
+/-- The pass's index is the latch's increment. -/
+theorem asciiNext_i (c : AsciiCarry) (bs2 bs3 : List UInt8) :
+    (asciiNext c bs2 bs3).i = c.i + 1 := rfl
+
+/-- A pass that takes the back edge advances the index inside the bound: the
+successor index's `Nat` reading grows by one without leaving the bound, because
+the latch's test is false exactly when it has not reached it. -/
+theorem asciiNext_index_lt (c : AsciiCarry) (bs2 bs3 : List UInt8)
+    (hlt : c.i.toNat < c.shr.toNat) (hne : c.i + 1 ≠ c.shr) :
+    (asciiNext c bs2 bs3).i.toNat < c.shr.toNat := by
+  have hsucc : (c.i + 1).toNat = c.i.toNat + 1 := by
+    rw [BitVec.toNat_add, show (1 : BitVec 64).toNat = 1 from by decide]
+    omega
+  have hneNat : c.i.toNat + 1 ≠ c.shr.toNat := fun h =>
+    hne (BitVec.eq_of_toNat_eq (by rw [hsucc]; exact h))
+  rw [asciiNext_i, hsucc]
+  omega
+
+/-- **The ASCII pass's back edge.**  The invariant at the latch, the latch's exit
+test taken false, the successor index inside the shift's range, and the pass's
+two word reads at the carry's memory: the latch's step, the body's run from the
+latch's register arm at `%b + 64*(i + 1)`, and the class test's ASCII branch —
+then the invariant at the next latch, with the index advanced by one and the
+pass's store in the memory. -/
+theorem asciiInv_step (env : Env) (s : State) (c : AsciiCarry)
+    (bs2 bs3 : List UInt8)
+    (hinv : AsciiInv env s c)
+    (hloop : evalICmp .eq (c.i + 1) c.shr = 0)
+    (hj : (c.i + 1).toNat < 2 ^ 57)
+    (hread2 : readBytes c.mem (c.b + 64 * (c.i + 1).toNat) 32 = some bs2)
+    (hread3 : readBytes c.mem (c.b + 64 * (c.i + 1).toNat + 32) 32 = some bs3)
+    (hbit : evalICmp .eq (ifEndTest (asciiValues c bs2 bs3).w2
+      (asciiValues c bs2 bs3).w3) 0 = 0) :
+    let v := asciiValues c bs2 bs3
+    let s1 := stateAt (forIncEnv env c.i c.shr)
+      { s with pc := "for.body", pre := some "for.inc" }
+    let s2 := stateAt (forBodyOut (forIncEnv env c.i c.shr) v)
+      { s with
+        pc := "if.end",
+        pre := some "for.body",
+        mem := writeBytes s.mem v.arrayidx (natToBytes v.or16.toNat 8) }
+    let s3 := stateAt (ifEndEnv (forBodyOut (forIncEnv env c.i c.shr) v) v.w2 v.w3)
+      { s with
+        pc := "for.inc",
+        pre := some "if.end",
+        mem := writeBytes s.mem v.arrayidx (natToBytes v.or16.toNat 8) }
+    step s1BlocksCalls s1BlocksFunction (stateAt env s) = .jump s1 ∧
+    step s1BlocksCalls s1BlocksFunction s1 = .jump s2 ∧
+    step s1BlocksCalls s1BlocksFunction s2 = .jump s3 ∧
+    AsciiInv (ifEndEnv (forBodyOut (forIncEnv env c.i c.shr) v) v.w2 v.w3) s3
+      (asciiNext c bs2 bs3) := by
+  intro v s1 s2 s3
+  have hread2' : readBytes s.mem (c.b + 64 * (c.i + 1).toNat) 32 = some bs2 := by
+    rw [hinv.mem]; exact hread2
+  have hread3' : readBytes s.mem (c.b + 64 * (c.i + 1).toNat + 32) 32 = some bs3 := by
+    rw [hinv.mem]; exact hread3
+  obtain ⟨h01, h12, h23⟩ := for_inc_page_ascii env s c.i c.shr c.prevS c.st0 c.st9
+    c.st15 bs2 bs3 c.b c.ent hinv.pc hinv.index hinv.bound hinv.prevS hinv.st0
+    hinv.st9 hinv.st15 hinv.gate hinv.base hinv.emit hloop hj hread2' hread3' hbit
+  refine ⟨h01, h12, h23, ?_⟩
+  refine
+    { pc := rfl
+      mem := by
+        simp only [asciiNext, asciiValues]
+        rw [← hinv.mem]
+        rfl
+      index := lookupName_ifEndEnv_of _ _ _
+        (lookupName_forBodyOut_i (forIncEnv env c.i c.shr) v)
+        (by decide) (by decide) (by decide)
+      bound := lookupName_ifEndEnv_of _ _ _ (by
+        rw [lookupName_forBodyOut_shr]
+        exact lookupName_forIncEnv_of env c.i c.shr hinv.bound (by decide) (by decide))
+        (by decide) (by decide) (by decide)
+      prevS := lookupName_ifEndEnv_of _ _ _
+        (lookupName_forBodyOut_shr17 (forIncEnv env c.i c.shr) v)
+        (by decide) (by decide) (by decide)
+      st0 := lookupName_ifEndEnv_of _ _ _
+        (lookupName_forBodyOut_shrII (forIncEnv env c.i c.shr) v)
+        (by decide) (by decide) (by decide)
+      st9 := lookupName_ifEndEnv_of _ _ _
+        (lookupName_forBodyOut_conv13 (forIncEnv env c.i c.shr) v)
+        (by decide) (by decide) (by decide)
+      st15 := lookupName_ifEndEnv_of _ _ _
+        (lookupName_forBodyOut_shrI (forIncEnv env c.i c.shr) v)
+        (by decide) (by decide) (by decide)
+      base := lookupName_ifEndEnv_of _ _ _ (by
+        rw [lookupName_forBodyOut_b]
+        exact lookupName_forIncEnv_of env c.i c.shr hinv.base (by decide) (by decide))
+        (by decide) (by decide) (by decide)
+      emit := lookupName_ifEndEnv_of _ _ _ (by
+        rw [lookupName_forBodyOut_ent]
+        exact lookupName_forIncEnv_of env c.i c.shr hinv.emit (by decide) (by decide))
+        (by decide) (by decide) (by decide)
+      gate := lookupName_ifEndEnv_of _ _ _ (by
+        rw [lookupName_forBodyOut_tobool]
+        exact lookupName_forIncEnv_of env c.i c.shr hinv.gate (by decide) (by decide))
+        (by decide) (by decide) (by decide)
+      index_lt := asciiNext_index_lt c bs2 bs3 hinv.index_lt
+        ((evalICmp_eq_zero_iff (c.i + 1) c.shr).mp hloop) }
+
+/-- **The latch's exit test is the phase's bound.**  The latch leaves for
+`for.end101` exactly when the successor index reaches `%shr`, and takes the back
+edge exactly when it has not. -/
+theorem for_inc_exitcond_iff (i shr : BitVec 64) :
+    (evalICmp .eq (i + 1) shr = 1 ↔ i + 1 = shr) ∧
+    (evalICmp .eq (i + 1) shr = 0 ↔ i + 1 ≠ shr) :=
+  ⟨evalICmp_eq_one_iff (i + 1) shr, evalICmp_eq_zero_iff (i + 1) shr⟩
+
+/-- **The phase's last pass.**  The bound holds, so the latch's exit test is true
+and the pass leaves the phase for `for.end101` at the latch's own increment. -/
+theorem asciiInv_exit (env : Env) (s : State) (c : AsciiCarry)
+    (hinv : AsciiInv env s c) (hbound : c.i + 1 = c.shr) :
+    step s1BlocksCalls s1BlocksFunction (stateAt env s) =
+      .jump (stateAt (forIncEnv env c.i c.shr)
+        { s with pc := "for.end101", pre := some "for.inc" }) :=
+  for_inc_step_exit env s c.i c.shr hinv.pc hinv.index hinv.bound
+    ((for_inc_exitcond_iff c.i c.shr).1.mpr hbound)
+
+/-- **The phase's seed.**  The preheader's first pass ends at the latch with the
+index advanced to one, the four words the first body left and its store in the
+memory.  With a nonempty block count the index is inside the bound, which is the
+invariant's own reading of `for_body_lr_ph_page_ascii`'s successor. -/
+theorem asciiInv_seed (env : Env) (s : State) (arm : BitVec 64)
+    (bs2 bs3 : List UInt8) (b ent : Nat) (shr : BitVec 64)
+    (harm : lookupName env "%arm" = some (.int 64 arm))
+    (hgate : evalICmp .eq (arm &&& 2) 0 = 1)
+    (hshr : lookupName env "%shr" = some (.int 64 shr))
+    (hb : lookupName env "%b" = some (.ptr b))
+    (hent : lookupName env "%ent" = some (.ptr ent))
+    (hnpos : 0 < shr.toNat) :
+    let v := forBodyValues 0 0 0 0 0 bs2 bs3 b ent
+    let s1 := stateAt (ifEndEnv (forBodyOut (lrPhEnv env arm) v) v.w2 v.w3)
+      { s with
+        pc := "for.inc",
+        pre := some "if.end",
+        mem := writeBytes s.mem v.arrayidx (natToBytes v.or16.toNat 8) }
+    AsciiInv (ifEndEnv (forBodyOut (lrPhEnv env arm) v) v.w2 v.w3) s1
+      { i := v.i, prevS := v.shr17, st0 := v.shrII, st9 := v.conv13II,
+        st15 := v.shrI, b := b, ent := ent, shr := shr,
+        mem := writeBytes s.mem v.arrayidx (natToBytes v.or16.toNat 8) } := by
+  intro v s1
+  have hb' : lookupName (lrPhEnv env arm) "%b" = some (.ptr b) :=
+    lookupName_lrPhEnv_of env arm hb (by decide) (by decide)
+  have hent' : lookupName (lrPhEnv env arm) "%ent" = some (.ptr ent) :=
+    lookupName_lrPhEnv_of env arm hent (by decide) (by decide)
+  have hshr' : lookupName (lrPhEnv env arm) "%shr" = some (.int 64 shr) :=
+    lookupName_lrPhEnv_of env arm hshr (by decide) (by decide)
+  have hgate' : lookupName (lrPhEnv env arm) "%tobool.not" = some (.int 1 1) := by
+    rw [lookupName_lrPhEnv_tobool, hgate]
+  refine
+    { pc := rfl
+      mem := rfl
+      index := lookupName_ifEndEnv_of _ _ _
+        (lookupName_forBodyOut_i (lrPhEnv env arm) v)
+        (by decide) (by decide) (by decide)
+      bound := lookupName_ifEndEnv_of _ _ _ (by
+        rw [lookupName_forBodyOut_shr]
+        exact hshr') (by decide) (by decide) (by decide)
+      prevS := lookupName_ifEndEnv_of _ _ _
+        (lookupName_forBodyOut_shr17 (lrPhEnv env arm) v)
+        (by decide) (by decide) (by decide)
+      st0 := lookupName_ifEndEnv_of _ _ _
+        (lookupName_forBodyOut_shrII (lrPhEnv env arm) v)
+        (by decide) (by decide) (by decide)
+      st9 := lookupName_ifEndEnv_of _ _ _
+        (lookupName_forBodyOut_conv13 (lrPhEnv env arm) v)
+        (by decide) (by decide) (by decide)
+      st15 := lookupName_ifEndEnv_of _ _ _
+        (lookupName_forBodyOut_shrI (lrPhEnv env arm) v)
+        (by decide) (by decide) (by decide)
+      base := lookupName_ifEndEnv_of _ _ _ (by
+        rw [lookupName_forBodyOut_b]
+        exact hb') (by decide) (by decide) (by decide)
+      emit := lookupName_ifEndEnv_of _ _ _ (by
+        rw [lookupName_forBodyOut_ent]
+        exact hent') (by decide) (by decide) (by decide)
+      gate := lookupName_ifEndEnv_of _ _ _ (by
+        rw [lookupName_forBodyOut_tobool]
+        exact hgate') (by decide) (by decide) (by decide)
+      index_lt := hnpos }
+
 /-! ### Axiom footprints
 
 The block runs and the branch lemmas compute from the block's own literal lists;
@@ -4647,5 +5182,16 @@ intrinsic arms. -/
 #print axioms for_body_lr_ph_page
 #print axioms for_body_lr_ph_page_ascii
 #print axioms for_body_lr_ph_page_handoff
+#print axioms lookupName_forIncEnv_of
+#print axioms lookupName_ifEndEnv_of
+#print axioms for_body_offset_toNat
+#print axioms for_inc_page
+#print axioms for_inc_page_ascii
+#print axioms for_inc_page_handoff
+#print axioms asciiNext_index_lt
+#print axioms asciiInv_step
+#print axioms for_inc_exitcond_iff
+#print axioms asciiInv_exit
+#print axioms asciiInv_seed
 
 end LeanLLVM.Refinement.JsonS1BlocksRefine
