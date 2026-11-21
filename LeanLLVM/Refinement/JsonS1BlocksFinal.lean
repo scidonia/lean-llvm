@@ -126,7 +126,18 @@ induction mentions the selection. -/
 
 /-- **The per-page post of the escape call.**  The three facts
 `JsonS1BlocksRunFrame.loopRun_frame` takes of the selection, at the loop's own
-`xp`, `nxp`, `xcarry` and document. -/
+`xp`, `nxp`, `xcarry` and document.
+
+`keep` is **not instantiable as stated**, and the bundle is a hypothesis about a
+selection that keeps a window it is never told about.  Its argument list is the
+three mask words, the block's index and the three pointers, so it carries neither
+the window's base `b` nor the bound `%shr`; a selection whose answer depends only
+on its arguments cannot place a document block at `c'.b`, and the escape record
+(`JsonS1BlocksRefine.escapeEntryAt`) establishes its post only at the vectors its
+`pre` admits, which are the pages' and the peel's.  The correct statement is the
+per-call `JsonS1BlocksUnitPost.S1BlocksUnitPostAt`, at those real argument
+vectors, from `escapeEntryAt` and the staging (`unitPostAt_of_pre`,
+`peel_unitPostAt_of_pre`); consumers take that form rather than this bundle. -/
 structure S1BlocksUnitPost (esc : Calls) (xp nxp xcarry : Nat) (bs : List UInt8) : Prop where
   /-- Every escape call resolves. -/
   callAll : ∀ (args : List Value) (mem : Mem) (next : Nat),

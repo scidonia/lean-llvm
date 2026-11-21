@@ -115,6 +115,33 @@ theorem pageModel (bs : List UInt8) : PageModel bs := by
   rw [show (BitVec.ofInt 64 (-1) : BitVec 64) = BitVec.allOnes 64 from rfl,
     BitVec.and_allOnes]
 
+/-- **The store identity at the page's reads.**  `PageModel`'s field with its
+premises discharged from the run's own shape: the page is inside the bound, the
+bound is the whole-block count, and the block's sixty-four-byte read is the
+document's, so `readBytes_split` gives the two windows.  This is the form the
+calling lanes' inductions carry. -/
+theorem storeAll_of_reads {bs : List UInt8}
+    (hstate : ∀ (c : FusedCarry), c.i.toNat < c.shr.toNat → PageCarry bs c)
+    (hshrBlocks : ∀ (c : FusedCarry), 64 * c.shr.toNat ≤ bs.length) :
+    ∀ (c : FusedCarry) (bs73 bs74 : List UInt8),
+      c.i.toNat < c.shr.toNat →
+      readBytes c.mem (c.b + 64 * c.i.toNat) 64 = some (docBlock bs c.i.toNat) →
+      readBytes c.mem (c.b + 64 * c.i.toNat) 32 = some bs73 →
+      readBytes c.mem (c.b + 64 * c.i.toNat + 32) 32 = some bs74 →
+      (fusedValues c bs73 bs74).or84 = stage1Word bs c.i.toNat := by
+  intro c bs73 bs74 hi hblk hr73 hr74
+  obtain ⟨h73r, h74r⟩ :=
+    readBytes_split c.mem (c.b + 64 * c.i.toNat) 32 32
+      (by rw [show 32 + 32 = 64 from rfl]; exact hblk)
+  have h73 : bs73 = (docBlock bs c.i.toNat).take 32 := by
+    rw [hr73] at h73r
+    exact Option.some.inj h73r
+  have h74 : bs74 = (docBlock bs c.i.toNat).drop 32 := by
+    rw [hr74] at h74r
+    exact Option.some.inj h74r
+  exact (pageModel bs).storeW c bs73 bs74 (by have := hshrBlocks c; omega)
+    (hstate c hi) h73 h74
+
 /-! ### The peel's word at the exit -/
 
 /-- **The peel's `%or135` is the model's entry word at the peel's block.**  The
@@ -272,6 +299,7 @@ theorem loopRun_carry_of_state (sel : Calls) (mem0 : Mem) (xp xn : Nat)
 
 #print axioms LeanLLVM.Refinement.JsonS1BlocksPageModel.pageCtx_oddRun
 #print axioms LeanLLVM.Refinement.JsonS1BlocksPageModel.pageModel
+#print axioms LeanLLVM.Refinement.JsonS1BlocksPageModel.storeAll_of_reads
 #print axioms LeanLLVM.Refinement.JsonS1BlocksPageModel.peelWordAtModel_of_carry
 #print axioms LeanLLVM.Refinement.JsonS1BlocksPageModel.loopExit_peel_slot_of_carry
 #print axioms LeanLLVM.Refinement.JsonS1BlocksPageModel.exit_staging_of_loopCarry
