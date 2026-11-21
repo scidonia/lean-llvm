@@ -609,9 +609,9 @@ a table lookup has its control's, a `zipWith` has the shorter of the two), so a
 macro "block_len" : tactic => `(tactic|
   (first
    | assumption
-   | (simp only [unpackLanes_length, pshufbLanes_length, List.length_zipWith,
-        List.length_map, List.length_append, List.length_replicate, List.length_cons,
-        List.length_nil, Nat.min_def, if_pos, if_neg] <;> omega)))
+   | (simp (config := { zetaDelta := true }) only [JsonS1MasksSteps.pshufbLanes_length, bitcastVecLanes,
+        unpackLanes_length, List.length_zipWith, List.length_map, List.length_append,
+        List.length_replicate, List.length_cons, List.length_nil] <;> omega)))
 
 macro "block_step_b" : tactic => `(tactic|
   (first
@@ -666,10 +666,10 @@ macro "block_close_step" : tactic => `(tactic|
    | (simp only [evalOperand, Const.toValue, lanesOf, splatOf]; rfl)
    | exact BlockEval.evalOperand_lit_of _ _ _
    | (refine vecLanes_self ?_; block_len)
-   | (simp only [Value.vecLanes]; repeat split; all_goals (first | rfl | contradiction))
+   | (simp only [Value.vecLanes]; repeat split; all_goals (first | rfl | contradiction | simp_all))
    | (simp only [phiIncoming]; rfl)
-   | (rw [binopLanes_replicate]; all_goals (first | assumption | (intro x; rfl) | (simp; omega) | rfl))
-   | (rw [binopLanes_zipWith]; all_goals (first | assumption | (intro x y; rfl) | (simp; omega) | rfl))
+   | (rw [binopLanes_replicate]; all_goals (first | assumption | (intro x; rfl) | block_len | rfl))
+   | (rw [binopLanes_zipWith]; all_goals (first | assumption | (intro x y; rfl) | block_len | rfl))
    | (rw [mapM_pick8 (by block_len) (by block_len)]; rfl)
    | (rw [mapM_pick32 (by block_len) (by block_len)]; rfl)
    | assumption
@@ -685,15 +685,29 @@ lane list from the statement instead of from the operand. -/
 elab "block_finish_b" : tactic => do
   let gs ← getGoals
   let mut main : Option MVarId := none
-  let mut sides : List MVarId := []
+  let mut sides : List (Nat × MVarId) := []
   for g in gs do
     let t ← instantiateMVars (← g.getType)
     let isMain := match t.eq? with
       | some (_, lhs, _) =>
           lhs.getAppFn.isConstOf ``denoteCode || lhs.getAppFn.isConstOf ``denoteRun
       | none => false
-    if isMain then main := some g else sides := sides ++ [g]
-  replaceMainGoal sides
+    if isMain then main := some g
+    else
+      let cs := t.getUsedConstants
+      let isp ← Lean.Meta.isProp t
+      let rank : Nat :=
+        if !isp then 3
+        else if cs.contains ``binopLanes then 2
+        else if cs.contains ``Value.vecLanes || cs.contains ``evalOperand then 0
+        else 1
+      sides := sides ++ [(rank, g)]
+  let ordered :=
+    ((sides.filter (·.1 == 0)).map (·.2) ++
+      (sides.filter (·.1 == 1)).map (·.2) ++
+      (sides.filter (·.1 == 2)).map (·.2) ++
+      (sides.filter (·.1 == 3)).map (·.2))
+  replaceMainGoal ordered
   evalTactic (← `(tactic| (all_goals (repeat block_close_step))))
   match main with
   | some m =>
@@ -2878,6 +2892,1550 @@ theorem for_body_denote (env : Env) (s : State) (p : String)
     _ = some (stateAt (forBodyOut env v)
           { s with mem := writeBytes s.mem v.arrayidx (natToBytes v.or16.toNat 8) }) := h7
 
+
+/-! ### `for.body`'s two exits
+
+The block's terminator is the escape gate's test: `%tobool.not` is `(arm & 2) = 0`,
+so the run leaves for `if.end` when the gate is set and for `if.then` when it is
+clear.  Both successors are the run's own environment, and the memory is the
+store the last segment wrote. -/
+
+/-- **`for.body`'s step to the class test.**  The gate is set: `if.end` tests the
+block's two words for a high bit. -/
+theorem for_body_step_end (env : Env) (s : State) (v : ForBodyValues)
+    (hpc : s.pc = "for.body")
+    (htobool : lookupName (forBodyOut env v) "%tobool.not" = some (.int 1 1))
+    (hout : denoteCode s1BlocksCalls for_bodyInstrs (stateAt env s) =
+      some (stateAt (forBodyOut env v)
+        { s with mem := writeBytes s.mem v.arrayidx (natToBytes v.or16.toNat 8) })) :
+    step s1BlocksCalls s1BlocksFunction (stateAt env s) =
+      .jump (stateAt (forBodyOut env v)
+        { s with
+          pc := "if.end",
+          pre := some "for.body",
+          mem := writeBytes s.mem v.arrayidx (natToBytes v.or16.toNat 8) }) := by
+  have hfind : s1BlocksFunction.findBlock (stateAt env s).pc = some for_bodyBlock := by
+    rw [show (stateAt env s).pc = s.pc from rfl, hpc]
+    exact LeanLLVM.Refinement.JsonS1BlocksIR.findBlock_for_body
+  rw [step_at hfind hout]
+  rw [show for_bodyBlock.term = for_bodyTerm from rfl]
+  simp only [for_bodyTerm]
+  rw [execTerm_condbr_true
+    (BlockEval.evalOperand_reg_of _ _ _ _ htobool) rfl]
+  simp only [stateAt, hpc]
+
+/-- **`for.body`'s step to the escape arm.**  The gate is clear: the block is the
+first with a high bit, and `if.then` runs the escape list. -/
+theorem for_body_step_then (env : Env) (s : State) (v : ForBodyValues)
+    (hpc : s.pc = "for.body")
+    (htobool : lookupName (forBodyOut env v) "%tobool.not" = some (.int 1 0))
+    (hout : denoteCode s1BlocksCalls for_bodyInstrs (stateAt env s) =
+      some (stateAt (forBodyOut env v)
+        { s with mem := writeBytes s.mem v.arrayidx (natToBytes v.or16.toNat 8) })) :
+    step s1BlocksCalls s1BlocksFunction (stateAt env s) =
+      .jump (stateAt (forBodyOut env v)
+        { s with
+          pc := "if.then",
+          pre := some "for.body",
+          mem := writeBytes s.mem v.arrayidx (natToBytes v.or16.toNat 8) }) := by
+  have hfind : s1BlocksFunction.findBlock (stateAt env s).pc = some for_bodyBlock := by
+    rw [show (stateAt env s).pc = s.pc from rfl, hpc]
+    exact LeanLLVM.Refinement.JsonS1BlocksIR.findBlock_for_body
+  rw [step_at hfind hout]
+  rw [show for_bodyBlock.term = for_bodyTerm from rfl]
+  simp only [for_bodyTerm]
+  rw [execTerm_condbr_false
+    (BlockEval.evalOperand_reg_of _ _ _ _ htobool) rfl]
+  simp only [stateAt, hpc]
+
+/-! ### `if.end` — the phase's block test
+
+The block joins the two words it is handed, zero-tests the join's high bits and
+compares the probe's word with zero.  `%tobool22.not` is that comparison: set
+when the block has a high bit somewhere (the hand-off), clear when it is ASCII
+(the latch). -/
+
+/-- The join of the two `<4 x i64>` words, in the operand order the block spells
+(`%3` first). -/
+def ifEndOr (a2 a3 : List (BitVec 64)) : List (BitVec 64) :=
+  List.zipWith (fun x y => x ||| y) a3 a2
+
+/-- The probe's zero test: `ptestz` of the join against the high-bit mask. -/
+def ifEndTest (a2 a3 : List (BitVec 64)) : BitVec 32 :=
+  ptestz (BitVec.ofNat 256 (packLanes (ifEndOr a2 a3)))
+    (BitVec.ofNat 256 (packLanes (List.replicate 4 0x8080808080808080#64)))
+
+/-- `if.end`'s environment: the join, the probe and the test. -/
+def ifEndEnv (env : Env) (a2 a3 : List (BitVec 64)) : Env :=
+  cells [("%tobool22.not", .int 1 (evalICmp .eq (ifEndTest a2 a3) 0)),
+         ("%38", .int 32 (ifEndTest a2 a3)),
+         ("%or.i285", .vec 4 64 (ifEndOr a2 a3))] env
+
+theorem if_end_denote (env : Env) (s : State) (a2 a3 : List (BitVec 64))
+    (h2len : a2.length = 4) (h3len : a3.length = 4)
+    (h2 : lookupName env "%2" = some (.vec 4 64 a2))
+    (h3 : lookupName env "%3" = some (.vec 4 64 a3)) :
+    denoteCode s1BlocksCalls if_endInstrs (stateAt env s) =
+      some (stateAt (ifEndEnv env a2 a3) s) := by
+  unfold if_endInstrs ifEndEnv ifEndOr ifEndTest
+  rw [denoteCode_binopVec s1BlocksCalls env s "%or.i285" .or 4 64
+      (.reg "%3") (.reg "%2")
+      (va := .vec 4 64 a3) (vb := .vec 4 64 a2)
+      (l1 := a3) (l2 := a2)
+      (ls := List.zipWith (fun x y => x ||| y) a3 a2)
+      (BlockEval.evalOperand_reg_of env s "%3" (.vec 4 64 a3) h3)
+      (BlockEval.evalOperand_reg_of env s "%2" (.vec 4 64 a2) h2)
+      (vecLanes_self h3len) (vecLanes_self h2len)
+      (binopLanes_zipWith .or (fun x y => x ||| y) (fun x y => rfl) a3 a2
+        (by rw [h3len, h2len]))]
+  rw [denoteCode_ptestz_b _ s "%38" (.reg "%or.i285")
+      (.imm (.splat 4 64 0x8080808080808080#64))
+      (a := List.zipWith (fun x y => x ||| y) a3 a2)
+      (b := List.replicate 4 0x8080808080808080#64)
+      (by exact BlockEval.evalOperand_reg_of _ _ _ _ (lookupName_cons_self _ _ _))
+      (by simp only [evalOperand, Const.toValue]) _]
+  rw [denoteCode_icmp_eq_imm_w s1BlocksCalls _ s "%tobool22.not" "%38" 32
+      (x := ptestz
+        (BitVec.ofNat 256 (packLanes (List.zipWith (fun x y => x ||| y) a3 a2)))
+        (BitVec.ofNat 256 (packLanes (List.replicate 4 0x8080808080808080#64))))
+      (c := 0x00000000#32)
+      (lookupName_cons_self _ _ _) _]
+  rfl
+
+/-- **`if.end`'s step to the hand-off.**  The probe found a high bit. -/
+theorem if_end_step_handoff (env : Env) (s : State) (a2 a3 : List (BitVec 64))
+    (h2len : a2.length = 4) (h3len : a3.length = 4)
+    (hpc : s.pc = "if.end")
+    (h2 : lookupName env "%2" = some (.vec 4 64 a2))
+    (h3 : lookupName env "%3" = some (.vec 4 64 a3))
+    (hbit : evalICmp .eq (ifEndTest a2 a3) 0 = 1) :
+    step s1BlocksCalls s1BlocksFunction (stateAt env s) =
+      .jump (stateAt (ifEndEnv env a2 a3)
+        { s with pc := "if.then38", pre := some "if.end" }) := by
+  have hfind : s1BlocksFunction.findBlock (stateAt env s).pc = some if_endBlock := by
+    rw [show (stateAt env s).pc = s.pc from rfl, hpc]
+    exact LeanLLVM.Refinement.JsonS1BlocksIR.findBlock_if_end
+  rw [step_at hfind (if_end_denote env s a2 a3 h2len h3len h2 h3)]
+  rw [show if_endBlock.term = if_endTerm from rfl]
+  simp only [if_endTerm]
+  rw [execTerm_condbr_true
+    (BlockEval.evalOperand_reg_of _ _ _ _ (by simp [ifEndEnv, cells])) hbit]
+  simp only [stateAt, hpc]
+
+/-- **`if.end`'s step to the latch.**  The block is all ASCII. -/
+theorem if_end_step_ascii (env : Env) (s : State) (a2 a3 : List (BitVec 64))
+    (h2len : a2.length = 4) (h3len : a3.length = 4)
+    (hpc : s.pc = "if.end")
+    (h2 : lookupName env "%2" = some (.vec 4 64 a2))
+    (h3 : lookupName env "%3" = some (.vec 4 64 a3))
+    (hbit : evalICmp .eq (ifEndTest a2 a3) 0 = 0) :
+    step s1BlocksCalls s1BlocksFunction (stateAt env s) =
+      .jump (stateAt (ifEndEnv env a2 a3)
+        { s with pc := "for.inc", pre := some "if.end" }) := by
+  have hfind : s1BlocksFunction.findBlock (stateAt env s).pc = some if_endBlock := by
+    rw [show (stateAt env s).pc = s.pc from rfl, hpc]
+    exact LeanLLVM.Refinement.JsonS1BlocksIR.findBlock_if_end
+  rw [step_at hfind (if_end_denote env s a2 a3 h2len h3len h2 h3)]
+  rw [show if_endBlock.term = if_endTerm from rfl]
+  simp only [if_endTerm]
+  rw [execTerm_condbr_false
+    (BlockEval.evalOperand_reg_of _ _ _ _ (by simp [ifEndEnv, cells])) hbit]
+  simp only [stateAt, hpc]
+
+
+/-! ### `if.then38` — the non-ASCII block's two-word class masks
+
+The block reads eight thirty-two-byte windows around the block pointer — the
+words at `+0` and `+32`, the three single bytes below the pointer, and the
+words at `+31`, `+30` and `+29` — runs the classifier's class masks on them,
+and combines the result with the two saturating subtracts' high-bit masks.  Its
+own terminator is the join at `if.end50`, so the run stops at the increment word.
+
+The values are stated once, in `IfThen38Values`; the run is split at nine
+points, each segment one `denoteCode` equation at an explicit environment. -/
+
+/-- The second table the class masks read. -/
+def ifThen38TableHi : List (BitVec 8) :=
+  [0xe7#8, 0xa3#8, 0x83#8, 0x83#8, 0x8b#8, 0xcb#8, 0xcb#8, 0xcb#8,
+   0xcb#8, 0xcb#8, 0xcb#8, 0xcb#8, 0xcb#8, 0xdb#8, 0xcb#8, 0xcb#8,
+   0xe7#8, 0xa3#8, 0x83#8, 0x83#8, 0x8b#8, 0xcb#8, 0xcb#8, 0xcb#8,
+   0xcb#8, 0xcb#8, 0xcb#8, 0xcb#8, 0xcb#8, 0xdb#8, 0xcb#8, 0xcb#8]
+
+/-- The third table the class masks read. -/
+def ifThen38TableMid : List (BitVec 8) :=
+  [0x02#8, 0x02#8, 0x02#8, 0x02#8, 0x02#8, 0x02#8, 0x02#8, 0x02#8,
+   0x80#8, 0x80#8, 0x80#8, 0x80#8, 0x21#8, 0x01#8, 0x15#8, 0x49#8,
+   0x02#8, 0x02#8, 0x02#8, 0x02#8, 0x02#8, 0x02#8, 0x02#8, 0x02#8,
+   0x80#8, 0x80#8, 0x80#8, 0x80#8, 0x21#8, 0x01#8, 0x15#8, 0x49#8]
+
+/-- The fourth table the class masks read. -/
+def ifThen38TableLo : List (BitVec 8) :=
+  [0x01#8, 0x01#8, 0x01#8, 0x01#8, 0x01#8, 0x01#8, 0x01#8, 0x01#8,
+   0xe6#8, 0xae#8, 0xba#8, 0xba#8, 0x01#8, 0x01#8, 0x01#8, 0x01#8,
+   0x01#8, 0x01#8, 0x01#8, 0x01#8, 0x01#8, 0x01#8, 0x01#8, 0x01#8,
+   0xe6#8, 0xae#8, 0xba#8, 0xba#8, 0x01#8, 0x01#8, 0x01#8, 0x01#8]
+
+/-- The values `if.then38` binds, one field per destination. -/
+structure IfThen38Values where
+  a : Nat
+  i : BitVec 64
+  bs39 : List UInt8
+  bs40 : List UInt8
+  bs41 : List UInt8
+  bs42 : List UInt8
+  bs43 : List UInt8
+  bs57 : List UInt8
+  bs58 : List UInt8
+  bs59 : List UInt8
+  addPtr5Le : Nat
+  w39 : List (BitVec 64)
+  w40 : List (BitVec 64)
+  or284 : List (BitVec 64)
+  addPtrII : Nat
+  w41 : List (BitVec 64)
+  addPtr3II : Nat
+  byte42 : List (BitVec 8)
+  addPtr5II : Nat
+  byte43 : List (BitVec 8)
+  byte44 : List (BitVec 8)
+  low45 : List (BitVec 8)
+  shuf46 : List (BitVec 8)
+  half47 : List (BitVec 16)
+  shr48 : List (BitVec 16)
+  byte49 : List (BitVec 8)
+  low50 : List (BitVec 8)
+  shuf51 : List (BitVec 8)
+  and1 : List (BitVec 8)
+  half52 : List (BitVec 16)
+  shr53 : List (BitVec 16)
+  byte54 : List (BitVec 8)
+  low55 : List (BitVec 8)
+  shuf56 : List (BitVec 8)
+  and2 : List (BitVec 8)
+  andHi : List (BitVec 64)
+  sat60 : List (BitVec 8)
+  sat70 : List (BitVec 8)
+  orSat : List (BitVec 8)
+  orVec : List (BitVec 64)
+  andMask : List (BitVec 64)
+  xor1 : List (BitVec 64)
+  addPtr4 : Nat
+  w57 : List (BitVec 64)
+  addPtr3_5 : Nat
+  byte58 : List (BitVec 8)
+  addPtr5_6 : Nat
+  byte59 : List (BitVec 8)
+  byte60 : List (BitVec 8)
+  low61 : List (BitVec 8)
+  shuf62 : List (BitVec 8)
+  half63 : List (BitVec 16)
+  shr64 : List (BitVec 16)
+  byte65 : List (BitVec 8)
+  low66 : List (BitVec 8)
+  shuf67 : List (BitVec 8)
+  and3 : List (BitVec 8)
+  half68 : List (BitVec 16)
+  shr69 : List (BitVec 16)
+  byte70 : List (BitVec 8)
+  low71 : List (BitVec 8)
+  shuf72 : List (BitVec 8)
+  and4 : List (BitVec 8)
+  andHi2 : List (BitVec 64)
+  sat60b : List (BitVec 8)
+  sat70b : List (BitVec 8)
+  orSat2 : List (BitVec 8)
+  orVec2 : List (BitVec 64)
+  andMask2 : List (BitVec 64)
+  xor2 : List (BitVec 64)
+  or291 : List (BitVec 64)
+  inc49 : BitVec 64
+
+/-- The block's computation, from the pointer, the loop index and the eight
+loaded windows. -/
+def ifThen38Values (a : Nat) (i : BitVec 64)
+    (bs39 bs40 bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8) : IfThen38Values :=
+  let addPtr5Le := a + ((0x0000000000000020#64).signExtend 64).toNat
+  let w39 := unpackLanes 64 4 (bytesToNat bs39)
+  let w40 := unpackLanes 64 4 (bytesToNat bs40)
+  let or284 := List.zipWith (fun x y => x ||| y) w40 w39
+  let addPtrII := a - 1
+  let w41 := unpackLanes 64 4 (bytesToNat bs41)
+  let addPtr3II := a - 2
+  let byte42 := bs42.map fun b => BitVec.ofNat 8 b.toNat
+  let addPtr5II := a - 3
+  let byte43 := bs43.map fun b => BitVec.ofNat 8 b.toNat
+  let byte44 := bitcastVecLanes 8 32 w41
+  let low45 := byte44.map fun x => x &&& 0x0f#8
+  let shuf46 := pshufbLanes ifThen38TableHi low45
+  let half47 := bitcastVecLanes 16 16 w41
+  let shr48 := half47.map fun x : BitVec 16 => x >>> (0x0004#16).toNat
+  let byte49 := bitcastVecLanes 8 32 shr48
+  let low50 := byte49.map fun x => x &&& 0x0f#8
+  let shuf51 := pshufbLanes ifThen38TableMid low50
+  let and1 := List.zipWith (fun x y => x &&& y) shuf51 shuf46
+  let half52 := bitcastVecLanes 16 16 w39
+  let shr53 := half52.map fun x : BitVec 16 => x >>> (0x0004#16).toNat
+  let byte54 := bitcastVecLanes 8 32 shr53
+  let low55 := byte54.map fun x => x &&& 0x0f#8
+  let shuf56 := pshufbLanes ifThen38TableLo low55
+  let and2 := List.zipWith (fun x y => x &&& y) and1 shuf56
+  let andHi := bitcastVecLanes 64 4 and2
+  let sat60 := List.zipWith BitLanes.subsSat byte42 (List.replicate 32 0x60#8)
+  let sat70 := List.zipWith BitLanes.subsSat byte43 (List.replicate 32 0x70#8)
+  let orSat := List.zipWith (fun x y => x ||| y) sat70 sat60
+  let orVec := bitcastVecLanes 64 4 orSat
+  let andMask := orVec.map fun x => x &&& 0x8080808080808080#64
+  let xor1 := List.zipWith (fun x y => x ^^^ y) andMask andHi
+  let addPtr4 := a + ((0x000000000000001f#64).signExtend 64).toNat
+  let w57 := unpackLanes 64 4 (bytesToNat bs57)
+  let addPtr3_5 := a + ((0x000000000000001e#64).signExtend 64).toNat
+  let byte58 := bs58.map fun b => BitVec.ofNat 8 b.toNat
+  let addPtr5_6 := a + ((0x000000000000001d#64).signExtend 64).toNat
+  let byte59 := bs59.map fun b => BitVec.ofNat 8 b.toNat
+  let byte60 := bitcastVecLanes 8 32 w57
+  let low61 := byte60.map fun x => x &&& 0x0f#8
+  let shuf62 := pshufbLanes ifThen38TableHi low61
+  let half63 := bitcastVecLanes 16 16 w57
+  let shr64 := half63.map fun x : BitVec 16 => x >>> (0x0004#16).toNat
+  let byte65 := bitcastVecLanes 8 32 shr64
+  let low66 := byte65.map fun x => x &&& 0x0f#8
+  let shuf67 := pshufbLanes ifThen38TableMid low66
+  let and3 := List.zipWith (fun x y => x &&& y) shuf67 shuf62
+  let half68 := bitcastVecLanes 16 16 w40
+  let shr69 := half68.map fun x : BitVec 16 => x >>> (0x0004#16).toNat
+  let byte70 := bitcastVecLanes 8 32 shr69
+  let low71 := byte70.map fun x => x &&& 0x0f#8
+  let shuf72 := pshufbLanes ifThen38TableLo low71
+  let and4 := List.zipWith (fun x y => x &&& y) and3 shuf72
+  let andHi2 := bitcastVecLanes 64 4 and4
+  let sat60b := List.zipWith BitLanes.subsSat byte58 (List.replicate 32 0x60#8)
+  let sat70b := List.zipWith BitLanes.subsSat byte59 (List.replicate 32 0x70#8)
+  let orSat2 := List.zipWith (fun x y => x ||| y) sat70b sat60b
+  let orVec2 := bitcastVecLanes 64 4 orSat2
+  let andMask2 := orVec2.map fun x => x &&& 0x8080808080808080#64
+  let xor2 := List.zipWith (fun x y => x ^^^ y) andMask2 andHi2
+  let or291 := List.zipWith (fun x y => x ||| y) xor2 xor1
+  let inc49 := i + (0x0000000000000001#64)
+  { a, i, bs39, bs40, bs41, bs42, bs43, bs57, bs58, bs59, addPtr5Le, w39, w40,
+    or284, addPtrII, w41, addPtr3II, byte42, addPtr5II, byte43, byte44, low45,
+    shuf46, half47, shr48, byte49, low50, shuf51, and1, half52, shr53, byte54,
+    low55, shuf56, and2, andHi, sat60, sat70, orSat, orVec, andMask, xor1,
+    addPtr4, w57, addPtr3_5, byte58, addPtr5_6, byte59, byte60, low61, shuf62,
+    half63, shr64, byte65, low66, shuf67, and3, half68, shr69, byte70, low71,
+    shuf72, and4, andHi2, sat60b, sat70b, orSat2, orVec2, andMask2, xor2, or291,
+    inc49 }
+
+/-- The environment after the two word loads and the load below the pointer. -/
+def iftEnv1 (env : Env) (v : IfThen38Values) : Env :=
+  cells [("%41", .vec 4 64 v.w41),
+         ("%add.ptr.i.i", .ptr v.addPtrII),
+         ("%or.i284", .vec 4 64 v.or284),
+         ("%40", .vec 4 64 v.w40),
+         ("%39", .vec 4 64 v.w39),
+         ("%add.ptr5.le", .ptr v.addPtr5Le)] env
+
+/-- The environment after the two byte windows below the pointer. -/
+def iftEnv2 (env : Env) (v : IfThen38Values) : Env :=
+  cells [("%43", .vec 32 8 v.byte43),
+         ("%add.ptr5.i.i", .ptr v.addPtr5II),
+         ("%42", .vec 32 8 v.byte42),
+         ("%add.ptr3.i.i", .ptr v.addPtr3II)] (iftEnv1 env v)
+
+/-- The environment after the first word's two class masks and their join. -/
+def iftEnv3 (env : Env) (v : IfThen38Values) : Env :=
+  cells [("%and.i3741.i.i", .vec 32 8 v.and1),
+         ("%51", .vec 32 8 v.shuf51),
+         ("%50", .vec 32 8 v.low50),
+         ("%49", .vec 32 8 v.byte49),
+         ("%48", .vec 16 16 v.shr48),
+         ("%47", .vec 16 16 v.half47),
+         ("%46", .vec 32 8 v.shuf46),
+         ("%45", .vec 32 8 v.low45),
+         ("%44", .vec 32 8 v.byte44)] (iftEnv2 env v)
+
+/-- The environment after the second word's class mask join. -/
+def iftEnv4 (env : Env) (v : IfThen38Values) : Env :=
+  cells [("%and.i3542.i.i", .vec 32 8 v.and2),
+         ("%56", .vec 32 8 v.shuf56),
+         ("%55", .vec 32 8 v.low55),
+         ("%54", .vec 32 8 v.byte54),
+         ("%53", .vec 16 16 v.shr53),
+         ("%52", .vec 16 16 v.half52)] (iftEnv3 env v)
+
+/-- The environment after the high-bit mask of the first window's subtracts. -/
+def iftEnv5 (env : Env) (v : IfThen38Values) : Env :=
+  cells [("%xor.i.i.i", .vec 4 64 v.xor1),
+         ("%and.i.i.i", .vec 4 64 v.andMask),
+         ("%or.i.i.i", .vec 4 64 v.orVec),
+         ("%or.i43.i.i", .vec 32 8 v.orSat),
+         ("%elt.sat.i.i.i", .vec 32 8 v.sat70),
+         ("%elt.sat.i40.i.i", .vec 32 8 v.sat60),
+         ("%and.i35.i.i", .vec 4 64 v.andHi)] (iftEnv4 env v)
+
+/-- The environment after the three windows above the pointer are loaded. -/
+def iftEnv6 (env : Env) (v : IfThen38Values) : Env :=
+  cells [("%59", .vec 32 8 v.byte59),
+         ("%add.ptr5.i6.i", .ptr v.addPtr5_6),
+         ("%58", .vec 32 8 v.byte58),
+         ("%add.ptr3.i5.i", .ptr v.addPtr3_5),
+         ("%57", .vec 4 64 v.w57),
+         ("%add.ptr.i4.i", .ptr v.addPtr4)] (iftEnv5 env v)
+
+/-- The environment after the second word's two class masks and their join. -/
+def iftEnv7 (env : Env) (v : IfThen38Values) : Env :=
+  cells [("%and.i3741.i7.i", .vec 32 8 v.and3),
+         ("%67", .vec 32 8 v.shuf67),
+         ("%66", .vec 32 8 v.low66),
+         ("%65", .vec 32 8 v.byte65),
+         ("%64", .vec 16 16 v.shr64),
+         ("%63", .vec 16 16 v.half63),
+         ("%62", .vec 32 8 v.shuf62),
+         ("%61", .vec 32 8 v.low61),
+         ("%60", .vec 32 8 v.byte60)] (iftEnv6 env v)
+
+/-- The environment after the second word's class mask join. -/
+def iftEnv8 (env : Env) (v : IfThen38Values) : Env :=
+  cells [("%and.i3542.i8.i", .vec 32 8 v.and4),
+         ("%72", .vec 32 8 v.shuf72),
+         ("%71", .vec 32 8 v.low71),
+         ("%70", .vec 32 8 v.byte70),
+         ("%69", .vec 16 16 v.shr69),
+         ("%68", .vec 16 16 v.half68)] (iftEnv7 env v)
+
+/-- The environment after the high-bit mask of the second window's subtracts,
+the combined state masks and the increment word. -/
+def iftEnv9 (env : Env) (v : IfThen38Values) : Env :=
+  cells [("%inc49", .int 64 v.inc49),
+         ("%or.i.i291", .vec 4 64 v.or291),
+         ("%xor.i.i15.i", .vec 4 64 v.xor2),
+         ("%and.i.i14.i", .vec 4 64 v.andMask2),
+         ("%or.i.i13.i", .vec 4 64 v.orVec2),
+         ("%or.i43.i12.i", .vec 32 8 v.orSat2),
+         ("%elt.sat.i.i11.i", .vec 32 8 v.sat70b),
+         ("%elt.sat.i40.i10.i", .vec 32 8 v.sat60b),
+         ("%and.i35.i9.i", .vec 4 64 v.andHi2)] (iftEnv8 env v)
+
+/-- `if.then38`'s environment: everything the block binds. -/
+abbrev ifThen38Out (env : Env) (v : IfThen38Values) : Env := iftEnv9 env v
+/-- `if.then38`'s run: the two word loads and the load below the pointer (instructions 0-5). -/
+def ifThen38Seg1 : List Instr :=
+[LeanLLVM.Instr.gep
+                            "%add.ptr5.le"
+                            (LeanLLVM.Ty.int 8)
+                            (LeanLLVM.Operand.reg "%add.ptr")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.int 64 0x0000000000000020#64)),
+                          LeanLLVM.Instr.load
+                            "%39"
+                            (LeanLLVM.Ty.vec 4 (LeanLLVM.Ty.int 64))
+                            (LeanLLVM.Operand.reg "%add.ptr"),
+                          LeanLLVM.Instr.load
+                            "%40"
+                            (LeanLLVM.Ty.vec 4 (LeanLLVM.Ty.int 64))
+                            (LeanLLVM.Operand.reg "%add.ptr5.le"),
+                          LeanLLVM.Instr.binopVec
+                            "%or.i284"
+                            (LeanLLVM.BinOp.or)
+                            4
+                            64
+                            (LeanLLVM.Operand.reg "%40")
+                            (LeanLLVM.Operand.reg "%39"),
+                          LeanLLVM.Instr.gep
+                            "%add.ptr.i.i"
+                            (LeanLLVM.Ty.int 8)
+                            (LeanLLVM.Operand.reg "%add.ptr")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.int 64 0xffffffffffffffff#64)),
+                          LeanLLVM.Instr.load
+                            "%41"
+                            (LeanLLVM.Ty.vec 4 (LeanLLVM.Ty.int 64))
+                            (LeanLLVM.Operand.reg "%add.ptr.i.i"),]
+
+/-- `if.then38`'s run: the two byte windows below the pointer (instructions 6-9). -/
+def ifThen38Seg2 : List Instr :=
+[                          LeanLLVM.Instr.gep
+                            "%add.ptr3.i.i"
+                            (LeanLLVM.Ty.int 8)
+                            (LeanLLVM.Operand.reg "%add.ptr")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.int 64 0xfffffffffffffffe#64)),
+                          LeanLLVM.Instr.load
+                            "%42"
+                            (LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8))
+                            (LeanLLVM.Operand.reg "%add.ptr3.i.i"),
+                          LeanLLVM.Instr.gep
+                            "%add.ptr5.i.i"
+                            (LeanLLVM.Ty.int 8)
+                            (LeanLLVM.Operand.reg "%add.ptr")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.int 64 0xfffffffffffffffd#64)),
+                          LeanLLVM.Instr.load
+                            "%43"
+                            (LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8))
+                            (LeanLLVM.Operand.reg "%add.ptr5.i.i"),]
+
+/-- `if.then38`'s run: the first word's two class masks and their join (instructions 10-18). -/
+def ifThen38Seg3 : List Instr :=
+[                          LeanLLVM.Instr.vecBitcast "%44" 4 64 32 8 (LeanLLVM.Operand.reg "%41"),
+                          LeanLLVM.Instr.binopVec
+                            "%45"
+                            (LeanLLVM.BinOp.and)
+                            32
+                            8
+                            (LeanLLVM.Operand.reg "%44")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.splat 32 8 0x0f#8)),
+                          LeanLLVM.Instr.call
+                            "%46"
+                            (LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8))
+                            "llvm.x86.avx2.pshuf.b"
+                            [(LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8),
+                              LeanLLVM.Operand.imm
+                                (LeanLLVM.Const.vector
+                                  8
+                                  [0xe7#8,
+                                   0xa3#8,
+                                   0x83#8,
+                                   0x83#8,
+                                   0x8b#8,
+                                   0xcb#8,
+                                   0xcb#8,
+                                   0xcb#8,
+                                   0xcb#8,
+                                   0xcb#8,
+                                   0xcb#8,
+                                   0xcb#8,
+                                   0xcb#8,
+                                   0xdb#8,
+                                   0xcb#8,
+                                   0xcb#8,
+                                   0xe7#8,
+                                   0xa3#8,
+                                   0x83#8,
+                                   0x83#8,
+                                   0x8b#8,
+                                   0xcb#8,
+                                   0xcb#8,
+                                   0xcb#8,
+                                   0xcb#8,
+                                   0xcb#8,
+                                   0xcb#8,
+                                   0xcb#8,
+                                   0xcb#8,
+                                   0xdb#8,
+                                   0xcb#8,
+                                   0xcb#8])),
+                             (LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8), LeanLLVM.Operand.reg "%45")],
+                          LeanLLVM.Instr.vecBitcast "%47" 4 64 16 16 (LeanLLVM.Operand.reg "%41"),
+                          LeanLLVM.Instr.binopVec
+                            "%48"
+                            (LeanLLVM.BinOp.lshr)
+                            16
+                            16
+                            (LeanLLVM.Operand.reg "%47")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.splat 16 16 0x0004#16)),
+                          LeanLLVM.Instr.vecBitcast "%49" 16 16 32 8 (LeanLLVM.Operand.reg "%48"),
+                          LeanLLVM.Instr.binopVec
+                            "%50"
+                            (LeanLLVM.BinOp.and)
+                            32
+                            8
+                            (LeanLLVM.Operand.reg "%49")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.splat 32 8 0x0f#8)),
+                          LeanLLVM.Instr.call
+                            "%51"
+                            (LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8))
+                            "llvm.x86.avx2.pshuf.b"
+                            [(LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8),
+                              LeanLLVM.Operand.imm
+                                (LeanLLVM.Const.vector
+                                  8
+                                  [0x02#8,
+                                   0x02#8,
+                                   0x02#8,
+                                   0x02#8,
+                                   0x02#8,
+                                   0x02#8,
+                                   0x02#8,
+                                   0x02#8,
+                                   0x80#8,
+                                   0x80#8,
+                                   0x80#8,
+                                   0x80#8,
+                                   0x21#8,
+                                   0x01#8,
+                                   0x15#8,
+                                   0x49#8,
+                                   0x02#8,
+                                   0x02#8,
+                                   0x02#8,
+                                   0x02#8,
+                                   0x02#8,
+                                   0x02#8,
+                                   0x02#8,
+                                   0x02#8,
+                                   0x80#8,
+                                   0x80#8,
+                                   0x80#8,
+                                   0x80#8,
+                                   0x21#8,
+                                   0x01#8,
+                                   0x15#8,
+                                   0x49#8])),
+                             (LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8), LeanLLVM.Operand.reg "%50")],
+                          LeanLLVM.Instr.binopVec
+                            "%and.i3741.i.i"
+                            (LeanLLVM.BinOp.and)
+                            32
+                            8
+                            (LeanLLVM.Operand.reg "%51")
+                            (LeanLLVM.Operand.reg "%46"),]
+
+/-- `if.then38`'s run: the second word's class mask join (instructions 19-24). -/
+def ifThen38Seg4 : List Instr :=
+[                          LeanLLVM.Instr.vecBitcast "%52" 4 64 16 16 (LeanLLVM.Operand.reg "%39"),
+                          LeanLLVM.Instr.binopVec
+                            "%53"
+                            (LeanLLVM.BinOp.lshr)
+                            16
+                            16
+                            (LeanLLVM.Operand.reg "%52")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.splat 16 16 0x0004#16)),
+                          LeanLLVM.Instr.vecBitcast "%54" 16 16 32 8 (LeanLLVM.Operand.reg "%53"),
+                          LeanLLVM.Instr.binopVec
+                            "%55"
+                            (LeanLLVM.BinOp.and)
+                            32
+                            8
+                            (LeanLLVM.Operand.reg "%54")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.splat 32 8 0x0f#8)),
+                          LeanLLVM.Instr.call
+                            "%56"
+                            (LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8))
+                            "llvm.x86.avx2.pshuf.b"
+                            [(LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8),
+                              LeanLLVM.Operand.imm
+                                (LeanLLVM.Const.vector
+                                  8
+                                  [0x01#8,
+                                   0x01#8,
+                                   0x01#8,
+                                   0x01#8,
+                                   0x01#8,
+                                   0x01#8,
+                                   0x01#8,
+                                   0x01#8,
+                                   0xe6#8,
+                                   0xae#8,
+                                   0xba#8,
+                                   0xba#8,
+                                   0x01#8,
+                                   0x01#8,
+                                   0x01#8,
+                                   0x01#8,
+                                   0x01#8,
+                                   0x01#8,
+                                   0x01#8,
+                                   0x01#8,
+                                   0x01#8,
+                                   0x01#8,
+                                   0x01#8,
+                                   0x01#8,
+                                   0xe6#8,
+                                   0xae#8,
+                                   0xba#8,
+                                   0xba#8,
+                                   0x01#8,
+                                   0x01#8,
+                                   0x01#8,
+                                   0x01#8])),
+                             (LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8), LeanLLVM.Operand.reg "%55")],
+                          LeanLLVM.Instr.binopVec
+                            "%and.i3542.i.i"
+                            (LeanLLVM.BinOp.and)
+                            32
+                            8
+                            (LeanLLVM.Operand.reg "%and.i3741.i.i")
+                            (LeanLLVM.Operand.reg "%56"),]
+
+/-- `if.then38`'s run: the first window's saturating subtracts and high-bit mask (instructions 25-31). -/
+def ifThen38Seg5 : List Instr :=
+[                          LeanLLVM.Instr.vecBitcast "%and.i35.i.i" 32 8 4 64 (LeanLLVM.Operand.reg "%and.i3542.i.i"),
+                          LeanLLVM.Instr.call
+                            "%elt.sat.i40.i.i"
+                            (LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8))
+                            "llvm.usub.sat.v32i8"
+                            [(LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8), LeanLLVM.Operand.reg "%42"),
+                             (LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8),
+                              LeanLLVM.Operand.imm (LeanLLVM.Const.splat 32 8 0x60#8))],
+                          LeanLLVM.Instr.call
+                            "%elt.sat.i.i.i"
+                            (LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8))
+                            "llvm.usub.sat.v32i8"
+                            [(LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8), LeanLLVM.Operand.reg "%43"),
+                             (LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8),
+                              LeanLLVM.Operand.imm (LeanLLVM.Const.splat 32 8 0x70#8))],
+                          LeanLLVM.Instr.binopVec
+                            "%or.i43.i.i"
+                            (LeanLLVM.BinOp.or)
+                            32
+                            8
+                            (LeanLLVM.Operand.reg "%elt.sat.i.i.i")
+                            (LeanLLVM.Operand.reg "%elt.sat.i40.i.i"),
+                          LeanLLVM.Instr.vecBitcast "%or.i.i.i" 32 8 4 64 (LeanLLVM.Operand.reg "%or.i43.i.i"),
+                          LeanLLVM.Instr.binopVec
+                            "%and.i.i.i"
+                            (LeanLLVM.BinOp.and)
+                            4
+                            64
+                            (LeanLLVM.Operand.reg "%or.i.i.i")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.splat 4 64 0x8080808080808080#64)),
+                          LeanLLVM.Instr.binopVec
+                            "%xor.i.i.i"
+                            (LeanLLVM.BinOp.xor)
+                            4
+                            64
+                            (LeanLLVM.Operand.reg "%and.i.i.i")
+                            (LeanLLVM.Operand.reg "%and.i35.i.i"),]
+
+/-- `if.then38`'s run: the three windows above the pointer (instructions 32-37). -/
+def ifThen38Seg6 : List Instr :=
+[                          LeanLLVM.Instr.gep
+                            "%add.ptr.i4.i"
+                            (LeanLLVM.Ty.int 8)
+                            (LeanLLVM.Operand.reg "%add.ptr")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.int 64 0x000000000000001f#64)),
+                          LeanLLVM.Instr.load
+                            "%57"
+                            (LeanLLVM.Ty.vec 4 (LeanLLVM.Ty.int 64))
+                            (LeanLLVM.Operand.reg "%add.ptr.i4.i"),
+                          LeanLLVM.Instr.gep
+                            "%add.ptr3.i5.i"
+                            (LeanLLVM.Ty.int 8)
+                            (LeanLLVM.Operand.reg "%add.ptr")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.int 64 0x000000000000001e#64)),
+                          LeanLLVM.Instr.load
+                            "%58"
+                            (LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8))
+                            (LeanLLVM.Operand.reg "%add.ptr3.i5.i"),
+                          LeanLLVM.Instr.gep
+                            "%add.ptr5.i6.i"
+                            (LeanLLVM.Ty.int 8)
+                            (LeanLLVM.Operand.reg "%add.ptr")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.int 64 0x000000000000001d#64)),
+                          LeanLLVM.Instr.load
+                            "%59"
+                            (LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8))
+                            (LeanLLVM.Operand.reg "%add.ptr5.i6.i"),]
+
+/-- `if.then38`'s run: the third word's two class masks and their join (instructions 38-46). -/
+def ifThen38Seg7 : List Instr :=
+[                          LeanLLVM.Instr.vecBitcast "%60" 4 64 32 8 (LeanLLVM.Operand.reg "%57"),
+                          LeanLLVM.Instr.binopVec
+                            "%61"
+                            (LeanLLVM.BinOp.and)
+                            32
+                            8
+                            (LeanLLVM.Operand.reg "%60")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.splat 32 8 0x0f#8)),
+                          LeanLLVM.Instr.call
+                            "%62"
+                            (LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8))
+                            "llvm.x86.avx2.pshuf.b"
+                            [(LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8),
+                              LeanLLVM.Operand.imm
+                                (LeanLLVM.Const.vector
+                                  8
+                                  [0xe7#8,
+                                   0xa3#8,
+                                   0x83#8,
+                                   0x83#8,
+                                   0x8b#8,
+                                   0xcb#8,
+                                   0xcb#8,
+                                   0xcb#8,
+                                   0xcb#8,
+                                   0xcb#8,
+                                   0xcb#8,
+                                   0xcb#8,
+                                   0xcb#8,
+                                   0xdb#8,
+                                   0xcb#8,
+                                   0xcb#8,
+                                   0xe7#8,
+                                   0xa3#8,
+                                   0x83#8,
+                                   0x83#8,
+                                   0x8b#8,
+                                   0xcb#8,
+                                   0xcb#8,
+                                   0xcb#8,
+                                   0xcb#8,
+                                   0xcb#8,
+                                   0xcb#8,
+                                   0xcb#8,
+                                   0xcb#8,
+                                   0xdb#8,
+                                   0xcb#8,
+                                   0xcb#8])),
+                             (LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8), LeanLLVM.Operand.reg "%61")],
+                          LeanLLVM.Instr.vecBitcast "%63" 4 64 16 16 (LeanLLVM.Operand.reg "%57"),
+                          LeanLLVM.Instr.binopVec
+                            "%64"
+                            (LeanLLVM.BinOp.lshr)
+                            16
+                            16
+                            (LeanLLVM.Operand.reg "%63")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.splat 16 16 0x0004#16)),
+                          LeanLLVM.Instr.vecBitcast "%65" 16 16 32 8 (LeanLLVM.Operand.reg "%64"),
+                          LeanLLVM.Instr.binopVec
+                            "%66"
+                            (LeanLLVM.BinOp.and)
+                            32
+                            8
+                            (LeanLLVM.Operand.reg "%65")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.splat 32 8 0x0f#8)),
+                          LeanLLVM.Instr.call
+                            "%67"
+                            (LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8))
+                            "llvm.x86.avx2.pshuf.b"
+                            [(LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8),
+                              LeanLLVM.Operand.imm
+                                (LeanLLVM.Const.vector
+                                  8
+                                  [0x02#8,
+                                   0x02#8,
+                                   0x02#8,
+                                   0x02#8,
+                                   0x02#8,
+                                   0x02#8,
+                                   0x02#8,
+                                   0x02#8,
+                                   0x80#8,
+                                   0x80#8,
+                                   0x80#8,
+                                   0x80#8,
+                                   0x21#8,
+                                   0x01#8,
+                                   0x15#8,
+                                   0x49#8,
+                                   0x02#8,
+                                   0x02#8,
+                                   0x02#8,
+                                   0x02#8,
+                                   0x02#8,
+                                   0x02#8,
+                                   0x02#8,
+                                   0x02#8,
+                                   0x80#8,
+                                   0x80#8,
+                                   0x80#8,
+                                   0x80#8,
+                                   0x21#8,
+                                   0x01#8,
+                                   0x15#8,
+                                   0x49#8])),
+                             (LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8), LeanLLVM.Operand.reg "%66")],
+                          LeanLLVM.Instr.binopVec
+                            "%and.i3741.i7.i"
+                            (LeanLLVM.BinOp.and)
+                            32
+                            8
+                            (LeanLLVM.Operand.reg "%67")
+                            (LeanLLVM.Operand.reg "%62"),]
+
+/-- `if.then38`'s run: the word at `+31`'s class mask join (instructions 47-52). -/
+def ifThen38Seg8 : List Instr :=
+[                          LeanLLVM.Instr.vecBitcast "%68" 4 64 16 16 (LeanLLVM.Operand.reg "%40"),
+                          LeanLLVM.Instr.binopVec
+                            "%69"
+                            (LeanLLVM.BinOp.lshr)
+                            16
+                            16
+                            (LeanLLVM.Operand.reg "%68")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.splat 16 16 0x0004#16)),
+                          LeanLLVM.Instr.vecBitcast "%70" 16 16 32 8 (LeanLLVM.Operand.reg "%69"),
+                          LeanLLVM.Instr.binopVec
+                            "%71"
+                            (LeanLLVM.BinOp.and)
+                            32
+                            8
+                            (LeanLLVM.Operand.reg "%70")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.splat 32 8 0x0f#8)),
+                          LeanLLVM.Instr.call
+                            "%72"
+                            (LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8))
+                            "llvm.x86.avx2.pshuf.b"
+                            [(LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8),
+                              LeanLLVM.Operand.imm
+                                (LeanLLVM.Const.vector
+                                  8
+                                  [0x01#8,
+                                   0x01#8,
+                                   0x01#8,
+                                   0x01#8,
+                                   0x01#8,
+                                   0x01#8,
+                                   0x01#8,
+                                   0x01#8,
+                                   0xe6#8,
+                                   0xae#8,
+                                   0xba#8,
+                                   0xba#8,
+                                   0x01#8,
+                                   0x01#8,
+                                   0x01#8,
+                                   0x01#8,
+                                   0x01#8,
+                                   0x01#8,
+                                   0x01#8,
+                                   0x01#8,
+                                   0x01#8,
+                                   0x01#8,
+                                   0x01#8,
+                                   0x01#8,
+                                   0xe6#8,
+                                   0xae#8,
+                                   0xba#8,
+                                   0xba#8,
+                                   0x01#8,
+                                   0x01#8,
+                                   0x01#8,
+                                   0x01#8])),
+                             (LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8), LeanLLVM.Operand.reg "%71")],
+                          LeanLLVM.Instr.binopVec
+                            "%and.i3542.i8.i"
+                            (LeanLLVM.BinOp.and)
+                            32
+                            8
+                            (LeanLLVM.Operand.reg "%and.i3741.i7.i")
+                            (LeanLLVM.Operand.reg "%72"),]
+
+/-- `if.then38`'s run: the second window's high-bit mask, the state mask and the increment (instructions 53-61). -/
+def ifThen38Seg9 : List Instr :=
+[                          LeanLLVM.Instr.vecBitcast "%and.i35.i9.i" 32 8 4 64 (LeanLLVM.Operand.reg "%and.i3542.i8.i"),
+                          LeanLLVM.Instr.call
+                            "%elt.sat.i40.i10.i"
+                            (LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8))
+                            "llvm.usub.sat.v32i8"
+                            [(LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8), LeanLLVM.Operand.reg "%58"),
+                             (LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8),
+                              LeanLLVM.Operand.imm (LeanLLVM.Const.splat 32 8 0x60#8))],
+                          LeanLLVM.Instr.call
+                            "%elt.sat.i.i11.i"
+                            (LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8))
+                            "llvm.usub.sat.v32i8"
+                            [(LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8), LeanLLVM.Operand.reg "%59"),
+                             (LeanLLVM.Ty.vec 32 (LeanLLVM.Ty.int 8),
+                              LeanLLVM.Operand.imm (LeanLLVM.Const.splat 32 8 0x70#8))],
+                          LeanLLVM.Instr.binopVec
+                            "%or.i43.i12.i"
+                            (LeanLLVM.BinOp.or)
+                            32
+                            8
+                            (LeanLLVM.Operand.reg "%elt.sat.i.i11.i")
+                            (LeanLLVM.Operand.reg "%elt.sat.i40.i10.i"),
+                          LeanLLVM.Instr.vecBitcast "%or.i.i13.i" 32 8 4 64 (LeanLLVM.Operand.reg "%or.i43.i12.i"),
+                          LeanLLVM.Instr.binopVec
+                            "%and.i.i14.i"
+                            (LeanLLVM.BinOp.and)
+                            4
+                            64
+                            (LeanLLVM.Operand.reg "%or.i.i13.i")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.splat 4 64 0x8080808080808080#64)),
+                          LeanLLVM.Instr.binopVec
+                            "%xor.i.i15.i"
+                            (LeanLLVM.BinOp.xor)
+                            4
+                            64
+                            (LeanLLVM.Operand.reg "%and.i.i14.i")
+                            (LeanLLVM.Operand.reg "%and.i35.i9.i"),
+                          LeanLLVM.Instr.binopVec
+                            "%or.i.i291"
+                            (LeanLLVM.BinOp.or)
+                            4
+                            64
+                            (LeanLLVM.Operand.reg "%xor.i.i15.i")
+                            (LeanLLVM.Operand.reg "%xor.i.i.i"),
+                          LeanLLVM.Instr.binop
+                            "%inc49"
+                            (LeanLLVM.BinOp.add)
+                            64
+                            (LeanLLVM.Operand.reg "%i.0510")
+                            (LeanLLVM.Operand.imm (LeanLLVM.Const.int 64 0x0000000000000001#64))]
+
+
+/-! ### The nine segments
+
+Each is one `denoteCode` equation at an explicit intermediate environment.  The
+pointer the block addresses through and the loop index are the two cells it
+reads from outside itself; everything else it binds. -/
+
+/-- **`if.then38`'s first segment.**  The two word loads at the pointer and the
+one byte below it. -/
+theorem if_then38_seg1 (env : Env) (s : State) (a : Nat) (i : BitVec 64)
+    (bs39 bs40 bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8)
+    (hadd : lookupName env "%add.ptr" = some (.ptr a))
+    (h39 : readBytes s.mem a 32 = some bs39)
+    (h40 : readBytes s.mem (a + ((0x0000000000000020#64).signExtend 64).toNat) 32
+      = some bs40)
+    (h1 : 1 ≤ a)
+    (h41 : readBytes s.mem (a - 1) 32 = some bs41) :
+    let v := ifThen38Values a i bs39 bs40 bs41 bs42 bs43 bs57 bs58 bs59
+    denoteCode s1BlocksCalls ifThen38Seg1 (stateAt env s) =
+      some (stateAt (iftEnv1 env v) s) := by
+  intro v
+  unfold ifThen38Seg1 iftEnv1
+  block_eval_b
+
+/-- **`if.then38`'s second segment.**  The two byte windows at `-2` and `-3`. -/
+theorem if_then38_seg2 (env : Env) (s : State) (a : Nat) (i : BitVec 64)
+    (bs39 bs40 bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8)
+    (hadd : lookupName env "%add.ptr" = some (.ptr a))
+    (h2 : 2 ≤ a) (h3 : 3 ≤ a)
+    (h42 : readBytes s.mem (a - 2) 32 = some bs42)
+    (h43 : readBytes s.mem (a - 3) 32 = some bs43) :
+    let v := ifThen38Values a i bs39 bs40 bs41 bs42 bs43 bs57 bs58 bs59
+    denoteCode s1BlocksCalls ifThen38Seg2 (stateAt (iftEnv1 env v) s) =
+      some (stateAt (iftEnv2 env v) s) := by
+  intro v
+  unfold ifThen38Seg2 iftEnv1 iftEnv2
+  block_eval_b
+
+/-- **`if.then38`'s third segment.**  The first word's two table lookups and
+their join. -/
+theorem if_then38_seg3 (env : Env) (s : State) (a : Nat) (i : BitVec 64)
+    (bs39 bs40 bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8) :
+    let v := ifThen38Values a i bs39 bs40 bs41 bs42 bs43 bs57 bs58 bs59
+    denoteCode s1BlocksCalls ifThen38Seg3 (stateAt (iftEnv2 env v) s) =
+      some (stateAt (iftEnv3 env v) s) := by
+  intro v
+  unfold ifThen38Seg3 iftEnv2 iftEnv3
+  block_eval_b
+
+/-- **`if.then38`'s fourth segment.**  The second word's table lookup and the
+join of the two class words. -/
+theorem if_then38_seg4 (env : Env) (s : State) (a : Nat) (i : BitVec 64)
+    (bs39 bs40 bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8) :
+    let v := ifThen38Values a i bs39 bs40 bs41 bs42 bs43 bs57 bs58 bs59
+    denoteCode s1BlocksCalls ifThen38Seg4 (stateAt (iftEnv3 env v) s) =
+      some (stateAt (iftEnv4 env v) s) := by
+  intro v
+  unfold ifThen38Seg4 iftEnv3 iftEnv4
+  block_eval_b
+
+/-- **`if.then38`'s fifth segment.**  The two saturating subtracts, their join's
+high-bit mask and the state word. -/
+theorem if_then38_seg5 (env : Env) (s : State) (a : Nat) (i : BitVec 64)
+    (bs39 bs40 bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8)
+    (h42len : bs42.length = 32) (h43len : bs43.length = 32) :
+    let v := ifThen38Values a i bs39 bs40 bs41 bs42 bs43 bs57 bs58 bs59
+    denoteCode s1BlocksCalls ifThen38Seg5 (stateAt (iftEnv4 env v) s) =
+      some (stateAt (iftEnv5 env v) s) := by
+  intro v
+  unfold ifThen38Seg5 iftEnv4 iftEnv5
+  block_eval_b
+  all_goals
+    first
+    | (simp only [v, ifThen38Values]
+       repeat split
+       all_goals (first | rfl | (intro h; cases h) | contradiction))
+    | (simp only [v, ifThen38Values]
+       rw [binopLanes_zipWith]
+       all_goals
+         (first
+          | (intro x y; rfl)
+          | block_len
+          | rfl))
+    | (simp only [v, ifThen38Values]
+       simp [List.length_zipWith, List.length_map, h42len, h43len])
+
+/-- **`if.then38`'s sixth segment.**  The word and the two byte windows above the
+pointer. -/
+theorem if_then38_seg6 (env : Env) (s : State) (a : Nat) (i : BitVec 64)
+    (bs39 bs40 bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8)
+    (hadd : lookupName env "%add.ptr" = some (.ptr a))
+    (h57 : readBytes s.mem (a + ((0x000000000000001f#64).signExtend 64).toNat) 32
+      = some bs57)
+    (h58 : readBytes s.mem (a + ((0x000000000000001e#64).signExtend 64).toNat) 32
+      = some bs58)
+    (h59 : readBytes s.mem (a + ((0x000000000000001d#64).signExtend 64).toNat) 32
+      = some bs59) :
+    let v := ifThen38Values a i bs39 bs40 bs41 bs42 bs43 bs57 bs58 bs59
+    denoteCode s1BlocksCalls ifThen38Seg6 (stateAt (iftEnv5 env v) s) =
+      some (stateAt (iftEnv6 env v) s) := by
+  intro v
+  unfold ifThen38Seg6 iftEnv5 iftEnv6
+  block_eval_b
+
+/-- **`if.then38`'s seventh segment.**  The third word's two table lookups and
+their join. -/
+theorem if_then38_seg7 (env : Env) (s : State) (a : Nat) (i : BitVec 64)
+    (bs39 bs40 bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8) :
+    let v := ifThen38Values a i bs39 bs40 bs41 bs42 bs43 bs57 bs58 bs59
+    denoteCode s1BlocksCalls ifThen38Seg7 (stateAt (iftEnv6 env v) s) =
+      some (stateAt (iftEnv7 env v) s) := by
+  intro v
+  unfold ifThen38Seg7 iftEnv6 iftEnv7
+  block_eval_b
+
+/-- **`if.then38`'s eighth segment.**  The fourth word's table lookup and the
+join of its two class words. -/
+theorem if_then38_seg8 (env : Env) (s : State) (a : Nat) (i : BitVec 64)
+    (bs39 bs40 bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8) :
+    let v := ifThen38Values a i bs39 bs40 bs41 bs42 bs43 bs57 bs58 bs59
+    denoteCode s1BlocksCalls ifThen38Seg8 (stateAt (iftEnv7 env v) s) =
+      some (stateAt (iftEnv8 env v) s) := by
+  intro v
+  unfold ifThen38Seg8 iftEnv7 iftEnv8
+  block_eval_b
+
+/-- **`if.then38`'s ninth segment.**  The second window's saturating subtracts
+and high-bit mask, the state mask's join and the increment. -/
+theorem if_then38_seg9 (env : Env) (s : State) (a : Nat) (i : BitVec 64)
+    (bs39 bs40 bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8)
+    (h58len : bs58.length = 32) (h59len : bs59.length = 32)
+    (hi : lookupName env "%i.0510" = some (.int 64 i)) :
+    let v := ifThen38Values a i bs39 bs40 bs41 bs42 bs43 bs57 bs58 bs59
+    denoteCode s1BlocksCalls ifThen38Seg9 (stateAt (iftEnv8 env v) s) =
+      some (stateAt (iftEnv9 env v) s) := by
+  intro v
+  unfold ifThen38Seg9 iftEnv8 iftEnv9
+  block_eval_b
+  all_goals
+    first
+    | (simp only [v, ifThen38Values]
+       repeat split
+       all_goals (first | rfl | (intro h; cases h) | contradiction))
+    | (simp only [v, ifThen38Values]
+       rw [binopLanes_zipWith]
+       all_goals
+         (first
+          | (intro x y; rfl)
+          | block_len
+          | rfl))
+    | (simp only [v, ifThen38Values]
+       simp [List.length_zipWith, List.length_map, h58len, h59len])
+
+/-- The block's instruction list, split at the nine segment boundaries. -/
+theorem if_then38Instrs_split :
+    if_then38Instrs =
+      ifThen38Seg1 ++ (ifThen38Seg2 ++ (ifThen38Seg3 ++ (ifThen38Seg4 ++
+        (ifThen38Seg5 ++ (ifThen38Seg6 ++ (ifThen38Seg7 ++
+          (ifThen38Seg8 ++ ifThen38Seg9))))))) := rfl
+
+/-- **`if.then38`'s run.**  The nine segments compose: the four loaded words and
+the three loaded windows run the classifier's class masks, the two windows'
+saturating subtracts give the state word, and the last segment forms the join
+with the increment the loop carries. -/
+theorem if_then38_denote (env : Env) (s : State) (a : Nat) (i : BitVec 64)
+    (bs39 bs40 bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8)
+    (hadd : lookupName env "%add.ptr" = some (.ptr a))
+    (hi : lookupName env "%i.0510" = some (.int 64 i))
+    (h39 : readBytes s.mem a 32 = some bs39)
+    (h40 : readBytes s.mem (a + ((0x0000000000000020#64).signExtend 64).toNat) 32
+      = some bs40)
+    (h1 : 1 ≤ a)
+    (h41 : readBytes s.mem (a - 1) 32 = some bs41)
+    (h2 : 2 ≤ a) (h3 : 3 ≤ a)
+    (h42 : readBytes s.mem (a - 2) 32 = some bs42)
+    (h43 : readBytes s.mem (a - 3) 32 = some bs43)
+    (h57 : readBytes s.mem (a + ((0x000000000000001f#64).signExtend 64).toNat) 32
+      = some bs57)
+    (h58 : readBytes s.mem (a + ((0x000000000000001e#64).signExtend 64).toNat) 32
+      = some bs58)
+    (h59 : readBytes s.mem (a + ((0x000000000000001d#64).signExtend 64).toNat) 32
+      = some bs59) :
+    let v := ifThen38Values a i bs39 bs40 bs41 bs42 bs43 bs57 bs58 bs59
+    denoteCode s1BlocksCalls if_then38Instrs (stateAt env s) =
+      some (stateAt (ifThen38Out env v) s) := by
+  intro v
+  have g1 := if_then38_seg1 env s a i bs39 bs40 bs41 bs42 bs43 bs57 bs58 bs59
+    hadd h39 h40 h1 h41
+  have g2 := if_then38_seg2 env s a i bs39 bs40 bs41 bs42 bs43 bs57 bs58 bs59
+    hadd h2 h3 h42 h43
+  have g3 := if_then38_seg3 env s a i bs39 bs40 bs41 bs42 bs43 bs57 bs58 bs59
+  have g4 := if_then38_seg4 env s a i bs39 bs40 bs41 bs42 bs43 bs57 bs58 bs59
+  have h42len : bs42.length = 32 :=
+    LeanLLVM.Refinement.JsonEntrySteps.readBytes_length s.mem (a - 2) 32 h42
+  have h43len : bs43.length = 32 :=
+    LeanLLVM.Refinement.JsonEntrySteps.readBytes_length s.mem (a - 3) 32 h43
+  have h58len : bs58.length = 32 :=
+    LeanLLVM.Refinement.JsonEntrySteps.readBytes_length s.mem
+      (a + ((0x000000000000001e#64).signExtend 64).toNat) 32 h58
+  have h59len : bs59.length = 32 :=
+    LeanLLVM.Refinement.JsonEntrySteps.readBytes_length s.mem
+      (a + ((0x000000000000001d#64).signExtend 64).toNat) 32 h59
+  have g5 := if_then38_seg5 env s a i bs39 bs40 bs41 bs42 bs43 bs57 bs58 bs59
+    h42len h43len
+  have g6 := if_then38_seg6 env s a i bs39 bs40 bs41 bs42 bs43 bs57 bs58 bs59
+    hadd h57 h58 h59
+  have g7 := if_then38_seg7 env s a i bs39 bs40 bs41 bs42 bs43 bs57 bs58 bs59
+  have g8 := if_then38_seg8 env s a i bs39 bs40 bs41 bs42 bs43 bs57 bs58 bs59
+  have g9 := if_then38_seg9 env s a i bs39 bs40 bs41 bs42 bs43 bs57 bs58 bs59
+    h58len h59len hi
+  calc denoteCode s1BlocksCalls if_then38Instrs (stateAt env s)
+      = denoteCode s1BlocksCalls
+          (ifThen38Seg1 ++ (ifThen38Seg2 ++ (ifThen38Seg3 ++ (ifThen38Seg4 ++
+            (ifThen38Seg5 ++ (ifThen38Seg6 ++ (ifThen38Seg7 ++
+              (ifThen38Seg8 ++ ifThen38Seg9)))))))) (stateAt env s) := by
+        rw [if_then38Instrs_split]
+    _ = denoteCode s1BlocksCalls
+          (ifThen38Seg2 ++ (ifThen38Seg3 ++ (ifThen38Seg4 ++
+            (ifThen38Seg5 ++ (ifThen38Seg6 ++ (ifThen38Seg7 ++
+              (ifThen38Seg8 ++ ifThen38Seg9)))))))
+          (stateAt (iftEnv1 env v) s) := denoteCode_append_apply g1 (by rfl)
+    _ = denoteCode s1BlocksCalls
+          (ifThen38Seg3 ++ (ifThen38Seg4 ++ (ifThen38Seg5 ++
+            (ifThen38Seg6 ++ (ifThen38Seg7 ++
+              (ifThen38Seg8 ++ ifThen38Seg9))))))
+          (stateAt (iftEnv2 env v) s) := denoteCode_append_apply g2 (by rfl)
+    _ = denoteCode s1BlocksCalls
+          (ifThen38Seg4 ++ (ifThen38Seg5 ++ (ifThen38Seg6 ++
+            (ifThen38Seg7 ++ (ifThen38Seg8 ++ ifThen38Seg9)))))
+          (stateAt (iftEnv3 env v) s) := denoteCode_append_apply g3 (by rfl)
+    _ = denoteCode s1BlocksCalls
+          (ifThen38Seg5 ++ (ifThen38Seg6 ++ (ifThen38Seg7 ++
+            (ifThen38Seg8 ++ ifThen38Seg9))))
+          (stateAt (iftEnv4 env v) s) := denoteCode_append_apply g4 (by rfl)
+    _ = denoteCode s1BlocksCalls
+          (ifThen38Seg6 ++ (ifThen38Seg7 ++ (ifThen38Seg8 ++ ifThen38Seg9)))
+          (stateAt (iftEnv5 env v) s) := denoteCode_append_apply g5 (by rfl)
+    _ = denoteCode s1BlocksCalls
+          (ifThen38Seg7 ++ (ifThen38Seg8 ++ ifThen38Seg9))
+          (stateAt (iftEnv6 env v) s) := denoteCode_append_apply g6 (by rfl)
+    _ = denoteCode s1BlocksCalls (ifThen38Seg8 ++ ifThen38Seg9)
+          (stateAt (iftEnv7 env v) s) := denoteCode_append_apply g7 (by rfl)
+    _ = denoteCode s1BlocksCalls ifThen38Seg9
+          (stateAt (iftEnv8 env v) s) := denoteCode_append_apply g8 (by rfl)
+    _ = some (stateAt (ifThen38Out env v) s) := g9
+
+/-- **`if.then38`'s step.**  The block's run, then its unconditional branch to
+the hand-off's join. -/
+theorem if_then38_step (env : Env) (s : State) (a : Nat) (i : BitVec 64)
+    (bs39 bs40 bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8)
+    (hpc : s.pc = "if.then38")
+    (hadd : lookupName env "%add.ptr" = some (.ptr a))
+    (hi : lookupName env "%i.0510" = some (.int 64 i))
+    (h39 : readBytes s.mem a 32 = some bs39)
+    (h40 : readBytes s.mem (a + ((0x0000000000000020#64).signExtend 64).toNat) 32
+      = some bs40)
+    (h1 : 1 ≤ a)
+    (h41 : readBytes s.mem (a - 1) 32 = some bs41)
+    (h2 : 2 ≤ a) (h3 : 3 ≤ a)
+    (h42 : readBytes s.mem (a - 2) 32 = some bs42)
+    (h43 : readBytes s.mem (a - 3) 32 = some bs43)
+    (h57 : readBytes s.mem (a + ((0x000000000000001f#64).signExtend 64).toNat) 32
+      = some bs57)
+    (h58 : readBytes s.mem (a + ((0x000000000000001e#64).signExtend 64).toNat) 32
+      = some bs58)
+    (h59 : readBytes s.mem (a + ((0x000000000000001d#64).signExtend 64).toNat) 32
+      = some bs59) :
+    step s1BlocksCalls s1BlocksFunction (stateAt env s) =
+      .jump (stateAt
+        (ifThen38Out env
+          (ifThen38Values a i bs39 bs40 bs41 bs42 bs43 bs57 bs58 bs59))
+        { s with pc := "if.end50", pre := some "if.then38" }) := by
+  have hfind : s1BlocksFunction.findBlock (stateAt env s).pc = some if_then38Block := by
+    rw [show (stateAt env s).pc = s.pc from rfl, hpc]
+    exact LeanLLVM.Refinement.JsonS1BlocksIR.findBlock_if_then38
+  rw [step_at hfind (if_then38_denote env s a i bs39 bs40 bs41 bs42 bs43 bs57 bs58 bs59
+    hadd hi h39 h40 h1 h41 h2 h3 h42 h43 h57 h58 h59)]
+  rw [show if_then38Block.term = if_then38Term from rfl]
+  simp only [if_then38Term, execTerm]
+  simp only [stateAt, hpc]
+
+/-! ### The hand-off's environment
+
+The hand-off is four blocks: the body's escape branch calls the escape list, the
+class test joins the block's two words, the hand-off runs the DFA's step on the
+four windows it reads, and `if.end50` selects the fused loop's carried state.
+The environments below are the four runs' outputs in the order the trace visits
+them; each is the previous one's cells over its own. -/
+
+/-- The escape arm's output environment, over the body's. -/
+def handoffIfThenEnv (env : Env) (v : ForBodyValues) : Env :=
+  ifThenOut (forBodyOut env v) v.w2 v.w3
+
+/-- The class test's output environment. -/
+def handoffIfEndEnv (env : Env) (v : ForBodyValues) : Env :=
+  ifEndEnv (handoffIfThenEnv env v) v.w2 v.w3
+
+/-- The hand-off's output environment. -/
+def handoffThen38Env (env : Env) (v : ForBodyValues) (v38 : IfThen38Values) : Env :=
+  ifThen38Out (handoffIfEndEnv env v) v38
+
+/-- The hand-off's join: the fused loop's incoming environment. -/
+def handoffOut (env : Env) (v : ForBodyValues) (v38 : IfThen38Values)
+    (shr : BitVec 64) : Env :=
+  ifEnd50Out (handoffThen38Env env v v38) v.shr17 v.shrII v.conv13II v.shrI
+    v38.or291 v38.or284 v38.inc49 shr
+
+/-- The register reads the four steps make, resolved through the cell chains the
+runs built: the block definitions are unfolded into their cell lists and the
+lookup's own equations read the chain, so the name's cell comes out of the lists
+the segments stated. -/
+macro "handoff_lk" : tactic => `(tactic|
+  (first
+   | assumption
+   | (simp (config := { failIfUnchanged := false }) only [forBodyOut, fbEnv1,
+        fbEnv2, fbEnv3, fbEnv4, fbEnv5, fbEnv6, fbEnv7, ifThenOut, ifEndEnv,
+        ifThen38Out, iftEnv1, iftEnv2, iftEnv3, iftEnv4, iftEnv5, iftEnv6,
+        iftEnv7, iftEnv8, iftEnv9, handoffIfThenEnv, handoffIfEndEnv,
+        handoffThen38Env, cells]
+      all_goals
+        (repeat
+          (first
+           | exact lookupName_cons_self _ _ _
+           | assumption
+           | rfl
+           | rw [lookupName_cons_ne _ _ (by decide)])))))
+
+theorem lookupName_forBodyOut_2 (env : Env) (v : ForBodyValues) :
+    lookupName (forBodyOut env v) "%2" = some (.vec 4 64 v.w2) := by
+  handoff_lk
+
+theorem lookupName_forBodyOut_3 (env : Env) (v : ForBodyValues) :
+    lookupName (forBodyOut env v) "%3" = some (.vec 4 64 v.w3) := by
+  handoff_lk
+
+theorem lookupName_forBodyOut_or14 (env : Env) (v : ForBodyValues) :
+    lookupName (forBodyOut env v) "%or14.i" = some (.int 64 v.or14) := by
+  handoff_lk
+
+theorem lookupName_forBodyOut_xor (env : Env) (v : ForBodyValues) :
+    lookupName (forBodyOut env v) "%xor.i" = some (.int 64 v.xorI) := by
+  handoff_lk
+
+theorem lookupName_forBodyOut_i (env : Env) (v : ForBodyValues) :
+    lookupName (forBodyOut env v) "%i.0510" = some (.int 64 v.i) := by
+  handoff_lk
+
+theorem lookupName_forBodyOut_addPtr (env : Env) (v : ForBodyValues) :
+    lookupName (forBodyOut env v) "%add.ptr" = some (.ptr v.addPtr) := by
+  handoff_lk
+
+theorem lookupName_forBodyOut_tobool (env : Env) (v : ForBodyValues) :
+    lookupName (forBodyOut env v) "%tobool.not" = lookupName env "%tobool.not" := by
+  handoff_lk
+
+theorem lookupName_forBodyOut_xp (env : Env) (v : ForBodyValues) {xp : Nat}
+    (h : lookupName env "%xp" = some (.ptr xp)) :
+    lookupName (forBodyOut env v) "%xp" = some (.ptr xp) := by
+  have hread : lookupName (forBodyOut env v) "%xp" = lookupName env "%xp" := by
+    handoff_lk
+  rw [hread, h]
+
+theorem lookupName_forBodyOut_nxp (env : Env) (v : ForBodyValues) {nxp : Nat}
+    (h : lookupName env "%nxp" = some (.ptr nxp)) :
+    lookupName (forBodyOut env v) "%nxp" = some (.ptr nxp) := by
+  have hread : lookupName (forBodyOut env v) "%nxp" = lookupName env "%nxp" := by
+    handoff_lk
+  rw [hread, h]
+
+theorem lookupName_forBodyOut_xcarry (env : Env) (v : ForBodyValues) {xcarry : Nat}
+    (h : lookupName env "%xcarry" = some (.ptr xcarry)) :
+    lookupName (forBodyOut env v) "%xcarry" = some (.ptr xcarry) := by
+  have hread : lookupName (forBodyOut env v) "%xcarry" = lookupName env "%xcarry" := by
+    handoff_lk
+  rw [hread, h]
+
+theorem lookupName_handoffIfThen_2 (env : Env) (v : ForBodyValues) :
+    lookupName (handoffIfThenEnv env v) "%2" = some (.vec 4 64 v.w2) := by
+  handoff_lk
+
+theorem lookupName_handoffIfThen_3 (env : Env) (v : ForBodyValues) :
+    lookupName (handoffIfThenEnv env v) "%3" = some (.vec 4 64 v.w3) := by
+  handoff_lk
+
+theorem lookupName_handoffIfEnd_addPtr (env : Env) (v : ForBodyValues) :
+    lookupName (handoffIfEndEnv env v) "%add.ptr" = some (.ptr v.addPtr) := by
+  handoff_lk
+
+theorem lookupName_handoffIfEnd_i (env : Env) (v : ForBodyValues) :
+    lookupName (handoffIfEndEnv env v) "%i.0510" = some (.int 64 v.i) := by
+  handoff_lk
+
+theorem lookupName_handoffThen38_shr17 (env : Env) (v : ForBodyValues)
+    (v38 : IfThen38Values) :
+    lookupName (handoffThen38Env env v v38) "%shr17" = some (.int 64 v.shr17) := by
+  handoff_lk
+
+theorem lookupName_handoffThen38_shrII (env : Env) (v : ForBodyValues)
+    (v38 : IfThen38Values) :
+    lookupName (handoffThen38Env env v v38) "%shr.i.i" = some (.int 64 v.shrII) := by
+  handoff_lk
+
+theorem lookupName_handoffThen38_conv13 (env : Env) (v : ForBodyValues)
+    (v38 : IfThen38Values) :
+    lookupName (handoffThen38Env env v v38) "%conv13.i.i" = some (.int 64 v.conv13II) := by
+  handoff_lk
+
+theorem lookupName_handoffThen38_shrI (env : Env) (v : ForBodyValues)
+    (v38 : IfThen38Values) :
+    lookupName (handoffThen38Env env v v38) "%shr.i" = some (.int 64 v.shrI) := by
+  handoff_lk
+
+theorem lookupName_handoffThen38_or291 (env : Env) (v : ForBodyValues)
+    (v38 : IfThen38Values) :
+    lookupName (handoffThen38Env env v v38) "%or.i.i291"
+      = some (.vec 4 64 v38.or291) := by
+  handoff_lk
+
+theorem lookupName_handoffThen38_or284 (env : Env) (v : ForBodyValues)
+    (v38 : IfThen38Values) :
+    lookupName (handoffThen38Env env v v38) "%or.i284"
+      = some (.vec 4 64 v38.or284) := by
+  handoff_lk
+
+theorem lookupName_handoffThen38_inc49 (env : Env) (v : ForBodyValues)
+    (v38 : IfThen38Values) :
+    lookupName (handoffThen38Env env v v38) "%inc49" = some (.int 64 v38.inc49) := by
+  handoff_lk
+
+/-- The loop's exit test reads through the whole hand-off to the incoming
+environment. -/
+theorem lookupName_handoffThen38_shr (env : Env) (v : ForBodyValues)
+    (v38 : IfThen38Values) :
+    lookupName (handoffThen38Env env v v38) "%shr" = lookupName env "%shr" := by
+  handoff_lk
+
+/-! ### The hand-off chain
+
+The trace from the body's block to the fused loop's entry: the body's escape
+branch, the escape list, the class test, the hand-off's DFA step and the join.
+The escape arm's call outcome is the caller's, so it is a parameter with the one
+call fact; the four windows the hand-off reads are premises at the returned
+memory, because the escape list may have written its own regions. -/
+
+theorem for_body_handoff (esc : Calls) (env : Env) (s : State) (p : String)
+    (op1 op2 op3 op4 op5 : Operand)
+    (prevS i st0 st9 st15 : BitVec 64) (bs2 bs3 : List UInt8) (b ent : Nat)
+    (xp nxp xcarry : Nat) (r : CallOutcome) (shr : BitVec 64)
+    (bs39 bs40 bs41 bs42 bs43 bs57 bs58 bs59 : List UInt8)
+    (hpc : s.pc = "for.body")
+    (hpre : s.pre = some p)
+    (hinc1 : phiIncoming p [("for.body.lr.ph", .imm (.int 64 0x0000000000000000#64)),
+      ("for.inc", .reg "%shr17")] = some op1)
+    (hop1 : evalOperand (stateAt env s) op1 = some (.int 64 prevS))
+    (hinc2 : phiIncoming p [("for.body.lr.ph", .imm (.int 64 0x0000000000000000#64)),
+      ("for.inc", .reg "%inc")] = some op2)
+    (hop2 : evalOperand (stateAt env s) op2 = some (.int 64 i))
+    (hinc3 : phiIncoming p [("for.body.lr.ph", .imm (.int 64 0x0000000000000000#64)),
+      ("for.inc", .reg "%shr.i.i")] = some op3)
+    (hop3 : evalOperand (stateAt env s) op3 = some (.int 64 st0))
+    (hinc4 : phiIncoming p [("for.body.lr.ph", .imm (.int 64 0x0000000000000000#64)),
+      ("for.inc", .reg "%conv13.i.i")] = some op4)
+    (hop4 : evalOperand (stateAt env s) op4 = some (.int 64 st9))
+    (hinc5 : phiIncoming p [("for.body.lr.ph", .imm (.int 64 0x0000000000000000#64)),
+      ("for.inc", .reg "%shr.i")] = some op5)
+    (hop5 : evalOperand (stateAt env s) op5 = some (.int 64 st15))
+    (hb : lookupName env "%b" = some (.ptr b))
+    (hent : lookupName env "%ent" = some (.ptr ent))
+    (hi63 : (i.signExtend 64).toNat < 2 ^ 63)
+    (hshl63 : ((i <<< (0x0000000000000006#64).toNat).signExtend 64).toNat < 2 ^ 63)
+    (hread2 : readBytes s.mem
+      (b + ((i <<< (0x0000000000000006#64).toNat).signExtend 64).toNat) 32 = some bs2)
+    (hread3 : readBytes s.mem
+      ((b + ((i <<< (0x0000000000000006#64).toNat).signExtend 64).toNat)
+        + ((0x0000000000000020#64).signExtend 64).toNat) 32 = some bs3)
+    (htobool : lookupName env "%tobool.not" = some (.int 1 0))
+    (hxp : lookupName env "%xp" = some (.ptr xp))
+    (hnxp : lookupName env "%nxp" = some (.ptr nxp))
+    (hxcarry : lookupName env "%xcarry" = some (.ptr xcarry))
+    (hbit : evalICmp .eq
+      (ifEndTest (forBodyValues prevS i st0 st9 st15 bs2 bs3 b ent).w2
+        (forBodyValues prevS i st0 st9 st15 bs2 bs3 b ent).w3) 0 = 1)
+    (h1 : 1 ≤ (forBodyValues prevS i st0 st9 st15 bs2 bs3 b ent).addPtr)
+    (h2 : 2 ≤ (forBodyValues prevS i st0 st9 st15 bs2 bs3 b ent).addPtr)
+    (h3 : 3 ≤ (forBodyValues prevS i st0 st9 st15 bs2 bs3 b ent).addPtr)
+    (hshr : lookupName env "%shr" = some (.int 64 shr)) :
+    let v := forBodyValues prevS i st0 st9 st15 bs2 bs3 b ent
+    let s1 := stateAt (forBodyOut env v)
+      { s with
+        pc := "if.then",
+        pre := some "for.body",
+        mem := writeBytes s.mem v.arrayidx (natToBytes v.or16.toNat 8) }
+    let s2 := stateAt (handoffIfThenEnv env v)
+      { s1 with
+        pc := "if.end",
+        pre := some "if.then",
+        mem := r.mem,
+        next := r.next }
+    let s3 := stateAt (handoffIfEndEnv env v)
+      { s2 with
+        pc := "if.then38",
+        pre := some "if.end" }
+    let v38 := ifThen38Values v.addPtr v.i bs39 bs40 bs41 bs42 bs43 bs57 bs58 bs59
+    let s4 := stateAt (handoffThen38Env env v v38)
+      { s3 with
+        pc := "if.end50",
+        pre := some "if.then38" }
+    (hc : esc escapeListCallee
+      [.int 64 v.or14, .int 64 (ifThenQuoteWord v.w2 v.w3), .int 64 v.xorI,
+       .int 64 v.i, .ptr xp, .ptr nxp, .ptr xcarry] s1.mem s1.next = some r) →
+    (hread39 : readBytes r.mem v.addPtr 32 = some bs39) →
+    (hread40 : readBytes r.mem
+      (v.addPtr + ((0x0000000000000020#64).signExtend 64).toNat) 32 = some bs40) →
+    (hread41 : readBytes r.mem (v.addPtr - 1) 32 = some bs41) →
+    (hread42 : readBytes r.mem (v.addPtr - 2) 32 = some bs42) →
+    (hread43 : readBytes r.mem (v.addPtr - 3) 32 = some bs43) →
+    (hread57 : readBytes r.mem
+      (v.addPtr + ((0x000000000000001f#64).signExtend 64).toNat) 32 = some bs57) →
+    (hread58 : readBytes r.mem
+      (v.addPtr + ((0x000000000000001e#64).signExtend 64).toNat) 32 = some bs58) →
+    (hread59 : readBytes r.mem
+      (v.addPtr + ((0x000000000000001d#64).signExtend 64).toNat) 32 = some bs59) →
+    step (s1BlocksCallsEsc esc) s1BlocksFunction (stateAt env s) = .jump s1 ∧
+    step (s1BlocksCallsEsc esc) s1BlocksFunction s1 = .jump s2 ∧
+    step (s1BlocksCallsEsc esc) s1BlocksFunction s2 = .jump s3 ∧
+    step (s1BlocksCallsEsc esc) s1BlocksFunction s3 = .jump s4 ∧
+    denoteCode s1BlocksCalls if_end50Instrs s4 =
+      some (stateAt (handoffOut env v v38 shr) s4) := by
+  intro v s1 s2 s3 v38 s4 hc hread39 hread40 hread41 hread42 hread43
+    hread57 hread58 hread59
+  have h2len : v.w2.length = 4 := unpackLanes_length 64 4 (bytesToNat bs2)
+  have h3len : v.w3.length = 4 := unpackLanes_length 64 4 (bytesToNat bs3)
+  have htobool' : lookupName (forBodyOut env v) "%tobool.not" = some (.int 1 0) := by
+    rw [lookupName_forBodyOut_tobool]
+    exact htobool
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  · have hfind : s1BlocksFunction.findBlock (stateAt env s).pc = some for_bodyBlock := by
+      rw [show (stateAt env s).pc = s.pc from rfl, hpc]
+      exact LeanLLVM.Refinement.JsonS1BlocksIR.findBlock_for_body
+    rw [step_esc_of_free esc s1BlocksFunction (stateAt env s) for_bodyBlock hfind
+      (by decide)]
+    exact for_body_step_then env s v hpc htobool'
+      (for_body_denote env s p op1 op2 op3 op4 op5 prevS i st0 st9 st15 bs2 bs3 b ent
+        hpre hinc1 hop1 hinc2 hop2 hinc3 hop3 hinc4 hop4 hinc5 hop5 hb hent hi63
+        hshl63 hread2 hread3)
+  · exact if_then_step_at esc (forBodyOut env v) s1 v.w2 v.w3 h2len h3len
+      v.or14 v.xorI v.i xp nxp xcarry r rfl
+      (lookupName_forBodyOut_2 env v) (lookupName_forBodyOut_3 env v)
+      (lookupName_forBodyOut_or14 env v) (lookupName_forBodyOut_xor env v)
+      (lookupName_forBodyOut_i env v) (lookupName_forBodyOut_xp env v hxp)
+      (lookupName_forBodyOut_nxp env v hnxp) (lookupName_forBodyOut_xcarry env v hxcarry)
+      hc
+  · have hfind : s1BlocksFunction.findBlock s2.pc = some if_endBlock := by
+      rw [show s2.pc = "if.end" from rfl]
+      exact LeanLLVM.Refinement.JsonS1BlocksIR.findBlock_if_end
+    rw [step_esc_of_free esc s1BlocksFunction s2 if_endBlock hfind (by decide)]
+    exact if_end_step_handoff (handoffIfThenEnv env v) s2 v.w2 v.w3 h2len h3len rfl
+      (lookupName_handoffIfThen_2 env v) (lookupName_handoffIfThen_3 env v) hbit
+  · have hfind : s1BlocksFunction.findBlock s3.pc = some if_then38Block := by
+      rw [show s3.pc = "if.then38" from rfl]
+      exact LeanLLVM.Refinement.JsonS1BlocksIR.findBlock_if_then38
+    rw [step_esc_of_free esc s1BlocksFunction s3 if_then38Block hfind (by decide)]
+    exact if_then38_step (handoffIfEndEnv env v) s3 v.addPtr v.i
+      bs39 bs40 bs41 bs42 bs43 bs57 bs58 bs59 rfl
+      (lookupName_handoffIfEnd_addPtr env v) (lookupName_handoffIfEnd_i env v)
+      hread39 hread40 h1 hread41 h2 h3 hread42 hread43 hread57 hread58 hread59
+  · exact if_end50_denote (handoffThen38Env env v v38) s4
+      v.shr17 v.shrII v.conv13II v.shrI v38.or291 v38.or284 v38.inc49 shr rfl
+      (lookupName_handoffThen38_shr17 env v v38)
+      (lookupName_handoffThen38_shrII env v v38)
+      (lookupName_handoffThen38_conv13 env v v38)
+      (lookupName_handoffThen38_shrI env v v38)
+      (lookupName_handoffThen38_or291 env v v38)
+      (lookupName_handoffThen38_or284 env v v38)
+      (lookupName_handoffThen38_inc49 env v v38)
+      (by rw [lookupName_handoffThen38_shr]; exact hshr)
+
 /-! ### Axiom footprints
 
 The block runs and the branch lemmas compute from the block's own literal lists;
@@ -2899,5 +4457,13 @@ intrinsic arms. -/
 #print axioms if_end170_denote
 #print axioms if_end170_step
 #print axioms for_body_denote
+#print axioms for_body_step_end
+#print axioms for_body_step_then
+#print axioms if_end_denote
+#print axioms if_end_step_handoff
+#print axioms if_end_step_ascii
+#print axioms if_then38_denote
+#print axioms if_then38_step
+#print axioms for_body_handoff
 
 end LeanLLVM.Refinement.JsonS1BlocksRefine
