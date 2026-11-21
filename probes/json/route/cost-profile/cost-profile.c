@@ -26,9 +26,9 @@
      utf8             `leanllvm_json_utf8` at the route's gate, eight runs per
                       sample divided by eight
      stage2           the walk over the pipeline's own entry and escape streams
-     stage2_plain     the same walk with an empty escape list (a cost probe: its
-                      arena differs by construction and it is never read through
-                      an identity gate)
+     stage2_plain     the same walk with an empty escape list: the list-free
+                      arm, where stage 2 rescans each body and validates it.  The
+                      probe times it and does not read it through a gate
      expand           `leanllvm_json_escape_expand` once per escaped body
      pipeline         `leanllvm_json_pipeline` alone
      native           `pipeline` plus the tagged header and both `memcpy`s, which
@@ -654,8 +654,9 @@ static void act_stage2(void *vp) {
   sink ^= v ^ s->ndst ^ s->nev ^ s->err;
 }
 
-/* stage2_plain: the same walk with an empty escape list.  A cost probe only:
-   every body takes the span form, so the arena and events differ. */
+/* stage2_plain: the same walk with an empty escape list.  This is the list-free
+   arm: stage 2 classifies each body's span and decodes it, so its arena and
+   events are the list arm's; the probe times it and gates nothing on it. */
 static void act_stage2_plain(void *vp) {
   bench *b = vp;
   state *s = b->s;
@@ -1065,8 +1066,8 @@ int main(int argc, char **argv) {
       memcmp(bstate.xp, ref.xp, (size_t)ref.nxp * 4) != 0)
     gate_fail("the pipe_nostage2 act wrote a different stage-1 stream");
   if (failures == 0)
-    printf("identity ablations=streams_identical (stage2_plain is a cost "
-           "probe and is not read through a gate)\n");
+    printf("identity ablations=streams_identical (stage2_plain is the "
+           "list-free arm and is timed, not gated)\n");
 
   if (failures != 0) {
     fprintf(stderr, "cost-profile: %d gate(s) failed before the clock\n",
@@ -1215,7 +1216,8 @@ int main(int argc, char **argv) {
          " pipeline = %" PRIu64 "\n", iso, sm[A_PIPELINE].median);
   printf("de-fusion (pipeline - isolated) = %" PRId64 "\n",
          (int64_t)sm[A_PIPELINE].median - (int64_t)iso);
-  printf("stage2 - stage2_plain (list-driven decode) = %" PRId64
+  printf("stage2 - stage2_plain (list arm minus list-free arm; negative means "
+         "the rescan costs more) = %" PRId64
          " expand (620 calls) = %" PRIu64 "\n",
          (int64_t)sm[A_STAGE2].median - (int64_t)sm[A_STAGE2_PLAIN].median,
          sm[A_EXPAND].median);

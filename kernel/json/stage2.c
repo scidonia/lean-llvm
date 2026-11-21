@@ -24,11 +24,12 @@
        caller's, stated in `pre`, and a reserve that would exceed it traps --
        a loud failure on a violated promise, never a behaviour the unit models.
 
-     - the escaped body's decoder is the escape unit's ABI entry point,
-       `leanllvm_json_escape_expand`, not a copy of `us_dec_x`.  The measured
-       per-body call is the same signature and the same semantics the escape
-       unit publishes (`escape.h`), which is what makes the composition
-       `stage2 -> escape_expand` a call and not a duplicate.
+     - the escaped body's decoder is the escape unit's ABI, not a copy of
+       `us_dec_x`.  With the stage-1 list, `leanllvm_json_escape_expand` is the
+       measured per-body call; with no list, the body is classified by a scan of
+       its own span and decoded by `leanllvm_json_escape_decode`, the escape
+       unit's list-free arm.  Both are the escape unit's text, which is what
+       makes the composition `stage2 -> escape` a call and not a duplicate.
 
      - the flags are fixed at the pipeline's call site: `S2_VAL | S2_STR |
        S2_EV`, so the walk validates, validates string bodies and materialises
@@ -1001,19 +1002,61 @@ __attribute__((always_inline)) static inline void s2_after_value(uint32_t *sp, i
     uint32_t t = *sp - 1;
     cs[t] = (ct[t] == C_OBJ) ? 3 : 1;
 }
+/* First byte of the body that is either a backslash or a control byte.
+   Returns Z_NONE when the body is plain.  *is_bs distinguishes the two. */
+#define Z_NONE UINT64_MAX
+__attribute__((always_inline)) static inline uint64_t
+z_scan(const uint8_t *p, uint64_t n, int *is_bs) {
+    const __m256i vbs = _mm256_set1_epi8('\\');
+    const __m256i v19 = _mm256_set1_epi8(0x1F);
+    uint64_t i = 0;
+    while (i + 32 <= n) {
+        __m256i v = _mm256_loadu_si256((const __m256i *)(p + i));
+        __m256i ctl = _mm256_cmpeq_epi8(_mm256_min_epu8(v, v19), v);
+        __m256i bs = _mm256_cmpeq_epi8(v, vbs);
+        unsigned m = (unsigned)_mm256_movemask_epi8(_mm256_or_si256(ctl, bs));
+        if (m) {
+            unsigned b = (unsigned)__builtin_ctz(m);
+            *is_bs = (p[i + b] == '\\');
+            return i + b;
+        }
+        i += 32;
+    }
+    if (i < n) {
+        __m256i v = _mm256_loadu_si256((const __m256i *)(p + i));
+        __m256i ctl = _mm256_cmpeq_epi8(_mm256_min_epu8(v, v19), v);
+        __m256i bs = _mm256_cmpeq_epi8(v, vbs);
+        unsigned m = (unsigned)_mm256_movemask_epi8(_mm256_or_si256(ctl, bs));
+        m &= (1u << (unsigned)(n - i)) - 1u;
+        if (m) {
+            unsigned b = (unsigned)__builtin_ctz(m);
+            *is_bs = (p[i + b] == '\\');
+            return i + b;
+        }
+    }
+    return Z_NONE;
+}
+
 /* String body: the validation half of od_string_body_z, without the event
    record.
 
    Two forms, and between them one pass over the body:
-     no escape   z_scan found nothing to decode, so the body is its own
-                 materialisation -- no copy is made at all (form (a));
-     escape      z_scan stopped at the first backslash.  Everything before it
-                 is already known clean and its decoded bytes are the input
-                 bytes, so they are copied and the SIMD unescaper starts at
-                 the backslash itself (form (b)).  Nothing before that offset
-                 is traversed twice.
+     no escape   the body is its own materialisation -- no copy is made at all
+                 (form (a));
+     escape      the body's first backslash is found by a scan of its own span
+                 (or named by the stage-1 list).  Everything before it is
+                 already known clean and its decoded bytes are the input bytes,
+                 so they are copied and the decoder starts at the backslash
+                 itself (form (b)).  Nothing before that offset is traversed
+                 twice.
    The error offset is the reference's: a control byte at its own offset, a
-   malformed escape at its backslash. */
+   malformed escape at its backslash.
+
+   The stage-1 list, when the caller supplies one, names every special byte of
+   the document, so the body's range alone classifies it and the decoder starts
+   at once.  With no list (`nxp == 0`) the body scan classifies it instead; that
+   is the shipping path when stage 1 emits no positions, and it is the same
+   decoder over the same span, not a second unescaper. */
 __attribute__((always_inline)) static inline int s2_string_body(OdCur *c, const uint8_t *p,
                                                                uint64_t len, uint8_t *dst,
                                                                size_t *outn,
@@ -1021,20 +1064,21 @@ __attribute__((always_inline)) static inline int s2_string_body(OdCur *c, const 
                                                                uint64_t *xj, uint64_t nxp,
                                                                const uint64_t *em,
                                                                const uint64_t *uk) {
-    /* The stage-1 list already names every special byte of this body: no scan
-       is needed to classify it, and the unescaper starts at once. */
-    {
-        uint64_t pos0 = (uint64_t)(p - c->b);
+    (void)em; (void)uk;   /* the S2_XM arm is deleted; the caller passes NULL */
+    uint64_t pos0 = (uint64_t)(p - c->b);
+    if (nxp) {
+        /* The stage-1 list already names every special byte of this body: no
+           scan is needed to classify it, and the unescaper starts at once. */
         while (*xj < nxp && (uint64_t)xp[*xj] < pos0) (*xj)++;
         if (!(*xj < nxp && (uint64_t)xp[*xj] < pos0 + len)) {
             *outn = (size_t)len;                            /* form (a) */
             return 1;
         }
         size_t ei = 0;
-        /* The escaped body's decoder is the escape unit's ABI entry
-           point: the measured call's signature and semantics are what
-           `escape.h` publishes, so the body is decoded by that call
-           rather than by a second copy of `us_dec_x` in this unit. */
+        /* The escaped body's decoder is the escape unit's ABI entry point: the
+           measured call's signature and semantics are what `escape.h`
+           publishes, so the body is decoded by that call rather than by a
+           second copy of the decoder in this unit. */
         size_t on = (size_t)leanllvm_json_escape_expand(p, len, dst, &ei,
                                                        xp, xj, nxp, pos0);
         if (on == (size_t)-1) {
@@ -1042,6 +1086,36 @@ __attribute__((always_inline)) static inline int s2_string_body(OdCur *c, const 
             return 0;
         }
         *outn = on;                                         /* form (b) */
+        return 2;
+    }
+    /* No list: scan this body's own span for its first special byte. */
+    {
+        int is_bs = 0;
+        uint64_t off = z_scan(p, len, &is_bs);
+        if (off == Z_NONE) {
+            *outn = (size_t)len;                            /* form (a) */
+            return 1;
+        }
+        if (!is_bs) {
+            od_fail(c, pos0 + off, "string");
+            return 0;
+        }
+        if (off) {
+            uint64_t k = 0;
+            do {
+                _mm256_storeu_si256((__m256i *)(dst + k),
+                                    _mm256_loadu_si256((const __m256i *)(p + k)));
+                k += 32;
+            } while (k < off);
+        }
+        size_t ei = 0;
+        size_t on = (size_t)leanllvm_json_escape_decode(p + off, len - off,
+                                                        dst + off, &ei);
+        if (on == (size_t)-1) {
+            od_fail(c, pos0 + off + ei, "string");
+            return 0;
+        }
+        *outn = (size_t)off + on;                           /* form (b) */
         return 2;
     }
 }

@@ -24,6 +24,16 @@ scenario's own cuts are recorded in
 [The route boundary's controls](json-route-evidence.md#the-route-boundarys-controls-r1r9);
 this page's flag relation is cut `R8`.
 
+> **Stale after the list-free arm.** `kernel/json/stage2.c` now carries
+> `z_scan` (an `always_inline` helper) and `s2_string_body`'s list-free branch,
+> so the transformed source has three `always_inline` occurrences rather than
+> the two this record was captured with. `correspondence.sh` therefore reports
+> `FAIL: the transformed source carries 3 'always_inline' occurrences, not 2`,
+> and `stage2.candidate.ll` and its inventories still describe the
+> list-consuming body. Regenerating the fixture with
+> `probes/install/ir/capture-stage2.sh` and stating the no-list arm's post in
+> the stage-2 proofs is the remaining proof work; it is not claimed here.
+
 ## The record
 
 ```text

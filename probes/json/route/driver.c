@@ -13,7 +13,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "escape_guard.h"
 #include "pipeline.h"
 #include "entry.h"
 
@@ -73,13 +72,10 @@ int main(int argc, char **argv) {
     uint32_t *tab = (uint32_t *)calloc(2048, 4);
     leanllvm_json_entry_table(tab);
 
-    /* The arm the route selects.  Bit 1 is the escape-list gate, and the guard
-       clears it on a document whose list arm 2 would build is empty, so the two
-       actors call the object with the same arm word and not merely with the
-       same staging.  `escape_guard.h` states the condition and why it is the
-       list's emptiness; `guard.sh` checks the two arms' outputs byte for byte
-       on every document the guard fires on. */
-    uint64_t arm = leanllvm_route_escape_can_skip(doc, n) ? 0 : 2;
+    /* The arm the route selects: stage 1 emits no escape-position list, so
+       stage 2 classifies and decodes each string body by scanning its own
+       span.  The route's fast path passes the same word. */
+    uint64_t arm = 0;
 
     uint64_t verdict = leanllvm_json_pipeline(
         win + 3, n, (uint64_t *)sc, (uint64_t *)mk, (uint64_t *)entw,

@@ -44,7 +44,7 @@ thirteen buffer capacities the record declares (`epcap = 64 * blocks + 9`,
 | `pipe_nostage2` | the block loop plus the UTF-8 call |
 | `utf8` | the UTF-8 stage at the route's gate |
 | `stage2` | the walk over the pipeline's entry and escape streams |
-| `stage2_plain` | the same walk with an empty escape list (cost probe) |
+| `stage2_plain` | the same walk with an empty escape list: the list-free arm, where stage 2 rescans each body |
 | `expand` | `leanllvm_json_escape_expand` once per escaped body |
 | `pipeline` | `leanllvm_json_pipeline` |
 | `native` | the pipeline, the 80-byte tagged header and the two result `memcpy`s |
@@ -56,9 +56,16 @@ The first five of those are nested: `masks`, `s1_no_escape`, `s1_fused`,
 paired differences therefore isolate one term each, and per round they
 telescope to the pipeline.  The report prints those differences, the same
 residual against the *isolated* acts (`entry`, `escape`, `stage2` over
-precomputed streams) as the de-fusion term, and `stage2 - stage2_plain` and
-`expand` for the list-driven decode.  No sum of medians is presented as the
+precomputed streams) as the de-fusion term, and `stage2 - stage2_plain` (the
+list arm minus the list-free arm; negative when the rescan costs more) and
+`expand` for the escape decode.  No sum of medians is presented as the
 pipeline's time.
+
+The committed `transcript.txt` predates the list-free arm: its `stage2_plain`
+row times the old span-form act (every body took form (a) and none was
+validated), so its `stage2 - stage2_plain` figure is that act's, not the
+rescan's.  Re-running the instrument replaces the row; this file's numbers are
+that pre-deferral run's and keep its host and clock.
 
 Every row carries a calibrated-clock figure as well: the `chain` act runs in
 each round, and cycles are that round's act median times the chain's iteration

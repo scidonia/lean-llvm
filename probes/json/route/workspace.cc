@@ -514,7 +514,7 @@ static intervals run_fresh(const doc_t *d, Workspace *w) {
   uint64_t s1 = now_ns();
 
   uint64_t n0 = now_ns();
-  act_native_fresh(w, d, f.escape_skip ? 0 : 2);
+  act_native_fresh(w, d, 0);
   uint64_t n1 = now_ns();
 
   uint64_t size = result_size_of(w);
@@ -556,7 +556,7 @@ static intervals run_reused(const doc_t *d, Workspace *w, uint64_t *stale_bytes,
   uint64_t s1 = now_ns();
 
   uint64_t n0 = now_ns();
-  act_native_reused(w, d, f.escape_skip ? 0 : 2);
+  act_native_reused(w, d, 0);
   uint64_t n1 = now_ns();
 
   uint64_t size = result_size_of(w);
@@ -753,7 +753,7 @@ int main(int argc, char **argv) {
     admit_facts f;
     act_admission(d, nullptr, 0, &f);
     act_stage_fresh(&w, d);
-    act_native_fresh(&w, d, f.escape_skip ? 0 : 2);
+    act_native_fresh(&w, d, 0);
     d->verdict = load64(w.result + 32);
     d->nk = load64(w.result + 40);
     d->nxp = load64(w.result + 48);
@@ -793,7 +793,7 @@ int main(int argc, char **argv) {
     admit_facts f;
     act_admission(d, nullptr, 0, &f);
     act_stage_fresh(&w, d);
-    act_native_fresh(&w, d, f.escape_skip ? 0 : 2);
+    act_native_fresh(&w, d, 0);
     d->verdict = load64(w.result + 32);
     d->nk = load64(w.result + 40);
     d->nxp = load64(w.result + 48);
@@ -1054,7 +1054,7 @@ int main(int argc, char **argv) {
     admit_facts f;
     act_admission(d, nullptr, 0, &f);
     act_stage_fresh(&w, d);
-    act_native_fresh(&w, d, f.escape_skip ? 0 : 2);
+    act_native_fresh(&w, d, 0);
     uint64_t fverdict = load64(w.result + 32);
     uint64_t ferr = load64(w.result + 72);
     uint64_t size = result_size_of(&w);

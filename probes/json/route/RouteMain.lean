@@ -274,23 +274,24 @@ def stage (doc : ByteArray) (n : Nat) : IO Staged := do
            nxp := nxp, xcarry := xcarry, dst := dst, dstcap := dstcap
            ndst := ndst, ev := ev, evcap := evcap, nev := nev, err := err }
 
-/-- The arm word the fast path passes: the escape-list gate is bit 1, and a
-document the guard fires on is the same call with that bit clear, because the
-list arm 2 would build is empty.  The other two selector bits are the route's
-own (`0`: the POS8 emitter, ungated UTF-8). -/
-def escapeArm (skip : Bool) : UInt64 := if skip then 0 else 2
+/-- The arm word the fast path passes.  Stage 1 emits no escape-position list:
+bit 1 is clear on every document, so stage 2 classifies each string body by
+scanning its own span.  The other two selector bits are the route's own (`0`:
+the POS8 emitter, ungated UTF-8).  The escape-list guard's fact no longer
+selects the arm; it is still reported by `--admit`, but the list is not an
+input the route asks for. -/
+def escapeArm : UInt64 := 0
 
-/-- The native call through the adapter, over a staged document.  `skip` is the
-escape-list guard's decision over the same bytes, and the arm word is
-`escapeArm skip`: the adapter does not rewrite the arm it is handed, so the
+/-- The native call through the adapter, over a staged document.  The arm word
+is `escapeArm`: the adapter does not rewrite the arm it is handed, so the
 argument list `JsonCallRoute.routeArgs` states is the one the object sees. -/
-def call (s : Staged) (skip : Bool) : IO ByteArray :=
+def call (s : Staged) : IO ByteArray :=
   route s.window (UInt64.ofNat s.n)
     s.sc s.mkSlot s.entw
     s.ep (UInt64.ofNat s.epcap) s.nk
     s.xp (UInt64.ofNat s.xpcap) s.nxp s.xcarry
     s.dst (UInt64.ofNat s.dstcap) s.ndst
-    s.ev (UInt64.ofNat s.evcap) s.nev s.err (escapeArm skip)
+    s.ev (UInt64.ofNat s.evcap) s.nev s.err escapeArm
 
 /-! ### Outcome handling, in the parts the stage report prices
 
@@ -484,10 +485,10 @@ deep), `depth` is the document's maximum structural nesting — the depth clause
 number, and the value its reason reports — `candidate` is the policy-candidate
 flag, `blocks` is the document's 64-byte block count, and `escapeSkip` is the
 stage-1 escape-list guard (`escape_guard.h`): the document carries no byte the
-list can name, so the pipeline's arm bit 1 may be cleared.  The guard is a fact
-of the same native call as the others — a separate call costs more than the list
-it skips — and a document the native clauses refuse is not scanned, because it
-never reaches the pipeline. -/
+list can name.  The fact is reported, not consulted: the route's arm is
+list-free on every document, so it decides nothing here.  The guard is a fact
+of the same native call as the others, and a document the native clauses refuse
+is not scanned, because it never reaches the pipeline. -/
 structure AdmitFacts where
   verdict : Bool
   clause : Nat
@@ -689,11 +690,11 @@ def decisionTag (d : Decision) : String :=
   | .failed _ => "failed"
 
 /-- The fast path: stage the document in the record's shape, call the object
-through the adapter with the arm the admission's guard fact selects, and print
-the observation and the two payloads. -/
-def runFast (doc : ByteArray) (n : Nat) (skip : Bool) : IO UInt32 := do
+through the adapter at the list-free arm, and print the observation and the two
+payloads. -/
+def runFast (doc : ByteArray) (n : Nat) : IO UInt32 := do
   let staged ← stage doc n
-  let result ← call staged skip
+  let result ← call staged
   interpret result
 
 /-- The fallback's acceptance, in the route's wording: the tape's token count,
@@ -726,7 +727,7 @@ def run (path : String) (maxDepth : Nat := kernelMaxDepth) : IO UInt32 := do
   -- bound unless a caller overrides it, which only the agreement scenario's
   -- control does.
   match ← decide2 doc maxDepth with
-  | .admitted f => runFast doc doc.size f.escapeSkip
+  | .admitted _ => runFast doc doc.size
   | .refused _ => runFallback doc
   | .failed status => return status
 
@@ -746,8 +747,9 @@ stage is both phases of the decision, and its two intervals are reported
 separately: `admission_native_ns` is phase one's native call and
 `admission_policy_ns` is phase two's scan, present only on the rows whose masks
 saw a candidate.  The escape-list guard is a fact of phase one's own native call,
-so its cost is inside `admission_native_ns`; `escape_skip` is the decision it
-reached, so a row states whether the call it priced carried the escape-list arm.
+so its cost is inside `admission_native_ns`; `escape_skip` reports that fact,
+which no longer selects the arm because the native call is list-free on every
+document.
 The adapter's three intervals come from the instrumented build's slots, so the
 route must be built with `TIMING=1`; a build without it reports that instead of
 printing zeros. -/
@@ -851,14 +853,13 @@ def runStaged (path : String) (reps : Nat) : IO UInt32 := do
     | .admitted f =>
         -- The escape-list guard is a fact of the admission's own native call,
         -- so its cost is inside `admission_native_ns` and not a stage of its
-        -- own; the row states the decision the arm was taken from.
-        let skip := f.escapeSkip
-        escapeSkipWord := if skip then 1 else 0
+        -- own; the row states the fact, which no longer selects the arm.
+        escapeSkipWord := if f.escapeSkip then 1 else 0
         let s0 ← IO.monoNanosNow
         let staged ← stage doc doc.size
         let s1 ← IO.monoNanosNow
         let c0 ← IO.monoNanosNow
-        let result ← call staged skip
+        let result ← call staged
         let c1 ← IO.monoNanosNow
         let ci ← stageNsAt 0
         let na ← stageNsAt 1
@@ -1074,15 +1075,14 @@ def runConsume (path : String) (reps : Nat) : IO UInt32 := do
     | .failed status => return status
     | .refused _ =>
       kind := "fallback"
-    | .admitted f =>
-      -- The arm is the admission's own guard fact, as in `runFast`: the
-      -- consumer measures the route's native call and nothing about the arm
-      -- decision costs it a call of its own.
-      let skip := f.escapeSkip
+    | .admitted _ =>
+      -- The list-free arm, as in `runFast`: the consumer measures the route's
+      -- native call and nothing about the arm decision costs it a call of its
+      -- own.
       let s0 ← IO.monoNanosNow
       let staged ← stage doc doc.size
       let c0 ← IO.monoNanosNow
-      let result ← call staged skip
+      let result ← call staged
       let c1 ← IO.monoNanosNow
       staging := staging.push (c0 - s0)
       routeNs := routeNs.push (c1 - c0)

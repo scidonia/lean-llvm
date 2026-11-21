@@ -10,8 +10,8 @@ pipeline's record demands and calls the native object.  The contract is
 | `shim.c` | the adapter: validates the staging, allocates its zero-filled buffers (`leanllvm_route_zeroed`: one allocation and one `memset` each, in place of `Array.replicate`'s boxed fill), copies the caller's `ByteArray`s into the object's ABI (the document window is handed over in place, because the object only reads it), fills the entry unit's POS8 table, calls `leanllvm_json_pipeline`, and returns the tagged result.  It also runs phase one of the admission — the walk over the document's structural delimiter sequence, whose maximum is the depth clause's number and whose lane list goes through the proved depth counter, and the escape-list guard's presence scan — phase two's wrapper over the policy scan, and the depth pass the admission record reports.  Phase one's code is `admission.h`, which the workspace probe calls directly |
 | `policy.c`, `policy.h` | phase two of the admission: the character-policy scan, native, reproducing `policyRefusal`'s decisions branch for branch — the class and the byte — over the document's bytes, with a screen that answers a document no policy refusal is possible in without visiting a position.  Its `policy_step` is also the body scan phase one walks (`leanllvm_route_body_stop`), so the depth clause's string spans and the policy class array are one reading of a body |
 | `admission.h` | the two-phase admission as plain C, with no Lean runtime: the depth walk over the structural delimiter sequence through the proved counter, the character-policy scan where the candidate flag is set, and the escape-list guard's fact.  `shim.c` wraps it for the route and `workspace.cc` calls it directly, so the admission the route runs and the admission the workspace experiment times are one source |
-| `escape_guard.h` | the pipeline's arm decision: whether the document carries no byte the stage-1 escape list can name — no `0x5C` and no byte at or below `0x1F` — so the list is empty on every block and bit 1 of the arm word may be cleared.  A 32-byte presence scan that stops at the first backslash; `shim.c` takes the fact in the admission's own native call, `RouteMain.lean` takes the arm from it, and `driver.c` applies the same decision |
-| `guard_check.c`, `guard.sh` | the guard's equivalence gate: 164 documents (the route's corpus, the escape unit's rows, the bench's documents) called twice each, arm 2 against the arm the guard selects, compared field for field and byte for byte; where the guard fires the arm-2 list must be empty, and a forced arm 0 must change the result on every document whose arm-2 list is not empty |
+| `escape_guard.h` | a document fact the admission reports: whether the document carries no byte the stage-1 escape list can name — no `0x5C` and no byte at or below `0x1F`.  A 32-byte presence scan that stops at the first backslash; `shim.c` takes the fact in the admission's own native call.  It no longer selects the arm: the route's native call is list-free on every document, and the fact is kept as a reported property of the bytes and as the `guard.sh` scenario's list-emptiness claim |
+| `guard_check.c`, `guard.sh` | the escape-list arm's equivalence gate: 164 documents (the route's corpus, the escape unit's rows, the bench's documents) called twice each, arm 2 (the list) against arm 0 (no list; stage 2 rescans), compared on every consumer-observable field — verdict, entry cursor, error offset, arena and event extents and both payloads.  Where the guard fires the arm-2 list must be empty.  The control is a defect build of `stage2.c` whose list-free arm validates nothing: it must diverge on at least one row whose arm-2 list is not empty |
 | `init_guard_check.c`, `init-guard.sh` | the POS8 table's initialisation gate, in three processes: with `leanllvm_json_entry_table` run first, pos8 accepts and writes b8's entry stream; without it, the pos8 pipeline traps (SIGILL) instead of returning a plausible wrong answer; and the b8 arm, which reads no table, accepts without the initialiser as the control |
 | `model-differential.sh` | the object-versus-model differential: for every row the route admits, the object's observation (verdict, the four cursor words, the refusal word, the arena's used prefix and the event stream) is compared byte for byte with the model run at `JsonPipelineIR.pipelineBody` under `pipelineCalls` and the workspace stage-2 selection, printed by `JsonPipelineModelMain.lean`; a row the route does not admit is reported by name with both decisions.  Three controls must go red: the uninitialised POS8 table traps (via `init-guard.sh`), a fixture copy with a constant return mutated must project differently, and a `stage2.c` copy with its verdict flipped must answer differently |
 | `driver.c` | a C caller that stages the document identically and prints the same three lines, for the fidelity comparison |
@@ -42,11 +42,13 @@ one of three paths, and the output distinguishes them:
 * **the fast path** (`verdict=...` on stdout).  The decision admits the
   document, the program stages it, and the native object answers; the
   observation, the arena and the event stream are printed.  This is the only
-  path that calls the object.  The pipeline's arm word is `escapeArm` of the
-  admission's escape-list guard fact: bit 1 is cleared where the document's
-  stage-1 list would be empty, which is the same call under either arm, so the
-  fast path never builds a list it cannot use and never changes what it
-  reports — `guard.sh` checks that on every document the guard fires on.
+  path that calls the object.  The pipeline's arm word is list-free on every
+  document (`escapeArm` is `0`): stage 1 emits no escape-position list and
+  stage 2 classifies each string body by scanning its own span.  The arm bit 1
+  path is still available and observationally equivalent on every
+  consumer-visible field — `guard.sh` checks arm 0 against arm 2 over the
+  corpus, the escape unit's rows and the bench's documents, with a defect build
+  that must make the comparison bite.
 * **the fallback's refusal** (`refused: ...` on stderr, exit 2).  The decision
   does not admit the document and the scalar reference parser refuses it; the
   reason and position printed are `parseBytes`'s own.
@@ -72,7 +74,7 @@ the counting routine is new code with no refinement theorem yet.
 nix develop -c bash probes/install/lake-locked.sh build LeanLLVM.JsonKernelDomain LeanLLVM.JSON.Parse
 nix develop -c bash probes/json/route/build.sh
 nix develop -c bash probes/json/route/check.sh
-nix develop -c bash probes/json/route/guard.sh   # the escape-list arm's gate
+nix develop -c bash probes/json/route/guard.sh   # the escape-list arm's equivalence gate
 nix develop -c bash probes/json/route/init-guard.sh # the POS8 table's gate
 nix develop -c bash probes/install/lake-locked.sh build leanllvm-json-pipeline-model
 nix develop -c bash probes/json/route/model-differential.sh
@@ -130,10 +132,10 @@ only on the rows whose walk saw a candidate byte; `admission_policy_ns=-` is a
 row where the phase was skipped.  A row also carries the facts the decision was
 taken on: `admission_depth` (the maximum structural nesting the depth clause
 compares), `admission_candidate`, `admission_blocks`, `admission_clause` and
-`escape_skip` (whether the arm this row's native call took cleared the list
-gate).  The guard is a fact of phase one rather than a stage of its own because a
-separate native call costs more than the list it skips: the guard's own scan is
-priced in `probes/json/core-shape/shape.sh`'s paired table.
+`escape_skip` (the escape-list guard's document fact — reported, not an arm
+selector, because the native call is list-free).  The guard is a fact of phase
+one rather than a stage of its own; its own scan is priced in
+`probes/json/core-shape/shape.sh`'s paired table.
 
 `--admit <file> <reps> [<native depth>]` is the agreement probe rather than a
 route: it runs phase one, the depth pass, the two-phase decision, the library's
@@ -488,9 +490,9 @@ failure class; otherwise `got` is the measured maximum structural nesting and
 `depth` the same number (the clause's comparison is `want`/`got`), `candidate`
 the policy flag, `blocks` the document's 64-byte block count, `verdict` the
 native clauses' decision, `clause` which of them refused (`0` none, `1` empty,
-`2` over-long, `3` too deep), and `escape_skip` the escape-list guard's fact (a
-refused document, which never reaches the pipeline, is not scanned and reports
-`0`).  On the empty and over-long clauses `depth` and `got` are zero and
+`2` over-long, `3` too deep), and `escape_skip` the escape-list guard's fact
+(reported, not consulted: the route's native call is list-free; a refused
+document, which never reaches the pipeline, is not scanned and reports `0`).  On the empty and over-long clauses `depth` and `got` are zero and
 mean nothing: the decision returns before the walk runs.  The policy scan's header is six words, no payload:
 `tag detail want got class pos` — `class` is `0` for a document the character
 policy admits, `1` for an unpaired surrogate escape and `2` for a noncharacter,
