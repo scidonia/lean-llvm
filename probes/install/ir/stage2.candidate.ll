@@ -407,7 +407,7 @@ sw.bb202.i:                                       ; preds = %LeafBlock
 
 if.then205.i:                                     ; preds = %sw.bb202.i
   %off1.i.i76 = getelementptr inbounds i8, ptr %e, i64 8
-  store i64 %4, ptr %off1.i.i76
+  store i64 %idxprom.i, ptr %off1.i.i76
   br label %if.then
 
 if.end207.i:                                      ; preds = %sw.bb202.i
@@ -421,7 +421,7 @@ if.end207.i:                                      ; preds = %sw.bb202.i
 
 if.then214.i:                                     ; preds = %if.end207.i
   %off1.i.i78 = getelementptr inbounds i8, ptr %e, i64 8
-  store i64 %4, ptr %off1.i.i78
+  store i64 %idxprom.i, ptr %off1.i.i78
   br label %if.then
 
 if.then219.i:                                     ; preds = %if.end207.i

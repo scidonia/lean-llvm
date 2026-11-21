@@ -1923,12 +1923,12 @@ theorem WalkLink.if_then192_i_at {calls : Calls} {m0 : Mem}
     (by exact lookupName_of_evalOperand_reg hv) hj64
   exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
 
-/-- **`if.then205.i`'s target, named.**  `gep %e, 8` and `store %4`;
-the branch takes `if.then` with the offset recorded. -/
+/-- **`if.then205.i`'s target, named.**  `gep %e, 8` and `store %idxprom.i`;
+the branch takes `if.then` with the entry's position recorded. -/
 theorem WalkLink.if_then205_i_at {calls : Calls} {m0 : Mem}
     (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
     (hblock : C.block = "if.then205.i")
-    {j : Nat} (hv : evalOperand s (.reg "%4") = some (.int 64 (BitVec.ofNat 64 j)))
+    {j : Nat} (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
     (he : lookupName s.env "%e" = some (.ptr C.stage.e))
     (hj : j ≤ G.n) (hj64 : j < 2 ^ 64)
     : ∃ (s' : State), WalkLink calls G C s
@@ -1940,17 +1940,17 @@ theorem WalkLink.if_then205_i_at {calls : Calls} {m0 : Mem}
   obtain ⟨s', hlink⟩ := WalkLink.if_then205_i G C s hInv hblock hv he hj hj64
   refine ⟨s', hlink, ?_⟩
   have hstep := walkRefusalStoreStep (calls := calls) (s := s) (b := walkIf_then205_i)
-    (off := "%off1.i.i76") (v := "%4") (dest := "if.then") (e := C.stage.e) (j := j)
+    (off := "%off1.i.i76") (v := "%idxprom.i") (dest := "if.then") (e := C.stage.e) (j := j)
     (by decide) (by rw [hInv.pc_eq, hblock]; exact walkIf_then205_i_find) rfl rfl he
     (by exact lookupName_of_evalOperand_reg hv) hj64
   exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)
 
-/-- **`if.then214.i`'s target, named.**  `gep %e, 8` and `store %4`;
-the branch takes `if.then` with the offset recorded. -/
+/-- **`if.then214.i`'s target, named.**  `gep %e, 8` and `store %idxprom.i`;
+the branch takes `if.then` with the entry's position recorded. -/
 theorem WalkLink.if_then214_i_at {calls : Calls} {m0 : Mem}
     (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
     (hblock : C.block = "if.then214.i")
-    {j : Nat} (hv : evalOperand s (.reg "%4") = some (.int 64 (BitVec.ofNat 64 j)))
+    {j : Nat} (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
     (he : lookupName s.env "%e" = some (.ptr C.stage.e))
     (hj : j ≤ G.n) (hj64 : j < 2 ^ 64)
     : ∃ (s' : State), WalkLink calls G C s
@@ -1962,7 +1962,7 @@ theorem WalkLink.if_then214_i_at {calls : Calls} {m0 : Mem}
   obtain ⟨s', hlink⟩ := WalkLink.if_then214_i G C s hInv hblock hv he hj hj64
   refine ⟨s', hlink, ?_⟩
   have hstep := walkRefusalStoreStep (calls := calls) (s := s) (b := walkIf_then214_i)
-    (off := "%off1.i.i78") (v := "%4") (dest := "if.then") (e := C.stage.e) (j := j)
+    (off := "%off1.i.i78") (v := "%idxprom.i") (dest := "if.then") (e := C.stage.e) (j := j)
     (by decide) (by rw [hInv.pc_eq, hblock]; exact walkIf_then214_i_find) rfl rfl he
     (by exact lookupName_of_evalOperand_reg hv) hj64
   exact Ctrl.jump.inj ((WalkLink.step hlink).symm.trans hstep)

@@ -1135,10 +1135,11 @@ s2_walk(S2 *s, unsigned flags, ZOut *z, Err *e) {
             break;
         }
         case '"': {
-            if (k >= nsp) return od_fail(&c, n, "unterminated"), 0;
+            /* parser: unterminatedString at the opening quote (p), not the document end; this arm used n */
+            if (k >= nsp) return od_fail(&c, p, "unterminated"), 0;
             uint32_t close = ep[k++];
             c.k = k;
-            if (close >= n) return od_fail(&c, n, "unterminated"), 0;
+            if (close >= n) return od_fail(&c, p, "unterminated"), 0;
             int key = 0;
             if (flags & S2_VAL) {
                 int val = s2_value_pos(sp, root_done, ctype, cst);

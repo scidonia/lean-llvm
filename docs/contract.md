@@ -1857,6 +1857,22 @@ the class its constructor names, and the next entry is the next token's start.
 the index's successor); the class clause is an implication rather than a component
 of the token existential so that the two parts are read separately.
 
+**The staged stream has quote lanes when the document has a string.**  The ABI's
+`ep` is "quote characters, the structural bytes and the first byte of every scalar"
+(`kernel/json/stage2.h:60`), so a string contributes two entries — its first byte
+and its closing quote — and `["ab","cd"]`'s are `[0, 1, 4, 5, 6, 9, 10]` rather than
+the token starts `[0, 1, 5, 6, 10]`.  The clause above is the *token-start* reading,
+which is the stream exactly when no token is a string
+(`Token.entryLanes_stringFree`).  The general clause is `WalkAlignQuoted`: the entry
+list is the lanes' positions (`Token.entryLanes`, `EntryLane.pos`), and at a start
+lane the document's byte names the token's class.  Its reading of the string arm is
+`WalkAlignQuoted.stringExtent` — the lane after a string's start is its closing
+quote, so the arm's `close = lane k + 1` is `span.stop - 1`, the body extent
+`close - idxprom - 1` (`%sub260.i`) is `span.stop - span.start - 2`, and the back
+edge moves the index two entries (`%inc208.i`).  The trace correspondence counts
+tokens rather than lanes, so the string rows carry the two indices apart
+(`WalkTracePrefixAt`, `row_stringPlainDocument`, `row_stringArenaDocument`).
+
 **The loop head's reading.**  `WalkAlign.head` reads the clause at a head state:
 the parser's token at the carried index starts at `entryPos G C.k`; the walk's
 `%8` is that token's class byte (`WalkIter.reg8` at `entryByte = b`); `%idxprom.i`

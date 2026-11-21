@@ -256,11 +256,12 @@ theorem WalkLink.if_then192_i {calls : Calls} {m0 : Mem}
     (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal])
     (hne := by rw [hblock]; decide)
 
-/-- `if.then205.i`: the refusal's offset store, of `%4`. -/
+/-- `if.then205.i`: the refusal's offset store, of `%idxprom.i` — the entry's position,
+which is where the parser reports an unterminated string. -/
 def walkIf_then205_i : Block :=
   { name := "if.then205.i",
     instrs := [Instr.gep "%off1.i.i76" (.int 8) (.reg "%e") (.imm (.int 64 (BitVec.ofNat 64 8))),
-               Instr.store (.int 64) (.reg "%4") (.reg "%off1.i.i76")],
+               Instr.store (.int 64) (.reg "%idxprom.i") (.reg "%off1.i.i76")],
     term := Term.br "if.then" }
 
 theorem walkIf_then205_i_find : stage2Body.findBlock "if.then205.i" = some walkIf_then205_i := by
@@ -269,7 +270,7 @@ theorem walkIf_then205_i_find : stage2Body.findBlock "if.then205.i" = some walkI
 theorem WalkLink.if_then205_i {calls : Calls} {m0 : Mem}
     (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
     (hblock : C.block = "if.then205.i")
-    {j : Nat} (hv : evalOperand s (.reg "%4") = some (.int 64 (BitVec.ofNat 64 j)))
+    {j : Nat} (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
     (he : lookupName s.env "%e" = some (.ptr C.stage.e))
     (hj : j ≤ G.n) (hj64 : j < 2 ^ 64)
     : ∃ s', WalkLink calls G C s
@@ -280,11 +281,12 @@ theorem WalkLink.if_then205_i {calls : Calls} {m0 : Mem}
     (by decide) (by decide) (by decide) (by decide) (by simp [WalkLocal])
     (hne := by rw [hblock]; decide)
 
-/-- `if.then214.i`: the refusal's offset store, of `%4`. -/
+/-- `if.then214.i`: the refusal's offset store, of `%idxprom.i` — the entry's position,
+for the same reason as `if.then205.i`. -/
 def walkIf_then214_i : Block :=
   { name := "if.then214.i",
     instrs := [Instr.gep "%off1.i.i78" (.int 8) (.reg "%e") (.imm (.int 64 (BitVec.ofNat 64 8))),
-               Instr.store (.int 64) (.reg "%4") (.reg "%off1.i.i78")],
+               Instr.store (.int 64) (.reg "%idxprom.i") (.reg "%off1.i.i78")],
     term := Term.br "if.then" }
 
 theorem walkIf_then214_i_find : stage2Body.findBlock "if.then214.i" = some walkIf_then214_i := by
@@ -293,7 +295,7 @@ theorem walkIf_then214_i_find : stage2Body.findBlock "if.then214.i" = some walkI
 theorem WalkLink.if_then214_i {calls : Calls} {m0 : Mem}
     (G : WalkGeom m0) (C : WalkCarry G) (s : State) (hInv : WalkInv G C s)
     (hblock : C.block = "if.then214.i")
-    {j : Nat} (hv : evalOperand s (.reg "%4") = some (.int 64 (BitVec.ofNat 64 j)))
+    {j : Nat} (hv : evalOperand s (.reg "%idxprom.i") = some (.int 64 (BitVec.ofNat 64 j)))
     (he : lookupName s.env "%e" = some (.ptr C.stage.e))
     (hj : j ≤ G.n) (hj64 : j < 2 ^ 64)
     : ∃ s', WalkLink calls G C s

@@ -450,16 +450,23 @@ theorem quoteRefuseStep₄ {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : Wal
   rw [hstate] at hl
   simpa [hbit] using hl
 
-/-- **`if.then205.i` at the last entry.**  The document's length is stored at `%e + 8`
-and the edge is the refusal copy. -/
+/-- **`if.then205.i` at the last entry.**  The entry's position, `%idxprom.i`, is
+stored at `%e + 8` and the edge is the refusal copy.  That position is the opening
+quote the parser reports for `Reject.unterminatedString` (`Parse.lean:138`,
+`rejectOf i .ended`), not the document's end. -/
 theorem quoteRefuseStep₅ {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
     (s : State) (hInv : WalkInv G C s) (hblock : C.block = "if.then205.i")
-    (hv : evalOperand s (.reg "%4") = some (.int 64 (BitVec.ofNat 64 G.n)))
-    (he : lookupName s.env "%e" = some (.ptr C.stage.e))
-    (hn64 : G.n < 2 ^ 64) :
-    WalkLink calls G C s { C with block := "if.then", eoff := G.n, refusal := true }
-      (refuseStore205Out C G.n s) := by
-  obtain ⟨s', hl, hs'⟩ := WalkLink.if_then205_i_at G C s hInv hblock hv he (le_refl G.n) hn64
+    (he : lookupName s.env "%e" = some (.ptr C.stage.e)) (hk : C.k < G.nep) :
+    WalkLink calls G C s
+      { C with block := "if.then", eoff := entryPos G C.k, refusal := true }
+      (refuseStore205Out C (entryPos G C.k) s) := by
+  have hv : evalOperand s (.reg "%idxprom.i") =
+      some (.int 64 (BitVec.ofNat 64 (entryPos G C.k))) :=
+    LeanLLVM.evalOperand_reg_of hInv.idx_reg
+  have hj : entryPos G C.k ≤ G.n := le_of_lt (entryPos_lt G hk)
+  have hj64 : entryPos G C.k < 2 ^ 64 :=
+    lt_of_le_of_lt hj (WalkGeom.n_lt G)
+  obtain ⟨s', hl, hs'⟩ := WalkLink.if_then205_i_at G C s hInv hblock hv he hj hj64
   rw [hs'] at hl
   exact hl
 
@@ -473,7 +480,6 @@ theorem quoteRefuse_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
     (hinc : evalOperand s (.reg "%inc.i") = some (.int 64 inc))
     (hnep : evalOperand s (.reg "%nep") = some (.int 64 nep))
     (hge : evalICmp .ult inc nep = 0)
-    (hv : evalOperand s (.reg "%4") = some (.int 64 (BitVec.ofNat 64 G.n)))
     (he : lookupName s.env "%e" = some (.ptr C.stage.e)) (hk : C.k < G.nep) :
     WalkRefuseAt calls G C s := by
   -- the byte, at the three states the switch binds into
@@ -504,13 +510,6 @@ theorem quoteRefuse_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
       lookupName_cons_ne (k := "%SwitchLeaf") (n := "%nep") _ _ (by decide),
       lookupName_cons_ne (k := "%Pivot6") (n := "%nep") _ _ (by decide),
       lookupName_cons_ne (k := "%Pivot22") (n := "%nep") _ _ (by decide)] using hnep
-  have hv₅ : evalOperand (quoteS₄ (quoteS₃ (quoteS₂ (quoteS₁ s))) inc nep) (.reg "%4") =
-      some (.int 64 (BitVec.ofNat 64 G.n)) := by
-    simpa only [quoteS₄, quoteS₃, quoteS₂, quoteS₁, evalOperand, State.bind,
-      lookupName_cons_ne (k := "%cmp203.not.i") (n := "%4") _ _ (by decide),
-      lookupName_cons_ne (k := "%SwitchLeaf") (n := "%4") _ _ (by decide),
-      lookupName_cons_ne (k := "%Pivot6") (n := "%4") _ _ (by decide),
-      lookupName_cons_ne (k := "%Pivot22") (n := "%4") _ _ (by decide)] using hv
   have he₅ : lookupName (quoteS₄ (quoteS₃ (quoteS₂ (quoteS₁ s))) inc nep).env "%e" =
       some (.ptr C.stage.e) := by
     simpa only [quoteS₄, quoteS₃, quoteS₂, quoteS₁, State.bind,
@@ -533,24 +532,26 @@ theorem quoteRefuse_at {calls : Calls} {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
       L₃.inv' rfl hinc₄ hnep₄ hge
   have L₅ : WalkLink calls G { C with block := "if.then205.i" }
       (quoteS₄ (quoteS₃ (quoteS₂ (quoteS₁ s))) inc nep)
-      { C with block := "if.then", eoff := G.n, refusal := true }
-      (refuseStore205Out C G.n (quoteS₄ (quoteS₃ (quoteS₂ (quoteS₁ s))) inc nep)) :=
+      { C with block := "if.then", eoff := entryPos G C.k, refusal := true }
+      (refuseStore205Out C (entryPos G C.k)
+        (quoteS₄ (quoteS₃ (quoteS₂ (quoteS₁ s))) inc nep)) :=
     quoteRefuseStep₅ G { C with block := "if.then205.i" }
-      (quoteS₄ (quoteS₃ (quoteS₂ (quoteS₁ s))) inc nep) L₄.inv' rfl hv₅ he₅
-      (WalkGeom.n_lt G)
-  refine ⟨{ C with block := "if.then", eoff := G.n, refusal := true },
-    refuseStore205Out C G.n (quoteS₄ (quoteS₃ (quoteS₂ (quoteS₁ s))) inc nep), 5, ?_,
+      (quoteS₄ (quoteS₃ (quoteS₂ (quoteS₁ s))) inc nep) L₄.inv' rfl he₅ hk
+  refine ⟨{ C with block := "if.then", eoff := entryPos G C.k, refusal := true },
+    refuseStore205Out C (entryPos G C.k)
+      (quoteS₄ (quoteS₃ (quoteS₂ (quoteS₁ s))) inc nep), 5, ?_,
     L₅.inv'.eoff_le, refusePrice_of_le G C (by omega) hk⟩
-  refine ⟨?_, rfl, G.n, le_refl G.n, ?_⟩
+  refine ⟨?_, rfl, entryPos G C.k, le_of_lt (entryPos_lt G hk), ?_⟩
   · exact Seg.measure (Seg.tail L₁ (Seg.tail L₂ (Seg.tail L₃ (Seg.tail L₄
       (Seg.tail L₅ (Seg.nil L₅.inv'))))))
   · simpa only [refuseStore205Out] using
-      refuseSegment_word_of_store (m := _) (e := C.stage.e) (v := G.n)
+      refuseSegment_word_of_store (m := _) (e := C.stage.e) (v := entryPos G C.k)
 
 /-- **The `refuse` witness at a string opener with no entries left**, in the
 shape `WalkRefuseAt` states.
-Five blocks from the head to the refusal copy, the document's length as the offset,
-and the price inside one entry's allowance.
+Five blocks from the head to the refusal copy, the entry's position as the offset —
+the opening quote, which is where the parser reports `unterminatedString` — and the
+price inside one entry's allowance.
 
 This is the branch the last entry's guard selects: `¬ (C.k + 1 < G.nep)` at
 `%inc.i = C.k + 1` is exactly `sw.bb202.i`'s negated test, so the run is the dispatch
@@ -562,13 +563,12 @@ theorem walkRefuseWitness_quote {calls : Calls} {m0 : Mem} (G : WalkGeom m0)
     (hinc : evalOperand s (.reg "%inc.i") = some (.int 64 inc))
     (hnep : evalOperand s (.reg "%nep") = some (.int 64 nep))
     (hge : evalICmp .ult inc nep = 0)
-    (hv : evalOperand s (.reg "%4") = some (.int 64 (BitVec.ofNat 64 G.n)))
     (he : lookupName s.env "%e" = some (.ptr C.stage.e)) (hk : C.k < G.nep) :
     ∃ (Cd : WalkCarry G) (sd : State) (p : Nat),
       WalkRefuseSegment calls G C s Cd sd p ∧ Cd.eoff ≤ G.n ∧
       p + 2 ≤ stage2EntryAllowance * (G.nep - C.k) +
         stage2ByteAllowance * (G.n - entryPos G C.k) :=
-  quoteRefuse_at G C s hInv hhead h8 hinc hnep hge hv he hk
+  quoteRefuse_at G C s hInv hhead h8 hinc hnep hge he hk
 
 /-! ### The colon at depth zero
 

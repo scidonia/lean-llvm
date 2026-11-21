@@ -21,20 +21,19 @@ the number side's counterpart of a string's escape read-back: `JsonStage2Helpers
 window the scan read, and tying that window to the token's span is the arm's premise,
 not the row's.
 
-**The string rows are not instantiable at this staging, and why.**  The ABI's entry
-stream is "quote characters, the structural bytes and the first byte of every scalar"
+**The string rows at the staged stream.**  The ABI's entry stream is "quote
+characters, the structural bytes and the first byte of every scalar"
 (`kernel/json/stage2.h:60`), so `["ab","cd"]`'s entries are `[0,1,4,5,6,9,10]` — seven,
-with one per quote.  `WalkAlign` instead states `G.nep = t.tokens.length` and a token
-starting at every entry, which is the token-start stream `[0,1,5,6,10]` that
-`row_stringPlainDocument` fixes.  The string arm reads the *next* lane as the closing
-quote (`if.end207.i`'s `%5 + %inc.i`), forms the body extent `close - idxprom - 1`
-(`%sub260.i`) and advances the index by two (`%inc208.i`), so at the token-start stream it
-would read `close = 5` (body extent three, not two) and skip the comma.  A string row
-therefore needs the quote-inclusive entry stream and an alignment keyed to the string
-spans' stops, and the string arm's composition needs its appended record exposed:
-`stringPath_seg` returns its endpoint existentially and states its block, index,
-predecessor and registers, but not the trace that endpoint carries.  Neither is this
-module's to change.
+one per quote — and not the token-start stream `[0,1,5,6,10]`.  `WalkAlignQuoted`
+(`JsonStage2WalkAlignment`) states that staging, and
+`WalkAlignQuoted.stringExtent` is the arm's reading of it: the lane after a string's
+start lane is its closing quote, so `close = lane k + 1` is `span.stop - 1` and the
+body extent `close - idxprom - 1` (`%sub260.i`) is the span's body.  The arm's
+composition exposes the record it appends — `stringPath_seg` ends at the merge carry
+with `∃ key len off, Cd.events = C.events ++ [str key len off]` — and
+`row_stringPlainDocument`/`row_stringArenaDocument` are the document's rows at that
+stream, with the entry index moving by two at each string (`%inc208.i`) and the token
+count by one.
 
 There is no `sorry`, `admit` or `native_decide`; the axiom pins are at the end.
 -/

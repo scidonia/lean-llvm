@@ -657,6 +657,254 @@ theorem tokenRecord_punct {m0 : Mem} {G : WalkGeom m0} {t : Tape}
   · exact TokenRecord.openBracket hbyte hstop
   · exact TokenRecord.closeBracket hbyte hstop
 
+/-! ### The staged entry stream: the quote lanes
+
+`WalkAlign` is the walk's alignment for a *token-start* stream — one entry per
+token, at its `span.start`.  The ABI hands the walk a different stream whenever the
+document has a string: `kernel/json/stage2.h:60` defines `ep` as "quote characters,
+the structural bytes and the first byte of every scalar", so a string contributes
+two lanes, its first byte and its closing quote.  `["ab","cd"]` is the smallest
+witness — `[0, 1, 4, 5, 6, 9, 10]`, seven entries for five tokens — and the string
+arm reads the lane *after* its own as the closing quote (`JsonStage2IR:639-641`,
+`%sub260.i = close - %idxprom.i - 1`) and leaves the index two entries further on
+(`%inc208.i = %k.0.i249 + 2`).
+
+**Why this is a second relation and not a generalization of `WalkAlign`.**
+`WalkTracePrefix` is indexed by *tokens*: the trace so far is
+`Token.recordTokens t.tokens C.k` and the exit condition is
+`C.k = t.tokens.length`.  On a quote-inclusive stream the carry's index counts
+*entries*, and the two indices part company at the first string — the arm advances
+the entry index by two and the token index by one — so no substitution makes the old
+clause true of the new stream, and the token-start clause is false of every document
+that has a string.  Stating `WalkAlignQuoted` beside it keeps each relation honest
+about the index it counts: `WalkAlign` remains the string-free case, which the
+container, number and separator rows consume, and `Token.entryLanes_stringFree` is
+the theorem that the two streams coincide there.  That is one staging with a case
+rather than two accounts of the ABI, and it is why the string rows state their
+carries' token indices beside their entry indices instead of equating them.
+
+**What the string rows take from here.**  `WalkAlignQuoted.input` is the tape's
+document — the payload arms' body read-back reads it — `WalkAlignQuoted.ent` and
+`WalkAlignQuoted.lane_pos` fix the entry positions, and
+`WalkAlignQuoted.stringExtent` is the arm's arithmetic: the lane after a string's
+start lane is its closing quote, so `close = lane k + 1` is `span.stop - 1` and the
+body extent `close - start - 1` is `span.stop - span.start - 2`.  What stays the
+arm's is the record it appended and the body's read-back.
+-/
+
+/-- **One lane of the staged entry stream.**  A token contributes its first byte; a
+string token contributes its closing quote as the next lane. -/
+inductive EntryLane where
+  /-- A token's first byte. -/
+  | start (tok : Token)
+  /-- A string token's closing quote. -/
+  | close (tok : Token)
+deriving DecidableEq, Repr
+
+/-- The document position a lane reads.  A start lane reads `span.start`; a string's
+close lane reads the quote just before `span.stop`, which is where the token's span
+ends. -/
+def EntryLane.pos : EntryLane → Nat
+  | .start tok => tok.span.start
+  | .close tok => tok.span.stop - 1
+
+/-- The lanes a token contributes: a string's closing quote, nothing otherwise. -/
+def Token.closeLane : Token → List EntryLane
+  | .string s => [.close (.string s)]
+  | _ => []
+
+/-- **The staged entry stream, token by token**: each token's first byte, followed by
+a string's closing quote. -/
+def Token.entryLanes : List Token → List EntryLane
+  | [] => []
+  | tok :: rest => .start tok :: (Token.closeLane tok ++ Token.entryLanes rest)
+
+/-- The lane list at the empty token list. -/
+theorem Token.entryLanes_nil : Token.entryLanes [] = [] := rfl
+
+/-- The lane list at a token list's head: its first byte, then its close lane or
+nothing, then the remaining tokens' lanes. -/
+theorem Token.entryLanes_cons (tok : Token) (rest : List Token) :
+    Token.entryLanes (tok :: rest) =
+      .start tok :: (Token.closeLane tok ++ Token.entryLanes rest) := rfl
+
+/-- A string token's two lanes. -/
+theorem Token.entryLanes_string (sp : Span) (rest : List Token) :
+    Token.entryLanes (Token.string sp :: rest) =
+      .start (.string sp) :: .close (.string sp) :: Token.entryLanes rest := rfl
+
+/-- **A token that is not a string contributes one lane.** -/
+theorem Token.entryLanes_start {tok : Token} {rest : List Token}
+    (h : ∀ sp : Span, tok ≠ .string sp) :
+    Token.entryLanes (tok :: rest) = .start tok :: Token.entryLanes rest := by
+  rw [Token.entryLanes_cons]
+  cases tok with
+  | string s => exact absurd rfl (h s)
+  | punct p s => rfl
+  | null s => rfl
+  | bool b s => rfl
+  | number s => rfl
+
+/-- **The alignment at the quote-inclusive stream.**  The tape is the parser's for the
+geometry's document, the geometry's entry positions are the lanes' positions, and at
+every start lane the document's byte is the one the token's class announces.  The
+close lanes carry no class: the token they close is the one whose start lane is
+before them, and `Token.entryLanes_succ_string` is that adjacency. -/
+def WalkAlignQuoted {m0 : Mem} (G : WalkGeom m0) (t : Tape) : Prop :=
+  t.input = ByteString.literal G.bs ∧
+    G.ent = (Token.entryLanes t.tokens).map EntryLane.pos ∧
+    (∀ k, k < G.nep → ∀ (tok : Token),
+      (Token.entryLanes t.tokens)[k]? = some (.start tok) →
+        ∃ b : UInt8, G.bs[tok.span.start]? = some b ∧
+          classOfByte b = some (tokenClass tok))
+
+/-- The clause's first conjunct: the tape is the parser's for this document. -/
+theorem WalkAlignQuoted.input {m0 : Mem} {G : WalkGeom m0} {t : Tape}
+    (h : WalkAlignQuoted G t) : t.input = ByteString.literal G.bs := h.1
+
+/-- The clause's second conjunct: the entry positions are the lanes' positions. -/
+theorem WalkAlignQuoted.ent {m0 : Mem} {G : WalkGeom m0} {t : Tape}
+    (h : WalkAlignQuoted G t) :
+    G.ent = (Token.entryLanes t.tokens).map EntryLane.pos := h.2.1
+
+/-- The entry count, at the lanes: `WalkGeom.entries` reads `G.nep` lanes, so the
+count is the lane list's length. -/
+theorem WalkAlignQuoted.nep {m0 : Mem} {G : WalkGeom m0} {t : Tape}
+    (h : WalkAlignQuoted G t) : G.nep = (Token.entryLanes t.tokens).length := by
+  rw [← WalkAlign.ent_length G, h.ent, List.length_map]
+
+/-- The lane at an entry, and its position: the clause read at one index. -/
+theorem WalkAlignQuoted.at {m0 : Mem} {G : WalkGeom m0} {t : Tape}
+    (h : WalkAlignQuoted G t) {k : Nat} (hk : k < G.nep) :
+    ∃ lane : EntryLane, (Token.entryLanes t.tokens)[k]? = some lane := by
+  have hlen : k < (Token.entryLanes t.tokens).length := by
+    rw [← h.nep]; exact hk
+  exact ⟨_, List.getElem?_eq_getElem hlen⟩
+
+/-- **The entry's position is its lane's.**  `entryPos` reads `G.ent`, and the clause
+says that list is the lanes' positions. -/
+theorem WalkAlignQuoted.lane_pos {m0 : Mem} {G : WalkGeom m0} {t : Tape}
+    (h : WalkAlignQuoted G t) {k : Nat} (lane : EntryLane)
+    (hlane : (Token.entryLanes t.tokens)[k]? = some lane) :
+    entryPos G k = lane.pos := by
+  unfold entryPos
+  rw [h.ent, List.getD_eq_getElem?_getD, List.getElem?_map, hlane]
+  rfl
+
+/-- The clause's third conjunct, at one index: a start lane's byte announces its
+token's class. -/
+theorem WalkAlignQuoted.class {m0 : Mem} {G : WalkGeom m0} {t : Tape}
+    (h : WalkAlignQuoted G t) {k : Nat} (hk : k < G.nep) {tok : Token}
+    (hlane : (Token.entryLanes t.tokens)[k]? = some (.start tok)) :
+    ∃ b : UInt8, G.bs[tok.span.start]? = some b ∧
+      classOfByte b = some (tokenClass tok) :=
+  h.2.2 k hk tok hlane
+
+/-- **The two streams are one where no token is a string.**  With no string token the
+lane list is the token starts, so the quote-inclusive staging's entry positions are
+`WalkAlign`'s token-start positions.  This is the case in which the two relations say
+the same thing, and it is the whole difference between them: a string token's closing
+quote is a lane of its own, and no token starts there. -/
+theorem Token.entryLanes_stringFree {toks : List Token}
+    (h : ∀ tok ∈ toks, ∀ sp : Span, tok ≠ .string sp) :
+    (Token.entryLanes toks).map EntryLane.pos =
+      toks.map (fun tok => tok.span.start) := by
+  induction toks with
+  | nil => rw [Token.entryLanes_nil]; rfl
+  | cons tok rest ih =>
+      have htok : ∀ sp : Span, tok ≠ .string sp := fun sp hs => h tok (by simp) sp hs
+      have hrest : ∀ t ∈ rest, ∀ sp : Span, t ≠ .string sp :=
+        fun t ht sp hs => h t (by simp [ht]) sp hs
+      rw [Token.entryLanes_start htok, List.map_cons, List.map_cons, ih hrest]
+      rfl
+
+/-- **The lane after a string's start lane is its closing quote.**  The two lanes are
+the arm's two entries: `close = lane k + 1` reads the string's own span. -/
+theorem Token.entryLanes_succ_string {toks : List Token} {k : Nat} {sp : Span}
+    (h : (Token.entryLanes toks)[k]? = some (.start (.string sp))) :
+    (Token.entryLanes toks)[k + 1]? = some (.close (.string sp)) := by
+  induction toks generalizing k with
+  | nil => rw [Token.entryLanes_nil] at h; simp at h
+  | cons tok rest ih =>
+      cases tok with
+      | string s =>
+          rw [Token.entryLanes_string] at h ⊢
+          cases k with
+          | zero =>
+              simp only [List.getElem?_cons_zero, Option.some.injEq, EntryLane.start.injEq,
+                Token.string.injEq] at h
+              subst h
+              simp
+          | succ k =>
+              simp only [List.getElem?_cons_succ] at h ⊢
+              cases k with
+              | zero =>
+                  simp only [List.getElem?_cons_zero, Option.some.injEq] at h
+                  cases h
+              | succ k =>
+                  simp only [List.getElem?_cons_succ] at h ⊢
+                  exact ih h
+      | punct p s =>
+          rw [Token.entryLanes_start (tok := Token.punct p s) (by intro sp hh; cases hh)] at h ⊢
+          cases k with
+          | zero =>
+              simp only [List.getElem?_cons_zero, Option.some.injEq, EntryLane.start.injEq] at h
+              cases h
+          | succ k =>
+              simp only [List.getElem?_cons_succ] at h ⊢
+              exact ih h
+      | null s =>
+          rw [Token.entryLanes_start (tok := Token.null s) (by intro sp hh; cases hh)] at h ⊢
+          cases k with
+          | zero =>
+              simp only [List.getElem?_cons_zero, Option.some.injEq, EntryLane.start.injEq] at h
+              cases h
+          | succ k =>
+              simp only [List.getElem?_cons_succ] at h ⊢
+              exact ih h
+      | bool b s =>
+          rw [Token.entryLanes_start (tok := Token.bool b s) (by intro sp hh; cases hh)] at h ⊢
+          cases k with
+          | zero =>
+              simp only [List.getElem?_cons_zero, Option.some.injEq, EntryLane.start.injEq] at h
+              cases h
+          | succ k =>
+              simp only [List.getElem?_cons_succ] at h ⊢
+              exact ih h
+      | number s =>
+          rw [Token.entryLanes_start (tok := Token.number s) (by intro sp hh; cases hh)] at h ⊢
+          cases k with
+          | zero =>
+              simp only [List.getElem?_cons_zero, Option.some.injEq, EntryLane.start.injEq] at h
+              cases h
+          | succ k =>
+              simp only [List.getElem?_cons_succ] at h ⊢
+              exact ih h
+
+/-- **The string arm's read at the staged stream.**  The next lane is the closing
+quote, so the arm's `close = lane k + 1` is `span.stop - 1`, its body opens at
+`span.start + 1`, and the extent `close - start - 1` it forms (`%sub260.i`) is the
+span's body.  `hquote` is the tape's two-quote span: the closing quote is inside the
+token, which is `tape_tokenBytes_string`'s content for a string token. -/
+theorem WalkAlignQuoted.stringExtent {m0 : Mem} {G : WalkGeom m0} {t : Tape}
+    (h : WalkAlignQuoted G t) {k : Nat} {sp : Span}
+    (hquote : sp.start + 2 ≤ sp.stop)
+    (hstart : (Token.entryLanes t.tokens)[k]? = some (.start (.string sp))) :
+    entryPos G k = sp.start ∧ entryPos G (k + 1) = sp.stop - 1 ∧
+      entryPos G (k + 1) - entryPos G k - 1 = sp.stop - sp.start - 2 := by
+  have h1 : entryPos G k = sp.start :=
+    h.lane_pos (EntryLane.start (.string sp)) hstart
+  have hclose := Token.entryLanes_succ_string hstart
+  have hlen : (Token.entryLanes t.tokens).length = G.nep := h.nep.symm
+  have hk1 : k + 1 < G.nep := by
+    have := (List.getElem?_eq_some_iff.mp hclose).1
+    omega
+  have h2 : entryPos G (k + 1) = sp.stop - 1 :=
+    h.lane_pos (EntryLane.close (.string sp)) hclose
+  refine ⟨h1, h2, ?_⟩
+  rw [h2, h1]
+  omega
+
 /-! ### What is still owed: the trace row, and its composition
 
 The row is at the parser's own token indices — which is what the alignment makes
@@ -981,5 +1229,29 @@ theorem align_not_enough {m0 : Mem} (G : WalkGeom m0) (hent : G.ent = [0])
 /-- info: 'LeanLLVM.Refinement.align_not_enough' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.align_not_enough
+
+/-- info: 'LeanLLVM.Refinement.Token.entryLanes_start' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.Token.entryLanes_start
+
+/-- info: 'LeanLLVM.Refinement.Token.entryLanes_stringFree' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.Token.entryLanes_stringFree
+
+/-- info: 'LeanLLVM.Refinement.Token.entryLanes_succ_string' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.Token.entryLanes_succ_string
+
+/-- info: 'LeanLLVM.Refinement.WalkAlignQuoted.nep' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkAlignQuoted.nep
+
+/-- info: 'LeanLLVM.Refinement.WalkAlignQuoted.lane_pos' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkAlignQuoted.lane_pos
+
+/-- info: 'LeanLLVM.Refinement.WalkAlignQuoted.stringExtent' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.WalkAlignQuoted.stringExtent
 
 end LeanLLVM.Refinement

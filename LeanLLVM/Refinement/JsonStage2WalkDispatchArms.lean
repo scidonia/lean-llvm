@@ -393,13 +393,14 @@ inductive LastEntryArm (calls : Calls) {m0 : Mem} (G : WalkGeom m0) (C : WalkCar
   the tree.  The class's seam rows (`HlastSeamRefusal`) are stated beside it in the class's
   own row, where the answer and the record the call wrote are named. -/
   | refuse (route : HlastRefuseRoute G C s) : LastEntryArm calls G C s
-  /-- **A bare string opener with no entry left**: refused at `if.then205.i`. -/
+  /-- **A bare string opener with no entry left**: refused at `if.then205.i`.  The
+  stored offset is the entry's position, which the route reads off the invariant's
+  `%idxprom.i`, so the arm carries no separate operand fact. -/
   | stringOpener {inc nep : BitVec 64}
       (h8 : evalOperand s (.reg "%8") = some (.int 8 (BitVec.ofNat 8 34)))
       (hinc : evalOperand s (.reg "%inc.i") = some (.int 64 inc))
       (hnep : evalOperand s (.reg "%nep") = some (.int 64 nep))
       (hge : evalICmp .ult inc nep = 0)
-      (hv : evalOperand s (.reg "%4") = some (.int 64 (BitVec.ofNat 64 G.n)))
       (he : lookupName s.env "%e" = some (.ptr C.stage.e)) : LastEntryArm calls G C s
   /-- **A closing bracket at depth zero with nothing open**: refused at `if.then56.i`. -/
   | closingZero {j : Nat}
@@ -689,10 +690,10 @@ theorem LastEntryArm.dispatch {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
   | .refuse route =>
     WalkDispatchResult.refuse route.Cd route.sd route.n route.seg route.hblock
       ⟨route.k, route.hk, route.hword⟩ route.herr route.hprice
-  | .stringOpener h8 hinc hnep hge hv he =>
+  | .stringOpener h8 hinc hnep hge he =>
     (fun ⟨Cd, sd, p, hseg, herr, hprice⟩ =>
       WalkDispatchResult.refuse Cd sd p hseg.seg hseg.block hseg.word herr hprice)
-      (quoteRefuse_at G C s hInv hblock h8 hinc hnep hge hv he
+      (quoteRefuse_at G C s hInv hblock h8 hinc hnep hge he
         (WalkInv.head_lt hInv (by simpa only [walkLoopHead] using hblock)))
   | .closingZero h8 hsp hv he hj hj64 =>
     (fun ⟨Cd, sd, p, hseg, herr, hprice⟩ =>
