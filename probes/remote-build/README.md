@@ -105,6 +105,11 @@ the worker, so name every changed source the target reads.
   outlive the tunnel under `setsid` with a pid and status file, and kill it by
   that pid; `pkill -f` from inside `run` matches the ssh command string and
   kills its own shell.
+- A copied `.lake/build` is **not** a cache to trust: an olean can be older than
+  its `.trace` (a copied tree can pair a current trace with an older olean), and
+  Lake will load it as current, failing later on a lemma the source has. Rebuild
+  the target's closure from source, or probe a recently added lemma with
+  `strings <olean> | grep`, before reading a build result from a copied tree.
 - Do not tar `.lake/build` while a build or a `lake serve` is running: a stale
   snapshot silently pairs new sources with old oleans, or omits a module's
   output entirely.
