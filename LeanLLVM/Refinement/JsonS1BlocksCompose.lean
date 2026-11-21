@@ -381,7 +381,7 @@ theorem escapeReach_of_post {base : Nat} {bs ctl im blk0 : BitVec 64}
     ?_, ?_, hpairOut.1, hhasOut, ?_⟩
   · simpa using hcntOut
   · simpa [blockPositions] using hposOut
-  · simpa [escapeRegions] using hframeOut
+  · simpa using hframeOut
 
 /-- **The per-call frame, at the unit's argument list.**  The three regions the
 record is silent outside, with the stream at the run's touched count.  This is the

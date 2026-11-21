@@ -3251,11 +3251,11 @@ theorem hasBytes_of_forall (m : Mem) : ∀ (M a : Nat),
 
 /-- **The escape stream's capacity, extended to the staged extent.**  The record
 promises presence of the block's per-call capacity, and byte equality outside its
-three regions at the extent the batch touched.  The caller passes the capacity-wide
-form — `escapeFrame_capacity` derives it from the record's frame at the block's own
-count, and every staged-capacity clause here orders its regions against
-`blockMax` — so the staged extent's tail is the caller's bytes and the two together
-are the whole staged stream. -/
+three regions from the stream's cursor to the extent the batch touched.  The caller
+passes the capacity-wide form — `escapeFrame_capacity` derives it from the record's
+cursor-based frame at the block's own count, and every staged-capacity clause here
+orders its regions against `blockMax` — so the staged extent's tail is the caller's
+bytes and the two together are the whole staged stream. -/
 theorem escape_capacity {r2 r3 : Mem} {xp xn xcarry xn0 extent : Nat}
     (hu : UnchangedOutside r2 r3 [(xp, 4 * blockMax xn0), (xn, 8), (xcarry, 16)])
     (hpost : HasBytes r3 xp (4 * blockMax xn0))
@@ -3289,8 +3289,9 @@ emitter's written extent — so the gate-on successor's facts are that frame
 composed with the list's exclusion, stated once here for both arms.
 
 The exclusion these steps carry is the block's *touched* extent, widened to the
-capacity by `escapeFrame_capacity` at the call site: the record's frame names
-`4 * touchedPositions xn0 len` and the staged capacity the invariant carries is
+capacity by `escapeFrame_capacity` at the call site: the record's frame starts at
+the stream's cursor, `touchedRegions_widen_touched` takes it to the block's spelling
+`4 * touchedPositions xn0 len`, and the staged capacity the invariant carries is
 `4 * S.xpExtent`, so `blockMax xn0 ≤ S.xpExtent` plus the block's own entry bound
 is what makes the carried extent a sub-range of the staged one, and the count's
 growth bound is what makes the capacity relation true at every block. -/
@@ -3569,9 +3570,9 @@ theorem escapeCall_at (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
   have hfin : (⟨31, escapePositionsPost._proof_1⟩ : Fin 32) = ⟨31, by decide⟩ :=
     Fin.ext rfl
   rw [hfin] at hcarryOut
-  -- the record's frame is the block's touched extent; the staged capacity's
-  -- silence is that frame's widening, and the block's bound is what makes the
-  -- touched end fall inside the capacity
+  -- the record's frame starts at the stream's cursor; the block's spelling
+  -- widens it to the stream's base, and the staged capacity's silence is that
+  -- frame's widening, the block's bound putting the touched end inside it
   have hframeCap : UnchangedOutside r2.mem r3.mem
       [(S.xp, 4 * blockMax S.xn), (S.nxp, 8), (S.xcarry, 16)] :=
     escapeFrame_capacity (xn0 := S.xn)
@@ -3580,7 +3581,9 @@ theorem escapeCall_at (tab base : Nat) (s2 : Calls) (Γ2 : MemContract)
   have hframeTight : UnchangedOutside r2.mem r3.mem
       [(S.xp, 4 * (S.xn + (escapePositionsFrom (block64 lo hi) st').length +
         batchReserve)), (S.nxp, 8), (S.xcarry, 16)] := by
-    simpa only [escapeRegions, touchedPositions] using hframe
+    simpa only [touchedPositions] using
+      touchedRegions_widen_touched (xn0 := S.xn)
+        (len := (escapePositionsFrom (block64 lo hi) st').length) hframe
   exact ⟨r3, carry64 lo hi st', (escapePositionsFrom (block64 lo hi) st').length,
     by simpa only [hiw] using hcall, hcountOut,
     escapePositionsFrom_length_le_block lo hi st', hcarryOut, hparity, hhasOut,
@@ -8474,9 +8477,10 @@ bitvector shift arithmetic `sh6_ofNat_toNat` names.
 /-! ### Axiom footprints of the gate-on arms and the loop instance
 
 The list's frames are `UnchangedOutside` and `readBytes` equalities, the call site
-is one record's conjunction, one exclusion at the extent the batch touched and one
-widening of it to the capacity the staged clauses order against
-(`escapeFrame_capacity`), and the successors are definitions.
+is one record's conjunction, one exclusion at the cursor-based extent the batch
+touched, one widening of it to the block's spelling
+(`touchedRegions_widen_touched`) and one to the capacity the staged clauses order
+against (`escapeFrame_capacity`), and the successors are definitions.
 The `Classical.choice` in the call bundles and the steps is `maskCall_at`'s and
 `pos8Call_at`'s — the bitvector shift arithmetic `sh6_ofNat_toNat` names, not a
 witness chosen in any statement here.

@@ -35,10 +35,12 @@ Three things are stated here and nothing else:
   expander's names the decoded bytes, the list cursor it leaves, and — on a refusal
   — the body-relative offset, which is a stated outcome rather than an absence.
 
-* The unchanged conjunct, as the *extent* the run writes and no wider.  The
-  measured eight-entry batch stores past the true count, so those bytes are inside
-  the extent and this conjunct is silent about their values; `pre` separately tells
-  the caller not to read them.
+* The unchanged conjunct, as the *extent* the run writes and no wider: from the
+  stream's cursor, `xp + 4 * xn0`, because every batch stores at the cursor and the
+  cursor only advances.  The measured eight-entry batch stores past the true count,
+  so those reserve bytes are inside the extent and this conjunct is silent about
+  their values; `pre` separately tells the caller not to read them.  The prefix
+  below the cursor is outside the extent, so the record keeps it.
 
 Each record takes its `budget` as a parameter.  The fuel is the run's own step
 count, which is read off the pinned body of the unit; it is not a constant of the
@@ -175,34 +177,69 @@ def batchReserve : Nat := 8
 /-- One block's positions occupy at most sixty-four entries. -/
 def blockMax (xn0 : Nat) : Nat := xn0 + 64 + batchReserve
 
-/-- The entries a block's run **touches** in the position stream: the count it is
-entered with, the positions it emits, and the eight-entry reserve its last batch
-writes past them.  The batch stores all eight of its entries at the cursor
-whatever the block counts, so the touched extent is the counted one plus the
-reserve; that sum, and not the capacity `blockMax`, is the frame's stream region.
-At the block's maximum it is the capacity, and otherwise it is what the run's
-stores actually reached. -/
+/-- Where a block's run's stores end, as a count of entries from the stream's
+base: the count it is entered with, the positions it emits, and the eight-entry
+reserve its last batch writes past them.  The batch stores all eight of its
+entries at the cursor whatever the block counts, so the touched end is the counted
+one plus the reserve; that end, and not the capacity `blockMax`, is what the
+record's cursor-based frame reaches, and `touchedRegions_widen_touched` restates
+that frame from the base at this number.  At the block's maximum it is the
+capacity, and otherwise it is what the run's stores actually reached. -/
 def touchedPositions (xn0 len : Nat) : Nat := xn0 + len + batchReserve
 
-/-- **The capacity's silence follows from the touched extent's.**  The record's
-frame names the run's touched extent; a consumer that orders its own region against
-the *capacity* `blockMax xn0` reads the silence it needs from that frame, because a
-byte outside the capacity is beyond the touched end as well.  This is the widening
-the pipeline's staged-capacity clauses do — deliberate, and in one place — and it
-needs the block's entry bound `len ≤ 64`, the only thing between the two extents. -/
-theorem escapeFrame_capacity {mem m : Mem} {xp xn carry xn0 len : Nat} (hlen : len ≤ 64)
-    (h : UnchangedOutside mem m
-      [(xp, 4 * touchedPositions xn0 len), (xn, 8), (carry, 16)]) :
-    UnchangedOutside mem m [(xp, 4 * blockMax xn0), (xn, 8), (carry, 16)] := by
-  have hle : touchedPositions xn0 len ≤ blockMax xn0 := by
-    unfold touchedPositions blockMax
-    omega
+/-- The three regions the run's stores reach: the stream from its cursor — the
+count the run is entered with, where the first batch writes — to the counted span
+plus the batch's eight-entry reserve, the count's slot, and the carry's sixteen
+bytes.
+
+The stream region begins at `xp + 4 * xn0`, not at the stream's base: every batch
+stores at the cursor and the cursor only advances, so the bytes below it are never
+written.  Naming them inside the frame would withhold exactly the fact a successor
+needs — that the prefix of the stream below this block's cursor is still the
+caller's — while claiming a silence the run does keep there. -/
+def touchedRegions (xp xn carry xn0 len : Nat) : List (Nat × Nat) :=
+  [(xp + 4 * xn0, 4 * (len + batchReserve)), (xn, 8), (carry, 16)]
+
+/-- **The cursor-based frame implies the frame from the stream's base.**  A byte
+outside `xp … xp + 4 * touchedPositions xn0 len` is either below the cursor or
+beyond the touched end, so the narrow frame is silent there too.  Consumers that
+order their own regions against the stream's base read the wider statement from
+this one. -/
+theorem touchedRegions_widen_touched {mem m : Mem} {xp xn carry xn0 len : Nat}
+    (h : UnchangedOutside mem m (touchedRegions xp xn carry xn0 len)) :
+    UnchangedOutside mem m
+      [(xp, 4 * touchedPositions xn0 len), (xn, 8), (carry, 16)] := by
   refine UnchangedOutside.widen h ?_
   intro a ha r hr
-  simp only [List.mem_cons, List.not_mem_nil, or_false] at hr ⊢
+  simp only [touchedRegions, List.mem_cons, List.not_mem_nil, or_false] at hr ⊢
   rcases hr with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
   · rintro ⟨h1, h2⟩
-    exact ha (xp, 4 * blockMax xn0) (by simp) ⟨h1, by omega⟩
+    simp only [Prod.fst, Prod.snd] at h1 h2
+    refine ha (xp, 4 * touchedPositions xn0 len) (by simp) ⟨by omega, ?_⟩
+    unfold touchedPositions at *
+    omega
+  · exact fun hc => ha (xn, 8) (by simp) hc
+  · exact fun hc => ha (carry, 16) (by simp) hc
+
+/-- **The capacity's silence follows from the frame's.**  The record's frame names
+the run's touched extent from the cursor; a consumer that orders its own region
+against the *capacity* `blockMax xn0` reads the silence it needs from that frame,
+because a byte outside the capacity is beyond the touched end as well.  This is the
+widening the pipeline's staged-capacity clauses do — deliberate, and in one place —
+and it needs the block's entry bound `len ≤ 64`, the only thing between the two
+extents. -/
+theorem escapeFrame_capacity {mem m : Mem} {xp xn carry xn0 len : Nat} (hlen : len ≤ 64)
+    (h : UnchangedOutside mem m (touchedRegions xp xn carry xn0 len)) :
+    UnchangedOutside mem m [(xp, 4 * blockMax xn0), (xn, 8), (carry, 16)] := by
+  refine UnchangedOutside.widen h ?_
+  intro a ha r hr
+  simp only [touchedRegions, List.mem_cons, List.not_mem_nil, or_false] at hr ⊢
+  rcases hr with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+  · rintro ⟨h1, h2⟩
+    simp only [Prod.fst, Prod.snd] at h1 h2
+    refine ha (xp, 4 * blockMax xn0) (by simp) ⟨by omega, ?_⟩
+    unfold blockMax batchReserve at *
+    omega
   · exact fun hc => ha (xn, 8) (by simp) hc
   · exact fun hc => ha (carry, 16) (by simp) hc
 
@@ -285,18 +322,24 @@ holding the caller's count could not order its own extent against them.  The bou
 is what makes the width a function of the word; it is a fact about the count, not a
 convenience for a proof.
 
-**The frame is the run's touched extent.**  Naming
-`(xp, 4 * touchedPositions xn0 len)` in `UnchangedOutside` is a promise about every
-byte outside it and about none inside, and it is the extent the stores reached:
-each batch stores its eight entries at the cursor whatever the block counts, so the
-last one writes the reserve up to eight entries beyond `xn0 + len`.  The counted
-span below is described by byte equality; the reserve is inside the frame and is
-not described, which is what makes the frame true and the record silent there.
+**The frame starts at the stream's cursor.**  Naming
+`(xp + 4 * xn0, 4 * (len + batchReserve))` in `UnchangedOutside` is a promise about
+every byte outside that region and about none inside, and it is the extent the
+stores reached: every batch stores its eight entries at the cursor, which only
+advances, so the stores begin at `xp + 4 * xn0` and the last one writes the reserve
+up to eight entries beyond `xn0 + len`.  The prefix below the cursor is therefore
+outside the frame, and its preservation — that the stream below this block's
+cursor still reads as the caller staged it — is a consequence of this post rather
+than a separate caller obligation.
+
+The counted span is described by byte equality; the reserve is inside the frame and
+is not described, which is what makes the frame true and the record silent there.
 Naming only the counted span would be false — those reserve bytes are written, with
-values the record does not promise — and naming the capacity would claim a silence
-the run does not keep: the bytes between the touched end and the capacity end are
-never stored, and the run's successor has to be able to conclude that from this
-post rather than restage it.
+values the record does not promise — and naming the frame from `xp` would include
+the never-written prefix and withhold its preservation, while naming the capacity
+would claim a silence the run does not keep: the bytes between the touched end and
+the capacity end are never stored, and the run's successor has to be able to
+conclude that from this post rather than restage it.
 
 **The presence clause states the capacity, and it is a different extent.**  `HasBytes
 m xp (4 * blockMax xn0)` is the capacity the caller staged, restated as presence:
@@ -332,8 +375,8 @@ def escapePositionsPost (base : Nat) (args : List Value) (mem m : Mem) : Prop :=
       (carry64 lo hi st).oddRun ∧
     HasBytes m xp (4 * blockMax xn0) ∧
     UnchangedOutside mem m
-      [(xp, 4 * touchedPositions xn0 (escapePositionsFrom (block64 lo hi) st).length),
-       (xn, 8), (carry, 16)]
+      (touchedRegions xp xn carry xn0
+        (escapePositionsFrom (block64 lo hi) st).length)
 
 /-- The position list's boundary record.
 

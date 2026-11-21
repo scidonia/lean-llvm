@@ -23,14 +23,16 @@ stated where it is used rather than in one conjunction:
   `ListLoopInv`/`ListWriterInv` conjunction is what times out;
 * the exit-successor segment, one lemma per arm of the position word's test.
 
-The frame's regions are the record's: the stream's touched extent `xp … xp + 4 *
-touchedPositions xn0 position.length`, the count's slot, and the carry's sixteen
-bytes.  The touched extent is the counted span plus the batch's eight-entry
-reserve, because the batch stores its whole thirty-two bytes whatever the block
-counts; the stream's capacity is the record's separate presence clause, and it is
-not the frame's region — a frame named there would leave a successor unable to
-conclude that the bytes between the touched end and the capacity end were never
-written.
+The frame's regions are the record's (`touchedRegions`): the stream from its
+cursor `xp + 4 * xn0` to the counted span plus the batch's eight-entry reserve, the
+count's slot, and the carry's sixteen bytes.  The stream's region starts at the
+cursor because the stores do: every batch writes at the cursor and the cursor only
+advances, so the prefix below it is outside the frame and its preservation follows
+from the record.  The touched extent is the counted span plus the reserve, because
+the batch stores its whole thirty-two bytes whatever the block counts; the stream's
+capacity is the record's separate presence clause, and it is not the frame's region
+— a frame named there would leave a successor unable to conclude that the bytes
+between the touched end and the capacity end were never written.
 -/
 import LeanLLVM.Refinement.JsonEscapeListPositions
 import LeanLLVM.Refinement.JsonEntrySteps
@@ -94,19 +96,6 @@ theorem ctpop_lxWord_positionWord {lo hi : Block32} {st : ClassState} :
   rw [lxWord_specPositionWord, ctpop_eq_setLanes_length, setLanes_specPositionWord]
 
 /-! ### The frame's regions -/
-
-/-- The three regions the run touches: the stream's entries from the cursor to the
-count it reports plus the batch's eight-entry reserve, the count's slot, and the
-carry's sixteen bytes.
-
-The first region is the *touched* extent, not the stream's capacity: the batch
-stores its eight entries at the cursor whatever the block counts, so the run's
-stores reach the count it reports plus the reserve, and no further.  A region
-named at the capacity would be a wider silence than the run keeps, which is the
-frame a successor cannot narrow: the bytes between the touched end and the
-capacity end are never stored, and its own extent has to be able to say so. -/
-def escapeRegions (xp xn carry count : Nat) : List (Nat × Nat) :=
-  [(xp, 4 * count), (xn, 8), (carry, 16)]
 
 /-- A byte outside a region containing `start … start + n` is below the interval
 or above it.  Stated as the disjunction rather than as the negation of the
@@ -312,23 +301,24 @@ names.  The touched extent ends at the block's own count plus the reserve, and t
 cursor is at most the count, so the batch's last entry is inside it. -/
 theorem writerBatch_region {xp xn carry xn0 used len o : Nat}
     (hcur : o = xp + 4 * xn0 + 4 * used) (husedle : used ≤ len) :
-    ∃ r ∈ escapeRegions xp xn carry (touchedPositions xn0 len),
+    ∃ r ∈ touchedRegions xp xn carry xn0 len,
       r.1 ≤ o ∧ o + 32 ≤ r.1 + r.2 := by
-  refine ⟨(xp, 4 * touchedPositions xn0 len), by simp [escapeRegions], by omega, ?_⟩
-  rw [hcur]; unfold touchedPositions batchReserve; omega
+  refine ⟨(xp + 4 * xn0, 4 * (len + batchReserve)),
+    by simp [touchedRegions], by omega, ?_⟩
+  rw [hcur]; unfold batchReserve; omega
 
 /-- The count's store is exactly the count's region. -/
-theorem writerCount_region {xp xn carry count : Nat} :
-    ∃ r ∈ escapeRegions xp xn carry count, r.1 ≤ xn ∧ xn + 8 ≤ r.1 + r.2 :=
-  ⟨(xn, 8), by simp [escapeRegions], by omega, by omega⟩
+theorem writerCount_region {xp xn carry xn0 len : Nat} :
+    ∃ r ∈ touchedRegions xp xn carry xn0 len, r.1 ≤ xn ∧ xn + 8 ≤ r.1 + r.2 :=
+  ⟨(xn, 8), by simp [touchedRegions], by omega, by omega⟩
 
 /-- A writer step preserves the frame. -/
 theorem lstWriter_step_frame (blk0 : BitVec 64) (xp xn xn0 carry : Nat) (position : List Nat)
     (base : BitVec 32) (used o : Nat) (s : State) (w : BitVec 64) (mem0 : Mem)
     (hinv : lstWriterInv blk0 xp xn xn0 position base used o s w)
-    (hframe : UnchangedOutside mem0 s.mem (escapeRegions xp xn carry (touchedPositions xn0 position.length))) :
+    (hframe : UnchangedOutside mem0 s.mem (touchedRegions xp xn carry xn0 position.length)) :
     ∃ e : State, step (escapeListCalls Γ_xl_batch) escapeListFunction s = .jump e ∧
-      UnchangedOutside mem0 e.mem (escapeRegions xp xn carry (touchedPositions xn0 position.length)) := by
+      UnchangedOutside mem0 e.mem (touchedRegions xp xn carry xn0 position.length) := by
   obtain ⟨e, hstep, hmem⟩ := lstWriter_step_mem blk0 xp xn xn0 position base used o s w hinv
   obtain ⟨hpc, _hphi, hLLI, hcur, _hkeep, _hconv, _hxn, _hpair, _hplt, _hbase,
     _hcap⟩ := hinv
@@ -337,7 +327,7 @@ theorem lstWriter_step_frame (blk0 : BitVec 64) (xp xn xn0 carry : Nat) (positio
   rw [hmem]
   refine unchangedOutside_writeBytes ?_ (unchangedOutside_batchMem ?_ hframe)
   · obtain ⟨r, hr, hlo, hhi⟩ := writerCount_region (xp := xp) (xn := xn) (carry := carry)
-      (count := touchedPositions xn0 position.length)
+      (xn0 := xn0) (len := position.length)
     exact ⟨r, hr, hlo, by rw [natToBytes_length]; exact hhi⟩
   · exact writerBatch_region (len := position.length) hcur husedle
 
@@ -404,12 +394,12 @@ theorem lstWriter_run_frame (blk0 : BitVec 64) (xp xn xn0 carry : Nat) (position
     (hcarr : carry + 16 ≤ xn ∨ xn + 8 ≤ carry) :
     ∀ (r used o : Nat) (s : State) (w : BitVec 64),
       lstWriterInv blk0 xp xn xn0 position base used o s w →
-      UnchangedOutside mem0 s.mem (escapeRegions xp xn carry (touchedPositions xn0 position.length)) →
+      UnchangedOutside mem0 s.mem (touchedRegions xp xn carry xn0 position.length) →
       readBytes s.mem carry 16 = some carryBytes →
       ctpop w ≤ 8 * r →
       HasBytes s.mem xp (4 * blockMax xn0) →
       ∃ (e : State) (j : Nat), j ≤ r + 1 ∧ lstWriterExit blk0 xp xn xn0 position e ∧
-        UnchangedOutside mem0 e.mem (escapeRegions xp xn carry (touchedPositions xn0 position.length)) ∧
+        UnchangedOutside mem0 e.mem (touchedRegions xp xn carry xn0 position.length) ∧
         readBytes e.mem carry 16 = some carryBytes ∧
         HasBytes e.mem xp (4 * blockMax xn0) ∧
         ∀ m, runFuel (escapeListCalls Γ_xl_batch) (j + m) escapeListFunction s =
@@ -583,10 +573,12 @@ The two memory clauses name different extents.  The presence conjunct is the
 *capacity* `4 * blockMax xn0`: the successor's own call is stated at
 `blockMax xn0 ≤ xpExtent`, and the run only stores, so the capacity it staged is
 still there — the bytes below the written span are present for exactly that reason.
-The frame is the extent the stores *touched*, `touchedPositions xn0 position.length`,
-which is the counted span plus the batch's reserve; a byte outside it is unchanged,
-and a byte between the touched end and the capacity end is unchanged too, which is
-what the successor needs and what a frame named at the capacity would withhold. -/
+The frame is the extent the stores *touched* (`touchedRegions`): from the stream's
+cursor `xp + 4 * xn0` — where the first batch writes and no store ever reaches
+below — to the counted span plus the batch's reserve.  A byte outside it is
+unchanged, so the stream's prefix below the cursor is preserved; a byte between the
+touched end and the capacity end is unchanged too, which is what the successor needs
+and what a frame named at the capacity would withhold. -/
 def EscapeReach (blk0 : BitVec 64) (xp xn carry xn0 : Nat) (position : List Nat)
     (carryBytes : List UInt8) (mem0 M : Mem) : Prop :=
   readBytes M xn 8 = some (wordBytes 8 (xn0 + position.length)) ∧
@@ -594,22 +586,24 @@ def EscapeReach (blk0 : BitVec 64) (xp xn carry xn0 : Nat) (position : List Nat)
     some (positionsBytes 4 (position.map fun k => blockAddr blk0 + k)) ∧
   readBytes M carry 16 = some carryBytes ∧
   HasBytes M xp (4 * blockMax xn0) ∧
-  UnchangedOutside mem0 M (escapeRegions xp xn carry (touchedPositions xn0 position.length))
+  UnchangedOutside mem0 M (touchedRegions xp xn carry xn0 position.length)
 
 /-- The carry region is a region. -/
-theorem mem_escapeRegions_carry (xp xn carry count : Nat) :
-    (carry, 16) ∈ escapeRegions xp xn carry count := by
-  simp [escapeRegions]
+theorem mem_touchedRegions_carry (xp xn carry xn0 len : Nat) :
+    (carry, 16) ∈ touchedRegions xp xn carry xn0 len := by
+  simp [touchedRegions]
 
 /-- The count's region is a region. -/
-theorem mem_escapeRegions_count (xp xn carry count : Nat) :
-    (xn, 8) ∈ escapeRegions xp xn carry count := by
-  simp [escapeRegions]
+theorem mem_touchedRegions_count (xp xn carry xn0 len : Nat) :
+    (xn, 8) ∈ touchedRegions xp xn carry xn0 len := by
+  simp [touchedRegions]
 
-/-- The stream's touched region is a region. -/
-theorem mem_escapeRegions_stream (xp xn carry count : Nat) :
-    (xp, 4 * count) ∈ escapeRegions xp xn carry count := by
-  simp [escapeRegions]
+/-- The stream's touched region is a region: from the cursor, width the counted
+span plus the batch's reserve. -/
+theorem mem_touchedRegions_stream (xp xn carry xn0 len : Nat) :
+    (xp + 4 * xn0, 4 * (len + batchReserve)) ∈
+      touchedRegions xp xn carry xn0 len := by
+  simp [touchedRegions]
 
 /-- **The `lxWord = 0` arm.**  The exit block jumps straight to the emitter's
 exit, so the run is the block's own step plus the return.  The stream is empty
@@ -622,7 +616,7 @@ theorem exitSegment_zero {Γ : MemContract} (env : Env) (s : State)
     (hbridge : setLanes (lxWord ctl im w) = position)
     (hcount : readBytes s.mem xn 8 = some (wordBytes 8 xn0))
     (hcarr : carry + 16 ≤ xn ∨ xn + 8 ≤ carry)
-    (hframe : UnchangedOutside mem0 s.mem (escapeRegions xp xn carry (touchedPositions xn0 position.length)))
+    (hframe : UnchangedOutside mem0 s.mem (touchedRegions xp xn carry xn0 position.length))
     (hhas : HasBytes s.mem xp (4 * blockMax xn0)) :
     runFuel (escapeListCalls Γ) 1 escapeListFunction
         (lxSuccessor env s bs ctl im blk0 w carry) =
@@ -646,8 +640,8 @@ theorem exitSegment_zero {Γ : MemContract} (env : Env) (s : State)
   · exact readBytes_lxMem2_carry s.mem bs w carry
   · exact hasBytes_lxMem2 hhas bs w carry
   · exact unchangedOutside_lxMem2
-      ⟨(carry, 16), mem_escapeRegions_carry xp xn carry
-        (touchedPositions xn0 position.length), by omega, by omega⟩ hframe
+      ⟨(carry, 16), mem_touchedRegions_carry xp xn carry xn0 position.length,
+        by omega, by omega⟩ hframe
 
 
 /-! ### The exit block's environment, read back -/
@@ -696,7 +690,7 @@ theorem exitSegment_skip {Γ : MemContract} (env : Env) (s : State)
     (hkeep : xn + 8 ≤ xp ∨ xp + 4 * blockMax xn0 ≤ xn)
     (hcx : carry + 16 ≤ xp ∨ xp + 4 * blockMax xn0 ≤ carry)
     (hblkcap : blk0.toNat * 64 + 64 < 2 ^ 32)
-    (hframe : UnchangedOutside mem0 s.mem (escapeRegions xp xn carry (touchedPositions xn0 position.length)))
+    (hframe : UnchangedOutside mem0 s.mem (touchedRegions xp xn carry xn0 position.length))
     (hhas : HasBytes s.mem xp (4 * blockMax xn0)) :
     let M := lstIfEnd4Mem (lxBase blk0) (lxWord ctl im w) (xp + xn0 * 4) xn
       (lstIfEnd4Count xn0 (lxWord ctl im w)) (lxMem2 s.mem bs w carry)
@@ -779,14 +773,14 @@ theorem exitSegment_skip {Γ : MemContract} (env : Env) (s : State)
   · exact hasBytes_lstIfEnd4Mem (hasBytes_lxMem2 hhas bs w carry) (lxBase blk0)
       (lxWord ctl im w) (xp + xn0 * 4) xn (lstIfEnd4Count xn0 (lxWord ctl im w))
   · refine unchangedOutside_lstIfEnd4Mem ?_ ?_ (unchangedOutside_lxMem2 ?_ hframe)
-    · refine ⟨(xp, 4 * touchedPositions xn0 position.length),
-        mem_escapeRegions_stream xp xn carry (touchedPositions xn0 position.length),
+    · refine ⟨(xp + 4 * xn0, 4 * (position.length + batchReserve)),
+        mem_touchedRegions_stream xp xn carry xn0 position.length,
         by omega, ?_⟩
-      unfold touchedPositions batchReserve; omega
-    · exact ⟨(xn, 8), mem_escapeRegions_count xp xn carry
-        (touchedPositions xn0 position.length), by omega, by omega⟩
-    · exact ⟨(carry, 16), mem_escapeRegions_carry xp xn carry
-        (touchedPositions xn0 position.length), by omega, by omega⟩
+      unfold batchReserve; omega
+    · exact ⟨(xn, 8), mem_touchedRegions_count xp xn carry xn0 position.length,
+        by omega, by omega⟩
+    · exact ⟨(carry, 16), mem_touchedRegions_carry xp xn carry xn0 position.length,
+        by omega, by omega⟩
 
 
 /-! ### The writer arm's tail: the loop, the frame and the return -/
@@ -870,7 +864,7 @@ theorem writerTail (blk0 : BitVec 64) (xp xn xn0 carry : Nat)
     (position : List Nat) (base : BitVec 32) (mem0 : Mem) (s3 : State) (w : BitVec 64)
     (carryBytes : List UInt8)
     (hinv : lstWriterInv blk0 xp xn xn0 position base 8 (xp + 4 * xn0 + 32) s3 w)
-    (hframe : UnchangedOutside mem0 s3.mem (escapeRegions xp xn carry (touchedPositions xn0 position.length)))
+    (hframe : UnchangedOutside mem0 s3.mem (touchedRegions xp xn carry xn0 position.length))
     (hcarry : readBytes s3.mem carry 16 = some carryBytes)
     (hcx : carry + 16 ≤ xp ∨ xp + 4 * blockMax xn0 ≤ carry)
     (hcarr : carry + 16 ≤ xn ∨ xn + 8 ≤ carry)
@@ -915,7 +909,7 @@ theorem writerHeadAt (blk0 : BitVec 64) (xp xn xn0 carry : Nat)
     (hkeep : xn + 8 ≤ xp ∨ xp + 4 * blockMax xn0 ≤ xn)
     (hcx : carry + 16 ≤ xp ∨ xp + 4 * blockMax xn0 ≤ carry)
     (hblkcap : blk0.toNat * 64 + 64 < 2 ^ 32)
-    (hframe1 : UnchangedOutside mem0 e1.mem (escapeRegions xp xn carry (touchedPositions xn0 position.length)))
+    (hframe1 : UnchangedOutside mem0 e1.mem (touchedRegions xp xn carry xn0 position.length))
     (hcarry1 : readBytes e1.mem carry 16 = some carryBytes)
     (hcarr : carry + 16 ≤ xn ∨ xn + 8 ≤ carry)
     (hhas1 : HasBytes e1.mem xp (4 * blockMax xn0)) :
@@ -926,7 +920,7 @@ theorem writerHeadAt (blk0 : BitVec 64) (xp xn xn0 carry : Nat)
     hxn1 hprefix1 hcount1 hgt hbridge hkeep hblkcap
   have hframe3 : UnchangedOutside mem0
       (wpSucc (fp17 e1.env esc) (fpSucc e1.env e1 esc) (xp + xn0 * 4)).mem
-      (escapeRegions xp xn carry (touchedPositions xn0 position.length)) := hframe1
+      (touchedRegions xp xn carry xn0 position.length) := hframe1
   have hcarry3 : readBytes
       (wpSucc (fp17 e1.env esc) (fpSucc e1.env e1 esc) (xp + xn0 * 4)).mem
       carry 16 = some carryBytes := hcarry1
@@ -973,7 +967,7 @@ theorem exitSegment_writer (env : Env) (s : State)
     (hkeep : xn + 8 ≤ xp ∨ xp + 4 * blockMax xn0 ≤ xn)
     (hcx : carry + 16 ≤ xp ∨ xp + 4 * blockMax xn0 ≤ carry)
     (hblkcap : blk0.toNat * 64 + 64 < 2 ^ 32)
-    (hframe : UnchangedOutside mem0 s.mem (escapeRegions xp xn carry (touchedPositions xn0 position.length)))
+    (hframe : UnchangedOutside mem0 s.mem (touchedRegions xp xn carry xn0 position.length))
     (hhas : HasBytes s.mem xp (4 * blockMax xn0)) :
     ∃ M, runFuel (escapeListCalls Γ_xl_batch) 13 escapeListFunction
         (lxSuccessor env s bs ctl im blk0 w carry) = some (.ret none M) ∧
@@ -1028,17 +1022,17 @@ theorem exitSegment_writer (env : Env) (s : State)
     have : lstIfEnd4Count xn0 (lxWord ctl im w) = xn0 + 8 := by
       unfold lstIfEnd4Count; rw [hmin]
     rw [this]
-  have hframe1 : UnchangedOutside mem0 e1.mem (escapeRegions xp xn carry (touchedPositions xn0 position.length)) := by
+  have hframe1 : UnchangedOutside mem0 e1.mem (touchedRegions xp xn carry xn0 position.length) := by
     rw [hmem1]
     refine unchangedOutside_lstIfEnd4Mem ?_ ?_ (unchangedOutside_lxMem2 ?_ hframe)
-    · refine ⟨(xp, 4 * touchedPositions xn0 position.length),
-        mem_escapeRegions_stream xp xn carry (touchedPositions xn0 position.length),
+    · refine ⟨(xp + 4 * xn0, 4 * (position.length + batchReserve)),
+        mem_touchedRegions_stream xp xn carry xn0 position.length,
         by omega, ?_⟩
-      unfold touchedPositions batchReserve; omega
-    · exact ⟨(xn, 8), mem_escapeRegions_count xp xn carry
-        (touchedPositions xn0 position.length), by omega, by omega⟩
-    · exact ⟨(carry, 16), mem_escapeRegions_carry xp xn carry
-        (touchedPositions xn0 position.length), by omega, by omega⟩
+      unfold batchReserve; omega
+    · exact ⟨(xn, 8), mem_touchedRegions_count xp xn carry xn0 position.length,
+        by omega, by omega⟩
+    · exact ⟨(carry, 16), mem_touchedRegions_carry xp xn carry xn0 position.length,
+        by omega, by omega⟩
   have hcarry1 : readBytes e1.mem carry 16 = some (lxCarry bs w) := by
     rw [hmem1]
     have h1 : carry + 16 ≤ xp + xn0 * 4 ∨ xp + xn0 * 4 + 32 ≤ carry := by
@@ -1097,7 +1091,7 @@ theorem exitCont_zero (env : Env) (e : State)
     (hcount : readBytes e.mem xn 8 = some (wordBytes 8 xn0))
     (hkeep : xn + 8 ≤ xp ∨ xp + 4 * blockMax xn0 ≤ xn)
     (hblkcap : blk0.toNat * 64 + 64 < 2 ^ 32)
-    (hframe : UnchangedOutside mem0 e.mem (escapeRegions xp xn carry (touchedPositions xn0 position.length)))
+    (hframe : UnchangedOutside mem0 e.mem (touchedRegions xp xn carry xn0 position.length))
     (hhas : HasBytes e.mem xp (4 * blockMax xn0))
     (hzero : lxWord ctl im w = 0) :
     runFuel (escapeListCalls Γ_xl_batch) 2 escapeListFunction e =
@@ -1143,7 +1137,7 @@ theorem exitCont_skip (env : Env) (e : State)
     (hkeep : xn + 8 ≤ xp ∨ xp + 4 * blockMax xn0 ≤ xn)
     (hcx : carry + 16 ≤ xp ∨ xp + 4 * blockMax xn0 ≤ carry)
     (hblkcap : blk0.toNat * 64 + 64 < 2 ^ 32)
-    (hframe : UnchangedOutside mem0 e.mem (escapeRegions xp xn carry (touchedPositions xn0 position.length)))
+    (hframe : UnchangedOutside mem0 e.mem (touchedRegions xp xn carry xn0 position.length))
     (hhas : HasBytes e.mem xp (4 * blockMax xn0))
     (hne : lxWord ctl im w ≠ 0)
     (hskip : ¬ ctpop (lxWord ctl im w) > 8) :
@@ -1191,7 +1185,7 @@ theorem exitCont_writer (env : Env) (e : State)
     (hkeep : xn + 8 ≤ xp ∨ xp + 4 * blockMax xn0 ≤ xn)
     (hcx : carry + 16 ≤ xp ∨ xp + 4 * blockMax xn0 ≤ carry)
     (hblkcap : blk0.toNat * 64 + 64 < 2 ^ 32)
-    (hframe : UnchangedOutside mem0 e.mem (escapeRegions xp xn carry (touchedPositions xn0 position.length)))
+    (hframe : UnchangedOutside mem0 e.mem (touchedRegions xp xn carry xn0 position.length))
     (hhas : HasBytes e.mem xp (4 * blockMax xn0))
     (hne : lxWord ctl im w ≠ 0)
     (hgt : ctpop (lxWord ctl im w) > 8) :
@@ -1366,7 +1360,7 @@ def AtExit (env : Env) (e : State) (mem0 : Mem) (bs ctl im blk0 w : BitVec 64)
   lookupName env "%xn" = some (.ptr xn) ∧
   lookupName env "%carry" = some (.ptr carry) ∧
   lookupName env "%arrayidx1" = some (.ptr (carry + 8)) ∧
-  UnchangedOutside mem0 e.mem (escapeRegions xp xn carry (touchedPositions xn0 len))
+  UnchangedOutside mem0 e.mem (touchedRegions xp xn carry xn0 len)
 
 /-- **From the seed chain to the position list.**  Either the chain's second
 doubling is already the fixed point — then it jumps straight to the exit block —
@@ -1965,10 +1959,6 @@ run's own `k` bound rather than the `omega` case splits that reach
 #guard_msgs in
 #print axioms ctpop_lxWord_positionWord
 
-/-- info: 'LeanLLVM.Refinement.escapeRegions' does not depend on any axioms -/
-#guard_msgs in
-#print axioms escapeRegions
-
 /-- info: 'LeanLLVM.Refinement.outside_region_lt_or_le' does not depend on any axioms -/
 #guard_msgs in
 #print axioms outside_region_lt_or_le
@@ -2053,17 +2043,17 @@ run's own `k` bound rather than the `omega` case splits that reach
 #guard_msgs in
 #print axioms EscapeReach
 
-/-- info: 'LeanLLVM.Refinement.mem_escapeRegions_carry' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.mem_touchedRegions_carry' depends on axioms: [propext] -/
 #guard_msgs in
-#print axioms mem_escapeRegions_carry
+#print axioms mem_touchedRegions_carry
 
-/-- info: 'LeanLLVM.Refinement.mem_escapeRegions_count' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.mem_touchedRegions_count' depends on axioms: [propext] -/
 #guard_msgs in
-#print axioms mem_escapeRegions_count
+#print axioms mem_touchedRegions_count
 
-/-- info: 'LeanLLVM.Refinement.mem_escapeRegions_stream' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.mem_touchedRegions_stream' depends on axioms: [propext] -/
 #guard_msgs in
-#print axioms mem_escapeRegions_stream
+#print axioms mem_touchedRegions_stream
 
 /-- info: 'LeanLLVM.Refinement.exitSegment_zero' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in

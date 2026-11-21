@@ -333,17 +333,19 @@ theorem frame_rule {W : Nat → Prop} {mem m : Mem} (h : UnchangedOn W mem m)
 /-- The **capacity** window of the escape positions stream: `xp` to
 `xp + 4 * blockMax xn0`, which includes the batch's eight-entry reserve.  It is the
 window the record's frame named *before* that frame was corrected: the record now
-names the run's touched extent (`Refinement.touchedPositions`, the counted positions
-plus the reserve), which is this window's prefix and shorter whenever the block
-counts fewer than its maximum.  The theorems below are about the capacity-wide
-shape, which is why this definition keeps `blockMax`. -/
+names the run's cursor-based touched extent (`Refinement.touchedRegions`, from the
+stream's cursor to the counted positions plus the reserve), which is inside this
+window and shorter whenever the block counts fewer than its maximum.  The theorems
+below are about the capacity-wide shape, which is why this definition keeps
+`blockMax`. -/
 def reserveWindow (xp xn0 : Nat) : Nat → Prop :=
   fun a => xp ≤ a ∧ a < xp + 4 * Refinement.blockMax xn0
 
 /-- The capacity-wide frame predicate: the stream's capacity (the reserve
 included), the count's slot and the carry's sixteen bytes.  An earlier shape of the
-escape positions post named exactly this; the record names the touched extent now,
-so this is the wider frame those theorems are about. -/
+escape positions post named exactly this; the record names the cursor-based touched
+extent now (`Refinement.touchedRegions`), so this is the wider frame those theorems
+are about. -/
 def escapeFrame (xp xn carry xn0 : Nat) : Nat → Prop :=
   inRegions [(xp, 4 * Refinement.blockMax xn0), (xn, 8), (carry, 16)]
 
@@ -357,7 +359,8 @@ capacity-wide frame predicate, every location of the reserve window is present.
 This is the half the escape positions post initially omitted: its exclusion named
 the whole capacity, but no predicate promised the reserve's presence, so the run's
 own successor had no capacity to stand on.  The record states that presence as a
-clause of its own now, at the capacity, beside a frame at the touched extent. -/
+clause of its own now, at the capacity, beside a frame at the cursor-based touched
+extent. -/
 theorem escapeFrame_owns_reserve {xp xn carry xn0 : Nat} {mem m : Mem}
     (h : Owns (escapeFrame xp xn carry xn0) mem m) :
     ∀ a, reserveWindow xp xn0 a → present m a :=
