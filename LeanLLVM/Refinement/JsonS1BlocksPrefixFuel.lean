@@ -34,13 +34,21 @@ fuel hypothesis: only the exit's own run `jE` and its containment
 (`asciiExitCells_run`, `fusedExitCells_run`) also state their fuel as an `∃`
 without exposing it.
 
-## What is still owed
+## What the rest of the run now supplies
 
-The prefix half of the run is now a term.  The exit half is not: `jE` is the
-`∃`-bound fuel of `asciiExitCells_run`/`fusedExitCells_run`, and neither exposes
-it, so `JsonS1BlocksFacts.S1BlocksResiduals.run` still names the whole run rather
-than reading it from a bounded composition.  That is the remaining facts-bundle
-gap, and it is the exit's to close, not the prefix's.
+The exit is charged too, in `JsonS1BlocksExitFuel`: its two compositions count
+`for.end101` and, when taken, `if.then103`, `if.end153` and `if.then164` against
+the tail arms' own steps, so the aligned empty document costs `3`, the aligned
+last byte `4` and the partial block at the silent merge `5`, and `exitCharge` is
+their largest.  The peel's escape merge is the calling arm, at `6`, and is
+`JsonS1BlocksEscapeRun`'s.  `s1BlocksRun_at_budget_of_chargedExit` takes the
+prefix segment at `next = 1` from `OnePrefixBounded` outright, and
+`JsonS1BlocksFacts.run_of_residuals` joins the residual's two segments at
+`s1BlocksBudget`, so no field of `S1BlocksResiduals` names a whole run.  What is
+left owed there is the exit's hypotheses, not its fuel: the peel's merge bit, the
+loop's staging and the tail byte's error bit, which `JsonS1BlocksPeelStaging`
+supplies from the peel's arithmetic and which the loop's register-to-model
+identities still owe.
 -/
 import LeanLLVM.Refinement.JsonS1BlocksLoopRun
 import LeanLLVM.Refinement.JsonS1BlocksStream
