@@ -14,9 +14,10 @@ The record is the output of
 nix develop -c bash probes/json/route/correspondence.sh
 ```
 
-observed on the working tree at `4f94295` plus the change that adds this page,
-with Lean 4.35.0 and clang/LLVM 21.1.8 from the flake.  The script re-derives
-every measurement and fails when a structural claim in the record stops holding
+observed on the working tree at `c2fc707` plus the change that repairs the
+record, with Lean 4.35.0 and clang/LLVM 21.1.8 from the flake.  The script
+re-derives every measurement and fails when a structural claim in the record
+stops holding
 — a flag beyond the optimisation level, a different transform, a lost helper
 call composition — so a stale copy of this page cannot pass as current.  The
 scenario's own cuts are recorded in
@@ -31,7 +32,7 @@ this page's flag relation is cut `R8`.
 | | flags | source | derivation |
 |---|---|---|---|
 | the proofs' body (`probes/install/ir/stage2.candidate.ll`) | `-S -emit-llvm -O3 -march=x86-64-v3 -mpclmul -std=gnu11 -falign-loops=64 -falign-functions=64` | `kernel/json/stage2.c`, `noinline` on eleven helpers, `s2_walk` forced inline | `opt -passes=lower-switch`, the recorded token strip, the local names pinned to the fixture's spelling, eight staging allocas flattened to parameters, callees reduced to declarations |
-| the route's object (`probes/json/route/build.sh`) | `-O2 -march=x86-64-v3 -mpclmul -std=gnu11 -falign-loops=64 -falign-functions=64 -I "$repo/kernel/json"` | the same file, untransformed | none: `clang -c` |
+| the route's object (`probes/json/route/build.sh`) | `-O2 -march=x86-64-v3 -mpclmul -std=gnu11 -falign-loops=64 -falign-functions=64 -I $repo/kernel/json` | the same file, untransformed | none: `clang -c` |
 
 ## The flag relation
 

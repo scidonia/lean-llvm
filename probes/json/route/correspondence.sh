@@ -7,7 +7,7 @@
 # `kernel/json/stage2.c` with `noinline` on every helper except `s2_walk`, its
 # switch lowered, the emitted attributes stripped and the eight staging objects
 # flattened to parameters.  The route links an object built from the same
-# `stage2.c` at `build.sh`'s flags, which use -O2 and no source transform.
+# `stage2.c` at `build.sh`'s flags (default -O2) and no source transform.
 # `stage2.candidate.ll`'s own header says in one line that it is "NOT the
 # measured object's text", and a shared source filename is not a
 # correspondence: this script derives and prints the relation that is actually
@@ -48,7 +48,7 @@ capture=$repo/probes/install/ir/capture-stage2.sh
 fixture=$repo/probes/install/ir/stage2.candidate.ll
 symbol=leanllvm_json_stage2
 
-for path in "$stage2" "$capture" "$fixture"; do
+for path in "$stage2" "$capture" "$fixture" "$here/build.sh"; do
   [ -f "$path" ] || { printf 'SETUP: absent: %s\n' "$path" >&2; exit 3; }
 done
 
@@ -67,9 +67,45 @@ flag_line() { # <script> <array name>
   tr '\n' ' ' <"$1" | sed -n "s/.*[^A-Za-z0-9_]$2=(\([^)]*\)).*/\1/p"
 }
 
-build_flags=$(flag_line "$here/build.sh" cflags)
+# `build.sh` does not spell the route object's flags on one literal line: it
+# assembles them from `opt` (the `OPT` knob, default -O2), a fixed `base` and
+# `kflags`, then compiles the six kernel units in a loop.  Read the invocation
+# that actually compiles `stage2.c` instead of pattern-matching a line shape: a
+# `clang` stand-in records that argument vector and stops the build, and a
+# `lake` stand-in stops it later should no invocation name `stage2.c` at all, so
+# neither the Lean toolchain nor the rest of the build is needed.  `OPT` and
+# `TIMING` are cleared: the record describes the route's default build, which is
+# the object the artifacts correspond to.
+route_flags() { # <build.sh>
+  local bin=$work/build-bin rec=$work/stage2.argv
+  mkdir -p "$bin"
+  cat >"$bin/clang" <<'STUB'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  case "$arg" in
+    */stage2.c) printf '%s\n' "$@" >"$ROUTE_FLAG_RECORD"; exit 42 ;;
+  esac
+done
+if [ -s "${ROUTE_FLAG_RECORD:-}" ]; then exit 42; fi
+exit 0
+STUB
+  cat >"$bin/lake" <<'STUB'
+#!/usr/bin/env bash
+exit 42
+STUB
+  chmod +x "$bin/clang" "$bin/lake"
+  : >"$rec"
+  env -u OPT -u TIMING BUILD_DIR="$work/router-build" ROUTE_FLAG_RECORD="$rec" \
+    PATH="$bin:$PATH" bash "$1" >/dev/null 2>&1 || true
+  [ -s "$rec" ] ||
+    fail "build.sh compiled no unit named stage2.c; the route object's flags could not be read"
+  # Everything before `-c` is the flag vector; the rest is the source and output.
+  awk '$0 == "-c" { exit } { printf "%s%s", sep, $0; sep = " " } END { printf "\n" }' "$rec"
+}
+
+build_flags=$(route_flags "$here/build.sh")
 capture_flags=$(flag_line "$capture" flags)
-[ -n "$build_flags" ] || fail "build.sh has no cflags=(...) line"
+[ -n "$build_flags" ] || fail "build.sh's stage2 compilation carries no flags"
 [ -n "$capture_flags" ] || fail "capture-stage2.sh has no flags=(...) line"
 
 # The codegen tokens: the output-mode flags (the capture emits .ll, the route
@@ -290,11 +326,19 @@ object_body_lines=$(wc -l <"$work/walk.o2.norm" | tr -d ' ')
 # The record
 # ---------------------------------------------------------------------------
 
+# The route's argument vector carries the repository root in its include path;
+# the record writes that root as `$repo`, so a machine-local path is not frozen
+# into the artifact.
+display_flags() { # <flags>
+  local s=${1//"$repo"/@@REPO@@} root='$repo'
+  printf '%s' "${s//@@REPO@@/$root}"
+}
+
 printf '## The two artifact paths\n\n'
 printf '| | flags | source | derivation |\n'
 printf '|---|---|---|---|\n'
 printf '| the proofs'"'"' body (`probes/install/ir/stage2.candidate.ll`) | `%s` | `kernel/json/stage2.c`, `noinline` on eleven helpers, `s2_walk` forced inline | `opt -passes=lower-switch`, the recorded token strip, the local names pinned to the fixture'"'"'s spelling, eight staging allocas flattened to parameters, callees reduced to declarations |\n' "$(printf '%s' "$capture_flags" | sed 's/  */ /g')"
-printf '| the route'"'"'s object (`probes/json/route/build.sh`) | `%s` | the same file, untransformed | none: `clang -c` |\n\n' "$(printf '%s' "$build_flags" | sed 's/  */ /g')"
+printf '| the route'"'"'s object (`probes/json/route/build.sh`) | `%s` | the same file, untransformed | none: `clang -c` |\n\n' "$(display_flags "$build_flags" | sed 's/  */ /g')"
 
 printf '## The flag relation\n\n'
 printf 'The codegen token sets are equal except for the optimisation level:\n\n'
@@ -305,7 +349,22 @@ printf -- '- ignored as non-codegen: `-S -emit-llvm` (output mode), `-I` and its
 printf 'The naming flag changes no instruction at the route'"'"'s own -O2 line: the emission with and without it is identical after register names and block labels are neutralised.\n\n'
 
 printf '## The normalisation steps\n\n'
-printf 'The fixture is derived, not transcribed.  In order: (1) the source transform above, whose counts are two `always_inline` occurrences (the comment'"'"'s and `s2_walk`'"'"'s) and eleven `noinline` helper functions, plus the `EL_ENTRY` macro line; (2) `opt -passes=lower-switch`; (3) the token strip, by the classes `capture-stage2.sh` records in `stage2.strip.tsv`; (4) the local-name pin, which renames the emission's registers and block labels to the fixture's spelling (`stage2.rewrites.tsv` class r8); (5) the eight staging allocas `%%d.i %%c.i %%ctype.i %%cst.i %%t352.i %%s %%z %%e` appended as `ptr` parameters (`stage2.staging.tsv`); (6) the three instruction rewrites and the callee definitions replaced by declarations (`stage2.rewrites.tsv`).  The comparison below applies steps (1)–(3) to both emissions and then replaces every virtual register with one placeholder and drops block labels, so the two texts are compared instruction by instruction.\n\n'
+cat <<'EOF'
+The fixture is derived, not transcribed.  In order: (1) the source transform above, whose counts are two `always_inline` occurrences (the comment's and `s2_walk`'s) and eleven `noinline` helper functions, plus the `EL_ENTRY` macro line; (2) `opt -passes=lower-switch`; (3) the token strip, by the classes `capture-stage2.sh` records in `stage2.strip.tsv`; (4) the local-name pin, which renames the emission's registers and block labels to the fixture's spelling (`stage2.rewrites.tsv` class r8); (5) the eight staging allocas `%d.i %c.i %ctype.i %cst.i %t352.i %s %z %e` appended as `ptr` parameters (`stage2.staging.tsv`); (6) the three instruction rewrites and the callee definitions replaced by declarations (`stage2.rewrites.tsv`).  The comparison below applies steps (1)–(3) to both emissions and then replaces every virtual register with one placeholder and drops block labels, so the two texts are compared instruction by instruction.
+
+EOF
+cat <<'EOF'
+The fixture is that derivation's output byte for byte.  The two quote refusal
+stores (`if.then205.i`, `if.then214.i`) carry `%idxprom.i`, the opening quote's
+position, because the walk now reports the parser's `unterminatedString`
+position; that operand was formerly patched into the fixture by hand, and the
+source emits it now, so the capture checks it instead.  The local-name pin
+(step 4 above) exists because `JsonStage2IR`'s `stage2Body` holds the parsed
+text by name and clang's counter shifts with an unrelated source edit: the
+emission's `%t354.i`/`if.then215.i` are renamed back to `%t352.i`/`if.then214.i`,
+and the capture refuses a stale, colliding or non-injective entry.
+
+EOF
 
 printf '## What is identical, and what is not\n\n'
 printf 'The eleven helpers, as emitted under the transform at each level:\n\n'
