@@ -18,6 +18,7 @@ escape list — the caller's own selection; a block that makes no call is
 independent of the selection (`evalInstr_calls_irrelevance`).
 -/
 import LeanLLVM.Refinement.JsonS1BlocksBlocks
+import LeanLLVM.Refinement.JsonS1BlocksContract
 import LeanLLVM.Refinement.JsonS1BlocksReuse
 import LeanLLVM.Refinement.BlockEvalVector
 import LeanLLVM.Refinement.JsonUtf8IR
@@ -5149,6 +5150,357 @@ theorem asciiInv_seed (env : Env) (s : State) (arm : BitVec 64)
         exact hgate') (by decide) (by decide) (by decide)
       index_lt := hnpos }
 
+/-! ### The pass's store and the document
+
+Each pass stores one eight-byte word into the emit area at `%ent + 8*i`, and the
+next pass reads the document at `%b + 64*(i + 1)`.  The two areas are disjoint:
+`s1BlocksPre` stages the emit area at or above the document window's end — the
+`b + 64 * blocksOf n ≤ ent` arm of its separation — and the phase states that
+premise as `%b + 64 * shr ≤ ent`, `shr` being the block count.  Every store the
+phase makes therefore sits above every block it reads, so the document the next
+pass reads is the caller's own. -/
+
+/-- **The document survives the emit area's stores.**  A store at or above `%ent`
+does not reach a block read at `%b + 64*j`: the block ends at `%b + 64*(j + 1)`,
+which is at or below `%ent` for every block the phase processes. -/
+theorem readBytes_writeBytes_doc (m : Mem) (bs : List UInt8) (start b shr : Nat)
+    (doc : Nat → List UInt8)
+    (h : ∀ j, j < shr → readBytes m (b + 64 * j) 64 = some (doc j))
+    (hgap : b + 64 * shr ≤ start) :
+    ∀ j, j < shr → readBytes (writeBytes m start bs) (b + 64 * j) 64 = some (doc j) := by
+  intro j hj
+  rw [readBytes_writeBytes_below m bs 64 (b + 64 * j) start (by omega)]
+  exact h j hj
+
+/-- **The pass's store leaves the next block's words intact.**  The emit word is
+stored at `%ent + 8*i`, eight bytes; the document's next block — `%b + 64*(i + 1)`
+and its `+32` word — lies below the emit area, so both reads survive the store.
+The premises are the staging's: the document window ends at or before `%ent`, and
+the read's span ends inside that window. -/
+theorem readBytes_writeBytes_emitWord (m : Mem) (bs : List UInt8) (b ent shr i : Nat)
+    (hgap : b + 64 * shr ≤ ent) (hi : i + 2 ≤ shr) :
+    readBytes (writeBytes m (ent + 8 * i) bs) (b + 64 * (i + 1)) 32
+        = readBytes m (b + 64 * (i + 1)) 32 ∧
+    readBytes (writeBytes m (ent + 8 * i) bs) (b + 64 * (i + 1) + 32) 32
+        = readBytes m (b + 64 * (i + 1) + 32) 32 := by
+  refine ⟨?_, ?_⟩
+  · rw [readBytes_writeBytes_below m bs 32 (b + 64 * (i + 1)) (ent + 8 * i) (by omega)]
+  · rw [readBytes_writeBytes_below m bs 32 (b + 64 * (i + 1) + 32) (ent + 8 * i)
+      (by omega)]
+
+/-- **The pass's emit address.**  The body's `gep` scales the sign-extended index
+by the integer word's eight bytes, and the pass's index is inside the shift's
+range, so the sign extension is the index itself: the store lands at
+`%ent + 8 * i`. -/
+theorem asciiValues_arrayidx (c : AsciiCarry) (bs2 bs3 : List UInt8)
+    (hj : (c.i + 1).toNat < 2 ^ 57) :
+    (asciiValues c bs2 bs3).arrayidx = c.ent + 8 * (c.i + 1).toNat := by
+  show c.ent + ((c.i + 1).signExtend 64).toNat * (Ty.int 64).sizeBytes
+      = c.ent + 8 * (c.i + 1).toNat
+  rw [BitVec.signExtend_eq, show (Ty.int 64).sizeBytes = 8 from by decide]
+  omega
+
+/-- **The preheader's first pass stores at `%ent`.**  Its index is zero, so the
+`gep` it computes is `%ent + 0`. -/
+theorem forBodyValues_zero_arrayidx (bs2 bs3 : List UInt8) (b ent : Nat) :
+    (forBodyValues 0 0 0 0 0 bs2 bs3 b ent).arrayidx = ent := by
+  show ent + ((0 : BitVec 64).signExtend 64).toNat * (Ty.int 64).sizeBytes = ent
+  rw [BitVec.signExtend_eq, show (Ty.int 64).sizeBytes = 8 from by decide]
+  simp
+
+/-- **The pass's index is inside the shift's range.**  The phase's bound is below
+`2 ^ 57` — the entry's `%shr = n >>> 6` with the document's length below `2 ^ 63`
+— and the latch's index is inside it, so the successor index is too.  That is
+what the body's shift and its `gep` need, and it is where the phase's `hj` comes
+from: nothing per-pass has to be assumed. -/
+theorem asciiPass_hj (c : AsciiCarry) (hshr : c.shr.toNat < 2 ^ 57)
+    (hlt : c.i.toNat < c.shr.toNat) : (c.i + 1).toNat < 2 ^ 57 := by
+  have hsucc : (c.i + 1).toNat = c.i.toNat + 1 := by
+    rw [BitVec.toNat_add, show (1 : BitVec 64).toNat = 1 from by decide]
+    omega
+  omega
+
+/-- Three admitted jumps are a `runFuel` prefix of three control steps. -/
+theorem runFuel_jump3 {calls : Calls} {f : Function} {s0 s1 s2 s3 : State}
+    (h01 : step calls f s0 = .jump s1) (h12 : step calls f s1 = .jump s2)
+    (h23 : step calls f s2 = .jump s3) (k : Nat) :
+    runFuel calls (3 + k) f s0 = runFuel calls k f s3 := by
+  rw [show 3 + k = 1 + (1 + (1 + k)) from by omega,
+    runFuel_jump_prefix h01 (1 + (1 + k)),
+    runFuel_jump_prefix h12 (1 + k),
+    runFuel_jump_prefix h23 k]
+
+/-! ### The phase's terminals
+
+The phase leaves in one of two ways, and each hands its successor the state the
+last pass left rather than the phase's entry.  At the bound the latch leaves for
+`for.end101` at its own environment; a block that is not all ASCII leaves for
+`if.then38` at the class test's environment, with the pass's values and the two
+words it read. -/
+
+/-- The state the phase hands `for.end101`: the final latch's environment with the
+loop's exit taken. -/
+def asciiExitState (env : Env) (s : State) (c : AsciiCarry) : State :=
+  stateAt (forIncEnv env c.i c.shr) { s with pc := "for.end101", pre := some "for.inc" }
+
+/-- The state the phase hands `if.then38`: the class test's environment over the
+pass's body, with the store the pass made. -/
+def asciiHandoffState (env : Env) (s : State) (c : AsciiCarry)
+    (v : ForBodyValues) : State :=
+  stateAt (ifEndEnv (forBodyOut (forIncEnv env c.i c.shr) v) v.w2 v.w3)
+    { s with
+      pc := "if.then38",
+      pre := some "if.end",
+      mem := writeBytes s.mem v.arrayidx (natToBytes v.or16.toNat 8) }
+
+/-- **The phase's two terminals.**  Either the latch reached its bound and left
+for `for.end101` at the final latch's environment, or a block was not all ASCII
+and the class test handed it to `if.then38` with that pass's values and its two
+words.  Both carry the final latch's invariant, so a successor reads the cells and
+the memory the last pass left. -/
+inductive AsciiTerm : State → Prop where
+  | exit (env : Env) (s : State) (c : AsciiCarry) :
+      AsciiInv env s c → c.i + 1 = c.shr → AsciiTerm (asciiExitState env s c)
+  | handoff (env : Env) (s : State) (c : AsciiCarry) (bs2 bs3 : List UInt8)
+      (v : ForBodyValues) :
+      AsciiInv env s c →
+      readBytes c.mem (c.b + 64 * (c.i + 1).toNat) 32 = some bs2 →
+      readBytes c.mem (c.b + 64 * (c.i + 1).toNat + 32) 32 = some bs3 →
+      v = asciiValues c bs2 bs3 →
+      AsciiTerm (asciiHandoffState env s c v)
+
+/-- The block's address at the hand-off's terminal, as the body left it.  It is
+the window `if.then38` loads its neighboring words at. -/
+theorem lookupName_asciiHandoff_addPtr (env : Env) (s : State) (c : AsciiCarry)
+    (v : ForBodyValues) :
+    lookupName (ifEndEnv (forBodyOut (forIncEnv env c.i c.shr) v) v.w2 v.w3) "%add.ptr"
+      = some (.ptr v.addPtr) :=
+  lookupName_ifEndEnv_of _ _ _ (lookupName_forBodyOut_addPtr _ _)
+    (by decide) (by decide) (by decide)
+
+/-- The index the hand-off's terminal reads, as the body left it. -/
+theorem lookupName_asciiHandoff_i (env : Env) (s : State) (c : AsciiCarry)
+    (v : ForBodyValues) :
+    lookupName (ifEndEnv (forBodyOut (forIncEnv env c.i c.shr) v) v.w2 v.w3) "%i.0510"
+      = some (.int 64 v.i) :=
+  lookupName_ifEndEnv_of _ _ _ (lookupName_forBodyOut_i _ _)
+    (by decide) (by decide) (by decide)
+
+/-! ### The phase's run
+
+The recursion consumes `asciiInv_seed` and, at each latch, either the bound's
+one-step exit (`asciiInv_exit`), the back edge's three steps at the class test's
+ASCII arm (`asciiInv_step`), or the hand-off's three steps to `if.then38`
+(`for_inc_page_handoff`).  Its measure is the distance to the bound,
+`shr - (i + 1)`, one per pass.  Each pass stores its emit word above the
+document, so `readBytes_writeBytes_doc` carries the document the next pass reads
+from the latch's memory to the one its own store leaves, and `asciiPass_hj`
+derives the pass's sign-extension bound from the phase's. -/
+
+/-- **The phase's run.**  From any latch inside the bound — with the document's
+blocks readable, the emit area above them, and the bound below `2 ^ 57` — the run
+reaches one of the phase's terminals in at most `3` steps per remaining pass plus
+`4` for the terminal itself: the bound's latch leaves in one step, and a block
+that is not all ASCII in three.  The terminal carries the final latch's
+invariant, its values and its words, so the successor reads what the last pass
+left. -/
+theorem asciiInv_runFuel_aux :
+    ∀ (r : Nat) (env : Env) (s : State) (c : AsciiCarry) (doc : Nat → List UInt8),
+      c.shr.toNat - (c.i.toNat + 1) = r →
+      c.shr.toNat < 2 ^ 57 →
+      AsciiInv env s c →
+      c.b + 64 * c.shr.toNat ≤ c.ent →
+      (∀ j, j < c.shr.toNat → readBytes c.mem (c.b + 64 * j) 64 = some (doc j)) →
+      ∃ (e : State) (j : Nat), j ≤ 3 * r + 4 ∧ AsciiTerm e ∧
+        ∀ k, runFuel s1BlocksCalls (j + k) s1BlocksFunction (stateAt env s)
+          = runFuel s1BlocksCalls k s1BlocksFunction e
+  | 0, env, s, c, doc, hmeasure, hshr, hinv, hgap, hdoc => by
+      have hsucc : (c.i + 1).toNat = c.i.toNat + 1 := by
+        rw [BitVec.toNat_add, show (1 : BitVec 64).toNat = 1 from by decide]
+        have hl := hinv.index_lt
+        omega
+      have hbound : c.i + 1 = c.shr := by
+        apply BitVec.eq_of_toNat_eq
+        rw [hsucc]
+        have hl := hinv.index_lt
+        omega
+      refine ⟨asciiExitState env s c, 1, by omega,
+        AsciiTerm.exit env s c hinv hbound, fun k => ?_⟩
+      exact runFuel_jump_prefix (asciiInv_exit env s c hinv hbound) k
+  | r + 1, env, s, c, doc, hmeasure, hshr, hinv, hgap, hdoc => by
+      have hlt : c.i.toNat < c.shr.toNat := hinv.index_lt
+      have hsucc : (c.i + 1).toNat = c.i.toNat + 1 := by
+        rw [BitVec.toNat_add, show (1 : BitVec 64).toNat = 1 from by decide]
+        omega
+      have hne : c.i + 1 ≠ c.shr := by
+        intro heq
+        have hcongr := congrArg BitVec.toNat heq
+        rw [hsucc] at hcongr
+        omega
+      have hloop : evalICmp .eq (c.i + 1) c.shr = 0 :=
+        (for_inc_exitcond_iff c.i c.shr).2.mpr hne
+      have hj57 : (c.i + 1).toNat < 2 ^ 57 := asciiPass_hj c hshr hlt
+      have hneNat : c.i.toNat + 1 ≠ c.shr.toNat := by
+        intro heq
+        exact hne (BitVec.eq_of_toNat_eq (by rw [hsucc]; exact heq))
+      have hblock : c.i.toNat + 1 < c.shr.toNat := by omega
+      let blk := doc (c.i.toNat + 1)
+      let bs2 := blk.take 32
+      let bs3 := blk.drop 32
+      have hblk : readBytes c.mem (c.b + 64 * (c.i + 1).toNat) 64 = some blk := by
+        rw [hsucc]
+        exact hdoc (c.i.toNat + 1) hblock
+      obtain ⟨hread2, hread3⟩ :=
+        readBytes_split c.mem (c.b + 64 * (c.i + 1).toNat) 32 32
+          (by rw [show 32 + 32 = 64 from rfl]; exact hblk)
+      have hread2' : readBytes s.mem (c.b + 64 * (c.i + 1).toNat) 32 = some bs2 := by
+        rw [hinv.mem]
+        exact hread2
+      have hread3' : readBytes s.mem (c.b + 64 * (c.i + 1).toNat + 32) 32 = some bs3 := by
+        rw [hinv.mem]
+        exact hread3
+      let v := asciiValues c bs2 bs3
+      let E' := ifEndEnv (forBodyOut (forIncEnv env c.i c.shr) v) v.w2 v.w3
+      let s3 := stateAt E'
+        { s with
+          pc := "for.inc",
+          pre := some "if.end",
+          mem := writeBytes s.mem v.arrayidx (natToBytes v.or16.toNat 8) }
+      by_cases hbit : evalICmp .eq (ifEndTest v.w2 v.w3) 0 = (1 : BitVec 1)
+      · -- the hand-off: three steps to `if.then38`
+        obtain ⟨h01, h12, h23⟩ :=
+          for_inc_page_handoff env s c.i c.shr c.prevS c.st0 c.st9 c.st15 bs2 bs3
+            c.b c.ent hinv.pc hinv.index hinv.bound hinv.prevS hinv.st0 hinv.st9
+            hinv.st15 hinv.gate hinv.base hinv.emit hloop hj57 hread2' hread3' hbit
+        refine ⟨asciiHandoffState env s c v, 3, by omega,
+          AsciiTerm.handoff env s c bs2 bs3 v hinv hread2 hread3 rfl, fun k => ?_⟩
+        exact runFuel_jump3 h01 h12 h23 k
+      · -- the back edge: three steps to the next latch, then the same induction
+        have hbit0 : evalICmp .eq (ifEndTest v.w2 v.w3) 0 = 0 := by
+          rcases bitVec1_eq_zero_or_one (evalICmp .eq (ifEndTest v.w2 v.w3) 0) with h | h
+          · exact h
+          · exact absurd h hbit
+        obtain ⟨h01, h12, h23, hinv'⟩ :=
+          asciiInv_step env s c bs2 bs3 hinv hloop hj57 hread2 hread3 hbit0
+        have hgap' : (asciiNext c bs2 bs3).b
+            + 64 * (asciiNext c bs2 bs3).shr.toNat ≤ (asciiNext c bs2 bs3).ent := by
+          simpa only [asciiNext] using hgap
+        have hdoc' : ∀ j, j < (asciiNext c bs2 bs3).shr.toNat →
+            readBytes (asciiNext c bs2 bs3).mem ((asciiNext c bs2 bs3).b + 64 * j) 64
+              = some (doc j) := by
+          intro j hj
+          have hmem : (asciiNext c bs2 bs3).mem
+              = writeBytes c.mem (c.ent + 8 * (c.i + 1).toNat) (natToBytes v.or16.toNat 8) := by
+            simp only [asciiNext, v]
+            rw [asciiValues_arrayidx c bs2 bs3 hj57]
+          have hb' : (asciiNext c bs2 bs3).b = c.b := rfl
+          have hshr' : (asciiNext c bs2 bs3).shr = c.shr := rfl
+          have hj' : j < c.shr.toNat := by simpa only [hshr'] using hj
+          rw [hmem, hb']
+          exact readBytes_writeBytes_doc c.mem _ (c.ent + 8 * (c.i + 1).toNat)
+            c.b c.shr.toNat doc hdoc (by omega) j hj'
+        have hmeasure' : (asciiNext c bs2 bs3).shr.toNat
+            - ((asciiNext c bs2 bs3).i.toNat + 1) = r := by
+          rw [show (asciiNext c bs2 bs3).shr = c.shr from rfl,
+            show (asciiNext c bs2 bs3).i = c.i + 1 from rfl, hsucc]
+          omega
+        obtain ⟨e, j, hjle, hterm, hfuel⟩ :=
+          asciiInv_runFuel_aux r E' s3 (asciiNext c bs2 bs3) doc hmeasure' hshr
+            hinv' hgap' hdoc'
+        refine ⟨e, 3 + j, by omega, hterm, fun k => ?_⟩
+        rw [show 3 + j + k = 3 + (j + k) from by omega,
+          runFuel_jump3 h01 h12 h23 (j + k)]
+        exact hfuel k
+
+/-- **The phase's run from a latch.**  The auxiliary form at the latch's own
+measure, `shr - (i + 1)` passes to go. -/
+theorem asciiInv_runFuel (env : Env) (s : State) (c : AsciiCarry)
+    (doc : Nat → List UInt8) (hshr : c.shr.toNat < 2 ^ 57) (hinv : AsciiInv env s c)
+    (hgap : c.b + 64 * c.shr.toNat ≤ c.ent)
+    (hdoc : ∀ j, j < c.shr.toNat → readBytes c.mem (c.b + 64 * j) 64 = some (doc j)) :
+    ∃ (e : State) (j : Nat),
+      j ≤ 3 * (c.shr.toNat - (c.i.toNat + 1)) + 4 ∧ AsciiTerm e ∧
+        ∀ k, runFuel s1BlocksCalls (j + k) s1BlocksFunction (stateAt env s)
+          = runFuel s1BlocksCalls k s1BlocksFunction e :=
+  asciiInv_runFuel_aux (c.shr.toNat - (c.i.toNat + 1)) env s c doc rfl hshr hinv hgap hdoc
+
+/-- **The phase from the preheader's seed.**  The preheader's first pass lands in
+`asciiInv_seed`'s invariant with the index at one, so the phase runs from there to
+`for.end101` or `if.then38` within `3 * (shr - 1) + 4` control steps — three per
+remaining pass and the terminal's charge.  The seed's own store is at `%ent`, above
+the document, so the blocks the recursion reads are the caller's. -/
+theorem asciiPhase_from_seed (env : Env) (s : State) (arm : BitVec 64)
+    (bs2 bs3 : List UInt8) (b ent : Nat) (shr : BitVec 64) (doc : Nat → List UInt8)
+    (harm : lookupName env "%arm" = some (.int 64 arm))
+    (hgate : evalICmp .eq (arm &&& 2) 0 = 1)
+    (hshr : lookupName env "%shr" = some (.int 64 shr))
+    (hb : lookupName env "%b" = some (.ptr b))
+    (hent : lookupName env "%ent" = some (.ptr ent))
+    (hnpos : 0 < shr.toNat) (hshr57 : shr.toNat < 2 ^ 57)
+    (hgap : b + 64 * shr.toNat ≤ ent)
+    (hdoc : ∀ j, j < shr.toNat → readBytes s.mem (b + 64 * j) 64 = some (doc j)) :
+    let v := forBodyValues 0 0 0 0 0 bs2 bs3 b ent
+    let E := ifEndEnv (forBodyOut (lrPhEnv env arm) v) v.w2 v.w3
+    let s1 := stateAt E
+      { s with
+        pc := "for.inc",
+        pre := some "if.end",
+        mem := writeBytes s.mem v.arrayidx (natToBytes v.or16.toNat 8) }
+    ∃ (e : State) (j : Nat), j ≤ 3 * (shr.toNat - 1) + 4 ∧ AsciiTerm e ∧
+      ∀ k, runFuel s1BlocksCalls (j + k) s1BlocksFunction (stateAt E s1)
+        = runFuel s1BlocksCalls k s1BlocksFunction e := by
+  intro v E s1
+  let c0 : AsciiCarry :=
+    { i := v.i, prevS := v.shr17, st0 := v.shrII, st9 := v.conv13II, st15 := v.shrI,
+      b := b, ent := ent, shr := shr,
+      mem := writeBytes s.mem v.arrayidx (natToBytes v.or16.toNat 8) }
+  have hseed : AsciiInv E s1 c0 :=
+    asciiInv_seed env s arm bs2 bs3 b ent shr harm hgate hshr hb hent hnpos
+  have hgap0 : c0.b + 64 * c0.shr.toNat ≤ c0.ent := hgap
+  have hmem : c0.mem = writeBytes s.mem ent (natToBytes v.or16.toNat 8) := by
+    show writeBytes s.mem v.arrayidx (natToBytes v.or16.toNat 8) = _
+    rw [forBodyValues_zero_arrayidx]
+  have hdoc0 : ∀ j, j < c0.shr.toNat →
+      readBytes c0.mem (c0.b + 64 * j) 64 = some (doc j) := by
+    intro j hj
+    have hb0 : c0.b = b := rfl
+    have hshr0 : c0.shr = shr := rfl
+    have hj' : j < shr.toNat := by simpa only [hshr0] using hj
+    rw [hmem, hb0]
+    rw [readBytes_writeBytes_below s.mem (natToBytes v.or16.toNat 8) 64
+      (b + 64 * j) ent (by omega)]
+    exact hdoc j hj'
+  obtain ⟨e, j, hjle, hterm, hfuel⟩ :=
+    asciiInv_runFuel_aux (c0.shr.toNat - (c0.i.toNat + 1)) E s1 c0 doc rfl hshr57
+      hseed hgap0 hdoc0
+  refine ⟨e, j, ?_, hterm, fun k => hfuel k⟩
+  have hcz : c0.i = 0 := rfl
+  have hczs : c0.shr = shr := rfl
+  rw [hczs, hcz] at hjle
+  simpa using hjle
+
+/-! ### The phase's charge in the record's budget
+
+The phase's run is three steps per remaining pass and four for the terminal, so
+from the preheader's seed its charge is `3 * (shr - 1) + 4`.  The entry's
+`%shr = n >>> 6` makes `shr` the document's block count `blocksOf n`, and the
+record's budget — eight steps per block plus the constant blocks around the loops
+(`s1BlocksBudget`) — contains that charge with room to spare: three of the eight
+per block cover the phase, and the constant covers the entry, the preheader, the
+cleanup, the peeled block and the done block.  `s1_blocks_refines` is the
+composition this term is spent in: the bound's arm continues at `for.end101`'s
+`phi` run, and the hand-off's at `if.then38`, whose window is the terminal's
+`%add.ptr` and index above. -/
+
+/-- **The phase's charge inside the record's budget.**  With the block count the
+unit's arguments name, the phase's `3 * (blocksOf n - 1) + 4` fits in
+`Γ_s1_blocks`'s budget `8 * blocksOf n + 32`. -/
+theorem asciiPhase_charge_le (args : List Value) (mem : Mem) (n : Nat)
+    (hn : s1BlocksLength args = some n) :
+    3 * (JsonScanSpec.blocksOf n - 1) + 4 ≤ s1BlocksBudget args mem := by
+  simp only [s1BlocksBudget, hn]
+  omega
+
 /-! ### Axiom footprints
 
 The block runs and the branch lemmas compute from the block's own literal lists;
@@ -5193,5 +5545,16 @@ intrinsic arms. -/
 #print axioms for_inc_exitcond_iff
 #print axioms asciiInv_exit
 #print axioms asciiInv_seed
+#print axioms readBytes_writeBytes_doc
+#print axioms readBytes_writeBytes_emitWord
+#print axioms asciiValues_arrayidx
+#print axioms forBodyValues_zero_arrayidx
+#print axioms asciiPass_hj
+#print axioms runFuel_jump3
+#print axioms lookupName_asciiHandoff_addPtr
+#print axioms lookupName_asciiHandoff_i
+#print axioms asciiInv_runFuel
+#print axioms asciiPhase_from_seed
+#print axioms asciiPhase_charge_le
 
 end LeanLLVM.Refinement.JsonS1BlocksRefine
