@@ -1318,7 +1318,7 @@ theorem asciiExitCells_run {esc : Calls} (env : Env) (s : State) (c : AsciiCarry
   exact s1BlocksAsciiExit_run env s c bs nb g arm n (n &&& 63) conv
     hinv.toAsciiInv hread hbs hshrEq hinv.and_cell hinv.n_cell hinv.conv_cell
     hinv.arm_cell hgateZero rfl hbs63 hnonzero hlast hsilent hstage hstagePeel
-    hstageByte
+    (fun last hr => hstageByte last (c.b + (n.signExtend 64).toNat - 1) hr)
 
 /-- **The fused loop's exit to the return, from the running environment.**  The
 loop's terminal at `for.end101` runs to the return; the exit's cells are the
@@ -1362,7 +1362,8 @@ theorem fusedExitCells_run {esc : Calls} (env : Env) (s : State) (c : FusedCarry
   exact s1BlocksFusedExit_run env s c (n &&& 63) n conv bs136 bs137 bs nb g arm
     hexit hcells.and_cell hcells.n_cell hexit.base hcells.conv_cell hcells.arm_cell
     hasciilen hpos h136 h137 hshr63 hnonzero hlast hgateZero hsilent hstage
-    hstagePeel hstageByte
+    hstagePeel
+    (fun last hr => hstageByte last (c.b + (n.signExtend 64).toNat - 1) hr)
 /-! ### The hand-off's environment builders
 
 The hand-off terminal's environment is `asciiHandoffEnv`; the join `if.end50`
