@@ -19,8 +19,8 @@ removed before the parser saw them.  This module
 Step 3 needs no bit-blasting: the fixtures are emitted at `-O0`, so their
 instruction sequences are the source expressions operation for operation, and
 the equalities below are rewrites.  The `CommaMask` side enters through
-`byteLoop_eq_spec` and `swar_eq_spec`, whose `bv_decide`
-footprint is pinned in `LeanLLVMTest/Refinement.lean` and is unchanged here.
+`byteLoop_eq_spec` and `swar_eq_spec`, whose kernel-checked axiom footprint is
+pinned in `LeanLLVMTest/Refinement.lean` and is unchanged here.
 -/
 import LeanLLVM.Parser
 import LeanLLVM.Semantics
