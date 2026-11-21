@@ -277,7 +277,23 @@ structure S1BlocksRunPartsAt (esc : Calls) (args : List Value) (mem : Mem)
   /-- The array's separation at the peel's call. -/
   xpSep : c.ent + 8 * blocksOf bs.length ≤ xp ∨
     xp + 4 * (xn + 64 * blocksOf bs.length + batchReserve) ≤ c.ent
-  /-- The exit's charge at the terminal's own `ret` and the outcome's memory. -/
+  /-- The exit's charge at the terminal's own `ret` and the outcome's memory.
+
+  **This field cannot be instantiated on the calling arm.**  Its charge is the
+  silent merge's `exitCharge` (`5`), while a `for.end101` terminal with
+  `arm &&& 2 ≠ 0` costs that block's step, `if.then103`'s store and
+  `tail_escape_run`'s four — `6`, `JsonS1BlocksRunCharge.escapeExitCharge`
+  (`JsonS1BlocksRunCharge.escapeExitCharge_eq_six`) — so no charge at most
+  `exitCharge` completes that call.  Its terminal is also universally
+  quantified: `∀ e, ExitTermCells … e → … = some (… out.mem)` demands one memory
+  for every terminal, and distinct `FusedExit` carries have distinct memories.
+  The shape is therefore usable only where a single terminal and the silent
+  merge suffice; it is kept as stated, and the corrected parts for the calling
+  arm are `JsonS1BlocksParts.S1BlocksRunPartsAt`, whose `runBounded` names one
+  terminal and charges its exit at `escapeExitCharge`.  The residual derived
+  here (`s1BlocksResiduals_of_atParts`) carries the same `exitCharge` bound in
+  its own exit segment, so this module's composition is the silent arm's; the
+  calling arm's is `JsonS1BlocksParts`'. -/
   exitBounded : ∃ jE : Nat, jE ≤ exitCharge ∧
     ∀ e : State, ExitTermCells b (BitVec.ofNat 64 bs.length) (entryGate arm) arm e →
       runFuel (s1BlocksCallsEsc esc) jE s1BlocksFunction e =
