@@ -30,10 +30,12 @@ one per quote — and not the token-start stream `[0,1,5,6,10]`.  `WalkAlignQuot
 start lane is its closing quote, so `close = lane k + 1` is `span.stop - 1` and the
 body extent `close - idxprom - 1` (`%sub260.i`) is the span's body.  The arm's
 composition exposes the record it appends — `stringPath_seg` ends at the merge carry
-with `∃ key len off, Cd.events = C.events ++ [str key len off]` — and
-`row_stringPlainDocument`/`row_stringArenaDocument` are the document's rows at that
-stream, with the entry index moving by two at each string (`%inc208.i`) and the token
-count by one.
+with `∃ key len off, Cd.events = C.events ++ [str key len off]`, and at the literal
+selector with that arm's own extent and span word — so `stringArmSegment` produces
+the segment, the kept index and the record, and `row_stringPlainDocument_arm` calls
+the plain row at the two lane heads.  The entry index moves by two at each string
+(`%inc208.i`) and the token count by one.  The arena form's arm and the general
+document's induction are what remain after this one.
 
 There is no `sorry`, `admit` or `native_decide`; the axiom pins are at the end.
 -/
@@ -147,6 +149,176 @@ theorem row_numberDocument_arm {m0 : Mem} {G : WalkGeom m0} {t : Tape}
     (sd₂ := WalkScope.scMergeF f₂) hal hspans hbs hent htokens hdec hpre₀ hk₀ hk₁ hev₁
     hInv₁ hseg₁ hkc₁ hevc₁ hk₃ hev₃ hInv₃ hseg₂ hkc₂ hevc₂
 
+/-! ### The string arm at the staged stream
+
+`["ab","cd"]`'s two strings are at the staged stream's lanes one and four.  The arm's
+composition is `stringPath_seg`: fifteen links from `NodeBlock21` to the merge, the
+entry index kept and one record appended.  The record it appends is the *literal*
+arm's when the body's answer is `1` — `%sub260.i`'s extent for the length and
+`%or.i`'s position with the top bit set for the span — and that is the form
+`row_stringPlainDocument` names.  `stringPath_seg` exposes the arm's record at that
+selector; the two readings are converted at the document's lanes below.
+
+**What the arm still takes.**  The bundle `HstringFacts` supplies the head's byte,
+counts, call and body answer; `HstringResidue` carries nothing.  The literal
+selector `f.y = 1` and the body's raw read-back are the arm's premises, as the
+number row's `f.ev` read-back is its own.  The heads' blocks are the loop's
+(`walkLoopHead` is `"NodeBlock21"`). -/
+
+/-- **The literal arm's span word.**  `strOr` is the position's successor with the
+top bit set; below `2 ^ 32` the successor does not wrap, so the word is
+`plainSpan` of the next position. -/
+theorem strOr_toNat_plainSpan {x : BitVec 32} (h32 : x.toNat + 1 < 2 ^ 32) :
+    (strOr x).toNat = plainSpan (x.toNat + 1) := by
+  have hlit : (9223372036854775808 : Nat) = 2 ^ 63 := by decide
+  unfold strOr plainSpan
+  rw [hlit]
+  have h1 : (BitVec.ofNat 32 1).toNat = 1 := by decide
+  have hx1 : (x + BitVec.ofNat 32 1).toNat = x.toNat + 1 := by
+    rw [BitVec.toNat_add, h1]
+    exact Nat.mod_eq_of_lt h32
+  have hof : (BitVec.ofNat 64 (x + BitVec.ofNat 32 1).toNat).toNat = x.toNat + 1 := by
+    rw [BitVec.toNat_ofNat, hx1]
+    exact Nat.mod_eq_of_lt (by
+      have hp : (2 : Nat) ^ 32 < 2 ^ 64 := by decide
+      omega)
+  have hhi : (BitVec.ofNat 64 (2 ^ 63)).toNat = 2 ^ 63 := by
+    rw [BitVec.toNat_ofNat]
+    exact Nat.mod_eq_of_lt (by decide)
+  rw [BitVec.toNat_or, hof, hhi]
+  exact Nat.or_two_pow_eq_add_of_lt (by
+    have hp : (2 : Nat) ^ 32 < 2 ^ 63 := by decide
+    omega)
+
+/-- **The literal string arm's segment, its index and its record.**  `stringPath_seg`
+composes the fifteen links and keeps the entry index; its record is the literal
+arm's, at the bundle's own extent and the position's successor.  The row's record
+is this one read at the document's lanes. -/
+theorem stringArmSegment {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (hblock : C.block = walkLoopHead) (hInv : WalkInv G C s)
+    (f : WalkScope.HstringFacts G C s) (hsp0 : C.sp = 0)
+    (R : WalkScope.HstringResidue G C s f)
+    (hR8 : evalICmp .slt f.y (BitVec.ofNat 32 1) = 0)
+    (hy1 : evalICmp .eq f.y (BitVec.ofNat 32 1) = 1) :
+    ∃ (Cd : WalkCarry G) (sd : State),
+      WalkScope.WalkSegment (stage2Calls stage2SubCalls) G C s Cd sd 15 ∧
+      Cd.k = C.k ∧
+      Cd.events = C.events ++ [EventRecord.str false
+        ((BitVec.ofNat 64 f.ext).toNat % 2 ^ 32)
+        (strOr (BitVec.ofNat 32 (entryPos G C.k))).toNat] := by
+  obtain ⟨Cd, sd, hseg, -, hk, -, -, -, -, -, hrec⟩ :=
+    WalkScope.stringPath_seg G C s (by simpa [walkLoopHead] using hblock) hInv f hsp0 R hR8
+  exact ⟨Cd, sd, hseg, hk, hrec hy1⟩
+
+/-- **The document `["ab","cd"]`'s row from the two literal string arms.**  The heads
+are at lanes one and four; the segments, their kept indices and their records are
+`stringArmSegment`'s, and the records' raw readings are converted at the document's
+lanes — the extent `4 - 1 - 1 = 2` and `9 - 6 - 1 = 2`, the spans `plainSpan 2` and
+`plainSpan 7`.  The next carries after each merge (`%inc208.i`) and the comma's
+silent advance stay the walk's premises, as they are for the number document. -/
+theorem row_stringPlainDocument_arm {m0 : Mem} {G : WalkGeom m0} {t : Tape}
+    {arena : List UInt8} {C₀ C₁ C₂ C₃ C₄ C₅ : WalkCarry G}
+    {s₁ s₃ : State} {v : JSON.Value}
+    (hal : WalkAlignQuoted G t)
+    (hbs : G.bs = stringDocumentBytes) (hent : G.ent = [0, 1, 4, 5, 6, 9, 10])
+    (htokens : t.tokens = [.punct .openBracket ⟨0, 1⟩, .string ⟨1, 5⟩,
+      .punct .comma ⟨5, 6⟩, .string ⟨6, 10⟩, .punct .closeBracket ⟨10, 11⟩])
+    (hdec : decodeTape t = some v)
+    (hpre₀ : WalkTracePrefix G arena t C₀) (hk₀ : C₀.k = 0)
+    (hk₁ : C₁.k = C₀.k + 1) (hev₁ : C₁.events = C₀.events ++ [EventRecord.tag 3])
+    (hInv₁ : WalkInv G C₁ s₁) (hblock₁ : C₁.block = walkLoopHead)
+    (f₁ : WalkScope.HstringFacts G C₁ s₁) (hsp0₁ : C₁.sp = 0)
+    (R₁ : WalkScope.HstringResidue G C₁ s₁ f₁)
+    (hR8₁ : evalICmp .slt f₁.y (BitVec.ofNat 32 1) = 0)
+    (hy1₁ : evalICmp .eq f₁.y (BitVec.ofNat 32 1) = 1)
+    (hk₂ : C₂.k = C₁.k + 2)
+    (hev₂ : C₂.events = C₁.events ++
+      [EventRecord.str false (entryPos G (C₁.k + 1) - entryPos G C₁.k - 1)
+        (plainSpan (entryPos G C₁.k + 1))])
+    (hbody₁ : ∀ (sp : Span) (cs : List Nat), bodyCodePoints G.bs sp = some cs →
+      escapeCodePoints ((G.bs.drop (sp.start + 1)).take
+        (entryPos G (C₁.k + 1) - entryPos G C₁.k - 1)) = some cs)
+    (hk₃ : C₃.k = C₂.k + 1) (hev₃ : C₃.events = C₂.events)
+    (hInv₃ : WalkInv G C₃ s₃) (hblock₃ : C₃.block = walkLoopHead)
+    (f₂ : WalkScope.HstringFacts G C₃ s₃) (hsp0₂ : C₃.sp = 0)
+    (R₂ : WalkScope.HstringResidue G C₃ s₃ f₂)
+    (hR8₂ : evalICmp .slt f₂.y (BitVec.ofNat 32 1) = 0)
+    (hy1₂ : evalICmp .eq f₂.y (BitVec.ofNat 32 1) = 1)
+    (hk₄ : C₄.k = C₃.k + 2)
+    (hev₄ : C₄.events = C₃.events ++
+      [EventRecord.str false (entryPos G (C₃.k + 1) - entryPos G C₃.k - 1)
+        (plainSpan (entryPos G C₃.k + 1))])
+    (hbody₂ : ∀ (sp : Span) (cs : List Nat), bodyCodePoints G.bs sp = some cs →
+      escapeCodePoints ((G.bs.drop (sp.start + 1)).take
+        (entryPos G (C₃.k + 1) - entryPos G C₃.k - 1)) = some cs)
+    (hk₅ : C₅.k = C₄.k + 1) (hev₅ : C₅.events = C₄.events ++ [EventRecord.tag 4]) :
+    WalkTraceRow G.bs arena t
+      ([EventRecord.tag 3, EventRecord.str false 2 (plainSpan 2),
+        EventRecord.str false 2 (plainSpan 7), EventRecord.tag 4] : List EventRecord) := by
+  -- the heads' lanes
+  have hk₁v : C₁.k = 1 := by omega
+  have hk₃v : C₃.k = 4 := by omega
+  have hp₁ : entryPos G C₁.k = 1 := by simp [entryPos, hk₁v, hent]
+  have hp₁' : entryPos G (C₁.k + 1) = 4 := by
+    have hk : C₁.k + 1 = 2 := by omega
+    simp [entryPos, hk, hent]
+  have hp₃ : entryPos G C₃.k = 6 := by simp [entryPos, hk₃v, hent]
+  have hp₃' : entryPos G (C₃.k + 1) = 9 := by
+    have hk : C₃.k + 1 = 5 := by omega
+    simp [entryPos, hk, hent]
+  -- the first string: the arm's segment, keep and record
+  obtain ⟨Cd₁, sd₁, hseg₁, hkc₁, hevc₁raw⟩ :=
+    stringArmSegment hblock₁ hInv₁ f₁ hsp0₁ R₁ hR8₁ hy1₁
+  have hf₁ : f₁.ext = 2 := by
+    have h := f₁.hext
+    have hix := f₁.hixPos
+    omega
+  have hlen₁ : (BitVec.ofNat 64 f₁.ext).toNat % 2 ^ 32
+      = entryPos G (C₁.k + 1) - entryPos G C₁.k - 1 := by
+    rw [hf₁, hp₁', hp₁, BitVec.toNat_ofNat]
+    decide
+  have hoff₁ : (strOr (BitVec.ofNat 32 (entryPos G C₁.k))).toNat
+      = plainSpan (entryPos G C₁.k + 1) := by
+    have hx : (BitVec.ofNat 32 (entryPos G C₁.k)).toNat = entryPos G C₁.k := by
+      rw [BitVec.toNat_ofNat]
+      exact Nat.mod_eq_of_lt (by rw [hp₁]; decide)
+    simpa [hx] using strOr_toNat_plainSpan (x := BitVec.ofNat 32 (entryPos G C₁.k))
+      (by rw [hx, hp₁]; decide)
+  have hevc₁ : Cd₁.events = C₁.events ++
+      [EventRecord.str false (entryPos G (C₁.k + 1) - entryPos G C₁.k - 1)
+        (plainSpan (entryPos G C₁.k + 1))] := by
+    rw [hevc₁raw, hlen₁, hoff₁]
+  -- the second string
+  obtain ⟨Cd₂, sd₂, hseg₂, hkc₂, hevc₂raw⟩ :=
+    stringArmSegment hblock₃ hInv₃ f₂ hsp0₂ R₂ hR8₂ hy1₂
+  have hf₂ : f₂.ext = 2 := by
+    have h := f₂.hext
+    have hix := f₂.hixPos
+    omega
+  have hlen₂ : (BitVec.ofNat 64 f₂.ext).toNat % 2 ^ 32
+      = entryPos G (C₃.k + 1) - entryPos G C₃.k - 1 := by
+    rw [hf₂, hp₃', hp₃, BitVec.toNat_ofNat]
+    decide
+  have hoff₂ : (strOr (BitVec.ofNat 32 (entryPos G C₃.k))).toNat
+      = plainSpan (entryPos G C₃.k + 1) := by
+    have hx : (BitVec.ofNat 32 (entryPos G C₃.k)).toNat = entryPos G C₃.k := by
+      rw [BitVec.toNat_ofNat]
+      exact Nat.mod_eq_of_lt (by rw [hp₃]; decide)
+    simpa [hx] using strOr_toNat_plainSpan (x := BitVec.ofNat 32 (entryPos G C₃.k))
+      (by rw [hx, hp₃]; decide)
+  have hevc₂ : Cd₂.events = C₃.events ++
+      [EventRecord.str false (entryPos G (C₃.k + 1) - entryPos G C₃.k - 1)
+        (plainSpan (entryPos G C₃.k + 1))] := by
+    rw [hevc₂raw, hlen₂, hoff₂]
+  -- the next carries are the merge carries' own
+  have hk₂' : C₂.k = Cd₁.k + 2 := by omega
+  have hev₂' : C₂.events = Cd₁.events := by rw [hev₂, hevc₁]
+  have hk₄' : C₄.k = Cd₂.k + 2 := by omega
+  have hev₄' : C₄.events = Cd₂.events := by rw [hev₄, hevc₂]
+  exact row_stringPlainDocument (Cd₁ := Cd₁) (Cd₂ := Cd₂) hal hbs hent htokens hdec
+    hpre₀ hk₀ hk₁ hev₁ hevc₁ hkc₁ hk₂' hev₂' hbody₁ hk₃ hev₃ hevc₂ hkc₂ hk₄' hev₄'
+    hbody₂ hk₅ hev₅
+
 /-! ### Axiom footprints
 
 Each is the dispatch layer's ceiling rather than the row engine's: the composition's
@@ -164,5 +336,17 @@ branch selections carry `Classical.choice`, as `stringPath_seg`'s fifteen-link o
 /-- info: 'LeanLLVM.Refinement.row_numberDocument_arm' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms row_numberDocument_arm
+
+/-- info: 'LeanLLVM.Refinement.strOr_toNat_plainSpan' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms strOr_toNat_plainSpan
+
+/-- info: 'LeanLLVM.Refinement.stringArmSegment' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms stringArmSegment
+
+/-- info: 'LeanLLVM.Refinement.row_stringPlainDocument_arm' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms row_stringPlainDocument_arm
 
 end LeanLLVM.Refinement
