@@ -71,10 +71,14 @@ from it.
 The residual is three kinds of input, and none is a restatement of a committed
 conclusion:
 
-* **The page's word identity** (`PageModel`).  The store word
-  (`(fusedValues c bs73 bs74).or84 = stage1Word bs c.i.toNat`) is the loop's
-  own arithmetic; `JsonS1BlocksLoopFacts`'s header names it and no module in the
-  tree states it.
+* **The page's word identity's inputs.**  `PageModel` is proved in
+  `JsonS1BlocksPageModel`, which closes the store word
+  (`(fusedValues c bs73 bs74).or84 = stage1Word bs c.i.toNat`) with the
+  `WordIdentities`/`PeelWord` docBlock corollary.  What the induction still takes
+  is the identity's three inputs at every head: the carried classifier state
+  (`PageCarry`), the whole-block bound (`64 * %shr ≤ bs.length`, true of the
+  entry's `%shr = n >>> 6`), and the two windows being the block's halves (the
+  run's read tie).
 * **The accumulator's fold and length** at the exit
   (`packLanes c.u8k = bytesToNat (klAcc bs c.i.toNat)`, `c.u8k.length = 4`).
   The loop's two arms hand on different words — the DFA arm's mask and the merge
@@ -215,15 +219,47 @@ structure PageStep (bs : List UInt8) (c : FusedCarry) (bs73 bs74 : List UInt8) :
   /-- The stored word is the model's entry word. -/
   store : (fusedValues c bs73 bs74).or84 = stage1Word bs c.i.toNat
 
-/-- **The page's word identity, at every head.**  The stored word is the model's
-entry word at the page's own index — the fast-table classifier against the
-specification's six masks, at `for.body54`'s registers. -/
+/-- **The classifier's carry, in the model's spelling.**  The fast tables read
+the block's halves and the loop's three carried state words, and the entry word
+of the specification is the model's word at the block's class carry.  These are
+the facts that tie the loop's carried state to that model, and they are the
+loop's own residual: no module derives the DFA state words from the classifier's
+carry.  `pageCtx` is the model's `Ctx` at the block, with the run's open and
+parity bits chosen from its own odd-run bit (the entry word reads neither). -/
+def pageCtx (bs : List UInt8) (i : Nat) : LeanLLVM.Refinement.JsonS1MasksIR.Ctx :=
+  { p := 0
+    c := 0
+    o := 0
+    lo := blockLo (padded bs) i
+    hi := blockHi (padded bs) i
+    st := classCarryAt (padded bs) ⟨false, false⟩ (64 * i)
+    opened := (classCarryAt (padded bs) ⟨false, false⟩ (64 * i)).oddRun
+    ppar := true }
+
+/-- **The carried state at one head**, as the page's entry word reads it: the
+two-state escaped-quote word, the seed lane and the shift register. -/
+structure PageCarry (bs : List UInt8) (c : FusedCarry) : Prop where
+  /-- The escaped-quote word is the model's `%esc.and00` at the block. -/
+  and00 : c.st0 &&& c.st9 = LeanLLVM.Refinement.JsonS1MasksSteps.escAnd00W
+    (pageCtx bs c.i.toNat)
+  /-- The third state word is the model's seed lane. -/
+  st15 : c.st15 = LeanLLVM.Refinement.JsonS1MasksSteps.seedW (pageCtx bs c.i.toNat)
+  /-- The shift register is the previous block's top scalar lane. -/
+  prevS : c.prevS = (if stage1PrevS bs c.i.toNat then 1 else 0)
+
+/-- **The page's word identity, at every full block.**  The stored word is the
+model's entry word at the page's own index — the fast-table classifier against
+the specification's six masks, at `for.body54`'s registers.  The page processes
+a whole block, so the model's tail clamp is the all-ones word; the two loaded
+words are the block's halves, which the run reads out of the document window;
+and the carried state is `PageCarry`'s.  The block's window is `docBlock`'s. -/
 structure PageModel (bs : List UInt8) : Prop where
   /-- The page's stored word is the model's entry word. -/
   storeW : ∀ (c : FusedCarry) (bs73 bs74 : List UInt8),
-    c.i.toNat < blocksOf bs.length →
-    readBytes c.mem (c.b + 64 * c.i.toNat) 32 = some bs73 →
-    readBytes c.mem (c.b + 64 * c.i.toNat + 32) 32 = some bs74 →
+    64 * (c.i.toNat + 1) ≤ bs.length →
+    PageCarry bs c →
+    bs73 = (docBlock bs c.i.toNat).take 32 →
+    bs74 = (docBlock bs c.i.toNat).drop 32 →
     (fusedValues c bs73 bs74).or84 = stage1Word bs c.i.toNat
 
 /-! ### One page's carry step -/
@@ -344,6 +380,8 @@ theorem loopLatch_page (sel : Calls) (env : Env) (s : State) (c : FusedCarry)
     (hinv : FusedInv env s c gate escBit)
     (hcarry : LoopCarry mem0 xp xn ps bs c)
     (hmodel : PageModel bs)
+    (hstate : ∀ (c : FusedCarry), c.i.toNat < c.shr.toNat → PageCarry bs c)
+    (hshrBlocks : 64 * c.shr.toNat ≤ bs.length)
     (hshr57 : c.shr.toNat < 2 ^ 57)
     (hb3 : 3 ≤ c.b)
     (hshrLe : c.shr.toNat ≤ blocksOf bs.length)
@@ -380,7 +418,6 @@ theorem loopLatch_page (sel : Calls) (env : Env) (s : State) (c : FusedCarry)
         readBytes c'.mem (c.b + 64 * j) 64 = some (docBlock bs j)) ∧
       readBytes c'.mem (c.b - 3) 3 = some [0, 0, 0] := by
   have hi := hinv.index_lt
-  have hi' : c.i.toNat < blocksOf bs.length := by omega
   have hwin : FusedWindows c.mem c.b c.shr.toNat c.i (docBlock bs) :=
     fused_windows c.mem c.b c.shr.toNat c.i (docBlock bs) hb3 hi hzero hdoc
   have hblk : readBytes c.mem (c.b + 64 * c.i.toNat) 64 =
@@ -412,7 +449,7 @@ theorem loopLatch_page (sel : Calls) (env : Env) (s : State) (c : FusedCarry)
               hwin.bs58 hwin.bs59).or281 r.mem) :=
         loopCarry_fusedNext hcarry
           { w73 := h73, w74 := h74
-            store := hmodel.storeW c bs73 bs74 hi' hread73 hread74 }
+            store := hmodel.storeW c bs73 bs74 (by omega) (hstate c hi) h73 h74 }
           (by omega) hblocks64 hkeepPrefix hkeepStream
       exact ⟨_, _, _, 4, by omega, fun j => runFuel_jump4 h01 h12 h23 h34 j,
         { toFusedLatch := hl, model := hcarry' }, rfl, rfl, rfl, rfl, rfl, rfl,
@@ -430,7 +467,7 @@ theorem loopLatch_page (sel : Calls) (env : Env) (s : State) (c : FusedCarry)
               hwin.bs58 hwin.bs59).or281 (fusedStore c bs73 bs74)) :=
         loopCarry_store hcarry
           { w73 := h73, w74 := h74
-            store := hmodel.storeW c bs73 bs74 hi' hread73 hread74 }
+            store := hmodel.storeW c bs73 bs74 (by omega) (hstate c hi) h73 h74 }
           (by omega) hblocks64 hentXp
       have hdoc' := readBytes_fusedStore_doc c bs73 bs74 (docBlock bs) hgap hdoc
       have hzero' : readBytes (fusedStore c bs73 bs74) (c.b - 3) 3 = some [0, 0, 0] := by
@@ -450,7 +487,7 @@ theorem loopLatch_page (sel : Calls) (env : Env) (s : State) (c : FusedCarry)
           (fusedNext c bs73 bs74 c.u8k r.mem) :=
         loopCarry_fusedNext hcarry
           { w73 := h73, w74 := h74
-            store := hmodel.storeW c bs73 bs74 hi' hread73 hread74 }
+            store := hmodel.storeW c bs73 bs74 (by omega) (hstate c hi) h73 h74 }
           (by omega) hblocks64 hkeepPrefix hkeepStream
       exact ⟨_, _, _, 3, by omega, fun j => runFuel_jump3 h01 h12 h23 j,
         { toFusedLatch := hl, model := hcarry' }, rfl, rfl, rfl, rfl, rfl, rfl,
@@ -464,7 +501,7 @@ theorem loopLatch_page (sel : Calls) (env : Env) (s : State) (c : FusedCarry)
           (fusedNext c bs73 bs74 c.u8k (fusedStore c bs73 bs74)) :=
         loopCarry_store hcarry
           { w73 := h73, w74 := h74
-            store := hmodel.storeW c bs73 bs74 hi' hread73 hread74 }
+            store := hmodel.storeW c bs73 bs74 (by omega) (hstate c hi) h73 h74 }
           (by omega) hblocks64 hentXp
       have hdoc' := readBytes_fusedStore_doc c bs73 bs74 (docBlock bs) hgap hdoc
       have hzero' : readBytes (fusedStore c bs73 bs74) (c.b - 3) 3 = some [0, 0, 0] := by
@@ -497,6 +534,8 @@ theorem loopRun_carry_aux (sel : Calls) (mem0 : Mem) (xp xn : Nat) (ps : List Na
       c.shr.toNat ≤ blocksOf bs.length →
       blocksOf bs.length < 2 ^ 64 →
       LoopInv mem0 xp xn ps bs env s c gate escBit →
+      (∀ (c : FusedCarry), c.i.toNat < c.shr.toNat → PageCarry bs c) →
+      64 * c.shr.toNat ≤ bs.length →
       3 ≤ c.b →
       c.b + 64 * c.shr.toNat ≤ c.ent →
       (∀ j, j < c.shr.toNat →
@@ -519,8 +558,8 @@ theorem loopRun_carry_aux (sel : Calls) (mem0 : Mem) (xp xn : Nat) (ps : List Na
       ∃ (e : State) (j : Nat), j ≤ 5 * r + 5 ∧ LoopTerm mem0 xp xn ps bs e ∧
         ∀ k, runFuel (s1BlocksCallsEsc sel) (j + k) s1BlocksFunction (stateAt env s)
           = runFuel (s1BlocksCallsEsc sel) k s1BlocksFunction e
-  | 0, env, s, c, gate, escBit, hmeasure, hshr57, hshrLe, hblocks64, hinv, hb3, hgap,
-    hdoc, hzero, hentXp, hcallAll, hkeep => by
+  | 0, env, s, c, gate, escBit, hmeasure, hshr57, hshrLe, hblocks64, hinv, hstate,
+    hshrBlocks, hb3, hgap, hdoc, hzero, hentXp, hcallAll, hkeep => by
       have hi : c.i.toNat < c.shr.toNat := hinv.index_lt
       have hsucc : (c.i + 1).toNat = c.i.toNat + 1 :=
         toNat_succ_of_lt (by omega)
@@ -540,8 +579,8 @@ theorem loopRun_carry_aux (sel : Calls) (mem0 : Mem) (xp xn : Nat) (ps : List Na
         -, -⟩ :=
         loopLatch_page sel env s c gate escBit ((docBlock bs c.i.toNat).take 32)
           ((docBlock bs c.i.toNat).drop 32) mem0 xp xn ps bs hinv.toFusedInv hinv.model
-          hmodel hshr57 hb3 hshrLe hblocks64 hgap hdoc hzero hentXp hread73 hread74
-          rc hcCall hkeepDoc hkeepZero hkeepPrefix hkeepStream
+          hmodel hstate hshrBlocks hshr57 hb3 hshrLe hblocks64 hgap hdoc hzero
+          hentXp hread73 hread74 rc hcCall hkeepDoc hkeepZero hkeepPrefix hkeepStream
       have hbit : evalICmp .eq (c.i + 1) c'.shr = 1 := by
         rw [hshr']
         exact (for_inc_exitcond_iff c.i c.shr).1.mpr hbound
@@ -555,8 +594,8 @@ theorem loopRun_carry_aux (sel : Calls) (mem0 : Mem) (xp xn : Nat) (ps : List Na
         fun j => ?_⟩
       rw [show k + 1 + j = k + (1 + j) from by omega, hrun (1 + j),
         runFuel_jump_prefix hstep j]
-  | r + 1, env, s, c, gate, escBit, hmeasure, hshr57, hshrLe, hblocks64, hinv, hb3, hgap,
-    hdoc, hzero, hentXp, hcallAll, hkeep => by
+  | r + 1, env, s, c, gate, escBit, hmeasure, hshr57, hshrLe, hblocks64, hinv, hstate,
+    hshrBlocks, hb3, hgap, hdoc, hzero, hentXp, hcallAll, hkeep => by
       have hi : c.i.toNat < c.shr.toNat := hinv.index_lt
       have hsucc : (c.i + 1).toNat = c.i.toNat + 1 :=
         toNat_succ_of_lt (by omega)
@@ -577,8 +616,8 @@ theorem loopRun_carry_aux (sel : Calls) (mem0 : Mem) (xp xn : Nat) (ps : List Na
         hdoc', hzero'⟩ :=
         loopLatch_page sel env s c gate escBit ((docBlock bs c.i.toNat).take 32)
           ((docBlock bs c.i.toNat).drop 32) mem0 xp xn ps bs hinv.toFusedInv hinv.model
-          hmodel hshr57 hb3 hshrLe hblocks64 hgap hdoc hzero hentXp hread73 hread74
-          rc hcCall hkeepDoc hkeepZero hkeepPrefix hkeepStream
+          hmodel hstate hshrBlocks hshr57 hb3 hshrLe hblocks64 hgap hdoc hzero
+          hentXp hread73 hread74 rc hcCall hkeepDoc hkeepZero hkeepPrefix hkeepStream
       have hbit : evalICmp .eq (c.i + 1) c'.shr = 0 := by
         rw [hshr']
         exact (for_inc_exitcond_iff c.i c.shr).2.mpr hne
@@ -601,7 +640,8 @@ theorem loopRun_carry_aux (sel : Calls) (mem0 : Mem) (xp xn : Nat) (ps : List Na
           (stateAt (ifEnd98Env env' c.i c'.shr)
             { core with pc := "for.body54", pre := some "if.end98" })
           c' gate escBit hmeasure' (by rw [hshr']; exact hshr57) hshrLe' hblocks64
-          { toFusedInv := hinv', model := hl.model } hb3' hgap'
+          { toFusedInv := hinv', model := hl.model } hstate (by rw [hshr']; exact hshrBlocks)
+          hb3' hgap'
           (by simpa only [hb', hshr'] using hdoc')
           (by simpa only [hb', hshr'] using hzero')
           hentXp' hcallAll hkeep
@@ -615,6 +655,8 @@ measure, `%shr - (i + 1)` pages to go. -/
 theorem loopRun_carry (sel : Calls) (mem0 : Mem) (xp xn : Nat) (ps : List Nat)
     (bs : List UInt8) (hmodel : PageModel bs) (env : Env) (s : State)
     (c : FusedCarry) (gate escBit : BitVec 1)
+    (hstate : ∀ (c : FusedCarry), c.i.toNat < c.shr.toNat → PageCarry bs c)
+    (hshrBlocks : 64 * c.shr.toNat ≤ bs.length)
     (hshr57 : c.shr.toNat < 2 ^ 57)
     (hshrLe : c.shr.toNat ≤ blocksOf bs.length)
     (hblocks64 : blocksOf bs.length < 2 ^ 64)
@@ -643,7 +685,7 @@ theorem loopRun_carry (sel : Calls) (mem0 : Mem) (xp xn : Nat) (ps : List Nat)
           = runFuel (s1BlocksCallsEsc sel) k s1BlocksFunction e :=
   loopRun_carry_aux sel mem0 xp xn ps bs hmodel
     (c.shr.toNat - (c.i.toNat + 1)) env s c gate escBit rfl hshr57 hshrLe hblocks64
-    hinv hb3 hgap hdoc hzero hentXp hcallAll hkeep
+    hinv hstate hshrBlocks hb3 hgap hdoc hzero hentXp hcallAll hkeep
 
 /-! ### The exit facts, at `FusedExit` -/
 
