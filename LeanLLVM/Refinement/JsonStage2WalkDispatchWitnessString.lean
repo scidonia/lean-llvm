@@ -2046,13 +2046,19 @@ the last link leaves.
 are taken, one link each, and they converge on `if.end290.i` with the same carry.
 The literal arm's cells are the position's successor with the high bit, and the
 write-back arm's are the decoded length; the merge's two `phi`s select them by the
-predecessor, which is why the arm has to be a case rather than a value. -/
+predecessor, which is why the arm has to be a case rather than a value.
+
+**The appended record is named at each selector**, because the record's fields are
+the arm's own readings and a consumer cannot recover them from the trace alone: the
+existential `l` is the decoded length `%outn.i` receives at the call, the literal
+arm's record is the extent `%sub260.i` with the span word `%or.i`, and the
+write-back arm's is that decoded length with the arena base `f.A.toNat`. -/
 theorem stringPath_seg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     (hhead : C.block = "NodeBlock21") (hInv : WalkInv G C s) (f : HstringFacts G C s)
     (hsp0 : C.sp = 0)
     (R : HstringResidue G C s f)
     (hR8 : evalICmp .slt f.y (BitVec.ofNat 32 1) = 0) :
-    ∃ (Cd : WalkCarry G) (sd : State),
+    ∃ (Cd : WalkCarry G) (sd : State) (l : Nat),
       WalkSegment (stage2Calls stage2SubCalls) G C s Cd sd 15 ∧
       Cd.block = "cleanup478.i" ∧ Cd.k = C.k ∧
       sd.pre = some "if.else334.i" ∧ WalkInv G Cd sd ∧
@@ -2063,7 +2069,11 @@ theorem stringPath_seg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
       (evalICmp .eq f.y (BitVec.ofNat 32 1) = 1 →
         Cd.events = C.events ++ [EventRecord.str false
           ((BitVec.ofNat 64 f.ext).toNat % 2 ^ 32)
-          (strOr (BitVec.ofNat 32 (entryPos G C.k))).toNat]) := by
+          (strOr (BitVec.ofNat 32 (entryPos G C.k))).toNat]) ∧
+      (evalICmp .eq f.y (BitVec.ofNat 32 1) = 0 →
+        Cd.events = C.events ++ [EventRecord.str false
+          ((BitVec.ofNat 64 l).toNat % 2 ^ 32)
+          (BitVec.ofNat 64 f.A.toNat).toNat]) := by
   obtain ⟨r, s10, hseg10, hs10, hretR, hlogBaseR, ⟨l, hreadOutn, hlext⟩⟩ :=
     strPath10 G C s hhead hInv f hsp0 (strArr_of_iter (f := f) hInv.iter.regarr)
       hInv.log_dst hR8 hInv.log_base
@@ -2397,13 +2407,15 @@ theorem stringPath_seg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
           (BitVec.ofNat 64 C.evlen) (BitVec.ofNat 64 G.evcap)
           (strS₁₂t (BitVec.ofNat 32 (entryPos G C.k))
             (strS₁₁ f.y (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))))),
+      l,
       ((((hseg10.trans (WalkSegment.of_link hl11')).trans
         (WalkSegment.of_link hl12')).trans (WalkSegment.of_link hl13')).trans
         (WalkSegment.of_link hl14')).trans (WalkSegment.of_link hl15'),
       rfl, rfl, ?_, hl15'.inv', ?_, ?_,
       ⟨(0 : BitVec 1) = 1, (BitVec.ofNat 64 f.ext).toNat % 2 ^ 32,
         (strOr (BitVec.ofNat 32 (entryPos G C.k))).toNat, rfl⟩,
-      fun _ => rfl⟩
+      fun _ => rfl,
+      fun h => absurd h (by rw [hy1]; decide)⟩
     · simp [strS₁₅, strS₁₄, walkIfThen328OutAt, hnotres]
     · simp [strS₁₅, strS₁₄, walkIfThen328OutAt, strS₁₃, strS₁₂t, strS₁₁, State.bind,
         strS₁₀, strS₉, walkZArenaReserveExitOutAt, strS₈, walkIfEnd256OutAt, strS₇,
@@ -2754,13 +2766,15 @@ theorem stringPath_seg {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State
           (ifElse285OutAt (strS₁₁ f.y
             (strS₁₀ G C f.q f.rd f.xv f.A f.Cc f.ix f.ext r s))
             C.stage.z f.A.toNat l))),
+      l,
       ((((hseg10.trans (WalkSegment.of_link hl11')).trans
         (WalkSegment.of_link hl12')).trans (WalkSegment.of_link hl13')).trans
         (WalkSegment.of_link hl14')).trans (WalkSegment.of_link hl15'),
       rfl, rfl, ?_, hl15'.inv', ?_, ?_,
       ⟨(0 : BitVec 1) = 1, (BitVec.ofNat 64 l).toNat % 2 ^ 32,
         (BitVec.ofNat 64 f.A.toNat).toNat, rfl⟩,
-      fun h => absurd h hy1⟩
+      fun h => absurd h hy1,
+      fun _ => rfl⟩
     · simp [strS₁₅, strS₁₄, walkIfThen328OutAt, hnotres]
     · simp [strS₁₅, strS₁₄, walkIfThen328OutAt, strS₁₃, ifElse285OutAt, strS₁₁,
         State.bind, strS₁₀, strS₉, walkZArenaReserveExitOutAt, strS₈, walkIfEnd256OutAt,
@@ -2806,7 +2820,7 @@ theorem WalkDispatchResult.ofStringMerge {m0 : Mem} (G : WalkGeom m0) (C : WalkC
     (f : HstringFacts G C s) (hsp0 : C.sp = 0) (R : HstringResidue G C s f)
     (hR8 : evalICmp .slt f.y (BitVec.ofNat 32 1) = 0) :
     WalkDispatchResult (stage2Calls stage2SubCalls) G C s := by
-  obtain ⟨Cd, sd, hseg, hsegBlock, hsegK, hsegPre, hInvD, hinc208, hnepM, -, -⟩ :=
+  obtain ⟨Cd, sd, -, hseg, hsegBlock, hsegK, hsegPre, hInvD, hinc208, hnepM, -, -, -⟩ :=
     stringPath_seg G C s hhead hInv f hsp0 R hR8
   have hk2cap : C.k + 2 ≤ G.nep := by
     have := strCount_test G C s hInv f

@@ -30,12 +30,19 @@ one per quote — and not the token-start stream `[0,1,5,6,10]`.  `WalkAlignQuot
 start lane is its closing quote, so `close = lane k + 1` is `span.stop - 1` and the
 body extent `close - idxprom - 1` (`%sub260.i`) is the span's body.  The arm's
 composition exposes the record it appends — `stringPath_seg` ends at the merge carry
-with `∃ key len off, Cd.events = C.events ++ [str key len off]`, and at the literal
-selector with that arm's own extent and span word — so `stringArmSegment` produces
-the segment, the kept index and the record, and `row_stringPlainDocument_arm` calls
-the plain row at the two lane heads.  The entry index moves by two at each string
-(`%inc208.i`) and the token count by one.  The arena form's arm and the general
-document's induction are what remain after this one.
+with `∃ key len off, Cd.events = C.events ++ [str key len off]`, and names each arm's
+record at its own selector: the literal arm's extent and span word, and the
+write-back arm's decoded length `l` and arena base `f.A.toNat` — so
+`stringArmSegment`/`stringArenaArmSegment` produce the segment, the kept index and the
+record, and the two arm rows call the row at the two lane heads.  The entry index
+moves by two at each string (`%inc208.i`) and the token count by one.  The plain row's
+record is fixed by the bundle's extent and the document's lane; the arena record's
+length is the callee's decoded length, so `row_stringArenaDocument` takes it as a
+parameter and `row_stringArenaDocument_arm` states the row at the witnesses the
+segment returns, with the escape unit's read-backs as its antecedent.  At
+`["ab","cd"]` that antecedent is false — an unescaped body takes the literal arm —
+and the literal `(2, 0)`/`(2, 2)` instance is `row_stringArenaDocument_literal`.  The
+general document's induction is what remains after this one.
 
 There is no `sorry`, `admit` or `native_decide`; the axiom pins are at the end.
 -/
@@ -206,16 +213,42 @@ theorem stringArmSegment {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : Sta
       Cd.events = C.events ++ [EventRecord.str false
         ((BitVec.ofNat 64 f.ext).toNat % 2 ^ 32)
         (strOr (BitVec.ofNat 32 (entryPos G C.k))).toNat] := by
-  obtain ⟨Cd, sd, hseg, -, hk, -, -, -, -, -, hrec⟩ :=
+  obtain ⟨Cd, sd, -, hseg, -, hk, -, -, -, -, -, hrec, -⟩ :=
     WalkScope.stringPath_seg G C s (by simpa [walkLoopHead] using hblock) hInv f hsp0 R hR8
   exact ⟨Cd, sd, hseg, hk, hrec hy1⟩
+
+/-- **The write-back string arm's segment, its index and its record.**  The same
+fifteen links at the other selector: `LeafBlock29`'s test on `1` is false, so the
+merge's length cell is `%outn.i`'s decoded length and its offset cell is the arena
+base `f.A.toNat` — the word the reservation read at `%z + 48`.  The record's length
+is left existential because the decoded length is produced at the callee's memory;
+the row names it as its length parameter. -/
+theorem stringArenaArmSegment {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G} {s : State}
+    (hblock : C.block = walkLoopHead) (hInv : WalkInv G C s)
+    (f : WalkScope.HstringFacts G C s) (hsp0 : C.sp = 0)
+    (R : WalkScope.HstringResidue G C s f)
+    (hR8 : evalICmp .slt f.y (BitVec.ofNat 32 1) = 0)
+    (hnot1 : evalICmp .eq f.y (BitVec.ofNat 32 1) = 0) :
+    ∃ (Cd : WalkCarry G) (sd : State) (L : Nat),
+      WalkScope.WalkSegment (stage2Calls stage2SubCalls) G C s Cd sd 15 ∧
+      Cd.k = C.k ∧
+      Cd.events = C.events ++ [EventRecord.str false L f.A.toNat] := by
+  obtain ⟨Cd, sd, l, hseg, -, hk, -, -, -, -, -, -, hrec⟩ :=
+    WalkScope.stringPath_seg G C s (by simpa [walkLoopHead] using hblock) hInv f hsp0 R hR8
+  refine ⟨Cd, sd, (BitVec.ofNat 64 l).toNat % 2 ^ 32, hseg, hk, ?_⟩
+  have hoff : (BitVec.ofNat 64 f.A.toNat).toNat = f.A.toNat := by
+    rw [BitVec.toNat_ofNat]
+    exact Nat.mod_eq_of_lt f.A.isLt
+  rw [hrec hnot1, hoff]
 
 /-- **The document `["ab","cd"]`'s row from the two literal string arms.**  The heads
 are at lanes one and four; the segments, their kept indices and their records are
 `stringArmSegment`'s, and the records' raw readings are converted at the document's
 lanes — the extent `4 - 1 - 1 = 2` and `9 - 6 - 1 = 2`, the spans `plainSpan 2` and
 `plainSpan 7`.  The next carries after each merge (`%inc208.i`) and the comma's
-silent advance stay the walk's premises, as they are for the number document. -/
+silent advance stay the walk's premises, as they are for the number document.  The
+raw-body read-backs are not premises: the row derives them from `hbs` at the tokens'
+spans, where the earlier ∀-over-spans form was false. -/
 theorem row_stringPlainDocument_arm {m0 : Mem} {G : WalkGeom m0} {t : Tape}
     {arena : List UInt8} {C₀ C₁ C₂ C₃ C₄ C₅ : WalkCarry G}
     {s₁ s₃ : State} {v : JSON.Value}
@@ -235,9 +268,6 @@ theorem row_stringPlainDocument_arm {m0 : Mem} {G : WalkGeom m0} {t : Tape}
     (hev₂ : C₂.events = C₁.events ++
       [EventRecord.str false (entryPos G (C₁.k + 1) - entryPos G C₁.k - 1)
         (plainSpan (entryPos G C₁.k + 1))])
-    (hbody₁ : ∀ (sp : Span) (cs : List Nat), bodyCodePoints G.bs sp = some cs →
-      escapeCodePoints ((G.bs.drop (sp.start + 1)).take
-        (entryPos G (C₁.k + 1) - entryPos G C₁.k - 1)) = some cs)
     (hk₃ : C₃.k = C₂.k + 1) (hev₃ : C₃.events = C₂.events)
     (hInv₃ : WalkInv G C₃ s₃) (hblock₃ : C₃.block = walkLoopHead)
     (f₂ : WalkScope.HstringFacts G C₃ s₃) (hsp0₂ : C₃.sp = 0)
@@ -248,9 +278,6 @@ theorem row_stringPlainDocument_arm {m0 : Mem} {G : WalkGeom m0} {t : Tape}
     (hev₄ : C₄.events = C₃.events ++
       [EventRecord.str false (entryPos G (C₃.k + 1) - entryPos G C₃.k - 1)
         (plainSpan (entryPos G C₃.k + 1))])
-    (hbody₂ : ∀ (sp : Span) (cs : List Nat), bodyCodePoints G.bs sp = some cs →
-      escapeCodePoints ((G.bs.drop (sp.start + 1)).take
-        (entryPos G (C₃.k + 1) - entryPos G C₃.k - 1)) = some cs)
     (hk₅ : C₅.k = C₄.k + 1) (hev₅ : C₅.events = C₄.events ++ [EventRecord.tag 4]) :
     WalkTraceRow G.bs arena t
       ([EventRecord.tag 3, EventRecord.str false 2 (plainSpan 2),
@@ -316,8 +343,95 @@ theorem row_stringPlainDocument_arm {m0 : Mem} {G : WalkGeom m0} {t : Tape}
   have hk₄' : C₄.k = Cd₂.k + 2 := by omega
   have hev₄' : C₄.events = Cd₂.events := by rw [hev₄, hevc₂]
   exact row_stringPlainDocument (Cd₁ := Cd₁) (Cd₂ := Cd₂) hal hbs hent htokens hdec
-    hpre₀ hk₀ hk₁ hev₁ hevc₁ hkc₁ hk₂' hev₂' hbody₁ hk₃ hev₃ hevc₂ hkc₂ hk₄' hev₄'
-    hbody₂ hk₅ hev₅
+    hpre₀ hk₀ hk₁ hev₁ hevc₁ hkc₁ hk₂' hev₂' hk₃ hev₃ hevc₂ hkc₂ hk₄' hev₄'
+    hk₅ hev₅
+
+/-- **The document `["ab","cd"]`'s row from the two write-back string arms.**  The
+heads are at lanes one and four; the segments, their kept indices and their records
+are `stringArenaArmSegment`'s, and the records are at the arms' own readings — the
+decoded lengths `L₁`/`L₂` and the arena bases `f₁.A.toNat`/`f₂.A.toNat` — so the row
+is stated at them, not at the document's extent.
+
+**The row's remaining premises move inside the `∃`.**  `stringPath_seg` produces the
+decoded length only existentially and reads it at the callee's memory, so a top-level
+`harena` at that length is not stateable; the arena-slice read-backs and the next
+carries' event equations therefore appear as the implication's antecedent, at the
+witnesses the conclusion names.  They are the escape unit's premises, as the plain
+arm's raw-body read-back is its own.  The offsets' `2 ^ 63` bounds are not premises:
+`WalkInv.logArena_le` and the window's room put `f.A.toNat` below the document length.
+
+**The `["ab","cd"]` instance is empty and correctly so.**  The write-back arm is taken
+only when the body's in-body escape list is non-empty, and each escape shortens the
+decoded length, so `L ≤ ext - 1`; at this document's `ext = 2` that is at most one
+byte, whose code points cannot be the token's two.  The antecedent is false here and
+the implication true: this document takes the literal arm
+(`row_stringPlainDocument_arm`), and the arena interface is inhabited at an escaping
+body.  The fixed `(2, 0)`/`(2, 2)` statement is `row_stringArenaDocument_literal`, not
+an instance of this arm. -/
+theorem row_stringArenaDocument_arm {m0 : Mem} {G : WalkGeom m0} {t : Tape}
+    {arena : List UInt8} {C₀ C₁ C₂ C₃ C₄ C₅ : WalkCarry G}
+    {s₁ s₃ : State} {v : JSON.Value}
+    (hal : WalkAlignQuoted G t)
+    (hbs : G.bs = stringDocumentBytes) (hent : G.ent = [0, 1, 4, 5, 6, 9, 10])
+    (htokens : t.tokens = [.punct .openBracket ⟨0, 1⟩, .string ⟨1, 5⟩,
+      .punct .comma ⟨5, 6⟩, .string ⟨6, 10⟩, .punct .closeBracket ⟨10, 11⟩])
+    (hdec : decodeTape t = some v)
+    (hpre₀ : WalkTracePrefix G arena t C₀) (hk₀ : C₀.k = 0)
+    (hk₁ : C₁.k = C₀.k + 1) (hev₁ : C₁.events = C₀.events ++ [EventRecord.tag 3])
+    (hInv₁ : WalkInv G C₁ s₁) (hblock₁ : C₁.block = walkLoopHead)
+    (f₁ : WalkScope.HstringFacts G C₁ s₁) (hsp0₁ : C₁.sp = 0)
+    (R₁ : WalkScope.HstringResidue G C₁ s₁ f₁)
+    (hR8₁ : evalICmp .slt f₁.y (BitVec.ofNat 32 1) = 0)
+    (hnot1₁ : evalICmp .eq f₁.y (BitVec.ofNat 32 1) = 0)
+    (hk₂ : C₂.k = C₁.k + 2)
+    (hk₃ : C₃.k = C₂.k + 1)
+    (hInv₃ : WalkInv G C₃ s₃) (hblock₃ : C₃.block = walkLoopHead)
+    (f₂ : WalkScope.HstringFacts G C₃ s₃) (hsp0₂ : C₃.sp = 0)
+    (R₂ : WalkScope.HstringResidue G C₃ s₃ f₂)
+    (hR8₂ : evalICmp .slt f₂.y (BitVec.ofNat 32 1) = 0)
+    (hnot1₂ : evalICmp .eq f₂.y (BitVec.ofNat 32 1) = 0)
+    (hk₄ : C₄.k = C₃.k + 2)
+    (hk₅ : C₅.k = C₄.k + 1) :
+    ∃ (Cd₁ : WalkCarry G) (sd₁ : State) (L₁ : Nat)
+      (Cd₂ : WalkCarry G) (sd₂ : State) (L₂ : Nat),
+      WalkScope.WalkSegment (stage2Calls stage2SubCalls) G C₁ s₁ Cd₁ sd₁ 15 ∧
+      Cd₁.k = C₁.k ∧
+      Cd₁.events = C₁.events ++ [EventRecord.str false L₁ f₁.A.toNat] ∧
+      WalkScope.WalkSegment (stage2Calls stage2SubCalls) G C₃ s₃ Cd₂ sd₂ 15 ∧
+      Cd₂.k = C₃.k ∧
+      Cd₂.events = C₃.events ++ [EventRecord.str false L₂ f₂.A.toNat] ∧
+      ((C₂.events = Cd₁.events ∧ C₃.events = C₂.events ∧
+        C₄.events = Cd₂.events ∧ C₅.events = C₄.events ++ [EventRecord.tag 4] ∧
+        (∀ cs : List Nat, bodyCodePoints G.bs ⟨1, 5⟩ = some cs →
+          escapeCodePoints ((arena.drop f₁.A.toNat).take L₁) = some cs) ∧
+        (∀ cs : List Nat, bodyCodePoints G.bs ⟨6, 10⟩ = some cs →
+          escapeCodePoints ((arena.drop f₂.A.toNat).take L₂) = some cs)) →
+        WalkTraceRow G.bs arena t
+          ([EventRecord.tag 3, EventRecord.str false L₁ f₁.A.toNat,
+            EventRecord.str false L₂ f₂.A.toNat,
+            EventRecord.tag 4] : List EventRecord)) := by
+  obtain ⟨Cd₁, sd₁, L₁, hseg₁, hkc₁, hevc₁⟩ :=
+    stringArenaArmSegment hblock₁ hInv₁ f₁ hsp0₁ R₁ hR8₁ hnot1₁
+  obtain ⟨Cd₂, sd₂, L₂, hseg₂, hkc₂, hevc₂⟩ :=
+    stringArenaArmSegment hblock₃ hInv₃ f₂ hsp0₂ R₂ hR8₂ hnot1₂
+  have hoff₁ : f₁.A.toNat < 2 ^ 63 := by
+    have h1 := hInv₁.logArena_le (A := f₁.A) f₁.hreadA
+    have h2 := f₁.hwin
+    have h3 := G.maxDoc
+    simp only [stage2MaxDocument] at h3
+    omega
+  have hoff₂ : f₂.A.toNat < 2 ^ 63 := by
+    have h1 := hInv₃.logArena_le (A := f₂.A) f₂.hreadA
+    have h2 := f₂.hwin
+    have h3 := G.maxDoc
+    simp only [stage2MaxDocument] at h3
+    omega
+  refine ⟨Cd₁, sd₁, L₁, Cd₂, sd₂, L₂, hseg₁, hkc₁, hevc₁, hseg₂, hkc₂, hevc₂, ?_⟩
+  intro ⟨hev₂, hev₃, hev₄, hev₅, harena₁, harena₂⟩
+  exact row_stringArenaDocument (Cd₁ := Cd₁) (Cd₂ := Cd₂)
+    (L₁ := L₁) (O₁ := f₁.A.toNat) (L₂ := L₂) (O₂ := f₂.A.toNat)
+    hal hbs hent htokens hdec hpre₀ hk₀ hk₁ hev₁ hevc₁ hkc₁ (by omega) hev₂ hoff₁
+    harena₁ hk₃ hev₃ hevc₂ hkc₂ (by omega) hev₄ hoff₂ harena₂ hk₅ hev₅
 
 /-! ### Axiom footprints
 
@@ -348,5 +462,13 @@ branch selections carry `Classical.choice`, as `stringPath_seg`'s fifteen-link o
 /-- info: 'LeanLLVM.Refinement.row_stringPlainDocument_arm' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms row_stringPlainDocument_arm
+
+/-- info: 'LeanLLVM.Refinement.stringArenaArmSegment' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms stringArenaArmSegment
+
+/-- info: 'LeanLLVM.Refinement.row_stringArenaDocument_arm' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms row_stringArenaDocument_arm
 
 end LeanLLVM.Refinement
