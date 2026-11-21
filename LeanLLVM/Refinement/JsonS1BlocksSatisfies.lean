@@ -31,9 +31,13 @@ arm lemmas meet in one bundle, `S1BlocksFacts`, exactly as
 The four loop residuals are named by `S1BlocksTail`'s disjuncts rather than
 hidden:
 
-* `EntryPrefix` and `EntryFrame` — the fused loop's per-slot store reading and
-  its frame, at the memory the loop hands the tail (`JsonS1BlocksRecordFrame`
-  states them; the loop lane's invariant supplies them).
+* `EntryPrefix` and the run's frame — the fused loop's per-slot store reading,
+  and the frame at the memory the loop hands the tail (`JsonS1BlocksRecordFrame`
+  states both; the loop lane's invariant supplies them).  The frame is the
+  one-region `EntryFrame` on the two silent shapes and the post's four-region
+  list at the escape call's count on the third: a page whose escape bit is set
+  calls the list too, so the run's memory is only the caller's outside the
+  array, the stream, the count's slot and the carry.
 * `StreamPrefix` — the stream's prefix at the caller's count, preserved because
   every escape call stores at or above its cursor.  On the escape arm the
   prefix is moved across the call with `escapeReach_streamPrefix`, from the
@@ -56,9 +60,10 @@ the staged one, so both of the post's escape branches hold (with the caller's
 own count and stream as the witnesses).  The peel's silent arm is
 `peel_arm_memory`: the prefix plus the peel's slot, the count and the capacity
 read through the peel's store, and the frame widened to the post's four
-regions.  The escape arm is `escape_arm_memory`: the same entry array, and the
+regions.  The escape arm is `escape_arm_memory`: the same entry array, the
 count, the written segment and the carry pair out of the escape record, at
-`nxp' = xn0 + position.length`.
+`nxp' = xn0 + position.length`, and the post's frame from the run's four-region
+one at `xn0` across the peel's store and the call's segment.
 
 `post_of_carry` reads the returned word's three clauses.  The `arm &&& 2`
 hypotheses the post's two branches carry are the tail's own — a peel that took
@@ -214,12 +219,18 @@ nothing else, so the memory is the loop's and the array is `EntryPrefix` at the
 document's whole block count.  `peelSilent` is `if.then103` followed by the
 merge's `%arm & 2 = 0` arm: the peel's store is the run's last write.
 `peelEscape` is the same store followed by the escape list's call, whose record
-`EscapeReach` pins the final memory to the call's.
+`EscapeReach` pins the final memory to the call's.  Its frame is the post's four
+regions at the count the call was entered with — not the one-region loop frame:
+on `arm & 2 ≠ 0` every page of the loop takes the same call, so the run's memory
+is the caller's outside the entry array, the stream, the count's slot and the
+carry, and the one-region frame is only the silent configuration's.
 
 The bundle carries the caller's count `xn` (the pre's), because that is the
 number the post's silent branch reads at the caller's memory and the number the
 aligned exit's escape branch reads the staged prefix at.  The escape call's own
-cursor is the third disjunct's `xn0`. -/
+cursor is the third disjunct's `xn0`, and the disjunct's array separation is the
+extent that call *touched* (`xn0 + position.length`), which the staging's
+capacity separation at `xn` and the count's room imply. -/
 def S1BlocksTail (mem : Mem) (ent xp nxp xcarry xn : Nat) (arm : BitVec 64)
     (bs : List UInt8) (M : Mem) : Prop :=
   (∃ (memL : Mem) (ps0 : List Nat),
@@ -239,7 +250,8 @@ def S1BlocksTail (mem : Mem) (ent xp nxp xcarry xn : Nat) (arm : BitVec 64)
       M = writeBytes memL (ent + 8 * shr) (natToBytes w.toNat 8)) ∨
   (∃ (memL : Mem) (shr xn0 : Nat) (or135 andv w blk0 : BitVec 64)
       (position ps0 : List Nat) (opened ppar : Bool),
-      EntryFrame mem memL ent (blocksOf bs.length) ∧
+      UnchangedOutside mem memL
+        (escapeCallWriteRegions ent (blocksOf bs.length) xp nxp xcarry xn0) ∧
       EntryPrefix memL ent bs shr ∧
       shr + 1 = blocksOf bs.length ∧
       PeelWordAtModel or135 bs shr ∧
@@ -255,7 +267,7 @@ def S1BlocksTail (mem : Mem) (ent xp nxp xcarry xn : Nat) (arm : BitVec 64)
       position.length ≤ 64 ∧
       xn0 + 64 ≤ xn + 64 * blocksOf bs.length ∧
       (ent + 8 * blocksOf bs.length ≤ xp ∨
-        xp + 4 * (xn0 + 64 * blocksOf bs.length + batchReserve) ≤ ent))
+        xp + 4 * (xn0 + position.length + batchReserve) ≤ ent))
 
 /-! ### The bundle
 
@@ -464,10 +476,10 @@ theorem s1BlocksPost_and_document_of_facts {args : List Value} {mem : Mem} {next
       have hstreamM : StreamPrefix M xp xn0 ps0 :=
         escapeReach_streamPrefix hreach hkeep hcx hprefixPeel
       obtain ⟨hentry, hcountM, hstreamOut, hcarryPair, hframePost⟩ :=
-        escape_arm_memory (bs := bs) (ent := ent) (shr := shr) (xn := xn0) (xp := xp)
+        escape_arm_memory (bs := bs) (ent := ent) (shr := shr) (xn0 := xn0) (xp := xp)
           (nxp := nxp) (xcarry := xcarry) (mem0 := mem) (memL := memL) (M := M)
           (w := w) (position := position) (ps0 := ps0) (opened := opened)
-          (ppar := ppar) hframe hprefix hsucc hslot hreach hstreamM hlen hxpSep
+          (ppar := ppar) hframe hprefix hsucc hslot hreach hstreamM hxpSep
           hp.hentNxp hp.hentXc
       obtain ⟨hdocBlocks, hzeroM⟩ :=
         s1Blocks_document_of_frame (b := b) (ent := ent) (xp := xp) (nxp := nxp)
