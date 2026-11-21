@@ -57,7 +57,8 @@ from it.
   loop facts at the peel, and the array's full read.  `tail_aligned_of_carry` and
   `tail_peel_of_carry` are the committed `S1BlocksTail`'s first two disjuncts at
   the carry; its third, the peel's escape call, is the escape unit's
-  `EscapeReach`, which this module does not stage.
+  `EscapeReach`, which this module does not stage
+  (`JsonS1BlocksEscapeRun.callTail_of_chain`).
 * `onePrefix_of_exit` — the committed one-prefix (`s1BlocksPrefix_exit`) read as
   a `OnePrefix`; its fuel is not exposed there, so the bound is the residual.
 * `s1BlocksInit_entryState`, `s1BlocksRun_at_budget`,
@@ -93,9 +94,12 @@ conclusion:
   remaining composition.  The loop's escape bit is `%tobool95.not`, i.e.
   `arm &&& 2 = 0`, and the page that *calls* is the one whose bit is `0`, so on
   `arm &&& 2 ≠ 0` every page calls and the run's memory is not the caller's
-  outside the array: `S1BlocksTail`'s one-region frame is the calling-free
-  configuration (`arm &&& 2 = 0`, where the loop's bit is the skip arm), which is
-  what `tail_aligned_of_carry` and `tail_peel_of_carry` instantiate.
+  outside the array.  The one-region frame `tail_aligned_of_carry` and
+  `tail_peel_of_carry` instantiate is then the calling-free configuration
+  (`arm &&& 2 = 0`, where the loop's bit is the skip arm), which is the first two
+  disjuncts'; the third disjunct is stated at the four-region frame at the count
+  the pages left, and `JsonS1BlocksEscapeRun.callTail_of_chain` supplies it from
+  the same carry plus the pages' chain.
 -/
 import LeanLLVM.Refinement.JsonS1BlocksLoopFacts
 import LeanLLVM.Refinement.JsonS1BlocksSatisfies

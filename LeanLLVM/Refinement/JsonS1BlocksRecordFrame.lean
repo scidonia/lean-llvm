@@ -48,13 +48,15 @@ the record is sharpened that way a call site has to supply the prefix itself.
 
 ## The frame
 
-`frame_of_peel_call` is the four-region claim: the loop's writes stay inside the
-entry array (`EntryFrame`), the peel's store is inside that same region, and the
-call is silent outside its three.  The three are literally the tail of the post's
-region list (`escapeCallWriteRegions`), so the composition is membership and
-`frame_comp`; the entry array's bytes are outside the call's regions by the
-staging's separations, which is `escapeReach_keepsEntry` and reduces the entry
-clause after the call to the entry clause before it.
+`frame_of_peel_call` is the four-region claim: the run's frame at the count the
+peel's call is entered with (`escapeCallWriteRegions`), the peel's store inside
+the entry array, and the call silent outside its three regions.  The three are
+literally the tail of the post's region list, so the composition is membership
+and `frame_comp`, with the call's segment widening the stream's region to the
+count it left (`escapeCallWriteRegions_widen`).  The entry array's bytes are
+outside the call's regions by the staging's separations at the extent the record
+*touched*, which is `escapeReach_keepsEntry` and reduces the entry clause after
+the call to the entry clause before it.
 
 ## What remains
 
@@ -62,8 +64,11 @@ clause after the call to the entry clause before it.
 
 * `EntryPrefix memL ent bs shr` — each slot before the peel's holds the model's
   word (the loop's per-block tie, not a memory fact about this block);
-* `EntryFrame mem0 memL ent (blocksOf bs.length)` — every write the loop made is
-  inside the entry array;
+* the run's frame — every write the loop and the peel's call made is inside the
+  post's four regions; on a configuration whose pages keep silent that is
+  `EntryFrame mem0 memL ent (blocksOf bs.length)`, and on one whose pages call it
+  is the four-region frame at the count the pages left (`S1BlocksTail`'s third
+  disjunct);
 * `PeelWordAtModel v.or135 bs shr` — the peel's `%or135` is the last block's
   `entryMask64` at the loop's carried state and run start;
 * `StreamPrefix` at the run's memory — the stream's prefix, which the caller
@@ -125,6 +130,20 @@ theorem frame_write_inside {m0 m : Mem} {lo w a : Nat} {bs : List UInt8}
     UnchangedOutside m0 (writeBytes m a bs) [(lo, w)] := by
   intro x hx
   have hx' : ¬ (lo ≤ x ∧ x < lo + w) := hx (lo, w) List.mem_cons_self
+  have hout : x < a ∨ a + bs.length ≤ x := by omega
+  rw [readByte_writeBytes_outside m bs hout]
+  exact h x hx
+
+/-- **A store inside a list's head region leaves a frame over the list.**  The
+head is the region the store lies in — the entry array, when the list is the
+four-region frame — and the tail is unaffected. -/
+theorem frame_write_in_region {m0 m : Mem} {R : List (Nat × Nat)} {lo w a : Nat}
+    {bs : List UInt8}
+    (h : UnchangedOutside m0 m ((lo, w) :: R))
+    (ha : lo ≤ a) (hb : a + bs.length ≤ lo + w) :
+    UnchangedOutside m0 (writeBytes m a bs) ((lo, w) :: R) := by
+  intro x hx
+  have hx' : ¬ (lo ≤ x ∧ x < lo + w) := fun hc => hx (lo, w) List.mem_cons_self hc
   have hout : x < a ∨ a + bs.length ≤ x := by omega
   rw [readByte_writeBytes_outside m bs hout]
   exact h x hx
@@ -389,6 +408,24 @@ theorem escapeCallWriteRegions_eq_post (ent blocks xp nxp xcarry nxp' : Nat) :
       [(ent, 8 * blocks), (xp, 4 * (nxp' + batchReserve)), (nxp, 8), (xcarry, 16)] :=
   rfl
 
+/-- **The four-region frame widens with the stream's count.**  A frame over the
+list at `xnA` is a frame at `xnB ≥ xnA`: the stream region at `xnB` contains the
+one at `xnA`, and the other three regions are the same pairs. -/
+theorem escapeCallWriteRegions_widen {mem0 m : Mem} {ent blocks xp nxp xcarry xnA xnB : Nat}
+    (h : UnchangedOutside mem0 m (escapeCallWriteRegions ent blocks xp nxp xcarry xnA))
+    (hxn : xnA ≤ xnB) :
+    UnchangedOutside mem0 m (escapeCallWriteRegions ent blocks xp nxp xcarry xnB) :=
+  UnchangedOutside.widen h (fun a ha r hr => by
+    simp only [escapeCallWriteRegions, escapeCallRegions, List.mem_cons,
+      List.not_mem_nil, or_false] at hr ⊢
+    rcases hr with rfl | rfl | rfl | rfl
+    · exact ha (ent, 8 * blocks)
+        (by simp [escapeCallWriteRegions, escapeCallRegions])
+    · exact fun hc => ha (xp, 4 * (xnB + batchReserve))
+        (by simp [escapeCallWriteRegions, escapeCallRegions]) ⟨hc.1, by omega⟩
+    · exact ha (nxp, 8) (by simp [escapeCallWriteRegions, escapeCallRegions])
+    · exact ha (xcarry, 16) (by simp [escapeCallWriteRegions, escapeCallRegions]))
+
 /-- **The peel's store is inside the entry array**, so it leaves the loop's frame
 in place. -/
 theorem peelStore_frame {mem0 mem : Mem} {ent blocks shr : Nat} {word : List UInt8}
@@ -397,41 +434,32 @@ theorem peelStore_frame {mem0 mem : Mem} {ent blocks shr : Nat} {word : List UIn
     EntryFrame mem0 (writeBytes mem (ent + 8 * shr) word) ent blocks :=
   frame_write_inside hframe (by omega) (by omega)
 
-/-- **The four-region frame, from the loop's, the peel's store and the call's.**
-The call's three regions are the tail of the post's list, so a byte outside the
-four is outside both the entry array and the call's regions. -/
+/-- **The four-region frame, across the peel's store and the call.**  The frame is
+over the four regions at the count the call was entered with, the peel's store is
+inside the entry array, and the call's three regions are the tail of the post's
+list — so the conclusion is the same list at the count the call left. -/
 theorem frame_of_peel_call {mem0 memL M : Mem} {ent blocks shr : Nat}
-    {word : List UInt8} {xp nxp xcarry nxp' : Nat}
-    (hframe : EntryFrame mem0 memL ent blocks) (hsucc : shr + 1 = blocks)
+    {word : List UInt8} {xp nxp xcarry xnA xnB : Nat}
+    (hframe : UnchangedOutside mem0 memL
+      (escapeCallWriteRegions ent blocks xp nxp xcarry xnA))
+    (hsucc : shr + 1 = blocks)
     (hwlen : word.length = 8)
     (hcall : UnchangedOutside (writeBytes memL (ent + 8 * shr) word) M
-      (escapeCallRegions xp nxp xcarry nxp')) :
+      (escapeCallRegions xp nxp xcarry xnB))
+    (hxn : xnA ≤ xnB) :
     UnchangedOutside mem0 M
-      (escapeCallWriteRegions ent blocks xp nxp xcarry nxp') := by
-  have hpre : UnchangedOutside mem0 (writeBytes memL (ent + 8 * shr) word)
-      (escapeCallWriteRegions ent blocks xp nxp xcarry nxp') :=
-    frame_mono (peelStore_frame hframe hsucc hwlen) (fun r hr => by
-      have hr' : r = (ent, 8 * blocks) := by simpa using hr
-      subst hr'
-      exact List.mem_cons_self)
-  exact frame_comp hpre hcall (fun r hr => List.mem_cons_of_mem _ hr)
+      (escapeCallWriteRegions ent blocks xp nxp xcarry xnB) := by
+  have hwide := escapeCallWriteRegions_widen hframe hxn
+  have hstore : UnchangedOutside mem0 (writeBytes memL (ent + 8 * shr) word)
+      (escapeCallWriteRegions ent blocks xp nxp xcarry xnB) :=
+    frame_write_in_region hwide (by omega) (by omega)
+  exact frame_comp hstore hcall (fun r hr => List.mem_cons_of_mem _ hr)
 
 /-! ### The entry array across the call
 
 The call may write only its three regions; the entry array is separate from each,
 so the array the peel left is the array the post reads.  The separations are the
 staging's, restated at the extent the record's frame names. -/
-
-/-- A staged-capacity separation of the entry array from the stream is a separation
-at the *touched* extent the record's frame names, once the block's positions fit in
-one block. -/
-theorem stream_sep_of_capacity {ent blocks xp xn xn0 len : Nat}
-    (hxn0 : xn0 = xn) (hlen : len ≤ 64) (hblocks : 1 ≤ blocks)
-    (h : ent + 8 * blocks ≤ xp ∨ xp + 4 * (xn + 64 * blocks + batchReserve) ≤ ent) :
-    ent + 8 * blocks ≤ xp ∨ xp + 4 * (xn0 + len + batchReserve) ≤ ent := by
-  rcases h with h | h
-  · exact Or.inl h
-  · exact Or.inr (by omega)
 
 /-- **The call leaves the entry array alone.**  `escapeReach_keepsEntry` at the
 staging's separations: the array the peel wrote is the array the post reads. -/
@@ -470,50 +498,47 @@ the caller's stream prefix as the only hypotheses about anything before the peel
 /-- **The escape arm's memory.**  The entry array (prefix, peel slot, kept across
 the call), the count, the stream, the carry pair, and the four-region frame.
 
+The run's frame is taken at the count the call was entered with — the count the
+count's slot holds — and the call's own segment widens it to the count it left.
 `shr` is the peel's slot index and `w` the word it stores, so `hslot` is
-`if_then103_store_stage1Word`'s conclusion at `v.and137`; the reach's count-in is
-the caller's count `xn` (the record's slot read pins it, as `escape_call_at`
-does). -/
+`if_then103_store_stage1Word`'s conclusion at `v.and137`; the array's separations
+from the call's three regions are the staging's, at the extent the record's frame
+*touched* rather than at a further block's capacity. -/
 theorem escape_arm_memory {blk0 : BitVec 64} {bs : List UInt8}
-    {ent shr xn xp nxp xcarry : Nat} {mem0 memL M : Mem} {w : BitVec 64}
+    {ent shr xn0 xp nxp xcarry : Nat} {mem0 memL M : Mem} {w : BitVec 64}
     {position ps0 : List Nat} {opened ppar : Bool}
-    (hloopFrame : EntryFrame mem0 memL ent (blocksOf bs.length))
+    (hframe : UnchangedOutside mem0 memL
+      (escapeCallWriteRegions ent (blocksOf bs.length) xp nxp xcarry xn0))
     (hprefix : EntryPrefix memL ent bs shr)
     (hsucc : shr + 1 = blocksOf bs.length)
     (hslot : readBytes
       (writeBytes memL (ent + 8 * shr) (natToBytes w.toNat 8)) (ent + 8 * shr) 8 =
         some (wordsOf [stage1Word bs shr]))
-    (hreach : EscapeReach blk0 xp nxp xcarry xn position
+    (hreach : EscapeReach blk0 xp nxp xcarry xn0 position
       (flagBytes opened ++ flagBytes ppar)
       (writeBytes memL (ent + 8 * shr) (natToBytes w.toNat 8)) M)
-    (hstream : StreamPrefix M xp xn ps0)
-    (hlen : position.length ≤ 64)
+    (hstream : StreamPrefix M xp xn0 ps0)
     (hxpSep : ent + 8 * blocksOf bs.length ≤ xp ∨
-      xp + 4 * (xn + 64 * blocksOf bs.length + batchReserve) ≤ ent)
+      xp + 4 * (xn0 + position.length + batchReserve) ≤ ent)
     (hxnSep : ent + 8 * blocksOf bs.length ≤ nxp ∨ nxp + 8 ≤ ent)
     (hxcSep : ent + 8 * blocksOf bs.length ≤ xcarry ∨ xcarry + 16 ≤ ent) :
     readBytes M ent (8 * blocksOf bs.length) = some (wordsOf (stage1Words bs)) ∧
-    readBytes M nxp 8 = some (wordBytes 8 (xn + position.length)) ∧
-    readBytes M xp (4 * (xn + position.length)) =
+    readBytes M nxp 8 = some (wordBytes 8 (xn0 + position.length)) ∧
+    readBytes M xp (4 * (xn0 + position.length)) =
       some (positionsBytes 4 (ps0 ++ position.map fun k => blockAddr blk0 + k)) ∧
     (∃ (st : ClassState) (prevb prevs : Bool), carryPair M xcarry st prevb prevs) ∧
     UnchangedOutside mem0 M
       (escapeCallWriteRegions ent (blocksOf bs.length) xp nxp xcarry
-        (xn + position.length)) := by
-  have hpeelFrame : EntryFrame mem0
-      (writeBytes memL (ent + 8 * shr) (natToBytes w.toNat 8)) ent
-      (blocksOf bs.length) :=
-    peelStore_frame hloopFrame hsucc (natToBytes_length w.toNat 8)
+        (xn0 + position.length)) := by
   have hentP : readBytes (writeBytes memL (ent + 8 * shr) (natToBytes w.toNat 8))
       ent (8 * blocksOf bs.length) = some (wordsOf (stage1Words bs)) :=
     entryWords_of_prefix_store hsucc
       (entryPrefix_read (by omega) hprefix) hslot
-  have hentM := entryWords_kept_by_escape hreach
-    (stream_sep_of_capacity rfl hlen (by omega) hxpSep) hxnSep hxcSep
+  have hentM := entryWords_kept_by_escape hreach hxpSep hxnSep hxcSep
   obtain ⟨hcount, hstreamOut, hpair⟩ := escapeClauses_of_reach hreach hstream
   exact ⟨by rw [hentM]; exact hentP, hcount, hstreamOut, hpair,
-    frame_of_peel_call hloopFrame hsucc (natToBytes_length w.toNat 8)
-      (escapeReach_callRegions hreach)⟩
+    frame_of_peel_call hframe hsucc (natToBytes_length w.toNat 8)
+      (escapeReach_callRegions hreach) (by omega)⟩
 
 /-! ### The merge's other branch's memory conjuncts
 
@@ -566,19 +591,23 @@ theorem peel_arm_memory {bs : List UInt8} {ent shr xn xp nxp xcarry : Nat}
 
 /-! ### Axiom footprints
 
-No statement carries `sorryAx`.  Five are axiom-free (`frame_mono`,
-`frame_comp`, `EntryFrame`, `StreamPrefix` and `escapeCallWriteRegions_eq_post`);
-the list and memory algebra reads only `propext` and `Quot.sound`; and seven
-statements carry `Classical.choice` as well — the ones that project the peel's
-`ifThen103Values` term or its register arithmetic (`limMask_tail_eq`,
-`if_then103_store_stage1Word`) and the store/frame statements that rest on them
-(`frame_write_inside`, `peelStore_frame`, `frame_of_peel_call`,
-`escape_arm_memory`, `peel_arm_memory`).  `Classical.choice` is the carrier this
-module family already has: `JsonS1BlocksCompose` reports it for the four
-statements that project the same value structure. -/
+No statement carries `sorryAx`.  The region list, the reads and the store-free
+frame moves report only `propext` and `Quot.sound` — `frame_mono`, `frame_comp`,
+`readBytes_frame`, `readBytes_frame_single`, `entryWords_of_prefix_full`,
+`entryWords_of_prefix_store`, `escapeClauses_of_reach`,
+`escapeCallWriteRegions_widen`, `entryWords_kept_by_escape`
+(`escapeCallWriteRegions_eq_post`, `EntryPrefix`, `EntryFrame` and `StreamPrefix`
+are stated by nothing at all).  `Classical.choice` accompanies the address
+arithmetic the store statements discharge with `omega` (`frame_write_inside`,
+`frame_write_in_region`) and the peel's value projection (`limMask_tail_eq`,
+`if_then103_store_stage1Word`) with the statements that rest on them
+(`peelStore_frame`, `frame_of_peel_call`, `escape_arm_memory`,
+`peel_arm_memory`) — the same carrier `JsonS1BlocksCompose` reports for the same
+value structure. -/
 #print axioms LeanLLVM.Refinement.JsonS1BlocksRecordFrame.frame_mono
 #print axioms LeanLLVM.Refinement.JsonS1BlocksRecordFrame.frame_comp
 #print axioms LeanLLVM.Refinement.JsonS1BlocksRecordFrame.frame_write_inside
+#print axioms LeanLLVM.Refinement.JsonS1BlocksRecordFrame.frame_write_in_region
 #print axioms LeanLLVM.Refinement.JsonS1BlocksRecordFrame.readBytes_frame
 #print axioms LeanLLVM.Refinement.JsonS1BlocksRecordFrame.readBytes_frame_single
 #print axioms LeanLLVM.Refinement.JsonS1BlocksRecordFrame.wordsOf_append
@@ -597,9 +626,9 @@ statements that project the same value structure. -/
 #print axioms LeanLLVM.Refinement.JsonS1BlocksRecordFrame.escapeSegment_of_reach
 #print axioms LeanLLVM.Refinement.JsonS1BlocksRecordFrame.StreamPrefix
 #print axioms LeanLLVM.Refinement.JsonS1BlocksRecordFrame.escapeCallWriteRegions_eq_post
+#print axioms LeanLLVM.Refinement.JsonS1BlocksRecordFrame.escapeCallWriteRegions_widen
 #print axioms LeanLLVM.Refinement.JsonS1BlocksRecordFrame.peelStore_frame
 #print axioms LeanLLVM.Refinement.JsonS1BlocksRecordFrame.frame_of_peel_call
-#print axioms LeanLLVM.Refinement.JsonS1BlocksRecordFrame.stream_sep_of_capacity
 #print axioms LeanLLVM.Refinement.JsonS1BlocksRecordFrame.entryWords_kept_by_escape
 #print axioms LeanLLVM.Refinement.JsonS1BlocksRecordFrame.escapePositionsFrom_block_length_le
 #print axioms LeanLLVM.Refinement.JsonS1BlocksRecordFrame.escape_arm_memory

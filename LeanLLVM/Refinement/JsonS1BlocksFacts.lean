@@ -30,11 +30,13 @@ the record instance and the refinement at `s1BlocksCallsEsc`.
   `JsonS1BlocksWordIdentities` (in flight) and the peel's own family is
   `JsonS1BlocksPeelStaging.lean` (in flight).
 
-* **`tail`** — `S1BlocksTail` at the run's memory: the entry array's prefix and
-  frame, the stream's prefix, the peel's word, and on the escape arm the
-  `EscapeReach` record.  Its committed pieces are
+* **`tail`** — `S1BlocksTail` at the run's memory: the entry array's prefix, the
+  run's frame (the one-region loop frame on the silent arms, the four-region one
+  at the call's count on the escape arm), the stream's prefix, the peel's word,
+  and on the escape arm the `EscapeReach` record.  Its committed pieces are
   `JsonS1BlocksLoopFacts.tail_peel_facts` / `LoopExitFacts`,
-  `JsonS1BlocksRecordFrame`, and `JsonS1BlocksSeparation`; the loop's induction
+  `JsonS1BlocksRecordFrame`, `JsonS1BlocksSeparation` and the escape arm's
+  `JsonS1BlocksEscapeRun.callTail_of_chain`; the loop's induction
   that carries `LoopExitFacts` through the four page shapes is not yet a
   committed theorem, so the shape is a field.
 
