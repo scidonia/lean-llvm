@@ -53,6 +53,7 @@ import LeanLLVM.Refinement.JsonS1BlocksRefines
 import LeanLLVM.Refinement.JsonS1BlocksLoopFacts
 import LeanLLVM.Refinement.JsonS1BlocksHandoff
 import LeanLLVM.Refinement.JsonS1BlocksPrefix
+import LeanLLVM.Refinement.JsonS1BlocksStream
 import LeanLLVM.Refinement.JsonS1BlocksShort
 import LeanLLVM.Refinement.JsonEntryIR
 import LeanLLVM.Refinement.JsonEntrySteps
