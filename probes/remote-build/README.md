@@ -35,10 +35,13 @@ bun scripts/gcloud-remote.ts run --session <session-id> --dir $HOME/lean-llvm --
   'git fetch origin main && git merge --ff-only FETCH_HEAD && nix develop -c lake build'
 ```
 
-Measured on the bake instances: `nix develop -c lake build` takes **1.6 s**
-(x86-64) and **2.0 s** (aarch64) when nothing changed, against the 21-minute
-cold build the image contains.  Both families were baked on 2026-11-23 from
-revision `8c65035` (image labels `source-rev`/`source-repo`), need
+Measured on the 8-vCPU bake instances (`n4d-highmem-8` for x86-64 in
+`asia-south1`, `n4a-highmem-8` for aarch64 in `europe-west4`): the second
+`nix develop -c lake build` takes **1.6 s** and **2.0 s**.  The first build on
+a freshly booted 4-vCPU worker takes 30 s (x86-64) and 14 s (aarch64) because
+the I/O and startup are cold, then about a second.  The full build the image
+contains took 21.5 and 17.3 minutes.  Both families were baked on 2026-11-23
+from revision `8c65035` (image labels `source-rev`/`source-repo`), need
 `--disk-gb 50`, and nothing rebuilds them automatically.
 
 ### From a plain worker
@@ -74,6 +77,91 @@ through the tunnel once per worker; the repository bundle is 1,017 MiB packed to
 251.6 MB in 1 s and uploaded in 21 s.  The first full build after extraction
 takes **78 s** over 2,186 jobs, 24 s of it the `leanllvm` relink; its trace names
 768 exports under the store packages and none under `.lake/packages`.
+
+## Rebaking the images
+
+The families `lean-llvm-precompiled-x86-64` and `lean-llvm-precompiled-aarch64`
+commit to one revision each, so they are rebaked when the tree has moved far
+enough that a checkout on top of the bake re-elaborates for minutes.  The
+triggers are in `AGENTS.md` ("Precompiled worker images").
+
+Bake from the plain image, on demand, sized for the full build (8 vCPU, 64 GB,
+50 GB disk — the peak is 27.9 GB and the build about 20 minutes):
+
+```bash
+bun scripts/gcloud-worker.ts create --purpose lean-llvm-bake --cores 8 \
+  --memory-gb 64 --disk-gb 50 --lease 8h --session <session-id> \
+  --image-family nixos-x86-64 --ondemand
+# --arch aarch64 --image-family nixos-aarch64 for the Arm bake
+```
+
+Push the target commit into a bare mirror in the worker's home, clone it, and
+build.  The first `nix develop` realises the dev shell (8m39s on x86-64 and
+3m46s on aarch64 — different regions, so that gap is mostly download; both
+substitute from `cache.nixos.org`), and the build takes 21.5 minutes on
+`n4d-highmem-8` and 17.3 minutes on `n4a-highmem-8`.
+
+```bash
+bun scripts/gcloud-remote.ts run --session <id> -- 'git init -q --bare -b main $HOME/lean-llvm.git'
+bun scripts/gcloud-remote.ts git-push --session <id> --repo . \
+  --remote $HOME/lean-llvm.git --ref main
+bun scripts/gcloud-remote.ts run --session <id> -- \
+  'git clone -q $HOME/lean-llvm.git $HOME/lean-llvm'
+bun scripts/gcloud-remote.ts tmux-run --session <id> --dir $HOME/lean-llvm -- \
+  'nix develop -c lake build'
+```
+
+Keep the bare mirror in the image and leave the clone's `origin` pointing at
+it: that is how a spawned worker receives its ref.  Root the shell closure and
+the flake inputs so a garbage collection cannot remove what an offline
+`nix develop` needs:
+
+```bash
+<remote> run --dir $HOME/lean-llvm -- 'mkdir -p $HOME/.nix-roots &&
+  nix build --out-link $HOME/.nix-roots/devshell .#devShells.<system>.default &&
+  for p in /nix/store/*-source; do
+    nix-store --add-root $HOME/.nix-roots/in-$(basename "$p") --indirect -r "$p"
+  done'
+```
+
+Run `nix develop -c lake build` a second time and require about two seconds: a
+longer build means the package cache is copying again (its stamps are gone) or
+the checkout is dirty.  Then write the provenance file, stop the instance, and
+freeze its disk under the family — the same family name, the base image's guest
+OS features (`GVNIC`, plus `UEFI_COMPATIBLE` on Arm), and the revision label:
+
+```bash
+<remote> run --dir $HOME/lean-llvm -- 'printf "%s\n" <family> \
+  "revision $(git rev-parse HEAD)" "baked <date>" > $HOME/lean-llvm.IMAGE && sync'
+
+gcloud --configuration=agents compute instances stop <instance> --zone=<zone>
+gcloud --configuration=agents compute images create <family>-<date> \
+  --project=agentic-resources --source-disk=<instance> --source-disk-zone=<zone> \
+  --family=<family> --storage-location=<region> \
+  --guest-os-features=GVNIC --labels=source-rev=<short-sha>,source-repo=lean-llvm
+```
+
+`--source-disk` reads the disk directly, so nothing goes through the image
+bucket and the `agents` identity's `compute.instanceAdmin.v1` is enough.  Add
+`UEFI_COMPATIBLE` on Arm.
+
+Finally boot a disposable worker from the family with `--disk-gb 50` and
+require the baked revision and a sub-two-second `lake build`:
+
+```bash
+bun scripts/gcloud-worker.ts create --purpose verify --cores 4 --memory-gb 16 \
+  --disk-gb 50 --lease 1h --session <id> --image-family <family> --ondemand
+bun scripts/gcloud-remote.ts run --session <id> --dir $HOME/lean-llvm -- \
+  'git log -1 --format=%H && time nix develop -c lake build'
+```
+
+Delete the bake and verify instances afterwards; the previous image stays
+bootable (and billed) until it is deleted, and the newest image in a family is
+what a spawn gets.
+
+`gcloud-remote.ts` resolves a worker by `--session`.  With more than one worker
+in the session (a bake and a verify at the same time, say) that lookup is
+ambiguous; pass `--name <instance> --zone <zone>` instead.
 
 ## Worker sizing
 
