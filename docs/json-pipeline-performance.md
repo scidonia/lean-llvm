@@ -41,7 +41,18 @@ and does not support. §"The composed route, against simdjson 5.0.5" then
 measures the assembled route beside the same simdjson arms over that corpus,
 with its own instrument, cost split, quotients and limits, and §"The workspace,
 fresh against reused" measures the same route with the caller's workspace
-rebuilt per document and with one workspace reused across the corpus.
+rebuilt per document and with one workspace reused across the corpus. A later
+scratch run, §"The 96-document corpus, the best entry, and the route's wrapper
+(measured 2026-11-21)", measures a benchmark-only best-entry pipeline over a
+96-document synthetic corpus and the route-native wrapper over the same corpus.
+It changes no claim above; its fast entries have no refinement theorem, and none
+of them is in this checkout. A second scratch section, §"The heterogeneous
+corpus, the C split, the DFA and the C consumer (measured 2026-11-22)", adds the
+148-document heterogeneous result, the C parser split, the DFA spike and the C
+consumer; it supersedes only the per-slot absence recorded in the first
+section's wrapper paragraph. A third section, §"Fair comparison and reappraisal
+(measured 2026-11-22)", re-reads the route against simdjson at equal output and
+marks the raw-parse claims as not like-for-like.
 
 The note answers one question: **can a byte-mask JSON parser, in the shape the
 Lean development would lower to, be competitive with a mature native parser on
@@ -2296,3 +2307,867 @@ Re-measure the rows above — not adjust them — when any of these changes:
 |all four intervals and their quotients|`workspace.cc`, `workspace.sh`, `admission.h`, `policy.c`, `shim.c`, any kernel source the harness links, the corpus, or the route's staging shape changes|
 |`native ÷ parse`|the above, and a change of simdjson release, of the realised dev/library outputs (their sha256s are in the transcripts), or of the harness's compiler line|
 |the stale-tail and refusal controls|any change to the staging reset, the consumer walk, or the admission's escape-guard fact|
+
+## The 96-document corpus, the best entry, and the route's wrapper (measured 2026-11-21)
+
+Status: **scratch measurement of benchmark-only entries, recorded 2026-11-22.**
+Two instruments outside this checkout produced the rows below. The first is
+`/tmp/pfast-bench`, a C harness that times the pipeline call and simdjson
+5.0.5's full parse in one process, on one core, from a warm workspace; its
+harness source is sha256 `ed0c222f…` and its run log records the compiler
+(`clang 21.1.8`), the flags (`-O3 -march=x86-64-v3 -mpclmul -std=c++17
+-falign-loops=64 -falign-functions=64`), the simdjson header and library hashes,
+the host and the load average. The second is `/tmp/large-corpus`, which runs a
+fetched route binary per document beside a separate simdjson baseline binary;
+its `meta.txt` records the route binary's sha256 `7f7302d5…`, the baseline's
+sha256 `61c5852b…`, the host, the core, the governor and the load average at
+each end. The candidate sources are untracked files plus modified route files in
+the scratch worktree `lazy-stage2-f451b17` at `e6ce512`; the pipeline sources
+the C harness compiled are `pipeline.c` sha256 `09b74785…`, `pipeline_fast.c`
+`53c551fb…` and `pipeline_fast_plain.c` `1a103e30…`. None of these entries, and
+neither scratch harness, is in this checkout, and none of the entries has a
+refinement theorem (§"What this does not establish"). The certified route still
+calls `leanllvm_json_pipeline` (`kernel/json/pipeline.c:32`).
+
+The section answers one question: **on a 96-document synthetic corpus, how far
+does a best-entry pipeline get against simdjson's full parse, and how much of
+that result does the route's Lean wrapper give back?** It does not re-measure,
+adjust or supersede §"The composed route, against simdjson 5.0.5" or §"The
+workspace, fresh against reused": those measure the default
+`leanllvm_json_pipeline`, with per-call staging and copy-in, and remain the
+record for that arm. The rows here measure benchmark-only entries with the
+adapter's copy moved out of the timed interval.
+
+### Corpus, denominators and gates
+
+The corpus is 96 documents: three shapes (`dense`, `strings`, `utf8`) × four
+sizes (65,536, 262,144, 524,288 and 1,048,576 bytes) × eight seeds. The shapes
+are the three classes of the tree's generator (`tests/json-units-bench/gen.c`,
+§"Corpus"): `dense` is small objects with many structural bytes, `strings` is
+long ASCII strings with occasional escapes, and `utf8` is raw multi-byte UTF-8
+sequences. The seeds are `0x243F6A8885A308D3`,
+`0xC276E44204ED84E8`, `0x60AE5DFB843800FD`, `0xFEE5D7B503827D12`,
+`0x9D1D516E82CCF927`, `0x3B54CB280217753C`, `0xD98C44E18161F151` and
+`0x77C3BE9B00AC6D66`. The three canonical 64 KiB documents are byte-identical
+to the `s0` documents of the same shape (sha256 `3d9e0237…`, `bd007090…`,
+`f95f4aea…`), and both harnesses saw the same files: the C harness's
+`/tmp/pfast-bench/corpus/syn-*-64k.json` and the route corpus's
+`dense-65536-s0.json`, `strings-65536-s0.json` and `utf8-65536-s0.json` are the
+same three files by hash.
+
+The route run measures 99 documents (the 96 plus the three canonical names) and
+the 96-document aggregate excludes the three canonical rows, which appear
+separately in the 64 KiB table. The C harness times three repetitions per trial
+and three trials, rotating the entry order per trial, and each row's ratio is
+that document's pipeline median over simdjson's parse median in the same trial;
+the route run times 51 repetitions per trial in three trial sessions (a
+two-trial invocation plus a one-trial append) and each document's ratio is its
+median route time over the median of the three parse times. Both runs pinned
+cpu0 on the same host: Intel Core Ultra 7 268V, Linux 6.17.0-1033-oem,
+`powersave`, load average 2.4–2.6 for the C harness and 2.6–3.8 for the route
+run. Both are shared-host sessions, not idle ones.
+
+The gates are exact denominators, not samples. The C harness reports **495/495**
+gate rows — 99 documents × 5 gated entries (`fast`, `fast_list`, `plain_pos8`,
+`plain_b8`, `best`; the default is the reference and is not a gate row) — with
+0 failures. The route run reports **297/297** gate rows per mode (99 documents ×
+3 trials), and every one of the three modes is complete: 891/891 across the
+three. A gate compares the candidate's emitted streams against the default at
+the arm its own `*nxp` names, byte for byte.
+
+### The C pipeline: a best entry at 0.9118
+
+Ratio is the pipeline call's ns over simdjson 5.0.5's full parse (`iterate` plus
+the complete value traversal) for the same bytes in the same trial; each cell is
+the median over the 96 documents, and the shape columns are the medians over
+that shape's 32 documents. Six entries, one binary, one session.
+
+|entry|all 96|dense (32)|strings (32)|UTF-8 (32)|gate rows|
+|---|---:|---:|---:|---:|---:|
+|`default0` (arm 0, the certified pipeline)|1.1427|1.0809|1.3058|1.1502|reference|
+|`fast` (fused list-free)|1.0239|1.1392|1.0239|0.8577|99/99|
+|`fast_list` (escape list + list path)|0.9706|1.1496|0.9277|0.9203|99/99|
+|`plain_pos8` (dense split)|1.0797|1.0691|1.1350|1.0747|99/99|
+|`plain_b8` (large strings/UTF-8 split)|1.0609|1.1348|1.0716|0.9359|99/99|
+|`best` (per-document choice)|**0.9118**|**1.0771**|**0.9003**|**0.8298**|99/99|
+
+`best` is a selector over three of the preceding entries (`fast`, `fast_list`
+and `plain_pos8`), chosen from a bounded prefix scan; `plain_b8` is measured but
+not selected. Its median is below every fixed entry's median. Its per-document
+counts are: **65/96 faster than simdjson, 88/96 at or within 10%, 8/96 over
+10%**. The eight over are all `dense`, at 1.101–1.189 (10.1–18.9% over); strings
+is 30/32 faster and 32/32 within 10%, UTF-8 is 32/32 faster and 32/32 within
+10%, and dense is 3/32 faster, 24/32 within 10% and 8/32 over. So the
+majority-faster condition is met on this corpus (65 of 96), and the strict
+"nothing over 10%" condition is not.
+
+The three canonical documents, in the same 64 KiB rows the route run also
+measured, read 1.0980 (`dense`), 0.7238 (`strings`) and 0.7621 (UTF-8) for the
+`best` entry; their absolute pipeline medians are 87,544, 17,706 and 15,017 ns.
+Those four numbers are the ones the wrapper arithmetic below uses.
+
+### The route native: 1.268, 1.233 and 1.291
+
+The route rows are `route_ns` over simdjson's parse median, both from
+`/tmp/large-corpus`; each cell is the median of the 96 per-document ratios and
+the shape columns are over that shape's 32. The three modes differ only in the
+benchmark-only entry and result shape they call; all three are `gate=1` on every
+row.
+
+|mode (flag)|all 96|dense (32)|strings (32)|UTF-8 (32)|faster|≤10%|>10%|gate rows|
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+|`best` (`--consume-reuse-fast-best`)|**1.268**|1.268|1.417|1.167|0/96|2/96|94/96|297/297|
+|`nocopy` (`--consume-reuse-fast-nocopy`)|**1.233**|1.228|1.374|1.149|0/96|7/96|89/96|297/297|
+|`fused` (`--consume-reuse-fast`)|**1.291**|1.266|1.514|1.170|0/96|3/96|93/96|297/297|
+
+Two facts are stronger than the medians. First, **no document in any mode is
+faster than simdjson**: the smallest ratio across the three modes is 1.068 (a
+256 KiB UTF-8 document in the no-copy mode), and every mode's maximum is above
+2.6 (64 KiB strings). Second, the within-10% documents are only UTF-8: all 32
+dense and all 32 string documents are over 10% in every mode, and the 2/7/3
+within-10% counts are the UTF-8 rows. The no-copy result is the best of the
+three by 0.035 (2.8%) on the median, and it buys 5 more within-10% documents;
+removing the result allocation and its payload copies is real but not
+sufficient.
+
+`route_ns` is not an end-to-end time. It excludes the one-time workspace
+construction, admission, the document read and the consumer's reading, and the
+reuse path moves the adapter's thirteen-array copy-in out of the interval
+(`staging_ns=-`); `gate=1` shows the emitted bytes equal the default's, not that
+the two arms did equal work. These rows therefore cannot be compared with the
+route's `--consume` rows above, whose `native` interval includes the copy-in and
+the result copy-out, and they are not the end-to-end pair.
+
+### The wrapper: about 19 µs on the 0.9118 basis
+
+The route's excess over the C pipeline's corpus-median ratio is
+`route_ns − 0.9118 × parse_ns`, evaluated per document and then reduced. On the
+three canonical 64 KiB documents (three trial medians each):
+
+|document|simdjson parse (ns)|0.9118 × parse (ns)|route `best` (ns)|excess (ns)|
+|---|---:|---:|---:|---:|
+|`syn-dense-64k`|80,349|73,262|92,393|+19,131|
+|`syn-strings-64k`|12,951|11,809|30,787|+18,978|
+|`syn-utf8-64k`|17,754|16,188|23,499|+7,311|
+
+That is the "about 20 µs" figure: ≈19 µs on the dense and string documents and
+≈7 µs on UTF-8. It is **not a paired wrapper measurement**: 0.9118 is the corpus
+median, and on these three documents the `best` entry's own ratios are 1.0980,
+0.7238 and 0.7621, so part of each excess is the document differing from the
+corpus median rather than wrapper work. Subtracting the C pipeline's absolute
+row from the route's absolute row instead gives 4.8, 13.1 and 8.5 µs, but that
+subtraction crosses two binaries and two sessions and is indicative only.
+
+The one component the run does isolate is the result build, as the paired
+difference between the `fused` mode (full result) and the `nocopy` mode (an
+80-byte observation header, the consumer reading the staged arrays), same
+pipeline, same session, same trials. At 64 KiB the medians over the eight seeds
+of each shape are:
+
+|shape|64 KiB|256 KiB|512 KiB|1 MiB|64 KiB range|
+|---|---:|---:|---:|---:|---|
+|dense|+294 ns|+21,252|+67,380|+75,196|−2,290..+1,230|
+|strings|+966 ns|+4,333|+47,648|+181,147|−387..+2,647|
+|UTF-8|+1,735 ns|+4,672|+6,411|+20,284|+1,130..+2,584|
+
+At 64 KiB the result build is **0.3–1.7 µs** (the dense median crosses zero),
+which is small against the 7–19 µs excess; at 1 MiB it is 20–181 µs because the
+payloads being copied are the event stream's, so removing it matters more at
+large sizes even though no mode's ratio reaches 1.0. The remainder at 64 KiB —
+≈18.8 µs on dense, ≈18.0 on strings and ≈5.6 on UTF-8 after subtracting the
+result term — is the adapter's document copy, the cursor resets, the staging
+pre/post checks and the FFI path, named by the adapter's own `TIMING=1` slot
+definitions. It is not split further here: the fetched binary was built
+`TIMING=0`, so every per-slot column in its rows is `-`. The decomposition's
+honest state is therefore "result build measured; residual attributed by slot
+definition, not measured per slot in this run." **That last limit is
+superseded for the profile.** A later `TIMING=1` build (sha256 `769ccefa…`)
+fills the slots, and §"The heterogeneous corpus, the C split, the DFA and the C
+consumer (measured 2026-11-22)" records them; the 96-document numbers above do
+not change.
+
+### The stage-2 fast prototype: a measured negative
+
+`kernel/json/stage2_fast.c` (sha256 `e40918db…`) is a benchmark-only prototype
+of the stage-2 walk with a different record writer and body scan; it has the
+certified walk's signature and output obligations, and the harness gates every
+timed act byte for byte against `leanllvm_json_stage2` before timing it. The
+harness is `/tmp/stage2-fast-gate/bench.c` (sha256 `ad8ae8e5…`), 64 KiB
+documents, A,B,B,A pairing per trial with the certified act on both sides of the
+candidate, so a linear drift in the session cancels in the ratio; it reports
+`certified ÷ fast`, where below 1 means the candidate is slower.
+
+The recorded session read **0.985 on dense, 0.965 on strings with the escape
+list (`nxp=1772`) and 0.892 on UTF-8** — the candidate is 1.5%, 3.6% and 12.1%
+slower, respectively. It gates, and it still loses, so it is rejected as a lever
+and is not wired into any pipeline. The result is recorded as a measured
+negative rather than left to be retried.
+
+**Reproducibility limit.** Those three digits did not reproduce exactly when the
+prototype's binaries were re-run on the same host the next day: across the six
+binaries built from the prototype in that session, dense read 0.919–0.972,
+strings read 0.924–1.145 on the list arm and 0.783–1.120 on the list-free arm,
+and UTF-8 read 0.821–0.982. Dense and UTF-8 stayed below 1 in every run; the
+strings arm crossed 1. The claim this record makes is the direction — the
+candidate does not pay consistently, and its UTF-8 arm is the clearest loss —
+not the three figures' exact repetition.
+
+### The certification gap on the shipping path
+
+The measurement's best entries are not the certified route, and the route they
+run on is not covered by the stage-2 proof. Both facts are recorded here
+because the ratios above make shipping them tempting.
+
+**The branch's default takes the no-list arm unconditionally.** On
+`fused-utf8`, `probes/json/route/RouteMain.lean:320` reads
+`def escapeArm : UInt64 := 0`; every fast-path call passes arm 0, so stage 1
+builds no escape list (`nxp=0`) and `s2_string_body` executes its no-list
+branch, which scans the body's own span (`z_scan`) and decodes it with the
+escape unit's list-free entry. This checkout's `RouteMain.lean:281` is
+`escapeArm (skip : Bool) := if skip then 0 else 2`, so arm 0 is taken here only
+when the escape guard reports no byte the list can name; the branch removes that
+condition.
+
+**The model does not cover that branch.** `stage2StringBody`
+(`LeanLLVM/Refinement/JsonStage2Body.lean:2809`) reads `xp[0..nxp)` and, at
+`nxp=0`, takes the empty-list case: it copies the body as form 1 without
+scanning or validating it. That is the list-consuming body's guarded case, not
+the branch's scan. The fixture `probes/install/ir/stage2.candidate.ll` and the
+helper body pinned from it
+(`probes/install/ir/stage2.helper.s2_string_body.ll`) likewise describe the
+list-consuming `s2_string_body`; the body proof in `docs/contract.md`
+§7.6 row (d) is therefore a proof about a body the branch's shipping route no
+longer executes. No committed ref carries a model or proof of the scan:
+the `defer-contract` worktree holds an uncommitted draft
+(`JsonStage2StringBodyNoList.lean`, untracked, with the model files modified)
+whose sub-theorems elaborate remotely but which has no `.olean` and is in no
+ref. The shipping path's evidence today is therefore the bench and route
+differential — byte-for-byte agreement on the measured corpus — not a
+refinement theorem.
+
+**The fixture is stale because `e6ce512` changed the source, not the
+fixture.** `kernel/json/stage2.c` gained `z_scan` and the no-list branch, while
+`probes/install/ir/stage2.candidate.ll` and the helper body pinned from it still
+describe the list-consuming body. The branch's version of
+[docs/json-route-artifact-correspondence.md](json-route-artifact-correspondence.md)
+records the consequence: `correspondence.sh` reports `FAIL: the transformed
+source carries 3 'always_inline' occurrences, not 2`, and regenerating the
+fixture plus stating the no-list arm's post is the remaining proof work. That
+note is not visible in this checkout's copy of the page, because `e6ce512` is
+not on `main`; the page here still records the relation for the list body, and
+the failure belongs to the branch that changed the source.
+
+**What a shipping path would need, with the ratios above.**
+
+- **dense** can keep the default *entry*: `default0` reads 1.0809 against the
+  best entry's 1.0771, 0.4% slower, so no new stage-1 entry or selector is
+  needed for dense. That does not avoid the stage-2 gap: the default call on
+  this branch runs arm 0, so dense too executes the unproved no-list body.
+- **strings** needs the fused family: `default0` 1.3058, best 0.9003.
+- **UTF-8** needs the fused body: `default0` 1.1502, `plain_b8` 0.9359, best
+  0.8298.
+- A conservative `plain_b8`-for-UTF-8 plus default-for-dense path is the
+  cheapest shipping shape — it adds no selector — but it still needs the
+  no-list stage-2 model and proof, because both paths run arm 0; it saves the
+  selector, not the proof.
+
+**Contract decisions this leaves open.** Three choices change what must be
+proved, not merely what is measured: whether `xp`/`nxp` is part of the
+observable interface or an internal staging fact; whether the public result is
+the no-copy 80-byte header or the copied result the certified route returns;
+and whether the `best` selector's thresholds are a specification (fixed by
+contract) or a heuristic allowed to move with the measurements. None is settled
+by the rows above; each changes the statement a proof would have to make.
+
+### What this does not establish
+
+- **No theorem covers any of these entries end to end.** The certified route
+  calls `leanllvm_json_pipeline`; `pipeline_fast.c`, `pipeline_fast_plain.c`,
+  the list arm and the `best` selector are benchmark-only. The family now has
+  model-level Lean modules — `JsonEntryAgreement`, `JsonRouteNoCopy`,
+  `JsonFastSelector` and `JsonPipelineFastStage1` — but no module states or
+  proves the C bodies' refinement, and a search for `pipeline_fast` in
+  `LeanLLVM/` finds the model pass only, not a refinement of the C. §"The
+  heterogeneous corpus, the C split, the DFA and the C consumer (measured
+  2026-11-22)" and `docs/contract.md` §7.15 state the current gap. The entries
+  also live only as untracked sources plus modified `shim.c`, `RouteMain.lean`
+  and `build.sh` in the scratch worktree, so nothing in this checkout can
+  rebuild or ship them.
+- **The end-to-end comparison stays unreachable under `routePre`.** The route's
+  entry contract requires `documentDecision doc = .admitted`
+  (`LeanLLVM/JsonCallRoute.lean:427`), and admission and staging are route-only
+  stages with no simdjson counterpart; the end-to-end pair in §"The composed
+  route" (6.3–39.8× on the three canonical documents) prices a different job
+  from `pad+parse`. No wrapper optimization changes that; it would take a
+  contract decision, not a faster adapter.
+- **Nothing about real-world documents.** All 96 are synthetic, valid and from
+  one generator with one shape definition per class; there is no heterogeneous
+  whitespace, key vocabulary, nesting depth or real-world text distribution in
+  this corpus. `strings` and `utf8` are the classes the result rests on, and
+  the 64 KiB string documents are the worst rows in every mode (2.4–2.9×).
+- **Nothing about documents over one mebibyte.** The route's domain stops at
+  1 MiB, so the C pipeline's 4 MiB rows in the units' sections have no route
+  counterpart and are not part of this 96.
+- **Nothing about another host or core class.** One Intel 268V, cpu0 only,
+  `powersave`, on a shared host whose load average was 2.6–3.8 during the route
+  run; the E-core class was not measured. The per-trial class flips are 11/96
+  (`best`), 16/96 (`nocopy`) and 12/96 (`fused`), so the counts are medians of
+  three sessions, not per-trial certainties. Absolute levels drift; only the
+  within-session paired ratios are claimed.
+- **Nothing about equal work between the artifacts.** The route emits an event
+  stream into the caller's buffers; simdjson's parse traverses an on-demand DOM.
+  The ratios compare two full parses of the same bytes producing different
+  things, and the route-native rows additionally exclude the copy-in.
+
+### Cadence
+
+Each headline row is re-measured — not adjusted, and not re-derived from a row
+taken in another session — when one of these happens:
+
+|headline row|re-measure when|
+|---|---|
+|`best` 0.9118 and its 65/88/8 counts|`pipeline_fast.c`, `pipeline_fast_plain.c`, the `best` selector, the generator's shape definitions or seed set, the size classes, or the simdjson release changes|
+|the route-native 1.268/1.233/1.291 and their counts|the above, plus `shim.c`, `RouteMain.lean`, `build.sh`, the route binary, or the reuse/no-copy modes change|
+|the wrapper excess and the result-build bands|the route binary, the adapter's slots, the staging shape or the result shape changes; the `TIMING=0` binary must be replaced by a `TIMING=1` build before any per-slot claim is added|
+|the stage-2 fast rejection|`stage2_fast.c`, its harness or its gates change, or a new stage-2 candidate is proposed; the exact digits need a fresh paired session, and the direction is the claim|
+
+## The heterogeneous corpus, the C split, the DFA and the C consumer (measured 2026-11-22)
+
+Status: **scratch measurements, no shipping claim.** Every result below comes
+from `/tmp` harnesses and either the fetched `-O3` route binary
+(sha256 `7f7302d5…`) or the later `TIMING=1` build (sha256 `769ccefa…`). The
+certified route is unchanged, the default remains `leanllvm_json_pipeline`, and
+none of the new paths has a refinement theorem over its C body. The section
+records what the measurements say, including the ones that refute a hoped-for
+lever.
+
+### The 148-document heterogeneous corpus: no document in the band
+
+The corpus is `/tmp/hetero-corpus-large`: 148 documents, 35 each of `pretty`,
+`tab`, `compact` and `spaced`, plus 4 `deep` (depth 64) and 4 escape-heavy
+documents; 280–1,048,480 bytes, with target-size groups at 512 B, 2 KiB, 8 KiB,
+32 KiB, 64 KiB (deep/escapes only), 128 KiB, 256 KiB (deep/escapes only),
+512 KiB and 1 MiB; 70 object roots and 78 array roots. The generator is
+`/tmp/hetero-corpus-large/gen.py` (sha256 `e0602885…`) at base seed
+`0x5EED2026F1ED`; every document is valid and inside the route's default 1 MiB
+bound. The run uses the three route-native modes of §"The 96-document corpus…"
+on the same remote-built binary: 3 route repetitions and 5 simdjson repetitions
+per trial, two trials, cpu0, with **296/296 gate rows per mode** (148 × 2) and
+0 failures. Load average was 1.39–2.33. The route rows are `route_ns` over
+simdjson's `parse` median; each cell is the median of the 148 per-document
+ratios.
+
+|mode|all 148|512 B (20)|1 MiB (20)|faster|≤10%|>10%|
+|---|---:|---:|---:|---:|---:|---:|
+|`nocopy`|**1.486**|3.314|1.339|0/148|0/148|148/148|
+|`best`|**1.570**|3.442|1.482|0/148|0/148|148/148|
+|`fast`|**1.594**|3.011|1.512|0/148|0/148|148/148|
+
+The shape of the result is uniform: the best style is `deep` at 1.304,
+`spaced` 1.437, `escapes` 1.468, `compact` 1.540, `tab` 1.621 and `pretty`
+1.670. **No document in any mode is faster, and none is within 10%**; the
+smallest ratio in the best mode is 1.225 and the largest 4.035. The 512 B group
+is 3.0–3.4× by mode and the 1 MiB group 1.34–1.51×, so the deficit is not only
+a fixed per-call cost: it persists at the top of the route's size domain.
+
+This is the corpus on which the synthetic `0.9118` does **not** carry. The C
+parser-only arm measured on 30 heterogeneous documents in
+`/tmp/hetero-c/out/report.txt` is 1.287 (4/30 within 10%, 1/30 at or below
+1.0), and the route-native arm on all 148 is 1.486–1.594; the 96-document
+synthetic result in §"The 96-document corpus…" remains a result about that
+corpus, not a general one. The 148 run is also a low-repetition session
+(3/5 reps × 2 trials) compared with the 96-document run's 51 × 3; the counts are
+unanimous, which is what makes the direction usable, not the exact medians.
+
+### The C parser split: the dispatch is 80.6%
+
+`/tmp/c-decomp` and `/tmp/s2rest` split the C parser on the 30-document
+heterogeneous corpus (512 B–1 MiB; `c-decomp` at 51 reps × 3 trials and `s2rest`
+at 15–400 scaled reps × 3 trials, with 0 gate failures). The atomic share of the
+**stage-2 call** is, as the median of the 30 documents:
+
+|term|share of stage 2|range|
+|---|---:|---|
+|per-entry dispatch (entry loop, stack, value rules, number/literal checks)|**80.6%**|26.1–92.1%|
+|string bodies (scan + decode + arena)|**17.5%**|11.6–73.9%|
+|event stores|**4.9%**|−5.1–16.7%|
+|event bookkeeping (reserve + cursor advance)|**2.6%**|−8.5–14.5%|
+|arena store (separated)|−0.5%|−12.9–9.7%|
+|residual (ablations overlap)|−5.0%|−13.9–3.3%|
+
+The shares are signed and need not sum exactly. The per-entry walk dominates on
+28/30 documents (68–92%); the exception is `hetero-escapes-65k`, where bodies
+are 73.9% because every body takes the escape unit's per-body decode. Stage 1 is
+the smaller part: on the 8 KiB–1 MiB documents the median stage-2/stage-1 ratio
+is 4.43× (3.0–6.6× by style). The integer fast path in `num_fast` is a measured
+negative: byte-equal on 30/30, but **−405 ns median (−1.83% of the pipeline),
+improved 3/30, regressed 27/30**; it was not adopted.
+
+### The DFA stage 2: 8.3% on the route, still 0/148
+
+A table-driven stage-2 spike (`/tmp/s2dispatch/stage2_dfa.c`) replaces the
+per-entry branch chain with `sd_cls`/`sd_tr` tables and one action switch, and
+is measured by `/tmp/dfa148` on the 148-document corpus with three C binaries:
+certified stage 2, DFA stage 2 as default, and DFA stage 2 in the fast stage-1
+pipelines. 21 reps × 3 trials, cpu0; **148/148 gate rows pass in each run**, the
+consumer's CNT reading is identical across the three on 148/148, and the
+pipeline/stage-2 pairs are byte-equal on 148/148. A control with the same
+fast-stage-1 objects in both binaries reads 0.987, so the session's later-binary
+drift is about 1.3% against the DFA and the gains below are conservative.
+
+|pair|median|min|max|DFA faster|
+|---|---:|---:|---:|---:|
+|certified/DFA, pipeline|**1.103**|0.895|1.383|139/148|
+|certified/DFA, pipeline + consumer|1.086|0.922|1.365|138/148|
+|certified/DFA, full route|**1.083**|0.907|1.291|139/148|
+
+Route over simdjson parse, full route:
+
+|configuration|median|min|faster|≤10%|>10%|
+|---|---:|---:|---:|---:|---:|
+|default stage 1 + certified stage 2|1.758|—|0|0|148|
+|default stage 1 + DFA stage 2|1.637|—|0|0|148|
+|best stage 1 + certified stage 2|1.704|1.204|0|0|148|
+|best stage 1 + DFA stage 2|**1.543**|1.272|0|0|148|
+
+The DFA moves the best route from 1.704 to 1.543 (minimum 1.204 → 1.272) and is
+faster on 139/148 documents, but **every configuration has 0/148 at or under
+1.10**.
+The 512 B group moves 1.573 → 1.478; the escape-heavy group gains only
+~3% (median 1.03). The remaining gap is not the dispatch alone: the summary's
+estimate is that stage 2 would need roughly another 2.5× before the 10% band is
+reachable on this corpus.
+
+**Certification.** `LeanLLVM/Refinement/JsonStage2DfaTable.lean` (549 lines)
+defines the symbols, states, table, classifier and restore map, pins the C
+tables by `#guard` against a captured fixture
+(`probes/install/ir/stage2-dfa.tables.txt`, 346 decimal bytes, sha256
+`bcefb228…`), and proves `sdCls_correct` (256 rows), `sdRestore_sound` (3),
+`sdTr_sound` (80), `sdA_err_iff_refusal` (80) and the helper bridges, with
+`#print axioms` reaching only `propext`/`Quot.sound`. The `.olean` was built
+remotely (sha256 `b12959c8…`). The abstract run layer compiles; the **C body,
+its emitted/fixture pin, and the final bridge to the walk post are pending**, so the DFA has no contract object and no refinement
+theorem and is not shippable. The certified `leanllvm_json_stage2` remains the
+default.
+
+### The C consumer: the Lean reading is 223–831× the C walk
+
+The route's `consume_values_ns` is the dominant end-to-end term: 19.4 ms on
+dense, 8.44 ms on strings and 3.02 ms on UTF-8 at 64 KiB, 97.6–99.0% of
+route + consumer. A benchmark-only C transcription of the same reading
+(`consumeFast`) was wired into the `TIMING=1` route and gated against the
+existing consumer. Its first run failed on a real ABI defect — Lean's
+`consumeFast (dst ev : ByteArray) (ndst nev : UInt64)` compiles to
+`(dst, ev, ndst, nev)`, while `shim.c` declared `(dst, ndst, ev, nev)`, so the C
+walk read `ev` as the destination extent and returned "extent past its array".
+With the parameter order fixed, **27/27 rows gate** (three modes × three
+documents × three trials, 51 reps), and the C consumer reads:
+
+|document|C consumer|Lean consumer|speedup|route + C consumer|consumer share|
+|---|---:|---:|---:|---:|---:|
+|`syn-dense-64k`|87.0 µs|19.4 ms|223×|408 µs|21.3%|
+|`syn-strings-64k`|10.2 µs|8.44 ms|831×|98.5 µs|10.3%|
+|`syn-utf8-64k`|11.8 µs|3.02 ms|256×|81.7 µs|14.5%|
+
+The range over the three shapes is **223–831×** on the tabulated medians. The
+same run's raw rows also carry a 10.13 ms Lean reading on strings, whose
+quotient against the 10.16 µs C walk is ~997×; the table's 8.44 ms median is the
+lower reading, hence 831×. The “223–997×” shorthand spans both readings, and the
+table states which one each row uses. The `TIMING=1` slots agree:
+the adapter's pipeline is 92–98% of `route_ns`; no-copy `copyout_ns` is
+92–132 ns, while the full result's copy-out is 2.6–12.8 µs; the C consumer is
+86.97/10.16/11.83 µs. So the consumer is no longer the end-to-end blocker, but
+the **route + consumer is still 5.6/7.6/5.3× simdjson's parse** on the three
+shapes, against the route-native 1.2–1.5×. The C walk is a benchmark consumer,
+not the Lean runtime's reading; the default `--consume` path and its Lean
+consumer are unchanged.
+
+### The certification state
+
+- **The fast family's model layer landed** in the scratch worktree as
+  uncommitted modules: `JsonEntryAgreement.lean` (`entry_b3_pos8_agree`,
+  `entry_b3_b8_agree`), `JsonRouteNoCopy.lean` (`routePost_observe`,
+  `routePost_noCopy`, the stale-tail extent statement),
+  `JsonFastSelector.lean` (`pfClass`, `pfSelect`, the branch-post schema, the
+  POS8 table read `route_init` supplies) and `JsonPipelineFastStage1.lean`
+  (`pf_mask_pass_spec`, `pf_utf8_word_eq`, the plain POS8/B8 specifications
+  `pf_plain_spec`/`pf_plain_spec_b8`). They are model statements, compiled and
+  axiom-pinned remotely; **none is a refinement of a C body**, and none is
+  committed. This supersedes the earlier note in this record that no Lean module
+  mentioned `pipeline_fast`: the model modules now exist, but they do not prove
+  a C body or the composed route.
+- **The emitter-agreement composition is blocked on a statement.** The three
+  conclusions share `readLanes32 … = streamPrefix ent blk0 nblk`, but
+  `entry_pos8_b8_agree`'s conclusion fixes `kP` and `kB` only as Nats tied to
+  the BitVec-valued run results (`kP = kB`, and equal lane reads of lengths
+  `kP - k`/`kB - k`). It does not state `kP = k + (ent.map ctpop).sum` (or the
+  same for `kB`), so a second invocation's cursor cannot be identified with the
+  witness's cursor for `readLanes32`'s slice length. The model development
+  reports that **`entry_pos8_b8_agree` needs that Nat-cursor strengthening in
+  its conclusion**; no weaker statement composes the triple.
+- **The fused stage-1 model has no C body yet.** `pf_mask_pass_spec` models
+  `passBlock`/`passRun` over `pfEntryWord` and `fusedStep`; there is no
+  `pipeline_fast.candidate.ll`, no `JsonPipelineFastIR`, and no statement of the
+  C full-block loop and peeled partial block (`lim < 64`, `(1 << lim) - 1`).
+  The list arm (`xp`/`nxp` per-block fold) and the partial block's `limMask`
+  clamp are also unstated. That is the next obligation, not a discharged one.
+- **The no-list/default on-demand proof is in flight.** The `defer-contract`
+  draft is still uncommitted, with no `.olean`; `docs/contract.md` §7.6 records
+  the branch's default `escapeArm := 0` and the model gap that leaves the
+  shipping no-list body on differential evidence. The on-demand build is the
+  step that would change that sentence; it has not landed.
+- **The DFA's table layer is proved and pinned; its body and bridge are not**
+  (§"The DFA stage 2" above). The C consumer is gated but is a benchmark
+  transcription, not a proved interface.
+
+**Nothing here is shippable.** The certified route remains the default, the
+fast family and the DFA remain benchmark-only, and the heterogeneous corpus
+result is 0/148 faster and 0/148 within 10%. The next certification work is
+the C-body/fixture obligations, not another performance mode.
+
+### What this does not establish
+
+- **Nothing about a real-world corpus.** The 148 documents are generated
+  serialization styles with known shapes (35 per style, 4 deep, 4 escape-heavy),
+  not a sample of production JSON; the equal weighting is arbitrary, and the
+  512 B/1 MiB groups are the only size extremes.
+- **Nothing at high repetition on the 148 corpus.** The route ran 3 reps and
+  simdjson 5 reps per trial, two trials; the counts are unanimous but the
+  medians are not the 51 × 3 discipline of the 96-document run.
+- **Nothing about the C split off the 30-document corpus.** The 80.6/17.5/4.9
+  shares are medians over those 30 documents and include signed, overlapping
+  ablation terms; they rank the terms, they are not an exact partition.
+- **Nothing shippable from the DFA or the C consumer.** The DFA has a proved
+  table and an unproved body/bridge; the C consumer has a gate, not a
+  refinement theorem, and the Lean consumer is unchanged. The C consumer's
+  route+consumer rows are not the Lean runtime's end-to-end time.
+- **Nothing that changes the target's verdict.** On the heterogeneous corpus
+  the target fails at the route-native layer (0/148 faster, 0/148 within 10%)
+  and at route + consumer (5.3–7.6× parse); the synthetic 0.9118 remains a
+  corpus-specific result.
+
+### Cadence
+
+Re-measure, not adjust, when:
+
+|headline row|re-measure when|
+|---|---|
+|the 148-document medians and counts|the generator, seed, style/size mix, route binary or either mode changes; a higher-repetition session replaces the 3/5 × 2 one|
+|the 80.6/17.5/4.9 split|`stage2.c`, the split harness or its ablations change, or the 30-document corpus is replaced|
+|the DFA ratios (1.103/1.083/1.543)|`stage2_dfa.c`, the gate, the 148 corpus or the route harness changes; the table pin changes with the C tables|
+|the C consumer rows|`consumeFast`, the `shim.c` ABI, the `TIMING=1` build or the three canonical documents change|
+|the certification state|the fast family's modules, the no-list draft, the DFA body/bridge, or the C fixture/pin change|
+
+## Fair comparison and reappraisal (measured 2026-11-22)
+
+Status: **scratch measurements; the reappraisal the matrix supports, with the
+rows that do not support a claim marked as such.** The matrix's inputs are the
+3 canonical 64 KiB documents plus the 148-document heterogeneous corpus, so
+every row has the same 151 documents. Its terms are:
+
+|term|what is timed|
+|---|---|
+|`parse`|simdjson 5.0.5 on-demand traversal only (no event stream)|
+|`pw`|simdjson traversal + a writer that materialises the route's exact event/arena bytes|
+|`pwc`|`pw` + the same C consumer|
+|`ps`|simdjson traversal + a direct consumer sum, no event buffer|
+|`rp`|the route pipeline (stage 1 + stage 2 + the event/arena materialisation)|
+|`rpc`|`rp` + the same C consumer|
+
+The writer is new code written for the comparison; its event and arena bytes are
+gated byte-for-byte against `leanllvm_json_pipeline` on all 151 documents, and
+the consumer's tokens/values/sum agree. The equal-output rows are therefore
+like-for-like in the artifact, not two APIs' different outputs. The `rp`/`pw`
+pair is the **event-stream row**; `rpc`/`pwc` is the same stream with the same
+consumer; `ps` is the consumer-boundary row; `parse` is the raw-parse row.
+
+Sources: `/tmp/c-matrix/out/report.txt` (the aggregated matrix; `/tmp/fair-matrix.done`
+names it), with its component rows `/tmp/c-matrix/out/{stage1,variants}.rows`;
+`/tmp/c-s1fair/out/report.txt` (the fair stage-1 row, 151/151 gated);
+`/tmp/noevent/{summary,timed}.txt` and `/tmp/noevent.done` (the no-event
+consumer-boundary prototype, 224/224 gated);
+`/tmp/c-fair/out/report.txt` and `fair.rows` (equal-output rows, 51 reps × 3
+trials); `/tmp/c-lean/out/report.txt`, `route.raw`, `sj.raw`, `sjwarm.raw`
+(Lean-first end-to-end, 3 reps × 3 trials, baseline 5 reps plus a 51-rep warm
+pass). All gates held: 151/151 on the fair, stage-1 and stage-2 variant rows,
+and 1812/1812 route rows audited with 0 failures. One CPU 0, `powersave`; the
+stage-1 ratio is the fair writer-included row above, not the cross-session raw
+pair.
+
+### Stage 1: a win at equal output, with the entry writer included
+
+The fair row gives simdjson's stage 1 the same entry writer, so both sides
+produce the same entry stream; the gate is 151/151. Terms: `s1` is simdjson's
+raw stage 1, `s1w` is `s1` plus our entry writer, `cert` is our certified
+composite (mask unit + POS8 entry emitter + UTF-8) and `fused` is
+`s1_blocks + B3`. The row is **not** the benchmark-only `splitfast3_u8`
+candidate; that candidate's rows are in the earlier ranking.
+
+|row|n|ratio|faster|1.0–1.10|>1.10|max|
+|---|---:|---:|---:|---:|---:|---:|
+|`cert` ÷ `s1w`|151|**0.670**|**137**|11|3|1.270|
+|`fused` ÷ `s1w`|151|**0.678**|**151**|0|0|0.996|
+
+Ours is faster on 137/151 certified (148 at or within 10%; the three over are
+canonical UTF-8 1.270, canonical strings 1.157 and one pretty-8192 document
+1.101), and the fused pass is faster on all 151 with a worst case of 0.996.
+Per style, `cert/s1w` is escapes 0.431, dense 0.462, compact 0.478, deep 0.504,
+spaced 0.640, tab 0.816, pretty 0.983, strings 1.157 and UTF-8 1.270; per size
+0.637 (512 B), 0.650 (2 KiB), 0.782 (8 KiB), 0.773 (32 KiB), 0.496 (64 KiB),
+0.749 (128 KiB), 0.460 (256 KiB), 0.728 (512 KiB) and 0.692 (1 MiB).
+
+The raw `s1/cert` ratio is **0.603**, but it is **not like-for-like**: raw
+simdjson stage 1 stops at the structural index, while our composite also does
+the entry writer's closing-quote recovery. That writer costs a median **5.04
+µs**, **57.3% of `s1w`**, and `s1w/s1` is **2.34×**; it is the missing work the
+raw ratio omits. The fair row is the one to read.
+
+`fused/cert` is 0.983 (89 faster, 30 in-band, 32 over): the fused pass wins
+strings 0.443, UTF-8 0.563, escapes 0.645, pretty 0.804 and tab 0.880, and loses
+deep 1.488 and dense 1.451, with compact 1.065 and spaced 1.014 smaller losses
+inside 10%.
+
+### Equal event stream: ours is slightly ahead, on a majority
+
+`rp` over `pw` (same event/arena bytes) and `rpc` over `pwc` (same stream, same
+C consumer), per document:
+
+|row|median (ours ÷ simdjson)|ours faster|1.0–1.10|>1.10|
+|---|---:|---:|---:|---:|
+|event stream (`rp`/`pw`)|**0.965**|**89/151**|42/151|20/151|
+|stream + same consumer (`rpc`/`pwc`)|**0.977**|**89/151**|54/151|8/151|
+
+The majority condition is met on this corpus (89/151 = 58.9% faster) and the
+at-or-within-10% condition is met with the same consumer (143/151 = 94.7%; 89
+faster plus 54 in the 1.0–1.10 band); the stream-only row has 20 documents over
+10%. The advantage is not uniform:
+ours is faster on compact 0.852, escapes 0.678, deep 0.891 and spaced 0.966, and
+slower on pretty 1.087 and tab 1.026; the canonical three read 0.952 (dense),
+0.874 (strings), 0.969 (UTF-8). Simdjson's writer costs a median **10.3 µs**,
+**+31.1% of `parse`** and **23.7% of `pw`**, concentrated on string-heavy
+documents; that writer cost is what the route's single materialising stage does
+not pay as a separate pass.
+
+**This supports equal-output parity or a slight advantage — a 3.6% median on the
+stream and 2.4% with the consumer, faster on the majority — not a large win and
+not a statement about the raw parsers.**
+
+### Consumer boundary: the no-event prototype reaches 1.024× simdjson, still short of a majority
+
+`rpc` over `ps` for the **materialising** route (same observed values, simdjson
+does not materialise an event buffer): median **1.424**, ours faster on
+**5/151**, in the 1.0–1.10 band on **2/151**, over 10% on **144/151**. The five
+are the four escape-heavy documents and the canonical strings document; the
+direct-sum term is `ps/parse` 1.183. This is the value-reading boundary, not the
+event-stream boundary.
+
+**The no-event row is now measured.** A bench-only no-event stage 2
+(`/tmp/noevent`) skips the event buffer and produces the consumer's reading
+directly — arena sum, tokens, values, sum — with the certified stage 1,
+grammar, refusals and string/number helpers. Gates: **224/224** (46 corner
+documents + 30 + 148) on verdict, refusal offset, tokens, values and sum,
+against the certified event stream + unchanged consumer; the certified ABI and
+`stage2.c` are untouched and remain the default.
+
+|row (148 documents)|median|faster|1.0–1.10|>1.10|
+|---|---:|---:|---:|---:|
+|certified ÷ no-event|**1.645**|—|—|—|
+|no-event ÷ simdjson direct-sum|**1.024**|**52**|50|46|
+
+The certified route takes **1.645×** the no-event path's time (2.011× on dense);
+against simdjson's direct-sum traversal the no-event path is 1.024× (2.4% slower
+median), with **52 faster, 50 in the 1.0–1.10 band, 46 over**. So **102/148
+(69%) are at or within 10% or faster — a major move from 0/148 — but this is not
+yet the stated “faster on the majority” (52/148), and 46 remain over 10%.** The
+512 B group is
+0.911 (19/20 at or within 10%, 15 faster); escapes 1.326 (0/4), pretty 1.130
+and strings 0.963. The canonical shapes: dense certified/no-event 2.011 and
+no-event/simdjson 0.831; strings 0.963/1.850; UTF-8 1.325/1.127.
+
+The removed term is the event stores (7.6% of the DFA stage-2 call) plus the
+13n+128-byte event buffer, its writes and the consumer's walk of `nev` bytes;
+that is what the 1.645× prices. Strings and escapes are body-bound and stay
+over 10%. **Not shippable:** the certified event-stream ABI and its proof remain
+the default; shipping needs the consumer-interface change (the consumer fed
+directly) and a `NoEventCert` refinement of that reading.
+
+### Raw parse: not like-for-like
+
+`rp` over `parse`: median **1.291**, ours faster 0/151, in the 1.0–1.10 band on
+7/151, over 10% on 144/151. `rpc/parse`: median **1.676**, 0/151 at or within
+10%. The variants' own raw-parse rows are cross-run estimates against the same
+fair-run parse: DFA 1.078 (29 faster, 63 in-band, 59 over), frame
+(`stage2_fast`) 1.255 (3 faster, 8 in-band, 140 over). These are the numbers the
+earlier route sections quote as "native/parse", and they are **not a
+like-for-like comparison**: ours produces the event stream and arena, simdjson's
+`parse` only traverses the document. The gap is the cost of the artifact, not a
+verdict on the parser; the equal-output row above is the like-for-like one.
+
+### Lean-first end-to-end: trusted/cfast/nocopy against `pad+parse`
+
+The core total is `admission (0 when excluded) + route_ns + consumer`; `trusted`
+excludes admission because the caller asserts the document is admissible,
+`cfast` includes it, and `nocopy` uses the Lean consumer and includes admission.
+The denominator is simdjson `pad + parse` from the same 151 documents. Median
+core/(pad+parse):
+
+|mode|median|ours faster|1.0–1.10|>1.10|canonical strings|canonical UTF-8|canonical dense|
+|---|---:|---:|---:|---:|---:|---:|---:|
+|`trusted` (admission excluded)|**1.827**|0/151|0/151|151/151|2.495|1.209|1.896|
+|`cfast` (admission included)|**6.374**|0/151|0/151|151/151|—|—|—|
+|`nocopy` (Lean consumer)|**47.888**|0/151|0/151|151/151|—|—|—|
+
+These are **product rows**: the ratio of the median core time to the median
+`pad+parse`, so they are not the per-document median of ratios quoted in
+§"The heterogeneous corpus…". Nothing is in the band: every mode has 0/151 at or
+within 10%. The 512 B group is 4.36× and 1 MiB 1.65×, so the small-document view
+is worse, not a fixed-cost artefact alone. `trusted` is a **benchmark
+contract**, not a route with admission: `admission_ns` is `-` by caller
+assertion. `cfast` and `nocopy` are the same core with the admission check
+included; their consumer terms differ (C vs Lean).
+
+### Consumer cost: C versus Lean
+
+|document|C consumer|Lean consumer|C ÷ Lean|C share (trusted)|C share (cfast)|
+|---|---:|---:|---:|---:|---:|
+|dense 64 KiB|87.0 µs|19.4 ms|223×|29.5%|20.4%|
+|strings 64 KiB|10.2 µs|8.44 ms|831×|12.1%|1.5%|
+|UTF-8 64 KiB|11.8 µs|3.02 ms|256×|20.0%|1.1%|
+
+The tabulated range is **223–831×** on the three canonical documents; the raw
+10.13 ms strings reading gives the ~997× upper figure noted in §"The
+heterogeneous corpus…". Over all 151 documents the matrix's median C/Lean
+ratios are **0.0093 for `consume_fold` (107×)** and **0.0075 for
+`consume_values` (133×)**, with Lean `consume_fold` at 1.17 ms and C at 9.8 µs;
+the C consumer is **22.3% of `pwc`** (9.8 µs of the stream + consumer term).
+The C consumer's share of the trusted core is 12.1–31.8%, and of `cfast`
+1.1–20.4%; the Lean consumer is 65–95% of the `nocopy`/`consume` core. The C
+consumer is a **benchmark transcription**, not the Lean runtime's reading; it is
+the current bound on what removing the Lean consumer could buy, not a shipped
+interface.
+
+### Stage-2 variants: certified, DFA, and the two frames
+
+|variant|pipeline ÷ certified|stage-2 call ÷ certified|raw parse ÷ `parse`|
+|---|---:|---:|---|
+|certified|1.000|1.000|1.291 (0 faster, 7 in-band, 144 over)|
+|DFA|0.894|0.861|1.078 (29 faster, 63 in-band, 59 over)|
+|matrix `frame` (`stage2_fast`)|1.032|1.028|1.255 (3 faster, 8 in-band, 140 over)|
+
+The stage-2 rows carry the matrix's class counts: DFA/certified is **148
+faster, 3 in the 1.0–1.10 band, 0 over**; `stage2_fast`/certified is **22
+faster, 100 in-band, 29 over**. The pipeline rows are the same comparison at the
+full pipeline term.
+
+The matrix's `pipe_frame`/`s2_frame` calls `leanllvm_json_stage2_fast`, the
+earlier one-frame prototype, and is **slower** (pipeline 1.032, stage-2 1.028);
+that confirms its rejection rather than adding a lever. Its raw-parse row is
+1.255 and is not 0/151 at or within 10% (3 faster + 8 in-band), but it is far
+from the band. The separate goto-threaded frame walk in `/tmp/s2arch` is a
+**different prototype**: 1.157 over the DFA on stage 2, about 1.32× over
+certified, route 1.477 (DFA 1.543, certified 1.704), still **0/148** within 10%.
+It has no contract object or refinement theorem. The DFA's table layer is proved
+and hash-pinned; its C body and bridge are pending (§"The heterogeneous
+corpus…").
+
+### Claim boundary
+
+**What the evidence supports.**
+
+- **Equal-output parity or a slight advantage** on the event stream:
+  0.965 median (3.6% our favour), ours faster on 89/151, 131/151 at or within
+  10%; with the same consumer 0.977, faster on 89/151, 143/151 at or within 10%.
+- **Stage 1 is a win at equal output.** Certified 0.670 (137/151 faster;
+  148/151 at or within 10%) and fused 0.678 (151/151 faster, worst 0.996),
+  against simdjson stage 1 plus the same entry writer. The raw `s1/cert` 0.603
+  is not like-for-like: the writer is 2.34× raw stage 1 and 57.3% of the fair
+  term.
+- **The certified route exists and is the default**; the C consumer, the DFA
+  table and the fast-family model lemmas are measured/proved to the extent the
+  earlier sections state.
+- **The raw-parse and end-to-end rows are measurable**, and they are not
+  like-for-like: raw parse 1.291, trusted end-to-end 1.827, cfast 6.374, nocopy
+  47.888 against `pad+parse`.
+- **The no-event consumer boundary is measured.** The bench-only path is
+  1.645× faster than the certified route (2.011× on dense), 1.024× simdjson's
+  direct sum, with 52/148 faster and 102/148 (69%) at or within 10%; 46 remain
+  over 10%, so it is a major move from 0/148 but **not** the majority-faster
+  condition. It is not shippable: it needs the consumer-interface change and a
+  `NoEventCert` refinement.
+
+**What it does not support.**
+
+- **Faster than simdjson `parse`.** 0/151 on the raw row; the event-producing
+  route is 1.291× the traversal and 1.676× with the consumer.
+- **Faster than the fastest generic parser.** The materialising route is 1.424×
+  simdjson's direct-sum term (simdjson's `ps` is 0.702× our time, ≈30% faster at
+  that boundary); the no-event path is 1.024× with 52/148 faster and 46 over
+  10%. Neither is a majority-faster or all-within result at that boundary.
+- **End-to-end parity.** The trusted contract is 1.827× median on
+  `pad+parse`, `cfast` 6.374×, `nocopy` 47.888×; 0/151 at or within 10% for all
+  three.
+- **A comparison without the entry writer.** The raw `s1/cert` 0.603 omits the
+  entry writer's closing-quote recovery (2.34× raw stage 1, 57.3% of `s1w`); it
+  is not the fair stage-1 row and is not used as one.
+- **A shippable fast/DFA/frame path.** None has a refinement theorem over its C
+  body, and the no-event path has no `NoEventCert`; the certified defaults are
+  unchanged.
+- **A large equal-output win.** 3.6%/2.4% median and 89/151 faster is a
+  majority-slight-advantage, not a step change; ours loses on pretty and tab.
+
+**The target that follows.**
+
+- The defensible target is **equal-output parity**: ours against
+  simdjson+writer on the same event stream and the same consumer. It is met on
+  this corpus (0.965/0.977; 89/151 faster; 143/151 at or within 10% with the
+  same consumer), and it is the only row where the two sides produce the same
+  artifact.
+- The **stage-1 target is met at equal output**: certified 0.670, fused 0.678
+  against simdjson stage 1 + the same entry writer. The remaining gap is not
+  stage 1; it is the end-to-end rows below.
+- The **raw-parse target** (`rp/parse` or `rpc/parse`) is not the like-for-like
+  target; it prices our event materialisation against a traversal that does not
+  produce it.
+- The **end-to-end target** (`core` vs `pad+parse`) is unmet and is not closed by
+  the DFA/frame: trusted remains 1.827, and the stage-2 variants move the
+  best-stage-1 route only 1.704 → 1.543 → 1.477 while staying 0/148. Closing it
+  needs a change at the stage boundary (typed entries/masks, no-event consumer)
+  or admission, not another walk rewrite.
+- The **no-event boundary is measured, not assumed**: 52/148 faster, 102/148 at
+  or within 10%, 46 over. It is a major move from 0/148 but not the
+  majority-faster condition; the remaining over-10% documents are body-bound
+  (escapes and the 8/32 KiB sizes). Shipping the path needs the
+  consumer-interface change and `NoEventCert`, not another walk rewrite.
+
+### Superseded readings
+
+These are kept for history and are not the fair comparison:
+
+- The earlier statement that **the no-event row was absent/unmeasured** is
+  superseded by `/tmp/noevent` (224/224 gates; certified/no-event 1.645×;
+  no-event/direct-sum 1.024×; 52/148 faster, 102/148 at or within 10%). The
+  measured row is in §"Consumer boundary…", with the not-shippable status.
+- The route-native **1.486–1.594** (§"The heterogeneous corpus…") is
+  `route_ns` over `parse`: a raw-parse row, now read through the equal-output
+  rows. It is not superseded as a measurement; it is superseded as the fair
+  claim.
+- The **0.9118** best entry and the 96-document counts are a pipeline-versus-
+  `parse` result on that synthetic corpus, not an equal-output result; they do
+  not generalize to the heterogeneous set (C parser-only 1.287 there).
+- The **1.449 stage-1 row** in the first version of this reappraisal paired our
+  composite with raw simdjson stage 1 and read it as a loss. The fair
+  writer-included row (0.670/0.678) supersedes it; the raw 0.603 is kept only as
+  the not-like-for-like figure.
+- The **DFA 1.103/1.083** and **best route 1.543** are session-specific; the
+  matrix's same-session variants read DFA/certified **0.894** pipeline and
+  **0.861** stage-2 (reciprocals 1.118/1.161). The 1.543 best-route figure is
+  the earlier best-stage-1 run, not this matrix.
+- The earlier **15.7×** end-to-end (admission + staging + native + consumer) is a
+  different row from the Lean-first core and is not used as the current
+  comparison; the Lean-first row above supersedes it as the end-to-end headline.
+- The composed route's **1.68/5.98/4.32** native/parse cells are raw-parse
+  readings, not like-for-like; they remain measurements of that pair.
+- The **stage-2 fast rejection** (0.985/0.965/0.892) is confirmed by the matrix's
+  same-session `stage2_fast` (`frame/certified` 1.032 pipeline, 1.028 stage-2 —
+  the earlier figures are certified/fast, so the matrix is their reciprocal); it
+  is not superseded as a negative.

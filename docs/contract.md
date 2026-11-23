@@ -730,6 +730,33 @@ only those two writes keep their proofs; the one link that reads the whole recor
 `stage2ErrSetMsg`'s message word is the zero word the `null`-rewritten text
 stores.
 
+**The list-free arm is not covered by row (d), and the branch's default takes
+it.** On `fused-utf8` the route's `escapeArm` is unconditionally `0`
+(`probes/json/route/RouteMain.lean:320`), so stage 1 emits no list and
+`s2_string_body` runs its `nxp == 0` branch: `z_scan` classifies the body's own
+span and the escape unit's list-free entry decodes it. The model
+`stage2StringBody` (`LeanLLVM/Refinement/JsonStage2Body.lean:2809`) reads
+`xp[0..nxp)`; at `nxp = 0` it copies the body as form 1 without scanning, which
+is the list-consuming body's guarded case that row (d) proves, not the scan.
+The fixture `probes/install/ir/stage2.candidate.ll` and the helper body pinned
+from it (`probes/install/ir/stage2.helper.s2_string_body.ll`) also still
+describe the list-consuming body: `e6ce512` changed
+`kernel/json/stage2.c` but not the fixture, and the branch's version of
+[docs/json-route-artifact-correspondence.md](json-route-artifact-correspondence.md)
+records that `correspondence.sh` now reports three `always_inline` occurrences
+rather than two. This checkout's copy of that page predates the branch
+(`e6ce512` is not on `main`), so the note is in the branch's version. No
+committed ref carries the scan's model; the `defer-contract` worktree holds an
+uncommitted draft (`JsonStage2StringBodyNoList.lean`) whose sub-theorems
+elaborate remotely but which has no `.olean` and is in no ref; the on-demand
+build of that arm is in flight. The shipping path's evidence is the route/bench
+differential, not a refinement theorem, and row (d)'s proof remains valid only
+for the list body it names. The fast family's own certification state, including
+the fused stage-1 model and the entry-agreement strengthening, is §7.15. The
+measured shipping options and the open interface decisions are recorded in the
+performance note, [the certification gap on the shipping
+path](json-pipeline-performance.md#the-certification-gap-on-the-shipping-path).
+
 ### 7.7 The stage-2 report at its boundary
 
 `stage2Boundary` (`LeanLLVM/Refinement/JsonStage2Contract.lean`) is the stage-2
@@ -2039,6 +2066,59 @@ compared rows of observed agreement say nothing about rows the run does not
 touch, nor about lowering, linking or the loader. Whether the assumption is
 recorded as a ledger row of its own or as a certificate field is an open
 decision; no row is added here.
+
+### 7.15 The fast family's certification state
+
+The benchmark-only fast family is measured in the performance note, [the
+heterogeneous corpus and the certification
+state](json-pipeline-performance.md#the-heterogeneous-corpus-the-c-split-the-dfa-and-the-c-consumer-measured-2026-11-22).
+It is not installed, not committed, and has no refinement theorem over any C
+body; the certified route still calls `leanllvm_json_pipeline`, and the default
+stage 2 is the certified `leanllvm_json_stage2`.
+
+**What the model development proved.** Four uncommitted modules in the scratch
+worktree are model-level statements, compiled and axiom-pinned remotely:
+`JsonEntryAgreement.lean` (`entry_b3_pos8_agree`, `entry_b3_b8_agree`),
+`JsonRouteNoCopy.lean` (`routePost_observe`, `routePost_noCopy`, the stale-tail
+extent statement), `JsonFastSelector.lean` (`pfClass`, `pfSelect`, the
+branch-post schema, and the POS8 table read `route_init` supplies) and
+`JsonPipelineFastStage1.lean` (`pf_mask_pass_spec`, `pf_utf8_word_eq`,
+`pf_plain_spec`, `pf_plain_spec_b8`). Each is a statement about the model or a
+recombination of the certified units' theorems; none says that a compiled C body
+runs it, and none composes the route.
+
+**The emitter-agreement composition needs a stronger conclusion.**
+`entry_pos8_b8_agree` (`JsonB8Steps.lean:4734`) concludes `∃ kP kB, …` with
+`kP = kB` and equal lane reads of lengths `kP - k` and `kB - k`. That is enough
+for the one-call agreement it states and not enough to compose a second call:
+`kP` and `kB` are Nats tied to the BitVec-valued run results, with no equation
+`kP = k + (ent.map ctpop).sum` (nor the same for `kB`), so a later invocation's
+cursor cannot be identified with this witness's cursor for `readLanes32`'s slice
+length. `entry_b3_pos8_agree` and `entry_b3_b8_agree` are the short
+recombinations that do not need it. The strengthening is a statement change in
+`entry_pos8_b8_agree`, not a weaker lemma; no proof of the triple composition
+is claimed until it lands.
+
+**The fused stage-1 pass has a model, not a body.** `pf_mask_pass_spec` states
+`passBlock`/`passRun` over `pfEntryWord` and `fusedStep`, and `pf_utf8_word_eq`
+carries the fused verdict from `utf8_stage_refines`. There is no
+`probes/install/ir/pipeline_fast.candidate.ll` and no `JsonPipelineFastIR`, so
+the C full-block loop, the peeled partial block (`lim < 64`,
+`(1 << lim) - 1`), the list arm's `xp`/`nxp` fold and the partial block's
+`limMask` clamp are unstated. An IR-level `pf_mask_pass_spec` is the next
+obligation; the present statement is about the model pass only.
+
+**The no-list and DFA paths.** The no-list/default on-demand proof is in flight;
+§7.6 records the branch's `escapeArm := 0` and the model gap, and the draft has
+no `.olean` and no ref. The DFA's table layer is proved and hash-pinned
+(`JsonStage2DfaTable.lean`; `sdCls_correct` 256 rows, `sdRestore_sound` 3,
+`sdTr_sound` 80, `sdA_err_iff_refusal` 80), but its C body, fixture pin and final
+bridge to the walk post are pending, so it too has no contract object.
+
+**Consequence for shipping.** The fast family and the DFA are measurement
+prototypes; the C consumer is a gated benchmark transcription, not the Lean
+runtime's reading. Nothing in this section licenses a shipping claim, and the
+heterogeneous corpus remains 0/148 faster and 0/148 within 10%.
 
 ## 8. Out of scope for the first contract
 
