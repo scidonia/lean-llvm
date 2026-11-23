@@ -6,19 +6,20 @@
 #     --files LeanLLVM/Refinement/Foo.lean [more...] -- \
 #     build LeanLLVM.Refinement.Foo
 #
-# The worker holds a warm copy of this repository at the same absolute path,
-# transferred once with the recipe in README.md.  This script copies only the
-# named files and then runs one command under probes/install/lake-locked.sh on
-# the worker.  It never edits or commits the repository.
+# The worker holds a warm copy of this repository under its own home
+# (`$HOME/lean-llvm` on a worker booted from a precompiled image), transferred
+# once with the recipe in README.md.  This script copies only the named files
+# and then runs one command under probes/install/lake-locked.sh on the worker.
+# It never edits or commits the repository.
 #
 # Requires: gcloud (nix shell nixpkgs#google-cloud-sdk), bun, the `agents`
 # gcloud configuration, and a worker reachable by SID (see README.md).
 set -euo pipefail
 
 repo=$(cd "$(dirname "$0")/../.." && pwd)
-pack=${PACK:-/home/gavin/.omp/plugins/node_modules/@scidonia/omp-tools}
+pack=${PACK:-$HOME/.omp/plugins/node_modules/@scidonia/omp-tools}
 sid=${SID:?set SID to the OMP session id whose worker to use}
-remote_root=${REMOTE_ROOT:-$repo}
+remote_root=${REMOTE_ROOT:-}
 
 # The image carries Lean and Lake; `LAKE_STORE` names the store wrapper whose
 # closure holds mathlib, the Lean dependencies and their link objects.  Set it
@@ -36,6 +37,12 @@ remote() {
   ( cd "$pack" && nix shell nixpkgs#google-cloud-sdk nixpkgs#bun -c \
       bun scripts/gcloud-remote.ts "$@" )
 }
+
+# The worker's home is the OS Login user's, not this host's: ask it rather than
+# assume the local path exists there.
+if [ -z "$remote_root" ]; then
+  remote_root="$(remote run --session "$sid" -- 'echo $HOME' | tail -1)/lean-llvm"
+fi
 
 files=()
 while [ "$#" -gt 0 ]; do
