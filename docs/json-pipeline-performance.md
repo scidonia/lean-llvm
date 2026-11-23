@@ -2856,7 +2856,7 @@ Re-measure, not adjust, when:
 |the 80.6/17.5/4.9 split|`stage2.c`, the split harness or its ablations change, or the 30-document corpus is replaced|
 |the DFA ratios (1.103/1.083/1.543)|`stage2_dfa.c`, the gate, the 148 corpus or the route harness changes; the table pin changes with the C tables|
 |the C consumer rows|`consumeFast`, the `shim.c` ABI, the `TIMING=1` build or the three canonical documents change|
-|the certification state|the fast family's modules, the no-list draft, the DFA body/bridge, or the C fixture/pin change|
+|the certification state|the fast family's modules, the no-list draft, the DFA body/bridge, or the C fixture/pin change, or the no-event entry's contract and its walk obligation|
 
 ## Fair comparison and reappraisal (measured 2026-11-22)
 
@@ -2961,13 +2961,17 @@ are the four escape-heavy documents and the canonical strings document; the
 direct-sum term is `ps/parse` 1.183. This is the value-reading boundary, not the
 event-stream boundary.
 
-**The no-event row is now measured.** A bench-only no-event stage 2
-(`/tmp/noevent`) skips the event buffer and produces the consumer's reading
-directly — arena sum, tokens, values, sum — with the certified stage 1,
-grammar, refusals and string/number helpers. Gates: **224/224** (46 corner
-documents + 30 + 148) on verdict, refusal offset, tokens, values and sum,
-against the certified event stream + unchanged consumer; the certified ABI and
-`stage2.c` are untouched and remain the default.
+**The no-event row is measured on the scratch prototype; the entry now exists
+and is contract-pinned.** A bench-only no-event stage 2 (`/tmp/noevent`) skips
+the event buffer and produces the consumer's reading directly — arena sum,
+tokens, values, sum — with the certified stage 1, grammar, refusals and
+string/number helpers.  Gates: **224/224** (46 corner documents + 30 + 148) on
+verdict, refusal offset, tokens, values and sum, against the certified event
+stream + unchanged consumer.  The rows below are that prototype's measurements,
+taken on `fused-utf8`'s stage 2; the entry this tree now carries is derived
+from `main`'s stage 2 (`kernel/json/stage2_noevent.c`,
+`kernel/json/pipeline_noevent.c`), and its contract pins the *reading*, not the
+ratio.  The certified ABI and `stage2.c` are untouched and remain the default.
 
 |row (148 documents)|median|faster|1.0–1.10|>1.10|
 |---|---:|---:|---:|---:|
@@ -2987,9 +2991,18 @@ no-event/simdjson 0.831; strings 0.963/1.850; UTF-8 1.325/1.127.
 The removed term is the event stores (7.6% of the DFA stage-2 call) plus the
 13n+128-byte event buffer, its writes and the consumer's walk of `nev` bytes;
 that is what the 1.645× prices. Strings and escapes are body-bound and stay
-over 10%. **Not shippable:** the certified event-stream ABI and its proof remain
-the default; shipping needs the consumer-interface change (the consumer fed
-directly) and a `NoEventCert` refinement of that reading.
+over 10%. **Probe-only, and now contract-backed.** The additive entry has a pinned
+boundary contract — `stage2NoEventBoundary` in
+`LeanLLVM/Refinement/JsonStage2NoEventContract.lean`, with the route
+`tests/json-noevent/check.sh` over the certified entry, `pipeline.c`'s stage 1
+and the unchanged consumer — so the reading it claims is no longer a prototype's
+unverified output.  Two obligations remain named and uninhabited: the walk,
+`Stage2NoEventWalkObligation`, conditional on a contract for `od_gap_recover`,
+which the tree does not model; and, inside it, that the emitted literal chain
+implements the proved rule `neLitCheck_eq_litCheck`.  The certified event-stream
+ABI and its proof remain the default: shipping the no-event path needs the
+consumer-interface change (the consumer fed directly), which this work does not
+make.
 
 ### Raw parse: not like-for-like
 
@@ -3088,12 +3101,17 @@ corpus…").
 - **The raw-parse and end-to-end rows are measurable**, and they are not
   like-for-like: raw parse 1.291, trusted end-to-end 1.827, cfast 6.374, nocopy
   47.888 against `pad+parse`.
-- **The no-event consumer boundary is measured.** The bench-only path is
-  1.645× faster than the certified route (2.011× on dense), 1.024× simdjson's
-  direct sum, with 52/148 faster and 102/148 (69%) at or within 10%; 46 remain
-  over 10%, so it is a major move from 0/148 but **not** the majority-faster
-  condition. It is not shippable: it needs the consumer-interface change and a
-  `NoEventCert` refinement.
+- **The no-event consumer boundary is measured, and the entry is now
+  contract-backed.** The prototype is 1.645× faster than the certified route
+  (2.011× on dense), 1.024× simdjson's direct sum, with 52/148 faster and
+  102/148 (69%) at or within 10%; 46 remain over 10%, so it is a major move from
+  0/148 but **not** the majority-faster condition.  The additive entry's
+  contract states the reading the unchanged consumer's fold computes
+  (`stage2NoEventBoundary`, and its corollary `stage2NoEventBoundary_consumer`);
+  `tests/json-noevent/check.sh` (NE1/NE2/NE3/NE4/NE6) is what checks the two C
+  entries agree over the committed corpus.  The contract does not pin the
+  prototype's ratios, which are measurements of a different body.  Shipping
+  still needs the consumer-interface change, which is not made.
 
 **What it does not support.**
 
@@ -3109,9 +3127,10 @@ corpus…").
 - **A comparison without the entry writer.** The raw `s1/cert` 0.603 omits the
   entry writer's closing-quote recovery (2.34× raw stage 1, 57.3% of `s1w`); it
   is not the fair stage-1 row and is not used as one.
-- **A shippable fast/DFA/frame path.** None has a refinement theorem over its C
-  body, and the no-event path has no `NoEventCert`; the certified defaults are
-  unchanged.
+- **A shippable fast/DFA/frame path.** The DFA and the frame have no refinement
+  theorem over their C bodies.  The no-event entry has a pinned boundary contract
+  and named obligations, not a refinement of its walk, and it is not shipped; the
+  certified defaults are unchanged.
 - **A large equal-output win.** 3.6%/2.4% median and 89/151 faster is a
   majority-slight-advantage, not a step change; ours loses on pretty and tab.
 
@@ -3134,10 +3153,11 @@ corpus…").
   needs a change at the stage boundary (typed entries/masks, no-event consumer)
   or admission, not another walk rewrite.
 - The **no-event boundary is measured, not assumed**: 52/148 faster, 102/148 at
-  or within 10%, 46 over. It is a major move from 0/148 but not the
+  or within 10%, 46 over.  It is a major move from 0/148 but not the
   majority-faster condition; the remaining over-10% documents are body-bound
-  (escapes and the 8/32 KiB sizes). Shipping the path needs the
-  consumer-interface change and `NoEventCert`, not another walk rewrite.
+  (escapes and the 8/32 KiB sizes).  The entry's reading is now contract-pinned;
+  shipping the path needs the consumer-interface change and the walk's
+  obligation, not another rewrite of the ratios.
 
 ### Superseded readings
 
@@ -3146,7 +3166,7 @@ These are kept for history and are not the fair comparison:
 - The earlier statement that **the no-event row was absent/unmeasured** is
   superseded by `/tmp/noevent` (224/224 gates; certified/no-event 1.645×;
   no-event/direct-sum 1.024×; 52/148 faster, 102/148 at or within 10%). The
-  measured row is in §"Consumer boundary…", with the not-shippable status.
+  measured row is in §"Consumer boundary…", with the probe-only, contract-backed status.
 - The route-native **1.486–1.594** (§"The heterogeneous corpus…") is
   `route_ns` over `parse`: a raw-parse row, now read through the equal-output
   rows. It is not superseded as a measurement; it is superseded as the fair

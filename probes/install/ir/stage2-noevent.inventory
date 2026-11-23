@@ -1,0 +1,40 @@
+# The no-event stage-2 entry as emitted and committed: opcodes and call targets.
+# Regenerate with probes/install/ir/capture-stage2-noevent.sh.
+#
+# The derivation, measured at three points, in this order:
+#   the untransformed emission of the same source at the measured line: 1003 lines / 122 blocks,
+#     carrying 25 line(s) with a vector type;
+#   the same source with every helper noinline and SLP disabled: 1148 lines / 167 blocks, no
+#     vector type and no insertelement/extractelement;
+#   the fixture below, with the staging objects flattened to parameters: 1148 lines,
+#     813 instruction(s), 167 block(s), 115 phi(s), 4 alloca(s), 1 `ret`.
+#
+# The body is the goto machine: 11 `switch` became comparison chains.
+# The scalar literal compare is body text: 32 byte comparison(s), no call.
+#
+call @llvm.lifetime.end.p0
+call @llvm.lifetime.start.p0
+call @llvm.memset.p0.i64
+call @llvm.trap
+call @num_fast_el1
+call @od_gap_recover
+call @s2_string_body
+opcode add
+opcode alloca
+opcode and
+opcode br
+opcode call
+opcode getelementptr
+opcode icmp
+opcode load
+opcode lshr
+opcode or
+opcode phi
+opcode ret
+opcode select
+opcode store
+opcode sub
+opcode trunc
+opcode unreachable
+opcode xor
+opcode zext
