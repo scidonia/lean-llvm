@@ -38,6 +38,42 @@ development host, and every local invocation still carries the ceiling.
 
 ### Remote worker sizing
 
+Choose the worker in this order; each step removes a degree of freedom the next
+would otherwise absorb, and the figures below decide only the shape.
+
+1. **Architecture.** x86-64 unless the work is an aarch64 build.  Store paths
+   are architecture-specific, so this host's x86-64 closure cannot run on an
+   Arm worker, and an Arm worker cannot use the local store.
+2. **Image.** The project's precompiled family for that architecture, with
+   `--disk-gb 50` (below), unless the ref is far from the bake — then a plain
+   image plus the transfer recipe in `probes/remote-build/README.md`.
+3. **Request and placement.** Ask for `--cores` and `--memory-gb` from the work
+   (the figures below), and let `create` choose the machine type and zone by
+   the estimated **cost of the work**: hourly rate times the family's measured
+   seconds for the reference build (`scripts/gcloud-speed.ts` in omp-tools),
+   compared across every shape a covered zone offers.  The cheap hour is not
+   the instrument — a family that builds faster can cost less per build at a
+   higher hourly rate.  `plan` prints the shape, rate and per-build cost
+   without spending.  The image's storage region is not a tiebreak: a worker
+   placed elsewhere streams the image at create time, and a cross-region spawn
+   measured the same order as an in-region one (timings in
+   `probes/remote-build/README.md`).  Pass `--idle-minutes` with the gap the
+   session expects to wait: the estimate becomes `hourly × (build + idle)`, and
+   idle is billed at the rate.  Only a machine-independent duration moves the
+   ranking — a utilisation ratio multiplies every candidate equally and cancels
+   — and a gap of minutes can favour the slow-build, cheap-hour family over the
+   quick build.
+4. **Capacity.** Spot by default; `--ondemand` only for a run with no
+   checkpoint to return to.
+5. **Lease and teardown.** Size the lease from the expected wall clock, and
+   delete at the work-item boundary: an idle machine bills at its rate, so a
+   gap of minutes is cheaper to cross by deleting and recreating from the image
+   than by holding it.
+
+The RAM, disk and vCPU figures below are what the request must carry, and the
+cost model cannot see them: 16 GB for a lane and 64 GB for the full target stay
+requirements even where a smaller shape would price lower.
+
 A worker is sized from a measured build peak, not from idle use.  On
 2026-11-19 an 8-vCPU `e2-highmem-8` worker used ~1.4 GB idle, and the
 largest leaf module then in the tree (`JsonStage2WalkScopeClassAB`, 81 KB)
@@ -119,13 +155,17 @@ bun scripts/gcloud-worker.ts create --purpose lean-prover --cores 8 \
   --memory-gb 64 --disk-gb 50 --lease 8h --session <session-id> \
   --image-family lean-llvm-precompiled-x86-64        # --arch aarch64 for Arm
 bun scripts/gcloud-remote.ts git-push --session <session-id> \
-  --repo . --remote $HOME/lean-llvm.git --ref <branch>
-bun scripts/gcloud-remote.ts run --session <session-id> --dir $HOME/lean-llvm -- \
-  'git fetch origin <branch> && git merge --ff-only FETCH_HEAD && nix develop -c lake build'
+  --repo . --remote '~/lean-llvm.git' --ref <branch>
+bun scripts/gcloud-remote.ts run --session <session-id> -- \
+  'cd "$HOME/lean-llvm" && git fetch origin <branch> && git merge --ff-only FETCH_HEAD && nix develop -c lake build'
 ```
 
-Transfer a ref through the tunnel: the worker has no IPv4 route, so push from
-the local checkout into the image's bare mirror and fetch it there.  `--disk-gb
+`--dir` and `--remote` are sent literally, so a local `$HOME` expands to the
+local path before the argument reaches the worker, whose OS Login home is a
+different one: use a quoted `~/` git URL, and `cd "$HOME/…"` inside the command
+or the literal remote path.  Transfer a ref through the tunnel: the worker has
+no IPv4 route, so push from the
+local checkout into the image's bare mirror and fetch it there.  `--disk-gb
 50` is the image's own disk size and a smaller boot disk is refused.
 
 **Rebake when the image stops being warm.**  The image commits to one revision;

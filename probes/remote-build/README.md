@@ -21,6 +21,54 @@ Nothing here is committed from the worker: it is a build lane, not a committer.
   family.  The worker is spot, has no external address, and every byte reaches
   it through the IAP tunnel.  Teardown is `delete --session <session-id>`.
 
+## Placement
+
+Architecture and image are decided first (`AGENTS.md`, "Remote worker sizing").
+The machine type and zone are then chosen by the estimated **cost of the work**
+— hourly rate times the family's measured seconds for a reference build
+(`scripts/gcloud-speed.ts` in omp-tools) — across every shape a covered zone
+offers, so the cheap hour is not the instrument.
+
+`plan` runs for this repository on 2026-11-23, 4 vCPU/16 GB, 2 h lease,
+50 GB boot disk, at three expected idle levels (nothing spent):
+
+| idle before/after the build | x86 pick | x86 estimate | Arm pick | Arm estimate |
+|---|---|---|---|---|
+| none | `c4-highmem-4`, `europe-west9-a` | 0.00036 EUR | `c4a-standard-4`, `europe-west4-a` | 0.00025 EUR |
+| 10 min | `n4-standard-4`, `europe-west1-b` | 0.00427 EUR | `c4a-standard-4`, `europe-west4-a` | 0.00436 EUR |
+| 30 min | `n4-standard-4`, `europe-west1-b` | 0.01203 EUR | `c4a-standard-4`, `europe-west4-a` | 0.01258 EUR |
+
+Idle is billed at the machine's rate, so a gap of minutes is most of the bill:
+ten minutes puts 91% of the x86 estimate and 94% of the Arm one in idle, and
+the build term stops choosing the machine.  The x86 pick then flips from
+`c4-highmem-4` to the cheap hour, `n4-standard-4` in `europe-west1-b` — which
+is the cross-region placement measured below, and the reason that row matters.
+The estimates are per reference build (the 72-module job in
+`scripts/gcloud-speed.ts`); a cone or the full default target scales the build
+term and lowers the idle share, without changing the rule.  At these rates a
+60-second boot is itself 1.0–1.6× the build cost.
+
+The image's storage region is not a tiebreak: a worker in another region
+streams the image at create time instead of copying it, and the placements
+below measured the same order — the spread between two runs of one placement
+was larger than the difference between them:
+
+| placement | shape | `create` | tunnel ready | first `lake build` | second |
+|---|---|---|---|---|---|
+| image region, `europe-west4-b` | `n4-standard-4` | 12 s | 26 s | 25.0 s | 1.21 s |
+| other region, `europe-west1-b` | `n4-standard-4` | 22 s | 12 s | not isolated | 1.45 s |
+| other region, `europe-west1-b` | `n4-standard-4` | 13 s | 40 s | 29.8 s | 1.78 s |
+
+Measured 2026-11-23 from `bf0d79c`, all booted from
+`lean-llvm-precompiled-x86-64` (baked at `8c65035`, stored in `europe-west4`),
+on 4 vCPU/16 GB spot workers with the image's 50 GB boot disk.  The
+`europe-west1-b` rows are the placement the idle-aware estimate picks for a
+session that expects to wait, so they are the ones to compare with the
+image-region row.  "tunnel ready" is counted from `create` returning; the first
+cross-region attempt answered `4047 Failed to lookup instance` for a few
+seconds.  The first `lake build` is cold I/O, not re-elaboration — its user CPU
+was 3.5 s on the cross-region row — and the second is the warm figure.
+
 ## Provisioning (once per worker)
 
 A worker from a precompiled family already has the checkout at the OS Login
@@ -30,9 +78,9 @@ into the existing tree and only what changed is re-elaborated:
 
 ```bash
 bun scripts/gcloud-remote.ts git-push --session <session-id> \
-  --repo . --remote $HOME/lean-llvm.git --ref main
-bun scripts/gcloud-remote.ts run --session <session-id> --dir $HOME/lean-llvm -- \
-  'git fetch origin main && git merge --ff-only FETCH_HEAD && nix develop -c lake build'
+  --repo . --remote '~/lean-llvm.git' --ref main
+bun scripts/gcloud-remote.ts run --session <session-id> -- \
+  'cd "$HOME/lean-llvm" && git fetch origin main && git merge --ff-only FETCH_HEAD && nix develop -c lake build'
 ```
 
 Measured on the 8-vCPU bake instances (`n4d-highmem-8` for x86-64,
@@ -105,11 +153,11 @@ substitute from `cache.nixos.org`), and the build takes 21.5 minutes on
 ```bash
 bun scripts/gcloud-remote.ts run --session <id> -- 'git init -q --bare -b main $HOME/lean-llvm.git'
 bun scripts/gcloud-remote.ts git-push --session <id> --repo . \
-  --remote $HOME/lean-llvm.git --ref main
+  --remote '~/lean-llvm.git' --ref main
 bun scripts/gcloud-remote.ts run --session <id> -- \
   'git clone -q $HOME/lean-llvm.git $HOME/lean-llvm'
-bun scripts/gcloud-remote.ts tmux-run --session <id> --dir $HOME/lean-llvm -- \
-  'nix develop -c lake build'
+bun scripts/gcloud-remote.ts tmux-run --session <id> -- \
+  'cd "$HOME/lean-llvm" && nix develop -c lake build'
 ```
 
 Keep the bare mirror in the image and leave the clone's `origin` pointing at
@@ -118,7 +166,7 @@ the flake inputs so a garbage collection cannot remove what an offline
 `nix develop` needs:
 
 ```bash
-<remote> run --dir $HOME/lean-llvm -- 'mkdir -p $HOME/.nix-roots &&
+<remote> run -- 'mkdir -p $HOME/.nix-roots &&
   nix build --out-link $HOME/.nix-roots/devshell .#devShells.<system>.default &&
   for p in /nix/store/*-source; do
     nix-store --add-root $HOME/.nix-roots/in-$(basename "$p") --indirect -r "$p"
@@ -132,7 +180,7 @@ freeze its disk under the family — the same family name, the base image's gues
 OS features (`GVNIC`, plus `UEFI_COMPATIBLE` on Arm), and the revision label:
 
 ```bash
-<remote> run --dir $HOME/lean-llvm -- 'printf "%s\n" <family> \
+<remote> run -- 'cd "$HOME/lean-llvm" && printf "%s\n" <family> \
   "revision $(git rev-parse HEAD)" "baked <date>" > $HOME/lean-llvm.IMAGE && sync'
 
 gcloud --configuration=agents compute instances stop <instance> --zone=<zone>
@@ -146,10 +194,11 @@ gcloud --configuration=agents compute images create <family>-<date> \
 bucket and the `agents` identity's `compute.instanceAdmin.v1` is enough.  Add
 `UEFI_COMPATIBLE` on Arm.
 
-Keep both families in the same storage location (`europe-west4`): a worker
-created in another region streams the image there, which inflates its create
-time and makes spawn timings look like an architecture difference.  An image
-already stored elsewhere is moved by creating a new image from it —
+Keep both families in the same storage location (`europe-west4`), so there is
+one place to look and one storage bill.  The location does not constrain
+placement: a worker created in another region streams the image at create time
+and measured the same order as an in-region spawn (**Placement** above).  An
+image already stored elsewhere is moved by creating a new image from it —
 `--source-image=<old> --storage-location=europe-west4` with the same family and
 guest OS features, then deleting the old one; the location cannot be changed in
 place.
@@ -161,8 +210,8 @@ second — the first pays cold I/O and may take 30 s:
 ```bash
 bun scripts/gcloud-worker.ts create --purpose verify --cores 4 --memory-gb 16 \
   --disk-gb 50 --lease 1h --session <id> --image-family <family> --ondemand
-bun scripts/gcloud-remote.ts run --session <id> --dir $HOME/lean-llvm -- \
-  'git log -1 --format=%H && time nix develop -c lake build &&
+bun scripts/gcloud-remote.ts run --session <id> -- \
+  'cd "$HOME/lean-llvm" && git log -1 --format=%H && time nix develop -c lake build &&
    time nix develop -c lake build'
 ```
 
@@ -214,8 +263,13 @@ the worker, so name every changed source the target reads.
 
 ## Limits
 
-- The worker's repository path must equal the local one; `remote-lean.sh` uses
-  the same absolute path on both sides.  The store package tree must exist at
+- The worker's repository path is its own, not the local absolute path: an OS
+  Login worker's home is `/home/sa_…`, so a precompiled image puts the checkout
+  at that home's `lean-llvm`.  `remote-lean.sh` resolves the remote home unless
+  `REMOTE_ROOT` names a path.  Every argument is sent literally, so
+  `--dir $HOME/…` and `--remote $HOME/…` expand on this host instead: write
+  `cd "$HOME/…"` inside the command, or pass a quoted `~/` git URL or the
+  literal remote path.  The store package tree must exist at
   its recorded paths (copied once or baked into the image); a replay hashes the
   toolchain from its version string, but a re-elaboration names the running
   sysroot.
