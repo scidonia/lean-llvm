@@ -66,8 +66,16 @@
                 ''
               ) allDeps}
 
+              # `stamps/` sits inside the cache it records.  Pruning it with the
+              # package directories would drop every stamp on each invocation,
+              # so the next run would re-copy every package and reset the
+              # mtimes Lake's staleness check reads, redoing build work that
+              # nothing changed.
               for entry in "$cache"/*/; do
                 [ -d "$entry" ] || continue
+                case "$(basename "$entry")" in
+                  stamps) continue ;;
+                esac
                 case "$keep" in
                   *" $(basename "$entry") "*) ;;
                   *) rm -rf "$entry" ;;
