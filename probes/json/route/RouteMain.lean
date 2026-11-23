@@ -59,12 +59,21 @@ opaque route (window : ByteArray) (n : UInt64)
   (dstcap : UInt64) (ndst : ByteArray) (ev : ByteArray) (evcap : UInt64)
   (nev err : ByteArray) (arm : UInt64) : IO ByteArray
 
-/-- One stage interval the adapter recorded, in nanoseconds: 0 the copy of the
-caller's arrays into the object's ABI, 1 the native call, 2 the copy back.
-`UINT64_MAX` means the adapter was built without `ROUTE_TIMING` and filled no
-slot, which `--stages` reports rather than printing a zero.  The read is an
-`IO` action because the slots are mutable state: a pure extern with a literal
-index is folded once and reports the first call's interval for every later one. -/
+/-- One stage interval the adapter recorded, in nanoseconds.  Slots 0-2 are the
+three the adapter has always recorded: 0 the caller's arrays copied into the
+object's ABI (the reuse entries: the document copy plus the cursor resets), 1
+the native call, 2 the copy back (the result object and its payload copies; the
+no-copy mode: the observation header alone).  The candidate entry also fills 3
+(document copy), 4 (cursor resets), 5 (staging preconditions) and 6 (the
+returned cursors and the contract checks).  Slot 0 is the parent of 3 and 4, so
+a candidate row's residual uses slots 1 and 3-6 only; that residual is the FFI
+call path, the pointer derivations, `route_init` and the result handling's
+boxing, and is reported per repetition and then medianed like every other
+column.  `UINT64_MAX` means the adapter was built without `ROUTE_TIMING` and
+filled no slot, which the modes report as `-` rather than printing a zero.  The
+read is an `IO` action because the slots are mutable state: a pure extern with a
+literal index is folded once and reports the first call's interval for every
+later one. -/
 @[extern "leanllvm_route_stage_ns_at"]
 opaque stageNsAt (i : UInt64) : IO Nat
 
@@ -80,11 +89,45 @@ opaque zeroed (n : UInt64) : IO ByteArray
 
 def blocks (n : Nat) : Nat := (n + 63) / 64
 
+/-- The mode list.  `--consume-reuse` is the benchmark-only reader: it stages the
+record's buffers once and hands those same arrays to the object on every
+repetition, so a row prices the native call, the document's copy into the window
+and the result's copy-out with no thirteen-array copy-in.  It reports the same
+consumer fields as `--consume` plus the `nk`, `nxp` and `err` cursors, and it
+needs a document the decision admits.  The `--consume-reuse-fast*` modes are
+that reader over one benchmark-only stage-1 candidate each -- the fused
+candidate, its escape-list arm, the `split_plain` shape's pos8 and b8 emitters,
+and the per-document choice entry -- and each first runs the candidate's
+equivalence gate against the default on the same document.
+`--consume-reuse-fast-nocopy` is the fused candidate with the no-copy result:
+the adapter returns the 80-byte observation header and the consumer reads the
+staged `dst`/`ev` arrays, so the result allocation and its payload copies leave
+the measured wrapper.  `--consume-reuse-fast-best-nocopy` is that same no-copy
+result over the per-document choice entry, the closest route-native
+configuration: the best pipeline plus the 80-byte header.
+`--consume-reuse-fast-best-nocopy-cfast` is that configuration with the
+benchmark C consumer: the staged event stream is walked in C at the same widths,
+stop rule and checksum, gated against both Lean readings before the loop, so the
+timed consumer builds no per-token Lean object.
+`--consume-reuse-fast-best-nocopy-cfast-trusted` is that configuration with the
+admission stage skipped: the caller asserts `documentDecision = admitted` (a
+benchmark contract, not the certified default), so the row's `admission_ns` is
+`-` and it carries `trusted=1`. -/
 def usage : String :=
   "usage: leanllvm-json-route --doc <file> [<native depth>]\n" ++
   "       leanllvm-json-route --admit <file> [reps] [<native depth>]\n" ++
   "       leanllvm-json-route --stages <file> [reps]\n" ++
-  "       leanllvm-json-route --consume <file> [reps]"
+  "       leanllvm-json-route --consume <file> [reps]\n" ++
+  "       leanllvm-json-route --consume-reuse <file> [reps]\n" ++
+  "       leanllvm-json-route --consume-reuse-fast <file> [reps]\n" ++
+  "       leanllvm-json-route --consume-reuse-fast-list <file> [reps]\n" ++
+  "       leanllvm-json-route --consume-reuse-fast-plain-pos8 <file> [reps]\n" ++
+  "       leanllvm-json-route --consume-reuse-fast-plain-b8 <file> [reps]\n" ++
+  "       leanllvm-json-route --consume-reuse-fast-nocopy <file> [reps]\n" ++
+  "       leanllvm-json-route --consume-reuse-fast-best-nocopy <file> [reps]\n" ++
+  "       leanllvm-json-route --consume-reuse-fast-best-nocopy-cfast <file> [reps]\n" ++
+  "       leanllvm-json-route --consume-reuse-fast-best-nocopy-cfast-trusted <file> [reps]\n" ++
+  "       leanllvm-json-route --consume-reuse-fast-best <file> [reps]"
 
 def hexByte (b : UInt8) : String :=
   let s := String.ofList (Nat.toDigits 16 b.toNat)
@@ -196,6 +239,10 @@ def preconditionName : Nat → String
   | 20 => "the two payload lengths"
   | 21 => "the window's 64-byte blocks (the mask unit reads every block whole)"
   | 22 => "the document's own bytes in the admission call"
+  | 23 => "the reused document's length against the staged window"
+  | 24 => "the candidate's entry-word scratch at one word per 64-byte block"
+  | 25 => "the candidate's entry stream at the cursor the call resets"
+  | 26 => "the candidate variant the adapter was asked for"
   | _ => "a precondition the adapter did not name"
 
 /-- Report a failure tag and return that class's exit status: 3 for an unmet
@@ -292,6 +339,120 @@ def call (s : Staged) : IO ByteArray :=
     s.xp (UInt64.ofNat s.xpcap) s.nxp s.xcarry
     s.dst (UInt64.ofNat s.dstcap) s.ndst
     s.ev (UInt64.ofNat s.evcap) s.nev s.err escapeArm
+
+/-- The benchmark-only reuse entry: the same arguments as `route`, plus the
+document, with the thirteen arrays already staged handed to the object in
+place.  The adapter copies the document into the window at offset 3, resets the
+five cursors and the two carries the object does not initialise, calls
+`leanllvm_json_pipeline` over the caller's own arrays, and builds the tagged
+result `route` returns.  `shim.c`'s `route_reuse_impl` states the state it
+reuses and why writing into the caller's buffers is safe for this one mode. -/
+@[extern "leanllvm_json_route_reuse"]
+opaque routeReuse (window doc : ByteArray) (n : UInt64)
+  (sc mkSlot entw : ByteArray) (ep : ByteArray) (epcap : UInt64) (nk : ByteArray)
+  (xp : ByteArray) (xpcap : UInt64) (nxp xcarry dst : ByteArray)
+  (dstcap : UInt64) (ndst : ByteArray) (ev : ByteArray) (evcap : UInt64)
+  (nev err : ByteArray) (arm : UInt64) : IO ByteArray
+
+/-- The reuse call over a staged workspace: `s`'s buffers are the ones the
+object writes, and `doc` is the repetition's own document, copied into `s`'s
+window.  The capacities are the staged ones, so a document of another length is
+refused by the adapter rather than measured against buffers that do not fit. -/
+def callReuse (s : Staged) (doc : ByteArray) : IO ByteArray :=
+  routeReuse s.window doc (UInt64.ofNat s.n)
+    s.sc s.mkSlot s.entw
+    s.ep (UInt64.ofNat s.epcap) s.nk
+    s.xp (UInt64.ofNat s.xpcap) s.nxp s.xcarry
+    s.dst (UInt64.ofNat s.dstcap) s.ndst
+    s.ev (UInt64.ofNat s.evcap) s.nev s.err escapeArm
+
+/-- The candidate's workspace: the reuse staging plus the entry-word scratch
+`pipeline_fast.h` states.  The default's `sc`/`mk`/`entw`/`xcarry` are kept
+because the gate runs the default on the same buffers; the candidate's timing
+call does not pass them, since the candidate keeps its masks and both carries
+in registers. -/
+structure FastStaged where
+  s : Staged
+  ent : ByteArray
+
+/-- Staging for the candidate: `stage`'s buffers and `(n + 63) >> 6`
+zero-filled entry words (`ent`).  `ep` is `stage`'s capacity
+(`64 * blocks + 9`), which covers the candidate's rule at the cursor the mode
+resets: `64 * blocks + 8` slots (`entry.h`). -/
+def stageFast (doc : ByteArray) (n : Nat) : IO FastStaged := do
+  let s ← stage doc n
+  let ent ← zeroed (UInt64.ofNat (8 * blocks n))
+  return { s := s, ent := ent }
+
+/-- The candidate variants, in `shim.c`'s order: the fused list-free entry, its
+escape-list arm, and the `split_plain` shape's pos8 and b8 emitters. -/
+def candidateFused : UInt64 := 0
+def candidateList : UInt64 := 1
+def candidatePlainPos8 : UInt64 := 2
+def candidatePlainB8 : UInt64 := 3
+def candidateBest : UInt64 := 4
+
+/-- The candidate's name, for the row and the messages. -/
+def candidateName : UInt64 → String
+  | 0 => "pipeline_fast"
+  | 1 => "pipeline_fast_list"
+  | 2 => "pipeline_fast_plain_pos8"
+  | 3 => "pipeline_fast_plain_b8"
+  | 4 => "pipeline_fast_best"
+  | _ => "a candidate the adapter did not name"
+
+/-- The candidate's entry: the reuse call against the selected
+`leanllvm_json_pipeline_fast*` function.  The buffers are handed over in place,
+the document is copied into the window on every call, and the five cursors are
+reset; there are no `sc`/`mk`/`entw`/`xcarry` resets because the candidates keep
+their masks and carries in registers or in locals, and `ent` is the only
+caller-staged scratch.  `nocopy = 1` returns the 80-byte observation header and
+leaves the payload in the staged `dst`/`ev`, so the consumer reads those arrays
+directly; `0` builds the full tagged result. -/
+@[extern "leanllvm_json_route_reuse_candidate"]
+opaque routeReuseCandidate (window doc : ByteArray) (n : UInt64)
+  (ent : ByteArray) (ep : ByteArray) (epcap : UInt64) (nk : ByteArray)
+  (xp : ByteArray) (xpcap : UInt64) (nxp : ByteArray)
+  (dst : ByteArray) (dstcap : UInt64) (ndst : ByteArray)
+  (ev : ByteArray) (evcap : UInt64) (nev : ByteArray)
+  (err : ByteArray) (variant : UInt64) (nocopy : UInt64) : IO ByteArray
+
+/-- The candidate's timing call over its staged workspace. -/
+def callReuseCandidate (f : FastStaged) (doc : ByteArray) (variant : UInt64)
+    (nocopy : Bool) : IO ByteArray :=
+  routeReuseCandidate f.s.window doc (UInt64.ofNat f.s.n)
+    f.ent f.s.ep (UInt64.ofNat f.s.epcap) f.s.nk
+    f.s.xp (UInt64.ofNat f.s.xpcap) f.s.nxp
+    f.s.dst (UInt64.ofNat f.s.dstcap) f.s.ndst
+    f.s.ev (UInt64.ofNat f.s.evcap) f.s.nev f.s.err
+    variant (if nocopy then 1 else 0)
+
+/-- The candidate's one-shot equivalence gate: the default at the arm the
+candidate pairs with (`arm 2` for the list entry, `arm 0` otherwise) and the
+candidate, both from the same fresh staging, compared on the fields
+`pipeline_fast.h` and `pipeline_fast_plain.h` list -- the return value, `err`,
+`nk` and `ep[0..nk)`, then `nxp` and `xp`: the list entry's stream against the
+default's arm-2 stream, or the whole buffer unchanged for the list-free entries;
+then `ndst` and `dst[0..ndst)`, and `nev` and `ev[0..nev)`.  The adapter's
+`route_init` fills the entry unit's table before the gate's first call, which is
+the pos8 entry's obligation and the default's at arm 0.  The result is a
+five-word header: tag, field, offset, expected, observed. -/
+@[extern "leanllvm_route_gate_candidate"]
+opaque gateCandidate (window doc : ByteArray) (n : UInt64)
+  (sc mkSlot entw : ByteArray) (ep : ByteArray) (epcap : UInt64) (nk : ByteArray)
+  (xp : ByteArray) (xpcap : UInt64) (nxp xcarry ent : ByteArray)
+  (dst : ByteArray) (dstcap : UInt64) (ndst : ByteArray)
+  (ev : ByteArray) (evcap : UInt64) (nev err : ByteArray)
+  (variant : UInt64) : IO ByteArray
+
+/-- The gate call over the candidate's staged workspace. -/
+def gateCall (f : FastStaged) (doc : ByteArray) (variant : UInt64) :
+    IO ByteArray :=
+  gateCandidate f.s.window doc (UInt64.ofNat f.s.n)
+    f.s.sc f.s.mkSlot f.s.entw f.s.ep (UInt64.ofNat f.s.epcap) f.s.nk
+    f.s.xp (UInt64.ofNat f.s.xpcap) f.s.nxp f.s.xcarry f.ent
+    f.s.dst (UInt64.ofNat f.s.dstcap) f.s.ndst
+    f.s.ev (UInt64.ofNat f.s.evcap) f.s.nev f.s.err variant
 
 /-! ### Outcome handling, in the parts the stage report prices
 
@@ -999,6 +1160,26 @@ def decodeIndexed (result : ByteArray) : Except String Observation :=
       else
         .ok o
 
+/-- The no-copy mode's header decode: the 80-byte observation header with no
+payload, whose `ndst`/`nev` words name the staged `dst`/`ev` extents the
+consumer reads.  A tag other than the two observation classes is a failure the
+adapter already reported. -/
+def decodeObservation (result : ByteArray) : Except String Observation :=
+  if result.size != headerBytes then
+    .error s!"the observation is {result.size} bytes, not its \
+      {headerBytes}-byte header"
+  else
+    let tag := indexWord result 0
+    if tag != 0 && tag != 1 then
+      .error s!"the adapter tagged the observation {tag}, not an observation"
+    else
+      .ok { verdict := (indexWord result 32).toNat
+            nk := (indexWord result 40).toNat
+            nxp := (indexWord result 48).toNat
+            ndst := (indexWord result 56).toNat
+            nev := (indexWord result 64).toNat
+            err := (indexWord result 72).toNat }
+
 /-- Read a result as a consumer would.  `build` also materialises one `Event`
 per event: with it the walk pays an object and an array growth per event;
 without it the same fields are folded and no per-token object exists. -/
@@ -1032,6 +1213,69 @@ partial def consumeResult (result : ByteArray) (o : Observation)
           else acc
         walk (k + w) (tokens + 1) sum acc
   walk 0 0 (arenaSum 0 0) #[]
+
+/-- Read a no-copy result as a consumer would, from the staged arrays: the
+arena is `dst[0..ndst)` and the event stream `ev[0..nev)`, with the same
+record widths, the same stop-before-reading-past rule and the same `build`
+behaviour as `consumeResult`. -/
+partial def consumeStaged (dst ev : ByteArray) (o : Observation)
+    (build : Bool) : Consumed :=
+  let rec arenaSum (k : Nat) (acc : UInt64) : UInt64 :=
+    if k < o.ndst then
+      arenaSum (k + 1) (acc + (dst.get! k).toUInt64)
+    else acc
+  let rec walk (k : Nat) (tokens : Nat) (sum : UInt64) (acc : Array Event) :
+      Consumed :=
+    if k >= o.nev then
+      { tokens := tokens, events := k, arena := o.ndst, sum := sum, walked := true,
+        values := acc.size, verdict := o.verdict }
+    else
+      let tag := ev.get! k
+      let w := eventWidth tag
+      if k + w > o.nev then
+        { tokens := tokens, events := k, arena := o.ndst, sum := sum,
+          walked := false, values := acc.size, verdict := o.verdict }
+      else
+        let len := if w == 13 then indexWord4 ev (k + 1) else 0
+        let payload :=
+          if w == 13 then indexWord ev (k + 5)
+          else if w == 9 then indexWord ev (k + 1)
+          else 0
+        let sum := sum + tag.toUInt64 + len + payload
+        let acc :=
+          if build then acc.push { tag := tag, len := len, payload := payload }
+          else acc
+        walk (k + w) (tokens + 1) sum acc
+  walk 0 0 (arenaSum 0 0) #[]
+
+/-- The benchmark-only C consumer: the staged arena and event stream walked in C
+at the same widths, stop rule and checksum as `consumeStaged`.  The result is
+seven words: status (0 walked, 2 an extent past its array), tokens, the event
+cursor at the stop, the arena extent, the checksum, `walked`, and the value
+count (one per token). -/
+@[extern "leanllvm_route_consume_fast"]
+opaque consumeFast (dst ev : ByteArray) (ndst nev : UInt64) : IO ByteArray
+
+/-- The C consumer's header: seven words. -/
+def consumerHeaderBytes : Nat := 56
+
+/-- The consumer gate's comparison: one Lean reading's fields against the C
+walk's words, as `(field, lean, c)` rows.  `checkValues` includes the value
+count, which only the materialising readings report (the fold reading keeps no
+per-token object, so its count is zero by construction). -/
+def consumeDiffs (what : String) (c : Consumed) (checkValues : Bool)
+    (cfTokens cfEvents cfArena cfValues : Nat) (cfSum : UInt64)
+    (cfWalked : Nat) : List (String × Nat × Nat) :=
+  let rows : List (String × Nat × Nat) :=
+    [(what ++ " tokens", c.tokens, cfTokens),
+     (what ++ " events", c.events, cfEvents),
+     (what ++ " arena", c.arena, cfArena),
+     (what ++ " sum", c.sum.toNat, cfSum.toNat),
+     (what ++ " walked", if c.walked then 1 else 0, cfWalked)]
+  let rows :=
+    if checkValues then rows ++ [(what ++ " values", c.values, cfValues)]
+    else rows
+  rows.filter (fun r => r.2.1 != r.2.2)
 
 /-- `--consume`: the fast path run `reps` times, with the consumer's two
 readings timed apart from the route and from each other.  The two readings share
@@ -1128,6 +1372,614 @@ def runConsume (path : String) (reps : Nat) : IO UInt32 := do
     IO.eprintln s!"route: --consume: the readings disagree: tokens={tokens} \
       values={valuesBuilt} walked={walked} fold sum={foldSum} \
       values sum={valuesSum}"
+    return 5
+  return 0
+
+/-! ### The reused workspace
+
+`--consume-reuse <file> <reps>` is the benchmark-only reader: it is `--consume`
+with the workspace staged once.  A sizing read before the loop allocates the
+record's buffers (`stage`, one `zeroed` per buffer, plus the window's padded
+construction) — `workspace_ns` is that one-time staging — and every repetition
+hands those same arrays to `leanllvm_json_pipeline` through the adapter's
+`leanllvm_json_route_reuse` entry, which copies the repetition's document into
+the staged window, resets the five cursors and the two carries the object does
+not initialise, and builds the same tagged result the default entry returns.
+The per-call price is then the native call, the document's copy and the
+result's copy-out: the thirteen-array copy-in the default entry pays on every
+call is gone, and the buffers carry the previous call's bytes as the workspace
+bench's reused arm does.
+
+The document is re-read inside every repetition, as `--consume` does, so no
+input is hoisted out of the measured region.  The buffers' capacities and the
+window's padding are the sizing read's length, so a repetition whose document
+has another length is refused with a message rather than measured against
+buffers that do not fit; a benchmark runs one unchanged file.  A document the
+sizing decision refuses never reaches the reuse call, so the mode prints a
+`path=fallback` row — its `read_ns` and `admission_ns` are the sizing read's,
+and the other fields are the empty ones `--consume` prints for a fallback — and
+exits 0 without staging anything.
+
+The row carries `--consume`'s fields for the same two consumer readings, plus
+the `nk`, `nxp` and `err` cursors the copied path does not print: the mode
+exists to show the reused buffers answer the same observation as the copied
+ones, so the cursors and the two payload extents are part of the comparison and
+not only the payload sums.  `workspace_ns` is the one-time staging;
+`staging_ns=-` states that nothing is staged per call; `route_ns` is the reuse
+call's wall, split by the same three adapter slots `--stages` reads, where
+`adapter_stage_ns` is the document copy and the resets (not a caller-array
+copy).  A build without `TIMING=1` prints `-` for the three slots.  A result
+that is not the adapter's tagged shape is reported and exits 5 rather than read
+as a refusal. -/
+
+/-- `--consume-reuse`: `--consume` over a workspace staged once, with the
+caller's arrays handed to the object in place.  The two consumer readings, the
+fields they report and the agreement check are `--consume`'s, so the two modes'
+rows are compared field by field. -/
+def runConsumeReuse (path : String) (reps : Nat) : IO UInt32 := do
+  -- The sizing read: the workspace's capacities and the window's padding are
+  -- this document's length, and a benchmark runs one unchanged file.  The
+  -- repetition loop reads again, so no input is hoisted out of a measured
+  -- region; this read is not part of any interval the row reports.
+  let st0 ← IO.monoNanosNow
+  let firstDoc ←
+    try
+      IO.FS.readBinFile path
+    catch e =>
+      IO.eprintln s!"route: cannot read '{path}': {e}"
+      return 2
+  let st1 ← IO.monoNanosNow
+  let firstReadNs := st1 - st0
+  let sd0 ← IO.monoNanosNow
+  let sizing ← decide2 firstDoc
+  let sd1 ← IO.monoNanosNow
+  let firstAdmNs := sd1 - sd0
+  match sizing with
+  | .failed status => return status
+  | .refused _ =>
+    -- The reuse call never runs for a document the decision refuses, and the
+    -- buffers would be sized from a document the object is not asked about, so
+    -- the mode reports the fallback path as `--consume` does rather than
+    -- staging work it cannot measure.
+    IO.eprintln s!"row doc={(System.FilePath.fileName path).getD path} \
+      size={firstDoc.size} path=fallback reps={reps} read_ns={firstReadNs} \
+      admission_ns={firstAdmNs} workspace_ns=- staging_ns=- route_ns=- \
+      adapter_stage_ns=- adapter_native_ns=- copyout_ns=- \
+      consume_fold_ns=- consume_values_ns=- verdict=0 nk=0 nxp=0 ndst=0 nev=0 \
+      err=0 tokens=0 values=0 walked=1 foldsum=0 valuessum=0"
+    return 0
+  | .admitted _ => pure ()
+  let w0 ← IO.monoNanosNow
+  let staged ← stage firstDoc firstDoc.size
+  let w1 ← IO.monoNanosNow
+  let workspaceNs : Array Nat := #[w1 - w0]
+  let mut reads : Array Nat := #[]
+  let mut adm : Array Nat := #[]
+  let mut routeNs : Array Nat := #[]
+  let mut stageSlots : Array Nat := #[]
+  let mut nativeSlots : Array Nat := #[]
+  let mut copyout : Array Nat := #[]
+  let mut fold : Array Nat := #[]
+  let mut values : Array Nat := #[]
+  let mut size := 0
+  let mut kind := "fast"
+  let mut tokens := 0
+  let mut valuesBuilt := 0
+  let mut nk := 0
+  let mut nxp := 0
+  let mut ndst := 0
+  let mut nev := 0
+  let mut err := 0
+  let mut walked := true
+  let mut foldSum : UInt64 := 0
+  let mut valuesSum : UInt64 := 0
+  let mut verdict := 0
+  for rep in List.range reps do
+    let t0 ← IO.monoNanosNow
+    let doc ←
+      try
+        IO.FS.readBinFile path
+      catch e =>
+        IO.eprintln s!"route: cannot read '{path}': {e}"
+        return 2
+    let t1 ← IO.monoNanosNow
+    reads := reads.push (t1 - t0)
+    size := doc.size
+    let a0 ← IO.monoNanosNow
+    let decision ← decide2 doc
+    let a1 ← IO.monoNanosNow
+    adm := adm.push (a1 - a0)
+    match decision with
+    | .failed status => return status
+    | .refused _ => kind := "fallback"
+    | .admitted _ =>
+      -- The staged workspace's capacities and the window's padding are the
+      -- sizing read's length, so a repetition whose document has another
+      -- length is refused rather than copied into a window that does not cover
+      -- it.
+      if doc.size != staged.n then
+        IO.eprintln s!"route: --consume-reuse: '{path}' is {doc.size} bytes and \
+          the staged workspace is {staged.n}; the buffers are sized once, so the \
+          document must not change length across repetitions"
+        return 5
+      let c0 ← IO.monoNanosNow
+      let result ← callReuse staged doc
+      let c1 ← IO.monoNanosNow
+      routeNs := routeNs.push (c1 - c0)
+      let st ← stageNsAt 0
+      let na ← stageNsAt 1
+      let co ← stageNsAt 2
+      if st != stageUnfilled then stageSlots := stageSlots.push st
+      if na != stageUnfilled then nativeSlots := nativeSlots.push na
+      if co != stageUnfilled then copyout := copyout.push co
+      -- The adapter's tagged shape is the default entry's; a header that is
+      -- not an observation is a defect in the reused path and is reported
+      -- rather than read as a refusal or an empty walk.
+      match decodeIndexed result with
+      | .error msg =>
+        IO.eprintln s!"route: --consume-reuse: {msg}"
+        return 5
+      | .ok _ => pure ()
+      -- One reading, with its own header decode, exactly as `--consume` takes
+      -- it; the two alternate which goes first.
+      let read (build : Bool) : IO (Observation × Consumed × Nat) := do
+        let r0 ← IO.monoNanosNow
+        let (o, c) :=
+          match decodeIndexed result with
+          | .ok o => (o, consumeResult result o build)
+          | .error _ => (({} : Observation), ({ walked := false } : Consumed))
+        let r1 ← IO.monoNanosNow
+        return (o, c, r1 - r0)
+      let first ← read (rep % 2 != 0)
+      let second ← read (rep % 2 == 0)
+      let (foldedObs, folded, fns) := if rep % 2 == 0 then first else second
+      let (_, built, vns) := if rep % 2 == 0 then second else first
+      fold := fold.push fns
+      values := values.push vns
+      tokens := folded.tokens
+      valuesBuilt := built.values
+      nk := foldedObs.nk
+      nxp := foldedObs.nxp
+      ndst := folded.arena
+      nev := folded.events
+      err := foldedObs.err
+      walked := folded.walked && built.walked && folded.tokens == built.tokens
+      foldSum := folded.sum
+      valuesSum := built.sum
+      verdict := folded.verdict
+  IO.eprintln s!"row doc={(System.FilePath.fileName path).getD path} size={size} \
+    path={kind} reps={reps} read_ns={median reads} \
+    admission_ns={stageField adm} workspace_ns={stageField workspaceNs} \
+    staging_ns=- route_ns={stageField routeNs} \
+    adapter_stage_ns={stageField stageSlots} \
+    adapter_native_ns={stageField nativeSlots} copyout_ns={stageField copyout} \
+    consume_fold_ns={stageField fold} consume_values_ns={stageField values} \
+    verdict={verdict} nk={nk} nxp={nxp} ndst={ndst} nev={nev} err={err} \
+    tokens={tokens} values={valuesBuilt} \
+    walked={if walked then 1 else 0} foldsum={foldSum} valuessum={valuesSum}"
+  -- The acceptance check is `--consume`'s: an accepted run's two readings must
+  -- count the same tokens, land on the stream's end and produce the same
+  -- checksum; a refusal (verdict 0) has no event stream and owes no token.
+  if kind == "fast" && verdict != 0 &&
+      !(walked && valuesBuilt == tokens && tokens > 0 && foldSum == valuesSum) then
+    IO.eprintln s!"route: --consume-reuse: the readings disagree: tokens={tokens} \
+      values={valuesBuilt} walked={walked} fold sum={foldSum} \
+      values sum={valuesSum}"
+    return 5
+  return 0
+
+/-! ### The candidates' reused workspaces, and their gates
+
+`--consume-reuse-fast*` are `--consume-reuse` with one benchmark-only stage-1
+candidate each, selected by a variant word: the fused list-free entry
+(`pipeline_fast`), its escape-list arm (`pipeline_fast_list`), the
+`split_plain` shape's pos8 and b8 emitters (`pipeline_fast_plain_pos8`,
+`pipeline_fast_plain_b8`), and the per-document choice entry
+(`pipeline_fast_best`, which picks one of the three by a bounded prefix scan).
+`--consume-reuse-fast-nocopy` is the fused candidate with the no-copy result:
+the adapter returns the 80-byte observation header and the consumer reads the
+staged `dst`/`ev` arrays, so the result allocation and its payload copies are
+outside the measured wrapper; `--consume-reuse-fast-best-nocopy` combines that
+result with the per-document choice entry -- the closest route-native
+configuration the candidates offer -- and `--consume-reuse-fast-best-nocopy-cfast`
+prices the same configuration with the benchmark C consumer: one C walk of the
+staged bytes at the same widths, stop rule and checksum, gated once against both
+Lean readings before the loop, so the timed consumer builds no per-token Lean
+object.  `--consume-reuse-fast-best-nocopy-cfast-trusted` is that configuration
+with the admission stage skipped: the caller asserts `documentDecision =
+admitted` (a benchmark contract, not the certified default), so the row's
+`admission_ns` is `-` and it carries `trusted=1`; the gates and the consumer
+checks are unchanged.  None has a refinement theorem, so each one's equivalence
+to the default is its mode's gate, not a proof.
+
+The workspace is `stageFast`'s: the reuse buffers plus the `ent` scratch the
+candidates need, staged once.  Before the timed loop each mode runs the gate
+once (`leanllvm_route_gate_candidate`): the default at the arm the candidate
+pairs with -- `arm 2` for the list entry, `arm 0` for the list-free and plain
+entries, and, for the choice entry, the arm its own `*nxp` names (zero -> arm 0
+with the buffer unchanged; non-zero -> arm 2 with `xp[0..nxp)` compared) -- and
+the candidate, both from the same fresh staging, compared on the fields
+`pipeline_fast.h` and `pipeline_fast_plain.h` list: the return value; `err`;
+`nk` and `ep[0..nk)`; `nxp` and `xp`, the list arm's stream against the
+default's arm-2 stream and the whole buffer unchanged for the list-free
+choices; `ndst` and `dst[0..ndst)`; `nev` and `ev[0..nev)`.  A difference is
+reported with its field, byte offset and the two values and exits 5; a staging
+precondition exits 3 and a gate snapshot that could not be allocated exits 4.
+The `ent` words are internal scratch and are not compared.  The adapter's
+`route_init` fills the entry unit's table before the gate's first default or
+candidate call, which is the pos8 entry's obligation (and the default's, at arm
+0).
+
+The loop is `--consume-reuse`'s: the document is re-read and the decision taken
+per repetition, the candidate writes the workspace's own arrays in place, and
+the five cursors are reset per call.  A row is `--consume-reuse`'s plus
+`native=<the candidate>` and `gate=1`, and reports the same consumer fields, so
+the rows and `--consume`'s are compared field by field; the gate's byte-level
+comparison covers what a row cannot print (the entry stream and, for the list
+arm, its escape positions).  A `TIMING=1` build also prints the wrapper split:
+`doc_copy_ns` (slot 3), `resets_ns` (4), `precheck_ns` (5), `adapter_native_ns`
+(1), `postcheck_ns` (6), `copyout_ns` (2, the result or the no-copy header),
+and `ffi_ns`, the `route_ns` remainder that the FFI path and the runtime's
+boxing occupy. -/
+
+/-- The gate's header: five words. -/
+def gateHeaderBytes : Nat := 40
+
+/-- The gate's field names, in `shim.c`'s order. -/
+def gateFieldName : Nat → String
+  | 0 => "none"
+  | 1 => "the return value"
+  | 2 => "err"
+  | 3 => "nk"
+  | 4 => "ep[0..nk)"
+  | 5 => "nxp"
+  | 6 => "xp"
+  | 7 => "ndst"
+  | 8 => "dst[0..ndst)"
+  | 9 => "nev"
+  | 10 => "ev[0..nev)"
+  | _ => "a field the gate did not name"
+
+/-- The trusted form's asserted decision: the caller supplies
+`documentDecision = admitted`, so the facts a real decision would have measured
+are not used and are fixed placeholders.  This is a benchmark contract, not the
+certified default. -/
+def trustedFacts : AdmitFacts :=
+  { verdict := true, clause := 0, depth := 0, candidate := false, blocks := 0,
+    escapeSkip := false }
+
+/-- `--consume-reuse-fast*`: the selected candidate's read over the workspace
+staged once, with its equivalence gate run first.  `variant` selects the
+candidate, `mode` is the CLI mode name the messages use, `nocopy` selects the
+result shape (`false` the full tagged result, `true` the 80-byte observation
+header over the staged arrays), and `cfast` replaces the timed Lean readings
+with the benchmark C consumer, gated against both Lean readings before the
+loop.  `trusted` skips the admission stage: the caller asserts
+`documentDecision = admitted` (a benchmark contract, not the certified
+default), so the row's `admission_ns` is `-` and it carries `trusted=1`; the
+gates and the consumer checks are unchanged.
+
+The no-copy consumer (`consumeStaged`) is a pure reading of arrays the adapter
+mutates in place, while Lean's model treats a `ByteArray` as immutable.  The
+mode relies on the loop's per-repetition inputs -- the re-read document and the
+freshly decoded observation -- keeping the reading's arguments distinct; a
+compiler that could treat them as invariant would price the consumer with the
+first reading.  The row's fields are unaffected (the same file re-read is the
+same input), but a mode that needs a guaranteed re-read should take the walk
+through an `IO` accessor.
+
+The C-consumer mode replaces that reading with one C walk of the same staged
+bytes, so the timed consumer has no per-token Lean object; before the loop it
+gates the C walk's six fields against both Lean readings over the copy result
+(`consumeResult`) and the staged arrays (`consumeStaged`), and reports the first
+difference.  The row's `consume_fast_ns` is that walk's wall.
+
+A `TIMING=1` row's split is per repetition and then medianed, like every other
+column: `doc_copy_ns` (slot 3), `resets_ns` (4), `precheck_ns` (5),
+`adapter_native_ns` (1), `postcheck_ns` (6), `copyout_ns` (2, the result or the
+no-copy header) and `ffi_ns`, the median of each repetition's `route_ns` minus
+slots 1 and 3-6.  Slot 0 is the parent of 3 and 4 and is not added to the
+residual; the residual is the FFI call, the pointer derivations, `route_init`
+and the result handling's boxing, not only FFI and boxing. -/
+def runConsumeCandidate (path : String) (reps : Nat) (variant : UInt64)
+    (mode : String) (nocopy : Bool) (cfast : Bool) (trusted : Bool) :
+    IO UInt32 := do
+  -- The sizing read: the workspace's capacities and the window's padding are
+  -- this document's length, and a benchmark runs one unchanged file.  The
+  -- repetition loop reads again, so no input is hoisted out of a measured
+  -- region; this read is not part of any interval the row reports.
+  let st0 ← IO.monoNanosNow
+  let firstDoc ←
+    try
+      IO.FS.readBinFile path
+    catch e =>
+      IO.eprintln s!"route: cannot read '{path}': {e}"
+      return 2
+  let st1 ← IO.monoNanosNow
+  let firstReadNs := st1 - st0
+  let sd0 ← IO.monoNanosNow
+  -- The trusted form takes no decision: the caller asserts
+  -- `documentDecision = admitted` (a benchmark contract, not the certified
+  -- default), so a constant stands in for the two-phase decision.
+  let sizing ←
+    if trusted then pure (.admitted trustedFacts) else decide2 firstDoc
+  let sd1 ← IO.monoNanosNow
+  let firstAdmNs := sd1 - sd0
+  match sizing with
+  | .failed status => return status
+  | .refused _ =>
+    -- The candidate is only asked about documents the decision admits, so a
+    -- refused document reports the fallback path without staging or gating.
+    IO.eprintln s!"row doc={(System.FilePath.fileName path).getD path} \
+      size={firstDoc.size} path=fallback reps={reps} read_ns={firstReadNs} \
+      admission_ns={firstAdmNs} workspace_ns=- staging_ns=- route_ns=- \
+      adapter_stage_ns=- adapter_native_ns=- copyout_ns=- \
+      doc_copy_ns=- resets_ns=- precheck_ns=- postcheck_ns=- ffi_ns=- \
+      consume_fold_ns=- consume_values_ns=- consume_fast_ns=- \
+      native={candidateName variant} trusted={if trusted then 1 else 0} \
+      gate=- verdict=0 nk=0 nxp=0 \
+      ndst=0 nev=0 err=0 tokens=0 values=0 walked=1 foldsum=0 valuessum=0"
+    return 0
+  | .admitted _ => pure ()
+  let w0 ← IO.monoNanosNow
+  let fast ← stageFast firstDoc firstDoc.size
+  let w1 ← IO.monoNanosNow
+  let workspaceNs : Array Nat := #[w1 - w0]
+  -- The gate, once, outside every timed interval: the candidate and the
+  -- default from the same fresh staging.
+  let g ← gateCall fast firstDoc variant
+  if g.size < gateHeaderBytes then
+    IO.eprintln s!"route: {mode}: the gate returned {g.size} \
+      bytes, fewer than its {gateHeaderBytes}-byte header"
+    return 5
+  let gtag := (indexWord g 0).toNat
+  let gfield := (indexWord g 8).toNat
+  if gtag == 1 then
+    IO.eprintln s!"route: {mode}: the candidate differs from the \
+      default at {gateFieldName gfield}: offset {(indexWord g 16).toNat}, \
+      default {(indexWord g 24)}, candidate {(indexWord g 32)}"
+    return 5
+  if gtag == 2 then
+    IO.eprintln s!"route: {mode}: unsupported domain: \
+      {preconditionName gfield}: expected {(indexWord g 24)}, observed \
+      {(indexWord g 32)}"
+    return 3
+  if gtag == 3 then
+    IO.eprintln s!"route: {mode}: the gate could not allocate its \
+      {(indexWord g 24)}-byte snapshot"
+    return 4
+  if gtag != 0 then
+    IO.eprintln s!"route: {mode}: the gate returned class {gtag}"
+    return 5
+  -- The consumer gate (C-consumer mode only), untimed: one candidate call in
+  -- each result shape, the two Lean readings over the copy result and the
+  -- staged arrays, and the C walk must agree on every field before the loop
+  -- prices the C walk alone.
+  if cfast then
+    let copyResult ← callReuseCandidate fast firstDoc variant false
+    let stagedResult ← callReuseCandidate fast firstDoc variant true
+    match decodeIndexed copyResult, decodeObservation stagedResult with
+    | .ok o, .ok os =>
+      if o.verdict != os.verdict || o.nk != os.nk || o.nxp != os.nxp ||
+          o.ndst != os.ndst || o.nev != os.nev || o.err != os.err then
+        IO.eprintln s!"route: {mode}: the copy and no-copy observations differ"
+        return 5
+      let foldR := consumeResult copyResult o false
+      let valsR := consumeResult copyResult o true
+      let foldS := consumeStaged fast.s.dst fast.s.ev o false
+      let valsS := consumeStaged fast.s.dst fast.s.ev o true
+      let cr ← consumeFast fast.s.dst fast.s.ev (UInt64.ofNat o.ndst)
+        (UInt64.ofNat o.nev)
+      if cr.size < consumerHeaderBytes then
+        IO.eprintln s!"route: {mode}: the consumer returned {cr.size} bytes, \
+          fewer than its {consumerHeaderBytes}-byte header"
+        return 5
+      if (indexWord cr 0).toNat != 0 then
+        IO.eprintln s!"route: {mode}: the consumer reports an extent past its \
+          array"
+        return 5
+      let cfTokens := (indexWord cr 8).toNat
+      let cfEvents := (indexWord cr 16).toNat
+      let cfArena := (indexWord cr 24).toNat
+      let cfSum := indexWord cr 32
+      let cfWalked := (indexWord cr 40).toNat
+      let cfValues := (indexWord cr 48).toNat
+      let bad1 := consumeDiffs "copy fold" foldR false cfTokens cfEvents cfArena
+        cfValues cfSum cfWalked
+      let bad2 := consumeDiffs "staged fold" foldS false cfTokens cfEvents
+        cfArena cfValues cfSum cfWalked
+      let bad3 := consumeDiffs "copy values" valsR true cfTokens cfEvents cfArena
+        cfValues cfSum cfWalked
+      let bad4 := consumeDiffs "staged values" valsS true cfTokens cfEvents
+        cfArena cfValues cfSum cfWalked
+      let bad := bad1 ++ bad2 ++ bad3 ++ bad4
+      match bad with
+      | [] => pure ()
+      | (what, want, got) :: _ =>
+        IO.eprintln s!"route: {mode}: consumer gate: {what}: lean {want}, \
+          c {got}"
+        return 5
+    | _, _ =>
+      IO.eprintln s!"route: {mode}: the consumer gate could not decode an \
+        observation"
+      return 5
+  let mut reads : Array Nat := #[]
+  let mut adm : Array Nat := #[]
+  let mut routeNs : Array Nat := #[]
+  let mut stageSlots : Array Nat := #[]
+  let mut nativeSlots : Array Nat := #[]
+  let mut docSlots : Array Nat := #[]
+  let mut resetSlots : Array Nat := #[]
+  let mut preSlots : Array Nat := #[]
+  let mut postSlots : Array Nat := #[]
+  let mut ffiSlots : Array Nat := #[]
+  let mut consumeFastNs : Array Nat := #[]
+  let mut copyout : Array Nat := #[]
+  let mut fold : Array Nat := #[]
+  let mut values : Array Nat := #[]
+  let mut size := 0
+  let mut kind := "fast"
+  let mut tokens := 0
+  let mut valuesBuilt := 0
+  let mut nk := 0
+  let mut nxp := 0
+  let mut ndst := 0
+  let mut nev := 0
+  let mut err := 0
+  let mut walked := true
+  let mut foldSum : UInt64 := 0
+  let mut valuesSum : UInt64 := 0
+  let mut verdict := 0
+  for rep in List.range reps do
+    let t0 ← IO.monoNanosNow
+    let doc ←
+      try
+        IO.FS.readBinFile path
+      catch e =>
+        IO.eprintln s!"route: cannot read '{path}': {e}"
+        return 2
+    let t1 ← IO.monoNanosNow
+    reads := reads.push (t1 - t0)
+    size := doc.size
+    let a0 ← IO.monoNanosNow
+    let decision ←
+      if trusted then pure (.admitted trustedFacts) else decide2 doc
+    let a1 ← IO.monoNanosNow
+    -- A trusted repetition takes no admission, so the row's `admission_ns`
+    -- stays `-` rather than reporting the constant branch's cost.
+    if !trusted then adm := adm.push (a1 - a0)
+    match decision with
+    | .failed status => return status
+    | .refused _ => kind := "fallback"
+    | .admitted _ =>
+      -- The staged workspace's capacities and the window's padding are the
+      -- sizing read's length, so a repetition whose document has another
+      -- length is refused rather than copied into a window that does not cover
+      -- it.
+      if doc.size != fast.s.n then
+        IO.eprintln s!"route: {mode}: '{path}' is {doc.size} \
+          bytes and the staged workspace is {fast.s.n}; the buffers are sized \
+          once, so the document must not change length across repetitions"
+        return 5
+      let c0 ← IO.monoNanosNow
+      let result ← callReuseCandidate fast doc variant nocopy
+      let c1 ← IO.monoNanosNow
+      routeNs := routeNs.push (c1 - c0)
+      let st ← stageNsAt 0
+      let na ← stageNsAt 1
+      let co ← stageNsAt 2
+      let dc ← stageNsAt 3
+      let rs ← stageNsAt 4
+      let pc ← stageNsAt 5
+      let po ← stageNsAt 6
+      if st != stageUnfilled then stageSlots := stageSlots.push st
+      if na != stageUnfilled then nativeSlots := nativeSlots.push na
+      if co != stageUnfilled then copyout := copyout.push co
+      if dc != stageUnfilled then docSlots := docSlots.push dc
+      if rs != stageUnfilled then resetSlots := resetSlots.push rs
+      if pc != stageUnfilled then preSlots := preSlots.push pc
+      if po != stageUnfilled then postSlots := postSlots.push po
+      -- The wrapper's unattributed remainder: the call's brackets minus every
+      -- interval the adapter recorded inside them.  It is the FFI path and the
+      -- runtime's boxing, reported only when all seven slots were filled.
+      if st != stageUnfilled && na != stageUnfilled && co != stageUnfilled &&
+          dc != stageUnfilled && rs != stageUnfilled &&
+          pc != stageUnfilled && po != stageUnfilled then
+        ffiSlots := ffiSlots.push (c1 - c0 - (dc + rs + pc + na + po + co))
+      -- The candidate's result is the default entry's tagged shape, or -- with
+      -- no-copy -- the 80-byte observation header over the staged arrays; a
+      -- header that is not an observation is a defect in the candidate path
+      -- and is reported rather than read as a refusal or an empty walk.
+      let check := if nocopy then decodeObservation result else decodeIndexed result
+      match check with
+      | .error msg =>
+        IO.eprintln s!"route: {mode}: {msg}"
+        return 5
+      | .ok _ => pure ()
+      -- The C-consumer mode prices one C walk of the staged bytes; the Lean
+      -- readings are gated once before the loop, not repeated here.
+      if cfast then
+        match check with
+        | .ok o =>
+          let f0 ← IO.monoNanosNow
+          let cr ← consumeFast fast.s.dst fast.s.ev (UInt64.ofNat o.ndst)
+            (UInt64.ofNat o.nev)
+          let f1 ← IO.monoNanosNow
+          consumeFastNs := consumeFastNs.push (f1 - f0)
+          if cr.size < consumerHeaderBytes then
+            IO.eprintln s!"route: {mode}: the consumer returned {cr.size} \
+              bytes, fewer than its {consumerHeaderBytes}-byte header"
+            return 5
+          if (indexWord cr 0).toNat != 0 then
+            IO.eprintln s!"route: {mode}: the consumer reports an extent past \
+              its array"
+            return 5
+          nk := o.nk
+          nxp := o.nxp
+          ndst := o.ndst
+          tokens := (indexWord cr 8).toNat
+          nev := (indexWord cr 16).toNat
+          walked := indexWord cr 40 == 1
+          foldSum := indexWord cr 32
+          valuesSum := foldSum
+          valuesBuilt := (indexWord cr 48).toNat
+          err := o.err
+          verdict := o.verdict
+        | .error _ => pure ()
+      if !cfast then
+        let read (build : Bool) : IO (Observation × Consumed × Nat) := do
+          let r0 ← IO.monoNanosNow
+          let decoded :=
+            if nocopy then decodeObservation result else decodeIndexed result
+          let (o, c) :=
+            match decoded with
+            | .ok o =>
+              let c :=
+                if nocopy then consumeStaged fast.s.dst fast.s.ev o build
+                else consumeResult result o build
+              (o, c)
+            | .error _ => (({} : Observation), ({ walked := false } : Consumed))
+          let r1 ← IO.monoNanosNow
+          return (o, c, r1 - r0)
+        let first ← read (rep % 2 != 0)
+        let second ← read (rep % 2 == 0)
+        let (foldedObs, folded, fns) := if rep % 2 == 0 then first else second
+        let (_, built, vns) := if rep % 2 == 0 then second else first
+        fold := fold.push fns
+        values := values.push vns
+        tokens := folded.tokens
+        valuesBuilt := built.values
+        nk := foldedObs.nk
+        nxp := foldedObs.nxp
+        ndst := folded.arena
+        nev := folded.events
+        err := foldedObs.err
+        walked := folded.walked && built.walked && folded.tokens == built.tokens
+        foldSum := folded.sum
+        valuesSum := built.sum
+        verdict := folded.verdict
+  IO.eprintln s!"row doc={(System.FilePath.fileName path).getD path} size={size} \
+    path={kind} reps={reps} read_ns={median reads} \
+    admission_ns={stageField adm} workspace_ns={stageField workspaceNs} \
+    staging_ns=- route_ns={stageField routeNs} \
+    adapter_stage_ns={stageField stageSlots} \
+    adapter_native_ns={stageField nativeSlots} copyout_ns={stageField copyout} \
+    doc_copy_ns={stageField docSlots} resets_ns={stageField resetSlots} \
+    precheck_ns={stageField preSlots} postcheck_ns={stageField postSlots} \
+    ffi_ns={stageField ffiSlots} \
+    consume_fold_ns={stageField fold} consume_values_ns={stageField values} \
+    consume_fast_ns={stageField consumeFastNs} \
+    native={candidateName variant} trusted={if trusted then 1 else 0} \
+    gate=1 verdict={verdict} nk={nk} nxp={nxp} \
+    ndst={ndst} nev={nev} err={err} \
+    tokens={tokens} values={valuesBuilt} \
+    walked={if walked then 1 else 0} foldsum={foldSum} valuessum={valuesSum}"
+  -- The acceptance check is `--consume-reuse`'s.
+  if kind == "fast" && verdict != 0 &&
+      !(walked && valuesBuilt == tokens && tokens > 0 && foldSum == valuesSum) then
+    IO.eprintln s!"route: {mode}: the readings disagree: \
+      tokens={tokens} values={valuesBuilt} walked={walked} \
+      fold sum={foldSum} values sum={valuesSum}"
     return 5
   return 0
 
@@ -1299,6 +2151,68 @@ def main (args : List String) : IO UInt32 := do
   | ["--stages", path, reps] => runStaged path reps.toNat!
   | ["--consume", path] => runConsume path 11
   | ["--consume", path, reps] => runConsume path reps.toNat!
+  -- The benchmark-only reuse reader: the workspace is staged once and its
+  -- arrays are handed to the object in place (see `runConsumeReuse`).
+  | ["--consume-reuse", path] => runConsumeReuse path 11
+  | ["--consume-reuse", path, reps] => runConsumeReuse path reps.toNat!
+  -- The same reader over the stage-1 candidates, each gated against the default
+  -- first (see `runConsumeCandidate`).  `--consume-reuse-fast-nocopy` takes the
+  -- observation header and reads the staged arrays; `-fast-best` is the
+  -- per-document choice entry.
+  | ["--consume-reuse-fast", path] =>
+      runConsumeCandidate path 11 candidateFused "--consume-reuse-fast" false
+        false false
+  | ["--consume-reuse-fast", path, reps] =>
+      runConsumeCandidate path reps.toNat! candidateFused
+        "--consume-reuse-fast" false false false
+  | ["--consume-reuse-fast-list", path] =>
+      runConsumeCandidate path 11 candidateList "--consume-reuse-fast-list"
+        false false false
+  | ["--consume-reuse-fast-list", path, reps] =>
+      runConsumeCandidate path reps.toNat! candidateList
+        "--consume-reuse-fast-list" false false false
+  | ["--consume-reuse-fast-plain-pos8", path] =>
+      runConsumeCandidate path 11 candidatePlainPos8
+        "--consume-reuse-fast-plain-pos8" false false false
+  | ["--consume-reuse-fast-plain-pos8", path, reps] =>
+      runConsumeCandidate path reps.toNat! candidatePlainPos8
+        "--consume-reuse-fast-plain-pos8" false false false
+  | ["--consume-reuse-fast-plain-b8", path] =>
+      runConsumeCandidate path 11 candidatePlainB8
+        "--consume-reuse-fast-plain-b8" false false false
+  | ["--consume-reuse-fast-plain-b8", path, reps] =>
+      runConsumeCandidate path reps.toNat! candidatePlainB8
+        "--consume-reuse-fast-plain-b8" false false false
+  | ["--consume-reuse-fast-nocopy", path] =>
+      runConsumeCandidate path 11 candidateFused "--consume-reuse-fast-nocopy"
+        true false false
+  | ["--consume-reuse-fast-nocopy", path, reps] =>
+      runConsumeCandidate path reps.toNat! candidateFused
+        "--consume-reuse-fast-nocopy" true false false
+  | ["--consume-reuse-fast-best", path] =>
+      runConsumeCandidate path 11 candidateBest "--consume-reuse-fast-best"
+        false false false
+  | ["--consume-reuse-fast-best", path, reps] =>
+      runConsumeCandidate path reps.toNat! candidateBest
+        "--consume-reuse-fast-best" false false false
+  | ["--consume-reuse-fast-best-nocopy", path] =>
+      runConsumeCandidate path 11 candidateBest
+        "--consume-reuse-fast-best-nocopy" true false false
+  | ["--consume-reuse-fast-best-nocopy", path, reps] =>
+      runConsumeCandidate path reps.toNat! candidateBest
+        "--consume-reuse-fast-best-nocopy" true false false
+  | ["--consume-reuse-fast-best-nocopy-cfast", path] =>
+      runConsumeCandidate path 11 candidateBest
+        "--consume-reuse-fast-best-nocopy-cfast" true true false
+  | ["--consume-reuse-fast-best-nocopy-cfast", path, reps] =>
+      runConsumeCandidate path reps.toNat! candidateBest
+        "--consume-reuse-fast-best-nocopy-cfast" true true false
+  | ["--consume-reuse-fast-best-nocopy-cfast-trusted", path] =>
+      runConsumeCandidate path 11 candidateBest
+        "--consume-reuse-fast-best-nocopy-cfast-trusted" true true true
+  | ["--consume-reuse-fast-best-nocopy-cfast-trusted", path, reps] =>
+      runConsumeCandidate path reps.toNat! candidateBest
+        "--consume-reuse-fast-best-nocopy-cfast-trusted" true true true
   | _ =>
       IO.eprintln usage
       return 1

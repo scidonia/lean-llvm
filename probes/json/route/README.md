@@ -6,8 +6,8 @@ pipeline's record demands and calls the native object.  The contract is
 
 | File | What it is |
 |---|---|
-| `RouteMain.lean` | the standalone Lean entry point: it takes the document decision in two phases — the adapter's native facts (the maximum structural nesting, the policy-candidate flag and the escape-list guard's fact), then the probe's own native character-policy scan (`policy.c`) where that flag is set — and falls back to `parseBytes` for every document that decision refuses (one shell, not two).  It stages the document in the record's shape on the fast path, calls the object through the adapter, and prints one of the three outcomes.  `--stages` splits the route into its stages and the outcome stage into its five parts; `--admit` prints the two-phase decision beside the library's `admission` and the library's `policyRefusal` on the same bytes; `--consume` reads the fast path's result without printing, as a fold and as a per-token value array |
-| `shim.c` | the adapter: validates the staging, allocates its zero-filled buffers (`leanllvm_route_zeroed`: one allocation and one `memset` each, in place of `Array.replicate`'s boxed fill), copies the caller's `ByteArray`s into the object's ABI (the document window is handed over in place, because the object only reads it), fills the entry unit's POS8 table, calls `leanllvm_json_pipeline`, and returns the tagged result.  It also runs phase one of the admission — the walk over the document's structural delimiter sequence, whose maximum is the depth clause's number and whose lane list goes through the proved depth counter, and the escape-list guard's presence scan — phase two's wrapper over the policy scan, and the depth pass the admission record reports.  Phase one's code is `admission.h`, which the workspace probe calls directly |
+| `RouteMain.lean` | the standalone Lean entry point: it takes the document decision in two phases — the adapter's native facts (the maximum structural nesting, the policy-candidate flag and the escape-list guard's fact), then the probe's own native character-policy scan (`policy.c`) where that flag is set — and falls back to `parseBytes` for every document that decision refuses (one shell, not two).  It stages the document in the record's shape on the fast path, calls the object through the adapter, and prints one of the three outcomes.  `--stages` splits the route into its stages and the outcome stage into its five parts; `--admit` prints the two-phase decision beside the library's `admission` and the library's `policyRefusal` on the same bytes; `--consume` reads the fast path's result without printing, as a fold and as a per-token value array; `--consume-reuse` is that reading over a workspace staged once, with the object writing the caller's own arrays in place (no thirteen-array copy-in); the `--consume-reuse-fast*` modes are the same reading over the benchmark-only stage-1 candidates (`pipeline_fast`, its list arm, the `split_plain` pos8/b8 entries, and the per-document choice), the `-nocopy` mode returns the observation header and reads the staged arrays, and each mode gates its candidate against the default first |
+| `shim.c` | the adapter: validates the staging, allocates its zero-filled buffers (`leanllvm_route_zeroed`: one allocation and one `memset` each, in place of `Array.replicate`'s boxed fill), copies the caller's `ByteArray`s into the object's ABI (the document window is handed over in place, because the object only reads it; `leanllvm_json_route_reuse`, reached only by `--consume-reuse`, hands the other thirteen over in place so the benchmark prices the native call without the copy; `leanllvm_json_route_reuse_candidate` does the same for the `--consume-reuse-fast*` candidates, and `leanllvm_route_gate_candidate` compares the selected candidate with the default at the paired arm from one fresh staging on the fields `pipeline_fast.h` and `pipeline_fast_plain.h` list; the per-document choice entry's arm is read from its own `nxp`), fills the entry unit's POS8 table, calls `leanllvm_json_pipeline`, and returns the tagged result.  It also runs phase one of the admission — the walk over the document's structural delimiter sequence, whose maximum is the depth clause's number and whose lane list goes through the proved depth counter, and the escape-list guard's presence scan — phase two's wrapper over the policy scan, and the depth pass the admission record reports.  Phase one's code is `admission.h`, which the workspace probe calls directly |
 | `policy.c`, `policy.h` | phase two of the admission: the character-policy scan, native, reproducing `policyRefusal`'s decisions branch for branch — the class and the byte — over the document's bytes, with a screen that answers a document no policy refusal is possible in without visiting a position.  Its `policy_step` is also the body scan phase one walks (`leanllvm_route_body_stop`), so the depth clause's string spans and the policy class array are one reading of a body |
 | `admission.h` | the two-phase admission as plain C, with no Lean runtime: the depth walk over the structural delimiter sequence through the proved counter, the character-policy scan where the candidate flag is set, and the escape-list guard's fact.  `shim.c` wraps it for the route and `workspace.cc` calls it directly, so the admission the route runs and the admission the workspace experiment times are one source |
 | `escape_guard.h` | a document fact the admission reports: whether the document carries no byte the stage-1 escape list can name — no `0x5C` and no byte at or below `0x1F`.  A 32-byte presence scan that stops at the first backslash; `shim.c` takes the fact in the admission's own native call.  It no longer selects the arm: the route's native call is list-free on every document, and the fact is kept as a reported property of the bytes and as the `guard.sh` scenario's list-emptiness claim |
@@ -15,7 +15,7 @@ pipeline's record demands and calls the native object.  The contract is
 | `init_guard_check.c`, `init-guard.sh` | the POS8 table's initialisation gate, in three processes: with `leanllvm_json_entry_table` run first, pos8 accepts and writes b8's entry stream; without it, the pos8 pipeline traps (SIGILL) instead of returning a plausible wrong answer; and the b8 arm, which reads no table, accepts without the initialiser as the control |
 | `model-differential.sh` | the object-versus-model differential: for every row the route admits, the object's observation (verdict, the four cursor words, the refusal word, the arena's used prefix and the event stream) is compared byte for byte with the model run at `JsonPipelineIR.pipelineBody` under `pipelineCalls` and the workspace stage-2 selection, printed by `JsonPipelineModelMain.lean`; a row the route does not admit is reported by name with both decisions.  Three controls must go red: the uninitialised POS8 table traps (via `init-guard.sh`), a fixture copy with a constant return mutated must project differently, and a `stage2.c` copy with its verdict flipped must answer differently |
 | `driver.c` | a C caller that stages the document identically and prints the same three lines, for the fidelity comparison |
-| `build.sh` | compiles the six kernel units, the proved depth counter (`tests/v16/depth_count.ll`), the policy scan, the adapter and the program, links them (the program's library modules link from their emitted C), and asserts every symbol the adapter calls is imported and defined |
+| `build.sh` | compiles the six kernel units, the benchmark-only candidates (`kernel/json/pipeline_fast.c` and `kernel/json/pipeline_fast_plain.c`) the `--consume-reuse-fast*` modes measure, the proved depth counter (`tests/v16/depth_count.ll`), the policy scan, the adapter and the program, links them (the program's library modules link from their emitted C), and asserts every symbol the adapter calls is imported and defined |
 | `check.sh` | the route scenario: fidelity against `driver.c` on every admitted row, each fallback answer against the manifest, the empty/over-bound/opener-rich documents, the depth boundary, the depth clause's own documents and a fixed-seed malformed sweep, the fourteen-row policy class, the three outcomes' distinctness, the two-phase decision's agreement with `admission` on every row — at the refusal's class and byte, and at the measured depth wherever the walk ran — with a control that must report a disagreement, the consumer mode's reading of a five-event fixture, and its reading of a refused document (a lone `]`) as a `verdict=0` row rather than a failed reading |
 | `bench.sh` | the route's per-stage timings, the outcome stage's five parts, the consumer rows, the object's -O2/-O3 pair taken paired against a drift control, the boundary rows' two paths, and the simdjson reference arm; the record is [the stage timings page](../../../docs/json-route-stage-timings.md) |
 | `bench-corpus.sh` | the route's cost on the units harness's corpus: it measures the documents `tests/json-units-bench/bench.sh` already generated (same seed, sizes and tiling) with the route's own `--stages` and `--consume` modes, `BENCH_TRIALS` trials of `BENCH_REPS` repetitions pinned with `taskset` exactly as that harness pins its rows, and reports the stage split and the consumer rows.  A document outside the admitted domain is reported as a refusal row rather than measured as if it had called the object; the 4 MiB synthetic documents are all of that class, because the route's input bound is one mebibyte |
@@ -163,6 +163,136 @@ checksum, so a row reports a reading that was checked rather than a duration
 alone.  A run the object *refuses* has no event stream: its row carries `verdict=0`,
 its two readings are the empty walk, and no token count is owed, so a refusal is
 reported rather than mistaken for a reading that missed the stream's end.
+
+`--consume-reuse <file> <reps>` is the benchmark-only reader over the default
+pipeline, and the first mode whose native call writes the caller's own arrays
+(the `--consume-reuse-fast*` modes do the same over the stage-1 candidates).
+It stages the record's buffers once (`workspace_ns`) and, on every repetition,
+hands those same arrays to `leanllvm_json_pipeline` through
+`leanllvm_json_route_reuse` (`shim.c`),
+which copies the repetition's document into the staged window, resets only the
+five cursors (`nk`, `nxp`, `ndst`, `nev`, `err`) and the two carries
+(`sc`, `xcarry`) the object does not initialise, and builds the same tagged
+result the default entry returns.  The shape measured is `workspace.cc`'s
+reused arm (`act_stage_reused` then `act_native_reused`): the buffers
+deliberately carry the previous call's bytes rather than a zero fill.  The
+correctness of that measurement rests on the read trace, not on an in-process
+comparison: every byte the pipeline reads from the workspace is one this call
+wrote — `sc` is reset and `mk`/`entw` are written before the emitter reads
+them, `ep` from the reset cursor, no `xp` is read (`nxp` is reset to zero for
+arm 0), `dst`/`ev` from their reset cursors, and the window's document is
+copied in this call with the base bytes and tail padding zero from staging.
+The mode's own check is that the two consumer readings agree on token count and
+checksum; an observation-level divergence from `--consume` on the same document
+is found by diffing the two rows offline, not inside the run.  The adapter
+allocates and frees nothing per call except the result the consumer reads, so
+`route_ns` is the native call, the document's copy and the result's copy-out,
+with no thirteen-array copy-in (`staging_ns=-` states that no per-call staging
+happens); the adapter's three slots are printed as `adapter_stage_ns` (the
+document copy and the resets), `adapter_native_ns` and `copyout_ns`, the same
+meanings `--stages` gives them, and need a `TIMING=1` build.  The row reports
+the two consumer readings exactly as `--consume` does and adds the `nk`, `nxp`
+and `err` cursors, so an observation can be compared field by field against the
+copied path's; the same agreement check exits 5 on a disagreement, a result that
+is not the adapter's tagged shape is reported rather than read as a refusal, and
+a document whose length changes across repetitions exits 5 because the buffers'
+capacities and the window's padding were sized once.  A document the decision
+refuses never reaches the reuse call: the mode prints a `path=fallback` row
+whose `read_ns` and `admission_ns` are the sizing read's and whose other fields
+are the empty ones `--consume` reports for a fallback, and exits 0.  The
+document is re-read inside every repetition, as the other measuring modes do.
+
+`--consume-reuse-fast*` are the same reader over the benchmark-only stage-1
+candidates, one variant per mode: `--consume-reuse-fast` is the fused list-free
+entry (`leanllvm_json_pipeline_fast`), `--consume-reuse-fast-list` its
+escape-list arm (`leanllvm_json_pipeline_fast_list`),
+`--consume-reuse-fast-plain-pos8` / `-plain-b8` the `split_plain` shape's two
+emitters (`pipeline_fast_plain_pos8` / `_b8`), and `--consume-reuse-fast-best`
+the per-document choice entry (`leanllvm_json_pipeline_fast_best`) that selects
+one of the three from a bounded prefix scan.
+`--consume-reuse-fast-best-nocopy` is that choice entry with the no-copy result
+below — the closest route-native configuration.
+`--consume-reuse-fast-best-nocopy-cfast` prices that same configuration with the
+benchmark C consumer: the staged arena and event stream are walked in C at the
+same widths, stop rule and checksum, so the timed consumer builds no per-token
+Lean object; before the loop the walk's token/event/arena/sum/`walked`/value
+fields are gated against both Lean readings (`consumeResult` over the copy
+result and `consumeStaged` over the staged arrays) and the first difference is
+reported, exit 5.  Its row's `consume_fast_ns` is that walk's wall, and
+`consume_fold_ns`/`consume_values_ns` are `-` there.
+`--consume-reuse-fast-best-nocopy-cfast-trusted` is that configuration with the
+admission stage skipped: the caller asserts `documentDecision = admitted` — a
+benchmark contract, not the certified default — so the sizing read and every
+repetition take the constant admitted decision instead of calling `decide2`.
+Its row's `admission_ns` is `-` (the stage is not taken) and it carries
+`trusted=1`; the candidate gate, the consumer gate and the wrapper columns are
+unchanged, so the trusted row differs from the cfast row only by the admission
+field and the `trusted` marker.  A document the certified decision would refuse
+is measured as admitted under this contract.
+`--consume-reuse-fast-nocopy` is the fused candidate with the **no-copy
+result**: the adapter returns the 80-byte observation header only and the
+consumer reads the staged `dst`/`ev` arrays directly, so the result allocation
+and its payload copies leave the measured wrapper; the emitted bytes are
+unchanged (same call, same buffers, same resets), and the gate compares the same
+full output.  That consumer is a pure reading of arrays the adapter mutates in
+place while Lean models a `ByteArray` as immutable; the mode relies on the
+per-repetition document and observation keeping the reading's inputs distinct (a
+compiler that could treat them as invariant would price the consumer with the
+first reading).  The row's fields are unaffected — the same file re-read is the
+same input — but a mode that needed a guaranteed re-read would take the walk
+through an `IO` accessor.
+None has a refinement theorem.
+
+The workspace is `--consume-reuse`'s plus the candidates' `ent` scratch (one
+entry word per 64-byte block); the arrays are handed over in place, the document
+is copied into the window per call, the five cursors are reset, and there are no
+`sc`/`mk`/`entw`/`xcarry` resets because the candidates keep their masks and
+carries in registers or in locals.  `xp` is staged at the list capacity
+(`64*blocks + 8`), which the list arm and the choice entry need.  Before the
+timed loop each mode runs its equivalence gate once, outside every reported
+interval: the default at the arm the candidate pairs with — `arm 2` for the list
+mode, `arm 0` for the list-free and plain modes, and, for the choice entry, the
+arm its own `*nxp` names (zero → arm 0 with the whole buffer compared unchanged;
+non-zero → arm 2 with `xp[0..nxp)` compared) — and the candidate from the same
+fresh staging (every buffer zeroed, the document copied in).  The gate compares
+byte for byte the return value, `err`, `nk` and `ep[0..nk)`, then `nxp` and
+`xp`, then `ndst` and `dst[0..ndst)`, and `nev` and `ev[0..nev)`.  The pos8
+mode's `leanllvm_json_entry_table` obligation (and the default's at arm 0) is
+met by the adapter's `route_init`, which fills the table before the gate's first
+call.  A difference prints the field, the byte offset and the default's and the
+candidate's values and exits 5; an unmet staging precondition exits 3 and a gate
+snapshot that could not be allocated exits 4.
+The gate runs once per invocation, on the sizing read, from fresh staging; the
+loop's later repetitions reuse stale buffers and are not re-gated.  That is
+exact because each candidate reads no byte it did not write or the adapter did
+not reset on the call — `ent` for every block before the emitter reads it, `ep`
+(and, for the list arm, `xp`) from the reset cursors before stage 2 reads
+them, `dst`/`ev` from their reset cursors, and the window's document copied in
+— so the fresh result is the reused one.  A document whose length is unchanged
+but whose bytes change between repetitions is therefore measured without being
+re-gated, and a consumer-level divergence would be an offline row difference
+against `--consume`.
+Each row is `--consume-reuse`'s plus `native=<the candidate entry>` and `gate=1`,
+so the rows are compared field by field against `--consume`, while the gate
+covers what a row cannot print (the entry stream and, for the list arm, its
+escape positions).  A `TIMING=1` build also splits the route-native wrapper on
+the row: `doc_copy_ns` (the document copy), `resets_ns` (the five cursor
+stores), `precheck_ns` (the staging preconditions), `adapter_native_ns` (the
+pipeline), `postcheck_ns` (the returned cursors and the contract checks),
+`copyout_ns` (the result build — the no-copy mode's 80-byte header alone) and
+`ffi_ns`.  Slot 0 (`adapter_stage_ns`) is the parent of 3 and 4 and is not added
+to the residual; `ffi_ns` is the median of each repetition's `route_ns` minus
+slots 1 and 3-6, and it is everything between the call's brackets that those
+slots do not cover: the FFI call path, the pointer derivations, `route_init` and
+the result handling's boxing, not only FFI and boxing.  Every column, `ffi_ns`
+included, is measured per repetition and then medianed; the modes print the same
+columns, so the copy/no-copy and per-shape comparison is a row diff.  The
+consumer columns follow the same rule: `consume_fold_ns` and
+`consume_values_ns` are the two Lean readings per repetition, while the
+C-consumer mode fills `consume_fast_ns` (the C walk) and reports the two Lean
+readings as `-`, since they were gated before the loop rather than rerun.
+Without `TIMING=1` those seven print `-`.  A document the decision refuses
+prints the same `path=fallback` row with `gate=-` and stages nothing.
 
 ## Observed
 

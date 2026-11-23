@@ -1,0 +1,4 @@
+item	reason
+-fno-inline-functions	At the measured line the passes are inlined into their wrappers and their helpers into the passes, so no pass has its own define block. The flag keeps the pass and its helpers out of line; the pass's instruction stream is the source's, and the proof's callee rows are the helper models.
+pf_mask_core's three parameters	clang elides the unused xp/nxp/xc parameters of the list-free macro ((void)xp; (void)nxp; (void)xc). The fixture's ABI is the optimized function's, and JsonPipelineFastStage1's passRun takes no xp/nxp on the list-free arm.
+%struct.s1_carry extent	The fixture carries no type definition; the IR module parses with the layout ("s1_carry", 24), the target's extent for three i64 fields.

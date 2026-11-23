@@ -4,11 +4,16 @@
 #   nix develop -c bash probes/json/route/build.sh
 #
 # The kernel is outside Lake (kernel/json/README.md), so this script is the link
-# step: it compiles the six kernel translation units, the proved stage-1 depth
+# step: it compiles the six kernel translation units, the benchmark-only
+# full-pipeline candidates (`kernel/json/pipeline_fast.c` and
+# `kernel/json/pipeline_fast_plain.c`) that the `--consume-reuse-fast*` modes
+# measure and gate, the proved stage-1 depth
 # counter (`tests/v16/depth_count.ll`, at the same `clang -c` line the install
 # uses for the unit), the probe's native character-policy scan (`policy.c`), the
 # C adapter, and the standalone Lean program, then links them with `leanc`.  It
 # asserts that the adapter imports the units it calls -- `leanllvm_json_pipeline`,
+# `leanllvm_json_pipeline_fast`, `leanllvm_json_pipeline_fast_list`,
+# `leanllvm_json_pipeline_fast_plain_pos8`, `leanllvm_json_pipeline_fast_plain_b8`,
 # `leanllvm_json_entry_table`, the mask unit, the depth counter and the policy
 # scan -- and that the executable defines each of them, so a build that silently
 # lost a call is a failure rather than a pass.
@@ -38,7 +43,7 @@ fi
 
 printf 'flags: kernel=%s adapter=-O2 timing=%s\n' "$opt" "$timing"
 
-for f in pipeline s1_block entry escape utf8 stage2; do
+for f in pipeline pipeline_fast pipeline_fast_plain s1_block entry escape utf8 stage2; do
   clang "${kflags[@]}" -c "$repo/kernel/json/$f.c" -o "$build/$f.o"
 done
 
@@ -106,8 +111,32 @@ done
 (cd "$repo" && lake env lean -c "$build/RouteMain.c" "$here/RouteMain.lean")
 leanc -c "$build/RouteMain.c" -I "$repo/.lake/build/ir" -o "$build/RouteMain.o"
 
-if [ "$(nm -u "$build/shim.o" | grep -c 'leanllvm_json_pipeline')" -eq 0 ]; then
+if [ "$(nm -u "$build/shim.o" | grep -c ' leanllvm_json_pipeline$')" -eq 0 ]; then
   echo "build: the adapter does not import leanllvm_json_pipeline" >&2
+  exit 1
+fi
+
+# The stage-1 candidates are the default's benchmark-only counterparts and the
+# adapter reaches them from `--consume-reuse-fast*`; a build that lost a call
+# would still link, and the mode would fail at its first gate.
+if [ "$(nm -u "$build/shim.o" | grep -c ' leanllvm_json_pipeline_fast$')" -eq 0 ]; then
+  echo "build: the adapter does not import leanllvm_json_pipeline_fast" >&2
+  exit 1
+fi
+if [ "$(nm -u "$build/shim.o" | grep -c ' leanllvm_json_pipeline_fast_list$')" -eq 0 ]; then
+  echo "build: the adapter does not import leanllvm_json_pipeline_fast_list" >&2
+  exit 1
+fi
+if [ "$(nm -u "$build/shim.o" | grep -c ' leanllvm_json_pipeline_fast_plain_pos8$')" -eq 0 ]; then
+  echo "build: the adapter does not import leanllvm_json_pipeline_fast_plain_pos8" >&2
+  exit 1
+fi
+if [ "$(nm -u "$build/shim.o" | grep -c ' leanllvm_json_pipeline_fast_plain_b8$')" -eq 0 ]; then
+  echo "build: the adapter does not import leanllvm_json_pipeline_fast_plain_b8" >&2
+  exit 1
+fi
+if [ "$(nm -u "$build/shim.o" | grep -c ' leanllvm_json_pipeline_fast_best$')" -eq 0 ]; then
+  echo "build: the adapter does not import leanllvm_json_pipeline_fast_best" >&2
   exit 1
 fi
 
@@ -143,12 +172,34 @@ fi
 
 leanc "$build/RouteMain.o" "$build/shim.o" "$build/policy.o" \
   "${cone_ir[@]}" \
-  "$build/pipeline.o" "$build/s1_block.o" "$build/entry.o" \
+  "$build/pipeline.o" "$build/pipeline_fast.o" "$build/pipeline_fast_plain.o" \
+  "$build/s1_block.o" \
+  "$build/entry.o" \
   "$build/escape.o" "$build/utf8.o" "$build/stage2.o" "$build/depth_count.o" \
   -I "$repo/.lake/build/ir" -o "$build/leanllvm-json-route"
 
 if [ "$(nm "$build/leanllvm-json-route" | grep -c ' T leanllvm_json_pipeline$')" -eq 0 ]; then
   echo "build: the executable does not define leanllvm_json_pipeline" >&2
+  exit 1
+fi
+if [ "$(nm "$build/leanllvm-json-route" | grep -c ' T leanllvm_json_pipeline_fast$')" -eq 0 ]; then
+  echo "build: the executable does not define leanllvm_json_pipeline_fast" >&2
+  exit 1
+fi
+if [ "$(nm "$build/leanllvm-json-route" | grep -c ' T leanllvm_json_pipeline_fast_list$')" -eq 0 ]; then
+  echo "build: the executable does not define leanllvm_json_pipeline_fast_list" >&2
+  exit 1
+fi
+if [ "$(nm "$build/leanllvm-json-route" | grep -c ' T leanllvm_json_pipeline_fast_plain_pos8$')" -eq 0 ]; then
+  echo "build: the executable does not define leanllvm_json_pipeline_fast_plain_pos8" >&2
+  exit 1
+fi
+if [ "$(nm "$build/leanllvm-json-route" | grep -c ' T leanllvm_json_pipeline_fast_plain_b8$')" -eq 0 ]; then
+  echo "build: the executable does not define leanllvm_json_pipeline_fast_plain_b8" >&2
+  exit 1
+fi
+if [ "$(nm "$build/leanllvm-json-route" | grep -c ' T leanllvm_json_pipeline_fast_best$')" -eq 0 ]; then
+  echo "build: the executable does not define leanllvm_json_pipeline_fast_best" >&2
   exit 1
 fi
 if [ "$(nm "$build/leanllvm-json-route" | grep -c ' T leanllvm_json_entry_table$')" -eq 0 ]; then

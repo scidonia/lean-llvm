@@ -1,0 +1,328 @@
+# capture-stage2-dfa.sh: the normalisation's strip, item by item.
+# class	kind	item	line	reason
+1	removed	range(i64 0, 2)	1	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	noundef	1	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	noundef	1	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	noundef	1	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	noundef	1	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	noundef	1	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	noundef	1	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	noundef	1	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	noundef	1	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	noundef	1	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	captures(none)	1	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	noundef	1	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	noundef	1	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	noundef	1	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	captures(none)	1	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	noundef	1	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	writeonly	1	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	captures(none)	1	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	nonnull	11	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	nonnull	12	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	nonnull	13	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	noundef	16	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	noundef	16	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	noundef	16	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	noundef	16	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	noundef	16	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	noundef	20	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	nonnull	20	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	align 8	20	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	dereferenceable(16)	20	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	nonnull	43	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	nonnull	44	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	nonnull	46	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	noundef	48	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	nonnull	48	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	align 8	48	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	dereferenceable(1160)	48	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	noundef	48	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	noundef	48	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	noundef	48	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	nonnull	261	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	noundef	278	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	noundef	278	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	nonnull	278	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	noundef	278	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	noundef	278	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	noundef	278	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	noundef	278	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	noundef	278	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	noundef	278	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	nonnull	290	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	nonnull	329	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	nonnull	349	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	noundef	460	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	noundef	460	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	noundef	460	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	nonnull	460	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	noundef	465	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	nonnull	509	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	nonnull	513	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	nonnull	539	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	nonnull	540	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	nonnull	541	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	nonnull	549	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	nonnull	550	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	nonnull	551	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	nonnull	562	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	nonnull	563	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+1	removed	nonnull	564	argument, parameter and call-result attributes: a promise about an argument or a result, re-established by the theorem's hypotheses; a call's or an operand's range is restated by the model's own definition
+2	removed	local_unnamed_addr	1	function-header surface: linkage, code placement and the header's alignment, for which the model has no semantics
+2	removed	#0	1	function-header surface: linkage, code placement and the header's alignment, for which the model has no semantics
+2	removed	align 64	1	function-header surface: linkage, code placement and the header's alignment, for which the model has no semantics
+3	removed	#20	11	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#20	12	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#20	13	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#20	43	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#20	44	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#20	46	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#20	48	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#20	261	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#20	290	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#20	329	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#20	349	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#20	509	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#20	513	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#20	539	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#20	540	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#20	541	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#20	549	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#20	550	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#20	551	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#20	562	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#20	563	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#20	564	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+4	removed	nuw	17	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nuw	18	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nuw	19	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nuw	23	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nuw	25	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nuw	29	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nuw	31	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nuw	34	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nuw	36	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nuw	39	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nuw	41	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nuw	47	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nuw	50	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nuw	52	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nuw	54	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nuw	56	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nuw	63	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nuw	64	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nuw	65	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nuw	66	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nuw	67	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nuw	79	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nuw	80	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nuw	83	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nuw	86	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nneg	88	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nuw	90	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nuw	138	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nsw	140	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nneg	141	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nuw	142	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nuw	147	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nsw	147	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nneg	156	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nuw	176	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nuw	189	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nneg	204	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nuw	224	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nuw	244	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nuw	245	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nsw	260	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nsw	263	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nuw	276	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nuw	277	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	disjoint	296	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nuw	321	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nuw	324	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nuw	326	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nuw	342	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nuw	386	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nuw	412	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+4	removed	nuw	474	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
+5	removed	!tbaa !17	21	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !21	22	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !22	24	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !23	26	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !24	27	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !21	28	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !25	30	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !26	32	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !55	33	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !39	35	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !56	37	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !27	38	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !28	40	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !29	42	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !21	45	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !30	49	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !32	51	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !33	53	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !34	55	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !35	57	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !36	81	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !37	84	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !37	87	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !37	91	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !39	122	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !39	130	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !37	139	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !37	143	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !41	150	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !42	155	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !42	160	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !43	164	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !44	165	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !45	175	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !43	178	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !37	190	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !41	198	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !42	203	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !42	208	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !43	212	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !44	213	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !45	223	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !43	226	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!llvm.loop !57	233	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !39	240	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !36	246	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !38	247	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !39	253	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !21	262	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !22	264	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !23	265	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !17	275	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !21	300	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !22	302	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !43	308	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !44	309	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !24	320	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !37	323	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !25	328	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!llvm.loop !57	335	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !36	343	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !46	350	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !48	351	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !37	357	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !37	387	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!llvm.loop !58	414	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !51	418	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !52	459	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !37	475	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!llvm.loop !59	502	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !39	505	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !39	517	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !39	527	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !39	535	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !22	542	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !21	543	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !25	544	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !21	545	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !22	552	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !21	553	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !25	554	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !21	555	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !39	556	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+5	removed	!tbaa !21	557	memory and analysis metadata: the model has no aliasing relation and no loop model to read it with
+9	removed	align 16	3	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	4	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	5	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	6	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	7	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	8	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	9	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	10	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	21	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	22	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	24	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	26	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	27	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	28	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	30	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	32	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	33	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	35	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	37	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	38	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	40	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	42	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	45	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	49	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	51	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	53	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	55	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	57	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 4	81	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 1	84	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 1	87	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 1	91	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	122	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	130	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 1	139	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 1	143	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	150	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	155	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	160	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	164	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	165	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	175	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 1	177	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	178	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 1	190	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	198	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	203	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	208	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	212	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	213	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	223	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 1	225	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	226	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	240	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 4	246	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	247	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	253	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	262	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	264	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	265	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	275	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	300	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	302	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	308	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	309	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	320	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 1	323	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 1	325	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 1	327	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	328	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 4	343	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	350	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 4	351	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 1	357	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 1	387	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	418	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	459	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 1	475	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	505	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	517	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	527	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	535	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	542	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	543	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	544	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	545	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	552	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	553	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	554	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	555	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	556	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+9	removed	align 8	557	instruction-level alignment: the parser's load, store and alloca have no alignment field, and the model addresses bytes
+10	removed	fastcc	16	a call's calling convention: no calling convention is modelled, and the Calls environment decides which definition answers and how the call is made
+10	removed	fastcc	278	a call's calling convention: no calling convention is modelled, and the Calls environment decides which definition answers and how the call is made
+10	removed	fastcc	460	a call's calling convention: no calling convention is modelled, and the Calls environment decides which definition answers and how the call is made
+10	removed	fastcc	465	a call's calling convention: no calling convention is modelled, and the Calls environment decides which definition answers and how the call is made

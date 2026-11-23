@@ -1,0 +1,42 @@
+# The table-driven stage-2 candidate as emitted and committed: opcodes and call targets.
+# Regenerate with probes/install/ir/capture-stage2-dfa.sh.
+#
+# The derivation, measured at three points, in this order:
+#   the fused emission of the same source at the same flags: 1249 lines / 158 blocks,
+#     carrying binary64 (the always_inline number path);
+#   the same source with the included unit's helpers noinline: 566 lines / 92 blocks, no
+#     binary64 and no vector operation -- this is the point that makes "the FP is
+#     semantic, not surface" a measurement;
+#   the fixture below, with the staging objects flattened to parameters: 564 lines,
+#     379 instruction(s), 92 block(s), 19 phi(s), 2 alloca(s), 1 `ret`.
+#
+# The body is the switch-lowered form: 6 `switch` became comparison chains.
+#
+call @llvm.lifetime.end.p0
+call @llvm.lifetime.start.p0
+call @llvm.memset.p0.i64
+call @llvm.trap
+call @od_gap_recover
+call @od_scalar_value
+call @s2_init
+call @s2_string_body
+opcode add
+opcode alloca
+opcode and
+opcode br
+opcode call
+opcode getelementptr
+opcode icmp
+opcode load
+opcode lshr
+opcode mul
+opcode or
+opcode phi
+opcode ret
+opcode select
+opcode shl
+opcode store
+opcode trunc
+opcode unreachable
+opcode xor
+opcode zext

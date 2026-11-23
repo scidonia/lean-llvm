@@ -1,0 +1,42 @@
+# pipeline_fast.inventory -- the two passes' structure, from the fixture.
+# function, blocks, alloca types, and the call targets in text order.
+@pf_mask_core blocks=13
+  alloca i32
+  alloca i32
+  alloca i32
+  alloca i32
+  alloca i32
+  alloca i32
+  alloca i32
+  alloca i32
+  alloca %struct.s1_carry
+  call 2 @kl_err_vec_ld
+  call 1 @kl_tail_byte
+  call 9 @llvm.lifetime.end.p0
+  call 9 @llvm.lifetime.start.p0
+  call 1 @llvm.memset.p0.i64
+  call 4 @llvm.x86.avx.ptestz.256
+  call 4 @pf_sw32_dn
+  call 2 @s1f_escaped
+  call 2 @s1f_prefix_xor
+@pf_mask_list blocks=13
+  alloca i32
+  alloca i32
+  alloca i32
+  alloca i32
+  alloca i32
+  alloca i32
+  alloca i32
+  alloca i32
+  alloca %struct.s1_carry
+  call 2 @kl_err_vec_ld
+  call 1 @kl_tail_byte
+  call 2 @leanllvm_json_escape_list
+  call 9 @llvm.lifetime.end.p0
+  call 9 @llvm.lifetime.start.p0
+  call 1 @llvm.memset.p0.i64
+  call 4 @llvm.x86.avx.ptestz.256
+  call 2 @pf_ctl
+  call 4 @pf_sw32_dn
+  call 2 @s1f_escaped
+  call 2 @s1f_prefix_xor

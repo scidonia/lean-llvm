@@ -12,6 +12,10 @@ import LeanLLVM.Refinement.JsonUnitContracts
 import LeanLLVM.Refinement.JsonEscapeSpec
 import LeanLLVM.Refinement.JsonEscapeSteps
 import LeanLLVM.Refinement.JsonStage2WalkCredit
+import LeanLLVM.Refinement.JsonEntryAgreement
+import LeanLLVM.Refinement.JsonRouteNoCopy
+import LeanLLVM.Refinement.JsonFastSelector
+import LeanLLVM.Refinement.JsonPipelineFastStage1
 
 open LeanLLVM.Refinement
 
@@ -6892,6 +6896,106 @@ recurrence and the per-block step count it rests on. -/
 /-- info: 'LeanLLVM.Refinement.JsonB8Steps.entry_pos8_b8_agree' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.JsonB8Steps.entry_pos8_b8_agree
+
+/-! The two emitter agreements the fast candidates reuse, the route's no-copy
+observation, and the per-document selector's spec.  The emitter theorems share
+`entry_b3_refines`'s conclusion with the POS8 and B8 statements; the route
+statements are `routePost`'s byte projection; the selector statements record
+the bounded read, the absent write and the branch posts. -/
+
+/-- info: 'LeanLLVM.Refinement.JsonEntryAgreement.entry_b3_pos8_agree' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonEntryAgreement.entry_b3_pos8_agree
+
+/-- info: 'LeanLLVM.Refinement.JsonEntryAgreement.entry_b3_b8_agree' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonEntryAgreement.entry_b3_b8_agree
+
+/-- info: 'LeanLLVM.Refinement.routePost_observe' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.routePost_observe
+
+/-- info: 'LeanLLVM.Refinement.routePost_noCopy' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.routePost_noCopy
+
+/-- info: 'LeanLLVM.Refinement.copied_staged_reads' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.copied_staged_reads
+
+/-- info: 'LeanLLVM.Refinement.stagedView_extents' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stagedView_extents
+
+/-- info: 'LeanLLVM.Refinement.pfSelect_leaves_mem' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.pfSelect_leaves_mem
+
+/-- info: 'LeanLLVM.Refinement.selector_extent_le_routeBlocks' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.selector_extent_le_routeBlocks
+
+/-- info: 'LeanLLVM.Refinement.stagedSelector_read' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stagedSelector_read
+
+/-- info: 'LeanLLVM.Refinement.pfEntry_branch_post' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.pfEntry_branch_post
+
+/-- info: 'LeanLLVM.Refinement.pfEntry_dense_table' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.pfEntry_dense_table
+
+/-! The fused stage-1 pass's pieces: the classifier's word identity, the entry
+column, the per-block emitter composition, the pass model, and the fused gate's
+word at the unit's post. -/
+
+/-- info: 'LeanLLVM.Refinement.JsonPipelineFastStage1.pf_neither_lane' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonPipelineFastStage1.pf_neither_lane
+
+/-- info: 'LeanLLVM.Refinement.JsonPipelineFastStage1.pf_masks_word_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonPipelineFastStage1.pf_masks_word_eq
+
+/-- info: 'LeanLLVM.Refinement.JsonPipelineFastStage1.pf_entry_word_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonPipelineFastStage1.pf_entry_word_eq
+
+/-- info: 'LeanLLVM.Refinement.JsonPipelineFastStage1.collectWords_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonPipelineFastStage1.collectWords_eq
+
+/-- info: 'LeanLLVM.Refinement.JsonPipelineFastStage1.perBlockFold_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonPipelineFastStage1.perBlockFold_eq
+
+/-- info: 'LeanLLVM.Refinement.JsonPipelineFastStage1.pf_plain_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonPipelineFastStage1.pf_plain_spec
+
+/-- info: 'LeanLLVM.Refinement.JsonPipelineFastStage1.pf_plain_spec_b8' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonPipelineFastStage1.pf_plain_spec_b8
+
+/-- info: 'LeanLLVM.Refinement.JsonPipelineFastStage1.passRun_words' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonPipelineFastStage1.passRun_words
+
+/-- info: 'LeanLLVM.Refinement.JsonPipelineFastStage1.passRun_gate' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonPipelineFastStage1.passRun_gate
+
+/-- info: 'LeanLLVM.Refinement.JsonPipelineFastStage1.pf_mask_pass_spec' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonPipelineFastStage1.pf_mask_pass_spec
+
+/-- info: 'LeanLLVM.Refinement.JsonPipelineFastStage1.pf_utf8_word_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.JsonPipelineFastStage1.pf_utf8_word_eq
 
 /-- info: 'LeanLLVM.Refinement.JsonB8Steps.entry_b8_undefined_of_no_read' depends on axioms: [propext,
  Classical.choice,

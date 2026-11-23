@@ -1,0 +1,8 @@
+class	token	reason
+1	attributes	noundef, nonnull, readonly, writeonly, captures(...), dereferenceable(...), initializes(...): a promise about an argument or result, re-established by the theorem's hypotheses
+2	function-header surface	local_unnamed_addr, unnamed_addr, #N: linkage and code placement, for which the model has no semantics
+4	constraining flags	nuw, nsw, nneg, disjoint, samesign, inreg: each excludes inputs, so removing it widens; the widening is recorded
+9	alignment	align N, both the header's and a load/store/alloca's: the parser's load and store have no alignment field
+10	calling conventions	fastcc, zeroext, signext: the model's calls are untyped and carry no convention
+5	metadata	!tbaa, !llvm.loop and the module's metadata nodes: the model has no aliasing relation or loop model
+8	module configuration	target datalayout, target triple, source_filename, and the %struct type definition: not read by the parser; the struct extent is supplied by the layout
