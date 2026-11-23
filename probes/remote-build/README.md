@@ -35,14 +35,15 @@ bun scripts/gcloud-remote.ts run --session <session-id> --dir $HOME/lean-llvm --
   'git fetch origin main && git merge --ff-only FETCH_HEAD && nix develop -c lake build'
 ```
 
-Measured on the 8-vCPU bake instances (`n4d-highmem-8` for x86-64 in
-`asia-south1`, `n4a-highmem-8` for aarch64 in `europe-west4`): the second
-`nix develop -c lake build` takes **1.6 s** and **2.0 s**.  The first build on
-a freshly booted 4-vCPU worker takes 30 s (x86-64) and 14 s (aarch64) because
-the I/O and startup are cold, then about a second.  The full build the image
-contains took 21.5 and 17.3 minutes.  Both families were baked on 2026-11-23
-from revision `8c65035` (image labels `source-rev`/`source-repo`), need
-`--disk-gb 50`, and nothing rebuilds them automatically.
+Measured on the 8-vCPU bake instances (`n4d-highmem-8` for x86-64,
+`n4a-highmem-8` for aarch64): the second `nix develop -c lake build` takes
+**1.6 s** and **2.0 s**.  The first build on a freshly booted 4-vCPU worker
+(`n4-standard-4`, `n4a-standard-4`, both in `europe-west4-b`) takes 29 s and
+15 s because the I/O and startup are cold, then about a second.  The full
+build the image contains took 21.5 and 17.3 minutes.  Both families were baked
+on 2026-11-23 from revision `8c65035` (image labels `source-rev`/`source-repo`),
+are stored in `europe-west4`, need `--disk-gb 50`, and nothing rebuilds them
+automatically.
 
 ### From a plain worker
 
@@ -137,7 +138,7 @@ OS features (`GVNIC`, plus `UEFI_COMPATIBLE` on Arm), and the revision label:
 gcloud --configuration=agents compute instances stop <instance> --zone=<zone>
 gcloud --configuration=agents compute images create <family>-<date> \
   --project=agentic-resources --source-disk=<instance> --source-disk-zone=<zone> \
-  --family=<family> --storage-location=<region> \
+  --family=<family> --storage-location=europe-west4 \
   --guest-os-features=GVNIC --labels=source-rev=<short-sha>,source-repo=lean-llvm
 ```
 
@@ -145,14 +146,24 @@ gcloud --configuration=agents compute images create <family>-<date> \
 bucket and the `agents` identity's `compute.instanceAdmin.v1` is enough.  Add
 `UEFI_COMPATIBLE` on Arm.
 
+Keep both families in the same storage location (`europe-west4`): a worker
+created in another region streams the image there, which inflates its create
+time and makes spawn timings look like an architecture difference.  An image
+already stored elsewhere is moved by creating a new image from it —
+`--source-image=<old> --storage-location=europe-west4` with the same family and
+guest OS features, then deleting the old one; the location cannot be changed in
+place.
+
 Finally boot a disposable worker from the family with `--disk-gb 50` and
-require the baked revision and a sub-two-second `lake build`:
+require the baked revision, then the **second** `lake build` to report about a
+second — the first pays cold I/O and may take 30 s:
 
 ```bash
 bun scripts/gcloud-worker.ts create --purpose verify --cores 4 --memory-gb 16 \
   --disk-gb 50 --lease 1h --session <id> --image-family <family> --ondemand
 bun scripts/gcloud-remote.ts run --session <id> --dir $HOME/lean-llvm -- \
-  'git log -1 --format=%H && time nix develop -c lake build'
+  'git log -1 --format=%H && time nix develop -c lake build &&
+   time nix develop -c lake build'
 ```
 
 Delete the bake and verify instances afterwards; the previous image stays

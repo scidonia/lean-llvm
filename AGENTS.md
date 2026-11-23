@@ -96,23 +96,23 @@ stamps, and the full `.lake` build.  **Spawn proof and build workers from
 these families**, not from the plain image, unless the ref is far from the
 baked revision.
 
-Measured on 4-vCPU/16 GB workers, both in `europe-west4-b`:
+Measured on 4-vCPU/16 GB workers in `europe-west4-b`, with both images stored
+in `europe-west4`:
 
 | image | shape | `create` | tunnel ready | first `lake build` | second |
 |---|---|---|---|---|---|
-| x86-64 | `n4-standard-4` | 57 s | 79 s | 29.7 s | 1.53 s |
-| aarch64 | `n4a-standard-4` | 11 s | 38 s | 14.2 s | 1.05 s |
+| x86-64 | `n4-standard-4` | 26 s | 46 s | 28.9 s | 1.51 s |
+| aarch64 | `n4a-standard-4` | 9 s | 36 s | 15.1 s | 1.11 s |
 
-The `create` difference is image locality, not architecture: the x86-64 image
-is stored in `asia-south1` and was streamed across regions, while the aarch64
-image sits in `europe-west4`.  The first `lake build` is not re-elaboration —
-its user CPU was 2.7 s and 1.8 s, so the wall time is cold I/O and startup —
-and a worker is iterating in about a second.  Do not compare these rows as an
-architecture benchmark: different hardware families, and one sample each.
+The first `lake build` is not re-elaboration: its user CPU was 2.9 s and 1.9 s,
+so the wall time is cold I/O and startup.  A worker is iterating in about a
+second; these rows say nothing reliable about architecture — one sample per
+shape, different hardware families.
 
 For scale, the full cold build on 8-vCPU high-memory workers was 21.5 minutes
-on `n4d-highmem-8` (x86-64, `asia-south1`) and 17.3 minutes on
-`n4a-highmem-8` (aarch64, `europe-west4`), again one sample per shape.
+on `n4d-highmem-8` (x86-64) and 17.3 minutes on `n4a-highmem-8` (aarch64), one
+sample each.  That is the only compute-heavy comparison here, and it suggests
+Arm is somewhat faster without establishing it.
 
 ```bash
 bun scripts/gcloud-worker.ts create --purpose lean-prover --cores 8 \
