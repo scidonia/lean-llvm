@@ -8,29 +8,47 @@ Nothing here is committed from the worker: it is a build lane, not a committer.
 
 - `gcloud` under `nix shell nixpkgs#google-cloud-sdk`, `bun`, and the `agents`
   configuration (`gcloud auth print-access-token --configuration=agents`).
-- A worker leased for the session, from the pack checkout (the Lean image is
-  chosen automatically in a Lean project; `--lean` forces it):
+- A worker leased for the session, booted from the project's precompiled image
+  family for its architecture, with the image's 50 GB boot disk:
 
   ```bash
   bun scripts/gcloud-worker.ts create --purpose lean-prover --cores 8 \
-    --memory-gb 64 --disk-gb 80 --lease 8h --session <session-id>
+    --memory-gb 64 --disk-gb 50 --lease 8h --session <session-id> \
+    --image-family lean-llvm-precompiled-x86-64
   ```
 
-  The worker is spot, has no external address, and every byte reaches it
-  through the IAP tunnel.  Teardown is `delete --session <session-id>`.
+  `--arch aarch64 --image-family lean-llvm-precompiled-aarch64` selects the Arm
+  family.  The worker is spot, has no external address, and every byte reaches
+  it through the IAP tunnel.  Teardown is `delete --session <session-id>`.
 
 ## Provisioning (once per worker)
 
-The Lean image (`nixos-lean-x86-64`) already carries Lean 4.35.0 and Lake
-5.0.0-src from `/run/current-system/sw/bin`; the flake uses the same toolchain.
-Mathlib and every Lean library it requires come from the flake's
-`leanPackagesWithExports`, whose closure is copied to the worker once (11 GiB
-over the tunnel, 9m55s) or baked into the image.  The worker has no internet.
+A worker from a precompiled family already has the checkout at the OS Login
+user's home (`$HOME/lean-llvm`), the bare mirror beside it, the realised dev
+shell and the full build, so it does not re-clone.  It fetches the task's ref
+into the existing tree and only what changed is re-elaborated:
 
 ```bash
-R=/home/gavin/dev/Scidonia/lean-llvm
-# same absolute path on the worker, owned by the OS Login user
-<remote> run -- "sudo -n mkdir -p $R && sudo -n chown -R $(id -un):$(id -gn) /home/gavin"
+bun scripts/gcloud-remote.ts git-push --session <session-id> \
+  --repo . --remote $HOME/lean-llvm.git --ref main
+bun scripts/gcloud-remote.ts run --session <session-id> --dir $HOME/lean-llvm -- \
+  'git fetch origin main && git merge --ff-only FETCH_HEAD && nix develop -c lake build'
+```
+
+Measured on the bake instances: `nix develop -c lake build` takes **1.6 s**
+(x86-64) and **2.0 s** (aarch64) when nothing changed, against the 21-minute
+cold build the image contains.  Both families were baked on 2026-11-23 from
+revision `8c65035` (image labels `source-rev`/`source-repo`), need
+`--disk-gb 50`, and nothing rebuilds them automatically.
+
+### From a plain worker
+
+A worker from a plain image has Nix but no Lean; the flake's dev shell supplies
+the toolchain and mathlib, so the shell's closure is the whole environment.
+Use this route for a tree far from the baked revision.
+
+```bash
+R=$HOME/lean-llvm
 ```
 
 Transfer from a **quiescent** checkout, so oleans, traces and sources describe
@@ -111,11 +129,12 @@ the worker, so name every changed source the target reads.
   `/nix/store/<hash>-lean-packages-with-exports/lake-overrides.json`.  Pass the
   path that exists on the machine in hand; a missing overrides file is a setup
   error, not a proof failure.
-- The image's `lake` shim runs `lean-llvm-overrides`, whose cleanup deletes the
-  cache's `stamps/` on every invocation, so two concurrent `lake` processes on
-  one worker race and can strip a package copy mid-build.  Run one `lake` per
-  worker, and invoke the store `lake` directly with the overrides path when the
-  shim's recopy cost or the race would otherwise dominate.
+- The `lake` shim runs `lean-llvm-overrides`, which copies each workspace
+  package into `$HOME/.cache/lean-llvm/packages` once and records the store
+  path in a stamp.  The stamps are what keep a second invocation from copying
+  again; `tests/lake-cache-stamps.sh` checks both the copy and the no-copy
+  case.  A cache that loses its stamps re-copies every package, which resets
+  the mtimes Lake reads and makes each build redo its C objects.
 - A copied `.lake/build` is **not** a cache to trust: an olean can be older than
   its `.trace` (a copied tree can pair a current trace with an older olean), and
   Lake will load it as current, failing later on a lemma the source has. Rebuild

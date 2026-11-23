@@ -43,13 +43,15 @@ A worker is sized from a measured build peak, not from idle use.  On
 largest leaf module then in the tree (`JsonStage2WalkScopeClassAB`, 81 KB)
 peaked at ~1.9 GB over a 15 s elaboration; the 6 GB single-module figure
 above predates the module splits and is not the current sizing signal.  The
-full default target's peak is the number that decides the shape and has not
-yet been recorded.
+full default target's peak is the number that decides the shape: on
+2026-11-20 it peaked at **27,867 MB** over 1,888 s and 2,227 jobs on
+`e3f8f2e`, so the full build takes **64 GB** (32 GB leaves ~4 GB headroom).
 
-- RAM: 32 GB is the standard; 16 GB once a full-build peak is measured under
-  ~8 GB; 64 GB only if that peak exceeds ~24 GB.
-- Disk: 40 GB is the standard (11 GiB package closure, repository, builds,
-  slack); 80 GB only for several lanes or large artifacts on one disk.
+- RAM: 64 GB for a worker that runs the full default target; 16 GB is enough
+  for a single-module proof lane, whose largest leaf peaks under 2 GB.
+- Disk: 50 GB is the precompiled images' boot disk, and a worker booted from
+  one must request at least that; 40 GB for a plain worker (11 GiB package
+  closure, repository, builds, slack).
 - vCPU: 8 for lane concurrency; 4 for a single cone.
 
 Measure with `probes/remote-build/measure-peak.sh` on a worker, running the
@@ -71,8 +73,11 @@ elaboration, and no `.lake/packages`.  The copy is what makes linking work: Lake
 writes the C objects it needs for an executable into each dependency package's
 own `.lake/build/ir`, and a package taken straight from the read-only store
 cannot receive them.  It is made once per user with `cp -r --reflink=auto` and
-reused while the store path is unchanged; a fresh cache costs the copy plus the
-compilation of the objects for the modules an executable actually imports.
+reused while the store path is unchanged: a stamp per copy is written beside
+the copies and kept across invocations, so a second invocation copies nothing,
+and `tests/lake-cache-stamps.sh` checks both the copy and the no-copy case.  A
+fresh cache costs the copy plus the compilation of the objects for the modules
+an executable actually imports.
 `packages.<system>.lake` is that wrapper on its own, for a consumer such as a
 machine image that needs the same resolution without the shell.  The mathlib
 revision, `lean-toolchain` and the flake's `leanPackages` are one unit: moving
@@ -80,6 +85,34 @@ one needs the other two to match.  `pkgs.lean4` is not interchangeable with
 `leanPackages.lean4` — only the latter's Lake accepts a `/nix/store` package
 directory as up to date — and nixpkgs' mathlib is at `v4.35.0`, so a mathlib
 revision that is not that tag has to be built, not substituted.
+
+### Precompiled worker images
+
+`lean-llvm-precompiled-x86-64` and `lean-llvm-precompiled-aarch64` are the
+project's own image families, baked from a live instance, and carry a checkout
+at `$HOME/lean-llvm` (the OS Login user's home), a bare mirror at
+`$HOME/lean-llvm.git`, the realised dev shell, the Lake package cache and the
+full `.lake` build.  A worker booted from one skips the shell realisation and
+the 21-minute full build:
+
+```bash
+bun scripts/gcloud-worker.ts create --purpose lean-prover --cores 8 \
+  --memory-gb 64 --disk-gb 50 --lease 8h --session <session-id> \
+  --image-family lean-llvm-precompiled-x86-64
+bun scripts/gcloud-remote.ts run --session <session-id> --dir $HOME/lean-llvm -- \
+  'git fetch origin main && git merge --ff-only FETCH_HEAD && nix develop -c lake build'
+```
+
+Transfer a ref through the tunnel: the worker has no IPv4 route, so push from
+the local checkout into the image's bare mirror and fetch it there.  A warm
+`lake build` reports under 2 s; a longer one means the tree moved far enough
+from the bake to re-elaborate, or the package cache lost its stamps.
+
+The image's own record is its `source-rev` label and `$HOME/lean-llvm.IMAGE`
+beside the checkout.  Both families were baked on 2026-11-23 from revision
+`8c65035`; nothing rebuilds them automatically, so rebake when `main` moves
+materially.  A worker booted from one needs a 50 GB boot disk, the image's own
+disk size.
 
 ## Layout
 
