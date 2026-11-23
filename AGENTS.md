@@ -91,28 +91,64 @@ revision that is not that tag has to be built, not substituted.
 `lean-llvm-precompiled-x86-64` and `lean-llvm-precompiled-aarch64` are the
 project's own image families, baked from a live instance, and carry a checkout
 at `$HOME/lean-llvm` (the OS Login user's home), a bare mirror at
-`$HOME/lean-llvm.git`, the realised dev shell, the Lake package cache and the
-full `.lake` build.  A worker booted from one skips the shell realisation and
-the 21-minute full build:
+`$HOME/lean-llvm.git`, the realised dev shell, the Lake package cache with its
+stamps, and the full `.lake` build.  **Spawn proof and build workers from
+these families**, not from the plain image, unless the ref is far from the
+baked revision.
+
+Measured on 4-vCPU/16 GB workers, both in `europe-west4-b`:
+
+| image | shape | `create` | tunnel ready | first `lake build` | second |
+|---|---|---|---|---|---|
+| x86-64 | `n4-standard-4` | 57 s | 79 s | 29.7 s | 1.53 s |
+| aarch64 | `n4a-standard-4` | 11 s | 38 s | 14.2 s | 1.05 s |
+
+The `create` difference is image locality, not architecture: the x86-64 image
+is stored in `asia-south1` and was streamed across regions, while the aarch64
+image sits in `europe-west4`.  The first `lake build` is not re-elaboration —
+its user CPU was 2.7 s and 1.8 s, so the wall time is cold I/O and startup —
+and a worker is iterating in about a second.  Do not compare these rows as an
+architecture benchmark: different hardware families, and one sample each.
+
+For scale, the full cold build on 8-vCPU high-memory workers was 21.5 minutes
+on `n4d-highmem-8` (x86-64, `asia-south1`) and 17.3 minutes on
+`n4a-highmem-8` (aarch64, `europe-west4`), again one sample per shape.
 
 ```bash
 bun scripts/gcloud-worker.ts create --purpose lean-prover --cores 8 \
   --memory-gb 64 --disk-gb 50 --lease 8h --session <session-id> \
-  --image-family lean-llvm-precompiled-x86-64
+  --image-family lean-llvm-precompiled-x86-64        # --arch aarch64 for Arm
+bun scripts/gcloud-remote.ts git-push --session <session-id> \
+  --repo . --remote $HOME/lean-llvm.git --ref <branch>
 bun scripts/gcloud-remote.ts run --session <session-id> --dir $HOME/lean-llvm -- \
-  'git fetch origin main && git merge --ff-only FETCH_HEAD && nix develop -c lake build'
+  'git fetch origin <branch> && git merge --ff-only FETCH_HEAD && nix develop -c lake build'
 ```
 
 Transfer a ref through the tunnel: the worker has no IPv4 route, so push from
-the local checkout into the image's bare mirror and fetch it there.  A warm
-`lake build` reports under 2 s; a longer one means the tree moved far enough
-from the bake to re-elaborate, or the package cache lost its stamps.
+the local checkout into the image's bare mirror and fetch it there.  `--disk-gb
+50` is the image's own disk size and a smaller boot disk is refused.
+
+**Rebake when the image stops being warm.**  The image commits to one revision;
+every checkout on top of it re-elaborates the modules that changed.  Rebake
+when any of these holds:
+
+- a spawned worker's `nix develop -c lake build` takes more than about two
+  minutes on a ref that is close to `main` — the bake no longer covers the
+  dependency cones that changed;
+- `main` has moved by roughly a hundred commits or several weeks since the
+  bake, whichever comes first;
+- the Lean, mathlib or `lake-toolchain` pin moves, because the shell closure
+  and therefore the image's store contents change with it.
+
+The bake route is in `probes/remote-build/README.md` ("Rebaking the images"):
+build on a live worker from the plain `nixos-x86-64`/`nixos-aarch64` image,
+freeze its disk under the same family name, and verify a cold boot has the
+revision and a sub-2-second build.  `nixos-lean-x86-64` is being retired; do
+not bake from it.
 
 The image's own record is its `source-rev` label and `$HOME/lean-llvm.IMAGE`
 beside the checkout.  Both families were baked on 2026-11-23 from revision
-`8c65035`; nothing rebuilds them automatically, so rebake when `main` moves
-materially.  A worker booted from one needs a 50 GB boot disk, the image's own
-disk size.
+`8c65035`.
 
 ## Layout
 
