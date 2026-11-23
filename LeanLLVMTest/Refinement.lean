@@ -10439,6 +10439,62 @@ contiguous to the end of this file. -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.stage2_pre_inhabited
 
+/-- info: 'LeanLLVM.Refinement.noEvent_abi_not_determined' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.noEvent_abi_not_determined
+
+/-- info: 'LeanLLVM.Refinement.consumer_eq_noEventFold' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.consumer_eq_noEventFold
+
+/-- info: 'LeanLLVM.Refinement.stage2Boundary_noEventConsumer' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2Boundary_noEventConsumer
+
+/-- info: 'LeanLLVM.Refinement.Stage2Records.toNoEvent' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.Stage2Records.toNoEvent
+
+/-- info: 'LeanLLVM.Refinement.consumeBytes_flatten' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.consumeBytes_flatten
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventBoundary_witness' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventBoundary_witness
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventBoundary_iff' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventBoundary_iff
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventBoundary_sum_exact' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventBoundary_sum_exact
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventRun_boundary_parts' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventRun_boundary_parts
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventRun_boundary' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventRun_boundary
+
+/-- info: 'LeanLLVM.Refinement.satisfies_calls_stage2_noevent' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.satisfies_calls_stage2_noevent
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEvent_encoding' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEvent_encoding
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventBoundary_consumer' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventBoundary_consumer
+
+/-- info: 'LeanLLVM.Refinement.neLitCheck_eq_litCheck' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.neLitCheck_eq_litCheck
+
 /-- info: 'LeanLLVM.Refinement.pipeline_satisfies_at_stage2' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.pipeline_satisfies_at_stage2

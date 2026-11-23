@@ -1,21 +1,25 @@
 # The stage-1 units
 
-Two units of the measured SIMD JSON pipeline are extracted here, each a unit of
-the same vendored measured set (`measured/`) with its own public ABI, its own
-specification and identity arms, and its own boundary, and the extraction of a
-third is what this directory's lists and arms are ready for:
+Three units of the measured SIMD JSON pipeline are extracted here, each a unit
+of the same vendored measured set (`measured/`) with its own public ABI, its own
+specification and identity arms, and its own boundary:
 
 - **`s1_block.c`**, the classification mask unit,
 - **`entry.c`**, the entry unit: a block's `ent` word to positions, and
 - **the UTF-8 validity unit**, the stage that decides whether the bytes scanned
   so far form valid UTF-8, whose unit is `kernel/json/utf8.c`.
 
-None is the pipeline.  Nothing here decodes UTF-8 into text, builds or expands
-an escape list, or reads a value: the UTF-8 unit returns a validity word and no
-positions.  `measured/` is read-only reference, compiled by the identity, bench and route
-scripts and by no `lake` target.  The units share the vendored
-files, the compiler line and the arms' machinery, and nothing else: each has its
-own entity list, its own deletion list and its own boundary.
+Beside them this directory holds the escape unit, the two additive no-event
+entries and the assembled pipeline, each with its own section below; the stage-2
+walk has no section of its own — its ABI, refusals and record encoding are stated
+in `kernel/json/stage2.h`, and its entities are the `stage2-entities:` row below.
+None of the stage-1 units is the pipeline.  Nothing here decodes UTF-8
+into text, builds or expands an escape list, or reads a value: the UTF-8 unit
+returns a validity word and no positions.  `measured/` is read-only reference,
+compiled by the identity, bench and route scripts and by no `lake` target.  The
+measured units share the vendored files, the compiler line and the arms'
+machinery, and nothing else: each has its own entity list, its own deletion list
+and its own boundary.
 
 ## The mask unit
 
@@ -116,6 +120,11 @@ stage2-entities: s2port:S2_VAL s2port:S2_STR s2port:S2_EV s2port:s2_init s2port:
 stage2-delete: s2port:438 s2port:442 s2port:444-488 s2port:494-521 s2port:580 s2port:582 s2port:608 s2port:611-614 s2port:650-652 s2port:654 s2port:701
 stage2-extra: leanllvm_json_stage2 s2_string_body z_arena_reserve out_reserve p6:to_double
 <!-- identity-list:end -->
+
+The no-event units have no row above: they are authored text, not measured
+extraction, so there is no entity list to compare and no identity arm.  Their
+dependency set is the route's census, which names the one undefined project
+symbol the certified unit also leaves undefined.
 
 The four deletions are the two conditional arms inside `s1f_masks`, resolved to
 the measured build's values: `S1F_XS=5` (`build49.sh:21`) takes the arm that
@@ -875,6 +884,57 @@ of the source and remove one call from a copy of the fixture; both are reported.
    emitter and the escape list per document is not in this unit, and the arm
    passes one selector for every document.  A document whose recorded class
    would select another emitter is outside this arm's row.
+
+## The no-event entries
+
+Two additive units beside the certified ones, replacing nothing:
+
+- **`stage2_noevent.c` / `stage2_noevent.h`**, `leanllvm_json_stage2_noevent`:
+  the certified walk's validation, body and number work with the event record and
+  the arena replaced by the consumer's three accumulations.  Twelve arguments:
+  the document, the entry stream, the escape list, one caller-staged `scratch`
+  buffer with its capacity, the three reading words and `*err`.
+- **`pipeline_noevent.c`**, `leanllvm_json_pipeline_noevent`: `pipeline.c`'s
+  stage-1 block loop, entry emitter, escape list and UTF-8 gate unchanged, with
+  the destination and event buffers replaced by the same `scratch`, ending in the
+  entry above.
+
+The helper text is the certified unit's: `stage2_noevent.c` includes `stage2.c`
+with its entry renamed, so every helper the walk calls except its literal
+comparison is that file's text, byte for byte.  The exception is `ne_lit`, which
+packs the literal's bytes into immediates and is inlined into the body, because
+the fragment the records are stated over has no module-global representation and
+the certified `lit_check` takes a `const char *`.  Its rule is `lit_check`'s; that
+the emitted chain implements it is a refinement obligation, not a claim of the
+unit.
+
+Where the obligations differ from the certified units':
+
+- `scratch` is a caller-staged **input** whose capacity is a `pre` — a shortfall
+  is the body's `__builtin_trap`, never a refusal — and there is no "used extent"
+  output.
+- `xp`/`nxp` carry `stage2.h`'s meaning and precondition: the list is required for
+  a document with escapes, and `nxp = 0` is a call for a document with none.
+- the pipeline entry **writes the three reading words on every call**: it zeroes
+  them at entry, before the block loop, so a refusal from either the UTF-8 gate or
+  the walk leaves zero and only an acceptance overwrites them.
+- on refusal both entries write zero to the three words and the first error offset
+  to `*err`; on acceptance `tokens` and `values` are the counts and `sum` is the
+  fold's sum in a 64-bit word, exact when the mathematical sum is below `2 ^ 64`.
+
+The object censes: `stage2_noevent.c` defines
+`leanllvm_json_stage2_noevent` and the renamed included entry, and its only
+undefined project symbol is `leanllvm_json_escape_expand`, the escape entry the
+certified unit itself calls; `pipeline_noevent.c` defines
+`leanllvm_json_pipeline_noevent` and leaves the six unit entries it calls
+undefined.  Neither is built by a `lake` target; the route is
+`tests/json-noevent/check.sh`.
+
+No proof covers the walk.  `Stage2NoEventWalkObligation`
+(`LeanLLVM/Refinement/JsonStage2NoEventBody.lean`) states what the body must
+satisfy, conditional on a contract for `od_gap_recover`, which this tree does not
+model, and the emitted literal chain is inside that obligation.  The differential
+is what the boundary currently rests on.
 
 ## The checks
 

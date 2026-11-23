@@ -734,3 +734,54 @@ What it shows, and what it does not:
   outside the 164 rows — the class is checked as a relation over the rows the
   scenario feeds, not proved; and the timing of the decision, which is
   `probes/json/core-shape/shape.sh`'s paired table and not this gate's.
+
+## The no-event entry's cuts, observed at `66159e24` with this change
+
+`kernel/json/stage2_noevent.c` and `kernel/json/pipeline_noevent.c` are additive
+units; their route is `tests/json-noevent/check.sh` over the committed corpus in
+`tests/json-noevent/corpus`.  The readings below were made on a worktree built
+at `66159e24b93d7f78139d08a8d1794f32ae12e777` with the additive files present,
+Lean 4.35.0 and clang/LLVM 21.1.8 from the flake.  Each cut was applied to a
+throwaway copy of the tree; every cut tree compiled (exit 0) before its route
+ran, and the uncut, unmodified worktree reached exit 0 with every `ok` line.
+
+Unlike the cuts above, these six are **rebuilt inside the route on every run**:
+the route compiles each cut from a copy of the committed source in its temporary
+directory and checks the firing assertion, so a green run exercises every
+negative control without touching the tree.
+
+| Cut | Cut applied in the copy | Build | Route exit | Assertion that fired |
+|---|---|---|---|---|
+| NE1 payload | the record payload omitted from the sum accumulator (`terms += tag + len`) | exit 0 | 1 | `FAIL: the driver exited 3 on the stage2/list route/arm`, then `FAIL … reading: reference 1/1/9223372036854775818, no-event 1/1/9` on `acc-string`, `acc-utf8-raw` and nine further accepted record-bearing documents |
+| NE2 A tail list | the stage-2 tail's `xp, *nxp` → `xp, 0` | exit 0 | 1 | `FAIL: the driver exited 3 on the pipeline/list route/arm`, then `FAIL … reading: pipeline 1/1/214, no-event 1/1/9223372036854775819` on `acc-esc-string` and the other escape-bearing documents; no `nk:` or `nxp:` line fires |
+| NE2 B pre-zero | the entry's three pre-zero stores deleted | exit 0 | 1 | `FAIL … refusal slots: expected zero, got 16045690984833335023/16045690984833335023/16045690984833335023` on `refuse-utf8-gate` only |
+| NE3 refusal stores | the three refusal stores deleted | exit 0 | 1 | the same sentinel line on every refusing document |
+| NE4 identity | one comment line appended to `kernel/json/stage2.c` | exit 0 | 1 | `kernel/json/stage2.c differs from 66159e24…`, `FAIL: a protected artefact differs from the base revision` |
+| NE6 census | a `static`, `used` reference to `leanllvm_json_s1_masks` appended to `stage2_noevent.c` | exit 0 | 1 | the census prints `leanllvm_json_escape_expand` and `leanllvm_json_s1_masks`, then `FAIL: the no-event object's symbol census is not the declared one` |
+
+What each shows, and what it does not:
+
+- **NE1 — the reading is the certified fold's.** The cut moves the sum on the
+  documents that carry a record and leaves every refusal and every number-only
+  row green, so the comparison notices a wrong arithmetic in one assertion
+  family. It does not show that the body refines the model: that is the walk
+  obligation's subject, and the route samples a corpus.
+- **NE2 A — the tail is wired to stage 1.** With the list dropped, `nk` and
+  `nxp` still agree and the escape-bearing readings move, so the cut isolates the
+  tail's use of the stage-1 list rather than the stage-1 outputs themselves.
+- **NE2 B — the gate's refusal leaves a total post.** Deleting the entry's
+  pre-zero surfaces the sentinel on the UTF-8 gate's document only, which is the
+  one refusal that returns before the walk; every accepting row and every walk
+  refusal stays green.
+- **NE3 — the refusal words are written, not merely unread.** The sentinel
+  pre-fill is what separates "wrote the declared zeros" from "never touched the
+  slot"; the cut makes that difference visible.
+- **NE4 — additive means additive.** The comparison passes trivially before the
+  change, so the one-byte control, not the pass, is its evidence.
+- **NE6 — the dependency set is the declared one.** The staged reference widens
+  the undefined set and the same census reports it, so the clean object's
+  one-symbol set is not vacuous.
+
+The route does not prove the new body refines the model and says nothing about a
+document the corpus does not carry; the walk obligation and the emitted literal
+chain stay in the Lean development and are not what these cuts show.

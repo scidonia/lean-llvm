@@ -179,6 +179,10 @@ import LeanLLVM.Refinement.JsonStage2NumFastScanSlow
 import LeanLLVM.Refinement.JsonStage2NumFastTier3Join
 import LeanLLVM.Refinement.JsonStage2NumFastFallback
 import LeanLLVM.Refinement.JsonStage2StringBody
+import LeanLLVM.Refinement.JsonStage2NoEvent
+import LeanLLVM.Refinement.JsonStage2NoEventIR
+import LeanLLVM.Refinement.JsonStage2NoEventContract
+import LeanLLVM.Refinement.JsonStage2NoEventBody
 import LeanLLVM.Refinement.JsonStage2WalkAlignment
 import LeanLLVM.Refinement.JsonStage2TraceRow
 import LeanLLVM.Refinement.JsonStage2WalkRowSteps

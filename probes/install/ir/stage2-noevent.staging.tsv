@@ -1,0 +1,6 @@
+# capture-stage2-noevent.sh: the entry's local objects, flattened to parameters.
+# alloca	parameter	reason
+  %stk = alloca [520 x i8]	ptr %stk	the fragment has no aggregate type and no element-count or vector alloca; the body writes and reads the same bytes at the same offsets through the parameter it used through the alloca, and the caller stages the object
+  %e = alloca %struct.Err	ptr %e	the fragment has no aggregate type and no element-count or vector alloca; the body writes and reads the same bytes at the same offsets through the parameter it used through the alloca, and the caller stages the object
+  %c = alloca %struct.OdCur	ptr %c	the fragment has no aggregate type and no element-count or vector alloca; the body writes and reads the same bytes at the same offsets through the parameter it used through the alloca, and the caller stages the object
+  %d = alloca double	ptr %d	the fragment has no aggregate type and no element-count or vector alloca; the body writes and reads the same bytes at the same offsets through the parameter it used through the alloca, and the caller stages the object
