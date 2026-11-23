@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Build and run the lazy-stage-2 cost probe on `syn-strings-64k`, arm 2.
+# Build and run the stage-2 escape cost probe on `syn-strings-64k`: the list
+# arm (2) and the shipping list-free arm (0), in one binary and one session.
 #
 #   nix develop -c bash probes/json/route/lazy-stage2/run.sh
 #   nix develop -c bash probes/json/route/lazy-stage2/run.sh --rounds 21 --reps 31 --core 2

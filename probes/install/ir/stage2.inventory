@@ -2,7 +2,7 @@
 # Regenerate with probes/install/ir/capture-stage2.sh.
 #
 # The derivation, measured at three points, in this order:
-#   the fused emission of the same source at the same flags: 1754 lines / 233 blocks,
+#   the fused emission of the same source at the same flags: 1850 lines / 249 blocks,
 #     carrying binary64 (the always_inline number path);
 #   the same source with the twelve helpers noinline: 944 lines / 165 blocks, no
 #     binary64 and no vector operation -- this is the point that makes "the FP is

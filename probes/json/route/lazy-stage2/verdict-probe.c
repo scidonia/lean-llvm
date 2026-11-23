@@ -1,18 +1,18 @@
-/* verdict-probe.c -- what withholding the escape list does to the verdict.
+/* verdict-probe.c -- withholding the escape list must not change the verdict.
 
    A bench-only control for `README.md`'s "what withholding the list does"
    section: two tiny documents whose strings carry a byte the reference parser
    refuses, run through the pipeline as committed and through the same stage-2
-   call with `nxp = 0` -- the shape a lazy stage 2 that did not validate string
-   bodies would take.
+   call with `nxp = 0` -- the list-free arm, where stage 2 classifies each body
+   by scanning its own span.
 
    The committed pipeline refuses both at offset 7.  With the list withheld the
-   walk accepts both, because every body takes `s2_string_body`'s form (a):
-   the list is stage 1's record of every byte a string body must be checked
-   for, and form (a) is taken exactly when the body has no listed position.
+   walk must refuse them at the same offset: the rescan validates the body, so
+   the list is a decoding input and not the validation driver.  A structural
+   refusal is in neither list's ownership and stays the same as well.
 
-   Exit status: 0 when both refusals are reproduced and both acceptances with
-   the list withheld follow (the observation), 3 when either does not. */
+   Exit status: 0 when every withheld-list call reproduces the committed
+   verdict and refusal offset, 3 when one does not. */
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -41,7 +41,7 @@ static const uint8_t doc_no_value[] = {0x7B, 0x22, 0x61, 0x22, 0x3A, 0x7D};
 static int failures;
 
 static void probe(const char *name, const uint8_t *doc, uint64_t n,
-                  int expect_refuse_at, int expect_withheld_accept) {
+                  int expect_refuse_at) {
   const uint64_t nb = (n + 63) >> 6, off = 3;
   uint8_t *win = (uint8_t *)xalloc((size_t)n + off + 64);
   memset(win, 0, (size_t)n + off + 64);
@@ -76,9 +76,12 @@ static void probe(const char *name, const uint8_t *doc, uint64_t n,
   printf("%-14s same walk, list withheld (nxp=0): verdict=%llu err=%llu nev=%llu\n",
          name, (unsigned long long)v2, (unsigned long long)er2,
          (unsigned long long)ne2);
-  if ((int)v2 != expect_withheld_accept) {
-    fprintf(stderr, "GATE: %s: the withheld-list verdict is not %d\n", name,
-            expect_withheld_accept);
+  if (v2 != v || er2 != err) {
+    fprintf(stderr,
+            "GATE: %s: the withheld-list call is (%llu, err %llu), the committed "
+            "call (%llu, err %llu)\n",
+            name, (unsigned long long)v2, (unsigned long long)er2,
+            (unsigned long long)v, (unsigned long long)err);
     failures++;
   }
 
@@ -89,16 +92,16 @@ static void probe(const char *name, const uint8_t *doc, uint64_t n,
 int main(void) {
   static uint32_t table[256 * 8];
   leanllvm_json_entry_table(table);   /* the pos8 emitter's table, once per process */
-  probe("control-byte", doc_control, sizeof doc_control, 7, 1);
-  probe("bad-escape", doc_bad_escape, sizeof doc_bad_escape, 7, 1);
-  /* The list owns the string-body rules, not the structural ones: a document
+  probe("control-byte", doc_control, sizeof doc_control, 7);
+  probe("bad-escape", doc_bad_escape, sizeof doc_bad_escape, 7);
+  /* The list owns the decoding route, not the structural rules: a document
      with no value after the colon is refused by both. */
-  probe("structural", doc_no_value, sizeof doc_no_value, 5, 0);
+  probe("structural", doc_no_value, sizeof doc_no_value, 5);
   if (failures != 0) {
     fprintf(stderr, "verdict-probe: %d gate(s) failed\n", failures);
     return 3;
   }
-  printf("observation: the string-body refusals become acceptances when the list\n"
-         "             is withheld; the structural refusal does not\n");
+  printf("observation: withholding the list changes neither verdict nor refusal\n"
+         "             offset; the rescan validates the same bytes\n");
   return 0;
 }

@@ -3,7 +3,8 @@
    `kernel/json/stage2.c` is the walk `pipeline.h` hands the entry stream to:
    one pass over the entry positions, a switch on the byte at each position, a
    scope stack of container type and state per depth, the string bodies decoded
-   from the stage-1 escape list, and the value/event stream and the first error
+   from the stage-1 escape list or, when no list is supplied, by scanning each
+   body's own span, and the value/event stream and the first error
    offset written into the caller's buffers.  The measured build inlines the
    walk into the pipeline's translation unit; this header is the staged form's
    ABI, because an inlined parser admits no compositional proof.
@@ -62,8 +63,14 @@
    in document order: quote characters, the structural bytes and the first
    byte of every scalar.  `xp` with count `nxp` is the stage-1 escape-position
    list; the walk threads its own cursor internally, so a document with no
-   escapes passes `nxp = 0`.  `*err` is the first error offset when the run
-   refuses, and is not written when it accepts.
+   escapes passes `nxp = 0`.  A caller that emits no list at all also passes
+   `nxp = 0`: the walk then classifies each string body by scanning its own
+   span and decodes it with the escape unit's list-free decoder.  The list is
+   therefore an input to the decoding route and not to the verdict: a list-free
+   call still validates every body (a control byte and a malformed escape are
+   refused at the same offsets), and its arena and event stream are the list
+   path's.  `*err` is the first error offset when the run refuses, and is not
+   written when it accepts.
 
    The run validates the grammar, validates each string body and materialises
    the event stream: those are the measured walk's `S2_VAL | S2_STR | S2_EV`

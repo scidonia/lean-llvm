@@ -11,15 +11,36 @@ open LeanLLVM.Refinement.JsonEntryIR (readLanes32)
 
 /-! ### The body, as the fixture parses
 
-The literal below is the parser's own result written out: `capture-stage2-helpers.sh`
-produced the text, and the `#guard` beneath it asserts that parsing the fixture
-returns exactly this.  The pin is a `#guard` rather than an `rfl` proposition
-because the parser runs on `String` primitives, which the kernel does not reduce.
-The control beside it is `s2StringBodySrcMutated`: the same text with the error
-record's offset changed, which still parses and is not the pinned body. -/
+**The pinned body is the emitted two-arm body.**  `stage2.helper.s2_string_body.ll`
+is `s2_string_body`'s text as `capture-stage2-helpers.sh` writes it from
+`kernel/json/stage2.c`: `entry` tests `nxp` and the two arms follow.  With a
+stage-1 list the scan walks the position list and the escaped form calls
+`leanllvm_json_escape_expand`; with no list (`nxp = 0`) the body scans its own
+span (`z_scan`), refuses a control byte at its own offset, copies the clean
+prefix exactly once the decode has accepted (`llvm.memcpy`), and decodes the
+suffix with `leanllvm_json_escape_decode`.
+
+Two properties of the emission are what make the body's own run match the staged
+model, and both are the source's, not the fixture's:
+
+- **one slot.**  The body allocates exactly one eight-byte slot, written only on
+  a path that is about to call a decoder, so the contract's `(next, 8)` region is
+  the body's whole allocation and the plain and control arms write nothing there.
+  `z_scan` therefore writes no state: the caller distinguishes a backslash from a
+  control byte by reading `p[off]`.
+- **an exact prefix.**  The prefix copy writes `off` bytes, not a rounded block,
+  and only after the decode accepted, so the refusing arm writes nothing at `dst`.
+
+The literal below is the parser's own result written out: `capture-stage2-helpers.sh
+--emit-pins s2_string_body` prints it, and the `#guard` beneath it asserts that
+parsing the fixture returns exactly this.  The pin is a `#guard` rather than an
+`rfl` proposition because the parser runs on `String` primitives, which the kernel
+does not reduce.  The control beside it is `s2StringBodySrcMutated`: the same text
+with the error record's offset changed, which still parses and is not the pinned
+body. -/
 
 /-- `@s2_string_body`, as `probes/install/ir/stage2.helper.s2_string_body.ll`
-parses. -/
+parses: `entry` tests `nxp` and the two arms follow. -/
 def s2StringBodyBody : Function :=
 { name := "s2_string_body",
   retTy := Ty.int 32,
@@ -42,20 +63,33 @@ def s2StringBodyBody : Function :=
                             64
                             (Operand.reg "%sub.ptr.lhs.cast")
                             (Operand.reg "%sub.ptr.rhs.cast"),
-                          Instr.load "%xj.promoted" (Ty.int 64) (Operand.reg "%xj"),
+                          Instr.callVoid
+                            "llvm.lifetime.start.p0"
+                            [(Ty.int 64, Operand.imm (Const.int 64 0x0000000000000008#64)),
+                             (Ty.ptr, Operand.reg "%ei")],
+                          Instr.icmp
+                            "%tobool.not"
+                            (IPred.eq)
+                            64
+                            (Operand.reg "%nxp")
+                            (Operand.imm (Const.int 64 0x0000000000000000#64))],
+               term := Term.condbr (Operand.reg "%tobool.not") "if.end16"
+                 "while.cond.preheader" },
+             { name := "while.cond.preheader",
+               instrs := [Instr.load "%xj.promoted" (Ty.int 64) (Operand.reg "%xj"),
                           Instr.icmp
                             "%cmp3"
                             (IPred.ult)
                             64
                             (Operand.reg "%xj.promoted")
                             (Operand.reg "%nxp")],
-               term := Term.condbr (Operand.reg "%cmp3") "land.rhs" "if.then" },
+               term := Term.condbr (Operand.reg "%cmp3") "land.rhs" "if.then9" },
              { name := "land.rhs",
                instrs := [Instr.phi
                             "%inc24"
                             (Ty.int 64)
                             [("while.body", Operand.reg "%inc"),
-                             ("entry", Operand.reg "%xj.promoted")],
+                             ("while.cond.preheader", Operand.reg "%xj.promoted")],
                           Instr.gep
                             "%arrayidx"
                             (Ty.int 32)
@@ -87,7 +121,7 @@ def s2StringBodyBody : Function :=
                             64
                             (Operand.reg "%inc")
                             (Operand.reg "%nxp")],
-               term := Term.condbr (Operand.reg "%exitcond.not") "if.then" "land.rhs" },
+               term := Term.condbr (Operand.reg "%exitcond.not") "if.then9" "land.rhs" },
              { name := "land.lhs.true",
                instrs := [Instr.binop
                             "%add"
@@ -101,19 +135,15 @@ def s2StringBodyBody : Function :=
                             64
                             (Operand.reg "%add")
                             (Operand.reg "%conv")],
-               term := Term.condbr (Operand.reg "%cmp7") "if.end" "if.then" },
-             { name := "if.then",
+               term := Term.condbr (Operand.reg "%cmp7") "if.end" "if.then9" },
+             { name := "if.then9",
                instrs := [Instr.store
                             (Ty.int 64)
                             (Operand.reg "%len")
                             (Operand.reg "%outn")],
-               term := Term.br "cleanup16" },
+               term := Term.br "cleanup47" },
              { name := "if.end",
-               instrs := [Instr.callVoid
-                            "llvm.lifetime.start.p0"
-                            [(Ty.int 64, Operand.imm (Const.int 64 0x0000000000000008#64)),
-                             (Ty.ptr, Operand.reg "%ei")],
-                          Instr.store
+               instrs := [Instr.store
                             (Ty.int 64)
                             (Operand.imm (Const.int 64 0x0000000000000000#64))
                             (Operand.reg "%ei"),
@@ -130,16 +160,16 @@ def s2StringBodyBody : Function :=
                              (Ty.int 64, Operand.reg "%nxp"),
                              (Ty.int 64, Operand.reg "%sub.ptr.sub")],
                           Instr.icmp
-                            "%cmp9"
+                            "%cmp10"
                             (IPred.eq)
                             64
                             (Operand.reg "%call")
                             (Operand.imm (Const.int 64 0xffffffffffffffff#64))],
-               term := Term.condbr (Operand.reg "%cmp9") "if.then11" "if.end14" },
-             { name := "if.then11",
+               term := Term.condbr (Operand.reg "%cmp10") "if.then12" "if.end15" },
+             { name := "if.then12",
                instrs := [Instr.load "%2" (Ty.int 64) (Operand.reg "%ei"),
                           Instr.binop
-                            "%add12"
+                            "%add13"
                             (BinOp.add)
                             64
                             (Operand.reg "%2")
@@ -149,54 +179,224 @@ def s2StringBodyBody : Function :=
                             (Ty.int 8)
                             (Operand.reg "%c")
                             (Operand.imm (Const.int 64 0x0000000000000458#64)),
-                          Instr.load "%c.val" (Ty.ptr) (Operand.reg "%3"),
+                          Instr.load "%c.val95" (Ty.ptr) (Operand.reg "%3"),
+                          Instr.store
+                            (Ty.int 32)
+                            (Operand.imm (Const.int 32 0x00000000#32))
+                            (Operand.reg "%c.val95"),
+                          Instr.gep
+                            "%off1.i.i"
+                            (Ty.int 8)
+                            (Operand.reg "%c.val95")
+                            (Operand.imm (Const.int 64 0x0000000000000008#64)),
+                          Instr.store
+                            (Ty.int 64)
+                            (Operand.reg "%add13")
+                            (Operand.reg "%off1.i.i"),
+                          Instr.gep
+                            "%msg2.i.i"
+                            (Ty.int 8)
+                            (Operand.reg "%c.val95")
+                            (Operand.imm (Const.int 64 0x0000000000000010#64)),
+                          Instr.store
+                            (Ty.ptr)
+                            (Operand.imm (Const.null))
+                            (Operand.reg "%msg2.i.i")],
+               term := Term.br "cleanup47" },
+             { name := "if.end15",
+               instrs := [Instr.store
+                            (Ty.int 64)
+                            (Operand.reg "%call")
+                            (Operand.reg "%outn")],
+               term := Term.br "cleanup47" },
+             { name := "if.end16",
+               instrs := [Instr.call
+                            "%call17"
+                            (Ty.int 64)
+                            "z_scan"
+                            [(Ty.ptr, Operand.reg "%p"),
+                             (Ty.int 64, Operand.reg "%len")],
+                          Instr.icmp
+                            "%cmp18"
+                            (IPred.eq)
+                            64
+                            (Operand.reg "%call17")
+                            (Operand.imm (Const.int 64 0xffffffffffffffff#64))],
+               term := Term.condbr (Operand.reg "%cmp18") "if.then20" "if.end21" },
+             { name := "if.then20",
+               instrs := [Instr.store
+                            (Ty.int 64)
+                            (Operand.reg "%len")
+                            (Operand.reg "%outn")],
+               term := Term.br "cleanup47" },
+             { name := "if.end21",
+               instrs := [Instr.gep
+                            "%arrayidx22"
+                            (Ty.int 8)
+                            (Operand.reg "%p")
+                            (Operand.reg "%call17"),
+                          Instr.load "%4" (Ty.int 8) (Operand.reg "%arrayidx22"),
+                          Instr.icmp
+                            "%cmp24.not"
+                            (IPred.eq)
+                            8
+                            (Operand.reg "%4")
+                            (Operand.imm (Const.int 8 0x5c#8))],
+               term := Term.condbr (Operand.reg "%cmp24.not") "if.end29" "if.then26" },
+             { name := "if.then26",
+               instrs := [Instr.binop
+                            "%add27"
+                            (BinOp.add)
+                            64
+                            (Operand.reg "%call17")
+                            (Operand.reg "%sub.ptr.sub"),
+                          Instr.gep
+                            "%5"
+                            (Ty.int 8)
+                            (Operand.reg "%c")
+                            (Operand.imm (Const.int 64 0x0000000000000458#64)),
+                          Instr.load "%c.val94" (Ty.ptr) (Operand.reg "%5"),
+                          Instr.store
+                            (Ty.int 32)
+                            (Operand.imm (Const.int 32 0x00000000#32))
+                            (Operand.reg "%c.val94"),
+                          Instr.gep
+                            "%off1.i.i96"
+                            (Ty.int 8)
+                            (Operand.reg "%c.val94")
+                            (Operand.imm (Const.int 64 0x0000000000000008#64)),
+                          Instr.store
+                            (Ty.int 64)
+                            (Operand.reg "%add27")
+                            (Operand.reg "%off1.i.i96"),
+                          Instr.gep
+                            "%msg2.i.i97"
+                            (Ty.int 8)
+                            (Operand.reg "%c.val94")
+                            (Operand.imm (Const.int 64 0x0000000000000010#64)),
+                          Instr.store
+                            (Ty.ptr)
+                            (Operand.imm (Const.null))
+                            (Operand.reg "%msg2.i.i97")],
+               term := Term.br "cleanup47" },
+             { name := "if.end29",
+               instrs := [Instr.store
+                            (Ty.int 64)
+                            (Operand.imm (Const.int 64 0x0000000000000000#64))
+                            (Operand.reg "%ei"),
+                          Instr.binop
+                            "%sub"
+                            (BinOp.sub)
+                            64
+                            (Operand.reg "%len")
+                            (Operand.reg "%call17"),
+                          Instr.gep
+                            "%add.ptr31"
+                            (Ty.int 8)
+                            (Operand.reg "%dst")
+                            (Operand.reg "%call17"),
+                          Instr.call
+                            "%call32"
+                            (Ty.int 64)
+                            "leanllvm_json_escape_decode"
+                            [(Ty.ptr, Operand.reg "%arrayidx22"),
+                             (Ty.int 64, Operand.reg "%sub"),
+                             (Ty.ptr, Operand.reg "%add.ptr31"),
+                             (Ty.ptr, Operand.reg "%ei")],
+                          Instr.icmp
+                            "%cmp33"
+                            (IPred.eq)
+                            64
+                            (Operand.reg "%call32")
+                            (Operand.imm (Const.int 64 0xffffffffffffffff#64))],
+               term := Term.condbr (Operand.reg "%cmp33") "if.then35" "if.end39" },
+             { name := "if.then35",
+               instrs := [Instr.binop
+                            "%add36"
+                            (BinOp.add)
+                            64
+                            (Operand.reg "%call17")
+                            (Operand.reg "%sub.ptr.sub"),
+                          Instr.load "%6" (Ty.int 64) (Operand.reg "%ei"),
+                          Instr.binop
+                            "%add37"
+                            (BinOp.add)
+                            64
+                            (Operand.reg "%add36")
+                            (Operand.reg "%6"),
+                          Instr.gep
+                            "%7"
+                            (Ty.int 8)
+                            (Operand.reg "%c")
+                            (Operand.imm (Const.int 64 0x0000000000000458#64)),
+                          Instr.load "%c.val" (Ty.ptr) (Operand.reg "%7"),
                           Instr.store
                             (Ty.int 32)
                             (Operand.imm (Const.int 32 0x00000000#32))
                             (Operand.reg "%c.val"),
                           Instr.gep
-                            "%off1.i.i"
+                            "%off1.i.i98"
                             (Ty.int 8)
                             (Operand.reg "%c.val")
                             (Operand.imm (Const.int 64 0x0000000000000008#64)),
                           Instr.store
                             (Ty.int 64)
-                            (Operand.reg "%add12")
-                            (Operand.reg "%off1.i.i"),
+                            (Operand.reg "%add37")
+                            (Operand.reg "%off1.i.i98"),
                           Instr.gep
-                            "%msg2.i.i"
+                            "%msg2.i.i99"
                             (Ty.int 8)
                             (Operand.reg "%c.val")
                             (Operand.imm (Const.int 64 0x0000000000000010#64)),
                           Instr.store
                             (Ty.ptr)
                             (Operand.imm (Const.null))
-                            (Operand.reg "%msg2.i.i")],
-               term := Term.br "cleanup" },
-             { name := "if.end14",
-               instrs := [Instr.store
+                            (Operand.reg "%msg2.i.i99")],
+               term := Term.br "cleanup47" },
+             { name := "if.end39",
+               instrs := [Instr.icmp
+                            "%tobool40.not"
+                            (IPred.eq)
+                            64
+                            (Operand.reg "%call17")
+                            (Operand.imm (Const.int 64 0x0000000000000000#64))],
+               term := Term.condbr (Operand.reg "%tobool40.not") "if.end43" "if.then41" },
+             { name := "if.then41",
+               instrs := [Instr.callVoid
+                            "llvm.memcpy.p0.p0.i64"
+                            [(Ty.ptr, Operand.reg "%dst"),
+                             (Ty.ptr, Operand.reg "%p"),
+                             (Ty.int 64, Operand.reg "%call17"),
+                             (Ty.int 1, Operand.imm (Const.int 1 0x0#1))]],
+               term := Term.br "if.end43" },
+             { name := "if.end43",
+               instrs := [Instr.binop
+                            "%add44"
+                            (BinOp.add)
+                            64
+                            (Operand.reg "%call32")
+                            (Operand.reg "%call17"),
+                          Instr.store
                             (Ty.int 64)
-                            (Operand.reg "%call")
+                            (Operand.reg "%add44")
                             (Operand.reg "%outn")],
-               term := Term.br "cleanup" },
-             { name := "cleanup",
+               term := Term.br "cleanup47" },
+             { name := "cleanup47",
                instrs := [Instr.phi
-                            "%retval.0"
+                            "%retval.3"
                             (Ty.int 32)
-                            [("if.then11", Operand.imm (Const.int 32 0x00000000#32)),
-                             ("if.end14", Operand.imm (Const.int 32 0x00000002#32))],
+                            [("if.then9", Operand.imm (Const.int 32 0x0000000000000001#32)),
+                             ("if.then12", Operand.imm (Const.int 32 0x0000000000000000#32)),
+                             ("if.end15", Operand.imm (Const.int 32 0x0000000000000002#32)),
+                             ("if.then20", Operand.imm (Const.int 32 0x0000000000000001#32)),
+                             ("if.then26", Operand.imm (Const.int 32 0x0000000000000000#32)),
+                             ("if.then35", Operand.imm (Const.int 32 0x0000000000000000#32)),
+                             ("if.end43", Operand.imm (Const.int 32 0x0000000000000002#32))],
                           Instr.callVoid
                             "llvm.lifetime.end.p0"
                             [(Ty.int 64, Operand.imm (Const.int 64 0x0000000000000008#64)),
                              (Ty.ptr, Operand.reg "%ei")]],
-               term := Term.br "cleanup16" },
-             { name := "cleanup16",
-               instrs := [Instr.phi
-                            "%retval.1"
-                            (Ty.int 32)
-                            [("cleanup", Operand.reg "%retval.0"),
-                             ("if.then", Operand.imm (Const.int 32 0x0000000000000001#32))]],
-               term := Term.ret (Ty.int 32) (some (Operand.reg "%retval.1")) }] }
+               term := Term.ret (Ty.int 32) (some (Operand.reg "%retval.3")) }] }
 
 -- Parsing `stage2.helper.s2_string_body.ll` returns `s2StringBodyBody`.
 #guard decide (firstFunction s2StringBodySrc = some s2StringBodyBody)
@@ -272,16 +472,81 @@ def escapeExpand8 : Calls
       | _, _, _ => none
   | _, _, _, _ => none
 
+/-! ### The list-free arm's two callees and the exact prefix copy
+
+`z_scan` writes no state and returns the first control byte or backslash of the
+body's own span; `leanllvm_json_escape_decode` is the escape unit's list-free
+decoder, whose accepting answer writes the decoded span at `dst` and whose refusal
+writes the body-relative offset into the slot; `llvm.memcpy.p0.p0.i64` writes the
+`n` bytes it reads.  All three are clauses of the body's environment, so every
+call the emitted text makes is one this fragment describes. -/
+
+/-- `z_scan`: the first control byte or backslash of the span, all-ones when it
+has none.  The scan writes no state, which is why the body has one slot. -/
+def zScan8 : Calls
+  | "z_scan", [.ptr p, .int 64 len], mem, next =>
+      match readBytes mem p len.toNat with
+      | some body =>
+          some { ret := .int 64 (match firstSpanSpecial? body 0 with
+                                 | none => 0xffffffffffffffff#64
+                                 | some (off, _) => BitVec.ofNat 64 off),
+                 mem := mem, next := next }
+      | none => none
+  | _, _, _, _ => none
+
+/-- `leanllvm_json_escape_decode` at its emitted four arguments: the decoded span
+at `dst`, or the span-relative refusal offset in the slot. -/
+def escapeDecode4 : Calls
+  | "leanllvm_json_escape_decode", [.ptr p, .int 64 len, .ptr dst, .ptr ei], mem, next =>
+      match readBytes mem p len.toNat with
+      | some body =>
+          match escapeDecodeSpan body with
+          | .decoded out _ => some { ret := .int 64 (BitVec.ofNat 64 out.length),
+                                     mem := writeBytes mem dst out, next := next }
+          | .refused rel _ => some { ret := .int 64 0xffffffffffffffff#64,
+                                     mem := writeBytes mem ei (wordBytes 8 rel), next := next }
+      | none => none
+  | _, _, _, _ => none
+
+/-- `llvm.memcpy.p0.p0.i64`: the bytes it reads, written exactly at the
+destination, and nothing else. -/
+def memcpy4 : Calls
+  | "llvm.memcpy.p0.p0.i64", [.ptr dst, .ptr src, .int 64 n, .int 1 _], mem, next =>
+      match readBytes mem src n.toNat with
+      | some bs => some { ret := .int 1 0, mem := writeBytes mem dst bs, next := next }
+      | none => none
+  | _, _, _, _ => none
+
+/-- The body's out-of-line callees: the expander on the list arm, and the scan,
+the list-free decoder and the exact copy on the no-list arm. -/
+def s2StringBodySub : Calls := fun callee args mem next =>
+  match callee with
+  | "z_scan" => zScan8 callee args mem next
+  | "leanllvm_json_escape_decode" => escapeDecode4 callee args mem next
+  | "llvm.memcpy.p0.p0.i64" => memcpy4 callee args mem next
+  | _ => escapeExpand8 callee args mem next
+
 /-- **The body's call environment**: the two lifetime markers and `memset` from
-the walk's own intrinsic selection, and the expander at the clause above.  A body
-this environment does not describe fails rather than being read as something it
-is not. -/
-def s2StringBodyCalls : Calls := JsonStage2IR.stage2Calls escapeExpand8
+the walk's own intrinsic selection, and the four clauses above.  A body this
+environment does not describe fails rather than being read as something it is
+not. -/
+def s2StringBodyCalls : Calls := JsonStage2IR.stage2Calls s2StringBodySub
 
 /-- The walk's intrinsic selection sends this callee to the clause below. -/
 theorem s2StringBodyCalls_expand_eq (args : List Value) (mem : Mem) (next : Nat) :
     s2StringBodyCalls "leanllvm_json_escape_expand" args mem next =
       escapeExpand8 "leanllvm_json_escape_expand" args mem next := rfl
+
+theorem s2StringBodyCalls_zscan_eq (args : List Value) (mem : Mem) (next : Nat) :
+    s2StringBodyCalls "z_scan" args mem next = zScan8 "z_scan" args mem next := rfl
+
+theorem s2StringBodyCalls_decode_eq (args : List Value) (mem : Mem) (next : Nat) :
+    s2StringBodyCalls "leanllvm_json_escape_decode" args mem next =
+      escapeDecode4 "leanllvm_json_escape_decode" args mem next := rfl
+
+theorem s2StringBodyCalls_memcpy_eq (args : List Value) (mem : Mem) (next : Nat) :
+    s2StringBodyCalls "llvm.memcpy.p0.p0.i64" args mem next =
+      memcpy4 "llvm.memcpy.p0.p0.i64" args mem next := rfl
 
 /-- **The expander's accepting answer at this call's eight arguments**: the
 decoded prefix at the destination, the advanced cursor at `xj`, the decoded
@@ -331,6 +596,58 @@ theorem escapeExpand8_refused (p len dst ei xp xj nxp pos0 : Nat) (mem : Mem)
   unfold escapeExpand8
   simp only [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hlen, Nat.mod_eq_of_lt hnxp,
     Nat.mod_eq_of_lt hpos0, hj, hp, hb, hr]
+
+/-- **`z_scan` at this call's two arguments**: the first special byte's offset, or
+all-ones for a plain span. -/
+theorem zScan8_at (p len : Nat) (mem : Mem) (next : Nat) {body : List UInt8}
+    (hb : readBytes mem p len = some body) (hlen : len < 2 ^ 64) :
+    s2StringBodyCalls "z_scan" [.ptr p, .int 64 (BitVec.ofNat 64 len)] mem next =
+      some { ret := .int 64 (match firstSpanSpecial? body 0 with
+                             | none => 0xffffffffffffffff#64
+                             | some (off, _) => BitVec.ofNat 64 off),
+             mem := mem, next := next } := by
+  rw [s2StringBodyCalls_zscan_eq]
+  unfold zScan8
+  simp only [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hlen, hb]
+
+/-- **The list-free decoder's accepting answer at this call's four arguments**:
+the decoded span at `dst` and the decoded length as the returned word. -/
+theorem escapeDecode4_decoded (p len dst ei : Nat) (mem : Mem) (next : Nat)
+    {body out : List UInt8} {k : Nat}
+    (hb : readBytes mem p len = some body) (hlen : len < 2 ^ 64)
+    (hd : escapeDecodeSpan body = .decoded out k) :
+    s2StringBodyCalls "leanllvm_json_escape_decode"
+      [.ptr p, .int 64 (BitVec.ofNat 64 len), .ptr dst, .ptr ei] mem next =
+    some { ret := .int 64 (BitVec.ofNat 64 out.length),
+           mem := writeBytes mem dst out, next := next } := by
+  rw [s2StringBodyCalls_decode_eq]
+  unfold escapeDecode4
+  simp only [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hlen, hb, hd]
+
+/-- **The list-free decoder's refusing answer at this call's four arguments**: the
+span-relative offset in the slot and all-ones as the returned word. -/
+theorem escapeDecode4_refused (p len dst ei : Nat) (mem : Mem) (next : Nat)
+    {body : List UInt8} {rel k : Nat}
+    (hb : readBytes mem p len = some body) (hlen : len < 2 ^ 64)
+    (hr : escapeDecodeSpan body = .refused rel k) :
+    s2StringBodyCalls "leanllvm_json_escape_decode"
+      [.ptr p, .int 64 (BitVec.ofNat 64 len), .ptr dst, .ptr ei] mem next =
+    some { ret := .int 64 0xffffffffffffffff#64,
+           mem := writeBytes mem ei (wordBytes 8 rel), next := next } := by
+  rw [s2StringBodyCalls_decode_eq]
+  unfold escapeDecode4
+  simp only [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hlen, hb, hr]
+
+/-- **`llvm.memcpy.p0.p0.i64` at this call's four arguments**: the read bytes
+written at the destination. -/
+theorem memcpy4_at (dst src n : Nat) (volatile : BitVec 1) (mem : Mem) (next : Nat)
+    {bs : List UInt8} (hb : readBytes mem src n = some bs) (hn : n < 2 ^ 64) :
+    s2StringBodyCalls "llvm.memcpy.p0.p0.i64"
+      [.ptr dst, .ptr src, .int 64 (BitVec.ofNat 64 n), .int 1 volatile] mem next =
+    some { ret := .int 1 0, mem := writeBytes mem dst bs, next := next } := by
+  rw [s2StringBodyCalls_memcpy_eq]
+  unfold memcpy4
+  simp only [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hn, hb]
 
 /-! ### One instruction, one step
 
@@ -411,226 +728,32 @@ theorem writeByte_not_map_of_duplicate :
       ≠ [(0, 1), (0, 2)].map (fun p => if p.1 = 0 then (p.1, 5) else p) := by
   decide
 
-/-- **The ten blocks, in the order the body runs them.**  `findBlock` is a
+/-- **The nineteen blocks, in the order the body runs them.**  `findBlock` is a
 search over this list, so the names and their order are what every block's step
-lemma resolves against; the control beneath it is a name the body does not carry. -/
+lemma resolves against; the control beneath it is a name the body does not carry.
+The per-block literal pins live in `JsonStage2StringBodyBlocks`, where the runs
+consume them, together with the control that two blocks resolve to different
+literals. -/
 theorem s2StringBodyBody_blockNames :
     (s2StringBodyBody.blocks.map (·.name)) =
-      ["entry", "land.rhs", "while.body", "land.lhs.true", "if.then", "if.end",
-       "if.then11", "if.end14", "cleanup", "cleanup16"] := by decide
+      ["entry", "while.cond.preheader", "land.rhs", "while.body", "land.lhs.true",
+       "if.then9", "if.end", "if.then12", "if.end15", "if.end16", "if.then20",
+       "if.end21", "if.then26", "if.end29", "if.then35", "if.end39", "if.then41",
+       "if.end43", "cleanup47"] := by decide
 
 -- The control: a block the body does not have is not found.
 theorem s2StringBodyBody_findBlock_absent :
     s2StringBodyBody.findBlock "land.rhs.not" = none := by decide
 
-/-- **The entry block.**  Seven instructions: the slot's `alloca`, the two
-address conversions, the subtraction, the cursor read and the two tests. -/
-theorem s2StringBody_findBlock_entry :
-    s2StringBodyBody.findBlock "entry" =
-      some ⟨"entry",
-        [Instr.alloca "%ei" (Ty.int 64) 0,
-         Instr.load "%0" (Ty.ptr) (Operand.reg "%c"),
-         Instr.ptrtoint "%sub.ptr.lhs.cast" (Operand.reg "%p"),
-         Instr.ptrtoint "%sub.ptr.rhs.cast" (Operand.reg "%0"),
-         Instr.binop "%sub.ptr.sub" (BinOp.sub) 64 (Operand.reg "%sub.ptr.lhs.cast")
-           (Operand.reg "%sub.ptr.rhs.cast"),
-         Instr.load "%xj.promoted" (Ty.int 64) (Operand.reg "%xj"),
-         Instr.icmp "%cmp3" (IPred.ult) 64 (Operand.reg "%xj.promoted")
-           (Operand.reg "%nxp")],
-        Term.condbr (Operand.reg "%cmp3") "land.rhs" "if.then"⟩ := by decide
-
--- The nine blocks beside `entry`, each the literal `findBlock` resolves to.  The
--- search is over the list pinned above, so these nine and the entry's statement
--- are what every block's step lemma rewrites with; the two controls beneath them
--- are that a name the body does not carry is `none`, and that two different
--- blocks do not resolve to the same literal — a step applied at the wrong block
--- fails here rather than in the run that follows it.
-theorem s2StringBody_findBlock_land_rhs :
-    s2StringBodyBody.findBlock "land.rhs" =
-      some { name := "land.rhs",
-               instrs := [Instr.phi
-                            "%inc24"
-                            (Ty.int 64)
-                            [("while.body", Operand.reg "%inc"),
-                             ("entry", Operand.reg "%xj.promoted")],
-                          Instr.gep
-                            "%arrayidx"
-                            (Ty.int 32)
-                            (Operand.reg "%xp")
-                            (Operand.reg "%inc24"),
-                          Instr.load "%1" (Ty.int 32) (Operand.reg "%arrayidx"),
-                          Instr.zext "%conv" 32 64 (Operand.reg "%1"),
-                          Instr.icmp
-                            "%cmp1"
-                            (IPred.ugt)
-                            64
-                            (Operand.reg "%sub.ptr.sub")
-                            (Operand.reg "%conv")],
-               term := Term.condbr (Operand.reg "%cmp1") "while.body" "land.lhs.true" } := by decide
-
-theorem s2StringBody_findBlock_while_body :
-    s2StringBodyBody.findBlock "while.body" =
-      some { name := "while.body",
-               instrs := [Instr.binop
-                            "%inc"
-                            (BinOp.add)
-                            64
-                            (Operand.reg "%inc24")
-                            (Operand.imm (Const.int 64 0x0000000000000001#64)),
-                          Instr.store
-                            (Ty.int 64)
-                            (Operand.reg "%inc")
-                            (Operand.reg "%xj"),
-                          Instr.icmp
-                            "%exitcond.not"
-                            (IPred.eq)
-                            64
-                            (Operand.reg "%inc")
-                            (Operand.reg "%nxp")],
-               term := Term.condbr (Operand.reg "%exitcond.not") "if.then" "land.rhs" } := by decide
-
-theorem s2StringBody_findBlock_land_lhs_true :
-    s2StringBodyBody.findBlock "land.lhs.true" =
-      some { name := "land.lhs.true",
-               instrs := [Instr.binop
-                            "%add"
-                            (BinOp.add)
-                            64
-                            (Operand.reg "%sub.ptr.sub")
-                            (Operand.reg "%len"),
-                          Instr.icmp
-                            "%cmp7"
-                            (IPred.ugt)
-                            64
-                            (Operand.reg "%add")
-                            (Operand.reg "%conv")],
-               term := Term.condbr (Operand.reg "%cmp7") "if.end" "if.then" } := by decide
-
-theorem s2StringBody_findBlock_if_then :
-    s2StringBodyBody.findBlock "if.then" =
-      some { name := "if.then",
-               instrs := [Instr.store
-                            (Ty.int 64)
-                            (Operand.reg "%len")
-                            (Operand.reg "%outn")],
-               term := Term.br "cleanup16" } := by decide
-
-theorem s2StringBody_findBlock_if_end :
-    s2StringBodyBody.findBlock "if.end" =
-      some { name := "if.end",
-               instrs := [Instr.callVoid
-                            "llvm.lifetime.start.p0"
-                            [(Ty.int 64, Operand.imm (Const.int 64 0x0000000000000008#64)),
-                             (Ty.ptr, Operand.reg "%ei")],
-                          Instr.store
-                            (Ty.int 64)
-                            (Operand.imm (Const.int 64 0x0000000000000000#64))
-                            (Operand.reg "%ei"),
-                          Instr.call
-                            "%call"
-                            (Ty.int 64)
-                            "leanllvm_json_escape_expand"
-                            [(Ty.ptr, Operand.reg "%p"),
-                             (Ty.int 64, Operand.reg "%len"),
-                             (Ty.ptr, Operand.reg "%dst"),
-                             (Ty.ptr, Operand.reg "%ei"),
-                             (Ty.ptr, Operand.reg "%xp"),
-                             (Ty.ptr, Operand.reg "%xj"),
-                             (Ty.int 64, Operand.reg "%nxp"),
-                             (Ty.int 64, Operand.reg "%sub.ptr.sub")],
-                          Instr.icmp
-                            "%cmp9"
-                            (IPred.eq)
-                            64
-                            (Operand.reg "%call")
-                            (Operand.imm (Const.int 64 0xffffffffffffffff#64))],
-               term := Term.condbr (Operand.reg "%cmp9") "if.then11" "if.end14" } := by decide
-
-theorem s2StringBody_findBlock_if_then11 :
-    s2StringBodyBody.findBlock "if.then11" =
-      some { name := "if.then11",
-               instrs := [Instr.load "%2" (Ty.int 64) (Operand.reg "%ei"),
-                          Instr.binop
-                            "%add12"
-                            (BinOp.add)
-                            64
-                            (Operand.reg "%2")
-                            (Operand.reg "%sub.ptr.sub"),
-                          Instr.gep
-                            "%3"
-                            (Ty.int 8)
-                            (Operand.reg "%c")
-                            (Operand.imm (Const.int 64 0x0000000000000458#64)),
-                          Instr.load "%c.val" (Ty.ptr) (Operand.reg "%3"),
-                          Instr.store
-                            (Ty.int 32)
-                            (Operand.imm (Const.int 32 0x00000000#32))
-                            (Operand.reg "%c.val"),
-                          Instr.gep
-                            "%off1.i.i"
-                            (Ty.int 8)
-                            (Operand.reg "%c.val")
-                            (Operand.imm (Const.int 64 0x0000000000000008#64)),
-                          Instr.store
-                            (Ty.int 64)
-                            (Operand.reg "%add12")
-                            (Operand.reg "%off1.i.i"),
-                          Instr.gep
-                            "%msg2.i.i"
-                            (Ty.int 8)
-                            (Operand.reg "%c.val")
-                            (Operand.imm (Const.int 64 0x0000000000000010#64)),
-                          Instr.store
-                            (Ty.ptr)
-                            (Operand.imm (Const.null))
-                            (Operand.reg "%msg2.i.i")],
-               term := Term.br "cleanup" } := by decide
-
-theorem s2StringBody_findBlock_if_end14 :
-    s2StringBodyBody.findBlock "if.end14" =
-      some { name := "if.end14",
-               instrs := [Instr.store
-                            (Ty.int 64)
-                            (Operand.reg "%call")
-                            (Operand.reg "%outn")],
-               term := Term.br "cleanup" } := by decide
-
-theorem s2StringBody_findBlock_cleanup :
-    s2StringBodyBody.findBlock "cleanup" =
-      some { name := "cleanup",
-               instrs := [Instr.phi
-                            "%retval.0"
-                            (Ty.int 32)
-                            [("if.then11", Operand.imm (Const.int 32 0x00000000#32)),
-                             ("if.end14", Operand.imm (Const.int 32 0x00000002#32))],
-                          Instr.callVoid
-                            "llvm.lifetime.end.p0"
-                            [(Ty.int 64, Operand.imm (Const.int 64 0x0000000000000008#64)),
-                             (Ty.ptr, Operand.reg "%ei")]],
-               term := Term.br "cleanup16" } := by decide
-
-theorem s2StringBody_findBlock_cleanup16 :
-    s2StringBodyBody.findBlock "cleanup16" =
-      some { name := "cleanup16",
-               instrs := [Instr.phi
-                            "%retval.1"
-                            (Ty.int 32)
-                            [("cleanup", Operand.reg "%retval.0"),
-                             ("if.then", Operand.imm (Const.int 32 0x00000001#32))]],
-               term := Term.ret (Ty.int 32) (some (Operand.reg "%retval.1")) } := by decide
--- The control: two different blocks are two different literals.
-theorem s2StringBody_findBlock_entry_ne_ifEnd :
-    s2StringBodyBody.findBlock "entry" ≠ s2StringBodyBody.findBlock "if.end" := by decide
-
 /-! ### The entry block's environment, named
 
-The block builds seven cells over the caller's environment, and the run's
-statement names them as definitions rather than as nested cons terms — the
-spelling `JsonStage2WalkRun`'s `walkEntry_denote` uses, and the reason its chain
-matches: a step's conclusion is `stateAt ((d, v) :: env) s'`, and a named
-definition is *that* term, so the closer's `dsimp only [s2StringBodyEnv1, …]`
-reconciles the two without either side having to guess a wildcard.  The
-allocator moves once, at the slot's `alloca`, and every definition below is
+The block builds six cells over the caller's environment, and the run's statement
+names them as definitions rather than as nested cons terms — the spelling
+`JsonStage2WalkRun`'s `walkEntry_denote` uses, and the reason its chain matches:
+a step's conclusion is `stateAt ((d, v) :: env) s'`, and a named definition is
+*that* term, so the closer's `dsimp only [s2StringBodyEnv1, …]` reconciles the two
+without either side having to guess a wildcard.  The allocator moves once, at the
+slot's `alloca`, the lifetime marker writes no cell, and every definition below is
 parameterised by the value its instruction read. -/
 def s2StringBodyEnv1 (env : Env) (ei : Nat) : Env := ("%ei", .ptr ei) :: env
 
@@ -645,15 +768,12 @@ def s2StringBodyEnv4 (env : Env) (base : Nat) : Env :=
 def s2StringBodyEnv5 (env : Env) (p base : Nat) : Env :=
   ("%sub.ptr.sub", .int 64 (BitVec.ofNat 64 p - BitVec.ofNat 64 base)) :: env
 
-def s2StringBodyEnv6 (env : Env) (j0 : Nat) : Env :=
-  ("%xj.promoted", .int 64 (BitVec.ofNat 64 j0)) :: env
-
-def s2StringBodyEnv7 (env : Env) (j0 : Nat) (nxp : BitVec 64) : Env :=
-  ("%cmp3", .int 1 (evalICmp .ult (BitVec.ofNat 64 j0) nxp)) :: env
+def s2StringBodyEnv6 (env : Env) (nxp : BitVec 64) : Env :=
+  ("%tobool.not", .int 1 (evalICmp .eq nxp (BitVec.ofNat 64 0))) :: env
 
 /-- The seven instructions the entry block runs, in order: the slot's
-allocation, the two address conversions and their subtraction, the cursor read
-and the test. -/
+allocation, the two address conversions and their subtraction, the slot's
+lifetime marker, and the `nxp = 0` test. -/
 def s2StringBodyEntryInstrs : List Instr :=
   [Instr.alloca "%ei" (Ty.int 64) 0,
    Instr.load "%0" (Ty.ptr) (Operand.reg "%c"),
@@ -661,9 +781,11 @@ def s2StringBodyEntryInstrs : List Instr :=
    Instr.ptrtoint "%sub.ptr.rhs.cast" (Operand.reg "%0"),
    Instr.binop "%sub.ptr.sub" (BinOp.sub) 64 (Operand.reg "%sub.ptr.lhs.cast")
      (Operand.reg "%sub.ptr.rhs.cast"),
-   Instr.load "%xj.promoted" (Ty.int 64) (Operand.reg "%xj"),
-   Instr.icmp "%cmp3" (IPred.ult) 64 (Operand.reg "%xj.promoted")
-     (Operand.reg "%nxp")]
+   Instr.callVoid "llvm.lifetime.start.p0"
+     [(Ty.int 64, Operand.imm (Const.int 64 0x0000000000000008#64)),
+      (Ty.ptr, Operand.reg "%ei")],
+   Instr.icmp "%tobool.not" (IPred.eq) 64 (Operand.reg "%nxp")
+     (Operand.imm (Const.int 64 0x0000000000000000#64))]
 
 -- The instruction list is the block the pin resolves to: the run is the block's
 -- own body, not a reading of it.

@@ -14,8 +14,8 @@ The record is the output of
 nix develop -c bash probes/json/route/correspondence.sh
 ```
 
-observed on the working tree at `c2fc707` plus the change that repairs the
-record, with Lean 4.35.0 and clang/LLVM 21.1.8 from the flake.  The script
+observed on the working tree at `87412bd` plus the list-free deferral change,
+with Lean 4.35.0 and clang/LLVM 21.1.8 from the flake.  The script
 re-derives every measurement and fails when a structural claim in the record
 stops holding
 — a flag beyond the optimisation level, a different transform, a lost helper
@@ -24,6 +24,18 @@ scenario's own cuts are recorded in
 [The route boundary's controls](json-route-evidence.md#the-route-boundarys-controls-r1r9);
 this page's flag relation is cut `R8`.
 
+> **The helper fixture now carries the list-free arm.**  `probes/install/ir/stage2.helper.s2_string_body.ll`
+> is regenerated from the current `kernel/json/stage2.c`, and `JsonStage2StringBodyAST`
+> pins and the `JsonStage2StringBody*` modules reason about the emitted body including
+> its no-list arm: `z_scan`, the body's own scan for its first control byte or
+> backslash, the exact prefix copy after the decode accepts, and
+> `leanllvm_json_escape_decode` for the escaped suffix.  `z_scan` is one of the twelve
+> `always_inline` helpers the transform takes out of line, so the transformed source has
+> two `always_inline` occurrences (the comment's and `s2_walk`'s) and thirteen `noinline`
+> occurrences (twelve helpers plus the `EL_ENTRY` macro line).  The arm's contract
+> `s2StringBodyArm_noList` is the clause still owed; until it is proved,
+> `s2StringBodyBody_contract` and the module that holds it do not build.
+
 ## The record
 
 ```text
@@ -31,7 +43,7 @@ this page's flag relation is cut `R8`.
 
 | | flags | source | derivation |
 |---|---|---|---|
-| the proofs' body (`probes/install/ir/stage2.candidate.ll`) | `-S -emit-llvm -O3 -march=x86-64-v3 -mpclmul -std=gnu11 -falign-loops=64 -falign-functions=64` | `kernel/json/stage2.c`, `noinline` on eleven helpers, `s2_walk` forced inline | `opt -passes=lower-switch`, the recorded token strip, the local names pinned to the fixture's spelling, eight staging allocas flattened to parameters, callees reduced to declarations |
+| the proofs' body (`probes/install/ir/stage2.candidate.ll`) | `-S -emit-llvm -O3 -march=x86-64-v3 -mpclmul -std=gnu11 -falign-loops=64 -falign-functions=64` | `kernel/json/stage2.c`, `noinline` on twelve helpers, `s2_walk` forced inline | `opt -passes=lower-switch`, the recorded token strip, the local names pinned to the fixture's spelling, eight staging allocas flattened to parameters, callees reduced to declarations |
 | the route's object (`probes/json/route/build.sh`) | `-O2 -march=x86-64-v3 -mpclmul -std=gnu11 -falign-loops=64 -falign-functions=64 -I $repo/kernel/json` | the same file, untransformed | none: `clang -c` |
 
 ## The flag relation
@@ -47,7 +59,7 @@ The naming flag changes no instruction at the route's own -O2 line: the emission
 
 ## The normalisation steps
 
-The fixture is derived, not transcribed.  In order: (1) the source transform above, whose counts are two `always_inline` occurrences (the comment's and `s2_walk`'s) and eleven `noinline` helper functions, plus the `EL_ENTRY` macro line; (2) `opt -passes=lower-switch`; (3) the token strip, by the classes `capture-stage2.sh` records in `stage2.strip.tsv`; (4) the local-name pin, which renames the emission's registers and block labels to the fixture's spelling (`stage2.rewrites.tsv` class r8); (5) the eight staging allocas `%d.i %c.i %ctype.i %cst.i %t352.i %s %z %e` appended as `ptr` parameters (`stage2.staging.tsv`); (6) the three instruction rewrites and the callee definitions replaced by declarations (`stage2.rewrites.tsv`).  The comparison below applies steps (1)–(3) to both emissions and then replaces every virtual register with one placeholder and drops block labels, so the two texts are compared instruction by instruction.
+The fixture is derived, not transcribed.  In order: (1) the source transform above, whose counts are two `always_inline` occurrences (the comment's and `s2_walk`'s) and twelve `noinline` helper functions, plus the `EL_ENTRY` macro line; (2) `opt -passes=lower-switch`; (3) the token strip, by the classes `capture-stage2.sh` records in `stage2.strip.tsv`; (4) the local-name pin, which renames the emission's registers and block labels to the fixture's spelling (`stage2.rewrites.tsv` class r8); (5) the eight staging allocas `%d.i %c.i %ctype.i %cst.i %t352.i %s %z %e` appended as `ptr` parameters (`stage2.staging.tsv`); (6) the three instruction rewrites and the callee definitions replaced by declarations (`stage2.rewrites.tsv`).  The comparison below applies steps (1)–(3) to both emissions and then replaces every virtual register with one placeholder and drops block labels, so the two texts are compared instruction by instruction.
 
 The fixture is that derivation's output byte for byte.  The two quote refusal
 stores (`if.then205.i`, `if.then214.i`) carry `%idxprom.i`, the opening quote's
@@ -61,9 +73,9 @@ and the capture refuses a stale, colliding or non-injective entry.
 
 ## What is identical, and what is not
 
-The eleven helpers, as emitted under the transform at each level:
+The twelve helpers, as emitted under the transform at each level:
 
-- identical after the normalisation (3): `num_d8_el1 s2_init s2_value_pos `
+- identical after the normalisation (4): `num_d8_el1 s2_init s2_value_pos z_scan `
 - differing (6): `el_exact el_pack num_fast_el1 od_scalar_value s2_after_value s2_string_body `
 - not emitted at either level (a `static` function this translation unit no longer references once the callers are out of line): `s2_string_touch touch_bytes`
 
@@ -77,7 +89,7 @@ The correspondence between the proof's body and the route's object is these five
 
 1. both artifacts are emitted from `kernel/json/stage2.c`; this is necessary and not sufficient, and it is all that the shared filename gives;
 2. their codegen flags differ in the optimisation level alone (`-O2` against `-O3`), measured above, and the naming flag is not an instruction change, measured above;
-3. of the eleven helper bodies, 3 are identical between the two levels under the transform after the recorded normalisation, 6 differ, and 2 are not emitted at either level; the walk's body differs;
+3. of the twelve helper bodies, 4 are identical between the two levels under the transform after the recorded normalisation, 6 differ, and 2 are not emitted at either level; the walk's body differs;
 4. the fixture keeps 10 helper call site(s) where the untransformed emissions keep 0, so the object inlines every helper the fixture leaves out of line;
 5. the object's walk text is therefore not the fixture's text: the fixture's body is 937 instruction line(s) against the object's normalised 622.
 
@@ -96,8 +108,8 @@ emissions keep none, so the object inlines the helpers the fixture leaves out of
 line; and the resulting texts are different bodies, 937 instruction lines
 against the object's 622.
 
-Statement 3 is the one that limits the claim.  Under the same transform, three
-of the eleven helpers emit an identical body at -O2 and -O3 after the recorded
+Statement 3 is the one that limits the claim.  Under the same transform, four
+of the twelve helpers emit an identical body at -O2 and -O3 after the recorded
 normalisation, six do not, and two are not emitted at all because their only
 caller is out of line in this translation unit.  The walk's own body differs as
 well.  So the object is not the fixture's function by measurement: it is a

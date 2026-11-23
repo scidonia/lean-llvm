@@ -337,16 +337,21 @@ scan's `getelementptr i32` sign-extends its index, which is the forward branch
 only below `2 ^ 63`; the scan is entered exactly when the cursor is below the
 count, so `j0` and the count are both bounded there.
 
-**One of those arithmetic facts is the sentinel's, and it is a domain
-restriction, not arithmetic convenience.**  `if.end` compares the expander's
-return against `0xffffffffffffffff` and takes the refusal path when it matches,
-while the model's `stage2StringBody` has no sentinel branch: a decoded answer of
-exactly `2 ^ 64 - 1` bytes would be form 2 in the model and form 0 in the body,
-so at that one input the body and the model disagree and no postcondition can
-hold.  `len.toNat + 1 < 2 ^ 64` closes the corner, and what it costs is the
-single document length that cannot be staged — sixteen exabytes.  It is a clause
-here rather than a remark in the closing for the reason every staging fact is:
-without it a reader finds the goal unprovable and narrows something else.
+**One of those arithmetic facts is a domain restriction, not arithmetic
+convenience, and it carries two.**  `if.end` compares the expander's return
+against `0xffffffffffffffff` and takes the refusal path when it matches, while the
+model's `stage2StringBody` has no sentinel branch: a decoded answer of exactly
+`2 ^ 64 - 1` bytes would be form 2 in the model and form 0 in the body.  And with
+no stage-1 list the body reaches its own span through `if.end21`'s
+`getelementptr i8, ptr %p, i64 %call17`, whose index is sign-extended: at
+`call17 ≥ 2 ^ 63` the positive branch is unavailable and the body reads
+`p - (2 ^ 64 - call17)` where the model reads `p + call17`.  `call17` is the
+scan's first special position, below the body's length, so
+`len.toNat + 1 < 2 ^ 63` closes both corners at once — and what it costs is every
+document of sixteen exabytes or more, which is a length no staged caller has:
+`stage2MaxDocument` is `2 ^ 32`.  It is a clause here rather than a remark in the
+closing for the reason every staging fact is: without it a reader finds the goal
+unprovable and narrows something else.
 
 **The staging's memory facts are reads, and that is enough.**  A body proof that
 writes one of these words back needs the write to be a no-op, which is a lemma
@@ -363,8 +368,10 @@ is a `readBytes … ≠ none` clause except `xj`, whose presence is the read abo
 separation facts name five regions, the body's own slot included, because a write
 the joins move still has to be known to be disjoint from the slot it crosses.  `writeByte` appends absent addresses, so write order is
 observable — with `dst`, `outn` and the record's `e` absent, the body's
-order (clear, `dst`, `xj`, slot, `outn`) and the model's (`dst`, `xj`, `outn`,
-slot) are different lists, and `r.mem = writeBytes m next slot` fails.  The
+order (clear, `dst`, `xj`, slot, `outn`) and the model's list arm (`dst`, `xj`, `outn`,
+slot) are different lists, and `r.mem = writeBytes m next slot` fails; the model's
+no-list arm writes (`dst`, `outn`, slot) and no cursor at all, so the same
+separation carries it.  The
 two-byte witness is `JsonStage2StringBody.writeBytes_absent_comm_witness`.  So the
 clause is the fact that makes the memory equality true, not a strengthening that
 eases a proof: the model's write order and the body's meet only where every
@@ -397,10 +404,11 @@ def s2StringBodyPre (args : List Value) (mem : Mem) (next : Nat) : Prop :=
     p < 2 ^ 64 ∧
     base ≤ p ∧
     p - base + len.toNat < 2 ^ 64 ∧
-    -- the expander's failure sentinel is `0xffffffffffffffff`, which is also a
-    -- length: the body's `if.end` cannot tell a `2 ^ 64 - 1`-byte decode from a
-    -- refusal, so that one document length is outside this staging
-    len.toNat + 1 < 2 ^ 64 ∧
+    -- the document's length is below `2 ^ 63`, which both keeps the expander's
+    -- failure sentinel (`0xffffffffffffffff`, also a length) from being read as a
+    -- decoded answer and keeps `if.end21`'s sign-extended `getelementptr` on its
+    -- positive branch
+    len.toNat + 1 < 2 ^ 63 ∧
     j0 < 2 ^ 63 ∧
     nxp.toNat < 2 ^ 63 ∧
     readBytes mem outn 8 ≠ none ∧
@@ -1016,50 +1024,107 @@ theorem s2StringBody_framed {args : List Value} {mem : Mem} {next : Nat}
       unfold stage2StringBody at hm
       simp only [hbase, hj0, hps, he] at hm
       split at hm
-      · have hinj := Option.some.inj hm
-        simp only [Prod.mk.injEq] at hinj
-        obtain ⟨rfl, rfl, rfl⟩ := hinj
-        exact (((UnchangedOutside.refl' mem _).write_le (a := xj) (w := 8)
-          ⟨(xj, 8), by simp, le_rfl, le_rfl⟩
-          (by simp [wordBytes, natToBytes_length])).write_le (a := outn) (w := 8)
-          ⟨(outn, 8), by simp, le_rfl, le_rfl⟩
-          (by simp [wordBytes, natToBytes_length])).write_le (a := next) (w := 8)
-          ⟨(next, 8), by simp, le_rfl, le_rfl⟩ (by simp)
-      · split at hm
-        · simp at hm
-        · rename_i body' hbody'
+      · -- no list: the body's own span decides the form, and no cursor moves
+        simp only [hbody] at hm
+        split at hm
+        · -- plain: the body-itself form writes only the length
+          have hinj := Option.some.inj hm
+          simp only [Prod.mk.injEq] at hinj
+          obtain ⟨rfl, rfl, rfl⟩ := hinj
+          exact ((UnchangedOutside.refl' mem _).write_le (a := outn) (w := 8)
+            ⟨(outn, 8), by simp, le_rfl, le_rfl⟩
+            (by simp [wordBytes, natToBytes_length])).write_le (a := next) (w := 8)
+            ⟨(next, 8), by simp, le_rfl, le_rfl⟩ (by simp)
+        · rename_i off b hfind
           split at hm
-          · rename_i out k hdec
-            have hinj := Option.some.inj hm
-            simp only [Prod.mk.injEq] at hinj
-            obtain ⟨rfl, rfl, rfl⟩ := hinj
-            have hlen : out.length ≤ len.toNat := by
-              have hle := escapeDecodeGo_length_le body'
-                (hspace base j0 ps body' hbase hj0 hps hbody') 0 [] out k hdec
-              have hbl : body'.length = len.toNat :=
-                JsonEntrySteps.readBytes_length mem p len.toNat hbody'
-              simp only [List.length_nil, Nat.zero_add] at hle
-              omega
-            exact ((((UnchangedOutside.refl' mem _).write_le (a := dst) (w := len.toNat)
-              ⟨(dst, len.toNat), by simp, le_rfl, le_rfl⟩ hlen).write_le
-              (a := xj) (w := 8) ⟨(xj, 8), by simp, le_rfl, le_rfl⟩
-              (by simp [wordBytes, natToBytes_length])).write_le (a := outn) (w := 8)
-              ⟨(outn, 8), by simp, le_rfl, le_rfl⟩
-              (by simp [wordBytes, natToBytes_length])).write_le (a := next) (w := 8)
-              ⟨(next, 8), by simp, le_rfl, le_rfl⟩
-              (by simp [wordBytes, natToBytes_length])
-          · rename_i off k href
+          · -- a control byte refuses: the record's offset, and nothing else
             have hinj := Option.some.inj hm
             simp only [Prod.mk.injEq] at hinj
             obtain ⟨rfl, rfl, rfl⟩ := hinj
             exact ((stage2ErrSetMsg_frame
               (R := [(xj, 8), (outn, 8), (dst, len.toNat), (next, 8)] ++
                 [(e, stage2ErrorExtent)])
-              ⟨(e, stage2ErrorExtent), by simp, le_rfl, le_rfl⟩).write_le (a := xj) (w := 8)
-              ⟨(xj, 8), by simp, le_rfl, le_rfl⟩
-              (by simp [wordBytes, natToBytes_length])).write_le (a := next) (w := 8)
-              ⟨(next, 8), by simp, le_rfl, le_rfl⟩
-              (by simp [wordBytes, natToBytes_length])
+              ⟨(e, stage2ErrorExtent), by simp, le_rfl, le_rfl⟩).write_le
+              (a := next) (w := 8) ⟨(next, 8), by simp, le_rfl, le_rfl⟩ (by simp))
+          · split at hm
+            · -- escaped: the plain prefix and the decoded suffix, then the length
+              rename_i out k hdec
+              have hinj := Option.some.inj hm
+              simp only [Prod.mk.injEq] at hinj
+              obtain ⟨rfl, rfl, rfl⟩ := hinj
+              have hlen : (body.take off ++ out).length ≤ len.toNat := by
+                have hout := escapeDecodeSpan_length_le (bs := body.drop off) hdec
+                rw [List.length_drop] at hout
+                have hbl : body.length = len.toNat :=
+                  JsonEntrySteps.readBytes_length mem p len.toNat hbody
+                have hoff : off < body.length := firstSpanSpecial?_lt hfind
+                have ht := List.length_take_le off body
+                rw [List.length_append]
+                omega
+              exact (((UnchangedOutside.refl' mem _).write_le (a := dst)
+                (w := len.toNat) ⟨(dst, len.toNat), by simp, le_rfl, le_rfl⟩
+                hlen).write_le (a := outn) (w := 8)
+                ⟨(outn, 8), by simp, le_rfl, le_rfl⟩
+                (by simp [wordBytes, natToBytes_length])).write_le (a := next) (w := 8)
+                ⟨(next, 8), by simp, le_rfl, le_rfl⟩
+                (by simp [wordBytes, natToBytes_length])
+            · -- a malformed escape refuses at the decoder's offset
+              rename_i rel k href
+              have hinj := Option.some.inj hm
+              simp only [Prod.mk.injEq] at hinj
+              obtain ⟨rfl, rfl, rfl⟩ := hinj
+              exact ((stage2ErrSetMsg_frame
+                (R := [(xj, 8), (outn, 8), (dst, len.toNat), (next, 8)] ++
+                  [(e, stage2ErrorExtent)])
+                ⟨(e, stage2ErrorExtent), by simp, le_rfl, le_rfl⟩).write_le
+                (a := next) (w := 8) ⟨(next, 8), by simp, le_rfl, le_rfl⟩
+                (by simp [wordBytes, natToBytes_length]))
+      · -- a stage-1 list: the scanned position decides the form
+        split at hm
+        · have hinj := Option.some.inj hm
+          simp only [Prod.mk.injEq] at hinj
+          obtain ⟨rfl, rfl, rfl⟩ := hinj
+          exact (((UnchangedOutside.refl' mem _).write_le (a := xj) (w := 8)
+            ⟨(xj, 8), by simp, le_rfl, le_rfl⟩
+            (by simp [wordBytes, natToBytes_length])).write_le (a := outn) (w := 8)
+            ⟨(outn, 8), by simp, le_rfl, le_rfl⟩
+            (by simp [wordBytes, natToBytes_length])).write_le (a := next) (w := 8)
+            ⟨(next, 8), by simp, le_rfl, le_rfl⟩ (by simp)
+        · split at hm
+          · simp at hm
+          · rename_i body' hbody'
+            split at hm
+            · rename_i out k hdec
+              have hinj := Option.some.inj hm
+              simp only [Prod.mk.injEq] at hinj
+              obtain ⟨rfl, rfl, rfl⟩ := hinj
+              have hlen : out.length ≤ len.toNat := by
+                have hle := escapeDecodeGo_length_le body'
+                  (hspace base j0 ps body' hbase hj0 hps hbody') 0 [] out k hdec
+                have hbl : body'.length = len.toNat :=
+                  JsonEntrySteps.readBytes_length mem p len.toNat hbody'
+                simp only [List.length_nil, Nat.zero_add] at hle
+                omega
+              exact ((((UnchangedOutside.refl' mem _).write_le (a := dst) (w := len.toNat)
+                ⟨(dst, len.toNat), by simp, le_rfl, le_rfl⟩ hlen).write_le
+                (a := xj) (w := 8) ⟨(xj, 8), by simp, le_rfl, le_rfl⟩
+                (by simp [wordBytes, natToBytes_length])).write_le (a := outn) (w := 8)
+                ⟨(outn, 8), by simp, le_rfl, le_rfl⟩
+                (by simp [wordBytes, natToBytes_length])).write_le (a := next) (w := 8)
+                ⟨(next, 8), by simp, le_rfl, le_rfl⟩
+                (by simp [wordBytes, natToBytes_length])
+            · rename_i off k href
+              have hinj := Option.some.inj hm
+              simp only [Prod.mk.injEq] at hinj
+              obtain ⟨rfl, rfl, rfl⟩ := hinj
+              exact ((stage2ErrSetMsg_frame
+                (R := [(xj, 8), (outn, 8), (dst, len.toNat), (next, 8)] ++
+                  [(e, stage2ErrorExtent)])
+                ⟨(e, stage2ErrorExtent), by simp, le_rfl, le_rfl⟩).write_le (a := xj) (w := 8)
+                ⟨(xj, 8), by simp, le_rfl, le_rfl⟩
+                (by simp [wordBytes, natToBytes_length])).write_le (a := next) (w := 8)
+                ⟨(next, 8), by simp, le_rfl, le_rfl⟩
+                (by simp [wordBytes, natToBytes_length])
 
 /-- **`s2_string_body`'s contract**: the decoded body. -/
 def s2StringBodyContract :
@@ -1084,38 +1149,88 @@ theorem s2StringBody_outn_le {mem : Mem} {c p dst outn xp xj : Nat} {len nxp : B
     ∃ on : Nat, readBytes m outn 8 = some (wordBytes 8 on) ∧ on ≤ len.toNat := by
   unfold stage2StringBody at hm
   split at hm
-  · rename_i base j0 ps hbase hj0 hps
+  · simp at hm
+  · rename_i base hbase
     dsimp only at hm
-    split at hm
-    · have hinj := Option.some.inj hm
-      simp only [Prod.mk.injEq] at hinj
-      obtain ⟨rfl, rfl, -⟩ := hinj
-      refine ⟨len.toNat, ?_, le_rfl⟩
-      exact readBytes_wordBytes_same (addr := outn) (v := len.toNat)
-    · split at hm
+    by_cases hz : nxp.toNat = 0
+    · -- no list: the body's own span decides the form
+      rw [if_pos hz] at hm
+      split at hm
       · simp at hm
       · rename_i body hbody
         split at hm
-        · rename_i out k hdec
+        · -- plain: the body-itself form writes `len`
           have hinj := Option.some.inj hm
           simp only [Prod.mk.injEq] at hinj
           obtain ⟨rfl, rfl, -⟩ := hinj
-          refine ⟨out.length, ?_, ?_⟩
-          · exact readBytes_wordBytes_same (addr := outn) (v := out.length)
-          · have hle := escapeDecodeGo_length_le body
-              (hspace base j0 ps body hbase hj0 hps hbody) 0 [] out k hdec
-            have hbl : body.length = len.toNat :=
-              JsonEntrySteps.readBytes_length mem p len.toNat hbody
-            simp only [List.length_nil, Nat.zero_add] at hle
-            omega
-        · rename_i off k href
+          exact ⟨len.toNat, readBytes_wordBytes_same (addr := outn) (v := len.toNat),
+            le_rfl⟩
+        · rename_i off b hfind
           split at hm
-          · have hinj := Option.some.inj hm
-            simp only [Prod.mk.injEq] at hinj
-            obtain ⟨rfl, rfl, -⟩ := hinj
-            exact absurd rfl hform
+          · -- control byte: form 0
+            split at hm
+            · have hinj := Option.some.inj hm
+              simp only [Prod.mk.injEq] at hinj
+              obtain ⟨-, h0, -⟩ := hinj
+              exact absurd h0.symm hform
+            · simp at hm
+          · split at hm
+            · -- escaped: the prefix plus the decoded suffix
+              rename_i out k hdec
+              have hinj := Option.some.inj hm
+              simp only [Prod.mk.injEq] at hinj
+              obtain ⟨rfl, rfl, -⟩ := hinj
+              refine ⟨(body.take off ++ out).length,
+                readBytes_wordBytes_same (addr := outn) (v := _), ?_⟩
+              have hout := escapeDecodeSpan_length_le (bs := body.drop off) hdec
+              rw [List.length_drop] at hout
+              have hbl : body.length = len.toNat :=
+                JsonEntrySteps.readBytes_length mem p len.toNat hbody
+              have hoff : off < body.length := firstSpanSpecial?_lt hfind
+              have ht := List.length_take_le off body
+              rw [List.length_append]
+              omega
+            · -- malformed escape: form 0
+              split at hm
+              · have hinj := Option.some.inj hm
+                simp only [Prod.mk.injEq] at hinj
+                obtain ⟨-, h0, -⟩ := hinj
+                exact absurd h0.symm hform
+              · simp at hm
+    · -- a stage-1 list: the scanned position decides the form
+      rw [if_neg hz] at hm
+      split at hm
+      · rename_i j0 ps hj0 hps
+        split at hm
+        · have hinj := Option.some.inj hm
+          simp only [Prod.mk.injEq] at hinj
+          obtain ⟨rfl, rfl, -⟩ := hinj
+          refine ⟨len.toNat, ?_, le_rfl⟩
+          exact readBytes_wordBytes_same (addr := outn) (v := len.toNat)
+        · split at hm
           · simp at hm
-  · simp at hm
+          · rename_i body hbody
+            split at hm
+            · rename_i out k hdec
+              have hinj := Option.some.inj hm
+              simp only [Prod.mk.injEq] at hinj
+              obtain ⟨rfl, rfl, -⟩ := hinj
+              refine ⟨out.length, ?_, ?_⟩
+              · exact readBytes_wordBytes_same (addr := outn) (v := out.length)
+              · have hle := escapeDecodeGo_length_le body
+                  (hspace base j0 ps body hbase hj0 hps hbody) 0 [] out k hdec
+                have hbl : body.length = len.toNat :=
+                  JsonEntrySteps.readBytes_length mem p len.toNat hbody
+                simp only [List.length_nil, Nat.zero_add] at hle
+                omega
+            · rename_i off k href
+              split at hm
+              · have hinj := Option.some.inj hm
+                simp only [Prod.mk.injEq] at hinj
+                obtain ⟨rfl, rfl, -⟩ := hinj
+                exact absurd rfl hform
+              · simp at hm
+      · simp at hm
 
 /-! #### `od_scalar_value`: the appended record -/
 

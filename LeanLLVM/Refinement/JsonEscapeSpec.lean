@@ -341,6 +341,199 @@ def escapeDecodeGo (bs : List UInt8) (i k : Nat) : List Nat → List UInt8 → E
 def escapeDecode (bs : List UInt8) (ps : List Nat) : EscapeOutcome :=
   escapeDecodeGo bs 0 0 ps []
 
+/-! ### The list-free decode
+
+`escape.c`'s `us_dec_span` is the same body pass with no position list: it finds
+the special bytes in the body's own span.  A byte is special to it when it is a
+control byte or a backslash, and each backslash is decoded by `escapeAt` — the
+same rule the position-driven walk uses.  The scan below is that classification:
+after an escape the walk resumes past the bytes the escape consumed, which is
+what `us_dec_span`'s mask clearing does with the position list absent. -/
+
+/-- A byte the list-free walk stops on: a control byte or a backslash. -/
+def IsSpanSpecial (b : UInt8) : Bool := IsControlB b || IsBackslashB b
+
+/-- The scan behind `firstSpanSpecial?`: `k` is the absolute index of `bs`'s
+head.  The entry carries the byte as well as its index, so the walk has no
+impossible `none` case to answer. -/
+def firstSpanSpecialFrom (bs : List UInt8) (k : Nat) : Option (Nat × UInt8) :=
+  match bs with
+  | [] => none
+  | b :: rest =>
+      if IsSpanSpecial b then some (k, b) else firstSpanSpecialFrom rest (k + 1)
+
+/-- The first special byte of `bs`, counting from `i`, and the byte itself. -/
+def firstSpanSpecial? (bs : List UInt8) (i : Nat) : Option (Nat × UInt8) :=
+  firstSpanSpecialFrom (bs.drop i) i
+
+/-- The scan never names an index before where it started. -/
+theorem firstSpanSpecialFrom_ge {bs : List UInt8} {k q : Nat} {b : UInt8}
+    (h : firstSpanSpecialFrom bs k = some (q, b)) : k ≤ q := by
+  induction bs generalizing k q b with
+  | nil => simp [firstSpanSpecialFrom] at h
+  | cons c rest ih =>
+      simp only [firstSpanSpecialFrom] at h
+      split at h
+      · simp only [Option.some.injEq, Prod.mk.injEq] at h
+        obtain ⟨rfl, -⟩ := h
+        omega
+      · have := ih h
+        omega
+
+/-- The scan never names an index past the list it scanned. -/
+theorem firstSpanSpecialFrom_lt {bs : List UInt8} {k q : Nat} {b : UInt8}
+    (h : firstSpanSpecialFrom bs k = some (q, b)) : q < k + bs.length := by
+  induction bs generalizing k q b with
+  | nil => simp [firstSpanSpecialFrom] at h
+  | cons c rest ih =>
+      simp only [firstSpanSpecialFrom] at h
+      split at h
+      · simp only [Option.some.injEq, Prod.mk.injEq] at h
+        obtain ⟨rfl, -⟩ := h
+        simp
+      · have := ih h
+        simp only [List.length_cons] at this ⊢
+        omega
+
+/-- The scan never names an index before where it started. -/
+theorem firstSpanSpecial?_ge {bs : List UInt8} {i q : Nat} {b : UInt8}
+    (h : firstSpanSpecial? bs i = some (q, b)) : i ≤ q := by
+  exact firstSpanSpecialFrom_ge h
+
+/-- The scan never names an index past the list it scanned. -/
+theorem firstSpanSpecial?_lt {bs : List UInt8} {i q : Nat} {b : UInt8}
+    (h : firstSpanSpecial? bs i = some (q, b)) : q < bs.length := by
+  have hge := firstSpanSpecial?_ge h
+  have hlt := firstSpanSpecialFrom_lt h
+  rw [List.length_drop] at hlt
+  omega
+
+/-- A four-hex-digit read names bytes inside the list. -/
+theorem hex4_bound {bs : List UInt8} {k cp : Nat} (h : hex4 bs k = some cp) :
+    k + 4 ≤ bs.length := by
+  by_cases hlen : k + 4 ≤ bs.length
+  · exact hlen
+  · exfalso
+    have hk : bs.length ≤ k + 3 := by omega
+    have hnone : bs[k + 3]? = none := List.getElem?_eq_none hk
+    have hz : hex4 bs k = none := by
+      unfold hex4
+      rw [hnone]
+      simp
+    rw [hz] at h
+    simp at h
+
+/-- A surrogate pair consumes twelve bytes. -/
+theorem surrogateTail_adv {bs : List UInt8} {k cp cp' adv : Nat}
+    (h : surrogateTail bs k cp = some (cp', adv)) : adv = 12 := by
+  unfold surrogateTail at h
+  split at h
+  · split at h
+    · split at h
+      · simp only [Option.some.injEq, Prod.mk.injEq] at h
+        omega
+      · simp at h
+    · simp at h
+  · simp at h
+
+/-- A surrogate pair's twelve bytes are inside the list. -/
+theorem surrogateTail_bound {bs : List UInt8} {k cp cp' adv : Nat}
+    (h : surrogateTail bs k cp = some (cp', adv)) : k + adv ≤ bs.length := by
+  unfold surrogateTail at h
+  split at h
+  · rename_i hcond
+    split at h
+    · split at h
+      · simp only [Option.some.injEq, Prod.mk.injEq] at h
+        obtain ⟨-, rfl⟩ := h
+        obtain ⟨-, -, h12, -, -⟩ := hcond
+        omega
+      · simp at h
+    · simp at h
+  · simp at h
+
+/-- `escapeAt`'s advance is at least two bytes: a decoded escape never moves the
+walk backwards. -/
+theorem escapeAt_adv_ge_two {bs : List UInt8} {q : Nat} {bytes : List UInt8}
+    {adv : Nat} (h : escapeAt bs q = some (bytes, adv)) : 2 ≤ adv := by
+  unfold escapeAt at h
+  split at h
+  · simp at h
+  · rename_i c1 h1
+    split at h
+    · simp only [Option.some.injEq, Prod.mk.injEq] at h
+      obtain ⟨-, h2⟩ := h
+      omega
+    · split at h
+      · cases h3 : hex4 bs (q + 2) with
+        | none => simp [h3] at h
+        | some cp =>
+            cases h4 : surrogateTail bs q cp with
+            | none =>
+                simp only [h3, h4, Option.some.injEq, Prod.mk.injEq] at h
+                obtain ⟨-, h6⟩ := h
+                omega
+            | some p =>
+                obtain ⟨cp', adv'⟩ := p
+                simp only [h3, h4, Option.some.injEq, Prod.mk.injEq] at h
+                obtain ⟨-, h6⟩ := h
+                have := surrogateTail_adv h4
+                omega
+      · simp at h
+
+/-- A decoded escape's consumed bytes are inside the body. -/
+theorem escapeAt_bound {bs : List UInt8} {q : Nat} {bytes : List UInt8}
+    {adv : Nat} (h : escapeAt bs q = some (bytes, adv)) : q + adv ≤ bs.length := by
+  unfold escapeAt at h
+  split at h
+  · simp at h
+  · rename_i c1 h1
+    split at h
+    · simp only [Option.some.injEq, Prod.mk.injEq] at h
+      obtain ⟨-, rfl⟩ := h
+      have hlt := lt_length_of_getElem?_eq_some h1
+      omega
+    · split at h
+      · cases h3 : hex4 bs (q + 2) with
+        | none => simp [h3] at h
+        | some cp =>
+            cases h4 : surrogateTail bs q cp with
+            | none =>
+                simp only [h3, h4, Option.some.injEq, Prod.mk.injEq] at h
+                obtain ⟨-, rfl⟩ := h
+                have := hex4_bound h3
+                omega
+            | some p =>
+                obtain ⟨cp', adv'⟩ := p
+                simp only [h3, h4, Option.some.injEq, Prod.mk.injEq] at h
+                obtain ⟨-, rfl⟩ := h
+                exact surrogateTail_bound h4
+      · simp at h
+
+/-- The list-free walk, with `fuel` decode steps.  The fuel is the span's length
+plus one at every call; an escape consumes at least two bytes, so the walk never
+spends it all. -/
+def escapeDecodeSpanAux (bs : List UInt8) (i : Nat) (out : List UInt8) :
+    Nat → EscapeOutcome
+  | 0 => .refused 0 0
+  | fuel + 1 =>
+      match firstSpanSpecial? bs i with
+      | none => .decoded (out ++ bs.drop i) 0
+      | some (q, b) =>
+          let out := out ++ (bs.drop i).take (q - i)
+          if IsControlB b then .refused q 0
+          else
+            match escapeAt bs q with
+            | none => .refused q 0
+            | some (bytes, adv) => escapeDecodeSpanAux bs (q + adv) (out ++ bytes) fuel
+
+/-- **The list-free decode of a span**: the plain runs copied, every escape
+decoded at its backslash, and a control byte or a malformed escape refused at its
+own span offset.  This is `us_dec_span`'s outcome, with the fuel sized from the
+span. -/
+def escapeDecodeSpan (bs : List UInt8) : EscapeOutcome :=
+  escapeDecodeSpanAux bs 0 [] (bs.length + 1)
+
 /-! ### Reading a code point list off its encoding
 
 The measured decoder writes UTF-8 bytes and the model stores code points, so the
@@ -505,6 +698,81 @@ theorem utf8Word_bytes (c : Nat) (h : c < 0x110000) :
 /-- info: 'LeanLLVM.Refinement.utf8Word_bytes' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms utf8Word_bytes
+
+/-- A decoded escape's output is no longer than the bytes it consumes.  This sits
+here rather than beside `escapeAt`, because its `\u` arms bound the encoded code
+point by `utf8Encode_length_le_four`, stated above. -/
+theorem escapeAt_bytes_length_le {bs : List UInt8} {q : Nat} {bytes : List UInt8}
+    {adv : Nat} (h : escapeAt bs q = some (bytes, adv)) : bytes.length ≤ adv := by
+  unfold escapeAt at h
+  split at h
+  · simp at h
+  · rename_i c1 h1
+    split at h
+    · simp only [Option.some.injEq, Prod.mk.injEq] at h
+      obtain ⟨rfl, rfl⟩ := h
+      simp
+    · split at h
+      · cases h3 : hex4 bs (q + 2) with
+        | none => simp [h3] at h
+        | some cp =>
+            cases h4 : surrogateTail bs q cp with
+            | none =>
+                simp only [h3, h4, Option.some.injEq, Prod.mk.injEq] at h
+                obtain ⟨rfl, rfl⟩ := h
+                have := utf8Encode_length_le_four cp
+                omega
+            | some p =>
+                obtain ⟨cp', adv'⟩ := p
+                simp only [h3, h4, Option.some.injEq, Prod.mk.injEq] at h
+                obtain ⟨rfl, rfl⟩ := h
+                have := utf8Encode_length_le_four cp'
+                have := surrogateTail_adv h4
+                omega
+      · simp at h
+
+/-- **A span decode never writes more than the span holds.**  The quantity carried
+is `written + (span length - cursor)`: a plain run moves bytes from the second
+summand to the first, and a decoded escape adds at most the bytes it consumes. -/
+theorem escapeDecodeSpanAux_length_le (bs : List UInt8) :
+    ∀ (fuel i : Nat) (out out' : List UInt8) (k : Nat),
+      escapeDecodeSpanAux bs i out fuel = .decoded out' k →
+      out'.length ≤ out.length + (bs.length - i) := by
+  intro fuel
+  induction fuel with
+  | zero =>
+      intro i out out' k h
+      simp only [escapeDecodeSpanAux] at h
+      cases h
+  | succ fuel ih =>
+      intro i out out' k h
+      simp only [escapeDecodeSpanAux] at h
+      split at h
+      · rename_i hnone
+        simp only [EscapeOutcome.decoded.injEq] at h
+        obtain ⟨rfl, -⟩ := h
+        simp only [List.length_append, List.length_drop]
+        omega
+      · rename_i q b hfind
+        split at h
+        · simp at h
+        · split at h
+          · simp at h
+          · rename_i bytes adv hesc
+            have hge := firstSpanSpecial?_ge hfind
+            have hblen := escapeAt_bytes_length_le hesc
+            have hbound := escapeAt_bound hesc
+            have htake : ((bs.drop i).take (q - i)).length ≤ q - i :=
+              List.length_take_le ..
+            have hrec := ih (q + adv) (out ++ (bs.drop i).take (q - i) ++ bytes) out' k h
+            simp only [List.length_append] at hrec htake ⊢
+            omega
+
+/-- **A span decode writes no more than the span holds.** -/
+theorem escapeDecodeSpan_length_le {bs : List UInt8} {out : List UInt8} {k : Nat}
+    (h : escapeDecodeSpan bs = .decoded out k) : out.length ≤ bs.length := by
+  have := escapeDecodeSpanAux_length_le bs (bs.length + 1) 0 [] out k h
+  simpa using this
 
 /-- A list of code points is no longer than their encodings. -/
 theorem flatten_length_ge (cps : List Nat) :

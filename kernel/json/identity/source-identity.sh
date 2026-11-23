@@ -1460,12 +1460,12 @@ EOF
     fi
     hits=$(nm -g --defined-only "$work/kernel.o" | awk '{ print $3 }' | LC_ALL=C sort | tr '\n' ' ')
     hits=${hits% }
-    if [ "$hits" != "leanllvm_json_escape_expand leanllvm_json_escape_list" ]; then
+    if [ "$hits" != "leanllvm_json_escape_decode leanllvm_json_escape_expand leanllvm_json_escape_list" ]; then
       printf 'FAIL: the unit defines the public symbols {%s}\n' "$hits" >&2
-      printf 'FAIL: expected exactly leanllvm_json_escape_expand/list\n' >&2
+      printf 'FAIL: expected exactly leanllvm_json_escape_decode/expand/list\n' >&2
       return 1
     fi
-    printf 'ok: the unit defines exactly its two ABI symbols\n'
+    printf 'ok: the unit defines exactly its three ABI symbols\n'
   fi
 
   if [ "$unit" = stage2 ]; then

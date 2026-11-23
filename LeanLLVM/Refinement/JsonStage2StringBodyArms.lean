@@ -27,30 +27,32 @@ in `s2StringBodyScan_run` is one `rcases` away:
 the counter's `∃ c` is what the closing uses to name that memory as the model's. -/
 
 /-- The second exit finishes the body-itself arm. -/
-theorem s2StringBodyExit_ifThen {e : State} {len : BitVec 64} {outn : Nat}
-    (hpc : e.pc = "if.then")
+theorem s2StringBodyExit_ifThen9 {e : State} {len : BitVec 64} {outn ei : Nat}
+    (hpc : e.pc = "if.then9")
     (hlen : lookupName e.env "%len" = some (.int 64 len))
-    (houtn : lookupName e.env "%outn" = some (.ptr outn)) :
+    (houtn : lookupName e.env "%outn" = some (.ptr outn))
+    (hei : lookupName e.env "%ei" = some (.ptr ei)) :
     runFuel s2StringBodyCalls 2 s2StringBodyBody e =
       some (.ret (some (.int 32 0x00000001#32))
         (writeBytes e.mem outn (natToBytes len.toNat 8))) :=
-  s2StringBodyIfThen_finishes (env := e.env) (s := e) hpc hlen houtn
+  s2StringBodyIfThen9_finishes (env := e.env) (s := e) hpc hlen houtn hei
 
 /-- The first exit, the lane inside the body: the body-itself arm through
 `if.then`. -/
-theorem s2StringBodyExit_landLhsTrue_toIfThen {e : State} {sub len conv : BitVec 64}
-    {outn : Nat}
+theorem s2StringBodyExit_landLhsTrue_toIfThen9 {e : State} {sub len conv : BitVec 64}
+    {outn ei : Nat}
     (hpc : e.pc = "land.lhs.true")
     (hsub : lookupName e.env "%sub.ptr.sub" = some (.int 64 sub))
     (hlen : lookupName e.env "%len" = some (.int 64 len))
     (hconv : lookupName e.env "%conv" = some (.int 64 conv))
     (hbit : evalICmpNat .ugt 64 (sub + len).toNat conv.toNat = 0#1)
-    (houtn : lookupName e.env "%outn" = some (.ptr outn)) :
+    (houtn : lookupName e.env "%outn" = some (.ptr outn))
+    (hei : lookupName e.env "%ei" = some (.ptr ei)) :
     runFuel s2StringBodyCalls 3 s2StringBodyBody e =
       some (.ret (some (.int 32 0x00000001#32))
         (writeBytes e.mem outn (natToBytes len.toNat 8))) :=
-  s2StringBodyLandLhsTrue_toIfThen_finishes (env := e.env) (s := e)
-    hpc hsub hlen hconv hbit houtn
+  s2StringBodyLandLhsTrue_toIfThen9_finishes (env := e.env) (s := e)
+    hpc hsub hlen hconv hbit houtn hei
 
 /-- The first exit, the expander refusing: the record's path, answer `0`. -/
 theorem s2StringBodyExit_refused {e : State} {sub len conv off : BitVec 64}
@@ -76,9 +78,9 @@ theorem s2StringBodyExit_refused {e : State} {sub len conv off : BitVec 64}
     (hoff : readBytes extra ei 8 = some (natToBytes off.toNat 8))
     (hcval : readBytes extra (c + (1112#64).toNat) 8 = some (wordBytes 8 j))
     (hj64 : j < 2 ^ 64) :
-    runFuel s2StringBodyCalls 5 s2StringBodyBody e =
+    runFuel s2StringBodyCalls 4 s2StringBodyBody e =
       some (.ret (some (.int 32 0x00000000#32))
-        (s2StringBodyIfThen11Mem extra j off sub)) :=
+        (s2StringBodyIfThen12Mem extra j off sub)) :=
   s2StringBodyLandLhsTrue_refused_finishes (env := e.env) (s := e)
     hpc hc hsub hlen hconv hbit7 hp hdst hei hxp hxj hnxp hexp hbit9 hoff hcval hj64
 
@@ -102,8 +104,9 @@ theorem s2StringBodyExit_decoded {e : State} {sub len conv : BitVec 64}
        .int 64 sub] (writeBytes e.mem ei (natToBytes (0#64).toNat 8)) e.next =
       some { ret := .int 64 call, mem := extra, next := nx })
     (hbit9 : evalICmp .eq call 0xffffffffffffffff#64 = 0#1)
-    (houtn : lookupName e.env "%outn" = some (.ptr outn)) :
-    runFuel s2StringBodyCalls 5 s2StringBodyBody e =
+    (houtn : lookupName e.env "%outn" = some (.ptr outn))
+    (hei : lookupName e.env "%ei" = some (.ptr ei)) :
+    runFuel s2StringBodyCalls 4 s2StringBodyBody e =
       some (.ret (some (.int 32 0x00000002#32))
         (writeBytes extra outn (natToBytes call.toNat 8))) :=
   s2StringBodyLandLhsTrue_decoded_finishes (env := e.env) (s := e)
@@ -542,8 +545,9 @@ five-cell record update is spelled once, here, because the parser will not read 
 inside a tuple and because the contract names this state repeatedly. -/
 def s2StringBodyHeadState (env : Env) (s : State) (base p j0 : Nat)
     (nxp : BitVec 64) : State :=
-  stateAt (s2StringBodyEntryOut env s.next base p j0 nxp)
-    { s with next := s.next + (Ty.int 64).sizeBytes, pc := "land.rhs", pre := some s.pc }
+  stateAt (s2StringBodyWhileCondEnv (s2StringBodyEntryOut env s.next base p nxp)
+      (BitVec.ofNat 64 j0) nxp)
+    { s with next := s.next + (Ty.int 64).sizeBytes, pc := "land.rhs", pre := some "while.cond.preheader" }
 
 /-- **The entry, seated**: the body's first control step reaches the named head, and
 the invariant holds there.  The prefix and the seat, consumed as one fact. -/
@@ -558,46 +562,37 @@ theorem s2StringBodyEntry_seat_landRhs {env : Env} {s : State}
     (hbase : readBytes s.mem c 8 = some (wordBytes 8 base)) (hb64 : base < 2 ^ 64)
     (hp64 : p < 2 ^ 64)
     (hj0 : readBytes s.mem xj 8 = some (wordBytes 8 j0)) (hj64 : j0 < 2 ^ 64)
+    (hbit0 : evalICmp .eq nxp (BitVec.ofNat 64 0) = 0#1)
     (hbit : evalICmp .ult (BitVec.ofNat 64 j0) nxp = 1#1)
     (hble : base ≤ p)
     (hword : stage2ReadWord s.mem xj 8 = some j0)
     (hps : readLanes32 s.mem xp nxp.toNat = some ps)
     (hj0N : j0 < nxp.toNat) :
-    (∀ k, runFuel s2StringBodyCalls (1 + k) s2StringBodyBody (stateAt env s) =
+    (∀ k, runFuel s2StringBodyCalls (2 + k) s2StringBodyBody (stateAt env s) =
         runFuel s2StringBodyCalls k s2StringBodyBody
           (s2StringBodyHeadState env s base p j0 nxp)) ∧
       s2StringBodyScanInv s.mem xj (p - base) xp nxp.toNat ps (nxp.toNat - j0)
-        (s2StringBodyHeadState env s base p j0 nxp) j0 :=
-  ⟨s2StringBodyEntry_prefix_landRhs hpc hc hp hxj hnxp hbase hb64 hp64 hj0 hj64 hbit,
-   s2StringBodyScanInv_seat env s base p xj xp j0 ps nxp hpc hble hp64 hword hps hj0N
-     hxpc hxj hnxp⟩
-
-/-- **The contract's statement, checked** — not proved.  It is the module's opening
-sentence made into a proposition: at the staging `s2StringBodyPre` states, the body's
-run answers with a `CallOutcome` satisfying the post and the footprint.  The budget is
-a term of the arguments — the entry's one step, the scan's `(N + 1) * 2`, and the
-longest arm's five — so the statement's fuel is computable before any proof is written.
-
-The eight premises are all proved (see the assembly note); what is missing is the
-composition.  Checking the statement here, in this module's options, is the point:
-the shape is settled, and the proof is the only thing outstanding. -/
-example {args : List Value} {mem : Mem} {next : Nat}
-    (hpre : s2StringBodyPre args mem next)
-    (hgoal : ∃ o : CallOutcome,
-      runFuel s2StringBodyCalls
-          (1 + (2 + 1) * 2 + 5) s2StringBodyBody
-          (stagedState s2StringBodyBody args mem next) =
-        some (.ret (some o.ret) o.mem) ∧
-      s2StringBodyPost args mem next o ∧
-      UnchangedOutside mem o.mem (s2StringBodyFoot args mem next)) :
-    ∃ o : CallOutcome,
-      runFuel s2StringBodyCalls
-          (1 + (2 + 1) * 2 + 5) s2StringBodyBody
-          (stagedState s2StringBodyBody args mem next) =
-        some (.ret (some o.ret) o.mem) ∧
-      s2StringBodyPost args mem next o ∧
-      UnchangedOutside mem o.mem (s2StringBodyFoot args mem next) :=
-  hgoal
+        (s2StringBodyHeadState env s base p j0 nxp) j0 := by
+  have h1 := s2StringBodyEntry_prefix_whileCond hpc hc hp hnxp hbase hb64 hp64 hbit0
+  have h2 := s2StringBodyWhileCond_prefix_landRhs
+    (env := s2StringBodyEntryOut env s.next base p nxp)
+    (s := { s with next := s.next + (Ty.int 64).sizeBytes, pc := "while.cond.preheader", pre := some s.pc })
+    rfl (by s2_lk) (by s2_lk) (j0 := BitVec.ofNat 64 j0)
+    (by rw [hj0, BitVec.toNat_ofNat, Nat.mod_eq_of_lt hj64])
+    (by exact (BitVec.ofNat 64 j0).isLt) hbit
+  refine ⟨?_, s2StringBodyScanInv_seat env s base p xj xp j0 ps nxp hble hp64 hword hps
+    hj0N hxpc hxj hnxp⟩
+  intro k
+  calc runFuel s2StringBodyCalls (2 + k) s2StringBodyBody (stateAt env s)
+      = runFuel s2StringBodyCalls (1 + (1 + k)) s2StringBodyBody (stateAt env s) := by
+        rw [show 2 + k = 1 + (1 + k) from by omega]
+    _ = runFuel s2StringBodyCalls (1 + k) s2StringBodyBody
+          (stateAt (s2StringBodyEntryOut env s.next base p nxp)
+            { s with next := s.next + (Ty.int 64).sizeBytes, pc := "while.cond.preheader", pre := some s.pc }) :=
+        h1 (1 + k)
+    _ = runFuel s2StringBodyCalls k s2StringBodyBody
+          (s2StringBodyHeadState env s base p j0 nxp) :=
+        h2 k
 
 /-- **The preamble**: the staged entry of the body carries the eight arguments as its
 registers, the caller's memory and allocator, and the entry as its block.  Every arm's
@@ -657,20 +652,38 @@ theorem s2StringBodyArm_bodyItself {env : Env} {s : State}
     (hbase : readBytes s.mem c 8 = some (wordBytes 8 base)) (hb64 : base < 2 ^ 64)
     (hp64 : p < 2 ^ 64)
     (hj0 : readBytes s.mem xj 8 = some (wordBytes 8 j0)) (hj64 : j0 < 2 ^ 64)
+    (hbit0 : evalICmp .eq nxp (BitVec.ofNat 64 0) = 0#1)
     (hbit : evalICmp .ult (BitVec.ofNat 64 j0) nxp = 0#1) :
-    runFuel s2StringBodyCalls 3 s2StringBodyBody (stateAt env s) =
+    runFuel s2StringBodyCalls 4 s2StringBodyBody (stateAt env s) =
       some (.ret (some (.int 32 0x00000001#32))
         (writeBytes s.mem outn (natToBytes len.toNat 8))) := by
-  have h1 := step_entry_ifThen hpc hc hp hxj hnxp hbase hb64 hp64 hj0 hj64 hbit
-  have h2 : runFuel s2StringBodyCalls 2 s2StringBodyBody
-      (stateAt (s2StringBodyEntryOut env s.next base p j0 nxp)
-        ({ s with next := s.next + (Ty.int 64).sizeBytes, pc := "if.then", pre := some s.pc })) =
+  have h1 := s2StringBodyEntry_prefix_whileCond hpc hc hp hnxp hbase hb64 hp64 hbit0
+  have h2 := s2StringBodyWhileCond_prefix_ifThen9
+    (env := s2StringBodyEntryOut env s.next base p nxp)
+    (s := { s with next := s.next + (Ty.int 64).sizeBytes, pc := "while.cond.preheader", pre := some s.pc })
+    rfl (by s2_lk) (by s2_lk) (j0 := BitVec.ofNat 64 j0)
+    (by rw [hj0, BitVec.toNat_ofNat, Nat.mod_eq_of_lt hj64])
+    (by exact (BitVec.ofNat 64 j0).isLt) hbit
+  have h3 : runFuel s2StringBodyCalls 2 s2StringBodyBody
+      (stateAt (s2StringBodyWhileCondEnv (s2StringBodyEntryOut env s.next base p nxp)
+        (BitVec.ofNat 64 j0) nxp)
+        { s with next := s.next + (Ty.int 64).sizeBytes, pc := "if.then9", pre := some "while.cond.preheader" }) =
       some (.ret (some (.int 32 0x00000001#32))
         (writeBytes s.mem outn (natToBytes len.toNat 8))) :=
-    s2StringBodyIfThen_finishes (env := s2StringBodyEntryOut env s.next base p j0 nxp)
-      (s := { s with next := s.next + (Ty.int 64).sizeBytes, pc := "if.then", pre := some s.pc })
-      rfl (by s2_lk) (by s2_lk)
-  exact runFuel_prefix_some (fun k => runFuel_jump_prefix h1 k) h2
+    s2StringBodyIfThen9_finishes
+      (env := s2StringBodyWhileCondEnv (s2StringBodyEntryOut env s.next base p nxp)
+        (BitVec.ofNat 64 j0) nxp)
+      (s := { s with next := s.next + (Ty.int 64).sizeBytes, pc := "if.then9", pre := some "while.cond.preheader" })
+      rfl (by s2_lk) (by s2_lk) (by s2_lk)
+  have h12 : ∀ k, runFuel s2StringBodyCalls (2 + k) s2StringBodyBody (stateAt env s) =
+      runFuel s2StringBodyCalls k s2StringBodyBody
+        (stateAt (s2StringBodyWhileCondEnv (s2StringBodyEntryOut env s.next base p nxp)
+          (BitVec.ofNat 64 j0) nxp)
+          { s with next := s.next + (Ty.int 64).sizeBytes, pc := "if.then9", pre := some "while.cond.preheader" }) := by
+    have h := runFuel_prefix_trans h1 h2
+    intro k
+    simpa [show 2 + k = 1 + (1 + k) from by omega] using h k
+  simpa using runFuel_prefix_some h12 h3
 
 /-- **The scan stage**: from the seated head, the scan reaches an exit — the block it
 lefts for, the word it leaves, and the prefix of fuel `(N + 1) * 2`.  The existential
@@ -732,8 +745,8 @@ No caller's register is among them, which is what lets the exit's continuation r
 the entry's argument cells through the prepended ones. -/
 def s2StringBodyScanNames : List String :=
   ["%ei", "%0", "%sub.ptr.lhs.cast", "%sub.ptr.rhs.cast", "%sub.ptr.sub",
-   "%xj.promoted", "%cmp3", "%cmp1", "%conv", "%1", "%arrayidx", "%inc24",
-   "%inc", "%exitcond.not"]
+   "%tobool.not", "%xj.promoted", "%cmp3", "%cmp1", "%conv", "%1", "%arrayidx",
+   "%inc24", "%inc", "%exitcond.not"]
 
 /-- **The environment a scan state carries** is the caller's with the body's own
 cells in front, and every one of those cells is the body's own name.  This is a
@@ -831,7 +844,7 @@ def s2StringBodyScanExitWordP (mem0 : Mem) (xj j0 : Nat) (ps : List Nat)
     lookupName e.env "%nxp" = some (.int 64 (BitVec.ofNat 64 N)) ∧
     -- the exit's block decides which way the scan stopped, so each arm reads its
     -- own case directly
-    (e.pc = "if.then" → c = N) ∧
+    (e.pc = "if.then9" → c = N) ∧
     (e.pc = "land.lhs.true" → ∃ q conv, ps[c]? = some q ∧ pos0 ≤ q ∧
       lookupName e.env "%conv" = some (.int 64 conv) ∧ conv.toNat = q)
 
@@ -966,7 +979,7 @@ theorem s2StringBodyScan_step_exitP (mem0 : Mem) (xj pos0 xp N j0 : Nat)
             (BitVec.ofNat 64 N))) ::
           ("%inc", .int 64 ((BitVec.ofNat 64 c) + 1#64)) ::
           s2StringBodyLandRhsEnv s.env (BitVec.ofNat 64 c) xp bs (BitVec.ofNat 64 pos0))
-        ({ s with mem := writeBytes s.mem xj (natToBytes ((BitVec.ofNat 64 c) + 1#64).toNat 8), pc := "if.then", pre := some "while.body" })
+        ({ s with mem := writeBytes s.mem xj (natToBytes ((BitVec.ofNat 64 c) + 1#64).toNat 8), pc := "if.then9", pre := some "while.body" })
     obtain ⟨hei', hsub', hxp', hxj', hnxp'⟩ := by
       simpa only [e, stateAt] using
         s2StringBodyScan_lookup_iterate (inc24 := BitVec.ofNat 64 c)
@@ -1193,27 +1206,26 @@ theorem s2StringBodyScanInvP_seat (env : Env) (s : State) (base p xj xp j0 : Nat
     (hxjc : lookupName env "%xj" = some (.ptr xj))
     (hnxpc : lookupName env "%nxp" = some (.int 64 nxp)) :
     s2StringBodyScanInvP s.mem xj (p - base) xp nxp.toNat j0 ps env s.next
-      (nxp.toNat - j0)
-      (stateAt (s2StringBodyEntryOut env s.next base p j0 nxp)
-        { s with next := s.next + (Ty.int 64).sizeBytes, pc := "land.rhs", pre := some s.pc })
-      j0 := by
-  refine ⟨s2StringBodyScanInv_seat env s base p xj xp j0 ps nxp hpc hbase hp64 hword hps
+      (nxp.toNat - j0) (s2StringBodyHeadState env s base p j0 nxp) j0 := by
+  refine ⟨s2StringBodyScanInv_seat env s base p xj xp j0 ps nxp hbase hp64 hword hps
     hj0 hxpc hxjc hnxpc, s2StringBodyScanPrefix_self ps (p - base) j0, ?_, ?_⟩
-  · refine ⟨s2StringBodyEntryOut [] s.next base p j0 nxp, ?_, ?_⟩
-    · simp only [stateAt, s2StringBodyEntryOut, s2StringBodyEnv7, s2StringBodyEnv6,
-        s2StringBodyEnv5, s2StringBodyEnv4, s2StringBodyEnv3, s2StringBodyEnv2,
-        s2StringBodyEnv1, List.cons_append, List.nil_append]
+  · refine ⟨s2StringBodyWhileCondEnv (s2StringBodyEntryOut [] s.next base p nxp)
+      (BitVec.ofNat 64 j0) nxp, ?_, ?_⟩
+    · simp only [stateAt, s2StringBodyHeadState, s2StringBodyWhileCondEnv,
+        s2StringBodyEntryOut, s2StringBodyEnv6, s2StringBodyEnv5, s2StringBodyEnv4,
+        s2StringBodyEnv3, s2StringBodyEnv2, s2StringBodyEnv1, List.cons_append,
+        List.nil_append]
     · intro name w hw
-      simp only [s2StringBodyEntryOut, s2StringBodyEnv7, s2StringBodyEnv6,
+      simp only [s2StringBodyWhileCondEnv, s2StringBodyEntryOut, s2StringBodyEnv6,
         s2StringBodyEnv5, s2StringBodyEnv4, s2StringBodyEnv3, s2StringBodyEnv2,
         s2StringBodyEnv1, List.mem_cons, List.not_mem_nil, or_false,
         Prod.mk.injEq] at hw
       obtain ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ |
-        ⟨rfl, -⟩ := hw <;> simp [s2StringBodyScanNames]
+        ⟨rfl, -⟩ | ⟨rfl, -⟩ := hw <;> simp [s2StringBodyScanNames]
   · -- `%ei` is the entry's own cell, over the caller's environment
-    simp only [stateAt, s2StringBodyEntryOut, s2StringBodyEnv7, s2StringBodyEnv6,
-      s2StringBodyEnv5, s2StringBodyEnv4, s2StringBodyEnv3, s2StringBodyEnv2,
-      s2StringBodyEnv1]
+    simp only [stateAt, s2StringBodyHeadState, s2StringBodyWhileCondEnv,
+      s2StringBodyEntryOut, s2StringBodyEnv6, s2StringBodyEnv5, s2StringBodyEnv4,
+      s2StringBodyEnv3, s2StringBodyEnv2, s2StringBodyEnv1]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
     rw [lookupName_cons_self]
 
@@ -1275,14 +1287,14 @@ theorem s2StringBodyExit_decoded_named {e : State} {sub len conv : BitVec 64}
     (houtn : lookupName e.env "%outn" = some (.ptr outn))
     (hextra : extra = s2StringBodyExpandMem e.mem ei dst xj out outj)
     (hcall : call = BitVec.ofNat 64 out.length) (hlenOut : out.length < 2 ^ 64) :
-    runFuel s2StringBodyCalls 5 s2StringBodyBody e =
+    runFuel s2StringBodyCalls 4 s2StringBodyBody e =
       some (.ret (some (.int 32 0x00000002#32))
         (writeBytes (s2StringBodyExpandMem e.mem ei dst xj out outj) outn
           (natToBytes out.length 8))) := by
   have htoNat : (BitVec.ofNat 64 out.length).toNat = out.length := by
     rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hlenOut]
   have hstep := s2StringBodyExit_decoded (e := e) hpc hsub hlen hconv hbit7 hp hdst hei
-    hxp hxj hnxp hexp hbit9 houtn
+    hxp hxj hnxp hexp hbit9 houtn hei
   rw [hcall, htoNat, hextra] at hstep
   exact hstep
 

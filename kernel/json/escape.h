@@ -1,18 +1,20 @@
-/* escape.h -- the escape-position list and the list-driven escape expander.
+/* escape.h -- the escape-position list, the list-driven expander and the
+   list-free decoder.
 
-   Two stages of the measured SIMD JSON pipeline, each hoisted to its own
-   entry point.  The list is stage 1's: for every byte inside a string that is
-   either a control byte or the first backslash of a run, its document
-   position.  The expander is stage 2's list-driven decoder: a string body, its
-   document offset, and the document's position list become the decoded body.
+   Three entry points of the measured SIMD JSON pipeline.  The list is stage
+   1's: for every byte inside a string that is either a control byte or the
+   first backslash of a run, its document position.  The expander is stage 2's
+   list-driven decoder: a string body, its document offset, and the document's
+   position list become the decoded body.  The list-free decoder is the same
+   body pass with no list: it finds the special bytes in the body's own span,
+   so a stage 1 that emits no positions is still decoded and still validated.
 
-   Neither entry point computes the per-document gate.  Whether a document gets
-   a list at all is the measured density probe's decision
-   (`kernel/json/measured/dens.h`), and it is an **arm selector**: it answers
-   PLAIN for documents that do carry escapes (seven of the route's twenty-one
-   rows do), so an absent list is not a claim that the document has no escape.
-   The caller passes the arm it selected; this unit has one shape of list and
-   states it once.
+   Neither list entry point computes the per-document gate.  Whether a document
+   gets a list at all is the caller's policy, and it is an **arm selector**: the
+   measured density probe answers PLAIN for documents that do carry escapes
+   (seven of the route's twenty-one rows do), so an absent list is not a claim
+   that the document has no escape.  The caller passes the arm it selected;
+   this unit has one shape of list and states it once.
 
    ## `leanllvm_json_escape_list`
 
@@ -105,7 +107,24 @@
        stores, so an overlapping destination changes both operands; nothing here
        claims what happens when they overlap.
 
-   See README.md for the unit's provenance, its limits and its identity arms. */
+   See README.md for the unit's provenance, its limits and its identity arms.
+
+   ## `leanllvm_json_escape_decode`
+
+   The list-free body decoder: `usdec.h`'s `us_dec_kernel` at the measured
+   defaults.  `b .. b+n-1` is the body and the return is the number of bytes
+   written at `dst`, or `~0ULL` when the body holds a control byte or a
+   malformed escape, with `*err` then the body-relative offset.  It scans the
+   body for the special bytes itself, so it needs no stage-1 output and no
+   cursor; `n == 0` returns 0.
+
+   The caller's obligations are the expander's, minus the list: `b + n .. b + n
+   + 31` is readable, `dst` has 64 writable bytes past the decoded extent, and
+   `dst` does not overlap `b`.  Because the decoder writes every byte of the
+   body (it is not a span form), `dst` needs the body's length plus that slack.
+   A caller that wants a plain body's zero-copy span form classifies it first
+   (stage 2's `z_scan`) and calls this entry only for a body whose first special
+   byte is a backslash. */
 #ifndef LEANLLVM_KERNEL_JSON_ESCAPE_H
 #define LEANLLVM_KERNEL_JSON_ESCAPE_H
 
@@ -118,5 +137,8 @@ void leanllvm_json_escape_list(uint64_t bs, uint64_t ctl, uint64_t im,
 uint64_t leanllvm_json_escape_expand(const uint8_t *b, uint64_t n, uint8_t *dst,
                                      uint64_t *err, const uint32_t *xp,
                                      uint64_t *xj, uint64_t nxp, uint64_t pos0);
+
+uint64_t leanllvm_json_escape_decode(const uint8_t *b, uint64_t n, uint8_t *dst,
+                                     uint64_t *err);
 
 #endif

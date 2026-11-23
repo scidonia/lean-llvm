@@ -88,6 +88,10 @@ refusal (`stage2.h:21-24`).
 * **the escape-position list** — `stage2.h:58-60`: `xp` with count `nxp`, read by
   the decoder through `4 * nxp` bytes, so `HasBytes mem xp (4 * nxp)`.  A
   document with no escapes passes `nxp = 0`, which this admits (`4 * 0 = 0`).
+  The shipping arm passes `nxp = 0` on **every** document, escapes or not: stage 2
+  then classifies each string body by scanning its own span (`s2_string_body`'s
+  no-list arm) and calls the escape unit's list-free entry point, so the list
+  clause is met by the empty region and nothing below reads `xp`.
   **The list's contents are deliberately not stated here.**  What the decoder
   needs of a list is that its entries inside a body's window are that body's
   escape positions (`Γ_escape_expand.pre`'s

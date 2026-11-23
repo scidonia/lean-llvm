@@ -495,9 +495,11 @@ end EventRecord
 the escaped body's decoder writes at `dst` and the walk advances `z->alen` by the
 decoded length.  `arenaAppend` is that step: the reserve check at the body's own
 length plus the slack, the decoder's `on` bytes at the cursor, and the cursor
-advanced.  The decoder is a call (`leanllvm_json_escape_expand`), so its write is
-the caller's `bs` parameter with `on = bs.length`, and `on ≤ len` is the escape
-unit's own post — the decoded form is never longer than its input. -/
+advanced.  The decoder is one of the escape unit's two entry points —
+`leanllvm_json_escape_expand` when the walk was given a stage-1 list and
+`leanllvm_json_escape_decode` when it was not — so its write is the caller's
+`bs` parameter with `on = bs.length`, and `on ≤ len` is the escape unit's own
+post — the decoded form is never longer than its input. -/
 
 /-- One escaped body's arena step: the reserve at `len + 64`, `on` bytes written
 at the cursor, and the cursor advanced by `on`.  `none` is the reserve's fault,
@@ -2805,31 +2807,69 @@ The cursor write back is the global index `j1 + k` the body's pointer would hold
 `j1` is where the scan left it.  A call that resumes *inside* a body is outside
 this model — the walk never does, because `xj` is carried across bodies, not
 restarted within one — and the `pre` of the escape unit states that restriction
-for the same reason. -/
+for the same reason.
+
+With no list (`nxp = 0`) the body classifies itself, as `s2_string_body`'s second
+arm does: the first control byte or backslash of its own span decides the form.  A
+control byte refuses at its own offset; a backslash copies the plain prefix and
+hands the suffix to the list-free decoder (`escapeDecodeSpan`), whose answer is
+`us_dec_span`'s.  No cursor moves on this arm, because there is no list to walk. -/
 def stage2StringBody (mem : Mem) (c p len dst outn xp xj nxp : Nat) :
     Option (Mem × Nat × List UInt8) :=
-  match stage2ReadWord mem c 8, stage2ReadWord mem xj 8, readLanes32 mem xp nxp with
-  | some base, some j0, some ps =>
+  match stage2ReadWord mem c 8 with
+  | none => none
+  | some base =>
       let pos0 := p - base
-      let j1 := j0 + ((ps.drop j0).takeWhile (fun q => q < pos0)).length
-      let inBody := (ps.drop j1).takeWhile (fun q => q < pos0 + len)
-      if inBody.isEmpty then
-        some (writeBytes (writeBytes mem xj (wordBytes 8 j1)) outn (wordBytes 8 len), 1, [])
-      else
+      if nxp = 0 then
+        -- No stage-1 list: scan the body's own span (`z_scan`).
         match readBytes mem p len with
         | none => none
         | some body =>
-            match escapeDecodeGo body 0 0 (inBody.map (fun q => q - pos0)) [] with
-            | .decoded out k =>
-                some (writeBytes
-                        (writeBytes (writeBytes mem dst out) xj (wordBytes 8 (j1 + k)))
-                        outn (wordBytes 8 out.length), 2, wordBytes 8 out.length)
-            | .refused off k =>
-                match stage2ReadWord mem (c + 1112) 8 with
-                | some e => some (writeBytes (stage2ErrSetMsg mem e (pos0 + off) 0)
-                                   xj (wordBytes 8 (j1 + k)), 0, wordBytes 8 off)
-                | none => none
-  | _, _, _ => none
+            match firstSpanSpecial? body 0 with
+            | none =>
+                some (writeBytes mem outn (wordBytes 8 len), 1, [])
+            | some (off, b) =>
+                if b.toNat < 0x20 then
+                  match stage2ReadWord mem (c + 1112) 8 with
+                  | some e =>
+                      some (stage2ErrSetMsg mem e (pos0 + off) 0, 0, [])
+                  | none => none
+                else
+                  -- The first special byte is a backslash: decode the suffix.
+                  match escapeDecodeSpan (body.drop off) with
+                  | .decoded out _ =>
+                      let dec := body.take off ++ out
+                      some (writeBytes (writeBytes mem dst dec) outn
+                              (wordBytes 8 dec.length), 2, wordBytes 8 0)
+                  | .refused rel _ =>
+                      match stage2ReadWord mem (c + 1112) 8 with
+                      | some e =>
+                          some (stage2ErrSetMsg mem e (pos0 + off + rel) 0, 0,
+                            wordBytes 8 rel)
+                      | none => none
+      else
+        match stage2ReadWord mem xj 8, readLanes32 mem xp nxp with
+        | some j0, some ps =>
+            let j1 := j0 + ((ps.drop j0).takeWhile (fun q => q < pos0)).length
+            let inBody := (ps.drop j1).takeWhile (fun q => q < pos0 + len)
+            if inBody.isEmpty then
+              some (writeBytes (writeBytes mem xj (wordBytes 8 j1)) outn
+                      (wordBytes 8 len), 1, [])
+            else
+              match readBytes mem p len with
+              | none => none
+              | some body =>
+                  match escapeDecodeGo body 0 0 (inBody.map (fun q => q - pos0)) [] with
+                  | .decoded out k =>
+                      some (writeBytes
+                              (writeBytes (writeBytes mem dst out) xj (wordBytes 8 (j1 + k)))
+                              outn (wordBytes 8 out.length), 2, wordBytes 8 out.length)
+                  | .refused off k =>
+                      match stage2ReadWord mem (c + 1112) 8 with
+                      | some e => some (writeBytes (stage2ErrSetMsg mem e (pos0 + off) 0)
+                                         xj (wordBytes 8 (j1 + k)), 0, wordBytes 8 off)
+                      | none => none
+        | _, _ => none
 
 /-- **`s2_string_body`** at the emitted call's eight arguments. -/
 def stage2StringBodyCall (args : List Value) (mem : Mem) (next : Nat) : Option CallOutcome :=
@@ -3043,8 +3083,9 @@ theorem stage2AfterValue_answers (mem : Mem) (sp rd ct cs : Nat)
   simp only [stage2AfterValue, if_neg hsp, hc]
   exact ⟨_, rfl⟩
 
-/-- **`s2_string_body` answers when its cursor, list and body are staged**; which
-form it takes depends on the list, but every branch the model has is `some`. -/
+/-- **`s2_string_body` answers when its cursor, list, body and refusal slot are
+staged**; which form it takes depends on the list and the body, but every branch
+the model has is `some`. -/
 theorem stage2StringBody_answers (mem : Mem) (c p len dst outn xp xj nxp : Nat)
     {base j0 e : Nat} {ps : List Nat} {body : List UInt8}
     (hb : stage2ReadWord mem c 8 = some base)
@@ -3053,9 +3094,29 @@ theorem stage2StringBody_answers (mem : Mem) (c p len dst outn xp xj nxp : Nat)
     (hbody : readBytes mem p len = some body)
     (herr : stage2ReadWord mem (c + 1112) 8 = some e) :
     ∃ r, stage2StringBody mem c p len dst outn xp xj nxp = some r := by
-  simp only [stage2StringBody, hb, hj, hp, hbody, herr]
-  repeat' split
-  all_goals exact ⟨_, rfl⟩
+  unfold stage2StringBody
+  dsimp only
+  simp only [hb]
+  split
+  · simp only [hbody]
+    split
+    · exact ⟨_, rfl⟩
+    · rename_i off b hfind
+      split
+      · simp only [herr]
+        exact ⟨_, rfl⟩
+      · split
+        · exact ⟨_, rfl⟩
+        · simp only [herr]
+          exact ⟨_, rfl⟩
+  · simp only [hj, hp]
+    split
+    · exact ⟨_, rfl⟩
+    · simp only [hbody]
+      split
+      · exact ⟨_, rfl⟩
+      · simp only [herr]
+        exact ⟨_, rfl⟩
 
 /-- **`num_fast_el1` answers when its lexeme is staged.** -/
 theorem stage2NumFast_answers (p : Nat) (n : BitVec 64) (out err : Nat)

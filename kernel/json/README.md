@@ -109,12 +109,12 @@ utf8-stage-end: /* end: copied stage statements */
 utf8-rename: s1f_u8_ungated ungated
 utf8-extra: leanllvm_json_utf8
 utf8-permutation: KLCARRY kl_carry_init kl_err32 kl_err_vec kl_block_vec kl_block kl_block_ld kl_carry_prefix
-escape-entities: xlist:xl_lanes xlist:xl_batch xlist:xl_emit_batch usdec:US_FAIL usdec:us_hex4_pshufb usdec:us_hex4 usdec:us_emit usdec:us_esc_u usdec:us_esc usdec:us_run usdec:us_run_long usdec:us_dec_x uj:UJ_UNESC uj:uj_enc_word
+escape-entities: xlist:xl_lanes xlist:xl_batch xlist:xl_emit_batch usdec:US_FAIL usdec:us_special32 usdec:us_hex4_pshufb usdec:us_hex4 usdec:us_emit usdec:us_esc_u usdec:us_esc usdec:us_run usdec:us_run_long usdec:us_dec_x uj:UJ_UNESC uj:uj_enc_word
 escape-delete: usdec:288 usdec:293-304 usdec:334-375 usdec:387 usdec:399-403 usdec:407-410 usdec:275 usdec:277-279 usdec:862-868 usdec:876-878 usdec:879 usdec:881 usdec:883-885 usdec:891-893 usdec:898 usdec:906 usdec:909 usdec:911 usdec:913
-escape-extra: xl_emit leanllvm_json_escape_list leanllvm_json_escape_expand
-stage2-entities: s2port:S2_VAL s2port:S2_STR s2port:S2_EV s2port:s2_init s2port:s2_value_pos s2port:s2_after_value s2port:s2_string_touch s2port:s2_walk p16:IXP@106 p16:NUMF_SLOW p16:num_fast p16:od_fail p16:touch_bytes p16:touch_u64 p16:od_gap_recover p16:od_scalar_value p6:PRIME p6:err_set p6:out_init p6:hup p6:out_raw p6:out_tag p6:out_u64 p6:dbits p6:is_ws p6:lit_check p6:num_scan p6:MAXD strz:z_init numf1:NUMF_SIMD numf1:NUMF_EL1_POW10 numf1:NUMF_EL1_P10 numf1:num_d8_el1 numf1:num_fast_el1@60 numel_el:EL_ENTRY@61 numel_el:EL_MASK numel_el:EL_HALF numel_el:el_pack numel_el:el_exact numel_el:num_el_el1 epow:EPOW epow:EPOW_MIN epow:EPOW_MAX usdec:US_SLACK
+escape-extra: xl_emit leanllvm_json_escape_list leanllvm_json_escape_expand leanllvm_json_escape_decode us_dec_span
+stage2-entities: s2port:S2_VAL s2port:S2_STR s2port:S2_EV s2port:s2_init s2port:s2_value_pos s2port:s2_after_value s2port:s2_string_touch p16:IXP@106 p16:NUMF_SLOW p16:num_fast p16:od_fail p16:touch_bytes p16:touch_u64 p16:od_gap_recover p16:od_scalar_value p6:PRIME p6:err_set p6:out_init p6:hup p6:out_raw p6:out_tag p6:out_u64 p6:dbits p6:is_ws p6:lit_check p6:num_scan p6:MAXD strz:z_init numf1:NUMF_SIMD numf1:NUMF_EL1_POW10 numf1:NUMF_EL1_P10 numf1:num_d8_el1 numf1:num_fast_el1@60 numel_el:EL_ENTRY@61 numel_el:EL_MASK numel_el:EL_HALF numel_el:el_pack numel_el:el_exact numel_el:num_el_el1 epow:EPOW epow:EPOW_MIN epow:EPOW_MAX usdec:US_SLACK
 stage2-delete: s2port:438 s2port:442 s2port:444-488 s2port:494-521 s2port:580 s2port:582 s2port:608 s2port:611-614 s2port:650-652 s2port:654 s2port:701
-stage2-extra: leanllvm_json_stage2 s2_string_body z_arena_reserve out_reserve p6:to_double
+stage2-extra: leanllvm_json_stage2 s2_string_body s2_walk z_scan z_arena_reserve out_reserve p6:to_double
 <!-- identity-list:end -->
 
 The four deletions are the two conditional arms inside `s1f_masks`, resolved to
@@ -132,6 +132,32 @@ block-loop macro, `xlist` for the table and its initialiser); `entry-delete:`
 names the lines dropped from them; `entry-extra:` names the definitions the unit
 carries that are not measured text; and `entry-xl-exempt:` is the exact set of
 `xl_` identifiers the unit's own text may name.
+
+The **stage-2 rows** are the same two lists for `kernel/json/stage2.c`.
+`stage2-extra:` names every definition the unit carries that the measured files
+do not: the ABI wrapper and body (`leanllvm_json_stage2`, `s2_string_body`), the
+arena and stream growth (`z_arena_reserve`, `out_reserve`), the unit's own
+`to_double` (which is not the measured `p6.c` function), and two entities that
+*depart from the measured text at a named point*:
+
+- **`s2_walk`** reports the opening quote at both unterminated-string `od_fail`
+  sites (commit `7451dcb`), where the measured `s2port.c` still passes `n`, the
+  document end.  The parser and `RefusalOffset` name the quote and every probe
+  document that reaches the fast path would otherwise report a wrong offset, so
+  the port deliberately leaves the measured text here.  Both sites are recorded
+  in this paragraph because the arm cannot compare an entity it carries as unit
+  text; a reader checking the walk's fidelity finds the two operands named rather
+  than a silent diff.
+- **`z_scan`** takes `(p, n)` where the measured `strz.c` takes
+  `(p, n, int *is_bs)`.  Its classification is unchanged — the caller reads the
+  returned byte (`p[off] == '\\'`) for the same predicate the out-parameter
+  carried — and the single return value is what lets the body allocate and touch
+  exactly the one eight-byte slot its contract and the walk's staging name.  The
+  scan writes no state, so nothing but that slot can observe the difference.
+
+The comparison is not weakened for any other definition: every entity on
+`stage2-entities:` is still compared token for token, and an entity added to the
+unit without a row fails the reverse check.
 
 The `utf8-` rows are the **UTF-8 unit's**, and the UTF-8 section below reads
 them:
@@ -524,16 +550,19 @@ to be refused, while `dens_`, `S1F_`, `SP_` and `sp_` stay refused.
 
 ## The escape unit
 
-The escape unit is two measured stages under one ABI: the stage-1 escape-position
-list — the block's control and escape-start positions, appended to the caller's
-`uint32_t` stream — and the stage-2 list-driven expander, the decoder a string
-body is run through with the document's position list.  The list is
-`xlist.h`'s `xl_lanes` and `xl_emit_batch` under the unit's own `xl_emit`,
-whose positions and eight-entry batch are the measured `XL_EMIT=1` selection's
+The escape unit is two measured stages and one list-free arm under one ABI: the
+stage-1 escape-position list — the block's control and escape-start positions,
+appended to the caller's `uint32_t` stream — the stage-2 list-driven expander,
+the decoder a string body is run through with the document's position list, and
+the span decoder a list-free caller reaches instead.  The list is `xlist.h`'s
+`xl_lanes` and `xl_emit_batch` under the unit's own `xl_emit`, whose positions
+and eight-entry batch are the measured `XL_EMIT=1` selection's
 (`s1fuse.h:70-71`, selected by `S1F_XS=5`); the expander is `usdec.h`'s
-`us_dec_x` at `US_EMIT4=1`, with `UJ_UNESC` and `uj_enc_word` from `uj.c`.  The
+`us_dec_x` at `US_EMIT4=1`, with `UJ_UNESC` and `uj_enc_word` from `uj.c`; the
+span decoder is `usdec.h`'s `us_dec_kernel` at the measured defaults, which the
+measured configuration deleted because it selected the list-driven arm.  The
 unit is `kernel/json/escape.c`, and the identity arms compare the copied
-definitions and name the one exclusion.
+definitions and name the extras.
 
 ### The ABI
 
@@ -544,6 +573,8 @@ void leanllvm_json_escape_list(uint64_t bs, uint64_t ctl, uint64_t im,
 uint64_t leanllvm_json_escape_expand(const uint8_t *b, uint64_t n, uint8_t *dst,
                                      uint64_t *err, const uint32_t *xp,
                                      uint64_t *xj, uint64_t nxp, uint64_t pos0);
+uint64_t leanllvm_json_escape_decode(const uint8_t *b, uint64_t n, uint8_t *dst,
+                                     uint64_t *err);
 ```
 
 The list takes the classifier's **three words**, not bytes: lane `t` of `bs`,
@@ -560,6 +591,14 @@ The expander keeps `us_dec_x`'s measured eight-parameter signature and return.
 `b .. b+n-1` is the body, `pos0` its document offset, `*xj` the list cursor, and
 the return is the decoded length or `~0ULL` with `*err` the body-relative
 refusal offset.
+
+The list-free decoder takes the body alone: it scans the body's own span for
+its first control-or-backslash byte, validates and decodes from there, and
+returns the decoded length or `~0ULL` with `*err` the body-relative refusal
+offset.  It writes every byte of the body, so its `dst` needs the body's length
+plus the same 64-byte slack; a caller that wants the zero-copy span form for a
+plain body classifies it first (stage 2's `z_scan`) and calls this entry only
+when the first special byte is a backslash.
 
 ### The caller's obligations
 
@@ -592,7 +631,7 @@ Each is the measurement's, not the ABI's convenience:
 
 ### What is measured text, and what is not
 
-The fourteen definitions `escape-entities:` names are copied unchanged from
+The fifteen definitions `escape-entities:` names are copied unchanged from
 `xlist.h`, `usdec.h` and `uj.c`, with the arms the measured configuration does
 not take deleted by line, as `escape-delete:` records: the `us_emit` encoder
 arms, the branch-free `us_esc` arm, the `US_RUN2` and non-64 window forms of
@@ -610,49 +649,60 @@ lane off the word with one `pdep` and one `tzcnt` instead of the serial
 `ctz`/clear-lowest chain.  A word with more than eight set lanes keeps the
 measured `xl_emit_batch` for its tail, so only the inlined first batch is the
 unit's.  The exclusion is recorded by name (`escape-extra:`),
-`source-identity.sh` compares the other fourteen entities byte for byte, and
+`source-identity.sh` compares the other fifteen entities byte for byte, and
 `ir-identity.sh` replaces `xl_emit` in the measured side of the emitted-code
 comparison, exactly as `s1f_escaped` is replaced for the mask unit.  The list's
 behaviour is compared directly by `bench/paired.sh --unit escape`, which derives
 both sides' streams before the clock starts, and by
 `tests/json-escape/check.sh`.
 
-The other new text is the two ABI functions, the `US_XP_DIAG` default the
+The other new text is the three ABI functions, the `US_XP_DIAG` default the
 decoder's kept guard reads, the two attribute selectors the deleted conditional
 blocks left outside the extracted spans (`us_esc_u`'s inline form and
 `us_dec_x`'s `noinline`), and the includes — no measured token is renamed, and
-the expander keeps `us_dec_x`'s measured name and signature.  The bilateral
-check in `source-identity.sh` names the emitter and the two ABI definitions
-through `escape-extra:`.  That row is an **exemption, not a comparison**: the
-bilateral check asks the same question of an entity name and an extra name (is
-this definition listed?), but it token-compares only the entity rows, so moving
-a measured name into `escape-extra:` would stop comparing it.  Here the extras
-are exactly `xl_emit` and the two ABI functions, and `--arms-only` asserts both
-symbols with `nm`, so nothing measured is exempt.
+the expander keeps `us_dec_x`'s measured name and signature.  The list-free
+decoder is the measured `us_dec_kernel`'s selected text under the same
+deletion discipline, named `us_dec_span` in the unit; it is named through
+`escape-extra:` because the measured configuration deleted it with the rest of
+the list-free arm.  The `us_special32` mask it reads is an entity row and is
+compared byte for byte.
+The bilateral check in `source-identity.sh` names the emitter, the three ABI
+definitions and the list-free decoder through `escape-extra:`.  That row is an
+**exemption, not a comparison**: the bilateral check asks the same question of
+an entity name and an extra name (is this definition listed?), but it
+token-compares only the entity rows, so moving a measured name into
+`escape-extra:` would stop comparing it.  Here the extras are `xl_emit`, the
+three ABI functions, and the list-free decoder; the fifteen entity rows are
+still compared byte for byte, the list-free decoder's behaviour is compared
+by `probes/json/route/guard.sh`'s arm differential, and `--arms-only` asserts
+the three ABI symbols with `nm`.
 
 ### The arms
 
-`source-identity.sh --unit escape` diffs the fourteen entities' tokens with one
+`source-identity.sh --unit escape` diffs the fifteen entities' tokens with one
 numeral control; `--arms-only` compiles the unit standalone, runs a detector
 calibrated to refuse `dens_`/`S1F_`/`SP_`/`sp_` while accepting this unit's
 `xl_`/`us_`/`uj_` vocabulary (with a positive control that inserts a `dens_`
-name), and asserts exactly the two ABI symbols.  `ir-identity.sh --unit escape`
-lifts the two ABI functions and `us_dec_x` from the unit and from
+name), and asserts exactly the three ABI symbols.  `ir-identity.sh --unit escape`
+lifts the list and expander ABIs and `us_dec_x` from the unit and from
 `identity/escape_oracle.c` — the measured text with `xl_emit` replaced by the
 unit's own emitter in a substituted `xlist.h`, and the same wrapper bodies —
 and requires an empty `llvm-diff`, with two controls: a numeral in `xl_lanes`
 (which is inlined into the lifted body, where the batch's tail is a call on
-both sides) and the `pos0 + n` bound in `us_dec_x`.  `bench/paired.sh --unit
+both sides) and the `pos0 + n` bound in `us_dec_x`.  The list-free decoder is
+not lifted; its body has no measured wrapper under the selected configuration,
+and its equivalence is the arm differential's subject.  `bench/paired.sh --unit
 escape` times the extracted unit against that oracle in one binary and bounds
 every input except `arm:escapes-64`, which one block divides a fixed call and
 placement term by and which is therefore reported only as an observation; the
 summary names the bounded set, not "every input".
 
 Three things the bound does not say.  **The timing comparison includes placement**:
-the two objects' instruction text is identical — the identity arms check it and
-the objects' sizes match — so a difference this arm reports is where the code
-lands, not what it does, and a placement-driven difference is not a defect of
-the extraction.  **The claim is one-sided**: the extracted body is not slower
+the two lifted functions' instruction text is identical — the identity arms
+check it — so a difference this arm reports is where the code lands, not what
+it does, and a placement-driven difference is not a defect of the extraction.
+The unit object also carries the list-free decoder, so a whole-object size
+comparison is not the claim; the lifted text is.  **The claim is one-sided**: the extracted body is not slower
 than the measured one by more than 0.5 ns per block, `extracted − measured ≤
 +0.5`, so a row on the favourable side is not a regression; `paired-escape.c`
 reads the same one-sided bound and prints a favourable row as an observation.  Because the per-round spread can exceed the bound, a 15-round row
@@ -670,10 +720,12 @@ direction, and the choice is the user's.
 ### Limits
 
 1. **The per-document gate is not here.**  Whether a document gets a list at all
-   is the density probe's decision, and it is an arm selector, not a
-   presence test: seven of the route's twenty-one rows carry escapes the gate
-   suppresses.  The caller passes the arm; this unit never classifies a
-   document.
+   is the caller's policy, and it is an arm selector, not a presence test:
+   seven of the route's twenty-one rows carry escapes a density gate would
+   suppress.  The caller passes the arm; this unit never classifies a
+   document.  The shipping policy passes no list (`nxp == 0`), so stage 2
+   reaches `leanllvm_json_escape_decode` instead; the list half remains the
+   arm-2 input and its byte-exact path.
 2. **Outside `pre` the model and the measured code differ.**  Lean's subtraction
    truncates, so on a list that is not the document's positions the model copies
    nothing where the C underflows and faults; `pre` excludes exactly that input.
@@ -682,6 +734,10 @@ direction, and the choice is the user's.
    the count hold the emitter's stores, not positions.
 4. **No aliasing claim.**  The caller owns `xp`, `dst` and the document; nothing
    here states what happens if they overlap.
+5. **The list-free decoder writes the whole body.**  Unlike the span form of a
+   plain body, it has no "the input is the output" arm: `dst` needs the body's
+   length plus the 64-byte slack, and the caller's decision to use it is the
+   classification (a `z_scan` in stage 2), not this unit's.
 
 ## The assembled pipeline
 

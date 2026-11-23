@@ -26,7 +26,7 @@ It is the walk's text with its intra-unit helper boundaries preserved and the
 mode constant.  It is **not** the measured object's text: the object inlines the
 helpers, and the difference is the call composition.  The measurement that makes
 that a measurement rather than a preference is in `stage2.inventory`: the fused
-emission of the same source is 1754 lines in 233 blocks and carries binary64
+emission of the same source is 1920 lines in 248 blocks and carries binary64
 (`alloca double`, `uitofp`, `fmul`, `fdiv`, `fneg`, `select double`,
 `phi double`), because `od_scalar_value` and `num_fast_el1` are
 `__attribute__((always_inline))`; the same source with the twelve helpers

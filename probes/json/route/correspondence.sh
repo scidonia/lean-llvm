@@ -19,11 +19,11 @@
 #     token matches, `-O2` against `-O3`, ignoring the output-mode flags, the
 #     include path and the naming flag;
 #   - the source transform is the one `capture-stage2.sh` describes: two
-#     `always_inline` occurrences (the comment's and `s2_walk`'s) and eleven
+#     `always_inline` occurrences (the comment's and `s2_walk`'s) and twelve
 #     `noinline` helpers;
 #   - `-fno-discard-value-names` changes no instruction at the route's own flag
 #     line, measured with and without it;
-#   - the eleven helpers are calls in the transformed emission and in the
+#   - the twelve helpers are calls in the transformed emission and in the
 #     committed fixture, and no calls at all in the untransformed emission at
 #     either level, so the gap between the fixture and the object is the
 #     transform's call composition and not the optimisation level.
@@ -147,24 +147,33 @@ sed -e 's/__attribute__((always_inline)) static inline/__attribute__((noinline))
     -e 's/#define EL_ENTRY __attribute__((always_inline)) static inline/#define EL_ENTRY __attribute__((noinline)) static inline/' \
     "$stage2" >"$work/step1.c"
 
-awk '{ if (hold) { print "__attribute__((always_inline)) static inline uint64_t"; hold = 0 }
-       if ($0 == "__attribute__((noinline)) static inline uint64_t") { hold = 1; next }
-       print }
-     END { if (hold) exit 1 }' "$work/step1.c" >"$work/noinline.c" ||
+# Restore the attribute on `s2_walk` alone.  The function is named, not matched
+# by its return type: `z_scan` has the same one-line header, and restoring every
+# `static inline uint64_t` would leave it inlined.
+awk '
+  $0 == "__attribute__((noinline)) static inline uint64_t" {
+    attr = $0
+    if ((getline nxt) <= 0) { print attr; exit 1 }
+    if (nxt ~ /^s2_walk\(/) { print "__attribute__((always_inline)) static inline uint64_t" }
+    else { print attr }
+    print nxt
+    next
+  }
+  { print }' "$work/step1.c" >"$work/noinline.c" ||
   fail "the s2_walk attribute was not restored"
 
 n_al=$(grep -c 'always_inline' "$work/noinline.c" || true)
 n_ni=$(grep -c '__attribute__((noinline))' "$work/noinline.c" || true)
 [ "$n_al" -eq 2 ] ||
   fail "the transformed source carries $n_al 'always_inline' occurrences, not 2"
-# Twelve occurrences: eleven function definitions and the `EL_ENTRY` macro line.
-[ "$n_ni" -eq 12 ] ||
-  fail "the transformed source carries $n_ni 'noinline' occurrences, not 12"
+# Thirteen occurrences: twelve function definitions and the `EL_ENTRY` macro line.
+[ "$n_ni" -eq 13 ] ||
+  fail "the transformed source carries $n_ni 'noinline' occurrences, not 13"
 grep -A1 '^__attribute__((always_inline)) static inline uint64_t$' "$work/noinline.c" |
   grep -q '^s2_walk(' ||
   fail "the one forced-inline function is not s2_walk"
 
-# The eleven functions the transform takes out of line.  A `#` line is skipped
+# The twelve functions the transform takes out of line.  A `#` line is skipped
 # rather than joined: the `EL_ENTRY` macro carries the attribute too but is not
 # a function, and a continued `static inline void` header's name is on the next
 # line.
@@ -180,8 +189,8 @@ awk '/__attribute__\(\(noinline\)\)/ {
        if (match(line, /[A-Za-z_][A-Za-z0-9_]*\(/))
          print substr(line, RSTART, RLENGTH - 1)
      }' "$work/noinline.c" | sort -u >"$work/helpers"
-[ "$(wc -l <"$work/helpers" | tr -d ' ')" -eq 11 ] ||
-  fail "read a helper list that is not eleven function names: $(paste -sd' ' "$work/helpers")"
+[ "$(wc -l <"$work/helpers" | tr -d ' ')" -eq 12 ] ||
+  fail "read a helper list that is not twelve function names: $(paste -sd' ' "$work/helpers")"
 
 # ---------------------------------------------------------------------------
 # The emissions
@@ -269,7 +278,7 @@ fused_o2_calls=$(count_calls "$work/fused-o2.ll" "$work/helpers")
 fused_o3_calls=$(count_calls "$work/fused-o3.ll" "$work/helpers")
 
 [ "$fixture_calls" -gt 0 ] ||
-  fail "the committed fixture has no call to any of the eleven helpers; the noinline transform is not the fixture's"
+  fail "the committed fixture has no call to any of the twelve helpers; the noinline transform is not the fixture's"
 [ "$o2_calls" -eq "$fixture_calls" ] ||
   fail "the transformed -O2 emission has $o2_calls helper call(s), the fixture has $fixture_calls"
 [ "$o3_calls" -eq "$fixture_calls" ] ||
@@ -337,7 +346,7 @@ display_flags() { # <flags>
 printf '## The two artifact paths\n\n'
 printf '| | flags | source | derivation |\n'
 printf '|---|---|---|---|\n'
-printf '| the proofs'"'"' body (`probes/install/ir/stage2.candidate.ll`) | `%s` | `kernel/json/stage2.c`, `noinline` on eleven helpers, `s2_walk` forced inline | `opt -passes=lower-switch`, the recorded token strip, the local names pinned to the fixture'"'"'s spelling, eight staging allocas flattened to parameters, callees reduced to declarations |\n' "$(printf '%s' "$capture_flags" | sed 's/  */ /g')"
+printf '| the proofs'"'"' body (`probes/install/ir/stage2.candidate.ll`) | `%s` | `kernel/json/stage2.c`, `noinline` on twelve helpers, `s2_walk` forced inline | `opt -passes=lower-switch`, the recorded token strip, the local names pinned to the fixture'"'"'s spelling, eight staging allocas flattened to parameters, callees reduced to declarations |\n' "$(printf '%s' "$capture_flags" | sed 's/  */ /g')"
 printf '| the route'"'"'s object (`probes/json/route/build.sh`) | `%s` | the same file, untransformed | none: `clang -c` |\n\n' "$(display_flags "$build_flags" | sed 's/  */ /g')"
 
 printf '## The flag relation\n\n'
@@ -350,7 +359,7 @@ printf 'The naming flag changes no instruction at the route'"'"'s own -O2 line: 
 
 printf '## The normalisation steps\n\n'
 cat <<'EOF'
-The fixture is derived, not transcribed.  In order: (1) the source transform above, whose counts are two `always_inline` occurrences (the comment's and `s2_walk`'s) and eleven `noinline` helper functions, plus the `EL_ENTRY` macro line; (2) `opt -passes=lower-switch`; (3) the token strip, by the classes `capture-stage2.sh` records in `stage2.strip.tsv`; (4) the local-name pin, which renames the emission's registers and block labels to the fixture's spelling (`stage2.rewrites.tsv` class r8); (5) the eight staging allocas `%d.i %c.i %ctype.i %cst.i %t352.i %s %z %e` appended as `ptr` parameters (`stage2.staging.tsv`); (6) the three instruction rewrites and the callee definitions replaced by declarations (`stage2.rewrites.tsv`).  The comparison below applies steps (1)–(3) to both emissions and then replaces every virtual register with one placeholder and drops block labels, so the two texts are compared instruction by instruction.
+The fixture is derived, not transcribed.  In order: (1) the source transform above, whose counts are two `always_inline` occurrences (the comment's and `s2_walk`'s) and twelve `noinline` helper functions, plus the `EL_ENTRY` macro line; (2) `opt -passes=lower-switch`; (3) the token strip, by the classes `capture-stage2.sh` records in `stage2.strip.tsv`; (4) the local-name pin, which renames the emission's registers and block labels to the fixture's spelling (`stage2.rewrites.tsv` class r8); (5) the eight staging allocas `%d.i %c.i %ctype.i %cst.i %t352.i %s %z %e` appended as `ptr` parameters (`stage2.staging.tsv`); (6) the three instruction rewrites and the callee definitions replaced by declarations (`stage2.rewrites.tsv`).  The comparison below applies steps (1)–(3) to both emissions and then replaces every virtual register with one placeholder and drops block labels, so the two texts are compared instruction by instruction.
 
 EOF
 cat <<'EOF'
@@ -367,7 +376,7 @@ and the capture refuses a stale, colliding or non-injective entry.
 EOF
 
 printf '## What is identical, and what is not\n\n'
-printf 'The eleven helpers, as emitted under the transform at each level:\n\n'
+printf 'The twelve helpers, as emitted under the transform at each level:\n\n'
 printf -- '- identical after the normalisation (%s): `%s`\n' "${#identical[@]}" "$(printf '%s ' "${identical[@]}")"
 if [ "${#differing[@]}" -gt 0 ]; then
   printf -- '- differing (%s): `%s`\n' "${#differing[@]}" "$(printf '%s ' "${differing[@]}")"
@@ -390,7 +399,7 @@ printf '## The relation relied on, and its residual\n\n'
 printf 'The correspondence between the proof'"'"'s body and the route'"'"'s object is these five statements and no more:\n\n'
 printf '1. both artifacts are emitted from `kernel/json/stage2.c`; this is necessary and not sufficient, and it is all that the shared filename gives;\n'
 printf '2. their codegen flags differ in the optimisation level alone (`%s` against `%s`), measured above, and the naming flag is not an instruction change, measured above;\n' "$only_build" "$only_capture"
-printf '3. of the eleven helper bodies, %s are identical between the two levels under the transform after the recorded normalisation, %s differ, and %s are not emitted at either level; the walk'"'"'s body %s;\n' \
+printf '3. of the twelve helper bodies, %s are identical between the two levels under the transform after the recorded normalisation, %s differ, and %s are not emitted at either level; the walk'"'"'s body %s;\n' \
   "${#identical[@]}" "${#differing[@]}" "${#absent[@]}" "$walk"
 printf '4. the fixture keeps %s helper call site(s) where the untransformed emissions keep %s, so the object inlines every helper the fixture leaves out of line;\n' \
   "$fixture_calls" "$fused_o2_calls"

@@ -17,12 +17,13 @@ the shape the route actually calls it.
 
 Every variant must return the same verdict, `nk`, `nxp`, `ndst`, `nev`, `err`,
 and the same event and arena bytes as `site`; a variant that parses differently
-is a setup fault (exit 3), not a timing row.  The escape-list guard's two sides
-are checked from the route's own copy of the condition
-(`../route/escape_guard.h`): where the guard fires, arm 2's list must be empty
-and arm 0 must produce the identical result, and where it does not fire and
-arm 2's list is not empty, forcing arm 0 must change the result — a guard that
-never mattered cannot pass for one that does.  The manifest digests are checked
+is a setup fault (exit 3), not a timing row.  The escape-list arm's two sides
+are checked from the route's own copy of the guard condition
+(`../route/escape_guard.h`): arm 0 (no list; stage 2 rescans) must agree with
+arm 2 (the list) on every consumer-observable field, with arm 0's list count
+zero by construction, and where the guard fires arm 2's list must be empty.
+The comparison's liveness control is the defect build in
+`probes/json/route/guard.sh`.  The manifest digests are checked
 first, so a row names the bytes the record names.
 
 ## Commands

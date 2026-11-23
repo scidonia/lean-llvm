@@ -85,7 +85,7 @@ the numbers.
 |---|---|
 | `read_ns` | `IO.FS.readBinFile` of the document — reported apart from the stages, in no stage |
 | `admission_ns` | the two-phase decision, both phases: `admission_native_ns` (the adapter's walk over the document — the running depth, its maximum, the structural lane list through the proved counter, the candidate flag, the escape-list guard's presence scan, and the header decode) plus `admission_policy_ns` (the native character-policy scan, which runs only where the walk saw a candidate; `-` on the rows where it was skipped) |
-| `admission_native_ns`, `admission_policy_ns` | the two phases apart, each its own interval inside the admission stage; a row also carries the facts the decision was taken on (`admission_depth` — the maximum structural nesting — `admission_candidate`, `admission_blocks`, `admission_clause`, and `escape_skip` — whether the pipeline's arm bit 1 was cleared, which is the fact `escape_guard.h` defines) |
+| `admission_native_ns`, `admission_policy_ns` | the two phases apart, each its own interval inside the admission stage; a row also carries the facts the decision was taken on (`admission_depth` — the maximum structural nesting — `admission_candidate`, `admission_blocks`, `admission_clause`, and `escape_skip` — the escape-list guard's document fact, which the route reports but no longer consults for the arm, because the shipping call is list-free on every document) |
 | `staging_ns` | the record's shape in bytes: the window `[0,0,0] ++ doc ++ padding ++ 32`, and the four growing buffers, each a fresh `ByteArray` at the record's capacity, zero-filled by the adapter's `leanllvm_route_zeroed` — one allocation and one `memset` per buffer |
 | `copyin_ns` | the adapter's precondition checks and its copy of the thirteen buffers the object writes into its own allocations (13 `malloc` + `memcpy`); the document window is borrowed, because the object only reads it, so its bytes are staged once rather than twice |
 | `native_ns` | the call to `leanllvm_json_pipeline` alone |
@@ -1003,7 +1003,16 @@ and 1.018 (0.908–1.147) on `fast-esc`, both ranges crossing 1.0.  The route's
 
 ### The escape-list guard, paired (unit: ns per 64-byte block; three sessions of 301 rounds)
 
-The route takes the pipeline's arm word from the admission's own native call.
+> **Superseded in its arm selection.** These rows were measured when the route
+> took the pipeline's arm word from the admission's guard fact (arm 2 on a
+> document the guard could not skip). The shipping route now passes arm 0 on
+> every document and stage 2 rescans; `shape.cc`'s `guard` act times the guard's
+> presence scan plus that arm, and `guard.sh`'s gate is now the two arms'
+> consumer-observable equivalence, with a defect build as its control. The
+> numbers below remain the record of the guard-selected arm.
+
+When these rows were measured the route took the pipeline's arm word from the
+admission's own native call; the shipping route now passes arm 0.
 `probes/json/route/escape_guard.h` states the guard — no `0x5C` byte and no byte
 at or below `0x1F` — and the scan stops at the first backslash, so the documents
 the guard cannot help are the ones it barely touches.  `escape_guard.h` also
@@ -1016,15 +1025,17 @@ backslash whose list is not empty.
 `probes/json/route/guard.sh` is the equivalence gate rather than a timing: 164
 documents (the route's corpus, the escape unit's 21 committed rows, the nine
 generated bench documents and the four committed `probes/bench/json/` ones), of
-which 112 fire the guard.  On every one of those, arm 0 and arm 2 must agree
-field for field — the verdict, the four cursors, the error offset, the arena
-bytes and the event bytes — and the arm-2 list must be empty; on the 48
-documents whose arm-2 list is not empty, a forced arm 0 must change the result.
-That gate passed on the tree this section was measured on, at those counts.
+which 112 fire the guard.  Arm 0 and arm 2 must agree on every
+consumer-observable field — the verdict, the entry cursor, the error offset, the
+arena and event extents and both payloads — and the arm-2 list must be empty
+where the guard fires.  The liveness control is a defect build whose list-free
+arm validates nothing, which must diverge on a document whose arm-2 list is not
+empty.  That gate passed on the tree this section was measured on, at those
+counts.
 
-The arms here are `shape.cc`'s `site` shape: `before` is the call the route made
-(`pipeline_call`, arm 2) and `after` is the guard's scan followed by the call at
-the arm it selects, one call per timed window.  Each round runs every act once in
+The arms here are `shape.cc`'s `site` shape: `before` is the old route's call
+(`pipeline_call`, arm 2) and `after` is the guard's scan followed by the
+shipping call (arm 0), one call per timed window.  Each round runs every act once in
 an order rotated by the round index, so no act always runs first; a pair is the
 two acts of one round.  `delta` is the median of the per-round differences in
 ns/block; `ratio` is the median of the per-round quotients, with the
@@ -1092,7 +1103,8 @@ possible construction — it is one 32-byte presence pass per document and it
 cannot be cheaper than reading the document once.  The route-level rows carry
 the guard inside `admission_native_ns` rather than as a stage of its own, so
 `native_ns` alone no longer prices the escape-list arm; `escape_skip` in the row
-says whether the call it priced carried it.  The sessions are paired within one
+reports the guard's document fact, which no longer selects the arm.  The
+sessions are paired within one
 process and one core, and the absolute columns are not compared with this page's
 other sections, as those sections' own caveat says.
 

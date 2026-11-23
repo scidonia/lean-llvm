@@ -22,8 +22,8 @@
 ;
 ; So this is the walk's text with its intra-unit helper boundaries preserved and
 ; the mode constant: NOT the measured object's text, which inlines the helpers.
-; Measured: the fused emission of the same source is 1754 lines and
-; 233 blocks and carries binary64; the body below is 937 lines and
+; Measured: the fused emission of the same source is 1850 lines and
+; 249 blocks and carries binary64; the body below is 937 lines and
 ; 165 blocks and carries none.
 ;
 ; The function's parameters are `stage2.h`'s thirteen in their ABI order,

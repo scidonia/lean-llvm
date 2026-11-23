@@ -90,21 +90,16 @@ def layoutFor (n : Nat) : RouteLayout :=
     ndst0 := 0
     nev0 := 0 }
 
-/-- The escape-list guard's fact, over the document's bytes: no byte is `0x5C`
-and no byte is at or below `0x1F`, so the stage-1 list is empty on every block
-and the arm word's bit 1 may be cleared.  This is the predicate
-`escape_guard.h` implements natively and the route takes its arm from. -/
-def escapeCanSkip (doc : List UInt8) : Bool :=
-  doc.all fun b => b != 0x5C && 0x1F < b.toNat
+/-- The route's arm word: stage 1 emits no escape-position list, so bit 1 is clear
+on every document and stage 2 classifies each string body by scanning its own
+span.  The other two selector bits are the route's own (`0`: the POS8 emitter,
+ungated UTF-8).  The escape-list guard's fact is still reported by the admission,
+but it no longer selects the arm. -/
+def routeArm : Nat := 0
 
-/-- The route's arm word: bit 1 selects the escape list, and the guard clears it
-exactly where the list it would build is empty. -/
-def armWord (doc : List UInt8) : Nat :=
-  if escapeCanSkip doc then 0 else 2
-
-/-- The layout with the arm the document's guard fact selects. -/
+/-- The layout at the route's list-free arm. -/
 def routeLayout (doc : List UInt8) : RouteLayout :=
-  { layoutFor doc.length with arm := armWord doc }
+  { layoutFor doc.length with arm := routeArm }
 
 /-- The allocator cursor the run starts at: above every staged object, so an
 `alloca` in a callee lands in fresh memory rather than in a staged region. -/

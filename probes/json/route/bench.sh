@@ -22,9 +22,9 @@
 #   `admission_policy_ns` split it, the second present only on the rows whose
 #   walk saw a policy candidate (`admission_candidate`).  Phase one also takes
 #   the escape-list guard's presence scan, so its cost is inside
-#   `admission_native_ns`; `escape_skip` says whether the arm this row's call
-#   took cleared the list gate, and the guard's own paired price is in
-#   `probes/json/core-shape/shape.sh`.
+#   `admission_native_ns`; `escape_skip` reports the guard's document fact,
+#   which no longer selects the arm (the native call is list-free), and the
+#   guard's own paired price is in `probes/json/core-shape/shape.sh`.
 # * `admit` rows come from `leanllvm-json-route --admit <file> <reps>` on the
 #   production build: the two-phase decision, the proved depth counter, the
 #   library's `admission`, and the library's own `policyRefusal` on the same

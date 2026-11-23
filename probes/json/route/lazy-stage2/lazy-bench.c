@@ -1,21 +1,22 @@
-/* lazy-bench.c -- bench-only instrument: what does stage 2's escape-list-driven
-   decode cost, and what would a lazy stage 2 leave behind?
+/* lazy-bench.c -- bench-only instrument: what does stage 2's escape decode cost
+   with the stage-1 list, and what does the list-free rescan cost instead?
 
    This is a cost probe, not a kernel unit and not a candidate for the tree's
    contract.  It links the route's own kernel objects at the route's compiler
    line, stages the caller's buffers the way `workspace.cc` shapes them, and
-   times six acts in one binary and one session, rotating the acts within each
+   times eight acts in one binary and one session, rotating the acts within each
    round so every reading is a same-session pair:
 
      stage2        `leanllvm_json_stage2` over the pipeline's entry and escape
                    streams (the committed walk, S2_VAL | S2_STR | S2_EV);
-     stage2_plain  the same walk with an empty escape list: every body takes the
-                   input-span form, so no body is decoded and none is validated
-                   against the list.  This is the committed ABI, and it is the
-                   *lower* bound of a lazy stage 2;
+     stage2_rescan the same walk with an empty escape list: stage 2 classifies
+                   each body's own span and decodes it with the escape unit's
+                   list-free entry.  Its verdict, extents, refusal offset, arena
+                   and events must equal `stage2`'s byte for byte before the
+                   clock; that gate is what makes it the same stage 2 and not a
+                   cost proxy;
      expand_arena  `leanllvm_json_escape_expand` over the escaped bodies, in
-                   order, into the arena -- the deferred decode a consumer would
-                   pay if it materialised the strings itself;
+                   order, into the arena -- the list-driven decode on its own;
      expand_l1     the same calls, each body decoded into one reused 4 KiB
                    scratch instead of the 55,931-byte arena: the decode and its
                    validation without the materialisation.  Its per-body bytes
@@ -23,14 +24,19 @@
                    and only the destination differs;
      copy_arena    `memcpy` of `ndst` bytes from the document into the arena:
                    the floor of writing the decoded extent at all;
-     pipeline      `leanllvm_json_pipeline` (the anchor the route's native
-                   interval is measured at).
+     pipeline      `leanllvm_json_pipeline` at arm 2 (the list arm and the
+                   anchor the route's native interval is measured at);
+     pipeline_rescan the same pipeline at arm 0, the shipping arm: stage 1
+                   emits no list and stage 2 rescans.  Its consumer-observable
+                   output must equal arm 2's before the clock, so the paired
+                   difference is the whole tradeoff on this document.
 
    The gates are the cost profile's where they apply: the reference pipeline
    must accept with the recorded words, stage 2 over the same streams must
-   reproduce the arena and events, the direct expander must reproduce the arena
-   and the cursor, and each `expand_l1` body must equal its arena slice.  A gate
-   failure exits 3 and prints nothing as a measurement.
+   reproduce the arena and events, the rescanned call must reproduce them too,
+   the direct expander must reproduce the arena and the cursor, and each
+   `expand_l1` body must equal its arena slice.  A gate failure exits 3 and
+   prints nothing as a measurement.
 
    Usage: lazy-bench --doc <path> [--rounds N] [--reps N] [--core N]
    Exit status: 0 on a complete run with every gate held, 2 on a bad argument,
@@ -160,14 +166,14 @@ static void reset_pipeline(state *s) {
   s->nk = s->nxp = s->ndst = s->nev = s->err = 0;
 }
 
-static uint64_t run_pipeline(state *s) {
+static uint64_t run_pipeline(state *s, uint64_t arm) {
   memset(s->win, 0, (size_t)s->doc_off);
   memcpy(s->win + s->doc_off, s->src, (size_t)s->n);
   memset(s->win + s->doc_off + s->n, 0, 64);
   return leanllvm_json_pipeline(s->doc, s->n, s->sc, s->mk, s->entw, s->ep,
                                 s->epcap, &s->nk, s->xp, s->xpcap, &s->nxp,
                                 s->xcarry, s->dst, s->dstcap, &s->ndst, s->ev,
-                                s->evcap, &s->nev, &s->err, ARM);
+                                s->evcap, &s->nev, &s->err, arm);
 }
 
 static uint64_t run_stage2(state *s, const state *src, uint64_t list_count) {
@@ -229,13 +235,13 @@ static uint64_t fnv1a(uint64_t h, const uint8_t *p, uint64_t n) {
 
 /* --------------------------------------------------------------- acts -- */
 enum {
-  A_STAGE2, A_PLAIN, A_EXPAND_ARENA, A_EXPAND_L1, A_COPY, A_PIPELINE, A_CHAIN,
-  A_COUNT
+  A_STAGE2, A_RESCAN, A_EXPAND_ARENA, A_EXPAND_L1, A_COPY, A_PIPELINE,
+  A_PIPELINE0, A_CHAIN, A_COUNT
 };
 
 static const char *act_name[A_COUNT] = {
-  "stage2", "stage2_plain", "expand_arena", "expand_l1", "copy_arena",
-  "pipeline", "chain"
+  "stage2", "stage2_rescan", "expand_arena", "expand_l1", "copy_arena",
+  "pipeline", "pipeline_rescan", "chain"
 };
 
 typedef struct {
@@ -261,7 +267,7 @@ static void act_stage2(void *vp) {
   sink ^= v ^ s->ndst ^ s->nev ^ s->err;
 }
 
-static void act_plain(void *vp) {
+static void act_rescan(void *vp) {
   bench *b = vp;
   state *s = b->s;
   b->s->ndst = 0;
@@ -322,7 +328,15 @@ static void act_pipeline(void *vp) {
   bench *b = vp;
   state *s = b->s;
   reset_pipeline(s);
-  uint64_t v = run_pipeline(s);
+  uint64_t v = run_pipeline(s, ARM);
+  sink ^= v ^ s->ndst ^ s->nev ^ s->err;
+}
+
+static void act_pipeline0(void *vp) {
+  bench *b = vp;
+  state *s = b->s;
+  reset_pipeline(s);
+  uint64_t v = run_pipeline(s, 0);
   sink ^= v ^ s->ndst ^ s->nev ^ s->err;
 }
 
@@ -332,8 +346,8 @@ static void act_chain(void *vp) {
 }
 
 static void (*act_fn[A_COUNT])(void *) = {
-  act_stage2, act_plain, act_expand_arena, act_expand_l1, act_copy,
-  act_pipeline, act_chain
+  act_stage2, act_rescan, act_expand_arena, act_expand_l1, act_copy,
+  act_pipeline, act_pipeline0, act_chain
 };
 
 /* ------------------------------------------------------------------ main -- */
@@ -405,7 +419,7 @@ int main(int argc, char **argv) {
   uint64_t npos = scan_document(src, n, pos, bodies, &nbodies, &unterminated);
 
   reset_pipeline(&ref);
-  uint64_t verdict = run_pipeline(&ref);
+  uint64_t verdict = run_pipeline(&ref, ARM);
   printf("reference verdict=%" PRIu64 " nk=%" PRIu64 " nxp=%" PRIu64
          " ndst=%" PRIu64 " nev=%" PRIu64 " err=%" PRIu64
          " arena_fnv=%016" PRIx64 "\n",
@@ -435,38 +449,44 @@ int main(int argc, char **argv) {
   else if (memcmp(bstate.ev, ref_ev, (size_t)ref.nev) != 0)
     gate_fail("stage 2 wrote different event bytes");
 
-  /* Gate: the two event streams are the same records in the same order.  The
-     plain walk's `str` records name the raw body where the committed walk's
-     name the arena slice, so those records' length and field may differ; the
-     tag sequence, the record count and every other record's bytes must not.
-     This is what makes `stage2_plain` a cost proxy for a lazy stage 2 rather
-     than a different stream. */
+  /* Gate: the shipping arm (0) and the list arm (2) agree on the pipeline's
+     consumer-observable output.  The list arm's `nxp` is the one field that
+     differs by construction. */
+  {
+    state p0;
+    state_init(&p0, src, n);
+    reset_pipeline(&p0);
+    uint64_t v0 = run_pipeline(&p0, 0);
+    if (v0 != verdict || p0.nxp != 0 || p0.ndst != ref.ndst ||
+        p0.nev != ref.nev || p0.err != ref.err ||
+        memcmp(p0.dst, ref_dst, (size_t)ref.ndst) != 0 ||
+        memcmp(p0.ev, ref_ev, (size_t)ref.nev) != 0)
+      gate_fail("the list-free pipeline disagrees with the list arm");
+    else
+      printf("list-free pipeline: verdict=%" PRIu64 " nxp=0 ndst=%" PRIu64
+             " nev=%" PRIu64 " (identical to arm 2)\n", v0, p0.ndst, p0.nev);
+  }
+
+  /* Gate: the rescan is not a second decoder.  Called with nxp = 0, the walk
+     classifies each body's own span and decodes it with the escape unit's
+     list-free entry; the verdict, both extents, the refusal offset and both
+     payloads must be the committed list-driven call's, byte for byte.  This is
+     what makes `stage2_rescan` the same stage 2 and not a cost proxy for a
+     different one. */
   {
     uint64_t nd3 = 0, ne3 = 0, er3 = 0;
     uint64_t v3 = leanllvm_json_stage2(ref.doc, n, ref.ep, ref.nk, ref.xp, 0,
                                        bstate.dst, bstate.dstcap, &nd3,
                                        bstate.ev, bstate.evcap, &ne3, &er3);
-    uint64_t ka = 0, kb = 0, recs_a = 0, recs_b = 0, str_diff = 0;
-    int shape_ok = (v3 == 1 && nd3 == 0);
-    if (!shape_ok) gate_fail("the plain walk did not accept with an empty arena");
-    while (shape_ok && ka < ref.nev && kb < ne3) {
-      uint8_t ta = ref_ev[ka], tb = bstate.ev[kb];
-      uint64_t wa = (ta == 5 || ta == 6) ? 13 : ta == 7 ? 9 : 1;
-      uint64_t wb = (tb == 5 || tb == 6) ? 13 : tb == 7 ? 9 : 1;
-      if (ta != tb || wa != wb) { shape_ok = 0; break; }
-      if (wa == 13) { str_diff++; }
-      else if (memcmp(ref_ev + ka, bstate.ev + kb, (size_t)wa) != 0) {
-        shape_ok = 0; break;
-      }
-      ka += wa; kb += wb; recs_a++; recs_b++;
-    }
-    if (shape_ok && (ka != ref.nev || kb != ne3 || recs_a != recs_b))
-      shape_ok = 0;
-    if (!shape_ok) gate_fail("the plain event stream is not the same record shape");
+    if (v3 != verdict || nd3 != ref.ndst || ne3 != ref.nev || er3 != ref.err)
+      gate_fail("the rescanned walk wrote different header words");
+    else if (memcmp(bstate.dst, ref_dst, (size_t)ref.ndst) != 0)
+      gate_fail("the rescanned walk wrote different arena bytes");
+    else if (memcmp(bstate.ev, ref_ev, (size_t)ref.nev) != 0)
+      gate_fail("the rescanned walk wrote different event bytes");
     else
-      printf("shape records=%" PRIu64 " str_records=%" PRIu64
-             " (tag sequence identical; only their length and field differ)\n",
-             recs_a, str_diff);
+      printf("rescan arena=%" PRIu64 " events=%" PRIu64
+             " (identical to the list-driven call)\n", nd3, ne3);
   }
 
   /* Gate: every position lies in exactly one body; count the escaped. */
@@ -621,11 +641,12 @@ int main(int argc, char **argv) {
   printf("\npaired differences (ns; each round's difference of that round's "
          "act medians, then median/min/max)\n");
   const struct { const char *name; int hi, lo; } pairs[] = {
-    {"stage2-plain", A_STAGE2, A_PLAIN},
-    {"expand_l1-plain", A_EXPAND_L1, A_PLAIN},
-    {"expand_arena-plain", A_EXPAND_ARENA, A_PLAIN},
+    {"stage2_rescan-stage2", A_RESCAN, A_STAGE2},
+    {"pipeline_rescan-pipeline", A_PIPELINE0, A_PIPELINE},
+    {"expand_l1-rescan", A_EXPAND_L1, A_RESCAN},
+    {"expand_arena-rescan", A_EXPAND_ARENA, A_RESCAN},
     {"expand_arena-l1", A_EXPAND_ARENA, A_EXPAND_L1},
-    {"copy", A_COPY, A_PLAIN},
+    {"copy-rescan", A_COPY, A_RESCAN},
   };
   for (size_t p = 0; p < sizeof pairs / sizeof pairs[0]; p++) {
     for (int r = 0; r < rounds; r++) {
@@ -638,33 +659,20 @@ int main(int argc, char **argv) {
            s.median, s.min, s.max);
   }
 
-  /* The lazy pipeline, per round: the pipeline with stage 2's list-driven
-     decode removed, once without validation and once with it kept (the L1
-     decode added back). */
-  const struct { const char *name; int sign_l1; } lazy[] = {
-    {"lazy pipeline (no validation)", 0},
-    {"lazy pipeline (validation kept)", 1},
-  };
-  printf("\nlazy pipeline, per round: pipeline - stage2 + plain (+ L1 decode)\n");
-  for (size_t p = 0; p < sizeof lazy / sizeof lazy[0]; p++) {
-    for (int r = 0; r < rounds; r++) {
-      int64_t t = (int64_t)round_ns[A_PIPELINE][r] -
-                  (int64_t)round_ns[A_STAGE2][r] +
-                  (int64_t)round_ns[A_PLAIN][r];
-      if (lazy[p].sign_l1) t += (int64_t)round_ns[A_EXPAND_L1][r];
-      d[r] = (uint64_t)(t > 0 ? t : 0);
-    }
-    summary s = summarise(d, (size_t)rounds);
-    printf("%-32s %12" PRIu64 " %10" PRIu64 " %10" PRIu64 "\n", lazy[p].name,
-           s.median, s.min, s.max);
-  }
-
-  printf("\nsave fraction of the pipeline, from the same rounds: "
-         "no-validation=%.1f%% validation-kept=%.1f%%\n",
-         100.0 * (double)(sm[A_STAGE2].median - sm[A_PLAIN].median) /
+  /* The rescan's price, from the same rounds: the difference of the two stage-2
+     calls is the list-free arm's added cost, and its share of the pipeline is
+     the tradeoff the deferral buys against the list's stage-1 cost. */
+  printf("\nrescan price: stage2_rescan - stage2 = %" PRIu64
+         " ns; that is %.1f%% of the arm-2 pipeline; stage2_rescan is %.1f%% of it\n",
+         sm[A_RESCAN].median >= sm[A_STAGE2].median
+             ? sm[A_RESCAN].median - sm[A_STAGE2].median : 0,
+         100.0 * ((double)sm[A_RESCAN].median - (double)sm[A_STAGE2].median) /
            (double)sm[A_PIPELINE].median,
-         100.0 * (double)(sm[A_STAGE2].median - sm[A_PLAIN].median -
-                          sm[A_EXPAND_L1].median) /
+         100.0 * (double)sm[A_RESCAN].median / (double)sm[A_PIPELINE].median);
+  printf("net tradeoff: pipeline_rescan - pipeline = %lld ns (%.1f%% of the "
+         "arm-2 pipeline); negative means the shipping arm is faster\n",
+         (long long)sm[A_PIPELINE0].median - (long long)sm[A_PIPELINE].median,
+         100.0 * ((double)sm[A_PIPELINE0].median - (double)sm[A_PIPELINE].median) /
            (double)sm[A_PIPELINE].median);
 
   free(d);

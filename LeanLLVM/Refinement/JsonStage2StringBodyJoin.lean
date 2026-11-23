@@ -246,20 +246,6 @@ structure s2StringBodyDecodedFacts (e : State) (p dst ei outn xp xj : Nat)
   ho_d : outn + 8 ≤ dst ∨ dst + out.length ≤ outn
   ho_x : outn + 8 ≤ xj ∨ xj + 8 ≤ outn
 
-/-- The statement alone, at the bundle: if this elaborates at the default budget, the
-bundle suffices and stage 3's proof is the two rewrites already written. -/
-example {e : State} {p dst ei outn xp xj : Nat} {len sub conv nxp : BitVec 64}
-    {extra : Mem} {nx : Nat} {call : BitVec 64} {outj out : List UInt8} {j1 k : Nat}
-    (h : s2StringBodyDecodedFacts e p dst ei outn xp xj len sub conv nxp extra nx call
-      outj out j1 k)
-    (hgoal : runFuel s2StringBodyCalls 5 s2StringBodyBody e =
-      some (.ret (some (.int 32 0x00000002#32))
-        (s2StringBodyDecodedMem e.mem dst xj outn ei outj out))) :
-    runFuel s2StringBodyCalls 5 s2StringBodyBody e =
-      some (.ret (some (.int 32 0x00000002#32))
-        (s2StringBodyDecodedMem e.mem dst xj outn ei outj out)) :=
-  hgoal
-
 /-- The inside test's environment, named: the two cells `land.lhs.true` builds over the
 exit's. -/
 def s2StringBodyLhsEnv (e : State) (sub len conv : BitVec 64) : Env :=
@@ -268,16 +254,16 @@ def s2StringBodyLhsEnv (e : State) (sub len conv : BitVec 64) : Env :=
 
 /-- The `if.end14` entry state, named: the inside test's environment over the expander's
 output.  Rule four at the state — a step whose conclusion names this is narrow again. -/
-def s2StringBodyIfEnd14State (e : State) (sub len conv : BitVec 64) (call : BitVec 64)
+def s2StringBodyIfEnd15State (e : State) (sub len conv : BitVec 64) (call : BitVec 64)
     (extra : Mem) (nx : Nat) : State :=
   stateAt (s2StringBodyIfEndEnv (s2StringBodyLhsEnv e sub len conv) call)
-    { e with mem := extra, next := nx, pc := "if.end14", pre := some "if.end" }
+    { e with mem := extra, next := nx, pc := "if.end15", pre := some "if.end" }
 
 /-- The `cleanup` entry state after the length's write, named. -/
 def s2StringBodyCleanupState (e : State) (sub len conv : BitVec 64) (call : BitVec 64)
     (extra : Mem) (nx outn : Nat) : State :=
   stateAt (s2StringBodyIfEndEnv (s2StringBodyLhsEnv e sub len conv) call)
-    ({ e with mem := writeBytes extra outn (natToBytes call.toNat 8), next := nx, pc := "cleanup", pre := some "if.end14" })
+    ({ e with mem := writeBytes extra outn (natToBytes call.toNat 8), next := nx, pc := "cleanup47", pre := some "if.end15" })
 
 /-! ### The contract
 
@@ -360,6 +346,7 @@ theorem s2StringBodyModel_bodyItself {mem : Mem} {c p dst outn xp xj j1 : Nat}
     (hbase : stage2ReadWord mem c 8 = some base)
     (hj0 : stage2ReadWord mem xj 8 = some j0)
     (hps : readLanes32 mem xp nxp.toNat = some ps)
+    (hnxp0 : nxp.toNat ≠ 0)
     (hj1 : j1 = j0 + ((ps.drop j0).takeWhile (fun q => decide (q < p - base))).length)
     (hempty : ((ps.drop j1).takeWhile
       (fun q => decide (q < p - base + len.toNat))).isEmpty = true) :
@@ -367,7 +354,7 @@ theorem s2StringBodyModel_bodyItself {mem : Mem} {c p dst outn xp xj j1 : Nat}
       some (writeBytes (writeBytes mem xj (wordBytes 8 j1)) outn
         (wordBytes 8 len.toNat), 1, []) := by
   simp only [stage2StringBody, hbase, hj0, hps]
-  rw [← hj1]
+  rw [if_neg hnxp0, ← hj1]
   rw [if_pos hempty]
 
 /-- **The model's decoded answer at a scan exit**: the window is non-empty, the
@@ -380,6 +367,7 @@ theorem s2StringBodyModel_decoded {mem : Mem} {c p dst outn xp xj j1 k : Nat}
     (hj0 : stage2ReadWord mem xj 8 = some j0)
     (hps : readLanes32 mem xp nxp.toNat = some ps)
     (hbody : readBytes mem p len.toNat = some body)
+    (hnxp0 : nxp.toNat ≠ 0)
     (hj1 : j1 = j0 + ((ps.drop j0).takeWhile (fun q => decide (q < p - base))).length)
     (hne : ((ps.drop j1).takeWhile
       (fun q => decide (q < p - base + len.toNat))).isEmpty = false)
@@ -391,7 +379,7 @@ theorem s2StringBodyModel_decoded {mem : Mem} {c p dst outn xp xj j1 k : Nat}
         (writeBytes (writeBytes mem dst out) xj (wordBytes 8 (j1 + k))) outn
         (wordBytes 8 out.length), 2, wordBytes 8 out.length) := by
   simp only [stage2StringBody, hbase, hj0, hps]
-  rw [← hj1]
+  rw [if_neg hnxp0, ← hj1]
   rw [if_neg (by simpa using hne)]
   simp only [hbody, hdec]
 
@@ -405,6 +393,7 @@ theorem s2StringBodyModel_refused {mem : Mem} {c p dst outn xp xj j1 k off e' : 
     (hps : readLanes32 mem xp nxp.toNat = some ps)
     (hbody : readBytes mem p len.toNat = some body)
     (he : stage2ReadWord mem (c + 1112) 8 = some e')
+    (hnxp0 : nxp.toNat ≠ 0)
     (hj1 : j1 = j0 + ((ps.drop j0).takeWhile (fun q => decide (q < p - base))).length)
     (hne : ((ps.drop j1).takeWhile
       (fun q => decide (q < p - base + len.toNat))).isEmpty = false)
@@ -415,7 +404,7 @@ theorem s2StringBodyModel_refused {mem : Mem} {c p dst outn xp xj j1 k off e' : 
       some (writeBytes (stage2ErrSetMsg mem e' (p - base + off) 0) xj
         (wordBytes 8 (j1 + k)), 0, wordBytes 8 off) := by
   simp only [stage2StringBody, hbase, hj0, hps]
-  rw [← hj1]
+  rw [if_neg hnxp0, ← hj1]
   rw [if_neg (by simpa using hne)]
   simp only [hbody, hr, he]
 
@@ -595,10 +584,12 @@ theorem s2StringBodyArm_scan_ifThen {mem : Mem} {next ch p dst outn xp xj : Nat}
     (hbase : stage2ReadWord mem ch 8 = some base)
     (hj0 : stage2ReadWord mem xj 8 = some j0)
     (hps : readLanes32 mem xp nxp.toNat = some ps)
-    (hpc : x.pc = "if.then")
+    (hpc : x.pc = "if.then9")
     (hword : s2StringBodyScanExitWordP mem xj j0 ps (p - base) nxp.toNat env0 ei xp x)
     (hlen : lookupName x.env "%len" = some (.int 64 len))
-    (houtn : lookupName x.env "%outn" = some (.ptr outn)) :
+    (houtn : lookupName x.env "%outn" = some (.ptr outn))
+    (hei : lookupName x.env "%ei" = some (.ptr ei))
+    (hnxp0 : nxp.toNat ≠ 0) :
     s2StringBodyConcludes
       [.ptr ch, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj,
         .int 64 nxp] mem next 2 x := by
@@ -622,10 +613,10 @@ theorem s2StringBodyArm_scan_ifThen {mem : Mem} {next ch p dst outn xp xj : Nat}
     exact hwin
   have hmodel := s2StringBodyModel_bodyItself (mem := mem) (c := ch) (p := p)
     (dst := dst) (outn := outn) (xp := xp) (xj := xj) (j1 := c1) (len := len)
-    (nxp := nxp) (base := base) (j0 := j0) (ps := ps) hbase hj0 hps hj1 hwin'
+    (nxp := nxp) (base := base) (j0 := j0) (ps := ps) hbase hj0 hps hnxp0 hj1 hwin'
   refine ⟨⟨.int 32 (BitVec.ofNat 32 1),
     writeBytes x.mem outn (natToBytes len.toNat 8), next + 8⟩, ?_, ?_, ?_⟩
-  · exact s2StringBodyExit_ifThen (e := x) hpc hlen houtn
+  · exact s2StringBodyExit_ifThen9 (e := x) hpc hlen houtn hei
   · refine ⟨writeBytes (writeBytes mem xj (wordBytes 8 c1)) outn
       (wordBytes 8 len.toNat), 1, [], hmodel, rfl, ?_, rfl⟩
     rw [hmem]
@@ -656,7 +647,9 @@ theorem s2StringBodyArm_scan_landLhsTrue {mem : Mem} {next ch p dst outn xp xj :
     (hpast : p - base + len.toNat ≤ lane)
     (hp0 : p - base < 2 ^ 64) (hpw : p - base + len.toNat < 2 ^ 64)
     (hlen : lookupName x.env "%len" = some (.int 64 len))
-    (houtn : lookupName x.env "%outn" = some (.ptr outn)) :
+    (houtn : lookupName x.env "%outn" = some (.ptr outn))
+    (hei : lookupName x.env "%ei" = some (.ptr ei))
+    (hnxp0 : nxp.toNat ≠ 0) :
     s2StringBodyConcludes
       [.ptr ch, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj,
         .int 64 nxp] mem next 3 x := by
@@ -668,7 +661,7 @@ theorem s2StringBodyArm_scan_landLhsTrue {mem : Mem} {next ch p dst outn xp xj :
     s2StringBodyWindow_empty_of_lane hlane hpast
   have hmodel := s2StringBodyModel_bodyItself (mem := mem) (c := ch) (p := p)
     (dst := dst) (outn := outn) (xp := xp) (xj := xj) (j1 := c1) (len := len)
-    (nxp := nxp) (base := base) (j0 := j0) (ps := ps) hbase hj0 hps hj1 hwin
+    (nxp := nxp) (base := base) (j0 := j0) (ps := ps) hbase hj0 hps hnxp0 hj1 hwin
   have hsum : ((BitVec.ofNat 64 (p - base)) + len).toNat = p - base + len.toNat := by
     rw [BitVec.toNat_add, BitVec.toNat_ofNat, Nat.mod_eq_of_lt hp0,
       Nat.mod_eq_of_lt hpw]
@@ -678,7 +671,7 @@ theorem s2StringBodyArm_scan_landLhsTrue {mem : Mem} {next ch p dst outn xp xj :
     exact evalICmpNat_ugt_zero hpw (by omega) hpast
   refine ⟨⟨.int 32 (BitVec.ofNat 32 1),
     writeBytes x.mem outn (natToBytes len.toNat 8), next + 8⟩, ?_, ?_, ?_⟩
-  · exact s2StringBodyExit_landLhsTrue_toIfThen (e := x) hpc hsub hlen hconv hbit houtn
+  · exact s2StringBodyExit_landLhsTrue_toIfThen9 (e := x) hpc hsub hlen hconv hbit houtn hei
   · refine ⟨writeBytes (writeBytes mem xj (wordBytes 8 c1)) outn
       (wordBytes 8 len.toNat), 1, [], hmodel, rfl, ?_, rfl⟩
     rw [hmem]
@@ -872,8 +865,8 @@ def s2StringBodyRefusedExtra (mem : Mem) (ei xj c1 offN k : Nat) : Mem :=
   s2StringBodyRefusedC3 mem ei xj c1 offN k
 
 /-- **The record's three words are the staged three**, stated between identifiers. -/
-theorem s2StringBodyIfThen11Mem_staged (mem : Mem) (ei xj c1 e' offN k p base : Nat) :
-    s2StringBodyIfThen11Mem (s2StringBodyRefusedExtra mem ei xj c1 offN k) e'
+theorem s2StringBodyIfThen12Mem_staged (mem : Mem) (ei xj c1 e' offN k p base : Nat) :
+    s2StringBodyIfThen12Mem (s2StringBodyRefusedExtra mem ei xj c1 offN k) e'
       (BitVec.ofNat 64 offN) (BitVec.ofNat 64 (p - base))
       = s2StringBodyRefusedC6 mem ei xj c1 e' offN k p base := rfl
 
@@ -1066,9 +1059,9 @@ theorem s2StringBodyArm_scan_refused_run {mem extra : Mem} {x : State}
     (hr : escapeDecodeGo body 0 0
       (((ps.drop c1).takeWhile (fun q => decide (q < p - base + len.toNat))).map
         (fun q => q - (p - base))) [] = .refused offN k) :
-    runFuel s2StringBodyCalls 5 s2StringBodyBody x =
+    runFuel s2StringBodyCalls 4 s2StringBodyBody x =
       some (.ret (some (.int 32 0x00000000#32))
-        (s2StringBodyIfThen11Mem extra e' (BitVec.ofNat 64 offN)
+        (s2StringBodyIfThen12Mem extra e' (BitVec.ofNat 64 offN)
           (BitVec.ofNat 64 (p - base)))) := by
   have hsum : ((BitVec.ofNat 64 (p - base)) + len).toNat = p - base + len.toNat := by
     rw [BitVec.toNat_add, BitVec.toNat_ofNat, Nat.mod_eq_of_lt hp0,
@@ -1118,13 +1111,14 @@ theorem s2StringBodyArm_scan_refused_run {mem extra : Mem} {x : State}
     rw [hx]
     rw [← hexpMem] at h
     exact h
-  exact s2StringBodyExit_refused (e := x) (off := BitVec.ofNat 64 offN) hpc hc hsub
+  simpa using s2StringBodyExit_refused (e := x) (off := BitVec.ofNat 64 offN) hpc hc hsub
     hlen hconv hbit7 hp hdst hei hxp hxj hnxp hexp (evalICmp_eq_one rfl)
-    (by rw [show (BitVec.ofNat 64 offN).toNat = offN from by
-          rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hoffN]]
-        show readBytes extra ei 8 = some (wordBytes 8 offN)
-        rw [← hWoff]
-        exact hoff)
+    (by
+      rw [show (BitVec.ofNat 64 offN).toNat = offN from by
+        rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hoffN]]
+      change readBytes extra ei 8 = some (wordBytes 8 offN)
+      rw [← hWoff]
+      exact hoff)
     (by simpa using hrecE) he64
 
 /-- **The expander's refusing answer, concluded at the stage**: its memory *is*
@@ -1173,10 +1167,10 @@ theorem s2StringBodyArm_entry_ifThen {mem : Mem} {next c p dst outn xp xj : Nat}
     (he : stage2ReadWord mem (c + 1112) 8 = some e)
     (hp64 : p < 2 ^ 64) (hble : base ≤ p)
     (hj63 : j0 < 2 ^ 63) (hN63 : nxp.toNat < 2 ^ 63)
-    (hnle : nxp.toNat ≤ j0) :
+    (hnle : nxp.toNat ≤ j0) (hnxp0 : nxp.toNat ≠ 0) :
     s2StringBodyConcludes
       [.ptr c, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj,
-        .int 64 nxp] mem next 3
+        .int 64 nxp] mem next 4
       (stagedState s2StringBodyBody
         [.ptr c, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj,
           .int 64 nxp] mem next) := by
@@ -1194,6 +1188,12 @@ theorem s2StringBodyArm_entry_ifThen {mem : Mem} {next c p dst outn xp xj : Nat}
     (stage2ReadWord_lt_64 hbase) hp64
     (by simpa only [hmem] using readBytes_of_stage2ReadWord hj0)
     (stage2ReadWord_lt_64 hj0)
+    (by
+      apply evalICmp_eq_zero
+      intro hzero
+      apply hnxp0
+      have := congrArg BitVec.toNat hzero
+      simpa using this)
     (s2StringBodyBit_cmp3_zero hj63 hN63 hnle)
   have hlen_ps : ps.length = nxp.toNat := (readLanes32_lane hps).1
   have hnil : ps.drop j0 = [] := List.drop_eq_nil_of_le (by omega)
@@ -1209,7 +1209,7 @@ theorem s2StringBodyArm_entry_ifThen {mem : Mem} {next c p dst outn xp xj : Nat}
       some (writeBytes (writeBytes mem xj (wordBytes 8 j0)) outn
         (wordBytes 8 len.toNat), 1, []) := by
     simp only [stage2StringBody, hbase, hj0, hps]
-    rw [if_pos hwin, hj1]
+    rw [if_neg hnxp0, if_pos hwin, hj1]
   refine ⟨⟨.int 32 (BitVec.ofNat 32 1),
     writeBytes mem outn (natToBytes len.toNat 8), next + 8⟩, ?_, ?_, ?_⟩
   · simpa only [stateAt, stagedState] using hrun

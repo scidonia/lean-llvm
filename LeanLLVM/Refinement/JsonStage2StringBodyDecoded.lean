@@ -1,4 +1,5 @@
 import LeanLLVM.Refinement.JsonStage2StringBodyJoin
+import LeanLLVM.Refinement.JsonStage2StringBodyNoList
 
 set_option autoImplicit false
 
@@ -225,7 +226,7 @@ theorem s2StringBodyArm_scan_refused {mem extra : Mem} {x : State}
       e' + (16#64).toNat + (natToBytes (0#64).toNat 8).length ≤ e' + (8#64).toNat) :
     s2StringBodyConcludes
       [.ptr ch, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj,
-        .int 64 nxp] mem next 5 x := by
+        .int 64 nxp] mem next 4 x := by
   have hchain : writeBytes
         (writeBytes (writeBytes (s2StringBodyRefusedC0 mem xj c1) ei
           (natToBytes (0#64).toNat 8)) ei Woff) xj Wj
@@ -247,15 +248,15 @@ theorem s2StringBodyArm_scan_refused {mem extra : Mem} {x : State}
     (s2StringBodyErr_presence hrec_bs).2.1 (s2StringBodyErr_presence hrec_bs).2.2
     hm1 hm2 hm3 hm4 hm5 hm6 hm7 hm8 hm9 hm10
     (offN := offN) (k := k) (p := p) (base := base)
-  have hM0 : s2StringBodyIfThen11Mem extra e' (BitVec.ofNat 64 offN)
+  have hM0 : s2StringBodyIfThen12Mem extra e' (BitVec.ofNat 64 offN)
         (BitVec.ofNat 64 (p - base))
       = writeBytes (writeBytes (stage2ErrSetMsg mem e' (p - base + offN) 0) xj
           (wordBytes 8 (c1 + k))) next (wordBytes 8 offN) := by
-    rw [hexpMem, hchain, s2StringBodyIfThen11Mem_staged, hC6join,
+    rw [hexpMem, hchain, s2StringBodyIfThen12Mem_staged, hC6join,
       s2StringBodyRefusedModel_reconciles mem hoffN hp0 hsumW,
       s2StringBodyRefusedM0, hnext]
   refine ⟨⟨.int 32 (BitVec.ofNat 32 0),
-      s2StringBodyIfThen11Mem extra e' (BitVec.ofNat 64 offN)
+      s2StringBodyIfThen12Mem extra e' (BitVec.ofNat 64 offN)
         (BitVec.ofNat 64 (p - base)),
       next + 8⟩, ?_, ?_, ?_⟩
   · exact s2StringBodyArm_scan_refused_run (outn := outn) (j0 := j0) (next := next)
@@ -335,7 +336,7 @@ theorem s2StringBodyArm_scan_decoded {mem : Mem} {x : State}
     (ho_x : outn + 8 ≤ xj ∨ xj + 8 ≤ outn) :
     s2StringBodyConcludes
       [.ptr ch, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj,
-        .int 64 nxp] mem next 5 x := by
+        .int 64 nxp] mem next 4 x := by
   have hmemEq : writeBytes
         (s2StringBodyExpandMem x.mem ei dst xj out outj) outn
         (natToBytes out.length 8)
@@ -413,21 +414,22 @@ theorem s2StringBodyBody_contract {args : List Value} {mem : Mem} {next : Nat}
   have hpsR : readLanes32 st.mem xp nxp.toNat = some ps := by rw [hmemS']; exact hps
   have hwordR : stage2ReadWord st.mem xj 8 = some j0 := by rw [hmemS']; exact hj0
   by_cases hj0N : j0 < nxp.toNat
-  · have hbit1 : evalICmp .ult (BitVec.ofNat 64 j0) nxp = 1#1 :=
+  · have hnxp0 : nxp.toNat ≠ 0 := by omega
+    have hbit1 : evalICmp .ult (BitVec.ofNat 64 j0) nxp = 1#1 :=
       s2StringBodyBit_cmp3_one hj063 hN63 hj0N
-    have hstAt : stateAt st.env st = st := rfl
-    have hstep : ∀ k, runFuel s2StringBodyCalls (1 + k) s2StringBodyBody st =
-        runFuel s2StringBodyCalls k s2StringBodyBody
-          (stateAt (s2StringBodyEntryOut st.env st.next base p j0 nxp)
-            { st with next := st.next + (Ty.int 64).sizeBytes, pc := "land.rhs", pre := some st.pc }) := by
-      intro k
-      have h := s2StringBodyEntry_prefix_landRhs (env := st.env) (s := st) hpcS' hcS' hpS'
-        hxjS' hnxpS' hbaseR hb64 hp64 hj0R hj64 hbit1 k
-      simpa only [hstAt] using h
+    have hbit0 : evalICmp .eq nxp (BitVec.ofNat 64 0) = 0#1 := by
+      apply evalICmp_eq_zero
+      intro hzero
+      apply hnxp0
+      have := congrArg BitVec.toNat hzero
+      simpa using this
+    have hseat := s2StringBodyEntry_seat_landRhs (env := st.env) (s := st)
+      hpcS' hcS' hpS' hxjS' hnxpS' hxpS' hbaseR hb64 hp64 hj0R hj64 hbit0 hbit1
+      hble hwordR hpsR hj0N
+    have hstep := hseat.1
     have hinvP : s2StringBodyScanInvP mem xj (p - base) xp nxp.toNat j0 ps st.env
         st.next (nxp.toNat - j0)
-        (stateAt (s2StringBodyEntryOut st.env st.next base p j0 nxp)
-          { st with next := st.next + (Ty.int 64).sizeBytes, pc := "land.rhs", pre := some st.pc }) j0 := by
+        (s2StringBodyHeadState st.env st base p j0 nxp) j0 := by
       rw [← hmemS']
       exact s2StringBodyScanInvP_seat st.env st base p xj xp j0 ps nxp hpcS' hble hp64
         hwordR hpsR hj0N hxpS' hxjS' hnxpS'
@@ -477,13 +479,13 @@ theorem s2StringBodyBody_contract {args : List Value} {mem : Mem} {next : Nat}
       · obtain ⟨o, hrun, hpost, hfoot⟩ :=
           s2StringBodyArm_scan_landLhsTrue (mem := mem) (next := next) (c1 := c1)
             (lane := lane) (conv := conv) (env0 := ex.env) (ei := st.next) (ch := c) hbase hj0 hps hpcx hmemx hfix hqlane hqge
-            hconvx hconvq hsubx hpast (by omega) hpw hlenE houtnE
+            hconvx hconvq hsubx hpast (by omega) hpw hlenE houtnE heix hnxp0
         refine ⟨o, ?_, hpost, hfoot⟩
-        have hS : runFuel s2StringBodyCalls (1 + (jx + 3)) s2StringBodyBody st =
+        have hS : runFuel s2StringBodyCalls (2 + (jx + 3)) s2StringBodyBody st =
             some (.ret (some o.ret) o.mem) := by
           rw [hstep (jx + 3), hscan 3]
           exact hrun
-        have hle : 1 + (jx + 3) ≤ s2StringBodyBudget
+        have hle : 2 + (jx + 3) ≤ s2StringBodyBudget
             [.ptr c, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj,
               .int 64 nxp] := by
           simp only [s2StringBodyBudget]; omega
@@ -553,7 +555,7 @@ theorem s2StringBodyBody_contract {args : List Value} {mem : Mem} {next : Nat}
               some (writeBytes (writeBytes (writeBytes mem dst out) xj
                 (wordBytes 8 (c1 + k))) outn (wordBytes 8 out.length), 2,
                 wordBytes 8 out.length) :=
-            s2StringBodyModel_decoded (k := k) hbase hj0 hps hbody hj1 hne hdecg
+            s2StringBodyModel_decoded (k := k) hbase hj0 hps hbody hnxp0 hj1 hne hdecg
           have hexp := s2StringBodyExpand_decoded_named (xmem := ex.mem)
             (Woff := wordBytes 8 out.length) (Wj := wordBytes 8 (c1 + k))
             (ei := st.next) (next := ex.next) (dst := dst)
@@ -602,11 +604,11 @@ theorem s2StringBodyBody_contract {args : List Value} {mem : Mem} {next : Nat}
                 · exact Or.inr (by omega))
               (ho_x := hxjo.symm)
           refine ⟨o, ?_, hpost, hfoot⟩
-          have hS : runFuel s2StringBodyCalls (1 + (jx + 5)) s2StringBodyBody st =
+          have hS : runFuel s2StringBodyCalls (2 + (jx + 4)) s2StringBodyBody st =
               some (.ret (some o.ret) o.mem) := by
-            rw [hstep (jx + 5), hscan 5]
+            rw [hstep (jx + 4), hscan 4]
             exact hrun
-          have hle : 1 + (jx + 5) ≤ s2StringBodyBudget
+          have hle : 2 + (jx + 4) ≤ s2StringBodyBudget
               [.ptr c, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj,
                 .int 64 nxp] := by
             simp only [s2StringBodyBudget]; omega
@@ -634,7 +636,7 @@ theorem s2StringBodyBody_contract {args : List Value} {mem : Mem} {next : Nat}
               some (writeBytes (stage2ErrSetMsg mem e (p - base + offN) 0) xj
                 (wordBytes 8 (c1 + k)), 0, wordBytes 8 offN) :=
             s2StringBodyModel_refused (k := k) (off := offN) (e' := e)
-              hbase hj0 hps hbody he hj1 hne hdecg
+              hbase hj0 hps hbody he hnxp0 hj1 hne hdecg
           obtain ⟨bs, hbs⟩ := exists_readBytes_of_ne hep
           obtain ⟨o, hrun, hpost, hfoot⟩ :=
             s2StringBodyArm_scan_refused (mem := mem) (x := ex) (ch := c) (dst := dst)
@@ -733,37 +735,49 @@ theorem s2StringBodyBody_contract {args : List Value} {mem : Mem} {next : Nat}
                   show (natToBytes (0#64).toNat 8).length = 8 from natToBytes_length _ _]
                 exact Or.inl (by omega))
           refine ⟨o, ?_, hpost, hfoot⟩
-          have hS : runFuel s2StringBodyCalls (1 + (jx + 5)) s2StringBodyBody st =
+          have hS : runFuel s2StringBodyCalls (2 + (jx + 4)) s2StringBodyBody st =
               some (.ret (some o.ret) o.mem) := by
-            rw [hstep (jx + 5), hscan 5]
+            rw [hstep (jx + 4), hscan 4]
             exact hrun
-          have hle : 1 + (jx + 5) ≤ s2StringBodyBudget
+          have hle : 2 + (jx + 4) ≤ s2StringBodyBudget
               [.ptr c, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj,
                 .int 64 nxp] := by
             simp only [s2StringBodyBudget]; omega
           exact runFuel_mono_le hle hS
     · obtain ⟨o, hrun, hpost, hfoot⟩ :=
         s2StringBodyArm_scan_ifThen (mem := mem) (next := next) hbase hj0 hps hpcx
-          hexword hlenE houtnE
+          hexword hlenE houtnE heix hnxp0
       refine ⟨o, ?_, hpost, hfoot⟩
-      have hS : runFuel s2StringBodyCalls (1 + (jx + 2)) s2StringBodyBody st =
+      have hS : runFuel s2StringBodyCalls (2 + (jx + 2)) s2StringBodyBody st =
           some (.ret (some o.ret) o.mem) := by
         rw [hstep (jx + 2), hscan 2]
         exact hrun
-      have hle : 1 + (jx + 2) ≤ s2StringBodyBudget
+      have hle : 2 + (jx + 2) ≤ s2StringBodyBudget
           [.ptr c, .ptr p, .int 64 len, .ptr dst, .ptr outn, .ptr xp, .ptr xj,
             .int 64 nxp] := by
         simp only [s2StringBodyBudget]; omega
       exact runFuel_mono_le hle hS
-  · obtain ⟨o, hrun, hpost, hfoot⟩ :=
-      s2StringBodyArm_entry_ifThen (mem := mem) (next := next) (body := body)
-        hbase hj0 hps he hp64
-        hble hj063 hN63 (by omega)
-    refine ⟨o, ?_, hpost, hfoot⟩
-    rw [← hst]
-    refine runFuel_mono_le ?_ hrun
-    simp only [s2StringBodyBudget]
-    omega
+  · by_cases hnxp0 : nxp.toNat = 0
+    · -- the list-free arm: `nxp = 0` scans the body's own span
+      have hc0 := s2StringBodyArm_noList (mem := mem) (next := next) (c := c) (p := p)
+        (dst := dst) (outn := outn) (xp := xp) (xj := xj) (len := len) (nxp := nxp)
+        (base := base) (body := body) (e := e)
+        (hbase := hbase) (hbody := hbody) (he := he) (hp64 := hp64) (hble := hble)
+        (hpw := hpw) (hlen1 := hlen1) (hnxp0 := hnxp0) (houtnp := houtnp)
+        (hdstp := hdstp) (hep := hep) (hnod := hnod) (hnou := hnou) (hnoe := hnoe)
+        (hnpe := hnpe) (hdpe := hdpe) (hode := hode) (hne2 := hne2)
+      rw [← hst]
+      obtain ⟨o, hrun, hpost, hfoot⟩ := hc0
+      exact ⟨o, runFuel_mono_le (by simp only [s2StringBodyBudget]; omega) hrun, hpost, hfoot⟩
+    · obtain ⟨o, hrun, hpost, hfoot⟩ :=
+        s2StringBodyArm_entry_ifThen (mem := mem) (next := next) (body := body)
+          hbase hj0 hps he hp64
+          hble hj063 hN63 (by omega) (by omega)
+      refine ⟨o, ?_, hpost, hfoot⟩
+      rw [← hst]
+      refine runFuel_mono_le ?_ hrun
+      simp only [s2StringBodyBudget]
+      omega
 
 /-! ### Axiom footprints
 

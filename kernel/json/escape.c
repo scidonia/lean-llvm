@@ -291,6 +291,17 @@ us_run_long(const uint8_t *p, uint8_t *dst, uint64_t len) {
     us_run(p + k, dst + k, len - k);
 }
 
+/* combined control-or-backslash mask of a 32-byte vector (`usdec.h:223-239`,
+   the default `US_CLS=0` arm) */
+static inline __attribute__((always_inline)) unsigned
+us_special32(__m256i v) {
+    const __m256i vbs = _mm256_set1_epi8('\\');
+    const __m256i v19 = _mm256_set1_epi8(0x1F);
+    __m256i ctl = _mm256_cmpeq_epi8(_mm256_min_epu8(v, v19), v);
+    __m256i bs = _mm256_cmpeq_epi8(v, vbs);
+    return (unsigned)_mm256_movemask_epi8(_mm256_or_si256(ctl, bs));
+}
+
 /* The measured default of the decoder's diagnostic switch (`usdec.h:821-822`).
    The kept arm tests it, so its value is part of the configuration rather than
    a reading of the header: 0 is the branch the measured build compiles. */
@@ -299,6 +310,77 @@ us_run_long(const uint8_t *p, uint8_t *dst, uint64_t len) {
 #endif
 
 #define US_FAIL ((size_t)-1)
+
+/* The list-free body decoder: `usdec.h:557-804`'s `us_dec_kernel` at the
+   measured defaults (`US_W=64`, `US_SLOTS=0`, `US_EXP=0`, `US_CHAIN=0`,
+   `US_DIAG=0`, `US_STATS=0`), with the arms the measured build did not take
+   deleted.  It classifies each 64-byte window itself, so it needs no stage-1
+   escape positions: the escape-step and run-copy kernels are the same
+   `us_esc`/`us_run` the list-driven decoder uses, and the position is found
+   with the same `us_special32` mask.
+
+   This is the decoder a stage-1 caller that emits no escape list reaches, and
+   it is this unit's list-free arm rather than the unit's own arithmetic: its
+   text is the measured function's selected text, kept here because the
+   measured configuration deleted it along with the rest of the list-free arm.
+   `README.md`'s `escape-extra:` row names it, and its behaviour is compared by
+   the rescan differential rather than by the token arm. */
+__attribute__((noinline)) static size_t
+us_dec_span(const uint8_t *p, uint64_t n, uint8_t *dst, size_t *err) {
+    uint64_t i = 0, j = 0;
+    while (i < n) {
+        uint64_t rem = n - i;
+        uint64_t win, m;
+        if (rem >= 64) {
+            __m256i v0 = _mm256_loadu_si256((const __m256i *)(p + i));
+            __m256i v1 = _mm256_loadu_si256((const __m256i *)(p + i + 32));
+            m = (uint64_t)us_special32(v0) | ((uint64_t)us_special32(v1) << 32);
+            if (!m) {
+                _mm256_storeu_si256((__m256i *)(dst + j), v0);
+                _mm256_storeu_si256((__m256i *)(dst + j + 32), v1);
+                j += 64; i += 64;
+                continue;
+            }
+            win = 64;
+        } else {
+            __m256i v = _mm256_loadu_si256((const __m256i *)(p + i));
+            win = (rem < 32) ? rem : 32;
+            m = (uint64_t)us_special32(v);
+            if (win < 32) m &= ((uint64_t)1 << win) - 1;
+            if (!m) {
+                _mm256_storeu_si256((__m256i *)(dst + j), v);
+                j += win; i += win;
+                continue;
+            }
+        }
+        {
+            uint64_t cur = 0;
+            while (m) {
+                unsigned b = (unsigned)__builtin_ctzll(m);
+                /* a zero-length run costs the same store as a long one, so the
+                   run length is not a branch */
+                us_run(p + i + cur, dst + j, (uint64_t)b - cur);
+                j += (uint64_t)b - cur;
+                uint64_t at = i + b;
+                if (p[at] < 0x20) { *err = (size_t)at; return US_FAIL; }
+                uint64_t adv;
+                if (!us_esc(p, n, at, dst, &j, &adv, err)) return US_FAIL;
+                cur = (uint64_t)b + adv;
+                if (cur >= win) break;
+                m &= ~(((uint64_t)1 << cur) - 1);
+            }
+            /* a zero-length run writes the same vector as a long one, and the
+               bytes are rewritten by the next window's first store or lie past
+               the returned length */
+            uint64_t nxt = (cur < win) ? win : cur;
+            uint64_t len = nxt - cur;
+            us_run(p + i + cur, dst + j, len);
+            j += len;
+            i += nxt;
+        }
+    }
+    return (size_t)j;
+}
 
 /* out of line in every build: the floor probe must pay the same call as the
    real consumer, otherwise the DIAG=6 binary inlines the copy and the
@@ -352,4 +434,9 @@ uint64_t leanllvm_json_escape_expand(const uint8_t *b, uint64_t n, uint8_t *dst,
                                      uint64_t *err, const uint32_t *xp,
                                      uint64_t *xj, uint64_t nxp, uint64_t pos0) {
     return (uint64_t)us_dec_x(b, n, dst, (size_t *)err, xp, xj, nxp, pos0);
+}
+
+uint64_t leanllvm_json_escape_decode(const uint8_t *b, uint64_t n, uint8_t *dst,
+                                     uint64_t *err) {
+    return (uint64_t)us_dec_span(b, n, dst, (size_t *)err);
 }

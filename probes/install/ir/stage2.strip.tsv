@@ -109,40 +109,40 @@
 2	removed	local_unnamed_addr	1	function-header surface: linkage, code placement and the header's alignment, for which the model has no semantics
 2	removed	#0	1	function-header surface: linkage, code placement and the header's alignment, for which the model has no semantics
 2	removed	align 64	1	function-header surface: linkage, code placement and the header's alignment, for which the model has no semantics
-3	removed	#19	15	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
-3	removed	#19	16	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
-3	removed	#19	17	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
-3	removed	#19	48	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
-3	removed	#19	50	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
-3	removed	#19	60	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
-3	removed	#19	61	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
-3	removed	#19	62	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
-3	removed	#19	64	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
-3	removed	#19	426	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
-3	removed	#19	490	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
-3	removed	#19	505	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
-3	removed	#19	520	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
-3	removed	#19	706	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
-3	removed	#19	707	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
-3	removed	#19	718	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
-3	removed	#19	719	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
-3	removed	#19	790	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
-3	removed	#19	791	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
-3	removed	#19	879	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
-3	removed	#19	883	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
-3	removed	#19	912	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
-3	removed	#19	913	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
-3	removed	#19	914	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
-3	removed	#19	915	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
-3	removed	#19	916	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
-3	removed	#19	924	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
-3	removed	#19	925	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
-3	removed	#19	926	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
-3	removed	#19	927	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
-3	removed	#19	928	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
-3	removed	#19	940	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
-3	removed	#19	941	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
-3	removed	#19	942	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#21	15	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#21	16	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#21	17	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#21	48	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#21	50	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#21	60	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#21	61	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#21	62	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#21	64	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#21	426	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#21	490	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#21	505	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#21	520	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#21	706	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#21	707	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#21	718	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#21	719	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#21	790	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#21	791	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#21	879	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#21	883	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#21	912	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#21	913	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#21	914	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#21	915	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#21	916	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#21	924	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#21	925	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#21	926	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#21	927	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#21	928	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#21	940	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#21	941	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
+3	removed	#21	942	attribute-group reference on a call: the target-feature and memory promise the group carries; the definition is removed with the module header
 4	removed	nuw	21	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
 4	removed	nuw	23	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established
 4	removed	nuw	25	instruction flag that constrains: it excludes inputs, so stripping widens, and the widening is recorded rather than re-established

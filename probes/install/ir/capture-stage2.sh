@@ -56,7 +56,7 @@
 #
 # --- Why the helpers are out of line, and what that costs -----------------
 #
-# As emitted, `@leanllvm_json_stage2` is 1754 lines in 233 blocks and carries
+# As emitted, `@leanllvm_json_stage2` is 1920 lines in 248 blocks and carries
 # **binary64**: `od_scalar_value` (`stage2.c:929`) and `num_fast_el1`
 # (`:379`) are `__attribute__((always_inline))`, so the number path's
 # `alloca double`, `uitofp`, `fmul`, `fdiv`, `fneg`, `select double` and
@@ -76,15 +76,16 @@
 #                                   contract is the tier composition proved in
 #                                   `LeanLLVM/Refinement/JsonStage2Body.lean`
 #                                   (`numFastEmitted_strtodSpec`)
-#   num_scan                         binary64 conversion and the SSE word
-#                                   kernels; the same reason
-#   touch_bytes, touch_u64           cursor value helpers, not the walk
-#   s2_value_pos, s2_after_value,    the value-position rules; each is a
-#   s2_string_body, s2_string_touch  function of the walk's state, and a call
-#                                   keeps its interface visible
+#   touch_bytes                     the cursor value helper, not the walk
+#   s2_init, s2_value_pos,          the container-state and value-position
+#   s2_after_value, s2_string_body, rules; each is a function of the walk's
+#   s2_string_touch                 state, and a call keeps its interface visible
+#   z_scan                          the list-free string body's own scan: the
+#                                   first control byte or backslash of a body,
+#                                   which is how the no-list arm classifies it
 #
-# Measured, and checked below rather than asserted: the fused emission is 1754
-# lines/233 blocks and the fixture is 944 lines/165 blocks before the parameter
+# Measured, and checked below rather than asserted: the fused emission is 1920
+# lines/248 blocks and the fixture is 944 lines/165 blocks before the parameter
 # flattening, with **zero** binary64 or vector operations in the body.  So the
 # fixture is the walk's text **with its intra-unit helper boundaries preserved
 # and the mode constant**, not the measured object's text: the object inlines
@@ -262,23 +263,33 @@ sed -e 's/__attribute__((always_inline)) static inline/__attribute__((noinline))
     -e 's/#define EL_ENTRY __attribute__((always_inline)) static inline/#define EL_ENTRY __attribute__((noinline)) static inline/' \
     "$repo/$src" > "$work/step1.c"
 
-awk '{ if (hold) { print "__attribute__((always_inline)) static inline uint64_t"; hold = 0 }
-       if ($0 == "__attribute__((noinline)) static inline uint64_t") { hold = 1; next }
-       print }
-     END { if (hold) exit 1 }' "$work/step1.c" > "$work/stage2.noinline.c" ||
+# Restore the attribute on `s2_walk` alone.  The function is named, not matched by
+# its return type: `z_scan` has the same one-line header, and restoring every
+# `static inline uint64_t` would leave it inlined, which is not the transform this
+# script states.
+awk '
+  $0 == "__attribute__((noinline)) static inline uint64_t" {
+    attr = $0
+    if ((getline nxt) <= 0) { print attr; exit 1 }
+    if (nxt ~ /^s2_walk\(/) { print "__attribute__((always_inline)) static inline uint64_t" }
+    else { print attr }
+    print nxt
+    next
+  }
+  { print }' "$work/step1.c" > "$work/stage2.noinline.c" ||
   fail "the s2_walk attribute was not restored; the transform is not the one this script describes"
 
 n_al=$(grep -c 'always_inline' "$work/stage2.noinline.c" || true)
 n_ni=$(grep -c '__attribute__((noinline))' "$work/stage2.noinline.c" || true)
 [ "$n_al" -eq 2 ] ||
   fail "the transformed source carries $n_al 'always_inline' occurrences; the transform leaves the comment and s2_walk's attribute, so 2"
-[ "$n_ni" -eq 12 ] ||
-  fail "the transformed source carries $n_ni 'noinline' occurrences; the always_inline set is 11 helpers plus the EL_ENTRY macro definition"
+[ "$n_ni" -eq 13 ] ||
+  fail "the transformed source carries $n_ni 'noinline' occurrences; the always_inline set is 12 helpers plus the EL_ENTRY macro definition"
 grep -A1 '^__attribute__((always_inline)) static inline uint64_t$' "$work/stage2.noinline.c" |
   grep -q '^s2_walk(' ||
   fail "the one forced-inline function is not s2_walk"
 
-# The EL_ENTRY define carries the twelfth noinline occurrence but names no
+# The EL_ENTRY define carries the thirteenth noinline occurrence but names no
 # symbol; without the #define guard its continuation line is misread as a
 # function name.
 awk '/__attribute__\(\(noinline\)\)/ && !/^#define/ {
@@ -289,8 +300,8 @@ awk '/__attribute__\(\(noinline\)\)/ && !/^#define/ {
          print substr(line, RSTART, RLENGTH - 1)
      }' "$work/stage2.noinline.c" | sort > "$work/noinline.names" || true
 n_noinline=$(wc -l < "$work/noinline.names" | tr -d ' ')
-[ "$n_noinline" -eq 11 ] ||
-  fail "read $n_noinline noinline symbol name(s); the 11 helpers name symbols and the EL_ENTRY macro does not"
+[ "$n_noinline" -eq 12 ] ||
+  fail "read $n_noinline noinline symbol name(s); the 12 helpers name symbols and the EL_ENTRY macro does not"
 
 # ---------------------------------------------------------------------------
 # The emission, and the naming flag's claim
@@ -1052,10 +1063,10 @@ fi
     "__attribute__((always_inline)) static inline uint64_t s2_walk(...)" \
     "the same, and it is the only forced-inline function" 1 \
     "the mode is a constant at the wrapper's call site, so inlining the walk folds the branches that mode does not take; every other helper is noinline, which is why the walk's text is the body and the helpers are calls"
-  printf '%s\t%s\t%s\t%s\t%d\t%s\n' r2 "noinline (11 helpers and the EL_ENTRY macro)" \
+  printf '%s\t%s\t%s\t%s\t%d\t%s\n' r2 "noinline (12 helpers and the EL_ENTRY macro)" \
     "$(paste -sd' ' "$work/noinline.names"), and the EL_ENTRY macro definition" \
-    "each helper a call in the fixture" 12 \
-    "their bodies are outside this fragment (binary64, vector word kernels) or are units of their own; each is resolved by the fixture's Calls environment at the record or tier theorem that states its contract; the count is twelve occurrences: the eleven helpers plus the macro definition, which names no symbol"
+    "each helper a separate function: the walk's fixture calls the ten it names, and z_scan is a call inside s2_string_body's own text" 13 \
+    "their bodies are the number path's binary64 arithmetic (which this fragment has no operations for), the walk's state rules, and z_scan's body scan; each the walk calls is resolved by the fixture's Calls environment at the contract that states it, and z_scan is reached one level down, inside s2_string_body; the count is thirteen occurrences: the twelve helpers plus the macro definition, which names no symbol"
   printf '%s\t%s\t%s\t%s\t%d\t%s\n' r3 "callee definitions" \
     "the emission's \`define internal\` blocks" \
     "the matching \`declare\` line" \

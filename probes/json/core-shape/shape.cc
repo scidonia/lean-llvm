@@ -420,11 +420,11 @@ static double act_guardscan(doc &d) {
   return t1 - t0;
 }
 
-/* the guard's decision and the call it selects: the arm the route passes */
+/* the guard's scan plus the shipping call: the arm the route passes (0) */
 static double act_guard(doc &d) {
   double t0 = now_ns();
-  int skip = leanllvm_route_escape_can_skip(d.win_site + 64, d.n);
-  uint64_t v = pipeline_call(d.win_site + 64, d.n, d.b, skip ? 0 : 2);
+  (void)leanllvm_route_escape_can_skip(d.win_site + 64, d.n);
+  uint64_t v = pipeline_call(d.win_site + 64, d.n, d.b, 0);
   double t1 = now_ns();
   sink ^= v;
   return t1 - t0;
@@ -600,12 +600,12 @@ static int verify(doc &d) {
       }
     }
   }
-  /* The escape-list guard's two sides, from the route's own copy of the
-     condition (`escape_guard.h`).  Where it fires, arm 2's list must be empty
-     and arm 0 must produce the identical result: that is the claim the guard
-     arms the call on.  Where it does not fire and arm 2's list is non-empty,
-     forcing arm 0 must change the result -- the failing control, so a guard
-     that never mattered cannot pass for one that does. */
+  /* The escape-list arm's two sides, from the route's own copy of the guard
+     condition (`escape_guard.h`).  Arm 0 (no list; stage 2 rescans) must agree
+     with arm 2 (the list) on every consumer-observable field; the list count is
+     the one field that differs by construction.  Where the guard fires, arm 2's
+     list must additionally be empty.  The comparison's liveness control is
+     `probes/json/route/guard.sh`'s defect build, not a corpus property. */
   {
     int skip = leanllvm_route_escape_can_skip(d.win_site + 64, d.n);
     buffers b;
@@ -613,26 +613,25 @@ static int verify(doc &d) {
     buffers_alloc(&b, d.n, d.nb, 0);
     buffers_zero(&b);
     uint64_t vv = pipeline_call(d.win_site + 64, d.n, b, 0);
-    int agreed = vv == v && b.nk == d.b.nk && b.nxp == d.b.nxp &&
+    int agreed = vv == v && b.nk == d.b.nk && b.nxp == 0 &&
                  b.ndst == d.b.ndst && b.nev == d.b.nev && b.err == d.b.err &&
                  memcmp(b.ev, ev0.data(), ev0.size()) == 0 &&
                  memcmp(b.dst, dst0.data(), dst0.size()) == 0;
-    if (skip) {
-      if (d.b.nxp != 0) {
-        fprintf(stderr, "SETUP: %s: the guard fires but arm 2's list holds %llu\n",
-                d.name, (unsigned long long)d.b.nxp);
-        buffers_free(&b);
-        return 3;
-      }
-      if (!agreed) {
-        fprintf(stderr, "SETUP: %s: the guard fires and arm 0 differs\n", d.name);
-        buffers_free(&b);
-        return 3;
-      }
-    } else if (d.b.nxp && agreed) {
+    if (skip && d.b.nxp != 0) {
+      fprintf(stderr, "SETUP: %s: the guard fires but arm 2's list holds %llu\n",
+              d.name, (unsigned long long)d.b.nxp);
+      buffers_free(&b);
+      return 3;
+    }
+    if (!agreed) {
       fprintf(stderr,
-              "SETUP: %s: the control did not fire (arm 0 agrees while arm 2's "
-              "list holds %llu)\n", d.name, (unsigned long long)d.b.nxp);
+              "SETUP: %s: arm 0 differs (verdict %llu/%llu, nxp %llu, ndst "
+              "%llu/%llu, nev %llu/%llu, err %llu/%llu)\n",
+              d.name, (unsigned long long)vv, (unsigned long long)v,
+              (unsigned long long)b.nxp, (unsigned long long)b.ndst,
+              (unsigned long long)d.b.ndst, (unsigned long long)b.nev,
+              (unsigned long long)d.b.nev, (unsigned long long)b.err,
+              (unsigned long long)d.b.err);
       buffers_free(&b);
       return 3;
     }
@@ -748,9 +747,9 @@ int main(int argc, char **argv) {
            v[A_PAD], v[A_FRESH3] / v[A_REF]);
   }
 
-  /* The escape-list guard, paired.  `site` is the route's call before this
-     change (arm 2 on every document); `guard` is the after arm (the presence
-     scan plus the arm it selects); both are one call in one timed window, the
+  /* The escape-list guard, paired.  `site` is the call the route made before
+     this change (arm 2 on every document); `guard` is the shipping call (the
+     presence scan plus arm 0).  Both are one call in one timed window, the
      route's own shape, so the pair differs in the scan and the arm alone.
      `delta` is the median of the per-round differences in ns/block (negative
      is a saving), and `site/site-ctl` is the drift control: the identical act

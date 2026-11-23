@@ -2156,6 +2156,19 @@ instrument's transcript and README carry the identity gates, the
 
 ### The lazy stage-2 measurement, and why it is rejected
 
+> **Superseded, in part.** The rejection below rests on the pre-deferral unit:
+> with the list withheld, `s2_string_body` took form (a) for every body and
+> validated none, so the withheld-list walk accepted documents the parser
+> refuses. That is no longer the shipping behaviour. Stage 2 now scans a
+> list-free body's own span and decodes it with the escape unit's list-free
+> entry, and `verdict-probe.c` shows the verdict and refusal offset unchanged
+> (`verdict=0 err=7` both with the list and with `nxp=0`). The measurement
+> below remains a record of the pre-deferral unit; the current instrument
+> prices the rescan against the list arm and finds the rescan slower on this
+> escape-heavy document (stage 2 +5.1 µs, pipeline +2.4 µs, 8.3%), which is the
+> deferral's tradeoff and not a validation regression. See
+> `probes/json/route/lazy-stage2/README.md` for the current rows.
+
 The profile above leaves stage 2's list-driven decode as the largest term after
 stage 1, and "do not materialise the decoded strings" is the obvious
 hypothesis. `probes/json/route/lazy-stage2/` prices it. It is bench-only: six

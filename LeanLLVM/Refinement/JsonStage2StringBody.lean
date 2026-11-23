@@ -27,9 +27,11 @@ rather than under-specified**: `if.end` compares the expander's return against t
 sentinel `0xffffffffffffffff` and takes the refusal path when it matches, while the
 model's `stage2StringBody` has no sentinel branch.  At a decoded answer of exactly
 `2 ^ 64 - 1` bytes the body answers form 0 and the model form 2, so no
-postcondition holds at that input; `s2StringBodyPre`'s `len.toNat + 1 < 2 ^ 64`
-excludes that one document length — sixteen exabytes — and the staging's own
-docstring states why.  One more fact of the chain's shape belongs to the closing:
+postcondition holds at that input; `s2StringBodyPre`'s `len.toNat + 1 < 2 ^ 63`
+excludes that length and, in the same clause, keeps the list-free arm's
+sign-extended `getelementptr` on its positive branch.  Both costs are lengths of
+sixteen exabytes or more, and the staging's own docstring states why.  One more
+fact of the chain's shape belongs to the closing:
 `BoundLoop.cost` is a structure projection, so a bound the loop hands back mentions
 it opaquely and `omega` needs it stated at the numeral.
 

@@ -46,10 +46,12 @@
        Bit 0 clear is the only arm with a setup obligation: POS8 reads the entry
        unit's file-static position table, and that table is filled only by
        `leanllvm_json_entry_table` (`entry.h`); see below.
-     - bit 1: the escape-list gate, `0` = no list, `1` = build it.  This is the
-       measured density probe's decision, and it is an **arm selector**, not an
-       escape-presence test: a document can carry escapes and still be given no
-       list;
+     - bit 1: the escape-list gate, `0` = no list, `1` = build it.  This is an
+       **arm selector**, not an escape-presence test: a document can carry
+       escapes and still be given no list.  The shipping policy clears it on
+       every document, and stage 2 then classifies each string body by scanning
+       its own span; the list arm remains byte-exact and observationally
+       equivalent on every consumer-visible field (`probes/json/route/guard.sh`);
      - bit 2: the UTF-8 stage's `ungated` parameter, whose two block paths agree
        on the verdict.
 
@@ -79,10 +81,11 @@
    offset are the reference parser's is the pipeline's specification, not this
    header's claim.
 
-   The escape *expander* is not called here: in the measured assembly stage 2's
-   consumer calls it per string (`s2port.h:526-529`), and the assembled form
-   keeps that call one level down, so the expander's record is consumed inside
-   `stage2_satisfies` rather than here.
+   The escape decoder is not called here: stage 2's string arm calls it per
+   body (`stage2.c`'s `s2_string_body`), through `leanllvm_json_escape_expand`
+   when a list was supplied and `leanllvm_json_escape_decode` when it was not.
+   The assembled form keeps those calls one level down, so the decoder's record
+   is consumed inside `stage2_satisfies` rather than here.
 
    See README.md for the assembly's provenance, its capture and its limits. */
 #ifndef LEANLLVM_KERNEL_JSON_PIPELINE_H

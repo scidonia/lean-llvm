@@ -664,7 +664,7 @@ def s2StringBodyScanInv (mem0 : Mem) (xj pos0 xp N : Nat) (ps : List Nat)
   s.pc = "land.rhs" ∧ s.mem = writeBytes mem0 xj (wordBytes 8 c) ∧ c + r = N ∧
   (∃ p op, s.pre = some p ∧
     phiIncoming p [("while.body", Operand.reg "%inc"),
-      ("entry", Operand.reg "%xj.promoted")] = some op ∧
+      ("while.cond.preheader", Operand.reg "%xj.promoted")] = some op ∧
     evalOperand (stateAt s.env s) op = some (.int 64 (BitVec.ofNat 64 c))) ∧
   lookupName s.env "%xp" = some (.ptr xp) ∧
   lookupName s.env "%sub.ptr.sub" = some (.int 64 (BitVec.ofNat 64 pos0)) ∧
@@ -886,7 +886,7 @@ theorem s2StringBodyScanInv_entry (mem0 : Mem) (xj pos0 xp N j0 : Nat)
     (hj0 : j0 ≤ N)
     (hphi : ∃ p op, s.pre = some p ∧
       phiIncoming p [("while.body", Operand.reg "%inc"),
-        ("entry", Operand.reg "%xj.promoted")] = some op ∧
+        ("while.cond.preheader", Operand.reg "%xj.promoted")] = some op ∧
       evalOperand (stateAt s.env s) op = some (.int 64 (BitVec.ofNat 64 j0)))
     (hxp : lookupName s.env "%xp" = some (.ptr xp))
     (hsub : lookupName s.env "%sub.ptr.sub" = some (.int 64 (BitVec.ofNat 64 pos0)))

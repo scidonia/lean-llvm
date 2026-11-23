@@ -1,26 +1,30 @@
-/* guard_check.c -- the escape-list guard's equivalence check and its control.
+/* guard_check.c -- the escape-list arm's equivalence check: stage 2 with the
+ * list against stage 2 without it.
  *
- * `escape_guard.h` claims a fact about the document: with no backslash byte and
- * no byte at or below `0x1F`, the stage-1 escape list arm 2 builds is empty on
- * every block, so the pipeline's arm bit 1 can be cleared.  "The list is empty"
- * is what the claim rests on and it is checked here rather than assumed:
+ * Stage 1's escape-position list is an input to the decoding route, not to the
+ * verdict.  A list-free call classifies each string body by scanning its own
+ * span and decodes it with the escape unit's list-free decoder, so the two arms
+ * must produce the same consumer-observable output on every document:
  *
  *   * for every document, the pipeline is called twice on the same bytes with
- *     the same staging -- once with arm 2 and once with the arm the guard
- *     selects -- and the two results are compared field for field: the verdict,
- *     the four cursors, the error offset, the arena bytes and the event bytes;
- *   * where the guard fires, the observation's `nxp` must be zero and the two
- *     results must be byte-identical, so the claim is the list's own emptiness
- *     and not a coincidence of the two arms' reporting;
- *   * the control runs arm 0 on a document whose arm-2 list is not empty, and
- *     must see the results diverge: a guard whose forced decision changes
- *     nothing would be indistinguishable from a guard that never fires.
+ *     the same staging -- once with arm 2 (the list) and once with arm 0 (no
+ *     list) -- and the two results are compared field for field: the verdict,
+ *     the entry cursor, the arena and event extents, the error offset, the
+ *     arena bytes and the event bytes.  The escape-list count is stage 1's
+ *     output and is reported, not compared;
+ *   * the list is nevertheless checked as the document fact it is: where the
+ *     guard fires (no backslash and no byte at or below `0x1F`), the arm-2 list
+ *     must be empty;
+ *   * the comparison's own control is `guard.sh`'s defect build, not a property
+ *     of the corpus: a stage 2 whose list-free arm returns the input span
+ *     without validating it must make arm 0 disagree with arm 2 on the
+ *     escape-bearing rows.  A comparison that cannot see that build differ
+ *     would be an equality over nothing.
  *
  * A row prints `<source> <label> n=<n> guard=<0|1> nxp=<arm-2 count>
- * identical=<0|1> control=<none|fired>`, and the last line is the summary the
- * caller asserts its controls on.  Exit status: 0 when every row holds, 1 when
- * one does not, 3 on a setup fault (an unreadable file, a bad hex row, an
- * allocation that failed).
+ * identical=<0|1>`, and the last line is the summary.  Exit status: 0 when
+ * every row holds, 1 when one does not, 3 on a setup fault (an unreadable file,
+ * a bad hex row, an allocation that failed).
  *
  * The probe stages the document exactly as `driver.c` and the route do -- the
  * three zero prefix bytes, the document, and 64 bytes per block of padding, so
@@ -113,12 +117,18 @@ static int run(const uint8_t *doc, uint64_t n, uint64_t arm, result *out) {
     return 0;
 }
 
-/* 1 when the two calls' observable results are identical, field for field and
-   byte for byte.  A difference in any cursor is a difference even where the
-   payloads happen to agree: the cursor is what stage 2 was told the list
-   length was. */
+/* 1 when the two calls' consumer-observable results are identical, field for
+   field and byte for byte: the verdict, the entry cursor, the arena and event
+   extents, the refusal offset, and both payloads.  The escape-list count is
+   not compared: it is stage 1's output, and the list-free arm leaves it zero
+   by construction. */
 static int identical(const result *a, const result *b) {
-    if (a->verdict != b->verdict || a->nk != b->nk || a->nxp != b->nxp ||
+    /* The list is stage 1's output, not a consumer-observable: arm 0 leaves
+       nxp zero by construction.  Everything the call reports after stage 2 —
+       the verdict, the entry cursor, the arena and event extents, the refusal
+       offset and both payloads — must be the same whether the list was built
+       or the bodies were rescanned. */
+    if (a->verdict != b->verdict || a->nk != b->nk ||
         a->ndst != b->ndst || a->nev != b->nev || a->err != b->err)
         return 0;
     if (a->ndst && memcmp(a->dst, b->dst, (size_t)a->ndst) != 0) return 0;
@@ -130,7 +140,6 @@ static int identical(const result *a, const result *b) {
 static const char *first_difference(const result *a, const result *b) {
     if (a->verdict != b->verdict) return "verdict";
     if (a->nk != b->nk) return "nk";
-    if (a->nxp != b->nxp) return "nxp";
     if (a->ndst != b->ndst) return "ndst";
     if (a->nev != b->nev) return "nev";
     if (a->err != b->err) return "err";
@@ -172,50 +181,36 @@ static int decode_hex(const char *hex, uint8_t **out, uint64_t *n) {
     return 0;
 }
 
-static uint64_t rows_compared, rows_fired, rows_with_list, controls_fired;
+static uint64_t rows_compared, rows_fired, rows_with_list;
 
-/* One document's comparison, the claim and the control.  Returns 0 when the
-   row holds and 1 when it does not; the diagnostic is on stderr. */
+/* One document's comparison: arm 0 (stage 1 emits no list; stage 2 rescans each
+   body) against arm 2 (the stage-1 list), on the consumer-observable output.
+   Returns 0 when the row holds and 1 when it does not; the diagnostic is on
+   stderr. */
 static int check_row(const char *source, const char *label, const uint8_t *doc,
                      uint64_t n) {
     int skip = leanllvm_route_escape_can_skip(doc, n);
-    result arm2, guarded;
-    if (run(doc, n, 2, &arm2) != 0 || run(doc, n, skip ? 0 : 2, &guarded) != 0) {
+    result arm2, rescan;
+    if (run(doc, n, 2, &arm2) != 0 || run(doc, n, 0, &rescan) != 0) {
         fprintf(stderr, "SETUP: %s: an allocation failed\n", label);
         return 3;
     }
-    int same = identical(&arm2, &guarded);
-    int control = 0; /* 0 = none, 1 = fired */
-    result forced;
-    int have_forced = 0;
-    if (arm2.nxp) {
-        if (run(doc, n, 0, &forced) != 0) {
-            fprintf(stderr, "SETUP: %s: an allocation failed\n", label);
-            result_free(&arm2);
-            result_free(&guarded);
-            return 3;
-        }
-        have_forced = 1;
-        control = identical(&arm2, &forced) ? 0 : 1;
-    }
+    int same = identical(&arm2, &rescan);
 
     rows_compared++;
     if (skip) rows_fired++;
     if (arm2.nxp) rows_with_list++;
-    if (control) controls_fired++;
 
-    printf("%s %s n=%llu guard=%d nxp=%llu identical=%d control=%s\n", source,
-           label, (unsigned long long)n, skip, (unsigned long long)arm2.nxp,
-           same, control ? "fired" : (have_forced ? "absent" : "none"));
+    printf("%s %s n=%llu guard=%d nxp=%llu identical=%d\n", source, label,
+           (unsigned long long)n, skip, (unsigned long long)arm2.nxp, same);
 
     int bad = 0;
-    if (skip && !same) {
+    if (!same) {
         fprintf(stderr,
-                "FAIL: %s: the guard fired and the arms differ (first field "
-                "%s; nxp %llu against %llu)\n",
-                label, first_difference(&arm2, &guarded),
-                (unsigned long long)arm2.nxp,
-                (unsigned long long)guarded.nxp);
+                "FAIL: %s: arm 0 and arm 2 differ (first field %s; arm-2 list "
+                "%llu entries)\n",
+                label, first_difference(&arm2, &rescan),
+                (unsigned long long)arm2.nxp);
         bad = 1;
     }
     if (skip && arm2.nxp != 0) {
@@ -225,16 +220,8 @@ static int check_row(const char *source, const char *label, const uint8_t *doc,
                 label, (unsigned long long)arm2.nxp);
         bad = 1;
     }
-    if (!skip && arm2.nxp && !control) {
-        fprintf(stderr,
-                "FAIL: %s: the control did not fire (arm 0 and arm 2 agree on "
-                "a document whose arm-2 list holds %llu entries)\n",
-                label, (unsigned long long)arm2.nxp);
-        bad = 1;
-    }
-    if (have_forced) result_free(&forced);
     result_free(&arm2);
-    result_free(&guarded);
+    result_free(&rescan);
     return bad;
 }
 
@@ -298,10 +285,9 @@ int main(int argc, char **argv) {
         return 3;
     }
     fprintf(stderr, "summary rows_compared=%llu rows_fired=%llu "
-            "rows_with_list=%llu controls_fired=%llu status=%d\n",
+            "rows_with_list=%llu status=%d\n",
            (unsigned long long)rows_compared,
            (unsigned long long)rows_fired,
-           (unsigned long long)rows_with_list,
-           (unsigned long long)controls_fired, status);
+           (unsigned long long)rows_with_list, status);
     return status;
 }

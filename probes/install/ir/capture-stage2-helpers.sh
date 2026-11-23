@@ -131,8 +131,8 @@ fail() { printf 'SETUP: %s\n' "$*" >&2; exit 3; }
 if [ "${1:-}" = "--emit-pins" ]; then
   sym=${2:-num_fast_el1}
   case "$sym" in
-    num_fast_el1 | od_scalar_value) ;;
-    *) fail "--emit-pins: no pin configuration for ${sym} (num_fast_el1, od_scalar_value)" ;;
+    num_fast_el1 | od_scalar_value | s2_string_body) ;;
+    *) fail "--emit-pins: no pin configuration for ${sym} (num_fast_el1, od_scalar_value, s2_string_body)" ;;
   esac
   fixture=$here/stage2.helper.$sym.ll
   [ -f "$fixture" ] || fail "absent: $fixture"
@@ -279,6 +279,15 @@ def runBlocks : List String :=
    "land.lhs.true195", "while.body206", "if.then209", "if.end216", "cleanup223.thread",
    "if.end226", "if.end230"]
 
+/-- The blocks `s2_string_body`'s pins are generated for: every block of the
+two-arm body, so the literal and a `findBlock` equation for each are emitted from
+the parse. -/
+def s2sbBlocks : List String :=
+  ["entry", "while.cond.preheader", "land.rhs", "while.body", "land.lhs.true",
+   "if.then9", "if.end", "if.then12", "if.end15", "if.end16", "if.then20",
+   "if.end21", "if.then26", "if.end29", "if.then35", "if.end39", "if.then41",
+   "if.end43", "cleanup47"]
+
 /-- The fixture, its declared layout, the prefix of the generated names, and the
 blocks a run reads (an empty list emits the body literal alone). -/
 def config : String → Option (String × List (String × Nat) × String × List String)
@@ -287,6 +296,9 @@ def config : String → Option (String × List (String × Nat) × String × List
         runBlocks)
   | "od_scalar_value" =>
       some ("probes/install/ir/stage2.helper.od_scalar_value.ll", [], "odScalarValue", [])
+  | "s2_string_body" =>
+      some ("probes/install/ir/stage2.helper.s2_string_body.ll", [], "s2StringBody",
+        s2sbBlocks)
   | _ => none
 
 def main : IO Unit := do
@@ -360,15 +372,31 @@ sed -e 's/__attribute__((always_inline)) static inline/__attribute__((noinline))
     -e 's/#define EL_ENTRY __attribute__((always_inline)) static inline/#define EL_ENTRY __attribute__((noinline)) static inline/' \
     "$repo/$src" > "$work/step1.c"
 
-awk '{ if (hold) { print "__attribute__((always_inline)) static inline uint64_t"; hold = 0 }
-       if ($0 == "__attribute__((noinline)) static inline uint64_t") { hold = 1; next }
-       print }
-     END { if (hold) exit 1 }' "$work/step1.c" > "$work/stage2.noinline.c" ||
+# Restore the attribute on `s2_walk` alone.  The function is named, not matched by
+# its return type: `z_scan` has the same one-line header, and restoring every
+# `static inline uint64_t` would leave it inlined, which is not the transform this
+# script states.
+awk '
+  $0 == "__attribute__((noinline)) static inline uint64_t" {
+    attr = $0
+    if ((getline nxt) <= 0) { print attr; exit 1 }
+    if (nxt ~ /^s2_walk\(/) { print "__attribute__((always_inline)) static inline uint64_t" }
+    else { print attr }
+    print nxt
+    next
+  }
+  { print }' "$work/step1.c" > "$work/stage2.noinline.c" ||
   fail "the s2_walk attribute was not restored; the transform is not the one this script describes"
 
+n_al=$(grep -c 'always_inline' "$work/stage2.noinline.c" || true)
 n_ni=$(grep -c '__attribute__((noinline))' "$work/stage2.noinline.c" || true)
-[ "$n_ni" -eq 12 ] ||
-  fail "the transformed source carries $n_ni 'noinline' occurrences; the always_inline set is 11 helpers plus the EL_ENTRY macro definition"
+[ "$n_al" -eq 2 ] ||
+  fail "the transformed source carries $n_al 'always_inline' occurrences; the transform leaves the comment and s2_walk's attribute, so 2"
+[ "$n_ni" -eq 13 ] ||
+  fail "the transformed source carries $n_ni 'noinline' occurrences; the always_inline set is 12 helpers plus the EL_ENTRY macro definition"
+grep -A1 '^__attribute__((always_inline)) static inline uint64_t$' "$work/stage2.noinline.c" |
+  grep -q '^s2_walk(' ||
+  fail "the one forced-inline function is not s2_walk"
 
 # ---------------------------------------------------------------------------
 # The emission

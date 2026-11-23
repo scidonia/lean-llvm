@@ -108,8 +108,9 @@ hypothesis list.
 The six bounds are **the caller's arithmetic**, not a fourth class: `p < 2 ^ 64`
 and `base ≤ p` make the body's `ptrtoint`-and-subtract agree with the model's
 `Nat` subtraction, `p - base + len.toNat < 2 ^ 64` keeps the model's window from
-wrapping, `len.toNat + 1 < 2 ^ 64` excludes the one length the body's sentinel
-confuses with a refusal, and `j0 < 2 ^ 63`/`nxp.toNat < 2 ^ 63` keep the scan's
+wrapping, `len.toNat + 1 < 2 ^ 63` excludes both the sentinel confusion on the
+list arm and the negative branch of the list-free arm's sign-extended
+`getelementptr`, and `j0 < 2 ^ 63`/`nxp.toNat < 2 ^ 63` keep the scan's
 sign-extended index forward.  A producer discharges them from the geometry's
 address and document bounds, so they stay hypotheses here.
 
@@ -130,7 +131,7 @@ theorem s2StringBodyPre_of_staging {mem : Mem} {next : Nat}
     (hp_lt : p < 2 ^ 64)
     (hbase_le : base ≤ p)
     (hwrap : p - base + len.toNat < 2 ^ 64)
-    (hlen_lt : len.toNat + 1 < 2 ^ 64)
+    (hlen_lt : len.toNat + 1 < 2 ^ 63)
     (hj0_lt : j0 < 2 ^ 63)
     (hnxp_lt : nxp.toNat < 2 ^ 63)
     (houtn : readBytes mem outn 8 ≠ none)
@@ -449,29 +450,85 @@ theorem stage2StringBody_form_congr {mem mem' : Mem} {c p dst outn xp xj len nxp
     (hm : stage2StringBody mem c p len dst outn xp xj nxp = some (m, form, slot))
     (hm' : stage2StringBody mem' c p len dst outn xp xj nxp = some (m', form', slot')) :
     form' = form := by
+  -- The two runs read the same five words, so each branch decision is the
+  -- same on both sides and the form is the branch's own constant; only the
+  -- memory each accepting branch writes differs.
   unfold stage2StringBody at hm hm'
   rw [hbase, hj0, hps, hbody, he] at hm'
   split at hm
-  · rename_i base j0 ps hb hj hp
-    dsimp only at hm
-    simp only [hb, hj, hp] at hm'
+  · simp at hm
+  · rename_i base hb
+    simp only [hb] at hm'
     split at hm
-    · -- the body itself: both answer form `1`
-      split at hm' <;> simp_all
-    · split at hm
+    · -- no list: the body's own span decides the form
+      rename_i hz
+      simp only [hz] at hm'
+      split at hm
       · simp at hm
       · rename_i body hbd
         simp only [hbd] at hm'
         split at hm
-        · -- the escaped form: both answer form `2`
-          split at hm' <;> simp_all
-        · rename_i off k href
-          simp only [href] at hm'
+        · -- plain: form `1`
+          simp_all
+        · rename_i off b hfind
+          simp only [hfind] at hm'
           split at hm
-          · -- the refusal: both answer form `0`
-            split at hm' <;> simp_all
+          · -- a control byte: form `0`
+            rename_i hctl
+            simp only [hctl] at hm'
+            split at hm
+            · rename_i e herr
+              simp only [herr] at hm'
+              simp_all
+            · simp at hm
+          · -- a backslash: the list-free decoder answers
+            rename_i hbs
+            simp only [hbs] at hm'
+            split at hm
+            · -- escaped: form `2`
+              rename_i out k hdec
+              simp only [hdec] at hm'
+              simp_all
+            · -- malformed escape: form `0`
+              rename_i rel k href
+              simp only [href] at hm'
+              split at hm
+              · rename_i e herr
+                simp only [herr] at hm'
+                simp_all
+              · simp at hm
+    · -- a stage-1 list: the scanned position decides the form
+      rename_i hnz
+      simp only [hnz] at hm'
+      split at hm
+      · rename_i j0 ps hj hp
+        simp only [hj, hp] at hm'
+        dsimp only at hm
+        split at hm
+        · -- no position inside the body: form `1`
+          rename_i hemp
+          simp only [hemp] at hm'
+          simp_all
+        · rename_i hnemp
+          simp only [hnemp] at hm'
+          split at hm
           · simp at hm
-  · simp at hm
+          · rename_i body hbd
+            simp only [hbd] at hm'
+            split at hm
+            · -- the decoded form: form `2`
+              rename_i out k hdec
+              simp only [hdec] at hm'
+              simp_all
+            · -- the refusal: form `0`
+              rename_i off k href
+              simp only [href] at hm'
+              split at hm
+              · rename_i e herr
+                simp only [herr] at hm'
+                simp_all
+              · simp at hm
+      · simp at hm
 
 /-- **The bundle's word is the model's form.**  A bundle states a call's answer at the
 head's memory and cursor; the string path's call is made at link 8's memory, where two
@@ -568,37 +625,83 @@ theorem s2StringBody_frame_of_form {mem : Mem} {c p len dst outn xp xj nxp next 
     exact UnchangedOutside.four_writes (by simp) (by simp) (by simp) (by simp)
       h1 h2 h3 h4
   split at hm
-  · -- form `1`: the empty window; the cursor and the length word
-    have hinj := Option.some.inj hm
-    simp only [Prod.mk.injEq] at hinj
-    obtain ⟨rfl, -, rfl⟩ := hinj
-    exact hframeFour (o1 := []) (slot := []) (by simp)
-      (wordBytes_length_eight _) (wordBytes_length_eight _) (by simp)
-  · split at hm
+  · -- no list: the body's own span decides the form
+    split at hm
     · simp at hm
     · rename_i body hbody
       split at hm
-      · -- form `2`: the decoded prefix and the three words
-        rename_i out k hdec
+      · -- form `1`: the length word alone
         have hinj := Option.some.inj hm
         simp only [Prod.mk.injEq] at hinj
-        have hle := escapeDecodeGo_length_le body
-          (hspace base j0 ps body hbase hj0 hps hbody) 0 [] out k hdec
-        have hbl : body.length = len := JsonEntrySteps.readBytes_length mem p len hbody
-        simp only [List.length_nil, Nat.zero_add] at hle
-        have hle' : out.length ≤ body.length := by simpa using hle
-        have houtle : out.length ≤ len := by rw [hbl] at hle'; exact hle'
         obtain ⟨rfl, -, rfl⟩ := hinj
-        exact hframeFour (o1 := out) (slot := wordBytes 8 out.length) houtle
-          (wordBytes_length_eight _) (wordBytes_length_eight _)
-          (wordBytes_length_eight _)
-      · -- the refusing arm: form `0`
-        rename_i off k href
+        exact hframeFour (o1 := []) (o2 := []) (slot := []) (by simp)
+          (by simp) (wordBytes_length_eight _) (by simp)
+      · rename_i off b hfind
         split at hm
-        · have h0 : (0 : Nat) = form :=
-            congrArg (fun p : Mem × Nat × List UInt8 => p.2.1) (Option.some.inj hm)
-          exact absurd h0.symm hform
-        · simp at hm
+        · -- a control byte: form `0`, the refusal record alone
+          split at hm
+          · have h0 : (0 : Nat) = form :=
+              congrArg (fun p : Mem × Nat × List UInt8 => p.2.1) (Option.some.inj hm)
+            exact absurd h0.symm hform
+          · simp at hm
+        · split at hm
+          · -- form `2`: the plain prefix and the decoded suffix
+            rename_i out k hdec
+            have hinj := Option.some.inj hm
+            simp only [Prod.mk.injEq] at hinj
+            have hlen : (body.take off ++ out).length ≤ len := by
+              have hout := escapeDecodeSpan_length_le (bs := body.drop off) hdec
+              rw [List.length_drop] at hout
+              have hbl : body.length = len :=
+                JsonEntrySteps.readBytes_length mem p len hbody
+              have hoff : off < body.length := firstSpanSpecial?_lt hfind
+              have ht := List.length_take_le off body
+              rw [List.length_append]
+              omega
+            obtain ⟨rfl, -, rfl⟩ := hinj
+            exact hframeFour (o1 := body.take off ++ out) (o2 := [])
+              (slot := wordBytes 8 0) hlen (by simp)
+              (wordBytes_length_eight _) (wordBytes_length_eight _)
+          · -- a malformed escape: form `0`
+            split at hm
+            · have h0 : (0 : Nat) = form :=
+                congrArg (fun p : Mem × Nat × List UInt8 => p.2.1) (Option.some.inj hm)
+              exact absurd h0.symm hform
+            · simp at hm
+  · -- a stage-1 list: the scanned position decides the form
+    split at hm
+    · -- no position inside the body: form `1`, the cursor and the length word
+      have hinj := Option.some.inj hm
+      simp only [Prod.mk.injEq] at hinj
+      obtain ⟨rfl, -, rfl⟩ := hinj
+      exact hframeFour (o1 := []) (o2 := wordBytes 8 _) (slot := []) (by simp)
+        (wordBytes_length_eight _) (wordBytes_length_eight _) (by simp)
+    · -- a position inside the body: the decoded arm, or a refusal
+      split at hm
+      · simp at hm
+      · rename_i body hbody
+        split at hm
+        · -- form `2`: the decoded prefix and the three words
+          rename_i out k hdec
+          have hinj := Option.some.inj hm
+          simp only [Prod.mk.injEq] at hinj
+          have hle := escapeDecodeGo_length_le body
+            (hspace base j0 ps body hbase hj0 hps hbody) 0 [] out k hdec
+          have hbl : body.length = len := JsonEntrySteps.readBytes_length mem p len hbody
+          simp only [List.length_nil, Nat.zero_add] at hle
+          have hle' : out.length ≤ body.length := by simpa using hle
+          have houtle : out.length ≤ len := by rw [hbl] at hle'; exact hle'
+          obtain ⟨rfl, -, rfl⟩ := hinj
+          exact hframeFour (o1 := out) (slot := wordBytes 8 out.length) houtle
+            (wordBytes_length_eight _) (wordBytes_length_eight _)
+            (wordBytes_length_eight _)
+        · -- the refusing arm: form `0`
+          rename_i off k href
+          split at hm
+          · have h0 : (0 : Nat) = form :=
+              congrArg (fun p : Mem × Nat × List UInt8 => p.2.1) (Option.some.inj hm)
+            exact absurd h0.symm hform
+          · simp at hm
 
 /-! ### The decoded length at the call's own memory
 
@@ -642,29 +745,64 @@ theorem stage2StringBody_slot_le {mem : Mem} {c p len dst outn xp xj nxp : Nat}
   unfold stage2StringBody at hm
   simp only [hbase, hj0, hps] at hm
   split at hm
-  · -- the body-itself arm writes no slot
-    have hinj := Option.some.inj hm
-    simp only [Prod.mk.injEq] at hinj
-    obtain ⟨-, -, rfl⟩ := hinj
-    simp
-  · split at hm
+  · -- no list: the body's own span decides the form
+    split at hm
     · simp at hm
     · rename_i body hbody
       split at hm
-      · -- the decoded arm's slot is the decoded length
-        rename_i out k hdec
+      · -- the plain form writes no slot
         have hinj := Option.some.inj hm
         simp only [Prod.mk.injEq] at hinj
         obtain ⟨-, -, rfl⟩ := hinj
-        exact wordBytes_length_eight _
-      · -- the refusing arm's slot is the body-relative offset
-        rename_i off k href
+        simp
+      · rename_i off b hfind
         split at hm
-        · have hinj := Option.some.inj hm
+        · -- a control byte refuses with no slot
+          split at hm
+          · have hinj := Option.some.inj hm
+            simp only [Prod.mk.injEq] at hinj
+            obtain ⟨-, -, rfl⟩ := hinj
+            simp
+          · simp at hm
+        · split at hm
+          · -- the escaped form's slot is the zero word
+            rename_i out k hdec
+            have hinj := Option.some.inj hm
+            simp only [Prod.mk.injEq] at hinj
+            obtain ⟨-, -, rfl⟩ := hinj
+            exact wordBytes_length_eight _
+          · -- a malformed escape's slot is the body-relative offset
+            split at hm
+            · have hinj := Option.some.inj hm
+              simp only [Prod.mk.injEq] at hinj
+              obtain ⟨-, -, rfl⟩ := hinj
+              exact wordBytes_length_eight _
+            · simp at hm
+  · -- a stage-1 list: the scanned position decides the form
+    split at hm
+    · -- no position inside the body writes no slot
+      have hinj := Option.some.inj hm
+      simp only [Prod.mk.injEq] at hinj
+      obtain ⟨-, -, rfl⟩ := hinj
+      simp
+    · split at hm
+      · simp at hm
+      · rename_i body hbody
+        split at hm
+        · -- the decoded arm's slot is the decoded length
+          rename_i out k hdec
+          have hinj := Option.some.inj hm
           simp only [Prod.mk.injEq] at hinj
           obtain ⟨-, -, rfl⟩ := hinj
           exact wordBytes_length_eight _
-        · simp at hm
+        · -- the refusing arm's slot is the body-relative offset
+          rename_i off k href
+          split at hm
+          · have hinj := Option.some.inj hm
+            simp only [Prod.mk.injEq] at hinj
+            obtain ⟨-, -, rfl⟩ := hinj
+            exact wordBytes_length_eight _
+          · simp at hm
 
 /-- **The decoded length at the caller's memory.**  `s2StringBody_outn_le`'s word
 survives the private slot's write at `next`, because the pre separates them; so the
@@ -715,28 +853,73 @@ theorem stage2StringBody_hasBytes {mem : Mem} {c p len dst outn xp xj nxp : Nat}
   intro a k h
   unfold stage2StringBody at hm
   split at hm
+  · simp at hm
   · simp only [] at hm
     split at hm
-    · have hinj := Option.some.inj hm
-      simp only [Prod.mk.injEq] at hinj
-      obtain ⟨rfl, -, -⟩ := hinj
-      exact hasBytes_writeBytes (hasBytes_writeBytes h)
-    · split at hm
+    · -- no list: the body's own span decides the form
+      split at hm
       · simp at hm
-      · split at hm
-        · have hinj := Option.some.inj hm
+      · rename_i body hbody
+        split at hm
+        · -- the plain form writes only the length word
+          have hinj := Option.some.inj hm
           simp only [Prod.mk.injEq] at hinj
           obtain ⟨rfl, -, -⟩ := hinj
-          exact hasBytes_writeBytes (hasBytes_writeBytes (hasBytes_writeBytes h))
+          exact hasBytes_writeBytes h
+        · rename_i off b hfind
+          split at hm
+          · -- a control byte writes the refusal record
+            split at hm
+            · have hinj := Option.some.inj hm
+              simp only [Prod.mk.injEq] at hinj
+              obtain ⟨rfl, -, -⟩ := hinj
+              unfold stage2ErrSetMsg stage2ErrSet
+              exact hasBytes_writeBytes (hasBytes_writeBytes (hasBytes_writeBytes h))
+            · simp at hm
+          · split at hm
+            · -- the escaped form writes the prefix and the length word
+              rename_i out k hdec
+              have hinj := Option.some.inj hm
+              simp only [Prod.mk.injEq] at hinj
+              obtain ⟨rfl, -, -⟩ := hinj
+              exact hasBytes_writeBytes (hasBytes_writeBytes h)
+            · -- a malformed escape writes the refusal record
+              split at hm
+              · have hinj := Option.some.inj hm
+                simp only [Prod.mk.injEq] at hinj
+                obtain ⟨rfl, -, -⟩ := hinj
+                unfold stage2ErrSetMsg stage2ErrSet
+                exact hasBytes_writeBytes (hasBytes_writeBytes (hasBytes_writeBytes h))
+              · simp at hm
+    · -- a stage-1 list: the scanned position decides the form
+      split at hm
+      · split at hm
+        · -- no position inside the body writes the cursor and length words
+          have hinj := Option.some.inj hm
+          simp only [Prod.mk.injEq] at hinj
+          obtain ⟨rfl, -, -⟩ := hinj
+          exact hasBytes_writeBytes (hasBytes_writeBytes h)
         · split at hm
-          · have hinj := Option.some.inj hm
-            simp only [Prod.mk.injEq] at hinj
-            obtain ⟨rfl, -, -⟩ := hinj
-            refine hasBytes_writeBytes ?_
-            unfold stage2ErrSetMsg stage2ErrSet
-            exact hasBytes_writeBytes (hasBytes_writeBytes (hasBytes_writeBytes h))
           · simp at hm
-  · simp at hm
+          · rename_i body hbody
+            split at hm
+            · -- the decoded form writes the prefix, cursor and length words
+              rename_i out k hdec
+              have hinj := Option.some.inj hm
+              simp only [Prod.mk.injEq] at hinj
+              obtain ⟨rfl, -, -⟩ := hinj
+              exact hasBytes_writeBytes (hasBytes_writeBytes (hasBytes_writeBytes h))
+            · -- the refusal writes the record and the cursor word
+              rename_i off k href
+              split at hm
+              · have hinj := Option.some.inj hm
+                simp only [Prod.mk.injEq] at hinj
+                obtain ⟨rfl, -, -⟩ := hinj
+                refine hasBytes_writeBytes ?_
+                unfold stage2ErrSetMsg stage2ErrSet
+                exact hasBytes_writeBytes (hasBytes_writeBytes (hasBytes_writeBytes h))
+              · simp at hm
+      · simp at hm
 
 /-- **The caller's presence over `walkStaged` survives the call.**  The callee's
 answer names its memory as `writeBytes` of the model's memory at the call's
@@ -1404,8 +1587,11 @@ theorem s2StringBodyPre_at_string_call {m0 : Mem} {G : WalkGeom m0} {C : WalkCar
   have hbase_le : G.b ≤ G.b + p + 1 := by omega
   have hwrap : G.b + p + 1 - G.b + (BitVec.ofNat 64 ext).toNat < 2 ^ 64 := by
     rw [hlenv]; omega
-  have hlen_lt : (BitVec.ofNat 64 ext).toNat + 1 < 2 ^ 64 := by
-    rw [hlenv]; omega
+  have hlen_lt : (BitVec.ofNat 64 ext).toNat + 1 < 2 ^ 63 := by
+    rw [hlenv]
+    have h := G.maxDoc
+    simp only [stage2MaxDocument] at h
+    omega
   -- the twenty separations, at the staging's addresses
   have hxj_next : RegionsApart (G.next0 + 12) 8 s.next 8 := by
     unfold RegionsApart; left; omega
