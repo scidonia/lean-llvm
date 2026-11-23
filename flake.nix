@@ -8,150 +8,114 @@
   outputs =
     { self, nixpkgs }:
     let
-      systems = [ "x86_64-linux" ];
-      forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
+      lib = nixpkgs.lib;
+      # aarch64-linux is declared so a consumer running on Arm gets a `lake`
+      # wrapper built for that architecture. Nothing under it is cached:
+      # nixpkgs' Lean packages compile from source there, mathlib included.
+      systems = [ "x86_64-linux" "aarch64-linux" ];
+      forAllSystems = f: lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
 
-      # `leanPackages.lean4` carries the patch that makes Lake treat a package
-      # under `/nix/store` as already elaborated, so a checkout builds this
-      # project's modules and nothing else.  Its mathlib is the revision
-      # `lakefile.toml` pins, tag `v4.35.0` of `leanprover-community/mathlib4`.
-      #
-      # The store packages ship the generated `.c` files but not the
-      # `.c.o.export` objects an executable links.  A dummy package that
-      # imports Mathlib makes Lake compile that facet for every module of the
-      # whole closure; the farm below redirects those writes into a writable
-      # tree of symlinks, leaving the store untouched.
-      mkLeanPackagesWithExports =
+      # The toolchain and mathlib come from nixpkgs' `leanPackages` set, not
+      # from Lake's fetch: a checkout elaborates this project's modules and
+      # nothing else.  The set's own `lean4` is the one whose Lake treats a
+      # `/nix/store` package directory as up to date (`pkgs.lean4` does not
+      # carry that patch), and its mathlib is the revision `lakefile.toml`
+      # pins, which is tag `v4.35.0` of `leanprover-community/mathlib4`.
+      mkLeanEnv =
         pkgs:
         let
-          lean = pkgs.leanPackages.lean4;
-          mathlib = pkgs.leanPackages.mathlib;
-          allPackages = mathlib.passthru.allLeanDeps ++ [ mathlib ];
-          packageName = dep: dep.passthru.lakePackageName;
-          names = map packageName allPackages;
-        in
-        pkgs.runCommand "lean-packages-with-exports"
-          {
-            nativeBuildInputs = [
-              lean
-              pkgs.stdenv.cc
-              pkgs.jq
-              pkgs.coreutils
-            ];
+          leanPackages = pkgs.leanPackages;
+          lean = leanPackages.lean4;
+          mathlib = leanPackages.mathlib;
+          leanDeps = mathlib.passthru.allLeanDeps;
 
-            # The export objects are the artifact; keep them whole and leave the
-            # symlink farm alone.
-            dontStrip = true;
-            dontPatchELF = true;
+          # Lake writes the C objects it needs for linking an executable into
+          # each package's own `.lake/build/ir`.  A package used straight from
+          # the store is read-only, so linking fails with EROFS there; these
+          # packages are copied into a writable cache first, under a
+          # `$XDG_CACHE_HOME` that belongs to the user rather than to the
+          # store.  The copy is a reflink where the filesystem supports one.
+          # A store path already materialised is reused, and directories for
+          # packages this project no longer uses are pruned.
+          allDeps = [ mathlib ] ++ leanDeps;
+          overrides = pkgs.writeShellApplication {
+            name = "lean-llvm-overrides";
+            runtimeInputs = [ pkgs.coreutils pkgs.util-linux ];
+            text = ''
+              cache="''${XDG_CACHE_HOME:-$HOME/.cache}/lean-llvm/packages"
+              mkdir -p "$cache/stamps"
+              exec 9>"$cache/.lock"
+              flock 9
 
-            passthru = {
-              inherit lean mathlib;
-            };
-          }
-          ''
-            set -euo pipefail
+              keep=" "
+              ${lib.concatMapStringsSep "\n" (
+                dep:
+                let
+                  store = "${dep}";
+                in
+                ''
+                  dir="$cache/$(basename "${store}")"
+                  keep="$keep $(basename "${store}") "
+                  if [ ! -f "$cache/stamps/$(basename "${store}")" ] \
+                    || [ "$(cat "$cache/stamps/$(basename "${store}")")" != "${store}" ]; then
+                    rm -rf "$dir"
+                    cp -r --reflink=auto "${store}" "$dir"
+                    chmod -R u+w "$dir"
+                    printf '%s\n' "${store}" > "$cache/stamps/$(basename "${store}")"
+                  fi
+                ''
+              ) allDeps}
 
-            export HOME="$TMPDIR"
-            export LAKE_NO_CACHE=1
-            export RESERVOIR_API_URL=""
-            export LEAN_CC="${pkgs.stdenv.cc}/bin/cc"
-            export LEAN_NUM_THREADS="''${NIX_BUILD_CORES:-1}"
+              for entry in "$cache"/*/; do
+                [ -d "$entry" ] || continue
+                case "$keep" in
+                  *" $(basename "$entry") "*) ;;
+                  *) rm -rf "$entry" ;;
+                esac
+              done
 
-            mkdir -p "$out"
-
-            # One directory per package name, mirroring the store package as
-            # symlinks.  Only directories are made writable, so Lake creates the
-            # missing objects beside the store files instead of inside them.
-            ${nixpkgs.lib.concatMapStringsSep "\n" (dep: ''
-              mkdir -p "$out/${packageName dep}"
-              cp -as ${dep}/. "$out/${packageName dep}"/
-              find "$out/${packageName dep}" -type d -exec chmod u+w {} +
-            '') allPackages}
-
-            # The manifest names each dependency, and `--packages` replaces every
-            # entry with the writable farm directory.
-            printf '%s\n' ${nixpkgs.lib.escapeShellArgs names} \
-              | jq -R . \
-              | jq -s --arg out "$out" \
-                '{schemaVersion: "1.2.0", packages: map({type: "path", name: ., inherited: false, dir: ($out + "/" + .)})}' \
-              > "$out/lake-overrides.json"
-
-            # The store packages are read-only; record the moment before the
-            # build so any write that somehow bypassed the farm is visible.
-            touch "$TMPDIR/store-marker"
-
-            dummy="$TMPDIR/dummy"
-            mkdir -p "$dummy"
-            cat > "$dummy/lakefile.toml" <<'EOF'
-            name = "dummy"
-            version = "0.1.0"
-            defaultTargets = ["dummy"]
-
-            [[require]]
-            name = "mathlib"
-
-            [[lean_exe]]
-            name = "dummy"
-            root = "Main"
-            EOF
-            cat > "$dummy/Main.lean" <<'EOF'
-            import Mathlib
-            def main : IO Unit := pure ()
-            EOF
-            cp ${./lake-manifest.json} "$dummy/lake-manifest.json"
-
-            (
-              cd "$dummy"
-              ${lean}/bin/lake --packages="$out/lake-overrides.json" build --no-ansi
-            )
-
-            # A build that reused the store packages in place would have needed
-            # a write there and failed; assert none happened.
-            for dep in ${nixpkgs.lib.escapeShellArgs (map toString allPackages)}; do
-              if [ -n "$(find "$dep" -newer "$TMPDIR/store-marker" -print -quit)" ]; then
-                echo "error: wrote into store package $dep" >&2
-                exit 1
-              fi
-            done
-
-            # `import Mathlib` does not reach every module in the tree --
-            # `Mathlib.Basic` is one it skips -- so the count is the check, not
-            # a particular module path.  A zero count is a hard failure.
-            exports="$out/mathlib/.lake/build/ir"
-            count="$(find "$exports" -name '*.c.o.export' | wc -l)"
-            if [ "$count" -eq 0 ]; then
-              echo "error: the build produced no .c.o.export objects" >&2
-              exit 1
-            fi
-            if [ "$count" -le 8000 ]; then
-              echo "error: expected more than 8000 mathlib exports, found $count" >&2
-              exit 1
-            fi
-          '';
-    in
-    {
-      packages = forAllSystems (pkgs: {
-        default = self.devShells.${pkgs.stdenv.hostPlatform.system}.default;
-        leanPackagesWithExports = mkLeanPackagesWithExports pkgs;
-      });
-
-      devShells = forAllSystems (
-        pkgs:
-        let
-          lean = pkgs.leanPackages.lean4;
-          leanPackagesWithExports = mkLeanPackagesWithExports pkgs;
+              json="$cache/overrides.json"
+              tmp="$json.tmp.$$"
+              {
+                printf '{"schemaVersion":"1.2.0","packages":['
+                sep=""
+                ${lib.concatMapStringsSep "\n" (
+                  dep:
+                  let
+                    name = dep.passthru.lakePackageName;
+                  in
+                  ''
+                    printf '%s{"type":"path","name":"${name}","inherited":false,"dir":"%s"}' \
+                      "$sep" "$cache/$(basename "${dep}")"
+                    sep=,
+                  ''
+                ) allDeps}
+                printf ']}'
+              } > "$tmp"
+              mv "$tmp" "$json"
+              printf '%s\n' "$json"
+            '';
+          };
 
           # `--packages` is a global Lake option, so one wrapper covers `build`,
           # `exe`, `env` and the rest of the surface the repository uses.
           # `--version` is only accepted as Lake's first argument, so it is
-          # forwarded without the override.
+          # forwarded without the override, and it must not pay for
+          # materialising the packages either.
           lake = pkgs.writeShellScriptBin "lake" ''
             if [ "''${1-}" = "--version" ]; then
               exec ${lean}/bin/lake "$@"
             fi
-            exec ${lean}/bin/lake --packages=${leanPackagesWithExports}/lake-overrides.json "$@"
+            exec ${lean}/bin/lake --packages=$(${overrides}/bin/lean-llvm-overrides) "$@"
           '';
-
+        in
+        { inherit lake lean mathlib leanDeps overrides; };
+    in
+    {
+      devShells = forAllSystems (
+        pkgs:
+        let
+          env = mkLeanEnv pkgs;
           llvm = pkgs.llvmPackages;
         in
         {
@@ -159,8 +123,12 @@
             name = "lean-llvm";
 
             packages = [
-              lean
-              leanPackagesWithExports
+              env.lean
+              env.mathlib
+            ]
+            ++ env.leanDeps
+            ++ [
+              env.lake
               pkgs.git
               pkgs.coreutils
               pkgs.file
@@ -178,9 +146,9 @@
             shellHook = ''
               unset -f lake lean
               # The wrapper takes precedence over the toolchain's own `lake`, and
-              # Lake's own caches are off: the packages with exports are the only
-              # source of dependency artifacts.
-              export PATH=${lake}/bin:$PATH
+              # Lake's own caches are off: the store packages are the only source
+              # of dependency artifacts.
+              export PATH=${env.lake}/bin:$PATH
               export LAKE_NO_CACHE=1
               export RESERVOIR_API_URL=""
               printf 'lean-llvm: %s\n' "$(lean --version)"
@@ -188,5 +156,12 @@
           };
         }
       );
+
+      packages = forAllSystems (pkgs: {
+        default = self.devShells.${pkgs.system}.default;
+        # The `lake` wrapper alone, for a NixOS image or another consumer that
+        # needs the same dependency resolution without the shell.
+        inherit (mkLeanEnv pkgs) lake;
+      });
     };
 }

@@ -31,9 +31,13 @@ globs = ["ITree.*"]
 [[lean_lib]]
 name = "LeanLLVMTest"
 
+# `LeanLLVMTest.Json` imports the `leanllvm-json` executable's root for its
+# rendering helpers.  An executable root is not a module of the package's
+# library facet, so without this declaration nothing produces `JsonMain.olean`
+# and the import fails with "unknown module prefix 'JsonMain'".  Declaring the
+# root here builds it as a library module as well.
 [[lean_lib]]
-name = "JsonReference"
-roots = ["JsonMain"]
+name = "JsonMain"
 
 [[lean_exe]]
 name = "leanllvm"
@@ -72,13 +76,6 @@ root = "JsonClassifyMain"
 name = "leanllvm-json-s1-masks"
 root = "JsonS1MasksMain"
 
-# Runs the stage-1 block body over corpus documents and the generated arms, on
-# both arms, so the object's rows can be compared with the body's; see
-# JsonS1BlocksMain.lean.
-[[lean_exe]]
-name = "leanllvm-json-s1-blocks"
-root = "JsonS1BlocksMain"
-
 # Runs the entry position bodies over corpus mask streams and the generated
 # arms, so the object's rows can be compared with the body's, and emits the
 # `ent` word's specification rows; see JsonEntryMain.lean.
@@ -109,10 +106,3 @@ root = "DepthMain"
 [[lean_exe]]
 name = "leanllvm-json-utf8"
 root = "JsonUtf8Main"
-
-# Runs the pipeline's model body at the route's arguments and prints the post's
-# caller-visible projection; JsonPipelineModelMain.lean, compared with the
-# native route by probes/json/route/model-differential.sh.
-[[lean_exe]]
-name = "leanllvm-json-pipeline-model"
-root = "JsonPipelineModelMain"
