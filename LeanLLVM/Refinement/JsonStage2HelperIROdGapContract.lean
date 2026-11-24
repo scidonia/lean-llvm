@@ -51,9 +51,7 @@ premise at the helper's boundary, not a consequence — the walk's own staging
 supplies it, and a lone call cannot derive where its caller's frame is. -/
 
 /-- The staging `od_gap_recover`'s run starts from. -/
-structure OdGapPrep (mem : Mem) (c pos : Nat) where
-  /-- The caller's allocator base: `%d` and `%ei` are its first two slots. -/
-  next : Nat
+structure OdGapPrep (mem : Mem) (next c pos lt lf ln : Nat) (win : List UInt8) where
   /-- The document's base. -/
   b : Nat
   /-- The document's length. -/
@@ -68,12 +66,6 @@ structure OdGapPrep (mem : Mem) (c pos : Nat) where
   e : Nat
   /-- The token's end boundary: the selected index word, or the length. -/
   ip : Nat
-  /-- The three staged literal pointers. -/
-  lt : Nat
-  lf : Nat
-  ln : Nat
-  /-- The document's bytes. -/
-  bytes : List UInt8
   hb : readBytes mem c 8 = some (natToBytes b 8)
   hb64 : b < 2 ^ 64
   hn : readBytes mem (c + odGapCurN) 8 = some (natToBytes n 8)
@@ -96,8 +88,8 @@ structure OdGapPrep (mem : Mem) (c pos : Nat) where
   hip64 : ip < 2 ^ 64
   hip63 : ip < 2 ^ 63
   /-- The window's bytes, one address at a time, and its length. -/
-  hbytes : gapBytesAt mem bytes b ip
-  hlen : bytes.length = ip
+  hbytes : gapBytesAt mem win b ip
+  hlen : win.length = ip
   /-- The three literal reads. -/
   hlt : readBytes mem lt 4 = some gapTrueLit
   hlf : readBytes mem lf 5 = some gapFalseLit
@@ -105,6 +97,12 @@ structure OdGapPrep (mem : Mem) (c pos : Nat) where
   /-- The record's address is disjoint from the body's two slots. -/
   hsep : DisjointRegions [(next, (Ty.double).sizeBytes + (Ty.int 64).sizeBytes),
     (c + odGapCurE, 24)]
+  /-- The document window ends before the body's two slots: the number-acceptance
+  row runs the second scan after `num_fast_el1` writes `%d` at `next`, and the
+  window is read from `b`.  This is derivable from `Γ_stage2_noevent`'s watermark
+  (`b + n ≤ next`) and the invariant's `ip < n`, so it is not a new caller
+  burden. -/
+  hwin : b + ip ≤ next ∨ next + 16 ≤ b
 
 /-- The effect the rule's write is: no write, or the record at `e`. -/
 def gapEffectOf (e : Nat) : GapWrite → GapRecoverEffect
@@ -155,9 +153,10 @@ theorem readBytes_of_gapBytesAt {mem : Mem} {bytes : List UInt8} {b ip : Nat}
 The six words, the index selection, and the window determine the rule's answer:
 it is `gapRecoverWrite`'s write, lifted to the effect at the cursor's `e`. -/
 
-theorem stage2GapRecoverRule_of_prep {mem : Mem} {c pos : Nat} (P : OdGapPrep mem c pos) :
+theorem stage2GapRecoverRule_of_prep {mem : Mem} {next c pos lt lf ln : Nat} {win : List UInt8}
+    (P : OdGapPrep mem next c pos lt lf ln win) :
     stage2GapRecoverRule mem c pos =
-      some (gapEffectOf P.e (gapRecoverWrite P.bytes P.ip pos)) := by
+      some (gapEffectOf P.e (gapRecoverWrite win P.ip pos)) := by
   have wb : stage2ReadWord mem c 8 = some P.b := gap_readWord P.hb P.hb64
   have hn : stage2ReadWord mem (c + 8) 8 = some P.n := by
     have := gap_readWord P.hn P.hn64
@@ -177,16 +176,16 @@ theorem stage2GapRecoverRule_of_prep {mem : Mem} {c pos : Nat} (P : OdGapPrep me
   have hidx : ∀ (_ : P.k < P.nix), stage2ReadWord mem (P.ix + 4 * P.k) 4 = some P.ip := by
     intro hklt
     exact gap_readWord4 (P.hidx hklt) (P.hip32 hklt)
-  have hbytes : readBytes mem P.b P.ip = some P.bytes :=
+  have hbytes : readBytes mem P.b P.ip = some win :=
     readBytes_of_gapBytesAt P.hbytes P.hlen
   unfold stage2GapRecoverRule
   simp only [odGapCurN, odGapCurIx, odGapCurNix, odGapCurK, odGapCurE]
   simp only [wb, hn, hix, hnix, hk, he]
   by_cases hklt : P.k < P.nix
   · simp only [if_pos hklt, hidx hklt, hbytes]
-    cases gapRecoverWrite P.bytes P.ip pos <;> rfl
+    cases gapRecoverWrite win P.ip pos <;> rfl
   · simp only [if_neg hklt, ← P.hnip (by omega), hbytes]
-    cases gapRecoverWrite P.bytes P.ip pos <;> rfl
+    cases gapRecoverWrite win P.ip pos <;> rfl
 
 /-! ### The entry prefix
 
@@ -201,11 +200,12 @@ theorem gapSizeBytes_double : (Ty.double).sizeBytes = 8 := rfl
 theorem gapSizeBytes_i64 : (Ty.int 64).sizeBytes = 8 := rfl
 
 /-- The prep's disjointness, as the arithmetic the reads consume. -/
-theorem odGapPrep_sep {mem : Mem} {c pos : Nat} (P : OdGapPrep mem c pos) :
-    P.next + 16 ≤ c + odGapCurE ∨ c + odGapCurE + 24 ≤ P.next := by
+theorem odGapPrep_sep {mem : Mem} {next c pos lt lf ln : Nat} {win : List UInt8}
+    (P : OdGapPrep mem next c pos lt lf ln win) :
+    next + 16 ≤ c + odGapCurE ∨ c + odGapCurE + 24 ≤ next := by
   have h := P.hsep
   unfold DisjointRegions at h
-  have h1 : (P.next + (8 + 8) ≤ c + odGapCurE ∨ c + odGapCurE + 24 ≤ P.next) := by
+  have h1 : (next + (8 + 8) ≤ c + odGapCurE ∨ c + odGapCurE + 24 ≤ next) := by
     have hp := List.pairwise_cons.mp h
     have hh := hp.1 (c + odGapCurE, 24) (by simp)
     simpa only [gapSizeBytes_double, gapSizeBytes_i64] using hh
@@ -213,13 +213,14 @@ theorem odGapPrep_sep {mem : Mem} {c pos : Nat} (P : OdGapPrep mem c pos) :
   omega
 
 /-- The staged entry state, spelled out. -/
-theorem gapEntryState_eq {mem : Mem} {c pos : Nat} (P : OdGapPrep mem c pos) :
+theorem gapEntryState_eq {mem : Mem} {next c pos lt lf ln : Nat} {win : List UInt8}
+    (P : OdGapPrep mem next c pos lt lf ln win) :
     EntryState odGapRecoverBody
-        [.ptr c, .int 64 (BitVec.ofNat 64 pos), .ptr P.lt, .ptr P.lf, .ptr P.ln]
-        mem P.next =
+        [.ptr c, .int 64 (BitVec.ofNat 64 pos), .ptr lt, .ptr lf, .ptr ln]
+        mem next =
       { env := [("%c", .ptr c), ("%t.0.val", .int 64 (BitVec.ofNat 64 pos)),
-                ("%littrue", .ptr P.lt), ("%litfalse", .ptr P.lf), ("%litnull", .ptr P.ln)],
-        mem := mem, next := P.next, pc := "entry", pre := none } := rfl
+                ("%littrue", .ptr lt), ("%litfalse", .ptr lf), ("%litnull", .ptr ln)],
+        mem := mem, next := next, pc := "entry", pre := none } := rfl
 /-! ### The entry prefix
 
 Two control steps — the entry block's two allocations folded into the state it
@@ -230,8 +231,8 @@ the composition below keeps the boundary in `%conv`/`%5` so that the step is the
 one the branch module proved. -/
 
 /-- The staged entry state's argument list. -/
-def odGapEntryArgs {mem : Mem} {c pos : Nat} (P : OdGapPrep mem c pos) : List Value :=
-  [.ptr c, .int 64 (BitVec.ofNat 64 pos), .ptr P.lt, .ptr P.lf, .ptr P.ln]
+def odGapEntryArgs (c pos lt lf ln : Nat) : List Value :=
+  [.ptr c, .int 64 (BitVec.ofNat 64 pos), .ptr lt, .ptr lf, .ptr ln]
 
 /-- The unsigned comparison at one is the natural order below `2 ^ 64`. -/
 theorem gap_ult_of_one {a b : Nat} (ha : a < 2 ^ 64) (hb : b < 2 ^ 64)
@@ -244,29 +245,35 @@ theorem gap_ult_of_one {a b : Nat} (ha : a < 2 ^ 64) (hb : b < 2 ^ 64)
 
 /-- The entry's own eight instructions leave the two slots allocated and the
 branch decided: two control steps to `cond.end` through `cond.true`. -/
-theorem gapPrefix_true {mem : Mem} {c pos : Nat} (P : OdGapPrep mem c pos)
+theorem gapPrefix_true {mem : Mem} {next c pos lt lf ln : Nat} {win : List UInt8}
+    (P : OdGapPrep mem next c pos lt lf ln win)
     (hklt : P.k < P.nix) :
     ∃ s : State,
       (∀ k, runFuel (stage2Calls stage2SubCalls) (2 + k) odGapRecoverBody
-          (EntryState odGapRecoverBody (odGapEntryArgs P) mem P.next) =
+          (EntryState odGapRecoverBody (odGapEntryArgs c pos lt lf ln) mem next) =
         runFuel (stage2Calls stage2SubCalls) k odGapRecoverBody s) ∧
       s.pc = "cond.end" ∧ s.pre = some "cond.true" ∧ s.mem = mem ∧
       lookupName s.env "%0" = some (.ptr P.b) ∧
       lookupName s.env "%c" = some (.ptr c) ∧
       lookupName s.env "%t.0.val" = some (.int 64 (BitVec.ofNat 64 pos)) ∧
+      lookupName s.env "%d" = some (.ptr next) ∧
+      lookupName s.env "%ei" = some (.ptr (next + (Ty.double).sizeBytes)) ∧
+      lookupName s.env "%littrue" = some (.ptr lt) ∧
+      lookupName s.env "%litfalse" = some (.ptr lf) ∧
+      lookupName s.env "%litnull" = some (.ptr ln) ∧
       lookupName s.env "%conv" = some (.int 64 (BitVec.ofNat 64 P.ip)) := by
   let s0 : State :=
     { env := [("%c", .ptr c), ("%t.0.val", .int 64 (BitVec.ofNat 64 pos)),
-              ("%littrue", .ptr P.lt), ("%litfalse", .ptr P.lf), ("%litnull", .ptr P.ln)],
-      mem := mem, next := P.next, pc := "entry", pre := none }
-  have hentry : EntryState odGapRecoverBody (odGapEntryArgs P) mem P.next = s0 := rfl
+              ("%littrue", .ptr lt), ("%litfalse", .ptr lf), ("%litnull", .ptr ln)],
+      mem := mem, next := next, pc := "entry", pre := none }
+  have hentry : EntryState odGapRecoverBody (odGapEntryArgs c pos lt lf ln) mem next = s0 := rfl
   have hc0 : lookupName s0.env "%c" = some (.ptr c) := by simp only [s0]; block_lk
   have hb0 : readBytes s0.mem c 8 = some (natToBytes P.b 8) := P.hb
   have hk0 : readBytes s0.mem (c + 32) 8 = some (natToBytes P.k 8) := by
     simpa only [s0, odGapCurK] using P.hk
   have hnix0 : readBytes s0.mem (c + 24) 8 = some (natToBytes P.nix 8) := by
     simpa only [s0, odGapCurNix] using P.hnix
-  let env1 : Env := gapEntryEnv s0.env P.next c P.b P.k P.nix
+  let env1 : Env := gapEntryEnv s0.env next c P.b P.k P.nix
   let s1 : State := stateAt env1 { s0 with next := s0.next + (Ty.double).sizeBytes + (Ty.int 64).sizeBytes, pc := "cond.true", pre := some "entry" }
   have hbit : evalICmp .ult (BitVec.ofNat 64 P.k) (BitVec.ofNat 64 P.nix) = 1#1 :=
     gap_ult_one P.hk64 P.hnix64 hklt
@@ -296,6 +303,16 @@ theorem gapPrefix_true {mem : Mem} {c pos : Nat} (P : OdGapPrep mem c pos)
       hix1 P.hix64 P.hk64 P.hk63 hidx1 (P.hip32 hklt)
     have hst : stateAt env1 s1 = s1 := rfl
     simpa only [hst, s2, env2] using hh
+  have hd2 : lookupName env2 "%d" = some (.ptr next) := by
+    simp only [env2, env1, gapEntryEnv]; block_lk
+  have hei2 : lookupName env2 "%ei" = some (.ptr (next + (Ty.double).sizeBytes)) := by
+    simp only [env2, env1, gapEntryEnv]; block_lk
+  have hlt2 : lookupName env2 "%littrue" = some (.ptr lt) := by
+    simp only [env2, s0]; block_lk
+  have hlf2 : lookupName env2 "%litfalse" = some (.ptr lf) := by
+    simp only [env2, s0]; block_lk
+  have hln2 : lookupName env2 "%litnull" = some (.ptr ln) := by
+    simp only [env2, s0]; block_lk
   have hconv2 : lookupName env2 "%conv" = some (.int 64 (BitVec.ofNat 64 P.ip)) := by
     simp only [env2, lookupName_cons_self]
   have ht2 : lookupName env2 "%t.0.val" = some (.int 64 (BitVec.ofNat 64 pos)) := by
@@ -304,7 +321,7 @@ theorem gapPrefix_true {mem : Mem} {c pos : Nat} (P : OdGapPrep mem c pos)
     simp only [env2, env1, gapEntryEnv]; block_lk
   have hc2 : lookupName env2 "%c" = some (.ptr c) := by
     simp only [env2, env1, gapEntryEnv]; block_lk
-  refine ⟨s2, ?_, rfl, rfl, ?_, h02, hc2, ht2, hconv2⟩
+  refine ⟨s2, ?_, rfl, rfl, ?_, h02, hc2, ht2, hd2, hei2, hlt2, hlf2, hln2, hconv2⟩
   · intro k
     rw [hentry, show 2 + k = 1 + (1 + k) from by omega,
       runFuel_jump_prefix h1 (1 + k), runFuel_jump_prefix h2 k]
@@ -312,29 +329,35 @@ theorem gapPrefix_true {mem : Mem} {c pos : Nat} (P : OdGapPrep mem c pos)
 
 /-- The same two steps through `cond.false`: no index word is read, and the
 length is the boundary. -/
-theorem gapPrefix_false {mem : Mem} {c pos : Nat} (P : OdGapPrep mem c pos)
+theorem gapPrefix_false {mem : Mem} {next c pos lt lf ln : Nat} {win : List UInt8}
+    (P : OdGapPrep mem next c pos lt lf ln win)
     (hnk : ¬ P.k < P.nix) :
     ∃ s : State,
       (∀ k, runFuel (stage2Calls stage2SubCalls) (2 + k) odGapRecoverBody
-          (EntryState odGapRecoverBody (odGapEntryArgs P) mem P.next) =
+          (EntryState odGapRecoverBody (odGapEntryArgs c pos lt lf ln) mem next) =
         runFuel (stage2Calls stage2SubCalls) k odGapRecoverBody s) ∧
       s.pc = "cond.end" ∧ s.pre = some "cond.false" ∧ s.mem = mem ∧
       lookupName s.env "%0" = some (.ptr P.b) ∧
       lookupName s.env "%c" = some (.ptr c) ∧
       lookupName s.env "%t.0.val" = some (.int 64 (BitVec.ofNat 64 pos)) ∧
+      lookupName s.env "%d" = some (.ptr next) ∧
+      lookupName s.env "%ei" = some (.ptr (next + (Ty.double).sizeBytes)) ∧
+      lookupName s.env "%littrue" = some (.ptr lt) ∧
+      lookupName s.env "%litfalse" = some (.ptr lf) ∧
+      lookupName s.env "%litnull" = some (.ptr ln) ∧
       lookupName s.env "%5" = some (.int 64 (BitVec.ofNat 64 P.ip)) := by
   let s0 : State :=
     { env := [("%c", .ptr c), ("%t.0.val", .int 64 (BitVec.ofNat 64 pos)),
-              ("%littrue", .ptr P.lt), ("%litfalse", .ptr P.lf), ("%litnull", .ptr P.ln)],
-      mem := mem, next := P.next, pc := "entry", pre := none }
-  have hentry : EntryState odGapRecoverBody (odGapEntryArgs P) mem P.next = s0 := rfl
+              ("%littrue", .ptr lt), ("%litfalse", .ptr lf), ("%litnull", .ptr ln)],
+      mem := mem, next := next, pc := "entry", pre := none }
+  have hentry : EntryState odGapRecoverBody (odGapEntryArgs c pos lt lf ln) mem next = s0 := rfl
   have hc0 : lookupName s0.env "%c" = some (.ptr c) := by simp only [s0]; block_lk
   have hb0 : readBytes s0.mem c 8 = some (natToBytes P.b 8) := P.hb
   have hk0 : readBytes s0.mem (c + 32) 8 = some (natToBytes P.k 8) := by
     simpa only [s0, odGapCurK] using P.hk
   have hnix0 : readBytes s0.mem (c + 24) 8 = some (natToBytes P.nix 8) := by
     simpa only [s0, odGapCurNix] using P.hnix
-  let env1 : Env := gapEntryEnv s0.env P.next c P.b P.k P.nix
+  let env1 : Env := gapEntryEnv s0.env next c P.b P.k P.nix
   let s1 : State := stateAt env1 { s0 with next := s0.next + (Ty.double).sizeBytes + (Ty.int 64).sizeBytes, pc := "cond.false", pre := some "entry" }
   have hbit : evalICmp .ult (BitVec.ofNat 64 P.k) (BitVec.ofNat 64 P.nix) = 0#1 := by
     rcases LeanLLVM.Refinement.BlockEval.bitVec1_eq_zero_or_one
@@ -363,6 +386,16 @@ theorem gapPrefix_false {mem : Mem} {c pos : Nat} (P : OdGapPrep mem c pos)
     have hst : stateAt env1 s1 = s1 := rfl
     rw [hst] at hh
     simpa only [s2, env2, ← hnp] using hh
+  have hd2 : lookupName env2 "%d" = some (.ptr next) := by
+    simp only [env2, env1, gapEntryEnv]; block_lk
+  have hei2 : lookupName env2 "%ei" = some (.ptr (next + (Ty.double).sizeBytes)) := by
+    simp only [env2, env1, gapEntryEnv]; block_lk
+  have hlt2 : lookupName env2 "%littrue" = some (.ptr lt) := by
+    simp only [env2, s0]; block_lk
+  have hlf2 : lookupName env2 "%litfalse" = some (.ptr lf) := by
+    simp only [env2, s0]; block_lk
+  have hln2 : lookupName env2 "%litnull" = some (.ptr ln) := by
+    simp only [env2, s0]; block_lk
   have h52 : lookupName env2 "%5" = some (.int 64 (BitVec.ofNat 64 P.ip)) := by
     simp only [env2, lookupName_cons_self]
   have ht2 : lookupName env2 "%t.0.val" = some (.int 64 (BitVec.ofNat 64 pos)) := by
@@ -371,7 +404,7 @@ theorem gapPrefix_false {mem : Mem} {c pos : Nat} (P : OdGapPrep mem c pos)
     simp only [env2, env1, gapEntryEnv]; block_lk
   have hc2 : lookupName env2 "%c" = some (.ptr c) := by
     simp only [env2, env1, gapEntryEnv]; block_lk
-  refine ⟨s2, ?_, rfl, rfl, ?_, h02, hc2, ht2, h52⟩
+  refine ⟨s2, ?_, rfl, rfl, ?_, h02, hc2, ht2, hd2, hei2, hlt2, hlf2, hln2, h52⟩
   · intro k
     rw [hentry, show 2 + k = 1 + (1 + k) from by omega,
       runFuel_jump_prefix h1 (1 + k), runFuel_jump_prefix h2 k]
@@ -383,19 +416,27 @@ From the scan's own seed the first loop runs to its end and `cleanup82` returns
 the caller's memory.  The model's rule writes nothing at that exit, which is the
 no-write row's second path. -/
 
-theorem gapScan_to_cleanup_none {mem : Mem} {bytes : List UInt8} {ip b pos : Nat}
+theorem gapScan_to_cleanup_none {mem : Mem} {bytes : List UInt8}
+    {ip b pos c next lt lf ln : Nat}
     (hbytes : gapBytesAt mem bytes b ip) (hblen : bytes.length = ip)
     (hEe : gapEe bytes ip pos = ip) (hposlt : pos < ip) (hiplt : ip < 2 ^ 63)
     (s : State) (hpc : s.pc = "land.rhs") (hpre : s.pre = some "cond.end")
     (hmem : s.mem = mem) (hb : lookupName s.env "%0" = some (.ptr b))
+    (hcur : lookupName s.env "%c" = some (.ptr c))
     (ht : lookupName s.env "%t.0.val" = some (.int 64 (BitVec.ofNat 64 pos)))
-    (hcond : lookupName s.env "%cond" = some (.int 64 (BitVec.ofNat 64 ip))) :
+    (hcond : lookupName s.env "%cond" = some (.int 64 (BitVec.ofNat 64 ip)))
+    (hd : lookupName s.env "%d" = some (.ptr next))
+    (hei : lookupName s.env "%ei" = some (.ptr (next + (Ty.double).sizeBytes)))
+    (hltc : lookupName s.env "%littrue" = some (.ptr lt))
+    (hlfc : lookupName s.env "%litfalse" = some (.ptr lf))
+    (hlnc : lookupName s.env "%litnull" = some (.ptr ln)) :
     ∃ j : Nat, j ≤ (ip + 1) * 5 + 1 ∧
       runFuel (stage2Calls stage2SubCalls) j odGapRecoverBody s = some (.ret none mem) := by
-  have hinv : gapScanInv bytes ip b pos mem ip s pos :=
-    gapScanInv_seed hposlt hiplt hpc hpre hmem hb ht hcond
+  have hinv : gapScanInv bytes ip b pos c next lt lf ln mem ip s pos :=
+    gapScanInv_seed hposlt hiplt hpc hpre hmem hb hcur ht hcond hd hei hltc hlfc hlnc
   obtain ⟨e, j, hj, _, hexit, hrun⟩ :=
-    gapScanLoop_run (calls := stage2Calls stage2SubCalls) hbytes hblen s pos hinv 1
+    gapScanLoop_run (calls := stage2Calls stage2SubCalls) (cur := c) (next := next)
+      (lt := lt) (lf := lf) (ln := ln) hbytes hblen s pos hinv 1
   have hpcE : e.pc = "cleanup82" := by
     rcases hexit with ⟨leaf, cc, hpc1, _⟩ | ⟨hpc2, _⟩
     · exfalso; omega
@@ -552,12 +593,14 @@ theorem gapRecoverWrite_none_iff {bytes : List UInt8} {ip pos : Nat} :
       exact absurd hh (gapAfterLoop_ne_none bytes ip pos (gapEe bytes ip pos))
     · intro hh; exact absurd hh h
 
-theorem gapRun_none_scan_true {mem : Mem} {c pos : Nat} (P : OdGapPrep mem c pos)
-    (hklt : P.k < P.nix) (hposlt : pos < P.ip) (hEe : gapEe P.bytes P.ip pos = P.ip) :
+theorem gapRun_none_scan_true {mem : Mem} {next c pos lt lf ln : Nat} {win : List UInt8}
+    (P : OdGapPrep mem next c pos lt lf ln win)
+    (hklt : P.k < P.nix) (hposlt : pos < P.ip) (hEe : gapEe win P.ip pos = P.ip) :
     ∃ B : Nat, B ≤ 4 + (P.ip + 1) * 5 ∧
       runFuel (stage2Calls stage2SubCalls) B odGapRecoverBody
-        (EntryState odGapRecoverBody (odGapEntryArgs P) mem P.next) = some (.ret none mem) := by
-  obtain ⟨s, hrun, hpc, hpre, hmem, h0, hcur, ht, hconv⟩ := gapPrefix_true P hklt
+        (EntryState odGapRecoverBody (odGapEntryArgs c pos lt lf ln) mem next) = some (.ret none mem) := by
+  obtain ⟨s, hrun, hpc, hpre, hmem, h0, hcur, ht, hd, hei, hltc, hlfc, hlnc, hconv⟩ :=
+    gapPrefix_true P hklt
   let sH : State := stateAt (("%cmp310", .int 1 (evalICmp .ult (BitVec.ofNat 64 pos)
       (BitVec.ofNat 64 P.ip))) :: ("%cond", .int 64 (BitVec.ofNat 64 P.ip)) :: s.env)
     { s with pc := "land.rhs", pre := some "cond.end" }
@@ -569,21 +612,26 @@ theorem gapRun_none_scan_true {mem : Mem} {c pos : Nat} (P : OdGapPrep mem c pos
     simp only [sH, stateAt]; block_lk
   have hHc : lookupName sH.env "%cond" = some (.int 64 (BitVec.ofNat 64 P.ip)) := by
     simp only [sH, stateAt]; block_lk
+  have hHcur : lookupName sH.env "%c" = some (.ptr c) := by
+    simp only [sH, stateAt]; block_lk
   have hHm : sH.mem = mem := by simp only [sH, stateAt]; exact hmem
-  obtain ⟨j, hj, hrun2⟩ := gapScan_to_cleanup_none (mem := mem) (bytes := P.bytes)
-    (ip := P.ip) (b := P.b) (pos := pos) P.hbytes P.hlen hEe hposlt P.hip63 sH rfl rfl
-    hHm hHb hHt hHc
+  obtain ⟨j, hj, hrun2⟩ := gapScan_to_cleanup_none (mem := mem) (bytes := win)
+    (ip := P.ip) (b := P.b) (pos := pos) (c := c) (next := next) (lt := lt) (lf := lf)
+    (ln := ln) P.hbytes P.hlen hEe hposlt P.hip63 sH rfl rfl hHm hHb hHcur hHt hHc
+    hd hei hltc hlfc hlnc
   refine ⟨2 + 1 + j, by omega, ?_⟩
   rw [show 2 + 1 + j = 2 + (1 + j) from by omega]
   rw [hrun (1 + j), runFuel_jump_prefix hstep j]
   exact hrun2
 
-theorem gapRun_none_scan_false {mem : Mem} {c pos : Nat} (P : OdGapPrep mem c pos)
-    (hnk : ¬ P.k < P.nix) (hposlt : pos < P.ip) (hEe : gapEe P.bytes P.ip pos = P.ip) :
+theorem gapRun_none_scan_false {mem : Mem} {next c pos lt lf ln : Nat} {win : List UInt8}
+    (P : OdGapPrep mem next c pos lt lf ln win)
+    (hnk : ¬ P.k < P.nix) (hposlt : pos < P.ip) (hEe : gapEe win P.ip pos = P.ip) :
     ∃ B : Nat, B ≤ 4 + (P.ip + 1) * 5 ∧
       runFuel (stage2Calls stage2SubCalls) B odGapRecoverBody
-        (EntryState odGapRecoverBody (odGapEntryArgs P) mem P.next) = some (.ret none mem) := by
-  obtain ⟨s, hrun, hpc, hpre, hmem, h0, hcur, ht, h5⟩ := gapPrefix_false P hnk
+        (EntryState odGapRecoverBody (odGapEntryArgs c pos lt lf ln) mem next) = some (.ret none mem) := by
+  obtain ⟨s, hrun, hpc, hpre, hmem, h0, hcur, ht, hd, hei, hltc, hlfc, hlnc, h5⟩ :=
+    gapPrefix_false P hnk
   let sH : State := stateAt (("%cmp310", .int 1 (evalICmp .ult (BitVec.ofNat 64 pos)
       (BitVec.ofNat 64 P.ip))) :: ("%cond", .int 64 (BitVec.ofNat 64 P.ip)) :: s.env)
     { s with pc := "land.rhs", pre := some "cond.end" }
@@ -595,10 +643,13 @@ theorem gapRun_none_scan_false {mem : Mem} {c pos : Nat} (P : OdGapPrep mem c po
     simp only [sH, stateAt]; block_lk
   have hHc : lookupName sH.env "%cond" = some (.int 64 (BitVec.ofNat 64 P.ip)) := by
     simp only [sH, stateAt]; block_lk
+  have hHcur : lookupName sH.env "%c" = some (.ptr c) := by
+    simp only [sH, stateAt]; block_lk
   have hHm : sH.mem = mem := by simp only [sH, stateAt]; exact hmem
-  obtain ⟨j, hj, hrun2⟩ := gapScan_to_cleanup_none (mem := mem) (bytes := P.bytes)
-    (ip := P.ip) (b := P.b) (pos := pos) P.hbytes P.hlen hEe hposlt P.hip63 sH rfl rfl
-    hHm hHb hHt hHc
+  obtain ⟨j, hj, hrun2⟩ := gapScan_to_cleanup_none (mem := mem) (bytes := win)
+    (ip := P.ip) (b := P.b) (pos := pos) (c := c) (next := next) (lt := lt) (lf := lf)
+    (ln := ln) P.hbytes P.hlen hEe hposlt P.hip63 sH rfl rfl hHm hHb hHcur hHt hHc
+    hd hei hltc hlfc hlnc
   refine ⟨2 + 1 + j, by omega, ?_⟩
   rw [show 2 + 1 + j = 2 + (1 + j) from by omega]
   rw [hrun (1 + j), runFuel_jump_prefix hstep j]
@@ -606,12 +657,14 @@ theorem gapRun_none_scan_false {mem : Mem} {c pos : Nat} (P : OdGapPrep mem c po
 
 /-- The zero-gap run: five steps from the entry, and the memory comes back as it
 went in.  Stated once per index branch. -/
-theorem gapRun_none_atIp_true {mem : Mem} {c pos : Nat} (P : OdGapPrep mem c pos)
+theorem gapRun_none_atIp_true {mem : Mem} {next c pos lt lf ln : Nat} {win : List UInt8}
+    (P : OdGapPrep mem next c pos lt lf ln win)
     (hklt : P.k < P.nix) (hpos : pos = P.ip) :
     ∃ B : Nat, B ≤ 5 ∧
       runFuel (stage2Calls stage2SubCalls) B odGapRecoverBody
-        (EntryState odGapRecoverBody (odGapEntryArgs P) mem P.next) = some (.ret none mem) := by
-  obtain ⟨s, hrun, hpc, hpre, hmem, h0, hcur, ht, hconv⟩ := gapPrefix_true P hklt
+        (EntryState odGapRecoverBody (odGapEntryArgs c pos lt lf ln) mem next) = some (.ret none mem) := by
+  obtain ⟨s, hrun, hpc, hpre, hmem, h0, hcur, ht, hd, hei, hltc, hlfc, hlnc, hconv⟩ :=
+    gapPrefix_true P hklt
   have ht' : lookupName s.env "%t.0.val" = some (.int 64 (BitVec.ofNat 64 P.ip)) := by
     simpa only [hpos] using ht
   let sW : State := stateAt (("%cmp310", .int 1 (evalICmp .ult (BitVec.ofNat 64 pos)
@@ -636,12 +689,14 @@ theorem gapRun_none_atIp_true {mem : Mem} {c pos : Nat} (P : OdGapPrep mem c pos
     runFuel_jump_prefix hstep (1 + 1), runFuel_jump_prefix hstep2 1]
   exact gapNum_runFuel_ret_void hret hmC
 
-theorem gapRun_none_atIp_false {mem : Mem} {c pos : Nat} (P : OdGapPrep mem c pos)
+theorem gapRun_none_atIp_false {mem : Mem} {next c pos lt lf ln : Nat} {win : List UInt8}
+    (P : OdGapPrep mem next c pos lt lf ln win)
     (hnk : ¬ P.k < P.nix) (hpos : pos = P.ip) :
     ∃ B : Nat, B ≤ 5 ∧
       runFuel (stage2Calls stage2SubCalls) B odGapRecoverBody
-        (EntryState odGapRecoverBody (odGapEntryArgs P) mem P.next) = some (.ret none mem) := by
-  obtain ⟨s, hrun, hpc, hpre, hmem, h0, hcur, ht, h5⟩ := gapPrefix_false P hnk
+        (EntryState odGapRecoverBody (odGapEntryArgs c pos lt lf ln) mem next) = some (.ret none mem) := by
+  obtain ⟨s, hrun, hpc, hpre, hmem, h0, hcur, ht, hd, hei, hltc, hlfc, hlnc, h5⟩ :=
+    gapPrefix_false P hnk
   have ht' : lookupName s.env "%t.0.val" = some (.int 64 (BitVec.ofNat 64 P.ip)) := by
     simpa only [hpos] using ht
   let sW : State := stateAt (("%cmp310", .int 1 (evalICmp .ult (BitVec.ofNat 64 pos)
@@ -669,32 +724,51 @@ theorem gapRun_none_atIp_false {mem : Mem} {c pos : Nat} (P : OdGapPrep mem c po
 /-- **The no-write row of `od_gap_recover`.**  When the rule writes nothing — the
 first loop reaches `ip` — the body returns `void` with the caller's memory, on
 either of its two paths and through either index branch. -/
-theorem odGapRecover_run_none {mem : Mem} {c pos : Nat} (P : OdGapPrep mem c pos)
-    (hnone : gapRecoverWrite P.bytes P.ip pos = GapWrite.none) :
+theorem odGapRecover_run_none {mem : Mem} {next c pos lt lf ln : Nat} {win : List UInt8}
+    (P : OdGapPrep mem next c pos lt lf ln win)
+    (hnone : gapRecoverWrite win P.ip pos = GapWrite.none) :
     ∃ B : Nat, B ≤ 4 + (P.ip + 1) * 5 ∧
       runFuel (stage2Calls stage2SubCalls) B odGapRecoverBody
-        (EntryState odGapRecoverBody (odGapEntryArgs P) mem P.next) = some (.ret none mem) ∧
-      stage2GapRecoverRule mem c pos = some .unchanged ∧
-      Stage2GapRecoverPost mem P.next c pos
-        { ret := voidRet, mem := mem, next := P.next } := by
-  have hEe : gapEe P.bytes P.ip pos = P.ip := gapRecoverWrite_none_iff.mp hnone
+        (EntryState odGapRecoverBody (odGapEntryArgs c pos lt lf ln) mem next) =
+        some (.ret none mem) ∧
+      (∃ eff, stage2GapRecoverRule mem c pos = some eff ∧
+        (eff = .unchanged → mem = mem) ∧
+        (∀ (e off tag : Nat), eff = .wrote e off tag →
+          readBytes mem e 4 = some (wordBytes 4 0) ∧
+          readBytes mem (e + 8) 8 = some (wordBytes 8 off) ∧
+          readBytes mem (e + 16) 8 = some (wordBytes 8 tag) ∧
+          UnchangedOutside mem mem
+            [(e, 4), (e + 8, 8), (e + 16, 8),
+             (next, (Ty.double).sizeBytes),
+             (next + (Ty.double).sizeBytes, (Ty.int 64).sizeBytes)])) := by
+  have hEe : gapEe win P.ip pos = P.ip := gapRecoverWrite_none_iff.mp hnone
   have hrule : stage2GapRecoverRule mem c pos = some .unchanged := by
     rw [stage2GapRecoverRule_of_prep P, hnone]; rfl
-  have hpost : Stage2GapRecoverPost mem P.next c pos
-      { ret := voidRet, mem := mem, next := P.next } :=
-    ⟨rfl, rfl, .unchanged, hrule, rfl⟩
+  have hclause : ∃ eff, stage2GapRecoverRule mem c pos = some eff ∧
+      (eff = .unchanged → mem = mem) ∧
+      (∀ (e off tag : Nat), eff = .wrote e off tag →
+        readBytes mem e 4 = some (wordBytes 4 0) ∧
+        readBytes mem (e + 8) 8 = some (wordBytes 8 off) ∧
+        readBytes mem (e + 16) 8 = some (wordBytes 8 tag) ∧
+        UnchangedOutside mem mem
+          [(e, 4), (e + 8, 8), (e + 16, 8),
+           (next, (Ty.double).sizeBytes),
+           (next + (Ty.double).sizeBytes, (Ty.int 64).sizeBytes)]) := by
+    refine ⟨.unchanged, hrule, fun _ => rfl, ?_⟩
+    intro e off tag hbad
+    cases hbad
   by_cases hpos : pos = P.ip
   · by_cases hklt : P.k < P.nix
     · obtain ⟨B, hB, hrun⟩ := gapRun_none_atIp_true P hklt hpos
-      exact ⟨B, by omega, hrun, hrule, hpost⟩
+      exact ⟨B, by omega, hrun, hclause⟩
     · obtain ⟨B, hB, hrun⟩ := gapRun_none_atIp_false P hklt hpos
-      exact ⟨B, by omega, hrun, hrule, hpost⟩
+      exact ⟨B, by omega, hrun, hclause⟩
   · have hposlt : pos < P.ip := lt_of_le_of_ne P.hposip hpos
     by_cases hklt : P.k < P.nix
     · obtain ⟨B, hB, hrun⟩ := gapRun_none_scan_true P hklt hposlt hEe
-      exact ⟨B, by omega, hrun, hrule, hpost⟩
+      exact ⟨B, by omega, hrun, hclause⟩
     · obtain ⟨B, hB, hrun⟩ := gapRun_none_scan_false P hklt hposlt hEe
-      exact ⟨B, by omega, hrun, hrule, hpost⟩
+      exact ⟨B, by omega, hrun, hclause⟩
 
 /-! ### Axiom footprints -/
 
