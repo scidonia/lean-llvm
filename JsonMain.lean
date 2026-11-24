@@ -13,6 +13,7 @@ its source lexeme as lowercase hex bytes, a string prints `"` and its code point
 as space-separated decimals and `"`, and containers print recursively.
 -/
 import LeanLLVM
+import LeanLLVM.JSON.Render
 
 open LeanLLVM.JSON
 
@@ -23,40 +24,6 @@ def profileLimits : String → Option Limits
   | "tok4" => some { Limits.default with maxTokens := 4 }
   | "in8" => some { Limits.default with maxInput := 8 }
   | _ => none
-
-/-- A rendering of decoded values, for the corpus oracle. -/
-def hexByte (b : Nat) : String :=
-  let s := String.ofList (Nat.toDigits 16 b)
-  if s.length == 1 then "0" ++ s else s
-
-def renderCodePoint (c : Nat) : String := toString c
-
-mutual
-def renderValue : Value → String
-  | .null => "null"
-  | .bool b => if b then "true" else "false"
-  | .number lex => "#" ++ String.join (numHexChars lex)
-  | .string cs => "\"" ++ String.intercalate " " (renderCodePoints cs) ++ "\""
-  | .array es => "[" ++ String.intercalate "," (renderValues es) ++ "]"
-  | .object ms => "{" ++ String.intercalate "," (renderMembers ms) ++ "}"
-
-/-- The lexeme's bytes as lowercase hex, read over the carrier's list view. -/
-def numHexChars (bs : Bytes) : List String :=
-  bs.toList.map (fun b => hexByte b.toNat)
-
-def renderCodePoints : List Nat → List String
-  | [] => []
-  | c :: cs => renderCodePoint c :: renderCodePoints cs
-
-def renderValues : List Value → List String
-  | [] => []
-  | e :: es => renderValue e :: renderValues es
-
-def renderMembers : List (List Nat × Value) → List String
-  | [] => []
-  | (k, v) :: ms =>
-      (renderValue (.string k) ++ ":" ++ renderValue v) :: renderMembers ms
-end
 
 /-- The verdict column's spelling of the parser's result, and the rendering. -/
 def outcome (r : ParseResult) : String × String :=

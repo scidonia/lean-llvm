@@ -89,6 +89,18 @@ fi
 # and the four they in turn reach (`Basic`, `Syntax`, `Binary64`, `Printer`).  A
 # module absent from this list is an undefined `deltaZ` at link, not a green
 # build: the list is what the emitted C names, not a choice.
+#
+# The value arm adds the event decoder (`JsonEventDecode`), the canonicalisation
+# (`JsonCanon`), the schema vocabulary (`JsonPipelineSpec`) and the shared
+# rendering (`JSON.Render`), and their import closure follows them into the link.
+# That closure is Mathlib-free by construction, and the list is the fence that
+# keeps it so: a module importing `StrtodTier1`/`StrtodTier3` (and through them
+# `ITree.Internal.FloatingPoint` and `Mathlib.Data.FP.Basic`) would pull the
+# Mathlib initialiser chain into the binary and would make the compiler pick
+# Mathlib's specialisation entries for this program's own `IO.println`/`List.foldl`
+# uses.  `StrtodRead` holds the reader the canonicalisation needs precisely so the
+# tier proofs stay out; a new import that breaks the fence fails at this link
+# rather than growing the binary and its start-up work silently.
 cone_ir=("$repo/.lake/build/ir/LeanLLVM/JsonKernelDomain.c"
          "$repo/.lake/build/ir/LeanLLVM/JSON/ByteString.c"
          "$repo/.lake/build/ir/LeanLLVM/JSON/Bytes.c"
@@ -104,12 +116,65 @@ cone_ir=("$repo/.lake/build/ir/LeanLLVM/JsonKernelDomain.c"
          "$repo/.lake/build/ir/LeanLLVM/Parser.c"
          "$repo/.lake/build/ir/LeanLLVM/Printer.c"
          "$repo/.lake/build/ir/LeanLLVM/Semantics.c"
-         "$repo/.lake/build/ir/LeanLLVM/Syntax.c")
+         "$repo/.lake/build/ir/LeanLLVM/Syntax.c"
+         "$repo/.lake/build/ir/LeanLLVM/JSON.c"
+         "$repo/.lake/build/ir/LeanLLVM/JSON/Correct.c"
+         "$repo/.lake/build/ir/LeanLLVM/JSON/Render.c"
+         "$repo/.lake/build/ir/LeanLLVM/JSON/ScanBlock.c"
+         "$repo/.lake/build/ir/LeanLLVM/JSON/ScanBlocks.c"
+         "$repo/.lake/build/ir/LeanLLVM/JSON/ScanBody.c"
+         "$repo/.lake/build/ir/LeanLLVM/JSON/ScanString.c"
+         "$repo/.lake/build/ir/LeanLLVM/JSON/ScanWindow.c"
+         "$repo/.lake/build/ir/LeanLLVM/JSON/Strtod.c"
+         "$repo/.lake/build/ir/LeanLLVM/JSON/TapeCorrect.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/BitLanes.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/CallsFootprint.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonB3Steps.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonB8Steps.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonCanon.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonConsumerEvent.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonEntSpec.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonEntryIR.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonEntrySteps.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonEscapeBatch.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonEscapeBatchEntries.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonEscapeIR.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonEscapeIntrinsics.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonEscapeListBody.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonEscapeListContract.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonEscapeListFixpoint.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonEscapeListInvariant.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonEscapeListLanes.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonEscapeListLoop.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonEscapeListMemo.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonEscapeListPositions.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonEscapeListRun.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonEscapeListWriter.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonEscapeSpec.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonEscapeSteps.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonEventBytes.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonEventDecode.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonPipelineContract.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonPipelineIR.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonPipelineSpec.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonS1MasksIR.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonS1MasksSteps.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonScanSpec.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonStage2Scratch.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonUnitContracts.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonUtf8IR.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonUtf8Spec.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonUtf8Steps.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/LoopFuel.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/Pclmul.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/QuoteDerive.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/Relation.c"
+         "$repo/.lake/build/ir/LeanLLVM/StrtodRead.c")
 for f in "${cone_ir[@]}"; do
   [ -f "$f" ] || {
     echo "build: absent: $f" >&2
     echo "build: build the route's Lean modules first:" >&2
-    echo "  nix develop -c bash probes/install/lake-locked.sh build LeanLLVM.JsonKernelDomain LeanLLVM.JSON.Parse" >&2
+    echo "  nix develop -c bash probes/install/lake-locked.sh build LeanLLVM.JsonKernelDomain LeanLLVM.JSON.Parse LeanLLVM.JSON.Render LeanLLVM.Refinement.JsonEventBytes LeanLLVM.Refinement.JsonCanon LeanLLVM.Refinement.JsonPipelineSpec" >&2
     exit 1
   }
 done

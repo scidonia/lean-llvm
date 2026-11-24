@@ -42,6 +42,10 @@ parser's acceptance of a document outside the pilot's domain, and
 -/
 import LeanLLVM.JsonKernelDomain
 import LeanLLVM.JSON.Parse
+import LeanLLVM.JSON.Render
+import LeanLLVM.Refinement.JsonEventBytes
+import LeanLLVM.Refinement.JsonCanon
+import LeanLLVM.Refinement.JsonPipelineSpec
 
 open LeanLLVM
 open LeanLLVM.JSON
@@ -99,6 +103,7 @@ def usage : String :=
   "       leanllvm-json-route --consume <file> [reps]          (the no-event arm)\n" ++
   "       leanllvm-json-route --consume-noevent <file> [reps]  (the same arm)\n" ++
   "       leanllvm-json-route --consume-events <file> [reps]   (the certified event arm)\n" ++
+  "       leanllvm-json-route --value <file>                   (the decoded value)\n" ++
   "       leanllvm-json-route --arm <events|noevent> --consume <file> [reps]"
 
 def hexByte (b : UInt8) : String :=
@@ -801,6 +806,105 @@ def runFallback (doc : ByteArray) : IO UInt32 := do
   match parseBytes Limits.default doc with
   | .ok t => reportFallbackAccept t; return 0
   | .error e => reportFallbackReject e; return 2
+
+/-! ### The value arm
+
+`--value <file>` answers a document with its decoded value rather than with the
+pipeline's observation.  On an admitted document it takes the native event call,
+reads the event stream back as events (`eventsOfBytes`), decodes those events as
+a value (`valueOfEvents`), and canonicalises the value's number lexemes the way
+the event side renders them.  Any of those steps that cannot read the stream as
+events — a truncated record, a string body outside its source — falls back to the
+reference parser, and so does a document the admission refuses: the fast path
+answers only what it can read, and the reference is the authority on everything
+else.  The report is one line either way, the value as lowercase hex of the
+rendering's UTF-8 bytes on acceptance and the reference's refusal class and
+offset on refusal.
+-/
+
+/-- The value arm's answer: the document's decoded value, or the reference
+parser's refusal of it. -/
+inductive RouteValue where
+  | value (v : JSON.Value)
+  | refused (e : ParseError)
+
+/-- Terminate with one of the route's exit statuses.  `IO.Process.exit` takes a
+byte, and the statuses this arm reports are its small codes. -/
+def exitStatus (status : UInt32) : IO α :=
+  IO.Process.exit (UInt8.ofNat status.toNat)
+
+/-- The reference's answer for a document, canonicalised: `parseBytes`, then
+`decodeTape`, then `canonValue`, which renders a number's lexeme as the binary64
+payload the event side carries.  The `none` case is the reference accepting a
+value whose number lexeme `StrtodReader.reader` refuses: that value has no
+canonical rendering, so it is reported at exit 5 rather than printed as a value
+the corpus oracle cannot share.  (It cannot arise from `valueOfEvents`, whose
+numbers are already the canonical rendering.) -/
+def fallbackValue (doc : ByteArray) : IO RouteValue := do
+  match parseBytes Limits.default doc with
+  | .error e => return .refused e
+  | .ok t =>
+      match (decodeTape t).bind canonValue with
+      | some v => return .value v
+      | none =>
+          IO.println "value: error canon"
+          IO.eprintln "route: --value: the reference parser accepted the \
+            document and produced no canonical value"
+          exitStatus 5
+
+/-- **The document's value.**  An admitted document takes the native event call
+and is read back from the emitted stream; every other outcome — a refusal, an
+unreadable stream, or an event list that is not one value — is the reference
+parser's to answer.  The two branches are canonicalised once each: the fallback
+by `canonValue` in `fallbackValue`, and the fast path by `valueOfEvents`, whose
+numbers already carry the canonical rendering (`JsonEventValue`), so neither
+value is canonicalised twice. -/
+def valueOf (doc : ByteArray) : IO RouteValue := do
+  match ← decide2 doc with
+  | .failed status => exitStatus status
+  | .refused _ => fallbackValue doc
+  | .admitted f =>
+      let staged ← stage doc doc.size
+      let result ← call staged f.escapeSkip
+      match ← decodeResult result with
+      | .error status => exitStatus status
+      | .ok o =>
+          -- A refusal word on an admitted document is the reference's to
+          -- answer, not the fast path's to report.
+          if o.verdict != 1 then fallbackValue doc
+          else
+            let (arena, events) := payloads result o.ndst o.nev
+            match eventsOfBytes doc.toList events.toList arena.toList with
+            | some ces =>
+                match valueOfEvents ces with
+                | some v => return .value v
+                | none => fallbackValue doc
+            | none => fallbackValue doc
+
+/-- The value line: the arm's prefix, the verdict word the observation uses, and
+the value's rendering as lowercase hex of its UTF-8 bytes on acceptance; the
+reference's refusal class and offset on refusal. -/
+def valueLine : RouteValue → String
+  | .value v => s!"value: verdict=1 value={hex (renderValue v).toUTF8}"
+  | .refused e =>
+      let offset := match parseErrorOffset e with
+        | some p => toString p
+        | none => "-"
+      s!"value: refused class={parseErrorName e} offset={offset}"
+
+/-- `--value <file>`: read the document, ask `valueOf`, and print the one line.
+The exit status is the fallback's: 0 for a value, 2 for the reference's refusal. -/
+def runValue (path : String) : IO UInt32 := do
+  let doc ← try
+      IO.FS.readBinFile path
+    catch e =>
+      IO.eprintln s!"route: cannot read '{path}': {e}"
+      return 2
+  let answer ← valueOf doc
+  IO.println (valueLine answer)
+  match answer with
+  | .value _ => return 0
+  | .refused _ => return 2
 
 def run (path : String) (maxDepth : Nat := kernelMaxDepth) : IO UInt32 := do
   let doc ← try
@@ -1550,6 +1654,7 @@ def main (args : List String) : IO UInt32 := do
   | ["--consume-noevent", path, reps] => runConsumeNoEvent path reps.toNat!
   | ["--consume-events", path] => runConsume path 11
   | ["--consume-events", path, reps] => runConsume path reps.toNat!
+  | ["--value", path] => runValue path
   | _ =>
       IO.eprintln usage
       return 1

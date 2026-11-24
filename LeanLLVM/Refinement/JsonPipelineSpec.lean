@@ -262,6 +262,45 @@ def rejectPos : Reject → Option Nat
   | .expectedCloseBrace p => some p
   | .trailingData p => some p
 
+/-- The refusal constructor's stable name, with none of the refusal prose's
+spacing: the vocabulary a schema line reports.  Every constructor is matched, so
+a new `Reject` constructor breaks this renderer — the class vocabulary cannot
+drift from the constructors without a compile error. -/
+def rejectName : Reject → String
+  | .unexpectedEnd _ => "unexpectedEnd"
+  | .unexpectedByte _ _ => "unexpectedByte"
+  | .badLiteral _ _ => "badLiteral"
+  | .badNumber _ => "badNumber"
+  | .unterminatedString _ => "unterminatedString"
+  | .badEscape _ => "badEscape"
+  | .badUTF8 _ => "badUTF8"
+  | .unpairedSurrogate _ => "unpairedSurrogate"
+  | .noncharacter _ => "noncharacter"
+  | .controlCharacter _ => "controlCharacter"
+  | .expectedColon _ => "expectedColon"
+  | .expectedComma _ => "expectedComma"
+  | .expectedCloseBracket _ => "expectedCloseBracket"
+  | .expectedCloseBrace _ => "expectedCloseBrace"
+  | .trailingData _ => "trailingData"
+  | .byteOrderMark => "byteOrderMark"
+
+/-- The refusal class a schema line reports: the syntax refusals under their
+constructor's name with the `invalid:` prefix `ParseError` gives them, and the
+three limit outcomes under their own. -/
+def parseErrorName : ParseError → String
+  | .invalid r => "invalid:" ++ rejectName r
+  | .inputTooLong => "inputTooLong"
+  | .depthExceeded => "depthExceeded"
+  | .outOfCapacity => "outOfCapacity"
+
+/-- The byte a refusal is reported at: the reject's own position.  A limit
+outcome names no byte, so it has none, as does the byte-order-mark refusal. -/
+def parseErrorOffset : ParseError → Option Nat
+  | .invalid r => rejectPos r
+  | .inputTooLong => none
+  | .depthExceeded => none
+  | .outOfCapacity => none
+
 /-- The first error offset, split by the stage that owns the refusal.
 
 The measured caller validates the document's UTF-8 before it walks the entry
@@ -483,6 +522,18 @@ def Γ_pipeline (eventRel : EventStreamRel) (tab base : Nat) : MemContract where
 #guard rejectPos (.unexpectedByte 3 93) = some 3
 #guard rejectPos (.badUTF8 1) = some 1
 
+-- The refusal vocabulary is per constructor, so the schema line's class is the
+-- constructor's name rather than a phrase; the limit outcomes have no offset.
+#guard rejectName (.unexpectedEnd 0) = "unexpectedEnd"
+#guard rejectName (.unexpectedByte 3 93) = "unexpectedByte"
+#guard rejectName .byteOrderMark = "byteOrderMark"
+#guard parseErrorName (.invalid (.unexpectedEnd 0)) = "invalid:unexpectedEnd"
+#guard parseErrorName .inputTooLong = "inputTooLong"
+#guard parseErrorName .outOfCapacity = "outOfCapacity"
+#guard parseErrorOffset (.invalid (.unexpectedByte 3 93)) = some 3
+#guard parseErrorOffset (.invalid .byteOrderMark) = none
+#guard parseErrorOffset .inputTooLong = none
+
 -- Each projection lands on its own field; an unshaped list yields `none`.
 -- The list is the contract module's read-set guard shape
 -- (`JsonPipelineContract.lean`'s `#guard`), the twenty `pipeline.h` arguments.
@@ -519,6 +570,18 @@ def Γ_pipeline (eventRel : EventStreamRel) (tab base : Nat) : MemContract where
 /-- info: 'LeanLLVM.Refinement.rejectPos' does not depend on any axioms -/
 #guard_msgs in
 #print axioms rejectPos
+
+/-- info: 'LeanLLVM.Refinement.rejectName' does not depend on any axioms -/
+#guard_msgs in
+#print axioms rejectName
+
+/-- info: 'LeanLLVM.Refinement.parseErrorName' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms parseErrorName
+
+/-- info: 'LeanLLVM.Refinement.parseErrorOffset' does not depend on any axioms -/
+#guard_msgs in
+#print axioms parseErrorOffset
 
 /-- info: 'LeanLLVM.Refinement.RefusalOffset' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in

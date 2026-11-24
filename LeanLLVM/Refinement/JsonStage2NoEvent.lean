@@ -84,6 +84,7 @@ projection.
 There is no `sorry`, `admit` or `native_decide`.
 -/
 import LeanLLVM.Refinement.JsonStage2Hsem
+import LeanLLVM.Refinement.JsonConsumerEvent
 import LeanLLVM.Refinement.JsonStage2TokenCorrespondence
 import LeanLLVM.JsonCallRoute
 
@@ -94,48 +95,6 @@ namespace LeanLLVM.Refinement
 open LeanLLVM
 open LeanLLVM.JSON
 open LeanLLVM.Refinement.JsonUtf8IR
-
-/-! ### The consumer's record
-
-One event as the caller's fold sees it: the tag byte, the two payload fields the
-record carries, and — for a string — the code points the body decodes to.  The
-`len`/`payload` fields are the record's own so the fold can add exactly what the
-emitted bytes would have carried; `cps` is the decoded body, which is what a
-consumer that wants the string reads off the document or the arena. -/
-
-/-- One event at the consumer's vocabulary. -/
-structure ConsumerEvent where
-  /-- The record's first byte: `T_OBJ`, `T_OBJ_END`, `T_ARR`, `T_ARR_END`,
-  `T_KEY`, `T_STR`, `T_NUM`, `T_TRUE`, `T_FALSE` or `T_NULL`. -/
-  tag : Nat
-  /-- The four-byte length a key or string record carries; zero otherwise. -/
-  len : Nat
-  /-- A number's eight payload bits, or a key's/string's eight-byte field. -/
-  payload : Nat
-  /-- The decoded body's code points; empty for a non-string event. -/
-  cps : List Nat
-deriving DecidableEq, Repr
-
-namespace ConsumerEvent
-
-/-- A container marker or literal tag. -/
-def kind (t : Nat) : ConsumerEvent :=
-  ⟨t, 0, 0, []⟩
-
-/-- A number: `T_NUM` and the payload the record would hold. -/
-def number (bits : Nat) : ConsumerEvent :=
-  ⟨stage2TagNum, 0, bits, []⟩
-
-/-- A key or string: `T_KEY`/`T_STR`, the length, the span-or-arena field, and
-the decoded code points. -/
-def str (key : Bool) (len field : Nat) (cps : List Nat) : ConsumerEvent :=
-  ⟨(if key then EventRecord.tagKey else EventRecord.tagStr), len, field, cps⟩
-
-/-- The consumer's per-record contribution to its sum: `tag + len + payload`. -/
-def terms (e : ConsumerEvent) : Nat :=
-  e.tag + e.len + e.payload
-
-end ConsumerEvent
 
 /-- The sum of a byte prefix, as the consumer accumulates the arena. -/
 def byteSum : List UInt8 → Nat

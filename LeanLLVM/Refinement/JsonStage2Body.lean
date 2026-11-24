@@ -142,6 +142,7 @@ IEEE operation with `roundMag`, which `StrtodTier1`'s docstring states and this
 module does not add to or weaken.
 -/
 import LeanLLVM.Refinement.JsonStage2Contract
+import LeanLLVM.Refinement.JsonConsumerEvent
 import LeanLLVM.Refinement.JsonStage2IR
 import LeanLLVM.Refinement.JsonEscapeSpec
 import LeanLLVM.StrtodReader
@@ -245,9 +246,6 @@ def outTag (mem : Mem) (ev len cap : Nat) (t : Nat) : Option (Mem × Nat) :=
 /-- `out_u64`: the eight bytes of `v`, low byte first (`natToBytes`'s order). -/
 def outU64 (mem : Mem) (ev len cap : Nat) (v : Nat) : Option (Mem × Nat) :=
   outBlob mem ev len cap (wordBytes 8 v)
-
-/-- `T_NUM` (`stage2.c:104`). -/
-def stage2TagNum : Nat := 7
 
 /-- The number record's payload: tag `T_NUM` and the eight bytes of the value's
 `toBits`.  Nine bytes, within the record's thirteen. -/
@@ -437,12 +435,6 @@ inductive EventRecord where
   deriving DecidableEq
 
 namespace EventRecord
-
-/-- `T_KEY` (`stage2.c:104`, pinned in `JsonStage2Body`). -/
-def tagKey : Nat := 5
-
-/-- `T_STR`. -/
-def tagStr : Nat := 6
 
 /-- The bytes the emitted body writes for the record.  A tag is `out_tag`'s one
 byte; a number is exactly `numberRecord`, the model of the number arm's two

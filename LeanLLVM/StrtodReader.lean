@@ -9,7 +9,10 @@ each take `read : Bytes → Option Decimal` with
 "the emitted scanner's own reading".  Neither proof establishes it: the tiers
 prove what the conversion does with a decomposition, and the decomposition is
 assumed to be what the scanner reads.  This module states that assumption field
-by field, models the scanner's byte loops, and proves the round trip.
+by field, models the scanner's byte loops, and proves the round trip.  The
+reading itself is `LeanLLVM/StrtodRead.lean`, which this module imports: it holds
+the executable function and the equations below are about that definition, so a
+program that needs only the reading does not import the tier proofs.
 
 **The statement, field by field.**  For `d` well formed — `IntPart d.ip`,
 `Digits` on the fraction when there is one, `Digits` on the exponent when there
@@ -80,6 +83,7 @@ axioms are pinned at the end of the file.
 -/
 import LeanLLVM.JSON.Scan
 import LeanLLVM.JSON.Strtod
+import LeanLLVM.StrtodRead
 import LeanLLVM.StrtodTier1
 import LeanLLVM.StrtodTier3
 
@@ -89,92 +93,6 @@ namespace LeanLLVM.StrtodReader
 
 open LeanLLVM.JSON
 open ByteString
-
-/-- A concrete byte string from a list of byte values. -/
-def bytes (cs : List Nat) : Bytes := ByteString.literal (cs.map UInt8.ofNat)
-
-/-! ### The emitted scanner's field reading
-
-`kernel/json/stage2.c`'s `num_scan` (`:152`) and `num_fast_el1` (`:379`) read a
-number lexeme with the same three loops: the optional `minus`, `int`'s digit run
-cut at the `.`/`e`, the optional `.` and its digit run, and the optional
-`e`/`E`, its sign byte and its digit run.  `to_double` (`:647`) reads the same
-three loops a second time for the fallback.
-
-`reader` is that reading as a function to `Decimal`, the decomposition the two
-conversion proofs take as a parameter.  Each field is the bytes the emitted loop
-consumes:
-
-* `neg` — the leading `0x2D`'s presence;
-* `ip` — `int`'s bytes, `0` alone or a `1`–`9` lead and its maximal digit run;
-* `fr` — the `.`'s following maximal digit run, `none` when there is no `.`;
-* `ex` — the exponent marker's optional `+`/`-` (recorded as `Decimal`'s `Bool`,
-  `true` for `-`) and its maximal digit run.
-
-The digit runs are `ByteString.takeWhile IsDigitB`, which is the emitted
-`while (p[i] >= '0' && p[i] <= '9') i++;` loop: maximal munch.  A lexeme is
-refused (`none`) when a loop's run is empty where the grammar needs one byte, or
-when a byte is left over — the emitted `i != n` check, and the `*err` returns at
-the same points. -/
-
-/-- The bytes after an `e`: `[ minus / plus ] 1*DIGIT`, exhausted. -/
-def expDigits (sign : Bool) (bs : Bytes) : Option (Bool × Bytes) :=
-  let ds := bs.takeWhile IsDigitB
-  if ds = empty then none
-  else if bs.dropWhile IsDigitB = empty then some (sign, ds) else none
-
-/-- The bytes after the `e`/`E`: an optional sign byte, then `1*DIGIT`. -/
-def expPart (bs : Bytes) : Option (Bool × Bytes) :=
-  match bs.data.toList with
-  | [] => none
-  | b :: rest =>
-      if decide (b = 0x2B) then expDigits false (literal rest)
-      else if decide (b = 0x2D) then expDigits true (literal rest)
-      else expDigits false (b +: literal rest)
-
-/-- `[ exp ]` at the end of a lexeme: nothing, or `e`/`E` and the exponent,
-with nothing after. -/
-def expTail (bs : Bytes) : Option (Option (Bool × Bytes)) :=
-  match bs.data.toList with
-  | [] => some none
-  | b :: rest =>
-      if decide (b = 0x65) || decide (b = 0x45) then (expPart (literal rest)).map some
-      else none
-
-/-- The bytes after an `int`: an optional `.` and its `1*DIGIT`, then an
-optional exponent, and nothing after. -/
-def suffix (neg : Bool) (ip : Bytes) (bs : Bytes) : Option Decimal :=
-  match bs.data.toList with
-  | [] => some ⟨neg, ip, none, none⟩
-  | b :: rest =>
-      if decide (b = 0x2E) then
-        let tail : Bytes := literal rest
-        let fs := tail.takeWhile IsDigitB
-        if fs = empty then none
-        else (expTail (tail.dropWhile IsDigitB)).map fun ex => ⟨neg, ip, some fs, ex⟩
-      else if decide (b = 0x65) || decide (b = 0x45) then
-        (expPart (literal rest)).map fun ex => ⟨neg, ip, none, some ex⟩
-      else none
-
-/-- The bytes after the optional `minus`: `int [ frac ] [ exp ]`, exhausted. -/
-def body (neg : Bool) (bs : Bytes) : Option Decimal :=
-  match bs.data.toList with
-  | [] => none
-  | b :: rest =>
-      let tail : Bytes := literal rest
-      if decide (b = 0x30) then suffix neg (0x30 +: empty) tail
-      else if 0x31 ≤ b ∧ b ≤ 0x39 then
-        suffix neg (b +: tail.takeWhile IsDigitB) (tail.dropWhile IsDigitB)
-      else none
-
-/-- `[ minus ] int [ frac ] [ exp ]`, exhausted: the emitted scanner's reading
-of a number lexeme, as the decomposition it accumulates. -/
-def reader (bs : Bytes) : Option Decimal :=
-  match bs.data.toList with
-  | [] => none
-  | b :: rest =>
-      if decide (b = 0x2D) then body true (literal rest)
-      else body false (literal (b :: rest))
 
 /-! ### The reader's equations
 
