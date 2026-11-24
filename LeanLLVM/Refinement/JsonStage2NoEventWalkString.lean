@@ -648,6 +648,280 @@ theorem ifEnd239_step {calls : Calls} {s : State}
     (by simpa only [stateAt, ifEnd239Block] using hcode) rfl
   simpa only [stateAt] using hstep
 
+/-! ### The result's dispatch and the two cleanup arms
+
+`NodeBlock29` splits on `%call243` against one, and `LeafBlock27` splits again on
+equality with one: below one the class refuses at `do.body246`, at one it takes
+the empty-string arm `do.body254`, and above one it hands to
+`for.cond266.preheader` with the callee's staged word.
+
+The dispatch rows carry the invariant (neither block writes memory).  The two
+cleanup blocks store at the caller's slots and leave the walk, so they are
+control steps with their memory effects, as the class's earlier cleanup arms are.
+-/
+
+/-- `NodeBlock29`: the result against one. -/
+def nodeBlock29Instrs : List Instr :=
+  [ Instr.icmp "%Pivot30" IPred.slt 32 (Operand.reg "%call243")
+      (Operand.imm (.int 32 (BitVec.ofNat 32 1))) ]
+
+/-- `NodeBlock29`, pinned. -/
+def nodeBlock29Block : Block :=
+  { name := "NodeBlock29", instrs := nodeBlock29Instrs,
+    term := Term.condbr (Operand.reg "%Pivot30") "do.body246" "LeafBlock27" }
+
+theorem nodeBlock29Block_find :
+    stage2NoEventBody.findBlock "NodeBlock29" = some nodeBlock29Block := by
+  decide
+
+theorem nodeBlock29_denote (calls : Calls) (env : Env) (s : State) {v : BitVec 32}
+    (hcall : lookupName env "%call243" = some (.int 32 v)) :
+    denoteCode calls nodeBlock29Instrs (stateAt env s) =
+      some (stateAt
+        (("%Pivot30", .int 1 (evalICmp .slt v (BitVec.ofNat 32 1))) :: env) s) := by
+  rw [nodeBlock29Instrs, stage2NoEventWalk_denote_icmp_imm (calls := calls)
+    (env := env) (s := s) (d := "%Pivot30") (a := "%call243") (p := .slt) (w := 32)
+    (c := BitVec.ofNat 32 1) hcall (is := [])]
+  simp only [denoteCode_nil]
+
+/-- **`NodeBlock29` below one**: the refusal's arm, to `do.body246`. -/
+theorem link_nodeBlock29_true {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Mem}
+    {s : State} {v : BitVec 32}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "NodeBlock29")
+    (hcall : lookupName s.env "%call243" = some (.int 32 v))
+    (hy : evalICmp .slt v (BitVec.ofNat 32 1) = 1) :
+    Stage2NoEventWalkLink calls K mem s K
+      (stage2NoEventWalkNext (("%Pivot30", .int 1 1) :: s.env) s "do.body246") := by
+  have hcode : denoteCode calls nodeBlock29Instrs (stateAt s.env s) =
+      some (stateAt (("%Pivot30", .int 1 1) :: s.env) s) := by
+    have hd := nodeBlock29_denote (calls := calls) s.env s hcall
+    rw [hy] at hd
+    exact hd
+  exact stage2NoEventWalkLink_condbr_true (env' := ("%Pivot30", .int 1 1) :: s.env)
+    h (by rw [hpc]; exact nodeBlock29Block_find) hcode rfl (by rw [lookupName_cons_self])
+
+/-- **`NodeBlock29` at or above one**: the value arms, to `LeafBlock27`. -/
+theorem link_nodeBlock29_false {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Mem}
+    {s : State} {v : BitVec 32}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "NodeBlock29")
+    (hcall : lookupName s.env "%call243" = some (.int 32 v))
+    (hy : evalICmp .slt v (BitVec.ofNat 32 1) = 0) :
+    Stage2NoEventWalkLink calls K mem s K
+      (stage2NoEventWalkNext (("%Pivot30", .int 1 0) :: s.env) s "LeafBlock27") := by
+  have hcode : denoteCode calls nodeBlock29Instrs (stateAt s.env s) =
+      some (stateAt (("%Pivot30", .int 1 0) :: s.env) s) := by
+    have hd := nodeBlock29_denote (calls := calls) s.env s hcall
+    rw [hy] at hd
+    exact hd
+  exact stage2NoEventWalkLink_condbr_false (env' := ("%Pivot30", .int 1 0) :: s.env)
+    h (by rw [hpc]; exact nodeBlock29Block_find) hcode rfl (by rw [lookupName_cons_self])
+
+/-- `LeafBlock27`: the result against one, the value arm's inner test. -/
+def leafBlock27Instrs : List Instr :=
+  [ Instr.icmp "%SwitchLeaf28" IPred.eq 32 (Operand.reg "%call243")
+      (Operand.imm (.int 32 (BitVec.ofNat 32 1))) ]
+
+/-- `LeafBlock27`, pinned. -/
+def leafBlock27Block : Block :=
+  { name := "LeafBlock27", instrs := leafBlock27Instrs,
+    term := Term.condbr (Operand.reg "%SwitchLeaf28") "do.body254" "for.cond266.preheader" }
+
+theorem leafBlock27Block_find :
+    stage2NoEventBody.findBlock "LeafBlock27" = some leafBlock27Block := by
+  decide
+
+theorem leafBlock27_denote (calls : Calls) (env : Env) (s : State) {v : BitVec 32}
+    (hcall : lookupName env "%call243" = some (.int 32 v)) :
+    denoteCode calls leafBlock27Instrs (stateAt env s) =
+      some (stateAt
+        (("%SwitchLeaf28", .int 1 (evalICmp .eq v (BitVec.ofNat 32 1))) :: env) s) := by
+  rw [leafBlock27Instrs, stage2NoEventWalk_denote_icmp_imm (calls := calls)
+    (env := env) (s := s) (d := "%SwitchLeaf28") (a := "%call243") (p := .eq) (w := 32)
+    (c := BitVec.ofNat 32 1) hcall (is := [])]
+  simp only [denoteCode_nil]
+
+/-- **`LeafBlock27` at one**: the empty-string arm, to `do.body254`. -/
+theorem link_leafBlock27_true {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Mem}
+    {s : State} {v : BitVec 32}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "LeafBlock27")
+    (hcall : lookupName s.env "%call243" = some (.int 32 v))
+    (hy : evalICmp .eq v (BitVec.ofNat 32 1) = 1) :
+    Stage2NoEventWalkLink calls K mem s K
+      (stage2NoEventWalkNext (("%SwitchLeaf28", .int 1 1) :: s.env) s "do.body254") := by
+  have hcode : denoteCode calls leafBlock27Instrs (stateAt s.env s) =
+      some (stateAt (("%SwitchLeaf28", .int 1 1) :: s.env) s) := by
+    have hd := leafBlock27_denote (calls := calls) s.env s hcall
+    rw [hy] at hd
+    exact hd
+  exact stage2NoEventWalkLink_condbr_true (env' := ("%SwitchLeaf28", .int 1 1) :: s.env)
+    h (by rw [hpc]; exact leafBlock27Block_find) hcode rfl (by rw [lookupName_cons_self])
+
+/-- **`LeafBlock27` above one**: the staged word's arm, to
+`for.cond266.preheader`'s entry. -/
+theorem link_leafBlock27_false {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Mem}
+    {s : State} {v : BitVec 32}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "LeafBlock27")
+    (hcall : lookupName s.env "%call243" = some (.int 32 v))
+    (hy : evalICmp .eq v (BitVec.ofNat 32 1) = 0) :
+    Stage2NoEventWalkLink calls K mem s K
+      (stage2NoEventWalkNext (("%SwitchLeaf28", .int 1 0) :: s.env) s
+        "for.cond266.preheader") := by
+  have hcode : denoteCode calls leafBlock27Instrs (stateAt s.env s) =
+      some (stateAt (("%SwitchLeaf28", .int 1 0) :: s.env) s) := by
+    have hd := leafBlock27_denote (calls := calls) s.env s hcall
+    rw [hy] at hd
+    exact hd
+  exact stage2NoEventWalkLink_condbr_false (env' := ("%SwitchLeaf28", .int 1 0) :: s.env)
+    h (by rw [hpc]; exact leafBlock27Block_find) hcode rfl (by rw [lookupName_cons_self])
+
+/-- `do.body246`: the refusal's zero stores and the observed offset. -/
+def doBody246Instrs : List Instr :=
+  [ Instr.store (Ty.int 64) (Operand.imm (.int 64 (BitVec.ofNat 64 0)))
+      (Operand.reg "%tokens_out"),
+    Instr.store (Ty.int 64) (Operand.imm (.int 64 (BitVec.ofNat 64 0)))
+      (Operand.reg "%values_out"),
+    Instr.store (Ty.int 64) (Operand.imm (.int 64 (BitVec.ofNat 64 0)))
+      (Operand.reg "%sum_out"),
+    Instr.load "%33" (Ty.int 64) (Operand.reg "%off") ]
+
+/-- `do.body246`, pinned. -/
+def doBody246Block : Block :=
+  { name := "do.body246", instrs := doBody246Instrs, term := Term.br "cleanup287.thread" }
+
+theorem doBody246Block_find :
+    stage2NoEventBody.findBlock "do.body246" = some doBody246Block := by
+  decide
+
+theorem doBody246_denote (calls : Calls) (env : Env) (s : State)
+    {tOut vOut sOut off : Nat} {w : BitVec 64}
+    (hto : lookupName env "%tokens_out" = some (.ptr tOut))
+    (hvo : lookupName env "%values_out" = some (.ptr vOut))
+    (hso : lookupName env "%sum_out" = some (.ptr sOut))
+    (hoff : lookupName env "%off" = some (.ptr off))
+    (hv : readBytes
+        ({ s with mem := stage2NoEventZeroMem s.mem tOut vOut sOut }).mem
+        off 8 = some (natToBytes w.toNat 8)) :
+    denoteCode calls doBody246Instrs (stateAt env s) =
+      some (stateAt (("%33", .int 64 w) :: env)
+        ({ s with mem := stage2NoEventZeroMem s.mem tOut vOut sOut })) := by
+  have h1 := ifThen209_denote (calls := calls) (env := env) (s := s) hto hvo hso
+  rw [show doBody246Instrs = ifThen209Instrs ++
+      [Instr.load "%33" (Ty.int 64) (Operand.reg "%off")] from rfl]
+  rw [denoteCode_append_apply (a := ifThen209Instrs)
+    (b := [Instr.load "%33" (Ty.int 64) (Operand.reg "%off")]) h1 (by decide)]
+  have h2 : denoteCode calls [Instr.load "%33" (Ty.int 64) (Operand.reg "%off")]
+      (stateAt env ({ s with mem := stage2NoEventZeroMem s.mem tOut vOut sOut })) =
+      some (stateAt (("%33", .int 64 w) :: env)
+        ({ s with mem := stage2NoEventZeroMem s.mem tOut vOut sOut })) :=
+    denoteCode_load64 (calls := calls) (env := env)
+      (s := { s with mem := stage2NoEventZeroMem s.mem tOut vOut sOut })
+      (d := "%33") (p := "%off") (v := w) hoff hv (is := [])
+  rw [h2]
+
+/-- `do.body246`'s control step: the three zero stores, the `%off` read, and the
+branch to `cleanup287.thread`. -/
+theorem doBody246_step {calls : Calls} {s : State}
+    {tOut vOut sOut off : Nat} {w : BitVec 64}
+    (hpc : s.pc = "do.body246")
+    (hto : lookupName s.env "%tokens_out" = some (.ptr tOut))
+    (hvo : lookupName s.env "%values_out" = some (.ptr vOut))
+    (hso : lookupName s.env "%sum_out" = some (.ptr sOut))
+    (hoff : lookupName s.env "%off" = some (.ptr off))
+    (hv : readBytes
+        ({ s with mem := stage2NoEventZeroMem s.mem tOut vOut sOut }).mem
+        off 8 = some (natToBytes w.toNat 8)) :
+    step calls stage2NoEventBody s = .jump
+      (stage2NoEventWalkStored (("%33", .int 64 w) :: s.env) s
+        (stage2NoEventZeroMem s.mem tOut vOut sOut) "cleanup287.thread") := by
+  have hcode := doBody246_denote (calls := calls) (env := s.env) (s := s)
+    hto hvo hso hoff hv
+  have hstep := stage2NoEventWalk_step_br (s := s) (f := stage2NoEventBody)
+    (by rw [hpc]; exact doBody246Block_find)
+    (by simpa only [stateAt, doBody246Block] using hcode) rfl
+  simpa only [stage2NoEventWalkStored, stateAt] using hstep
+
+/-- `do.body254`: the empty string's length and the arena's byte count. -/
+def doBody254Instrs : List Instr :=
+  [ Instr.binop "%add257" BinOp.add 32 (Operand.reg "%.lcssa1125")
+      (Operand.imm (.int 32 (BitVec.ofNat 32 1))),
+    Instr.zext "%conv258" 32 64 (Operand.reg "%add257"),
+    Instr.binop "%or259" BinOp.add 64 (Operand.reg "%conv258")
+      (Operand.imm (.int 64 (BitVec.ofNat 64 9223372036854775814))),
+    Instr.binop "%add260" BinOp.add 64 (Operand.reg "%or259") (Operand.reg "%sub234") ]
+
+/-- `do.body254`, pinned. -/
+def doBody254Block : Block :=
+  { name := "do.body254", instrs := doBody254Instrs, term := Term.br "cleanup287" }
+
+theorem doBody254Block_find :
+    stage2NoEventBody.findBlock "do.body254" = some doBody254Block := by
+  decide
+
+theorem doBody254_denote (calls : Calls) (env : Env) (s : State)
+    {lc : BitVec 32} {sub : BitVec 64}
+    (hlc : lookupName env "%.lcssa1125" = some (.int 32 lc))
+    (hsub : lookupName env "%sub234" = some (.int 64 sub)) :
+    denoteCode calls doBody254Instrs (stateAt env s) =
+      some (stateAt
+        (("%add260", .int 64
+            ((BitVec.ofNat 64 (lc + BitVec.ofNat 32 1).toNat +
+              BitVec.ofNat 64 9223372036854775814) + sub)) ::
+          ("%or259", .int 64
+            (BitVec.ofNat 64 (lc + BitVec.ofNat 32 1).toNat +
+              BitVec.ofNat 64 9223372036854775814)) ::
+          ("%conv258", .int 64 (BitVec.ofNat 64 (lc + BitVec.ofNat 32 1).toNat)) ::
+          ("%add257", .int 32 (lc + BitVec.ofNat 32 1)) :: env) s) := by
+  unfold doBody254Instrs
+  rw [stage2NoEventWalk_denote_add_imm_w (calls := calls) (env := env) (s := s)
+    (d := "%add257") (a := "%.lcssa1125") (w := 32) (x := lc)
+    (c := BitVec.ofNat 32 1) hlc]
+  rw [denoteCode_zext (calls := calls)
+    (env := ("%add257", .int 32 (lc + BitVec.ofNat 32 1)) :: env) (s := s)
+    (d := "%conv258") (v := "%add257") (wIn := 32) (wOut := 64)
+    (x := lc + BitVec.ofNat 32 1) (by simp only [lookupName_cons_self])]
+  rw [stage2NoEventWalk_denote_add_imm_w (calls := calls)
+    (env := ("%conv258", .int 64 (BitVec.ofNat 64 (lc + BitVec.ofNat 32 1).toNat)) ::
+      ("%add257", .int 32 (lc + BitVec.ofNat 32 1)) :: env) (s := s)
+    (d := "%or259") (a := "%conv258") (w := 64)
+    (x := BitVec.ofNat 64 (lc + BitVec.ofNat 32 1).toNat)
+    (c := BitVec.ofNat 64 9223372036854775814) (by simp only [lookupName_cons_self])]
+  rw [denoteCode_add_reg (calls := calls)
+    (env := ("%or259", .int 64 (BitVec.ofNat 64 (lc + BitVec.ofNat 32 1).toNat +
+        BitVec.ofNat 64 9223372036854775814)) ::
+      ("%conv258", .int 64 (BitVec.ofNat 64 (lc + BitVec.ofNat 32 1).toNat)) ::
+      ("%add257", .int 32 (lc + BitVec.ofNat 32 1)) :: env) (s := s)
+    (d := "%add260") (a := "%or259") (b := "%sub234")
+    (x := BitVec.ofNat 64 (lc + BitVec.ofNat 32 1).toNat +
+      BitVec.ofNat 64 9223372036854775814) (y := sub)
+    (by simp only [lookupName_cons_self])
+    (by rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide)]; exact hsub)]
+  simp only [denoteCode_nil]
+
+/-- `do.body254`'s control step: the length, its extension and the arena's count,
+to `cleanup287`.  The block writes no memory. -/
+theorem doBody254_step {calls : Calls} {s : State}
+    {lc : BitVec 32} {sub : BitVec 64}
+    (hpc : s.pc = "do.body254")
+    (hlc : lookupName s.env "%.lcssa1125" = some (.int 32 lc))
+    (hsub : lookupName s.env "%sub234" = some (.int 64 sub)) :
+    step calls stage2NoEventBody s = .jump
+      (stage2NoEventWalkNext
+        (("%add260", .int 64
+            ((BitVec.ofNat 64 (lc + BitVec.ofNat 32 1).toNat +
+              BitVec.ofNat 64 9223372036854775814) + sub)) ::
+          ("%or259", .int 64
+            (BitVec.ofNat 64 (lc + BitVec.ofNat 32 1).toNat +
+              BitVec.ofNat 64 9223372036854775814)) ::
+          ("%conv258", .int 64 (BitVec.ofNat 64 (lc + BitVec.ofNat 32 1).toNat)) ::
+          ("%add257", .int 32 (lc + BitVec.ofNat 32 1)) :: s.env)
+        s "cleanup287") := by
+  have hcode := doBody254_denote (calls := calls) (env := s.env) (s := s) hlc hsub
+  have hstep := stage2NoEventWalk_step_br (s := s) (f := stage2NoEventBody)
+    (by rw [hpc]; exact doBody254Block_find)
+    (by simpa only [stateAt, doBody254Block] using hcode) rfl
+  simpa only [stage2NoEventWalkNext, stateAt] using hstep
+
 /-! ### Axiom footprints -/
 
 #print axioms ifThen209Block_find
@@ -674,5 +948,19 @@ theorem ifEnd239_step {calls : Calls} {s : State}
 #print axioms ifEnd239_denote
 #print axioms ifEnd239_denote_stage2NoEventCalls
 #print axioms ifEnd239_step
+#print axioms nodeBlock29Block_find
+#print axioms nodeBlock29_denote
+#print axioms link_nodeBlock29_true
+#print axioms link_nodeBlock29_false
+#print axioms leafBlock27Block_find
+#print axioms leafBlock27_denote
+#print axioms link_leafBlock27_true
+#print axioms link_leafBlock27_false
+#print axioms doBody246Block_find
+#print axioms doBody246_denote
+#print axioms doBody246_step
+#print axioms doBody254Block_find
+#print axioms doBody254_denote
+#print axioms doBody254_step
 
 end LeanLLVM.Refinement
