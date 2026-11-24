@@ -1412,6 +1412,19 @@ theorem odGap_unchangedOutside_slotWrite {mem : Mem} {start : Nat} {bs : List UI
     · left; omega
     · right; omega)]
 
+/-- A plain record write's frame: the literal and scalar rows write only the
+record's three words, so every byte outside them is the caller's. -/
+theorem odGap_unchangedOutside_record {mem : Mem} {e off tag : Nat} :
+    UnchangedOutside mem (stage2ErrSetMsg mem e off tag)
+      [(e, 4), (e + 8, 8), (e + 16, 8)] := by
+  unfold stage2ErrSetMsg stage2ErrSet
+  refine UnchangedOutside.write_le (a := e + 16) (w := 8)
+    (UnchangedOutside.write_le (a := e + 8) (w := 8)
+      (UnchangedOutside.write_le (a := e) (w := 4) (UnchangedOutside.refl' mem _)
+        ⟨(e, 4), by simp, le_rfl, by omega⟩ (by simp [wordBytes, natToBytes_length]))
+      ⟨(e + 8, 8), by simp, by omega, by omega⟩ (by simp [wordBytes, natToBytes_length]))
+    ⟨(e + 16, 8), by simp, by omega, by omega⟩ (by simp [wordBytes, natToBytes_length])
+
 /-! ### Axiom footprints -/
 
 #print axioms odGapLitCheck_of_firstDiff
@@ -1724,5 +1737,6 @@ theorem odGap_numberAccept_ifEnd {mem : Mem} {c pos b e ip ee next : Nat}
 #print axioms odGap_memory_accept
 #print axioms odGapSegment_readBytes
 #print axioms odGapLitScan_map_add
+#print axioms odGap_unchangedOutside_record
 
 end LeanLLVM.Refinement
