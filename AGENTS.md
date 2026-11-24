@@ -148,7 +148,10 @@ scratch file or in an agent's report is not a checkpoint.  A wide or stalled
 goal is split into independent lemmas before another whole-proof attempt is
 added: acceleration tracks independent sub-goals, not lane count.  A statement
 that reads from a body state binds every cell the invariant or the exit word
-carries, read from that field list rather than from the block text.  Measure a
+carries, read from that field list rather than from the block text; and a
+pointwise predicate does not carry a list's length, nor a congruence its width,
+so a statement that mentions a length or compares `ofNat` values carries that
+fact as its own hypothesis.  Measure a
 lane's wall clock against the serial estimate, and keep a lane only while it
 reduces it.
 
