@@ -981,3 +981,748 @@ theorem gapSub_toNat {a b : Nat} (hba : b ≤ a) (ha : a < 2 ^ 64) (hb : b < 2 ^
 #print axioms gapICmpEq_one_iff
 
 end LeanLLVM.Refinement
+namespace LeanLLVM.Refinement
+
+open LeanLLVM
+open LeanLLVM.Refinement.JsonStage2IR (stage2Calls)
+open LeanLLVM.Refinement.BlockEval (stateAt cells denoteCode_gep8_reg)
+open LeanLLVM.Refinement.JsonEntrySteps (readBytes_writeBytes_frame readBytes_length)
+
+/-! ### The window as a range, and its token segment -/
+
+/-- The byte-at-a-time window reads back as one range. -/
+theorem odGapBytesAt_readBytes {mem : Mem} {bytes : List UInt8} {b ip : Nat}
+    (h : gapBytesAt mem bytes b ip) (hlen : bytes.length = ip) :
+    readBytes mem b ip = some bytes := by
+  induction ip generalizing bytes b with
+  | zero =>
+      cases bytes with
+      | nil => rfl
+      | cons y ys => simp at hlen
+  | succ n ih =>
+      cases bytes with
+      | nil => simp at hlen
+      | cons x xs =>
+          have hlen' : xs.length = n := by simp at hlen; omega
+          have hx : readByte mem b = some x := by
+            have := h 0 (by omega)
+            simpa using this
+          have hxs : gapBytesAt mem xs (b + 1) n := by
+            intro i hi
+            have := h (i + 1) (by omega)
+            rw [show b + (i + 1) = (b + 1) + i from by omega, List.getD_cons_succ] at this
+            exact this
+          have hrec := ih hxs hlen'
+          simp only [readBytes, hx, hrec]
+
+/-- The token's window `[pos, ee)` as one range read of the document. -/
+theorem odGapSegment_readBytes {mem : Mem} {bytes : List UInt8} {b pos ee ip : Nat}
+    (h : readBytes mem b ip = some bytes) (hpe : pos ≤ ee) (hee : ee ≤ ip) :
+    readBytes mem (b + pos) (ee - pos) = some (gapSegment bytes pos ee) := by
+  have hle : pos ≤ ip := le_trans hpe hee
+  have h' : readBytes mem b (pos + (ip - pos)) = some bytes := by
+    rw [Nat.add_sub_cancel' hle]; exact h
+  obtain ⟨-, htail⟩ := readBytes_split mem b pos (ip - pos) h'
+  have h'' : readBytes mem (b + pos) ((ee - pos) + (ip - ee)) = some (bytes.drop pos) := by
+    rw [show (ee - pos) + (ip - ee) = ip - pos from by omega]; exact htail
+  exact (readBytes_split mem (b + pos) (ee - pos) (ip - ee) h'').1
+
+/-- A list's byte inside its first `k`. -/
+theorem odGap_getD_take {l : List UInt8} {k j : Nat} (hj : j < k) :
+    (l.take k).getD j 0 = l.getD j 0 := by
+  rw [List.getD_eq_getElem?_getD, List.getD_eq_getElem?_getD, List.getElem?_take,
+    if_pos hj]
+
+/-- The first `k` of two lists agree when their bytes do. -/
+theorem odGap_take_eq {a b : List UInt8} {k : Nat}
+    (hka : k ≤ a.length) (hkb : k ≤ b.length)
+    (hpre : ∀ j, j < k → a.getD j 0 = b.getD j 0) :
+    a.take k = b.take k := by
+  apply List.ext_getElem?
+  intro j
+  by_cases hj : j < k
+  · have hja : j < a.length := lt_of_lt_of_le hj hka
+    have hjb : j < b.length := lt_of_lt_of_le hj hkb
+    rw [List.getElem?_take, List.getElem?_take, if_pos hj, if_pos hj,
+      List.getElem?_eq_getElem hja, List.getElem?_eq_getElem hjb]
+    congr 1
+    have hg := hpre j hj
+    rwa [List.getD_eq_getElem?_getD, List.getD_eq_getElem?_getD,
+      List.getElem?_eq_getElem hja, List.getElem?_eq_getElem hjb,
+      Option.getD_some, Option.getD_some] at hg
+  · rw [List.getElem?_take, List.getElem?_take, if_neg hj, if_neg hj]
+
+/-- The token segment's byte at an offset is the document's at `pos + j`. -/
+theorem odGapSegment_getD {bytes : List UInt8} {pos ee j : Nat} (hj : j < ee - pos) :
+    (gapSegment bytes pos ee).getD j 0 = bytes.getD (pos + j) 0 := by
+  unfold gapSegment
+  rw [odGap_getD_take (by omega), gap_getD_drop_add]
+
+/-- The token segment's length, inside the window. -/
+theorem odGapSegment_length {bytes : List UInt8} {pos ee : Nat}
+    (hpe : pos ≤ ee) (hee : ee ≤ bytes.length) :
+    (gapSegment bytes pos ee).length = ee - pos := by
+  unfold gapSegment
+  rw [List.length_take, List.length_drop]
+  omega
+
+/-! ### `lit_check` as a scan
+
+`litCheck` is the first differing position, or the shorter length where one list
+is a strict prefix.  `odGapLitScan` is the same function with the position as an
+accumulator, which is what the composition's prefix facts consume. -/
+
+/-- `litCheck` with the position carried. -/
+def odGapLitScan : List UInt8 → List UInt8 → Nat → Option Nat
+  | [], [], _ => none
+  | [], _ :: _, k => some k
+  | _ :: _, [], k => some k
+  | a :: as, b :: bs, k => if a = b then odGapLitScan as bs (k + 1) else some k
+
+/-- The accumulator form is `litCheck` plus the offset. -/
+theorem odGapLitScan_map_add (a b : List UInt8) (k : Nat) :
+    (litCheck a b).map (· + k) = odGapLitScan a b k := by
+  induction a generalizing b k with
+  | nil =>
+      cases b with
+      | nil => rfl
+      | cons y ys => simp [litCheck, odGapLitScan]
+  | cons x xs ih =>
+      cases b with
+      | nil => simp [litCheck, odGapLitScan]
+      | cons y ys =>
+          simp only [litCheck, odGapLitScan]
+          by_cases h : x = y
+          · rw [if_pos h, if_pos h, ← ih ys (k + 1)]
+            cases hlit : litCheck xs ys with
+            | none => rfl
+            | some v => simp only [Option.map]; congr 1; omega
+          · rw [if_neg h, if_neg h]
+            simp only [Option.map]
+            congr 1
+            omega
+
+/-- **`litCheck` is the scan at zero.** -/
+theorem odGapLitCheck_eq_scan (a b : List UInt8) :
+    litCheck a b = odGapLitScan a b 0 := by
+  have h := odGapLitScan_map_add a b 0
+  simpa using h
+
+/-- The scan at an accumulator carries a matching prefix. -/
+theorem odGapLitScan_drop_add {a b : List UInt8} {k n : Nat}
+    (hka : k ≤ a.length) (hkb : k ≤ b.length)
+    (hpre : ∀ j, j < k → a.getD j 0 = b.getD j 0) :
+    odGapLitScan a b n = odGapLitScan (a.drop k) (b.drop k) (n + k) := by
+  induction k generalizing a b n with
+  | zero => simp
+  | succ k ih =>
+      cases a with
+      | nil => simp at hka
+      | cons x as =>
+          cases b with
+          | nil => simp at hkb
+          | cons y ys =>
+              have hxy : x = y := by
+                have := hpre 0 (by omega); simpa using this
+              subst hxy
+              simp only [odGapLitScan, if_pos rfl, List.drop_succ_cons]
+              rw [ih (a := as) (b := ys) (n := n + 1) (by simpa using hka)
+                (by simpa using hkb)
+                (fun j hj => by have := hpre (j + 1) (by omega); simpa using this)]
+              rw [show n + 1 + k = n + (k + 1) from by omega]
+              simp
+
+/-- A first difference after a shared prefix, at the prefix's length. -/
+theorem odGapLitScan_firstDiff (pre as bs : List UInt8) (x y : UInt8) (n : Nat)
+    (h : x ≠ y) :
+    odGapLitScan (pre ++ x :: as) (pre ++ y :: bs) n = some (n + pre.length) := by
+  induction pre generalizing n with
+  | nil =>
+      simp only [List.nil_append, odGapLitScan, if_neg h, List.length_nil, Nat.add_zero]
+  | cons p ps ih =>
+      simp only [List.cons_append, odGapLitScan, if_pos rfl]
+      simpa [List.length_cons, Nat.add_assoc, Nat.add_comm, Nat.add_left_comm]
+        using ih (n + 1)
+
+/-- The first list is a strict prefix of the second. -/
+theorem odGapLitScan_short (pre rest : List UInt8) (n : Nat) (h : rest ≠ []) :
+    odGapLitScan pre (pre ++ rest) n = some (n + pre.length) := by
+  induction pre generalizing n with
+  | nil =>
+      cases rest with
+      | nil => exact absurd rfl h
+      | cons y ys => simp only [List.nil_append, odGapLitScan, List.length_nil, Nat.add_zero]
+  | cons p ps ih =>
+      simp only [List.cons_append, odGapLitScan, if_pos rfl]
+      simpa [List.length_cons, Nat.add_assoc, Nat.add_comm, Nat.add_left_comm]
+        using ih (n + 1)
+
+/-- The second list is a strict prefix of the first. -/
+theorem odGapLitScan_long (pre rest : List UInt8) (n : Nat) (h : rest ≠ []) :
+    odGapLitScan (pre ++ rest) pre n = some (n + pre.length) := by
+  induction pre generalizing n with
+  | nil =>
+      cases rest with
+      | nil => exact absurd rfl h
+      | cons y ys => simp only [List.nil_append, odGapLitScan, List.length_nil, Nat.add_zero]
+  | cons p ps ih =>
+      simp only [List.cons_append, odGapLitScan, if_pos rfl]
+      simpa [List.length_cons, Nat.add_assoc, Nat.add_comm, Nat.add_left_comm]
+        using ih (n + 1)
+
+/-- Equal lists have no refusal position. -/
+theorem odGapLitCheck_eq_none {a b : List UInt8} (h : a = b) : litCheck a b = none := by
+  subst h
+  induction a with
+  | nil => rfl
+  | cons x xs ih => simp [litCheck, ih]
+
+/-- **The refusal at a first difference.** -/
+theorem odGapLitCheck_of_firstDiff {a b : List UInt8} {c : Nat}
+    (hca : c < a.length) (hcb : c < b.length)
+    (hpre : ∀ j, j < c → a.getD j 0 = b.getD j 0)
+    (hne : a.getD c 0 ≠ b.getD c 0) :
+    litCheck a b = some c := by
+  have hda := List.drop_eq_getElem_cons (l := a) hca
+  have hdb := List.drop_eq_getElem_cons (l := b) hcb
+  have hta := List.take_append_drop c a
+  have htb := List.take_append_drop c b
+  have htake : a.take c = b.take c :=
+    odGap_take_eq (Nat.le_of_lt hca) (Nat.le_of_lt hcb) hpre
+  have hne' : a[c] ≠ b[c] := by
+    intro h
+    apply hne
+    rw [List.getD_eq_getElem?_getD, List.getD_eq_getElem?_getD,
+      List.getElem?_eq_getElem hca, List.getElem?_eq_getElem hcb, Option.getD_some]
+    exact h
+  have e1 : a = a.take c ++ a[c] :: a.drop (c + 1) := by
+    conv => lhs; rw [← hta, hda]
+  have e2 : b = b.take c ++ b[c] :: b.drop (c + 1) := by
+    conv => lhs; rw [← htb, hdb]
+  rw [odGapLitCheck_eq_scan, e1, e2, htake, odGapLitScan_firstDiff _ _ _ _ _ 0 hne']
+  congr 1
+  rw [List.length_take, Nat.min_eq_left (Nat.le_of_lt hcb)]
+  omega
+
+/-- **The refusal where the first list is a strict prefix.** -/
+theorem odGapLitCheck_of_short {a b : List UInt8}
+    (hlen : a.length < b.length)
+    (hpre : ∀ j, j < a.length → a.getD j 0 = b.getD j 0) :
+    litCheck a b = some a.length := by
+  have htake : a.take a.length = b.take a.length :=
+    odGap_take_eq (le_rfl) (Nat.le_of_lt hlen) hpre
+  have hb : b = a ++ b.drop a.length := by
+    conv => lhs; rw [← List.take_append_drop a.length b, ← htake, List.take_length]
+  have hrest : b.drop a.length ≠ [] := by
+    intro h
+    have := List.length_drop (l := b) (i := a.length)
+    rw [h] at this
+    simp at this
+    omega
+  rw [odGapLitCheck_eq_scan, hb]
+  simpa using odGapLitScan_short _ _ 0 hrest
+
+/-- **The refusal where the second list is a strict prefix.** -/
+theorem odGapLitCheck_of_long {a b : List UInt8}
+    (hlen : b.length < a.length)
+    (hpre : ∀ j, j < b.length → a.getD j 0 = b.getD j 0) :
+    litCheck a b = some b.length := by
+  have htake : a.take b.length = b.take b.length :=
+    odGap_take_eq (Nat.le_of_lt hlen) le_rfl hpre
+  have ha : a = b ++ a.drop b.length := by
+    conv => lhs; rw [← List.take_append_drop b.length a, htake, List.take_length]
+  have hrest : a.drop b.length ≠ [] := by
+    intro h
+    have := List.length_drop (l := a) (i := b.length)
+    rw [h] at this
+    simp at this
+    omega
+  rw [odGapLitCheck_eq_scan, ha]
+  simpa using odGapLitScan_long _ _ 0 hrest
+
+/-- The empty segment against a nonempty literal refuses at `0`. -/
+theorem odGapLitCheck_nil_left {lit : List UInt8} (h : lit ≠ []) :
+    litCheck [] lit = some 0 := by
+  cases lit with
+  | nil => exact absurd rfl h
+  | cons y ys => rfl
+
+/-- The number arm's refusal write: the tag-1 record at `pos + ei`. -/
+theorem odGapAfterLoop_number {bytes : List UInt8} {ip pos ee : Nat}
+    (hch : bytes.getD pos 0 = 0x2D ∨
+      (0x30 ≤ bytes.getD pos 0 ∧ bytes.getD pos 0 ≤ 0x39))
+    (hacc : (numLexScan (gapSegment bytes pos ee)).2 = false) :
+    gapAfterLoop bytes ip pos ee =
+      GapWrite.err (pos + (numLexScan (gapSegment bytes pos ee)).1) gapTagNumber := by
+  unfold gapAfterLoop
+  simp only [hch, if_pos, hacc, Bool.false_eq_true, if_false]
+
+/-- The number arm's acceptance falls through to the second token's write. -/
+theorem odGapAfterLoop_number_accept {bytes : List UInt8} {ip pos ee : Nat}
+    (hch : bytes.getD pos 0 = 0x2D ∨
+      (0x30 ≤ bytes.getD pos 0 ∧ bytes.getD pos 0 ≤ 0x39))
+    (hacc : (numLexScan (gapSegment bytes pos ee)).2 = true) :
+    gapAfterLoop bytes ip pos ee = gapExtraWrite bytes ip ee := by
+  unfold gapAfterLoop
+  simp only [hch, if_pos, hacc, if_true]
+
+/-- The literal arm's refusal: the tag-2 record at `pos + i`. -/
+theorem odGapAfterLoop_literal {bytes lit : List UInt8} {ip pos ee i : Nat} {ch : UInt8}
+    (hch : bytes.getD pos 0 = ch)
+    (hnotnum : ¬ (ch = 0x2D ∨ (0x30 ≤ ch ∧ ch ≤ 0x39)))
+    (hsel : ch = 0x74 ∨ ch = 0x66 ∨ ch = 0x6E)
+    (hlitT : ch = 0x74 → lit = gapTrueLit)
+    (hlitF : ch = 0x66 → lit = gapFalseLit)
+    (hlitN : ch = 0x6E → lit = gapNullLit)
+    (hlit : litCheck (gapSegment bytes pos ee) lit = some i) :
+    gapAfterLoop bytes ip pos ee = GapWrite.err (pos + i) gapTagLiteral := by
+  unfold gapAfterLoop
+  simp only [hch, hnotnum, if_false]
+  rcases hsel with h | h | h
+  · subst h
+    have hlit' : litCheck (gapSegment bytes pos ee) gapTrueLit = some i := by
+      rw [← hlitT rfl]; exact hlit
+    rw [if_pos rfl]
+    simp only [gapLiteralWrite, hlit']
+  · subst h
+    have hlit' : litCheck (gapSegment bytes pos ee) gapFalseLit = some i := by
+      rw [← hlitF rfl]; exact hlit
+    rw [if_neg (by decide : ¬ (0x66 : UInt8) = 0x74), if_pos rfl]
+    simp only [gapLiteralWrite, hlit']
+  · subst h
+    have hlit' : litCheck (gapSegment bytes pos ee) gapNullLit = some i := by
+      rw [← hlitN rfl]; exact hlit
+    rw [if_neg (by decide : ¬ (0x6E : UInt8) = 0x74),
+      if_neg (by decide : ¬ (0x6E : UInt8) = 0x66), if_pos rfl]
+    simp only [gapLiteralWrite, hlit']
+
+/-- The literal arm's acceptance falls through to the second token's write. -/
+theorem odGapAfterLoop_literal_accept {bytes lit : List UInt8} {ip pos ee : Nat} {ch : UInt8}
+    (hch : bytes.getD pos 0 = ch)
+    (hnotnum : ¬ (ch = 0x2D ∨ (0x30 ≤ ch ∧ ch ≤ 0x39)))
+    (hsel : ch = 0x74 ∨ ch = 0x66 ∨ ch = 0x6E)
+    (hlitT : ch = 0x74 → lit = gapTrueLit)
+    (hlitF : ch = 0x66 → lit = gapFalseLit)
+    (hlitN : ch = 0x6E → lit = gapNullLit)
+    (hlit : litCheck (gapSegment bytes pos ee) lit = none) :
+    gapAfterLoop bytes ip pos ee = gapExtraWrite bytes ip ee := by
+  unfold gapAfterLoop
+  simp only [hch, hnotnum, if_false]
+  rcases hsel with h | h | h
+  · subst h
+    have hlit' : litCheck (gapSegment bytes pos ee) gapTrueLit = none := by
+      rw [← hlitT rfl]; exact hlit
+    rw [if_pos rfl]
+    simp only [gapLiteralWrite, hlit', if_true]
+  · subst h
+    have hlit' : litCheck (gapSegment bytes pos ee) gapFalseLit = none := by
+      rw [← hlitF rfl]; exact hlit
+    rw [if_neg (by decide : ¬ (0x66 : UInt8) = 0x74), if_pos rfl]
+    simp only [gapLiteralWrite, hlit', if_true]
+  · subst h
+    have hlit' : litCheck (gapSegment bytes pos ee) gapNullLit = none := by
+      rw [← hlitN rfl]; exact hlit
+    rw [if_neg (by decide : ¬ (0x6E : UInt8) = 0x74),
+      if_neg (by decide : ¬ (0x6E : UInt8) = 0x66), if_pos rfl]
+    simp only [gapLiteralWrite, hlit', if_true]
+
+/-- The non-scalar first byte: the tag-3 record at `pos`. -/
+theorem odGapAfterLoop_scalar {bytes : List UInt8} {ip pos ee : Nat} {ch : UInt8}
+    (hch : bytes.getD pos 0 = ch)
+    (hnotnum : ¬ (ch = 0x2D ∨ (0x30 ≤ ch ∧ ch ≤ 0x39)))
+    (h74 : ch ≠ 0x74) (h66 : ch ≠ 0x66) (h6E : ch ≠ 0x6E) :
+    gapAfterLoop bytes ip pos ee = GapWrite.err pos gapTagScalar := by
+  unfold gapAfterLoop
+  simp only [hch, hnotnum, if_false, h74, h66, h6E, if_neg]
+
+
+
+/-! ### The record's words and the frame
+
+`err_set` writes the record's three words; a caller observes them read back, and
+every address outside the record and the two staging slots keeps its byte. -/
+
+theorem odGapSizeBytes_double : (Ty.double).sizeBytes = 8 := rfl
+theorem odGapSizeBytes_i64 : (Ty.int 64).sizeBytes = 8 := rfl
+
+/-- `err_set`'s three stores do not touch an address outside `[e, e + 24)`. -/
+theorem odGap_readByte_errSetMsg {m : Mem} {e off tag a : Nat}
+    (h1 : a < e ∨ e + 4 ≤ a) (h2 : a < e + 8 ∨ e + 16 ≤ a)
+    (h3 : a < e + 16 ∨ e + 24 ≤ a) :
+    readByte (stage2ErrSetMsg m e off tag) a = readByte m a := by
+  unfold stage2ErrSetMsg stage2ErrSet
+  rw [readByte_writeBytes_outside (m := writeBytes (writeBytes m e (wordBytes 4 0)) (e + 8)
+        (wordBytes 8 off)) (bs := wordBytes 8 tag) (start := e + 16)
+        (by simp only [wordBytes, natToBytes_length]; omega),
+      readByte_writeBytes_outside (m := writeBytes m e (wordBytes 4 0))
+        (bs := wordBytes 8 off) (start := e + 8)
+        (by simp only [wordBytes, natToBytes_length]; omega),
+      readByte_writeBytes_outside (m := m) (bs := wordBytes 4 0) (start := e)
+        (by simp only [wordBytes, natToBytes_length]; omega)]
+
+/-- The record's own regions, in the list the frame names. -/
+theorem odGap_frame_outside {e next a : Nat}
+    (hout : ∀ r ∈ [(e, 4), (e + 8, 8), (e + 16, 8), (next, 8), (next + 8, 8)],
+      ¬ (r.1 ≤ a ∧ a < r.1 + r.2)) :
+    (a < e ∨ e + 4 ≤ a) ∧ (a < e + 8 ∨ e + 16 ≤ a) ∧ (a < e + 16 ∨ e + 24 ≤ a) := by
+  have h1 := hout (e, 4) (by simp)
+  have h2 := hout (e + 8, 8) (by simp)
+  have h3 := hout (e + 16, 8) (by simp)
+  omega
+
+/-- **The frame at a record written over a memory.**  A byte outside the record
+and the two slots reads as it did before the record's stores. -/
+theorem odGap_unchangedOutside_errSetMsg {ref m : Mem} {e next off tag : Nat}
+    (h : UnchangedOutside ref m
+      [(e, 4), (e + 8, 8), (e + 16, 8), (next, 8), (next + 8, 8)]) :
+    UnchangedOutside ref (stage2ErrSetMsg m e off tag)
+      [(e, 4), (e + 8, 8), (e + 16, 8), (next, 8), (next + 8, 8)] := by
+  intro a hout
+  obtain ⟨h1, h2, h3⟩ := odGap_frame_outside hout
+  rw [odGap_readByte_errSetMsg (m := m) (off := off) (tag := tag) h1 h2 h3]
+  exact h a hout
+
+/-- Two half-open slots cover one contiguous interval: an address outside both is
+outside the whole `[next, next + 16)`. -/
+theorem odGap_not_in_slots {a next : Nat}
+    (h1 : ¬ (next ≤ a ∧ a < next + 8))
+    (h2 : ¬ (next + 8 ≤ a ∧ a < next + 16)) :
+    a < next ∨ next + 16 ≤ a := by
+  by_cases ha : a < next
+  · exact Or.inl ha
+  · right
+    by_contra hc
+    push_neg at hc
+    rcases Nat.lt_or_ge a (next + 8) with h | h
+    · exact h1 ⟨by omega, h⟩
+    · exact h2 ⟨h, by omega⟩
+
+/-- **The frame at a slot write.**  A write inside the two staging slots is
+invisible outside them. -/
+theorem odGap_unchangedOutside_slotWrite {mem : Mem} {start : Nat} {bs : List UInt8}
+    {next : Nat} (hstart : next ≤ start) (hlen : start + bs.length ≤ next + 16) :
+    UnchangedOutside mem (writeBytes mem start bs)
+      [(next, (Ty.double).sizeBytes), (next + (Ty.double).sizeBytes, (Ty.int 64).sizeBytes)] := by
+  intro a hout
+  rw [readByte_writeBytes_outside mem bs (by
+    have h1 := hout (next, (Ty.double).sizeBytes) (by simp)
+    have h2 := hout (next + (Ty.double).sizeBytes, (Ty.int 64).sizeBytes) (by simp)
+    simp only [odGapSizeBytes_double] at h1 h2 ⊢
+    rcases odGap_not_in_slots h1 h2 with h | h
+    · left; omega
+    · right; omega)]
+
+/-! ### Axiom footprints -/
+
+#print axioms odGapLitCheck_of_firstDiff
+#print axioms odGapNumberByte_iff
+#print axioms odGapAfterLoop_number
+#print axioms odGap_unchangedOutside_errSetMsg
+
+
+
+
+/-! ### Small arithmetic -/
+
+/-- Two small words add as their naturals. -/
+theorem odGap_add_toNat {a b : Nat} (h : a + b < 2 ^ 64) :
+    ((BitVec.ofNat 64 a) + (BitVec.ofNat 64 b)).toNat = a + b := by
+  rw [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat,
+    Nat.mod_eq_of_lt (by omega : a < 2 ^ 64),
+    Nat.mod_eq_of_lt (by omega : b < 2 ^ 64), Nat.mod_eq_of_lt h]
+
+/-- The token length the body subtracts is the segment's length. -/
+theorem odGap_sub_toNat {a b : Nat} (hba : b ≤ a) (ha : a < 2 ^ 64) :
+    ((BitVec.ofNat 64 a) - (BitVec.ofNat 64 b)).toNat = a - b := by
+  rw [BitVec.toNat_sub, BitVec.toNat_ofNat, BitVec.toNat_ofNat,
+    Nat.mod_eq_of_lt ha, Nat.mod_eq_of_lt (by omega : b < 2 ^ 64)]
+  have h : 2 ^ 64 - b + a = 2 ^ 64 + (a - b) := by omega
+  rw [h, Nat.add_comm (2 ^ 64) (a - b), Nat.add_mod_right, Nat.mod_eq_of_lt (by omega)]
+
+/-! ### The refusal record's memory -/
+
+/-- **The number refusal's record and frame.**  The helper wrote `%ei` at
+`next + 8`; the record's three words are the model's and every byte outside the
+record and the two slots is the caller's. -/
+theorem odGap_memory_numberRefusal {mem : Mem} {next e pos off : Nat} :
+    readBytes (stage2ErrSetMsg (writeBytes mem (next + 8) (wordBytes 8 off)) e
+        (pos + off) 1) e 4 = some (wordBytes 4 0) ∧
+      readBytes (stage2ErrSetMsg (writeBytes mem (next + 8) (wordBytes 8 off)) e
+        (pos + off) 1) (e + 8) 8 = some (wordBytes 8 (pos + off)) ∧
+      readBytes (stage2ErrSetMsg (writeBytes mem (next + 8) (wordBytes 8 off)) e
+        (pos + off) 1) (e + 16) 8 = some (wordBytes 8 1) ∧
+      UnchangedOutside mem
+        (stage2ErrSetMsg (writeBytes mem (next + 8) (wordBytes 8 off)) e (pos + off) 1)
+        [(e, 4), (e + 8, 8), (e + 16, 8), (next, 8), (next + 8, 8)] := by
+  refine ⟨stage2ErrSetMsg_ok_read _ _ _ _, stage2ErrSetMsg_off_read _ _ _ _,
+    stage2ErrSetMsg_msg_read _ _ _ _, ?_⟩
+  refine odGap_unchangedOutside_errSetMsg ?_
+  intro a hout
+  have h1 := hout (next, 8) (by simp)
+  have h2 := hout (next + 8, 8) (by simp)
+  have h3 : a < next + 8 ∨ next + 16 ≤ a := by
+    rcases odGap_not_in_slots h1 h2 with h | h <;> omega
+  rw [readByte_writeBytes_outside mem (wordBytes 8 off) (start := next + 8) (by
+    simp only [wordBytes, natToBytes_length]; omega)]
+
+/-- **The accepting rows' record and frame.**  The helper wrote `%d` at `next`;
+the record's three words are the model's and every byte outside the record and
+the two slots is the caller's. -/
+theorem odGap_memory_accept {mem : Mem} {next e off tag : Nat} {val : List UInt8}
+    (hval : val.length = 8) :
+    readBytes (stage2ErrSetMsg (writeBytes mem next val) e off tag) e 4 =
+        some (wordBytes 4 0) ∧
+      readBytes (stage2ErrSetMsg (writeBytes mem next val) e off tag) (e + 8) 8 =
+        some (wordBytes 8 off) ∧
+      readBytes (stage2ErrSetMsg (writeBytes mem next val) e off tag) (e + 16) 8 =
+        some (wordBytes 8 tag) ∧
+      UnchangedOutside mem (stage2ErrSetMsg (writeBytes mem next val) e off tag)
+        [(e, 4), (e + 8, 8), (e + 16, 8), (next, 8), (next + 8, 8)] := by
+  refine ⟨stage2ErrSetMsg_ok_read _ _ _ _, stage2ErrSetMsg_off_read _ _ _ _,
+    stage2ErrSetMsg_msg_read _ _ _ _, ?_⟩
+  refine odGap_unchangedOutside_errSetMsg ?_
+  intro a hout
+  have h1 := hout (next, 8) (by simp)
+  have h2 := hout (next + 8, 8) (by simp)
+  have h3 : a < next ∨ next + 16 ≤ a := odGap_not_in_slots h1 h2
+  rw [readByte_writeBytes_outside mem val (start := next) (by omega)]
+
+
+/-- **`num_fast_el1`'s refusing outcome at the emitted argument list.**  A pure
+computation: the four-element argument match reduces, the token length is the
+segment's, and the scan refuses. -/
+theorem odGap_stage2NumFast_refuse {mem : Mem} {b pos ee next : Nat} {seg : List UInt8}
+    (hsub : (BitVec.ofNat 64 ee - BitVec.ofNat 64 pos).toNat = ee - pos)
+    (hseg : readBytes mem (b + pos) (ee - pos) = some seg)
+    (hacc : (numLexScan seg).2 = false) :
+    stage2NumFast [.ptr (b + pos), .int 64 (BitVec.ofNat 64 ee - BitVec.ofNat 64 pos),
+        .ptr next, .ptr (next + 8)] mem (next + 16) =
+      some ⟨.int 32 (BitVec.ofNat 32 0),
+        writeBytes mem (next + 8) (wordBytes 8 (numLexScan seg).1), next + 16⟩ := by
+  simp only [stage2NumFast, hsub, hseg, hacc, Bool.false_eq_true, if_false]
+
+/-! ### The number refusal at `if.end` -/
+
+/-- **The number refusal row's body.**  At `if.end` with the number test true and
+`num_fast_el1` refusing, the body writes the tag-1 record at `pos + ei` and
+returns `void`, in four control steps. -/
+theorem odGap_numberRefusal_ifEnd {mem : Mem} {c pos b e ip ee next : Nat}
+    {bytes : List UInt8} {s : State}
+    (hpc : s.pc = "if.end") (hmem : s.mem = mem)
+    (h0 : lookupName s.env "%0" = some (.ptr b))
+    (ht : lookupName s.env "%t.0.val" = some (.int 64 (BitVec.ofNat 64 pos)))
+    (hee : lookupName s.env "%ee.0.lcssa" = some (.int 64 (BitVec.ofNat 64 ee)))
+    (hd : lookupName s.env "%d" = some (.ptr next))
+    (hei : lookupName s.env "%ei" = some (.ptr (next + 8)))
+    (hc : lookupName s.env "%c" = some (.ptr c))
+    (hnext : s.next = next + 16)
+    (hbytesAt : gapBytesAt mem bytes b ip) (hblen : bytes.length = ip)
+    (hposlt : pos < ip) (hposee : pos ≤ ee) (heele : ee ≤ ip)
+    (hpos64 : pos < 2 ^ 64) (hip64 : ip < 2 ^ 64) (hip63 : ip < 2 ^ 63)
+    (he : readBytes mem (c + 1112) 8 = some (natToBytes e 8)) (he64 : e < 2 ^ 64)
+    (hfield : c + odGapCurE + 8 ≤ next ∨ next + 16 ≤ c + odGapCurE)
+    (hnum : gapNumberByte (gapByte (bytes.getD pos 0)))
+    (hacc : (numLexScan (gapSegment bytes pos ee)).2 = false) :
+    runFuel (stage2Calls stage2SubCalls) 4 odGapRecoverBody s =
+      some (.ret none (stage2ErrSetMsg
+        (writeBytes mem (next + 8) (wordBytes 8 (numLexScan (gapSegment bytes pos ee)).1))
+        e (pos + (numLexScan (gapSegment bytes pos ee)).1) 1)) := by
+  have hbytes : readBytes mem b ip = some bytes := readBytes_of_gapBytesAt hbytesAt hblen
+  have hseg : readBytes mem (b + pos) (ee - pos) = some (gapSegment bytes pos ee) :=
+    odGapSegment_readBytes hbytes hposee heele
+  have hbyte : readBytes s.mem (b + pos) 1 =
+      some (natToBytes (gapByte (bytes.getD pos 0)).toNat 1) := by
+    rw [hmem]; exact gap_readOne hbytesAt hposlt rfl
+  have hse : ((BitVec.ofNat 64 pos).signExtend 64).toNat = pos :=
+    gap_signExtend_ofNat pos hpos64
+  have hse63 : pos < 2 ^ 63 := by omega
+  have hoffle : (numLexScan (gapSegment bytes pos ee)).1 ≤ ip := by
+    have h1 := numLexScan_fst_le (gapSegment bytes pos ee)
+    have h2 := odGapSegment_length hposee (by rw [hblen]; exact heele)
+    calc (numLexScan (gapSegment bytes pos ee)).1
+        ≤ (gapSegment bytes pos ee).length := h1
+      _ = ee - pos := h2
+      _ ≤ ee := Nat.sub_le _ _
+      _ ≤ ip := heele
+  have hoff64 : (numLexScan (gapSegment bytes pos ee)).1 < 2 ^ 64 := by omega
+  have hsub : (BitVec.ofNat 64 ee - BitVec.ofNat 64 pos).toNat = ee - pos :=
+    odGap_sub_toNat hposee (by omega)
+  have hcall : stage2Calls stage2SubCalls "num_fast_el1"
+      [.ptr (b + pos), .int 64 (BitVec.ofNat 64 ee - BitVec.ofNat 64 pos),
+        .ptr next, .ptr (next + 8)] s.mem s.next =
+      some ⟨.int 32 (BitVec.ofNat 32 0),
+        writeBytes mem (next + 8) (wordBytes 8 (numLexScan (gapSegment bytes pos ee)).1),
+        next + 16⟩ := by
+    rw [stage2Calls_num_fast_el1, hmem, hnext]
+    exact odGap_stage2NumFast_refuse hsub hseg hacc
+  have hfield' : c + 1112 + 8 ≤ next ∨ next + 16 ≤ c + 1112 := by
+    simpa only [odGapCurE] using hfield
+  have hrec : readBytes (writeBytes mem (next + 8) (wordBytes 8 (numLexScan (gapSegment bytes pos ee)).1)) (c + 1112) 8 =
+      some (natToBytes e 8) := by
+    rw [readBytes_writeBytes_frame _ _ (p := c + 1112) (n := 8) (start := next + 8)
+      (by simp only [wordBytes, natToBytes_length]; omega)]
+    exact he
+  have h10 : readBytes (writeBytes mem (next + 8) (wordBytes 8 (numLexScan (gapSegment bytes pos ee)).1)) (next + 8) 8 =
+      some (natToBytes (BitVec.ofNat 64 (numLexScan (gapSegment bytes pos ee)).1).toNat 8) := by
+    rw [gap_word64 hoff64]
+    have hs := readBytes_writeBytes_same mem (wordBytes 8 (numLexScan (gapSegment bytes pos ee)).1) (addr := next + 8)
+    rw [show (wordBytes 8 (numLexScan (gapSegment bytes pos ee)).1).length = 8 from by
+      simp only [wordBytes, natToBytes_length]] at hs
+    simpa only [wordBytes] using hs
+  have hoffpos : (numLexScan (gapSegment bytes pos ee)).1 + pos < 2 ^ 64 := by
+    have h := Nat.add_le_add hoffle (le_of_lt hposlt)
+    omega
+  have hconv : gapNumThen25Mem (writeBytes mem (next + 8) (wordBytes 8 (numLexScan (gapSegment bytes pos ee)).1)) e
+      (BitVec.ofNat 64 (numLexScan (gapSegment bytes pos ee)).1) (BitVec.ofNat 64 pos) =
+      stage2ErrSetMsg (writeBytes mem (next + 8) (wordBytes 8 (numLexScan (gapSegment bytes pos ee)).1)) e (pos + (numLexScan (gapSegment bytes pos ee)).1) 1 := by
+    unfold gapNumThen25Mem stage2ErrSetMsg stage2ErrSet
+    simp only [wordBytes]
+    rw [odGap_add_toNat hoffpos, Nat.add_comm (numLexScan (gapSegment bytes pos ee)).1 pos]
+  have hrun := gap_number_refusal_outcome (nf := stage2SubCalls) (env := s.env) (s := s)
+    hpc h0 ht hee hd hei hc hse hse63 hbyte hnum hcall
+    (by decide : (BitVec.ofNat 32 0) = 0#32) hrec he64 h10
+  simpa only [stateAt, hconv] using hrun
+
+/-- **`num_fast_el1`'s accepting outcome at the emitted argument list.** -/
+theorem odGap_stage2NumFast_accept {mem : Mem} {b pos ee next : Nat} {seg : List UInt8}
+    (hsub : (BitVec.ofNat 64 ee - BitVec.ofNat 64 pos).toNat = ee - pos)
+    (hseg : readBytes mem (b + pos) (ee - pos) = some seg)
+    (hacc : (numLexScan seg).2 = true) :
+    stage2NumFast [.ptr (b + pos), .int 64 (BitVec.ofNat 64 ee - BitVec.ofNat 64 pos),
+        .ptr next, .ptr (next + 8)] mem (next + 16) =
+      some ⟨.int 32 (BitVec.ofNat 32 1),
+        writeBytes mem next
+          (wordBytes 8 (numFastEmitted (JSON.ByteString.literal seg)).toBits), next + 16⟩ := by
+  simp only [stage2NumFast, hsub, hseg, hacc, if_true]
+
+/-- **The number acceptance row's body.**  At `if.end` with the number test true
+and `num_fast_el1` accepting, the body reaches `if.end67`, runs the second scan,
+and returns `void` with the tag-4 record at `gapS2`; the returned memory is the
+record plus the helper's `%d` slot. -/
+theorem odGap_numberAccept_ifEnd {mem : Mem} {c pos b e ip ee next : Nat}
+    {bytes : List UInt8} {s : State}
+    (hpc : s.pc = "if.end") (hmem : s.mem = mem)
+    (h0 : lookupName s.env "%0" = some (.ptr b))
+    (ht : lookupName s.env "%t.0.val" = some (.int 64 (BitVec.ofNat 64 pos)))
+    (hee : lookupName s.env "%ee.0.lcssa" = some (.int 64 (BitVec.ofNat 64 ee)))
+    (hd : lookupName s.env "%d" = some (.ptr next))
+    (hei : lookupName s.env "%ei" = some (.ptr (next + 8)))
+    (hc : lookupName s.env "%c" = some (.ptr c))
+    (hcond : lookupName s.env "%cond" = some (.int 64 (BitVec.ofNat 64 ip)))
+    (hnext : s.next = next + 16)
+    (hbytesAt : gapBytesAt mem bytes b ip) (hblen : bytes.length = ip)
+    (hposlt : pos < ip) (hposee : pos ≤ ee) (heele : ee ≤ ip)
+    (hpos64 : pos < 2 ^ 64) (hip64 : ip < 2 ^ 64) (hip63 : ip < 2 ^ 63)
+    (he : readBytes mem (c + 1112) 8 = some (natToBytes e 8)) (he64 : e < 2 ^ 64)
+    (hfield : c + odGapCurE + 8 ≤ next ∨ next + 16 ≤ c + odGapCurE)
+    (hwin : b + ip ≤ next ∨ next + 16 ≤ b)
+    (hnum : gapNumberByte (gapByte (bytes.getD pos 0)))
+    (hacc : (numLexScan (gapSegment bytes pos ee)).2 = true) :
+    ∃ j : Nat, j ≤ 3 + (1 + (ip + 1) * 5 + 2) ∧
+      runFuel (stage2Calls stage2SubCalls) j odGapRecoverBody s =
+        some (.ret none (stage2ErrSetMsg
+          (writeBytes mem next
+            (wordBytes 8 (numFastEmitted (JSON.ByteString.literal (gapSegment bytes pos ee))).toBits))
+          e (gapS2 bytes ip ee) 4)) ∧
+      readBytes (stage2ErrSetMsg
+          (writeBytes mem next
+            (wordBytes 8 (numFastEmitted (JSON.ByteString.literal (gapSegment bytes pos ee))).toBits))
+          e (gapS2 bytes ip ee) 4) e 4 = some (wordBytes 4 0) ∧
+      readBytes (stage2ErrSetMsg
+          (writeBytes mem next
+            (wordBytes 8 (numFastEmitted (JSON.ByteString.literal (gapSegment bytes pos ee))).toBits))
+          e (gapS2 bytes ip ee) 4) (e + 8) 8 = some (wordBytes 8 (gapS2 bytes ip ee)) ∧
+      readBytes (stage2ErrSetMsg
+          (writeBytes mem next
+            (wordBytes 8 (numFastEmitted (JSON.ByteString.literal (gapSegment bytes pos ee))).toBits))
+          e (gapS2 bytes ip ee) 4) (e + 16) 8 = some (wordBytes 8 4) ∧
+      UnchangedOutside mem
+        (stage2ErrSetMsg
+          (writeBytes mem next
+            (wordBytes 8 (numFastEmitted (JSON.ByteString.literal (gapSegment bytes pos ee))).toBits))
+          e (gapS2 bytes ip ee) 4)
+        [(e, 4), (e + 8, 8), (e + 16, 8), (next, 8), (next + 8, 8)] := by
+  have hbytes : readBytes mem b ip = some bytes := readBytes_of_gapBytesAt hbytesAt hblen
+  have hseg : readBytes mem (b + pos) (ee - pos) = some (gapSegment bytes pos ee) :=
+    odGapSegment_readBytes hbytes hposee heele
+  have hbyte : readBytes s.mem (b + pos) 1 =
+      some (natToBytes (gapByte (bytes.getD pos 0)).toNat 1) := by
+    rw [hmem]; exact gap_readOne hbytesAt hposlt rfl
+  have hse : ((BitVec.ofNat 64 pos).signExtend 64).toNat = pos :=
+    gap_signExtend_ofNat pos hpos64
+  have hse63 : pos < 2 ^ 63 := by omega
+  have hsub : (BitVec.ofNat 64 ee - BitVec.ofNat 64 pos).toNat = ee - pos :=
+    odGap_sub_toNat hposee (by omega)
+  have hval : (wordBytes 8
+      (numFastEmitted (JSON.ByteString.literal (gapSegment bytes pos ee))).toBits).length = 8 := by
+    simp only [wordBytes, natToBytes_length]
+  have hcall : stage2Calls stage2SubCalls "num_fast_el1"
+      [.ptr (b + pos), .int 64 (BitVec.ofNat 64 ee - BitVec.ofNat 64 pos),
+        .ptr next, .ptr (next + 8)] s.mem s.next =
+      some ⟨.int 32 (BitVec.ofNat 32 1),
+        writeBytes mem next
+          (wordBytes 8 (numFastEmitted (JSON.ByteString.literal (gapSegment bytes pos ee))).toBits),
+        next + 16⟩ := by
+    rw [stage2Calls_num_fast_el1, hmem, hnext]
+    exact odGap_stage2NumFast_accept hsub hseg hacc
+  have hfield' : c + 1112 + 8 ≤ next ∨ next + 16 ≤ c + 1112 := by
+    simpa only [odGapCurE] using hfield
+  let val := wordBytes 8 (numFastEmitted (JSON.ByteString.literal (gapSegment bytes pos ee))).toBits
+  let mem' := writeBytes mem next val
+  let sA : State := stateAt
+    (gapNumberAcceptEnv s.env b pos (gapByte (bytes.getD pos 0))
+      (BitVec.ofNat 64 pos) (BitVec.ofNat 64 ee) (BitVec.ofNat 32 1))
+    (gapNumberAcceptState s mem' (next + 16))
+  have hpcA : sA.pc = "if.end67" := rfl
+  have hmemA : sA.mem = mem' := rfl
+  have h0A : lookupName sA.env "%0" = some (.ptr b) := by
+    simp only [sA, stateAt, gapNumberAcceptEnv, gapNumThen19Env, gapNumIfEndEnv, cells]
+    block_lk
+  have hcA : lookupName sA.env "%c" = some (.ptr c) := by
+    simp only [sA, stateAt, gapNumberAcceptEnv, gapNumThen19Env, gapNumIfEndEnv, cells]
+    block_lk
+  have heeA : lookupName sA.env "%ee.0.lcssa" = some (.int 64 (BitVec.ofNat 64 ee)) := by
+    simp only [sA, stateAt, gapNumberAcceptEnv, gapNumThen19Env, gapNumIfEndEnv, cells]
+    block_lk
+  have hcondA : lookupName sA.env "%cond" = some (.int 64 (BitVec.ofNat 64 ip)) := by
+    simp only [sA, stateAt, gapNumberAcceptEnv, gapNumThen19Env, gapNumIfEndEnv, cells]
+    exact hcond
+  have heA : readBytes mem' (c + 1112) 8 = some (natToBytes e 8) := by
+    rw [show mem' = writeBytes mem next val from rfl,
+      readBytes_writeBytes_frame _ _ (p := c + 1112) (n := 8) (start := next)
+        (by simp only [val, wordBytes, natToBytes_length]; omega)]
+    exact he
+  have hbytesA : gapBytesAt mem' bytes b ip := by
+    intro i hi
+    rw [show mem' = writeBytes mem next val from rfl,
+      readByte_writeBytes_outside mem val (start := next) (by
+        simp only [val, wordBytes, natToBytes_length]
+        rcases hwin with h | h <;> omega)]
+    exact hbytesAt i hi
+  obtain ⟨j2, hj2, hrun2, _hxw, _hoff, _htag⟩ :=
+    gapWs_secondScan_run (mem := mem') (bytes := bytes) (ip := ip) (b := b)
+      (ee := ee) (c := c) (e := e) (s := sA) hpcA hmemA h0A hcA heeA hcondA
+      heA he64 hbytesA hblen heele hip63
+  have hrun1 := gap_number_accept_run (nf := stage2SubCalls) (env := s.env) (s := s)
+    hpc h0 ht hee hd hei hse hse63 hbyte hnum hcall
+    (by decide : (BitVec.ofNat 32 1) ≠ 0#32) (k := j2)
+  have hrun : runFuel (stage2Calls stage2SubCalls) (3 + j2) odGapRecoverBody s =
+      some (.ret none (stage2ErrSetMsg mem' e (gapS2 bytes ip ee) 4)) := by
+    rw [show runFuel (stage2Calls stage2SubCalls) (3 + j2) odGapRecoverBody s =
+      runFuel (stage2Calls stage2SubCalls) j2 odGapRecoverBody sA from by
+        simpa only [sA, val, mem', stateAt] using hrun1]
+    exact hrun2
+  obtain ⟨h1, h2, h3, h4⟩ := odGap_memory_accept (mem := mem) (next := next)
+    (e := e) (off := gapS2 bytes ip ee) (tag := 4) (val := val) hval
+  exact ⟨3 + j2, by omega, hrun, h1, h2, h3, h4⟩
+
+/-! ### Axiom footprints -/
+
+#print axioms odGap_numberRefusal_ifEnd
+#print axioms odGap_numberAccept_ifEnd
+#print axioms odGap_memory_numberRefusal
+#print axioms odGap_memory_accept
+#print axioms odGapSegment_readBytes
+#print axioms odGapLitScan_map_add
+
+end LeanLLVM.Refinement
