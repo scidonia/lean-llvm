@@ -1,6 +1,6 @@
 /-
 `od_gap_recover` at its call boundary: the entry chain, the token-at-`ip` case,
-and the arithmetic lemmas its run proof reads.
+the first scan's routing and head, and the arithmetic lemmas its run reads.
 
 `JsonStage2HelperIROdGapSteps` pins the body's blocks and proves the instruction
 and terminator steps at its widths.  This module begins the run those steps
@@ -11,9 +11,13 @@ path the body takes when the token's position is already `ip` — together with 
 rule's no-write value at that position and the two word readings the model's
 fields use.  The `p = ip` case of the `runFuel` completion is proved (`gap_run_atIp`, with
 `gap_rule_atIp`'s `.unchanged` value), and it states the model's post at that one
-staging — not a contract over the whole function: the loops, the four refusal arms
-and the other no-write case (the scan advancing to `ip`) are not in this module, so
-the body's relation to the model is still the seam `docs/contract.md` records.
+staging — not a contract over the whole function.  The first scan's vocabulary is
+here as far as its head: the routing the switch takes at every byte
+(`gapRoute`), and `land.rhs`'s two steps, entered from `cond.end` and from
+`while.body`.  The scan's remaining blocks, its `BoundLoop` instance and its run,
+the four refusal arms and the other no-write case (the scan advancing to `ip`) are
+not in this module, so the body's relation to the model is still the seam
+`docs/contract.md` records.
 -/
 import LeanLLVM.Refinement.JsonStage2HelperIROdGapSteps
 
@@ -289,6 +293,200 @@ theorem gap_whileEnd_fromCondEnd_denote {calls : Calls} {env : Env} {s : State}
     "%cmp6" "%ee.0.lcssa" "%cond" (by block_lk) (by block_lk) _) ?_
   rfl
 
+
+
+/-! ### The first scan's routing
+
+The emitted switch tests one byte with three comparisons; the block it selects
+decides whether the scan stops (`while.end`) or advances (`while.body`).  The
+facts are enumerated over the 256 bytes the load can produce: `gapRouteProp`
+states, per byte, which of the three leaves the switch selects and whether that
+leaf stops the scan. -/
+
+/-- The eight-bit word a loaded byte produces. -/
+def gapByte (byte : UInt8) : BitVec 8 := BitVec.ofNat 8 byte.toNat
+
+/-- `add i8 %6, -9`: the switch's `'\\t'`/`'\\n'` test folds the subtraction in. -/
+def gapOff (x : BitVec 8) : BitVec 8 := x + BitVec.ofInt 8 (-9)
+
+/-- The scan-stopping routes: each leaf selects `while.end`. -/
+def gapWsRoute (x : BitVec 8) : Prop :=
+  (evalICmp .slt x (BitVec.ofNat 8 13) = 1#1 ∧
+      evalICmp .ule (gapOff x) (BitVec.ofNat 8 1) = 1#1) ∨
+  (evalICmp .slt x (BitVec.ofNat 8 13) = 0#1 ∧
+      evalICmp .slt x (BitVec.ofNat 8 32) = 1#1 ∧
+      evalICmp .eq x (BitVec.ofNat 8 13) = 1#1) ∨
+  (evalICmp .slt x (BitVec.ofNat 8 13) = 0#1 ∧
+      evalICmp .slt x (BitVec.ofNat 8 32) = 0#1 ∧
+      evalICmp .eq x (BitVec.ofNat 8 32) = 1#1)
+
+/-- The advancing routes: each leaf selects `while.body`. -/
+def gapNonWsRoute (x : BitVec 8) : Prop :=
+  (evalICmp .slt x (BitVec.ofNat 8 13) = 1#1 ∧
+      evalICmp .ule (gapOff x) (BitVec.ofNat 8 1) = 0#1) ∨
+  (evalICmp .slt x (BitVec.ofNat 8 13) = 0#1 ∧
+      evalICmp .slt x (BitVec.ofNat 8 32) = 1#1 ∧
+      evalICmp .eq x (BitVec.ofNat 8 13) = 0#1) ∨
+  (evalICmp .slt x (BitVec.ofNat 8 13) = 0#1 ∧
+      evalICmp .slt x (BitVec.ofNat 8 32) = 0#1 ∧
+      evalICmp .eq x (BitVec.ofNat 8 32) = 0#1)
+
+/-- The routing, as a computation: the branch the switch takes for a byte. -/
+def gapRouteOK (byte : UInt8) : Bool :=
+  let x := gapByte byte
+  let b1 := evalICmp .slt x (BitVec.ofNat 8 13)
+  let b2 := evalICmp .ule (gapOff x) (BitVec.ofNat 8 1)
+  let b3 := evalICmp .slt x (BitVec.ofNat 8 32)
+  let b4 := evalICmp .eq x (BitVec.ofNat 8 13)
+  let b5 := evalICmp .eq x (BitVec.ofNat 8 32)
+  if gapIsWs byte then
+    (b1 == 1#1 && b2 == 1#1) || (b1 == 0#1 && b3 == 1#1 && b4 == 1#1) ||
+      (b1 == 0#1 && b3 == 0#1 && b5 == 1#1)
+  else
+    (b1 == 1#1 && b2 == 0#1) || (b1 == 0#1 && b3 == 1#1 && b4 == 0#1) ||
+      (b1 == 0#1 && b3 == 0#1 && b5 == 0#1)
+
+/-- The routing, per byte: a whitespace byte stops the scan, any other advances it. -/
+def gapRouteProp (byte : UInt8) : Prop :=
+  (gapIsWs byte = true → gapWsRoute (gapByte byte)) ∧
+  (gapIsWs byte = false → gapNonWsRoute (gapByte byte))
+
+/-- The computation and the rule agree at every byte. -/
+theorem gapRouteOK_eq (byte : UInt8) : gapRouteOK byte = true ↔ gapRouteProp byte := by
+  unfold gapRouteOK gapRouteProp gapWsRoute gapNonWsRoute gapByte gapOff
+  cases gapIsWs byte <;> simp [Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq, and_assoc, or_assoc]
+
+/-- The enumeration: the routing holds at every byte. -/
+theorem gapRoute_pin :
+    (List.range 256).all (fun a => gapRouteOK (UInt8.ofNat a)) = true := by
+  decide
+
+/-- Every loaded byte routes as the switch says. -/
+theorem gapRoute (byte : UInt8) : gapRouteProp byte := by
+  have hall := List.all_eq_true.mp gapRoute_pin
+  have h := hall byte.toNat (List.mem_range.mpr byte.toNat_lt)
+  have hb : UInt8.ofNat byte.toNat = byte := by simp
+  rw [hb] at h
+  exact (gapRouteOK_eq byte).1 h
+
+/-- A whitespace byte takes a leaf that stops the scan. -/
+theorem gapRoute_ws {byte : UInt8} (h : gapIsWs byte = true) : gapWsRoute (gapByte byte) :=
+  (gapRoute byte).1 h
+
+/-- Any other byte takes a leaf that advances the scan. -/
+theorem gapRoute_nonWs {byte : UInt8} (h : gapIsWs byte = false) :
+    gapNonWsRoute (gapByte byte) :=
+  (gapRoute byte).2 h
+
+/-! ### The scan's block steps -/
+
+/-- The state `land.rhs` leaves: the counter cell, its address, and the byte. -/
+def gapLandRhsEnv (env : Env) (b c : Nat) (byte : UInt8) : Env :=
+  ("%6", .int 8 (gapByte byte)) ::
+  ("%arrayidx5", .ptr (b + c)) ::
+  ("%ee.011", .int 64 (BitVec.ofNat 64 c)) :: env
+
+/-- `land.rhs` entered from `cond.end`: the counter is the token's position. -/
+theorem gap_step_landRhs_condEnd {calls : Calls} {env : Env} {s : State}
+    {b c : Nat} {byte : UInt8}
+    (hpc : s.pc = "land.rhs") (hpre : s.pre = some "cond.end")
+    (hb : lookupName env "%0" = some (.ptr b))
+    (ht : lookupName env "%t.0.val" = some (.int 64 (BitVec.ofNat 64 c)))
+    (hld : readBytes s.mem (b + c) 1 = some (natToBytes (gapByte byte).toNat 1))
+    (hc63 : c < 2 ^ 63) :
+    step calls odGapRecoverBody (stateAt env s) =
+      .jump (stateAt (gapLandRhsEnv env b c byte)
+        { s with pc := "NodeBlock5", pre := some "land.rhs" }) := by
+  have hpc' : (stateAt env s).pc = "land.rhs" := hpc
+  have hfind : odGapRecoverBody.findBlock (stateAt env s).pc =
+      some ⟨"land.rhs", odGapRecoverLandRhsInstrs,
+        Term.br "NodeBlock5"⟩ := by
+    rw [hpc']; exact odGapRecover_findBlock_land_rhs
+  have hinc : phiIncoming "cond.end"
+      [("while.body", Operand.reg "%inc"), ("cond.end", Operand.reg "%t.0.val")] =
+        some (Operand.reg "%t.0.val") := by decide
+  have hop : evalOperand (stateAt env s) (Operand.reg "%t.0.val") =
+      some (.int 64 (BitVec.ofNat 64 c)) := by
+    simp only [evalOperand, stateAt]
+    rw [ht]
+  have hgp : ((BitVec.ofNat 64 c).signExtend 64).toNat < 2 ^ 63 := by
+    rw [gap_signExtend_ofNat c (by omega)]
+    omega
+  have hden : denoteCode calls odGapRecoverLandRhsInstrs (stateAt env s) =
+      some (stateAt (gapLandRhsEnv env b c byte) s) := by
+    rw [odGapRecoverLandRhsInstrs]
+    refine Eq.trans (denoteCode_phi calls env s "%ee.011" (Ty.int 64)
+      [("while.body", Operand.reg "%inc"), ("cond.end", Operand.reg "%t.0.val")]
+      (p := "cond.end") (op := Operand.reg "%t.0.val")
+      (v := .int 64 (BitVec.ofNat 64 c)) hpre hinc hop
+      [Instr.gep "%arrayidx5" (Ty.int 8) (Operand.reg "%0") (Operand.reg "%ee.011"),
+       Instr.load "%6" (Ty.int 8) (Operand.reg "%arrayidx5")] (by decide)) ?_
+    refine Eq.trans (denoteCode_gep8_reg calls
+      (("%ee.011", .int 64 (BitVec.ofNat 64 c)) :: env) s
+      "%arrayidx5" "%0" "%ee.011" (by block_lk) (by block_lk) hgp
+      [Instr.load "%6" (Ty.int 8) (Operand.reg "%arrayidx5")]) ?_
+    rw [gap_signExtend_ofNat c (by omega)]
+    refine Eq.trans (gap_denote_load8 calls
+      (("%arrayidx5", .ptr (b + c)) :: ("%ee.011", .int 64 (BitVec.ofNat 64 c)) :: env) s
+      "%6" "%arrayidx5" (by block_lk) hld []) ?_
+    rfl
+  have hterm : execTerm (stateAt (gapLandRhsEnv env b c byte) s) (Term.br "NodeBlock5") =
+      .jump (stateAt (gapLandRhsEnv env b c byte)
+        { s with pc := "NodeBlock5", pre := some "land.rhs" }) := by
+    rw [gap_execTerm_br]
+    simp only [stateAt, hpc]
+  simp only [step, hfind, hden, hterm]
+
+/-- `land.rhs` entered from `while.body`: the counter is the incremented one. -/
+theorem gap_step_landRhs_whileBody {calls : Calls} {env : Env} {s : State}
+    {b c : Nat} {byte : UInt8}
+    (hpc : s.pc = "land.rhs") (hpre : s.pre = some "while.body")
+    (hb : lookupName env "%0" = some (.ptr b))
+    (hinc : lookupName env "%inc" = some (.int 64 (BitVec.ofNat 64 c)))
+    (hld : readBytes s.mem (b + c) 1 = some (natToBytes (gapByte byte).toNat 1))
+    (hc63 : c < 2 ^ 63) :
+    step calls odGapRecoverBody (stateAt env s) =
+      .jump (stateAt (gapLandRhsEnv env b c byte)
+        { s with pc := "NodeBlock5", pre := some "land.rhs" }) := by
+  have hpc' : (stateAt env s).pc = "land.rhs" := hpc
+  have hfind : odGapRecoverBody.findBlock (stateAt env s).pc =
+      some ⟨"land.rhs", odGapRecoverLandRhsInstrs,
+        Term.br "NodeBlock5"⟩ := by
+    rw [hpc']; exact odGapRecover_findBlock_land_rhs
+  have hinc' : phiIncoming "while.body"
+      [("while.body", Operand.reg "%inc"), ("cond.end", Operand.reg "%t.0.val")] =
+        some (Operand.reg "%inc") := by decide
+  have hop : evalOperand (stateAt env s) (Operand.reg "%inc") =
+      some (.int 64 (BitVec.ofNat 64 c)) := by
+    simp only [evalOperand, stateAt]
+    rw [hinc]
+  have hgp : ((BitVec.ofNat 64 c).signExtend 64).toNat < 2 ^ 63 := by
+    rw [gap_signExtend_ofNat c (by omega)]
+    omega
+  have hden : denoteCode calls odGapRecoverLandRhsInstrs (stateAt env s) =
+      some (stateAt (gapLandRhsEnv env b c byte) s) := by
+    rw [odGapRecoverLandRhsInstrs]
+    refine Eq.trans (denoteCode_phi calls env s "%ee.011" (Ty.int 64)
+      [("while.body", Operand.reg "%inc"), ("cond.end", Operand.reg "%t.0.val")]
+      (p := "while.body") (op := Operand.reg "%inc")
+      (v := .int 64 (BitVec.ofNat 64 c)) hpre hinc' hop
+      [Instr.gep "%arrayidx5" (Ty.int 8) (Operand.reg "%0") (Operand.reg "%ee.011"),
+       Instr.load "%6" (Ty.int 8) (Operand.reg "%arrayidx5")] (by decide)) ?_
+    refine Eq.trans (denoteCode_gep8_reg calls
+      (("%ee.011", .int 64 (BitVec.ofNat 64 c)) :: env) s
+      "%arrayidx5" "%0" "%ee.011" (by block_lk) (by block_lk) hgp
+      [Instr.load "%6" (Ty.int 8) (Operand.reg "%arrayidx5")]) ?_
+    rw [gap_signExtend_ofNat c (by omega)]
+    refine Eq.trans (gap_denote_load8 calls
+      (("%arrayidx5", .ptr (b + c)) :: ("%ee.011", .int 64 (BitVec.ofNat 64 c)) :: env) s
+      "%6" "%arrayidx5" (by block_lk) hld []) ?_
+    rfl
+  have hterm : execTerm (stateAt (gapLandRhsEnv env b c byte) s) (Term.br "NodeBlock5") =
+      .jump (stateAt (gapLandRhsEnv env b c byte)
+        { s with pc := "NodeBlock5", pre := some "land.rhs" }) := by
+    rw [gap_execTerm_br]
+    simp only [stateAt, hpc]
+  simp only [step, hfind, hden, hterm]
 
 /-! ### Axiom footprints -/
 
@@ -771,5 +969,11 @@ theorem gap_run_atIp {nf : Calls} {mem : Mem} {next c ip b n ix nix k e lt lf ln
 #print axioms gap_readWord4
 #print axioms gap_rule_atIp
 #print axioms gap_run_atIp
+#print axioms gapRoute_pin
+#print axioms gapRoute
+#print axioms gapRoute_ws
+#print axioms gapRoute_nonWs
+#print axioms gap_step_landRhs_condEnd
+#print axioms gap_step_landRhs_whileBody
 
 end LeanLLVM.Refinement
