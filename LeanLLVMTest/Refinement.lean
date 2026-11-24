@@ -10627,6 +10627,72 @@ contiguous to the end of this file. -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.stage2NoEventCallSatisfies_of_staging
 
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalk_step_call8' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalk_step_call8
+
+/-- info: 'LeanLLVM.Refinement.ifEnd239_denote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.ifEnd239_denote
+
+/-- info: 'LeanLLVM.Refinement.ifEnd239_step' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.ifEnd239_step
+
+/-- info: 'LeanLLVM.Refinement.nodeBlock29_denote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.nodeBlock29_denote
+
+/-- info: 'LeanLLVM.Refinement.doBody246_step' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.doBody246_step
+
+/-- info: 'LeanLLVM.Refinement.doBody254_step' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.doBody254_step
+
+/-- info: 'LeanLLVM.Refinement.stage2SkipLeaf_eq_ws' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2SkipLeaf_eq_ws
+
+/-- info: 'LeanLLVM.Refinement.stage2SkipWs_iff' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2SkipWs_iff
+
+/-- info: 'LeanLLVM.Refinement.stage2SkipIfEnd457_denote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2SkipIfEnd457_denote
+
+/-- info: 'LeanLLVM.Refinement.stage2SkipRun5' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2SkipRun5
+
+/-- info: 'LeanLLVM.Refinement.stage2SkipStoreRegion' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2SkipStoreRegion
+
+/-- info: 'LeanLLVM.Refinement.stage2SkipInvAt_cells' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2SkipInvAt_cells
+
+/-- info: 'LeanLLVM.Refinement.stage2SkipJoin_leaf' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2SkipJoin_leaf
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWorkspace.toStagedPre' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWorkspace.toStagedPre
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkObligation_of_workspace' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkObligation_of_workspace
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventCallSatisfies_of_workspace' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventCallSatisfies_of_workspace
+
 /-- info: 'LeanLLVM.Refinement.gapCases_sound' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.gapCases_sound
