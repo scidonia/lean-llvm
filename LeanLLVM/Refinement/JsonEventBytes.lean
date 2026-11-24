@@ -63,7 +63,7 @@ def recordBodyCodePoints (bs arena : List UInt8) (len field : Nat) :
 /-- The walk: one record at a time, at the widths `kernel/json/stage2.h`
 documents.  Every recursive call is on a shorter suffix, which the truncation
 checks above it establish. -/
-private def walkRecords (bs arena : List UInt8) : List UInt8 →
+def walkRecords (bs arena : List UInt8) : List UInt8 →
     Option (List ConsumerEvent)
   | [] => some []
   | b :: rest =>

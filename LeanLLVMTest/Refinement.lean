@@ -11300,3 +11300,24 @@ module prints it. -/
 /-- info: 'LeanLLVM.Refinement.odGapRecover_run_post_of_prep' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.odGapRecover_run_post_of_prep
+
+/-! ### The event bridges' pins
+
+`hD` and `hcanon` are proved in `JsonEventBridge`; `hT` and `hE` are stated there
+as the remaining obligation.  The pins are the proved two's footprints. -/
+
+/-- info: 'LeanLLVM.Refinement.eventsOfBytes_flatten' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.eventsOfBytes_flatten
+
+/-- info: 'LeanLLVM.Refinement.eventsOfBytes_stage2Records' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.eventsOfBytes_stage2Records
+
+/-- info: 'LeanLLVM.Refinement.canonValue_isSome_of_decodeTape' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.canonValue_isSome_of_decodeTape
+
+/-- info: 'LeanLLVM.Refinement.valueAt_numberReadable' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.valueAt_numberReadable
