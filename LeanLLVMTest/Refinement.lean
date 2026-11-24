@@ -10699,6 +10699,10 @@ contiguous to the end of this file. -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.gapScanLoop_run
 
+/-- info: 'LeanLLVM.Refinement.gapWs_secondScan_run' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.gapWs_secondScan_run
+
 /-- info: 'LeanLLVM.Refinement.stage2NoEventWorkspace.toStagedPre' does not depend on any axioms -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.stage2NoEventWorkspace.toStagedPre
