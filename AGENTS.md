@@ -122,6 +122,18 @@ one needs the other two to match.  `pkgs.lean4` is not interchangeable with
 directory as up to date — and nixpkgs' mathlib is at `v4.35.0`, so a mathlib
 revision that is not that tag has to be built, not substituted.
 
+### Two attempts on a hard proof
+
+For a proof milestone that is materially uncertain, two independent attempts on
+separate workers can be cheaper than one: an attempt that stalls is replaced,
+and the milestone keeps moving instead of waiting on it.  Keep the goal and the
+statement fixed across both.  When one attempt stalls, start the fresh one from
+the target and the stuck state — the definitions, the pinned body and what the
+first attempt established — rather than from the same context.  The price is
+double worker cost for the duration, so reserve it for a milestone that is
+uncertain or has already stalled once.  The first completed proof is kept; the
+other attempt's findings are folded in or dropped.
+
 ### Precompiled worker images
 
 `lean-llvm-precompiled-x86-64` and `lean-llvm-precompiled-aarch64` are the
