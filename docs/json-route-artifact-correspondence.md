@@ -131,6 +131,42 @@ between a run of the linked object and `pipelineUnitsPost` remains the rows 8/9
 assumption — not proved, and not an axiom — and whether it is recorded as a
 ledger row of its own or as a certificate field is an open decision.
 
+The value entry's own observation is finite in the same way and for the same
+reason.  `leanllvm-json-route --value` answers thirteen documents of
+`tests/json-value` — seven acceptances to their canonical rendering and six
+refusals to their class and offset — and `tests/json-noevent/check.sh` compares
+each line byte for byte against a table derived from the reference path at
+`47a2096`, with a tamper control and a relocation guard that reproduces the
+table in a second derivation at the head.  That establishes that the entry
+reports *this object's* decoded value on the rows it was given.  The chain from
+the emitted bytes to the reference's canonical value is half proved: `hD` —
+conditional on the event-level body clause and on the boundary row
+`stage2Boundary_noEventConsumer` — and `hcanon`, with `hT` and `hE` designed and
+owed.
+
+**Measured, with its limits on the row.**  On `pleiades` (Core Ultra 7 268V,
+`powersave`, load 2.4 falling to 2.0, shared and not quiet; clock reads, no
+PMU), one process, one binary, medians of three 21-repeat runs: admission
+214 ns (P-core) / 387 ns (E-core) and native execution 55 / 106 ns; consumption
+`value_bytes_ns` 378 / 625 ns around `eventsOfBytes` and `value_decode_ns`
+184 / 249 ns around `valueOfEvents` on the 65 accepted corpus rows; on the
+64 KiB documents `value_bytes` 1.523 s (dense), 57.7 ms (strings) and 193.0 ms
+(utf8) against native 95 µs, 45 µs and 23 µs.  **Consumption is the fast path's
+dominant cost, an order of magnitude above every other stage**, so a row
+reporting admission and native execution alone would misplace the time.  The
+fallback's canonicalisation is priced apart (`fallback_decode_ns`,
+`fallback_canon_ns`) and its digest agrees with the fast branch's on the same
+document.
+
+**The entry's scaling limit sits beside any advertisement of it.**  Its process
+wall is superlinear above about 32 KiB — 512 KiB takes 56 s and 1 MiB times out
+— so the entry demonstrates the decoded value at the route's own input bound;
+it is not a drop-in parser for documents at the corpus's larger sizes.  Wall
+figures and components are reported apart and never subtracted: on the dense row
+the component exceeds wall less start-up, because a 21-repeat probe and a single
+invocation do not compose there.  Re-measure in one session when the route's
+link or `eventsOfBytes` changes, on a quiet host where one is available.
+
 That is why the correspondence is recorded rather than unified.  Linking the
 fixture would make the route call a twenty-one-argument body while the driver
 calls the thirteen-argument ABI, so the route and the driver would stop being
