@@ -768,20 +768,34 @@ fixture inlined; its literal compare is an inlined region; and its walk is a
 |---|---------|--------------------------------------------------------|-------|------------------------|
 | g | `od_gap_recover` | The refusal record the loop's gap leaves: no write when the first loop reaches `ip`, else the first-byte decision's tag and offset at the document window. **Proved of the model**: the post, the frame and the one write (`stage2GapRecover_post`, `_unchanged`, `_wrote`). The model is `stage2GapRecover`; the C text is `kernel/json/stage2.c:898`, a plain `static void` the certified fixture inlined and the additive body did not. | assumed (model): the transcription is pinned by text, not proved of the emitted body | `LeanLLVM/Refinement/JsonStage2HelperOdGap.lean`; the trust row is stated in `JsonStage2NoEventBody.lean:616-630`; the body-faithfulness distance is §7.1's row 5, as for the six helpers above |
 | h | the emitted literal chain | From `if.end519`, the unrolled `icmp eq i8` chain returns the first differing byte's offset, the token's length when it ends inside the literal, or the literal's width when the token is longer — `neLitCheck`'s verdict, which `neLitCheck_eq_litCheck` identifies with the certified `lit_check`. **Proved of the emitted chain**: `stage2NoEventLitChain_run` runs the region to one of its two exits, writes no memory, and fixes the offset the refusal block's `phi` selects; the `true`, `false` and `null` instances are taken at the shared `phi`, whose three predecessor entries are pinned. | proved (body region): a run to the chain's exits, not a `Satisfies` at a function | `LeanLLVM/Refinement/JsonStage2NoEventLiteral.lean`; pins at `LeanLLVMTest/Refinement.lean:10753`; the fixture is `probes/install/ir/stage2-noevent.candidate.ll` |
-| i | the no-event walk | `Stage2NoEventWalkObligation` at `gap := stage2GapRecover`, from the dispatch's rows at `Γ_stage2_noevent`'s precondition and the four staged objects. **Proved**: `stage2NoEventWalkObligation_of_staging` derives both conjuncts of `Satisfies` from `Stage2NoEventWalkRows` (`stage2NoEventWalkPremises_of_rows` composes the seed run and the flush route), and `stage2NoEventCallSatisfies_of_staging` projects the obligation to the pipeline's call slot. **Not proved**: the rows themselves, the staging hypothesis, or the certified walk's premise tier. | proved from the named tier; the rows are a premise | `LeanLLVM/Refinement/JsonStage2NoEventWalkAssembly.lean`; pins at `LeanLLVMTest/Refinement.lean:10622-10628`; the staging is `stage2NoEventStagedPre` |
+| i | the no-event walk | `Stage2NoEventWalkObligation` at `gap := stage2GapRecover`, from the dispatch's rows at `Γ_stage2_noevent`'s precondition and the four staged objects. **Proved**: `stage2NoEventWalkObligation_of_staging` derives both conjuncts of `Satisfies` from `Stage2NoEventWalkRows` (`stage2NoEventWalkPremises_of_rows` composes the seed run and the flush route), and `stage2NoEventCallSatisfies_of_staging` projects the obligation to the pipeline's call slot. The staging is a **named caller-domain clause**: `stage2NoEventWorkspace` states the four objects' presence at `stage2NoEventStagedRegions`, their separation from the caller's region list and the watermark for both lists, `toStagedPre` projects it to `stage2NoEventStagedPre` from the ABI decomposition and the four word bounds, and `stage2NoEventWorkspaceAt` states the same at the precondition's own decomposition with `WorkspaceAt.toStagedPre` and `StagedPre.workspaceAt`; the `…_of_workspace` theorems carry the `At` form in their rows premise. It is caller-domain because `Γ_stage2_noevent.pre` does not imply it, and the certified side states the analogous fact the same way — `pipelineStage2Workspace` is a clause of `Γ_pipeline_units.pre`, the proof body's allocas having been flattened into parameters (`allocaTypes pipelineBody = []`). The certificate-named statements are unchanged, so `probes/install/InstallCertificate.lean` and `probes/install/select.sh` are untouched. **Not proved**: the rows themselves, or the certified walk's premise tier. | proved from the named tier; the rows are a premise; the staging is a caller-domain clause | `LeanLLVM/Refinement/JsonStage2NoEventWalkAssembly.lean`, `JsonStage2NoEventWorkspace.lean`; pins at `LeanLLVMTest/Refinement.lean:10622-10628`; the staging is `stage2NoEventStagedPre`, reached through `stage2NoEventWorkspace`/`stage2NoEventWorkspaceAt` |
 
-What the three rows leave open, stated once:
+What these rows leave open, and what stands beside them, stated once:
 
-- **Row g's trust.** The `od_gap_recover` model is a transcription. Nothing in
-  the kernel says the emitted function executes that text, so a proof that reads
-  the model is a proof about the model; the distance is the same body-faithfulness
-  seam the six rows above record, and `JsonStage2NoEventBody.lean:616-630` is
-  where the additive entry says so.
+- **Row g's trust, and what would close it.** The `od_gap_recover` model is a
+  transcription. Nothing in the kernel says the emitted function executes that
+  text, so a proof that reads the model is a proof about the model; the distance
+  is the same body-faithfulness seam the six rows above record, and
+  `JsonStage2NoEventBody.lean:616-630` is where the additive entry says so.  Row g
+  therefore stays *assumed (model)*: a `CallSatisfies`-shaped theorem relating the
+  emitted body to `stage2GapRecover` — the scan and literal loops, `cleanup82` and
+  the four refusal arms — is open, and the row moves only when that theorem lands.
 - **Row i's premise.** The dispatch's rows are the walk's data — the count
   classes' cycle-closing segments and the terminal routes' evidence, with the
   acceptance's parse relation and the walk's report. They are assumed at the
   record's precondition; the theorem is conditional on them, and nothing makes
   them unconditional.
+- **The staging is a caller-domain clause, not a derivation.** The four private
+  objects are flattened parameters of the body, so the body cannot allocate them,
+  and `Γ_stage2_noevent.pre` does not imply their staging; the certified pipeline
+  states the analogous fact as a clause of `Γ_pipeline_units.pre` for the same
+  reason (`pipelineStage2Workspace`, its proof body's allocas flattened). The two
+  workspace predicates name the clause and project it to `stage2NoEventStagedPre`;
+  deriving it would mean modelling the pipeline's caller, which no module here does.
+- **The certificate's statement is unchanged.** The `…_of_workspace` theorems are
+  additions beside the pair the certificate names, so `InstallCertificate.lean`
+  elaborates the same proposition and `select.sh`'s expected-theorem line still
+  matches; a certificate migration was not needed and was not made.
 - **The certified tier is not discharged.** `stage2NoEventWalkObligation_of_staging`
   is stated at the no-event body's tier; it does not supply the certified walk's
   premise tier, and no sentence here claims that tier is closed.
@@ -789,6 +803,21 @@ What the three rows leave open, stated once:
   region and its rule; the walk's obligation composes that region with the
   refusal block's own writes (`%off`'s store, the `od_gap_recover` call and the
   four stores), which are outside row h's exits.
+- **The consumer's reading is proved at the walk report; the public post is
+  unchanged.** `Stage2NoEventRun.consumer` derives the certified consumer's three
+  words from the run's report, with the report's arena pinned by `arenaAt` — a read
+  of the returned memory at the run's own scratch buffer — and two bridge premises
+  left open: the arena prefix's agreement with the certified trace, and the event
+  list's agreement with the consumer's fold over the certified records, each
+  stated at the run's own outputs.  `stage2NoEventBoundary` and
+  `stage2NoEventPost` keep their bytes, so no consumer of the post reads a new
+  clause.
+- **The refusal offset is settled for the flush route only.** The empty entry
+  stream's route is the whitespace-only document: `stage2NoEventRefusalOffset_flush`
+  reads the walk's stored offset into `RefusalOffset bs bs.length`, matching the
+  parser's own refusal at that document's end.  The structural, number, literal,
+  string-body and end-of-stream classes are open — one per terminal row, and no
+  class is claimed before its row exists.
 
 ### 7.7 The stage-2 report at its boundary
 
