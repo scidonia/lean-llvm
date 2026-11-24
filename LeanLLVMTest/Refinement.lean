@@ -11387,3 +11387,11 @@ as the remaining obligation.  The pins are the proved two's footprints. -/
 -- The token level on the same document returns the same value: the two decoders
 -- agree here, which is `EventsParseValue` at one instance.
 #guard decide ((parseValueT ⟨ByteString.literal [0x7B,0x22,0x61,0x22,0x3A,0x6E,0x75,0x6C,0x6C,0x7D], [.punct .openBrace ⟨0,1⟩, .string ⟨1,4⟩, .punct .colon ⟨4,5⟩, .null ⟨5,9⟩, .punct .closeBrace ⟨9,10⟩]⟩) = some (.object [([97], .null)]))
+
+/-- info: 'LeanLLVM.Refinement.eventsParseValue' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.eventsParseValue
+
+/-- info: 'LeanLLVM.Refinement.eventsOfBytes_valueOfEvents_events' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.eventsOfBytes_valueOfEvents_events
