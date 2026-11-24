@@ -26,6 +26,7 @@ import LeanLLVM.Refinement.JsonStage2HelperIROdGapSteps
 import LeanLLVM.Refinement.JsonStage2HelperIROdGapNumber
 import LeanLLVM.Refinement.JsonStage2HelperIROdGapSecondScan
 import LeanLLVM.Refinement.JsonStage2HelperIROdGapLiteral
+import LeanLLVM.Refinement.JsonStage2HelperIROdGapRuleCases
 
 set_option autoImplicit false
 set_option maxRecDepth 8192
@@ -36,7 +37,7 @@ namespace LeanLLVM.Refinement
 open LeanLLVM
 open LeanLLVM.Refinement.JsonStage2IR (stage2Calls)
 open LeanLLVM.Refinement.JsonEntrySteps (readBytes_writeBytes_frame readBytes_length)
-open LeanLLVM.Refinement.BlockEval (stateAt cells)
+open LeanLLVM.Refinement.BlockEval (stateAt cells denoteCode_gep8_reg)
 
 /-! ### The staging
 
@@ -784,5 +785,107 @@ theorem odGapRecover_run_none {mem : Mem} {next c pos lt lf ln : Nat} {win : Lis
 #print axioms gapLitLoop_run
 #print axioms gapLit_exitRun
 #print axioms gapLitInv_seed
+/-! ### `if.end`'s other edge, and the first-byte classes
+
+The number test's false arm leaves `if.end` for `if.else` with the same six cells;
+the byte it loaded decides which of the four arms the dispatch selects.  The
+bridges below turn the body's `icmp`/`add` test at `%7` into the model's
+`gapNumStart`, and the window's segment into the range `num_fast_el1` reads. -/
+
+/-- `if.end` on the number test's false arm: the byte at `%arrayidx9`, the minus
+test, the digit test and their `or`, with the branch into `if.else`. -/
+theorem gapNum_step_ifEnd_nonNum {calls : Calls} {env : Env} {s : State}
+    {base se : Nat} {t : BitVec 64} {v7 : BitVec 8}
+    (hpc : s.pc = "if.end")
+    (h0 : lookupName env "%0" = some (.ptr base))
+    (ht : lookupName env "%t.0.val" = some (.int 64 t))
+    (hse : (t.signExtend 64).toNat = se) (hse63 : se < 2 ^ 63)
+    (hbyte : readBytes s.mem (base + se) 1 = some (natToBytes v7.toNat 1))
+    (hbit : (evalICmp .eq v7 (BitVec.ofNat 8 45) |||
+      evalICmp .ult (v7 + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) = 0#1) :
+    step calls odGapRecoverBody (stateAt env s) =
+      .jump (stateAt (gapNumIfEndEnv env base se v7)
+        { s with pc := "if.else", pre := some "if.end" }) := by
+  let env' : Env := gapNumIfEndEnv env base se v7
+  have hcode : denoteCode calls odGapRecoverIfEndInstrs (stateAt env s) =
+      some (stateAt env' s) := by
+    unfold odGapRecoverIfEndInstrs
+    refine Eq.trans (denoteCode_gep8_reg calls env s "%arrayidx9" "%0" "%t.0.val"
+      h0 ht (by rw [hse]; exact hse63) _) ?_
+    rw [hse]
+    refine Eq.trans (gap_denote_load8 calls
+      (("%arrayidx9", .ptr (base + se)) :: env) s "%7" "%arrayidx9"
+      (by block_lk) hbyte _) ?_
+    refine Eq.trans (gap_denote_icmp_eq_imm calls
+      (("%7", .int 8 v7) :: ("%arrayidx9", .ptr (base + se)) :: env) s
+      "%cmp11" "%7" (by block_lk) _) ?_
+    refine Eq.trans (gap_denote_add_imm calls
+      (("%cmp11", .int 1 (evalICmp .eq v7 (BitVec.ofNat 8 45))) ::
+        ("%7", .int 8 v7) :: ("%arrayidx9", .ptr (base + se)) :: env) s
+      "%8" "%7" (by block_lk) _) ?_
+    refine Eq.trans (gap_denote_icmp_ult_imm calls
+      (("%8", .int 8 (v7 + BitVec.ofNat 8 208)) ::
+        ("%cmp11", .int 1 (evalICmp .eq v7 (BitVec.ofNat 8 45))) ::
+        ("%7", .int 8 v7) :: ("%arrayidx9", .ptr (base + se)) :: env) s
+      "%or.cond" "%8" (by block_lk) _) ?_
+    refine Eq.trans (gap_denote_or_reg calls
+      (("%or.cond", .int 1 (evalICmp .ult (v7 + BitVec.ofNat 8 208)
+          (BitVec.ofNat 8 10))) ::
+        ("%8", .int 8 (v7 + BitVec.ofNat 8 208)) ::
+        ("%cmp11", .int 1 (evalICmp .eq v7 (BitVec.ofNat 8 45))) ::
+        ("%7", .int 8 v7) :: ("%arrayidx9", .ptr (base + se)) :: env) s
+      "%or.cond127" "%cmp11" "%or.cond" (by block_lk) (by block_lk) []) ?_
+    rfl
+  refine gapNum_step_at_block (f := odGapRecoverBody) (s := stateAt env s)
+    (s' := stateAt env' s) (name := "if.end") (is := odGapRecoverIfEndInstrs)
+    (term := Term.condbr (Operand.reg "%or.cond127") "if.then19" "if.else")
+    (c := .jump (stateAt env' (gapNumJump s "if.else" "if.end" s.mem s.next)))
+    ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using odGapRecover_findBlock_if_end
+  · exact hcode
+  · rw [gap_execTerm_condbr_zero
+      (by simp only [env', gapNumIfEndEnv, cells, stateAt, evalOperand, hbit]
+          rw [lookupName_cons_self]
+          rfl)]
+    simp only [stateAt, hpc, gapNumJump]
+
+/-- An equality at one is the words being equal. -/
+theorem gapICmpEq_one_iff {w : Nat} {x y : BitVec w} :
+    evalICmp .eq x y = 1#1 ↔ x = y := by
+  unfold evalICmp
+  by_cases h : x = y <;> simp [h]
+
+/-- The window's segment as the range `num_fast_el1` and `lit_check` read. -/
+theorem readBytes_gapSegment {mem : Mem} {win : List UInt8} {b ip pos ee : Nat}
+    (hbytes : gapBytesAt mem win b ip) (hlen : win.length = ip)
+    (hpos : pos ≤ ee) (hee : ee ≤ ip) :
+    readBytes mem (b + pos) (ee - pos) = some (gapSegment win pos ee) := by
+  have h : readBytes mem b ip = some win := readBytes_of_gapBytesAt hbytes hlen
+  have h' : readBytes mem b (pos + (ip - pos)) = some win := by
+    rw [show pos + (ip - pos) = ip from by omega]; exact h
+  obtain ⟨_, hsuf⟩ := readBytes_split mem b pos (ip - pos) h'
+  have h'' : readBytes mem (b + pos) ((ee - pos) + (ip - ee)) = some (win.drop pos) := by
+    rw [show (ee - pos) + (ip - ee) = ip - pos from by omega]; exact hsuf
+  obtain ⟨hpre, _⟩ := readBytes_split mem (b + pos) (ee - pos) (ip - ee) h''
+  simpa only [gapSegment] using hpre
+
+/-- The token's window length, as the word the call passes: the body subtracts
+`%t.0.val` from `%ee.0.lcssa` in 64-bit arithmetic, and the `Nat` difference is
+the same below `2 ^ 64`. -/
+theorem gapSub_toNat {a b : Nat} (hba : b ≤ a) (ha : a < 2 ^ 64) (hb : b < 2 ^ 64) :
+    (BitVec.ofNat 64 a - BitVec.ofNat 64 b).toNat = a - b := by
+  have hx : (BitVec.ofNat 64 a).toNat = a := gap_word64 ha
+  have hy : (BitVec.ofNat 64 b).toNat = b := gap_word64 hb
+  have h := BitVec.toNat_sub (BitVec.ofNat 64 a) (BitVec.ofNat 64 b)
+  rw [hx, hy] at h
+  rw [h, show 2 ^ 64 - b + a = (a - b) + 2 ^ 64 from by omega,
+    Nat.add_mod_right, Nat.mod_eq_of_lt (by omega)]
+
+/-! ### Axiom footprints -/
+
+#print axioms gapNum_step_ifEnd_nonNum
+#print axioms readBytes_gapSegment
+#print axioms gapSub_toNat
+#print axioms gapICmpEq_one_iff
 
 end LeanLLVM.Refinement
