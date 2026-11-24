@@ -332,6 +332,14 @@ structure Stage2NoEventRun (args : List Value) (mem m0 : Mem) where
   walkFrame : UnchangedOutside mem m0
     (stage2NoEventRunRegions scratch scratchcap stk e c d ++
       [(next0, nextEnd - next0)])
+  /-- The run's own scratch, read back at the arena's length: the staging word the
+  arena the consumer reads is.  There is no event field beside it: the decoder's
+  free offset leaves the events under-determined by the arena (arena `[10, 10]`
+  with document `"\n"` decodes `[10]` at offset `0` and at offset `1`, with
+  different `terms`), so the events stay the differential's hypothesis. -/
+  arenaAt : readBytes m0 scratch arena.length = some arena
+  /-- The arena fits the scratch capacity. -/
+  arenaCap : arena.length ≤ scratchcap
 
 namespace Stage2NoEventRun
 
@@ -846,7 +854,9 @@ certified consumer's token count and the sum word holds its sum modulo `2 ^ 64`.
 The bridge between the two runs is the hypothesis that the no-event entry's
 existential arena and events are the certified trace's decoded prefix and its
 consumer rows — which is what the differential compares, and what a refinement of
-this entry would establish. -/
+this entry would establish.  This is the boundary-level form, for a consumer that
+already holds the witness's facts; `Stage2NoEventRun.consumer` is the form whose
+arena premise reads the run's own scratch. -/
 theorem stage2NoEventBoundary_consumer {args : List Value} {mem : Mem} {next : Nat}
     {m : Mem} {v : Value} {w : Stage2NoEventWitness}
     (h : Stage2NoEventFacts w args mem next m v) (hacc : w.verdict = 1)
@@ -896,6 +906,78 @@ theorem stage2NoEventBoundary_consumer {args : List Value} {mem : Mem} {next : N
   · rw [h.accept_tokens hacc, htok]
   · rw [h.accept_values hacc, hval]
   · rw [h.accept_sum hacc, hsumRes]
+
+/-- **The new post's words are the certified consumer's readings, from the run.**
+This is the consumer form whose arena premise is the run's own scratch: `arenaAt`
+reads the staging word back at the arena's length and `hscratch` identifies it
+with the certified trace's decoded prefix, so the run's arena is that prefix.
+The certified consumer supplies the trace's token count, value count and sum, and
+the run's own fields (`obsLen` and `termsEq`) carry them to the words the store
+lemmas state at the run's slots. -/
+theorem Stage2NoEventRun.consumer {args : List Value} {mem m0 : Mem}
+    (h : Stage2NoEventRun args mem m0) (href : h.refusal = false)
+    {bw : Stage2BoundaryWitness} {argsC : List Value} {memC mC : Mem} {nextC : Nat}
+    {vC : Value} {bs : List UInt8} {t : Tape} {rs : List EventRecord}
+    (hbytes : readBytes memC bw.b bw.n = some bs)
+    (hcert : Stage2BoundaryFacts bw argsC memC nextC mC vC)
+    (hcertAcc : bw.verdict = 1)
+    (hparse : parseBytes Limits.default (ByteString.literal bs) = .ok t)
+    (hrecs : bw.evs = (rs.map EventRecord.encodedBytes).flatten)
+    (hb : ∀ r ∈ rs, r.Bounded)
+    (hrel : Stage2Records bs (bw.arena.take bw.ndstU) rs t.tokens)
+    (hscratch : readBytes m0 h.scratch h.arena.length = some (bw.arena.take bw.ndstU))
+    (hobs : h.obs = consumeRecords bs (bw.arena.take bw.ndstU) rs) :
+    let m := stage2NoEventReport m0 h.tokensOut h.valuesOut h.sumOut h.err h.refusal
+      h.tok ((byteSum h.arena + h.terms) % 2 ^ 64) h.eoff
+    readBytes m h.tokensOut 8 = some (wordBytes 8
+      (consumeBytesResult bs (bw.arena.take bw.ndstU) bw.evs).tokens) ∧
+    readBytes m h.valuesOut 8 = some (wordBytes 8
+      (consumeBytesResult bs (bw.arena.take bw.ndstU) bw.evs).values) ∧
+    readBytes m h.sumOut 8 = some (wordBytes 8
+      ((consumeBytesResult bs (bw.arena.take bw.ndstU) bw.evs).sum % 2 ^ 64)) := by
+  dsimp only []
+  -- the certified consumer's readings of the trace
+  obtain ⟨obs, pv, hno, hobsEq, hconsume, hdecode, hbytesEq, hfold, hdec, hsepC,
+    husedC, hevsC⟩ :=
+    stage2Boundary_noEventConsumer hcert hbytes hcertAcc hparse hrecs hb hrel
+  have hobs' : h.obs = obs := by rw [hobs, ← hobsEq]
+  have hconsumed : consumeBytesResult bs (bw.arena.take bw.ndstU) bw.evs =
+      LeanLLVM.Refinement.consumer (bw.arena.take bw.ndstU) rs := hbytesEq
+  have hlenObs : rs.length = h.obs.length := by
+    rw [hobs', hobsEq]
+    simp [consumeRecords]
+  have htok : (consumeBytesResult bs (bw.arena.take bw.ndstU) bw.evs).tokens = h.tok := by
+    rw [hconsumed]
+    simp only [LeanLLVM.Refinement.consumer]
+    rw [hlenObs, h.obsLen]
+  have hval : (consumeBytesResult bs (bw.arena.take bw.ndstU) bw.evs).values = h.tok := by
+    rw [hconsumed]
+    simp only [LeanLLVM.Refinement.consumer]
+    rw [hlenObs, h.obsLen]
+  -- the run's own scratch reads back the arena `hscratch` names
+  have hArena : h.arena = bw.arena.take bw.ndstU :=
+    Option.some.inj (by rw [← h.arenaAt, hscratch])
+  have hsumRes : (consumeBytesResult bs (bw.arena.take bw.ndstU) bw.evs).sum =
+      byteSum h.arena + h.terms := by
+    rw [hconsumed, hfold, ← hArena, ← hobs']
+    simp only [noEventFold]
+    rw [h.termsEq]
+  -- the stores' read-backs at the run's own slots
+  obtain ⟨h1, h2, h3, h4, h5, h6⟩ :=
+    stage2NoEventWrites_slots (stage2NoEventRegions_writes h.separate)
+  refine ⟨?_, ?_, ?_⟩
+  · rw [htok]
+    simpa only [stage2NoEventWord, href] using
+      stage2NoEventReport_tokens m0 h.tokensOut h.valuesOut h.sumOut h.err
+        h.refusal h.tok ((byteSum h.arena + h.terms) % 2 ^ 64) h.eoff h1 h2 h3
+  · rw [hval]
+    simpa only [stage2NoEventWord, href] using
+      stage2NoEventReport_values m0 h.tokensOut h.valuesOut h.sumOut h.err
+        h.refusal h.tok ((byteSum h.arena + h.terms) % 2 ^ 64) h.eoff h4
+  · rw [hsumRes]
+    simpa only [stage2NoEventWord, href] using
+      stage2NoEventReport_sum m0 h.tokensOut h.valuesOut h.sumOut h.err
+        h.refusal h.tok ((byteSum h.arena + h.terms) % 2 ^ 64) h.eoff
 
 /-! ### The literal compare
 
@@ -1036,6 +1118,7 @@ def phiImms (f : Function) (dst : String) : List Nat :=
 #print axioms satisfies_calls_stage2_noevent
 #print axioms stage2NoEvent_encoding
 #print axioms stage2NoEventBoundary_consumer
+#print axioms Stage2NoEventRun.consumer
 #print axioms neLitCheck_eq_litCheck
 #print axioms neLitCheck_true
 
