@@ -10711,6 +10711,14 @@ contiguous to the end of this file. -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.gapLit_dispatch_refuse
 
+/-- info: 'LeanLLVM.Refinement.gap_number_refusal_outcome' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.gap_number_refusal_outcome
+
+/-- info: 'LeanLLVM.Refinement.gap_number_accept_run' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.gap_number_accept_run
+
 /-- info: 'LeanLLVM.Refinement.stage2NoEventWorkspace.toStagedPre' does not depend on any axioms -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.stage2NoEventWorkspace.toStagedPre

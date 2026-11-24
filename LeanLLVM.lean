@@ -138,6 +138,7 @@ import LeanLLVM.Refinement.JsonStage2HelperIRBodies
 import LeanLLVM.Refinement.JsonStage2HelperIRNumFast
 import LeanLLVM.Refinement.JsonStage2HelperIROdGap
 import LeanLLVM.Refinement.JsonStage2HelperIROdGapLiteral
+import LeanLLVM.Refinement.JsonStage2HelperIROdGapNumber
 import LeanLLVM.Refinement.JsonStage2HelperIROdGapRun
 import LeanLLVM.Refinement.JsonStage2HelperIROdGapSecondScan
 import LeanLLVM.Refinement.JsonStage2HelperIROdGapSteps
