@@ -855,6 +855,95 @@ theorem gapICmpEq_one_iff {w : Nat} {x y : BitVec w} :
   unfold evalICmp
   by_cases h : x = y <;> simp [h]
 
+/-- `BitVec.ofBool` is `1` exactly at a true bit. -/
+theorem odGap_ofBool_one_iff {b : Bool} :
+    BitVec.ofBool b = 1#1 ↔ b = true := by
+  cases b <;> decide
+
+/-- `icmp eq` is one exactly at equal words. -/
+theorem odGap_evalICmp_eq_one_iff {w : Nat} {x y : BitVec w} :
+    evalICmp .eq x y = 1#1 ↔ x = y := by
+  unfold evalICmp
+  rw [odGap_ofBool_one_iff, decide_eq_true_iff]
+
+/-- `icmp ult` is one exactly at the unsigned order on `Nat` readings. -/
+theorem odGap_evalICmp_ult_one_iff {w : Nat} {x y : BitVec w} :
+    evalICmp .ult x y = 1#1 ↔ x.toNat < y.toNat := by
+  unfold evalICmp
+  rw [odGap_ofBool_one_iff, BitVec.ult_iff_toNat_lt]
+
+/-- Two small `Nat`s are equal exactly when their eight-bit words are. -/
+theorem odGap_ofNat8_eq_iff {a b : Nat} (ha : a < 2 ^ 8) (hb : b < 2 ^ 8) :
+    BitVec.ofNat 8 a = BitVec.ofNat 8 b ↔ a = b := by
+  rw [BitVec.toNat_eq, BitVec.toNat_ofNat, BitVec.toNat_ofNat,
+    Nat.mod_eq_of_lt ha, Nat.mod_eq_of_lt hb]
+
+/-- The byte plus `208` reads as its distance from `'0'`, modulo the byte. -/
+theorem odGap_byte_add_toNat (ch : UInt8) :
+    (gapByte ch + BitVec.ofNat 8 208).toNat = (ch.toNat + 208) % 2 ^ 8 := by
+  rw [BitVec.toNat_add, BitVec.toNat_ofNat]
+  unfold gapByte
+  rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt ch.toNat_lt,
+    Nat.mod_eq_of_lt (by decide : 208 < 2 ^ 8)]
+
+/-- **The number test, at the byte.**  The body's `'-'`/digit test holds exactly
+at the model's list-level condition. -/
+theorem odGapNumberByte_iff (ch : UInt8) :
+    gapNumberByte (gapByte ch) ↔
+      ch.toNat = 45 ∨ (48 ≤ ch.toNat ∧ ch.toNat ≤ 57) := by
+  unfold gapNumberByte
+  have hlt : ch.toNat < 2 ^ 8 := ch.toNat_lt
+  constructor
+  · intro h
+    rcases h with h | h
+    · left
+      have heq := odGap_evalICmp_eq_one_iff.1 h
+      simpa only [gapByte] using
+        (odGap_ofNat8_eq_iff (a := ch.toNat) (b := 45) (by omega) (by decide)).1 heq
+    · right
+      have hu' : (ch.toNat + 208) % 2 ^ 8 < 10 := by
+        have hu := odGap_evalICmp_ult_one_iff.1 h
+        rw [odGap_byte_add_toNat, BitVec.toNat_ofNat,
+          Nat.mod_eq_of_lt (by decide : 10 < 2 ^ 8)] at hu
+        exact hu
+      by_cases hc : ch.toNat < 48
+      · exfalso
+        rw [Nat.mod_eq_of_lt (by omega)] at hu'
+        omega
+      · constructor <;> omega
+  · intro h
+    rcases h with h | ⟨h1, h2⟩
+    · left
+      refine odGap_evalICmp_eq_one_iff.2 ?_
+      simpa only [gapByte] using
+        (odGap_ofNat8_eq_iff (a := ch.toNat) (b := 45) (by omega) (by decide)).2 (by omega)
+    · right
+      rw [odGap_evalICmp_ult_one_iff, odGap_byte_add_toNat, BitVec.toNat_ofNat,
+        Nat.mod_eq_of_lt (by decide : 10 < 2 ^ 8)]
+      have hsum : ch.toNat + 208 = (ch.toNat - 48) + 2 ^ 8 := by omega
+      rw [hsum, Nat.add_mod_right, Nat.mod_eq_of_lt (by omega)]
+      omega
+
+/-- The model's list-level number condition is the same byte condition. -/
+theorem odGapNumberCondition_iff (ch : UInt8) :
+    (ch = 0x2D ∨ (0x30 ≤ ch ∧ ch ≤ 0x39)) ↔
+      ch.toNat = 45 ∨ (48 ≤ ch.toNat ∧ ch.toNat ≤ 57) := by
+  have h2d : (0x2D : UInt8).toNat = 45 := by decide
+  have h30 : (0x30 : UInt8).toNat = 48 := by decide
+  have h39 : (0x39 : UInt8).toNat = 57 := by decide
+  have h1 : (ch = 0x2D) ↔ ch.toNat = 45 := by
+    rw [← UInt8.toNat_inj, h2d]
+  have h2 : (0x30 ≤ ch) ↔ 48 ≤ ch.toNat := by
+    rw [UInt8.le_iff_toNat_le, h30]
+  have h3 : (ch ≤ 0x39) ↔ ch.toNat ≤ 57 := by
+    rw [UInt8.le_iff_toNat_le, h39]
+  rw [h1, h2, h3]
+
+/-- The body's number test and the model's list-level condition agree. -/
+theorem odGapNumberByte_iff' (ch : UInt8) :
+    gapNumberByte (gapByte ch) ↔ (ch = 0x2D ∨ (0x30 ≤ ch ∧ ch ≤ 0x39)) :=
+  (odGapNumberByte_iff ch).trans (odGapNumberCondition_iff ch).symm
+
 /-- The window's segment as the range `num_fast_el1` and `lit_check` read. -/
 theorem readBytes_gapSegment {mem : Mem} {win : List UInt8} {b ip pos ee : Nat}
     (hbytes : gapBytesAt mem win b ip) (hlen : win.length = ip)
@@ -884,6 +973,9 @@ theorem gapSub_toNat {a b : Nat} (hba : b ≤ a) (ha : a < 2 ^ 64) (hb : b < 2 ^
 /-! ### Axiom footprints -/
 
 #print axioms gapNum_step_ifEnd_nonNum
+#print axioms odGapNumberByte_iff'
+#print axioms odGapNumberCondition_iff
+#print axioms odGap_byte_add_toNat
 #print axioms readBytes_gapSegment
 #print axioms gapSub_toNat
 #print axioms gapICmpEq_one_iff
