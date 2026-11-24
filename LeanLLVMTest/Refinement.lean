@@ -11326,6 +11326,10 @@ as the remaining obligation.  The pins are the proved two's footprints. -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.bodyReads_of_boundaryRow
 
+/-- info: 'LeanLLVM.Refinement.eventsOfBytes_valueOfEvents' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.eventsOfBytes_valueOfEvents
+
 /-- info: 'LeanLLVM.Refinement.parseValueK_eq_bind' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.parseValueK_eq_bind
