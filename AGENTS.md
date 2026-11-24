@@ -134,6 +134,13 @@ double worker cost for the duration, so reserve it for a milestone that is
 uncertain or has already stalled once.  The first completed proof is kept; the
 other attempt is stopped at once; its findings are folded in or dropped.
 
+Each attempt writes its own module or file, not a shared one, and each green
+checkpoint is committed as it lands rather than held until the finished proof.
+A predicate or shared statement is not raced: one attempt owns it and the other
+rebases.  The first complete proof's module becomes the canonical module; the
+other attempt's module or branch is removed, and duplicate declarations are
+never imported together.
+
 ### Precompiled worker images
 
 `lean-llvm-precompiled-x86-64` and `lean-llvm-precompiled-aarch64` are the
