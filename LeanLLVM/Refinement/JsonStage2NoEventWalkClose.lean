@@ -2639,6 +2639,565 @@ theorem stage2NoEventRow_value {calls : Calls} {K : Stage2NoEventWalkCarry}
         (stage2NoEvent_slt_zero_of_toInt_ge hge)
         (stage2NoEvent_slt_zero_of_toInt_ge hge') (stage2NoEvent_eq_zero_of_ne hy123)))
 
+/-! ### The continuation dispatch: `NodeBlock15` and its three leaves
+
+After a completed key/value pair, `if.end` hands `%7` to the same three-way tree
+the entry head uses, with loop-exit targets:
+
+| byte | `NodeBlock15` (slt 91) | `NodeBlock13` (slt 123) | leaf | handoff |
+|---|---|---|---|---|
+| `{` 123 | false → `NodeBlock13` | false → `LeafBlock11` | eq 123 → `if.then9.loopexit` | the brace's exit phi run |
+| `[` 91  | false → `NodeBlock13` | true → `LeafBlock9`  | eq 91 → `if.then35` | the bracket's exit phi run |
+| `"` 34  | true → `LeafBlock7` | — | eq 34 → `string_value.loopexit` | the string exit phi run |
+| else | as its pivot range selects | | eq false → `scalar.loopexit` | the value exit |
+
+Each row ends at the exit block's entry; the `%idxprom.le*`/`%9` phis that follow
+the jump belong to the exit blocks and not to these rows, and no row reads or
+writes memory, so the invariant is transported by `mem_congr`. -/
+
+/-- `NodeBlock15`: the continuation dispatch's root, the byte against 91. -/
+def nodeBlock15Instrs : List Instr :=
+  [ Instr.icmp "%Pivot16" IPred.slt 8 (Operand.reg "%7")
+      (Operand.imm (.int 8 (BitVec.ofNat 8 91))) ]
+
+/-- `NodeBlock15`, pinned. -/
+def nodeBlock15Block : Block :=
+  { name := "NodeBlock15", instrs := nodeBlock15Instrs,
+    term := Term.condbr (Operand.reg "%Pivot16") "LeafBlock7" "NodeBlock13" }
+
+theorem nodeBlock15Block_find :
+    stage2NoEventBody.findBlock "NodeBlock15" = some nodeBlock15Block := by
+  decide
+
+/-- `NodeBlock13`: the continuation dispatch's inner node, the byte against 123. -/
+def nodeBlock13Instrs : List Instr :=
+  [ Instr.icmp "%Pivot14" IPred.slt 8 (Operand.reg "%7")
+      (Operand.imm (.int 8 (BitVec.ofNat 8 123))) ]
+
+/-- `NodeBlock13`, pinned. -/
+def nodeBlock13Block : Block :=
+  { name := "NodeBlock13", instrs := nodeBlock13Instrs,
+    term := Term.condbr (Operand.reg "%Pivot14") "LeafBlock9" "LeafBlock11" }
+
+theorem nodeBlock13Block_find :
+    stage2NoEventBody.findBlock "NodeBlock13" = some nodeBlock13Block := by
+  decide
+
+/-- `LeafBlock11`: the byte against 123, the brace's exit leaf. -/
+def leafBlock11Instrs : List Instr :=
+  [ Instr.icmp "%SwitchLeaf12" IPred.eq 8 (Operand.reg "%7")
+      (Operand.imm (.int 8 (BitVec.ofNat 8 123))) ]
+
+/-- `LeafBlock11`, pinned. -/
+def leafBlock11Block : Block :=
+  { name := "LeafBlock11", instrs := leafBlock11Instrs,
+    term := Term.condbr (Operand.reg "%SwitchLeaf12") "if.then9.loopexit" "scalar.loopexit" }
+
+theorem leafBlock11Block_find :
+    stage2NoEventBody.findBlock "LeafBlock11" = some leafBlock11Block := by
+  decide
+
+/-- `LeafBlock9`: the byte against 91, the bracket's exit leaf. -/
+def leafBlock9Instrs : List Instr :=
+  [ Instr.icmp "%SwitchLeaf10" IPred.eq 8 (Operand.reg "%7")
+      (Operand.imm (.int 8 (BitVec.ofNat 8 91))) ]
+
+/-- `LeafBlock9`, pinned. -/
+def leafBlock9Block : Block :=
+  { name := "LeafBlock9", instrs := leafBlock9Instrs,
+    term := Term.condbr (Operand.reg "%SwitchLeaf10") "if.then35" "scalar.loopexit" }
+
+theorem leafBlock9Block_find :
+    stage2NoEventBody.findBlock "LeafBlock9" = some leafBlock9Block := by
+  decide
+
+/-- `LeafBlock7`: the byte against 34, the quote's exit leaf. -/
+def leafBlock7Instrs : List Instr :=
+  [ Instr.icmp "%SwitchLeaf8" IPred.eq 8 (Operand.reg "%7")
+      (Operand.imm (.int 8 (BitVec.ofNat 8 34))) ]
+
+/-- `LeafBlock7`, pinned. -/
+def leafBlock7Block : Block :=
+  { name := "LeafBlock7", instrs := leafBlock7Instrs,
+    term := Term.condbr (Operand.reg "%SwitchLeaf8") "string_value.loopexit" "scalar.loopexit" }
+
+theorem leafBlock7Block_find :
+    stage2NoEventBody.findBlock "LeafBlock7" = some leafBlock7Block := by
+  decide
+
+theorem nodeBlock15_denote (calls : Calls) (env : Env) (s : State) {y : BitVec 8}
+    (h7 : lookupName env "%7" = some (.int 8 y)) :
+    denoteCode calls nodeBlock15Instrs (stateAt env s) =
+      some (stateAt
+        (("%Pivot16", .int 1 (evalICmp .slt y (BitVec.ofNat 8 91))) :: env) s) := by
+  rw [nodeBlock15Instrs, stage2NoEventWalk_denote_icmp_imm (calls := calls)
+    (env := env) (s := s) (d := "%Pivot16") (a := "%7") (p := .slt) (w := 8)
+    (c := BitVec.ofNat 8 91) h7 (is := [])]
+  simp only [denoteCode_nil]
+
+theorem nodeBlock13_denote (calls : Calls) (env : Env) (s : State) {y : BitVec 8}
+    (h7 : lookupName env "%7" = some (.int 8 y)) :
+    denoteCode calls nodeBlock13Instrs (stateAt env s) =
+      some (stateAt
+        (("%Pivot14", .int 1 (evalICmp .slt y (BitVec.ofNat 8 123))) :: env) s) := by
+  rw [nodeBlock13Instrs, stage2NoEventWalk_denote_icmp_imm (calls := calls)
+    (env := env) (s := s) (d := "%Pivot14") (a := "%7") (p := .slt) (w := 8)
+    (c := BitVec.ofNat 8 123) h7 (is := [])]
+  simp only [denoteCode_nil]
+
+theorem leafBlock11_denote (calls : Calls) (env : Env) (s : State) {y : BitVec 8}
+    (h7 : lookupName env "%7" = some (.int 8 y)) :
+    denoteCode calls leafBlock11Instrs (stateAt env s) =
+      some (stateAt
+        (("%SwitchLeaf12", .int 1 (evalICmp .eq y (BitVec.ofNat 8 123))) :: env) s) := by
+  rw [leafBlock11Instrs, stage2NoEventWalk_denote_icmp_imm (calls := calls)
+    (env := env) (s := s) (d := "%SwitchLeaf12") (a := "%7") (p := .eq) (w := 8)
+    (c := BitVec.ofNat 8 123) h7 (is := [])]
+  simp only [denoteCode_nil]
+
+theorem leafBlock9_denote (calls : Calls) (env : Env) (s : State) {y : BitVec 8}
+    (h7 : lookupName env "%7" = some (.int 8 y)) :
+    denoteCode calls leafBlock9Instrs (stateAt env s) =
+      some (stateAt
+        (("%SwitchLeaf10", .int 1 (evalICmp .eq y (BitVec.ofNat 8 91))) :: env) s) := by
+  rw [leafBlock9Instrs, stage2NoEventWalk_denote_icmp_imm (calls := calls)
+    (env := env) (s := s) (d := "%SwitchLeaf10") (a := "%7") (p := .eq) (w := 8)
+    (c := BitVec.ofNat 8 91) h7 (is := [])]
+  simp only [denoteCode_nil]
+
+theorem leafBlock7_denote (calls : Calls) (env : Env) (s : State) {y : BitVec 8}
+    (h7 : lookupName env "%7" = some (.int 8 y)) :
+    denoteCode calls leafBlock7Instrs (stateAt env s) =
+      some (stateAt
+        (("%SwitchLeaf8", .int 1 (evalICmp .eq y (BitVec.ofNat 8 34))) :: env) s) := by
+  rw [leafBlock7Instrs, stage2NoEventWalk_denote_icmp_imm (calls := calls)
+    (env := env) (s := s) (d := "%SwitchLeaf8") (a := "%7") (p := .eq) (w := 8)
+    (c := BitVec.ofNat 8 34) h7 (is := [])]
+  simp only [denoteCode_nil]
+
+/-- `NodeBlock15` at a byte below 91: the true arm, to `LeafBlock7`. -/
+theorem link_nodeBlock15_true {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State} {y : BitVec 8}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "NodeBlock15")
+    (h7 : lookupName s.env "%7" = some (.int 8 y))
+    (hy : evalICmp .slt y (BitVec.ofNat 8 91) = 1) :
+    Stage2NoEventWalkLink calls K mem s K
+      (stage2NoEventWalkNext (("%Pivot16", .int 1 1) :: s.env) s "LeafBlock7") := by
+  have hcode : denoteCode calls nodeBlock15Instrs (stateAt s.env s) =
+      some (stateAt (("%Pivot16", .int 1 1) :: s.env) s) := by
+    have hd := nodeBlock15_denote calls s.env s h7
+    rw [hy] at hd
+    exact hd
+  exact stage2NoEventWalkLink_condbr_true (env' := ("%Pivot16", .int 1 1) :: s.env)
+    h (by rw [hpc]; exact nodeBlock15Block_find) hcode rfl (by rw [lookupName_cons_self])
+
+/-- `NodeBlock15` at a byte at or above 91: the false arm, to `NodeBlock13`. -/
+theorem link_nodeBlock15_false {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State} {y : BitVec 8}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "NodeBlock15")
+    (h7 : lookupName s.env "%7" = some (.int 8 y))
+    (hy : evalICmp .slt y (BitVec.ofNat 8 91) = 0) :
+    Stage2NoEventWalkLink calls K mem s K
+      (stage2NoEventWalkNext (("%Pivot16", .int 1 0) :: s.env) s "NodeBlock13") := by
+  have hcode : denoteCode calls nodeBlock15Instrs (stateAt s.env s) =
+      some (stateAt (("%Pivot16", .int 1 0) :: s.env) s) := by
+    have hd := nodeBlock15_denote calls s.env s h7
+    rw [hy] at hd
+    exact hd
+  exact stage2NoEventWalkLink_condbr_false (env' := ("%Pivot16", .int 1 0) :: s.env)
+    h (by rw [hpc]; exact nodeBlock15Block_find) hcode rfl (by rw [lookupName_cons_self])
+
+/-- `NodeBlock13` at a byte below 123: the true arm, to `LeafBlock9`. -/
+theorem link_nodeBlock13_true {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State} {y : BitVec 8}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "NodeBlock13")
+    (h7 : lookupName s.env "%7" = some (.int 8 y))
+    (hy : evalICmp .slt y (BitVec.ofNat 8 123) = 1) :
+    Stage2NoEventWalkLink calls K mem s K
+      (stage2NoEventWalkNext (("%Pivot14", .int 1 1) :: s.env) s "LeafBlock9") := by
+  have hcode : denoteCode calls nodeBlock13Instrs (stateAt s.env s) =
+      some (stateAt (("%Pivot14", .int 1 1) :: s.env) s) := by
+    have hd := nodeBlock13_denote calls s.env s h7
+    rw [hy] at hd
+    exact hd
+  exact stage2NoEventWalkLink_condbr_true (env' := ("%Pivot14", .int 1 1) :: s.env)
+    h (by rw [hpc]; exact nodeBlock13Block_find) hcode rfl (by rw [lookupName_cons_self])
+
+/-- `NodeBlock13` at a byte at or above 123: the false arm, to `LeafBlock11`. -/
+theorem link_nodeBlock13_false {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State} {y : BitVec 8}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "NodeBlock13")
+    (h7 : lookupName s.env "%7" = some (.int 8 y))
+    (hy : evalICmp .slt y (BitVec.ofNat 8 123) = 0) :
+    Stage2NoEventWalkLink calls K mem s K
+      (stage2NoEventWalkNext (("%Pivot14", .int 1 0) :: s.env) s "LeafBlock11") := by
+  have hcode : denoteCode calls nodeBlock13Instrs (stateAt s.env s) =
+      some (stateAt (("%Pivot14", .int 1 0) :: s.env) s) := by
+    have hd := nodeBlock13_denote calls s.env s h7
+    rw [hy] at hd
+    exact hd
+  exact stage2NoEventWalkLink_condbr_false (env' := ("%Pivot14", .int 1 0) :: s.env)
+    h (by rw [hpc]; exact nodeBlock13Block_find) hcode rfl (by rw [lookupName_cons_self])
+
+/-- `LeafBlock11` at 123: the brace's exit, to `if.then9.loopexit`. -/
+theorem link_leafBlock11_true {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State} {y : BitVec 8}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "LeafBlock11")
+    (h7 : lookupName s.env "%7" = some (.int 8 y))
+    (hy : evalICmp .eq y (BitVec.ofNat 8 123) = 1) :
+    Stage2NoEventWalkLink calls K mem s K
+      (stage2NoEventWalkNext (("%SwitchLeaf12", .int 1 1) :: s.env) s "if.then9.loopexit") := by
+  have hcode : denoteCode calls leafBlock11Instrs (stateAt s.env s) =
+      some (stateAt (("%SwitchLeaf12", .int 1 1) :: s.env) s) := by
+    have hd := leafBlock11_denote calls s.env s h7
+    rw [hy] at hd
+    exact hd
+  exact stage2NoEventWalkLink_condbr_true (env' := ("%SwitchLeaf12", .int 1 1) :: s.env)
+    h (by rw [hpc]; exact leafBlock11Block_find) hcode rfl (by rw [lookupName_cons_self])
+
+/-- `LeafBlock11` at a byte other than 123: the value exit, `scalar.loopexit`. -/
+theorem link_leafBlock11_false {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State} {y : BitVec 8}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "LeafBlock11")
+    (h7 : lookupName s.env "%7" = some (.int 8 y))
+    (hy : evalICmp .eq y (BitVec.ofNat 8 123) = 0) :
+    Stage2NoEventWalkLink calls K mem s K
+      (stage2NoEventWalkNext (("%SwitchLeaf12", .int 1 0) :: s.env) s "scalar.loopexit") := by
+  have hcode : denoteCode calls leafBlock11Instrs (stateAt s.env s) =
+      some (stateAt (("%SwitchLeaf12", .int 1 0) :: s.env) s) := by
+    have hd := leafBlock11_denote calls s.env s h7
+    rw [hy] at hd
+    exact hd
+  exact stage2NoEventWalkLink_condbr_false (env' := ("%SwitchLeaf12", .int 1 0) :: s.env)
+    h (by rw [hpc]; exact leafBlock11Block_find) hcode rfl (by rw [lookupName_cons_self])
+
+/-- `LeafBlock9` at 91: the bracket's exit, to `if.then35`. -/
+theorem link_leafBlock9_true {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State} {y : BitVec 8}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "LeafBlock9")
+    (h7 : lookupName s.env "%7" = some (.int 8 y))
+    (hy : evalICmp .eq y (BitVec.ofNat 8 91) = 1) :
+    Stage2NoEventWalkLink calls K mem s K
+      (stage2NoEventWalkNext (("%SwitchLeaf10", .int 1 1) :: s.env) s "if.then35") := by
+  have hcode : denoteCode calls leafBlock9Instrs (stateAt s.env s) =
+      some (stateAt (("%SwitchLeaf10", .int 1 1) :: s.env) s) := by
+    have hd := leafBlock9_denote calls s.env s h7
+    rw [hy] at hd
+    exact hd
+  exact stage2NoEventWalkLink_condbr_true (env' := ("%SwitchLeaf10", .int 1 1) :: s.env)
+    h (by rw [hpc]; exact leafBlock9Block_find) hcode rfl (by rw [lookupName_cons_self])
+
+/-- `LeafBlock9` at a byte other than 91: the value exit, `scalar.loopexit`. -/
+theorem link_leafBlock9_false {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State} {y : BitVec 8}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "LeafBlock9")
+    (h7 : lookupName s.env "%7" = some (.int 8 y))
+    (hy : evalICmp .eq y (BitVec.ofNat 8 91) = 0) :
+    Stage2NoEventWalkLink calls K mem s K
+      (stage2NoEventWalkNext (("%SwitchLeaf10", .int 1 0) :: s.env) s "scalar.loopexit") := by
+  have hcode : denoteCode calls leafBlock9Instrs (stateAt s.env s) =
+      some (stateAt (("%SwitchLeaf10", .int 1 0) :: s.env) s) := by
+    have hd := leafBlock9_denote calls s.env s h7
+    rw [hy] at hd
+    exact hd
+  exact stage2NoEventWalkLink_condbr_false (env' := ("%SwitchLeaf10", .int 1 0) :: s.env)
+    h (by rw [hpc]; exact leafBlock9Block_find) hcode rfl (by rw [lookupName_cons_self])
+
+/-- `LeafBlock7` at 34: the quote's exit, to `string_value.loopexit`. -/
+theorem link_leafBlock7_true {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State} {y : BitVec 8}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "LeafBlock7")
+    (h7 : lookupName s.env "%7" = some (.int 8 y))
+    (hy : evalICmp .eq y (BitVec.ofNat 8 34) = 1) :
+    Stage2NoEventWalkLink calls K mem s K
+      (stage2NoEventWalkNext (("%SwitchLeaf8", .int 1 1) :: s.env) s
+        "string_value.loopexit") := by
+  have hcode : denoteCode calls leafBlock7Instrs (stateAt s.env s) =
+      some (stateAt (("%SwitchLeaf8", .int 1 1) :: s.env) s) := by
+    have hd := leafBlock7_denote calls s.env s h7
+    rw [hy] at hd
+    exact hd
+  exact stage2NoEventWalkLink_condbr_true (env' := ("%SwitchLeaf8", .int 1 1) :: s.env)
+    h (by rw [hpc]; exact leafBlock7Block_find) hcode rfl (by rw [lookupName_cons_self])
+
+/-- `LeafBlock7` at a byte other than 34: the value exit, `scalar.loopexit`. -/
+theorem link_leafBlock7_false {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State} {y : BitVec 8}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "LeafBlock7")
+    (h7 : lookupName s.env "%7" = some (.int 8 y))
+    (hy : evalICmp .eq y (BitVec.ofNat 8 34) = 0) :
+    Stage2NoEventWalkLink calls K mem s K
+      (stage2NoEventWalkNext (("%SwitchLeaf8", .int 1 0) :: s.env) s "scalar.loopexit") := by
+  have hcode : denoteCode calls leafBlock7Instrs (stateAt s.env s) =
+      some (stateAt (("%SwitchLeaf8", .int 1 0) :: s.env) s) := by
+    have hd := leafBlock7_denote calls s.env s h7
+    rw [hy] at hd
+    exact hd
+  exact stage2NoEventWalkLink_condbr_false (env' := ("%SwitchLeaf8", .int 1 0) :: s.env)
+    h (by rw [hpc]; exact leafBlock7Block_find) hcode rfl (by rw [lookupName_cons_self])
+
+/-- **`{` (123) at the continuation dispatch**, to `if.then9.loopexit`. -/
+theorem stage2NoEventRow_loopExitBrace {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "NodeBlock15")
+    (h7 : lookupName s.env "%7" = some (.int 8 (BitVec.ofNat 8 123))) :
+    Stage2NoEventWalkChain calls mem K s K
+      (stage2NoEventWalkAt
+        (("%SwitchLeaf12", .int 1 1) ::
+          ("%Pivot14", .int 1 0) :: ("%Pivot16", .int 1 0) :: s.env) s
+        "if.then9.loopexit" "LeafBlock11") := by
+  have h7₁ : lookupName (("%Pivot16", .int 1 (0 : BitVec 1)) :: s.env) "%7"
+      = some (.int 8 (BitVec.ofNat 8 123)) :=
+    lookupName_cons_other _ _ _ (by decide) h7
+  have h7₂ : lookupName (("%Pivot14", .int 1 (0 : BitVec 1)) ::
+      ("%Pivot16", .int 1 (0 : BitVec 1)) :: s.env) "%7"
+      = some (.int 8 (BitVec.ofNat 8 123)) :=
+    lookupName_cons_other _ _ _ (by decide) h7₁
+  let S1 := stage2NoEventWalkNext (("%Pivot16", .int 1 0) :: s.env) s "NodeBlock13"
+  let S2 := stage2NoEventWalkNext
+    (("%Pivot14", .int 1 0) :: ("%Pivot16", .int 1 0) :: s.env) S1 "LeafBlock11"
+  have L1 : Stage2NoEventWalkLink calls K mem s K S1 :=
+    link_nodeBlock15_false h hpc h7 (by decide)
+  have L2 : Stage2NoEventWalkLink calls K mem S1 K S2 :=
+    link_nodeBlock13_false L1.inv' (by simp only [S1, stage2NoEventWalkNext]) h7₁ (by decide)
+  have L3 : Stage2NoEventWalkLink calls K mem S2 K
+      (stage2NoEventWalkNext (("%SwitchLeaf12", .int 1 1) ::
+        ("%Pivot14", .int 1 0) :: ("%Pivot16", .int 1 0) :: s.env) S2
+        "if.then9.loopexit") :=
+    link_leafBlock11_true L2.inv' (by simp only [S2, S1, stage2NoEventWalkNext]) h7₂
+      (by decide)
+  simpa only [S1, S2, stage2NoEventWalkNext, stage2NoEventWalkAt] using
+    (Stage2NoEventWalkChain.tail L1 (Stage2NoEventWalkChain.tail L2
+      (Stage2NoEventWalkChain.tail L3 (Stage2NoEventWalkChain.nil L3.inv'))))
+
+/-- **`[` (91) at the continuation dispatch**, to `if.then35`. -/
+theorem stage2NoEventRow_loopExitBracket {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "NodeBlock15")
+    (h7 : lookupName s.env "%7" = some (.int 8 (BitVec.ofNat 8 91))) :
+    Stage2NoEventWalkChain calls mem K s K
+      (stage2NoEventWalkAt
+        (("%SwitchLeaf10", .int 1 1) ::
+          ("%Pivot14", .int 1 1) :: ("%Pivot16", .int 1 0) :: s.env) s
+        "if.then35" "LeafBlock9") := by
+  have h7₁ : lookupName (("%Pivot16", .int 1 (0 : BitVec 1)) :: s.env) "%7"
+      = some (.int 8 (BitVec.ofNat 8 91)) :=
+    lookupName_cons_other _ _ _ (by decide) h7
+  have h7₂ : lookupName (("%Pivot14", .int 1 (1 : BitVec 1)) ::
+      ("%Pivot16", .int 1 (0 : BitVec 1)) :: s.env) "%7"
+      = some (.int 8 (BitVec.ofNat 8 91)) :=
+    lookupName_cons_other _ _ _ (by decide) h7₁
+  let S1 := stage2NoEventWalkNext (("%Pivot16", .int 1 0) :: s.env) s "NodeBlock13"
+  let S2 := stage2NoEventWalkNext
+    (("%Pivot14", .int 1 1) :: ("%Pivot16", .int 1 0) :: s.env) S1 "LeafBlock9"
+  have L1 : Stage2NoEventWalkLink calls K mem s K S1 :=
+    link_nodeBlock15_false h hpc h7 (by decide)
+  have L2 : Stage2NoEventWalkLink calls K mem S1 K S2 :=
+    link_nodeBlock13_true L1.inv' (by simp only [S1, stage2NoEventWalkNext]) h7₁ (by decide)
+  have L3 : Stage2NoEventWalkLink calls K mem S2 K
+      (stage2NoEventWalkNext (("%SwitchLeaf10", .int 1 1) ::
+        ("%Pivot14", .int 1 1) :: ("%Pivot16", .int 1 0) :: s.env) S2 "if.then35") :=
+    link_leafBlock9_true L2.inv' (by simp only [S2, S1, stage2NoEventWalkNext]) h7₂
+      (by decide)
+  simpa only [S1, S2, stage2NoEventWalkNext, stage2NoEventWalkAt] using
+    (Stage2NoEventWalkChain.tail L1 (Stage2NoEventWalkChain.tail L2
+      (Stage2NoEventWalkChain.tail L3 (Stage2NoEventWalkChain.nil L3.inv'))))
+
+/-- **`"` (34) at the continuation dispatch**, to `string_value.loopexit`. -/
+theorem stage2NoEventRow_loopExitString {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "NodeBlock15")
+    (h7 : lookupName s.env "%7" = some (.int 8 (BitVec.ofNat 8 34))) :
+    Stage2NoEventWalkChain calls mem K s K
+      (stage2NoEventWalkAt
+        (("%SwitchLeaf8", .int 1 1) ::
+          ("%Pivot16", .int 1 1) :: s.env) s
+        "string_value.loopexit" "LeafBlock7") := by
+  have h7₁ : lookupName (("%Pivot16", .int 1 (1 : BitVec 1)) :: s.env) "%7"
+      = some (.int 8 (BitVec.ofNat 8 34)) :=
+    lookupName_cons_other _ _ _ (by decide) h7
+  let S1 := stage2NoEventWalkNext (("%Pivot16", .int 1 1) :: s.env) s "LeafBlock7"
+  have L1 : Stage2NoEventWalkLink calls K mem s K S1 :=
+    link_nodeBlock15_true h hpc h7 (by decide)
+  have L2 : Stage2NoEventWalkLink calls K mem S1 K
+      (stage2NoEventWalkNext (("%SwitchLeaf8", .int 1 1) ::
+        ("%Pivot16", .int 1 1) :: s.env) S1 "string_value.loopexit") :=
+    link_leafBlock7_true L1.inv' (by simp only [S1, stage2NoEventWalkNext]) h7₁ (by decide)
+  simpa only [S1, stage2NoEventWalkNext, stage2NoEventWalkAt] using
+    (Stage2NoEventWalkChain.tail L1 (Stage2NoEventWalkChain.tail L2
+      (Stage2NoEventWalkChain.nil L2.inv')))
+
+/-- **The value exit through `LeafBlock7`**: a byte below 91 that is not 34
+reaches `scalar.loopexit`. -/
+theorem stage2NoEventRow_loopScalar7 {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State} {y : BitVec 8}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "NodeBlock15")
+    (h7 : lookupName s.env "%7" = some (.int 8 y))
+    (hy91 : evalICmp .slt y (BitVec.ofNat 8 91) = 1)
+    (hy34 : evalICmp .eq y (BitVec.ofNat 8 34) = 0) :
+    Stage2NoEventWalkChain calls mem K s K
+        (stage2NoEventWalkAt
+          (("%SwitchLeaf8", .int 1 0) ::
+            ("%Pivot16", .int 1 1) :: s.env) s
+          "scalar.loopexit" "LeafBlock7") ∧
+      Stage2NoEventWalkInv K mem
+        (stage2NoEventWalkAt
+          (("%SwitchLeaf8", .int 1 0) ::
+            ("%Pivot16", .int 1 1) :: s.env) s
+          "scalar.loopexit" "LeafBlock7") := by
+  have h7₁ : lookupName (("%Pivot16", .int 1 (1 : BitVec 1)) :: s.env) "%7"
+      = some (.int 8 y) :=
+    lookupName_cons_other _ _ _ (by decide) h7
+  let S1 := stage2NoEventWalkNext (("%Pivot16", .int 1 1) :: s.env) s "LeafBlock7"
+  have L1 : Stage2NoEventWalkLink calls K mem s K S1 :=
+    link_nodeBlock15_true h hpc h7 hy91
+  have L2 : Stage2NoEventWalkLink calls K mem S1 K
+      (stage2NoEventWalkNext (("%SwitchLeaf8", .int 1 0) ::
+        ("%Pivot16", .int 1 1) :: s.env) S1 "scalar.loopexit") :=
+    link_leafBlock7_false L1.inv' (by simp only [S1, stage2NoEventWalkNext]) h7₁ hy34
+  refine ⟨?_, ?_⟩
+  · simpa only [S1, stage2NoEventWalkNext, stage2NoEventWalkAt] using
+      (Stage2NoEventWalkChain.tail L1 (Stage2NoEventWalkChain.tail L2
+        (Stage2NoEventWalkChain.nil L2.inv')))
+  · simpa only [S1, stage2NoEventWalkNext, stage2NoEventWalkAt] using L2.inv'
+
+/-- **The value exit through `LeafBlock9`**: a byte from 91 up to 123 signed that
+is not 91 reaches `scalar.loopexit`. -/
+theorem stage2NoEventRow_loopScalar9 {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State} {y : BitVec 8}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "NodeBlock15")
+    (h7 : lookupName s.env "%7" = some (.int 8 y))
+    (hy91 : evalICmp .slt y (BitVec.ofNat 8 91) = 0)
+    (hy123 : evalICmp .slt y (BitVec.ofNat 8 123) = 1)
+    (hy91eq : evalICmp .eq y (BitVec.ofNat 8 91) = 0) :
+    Stage2NoEventWalkChain calls mem K s K
+        (stage2NoEventWalkAt
+          (("%SwitchLeaf10", .int 1 0) ::
+            ("%Pivot14", .int 1 1) :: ("%Pivot16", .int 1 0) :: s.env) s
+          "scalar.loopexit" "LeafBlock9") ∧
+      Stage2NoEventWalkInv K mem
+        (stage2NoEventWalkAt
+          (("%SwitchLeaf10", .int 1 0) ::
+            ("%Pivot14", .int 1 1) :: ("%Pivot16", .int 1 0) :: s.env) s
+          "scalar.loopexit" "LeafBlock9") := by
+  have h7₁ : lookupName (("%Pivot16", .int 1 (0 : BitVec 1)) :: s.env) "%7"
+      = some (.int 8 y) :=
+    lookupName_cons_other _ _ _ (by decide) h7
+  have h7₂ : lookupName (("%Pivot14", .int 1 (1 : BitVec 1)) ::
+      ("%Pivot16", .int 1 (0 : BitVec 1)) :: s.env) "%7" = some (.int 8 y) :=
+    lookupName_cons_other _ _ _ (by decide) h7₁
+  let S1 := stage2NoEventWalkNext (("%Pivot16", .int 1 0) :: s.env) s "NodeBlock13"
+  let S2 := stage2NoEventWalkNext
+    (("%Pivot14", .int 1 1) :: ("%Pivot16", .int 1 0) :: s.env) S1 "LeafBlock9"
+  have L1 : Stage2NoEventWalkLink calls K mem s K S1 :=
+    link_nodeBlock15_false h hpc h7 hy91
+  have L2 : Stage2NoEventWalkLink calls K mem S1 K S2 :=
+    link_nodeBlock13_true L1.inv' (by simp only [S1, stage2NoEventWalkNext]) h7₁ hy123
+  have L3 : Stage2NoEventWalkLink calls K mem S2 K
+      (stage2NoEventWalkNext (("%SwitchLeaf10", .int 1 0) ::
+        ("%Pivot14", .int 1 1) :: ("%Pivot16", .int 1 0) :: s.env) S2
+        "scalar.loopexit") :=
+    link_leafBlock9_false L2.inv' (by simp only [S2, S1, stage2NoEventWalkNext])
+      h7₂ hy91eq
+  refine ⟨?_, ?_⟩
+  · simpa only [S1, S2, stage2NoEventWalkNext, stage2NoEventWalkAt] using
+      (Stage2NoEventWalkChain.tail L1 (Stage2NoEventWalkChain.tail L2
+        (Stage2NoEventWalkChain.tail L3 (Stage2NoEventWalkChain.nil L3.inv'))))
+  · simpa only [S1, S2, stage2NoEventWalkNext, stage2NoEventWalkAt] using L3.inv'
+
+/-- **The value exit through `LeafBlock11`**: a byte at or above 123 signed that
+is not 123 reaches `scalar.loopexit`. -/
+theorem stage2NoEventRow_loopScalar11 {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State} {y : BitVec 8}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "NodeBlock15")
+    (h7 : lookupName s.env "%7" = some (.int 8 y))
+    (hy91 : evalICmp .slt y (BitVec.ofNat 8 91) = 0)
+    (hy123 : evalICmp .slt y (BitVec.ofNat 8 123) = 0)
+    (hy123eq : evalICmp .eq y (BitVec.ofNat 8 123) = 0) :
+    Stage2NoEventWalkChain calls mem K s K
+        (stage2NoEventWalkAt
+          (("%SwitchLeaf12", .int 1 0) ::
+            ("%Pivot14", .int 1 0) :: ("%Pivot16", .int 1 0) :: s.env) s
+          "scalar.loopexit" "LeafBlock11") ∧
+      Stage2NoEventWalkInv K mem
+        (stage2NoEventWalkAt
+          (("%SwitchLeaf12", .int 1 0) ::
+            ("%Pivot14", .int 1 0) :: ("%Pivot16", .int 1 0) :: s.env) s
+          "scalar.loopexit" "LeafBlock11") := by
+  have h7₁ : lookupName (("%Pivot16", .int 1 (0 : BitVec 1)) :: s.env) "%7"
+      = some (.int 8 y) :=
+    lookupName_cons_other _ _ _ (by decide) h7
+  have h7₂ : lookupName (("%Pivot14", .int 1 (0 : BitVec 1)) ::
+      ("%Pivot16", .int 1 (0 : BitVec 1)) :: s.env) "%7" = some (.int 8 y) :=
+    lookupName_cons_other _ _ _ (by decide) h7₁
+  let S1 := stage2NoEventWalkNext (("%Pivot16", .int 1 0) :: s.env) s "NodeBlock13"
+  let S2 := stage2NoEventWalkNext
+    (("%Pivot14", .int 1 0) :: ("%Pivot16", .int 1 0) :: s.env) S1 "LeafBlock11"
+  have L1 : Stage2NoEventWalkLink calls K mem s K S1 :=
+    link_nodeBlock15_false h hpc h7 hy91
+  have L2 : Stage2NoEventWalkLink calls K mem S1 K S2 :=
+    link_nodeBlock13_false L1.inv' (by simp only [S1, stage2NoEventWalkNext]) h7₁ hy123
+  have L3 : Stage2NoEventWalkLink calls K mem S2 K
+      (stage2NoEventWalkNext (("%SwitchLeaf12", .int 1 0) ::
+        ("%Pivot14", .int 1 0) :: ("%Pivot16", .int 1 0) :: s.env) S2
+        "scalar.loopexit") :=
+    link_leafBlock11_false L2.inv' (by simp only [S2, S1, stage2NoEventWalkNext])
+      h7₂ hy123eq
+  refine ⟨?_, ?_⟩
+  · simpa only [S1, S2, stage2NoEventWalkNext, stage2NoEventWalkAt] using
+      (Stage2NoEventWalkChain.tail L1 (Stage2NoEventWalkChain.tail L2
+        (Stage2NoEventWalkChain.tail L3 (Stage2NoEventWalkChain.nil L3.inv'))))
+  · simpa only [S1, S2, stage2NoEventWalkNext, stage2NoEventWalkAt] using L3.inv'
+
+/-- **The value exit**: any byte other than `{`, `[` and `"` reaches
+`scalar.loopexit`, through the leaf its pivot range selects. -/
+theorem stage2NoEventRow_loopScalar {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State} {y : BitVec 8}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "NodeBlock15")
+    (h7 : lookupName s.env "%7" = some (.int 8 y))
+    (hy34 : y ≠ BitVec.ofNat 8 34) (hy91 : y ≠ BitVec.ofNat 8 91)
+    (hy123 : y ≠ BitVec.ofNat 8 123) :
+    (Stage2NoEventWalkChain calls mem K s K
+        (stage2NoEventWalkAt
+          (("%SwitchLeaf8", .int 1 0) ::
+            ("%Pivot16", .int 1 1) :: s.env) s
+          "scalar.loopexit" "LeafBlock7") ∧
+      Stage2NoEventWalkInv K mem
+        (stage2NoEventWalkAt
+          (("%SwitchLeaf8", .int 1 0) ::
+            ("%Pivot16", .int 1 1) :: s.env) s
+          "scalar.loopexit" "LeafBlock7")) ∨
+      (Stage2NoEventWalkChain calls mem K s K
+        (stage2NoEventWalkAt
+          (("%SwitchLeaf10", .int 1 0) ::
+            ("%Pivot14", .int 1 1) :: ("%Pivot16", .int 1 0) :: s.env) s
+          "scalar.loopexit" "LeafBlock9") ∧
+      Stage2NoEventWalkInv K mem
+        (stage2NoEventWalkAt
+          (("%SwitchLeaf10", .int 1 0) ::
+            ("%Pivot14", .int 1 1) :: ("%Pivot16", .int 1 0) :: s.env) s
+          "scalar.loopexit" "LeafBlock9")) ∨
+      (Stage2NoEventWalkChain calls mem K s K
+        (stage2NoEventWalkAt
+          (("%SwitchLeaf12", .int 1 0) ::
+            ("%Pivot14", .int 1 0) :: ("%Pivot16", .int 1 0) :: s.env) s
+          "scalar.loopexit" "LeafBlock11") ∧
+      Stage2NoEventWalkInv K mem
+        (stage2NoEventWalkAt
+          (("%SwitchLeaf12", .int 1 0) ::
+            ("%Pivot14", .int 1 0) :: ("%Pivot16", .int 1 0) :: s.env) s
+          "scalar.loopexit" "LeafBlock11")) := by
+  rcases lt_or_ge y.toInt (BitVec.ofNat 8 91).toInt with hlt | hge
+  · exact Or.inl (stage2NoEventRow_loopScalar7 h hpc h7
+      (stage2NoEvent_slt_one_of_toInt_lt hlt) (stage2NoEvent_eq_zero_of_ne hy34))
+  · rcases lt_or_ge y.toInt (BitVec.ofNat 8 123).toInt with hlt | hge'
+    · exact Or.inr (Or.inl (stage2NoEventRow_loopScalar9 h hpc h7
+        (stage2NoEvent_slt_zero_of_toInt_ge hge) (stage2NoEvent_slt_one_of_toInt_lt hlt)
+        (stage2NoEvent_eq_zero_of_ne hy91)))
+    · exact Or.inr (Or.inr (stage2NoEventRow_loopScalar11 h hpc h7
+        (stage2NoEvent_slt_zero_of_toInt_ge hge)
+        (stage2NoEvent_slt_zero_of_toInt_ge hge') (stage2NoEvent_eq_zero_of_ne hy123)))
+
 /-- The head's own run: its nine phis and its six reads. -/
 theorem loopHead_denote {calls : Calls} (env : Env) (s : State)
     {k : BitVec 64} {ep b : Nat} {bs4 bs1 : List UInt8}
@@ -4523,5 +5082,27 @@ structure Stage2NoEventWalkContainerClass (calls : Calls) (K : Stage2NoEventWalk
 #print axioms stage2NoEventRow_valueLeaf1
 #print axioms stage2NoEventRow_valueLeaf3
 #print axioms stage2NoEventRow_value
+#print axioms nodeBlock15Block_find
+#print axioms nodeBlock13Block_find
+#print axioms leafBlock11Block_find
+#print axioms leafBlock9Block_find
+#print axioms leafBlock7Block_find
+#print axioms link_nodeBlock15_true
+#print axioms link_nodeBlock15_false
+#print axioms link_nodeBlock13_true
+#print axioms link_nodeBlock13_false
+#print axioms link_leafBlock11_true
+#print axioms link_leafBlock11_false
+#print axioms link_leafBlock9_true
+#print axioms link_leafBlock9_false
+#print axioms link_leafBlock7_true
+#print axioms link_leafBlock7_false
+#print axioms stage2NoEventRow_loopExitBrace
+#print axioms stage2NoEventRow_loopExitBracket
+#print axioms stage2NoEventRow_loopExitString
+#print axioms stage2NoEventRow_loopScalar7
+#print axioms stage2NoEventRow_loopScalar9
+#print axioms stage2NoEventRow_loopScalar11
+#print axioms stage2NoEventRow_loopScalar
 
 end LeanLLVM.Refinement
