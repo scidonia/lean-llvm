@@ -11376,3 +11376,14 @@ as the remaining obligation.  The pins are the proved two's footprints. -/
 -- and still leave the suite green.
 #guard (LeanLLVM.Refinement.parseValueT { input := ByteString.literal [0x20, 0x31], tokens := [.number ⟨0, 1⟩] }).isSome
 #guard (LeanLLVM.JSON.decodeTape { input := ByteString.literal [0x20, 0x31], tokens := [.number ⟨0, 1⟩] }).isNone
+
+-- The refutation that forced `parseMembersF` to read a member key by position:
+-- at a string position the position decides the role, and the relation leaves the
+-- key flag free, so a value-tagged key (`str false`) is admitted and must decode
+-- as the key.  Gating on `T_KEY` made `EventsParseValue` false on this trace;
+-- do not restore the gate.
+#guard decide ((valueOfEvents (consumeRecords [0x7B,0x22,0x61,0x22,0x3A,0x6E,0x75,0x6C,0x6C,0x7D] [] [.tag 1, .str false 1 (plainSpan 2), .tag 10, .tag 2])) = some (.object [([97], .null)]))
+
+-- The token level on the same document returns the same value: the two decoders
+-- agree here, which is `EventsParseValue` at one instance.
+#guard decide ((parseValueT ⟨ByteString.literal [0x7B,0x22,0x61,0x22,0x3A,0x6E,0x75,0x6C,0x6C,0x7D], [.punct .openBrace ⟨0,1⟩, .string ⟨1,4⟩, .punct .colon ⟨4,5⟩, .null ⟨5,9⟩, .punct .closeBrace ⟨9,10⟩]⟩) = some (.object [([97], .null)]))
