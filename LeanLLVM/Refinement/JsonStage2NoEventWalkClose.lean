@@ -2185,6 +2185,15 @@ theorem leafBlock_denote {calls : Calls} (env : Env) (s : State)
     (c := BitVec.ofNat 8 34) h3]
   rfl
 
+/-- `LeafBlock`, pinned. -/
+def leafBlockBlock : Block :=
+  { name := "LeafBlock", instrs := leafBlockInstrs,
+    term := Term.condbr (Operand.reg "%SwitchLeaf") "string_value" "scalar" }
+
+theorem leafBlockBlock_find :
+    stage2NoEventBody.findBlock "LeafBlock" = some leafBlockBlock := by
+  decide
+
 /-- `nodeBlock5`'s `%Pivot6` branch, taken (`LeafBlock`). -/
 theorem nodeBlock5_branch_true {calls : Calls} (env : Env) (s : State)
     {x : BitVec 8} (h3 : lookupName env "%3" = some (.int 8 x))
@@ -2363,6 +2372,272 @@ theorem leafBlock_branch_false {calls : Calls} (env : Env) (s : State)
       (.int 1 (evalICmp IPred.eq x (BitVec.ofNat 8 34))) (by simp only [lookupName_cons_self])
   simp only [execTerm, hop, hbit, stage2NoEventJumpState, stage2NoEventStepState, stateAt]
   rfl
+
+/-! ### The quote's row and the value path
+
+`LeafBlock` is `NodeBlock5`'s true arm, so the quote's row is two links: the
+`slt 91` true arm and the leaf's `eq 34` true arm.  Every other byte that the
+three leaf tests reject reaches `scalar`, and the path it takes is the pivot
+range it falls in: below 91 signed, the `LeafBlock` arm; between 91 and 123, the
+`LeafBlock1` arm; at or above 123, the `LeafBlock3` arm.  Each arm's row carries
+the invariant at its endpoint, and the value row is the disjunction of the three
+because the handoff environment names the leaf it came through. -/
+
+/-- `NodeBlock5` at a byte below 91: the true arm, to `LeafBlock`. -/
+theorem link_nodeBlock5_true {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State} {y : BitVec 8}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "NodeBlock5")
+    (h3 : lookupName s.env "%3" = some (.int 8 y))
+    (hy : evalICmp .slt y (BitVec.ofNat 8 91) = 1) :
+    Stage2NoEventWalkLink calls K mem s K
+      (stage2NoEventWalkNext (("%Pivot6", .int 1 1) :: s.env) s "LeafBlock") := by
+  have hcode : denoteCode calls nodeBlock5Instrs (stateAt s.env s) =
+      some (stateAt (("%Pivot6", .int 1 1) :: s.env) s) := by
+    have hd := nodeBlock5_denote calls s.env s h3
+    rw [hy] at hd
+    exact hd
+  exact stage2NoEventWalkLink_condbr_true (env' := ("%Pivot6", .int 1 1) :: s.env)
+    h (by rw [hpc]; exact nodeBlock5Block_find) hcode rfl (by rw [lookupName_cons_self])
+
+/-- `LeafBlock` at 34: the quote's arm, to `string_value`. -/
+theorem link_leafBlock_true {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State} {y : BitVec 8}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "LeafBlock")
+    (h3 : lookupName s.env "%3" = some (.int 8 y))
+    (hy : evalICmp .eq y (BitVec.ofNat 8 34) = 1) :
+    Stage2NoEventWalkLink calls K mem s K
+      (stage2NoEventWalkNext (("%SwitchLeaf", .int 1 1) :: s.env) s "string_value") := by
+  have hcode : denoteCode calls leafBlockInstrs (stateAt s.env s) =
+      some (stateAt (("%SwitchLeaf", .int 1 1) :: s.env) s) := by
+    have hd := leafBlock_denote (calls := calls) s.env s h3
+    rw [hy] at hd
+    exact hd
+  exact stage2NoEventWalkLink_condbr_true (env' := ("%SwitchLeaf", .int 1 1) :: s.env)
+    h (by rw [hpc]; exact leafBlockBlock_find) hcode rfl (by rw [lookupName_cons_self])
+
+/-- `LeafBlock` at a byte other than 34: the value path, `scalar`. -/
+theorem link_leafBlock_false {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State} {y : BitVec 8}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "LeafBlock")
+    (h3 : lookupName s.env "%3" = some (.int 8 y))
+    (hy : evalICmp .eq y (BitVec.ofNat 8 34) = 0) :
+    Stage2NoEventWalkLink calls K mem s K
+      (stage2NoEventWalkNext (("%SwitchLeaf", .int 1 0) :: s.env) s "scalar") := by
+  have hcode : denoteCode calls leafBlockInstrs (stateAt s.env s) =
+      some (stateAt (("%SwitchLeaf", .int 1 0) :: s.env) s) := by
+    have hd := leafBlock_denote (calls := calls) s.env s h3
+    rw [hy] at hd
+    exact hd
+  exact stage2NoEventWalkLink_condbr_false (env' := ("%SwitchLeaf", .int 1 0) :: s.env)
+    h (by rw [hpc]; exact leafBlockBlock_find) hcode rfl (by rw [lookupName_cons_self])
+
+/-- **`"` (34)**: the quote's dispatch, to `string_value`. -/
+theorem stage2NoEventRow_string {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "NodeBlock5")
+    (h3 : lookupName s.env "%3" = some (.int 8 (BitVec.ofNat 8 34))) :
+    Stage2NoEventWalkChain calls mem K s K
+      (stage2NoEventWalkAt
+        (("%SwitchLeaf", .int 1 1) ::
+          ("%Pivot6", .int 1 1) :: s.env) s
+        "string_value" "LeafBlock") := by
+  have h3₁ : lookupName (("%Pivot6", .int 1 (1 : BitVec 1)) :: s.env) "%3"
+      = some (.int 8 (BitVec.ofNat 8 34)) :=
+    lookupName_cons_other _ _ _ (by decide) h3
+  let S1 := stage2NoEventWalkNext (("%Pivot6", .int 1 1) :: s.env) s "LeafBlock"
+  have L1 : Stage2NoEventWalkLink calls K mem s K S1 :=
+    link_nodeBlock5_true h hpc h3 (by decide)
+  have L2 : Stage2NoEventWalkLink calls K mem S1 K
+      (stage2NoEventWalkNext (("%SwitchLeaf", .int 1 1) ::
+        ("%Pivot6", .int 1 1) :: s.env) S1 "string_value") :=
+    link_leafBlock_true L1.inv' (by simp only [S1, stage2NoEventWalkNext]) h3₁ (by decide)
+  simpa only [S1, stage2NoEventWalkNext, stage2NoEventWalkAt] using
+    (Stage2NoEventWalkChain.tail L1 (Stage2NoEventWalkChain.tail L2
+      (Stage2NoEventWalkChain.nil L2.inv')))
+
+/-- `icmp slt` at one is the signed order on the byte's readings. -/
+theorem stage2NoEvent_slt_one_of_toInt_lt {w : Nat} {x a : BitVec w}
+    (h : x.toInt < a.toInt) : evalICmp .slt x a = 1 := by
+  simp [evalICmp, BitVec.slt_eq_decide, h]
+
+/-- `icmp slt` at zero is the negated signed order. -/
+theorem stage2NoEvent_slt_zero_of_toInt_ge {w : Nat} {x a : BitVec w}
+    (h : a.toInt ≤ x.toInt) : evalICmp .slt x a = 0 := by
+  simp [evalICmp, BitVec.slt_eq_decide, not_lt.mpr h]
+
+/-- `icmp eq` at zero, from the two words being unequal. -/
+theorem stage2NoEvent_eq_zero_of_ne {w : Nat} {x c : BitVec w} (h : x ≠ c) :
+    evalICmp .eq x c = 0 := by
+  simp [evalICmp, h]
+
+/-- **The value path through `LeafBlock`**: a byte below 91 that is not 34 reaches
+`scalar`. -/
+theorem stage2NoEventRow_valueLeaf {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State} {y : BitVec 8}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "NodeBlock5")
+    (h3 : lookupName s.env "%3" = some (.int 8 y))
+    (hy91 : evalICmp .slt y (BitVec.ofNat 8 91) = 1)
+    (hy34 : evalICmp .eq y (BitVec.ofNat 8 34) = 0) :
+    Stage2NoEventWalkChain calls mem K s K
+        (stage2NoEventWalkAt
+          (("%SwitchLeaf", .int 1 0) ::
+            ("%Pivot6", .int 1 1) :: s.env) s
+          "scalar" "LeafBlock") ∧
+      Stage2NoEventWalkInv K mem
+        (stage2NoEventWalkAt
+          (("%SwitchLeaf", .int 1 0) ::
+            ("%Pivot6", .int 1 1) :: s.env) s
+          "scalar" "LeafBlock") := by
+  have h3₁ : lookupName (("%Pivot6", .int 1 (1 : BitVec 1)) :: s.env) "%3"
+      = some (.int 8 y) :=
+    lookupName_cons_other _ _ _ (by decide) h3
+  let S1 := stage2NoEventWalkNext (("%Pivot6", .int 1 1) :: s.env) s "LeafBlock"
+  have L1 : Stage2NoEventWalkLink calls K mem s K S1 :=
+    link_nodeBlock5_true h hpc h3 hy91
+  have L2 : Stage2NoEventWalkLink calls K mem S1 K
+      (stage2NoEventWalkNext (("%SwitchLeaf", .int 1 0) ::
+        ("%Pivot6", .int 1 1) :: s.env) S1 "scalar") :=
+    link_leafBlock_false L1.inv' (by simp only [S1, stage2NoEventWalkNext]) h3₁ hy34
+  refine ⟨?_, ?_⟩
+  · simpa only [S1, stage2NoEventWalkNext, stage2NoEventWalkAt] using
+      (Stage2NoEventWalkChain.tail L1 (Stage2NoEventWalkChain.tail L2
+        (Stage2NoEventWalkChain.nil L2.inv')))
+  · simpa only [S1, stage2NoEventWalkNext, stage2NoEventWalkAt] using L2.inv'
+
+/-- **The value path through `LeafBlock1`**: a byte from 91 up to 123 signed that
+is not 91 reaches `scalar`. -/
+theorem stage2NoEventRow_valueLeaf1 {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State} {y : BitVec 8}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "NodeBlock5")
+    (h3 : lookupName s.env "%3" = some (.int 8 y))
+    (hy91 : evalICmp .slt y (BitVec.ofNat 8 91) = 0)
+    (hy123 : evalICmp .slt y (BitVec.ofNat 8 123) = 1)
+    (hy91eq : evalICmp .eq y (BitVec.ofNat 8 91) = 0) :
+    Stage2NoEventWalkChain calls mem K s K
+        (stage2NoEventWalkAt
+          (("%SwitchLeaf2", .int 1 0) ::
+            ("%Pivot", .int 1 1) :: ("%Pivot6", .int 1 0) :: s.env) s
+          "scalar" "LeafBlock1") ∧
+      Stage2NoEventWalkInv K mem
+        (stage2NoEventWalkAt
+          (("%SwitchLeaf2", .int 1 0) ::
+            ("%Pivot", .int 1 1) :: ("%Pivot6", .int 1 0) :: s.env) s
+          "scalar" "LeafBlock1") := by
+  have h3₁ : lookupName (("%Pivot6", .int 1 (0 : BitVec 1)) :: s.env) "%3"
+      = some (.int 8 y) :=
+    lookupName_cons_other _ _ _ (by decide) h3
+  have h3₂ : lookupName (("%Pivot", .int 1 (1 : BitVec 1)) ::
+      ("%Pivot6", .int 1 (0 : BitVec 1)) :: s.env) "%3" = some (.int 8 y) :=
+    lookupName_cons_other _ _ _ (by decide) h3₁
+  let S1 := stage2NoEventWalkNext (("%Pivot6", .int 1 0) :: s.env) s "NodeBlock"
+  let S2 := stage2NoEventWalkNext
+    (("%Pivot", .int 1 1) :: ("%Pivot6", .int 1 0) :: s.env) S1 "LeafBlock1"
+  have L1 : Stage2NoEventWalkLink calls K mem s K S1 :=
+    link_nodeBlock5_false h hpc h3 hy91
+  have L2 : Stage2NoEventWalkLink calls K mem S1 K S2 :=
+    link_nodeBlock_true L1.inv' (by simp only [S1, stage2NoEventWalkNext]) h3₁ hy123
+  have L3 : Stage2NoEventWalkLink calls K mem S2 K
+      (stage2NoEventWalkNext (("%SwitchLeaf2", .int 1 0) ::
+        ("%Pivot", .int 1 1) :: ("%Pivot6", .int 1 0) :: s.env) S2 "scalar") :=
+    link_leafBlock1_false L2.inv' (by simp only [S2, S1, stage2NoEventWalkNext])
+      h3₂ hy91eq
+  refine ⟨?_, ?_⟩
+  · simpa only [S1, S2, stage2NoEventWalkNext, stage2NoEventWalkAt] using
+      (Stage2NoEventWalkChain.tail L1 (Stage2NoEventWalkChain.tail L2
+        (Stage2NoEventWalkChain.tail L3 (Stage2NoEventWalkChain.nil L3.inv'))))
+  · simpa only [S1, S2, stage2NoEventWalkNext, stage2NoEventWalkAt] using L3.inv'
+
+/-- **The value path through `LeafBlock3`**: a byte at or above 123 signed that
+is not 123 reaches `scalar`. -/
+theorem stage2NoEventRow_valueLeaf3 {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State} {y : BitVec 8}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "NodeBlock5")
+    (h3 : lookupName s.env "%3" = some (.int 8 y))
+    (hy91 : evalICmp .slt y (BitVec.ofNat 8 91) = 0)
+    (hy123 : evalICmp .slt y (BitVec.ofNat 8 123) = 0)
+    (hy123eq : evalICmp .eq y (BitVec.ofNat 8 123) = 0) :
+    Stage2NoEventWalkChain calls mem K s K
+        (stage2NoEventWalkAt
+          (("%SwitchLeaf4", .int 1 0) ::
+            ("%Pivot", .int 1 0) :: ("%Pivot6", .int 1 0) :: s.env) s
+          "scalar" "LeafBlock3") ∧
+      Stage2NoEventWalkInv K mem
+        (stage2NoEventWalkAt
+          (("%SwitchLeaf4", .int 1 0) ::
+            ("%Pivot", .int 1 0) :: ("%Pivot6", .int 1 0) :: s.env) s
+          "scalar" "LeafBlock3") := by
+  have h3₁ : lookupName (("%Pivot6", .int 1 (0 : BitVec 1)) :: s.env) "%3"
+      = some (.int 8 y) :=
+    lookupName_cons_other _ _ _ (by decide) h3
+  have h3₂ : lookupName (("%Pivot", .int 1 (0 : BitVec 1)) ::
+      ("%Pivot6", .int 1 (0 : BitVec 1)) :: s.env) "%3" = some (.int 8 y) :=
+    lookupName_cons_other _ _ _ (by decide) h3₁
+  let S1 := stage2NoEventWalkNext (("%Pivot6", .int 1 0) :: s.env) s "NodeBlock"
+  let S2 := stage2NoEventWalkNext
+    (("%Pivot", .int 1 0) :: ("%Pivot6", .int 1 0) :: s.env) S1 "LeafBlock3"
+  have L1 : Stage2NoEventWalkLink calls K mem s K S1 :=
+    link_nodeBlock5_false h hpc h3 hy91
+  have L2 : Stage2NoEventWalkLink calls K mem S1 K S2 :=
+    link_nodeBlock_false L1.inv' (by simp only [S1, stage2NoEventWalkNext]) h3₁ hy123
+  have L3 : Stage2NoEventWalkLink calls K mem S2 K
+      (stage2NoEventWalkNext (("%SwitchLeaf4", .int 1 0) ::
+        ("%Pivot", .int 1 0) :: ("%Pivot6", .int 1 0) :: s.env) S2 "scalar") :=
+    link_leafBlock3_false L2.inv' (by simp only [S2, S1, stage2NoEventWalkNext])
+      h3₂ hy123eq
+  refine ⟨?_, ?_⟩
+  · simpa only [S1, S2, stage2NoEventWalkNext, stage2NoEventWalkAt] using
+      (Stage2NoEventWalkChain.tail L1 (Stage2NoEventWalkChain.tail L2
+        (Stage2NoEventWalkChain.tail L3 (Stage2NoEventWalkChain.nil L3.inv'))))
+  · simpa only [S1, S2, stage2NoEventWalkNext, stage2NoEventWalkAt] using L3.inv'
+
+/-- **The value path**: any byte other than `{`, `[` and `"` reaches `scalar`,
+through the leaf its pivot range selects. -/
+theorem stage2NoEventRow_value {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State} {y : BitVec 8}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "NodeBlock5")
+    (h3 : lookupName s.env "%3" = some (.int 8 y))
+    (hy34 : y ≠ BitVec.ofNat 8 34) (hy91 : y ≠ BitVec.ofNat 8 91)
+    (hy123 : y ≠ BitVec.ofNat 8 123) :
+    (Stage2NoEventWalkChain calls mem K s K
+        (stage2NoEventWalkAt
+          (("%SwitchLeaf", .int 1 0) ::
+            ("%Pivot6", .int 1 1) :: s.env) s
+          "scalar" "LeafBlock") ∧
+      Stage2NoEventWalkInv K mem
+        (stage2NoEventWalkAt
+          (("%SwitchLeaf", .int 1 0) ::
+            ("%Pivot6", .int 1 1) :: s.env) s
+          "scalar" "LeafBlock")) ∨
+      (Stage2NoEventWalkChain calls mem K s K
+        (stage2NoEventWalkAt
+          (("%SwitchLeaf2", .int 1 0) ::
+            ("%Pivot", .int 1 1) :: ("%Pivot6", .int 1 0) :: s.env) s
+          "scalar" "LeafBlock1") ∧
+      Stage2NoEventWalkInv K mem
+        (stage2NoEventWalkAt
+          (("%SwitchLeaf2", .int 1 0) ::
+            ("%Pivot", .int 1 1) :: ("%Pivot6", .int 1 0) :: s.env) s
+          "scalar" "LeafBlock1")) ∨
+      (Stage2NoEventWalkChain calls mem K s K
+        (stage2NoEventWalkAt
+          (("%SwitchLeaf4", .int 1 0) ::
+            ("%Pivot", .int 1 0) :: ("%Pivot6", .int 1 0) :: s.env) s
+          "scalar" "LeafBlock3") ∧
+      Stage2NoEventWalkInv K mem
+        (stage2NoEventWalkAt
+          (("%SwitchLeaf4", .int 1 0) ::
+            ("%Pivot", .int 1 0) :: ("%Pivot6", .int 1 0) :: s.env) s
+          "scalar" "LeafBlock3")) := by
+  rcases lt_or_ge y.toInt (BitVec.ofNat 8 91).toInt with hlt | hge
+  · exact Or.inl (stage2NoEventRow_valueLeaf h hpc h3
+      (stage2NoEvent_slt_one_of_toInt_lt hlt) (stage2NoEvent_eq_zero_of_ne hy34))
+  · rcases lt_or_ge y.toInt (BitVec.ofNat 8 123).toInt with hlt | hge'
+    · exact Or.inr (Or.inl (stage2NoEventRow_valueLeaf1 h hpc h3
+        (stage2NoEvent_slt_zero_of_toInt_ge hge) (stage2NoEvent_slt_one_of_toInt_lt hlt)
+        (stage2NoEvent_eq_zero_of_ne hy91)))
+    · exact Or.inr (Or.inr (stage2NoEventRow_valueLeaf3 h hpc h3
+        (stage2NoEvent_slt_zero_of_toInt_ge hge)
+        (stage2NoEvent_slt_zero_of_toInt_ge hge') (stage2NoEvent_eq_zero_of_ne hy123)))
 
 /-- The head's own run: its nine phis and its six reads. -/
 theorem loopHead_denote {calls : Calls} (env : Env) (s : State)
@@ -4239,5 +4514,14 @@ structure Stage2NoEventWalkContainerClass (calls : Calls) (K : Stage2NoEventWalk
 #print axioms stage2NoEventWalkOpenPath
 #print axioms stage2NoEventWalkClosePath
 #print axioms stage2NoEventWalkContainerClass
+#print axioms leafBlockBlock_find
+#print axioms link_nodeBlock5_true
+#print axioms link_leafBlock_true
+#print axioms link_leafBlock_false
+#print axioms stage2NoEventRow_string
+#print axioms stage2NoEventRow_valueLeaf
+#print axioms stage2NoEventRow_valueLeaf1
+#print axioms stage2NoEventRow_valueLeaf3
+#print axioms stage2NoEventRow_value
 
 end LeanLLVM.Refinement
