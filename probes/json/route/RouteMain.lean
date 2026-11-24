@@ -99,7 +99,7 @@ def blocks (n : Nat) : Nat := (n + 63) / 64
 def usage : String :=
   "usage: leanllvm-json-route --doc <file> [<native depth>]\n" ++
   "       leanllvm-json-route --admit <file> [reps] [<native depth>]\n" ++
-  "       leanllvm-json-route --stages <file> [reps]\n" ++
+  "       leanllvm-json-route --stages <file> [reps] [<native depth>]\n" ++
   "       leanllvm-json-route --consume <file> [reps]          (the no-event arm)\n" ++
   "       leanllvm-json-route --consume-noevent <file> [reps]  (the same arm)\n" ++
   "       leanllvm-json-route --consume-events <file> [reps]   (the certified event arm)\n" ++
@@ -925,8 +925,11 @@ def run (path : String) (maxDepth : Nat := kernelMaxDepth) : IO UInt32 := do
 
 /-! ### The stage report
 
-`--stages <file> <reps>` runs the route `reps` times on the same document and
-prints each stage's median in nanoseconds.  The document is read inside every
+`--stages <file> [reps] [<native depth>]` runs the route `reps` times on the
+same document and prints each stage's median in nanoseconds.  The optional
+native depth, like `--doc`'s, is the agreement control's bound and exists here so
+the fallback branch's own fields can be exercised on a document the bound
+refuses and the reference accepts; the certified bound is the default.  The document is read inside every
 repetition and the read is timed apart from the stages, so no stage's input is
 hoisted out of its timed region and shared between repetitions: each
 repetition's document is a fresh `ByteArray`.  A stage the path does not take is
@@ -958,7 +961,106 @@ def stageField (xs : Array Nat) : String :=
 /-- The unfilled slot's value: `UINT64_MAX`. -/
 def stageUnfilled : Nat := 18446744073709551615
 
-def runStaged (path : String) (reps : Nat) : IO UInt32 := do
+/-! ### The value chain's probe
+
+The entry's consumption is `eventsOfBytes` then `valueOfEvents`; `--stages` prices
+those two calls in `value_bytes_ns` and `value_decode_ns`, outside every stage's
+timed window and after the outcome stage, so the existing fields keep the
+windows they always had.  The interval is the decoder's call; the `toList`
+conversions it takes are scaffolding before the clock read, reported by neither
+field.
+
+The probe is not a second parser: the decoded event list's digest folds every
+record's tag, length, payload and decoded code points, and the value's digest
+folds the UTF-8 bytes of its rendering.  Both digests are printed, and a decoder
+that returns `none` is reported by `value_outcome` with the interval it did take
+and no checksum — never timed as a successful fast path.  The digests must be
+the same on every repetition, which is the anti-elision discipline
+`--consume-events` applies to its two readings. -/
+
+/-- One word folded into a running digest. -/
+def probeStep (h : UInt64) (w : Nat) : UInt64 := h * 131 + UInt64.ofNat w
+
+/-- The event list's digest: every tag, length, payload and code point. -/
+def eventDigest (evs : List ConsumerEvent) : UInt64 :=
+  evs.foldl (fun h e =>
+    let h := probeStep h e.tag
+    let h := probeStep h e.len
+    let h := probeStep h e.payload
+    e.cps.foldl probeStep h) 0
+
+/-- A value's digest: the UTF-8 bytes of its rendering. -/
+def valueDigest (v : JSON.Value) : UInt64 :=
+  (renderValue v).toUTF8.toList.foldl (fun h b => probeStep h b.toNat) 0
+
+/-- One fast-path consumption probe's intervals and observables.  `decodeRan`
+distinguishes a `valueOfEvents` that returned `none` (its interval exists) from
+an `eventsOfBytes` that returned `none` (no list to decode). -/
+structure ValueProbe where
+  bytes : Nat := 0
+  decode : Nat := 0
+  decodeRan : Bool := false
+  outcome : String := "-"
+  tokens : Nat := 0
+  eventsSum : UInt64 := 0
+  valueSum : UInt64 := 0
+
+/-- `eventsOfBytes` then `valueOfEvents`, each timed on its own. -/
+def valueProbe (doc arena events : ByteArray) : IO ValueProbe := do
+  let bs := doc.toList
+  let evs := events.toList
+  let ar := arena.toList
+  let b0 ← IO.monoNanosNow
+  let ces? := eventsOfBytes bs evs ar
+  let b1 ← IO.monoNanosNow
+  match ces? with
+  | none => return { bytes := b1 - b0, outcome := "events-none" }
+  | some ces =>
+      let d0 ← IO.monoNanosNow
+      let v? := valueOfEvents ces
+      let d1 ← IO.monoNanosNow
+      match v? with
+      | none =>
+          return { bytes := b1 - b0, decode := d1 - d0, decodeRan := true,
+                   outcome := "value-none" }
+      | some v =>
+          -- The digests are computed after `d1`, so neither interval contains
+          -- the checksum's own work; their presence in the row is what keeps
+          -- the decoders from being dropped.
+          return { bytes := b1 - b0, decode := d1 - d0, decodeRan := true,
+                   outcome := "value", tokens := ces.length,
+                   eventsSum := eventDigest ces, valueSum := valueDigest v }
+
+/-- The fallback's two intervals: `decodeTape`, then `canonValue`.  They are the
+fallback branch's own fields and are never added to the fast path's. -/
+structure FallbackProbe where
+  decode : Nat := 0
+  canon : Nat := 0
+  canonRan : Bool := false
+  outcome : String := "-"
+  sum : UInt64 := 0
+
+/-- `decodeTape` then `canonValue` on the reference's tape. -/
+def fallbackProbe (t : Tape) : IO FallbackProbe := do
+  let d0 ← IO.monoNanosNow
+  let v? := decodeTape t
+  let d1 ← IO.monoNanosNow
+  match v? with
+  | none => return { decode := d1 - d0, outcome := "decode-none" }
+  | some v =>
+      let c0 ← IO.monoNanosNow
+      let cv? := canonValue v
+      let c1 ← IO.monoNanosNow
+      match cv? with
+      | none =>
+          return { decode := d1 - d0, canon := c1 - c0, canonRan := true,
+                   outcome := "canon-none" }
+      | some cv =>
+          return { decode := d1 - d0, canon := c1 - c0, canonRan := true,
+                   outcome := "value", sum := valueDigest cv }
+
+def runStaged (path : String) (reps : Nat) (maxDepth : Nat := kernelMaxDepth) :
+    IO UInt32 := do
   let mut reads : Array Nat := #[]
   let mut adm : Array Nat := #[]
   let mut admnative : Array Nat := #[]
@@ -991,6 +1093,19 @@ def runStaged (path : String) (reps : Nat) : IO UInt32 := do
   let mut depth := 0
   let mut blocks := 0
   let mut clause := "-"
+  -- The value chain's intervals and observables, and the fallback's two.
+  let mut vbytes : Array Nat := #[]
+  let mut vdecode : Array Nat := #[]
+  let mut valueOutcome := "-"
+  let mut valueTokens := 0
+  let mut valueEventsSum : UInt64 := 0
+  let mut valueSum : UInt64 := 0
+  let mut valueSeen := false
+  let mut fbdecode : Array Nat := #[]
+  let mut fbcanon : Array Nat := #[]
+  let mut fallbackOutcome := "-"
+  let mut fallbackSum : UInt64 := 0
+  let mut fallbackSeen := false
   for _ in List.range reps do
     let t0 ← IO.monoNanosNow
     let doc ←
@@ -1006,7 +1121,7 @@ def runStaged (path : String) (reps : Nat) : IO UInt32 := do
     -- policy scan where a candidate exists.  Each phase's own interval is
     -- reported beside the sum.
     let a0 ← IO.monoNanosNow
-    let facts ← admitPhase1 doc
+    let facts ← admitPhase1 doc maxDepth
     let a1 ← IO.monoNanosNow
     let decision ← match facts with
       | .ok f => decide2From doc f
@@ -1041,6 +1156,26 @@ def runStaged (path : String) (reps : Nat) : IO UInt32 := do
         status := st
         total := total.push (o1 - a0)
         summed := summed.push ((a2 - a0) + (f1 - f0) + (o1 - o0))
+        -- The fallback's own two intervals, after every window above:
+        -- `fallback_ns` stays the reference parser's call, and neither interval
+        -- is ever added to the fast path's consumption.
+        match answer with
+        | .error _ => pure ()
+        | .ok t =>
+            let p ← fallbackProbe t
+            fbdecode := fbdecode.push p.decode
+            if p.canonRan then fbcanon := fbcanon.push p.canon
+            if fallbackOutcome != "-" && fallbackOutcome != p.outcome then
+              IO.eprintln "route: --stages: the fallback probe changed outcome \
+                across repetitions"
+              return 5
+            fallbackOutcome := p.outcome
+            if p.outcome == "value" then
+              if fallbackSeen && p.sum != fallbackSum then
+                IO.eprintln "route: --stages: the fallback probe is not repeatable"
+                return 5
+              fallbackSeen := true
+              fallbackSum := p.sum
     | .admitted f =>
         -- The escape-list guard is a fact of the admission's own native call,
         -- so its cost is inside `admission_native_ns` and not a stage of its
@@ -1097,6 +1232,33 @@ def runStaged (path : String) (reps : Nat) : IO UInt32 := do
         awall := awall.push (c1 - c0)
         total := total.push (o1 - a0)
         summed := summed.push ((a2 - a0) + (s1 - s0) + ci + na + co + ocost)
+        -- The value chain, after every window above.  An admitted document the
+        -- object refuses has no consumed stream, so it is reported by outcome
+        -- and carries no consumption interval; an accepted one is measured.
+        let accepted := be64 result 32 == 1
+        if parts.status == 0 && accepted then
+          let p ← valueProbe doc parts.arenaBytes parts.eventBytes
+          vbytes := vbytes.push p.bytes
+          if p.decodeRan then vdecode := vdecode.push p.decode
+          if valueOutcome != "-" && valueOutcome != p.outcome then
+            IO.eprintln "route: --stages: the value probe changed outcome across \
+              repetitions"
+            return 5
+          valueOutcome := p.outcome
+          if p.outcome == "value" then
+            if valueSeen &&
+                (p.tokens != valueTokens || p.eventsSum != valueEventsSum ||
+                 p.valueSum != valueSum) then
+              IO.eprintln "route: --stages: the value probe is not repeatable"
+              return 5
+            valueSeen := true
+            valueTokens := p.tokens
+            valueEventsSum := p.eventsSum
+            valueSum := p.valueSum
+        else if parts.status == 0 then
+          valueOutcome := "refused"
+        else
+          valueOutcome := "adapter-failed"
   IO.eprintln s!"row doc={(System.FilePath.fileName path).getD path} size={size} \
     path={kind} reps={reps} \
     read_ns={median reads} admission_ns={stageField adm} \
@@ -1114,7 +1276,16 @@ def runStaged (path : String) (reps : Nat) : IO UInt32 := do
     hex_arena_ns={stageField hexArena} hex_events_ns={stageField hexEvents} \
     hexlen={if hexArena.isEmpty then "-" else toString hexLen} \
     total_ns={median total} summed_stage_ns={median summed} \
-    verdict={verdict} ndst={ndst} nev={nev} rep_total_ns={total.toList}"
+    verdict={verdict} ndst={ndst} nev={nev} rep_total_ns={total.toList} \
+    value_bytes_ns={stageField vbytes} value_decode_ns={stageField vdecode} \
+    value_outcome={valueOutcome} \
+    value_tokens={if valueSeen then toString valueTokens else "-"} \
+    value_events_sum={if valueSeen then toString valueEventsSum else "-"} \
+    value_sum={if valueSeen then toString valueSum else "-"} \
+    fallback_decode_ns={stageField fbdecode} \
+    fallback_canon_ns={stageField fbcanon} \
+    fallback_outcome={fallbackOutcome} \
+    fallback_sum={if fallbackSeen then toString fallbackSum else "-"}"
   return status
 
 /-! ### The consumer's read
@@ -1642,6 +1813,7 @@ def main (args : List String) : IO UInt32 := do
   | ["--admit", path, reps, depth] => runAdmit path reps.toNat! depth.toNat!
   | ["--stages", path] => runStaged path 11
   | ["--stages", path, reps] => runStaged path reps.toNat!
+  | ["--stages", path, reps, depth] => runStaged path reps.toNat! depth.toNat!
   | ["--consume", path] =>
       match arm with
       | some true => runConsume path 11
