@@ -607,7 +607,7 @@ def gapLitCarried (s : State) (c : Nat) : Prop :=
 
 /-- The loop's invariant at `for.body.i`: the head's cells, the carried counter,
 the compare length and the compared prefix. -/
-def gapLitInv (bytes litBytes : List UInt8) (cur base litBase t n ln m : Nat)
+def gapLitInv (bytes litBytes : List UInt8) (b ip cur base litBase t n ln m : Nat)
     (mem : Mem) (r : Nat) (s : State) (c : Nat) : Prop :=
   s.pc = "for.body.i" ∧ s.mem = mem ∧
   lookupName s.env "%arrayidx9" = some (.ptr base) ∧
@@ -617,6 +617,9 @@ def gapLitInv (bytes litBytes : List UInt8) (cur base litBase t n ln m : Nat)
   lookupName s.env "%ln.0" = some (.int 64 (BitVec.ofNat 64 ln)) ∧
   lookupName s.env "%t.0.val" = some (.int 64 (BitVec.ofNat 64 t)) ∧
   lookupName s.env "%c" = some (.ptr cur) ∧
+  lookupName s.env "%0" = some (.ptr b) ∧
+  lookupName s.env "%cond" = some (.int 64 (BitVec.ofNat 64 ip)) ∧
+  lookupName s.env "%ee.0.lcssa" = some (.int 64 (BitVec.ofNat 64 (t + n))) ∧
   gapLitCarried s c ∧
   m ≤ n ∧ m ≤ ln ∧ c < m ∧ m ≤ 2 ^ 63 ∧
   (∀ j, j < c → bytes.getD (t + j) 0 = litBytes.getD j 0) ∧
@@ -632,7 +635,7 @@ def gapLitExitBlock (e : State) : Prop := e.pc = "if.then57" ∨ e.pc = "for.end
 /-- The exit word: the caller's memory, the record word the refusal sites read
 and its address bound, the cells the refusal sites read, and the exit's own index
 — a differing position on the mismatch, the compare length on the bound exit. -/
-def gapLitExitWord (bytes litBytes : List UInt8) (cur t n ln m : Nat) (mem : Mem)
+def gapLitExitWord (bytes litBytes : List UInt8) (b ip cur t n ln m : Nat) (mem : Mem)
     (e : State) : Prop :=
   e.mem = mem ∧
   lookupName e.env "%c" = some (.ptr cur) ∧
@@ -640,6 +643,9 @@ def gapLitExitWord (bytes litBytes : List UInt8) (cur t n ln m : Nat) (mem : Mem
   lookupName e.env "%cond.i" = some (.int 64 (BitVec.ofNat 64 m)) ∧
   lookupName e.env "%sub54" = some (.int 64 (BitVec.ofNat 64 n)) ∧
   lookupName e.env "%ln.0" = some (.int 64 (BitVec.ofNat 64 ln)) ∧
+  lookupName e.env "%0" = some (.ptr b) ∧
+  lookupName e.env "%cond" = some (.int 64 (BitVec.ofNat 64 ip)) ∧
+  lookupName e.env "%ee.0.lcssa" = some (.int 64 (BitVec.ofNat 64 (t + n))) ∧
   ((∃ c, e.pc = "if.then57" ∧ e.pre = some "for.body.i" ∧
       lookupName e.env "%i.029.i" = some (.int 64 (BitVec.ofNat 64 c)) ∧
       c < m ∧
@@ -653,7 +659,7 @@ def gapLitExitWord (bytes litBytes : List UInt8) (cur t n ln m : Nat) (mem : Mem
 /-- The head's own step, at the body bytes the invariant's prefix reaches. -/
 theorem gapLit_head_step {calls : Calls} {s : State}
     {bytes litBytes : List UInt8} {cur base litBase b t n ln m r c ip : Nat} {mem : Mem}
-    (hinv : gapLitInv bytes litBytes cur base litBase t n ln m mem r s c)
+    (hinv : gapLitInv bytes litBytes b ip cur base litBase t n ln m mem r s c)
     (hbase : base = b + t)
     (hbytes : gapBytesAt mem bytes b ip) (hlt : t + n ≤ ip)
     (hlit : gapBytesAt mem litBytes litBase ln) :
@@ -664,8 +670,8 @@ theorem gapLit_head_step {calls : Calls} {s : State}
                             (gapByte (litBytes.getD c 0)) = 1
                          then "for.inc.i" else "if.then57",
                  pre := some "for.body.i" }) := by
-  obtain ⟨hpc, hmem, harr, hlit0, hcond, hsub, hln0, ht0, hcur, hcar,
-    hmn, hml, hcm, hm63, hpfx, _⟩ := hinv
+  obtain ⟨hpc, hmem, harr, hlit0, hcond, hsub, hln0, ht0, hcur, _h0, _hcnd,
+    _hee, hcar, hmn, hml, hcm, hm63, hpfx, _⟩ := hinv
   have hse : ((BitVec.ofNat 64 c).signExtend 64).toNat = c :=
     gap_signExtend_ofNat c (by omega)
   have hx0 : readBytes mem (b + (t + c)) 1 =
@@ -727,16 +733,16 @@ def gapLitLoop (calls : Calls) (bytes litBytes : List UInt8)
   exitBlock := "for.end.i"
   N := m - 1
   cost := 2
-  Inv := gapLitInv bytes litBytes cur base litBase t n ln m mem
+  Inv := gapLitInv bytes litBytes b ip cur base litBase t n ln m mem
   atBound := gapLitAtBound bytes litBytes t m
   Exit := gapLitExitBlock
-  ExitWord := gapLitExitWord bytes litBytes cur t n ln m mem
+  ExitWord := gapLitExitWord bytes litBytes b ip cur t n ln m mem
   step_exit := by
     intro r s c hinv hat
     have hs := gapLit_head_step (calls := calls) (mem := mem) (b := b) (ip := ip)
       hinv hbase hbytes hlt hlit
-    obtain ⟨hpc, hmem, harr, hlit0, hcond, hsub, hln0, ht0, hcur, hcar,
-      hmn, hml, hcm, hm63, hpfx, _⟩ := hinv
+    obtain ⟨hpc, hmem, harr, hlit0, hcond, hsub, hln0, ht0, hcur, h0cell,
+      hcndcell, heecell, hcar, hmn, hml, hcm, hm63, hpfx, _⟩ := hinv
     by_cases hbe : (gapByte (bytes.getD (t + c) 0)) = (gapByte (litBytes.getD c 0))
     · -- equal bytes: the head advances, and the test at `for.inc.i` exits at the bound
       have hbit : evalICmp .eq (gapByte (bytes.getD (t + c) 0))
@@ -768,8 +774,11 @@ def gapLitLoop (calls : Calls) (bytes litBytes : List UInt8)
         exact h
       refine ⟨e, 2, by decide, Or.inr rfl, ?_, ?_⟩
       · unfold gapLitExitWord
-        refine ⟨?_, ?_, ?_, ?_, ?_, ?_, Or.inr ⟨rfl, rfl, ?_, ?_⟩, ?_⟩
+        refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, Or.inr ⟨rfl, rfl, ?_, ?_⟩, ?_⟩
         · simp [e, s1, stateAt, hmem]
+        · simp only [e, s1, stateAt, gapLitIncEnv, gapLitBodyEnv]; block_lk
+        · simp only [e, s1, stateAt, gapLitIncEnv, gapLitBodyEnv]; block_lk
+        · simp only [e, s1, stateAt, gapLitIncEnv, gapLitBodyEnv]; block_lk
         · simp only [e, s1, stateAt, gapLitIncEnv, gapLitBodyEnv]; block_lk
         · simp only [e, s1, stateAt, gapLitIncEnv, gapLitBodyEnv]; block_lk
         · simp only [e, s1, stateAt, gapLitIncEnv, gapLitBodyEnv]; block_lk
@@ -804,8 +813,12 @@ def gapLitLoop (calls : Calls) (bytes litBytes : List UInt8)
         rw [hs, hbit]; simp [e]
       refine ⟨e, 1, by decide, Or.inl rfl, ?_, ?_⟩
       · unfold gapLitExitWord
-        refine ⟨?_, ?_, ?_, ?_, ?_, ?_, Or.inl ⟨c, rfl, rfl, ?_, hcm, hpfx, hne⟩, ?_⟩
+        refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+          Or.inl ⟨c, rfl, rfl, ?_, hcm, hpfx, hne⟩, ?_⟩
         · simp [e, stateAt, hmem]
+        · simp only [e, stateAt, gapLitBodyEnv]; block_lk
+        · simp only [e, stateAt, gapLitBodyEnv]; block_lk
+        · simp only [e, stateAt, gapLitBodyEnv]; block_lk
         · simp only [e, stateAt, gapLitBodyEnv]; block_lk
         · simp only [e, stateAt, gapLitBodyEnv]; block_lk
         · simp only [e, stateAt, gapLitBodyEnv]; block_lk
@@ -819,8 +832,8 @@ def gapLitLoop (calls : Calls) (bytes litBytes : List UInt8)
     intro r s c hinv hat
     have hs := gapLit_head_step (calls := calls) (mem := mem) (b := b) (ip := ip)
       hinv hbase hbytes hlt hlit
-    obtain ⟨hpc, hmem, harr, hlit0, hcond, hsub, hln0, ht0, hcur, hcar,
-      hmn, hml, hcm, hm63, hpfx, hbud⟩ := hinv
+    obtain ⟨hpc, hmem, harr, hlit0, hcond, hsub, hln0, ht0, hcur, h0cell,
+      hcndcell, heecell, hcar, hmn, hml, hcm, hm63, hpfx, hbud⟩ := hinv
     unfold gapLitAtBound at hat
     rcases Bool.or_eq_false_iff.mp hat with ⟨hdiff, hbound⟩
     have hbe : gapByte (bytes.getD (t + c) 0) = gapByte (litBytes.getD c 0) := by
@@ -855,9 +868,12 @@ def gapLitLoop (calls : Calls) (bytes litBytes : List UInt8)
       exact h
     refine ⟨e, c + 1, 2, by decide, rfl, by omega, ?_, ?_⟩
     · -- the invariant one counter further
-      refine ⟨rfl, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, Or.inr ⟨rfl, ?_⟩, hmn, hml,
-        by omega, hm63, ?_, ?_⟩
+      refine ⟨rfl, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+        Or.inr ⟨rfl, ?_⟩, hmn, hml, by omega, hm63, ?_, ?_⟩
       · simp [e, s1, stateAt, hmem]
+      · simp only [e, s1, stateAt, gapLitIncEnv, gapLitBodyEnv]; block_lk
+      · simp only [e, s1, stateAt, gapLitIncEnv, gapLitBodyEnv]; block_lk
+      · simp only [e, s1, stateAt, gapLitIncEnv, gapLitBodyEnv]; block_lk
       · simp only [e, s1, stateAt, gapLitIncEnv, gapLitBodyEnv]; block_lk
       · simp only [e, s1, stateAt, gapLitIncEnv, gapLitBodyEnv]; block_lk
       · simp only [e, s1, stateAt, gapLitIncEnv, gapLitBodyEnv]; block_lk
@@ -881,7 +897,7 @@ def gapLitLoop (calls : Calls) (bytes litBytes : List UInt8)
         runFuel_jump_prefix hs1 (1 + k), runFuel_jump_prefix hs2' k]
   exit_at_zero := by
     intro s c hinv
-    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, hcm, _, _, hbud⟩ := hinv
+    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hcm, _, _, hbud⟩ := hinv
     have hc1 : c + 1 = m := by
       have : m - 1 ≤ c := by omega
       omega
@@ -891,12 +907,12 @@ def gapLitLoop (calls : Calls) (bytes litBytes : List UInt8)
     simpa only [decide_eq_true_iff] using hc1
   budget := by
     intro r s c hinv
-    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, hcm, _, _, hbud⟩ := hinv
+    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hcm, _, _, hbud⟩ := hinv
     exact ⟨by omega, hbud⟩
 
 /-- The loop's first visit: the carried counter is zero and the budget is the
 whole bound. -/
-theorem gapLitInv_seed {bytes litBytes : List UInt8} {cur base litBase t n ln m : Nat}
+theorem gapLitInv_seed {bytes litBytes : List UInt8} {b ip cur base litBase t n ln m : Nat}
     {mem : Mem} {s : State}
     (hm : 0 < m) (hpc : s.pc = "for.body.i") (hpre : s.pre = some "if.end48")
     (hmem : s.mem = mem)
@@ -907,10 +923,14 @@ theorem gapLitInv_seed {bytes litBytes : List UInt8} {cur base litBase t n ln m 
     (hln0 : lookupName s.env "%ln.0" = some (.int 64 (BitVec.ofNat 64 ln)))
     (ht0 : lookupName s.env "%t.0.val" = some (.int 64 (BitVec.ofNat 64 t)))
     (hcur : lookupName s.env "%c" = some (.ptr cur))
+    (h0 : lookupName s.env "%0" = some (.ptr b))
+    (hcnd : lookupName s.env "%cond" = some (.int 64 (BitVec.ofNat 64 ip)))
+    (hee0 : lookupName s.env "%ee.0.lcssa" =
+      some (.int 64 (BitVec.ofNat 64 (t + n))))
     (hmn : m ≤ n) (hml : m ≤ ln) (hm63 : m ≤ 2 ^ 63) :
-    gapLitInv bytes litBytes cur base litBase t n ln m mem (m - 1) s 0 :=
-  ⟨hpc, hmem, harr, hlit0, hcond, hsub, hln0, ht0, hcur, Or.inl ⟨hpre, rfl⟩,
-    hmn, hml, hm, hm63, by intro j hj; omega, by omega⟩
+    gapLitInv bytes litBytes b ip cur base litBase t n ln m mem (m - 1) s 0 :=
+  ⟨hpc, hmem, harr, hlit0, hcond, hsub, hln0, ht0, hcur, h0, hcnd, hee0,
+    Or.inl ⟨hpre, rfl⟩, hmn, hml, hm, hm63, by intro j hj; omega, by omega⟩
 
 /-- **The compare loop's run.**  From its head with the whole bound as budget,
 the run reaches one of the two exit blocks within `((m - 1) + 1) * 2` steps,
@@ -922,10 +942,10 @@ theorem gapLitLoop_run {calls : Calls} {bytes litBytes : List UInt8}
     (hbase : base = b + t)
     (hbytes : gapBytesAt mem bytes b ip) (hlt : t + n ≤ ip)
     (hlit : gapBytesAt mem litBytes litBase ln)
-    (s : State) (hinv : gapLitInv bytes litBytes cur base litBase t n ln m mem (m - 1) s 0)
+    (s : State) (hinv : gapLitInv bytes litBytes b ip cur base litBase t n ln m mem (m - 1) s 0)
     (k : Nat) :
     ∃ (e : State) (j : Nat), j ≤ ((m - 1) + 1) * 2 ∧ gapLitExitBlock e ∧
-      gapLitExitWord bytes litBytes cur t n ln m mem e ∧
+      gapLitExitWord bytes litBytes b ip cur t n ln m mem e ∧
       runFuel calls (j + k) odGapRecoverBody s = runFuel calls k odGapRecoverBody e :=
   (gapLitLoop calls bytes litBytes cur base litBase b t n ln m ip mem
     r hrec hr64 hbase hbytes hlt hlit).run s 0 hinv k
@@ -1435,10 +1455,10 @@ theorem gapLit_then57_cells (env : Env) (cur r : Nat) (ew tw : BitVec 64) :
 takes `%i.029.i` as its index, writes the tag-2 record at
 `%i.029.i + %t.0.val`, and returns to `cleanup82` in one step. -/
 theorem gapLit_exitThen57 {calls : Calls} {bytes litBytes : List UInt8}
-    {cur t n ln m r c : Nat} {mem : Mem} {e : State}
+    {b ip cur t n ln m r c : Nat} {mem : Mem} {e : State}
     (hpc : e.pc = "if.then57") (hpre : e.pre = some "for.body.i")
     (hidx : lookupName e.env "%i.029.i" = some (.int 64 (BitVec.ofNat 64 c)))
-    (hw : gapLitExitWord bytes litBytes cur t n ln m mem e)
+    (hw : gapLitExitWord bytes litBytes b ip cur t n ln m mem e)
     (hrec : readBytes mem (cur + 1112) 8 = some (natToBytes r 8)) (hr64 : r < 2 ^ 64) :
     ∃ (e' : State) (j : Nat), j ≤ 1 ∧ e'.pc = "cleanup82" ∧ e'.pre = some "if.then57" ∧
       e'.mem = gapLitThen57Mem e r (BitVec.ofNat 64 c) (BitVec.ofNat 64 t) ∧
@@ -1447,7 +1467,7 @@ theorem gapLit_exitThen57 {calls : Calls} {bytes litBytes : List UInt8}
       lookupName e'.env "%msg2.i132" = some (.ptr (r + 16)) ∧
       lookupName e'.env "%off1.i131" = some (.ptr (r + 8)) ∧
       ∀ k, runFuel calls (j + k) odGapRecoverBody e = runFuel calls k odGapRecoverBody e' := by
-  obtain ⟨hmem, hcur, ht, _hcond, _hsub, _hln, _hdisj, _⟩ := hw
+  obtain ⟨hmem, hcur, ht, _hcond, _hsub, _hln, _h0, _hcnd, _hee, _hdisj, _⟩ := hw
   have hinc : phiIncoming "for.body.i"
       [("for.end.i", Operand.reg "%cond.i"), ("for.body.i", Operand.reg "%i.029.i")] =
       some (Operand.reg "%i.029.i") := by decide
@@ -1487,14 +1507,14 @@ theorem gapLit_exitThen57 {calls : Calls} {bytes litBytes : List UInt8}
 /-- **The bound exit, matched.**  `for.end.i` with the token's length equal to the
 literal's leaves for `if.end67` in one step, writing nothing. -/
 theorem gapLit_exitForEnd {calls : Calls} {bytes litBytes : List UInt8}
-    {cur t n ln m : Nat} {mem : Mem} {e : State}
+    {b ip cur t n ln m : Nat} {mem : Mem} {e : State}
     (hpc : e.pc = "for.end.i")
-    (hw : gapLitExitWord bytes litBytes cur t n ln m mem e)
+    (hw : gapLitExitWord bytes litBytes b ip cur t n ln m mem e)
     (hbit : evalICmp .eq (BitVec.ofNat 64 n) (BitVec.ofNat 64 ln) = 1#1) :
     ∃ (e' : State) (j : Nat), j ≤ 1 ∧ e'.pc = "if.end67" ∧ e'.pre = some "for.end.i" ∧
       e'.mem = mem ∧
       ∀ k, runFuel calls (j + k) odGapRecoverBody e = runFuel calls k odGapRecoverBody e' := by
-  obtain ⟨hmem, _hcur, _ht, _hcond, hsub, hln, _hdisj, _⟩ := hw
+  obtain ⟨hmem, _hcur, _ht, _hcond, hsub, hln, _h0, _hcnd, _hee, _hdisj, _⟩ := hw
   have hstep : step calls odGapRecoverBody e =
       .jump (stateAt (gapLitEndEnv e.env (BitVec.ofNat 64 n) (BitVec.ofNat 64 ln))
         { e with pc := "if.end67", pre := some "for.end.i" }) := by
@@ -1520,9 +1540,9 @@ the literal's falls to `if.then57`, whose `phi` selects `%cond.i` — the compar
 length `m` — and writes the tag-2 record at `m + %t.0.val` before returning to
 `cleanup82`. -/
 theorem gapLit_exitForEndRefuse {calls : Calls} {bytes litBytes : List UInt8}
-    {cur t n ln m r : Nat} {mem : Mem} {e : State}
+    {b ip cur t n ln m r : Nat} {mem : Mem} {e : State}
     (hpc : e.pc = "for.end.i")
-    (hw : gapLitExitWord bytes litBytes cur t n ln m mem e)
+    (hw : gapLitExitWord bytes litBytes b ip cur t n ln m mem e)
     (hrec : readBytes mem (cur + 1112) 8 = some (natToBytes r 8)) (hr64 : r < 2 ^ 64)
     (hbit : evalICmp .eq (BitVec.ofNat 64 n) (BitVec.ofNat 64 ln) = 0#1) :
     ∃ (e' : State) (j : Nat), j ≤ 2 ∧ e'.pc = "cleanup82" ∧ e'.pre = some "if.then57" ∧
@@ -1532,7 +1552,7 @@ theorem gapLit_exitForEndRefuse {calls : Calls} {bytes litBytes : List UInt8}
       lookupName e'.env "%msg2.i132" = some (.ptr (r + 16)) ∧
       lookupName e'.env "%off1.i131" = some (.ptr (r + 8)) ∧
       ∀ k, runFuel calls (j + k) odGapRecoverBody e = runFuel calls k odGapRecoverBody e' := by
-  obtain ⟨hmem, hcur, ht, hcond, hsub, hln, _hdisj, _⟩ := hw
+  obtain ⟨hmem, hcur, ht, hcond, hsub, hln, _h0, _hcnd, _hee, _hdisj, _⟩ := hw
   have hstep1 : step calls odGapRecoverBody e =
       .jump (stateAt (gapLitEndEnv e.env (BitVec.ofNat 64 n) (BitVec.ofNat 64 ln))
         { e with pc := "if.then57", pre := some "for.end.i" }) := by
@@ -1607,9 +1627,9 @@ theorem gapLit_exitForEndRefuse {calls : Calls} {bytes litBytes : List UInt8}
 run reaches `if.end67` with the memory unchanged, or `cleanup82` with the tag-2
 record and its own index, within three control steps. -/
 theorem gapLit_exitRun {calls : Calls} {bytes litBytes : List UInt8}
-    {cur t n ln m r : Nat} {mem : Mem} {e : State}
+    {b ip cur t n ln m r : Nat} {mem : Mem} {e : State}
     (hblock : gapLitExitBlock e)
-    (hw : gapLitExitWord bytes litBytes cur t n ln m mem e)
+    (hw : gapLitExitWord bytes litBytes b ip cur t n ln m mem e)
     (hrec : readBytes mem (cur + 1112) 8 = some (natToBytes r 8)) (hr64 : r < 2 ^ 64) :
     ∃ (e' : State) (j : Nat), j ≤ 3 ∧
       ((e'.pc = "if.end67" ∧ e'.pre = some "for.end.i" ∧ e'.mem = mem) ∨
@@ -1620,7 +1640,7 @@ theorem gapLit_exitRun {calls : Calls} {bytes litBytes : List UInt8}
           e'.mem = gapLitThen57Mem e r ew (BitVec.ofNat 64 t))) ∧
       ∀ k, runFuel calls (j + k) odGapRecoverBody e = runFuel calls k odGapRecoverBody e' := by
   have hw' := hw
-  obtain ⟨_hmem, _hcur, _ht, _hcond, _hsub, _hln, hdisj, _⟩ := hw'
+  obtain ⟨_hmem, _hcur, _ht, _hcond, _hsub, _hln, _h0, _hcnd, _hee, hdisj, _⟩ := hw'
   rcases hblock with hpc | hpc
   · rcases hdisj with ⟨c, _hpc1, hpre1, hidx, _hlt, _hpfx, _hne⟩ | ⟨hpc2, _hpre2, _hinc2, _hall⟩
     · obtain ⟨e', j, hj, hpc', hpre', hmem', hei, hadd, hmsg, hoff, hrun⟩ :=
