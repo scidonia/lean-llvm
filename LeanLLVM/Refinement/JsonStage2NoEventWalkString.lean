@@ -443,6 +443,211 @@ theorem ifThen238_step_ub_stage2Calls {gap : Calls} {s : State}
   rw [ite_eq_right (by decide)]
   exact JsonStage2IR.stage2Calls_trap
 
+/-! ### `if.end239`: the string body's call
+
+The block clears the staging word, forms the callee's cursor, and calls
+`s2_string_body` with the eight arguments the emitted call passes; it then hands
+to `NodeBlock29`.
+
+**The `%gep` address.**  `%invariant.gep` is the entry block's
+`getelementptr i8, ptr %b, i64 1` (`%b - 1` is the sibling `%invariant.gep1068`,
+which the value path reads), so the row takes its value as the environment
+binding `lookupName env "%invariant.gep" = some (.ptr g)` and computes
+`%gep = g + idxprom.lcssa1109`; no address is assumed.  Nothing in
+`Stage2NoEventWalkInv` mentions the register, so no invariant clause supplies it
+— the entry block's own `getelementptr` does, in the modelled chain.  No region
+fact is needed by this row: it claims nothing about the bytes the callee reads,
+only the call the selection returns.
+
+**The invariant is not claimed.**  The block stores at `%outn205` and then runs
+a call whose memory is the selection's `CallOutcome`; both lie outside the
+invariant's run regions, so `walkFrame` does not survive and there is no link.
+The row states the control step and its memory effect, as the cleanup arms do.
+-/
+
+/-- An eight-argument call that binds its result: the string body's shape. -/
+theorem stage2NoEventWalk_step_call8 (calls : Calls) (env : Env) (s : State)
+    (d callee : String) (o1 o2 o3 o4 o5 o6 o7 o8 : Operand)
+    {v1 v2 v3 v4 v5 v6 v7 v8 : Value} {r : CallOutcome}
+    (h1 : evalOperand (stateAt env s) o1 = some v1)
+    (h2 : evalOperand (stateAt env s) o2 = some v2)
+    (h3 : evalOperand (stateAt env s) o3 = some v3)
+    (h4 : evalOperand (stateAt env s) o4 = some v4)
+    (h5 : evalOperand (stateAt env s) o5 = some v5)
+    (h6 : evalOperand (stateAt env s) o6 = some v6)
+    (h7 : evalOperand (stateAt env s) o7 = some v7)
+    (h8 : evalOperand (stateAt env s) o8 = some v8)
+    (hc : calls callee [v1, v2, v3, v4, v5, v6, v7, v8] s.mem s.next = some r) :
+    evalInstr calls (stateAt env s)
+        (.call d (Ty.int 32) callee
+          [(Ty.ptr, o1), (Ty.ptr, o2), (Ty.int 64, o3), (Ty.ptr, o4),
+           (Ty.ptr, o5), (Ty.ptr, o6), (Ty.ptr, o7), (Ty.int 64, o8)]) =
+      some (stateAt ((d, r.ret) :: env) { s with mem := r.mem, next := r.next }) := by
+  have hargs : evalOperands (stateAt env s)
+      [(Ty.ptr, o1), (Ty.ptr, o2), (Ty.int 64, o3), (Ty.ptr, o4),
+       (Ty.ptr, o5), (Ty.ptr, o6), (Ty.ptr, o7), (Ty.int 64, o8)] =
+      some [v1, v2, v3, v4, v5, v6, v7, v8] := by
+    simp only [evalOperands, h1, h2, h3, h4, h5, h6, h7, h8]
+  have hc' : calls callee [v1, v2, v3, v4, v5, v6, v7, v8]
+      (stateAt env s).mem (stateAt env s).next = some r := hc
+  simp only [evalInstr, hargs, hc']
+  rfl
+
+/-- The eight-argument call's chain step. -/
+theorem denoteCode_call8 (calls : Calls) (env : Env) (s : State) (d callee : String)
+    (o1 o2 o3 o4 o5 o6 o7 o8 : Operand)
+    {v1 v2 v3 v4 v5 v6 v7 v8 : Value} {r : CallOutcome}
+    (h1 : evalOperand (stateAt env s) o1 = some v1)
+    (h2 : evalOperand (stateAt env s) o2 = some v2)
+    (h3 : evalOperand (stateAt env s) o3 = some v3)
+    (h4 : evalOperand (stateAt env s) o4 = some v4)
+    (h5 : evalOperand (stateAt env s) o5 = some v5)
+    (h6 : evalOperand (stateAt env s) o6 = some v6)
+    (h7 : evalOperand (stateAt env s) o7 = some v7)
+    (h8 : evalOperand (stateAt env s) o8 = some v8)
+    (hc : calls callee [v1, v2, v3, v4, v5, v6, v7, v8] s.mem s.next = some r)
+    (is : List Instr) :
+    denoteCode calls
+        (.call d (Ty.int 32) callee
+          [(Ty.ptr, o1), (Ty.ptr, o2), (Ty.int 64, o3), (Ty.ptr, o4),
+           (Ty.ptr, o5), (Ty.ptr, o6), (Ty.ptr, o7), (Ty.int 64, o8)] :: is)
+        (stateAt env s) =
+      denoteCode calls is (stateAt ((d, r.ret) :: env) { s with mem := r.mem, next := r.next }) := by
+  rw [denoteCode_cons_of _ _ _ _ _
+    (stage2NoEventWalk_step_call8 calls env s d callee o1 o2 o3 o4 o5 o6 o7 o8
+      h1 h2 h3 h4 h5 h6 h7 h8 hc)]
+
+/-- `if.end239`: the staging word, the callee's cursor, and the call. -/
+def ifEnd239Instrs : List Instr :=
+  [ Instr.store (Ty.int 64) (Operand.imm (.int 64 (BitVec.ofNat 64 0)))
+      (Operand.reg "%outn205"),
+    Instr.gep "%gep" (Ty.int 8) (Operand.reg "%invariant.gep")
+      (Operand.reg "%idxprom.lcssa1109"),
+    Instr.call "%call243" (Ty.int 32) "s2_string_body"
+      [(Ty.ptr, (Operand.reg "%c")), (Ty.ptr, (Operand.reg "%gep")),
+       ((Ty.int 64), (Operand.reg "%sub234")), (Ty.ptr, (Operand.reg "%scratch")),
+       (Ty.ptr, (Operand.reg "%outn205")), (Ty.ptr, (Operand.reg "%xp")),
+       (Ty.ptr, (Operand.reg "%xj")), ((Ty.int 64), (Operand.reg "%nxp"))] ]
+
+/-- `if.end239`, pinned. -/
+def ifEnd239Block : Block :=
+  { name := "if.end239", instrs := ifEnd239Instrs, term := Term.br "NodeBlock29" }
+
+theorem ifEnd239Block_find :
+    stage2NoEventBody.findBlock "if.end239" = some ifEnd239Block := by
+  decide
+
+/-- The env `if.end239` leaves: the callee's cursor and its result. -/
+def ifEnd239Cells (env : Env) (g : Nat) (idx : BitVec 64) (r : CallOutcome) : Env :=
+  ("%call243", r.ret) :: ("%gep", .ptr (g + (idx.signExtend 64).toNat)) :: env
+
+/-- **`if.end239`'s run at the selection's answer for `s2_string_body`**: the zero
+store at `%outn205`, the callee's cursor, the eight-argument call, and its
+`CallOutcome`. -/
+theorem ifEnd239_denote (calls : Calls) (env : Env) (s : State)
+    {g outn c scratch xp xj : Nat} {idx sub nxp : BitVec 64} {r : CallOutcome}
+    (houtn : lookupName env "%outn205" = some (.ptr outn))
+    (hg : lookupName env "%invariant.gep" = some (.ptr g))
+    (hidx : lookupName env "%idxprom.lcssa1109" = some (.int 64 idx))
+    (hpos : (idx.signExtend 64).toNat < 2 ^ 63)
+    (hcP : lookupName env "%c" = some (.ptr c))
+    (hsub : lookupName env "%sub234" = some (.int 64 sub))
+    (hsc : lookupName env "%scratch" = some (.ptr scratch))
+    (hxp : lookupName env "%xp" = some (.ptr xp))
+    (hxj : lookupName env "%xj" = some (.ptr xj))
+    (hnxp : lookupName env "%nxp" = some (.int 64 nxp))
+    (hc : calls "s2_string_body"
+      [.ptr c, .ptr (g + (idx.signExtend 64).toNat), .int 64 sub, .ptr scratch,
+       .ptr outn, .ptr xp, .ptr xj, .int 64 nxp]
+      (writeBytes s.mem outn (natToBytes 0 8)) s.next = some r) :
+    denoteCode calls ifEnd239Instrs (stateAt env s) =
+      some (stateAt (ifEnd239Cells env g idx r)
+        { s with mem := r.mem, next := r.next }) := by
+  unfold ifEnd239Instrs
+  rw [stage2NoEventWalk_denote_store64_imm (calls := calls) (env := env) (s := s)
+    (x := BitVec.ofNat 64 0) (p := "%outn205") houtn]
+  simp only [BitVec.toNat_ofNat, Nat.zero_mod]
+  rw [denoteCode_gep8_reg (calls := calls) (env := env) (s := _)
+    (d := "%gep") (base := "%invariant.gep") (off := "%idxprom.lcssa1109")
+    (a := g) (idx := idx) hg hidx hpos]
+  rw [denoteCode_call8 (calls := calls)
+    (env := ("%gep", .ptr (g + (idx.signExtend 64).toNat)) :: env) (s := _)
+    (d := "%call243") (callee := "s2_string_body")
+    (o1 := .reg "%c") (o2 := .reg "%gep") (o3 := .reg "%sub234")
+    (o4 := .reg "%scratch") (o5 := .reg "%outn205") (o6 := .reg "%xp")
+    (o7 := .reg "%xj") (o8 := .reg "%nxp")
+    (v1 := .ptr c) (v2 := .ptr (g + (idx.signExtend 64).toNat)) (v3 := .int 64 sub)
+    (v4 := .ptr scratch) (v5 := .ptr outn) (v6 := .ptr xp) (v7 := .ptr xj)
+    (v8 := .int 64 nxp) (r := r) (is := [])
+    (by simp only [stateAt, evalOperand]; rw [lookupName_cons_ne _ _ (by decide)]; simp only [hcP])
+    (by simp only [stateAt, evalOperand, lookupName_cons_self])
+    (by simp only [stateAt, evalOperand]; rw [lookupName_cons_ne _ _ (by decide)]; simp only [hsub])
+    (by simp only [stateAt, evalOperand]; rw [lookupName_cons_ne _ _ (by decide)]; simp only [hsc])
+    (by simp only [stateAt, evalOperand]; rw [lookupName_cons_ne _ _ (by decide)]; simp only [houtn])
+    (by simp only [stateAt, evalOperand]; rw [lookupName_cons_ne _ _ (by decide)]; simp only [hxp])
+    (by simp only [stateAt, evalOperand]; rw [lookupName_cons_ne _ _ (by decide)]; simp only [hxj])
+    (by simp only [stateAt, evalOperand]; rw [lookupName_cons_ne _ _ (by decide)]; simp only [hnxp])
+    hc]
+  simp only [denoteCode_nil, ifEnd239Cells]
+
+/-- **`if.end239` at the resolved selection**: the same run with the call
+hypothesis stated at `stage2Calls stage2SubCalls`, which is what
+`stage2NoEventCalls` sends `s2_string_body` through
+(`stage2Calls_s2_string_body` names the model it resolves to). -/
+theorem ifEnd239_denote_stage2NoEventCalls {gap : Calls} (env : Env) (s : State)
+    {g outn c scratch xp xj : Nat} {idx sub nxp : BitVec 64} {r : CallOutcome}
+    (houtn : lookupName env "%outn205" = some (.ptr outn))
+    (hg : lookupName env "%invariant.gep" = some (.ptr g))
+    (hidx : lookupName env "%idxprom.lcssa1109" = some (.int 64 idx))
+    (hpos : (idx.signExtend 64).toNat < 2 ^ 63)
+    (hcP : lookupName env "%c" = some (.ptr c))
+    (hsub : lookupName env "%sub234" = some (.int 64 sub))
+    (hsc : lookupName env "%scratch" = some (.ptr scratch))
+    (hxp : lookupName env "%xp" = some (.ptr xp))
+    (hxj : lookupName env "%xj" = some (.ptr xj))
+    (hnxp : lookupName env "%nxp" = some (.int 64 nxp))
+    (hc : JsonStage2IR.stage2Calls stage2SubCalls "s2_string_body"
+      [.ptr c, .ptr (g + (idx.signExtend 64).toNat), .int 64 sub, .ptr scratch,
+       .ptr outn, .ptr xp, .ptr xj, .int 64 nxp]
+      (writeBytes s.mem outn (natToBytes 0 8)) s.next = some r) :
+    denoteCode (stage2NoEventCalls gap) ifEnd239Instrs (stateAt env s) =
+      some (stateAt (ifEnd239Cells env g idx r)
+        { s with mem := r.mem, next := r.next }) := by
+  refine ifEnd239_denote (calls := stage2NoEventCalls gap) env s houtn hg hidx hpos
+    hcP hsub hsc hxp hxj hnxp ?_
+  simp only [stage2NoEventCalls]
+  rw [ite_eq_right (by decide)]
+  exact hc
+
+/-- **`if.end239`'s control step**: the zero store, the callee's cursor, the call,
+and the handoff to `NodeBlock29`, with the call's memory and cursor. -/
+theorem ifEnd239_step {calls : Calls} {s : State}
+    {g outn c scratch xp xj : Nat} {idx sub nxp : BitVec 64} {r : CallOutcome}
+    (hpc : s.pc = "if.end239")
+    (houtn : lookupName s.env "%outn205" = some (.ptr outn))
+    (hg : lookupName s.env "%invariant.gep" = some (.ptr g))
+    (hidx : lookupName s.env "%idxprom.lcssa1109" = some (.int 64 idx))
+    (hpos : (idx.signExtend 64).toNat < 2 ^ 63)
+    (hcP : lookupName s.env "%c" = some (.ptr c))
+    (hsub : lookupName s.env "%sub234" = some (.int 64 sub))
+    (hsc : lookupName s.env "%scratch" = some (.ptr scratch))
+    (hxp : lookupName s.env "%xp" = some (.ptr xp))
+    (hxj : lookupName s.env "%xj" = some (.ptr xj))
+    (hnxp : lookupName s.env "%nxp" = some (.int 64 nxp))
+    (hc : calls "s2_string_body"
+      [.ptr c, .ptr (g + (idx.signExtend 64).toNat), .int 64 sub, .ptr scratch,
+       .ptr outn, .ptr xp, .ptr xj, .int 64 nxp]
+      (writeBytes s.mem outn (natToBytes 0 8)) s.next = some r) :
+    step calls stage2NoEventBody s = .jump
+      { env := ifEnd239Cells s.env g idx r, mem := r.mem, next := r.next,
+        pc := "NodeBlock29", pre := some s.pc } := by
+  have hcode := ifEnd239_denote (calls := calls) (env := s.env) (s := s)
+    houtn hg hidx hpos hcP hsub hsc hxp hxj hnxp hc
+  have hstep := stage2NoEventWalk_step_br (s := s) (f := stage2NoEventBody)
+    (by rw [hpc]; exact ifEnd239Block_find)
+    (by simpa only [stateAt, ifEnd239Block] using hcode) rfl
+  simpa only [stateAt] using hstep
+
 /-! ### Axiom footprints -/
 
 #print axioms ifThen209Block_find
@@ -463,5 +668,11 @@ theorem ifThen238_step_ub_stage2Calls {gap : Calls} {s : State}
 #print axioms ifThen238_denote_none
 #print axioms ifThen238_step_ub
 #print axioms ifThen238_step_ub_stage2Calls
+#print axioms stage2NoEventWalk_step_call8
+#print axioms denoteCode_call8
+#print axioms ifEnd239Block_find
+#print axioms ifEnd239_denote
+#print axioms ifEnd239_denote_stage2NoEventCalls
+#print axioms ifEnd239_step
 
 end LeanLLVM.Refinement
