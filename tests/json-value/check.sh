@@ -44,7 +44,7 @@ cd "$repo"
 
 # The library modules the oracle imports.  A no-op once built, and the reason a
 # fresh checkout can elaborate the program without a separate `lake build`.
-lake build LeanLLVM.JSON.Render LeanLLVM.Refinement.JsonEventValue \
+lake build LeanLLVM.JSON.Render LeanLLVM.Refinement.JsonCanon \
   LeanLLVM.Refinement.JsonPipelineSpec
 
 work=$(mktemp -d)

@@ -5,8 +5,9 @@ document in a corpus directory.
 For one document the oracle runs `parseBytes Limits.default doc`, decodes the
 tape with `decodeTape`, canonicalises the value's number lexemes with
 `canonValue`, and prints the lowercase hex of the UTF-8 bytes of
-`renderValue`'s rendering (all three from the library: `JSON/Parse.lean`,
-`JSON/Tape.lean`, `Refinement/JsonEventValue.lean` and `JSON/Render.lean`).  It
+`renderValue`'s rendering (from the library: `JSON/Parse.lean` and
+`JSON/Tape.lean` for the parse and decode, `Refinement/JsonCanon.lean` for
+`canonValue`, and `JSON/Render.lean` for `renderValue`).  It
 never renders a value itself, so a route comparing its own answer against these
 rows compares one rendering, not two.  A document the reference refuses prints
 the refusal instead, in the route's value-line vocabulary: the class from
@@ -34,7 +35,7 @@ the lexeme in place would compare a source spelling against a canonical payload
 and report a value mismatch for a rendering bug.
 -/
 import LeanLLVM.JSON.Render
-import LeanLLVM.Refinement.JsonEventValue
+import LeanLLVM.Refinement.JsonCanon
 import LeanLLVM.Refinement.JsonPipelineSpec
 
 namespace JsonValueOracle
@@ -95,6 +96,6 @@ end JsonValueOracle
 def main (args : List String) : IO UInt32 :=
   match args with
   | [dir] => JsonValueOracle.run dir
-  | _ =>
+  | _ => do
       IO.eprintln "usage: lake env lean --run tests/json-value.lean <corpus-dir>"
       return 2
