@@ -14,13 +14,16 @@ shown to leave at it, at the depth the certified walk reaches:
   is a `Satisfies` at the pinned body and the record the flattening adapts
   (`Γ_stage2_noevent_at`), at the certified walk's depth: post, stores theorem,
   `Satisfies` instance, and the loop named rather than implied.  Nothing below
-  proves it, and nothing below may be read as proving it.  It is also
-  **conditional**: its one parameter is the selection of `od_gap_recover`, the one
-  symbol the pinned body calls which this tree does not model, and the three
-  modelled sub-units are fixed to the certified models inside
-  `stage2NoEventCalls`.  So the hole is the loop *plus* one unmodelled callee, and
-  the obligation is narrower than `Stage2WalkObligation`, which fixes its whole
-  selection.
+  proves it, and nothing below may be read as proving it.  It is stated
+  **relative to the gap helper's model**: its one parameter is the selection of
+  `od_gap_recover`, the one symbol the pinned body calls out of line which this
+  tree models but does not prove against its body, and the three certified
+  sub-units are fixed inside `stage2NoEventCalls`.  The model is
+  `stage2GapRecover` (`JsonStage2HelperOdGap`), which the selection and the
+  obligation default to; its body faithfulness is `docs/contract.md` §7.6's
+  trust row, not a proof here.  So the hole is the loop, at a named model rather
+  than at a free symbol, and the obligation is narrower than
+  `Stage2WalkObligation`, which fixes its whole selection.
 * **the encoding, bound to the fold.**  `stage2NoEvent_encoding` states the three
   record widths (13, 9, 1), the seven tag bytes, the plain-string payload bit, and
   the per-record contribution, all against `EventRecord.encodedBytes` and
@@ -42,6 +45,7 @@ shown to leave at it, at the depth the certified walk reaches:
 -/
 import LeanLLVM.Refinement.JsonStage2NoEventContract
 import LeanLLVM.Refinement.JsonStage2NoEventIR
+import LeanLLVM.Refinement.JsonStage2HelperOdGap
 import LeanLLVM.Refinement.JsonStage2Body
 import LeanLLVM.Refinement.JsonStage2IR
 
@@ -343,8 +347,8 @@ theorem pre (h : Stage2NoEventRun args mem m0) :
 theorem stagedPre (h : Stage2NoEventRun args mem m0) :
     stage2NoEventStagedPre args mem h.next0 h.stk h.e h.c h.d :=
   ⟨h.stagedBytes, h.b, h.n, h.ep, h.nep, h.xp, h.nxp, h.scratch, h.scratchcap,
-    h.tokensOut, h.valuesOut, h.sumOut, h.err, h.args_eq, h.stagedSep,
-    h.watermark, h.stagedEnd⟩
+    h.tokensOut, h.valuesOut, h.sumOut, h.err, h.args_eq, h.nLt, h.scratchcapLt,
+    h.nepLt, h.nxpLt, h.stagedSep, h.watermark, h.stagedEnd⟩
 
 end Stage2NoEventRun
 
@@ -611,16 +615,17 @@ markers, `memset`, and the trap, which answers `none` because its arms are the
 reserve checks' faults and the pre puts them out of reach).  Three are
 sub-units, and the census's disposition is exact: `s2_string_body` and
 `num_fast_el1` are the certified models, and `od_gap_recover` is the one symbol
-this tree does not model — its C text is `kernel/json/stage2.c:898`, it is a plain
-`static void` the certified fixture (`probes/install/ir/stage2.candidate.ll`)
-happened to inline and the new body did not, and
-**nothing in the tree supplies a model or a contract for it**.  So its selection
-is the obligation's parameter, and it is the *only* free symbol: the three
+this tree models without a body proof — its C text is
+`kernel/json/stage2.c:898`, it is a plain `static void` the certified fixture
+(`probes/install/ir/stage2.candidate.ll`) happened to inline and the new body did
+not, and its model is `stage2GapRecover` (`JsonStage2HelperOdGap`).  That model is
+the selection's default, and it is the *only* overridable symbol: the three
 modelled ones are fixed inside `stage2NoEventCalls`, because at an arbitrary
-selection the statement is not a stronger theorem but a false one.  A future item
-that wants to discharge the obligation begins by authoring that one model; the
-parameter is the discharger's choice, not a universal quantification, so no proof
-is expected at every `Calls`. -/
+selection the statement is not a stronger theorem but a false one.  The default
+narrows the hole to the loop; the model's body faithfulness is
+`docs/contract.md` §7.6's trust row, and a discharger may still replace it
+through the parameter, which is a choice rather than a universal
+quantification. -/
 
 /-- The four objects the flattening appends, as the body's parameters. -/
 def stage2NoEventStagingArgs (stk e c d : Nat) : List Value :=
@@ -666,11 +671,31 @@ theorem Γ_stage2_noevent_at_pre {a12 : List Value} {mem : Mem} {next : Nat}
   ⟨a12, rfl, h, hstaged⟩
 
 /-- **The no-event entry's call environment**: the three modelled sub-units fixed
-to the certified models, and `od_gap_recover` from the parameter. -/
-def stage2NoEventCalls (gap : Calls) : Calls :=
+to the certified models, and `od_gap_recover` from the parameter, which defaults
+to `stage2GapRecover` — the tree's model of the helper — unless a caller
+overrides it. -/
+def stage2NoEventCalls (gap : Calls := stage2GapRecover) : Calls :=
   fun callee args mem next =>
     if callee = "od_gap_recover" then gap callee args mem next
     else JsonStage2IR.stage2Calls stage2SubCalls callee args mem next
+
+-- The parameter's default is the tree's model: read as a `Calls`, the selection
+-- is the environment at `stage2GapRecover`.
+example : (stage2NoEventCalls : Calls) = stage2NoEventCalls (gap := stage2GapRecover) := rfl
+
+/-- **The selection resolves `od_gap_recover` at the model it is given**, and the
+default is `stage2GapRecover` (the example above). -/
+theorem stage2NoEventCalls_gap (args : List Value) (mem : Mem) (next : Nat) :
+    (stage2NoEventCalls (gap := stage2GapRecover)) "od_gap_recover" args mem next =
+      stage2GapRecover "od_gap_recover" args mem next := rfl
+
+/-- The selection does not answer a symbol it does not name itself. -/
+theorem stage2NoEventCalls_other {callee : String} (h : callee ≠ "od_gap_recover")
+    (args : List Value) (mem : Mem) (next : Nat) :
+    (stage2NoEventCalls (gap := stage2GapRecover)) callee args mem next =
+      JsonStage2IR.stage2Calls stage2SubCalls callee args mem next := by
+  unfold stage2NoEventCalls
+  rw [ite_eq_right h]
 
 /-- **The walk's obligation at a staging: the pinned body, run with the selection
 the record gives it.**
@@ -679,15 +704,14 @@ This is the loop, stated and **not inhabited**: a proof would be the completion
 budget for a 167-block body plus the `Stage2NoEventRun` report it produces, and
 nothing here supplies either.
 
-It is also **conditional**, and the condition is not the loop.  The selection
-fixes `s2_string_body`, `num_fast_el1` and the three intrinsic symbols to the
-certified models, and takes `od_gap_recover`'s from `gap`; that helper's C text
-is `kernel/json/stage2.c:898`, and nothing in this tree supplies a model or a
-contract for it.  So the obligation is the loop relative to a contract at
-`od_gap_recover`, and no current item discharges it: a future one begins by
-authoring that model.  `gap` is the *discharger's choice*, not a universal
-quantification — the statement is not to be proved at every `Calls`, and at an
-arbitrary one it is false.
+It is also **relative to a callee**, and the callee is not the loop.  The
+selection fixes `s2_string_body`, `num_fast_el1` and the three intrinsic symbols
+to the certified models, and takes `od_gap_recover`'s from `gap`, which defaults
+to the tree's model `stage2GapRecover` (`JsonStage2HelperOdGap`); that model's
+body faithfulness is `docs/contract.md` §7.6's trust row, not a proof here.  So
+the obligation is the loop at a named model, and no current item discharges the
+loop itself.  `gap` remains the *discharger's choice* — a parameter, not a
+universal quantification, because at an arbitrary `Calls` the statement is false.
 
 The **literal chain is inside this obligation**, not beside it.  The body's
 scalar-literal compare is emitted as an unrolled `icmp eq i8` chain with packed
@@ -698,7 +722,8 @@ its constants are pinned against the fixture's phis; that the emitted chain
 computes this rule is a fact about the body's trace, which is exactly what this
 obligation names and nothing here assumes.  A reader of the lemma must not read
 it as covering the emitted code. -/
-def Stage2NoEventWalkObligation (gap : Calls) (stk e c d : Nat) : Prop :=
+def Stage2NoEventWalkObligation (gap : Calls := stage2GapRecover) (stk e c d : Nat) :
+    Prop :=
   Satisfies (stage2NoEventCalls gap) stage2NoEventBody
     (Γ_stage2_noevent_at stk e c d)
 
