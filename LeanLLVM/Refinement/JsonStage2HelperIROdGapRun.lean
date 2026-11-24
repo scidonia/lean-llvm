@@ -1715,12 +1715,18 @@ the two cells a step reads besides the counter (`%0` the document's base and
 `%cond` the window's end), the carried counter, the window's arithmetic —
 `p ≤ c < ip < 2 ^ 63`, the last because the head's `gep i8` signs the counter —
 the budget `ip ≤ c + r`, and the model's no-whitespace prefix. -/
-def gapScanInv (bytes : List UInt8) (ip b p : Nat) (mem : Mem)
+def gapScanInv (bytes : List UInt8) (ip b p cur next lt lf ln : Nat) (mem : Mem)
     (r : Nat) (s : State) (c : Nat) : Prop :=
   s.pc = "land.rhs" ∧ s.mem = mem ∧
   lookupName s.env "%0" = some (.ptr b) ∧
+  lookupName s.env "%c" = some (.ptr cur) ∧
   lookupName s.env "%cond" = some (.int 64 (BitVec.ofNat 64 ip)) ∧
   lookupName s.env "%t.0.val" = some (.int 64 (BitVec.ofNat 64 p)) ∧
+  lookupName s.env "%d" = some (.ptr next) ∧
+  lookupName s.env "%ei" = some (.ptr (next + (Ty.double).sizeBytes)) ∧
+  lookupName s.env "%littrue" = some (.ptr lt) ∧
+  lookupName s.env "%litfalse" = some (.ptr lf) ∧
+  lookupName s.env "%litnull" = some (.ptr ln) ∧
   gapScanCarried s c ∧
   p ≤ c ∧ c < ip ∧ ip < 2 ^ 63 ∧ ip ≤ c + r ∧
   gapNonWsRun (c - p) (bytes.drop p) = c - p
@@ -1734,7 +1740,8 @@ def gapScanAtBound (bytes : List UInt8) (ip : Nat) (_s : State) (c : Nat) : Bool
 first whitespace — and at `cleanup82` the model's `ee` is `ip`.  The cells the
 exit's continuation reads are here, and so is the predecessor, because the
 `while.end` `phi` selects by it. -/
-def gapScanExit (bytes : List UInt8) (b ip p : Nat) (mem : Mem) (e : State) : Prop :=
+def gapScanExit (bytes : List UInt8) (b cur next lt lf ln ip p : Nat) (mem : Mem)
+    (e : State) : Prop :=
   (∃ (leaf : String) (c : Nat),
       e.pc = "while.end" ∧ e.pre = some leaf ∧ e.mem = mem ∧
       phiIncoming leaf
@@ -1744,21 +1751,34 @@ def gapScanExit (bytes : List UInt8) (b ip p : Nat) (mem : Mem) (e : State) : Pr
       lookupName e.env "%ee.011" = some (.int 64 (BitVec.ofNat 64 c)) ∧
       lookupName e.env "%cond" = some (.int 64 (BitVec.ofNat 64 ip)) ∧
       lookupName e.env "%0" = some (.ptr b) ∧
+      lookupName e.env "%c" = some (.ptr cur) ∧
       lookupName e.env "%t.0.val" = some (.int 64 (BitVec.ofNat 64 p)) ∧
+      lookupName e.env "%d" = some (.ptr next) ∧
+      lookupName e.env "%ei" = some (.ptr (next + (Ty.double).sizeBytes)) ∧
+      lookupName e.env "%littrue" = some (.ptr lt) ∧
+      lookupName e.env "%litfalse" = some (.ptr lf) ∧
+      lookupName e.env "%litnull" = some (.ptr ln) ∧
       gapEe bytes ip p = c ∧ c < ip)
   ∨ (e.pc = "cleanup82" ∧ e.mem = mem ∧ gapEe bytes ip p = ip)
 
 /-- The invariant at the head's first visit: the token's start is the counter,
 and the budget is the whole bound. -/
-theorem gapScanInv_seed {bytes : List UInt8} {ip b p : Nat} {mem : Mem} {s : State}
+theorem gapScanInv_seed {bytes : List UInt8} {ip b p cur next lt lf ln : Nat} {mem : Mem}
+    {s : State}
     (hp : p < ip) (hiplt : ip < 2 ^ 63)
     (hpc : s.pc = "land.rhs") (hpre : s.pre = some "cond.end") (hmem : s.mem = mem)
     (hb : lookupName s.env "%0" = some (.ptr b))
+    (hcur : lookupName s.env "%c" = some (.ptr cur))
     (ht : lookupName s.env "%t.0.val" = some (.int 64 (BitVec.ofNat 64 p)))
-    (hcond : lookupName s.env "%cond" = some (.int 64 (BitVec.ofNat 64 ip))) :
-    gapScanInv bytes ip b p mem ip s p :=
-  ⟨hpc, hmem, hb, hcond, ht, Or.inl ⟨hpre, ht⟩, le_rfl, hp, hiplt, by omega,
-    by simp [gapNonWsRun]⟩
+    (hcond : lookupName s.env "%cond" = some (.int 64 (BitVec.ofNat 64 ip)))
+    (hd : lookupName s.env "%d" = some (.ptr next))
+    (hei : lookupName s.env "%ei" = some (.ptr (next + (Ty.double).sizeBytes)))
+    (hlt : lookupName s.env "%littrue" = some (.ptr lt))
+    (hlf : lookupName s.env "%litfalse" = some (.ptr lf))
+    (hln : lookupName s.env "%litnull" = some (.ptr ln)) :
+    gapScanInv bytes ip b p cur next lt lf ln mem ip s p :=
+  ⟨hpc, hmem, hb, hcur, hcond, ht, hd, hei, hlt, hlf, hln,
+    Or.inl ⟨hpre, ht⟩, le_rfl, hp, hiplt, by omega, by simp [gapNonWsRun]⟩
 
 /-! ### The scan's three prefixes
 
@@ -1770,16 +1790,17 @@ three, the advance and the `ip` exit. -/
 /-- **The scan's whitespace exit.**  From the head over a whitespace byte, three
 control steps (`'\t'`/`'\n'`) or four (`'\r'`/`' '`) reach `while.end`, the counter
 being the model's `ee`. -/
-theorem gap_scan_exit_ws {calls : Calls} {bytes : List UInt8} {ip b p r c : Nat}
+theorem gap_scan_exit_ws {calls : Calls} {bytes : List UInt8} {ip b p cur next lt lf ln r c : Nat}
     {mem : Mem} {s : State}
     (hbytes : gapBytesAt mem bytes b ip)
-    (hinv : gapScanInv bytes ip b p mem r s c)
+    (hinv : gapScanInv bytes ip b p cur next lt lf ln mem r s c)
     (hws : gapIsWs (bytes.getD c 0) = true) :
     ∃ (e : State) (j : Nat), j ≤ 4 ∧ (e.pc = "while.end" ∨ e.pc = "cleanup82") ∧
-      gapScanExit bytes b ip p mem e ∧
+      gapScanExit bytes b cur next lt lf ln ip p mem e ∧
       ∀ k, runFuel calls (j + k) odGapRecoverBody s =
         runFuel calls k odGapRecoverBody e := by
-  obtain ⟨hpc, hmem, hb, hcond, _htv, hcarried, hple, hclt, hiplt, _hbud, hpre⟩ := hinv
+  obtain ⟨hpc, hmem, hb, _hcur, hcond, _htv, _hd, _hei, _hltc, _hlfc, _hlnc,
+    hcarried, hple, hclt, hiplt, _hbud, hpre⟩ := hinv
   have hc63 : c < 2 ^ 63 := by omega
   have hbytes' : gapBytesAt s.mem bytes b ip := by rw [hmem]; exact hbytes
   have hread : readBytes s.mem (b + c) 1
@@ -1827,8 +1848,21 @@ theorem gap_scan_exit_ws {calls : Calls} {bytes : List UInt8} {ip b p r c : Nat}
       have hst : stateAt s2.env s2 = s2 := rfl
       simpa only [hst, s3] using hh
     refine ⟨s3, 3, by omega, Or.inl rfl, ?_, ?_⟩
-    · refine Or.inl ⟨"LeafBlock", c, rfl, rfl, ?_, by decide, ?_, ?_, ?_, ?_, hee, hclt⟩
+    · refine Or.inl ⟨"LeafBlock", c, rfl, rfl, ?_, by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+        ?_, hee, hclt⟩
       · simp only [s3, stateAt]; exact hmem
+      · simp only [s3, s2, s1, stateAt, gapLandRhsEnv]
+        block_lk
+      · simp only [s3, s2, s1, stateAt, gapLandRhsEnv]
+        block_lk
+      · simp only [s3, s2, s1, stateAt, gapLandRhsEnv]
+        block_lk
+      · simp only [s3, s2, s1, stateAt, gapLandRhsEnv]
+        block_lk
+      · simp only [s3, s2, s1, stateAt, gapLandRhsEnv]
+        block_lk
+      · simp only [s3, s2, s1, stateAt, gapLandRhsEnv]
+        block_lk
       · simp only [s3, s2, s1, stateAt, gapLandRhsEnv]
         block_lk
       · simp only [s3, s2, s1, stateAt, gapLandRhsEnv]
@@ -1876,8 +1910,21 @@ theorem gap_scan_exit_ws {calls : Calls} {bytes : List UInt8} {ip b p r c : Nat}
       have hst : stateAt s3.env s3 = s3 := rfl
       simpa only [hst, s4] using hh
     refine ⟨s4, 4, by omega, Or.inl rfl, ?_, ?_⟩
-    · refine Or.inl ⟨"LeafBlock1", c, rfl, rfl, ?_, by decide, ?_, ?_, ?_, ?_, hee, hclt⟩
+    · refine Or.inl ⟨"LeafBlock1", c, rfl, rfl, ?_, by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+        ?_, hee, hclt⟩
       · simp only [s4, stateAt]; exact hmem
+      · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
+        block_lk
+      · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
+        block_lk
+      · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
+        block_lk
+      · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
+        block_lk
+      · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
+        block_lk
+      · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
+        block_lk
       · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
         block_lk
       · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
@@ -1926,8 +1973,21 @@ theorem gap_scan_exit_ws {calls : Calls} {bytes : List UInt8} {ip b p r c : Nat}
       have hst : stateAt s3.env s3 = s3 := rfl
       simpa only [hst, s4] using hh
     refine ⟨s4, 4, by omega, Or.inl rfl, ?_, ?_⟩
-    · refine Or.inl ⟨"LeafBlock3", c, rfl, rfl, ?_, by decide, ?_, ?_, ?_, ?_, hee, hclt⟩
+    · refine Or.inl ⟨"LeafBlock3", c, rfl, rfl, ?_, by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+        ?_, hee, hclt⟩
       · simp only [s4, stateAt]; exact hmem
+      · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
+        block_lk
+      · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
+        block_lk
+      · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
+        block_lk
+      · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
+        block_lk
+      · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
+        block_lk
+      · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
+        block_lk
       · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
         block_lk
       · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
@@ -1946,19 +2006,26 @@ theorem gap_scan_exit_ws {calls : Calls} {bytes : List UInt8} {ip b p r c : Nat}
 control steps (`'\t'`/`'\n'`) or four (`'\r'`/`' '`) — the switch's three
 advancing routes — reach `while.body`, and the cells its own step reads are still
 bound. -/
-theorem gap_scan_toWhileBody {calls : Calls} {bytes : List UInt8} {ip b p r c : Nat}
+theorem gap_scan_toWhileBody {calls : Calls} {bytes : List UInt8} {ip b p cur next lt lf ln r c : Nat}
     {mem : Mem} {s : State}
     (hbytes : gapBytesAt mem bytes b ip)
-    (hinv : gapScanInv bytes ip b p mem r s c)
+    (hinv : gapScanInv bytes ip b p cur next lt lf ln mem r s c)
     (hnws : gapIsWs (bytes.getD c 0) = false) :
     ∃ (e : State) (j : Nat), j ≤ 4 ∧ e.pc = "while.body" ∧ e.mem = mem ∧
       lookupName e.env "%ee.011" = some (.int 64 (BitVec.ofNat 64 c)) ∧
       lookupName e.env "%cond" = some (.int 64 (BitVec.ofNat 64 ip)) ∧
       lookupName e.env "%0" = some (.ptr b) ∧
+      lookupName e.env "%c" = some (.ptr cur) ∧
       lookupName e.env "%t.0.val" = some (.int 64 (BitVec.ofNat 64 p)) ∧
+      lookupName e.env "%d" = some (.ptr next) ∧
+      lookupName e.env "%ei" = some (.ptr (next + (Ty.double).sizeBytes)) ∧
+      lookupName e.env "%littrue" = some (.ptr lt) ∧
+      lookupName e.env "%litfalse" = some (.ptr lf) ∧
+      lookupName e.env "%litnull" = some (.ptr ln) ∧
       ∀ k, runFuel calls (j + k) odGapRecoverBody s =
         runFuel calls k odGapRecoverBody e := by
-  obtain ⟨hpc, hmem, hb, hcond, _h0v, hcarried, _hple, hclt, hiplt, _hbud, _hpre⟩ := hinv
+  obtain ⟨hpc, hmem, hb, _hcur, hcond, _htv, _hd, _hei, _hltc, _hlfc, _hlnc,
+    hcarried, _hple, hclt, hiplt, _hbud, _hpre⟩ := hinv
   have hc63 : c < 2 ^ 63 := by omega
   have hbytes' : gapBytesAt s.mem bytes b ip := by rw [hmem]; exact hbytes
   have hread : readBytes s.mem (b + c) 1
@@ -2004,7 +2071,19 @@ theorem gap_scan_toWhileBody {calls : Calls} {bytes : List UInt8} {ip b p r c : 
         (byte := bytes.getD c 0) rfl rfl hs2 hb2
       have hst : stateAt s2.env s2 = s2 := rfl
       simpa only [hst, s3] using hh
-    refine ⟨s3, 3, by omega, rfl, hmem, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨s3, 3, by omega, rfl, hmem, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    · simp only [s3, s2, s1, stateAt, gapLandRhsEnv]
+      block_lk
+    · simp only [s3, s2, s1, stateAt, gapLandRhsEnv]
+      block_lk
+    · simp only [s3, s2, s1, stateAt, gapLandRhsEnv]
+      block_lk
+    · simp only [s3, s2, s1, stateAt, gapLandRhsEnv]
+      block_lk
+    · simp only [s3, s2, s1, stateAt, gapLandRhsEnv]
+      block_lk
+    · simp only [s3, s2, s1, stateAt, gapLandRhsEnv]
+      block_lk
     · simp only [s3, s2, s1, stateAt, gapLandRhsEnv]
       block_lk
     · simp only [s3, s2, s1, stateAt, gapLandRhsEnv]
@@ -2051,7 +2130,19 @@ theorem gap_scan_toWhileBody {calls : Calls} {bytes : List UInt8} {ip b p r c : 
         (byte := bytes.getD c 0) rfl rfl hs3 hb4
       have hst : stateAt s3.env s3 = s3 := rfl
       simpa only [hst, s4] using hh
-    refine ⟨s4, 4, by omega, rfl, hmem, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨s4, 4, by omega, rfl, hmem, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
+      block_lk
+    · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
+      block_lk
+    · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
+      block_lk
+    · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
+      block_lk
+    · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
+      block_lk
+    · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
+      block_lk
     · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
       block_lk
     · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
@@ -2099,7 +2190,19 @@ theorem gap_scan_toWhileBody {calls : Calls} {bytes : List UInt8} {ip b p r c : 
         (byte := bytes.getD c 0) rfl rfl hs3 hb5
       have hst : stateAt s3.env s3 = s3 := rfl
       simpa only [hst, s4] using hh
-    refine ⟨s4, 4, by omega, rfl, hmem, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨s4, 4, by omega, rfl, hmem, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
+      block_lk
+    · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
+      block_lk
+    · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
+      block_lk
+    · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
+      block_lk
+    · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
+      block_lk
+    · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
+      block_lk
     · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
       block_lk
     · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
@@ -2130,18 +2233,20 @@ theorem gap_scan_offIp_bit {c ip : Nat} (hclt : c < ip) (hip64 : ip < 2 ^ 64)
 /-- **The scan's `ip` exit.**  From the head over a non-whitespace byte whose
 successor is the window's end, five control steps reach `cleanup82`, and the
 model's first loop has run the whole window. -/
-theorem gap_scan_exit_ip {calls : Calls} {bytes : List UInt8} {ip b p r c : Nat}
+theorem gap_scan_exit_ip {calls : Calls} {bytes : List UInt8} {ip b p cur next lt lf ln r c : Nat}
     {mem : Mem} {s : State}
     (hbytes : gapBytesAt mem bytes b ip) (hblen : bytes.length = ip)
-    (hinv : gapScanInv bytes ip b p mem r s c)
+    (hinv : gapScanInv bytes ip b p cur next lt lf ln mem r s c)
     (hnws : gapIsWs (bytes.getD c 0) = false) (hnext : c + 1 = ip) :
     ∃ (e : State) (j : Nat), j ≤ 5 ∧ (e.pc = "while.end" ∨ e.pc = "cleanup82") ∧
-      gapScanExit bytes b ip p mem e ∧
+      gapScanExit bytes b cur next lt lf ln ip p mem e ∧
       ∀ k, runFuel calls (j + k) odGapRecoverBody s =
         runFuel calls k odGapRecoverBody e := by
-  obtain ⟨e1, j1, hj1, hpc1, hmem1, h6cell, hcond1, _h0cell, _htcell, hrun1⟩ :=
+  obtain ⟨e1, j1, hj1, hpc1, hmem1, h6cell, hcond1, _h0cell1, _hc1, _ht1, _hd1,
+    _hei1, _hlt1, _hlf1, _hln1, hrun1⟩ :=
     gap_scan_toWhileBody (calls := calls) hbytes hinv hnws
-  obtain ⟨hpc, hmem, hb, hcond, _htv, hcarried, hple, hclt, hiplt, _hbud, hpre⟩ := hinv
+  obtain ⟨hpc, hmem, hb, _hcur, hcond, _htv, _hd, _hei, _hltc, _hlfc, _hlnc,
+    hcarried, hple, hclt, hiplt, _hbud, hpre⟩ := hinv
   have hip64 : ip < 2 ^ 64 := by omega
   have hee : gapEe bytes ip p = ip := gapEe_of_prefix_all hblen hple hnext hpre hnws
   have hbit : evalICmp .eq (BitVec.ofNat 64 c + 1) (BitVec.ofNat 64 ip) = 1#1 :=
@@ -2165,18 +2270,20 @@ theorem gap_scan_exit_ip {calls : Calls} {bytes : List UInt8} {ip b p r c : Nat}
 /-- **The scan's advance.**  From the head over a non-whitespace byte whose
 successor is still inside the window, five control steps re-enter `land.rhs` with
 the counter advanced and the invariant at one unit of budget less. -/
-theorem gap_scan_step_loop {calls : Calls} {bytes : List UInt8} {ip b p r c : Nat}
+theorem gap_scan_step_loop {calls : Calls} {bytes : List UInt8} {ip b p cur next lt lf ln r c : Nat}
     {mem : Mem} {s : State}
     (hbytes : gapBytesAt mem bytes b ip) (hblen : bytes.length = ip)
-    (hinv : gapScanInv bytes ip b p mem (r + 1) s c)
+    (hinv : gapScanInv bytes ip b p cur next lt lf ln mem (r + 1) s c)
     (hnws : gapIsWs (bytes.getD c 0) = false) (hnext : c + 1 ≠ ip) :
     ∃ (e : State) (c' : Nat) (j : Nat), j ≤ 5 ∧ e.pc = "land.rhs" ∧ c < c' ∧
-      gapScanInv bytes ip b p mem r e c' ∧
+      gapScanInv bytes ip b p cur next lt lf ln mem r e c' ∧
       ∀ k, runFuel calls (j + k) odGapRecoverBody s =
         runFuel calls k odGapRecoverBody e := by
-  obtain ⟨e1, j1, hj1, hpc1, hmem1, h6cell, hcond1, h0cell, htcell1, hrun1⟩ :=
+  obtain ⟨e1, j1, hj1, hpc1, hmem1, h6cell, hcond1, h0cell, hcurcell, htcell1,
+    hdcell, heicell, hltcell, hlflcell, hlncell, hrun1⟩ :=
     gap_scan_toWhileBody (calls := calls) hbytes hinv hnws
-  obtain ⟨hpc, hmem, hb, hcond, _htv, hcarried, hple, hclt, hiplt, hbud, hpre⟩ := hinv
+  obtain ⟨hpc, hmem, hb, _hcur, hcond, _htv, _hd, _hei, _hltc, _hlfc, _hlnc,
+    hcarried, hple, hclt, hiplt, hbud, hpre⟩ := hinv
   have hip64 : ip < 2 ^ 64 := by omega
   have hkp : c - p < (bytes.drop p).length := by
     rw [List.length_drop, hblen]; omega
@@ -2197,14 +2304,17 @@ theorem gap_scan_step_loop {calls : Calls} {bytes : List UInt8} {ip b p r c : Na
       gapNonWsRun_succ hpre hkp
         (by rw [gap_getD_drop_add, show p + (c - p) = c from by omega]; exact hnws)]
   refine ⟨sE, c + 1, j1 + 1, by omega, rfl, by omega, ?_, ?_⟩
-  · refine ⟨rfl, hmem1, ?_, ?_, ?_, Or.inr ⟨rfl, ?_⟩, by omega, by omega, hiplt,
-      by omega, hseed⟩
-    · simp only [sE, stateAt]
-      block_lk
-    · simp only [sE, stateAt]
-      block_lk
-    · simp only [sE, stateAt]
-      block_lk
+  · refine ⟨rfl, hmem1, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, Or.inr ⟨rfl, ?_⟩,
+      by omega, by omega, hiplt, by omega, hseed⟩
+    · simp only [sE, stateAt]; block_lk
+    · simp only [sE, stateAt]; block_lk
+    · simp only [sE, stateAt]; block_lk
+    · simp only [sE, stateAt]; block_lk
+    · simp only [sE, stateAt]; block_lk
+    · simp only [sE, stateAt]; block_lk
+    · simp only [sE, stateAt]; block_lk
+    · simp only [sE, stateAt]; block_lk
+    · simp only [sE, stateAt]; block_lk
     · simp only [sE, stateAt]
       rw [gap_ofNat64_add_one (c := c) (by omega)]
       block_lk
@@ -2229,17 +2339,18 @@ asks for `c < ip` and for `ip ≤ c`, so no head state carries zero budget, and 
 induction's base case cannot fire.  The exits are the loop's two tests — the
 switch on a whitespace and `while.body`'s equality with `ip` — and the bound `ip`
 is what `run` turns into `(ip + 1) * 5`. -/
-def gapScanLoop (calls : Calls) (bytes : List UInt8) (ip b p : Nat) (mem : Mem)
+def gapScanLoop (calls : Calls) (bytes : List UInt8) (ip b p cur next lt lf ln : Nat)
+    (mem : Mem)
     (hbytes : gapBytesAt mem bytes b ip) (hblen : bytes.length = ip) :
     BoundLoop calls odGapRecoverBody where
   head := "land.rhs"
   exitBlock := "while.end"
   N := ip
   cost := 5
-  Inv := gapScanInv bytes ip b p mem
+  Inv := gapScanInv bytes ip b p cur next lt lf ln mem
   atBound := gapScanAtBound bytes ip
   Exit := gapScanExitBlock
-  ExitWord := gapScanExit bytes b ip p mem
+  ExitWord := gapScanExit bytes b cur next lt lf ln ip p mem
   step_exit := by
     intro r s c hinv hat
     unfold gapScanAtBound at hat
@@ -2262,34 +2373,38 @@ def gapScanLoop (calls : Calls) (bytes : List UInt8) (ip b p : Nat) (mem : Mem)
     exact gap_scan_step_loop hbytes hblen hinv hws (of_decide_eq_false hid)
   exit_at_zero := by
     intro s c hinv
-    obtain ⟨_, _, _, _, _, _, _, hclt, _, hbud, _⟩ := hinv
+    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, hclt, _, hbud, _⟩ := hinv
     exact absurd hbud (by omega)
   budget := by
     intro r s c hinv
-    obtain ⟨_, _, _, _, _, _, hple, _, _, hbud, _⟩ := hinv
+    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, hple, _, _, hbud, _⟩ := hinv
     exact ⟨by omega, hbud⟩
 
 /-- **The scan's run from its head.**  From `land.rhs` with `r` iterations of
 budget, the scan reaches one of its exits within `(r + 1) * 5` control steps. -/
-theorem gapScanLoop_run_from {calls : Calls} {bytes : List UInt8} {ip b p : Nat}
+theorem gapScanLoop_run_from {calls : Calls} {bytes : List UInt8}
+    {ip b p cur next lt lf ln : Nat}
     {mem : Mem} (hbytes : gapBytesAt mem bytes b ip) (hblen : bytes.length = ip)
-    (r : Nat) (s : State) (c : Nat) (h : gapScanInv bytes ip b p mem r s c) :
+    (r : Nat) (s : State) (c : Nat)
+    (h : gapScanInv bytes ip b p cur next lt lf ln mem r s c) :
     ∃ (e : State) (j : Nat), j ≤ (r + 1) * 5 ∧ gapScanExitBlock e ∧
-      gapScanExit bytes b ip p mem e ∧
+      gapScanExit bytes b cur next lt lf ln ip p mem e ∧
       ∀ k, runFuel calls (j + k) odGapRecoverBody s =
         runFuel calls k odGapRecoverBody e :=
-  (gapScanLoop calls bytes ip b p mem hbytes hblen).run_from r s c h
+  (gapScanLoop calls bytes ip b p cur next lt lf ln mem hbytes hblen).run_from r s c h
 
 /-- **The scan's run.**  At the whole bound as its budget, the scan of the
 document `[0, ip)` from the token's start reaches one of its exits within
 `(ip + 1) * 5` control steps, and the run continues identically from there. -/
-theorem gapScanLoop_run {calls : Calls} {bytes : List UInt8} {ip b p : Nat} {mem : Mem}
+theorem gapScanLoop_run {calls : Calls} {bytes : List UInt8}
+    {ip b p cur next lt lf ln : Nat} {mem : Mem}
     (hbytes : gapBytesAt mem bytes b ip) (hblen : bytes.length = ip)
-    (s : State) (c : Nat) (h : gapScanInv bytes ip b p mem ip s c) (k : Nat) :
+    (s : State) (c : Nat) (h : gapScanInv bytes ip b p cur next lt lf ln mem ip s c)
+    (k : Nat) :
     ∃ (e : State) (j : Nat), j ≤ (ip + 1) * 5 ∧ gapScanExitBlock e ∧
-      gapScanExit bytes b ip p mem e ∧
+      gapScanExit bytes b cur next lt lf ln ip p mem e ∧
       runFuel calls (j + k) odGapRecoverBody s = runFuel calls k odGapRecoverBody e :=
-  (gapScanLoop calls bytes ip b p mem hbytes hblen).run s c h k
+  (gapScanLoop calls bytes ip b p cur next lt lf ln mem hbytes hblen).run s c h k
 
 /-! ### The scan's exits, continued
 
@@ -2333,8 +2448,9 @@ theorem gap_scan_whileEnd_step {calls : Calls} {ip c : Nat}
 /-- **At the scan's whitespace exit.**  The exit word's first arm is the basis of
 the continuation: the counter is the model's `ee`, and the scan leaves
 `while.end` for `if.end`. -/
-theorem gap_scan_whileEnd_continue {calls : Calls} {bytes : List UInt8} {ip b p : Nat}
-    {mem : Mem} {e : State} (hpc : e.pc = "while.end") (hexit : gapScanExit bytes b ip p mem e)
+theorem gap_scan_whileEnd_continue {calls : Calls} {bytes : List UInt8}
+    {ip b p cur next lt lf ln : Nat} {mem : Mem} {e : State} (hpc : e.pc = "while.end")
+    (hexit : gapScanExit bytes b cur next lt lf ln ip p mem e)
     (hip64 : ip < 2 ^ 64) :
     ∃ (leaf : String) (c : Nat), e.pre = some leaf ∧ gapEe bytes ip p = c ∧ c < ip ∧
       step calls odGapRecoverBody e =
@@ -2342,8 +2458,8 @@ theorem gap_scan_whileEnd_continue {calls : Calls} {bytes : List UInt8} {ip b p 
           (("%cmp6", .int 1 (evalICmp .eq (BitVec.ofNat 64 c) (BitVec.ofNat 64 ip))) ::
             ("%ee.0.lcssa", .int 64 (BitVec.ofNat 64 c)) :: e.env)
           { e with pc := "if.end", pre := some "while.end" }) := by
-  rcases hexit with ⟨leaf, c, hpc', hpre, _hmem, hinc, h6, hcond, _h0, _ht, hee, hlt⟩
-      | ⟨hpc', _⟩
+  rcases hexit with ⟨leaf, c, hpc', hpre, _hmem, hinc, h6, hcond, _h0, _hc, _ht,
+      _hd, _hei, _hltc, _hlfc, _hlnc, hee, hlt⟩ | ⟨hpc', _⟩
   · refine ⟨leaf, c, hpre, hee, hlt, ?_⟩
     exact gap_scan_whileEnd_step hpc hpre hinc h6 hcond hlt hip64
   · rw [hpc] at hpc'
@@ -2360,8 +2476,9 @@ theorem gap_scan_cleanup82_exit {calls : Calls} {bytes : List UInt8} {ip p : Nat
   simpa only [hst] using hh
 
 /-- **At the scan's `ip` exit, from the exit word.** -/
-theorem gap_scan_cleanup82_continue {calls : Calls} {bytes : List UInt8} {ip b p : Nat}
-    {mem : Mem} {e : State} (hpc : e.pc = "cleanup82") (hexit : gapScanExit bytes b ip p mem e) :
+theorem gap_scan_cleanup82_continue {calls : Calls} {bytes : List UInt8}
+    {ip b p cur next lt lf ln : Nat} {mem : Mem} {e : State} (hpc : e.pc = "cleanup82")
+    (hexit : gapScanExit bytes b cur next lt lf ln ip p mem e) :
     step calls odGapRecoverBody e = .ret none e ∧
       gapRecoverWrite bytes ip p = GapWrite.none := by
   rcases hexit with ⟨leaf, c, hpc', _⟩ | ⟨_, _hmem, hee⟩
