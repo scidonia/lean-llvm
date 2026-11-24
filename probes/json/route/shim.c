@@ -24,6 +24,12 @@
  * observed numbers, so the caller reports what failed rather than that
  * something did.  The payload follows the header only on the first two tags.
  *
+ * The no-event arm (`leanllvm_json_route_noevent`) has its own header, the
+ * same four failure words followed by the seven observation words
+ * `verdict nk nxp err tokens values sum`, and no payload: that arm builds no
+ * arena and no event stream, so its reading is the three words the pipeline's
+ * tail returns and there is nothing after the header to copy.
+ *
  * ## No clamping, and why the checks are before the call
  *
  * A returned cursor larger than its capacity means the object stored past a
@@ -53,6 +59,7 @@
 
 #include "escape_guard.h"
 #include "pipeline.h"
+#include "stage2_noevent.h"
 #include "entry.h"
 #include "policy.h"
 #include "admission.h"
@@ -68,6 +75,9 @@ extern int64_t depth_count(const uint8_t *buf, const int32_t *idx,
 
 /* The result's header: ten words, then the payload. */
 #define ROUTE_HEADER_BYTES 80
+
+/* The no-event result's header: eleven words, no payload. */
+#define ROUTE_NOEVENT_HEADER_BYTES 88
 
 /* ## Stage timing, and why it is gated
  *
@@ -145,7 +155,11 @@ enum route_precondition {
   PC_CURSOR_NEV = 19,
   PC_TOTAL = 20,
   PC_WINDOW_BLOCKS = 21,
-  PC_DOC = 22
+  PC_DOC = 22,
+  PC_SCRATCH = 23,
+  PC_TOKENS = 24,
+  PC_VALUES = 25,
+  PC_SUM = 26
 };
 
 /* The caller's arrays, in the order the copy loop walks them. */
@@ -540,6 +554,182 @@ LEAN_EXPORT lean_object *leanllvm_json_route(
   return lean_io_result_mk_ok(
       route_impl(win, n, sc, mk, entw, ep, epcap, nk, xp, xpcap, nxp, xcarry,
                  dst, dstcap, ndst, ev, evcap, nev, err, arm));
+}
+
+/* ## The no-event arm
+ *
+ * `leanllvm_json_pipeline_noevent` is the assembled pipeline with the
+ * event-writing tail replaced by the reading the unchanged consumer fold makes
+ * of the certified route's stream.  It takes the stage-1 buffers and a scratch
+ * pair in place of the destination and event triplets, so this wrapper stages
+ * the same objects minus the two the arm does not build, and returns the
+ * reading in the header's last three words.  The observation words keep the
+ * event arm's meaning -- `verdict`, both stage-1 cursors and the refusal offset
+ * -- except that `ndst` and `nev` have no counterpart: the arm builds neither
+ * an arena nor an event stream, and its header has no slot for them.
+ *
+ * The reading slots are pure outputs and the entry zeroes them on every call;
+ * on a refusal they therefore stay zero while `err` carries the walk's offset
+ * (or `n` for the UTF-8 stage's document-level refusal).  The wrapper checks
+ * the scratch capacity the entry's `pre` states and that each word slot is
+ * eight bytes, exactly as the event arm checks its per-array preconditions.
+ * The slots are copied like every other written buffer, so the object never
+ * stores into a Lean-owned object. */
+
+static lean_object *noevent_result(uint64_t tag, uint64_t detail, uint64_t want,
+                                   uint64_t got, const uint64_t *obs) {
+  uint64_t w[11] = {tag, detail, want, got, obs[0], obs[1], obs[2], obs[3],
+                    obs[4], obs[5], obs[6]};
+  return word_result(ROUTE_NOEVENT_HEADER_BYTES, w, 11);
+}
+
+static lean_object *noevent_failure(uint64_t tag, uint64_t detail, uint64_t want,
+                                    uint64_t got) {
+  static const uint64_t none[7] = {0, 0, 0, 0, 0, 0, 0};
+  return noevent_result(tag, detail, want, got, none);
+}
+
+/* The caller's buffers, in the order the copy loop walks them. */
+enum route_noevent_input {
+  NE_WIN, NE_SC, NE_MK, NE_ENTW, NE_EP, NE_NK, NE_XP, NE_NXP, NE_XCARRY,
+  NE_SCRATCH, NE_TOKENS, NE_VALUES, NE_SUM, NE_ERR, NE_COUNT
+};
+
+static lean_object *noevent_impl(
+    lean_object *win, uint64_t n,
+    lean_object *sc, lean_object *mk, lean_object *entw,
+    lean_object *ep, uint64_t epcap, lean_object *nk,
+    lean_object *xp, uint64_t xpcap, lean_object *nxp, lean_object *xcarry,
+    lean_object *scratch, uint64_t scratchcap,
+    lean_object *tokens, lean_object *values, lean_object *sum,
+    lean_object *err, uint64_t arm) {
+  route_init();
+
+  /* The window and the stage-1 slots are the event arm's, checked at the same
+     extents and in the same order, so a staging defect is reported at the same
+     precondition index on either arm. */
+  uint64_t winLen = array_bytes(win);
+  uint64_t past = winLen < 3 ? 0 : winLen - 3;
+  if (winLen < 3 || n > past)
+    return noevent_failure(ROUTE_DOMAIN, PC_WINDOW, n, past);
+  if (admit_block_count(n) > past / 64)
+    return noevent_failure(ROUTE_DOMAIN, PC_WINDOW_BLOCKS, admit_block_count(n),
+                           past / 64);
+  if (array_bytes(sc) < 24)
+    return noevent_failure(ROUTE_DOMAIN, PC_SC, 24, array_bytes(sc));
+  if (array_bytes(mk) < 48)
+    return noevent_failure(ROUTE_DOMAIN, PC_MK, 48, array_bytes(mk));
+  if (array_bytes(entw) < 8)
+    return noevent_failure(ROUTE_DOMAIN, PC_ENTW, 8, array_bytes(entw));
+  if (epcap > UINT64_MAX / 4)
+    return noevent_failure(ROUTE_DOMAIN, PC_EP, UINT64_MAX / 4, epcap);
+  if (array_bytes(ep) < 4 * epcap)
+    return noevent_failure(ROUTE_DOMAIN, PC_EP, 4 * epcap, array_bytes(ep));
+  if (array_bytes(nk) < 8)
+    return noevent_failure(ROUTE_DOMAIN, PC_NK, 8, array_bytes(nk));
+  if (xpcap > UINT64_MAX / 4)
+    return noevent_failure(ROUTE_DOMAIN, PC_XP, UINT64_MAX / 4, xpcap);
+  if (array_bytes(xp) < 4 * xpcap)
+    return noevent_failure(ROUTE_DOMAIN, PC_XP, 4 * xpcap, array_bytes(xp));
+  if (array_bytes(nxp) < 8)
+    return noevent_failure(ROUTE_DOMAIN, PC_NXP, 8, array_bytes(nxp));
+  if (array_bytes(xcarry) < 16)
+    return noevent_failure(ROUTE_DOMAIN, PC_XCARRY, 16, array_bytes(xcarry));
+  /* The entry's `pre`: a body's `len + US_SLACK` never exceeds `n + 64`, so a
+     scratch smaller than the capacity the caller declares could be written
+     past.  The check is the caller's buffer against the capacity it hands
+     over, not the capacity against `n`: the entry only ever needs the bound
+     the caller promised. */
+  if (array_bytes(scratch) < scratchcap)
+    return noevent_failure(ROUTE_DOMAIN, PC_SCRATCH, scratchcap,
+                           array_bytes(scratch));
+  if (array_bytes(tokens) < 8)
+    return noevent_failure(ROUTE_DOMAIN, PC_TOKENS, 8, array_bytes(tokens));
+  if (array_bytes(values) < 8)
+    return noevent_failure(ROUTE_DOMAIN, PC_VALUES, 8, array_bytes(values));
+  if (array_bytes(sum) < 8)
+    return noevent_failure(ROUTE_DOMAIN, PC_SUM, 8, array_bytes(sum));
+  if (array_bytes(err) < 8)
+    return noevent_failure(ROUTE_DOMAIN, PC_ERR, 8, array_bytes(err));
+  if ((arm & ~(uint64_t)7) != 0)
+    return noevent_failure(ROUTE_DOMAIN, PC_ARM, 0, arm);
+
+  lean_object *ins[NE_COUNT] = {win, sc, mk, entw, ep, nk, xp, nxp, xcarry,
+                                scratch, tokens, values, sum, err};
+  /* The window is borrowed for the same reason as on the event arm: every
+     unit's document parameter is `const`.  The other thirteen buffers are
+     written, so each gets its own allocation. */
+  uint8_t *copies[NE_COUNT] = {0};
+  copies[NE_WIN] = lean_sarray_cptr(win);
+#ifdef ROUTE_TIMING
+  uint64_t route_t_copy0 = route_now_ns();
+#endif
+  for (int i = NE_WIN + 1; i < NE_COUNT; i++) {
+    copies[i] = copy_array(ins[i]);
+    if (!copies[i]) {
+      uint64_t bytes = array_bytes(ins[i]);
+      for (int j = NE_WIN + 1; j < i; j++) free(copies[j]);
+      return noevent_failure(ROUTE_ALLOC, PC_NONE, bytes, 0);
+    }
+  }
+#ifdef ROUTE_TIMING
+  uint64_t route_t_native0 = route_now_ns();
+  leanllvm_route_stage_ns[0] = route_t_native0 - route_t_copy0;
+#endif
+
+  uint64_t verdict = leanllvm_json_pipeline_noevent(
+      copies[NE_WIN] + 3, n, (uint64_t *)copies[NE_SC],
+      (uint64_t *)copies[NE_MK], (uint64_t *)copies[NE_ENTW],
+      (uint32_t *)copies[NE_EP], epcap, (uint64_t *)copies[NE_NK],
+      (uint32_t *)copies[NE_XP], xpcap, (uint64_t *)copies[NE_NXP],
+      (uint64_t *)copies[NE_XCARRY], copies[NE_SCRATCH], scratchcap,
+      (uint64_t *)copies[NE_TOKENS], (uint64_t *)copies[NE_VALUES],
+      (uint64_t *)copies[NE_SUM], (uint64_t *)copies[NE_ERR], arm);
+
+#ifdef ROUTE_TIMING
+  uint64_t route_t_out0 = route_now_ns();
+  leanllvm_route_stage_ns[1] = route_t_out0 - route_t_native0;
+#endif
+
+  uint64_t nkv = *(uint64_t *)copies[NE_NK];
+  uint64_t nxv = *(uint64_t *)copies[NE_NXP];
+  uint64_t toks = *(uint64_t *)copies[NE_TOKENS];
+  uint64_t vals = *(uint64_t *)copies[NE_VALUES];
+  uint64_t sumv = *(uint64_t *)copies[NE_SUM];
+  uint64_t erv = *(uint64_t *)copies[NE_ERR];
+
+  /* A stage-1 cursor past its capacity is the same internal contract violation
+     the event arm reports; there is no payload cursor to check, because the
+     arm builds no payload. */
+  lean_object *out;
+  if (nkv > epcap) {
+    out = noevent_failure(ROUTE_CONTRACT, PC_CURSOR_NK, epcap, nkv);
+  } else if (nxv > xpcap) {
+    out = noevent_failure(ROUTE_CONTRACT, PC_CURSOR_NXP, xpcap, nxv);
+  } else {
+    uint64_t obs[7] = {verdict, nkv, nxv, erv, toks, vals, sumv};
+    out = noevent_result(verdict == 1 ? ROUTE_OBSERVED : ROUTE_REFUSED,
+                         PC_NONE, 0, 0, obs);
+  }
+
+  for (int i = NE_WIN + 1; i < NE_COUNT; i++) free(copies[i]);
+#ifdef ROUTE_TIMING
+  leanllvm_route_stage_ns[2] = route_now_ns() - route_t_out0;
+#endif
+  return out;
+}
+
+LEAN_EXPORT lean_object *leanllvm_json_route_noevent(
+    lean_object *win, uint64_t n,
+    lean_object *sc, lean_object *mk, lean_object *entw,
+    lean_object *ep, uint64_t epcap, lean_object *nk,
+    lean_object *xp, uint64_t xpcap, lean_object *nxp, lean_object *xcarry,
+    lean_object *scratch, uint64_t scratchcap,
+    lean_object *tokens, lean_object *values, lean_object *sum,
+    lean_object *err, uint64_t arm) {
+  return lean_io_result_mk_ok(
+      noevent_impl(win, n, sc, mk, entw, ep, epcap, nk, xp, xpcap, nxp, xcarry,
+                   scratch, scratchcap, tokens, values, sum, err, arm));
 }
 
 /* Phase one of the two-phase admission: the document, its length, and the two

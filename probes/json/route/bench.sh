@@ -49,11 +49,12 @@
 #   process start, the file read, the route, and the printing of the hex
 #   payloads.  They are the artifact a shell sees, and they are measured on the
 #   uninstrumented build for both levels.
-# * `consume` rows come from `leanllvm-json-route --consume <file> <reps>` on
-#   the production build: the fast path run once per repetition, its result read
-#   without printing -- the header through indexing and the event stream record
-#   by record -- with a fold that keeps no per-token object and a reading that
-#   materialises one event record per token.  The dissection section prices the
+# * `consume` rows come from `leanllvm-json-route --consume-events <file>
+#   <reps>` on the production build: the event arm's fast path run once per
+#   repetition, its result read without printing -- the header through indexing
+#   and the event stream record by record -- with a fold that keeps no
+#   per-token object and a reading that materialises one event record per
+#   token.  The dissection section prices the
 #   outcome stage's five parts against them; the mode exits 5 if its two
 #   readings disagree.
 # * `simdjson` rows come from `bench/simdjson-baseline.cc`: `pad_ns` is one
@@ -277,7 +278,7 @@ wall_row() { # <build dir> <file> -> row on stdout
 consumer_row() { # <build dir> <file> [reps] -> row on stdout
   local out status row r=${3:-$reps}
   set +e
-  out=$("${pin[@]}" "$work/$1/leanllvm-json-route" --consume "$2" "$r" \
+  out=$("${pin[@]}" "$work/$1/leanllvm-json-route" --consume-events "$2" "$r" \
           2>&1 >/dev/null)
   status=$?
   set -e
@@ -288,14 +289,14 @@ consumer_row() { # <build dir> <file> [reps] -> row on stdout
   case $status in
     0) ;;
     *)
-      echo "bench: $(basename "$2") exited $status under --consume in $1:" >&2
+      echo "bench: $(basename "$2") exited $status under --consume-events in $1:" >&2
       printf '%s\n' "$out" >&2
       exit 1
       ;;
   esac
   row=$(printf '%s\n' "$out" | grep '^row ')
   if [ "$(field "$row" path)" != fast ]; then
-    echo "bench: $(basename "$2") took path=$(field "$row" path) under --consume" >&2
+    echo "bench: $(basename "$2") took path=$(field "$row" path) under --consume-events" >&2
     exit 1
   fi
   printf '%s\n' "$row"
@@ -338,11 +339,12 @@ done
 printf '\n'
 
 # --- the consumer's rows --------------------------------------------------
-# `--consume` reads the fast path's result without printing: the header through
-# indexing and the event stream record by record, counted and checksummed.  It
-# is driven on the production build, so nothing in its row comes from the
-# adapter's instrument; the mode exits 5 if its two readings disagree.
-printf 'consume rows  <build>/leanllvm-json-route --consume <file> %s\n\n' "$reps"
+# `--consume-events` reads the event arm's result without printing: the header
+# through indexing and the event stream record by record, counted and
+# checksummed.  It is driven on the production build, so nothing in its row
+# comes from the adapter's instrument; the mode exits 5 if its two readings
+# disagree.
+printf 'consume rows  <build>/leanllvm-json-route --consume-events <file> %s\n\n' "$reps"
 cons_rows="$work/cons-fast.rows"
 : >"$cons_rows"
 for doc in "${fast_docs[@]}"; do

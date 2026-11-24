@@ -60,8 +60,8 @@ decision, the depth counter, the library's `admission` and the library's own
 total, both decisions and both policy readings, on one line;
 `--stages <file> <reps>`: one process,
 `reps` repetitions, the document re-read inside every repetition, one median per
-stage and per outcome part; and `--consume <file> <reps>`: the same fast path,
-with the result read and never printed, priced as two readings.  Both are
+stage and per outcome part; and `--consume-events <file> <reps>`: the same fast
+path, with the result read and never printed, priced as two readings.  Both are
 documented in `probes/json/route/README.md` beside the build knobs `OPT` (the
 kernel object's level) and `TIMING=1` (the adapter's stage instrument).
 
@@ -113,10 +113,10 @@ but are not in `outcome_ns` or in `total_ns`.
 
 ## The consumer rows
 
-`--consume` runs the fast path and reads the result the way a consumer that
-keeps no printed copy would: the header words through `ByteArray` indexing, and
-the event stream record by record at the widths `kernel/json/stage2.h`
-documents (a tag for `{`, `}`, `[`, `]`, `true`, `false` and `null`; a tag and
+`--consume-events` runs the event arm's fast path and reads the result the way a
+consumer that keeps no printed copy would: the header words through `ByteArray`
+indexing, and the event stream record by record at the widths
+`kernel/json/stage2.h` documents (a tag for `{`, `}`, `[`, `]`, `true`, `false` and `null`; a tag and
 eight bytes for a number; a tag, four length bytes and eight span bytes for a key
 or a string).  Two readings are priced in the same repetition, alternating which
 goes first: `consume_fold_ns` reads each record's tag, length and payload and
@@ -232,7 +232,7 @@ row doc=depth-128.json size=256 build=o2 process_wall_ns=7383769 reps=21
 row doc=depth-129.json size=258 build=o2 process_wall_ns=9174120 reps=21
 row doc=scale-4096.json size=4096 build=o2 process_wall_ns=18034621 reps=21
 
-consume rows  <build>/leanllvm-json-route --consume <file> 21
+consume rows  <build>/leanllvm-json-route --consume-events <file> 21
 
 row doc=fast-nums-4096.json size=4099 path=fast reps=21 read_ns=4410 admission_ns=2525 staging_ns=4974 route_ns=13480 copyout_ns=- consume_fold_ns=12865 consume_values_ns=18771 ndst=0 nev=6149 tokens=685 values=685 walked=1 foldsum=15412454270129148596 valuessum=15412454270129148596
 row doc=fast-nums-16384.json size=16387 path=fast reps=21 read_ns=5948 admission_ns=9671 staging_ns=19453 route_ns=57246 copyout_ns=- consume_fold_ns=52162 consume_values_ns=74466 ndst=0 nev=24581 tokens=2733 values=2733 walked=1 foldsum=1641572509537028788 valuessum=1641572509537028788
@@ -930,10 +930,10 @@ partition.
 
 Construction: the byte columns divide the stage table's column by 64; the token
 columns multiply it by the document's block count and divide by the event
-records the route's `--consume` counts on the same file (685, 2,733, 10,925 and
-8,902).  The five escape documents carry three event records each, so their
-per-token figures divide by three and are not read; their per-byte figures are
-the comparable ones and are in the first table.
+records the route's `--consume-events` counts on the same file (685, 2,733,
+10,925 and 8,902).  The five escape documents carry three event records each,
+so their per-token figures divide by three and are not read; their per-byte
+figures are the comparable ones and are in the first table.
 
 The number conversion is the walk's largest part on the scalar arrays: the
 `numbers` act times `num_fast_el1` over every number token, 50.938, 52.996 and

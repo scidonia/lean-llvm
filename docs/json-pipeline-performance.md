@@ -1714,7 +1714,7 @@ runs two arms over the units' eight documents, checking every file against the
 size and sha256 `tests/json-units-bench/transcript.txt` records. The route arm is
 the binary `probes/json/route/build.sh` produces -- this run's is sha256
 `a9e37c684223fb0d9950c67c8c91723997bfc5212205c4ce595f6e1df7714a37`, the default
-`TIMING=0` build -- invoked as `leanllvm-json-route --consume <doc> 51`.
+`TIMING=0` build -- invoked as `leanllvm-json-route --consume-events <doc> 51`.
 
 The two arms alternate which goes first inside each trial, so a drift across the
 trial does not become a quotient; each document is warmed outside the clock
@@ -1773,11 +1773,12 @@ sweep and 1.16 after it.
 
 ### The route's cost split
 
-The route's own intervals, from `--consume`: `admission` is the two-phase domain
-decision, `staging` is the caller's buffers built in the pipeline record's
-shape, `native` is the call to `leanllvm_json_pipeline` (classification, the
-entry emitter, escape positions, UTF-8 validity and stage 2 in one function),
-and `consume` is `consume_values_ns`, a reading that materialises one record per
+The route's own intervals, from `--consume-events`: `admission` is the
+two-phase domain decision, `staging` is the caller's buffers built in the
+pipeline record's shape, `native` is the call to `leanllvm_json_pipeline`
+(classification, the entry emitter, escape positions, UTF-8 validity and stage 2
+in one function), and `consume` is `consume_values_ns`, a reading that
+materialises one record per
 event and sums the decoded-string arena. The document read (`read_ns`) is in no
 stage. `end2end` is their sum per trial. The adapter's copy-in and copy-out are
 inside `native` and not separated, because this is the `TIMING=0` build.
@@ -1948,10 +1949,10 @@ materialisation, not a user's.
   consumer intervals price a refusal. Only the three synthetic documents have an
   accepted-pipeline figure.
 - **Nothing end to end at a system boundary.** The subject is
-  `leanllvm-json-route --consume`, a probe binary, and the consumer is the
-  harness's reading of the event stream. The adapter's copy-in and copy-out are
-  inside `native` and not separated, and the `TIMING=1` dissection (`--stages`)
-  was not used.
+  `leanllvm-json-route --consume-events`, a probe binary, and the consumer is
+  the harness's reading of the event stream. The adapter's copy-in and copy-out
+  are inside `native` and not separated, and the `TIMING=1` dissection
+  (`--stages`) was not used.
 - **Nothing about the parity of the two artifacts.** The route emits an event
   stream into the caller's buffer; simdjson's `parse` traverses an on-demand
   DOM. `native ÷ parse` compares two full parses of the same bytes that produce
@@ -2013,7 +2014,7 @@ runs them:
 |`admission`|the two-phase decision: the depth walk over the structural delimiter sequence, then the character-policy scan where the walk saw a candidate byte (`admission.h`, the code the adapter calls)|
 |`staging`|the caller's window `[0,0,0] ++ doc ++ padding ++ 32` and the thirteen buffers in the record's capacities|
 |`native`|the adapter's copy-in (present in the fresh arm only), `leanllvm_json_pipeline`, and the tagged result's construction|
-|`consumer`|the values reading of `--consume`: the header decode, the arena sum, and one record materialised per event|
+|`consumer`|the values reading of `--consume-events`: the header decode, the arena sum, and one record materialised per event|
 
 `fresh` rebuilds the workspace on every call: the window and the thirteen
 buffers are allocated and zeroed per call, the adapter's thirteen copies are
@@ -2120,8 +2121,8 @@ The fresh cells are not the earlier section's 1.68, 5.98 and 4.32, and they do
 not supersede them. Those figures were taken on a host where a fresh staging of
 the same size cost 42-164 µs; here it costs 492-508 µs. The route binary
 itself, run on the same files in the same session, reports `staging_ns`
-392281-415423 and `route_ns` 693725-782787 in its own `--consume` rows at one
-repetition each — a sample of the regime rather than a row of its own — quoted
+392281-415423 and `route_ns` 693725-782787 in its own `--consume-events` rows at
+one repetition each — a sample of the regime rather than a row of its own — quoted
 in the transcript, so the fresh arm's regime is the route's on this host and
 not an artefact of the C harness. The reused arm removes that term, which is
 why its cells are the ones that price parse work: 1.1-3.6× simdjson's full
@@ -2263,8 +2264,8 @@ The following checks held on every act, timed or not:
   bytes and returned the reference sums. The equality is therefore a statement
   about stale bytes that were there, not about zero-filled buffers.
 - **The independent cross-check.** The harness's reference observation for each
-  document equals the route binary's own `--consume` row for the same file:
-  verdict, `ndst`, `nev`, tokens, values, `foldsum`, `valuessum`. The C
+  document equals the route binary's own `--consume-events` row for the same
+  file: verdict, `ndst`, `nev`, tokens, values, `foldsum`, `valuessum`. The C
   transcription of the route's reading and the Lean route's reading agree on
   these identities.
 
@@ -2435,8 +2436,8 @@ construction, admission, the document read and the consumer's reading, and the
 reuse path moves the adapter's thirteen-array copy-in out of the interval
 (`staging_ns=-`); `gate=1` shows the emitted bytes equal the default's, not that
 the two arms did equal work. These rows therefore cannot be compared with the
-route's `--consume` rows above, whose `native` interval includes the copy-in and
-the result copy-out, and they are not the end-to-end pair.
+route's `--consume-events` rows above, whose `native` interval includes the
+copy-in and the result copy-out, and they are not the end-to-end pair.
 
 ### The wrapper: about 19 µs on the 0.9118 basis
 
@@ -2779,8 +2780,8 @@ the adapter's pipeline is 92–98% of `route_ns`; no-copy `copyout_ns` is
 86.97/10.16/11.83 µs. So the consumer is no longer the end-to-end blocker, but
 the **route + consumer is still 5.6/7.6/5.3× simdjson's parse** on the three
 shapes, against the route-native 1.2–1.5×. The C walk is a benchmark consumer,
-not the Lean runtime's reading; the default `--consume` path and its Lean
-consumer are unchanged.
+not the Lean runtime's reading; the event arm's `--consume-events` path and its
+Lean consumer are unchanged.
 
 ### The certification state
 
@@ -2856,6 +2857,7 @@ Re-measure, not adjust, when:
 |the 80.6/17.5/4.9 split|`stage2.c`, the split harness or its ablations change, or the 30-document corpus is replaced|
 |the DFA ratios (1.103/1.083/1.543)|`stage2_dfa.c`, the gate, the 148 corpus or the route harness changes; the table pin changes with the C tables|
 |the C consumer rows|`consumeFast`, the `shim.c` ABI, the `TIMING=1` build or the three canonical documents change|
+|the fair `rpn/ps` row (0.8735; 128/151 faster)|`tests/json-fair/{gen.py,run.sh,fair.cc,manifest.tsv}`, the no-event entry or either pipeline's object set, the corpus, the host class or the governor handling changes; a new session replaces the 3 × 51 discipline|
 |the certification state|the fast family's modules, the no-list draft, the DFA body/bridge, or the C fixture/pin change, or the no-event entry's contract and its walk obligation|
 
 ## Fair comparison and reappraisal (measured 2026-11-22)
@@ -2952,7 +2954,7 @@ not pay as a separate pass.
 stream and 2.4% with the consumer, faster on the majority — not a large win and
 not a statement about the raw parsers.**
 
-### Consumer boundary: the no-event prototype reaches 1.024× simdjson, still short of a majority
+### Consumer boundary: the shipped no-event entry's fair row is a majority, 0.8735
 
 `rpc` over `ps` for the **materialising** route (same observed values, simdjson
 does not materialise an event buffer): median **1.424**, ours faster on
@@ -2961,48 +2963,83 @@ are the four escape-heavy documents and the canonical strings document; the
 direct-sum term is `ps/parse` 1.183. This is the value-reading boundary, not the
 event-stream boundary.
 
-**The no-event row is measured on the scratch prototype; the entry now exists
-and is contract-pinned.** A bench-only no-event stage 2 (`/tmp/noevent`) skips
-the event buffer and produces the consumer's reading directly — arena sum,
-tokens, values, sum — with the certified stage 1, grammar, refusals and
-string/number helpers.  Gates: **224/224** (46 corner documents + 30 + 148) on
-verdict, refusal offset, tokens, values and sum, against the certified event
-stream + unchanged consumer.  The rows below are that prototype's measurements,
-taken on `fused-utf8`'s stage 2; the entry this tree now carries is derived
-from `main`'s stage 2 (`kernel/json/stage2_noevent.c`,
+**The scratch prototype's row is history; the shipped entry's row is the fair
+measurement.** A bench-only no-event stage 2 (`/tmp/noevent`, built on
+`fused-utf8`'s stage 2) skips the event buffer and produces the consumer's
+reading directly — arena sum, tokens, values, sum — with the certified stage 1,
+grammar, refusals and string/number helpers.  Gates: **224/224** (46 corner
+documents + 30 + 148) on verdict, refusal offset, tokens, values and sum,
+against the certified event stream and unchanged consumer; the record is
+`/tmp/noevent/summary.txt`.  It is not the body this tree carries: the entry here
+is derived from `main`'s stage 2 (`kernel/json/stage2_noevent.c`,
 `kernel/json/pipeline_noevent.c`), and its contract pins the *reading*, not the
-ratio.  The certified ABI and `stage2.c` are untouched and remain the default.
+ratio.  The two rows differ in body, harness and host, and the delta is not
+explained by anything the comparison measured.  The prototype's row is therefore kept
+only as the prior comparison:
 
-|row (148 documents)|median|faster|1.0–1.10|>1.10|
+|prototype (148 documents)|median|faster|1.0–1.10|>1.10|
 |---|---:|---:|---:|---:|
-|certified ÷ no-event|**1.645**|—|—|—|
-|no-event ÷ simdjson direct-sum|**1.024**|**52**|50|46|
+|certified ÷ prototype|**1.645**|—|—|—|
+|prototype ÷ simdjson direct-sum|**1.024**|**52**|50|46|
 
-The certified route takes **1.645×** the no-event path's time (2.011× on dense);
-against simdjson's direct-sum traversal the no-event path is 1.024× (2.4% slower
-median), with **52 faster, 50 in the 1.0–1.10 band, 46 over**. So **102/148
-(69%) are at or within 10% or faster — a major move from 0/148 — but this is not
-yet the stated “faster on the majority” (52/148), and 46 remain over 10%.** The
-512 B group is
-0.911 (19/20 at or within 10%, 15 faster); escapes 1.326 (0/4), pretty 1.130
-and strings 0.963. The canonical shapes: dense certified/no-event 2.011 and
-no-event/simdjson 0.831; strings 0.963/1.850; UTF-8 1.325/1.127.
+The prototype took 1.645× the certified route's time (2.011× on dense) and
+1.024× simdjson's direct-sum traversal (2.4% slower median), faster on 52/148.
+**No count or ratio here is the shipped entry's**, and the majority condition is
+not what this row reads.
+
+**The shipped entry's fair row.**  The additive entry is measured by
+`tests/json-fair/run.sh` over the pinned corpus of 151 documents — 148
+heterogeneous documents from `gen.py` plus the three canonical 64 KiB documents
+— at `BENCH_TRIALS=3` × `BENCH_REPS=51`, `taskset` CPU 0, arms alternating, with
+simdjson 5.0.5's traversal and direct consumer sum on the other side.  The
+instrument and corpus are the measurement record's: 0 gate failures over 151
+documents;
+`run.sh` `cfb21fe0…`, `gen.py` `bfdcb84f…`, `manifest.tsv` `61a4999e…` (151
+rows), `fair.cc` `e7ffab24…` (the writer), the simdjson 5.0.5 store
+paths, host `AMD EPYC 9B45`, governor unknown; the per-document table is
+`/tmp/m2-per-document.tsv`.
+
+|row (151 documents)|median|faster|1.0–1.10|>1.10|
+|---|---:|---:|---:|---:|
+|`rpn/ps` (no-event reading ÷ traversal + direct consumer sum)|**0.8735**|**128**|22|1|
+|the same, 148 heterogeneous documents|**0.8729**|127|21|0|
+
+The majority condition is **met**: 128/151 (127/148 heterogeneous) are strictly
+faster, and 150/151 are at parity or within 10%.  The one over-10% document is
+`syn-strings-64k` at **1.2613**, a canonical 64 KiB document, not the
+`escapes`/8–32 KiB shape the body work targeted; the heterogeneous set has none
+over 10%.  Deep documents read 0.585–0.591 and escapes 0.718–0.738; the four
+heterogeneous styles cluster 0.79–0.96 by size.  The recount under NF3 over the
+per-document table is `RECOUNT 151 128 22 1 0.8735 148 127 21 0 0.8729`.  This is
+one row on one host at the recorded discipline, not a cross-machine claim, and
+no sentence here generalizes it.
 
 The removed term is the event stores (7.6% of the DFA stage-2 call) plus the
 13n+128-byte event buffer, its writes and the consumer's walk of `nev` bytes;
-that is what the 1.645× prices. Strings and escapes are body-bound and stay
-over 10%. **Probe-only, and now contract-backed.** The additive entry has a pinned
-boundary contract — `stage2NoEventBoundary` in
-`LeanLLVM/Refinement/JsonStage2NoEventContract.lean`, with the route
-`tests/json-noevent/check.sh` over the certified entry, `pipeline.c`'s stage 1
-and the unchanged consumer — so the reading it claims is no longer a prototype's
-unverified output.  Two obligations remain named and uninhabited: the walk,
-`Stage2NoEventWalkObligation`, conditional on a contract for `od_gap_recover`,
-which the tree does not model; and, inside it, that the emitted literal chain
-implements the proved rule `neLitCheck_eq_litCheck`.  The certified event-stream
-ABI and its proof remain the default: shipping the no-event path needs the
-consumer-interface change (the consumer fed directly), which this work does not
-make.
+that is what the certified route's 1.645× over the *prototype* prices, and the
+shipped entry's row is the one above.
+
+The route's shipped default is the no-event entry: `--consume` reads the no-event arm's result, and the certified event path remains selectable (`--consume-events`/`--arm events`). The fair row this note publishes is that shipped entry's.
+
+**Decided state: the no-event entry is contract-pinned and measured.**  The
+additive entry has a pinned boundary contract — `stage2NoEventBoundary` in
+`LeanLLVM/Refinement/JsonStage2NoEventContract.lean` — checked by
+`tests/json-noevent/check.sh` over the committed corpus and the certified
+entry's stage 1, against the unchanged consumer.  `--doc` still prints the
+certified event arm's observation, and the event arm's bytes stay frozen against
+its 183 base rows, so the default change moves none of them.  The walk's
+obligation is now inhabited at the named tier:
+`stage2NoEventWalkObligation_of_staging` and
+`stage2NoEventCallSatisfies_of_staging`
+(`LeanLLVM/Refinement/JsonStage2NoEventWalkAssembly.lean`) derive it, and the
+pipeline's call slot, from the dispatch's rows at `gap := stage2GapRecover`.  The
+rows remain a premise; the model's body faithfulness is `docs/contract.md`
+§7.6's trust row; the emitted literal chain is proved to implement the rule
+`neLitCheck_eq_litCheck` (`stage2NoEventLitChain_run`, with its `true`, `false`
+and `null` instances at the shared `phi`) and is inside that obligation; and the
+certified walk's premise tier is **not** discharged.  No further optimization
+was taken: the majority condition was met by this row, and any further work is a
+new decision behind a body re-capture.
 
 ### Raw parse: not like-for-like
 
@@ -3101,36 +3138,38 @@ corpus…").
 - **The raw-parse and end-to-end rows are measurable**, and they are not
   like-for-like: raw parse 1.291, trusted end-to-end 1.827, cfast 6.374, nocopy
   47.888 against `pad+parse`.
-- **The no-event consumer boundary is measured, and the entry is now
-  contract-backed.** The prototype is 1.645× faster than the certified route
-  (2.011× on dense), 1.024× simdjson's direct sum, with 52/148 faster and
-  102/148 (69%) at or within 10%; 46 remain over 10%, so it is a major move from
-  0/148 but **not** the majority-faster condition.  The additive entry's
-  contract states the reading the unchanged consumer's fold computes
-  (`stage2NoEventBoundary`, and its corollary `stage2NoEventBoundary_consumer`);
-  `tests/json-noevent/check.sh` (NE1/NE2/NE3/NE4/NE6) is what checks the two C
-  entries agree over the committed corpus.  The contract does not pin the
-  prototype's ratios, which are measurements of a different body.  Shipping
-  still needs the consumer-interface change, which is not made.
+- **The shipped no-event entry's fair row is a majority, and the entry is
+  contract-backed.** The fair row over the 151-document corpus is 0.8735 median,
+  128/151 faster, 22 in band, 1 over (127/21/0 over the 148 heterogeneous), so
+  the majority condition is met.  The additive entry's contract states the
+  reading the unchanged consumer's fold computes (`stage2NoEventBoundary`, and
+  its corollary `stage2NoEventBoundary_consumer`); `tests/json-noevent/check.sh`
+  checks the two C entries agree over the committed corpus.  The prototype's
+  1.645×/1.024× row above is a different body's and is not this entry's.  The
+  entry is the route's shipped default (`--consume`), and the certified event
+  arm remains selectable (`--consume-events`/`--arm events`).
 
 **What it does not support.**
 
 - **Faster than simdjson `parse`.** 0/151 on the raw row; the event-producing
   route is 1.291× the traversal and 1.676× with the consumer.
-- **Faster than the fastest generic parser.** The materialising route is 1.424×
-  simdjson's direct-sum term (simdjson's `ps` is 0.702× our time, ≈30% faster at
-  that boundary); the no-event path is 1.024× with 52/148 faster and 46 over
-  10%. Neither is a majority-faster or all-within result at that boundary.
+- **Faster at that boundary on every document.** The shipped no-event entry is
+  0.8735 median and faster on 128/151, but 22 documents are in the 1.0–1.10 band
+  and one (`syn-strings-64k`, 1.2613) is over 10%.  The prototype's row is
+  1.024× with 52/148 faster and 46 over.  Neither is an all-documents win.
 - **End-to-end parity.** The trusted contract is 1.827× median on
   `pad+parse`, `cfast` 6.374×, `nocopy` 47.888×; 0/151 at or within 10% for all
   three.
 - **A comparison without the entry writer.** The raw `s1/cert` 0.603 omits the
   entry writer's closing-quote recovery (2.34× raw stage 1, 57.3% of `s1w`); it
   is not the fair stage-1 row and is not used as one.
-- **A shippable fast/DFA/frame path.** The DFA and the frame have no refinement
-  theorem over their C bodies.  The no-event entry has a pinned boundary contract
-  and named obligations, not a refinement of its walk, and it is not shipped; the
-  certified defaults are unchanged.
+- **A _proved_ default no-event path.** The DFA and the frame have no
+  refinement theorem over their C bodies.  The no-event entry is the route's
+  shipped default, and it has a pinned boundary contract and the walk's
+  obligation inhabited at its premise tier — the rows a premise, the
+  `od_gap_recover` trust row, and the certified walk's premise tier not
+  discharged — so the route's shipped default is not a proved refinement of its
+  walk.
 - **A large equal-output win.** 3.6%/2.4% median and 89/151 faster is a
   majority-slight-advantage, not a step change; ours loses on pretty and tab.
 
@@ -3152,12 +3191,13 @@ corpus…").
   best-stage-1 route only 1.704 → 1.543 → 1.477 while staying 0/148. Closing it
   needs a change at the stage boundary (typed entries/masks, no-event consumer)
   or admission, not another walk rewrite.
-- The **no-event boundary is measured, not assumed**: 52/148 faster, 102/148 at
-  or within 10%, 46 over.  It is a major move from 0/148 but not the
-  majority-faster condition; the remaining over-10% documents are body-bound
-  (escapes and the 8/32 KiB sizes).  The entry's reading is now contract-pinned;
-  shipping the path needs the consumer-interface change and the walk's
-  obligation, not another rewrite of the ratios.
+- The **no-event target is met at the consumer boundary**: 0.8735 median,
+  128/151 faster (127/148 heterogeneous), 150/151 at parity or within 10%.  The
+  one residual is a canonical strings document, not the body-bound escapes or
+  8/32 KiB shape; no further optimisation was taken, and any further work is a
+  new decision behind a body re-capture.  The entry's reading is contract-pinned
+  and its walk obligation is inhabited at the named premise tier; shipping it by
+  default still needs the consumer-interface change, not another ratio rewrite.
 
 ### Superseded readings
 
@@ -3165,8 +3205,9 @@ These are kept for history and are not the fair comparison:
 
 - The earlier statement that **the no-event row was absent/unmeasured** is
   superseded by `/tmp/noevent` (224/224 gates; certified/no-event 1.645×;
-  no-event/direct-sum 1.024×; 52/148 faster, 102/148 at or within 10%). The
-  measured row is in §"Consumer boundary…", with the probe-only, contract-backed status.
+  no-event/direct-sum 1.024×; 52/148 faster, 102/148 at or within 10%).  That is
+  the scratch prototype's row and is kept as history; this entry's row is the
+  fair measurement in §"Consumer boundary…", with its own provenance.
 - The route-native **1.486–1.594** (§"The heterogeneous corpus…") is
   `route_ns` over `parse`: a raw-parse row, now read through the equal-output
   rows. It is not superseded as a measurement; it is superseded as the fair

@@ -86,6 +86,38 @@
 #          control, and asserts its one public symbol.  `--link-census` is
 #          accepted for this unit too: the place in the assembled link is the
 #          pipeline's own claim.
+#   noevent the additive no-event stage-2 entry, `kernel/json/stage2_noevent.c`.
+#          It is authored text, not an extraction: it carries the certified
+#          helpers by **including** `stage2.c` under a rename of the certified
+#          entry (`#define leanllvm_json_stage2
+#          leanllvm_json_stage2_noevent_lib`), and adds only its own entry and
+#          the literal packer `ne_lit`.  Its token claim is therefore an
+#          invariance of the preprocessing: every definition README.md's
+#          `stage2-entities:` and `stage2-extra:` name, extracted from the
+#          unit's preprocessed text, must be the same tokens as the same
+#          definition in the preprocessed `stage2.c` (macro entities compared
+#          through both translation units' `-dM` macro tables).  Its own source
+#          text defines only `ne_lit` and the unit's entry (the renamed
+#          certified entry is the include's), and the arm checks that direction
+#          too.  Its mutation control changes two things in a copy of the
+#          included file -- `MAXD`'s numeral and one numeral in a helper body --
+#          and the comparison must report both.  `--arms-only` compiles it and
+#          asserts its symbol census: the unit's entry, the include's renamed
+#          certified entry as the recorded second global, and the one undefined
+#          project symbol the certified stage-2 unit also leaves
+#          (`leanllvm_json_escape_expand`).  `--preprocess` is this unit's
+#          invariance arm under its own name.
+#   pipeline-noevent
+#          the assembled caller with the no-event tail,
+#          `kernel/json/pipeline_noevent.c`.  It is `pipeline.c`'s block loop
+#          with the reading tail in place of the certified stage 2, so its
+#          source claim is the call census too: the certified pipeline's six
+#          ABIs with `leanllvm_json_stage2` replaced by
+#          `leanllvm_json_stage2_noevent`, each called once.  The mutation
+#          control changes one call target.  `--arms-only` compiles it, runs
+#          the measurement-vocabulary detector with its positive control, and
+#          asserts its one public symbol.  `--preprocess` is refused for this
+#          unit: it has no included measured text.
 #
 # Modes (default: --identity --mutate):
 #   --identity    extract the entities `kernel/json/README.md` lists from the
@@ -269,8 +301,23 @@ case "$unit" in
     input_paths=("$kernel" "$repo/kernel/json/pipeline.h" "$readme" \
                  "$repo/probes/install/ir/json-pipeline.inventory")
     ;;
+  noevent)
+    kernel=$repo/kernel/json/stage2_noevent.c
+    oracle=""
+    # The reference side is the file the unit includes, not a vendored
+    # measured header: this unit's claim is about the include's text.
+    input_paths=("$kernel" "$repo/kernel/json/stage2_noevent.h" \
+                 "$repo/kernel/json/stage2.c" "$repo/kernel/json/stage2.h" \
+                 "$repo/kernel/json/escape.h" "$readme")
+    ;;
+  pipeline-noevent)
+    kernel=$repo/kernel/json/pipeline_noevent.c
+    oracle=""
+    input_paths=("$kernel" "$repo/kernel/json/stage2_noevent.h" "$readme" \
+                 "$repo/probes/install/ir/json-pipeline.inventory")
+    ;;
   *)
-    printf 'SETUP: unit %s has no source identity arm; implemented units: s1 entry utf8 escape stage2 pipeline\n' "$unit" >&2
+    printf 'SETUP: unit %s has no source identity arm; implemented units: s1 entry utf8 escape stage2 pipeline noevent pipeline-noevent\n' "$unit" >&2
     exit 3
     ;;
 esac
@@ -304,9 +351,10 @@ require_paths() {
 [ "$tree_only" -eq 1 ] && [ "$needs_unit" -eq 1 ] && \
   for path in "${input_paths[@]}"; do require_in_tree "$path"; done
 
-if [ "$run_preprocess" -eq 1 ] && [ "$unit" != s1 ]; then
-  printf 'SETUP: --preprocess is the s1 unit'"'"'s claim; the %s entities exist under one\n' "$unit" >&2
-  printf 'SETUP: macro set only, so no macro-set invariance is claimed for them (exit 3)\n' >&2
+if [ "$run_preprocess" -eq 1 ] && [ "$unit" != s1 ] && [ "$unit" != noevent ]; then
+  printf 'SETUP: --preprocess is the s1 unit'"'"'s claim (a macro-set invariance) and the\n' >&2
+  printf 'SETUP: noevent unit'"'"'s (the included text is unchanged by the include); the\n' >&2
+  printf 'SETUP: %s unit has neither, so the mode is refused (exit 3)\n' "$unit" >&2
   exit 3
 fi
 
@@ -420,9 +468,29 @@ case "$unit" in
     xl_exempt=""
     detector_unit=$detector
     ;;
+  noevent)
+    # The helper entities are the included `stage2.c`'s own: the unit adds only
+    # its entry, the include's renamed certified entry and `ne_lit`.  The
+    # reference side is `stage2.c` itself, so the deletion list is not applied
+    # (those arms are already absent from it).
+    entity_specs=$(list_field stage2-entities)
+    deletion_specs=""
+    extra_specs=$(list_field stage2-extra)
+    defs_re="ne_lit|s2_[a-z0-9_]+|od_[a-z0-9_]+|out_[a-z0-9_]+|err_[a-z0-9_]+|z_[a-z0-9_]+|num_[a-z0-9_]+|el_[a-z0-9_]+|num_d8_[a-z0-9_]+|EPOW|EPOW_[A-Z]+|NUMF_[A-Za-z0-9_]+|US_SLACK|MAXD|PRIME|IXP|EL_ENTRY|EL_MASK|EL_HALF|dbits|is_ws|lit_check|to_double|num_scan|hup|leanllvm_json_[a-z0-9_]+"
+    xl_exempt=""
+    detector_unit=$detector_stage2
+    ;;
+  pipeline-noevent)
+    entity_specs=""
+    deletion_specs=""
+    extra_specs=""
+    defs_re="leanllvm_json_[a-z0-9_]+"
+    xl_exempt=""
+    detector_unit=$detector
+    ;;
 esac
 
-if [ -z "$entity_specs" ] && [ "$unit" != pipeline ]; then
+if [ -z "$entity_specs" ] && [ "$unit" != pipeline ] && [ "$unit" != pipeline-noevent ]; then
   printf 'SETUP: the %s identity list names no entities\n' "$unit" >&2
   exit 3
 fi
@@ -432,6 +500,13 @@ if [ "$run_stage_tu" -eq 0 ]; then
   printf 'unit:          %s\n' "$unit"
   if [ "$unit" = pipeline ]; then
     printf 'claim:         the call census of leanllvm_json_pipeline\n'
+  elif [ "$unit" = pipeline-noevent ]; then
+    printf 'claim:         the call census of leanllvm_json_pipeline_noevent\n'
+  elif [ "$unit" = noevent ]; then
+    printf 'claim:         the included stage2.c text, token for token\n'
+    printf 'own text:      ne_lit leanllvm_json_stage2_noevent leanllvm_json_stage2_noevent_lib\n'
+    printf 'entities:      %s helper definition(s), from the stage2 identity list\n' \
+      "$(printf '%s\n' $entity_specs | wc -l | tr -d ' ')"
   else
     printf 'identity list: %s\n' "$entity_specs"
     printf 'delete list:   %s\n' "$deletion_specs"
@@ -1077,11 +1152,20 @@ pipeline_callees() {
     | LC_ALL=C sort
 }
 
-# pipeline_census <preprocessed> -- the calls `leanllvm_json_pipeline` makes, as
-# `<name> <count>` lines.  The declaration in `pipeline.h` is skipped; only the
+# pipeline_noevent_callees -- the same list with the tail's target substituted:
+# this unit is the certified block loop with the no-event stage 2 in place of
+# the certified one, and that single substitution is the whole call difference.
+pipeline_noevent_callees() {
+  pipeline_callees | sed 's/^leanllvm_json_stage2$/leanllvm_json_stage2_noevent/' \
+    | LC_ALL=C sort
+}
+
+# pipeline_census <preprocessed> [<self>] -- the calls the definition makes, as
+# `<name> <count>` lines.  The declaration in the header is skipped; only the
 # definition's body is read.
-pipeline_census() { # <file>
-  awk -v self="leanllvm_json_pipeline" '
+pipeline_census() { # <file> [<self>]
+  local self=${2:-leanllvm_json_pipeline}
+  awk -v self="$self" '
     state == 0 && index($0, self "(") > 0 { state = 1; next }
     state == 1 && $0 !~ /\{/ && $0 ~ /;[ \t]*$/ { state = 0; next }
     state == 1 && $0 ~ /\{/ { state = 2 }
@@ -1103,9 +1187,22 @@ pipeline_census() { # <file>
   ' "$1" | LC_ALL=C sort
 }
 
-# pipeline_expected -- the pinned six, each once, in the census's shape.
+# pipeline_expected -- the pinned callees, each once, in the census's shape.
 pipeline_expected() {
-  pipeline_callees | awk '{ print $1, 1 }' | LC_ALL=C sort
+  if [ "$unit" = pipeline-noevent ]; then
+    pipeline_noevent_callees
+  else
+    pipeline_callees
+  fi | awk '{ print $1, 1 }' | LC_ALL=C sort
+}
+
+# census_self -- the definition whose body the census reads.
+census_self() {
+  if [ "$unit" = pipeline-noevent ]; then
+    printf 'leanllvm_json_pipeline_noevent'
+  else
+    printf 'leanllvm_json_pipeline'
+  fi
 }
 
 arm_identity_pipeline() {
@@ -1113,25 +1210,30 @@ arm_identity_pipeline() {
   printf '\n== Arm A (%s): the call census, against the pinned inventory\n' "$unit"
   if ! "$cc" "${cflags[@]}" -I "$repo/kernel/json" -E -P "$kernel" \
       > "$work/pipeline.i"; then
-    printf 'SETUP: the pipeline did not preprocess\n' >&2
+    printf 'SETUP: the %s did not preprocess\n' "$unit" >&2
     return 3
   fi
-  got=$(pipeline_census "$work/pipeline.i")
+  got=$(pipeline_census "$work/pipeline.i" "$(census_self)")
   want=$(pipeline_expected)
   if [ "$got" != "$want" ]; then
-    printf 'DIFF: the pipeline'"'"'s call census is not the pinned six\n' >&2
+    printf 'DIFF: the %s call census is not the pinned six\n' "$unit" >&2
     printf '      pinned: %s\n' "$(echo $want)" >&2
     printf '      census: %s\n' "$(echo $got)" >&2
     return 1
   fi
-  printf 'ok: the body calls exactly the six unit ABIs, each once:\n'
+  if [ "$unit" = pipeline-noevent ]; then
+    printf 'ok: the body calls the certified block loop'"'"'s six ABIs, with\n'
+    printf '    leanllvm_json_stage2 replaced by leanllvm_json_stage2_noevent, each once:\n'
+  else
+    printf 'ok: the body calls exactly the six unit ABIs, each once:\n'
+  fi
   printf '%s\n' "$got" | awk '{ printf "    %-32s %s\n", $1, $2 }'
   return 0
 }
 
 arm_mutate_pipeline() {
   local mut got want
-  printf '\n== Control: one call target changed in a copy of the pipeline\n'
+  printf '\n== Control: one call target changed in a copy of the %s\n' "$unit"
   mut=$work/pipeline.control.c
   awk '
     { if (!done && index($0, "leanllvm_json_entry_pos8(entw") > 0) {
@@ -1153,7 +1255,7 @@ arm_mutate_pipeline() {
     printf 'SETUP: the control copy did not preprocess\n' >&2
     return 3
   fi
-  got=$(pipeline_census "$work/pipeline.control.i")
+  got=$(pipeline_census "$work/pipeline.control.i" "$(census_self)")
   want=$(pipeline_expected)
   if [ "$got" = "$want" ]; then
     printf 'FAIL: the census did not see the changed call target\n' >&2
@@ -1163,10 +1265,271 @@ arm_mutate_pipeline() {
   return 0
 }
 
+# --- the no-event entry: the include's text, and its own definitions --------
+
+# The three definitions the unit carries that are not the included file's:
+# the literal packer and the two entry points (the unit's own, and the
+# include's renamed certified entry).
+noevent_own="ne_lit leanllvm_json_stage2_noevent leanllvm_json_stage2_noevent_lib"
+
+# tokens_of <text> -- whitespace-folded tokens.  Both sides are already
+# preprocessed, so this is representation and not a second preprocessing.
+tokens_of() { tr '\n\t' '  ' | tr -s ' ' | sed -e 's/^ //' -e 's/ $//'; }
+
+# preprocess_tu <source> <out> -- the preprocessed text of one translation unit.
+preprocess_tu() { # <source> <out>
+  "$cc" "${cflags[@]}" -I "$repo/kernel/json" -E -P "$1" > "$2"
+}
+
+# macro_of <name> <macro-table> -- the one `#define` line for that name in a
+# `-dM` dump, or empty.
+macro_of() { # <name> <file>
+  grep -E "^#define[[:space:]]+$1([[:space:](]|$)" "$2" | head -1
+}
+
+# compare_noevent_sides <unit.i> <ref.i> <unit-macros> <ref-macros> <label>
+# Every `stage2-entities:` definition, extracted from the unit's preprocessed
+# text, must be the same tokens as the same definition in the preprocessed
+# `stage2.c`.  A macro entity has no extracted body in a `-E -P` dump; it is
+# compared through the two translation units' `-dM` tables, which is where the
+# preprocessing leaves it.  An entity present on neither side, or an empty
+# extraction, is a setup fault and not an identity.
+compare_noevent_sides() { # <unit.i> <ref.i> <unit.macros> <ref.macros> <label>
+  local unit_i=$1 ref_i=$2 unit_m=$3 ref_m=$4 label=$5
+  local spec name utext rtext utok rtok uline rline n=0 rc=0
+  for spec in $entity_specs; do
+    name=${spec#*:}
+    name=${name%%@*}
+    uline=$(macro_of "$name" "$unit_m")
+    if [ -n "$uline" ]; then
+      rline=$(macro_of "$name" "$ref_m")
+      if [ -z "$rline" ]; then
+        printf 'SETUP: %s is a macro in the unit and not in stage2.c\n' "$name" >&2
+        return 3
+      fi
+      if [ "$uline" = "$rline" ]; then
+        printf 'ok: %-8s %-22s identical (macro)\n' "$label" "$name"
+      else
+        rc=1
+        printf 'DIFF: %-8s %-22s macro differs\n' "$label" "$name" >&2
+        printf '      unit:  %s\n      stage2: %s\n' "$uline" "$rline" >&2
+      fi
+    else
+      if ! utext=$(extract_entity "$unit_i" "$name" ""); then
+        printf 'SETUP: cannot extract %s from the unit'"'"'s preprocessed text\n' "$name" >&2
+        return 3
+      fi
+      if ! rtext=$(extract_entity "$ref_i" "$name" ""); then
+        printf 'SETUP: cannot extract %s from stage2.c'"'"'s preprocessed text\n' "$name" >&2
+        return 3
+      fi
+      utok=$(printf '%s\n' "$utext" | tokens_of)
+      rtok=$(printf '%s\n' "$rtext" | tokens_of)
+      if [ -z "$utok" ] || [ -z "$rtok" ]; then
+        printf 'SETUP: %s extracts to nothing on one side; an empty side is not identity\n' \
+          "$name" >&2
+        return 3
+      fi
+      if [ "$utok" = "$rtok" ]; then
+        printf 'ok: %-8s %-22s identical (%s tokens)\n' "$label" "$name" \
+          "$(printf '%s\n' "$utok" | wc -w | tr -d ' ')"
+      else
+        rc=1
+        printf 'DIFF: %-8s %-22s differs\n' "$label" "$name" >&2
+        diff -u <(printf '%s\n' "$rtok" | tr ' ' '\n') \
+                <(printf '%s\n' "$utok" | tr ' ' '\n') \
+          | sed -e '1,2d' -e 's/^/      /' | awk 'NR <= 20' >&2
+      fi
+    fi
+    n=$((n + 1))
+  done
+  if [ "$n" -eq 0 ]; then
+    printf 'SETUP: the identity list names no helper entities to compare\n' >&2
+    return 3
+  fi
+  return "$rc"
+}
+
+# noevent_reverse_check <unit.i> -- the definitions the unit carries outside the
+# helper set and its own three.  The comparison above is one-directional (every
+# listed entity agrees); this is the other direction, so a definition the unit
+# added and no list names is a difference rather than an omission.
+# noevent_reverse_check <unit-source> -- the definitions the unit's own text
+# carries.  The helper definitions are the included file's, and the comparison
+# above is their accounting; this direction is about what the unit adds, so it
+# reads the source rather than the preprocessed text (whose system-header inline
+# functions and header declarations would otherwise read as unit definitions).
+noevent_reverse_check() { # <unit-source>
+  local unit_src=$1 re defs allowed extra
+  re="($defs_re)[[:space:]]*[([]"
+  defs=$(awk -v re="$re" -v dre="($defs_re)" '
+    BEGIN { in_def = 0 }
+    in_def { if ($0 !~ /\\[ \t]*$/) in_def = 0; next }
+    /^#define[ \t]/ { if ($0 ~ /\\[ \t]*$/) in_def = 1; next }
+    /^[A-Za-z_#]/ {
+      line = $0
+      while (match(line, re)) {
+        s = substr(line, RSTART, RLENGTH)
+        sub(/[ \t]*[([]$/, "", s)
+        print s
+        line = substr(line, RSTART + RLENGTH)
+      }
+    }
+    /^[A-Za-z_][A-Za-z0-9_]*[ \t]*\(/ {
+      rest = $0
+      while (match(rest, dre)) {
+        print substr(rest, RSTART, RLENGTH)
+        rest = substr(rest, RSTART + RLENGTH)
+      }
+    }
+  ' "$unit_src" | LC_ALL=C sort -u)
+  if [ -z "$defs" ]; then
+    printf 'SETUP: the unit'"'"'s own text names no domain definition; nothing was read\n' >&2
+    return 3
+  fi
+  allowed=$(printf '%s\n' $noevent_own | LC_ALL=C sort -u)
+  extra=$(LC_ALL=C comm -13 <(printf '%s\n' "$allowed") <(printf '%s\n' "$defs"))
+  if [ -n "$extra" ]; then
+    printf 'DIFF: the unit'"'"'s own text defines %s, which is not one of its\n' \
+      "$(echo $extra)" >&2
+    printf 'DIFF: recorded three (ne_lit and the two entries)\n' >&2
+    return 1
+  fi
+  printf 'ok: the unit'"'"'s own text defines only %s; the helpers come from the\n' \
+    "$(echo $defs)"
+  printf '    include, and the comparison above is their accounting\n'
+  return 0
+}
+
+arm_identity_noevent() {
+  local rc st
+  printf '\n== Arm A (noevent): the included stage2.c text, token for token\n'
+  printf '   claim: the unit'"'"'s preprocessing of the included file is stage2.c'"'"'s own\n'
+  printf '   preprocessing; this is an invariance of the include, not a preservation theorem\n'
+  preprocess_tu "$kernel" "$work/noevent.i" || {
+    printf 'SETUP: the unit did not preprocess\n' >&2
+    return 3
+  }
+  preprocess_tu "$repo/kernel/json/stage2.c" "$work/noevent.ref.i" || {
+    printf 'SETUP: stage2.c did not preprocess\n' >&2
+    return 3
+  }
+  "$cc" "${cflags[@]}" -I "$repo/kernel/json" -E -dM "$kernel" \
+    > "$work/noevent.macros" || {
+    printf 'SETUP: the unit'"'"'s macro table did not read\n' >&2
+    return 3
+  }
+  "$cc" "${cflags[@]}" -I "$repo/kernel/json" -E -dM "$repo/kernel/json/stage2.c" \
+    > "$work/noevent.ref.macros" || {
+    printf 'SETUP: stage2.c'"'"'s macro table did not read\n' >&2
+    return 3
+  }
+  compare_noevent_sides "$work/noevent.i" "$work/noevent.ref.i" \
+    "$work/noevent.macros" "$work/noevent.ref.macros" identity
+  st=$?
+  [ "$st" -eq 3 ] && return 3
+  rc=$st
+  noevent_reverse_check "$kernel"
+  st=$?
+  [ "$st" -eq 3 ] && return 3
+  [ "$st" -ne 0 ] && rc=1
+  return "$rc"
+}
+
+# arm_mutate_noevent -- the control: two numerals changed in a copy of the file
+# the unit includes, one in a macro and one in a helper body.  The unit copy
+# sends its quoted include to the mutated file (the quoted search starts in the
+# including file'"'"'s directory), and the reference side stays the original
+# stage2.c; both verdicts are printed because the two halves of the comparison
+# are different instruments.
+arm_mutate_noevent() {
+  local mutdir=$work/mut rc=0 uline rline utok rtok st
+  printf '\n== Control: two numerals changed in a copy of the included stage2.c\n'
+  mkdir -p "$mutdir" || { printf 'SETUP: cannot create %s\n' "$mutdir" >&2; return 3; }
+  cp "$kernel" "$mutdir/stage2_noevent.c" || return 3
+  awk '
+    { if (!done && index($0, "#define MAXD 520") > 0) {
+        sub(/#define MAXD 520/, "#define MAXD 521"); done = 1 }
+      print }
+    END { if (!done) exit 1 }
+  ' "$repo/kernel/json/stage2.c" > "$mutdir/stage2.c" || {
+    printf 'SETUP: the MAXD control did not apply\n' >&2
+    return 3
+  }
+  awk '
+    { if (!done && index($0, "return acc + v * 0x9E3779B97F4A7C15ULL") > 0) {
+        sub(/C15ULL/, "C16ULL"); done = 1 }
+      print }
+    END { if (!done) exit 1 }
+  ' "$mutdir/stage2.c" > "$mutdir/stage2.c.2" || {
+    printf 'SETUP: the helper-numeral control did not apply\n' >&2
+    return 3
+  }
+  mv "$mutdir/stage2.c.2" "$mutdir/stage2.c" || return 3
+  if cmp -s "$repo/kernel/json/stage2.c" "$mutdir/stage2.c"; then
+    printf 'SETUP: the control could not rewrite the included file\n' >&2
+    return 3
+  fi
+  printf '   (%s: MAXD 520 -> 521, and touch_u64'"'"'s multiplier ...C15 -> ...C16)\n' \
+    "${mutdir#$repo/}/stage2.c"
+  preprocess_tu "$mutdir/stage2_noevent.c" "$work/noevent.mut.i" || {
+    printf 'SETUP: the mutated unit did not preprocess\n' >&2
+    return 3
+  }
+  "$cc" "${cflags[@]}" -I "$repo/kernel/json" -E -dM "$mutdir/stage2_noevent.c" \
+    > "$work/noevent.mut.macros" || return 3
+
+  uline=$(macro_of MAXD "$work/noevent.mut.macros")
+  rline=$(macro_of MAXD "$work/noevent.ref.macros")
+  if [ -z "$rline" ]; then
+    "$cc" "${cflags[@]}" -I "$repo/kernel/json" -E -dM \
+      "$repo/kernel/json/stage2.c" > "$work/noevent.ref.macros" || return 3
+    rline=$(macro_of MAXD "$work/noevent.ref.macros")
+  fi
+  if [ -n "$uline" ] && [ "$uline" != "$rline" ]; then
+    printf 'ok: the macro comparison reports the changed MAXD (%s)\n' "$uline"
+  else
+    printf 'FAIL: the macro comparison did not see MAXD changed\n' >&2
+    rc=1
+  fi
+
+  if [ ! -s "$work/noevent.ref.i" ]; then
+    preprocess_tu "$repo/kernel/json/stage2.c" "$work/noevent.ref.i" || return 3
+  fi
+  utok=$(extract_entity "$work/noevent.mut.i" touch_u64 "" | tokens_of)
+  rtok=$(extract_entity "$work/noevent.ref.i" touch_u64 "" | tokens_of)
+  if [ -n "$utok" ] && [ "$utok" != "$rtok" ]; then
+    printf 'ok: the token comparison reports the changed touch_u64 numeral\n'
+  else
+    printf 'FAIL: the token comparison did not see the helper numeral changed\n' >&2
+    rc=1
+  fi
+
+  # The whole comparison must also report a difference, and must not mistake the
+  # mutated include for a setup fault.
+  compare_noevent_sides "$work/noevent.mut.i" "$work/noevent.ref.i" \
+    "$work/noevent.mut.macros" "$work/noevent.ref.macros" control \
+    > "$work/noevent.control.out" 2>&1
+  st=$?
+  case "$st" in
+    1) printf 'ok: the arm reports the mutated include as a difference\n' ;;
+    *) printf 'FAIL: the arm did not report the mutated include as a difference (status %s)\n' \
+         "$st" >&2
+       sed -e 's/^/      /' "$work/noevent.control.out" >&2
+       rc=1 ;;
+  esac
+  return "$rc"
+}
+
+
 arm_identity() {
   local rc defs extra re
-  if [ "$unit" = pipeline ]; then
+  if [ "$unit" = pipeline ] || [ "$unit" = pipeline-noevent ]; then
     arm_identity_pipeline
+    return $?
+  fi
+  if [ "$unit" = noevent ]; then
+    arm_identity_noevent
     return $?
   fi
   printf '\n== Arm A (%s): token identity, against %s\n' "$unit" "$kernel"
@@ -1237,8 +1600,12 @@ fold_status() {
 
 arm_mutate() {
   local rc=0 status st
-  if [ "$unit" = pipeline ]; then
+  if [ "$unit" = pipeline ] || [ "$unit" = pipeline-noevent ]; then
     arm_mutate_pipeline
+    return $?
+  fi
+  if [ "$unit" = noevent ]; then
+    arm_mutate_noevent
     return $?
   fi
   printf '\n== Control: text rewritten in a copy of the unit (%s)\n' "$kernel"
@@ -1501,7 +1868,7 @@ EOF
     printf 'ok: the unit defines exactly its one ABI symbol\n'
   fi
 
-  if [ "$unit" = pipeline ]; then
+  if [ "$unit" = pipeline ] || [ "$unit" = pipeline-noevent ]; then
     # The detector's positive control: the caller is not extracted text, so a
     # detector that matches nothing and a caller that carries no measurement
     # vocabulary are the same log without it.
@@ -1519,10 +1886,10 @@ EOF
     printf 'ok: control: the same detector names %s in a copy that inserts one\n' \
       "$(echo $hits)"
     # The call census, from the same preprocessed unit the detector reads.
-    got=$(pipeline_census "$work/kernel.i")
+    got=$(pipeline_census "$work/kernel.i" "$(census_self)")
     want=$(pipeline_expected)
     if [ "$got" != "$want" ]; then
-      printf 'FAIL: the pipeline'"'"'s call census is not the pinned six\n' >&2
+      printf 'FAIL: the %s call census is not the pinned six\n' "$unit" >&2
       printf '      pinned: %s\n' "$(echo $want)" >&2
       printf '      census: %s\n' "$(echo $got)" >&2
       return 1
@@ -1534,12 +1901,69 @@ EOF
     fi
     hits=$(nm -g --defined-only "$work/kernel.o" | awk '{ print $3 }' | LC_ALL=C sort | tr '\n' ' ')
     hits=${hits% }
-    if [ "$hits" != "leanllvm_json_pipeline" ]; then
+    if [ "$unit" = pipeline-noevent ]; then
+      want_sym=leanllvm_json_pipeline_noevent
+    else
+      want_sym=leanllvm_json_pipeline
+    fi
+    if [ "$hits" != "$want_sym" ]; then
       printf 'FAIL: the unit defines the public symbols {%s}\n' "$hits" >&2
-      printf 'FAIL: expected exactly leanllvm_json_pipeline\n' >&2
+      printf 'FAIL: expected exactly %s\n' "$want_sym" >&2
       return 1
     fi
     printf 'ok: the unit defines exactly its one ABI symbol\n'
+    printf '    (%s)\n' "$want_sym"
+  fi
+
+  if [ "$unit" = noevent ]; then
+    # The detector is the stage-2 unit's, because this unit's helper text is
+    # that unit's file: a copy with one deleted-arm name inserted must be named,
+    # or a detector that matches nothing and a unit that carries no arm are the
+    # same log.
+    { cat "$kernel"; printf '\nint us_dec_x_out;\n'; } > "$work/kernel.dens.c"
+    "$cc" "${cflags[@]}" -I "$repo/kernel/json" -E -P "$work/kernel.dens.c" \
+      > "$work/kernel.dens.i" || {
+      printf 'SETUP: the detector control did not preprocess\n' >&2
+      return 3
+    }
+    hits=$(grep -oE "$detector_unit" "$work/kernel.dens.i" | sort -u || true)
+    case "$hits" in
+      *us_dec_x_out*) printf 'ok: control: the detector names an inserted us_dec_x_out\n' ;;
+      *)
+        printf 'FAIL: the detector named {%s} in a copy that inserts us_dec_x_out\n' "$hits" >&2
+        return 1
+        ;;
+    esac
+    if ! command -v nm >/dev/null 2>&1; then
+      printf 'SETUP: no nm on PATH; the symbol census needs it\n' >&2
+      return 3
+    fi
+    # The unit's own entry plus the include's renamed certified entry: the
+    # header records the pair, and nothing else may become a global.
+    hits=$(nm -g --defined-only "$work/kernel.o" | awk '{ print $3 }' | LC_ALL=C sort | tr '\n' ' ')
+    hits=${hits% }
+    want_sym="leanllvm_json_stage2_noevent leanllvm_json_stage2_noevent_lib"
+    if [ "$hits" != "$want_sym" ]; then
+      printf 'FAIL: the unit defines the public symbols {%s}\n' "$hits" >&2
+      printf 'FAIL: expected the recorded pair: %s\n' "$want_sym" >&2
+      return 1
+    fi
+    printf 'ok: the object defines the recorded pair (the unit entry and the include'"'"'s\n'
+    printf '    renamed certified entry), and nothing else\n'
+    # The one undefined project symbol the certified stage-2 unit also leaves.
+    hits=$(nm -u "$work/kernel.o" | awk '{ print $NF }' | grep -E '^leanllvm_json_' || true)
+    want_sym=leanllvm_json_escape_expand
+    if [ "$hits" != "$want_sym" ]; then
+      printf 'FAIL: the unit leaves undefined project symbols {%s}\n' "$(echo $hits)" >&2
+      printf 'FAIL: expected exactly %s\n' "$want_sym" >&2
+      return 1
+    fi
+    printf 'ok: its one undefined project symbol is %s, the escape entry the\n' "$want_sym"
+    printf '    certified stage-2 unit itself calls\n'
+    # The detector's measured-side calibration is the stage-2 unit's own arm
+    # (the same detector), so the generic measured-TU check below is skipped and
+    # the positive control above is this arm's non-vacuity evidence.
+    return 0
   fi
 
   hits=$(grep -oE "$detector" "$work/control.i" | sort -u || true)
@@ -1744,6 +2168,13 @@ preprocess_entities() { # <label>
 
 arm_preprocess() {
   local spec entity rc=0
+  if [ "$unit" = noevent ]; then
+    # The no-event unit's invariance is about the include, and it is the same
+    # comparison the identity arm runs; `--preprocess` is its name for it.
+    printf '\n== --preprocess (noevent): the include leaves stage2.c'"'"'s text unchanged\n'
+    arm_identity_noevent
+    return $?
+  fi
   printf '\n== --preprocess: the mask region is invariant to the macro set\n'
   printf '   claim: the six measured entities are the same text under each macro set;\n'
   printf '   s1f_escaped is the unit'"'"'s own text and is excluded by name;\n'

@@ -458,6 +458,29 @@ beside the checkout.  Both families were baked on 2026-11-23 from revision
   like-for-like. Run the units' bench with
   `nix develop -c bash tests/json-units-bench/bench.sh`; its numbers and limits
   are the last section of `docs/json-pipeline-performance.md`.
+  `tests/json-fair/` is the fair-measurement harness: `gen.py` regenerates the
+  148-document heterogeneous corpus and the three canonical 64 KiB documents
+  from the committed generator and manifest, `fair.cc` is the C consumer, and
+  `run.sh` runs the arms alternately — the no-event reading and the certified
+  pipeline, against simdjson's `parse`, `ps` and `pw` — and writes the
+  per-document table whose `rpn/ps` column is the per-document quotient of the
+  no-event route's core time to simdjson's direct-scan time; the row is the
+  median of those quotients over the corpus (`RECOUNT 151 128 22 1 0.8735 148
+  127 21 0 0.8729`), and a change to the generator, the corpus, the entry's
+  object set, the host class or the governor handling replaces the 3 × 51
+  discipline and the row with a new session.
+  `tests/json-noevent/check.sh` is the two additive entries' route: the two
+  no-event actors' readings against the certified event stream and its consumer,
+  every refusal's zeros and offset, and the event arm against its 183-row base
+  fixture.  Run the fair harness with
+  `nix develop -c bash tests/json-fair/run.sh`, the entries' route with
+  `nix develop -c bash tests/json-noevent/check.sh` after
+  `nix develop -c bash probes/json/route/build.sh` (whose `nm` assertions are
+  anchored, so losing either of the two pipeline calls is a red), and the
+  identity arms with
+  `nix develop -c bash kernel/json/identity/source-identity.sh --unit noevent --arms-only`,
+  `nix develop -c bash kernel/json/identity/source-identity.sh --unit pipeline-noevent --arms-only`
+  and `nix develop -c bash kernel/json/identity/ir-identity.sh --unit noevent`.
   `probes/install/ir/capture-json.sh` regenerates the classifier fixture and
   records its invocation and stripped items, and `lake exe leanllvm-json-emit`
   prints the caller fixture.  Each route carries a

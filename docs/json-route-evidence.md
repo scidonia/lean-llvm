@@ -782,6 +782,62 @@ What each shows, and what it does not:
   the undefined set and the same census reports it, so the clean object's
   one-symbol set is not vacuous.
 
+### The route arm and the frozen event arm
+
+The route boundary has its own arm, and it was observed on the worktree carrying
+the change: `tests/json-noevent/check.sh` exits 0 with every `ok` line, over the
+69-document corpus and the 183 base rows.  The observations the arm makes:
+
+- **The two arms agree on every admitted document.**  The route's no-event arm
+  (`--consume-noevent`) and the C caller (`driver --noevent`) print one identical
+  `reading` line on all 68 admitted documents; the empty document is outside the
+  arm and the caller refuses it at its own entry.  Each line's `verdict`, `nk`,
+  `nxp` and `err` equal the certified event arm's observation of the same
+  document, and on an acceptance its `tokens`, `values` and `sum` equal the
+  unchanged consumer's fold of the certified stream.
+- **Every refusal carries zero and the certified offset.**  A refusal leaves all
+  three reading words zero, with `err` the manifest's pinned offset (the
+  document's length for the UTF-8 gate's refusal).  The sentinel cut in NE3
+  separates "wrote the zeros" from "never touched the slot".
+- **The entries agree with the certified routes.**  Over the corpus, NE1 and NE2
+  compare the two entries' readings with the certified entries' at the same
+  documents and the final line reports the agreement; the sentinel, the
+  dependency census and the byte identity are the other three boundaries the
+  run prints.
+- **The protected set is byte-identical to `66159e24…`.**  The six ABI artifacts
+  (`kernel/json/stage2.c`, `stage2.h`, `pipeline.c`, `pipeline.h`,
+  `probes/install/ir/stage2.candidate.ll`, `json-pipeline.candidate.ll`) are
+  compared with that revision's blobs, and the NE4 one-byte control reddens the
+  comparison.
+- **The event arm is frozen against 183 base rows.**  `tests/json-noevent/
+  base-event-rows.tsv` records base revision
+  `691ca12dc1b6afa8e05ff5828003fdadd15c9c1c`, the base binary's SHA-256
+  `86fbb06b…`, and one row per document: exit word, six observation words, the
+  arena and event payload digests, the document's digest and the whole stdout's
+  digest.  Every row is reproduced on the current tree.
+
+Three cuts reach those assertions; each was applied to a throwaway copy of the
+tree, rebuilt there, and the uncut control in the same command exited 0.
+
+| Cut | Cut applied in the copy | Build | Route exit | Assertion that fired |
+|---|---|---|---|---|
+| NE7 zeros | the no-event arm's reading wired to zeros in `shim.c` | exit 0 | 1 | `FAIL: --consume-noevent exited 5 on documents/acc-empty-object`, then `an acceptance's reading is tokens=0 values=0; the two counts must agree and be non-zero` |
+| NE7 offset | the arm's `tokens` and `values` each incremented in `shim.c` | exit 0 | 1 | `FAIL: the route and the C caller print different readings on documents/acc-empty-object`, with `tokens=3 values=3` against the driver's `tokens=2 values=2` |
+| NE8 | the event arm's printed `nev` word changed in a copy of `RouteMain.lean` | exit 0 | 1 | `FAIL: tests/json/corpus/bom.json: the event arm's stdout digest bc50ca33… is not the base row's e6d851f1…` |
+
+The cuts are independent at their own assertions: under NE7 zeros the event
+arm still reproduces all 183 base rows with 0 mismatches, and under NE8 the route
+and the C caller still print one identical reading on every admitted document.
+NE7's zeros fires the arm's *own* exit-5 guard rather than the comparison, so the
+guard and the comparison are both witnessed.
+
+**An owed run.**  The lane used for the Lean evidence has no `xxd` in its dev
+shell, so `tests/json-noevent/check.sh` exits 3 at its SETUP line there; the
+event payload digests need it.  The run recorded here is the worktree's, with
+every harness input's SHA-256 matching the lane's.  A C-observable run on a lane
+that provides `xxd` remains owed, and the worktree run is the evidence until it
+arrives.
+
 The route does not prove the new body refines the model and says nothing about a
 document the corpus does not carry; the walk obligation and the emitted literal
 chain stay in the Lean development and are not what these cuts show.

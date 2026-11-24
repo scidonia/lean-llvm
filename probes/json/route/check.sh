@@ -911,28 +911,28 @@ fi
 # ---------------------------------------------------------------------------
 # The consumer mode
 #
-# `--consume` is the reading the timings page quotes as the production
-# consumer's: the result read without printing, by index and record.  Its two
-# readings must agree on the token count and the checksum and land on the event
-# stream's end, and the record widths it decodes at (13 for a string, 9 for a
-# number, 1 for every other tag) must be the ones the object wrote.  The fixture
-# carries one of each: an array, an escaped string (one arena byte), a number,
-# `true`, and the array's close.
+# `--consume-events` is the certified event arm's reading: the result read
+# without printing, by index and record.  Its two readings must agree on the
+# token count and the checksum and land on the event stream's end, and the
+# record widths it decodes at (13 for a string, 9 for a number, 1 for every
+# other tag) must be the ones the object wrote.  The fixture carries one of
+# each: an array, an escaped string (one arena byte), a number, `true`, and the
+# array's close.
 # ---------------------------------------------------------------------------
 printf '["\\n",123,true]' >"$work/consume.json"
-"$route" --consume "$work/consume.json" 5 >"$work/out" 2>"$work/err"
+"$route" --consume-events "$work/consume.json" 5 >"$work/out" 2>"$work/err"
 status=$?
 crow=$(grep '^row ' "$work/err")
 cf() { printf '%s\n' "$crow" | tr ' ' '\n' | sed -n "s/^$1=//p" | head -1; }
 if [ "$status" -ne 0 ] || [ -z "$crow" ]; then
-  printf 'FAIL: --consume exited %s on a five-event document:\n' "$status" >&2
+  printf 'FAIL: --consume-events exited %s on a five-event document:\n' "$status" >&2
   cat "$work/err" >&2
   failed=$((failed + 1))
 elif [ "$(cf path)" != fast ] || [ "$(cf tokens)" != 5 ] ||
      [ "$(cf values)" != 5 ] || [ "$(cf walked)" != 1 ] ||
      [ "$(cf ndst)" != 1 ] || [ "$(cf nev)" != 25 ] ||
      [ "$(cf foldsum)" != "$(cf valuessum)" ]; then
-  printf 'FAIL: --consume read the five-event document as:\n  %s\n' "$crow" >&2
+  printf 'FAIL: --consume-events read the five-event document as:\n  %s\n' "$crow" >&2
   printf '  expected path=fast tokens=5 values=5 walked=1 ndst=1 nev=25 and equal sums\n' >&2
   failed=$((failed + 1))
 else
@@ -946,17 +946,17 @@ fi
 # mode still exited 5, which is the disagreement it reports: this block is that
 # case's control.
 printf ']' >"$work/consume-refused.json"
-"$route" --consume "$work/consume-refused.json" 5 >"$work/out" 2>"$work/err"
+"$route" --consume-events "$work/consume-refused.json" 5 >"$work/out" 2>"$work/err"
 status=$?
 crow=$(grep '^row ' "$work/err")
 if [ "$status" -ne 0 ] || [ -z "$crow" ]; then
-  printf 'FAIL: --consume exited %s on a refused document:\n' "$status" >&2
+  printf 'FAIL: --consume-events exited %s on a refused document:\n' "$status" >&2
   cat "$work/err" >&2
   failed=$((failed + 1))
 elif [ "$(cf path)" != fast ] || [ "$(cf verdict)" != 0 ] ||
      [ "$(cf walked)" != 1 ] || [ "$(cf tokens)" != 0 ] ||
      [ "$(cf foldsum)" != "$(cf valuessum)" ]; then
-  printf 'FAIL: --consume read the refused document as:\n  %s\n' "$crow" >&2
+  printf 'FAIL: --consume-events read the refused document as:\n  %s\n' "$crow" >&2
   printf '  expected path=fast verdict=0 walked=1 tokens=0 and equal sums\n' >&2
   failed=$((failed + 1))
 else

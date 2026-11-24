@@ -57,8 +57,10 @@ the destination or the event buffer is a theorem that the run wrote neither.
 The post is the *shape* the run must satisfy.  That the pinned body produces it
 is `stage2NoEventRun_boundary` at a walk report, and the report itself is
 `Stage2NoEventWalkObligation` — stated and not inhabited, at the certified walk's
-depth, and narrower than `Stage2WalkObligation`: it is conditional on a contract
-at `od_gap_recover`, which this tree does not yet supply.  The consumer-boundary
+depth, and narrower than `Stage2WalkObligation`: it is stated relative to
+`stage2GapRecover`, the tree's model of `od_gap_recover`
+(`JsonStage2HelperOdGap`), whose body faithfulness is §7.6's trust row rather than
+a proof.  The consumer-boundary
 agreement (the fold over the events is the certified consumer's reading) is
 `JsonStage2NoEventBody`'s corollary of Item 1's `stage2Boundary_noEventConsumer`.
 -/
@@ -129,7 +131,11 @@ def stage2NoEventRegions (b n ep nep xp nxp scratch scratchcap tokensOut valuesO
 arguments.  Every clause is one the certified record states, with the arena and
 event capacities replaced by the scratch's:
 
-* the document is readable, with the decoder's read-past tail;
+* the document is readable, with the decoder's read-past tail, and the document
+  pointer's address is at least one — the entry block computes `%b - 1` as an
+  address, which is the LLVM value only off the wrap, so a null document pointer
+  is outside the defined domain (it is undefined behaviour at that instruction
+  even at length zero);
 * the entry stream is `readLanes32`-readable, in document order, inside the
   document;
 * the escape list's bytes are staged;
@@ -150,6 +156,7 @@ def stage2NoEventPre (args : List Value) (mem : Mem) (next : Nat) : Prop :=
             .ptr scratch, .int 64 (BitVec.ofNat 64 scratchcap),
             .ptr tokensOut, .ptr valuesOut, .ptr sumOut, .ptr err] ∧
     readBytes mem b n = some bs ∧
+    1 ≤ b ∧
     HasBytes mem (b + n) stage2ReadTail ∧
     readLanes32 mem ep nep = some ent ∧
     ent.Pairwise (· < ·) ∧
@@ -182,6 +189,13 @@ def stage2NoEventStagedPre (args : List Value) (mem : Mem) (next : Nat)
             .int 64 (BitVec.ofNat 64 nep), .ptr xp, .int 64 (BitVec.ofNat 64 nxp),
             .ptr scratch, .int 64 (BitVec.ofNat 64 scratchcap),
             .ptr tokensOut, .ptr valuesOut, .ptr sumOut, .ptr err] ∧
+    -- **The four count words are the pre's own values.**  This staging is an
+    -- existential over `Nat`s, so a second decomposition of the same argument
+    -- list may pick a different representative of one eight-byte word
+    -- (`n + k * 2 ^ 64`) and draw a different region list under one read.  The
+    -- bounds are `stage2NoEventPre`'s own, at the same words; without them the
+    -- separation stated here would not be the pre's.
+    n < 2 ^ 64 ∧ scratchcap < 2 ^ 64 ∧ nep < 2 ^ 64 ∧ nxp < 2 ^ 64 ∧
     DisjointRegions
       (stage2NoEventRegions b n ep nep xp nxp scratch scratchcap tokensOut
         valuesOut sumOut err ++ stage2NoEventStagedRegions stk e c d) ∧

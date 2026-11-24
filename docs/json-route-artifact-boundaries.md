@@ -40,6 +40,8 @@ only under the assumptions this page lists.
 | `escape.o` | `kernel/json/escape.c` | the same | `build.sh` |
 | `utf8.o` | `kernel/json/utf8.c` | the same | `build.sh` |
 | `stage2.o` | `kernel/json/stage2.c` | the same | `build.sh` |
+| `stage2_noevent.o` | `kernel/json/stage2_noevent.c` | the same | `build.sh` |
+| `pipeline_noevent.o` | `kernel/json/pipeline_noevent.c` | the same | `build.sh` |
 | `depth_count.o` | `tests/v16/depth_count.ll` | `clang -c` at the install's line | `build.sh` |
 | `policy.o` | `probes/json/route/policy.c` | `-O2` + `leanc --print-cflags` | `build.sh` |
 | `shim.o` | `probes/json/route/shim.c` | `-O2` + `leanc --print-cflags` | `build.sh` |
@@ -132,6 +134,54 @@ The six helpers' *caller-side* footprints are `HelperContract.framed`'s, and
 `docs/contract.md` §7.6 states the four body-allocated objects (`%ei.i`,
 `%root_done.i`, `%xj.i`, `%outn.i`) that a walk invariant's region claim must
 name because they are not among the staged objects.
+
+## The additive no-event entry
+
+`stage2_noevent.c` and `pipeline_noevent.c` are two additive translation units;
+no byte of the certified set changes.  The stage-2 entry takes the certified
+twelve-argument ABI's arguments plus four objects the flattening appends (the
+container stack, the refusal record, the cursor record and the number path's
+output slot), and the pipeline entry keeps `pipeline.c`'s stage 1 byte for byte
+and ends in that entry.
+
+The proofs read one fixture for the pair:
+`probes/install/ir/stage2-noevent.candidate.ll`, the 167-block emission derived
+by `capture-stage2-noevent.sh` with its strip, rewriting and staging tables, and
+pinned by `JsonStage2NoEventIR`.  The pipeline unit has no fixture of its own and
+no proof over its body; it is the test route's subject.
+`stage2-noevent.inventory` is the identity arm's target set, and the census is
+computed live.
+
+The helper text inside the stage-2 entry is the certified unit's: it includes
+`stage2.c` with the entry renamed, so the grammar, refusals, string decode and
+number conversion are that text.  Two helpers differ in how they are reached:
+`ne_lit` is inlined as an `icmp eq i8` chain behind one shared `phi`, and that
+chain is what the proofs read; `od_gap_recover` is a call the certified fixture
+happened to inline and this body does not.  The chain's rule is proved of the
+emitted chain (`stage2NoEventLitChain_run`, `neLitCheck_eq_litCheck`); `od_gap_recover`'s model
+`stage2GapRecover` is not proved of its C text, and its body faithfulness is the
+§7.6 trust row.
+
+The certified/no-event boundary is pinned rather than assumed:
+
+- the protected set — `kernel/json/stage2.c`, `stage2.h`, `pipeline.c`,
+  `pipeline.h`, `probes/install/ir/stage2.candidate.ll` and
+  `json-pipeline.candidate.ll` — is byte-identical to `66159e24…`, compared by
+  `tests/json-noevent/check.sh` with its one-byte control (NE4);
+- the no-event entry is the route's shipped default (`--consume`), while the
+  certified event arm remains selectable and its output is frozen against 183
+  base rows at base revision `691ca12…` (NE8), so a default change that moved
+  the event arm's bytes is a red;
+- the two entries' readings are identified with the certified event stream, its
+  observation and the unchanged consumer's fold over the shared corpus
+  (NE1/NE2/NE7), and every refusal carries zero and the certified offset (NE3).
+
+What that boundary does not say is what the Lean development leaves open: the
+walk's obligation is inhabited at the named tier from the dispatch's rows, the
+rows are a premise, the `od_gap_recover` model is trusted rather than proved of
+its body, and the certified walk's premise tier is not discharged.  The object's
+inlining of the helpers is the compiler's, and the fixture's call boundary is not
+the object's.
 
 The forwarded helpers that are *not* stage-2's own are the units the pipeline
 calls, and the route calls them through the pipeline exactly as `pipeline.c`
@@ -226,8 +276,8 @@ against the proved relation rather than a byte count:
   `TokenRecord`), the byte-level relation `Stage2EventRel bs arena evs t.tokens`
   (`stage2EventRel_of_records` at the same stream), the skeleton
   (`parseSkeleton`) and `decodeTape`'s value.
-- The executable's `--consume` reader is the same table — a key or string
-  thirteen bytes, a number nine, every other tag one — and it exits 5 unless the
+- The executable's `--consume-events` reader is the same table — a key or
+  string thirteen bytes, a number nine, every other tag one — and it exits 5 unless the
   fold and the materialising reading count the same tokens, produce the same
   checksum, and land exactly on the stream's end.  `check.sh` pins that on the
   consumer fixture, so the program's reader and the proved one are checked
@@ -282,13 +332,19 @@ is verified by the theorems:
 4. the Lean compiler and runtime, for `RouteMain.lean` and its `@[extern]`
    calls: the ABI agreement is observed at link and run (row 9), and Lean's
    compilation of the wrapper is not proved to preserve its meaning;
-5. the adapter (`shim.c`), the policy scan (`policy.c`) and the entry table's
-   fill, which are new code with no refinement theorem; their agreement with
-   the library's decisions is observed (`--admit`, `check.sh`, `guard.sh`);
+5. the adapter (`shim.c`, its no-event entry included), the policy scan
+   (`policy.c`) and the entry table's fill, which are new code with no
+   refinement theorem; their agreement with the library's decisions is observed
+   (`--admit`, `check.sh`, `guard.sh`);
 6. libc's `malloc`, `memset`, `memcpy` and the stack protector, which the
    adapter and two kernel units call;
 7. the object's inlining of the six stage-2 helpers and of the pipeline's
-   unit calls, and the numeric conversion's emitted body (the obligation above).
+   unit calls, and the numeric conversion's emitted body (the obligation above);
+8. the additive no-event entry: `ne_lit`'s inlined compare chain (proved of the
+   emitted chain, `stage2NoEventLitChain_run`), `od_gap_recover`'s model
+   `stage2GapRecover` (the §7.6 trust row, not a body proof), and the dispatch's
+   rows, which the walk's obligation takes as a premise; the certified walk's
+   premise tier is not discharged.
 
 What is *not* required is verification of the whole Lean compiler or of clang:
 the proofs stand on their fixtures and the relation, and the deployment claim is
@@ -303,8 +359,8 @@ that would close it.
 The measurement is `probes/json/route/bench-corpus.sh`, which reads the corpus
 `tests/json-units-bench/bench.sh` generated (the same seed, sizes and tiling;
 `tests/json-units-bench/build/corpus`) and runs the route's own `--stages` and
-`--consume` modes: three trials of twenty-one repetitions per document, each
-trial pinned with `taskset` to one CPU, exactly the units harness's shape.  The
+`--consume-events` modes: three trials of twenty-one repetitions per document,
+each trial pinned with `taskset` to one CPU, exactly the units harness's shape.  The
 route binary is the `TIMING=1` build, so the adapter's three intervals are
 inside stages; the ordinary build reads no clock (`build.sh` asserts that with
 `nm`).  Observed on 18 November 2026, host `Linux 6.17.0-1033-oem x86_64`,
@@ -316,7 +372,8 @@ Three facts about the rows, because their names can mislead:
   (which materialises the result's list at every byte it reads), the payload
   slices and the two hex lines written to stdout.  It is the *route's
   reporting*, not the object's work and not the production reader's; the
-  `--consume` rows below are the production reader.
+  `--consume-events` rows below are the certified event arm's consumer, which
+  is not the route's shipped default (`--consume` reads the no-event arm).
 - `staging`, `copy-in`, `call` and `copy-out` are the application's cost: the
   record's sixteen zero-filled buffers, the adapter's copy into the object's
   ABI, the object's call, and the result copy.  The document read
@@ -350,10 +407,10 @@ devices are reported rather than one being averaged into the other.
 The dominant number is `decode+print`, and it is the reporting path's: the
 `be64` header read traverses the whole result's list for every byte of every
 word, so a 132,638-byte event stream costs 38 ms to read seven words and then
-7 ms to print.  The production reader avoids it (`--consume` decodes the header
-by index), and pays:
+7 ms to print.  The event arm's consumer avoids it (`--consume-events` decodes
+the header by index), and pays:
 
-### The production reader (CPU 0; ns, the three trials; tokens = decoded records)
+### The event arm's consumer (CPU 0; ns, the three trials; tokens = decoded records)
 
 | document | verdict | tokens | fold (three trials) | materialising (three trials) |
 |---|---|---|---|---|

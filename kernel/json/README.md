@@ -122,9 +122,12 @@ stage2-extra: leanllvm_json_stage2 s2_string_body z_arena_reserve out_reserve p6
 <!-- identity-list:end -->
 
 The no-event units have no row above: they are authored text, not measured
-extraction, so there is no entity list to compare and no identity arm.  Their
-dependency set is the route's census, which names the one undefined project
-symbol the certified unit also leaves undefined.
+extraction, so there is no entity list to compare.  Their identity arms are the
+source arm's token and symbol comparison (for both the entry and the pipeline
+unit) and the IR arm's three-text relation — the same instruments at additive
+units, with their commands below.  Their dependency set is the route's census,
+which names the one undefined project symbol the certified unit also leaves
+undefined.
 
 The four deletions are the two conditional arms inside `s1f_masks`, resolved to
 the measured build's values: `S1F_XS=5` (`build49.sh:21`) takes the arm that
@@ -930,11 +933,29 @@ certified unit itself calls; `pipeline_noevent.c` defines
 undefined.  Neither is built by a `lake` target; the route is
 `tests/json-noevent/check.sh`.
 
-No proof covers the walk.  `Stage2NoEventWalkObligation`
-(`LeanLLVM/Refinement/JsonStage2NoEventBody.lean`) states what the body must
-satisfy, conditional on a contract for `od_gap_recover`, which this tree does not
-model, and the emitted literal chain is inside that obligation.  The differential
-is what the boundary currently rests on.
+The route is `tests/json-noevent/check.sh`; its corpus, the 183-row event-arm
+fixture (`base-event-rows.tsv`) and the identity scripts' no-event arms are the
+observable side.  The equal-output harness and the 151-document corpus the fair
+row is measured on are `tests/json-fair/`.  The proof side's fixture is
+`probes/install/ir/stage2-noevent.candidate.ll`, the 167-block emission captured
+by `capture-stage2-noevent.sh` with its strip, rewriting and staging tables;
+`stage2-noevent.inventory` is the target set `ir-identity.sh --unit noevent`
+compares, computed live rather than counted in the file.
+
+`Stage2NoEventWalkObligation`
+(`LeanLLVM/Refinement/JsonStage2NoEventBody.lean`) is now **inhabited at the
+named tier**: `stage2NoEventWalkObligation_of_staging` and
+`stage2NoEventCallSatisfies_of_staging`
+(`JsonStage2NoEventWalkAssembly.lean`) derive it, and the pipeline's call slot,
+at `gap := stage2GapRecover` from the dispatch's rows.  What remains a premise is
+named rather than glossed: the rows are the dispatch's data, the four staged
+objects are a hypothesis the twelve-slot ABI cannot carry, and the model's body
+faithfulness is the `od_gap_recover` trust row of `docs/contract.md` §7.6.  The
+emitted literal chain is proved to implement the same rule as the certified
+`lit_check` (`neLitCheck_eq_litCheck`; `stage2NoEventLitChain_run` with its
+`true`, `false` and `null` instances at the shared `phi`), and it is inside that
+obligation.  The certified walk's premise tier is **not** discharged, and nothing
+here makes the rows or the trust row unconditional.
 
 ## The checks
 
@@ -976,7 +997,19 @@ nix develop -c bash kernel/json/identity/source-identity.sh --unit pipeline --li
 nix develop -c bash kernel/json/identity/ir-identity.sh --unit pipeline     # emission, object and fixture census + two controls
 nix develop -c bash kernel/json/bench/paired.sh --unit pipeline             # staged vs one-TU timing, 301 rounds
 nix develop -c bash kernel/json/identity/final-identity.sh pipeline         # the pipeline's three arms, one command
+nix develop -c bash kernel/json/identity/source-identity.sh --unit noevent --arms-only # the no-event unit's tokens and one-symbol census
+nix develop -c bash kernel/json/identity/source-identity.sh --unit pipeline-noevent --arms-only # the no-event pipeline's tokens and one-symbol census
+nix develop -c bash kernel/json/identity/ir-identity.sh --unit noevent      # emission, object and pinned fixture: target set + controls
+nix develop -c bash tests/json-noevent/check.sh                            # the two entries against the certified stream and the frozen event arm
+nix develop -c bash tests/json-fair/check.sh                               # corpus, equal-output gates and the report's arithmetic
 ```
+
+The no-event arms are the same instruments at additive units: the source arm's
+token comparison and mutation controls, the IR arm's three-text relation (with
+the target-set narrowing the script's header states), and the two route checks.
+`tests/json-noevent/check.sh` needs the route's build
+(`probes/json/route/build.sh`) and `xxd`; `tests/json-fair/check.sh` regenerates
+its corpus and builds the harness in a private directory.
 
 `final-identity.sh <unit>` is the dispatcher: it runs the unit's token identity,
 its IR identity and its paired timing arm in that order, and exits `3` naming

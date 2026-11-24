@@ -4,14 +4,16 @@ The installation certificate producer.
 `probes/install/build.sh` and `probes/install/select.sh` elaborate this module
 with
 
-  CERT_UNIT=<baseline|candidate|loop|depth_count|json_scan> \
+  CERT_UNIT=<baseline|candidate|loop|depth_count|json_scan|noevent> \
     CERT_MANIFEST=<absolute manifest path> \
     CERT_OUT=<absolute output path> lake env lean probes/install/InstallCertificate.lean
 
 from the repository root, after re-elaborating `LeanLLVM/Refinement/CommaMaskIR.lean`
 from source and, for the loop unit, `LeanLLVM/Refinement/CommaMaskLoop.lean` too,
-for the depth unit `LeanLLVM/Refinement/DepthCountRefine.lean`, and for the window
-scanner `LeanLLVM/Refinement/JsonScanIR.lean`.
+for the depth unit `LeanLLVM/Refinement/DepthCountRefine.lean`, for the window
+scanner `LeanLLVM/Refinement/JsonScanIR.lean`, and for the no-event unit
+`LeanLLVM/Refinement/JsonStage2NoEventIR.lean` (the fixture guard) and then
+`LeanLLVM/Refinement/JsonStage2NoEventWalkAssembly.lean` (its body theorem).
 The module imports those freshly built proof modules, checks the statement and
 axiom footprint of the theorem that covers the requested unit, and writes one
 canonical certificate to `CERT_OUT`:
@@ -59,6 +61,7 @@ import LeanLLVM.Refinement.CommaMaskIR
 import LeanLLVM.Refinement.CommaMaskLoop
 import LeanLLVM.Refinement.DepthCountRefine
 import LeanLLVM.Refinement.JsonScanIR
+import LeanLLVM.Refinement.JsonStage2NoEventWalkAssembly
 import Lean.Util.CollectAxioms
 
 open Lean Elab Command
@@ -108,6 +111,30 @@ def scanTheoremName : Name := `LeanLLVM.Refinement.JsonScanIR.scanWindowLLVM_ref
 selection route's manifest carry. -/
 def scanTheoremText : String := "LeanLLVM.Refinement.JsonScanIR.scanWindowLLVM_refines"
 
+/-- The theorem the no-event stage-2 unit's certificate names: the walk
+obligation `stage2NoEventBody` satisfies at the record's staging, inhabited from
+the dispatch's premise tier.  The theorem's type carries the tier (`hrows`) and
+the staging hypothesis, so naming it discloses what the certificate's claim
+rests on; the `od_gap_recover` model's body faithfulness is
+`docs/contract.md` §7.6's trust row, not a proof this certificate carries. -/
+def noeventTheoremName : Name :=
+  ``LeanLLVM.Refinement.stage2NoEventWalkObligation_of_staging
+
+/-- The same name as it is serialized. -/
+def noeventTheoremText : String :=
+  "LeanLLVM.Refinement.stage2NoEventWalkObligation_of_staging"
+
+/-- The no-event unit's boundary: the proposition the obligation's post projects
+at a returned value.  It is the only ASCII-named boundary statement for the
+unit, and `checkNoEventContract` below requires it to be the constant the
+record's post actually uses rather than a proposition beside it. -/
+def noeventContractName : Name :=
+  ``LeanLLVM.Refinement.stage2NoEventBoundary
+
+/-- The same name as it is serialized. -/
+def noeventContractText : String :=
+  "LeanLLVM.Refinement.stage2NoEventBoundary"
+
 /-- The theorem that covers a unit, or `none` when the producer knows of none.
 `baseline` and `candidate` are covered by `IR_refines`, which relates them; the
 loop, the depth counter and the window scanner are covered by their own
@@ -118,6 +145,7 @@ def theoremNameFor (unit : String) : Option Name :=
   | "loop" => some loopTheoremName
   | "depth_count" => some depthTheoremName
   | "json_scan" => some scanTheoremName
+  | "noevent" => some noeventTheoremName
   | _ => none
 
 /-- The serialized form of `theoremNameFor`. -/
@@ -127,6 +155,7 @@ def theoremTextFor (unit : String) : Option String :=
   | "loop" => some loopTheoremText
   | "depth_count" => some depthTheoremText
   | "json_scan" => some scanTheoremText
+  | "noevent" => some noeventTheoremText
   | _ => none
 
 /-- The covering theorem and its serialized name, or `none` for a unit that has
@@ -145,6 +174,7 @@ def theoremKeyFor (unit : String) : Option String :=
   | "loop" => some "loop_theorem"
   | "depth_count" => some "depth_count_theorem"
   | "json_scan" => some "json_scan_theorem"
+  | "noevent" => some "noevent_theorem"
   | _ => none
 
 /-- The contract the certificate names for the comma-mask units. -/
@@ -181,6 +211,7 @@ def contractNameFor (unit : String) : Option Name :=
   | "baseline" | "candidate" | "loop" => some contractName
   | "depth_count" => some depthContractName
   | "json_scan" => some scanContractName
+  | "noevent" => some noeventContractName
   | _ => none
 
 /-- The serialized form of `contractNameFor`. -/
@@ -189,6 +220,7 @@ def contractTextFor (unit : String) : Option String :=
   | "baseline" | "candidate" | "loop" => some contractText
   | "depth_count" => some depthContractText
   | "json_scan" => some scanContractText
+  | "noevent" => some noeventContractText
   | _ => none
 
 /-- The contract and its serialized name, or `none`: refused on the same terms as
@@ -204,6 +236,7 @@ def contractKeyFor (unit : String) : Option String :=
   match unit with
   | "depth_count" => some "depth_contract"
   | "json_scan" => some "json_scan_contract"
+  | "noevent" => some "noevent_contract"
   | _ => none
 
 /-! #### The dispatch, checked
@@ -219,14 +252,20 @@ example : coveredBy "loop" = some (loopTheoremName, loopTheoremText) := by decid
 example : coveredBy "depth_count" = some (depthTheoremName, depthTheoremText) := by
   decide
 example : coveredBy "json_scan" = some (scanTheoremName, scanTheoremText) := by decide
+example : coveredBy "noevent" = some (noeventTheoremName, noeventTheoremText) := by
+  decide
 example : (coveredBy "json-scan").isNone = true := by decide
+example : (coveredBy "no-event").isNone = true := by decide
 example : (coveredBy "").isNone = true := by decide
 example : coveredContract "loop" = some (contractName, contractText) := by decide
 example : coveredContract "depth_count" =
     some (depthContractName, depthContractText) := by decide
 example : coveredContract "json_scan" =
     some (scanContractName, scanContractText) := by decide
+example : coveredContract "noevent" =
+    some (noeventContractName, noeventContractText) := by decide
 example : (coveredContract "json-scan").isNone = true := by decide
+example : (coveredContract "no-event").isNone = true := by decide
 
 -- `Name.toString` is not kernel-reducible, so the spellings the certificate
 -- carries are checked by compiled evaluation: a renamed constant or a retyped
@@ -237,6 +276,8 @@ example : (coveredContract "json-scan").isNone = true := by decide
 #guard loopTheoremName.toString == loopTheoremText
 #guard depthTheoremName.toString == depthTheoremText
 #guard depthContractName.toString == depthContractText
+#guard noeventTheoremName.toString == noeventTheoremText
+#guard noeventContractName.toString == noeventContractText
 
 /-- The witness that the depth boundary is proved, not merely named. -/
 def depthContractWitness : Name :=
@@ -430,6 +471,14 @@ def gather (m : Manifest) (unit triple layout : String) : IO Inputs := do
     unless scanFixtureText == LeanLLVM.Refinement.JsonScanIR.scanWindowBodySrc do
       throw <| IO.userError
         s!"the loaded proof module was not elaborated from the current json_scan fixture {unitFixturePath}"
+  -- `JsonStage2NoEventIR` pins the no-event emission through `include_str`, so
+  -- the certificate's fixture hash is bound to the text the body theorem's
+  -- module parsed, not to whatever file the manifest happens to name.
+  if unit == "noevent" then
+    let noeventFixtureText ← IO.FS.readFile unitFixturePath
+    unless noeventFixtureText == LeanLLVM.Refinement.JsonStage2NoEventIR.stage2NoEventSrc do
+      throw <| IO.userError
+        s!"the loaded proof module was not elaborated from the current noevent fixture {unitFixturePath}"
   pure {
     unitObject := (← sha256File unitObjectPath)
     unitFixture := (← sha256File unitFixturePath)
@@ -474,6 +523,51 @@ def depthProposition : TermElabM Lean.Expr := do
   Term.synthesizeSyntheticMVarsNoPostponing
   instantiateMVars expected
 
+/-- The statement the no-event body theorem must have: the walk obligation at
+`stage2GapRecover` and the record's staging, from the dispatch's rows at
+`Γ_stage2_noevent`'s precondition.  The rows are the premise tier the theorem
+assumes; naming the theorem discloses it.  The `gap` is fixed to
+`stage2GapRecover`, whose body faithfulness is `docs/contract.md` §7.6's trust
+row rather than a proof, and the four staged objects are the hypothesis
+`Γ_stage2_noevent.pre` does not carry. -/
+def noeventProposition : TermElabM Lean.Expr := do
+  let expected ← Term.elabType (←
+    `(∀ {stk e c d : Nat},
+        (∀ (a12 : List LeanLLVM.Value) (mem : LeanLLVM.Mem) (next : Nat),
+          LeanLLVM.Refinement.Γ_stage2_noevent.pre a12 mem next →
+          LeanLLVM.Refinement.stage2NoEventStagedPre a12 mem next stk e c d →
+          LeanLLVM.Refinement.Stage2NoEventWalkRows
+            (LeanLLVM.Refinement.stage2NoEventCalls
+              LeanLLVM.Refinement.stage2GapRecover) mem 27) →
+        LeanLLVM.Refinement.Stage2NoEventWalkObligation
+          LeanLLVM.Refinement.stage2GapRecover stk e c d))
+  Term.synthesizeSyntheticMVarsNoPostponing
+  instantiateMVars expected
+
+/-- The no-event boundary is a proposition parameterised by the call's input,
+the pre-state and the returned memory and value.  The named definition must be
+that shape, and it must be the constant the unit's post projects — a renamed or
+unrelated proposition beside the post does not certify. -/
+def checkNoEventContract : TermElabM Unit := do
+  let info ← getConstInfo noeventContractName
+  match info with
+  | ConstantInfo.defnInfo _ => pure ()
+  | _ => throwError m!"{noeventContractName} is not a definition"
+  let expected ← Term.elabType (←
+    `(List LeanLLVM.Value → LeanLLVM.Mem → Nat → LeanLLVM.Mem →
+        LeanLLVM.Value → Prop))
+  Term.synthesizeSyntheticMVarsNoPostponing
+  let typeOk ← Lean.Meta.withNewMCtxDepth do Lean.Meta.isDefEq info.type expected
+  unless typeOk do
+    throwError m!"{noeventContractName} is not the no-event boundary proposition"
+  let postInfo ← getConstInfo ``LeanLLVM.Refinement.stage2NoEventPost
+  let postValue ←
+    match postInfo with
+    | ConstantInfo.defnInfo defn => pure defn.value
+    | _ => throwError m!"LeanLLVM.Refinement.stage2NoEventPost is not a definition"
+  unless postValue.getUsedConstants.contains noeventContractName do
+    throwError m!"{noeventContractName} is not the boundary the no-event post projects"
+
 /-- The theorem that covers `unit` must be a theorem of exactly the statement the
 installation relies on: `IR_refines` for the candidate and the baseline, the
 framed loop-to-candidate refinement within the loop's own allocations for the
@@ -494,6 +588,8 @@ def checkTheorem (unit : String) (name : Name) : TermElabM Unit := do
       depthProposition
     else if unit == "json_scan" then
       pure (Lean.mkConst ``LeanLLVM.Refinement.JsonScanIR.scanWindowStatement)
+    else if unit == "noevent" then
+      noeventProposition
     else
       Term.elabType (←
         if unit == "loop" then
@@ -560,6 +656,8 @@ whose type is the check. -/
 def checkContract (unit : String) (contract : Name) : TermElabM Unit := do
   if unit == "depth_count" then
     checkDepthContract
+  else if unit == "noevent" then
+    checkNoEventContract
   else if unit == "json_scan" then
     let contractInfo ← getConstInfo contract
     match contractInfo with

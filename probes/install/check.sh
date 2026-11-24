@@ -75,6 +75,7 @@ warm_depth >/dev/null
 [ -s "$build/proof_candidate.env" ] || fail "no candidate certificate was published"
 [ -s "$build/proof_loop.env" ] || fail "no loop certificate was published"
 [ -s "$build/proof_depth_count.env" ] || fail "no depth_count certificate was published"
+[ -s "$build/proof_noevent.env" ] || fail "no noevent certificate was published"
 
 echo "== proof"
 proof >/dev/null
@@ -168,6 +169,12 @@ grep -qx "proof_sha256=$(pub_sha "$build/proof_depth_count.env")" \
   > "$build/depth_expected.txt"
 cmp "$build/out_depth_count.txt" "$build/depth_expected.txt"
 echo "select: installed the depth counter; its numeric output is depthSpec's"
+
+# The no-event entry's certificate is published above.  Its selector route is
+# `tests/json-noevent-select-gate.sh` (NE11): the fixture's three helper calls
+# are declared, not defined, so a real installation link additionally needs the
+# out-of-line helper objects `docs/contract.md` §7.6 carries as a trust row, and
+# this repository's build does not produce them for the fixture alone.
 
 # --- a changed fixture fails at the source guard, before any other detector --
 echo "== a mutated fixture fails at the source guard and publishes nothing"
@@ -401,6 +408,22 @@ if ! bash "$repo/tests/depth-count/check.sh" >>"$gate_log" 2>&1; then
 fi
 echo "gate: the depth counter installed from its own certificate, refused another unit's theorem, contract and object hash, and fell back"
 echo "gate: the installed depth object agrees with depthSpec, and the tampered expectation and defect object are reported"
+
+# The no-event entry's gate: a matching certificate installs the unit and
+# records its body theorem, boundary and object digest; another unit's theorem
+# or a mismatched object hash is refused by name after the manifest digest is
+# repaired; the non-strict mismatch falls back; and a manifest binding only the
+# unconditional boundary corollary does not offer the strict install.
+noevent_gate=$repo/tests/json-noevent-select-gate.sh
+for mode in --strict --strict-theorem --strict-hash --no-body-theorem \
+  --fallback-hash; do
+  if ! bash "$noevent_gate" "$mode" >>"$gate_log" 2>&1; then
+    echo "check: the no-event installation gate failed for '$mode'" >&2
+    tail -20 "$gate_log" >&2
+    exit 1
+  fi
+done
+echo "gate: the no-event entry installed from its own certificate, refused another unit's theorem and a mismatched object hash, withheld strict install without the body theorem, and fell back"
 
 # --- one source-elaboration writer at a time across the two routes -----------
 echo "== the source-elaboration lock serializes the build and the selector"

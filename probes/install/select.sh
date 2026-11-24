@@ -10,10 +10,12 @@
 #     the loop's own `loop_refines_candidate_within` in the manifest's
 #     `loop_theorem` field for `UNIT=loop`,
 #     `depth_count_refines` with `depthContract` in `depth_count_theorem` and
-#     `depth_contract` for `UNIT=depth_count`, and the scanner's own
+#     `depth_contract` for `UNIT=depth_count`, the scanner's own
 #     `scanWindowLLVM_refines` with `jsonScanContract` in `json_scan_theorem`
-#     and `json_scan_contract` for `UNIT=json_scan`, so each request is decided
-#     by its certificate;
+#     and `json_scan_contract` for `UNIT=json_scan`, and the no-event entry's
+#     body theorem `stage2NoEventWalkObligation_of_staging` with its boundary
+#     `stage2NoEventBoundary` in `noevent_theorem` and `noevent_contract` for
+#     `UNIT=noevent`, so each request is decided by its certificate;
 #   * every recorded hash matches: caller, the unit objects, the differential
 #     transcript, and each bound unit's fixture and marker inputs;
 #   * each unit object is rebuilt from its fixtures and the rebuild matches the
@@ -37,7 +39,9 @@
 #     loop request re-elaborates `CommaMaskLoop` after `CommaMaskIR`, because
 #     the loop's proof module imports the one the fixture guards are about; a
 #     depth request re-elaborates `DepthCountRefine`, which carries the depth
-#     fixture through `include_str`;
+#     fixture through `include_str`; a no-event request re-elaborates
+#     `JsonStage2NoEventIR` — which carries the no-event fixture through
+#     `include_str` — and then the walk assembly that names its body theorem;
 #   * the objects are ELF64 and export the seam and marker symbols, and the
 #     caller imports the seam.
 #
@@ -128,14 +132,17 @@ expected_theorem=LeanLLVM.Refinement.CommaMaskIR.IR_refines
 expected_loop_theorem=LeanLLVM.Refinement.CommaMaskLoop.loop_refines_candidate_within
 expected_depth_theorem=LeanLLVM.Refinement.DepthCountRefine.depth_count_refines
 expected_json_scan_theorem=LeanLLVM.Refinement.JsonScanIR.scanWindowLLVM_refines
+expected_noevent_theorem=LeanLLVM.Refinement.stage2NoEventWalkObligation_of_staging
 expected_contract=LeanLLVM.Refinement.commaContract
 expected_depth_contract=LeanLLVM.Refinement.DepthCountRefine.depthContract
 expected_json_scan_contract=LeanLLVM.Refinement.JsonScanABI.jsonScanContract
+expected_noevent_contract=LeanLLVM.Refinement.stage2NoEventBoundary
 expected_axioms=Classical.choice,Quot.sound,propext
 expected_symbol=leanllvm_comma_mask8
 expected_marker=leanllvm_impl_id
 expected_depth_symbol=depth_count
 expected_json_scan_symbol=leanllvm_json_scan_window
+expected_noevent_symbol=leanllvm_json_stage2_noevent
 
 # A tool probe whose answer does not depend on how much of the output is read.
 # `tool | grep -q` leaves as soon as it matches, so the producer can be killed
@@ -249,7 +256,7 @@ parse_certificate() { # path
       unit)
         [ "$value" = baseline ] || [ "$value" = candidate ] ||
           [ "$value" = loop ] || [ "$value" = depth_count ] ||
-          [ "$value" = json_scan ] || return 1 ;;
+          [ "$value" = json_scan ] || [ "$value" = noevent ] || return 1 ;;
       theorem | contract)
         [[ "$value" =~ ^LeanLLVM\.[A-Za-z0-9_.]+$ ]] || return 1 ;;
       axioms) [[ "$value" =~ ^[A-Za-z0-9_.]+(,[A-Za-z0-9_.]+)*$ ]] || return 1 ;;
@@ -299,6 +306,7 @@ check_certificate() { # unit
     loop) unit_object=${loop:-} ;;
     depth_count) unit_object=${depth_count:-} ;;
     json_scan) unit_object=${json_scan:-} ;;
+    noevent) unit_object=${noevent:-} ;;
     *) proof_failure=invalid; return 1 ;;
   esac
   unit_fixture=${!fixture_var:-}
@@ -350,6 +358,16 @@ check_certificate() { # unit
     expected_unit_theorem=$expected_json_scan_theorem
     bound_contract=${json_scan_contract:-}
     expected_unit_contract=$expected_json_scan_contract
+  fi
+  # The no-event unit's certificate must name the body theorem the proof
+  # inhabits, not the unconditional boundary corollary: a manifest that binds
+  # only the boundary is refused here with the required body theorem named,
+  # even when its certificate agrees with that manifest.
+  if [ "$unit" = noevent ]; then
+    bound_theorem=${noevent_theorem:-}
+    expected_unit_theorem=$expected_noevent_theorem
+    bound_contract=${noevent_contract:-}
+    expected_unit_contract=$expected_noevent_contract
   fi
   if [ "${cert[theorem]}" != "$bound_theorem" ] ||
      [ "${cert[theorem]}" != "$expected_unit_theorem" ]; then
@@ -426,6 +444,19 @@ check_certificate() { # unit
       >/dev/null 2>"$work/json-scan-rebuild.log"; then
     sequence_ok=0
   fi
+  # The no-event proof module is the walk assembly, and the fixture guard lives
+  # in `JsonStage2NoEventIR`, which carries the fixture through `include_str`.
+  # Removing the guard module's olean first makes the assembly's rebuild re-run
+  # it: Lake's up-to-date check does not track `include_str` inputs, so a plain
+  # build would accept an olean elaborated from different fixture bytes.
+  if [ "$sequence_ok" -eq 1 ] && [ "$unit" = noevent ] &&
+     ! (cd "$root" &&
+        rm -f .lake/build/lib/lean/LeanLLVM/Refinement/JsonStage2NoEventIR.olean \
+          .lake/build/lib/lean/LeanLLVM/Refinement/JsonStage2NoEventWalkAssembly.olean &&
+        lake build LeanLLVM.Refinement.JsonStage2NoEventWalkAssembly) \
+      >/dev/null 2>"$work/noevent-rebuild.log"; then
+    sequence_ok=0
+  fi
   if [ "$sequence_ok" -eq 1 ] &&
      ! (cd "$root" &&
         CERT_UNIT="$unit" CERT_MANIFEST="$manifest_abs" CERT_OUT="$derived" \
@@ -455,6 +486,7 @@ case "$req_unit" in
   loop) selected_unit=loop ;;
   depth_count) selected_unit=depth_count ;;
   json_scan) selected_unit=json_scan ;;
+  noevent) selected_unit=noevent ;;
   *) selected_unit= ;;
 esac
 if [ -z "$selected_unit" ]; then
@@ -492,6 +524,22 @@ if [ -n "${json_scan:-}" ]; then
     "json_scan fixture"
   check_hash "${json_scan_marker:-}" "${json_scan_marker_sha256:-}" \
     "json_scan marker"
+fi
+
+if [ -n "${noevent:-}" ]; then
+  check_hash "${noevent:-}" "${noevent_sha256:-}" "noevent hash"
+  check_hash "${noevent_fixture:-}" "${noevent_fixture_sha256:-}" \
+    "noevent fixture"
+  check_hash "${noevent_marker:-}" "${noevent_marker_sha256:-}" \
+    "noevent marker"
+  # The no-event unit's ABI is not the comma seam, so the install build binds a
+  # caller that imports its symbol.  The binding is optional: a manifest that
+  # names only the shared caller still passes when that caller imports the
+  # symbol, which is what the link and import checks below observe.
+  if [ -n "${noevent_caller:-}" ]; then
+    check_hash "${noevent_caller:-}" "${noevent_caller_sha256:-}" \
+      "noevent caller"
+  fi
 fi
 
 if [ "${kind:-}" != "proof-bound" ]; then
@@ -543,6 +591,22 @@ if [ -n "${json_scan_theorem:-}" ] &&
    [ "$json_scan_theorem" != "$expected_json_scan_theorem" ]; then
   ok=0; reasons+=("manifest json_scan theorem $json_scan_theorem")
 fi
+if [ -n "${noevent_symbol:-}" ] &&
+   [ "$noevent_symbol" != "$expected_noevent_symbol" ]; then
+  ok=0; reasons+=("manifest noevent symbol $noevent_symbol")
+fi
+if [ -n "${noevent_contract:-}" ] &&
+   [ "$noevent_contract" != "$expected_noevent_contract" ]; then
+  ok=0; reasons+=("manifest noevent contract $noevent_contract")
+fi
+if [ -n "${noevent_theorem:-}" ] &&
+   [ "$noevent_theorem" != "$expected_noevent_theorem" ]; then
+  # A manifest that binds only the unconditional boundary corollary is the
+  # state in which the strict install is not offered.  The certificate check
+  # below also names the required body theorem, so the operator sees both the
+  # binding and the field value that disagreed.
+  ok=0; reasons+=("manifest noevent theorem $noevent_theorem")
+fi
 if [ "$selected_unit" = depth_count ]; then
   if [ -z "${depth_count_symbol:-}" ] || [ -z "${depth_contract:-}" ] ||
      [ -z "${depth_count_theorem:-}" ] || [ -z "${depth_caller:-}" ]; then
@@ -553,6 +617,12 @@ if [ "$selected_unit" = json_scan ]; then
   if [ -z "${json_scan_symbol:-}" ] || [ -z "${json_scan_contract:-}" ] ||
      [ -z "${json_scan_theorem:-}" ]; then
     ok=0; reasons+=("manifest does not bind the json_scan unit")
+  fi
+fi
+if [ "$selected_unit" = noevent ]; then
+  if [ -z "${noevent_symbol:-}" ] || [ -z "${noevent_contract:-}" ] ||
+     [ -z "${noevent_theorem:-}" ]; then
+    ok=0; reasons+=("manifest does not bind the noevent unit")
   fi
 fi
 
@@ -581,6 +651,12 @@ if [ "$ok" -eq 1 ]; then
     if ! verify_rebuild json_scan "${json_scan_fixture:-}" \
         "${json_scan_marker:-}" "${json_scan_sha256:-}"; then
       ok=0; reasons+=("json_scan unit not rebuilt from its fixture")
+    fi
+  fi
+  if [ -n "${noevent:-}" ]; then
+    if ! verify_rebuild noevent "${noevent_fixture:-}" \
+        "${noevent_marker:-}" "${noevent_sha256:-}"; then
+      ok=0; reasons+=("noevent unit not rebuilt from its fixture")
     fi
   fi
 fi
@@ -653,6 +729,17 @@ if [ -n "${json_scan:-}" ]; then
     ok=0; reasons+=("json_scan marker")
   fi
 fi
+if [ -n "${noevent:-}" ]; then
+  if ! probe 'ELF 64-bit' file -b "${noevent:-}"; then
+    ok=0; reasons+=("noevent is not ELF64")
+  fi
+  if ! probe " T ${expected_noevent_symbol}" nm -g "${noevent:-}"; then
+    ok=0; reasons+=("noevent symbol")
+  fi
+  if ! probe ' T leanllvm_impl_id' nm -g "${noevent:-}"; then
+    ok=0; reasons+=("noevent marker")
+  fi
+fi
 # The caller is the object that imports the selected unit's symbol: the
 # comma-mask caller for the three mask units, the depth corpus driver for the
 # depth counter, whose ABI is not the one-word seam, and the seam's caller for
@@ -662,6 +749,14 @@ if [ "$selected_unit" = depth_count ]; then
   link_caller=${depth_caller:-}
   if ! probe 'depth_count' nm -u "${link_caller:-}"; then
     ok=0; reasons+=("depth caller import")
+  fi
+elif [ "$selected_unit" = noevent ]; then
+  # The no-event entry's ABI is not the comma seam, so the caller must import
+  # the unit's own symbol.  The build binds a dedicated caller; a manifest that
+  # names only the shared caller passes when that caller imports the symbol.
+  link_caller=${noevent_caller:-${caller:-}}
+  if ! probe "$expected_noevent_symbol" nm -u "${link_caller:-}"; then
+    ok=0; reasons+=("noevent caller import")
   fi
 elif [ "$selected_unit" = json_scan ]; then
   if ! probe "$expected_json_scan_symbol" nm -u "${link_caller:-}"; then
@@ -693,6 +788,11 @@ if [ "$ok" -eq 1 ] && [ -z "$proof_failure" ]; then
       selected=${json_scan:-}
       covering_theorem=${json_scan_theorem:-}
       covering_contract=${json_scan_contract:-}
+      ;;
+    noevent)
+      selected=${noevent:-}
+      covering_theorem=${noevent_theorem:-}
+      covering_contract=${noevent_contract:-}
       ;;
   esac
   kind=$selected_unit
@@ -735,6 +835,7 @@ case "$selected_unit" in
   loop) proof_path=${proof_loop:-} ;;
   depth_count) proof_path=${proof_depth_count:-} ;;
   json_scan) proof_path=${proof_json_scan:-} ;;
+  noevent) proof_path=${proof_noevent:-} ;;
   *) proof_path= ;;
 esac
 if [ -n "$proof_path" ] && [ -f "$proof_path" ]; then
@@ -759,7 +860,9 @@ fi
   echo "loop_sha256=${loop_sha256:-}"
   echo "depth_count_sha256=${depth_count_sha256:-}"
   echo "json_scan_sha256=${json_scan_sha256:-}"
+  echo "noevent_sha256=${noevent_sha256:-}"
   echo "depth_caller_sha256=${depth_caller_sha256:-}"
+  echo "noevent_caller_sha256=${noevent_caller_sha256:-}"
   echo "differential_sha256=${differential_sha256:-}"
 } > "$req_record"
 

@@ -6,7 +6,7 @@ pipeline's record demands and calls the native object.  The contract is
 
 | File | What it is |
 |---|---|
-| `RouteMain.lean` | the standalone Lean entry point: it takes the document decision in two phases — the adapter's native facts (the maximum structural nesting, the policy-candidate flag and the escape-list guard's fact), then the probe's own native character-policy scan (`policy.c`) where that flag is set — and falls back to `parseBytes` for every document that decision refuses (one shell, not two).  It stages the document in the record's shape on the fast path, calls the object through the adapter, and prints one of the three outcomes.  `--stages` splits the route into its stages and the outcome stage into its five parts; `--admit` prints the two-phase decision beside the library's `admission` and the library's `policyRefusal` on the same bytes; `--consume` reads the fast path's result without printing, as a fold and as a per-token value array |
+| `RouteMain.lean` | the standalone Lean entry point: it takes the document decision in two phases — the adapter's native facts (the maximum structural nesting, the policy-candidate flag and the escape-list guard's fact), then the probe's own native character-policy scan (`policy.c`) where that flag is set — and falls back to `parseBytes` for every document that decision refuses (one shell, not two).  It stages the document in the record's shape on the fast path, calls the object through the adapter, and prints one of the three outcomes.  `--stages` splits the route into its stages and the outcome stage into its five parts; `--admit` prints the two-phase decision beside the library's `admission` and the library's `policyRefusal` on the same bytes; `--consume` reads the shipped default, the no-event arm's three words; `--consume-noevent` is the same arm spelled out; `--consume-events` (or `--arm events --consume`) reads the certified event arm's result without printing, as a fold and as a per-token value array |
 | `shim.c` | the adapter: validates the staging, allocates its zero-filled buffers (`leanllvm_route_zeroed`: one allocation and one `memset` each, in place of `Array.replicate`'s boxed fill), copies the caller's `ByteArray`s into the object's ABI (the document window is handed over in place, because the object only reads it), fills the entry unit's POS8 table, calls `leanllvm_json_pipeline`, and returns the tagged result.  It also runs phase one of the admission — the walk over the document's structural delimiter sequence, whose maximum is the depth clause's number and whose lane list goes through the proved depth counter, and the escape-list guard's presence scan — phase two's wrapper over the policy scan, and the depth pass the admission record reports.  Phase one's code is `admission.h`, which the workspace probe calls directly |
 | `policy.c`, `policy.h` | phase two of the admission: the character-policy scan, native, reproducing `policyRefusal`'s decisions branch for branch — the class and the byte — over the document's bytes, with a screen that answers a document no policy refusal is possible in without visiting a position.  Its `policy_step` is also the body scan phase one walks (`leanllvm_route_body_stop`), so the depth clause's string spans and the policy class array are one reading of a body |
 | `admission.h` | the two-phase admission as plain C, with no Lean runtime: the depth walk over the structural delimiter sequence through the proved counter, the character-policy scan where the candidate flag is set, and the escape-list guard's fact.  `shim.c` wraps it for the route and `workspace.cc` calls it directly, so the admission the route runs and the admission the workspace experiment times are one source |
@@ -14,13 +14,13 @@ pipeline's record demands and calls the native object.  The contract is
 | `guard_check.c`, `guard.sh` | the guard's equivalence gate: 164 documents (the route's corpus, the escape unit's rows, the bench's documents) called twice each, arm 2 against the arm the guard selects, compared field for field and byte for byte; where the guard fires the arm-2 list must be empty, and a forced arm 0 must change the result on every document whose arm-2 list is not empty |
 | `init_guard_check.c`, `init-guard.sh` | the POS8 table's initialisation gate, in three processes: with `leanllvm_json_entry_table` run first, pos8 accepts and writes b8's entry stream; without it, the pos8 pipeline traps (SIGILL) instead of returning a plausible wrong answer; and the b8 arm, which reads no table, accepts without the initialiser as the control |
 | `model-differential.sh` | the object-versus-model differential: for every row the route admits, the object's observation (verdict, the four cursor words, the refusal word, the arena's used prefix and the event stream) is compared byte for byte with the model run at `JsonPipelineIR.pipelineBody` under `pipelineCalls` and the workspace stage-2 selection, printed by `JsonPipelineModelMain.lean`; a row the route does not admit is reported by name with both decisions.  Three controls must go red: the uninitialised POS8 table traps (via `init-guard.sh`), a fixture copy with a constant return mutated must project differently, and a `stage2.c` copy with its verdict flipped must answer differently |
-| `driver.c` | a C caller that stages the document identically and prints the same three lines, for the fidelity comparison |
-| `build.sh` | compiles the six kernel units, the proved depth counter (`tests/v16/depth_count.ll`), the policy scan, the adapter and the program, links them (the program's library modules link from their emitted C), and asserts every symbol the adapter calls is imported and defined |
+| `driver.c` | a C caller that stages the document identically and prints the same three lines, for the fidelity comparison; `--noevent` calls `leanllvm_json_pipeline_noevent` on the same staging and prints the one-line reading the route's no-event arm prints |
+| `build.sh` | compiles the six kernel units, the two additive no-event units (`stage2_noevent.c`, `pipeline_noevent.c`), the proved depth counter (`tests/v16/depth_count.ll`), the policy scan, the adapter and the program, links them (the program's library modules link from their emitted C), and asserts every symbol the adapter calls is imported and defined, the no-event imports and definitions included |
 | `check.sh` | the route scenario: fidelity against `driver.c` on every admitted row, each fallback answer against the manifest, the empty/over-bound/opener-rich documents, the depth boundary, the depth clause's own documents and a fixed-seed malformed sweep, the fourteen-row policy class, the three outcomes' distinctness, the two-phase decision's agreement with `admission` on every row — at the refusal's class and byte, and at the measured depth wherever the walk ran — with a control that must report a disagreement, the consumer mode's reading of a five-event fixture, and its reading of a refused document (a lone `]`) as a `verdict=0` row rather than a failed reading |
 | `bench.sh` | the route's per-stage timings, the outcome stage's five parts, the consumer rows, the object's -O2/-O3 pair taken paired against a drift control, the boundary rows' two paths, and the simdjson reference arm; the record is [the stage timings page](../../../docs/json-route-stage-timings.md) |
-| `bench-corpus.sh` | the route's cost on the units harness's corpus: it measures the documents `tests/json-units-bench/bench.sh` already generated (same seed, sizes and tiling) with the route's own `--stages` and `--consume` modes, `BENCH_TRIALS` trials of `BENCH_REPS` repetitions pinned with `taskset` exactly as that harness pins its rows, and reports the stage split and the consumer rows.  A document outside the admitted domain is reported as a refusal row rather than measured as if it had called the object; the 4 MiB synthetic documents are all of that class, because the route's input bound is one mebibyte |
+| `bench-corpus.sh` | the route's cost on the units harness's corpus: it measures the documents `tests/json-units-bench/bench.sh` already generated (same seed, sizes and tiling) with the route's own `--stages` and `--consume-events` modes, `BENCH_TRIALS` trials of `BENCH_REPS` repetitions pinned with `taskset` exactly as that harness pins its rows, and reports the stage split and the consumer rows.  A document outside the admitted domain is reported as a refusal row rather than measured as if it had called the object; the 4 MiB synthetic documents are all of that class, because the route's input bound is one mebibyte |
 | `bench/simdjson-baseline.cc` | the reference arm: simdjson 4.6.11 on-demand over the same documents, its `padded_string` staging and its `iterate` plus full value traversal timed apart |
-| `workspace.cc`, `workspace.sh` | the workspace measurement: the route's four intervals (admission, staging, the native call, the consumer's values reading) with a workspace rebuilt on every call and with one workspace reused across the three accepted 64 KiB documents, paired against simdjson 5.0.5's full parse in the same process.  The reused arm rotates the documents so a call inherits the previous one's buffers; every act's header, bytes and consumer readings are checked against the reference observation and the route binary's own `--consume` row, and the stale-tail control requires the inherited bytes to be present.  The record is [the performance page](../../../docs/json-pipeline-performance.md)'s "The workspace, fresh against reused" |
+| `workspace.cc`, `workspace.sh` | the workspace measurement: the route's four intervals (admission, staging, the native call, the consumer's values reading) with a workspace rebuilt on every call and with one workspace reused across the three accepted 64 KiB documents, paired against simdjson 5.0.5's full parse in the same process.  The reused arm rotates the documents so a call inherits the previous one's buffers; every act's header, bytes and consumer readings are checked against the reference observation and the route binary's own `--consume-events` row, and the stale-tail control requires the inherited bytes to be present.  The record is [the performance page](../../../docs/json-pipeline-performance.md)'s "The workspace, fresh against reused" |
 | `correspondence.sh` | the stage-2 artifact correspondence: the flags, the derivation steps, which bodies are identical under the transform, and what is left over |
 | `residue.sh` | the document-domain measurement: every corpus row, the scenario's generated rows, the bench's documents and the constructed shapes the corpus does not cover, each classified by the admission clause that refused it, with the reference's verdict on the same bytes read from `leanllvm-json`; the record is [the residue page](../../../docs/json-route-residue.md) |
 | `DomainCheck.lean` | the library shell's `documentDecision` and `checkRoute`, elaborated from source: every admission clause on both sides, both fallback outcomes, the fourteen-row policy class, and the layout checks |
@@ -77,6 +77,7 @@ nix develop -c bash probes/json/route/init-guard.sh # the POS8 table's gate
 nix develop -c bash probes/install/lake-locked.sh build leanllvm-json-pipeline-model
 nix develop -c bash probes/json/route/model-differential.sh
 "$PWD/probes/json/route/build/leanllvm-json-route" --consume tests/json/corpus/depth-two-ok.json 21
+"$PWD/probes/json/route/build/leanllvm-json-route" --consume-events tests/json/corpus/depth-two-ok.json 21
 "$PWD/probes/json/route/build/leanllvm-json-route" --admit tests/json/corpus/depth-two-ok.json 21
 nix develop -c bash probes/json/route/correspondence.sh
 nix develop -c bash probes/install/lake-locked.sh build leanllvm-json   # the residue's validity oracle
@@ -150,17 +151,54 @@ its class alone.  The
 optional third argument is the native side's depth bound; it defaults to
 `kernelMaxDepth`, and the scenario's control is the only caller that moves it.
 
-`--consume <file> <reps>` is the production reader's number: it runs the fast
-path once per repetition and reads the result without printing — the header by
-index, the event stream record by record at the widths `kernel/json/stage2.h`
-documents — as a fold that keeps no per-token object (`consume_fold_ns`) and as
-one that materialises an event record per token (`consume_values_ns`).  The two
-alternate which goes first.  An accepted run exits 5 unless both readings count
-the same tokens, land exactly on the event stream's end and produce the same
-checksum, so a row reports a reading that was checked rather than a duration
-alone.  A run the object *refuses* has no event stream: its row carries `verdict=0`,
-its two readings are the empty walk, and no token count is owed, so a refusal is
-reported rather than mistaken for a reading that missed the stream's end.
+The route's shipped default is the no-event arm: `--consume <file> <reps>` reads
+the pipeline's returned three words, with no event walk and no payload copy, and
+`--consume-noevent` is the same arm spelled out.  The certified event arm remains
+selectable — `--consume-events <file> <reps>`, or `--arm events --consume` — and
+that mode is the event arm's consumer number: it runs the fast path once per
+repetition and reads the result without printing — the header by index, the event
+stream record by record at the widths `kernel/json/stage2.h` documents — as a
+fold that keeps no per-token object (`consume_fold_ns`) and as one that
+materialises an event record per token (`consume_values_ns`).  The two alternate
+which goes first.  An accepted run exits 5 unless both readings count the same
+tokens, land exactly on the event stream's end and produce the same checksum, so
+a row reports a reading that was checked rather than a duration alone.  A run the
+object *refuses* has no event stream: its row carries `verdict=0`, its two
+readings are the empty walk, and no token count is owed, so a refusal is reported
+rather than mistaken for a reading that missed the stream's end.
+
+`--consume-noevent <file> <reps>` is that no-event arm, and `--consume` is its
+default spelling: it stages the same stage-1 buffers, adds a scratch buffer at
+the entry's `pre` (`n + 64`), and calls `leanllvm_json_pipeline_noevent` through
+its own adapter entry.  The arm writes no arena and no event stream, so the
+reading is the three words the pipeline's tail returns — `tokens`, `values` and
+`sum`, the same words `tests/json-noevent.contract.md` pins at the C boundary —
+and the header carries
+`verdict`, both stage-1 cursors, the refusal offset and those three words with no
+payload.  On an acceptance `values` must equal `tokens`, and a refusal must leave
+all three zero with `err` the walk's offset (or the document's length for the
+UTF-8 stage's refusal); a violation is reported at exit 5.  The reading is
+printed once on stdout as `reading verdict=… nk=… nxp=… err=… tokens=… values=…
+sum=…`, the form `driver --noevent` prints, and the row on stderr carries the
+stage intervals.
+
+The no-event arm is the route's shipped default, so its reading is the one a
+consumer of this route gets, and the certified event arm is reached by its own
+flag.  `--doc` still prints the event arm's observation and is unchanged.
+`tests/json-noevent/check.sh` is the agreement and freeze: the two no-event
+actors print one identical reading on every admitted document, the certified
+event arm's observation and consumer fold are the reference, and the event arm's
+output is compared with its 183-row base fixture, so a default change that moved
+the event arm's bytes is a red.
+
+The reading's measured provenance is `tests/json-fair/`: the same three words
+against simdjson 5.0.5's traversal plus the direct consumer sum over the pinned
+151-document corpus, at three trials of 51 repetitions on one CPU.  The row is
+0.8735 median, faster on 128/151, 22 in band and 1 over (127/21/0 over the
+148 heterogeneous documents); the instrument and corpus are recorded in
+`tests/json-fair/README.md` and the performance note's fair section.  This arm
+does not read the event stream; the certified event stream and its proof remain
+the shipped ABI.
 
 ## Observed
 
@@ -288,7 +326,7 @@ was never the one under test.
 | a policy-violating document falls back | `.error (.unpairedSurrogate _) \| .error (.noncharacter _) => runFast …` | `FAIL: the fallback refuses a different policy class than the one pinned`, `FAIL: expected 14 policy refusals, saw 0`, and the fourteen rows counted as divergences |
 | over-length falls back | `.error (.inputTooLong _) => runFast …` | `FAIL: the over-bound document was not the fallback's refusal (exit 0)` |
 | a policy-clean in-domain document takes the fast path | `.ok () => … runFallback doc` (with `runFast` still referenced from a branch that is not taken, so the link step keeps the call) | `FAIL: the fast-path arm is empty (accept 0, invalid 0)`, `FAIL: no compared row carried arena bytes…`, and the depth-128 row losing its observation |
-| the consumer decodes the record widths | `eventWidth`: `tag == 7 then 9` → `then 1` (a number read as a one-byte record) | `FAIL: --consume read the five-event document as: … tokens=13 values=13 …` and `FAIL: 1 assertion(s) failed over 122 default-profile rows` |
+| the consumer decodes the record widths | `eventWidth`: `tag == 7 then 9` → `then 1` (a number read as a one-byte record) | `FAIL: --consume-events read the five-event document as: … tokens=13 values=13 …` and `FAIL: 1 assertion(s) failed over 122 default-profile rows` |
 | the native scan raises the surrogate class | `policy.c`: the high-surrogate branch's `if (cv >= 0xD800u && cv <= 0xDBFFu)` → `if (0)`, so a `\uD800` form is accepted as an ordinary character | `FAIL: lone-d800.json: the two-phase decision and the certified predicate differ` — also `double-high`, `high-char`, and `pair-d834`/`pair-i-json`, where a *valid* pair is now refused because its low half is read as unpaired — then `FAIL: expected 14 policy refusals, saw 11` and `FAIL: 3 default-profile rows still diverge from the reference: lone-d800.json double-high.json high-char.json`; 9 assertions failed |
 | the native scan reports the refusal's byte | `policy.c`: `policy_refusal_pos` returns `i - s` (the body-relative offset) instead of `i` | every one of the fourteen policy rows: `FAIL: <row>: the two-phase decision and the certified predicate differ`, with the row itself `policy_native=unpairedSurrogate@0 policy_oracle=unpairedSurrogate@1 … reason=unpairedSurrogate@0 certified_reason=unpairedSurrogate@1 agree=0` |
 | the depth clause's number | `shim.c`: `depth_measure` keeps the walk and its lane list, and sets the clause's number to the previous rule's opener-byte count over the whole document (string bodies included) instead of the maximum it tracked | `FAIL: opener-rich: the two-phase decision and the certified predicate differ` with `native_depth=129 certified_depth=0`; also `siblings` (201 against 2), `escaped` (201 against 1), `straddle-body`/`straddle-quote`, and 113 of the 120 swept rows; `FAIL: the opener-rich document did not take the fast path`, and the depth gate's own expectations `FAIL: <row>: measured depth native=… certified=…, expected …`; 129 assertions |
@@ -318,9 +356,9 @@ reason agree on both sides (`1`/`none`) and only the number differs (`2` against
 `0`) — a red only because the depth is compared.
 
 The consumer's refusal block is not a cut of the current code: it is the failure
-the mode's fix prevents, observed against the code before it.  `--consume` on
+the mode's fix prevents, observed against the code before it.  `--consume-events` on
 `route-u8-64k` (a document the domain admits and the object refuses) printed
-`route: --consume: the readings disagree: tokens=0 values=0 walked=true fold
+`route: --consume-events: the readings disagree: tokens=0 values=0 walked=true fold
 sum=0 values sum=0` and exited 5, though the two readings agreed: the gate read
 the empty walk of a refusal as a reading that missed the stream's end.  The mode
 now reports `verdict=0` and no token count is owed, and the block in `check.sh`
