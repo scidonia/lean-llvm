@@ -254,6 +254,7 @@ theorem gapPrefix_true {mem : Mem} {next c pos lt lf ln : Nat} {win : List UInt8
           (EntryState odGapRecoverBody (odGapEntryArgs c pos lt lf ln) mem next) =
         runFuel (stage2Calls stage2SubCalls) k odGapRecoverBody s) ∧
       s.pc = "cond.end" ∧ s.pre = some "cond.true" ∧ s.mem = mem ∧
+      s.next = next + (Ty.double).sizeBytes + (Ty.int 64).sizeBytes ∧
       lookupName s.env "%0" = some (.ptr P.b) ∧
       lookupName s.env "%c" = some (.ptr c) ∧
       lookupName s.env "%t.0.val" = some (.int 64 (BitVec.ofNat 64 pos)) ∧
@@ -322,7 +323,7 @@ theorem gapPrefix_true {mem : Mem} {next c pos lt lf ln : Nat} {win : List UInt8
     simp only [env2, env1, gapEntryEnv]; block_lk
   have hc2 : lookupName env2 "%c" = some (.ptr c) := by
     simp only [env2, env1, gapEntryEnv]; block_lk
-  refine ⟨s2, ?_, rfl, rfl, ?_, h02, hc2, ht2, hd2, hei2, hlt2, hlf2, hln2, hconv2⟩
+  refine ⟨s2, ?_, rfl, rfl, ?_, (by simp only [s2, s1, s0, stateAt]), h02, hc2, ht2, hd2, hei2, hlt2, hlf2, hln2, hconv2⟩
   · intro k
     rw [hentry, show 2 + k = 1 + (1 + k) from by omega,
       runFuel_jump_prefix h1 (1 + k), runFuel_jump_prefix h2 k]
@@ -338,6 +339,7 @@ theorem gapPrefix_false {mem : Mem} {next c pos lt lf ln : Nat} {win : List UInt
           (EntryState odGapRecoverBody (odGapEntryArgs c pos lt lf ln) mem next) =
         runFuel (stage2Calls stage2SubCalls) k odGapRecoverBody s) ∧
       s.pc = "cond.end" ∧ s.pre = some "cond.false" ∧ s.mem = mem ∧
+      s.next = next + (Ty.double).sizeBytes + (Ty.int 64).sizeBytes ∧
       lookupName s.env "%0" = some (.ptr P.b) ∧
       lookupName s.env "%c" = some (.ptr c) ∧
       lookupName s.env "%t.0.val" = some (.int 64 (BitVec.ofNat 64 pos)) ∧
@@ -405,7 +407,7 @@ theorem gapPrefix_false {mem : Mem} {next c pos lt lf ln : Nat} {win : List UInt
     simp only [env2, env1, gapEntryEnv]; block_lk
   have hc2 : lookupName env2 "%c" = some (.ptr c) := by
     simp only [env2, env1, gapEntryEnv]; block_lk
-  refine ⟨s2, ?_, rfl, rfl, ?_, h02, hc2, ht2, hd2, hei2, hlt2, hlf2, hln2, h52⟩
+  refine ⟨s2, ?_, rfl, rfl, ?_, (by simp only [s2, s1, s0, stateAt]), h02, hc2, ht2, hd2, hei2, hlt2, hlf2, hln2, h52⟩
   · intro k
     rw [hentry, show 2 + k = 1 + (1 + k) from by omega,
       runFuel_jump_prefix h1 (1 + k), runFuel_jump_prefix h2 k]
@@ -417,12 +419,16 @@ From the scan's own seed the first loop runs to its end and `cleanup82` returns
 the caller's memory.  The model's rule writes nothing at that exit, which is the
 no-write row's second path. -/
 
-theorem gapScan_to_cleanup_none {mem : Mem} {bytes : List UInt8}
+/-- `hnextS` is the scan invariant's ninth cell, supplied by `gapPrefix_*`'s own
+`hnextP`. -/
+private theorem gapScan_to_cleanup_none {mem : Mem} {bytes : List UInt8}
     {ip b pos c next lt lf ln : Nat}
     (hbytes : gapBytesAt mem bytes b ip) (hblen : bytes.length = ip)
     (hEe : gapEe bytes ip pos = ip) (hposlt : pos < ip) (hiplt : ip < 2 ^ 63)
     (s : State) (hpc : s.pc = "land.rhs") (hpre : s.pre = some "cond.end")
-    (hmem : s.mem = mem) (hb : lookupName s.env "%0" = some (.ptr b))
+    (hmem : s.mem = mem)
+    (hnextS : s.next = next + (Ty.double).sizeBytes + (Ty.int 64).sizeBytes)
+    (hb : lookupName s.env "%0" = some (.ptr b))
     (hcur : lookupName s.env "%c" = some (.ptr c))
     (ht : lookupName s.env "%t.0.val" = some (.int 64 (BitVec.ofNat 64 pos)))
     (hcond : lookupName s.env "%cond" = some (.int 64 (BitVec.ofNat 64 ip)))
@@ -434,18 +440,20 @@ theorem gapScan_to_cleanup_none {mem : Mem} {bytes : List UInt8}
     ∃ j : Nat, j ≤ (ip + 1) * 5 + 1 ∧
       runFuel (stage2Calls stage2SubCalls) j odGapRecoverBody s = some (.ret none mem) := by
   have hinv : gapScanInv bytes ip b pos c next lt lf ln mem ip s pos :=
-    gapScanInv_seed hposlt hiplt hpc hpre hmem hb hcur ht hcond hd hei hltc hlfc hlnc
+    gapScanInv_seed hposlt hiplt hpc hpre hmem hnextS hb hcur ht hcond hd hei hltc hlfc hlnc
   obtain ⟨e, j, hj, _, hexit, hrun⟩ :=
     gapScanLoop_run (calls := stage2Calls stage2SubCalls) (cur := c) (next := next)
       (lt := lt) (lf := lf) (ln := ln) hbytes hblen s pos hinv 1
   have hpcE : e.pc = "cleanup82" := by
-    rcases hexit with ⟨leaf, cc, hpc1, _⟩ | ⟨hpc2, _⟩
+    rcases hexit with ⟨leaf, cc, hpc1, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _⟩
+      | ⟨hpc2, _⟩
     · exfalso; omega
     · exact hpc2
   obtain ⟨hret, _⟩ :=
     gap_scan_cleanup82_continue (calls := stage2Calls stage2SubCalls) hpcE hexit
   have hmemE : e.mem = mem := by
-    rcases hexit with ⟨leaf, cc, hpc1, hpre1, hm, _⟩ | ⟨_, hm, _⟩
+    rcases hexit with ⟨leaf, cc, hpc1, hpre1, hm, _, _, _, _, _, _, _, _, _, _, _, _, _, _⟩
+      | ⟨_, hm, _⟩
     · rw [hpcE] at hpc1
       exact absurd hpc1 (by decide)
     · exact hm
@@ -600,7 +608,7 @@ theorem gapRun_none_scan_true {mem : Mem} {next c pos lt lf ln : Nat} {win : Lis
     ∃ B : Nat, B ≤ 4 + (P.ip + 1) * 5 ∧
       runFuel (stage2Calls stage2SubCalls) B odGapRecoverBody
         (EntryState odGapRecoverBody (odGapEntryArgs c pos lt lf ln) mem next) = some (.ret none mem) := by
-  obtain ⟨s, hrun, hpc, hpre, hmem, h0, hcur, ht, hd, hei, hltc, hlfc, hlnc, hconv⟩ :=
+  obtain ⟨s, hrun, hpc, hpre, hmem, hnextP, h0, hcur, ht, hd, hei, hltc, hlfc, hlnc, hconv⟩ :=
     gapPrefix_true P hklt
   let sH : State := stateAt (("%cmp310", .int 1 (evalICmp .ult (BitVec.ofNat 64 pos)
       (BitVec.ofNat 64 P.ip))) :: ("%cond", .int 64 (BitVec.ofNat 64 P.ip)) :: s.env)
@@ -616,9 +624,11 @@ theorem gapRun_none_scan_true {mem : Mem} {next c pos lt lf ln : Nat} {win : Lis
   have hHcur : lookupName sH.env "%c" = some (.ptr c) := by
     simp only [sH, stateAt]; block_lk
   have hHm : sH.mem = mem := by simp only [sH, stateAt]; exact hmem
+  have hHnext : sH.next = next + (Ty.double).sizeBytes + (Ty.int 64).sizeBytes := by
+    simp only [sH, stateAt]; exact hnextP
   obtain ⟨j, hj, hrun2⟩ := gapScan_to_cleanup_none (mem := mem) (bytes := win)
     (ip := P.ip) (b := P.b) (pos := pos) (c := c) (next := next) (lt := lt) (lf := lf)
-    (ln := ln) P.hbytes P.hlen hEe hposlt P.hip63 sH rfl rfl hHm hHb hHcur hHt hHc
+    (ln := ln) P.hbytes P.hlen hEe hposlt P.hip63 sH rfl rfl hHm hHnext hHb hHcur hHt hHc
     hd hei hltc hlfc hlnc
   refine ⟨2 + 1 + j, by omega, ?_⟩
   rw [show 2 + 1 + j = 2 + (1 + j) from by omega]
@@ -631,7 +641,7 @@ theorem gapRun_none_scan_false {mem : Mem} {next c pos lt lf ln : Nat} {win : Li
     ∃ B : Nat, B ≤ 4 + (P.ip + 1) * 5 ∧
       runFuel (stage2Calls stage2SubCalls) B odGapRecoverBody
         (EntryState odGapRecoverBody (odGapEntryArgs c pos lt lf ln) mem next) = some (.ret none mem) := by
-  obtain ⟨s, hrun, hpc, hpre, hmem, h0, hcur, ht, hd, hei, hltc, hlfc, hlnc, h5⟩ :=
+  obtain ⟨s, hrun, hpc, hpre, hmem, hnextP, h0, hcur, ht, hd, hei, hltc, hlfc, hlnc, h5⟩ :=
     gapPrefix_false P hnk
   let sH : State := stateAt (("%cmp310", .int 1 (evalICmp .ult (BitVec.ofNat 64 pos)
       (BitVec.ofNat 64 P.ip))) :: ("%cond", .int 64 (BitVec.ofNat 64 P.ip)) :: s.env)
@@ -647,9 +657,11 @@ theorem gapRun_none_scan_false {mem : Mem} {next c pos lt lf ln : Nat} {win : Li
   have hHcur : lookupName sH.env "%c" = some (.ptr c) := by
     simp only [sH, stateAt]; block_lk
   have hHm : sH.mem = mem := by simp only [sH, stateAt]; exact hmem
+  have hHnext : sH.next = next + (Ty.double).sizeBytes + (Ty.int 64).sizeBytes := by
+    simp only [sH, stateAt]; exact hnextP
   obtain ⟨j, hj, hrun2⟩ := gapScan_to_cleanup_none (mem := mem) (bytes := win)
     (ip := P.ip) (b := P.b) (pos := pos) (c := c) (next := next) (lt := lt) (lf := lf)
-    (ln := ln) P.hbytes P.hlen hEe hposlt P.hip63 sH rfl rfl hHm hHb hHcur hHt hHc
+    (ln := ln) P.hbytes P.hlen hEe hposlt P.hip63 sH rfl rfl hHm hHnext hHb hHcur hHt hHc
     hd hei hltc hlfc hlnc
   refine ⟨2 + 1 + j, by omega, ?_⟩
   rw [show 2 + 1 + j = 2 + (1 + j) from by omega]
@@ -664,7 +676,7 @@ theorem gapRun_none_atIp_true {mem : Mem} {next c pos lt lf ln : Nat} {win : Lis
     ∃ B : Nat, B ≤ 5 ∧
       runFuel (stage2Calls stage2SubCalls) B odGapRecoverBody
         (EntryState odGapRecoverBody (odGapEntryArgs c pos lt lf ln) mem next) = some (.ret none mem) := by
-  obtain ⟨s, hrun, hpc, hpre, hmem, h0, hcur, ht, hd, hei, hltc, hlfc, hlnc, hconv⟩ :=
+  obtain ⟨s, hrun, hpc, hpre, hmem, hnextP, h0, hcur, ht, hd, hei, hltc, hlfc, hlnc, hconv⟩ :=
     gapPrefix_true P hklt
   have ht' : lookupName s.env "%t.0.val" = some (.int 64 (BitVec.ofNat 64 P.ip)) := by
     simpa only [hpos] using ht
@@ -696,7 +708,7 @@ theorem gapRun_none_atIp_false {mem : Mem} {next c pos lt lf ln : Nat} {win : Li
     ∃ B : Nat, B ≤ 5 ∧
       runFuel (stage2Calls stage2SubCalls) B odGapRecoverBody
         (EntryState odGapRecoverBody (odGapEntryArgs c pos lt lf ln) mem next) = some (.ret none mem) := by
-  obtain ⟨s, hrun, hpc, hpre, hmem, h0, hcur, ht, hd, hei, hltc, hlfc, hlnc, h5⟩ :=
+  obtain ⟨s, hrun, hpc, hpre, hmem, hnextP, h0, hcur, ht, hd, hei, hltc, hlfc, hlnc, h5⟩ :=
     gapPrefix_false P hnk
   have ht' : lookupName s.env "%t.0.val" = some (.int 64 (BitVec.ofNat 64 P.ip)) := by
     simpa only [hpos] using ht

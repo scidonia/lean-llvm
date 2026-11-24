@@ -12,6 +12,7 @@ import LeanLLVM.Refinement.JsonUnitContracts
 import LeanLLVM.Refinement.JsonEscapeSpec
 import LeanLLVM.Refinement.JsonEscapeSteps
 import LeanLLVM.Refinement.JsonStage2WalkCredit
+import LeanLLVM.Refinement.JsonEventValue
 
 open LeanLLVM.Refinement
 
@@ -11291,3 +11292,11 @@ module prints it. -/
 /-- info: 'LeanLLVM.Refinement.stage2NoEventWalkContainerClass' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.stage2NoEventWalkContainerClass
+
+/-- info: 'LeanLLVM.Refinement.valueOfEvents_consumeRecords' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.valueOfEvents_consumeRecords
+
+/-- info: 'LeanLLVM.Refinement.odGapRecover_run_post_of_prep' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.odGapRecover_run_post_of_prep

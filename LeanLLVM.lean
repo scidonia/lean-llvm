@@ -145,6 +145,8 @@ import LeanLLVM.Refinement.JsonStage2HelperIROdGapRuleCases
 import LeanLLVM.Refinement.JsonStage2HelperIROdGapRun
 import LeanLLVM.Refinement.JsonStage2HelperIROdGapSecondScan
 import LeanLLVM.Refinement.JsonStage2HelperIROdGapSteps
+import LeanLLVM.Refinement.JsonStage2HelperIROdGapFinalSplitEntry
+import LeanLLVM.Refinement.JsonStage2HelperIROdGapFinalSplitOutcome
 import LeanLLVM.Refinement.JsonStage2HelperIROdScalar
 import LeanLLVM.Refinement.JsonStage2HelperOdGap
 import LeanLLVM.Refinement.JsonStage2NumFastArm

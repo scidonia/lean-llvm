@@ -1718,6 +1718,7 @@ the budget `ip ≤ c + r`, and the model's no-whitespace prefix. -/
 def gapScanInv (bytes : List UInt8) (ip b p cur next lt lf ln : Nat) (mem : Mem)
     (r : Nat) (s : State) (c : Nat) : Prop :=
   s.pc = "land.rhs" ∧ s.mem = mem ∧
+  s.next = next + (Ty.double).sizeBytes + (Ty.int 64).sizeBytes ∧
   lookupName s.env "%0" = some (.ptr b) ∧
   lookupName s.env "%c" = some (.ptr cur) ∧
   lookupName s.env "%cond" = some (.int 64 (BitVec.ofNat 64 ip)) ∧
@@ -1739,11 +1740,15 @@ def gapScanAtBound (bytes : List UInt8) (ip : Nat) (_s : State) (c : Nat) : Bool
 /-- The scan's exit word: at `while.end` the counter is the model's `ee` — the
 first whitespace — and at `cleanup82` the model's `ee` is `ip`.  The cells the
 exit's continuation reads are here, and so is the predecessor, because the
-`while.end` `phi` selects by it. -/
+`while.end` `phi` selects by it.  The allocator cell is carried by the
+`while.end` arm only: it is where the scan's next write lands, so no `cleanup82`
+state supplies it, and the `cleanup82` arm's pc, memory and `gapEe = ip` do not
+describe `next`. -/
 def gapScanExit (bytes : List UInt8) (b cur next lt lf ln ip p : Nat) (mem : Mem)
     (e : State) : Prop :=
   (∃ (leaf : String) (c : Nat),
       e.pc = "while.end" ∧ e.pre = some leaf ∧ e.mem = mem ∧
+      e.next = next + (Ty.double).sizeBytes + (Ty.int 64).sizeBytes ∧
       phiIncoming leaf
           [("cond.end", Operand.reg "%t.0.val"), ("LeafBlock", Operand.reg "%ee.011"),
            ("LeafBlock1", Operand.reg "%ee.011"),
@@ -1767,6 +1772,7 @@ theorem gapScanInv_seed {bytes : List UInt8} {ip b p cur next lt lf ln : Nat} {m
     {s : State}
     (hp : p < ip) (hiplt : ip < 2 ^ 63)
     (hpc : s.pc = "land.rhs") (hpre : s.pre = some "cond.end") (hmem : s.mem = mem)
+    (hnext : s.next = next + (Ty.double).sizeBytes + (Ty.int 64).sizeBytes)
     (hb : lookupName s.env "%0" = some (.ptr b))
     (hcur : lookupName s.env "%c" = some (.ptr cur))
     (ht : lookupName s.env "%t.0.val" = some (.int 64 (BitVec.ofNat 64 p)))
@@ -1777,7 +1783,7 @@ theorem gapScanInv_seed {bytes : List UInt8} {ip b p cur next lt lf ln : Nat} {m
     (hlf : lookupName s.env "%litfalse" = some (.ptr lf))
     (hln : lookupName s.env "%litnull" = some (.ptr ln)) :
     gapScanInv bytes ip b p cur next lt lf ln mem ip s p :=
-  ⟨hpc, hmem, hb, hcur, hcond, ht, hd, hei, hlt, hlf, hln,
+  ⟨hpc, hmem, hnext, hb, hcur, hcond, ht, hd, hei, hlt, hlf, hln,
     Or.inl ⟨hpre, ht⟩, le_rfl, hp, hiplt, by omega, by simp [gapNonWsRun]⟩
 
 /-! ### The scan's three prefixes
@@ -1799,7 +1805,7 @@ theorem gap_scan_exit_ws {calls : Calls} {bytes : List UInt8} {ip b p cur next l
       gapScanExit bytes b cur next lt lf ln ip p mem e ∧
       ∀ k, runFuel calls (j + k) odGapRecoverBody s =
         runFuel calls k odGapRecoverBody e := by
-  obtain ⟨hpc, hmem, hb, _hcur, hcond, _htv, _hd, _hei, _hltc, _hlfc, _hlnc,
+  obtain ⟨hpc, hmem, hnextInv, hb, _hcur, hcond, _htv, _hd, _hei, _hltc, _hlfc, _hlnc,
     hcarried, hple, hclt, hiplt, _hbud, hpre⟩ := hinv
   have hc63 : c < 2 ^ 63 := by omega
   have hbytes' : gapBytesAt s.mem bytes b ip := by rw [hmem]; exact hbytes
@@ -1848,9 +1854,10 @@ theorem gap_scan_exit_ws {calls : Calls} {bytes : List UInt8} {ip b p cur next l
       have hst : stateAt s2.env s2 = s2 := rfl
       simpa only [hst, s3] using hh
     refine ⟨s3, 3, by omega, Or.inl rfl, ?_, ?_⟩
-    · refine Or.inl ⟨"LeafBlock", c, rfl, rfl, ?_, by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+    · refine Or.inl ⟨"LeafBlock", c, rfl, rfl, ?_, ?_, by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
         ?_, hee, hclt⟩
       · simp only [s3, stateAt]; exact hmem
+      · simp only [s3, stateAt]; exact hnextInv
       · simp only [s3, s2, s1, stateAt, gapLandRhsEnv]
         block_lk
       · simp only [s3, s2, s1, stateAt, gapLandRhsEnv]
@@ -1910,9 +1917,10 @@ theorem gap_scan_exit_ws {calls : Calls} {bytes : List UInt8} {ip b p cur next l
       have hst : stateAt s3.env s3 = s3 := rfl
       simpa only [hst, s4] using hh
     refine ⟨s4, 4, by omega, Or.inl rfl, ?_, ?_⟩
-    · refine Or.inl ⟨"LeafBlock1", c, rfl, rfl, ?_, by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+    · refine Or.inl ⟨"LeafBlock1", c, rfl, rfl, ?_, ?_, by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
         ?_, hee, hclt⟩
       · simp only [s4, stateAt]; exact hmem
+      · simp only [s4, stateAt]; exact hnextInv
       · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
         block_lk
       · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
@@ -1973,9 +1981,10 @@ theorem gap_scan_exit_ws {calls : Calls} {bytes : List UInt8} {ip b p cur next l
       have hst : stateAt s3.env s3 = s3 := rfl
       simpa only [hst, s4] using hh
     refine ⟨s4, 4, by omega, Or.inl rfl, ?_, ?_⟩
-    · refine Or.inl ⟨"LeafBlock3", c, rfl, rfl, ?_, by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+    · refine Or.inl ⟨"LeafBlock3", c, rfl, rfl, ?_, ?_, by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
         ?_, hee, hclt⟩
       · simp only [s4, stateAt]; exact hmem
+      · simp only [s4, stateAt]; exact hnextInv
       · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
         block_lk
       · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
@@ -2012,6 +2021,7 @@ theorem gap_scan_toWhileBody {calls : Calls} {bytes : List UInt8} {ip b p cur ne
     (hinv : gapScanInv bytes ip b p cur next lt lf ln mem r s c)
     (hnws : gapIsWs (bytes.getD c 0) = false) :
     ∃ (e : State) (j : Nat), j ≤ 4 ∧ e.pc = "while.body" ∧ e.mem = mem ∧
+      e.next = next + (Ty.double).sizeBytes + (Ty.int 64).sizeBytes ∧
       lookupName e.env "%ee.011" = some (.int 64 (BitVec.ofNat 64 c)) ∧
       lookupName e.env "%cond" = some (.int 64 (BitVec.ofNat 64 ip)) ∧
       lookupName e.env "%0" = some (.ptr b) ∧
@@ -2024,7 +2034,7 @@ theorem gap_scan_toWhileBody {calls : Calls} {bytes : List UInt8} {ip b p cur ne
       lookupName e.env "%litnull" = some (.ptr ln) ∧
       ∀ k, runFuel calls (j + k) odGapRecoverBody s =
         runFuel calls k odGapRecoverBody e := by
-  obtain ⟨hpc, hmem, hb, _hcur, hcond, _htv, _hd, _hei, _hltc, _hlfc, _hlnc,
+  obtain ⟨hpc, hmem, hnextInv, hb, _hcur, hcond, _htv, _hd, _hei, _hltc, _hlfc, _hlnc,
     hcarried, _hple, hclt, hiplt, _hbud, _hpre⟩ := hinv
   have hc63 : c < 2 ^ 63 := by omega
   have hbytes' : gapBytesAt s.mem bytes b ip := by rw [hmem]; exact hbytes
@@ -2071,7 +2081,7 @@ theorem gap_scan_toWhileBody {calls : Calls} {bytes : List UInt8} {ip b p cur ne
         (byte := bytes.getD c 0) rfl rfl hs2 hb2
       have hst : stateAt s2.env s2 = s2 := rfl
       simpa only [hst, s3] using hh
-    refine ⟨s3, 3, by omega, rfl, hmem, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨s3, 3, by omega, rfl, hmem, (by simp only [s3, s2, s1, stateAt, gapLandRhsEnv]; exact hnextInv), ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · simp only [s3, s2, s1, stateAt, gapLandRhsEnv]
       block_lk
     · simp only [s3, s2, s1, stateAt, gapLandRhsEnv]
@@ -2130,7 +2140,7 @@ theorem gap_scan_toWhileBody {calls : Calls} {bytes : List UInt8} {ip b p cur ne
         (byte := bytes.getD c 0) rfl rfl hs3 hb4
       have hst : stateAt s3.env s3 = s3 := rfl
       simpa only [hst, s4] using hh
-    refine ⟨s4, 4, by omega, rfl, hmem, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨s4, 4, by omega, rfl, hmem, (by simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]; exact hnextInv), ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
       block_lk
     · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
@@ -2190,7 +2200,7 @@ theorem gap_scan_toWhileBody {calls : Calls} {bytes : List UInt8} {ip b p cur ne
         (byte := bytes.getD c 0) rfl rfl hs3 hb5
       have hst : stateAt s3.env s3 = s3 := rfl
       simpa only [hst, s4] using hh
-    refine ⟨s4, 4, by omega, rfl, hmem, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨s4, 4, by omega, rfl, hmem, (by simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]; exact hnextInv), ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
       block_lk
     · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
@@ -2242,10 +2252,10 @@ theorem gap_scan_exit_ip {calls : Calls} {bytes : List UInt8} {ip b p cur next l
       gapScanExit bytes b cur next lt lf ln ip p mem e ∧
       ∀ k, runFuel calls (j + k) odGapRecoverBody s =
         runFuel calls k odGapRecoverBody e := by
-  obtain ⟨e1, j1, hj1, hpc1, hmem1, h6cell, hcond1, _h0cell1, _hc1, _ht1, _hd1,
+  obtain ⟨e1, j1, hj1, hpc1, hmem1, _hnextE1, h6cell, hcond1, _h0cell1, _hc1, _ht1, _hd1,
     _hei1, _hlt1, _hlf1, _hln1, hrun1⟩ :=
     gap_scan_toWhileBody (calls := calls) hbytes hinv hnws
-  obtain ⟨hpc, hmem, hb, _hcur, hcond, _htv, _hd, _hei, _hltc, _hlfc, _hlnc,
+  obtain ⟨hpc, hmem, hnextInv, hb, _hcur, hcond, _htv, _hd, _hei, _hltc, _hlfc, _hlnc,
     hcarried, hple, hclt, hiplt, _hbud, hpre⟩ := hinv
   have hip64 : ip < 2 ^ 64 := by omega
   have hee : gapEe bytes ip p = ip := gapEe_of_prefix_all hblen hple hnext hpre hnws
@@ -2279,10 +2289,10 @@ theorem gap_scan_step_loop {calls : Calls} {bytes : List UInt8} {ip b p cur next
       gapScanInv bytes ip b p cur next lt lf ln mem r e c' ∧
       ∀ k, runFuel calls (j + k) odGapRecoverBody s =
         runFuel calls k odGapRecoverBody e := by
-  obtain ⟨e1, j1, hj1, hpc1, hmem1, h6cell, hcond1, h0cell, hcurcell, htcell1,
+  obtain ⟨e1, j1, hj1, hpc1, hmem1, hnextE1, h6cell, hcond1, h0cell, hcurcell, htcell1,
     hdcell, heicell, hltcell, hlflcell, hlncell, hrun1⟩ :=
     gap_scan_toWhileBody (calls := calls) hbytes hinv hnws
-  obtain ⟨hpc, hmem, hb, _hcur, hcond, _htv, _hd, _hei, _hltc, _hlfc, _hlnc,
+  obtain ⟨hpc, hmem, hnextInv, hb, _hcur, hcond, _htv, _hd, _hei, _hltc, _hlfc, _hlnc,
     hcarried, hple, hclt, hiplt, hbud, hpre⟩ := hinv
   have hip64 : ip < 2 ^ 64 := by omega
   have hkp : c - p < (bytes.drop p).length := by
@@ -2304,8 +2314,9 @@ theorem gap_scan_step_loop {calls : Calls} {bytes : List UInt8} {ip b p cur next
       gapNonWsRun_succ hpre hkp
         (by rw [gap_getD_drop_add, show p + (c - p) = c from by omega]; exact hnws)]
   refine ⟨sE, c + 1, j1 + 1, by omega, rfl, by omega, ?_, ?_⟩
-  · refine ⟨rfl, hmem1, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, Or.inr ⟨rfl, ?_⟩,
+  · refine ⟨rfl, hmem1, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, Or.inr ⟨rfl, ?_⟩,
       by omega, by omega, hiplt, by omega, hseed⟩
+    · simpa only [sE, stateAt] using hnextE1
     · simp only [sE, stateAt]; block_lk
     · simp only [sE, stateAt]; block_lk
     · simp only [sE, stateAt]; block_lk
@@ -2373,11 +2384,11 @@ def gapScanLoop (calls : Calls) (bytes : List UInt8) (ip b p cur next lt lf ln :
     exact gap_scan_step_loop hbytes hblen hinv hws (of_decide_eq_false hid)
   exit_at_zero := by
     intro s c hinv
-    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, hclt, _, hbud, _⟩ := hinv
+    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, hclt, _, hbud, _⟩ := hinv
     exact absurd hbud (by omega)
   budget := by
     intro r s c hinv
-    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, hple, _, _, hbud, _⟩ := hinv
+    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, hple, _, _, hbud, _⟩ := hinv
     exact ⟨by omega, hbud⟩
 
 /-- **The scan's run from its head.**  From `land.rhs` with `r` iterations of
@@ -2458,7 +2469,7 @@ theorem gap_scan_whileEnd_continue {calls : Calls} {bytes : List UInt8}
           (("%cmp6", .int 1 (evalICmp .eq (BitVec.ofNat 64 c) (BitVec.ofNat 64 ip))) ::
             ("%ee.0.lcssa", .int 64 (BitVec.ofNat 64 c)) :: e.env)
           { e with pc := "if.end", pre := some "while.end" }) := by
-  rcases hexit with ⟨leaf, c, hpc', hpre, _hmem, hinc, h6, hcond, _h0, _hc, _ht,
+  rcases hexit with ⟨leaf, c, hpc', hpre, _hmem, _hnextE, hinc, h6, hcond, _h0, _hc, _ht,
       _hd, _hei, _hltc, _hlfc, _hlnc, hee, hlt⟩ | ⟨hpc', _⟩
   · refine ⟨leaf, c, hpre, hee, hlt, ?_⟩
     exact gap_scan_whileEnd_step hpc hpre hinc h6 hcond hlt hip64
@@ -2481,7 +2492,8 @@ theorem gap_scan_cleanup82_continue {calls : Calls} {bytes : List UInt8}
     (hexit : gapScanExit bytes b cur next lt lf ln ip p mem e) :
     step calls odGapRecoverBody e = .ret none e ∧
       gapRecoverWrite bytes ip p = GapWrite.none := by
-  rcases hexit with ⟨leaf, c, hpc', _⟩ | ⟨_, _hmem, hee⟩
+  rcases hexit with ⟨leaf, c, hpc', _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _⟩
+    | ⟨_, _hmem, hee⟩
   · rw [hpc] at hpc'
     exact absurd hpc' (by decide)
   · exact gap_scan_cleanup82_exit hpc hee
