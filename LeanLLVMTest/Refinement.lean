@@ -10719,6 +10719,30 @@ contiguous to the end of this file. -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.gap_number_accept_run
 
+/-- info: 'LeanLLVM.Refinement.gapRule_unchanged' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.gapRule_unchanged
+
+/-- info: 'LeanLLVM.Refinement.gapRule_numberRefusal' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.gapRule_numberRefusal
+
+/-- info: 'LeanLLVM.Refinement.gapRule_numberExtra' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.gapRule_numberExtra
+
+/-- info: 'LeanLLVM.Refinement.gapRule_literalRefusal' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.gapRule_literalRefusal
+
+/-- info: 'LeanLLVM.Refinement.gapRule_literalExtra' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.gapRule_literalExtra
+
+/-- info: 'LeanLLVM.Refinement.gapRule_scalarRefusal' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.gapRule_scalarRefusal
+
 /-- info: 'LeanLLVM.Refinement.stage2NoEventWorkspace.toStagedPre' does not depend on any axioms -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.stage2NoEventWorkspace.toStagedPre
