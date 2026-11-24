@@ -58,6 +58,43 @@
 #          sentence.  Its two controls change one call target in a copy of the
 #          source, and remove one call from a copy of the fixture; both must be
 #          reported.
+#   noevent the additive no-event stage-2 entry, `kernel/json/stage2_noevent.c`.
+#          It is authored text whose helper text is the included `stage2.c`, and
+#          its pinned fixture `probes/install/ir/stage2-noevent.candidate.ll`
+#          was captured from the merged source with the capture's two source
+#          transforms (`always_inline` -> `noinline` on both files, and the
+#          entry's `#include "stage2.c"` replaced by the transformed file).
+#          This arm reproduces that derivation, emits the entry's `define`
+#          block, and relates three texts by their **call census**:
+#            - the emission's call multiset equals the pinned fixture's, after
+#              the capture's one recorded call rewrite (`llvm.umax.i32` woven
+#              into `icmp`+`select`, whose row in
+#              `stage2-noevent.rewrites.tsv` the arm requires).  That is the
+#              fixture's own claim to be this source's emission;
+#            - the object built from the pinned text leaves the same census
+#              under the recorded backend lowering: `llvm.lifetime.*` and
+#              `llvm.trap` become no call, and `llvm.memset.p0.i64` becomes the
+#              C library's `memset`.  Codegen optimization is off for this
+#              object because at the measured line the backend merges repeated
+#              project calls (three `od_gap_recover` sites become one) and the
+#              counts would measure the optimizer; at the measured line the arm
+#              separately requires the object to carry every project target and
+#              no target outside the project set and the class.
+#          The inventory's `call` lines are the target set; the multiset is
+#          computed here, as it is for the pipeline.  Its two controls change
+#          one call target in a copy of the source (the emission's census must
+#          change) and remove one call from a copy of the fixture (the fixture's
+#          census must differ from the emission's).
+#   pipeline-noevent
+#          the assembled caller with the no-event tail,
+#          `kernel/json/pipeline_noevent.c`.  It has no fixture of its own: it
+#          is `pipeline.c`'s block loop with the reading tail, so the arm
+#          relates the emission and the object to the **certified** pipeline
+#          fixture with one recorded substitution -- its `leanllvm_json_stage2`
+#          call becomes `leanllvm_json_stage2_noevent` -- and requires the three
+#          censuses to agree.  Its two controls are the same pair: one source
+#          call retargeted, and one call removed from a copy of the certified
+#          fixture.
 #
 # All three units: both sides are compiled with the measured compiler line
 # (`build49.sh:17`); `s1` adds the P2 `-D` set (`build49.sh:21`), `entry` the
@@ -126,6 +163,8 @@ cflags=(-O3 -march=x86-64-v3 -mpclmul -std=gnu11 -falign-loops=64 -falign-functi
 
 unit=s1
 pipeline=0
+noevent=0
+pipeline_noevent=0
 run_identity=0
 run_controls=0
 tree_only=0
@@ -229,8 +268,35 @@ case "$unit" in
     generated=0
     pipeline=1
     ;;
+  noevent)
+    kernel=$repo/kernel/json/stage2_noevent.c
+    # The three texts are the derivation's emission, its object, and the
+    # pinned fixture; nothing is lifted, because the comparison is over the
+    # body's call census.
+    oracle=""
+    probe_src=""
+    probe=leanllvm_json_stage2_noevent
+    defs=()
+    lift=()
+    lift_functions=""
+    by_name=0
+    generated=0
+    noevent=1
+    ;;
+  pipeline-noevent)
+    kernel=$repo/kernel/json/pipeline_noevent.c
+    oracle=""
+    probe_src=""
+    probe=leanllvm_json_pipeline_noevent
+    defs=()
+    lift=()
+    lift_functions=""
+    by_name=0
+    generated=0
+    pipeline_noevent=1
+    ;;
   *)
-    printf 'SETUP: unit %s has no IR identity arm; implemented units: s1 entry utf8 escape pipeline\n' "$unit" >&2
+    printf 'SETUP: unit %s has no IR identity arm; implemented units: s1 entry utf8 escape pipeline noevent pipeline-noevent\n' "$unit" >&2
     exit 3
     ;;
 esac
@@ -243,6 +309,13 @@ measured=$repo/kernel/json/measured
 [ "$unit" = escape ] && inputs+=("$measured/s1fuse.h" "$measured/xlist.h" \
                                  "$measured/usdec.h" "$measured/uj.c")
 [ "$pipeline" -eq 1 ] && inputs+=("$repo/probes/install/ir/json-pipeline.candidate.ll")
+[ "$noevent" -eq 1 ] && inputs+=("$repo/kernel/json/stage2.c" \
+  "$repo/kernel/json/stage2.h" "$repo/kernel/json/escape.h" \
+  "$repo/probes/install/ir/stage2-noevent.candidate.ll" \
+  "$repo/probes/install/ir/stage2-noevent.inventory")
+[ "$pipeline_noevent" -eq 1 ] && inputs+=(
+  "$repo/probes/install/ir/json-pipeline.candidate.ll" \
+  "$repo/probes/install/ir/json-pipeline.inventory")
 
 for path in "${inputs[@]}"; do
   [ -e "$path" ] || { printf 'SETUP: absent: %s\n' "$path" >&2; exit 3; }
@@ -807,10 +880,449 @@ arm_controls_pipeline() {
   return "$rc"
 }
 
+# --- the no-event entry's three texts ---------------------------------------
+
+# call_census <ir> -- every call target as `<name> <count>` lines, comment
+# lines skipped: the fixture's header prose names calls that are not its text.
+call_census() { # <file>
+  awk '
+    /^[ \t]*;/ { next }
+    /call .*@/ {
+      line = $0
+      while (match(line, /@[A-Za-z0-9_.$-]+/)) {
+        n = substr(line, RSTART + 1, RLENGTH - 1)
+        c[n]++
+        line = substr(line, RSTART + RLENGTH)
+      }
+    }
+    END { for (n in c) print n, c[n] }
+  ' "$1" | LC_ALL=C sort
+}
+
+# reloc_census <object> -- the PLT32 relocation targets as `<name> <count>`.
+reloc_census() { # <object>
+  readelf -rW "$1" | awk '
+    $3 == "R_X86_64_PLT32" { n = $5; sub(/-.*$/, "", n); c[n]++ }
+    END { for (n in c) print n, c[n] }
+  ' | LC_ALL=C sort
+}
+
+# census_names <census> -- the target set of a census.
+census_names() { awk '{ print $1 }' | LC_ALL=C sort; }
+
+# derive_noevent_source <out> [<kernel>] -- the merged translation unit the
+# pinned fixture was captured from: `capture-stage2-noevent.sh`'s two source
+# transforms, reproduced.  `always_inline` becomes `noinline` in both files, and
+# the entry's `#include "stage2.c"` line is replaced by the transformed helper
+# file.  If the capture's transform ever moves a call, the emission below stops
+# agreeing with the committed fixture and this arm fails rather than drifting.
+derive_noevent_source() { # <out> [<kernel>]
+  local out=$1 src=${2:-$repo/kernel/json/stage2_noevent.c}
+  sed -e 's/__attribute__((always_inline)) static inline/__attribute__((noinline)) static inline/g' \
+    "$repo/kernel/json/stage2.c" > "$work/derive.stage2.c" || return 3
+  sed -e 's/__attribute__((always_inline)) static inline/__attribute__((noinline)) static inline/g' \
+    "$src" > "$work/derive.unit.c" || return 3
+  if grep -q '__attribute__((always_inline))' "$work/derive.stage2.c" ||
+     grep -q '__attribute__((always_inline))' "$work/derive.unit.c"; then
+    printf 'SETUP: the derivation left an always_inline helper in the source\n' >&2
+    return 3
+  fi
+  awk -v inc="$work/derive.stage2.c" '
+    $0 == "#include \"stage2.c\"" { while ((getline l < inc) > 0) print l; close(inc); next }
+    { print }' "$work/derive.unit.c" > "$out" || return 3
+  grep -q '^uint64_t leanllvm_json_stage2_noevent(' "$out" || {
+    printf 'SETUP: the derived source lost the no-event entry\n' >&2
+    return 3
+  }
+}
+
+# noevent_emit_block <derived.c> <out.ll> -- the entry's `define` block of the
+# derived source's emission, at the capture's compiler line.
+noevent_emit_block() { # <source> <out.ll>
+  local full=$work/noevent.full.ll
+  if ! "$cc" "${cflags[@]}" -fno-slp-vectorize "${defs[@]}" \
+      -I "$repo/kernel/json" -S -emit-llvm -o "$full" "$1"; then
+    printf 'SETUP: the derived source did not emit IR\n' >&2
+    return 3
+  fi
+  awk '/^define .*@leanllvm_json_stage2_noevent\(/ {on=1} on {print} on && $0=="}" {exit}' \
+    "$full" > "$2"
+  [ -s "$2" ] || { printf 'SETUP: the emission has no entry block\n' >&2; return 3; }
+}
+
+# unfold_umax <in> <out> -- the capture's r7 rewrite, applied so the emission
+# and the pinned fixture are compared after the same recorded rewrite.  Exactly
+# one call is woven into its definition (`icmp ugt` plus `select`); the caller
+# checks the rewrite is recorded in the committed rewrites table.
+unfold_umax() { # <in> <out>
+  local nfile=$work/unfold.count
+  awk -v counts="$nfile" '
+    {
+      line = $0
+      if (match(line, /^  (%[A-Za-z0-9_.]+) = call i32 @llvm\.umax\.i32\(i32 ([^,]+), i32 ([^)]+)\)$/, m)) {
+        nmin++
+        print "  " m[1] ".max = icmp ugt i32 " m[2] ", " m[3]
+        print "  " m[1] " = select i1 " m[1] ".max, i32 " m[2] ", i32 " m[3]
+        next
+      }
+      print line
+    }
+    END { printf "%d\n", nmin > counts }' "$1" > "$2"
+  if [ "$(cat "$nfile" 2>/dev/null)" != "1" ]; then
+    printf 'SETUP: the emission carries %s llvm.umax call(s); the capture records one\n' \
+      "$(cat "$nfile" 2>/dev/null || echo '?')" >&2
+    return 3
+  fi
+}
+
+# census_after_lowering <ir-census> -- the census mapped through the recorded
+# backend lowering: lifetime markers and `trap` become no call at all, and the
+# memset intrinsic becomes the C library's `memset`.
+census_after_lowering() {
+  awk '
+    $1 ~ /^llvm\.lifetime\./ { next }
+    $1 == "llvm.trap" { next }
+    $1 == "llvm.memset.p0.i64" { print "memset", $2; next }
+    { print $1, $2 }
+  ' | LC_ALL=C sort
+}
+
+arm_identity_noevent() {
+  local inv=$repo/probes/install/ir/stage2-noevent.inventory
+  local fixture=$repo/probes/install/ir/stage2-noevent.candidate.ll
+  local rewrite=$repo/probes/install/ir/stage2-noevent.rewrites.tsv
+  local names pin census fixture_census mapped obj_census obj2 unsupported rc=0
+  printf '\n== Arm B (noevent): the emission, the object, and the pinned fixture\n'
+  for tool in readelf nm; do
+    command -v "$tool" >/dev/null 2>&1 || {
+      printf 'SETUP: no %s on PATH\n' "$tool" >&2
+      return 3
+    }
+  done
+  derive_noevent_source "$work/noevent.derived.c" "$kernel" || return 3
+  noevent_emit_block "$work/noevent.derived.c" "$work/noevent.block.ll" || return 3
+
+  # The one recorded rewrite that touches a call: umax has no parser rule, so
+  # the fixture weaves it into icmp+select.  It is applied here and the record
+  # is required, so a vanished rewrite fails rather than silently excusing.
+  if ! grep -q 'umax unfolding' "$rewrite"; then
+    printf 'SETUP: %s no longer records the umax unfolding\n' "$rewrite" >&2
+    return 3
+  fi
+  unfold_umax "$work/noevent.block.ll" "$work/noevent.block.unfolded.ll" || return 3
+
+  # The inventory's call lines are the target set; the multiset is computed.
+  names=$(call_census "$work/noevent.block.unfolded.ll" | census_names)
+  pin=$(sed -n 's/^call @//p' "$inv" | LC_ALL=C sort -u)
+  if [ -z "$names" ] || [ -z "$pin" ]; then
+    printf 'SETUP: the emission or the inventory names no call target\n' >&2
+    return 3
+  fi
+  if [ "$names" != "$pin" ]; then
+    printf 'DIFF: the emission'"'"'s call targets are not the inventory'"'"'s\n' >&2
+    diff -u <(printf '%s\n' "$pin") <(printf '%s\n' "$names") | awk 'NR <= 20' >&2
+    return 1
+  fi
+  printf 'ok: the emission'"'"'s call targets are exactly the %s the inventory names\n' \
+    "$(printf '%s\n' "$pin" | wc -l | tr -d ' ')"
+
+  census=$(call_census "$work/noevent.block.unfolded.ll")
+  fixture_census=$(call_census "$fixture")
+  if [ -z "$census" ] || [ -z "$fixture_census" ]; then
+    printf 'SETUP: the emission or the fixture census is empty\n' >&2
+    return 3
+  fi
+  if [ "$census" != "$fixture_census" ]; then
+    printf 'FAIL: the pinned fixture'"'"'s call census is not the emission'"'"'s\n' >&2
+    diff -u <(printf '%s\n' "$fixture_census") <(printf '%s\n' "$census") \
+      | awk 'NR <= 20' >&2
+    rc=1
+  else
+    printf 'ok: the pinned fixture'"'"'s call census is the emission'"'"'s, after the\n'
+    printf '    recorded umax unfolding:\n'
+    printf '%s\n' "$census" | awk '{ printf "     %-32s %s\n", $1, $2 }'
+  fi
+
+  # Every emitted target is either a project call or in the recorded lowering
+  # class; a name outside both is a widening and fails.
+  unsupported=$(printf '%s\n' "$census" | census_names \
+    | while IFS= read -r tn; do
+        case "$tn" in
+          num_fast_el1|od_gap_recover|s2_string_body|memset) ;;
+          llvm.lifetime.*|llvm.trap|llvm.memset.p0.i64) ;;
+          *) printf '%s\n' "$tn" ;;
+        esac
+      done)
+  if [ -n "$unsupported" ]; then
+    printf 'FAIL: the emission names calls outside the project set and the recorded\n' >&2
+    printf 'FAIL: lowering class (lifetime.*, trap, memset): %s\n' "$(echo $unsupported)" >&2
+    rc=1
+  fi
+
+  # The object the pinned text compiles to.  Codegen optimization is off so the
+  # backend does not merge repeated calls: at the measured line three
+  # `od_gap_recover` sites become one, and a census there would measure the
+  # optimizer.  The class is exactly what the IR's intrinsics lower to.
+  if ! "$cc" -c -O0 -std=gnu11 -o "$work/noevent.fixture.o" "$fixture" 2>"$work/noevent.fixture.err"; then
+    printf 'SETUP: the pinned fixture did not compile to an object\n' >&2
+    sed -e 's/^/      /' "$work/noevent.fixture.err" | awk 'NR <= 10' >&2
+    return 3
+  fi
+  mapped=$(printf '%s\n' "$census" | census_after_lowering)
+  obj_census=$(reloc_census "$work/noevent.fixture.o")
+  if [ -z "$obj_census" ]; then
+    printf 'SETUP: the object carries no PLT32 relocation; nothing was read\n' >&2
+    return 3
+  fi
+  if [ "$obj_census" != "$mapped" ]; then
+    printf 'FAIL: the object'"'"'s call census is not the fixture'"'"'s under the\n' >&2
+    printf 'FAIL: recorded lowering class\n' >&2
+    diff -u <(printf '%s\n' "$mapped") <(printf '%s\n' "$obj_census") | awk 'NR <= 20' >&2
+    rc=1
+  else
+    printf 'ok: the object built from the pinned text leaves the same call census,\n'
+    printf '    with lifetime/trap lowered to no call and llvm.memset to memset:\n'
+    printf '%s\n' "$obj_census" | awk '{ printf "     %-32s %s\n", $1, $2 }'
+  fi
+
+  # At the measured line the backend merges repeated project calls; the object
+  # must still carry every project target, and no foreign one.
+  if ! "$cc" "${cflags[@]}" -c -o "$work/noevent.fixture.o2" "$fixture" \
+      2>/dev/null; then
+    printf 'SETUP: the pinned fixture did not compile at the measured line\n' >&2
+    return 3
+  fi
+  obj2=$(reloc_census "$work/noevent.fixture.o2")
+  names=$(printf '%s\n' "$obj2" | census_names)
+  unsupported=$(printf '%s\n' "$names" \
+    | while IFS= read -r tn; do
+        case "$tn" in
+          num_fast_el1|od_gap_recover|s2_string_body|memset) ;;
+          '') ;;
+          *) printf '%s\n' "$tn" ;;
+        esac
+      done)
+  if [ -n "$unsupported" ]; then
+    printf 'FAIL: the measured-line object names a call outside the project set\n' >&2
+    printf 'FAIL: and the lowering class: %s\n' "$(echo $unsupported)" >&2
+    rc=1
+  fi
+  for tn in num_fast_el1 od_gap_recover s2_string_body; do
+    if ! printf '%s\n' "$names" | grep -qx "$tn"; then
+      printf 'FAIL: the measured-line object does not carry %s\n' "$tn" >&2
+      rc=1
+    fi
+  done
+  printf 'ok: at the measured line the object still carries every project target;\n'
+  printf '    its counts are the optimizer'"'"'s (od_gap_recover %s), which is why the\n' \
+    "$(printf '%s\n' "$obj2" | awk '$1 == "od_gap_recover" { print $2 }')"
+  printf '    census relation above is read from the unmerged object\n'
+  return "$rc"
+}
+
+arm_controls_noevent() {
+  local baseline got mut fixture_census rc=0
+  printf '\n== Control: one call target changed in a copy of the source\n'
+  mut=$work/noevent.retarget.c
+  awk '
+    { if (!done && index($0, "num_fast_el1(b + p, ee - p, ") > 0) {
+        sub(/num_fast_el1\(b \+ p, ee - p, /, "num_scan(b + p, ee - p, "); done = 1 }
+      print }
+    END { if (!done) exit 1 }
+  ' "$kernel" > "$mut" || {
+    printf 'SETUP: the source control did not apply\n' >&2
+    return 3
+  }
+  if cmp -s "$kernel" "$mut"; then
+    printf 'SETUP: the source control could not rewrite the call\n' >&2
+    return 3
+  fi
+  derive_noevent_source "$work/noevent.control.c" "$mut" || return 3
+  noevent_emit_block "$work/noevent.control.c" "$work/noevent.control.ll" || return 3
+  unfold_umax "$work/noevent.control.ll" "$work/noevent.control.unfolded.ll" || return 3
+  got=$(call_census "$work/noevent.control.unfolded.ll")
+  if [ -z "$got" ]; then
+    printf 'SETUP: the control emission carries no call\n' >&2
+    return 3
+  fi
+  if [ "$got" = "$(call_census "$repo/probes/install/ir/stage2-noevent.candidate.ll")" ]; then
+    printf 'FAIL: the census did not see the changed call target\n' >&2
+    rc=1
+  else
+    printf 'ok: the changed call target is reported as a different census\n'
+  fi
+
+  printf '\n== Control: one call removed from a copy of the pinned fixture\n'
+  mut=$work/noevent.fixture.control.ll
+  awk '
+    { if (!done && index($0, "call i32 @s2_string_body(") > 0) { done = 1; next }
+      print }
+    END { if (!done) exit 1 }
+  ' "$repo/probes/install/ir/stage2-noevent.candidate.ll" > "$mut" || {
+    printf 'SETUP: the fixture control did not apply\n' >&2
+    return 3
+  }
+  fixture_census=$(call_census "$mut")
+  baseline=$(call_census "$repo/probes/install/ir/stage2-noevent.candidate.ll")
+  if [ -z "$fixture_census" ] || [ "$fixture_census" = "$baseline" ]; then
+    printf 'FAIL: the fixture comparison did not see the removed call\n' >&2
+    rc=1
+  else
+    printf 'ok: the removed call is reported as a different census\n'
+  fi
+  return "$rc"
+}
+
+# --- the no-event caller's three texts -------------------------------------
+
+# pipeline_noevent_callees -- the certified fixture's call targets with the one
+# recorded substitution this caller makes: the certified stage 2 becomes the
+# no-event entry.  The inventory's call lines are the target set.
+pipeline_noevent_callees() {
+  sed -n 's/^call @//p' "$repo/probes/install/ir/json-pipeline.inventory" \
+    | sed 's/^leanllvm_json_stage2$/leanllvm_json_stage2_noevent/' \
+    | LC_ALL=C sort
+}
+
+# substitute_stage2_census -- the certified fixture's census with the one
+# recorded substitution this caller makes: `leanllvm_json_stage2` becomes
+# `leanllvm_json_stage2_noevent`.
+substitute_stage2_census() {
+  awk '
+    $1 == "leanllvm_json_stage2" { print "leanllvm_json_stage2_noevent", $2; next }
+    { print $1, $2 }
+  ' | LC_ALL=C sort
+}
+
+arm_identity_pipeline_noevent() {
+  local inv=$repo/probes/install/ir/json-pipeline.inventory
+  local fixture=$repo/probes/install/ir/json-pipeline.candidate.ll
+  local census object fixture_census rc=0
+  printf '\n== Arm B (pipeline-noevent): the emission, the object, and the certified fixture\n'
+  for tool in readelf nm; do
+    command -v "$tool" >/dev/null 2>&1 || {
+      printf 'SETUP: no %s on PATH\n' "$tool" >&2
+      return 3
+    }
+  done
+  if ! "$cc" "${cflags[@]}" "${defs[@]}" -I "$repo/kernel/json" -S -emit-llvm \
+      -o "$work/pipeline_noevent.ll" "$kernel"; then
+    printf 'SETUP: the caller did not emit IR\n' >&2
+    return 3
+  fi
+  if ! "$cc" "${cflags[@]}" "${defs[@]}" -I "$repo/kernel/json" -c \
+      -o "$work/pipeline_noevent.o" "$kernel"; then
+    printf 'SETUP: the caller did not compile\n' >&2
+    return 3
+  fi
+  census=$(ir_census "$work/pipeline_noevent.ll")
+  object=$(object_census "$work/pipeline_noevent.o")
+  pin=$(pipeline_noevent_callees)
+  fixture_census=$(ir_census "$fixture" | substitute_stage2_census)
+  if [ -z "$census" ] || [ -z "$object" ] || [ -z "$pin" ] || [ -z "$fixture_census" ]; then
+    printf 'SETUP: one of the call censuses is empty\n' >&2
+    return 3
+  fi
+  if [ "$(printf '%s\n' "$census" | census_names)" != "$pin" ]; then
+    printf 'FAIL: the emission'"'"'s call targets are not the inventory'"'"'s six with\n' >&2
+    printf 'FAIL: the stage-2 target substituted\n' >&2
+    diff -u <(printf '%s\n' "$pin") <(printf '%s\n' "$census" | census_names) \
+      | awk 'NR <= 20' >&2
+    rc=1
+  fi
+  # The multiset is the certified fixture's, with the one substitution: the
+  # loop's unswitching duplicates the stage-1 calls, and the fixture records it.
+  if [ "$census" != "$fixture_census" ]; then
+    printf 'FAIL: the emission'"'"'s call census is not the certified fixture'"'"'s with\n' >&2
+    printf 'FAIL: the stage-2 target substituted\n' >&2
+    diff -u <(printf '%s\n' "$fixture_census") <(printf '%s\n' "$census") | awk 'NR <= 20' >&2
+    rc=1
+  fi
+  if [ "$object" != "$census" ]; then
+    printf 'FAIL: the object built from the same source has a different call census\n' >&2
+    diff -u <(printf '%s\n' "$census") <(printf '%s\n' "$object") | awk 'NR <= 20' >&2
+    rc=1
+  fi
+  if [ "$rc" -eq 0 ]; then
+    printf 'ok: the emission, the object, and the certified fixture with\n'
+    printf '    leanllvm_json_stage2 -> leanllvm_json_stage2_noevent agree:\n'
+    printf '%s\n' "$census" | awk '{ printf "     %-32s %s\n", $1, $2 }'
+  fi
+  return "$rc"
+}
+
+arm_controls_pipeline_noevent() {
+  local mut census baseline rc=0
+  printf '\n== Control: one call target changed in a copy of the caller\n'
+  mut=$work/pipeline_noevent.control.c
+  awk '
+    { if (!done && index($0, "leanllvm_json_entry_pos8(entw") > 0) {
+        sub(/leanllvm_json_entry_pos8\(entw/, "leanllvm_json_entry_b8(entw")
+        done = 1
+      }
+      print }
+    END { if (!done) exit 1 }
+  ' "$kernel" > "$mut" || {
+    printf 'SETUP: the source control did not apply\n' >&2
+    return 3
+  }
+  if ! "$cc" "${cflags[@]}" "${defs[@]}" -I "$repo/kernel/json" -S -emit-llvm \
+      -o "$work/pipeline_noevent.control.ll" "$mut"; then
+    printf 'SETUP: the control copy did not emit IR\n' >&2
+    return 3
+  fi
+  census=$(ir_census "$work/pipeline_noevent.control.ll")
+  baseline=$(ir_census "$work/pipeline_noevent.ll" 2>/dev/null || true)
+  if [ -z "$baseline" ]; then
+    if ! "$cc" "${cflags[@]}" "${defs[@]}" -I "$repo/kernel/json" -S -emit-llvm \
+        -o "$work/pipeline_noevent.ll" "$kernel"; then
+      printf 'SETUP: the caller did not emit IR\n' >&2
+      return 3
+    fi
+    baseline=$(ir_census "$work/pipeline_noevent.ll")
+  fi
+  if [ -z "$census" ] || [ "$census" = "$baseline" ]; then
+    printf 'FAIL: the census did not see the changed call target\n' >&2
+    rc=1
+  else
+    printf 'ok: the changed call target is reported as a different census\n'
+  fi
+
+  printf '\n== Control: one call removed from a copy of the certified fixture\n'
+  mut=$work/pipeline_noevent.fixture.control.ll
+  awk '
+    { if (!done && index($0, "call") > 0 &&
+          index($0, "@leanllvm_json_utf8(") > 0) { done = 1; next }
+      print }
+    END { if (!done) exit 1 }
+  ' "$repo/probes/install/ir/json-pipeline.candidate.ll" > "$mut" || {
+    printf 'SETUP: the fixture control did not apply\n' >&2
+    return 3
+  }
+  census=$(ir_census "$mut" | substitute_stage2_census)
+  baseline=$(ir_census "$repo/probes/install/ir/json-pipeline.candidate.ll" \
+    | substitute_stage2_census)
+  if [ -z "$census" ] || [ "$census" = "$baseline" ]; then
+    printf 'FAIL: the fixture comparison did not see the removed call\n' >&2
+    rc=1
+  else
+    printf 'ok: the removed call is reported as a different census\n'
+  fi
+  return "$rc"
+}
+
 arm_identity() {
   local a b ca cb
   if [ "$pipeline" -eq 1 ]; then
     arm_identity_pipeline
+    return $?
+  fi
+  if [ "$noevent" -eq 1 ]; then
+    arm_identity_noevent
+    return $?
+  fi
+  if [ "$pipeline_noevent" -eq 1 ]; then
+    arm_identity_pipeline_noevent
     return $?
   fi
   printf '\n== Arm B (%s): emitted-code identity\n' "$unit"
@@ -1008,6 +1520,14 @@ arm_controls_escape() {
 arm_controls() {
   if [ "$pipeline" -eq 1 ]; then
     arm_controls_pipeline
+    return $?
+  fi
+  if [ "$noevent" -eq 1 ]; then
+    arm_controls_noevent
+    return $?
+  fi
+  if [ "$pipeline_noevent" -eq 1 ]; then
+    arm_controls_pipeline_noevent
     return $?
   fi
   if [ "$generated" -eq 1 ]; then

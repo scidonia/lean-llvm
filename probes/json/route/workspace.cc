@@ -14,8 +14,8 @@
                 shape
      native     the adapter's copy-in, `leanllvm_json_pipeline`, and the tagged
                 result's copy-out
-     consumer   `--consume`'s reading that materialises one record per event,
-                with the header decode in the interval
+     consumer   `--consume-events`' reading that materialises one record per
+                event, with the header decode in the interval
 
    twice: `fresh` rebuilds the workspace for every call, as the route does,
    and `reused` keeps one allocation of the same capacities, resets the five

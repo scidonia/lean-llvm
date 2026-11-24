@@ -757,6 +757,39 @@ measured shipping options and the open interface decisions are recorded in the
 performance note, [the certification gap on the shipping
 path](json-pipeline-performance.md#the-certification-gap-on-the-shipping-path).
 
+#### The additive entry's three rows
+
+The no-event entry's walk has its own ledger, stated at the same vocabulary. Its
+`od_gap_recover` is the one helper the entry calls out of line and the certified
+fixture inlined; its literal compare is an inlined region; and its walk is a
+`Satisfies`-shaped obligation at a named tier.
+
+| # | Subject | What the model states, and what the tree proves about it | Basis | Evidence in this tree |
+|---|---------|--------------------------------------------------------|-------|------------------------|
+| g | `od_gap_recover` | The refusal record the loop's gap leaves: no write when the first loop reaches `ip`, else the first-byte decision's tag and offset at the document window. **Proved of the model**: the post, the frame and the one write (`stage2GapRecover_post`, `_unchanged`, `_wrote`). The model is `stage2GapRecover`; the C text is `kernel/json/stage2.c:898`, a plain `static void` the certified fixture inlined and the additive body did not. | assumed (model): the transcription is pinned by text, not proved of the emitted body | `LeanLLVM/Refinement/JsonStage2HelperOdGap.lean`; the trust row is stated in `JsonStage2NoEventBody.lean:616-630`; the body-faithfulness distance is §7.1's row 5, as for the six helpers above |
+| h | the emitted literal chain | From `if.end519`, the unrolled `icmp eq i8` chain returns the first differing byte's offset, the token's length when it ends inside the literal, or the literal's width when the token is longer — `neLitCheck`'s verdict, which `neLitCheck_eq_litCheck` identifies with the certified `lit_check`. **Proved of the emitted chain**: `stage2NoEventLitChain_run` runs the region to one of its two exits, writes no memory, and fixes the offset the refusal block's `phi` selects; the `true`, `false` and `null` instances are taken at the shared `phi`, whose three predecessor entries are pinned. | proved (body region): a run to the chain's exits, not a `Satisfies` at a function | `LeanLLVM/Refinement/JsonStage2NoEventLiteral.lean`; pins at `LeanLLVMTest/Refinement.lean:10753`; the fixture is `probes/install/ir/stage2-noevent.candidate.ll` |
+| i | the no-event walk | `Stage2NoEventWalkObligation` at `gap := stage2GapRecover`, from the dispatch's rows at `Γ_stage2_noevent`'s precondition and the four staged objects. **Proved**: `stage2NoEventWalkObligation_of_staging` derives both conjuncts of `Satisfies` from `Stage2NoEventWalkRows` (`stage2NoEventWalkPremises_of_rows` composes the seed run and the flush route), and `stage2NoEventCallSatisfies_of_staging` projects the obligation to the pipeline's call slot. **Not proved**: the rows themselves, the staging hypothesis, or the certified walk's premise tier. | proved from the named tier; the rows are a premise | `LeanLLVM/Refinement/JsonStage2NoEventWalkAssembly.lean`; pins at `LeanLLVMTest/Refinement.lean:10622-10628`; the staging is `stage2NoEventStagedPre` |
+
+What the three rows leave open, stated once:
+
+- **Row g's trust.** The `od_gap_recover` model is a transcription. Nothing in
+  the kernel says the emitted function executes that text, so a proof that reads
+  the model is a proof about the model; the distance is the same body-faithfulness
+  seam the six rows above record, and `JsonStage2NoEventBody.lean:616-630` is
+  where the additive entry says so.
+- **Row i's premise.** The dispatch's rows are the walk's data — the count
+  classes' cycle-closing segments and the terminal routes' evidence, with the
+  acceptance's parse relation and the walk's report. They are assumed at the
+  record's precondition; the theorem is conditional on them, and nothing makes
+  them unconditional.
+- **The certified tier is not discharged.** `stage2NoEventWalkObligation_of_staging`
+  is stated at the no-event body's tier; it does not supply the certified walk's
+  premise tier, and no sentence here claims that tier is closed.
+- **The literal chain is inside row i, not beside it.** Row h proves the chain's
+  region and its rule; the walk's obligation composes that region with the
+  refusal block's own writes (`%off`'s store, the `od_gap_recover` call and the
+  four stores), which are outside row h's exits.
+
 ### 7.7 The stage-2 report at its boundary
 
 `stage2Boundary` (`LeanLLVM/Refinement/JsonStage2Contract.lean`) is the stage-2

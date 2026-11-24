@@ -35,9 +35,23 @@
 # the installed object with `depthSpec`; it is not part of the comma-mask
 # differential transcript below.
 #
-# The four kernel-derived certificates are produced before the differential
+# `noevent` is the no-event stage-2 entry.  Its fixture is the committed
+# emission `probes/install/ir/stage2-noevent.candidate.ll`, the text
+# `LeanLLVM/Refinement/JsonStage2NoEventIR.lean` parses and pins.  Its
+# certificate names the body theorem
+# `stage2NoEventWalkObligation_of_staging` and the unit's boundary
+# `stage2NoEventBoundary`; the theorem's type carries its premise tier and
+# fixes the gap to `stage2GapRecover`, whose body faithfulness is
+# `docs/contract.md` §7.6's trust row.  Its caller is `noevent_caller.c`,
+# because the entry's symbol is not the comma seam.
+#
+# The five kernel-derived certificates are produced before the differential
 # detector runs, so a fixture-pin failure is reported by the source
-# elaboration that has to see it, not masked by a runtime comparison.
+# elaboration that has to see it, not masked by a runtime comparison.  The
+# no-event proof module is not re-elaborated here: its producer compares the
+# fixture file with the `include_str` text the loaded module carries, so a
+# changed fixture is refused by name instead of certified from bytes the proof
+# never parsed.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -110,7 +124,8 @@ publish() { # name
 # Basenames are part of the build input: clang records the module name in the
 # object, so `select.sh` has to rebuild under the same names to compare.
 units=$staging/units
-mkdir -p "$units/baseline" "$units/candidate" "$units/loop" "$units/depth_count"
+mkdir -p "$units/baseline" "$units/candidate" "$units/loop" \
+  "$units/depth_count" "$units/noevent"
 
 # The fixture a unit is compiled from.  The comma-mask units' fixtures are the
 # captured IR in `probes/install/ir/`; the depth counter's is the census
@@ -118,6 +133,7 @@ mkdir -p "$units/baseline" "$units/candidate" "$units/loop" "$units/depth_count"
 unit_fixture() { # unit
   case "$1" in
     depth_count) printf '%s' "$repo/tests/v16/depth_count.ll" ;;
+    noevent) printf '%s' "$here/ir/stage2-noevent.candidate.ll" ;;
     *) printf '%s' "$here/ir/$1.ll" ;;
   esac
 }
@@ -134,7 +150,7 @@ lean -c "$staging/Candidate.c" "$here/Candidate.lean"
   leanc -c Candidate.c -o lean_candidate.o 2>>"$staging/leanc.log")
 
 # 3. Installed units: the proved fixture plus its marker object.
-for unit in baseline candidate loop depth_count; do
+for unit in baseline candidate loop depth_count noevent; do
   dir=$units/$unit
   cp "$(unit_fixture "$unit")" "$dir/$unit.ll"
   cp "$here/ir/marker_$unit.ll" "$dir/marker_$unit.ll"
@@ -144,6 +160,11 @@ for unit in baseline candidate loop depth_count; do
     ld -r "$unit.o" "marker_$unit.o" -o unit.o)
   cp "$dir/unit.o" "$staging/$unit.o"
 done
+
+# The no-event entry's symbol is not the comma seam, so its caller is its own
+# object and is bound by hash like every other installation input.
+clang -c "$here/noevent_caller.c" -o "$staging/noevent_caller.o" \
+  2>>"$staging/clang.log"
 
 # The depth unit's caller is the corpus driver: it calls the ABI the fixture
 # defines (`depth_count(ptr buf, ptr idx, i64 nidx, ptr stats)`) rather than the
@@ -178,6 +199,9 @@ loop_theorem=LeanLLVM.Refinement.CommaMaskLoop.loop_refines_candidate_within
 depth_count_symbol=depth_count
 depth_contract=LeanLLVM.Refinement.DepthCountRefine.depthContract
 depth_count_theorem=LeanLLVM.Refinement.DepthCountRefine.depth_count_refines
+noevent_symbol=leanllvm_json_stage2_noevent
+noevent_theorem=LeanLLVM.Refinement.stage2NoEventWalkObligation_of_staging
+noevent_contract=LeanLLVM.Refinement.stage2NoEventBoundary
 attributes=reject
 datalayout=$datalayout
 target_features=none
@@ -185,30 +209,38 @@ baseline_fixture=$here/ir/baseline.ll
 candidate_fixture=$here/ir/candidate.ll
 loop_fixture=$here/ir/loop.ll
 depth_count_fixture=$repo/tests/v16/depth_count.ll
+noevent_fixture=$here/ir/stage2-noevent.candidate.ll
 baseline_marker=$here/ir/marker_baseline.ll
 candidate_marker=$here/ir/marker_candidate.ll
 loop_marker=$here/ir/marker_loop.ll
 depth_count_marker=$here/ir/marker_depth_count.ll
+noevent_marker=$here/ir/marker_noevent.ll
 baseline_fixture_sha256=$(sha "$here/ir/baseline.ll")
 candidate_fixture_sha256=$(sha "$here/ir/candidate.ll")
 loop_fixture_sha256=$(sha "$here/ir/loop.ll")
 depth_count_fixture_sha256=$(sha "$repo/tests/v16/depth_count.ll")
+noevent_fixture_sha256=$(sha "$here/ir/stage2-noevent.candidate.ll")
 baseline_marker_sha256=$(sha "$here/ir/marker_baseline.ll")
 candidate_marker_sha256=$(sha "$here/ir/marker_candidate.ll")
 loop_marker_sha256=$(sha "$here/ir/marker_loop.ll")
 depth_count_marker_sha256=$(sha "$here/ir/marker_depth_count.ll")
+noevent_marker_sha256=$(sha "$here/ir/marker_noevent.ll")
 caller=$objects/caller.o
 baseline=$objects/baseline.o
 candidate=$objects/candidate.o
 loop=$objects/loop.o
 depth_count=$objects/depth_count.o
 depth_caller=$objects/depth_caller.o
+noevent=$objects/noevent.o
+noevent_caller=$objects/noevent_caller.o
 caller_sha256=$(sha "$hashes/caller.o")
 baseline_sha256=$(sha "$hashes/baseline.o")
 candidate_sha256=$(sha "$hashes/candidate.o")
 loop_sha256=$(sha "$hashes/loop.o")
 depth_count_sha256=$(sha "$hashes/depth_count.o")
 depth_caller_sha256=$(sha "$hashes/depth_caller.o")
+noevent_sha256=$(sha "$hashes/noevent.o")
+noevent_caller_sha256=$(sha "$hashes/noevent_caller.o")
 EOF
 }
 
@@ -220,6 +252,7 @@ EOF
   printf 'proof_candidate=%s\n' "$staging/proof_candidate.env"
   printf 'proof_loop=%s\n' "$staging/proof_loop.env"
   printf 'proof_depth_count=%s\n' "$staging/proof_depth_count.env"
+  printf 'proof_noevent=%s\n' "$staging/proof_noevent.env"
 } > "$staging/manifest.env"
 
 # 6. The kernel-derived certificates.  `lake build` does not track
@@ -249,7 +282,14 @@ source_check() {
     lake build LeanLLVM.Refinement.CommaMaskLoop) &&
   (cd "$repo" &&
     rm -f .lake/build/lib/lean/LeanLLVM/Refinement/DepthCountRefine.olean &&
-    lake build LeanLLVM.Refinement.DepthCountRefine)
+    lake build LeanLLVM.Refinement.DepthCountRefine) &&
+  # The no-event body theorem's module is not rebuilt here: its fixture guard
+  # lives in `JsonStage2NoEventIR`, and the producer's own `include_str`
+  # comparison refuses a stale module rather than hashing bytes the loaded proof
+  # never parsed.  Building it only when its olean is absent keeps the install
+  # route from re-elaborating the whole walk family on every run.
+  (cd "$repo" &&
+    lake build LeanLLVM.Refinement.JsonStage2NoEventWalkAssembly)
 }
 certificate() { # unit
   local unit=$1
@@ -267,6 +307,7 @@ certificate baseline
 certificate candidate
 certificate loop
 certificate depth_count
+certificate noevent
 
 # 7. Differential transcript: every body must agree with every other on the
 #    corpus, and each must agree with the lane-wise specification `diff.c`
@@ -343,10 +384,12 @@ done
   printf 'proof_candidate=%s\n' "$build/proof_candidate.env"
   printf 'proof_loop=%s\n' "$build/proof_loop.env"
   printf 'proof_depth_count=%s\n' "$build/proof_depth_count.env"
+  printf 'proof_noevent=%s\n' "$build/proof_noevent.env"
   printf 'proof_baseline_sha256=%s\n' "$(sha "$staging/proof_baseline.env")"
   printf 'proof_candidate_sha256=%s\n' "$(sha "$staging/proof_candidate.env")"
   printf 'proof_loop_sha256=%s\n' "$(sha "$staging/proof_loop.env")"
   printf 'proof_depth_count_sha256=%s\n' "$(sha "$staging/proof_depth_count.env")"
+  printf 'proof_noevent_sha256=%s\n' "$(sha "$staging/proof_noevent.env")"
 } > "$staging/manifest.final.env"
 
 # 9. Publish.  Every object and evidence file first, then the certificates,
@@ -356,7 +399,7 @@ done
 #    old bytes.
 for name in Caller.c Baseline.c Candidate.c caller.o lean_baseline.o \
   lean_candidate.o baseline.o candidate.o loop.o depth_count.o depth_caller.o \
-  wrong_seam.c wrong_seam.o \
+  noevent.o noevent_caller.o wrong_seam.c wrong_seam.o \
   diff_wrong diff_wrong.txt diff_baseline diff_baseline.txt diff_candidate \
   diff_candidate.txt diff_loop diff_loop.txt diff_lean_baseline \
   diff_lean_baseline.txt diff_lean_candidate diff_lean_candidate.txt \
@@ -368,6 +411,7 @@ publish proof_baseline.env
 publish proof_candidate.env
 publish proof_loop.env
 publish proof_depth_count.env
+publish proof_noevent.env
 cp "$staging/manifest.final.env" "$build/manifest.env.tmp.$$"
 mv "$build/manifest.env.tmp.$$" "$build/manifest.env"
 

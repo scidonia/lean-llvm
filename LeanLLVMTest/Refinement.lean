@@ -10495,6 +10495,138 @@ contiguous to the end of this file. -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.neLitCheck_eq_litCheck
 
+/-- info: 'LeanLLVM.Refinement.Stage2NoEventWalkSegment.trans' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.Stage2NoEventWalkSegment.trans
+
+/-- info: 'LeanLLVM.Refinement.Stage2NoEventWalkSegment.of_chain' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.Stage2NoEventWalkSegment.of_chain
+
+/-- info: 'LeanLLVM.Refinement.Stage2NoEventWalkSegment.ret' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.Stage2NoEventWalkSegment.ret
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkPotential_le_of_le' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkPotential_le_of_le
+
+/-- info: 'LeanLLVM.Refinement.Stage2NoEventWalkPricedSegment.trans' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.Stage2NoEventWalkPricedSegment.trans
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventFlushSteps_le_finalisation' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventFlushSteps_le_finalisation
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkSegment_of_step' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkSegment_of_step
+
+/-- info: 'LeanLLVM.Refinement.Stage2NoEventWalkInv.write' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.Stage2NoEventWalkInv.write
+
+/-- info: 'LeanLLVM.Refinement.entryBootstrap_run' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.entryBootstrap_run
+
+/-- info: 'LeanLLVM.Refinement.entryBlock_denote' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.entryBlock_denote
+
+/-- info: 'LeanLLVM.Refinement.entryBlock_term_flush' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.entryBlock_term_flush
+
+/-- info: 'LeanLLVM.Refinement.entryBlock_inv' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.entryBlock_inv
+
+/-- info: 'LeanLLVM.Refinement.entryFlush_params' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.entryFlush_params
+
+/-- info: 'LeanLLVM.Refinement.entryFlush_locals' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.entryFlush_locals
+
+/-- info: 'LeanLLVM.Refinement.Stage2NoEventWalkSegment.flush' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.Stage2NoEventWalkSegment.flush
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkFlushRoute' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkFlushRoute
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkPotential_le' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkPotential_le
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkLoopFinishes' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkLoopFinishes
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkCompletes_of_loop' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkCompletes_of_loop
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkCompletes_of_loop_budget' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkCompletes_of_loop_budget
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkBudget_le' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkBudget_le
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkCompletes_at_stage2Budget' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkCompletes_at_stage2Budget
+
+/-- info: 'LeanLLVM.Refinement.Stage2NoEventWalkInv.readBytes_off' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.Stage2NoEventWalkInv.readBytes_off
+
+/-- info: 'LeanLLVM.Refinement.Stage2NoEventWalkInv.readLanes_off' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.Stage2NoEventWalkInv.readLanes_off
+
+/-- info: 'LeanLLVM.Refinement.entryBlock_step_preheader' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.entryBlock_step_preheader
+
+/-- info: 'LeanLLVM.Refinement.entryPreheader_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.entryPreheader_step
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkSeedRun' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkSeedRun
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkStep_of_rows' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkStep_of_rows
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkPremises_of_rows' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkPremises_of_rows
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventPost_of_completion' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventPost_of_completion
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkObligation_of_premises' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkObligation_of_premises
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkObligation_of_staging' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkObligation_of_staging
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventCallSatisfies_of_staging' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventCallSatisfies_of_staging
+
 /-- info: 'LeanLLVM.Refinement.gapCases_sound' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.gapCases_sound

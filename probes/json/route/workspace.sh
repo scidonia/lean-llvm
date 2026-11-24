@@ -28,8 +28,8 @@
 # count and both checksums; a disagreement exits 3.
 #
 # The reference observation is cross-checked against the route binary's own
-# `--consume` row for the same document, so the C harness's reading and the
-# Lean route's reading are compared and not assumed equal.
+# `--consume-events` row for the same document, so the C harness's reading and
+# the Lean route's reading are compared and not assumed equal.
 #
 # Corpus.  The five 65,536-byte documents of `tests/json-units-bench/
 # transcript.txt` live in the units' corpus directory; the three synthetic ones
@@ -177,10 +177,11 @@ printf '\n'
 # --- the route binary's own reading, for the cross-check --------------------
 : >"$work/route-ref.txt"
 for name in syn-dense-64k syn-strings-64k syn-utf8-64k; do
-  taskset -c "$core" "$route" --consume "$corpus/$name.json" 1 2>&1 |
+  taskset -c "$core" "$route" --consume-events "$corpus/$name.json" 1 2>&1 |
     grep '^row ' >>"$work/route-ref.txt"
 done
-printf '## the route binary'"'"'s own `--consume` rows (unit ns; repetitions: 1, for the identities)\n'
+printf '## the route binary'"'"'s own `--consume-events` rows (unit ns; repetitions: 1,\n'
+printf '## for the identities)\n'
 cat "$work/route-ref.txt"
 printf '\n'
 

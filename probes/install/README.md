@@ -44,6 +44,23 @@ This probe exercises the installation point described in
   `depth_driver.c`, not the one-word comma seam, so `UNIT=depth_count` links the
   driver. The gate is `tests/m4-depth-install-gate.sh`, and the numeric route is
   `tests/depth-count/check.sh`.
+- `noevent` is the no-event stage-2 entry
+  `probes/install/ir/stage2-noevent.candidate.ll`, the emission
+  `LeanLLVM/Refinement/JsonStage2NoEventIR.lean` parses and pins. Its installed
+  object is the fixture plus `ir/marker_noevent.ll`, and its symbol
+  `leanllvm_json_stage2_noevent` is not the comma seam, so the manifest binds
+  `noevent_caller.c` rather than `Caller.lean`. The fixture's body calls three
+  helpers out of line (`s2_string_body`, `num_fast_el1`, `od_gap_recover`), so a
+  real installation link also needs those helper objects; the repository's
+  build does not produce them for the fixture alone, and the selector route is
+  exercised with the local shims. Its certificate names the body
+  theorem `stage2NoEventWalkObligation_of_staging` and the unit's boundary
+  `stage2NoEventBoundary`; the theorem's type carries its premise tier and fixes
+  the gap to `stage2GapRecover`, whose body faithfulness is `docs/contract.md`
+  §7.6's trust row. A manifest that binds only the unconditional
+  `stage2NoEventBoundary_consumer` does not offer the strict install, and a
+  certificate naming it is refused with the required body theorem named. The
+  gate is `tests/json-noevent-select-gate.sh` (NE11).
 - `json_scan` is the window scanner's certified body `ir/json-scan-body.ll`,
   printed from the `scanWindowBody` AST in
   `LeanLLVM/Refinement/JsonScanBody.lean` by `lake exe leanllvm-json-scan-emit`
@@ -62,29 +79,36 @@ This probe exercises the installation point described in
   the missing `#print axioms` pin before it reaches the selector.
 - `build.sh` builds everything in a private staging directory and publishes
   `differential.txt`, `proof_baseline.env`, `proof_candidate.env`,
-  `proof_loop.env`, `proof_depth_count.env` and `manifest.env` only after every
+  `proof_loop.env`, `proof_depth_count.env`, `proof_noevent.env` and
+  `manifest.env` only after every
   check passes, one file at a time with the
   manifest last, so a failed build leaves the previously published bytes in
   place. The manifest binds the schema, the target triple and data layout, the
   target-feature policy (`none`: the build passes no `-march`/`-mattr`, so
   clang's triple default applies), the contract and every unit's theorem name
   (`theorem` for the candidate and the baseline, `loop_theorem` for the loop,
-  `depth_count_theorem` and `depth_contract` for the depth counter, and
+  `depth_count_theorem` and `depth_contract` for the depth counter,
   `json_scan_theorem`, `json_scan_contract` and `json_scan_symbol` for the
-  window scanner), the
-  attribute policy, every fixture and marker hash, the caller, depth-caller and
-  unit hashes, the differential transcript as ancillary evidence, and the four
-  certificate paths and digests. `select.sh` recomputes the triple and data
-  layout from the toolchain and rejects a mismatch.
+  window scanner, and `noevent_theorem`, `noevent_contract` and
+  `noevent_symbol` for the no-event entry), the
+  attribute policy, every fixture and marker hash, the caller, depth-caller,
+  no-event-caller and unit hashes, the differential transcript as ancillary
+  evidence, and the five certificate paths and digests. `select.sh` recomputes
+  the triple and data layout from the toolchain and rejects a mismatch.
 - `InstallCertificate.lean` is the certificate producer. The imported proof
   graph is rebuilt from current project source, `CommaMaskIR` is re-elaborated
   from source and — for a loop certificate — so is `CommaMaskLoop`, which
-  imports it; a depth certificate re-elaborates `DepthCountRefine`, and a
-  scanner certificate would re-elaborate `JsonScanIR`, which carries the scanner
-  fixture through `include_str`. The
+  imports it; a depth certificate re-elaborates `DepthCountRefine`, a no-event
+  certificate re-elaborates `JsonStage2NoEventIR` — which carries the no-event
+  fixture through `include_str` — and then `JsonStage2NoEventWalkAssembly`, and
+  a scanner certificate would re-elaborate `JsonScanIR`, which carries the
+  scanner fixture through `include_str`. The
   producer imports those fresh modules, checks the statement of the theorem
   that covers the requested unit, the contract or boundary link and the
-  axiom footprint, and writes the certificate described below. The unit dispatch
+  axiom footprint, and writes the certificate described below. For the no-event
+  unit it checks the exact body-theorem statement (the tier is the hypothesis,
+  the gap is `stage2GapRecover`), requires the named contract to be the constant
+  the unit's post projects, and holds the theorem to the pinned footprint. The unit dispatch
   is one table with no fall-through: a unit it does not know has no covering
   theorem and no contract, and the producer refuses it by name rather than
   certifying it under the comma-mask pair. It also refuses
@@ -94,15 +118,25 @@ This probe exercises the installation point described in
 - `select.sh` verifies the hashes, target and layout, requires the manifest's
   contract and the theorem that covers the requested unit (the global `theorem`
   and `contract` for the candidate and the baseline, `loop_theorem` for the
-  loop, `depth_count_theorem` and `depth_contract` for the depth counter, and
-  `json_scan_theorem` and `json_scan_contract` for the window scanner),
+  loop, `depth_count_theorem` and `depth_contract` for the depth counter,
+  `json_scan_theorem` and `json_scan_contract` for the window scanner, and
+  `noevent_theorem` and `noevent_contract` for the no-event entry),
   **rebuilds each unit from its fixtures**, parses the requested unit's
   certificate as closed data, compares every field with the object, fixture,
   marker, manifest and observed toolchain, and then rebuilds the imported proof
   graph, re-elaborates the proof module and reproduces the certificate with the
   producer, requiring the same bytes. Only then does it link the unit with its
-  caller (the depth corpus driver for `UNIT=depth_count`, and the seam's caller
-  for `UNIT=json_scan`, which imports the scanner's symbol). An unknown unit is
+  caller (the depth corpus driver for `UNIT=depth_count`, the seam's caller for
+  `UNIT=json_scan`, which imports the scanner's symbol, and
+  `noevent_caller.c` for `UNIT=noevent`, which imports the entry's symbol; a
+  real link for the no-event unit additionally needs the three out-of-line
+  helper objects its fixture declares, so its selector decisions are exercised
+  by `tests/json-noevent-select-gate.sh`'s shims). A
+  no-event certificate is accepted only when it names the body theorem
+  `stage2NoEventWalkObligation_of_staging`; a manifest or certificate that names
+  only the unconditional `stage2NoEventBoundary_consumer` is refused with the
+  required body theorem named, so the strict install is offered only with the
+  body theorem. An unknown unit is
   refused; `STRICT=1` fails instead of falling back, and a non-strict request
   whose certificate is missing or rejected installs the baseline and records
   the rejection as a fallback. A strict refusal names the certificate field that
@@ -125,14 +159,16 @@ This probe exercises the installation point described in
   with its own certificate in both modes, a loop-hash-mismatch fallback and
   strict rejection, a depth install with its own certificate in which the
   selection record's object and certificate digests are checked and the
-  installed executable's numeric output is compared with `depthSpec`, a
+  installed executable's numeric output is compared with `depthSpec`, the
+  no-event certificate published with its theorem, boundary and footprint, a
   mutated-fixture failure at the source guard with the
   published bytes asserted unchanged, a stale imported proof source refused by
   the real build and both selector modes under a restoring trap, the full
   certificate-gate matrix (seventeen fields in both modes, three
   absent-certificate routes, four structural malformations and two
   stale-import routes), the loop installation gate in its four modes, the depth
-  installation gate in its five modes, the depth numeric scenario with its
+  installation gate in its five modes, the no-event installation gate in its
+  five modes, the depth numeric scenario with its
   three controls, and the lock, warm-up and release-failure checks.
 
 Run from the repository root:
@@ -154,6 +190,11 @@ nix develop -c bash tests/m4-depth-install-gate.sh --strict-theorem   # another 
 nix develop -c bash tests/m4-depth-install-gate.sh --strict-contract  # another unit's contract is refused by name
 nix develop -c bash tests/m4-depth-install-gate.sh --strict-hash      # another unit's object hash is refused
 nix develop -c bash tests/m4-depth-install-gate.sh --fallback-hash    # a wrong hash falls back
+nix develop -c bash tests/json-noevent-select-gate.sh --strict         # the no-event entry installs
+nix develop -c bash tests/json-noevent-select-gate.sh --strict-theorem # another unit's theorem is refused by name
+nix develop -c bash tests/json-noevent-select-gate.sh --strict-hash    # a mismatched object hash is refused
+nix develop -c bash tests/json-noevent-select-gate.sh --no-body-theorem # only the boundary bound: strict not offered
+nix develop -c bash tests/json-noevent-select-gate.sh --fallback-hash  # a wrong hash falls back
 nix develop -c bash tests/depth-count/check.sh   # the installed object against depthSpec, with controls
 ```
 
@@ -177,7 +218,7 @@ Two kinds of certificate, with different reach:
    `CommaMaskKernel.lean`. Axiom footprints are pinned in
    `LeanLLVMTest/Refinement.lean`.
 2. **Installation.** `proof_baseline.env`, `proof_candidate.env`,
-   `proof_loop.env` and `proof_depth_count.env` are the
+   `proof_loop.env`, `proof_depth_count.env` and `proof_noevent.env` are the
    kernel-derived certificates. Each is a deterministic data file with exactly
    these fields, in this order: `schema` (`leanllvm-install-v1`), `unit`, the
    unit's object, fixture and marker hashes, the baseline/candidate object,
@@ -193,13 +234,22 @@ Two kinds of certificate, with different reach:
    because `IR_refines` relates the candidate to the baseline and says nothing
    about the memory-backed loop, and
    `LeanLLVM.Refinement.DepthCountRefine.depth_count_refines` on the depth
-   counter's. `contract` names `LeanLLVM.Refinement.commaContract` for the
-   comma-mask units and `LeanLLVM.Refinement.DepthCountRefine.depthContract` for
-   the depth counter: the latter is a proposition — the hypothesis set and
+   counter's, and
+   `LeanLLVM.Refinement.stage2NoEventWalkObligation_of_staging` on the no-event
+   entry's: the walk obligation the pinned body satisfies at the record's
+   staging, with the dispatch's premise tier as its hypothesis and the gap fixed
+   to `stage2GapRecover`. `contract` names `LeanLLVM.Refinement.commaContract`
+   for the comma-mask units,
+   `LeanLLVM.Refinement.DepthCountRefine.depthContract` for
+   the depth counter, and `LeanLLVM.Refinement.stage2NoEventBoundary` for the
+   no-event entry. The depth contract is a proposition — the hypothesis set and
    conclusion of `depth_count_refines`, with `depthContract_holds` as its
    witness — because the pure `BitVec 64 → BitVec 64` structure does not
    describe a kernel that reads through an index array and writes statistics
-   words. The producer checks the depth theorem's type against that proposition
+   words. The no-event boundary is the proposition the unit's post projects;
+   the producer checks the theorem's exact statement and requires the named
+   contract to be the constant that post uses. The producer checks the depth
+   theorem's type against that proposition
    by definitional equality and checks the contract definition's own body, not
    just its name. The selector never sources a certificate: it
    parses the closed grammar, compares each field with the input it names, and
@@ -297,6 +347,19 @@ some unmodelled tokens, so the refusal promise covers function definitions, not
   by a theorem about machine code. The `IR_refines` statement still relates only
   the candidate and the baseline; the loop has its own statement and its own
   field.
+- The no-event entry's certificate names
+  `stage2NoEventWalkObligation_of_staging`, a theorem about the model's
+  execution of the pinned fixture from the dispatch's premise tier. The tier is
+  a hypothesis, and the `od_gap_recover` helper's body faithfulness is
+  `docs/contract.md` §7.6's trust row rather than a proof; naming
+  `stage2NoEventBoundary` records the boundary the post projects, not a proof
+  that the compiled instructions implement the model. The certificate binds the
+  fixture by its `include_str` text and the object by rebuild, exactly as the
+  other units' do. The installed fixture declares `s2_string_body`,
+  `num_fast_el1` and `od_gap_recover` rather than defining them, so a runnable
+  installation must link helper objects the certificate does not bind;
+  `UNIT=noevent`'s selector decisions are gated with the local shims, not by
+  linking the fixture alone.
 - The depth counter's certificate names `depth_count_refines` — a theorem about
   the model's execution of the parsed fixture — and `depthContract`, which is
   that theorem's own type stated as a proposition with `depthContract_holds` as
@@ -327,9 +390,11 @@ cat probes/install/build/proof_baseline.env
 cat probes/install/build/proof_candidate.env
 cat probes/install/build/proof_loop.env
 cat probes/install/build/proof_depth_count.env
+cat probes/install/build/proof_noevent.env
 cat probes/install/build/selection_candidate.env
 cat probes/install/build/selection_loop.env
 cat probes/install/build/selection_depth_count.env
+cat probes/install/build/selection_noevent.env
 cat probes/install/build/differential.txt
 cat probes/install/build/diff_wrong.txt
 cat probes/install/build/out_candidate.txt

@@ -267,6 +267,9 @@ structure Stage2NoEventRun (args : List Value) (mem m0 : Mem) where
     .ptr scratch, .int 64 (BitVec.ofNat 64 scratchcap), .ptr tokensOut,
     .ptr valuesOut, .ptr sumOut, .ptr err]
   doc : readBytes mem b n = some bs
+  /-- The document pointer's address is at least one, as the record's pre states
+  (the entry block's `%b - 1` is an address off the wrap). -/
+  bPos : 1 ≤ b
   tail : HasBytes mem (b + n) stage2ReadTail
   entries : readLanes32 mem ep nep = some ent
   order : ent.Pairwise (· < ·)
@@ -338,7 +341,7 @@ variable {args : List Value} {mem m0 : Mem}
 theorem pre (h : Stage2NoEventRun args mem m0) :
     Γ_stage2_noevent.pre args mem h.next0 :=
   ⟨h.b, h.n, h.ep, h.nep, h.xp, h.nxp, h.scratch, h.scratchcap, h.tokensOut,
-    h.valuesOut, h.sumOut, h.err, h.bs, h.ent, h.args_eq, h.doc, h.tail,
+    h.valuesOut, h.sumOut, h.err, h.bs, h.ent, h.args_eq, h.doc, h.bPos, h.tail,
     h.entries, h.order, h.inside, h.esc, h.scratchBytes, h.scratchRoom,
     h.tokensBytes, h.valuesBytes, h.sumBytes, h.errBytes, h.maxDoc, h.nLt,
     h.scratchcapLt, h.nepLt, h.nxpLt, h.separate, h.watermark⟩

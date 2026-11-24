@@ -317,11 +317,13 @@ theorem a12_length (h : Stage2NoEventWalkInv K mem s) : K.a12.length = 12 := by
   rw [h.args_eq]
   rfl
 
-/-- The record's precondition, read off the invariant. -/
-theorem pre (h : Stage2NoEventWalkInv K mem s) :
+/-- The record's precondition, read off the invariant, at a non-null document
+pointer.  The pointer's clause is the caller's staging fact, so it is a hypothesis
+here rather than a field of the invariant. -/
+theorem pre (h : Stage2NoEventWalkInv K mem s) (hb : 1 ≤ K.b) :
     Γ_stage2_noevent.pre K.a12 mem K.next0 :=
   ⟨K.b, K.n, K.ep, K.nep, K.xp, K.nxp, K.scratch, K.scratchcap, K.tokensOut,
-    K.valuesOut, K.sumOut, K.err, K.bs, K.ent, h.args_eq, h.doc, h.tail,
+    K.valuesOut, K.sumOut, K.err, K.bs, K.ent, h.args_eq, h.doc, hb, h.tail,
     h.entries, h.order, h.inside, h.esc, h.scratchBytes, h.scratchRoom,
     h.tokensBytes, h.valuesBytes, h.sumBytes, h.errBytes, h.maxDoc, h.nLt,
     h.scratchcapLt, h.nepLt, h.nxpLt, h.separate, h.watermark⟩
@@ -360,12 +362,12 @@ theorem stage2NoEventWalkInv_seed
     (hstaged : stage2NoEventStagedPre a12 mem next stk e c d) :
     ∃ K : Stage2NoEventWalkCarry,
       K.a12 = a12 ∧ K.stk = stk ∧ K.e = e ∧ K.c = c ∧ K.d = d ∧
-      K.next0 = next ∧ K.tok = 0 ∧ K.terms = 0 ∧ K.arena = [] ∧
+      K.next0 = next ∧ K.xj = next ∧ K.tok = 0 ∧ K.terms = 0 ∧ K.arena = [] ∧
       Stage2NoEventWalkInv K mem
         (EntryState stage2NoEventBody (stage2NoEventArgs a12 stk e c d) mem next) := by
   have hpre' := hpre
   obtain ⟨b, n, ep, nep, xp, nxp, scratch, scratchcap, tokensOut, valuesOut,
-    sumOut, err, bs, ent, hargs, hdoc, htail, hentries, horder, hinside, hesc,
+    sumOut, err, bs, ent, hargs, hdoc, hb1, htail, hentries, horder, hinside, hesc,
     hscratchBytes, hscratchRoom, htokB, hvalB, hsumB, herrB, hmaxDoc, hnLt,
     hscLt, hneLt, hnxLt, hsep, hwater⟩ := hpre'
   have hstaged' := hstaged
@@ -382,7 +384,7 @@ theorem stage2NoEventWalkInv_seed
       bs := bs, ent := ent, stk := stk, d := d, xj := next, e := e, c := c,
       tok := 0, pos := 0, terms := 0, arena := [], arenaWord := 0,
       nextEnd := next + (stage2BootstrapExtent + 8) },
-    rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl,
+    rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl,
     { args_eq := hargs, doc := hdoc, tail := htail, entries := hentries,
       order := horder, inside := hinside, esc := hesc,
       scratchBytes := hscratchBytes, scratchRoom := hscratchRoom,

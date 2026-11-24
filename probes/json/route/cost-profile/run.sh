@@ -25,9 +25,9 @@
 # bodies must reproduce the arena and the cursor, and the admission must select
 # arm 2.  A gate failure exits 3.  The same gates run again after the rounds.
 #
-# The route binary's `--consume` row is read as a second binary's reading of the
-# same kernel and compared field by field; it is not an independent parser and
-# the report says so.
+# The route binary's `--consume-events` row is read as a second binary's reading
+# of the same kernel and compared field by field; it is not an independent
+# parser and the report says so.
 set -euo pipefail
 export LC_ALL=C
 
@@ -86,7 +86,7 @@ route_row=""
 if [ -x "$route" ]; then
   routetmp=$(mktemp)
   set +e
-  taskset -c "$core" "$route" --consume "$doc" 3 >/dev/null 2>"$routetmp"
+  taskset -c "$core" "$route" --consume-events "$doc" 3 >/dev/null 2>"$routetmp"
   rstatus=$?
   set -e
   route_row=$(grep '^row doc=' "$routetmp" | tail -1)
@@ -94,7 +94,7 @@ if [ -x "$route" ]; then
   if [ -n "$route_row" ]; then
     emit "route row: $route_row"
   else
-    emit "route row: absent (no --consume row for this document)"
+    emit "route row: absent (no --consume-events row for this document)"
   fi
   rm -f "$routetmp"
 else

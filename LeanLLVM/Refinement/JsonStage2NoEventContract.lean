@@ -131,7 +131,11 @@ def stage2NoEventRegions (b n ep nep xp nxp scratch scratchcap tokensOut valuesO
 arguments.  Every clause is one the certified record states, with the arena and
 event capacities replaced by the scratch's:
 
-* the document is readable, with the decoder's read-past tail;
+* the document is readable, with the decoder's read-past tail, and the document
+  pointer's address is at least one — the entry block computes `%b - 1` as an
+  address, which is the LLVM value only off the wrap, so a null document pointer
+  is outside the defined domain (it is undefined behaviour at that instruction
+  even at length zero);
 * the entry stream is `readLanes32`-readable, in document order, inside the
   document;
 * the escape list's bytes are staged;
@@ -152,6 +156,7 @@ def stage2NoEventPre (args : List Value) (mem : Mem) (next : Nat) : Prop :=
             .ptr scratch, .int 64 (BitVec.ofNat 64 scratchcap),
             .ptr tokensOut, .ptr valuesOut, .ptr sumOut, .ptr err] ∧
     readBytes mem b n = some bs ∧
+    1 ≤ b ∧
     HasBytes mem (b + n) stage2ReadTail ∧
     readLanes32 mem ep nep = some ent ∧
     ent.Pairwise (· < ·) ∧

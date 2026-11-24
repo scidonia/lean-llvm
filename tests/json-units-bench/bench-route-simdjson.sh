@@ -9,8 +9,8 @@
 # trial cancels in the quotient:
 #
 #   route     the composed route from this tree, `leanllvm-json-route
-#             --consume <doc> <reps>`.  The row's fields are its own stages:
-#             `admission_ns` (the two-phase domain decision), `staging_ns`,
+#             --consume-events <doc> <reps>`.  The row's fields are its own
+#             stages: `admission_ns` (the two-phase domain decision), `staging_ns`,
 #             `route_ns` (the native call `leanllvm_json_pipeline`), and
 #             `consume_values_ns` (a consumer that materialises one event record
 #             per token).  The document read is `read_ns` and is in no stage.
@@ -50,7 +50,7 @@
 # The report gives the median of the trial medians with their minimum and
 # maximum, and each quotient as the median of the per-trial quotients with its
 # minimum and maximum.  The simdjson arm calibrates its core clock before every
-# row; the route's `--consume` row carries no clock, so GB/s and the quotients
+# row; the route's `--consume-events` row carries no clock, so GB/s and the quotients
 # are wall-time figures and no cycles-per-byte figure is derived for the route.
 #
 # Provenance.  The simdjson dev output and library are the realised nix builds
@@ -199,7 +199,7 @@ printf '\n'
 # One probe each records the refusal; they are not timed and not compared.
 for name in "${names[@]}"; do
   case " ${admitted[*]} " in *" $name "*) continue ;; esac
-  out=$(taskset -c "${cpus%% *}" "$route" --consume "$corpus/$name.json" 1 2>&1)
+  out=$(taskset -c "${cpus%% *}" "$route" --consume-events "$corpus/$name.json" 1 2>&1)
   st=$?
   printf 'refusal %s exit=%s %s\n' "$name" "$st" "$out"
   case $out in
@@ -231,9 +231,9 @@ for cpu in $cpus; do
       if [ "$arm" = route ]; then
         for name in "${admitted[@]}"; do
           # One warm pass per document, outside the clock of the measured row.
-          taskset -c "$cpu" "$route" --consume "$corpus/$name.json" 1 \
+          taskset -c "$cpu" "$route" --consume-events "$corpus/$name.json" 1 \
             >/dev/null 2>&1
-          out=$(taskset -c "$cpu" "$route" --consume "$corpus/$name.json" "$reps" 2>&1)
+          out=$(taskset -c "$cpu" "$route" --consume-events "$corpus/$name.json" "$reps" 2>&1)
           st=$?
           printf '%s\n' "$out" >"$work/route.$cpu.$trial.$name.out"
           if [ "$st" -ne 0 ]; then

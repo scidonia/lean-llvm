@@ -11,10 +11,10 @@
 # documents at 65,536 and 4,194,304 bytes from that harness's seed.  This script
 # generates nothing of its own, so the two measurements describe the same bytes.
 #
-# Instrument.  The route's own `--stages` and `--consume` modes: the stage split
-# is the code the route runs, and the consumer row is the caller's reader.  The
-# stage rows need a `TIMING=1` build; the consumer rows do not, but the frozen
-# object must be one build for the two to describe one artifact.
+# Instrument.  The route's own `--stages` and `--consume-events` modes: the
+# stage split is the code the route runs, and the consumer row is the caller's
+# reader.  The stage rows need a `TIMING=1` build; the consumer rows do not,
+# but the frozen object must be one build for the two to describe one artifact.
 #
 # Discipline.  `BENCH_TRIALS` trials of `BENCH_REPS` repetitions per document,
 # each trial pinned with `taskset` to one CPU from `BENCH_CPUS`, and the summary
@@ -103,7 +103,7 @@ for cpu in $cpus; do
       taskset -c "$cpu" "$bin" --stages "$f" "$reps" \
         >/dev/null 2>"$out/stages.$cpu.$trial.$name.log"
       st=$?
-      taskset -c "$cpu" "$bin" --consume "$f" "$reps" \
+      taskset -c "$cpu" "$bin" --consume-events "$f" "$reps" \
         >/dev/null 2>"$out/consume.$cpu.$trial.$name.log"
       ct=$?
       set -e
@@ -119,10 +119,10 @@ for cpu in $cpus; do
       # failure.
       if grep -q '^row .*path=fast' "$out/stages.$cpu.$trial.$name.log"; then
         [ "$st" = 0 ] || { printf 'FAIL: --stages %s exited %s with a fast row\n' "$name" "$st" >&2; status=1; }
-        case $ct in 0|5) : ;; *) printf 'FAIL: --consume %s exited %s on a fast row\n' "$name" "$ct" >&2; status=1 ;; esac
+        case $ct in 0|5) : ;; *) printf 'FAIL: --consume-events %s exited %s on a fast row\n' "$name" "$ct" >&2; status=1 ;; esac
       else
         case $st in 0|2) : ;; *) printf 'FAIL: --stages %s exited %s without a fast row\n' "$name" "$st" >&2; status=1 ;; esac
-        case $ct in 0|2|5) : ;; *) printf 'FAIL: --consume %s exited %s\n' "$name" "$ct" >&2; status=1 ;; esac
+        case $ct in 0|2|5) : ;; *) printf 'FAIL: --consume-events %s exited %s\n' "$name" "$ct" >&2; status=1 ;; esac
       fi
     done
   done

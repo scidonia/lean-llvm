@@ -82,6 +82,33 @@
 #   evidence is the positive control: a copy with one byte changed fails the
 #   same detector, and an unchanged copy passes it.
 #
+#   NE12 — the shipped default's dispatch.  One staged document carries the
+#   comparison: plain `--consume` prints the same `reading` line as
+#   `--consume-noevent` and as `--arm noevent --consume`, so the default
+#   spelling is the no-event arm; `--arm events --consume` reaches the
+#   certified event consumer and agrees with `--consume-events`, and a `--arm`
+#   word that contradicts the mode's spelling exits 1 with the reason.
+#
+#   NE7 — the route's no-event arm agrees with its C caller and the certified
+#   event arm.  Over the corpus's documents the shipped route
+#   (`--consume-noevent`) and the C caller (`--noevent`) must print the same
+#   `reading` line field for field; the certified event arm is the reference,
+#   reached explicitly (`--consume-events`, or `--arm events --consume`).  On
+#   the documents the arm is admitted to,
+#   that line's verdict, `nk`, `nxp` and `err` equal the event arm's
+#   observation and its `tokens`/`values`/`sum` equal the event arm's
+#   consumer reading; an acceptance's `tokens` and `values` agree and are
+#   non-zero; a refusal carries zero in all three and the certified offset.
+#   The route binary is the build step's artefact, so an absent one is a setup
+#   fault naming the build command.
+#
+#   NE8 — the certified event arm is unchanged.  Over all 183 documents the
+#   base rows pin, the event arm's exit word, six observation words, arena and
+#   event payload digests, document digest and whole-stdout digest must equal
+#   `base-event-rows.tsv`'s, which records the base revision and the base
+#   binary's digest.  The rows are the fixture; the comparison is per
+#   document.
+#
 # The corpus's own integrity is asserted first: every document's digest
 # matches the manifest, the document set is exactly the manifest's, and
 # `generate.sh` at its fixed seed reproduces both the documents and the
@@ -118,9 +145,10 @@ cc=clang
 # The measured compiler line (`build49.sh:17`).
 cflags=(-O3 -march=x86-64-v3 -mpclmul -std=gnu11 -falign-loops=64 -falign-functions=64)
 
-# The certifying route's artefact set: the two kernel units the no-event entry
-# leaves untouched, their pinned fixtures, and the build list that compiles the
-# shipped units.
+# The certifying route's ABI artefact set: the two kernel units the no-event
+# entry leaves untouched and their pinned fixtures.  The shipped route's build
+# list is not compared: no ABI byte of it is at stake, and the event arm's
+# byte identity is NE8's subject.
 protected=(
   kernel/json/stage2.c
   kernel/json/stage2.h
@@ -128,7 +156,6 @@ protected=(
   kernel/json/pipeline.h
   probes/install/ir/stage2.candidate.ll
   probes/install/ir/json-pipeline.candidate.ll
-  probes/json/route/build.sh
 )
 
 # The driver's sentinel, `0xDEADBEEFDEADBEEF`, in decimal.
@@ -149,6 +176,23 @@ for unit in s1_block entry utf8 escape stage2 pipeline stage2_noevent pipeline_n
 done
 command -v "$cc" >/dev/null 2>&1 || setup "no $cc on PATH, and the kernel is C"
 command -v git >/dev/null 2>&1 || setup "no git on PATH, and the base comparison needs it"
+command -v xxd >/dev/null 2>&1 || setup "no xxd on PATH, and the event payloads' digests need it"
+# The route binary and its C caller are the shipped build step's artefacts.
+# They are not rebuilt here: the build step compiles the Lean program against
+# the Lake modules, and a scenario that rebuilt the program would be running a
+# different actor from the one the build asserts.
+route_bin=${ROUTE:-"$repo/probes/json/route/build/leanllvm-json-route"}
+c_driver=${NOEVENT_DRIVER:-"$repo/probes/json/route/build/driver"}
+base_rows=$repo/$route_rel/base-event-rows.tsv
+[ -f "$base_rows" ] || setup "absent: $base_rows"
+if [ ! -x "$route_bin" ]; then
+  setup "absent: $route_bin
+  build the route with: nix develop -c bash probes/json/route/build.sh"
+fi
+if [ ! -x "$c_driver" ]; then
+  setup "absent: $c_driver
+  build the route with: nix develop -c bash probes/json/route/build.sh"
+fi
 git -C "$repo" cat-file -e "$base^{commit}" 2>/dev/null ||
   setup "the pinned base $base is not in this repository"
 
@@ -736,6 +780,318 @@ for unit in stage2 pipeline; do
     fail "the $unit identity arm did not report its source identity"
 done
 printf 'ok: the stage-2 and pipeline identity arms report their one-symbol censuses\n'
+
+# ------------------------- 8. NE12: the shipped default's dispatch --------
+#
+# The default spelling is the arm a caller gets without naming one, so its
+# reading is compared with the arm's spelled-out name and with the `--arm`
+# spelling of that arm.  The certified event arm is reached through `--arm
+# events` and compared with its own flag, and a `--arm` word that contradicts
+# the mode's spelling is refused.  One document carries every invocation, so
+# each comparison is made on the same bytes.
+
+# One `name=value` field from a space-separated line: the reading line, the
+# event arm's observation line and its consumer row are all that form.
+word() { # line, name -> the first value, empty when the name is absent
+  printf '%s\n' "$1" | tr ' ' '\n' | sed -n "s/^$2=//p" | head -n 1
+}
+
+ne12_doc=$repo/tests/json/corpus/depth-two-ok.json
+[ -f "$ne12_doc" ] || setup "absent: $ne12_doc"
+
+"$route_bin" --consume "$ne12_doc" \
+  >"$work/ne12.default.out" 2>"$work/ne12.default.err"
+ne12_dst=$?
+ne12_default=$(cat "$work/ne12.default.out")
+"$route_bin" --consume-noevent "$ne12_doc" \
+  >"$work/ne12.explicit.out" 2>"$work/ne12.explicit.err"
+ne12_est=$?
+ne12_explicit=$(cat "$work/ne12.explicit.out")
+[ "$ne12_dst" -eq 0 ] && [ "$ne12_est" -eq 0 ] && [ -n "$ne12_default" ] &&
+  [ "$ne12_default" = "$ne12_explicit" ] || {
+  printf 'FAIL: --consume is not the no-event arm on depth-two-ok.json\n' >&2
+  printf '  --consume:         %s (exit %s)\n  --consume-noevent: %s (exit %s)\n' \
+    "$ne12_default" "$ne12_dst" "$ne12_explicit" "$ne12_est" >&2
+  exit 1
+}
+case $ne12_default in
+  'reading verdict='*) ;;
+  *) fail "--consume's line is not the reading form: $ne12_default" ;;
+esac
+
+"$route_bin" --arm noevent --consume "$ne12_doc" \
+  >"$work/ne12.armnoevent.out" 2>"$work/ne12.armnoevent.err"
+st=$?
+ne12_armnoevent=$(cat "$work/ne12.armnoevent.out")
+[ "$st" -eq 0 ] && [ "$ne12_armnoevent" = "$ne12_default" ] ||
+  fail "--arm noevent --consume is not the default reading: '$ne12_armnoevent' (exit $st) against '$ne12_default'"
+
+"$route_bin" --consume-events "$ne12_doc" \
+  >"$work/ne12.events.out" 2>"$work/ne12.events.err"
+ne12_evst=$?
+ne12_eventsrow=$(cat "$work/ne12.events.err")
+"$route_bin" --arm events --consume "$ne12_doc" \
+  >"$work/ne12.armevents.out" 2>"$work/ne12.armevents.err"
+ne12_armst=$?
+ne12_armeventsrow=$(cat "$work/ne12.armevents.err")
+ne12_same=0
+if [ "$ne12_evst" -eq 0 ] && [ "$ne12_armst" -eq 0 ] &&
+   [ ! -s "$work/ne12.armevents.out" ] &&
+   [ "$(word "$ne12_eventsrow" path)" = fast ] &&
+   [ "$(word "$ne12_eventsrow" walked)" = 1 ]; then
+  ne12_same=1
+  for f in path verdict ndst nev tokens values walked foldsum valuessum; do
+    [ "$(word "$ne12_eventsrow" "$f")" = "$(word "$ne12_armeventsrow" "$f")" ] ||
+      ne12_same=0
+  done
+  [ "$(word "$ne12_eventsrow" tokens)" = "$(word "$ne12_default" tokens)" ] ||
+    ne12_same=0
+  [ "$(word "$ne12_eventsrow" foldsum)" = "$(word "$ne12_default" sum)" ] ||
+    ne12_same=0
+fi
+[ "$ne12_same" -eq 1 ] || {
+  printf 'FAIL: --arm events --consume does not reach the certified event consumer on depth-two-ok.json\n' >&2
+  printf '  --consume-events:       %s (exit %s)\n  --arm events --consume: %s (exit %s)\n  --consume:              %s\n' \
+    "$ne12_eventsrow" "$ne12_evst" "$ne12_armeventsrow" "$ne12_armst" "$ne12_default" >&2
+  exit 1
+}
+
+while read -r arm mode; do
+  "$route_bin" --arm "$arm" "$mode" "$ne12_doc" \
+    >"$work/ne12.conflict.out" 2>"$work/ne12.conflict.err"
+  st=$?
+  [ "$st" -eq 1 ] && [ ! -s "$work/ne12.conflict.out" ] &&
+    grep -qx "route: --arm and the mode's spelling name different arms" \
+      "$work/ne12.conflict.err" ||
+    fail "--arm $arm $mode exited $st without the conflicting-arms reason"
+done <<'EOF'
+events --consume-noevent
+noevent --consume-events
+EOF
+printf 'ok: --consume is the no-event arm, --arm names that same arm and the certified event arm, and conflicting spellings are refused\n'
+
+# ------------------------------------------------- 9. NE7: the arms agree ----
+#
+# The shipped route is the third actor.  Its `--consume-noevent` line and the C
+# caller's `--noevent` line are compared literally, and the certified event arm
+# is the reference for every word they carry: the observation words come from
+# the event arm's `--doc` line and the reading words from its `--consume-events`
+# row.  The event arm is run on the same document, so the reference cannot
+# drift from the document under test.
+
+ne7_docs=0
+ne7_read=0
+ne7_fallback=0
+while IFS=$'\t' read -r key arms cls verdict errf tok val sumhex sha origin; do
+  [ -n "$key" ] || continue
+  ne7_docs=$((ne7_docs + 1))
+  doc=$corpus/$key
+
+  "$route_bin" --consume-noevent "$doc" \
+    >"$work/ne7.route.out" 2>"$work/ne7.route.err"
+  rst=$?
+  if [ "$rst" -ne 0 ]; then
+    printf 'FAIL: --consume-noevent exited %s on %s\n' "$rst" "$key" >&2
+    awk 'NR <= 5' "$work/ne7.route.err" >&2
+    exit 1
+  fi
+
+  if [ ! -s "$work/ne7.route.out" ]; then
+    # The arm is entered only on a document the admission admits.  The one
+    # document it does not enter is the empty one, and the C caller refuses
+    # that document at its own entry with the record's reason.
+    ne7_fallback=$((ne7_fallback + 1))
+    [ "$(wc -c <"$doc")" -eq 0 ] ||
+      fail "$key: --consume-noevent printed no reading and the document is not empty"
+    grep -q ' path=fallback ' "$work/ne7.route.err" ||
+      fail "$key: --consume-noevent printed no reading on an admitted document"
+    "$c_driver" --noevent "$doc" \
+      >"$work/ne7.driver.out" 2>"$work/ne7.driver.err"
+    dst=$?
+    [ "$dst" -eq 2 ] ||
+      fail "$key: the C caller exited $dst on the empty document, and its entry refuses it at 2"
+    grep -q '^refused: empty input' "$work/ne7.driver.err" ||
+      fail "$key: the C caller did not report the empty input as its refusal"
+    continue
+  fi
+
+  ne7_read=$((ne7_read + 1))
+  [ "$(wc -l <"$work/ne7.route.out")" -eq 1 ] ||
+    fail "$key: --consume-noevent printed $(wc -l <"$work/ne7.route.out") lines"
+  rline=$(cat "$work/ne7.route.out")
+  case $rline in
+    'reading verdict='*) ;;
+    *) fail "$key: --consume-noevent did not print a reading line: $rline" ;;
+  esac
+
+  "$c_driver" --noevent "$doc" \
+    >"$work/ne7.driver.out" 2>"$work/ne7.driver.err"
+  dst=$?
+  [ "$dst" -eq 0 ] || {
+    printf 'FAIL: the C caller exited %s on %s\n' "$dst" "$key" >&2
+    awk 'NR <= 5' "$work/ne7.driver.err" >&2
+    exit 1
+  }
+  [ -s "$work/ne7.driver.err" ] &&
+    fail "$key: the C caller wrote to stderr although it exited 0"
+  dline=$(cat "$work/ne7.driver.out")
+  [ "$rline" = "$dline" ] || {
+    printf 'FAIL: the route and the C caller print different readings on %s\n' "$key" >&2
+    printf '  route:  %s\n  driver: %s\n' "$rline" "$dline" >&2
+    exit 1
+  }
+
+  # The certified event arm, on the same bytes: the observation and the
+  # consumer's reading of the event stream and arena.
+  "$route_bin" --consume-events "$doc" \
+    >"$work/ne7.consume.out" 2>"$work/ne7.consume.err"
+  cst=$?
+  if [ "$cst" -ne 0 ]; then
+    printf 'FAIL: --consume-events exited %s on %s\n' "$cst" "$key" >&2
+    awk 'NR <= 5' "$work/ne7.consume.err" >&2
+    exit 1
+  fi
+  crow=$(cat "$work/ne7.consume.err")
+  [ "$(word "$crow" path)" = fast ] ||
+    fail "$key: the event arm did not run the fast path beside the arm's evidence"
+  [ "$(word "$crow" walked)" = 1 ] ||
+    fail "$key: the event arm's consumer did not walk the stream to its end"
+
+  "$route_bin" --doc "$doc" >"$work/ne7.doc.out" 2>"$work/ne7.doc.err"
+  est=$?
+  [ "$est" -eq 0 ] || {
+    printf 'FAIL: --doc exited %s on %s\n' "$est" "$key" >&2
+    awk 'NR <= 5' "$work/ne7.doc.err" >&2
+    exit 1
+  }
+  [ -s "$work/ne7.doc.err" ] &&
+    fail "$key: the event arm wrote to stderr although it exited 0"
+  drow=$(sed -n '1p' "$work/ne7.doc.out")
+
+  rv=$(word "$rline" verdict)
+  rnk=$(word "$rline" nk)
+  rnxp=$(word "$rline" nxp)
+  rerr=$(word "$rline" err)
+  rt=$(word "$rline" tokens)
+  rval=$(word "$rline" values)
+  rs=$(word "$rline" sum)
+
+  dv=$(word "$drow" verdict)
+  dnk=$(word "$drow" nk)
+  dnxp=$(word "$drow" nxp)
+  derr=$(word "$drow" err)
+
+  ct=$(word "$crow" tokens)
+  cval=$(word "$crow" values)
+  cs=$(word "$crow" foldsum)
+  cvs=$(word "$crow" valuessum)
+  cverdict=$(word "$crow" verdict)
+
+  # The reference is one arm, so its verdict word must be the same on both of
+  # its readings before either is used.  The payload words (`ndst`, `nev`) are
+  # not compared between the two halves: the arm's own reading does not carry
+  # them, and the event arm's printed `nev` is NE8's subject, not this arm's.
+  [ "$dv" = "$cverdict" ] ||
+    fail "$key: the event arm's observation says verdict $dv and its consumer $cverdict"
+
+  case ${M_VERDICT[$key]} in
+    accept) [ "$rv" = 1 ] || fail "$key: the manifest pins accept and the arm reads verdict $rv" ;;
+    refuse) [ "$rv" = 0 ] || fail "$key: the manifest pins refuse and the arm reads verdict $rv" ;;
+  esac
+
+  [ "$rv" = "$dv" ] || fail "$key: the arm's verdict $rv, the event arm's $dv"
+  [ "$rnk" = "$dnk" ] || fail "$key: the arm's nk $rnk, the event arm's $dnk"
+  [ "$rnxp" = "$dnxp" ] || fail "$key: the arm's nxp $rnxp, the event arm's $dnxp"
+  [ "$rerr" = "$derr" ] || fail "$key: the arm's err $rerr, the event arm's $derr"
+
+  if [ "$rv" = 1 ]; then
+    [ "$rt" = "$ct" ] || fail "$key: the arm's tokens $rt, the event arm's $ct"
+    [ "$rval" = "$cval" ] || fail "$key: the arm's values $rval, the event arm's $cval"
+    [ "$rs" = "$cs" ] || fail "$key: the arm's sum $rs, the event arm's fold sum $cs"
+    [ "$rt" = "$rval" ] ||
+      fail "$key: an acceptance's tokens $rt and values $rval disagree"
+    [ "$rt" -gt 0 ] || fail "$key: an acceptance carries no token"
+    [ "$cs" = "$cvs" ] ||
+      fail "$key: the event arm's fold sum $cs and values sum $cvs disagree"
+  else
+    # A walk refusal leaves the prefix events the object wrote before it failed,
+    # so the event arm's consumer still reads them; the no-event entry's
+    # refusal semantics are the three zeros, and the offset is the certified one.
+    [ "$rt" = 0 ] && [ "$rval" = 0 ] && [ "$rs" = 0 ] ||
+      fail "$key: a refusal carries a reading: $rt/$rval/$rs"
+    [ "$rerr" = "${M_ERR[$key]}" ] ||
+      fail "$key: a refusal's offset $rerr is not the certified ${M_ERR[$key]}"
+  fi
+done <"$manifest"
+
+[ "$ne7_docs" -gt 0 ] || fail "the manifest is empty"
+[ "$ne7_read" -gt 0 ] || fail "the no-event arm printed no reading on the corpus"
+printf 'ok: the route and the C caller print one identical reading on all %s admitted documents\n' \
+  "$ne7_read"
+printf 'ok: every one of those readings equals the event arm (six words, tokens, values, fold sum)\n'
+printf 'ok: %s empty document(s) are outside the arm and refused at the driver entry\n' \
+  "$ne7_fallback"
+
+# ---------------------------------------- 10. NE8: the event arm is frozen --
+#
+# The base rows are the fixture: each document's exit word, its six observation
+# words, the digests of its arena and event payloads, its own digest, and the
+# digest of the base route's whole stdout.  The event arm is run on every row's
+# document and compared with the row, so a changed word, a changed payload, a
+# changed document or a changed output line is a failure at that document.
+
+grep -qx '# base revision: 691ca12dc1b6afa8e05ff5828003fdadd15c9c1c' "$base_rows" ||
+  fail "the base rows do not record the base revision"
+grep -qx '# base binary: 86fbb06b3ab8d498e7edc73ee49abae5484ac66f1f12b9345aa2cbf5ac901e40' "$base_rows" ||
+  fail "the base rows do not record the base binary"
+
+base_count=$(awk '!/^#/ && NF { n++ } END { print n + 0 }' "$base_rows")
+[ "$base_count" -eq 183 ] ||
+  fail "the base rows carry $base_count rows, and the record pins 183"
+base_dups=$(awk -F '\t' '!/^#/ && NF { print $1 }' "$base_rows" | LC_ALL=C sort | uniq -d)
+[ -z "$base_dups" ] ||
+  fail "the base rows name a document twice: $(printf '%s' "$base_dups" | head -n 1)"
+
+ne8_rows=0
+while IFS=$'\t' read -r p ex pv pnk pnxp pndst pnev perr pash pesh pdsha posha; do
+  case $p in '' | '#'*) continue ;; esac
+  ne8_rows=$((ne8_rows + 1))
+  abspath=$repo/$p
+  [ -f "$abspath" ] || fail "a base row names an absent document: $p"
+  got=$(sha256sum "$abspath" | cut -d' ' -f1)
+  [ "$got" = "$pdsha" ] ||
+    fail "$p: the document's digest is not the base row's (the fixture moved)"
+
+  "$route_bin" --doc "$abspath" >"$work/ne8.out" 2>"$work/ne8.err"
+  st=$?
+  if [ "$st" -ne "$ex" ]; then
+    printf 'FAIL: %s: the event arm exited %s, the base row pins %s\n' "$p" "$st" "$ex" >&2
+    awk 'NR <= 5' "$work/ne8.err" >&2
+    exit 1
+  fi
+  got=$(sha256sum <"$work/ne8.out" | cut -d' ' -f1)
+  [ "$got" = "$posha" ] ||
+    fail "$p: the event arm's stdout digest $got is not the base row's $posha"
+
+  line=$(sed -n '1p' "$work/ne8.out")
+  want="verdict=$pv nk=$pnk nxp=$pnxp ndst=$pndst nev=$pnev err=$perr"
+  [ "$line" = "$want" ] || {
+    printf 'FAIL: %s: the event arm observation is not the base row'"'"'s\n' "$p" >&2
+    printf '  current: %s\n  base:    %s\n' "$line" "$want" >&2
+    exit 1
+  }
+  arena=$(sed -n 's/^arena=//p' "$work/ne8.out")
+  events=$(sed -n 's/^events=//p' "$work/ne8.out")
+  got=$(printf '%s' "$arena" | xxd -r -p | sha256sum | cut -d' ' -f1)
+  [ "$got" = "$pash" ] || fail "$p: the arena's digest $got is not the base row's $pash"
+  got=$(printf '%s' "$events" | xxd -r -p | sha256sum | cut -d' ' -f1)
+  [ "$got" = "$pesh" ] || fail "$p: the event stream's digest $got is not the base row's $pesh"
+done <"$base_rows"
+
+[ "$ne8_rows" -eq "$base_count" ] ||
+  fail "the base rows yielded $ne8_rows rows of a pinned $base_count"
+printf 'ok: the event arm reproduces all %s base rows (exit, six words, both payloads, document and stdout)\n' \
+  "$ne8_rows"
 
 printf 'ok: the no-event entries agree with the certified routes; the sentinel separates refusals; the census and the byte identity are pinned\n'
 exit 0

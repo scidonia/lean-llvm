@@ -59,6 +59,18 @@ opaque route (window : ByteArray) (n : UInt64)
   (dstcap : UInt64) (ndst : ByteArray) (ev : ByteArray) (evcap : UInt64)
   (nev err : ByteArray) (arm : UInt64) : IO ByteArray
 
+/-- The no-event arm's adapter (`shim.c`): the same stage-1 arguments, a
+scratch pair in place of the destination and event triplets, and three reading
+slots the pipeline's tail writes.  Its result is a fixed eleven-word header --
+the four failure words and `verdict nk nxp err tokens values sum` -- with no
+payload, because the arm builds no arena and no event stream. -/
+@[extern "leanllvm_json_route_noevent"]
+opaque routeNoEvent (window : ByteArray) (n : UInt64)
+  (sc mkSlot entw : ByteArray) (ep : ByteArray) (epcap : UInt64) (nk : ByteArray)
+  (xp : ByteArray) (xpcap : UInt64) (nxp xcarry scratch : ByteArray)
+  (scratchcap : UInt64) (tokens values sum err : ByteArray)
+  (arm : UInt64) : IO ByteArray
+
 /-- One stage interval the adapter recorded, in nanoseconds: 0 the copy of the
 caller's arrays into the object's ABI, 1 the native call, 2 the copy back.
 `UINT64_MAX` means the adapter was built without `ROUTE_TIMING` and filled no
@@ -84,7 +96,10 @@ def usage : String :=
   "usage: leanllvm-json-route --doc <file> [<native depth>]\n" ++
   "       leanllvm-json-route --admit <file> [reps] [<native depth>]\n" ++
   "       leanllvm-json-route --stages <file> [reps]\n" ++
-  "       leanllvm-json-route --consume <file> [reps]"
+  "       leanllvm-json-route --consume <file> [reps]          (the no-event arm)\n" ++
+  "       leanllvm-json-route --consume-noevent <file> [reps]  (the same arm)\n" ++
+  "       leanllvm-json-route --consume-events <file> [reps]   (the certified event arm)\n" ++
+  "       leanllvm-json-route --arm <events|noevent> --consume <file> [reps]"
 
 def hexByte (b : UInt8) : String :=
   let s := String.ofList (Nat.toDigits 16 b.toNat)
@@ -166,6 +181,10 @@ says what failed rather than that something did. -/
 /-- The header's size: ten words. -/
 def headerBytes : Nat := 80
 
+/-- The no-event arm's header: eleven words — the four failure words and the
+seven observation words — with no payload. -/
+def noEventHeaderBytes : Nat := 88
+
 /-- The adapter tagged the object's acceptance. -/
 def tagObserved : Nat := 0
 
@@ -196,6 +215,10 @@ def preconditionName : Nat → String
   | 20 => "the two payload lengths"
   | 21 => "the window's 64-byte blocks (the mask unit reads every block whole)"
   | 22 => "the document's own bytes in the admission call"
+  | 23 => "the no-event walk's scratch buffer at its capacity"
+  | 24 => "the reading's token slot"
+  | 25 => "the reading's value slot"
+  | 26 => "the reading's sum slot"
   | _ => "a precondition the adapter did not name"
 
 /-- Report a failure tag and return that class's exit status: 3 for an unmet
@@ -292,6 +315,72 @@ def call (s : Staged) (skip : Bool) : IO ByteArray :=
     s.dst (UInt64.ofNat s.dstcap) s.ndst
     s.ev (UInt64.ofNat s.evcap) s.nev s.err (escapeArm skip)
 
+/-- The no-event arm's staged input: the event arm's stage-1 buffers, a scratch
+buffer at the entry's `pre` (`n + 64`) in place of the arena and event triplets,
+and the four word slots — the refusal offset and the reading's three words. -/
+structure NoEventStaged where
+  n : Nat
+  window : ByteArray
+  sc : ByteArray
+  mkSlot : ByteArray
+  entw : ByteArray
+  ep : ByteArray
+  epcap : Nat
+  nk : ByteArray
+  xp : ByteArray
+  xpcap : Nat
+  nxp : ByteArray
+  xcarry : ByteArray
+  scratch : ByteArray
+  scratchcap : Nat
+  tokens : ByteArray
+  values : ByteArray
+  sum : ByteArray
+  err : ByteArray
+
+/-- Staging for the no-event arm.  The stage-1 buffers and the window are the
+event arm's, at the same capacities; the destination and event buffers are
+absent, and the scratch buffer is `n + 64` bytes, the capacity a string body's
+`len + US_SLACK` can reach.  `stage` is left as it stands: the two arms stage
+different objects, and nothing here revisits the event arm's buffers. -/
+def stageNoEvent (doc : ByteArray) (n : Nat) : IO NoEventStaged := do
+  let nb := blocks n
+  let epcap := 64 * nb + 9
+  let xpcap := 64 * nb + 8
+  let scratchcap := n + 64
+  let base ← zeroed 3
+  let pad ← zeroed (UInt64.ofNat (64 * nb - n))
+  let tail ← zeroed 32
+  let window := base.append doc |>.append pad |>.append tail
+  let sc ← zeroed 24
+  let mkSlot ← zeroed 48
+  let entw ← zeroed 8
+  let ep ← zeroed (UInt64.ofNat (4 * epcap))
+  let nk ← zeroed 8
+  let xp ← zeroed (UInt64.ofNat (4 * xpcap))
+  let nxp ← zeroed 8
+  let xcarry ← zeroed 16
+  let scratch ← zeroed (UInt64.ofNat scratchcap)
+  let tokens ← zeroed 8
+  let values ← zeroed 8
+  let sum ← zeroed 8
+  let err ← zeroed 8
+  return { n := n, window := window, sc := sc, mkSlot := mkSlot, entw := entw
+           ep := ep, epcap := epcap, nk := nk, xp := xp, xpcap := xpcap
+           nxp := nxp, xcarry := xcarry, scratch := scratch
+           scratchcap := scratchcap, tokens := tokens, values := values
+           sum := sum, err := err }
+
+/-- The no-event arm's native call through the adapter, over a staged document.
+The arm word is `escapeArm skip`, the event arm's own decision. -/
+def callNoEvent (s : NoEventStaged) (skip : Bool) : IO ByteArray :=
+  routeNoEvent s.window (UInt64.ofNat s.n)
+    s.sc s.mkSlot s.entw
+    s.ep (UInt64.ofNat s.epcap) s.nk
+    s.xp (UInt64.ofNat s.xpcap) s.nxp s.xcarry
+    s.scratch (UInt64.ofNat s.scratchcap)
+    s.tokens s.values s.sum s.err (escapeArm skip)
+
 /-! ### Outcome handling, in the parts the stage report prices
 
 `interpret` is the outcome stage with no clock read in it.  `--stages` calls its
@@ -303,7 +392,7 @@ runs — the same `decodeResult`, `payloads`, `observationLine` and `payloadLine
 `result.toList` at every byte it reads, so one word costs eight list traversals
 of the whole result and the seven words an observation needs cost fifty-six.
 `payloads` materialises the result's list once per payload.  Both are priced as
-they are rather than changed here; `--consume` below reads the same words
+they are rather than changed here; `--consume-events` below reads the same words
 through indexing, and the two numbers together are what those conversions cost.
 -/
 
@@ -926,9 +1015,13 @@ def runStaged (path : String) (reps : Nat) : IO UInt32 := do
 
 /-! ### The consumer's read
 
-`--consume <file> <reps>` is the route without its reporting: it runs the fast
-path and reads the result the way a consumer that keeps no printed copy would.
-The header words come from `ByteArray` indexing rather than `be64`'s list
+`--consume <file> <reps>` is the route's shipped reading, and it is the no-event
+arm's: the pipeline's returned three words, read by index with no event walk and
+no payload copy (`--consume-noevent` is the same arm spelled out).  The certified
+event arm remains selectable — `--consume-events`, or `--arm events --consume` —
+and that mode is the route without its reporting: it runs the fast path and
+reads the result the way a consumer that keeps no printed copy would.  The
+header words come from `ByteArray` indexing rather than `be64`'s list
 materialisation, and the event stream is walked record by record at the widths
 `kernel/json/stage2.h` documents.  Two readings are priced: a fold that keeps no
 per-token object, and one that materialises one `Event` per event — which is what
@@ -1032,8 +1125,116 @@ partial def consumeResult (result : ByteArray) (o : Observation)
         walk (k + w) (tokens + 1) sum acc
   walk 0 0 (arenaSum 0 0) #[]
 
-/-- `--consume`: the fast path run `reps` times, with the consumer's two
-readings timed apart from the route and from each other.  The two readings share
+/-- The no-event arm's reading: the three words the pipeline's tail returns.
+`tokens` is one per event (the same count the materialising consumer's `values`
+reports), and `sum` is the arena's byte sum plus every event's tag, length and
+payload words. -/
+structure Reading where
+  tokens : Nat := 0
+  values : Nat := 0
+  sum : UInt64 := 0
+
+/-- Read the no-event arm's header as a consumer would: the three reading words
+by index, with no event walk and no payload copy.  The header's class is checked
+by the caller before this read; on a failure header every word is zero and this
+value is never reported as a reading. -/
+def readReading (result : ByteArray) : Reading :=
+  { tokens := (indexWord result 64).toNat
+    values := (indexWord result 72).toNat
+    sum := indexWord result 80 }
+
+/-- `--consume` (also spelled `--consume-noevent`): the no-event arm, the
+route's shipped default, run `reps` times.  The stage intervals
+are the event arm's; the reading is the pipeline's returned three words, with no
+event walk and no payload copy.  The reading is printed once on stdout in the
+same line form as `driver --noevent`, so the two actors' readings can be
+compared line for line, and the row on stderr carries the timings.  An
+acceptance must report `values = tokens` and a non-zero token count, and a
+refusal must leave all three words zero (the entry's declared refusal
+semantics); either violation is reported at exit 5 rather than printed as a
+reading. -/
+def runConsumeNoEvent (path : String) (reps : Nat) : IO UInt32 := do
+  let mut reads : Array Nat := #[]
+  let mut adm : Array Nat := #[]
+  let mut staging : Array Nat := #[]
+  let mut routeNs : Array Nat := #[]
+  let mut copyout : Array Nat := #[]
+  let mut size := 0
+  let mut kind := "fast"
+  let mut verdict := 0
+  let mut nkWord := 0
+  let mut nxpWord := 0
+  let mut errWord := 0
+  let mut reading : Reading := {}
+  for _rep in List.range reps do
+    let t0 ← IO.monoNanosNow
+    let doc ←
+      try
+        IO.FS.readBinFile path
+      catch e =>
+        IO.eprintln s!"route: cannot read '{path}': {e}"
+        return 2
+    let t1 ← IO.monoNanosNow
+    reads := reads.push (t1 - t0)
+    size := doc.size
+    let a0 ← IO.monoNanosNow
+    let decision ← decide2 doc
+    let a1 ← IO.monoNanosNow
+    adm := adm.push (a1 - a0)
+    match decision with
+    | .failed status => return status
+    | .refused _ =>
+      kind := "fallback"
+    | .admitted f =>
+      let skip := f.escapeSkip
+      let s0 ← IO.monoNanosNow
+      let staged ← stageNoEvent doc doc.size
+      let c0 ← IO.monoNanosNow
+      let result ← callNoEvent staged skip
+      let c1 ← IO.monoNanosNow
+      staging := staging.push (c0 - s0)
+      routeNs := routeNs.push (c1 - c0)
+      let co ← stageNsAt 2
+      if co != stageUnfilled then copyout := copyout.push co
+      if result.size ≠ noEventHeaderBytes then
+        IO.eprintln s!"route: --consume-noevent: the adapter returned \
+          {result.size} bytes, and the no-event header is {noEventHeaderBytes}"
+        return 5
+      let tag := indexWord result 0
+      if tag != 0 && tag != 1 then
+        return (← reportAdapterFailure result tag.toNat)
+      verdict := (indexWord result 32).toNat
+      nkWord := (indexWord result 40).toNat
+      nxpWord := (indexWord result 48).toNat
+      errWord := (indexWord result 56).toNat
+      reading := readReading result
+  IO.eprintln s!"row doc={(System.FilePath.fileName path).getD path} size={size} \
+    path={kind} reps={reps} read_ns={median reads} \
+    admission_ns={stageField adm} staging_ns={stageField staging} \
+    route_ns={stageField routeNs} copyout_ns={stageField copyout} \
+    verdict={verdict} nk={nkWord} nxp={nxpWord} err={errWord} \
+    tokens={reading.tokens} values={reading.values} sum={reading.sum}"
+  if kind == "fast" then
+    IO.println s!"reading verdict={verdict} nk={nkWord} nxp={nxpWord} \
+      err={errWord} tokens={reading.tokens} values={reading.values} \
+      sum={reading.sum}"
+    if verdict != 0 && (reading.values != reading.tokens || reading.tokens == 0)
+    then
+      IO.eprintln s!"route: --consume-noevent: an acceptance's reading is \
+        tokens={reading.tokens} values={reading.values}; the two counts must \
+        agree and be non-zero"
+      return 5
+    if verdict == 0 &&
+        (reading.tokens != 0 || reading.values != 0 || reading.sum != 0) then
+      IO.eprintln s!"route: --consume-noevent: a refusal's reading is \
+        tokens={reading.tokens} values={reading.values} sum={reading.sum}; the \
+        entry's refusal semantics leave all three zero"
+      return 5
+  return 0
+
+/-- `--consume-events` (or `--arm events --consume`): the certified event arm's
+fast path run `reps` times, with the consumer's two readings timed apart from
+the route and from each other.  The two readings share
 one header decode each, so each price includes it; the fold and the values walk
 must agree on the token count and on the checksum, and a disagreement is
 reported rather than averaged in. -/
@@ -1125,7 +1326,7 @@ def runConsume (path : String) (reps : Nat) : IO UInt32 := do
   -- zero, its event stream is empty, and no token count is owed.
   if kind == "fast" && verdict != 0 &&
       !(walked && valuesBuilt == tokens && tokens > 0 && foldSum == valuesSum) then
-    IO.eprintln s!"route: --consume: the readings disagree: tokens={tokens} \
+    IO.eprintln s!"route: --consume-events: the readings disagree: tokens={tokens} \
       values={valuesBuilt} walked={walked} fold sum={foldSum} \
       values sum={valuesSum}"
     return 5
@@ -1288,8 +1489,48 @@ def runAdmit (path : String) (reps : Nat) (nativeDepth : Nat) : IO UInt32 := do
     two_phase_ns={median two}"
   return 0
 
+/-- Whether the mode on the command line reads a pipeline arm: the consumer
+family, the only modes `--arm` applies to. -/
+def isConsumeMode : List String → Bool
+  | "--consume" :: _ => true
+  | "--consume-events" :: _ => true
+  | "--consume-noevent" :: _ => true
+  | _ => false
+
+/-- The arm a consumer mode's own spelling names: `--consume-events` the
+certified event arm, `--consume-noevent` the no-event arm, and `--consume` none,
+because its default is the no-event arm. -/
+def modeArm : List String → Option Bool
+  | "--consume-events" :: _ => some true
+  | "--consume-noevent" :: _ => some false
+  | _ => none
+
 def main (args : List String) : IO UInt32 := do
-  match args with
+  -- `--arm <events|noevent>` names the arm a consumer mode reads; the mode's
+  -- own spelling may name it too, and the two must agree.  The default is the
+  -- no-event arm, so `--consume`, `--consume-noevent` and
+  -- `--arm noevent --consume` are one reading, and `--consume-events` and
+  -- `--arm events --consume` are the certified event arm's.
+  let (arm, rest) ←
+    match args with
+    | "--arm" :: a :: rest =>
+        if a == "events" then pure (some true, rest)
+        else if a == "noevent" then pure (some false, rest)
+        else do
+          IO.eprintln s!"route: --arm takes 'events' or 'noevent', not '{a}'"
+          return 1
+    | _ => pure (none, args)
+  if arm.isSome && !isConsumeMode rest then
+    IO.eprintln "route: --arm names the arm of a consumer mode; no other mode selects one"
+    return 1
+  let conflict :=
+    match arm, modeArm rest with
+    | some a, some b => a != b
+    | _, _ => false
+  if conflict then
+    IO.eprintln "route: --arm and the mode's spelling name different arms"
+    return 1
+  match rest with
   | ["--doc", path] => run path
   | ["--doc", path, depth] => run path depth.toNat!
   | ["--admit", path] => runAdmit path 11 kernelMaxDepth
@@ -1297,8 +1538,18 @@ def main (args : List String) : IO UInt32 := do
   | ["--admit", path, reps, depth] => runAdmit path reps.toNat! depth.toNat!
   | ["--stages", path] => runStaged path 11
   | ["--stages", path, reps] => runStaged path reps.toNat!
-  | ["--consume", path] => runConsume path 11
-  | ["--consume", path, reps] => runConsume path reps.toNat!
+  | ["--consume", path] =>
+      match arm with
+      | some true => runConsume path 11
+      | _ => runConsumeNoEvent path 11
+  | ["--consume", path, reps] =>
+      match arm with
+      | some true => runConsume path reps.toNat!
+      | _ => runConsumeNoEvent path reps.toNat!
+  | ["--consume-noevent", path] => runConsumeNoEvent path 11
+  | ["--consume-noevent", path, reps] => runConsumeNoEvent path reps.toNat!
+  | ["--consume-events", path] => runConsume path 11
+  | ["--consume-events", path, reps] => runConsume path reps.toNat!
   | _ =>
       IO.eprintln usage
       return 1

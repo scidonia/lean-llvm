@@ -95,8 +95,8 @@ The instrument does not link simdjson.  `syn-strings-64k`'s paired full-parse
 figure (11.5 µs, and 11.7 µs in this session's `workspace` run) is the existing
 `workspace`/`paired-reference` measurement; reproducing it here would require
 the C++ baseline and the 5.0.5 dev output, which is outside this instrument's
-"C only" build.  The route binary's `--consume` row is compared field by field
-as a second binary's reading of the same kernel; it is not an independent
+"C only" build.  The route binary's `--consume-events` row is compared field by
+field as a second binary's reading of the same kernel; it is not an independent
 parser.
 
 ## A measured limit: code placement

@@ -7,6 +7,17 @@
  * wrapper builds the staging the record demands, and that its output is the
  * object's rather than a Lean-side recomputation.  Comparing the observation
  * alone would let equal lengths and verdicts conceal different values.
+ *
+ * `--noevent <file>` calls `leanllvm_json_pipeline_noevent` on the same staged
+ * document, with a scratch buffer at the entry's `pre` (`n + 64`) in place of
+ * the destination and event buffers, and prints one line:
+ *
+ *   reading verdict=<v> nk=<n> nxp=<n> err=<n> tokens=<n> values=<n> sum=<n>
+ *
+ * The line is the form `--consume-noevent` prints, so the route's arm and this
+ * actor's reading are compared without transcription.  The default form, with
+ * no flag, is the event arm's three lines; the flag adds an arm and changes
+ * nothing about the certified one.
  */
 #include <stdio.h>
 #include <stdint.h>
@@ -15,6 +26,7 @@
 
 #include "escape_guard.h"
 #include "pipeline.h"
+#include "stage2_noevent.h"
 #include "entry.h"
 
 /* One payload line, in `RouteMain.lean`'s form: the label, then two lowercase
@@ -26,12 +38,18 @@ static void print_hex(const char *label, const uint8_t *p, uint64_t n) {
 }
 
 int main(int argc, char **argv) {
-    if (argc != 2) {
-        fprintf(stderr, "usage: driver <file>\n");
+    int noevent = 0;
+    int argi = 1;
+    if (argc >= 2 && strcmp(argv[1], "--noevent") == 0) {
+        noevent = 1;
+        argi = 2;
+    }
+    if (argc != argi + 1) {
+        fprintf(stderr, "usage: driver [--noevent] <file>\n");
         return 1;
     }
-    FILE *f = fopen(argv[1], "rb");
-    if (!f) { fprintf(stderr, "driver: cannot read %s\n", argv[1]); return 2; }
+    FILE *f = fopen(argv[argi], "rb");
+    if (!f) { fprintf(stderr, "driver: cannot read %s\n", argv[argi]); return 2; }
     fseek(f, 0, SEEK_END);
     long sz = ftell(f);
     fseek(f, 0, SEEK_SET);
@@ -64,11 +82,6 @@ int main(int argc, char **argv) {
     uint32_t *xp = (uint32_t *)calloc(4 * xpcap, 1);
     uint64_t *nxp = (uint64_t *)calloc(8, 1);
     uint64_t *xcarry = (uint64_t *)calloc(16, 1);
-    uint8_t *dst = (uint8_t *)calloc(dstcap, 1);
-    uint64_t *ndst = (uint64_t *)calloc(8, 1);
-    uint8_t *ev = (uint8_t *)calloc(evcap, 1);
-    uint64_t *nev = (uint64_t *)calloc(8, 1);
-    uint64_t *err = (uint64_t *)calloc(8, 1);
 
     uint32_t *tab = (uint32_t *)calloc(2048, 4);
     leanllvm_json_entry_table(tab);
@@ -80,6 +93,35 @@ int main(int argc, char **argv) {
        list's emptiness; `guard.sh` checks the two arms' outputs byte for byte
        on every document the guard fires on. */
     uint64_t arm = leanllvm_route_escape_can_skip(doc, n) ? 0 : 2;
+
+    if (noevent) {
+        /* The same stage-1 buffers and the same arm word; the destination and
+           event buffers are replaced by the scratch buffer at the entry's
+           `pre`, and the reading slots start zeroed as the entry declares. */
+        uint8_t *scratch = (uint8_t *)calloc((size_t)n + 64, 1);
+        uint64_t *tokens = (uint64_t *)calloc(8, 1);
+        uint64_t *values = (uint64_t *)calloc(8, 1);
+        uint64_t *sum = (uint64_t *)calloc(8, 1);
+        uint64_t *err = (uint64_t *)calloc(8, 1);
+        uint64_t verdict = leanllvm_json_pipeline_noevent(
+            win + 3, n, (uint64_t *)sc, (uint64_t *)mk, (uint64_t *)entw,
+            ep, epcap, (uint64_t *)nk, xp, xpcap, (uint64_t *)nxp,
+            (uint64_t *)xcarry, scratch, n + 64, tokens, values, sum, err, arm);
+        printf("reading verdict=%llu nk=%llu nxp=%llu err=%llu tokens=%llu "
+               "values=%llu sum=%llu\n",
+               (unsigned long long)verdict, (unsigned long long)*nk,
+               (unsigned long long)*nxp, (unsigned long long)*err,
+               (unsigned long long)*tokens, (unsigned long long)*values,
+               (unsigned long long)*sum);
+        free(scratch); free(tokens); free(values); free(sum); free(err);
+        return 0;
+    }
+
+    uint8_t *dst = (uint8_t *)calloc(dstcap, 1);
+    uint64_t *ndst = (uint64_t *)calloc(8, 1);
+    uint8_t *ev = (uint8_t *)calloc(evcap, 1);
+    uint64_t *nev = (uint64_t *)calloc(8, 1);
+    uint64_t *err = (uint64_t *)calloc(8, 1);
 
     uint64_t verdict = leanllvm_json_pipeline(
         win + 3, n, (uint64_t *)sc, (uint64_t *)mk, (uint64_t *)entw,

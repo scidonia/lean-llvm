@@ -4,14 +4,17 @@
 #   nix develop -c bash probes/json/route/build.sh
 #
 # The kernel is outside Lake (kernel/json/README.md), so this script is the link
-# step: it compiles the six kernel translation units, the proved stage-1 depth
-# counter (`tests/v16/depth_count.ll`, at the same `clang -c` line the install
-# uses for the unit), the probe's native character-policy scan (`policy.c`), the
-# C adapter, and the standalone Lean program, then links them with `leanc`.  It
-# asserts that the adapter imports the units it calls -- `leanllvm_json_pipeline`,
+# step: it compiles the six kernel translation units and the two additive
+# no-event units (`stage2_noevent.c`, `pipeline_noevent.c`), the proved stage-1
+# depth counter (`tests/v16/depth_count.ll`, at the same `clang -c` line the
+# install uses for the unit), the probe's native character-policy scan
+# (`policy.c`), the C adapter, and the standalone Lean program, then links them
+# with `leanc`.  It asserts that the adapter imports the units it calls --
+# `leanllvm_json_pipeline`, `leanllvm_json_pipeline_noevent`,
 # `leanllvm_json_entry_table`, the mask unit, the depth counter and the policy
-# scan -- and that the executable defines each of them, so a build that silently
-# lost a call is a failure rather than a pass.
+# scan -- and that the executable defines each of them, including the no-event
+# units, so a build that silently lost a call is a failure rather than a pass.
+# The certified objects' flags and symbol assertions are unchanged.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -39,6 +42,14 @@ fi
 printf 'flags: kernel=%s adapter=-O2 timing=%s\n' "$opt" "$timing"
 
 for f in pipeline s1_block entry escape utf8 stage2; do
+  clang "${kflags[@]}" -c "$repo/kernel/json/$f.c" -o "$build/$f.o"
+done
+
+# The no-event arm's two units, at the same kernel flags.  They are additive:
+# `stage2_noevent.c` includes `stage2.c` under a rename of the certified entry,
+# so the helper text is the certified unit's, and `pipeline_noevent.c` is the
+# stage-1 loop with the reading tail.  Nothing in the certified objects changes.
+for f in stage2_noevent pipeline_noevent; do
   clang "${kflags[@]}" -c "$repo/kernel/json/$f.c" -o "$build/$f.o"
 done
 
@@ -106,14 +117,19 @@ done
 (cd "$repo" && lake env lean -c "$build/RouteMain.c" "$here/RouteMain.lean")
 leanc -c "$build/RouteMain.c" -I "$repo/.lake/build/ir" -o "$build/RouteMain.o"
 
-if [ "$(nm -u "$build/shim.o" | grep -c 'leanllvm_json_pipeline')" -eq 0 ]; then
+if [ "$(nm -u "$build/shim.o" | grep -c ' leanllvm_json_pipeline_noevent$')" -eq 0 ]; then
+  echo "build: the adapter does not import leanllvm_json_pipeline_noevent" >&2
+  exit 1
+fi
+
+if [ "$(nm -u "$build/shim.o" | grep -c ' leanllvm_json_pipeline$')" -eq 0 ]; then
   echo "build: the adapter does not import leanllvm_json_pipeline" >&2
   exit 1
 fi
 
 # The adapter's setup fills the entry unit's POS8 table before the call; a
 # build that lost that call leaves the table zero and every container refused.
-if [ "$(nm -u "$build/shim.o" | grep -c 'leanllvm_json_entry_table')" -eq 0 ]; then
+if [ "$(nm -u "$build/shim.o" | grep -c ' leanllvm_json_entry_table$')" -eq 0 ]; then
   echo "build: the adapter does not import leanllvm_json_entry_table" >&2
   exit 1
 fi
@@ -144,8 +160,18 @@ fi
 leanc "$build/RouteMain.o" "$build/shim.o" "$build/policy.o" \
   "${cone_ir[@]}" \
   "$build/pipeline.o" "$build/s1_block.o" "$build/entry.o" \
-  "$build/escape.o" "$build/utf8.o" "$build/stage2.o" "$build/depth_count.o" \
+  "$build/escape.o" "$build/utf8.o" "$build/stage2.o" \
+  "$build/stage2_noevent.o" "$build/pipeline_noevent.o" "$build/depth_count.o" \
   -I "$repo/.lake/build/ir" -o "$build/leanllvm-json-route"
+
+if [ "$(nm "$build/leanllvm-json-route" | grep -c ' T leanllvm_json_pipeline_noevent$')" -eq 0 ]; then
+  echo "build: the route does not define leanllvm_json_pipeline_noevent" >&2
+  exit 1
+fi
+if [ "$(nm "$build/leanllvm-json-route" | grep -c ' T leanllvm_json_stage2_noevent$')" -eq 0 ]; then
+  echo "build: the route does not define leanllvm_json_stage2_noevent" >&2
+  exit 1
+fi
 
 if [ "$(nm "$build/leanllvm-json-route" | grep -c ' T leanllvm_json_pipeline$')" -eq 0 ]; then
   echo "build: the executable does not define leanllvm_json_pipeline" >&2
@@ -170,7 +196,8 @@ fi
 
 clang "${kflags[@]}" "$here/driver.c" \
   "$build/pipeline.o" "$build/s1_block.o" "$build/entry.o" \
-  "$build/escape.o" "$build/utf8.o" "$build/stage2.o" -o "$build/driver"
+  "$build/escape.o" "$build/utf8.o" "$build/stage2.o" \
+  "$build/stage2_noevent.o" "$build/pipeline_noevent.o" -o "$build/driver"
 
 # The guard's own scenario (`guard.sh`) drives this probe over the corpus, the
 # escape unit's rows and the bench's documents; it is built here so the probe
