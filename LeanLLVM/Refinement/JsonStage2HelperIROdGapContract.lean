@@ -1425,6 +1425,27 @@ theorem odGap_unchangedOutside_record {mem : Mem} {e off tag : Nat} :
       ⟨(e + 8, 8), by simp, by omega, by omega⟩ (by simp [wordBytes, natToBytes_length]))
     ⟨(e + 16, 8), by simp, by omega, by omega⟩ (by simp [wordBytes, natToBytes_length])
 
+/-- The block's `BitVec` difference is the `Nat` difference at `ofNat`. -/
+theorem gapSub_eq_ofNat {a b : Nat} (hba : b ≤ a) (ha : a < 2 ^ 64) (hb : b < 2 ^ 64) :
+    BitVec.ofNat 64 a - BitVec.ofNat 64 b = BitVec.ofNat 64 (a - b) := by
+  apply BitVec.eq_of_toNat_eq
+  rw [gapSub_toNat hba ha hb, gap_word64 (by omega)]
+
+/-- The compare bound `%cond.i` is the smaller of the two lengths. -/
+theorem gapLit_cond_min {a b : Nat} (ha : a < 2 ^ 64) (hb : b < 2 ^ 64) :
+    (if evalICmp .ult (BitVec.ofNat 64 a) (BitVec.ofNat 64 b) = 1 then
+        BitVec.ofNat 64 a else BitVec.ofNat 64 b) = BitVec.ofNat 64 (min a b) := by
+  by_cases h : a < b
+  · have h1 : evalICmp .ult (BitVec.ofNat 64 a) (BitVec.ofNat 64 b) = 1#1 :=
+      gap_ult_one ha hb h
+    rw [h1, if_pos (by decide), Nat.min_eq_left (by omega)]
+  · have hz : evalICmp .ult (BitVec.ofNat 64 a) (BitVec.ofNat 64 b) = 0#1 := by
+      rcases LeanLLVM.Refinement.BlockEval.bitVec1_eq_zero_or_one
+        (evalICmp .ult (BitVec.ofNat 64 a) (BitVec.ofNat 64 b)) with h' | h'
+      · exact h'
+      · exact absurd (gap_ult_of_one ha hb h') h
+    rw [hz, if_neg (by decide), Nat.min_eq_right (by omega)]
+
 /-! ### Axiom footprints -/
 
 #print axioms odGapLitCheck_of_firstDiff
@@ -1738,5 +1759,122 @@ theorem odGap_numberAccept_ifEnd {mem : Mem} {c pos b e ip ee next : Nat}
 #print axioms odGapSegment_readBytes
 #print axioms odGapLitScan_map_add
 #print axioms odGap_unchangedOutside_record
+#print axioms gapSub_eq_ofNat
+#print axioms gapLit_cond_min
+
+end LeanLLVM.Refinement
+namespace LeanLLVM.Refinement
+
+open LeanLLVM
+open LeanLLVM.Refinement.JsonStage2IR (stage2Calls)
+open LeanLLVM.Refinement.BlockEval (stateAt cells denoteCode_gep8_reg bitVec1_eq_zero_or_one)
+open LeanLLVM.Refinement.JsonEntrySteps (readBytes_writeBytes_frame readBytes_length)
+
+/-- **The scalar refusal row's body.**  At `if.end` with the first byte in no
+arm's class, the body leaves for `if.else`, the dispatch refuses at `pos`, and
+`cleanup82` returns `void` with the tag-3 record.  Two steps before the dispatch,
+at most five through it, and one to return. -/
+theorem odGap_scalar_ifEnd {mem : Mem} {c pos b e ip next : Nat}
+    {win : List UInt8} {s : State}
+    (hpc : s.pc = "if.end") (hmem : s.mem = mem)
+    (h0 : lookupName s.env "%0" = some (.ptr b))
+    (ht : lookupName s.env "%t.0.val" = some (.int 64 (BitVec.ofNat 64 pos)))
+    (hc : lookupName s.env "%c" = some (.ptr c))
+    (hbytesAt : gapBytesAt mem win b ip) (hblen : win.length = ip)
+    (hposlt : pos < ip)
+    (hpos64 : pos < 2 ^ 64) (hip63 : ip < 2 ^ 63)
+    (he : readBytes mem (c + 1112) 8 = some (natToBytes e 8)) (he64 : e < 2 ^ 64)
+    (hch : gapScalarStart (win.getD pos 0)) :
+    ∃ j : Nat, j ≤ 8 ∧
+      runFuel (stage2Calls stage2SubCalls) j odGapRecoverBody s =
+        some (.ret none (stage2ErrSetMsg mem e pos 3)) := by
+  have hnotnum : ¬ gapNumberByte (gapByte (win.getD pos 0)) :=
+    fun h => hch.1 ((odGapNumberByte_iff' (win.getD pos 0)).mp h)
+  have hbit : (evalICmp .eq (gapByte (win.getD pos 0)) (BitVec.ofNat 8 45) |||
+      evalICmp .ult (gapByte (win.getD pos 0) + BitVec.ofNat 8 208)
+        (BitVec.ofNat 8 10)) = 0#1 := by
+    have h1 : evalICmp .eq (gapByte (win.getD pos 0)) (BitVec.ofNat 8 45) = 0#1 := by
+      rcases bitVec1_eq_zero_or_one _ with h | h
+      · exact h
+      · exact absurd (Or.inl h) hnotnum
+    have h2 : evalICmp .ult (gapByte (win.getD pos 0) + BitVec.ofNat 8 208)
+        (BitVec.ofNat 8 10) = 0#1 := by
+      rcases bitVec1_eq_zero_or_one _ with h | h
+      · exact h
+      · exact absurd (Or.inr h) hnotnum
+    rw [h1, h2]
+    rfl
+  have hbyte : readBytes s.mem (b + pos) 1 =
+      some (natToBytes (gapByte (win.getD pos 0)).toNat 1) := by
+    rw [hmem]
+    exact gap_readOne (h := hbytesAt) (hc := hposlt) (hbyte := rfl)
+  have hse : ((BitVec.ofNat 64 pos).signExtend 64).toNat = pos :=
+    gap_signExtend_ofNat pos hpos64
+  have hse63 : pos < 2 ^ 63 := by omega
+  have hstep1 : step (stage2Calls stage2SubCalls) odGapRecoverBody (stateAt s.env s) =
+      .jump (stateAt (gapNumIfEndEnv s.env b pos (gapByte (win.getD pos 0)))
+        { s with pc := "if.else", pre := some "if.end" }) :=
+    gapNum_step_ifEnd_nonNum (calls := stage2Calls stage2SubCalls) (env := s.env)
+      (s := s) hpc h0 ht hse hse63 hbyte hbit
+  let s1 : State := stateAt (gapNumIfEndEnv s.env b pos (gapByte (win.getD pos 0)))
+    { s with pc := "if.else", pre := some "if.end" }
+  have h7 : lookupName s1.env "%7" = some (.int 8 (gapByte (win.getD pos 0))) := by
+    simp only [s1, stateAt, gapNumIfEndEnv]; block_lk
+  have hc1 : lookupName s1.env "%c" = some (.ptr c) := by
+    simp only [s1, stateAt, gapNumIfEndEnv]; block_lk
+  have ht1 : lookupName s1.env "%t.0.val" = some (.int 64 (BitVec.ofNat 64 pos)) := by
+    simp only [s1, stateAt, gapNumIfEndEnv]; block_lk
+  have hmem1 : s1.mem = mem := by simp only [s1, stateAt]; exact hmem
+  have hrec1 : readBytes s1.mem (c + 1112) 8 = some (natToBytes e 8) := by
+    rw [hmem1]; exact he
+  have hbad102 : gapByte (win.getD pos 0) ≠ BitVec.ofNat 8 102 := by
+    intro h
+    refine hch.2.2.1 ?_
+    rw [← gapLit_gapByte_eq]
+    rw [show BitVec.ofNat 8 102 = gapByte (0x66 : UInt8) from by decide] at h
+    exact h
+  have hbad110 : gapByte (win.getD pos 0) ≠ BitVec.ofNat 8 110 := by
+    intro h
+    refine hch.2.2.2 ?_
+    rw [← gapLit_gapByte_eq]
+    rw [show BitVec.ofNat 8 110 = gapByte (0x6E : UInt8) from by decide] at h
+    exact h
+  have hbad116 : gapByte (win.getD pos 0) ≠ BitVec.ofNat 8 116 := by
+    intro h
+    refine hch.2.1 ?_
+    rw [← gapLit_gapByte_eq]
+    rw [show BitVec.ofNat 8 116 = gapByte (0x74 : UInt8) from by decide] at h
+    exact h
+  obtain ⟨e', j3, hj3, hpc3, hpre3, hmem3, _, _, _, hrun3⟩ :=
+    gapLit_dispatch_refuse (calls := stage2Calls stage2SubCalls) (env := s1.env)
+      (s := s1) (cur := c) (r := e)
+      (t := BitVec.ofNat 64 pos) (x := gapByte (win.getD pos 0))
+      rfl h7 hbad102 hbad110 hbad116 hc1 hrec1 he64 ht1
+  have hrecEq : writeBytes
+      (writeBytes (writeBytes s1.mem e (natToBytes 0 4)) (e + 8)
+        (natToBytes (BitVec.ofNat 64 pos).toNat 8))
+      (e + 16) (natToBytes 3 8) = stage2ErrSetMsg mem e pos 3 := by
+    rw [hmem1]
+    simp only [stage2ErrSetMsg, stage2ErrSet, wordBytes,
+      gap_word64 hpos64]
+  have hret : step (stage2Calls stage2SubCalls) odGapRecoverBody e' = .ret none e' :=
+    gap_step_cleanup82 (calls := stage2Calls stage2SubCalls) (env := e'.env) (s := e') hpc3
+  have hrunRet : runFuel (stage2Calls stage2SubCalls) 1 odGapRecoverBody e' =
+      some (.ret none (stage2ErrSetMsg mem e pos 3)) := by
+    refine gapNum_runFuel_ret_void hret ?_
+    rw [hmem3, hrecEq]
+  refine ⟨1 + (j3 + 1), by omega, ?_⟩
+  have hstep1' : step (stage2Calls stage2SubCalls) odGapRecoverBody s = .jump s1 := by
+    simpa only [s1, stateAt] using hstep1
+  rw [show 1 + (j3 + 1) = 1 + (j3 + 1) from rfl,
+    runFuel_jump_prefix hstep1' (j3 + 1)]
+  have hrun3' : runFuel (stage2Calls stage2SubCalls) (j3 + 1) odGapRecoverBody s1 =
+      runFuel (stage2Calls stage2SubCalls) 1 odGapRecoverBody e' := by
+    simpa only [stateAt] using hrun3 1
+  rw [hrun3']
+  exact hrunRet
+/-! ### Axiom footprints -/
+
+#print axioms odGap_scalar_ifEnd
 
 end LeanLLVM.Refinement
