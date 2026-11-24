@@ -1,6 +1,7 @@
 /-
 `od_gap_recover` at its call boundary: the entry chain, the token-at-`ip` case,
-the first scan's routing and head, and the arithmetic lemmas its run reads.
+the first scan's routing, blocks and run, and the arithmetic lemmas its run
+reads.
 
 `JsonStage2HelperIROdGapSteps` pins the body's blocks and proves the instruction
 and terminator steps at its widths.  This module begins the run those steps
@@ -11,13 +12,24 @@ path the body takes when the token's position is already `ip` — together with 
 rule's no-write value at that position and the two word readings the model's
 fields use.  The `p = ip` case of the `runFuel` completion is proved (`gap_run_atIp`, with
 `gap_rule_atIp`'s `.unchanged` value), and it states the model's post at that one
-staging — not a contract over the whole function.  The first scan's vocabulary is
-here as far as its head: the routing the switch takes at every byte
-(`gapRoute`), and `land.rhs`'s two steps, entered from `cond.end` and from
-`while.body`.  The scan's remaining blocks, its `BoundLoop` instance and its run,
-the four refusal arms and the other no-write case (the scan advancing to `ip`) are
-not in this module, so the body's relation to the model is still the seam
-`docs/contract.md` records.
+staging — not a contract over the whole function.
+
+The first scan is proved as a run: the routing the switch takes at every byte
+(`gapRoute`), `land.rhs`'s two steps, the scan's three `runFuel` prefixes — the
+whitespace exit to `while.end` (`gap_scan_exit_ws`), the `ip` exit to `cleanup82`
+(`gap_scan_exit_ip`) and the advance back to the head (`gap_scan_step_loop`, over
+`gap_scan_toWhileBody`) — the invariant they preserve (`gapScanInv`: the carried
+counter, the stable cells, the no-whitespace prefix and the budget `ip ≤ c + r`),
+the `BoundLoop` instance built from them (`gapScanLoop`, `cost = 5`) with its
+`run` and `run_from` (`gapScanLoop_run`, `gapScanLoop_run_from`), and the two
+exits' continuations: `while.end`'s `%cmp6` false into `if.end` with
+`%ee.0.lcssa` the first whitespace (`gap_scan_whileEnd_continue`), and
+`cleanup82`'s `void` return with the model writing nothing
+(`gap_scan_cleanup82_continue`).
+
+The literal loop that follows `if.end`, the four refusal arms and the model's
+post beyond the scan's exit are not in this module, so the body's relation to the
+model is still the seam `docs/contract.md` records.
 -/
 import LeanLLVM.Refinement.JsonStage2HelperIROdGapSteps
 
@@ -1527,5 +1539,836 @@ theorem gap_run_atIp {nf : Calls} {mem : Mem} {next c ip b n ix nix k e lt lf ln
 #print axioms gap_eq_zero
 #print axioms gap_eq_one
 #print axioms gap_ofNat_ne
+
+/-! ### The scan's byte reads
+
+The scan's head reads one byte at a time, while the document is read as a range
+(`readBytes mem b ip`).  `gapBytesAt` states the range's bytes one at a time, and
+`gap_readOne` turns one of them into the one-byte `readBytes` the head's load
+consumes. -/
+
+/-- The document's bytes, as the per-byte reads a byte-walking body performs. -/
+def gapBytesAt (mem : Mem) (bytes : List UInt8) (b ip : Nat) : Prop :=
+  ∀ i, i < ip → readByte mem (b + i) = some (bytes.getD i 0)
+
+/-- A range's read is the byte-by-byte one. -/
+theorem gapBytesAt_of_readBytes {mem : Mem} {bytes : List UInt8} {b ip : Nat}
+    (h : readBytes mem b ip = some bytes) : gapBytesAt mem bytes b ip := by
+  intro i hi
+  exact readByte_of_readBytes h hi
+
+/-- The byte a one-byte load reads, as the loaded byte's encoding. -/
+theorem gap_natToBytes_gapByte (byte : UInt8) :
+    natToBytes (gapByte byte).toNat 1 = [byte] := by
+  simp only [gapByte, natToBytes, BitVec.toNat_ofNat]
+  rw [Nat.mod_eq_of_lt byte.toNat_lt, Nat.mod_eq_of_lt byte.toNat_lt, UInt8.ofNat_toNat]
+
+/-- The one-byte read the head's load consumes, supplied by the range's read. -/
+theorem gap_readOne {mem : Mem} {bytes : List UInt8} {b ip c : Nat} {byte : UInt8}
+    (h : gapBytesAt mem bytes b ip) (hc : c < ip) (hbyte : bytes.getD c 0 = byte) :
+    readBytes mem (b + c) 1 = some (natToBytes (gapByte byte).toNat 1) := by
+  rw [JsonEntrySteps.readBytes_one, h c hc, hbyte, gap_natToBytes_gapByte]
+  rfl
+
+/-! ### The model's prefix arithmetic
+
+The position the scan stops at is the model's `gapEe`: the count of
+non-whitespace bytes from the token's start.  The invariant carries that count as
+a prefix fact — the first `c - p` bytes from `p` are non-whitespace — and these
+lemmas turn it into the model's value at each of the scan's two exits. -/
+
+/-- A dropped list's byte at an offset. -/
+theorem gap_getD_drop_add (bs : List UInt8) (a i : Nat) :
+    (bs.drop a).getD i 0 = bs.getD (a + i) 0 := by
+  induction bs generalizing a i with
+  | nil => cases a <;> cases i <;> rfl
+  | cons b bs ih => cases a with
+    | zero => simp
+    | succ a =>
+      rw [List.drop_succ_cons, ih, show a + 1 + i = a + i + 1 from by omega]
+      simp [List.getD]
+
+/-- A dropped list's first byte. -/
+theorem gap_getD_drop (bs : List UInt8) (k : Nat) :
+    (bs.drop k).getD 0 0 = bs.getD k 0 := by
+  rw [gap_getD_drop_add, Nat.add_zero]
+
+/-- The run from a non-whitespace prefix appends. -/
+theorem gapNonWsRun_add {k m : Nat} {bs : List UInt8}
+    (h : gapNonWsRun k bs = k) :
+    gapNonWsRun (k + m) bs = k + gapNonWsRun m (bs.drop k) := by
+  induction k generalizing bs with
+  | zero => simp
+  | succ k ih =>
+    cases bs with
+    | nil => simp [gapNonWsRun] at h
+    | cons b bs =>
+      simp only [gapNonWsRun] at h
+      split at h
+      · omega
+      · rename_i hws
+        have hk : gapNonWsRun k bs = k := by omega
+        rw [show k + 1 + m = k + m + 1 from by omega]
+        simp only [gapNonWsRun, hws, Bool.false_eq_true, ite_false, List.drop_succ_cons]
+        rw [ih hk]
+        omega
+
+/-- A run that starts on a whitespace byte is zero. -/
+theorem gapNonWsRun_zero_of_ws {m : Nat} {bs : List UInt8} (hm : 0 < m)
+    (hws : gapIsWs (bs.getD 0 0) = true) : gapNonWsRun m bs = 0 := by
+  cases m with
+  | zero => omega
+  | succ m =>
+    cases bs with
+    | nil => simp [gapIsWs] at hws
+    | cons b bs =>
+      have hb : gapIsWs b = true := hws
+      simp [gapNonWsRun, hb]
+
+/-- A run continues one byte past a non-whitespace prefix. -/
+theorem gapNonWsRun_succ {k : Nat} {bs : List UInt8}
+    (h : gapNonWsRun k bs = k) (hk : k < bs.length)
+    (hws : gapIsWs (bs.getD k 0) = false) :
+    gapNonWsRun (k + 1) bs = k + 1 := by
+  rw [gapNonWsRun_add h]
+  have hone : gapNonWsRun 1 (bs.drop k) = 1 := by
+    have hne : bs.drop k ≠ [] := by
+      intro hnil
+      have h0 : (bs.drop k).length = 0 := by rw [hnil]; rfl
+      rw [List.length_drop] at h0
+      omega
+    cases hd : bs.drop k with
+    | nil => exact absurd hd hne
+    | cons b rest =>
+      have hb : gapIsWs b = false := by
+        have hh := hws
+        rw [← gap_getD_drop bs k] at hh
+        rw [show (bs.drop k).getD 0 0 = (b :: rest).getD 0 0 from by rw [hd]] at hh
+        simpa using hh
+      simp [gapNonWsRun, hb]
+  rw [hone]
+
+/-- A drop of a drop. -/
+theorem gap_drop_drop (bs : List UInt8) (a b : Nat) :
+    (bs.drop a).drop b = bs.drop (a + b) := List.drop_drop ..
+
+/-- **The scan's whitespace exit.**  With the first `c - p` bytes non-whitespace
+and the byte at `c` a whitespace, the model's first loop has stopped at `c`. -/
+theorem gapEe_of_prefix_ws {bytes : List UInt8} {ip p c : Nat}
+    (hpc : p ≤ c) (hlt : c < ip)
+    (hpre : gapNonWsRun (c - p) (bytes.drop p) = c - p)
+    (hws : gapIsWs (bytes.getD c 0) = true) :
+    gapEe bytes ip p = c := by
+  unfold gapEe
+  have hadd := gapNonWsRun_add (m := ip - c) hpre
+  rw [show c - p + (ip - c) = ip - p from by omega] at hadd
+  rw [hadd, gap_drop_drop, show p + (c - p) = c from by omega,
+    gapNonWsRun_zero_of_ws (m := ip - c) (by omega)
+      (by rw [gap_getD_drop]; exact hws)]
+  omega
+
+/-- **The scan's `ip` exit.**  With the first `c - p` bytes non-whitespace, the
+byte at `c` not a whitespace, and `c + 1 = ip`, the model's first loop has run
+the whole window: its stop is `ip`. -/
+theorem gapEe_of_prefix_all {bytes : List UInt8} {ip p c : Nat}
+    (hblen : bytes.length = ip) (hpc : p ≤ c) (hnext : c + 1 = ip)
+    (hpre : gapNonWsRun (c - p) (bytes.drop p) = c - p)
+    (hnws : gapIsWs (bytes.getD c 0) = false) :
+    gapEe bytes ip p = ip := by
+  unfold gapEe
+  have hone : gapNonWsRun 1 (bytes.drop c) = 1 :=
+    gapNonWsRun_succ (k := 0) rfl (by rw [List.length_drop, hblen]; omega)
+      (by rw [gap_getD_drop]; exact hnws)
+  have hadd := gapNonWsRun_add (m := ip - c) hpre
+  rw [show c - p + (ip - c) = ip - p from by omega] at hadd
+  rw [hadd, gap_drop_drop, show p + (c - p) = c from by omega,
+    show ip - c = 1 from by omega, hone]
+  omega
+
+/-- `ofNat 64 c + 1` is the successor's word. -/
+theorem gap_ofNat64_add_one {c : Nat} (hc : c + 1 < 2 ^ 64) :
+    BitVec.ofNat 64 c + 1 = BitVec.ofNat 64 (c + 1) := by
+  have hc' : c < 2 ^ 64 := by omega
+  apply BitVec.eq_of_toNat_eq
+  rw [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat,
+    show (1 : BitVec 64).toNat = 1 from rfl, Nat.mod_eq_of_lt hc',
+    Nat.mod_eq_of_lt hc]
+
+/-! ### The scan's invariant
+
+The head `land.rhs` carries the counter `c` in the cell its `phi` selects: the
+token's position on the first visit (`%t.0.val`, from `cond.end`) and the
+incremented counter on every later one (`%inc`, from `while.body`), so the
+predecessor picks which cell the counter lives in.  The budget `ip ≤ c + r` is
+what `BoundLoop` consumes as its measure, and `gapNonWsRun`'s prefix fact is the
+model's: every byte from the token's start to `c` is non-whitespace. -/
+
+/-- The counter the head's `phi` carries, by predecessor. -/
+def gapScanCarried (s : State) (c : Nat) : Prop :=
+  (s.pre = some "cond.end" ∧
+    lookupName s.env "%t.0.val" = some (.int 64 (BitVec.ofNat 64 c))) ∨
+  (s.pre = some "while.body" ∧
+    lookupName s.env "%inc" = some (.int 64 (BitVec.ofNat 64 c)))
+
+/-- The scan's invariant at `land.rhs`: the head's own block, the caller's memory,
+the two cells a step reads besides the counter (`%0` the document's base and
+`%cond` the window's end), the carried counter, the window's arithmetic —
+`p ≤ c < ip < 2 ^ 63`, the last because the head's `gep i8` signs the counter —
+the budget `ip ≤ c + r`, and the model's no-whitespace prefix. -/
+def gapScanInv (bytes : List UInt8) (ip b p : Nat) (mem : Mem)
+    (r : Nat) (s : State) (c : Nat) : Prop :=
+  s.pc = "land.rhs" ∧ s.mem = mem ∧
+  lookupName s.env "%0" = some (.ptr b) ∧
+  lookupName s.env "%cond" = some (.int 64 (BitVec.ofNat 64 ip)) ∧
+  gapScanCarried s c ∧
+  p ≤ c ∧ c < ip ∧ ip < 2 ^ 63 ∧ ip ≤ c + r ∧
+  gapNonWsRun (c - p) (bytes.drop p) = c - p
+
+/-- The head's exit test: the byte at the counter is a whitespace, or the counter
+is the window's last position. -/
+def gapScanAtBound (bytes : List UInt8) (ip : Nat) (_s : State) (c : Nat) : Bool :=
+  gapIsWs (bytes.getD c 0) || decide (c + 1 = ip)
+
+/-- The scan's exit word: at `while.end` the counter is the model's `ee` — the
+first whitespace — and at `cleanup82` the model's `ee` is `ip`.  The cells the
+exit's continuation reads are here, and so is the predecessor, because the
+`while.end` `phi` selects by it. -/
+def gapScanExit (bytes : List UInt8) (ip p : Nat) (e : State) : Prop :=
+  (∃ (leaf : String) (c : Nat),
+      e.pc = "while.end" ∧ e.pre = some leaf ∧
+      phiIncoming leaf
+          [("cond.end", Operand.reg "%t.0.val"), ("LeafBlock", Operand.reg "%ee.011"),
+           ("LeafBlock1", Operand.reg "%ee.011"),
+           ("LeafBlock3", Operand.reg "%ee.011")] = some (Operand.reg "%ee.011") ∧
+      lookupName e.env "%ee.011" = some (.int 64 (BitVec.ofNat 64 c)) ∧
+      lookupName e.env "%cond" = some (.int 64 (BitVec.ofNat 64 ip)) ∧
+      gapEe bytes ip p = c ∧ c < ip)
+  ∨ (e.pc = "cleanup82" ∧ gapEe bytes ip p = ip)
+
+/-- The invariant at the head's first visit: the token's start is the counter,
+and the budget is the whole bound. -/
+theorem gapScanInv_seed {bytes : List UInt8} {ip b p : Nat} {mem : Mem} {s : State}
+    (hp : p < ip) (hiplt : ip < 2 ^ 63)
+    (hpc : s.pc = "land.rhs") (hpre : s.pre = some "cond.end") (hmem : s.mem = mem)
+    (hb : lookupName s.env "%0" = some (.ptr b))
+    (ht : lookupName s.env "%t.0.val" = some (.int 64 (BitVec.ofNat 64 p)))
+    (hcond : lookupName s.env "%cond" = some (.int 64 (BitVec.ofNat 64 ip))) :
+    gapScanInv bytes ip b p mem ip s p :=
+  ⟨hpc, hmem, hb, hcond, Or.inl ⟨hpre, ht⟩, le_rfl, hp, hiplt, by omega, by simp [gapNonWsRun]⟩
+
+/-! ### The scan's three prefixes
+
+Each is the `∃ j ≤ cost` shape `BoundLoop`'s arms consume: at an exit the state
+leaves with `gapScanExit`, and on the advance the invariant holds one counter
+further with one unit of the budget spent.  `cost = 5` is the longest of the
+three, the advance and the `ip` exit. -/
+
+/-- **The scan's whitespace exit.**  From the head over a whitespace byte, three
+control steps (`'\t'`/`'\n'`) or four (`'\r'`/`' '`) reach `while.end`, the counter
+being the model's `ee`. -/
+theorem gap_scan_exit_ws {calls : Calls} {bytes : List UInt8} {ip b p r c : Nat}
+    {mem : Mem} {s : State}
+    (hbytes : gapBytesAt mem bytes b ip)
+    (hinv : gapScanInv bytes ip b p mem r s c)
+    (hws : gapIsWs (bytes.getD c 0) = true) :
+    ∃ (e : State) (j : Nat), j ≤ 4 ∧ (e.pc = "while.end" ∨ e.pc = "cleanup82") ∧
+      gapScanExit bytes ip p e ∧
+      ∀ k, runFuel calls (j + k) odGapRecoverBody s =
+        runFuel calls k odGapRecoverBody e := by
+  obtain ⟨hpc, hmem, hb, hcond, hcarried, hple, hclt, hiplt, _hbud, hpre⟩ := hinv
+  have hc63 : c < 2 ^ 63 := by omega
+  have hbytes' : gapBytesAt s.mem bytes b ip := by rw [hmem]; exact hbytes
+  have hread : readBytes s.mem (b + c) 1
+      = some (natToBytes (gapByte (bytes.getD c 0)).toNat 1) :=
+    gap_readOne hbytes' hclt rfl
+  have hee : gapEe bytes ip p = c := gapEe_of_prefix_ws hple hclt hpre hws
+  let s1 : State := stateAt (gapLandRhsEnv s.env b c (bytes.getD c 0))
+    { s with pc := "NodeBlock5", pre := some "land.rhs" }
+  have h1 : step calls odGapRecoverBody s = .jump s1 := by
+    rcases hcarried with ⟨hpre0, ht⟩ | ⟨hpre0, hinc⟩
+    · have hh := gap_step_landRhs_condEnd (calls := calls) (env := s.env) (s := s)
+        (b := b) (c := c) (byte := bytes.getD c 0) hpc hpre0 hb ht hread hc63
+      have hst : stateAt s.env s = s := rfl
+      simpa only [hst, s1] using hh
+    · have hh := gap_step_landRhs_whileBody (calls := calls) (env := s.env) (s := s)
+        (b := b) (c := c) (byte := bytes.getD c 0) hpc hpre0 hb hinc hread hc63
+      have hst : stateAt s.env s = s := rfl
+      simpa only [hst, s1] using hh
+  have hs1 : lookupName s1.env "%6" = some (.int 8 (gapByte (bytes.getD c 0))) := by
+    simp only [s1, stateAt, gapLandRhsEnv]
+    block_lk
+  have hroute := gapRoute_ws hws
+  rcases hroute with ⟨hb1, hb2⟩ | ⟨hb1, hb3, hb4⟩ | ⟨hb1, hb3, hb5⟩
+  · -- `\t`/`\n`: `NodeBlock5` → `LeafBlock` → `while.end`
+    let s2 : State := stateAt
+      (("%Pivot6", .int 1 (evalICmp .slt (gapByte (bytes.getD c 0))
+        (BitVec.ofNat 8 13))) :: s1.env)
+      { s1 with pc := "LeafBlock", pre := some "NodeBlock5" }
+    have h2 : step calls odGapRecoverBody s1 = .jump s2 := by
+      have hh := gap_step_NodeBlock5_toLeaf (calls := calls) (env := s1.env) (s := s1)
+        (byte := bytes.getD c 0) rfl rfl hs1 hb1
+      have hst : stateAt s1.env s1 = s1 := rfl
+      simpa only [hst, s2] using hh
+    have hs2 : lookupName s2.env "%6" = some (.int 8 (gapByte (bytes.getD c 0))) := by
+      simp only [s2, stateAt]
+      block_lk
+    let s3 : State := stateAt
+      (("%SwitchLeaf", .int 1 (evalICmp .ule (gapOff (gapByte (bytes.getD c 0)))
+          (BitVec.ofNat 8 1))) ::
+        ("%.off", .int 8 (gapOff (gapByte (bytes.getD c 0)))) :: s2.env)
+      { s2 with pc := "while.end", pre := some "LeafBlock" }
+    have h3 : step calls odGapRecoverBody s2 = .jump s3 := by
+      have hh := gap_step_LeafBlock_toWhileEnd (calls := calls) (env := s2.env) (s := s2)
+        (byte := bytes.getD c 0) rfl rfl hs2 hb2
+      have hst : stateAt s2.env s2 = s2 := rfl
+      simpa only [hst, s3] using hh
+    refine ⟨s3, 3, by omega, Or.inl rfl, ?_, ?_⟩
+    · refine Or.inl ⟨"LeafBlock", c, rfl, rfl, by decide, ?_, ?_, hee, hclt⟩
+      · simp only [s3, s2, s1, stateAt, gapLandRhsEnv]
+        block_lk
+      · simp only [s3, s2, s1, stateAt, gapLandRhsEnv]
+        block_lk
+    · intro k
+      rw [show 3 + k = 1 + (1 + (1 + k)) from by omega,
+        runFuel_jump_prefix h1 (1 + (1 + k)),
+        runFuel_jump_prefix h2 (1 + k), runFuel_jump_prefix h3 k]
+  · -- `\r`: `NodeBlock5` → `NodeBlock` → `LeafBlock1` → `while.end`
+    let s2 : State := stateAt
+      (("%Pivot6", .int 1 (evalICmp .slt (gapByte (bytes.getD c 0))
+        (BitVec.ofNat 8 13))) :: s1.env)
+      { s1 with pc := "NodeBlock", pre := some "NodeBlock5" }
+    have h2 : step calls odGapRecoverBody s1 = .jump s2 := by
+      have hh := gap_step_NodeBlock5_toNode (calls := calls) (env := s1.env) (s := s1)
+        (byte := bytes.getD c 0) rfl rfl hs1 hb1
+      have hst : stateAt s1.env s1 = s1 := rfl
+      simpa only [hst, s2] using hh
+    have hs2 : lookupName s2.env "%6" = some (.int 8 (gapByte (bytes.getD c 0))) := by
+      simp only [s2, stateAt]
+      block_lk
+    let s3 : State := stateAt
+      (("%Pivot", .int 1 (evalICmp .slt (gapByte (bytes.getD c 0))
+        (BitVec.ofNat 8 32))) :: s2.env)
+      { s2 with pc := "LeafBlock1", pre := some "NodeBlock" }
+    have h3 : step calls odGapRecoverBody s2 = .jump s3 := by
+      have hh := gap_step_NodeBlock_toLeaf1 (calls := calls) (env := s2.env) (s := s2)
+        (byte := bytes.getD c 0) rfl rfl hs2 hb3
+      have hst : stateAt s2.env s2 = s2 := rfl
+      simpa only [hst, s3] using hh
+    have hs3 : lookupName s3.env "%6" = some (.int 8 (gapByte (bytes.getD c 0))) := by
+      simp only [s3, stateAt]
+      block_lk
+    let s4 : State := stateAt
+      (("%SwitchLeaf2", .int 1 (evalICmp .eq (gapByte (bytes.getD c 0))
+        (BitVec.ofNat 8 13))) :: s3.env)
+      { s3 with pc := "while.end", pre := some "LeafBlock1" }
+    have h4 : step calls odGapRecoverBody s3 = .jump s4 := by
+      have hh := gap_step_LeafBlock1_toWhileEnd (calls := calls) (env := s3.env) (s := s3)
+        (byte := bytes.getD c 0) rfl rfl hs3 hb4
+      have hst : stateAt s3.env s3 = s3 := rfl
+      simpa only [hst, s4] using hh
+    refine ⟨s4, 4, by omega, Or.inl rfl, ?_, ?_⟩
+    · refine Or.inl ⟨"LeafBlock1", c, rfl, rfl, by decide, ?_, ?_, hee, hclt⟩
+      · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
+        block_lk
+      · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
+        block_lk
+    · intro k
+      rw [show 4 + k = 1 + (1 + (1 + (1 + k))) from by omega,
+        runFuel_jump_prefix h1 (1 + (1 + (1 + k))),
+        runFuel_jump_prefix h2 (1 + (1 + k)),
+        runFuel_jump_prefix h3 (1 + k), runFuel_jump_prefix h4 k]
+  · -- `\ `: `NodeBlock5` → `NodeBlock` → `LeafBlock3` → `while.end`
+    let s2 : State := stateAt
+      (("%Pivot6", .int 1 (evalICmp .slt (gapByte (bytes.getD c 0))
+        (BitVec.ofNat 8 13))) :: s1.env)
+      { s1 with pc := "NodeBlock", pre := some "NodeBlock5" }
+    have h2 : step calls odGapRecoverBody s1 = .jump s2 := by
+      have hh := gap_step_NodeBlock5_toNode (calls := calls) (env := s1.env) (s := s1)
+        (byte := bytes.getD c 0) rfl rfl hs1 hb1
+      have hst : stateAt s1.env s1 = s1 := rfl
+      simpa only [hst, s2] using hh
+    have hs2 : lookupName s2.env "%6" = some (.int 8 (gapByte (bytes.getD c 0))) := by
+      simp only [s2, stateAt]
+      block_lk
+    let s3 : State := stateAt
+      (("%Pivot", .int 1 (evalICmp .slt (gapByte (bytes.getD c 0))
+        (BitVec.ofNat 8 32))) :: s2.env)
+      { s2 with pc := "LeafBlock3", pre := some "NodeBlock" }
+    have h3 : step calls odGapRecoverBody s2 = .jump s3 := by
+      have hh := gap_step_NodeBlock_toLeaf3 (calls := calls) (env := s2.env) (s := s2)
+        (byte := bytes.getD c 0) rfl rfl hs2 hb3
+      have hst : stateAt s2.env s2 = s2 := rfl
+      simpa only [hst, s3] using hh
+    have hs3 : lookupName s3.env "%6" = some (.int 8 (gapByte (bytes.getD c 0))) := by
+      simp only [s3, stateAt]
+      block_lk
+    let s4 : State := stateAt
+      (("%SwitchLeaf4", .int 1 (evalICmp .eq (gapByte (bytes.getD c 0))
+        (BitVec.ofNat 8 32))) :: s3.env)
+      { s3 with pc := "while.end", pre := some "LeafBlock3" }
+    have h4 : step calls odGapRecoverBody s3 = .jump s4 := by
+      have hh := gap_step_LeafBlock3_toWhileEnd (calls := calls) (env := s3.env) (s := s3)
+        (byte := bytes.getD c 0) rfl rfl hs3 hb5
+      have hst : stateAt s3.env s3 = s3 := rfl
+      simpa only [hst, s4] using hh
+    refine ⟨s4, 4, by omega, Or.inl rfl, ?_, ?_⟩
+    · refine Or.inl ⟨"LeafBlock3", c, rfl, rfl, by decide, ?_, ?_, hee, hclt⟩
+      · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
+        block_lk
+      · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
+        block_lk
+    · intro k
+      rw [show 4 + k = 1 + (1 + (1 + (1 + k))) from by omega,
+        runFuel_jump_prefix h1 (1 + (1 + (1 + k))),
+        runFuel_jump_prefix h2 (1 + (1 + k)),
+        runFuel_jump_prefix h3 (1 + k), runFuel_jump_prefix h4 k]
+
+/-- **The scan's advance head.**  From the head over a non-whitespace byte, three
+control steps (`'\t'`/`'\n'`) or four (`'\r'`/`' '`) — the switch's three
+advancing routes — reach `while.body`, and the cells its own step reads are still
+bound. -/
+theorem gap_scan_toWhileBody {calls : Calls} {bytes : List UInt8} {ip b p r c : Nat}
+    {mem : Mem} {s : State}
+    (hbytes : gapBytesAt mem bytes b ip)
+    (hinv : gapScanInv bytes ip b p mem r s c)
+    (hnws : gapIsWs (bytes.getD c 0) = false) :
+    ∃ (e : State) (j : Nat), j ≤ 4 ∧ e.pc = "while.body" ∧ e.mem = mem ∧
+      lookupName e.env "%ee.011" = some (.int 64 (BitVec.ofNat 64 c)) ∧
+      lookupName e.env "%cond" = some (.int 64 (BitVec.ofNat 64 ip)) ∧
+      lookupName e.env "%0" = some (.ptr b) ∧
+      ∀ k, runFuel calls (j + k) odGapRecoverBody s =
+        runFuel calls k odGapRecoverBody e := by
+  obtain ⟨hpc, hmem, hb, hcond, hcarried, _hple, hclt, hiplt, _hbud, _hpre⟩ := hinv
+  have hc63 : c < 2 ^ 63 := by omega
+  have hbytes' : gapBytesAt s.mem bytes b ip := by rw [hmem]; exact hbytes
+  have hread : readBytes s.mem (b + c) 1
+      = some (natToBytes (gapByte (bytes.getD c 0)).toNat 1) :=
+    gap_readOne hbytes' hclt rfl
+  let s1 : State := stateAt (gapLandRhsEnv s.env b c (bytes.getD c 0))
+    { s with pc := "NodeBlock5", pre := some "land.rhs" }
+  have h1 : step calls odGapRecoverBody s = .jump s1 := by
+    rcases hcarried with ⟨hpre0, ht⟩ | ⟨hpre0, hinc⟩
+    · have hh := gap_step_landRhs_condEnd (calls := calls) (env := s.env) (s := s)
+        (b := b) (c := c) (byte := bytes.getD c 0) hpc hpre0 hb ht hread hc63
+      have hst : stateAt s.env s = s := rfl
+      simpa only [hst, s1] using hh
+    · have hh := gap_step_landRhs_whileBody (calls := calls) (env := s.env) (s := s)
+        (b := b) (c := c) (byte := bytes.getD c 0) hpc hpre0 hb hinc hread hc63
+      have hst : stateAt s.env s = s := rfl
+      simpa only [hst, s1] using hh
+  have hs1 : lookupName s1.env "%6" = some (.int 8 (gapByte (bytes.getD c 0))) := by
+    simp only [s1, stateAt, gapLandRhsEnv]
+    block_lk
+  have hroute := gapRoute_nonWs hnws
+  rcases hroute with ⟨hb1, hb2⟩ | ⟨hb1, hb3, hb4⟩ | ⟨hb1, hb3, hb5⟩
+  · -- `\t`/`\n`: `LeafBlock` advances
+    let s2 : State := stateAt
+      (("%Pivot6", .int 1 (evalICmp .slt (gapByte (bytes.getD c 0))
+        (BitVec.ofNat 8 13))) :: s1.env)
+      { s1 with pc := "LeafBlock", pre := some "NodeBlock5" }
+    have h2 : step calls odGapRecoverBody s1 = .jump s2 := by
+      have hh := gap_step_NodeBlock5_toLeaf (calls := calls) (env := s1.env) (s := s1)
+        (byte := bytes.getD c 0) rfl rfl hs1 hb1
+      have hst : stateAt s1.env s1 = s1 := rfl
+      simpa only [hst, s2] using hh
+    have hs2 : lookupName s2.env "%6" = some (.int 8 (gapByte (bytes.getD c 0))) := by
+      simp only [s2, stateAt]
+      block_lk
+    let s3 : State := stateAt
+      (("%SwitchLeaf", .int 1 (evalICmp .ule (gapOff (gapByte (bytes.getD c 0)))
+          (BitVec.ofNat 8 1))) ::
+        ("%.off", .int 8 (gapOff (gapByte (bytes.getD c 0)))) :: s2.env)
+      { s2 with pc := "while.body", pre := some "LeafBlock" }
+    have h3 : step calls odGapRecoverBody s2 = .jump s3 := by
+      have hh := gap_step_LeafBlock_toWhileBody (calls := calls) (env := s2.env) (s := s2)
+        (byte := bytes.getD c 0) rfl rfl hs2 hb2
+      have hst : stateAt s2.env s2 = s2 := rfl
+      simpa only [hst, s3] using hh
+    refine ⟨s3, 3, by omega, rfl, hmem, ?_, ?_, ?_, ?_⟩
+    · simp only [s3, s2, s1, stateAt, gapLandRhsEnv]
+      block_lk
+    · simp only [s3, s2, s1, stateAt, gapLandRhsEnv]
+      block_lk
+    · simp only [s3, s2, s1, stateAt, gapLandRhsEnv]
+      block_lk
+    · intro k
+      rw [show 3 + k = 1 + (1 + (1 + k)) from by omega,
+        runFuel_jump_prefix h1 (1 + (1 + k)),
+        runFuel_jump_prefix h2 (1 + k), runFuel_jump_prefix h3 k]
+  · -- `\r`: `LeafBlock1` advances
+    let s2 : State := stateAt
+      (("%Pivot6", .int 1 (evalICmp .slt (gapByte (bytes.getD c 0))
+        (BitVec.ofNat 8 13))) :: s1.env)
+      { s1 with pc := "NodeBlock", pre := some "NodeBlock5" }
+    have h2 : step calls odGapRecoverBody s1 = .jump s2 := by
+      have hh := gap_step_NodeBlock5_toNode (calls := calls) (env := s1.env) (s := s1)
+        (byte := bytes.getD c 0) rfl rfl hs1 hb1
+      have hst : stateAt s1.env s1 = s1 := rfl
+      simpa only [hst, s2] using hh
+    have hs2 : lookupName s2.env "%6" = some (.int 8 (gapByte (bytes.getD c 0))) := by
+      simp only [s2, stateAt]
+      block_lk
+    let s3 : State := stateAt
+      (("%Pivot", .int 1 (evalICmp .slt (gapByte (bytes.getD c 0))
+        (BitVec.ofNat 8 32))) :: s2.env)
+      { s2 with pc := "LeafBlock1", pre := some "NodeBlock" }
+    have h3 : step calls odGapRecoverBody s2 = .jump s3 := by
+      have hh := gap_step_NodeBlock_toLeaf1 (calls := calls) (env := s2.env) (s := s2)
+        (byte := bytes.getD c 0) rfl rfl hs2 hb3
+      have hst : stateAt s2.env s2 = s2 := rfl
+      simpa only [hst, s3] using hh
+    have hs3 : lookupName s3.env "%6" = some (.int 8 (gapByte (bytes.getD c 0))) := by
+      simp only [s3, stateAt]
+      block_lk
+    let s4 : State := stateAt
+      (("%SwitchLeaf2", .int 1 (evalICmp .eq (gapByte (bytes.getD c 0))
+        (BitVec.ofNat 8 13))) :: s3.env)
+      { s3 with pc := "while.body", pre := some "LeafBlock1" }
+    have h4 : step calls odGapRecoverBody s3 = .jump s4 := by
+      have hh := gap_step_LeafBlock1_toWhileBody (calls := calls) (env := s3.env) (s := s3)
+        (byte := bytes.getD c 0) rfl rfl hs3 hb4
+      have hst : stateAt s3.env s3 = s3 := rfl
+      simpa only [hst, s4] using hh
+    refine ⟨s4, 4, by omega, rfl, hmem, ?_, ?_, ?_, ?_⟩
+    · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
+      block_lk
+    · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
+      block_lk
+    · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
+      block_lk
+    · intro k
+      rw [show 4 + k = 1 + (1 + (1 + (1 + k))) from by omega,
+        runFuel_jump_prefix h1 (1 + (1 + (1 + k))),
+        runFuel_jump_prefix h2 (1 + (1 + k)),
+        runFuel_jump_prefix h3 (1 + k), runFuel_jump_prefix h4 k]
+  · -- `\ `: `LeafBlock3` advances
+    let s2 : State := stateAt
+      (("%Pivot6", .int 1 (evalICmp .slt (gapByte (bytes.getD c 0))
+        (BitVec.ofNat 8 13))) :: s1.env)
+      { s1 with pc := "NodeBlock", pre := some "NodeBlock5" }
+    have h2 : step calls odGapRecoverBody s1 = .jump s2 := by
+      have hh := gap_step_NodeBlock5_toNode (calls := calls) (env := s1.env) (s := s1)
+        (byte := bytes.getD c 0) rfl rfl hs1 hb1
+      have hst : stateAt s1.env s1 = s1 := rfl
+      simpa only [hst, s2] using hh
+    have hs2 : lookupName s2.env "%6" = some (.int 8 (gapByte (bytes.getD c 0))) := by
+      simp only [s2, stateAt]
+      block_lk
+    let s3 : State := stateAt
+      (("%Pivot", .int 1 (evalICmp .slt (gapByte (bytes.getD c 0))
+        (BitVec.ofNat 8 32))) :: s2.env)
+      { s2 with pc := "LeafBlock3", pre := some "NodeBlock" }
+    have h3 : step calls odGapRecoverBody s2 = .jump s3 := by
+      have hh := gap_step_NodeBlock_toLeaf3 (calls := calls) (env := s2.env) (s := s2)
+        (byte := bytes.getD c 0) rfl rfl hs2 hb3
+      have hst : stateAt s2.env s2 = s2 := rfl
+      simpa only [hst, s3] using hh
+    have hs3 : lookupName s3.env "%6" = some (.int 8 (gapByte (bytes.getD c 0))) := by
+      simp only [s3, stateAt]
+      block_lk
+    let s4 : State := stateAt
+      (("%SwitchLeaf4", .int 1 (evalICmp .eq (gapByte (bytes.getD c 0))
+        (BitVec.ofNat 8 32))) :: s3.env)
+      { s3 with pc := "while.body", pre := some "LeafBlock3" }
+    have h4 : step calls odGapRecoverBody s3 = .jump s4 := by
+      have hh := gap_step_LeafBlock3_toWhileBody (calls := calls) (env := s3.env) (s := s3)
+        (byte := bytes.getD c 0) rfl rfl hs3 hb5
+      have hst : stateAt s3.env s3 = s3 := rfl
+      simpa only [hst, s4] using hh
+    refine ⟨s4, 4, by omega, rfl, hmem, ?_, ?_, ?_, ?_⟩
+    · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
+      block_lk
+    · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
+      block_lk
+    · simp only [s4, s3, s2, s1, stateAt, gapLandRhsEnv]
+      block_lk
+    · intro k
+      rw [show 4 + k = 1 + (1 + (1 + (1 + k))) from by omega,
+        runFuel_jump_prefix h1 (1 + (1 + (1 + k))),
+        runFuel_jump_prefix h2 (1 + (1 + k)),
+        runFuel_jump_prefix h3 (1 + k), runFuel_jump_prefix h4 k]
+
+/-- `while.body`'s exit bit at the window's end: the increment is `ip`. -/
+theorem gap_scan_atIp_bit {c ip : Nat} (hip64 : ip < 2 ^ 64) (hnext : c + 1 = ip) :
+    evalICmp .eq (BitVec.ofNat 64 c + 1) (BitVec.ofNat 64 ip) = 1#1 := by
+  rw [gap_ofNat64_add_one (by omega), hnext]
+  exact gap_eq_self _
+
+/-- `while.body`'s exit bit off the window's end. -/
+theorem gap_scan_offIp_bit {c ip : Nat} (hclt : c < ip) (hip64 : ip < 2 ^ 64)
+    (hnext : c + 1 ≠ ip) :
+    evalICmp .eq (BitVec.ofNat 64 c + 1) (BitVec.ofNat 64 ip) = 0#1 := by
+  rw [gap_ofNat64_add_one (by omega)]
+  exact gap_eq_zero (gap_ofNat_ne (by omega) hip64 hnext)
+
+/-- **The scan's `ip` exit.**  From the head over a non-whitespace byte whose
+successor is the window's end, five control steps reach `cleanup82`, and the
+model's first loop has run the whole window. -/
+theorem gap_scan_exit_ip {calls : Calls} {bytes : List UInt8} {ip b p r c : Nat}
+    {mem : Mem} {s : State}
+    (hbytes : gapBytesAt mem bytes b ip) (hblen : bytes.length = ip)
+    (hinv : gapScanInv bytes ip b p mem r s c)
+    (hnws : gapIsWs (bytes.getD c 0) = false) (hnext : c + 1 = ip) :
+    ∃ (e : State) (j : Nat), j ≤ 5 ∧ (e.pc = "while.end" ∨ e.pc = "cleanup82") ∧
+      gapScanExit bytes ip p e ∧
+      ∀ k, runFuel calls (j + k) odGapRecoverBody s =
+        runFuel calls k odGapRecoverBody e := by
+  obtain ⟨e1, j1, hj1, hpc1, hmem1, h6cell, hcond1, _h0cell, hrun1⟩ :=
+    gap_scan_toWhileBody (calls := calls) hbytes hinv hnws
+  obtain ⟨hpc, hmem, hb, hcond, hcarried, hple, hclt, hiplt, _hbud, hpre⟩ := hinv
+  have hip64 : ip < 2 ^ 64 := by omega
+  have hee : gapEe bytes ip p = ip := gapEe_of_prefix_all hblen hple hnext hpre hnws
+  have hbit : evalICmp .eq (BitVec.ofNat 64 c + 1) (BitVec.ofNat 64 ip) = 1#1 :=
+    gap_scan_atIp_bit hip64 hnext
+  let sE : State := stateAt
+    (("%exitcond.not", .int 1 (evalICmp .eq (BitVec.ofNat 64 c + 1)
+        (BitVec.ofNat 64 ip))) ::
+      ("%inc", .int 64 (BitVec.ofNat 64 c + 1)) :: e1.env)
+    { e1 with pc := "cleanup82", pre := some "while.body" }
+  have hstep : step calls odGapRecoverBody e1 = .jump sE := by
+    have hh := gap_step_whileBody_toCleanup (calls := calls) (env := e1.env) (s := e1)
+      (c := c) (ip := ip) hpc1 h6cell hcond1 hbit
+    have hst : stateAt e1.env e1 = e1 := rfl
+    simpa only [hst, sE] using hh
+  refine ⟨sE, j1 + 1, by omega, Or.inr rfl, Or.inr ⟨rfl, hee⟩, ?_⟩
+  intro k
+  rw [show j1 + 1 + k = j1 + (1 + k) from by omega, hrun1 (1 + k),
+    runFuel_jump_prefix hstep k]
+
+/-- **The scan's advance.**  From the head over a non-whitespace byte whose
+successor is still inside the window, five control steps re-enter `land.rhs` with
+the counter advanced and the invariant at one unit of budget less. -/
+theorem gap_scan_step_loop {calls : Calls} {bytes : List UInt8} {ip b p r c : Nat}
+    {mem : Mem} {s : State}
+    (hbytes : gapBytesAt mem bytes b ip) (hblen : bytes.length = ip)
+    (hinv : gapScanInv bytes ip b p mem (r + 1) s c)
+    (hnws : gapIsWs (bytes.getD c 0) = false) (hnext : c + 1 ≠ ip) :
+    ∃ (e : State) (c' : Nat) (j : Nat), j ≤ 5 ∧ e.pc = "land.rhs" ∧ c < c' ∧
+      gapScanInv bytes ip b p mem r e c' ∧
+      ∀ k, runFuel calls (j + k) odGapRecoverBody s =
+        runFuel calls k odGapRecoverBody e := by
+  obtain ⟨e1, j1, hj1, hpc1, hmem1, h6cell, hcond1, h0cell, hrun1⟩ :=
+    gap_scan_toWhileBody (calls := calls) hbytes hinv hnws
+  obtain ⟨hpc, hmem, hb, hcond, hcarried, hple, hclt, hiplt, hbud, hpre⟩ := hinv
+  have hip64 : ip < 2 ^ 64 := by omega
+  have hkp : c - p < (bytes.drop p).length := by
+    rw [List.length_drop, hblen]; omega
+  have hbit : evalICmp .eq (BitVec.ofNat 64 c + 1) (BitVec.ofNat 64 ip) = 0#1 :=
+    gap_scan_offIp_bit hclt hip64 hnext
+  let sE : State := stateAt
+    (("%exitcond.not", .int 1 (evalICmp .eq (BitVec.ofNat 64 c + 1)
+        (BitVec.ofNat 64 ip))) ::
+      ("%inc", .int 64 (BitVec.ofNat 64 c + 1)) :: e1.env)
+    { e1 with pc := "land.rhs", pre := some "while.body" }
+  have hstep : step calls odGapRecoverBody e1 = .jump sE := by
+    have hh := gap_step_whileBody_toLandRhs (calls := calls) (env := e1.env) (s := e1)
+      (c := c) (ip := ip) hpc1 h6cell hcond1 hbit
+    have hst : stateAt e1.env e1 = e1 := rfl
+    simpa only [hst, sE] using hh
+  have hseed : gapNonWsRun (c + 1 - p) (bytes.drop p) = c + 1 - p := by
+    rw [show c + 1 - p = (c - p) + 1 from by omega,
+      gapNonWsRun_succ hpre hkp
+        (by rw [gap_getD_drop_add, show p + (c - p) = c from by omega]; exact hnws)]
+  refine ⟨sE, c + 1, j1 + 1, by omega, rfl, by omega, ?_, ?_⟩
+  · refine ⟨rfl, hmem1, ?_, ?_, Or.inr ⟨rfl, ?_⟩, by omega, by omega, hiplt,
+      by omega, hseed⟩
+    · simp only [sE, stateAt]
+      block_lk
+    · simp only [sE, stateAt]
+      block_lk
+    · simp only [sE, stateAt]
+      rw [gap_ofNat64_add_one (c := c) (by omega)]
+      block_lk
+  · intro k
+    rw [show j1 + 1 + k = j1 + (1 + k) from by omega, hrun1 (1 + k),
+      runFuel_jump_prefix hstep k]
+
+/-! ### The loop instance
+
+The instance's bound is `ip` itself, its measure the budget `ip ≤ c + r`, and its
+per-iteration control-step bound the longest of the three prefixes: the advance
+and the `ip` exit at five, the whitespace exit at four.  The exits are
+`while.end` and `cleanup82`, because the scan leaves by the switch on a
+whitespace and by `while.body`'s test at the window's end. -/
+
+/-- The scan's exits: `while.end` on a whitespace, `cleanup82` at the window's
+end. -/
+def gapScanExitBlock (e : State) : Prop := e.pc = "while.end" ∨ e.pc = "cleanup82"
+
+/-- **The scan as a `BoundLoop`.**  The budget's zero edge is empty: the invariant
+asks for `c < ip` and for `ip ≤ c`, so no head state carries zero budget, and the
+induction's base case cannot fire.  The exits are the loop's two tests — the
+switch on a whitespace and `while.body`'s equality with `ip` — and the bound `ip`
+is what `run` turns into `(ip + 1) * 5`. -/
+def gapScanLoop (calls : Calls) (bytes : List UInt8) (ip b p : Nat) (mem : Mem)
+    (hbytes : gapBytesAt mem bytes b ip) (hblen : bytes.length = ip) :
+    BoundLoop calls odGapRecoverBody where
+  head := "land.rhs"
+  exitBlock := "while.end"
+  N := ip
+  cost := 5
+  Inv := gapScanInv bytes ip b p mem
+  atBound := gapScanAtBound bytes ip
+  Exit := gapScanExitBlock
+  ExitWord := gapScanExit bytes ip p
+  step_exit := by
+    intro r s c hinv hat
+    unfold gapScanAtBound at hat
+    by_cases hws : gapIsWs (bytes.getD c 0) = true
+    · obtain ⟨e, j, hj, hexit, hword, hrun⟩ := gap_scan_exit_ws hbytes hinv hws
+      exact ⟨e, j, by omega, hexit, hword, hrun⟩
+    · have hfalse : gapIsWs (bytes.getD c 0) = false := by
+        cases h : gapIsWs (bytes.getD c 0) with
+        | false => rfl
+        | true => exact absurd h hws
+      have hid : decide (c + 1 = ip) = true := by
+        rcases Bool.or_eq_true_iff.mp hat with h | h
+        · exact absurd h hws
+        · exact h
+      exact gap_scan_exit_ip hbytes hblen hinv hfalse (of_decide_eq_true hid)
+  step_loop := by
+    intro r s c hinv hat
+    unfold gapScanAtBound at hat
+    rcases Bool.or_eq_false_iff.mp hat with ⟨hws, hid⟩
+    exact gap_scan_step_loop hbytes hblen hinv hws (of_decide_eq_false hid)
+  exit_at_zero := by
+    intro s c hinv
+    obtain ⟨_, _, _, _, _, _, hclt, _, hbud, _⟩ := hinv
+    exact absurd hbud (by omega)
+  budget := by
+    intro r s c hinv
+    obtain ⟨_, _, _, _, _, hple, _, _, hbud, _⟩ := hinv
+    exact ⟨by omega, hbud⟩
+
+/-- **The scan's run from its head.**  From `land.rhs` with `r` iterations of
+budget, the scan reaches one of its exits within `(r + 1) * 5` control steps. -/
+theorem gapScanLoop_run_from {calls : Calls} {bytes : List UInt8} {ip b p : Nat}
+    {mem : Mem} (hbytes : gapBytesAt mem bytes b ip) (hblen : bytes.length = ip)
+    (r : Nat) (s : State) (c : Nat) (h : gapScanInv bytes ip b p mem r s c) :
+    ∃ (e : State) (j : Nat), j ≤ (r + 1) * 5 ∧ gapScanExitBlock e ∧
+      gapScanExit bytes ip p e ∧
+      ∀ k, runFuel calls (j + k) odGapRecoverBody s =
+        runFuel calls k odGapRecoverBody e :=
+  (gapScanLoop calls bytes ip b p mem hbytes hblen).run_from r s c h
+
+/-- **The scan's run.**  At the whole bound as its budget, the scan of the
+document `[0, ip)` from the token's start reaches one of its exits within
+`(ip + 1) * 5` control steps, and the run continues identically from there. -/
+theorem gapScanLoop_run {calls : Calls} {bytes : List UInt8} {ip b p : Nat} {mem : Mem}
+    (hbytes : gapBytesAt mem bytes b ip) (hblen : bytes.length = ip)
+    (s : State) (c : Nat) (h : gapScanInv bytes ip b p mem ip s c) (k : Nat) :
+    ∃ (e : State) (j : Nat), j ≤ (ip + 1) * 5 ∧ gapScanExitBlock e ∧
+      gapScanExit bytes ip p e ∧
+      runFuel calls (j + k) odGapRecoverBody s = runFuel calls k odGapRecoverBody e :=
+  (gapScanLoop calls bytes ip b p mem hbytes hblen).run s c h k
+
+/-! ### The scan's exits, continued
+
+The scan leaves at `while.end` on a whitespace and at `cleanup82` at the window's
+end.  At `while.end` the `phi` carries the counter and `%cmp6` is the equality
+with `ip`, which is false because the counter is below it; the scan continues to
+`if.end` with `%ee.0.lcssa` the first whitespace.  At `cleanup82` the body returns
+`void`, and the model's first loop has run the window, so its rule writes
+nothing. -/
+
+/-- The rule writes nothing when the model's first loop has run the window. -/
+theorem gap_recoverWrite_none_of_ee {bytes : List UInt8} {ip p : Nat}
+    (h : gapEe bytes ip p = ip) : gapRecoverWrite bytes ip p = GapWrite.none := by
+  simp [gapRecoverWrite, h]
+
+/-- **The scan's `while.end` continuation.**  With the counter the `phi` carries
+below `ip`, `%cmp6` is false and the scan leaves for `if.end` carrying the first
+whitespace. -/
+theorem gap_scan_whileEnd_step {calls : Calls} {ip c : Nat}
+    {e : State} {leaf : String}
+    (hpc : e.pc = "while.end") (hpre : e.pre = some leaf)
+    (hinc : phiIncoming leaf
+        [("cond.end", Operand.reg "%t.0.val"), ("LeafBlock", Operand.reg "%ee.011"),
+         ("LeafBlock1", Operand.reg "%ee.011"),
+         ("LeafBlock3", Operand.reg "%ee.011")] = some (Operand.reg "%ee.011"))
+    (h6 : lookupName e.env "%ee.011" = some (.int 64 (BitVec.ofNat 64 c)))
+    (hcond : lookupName e.env "%cond" = some (.int 64 (BitVec.ofNat 64 ip)))
+    (hlt : c < ip) (hip64 : ip < 2 ^ 64) :
+    step calls odGapRecoverBody e =
+      .jump (stateAt
+        (("%cmp6", .int 1 (evalICmp .eq (BitVec.ofNat 64 c) (BitVec.ofNat 64 ip))) ::
+          ("%ee.0.lcssa", .int 64 (BitVec.ofNat 64 c)) :: e.env)
+        { e with pc := "if.end", pre := some "while.end" }) := by
+  have hbit : evalICmp .eq (BitVec.ofNat 64 c) (BitVec.ofNat 64 ip) = 0#1 :=
+    gap_eq_zero (gap_ofNat_ne (by omega) hip64 (by omega))
+  have hh := gap_step_whileEnd_fromLeaf (calls := calls) (env := e.env) (s := e)
+    (c := c) (ip := ip) (p := leaf) hpc hpre hinc h6 hcond hbit
+  have hst : stateAt e.env e = e := rfl
+  simpa only [hst] using hh
+
+/-- **At the scan's whitespace exit.**  The exit word's first arm is the basis of
+the continuation: the counter is the model's `ee`, and the scan leaves
+`while.end` for `if.end`. -/
+theorem gap_scan_whileEnd_continue {calls : Calls} {bytes : List UInt8} {ip p : Nat}
+    {e : State} (hpc : e.pc = "while.end") (hexit : gapScanExit bytes ip p e)
+    (hip64 : ip < 2 ^ 64) :
+    ∃ (leaf : String) (c : Nat), e.pre = some leaf ∧ gapEe bytes ip p = c ∧ c < ip ∧
+      step calls odGapRecoverBody e =
+        .jump (stateAt
+          (("%cmp6", .int 1 (evalICmp .eq (BitVec.ofNat 64 c) (BitVec.ofNat 64 ip))) ::
+            ("%ee.0.lcssa", .int 64 (BitVec.ofNat 64 c)) :: e.env)
+          { e with pc := "if.end", pre := some "while.end" }) := by
+  rcases hexit with ⟨leaf, c, hpc', hpre, hinc, h6, hcond, hee, hlt⟩
+      | ⟨hpc', _⟩
+  · refine ⟨leaf, c, hpre, hee, hlt, ?_⟩
+    exact gap_scan_whileEnd_step hpc hpre hinc h6 hcond hlt hip64
+  · rw [hpc] at hpc'
+    exact absurd hpc' (by decide)
+
+/-- **At the scan's `ip` exit.**  `cleanup82` returns `void`, and the model's
+rule writes nothing. -/
+theorem gap_scan_cleanup82_exit {calls : Calls} {bytes : List UInt8} {ip p : Nat}
+    {e : State} (hpc : e.pc = "cleanup82") (hee : gapEe bytes ip p = ip) :
+    step calls odGapRecoverBody e = .ret none e ∧ gapRecoverWrite bytes ip p = GapWrite.none := by
+  refine ⟨?_, gap_recoverWrite_none_of_ee hee⟩
+  have hh := gap_step_cleanup82 (calls := calls) (env := e.env) (s := e) hpc
+  have hst : stateAt e.env e = e := rfl
+  simpa only [hst] using hh
+
+/-- **At the scan's `ip` exit, from the exit word.** -/
+theorem gap_scan_cleanup82_continue {calls : Calls} {bytes : List UInt8} {ip p : Nat}
+    {e : State} (hpc : e.pc = "cleanup82") (hexit : gapScanExit bytes ip p e) :
+    step calls odGapRecoverBody e = .ret none e ∧
+      gapRecoverWrite bytes ip p = GapWrite.none := by
+  rcases hexit with ⟨leaf, c, hpc', _⟩ | ⟨_, hee⟩
+  · rw [hpc] at hpc'
+    exact absurd hpc' (by decide)
+  · exact gap_scan_cleanup82_exit hpc hee
+
+/-! ### Axiom footprints -/
+
+#print axioms gapBytesAt_of_readBytes
+#print axioms gap_natToBytes_gapByte
+#print axioms gap_readOne
+#print axioms gap_getD_drop_add
+#print axioms gap_getD_drop
+#print axioms gapNonWsRun_add
+#print axioms gapNonWsRun_zero_of_ws
+#print axioms gapNonWsRun_succ
+#print axioms gap_drop_drop
+#print axioms gapEe_of_prefix_ws
+#print axioms gapEe_of_prefix_all
+#print axioms gap_ofNat64_add_one
+#print axioms gapScanInv_seed
+#print axioms gap_scan_exit_ws
+#print axioms gap_scan_toWhileBody
+#print axioms gap_scan_atIp_bit
+#print axioms gap_scan_offIp_bit
+#print axioms gap_scan_exit_ip
+#print axioms gap_scan_step_loop
+#print axioms gapScanExitBlock
+#print axioms gapScanLoop
+#print axioms gapScanLoop_run_from
+#print axioms gapScanLoop_run
+#print axioms gap_recoverWrite_none_of_ee
+#print axioms gap_scan_whileEnd_step
+#print axioms gap_scan_whileEnd_continue
+#print axioms gap_scan_cleanup82_exit
+#print axioms gap_scan_cleanup82_continue
 
 end LeanLLVM.Refinement
