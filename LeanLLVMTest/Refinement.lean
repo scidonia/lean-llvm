@@ -10687,6 +10687,14 @@ contiguous to the end of this file. -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.Stage2NoEventRun.consumer
 
+/-- info: 'LeanLLVM.Refinement.stage2NoEventRefusalOffset_flush' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventRefusalOffset_flush
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventRefusalOffset_flush_eoff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventRefusalOffset_flush_eoff
+
 /-- info: 'LeanLLVM.Refinement.stage2NoEventWorkspace.toStagedPre' does not depend on any axioms -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.stage2NoEventWorkspace.toStagedPre

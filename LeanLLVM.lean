@@ -197,6 +197,7 @@ import LeanLLVM.Refinement.JsonStage2NoEventWalkScalar
 import LeanLLVM.Refinement.JsonStage2NoEventWalkString
 import LeanLLVM.Refinement.JsonStage2NoEventWorkspace
 import LeanLLVM.Refinement.JsonStage2NoEventWalkAssembly
+import LeanLLVM.Refinement.JsonStage2NoEventRefusalOffset
 import LeanLLVM.Refinement.JsonStage2WalkAlignment
 import LeanLLVM.Refinement.JsonStage2TraceRow
 import LeanLLVM.Refinement.JsonStage2WalkRowSteps
