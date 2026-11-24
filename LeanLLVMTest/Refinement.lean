@@ -11334,6 +11334,10 @@ as the remaining obligation.  The pins are the proved two's footprints. -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.parseValueKB_map
 
+/-- info: 'LeanLLVM.Refinement.tokenDecoderAgrees_of_parse' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.tokenDecoderAgrees_of_parse
+
 /-- info: 'LeanLLVM.Refinement.valueAt_numberReadable' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.valueAt_numberReadable

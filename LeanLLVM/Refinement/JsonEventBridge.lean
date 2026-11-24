@@ -3,8 +3,8 @@ The bridges from the emitted stream to the value the entry returns.
 
 `JsonEventValue` states the pipeline's value transfer conditionally: the two
 decoder bridges `hE` and `hT` and the canonicalisation's domain `hcanon` are
-named premises, and the theorem applies them.  This module proves two of the four
-and states the other two here, unproved, as the remaining obligation:
+named premises, and the theorem applies them.  This module proves two of the four, states `hT` and `hE` here, and `hT` is
+proved in `JsonEventBridgeTokenB`; `hE` remains the remaining obligation:
 
 * **`hD` — proved.**  `eventsOfBytes_flatten` / `eventsOfBytes_stage2Records`:
   on the records' own encoding, the byte reader returns the trace's consumer
@@ -15,7 +15,7 @@ and states the other two here, unproved, as the remaining obligation:
 * **`hcanon` — proved.**  `canonValue_isSome_of_decodeTape`: every number lexeme
   of a value the tape decodes has a canonical rendering, so the transfer's
   right-hand side is never a silent `none`;
-* **`hT` — owed.**  `parseValueT_eq_decodeTape`:
+* **`hT` — proved in `JsonEventBridgeTokenB`.**  `parseValueT_eq_decodeTape`:
   `parseBytes Limits.default bs = .ok t → parseValueT t = decodeTape t`.  The
   statement is not the bare `parseValueT t = decodeTape t` over every tape: that
   is false, because `decodeValue` checks each token's span against its cursor
