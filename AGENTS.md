@@ -132,7 +132,7 @@ the target and the stuck state — the definitions, the pinned body and what the
 first attempt established — rather than from the same context.  The price is
 double worker cost for the duration, so reserve it for a milestone that is
 uncertain or has already stalled once.  The first completed proof is kept; the
-other attempt's findings are folded in or dropped.
+other attempt is stopped at once; its findings are folded in or dropped.
 
 ### Precompiled worker images
 
