@@ -10743,6 +10743,14 @@ contiguous to the end of this file. -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.gapRule_scalarRefusal
 
+/-- info: 'LeanLLVM.Refinement.stage2GapRecover_callSatisfies' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2GapRecover_callSatisfies
+
+/-- info: 'LeanLLVM.Refinement.gapWindow_hwin_of_staging' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.gapWindow_hwin_of_staging
+
 /-- info: 'LeanLLVM.Refinement.stage2NoEventWorkspace.toStagedPre' does not depend on any axioms -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.stage2NoEventWorkspace.toStagedPre
