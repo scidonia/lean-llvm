@@ -11,7 +11,10 @@
 ; two of the same kind: its llvm.umin.i64 folds to the icmp/select pair, and
 ; `ashr exact` loses its flag.  s2_string_body takes one: its refusal message
 ; becomes `null`, because the call boundary has no global table to read the
-; symbol's address from.  The body is a program of this fragment: its `ptrtoint` pair is modelled, and `JsonStage2StringBody` pins the AST it parses to and proves the helper contract of that body.  Its refusal message is `null` here — the call boundary carries no global table — so this fixture is not where `Operand.global`'s body-level evidence lives; that evidence is tests/core-extension.lean's acceptance pins.
+; symbol's address from, and od_gap_recover takes three: its llvm.umin.i64
+; unfolds, each refusal site's message word becomes that site's tag, and the
+; literal compare's three globals become appended pointer parameters.
+; The body is a program of this fragment: its `ptrtoint` pair is modelled, and `JsonStage2StringBody` pins the AST it parses to and proves the helper contract of that body.  Its refusal message is `null` here — the call boundary carries no global table — so this fixture is not where `Operand.global`'s body-level evidence lives; that evidence is tests/core-extension.lean's acceptance pins.
 ;
 define i32 @s2_string_body(ptr %c, ptr %p, i64 %len, ptr %dst, ptr %outn, ptr %xp, ptr %xj, i64 %nxp) {
 entry:

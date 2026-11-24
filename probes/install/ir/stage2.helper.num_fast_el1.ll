@@ -11,7 +11,10 @@
 ; two of the same kind: its llvm.umin.i64 folds to the icmp/select pair, and
 ; `ashr exact` loses its flag.  s2_string_body takes one: its refusal message
 ; becomes `null`, because the call boundary has no global table to read the
-; symbol's address from.  The body is a program of this fragment after its two strip rewrites (the `llvm.umin.i64` fold and the dropped `exact` flag) and with the extent of `%struct.Stk` supplied as the `Layout` `[("Stk", 1568)]` the pin states, which is the number the body own `llvm.lifetime.start` names.  `JsonStage2HelperIRNumFast` pins the AST it parses to, block by block.
+; symbol's address from, and od_gap_recover takes three: its llvm.umin.i64
+; unfolds, each refusal site's message word becomes that site's tag, and the
+; literal compare's three globals become appended pointer parameters.
+; The body is a program of this fragment after its two strip rewrites (the `llvm.umin.i64` fold and the dropped `exact` flag) and with the extent of `%struct.Stk` supplied as the `Layout` `[("Stk", 1568)]` the pin states, which is the number the body own `llvm.lifetime.start` names.  `JsonStage2HelperIRNumFast` pins the AST it parses to, block by block.
 ;
 define i32 @num_fast_el1(ptr %p, i64 %n, ptr %out, ptr %err) {
 entry:

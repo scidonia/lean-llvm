@@ -11,7 +11,10 @@
 ; two of the same kind: its llvm.umin.i64 folds to the icmp/select pair, and
 ; `ashr exact` loses its flag.  s2_string_body takes one: its refusal message
 ; becomes `null`, because the call boundary has no global table to read the
-; symbol's address from.  The body is captured and the fragment expresses it.
+; symbol's address from, and od_gap_recover takes three: its llvm.umin.i64
+; unfolds, each refusal site's message word becomes that site's tag, and the
+; literal compare's three globals become appended pointer parameters.
+; The body is captured and the fragment expresses it.
 ;
 define i32 @s2_value_pos(i32 %sp, i32 %root_done, ptr %ct, ptr %cs) {
 entry:
