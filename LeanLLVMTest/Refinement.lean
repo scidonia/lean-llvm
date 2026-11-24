@@ -11318,6 +11318,14 @@ as the remaining obligation.  The pins are the proved two's footprints. -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.canonValue_isSome_of_decodeTape
 
+/-- info: 'LeanLLVM.Refinement.bodyReads_of_bodiesWithin' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.bodyReads_of_bodiesWithin
+
+/-- info: 'LeanLLVM.Refinement.bodyReads_of_boundaryRow' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.bodyReads_of_boundaryRow
+
 /-- info: 'LeanLLVM.Refinement.valueAt_numberReadable' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.valueAt_numberReadable
