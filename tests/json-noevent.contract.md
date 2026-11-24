@@ -545,6 +545,73 @@ sum reaches `2 ^ 64`, so the bound is enforced and not merely intended.
   the equality between the default's line and the arm's is what observes the
   difference.
 
+## NE13 — the value arm prints the reference's decoded value
+
+- **Actor:** `probes/json/route/build/leanllvm-json-route --value`, an external
+  process over `tests/json-value/corpus`, one document per invocation.  The
+  boundary is the process's stdout for that one document, parsed field by
+  field; nothing inside the route is named or reached.
+- **Given:** the corpus's documents; `tests/json-value/expected.tsv`, one row
+  per document — its path, its verdict (`accept` or `refuse`), the lowercase
+  hex of the UTF-8 bytes of `renderValue (canonValue v)` where `v` is the
+  value the reference path gives (`decodeTape` of `parseBytes`' tape on the
+  document's own bytes) or `-`, the refusal class or `-`, the refusal offset
+  or `-`, and the document's SHA-256; and the route binary the build step
+  produces (`nix develop -c bash probes/json/route/build.sh`).  An absent
+  binary is a setup fault naming that command; an absent corpus or table is a
+  setup fault naming its path.
+- **When:** the operator runs `tests/json-noevent/check.sh`.  It runs two
+  controls first, then invokes `--value` on one accepting document and on
+  every corpus document.
+- **Then:**
+  - **Control a — the reader.** The same field reader and comparison the value
+    line uses are applied to the certified event arm's consumer row on
+    `tests/json/corpus/depth-two-ok.json`: `path=fast`, `walked=1`, a non-empty
+    token count, and `foldsum` equal to `valuessum`.  The control passes
+    today, so a failure below is the value arm's absence and not a detector
+    that reads nothing.
+  - **Control b — the reference's refusal.** The empty document
+    (`repo-empty`) is the one the admission declines, so the event arm's
+    fallback answers it from the reference parser: exit 2, empty stdout, and
+    stderr exactly `refused: invalid: unexpected end at 0`.  The value arm's
+    refusal for that document must name the same refusal — `class=invalid:
+    unexpectedEnd offset=0` — so the refusal path is observed from the
+    reference today rather than asserted from a normalised corpus class.
+  - **An acceptance.** The arm exits 0 and prints exactly one
+    `value: verdict=1 value=<hex>` line; `<hex>` equals the row's value field.
+  - **A refusal.** The arm exits 2 and prints exactly one
+    `value: refused class=<class> offset=<offset>` line, where `<class>` is
+    the reference's `parseErrorName` (for an invalid document
+    `invalid:<Reject constructor>`, as in `invalid:unexpectedEnd`; for a limit
+    outcome that outcome's own name) and `<offset>` is the reject's position
+    or `-` where the reject carries none.  The whole line is compared by exact
+    string equality, so a token-preserving near-miss fails.
+  - **No canonical value.** A reference acceptance whose canonical value
+    cannot be produced is `value: error canon` at exit 5.  No corpus row
+    expects that form; the comparison reports it as the arm's failure rather
+    than as a value mismatch.
+  - **The comparator's control.** Appending two hex digits to one acceptance's
+    pinned value must be rejected by the same comparator and with the reason
+    it prints for an ordinary mismatch; a comparator that never compared would
+    otherwise pass every row.
+- **Expected failure:** at `05ea7d4` `--value` is not a mode.  The invocation
+  reaches the route, which exits 1 and writes the usage line to stderr, so
+  the probe's own exit-status assertion fires and quotes the usage line; both
+  controls pass before it.  The red is not an invocation, fixture or setup
+  failure: the probe's document is committed at the revision, the binary was
+  built there, and no absent corpus or table is read before the probe.
+- **Why:** the no-event arm reports three aggregate words, and an aggregate
+  cannot reconstruct a tape or a JSON value.  The value is the
+  caller-visible result the reference defines, so the arm must expose it at
+  the same boundary as the reading.  The canonicalisation is load-bearing and
+  observable: numerically equal spellings (`1.0`, `1.00`, `1e0`) collapse to
+  one form, while `-0` and `0` stay distinct because their bits differ; the
+  corpus carries both an accepted `[1.0]` and an accepted `-0`, so a fast path
+  that returned the reference's own lexeme would fail on them.  Comparing
+  against the reference path rather than against the fast path is what keeps
+  the comparison structural: the expected operand is decoded by
+  `parseBytes`/`decodeTape`, never by the arm under test.
+
 ## The red, as observed
 
 Each cut was applied to a throwaway copy of the tree (rsync without `.lake`,

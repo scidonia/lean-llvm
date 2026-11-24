@@ -109,6 +109,22 @@
 #   binary's digest.  The rows are the fixture; the comparison is per
 #   document.
 #
+#   NE13 — the value arm's decoded reading.  `--value` prints one stdout line
+#   per document: `value: verdict=1 value=<hex>` at exit 0 on an acceptance,
+#   and `value: refused class=<class> offset=<offset>` at exit 2 on a
+#   refusal, where the class is the reference's `parseErrorName` and the
+#   offset is its position or `-`.  A reference acceptance whose canonical
+#   value cannot be produced is `value: error canon` at exit 5, a form no
+#   expected row admits.  The value is the lowercase hex of the UTF-8 bytes of
+#   `renderValue (canonValue v)` on the document's own bytes; the expected
+#   field of each document is pinned in `tests/json-value/expected.tsv`.  Two
+#   controls run first — the field reader over the certified event arm's own
+#   row, and the reference's refusal through the fallback on the document the
+#   admission declines — so a red below is the arm's absence and not a blind
+#   detector.  At the pre-change revision `--value` is not a mode: the
+#   invocation exits 1 and prints the usage line, so the probe reds at its own
+#   exit-status assertion.
+#
 # The corpus's own integrity is asserted first: every document's digest
 # matches the manifest, the document set is exactly the manifest's, and
 # `generate.sh` at its fixed seed reproduces both the documents and the
@@ -1092,6 +1108,227 @@ done <"$base_rows"
   fail "the base rows yielded $ne8_rows rows of a pinned $base_count"
 printf 'ok: the event arm reproduces all %s base rows (exit, six words, both payloads, document and stdout)\n' \
   "$ne8_rows"
+
+# ----------------------------- 11. NE13: the value arm's decoded reading --
+#
+# `--value` answers a document from the reference path, not the fast path:
+#
+#   value: verdict=1 value=<hex>              exit 0
+#   value: refused class=<class> offset=<n>   exit 2
+#   value: error canon                        exit 5
+#
+# `<hex>` is the lowercase hex of the UTF-8 bytes of `renderValue (canonValue
+# v)`, the value the reference path gives (`decodeTape` of `parseBytes`' tape)
+# on the document's own bytes.  The line is whitespace-separated, so the value
+# travels as hex and a string carrying its own spaces cannot split the line.
+# `<class>` is the reference's `parseErrorName` (`invalid:<Reject
+# constructor>`, or the limit outcome's own name) and `<n>` its position, or
+# `-` where it carries none, so a refusal names the reference's own class and
+# offset rather than a normalised corpus class.  `value: error canon` is a
+# reference acceptance with no canonical value; no expected row admits it.
+#
+# The expected rows are `tests/json-value/expected.tsv`: `path`, `verdict`
+# (`accept` or `refuse`), the value's hex or `-`, the class or `-`, the offset
+# or `-`, and the document's digest.  The table is the oracle's; the route is
+# compared against it per document, one line and one status per row.
+#
+# Two controls run before the arm is probed, so what fails below is the arm's
+# absence and not a detector that reads nothing.
+
+# Control (a): the field reader over a line the route prints today.  The
+# certified event arm's consumer row carries `walked`, `foldsum` and
+# `valuessum`; reading them and requiring the two sums to agree is the same
+# reader and comparison the value line's fields use.
+ne13_ctl_doc=$repo/tests/json/corpus/depth-two-ok.json
+[ -f "$ne13_ctl_doc" ] || setup "absent: $ne13_ctl_doc"
+"$route_bin" --consume-events "$ne13_ctl_doc" >/dev/null 2>"$work/ne13.row"
+ne13_rst=$?
+ne13_row=$(cat "$work/ne13.row")
+[ "$ne13_rst" -eq 0 ] && [ "$(word "$ne13_row" path)" = fast ] &&
+  [ "$(word "$ne13_row" walked)" = 1 ] &&
+  [ -n "$(word "$ne13_row" tokens)" ] &&
+  [ "$(word "$ne13_row" foldsum)" = "$(word "$ne13_row" valuessum)" ] || {
+  printf 'FAIL: the field reader does not read the certified event arm (exit %s)\n' "$ne13_rst" >&2
+  printf '  row: %s\n' "$ne13_row" >&2
+  exit 1
+}
+printf 'ok: the field reader reads walked/foldsum/valuessum from the route today (%s)\n' \
+  "$(word "$ne13_row" foldsum)"
+
+# Control (b): the reference's refusal, observed today.  The empty document is
+# the corpus's one document the admission declines, so the event arm's
+# fallback answers it with the reference parser's own refusal and offset.  The
+# value arm's refusal line must name that same refusal, exactly.
+ne13_ref_doc=$repo/tests/json-noevent/corpus/documents/repo-empty
+[ -f "$ne13_ref_doc" ] || setup "absent: $ne13_ref_doc"
+[ ! -s "$ne13_ref_doc" ] || setup "the empty control document is not empty"
+"$route_bin" --doc "$ne13_ref_doc" >"$work/ne13.ref.out" 2>"$work/ne13.ref.err"
+ne13_rest=$?
+ne13_ref=$(cat "$work/ne13.ref.err")
+[ "$ne13_rest" -eq 2 ] && [ ! -s "$work/ne13.ref.out" ] &&
+  [ "$ne13_ref" = 'refused: invalid: unexpected end at 0' ] || {
+  printf 'FAIL: the event arm does not report the reference refusal on the empty document (exit %s)\n' \
+    "$ne13_rest" >&2
+  printf '  stderr: %s\n' "$ne13_ref" >&2
+  exit 1
+}
+printf 'ok: the reference refusal is observed today: %s\n' "$ne13_ref"
+
+# The arm's absence.  `--value` is not a mode at the pre-change revision, so
+# the invocation exits 1 and prints the usage line; this exit-status assertion
+# is the scenario's own, reached at the actor's boundary rather than at a
+# missing binary or corpus.  An acceptance is the probe: the arm answers it
+# with one `value=` line at exit 0.
+ne13_probe_doc=$repo/tests/json-noevent/corpus/documents/acc-number-zero-array
+[ -f "$ne13_probe_doc" ] || setup "absent: $ne13_probe_doc"
+"$route_bin" --value "$ne13_probe_doc" >"$work/ne13.probe.out" 2>"$work/ne13.probe.err"
+ne13_pst=$?
+if [ "$ne13_pst" -ne 0 ]; then
+  printf 'FAIL: --value exited %s on %s; the value arm must exit 0 and print its line on an acceptance\n' \
+    "$ne13_pst" "$(basename "$ne13_probe_doc")" >&2
+  awk 'NR <= 10' "$work/ne13.probe.err" >&2
+  exit 1
+fi
+[ "$(wc -l <"$work/ne13.probe.out")" -eq 1 ] ||
+  fail "--value printed $(wc -l <"$work/ne13.probe.out") lines on an acceptance"
+ne13_probe=$(cat "$work/ne13.probe.out")
+case $ne13_probe in
+  'value: verdict=1 value='*) ;;
+  *) fail "--value's line is not the value form: $ne13_probe" ;;
+esac
+printf 'ok: --value answers an acceptance with its value line\n'
+
+# The per-document comparison.  The corpus and the expected table are the
+# arm's fixture: an absent one is a setup fault naming the path, never an
+# assertion result.  The table's columns are `path`, `verdict`, the value's
+# hex (or `-`), the refusal class (or `-`), the refusal offset (or `-`) and
+# the document's digest.
+value_corpus=$repo/tests/json-value/corpus
+value_expected=$repo/tests/json-value/expected.tsv
+[ -d "$value_corpus" ] || setup "absent: $value_corpus"
+[ -f "$value_expected" ] || setup "absent: $value_expected"
+
+# The expected stdout line for one row.
+ne13_expected_line() { # verdict value class offset
+  case $1 in
+    accept) printf 'value: verdict=1 value=%s' "$2" ;;
+    refuse) printf 'value: refused class=%s offset=%s' "$3" "$4" ;;
+    *) return 1 ;;
+  esac
+}
+
+# One document's comparison: the invocation's status is the row's verdict's,
+# its stdout is exactly one line, and that line is the expected one.  The
+# comparison is exact string equality, so a token-preserving near-miss fails.
+ne13_compare() { # doc verdict value class offset -> 0 when the line matches
+  local doc=$1 verdict=$2 value=$3 class=$4 offset=$5
+  local want status st got
+  want=$(ne13_expected_line "$verdict" "$value" "$class" "$offset") || return 1
+  case $verdict in
+    accept) status=0 ;;
+    refuse) status=2 ;;
+    *) return 1 ;;
+  esac
+  "$route_bin" --value "$doc" >"$work/ne13.value.out" 2>"$work/ne13.value.err"
+  st=$?
+  if [ "$st" -eq 5 ] &&
+     [ "$(cat "$work/ne13.value.out")" = 'value: error canon' ]; then
+    printf '  %s: the arm reported no canonical value for a document the reference accepted\n' \
+      "$(basename "$doc")" >&2
+    return 1
+  fi
+  if [ "$st" -ne "$status" ]; then
+    printf '  %s: --value exited %s, and the row pins %s\n' \
+      "$(basename "$doc")" "$st" "$status" >&2
+    return 1
+  fi
+  if [ "$(wc -l <"$work/ne13.value.out")" -ne 1 ]; then
+    printf '  %s: --value printed %s lines\n' \
+      "$(basename "$doc")" "$(wc -l <"$work/ne13.value.out")" >&2
+    return 1
+  fi
+  got=$(cat "$work/ne13.value.out")
+  if [ "$got" != "$want" ]; then
+    printf '  %s: the arm'"'"'s line is not the row'"'"'s\n' "$(basename "$doc")" >&2
+    printf '    arm:      %s\n    expected: %s\n' "$got" "$want" >&2
+    return 1
+  fi
+  return 0
+}
+
+ne13_rows=0
+ne13_accept_doc=
+ne13_accept_value=
+while IFS=$'\t' read -r vpath vverdict vvalue vclass voffset vsha; do
+  case $vpath in '' | '#'*) continue ;; esac
+  ne13_rows=$((ne13_rows + 1))
+  vdoc=$value_corpus/$vpath
+  [ -f "$vdoc" ] || fail "$vpath: the expected table names an absent document"
+  got=$(sha256sum "$vdoc" | cut -d' ' -f1)
+  [ "$got" = "$vsha" ] ||
+    fail "$vpath: the document's digest is not the expected table's"
+  case $vverdict in
+    accept)
+      [ -n "$vvalue" ] && [ "$vvalue" != '-' ] &&
+        [ "$vclass" = '-' ] && [ "$voffset" = '-' ] ||
+        fail "$vpath: an acceptance's row carries a refusal field"
+      [ -z "$ne13_accept_doc" ] && ne13_accept_doc=$vdoc && ne13_accept_value=$vvalue
+      ;;
+    refuse)
+      [ "$vvalue" = '-' ] && [ "$vclass" != '-' ] ||
+        fail "$vpath: a refusal's row does not carry its class and value"
+      case $voffset in
+        -) ;;
+        '' | *[!0-9]*)
+          fail "$vpath: a refusal's offset is neither a position nor '-'"
+          ;;
+      esac
+      ;;
+    *) fail "$vpath: the expected row's verdict is neither accept nor refuse: $vverdict" ;;
+  esac
+  ne13_compare "$vdoc" "$vverdict" "$vvalue" "$vclass" "$voffset" || {
+    printf 'FAIL: %s: the value arm is not the reference\n' "$vpath" >&2
+    exit 1
+  }
+done <"$value_expected"
+
+[ "$ne13_rows" -gt 0 ] || fail "the value arm's expected table is empty"
+[ -n "$ne13_accept_doc" ] || fail "the value arm's expected table has no acceptance"
+
+# The table and the corpus are one set: each corpus document is named exactly
+# once, and the table names no document the corpus does not carry.  Without
+# this, a document the table omits would be skipped silently by the loop.
+ne13_dups=$(awk -F '\t' '!/^#/ && NF { print $1 }' "$value_expected" |
+  LC_ALL=C sort | uniq -d)
+[ -z "$ne13_dups" ] ||
+  fail "the expected table names a document twice: $(printf '%s' "$ne13_dups" | head -n 1)"
+ne13_corpus_set=$(find "$value_corpus" -mindepth 1 -maxdepth 1 -type f \
+  -printf '%f\n' | LC_ALL=C sort)
+ne13_table_set=$(awk -F '\t' '!/^#/ && NF { print $1 }' "$value_expected" |
+  LC_ALL=C sort)
+if [ "$ne13_corpus_set" != "$ne13_table_set" ]; then
+  printf 'FAIL: the value corpus and the expected table name different documents\n' >&2
+  diff <(printf '%s\n' "$ne13_corpus_set") <(printf '%s\n' "$ne13_table_set") |
+    awk 'NR <= 20' >&2
+  exit 1
+fi
+ne13_corpus_count=$(printf '%s\n' "$ne13_corpus_set" | grep -c .)
+[ "$ne13_corpus_count" -eq "$ne13_rows" ] ||
+  fail "the expected table has $ne13_rows rows and the corpus has $ne13_corpus_count documents"
+
+# The comparison's own control: two hex digits appended to an acceptance's
+# pinned value is a tampered expectation, and the same comparator must reject
+# it.  Without this, a comparator that never compared would pass every row.
+if ne13_compare "$ne13_accept_doc" accept "${ne13_accept_value}00" - - \
+    2>"$work/ne13.tamper.err"; then
+  fail "the comparator passed a tampered expectation"
+fi
+grep -q 'the arm.s line is not the row.s' "$work/ne13.tamper.err" ||
+  fail "the comparator rejected the tampered expectation without saying why"
+printf 'ok: the comparator rejects a tampered expectation on %s\n' \
+  "$(basename "$ne13_accept_doc")"
+
+printf 'ok: --value carries the reference value or refusal on all %s documents\n' "$ne13_rows"
 
 printf 'ok: the no-event entries agree with the certified routes; the sentinel separates refusals; the census and the byte identity are pinned\n'
 exit 0
