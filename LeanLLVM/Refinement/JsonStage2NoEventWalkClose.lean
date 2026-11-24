@@ -3575,6 +3575,1140 @@ theorem link_ifThen9 {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Mem}
     h (by rw [hpc]; exact ifThen9Block_find) hcode rfl ?_
   simp only [ifThen9Env1, lookupName_cons_self]
 
+/-! ### The loop exits and their class heads
+
+The continuation dispatch's four exits are the block stubs that hand the loop's
+carried state to a class head: `if.then9.loopexit` (the brace), `if.then35` (the
+bracket), `string_value.loopexit` (the string) and `scalar.loopexit` (the value).
+Each stub computes the entry index and the depth word, and the head then runs its
+`phi` run and its first test.  The rows below stop at that test's branch: the
+class arm behind it is the class's own segment, not this one's.
+
+The `phi` runs are the block's, read off `PhiSpec` lists: `ifThen9PhiSpecs` is the
+brace head's (shared with the `LeafBlock3` edge) and the others are stated here.
+No register the runs read is carried by `Stage2NoEventWalkInv`; every one is a
+lookup at the state's environment, and each link takes the ones it reads as
+hypotheses, the way the head's own link does.  The lifetime marker in
+`string_value` is a call: the link is parametric in the selection and takes the
+outcome's own neutrality (`out.mem = s.mem`, `out.next = s.next`), which
+`stage2Calls_lifetime` supplies for `stage2Calls`'s resolution. -/
+
+/-- A comparison of two registers, at any predicate and width. -/
+theorem stage2NoEventWalk_denote_icmp_reg (calls : Calls) (env : Env) (s : State)
+    (d a b : String) (p : IPred) (w : Nat) {x y : BitVec w}
+    (ha : lookupName env a = some (.int w x))
+    (hb : lookupName env b = some (.int w y)) (is : List Instr) :
+    denoteCode calls (.icmp d p w (.reg a) (.reg b) :: is) (stateAt env s) =
+      denoteCode calls is (stateAt ((d, .int 1 (evalICmp p x y)) :: env) s) := by
+  have ha' : evalOperand (stateAt env s) (.reg a) = some (.int w x) := by
+    simp only [stateAt, evalOperand, ha]
+  have hb' : evalOperand (stateAt env s) (.reg b) = some (.int w y) := by
+    simp only [stateAt, evalOperand, hb]
+  have hstep : evalInstr calls (stateAt env s) (.icmp d p w (.reg a) (.reg b)) =
+      some ((stateAt env s).bind d (.int 1 (evalICmp p x y))) :=
+    JsonS1MasksIR.evalInstr_icmp ha' hb'
+  rw [denoteCode_cons_of _ _ _ _ _ hstep]
+  simp only [stateAt, State.bind]
+
+/-! #### `if.then9.loopexit`: the brace's exit stub and the head at its edge -/
+
+/-- `if.then9.loopexit`: `%idxprom.le1289 = zext %8`, `%9 = trunc %indvars.iv`. -/
+def ifThen9LoopexitInstrs : List Instr :=
+  [ Instr.zext "%idxprom.le1289" 32 64 (Operand.reg "%8"),
+    Instr.trunc "%9" 64 32 (Operand.reg "%indvars.iv") ]
+
+/-- `if.then9.loopexit`, pinned. -/
+def ifThen9LoopexitBlock : Block :=
+  { name := "if.then9.loopexit", instrs := ifThen9LoopexitInstrs,
+    term := Term.br "if.then9" }
+
+theorem ifThen9LoopexitBlock_find :
+    stage2NoEventBody.findBlock "if.then9.loopexit" = some ifThen9LoopexitBlock := by
+  decide
+
+theorem ifThen9LoopexitEntry_denote (calls : Calls) (env : Env) (s : State)
+    {w : BitVec 32} {iv : BitVec 64}
+    (h8 : lookupName env "%8" = some (.int 32 w))
+    (hiv : lookupName env "%indvars.iv" = some (.int 64 iv)) :
+    denoteCode calls ifThen9LoopexitInstrs (stateAt env s) =
+      some (stateAt
+        (("%9", .int 32 (BitVec.ofNat 32 (iv.toNat % 2 ^ 32))) ::
+          ("%idxprom.le1289", .int 64 (BitVec.ofNat 64 w.toNat)) :: env) s) := by
+  unfold ifThen9LoopexitInstrs
+  rw [denoteCode_zext (calls := calls) (env := env) (s := s) (d := "%idxprom.le1289")
+    (v := "%8") (wIn := 32) (wOut := 64) (x := w) h8]
+  rw [denoteCode_trunc (calls := calls)
+    (env := ("%idxprom.le1289", .int 64 (BitVec.ofNat 64 w.toNat)) :: env) (s := s)
+    (d := "%9") (v := "%indvars.iv") (wIn := 64) (wOut := 32) (x := iv)
+    (lookupName_cons_other _ _ _ (by decide) hiv)]
+  simp only [denoteCode_nil]
+
+/-- The brace's exit stub: the index's zero extension and the depth's truncation,
+to `if.then9`. -/
+theorem link_ifThen9LoopexitEntry {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State} {w : BitVec 32} {iv : BitVec 64}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "if.then9.loopexit")
+    (h8 : lookupName s.env "%8" = some (.int 32 w))
+    (hiv : lookupName s.env "%indvars.iv" = some (.int 64 iv)) :
+    Stage2NoEventWalkLink calls K mem s K
+      (stage2NoEventWalkNext
+        (("%9", .int 32 (BitVec.ofNat 32 (iv.toNat % 2 ^ 32))) ::
+          ("%idxprom.le1289", .int 64 (BitVec.ofNat 64 w.toNat)) :: s.env)
+        s "if.then9") := by
+  have hcode := ifThen9LoopexitEntry_denote (calls := calls) (env := s.env) (s := s) h8 hiv
+  refine ⟨h, ?_, Stage2NoEventWalkInv.mem_congr h rfl⟩
+  have hstep := stage2NoEventWalk_step_br (s := s) (f := stage2NoEventBody)
+    (by rw [hpc]; exact ifThen9LoopexitBlock_find) hcode rfl
+  simpa only [stage2NoEventWalkNext, stateAt] using hstep
+
+/-- The `if.then9` cells at the brace exit's edge: its seven `phi`s and the depth
+test, with `%sp` the truncated index. -/
+abbrev ifThen9AtLoopexitCells (env : Env) (inc idx : BitVec 64) (sp9 : BitVec 32)
+    (k terms tok : BitVec 64) : Env :=
+  ("%cmp10", Value.int 1 (evalICmp .ugt sp9 (BitVec.ofNat 32 519))) ::
+    ("%tokens.0.lcssa1074", Value.int 64 tok) ::
+    ("%terms.0.lcssa1080", Value.int 64 terms) ::
+    ("%k.0.lcssa1086", Value.int 64 k) ::
+    ("%sp.0.lcssa1092.wide", Value.int 32 sp9) ::
+    ("%frame.0.lcssa1098", Value.int 8 1) ::
+    ("%idxprom.lcssa1108", Value.int 64 idx) ::
+    ("%inc.lcssa1129", Value.int 64 inc) :: env
+
+/-- The brace head's `phi` bindings at the brace exit's edge, in the order the
+block writes them. -/
+def ifThen9AtLoopexitVs (inc idx : BitVec 64) (sp9 : BitVec 32)
+    (k terms tok : BitVec 64) : List (String × Value) :=
+  [("%inc.lcssa1129", .int 64 inc),
+   ("%idxprom.lcssa1108", .int 64 idx),
+   ("%frame.0.lcssa1098", .int 8 (BitVec.ofNat 8 1)),
+   ("%sp.0.lcssa1092.wide", .int 32 sp9),
+   ("%k.0.lcssa1086", .int 64 k),
+   ("%terms.0.lcssa1080", .int 64 terms),
+   ("%tokens.0.lcssa1074", .int 64 tok)]
+
+/-- **The brace head at the brace exit's edge**: `ifThen9PhiSpecs`' seven `phi`s
+selecting `if.then9.loopexit`'s operands, then the depth test.  (`ifThen9_denote`
+is the same run at the `LeafBlock3` edge; the specs and their split are reused
+here.) -/
+theorem ifThen9AtLoopexit_denote {calls : Calls} (env : Env) (s : State)
+    {inc idx k terms tok : BitVec 64} {sp9 : BitVec 32}
+    (hpre : s.pre = some "if.then9.loopexit")
+    (hinc : lookupName env "%inc" = some (.int 64 inc))
+    (hidx : lookupName env "%idxprom.le1289" = some (.int 64 idx))
+    (h9 : lookupName env "%9" = some (.int 32 sp9))
+    (hk : lookupName env "%k.0" = some (.int 64 k))
+    (htr : lookupName env "%terms.0" = some (.int 64 terms))
+    (htok : lookupName env "%tokens.0" = some (.int 64 tok)) :
+    denoteCode calls ifThen9Instrs (stateAt env s) =
+      some (stateAt (ifThen9AtLoopexitCells env inc idx sp9 k terms tok) s) := by
+  have hsel : PhiSelects (stateAt env s) "if.then9.loopexit" ifThen9PhiSpecs
+      (ifThen9AtLoopexitVs inc idx sp9 k terms tok) := by
+    simp only [ifThen9AtLoopexitVs]
+    refine PhiSelects.cons (op := .reg "%inc") (by decide) ?_
+      (PhiSelects.cons (op := .reg "%idxprom.le1289") (by decide) ?_
+        (PhiSelects.cons (op := .imm (.int 8 (BitVec.ofNat 8 1))) (by decide) ?_
+          (PhiSelects.cons (op := .reg "%9") (by decide) ?_
+            (PhiSelects.cons (op := .reg "%k.0") (by decide) ?_
+              (PhiSelects.cons (op := .reg "%terms.0") (by decide) ?_
+                (PhiSelects.cons (op := .reg "%tokens.0") (by decide) ?_
+                  PhiSelects.nil))))))
+    all_goals
+      simp only [stateAt, evalOperand, Const.toValue, hinc, hidx, h9, hk, htr, htok] <;>
+        rfl
+  rw [ifThen9Phi_eq,
+    denoteCode_phiRun (s := stateAt env s) (p := "if.then9.loopexit")
+      (specs := ifThen9PhiSpecs) (vs := ifThen9AtLoopexitVs inc idx sp9 k terms tok)
+      (rest := [Instr.icmp "%cmp10" IPred.ugt 32 (Operand.reg "%sp.0.lcssa1092.wide")
+        (Operand.imm (.int 32 (BitVec.ofNat 32 519)))])
+      (hpre := hpre) (hsel := hsel) (hrest := rfl)]
+  rw [stateAt_bindAll_runCells]
+  have hSp : lookupName (runCells (ifThen9AtLoopexitVs inc idx sp9 k terms tok) env)
+      "%sp.0.lcssa1092.wide" = some (.int 32 sp9) := by
+    simp only [ifThen9AtLoopexitVs, runCells]
+    rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide)]
+    simp only [lookupName_cons_self]
+  rw [stage2NoEventWalk_denote_icmp_imm (calls := calls)
+    (env := runCells (ifThen9AtLoopexitVs inc idx sp9 k terms tok) env) (s := s)
+    (d := "%cmp10") (a := "%sp.0.lcssa1092.wide") (p := .ugt) (w := 32)
+    (c := BitVec.ofNat 32 519) hSp (is := [])]
+  simp only [denoteCode_nil, ifThen9AtLoopexitCells, ifThen9AtLoopexitVs, runCells]
+  rfl
+
+/-- **The brace head's depth test, taken**: the exit's edge, the `phi` run, and
+`if.then9`'s `%cmp10` arm to `if.then12`. -/
+theorem link_ifThen9AtLoopexit_true {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State} {inc idx k terms tok : BitVec 64} {sp9 : BitVec 32}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "if.then9")
+    (hpre : s.pre = some "if.then9.loopexit")
+    (hinc : lookupName s.env "%inc" = some (.int 64 inc))
+    (hidx : lookupName s.env "%idxprom.le1289" = some (.int 64 idx))
+    (h9 : lookupName s.env "%9" = some (.int 32 sp9))
+    (hk : lookupName s.env "%k.0" = some (.int 64 k))
+    (htr : lookupName s.env "%terms.0" = some (.int 64 terms))
+    (htok : lookupName s.env "%tokens.0" = some (.int 64 tok))
+    (hy : evalICmp .ugt sp9 (BitVec.ofNat 32 519) = 1) :
+    Stage2NoEventWalkLink calls K mem s K
+      (stage2NoEventWalkNext
+        (ifThen9AtLoopexitCells s.env inc idx sp9 k terms tok) s "if.then12") := by
+  have hblock : ifThen9Block.instrs = ifThen9Instrs := by decide
+  have hcode : denoteCode calls ifThen9Block.instrs (stateAt s.env s) =
+      some (stateAt (ifThen9AtLoopexitCells s.env inc idx sp9 k terms tok) s) := by
+    rw [hblock]
+    exact ifThen9AtLoopexit_denote (calls := calls) s.env s hpre hinc hidx h9 hk htr htok
+  exact stage2NoEventWalkLink_condbr_true
+    (env' := ifThen9AtLoopexitCells s.env inc idx sp9 k terms tok)
+    h (by rw [hpc]; exact ifThen9Block_find) hcode rfl
+    (by simp only [ifThen9AtLoopexitCells, lookupName_cons_self, hy])
+
+/-- **The brace head's depth test, not taken**: the same run, to `if.end19`. -/
+theorem link_ifThen9AtLoopexit_false {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State} {inc idx k terms tok : BitVec 64} {sp9 : BitVec 32}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "if.then9")
+    (hpre : s.pre = some "if.then9.loopexit")
+    (hinc : lookupName s.env "%inc" = some (.int 64 inc))
+    (hidx : lookupName s.env "%idxprom.le1289" = some (.int 64 idx))
+    (h9 : lookupName s.env "%9" = some (.int 32 sp9))
+    (hk : lookupName s.env "%k.0" = some (.int 64 k))
+    (htr : lookupName s.env "%terms.0" = some (.int 64 terms))
+    (htok : lookupName s.env "%tokens.0" = some (.int 64 tok))
+    (hy : evalICmp .ugt sp9 (BitVec.ofNat 32 519) = 0) :
+    Stage2NoEventWalkLink calls K mem s K
+      (stage2NoEventWalkNext
+        (ifThen9AtLoopexitCells s.env inc idx sp9 k terms tok) s "if.end19") := by
+  have hblock : ifThen9Block.instrs = ifThen9Instrs := by decide
+  have hcode : denoteCode calls ifThen9Block.instrs (stateAt s.env s) =
+      some (stateAt (ifThen9AtLoopexitCells s.env inc idx sp9 k terms tok) s) := by
+    rw [hblock]
+    exact ifThen9AtLoopexit_denote (calls := calls) s.env s hpre hinc hidx h9 hk htr htok
+  exact stage2NoEventWalkLink_condbr_false
+    (env' := ifThen9AtLoopexitCells s.env inc idx sp9 k terms tok)
+    h (by rw [hpc]; exact ifThen9Block_find) hcode rfl
+    (by simp only [ifThen9AtLoopexitCells, lookupName_cons_self, hy])
+
+/-! #### `if.then35`: the bracket's exit test -/
+
+/-- `if.then35`: the entry index against the budget's trip count. -/
+def ifThen35Instrs : List Instr :=
+  [ Instr.icmp "%exitcond" IPred.eq 64 (Operand.reg "%indvars.iv")
+      (Operand.reg "%wide.trip.count1409") ]
+
+/-- `if.then35`, pinned. -/
+def ifThen35Block : Block :=
+  { name := "if.then35", instrs := ifThen35Instrs,
+    term := Term.condbr (Operand.reg "%exitcond") "if.then38.loopexit" "if.end51" }
+
+theorem ifThen35Block_find :
+    stage2NoEventBody.findBlock "if.then35" = some ifThen35Block := by
+  decide
+
+theorem ifThen35_denote (calls : Calls) (env : Env) (s : State)
+    {iv cnt : BitVec 64}
+    (hiv : lookupName env "%indvars.iv" = some (.int 64 iv))
+    (hcnt : lookupName env "%wide.trip.count1409" = some (.int 64 cnt)) :
+    denoteCode calls ifThen35Instrs (stateAt env s) =
+      some (stateAt (("%exitcond", .int 1 (evalICmp .eq iv cnt)) :: env) s) := by
+  rw [ifThen35Instrs, denoteCode_icmp_eq_reg (calls := calls) (env := env) (s := s)
+    (d := "%exitcond") (a := "%indvars.iv") (b := "%wide.trip.count1409")
+    hiv hcnt (is := [])]
+  simp only [denoteCode_nil]
+
+/-- **The bracket's exit test, taken**: the index reached the trip count, to
+`if.then38.loopexit`. -/
+theorem link_ifThen35_true {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State} {iv cnt : BitVec 64}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "if.then35")
+    (hiv : lookupName s.env "%indvars.iv" = some (.int 64 iv))
+    (hcnt : lookupName s.env "%wide.trip.count1409" = some (.int 64 cnt))
+    (hy : evalICmp .eq iv cnt = 1) :
+    Stage2NoEventWalkLink calls K mem s K
+      (stage2NoEventWalkNext (("%exitcond", .int 1 1) :: s.env) s
+        "if.then38.loopexit") := by
+  have hcode : denoteCode calls ifThen35Instrs (stateAt s.env s) =
+      some (stateAt (("%exitcond", .int 1 1) :: s.env) s) := by
+    have hd := ifThen35_denote (calls := calls) s.env s hiv hcnt
+    rw [hy] at hd
+    exact hd
+  exact stage2NoEventWalkLink_condbr_true (env' := ("%exitcond", .int 1 1) :: s.env)
+    h (by rw [hpc]; exact ifThen35Block_find) hcode rfl (by rw [lookupName_cons_self])
+
+/-- **The bracket's exit test, not taken**: the index is short of the trip count,
+to `if.end51`. -/
+theorem link_ifThen35_false {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State} {iv cnt : BitVec 64}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "if.then35")
+    (hiv : lookupName s.env "%indvars.iv" = some (.int 64 iv))
+    (hcnt : lookupName s.env "%wide.trip.count1409" = some (.int 64 cnt))
+    (hy : evalICmp .eq iv cnt = 0) :
+    Stage2NoEventWalkLink calls K mem s K
+      (stage2NoEventWalkNext (("%exitcond", .int 1 0) :: s.env) s "if.end51") := by
+  have hcode : denoteCode calls ifThen35Instrs (stateAt s.env s) =
+      some (stateAt (("%exitcond", .int 1 0) :: s.env) s) := by
+    have hd := ifThen35_denote (calls := calls) s.env s hiv hcnt
+    rw [hy] at hd
+    exact hd
+  exact stage2NoEventWalkLink_condbr_false (env' := ("%exitcond", .int 1 0) :: s.env)
+    h (by rw [hpc]; exact ifThen35Block_find) hcode rfl (by rw [lookupName_cons_self])
+
+/-! #### `string_value.loopexit`: the string's exit stub and head -/
+
+/-- `string_value.loopexit`: `%idxprom.le1287 = zext %8`, `%28 = trunc %indvars.iv`. -/
+def stringValueLoopexitInstrs : List Instr :=
+  [ Instr.zext "%idxprom.le1287" 32 64 (Operand.reg "%8"),
+    Instr.trunc "%28" 64 32 (Operand.reg "%indvars.iv") ]
+
+/-- `string_value.loopexit`, pinned. -/
+def stringValueLoopexitBlock : Block :=
+  { name := "string_value.loopexit", instrs := stringValueLoopexitInstrs,
+    term := Term.br "string_value" }
+
+theorem stringValueLoopexitBlock_find :
+    stage2NoEventBody.findBlock "string_value.loopexit" = some stringValueLoopexitBlock := by
+  decide
+
+theorem stringValueLoopexit_denote (calls : Calls) (env : Env) (s : State)
+    {w : BitVec 32} {iv : BitVec 64}
+    (h8 : lookupName env "%8" = some (.int 32 w))
+    (hiv : lookupName env "%indvars.iv" = some (.int 64 iv)) :
+    denoteCode calls stringValueLoopexitInstrs (stateAt env s) =
+      some (stateAt
+        (("%28", .int 32 (BitVec.ofNat 32 (iv.toNat % 2 ^ 32))) ::
+          ("%idxprom.le1287", .int 64 (BitVec.ofNat 64 w.toNat)) :: env) s) := by
+  unfold stringValueLoopexitInstrs
+  rw [denoteCode_zext (calls := calls) (env := env) (s := s) (d := "%idxprom.le1287")
+    (v := "%8") (wIn := 32) (wOut := 64) (x := w) h8]
+  rw [denoteCode_trunc (calls := calls)
+    (env := ("%idxprom.le1287", .int 64 (BitVec.ofNat 64 w.toNat)) :: env) (s := s)
+    (d := "%28") (v := "%indvars.iv") (wIn := 64) (wOut := 32) (x := iv)
+    (lookupName_cons_other _ _ _ (by decide) hiv)]
+  simp only [denoteCode_nil]
+
+/-- The string's exit stub: the index's zero extension and the depth's
+truncation, to `string_value`. -/
+theorem link_stringValueLoopexitEntry {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State} {w : BitVec 32} {iv : BitVec 64}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "string_value.loopexit")
+    (h8 : lookupName s.env "%8" = some (.int 32 w))
+    (hiv : lookupName s.env "%indvars.iv" = some (.int 64 iv)) :
+    Stage2NoEventWalkLink calls K mem s K
+      (stage2NoEventWalkNext
+        (("%28", .int 32 (BitVec.ofNat 32 (iv.toNat % 2 ^ 32))) ::
+          ("%idxprom.le1287", .int 64 (BitVec.ofNat 64 w.toNat)) :: s.env)
+        s "string_value") := by
+  have hcode := stringValueLoopexit_denote (calls := calls) (env := s.env) (s := s) h8 hiv
+  refine ⟨h, ?_, Stage2NoEventWalkInv.mem_congr h rfl⟩
+  have hstep := stage2NoEventWalk_step_br (s := s) (f := stage2NoEventBody)
+    (by rw [hpc]; exact stringValueLoopexitBlock_find) hcode rfl
+  simpa only [stage2NoEventWalkNext, stateAt] using hstep
+
+/-- `string_value`: its eight `phi`s, the lifetime marker, and the end test. -/
+def stringValueInstrs : List Instr :=
+  [ Instr.phi "%inc.lcssa1130" (Ty.int 64)
+      [("LeafBlock", Operand.reg "%inc.peel"), ("string_value.loopexit", Operand.reg "%inc")],
+    Instr.phi "%.lcssa1125" (Ty.int 32)
+      [("LeafBlock", Operand.reg "%2"), ("string_value.loopexit", Operand.reg "%8")],
+    Instr.phi "%idxprom.lcssa1109" (Ty.int 64)
+      [("LeafBlock", Operand.reg "%idxprom.peel"),
+       ("string_value.loopexit", Operand.reg "%idxprom.le1287")],
+    Instr.phi "%frame.0.lcssa1099" (Ty.int 8)
+      [("LeafBlock", Operand.reg "%frame.0.ph1402"),
+       ("string_value.loopexit", Operand.imm (.int 8 (BitVec.ofNat 8 1)))],
+    Instr.phi "%sp.0.lcssa1093.wide" (Ty.int 32)
+      [("LeafBlock", Operand.reg "%sp.0.ph1403"),
+       ("string_value.loopexit", Operand.reg "%28")],
+    Instr.phi "%k.0.lcssa1087" (Ty.int 64)
+      [("LeafBlock", Operand.reg "%k.0.ph1404"),
+       ("string_value.loopexit", Operand.reg "%k.0")],
+    Instr.phi "%terms.0.lcssa1081" (Ty.int 64)
+      [("LeafBlock", Operand.reg "%terms.0.ph1407"),
+       ("string_value.loopexit", Operand.reg "%terms.0")],
+    Instr.phi "%tokens.0.lcssa1075" (Ty.int 64)
+      [("LeafBlock", Operand.reg "%tokens.0.ph1408"),
+       ("string_value.loopexit", Operand.reg "%tokens.0")],
+    Instr.callVoid "llvm.lifetime.start.p0"
+      [((Ty.int 64), (Operand.imm (.int 64 (BitVec.ofNat 64 8)))),
+       (Ty.ptr, (Operand.reg "%outn205"))],
+    Instr.icmp "%cmp207.not" IPred.ult 64 (Operand.reg "%inc.lcssa1130")
+      (Operand.reg "%nep") ]
+
+/-- `string_value`, pinned. -/
+def stringValueBlock : Block :=
+  { name := "string_value", instrs := stringValueInstrs,
+    term := Term.condbr (Operand.reg "%cmp207.not") "if.end216" "if.then209" }
+
+theorem stringValueBlock_find :
+    stage2NoEventBody.findBlock "string_value" = some stringValueBlock := by
+  decide
+
+/-- `string_value`'s leading `phi` run, as specs. -/
+def stringValuePhiSpecs : List PhiSpec :=
+  [ { dst := "%inc.lcssa1130", ty := Ty.int 64,
+      incoming := [("LeafBlock", Operand.reg "%inc.peel"),
+        ("string_value.loopexit", Operand.reg "%inc")] },
+    { dst := "%.lcssa1125", ty := Ty.int 32,
+      incoming := [("LeafBlock", Operand.reg "%2"),
+        ("string_value.loopexit", Operand.reg "%8")] },
+    { dst := "%idxprom.lcssa1109", ty := Ty.int 64,
+      incoming := [("LeafBlock", Operand.reg "%idxprom.peel"),
+        ("string_value.loopexit", Operand.reg "%idxprom.le1287")] },
+    { dst := "%frame.0.lcssa1099", ty := Ty.int 8,
+      incoming := [("LeafBlock", Operand.reg "%frame.0.ph1402"),
+        ("string_value.loopexit", Operand.imm (.int 8 (BitVec.ofNat 8 1)))] },
+    { dst := "%sp.0.lcssa1093.wide", ty := Ty.int 32,
+      incoming := [("LeafBlock", Operand.reg "%sp.0.ph1403"),
+        ("string_value.loopexit", Operand.reg "%28")] },
+    { dst := "%k.0.lcssa1087", ty := Ty.int 64,
+      incoming := [("LeafBlock", Operand.reg "%k.0.ph1404"),
+        ("string_value.loopexit", Operand.reg "%k.0")] },
+    { dst := "%terms.0.lcssa1081", ty := Ty.int 64,
+      incoming := [("LeafBlock", Operand.reg "%terms.0.ph1407"),
+        ("string_value.loopexit", Operand.reg "%terms.0")] },
+    { dst := "%tokens.0.lcssa1075", ty := Ty.int 64,
+      incoming := [("LeafBlock", Operand.reg "%tokens.0.ph1408"),
+        ("string_value.loopexit", Operand.reg "%tokens.0")] } ]
+
+theorem stringValuePhi_eq :
+    stringValueInstrs = List.map PhiSpec.instr stringValuePhiSpecs ++
+      [Instr.callVoid "llvm.lifetime.start.p0"
+        [((Ty.int 64), (Operand.imm (.int 64 (BitVec.ofNat 64 8)))),
+         (Ty.ptr, (Operand.reg "%outn205"))],
+       Instr.icmp "%cmp207.not" IPred.ult 64 (Operand.reg "%inc.lcssa1130")
+        (Operand.reg "%nep")] := by
+  decide
+
+/-- The string head's `phi` bindings at the string exit's edge. -/
+def stringValueVs (inc : BitVec 64) (lc : BitVec 32) (idx : BitVec 64)
+    (sp28 : BitVec 32) (k terms tok : BitVec 64) : List (String × Value) :=
+  [("%inc.lcssa1130", .int 64 inc),
+   ("%.lcssa1125", .int 32 lc),
+   ("%idxprom.lcssa1109", .int 64 idx),
+   ("%frame.0.lcssa1099", .int 8 (BitVec.ofNat 8 1)),
+   ("%sp.0.lcssa1093.wide", .int 32 sp28),
+   ("%k.0.lcssa1087", .int 64 k),
+   ("%terms.0.lcssa1081", .int 64 terms),
+   ("%tokens.0.lcssa1075", .int 64 tok)]
+
+/-- The `string_value` cells after its run: its end test over the base `%nep`. -/
+abbrev stringValueCells (env : Env) (inc : BitVec 64) (lc : BitVec 32) (idx : BitVec 64)
+    (sp28 : BitVec 32) (k terms tok : BitVec 64) (nep : BitVec 64) : Env :=
+  ("%cmp207.not", Value.int 1 (evalICmp .ult inc nep)) ::
+    ("%tokens.0.lcssa1075", Value.int 64 tok) ::
+    ("%terms.0.lcssa1081", Value.int 64 terms) ::
+    ("%k.0.lcssa1087", Value.int 64 k) ::
+    ("%sp.0.lcssa1093.wide", Value.int 32 sp28) ::
+    ("%frame.0.lcssa1099", Value.int 8 1) ::
+    ("%idxprom.lcssa1109", Value.int 64 idx) ::
+    ("%.lcssa1125", Value.int 32 lc) ::
+    ("%inc.lcssa1130", Value.int 64 inc) :: env
+
+/-- A call that binds nothing, at the lifetime marker's two-argument shape. -/
+theorem stage2NoEventWalk_step_callVoid2 (calls : Calls) (env : Env) (s : State)
+    (callee : String) (c : BitVec 64) (o2 : Operand) {v2 : Value} {r : CallOutcome}
+    (h2 : evalOperand (stateAt env s) o2 = some v2)
+    (hc : calls callee [.int 64 c, v2] s.mem s.next = some r) :
+    evalInstr calls (stateAt env s)
+        (.callVoid callee [(Ty.int 64, .imm (.int 64 c)), (Ty.ptr, o2)]) =
+      some (stateAt env { s with mem := r.mem, next := r.next }) := by
+  have hargs : evalOperands (stateAt env s)
+      [(Ty.int 64, .imm (.int 64 c)), (Ty.ptr, o2)] = some [.int 64 c, v2] := by
+    simp only [evalOperands, evalOperand_lit_of, h2]
+  have hc' : calls callee [.int 64 c, v2] (stateAt env s).mem (stateAt env s).next
+      = some r := hc
+  simp only [evalInstr, hargs, hc']
+  rfl
+
+/-- The lifetime marker's chain step. -/
+theorem denoteCode_callVoid2 (calls : Calls) (env : Env) (s : State)
+    (callee : String) (c : BitVec 64) (o2 : Operand) {v2 : Value} {r : CallOutcome}
+    (h2 : evalOperand (stateAt env s) o2 = some v2)
+    (hc : calls callee [.int 64 c, v2] s.mem s.next = some r) (is : List Instr) :
+    denoteCode calls
+        (.callVoid callee [(Ty.int 64, .imm (.int 64 c)), (Ty.ptr, o2)] :: is)
+        (stateAt env s) =
+      denoteCode calls is (stateAt env { s with mem := r.mem, next := r.next }) := by
+  rw [denoteCode_cons_of _ _ _ _ _
+    (stage2NoEventWalk_step_callVoid2 calls env s callee c o2 h2 hc)]
+
+/-- **The string head at the string exit's edge**: the `phi` run selecting
+`string_value.loopexit`'s operands, the lifetime marker, and the end test. -/
+theorem stringValue_denote {calls : Calls} (env : Env) (s : State)
+    {inc : BitVec 64} {lc : BitVec 32} {idx k terms tok : BitVec 64} {sp28 : BitVec 32}
+    {nep : BitVec 64} {o : Nat} {r : CallOutcome}
+    (hpre : s.pre = some "string_value.loopexit")
+    (hinc : lookupName env "%inc" = some (.int 64 inc))
+    (hlc : lookupName env "%8" = some (.int 32 lc))
+    (hidx : lookupName env "%idxprom.le1287" = some (.int 64 idx))
+    (hsp : lookupName env "%28" = some (.int 32 sp28))
+    (hk : lookupName env "%k.0" = some (.int 64 k))
+    (htr : lookupName env "%terms.0" = some (.int 64 terms))
+    (htok : lookupName env "%tokens.0" = some (.int 64 tok))
+    (houtn : lookupName env "%outn205" = some (.ptr o))
+    (hnep : lookupName env "%nep" = some (.int 64 nep))
+    (hc : calls "llvm.lifetime.start.p0"
+      [.int 64 (BitVec.ofNat 64 8), .ptr o] s.mem s.next = some r) :
+    denoteCode calls stringValueInstrs (stateAt env s) =
+      some (stateAt (stringValueCells env inc lc idx sp28 k terms tok nep)
+        { s with mem := r.mem, next := r.next }) := by
+  have hsel : PhiSelects (stateAt env s) "string_value.loopexit" stringValuePhiSpecs
+      (stringValueVs inc lc idx sp28 k terms tok) := by
+    simp only [stringValueVs]
+    refine PhiSelects.cons (op := .reg "%inc") (by decide) ?_
+      (PhiSelects.cons (op := .reg "%8") (by decide) ?_
+        (PhiSelects.cons (op := .reg "%idxprom.le1287") (by decide) ?_
+          (PhiSelects.cons (op := .imm (.int 8 (BitVec.ofNat 8 1))) (by decide) ?_
+            (PhiSelects.cons (op := .reg "%28") (by decide) ?_
+              (PhiSelects.cons (op := .reg "%k.0") (by decide) ?_
+                (PhiSelects.cons (op := .reg "%terms.0") (by decide) ?_
+                  (PhiSelects.cons (op := .reg "%tokens.0") (by decide) ?_
+                    PhiSelects.nil)))))))
+    all_goals
+      simp only [stateAt, evalOperand, Const.toValue, hinc, hlc, hidx, hsp, hk, htr, htok] <;>
+        rfl
+  rw [stringValuePhi_eq,
+    denoteCode_phiRun (s := stateAt env s) (p := "string_value.loopexit")
+      (specs := stringValuePhiSpecs) (vs := stringValueVs inc lc idx sp28 k terms tok)
+      (rest := [Instr.callVoid "llvm.lifetime.start.p0"
+          [((Ty.int 64), (Operand.imm (.int 64 (BitVec.ofNat 64 8)))),
+           (Ty.ptr, (Operand.reg "%outn205"))],
+        Instr.icmp "%cmp207.not" IPred.ult 64 (Operand.reg "%inc.lcssa1130")
+          (Operand.reg "%nep")])
+      (hpre := hpre) (hsel := hsel) (hrest := by decide)]
+  rw [stateAt_bindAll_runCells]
+  have hOutn : lookupName
+      (runCells (stringValueVs inc lc idx sp28 k terms tok) env) "%outn205"
+      = some (.ptr o) := by
+    simp only [stringValueVs, runCells]
+    rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
+    exact houtn
+  have hNep : lookupName
+      (runCells (stringValueVs inc lc idx sp28 k terms tok) env) "%nep"
+      = some (.int 64 nep) := by
+    simp only [stringValueVs, runCells]
+    rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
+    exact hnep
+  have hIncCell : lookupName
+      (runCells (stringValueVs inc lc idx sp28 k terms tok) env) "%inc.lcssa1130"
+      = some (.int 64 inc) := by
+    simp only [stringValueVs, runCells]
+    rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide)]
+    simp only [lookupName_cons_self]
+  rw [denoteCode_callVoid2 (calls := calls)
+    (env := runCells (stringValueVs inc lc idx sp28 k terms tok) env) (s := s)
+    (callee := "llvm.lifetime.start.p0") (c := BitVec.ofNat 64 8)
+    (o2 := Operand.reg "%outn205") (v2 := .ptr o) (r := r)
+    (by simp only [stateAt, evalOperand, hOutn]) hc]
+  rw [stage2NoEventWalk_denote_icmp_reg (calls := calls)
+    (env := runCells (stringValueVs inc lc idx sp28 k terms tok) env)
+    (s := { s with mem := r.mem, next := r.next })
+    (d := "%cmp207.not") (a := "%inc.lcssa1130") (b := "%nep") (p := .ult) (w := 64)
+    (x := inc) (y := nep) hIncCell hNep (is := [])]
+  simp only [denoteCode_nil, stringValueCells, stringValueVs, runCells]
+  rfl
+
+/-- **The string end test, taken**: the entry cursor is below the document, to
+`if.end216`. -/
+theorem link_stringValue_true {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State} {inc : BitVec 64} {lc : BitVec 32}
+    {idx k terms tok nep : BitVec 64} {sp28 : BitVec 32} {o : Nat} {r : CallOutcome}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "string_value")
+    (hpre : s.pre = some "string_value.loopexit")
+    (hinc : lookupName s.env "%inc" = some (.int 64 inc))
+    (hlc : lookupName s.env "%8" = some (.int 32 lc))
+    (hidx : lookupName s.env "%idxprom.le1287" = some (.int 64 idx))
+    (hsp : lookupName s.env "%28" = some (.int 32 sp28))
+    (hk : lookupName s.env "%k.0" = some (.int 64 k))
+    (htr : lookupName s.env "%terms.0" = some (.int 64 terms))
+    (htok : lookupName s.env "%tokens.0" = some (.int 64 tok))
+    (houtn : lookupName s.env "%outn205" = some (.ptr o))
+    (hnep : lookupName s.env "%nep" = some (.int 64 nep))
+    (hc : calls "llvm.lifetime.start.p0"
+      [.int 64 (BitVec.ofNat 64 8), .ptr o] s.mem s.next = some r)
+    (hmem : r.mem = s.mem) (hnext : r.next = s.next)
+    (hy : evalICmp .ult inc nep = 1) :
+    Stage2NoEventWalkLink calls K mem s K
+      (stage2NoEventWalkNext
+        (stringValueCells s.env inc lc idx sp28 k terms tok nep) s "if.end216") := by
+  have hblock : stringValueBlock.instrs = stringValueInstrs := by decide
+  have hcode : denoteCode calls stringValueBlock.instrs (stateAt s.env s) =
+      some (stateAt (stringValueCells s.env inc lc idx sp28 k terms tok nep)
+        { s with mem := r.mem, next := r.next }) := by
+    rw [hblock]
+    exact stringValue_denote (calls := calls) s.env s hpre hinc hlc hidx hsp hk htr htok
+      houtn hnep hc
+  refine ⟨h, ?_, Stage2NoEventWalkInv.mem_congr h rfl⟩
+  have hstep := stage2NoEventWalk_step_condbr_true (f := stage2NoEventBody)
+    (by simp only [stateAt]; rw [hpc]; exact stringValueBlock_find) hcode rfl
+    (by simp only [stateAt, stringValueCells, lookupName_cons_self, hy])
+  simpa only [stage2NoEventWalkNext, stateAt, hmem, hnext] using hstep
+
+/-- **The string end test, not taken**: the entry cursor reached the document's
+end, to `if.then209`. -/
+theorem link_stringValue_false {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State} {inc : BitVec 64} {lc : BitVec 32}
+    {idx k terms tok nep : BitVec 64} {sp28 : BitVec 32} {o : Nat} {r : CallOutcome}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "string_value")
+    (hpre : s.pre = some "string_value.loopexit")
+    (hinc : lookupName s.env "%inc" = some (.int 64 inc))
+    (hlc : lookupName s.env "%8" = some (.int 32 lc))
+    (hidx : lookupName s.env "%idxprom.le1287" = some (.int 64 idx))
+    (hsp : lookupName s.env "%28" = some (.int 32 sp28))
+    (hk : lookupName s.env "%k.0" = some (.int 64 k))
+    (htr : lookupName s.env "%terms.0" = some (.int 64 terms))
+    (htok : lookupName s.env "%tokens.0" = some (.int 64 tok))
+    (houtn : lookupName s.env "%outn205" = some (.ptr o))
+    (hnep : lookupName s.env "%nep" = some (.int 64 nep))
+    (hc : calls "llvm.lifetime.start.p0"
+      [.int 64 (BitVec.ofNat 64 8), .ptr o] s.mem s.next = some r)
+    (hmem : r.mem = s.mem) (hnext : r.next = s.next)
+    (hy : evalICmp .ult inc nep = 0) :
+    Stage2NoEventWalkLink calls K mem s K
+      (stage2NoEventWalkNext
+        (stringValueCells s.env inc lc idx sp28 k terms tok nep) s "if.then209") := by
+  have hblock : stringValueBlock.instrs = stringValueInstrs := by decide
+  have hcode : denoteCode calls stringValueBlock.instrs (stateAt s.env s) =
+      some (stateAt (stringValueCells s.env inc lc idx sp28 k terms tok nep)
+        { s with mem := r.mem, next := r.next }) := by
+    rw [hblock]
+    exact stringValue_denote (calls := calls) s.env s hpre hinc hlc hidx hsp hk htr htok
+      houtn hnep hc
+  refine ⟨h, ?_, Stage2NoEventWalkInv.mem_congr h rfl⟩
+  have hstep := stage2NoEventWalk_step_condbr_false (f := stage2NoEventBody)
+    (by simp only [stateAt]; rw [hpc]; exact stringValueBlock_find) hcode rfl
+    (by simp only [stateAt, stringValueCells, lookupName_cons_self, hy])
+  simpa only [stage2NoEventWalkNext, stateAt, hmem, hnext] using hstep
+
+/-! #### `scalar.loopexit`: the value's exit stub and head -/
+
+/-- `scalar.loopexit`: `%idxprom.le1291 = zext %8`, `%55 = trunc %indvars.iv`. -/
+def scalarLoopexitInstrs : List Instr :=
+  [ Instr.zext "%idxprom.le1291" 32 64 (Operand.reg "%8"),
+    Instr.trunc "%55" 64 32 (Operand.reg "%indvars.iv") ]
+
+/-- `scalar.loopexit`, pinned. -/
+def scalarLoopexitBlock : Block :=
+  { name := "scalar.loopexit", instrs := scalarLoopexitInstrs,
+    term := Term.br "scalar" }
+
+theorem scalarLoopexitBlock_find :
+    stage2NoEventBody.findBlock "scalar.loopexit" = some scalarLoopexitBlock := by
+  decide
+
+theorem scalarLoopexitEntry_denote (calls : Calls) (env : Env) (s : State)
+    {w : BitVec 32} {iv : BitVec 64}
+    (h8 : lookupName env "%8" = some (.int 32 w))
+    (hiv : lookupName env "%indvars.iv" = some (.int 64 iv)) :
+    denoteCode calls scalarLoopexitInstrs (stateAt env s) =
+      some (stateAt
+        (("%55", .int 32 (BitVec.ofNat 32 (iv.toNat % 2 ^ 32))) ::
+          ("%idxprom.le1291", .int 64 (BitVec.ofNat 64 w.toNat)) :: env) s) := by
+  unfold scalarLoopexitInstrs
+  rw [denoteCode_zext (calls := calls) (env := env) (s := s) (d := "%idxprom.le1291")
+    (v := "%8") (wIn := 32) (wOut := 64) (x := w) h8]
+  rw [denoteCode_trunc (calls := calls)
+    (env := ("%idxprom.le1291", .int 64 (BitVec.ofNat 64 w.toNat)) :: env) (s := s)
+    (d := "%55") (v := "%indvars.iv") (wIn := 64) (wOut := 32) (x := iv)
+    (lookupName_cons_other _ _ _ (by decide) hiv)]
+  simp only [denoteCode_nil]
+
+/-- The value's exit stub: the index's zero extension and the depth's truncation,
+to `scalar`. -/
+theorem link_scalarLoopexitEntry {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State} {w : BitVec 32} {iv : BitVec 64}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "scalar.loopexit")
+    (h8 : lookupName s.env "%8" = some (.int 32 w))
+    (hiv : lookupName s.env "%indvars.iv" = some (.int 64 iv)) :
+    Stage2NoEventWalkLink calls K mem s K
+      (stage2NoEventWalkNext
+        (("%55", .int 32 (BitVec.ofNat 32 (iv.toNat % 2 ^ 32))) ::
+          ("%idxprom.le1291", .int 64 (BitVec.ofNat 64 w.toNat)) :: s.env)
+        s "scalar") := by
+  have hcode := scalarLoopexitEntry_denote (calls := calls) (env := s.env) (s := s) h8 hiv
+  refine ⟨h, ?_, Stage2NoEventWalkInv.mem_congr h rfl⟩
+  have hstep := stage2NoEventWalk_step_br (s := s) (f := stage2NoEventBody)
+    (by rw [hpc]; exact scalarLoopexitBlock_find) hcode rfl
+  simpa only [stage2NoEventWalkNext, stateAt] using hstep
+
+/-- `scalar`: its seven `phi`s, the byte's address, and the end test. -/
+def scalarInstrs : List Instr :=
+  [ Instr.phi "%inc.lcssa" (Ty.int 64)
+      [("scalar.loopexit", Operand.reg "%inc"), ("LeafBlock", Operand.reg "%inc.peel"),
+       ("LeafBlock1", Operand.reg "%inc.peel"), ("LeafBlock3", Operand.reg "%inc.peel")],
+    Instr.phi "%idxprom.lcssa" (Ty.int 64)
+      [("scalar.loopexit", Operand.reg "%idxprom.le1291"),
+       ("LeafBlock", Operand.reg "%idxprom.peel"),
+       ("LeafBlock1", Operand.reg "%idxprom.peel"),
+       ("LeafBlock3", Operand.reg "%idxprom.peel")],
+    Instr.phi "%.lcssa" (Ty.int 8)
+      [("scalar.loopexit", Operand.reg "%7"), ("LeafBlock", Operand.reg "%3"),
+       ("LeafBlock1", Operand.reg "%3"), ("LeafBlock3", Operand.reg "%3")],
+    Instr.phi "%frame.0.lcssa1097" (Ty.int 8)
+      [("scalar.loopexit", Operand.imm (.int 8 (BitVec.ofNat 8 1))),
+       ("LeafBlock", Operand.reg "%frame.0.ph1402"),
+       ("LeafBlock1", Operand.reg "%frame.0.ph1402"),
+       ("LeafBlock3", Operand.reg "%frame.0.ph1402")],
+    Instr.phi "%sp.0.lcssa1091.wide" (Ty.int 32)
+      [("scalar.loopexit", Operand.reg "%55"),
+       ("LeafBlock", Operand.reg "%sp.0.ph1403"),
+       ("LeafBlock1", Operand.reg "%sp.0.ph1403"),
+       ("LeafBlock3", Operand.reg "%sp.0.ph1403")],
+    Instr.phi "%terms.0.lcssa1079" (Ty.int 64)
+      [("scalar.loopexit", Operand.reg "%terms.0"),
+       ("LeafBlock", Operand.reg "%terms.0.ph1407"),
+       ("LeafBlock1", Operand.reg "%terms.0.ph1407"),
+       ("LeafBlock3", Operand.reg "%terms.0.ph1407")],
+    Instr.phi "%tokens.0.lcssa1073" (Ty.int 64)
+      [("scalar.loopexit", Operand.reg "%tokens.0"),
+       ("LeafBlock", Operand.reg "%tokens.0.ph1408"),
+       ("LeafBlock1", Operand.reg "%tokens.0.ph1408"),
+       ("LeafBlock3", Operand.reg "%tokens.0.ph1408")],
+    Instr.gep "%arrayidx6.le1046" (Ty.int 8) (Operand.reg "%b")
+      (Operand.reg "%idxprom.lcssa"),
+    Instr.icmp "%cmp436" IPred.ult 64 (Operand.reg "%inc.lcssa") (Operand.reg "%nep") ]
+
+/-- `scalar`, pinned. -/
+def scalarBlock : Block :=
+  { name := "scalar", instrs := scalarInstrs,
+    term := Term.condbr (Operand.reg "%cmp436") "cond.true" "cond.end" }
+
+theorem scalarBlock_find :
+    stage2NoEventBody.findBlock "scalar" = some scalarBlock := by
+  decide
+
+/-- `scalar`'s leading `phi` run, as specs. -/
+def scalarPhiSpecs : List PhiSpec :=
+  [ { dst := "%inc.lcssa", ty := Ty.int 64,
+      incoming := [("scalar.loopexit", Operand.reg "%inc"),
+        ("LeafBlock", Operand.reg "%inc.peel"),
+        ("LeafBlock1", Operand.reg "%inc.peel"),
+        ("LeafBlock3", Operand.reg "%inc.peel")] },
+    { dst := "%idxprom.lcssa", ty := Ty.int 64,
+      incoming := [("scalar.loopexit", Operand.reg "%idxprom.le1291"),
+        ("LeafBlock", Operand.reg "%idxprom.peel"),
+        ("LeafBlock1", Operand.reg "%idxprom.peel"),
+        ("LeafBlock3", Operand.reg "%idxprom.peel")] },
+    { dst := "%.lcssa", ty := Ty.int 8,
+      incoming := [("scalar.loopexit", Operand.reg "%7"),
+        ("LeafBlock", Operand.reg "%3"),
+        ("LeafBlock1", Operand.reg "%3"),
+        ("LeafBlock3", Operand.reg "%3")] },
+    { dst := "%frame.0.lcssa1097", ty := Ty.int 8,
+      incoming := [("scalar.loopexit", Operand.imm (.int 8 (BitVec.ofNat 8 1))),
+        ("LeafBlock", Operand.reg "%frame.0.ph1402"),
+        ("LeafBlock1", Operand.reg "%frame.0.ph1402"),
+        ("LeafBlock3", Operand.reg "%frame.0.ph1402")] },
+    { dst := "%sp.0.lcssa1091.wide", ty := Ty.int 32,
+      incoming := [("scalar.loopexit", Operand.reg "%55"),
+        ("LeafBlock", Operand.reg "%sp.0.ph1403"),
+        ("LeafBlock1", Operand.reg "%sp.0.ph1403"),
+        ("LeafBlock3", Operand.reg "%sp.0.ph1403")] },
+    { dst := "%terms.0.lcssa1079", ty := Ty.int 64,
+      incoming := [("scalar.loopexit", Operand.reg "%terms.0"),
+        ("LeafBlock", Operand.reg "%terms.0.ph1407"),
+        ("LeafBlock1", Operand.reg "%terms.0.ph1407"),
+        ("LeafBlock3", Operand.reg "%terms.0.ph1407")] },
+    { dst := "%tokens.0.lcssa1073", ty := Ty.int 64,
+      incoming := [("scalar.loopexit", Operand.reg "%tokens.0"),
+        ("LeafBlock", Operand.reg "%tokens.0.ph1408"),
+        ("LeafBlock1", Operand.reg "%tokens.0.ph1408"),
+        ("LeafBlock3", Operand.reg "%tokens.0.ph1408")] } ]
+
+theorem scalarPhi_eq :
+    scalarInstrs = List.map PhiSpec.instr scalarPhiSpecs ++
+      [Instr.gep "%arrayidx6.le1046" (Ty.int 8) (Operand.reg "%b")
+        (Operand.reg "%idxprom.lcssa"),
+       Instr.icmp "%cmp436" IPred.ult 64 (Operand.reg "%inc.lcssa")
+        (Operand.reg "%nep")] := by
+  decide
+
+/-- The value head's `phi` bindings at the value exit's edge. -/
+def scalarVs (inc idx : BitVec 64) (bv : BitVec 8) (sp : BitVec 32)
+    (terms tok : BitVec 64) : List (String × Value) :=
+  [("%inc.lcssa", .int 64 inc),
+   ("%idxprom.lcssa", .int 64 idx),
+   ("%.lcssa", .int 8 bv),
+   ("%frame.0.lcssa1097", .int 8 (BitVec.ofNat 8 1)),
+   ("%sp.0.lcssa1091.wide", .int 32 sp),
+   ("%terms.0.lcssa1079", .int 64 terms),
+   ("%tokens.0.lcssa1073", .int 64 tok)]
+
+/-- The `scalar` cells after its run: the byte's address and the end test. -/
+abbrev scalarCells (env : Env) (inc idx : BitVec 64) (bv : BitVec 8) (sp : BitVec 32)
+    (terms tok nep : BitVec 64) (a : Nat) : Env :=
+  ("%cmp436", Value.int 1 (evalICmp .ult inc nep)) ::
+    ("%arrayidx6.le1046", Value.ptr a) ::
+    ("%tokens.0.lcssa1073", Value.int 64 tok) ::
+    ("%terms.0.lcssa1079", Value.int 64 terms) ::
+    ("%sp.0.lcssa1091.wide", Value.int 32 sp) ::
+    ("%frame.0.lcssa1097", Value.int 8 1) ::
+    ("%.lcssa", Value.int 8 bv) ::
+    ("%idxprom.lcssa", Value.int 64 idx) ::
+    ("%inc.lcssa", Value.int 64 inc) :: env
+
+/-- **The value head at the value exit's edge**: the `phi` run selecting
+`scalar.loopexit`'s operands, the entry byte's address, and the end test. -/
+theorem scalar_denote {calls : Calls} (env : Env) (s : State)
+    {inc idx : BitVec 64} {bv : BitVec 8} {sp : BitVec 32}
+    {terms tok nep : BitVec 64} {b : Nat}
+    (hpre : s.pre = some "scalar.loopexit")
+    (hinc : lookupName env "%inc" = some (.int 64 inc))
+    (hidx : lookupName env "%idxprom.le1291" = some (.int 64 idx))
+    (hbv : lookupName env "%7" = some (.int 8 bv))
+    (hsp : lookupName env "%55" = some (.int 32 sp))
+    (htr : lookupName env "%terms.0" = some (.int 64 terms))
+    (htok : lookupName env "%tokens.0" = some (.int 64 tok))
+    (hb : lookupName env "%b" = some (.ptr b))
+    (hnep : lookupName env "%nep" = some (.int 64 nep))
+    (hpos : (idx.signExtend 64).toNat < 2 ^ 63) :
+    denoteCode calls scalarInstrs (stateAt env s) =
+      some (stateAt (scalarCells env inc idx bv sp terms tok nep
+        (b + (idx.signExtend 64).toNat)) s) := by
+  have hsel : PhiSelects (stateAt env s) "scalar.loopexit" scalarPhiSpecs
+      (scalarVs inc idx bv sp terms tok) := by
+    simp only [scalarVs]
+    refine PhiSelects.cons (op := .reg "%inc") (by decide) ?_
+      (PhiSelects.cons (op := .reg "%idxprom.le1291") (by decide) ?_
+        (PhiSelects.cons (op := .reg "%7") (by decide) ?_
+          (PhiSelects.cons (op := .imm (.int 8 (BitVec.ofNat 8 1))) (by decide) ?_
+            (PhiSelects.cons (op := .reg "%55") (by decide) ?_
+              (PhiSelects.cons (op := .reg "%terms.0") (by decide) ?_
+                (PhiSelects.cons (op := .reg "%tokens.0") (by decide) ?_
+                  PhiSelects.nil))))))
+    all_goals
+      simp only [stateAt, evalOperand, Const.toValue, hinc, hidx, hbv, hsp, htr, htok] <;>
+        rfl
+  rw [scalarPhi_eq,
+    denoteCode_phiRun (s := stateAt env s) (p := "scalar.loopexit")
+      (specs := scalarPhiSpecs) (vs := scalarVs inc idx bv sp terms tok)
+      (rest := [Instr.gep "%arrayidx6.le1046" (Ty.int 8) (Operand.reg "%b")
+          (Operand.reg "%idxprom.lcssa"),
+        Instr.icmp "%cmp436" IPred.ult 64 (Operand.reg "%inc.lcssa")
+          (Operand.reg "%nep")])
+      (hpre := hpre) (hsel := hsel) (hrest := by decide)]
+  rw [stateAt_bindAll_runCells]
+  have hB : lookupName (runCells (scalarVs inc idx bv sp terms tok) env) "%b"
+      = some (.ptr b) := by
+    simp only [scalarVs, runCells]
+    rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide)]
+    exact hb
+  have hNep : lookupName (runCells (scalarVs inc idx bv sp terms tok) env) "%nep"
+      = some (.int 64 nep) := by
+    simp only [scalarVs, runCells]
+    rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide)]
+    exact hnep
+  have hIdxCell : lookupName (runCells (scalarVs inc idx bv sp terms tok) env)
+      "%idxprom.lcssa" = some (.int 64 idx) := by
+    simp only [scalarVs, runCells]
+    rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide)]
+    simp only [lookupName_cons_self]
+  have hIncCell : lookupName (runCells (scalarVs inc idx bv sp terms tok) env)
+      "%inc.lcssa" = some (.int 64 inc) := by
+    simp only [scalarVs, runCells]
+    rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
+    simp only [lookupName_cons_self]
+  rw [denoteCode_gep8_reg (calls := calls)
+    (env := runCells (scalarVs inc idx bv sp terms tok) env) (s := s)
+    (d := "%arrayidx6.le1046") (base := "%b") (off := "%idxprom.lcssa")
+    (a := b) (idx := idx) hB hIdxCell hpos]
+  rw [stage2NoEventWalk_denote_icmp_reg (calls := calls)
+    (env := ("%arrayidx6.le1046", .ptr (b + (idx.signExtend 64).toNat)) ::
+      runCells (scalarVs inc idx bv sp terms tok) env) (s := s)
+    (d := "%cmp436") (a := "%inc.lcssa") (b := "%nep") (p := .ult) (w := 64)
+    (x := inc) (y := nep)
+    (lookupName_cons_other _ _ _ (by decide) hIncCell)
+    (lookupName_cons_other _ _ _ (by decide) hNep) (is := [])]
+  simp only [denoteCode_nil, scalarCells, scalarVs, runCells]
+  rfl
+
+/-- **The value head's end test, taken**: the cursor is below the document, to
+`cond.true`. -/
+theorem link_scalar_true {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State} {inc idx : BitVec 64} {bv : BitVec 8} {sp : BitVec 32}
+    {terms tok nep : BitVec 64} {b : Nat}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "scalar")
+    (hpre : s.pre = some "scalar.loopexit")
+    (hinc : lookupName s.env "%inc" = some (.int 64 inc))
+    (hidx : lookupName s.env "%idxprom.le1291" = some (.int 64 idx))
+    (hbv : lookupName s.env "%7" = some (.int 8 bv))
+    (hsp : lookupName s.env "%55" = some (.int 32 sp))
+    (htr : lookupName s.env "%terms.0" = some (.int 64 terms))
+    (htok : lookupName s.env "%tokens.0" = some (.int 64 tok))
+    (hb : lookupName s.env "%b" = some (.ptr b))
+    (hnep : lookupName s.env "%nep" = some (.int 64 nep))
+    (hpos : (idx.signExtend 64).toNat < 2 ^ 63)
+    (hy : evalICmp .ult inc nep = 1) :
+    Stage2NoEventWalkLink calls K mem s K
+      (stage2NoEventWalkNext
+        (scalarCells s.env inc idx bv sp terms tok nep (b + (idx.signExtend 64).toNat))
+        s "cond.true") := by
+  have hblock : scalarBlock.instrs = scalarInstrs := by decide
+  have hcode : denoteCode calls scalarBlock.instrs (stateAt s.env s) =
+      some (stateAt
+        (scalarCells s.env inc idx bv sp terms tok nep (b + (idx.signExtend 64).toNat))
+        s) := by
+    rw [hblock]
+    exact scalar_denote (calls := calls) s.env s hpre hinc hidx hbv hsp htr htok hb hnep hpos
+  exact stage2NoEventWalkLink_condbr_true
+    (env' := scalarCells s.env inc idx bv sp terms tok nep (b + (idx.signExtend 64).toNat))
+    h (by rw [hpc]; exact scalarBlock_find) hcode rfl
+    (by simp only [scalarCells, lookupName_cons_self, hy])
+
+/-- **The value head's end test, not taken**: the cursor reached the document's
+end, to `cond.end`. -/
+theorem link_scalar_false {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State} {inc idx : BitVec 64} {bv : BitVec 8} {sp : BitVec 32}
+    {terms tok nep : BitVec 64} {b : Nat}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "scalar")
+    (hpre : s.pre = some "scalar.loopexit")
+    (hinc : lookupName s.env "%inc" = some (.int 64 inc))
+    (hidx : lookupName s.env "%idxprom.le1291" = some (.int 64 idx))
+    (hbv : lookupName s.env "%7" = some (.int 8 bv))
+    (hsp : lookupName s.env "%55" = some (.int 32 sp))
+    (htr : lookupName s.env "%terms.0" = some (.int 64 terms))
+    (htok : lookupName s.env "%tokens.0" = some (.int 64 tok))
+    (hb : lookupName s.env "%b" = some (.ptr b))
+    (hnep : lookupName s.env "%nep" = some (.int 64 nep))
+    (hpos : (idx.signExtend 64).toNat < 2 ^ 63)
+    (hy : evalICmp .ult inc nep = 0) :
+    Stage2NoEventWalkLink calls K mem s K
+      (stage2NoEventWalkNext
+        (scalarCells s.env inc idx bv sp terms tok nep (b + (idx.signExtend 64).toNat))
+        s "cond.end") := by
+  have hblock : scalarBlock.instrs = scalarInstrs := by decide
+  have hcode : denoteCode calls scalarBlock.instrs (stateAt s.env s) =
+      some (stateAt
+        (scalarCells s.env inc idx bv sp terms tok nep (b + (idx.signExtend 64).toNat))
+        s) := by
+    rw [hblock]
+    exact scalar_denote (calls := calls) s.env s hpre hinc hidx hbv hsp htr htok hb hnep hpos
+  exact stage2NoEventWalkLink_condbr_false
+    (env' := scalarCells s.env inc idx bv sp terms tok nep (b + (idx.signExtend 64).toNat))
+    h (by rw [hpc]; exact scalarBlock_find) hcode rfl
+    (by simp only [scalarCells, lookupName_cons_self, hy])
+
+/-- `cond.true`: the cursor's lane word, zero-extended. -/
+def condTrueInstrs : List Instr :=
+  [ Instr.gep "%arrayidx438" (Ty.int 32) (Operand.reg "%ep") (Operand.reg "%inc.lcssa"),
+    Instr.load "%56" (Ty.int 32) (Operand.reg "%arrayidx438"),
+    Instr.zext "%conv439" 32 64 (Operand.reg "%56") ]
+
+/-- `cond.true`, pinned. -/
+def condTrueBlock : Block :=
+  { name := "cond.true", instrs := condTrueInstrs, term := Term.br "cond.end" }
+
+theorem condTrueBlock_find :
+    stage2NoEventBody.findBlock "cond.true" = some condTrueBlock := by
+  decide
+
+/-- The `cond.true` cells: the lane's address, its word, and its extension. -/
+abbrev condTrueCells (env : Env) (a : Nat) (bs : List UInt8) : Env :=
+  ("%conv439", Value.int 64
+      (BitVec.ofNat 64 (BitVec.ofNat 32 (bytesToNat bs)).toNat)) ::
+    ("%56", Value.int 32 (BitVec.ofNat 32 (bytesToNat bs))) ::
+    ("%arrayidx438", Value.ptr a) :: env
+
+theorem condTrue_denote (calls : Calls) (env : Env) (s : State)
+    {ep : Nat} {inc : BitVec 64} {bs : List UInt8}
+    (hep : lookupName env "%ep" = some (.ptr ep))
+    (hinc : lookupName env "%inc.lcssa" = some (.int 64 inc))
+    (hpos : (inc.signExtend 64).toNat < 2 ^ 63)
+    (hload : readBytes s.mem (ep + (inc.signExtend 64).toNat * 4) 4 = some bs) :
+    denoteCode calls condTrueInstrs (stateAt env s) =
+      some (stateAt (condTrueCells env (ep + (inc.signExtend 64).toNat * 4) bs) s) := by
+  unfold condTrueInstrs
+  rw [stage2NoEventWalk_denote_gep32 (calls := calls) (env := env) (s := s)
+    (d := "%arrayidx438") (base := "%ep") (off := "%inc.lcssa")
+    (a := ep) (o := inc) hep hinc hpos]
+  rw [stage2NoEventWalk_denote_load_int (calls := calls)
+    (env := ("%arrayidx438", .ptr (ep + (inc.signExtend 64).toNat * 4)) :: env) (s := s)
+    (d := "%56") (p := "%arrayidx438") (a := ep + (inc.signExtend 64).toNat * 4)
+    (w := 32) (bs := bs) (hw := by decide)
+    (by simp only [lookupName_cons_self]) (by simpa using hload)]
+  rw [denoteCode_zext (calls := calls) (env := _) (s := s) (d := "%conv439")
+    (v := "%56") (wIn := 32) (wOut := 64)
+    (x := BitVec.ofNat 32 (bytesToNat bs)) (by simp only [lookupName_cons_self])]
+  simp only [denoteCode_nil]
+
+/-- One step of the taken `cond.true` arm: the lane load, to `cond.end`. -/
+theorem link_condTrue {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State} {ep : Nat} {inc : BitVec 64} {bs : List UInt8}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "cond.true")
+    (hep : lookupName s.env "%ep" = some (.ptr ep))
+    (hinc : lookupName s.env "%inc.lcssa" = some (.int 64 inc))
+    (hpos : (inc.signExtend 64).toNat < 2 ^ 63)
+    (hload : readBytes s.mem (ep + (inc.signExtend 64).toNat * 4) 4 = some bs) :
+    Stage2NoEventWalkLink calls K mem s K
+      (stage2NoEventWalkNext
+        (condTrueCells s.env (ep + (inc.signExtend 64).toNat * 4) bs) s "cond.end") := by
+  have hcode := condTrue_denote (calls := calls) (env := s.env) (s := s)
+    hep hinc hpos hload
+  refine ⟨h, ?_, Stage2NoEventWalkInv.mem_congr h rfl⟩
+  have hstep := stage2NoEventWalk_step_br (s := s) (f := stage2NoEventBody)
+    (by rw [hpc]; exact condTrueBlock_find) hcode rfl
+  simpa only [stage2NoEventWalkNext, stateAt] using hstep
+
+/-- `cond.end`: the conditional word's `phi` and the extent test. -/
+def condEndInstrs : List Instr :=
+  [ Instr.phi "%cond" (Ty.int 64)
+      [("cond.true", Operand.reg "%conv439"), ("scalar", Operand.reg "%n")],
+    Instr.icmp "%cmp443" IPred.ugt 64 (Operand.reg "%cond")
+      (Operand.reg "%idxprom.lcssa") ]
+
+/-- `cond.end`, pinned. -/
+def condEndBlock : Block :=
+  { name := "cond.end", instrs := condEndInstrs,
+    term := Term.condbr (Operand.reg "%cmp443") "land.lhs.true" "if.end457" }
+
+theorem condEndBlock_find :
+    stage2NoEventBody.findBlock "cond.end" = some condEndBlock := by
+  decide
+
+/-- `cond.end`'s leading `phi`, as a spec. -/
+def condEndPhiSpecs : List PhiSpec :=
+  [ { dst := "%cond", ty := Ty.int 64,
+      incoming := [("cond.true", Operand.reg "%conv439"),
+        ("scalar", Operand.reg "%n")] } ]
+
+theorem condEndPhi_eq :
+    condEndInstrs = List.map PhiSpec.instr condEndPhiSpecs ++
+      [Instr.icmp "%cmp443" IPred.ugt 64 (Operand.reg "%cond")
+        (Operand.reg "%idxprom.lcssa")] := by
+  decide
+
+/-- The `cond.end` cells: the conditional word and the extent test. -/
+abbrev condEndCells (env : Env) (c idx : BitVec 64) : Env :=
+  ("%cmp443", Value.int 1 (evalICmp .ugt c idx)) ::
+    ("%cond", Value.int 64 c) :: env
+
+theorem condEnd_denote_fromScalar {calls : Calls} (env : Env) (s : State)
+    {c idx : BitVec 64}
+    (hpre : s.pre = some "scalar")
+    (hn : lookupName env "%n" = some (.int 64 c))
+    (hidx : lookupName env "%idxprom.lcssa" = some (.int 64 idx)) :
+    denoteCode calls condEndInstrs (stateAt env s) =
+      some (stateAt (condEndCells env c idx) s) := by
+  have hsel : PhiSelects (stateAt env s) "scalar" condEndPhiSpecs
+      [("%cond", .int 64 c)] := by
+    refine PhiSelects.cons (op := .reg "%n") (by decide) ?_ PhiSelects.nil
+    simp only [stateAt, evalOperand, hn]
+  rw [condEndPhi_eq,
+    denoteCode_phiRun (s := stateAt env s) (p := "scalar") (specs := condEndPhiSpecs)
+      (vs := [("%cond", .int 64 c)])
+      (rest := [Instr.icmp "%cmp443" IPred.ugt 64 (Operand.reg "%cond")
+        (Operand.reg "%idxprom.lcssa")])
+      (hpre := hpre) (hsel := hsel) (hrest := by decide)]
+  rw [stateAt_bindAll_runCells]
+  simp only [runCells]
+  rw [stage2NoEventWalk_denote_icmp_reg (calls := calls)
+    (env := ("%cond", .int 64 c) :: env) (s := s)
+    (d := "%cmp443") (a := "%cond") (b := "%idxprom.lcssa") (p := .ugt) (w := 64)
+    (x := c) (y := idx) (by simp only [lookupName_cons_self])
+    (lookupName_cons_other _ _ _ (by decide) hidx) (is := [])]
+  simp only [denoteCode_nil, condEndCells]
+
+theorem condEnd_denote_fromCondTrue {calls : Calls} (env : Env) (s : State)
+    {c idx : BitVec 64}
+    (hpre : s.pre = some "cond.true")
+    (hconv : lookupName env "%conv439" = some (.int 64 c))
+    (hidx : lookupName env "%idxprom.lcssa" = some (.int 64 idx)) :
+    denoteCode calls condEndInstrs (stateAt env s) =
+      some (stateAt (condEndCells env c idx) s) := by
+  have hsel : PhiSelects (stateAt env s) "cond.true" condEndPhiSpecs
+      [("%cond", .int 64 c)] := by
+    refine PhiSelects.cons (op := .reg "%conv439") (by decide) ?_ PhiSelects.nil
+    simp only [stateAt, evalOperand, hconv]
+  rw [condEndPhi_eq,
+    denoteCode_phiRun (s := stateAt env s) (p := "cond.true") (specs := condEndPhiSpecs)
+      (vs := [("%cond", .int 64 c)])
+      (rest := [Instr.icmp "%cmp443" IPred.ugt 64 (Operand.reg "%cond")
+        (Operand.reg "%idxprom.lcssa")])
+      (hpre := hpre) (hsel := hsel) (hrest := by decide)]
+  rw [stateAt_bindAll_runCells]
+  simp only [runCells]
+  rw [stage2NoEventWalk_denote_icmp_reg (calls := calls)
+    (env := ("%cond", .int 64 c) :: env) (s := s)
+    (d := "%cmp443") (a := "%cond") (b := "%idxprom.lcssa") (p := .ugt) (w := 64)
+    (x := c) (y := idx) (by simp only [lookupName_cons_self])
+    (lookupName_cons_other _ _ _ (by decide) hidx) (is := [])]
+  simp only [denoteCode_nil, condEndCells]
+
+/-- The `cond.end` extent test, taken: the word is above the entry's index, to
+`land.lhs.true`. -/
+theorem link_condEnd_true {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State} {c idx : BitVec 64}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "cond.end")
+    (hpre : s.pre = some "scalar") (hn : lookupName s.env "%n" = some (.int 64 c))
+    (hidx : lookupName s.env "%idxprom.lcssa" = some (.int 64 idx))
+    (hy : evalICmp .ugt c idx = 1) :
+    Stage2NoEventWalkLink calls K mem s K
+      (stage2NoEventWalkNext (condEndCells s.env c idx) s "land.lhs.true") := by
+  have hcode := condEnd_denote_fromScalar (calls := calls) s.env s hpre hn hidx
+  exact stage2NoEventWalkLink_condbr_true (env' := condEndCells s.env c idx)
+    h (by rw [hpc]; exact condEndBlock_find) hcode rfl
+    (by simp only [condEndCells, lookupName_cons_self, hy])
+
+/-- The `cond.end` extent test, taken, from the taken `cond.true` arm. -/
+theorem link_condEnd_fromCondTrue_true {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State} {c idx : BitVec 64}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "cond.end")
+    (hpre : s.pre = some "cond.true")
+    (hconv : lookupName s.env "%conv439" = some (.int 64 c))
+    (hidx : lookupName s.env "%idxprom.lcssa" = some (.int 64 idx))
+    (hy : evalICmp .ugt c idx = 1) :
+    Stage2NoEventWalkLink calls K mem s K
+      (stage2NoEventWalkNext (condEndCells s.env c idx) s "land.lhs.true") := by
+  have hcode := condEnd_denote_fromCondTrue (calls := calls) s.env s hpre hconv hidx
+  exact stage2NoEventWalkLink_condbr_true (env' := condEndCells s.env c idx)
+    h (by rw [hpc]; exact condEndBlock_find) hcode rfl
+    (by simp only [condEndCells, lookupName_cons_self, hy])
+
+/-- The `cond.end` extent test, not taken, from the untaken `scalar` arm. -/
+theorem link_condEnd_false {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State} {c idx : BitVec 64}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "cond.end")
+    (hpre : s.pre = some "scalar") (hn : lookupName s.env "%n" = some (.int 64 c))
+    (hidx : lookupName s.env "%idxprom.lcssa" = some (.int 64 idx))
+    (hy : evalICmp .ugt c idx = 0) :
+    Stage2NoEventWalkLink calls K mem s K
+      (stage2NoEventWalkNext (condEndCells s.env c idx) s "if.end457") := by
+  have hcode := condEnd_denote_fromScalar (calls := calls) s.env s hpre hn hidx
+  exact stage2NoEventWalkLink_condbr_false (env' := condEndCells s.env c idx)
+    h (by rw [hpc]; exact condEndBlock_find) hcode rfl
+    (by simp only [condEndCells, lookupName_cons_self, hy])
+
+/-- The `cond.end` extent test, not taken, from the taken `cond.true` arm. -/
+theorem link_condEnd_fromCondTrue_false {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State} {c idx : BitVec 64}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "cond.end")
+    (hpre : s.pre = some "cond.true")
+    (hconv : lookupName s.env "%conv439" = some (.int 64 c))
+    (hidx : lookupName s.env "%idxprom.lcssa" = some (.int 64 idx))
+    (hy : evalICmp .ugt c idx = 0) :
+    Stage2NoEventWalkLink calls K mem s K
+      (stage2NoEventWalkNext (condEndCells s.env c idx) s "if.end457") := by
+  have hcode := condEnd_denote_fromCondTrue (calls := calls) s.env s hpre hconv hidx
+  exact stage2NoEventWalkLink_condbr_false (env' := condEndCells s.env c idx)
+    h (by rw [hpc]; exact condEndBlock_find) hcode rfl
+    (by simp only [condEndCells, lookupName_cons_self, hy])
+
 /-! ### The `{` count, the next-entry dispatch, and the `}` handoff
 
 The open arm's tail after `if.end23`: `if.end74` reads the next entry's lane and
@@ -5104,5 +6238,42 @@ structure Stage2NoEventWalkContainerClass (calls : Calls) (K : Stage2NoEventWalk
 #print axioms stage2NoEventRow_loopScalar9
 #print axioms stage2NoEventRow_loopScalar11
 #print axioms stage2NoEventRow_loopScalar
+#print axioms stage2NoEventWalk_denote_icmp_reg
+#print axioms stage2NoEventWalk_step_callVoid2
+#print axioms denoteCode_callVoid2
+#print axioms ifThen9LoopexitBlock_find
+#print axioms ifThen9LoopexitEntry_denote
+#print axioms link_ifThen9LoopexitEntry
+#print axioms ifThen9AtLoopexit_denote
+#print axioms link_ifThen9AtLoopexit_true
+#print axioms link_ifThen9AtLoopexit_false
+#print axioms ifThen35Block_find
+#print axioms ifThen35_denote
+#print axioms link_ifThen35_true
+#print axioms link_ifThen35_false
+#print axioms stringValueLoopexitBlock_find
+#print axioms stringValueLoopexit_denote
+#print axioms link_stringValueLoopexitEntry
+#print axioms stringValueBlock_find
+#print axioms stringValue_denote
+#print axioms link_stringValue_true
+#print axioms link_stringValue_false
+#print axioms scalarLoopexitBlock_find
+#print axioms scalarLoopexitEntry_denote
+#print axioms link_scalarLoopexitEntry
+#print axioms scalarBlock_find
+#print axioms scalar_denote
+#print axioms link_scalar_true
+#print axioms link_scalar_false
+#print axioms condTrueBlock_find
+#print axioms condTrue_denote
+#print axioms link_condTrue
+#print axioms condEndBlock_find
+#print axioms condEnd_denote_fromScalar
+#print axioms condEnd_denote_fromCondTrue
+#print axioms link_condEnd_true
+#print axioms link_condEnd_false
+#print axioms link_condEnd_fromCondTrue_true
+#print axioms link_condEnd_fromCondTrue_false
 
 end LeanLLVM.Refinement
