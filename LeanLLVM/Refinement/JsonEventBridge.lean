@@ -66,6 +66,8 @@ There is no `sorry`, `admit` or `native_decide`; the axiom pins are in
 `LeanLLVMTest/Refinement.lean`.
 -/
 import LeanLLVM.Refinement.JsonEventBytes
+import LeanLLVM.Refinement.JsonEventDecode
+import LeanLLVM.JSON.Tape
 import LeanLLVM.Refinement.JsonEventValue
 import LeanLLVM.StrtodReader
 
@@ -464,5 +466,11 @@ theorem stage2NoEvent_str_len_free {bs arena : List UInt8} {key : Bool} {s : Spa
     (harena : escapeCodePoints ((arena.drop off).take len') = some cs) :
     Stage2NoEvent bs arena (.str key len' off cs :: es) (.string s :: toks) :=
   Stage2NoEvent.strArena hquote hspan hcode hbelow harena h
+
+/-- The token decoder and the tape decoder agree on a tape the reference parser
+produced.  Conditional because a tape whose spans disagree with its cursor is
+read by the first and rejected by the second. -/
+def TokenDecoderAgrees (t : LeanLLVM.JSON.Tape) : Prop :=
+  LeanLLVM.Refinement.parseValueT t = LeanLLVM.JSON.decodeTape t
 
 end LeanLLVM.Refinement
