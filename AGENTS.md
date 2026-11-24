@@ -141,6 +141,17 @@ rebases.  The first complete proof's module becomes the canonical module; the
 other attempt's module or branch is removed, and duplicate declarations are
 never imported together.
 
+Each green checkpoint is committed and announced to the other attempts with the
+declaration names read from the committed module and its file and line, so a
+blocked attempt imports it instead of re-proving it; a name seen only in a
+scratch file or in an agent's report is not a checkpoint.  A wide or stalled
+goal is split into independent lemmas before another whole-proof attempt is
+added: acceleration tracks independent sub-goals, not lane count.  A statement
+that reads from a body state binds every cell the invariant or the exit word
+carries, read from that field list rather than from the block text.  Measure a
+lane's wall clock against the serial estimate, and keep a lane only while it
+reduces it.
+
 ### Precompiled worker images
 
 `lean-llvm-precompiled-x86-64` and `lean-llvm-precompiled-aarch64` are the
