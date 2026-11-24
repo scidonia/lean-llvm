@@ -23,24 +23,26 @@ one the arms consume, and the four-byte set the segment's statement reports.
 Both equivalence proofs are kernel `decide` over `Fin 256`, not a per-byte case
 analysis.
 
-**The loop's vocabulary.**  The skip loop is `land.rhs` (the `%ee.01053` `phi`,
-the `%b` `gep`, the byte load) and its test `NodeBlock62`, then `while.body`'s
-increment and `%exitcond1170.not`.  The module states the vocabulary the
-`LoopFuel` instance consumes and does not yet contain the instance: the
-bound-exit induction's head is `NodeBlock62` — the first block at which the
-cursor and the byte it loaded are both bound — its bound is `%cond`, and its
-exit test is the disjunction the body branches on, `stage2SkipAtBound`: the
-loaded byte is out of the class, or the increment has reached `%cond`.  The
-measure is the distance `%cond - %ee.01053`, carried as the invariant's budget
-(`stage2SkipInvAt`); the invariant also carries the class membership of every
-position the loop has passed, so the exit word, `stage2SkipExit`, states that
-the loop stopped at the first non-whitespace position at or before `%cond`, with
-the merge's `%ee.1` selection at that same position and the walk's invariant at
-the merge.  The head's two three-way pivot splits — the member byte to
-`while.body`, the non-member straight to the merge — and the increment block's
-two one-link tails are the rows that instance is to consume; they, the instance
-and the composed segment are the module's remaining work, and the header states
-them in the future tense for that reason.
+**The loop, and its polarity.**  The skip loop is `land.rhs` (the `%ee.01053`
+`phi`, the `%b` `gep`, the byte load) and its test `NodeBlock62`, then
+`while.body`'s increment and `%exitcond1170.not`.  Each pinned leaf takes its
+true arm to `if.end457` and its false arm to `while.body`, so the loop advances
+over non-members and leaves on the first member at or before the bound.  The
+`LoopFuel.BoundLoop` instance `stage2SkipLoop` has head `NodeBlock62` — the first
+block at which the cursor and the byte it loaded are both bound — bound `%cond`,
+and exit test `stage2SkipAtBound`: the loaded byte is a class member, or the
+increment has reached `%cond`.  The measure is the distance
+`%cond - %ee.01053`, carried as the invariant's budget (`stage2SkipInvAt`); the
+invariant also carries the non-membership of every position the loop has passed,
+so the exit word, `stage2SkipExit`, states that the loop stopped at the first
+member at or before `%cond` (or exhausted at the bound), with the merge's `%ee.1`
+selection at that same position and the walk's invariant at the merge.  The
+head's two three-way pivot splits (`stage2SkipAdvance`'s non-member to
+`while.body`, `stage2SkipStop`'s member straight to the merge) and the increment
+block's two one-link tails (`stage2SkipWhileBodyExit` at the bound,
+`stage2SkipWhileBodyContinue` back to the head) are the rows the instance
+consumes; `stage2SkipLoop_run` is the induction's run and its memory is the
+entry state's.
 
 **Hypotheses at the entry, and conclusions.**  The entry is `land.lhs.true`'s
 state as `link_condEnd_true` delivers it, so the values it reads are hypotheses:
@@ -67,12 +69,13 @@ every block before the store keeps the state's memory.
 four-byte characterization, the fifteen block pins, the fifteen block
 denotations, the twenty-eight one-step links with their fuel compositions, the
 `%k219` store's region fact, the loop's invariant and exit word with the
-invariant's transport across cells, and the merge's invariant with its two
-constructors.  It does **not** yet contain the head's two block paths
-(`stage2SkipAdvance`/`stage2SkipStop`), the increment block's two tails, the
-`LoopFuel.BoundLoop` instance and its run, the merge's one-step run, or the entry
-test and the composed segment theorem to `if.then471`/`if.else495`; those are the
-next work on this file.  The two arms below the merge's entries —
+invariant's transport across cells, the merge's invariant with its two
+constructors, the head's two block paths (`stage2SkipAdvance`/`stage2SkipStop`),
+the increment block's two tails, the `LoopFuel.BoundLoop` instance
+`stage2SkipLoop` and its run `stage2SkipLoop_run`, the merge's one-step run
+`stage2SkipJoinRun`, the entry test `stage2SkipFirstTest`, and the composed
+segment `stage2NoEventWalkScalarSkip` from `land.lhs.true` to
+`if.then471`/`if.else495`.  The two arms below the merge's entries —
 `if.then471`'s number path (`num_fast_el1`, the `%off` store, the
 `od_gap_recover` call) and `if.else495`'s literal path — are not modelled here;
 nor is the `cond.true` extent arm that produces `%cond` from a lane word, nor
@@ -1353,9 +1356,12 @@ def stage2SkipHeadClass (s : State) : Bool :=
   | some (.int 8 v) => stage2SkipWs v
   | _ => false
 
-/-- The head's exit test: out of the class, or the increment reached `%cond`. -/
+/-- The head's exit test: the loaded byte is a class member, or the increment
+reached `%cond`.  The loop's leaves take their true arm to the merge and their
+false arm back through `while.body`, so the loop advances over non-members and
+leaves on the first member at or before the bound. -/
 def stage2SkipAtBound (cond : Nat) (s : State) (c : Nat) : Bool :=
-  !(stage2SkipHeadClass s) || (c + 1 == cond)
+  stage2SkipHeadClass s || (c + 1 == cond)
 
 /-- The registers the loop reads and the merge's store and guard read; no block
 between the head and the merge writes one of them. -/
@@ -1382,7 +1388,7 @@ def stage2SkipInvAt (pc : String) (K : Stage2NoEventWalkCarry) (mem : Mem)
   lookupName s.env "%k219" = some (.ptr k219) ∧
   cond < 2 ^ 63 ∧
   idx ≤ c ∧ c < cond ∧ cond ≤ c + r ∧
-  (∀ j, idx ≤ j → j < c → stage2SkipWs (BitVec.ofNat 8 (σ j).toNat) = true) ∧
+  (∀ j, idx ≤ j → j < c → stage2SkipWs (BitVec.ofNat 8 (σ j).toNat) = false) ∧
   (∀ j, j < cond → readByte s.mem (b + j) = some (σ j))
 
 /-- The loop's invariant at its head. -/
@@ -1405,38 +1411,49 @@ def stage2SkipJoin (b idx cond : Nat) (σ : Nat → UInt8) (inc : BitVec 64)
   lookupName e.env "%.lcssa" = some (.int 8 lc) ∧
   lookupName e.env "%k219" = some (.ptr k219)
 
-/-- **The loop's exit word**: the merge's invariant and the first-non-member
-property, at one and the same position. -/
-def stage2SkipExit (b idx cond : Nat) (σ : Nat → UInt8) (inc : BitVec 64)
-    (lc : BitVec 8) (k219 : Nat) (e : State) : Prop :=
-  stage2SkipJoin b idx cond σ inc lc k219 e ∧
-  ∃ (q : Nat),
+/-- **The loop's exit word**: the merge is entered from a named predecessor with
+the walk's invariant intact, and one position carries both the merge's `%ee.1`
+selection and the first-member property. -/
+def stage2SkipExit (K : Stage2NoEventWalkCarry) (mem : Mem) (b idx cond : Nat)
+    (σ : Nat → UInt8) (inc : BitVec 64) (lc : BitVec 8) (k219 : Nat) (e : State) : Prop :=
+  e.pc = "if.end457" ∧
+  Stage2NoEventWalkInv K mem e ∧
+  ∃ (pre : String) (q : Nat) (op : Operand),
+    e.pre = some pre ∧
+    phiIncoming pre stage2SkipIfEnd457EeIncoming = some op ∧
+    evalOperand (stateAt e.env e) op = some (.int 64 (BitVec.ofNat 64 q)) ∧
     idx ≤ q ∧ q ≤ cond ∧
-    (∀ j, idx ≤ j → j < q → stage2SkipWs (BitVec.ofNat 8 (σ j).toNat) = true) ∧
-    (q = cond ∨ stage2SkipWs (BitVec.ofNat 8 (σ q).toNat) = false)
+    (∀ j, idx ≤ j → j < q → stage2SkipWs (BitVec.ofNat 8 (σ j).toNat) = false) ∧
+    (q = cond ∨ stage2SkipWs (BitVec.ofNat 8 (σ q).toNat) = true) ∧
+    lookupName e.env "%inc.lcssa" = some (.int 64 inc) ∧
+    lookupName e.env "%.lcssa" = some (.int 8 lc) ∧
+    lookupName e.env "%k219" = some (.ptr k219)
 
 /-- The loop's exit word projects the merge's invariant. -/
-theorem stage2SkipJoin_of_exit {e : State} {b idx cond : Nat} {σ : Nat → UInt8}
-    {inc : BitVec 64} {lc : BitVec 8} {k219 : Nat}
-    (h : stage2SkipExit b idx cond σ inc lc k219 e) :
-    stage2SkipJoin b idx cond σ inc lc k219 e := h.1
+theorem stage2SkipJoin_of_exit {e : State} {K : Stage2NoEventWalkCarry} {mem : Mem}
+    {b idx cond : Nat} {σ : Nat → UInt8} {inc : BitVec 64} {lc : BitVec 8} {k219 : Nat}
+    (h : stage2SkipExit K mem b idx cond σ inc lc k219 e) :
+    stage2SkipJoin b idx cond σ inc lc k219 e := by
+  obtain ⟨hpc, -, pre, q, op, hpre, hinc, hop, hidx, hcond, -, -, hincv, hlc, hk⟩ := h
+  refine ⟨hpc, ⟨q, op, ?_, hop, hidx, hcond⟩, hincv, hlc, hk⟩
+  rw [hpre]; exact hinc
 
 /-- Discharging the "not a carried name" side condition of `InvAt_cells`. -/
 macro "skip_names" : tactic => `(tactic|
   (intro x hx
-   simp only [List.mem_cons, List.not_mem_nil, or_false] at hx
-   rcases hx with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> decide))
+   simp only [stage2SkipCarriedNames, List.mem_cons, List.not_mem_nil, or_false] at hx
+   rcases hx with h | h | h | h | h | h | h <;> subst x <;> simp))
 
 /-- **The invariant across cells of other names.**  Every register the loop reads
 and the merge writes is untouched, so the predicate moves to the extended
 environment unchanged, and the run's memory is the head's. -/
-theorem stage2SkipInvAt_cells {pc : String} {K : Stage2NoEventWalkCarry} {mem : Mem}
+theorem stage2SkipInvAt_cells {pc pc' : String} {K : Stage2NoEventWalkCarry} {mem : Mem}
     {b idx cond c : Nat} {σ : Nat → UInt8} {inc : BitVec 64} {lc : BitVec 8}
     {k219 r : Nat} {s s' : State} {cs : List (String × Value)}
     (h : stage2SkipInvAt pc K mem b idx cond σ inc lc k219 r s c)
-    (hmem : s'.mem = s.mem) (hpc : s'.pc = pc) (henv : s'.env = cells cs s.env)
+    (hmem : s'.mem = s.mem) (hpc : s'.pc = pc') (henv : s'.env = cells cs s.env)
     (hnames : ∀ x ∈ stage2SkipCarriedNames, x ∉ cs.map (·.1)) :
-    stage2SkipInvAt pc K mem b idx cond σ inc lc k219 r s' c := by
+    stage2SkipInvAt pc' K mem b idx cond σ inc lc k219 r s' c := by
   obtain ⟨-, hInv, hb, hee, h58, hcond, hincv, hlc, hk, hlt, hidxle, hclt,
     hbudget, hpre, hbytes⟩ := h
   refine ⟨hpc, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hlt, hidxle, hclt, hbudget, hpre, ?_⟩
@@ -1499,5 +1516,984 @@ theorem stage2SkipJoin_whileBody {e : State} {b idx cond : Nat} {σ : Nat → UI
   exact ⟨hpc, ⟨cond, .reg "%cond", hphi,
       evalOperand_reg_of e.env e "%cond" (.int 64 (BitVec.ofNat 64 cond)) hcd,
       hidx, Nat.le_refl _⟩, hincv, hlc, hk⟩
+
+
+/-! ### The preheader state
+
+`land.rhs.preheader` has no instructions: it is the loop's entry, and the facts
+the loop is seeded with are the ones the first test carries to it. -/
+
+/-- The state `land.rhs.preheader` is entered with: the loop's entry facts. -/
+def stage2SkipPre (b idx cond : Nat) (σ : Nat → UInt8) (inc : BitVec 64)
+    (lc : BitVec 8) (k219 : Nat) (e : State) : Prop :=
+  e.pc = "land.rhs.preheader" ∧
+  lookupName e.env "%idxprom.lcssa" = some (.int 64 (BitVec.ofNat 64 idx)) ∧
+  lookupName e.env "%b" = some (.ptr b) ∧
+  lookupName e.env "%cond" = some (.int 64 (BitVec.ofNat 64 cond)) ∧
+  lookupName e.env "%inc.lcssa" = some (.int 64 inc) ∧
+  lookupName e.env "%.lcssa" = some (.int 8 lc) ∧
+  lookupName e.env "%k219" = some (.ptr k219)
+
+/-! ### The head's two block paths -/
+
+/-- **`NodeBlock62` to `while.body` on a class member.**  Three pivot cases, each
+ending at the increment block with the cursor unchanged. -/
+theorem stage2SkipAdvance {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Mem}
+    {s : State} {b idx cond c : Nat} {σ : Nat → UInt8} {inc : BitVec 64}
+    {lc : BitVec 8} {k219 : Nat} {r : Nat}
+    (h : stage2SkipInvAt "NodeBlock62" K mem b idx cond σ inc lc k219 r s c)
+    (hws : stage2SkipWs (BitVec.ofNat 8 (σ c).toNat) = false) :
+    ∃ (e : State) (j : Nat), j ≤ 3 ∧
+      stage2SkipInvAt "while.body" K mem b idx cond σ inc lc k219 r e c ∧
+      (∀ n, runFuel calls (j + n) stage2NoEventBody s =
+        runFuel calls n stage2NoEventBody e) ∧ e.mem = s.mem := by
+  have hh := h
+  obtain ⟨hpc, hInv, hb, hee, h58, hcond, hincv, hlc, hk, hcondlt, hidxle, hclt, -,
+    hpre, hbytes⟩ := h
+  let v : BitVec 8 := BitVec.ofNat 8 (σ c).toNat
+  have hv : v = BitVec.ofNat 8 (σ c).toNat := rfl
+  rw [← hv] at hws h58
+  by_cases h13 : v.slt (BitVec.ofNat 8 13) = true
+  · have hleaf : (v + BitVec.ofNat 8 247).ule (BitVec.ofNat 8 1) = false := by
+      rw [← stage2SkipLeaf_slt13_true h13, stage2SkipLeaf_eq_ws]; exact hws
+    let S1 : State := stage2NoEventWalkNext
+      (("%Pivot63", .int 1 (evalICmp .slt v (BitVec.ofNat 8 13))) :: s.env) s "LeafBlock53"
+    have L1 : Stage2NoEventWalkLink calls K mem s K S1 :=
+      link_skipNodeBlock62_true hInv hpc h58 (by
+        show BitVec.ofBool (v.slt (BitVec.ofNat 8 13)) = 1
+        rw [h13]; rfl)
+    have h58₁ : lookupName S1.env "%58" = some (.int 8 v) := by
+      simp only [S1, stage2NoEventWalkNext]; skip_lk
+    let S2 : State := stage2NoEventWalkNext
+      (("%SwitchLeaf55", .int 1 (evalICmp .ule (v + BitVec.ofNat 8 247)
+          (BitVec.ofNat 8 1))) ::
+        ("%.off54", .int 8 (v + BitVec.ofNat 8 247)) :: S1.env) S1 "while.body"
+    have L2 : Stage2NoEventWalkLink calls K mem S1 K S2 :=
+      link_skipLeafBlock53_false L1.inv' (by simp only [S1, stage2NoEventWalkNext])
+        h58₁ (stage2Skip_ule_zero_of hleaf)
+    have henv : S2.env = cells
+        [("%SwitchLeaf55", .int 1 (evalICmp .ule (v + BitVec.ofNat 8 247)
+            (BitVec.ofNat 8 1))),
+         ("%.off54", .int 8 (v + BitVec.ofNat 8 247)),
+         ("%Pivot63", .int 1 (evalICmp .slt v (BitVec.ofNat 8 13)))] s.env := rfl
+    refine ⟨S2, 2, by omega, ?_, stage2SkipRun2 L1 L2,
+      (by simp only [S2, S1, stage2NoEventWalkNext])⟩
+    exact stage2SkipInvAt_cells
+      (cs := [("%SwitchLeaf55", .int 1 (evalICmp .ule
+          (v + BitVec.ofNat 8 247) (BitVec.ofNat 8 1))),
+        ("%.off54", .int 8 (v + BitVec.ofNat 8 247)),
+        ("%Pivot63", .int 1 (evalICmp .slt v (BitVec.ofNat 8 13)))])
+      hh (by rfl) (by rfl) henv (by skip_names)
+  · have h13f : v.slt (BitVec.ofNat 8 13) = false := by
+      cases h : v.slt (BitVec.ofNat 8 13) <;> simp_all
+    by_cases h32 : v.slt (BitVec.ofNat 8 32) = true
+    · have hleaf : (v == BitVec.ofNat 8 13) = false := by
+        rw [← stage2SkipLeaf_slt32_true h13f h32, stage2SkipLeaf_eq_ws]; exact hws
+      let S1 : State := stage2NoEventWalkNext
+        (("%Pivot63", .int 1 (evalICmp .slt v (BitVec.ofNat 8 13))) :: s.env) s
+        "NodeBlock60"
+      have L1 : Stage2NoEventWalkLink calls K mem s K S1 :=
+        link_skipNodeBlock62_false hInv hpc h58 (by
+          show BitVec.ofBool (v.slt (BitVec.ofNat 8 13)) = 0
+          rw [h13f]; rfl)
+      have h58₁ : lookupName S1.env "%58" = some (.int 8 v) := by
+        simp only [S1, stage2NoEventWalkNext]; skip_lk
+      let S2 : State := stage2NoEventWalkNext
+        (("%Pivot61", .int 1 (evalICmp .slt v (BitVec.ofNat 8 32))) :: S1.env) S1
+        "LeafBlock56"
+      have L2 : Stage2NoEventWalkLink calls K mem S1 K S2 :=
+        link_skipNodeBlock60_true L1.inv' (by simp only [S1, stage2NoEventWalkNext]) h58₁
+          (by
+            show BitVec.ofBool (v.slt (BitVec.ofNat 8 32)) = 1
+            rw [h32]; rfl)
+      have h58₂ : lookupName S2.env "%58" = some (.int 8 v) := by
+        simp only [S2, stage2NoEventWalkNext]; skip_lk
+      let S3 : State := stage2NoEventWalkNext
+        (("%SwitchLeaf57", .int 1 (evalICmp .eq v (BitVec.ofNat 8 13))) :: S2.env) S2
+        "while.body"
+      have L3 : Stage2NoEventWalkLink calls K mem S2 K S3 :=
+        link_skipLeafBlock56_false L2.inv' (by simp only [S2, stage2NoEventWalkNext])
+          h58₂ (stage2Skip_beq_zero_of hleaf)
+      have henv : S3.env = cells
+          [("%SwitchLeaf57", .int 1 (evalICmp .eq v (BitVec.ofNat 8 13))),
+           ("%Pivot61", .int 1 (evalICmp .slt v (BitVec.ofNat 8 32))),
+           ("%Pivot63", .int 1 (evalICmp .slt v (BitVec.ofNat 8 13)))] s.env := rfl
+      refine ⟨S3, 3, by omega, ?_, stage2SkipRun3 L1 L2 L3,
+        (by simp only [S3, S2, S1, stage2NoEventWalkNext])⟩
+      exact stage2SkipInvAt_cells
+        (cs := [("%SwitchLeaf57", .int 1 (evalICmp .eq v (BitVec.ofNat 8 13))),
+          ("%Pivot61", .int 1 (evalICmp .slt v (BitVec.ofNat 8 32))),
+          ("%Pivot63", .int 1 (evalICmp .slt v (BitVec.ofNat 8 13)))])
+        hh (by rfl) (by rfl) henv (by skip_names)
+    · have h32f : v.slt (BitVec.ofNat 8 32) = false := by
+        cases h : v.slt (BitVec.ofNat 8 32) <;> simp_all
+      have hleaf : (v == BitVec.ofNat 8 32) = false := by
+        rw [← stage2SkipLeaf_slt32_false h13f h32f, stage2SkipLeaf_eq_ws]; exact hws
+      let S1 : State := stage2NoEventWalkNext
+        (("%Pivot63", .int 1 (evalICmp .slt v (BitVec.ofNat 8 13))) :: s.env) s
+        "NodeBlock60"
+      have L1 : Stage2NoEventWalkLink calls K mem s K S1 :=
+        link_skipNodeBlock62_false hInv hpc h58 (by
+          show BitVec.ofBool (v.slt (BitVec.ofNat 8 13)) = 0
+          rw [h13f]; rfl)
+      have h58₁ : lookupName S1.env "%58" = some (.int 8 v) := by
+        simp only [S1, stage2NoEventWalkNext]; skip_lk
+      let S2 : State := stage2NoEventWalkNext
+        (("%Pivot61", .int 1 (evalICmp .slt v (BitVec.ofNat 8 32))) :: S1.env) S1
+        "LeafBlock58"
+      have L2 : Stage2NoEventWalkLink calls K mem S1 K S2 :=
+        link_skipNodeBlock60_false L1.inv' (by simp only [S1, stage2NoEventWalkNext])
+          h58₁ (by
+            show BitVec.ofBool (v.slt (BitVec.ofNat 8 32)) = 0
+            rw [h32f]; rfl)
+      have h58₂ : lookupName S2.env "%58" = some (.int 8 v) := by
+        simp only [S2, stage2NoEventWalkNext]; skip_lk
+      let S3 : State := stage2NoEventWalkNext
+        (("%SwitchLeaf59", .int 1 (evalICmp .eq v (BitVec.ofNat 8 32))) :: S2.env) S2
+        "while.body"
+      have L3 : Stage2NoEventWalkLink calls K mem S2 K S3 :=
+        link_skipLeafBlock58_false L2.inv' (by simp only [S2, stage2NoEventWalkNext])
+          h58₂ (stage2Skip_beq_zero_of hleaf)
+      have henv : S3.env = cells
+          [("%SwitchLeaf59", .int 1 (evalICmp .eq v (BitVec.ofNat 8 32))),
+           ("%Pivot61", .int 1 (evalICmp .slt v (BitVec.ofNat 8 32))),
+           ("%Pivot63", .int 1 (evalICmp .slt v (BitVec.ofNat 8 13)))] s.env := rfl
+      refine ⟨S3, 3, by omega, ?_, stage2SkipRun3 L1 L2 L3,
+        (by simp only [S3, S2, S1, stage2NoEventWalkNext])⟩
+      exact stage2SkipInvAt_cells
+        (cs := [("%SwitchLeaf59", .int 1 (evalICmp .eq v (BitVec.ofNat 8 32))),
+          ("%Pivot61", .int 1 (evalICmp .slt v (BitVec.ofNat 8 32))),
+          ("%Pivot63", .int 1 (evalICmp .slt v (BitVec.ofNat 8 13)))])
+        hh (by rfl) (by rfl) henv (by skip_names)
+
+/-- **`NodeBlock62` to the merge on a class member.**  The same three pivots, each
+leaf's true arm taken, ending at `if.end457` with the loop's exit word. -/
+theorem stage2SkipStop {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Mem}
+    {s : State} {b idx cond c : Nat} {σ : Nat → UInt8} {inc : BitVec 64}
+    {lc : BitVec 8} {k219 : Nat} {r : Nat}
+    (h : stage2SkipInvAt "NodeBlock62" K mem b idx cond σ inc lc k219 r s c)
+    (hws : stage2SkipWs (BitVec.ofNat 8 (σ c).toNat) = true) :
+    ∃ (e : State) (j : Nat), j ≤ 3 ∧ stage2SkipExit K mem b idx cond σ inc lc k219 e ∧
+      Stage2NoEventWalkInv K mem e ∧
+      (∀ n, runFuel calls (j + n) stage2NoEventBody s =
+        runFuel calls n stage2NoEventBody e) ∧ e.mem = s.mem := by
+  obtain ⟨hpc, hInv, hb, hee, h58, hcond, hincv, hlc, hk, hcondlt, hidxle, hclt, -,
+    hpre, hbytes⟩ := h
+  have hexit : ∀ (e : State) (pre : String) (q : Nat), e.pc = "if.end457" →
+      e.pre = some pre → Stage2NoEventWalkInv K mem e →
+      (pre = "LeafBlock53" ∨ pre = "LeafBlock56" ∨ pre = "LeafBlock58") →
+      lookupName e.env "%ee.01053" = some (.int 64 (BitVec.ofNat 64 q)) →
+      idx ≤ q → q ≤ cond →
+      lookupName e.env "%inc.lcssa" = some (.int 64 inc) →
+      lookupName e.env "%.lcssa" = some (.int 8 lc) →
+      lookupName e.env "%k219" = some (.ptr k219) →
+      (∀ j, idx ≤ j → j < q → stage2SkipWs (BitVec.ofNat 8 (σ j).toNat) = false) →
+      stage2SkipWs (BitVec.ofNat 8 (σ q).toNat) = true →
+      stage2SkipExit K mem b idx cond σ inc lc k219 e := by
+    intro e pre q hpc' hpre' hinv' hmem hee' hidx' hq' hinc' hlc' hk' hprefix hstop
+    have hphi : phiIncoming pre stage2SkipIfEnd457EeIncoming =
+        some (.reg "%ee.01053") := by
+      rcases hmem with h' | h' | h' <;> rw [h'] <;> decide
+    exact ⟨hpc', hinv', pre, q, .reg "%ee.01053", hpre', hphi,
+      evalOperand_reg_of e.env e "%ee.01053" (.int 64 (BitVec.ofNat 64 q)) hee',
+      hidx', hq', hprefix, Or.inr hstop, hinc', hlc', hk'⟩
+  let v : BitVec 8 := BitVec.ofNat 8 (σ c).toNat
+  have hv : v = BitVec.ofNat 8 (σ c).toNat := rfl
+  rw [← hv] at hws h58
+  by_cases h13 : v.slt (BitVec.ofNat 8 13) = true
+  · have hleaf : (v + BitVec.ofNat 8 247).ule (BitVec.ofNat 8 1) = true := by
+      rw [← stage2SkipLeaf_slt13_true h13, stage2SkipLeaf_eq_ws]; exact hws
+    let S1 : State := stage2NoEventWalkNext
+      (("%Pivot63", .int 1 (evalICmp .slt v (BitVec.ofNat 8 13))) :: s.env) s "LeafBlock53"
+    have L1 : Stage2NoEventWalkLink calls K mem s K S1 :=
+      link_skipNodeBlock62_true hInv hpc h58 (by
+        show BitVec.ofBool (v.slt (BitVec.ofNat 8 13)) = 1
+        rw [h13]; rfl)
+    have h58₁ : lookupName S1.env "%58" = some (.int 8 v) := by
+      simp only [S1, stage2NoEventWalkNext]; skip_lk
+    let S2 : State := stage2NoEventWalkNext
+      (("%SwitchLeaf55", .int 1 (evalICmp .ule (v + BitVec.ofNat 8 247)
+          (BitVec.ofNat 8 1))) ::
+        ("%.off54", .int 8 (v + BitVec.ofNat 8 247)) :: S1.env) S1 "if.end457"
+    have L2 : Stage2NoEventWalkLink calls K mem S1 K S2 :=
+      link_skipLeafBlock53_true L1.inv' (by simp only [S1, stage2NoEventWalkNext])
+        h58₁ (stage2Skip_ule_one_of hleaf)
+    refine ⟨S2, 2, by omega, ?_, L2.inv', stage2SkipRun2 L1 L2,
+      (by simp only [S2, S1, stage2NoEventWalkNext])⟩
+    exact hexit S2 "LeafBlock53" c (by simp only [S2, stage2NoEventWalkNext])
+      (by simp only [S2, S1, stage2NoEventWalkNext]) L2.inv' (Or.inl rfl)
+      (by simp only [S2, stage2NoEventWalkNext]; skip_lk)
+      hidxle (by omega)
+      (by simp only [S2, stage2NoEventWalkNext]; skip_lk)
+      (by simp only [S2, stage2NoEventWalkNext]; skip_lk)
+      (by simp only [S2, stage2NoEventWalkNext]; skip_lk)
+      (fun j hj hjlt => hpre j hj hjlt) hws
+  · have h13f : v.slt (BitVec.ofNat 8 13) = false := by
+      cases h : v.slt (BitVec.ofNat 8 13) <;> simp_all
+    by_cases h32 : v.slt (BitVec.ofNat 8 32) = true
+    · have hleaf : (v == BitVec.ofNat 8 13) = true := by
+        rw [← stage2SkipLeaf_slt32_true h13f h32, stage2SkipLeaf_eq_ws]; exact hws
+      let S1 : State := stage2NoEventWalkNext
+        (("%Pivot63", .int 1 (evalICmp .slt v (BitVec.ofNat 8 13))) :: s.env) s
+        "NodeBlock60"
+      have L1 : Stage2NoEventWalkLink calls K mem s K S1 :=
+        link_skipNodeBlock62_false hInv hpc h58 (by
+          show BitVec.ofBool (v.slt (BitVec.ofNat 8 13)) = 0
+          rw [h13f]; rfl)
+      have h58₁ : lookupName S1.env "%58" = some (.int 8 v) := by
+        simp only [S1, stage2NoEventWalkNext]; skip_lk
+      let S2 : State := stage2NoEventWalkNext
+        (("%Pivot61", .int 1 (evalICmp .slt v (BitVec.ofNat 8 32))) :: S1.env) S1
+        "LeafBlock56"
+      have L2 : Stage2NoEventWalkLink calls K mem S1 K S2 :=
+        link_skipNodeBlock60_true L1.inv' (by simp only [S1, stage2NoEventWalkNext]) h58₁
+          (by
+            show BitVec.ofBool (v.slt (BitVec.ofNat 8 32)) = 1
+            rw [h32]; rfl)
+      have h58₂ : lookupName S2.env "%58" = some (.int 8 v) := by
+        simp only [S2, stage2NoEventWalkNext]; skip_lk
+      let S3 : State := stage2NoEventWalkNext
+        (("%SwitchLeaf57", .int 1 (evalICmp .eq v (BitVec.ofNat 8 13))) :: S2.env) S2
+        "if.end457"
+      have L3 : Stage2NoEventWalkLink calls K mem S2 K S3 :=
+        link_skipLeafBlock56_true L2.inv' (by simp only [S2, stage2NoEventWalkNext])
+          h58₂ (stage2Skip_beq_one_of hleaf)
+      refine ⟨S3, 3, by omega, ?_, L3.inv', stage2SkipRun3 L1 L2 L3,
+        (by simp only [S3, S2, S1, stage2NoEventWalkNext])⟩
+      exact hexit S3 "LeafBlock56" c (by simp only [S3, stage2NoEventWalkNext])
+        (by simp only [S3, S2, stage2NoEventWalkNext]) L3.inv' (Or.inr (Or.inl rfl))
+        (by simp only [S3, stage2NoEventWalkNext]; skip_lk)
+        hidxle (by omega)
+        (by simp only [S3, stage2NoEventWalkNext]; skip_lk)
+        (by simp only [S3, stage2NoEventWalkNext]; skip_lk)
+        (by simp only [S3, stage2NoEventWalkNext]; skip_lk)
+        (fun j hj hjlt => hpre j hj hjlt) hws
+    · have h32f : v.slt (BitVec.ofNat 8 32) = false := by
+        cases h : v.slt (BitVec.ofNat 8 32) <;> simp_all
+      have hleaf : (v == BitVec.ofNat 8 32) = true := by
+        rw [← stage2SkipLeaf_slt32_false h13f h32f, stage2SkipLeaf_eq_ws]; exact hws
+      let S1 : State := stage2NoEventWalkNext
+        (("%Pivot63", .int 1 (evalICmp .slt v (BitVec.ofNat 8 13))) :: s.env) s
+        "NodeBlock60"
+      have L1 : Stage2NoEventWalkLink calls K mem s K S1 :=
+        link_skipNodeBlock62_false hInv hpc h58 (by
+          show BitVec.ofBool (v.slt (BitVec.ofNat 8 13)) = 0
+          rw [h13f]; rfl)
+      have h58₁ : lookupName S1.env "%58" = some (.int 8 v) := by
+        simp only [S1, stage2NoEventWalkNext]; skip_lk
+      let S2 : State := stage2NoEventWalkNext
+        (("%Pivot61", .int 1 (evalICmp .slt v (BitVec.ofNat 8 32))) :: S1.env) S1
+        "LeafBlock58"
+      have L2 : Stage2NoEventWalkLink calls K mem S1 K S2 :=
+        link_skipNodeBlock60_false L1.inv' (by simp only [S1, stage2NoEventWalkNext])
+          h58₁ (by
+            show BitVec.ofBool (v.slt (BitVec.ofNat 8 32)) = 0
+            rw [h32f]; rfl)
+      have h58₂ : lookupName S2.env "%58" = some (.int 8 v) := by
+        simp only [S2, stage2NoEventWalkNext]; skip_lk
+      let S3 : State := stage2NoEventWalkNext
+        (("%SwitchLeaf59", .int 1 (evalICmp .eq v (BitVec.ofNat 8 32))) :: S2.env) S2
+        "if.end457"
+      have L3 : Stage2NoEventWalkLink calls K mem S2 K S3 :=
+        link_skipLeafBlock58_true L2.inv' (by simp only [S2, stage2NoEventWalkNext])
+          h58₂ (stage2Skip_beq_one_of hleaf)
+      refine ⟨S3, 3, by omega, ?_, L3.inv', stage2SkipRun3 L1 L2 L3,
+        (by simp only [S3, S2, S1, stage2NoEventWalkNext])⟩
+      exact hexit S3 "LeafBlock58" c (by simp only [S3, stage2NoEventWalkNext])
+        (by simp only [S3, S2, stage2NoEventWalkNext]) L3.inv' (Or.inr (Or.inr rfl))
+        (by simp only [S3, stage2NoEventWalkNext]; skip_lk)
+        hidxle (by omega)
+        (by simp only [S3, stage2NoEventWalkNext]; skip_lk)
+        (by simp only [S3, stage2NoEventWalkNext]; skip_lk)
+        (by simp only [S3, stage2NoEventWalkNext]; skip_lk)
+        (fun j hj hjlt => hpre j hj hjlt) hws
+
+/-! ### The increment block's two tails -/
+
+/-- The increment reached `%cond`: the loop exits at the merge. -/
+theorem stage2SkipWhileBodyExit {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State} {b idx cond c : Nat} {σ : Nat → UInt8} {inc : BitVec 64}
+    {lc : BitVec 8} {k219 : Nat} {r : Nat}
+    (h : stage2SkipInvAt "while.body" K mem b idx cond σ inc lc k219 r s c)
+    (htest : (c + 1 == cond) = true) (hws : stage2SkipWs (BitVec.ofNat 8 (σ c).toNat) = false) :
+    ∃ (e : State), stage2SkipExit K mem b idx cond σ inc lc k219 e ∧
+      Stage2NoEventWalkInv K mem e ∧
+      (∀ n, runFuel calls (1 + n) stage2NoEventBody s =
+        runFuel calls n stage2NoEventBody e) ∧ e.mem = s.mem := by
+  obtain ⟨hpc, hInv, hb, hee, h58, hcond, hincv, hlc, hk, hcondlt, hidxle, hclt,
+    hbudget, hpre, hbytes⟩ := h
+  have hce : c + 1 = cond := by simpa using htest
+  have hy : evalICmp .eq (BitVec.ofNat 64 c + BitVec.ofNat 64 1)
+      (BitVec.ofNat 64 cond) = 1 := by
+    rw [stage2Skip_ofNat_succ (by omega : c + 1 < 2 ^ 64)]
+    exact stage2Skip_eq_ofNat_one hce
+  let S1 : State := stage2NoEventWalkNext
+    (stage2SkipWhileBodyCells s.env (BitVec.ofNat 64 c) (BitVec.ofNat 64 cond)) s
+    "if.end457"
+  have L1 : Stage2NoEventWalkLink calls K mem s K S1 :=
+    link_skipWhileBody_true hInv hpc hee hcond hy
+  refine ⟨S1, ?_, L1.inv', ?_,
+    (by simp only [S1, stage2NoEventWalkNext])⟩
+  · refine ⟨by simp only [S1, stage2NoEventWalkNext], L1.inv', "while.body", cond,
+      .reg "%cond", by simp only [S1, stage2NoEventWalkNext, hpc], ?_, ?_, by omega, by omega,
+      ?_, Or.inl rfl,
+      by simp only [S1, stage2NoEventWalkNext]; skip_lk,
+      by simp only [S1, stage2NoEventWalkNext]; skip_lk,
+      by simp only [S1, stage2NoEventWalkNext]; skip_lk⟩
+    · decide
+    · exact evalOperand_reg_of S1.env S1 "%cond"
+        (.int 64 (BitVec.ofNat 64 cond)) (by
+          simp only [S1, stage2NoEventWalkNext]; skip_lk)
+    · intro j hj hjlt
+      rcases Nat.lt_or_ge j c with h' | h'
+      · exact hpre j hj h'
+      · have hj' : j = c := by omega
+        subst hj'
+        exact hws
+  · intro n
+    exact stage2NoEventWalkLink_runFuel L1 n
+
+/-- The increment is short of `%cond`: the loop re-enters the head, one budget
+unit spent. -/
+theorem stage2SkipWhileBodyContinue {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State} {b idx cond c : Nat} {σ : Nat → UInt8} {inc : BitVec 64}
+    {lc : BitVec 8} {k219 : Nat} {r : Nat}
+    (h : stage2SkipInvAt "while.body" K mem b idx cond σ inc lc k219 (r + 1) s c)
+    (hws : stage2SkipWs (BitVec.ofNat 8 (σ c).toNat) = false)
+    (htest : (c + 1 == cond) = false) :
+    ∃ (e : State), stage2SkipInv K mem b idx cond σ inc lc k219 r e (c + 1) ∧
+      (∀ n, runFuel calls (2 + n) stage2NoEventBody s =
+        runFuel calls n stage2NoEventBody e) ∧ e.mem = s.mem := by
+  obtain ⟨hpc, hInv, hb, hee, h58, hcond, hincv, hlc, hk, hcondlt, hidxle, hclt,
+    hbudget, hpre, hbytes⟩ := h
+  have hne : c + 1 ≠ cond := by
+    intro hc
+    have h1 : (c + 1 == cond) = true := by simpa using hc
+    rw [h1] at htest
+    exact absurd htest (by decide)
+  have hc1 : c + 1 < 2 ^ 64 := by omega
+  have hy : evalICmp .eq (BitVec.ofNat 64 c + BitVec.ofNat 64 1)
+      (BitVec.ofNat 64 cond) = 0 := by
+    rw [stage2Skip_ofNat_succ hc1]
+    exact stage2Skip_eq_ofNat_zero (by omega) (by omega) hne
+  let S1 : State := stage2NoEventWalkNext
+    (stage2SkipWhileBodyCells s.env (BitVec.ofNat 64 c) (BitVec.ofNat 64 cond)) s
+    "land.rhs"
+  have L1 : Stage2NoEventWalkLink calls K mem s K S1 :=
+    link_skipWhileBody_false hInv hpc hee hcond hy
+  have hinc₁ : lookupName S1.env "%inc456" =
+      some (.int 64 (BitVec.ofNat 64 (c + 1))) := by
+    simp only [S1, stage2NoEventWalkNext]
+    rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_self,
+      stage2Skip_ofNat_succ hc1]
+  have hb₁ : lookupName S1.env "%b" = some (.ptr b) := by
+    simp only [S1, stage2NoEventWalkNext]
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+    exact hb
+  have hbyte : readByte S1.mem (b + (c + 1)) = some (σ (c + 1)) := by
+    have hm : S1.mem = s.mem := rfl
+    rw [hm]
+    exact hbytes (c + 1) (by omega)
+  let S2 : State := stage2NoEventWalkNext
+    (stage2SkipLandRhsCells S1.env (BitVec.ofNat 64 (c + 1)) b (σ (c + 1))) S1
+    "NodeBlock62"
+  have hpos : ((BitVec.ofNat 64 (c + 1)).signExtend 64).toNat < 2 ^ 63 := by
+    rw [stage2NoEventSignExtend_self, BitVec.toNat_ofNat, Nat.mod_eq_of_lt hc1]
+    omega
+  have L2 : Stage2NoEventWalkLink calls K mem S1 K S2 :=
+    link_skipLandRhs_whileBody L1.inv' (by simp only [S1, stage2NoEventWalkNext])
+      (by simp only [S1, stage2NoEventWalkNext, hpc]) hinc₁ hb₁ hpos (by
+        simpa only [stage2NoEventSignExtend_self, BitVec.toNat_ofNat,
+          Nat.mod_eq_of_lt hc1] using hbyte)
+  refine ⟨S2, ?_, stage2SkipRun2 L1 L2,
+    (by simp only [S2, S1, stage2NoEventWalkNext])⟩
+  refine ⟨by simp only [S2, stage2NoEventWalkNext], L2.inv', ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+    hcondlt, by omega, by omega, by omega, ?_, ?_⟩
+  · simp only [S2, stage2NoEventWalkNext]; skip_lk
+  · simp only [S2, stage2NoEventWalkNext]; skip_lk
+  · simp only [S2, stage2NoEventWalkNext]; rw [lookupName_cons_self]
+  · simp only [S2, stage2NoEventWalkNext]; skip_lk
+  · simp only [S2, stage2NoEventWalkNext]; skip_lk
+  · simp only [S2, stage2NoEventWalkNext]; skip_lk
+  · simp only [S2, stage2NoEventWalkNext]; skip_lk
+  · intro j hj hjlt
+    rcases Nat.lt_or_ge j c with h' | h'
+    · exact hpre j hj h'
+    · have hj' : j = c := by omega
+      subst hj'
+      exact hws
+  · intro j hj
+    have hm2 : S2.mem = s.mem := by simp only [S2, S1, stage2NoEventWalkNext]
+    rw [hm2]
+    exact hbytes j (by omega)
+
+/-! ### The loop -/
+
+/-- The skip loop, as `LoopFuel.BoundLoop`: the head is `NodeBlock62`, the bound
+`%cond`, the exit test `stage2SkipAtBound`, and the exit word the loop's own. -/
+def stage2SkipLoop (calls : Calls) (K : Stage2NoEventWalkCarry) (mem : Mem)
+    (b idx cond : Nat) (σ : Nat → UInt8) (inc : BitVec 64) (lc : BitVec 8)
+    (k219 : Nat) (M : Mem) : BoundLoop calls stage2NoEventBody where
+  head := "NodeBlock62"
+  exitBlock := "if.end457"
+  N := cond
+  cost := 5
+  Inv := fun r s c =>
+    stage2SkipInvAt "NodeBlock62" K mem b idx cond σ inc lc k219 r s c ∧ s.mem = M
+  atBound := fun s c => stage2SkipAtBound cond s c
+  ExitWord := fun e => stage2SkipExit K mem b idx cond σ inc lc k219 e ∧ e.mem = M
+  step_exit := by
+    intro r s c h hb
+    obtain ⟨hinv, hmem⟩ := h
+    have hinv0 := hinv
+    obtain ⟨hpc, hInv, hbreg, hee, h58, hcond, hincv, hlc, hk, hcondlt, hidxle, hclt, -,
+      hpre, hbytes⟩ := hinv
+    cases hcls : stage2SkipHeadClass s
+    · have hws : stage2SkipWs (BitVec.ofNat 8 (σ c).toNat) = false := by
+        simpa only [stage2SkipHeadClass, h58] using hcls
+      have heq : (c + 1 == cond) = true := by
+        have h1 : (false || (c + 1 == cond)) = true := by
+          simpa only [stage2SkipAtBound, hcls] using hb
+        simpa only [Bool.false_or] using h1
+      obtain ⟨e₁, j₁, hj₁, hinv₁, hrun₁, hme₁⟩ := stage2SkipAdvance hinv0 hws
+      obtain ⟨e₂, hexit₂, hinv₂, hrun₂, hme₂⟩ := stage2SkipWhileBodyExit hinv₁ heq hws
+      refine ⟨e₂, j₁ + 1, by omega, hexit₂.1, ⟨hexit₂, ?_⟩, ?_⟩
+      · rw [hme₂, hme₁, hmem]
+      · intro n
+        rw [show j₁ + 1 + n = j₁ + (1 + n) from by omega, hrun₁ (1 + n), hrun₂ n]
+    · have hws : stage2SkipWs (BitVec.ofNat 8 (σ c).toNat) = true := by
+        simpa only [stage2SkipHeadClass, h58] using hcls
+      obtain ⟨e, j, hj, hexit, hinv, hrun, hme⟩ := stage2SkipStop hinv0 hws
+      exact ⟨e, j, by omega, hexit.1, ⟨hexit, by rw [hme, hmem]⟩, hrun⟩
+  step_loop := by
+    intro r s c h hb
+    obtain ⟨hinv, hmem⟩ := h
+    have hinv0 := hinv
+    obtain ⟨hpc, hInv, hbreg, hee, h58, hcond, hincv, hlc, hk, hcondlt, hidxle, hclt, -,
+      hpre, hbytes⟩ := hinv
+    cases hcls : stage2SkipHeadClass s
+    · have hws : stage2SkipWs (BitVec.ofNat 8 (σ c).toNat) = false := by
+        simpa only [stage2SkipHeadClass, h58] using hcls
+      have hne : (c + 1 == cond) = false := by
+        have h1 : (false || (c + 1 == cond)) = false := by
+          simpa only [stage2SkipAtBound, hcls] using hb
+        simpa only [Bool.false_or] using h1
+      obtain ⟨e₁, j₁, hj₁, hinv₁, hrun₁, hme₁⟩ := stage2SkipAdvance hinv0 hws
+      obtain ⟨e₂, hinv₂, hrun₂, hme₂⟩ := stage2SkipWhileBodyContinue hinv₁ hws hne
+      refine ⟨e₂, c + 1, j₁ + 2, by omega, hinv₂.1, by omega, ⟨hinv₂, ?_⟩, ?_⟩
+      · rw [hme₂, hme₁, hmem]
+      · intro n
+        rw [show j₁ + 2 + n = j₁ + (2 + n) from by omega, hrun₁ (2 + n), hrun₂ n]
+    · have h1 : (true || (c + 1 == cond)) = false := by
+        simpa only [stage2SkipAtBound, hcls] using hb
+      exact absurd h1 (by simp)
+  exit_at_zero := by
+    intro s c h
+    obtain ⟨hinv, -⟩ := h
+    obtain ⟨-, -, -, -, -, -, -, -, -, -, -, hclt, hbudget, -⟩ := hinv
+    exact absurd hbudget (by omega)
+  budget := by
+    intro r s c h
+    obtain ⟨hinv, -⟩ := h
+    obtain ⟨-, -, -, -, -, -, -, -, -, -, -, hclt, hbudget, -⟩ := hinv
+    exact ⟨by omega, hbudget⟩
+
+/-- **The loop from its head**, at the whole budget: the run reaches the merge
+within `(%cond + 1) * 5` steps, leaving the loop's exit word. -/
+theorem stage2SkipLoop_run {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Mem}
+    {s : State} {b idx cond : Nat} {σ : Nat → UInt8} {inc : BitVec 64}
+    {lc : BitVec 8} {k219 : Nat} {M : Mem}
+    (h : stage2SkipInv K mem b idx cond σ inc lc k219 cond s idx)
+    (hmem : s.mem = M) :
+    ∃ (e : State) (j : Nat), j ≤ (cond + 1) * 5 ∧
+      stage2SkipExit K mem b idx cond σ inc lc k219 e ∧
+      (∀ n, runFuel calls (j + n) stage2NoEventBody s =
+        runFuel calls n stage2NoEventBody e) ∧ e.mem = s.mem := by
+  let L : BoundLoop calls stage2NoEventBody :=
+    stage2SkipLoop calls K mem b idx cond σ inc lc k219 M
+  have hL : stage2SkipInvAt "NodeBlock62" K mem b idx cond σ inc lc k219 cond s idx ∧
+      s.mem = M := ⟨h, hmem⟩
+  obtain ⟨e, j, hj, hexitPc, hexitWord, hrun⟩ := L.run_from L.N s idx hL
+  obtain ⟨hexit, hme⟩ : stage2SkipExit K mem b idx cond σ inc lc k219 e ∧
+      e.mem = M := hexitWord
+  refine ⟨e, j, ?_, ?_, hrun, ?_⟩
+  · simpa only [L, stage2SkipLoop] using hj
+  · simpa only [L, stage2SkipLoop] using hexit
+  · rw [hme, hmem]
+
+/-! ### The merge's run -/
+
+/-- **The merge's one step**, from its invariant: the `%ee.1` selection, the
+`%k219` store, the number-or-minus guard, and the arm it selects. -/
+theorem stage2SkipJoinRun {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Mem}
+    {s : State} {b idx cond q : Nat} {σ : Nat → UInt8} {op : Operand}
+    {inc : BitVec 64} {lc : BitVec 8} {k219 : Nat}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "if.end457")
+    (hinc : phiIncoming (s.pre.getD "") stage2SkipIfEnd457EeIncoming = some op)
+    (hop : evalOperand (stateAt s.env s) op = some (.int 64 (BitVec.ofNat 64 q)))
+    (hincv : lookupName s.env "%inc.lcssa" = some (.int 64 inc))
+    (hlc : lookupName s.env "%.lcssa" = some (.int 8 lc))
+    (hk : lookupName s.env "%k219" = some (.ptr k219)) (hstore : k219 = K.c + 32) :
+    ∃ (e : State),
+      (e.pc = "if.then471" ∨ e.pc = "if.else495") ∧
+      lookupName e.env "%ee.1" = some (.int 64 (BitVec.ofNat 64 q)) ∧
+      Stage2NoEventWalkInv K mem e ∧
+      e.mem = writeBytes s.mem k219 (natToBytes inc.toNat 8) ∧
+      (∀ n, runFuel calls (1 + n) stage2NoEventBody s =
+        runFuel calls n stage2NoEventBody e) := by
+  have hcode : denoteCode calls stage2SkipIfEnd457Instrs (stateAt s.env s) =
+      some (stateAt (stage2SkipIfEnd457Cells s.env q lc)
+        (stage2NoEventStepState s (writeBytes s.mem k219 (natToBytes inc.toNat 8))
+          s.next)) := by
+    cases hp : s.pre with
+    | none =>
+        rw [hp] at hinc
+        simp only [Option.getD_none] at hinc
+        have hnone : phiIncoming "" stage2SkipIfEnd457EeIncoming = none := by decide
+        rw [hnone] at hinc
+        exact absurd hinc (by simp)
+    | some pre =>
+        simp only [hp, Option.getD_some] at hinc
+        exact stage2SkipIfEnd457_denote (calls := calls) (env := s.env) (s := s)
+          hp hinc hop hincv hlc hk
+  let mid : State :=
+    stage2NoEventStepState s (writeBytes s.mem k219 (natToBytes inc.toNat 8)) s.next
+  have hmid : mid =
+      stage2NoEventStepState s (writeBytes s.mem k219 (natToBytes inc.toNat 8)) s.next := rfl
+  have hinv' : Stage2NoEventWalkInv K mem mid :=
+    Stage2NoEventWalkInv.mem_congr (s' := mid)
+      (Stage2NoEventWalkInv.stack_write (h := h) (a := k219)
+        (bs := natToBytes inc.toNat 8) (stage2SkipStoreRegion hstore)) (by rfl)
+  have hmem : mid.mem = writeBytes s.mem k219 (natToBytes inc.toNat 8) := rfl
+  let env' : Env := stage2SkipIfEnd457Cells s.env q lc
+  have henv' : env' = stage2SkipIfEnd457Cells s.env q lc := rfl
+  have hval : lookupName env' "%ee.1" = some (.int 64 (BitVec.ofNat 64 q)) := by
+    simp only [henv', stage2SkipIfEnd457Cells]
+    skip_lk
+  rcases bitVec1_eq_zero_or_one (evalICmp .eq lc (BitVec.ofNat 8 45) |||
+    evalICmp .ult (lc + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) with hg | hg
+  · refine ⟨stage2NoEventWalkNext env' mid "if.else495", Or.inr rfl, ?_, ?_, ?_, ?_⟩
+    · simpa only [stage2NoEventWalkNext] using hval
+    · exact Stage2NoEventWalkInv.mem_congr (s' :=
+        stage2NoEventWalkNext env' mid "if.else495") hinv' (by
+          simp only [stage2NoEventWalkNext])
+    · simpa only [stage2NoEventWalkNext] using hmem
+    · intro n
+      have hstep := stage2NoEventWalk_step_condbr_false (f := stage2NoEventBody) (s := s)
+        (b := ⟨"if.end457", stage2SkipIfEnd457Instrs,
+          Term.condbr (Operand.reg "%or.cond901") "if.then471" "if.else495"⟩)
+        (by rw [hpc]; exact stage2SkipIfEnd457_find) hcode rfl
+        (by simp only [henv', stage2SkipIfEnd457Cells, stateAt, lookupName_cons_self, hg])
+      rw [show 1 + n = n + 1 from by omega]
+      simp only [runFuel, hstep]
+      rfl
+  · refine ⟨stage2NoEventWalkNext env' mid "if.then471", Or.inl rfl, ?_, ?_, ?_, ?_⟩
+    · simpa only [stage2NoEventWalkNext] using hval
+    · exact Stage2NoEventWalkInv.mem_congr (s' :=
+        stage2NoEventWalkNext env' mid "if.then471") hinv' (by
+          simp only [stage2NoEventWalkNext])
+    · simpa only [stage2NoEventWalkNext] using hmem
+    · intro n
+      have hstep := stage2NoEventWalk_step_condbr_true (f := stage2NoEventBody) (s := s)
+        (b := ⟨"if.end457", stage2SkipIfEnd457Instrs,
+          Term.condbr (Operand.reg "%or.cond901") "if.then471" "if.else495"⟩)
+        (by rw [hpc]; exact stage2SkipIfEnd457_find) hcode rfl
+        (by simp only [henv', stage2SkipIfEnd457Cells, stateAt, lookupName_cons_self, hg])
+      rw [show 1 + n = n + 1 from by omega]
+      simp only [runFuel, hstep]
+      rfl
+
+/-! ### The first test -/
+
+/-- **`land.lhs.true` to the preheader or the merge.**  The probe's byte decides:
+a class member enters the loop at `land.rhs.preheader`; a non-member goes
+straight to the merge, whose `%ee.1` selection is `%cond`. -/
+theorem stage2SkipFirstTest {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Mem}
+    {s : State} {g b idx cond : Nat} {σ : Nat → UInt8} {u0 : UInt8} {inc : BitVec 64}
+    {lc : BitVec 8} {k219 : Nat}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "land.lhs.true")
+    (hg : lookupName s.env "%invariant.gep1068" = some (.ptr g))
+    (hc : lookupName s.env "%cond" = some (.int 64 (BitVec.ofNat 64 cond)))
+    (hidx : lookupName s.env "%idxprom.lcssa" = some (.int 64 (BitVec.ofNat 64 idx)))
+    (hb : lookupName s.env "%b" = some (.ptr b))
+    (hincv : lookupName s.env "%inc.lcssa" = some (.int 64 inc))
+    (hlc : lookupName s.env "%.lcssa" = some (.int 8 lc))
+    (hk : lookupName s.env "%k219" = some (.ptr k219))
+    (hread0 : readByte s.mem (g + cond) = some u0)
+    (hidxlt : idx < cond) (hcondlt : cond < 2 ^ 63) :
+    (∃ (e : State) (j : Nat), j ≤ 4 ∧ e.mem = s.mem ∧
+      Stage2NoEventWalkInv K mem e ∧ stage2SkipPre b idx cond σ inc lc k219 e ∧
+      (∀ n, runFuel calls (j + n) stage2NoEventBody s =
+        runFuel calls n stage2NoEventBody e))
+    ∨ (∃ (e : State) (j : Nat), j ≤ 4 ∧ e.mem = s.mem ∧
+      Stage2NoEventWalkInv K mem e ∧ e.pc = "if.end457" ∧
+      phiIncoming (e.pre.getD "") stage2SkipIfEnd457EeIncoming = some (.reg "%cond") ∧
+      lookupName e.env "%cond" = some (.int 64 (BitVec.ofNat 64 cond)) ∧
+      lookupName e.env "%inc.lcssa" = some (.int 64 inc) ∧
+      lookupName e.env "%.lcssa" = some (.int 8 lc) ∧
+      lookupName e.env "%k219" = some (.ptr k219) ∧
+      (∀ n, runFuel calls (j + n) stage2NoEventBody s =
+        runFuel calls n stage2NoEventBody e)) := by
+  let v : BitVec 8 := BitVec.ofNat 8 u0.toNat
+  have hv : v = BitVec.ofNat 8 u0.toNat := rfl
+  have hread0' : readByte s.mem (g + ((BitVec.ofNat 64 cond).signExtend 64).toNat)
+      = some u0 := by
+    rw [stage2NoEventSignExtend_self, BitVec.toNat_ofNat,
+      Nat.mod_eq_of_lt (by omega : cond < 2 ^ 64)]
+    exact hread0
+  have hpos0 : ((BitVec.ofNat 64 cond).signExtend 64).toNat < 2 ^ 63 := by
+    rw [stage2NoEventSignExtend_self, BitVec.toNat_ofNat,
+      Nat.mod_eq_of_lt (by omega : cond < 2 ^ 64)]
+    exact hcondlt
+  let S1 : State := stage2NoEventWalkNext
+    (stage2SkipLandLhsTrueCells s.env g (BitVec.ofNat 64 cond) u0) s "NodeBlock51"
+  have L1 : Stage2NoEventWalkLink calls K mem s K S1 :=
+    link_skipLandLhsTrue h hpc hg hc hpos0 hread0'
+  have h57₁ : lookupName S1.env "%57" = some (.int 8 v) := by
+    simp only [S1, stage2NoEventWalkNext]; skip_lk
+  by_cases hws : stage2SkipWs v = true
+  · have hleaf : stage2SkipLeaf v = true := by rw [stage2SkipLeaf_eq_ws]; exact hws
+    by_cases h13 : v.slt (BitVec.ofNat 8 13) = true
+    · have hb1 : (v + BitVec.ofNat 8 247).ule (BitVec.ofNat 8 1) = true := by
+        rw [← stage2SkipLeaf_slt13_true h13]; exact hleaf
+      have hy : evalICmp .ule (v + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 1 :=
+        stage2Skip_ule_one_of hb1
+      let S2 : State := stage2NoEventWalkNext
+        (("%Pivot52", .int 1 (evalICmp .slt v (BitVec.ofNat 8 13))) :: S1.env) S1
+        "LeafBlock43"
+      have L2 : Stage2NoEventWalkLink calls K mem S1 K S2 :=
+        link_skipNodeBlock51_true L1.inv' (by simp only [S1, stage2NoEventWalkNext]) h57₁
+          (by show BitVec.ofBool (v.slt (BitVec.ofNat 8 13)) = 1; rw [h13]; rfl)
+      have h57₂ : lookupName S2.env "%57" = some (.int 8 v) := by
+        simp only [S2, stage2NoEventWalkNext]; skip_lk
+      let S3 : State := stage2NoEventWalkNext
+        (("%SwitchLeaf44",
+            .int 1 (evalICmp .ule (v + BitVec.ofNat 8 247) (BitVec.ofNat 8 1))) ::
+          ("%.off", .int 8 (v + BitVec.ofNat 8 247)) :: S2.env) S2
+        "land.rhs.preheader"
+      have L3 : Stage2NoEventWalkLink calls K mem S2 K S3 :=
+        link_skipLeafBlock43_true L2.inv' (by simp only [S2, stage2NoEventWalkNext])
+          h57₂ hy
+      refine Or.inl ⟨S3, 3, by omega,
+        (by simp only [S3, S2, S1, stage2NoEventWalkNext]), L3.inv', ?_,
+        stage2SkipRun3 L1 L2 L3⟩
+      exact ⟨by simp only [S3, stage2NoEventWalkNext],
+        by simp only [S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
+        by simp only [S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
+        by simp only [S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
+        by simp only [S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
+        by simp only [S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
+        by simp only [S3, S2, S1, stage2NoEventWalkNext]; skip_lk⟩
+    · have h13f : v.slt (BitVec.ofNat 8 13) = false := by
+        cases h : v.slt (BitVec.ofNat 8 13) <;> simp_all
+      by_cases h32 : v.slt (BitVec.ofNat 8 32) = true
+      · have hleaf' : (v == BitVec.ofNat 8 13) = true := by
+          rw [← stage2SkipLeaf_slt32_true h13f h32, stage2SkipLeaf_eq_ws]; exact hws
+        have hy : evalICmp .eq v (BitVec.ofNat 8 13) = 1 := stage2Skip_beq_one_of hleaf'
+        let S2 : State := stage2NoEventWalkNext
+          (("%Pivot52", .int 1 (evalICmp .slt v (BitVec.ofNat 8 13))) :: S1.env) S1
+          "NodeBlock49"
+        have L2 : Stage2NoEventWalkLink calls K mem S1 K S2 :=
+          link_skipNodeBlock51_false L1.inv' (by simp only [S1, stage2NoEventWalkNext])
+            h57₁ (by show BitVec.ofBool (v.slt (BitVec.ofNat 8 13)) = 0; rw [h13f]; rfl)
+        have h57₂ : lookupName S2.env "%57" = some (.int 8 v) := by
+          simp only [S2, stage2NoEventWalkNext]; skip_lk
+        let S3 : State := stage2NoEventWalkNext
+          (("%Pivot50", .int 1 (evalICmp .slt v (BitVec.ofNat 8 32))) :: S2.env) S2
+          "LeafBlock45"
+        have L3 : Stage2NoEventWalkLink calls K mem S2 K S3 :=
+          link_skipNodeBlock49_true L2.inv' (by simp only [S2, stage2NoEventWalkNext])
+            h57₂ (by show BitVec.ofBool (v.slt (BitVec.ofNat 8 32)) = 1; rw [h32]; rfl)
+        have h57₃ : lookupName S3.env "%57" = some (.int 8 v) := by
+          simp only [S3, stage2NoEventWalkNext]; skip_lk
+        let S4 : State := stage2NoEventWalkNext
+          (("%SwitchLeaf46", .int 1 (evalICmp .eq v (BitVec.ofNat 8 13))) :: S3.env) S3
+          "land.rhs.preheader"
+        have L4 : Stage2NoEventWalkLink calls K mem S3 K S4 :=
+          link_skipLeafBlock45_true L3.inv' (by simp only [S3, stage2NoEventWalkNext])
+            h57₃ hy
+        refine Or.inl ⟨S4, 4, by omega,
+          (by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]), L4.inv', ?_,
+          stage2SkipRun4 L1 L2 L3 L4⟩
+        exact ⟨by simp only [S4, stage2NoEventWalkNext],
+          by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
+          by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
+          by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
+          by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
+          by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
+          by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]; skip_lk⟩
+      · have h32f : v.slt (BitVec.ofNat 8 32) = false := by
+          cases h : v.slt (BitVec.ofNat 8 32) <;> simp_all
+        have hleaf' : (v == BitVec.ofNat 8 32) = true := by
+          rw [← stage2SkipLeaf_slt32_false h13f h32f, stage2SkipLeaf_eq_ws]; exact hws
+        have hy : evalICmp .eq v (BitVec.ofNat 8 32) = 1 := stage2Skip_beq_one_of hleaf'
+        let S2 : State := stage2NoEventWalkNext
+          (("%Pivot52", .int 1 (evalICmp .slt v (BitVec.ofNat 8 13))) :: S1.env) S1
+          "NodeBlock49"
+        have L2 : Stage2NoEventWalkLink calls K mem S1 K S2 :=
+          link_skipNodeBlock51_false L1.inv' (by simp only [S1, stage2NoEventWalkNext])
+            h57₁ (by show BitVec.ofBool (v.slt (BitVec.ofNat 8 13)) = 0; rw [h13f]; rfl)
+        have h57₂ : lookupName S2.env "%57" = some (.int 8 v) := by
+          simp only [S2, stage2NoEventWalkNext]; skip_lk
+        let S3 : State := stage2NoEventWalkNext
+          (("%Pivot50", .int 1 (evalICmp .slt v (BitVec.ofNat 8 32))) :: S2.env) S2
+          "LeafBlock47"
+        have L3 : Stage2NoEventWalkLink calls K mem S2 K S3 :=
+          link_skipNodeBlock49_false L2.inv' (by simp only [S2, stage2NoEventWalkNext])
+            h57₂ (by show BitVec.ofBool (v.slt (BitVec.ofNat 8 32)) = 0; rw [h32f]; rfl)
+        have h57₃ : lookupName S3.env "%57" = some (.int 8 v) := by
+          simp only [S3, stage2NoEventWalkNext]; skip_lk
+        let S4 : State := stage2NoEventWalkNext
+          (("%SwitchLeaf48", .int 1 (evalICmp .eq v (BitVec.ofNat 8 32))) :: S3.env) S3
+          "land.rhs.preheader"
+        have L4 : Stage2NoEventWalkLink calls K mem S3 K S4 :=
+          link_skipLeafBlock47_true L3.inv' (by simp only [S3, stage2NoEventWalkNext])
+            h57₃ hy
+        refine Or.inl ⟨S4, 4, by omega,
+          (by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]), L4.inv', ?_,
+          stage2SkipRun4 L1 L2 L3 L4⟩
+        exact ⟨by simp only [S4, stage2NoEventWalkNext],
+          by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
+          by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
+          by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
+          by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
+          by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
+          by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]; skip_lk⟩
+  · have hwsf : stage2SkipWs v = false := by
+      cases h : stage2SkipWs v <;> simp_all
+    have hleaf : stage2SkipLeaf v = false := by rw [stage2SkipLeaf_eq_ws]; exact hwsf
+    have hnot : ∀ (e : State), e.pc = "if.end457" →
+        (e.pre = some "LeafBlock43" ∨ e.pre = some "LeafBlock45" ∨
+          e.pre = some "LeafBlock47") →
+        phiIncoming (e.pre.getD "") stage2SkipIfEnd457EeIncoming = some (.reg "%cond") := by
+      intro e hpc' hpre'
+      rcases hpre' with h' | h' | h'
+      · rw [h']; decide
+      · rw [h']; decide
+      · rw [h']; decide
+    by_cases h13 : v.slt (BitVec.ofNat 8 13) = true
+    · have hb1 : (v + BitVec.ofNat 8 247).ule (BitVec.ofNat 8 1) = false := by
+        rw [← stage2SkipLeaf_slt13_true h13]; exact hleaf
+      have hy : evalICmp .ule (v + BitVec.ofNat 8 247) (BitVec.ofNat 8 1) = 0 :=
+        stage2Skip_ule_zero_of hb1
+      let S2 : State := stage2NoEventWalkNext
+        (("%Pivot52", .int 1 (evalICmp .slt v (BitVec.ofNat 8 13))) :: S1.env) S1
+        "LeafBlock43"
+      have L2 : Stage2NoEventWalkLink calls K mem S1 K S2 :=
+        link_skipNodeBlock51_true L1.inv' (by simp only [S1, stage2NoEventWalkNext]) h57₁
+          (by show BitVec.ofBool (v.slt (BitVec.ofNat 8 13)) = 1; rw [h13]; rfl)
+      have h57₂ : lookupName S2.env "%57" = some (.int 8 v) := by
+        simp only [S2, stage2NoEventWalkNext]; skip_lk
+      let S3 : State := stage2NoEventWalkNext
+        (("%SwitchLeaf44",
+            .int 1 (evalICmp .ule (v + BitVec.ofNat 8 247) (BitVec.ofNat 8 1))) ::
+          ("%.off", .int 8 (v + BitVec.ofNat 8 247)) :: S2.env) S2 "if.end457"
+      have L3 : Stage2NoEventWalkLink calls K mem S2 K S3 :=
+        link_skipLeafBlock43_false L2.inv' (by simp only [S2, stage2NoEventWalkNext])
+          h57₂ hy
+      refine Or.inr ⟨S3, 3, by omega,
+        (by simp only [S3, S2, S1, stage2NoEventWalkNext]), L3.inv',
+        (by simp only [S3, stage2NoEventWalkNext]),
+        hnot S3 (by simp only [S3, stage2NoEventWalkNext])
+          (Or.inl (by simp only [S3, S2, stage2NoEventWalkNext])),
+        by simp only [S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
+        by simp only [S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
+        by simp only [S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
+        by simp only [S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
+        stage2SkipRun3 L1 L2 L3⟩
+    · have h13f : v.slt (BitVec.ofNat 8 13) = false := by
+        cases h : v.slt (BitVec.ofNat 8 13) <;> simp_all
+      by_cases h32 : v.slt (BitVec.ofNat 8 32) = true
+      · have hleaf' : (v == BitVec.ofNat 8 13) = false := by
+          rw [← stage2SkipLeaf_slt32_true h13f h32, stage2SkipLeaf_eq_ws]; exact hwsf
+        have hy : evalICmp .eq v (BitVec.ofNat 8 13) = 0 := stage2Skip_beq_zero_of hleaf'
+        let S2 : State := stage2NoEventWalkNext
+          (("%Pivot52", .int 1 (evalICmp .slt v (BitVec.ofNat 8 13))) :: S1.env) S1
+          "NodeBlock49"
+        have L2 : Stage2NoEventWalkLink calls K mem S1 K S2 :=
+          link_skipNodeBlock51_false L1.inv' (by simp only [S1, stage2NoEventWalkNext])
+            h57₁ (by show BitVec.ofBool (v.slt (BitVec.ofNat 8 13)) = 0; rw [h13f]; rfl)
+        have h57₂ : lookupName S2.env "%57" = some (.int 8 v) := by
+          simp only [S2, stage2NoEventWalkNext]; skip_lk
+        let S3 : State := stage2NoEventWalkNext
+          (("%Pivot50", .int 1 (evalICmp .slt v (BitVec.ofNat 8 32))) :: S2.env) S2
+          "LeafBlock45"
+        have L3 : Stage2NoEventWalkLink calls K mem S2 K S3 :=
+          link_skipNodeBlock49_true L2.inv' (by simp only [S2, stage2NoEventWalkNext])
+            h57₂ (by show BitVec.ofBool (v.slt (BitVec.ofNat 8 32)) = 1; rw [h32]; rfl)
+        have h57₃ : lookupName S3.env "%57" = some (.int 8 v) := by
+          simp only [S3, stage2NoEventWalkNext]; skip_lk
+        let S4 : State := stage2NoEventWalkNext
+          (("%SwitchLeaf46", .int 1 (evalICmp .eq v (BitVec.ofNat 8 13))) :: S3.env) S3
+          "if.end457"
+        have L4 : Stage2NoEventWalkLink calls K mem S3 K S4 :=
+          link_skipLeafBlock45_false L3.inv' (by simp only [S3, stage2NoEventWalkNext])
+            h57₃ hy
+        refine Or.inr ⟨S4, 4, by omega,
+          (by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]), L4.inv',
+          (by simp only [S4, stage2NoEventWalkNext]),
+          hnot S4 (by simp only [S4, stage2NoEventWalkNext])
+            (Or.inr (Or.inl (by simp only [S4, S3, stage2NoEventWalkNext]))),
+          by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
+          by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
+          by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
+          by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
+          stage2SkipRun4 L1 L2 L3 L4⟩
+      · have h32f : v.slt (BitVec.ofNat 8 32) = false := by
+          cases h : v.slt (BitVec.ofNat 8 32) <;> simp_all
+        have hleaf' : (v == BitVec.ofNat 8 32) = false := by
+          rw [← stage2SkipLeaf_slt32_false h13f h32f, stage2SkipLeaf_eq_ws]; exact hwsf
+        have hy : evalICmp .eq v (BitVec.ofNat 8 32) = 0 := stage2Skip_beq_zero_of hleaf'
+        let S2 : State := stage2NoEventWalkNext
+          (("%Pivot52", .int 1 (evalICmp .slt v (BitVec.ofNat 8 13))) :: S1.env) S1
+          "NodeBlock49"
+        have L2 : Stage2NoEventWalkLink calls K mem S1 K S2 :=
+          link_skipNodeBlock51_false L1.inv' (by simp only [S1, stage2NoEventWalkNext])
+            h57₁ (by show BitVec.ofBool (v.slt (BitVec.ofNat 8 13)) = 0; rw [h13f]; rfl)
+        have h57₂ : lookupName S2.env "%57" = some (.int 8 v) := by
+          simp only [S2, stage2NoEventWalkNext]; skip_lk
+        let S3 : State := stage2NoEventWalkNext
+          (("%Pivot50", .int 1 (evalICmp .slt v (BitVec.ofNat 8 32))) :: S2.env) S2
+          "LeafBlock47"
+        have L3 : Stage2NoEventWalkLink calls K mem S2 K S3 :=
+          link_skipNodeBlock49_false L2.inv' (by simp only [S2, stage2NoEventWalkNext])
+            h57₂ (by show BitVec.ofBool (v.slt (BitVec.ofNat 8 32)) = 0; rw [h32f]; rfl)
+        have h57₃ : lookupName S3.env "%57" = some (.int 8 v) := by
+          simp only [S3, stage2NoEventWalkNext]; skip_lk
+        let S4 : State := stage2NoEventWalkNext
+          (("%SwitchLeaf48", .int 1 (evalICmp .eq v (BitVec.ofNat 8 32))) :: S3.env) S3
+          "if.end457"
+        have L4 : Stage2NoEventWalkLink calls K mem S3 K S4 :=
+          link_skipLeafBlock47_false L3.inv' (by simp only [S3, stage2NoEventWalkNext])
+            h57₃ hy
+        refine Or.inr ⟨S4, 4, by omega,
+          (by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]), L4.inv',
+          (by simp only [S4, stage2NoEventWalkNext]),
+          hnot S4 (by simp only [S4, stage2NoEventWalkNext])
+            (Or.inr (Or.inr (by simp only [S4, S3, stage2NoEventWalkNext]))),
+          by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
+          by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
+          by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
+          by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
+          stage2SkipRun4 L1 L2 L3 L4⟩
+
+/-! ### The segment -/
+
+/-- **The scalar class's whitespace skip.**  From `land.lhs.true`'s entry — the
+state `link_condEnd_true` delivers — the segment probes `%invariant.gep1068 +
+%cond`, classifies the byte with the first test, and either goes straight to the
+merge (a non-member) or seeds the skip loop and runs it to the merge; then
+`if.end457`'s `%ee.1` selection, `%k219` store and number-or-minus guard carry it
+to `if.then471`'s or `if.else495`'s entry, with `Stage2NoEventWalkInv` at the end
+and `%ee.1`'s position between `%idxprom.lcssa` and `%cond`. -/
+theorem stage2NoEventWalkScalarSkip {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State} {g b idx cond : Nat} {σ : Nat → UInt8} {u0 : UInt8}
+    {inc : BitVec 64} {lc : BitVec 8} {k219 : Nat}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "land.lhs.true")
+    (hg : lookupName s.env "%invariant.gep1068" = some (.ptr g))
+    (hc : lookupName s.env "%cond" = some (.int 64 (BitVec.ofNat 64 cond)))
+    (hidx : lookupName s.env "%idxprom.lcssa" = some (.int 64 (BitVec.ofNat 64 idx)))
+    (hb : lookupName s.env "%b" = some (.ptr b))
+    (hincv : lookupName s.env "%inc.lcssa" = some (.int 64 inc))
+    (hlc : lookupName s.env "%.lcssa" = some (.int 8 lc))
+    (hk : lookupName s.env "%k219" = some (.ptr k219))
+    (hstore : k219 = K.c + 32)
+    (hread0 : readByte s.mem (g + cond) = some u0)
+    (hbytes : ∀ j, j < cond → readByte s.mem (b + j) = some (σ j))
+    (hidxlt : idx < cond) (hcondlt : cond < 2 ^ 63) :
+    ∃ (e : State) (j q : Nat), j ≤ 7 + (cond + 1) * 5 ∧
+      (e.pc = "if.then471" ∨ e.pc = "if.else495") ∧
+      lookupName e.env "%ee.1" = some (.int 64 (BitVec.ofNat 64 q)) ∧
+      idx ≤ q ∧ q ≤ cond ∧
+      (q = cond ∨ stage2SkipWs (BitVec.ofNat 8 (σ q).toNat) = true) ∧
+      Stage2NoEventWalkInv K mem e ∧
+      e.mem = writeBytes s.mem k219 (natToBytes inc.toNat 8) ∧
+      (∀ n, runFuel calls (j + n) stage2NoEventBody s =
+        runFuel calls n stage2NoEventBody e) := by
+  rcases stage2SkipFirstTest (σ := σ) h hpc hg hc hidx hb hincv hlc hk hread0 hidxlt hcondlt with
+    ⟨e₁, j₁, hj₁, hm₁, hinv₁, hpre₁, hrun₁⟩ |
+    ⟨e₁, j₁, hj₁, hm₁, hinv₁, hpc₁, hinc₁, hcond₁, hincv₁, hlc₁, hk₁, hrun₁⟩
+  · -- the loop
+    obtain ⟨hpc₀, hidx₀, hb₀, hcond₀, hincv₀, hlc₀, hk₀⟩ := hpre₁
+    have hbytes₀ : readByte e₁.mem (b + idx) = some (σ idx) := by
+      rw [hm₁]; exact hbytes idx hidxlt
+    let S1 : State := stage2NoEventWalkNext e₁.env e₁ "land.rhs"
+    have L1 : Stage2NoEventWalkLink calls K mem e₁ K S1 :=
+      link_skipLandRhsPreheader hinv₁ hpc₀
+    have hidx₁ : lookupName S1.env "%idxprom.lcssa" =
+        some (.int 64 (BitVec.ofNat 64 idx)) := by
+      simp only [S1, stage2NoEventWalkNext]; exact hidx₀
+    have hb₁ : lookupName S1.env "%b" = some (.ptr b) := by
+      simp only [S1, stage2NoEventWalkNext]; exact hb₀
+    have hidxpos : ((BitVec.ofNat 64 idx).signExtend 64).toNat < 2 ^ 63 := by
+      rw [stage2NoEventSignExtend_self, BitVec.toNat_ofNat,
+        Nat.mod_eq_of_lt (by omega : idx < 2 ^ 64)]
+      omega
+    have hbyte₁ : readByte S1.mem
+        (b + ((BitVec.ofNat 64 idx).signExtend 64).toNat) = some (σ idx) := by
+      have hm0 : S1.mem = e₁.mem := rfl
+      rw [hm0, stage2NoEventSignExtend_self, BitVec.toNat_ofNat,
+        Nat.mod_eq_of_lt (by omega : idx < 2 ^ 64)]
+      exact hbytes₀
+    let S2 : State := stage2NoEventWalkNext
+      (stage2SkipLandRhsCells S1.env (BitVec.ofNat 64 idx) b (σ idx)) S1 "NodeBlock62"
+    have L2 : Stage2NoEventWalkLink calls K mem S1 K S2 :=
+      link_skipLandRhs_preheader (idx := idx) L1.inv'
+        (by simp only [S1, stage2NoEventWalkNext])
+        (by simp only [S1, stage2NoEventWalkNext, hpc₀]) hidx₁ hb₁ hidxpos hbyte₁
+    have hm2 : S2.mem = s.mem := by
+      simp only [S2, S1, stage2NoEventWalkNext, hm₁]
+    have hInv0 : stage2SkipInv K mem b idx cond σ inc lc k219 cond S2 idx := by
+      refine ⟨by simp only [S2, stage2NoEventWalkNext], L2.inv', ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+        hcondlt, by omega, hidxlt, by omega, ?_, ?_⟩
+      · simp only [S2, stage2NoEventWalkNext]; skip_lk
+      · exact (by simp only [S2, stage2NoEventWalkNext]; skip_lk :
+          lookupName S2.env "%ee.01053" = some (.int 64 (BitVec.ofNat 64 idx)))
+      · simp only [S2, stage2NoEventWalkNext]; rw [lookupName_cons_self]
+      · simp only [S2, stage2NoEventWalkNext]; skip_lk
+      · simp only [S2, stage2NoEventWalkNext]; skip_lk
+      · simp only [S2, stage2NoEventWalkNext]; skip_lk
+      · simp only [S2, stage2NoEventWalkNext]; skip_lk
+      · intro j hj hjlt; omega
+      · intro j hj
+        rw [hm2]; exact hbytes j hj
+    obtain ⟨e₃, j₃, hj₃, hexit₃, hrun₃, hmem₃⟩ :=
+      stage2SkipLoop_run (M := S2.mem) hInv0 rfl
+    obtain ⟨hpc₃, hinv₃, pre₃, q₃, op₃, hpre₃, hinc₃, hop₃, hidx₃, hq₃, hpre₃',
+      hstop₃, hincv₃, hlc₃, hk₃⟩ := hexit₃
+    obtain ⟨e₄, hpc₄, hq₄, hinv₄, hmem₄, hrun₄⟩ :=
+      stage2SkipJoinRun (b := b) (idx := idx) (cond := cond) (σ := σ)
+        hinv₃ hpc₃ (by rw [hpre₃]; exact hinc₃) hop₃ hincv₃ hlc₃ hk₃
+        hstore
+    refine ⟨e₄, j₁ + 2 + j₃ + 1, q₃, by omega, hpc₄, hq₄, hidx₃, hq₃, hstop₃, hinv₄,
+      (hmem₄.trans (by rw [hmem₃, hm2])), ?_⟩
+    intro n
+    rw [show j₁ + 2 + j₃ + 1 + n = j₁ + (2 + (j₃ + (1 + n))) from by omega,
+      hrun₁ (2 + (j₃ + (1 + n))), stage2SkipRun2 L1 L2 (j₃ + (1 + n)),
+      hrun₃ (1 + n), hrun₄ n]
+  · -- the merge directly, with `%cond` as the selection
+    obtain ⟨e₄, hpc₄, hq₄, hinv₄, hmem₄, hrun₄⟩ :=
+      stage2SkipJoinRun (b := b) (idx := idx) (cond := cond) (σ := σ)
+        hinv₁ hpc₁ hinc₁
+        (evalOperand_reg_of e₁.env e₁ "%cond" (.int 64 (BitVec.ofNat 64 cond)) hcond₁)
+        hincv₁ hlc₁ hk₁ hstore
+    refine ⟨e₄, j₁ + 1, cond, by omega, hpc₄, hq₄, by omega, by omega, Or.inl rfl,
+      hinv₄, (hmem₄.trans (by rw [hm₁])), ?_⟩
+    intro n
+    rw [show j₁ + 1 + n = j₁ + (1 + n) from by omega, hrun₁ (1 + n), hrun₄ n]
+
+/-! ### Axiom footprints -/
+
+#print axioms stage2SkipExit
+#print axioms stage2SkipInvAt_cells
+#print axioms stage2SkipAdvance
+#print axioms stage2SkipStop
+#print axioms stage2SkipWhileBodyExit
+#print axioms stage2SkipWhileBodyContinue
+#print axioms stage2SkipLoop
+#print axioms stage2SkipLoop_run
+#print axioms stage2SkipJoinRun
+#print axioms stage2SkipFirstTest
+#print axioms stage2NoEventWalkScalarSkip
 
 end LeanLLVM.Refinement
