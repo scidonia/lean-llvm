@@ -488,6 +488,541 @@ theorem gap_step_landRhs_whileBody {calls : Calls} {env : Env} {s : State}
     simp only [stateAt, hpc]
   simp only [step, hfind, hden, hterm]
 
+/-- `NodeBlock5`: `%6 < 13` selects LeafBlock. -/
+theorem gap_step_NodeBlock5_toLeaf {calls : Calls} {env : Env} {s : State}
+    {byte : UInt8}
+    (hpc : s.pc = "NodeBlock5") (hpre : s.pre = some "land.rhs")
+    (h6 : lookupName env "%6" = some (.int 8 (gapByte byte)))
+    (hbit : evalICmp .slt (gapByte byte) (BitVec.ofNat 8 13) = 1#1) :
+    step calls odGapRecoverBody (stateAt env s) =
+      .jump (stateAt
+        (("%Pivot6", .int 1 (evalICmp .slt (gapByte byte) (BitVec.ofNat 8 13))) :: env)
+        { s with pc := "LeafBlock", pre := some "NodeBlock5" }) := by
+  have hpc' : (stateAt env s).pc = "NodeBlock5" := hpc
+  have hfind : odGapRecoverBody.findBlock (stateAt env s).pc =
+      some ⟨"NodeBlock5", odGapRecoverNodeBlock5Instrs,
+        Term.condbr (Operand.reg "%Pivot6") "LeafBlock" "NodeBlock"⟩ := by
+    rw [hpc']; exact odGapRecover_findBlock_NodeBlock5
+  have hden : denoteCode calls odGapRecoverNodeBlock5Instrs (stateAt env s) =
+      some (stateAt (("%Pivot6", .int 1 (evalICmp .slt (gapByte byte)
+        (BitVec.ofNat 8 13))) :: env) s) := by
+    rw [odGapRecoverNodeBlock5Instrs]
+    refine Eq.trans (gap_denote_icmp_slt_imm calls env s "%Pivot6" "%6" (by block_lk) []) ?_
+    rfl
+  have hterm : execTerm (stateAt (("%Pivot6", .int 1 (evalICmp .slt (gapByte byte)
+        (BitVec.ofNat 8 13))) :: env) s)
+      (Term.condbr (Operand.reg "%Pivot6") "LeafBlock" "NodeBlock") =
+    .jump (stateAt (("%Pivot6", .int 1 (evalICmp .slt (gapByte byte)
+        (BitVec.ofNat 8 13))) :: env)
+      { s with pc := "LeafBlock", pre := some "NodeBlock5" }) := by
+    rw [gap_execTerm_condbr_one
+      (by simp only [evalOperand, stateAt, lookupName_cons_self, hbit]; rfl)]
+    simp only [stateAt, hpc]
+  simp only [step, hfind, hden, hterm]
+
+/-- `NodeBlock5`: `%6 < 13` selects NodeBlock. -/
+theorem gap_step_NodeBlock5_toNode {calls : Calls} {env : Env} {s : State}
+    {byte : UInt8}
+    (hpc : s.pc = "NodeBlock5") (hpre : s.pre = some "land.rhs")
+    (h6 : lookupName env "%6" = some (.int 8 (gapByte byte)))
+    (hbit : evalICmp .slt (gapByte byte) (BitVec.ofNat 8 13) = 0#1) :
+    step calls odGapRecoverBody (stateAt env s) =
+      .jump (stateAt
+        (("%Pivot6", .int 1 (evalICmp .slt (gapByte byte) (BitVec.ofNat 8 13))) :: env)
+        { s with pc := "NodeBlock", pre := some "NodeBlock5" }) := by
+  have hpc' : (stateAt env s).pc = "NodeBlock5" := hpc
+  have hfind : odGapRecoverBody.findBlock (stateAt env s).pc =
+      some ⟨"NodeBlock5", odGapRecoverNodeBlock5Instrs,
+        Term.condbr (Operand.reg "%Pivot6") "LeafBlock" "NodeBlock"⟩ := by
+    rw [hpc']; exact odGapRecover_findBlock_NodeBlock5
+  have hden : denoteCode calls odGapRecoverNodeBlock5Instrs (stateAt env s) =
+      some (stateAt (("%Pivot6", .int 1 (evalICmp .slt (gapByte byte)
+        (BitVec.ofNat 8 13))) :: env) s) := by
+    rw [odGapRecoverNodeBlock5Instrs]
+    refine Eq.trans (gap_denote_icmp_slt_imm calls env s "%Pivot6" "%6" (by block_lk) []) ?_
+    rfl
+  have hterm : execTerm (stateAt (("%Pivot6", .int 1 (evalICmp .slt (gapByte byte)
+        (BitVec.ofNat 8 13))) :: env) s)
+      (Term.condbr (Operand.reg "%Pivot6") "LeafBlock" "NodeBlock") =
+    .jump (stateAt (("%Pivot6", .int 1 (evalICmp .slt (gapByte byte)
+        (BitVec.ofNat 8 13))) :: env)
+      { s with pc := "NodeBlock", pre := some "NodeBlock5" }) := by
+    rw [gap_execTerm_condbr_zero
+      (by simp only [evalOperand, stateAt, lookupName_cons_self, hbit]; rfl)]
+    simp only [stateAt, hpc]
+  simp only [step, hfind, hden, hterm]
+
+/-- `NodeBlock`: `%6 < 32` selects LeafBlock1. -/
+theorem gap_step_NodeBlock_toLeaf1 {calls : Calls} {env : Env} {s : State}
+    {byte : UInt8}
+    (hpc : s.pc = "NodeBlock") (hpre : s.pre = some "NodeBlock5")
+    (h6 : lookupName env "%6" = some (.int 8 (gapByte byte)))
+    (hbit : evalICmp .slt (gapByte byte) (BitVec.ofNat 8 32) = 1#1) :
+    step calls odGapRecoverBody (stateAt env s) =
+      .jump (stateAt
+        (("%Pivot", .int 1 (evalICmp .slt (gapByte byte) (BitVec.ofNat 8 32))) :: env)
+        { s with pc := "LeafBlock1", pre := some "NodeBlock" }) := by
+  have hpc' : (stateAt env s).pc = "NodeBlock" := hpc
+  have hfind : odGapRecoverBody.findBlock (stateAt env s).pc =
+      some ⟨"NodeBlock", odGapRecoverNodeBlockInstrs,
+        Term.condbr (Operand.reg "%Pivot") "LeafBlock1" "LeafBlock3"⟩ := by
+    rw [hpc']; exact odGapRecover_findBlock_NodeBlock
+  have hden : denoteCode calls odGapRecoverNodeBlockInstrs (stateAt env s) =
+      some (stateAt (("%Pivot", .int 1 (evalICmp .slt (gapByte byte)
+        (BitVec.ofNat 8 32))) :: env) s) := by
+    rw [odGapRecoverNodeBlockInstrs]
+    refine Eq.trans (gap_denote_icmp_slt_imm calls env s "%Pivot" "%6" (by block_lk) []) ?_
+    rfl
+  have hterm : execTerm (stateAt (("%Pivot", .int 1 (evalICmp .slt (gapByte byte)
+        (BitVec.ofNat 8 32))) :: env) s)
+      (Term.condbr (Operand.reg "%Pivot") "LeafBlock1" "LeafBlock3") =
+    .jump (stateAt (("%Pivot", .int 1 (evalICmp .slt (gapByte byte)
+        (BitVec.ofNat 8 32))) :: env)
+      { s with pc := "LeafBlock1", pre := some "NodeBlock" }) := by
+    rw [gap_execTerm_condbr_one
+      (by simp only [evalOperand, stateAt, lookupName_cons_self, hbit]; rfl)]
+    simp only [stateAt, hpc]
+  simp only [step, hfind, hden, hterm]
+
+/-- `NodeBlock`: `%6 < 32` selects LeafBlock3. -/
+theorem gap_step_NodeBlock_toLeaf3 {calls : Calls} {env : Env} {s : State}
+    {byte : UInt8}
+    (hpc : s.pc = "NodeBlock") (hpre : s.pre = some "NodeBlock5")
+    (h6 : lookupName env "%6" = some (.int 8 (gapByte byte)))
+    (hbit : evalICmp .slt (gapByte byte) (BitVec.ofNat 8 32) = 0#1) :
+    step calls odGapRecoverBody (stateAt env s) =
+      .jump (stateAt
+        (("%Pivot", .int 1 (evalICmp .slt (gapByte byte) (BitVec.ofNat 8 32))) :: env)
+        { s with pc := "LeafBlock3", pre := some "NodeBlock" }) := by
+  have hpc' : (stateAt env s).pc = "NodeBlock" := hpc
+  have hfind : odGapRecoverBody.findBlock (stateAt env s).pc =
+      some ⟨"NodeBlock", odGapRecoverNodeBlockInstrs,
+        Term.condbr (Operand.reg "%Pivot") "LeafBlock1" "LeafBlock3"⟩ := by
+    rw [hpc']; exact odGapRecover_findBlock_NodeBlock
+  have hden : denoteCode calls odGapRecoverNodeBlockInstrs (stateAt env s) =
+      some (stateAt (("%Pivot", .int 1 (evalICmp .slt (gapByte byte)
+        (BitVec.ofNat 8 32))) :: env) s) := by
+    rw [odGapRecoverNodeBlockInstrs]
+    refine Eq.trans (gap_denote_icmp_slt_imm calls env s "%Pivot" "%6" (by block_lk) []) ?_
+    rfl
+  have hterm : execTerm (stateAt (("%Pivot", .int 1 (evalICmp .slt (gapByte byte)
+        (BitVec.ofNat 8 32))) :: env) s)
+      (Term.condbr (Operand.reg "%Pivot") "LeafBlock1" "LeafBlock3") =
+    .jump (stateAt (("%Pivot", .int 1 (evalICmp .slt (gapByte byte)
+        (BitVec.ofNat 8 32))) :: env)
+      { s with pc := "LeafBlock3", pre := some "NodeBlock" }) := by
+    rw [gap_execTerm_condbr_zero
+      (by simp only [evalOperand, stateAt, lookupName_cons_self, hbit]; rfl)]
+    simp only [stateAt, hpc]
+  simp only [step, hfind, hden, hterm]
+
+/-- `LeafBlock3`: `%6 == 32` selects while.end. -/
+theorem gap_step_LeafBlock3_toWhileEnd {calls : Calls} {env : Env} {s : State}
+    {byte : UInt8}
+    (hpc : s.pc = "LeafBlock3") (hpre : s.pre = some "NodeBlock")
+    (h6 : lookupName env "%6" = some (.int 8 (gapByte byte)))
+    (hbit : evalICmp .eq (gapByte byte) (BitVec.ofNat 8 32) = 1#1) :
+    step calls odGapRecoverBody (stateAt env s) =
+      .jump (stateAt
+        (("%SwitchLeaf4", .int 1 (evalICmp .eq (gapByte byte) (BitVec.ofNat 8 32))) :: env)
+        { s with pc := "while.end", pre := some "LeafBlock3" }) := by
+  have hpc' : (stateAt env s).pc = "LeafBlock3" := hpc
+  have hfind : odGapRecoverBody.findBlock (stateAt env s).pc =
+      some ⟨"LeafBlock3", odGapRecoverLeafBlock3Instrs,
+        Term.condbr (Operand.reg "%SwitchLeaf4") "while.end" "while.body"⟩ := by
+    rw [hpc']; exact odGapRecover_findBlock_LeafBlock3
+  have hden : denoteCode calls odGapRecoverLeafBlock3Instrs (stateAt env s) =
+      some (stateAt (("%SwitchLeaf4", .int 1 (evalICmp .eq (gapByte byte)
+        (BitVec.ofNat 8 32))) :: env) s) := by
+    rw [odGapRecoverLeafBlock3Instrs]
+    refine Eq.trans (gap_denote_icmp_eq_imm calls env s "%SwitchLeaf4" "%6" (by block_lk) []) ?_
+    rfl
+  have hterm : execTerm (stateAt (("%SwitchLeaf4", .int 1 (evalICmp .eq (gapByte byte)
+        (BitVec.ofNat 8 32))) :: env) s)
+      (Term.condbr (Operand.reg "%SwitchLeaf4") "while.end" "while.body") =
+    .jump (stateAt (("%SwitchLeaf4", .int 1 (evalICmp .eq (gapByte byte)
+        (BitVec.ofNat 8 32))) :: env)
+      { s with pc := "while.end", pre := some "LeafBlock3" }) := by
+    rw [gap_execTerm_condbr_one
+      (by simp only [evalOperand, stateAt, lookupName_cons_self, hbit]; rfl)]
+    simp only [stateAt, hpc]
+  simp only [step, hfind, hden, hterm]
+
+/-- `LeafBlock3`: `%6 == 32` selects while.body. -/
+theorem gap_step_LeafBlock3_toWhileBody {calls : Calls} {env : Env} {s : State}
+    {byte : UInt8}
+    (hpc : s.pc = "LeafBlock3") (hpre : s.pre = some "NodeBlock")
+    (h6 : lookupName env "%6" = some (.int 8 (gapByte byte)))
+    (hbit : evalICmp .eq (gapByte byte) (BitVec.ofNat 8 32) = 0#1) :
+    step calls odGapRecoverBody (stateAt env s) =
+      .jump (stateAt
+        (("%SwitchLeaf4", .int 1 (evalICmp .eq (gapByte byte) (BitVec.ofNat 8 32))) :: env)
+        { s with pc := "while.body", pre := some "LeafBlock3" }) := by
+  have hpc' : (stateAt env s).pc = "LeafBlock3" := hpc
+  have hfind : odGapRecoverBody.findBlock (stateAt env s).pc =
+      some ⟨"LeafBlock3", odGapRecoverLeafBlock3Instrs,
+        Term.condbr (Operand.reg "%SwitchLeaf4") "while.end" "while.body"⟩ := by
+    rw [hpc']; exact odGapRecover_findBlock_LeafBlock3
+  have hden : denoteCode calls odGapRecoverLeafBlock3Instrs (stateAt env s) =
+      some (stateAt (("%SwitchLeaf4", .int 1 (evalICmp .eq (gapByte byte)
+        (BitVec.ofNat 8 32))) :: env) s) := by
+    rw [odGapRecoverLeafBlock3Instrs]
+    refine Eq.trans (gap_denote_icmp_eq_imm calls env s "%SwitchLeaf4" "%6" (by block_lk) []) ?_
+    rfl
+  have hterm : execTerm (stateAt (("%SwitchLeaf4", .int 1 (evalICmp .eq (gapByte byte)
+        (BitVec.ofNat 8 32))) :: env) s)
+      (Term.condbr (Operand.reg "%SwitchLeaf4") "while.end" "while.body") =
+    .jump (stateAt (("%SwitchLeaf4", .int 1 (evalICmp .eq (gapByte byte)
+        (BitVec.ofNat 8 32))) :: env)
+      { s with pc := "while.body", pre := some "LeafBlock3" }) := by
+    rw [gap_execTerm_condbr_zero
+      (by simp only [evalOperand, stateAt, lookupName_cons_self, hbit]; rfl)]
+    simp only [stateAt, hpc]
+  simp only [step, hfind, hden, hterm]
+
+/-- `LeafBlock1`: `%6 == 13` selects while.end. -/
+theorem gap_step_LeafBlock1_toWhileEnd {calls : Calls} {env : Env} {s : State}
+    {byte : UInt8}
+    (hpc : s.pc = "LeafBlock1") (hpre : s.pre = some "NodeBlock")
+    (h6 : lookupName env "%6" = some (.int 8 (gapByte byte)))
+    (hbit : evalICmp .eq (gapByte byte) (BitVec.ofNat 8 13) = 1#1) :
+    step calls odGapRecoverBody (stateAt env s) =
+      .jump (stateAt
+        (("%SwitchLeaf2", .int 1 (evalICmp .eq (gapByte byte) (BitVec.ofNat 8 13))) :: env)
+        { s with pc := "while.end", pre := some "LeafBlock1" }) := by
+  have hpc' : (stateAt env s).pc = "LeafBlock1" := hpc
+  have hfind : odGapRecoverBody.findBlock (stateAt env s).pc =
+      some ⟨"LeafBlock1", odGapRecoverLeafBlock1Instrs,
+        Term.condbr (Operand.reg "%SwitchLeaf2") "while.end" "while.body"⟩ := by
+    rw [hpc']; exact odGapRecover_findBlock_LeafBlock1
+  have hden : denoteCode calls odGapRecoverLeafBlock1Instrs (stateAt env s) =
+      some (stateAt (("%SwitchLeaf2", .int 1 (evalICmp .eq (gapByte byte)
+        (BitVec.ofNat 8 13))) :: env) s) := by
+    rw [odGapRecoverLeafBlock1Instrs]
+    refine Eq.trans (gap_denote_icmp_eq_imm calls env s "%SwitchLeaf2" "%6" (by block_lk) []) ?_
+    rfl
+  have hterm : execTerm (stateAt (("%SwitchLeaf2", .int 1 (evalICmp .eq (gapByte byte)
+        (BitVec.ofNat 8 13))) :: env) s)
+      (Term.condbr (Operand.reg "%SwitchLeaf2") "while.end" "while.body") =
+    .jump (stateAt (("%SwitchLeaf2", .int 1 (evalICmp .eq (gapByte byte)
+        (BitVec.ofNat 8 13))) :: env)
+      { s with pc := "while.end", pre := some "LeafBlock1" }) := by
+    rw [gap_execTerm_condbr_one
+      (by simp only [evalOperand, stateAt, lookupName_cons_self, hbit]; rfl)]
+    simp only [stateAt, hpc]
+  simp only [step, hfind, hden, hterm]
+
+/-- `LeafBlock1`: `%6 == 13` selects while.body. -/
+theorem gap_step_LeafBlock1_toWhileBody {calls : Calls} {env : Env} {s : State}
+    {byte : UInt8}
+    (hpc : s.pc = "LeafBlock1") (hpre : s.pre = some "NodeBlock")
+    (h6 : lookupName env "%6" = some (.int 8 (gapByte byte)))
+    (hbit : evalICmp .eq (gapByte byte) (BitVec.ofNat 8 13) = 0#1) :
+    step calls odGapRecoverBody (stateAt env s) =
+      .jump (stateAt
+        (("%SwitchLeaf2", .int 1 (evalICmp .eq (gapByte byte) (BitVec.ofNat 8 13))) :: env)
+        { s with pc := "while.body", pre := some "LeafBlock1" }) := by
+  have hpc' : (stateAt env s).pc = "LeafBlock1" := hpc
+  have hfind : odGapRecoverBody.findBlock (stateAt env s).pc =
+      some ⟨"LeafBlock1", odGapRecoverLeafBlock1Instrs,
+        Term.condbr (Operand.reg "%SwitchLeaf2") "while.end" "while.body"⟩ := by
+    rw [hpc']; exact odGapRecover_findBlock_LeafBlock1
+  have hden : denoteCode calls odGapRecoverLeafBlock1Instrs (stateAt env s) =
+      some (stateAt (("%SwitchLeaf2", .int 1 (evalICmp .eq (gapByte byte)
+        (BitVec.ofNat 8 13))) :: env) s) := by
+    rw [odGapRecoverLeafBlock1Instrs]
+    refine Eq.trans (gap_denote_icmp_eq_imm calls env s "%SwitchLeaf2" "%6" (by block_lk) []) ?_
+    rfl
+  have hterm : execTerm (stateAt (("%SwitchLeaf2", .int 1 (evalICmp .eq (gapByte byte)
+        (BitVec.ofNat 8 13))) :: env) s)
+      (Term.condbr (Operand.reg "%SwitchLeaf2") "while.end" "while.body") =
+    .jump (stateAt (("%SwitchLeaf2", .int 1 (evalICmp .eq (gapByte byte)
+        (BitVec.ofNat 8 13))) :: env)
+      { s with pc := "while.body", pre := some "LeafBlock1" }) := by
+    rw [gap_execTerm_condbr_zero
+      (by simp only [evalOperand, stateAt, lookupName_cons_self, hbit]; rfl)]
+    simp only [stateAt, hpc]
+  simp only [step, hfind, hden, hterm]
+
+/-- `LeafBlock`: `%6 - 9 <= 1` selects while.end. -/
+theorem gap_step_LeafBlock_toWhileEnd {calls : Calls} {env : Env} {s : State}
+    {byte : UInt8}
+    (hpc : s.pc = "LeafBlock") (hpre : s.pre = some "NodeBlock5")
+    (h6 : lookupName env "%6" = some (.int 8 (gapByte byte)))
+    (hbit : evalICmp .ule (gapOff (gapByte byte)) (BitVec.ofNat 8 1) = 1#1) :
+    step calls odGapRecoverBody (stateAt env s) =
+      .jump (stateAt
+        (("%SwitchLeaf", .int 1 (evalICmp .ule (gapOff (gapByte byte))
+          (BitVec.ofNat 8 1))) :: ("%.off", .int 8 (gapOff (gapByte byte))) :: env)
+        { s with pc := "while.end", pre := some "LeafBlock" }) := by
+  have hpc' : (stateAt env s).pc = "LeafBlock" := hpc
+  have hfind : odGapRecoverBody.findBlock (stateAt env s).pc =
+      some ⟨"LeafBlock", odGapRecoverLeafBlockInstrs,
+        Term.condbr (Operand.reg "%SwitchLeaf") "while.end" "while.body"⟩ := by
+    rw [hpc']; exact odGapRecover_findBlock_LeafBlock
+  have hden : denoteCode calls odGapRecoverLeafBlockInstrs (stateAt env s) =
+      some (stateAt (("%SwitchLeaf", .int 1 (evalICmp .ule (gapOff (gapByte byte))
+        (BitVec.ofNat 8 1))) :: ("%.off", .int 8 (gapOff (gapByte byte))) :: env) s) := by
+    rw [odGapRecoverLeafBlockInstrs]
+    refine Eq.trans (gap_denote_add_imm calls env s "%.off" "%6" (by block_lk) _) ?_
+    refine Eq.trans (gap_denote_icmp_ule_imm calls
+      (("%.off", .int 8 (gapOff (gapByte byte))) :: env) s
+      "%SwitchLeaf" "%.off" (by block_lk) []) ?_
+    rfl
+  have hterm : execTerm (stateAt (("%SwitchLeaf", .int 1 (evalICmp .ule (gapOff (gapByte byte))
+        (BitVec.ofNat 8 1))) :: ("%.off", .int 8 (gapOff (gapByte byte))) :: env) s)
+      (Term.condbr (Operand.reg "%SwitchLeaf") "while.end" "while.body") =
+    .jump (stateAt (("%SwitchLeaf", .int 1 (evalICmp .ule (gapOff (gapByte byte))
+        (BitVec.ofNat 8 1))) :: ("%.off", .int 8 (gapOff (gapByte byte))) :: env)
+      { s with pc := "while.end", pre := some "LeafBlock" }) := by
+    rw [gap_execTerm_condbr_one
+      (by simp only [evalOperand, stateAt, lookupName_cons_self, hbit]; rfl)]
+    simp only [stateAt, hpc]
+  simp only [step, hfind, hden, hterm]
+
+/-- `LeafBlock`: `%6 - 9 <= 1` selects while.body. -/
+theorem gap_step_LeafBlock_toWhileBody {calls : Calls} {env : Env} {s : State}
+    {byte : UInt8}
+    (hpc : s.pc = "LeafBlock") (hpre : s.pre = some "NodeBlock5")
+    (h6 : lookupName env "%6" = some (.int 8 (gapByte byte)))
+    (hbit : evalICmp .ule (gapOff (gapByte byte)) (BitVec.ofNat 8 1) = 0#1) :
+    step calls odGapRecoverBody (stateAt env s) =
+      .jump (stateAt
+        (("%SwitchLeaf", .int 1 (evalICmp .ule (gapOff (gapByte byte))
+          (BitVec.ofNat 8 1))) :: ("%.off", .int 8 (gapOff (gapByte byte))) :: env)
+        { s with pc := "while.body", pre := some "LeafBlock" }) := by
+  have hpc' : (stateAt env s).pc = "LeafBlock" := hpc
+  have hfind : odGapRecoverBody.findBlock (stateAt env s).pc =
+      some ⟨"LeafBlock", odGapRecoverLeafBlockInstrs,
+        Term.condbr (Operand.reg "%SwitchLeaf") "while.end" "while.body"⟩ := by
+    rw [hpc']; exact odGapRecover_findBlock_LeafBlock
+  have hden : denoteCode calls odGapRecoverLeafBlockInstrs (stateAt env s) =
+      some (stateAt (("%SwitchLeaf", .int 1 (evalICmp .ule (gapOff (gapByte byte))
+        (BitVec.ofNat 8 1))) :: ("%.off", .int 8 (gapOff (gapByte byte))) :: env) s) := by
+    rw [odGapRecoverLeafBlockInstrs]
+    refine Eq.trans (gap_denote_add_imm calls env s "%.off" "%6" (by block_lk) _) ?_
+    refine Eq.trans (gap_denote_icmp_ule_imm calls
+      (("%.off", .int 8 (gapOff (gapByte byte))) :: env) s
+      "%SwitchLeaf" "%.off" (by block_lk) []) ?_
+    rfl
+  have hterm : execTerm (stateAt (("%SwitchLeaf", .int 1 (evalICmp .ule (gapOff (gapByte byte))
+        (BitVec.ofNat 8 1))) :: ("%.off", .int 8 (gapOff (gapByte byte))) :: env) s)
+      (Term.condbr (Operand.reg "%SwitchLeaf") "while.end" "while.body") =
+    .jump (stateAt (("%SwitchLeaf", .int 1 (evalICmp .ule (gapOff (gapByte byte))
+        (BitVec.ofNat 8 1))) :: ("%.off", .int 8 (gapOff (gapByte byte))) :: env)
+      { s with pc := "while.body", pre := some "LeafBlock" }) := by
+    rw [gap_execTerm_condbr_zero
+      (by simp only [evalOperand, stateAt, lookupName_cons_self, hbit]; rfl)]
+    simp only [stateAt, hpc]
+  simp only [step, hfind, hden, hterm]
+
+/-- `while.body`: `%inc == %cond` selects cleanup82. -/
+theorem gap_step_whileBody_toCleanup {calls : Calls} {env : Env} {s : State}
+    {c ip : Nat}
+    (hpc : s.pc = "while.body")
+    (hinc : lookupName env "%ee.011" = some (.int 64 (BitVec.ofNat 64 c)))
+    (hcond : lookupName env "%cond" = some (.int 64 (BitVec.ofNat 64 ip)))
+    (hbit : evalICmp .eq (BitVec.ofNat 64 c + 1) (BitVec.ofNat 64 ip) = 1#1) :
+    step calls odGapRecoverBody (stateAt env s) =
+      .jump (stateAt
+        (("%exitcond.not", .int 1 (evalICmp .eq (BitVec.ofNat 64 c + 1)
+            (BitVec.ofNat 64 ip))) ::
+          ("%inc", .int 64 (BitVec.ofNat 64 c + 1)) :: env)
+        { s with pc := "cleanup82", pre := some "while.body" }) := by
+  have hpc' : (stateAt env s).pc = "while.body" := hpc
+  have hfind : odGapRecoverBody.findBlock (stateAt env s).pc =
+      some ⟨"while.body", odGapRecoverWhileBodyInstrs,
+        Term.condbr (Operand.reg "%exitcond.not") "cleanup82" "land.rhs"⟩ := by
+    rw [hpc']; exact odGapRecover_findBlock_while_body
+  have hden : denoteCode calls odGapRecoverWhileBodyInstrs (stateAt env s) =
+      some (stateAt (("%exitcond.not", .int 1 (evalICmp .eq (BitVec.ofNat 64 c + 1)
+        (BitVec.ofNat 64 ip))) :: ("%inc", .int 64 (BitVec.ofNat 64 c + 1)) :: env) s) := by
+    rw [odGapRecoverWhileBodyInstrs]
+    refine Eq.trans (gap_denote_add_imm calls env s "%inc" "%ee.011" (by block_lk) _) ?_
+    refine Eq.trans (gap_denote_icmp_eq_reg calls
+      (("%inc", .int 64 (BitVec.ofNat 64 c + 1)) :: env) s
+      "%exitcond.not" "%inc" "%cond" (by block_lk) (by block_lk) []) ?_
+    rfl
+  have hterm : execTerm (stateAt (("%exitcond.not", .int 1 (evalICmp .eq (BitVec.ofNat 64 c + 1)
+        (BitVec.ofNat 64 ip))) :: ("%inc", .int 64 (BitVec.ofNat 64 c + 1)) :: env) s)
+      (Term.condbr (Operand.reg "%exitcond.not") "cleanup82" "land.rhs") =
+    .jump (stateAt (("%exitcond.not", .int 1 (evalICmp .eq (BitVec.ofNat 64 c + 1)
+        (BitVec.ofNat 64 ip))) :: ("%inc", .int 64 (BitVec.ofNat 64 c + 1)) :: env)
+      { s with pc := "cleanup82", pre := some "while.body" }) := by
+    rw [gap_execTerm_condbr_one
+      (by simp only [evalOperand, stateAt, lookupName_cons_self, hbit]; rfl)]
+    simp only [stateAt, hpc]
+  simp only [step, hfind, hden, hterm]
+
+/-- `while.body`: `%inc == %cond` selects land.rhs. -/
+theorem gap_step_whileBody_toLandRhs {calls : Calls} {env : Env} {s : State}
+    {c ip : Nat}
+    (hpc : s.pc = "while.body")
+    (hinc : lookupName env "%ee.011" = some (.int 64 (BitVec.ofNat 64 c)))
+    (hcond : lookupName env "%cond" = some (.int 64 (BitVec.ofNat 64 ip)))
+    (hbit : evalICmp .eq (BitVec.ofNat 64 c + 1) (BitVec.ofNat 64 ip) = 0#1) :
+    step calls odGapRecoverBody (stateAt env s) =
+      .jump (stateAt
+        (("%exitcond.not", .int 1 (evalICmp .eq (BitVec.ofNat 64 c + 1)
+            (BitVec.ofNat 64 ip))) ::
+          ("%inc", .int 64 (BitVec.ofNat 64 c + 1)) :: env)
+        { s with pc := "land.rhs", pre := some "while.body" }) := by
+  have hpc' : (stateAt env s).pc = "while.body" := hpc
+  have hfind : odGapRecoverBody.findBlock (stateAt env s).pc =
+      some ⟨"while.body", odGapRecoverWhileBodyInstrs,
+        Term.condbr (Operand.reg "%exitcond.not") "cleanup82" "land.rhs"⟩ := by
+    rw [hpc']; exact odGapRecover_findBlock_while_body
+  have hden : denoteCode calls odGapRecoverWhileBodyInstrs (stateAt env s) =
+      some (stateAt (("%exitcond.not", .int 1 (evalICmp .eq (BitVec.ofNat 64 c + 1)
+        (BitVec.ofNat 64 ip))) :: ("%inc", .int 64 (BitVec.ofNat 64 c + 1)) :: env) s) := by
+    rw [odGapRecoverWhileBodyInstrs]
+    refine Eq.trans (gap_denote_add_imm calls env s "%inc" "%ee.011" (by block_lk) _) ?_
+    refine Eq.trans (gap_denote_icmp_eq_reg calls
+      (("%inc", .int 64 (BitVec.ofNat 64 c + 1)) :: env) s
+      "%exitcond.not" "%inc" "%cond" (by block_lk) (by block_lk) []) ?_
+    rfl
+  have hterm : execTerm (stateAt (("%exitcond.not", .int 1 (evalICmp .eq (BitVec.ofNat 64 c + 1)
+        (BitVec.ofNat 64 ip))) :: ("%inc", .int 64 (BitVec.ofNat 64 c + 1)) :: env) s)
+      (Term.condbr (Operand.reg "%exitcond.not") "cleanup82" "land.rhs") =
+    .jump (stateAt (("%exitcond.not", .int 1 (evalICmp .eq (BitVec.ofNat 64 c + 1)
+        (BitVec.ofNat 64 ip))) :: ("%inc", .int 64 (BitVec.ofNat 64 c + 1)) :: env)
+      { s with pc := "land.rhs", pre := some "while.body" }) := by
+    rw [gap_execTerm_condbr_zero
+      (by simp only [evalOperand, stateAt, lookupName_cons_self, hbit]; rfl)]
+    simp only [stateAt, hpc]
+  simp only [step, hfind, hden, hterm]
+
+/-- `while.end` from a leaf: the `phi` carries the counter, and `%cmp6` is false
+while the counter is below `ip`, so the scan leaves for `if.end`. -/
+theorem gap_step_whileEnd_fromLeaf {calls : Calls} {env : Env} {s : State}
+    {c ip : Nat} {p : String}
+    (hpc : s.pc = "while.end") (hpre : s.pre = some p)
+    (hinc : phiIncoming p
+      [("cond.end", Operand.reg "%t.0.val"), ("LeafBlock", Operand.reg "%ee.011"),
+       ("LeafBlock1", Operand.reg "%ee.011"), ("LeafBlock3", Operand.reg "%ee.011")] =
+        some (Operand.reg "%ee.011"))
+    (h6 : lookupName env "%ee.011" = some (.int 64 (BitVec.ofNat 64 c)))
+    (hcond : lookupName env "%cond" = some (.int 64 (BitVec.ofNat 64 ip)))
+    (hbit : evalICmp .eq (BitVec.ofNat 64 c) (BitVec.ofNat 64 ip) = 0#1) :
+    step calls odGapRecoverBody (stateAt env s) =
+      .jump (stateAt
+        (("%cmp6", .int 1 (evalICmp .eq (BitVec.ofNat 64 c) (BitVec.ofNat 64 ip))) ::
+          ("%ee.0.lcssa", .int 64 (BitVec.ofNat 64 c)) :: env)
+        { s with pc := "if.end", pre := some "while.end" }) := by
+  have hpc' : (stateAt env s).pc = "while.end" := hpc
+  have hfind : odGapRecoverBody.findBlock (stateAt env s).pc =
+      some ⟨"while.end", odGapRecoverWhileEndInstrs,
+        Term.condbr (Operand.reg "%cmp6") "cleanup82" "if.end"⟩ := by
+    rw [hpc']; exact odGapRecover_findBlock_while_end
+  have hop : evalOperand (stateAt env s) (Operand.reg "%ee.011") =
+      some (.int 64 (BitVec.ofNat 64 c)) := by
+    simp only [evalOperand, stateAt]
+    rw [h6]
+  have hden : denoteCode calls odGapRecoverWhileEndInstrs (stateAt env s) =
+      some (stateAt (("%cmp6", .int 1 (evalICmp .eq (BitVec.ofNat 64 c)
+        (BitVec.ofNat 64 ip))) :: ("%ee.0.lcssa", .int 64 (BitVec.ofNat 64 c)) :: env) s) := by
+    rw [odGapRecoverWhileEndInstrs]
+    refine Eq.trans (denoteCode_phi calls env s "%ee.0.lcssa" (Ty.int 64)
+      [("cond.end", Operand.reg "%t.0.val"), ("LeafBlock", Operand.reg "%ee.011"),
+       ("LeafBlock1", Operand.reg "%ee.011"), ("LeafBlock3", Operand.reg "%ee.011")]
+      (p := p) (op := Operand.reg "%ee.011") (v := .int 64 (BitVec.ofNat 64 c))
+      hpre hinc hop
+      [Instr.icmp "%cmp6" (IPred.eq) 64 (Operand.reg "%ee.0.lcssa") (Operand.reg "%cond")]
+      (by decide)) ?_
+    refine Eq.trans (gap_denote_icmp_eq_reg calls
+      (("%ee.0.lcssa", .int 64 (BitVec.ofNat 64 c)) :: env) s
+      "%cmp6" "%ee.0.lcssa" "%cond" (by block_lk) (by block_lk) []) ?_
+    rfl
+  have hterm : execTerm (stateAt (("%cmp6", .int 1 (evalICmp .eq (BitVec.ofNat 64 c)
+        (BitVec.ofNat 64 ip))) :: ("%ee.0.lcssa", .int 64 (BitVec.ofNat 64 c)) :: env) s)
+      (Term.condbr (Operand.reg "%cmp6") "cleanup82" "if.end") =
+    .jump (stateAt (("%cmp6", .int 1 (evalICmp .eq (BitVec.ofNat 64 c)
+        (BitVec.ofNat 64 ip))) :: ("%ee.0.lcssa", .int 64 (BitVec.ofNat 64 c)) :: env)
+      { s with pc := "if.end", pre := some "while.end" }) := by
+    rw [gap_execTerm_condbr_zero
+      (by simp only [evalOperand, stateAt, lookupName_cons_self, hbit]; rfl)]
+    simp only [stateAt, hpc]
+  simp only [step, hfind, hden, hterm]
+
+/-- `while.end` from `cond.end`: the same equality test at the token's position. -/
+theorem gap_step_whileEnd_fromCondEnd_scan {calls : Calls} {env : Env} {s : State}
+    {c ip : Nat}
+    (hpc : s.pc = "while.end") (hpre : s.pre = some "cond.end")
+    (ht : lookupName env "%t.0.val" = some (.int 64 (BitVec.ofNat 64 c)))
+    (hcond : lookupName env "%cond" = some (.int 64 (BitVec.ofNat 64 ip)))
+    (hbit : evalICmp .eq (BitVec.ofNat 64 c) (BitVec.ofNat 64 ip) = 0#1) :
+    step calls odGapRecoverBody (stateAt env s) =
+      .jump (stateAt
+        (("%cmp6", .int 1 (evalICmp .eq (BitVec.ofNat 64 c) (BitVec.ofNat 64 ip))) ::
+          ("%ee.0.lcssa", .int 64 (BitVec.ofNat 64 c)) :: env)
+        { s with pc := "if.end", pre := some "while.end" }) := by
+  have hpc' : (stateAt env s).pc = "while.end" := hpc
+  have hfind : odGapRecoverBody.findBlock (stateAt env s).pc =
+      some ⟨"while.end", odGapRecoverWhileEndInstrs,
+        Term.condbr (Operand.reg "%cmp6") "cleanup82" "if.end"⟩ := by
+    rw [hpc']; exact odGapRecover_findBlock_while_end
+  have hop : evalOperand (stateAt env s) (Operand.reg "%t.0.val") =
+      some (.int 64 (BitVec.ofNat 64 c)) := by
+    simp only [evalOperand, stateAt]
+    rw [ht]
+  have hinc : phiIncoming "cond.end"
+      [("cond.end", Operand.reg "%t.0.val"), ("LeafBlock", Operand.reg "%ee.011"),
+       ("LeafBlock1", Operand.reg "%ee.011"), ("LeafBlock3", Operand.reg "%ee.011")] =
+        some (Operand.reg "%t.0.val") := by decide
+  have hden : denoteCode calls odGapRecoverWhileEndInstrs (stateAt env s) =
+      some (stateAt (("%cmp6", .int 1 (evalICmp .eq (BitVec.ofNat 64 c)
+        (BitVec.ofNat 64 ip))) :: ("%ee.0.lcssa", .int 64 (BitVec.ofNat 64 c)) :: env) s) := by
+    rw [odGapRecoverWhileEndInstrs]
+    refine Eq.trans (denoteCode_phi calls env s "%ee.0.lcssa" (Ty.int 64)
+      [("cond.end", Operand.reg "%t.0.val"), ("LeafBlock", Operand.reg "%ee.011"),
+       ("LeafBlock1", Operand.reg "%ee.011"), ("LeafBlock3", Operand.reg "%ee.011")]
+      (p := "cond.end") (op := Operand.reg "%t.0.val")
+      (v := .int 64 (BitVec.ofNat 64 c)) hpre hinc hop
+      [Instr.icmp "%cmp6" (IPred.eq) 64 (Operand.reg "%ee.0.lcssa") (Operand.reg "%cond")]
+      (by decide)) ?_
+    refine Eq.trans (gap_denote_icmp_eq_reg calls
+      (("%ee.0.lcssa", .int 64 (BitVec.ofNat 64 c)) :: env) s
+      "%cmp6" "%ee.0.lcssa" "%cond" (by block_lk) (by block_lk) []) ?_
+    rfl
+  have hterm : execTerm (stateAt (("%cmp6", .int 1 (evalICmp .eq (BitVec.ofNat 64 c)
+        (BitVec.ofNat 64 ip))) :: ("%ee.0.lcssa", .int 64 (BitVec.ofNat 64 c)) :: env) s)
+      (Term.condbr (Operand.reg "%cmp6") "cleanup82" "if.end") =
+    .jump (stateAt (("%cmp6", .int 1 (evalICmp .eq (BitVec.ofNat 64 c)
+        (BitVec.ofNat 64 ip))) :: ("%ee.0.lcssa", .int 64 (BitVec.ofNat 64 c)) :: env)
+      { s with pc := "if.end", pre := some "while.end" }) := by
+    rw [gap_execTerm_condbr_zero
+      (by simp only [evalOperand, stateAt, lookupName_cons_self, hbit]; rfl)]
+    simp only [stateAt, hpc]
+  simp only [step, hfind, hden, hterm]
+
+
+
+/-! ### The scan's advance prefix
+
+From the loop head over a byte that is not whitespace, the body takes one of the
+switch's three advancing leaves and re-enters `land.rhs` with the counter
+incremented.  The routes are stated separately: the caller selects one from
+`gapRoute_nonWs`. -/
+
+/-- `icmp eq` is false at unequal words. -/
+theorem gap_eq_zero {w : Nat} {x y : BitVec w} (h : x ≠ y) :
+    evalICmp .eq x y = 0#1 := by
+  simp [evalICmp, h]
+
+/-- `icmp eq` is true at equal words. -/
+theorem gap_eq_one {x y : BitVec 64} (h : x = y) :
+    evalICmp .eq x y = 1#1 := by
+  subst h
+  exact gap_eq_self x
+
+/-- Two `Nat` words below `2 ^ 64` that differ give unequal `i64` values. -/
+theorem gap_ofNat_ne {a b : Nat} (ha : a < 2 ^ 64) (hb : b < 2 ^ 64) (h : a ≠ b) :
+    (BitVec.ofNat 64 a) ≠ (BitVec.ofNat 64 b) := by
+  intro he
+  apply h
+  have := congrArg BitVec.toNat he
+  simpa only [gap_word64 ha, gap_word64 hb] using this
+
 /-! ### Axiom footprints -/
 
 #print axioms gap_entry_denote
@@ -975,5 +1510,22 @@ theorem gap_run_atIp {nf : Calls} {mem : Mem} {next c ip b n ix nix k e lt lf ln
 #print axioms gapRoute_nonWs
 #print axioms gap_step_landRhs_condEnd
 #print axioms gap_step_landRhs_whileBody
+#print axioms gap_step_NodeBlock5_toLeaf
+#print axioms gap_step_NodeBlock5_toNode
+#print axioms gap_step_NodeBlock_toLeaf1
+#print axioms gap_step_NodeBlock_toLeaf3
+#print axioms gap_step_LeafBlock3_toWhileEnd
+#print axioms gap_step_LeafBlock3_toWhileBody
+#print axioms gap_step_LeafBlock1_toWhileEnd
+#print axioms gap_step_LeafBlock1_toWhileBody
+#print axioms gap_step_LeafBlock_toWhileEnd
+#print axioms gap_step_LeafBlock_toWhileBody
+#print axioms gap_step_whileBody_toCleanup
+#print axioms gap_step_whileBody_toLandRhs
+#print axioms gap_step_whileEnd_fromLeaf
+#print axioms gap_step_whileEnd_fromCondEnd_scan
+#print axioms gap_eq_zero
+#print axioms gap_eq_one
+#print axioms gap_ofNat_ne
 
 end LeanLLVM.Refinement
