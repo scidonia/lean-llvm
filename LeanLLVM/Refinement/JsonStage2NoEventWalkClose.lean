@@ -5126,6 +5126,485 @@ theorem ifEnd_produce {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Mem}
   · exact ifEndProduce_fromEnd327Peel h hpc hpre (h6 hpre) (h5 hpre) (h1 hpre)
       (hincp hpre) (htrp hpre) (htokp hpre)
 
+/-! ### `if.end327` and `if.end327.peel`: the entry byte's read
+
+Both blocks read the next entry's lane word and byte and test the byte against
+`]`.  Each is the block's own computation, so its loads are conclusions once the
+block has run; its inputs are the entry cursor, `%ep` and `%b` (and the memory
+the loads read).  The `]` arm leaves for `if.then334.loopexit` (from `if.end327`)
+or `if.then334` (from `if.end327.peel`); the value arm reaches `if.end` and then
+`NodeBlock15`.
+
+`if.end327.peel`'s block was already pinned for the closer's arm; its abstract
+denotation and its value-arm link are added here.  The composed producers below
+carry the six `if.end` `phi` inputs as conclusions at the `if.end` entry, and the
+four post-`if.end` counts at `NodeBlock15`. -/
+
+/-- `if.end327`: the value path's next-entry read and `]` test. -/
+def ifEnd327Instrs : List Instr :=
+  [ Instr.gep "%arrayidx328" (Ty.int 32) (Operand.reg "%ep") (Operand.reg "%inc"),
+    Instr.load "%46" (Ty.int 32) (Operand.reg "%arrayidx328"),
+    Instr.zext "%idxprom329" 32 64 (Operand.reg "%46"),
+    Instr.gep "%arrayidx330" (Ty.int 8) (Operand.reg "%b") (Operand.reg "%idxprom329"),
+    Instr.load "%47" (Ty.int 8) (Operand.reg "%arrayidx330"),
+    Instr.icmp "%cmp332" IPred.eq 8 (Operand.reg "%47")
+      (Operand.imm (.int 8 (BitVec.ofNat 8 93))) ]
+
+/-- `if.end327`, pinned. -/
+def ifEnd327Block : Block :=
+  { name := "if.end327", instrs := ifEnd327Instrs,
+    term := Term.condbr (Operand.reg "%cmp332") "if.then334.loopexit" "if.end" }
+
+theorem ifEnd327Block_find :
+    stage2NoEventBody.findBlock "if.end327" = some ifEnd327Block := by
+  decide
+
+theorem ifEnd327_denote (calls : Calls) (env : Env) (s : State)
+    {inc : BitVec 64} {ep b : Nat} {bs4 bs1 : List UInt8}
+    (hinc : lookupName env "%inc" = some (.int 64 inc))
+    (hep : lookupName env "%ep" = some (.ptr ep))
+    (hb : lookupName env "%b" = some (.ptr b))
+    (hincLt : inc.toNat < 2 ^ 63)
+    (hlane : readBytes s.mem (ep + inc.toNat * 4) 4 = some bs4)
+    (hlanelt : bytesToNat bs4 < 2 ^ 32)
+    (hbyte : readBytes s.mem
+      (b + (BitVec.signExtend 64 (BitVec.ofNat 64 (bytesToNat bs4))).toNat) 1 = some bs1) :
+    denoteCode calls ifEnd327Instrs (stateAt env s) =
+      some (stateAt
+        (("%cmp332", .int 1
+            (evalICmp .eq (BitVec.ofNat 8 (bytesToNat bs1)) (BitVec.ofNat 8 93))) ::
+          ("%47", .int 8 (BitVec.ofNat 8 (bytesToNat bs1))) ::
+          ("%arrayidx330",
+            .ptr (b + (BitVec.signExtend 64
+              (BitVec.ofNat 64 (bytesToNat bs4))).toNat)) ::
+          ("%idxprom329", .int 64 (BitVec.ofNat 64 (bytesToNat bs4))) ::
+          ("%46", .int 32 (BitVec.ofNat 32 (bytesToNat bs4))) ::
+          ("%arrayidx328", .ptr (ep + inc.toNat * 4)) :: env) s) := by
+  unfold ifEnd327Instrs
+  rw [stage2NoEventWalk_denote_gep32 (calls := calls) (env := env) (s := s)
+    (d := "%arrayidx328") (base := "%ep") (off := "%inc")
+    (a := ep) (o := inc) hep hinc
+    (by rw [stage2NoEventSignExtend_self]; exact hincLt)]
+  rw [stage2NoEventSignExtend_self]
+  rw [stage2NoEventWalk_denote_load_int (calls := calls) (env := _) (s := s)
+    (d := "%46") (p := "%arrayidx328") (a := ep + inc.toNat * 4) (w := 32)
+    (bs := bs4) (hw := by decide) (by simp only [lookupName_cons_self])
+    (by simpa using hlane)]
+  rw [denoteCode_zext (calls := calls) (env := _) (s := s) (d := "%idxprom329")
+    (v := "%46") (wIn := 32) (wOut := 64) (x := BitVec.ofNat 32 (bytesToNat bs4))
+    (by simp only [lookupName_cons_self])]
+  rw [stage2NoEventOfNat32_toNat hlanelt]
+  rw [denoteCode_gep8_reg (calls := calls) (env := _) (s := s)
+    (d := "%arrayidx330") (base := "%b") (off := "%idxprom329")
+    (a := b) (idx := BitVec.ofNat 64 (bytesToNat bs4))
+    (by rw [lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide)]; exact hb)
+    (by simp only [lookupName_cons_self])
+    (by
+      have hx : (bytesToNat bs4) < 2 ^ 63 := by omega
+      rw [stage2NoEventSignExtend_ofNat hx]
+      exact hx)]
+  rw [stage2NoEventWalk_denote_load_int (calls := calls) (env := _) (s := s)
+    (d := "%47") (p := "%arrayidx330")
+    (a := b + (BitVec.signExtend 64 (BitVec.ofNat 64 (bytesToNat bs4))).toNat)
+    (w := 8) (bs := bs1) (hw := by decide)
+    (by simp only [lookupName_cons_self]) (by simpa using hbyte)]
+  rw [stage2NoEventWalk_denote_icmp_imm (calls := calls) (env := _) (s := s)
+    (d := "%cmp332") (a := "%47") (p := .eq) (w := 8)
+    (x := BitVec.ofNat 8 (bytesToNat bs1))
+    (c := BitVec.ofNat 8 93) (by simp only [lookupName_cons_self]) (is := [])]
+  simp only [denoteCode_nil]
+
+/-- `if.end327` at a `]`: the closer's arm, to `if.then334.loopexit`. -/
+theorem link_ifEnd327_true {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Mem}
+    {s : State} {inc : BitVec 64} {ep b : Nat} {bs4 bs1 : List UInt8}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "if.end327")
+    (hinc : lookupName s.env "%inc" = some (.int 64 inc))
+    (hep : lookupName s.env "%ep" = some (.ptr ep))
+    (hb : lookupName s.env "%b" = some (.ptr b))
+    (hincLt : inc.toNat < 2 ^ 63)
+    (hlane : readBytes s.mem (ep + inc.toNat * 4) 4 = some bs4)
+    (hlanelt : bytesToNat bs4 < 2 ^ 32)
+    (hbyte : readBytes s.mem
+      (b + (BitVec.signExtend 64 (BitVec.ofNat 64 (bytesToNat bs4))).toNat) 1 = some bs1)
+    (hbit : evalICmp .eq (BitVec.ofNat 8 (bytesToNat bs1)) (BitVec.ofNat 8 93) = 1) :
+    Stage2NoEventWalkLink calls K mem s K
+      (stage2NoEventWalkNext
+        (("%cmp332", .int 1 1) ::
+          ("%47", .int 8 (BitVec.ofNat 8 (bytesToNat bs1))) ::
+          ("%arrayidx330",
+            .ptr (b + (BitVec.signExtend 64
+              (BitVec.ofNat 64 (bytesToNat bs4))).toNat)) ::
+          ("%idxprom329", .int 64 (BitVec.ofNat 64 (bytesToNat bs4))) ::
+          ("%46", .int 32 (BitVec.ofNat 32 (bytesToNat bs4))) ::
+          ("%arrayidx328", .ptr (ep + inc.toNat * 4)) :: s.env)
+        s "if.then334.loopexit") := by
+  have hcode : denoteCode calls ifEnd327Instrs (stateAt s.env s) =
+      some (stateAt
+        (("%cmp332", .int 1 1) ::
+          ("%47", .int 8 (BitVec.ofNat 8 (bytesToNat bs1))) ::
+          ("%arrayidx330",
+            .ptr (b + (BitVec.signExtend 64
+              (BitVec.ofNat 64 (bytesToNat bs4))).toNat)) ::
+          ("%idxprom329", .int 64 (BitVec.ofNat 64 (bytesToNat bs4))) ::
+          ("%46", .int 32 (BitVec.ofNat 32 (bytesToNat bs4))) ::
+          ("%arrayidx328", .ptr (ep + inc.toNat * 4)) :: s.env) s) := by
+    have hd := ifEnd327_denote (calls := calls) s.env s hinc hep hb hincLt hlane hlanelt hbyte
+    rw [hbit] at hd
+    exact hd
+  exact stage2NoEventWalkLink_condbr_true (env' := _)
+    h (by rw [hpc]; exact ifEnd327Block_find) hcode rfl (by rw [lookupName_cons_self])
+
+/-- `if.end327` at a byte other than 93: the value arm, to `if.end`. -/
+theorem link_ifEnd327_false {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Mem}
+    {s : State} {inc : BitVec 64} {ep b : Nat} {bs4 bs1 : List UInt8}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "if.end327")
+    (hinc : lookupName s.env "%inc" = some (.int 64 inc))
+    (hep : lookupName s.env "%ep" = some (.ptr ep))
+    (hb : lookupName s.env "%b" = some (.ptr b))
+    (hincLt : inc.toNat < 2 ^ 63)
+    (hlane : readBytes s.mem (ep + inc.toNat * 4) 4 = some bs4)
+    (hlanelt : bytesToNat bs4 < 2 ^ 32)
+    (hbyte : readBytes s.mem
+      (b + (BitVec.signExtend 64 (BitVec.ofNat 64 (bytesToNat bs4))).toNat) 1 = some bs1)
+    (hbit : evalICmp .eq (BitVec.ofNat 8 (bytesToNat bs1)) (BitVec.ofNat 8 93) = 0) :
+    Stage2NoEventWalkLink calls K mem s K
+      (stage2NoEventWalkNext
+        (("%cmp332", .int 1 0) ::
+          ("%47", .int 8 (BitVec.ofNat 8 (bytesToNat bs1))) ::
+          ("%arrayidx330",
+            .ptr (b + (BitVec.signExtend 64
+              (BitVec.ofNat 64 (bytesToNat bs4))).toNat)) ::
+          ("%idxprom329", .int 64 (BitVec.ofNat 64 (bytesToNat bs4))) ::
+          ("%46", .int 32 (BitVec.ofNat 32 (bytesToNat bs4))) ::
+          ("%arrayidx328", .ptr (ep + inc.toNat * 4)) :: s.env)
+        s "if.end") := by
+  have hcode : denoteCode calls ifEnd327Instrs (stateAt s.env s) =
+      some (stateAt
+        (("%cmp332", .int 1 0) ::
+          ("%47", .int 8 (BitVec.ofNat 8 (bytesToNat bs1))) ::
+          ("%arrayidx330",
+            .ptr (b + (BitVec.signExtend 64
+              (BitVec.ofNat 64 (bytesToNat bs4))).toNat)) ::
+          ("%idxprom329", .int 64 (BitVec.ofNat 64 (bytesToNat bs4))) ::
+          ("%46", .int 32 (BitVec.ofNat 32 (bytesToNat bs4))) ::
+          ("%arrayidx328", .ptr (ep + inc.toNat * 4)) :: s.env) s) := by
+    have hd := ifEnd327_denote (calls := calls) s.env s hinc hep hb hincLt hlane hlanelt hbyte
+    rw [hbit] at hd
+    exact hd
+  exact stage2NoEventWalkLink_condbr_false (env' := _)
+    h (by rw [hpc]; exact ifEnd327Block_find) hcode rfl (by rw [lookupName_cons_self])
+
+/-- `if.end327.peel`: its abstract denotation (the closer arms' link states the
+same run with the `]` test taken). -/
+theorem ifEnd327peel_denote (calls : Calls) (env : Env) (s : State)
+    {inc : BitVec 64} {ep b : Nat} {bs4 bs1 : List UInt8}
+    (hinc : lookupName env "%inc.peel" = some (.int 64 inc))
+    (hep : lookupName env "%ep" = some (.ptr ep))
+    (hb : lookupName env "%b" = some (.ptr b))
+    (hincLt : inc.toNat < 2 ^ 63)
+    (hlane : readBytes s.mem (ep + inc.toNat * 4) 4 = some bs4)
+    (hlanelt : bytesToNat bs4 < 2 ^ 32)
+    (hbyte : readBytes s.mem
+      (b + (BitVec.signExtend 64 (BitVec.ofNat 64 (bytesToNat bs4))).toNat) 1 = some bs1) :
+    denoteCode calls ifEnd327peelBlock.instrs (stateAt env s) =
+      some (stateAt
+        (("%cmp332.peel", .int 1
+            (evalICmp .eq (BitVec.ofNat 8 (bytesToNat bs1)) (BitVec.ofNat 8 93))) ::
+          ("%6", .int 8 (BitVec.ofNat 8 (bytesToNat bs1))) ::
+          ("%arrayidx330.peel",
+            .ptr (b + (BitVec.signExtend 64
+              (BitVec.ofNat 64 (bytesToNat bs4))).toNat)) ::
+          ("%idxprom329.peel", .int 64 (BitVec.ofNat 64 (bytesToNat bs4))) ::
+          ("%5", .int 32 (BitVec.ofNat 32 (bytesToNat bs4))) ::
+          ("%arrayidx328.peel", .ptr (ep + inc.toNat * 4)) :: env) s) := by
+  rw [ifEnd327peelBlock]
+  rw [stage2NoEventWalk_denote_gep32 (calls := calls) (env := env) (s := s)
+    (d := "%arrayidx328.peel") (base := "%ep") (off := "%inc.peel")
+    (a := ep) (o := inc) hep hinc
+    (by rw [stage2NoEventSignExtend_self]; exact hincLt)]
+  rw [stage2NoEventSignExtend_self]
+  rw [stage2NoEventWalk_denote_load_int (calls := calls) (env := _) (s := s)
+    (d := "%5") (p := "%arrayidx328.peel") (a := ep + inc.toNat * 4) (w := 32)
+    (bs := bs4) (hw := by decide) (by simp only [lookupName_cons_self])
+    (by simpa using hlane)]
+  rw [denoteCode_zext (calls := calls) (env := _) (s := s) (d := "%idxprom329.peel")
+    (v := "%5") (wIn := 32) (wOut := 64) (x := BitVec.ofNat 32 (bytesToNat bs4))
+    (by simp only [lookupName_cons_self])]
+  rw [stage2NoEventOfNat32_toNat hlanelt]
+  rw [denoteCode_gep8_reg (calls := calls) (env := _) (s := s)
+    (d := "%arrayidx330.peel") (base := "%b") (off := "%idxprom329.peel")
+    (a := b) (idx := BitVec.ofNat 64 (bytesToNat bs4))
+    (by rw [lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide)]; exact hb)
+    (by simp only [lookupName_cons_self])
+    (by
+      have hx : (bytesToNat bs4) < 2 ^ 63 := by omega
+      rw [stage2NoEventSignExtend_ofNat hx]
+      exact hx)]
+  rw [stage2NoEventWalk_denote_load_int (calls := calls) (env := _) (s := s)
+    (d := "%6") (p := "%arrayidx330.peel")
+    (a := b + (BitVec.signExtend 64 (BitVec.ofNat 64 (bytesToNat bs4))).toNat)
+    (w := 8) (bs := bs1) (hw := by decide)
+    (by simp only [lookupName_cons_self]) (by simpa using hbyte)]
+  rw [stage2NoEventWalk_denote_icmp_imm (calls := calls) (env := _) (s := s)
+    (d := "%cmp332.peel") (a := "%6") (p := .eq) (w := 8)
+    (x := BitVec.ofNat 8 (bytesToNat bs1))
+    (c := BitVec.ofNat 8 93) (by simp only [lookupName_cons_self]) (is := [])]
+  simp only [denoteCode_nil]
+
+/-- `if.end327.peel` at a byte other than 93: the value arm, to `if.end`. -/
+theorem link_ifEnd327peel_false {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Mem}
+    {s : State} {inc : BitVec 64} {ep b : Nat} {bs4 bs1 : List UInt8}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "if.end327.peel")
+    (hinc : lookupName s.env "%inc.peel" = some (.int 64 inc))
+    (hep : lookupName s.env "%ep" = some (.ptr ep))
+    (hb : lookupName s.env "%b" = some (.ptr b))
+    (hincLt : inc.toNat < 2 ^ 63)
+    (hlane : readBytes s.mem (ep + inc.toNat * 4) 4 = some bs4)
+    (hlanelt : bytesToNat bs4 < 2 ^ 32)
+    (hbyte : readBytes s.mem
+      (b + (BitVec.signExtend 64 (BitVec.ofNat 64 (bytesToNat bs4))).toNat) 1 = some bs1)
+    (hbit : evalICmp .eq (BitVec.ofNat 8 (bytesToNat bs1)) (BitVec.ofNat 8 93) = 0) :
+    Stage2NoEventWalkLink calls K mem s K
+      (stage2NoEventWalkNext
+        (("%cmp332.peel", .int 1 0) ::
+          ("%6", .int 8 (BitVec.ofNat 8 (bytesToNat bs1))) ::
+          ("%arrayidx330.peel",
+            .ptr (b + (BitVec.signExtend 64
+              (BitVec.ofNat 64 (bytesToNat bs4))).toNat)) ::
+          ("%idxprom329.peel", .int 64 (BitVec.ofNat 64 (bytesToNat bs4))) ::
+          ("%5", .int 32 (BitVec.ofNat 32 (bytesToNat bs4))) ::
+          ("%arrayidx328.peel", .ptr (ep + inc.toNat * 4)) :: s.env)
+        s "if.end") := by
+  have hcode : denoteCode calls ifEnd327peelBlock.instrs (stateAt s.env s) =
+      some (stateAt
+        (("%cmp332.peel", .int 1 0) ::
+          ("%6", .int 8 (BitVec.ofNat 8 (bytesToNat bs1))) ::
+          ("%arrayidx330.peel",
+            .ptr (b + (BitVec.signExtend 64
+              (BitVec.ofNat 64 (bytesToNat bs4))).toNat)) ::
+          ("%idxprom329.peel", .int 64 (BitVec.ofNat 64 (bytesToNat bs4))) ::
+          ("%5", .int 32 (BitVec.ofNat 32 (bytesToNat bs4))) ::
+          ("%arrayidx328.peel", .ptr (ep + inc.toNat * 4)) :: s.env) s) := by
+    have hd := ifEnd327peel_denote (calls := calls) s.env s
+      hinc hep hb hincLt hlane hlanelt hbyte
+    rw [hbit] at hd
+    exact hd
+  exact stage2NoEventWalkLink_condbr_false (env' := _)
+    h (by rw [hpc]; exact ifEnd327peelBlock_find) hcode rfl (by rw [lookupName_cons_self])
+
+/-- `if.then334.loopexit`: the depth word for an empty closed array. -/
+def ifThen334LoopexitInstrs : List Instr :=
+  [ Instr.trunc "%48" 64 32 (Operand.reg "%indvars.iv") ]
+
+/-- `if.then334.loopexit`, pinned. -/
+def ifThen334LoopexitBlock : Block :=
+  { name := "if.then334.loopexit", instrs := ifThen334LoopexitInstrs,
+    term := Term.br "if.then334" }
+
+theorem ifThen334LoopexitBlock_find :
+    stage2NoEventBody.findBlock "if.then334.loopexit" = some ifThen334LoopexitBlock := by
+  decide
+
+theorem ifThen334Loopexit_denote (calls : Calls) (env : Env) (s : State)
+    {iv : BitVec 64}
+    (hiv : lookupName env "%indvars.iv" = some (.int 64 iv)) :
+    denoteCode calls ifThen334LoopexitInstrs (stateAt env s) =
+      some (stateAt
+        (("%48", .int 32 (BitVec.ofNat 32 (iv.toNat % 2 ^ 32))) :: env) s) := by
+  unfold ifThen334LoopexitInstrs
+  rw [denoteCode_trunc (calls := calls) (env := env) (s := s) (d := "%48")
+    (v := "%indvars.iv") (wIn := 64) (wOut := 32) (x := iv) hiv]
+  simp only [denoteCode_nil]
+
+/-- The empty closed array's exit stub, to `if.then334`. -/
+theorem link_ifThen334Loopexit {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State} {iv : BitVec 64}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "if.then334.loopexit")
+    (hiv : lookupName s.env "%indvars.iv" = some (.int 64 iv)) :
+    Stage2NoEventWalkLink calls K mem s K
+      (stage2NoEventWalkNext
+        (("%48", .int 32 (BitVec.ofNat 32 (iv.toNat % 2 ^ 32))) :: s.env)
+        s "if.then334") := by
+  have hcode := ifThen334Loopexit_denote (calls := calls) (env := s.env) (s := s) hiv
+  refine ⟨h, ?_, Stage2NoEventWalkInv.mem_congr h rfl⟩
+  have hstep := stage2NoEventWalk_step_br (s := s) (f := stage2NoEventBody)
+    (by rw [hpc]; exact ifThen334LoopexitBlock_find) hcode rfl
+  simpa only [stage2NoEventWalkNext, stateAt] using hstep
+
+/-- **The value path's producer from `if.end327`**: the entry block's read, then
+`if.end`, with the six `if.end` `phi` inputs as conclusions at the `if.end` entry
+and the four counts at `NodeBlock15`. -/
+theorem ifEnd327_produce {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Mem}
+    {s : State} {inc : BitVec 64} {ep b : Nat} {bs4 bs1 : List UInt8}
+    {iv tr tok : BitVec 64}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "if.end327")
+    (hinc : lookupName s.env "%inc" = some (.int 64 inc))
+    (hep : lookupName s.env "%ep" = some (.ptr ep))
+    (hb : lookupName s.env "%b" = some (.ptr b))
+    (hincLt : inc.toNat < 2 ^ 63)
+    (hlane : readBytes s.mem (ep + inc.toNat * 4) 4 = some bs4)
+    (hlanelt : bytesToNat bs4 < 2 ^ 32)
+    (hbyte : readBytes s.mem
+      (b + (BitVec.signExtend 64 (BitVec.ofNat 64 (bytesToNat bs4))).toNat) 1 = some bs1)
+    (hiv : lookupName s.env "%indvars.iv" = some (.int 64 iv))
+    (htr : lookupName s.env "%terms.0" = some (.int 64 tr))
+    (htok : lookupName s.env "%tokens.0" = some (.int 64 tok))
+    (hbit : evalICmp .eq (BitVec.ofNat 8 (bytesToNat bs1)) (BitVec.ofNat 8 93) = 0) :
+    ∃ sM s', Stage2NoEventWalkLink calls K mem s K sM ∧ sM.pc = "if.end" ∧
+      lookupName sM.env "%47" = some (.int 8 (BitVec.ofNat 8 (bytesToNat bs1))) ∧
+      lookupName sM.env "%46" = some (.int 32 (BitVec.ofNat 32 (bytesToNat bs4))) ∧
+      lookupName sM.env "%indvars.iv" = some (.int 64 iv) ∧
+      lookupName sM.env "%inc" = some (.int 64 inc) ∧
+      lookupName sM.env "%terms.0" = some (.int 64 tr) ∧
+      lookupName sM.env "%tokens.0" = some (.int 64 tok) ∧
+      Stage2NoEventWalkLink calls K mem sM K s' ∧ s'.pc = "NodeBlock15" ∧
+      lookupName s'.env "%indvars.iv" = some (.int 64 (iv + BitVec.ofNat 64 1)) ∧
+      lookupName s'.env "%tokens.0" = some (.int 64 (tok + BitVec.ofNat 64 1)) ∧
+      lookupName s'.env "%terms.0" = some (.int 64 (tr + BitVec.ofNat 64 3)) ∧
+      lookupName s'.env "%inc" = some (.int 64 (inc + BitVec.ofNat 64 1)) := by
+  let sM := stage2NoEventWalkNext
+    (("%cmp332", .int 1 0) ::
+      ("%47", .int 8 (BitVec.ofNat 8 (bytesToNat bs1))) ::
+      ("%arrayidx330",
+        .ptr (b + (BitVec.signExtend 64
+          (BitVec.ofNat 64 (bytesToNat bs4))).toNat)) ::
+      ("%idxprom329", .int 64 (BitVec.ofNat 64 (bytesToNat bs4))) ::
+      ("%46", .int 32 (BitVec.ofNat 32 (bytesToNat bs4))) ::
+      ("%arrayidx328", .ptr (ep + inc.toNat * 4)) :: s.env) s "if.end"
+  have hL1 : Stage2NoEventWalkLink calls K mem s K sM :=
+    link_ifEnd327_false h hpc hinc hep hb hincLt hlane hlanelt hbyte hbit
+  have h47 : lookupName sM.env "%47"
+      = some (.int 8 (BitVec.ofNat 8 (bytesToNat bs1))) := by
+    simp only [sM, stage2NoEventWalkNext]
+    rw [lookupName_cons_ne _ _ (by decide)]
+    simp only [lookupName_cons_self]
+  have h46 : lookupName sM.env "%46"
+      = some (.int 32 (BitVec.ofNat 32 (bytesToNat bs4))) := by
+    simp only [sM, stage2NoEventWalkNext]
+    rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
+    simp only [lookupName_cons_self]
+  have hivM : lookupName sM.env "%indvars.iv" = some (.int 64 iv) := by
+    simp only [sM, stage2NoEventWalkNext]
+    rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
+    exact hiv
+  have hincM : lookupName sM.env "%inc" = some (.int 64 inc) := by
+    simp only [sM, stage2NoEventWalkNext]
+    rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
+    exact hinc
+  have htrM : lookupName sM.env "%terms.0" = some (.int 64 tr) := by
+    simp only [sM, stage2NoEventWalkNext]
+    rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
+    exact htr
+  have htokM : lookupName sM.env "%tokens.0" = some (.int 64 tok) := by
+    simp only [sM, stage2NoEventWalkNext]
+    rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
+    exact htok
+  obtain ⟨s', hL2, hpc', -, -, hiv', -, htr', htok', hinc'⟩ :=
+    ifEndProduce_fromEnd327 hL1.inv'
+      (by simp only [sM, stage2NoEventWalkNext])
+      (by simp only [sM, stage2NoEventWalkNext, hpc])
+      h47 h46 hivM hincM htrM htokM
+  exact ⟨sM, s', hL1, by simp only [sM, stage2NoEventWalkNext], h47, h46, hivM, hincM,
+    htrM, htokM, hL2, hpc', hiv', htok', htr', hinc'⟩
+
+/-- **The value path's producer from `if.end327.peel`**: the entry block's read,
+then `if.end`, with the six `if.end` `phi` inputs as conclusions at the `if.end`
+entry and the four counts at `NodeBlock15`. -/
+theorem ifEnd327peel_produce {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Mem}
+    {s : State} {inc : BitVec 64} {ep b : Nat} {bs4 bs1 : List UInt8}
+    {iv tr tok : BitVec 64}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "if.end327.peel")
+    (hinc : lookupName s.env "%inc.peel" = some (.int 64 inc))
+    (hep : lookupName s.env "%ep" = some (.ptr ep))
+    (hb : lookupName s.env "%b" = some (.ptr b))
+    (hincLt : inc.toNat < 2 ^ 63)
+    (hlane : readBytes s.mem (ep + inc.toNat * 4) 4 = some bs4)
+    (hlanelt : bytesToNat bs4 < 2 ^ 32)
+    (hbyte : readBytes s.mem
+      (b + (BitVec.signExtend 64 (BitVec.ofNat 64 (bytesToNat bs4))).toNat) 1 = some bs1)
+    (hiv : lookupName s.env "%1" = some (.int 64 iv))
+    (htr : lookupName s.env "%terms.0.ph1407" = some (.int 64 tr))
+    (htok : lookupName s.env "%tokens.0.ph1408" = some (.int 64 tok))
+    (hbit : evalICmp .eq (BitVec.ofNat 8 (bytesToNat bs1)) (BitVec.ofNat 8 93) = 0) :
+    ∃ sM s', Stage2NoEventWalkLink calls K mem s K sM ∧ sM.pc = "if.end" ∧
+      lookupName sM.env "%6" = some (.int 8 (BitVec.ofNat 8 (bytesToNat bs1))) ∧
+      lookupName sM.env "%5" = some (.int 32 (BitVec.ofNat 32 (bytesToNat bs4))) ∧
+      lookupName sM.env "%1" = some (.int 64 iv) ∧
+      lookupName sM.env "%inc.peel" = some (.int 64 inc) ∧
+      lookupName sM.env "%terms.0.ph1407" = some (.int 64 tr) ∧
+      lookupName sM.env "%tokens.0.ph1408" = some (.int 64 tok) ∧
+      Stage2NoEventWalkLink calls K mem sM K s' ∧ s'.pc = "NodeBlock15" ∧
+      lookupName s'.env "%indvars.iv" = some (.int 64 (iv + BitVec.ofNat 64 1)) ∧
+      lookupName s'.env "%tokens.0" = some (.int 64 (tok + BitVec.ofNat 64 1)) ∧
+      lookupName s'.env "%terms.0" = some (.int 64 (tr + BitVec.ofNat 64 3)) ∧
+      lookupName s'.env "%inc" = some (.int 64 (inc + BitVec.ofNat 64 1)) := by
+  let sM := stage2NoEventWalkNext
+    (("%cmp332.peel", .int 1 0) ::
+      ("%6", .int 8 (BitVec.ofNat 8 (bytesToNat bs1))) ::
+      ("%arrayidx330.peel",
+        .ptr (b + (BitVec.signExtend 64
+          (BitVec.ofNat 64 (bytesToNat bs4))).toNat)) ::
+      ("%idxprom329.peel", .int 64 (BitVec.ofNat 64 (bytesToNat bs4))) ::
+      ("%5", .int 32 (BitVec.ofNat 32 (bytesToNat bs4))) ::
+      ("%arrayidx328.peel", .ptr (ep + inc.toNat * 4)) :: s.env) s "if.end"
+  have hL1 : Stage2NoEventWalkLink calls K mem s K sM :=
+    link_ifEnd327peel_false h hpc hinc hep hb hincLt hlane hlanelt hbyte hbit
+  have h6 : lookupName sM.env "%6"
+      = some (.int 8 (BitVec.ofNat 8 (bytesToNat bs1))) := by
+    simp only [sM, stage2NoEventWalkNext]
+    rw [lookupName_cons_ne _ _ (by decide)]
+    simp only [lookupName_cons_self]
+  have h5 : lookupName sM.env "%5"
+      = some (.int 32 (BitVec.ofNat 32 (bytesToNat bs4))) := by
+    simp only [sM, stage2NoEventWalkNext]
+    rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
+    simp only [lookupName_cons_self]
+  have h1M : lookupName sM.env "%1" = some (.int 64 iv) := by
+    simp only [sM, stage2NoEventWalkNext]
+    rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
+    exact hiv
+  have hincM : lookupName sM.env "%inc.peel" = some (.int 64 inc) := by
+    simp only [sM, stage2NoEventWalkNext]
+    rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
+    exact hinc
+  have htrM : lookupName sM.env "%terms.0.ph1407" = some (.int 64 tr) := by
+    simp only [sM, stage2NoEventWalkNext]
+    rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
+    exact htr
+  have htokM : lookupName sM.env "%tokens.0.ph1408" = some (.int 64 tok) := by
+    simp only [sM, stage2NoEventWalkNext]
+    rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
+    exact htok
+  obtain ⟨s', hL2, hpc', -, -, hiv', -, htr', htok', hinc'⟩ :=
+    ifEndProduce_fromEnd327Peel hL1.inv'
+      (by simp only [sM, stage2NoEventWalkNext])
+      (by simp only [sM, stage2NoEventWalkNext, hpc])
+      h6 h5 h1M hincM htrM htokM
+  exact ⟨sM, s', hL1, by simp only [sM, stage2NoEventWalkNext], h6, h5, h1M, hincM,
+    htrM, htokM, hL2, hpc', hiv', htok', htr', hinc'⟩
+
 /-! ### The `{` count, the next-entry dispatch, and the `}` handoff
 
 The open arm's tail after `if.end23`: `if.end74` reads the next entry's lane and
@@ -6704,5 +7183,16 @@ structure Stage2NoEventWalkContainerClass (calls : Calls) (K : Stage2NoEventWalk
 #print axioms ifEndProduce_fromEnd327
 #print axioms ifEndProduce_fromEnd327Peel
 #print axioms ifEnd_produce
+#print axioms ifEnd327Block_find
+#print axioms ifEnd327_denote
+#print axioms link_ifEnd327_true
+#print axioms link_ifEnd327_false
+#print axioms ifEnd327peel_denote
+#print axioms link_ifEnd327peel_false
+#print axioms ifThen334LoopexitBlock_find
+#print axioms ifThen334Loopexit_denote
+#print axioms link_ifThen334Loopexit
+#print axioms ifEnd327_produce
+#print axioms ifEnd327peel_produce
 
 end LeanLLVM.Refinement
