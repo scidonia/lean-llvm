@@ -4709,6 +4709,423 @@ theorem link_condEnd_fromCondTrue_false {calls : Calls} {K : Stage2NoEventWalkCa
     h (by rw [hpc]; exact condEndBlock_find) hcode rfl
     (by simp only [condEndCells, lookupName_cons_self, hy])
 
+/-! ### `if.end`: the pair's counts and the dispatch handoff
+
+`if.end` closes a completed key/value pair: its six `phi`s select the pair's
+bytes, cursor, counts and entry index from whichever edge reached it, then four
+adds write the next iteration's `%tokens.0`, `%terms.0`, `%indvars.iv` and
+`%inc`, and it branches to `NodeBlock15`.  This is `%indvars.iv`'s producer — the
+binding the exit rows at `NodeBlock15` take as a hypothesis.
+
+The edge's operands are hypotheses, one set per predecessor: the block reads
+`%47`, `%46`, `%indvars.iv`, `%inc`, `%terms.0`, `%tokens.0` from `if.end327`
+and `%6`, `%5`, `%1`, `%inc.peel`, `%terms.0.ph1407`, `%tokens.0.ph1408` from
+`if.end327.peel`.  `if.end327`'s own block is not modelled here, so those values
+enter as named lookups at the state's environment and nothing is invented.  The
+producer's conclusions are the `NodeBlock15` bindings themselves: `%7`, `%8`,
+`%indvars.iv`, `%k.0`, `%terms.0`, `%tokens.0` and `%inc`, each at the value the
+selected operand and the add produce. -/
+
+/-- `if.end`'s six-`phi` run, as specs. -/
+def ifEndPhiSpecs : List PhiSpec :=
+  [ { dst := "%7", ty := Ty.int 8,
+      incoming := [("if.end327", Operand.reg "%47"),
+        ("if.end327.peel", Operand.reg "%6")] },
+    { dst := "%8", ty := Ty.int 32,
+      incoming := [("if.end327", Operand.reg "%46"),
+        ("if.end327.peel", Operand.reg "%5")] },
+    { dst := "%indvars.iv.in", ty := Ty.int 64,
+      incoming := [("if.end327", Operand.reg "%indvars.iv"),
+        ("if.end327.peel", Operand.reg "%1")] },
+    { dst := "%k.0", ty := Ty.int 64,
+      incoming := [("if.end327", Operand.reg "%inc"),
+        ("if.end327.peel", Operand.reg "%inc.peel")] },
+    { dst := "%terms.0.in", ty := Ty.int 64,
+      incoming := [("if.end327", Operand.reg "%terms.0"),
+        ("if.end327.peel", Operand.reg "%terms.0.ph1407")] },
+    { dst := "%tokens.0.in", ty := Ty.int 64,
+      incoming := [("if.end327", Operand.reg "%tokens.0"),
+        ("if.end327.peel", Operand.reg "%tokens.0.ph1408")] } ]
+
+/-- `if.end`'s leading `phi` run. -/
+def ifEndPhiInstrs : List Instr := List.map PhiSpec.instr ifEndPhiSpecs
+
+theorem ifEndPhi_eq : ifEndPhiInstrs = ifEndPhiSpecs.map PhiSpec.instr := rfl
+
+/-- `if.end`'s four adds, in the order the block writes them. -/
+def ifEndRest : List Instr :=
+  [ Instr.binop "%tokens.0" BinOp.add 64 (Operand.reg "%tokens.0.in")
+      (Operand.imm (.int 64 (BitVec.ofNat 64 1))),
+    Instr.binop "%terms.0" BinOp.add 64 (Operand.reg "%terms.0.in")
+      (Operand.imm (.int 64 (BitVec.ofNat 64 3))),
+    Instr.binop "%indvars.iv" BinOp.add 64 (Operand.reg "%indvars.iv.in")
+      (Operand.imm (.int 64 (BitVec.ofNat 64 1))),
+    Instr.binop "%inc" BinOp.add 64 (Operand.reg "%k.0")
+      (Operand.imm (.int 64 (BitVec.ofNat 64 1))) ]
+
+/-- `if.end`, pinned. -/
+def ifEndInstrs : List Instr := ifEndPhiInstrs ++ ifEndRest
+
+theorem ifEnd_split : ifEndInstrs = ifEndPhiInstrs ++ ifEndRest := rfl
+
+/-- `if.end`, pinned. -/
+def ifEndBlock : Block :=
+  { name := "if.end", instrs := ifEndInstrs, term := Term.br "NodeBlock15" }
+
+theorem ifEndBlock_find :
+    stage2NoEventBody.findBlock "if.end" = some ifEndBlock := by
+  decide
+
+/-- `if.end`'s `phi` cells, last written outermost. -/
+def ifEndPhiCells (v7 : BitVec 8) (v8 : BitVec 32) (ivIn k0 termsIn toksIn : BitVec 64) :
+    List (String × Value) :=
+  [("%tokens.0.in", .int 64 toksIn), ("%terms.0.in", .int 64 termsIn),
+   ("%k.0", .int 64 k0), ("%indvars.iv.in", .int 64 ivIn),
+   ("%8", .int 32 v8), ("%7", .int 8 v7)]
+
+/-- `if.end`'s add cells, last written outermost. -/
+def ifEndTailCells (v7 : BitVec 8) (v8 : BitVec 32) (ivIn k0 termsIn toksIn : BitVec 64) :
+    List (String × Value) :=
+  [("%inc", .int 64 (k0 + BitVec.ofNat 64 1)),
+   ("%indvars.iv", .int 64 (ivIn + BitVec.ofNat 64 1)),
+   ("%terms.0", .int 64 (termsIn + BitVec.ofNat 64 3)),
+   ("%tokens.0", .int 64 (toksIn + BitVec.ofNat 64 1))]
+
+/-- The composed cell list `if.end`'s adds and its edge bind. -/
+def ifEndAllCells (v7 : BitVec 8) (v8 : BitVec 32) (ivIn k0 termsIn toksIn : BitVec 64) :
+    List (String × Value) :=
+  ifEndTailCells v7 v8 ivIn k0 termsIn toksIn ++ ifEndPhiCells v7 v8 ivIn k0 termsIn toksIn
+
+/-- `if.end`'s `phi` run at the `if.end327` edge. -/
+theorem ifEndPhi_denote_fromEnd327 (calls : Calls) (env : Env) (s : State)
+    {v7 : BitVec 8} {v8 : BitVec 32} {ivIn k0 termsIn toksIn : BitVec 64}
+    (hpre : s.pre = some "if.end327")
+    (h47 : lookupName env "%47" = some (.int 8 v7))
+    (h46 : lookupName env "%46" = some (.int 32 v8))
+    (hiv : lookupName env "%indvars.iv" = some (.int 64 ivIn))
+    (hinc : lookupName env "%inc" = some (.int 64 k0))
+    (htr : lookupName env "%terms.0" = some (.int 64 termsIn))
+    (htok : lookupName env "%tokens.0" = some (.int 64 toksIn)) :
+    denoteCode calls ifEndPhiInstrs (stateAt env s) =
+      some (stateAt (cells (ifEndPhiCells v7 v8 ivIn k0 termsIn toksIn) env) s) := by
+  have hsel : PhiSelects (stateAt env s) "if.end327" ifEndPhiSpecs
+      [("%7", .int 8 v7), ("%8", .int 32 v8), ("%indvars.iv.in", .int 64 ivIn),
+       ("%k.0", .int 64 k0), ("%terms.0.in", .int 64 termsIn),
+       ("%tokens.0.in", .int 64 toksIn)] := by
+    refine PhiSelects.cons (op := .reg "%47") (by decide) ?_
+      (PhiSelects.cons (op := .reg "%46") (by decide) ?_
+        (PhiSelects.cons (op := .reg "%indvars.iv") (by decide) ?_
+          (PhiSelects.cons (op := .reg "%inc") (by decide) ?_
+            (PhiSelects.cons (op := .reg "%terms.0") (by decide) ?_
+              (PhiSelects.cons (op := .reg "%tokens.0") (by decide) ?_ PhiSelects.nil)))))
+    all_goals simp only [stateAt, evalOperand, h47, h46, hiv, hinc, htr, htok]
+  rw [ifEndPhi_eq, ← List.append_nil (List.map PhiSpec.instr ifEndPhiSpecs),
+    denoteCode_phiRun (s := stateAt env s) (p := "if.end327")
+      (specs := ifEndPhiSpecs) (rest := [])
+      (hpre := hpre) (hsel := hsel) (hrest := rfl)]
+  simp only [State.bindAll, State.bind, ifEndPhiCells, cells]
+  rfl
+
+/-- `if.end`'s `phi` run at the `if.end327.peel` edge. -/
+theorem ifEndPhi_denote_fromEnd327Peel (calls : Calls) (env : Env) (s : State)
+    {v7 : BitVec 8} {v8 : BitVec 32} {ivIn k0 termsIn toksIn : BitVec 64}
+    (hpre : s.pre = some "if.end327.peel")
+    (h6 : lookupName env "%6" = some (.int 8 v7))
+    (h5 : lookupName env "%5" = some (.int 32 v8))
+    (h1 : lookupName env "%1" = some (.int 64 ivIn))
+    (hinc : lookupName env "%inc.peel" = some (.int 64 k0))
+    (htr : lookupName env "%terms.0.ph1407" = some (.int 64 termsIn))
+    (htok : lookupName env "%tokens.0.ph1408" = some (.int 64 toksIn)) :
+    denoteCode calls ifEndPhiInstrs (stateAt env s) =
+      some (stateAt (cells (ifEndPhiCells v7 v8 ivIn k0 termsIn toksIn) env) s) := by
+  have hsel : PhiSelects (stateAt env s) "if.end327.peel" ifEndPhiSpecs
+      [("%7", .int 8 v7), ("%8", .int 32 v8), ("%indvars.iv.in", .int 64 ivIn),
+       ("%k.0", .int 64 k0), ("%terms.0.in", .int 64 termsIn),
+       ("%tokens.0.in", .int 64 toksIn)] := by
+    refine PhiSelects.cons (op := .reg "%6") (by decide) ?_
+      (PhiSelects.cons (op := .reg "%5") (by decide) ?_
+        (PhiSelects.cons (op := .reg "%1") (by decide) ?_
+          (PhiSelects.cons (op := .reg "%inc.peel") (by decide) ?_
+            (PhiSelects.cons (op := .reg "%terms.0.ph1407") (by decide) ?_
+              (PhiSelects.cons (op := .reg "%tokens.0.ph1408") (by decide) ?_
+                PhiSelects.nil)))))
+    all_goals simp only [stateAt, evalOperand, h6, h5, h1, hinc, htr, htok]
+  rw [ifEndPhi_eq, ← List.append_nil (List.map PhiSpec.instr ifEndPhiSpecs),
+    denoteCode_phiRun (s := stateAt env s) (p := "if.end327.peel")
+      (specs := ifEndPhiSpecs) (rest := [])
+      (hpre := hpre) (hsel := hsel) (hrest := rfl)]
+  simp only [State.bindAll, State.bind, ifEndPhiCells, cells]
+  rfl
+
+/-- `if.end`'s four adds, at the `phi` run's cells.  Edge-independent: the run
+has already selected the values. -/
+theorem ifEndTail_denote (calls : Calls) (env : Env) (s : State)
+    {v7 : BitVec 8} {v8 : BitVec 32} {ivIn k0 termsIn toksIn : BitVec 64} :
+    denoteCode calls ifEndRest
+        (stateAt (cells (ifEndPhiCells v7 v8 ivIn k0 termsIn toksIn) env) s) =
+      some (stateAt (cells (ifEndAllCells v7 v8 ivIn k0 termsIn toksIn) env) s) := by
+  rw [ifEndRest]
+  rw [stage2NoEventWalk_denote_add_imm_w (calls := calls)
+    (env := cells (ifEndPhiCells v7 v8 ivIn k0 termsIn toksIn) env) (s := s)
+    (d := "%tokens.0") (a := "%tokens.0.in") (w := 64) (x := toksIn)
+    (c := BitVec.ofNat 64 1)
+    (lookupName_cells_of_some (cs := ifEndPhiCells v7 v8 ivIn k0 termsIn toksIn)
+      (n := "%tokens.0.in") (env := env) (by rw [ifEndPhiCells]; cells_lk))]
+  rw [stage2NoEventWalk_denote_add_imm_w (calls := calls) (env := _) (s := s)
+    (d := "%terms.0") (a := "%terms.0.in") (w := 64) (x := termsIn)
+    (c := BitVec.ofNat 64 3)
+    (by rw [lookupName_cons_ne _ _ (by decide),
+      lookupName_cells_of_some (cs := ifEndPhiCells v7 v8 ivIn k0 termsIn toksIn)
+        (n := "%terms.0.in") (env := env) (by rw [ifEndPhiCells]; cells_lk)])]
+  rw [stage2NoEventWalk_denote_add_imm_w (calls := calls) (env := _) (s := s)
+    (d := "%indvars.iv") (a := "%indvars.iv.in") (w := 64) (x := ivIn)
+    (c := BitVec.ofNat 64 1)
+    (by rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cells_of_some (cs := ifEndPhiCells v7 v8 ivIn k0 termsIn toksIn)
+        (n := "%indvars.iv.in") (env := env) (by rw [ifEndPhiCells]; cells_lk)])]
+  rw [stage2NoEventWalk_denote_add_imm_w (calls := calls) (env := _) (s := s)
+    (d := "%inc") (a := "%k.0") (w := 64) (x := k0) (c := BitVec.ofNat 64 1)
+    (by rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide),
+      lookupName_cells_of_some (cs := ifEndPhiCells v7 v8 ivIn k0 termsIn toksIn)
+        (n := "%k.0") (env := env) (by rw [ifEndPhiCells]; cells_lk)])]
+  rw [ifEndAllCells, ifEndTailCells, ifEndPhiCells, cells, denoteCode_nil]
+  rfl
+
+/-- `if.end` at the `if.end327` edge: the `phi` run and the four adds. -/
+theorem ifEnd_denote_fromEnd327 (calls : Calls) (env : Env) (s : State)
+    {v7 : BitVec 8} {v8 : BitVec 32} {ivIn k0 termsIn toksIn : BitVec 64}
+    (hpre : s.pre = some "if.end327")
+    (h47 : lookupName env "%47" = some (.int 8 v7))
+    (h46 : lookupName env "%46" = some (.int 32 v8))
+    (hiv : lookupName env "%indvars.iv" = some (.int 64 ivIn))
+    (hinc : lookupName env "%inc" = some (.int 64 k0))
+    (htr : lookupName env "%terms.0" = some (.int 64 termsIn))
+    (htok : lookupName env "%tokens.0" = some (.int 64 toksIn)) :
+    denoteCode calls ifEndBlock.instrs (stateAt env s) =
+      some (stateAt (cells (ifEndAllCells v7 v8 ivIn k0 termsIn toksIn) env) s) := by
+  have h1 := ifEndPhi_denote_fromEnd327 (calls := calls) (env := env) (s := s)
+    hpre h47 h46 hiv hinc htr htok
+  have h2 := ifEndTail_denote (calls := calls) (env := env) (s := s)
+    (v7 := v7) (v8 := v8) (ivIn := ivIn) (k0 := k0) (termsIn := termsIn) (toksIn := toksIn)
+  rw [ifEndBlock, ifEnd_split]
+  rw [denoteCode_append_apply (a := ifEndPhiInstrs) (b := ifEndRest) h1 (by decide)]
+  exact h2
+
+/-- `if.end` at the `if.end327.peel` edge: the `phi` run and the four adds. -/
+theorem ifEnd_denote_fromEnd327Peel (calls : Calls) (env : Env) (s : State)
+    {v7 : BitVec 8} {v8 : BitVec 32} {ivIn k0 termsIn toksIn : BitVec 64}
+    (hpre : s.pre = some "if.end327.peel")
+    (h6 : lookupName env "%6" = some (.int 8 v7))
+    (h5 : lookupName env "%5" = some (.int 32 v8))
+    (h1 : lookupName env "%1" = some (.int 64 ivIn))
+    (hinc : lookupName env "%inc.peel" = some (.int 64 k0))
+    (htr : lookupName env "%terms.0.ph1407" = some (.int 64 termsIn))
+    (htok : lookupName env "%tokens.0.ph1408" = some (.int 64 toksIn)) :
+    denoteCode calls ifEndBlock.instrs (stateAt env s) =
+      some (stateAt (cells (ifEndAllCells v7 v8 ivIn k0 termsIn toksIn) env) s) := by
+  have hphi := ifEndPhi_denote_fromEnd327Peel (calls := calls) (env := env) (s := s)
+    hpre h6 h5 h1 hinc htr htok
+  have htail := ifEndTail_denote (calls := calls) (env := env) (s := s)
+    (v7 := v7) (v8 := v8) (ivIn := ivIn) (k0 := k0) (termsIn := termsIn) (toksIn := toksIn)
+  rw [ifEndBlock, ifEnd_split]
+  rw [denoteCode_append_apply (a := ifEndPhiInstrs) (b := ifEndRest) hphi (by decide)]
+  exact htail
+
+/-- `if.end` at the `if.end327` edge, as a link to `NodeBlock15`. -/
+theorem link_ifEnd_fromEnd327 {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Mem}
+    {s : State} {v7 : BitVec 8} {v8 : BitVec 32} {ivIn k0 termsIn toksIn : BitVec 64}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "if.end")
+    (hpre : s.pre = some "if.end327")
+    (h47 : lookupName s.env "%47" = some (.int 8 v7))
+    (h46 : lookupName s.env "%46" = some (.int 32 v8))
+    (hiv : lookupName s.env "%indvars.iv" = some (.int 64 ivIn))
+    (hinc : lookupName s.env "%inc" = some (.int 64 k0))
+    (htr : lookupName s.env "%terms.0" = some (.int 64 termsIn))
+    (htok : lookupName s.env "%tokens.0" = some (.int 64 toksIn)) :
+    Stage2NoEventWalkLink calls K mem s K
+      (stage2NoEventWalkNext (cells (ifEndAllCells v7 v8 ivIn k0 termsIn toksIn) s.env)
+        s "NodeBlock15") := by
+  have hcode := ifEnd_denote_fromEnd327 (calls := calls) (env := s.env) (s := s)
+    hpre h47 h46 hiv hinc htr htok
+  refine ⟨h, ?_, Stage2NoEventWalkInv.mem_congr h rfl⟩
+  have hstep := stage2NoEventWalk_step_br (s := s) (f := stage2NoEventBody)
+    (by rw [hpc]; exact ifEndBlock_find) (by simpa only [stateAt] using hcode) rfl
+  simpa only [stage2NoEventWalkNext, stateAt] using hstep
+
+/-- `if.end` at the `if.end327.peel` edge, as a link to `NodeBlock15`. -/
+theorem link_ifEnd_fromEnd327Peel {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Mem}
+    {s : State} {v7 : BitVec 8} {v8 : BitVec 32} {ivIn k0 termsIn toksIn : BitVec 64}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "if.end")
+    (hpre : s.pre = some "if.end327.peel")
+    (h6 : lookupName s.env "%6" = some (.int 8 v7))
+    (h5 : lookupName s.env "%5" = some (.int 32 v8))
+    (h1 : lookupName s.env "%1" = some (.int 64 ivIn))
+    (hinc : lookupName s.env "%inc.peel" = some (.int 64 k0))
+    (htr : lookupName s.env "%terms.0.ph1407" = some (.int 64 termsIn))
+    (htok : lookupName s.env "%tokens.0.ph1408" = some (.int 64 toksIn)) :
+    Stage2NoEventWalkLink calls K mem s K
+      (stage2NoEventWalkNext (cells (ifEndAllCells v7 v8 ivIn k0 termsIn toksIn) s.env)
+        s "NodeBlock15") := by
+  have hcode := ifEnd_denote_fromEnd327Peel (calls := calls) (env := s.env) (s := s)
+    hpre h6 h5 h1 hinc htr htok
+  refine ⟨h, ?_, Stage2NoEventWalkInv.mem_congr h rfl⟩
+  have hstep := stage2NoEventWalk_step_br (s := s) (f := stage2NoEventBody)
+    (by rw [hpc]; exact ifEndBlock_find) (by simpa only [stateAt] using hcode) rfl
+  simpa only [stage2NoEventWalkNext, stateAt] using hstep
+
+/-- The seven `NodeBlock15` bindings, as the producer hands them back. -/
+theorem ifEndAllCells_lookup (v7 : BitVec 8) (v8 : BitVec 32)
+    (ivIn k0 termsIn toksIn : BitVec 64) (env : Env) :
+    lookupName (cells (ifEndAllCells v7 v8 ivIn k0 termsIn toksIn) env) "%indvars.iv"
+        = some (.int 64 (ivIn + BitVec.ofNat 64 1)) ∧
+      lookupName (cells (ifEndAllCells v7 v8 ivIn k0 termsIn toksIn) env) "%tokens.0"
+        = some (.int 64 (toksIn + BitVec.ofNat 64 1)) ∧
+      lookupName (cells (ifEndAllCells v7 v8 ivIn k0 termsIn toksIn) env) "%terms.0"
+        = some (.int 64 (termsIn + BitVec.ofNat 64 3)) ∧
+      lookupName (cells (ifEndAllCells v7 v8 ivIn k0 termsIn toksIn) env) "%inc"
+        = some (.int 64 (k0 + BitVec.ofNat 64 1)) := by
+  refine ⟨?_, ?_, ?_, ?_⟩ <;>
+    exact lookupName_cells_of_some (cs := ifEndAllCells v7 v8 ivIn k0 termsIn toksIn)
+      (n := _) (env := env)
+      (by simp only [ifEndAllCells, ifEndTailCells, ifEndPhiCells, List.cons_append,
+        List.nil_append]; cells_lk)
+
+/-- **`if.end`'s producer at the `if.end327` edge**: the counts and the entry
+index at `NodeBlock15`, as conclusions. -/
+theorem ifEndProduce_fromEnd327 {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Mem}
+    {s : State} {v7 : BitVec 8} {v8 : BitVec 32} {ivIn k0 termsIn toksIn : BitVec 64}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "if.end")
+    (hpre : s.pre = some "if.end327")
+    (h47 : lookupName s.env "%47" = some (.int 8 v7))
+    (h46 : lookupName s.env "%46" = some (.int 32 v8))
+    (hiv : lookupName s.env "%indvars.iv" = some (.int 64 ivIn))
+    (hinc : lookupName s.env "%inc" = some (.int 64 k0))
+    (htr : lookupName s.env "%terms.0" = some (.int 64 termsIn))
+    (htok : lookupName s.env "%tokens.0" = some (.int 64 toksIn)) :
+    ∃ s', Stage2NoEventWalkLink calls K mem s K s' ∧ s'.pc = "NodeBlock15" ∧
+      lookupName s'.env "%7" = some (.int 8 v7) ∧
+      lookupName s'.env "%8" = some (.int 32 v8) ∧
+      lookupName s'.env "%indvars.iv" = some (.int 64 (ivIn + BitVec.ofNat 64 1)) ∧
+      lookupName s'.env "%k.0" = some (.int 64 k0) ∧
+      lookupName s'.env "%terms.0" = some (.int 64 (termsIn + BitVec.ofNat 64 3)) ∧
+      lookupName s'.env "%tokens.0" = some (.int 64 (toksIn + BitVec.ofNat 64 1)) ∧
+      lookupName s'.env "%inc" = some (.int 64 (k0 + BitVec.ofNat 64 1)) := by
+  obtain ⟨hiv', htok', htr', hinc'⟩ :=
+    ifEndAllCells_lookup v7 v8 ivIn k0 termsIn toksIn s.env
+  refine ⟨stage2NoEventWalkNext
+      (cells (ifEndAllCells v7 v8 ivIn k0 termsIn toksIn) s.env) s "NodeBlock15",
+    link_ifEnd_fromEnd327 h hpc hpre h47 h46 hiv hinc htr htok,
+    by simp only [stage2NoEventWalkNext],
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · exact lookupName_cells_of_some (cs := ifEndAllCells v7 v8 ivIn k0 termsIn toksIn)
+      (n := "%7") (env := s.env)
+      (by simp only [ifEndAllCells, ifEndTailCells, ifEndPhiCells, List.cons_append,
+        List.nil_append]; cells_lk)
+  · exact lookupName_cells_of_some (cs := ifEndAllCells v7 v8 ivIn k0 termsIn toksIn)
+      (n := "%8") (env := s.env)
+      (by simp only [ifEndAllCells, ifEndTailCells, ifEndPhiCells, List.cons_append,
+        List.nil_append]; cells_lk)
+  · simpa only [stage2NoEventWalkNext] using hiv'
+  · exact lookupName_cells_of_some (cs := ifEndAllCells v7 v8 ivIn k0 termsIn toksIn)
+      (n := "%k.0") (env := s.env)
+      (by simp only [ifEndAllCells, ifEndTailCells, ifEndPhiCells, List.cons_append,
+        List.nil_append]; cells_lk)
+  · simpa only [stage2NoEventWalkNext] using htr'
+  · simpa only [stage2NoEventWalkNext] using htok'
+  · simpa only [stage2NoEventWalkNext] using hinc'
+
+/-- **`if.end`'s producer at the `if.end327.peel` edge**: the counts and the entry
+index at `NodeBlock15`, as conclusions. -/
+theorem ifEndProduce_fromEnd327Peel {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {s : State} {v7 : BitVec 8} {v8 : BitVec 32}
+    {ivIn k0 termsIn toksIn : BitVec 64}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "if.end")
+    (hpre : s.pre = some "if.end327.peel")
+    (h6 : lookupName s.env "%6" = some (.int 8 v7))
+    (h5 : lookupName s.env "%5" = some (.int 32 v8))
+    (h1 : lookupName s.env "%1" = some (.int 64 ivIn))
+    (hinc : lookupName s.env "%inc.peel" = some (.int 64 k0))
+    (htr : lookupName s.env "%terms.0.ph1407" = some (.int 64 termsIn))
+    (htok : lookupName s.env "%tokens.0.ph1408" = some (.int 64 toksIn)) :
+    ∃ s', Stage2NoEventWalkLink calls K mem s K s' ∧ s'.pc = "NodeBlock15" ∧
+      lookupName s'.env "%7" = some (.int 8 v7) ∧
+      lookupName s'.env "%8" = some (.int 32 v8) ∧
+      lookupName s'.env "%indvars.iv" = some (.int 64 (ivIn + BitVec.ofNat 64 1)) ∧
+      lookupName s'.env "%k.0" = some (.int 64 k0) ∧
+      lookupName s'.env "%terms.0" = some (.int 64 (termsIn + BitVec.ofNat 64 3)) ∧
+      lookupName s'.env "%tokens.0" = some (.int 64 (toksIn + BitVec.ofNat 64 1)) ∧
+      lookupName s'.env "%inc" = some (.int 64 (k0 + BitVec.ofNat 64 1)) := by
+  obtain ⟨hiv', htok', htr', hinc'⟩ :=
+    ifEndAllCells_lookup v7 v8 ivIn k0 termsIn toksIn s.env
+  refine ⟨stage2NoEventWalkNext
+      (cells (ifEndAllCells v7 v8 ivIn k0 termsIn toksIn) s.env) s "NodeBlock15",
+    link_ifEnd_fromEnd327Peel h hpc hpre h6 h5 h1 hinc htr htok,
+    by simp only [stage2NoEventWalkNext],
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · exact lookupName_cells_of_some (cs := ifEndAllCells v7 v8 ivIn k0 termsIn toksIn)
+      (n := "%7") (env := s.env)
+      (by simp only [ifEndAllCells, ifEndTailCells, ifEndPhiCells, List.cons_append,
+        List.nil_append]; cells_lk)
+  · exact lookupName_cells_of_some (cs := ifEndAllCells v7 v8 ivIn k0 termsIn toksIn)
+      (n := "%8") (env := s.env)
+      (by simp only [ifEndAllCells, ifEndTailCells, ifEndPhiCells, List.cons_append,
+        List.nil_append]; cells_lk)
+  · simpa only [stage2NoEventWalkNext] using hiv'
+  · exact lookupName_cells_of_some (cs := ifEndAllCells v7 v8 ivIn k0 termsIn toksIn)
+      (n := "%k.0") (env := s.env)
+      (by simp only [ifEndAllCells, ifEndTailCells, ifEndPhiCells, List.cons_append,
+        List.nil_append]; cells_lk)
+  · simpa only [stage2NoEventWalkNext] using htr'
+  · simpa only [stage2NoEventWalkNext] using htok'
+  · simpa only [stage2NoEventWalkNext] using hinc'
+
+/-- **`if.end`'s producer, from either edge**: whichever predecessor reached the
+block, the run hands back the seven `NodeBlock15` bindings as conclusions.  The
+edge's operands are the hypotheses, supplied by the caller for the edge its state
+names. -/
+theorem ifEnd_produce {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Mem}
+    {s : State} {v7 : BitVec 8} {v8 : BitVec 32} {ivIn k0 termsIn toksIn : BitVec 64}
+    (h : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "if.end")
+    (hpre : s.pre = some "if.end327" ∨ s.pre = some "if.end327.peel")
+    (h47 : s.pre = some "if.end327" →
+      lookupName s.env "%47" = some (.int 8 v7))
+    (h46 : s.pre = some "if.end327" →
+      lookupName s.env "%46" = some (.int 32 v8))
+    (hiv : s.pre = some "if.end327" →
+      lookupName s.env "%indvars.iv" = some (.int 64 ivIn))
+    (hinc : s.pre = some "if.end327" →
+      lookupName s.env "%inc" = some (.int 64 k0))
+    (htr : s.pre = some "if.end327" →
+      lookupName s.env "%terms.0" = some (.int 64 termsIn))
+    (htok : s.pre = some "if.end327" →
+      lookupName s.env "%tokens.0" = some (.int 64 toksIn))
+    (h6 : s.pre = some "if.end327.peel" →
+      lookupName s.env "%6" = some (.int 8 v7))
+    (h5 : s.pre = some "if.end327.peel" →
+      lookupName s.env "%5" = some (.int 32 v8))
+    (h1 : s.pre = some "if.end327.peel" →
+      lookupName s.env "%1" = some (.int 64 ivIn))
+    (hincp : s.pre = some "if.end327.peel" →
+      lookupName s.env "%inc.peel" = some (.int 64 k0))
+    (htrp : s.pre = some "if.end327.peel" →
+      lookupName s.env "%terms.0.ph1407" = some (.int 64 termsIn))
+    (htokp : s.pre = some "if.end327.peel" →
+      lookupName s.env "%tokens.0.ph1408" = some (.int 64 toksIn)) :
+    ∃ s', Stage2NoEventWalkLink calls K mem s K s' ∧ s'.pc = "NodeBlock15" ∧
+      lookupName s'.env "%7" = some (.int 8 v7) ∧
+      lookupName s'.env "%8" = some (.int 32 v8) ∧
+      lookupName s'.env "%indvars.iv" = some (.int 64 (ivIn + BitVec.ofNat 64 1)) ∧
+      lookupName s'.env "%k.0" = some (.int 64 k0) ∧
+      lookupName s'.env "%terms.0" = some (.int 64 (termsIn + BitVec.ofNat 64 3)) ∧
+      lookupName s'.env "%tokens.0" = some (.int 64 (toksIn + BitVec.ofNat 64 1)) ∧
+      lookupName s'.env "%inc" = some (.int 64 (k0 + BitVec.ofNat 64 1)) := by
+  rcases hpre with hpre | hpre
+  · exact ifEndProduce_fromEnd327 h hpc hpre (h47 hpre) (h46 hpre) (hiv hpre)
+      (hinc hpre) (htr hpre) (htok hpre)
+  · exact ifEndProduce_fromEnd327Peel h hpc hpre (h6 hpre) (h5 hpre) (h1 hpre)
+      (hincp hpre) (htrp hpre) (htokp hpre)
+
 /-! ### The `{` count, the next-entry dispatch, and the `}` handoff
 
 The open arm's tail after `if.end23`: `if.end74` reads the next entry's lane and
@@ -6275,5 +6692,17 @@ structure Stage2NoEventWalkContainerClass (calls : Calls) (K : Stage2NoEventWalk
 #print axioms link_condEnd_false
 #print axioms link_condEnd_fromCondTrue_true
 #print axioms link_condEnd_fromCondTrue_false
+#print axioms ifEndBlock_find
+#print axioms ifEndPhi_denote_fromEnd327
+#print axioms ifEndPhi_denote_fromEnd327Peel
+#print axioms ifEndTail_denote
+#print axioms ifEnd_denote_fromEnd327
+#print axioms ifEnd_denote_fromEnd327Peel
+#print axioms link_ifEnd_fromEnd327
+#print axioms link_ifEnd_fromEnd327Peel
+#print axioms ifEndAllCells_lookup
+#print axioms ifEndProduce_fromEnd327
+#print axioms ifEndProduce_fromEnd327Peel
+#print axioms ifEnd_produce
 
 end LeanLLVM.Refinement
