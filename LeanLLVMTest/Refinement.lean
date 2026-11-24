@@ -11338,6 +11338,30 @@ as the remaining obligation.  The pins are the proved two's footprints. -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.tokenDecoderAgrees_of_parse
 
+/-- info: 'LeanLLVM.Refinement.parseValueTB_value' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.parseValueTB_value
+
+/-- info: 'LeanLLVM.Refinement.parseValueTB_remainder' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.parseValueTB_remainder
+
+/-- info: 'LeanLLVM.Refinement.parseElemsTB_agree' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.parseElemsTB_agree
+
+/-- info: 'LeanLLVM.Refinement.parseMembersTB_agree' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.parseMembersTB_agree
+
+/-- info: 'LeanLLVM.Refinement.parseValueTB_value_at' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.parseValueTB_value_at
+
+/-- info: 'LeanLLVM.Refinement.parseValueTB_remainder_at' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.parseValueTB_remainder_at
+
 /-- info: 'LeanLLVM.Refinement.valueAt_numberReadable' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.valueAt_numberReadable
