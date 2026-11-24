@@ -33,6 +33,7 @@ here makes either unconditional, and nothing here claims the certified walk's
 premise tier is discharged.
 -/
 import LeanLLVM.Refinement.JsonStage2NoEventWalkPremises
+import LeanLLVM.Refinement.JsonStage2NoEventWorkspace
 
 set_option autoImplicit false
 set_option maxRecDepth 8192
@@ -81,9 +82,47 @@ theorem stage2NoEventCallSatisfies_of_staging {stk e c d : Nat}
   satisfies_calls_stage2_noevent stk e c d
     (stage2NoEventWalkObligation_of_staging hrows) hstaged
 
+/-- **The walk's obligation from a caller-supplied workspace.**  The rows premise
+carries the workspace at the precondition's decomposition instead of the adapter's
+staging: the proof reads the staging the underlying theorem is given as a
+workspace (`stage2NoEventStagedPre.workspaceAt`, a projection between Props) and
+hands it to the premise.  Nothing here derives that a workspace exists; the
+decomposition is the caller's. -/
+theorem stage2NoEventWalkObligation_of_workspace {stk e c d : Nat}
+    (hrows : ∀ (a12 : List Value) (mem : Mem) (next : Nat),
+      Γ_stage2_noevent.pre a12 mem next →
+      stage2NoEventWorkspaceAt a12 stk e c d mem next →
+      Stage2NoEventWalkRows (stage2NoEventCalls stage2GapRecover) mem 27) :
+    Stage2NoEventWalkObligation stage2GapRecover stk e c d :=
+  stage2NoEventWalkObligation_of_staging
+    (fun a12 mem next hpre hstaged =>
+      hrows a12 mem next hpre (stage2NoEventStagedPre.workspaceAt hstaged))
+
+/-- **The no-event entry's call record from a caller-supplied workspace.**  The
+rows premise carries the workspace as above, and the staging provider is the
+workspace at the precondition's decomposition; `stage2NoEventWorkspaceAt.toStagedPre`
+projects that workspace to the adapter's staging, which is the hypothesis the
+existing slot theorem takes. -/
+theorem stage2NoEventCallSatisfies_of_workspace {stk e c d : Nat}
+    (hrows : ∀ (a12 : List Value) (mem : Mem) (next : Nat),
+      Γ_stage2_noevent.pre a12 mem next →
+      stage2NoEventWorkspaceAt a12 stk e c d mem next →
+      Stage2NoEventWalkRows (stage2NoEventCalls stage2GapRecover) mem 27)
+    (hws : ∀ {args : List Value} {mem : Mem} {next : Nat},
+      Γ_stage2_noevent.pre args mem next →
+      stage2NoEventWorkspaceAt args stk e c d mem next) :
+    CallSatisfies (envForStage2NoEvent stage2GapRecover stk e c d) Γ_stage2_noevent
+      "leanllvm_json_stage2_noevent" :=
+  stage2NoEventCallSatisfies_of_staging
+    (fun a12 mem next hpre hstaged =>
+      hrows a12 mem next hpre (stage2NoEventStagedPre.workspaceAt hstaged))
+    (fun {args} {mem} {next} hpre => stage2NoEventWorkspaceAt.toStagedPre (hws hpre))
+
 /-! ### Axiom footprints -/
 
 #print axioms stage2NoEventWalkObligation_of_staging
 #print axioms stage2NoEventCallSatisfies_of_staging
+#print axioms stage2NoEventWalkObligation_of_workspace
+#print axioms stage2NoEventCallSatisfies_of_workspace
 
 end LeanLLVM.Refinement
