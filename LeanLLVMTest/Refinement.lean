@@ -11321,3 +11321,10 @@ as the remaining obligation.  The pins are the proved two's footprints. -/
 /-- info: 'LeanLLVM.Refinement.valueAt_numberReadable' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.valueAt_numberReadable
+
+-- The span-versus-cursor disagreement that keeps `hT` at the parsed tape: the
+-- token decoder reads the span's bytes, while the tape decoder rejects a span
+-- that disagrees with its cursor.  Pinned so the hypothesis cannot be dropped
+-- and still leave the suite green.
+#guard (LeanLLVM.Refinement.parseValueT { input := ByteString.literal [0x20, 0x31], tokens := [.number ⟨0, 1⟩] }).isSome
+#guard (LeanLLVM.JSON.decodeTape { input := ByteString.literal [0x20, 0x31], tokens := [.number ⟨0, 1⟩] }).isNone

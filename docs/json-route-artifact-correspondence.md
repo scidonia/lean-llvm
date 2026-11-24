@@ -138,11 +138,13 @@ refusals to their class and offset — and `tests/json-noevent/check.sh` compare
 each line byte for byte against a table derived from the reference path at
 `47a2096`, with a tamper control and a relocation guard that reproduces the
 table in a second derivation at the head.  That establishes that the entry
-reports *this object's* decoded value on the rows it was given.  The chain from
-the emitted bytes to the reference's canonical value is half proved: `hD` —
-conditional on the event-level body clause and on the boundary row
-`stage2Boundary_noEventConsumer` — and `hcanon`, with `hT` and `hE` designed and
-owed.
+reports *this object's* decoded value on the rows it was given.  The guard
+re-derives the table's **value column** at the head from
+`LeanLLVM.JSON.renderValue` and requires it byte-identical to the rows derived
+at `47a2096` from `JsonMain.renderValue`; the class and offset columns have a
+single derivation — the committed `JsonPipelineSpec` renderers — and no second
+one, their guarantee being the type, since a new `Reject` constructor breaks the
+renderer's match at compile time.
 
 **Measured, with its limits on the row.**  On `pleiades` (Core Ultra 7 268V,
 `powersave`, load 2.4 falling to 2.0, shared and not quiet; clock reads, no
@@ -155,8 +157,9 @@ PMU), one process, one binary, medians of three 21-repeat runs: admission
 dominant cost, an order of magnitude above every other stage**, so a row
 reporting admission and native execution alone would misplace the time.  The
 fallback's canonicalisation is priced apart (`fallback_decode_ns`,
-`fallback_canon_ns`) and its digest agrees with the fast branch's on the same
-document.
+`fallback_canon_ns`); its digest agreed with the fast branch's on the same
+document.  That agreement was observed once, in that session; it is not a
+committed check, and nothing else on this page rests on it.
 
 **The entry's scaling limit sits beside any advertisement of it.**  Its process
 wall is superlinear above about 32 KiB — 512 KiB takes 56 s and 1 MiB times out

@@ -6,7 +6,7 @@ pipeline's record demands and calls the native object.  The contract is
 
 | File | What it is |
 |---|---|
-| `RouteMain.lean` | the standalone Lean entry point: it takes the document decision in two phases — the adapter's native facts (the maximum structural nesting, the policy-candidate flag and the escape-list guard's fact), then the probe's own native character-policy scan (`policy.c`) where that flag is set — and falls back to `parseBytes` for every document that decision refuses (one shell, not two).  It stages the document in the record's shape on the fast path, calls the object through the adapter, and prints one of the three outcomes.  `--stages` splits the route into its stages and the outcome stage into its five parts; `--admit` prints the two-phase decision beside the library's `admission` and the library's `policyRefusal` on the same bytes; `--consume` reads the shipped default, the no-event arm's three words; `--consume-noevent` is the same arm spelled out; `--consume-events` (or `--arm events --consume`) reads the certified event arm's result without printing, as a fold and as a per-token value array |
+| `RouteMain.lean` | the standalone Lean entry point: it takes the document decision in two phases — the adapter's native facts (the maximum structural nesting, the policy-candidate flag and the escape-list guard's fact), then the probe's own native character-policy scan (`policy.c`) where that flag is set — and falls back to `parseBytes` for every document that decision refuses (one shell, not two).  It stages the document in the record's shape on the fast path, calls the object through the adapter, and prints one of the three outcomes.  `--stages` splits the route into its stages and the outcome stage into its five parts; `--admit` prints the two-phase decision beside the library's `admission` and the library's `policyRefusal` on the same bytes; `--consume` reads the shipped default, the no-event arm's three words; `--consume-noevent` is the same arm spelled out; `--consume-events` (or `--arm events --consume`) reads the certified event arm's result without printing, as a fold and as a per-token value array; `--value` prints the entry's one line for a document — `value: verdict=1 value=<hex>` at exit 0, `value: refused class=<parseErrorName> offset=<n|->` at exit 2, `value: error canon` at exit 5 — reading the fast path's events and falling back to `parseBytes`/`decodeTape` |
 | `shim.c` | the adapter: validates the staging, allocates its zero-filled buffers (`leanllvm_route_zeroed`: one allocation and one `memset` each, in place of `Array.replicate`'s boxed fill), copies the caller's `ByteArray`s into the object's ABI (the document window is handed over in place, because the object only reads it), fills the entry unit's POS8 table, calls `leanllvm_json_pipeline`, and returns the tagged result.  It also runs phase one of the admission — the walk over the document's structural delimiter sequence, whose maximum is the depth clause's number and whose lane list goes through the proved depth counter, and the escape-list guard's presence scan — phase two's wrapper over the policy scan, and the depth pass the admission record reports.  Phase one's code is `admission.h`, which the workspace probe calls directly |
 | `policy.c`, `policy.h` | phase two of the admission: the character-policy scan, native, reproducing `policyRefusal`'s decisions branch for branch — the class and the byte — over the document's bytes, with a screen that answers a document no policy refusal is possible in without visiting a position.  Its `policy_step` is also the body scan phase one walks (`leanllvm_route_body_stop`), so the depth clause's string spans and the policy class array are one reading of a body |
 | `admission.h` | the two-phase admission as plain C, with no Lean runtime: the depth walk over the structural delimiter sequence through the proved counter, the character-policy scan where the candidate flag is set, and the escape-list guard's fact.  `shim.c` wraps it for the route and `workspace.cc` calls it directly, so the admission the route runs and the admission the workspace experiment times are one source |
@@ -112,15 +112,30 @@ read, which `build.sh` asserts with `nm` rather than assuming.  `bench.sh` uses
 
 ## The stage report, and the consumer's reading
 
-`--stages <file> <reps>` reports one median per stage and, for the fast path,
-five medians for the outcome stage's parts: `outcome_decode_ns` (the tagged
-header and its seven words), `outcome_slice_ns` (the two payloads cut out),
-`outcome_header_ns`, `outcome_arena_ns` and `outcome_events_ns` (each line built
-and written).  Their per-repetition sum is `outcome_ns`, so the five clock reads
-that divide them are inside the stage.  `hex_arena_ns` and `hex_events_ns`
-rebuild the same two payload lines with the write removed, after the stage's
-timed window; the difference between a payload part and its hex figure is that
-line's write.  The parts price the route's own reporting, not the object.
+`--stages <file> [reps] [<native depth>]` reports one median per stage and, for
+the fast path, five medians for the outcome stage's parts: `outcome_decode_ns`
+(the tagged header and its seven words), `outcome_slice_ns` (the two payloads
+cut out), `outcome_header_ns`, `outcome_arena_ns` and `outcome_events_ns`
+(each line built and written).  Their per-repetition sum is `outcome_ns`, so
+the five clock reads that divide them are inside the stage.  `hex_arena_ns` and
+`hex_events_ns` rebuild the same two payload lines with the write removed, after
+the stage's timed window; the difference between a payload part and its hex
+figure is that line's write.  The parts price the route's own reporting, not the
+object.
+
+The value probe runs after `total_ns` and `summed_stage_ns` are pushed, so every
+window above is unchanged; its fields are appended at the end of the row:
+`value_bytes_ns` (the `eventsOfBytes` walk), `value_decode_ns` (the
+`valueOfEvents` decode), `value_outcome` (`value`, `value-none`,
+`events-none`, `refused`, `adapter-failed` or `-`), `value_tokens`,
+`value_events_sum`, `value_sum`, and the fallback's own `fallback_decode_ns`,
+`fallback_canon_ns`, `fallback_outcome` and `fallback_sum`.  The two sums repeat
+across repetitions or the run exits 5, and a decoder returning `none` is
+reported as such rather than timed as a successful decode.  The fallback's
+decode and canonicalisation never enter the fast path's fields.
+
+The optional third argument bounds the adapter's native depth for the fallback
+rows, as `--doc` and `--admit` do.
 
 The admission stage is the two-phase decision and reports its split:
 `admission_ns` is both phases, `admission_native_ns` is phase one's native call

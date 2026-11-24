@@ -12,11 +12,13 @@
 #
 # The value rows are the values at 47a2096, measured against the committed
 # JsonMain.renderValue -- the definition the value arm relocates to
-# LeanLLVM.JSON.Render.  The class/offset rows are the working-tree relocation
-# of the refusal renderers (JsonPipelineSpec.lean, uncommitted), whose
-# vocabulary is invalid:<Reject constructor> with the constructor's position,
-# and '-' where the reject carries none.  The relocation must print these rows
-# byte for byte; a differing row is a changed printer, not a stale table.
+# LeanLLVM.JSON.Render.  The class/offset rows are
+# LeanLLVM.Refinement.parseErrorName and parseErrorOffset
+# (JsonPipelineSpec.lean, committed), whose vocabulary is
+# invalid:<Reject constructor> with the constructor's position, and '-' where
+# the reject carries none, with one derivation whose match the type closes.
+# The value column must survive the relocation byte for byte; a differing row
+# is a changed printer, not a stale table.
 #
 # Limit outcomes (depthExceeded, inputTooLong, outOfCapacity) are waived: each
 # needs an input far past a corpus document's size, and the byte-order-mark row

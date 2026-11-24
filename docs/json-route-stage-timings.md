@@ -99,6 +99,16 @@ the numbers.
 | `hex_arena_ns`, `hex_events_ns` | instrument-only: the same two lines rebuilt with the write removed, after the stage's timed window, so each printed line's write is the difference between its part and its hex figure |
 | `total_ns` | admission's start to the end of outcome handling; the file read is outside it |
 | `adapter_wall_ns` | the interval the caller saw around the adapter; `copyin + native + copyout` less it is the precondition checks and the adapter's own clock reads |
+| `value_bytes_ns` | the `eventsOfBytes` walk over the emitted record bytes on the admitted fast path; the list scaffolding is outside the clock |
+| `value_decode_ns` | the `valueOfEvents` decode of that event list |
+| `value_outcome`, `value_tokens`, `value_events_sum`, `value_sum` | the probe's outcome (`value`, `value-none`, `events-none`, `refused`, `adapter-failed` or `-`), the event count, and the two per-repetition digests — the decoded value's canonical rendering and the event list |
+| `fallback_decode_ns` | `decodeTape` on the fallback branch |
+| `fallback_canon_ns` | `canonValue` on the fallback branch, its own interval, never added to `value_*` |
+| `fallback_outcome`, `fallback_sum` | the fallback's outcome (`value`, `canon-none`, `decode-none` or `-`) and the canonicalised rendering's digest |
+
+The value probe's fields are appended after `rep_total_ns`, and the probe runs
+after `total_ns` and `summed_stage_ns` are pushed: every row above keeps its
+name, order and window, so the older rows still mean what they meant.
 
 The copy cost is a visible line item: `copyin_ns` and `copyout_ns` are their own
 columns, and the staging the caller pays before them is a third.  The adapter's
