@@ -180,6 +180,17 @@ sentinel=16045690984833335023
 setup() { printf 'SETUP: %s\n' "$1" >&2; exit 3; }
 fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 
+# A hex string as bytes, the conversion the event payloads' digests need.  It
+# is `xxd -r -p`'s read without depending on vim's tool: `sed` pairs the
+# digits into `\xNN` escapes and `printf` writes them.  An odd trailing nibble
+# is dropped, as `xxd -r -p` drops it; the payloads are even-length.
+hex_to_bin() {
+  local h=$1
+  [ -n "$h" ] || return 0
+  [ $(( ${#h} % 2 )) -eq 0 ] || h=${h%?}
+  printf '%b' "$(printf '%s' "$h" | sed 's/../\\x&/g')"
+}
+
 for path in "$corpus" "$docs" "$manifest" "$generator" "$spec" "$seed_file" \
             "$driver_src" "$repo/kernel/json/stage2_noevent.c" \
             "$repo/kernel/json/stage2_noevent.h" \
@@ -192,7 +203,6 @@ for unit in s1_block entry utf8 escape stage2 pipeline stage2_noevent pipeline_n
 done
 command -v "$cc" >/dev/null 2>&1 || setup "no $cc on PATH, and the kernel is C"
 command -v git >/dev/null 2>&1 || setup "no git on PATH, and the base comparison needs it"
-command -v xxd >/dev/null 2>&1 || setup "no xxd on PATH, and the event payloads' digests need it"
 # The route binary and its C caller are the shipped build step's artefacts.
 # They are not rebuilt here: the build step compiles the Lean program against
 # the Lake modules, and a scenario that rebuilt the program would be running a
@@ -1098,9 +1108,9 @@ while IFS=$'\t' read -r p ex pv pnk pnxp pndst pnev perr pash pesh pdsha posha; 
   }
   arena=$(sed -n 's/^arena=//p' "$work/ne8.out")
   events=$(sed -n 's/^events=//p' "$work/ne8.out")
-  got=$(printf '%s' "$arena" | xxd -r -p | sha256sum | cut -d' ' -f1)
+  got=$(hex_to_bin "$arena" | sha256sum | cut -d' ' -f1)
   [ "$got" = "$pash" ] || fail "$p: the arena's digest $got is not the base row's $pash"
-  got=$(printf '%s' "$events" | xxd -r -p | sha256sum | cut -d' ' -f1)
+  got=$(hex_to_bin "$events" | sha256sum | cut -d' ' -f1)
   [ "$got" = "$pesh" ] || fail "$p: the event stream's digest $got is not the base row's $pesh"
 done <"$base_rows"
 
