@@ -24,6 +24,7 @@ This repository is an initial vertical slice, not a port of Vellvm:
 | Tree relation | A generic interaction-tree library (`ITree/`) with a one-step event handler and its computable interpreter, a seeded guarded recursion `mfix` with its unfolding equations and positive-delay witnesses, and an LLVM instantiation (`LeanLLVM/ITree/`) that folds memory into the tree as an effect: `simtt` is a postcondition-indexed, directed simulation over those bare handled trees, `timeout` matches only `timeout`, undefined behaviour and silent divergence are one-sided, a framed rule proves it for the remaining pairs of an invariant, and the comma-mask loop is related to its unrolled candidate at the loop's allocator-derived frame | adoption by `Refines`/`RefinesWithin`; a refinement- or behaviour-level loop rule; a `runT`/`mfix` correspondence; a memory-aware module theorem; a computable host handler (`frame` has no decider today) |
 | Passes | Certified constant propagation, certified branch folding, certified strength reduction, composition, pipeline | dead-code elimination, unreachable-block elimination, algebraic simplification, loop transforms |
 | Pure seam refinement | `Γ ⊢ candidate ⊑ baseline` for the comma-mask seam, with a contextual replacement theorem (`LeanLLVM/Refinement/`) | no theorem relates Lean's compiled code or machine instructions to the model; installation is gated by a kernel-derived certificate over the proved fixture (hash and byte-for-byte reproduction), not by a compiler-equivalence theorem, and each installed unit — baseline, candidate and the memory-backed loop — has its own certificate and its own covering statement |
+| JSON pipeline | The certified stage-1 units (s1 masks, entry positions, UTF-8, the escape's arithmetic) and the stage-2 walk, each with its extracted kernel, specification and refinement theorem, the classifier's IR refinement and seam, and the byte-complete `s1_block`; the route with its certified admission and scalar fallback; the model-vs-native differential; the fair row (the no-event route against simdjson 5.0.5) and the `noevent` certificate; the transfer from the emitted stream to the reference's canonical value at a run's post, conditional on the run's own facts (`d28a136`) | the compiled object is not proved (the certificate is a hash-and-rebuild bridge); the baseline body and the route-against-scalar comparison are open |
 | Toolchain | `leanllvm` reads `.ll`, applies the pipeline, writes `.ll`; output is checked with `llvm-as` | bitcode I/O, pass-manager integration inside `opt` |
 
 Every pass is a theorem, not a test: the build fails if the refinement proof
@@ -43,8 +44,10 @@ own allocations); the certificate is a hash-and-rebuild bridge like the
 candidate's and baseline's, not a compiled-code theorem.  The seam units have a
 benchmark (`probes/bench/bench.sh`, with a recorded run at `b29716c`) that
 reports how fast each installed unit ran and presents no ratio as proof, while
-the parser has no timing and no native-reference comparison (J5 and J6 are
-open), so no parser performance is claimed.
+the parser's scaling is measured (`probes/bench/json-bench.sh`) and the
+no-event route's fair row against simdjson 5.0.5 is recorded
+(`docs/json-pipeline-performance.md`, median 0.8735, 128 of 151 faster); the
+route against the scalar parser and the baseline body are open (J4–J6).
 Calls carry a memory channel: an environment returns the value, the memory and
 the allocator state the callee leaves, and the caller adopts them.  The
 module-level replacement theorem is stated over `CallRefines`, which demands

@@ -1325,6 +1325,18 @@ stream's meaning (`JsonStage2Contract`).  On the refusal path the evidence also
 carries the policy at the written word; the offset's two clauses are
 `refusalOffset_walk`'s and `refusalOffset_utf8`'s.
 
+**The emitted stream's value at the run.**  `eventsOfBytes_valueOfEvents_events`
+(`JsonEventBridgeFinal`, `d28a136`) proves that the emitted route's value at a
+run's post, `(eventsOfBytes bs evs arena).bind valueOfEvents`, equals the token
+decoder's canonicalised value `(decodeTape t).bind canonValue`, from the run's
+own facts: the trace relation, the boundary row, the within-extent clause, the
+bounded record widths, the token parse, the token identity and the event-stream
+definition.  It is conditional on those facts, which the entry's call supplies,
+and not a claim over arbitrary documents.  The last link `eventsParseValue` is
+`EventsParseValue` unstrengthened, proved against the decoder that reads a
+member key by position — the repair at `8565a81`, whose refuting trace is guarded
+at `6f7fcbf`; both theorems pin at `[propext, Classical.choice, Quot.sound]`.
+
 **No accepted run's output is only related.**  The accepted clause's value is
 `decodeTape`'s and its validity is `ValidDocument`'s; the arena and event bytes
 are *related to* the tokens that value came from, which is what a record stream
