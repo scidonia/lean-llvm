@@ -20,7 +20,7 @@ and states the other two here, unproved, as the remaining obligation:
   statement is not the bare `parseValueT t = decodeTape t` over every tape: that
   is false, because `decodeValue` checks each token's span against its cursor
   while `parseValueTB` reads the span alone.  With `t.input = " 1"` and
-  `t.tokens = [.number ⟨0,1⟩]`, `parseValueT t = some (.number "1")` (the span's
+  `t.tokens = [.number ⟨0,1⟩]`, `parseValueT t = some (.number " ")` (the span's
   bytes) and `decodeTape t = none` (`skipFrom` starts at 1, so the number guard
   wants `⟨1,2⟩`).  At the parser's own tape the equality holds, and `hparse` is
   already a transfer premise.  The proof is the structural decoder's

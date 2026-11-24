@@ -137,7 +137,8 @@ reason.  `leanllvm-json-route --value` answers thirteen documents of
 refusals to their class and offset — and `tests/json-noevent/check.sh` compares
 each line byte for byte against a table derived from the reference path at
 `47a2096`, with a tamper control and a relocation guard that reproduces the
-table in a second derivation at the head.  That establishes that the entry
+table at the head — the value column in a second derivation, the class and
+offset columns from the committed renderers, whose guarantee is the type.  That establishes that the entry
 reports *this object's* decoded value on the rows it was given.  The guard
 re-derives the table's **value column** at the head from
 `LeanLLVM.JSON.renderValue` and requires it byte-identical to the rows derived
