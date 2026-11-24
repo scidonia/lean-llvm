@@ -71,14 +71,19 @@ def parseElemsF : Nat → List ConsumerEvent → Option (List JSON.Value × List
         | none => none
 
 /-- Object members, back to back, closed by `T_OBJ_END` (consumed here); a member
-is a key event (`T_KEY`) followed by a value. -/
+is a key event followed by a value.  At a member-key position a string event is
+the key whatever its tag says: the position decides the role, and the emitter's
+`T_KEY`/`T_STR` flag is an annotation the stream's consumer does not need to
+trust.  Both tags are therefore accepted here, and `parseValueF` likewise accepts
+either at a value position, so a key-flagged or value-flagged string record reads
+the same at either position. -/
 def parseMembersF : Nat → List ConsumerEvent →
     Option (List (List Nat × JSON.Value) × List ConsumerEvent)
   | 0, _ => none
   | _, [] => none
   | f + 1, e :: es =>
       if e.tag = 2 then some ([], es)
-      else if e.tag = 5 then
+      else if e.tag = 5 ∨ e.tag = 6 then
         match es with
         | [] => none
         | v :: vs =>
