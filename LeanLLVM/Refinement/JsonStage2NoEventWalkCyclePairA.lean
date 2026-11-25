@@ -362,12 +362,14 @@ structure Stage2NoEventWalkPairSrc (calls : Calls) (mem : Mem)
   /-- The byte at the colon's entry is the colon. -/
   colon : ∀ lane, K.ent[inc137]? = some lane → K.bs.getD lane 0 = 58
 
-/-- **The pair's cycle at a delta of four**: `if.end303`, the backedge and the
-head read, from the pair endpoint to the head at `k + 4`. -/
-theorem stage2NoEventWalkCycle_of_pair {calls : Calls} {mem : Mem}
+/-- **The pair's cycle at a delta of four, its price named**: `if.end303`, the
+backedge and the head read, from the pair endpoint to the head at `k + 4`.  The
+three steps' own count is `3`; keeping it visible lets a caller compose the cycle
+with a class route and pay the sum against the four-entry advance. -/
+theorem stage2NoEventWalkCycle_of_pair_price {calls : Calls} {mem : Mem}
     {K : Stage2NoEventWalkCarry} {k : Nat} {s : State}
     (h : Stage2NoEventWalkPairSrc calls mem K k s) :
-    ∃ (s' : State) (p : Nat), Stage2NoEventWalkCycle calls mem K k s 4 s' p := by
+    ∃ (s' : State), Stage2NoEventWalkCycle calls mem K k s 4 s' 3 := by
   obtain ⟨inv, hpc, sp, hspLt, inc137, hincEq, terms1, tokens1, addpn, htermsEq,
     htokEq, hkAddr, hklt, hd, hdLe, hcount, hkin, htermsv, htokensv, haddpnv,
     hincv, hspv, halenv, harenav, hbase, hbpos, htrace, hcolon⟩ := h
@@ -541,7 +543,17 @@ theorem stage2NoEventWalkCycle_of_pair {calls : Calls} {mem : Mem}
             (K.bs.getD laneNX 0))
           (names := loopHeadReadCellNames) rfl (by decide)
         exact h5 }
-  exact ⟨r3, 3, ⟨⟨⟨hrun, l3.inv'⟩, hhead, htrace⟩, hcred⟩⟩
+  exact ⟨r3, ⟨⟨⟨hrun, l3.inv'⟩, hhead, htrace⟩, hcred⟩⟩
+
+/-- **The pair's cycle at a delta of four**, at some price: the priced form's
+existential projection, which is the statement a caller that does not compose the
+price consumes. -/
+theorem stage2NoEventWalkCycle_of_pair {calls : Calls} {mem : Mem}
+    {K : Stage2NoEventWalkCarry} {k : Nat} {s : State}
+    (h : Stage2NoEventWalkPairSrc calls mem K k s) :
+    ∃ (s' : State) (p : Nat), Stage2NoEventWalkCycle calls mem K k s 4 s' p := by
+  obtain ⟨s', hc⟩ := stage2NoEventWalkCycle_of_pair_price h
+  exact ⟨s', 3, hc⟩
 
 /-- **The pair's cycle, with the head named**: the same theorem, its target head
 projected. -/
@@ -560,6 +572,7 @@ theorem stage2NoEventWalkCycle_pair_head {calls : Calls} {mem : Mem}
 #print axioms ifEnd303_denote
 #print axioms outerBackedge_ifEnd303_phiSelects
 #print axioms outerBackedge_ifEnd303_denote
+#print axioms stage2NoEventWalkCycle_of_pair_price
 #print axioms stage2NoEventWalkCycle_of_pair
 #print axioms stage2NoEventWalkCycle_pair_head
 
