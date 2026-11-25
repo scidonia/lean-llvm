@@ -219,9 +219,12 @@ freeze its disk under the same family name, and verify a cold boot has the
 revision and a sub-2-second build.  `nixos-lean-x86-64` is being retired; do
 not bake from it.
 
-The image's own record is its `source-rev` label and `$HOME/lean-llvm.IMAGE`
-beside the checkout.  Both families were baked on 2026-11-23 from revision
-`8c65035`.
+The image's own record is its labels and `$HOME/lean-llvm.IMAGE` beside the
+checkout: `source-rev`/`source-repo` name the checkout, and a rebased image adds
+`base-image`, the nixpkgs `base-rev` and `nixos-images-rev`.  Both families were
+rebaked on 2026-11-25 from revision `b0526fc` by booting the 2026-11-23 images,
+switching them to `nixos-images` `cb994f4` (the worker-telemetry change) and
+re-elaborating the delta.
 
 ## Layout
 

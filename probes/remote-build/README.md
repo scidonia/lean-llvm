@@ -88,10 +88,14 @@ Measured on the 8-vCPU bake instances (`n4d-highmem-8` for x86-64,
 **1.6 s** and **2.0 s**.  The first build on a freshly booted 4-vCPU worker
 (`n4-standard-4`, `n4a-standard-4`, both in `europe-west4-b`) takes 29 s and
 15 s because the I/O and startup are cold, then about a second.  The full
-build the image contains took 21.5 and 17.3 minutes.  Both families were baked
-on 2026-11-23 from revision `8c65035` (image labels `source-rev`/`source-repo`),
-are stored in `europe-west4`, need `--disk-gb 50`, and nothing rebuilds them
-automatically.
+build the image contains took 21.5 and 17.3 minutes.  Both families were
+rebaked on 2026-11-25 from revision `b0526fc`: each was booted from its
+2026-11-23 image (`8c65035`), switched to `nixos-images` `cb994f4` — the
+worker-telemetry change — and re-elaborated over the delta, which took 656 s
+on x86-64 and 105 s on aarch64.  The labels record `source-rev`,
+`source-repo`, `base-image`, the nixpkgs `base-rev` and `nixos-images-rev`;
+both images are stored in `europe-west4`, need `--disk-gb 50`, and nothing
+rebuilds them automatically.
 
 ### From a plain worker
 
@@ -133,6 +137,17 @@ The families `lean-llvm-precompiled-x86-64` and `lean-llvm-precompiled-aarch64`
 commit to one revision each, so they are rebaked when the tree has moved far
 enough that a checkout on top of the bake re-elaborates for minutes.  The
 triggers are in `AGENTS.md` ("Precompiled worker images").
+
+When the toolchain pin has not moved, boot each family's previous image instead
+and rebase it: push the current checkout and a `nixos-images` checkout to the
+worker, `flake-closure` both, run
+`sudo nixos-rebuild switch --flake "$HOME/nixos-images#gce-worker-x86"` (or
+`#gce-worker-aarch64`), and re-elaborate.  The checkout and its build output sit
+in the home directory, so only the guest system and the delta are redone; this
+was the 2026-11-25 route onto `nixos-images` `cb994f4` (worker telemetry).  A
+first bake from the plain image is still the route when the previous checkout is
+not sound enough to build on, or when the toolchain pin moved and every artifact
+is invalid.
 
 Bake from the plain image, on demand, sized for the full build (8 vCPU, 64 GB,
 50 GB disk — the peak is 27.9 GB and the build about 20 minutes):
