@@ -1348,6 +1348,53 @@ private theorem stage2SkipCells_notin :
       simp only [cells, lookupName_cons_ne w (cells cs env) hk]
       exact stage2SkipCells_notin cs n env (fun hc => h (List.mem_cons_of_mem _ hc))
 
+/-! ### The route's frame
+
+The scan reads a fixed register set — the entry chain's names, the scalar run's
+`phi` outputs, the cursor record's index cell — and no block between
+`land.lhs.true` and the merge's arms writes any of them.  `stage2SkipFrame s e`
+says the exit state binds each of them as the entry did, so the arms below the
+merge read the entry's values rather than re-deriving the `cells` chain. -/
+
+/-- The registers the scan and the arms below it read and the scan does not
+write. -/
+def stage2SkipFrameNames : List String :=
+  ["%b", "%cond", "%idxprom.lcssa", "%inc.lcssa", "%.lcssa",
+   "%arrayidx6.le1046", "%tokens.0.lcssa1073", "%terms.0.lcssa1079",
+   "%frame.0.lcssa1097", "%sp.0.lcssa1091.wide", "%k219",
+   "%alen.0.ph1405", "%arena.0.ph1406", "%d", "%ei"]
+
+/-- The scan's frame: every register it carries reads as it did at the entry. -/
+def stage2SkipFrame (s e : State) : Prop :=
+  ∀ n ∈ stage2SkipFrameNames, lookupName e.env n = lookupName s.env n
+
+/-- The frame at one state. -/
+theorem stage2SkipFrame.refl (s : State) : stage2SkipFrame s s := fun _ _ => rfl
+
+/-- The frame composes. -/
+theorem stage2SkipFrame.trans {s e f : State}
+    (h₁ : stage2SkipFrame s e) (h₂ : stage2SkipFrame e f) : stage2SkipFrame s f :=
+  fun n hn => (h₂ n hn).trans (h₁ n hn)
+
+/-- The frame crosses a block's cells when they bind none of its names. -/
+theorem stage2SkipFrame.mono {s e e' : State} {cs : List (String × Value)}
+    (h : stage2SkipFrame s e) (henv : e'.env = cells cs e.env)
+    (hnames : ∀ n ∈ stage2SkipFrameNames, n ∉ cs.map (·.1)) :
+    stage2SkipFrame s e' := by
+  intro n hn
+  rw [henv, stage2SkipCells_notin cs n e.env (hnames n hn)]
+  exact h n hn
+
+/-- Discharging a block's "not a frame name" side condition. -/
+macro "frame_names" : tactic => `(tactic|
+  (intro n hn hmem
+   simp only [stage2SkipFrameNames, List.mem_cons, List.not_mem_nil, or_false] at hn
+   rcases hn with h | h | h | h | h | h | h | h | h | h | h | h | h | h | h
+   all_goals
+     subst n
+     simp only [List.map_cons, List.mem_cons, List.not_mem_nil, or_false] at hmem
+     exact absurd hmem (by decide)))
+
 /-! ### The loop's invariant and its exit word -/
 
 /-- The loaded byte's class, read from the head state's `%58`. -/
@@ -1411,14 +1458,14 @@ def stage2SkipJoin (b idx cond : Nat) (σ : Nat → UInt8) (inc : BitVec 64)
   lookupName e.env "%.lcssa" = some (.int 8 lc) ∧
   lookupName e.env "%k219" = some (.ptr k219)
 
-/-- **The loop's exit word**: the merge is entered from a named predecessor with
-the walk's invariant intact, and one position carries both the merge's `%ee.1`
-selection and the first-member property. -/
-def stage2SkipExit (K : Stage2NoEventWalkCarry) (mem : Mem) (b idx cond : Nat)
+/-- **The loop's exit word at its position**: the merge is entered from a named
+predecessor with the walk's invariant intact, and the position `q` carries both
+the merge's `%ee.1` selection and the first-member property. -/
+def stage2SkipExitAt (K : Stage2NoEventWalkCarry) (mem : Mem) (b idx cond q : Nat)
     (σ : Nat → UInt8) (inc : BitVec 64) (lc : BitVec 8) (k219 : Nat) (e : State) : Prop :=
   e.pc = "if.end457" ∧
   Stage2NoEventWalkInv K mem e ∧
-  ∃ (pre : String) (q : Nat) (op : Operand),
+  ∃ (pre : String) (op : Operand),
     e.pre = some pre ∧
     phiIncoming pre stage2SkipIfEnd457EeIncoming = some op ∧
     evalOperand (stateAt e.env e) op = some (.int 64 (BitVec.ofNat 64 q)) ∧
@@ -1429,12 +1476,17 @@ def stage2SkipExit (K : Stage2NoEventWalkCarry) (mem : Mem) (b idx cond : Nat)
     lookupName e.env "%.lcssa" = some (.int 8 lc) ∧
     lookupName e.env "%k219" = some (.ptr k219)
 
+/-- **The loop's exit word**: the exit state, at the position its merge selects. -/
+def stage2SkipExit (K : Stage2NoEventWalkCarry) (mem : Mem) (b idx cond : Nat)
+    (σ : Nat → UInt8) (inc : BitVec 64) (lc : BitVec 8) (k219 : Nat) (e : State) : Prop :=
+  ∃ q, stage2SkipExitAt K mem b idx cond q σ inc lc k219 e
+
 /-- The loop's exit word projects the merge's invariant. -/
 theorem stage2SkipJoin_of_exit {e : State} {K : Stage2NoEventWalkCarry} {mem : Mem}
     {b idx cond : Nat} {σ : Nat → UInt8} {inc : BitVec 64} {lc : BitVec 8} {k219 : Nat}
     (h : stage2SkipExit K mem b idx cond σ inc lc k219 e) :
     stage2SkipJoin b idx cond σ inc lc k219 e := by
-  obtain ⟨hpc, -, pre, q, op, hpre, hinc, hop, hidx, hcond, -, -, hincv, hlc, hk⟩ := h
+  obtain ⟨q, hpc, -, pre, op, hpre, hinc, hop, hidx, hcond, -, -, hincv, hlc, hk⟩ := h
   refine ⟨hpc, ⟨q, op, ?_, hop, hidx, hcond⟩, hincv, hlc, hk⟩
   rw [hpre]; exact hinc
 
@@ -1560,7 +1612,8 @@ theorem stage2SkipAdvance {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Me
     ∃ (e : State) (j : Nat), j ≤ 3 ∧
       stage2SkipInvAt "while.body" K mem b idx cond σ inc lc k219 r e c ∧
       (∀ n, runFuel calls (j + n) stage2NoEventBody s =
-        runFuel calls n stage2NoEventBody e) ∧ e.mem = s.mem := by
+        runFuel calls n stage2NoEventBody e) ∧ e.mem = s.mem ∧
+      stage2SkipFrame s e := by
   have hh := h
   obtain ⟨hpc, hInv, hb, hee, h58, hcond, hincv, hlc, hk, hcondlt, hidxle, hclt, -,
     hpre, hbytes⟩ := h
@@ -1591,7 +1644,8 @@ theorem stage2SkipAdvance {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Me
          ("%.off54", .int 8 (v + BitVec.ofNat 8 247)),
          ("%Pivot63", .int 1 (evalICmp .slt v (BitVec.ofNat 8 13)))] s.env := rfl
     refine ⟨S2, 2, by omega, ?_, stage2SkipRun2 L1 L2,
-      (by simp only [S2, S1, stage2NoEventWalkNext])⟩
+      (by simp only [S2, S1, stage2NoEventWalkNext]),
+      stage2SkipFrame.mono (stage2SkipFrame.refl s) henv (by frame_names)⟩
     exact stage2SkipInvAt_cells
       (cs := [("%SwitchLeaf55", .int 1 (evalICmp .ule
           (v + BitVec.ofNat 8 247) (BitVec.ofNat 8 1))),
@@ -1633,7 +1687,8 @@ theorem stage2SkipAdvance {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Me
            ("%Pivot61", .int 1 (evalICmp .slt v (BitVec.ofNat 8 32))),
            ("%Pivot63", .int 1 (evalICmp .slt v (BitVec.ofNat 8 13)))] s.env := rfl
       refine ⟨S3, 3, by omega, ?_, stage2SkipRun3 L1 L2 L3,
-        (by simp only [S3, S2, S1, stage2NoEventWalkNext])⟩
+        (by simp only [S3, S2, S1, stage2NoEventWalkNext]),
+        stage2SkipFrame.mono (stage2SkipFrame.refl s) henv (by frame_names)⟩
       exact stage2SkipInvAt_cells
         (cs := [("%SwitchLeaf57", .int 1 (evalICmp .eq v (BitVec.ofNat 8 13))),
           ("%Pivot61", .int 1 (evalICmp .slt v (BitVec.ofNat 8 32))),
@@ -1673,7 +1728,8 @@ theorem stage2SkipAdvance {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Me
            ("%Pivot61", .int 1 (evalICmp .slt v (BitVec.ofNat 8 32))),
            ("%Pivot63", .int 1 (evalICmp .slt v (BitVec.ofNat 8 13)))] s.env := rfl
       refine ⟨S3, 3, by omega, ?_, stage2SkipRun3 L1 L2 L3,
-        (by simp only [S3, S2, S1, stage2NoEventWalkNext])⟩
+        (by simp only [S3, S2, S1, stage2NoEventWalkNext]),
+        stage2SkipFrame.mono (stage2SkipFrame.refl s) henv (by frame_names)⟩
       exact stage2SkipInvAt_cells
         (cs := [("%SwitchLeaf59", .int 1 (evalICmp .eq v (BitVec.ofNat 8 32))),
           ("%Pivot61", .int 1 (evalICmp .slt v (BitVec.ofNat 8 32))),
@@ -1687,10 +1743,12 @@ theorem stage2SkipStop {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Mem}
     {lc : BitVec 8} {k219 : Nat} {r : Nat}
     (h : stage2SkipInvAt "NodeBlock62" K mem b idx cond σ inc lc k219 r s c)
     (hws : stage2SkipWs (BitVec.ofNat 8 (σ c).toNat) = true) :
-    ∃ (e : State) (j : Nat), j ≤ 3 ∧ stage2SkipExit K mem b idx cond σ inc lc k219 e ∧
+    ∃ (e : State) (j : Nat), j ≤ 3 ∧
+      stage2SkipExitAt K mem b idx cond c σ inc lc k219 e ∧
       Stage2NoEventWalkInv K mem e ∧
       (∀ n, runFuel calls (j + n) stage2NoEventBody s =
-        runFuel calls n stage2NoEventBody e) ∧ e.mem = s.mem := by
+        runFuel calls n stage2NoEventBody e) ∧ e.mem = s.mem ∧
+      stage2SkipFrame s e := by
   obtain ⟨hpc, hInv, hb, hee, h58, hcond, hincv, hlc, hk, hcondlt, hidxle, hclt, -,
     hpre, hbytes⟩ := h
   have hexit : ∀ (e : State) (pre : String) (q : Nat), e.pc = "if.end457" →
@@ -1703,12 +1761,12 @@ theorem stage2SkipStop {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Mem}
       lookupName e.env "%k219" = some (.ptr k219) →
       (∀ j, idx ≤ j → j < q → stage2SkipWs (BitVec.ofNat 8 (σ j).toNat) = false) →
       stage2SkipWs (BitVec.ofNat 8 (σ q).toNat) = true →
-      stage2SkipExit K mem b idx cond σ inc lc k219 e := by
+      stage2SkipExitAt K mem b idx cond q σ inc lc k219 e := by
     intro e pre q hpc' hpre' hinv' hmem hee' hidx' hq' hinc' hlc' hk' hprefix hstop
     have hphi : phiIncoming pre stage2SkipIfEnd457EeIncoming =
         some (.reg "%ee.01053") := by
       rcases hmem with h' | h' | h' <;> rw [h'] <;> decide
-    exact ⟨hpc', hinv', pre, q, .reg "%ee.01053", hpre', hphi,
+    exact ⟨hpc', hinv', pre, .reg "%ee.01053", hpre', hphi,
       evalOperand_reg_of e.env e "%ee.01053" (.int 64 (BitVec.ofNat 64 q)) hee',
       hidx', hq', hprefix, Or.inr hstop, hinc', hlc', hk'⟩
   let v : BitVec 8 := BitVec.ofNat 8 (σ c).toNat
@@ -1733,7 +1791,13 @@ theorem stage2SkipStop {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Mem}
       link_skipLeafBlock53_true L1.inv' (by simp only [S1, stage2NoEventWalkNext])
         h58₁ (stage2Skip_ule_one_of hleaf)
     refine ⟨S2, 2, by omega, ?_, L2.inv', stage2SkipRun2 L1 L2,
-      (by simp only [S2, S1, stage2NoEventWalkNext])⟩
+      (by simp only [S2, S1, stage2NoEventWalkNext]),
+      stage2SkipFrame.mono (stage2SkipFrame.refl s)
+        (cs := [("%SwitchLeaf55", .int 1 (evalICmp .ule
+            (v + BitVec.ofNat 8 247) (BitVec.ofNat 8 1))),
+          ("%.off54", .int 8 (v + BitVec.ofNat 8 247)),
+          ("%Pivot63", .int 1 (evalICmp .slt v (BitVec.ofNat 8 13)))])
+        (by simp only [S2, S1, stage2NoEventWalkNext, cells]) (by frame_names)⟩
     exact hexit S2 "LeafBlock53" c (by simp only [S2, stage2NoEventWalkNext])
       (by simp only [S2, S1, stage2NoEventWalkNext]) L2.inv' (Or.inl rfl)
       (by simp only [S2, stage2NoEventWalkNext]; skip_lk)
@@ -1773,7 +1837,13 @@ theorem stage2SkipStop {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Mem}
         link_skipLeafBlock56_true L2.inv' (by simp only [S2, stage2NoEventWalkNext])
           h58₂ (stage2Skip_beq_one_of hleaf)
       refine ⟨S3, 3, by omega, ?_, L3.inv', stage2SkipRun3 L1 L2 L3,
-        (by simp only [S3, S2, S1, stage2NoEventWalkNext])⟩
+        (by simp only [S3, S2, S1, stage2NoEventWalkNext]),
+        stage2SkipFrame.mono (stage2SkipFrame.refl s)
+          (cs := [("%SwitchLeaf57", .int 1 (evalICmp .eq v (BitVec.ofNat 8 13))),
+            ("%Pivot61", .int 1 (evalICmp .slt v (BitVec.ofNat 8 32))),
+            ("%Pivot63", .int 1 (evalICmp .slt v (BitVec.ofNat 8 13)))])
+          (by simp only [S3, S2, S1, stage2NoEventWalkNext, cells])
+          (by frame_names)⟩
       exact hexit S3 "LeafBlock56" c (by simp only [S3, stage2NoEventWalkNext])
         (by simp only [S3, S2, stage2NoEventWalkNext]) L3.inv' (Or.inr (Or.inl rfl))
         (by simp only [S3, stage2NoEventWalkNext]; skip_lk)
@@ -1812,7 +1882,13 @@ theorem stage2SkipStop {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Mem}
         link_skipLeafBlock58_true L2.inv' (by simp only [S2, stage2NoEventWalkNext])
           h58₂ (stage2Skip_beq_one_of hleaf)
       refine ⟨S3, 3, by omega, ?_, L3.inv', stage2SkipRun3 L1 L2 L3,
-        (by simp only [S3, S2, S1, stage2NoEventWalkNext])⟩
+        (by simp only [S3, S2, S1, stage2NoEventWalkNext]),
+        stage2SkipFrame.mono (stage2SkipFrame.refl s)
+          (cs := [("%SwitchLeaf59", .int 1 (evalICmp .eq v (BitVec.ofNat 8 32))),
+            ("%Pivot61", .int 1 (evalICmp .slt v (BitVec.ofNat 8 32))),
+            ("%Pivot63", .int 1 (evalICmp .slt v (BitVec.ofNat 8 13)))])
+          (by simp only [S3, S2, S1, stage2NoEventWalkNext, cells])
+          (by frame_names)⟩
       exact hexit S3 "LeafBlock58" c (by simp only [S3, stage2NoEventWalkNext])
         (by simp only [S3, S2, stage2NoEventWalkNext]) L3.inv' (Or.inr (Or.inr rfl))
         (by simp only [S3, stage2NoEventWalkNext]; skip_lk)
@@ -1830,10 +1906,11 @@ theorem stage2SkipWhileBodyExit {calls : Calls} {K : Stage2NoEventWalkCarry}
     {lc : BitVec 8} {k219 : Nat} {r : Nat}
     (h : stage2SkipInvAt "while.body" K mem b idx cond σ inc lc k219 r s c)
     (htest : (c + 1 == cond) = true) (hws : stage2SkipWs (BitVec.ofNat 8 (σ c).toNat) = false) :
-    ∃ (e : State), stage2SkipExit K mem b idx cond σ inc lc k219 e ∧
+    ∃ (e : State), stage2SkipExitAt K mem b idx cond cond σ inc lc k219 e ∧
       Stage2NoEventWalkInv K mem e ∧
       (∀ n, runFuel calls (1 + n) stage2NoEventBody s =
-        runFuel calls n stage2NoEventBody e) ∧ e.mem = s.mem := by
+        runFuel calls n stage2NoEventBody e) ∧ e.mem = s.mem ∧
+      stage2SkipFrame s e := by
   obtain ⟨hpc, hInv, hb, hee, h58, hcond, hincv, hlc, hk, hcondlt, hidxle, hclt,
     hbudget, hpre, hbytes⟩ := h
   have hce : c + 1 = cond := by simpa using htest
@@ -1847,8 +1924,8 @@ theorem stage2SkipWhileBodyExit {calls : Calls} {K : Stage2NoEventWalkCarry}
   have L1 : Stage2NoEventWalkLink calls K mem s K S1 :=
     link_skipWhileBody_true hInv hpc hee hcond hy
   refine ⟨S1, ?_, L1.inv', ?_,
-    (by simp only [S1, stage2NoEventWalkNext])⟩
-  · refine ⟨by simp only [S1, stage2NoEventWalkNext], L1.inv', "while.body", cond,
+    (by simp only [S1, stage2NoEventWalkNext]), ?_⟩
+  · refine ⟨by simp only [S1, stage2NoEventWalkNext], L1.inv', "while.body",
       .reg "%cond", by simp only [S1, stage2NoEventWalkNext, hpc], ?_, ?_, by omega, by omega,
       ?_, Or.inl rfl,
       by simp only [S1, stage2NoEventWalkNext]; skip_lk,
@@ -1866,6 +1943,10 @@ theorem stage2SkipWhileBodyExit {calls : Calls} {K : Stage2NoEventWalkCarry}
         exact hws
   · intro n
     exact stage2NoEventWalkLink_runFuel L1 n
+  · exact stage2SkipFrame.mono (stage2SkipFrame.refl s)
+      (cs := stage2SkipWhileBodyCells [] (BitVec.ofNat 64 c) (BitVec.ofNat 64 cond))
+      (by simp only [S1, stage2NoEventWalkNext, stage2SkipWhileBodyCells, cells])
+      (by frame_names)
 
 /-- The increment is short of `%cond`: the loop re-enters the head, one budget
 unit spent. -/
@@ -1877,7 +1958,8 @@ theorem stage2SkipWhileBodyContinue {calls : Calls} {K : Stage2NoEventWalkCarry}
     (htest : (c + 1 == cond) = false) :
     ∃ (e : State), stage2SkipInv K mem b idx cond σ inc lc k219 r e (c + 1) ∧
       (∀ n, runFuel calls (2 + n) stage2NoEventBody s =
-        runFuel calls n stage2NoEventBody e) ∧ e.mem = s.mem := by
+        runFuel calls n stage2NoEventBody e) ∧ e.mem = s.mem ∧
+      stage2SkipFrame s e := by
   obtain ⟨hpc, hInv, hb, hee, h58, hcond, hincv, hlc, hk, hcondlt, hidxle, hclt,
     hbudget, hpre, hbytes⟩ := h
   have hne : c + 1 ≠ cond := by
@@ -1920,7 +2002,7 @@ theorem stage2SkipWhileBodyContinue {calls : Calls} {K : Stage2NoEventWalkCarry}
         simpa only [stage2NoEventSignExtend_self, BitVec.toNat_ofNat,
           Nat.mod_eq_of_lt hc1] using hbyte)
   refine ⟨S2, ?_, stage2SkipRun2 L1 L2,
-    (by simp only [S2, S1, stage2NoEventWalkNext])⟩
+    (by simp only [S2, S1, stage2NoEventWalkNext]), ?_⟩
   refine ⟨by simp only [S2, stage2NoEventWalkNext], L2.inv', ?_, ?_, ?_, ?_, ?_, ?_, ?_,
     hcondlt, by omega, by omega, by omega, ?_, ?_⟩
   · simp only [S2, stage2NoEventWalkNext]; skip_lk
@@ -1940,6 +2022,17 @@ theorem stage2SkipWhileBodyContinue {calls : Calls} {K : Stage2NoEventWalkCarry}
     have hm2 : S2.mem = s.mem := by simp only [S2, S1, stage2NoEventWalkNext]
     rw [hm2]
     exact hbytes j (by omega)
+  · have h1 : stage2SkipFrame s S1 :=
+      stage2SkipFrame.mono (stage2SkipFrame.refl s)
+        (cs := stage2SkipWhileBodyCells [] (BitVec.ofNat 64 c) (BitVec.ofNat 64 cond))
+        (by simp only [S1, stage2NoEventWalkNext, stage2SkipWhileBodyCells, cells])
+        (by frame_names)
+    have h2 : stage2SkipFrame S1 S2 :=
+      stage2SkipFrame.mono (stage2SkipFrame.refl S1)
+        (cs := stage2SkipLandRhsCells [] (BitVec.ofNat 64 (c + 1)) b (σ (c + 1)))
+        (by simp only [S2, stage2NoEventWalkNext, stage2SkipLandRhsCells, cells])
+        (by frame_names)
+    exact stage2SkipFrame.trans h1 h2
 
 /-! ### The loop -/
 
@@ -1947,18 +2040,20 @@ theorem stage2SkipWhileBodyContinue {calls : Calls} {K : Stage2NoEventWalkCarry}
 `%cond`, the exit test `stage2SkipAtBound`, and the exit word the loop's own. -/
 def stage2SkipLoop (calls : Calls) (K : Stage2NoEventWalkCarry) (mem : Mem)
     (b idx cond : Nat) (σ : Nat → UInt8) (inc : BitVec 64) (lc : BitVec 8)
-    (k219 : Nat) (M : Mem) : BoundLoop calls stage2NoEventBody where
+    (k219 : Nat) (M : Mem) (s0 : State) : BoundLoop calls stage2NoEventBody where
   head := "NodeBlock62"
   exitBlock := "if.end457"
   N := cond
   cost := 5
   Inv := fun r s c =>
-    stage2SkipInvAt "NodeBlock62" K mem b idx cond σ inc lc k219 r s c ∧ s.mem = M
+    stage2SkipInvAt "NodeBlock62" K mem b idx cond σ inc lc k219 r s c ∧ s.mem = M ∧
+      stage2SkipFrame s0 s
   atBound := fun s c => stage2SkipAtBound cond s c
-  ExitWord := fun e => stage2SkipExit K mem b idx cond σ inc lc k219 e ∧ e.mem = M
+  ExitWord := fun e =>
+    stage2SkipExit K mem b idx cond σ inc lc k219 e ∧ e.mem = M ∧ stage2SkipFrame s0 e
   step_exit := by
     intro r s c h hb
-    obtain ⟨hinv, hmem⟩ := h
+    obtain ⟨hinv, hmem, hfr⟩ := h
     have hinv0 := hinv
     obtain ⟨hpc, hInv, hbreg, hee, h58, hcond, hincv, hlc, hk, hcondlt, hidxle, hclt, -,
       hpre, hbytes⟩ := hinv
@@ -1969,19 +2064,22 @@ def stage2SkipLoop (calls : Calls) (K : Stage2NoEventWalkCarry) (mem : Mem)
         have h1 : (false || (c + 1 == cond)) = true := by
           simpa only [stage2SkipAtBound, hcls] using hb
         simpa only [Bool.false_or] using h1
-      obtain ⟨e₁, j₁, hj₁, hinv₁, hrun₁, hme₁⟩ := stage2SkipAdvance hinv0 hws
-      obtain ⟨e₂, hexit₂, hinv₂, hrun₂, hme₂⟩ := stage2SkipWhileBodyExit hinv₁ heq hws
-      refine ⟨e₂, j₁ + 1, by omega, hexit₂.1, ⟨hexit₂, ?_⟩, ?_⟩
+      obtain ⟨e₁, j₁, hj₁, hinv₁, hrun₁, hme₁, hfr₁⟩ := stage2SkipAdvance hinv0 hws
+      obtain ⟨e₂, hexit₂, hinv₂, hrun₂, hme₂, hfr₂⟩ :=
+        stage2SkipWhileBodyExit hinv₁ heq hws
+      refine ⟨e₂, j₁ + 1, by omega, hexit₂.1, ⟨⟨cond, hexit₂⟩, ?_, ?_⟩, ?_⟩
       · rw [hme₂, hme₁, hmem]
+      · exact stage2SkipFrame.trans hfr (stage2SkipFrame.trans hfr₁ hfr₂)
       · intro n
         rw [show j₁ + 1 + n = j₁ + (1 + n) from by omega, hrun₁ (1 + n), hrun₂ n]
     · have hws : stage2SkipWs (BitVec.ofNat 8 (σ c).toNat) = true := by
         simpa only [stage2SkipHeadClass, h58] using hcls
-      obtain ⟨e, j, hj, hexit, hinv, hrun, hme⟩ := stage2SkipStop hinv0 hws
-      exact ⟨e, j, by omega, hexit.1, ⟨hexit, by rw [hme, hmem]⟩, hrun⟩
+      obtain ⟨e, j, hj, hexit, hinv, hrun, hme, hfr'⟩ := stage2SkipStop hinv0 hws
+      exact ⟨e, j, by omega, hexit.1,
+        ⟨⟨c, hexit⟩, by rw [hme, hmem], stage2SkipFrame.trans hfr hfr'⟩, hrun⟩
   step_loop := by
     intro r s c h hb
-    obtain ⟨hinv, hmem⟩ := h
+    obtain ⟨hinv, hmem, hfr⟩ := h
     have hinv0 := hinv
     obtain ⟨hpc, hInv, hbreg, hee, h58, hcond, hincv, hlc, hk, hcondlt, hidxle, hclt, -,
       hpre, hbytes⟩ := hinv
@@ -1992,9 +2090,11 @@ def stage2SkipLoop (calls : Calls) (K : Stage2NoEventWalkCarry) (mem : Mem)
         have h1 : (false || (c + 1 == cond)) = false := by
           simpa only [stage2SkipAtBound, hcls] using hb
         simpa only [Bool.false_or] using h1
-      obtain ⟨e₁, j₁, hj₁, hinv₁, hrun₁, hme₁⟩ := stage2SkipAdvance hinv0 hws
-      obtain ⟨e₂, hinv₂, hrun₂, hme₂⟩ := stage2SkipWhileBodyContinue hinv₁ hws hne
-      refine ⟨e₂, c + 1, j₁ + 2, by omega, hinv₂.1, by omega, ⟨hinv₂, ?_⟩, ?_⟩
+      obtain ⟨e₁, j₁, hj₁, hinv₁, hrun₁, hme₁, hfr₁⟩ := stage2SkipAdvance hinv0 hws
+      obtain ⟨e₂, hinv₂, hrun₂, hme₂, hfr₂⟩ :=
+        stage2SkipWhileBodyContinue hinv₁ hws hne
+      refine ⟨e₂, c + 1, j₁ + 2, by omega, hinv₂.1, by omega,
+        ⟨hinv₂, ?_, stage2SkipFrame.trans hfr (stage2SkipFrame.trans hfr₁ hfr₂)⟩, ?_⟩
       · rw [hme₂, hme₁, hmem]
       · intro n
         rw [show j₁ + 2 + n = j₁ + (2 + n) from by omega, hrun₁ (2 + n), hrun₂ n]
@@ -2003,12 +2103,12 @@ def stage2SkipLoop (calls : Calls) (K : Stage2NoEventWalkCarry) (mem : Mem)
       exact absurd h1 (by simp)
   exit_at_zero := by
     intro s c h
-    obtain ⟨hinv, -⟩ := h
+    obtain ⟨hinv, -, -⟩ := h
     obtain ⟨-, -, -, -, -, -, -, -, -, -, -, hclt, hbudget, -⟩ := hinv
     exact absurd hbudget (by omega)
   budget := by
     intro r s c h
-    obtain ⟨hinv, -⟩ := h
+    obtain ⟨hinv, -, -⟩ := h
     obtain ⟨-, -, -, -, -, -, -, -, -, -, -, hclt, hbudget, -⟩ := hinv
     exact ⟨by omega, hbudget⟩
 
@@ -2017,25 +2117,99 @@ within `(%cond + 1) * 5` steps, leaving the loop's exit word. -/
 theorem stage2SkipLoop_run {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Mem}
     {s : State} {b idx cond : Nat} {σ : Nat → UInt8} {inc : BitVec 64}
     {lc : BitVec 8} {k219 : Nat} {M : Mem}
+    (s0 : State) (hfr : stage2SkipFrame s0 s)
     (h : stage2SkipInv K mem b idx cond σ inc lc k219 cond s idx)
     (hmem : s.mem = M) :
     ∃ (e : State) (j : Nat), j ≤ (cond + 1) * 5 ∧
       stage2SkipExit K mem b idx cond σ inc lc k219 e ∧
       (∀ n, runFuel calls (j + n) stage2NoEventBody s =
-        runFuel calls n stage2NoEventBody e) ∧ e.mem = s.mem := by
+        runFuel calls n stage2NoEventBody e) ∧ e.mem = s.mem ∧
+      stage2SkipFrame s0 e := by
   let L : BoundLoop calls stage2NoEventBody :=
-    stage2SkipLoop calls K mem b idx cond σ inc lc k219 M
+    stage2SkipLoop calls K mem b idx cond σ inc lc k219 M s0
   have hL : stage2SkipInvAt "NodeBlock62" K mem b idx cond σ inc lc k219 cond s idx ∧
-      s.mem = M := ⟨h, hmem⟩
+      s.mem = M ∧ stage2SkipFrame s0 s := ⟨h, hmem, hfr⟩
   obtain ⟨e, j, hj, hexitPc, hexitWord, hrun⟩ := L.run_from L.N s idx hL
-  obtain ⟨hexit, hme⟩ : stage2SkipExit K mem b idx cond σ inc lc k219 e ∧
-      e.mem = M := hexitWord
-  refine ⟨e, j, ?_, ?_, hrun, ?_⟩
+  obtain ⟨hexit, hme, hfr'⟩ : stage2SkipExit K mem b idx cond σ inc lc k219 e ∧
+      e.mem = M ∧ stage2SkipFrame s0 e := hexitWord
+  refine ⟨e, j, ?_, hexit, hrun, ?_, hfr'⟩
   · simpa only [L, stage2SkipLoop] using hj
-  · simpa only [L, stage2SkipLoop] using hexit
   · rw [hme, hmem]
 
-/-! ### The merge's run -/
+/-- **The loop's run at its own trip count.**  From the head at `idx` the loop
+reaches its merge at the exit position `q` — the cursor the test left from —
+within `5 * (q - idx) + 4` steps: every back edge spends at most five steps and
+advances the cursor by at least one, and the exit iteration spends at most four.
+The position is exposed, so a caller's count is relative to the loop's own exit
+rather than to the bound `%cond`. -/
+theorem stage2SkipLoop_run_at {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Mem}
+    {s : State} {b idx cond : Nat} {σ : Nat → UInt8} {inc : BitVec 64}
+    {lc : BitVec 8} {k219 : Nat} {M : Mem}
+    (s0 : State) (hfr : stage2SkipFrame s0 s)
+    (h : stage2SkipInv K mem b idx cond σ inc lc k219 cond s idx)
+    (hmem : s.mem = M) :
+    ∃ (e : State) (j q : Nat), j ≤ 5 * (q - idx) + 4 ∧ idx ≤ q ∧
+      stage2SkipExitAt K mem b idx cond q σ inc lc k219 e ∧
+      (∀ n, runFuel calls (j + n) stage2NoEventBody s =
+        runFuel calls n stage2NoEventBody e) ∧ e.mem = s.mem ∧
+      stage2SkipFrame s0 e := by
+  have key : ∀ (r : Nat) (s : State) (c : Nat),
+      stage2SkipInvAt "NodeBlock62" K mem b idx cond σ inc lc k219 r s c →
+      s.mem = M → stage2SkipFrame s0 s →
+      ∃ (e : State) (j q : Nat), j ≤ 5 * (q - c) + 4 ∧ c ≤ q ∧
+        stage2SkipExitAt K mem b idx cond q σ inc lc k219 e ∧
+        (∀ n, runFuel calls (j + n) stage2NoEventBody s =
+          runFuel calls n stage2NoEventBody e) ∧ e.mem = M ∧
+        stage2SkipFrame s0 e := by
+    intro r
+    induction r with
+    | zero =>
+        intro s c hinv hmem hf
+        obtain ⟨-, -, -, -, -, -, -, -, -, -, -, hclt, hbudget, -, -⟩ := hinv
+        omega
+    | succ r ih =>
+        intro s c hinv hmem hf
+        have hinv0 := hinv
+        obtain ⟨hpc, hInv, hb, hee, h58, hcond, hincv, hlc, hk, hcondlt, hidxle, hclt,
+          hbudget, hpre, hbytes⟩ := hinv
+        cases hcls : stage2SkipHeadClass s
+        · have hws : stage2SkipWs (BitVec.ofNat 8 (σ c).toNat) = false := by
+            simpa only [stage2SkipHeadClass, h58] using hcls
+          by_cases htest : (c + 1 == cond) = true
+          · obtain ⟨e₁, j₁, hj₁, hinv₁, hrun₁, hme₁, hfr₁⟩ :=
+              stage2SkipAdvance hinv0 hws
+            obtain ⟨e₂, hexit₂, hinv₂, hrun₂, hme₂, hfr₂⟩ :=
+              stage2SkipWhileBodyExit hinv₁ htest hws
+            refine ⟨e₂, j₁ + 1, cond, ?_, by omega, hexit₂, ?_, ?_, ?_⟩
+            · omega
+            · intro n
+              rw [show j₁ + 1 + n = j₁ + (1 + n) from by omega,
+                hrun₁ (1 + n), hrun₂ n]
+            · rw [hme₂, hme₁, hmem]
+            · exact stage2SkipFrame.trans hf (stage2SkipFrame.trans hfr₁ hfr₂)
+          · have hne : (c + 1 == cond) = false := by
+              cases h : (c + 1 == cond) <;> simp_all
+            obtain ⟨e₁, j₁, hj₁, hinv₁, hrun₁, hme₁, hfr₁⟩ :=
+              stage2SkipAdvance hinv0 hws
+            obtain ⟨e₂, hinv₂, hrun₂, hme₂, hfr₂⟩ :=
+              stage2SkipWhileBodyContinue hinv₁ hws hne
+            obtain ⟨e, j, q, hj, hcq, hexit, hrun', hme', hfr'⟩ :=
+              ih e₂ (c + 1) hinv₂ (by rw [hme₂, hme₁, hmem])
+                (stage2SkipFrame.trans hf (stage2SkipFrame.trans hfr₁ hfr₂))
+            refine ⟨e, j₁ + 2 + j, q, ?_, by omega, hexit, ?_, hme', hfr'⟩
+            · omega
+            · intro n
+              rw [show j₁ + 2 + j + n = j₁ + (2 + (j + n)) from by omega,
+                hrun₁ (2 + (j + n)), hrun₂ (j + n), hrun' n]
+        · have hws : stage2SkipWs (BitVec.ofNat 8 (σ c).toNat) = true := by
+            simpa only [stage2SkipHeadClass, h58] using hcls
+          obtain ⟨e, j, hj, hexit, hinv', hrun, hme, hfr'⟩ := stage2SkipStop hinv0 hws
+          refine ⟨e, j, c, ?_, le_rfl, hexit, hrun, ?_, ?_⟩
+          · omega
+          · rw [hme, hmem]
+          · exact stage2SkipFrame.trans hf hfr'
+  obtain ⟨e, j, q, hj, hq, hexit, hrun, hme, hfr'⟩ := key cond s idx h hmem hfr
+  exact ⟨e, j, q, hj, hq, hexit, hrun, hme.trans hmem.symm, hfr'⟩
 
 /-- **The merge's one step**, from its invariant: the `%ee.1` selection, the
 `%k219` store, the number-or-minus guard, and the arm it selects. -/
@@ -2054,7 +2228,8 @@ theorem stage2SkipJoinRun {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Me
       Stage2NoEventWalkInv K mem e ∧
       e.mem = writeBytes s.mem k219 (natToBytes inc.toNat 8) ∧
       (∀ n, runFuel calls (1 + n) stage2NoEventBody s =
-        runFuel calls n stage2NoEventBody e) := by
+        runFuel calls n stage2NoEventBody e) ∧
+      stage2SkipFrame s e := by
   have hcode : denoteCode calls stage2SkipIfEnd457Instrs (stateAt s.env s) =
       some (stateAt (stage2SkipIfEnd457Cells s.env q lc)
         (stage2NoEventStepState s (writeBytes s.mem k219 (natToBytes inc.toNat 8))
@@ -2084,9 +2259,16 @@ theorem stage2SkipJoinRun {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Me
   have hval : lookupName env' "%ee.1" = some (.int 64 (BitVec.ofNat 64 q)) := by
     simp only [henv', stage2SkipIfEnd457Cells]
     skip_lk
+  have hframe : ∀ pc : String,
+      stage2SkipFrame s (stage2NoEventWalkNext env' mid pc) := by
+    intro pc
+    exact stage2SkipFrame.mono (stage2SkipFrame.refl s)
+      (cs := stage2SkipIfEnd457Cells [] q lc)
+      (by simp only [env', stage2NoEventWalkNext, stage2SkipIfEnd457Cells, cells])
+      (by frame_names)
   rcases bitVec1_eq_zero_or_one (evalICmp .eq lc (BitVec.ofNat 8 45) |||
     evalICmp .ult (lc + BitVec.ofNat 8 208) (BitVec.ofNat 8 10)) with hg | hg
-  · refine ⟨stage2NoEventWalkNext env' mid "if.else495", Or.inr rfl, ?_, ?_, ?_, ?_⟩
+  · refine ⟨stage2NoEventWalkNext env' mid "if.else495", Or.inr rfl, ?_, ?_, ?_, ?_, ?_⟩
     · simpa only [stage2NoEventWalkNext] using hval
     · exact Stage2NoEventWalkInv.mem_congr (s' :=
         stage2NoEventWalkNext env' mid "if.else495") hinv' (by
@@ -2101,7 +2283,8 @@ theorem stage2SkipJoinRun {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Me
       rw [show 1 + n = n + 1 from by omega]
       simp only [runFuel, hstep]
       rfl
-  · refine ⟨stage2NoEventWalkNext env' mid "if.then471", Or.inl rfl, ?_, ?_, ?_, ?_⟩
+    · exact hframe "if.else495"
+  · refine ⟨stage2NoEventWalkNext env' mid "if.then471", Or.inl rfl, ?_, ?_, ?_, ?_, ?_⟩
     · simpa only [stage2NoEventWalkNext] using hval
     · exact Stage2NoEventWalkInv.mem_congr (s' :=
         stage2NoEventWalkNext env' mid "if.then471") hinv' (by
@@ -2116,6 +2299,7 @@ theorem stage2SkipJoinRun {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Me
       rw [show 1 + n = n + 1 from by omega]
       simp only [runFuel, hstep]
       rfl
+    · exact hframe "if.then471"
 
 /-! ### The first test -/
 
@@ -2139,7 +2323,7 @@ theorem stage2SkipFirstTest {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : 
     (∃ (e : State) (j : Nat), j ≤ 4 ∧ e.mem = s.mem ∧
       Stage2NoEventWalkInv K mem e ∧ stage2SkipPre b idx cond σ inc lc k219 e ∧
       (∀ n, runFuel calls (j + n) stage2NoEventBody s =
-        runFuel calls n stage2NoEventBody e))
+        runFuel calls n stage2NoEventBody e) ∧ stage2SkipFrame s e)
     ∨ (∃ (e : State) (j : Nat), j ≤ 4 ∧
       stage2SkipWs (BitVec.ofNat 8 u0.toNat) = false ∧ e.mem = s.mem ∧
       Stage2NoEventWalkInv K mem e ∧ e.pc = "if.end457" ∧
@@ -2149,7 +2333,7 @@ theorem stage2SkipFirstTest {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : 
       lookupName e.env "%.lcssa" = some (.int 8 lc) ∧
       lookupName e.env "%k219" = some (.ptr k219) ∧
       (∀ n, runFuel calls (j + n) stage2NoEventBody s =
-        runFuel calls n stage2NoEventBody e)) := by
+        runFuel calls n stage2NoEventBody e) ∧ stage2SkipFrame s e) := by
   let v : BitVec 8 := BitVec.ofNat 8 u0.toNat
   have hv : v = BitVec.ofNat 8 u0.toNat := rfl
   have hread0' : readByte s.mem (g + ((BitVec.ofNat 64 cond).signExtend 64).toNat)
@@ -2167,6 +2351,11 @@ theorem stage2SkipFirstTest {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : 
     link_skipLandLhsTrue h hpc hg hc hpos0 hread0'
   have h57₁ : lookupName S1.env "%57" = some (.int 8 v) := by
     simp only [S1, stage2NoEventWalkNext]; skip_lk
+  have hfr1 : stage2SkipFrame s S1 :=
+    stage2SkipFrame.mono (stage2SkipFrame.refl s)
+      (cs := stage2SkipLandLhsTrueCells [] g (BitVec.ofNat 64 cond) u0)
+      (by simp only [S1, stage2NoEventWalkNext, stage2SkipLandLhsTrueCells, cells])
+      (by frame_names)
   by_cases hws : stage2SkipWs v = true
   · have hleaf : stage2SkipLeaf v = true := by rw [stage2SkipLeaf_eq_ws]; exact hws
     by_cases h13 : v.slt (BitVec.ofNat 8 13) = true
@@ -2192,7 +2381,7 @@ theorem stage2SkipFirstTest {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : 
           h57₂ hy
       refine Or.inl ⟨S3, 3, by omega,
         (by simp only [S3, S2, S1, stage2NoEventWalkNext]), L3.inv', ?_,
-        stage2SkipRun3 L1 L2 L3⟩
+        stage2SkipRun3 L1 L2 L3, ?_⟩
       exact ⟨by simp only [S3, stage2NoEventWalkNext],
         by simp only [S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
         by simp only [S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
@@ -2200,6 +2389,17 @@ theorem stage2SkipFirstTest {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : 
         by simp only [S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
         by simp only [S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
         by simp only [S3, S2, S1, stage2NoEventWalkNext]; skip_lk⟩
+      · have hfr2 : stage2SkipFrame S1 S2 :=
+          stage2SkipFrame.mono (stage2SkipFrame.refl S1)
+            (cs := [("%Pivot52", .int 1 (evalICmp .slt v (BitVec.ofNat 8 13)))])
+            (by simp only [S2, stage2NoEventWalkNext, cells]) (by frame_names)
+        have hfr3 : stage2SkipFrame S2 S3 :=
+          stage2SkipFrame.mono (stage2SkipFrame.refl S2)
+            (cs := [("%SwitchLeaf44", .int 1 (evalICmp .ule
+                (v + BitVec.ofNat 8 247) (BitVec.ofNat 8 1))),
+              ("%.off", .int 8 (v + BitVec.ofNat 8 247))])
+            (by simp only [S3, stage2NoEventWalkNext, cells]) (by frame_names)
+        exact stage2SkipFrame.trans hfr1 (stage2SkipFrame.trans hfr2 hfr3)
     · have h13f : v.slt (BitVec.ofNat 8 13) = false := by
         cases h : v.slt (BitVec.ofNat 8 13) <;> simp_all
       by_cases h32 : v.slt (BitVec.ofNat 8 32) = true
@@ -2230,7 +2430,7 @@ theorem stage2SkipFirstTest {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : 
             h57₃ hy
         refine Or.inl ⟨S4, 4, by omega,
           (by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]), L4.inv', ?_,
-          stage2SkipRun4 L1 L2 L3 L4⟩
+          stage2SkipRun4 L1 L2 L3 L4, ?_⟩
         exact ⟨by simp only [S4, stage2NoEventWalkNext],
           by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
           by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
@@ -2238,6 +2438,20 @@ theorem stage2SkipFirstTest {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : 
           by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
           by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
           by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]; skip_lk⟩
+        · have hfr2 : stage2SkipFrame S1 S2 :=
+            stage2SkipFrame.mono (stage2SkipFrame.refl S1)
+              (cs := [("%Pivot52", .int 1 (evalICmp .slt v (BitVec.ofNat 8 13)))])
+              (by simp only [S2, stage2NoEventWalkNext, cells]) (by frame_names)
+          have hfr3 : stage2SkipFrame S2 S3 :=
+            stage2SkipFrame.mono (stage2SkipFrame.refl S2)
+              (cs := [("%Pivot50", .int 1 (evalICmp .slt v (BitVec.ofNat 8 32)))])
+              (by simp only [S3, stage2NoEventWalkNext, cells]) (by frame_names)
+          have hfr4 : stage2SkipFrame S3 S4 :=
+            stage2SkipFrame.mono (stage2SkipFrame.refl S3)
+              (cs := [("%SwitchLeaf46", .int 1 (evalICmp .eq v (BitVec.ofNat 8 13)))])
+              (by simp only [S4, stage2NoEventWalkNext, cells]) (by frame_names)
+          exact stage2SkipFrame.trans hfr1
+            (stage2SkipFrame.trans hfr2 (stage2SkipFrame.trans hfr3 hfr4))
       · have h32f : v.slt (BitVec.ofNat 8 32) = false := by
           cases h : v.slt (BitVec.ofNat 8 32) <;> simp_all
         have hleaf' : (v == BitVec.ofNat 8 32) = true := by
@@ -2267,7 +2481,7 @@ theorem stage2SkipFirstTest {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : 
             h57₃ hy
         refine Or.inl ⟨S4, 4, by omega,
           (by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]), L4.inv', ?_,
-          stage2SkipRun4 L1 L2 L3 L4⟩
+          stage2SkipRun4 L1 L2 L3 L4, ?_⟩
         exact ⟨by simp only [S4, stage2NoEventWalkNext],
           by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
           by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
@@ -2275,6 +2489,20 @@ theorem stage2SkipFirstTest {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : 
           by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
           by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
           by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]; skip_lk⟩
+        · have hfr2 : stage2SkipFrame S1 S2 :=
+            stage2SkipFrame.mono (stage2SkipFrame.refl S1)
+              (cs := [("%Pivot52", .int 1 (evalICmp .slt v (BitVec.ofNat 8 13)))])
+              (by simp only [S2, stage2NoEventWalkNext, cells]) (by frame_names)
+          have hfr3 : stage2SkipFrame S2 S3 :=
+            stage2SkipFrame.mono (stage2SkipFrame.refl S2)
+              (cs := [("%Pivot50", .int 1 (evalICmp .slt v (BitVec.ofNat 8 32)))])
+              (by simp only [S3, stage2NoEventWalkNext, cells]) (by frame_names)
+          have hfr4 : stage2SkipFrame S3 S4 :=
+            stage2SkipFrame.mono (stage2SkipFrame.refl S3)
+              (cs := [("%SwitchLeaf48", .int 1 (evalICmp .eq v (BitVec.ofNat 8 32)))])
+              (by simp only [S4, stage2NoEventWalkNext, cells]) (by frame_names)
+          exact stage2SkipFrame.trans hfr1
+            (stage2SkipFrame.trans hfr2 (stage2SkipFrame.trans hfr3 hfr4))
   · have hwsf : stage2SkipWs v = false := by
       cases h : stage2SkipWs v <;> simp_all
     have hleaf : stage2SkipLeaf v = false := by rw [stage2SkipLeaf_eq_ws]; exact hwsf
@@ -2316,7 +2544,18 @@ theorem stage2SkipFirstTest {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : 
         by simp only [S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
         by simp only [S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
         by simp only [S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
-        stage2SkipRun3 L1 L2 L3⟩
+        stage2SkipRun3 L1 L2 L3, ?_⟩
+      · have hfr2 : stage2SkipFrame S1 S2 :=
+          stage2SkipFrame.mono (stage2SkipFrame.refl S1)
+            (cs := [("%Pivot52", .int 1 (evalICmp .slt v (BitVec.ofNat 8 13)))])
+            (by simp only [S2, stage2NoEventWalkNext, cells]) (by frame_names)
+        have hfr3 : stage2SkipFrame S2 S3 :=
+          stage2SkipFrame.mono (stage2SkipFrame.refl S2)
+            (cs := [("%SwitchLeaf44", .int 1 (evalICmp .ule
+                (v + BitVec.ofNat 8 247) (BitVec.ofNat 8 1))),
+              ("%.off", .int 8 (v + BitVec.ofNat 8 247))])
+            (by simp only [S3, stage2NoEventWalkNext, cells]) (by frame_names)
+        exact stage2SkipFrame.trans hfr1 (stage2SkipFrame.trans hfr2 hfr3)
     · have h13f : v.slt (BitVec.ofNat 8 13) = false := by
         cases h : v.slt (BitVec.ofNat 8 13) <;> simp_all
       by_cases h32 : v.slt (BitVec.ofNat 8 32) = true
@@ -2354,7 +2593,21 @@ theorem stage2SkipFirstTest {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : 
           by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
           by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
           by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
-          stage2SkipRun4 L1 L2 L3 L4⟩
+          stage2SkipRun4 L1 L2 L3 L4, ?_⟩
+        · have hfr2 : stage2SkipFrame S1 S2 :=
+            stage2SkipFrame.mono (stage2SkipFrame.refl S1)
+              (cs := [("%Pivot52", .int 1 (evalICmp .slt v (BitVec.ofNat 8 13)))])
+              (by simp only [S2, stage2NoEventWalkNext, cells]) (by frame_names)
+          have hfr3 : stage2SkipFrame S2 S3 :=
+            stage2SkipFrame.mono (stage2SkipFrame.refl S2)
+              (cs := [("%Pivot50", .int 1 (evalICmp .slt v (BitVec.ofNat 8 32)))])
+              (by simp only [S3, stage2NoEventWalkNext, cells]) (by frame_names)
+          have hfr4 : stage2SkipFrame S3 S4 :=
+            stage2SkipFrame.mono (stage2SkipFrame.refl S3)
+              (cs := [("%SwitchLeaf46", .int 1 (evalICmp .eq v (BitVec.ofNat 8 13)))])
+              (by simp only [S4, stage2NoEventWalkNext, cells]) (by frame_names)
+          exact stage2SkipFrame.trans hfr1
+            (stage2SkipFrame.trans hfr2 (stage2SkipFrame.trans hfr3 hfr4))
       · have h32f : v.slt (BitVec.ofNat 8 32) = false := by
           cases h : v.slt (BitVec.ofNat 8 32) <;> simp_all
         have hleaf' : (v == BitVec.ofNat 8 32) = false := by
@@ -2391,7 +2644,21 @@ theorem stage2SkipFirstTest {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : 
           by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
           by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
           by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]; skip_lk,
-          stage2SkipRun4 L1 L2 L3 L4⟩
+          stage2SkipRun4 L1 L2 L3 L4, ?_⟩
+        · have hfr2 : stage2SkipFrame S1 S2 :=
+            stage2SkipFrame.mono (stage2SkipFrame.refl S1)
+              (cs := [("%Pivot52", .int 1 (evalICmp .slt v (BitVec.ofNat 8 13)))])
+              (by simp only [S2, stage2NoEventWalkNext, cells]) (by frame_names)
+          have hfr3 : stage2SkipFrame S2 S3 :=
+            stage2SkipFrame.mono (stage2SkipFrame.refl S2)
+              (cs := [("%Pivot50", .int 1 (evalICmp .slt v (BitVec.ofNat 8 32)))])
+              (by simp only [S3, stage2NoEventWalkNext, cells]) (by frame_names)
+          have hfr4 : stage2SkipFrame S3 S4 :=
+            stage2SkipFrame.mono (stage2SkipFrame.refl S3)
+              (cs := [("%SwitchLeaf48", .int 1 (evalICmp .eq v (BitVec.ofNat 8 32)))])
+              (by simp only [S4, stage2NoEventWalkNext, cells]) (by frame_names)
+          exact stage2SkipFrame.trans hfr1
+            (stage2SkipFrame.trans hfr2 (stage2SkipFrame.trans hfr3 hfr4))
 
 /-! ### The segment -/
 
@@ -2436,13 +2703,18 @@ theorem stage2NoEventWalkScalarSkip {calls : Calls} {K : Stage2NoEventWalkCarry}
       (q = cond ∨ stage2SkipWs (BitVec.ofNat 8 (σ q).toNat) = true) ∧
       ((∀ j, idx ≤ j → j < q → stage2SkipWs (BitVec.ofNat 8 (σ j).toNat) = false) ∨
         (q = cond ∧ stage2SkipWs (BitVec.ofNat 8 u0.toNat) = false)) ∧
+      ((j ≤ 12 + 5 * (q - idx) ∧
+        (∀ j, idx ≤ j → j < q → stage2SkipWs (BitVec.ofNat 8 (σ j).toNat) = false)) ∨
+        (j ≤ 6 ∧ q = cond)) ∧
       Stage2NoEventWalkInv K mem e ∧
       e.mem = writeBytes s.mem k219 (natToBytes inc.toNat 8) ∧
       (∀ n, runFuel calls (j + n) stage2NoEventBody s =
-        runFuel calls n stage2NoEventBody e) := by
+        runFuel calls n stage2NoEventBody e) ∧
+      stage2SkipFrame s e := by
   rcases stage2SkipFirstTest (σ := σ) h hpc hg hc hidx hb hincv hlc hk hread0 hidxlt hcondlt with
-    ⟨e₁, j₁, hj₁, hm₁, hinv₁, hpre₁, hrun₁⟩ |
-    ⟨e₁, j₁, hj₁, hws₁, hm₁, hinv₁, hpc₁, hinc₁, hcond₁, hincv₁, hlc₁, hk₁, hrun₁⟩
+    ⟨e₁, j₁, hj₁, hm₁, hinv₁, hpre₁, hrun₁, hfr₁⟩ |
+    ⟨e₁, j₁, hj₁, hws₁, hm₁, hinv₁, hpc₁, hinc₁, hcond₁, hincv₁, hlc₁, hk₁, hrun₁,
+      hfr₁⟩
   · -- the loop
     obtain ⟨hpc₀, hidx₀, hb₀, hcond₀, hincv₀, hlc₀, hk₀⟩ := hpre₁
     have hbytes₀ : readByte e₁.mem (b + idx) = some (σ idx) := by
@@ -2473,6 +2745,11 @@ theorem stage2NoEventWalkScalarSkip {calls : Calls} {K : Stage2NoEventWalkCarry}
         (by simp only [S1, stage2NoEventWalkNext, hpc₀]) hidx₁ hb₁ hidxpos hbyte₁
     have hm2 : S2.mem = s.mem := by
       simp only [S2, S1, stage2NoEventWalkNext, hm₁]
+    have hfr2 : stage2SkipFrame e₁ S2 :=
+      stage2SkipFrame.mono (stage2SkipFrame.refl e₁)
+        (cs := stage2SkipLandRhsCells [] (BitVec.ofNat 64 idx) b (σ idx))
+        (by simp only [S2, S1, stage2NoEventWalkNext, stage2SkipLandRhsCells, cells])
+        (by frame_names)
     have hInv0 : stage2SkipInv K mem b idx cond σ inc lc k219 cond S2 idx := by
       refine ⟨by simp only [S2, stage2NoEventWalkNext], L2.inv', ?_, ?_, ?_, ?_, ?_, ?_, ?_,
         hcondlt, by omega, hidxlt, by omega, ?_, ?_⟩
@@ -2487,46 +2764,48 @@ theorem stage2NoEventWalkScalarSkip {calls : Calls} {K : Stage2NoEventWalkCarry}
       · intro j hj hjlt; omega
       · intro j hj
         rw [hm2]; exact hbytes j hj
-    let L : BoundLoop calls stage2NoEventBody :=
-      stage2SkipLoop calls K mem b idx cond σ inc lc k219 S2.mem
-    have hInv0' : stage2SkipInvAt "NodeBlock62" K mem b idx cond σ inc lc k219
-        (cond - idx) S2 idx :=
-      stage2SkipInvAt_budget hInv0 (by omega)
-    obtain ⟨e₃, j₃, hj₃, -, hexitW, hrun₃⟩ :=
-      L.run_from (cond - idx) S2 idx ⟨hInv0', rfl⟩
-    obtain ⟨hexit₃, hmem₃⟩ := hexitW
-    have hj₃' : j₃ ≤ 5 * (cond - idx) + 5 := by
-      have h := hj₃
-      simp only [L, stage2SkipLoop] at h
-      omega
-    obtain ⟨hpc₃, hinv₃, pre₃, q₃, op₃, hpre₃, hinc₃, hop₃, hidx₃, hq₃, hpre₃',
+    obtain ⟨e₃, j₃, q₃, hj₃, hidxle₃, hexit₃, hrun₃, hmem₃, hfr₃⟩ :=
+      stage2SkipLoop_run_at (calls := calls) (K := K) (mem := mem)
+        (b := b) (idx := idx) (cond := cond) (σ := σ) (inc := inc) (lc := lc)
+        (k219 := k219) (M := S2.mem) S2 (stage2SkipFrame.refl S2) hInv0 rfl
+    obtain ⟨hpc₃, hinv₃, pre₃, op₃, hpre₃, hinc₃, hop₃, hidx₃, hq₃, hpre₃',
       hstop₃, hincv₃, hlc₃, hk₃⟩ := hexit₃
-    obtain ⟨e₄, hpc₄, hq₄, hinv₄, hmem₄, hrun₄⟩ :=
+    obtain ⟨e₄, hpc₄, hq₄, hinv₄, hmem₄, hrun₄, hfr₄⟩ :=
       stage2SkipJoinRun (b := b) (idx := idx) (cond := cond) (σ := σ)
         hinv₃ hpc₃ (by rw [hpre₃]; exact hinc₃) hop₃ hincv₃ hlc₃ hk₃
         hstore
     refine ⟨e₄, j₁ + 2 + j₃ + 1, q₃, ?_, hpc₄, hq₄, hidx₃, hq₃, hstop₃,
-      Or.inl hpre₃', hinv₄, (hmem₄.trans (by rw [hmem₃, hm2])), ?_⟩
+      Or.inl hpre₃', Or.inl ⟨?_, hpre₃'⟩, hinv₄,
+      (hmem₄.trans (by rw [hmem₃, hm2])), ?_,
+      stage2SkipFrame.trans hfr₁
+        (stage2SkipFrame.trans hfr2 (stage2SkipFrame.trans hfr₃ hfr₄))⟩
+    · omega
     · omega
     · intro n
       rw [show j₁ + 2 + j₃ + 1 + n = j₁ + (2 + (j₃ + (1 + n))) from by omega,
         hrun₁ (2 + (j₃ + (1 + n))), stage2SkipRun2 L1 L2 (j₃ + (1 + n)),
         hrun₃ (1 + n), hrun₄ n]
   · -- the merge directly, with `%cond` as the selection
-    obtain ⟨e₄, hpc₄, hq₄, hinv₄, hmem₄, hrun₄⟩ :=
+    obtain ⟨e₄, hpc₄, hq₄, hinv₄, hmem₄, hrun₄, hfr₄⟩ :=
       stage2SkipJoinRun (b := b) (idx := idx) (cond := cond) (σ := σ)
         hinv₁ hpc₁ hinc₁
         (evalOperand_reg_of e₁.env e₁ "%cond" (.int 64 (BitVec.ofNat 64 cond)) hcond₁)
         hincv₁ hlc₁ hk₁ hstore
     refine ⟨e₄, j₁ + 1, cond, ?_, hpc₄, hq₄, by omega, by omega, Or.inl rfl,
-      Or.inr ⟨rfl, hws₁⟩, hinv₄, (hmem₄.trans (by rw [hm₁])), ?_⟩
+      Or.inr ⟨rfl, hws₁⟩, Or.inr ⟨?_, rfl⟩, hinv₄,
+      (hmem₄.trans (by rw [hm₁])), ?_, stage2SkipFrame.trans hfr₁ hfr₄⟩
+    · omega
     · omega
     · intro n
       rw [show j₁ + 1 + n = j₁ + (1 + n) from by omega, hrun₁ (1 + n), hrun₄ n]
 
 /-! ### Axiom footprints -/
 
+#print axioms stage2SkipFrame
+#print axioms stage2SkipFrame.trans
+#print axioms stage2SkipFrame.mono
 #print axioms stage2SkipExit
+#print axioms stage2SkipExitAt
 #print axioms stage2SkipInvAt_cells
 #print axioms stage2SkipInvAt_budget
 #print axioms stage2SkipAdvance
@@ -2535,6 +2814,7 @@ theorem stage2NoEventWalkScalarSkip {calls : Calls} {K : Stage2NoEventWalkCarry}
 #print axioms stage2SkipWhileBodyContinue
 #print axioms stage2SkipLoop
 #print axioms stage2SkipLoop_run
+#print axioms stage2SkipLoop_run_at
 #print axioms stage2SkipJoinRun
 #print axioms stage2SkipFirstTest
 #print axioms stage2NoEventWalkScalarSkip

@@ -580,12 +580,54 @@ abbrev valueLandStateZ (e : State) (k lane sp fr : Nat) (bv : BitVec 8)
       (BitVec.ofNat 64 lane))
     (valueCondEndStateZ e k lane sp fr bv K) "land.lhs.true"
 
+/-- The registers the number and literal arms read at the scan's exit: the
+entry's position, the scan's stop and bound, the counts, the frame and depth the
+event carries, the cursor's index cell, and the four entry-chain cells the arms
+stage. -/
+structure Stage2NoEventWalkValueArmsRegs (K : Stage2NoEventWalkCarry)
+    (k lane sp fr : Nat) (bv : BitVec 8) (q cond : Nat) (e : State) : Prop where
+  /-- The scan's stop. -/
+  ee : lookupName e.env "%ee.1" = some (.int 64 (BitVec.ofNat 64 q))
+  /-- The entry's position. -/
+  idx : lookupName e.env "%idxprom.lcssa" = some (.int 64 (BitVec.ofNat 64 lane))
+  /-- The lexeme's first address. -/
+  arr : lookupName e.env "%arrayidx6.le1046" = some (.ptr (K.b + lane))
+  /-- The document's base. -/
+  b : lookupName e.env "%b" = some (.ptr K.b)
+  /-- The scan's bound. -/
+  cond : lookupName e.env "%cond" = some (.int 64 (BitVec.ofNat 64 cond))
+  /-- The term count. -/
+  tokens : lookupName e.env "%tokens.0.lcssa1073" =
+    some (.int 64 (BitVec.ofNat 64 K.tok))
+  /-- The value count. -/
+  terms : lookupName e.env "%terms.0.lcssa1079" =
+    some (.int 64 (BitVec.ofNat 64 K.terms))
+  /-- The frame's `phi`. -/
+  frame : lookupName e.env "%frame.0.lcssa1097" = some (.int 8 (BitVec.ofNat 8 fr))
+  /-- The depth's `phi`. -/
+  sp : lookupName e.env "%sp.0.lcssa1091.wide" =
+    some (.int 32 (BitVec.ofNat 32 sp))
+  /-- The cursor's next entry. -/
+  inc : lookupName e.env "%inc.lcssa" = some (.int 64 (BitVec.ofNat 64 (k + 1)))
+  /-- The entry's first byte. -/
+  lcssa : lookupName e.env "%.lcssa" = some (.int 8 bv)
+  /-- The arena length's `phi`. -/
+  alen : lookupName e.env "%alen.0.ph1405" =
+    some (.int 64 (BitVec.ofNat 64 K.arena.length))
+  /-- The arena word's `phi`. -/
+  arena : lookupName e.env "%arena.0.ph1406" =
+    some (.int 64 (BitVec.ofNat 64 K.arenaWord))
+  /-- The number's staging word. -/
+  d : lookupName e.env "%d" = some (.ptr K.d)
+  /-- The number's staged length. -/
+  ei : lookupName e.env "%ei" = some (.ptr (K.next0 + 24))
+
 /-- **The value class's route from a scalar state.**  From the `scalar` block's
 head-edge state — its seven `phi` cells, the entry's position and byte, and the
 entry chain's two `gep`s — the walk reaches the number or literal entry with the
-scan's `%ee.1` inside `[lane, cond]`, the invariant there, the scan's write, and a
-run of at most `15 + 5 * (cond - lane)` steps, where `cond` is the next entry's
-position or the document's length. -/
+scan's `%ee.1` inside `[lane, cond]`, the invariant there, the scan's write, the
+registers the arms read, and a run of at most `15 + 5 * (cond - lane)` steps,
+where `cond` is the next entry's position or the document's length. -/
 theorem stage2NoEventWalkValueAt {calls : Calls} {K : Stage2NoEventWalkCarry}
     {mem : Mem} {e : State} {pre : String} {k lane sp fr : Nat} {bv : BitVec 8}
     (hinv : Stage2NoEventWalkInv K mem e) (hpc : e.pc = "scalar")
@@ -606,9 +648,16 @@ theorem stage2NoEventWalkValueAt {calls : Calls} {K : Stage2NoEventWalkCarry}
     (hep : lookupName e.env "%ep" = some (.ptr K.ep))
     (hgep : lookupName e.env "%invariant.gep1068" = some (.ptr (K.b - 1)))
     (hk219 : lookupName e.env "%k219" = some (.ptr (K.c + 32)))
+    (hale : lookupName e.env "%alen.0.ph1405" =
+      some (.int 64 (BitVec.ofNat 64 K.arena.length)))
+    (harw : lookupName e.env "%arena.0.ph1406" =
+      some (.int 64 (BitVec.ofNat 64 K.arenaWord)))
+    (hd : lookupName e.env "%d" = some (.ptr K.d))
+    (hei : lookupName e.env "%ei" = some (.ptr (K.next0 + 24)))
     (klt : k < K.nep) :
     ∃ (e' : State) (j q cond : Nat),
       j ≤ 15 + 5 * (cond - lane) ∧
+      j ≤ 15 + 5 * (q - lane) ∧
       (e'.pc = "if.then471" ∨ e'.pc = "if.else495") ∧
       lookupName e'.env "%ee.1" = some (.int 64 (BitVec.ofNat 64 q)) ∧
       lane ≤ q ∧ q ≤ cond ∧ cond ≤ K.n ∧ lane < cond ∧
@@ -617,6 +666,7 @@ theorem stage2NoEventWalkValueAt {calls : Calls} {K : Stage2NoEventWalkCarry}
       ((∀ j, lane ≤ j → j < q → stage2SkipWs (BitVec.ofNat 8 (K.bs.getD j 0).toNat) = false) ∨
         (q = cond ∧ stage2SkipWs (BitVec.ofNat 8 (K.bs.getD (cond - 1) 0).toNat) = false)) ∧
       Stage2NoEventWalkInv K mem e' ∧
+      Stage2NoEventWalkValueArmsRegs K k lane sp fr bv q cond e' ∧
       e'.mem = writeBytes e.mem (K.c + 32)
         (natToBytes (BitVec.ofNat 64 (k + 1)).toNat 8) ∧
       (∀ n, runFuel calls (j + n) stage2NoEventBody e =
@@ -736,6 +786,60 @@ theorem stage2NoEventWalkValueAt {calls : Calls} {K : Stage2NoEventWalkCarry}
         stage2NoEventWalkNext, condEndCells, condTrueCells, valueScalarCells]
       repeat rw [lookupName_cons_ne _ _ (by decide)]
       exact hk219
+    have harrL : lookupName (valueLandState e k lane sp fr bv K bs4 q).env
+        "%arrayidx6.le1046" = some (.ptr (K.b + lane)) := by
+      simp only [valueLandState, valueLandEnv, valueCondTrueEnv, valueScalarEnv,
+        stage2NoEventWalkNext, condEndCells, condTrueCells, valueScalarCells]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+      rw [lookupName_cons_self, value_signExtend_lane hlane32]
+    have htkL : lookupName (valueLandState e k lane sp fr bv K bs4 q).env
+        "%tokens.0.lcssa1073" = some (.int 64 (BitVec.ofNat 64 K.tok)) := by
+      simp only [valueLandState, valueLandEnv, valueCondTrueEnv, valueScalarEnv,
+        stage2NoEventWalkNext, condEndCells, condTrueCells, valueScalarCells]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+      rw [lookupName_cons_self]
+    have htmL : lookupName (valueLandState e k lane sp fr bv K bs4 q).env
+        "%terms.0.lcssa1079" = some (.int 64 (BitVec.ofNat 64 K.terms)) := by
+      simp only [valueLandState, valueLandEnv, valueCondTrueEnv, valueScalarEnv,
+        stage2NoEventWalkNext, condEndCells, condTrueCells, valueScalarCells]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+      rw [lookupName_cons_self]
+    have hspL : lookupName (valueLandState e k lane sp fr bv K bs4 q).env
+        "%sp.0.lcssa1091.wide" = some (.int 32 (BitVec.ofNat 32 sp)) := by
+      simp only [valueLandState, valueLandEnv, valueCondTrueEnv, valueScalarEnv,
+        stage2NoEventWalkNext, condEndCells, condTrueCells, valueScalarCells]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+      rw [lookupName_cons_self]
+    have hfrL : lookupName (valueLandState e k lane sp fr bv K bs4 q).env
+        "%frame.0.lcssa1097" = some (.int 8 (BitVec.ofNat 8 fr)) := by
+      simp only [valueLandState, valueLandEnv, valueCondTrueEnv, valueScalarEnv,
+        stage2NoEventWalkNext, condEndCells, condTrueCells, valueScalarCells]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+      rw [lookupName_cons_self]
+    have haleL : lookupName (valueLandState e k lane sp fr bv K bs4 q).env
+        "%alen.0.ph1405" = some (.int 64 (BitVec.ofNat 64 K.arena.length)) := by
+      simp only [valueLandState, valueLandEnv, valueCondTrueEnv, valueScalarEnv,
+        stage2NoEventWalkNext, condEndCells, condTrueCells, valueScalarCells]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+      exact hale
+    have harwL : lookupName (valueLandState e k lane sp fr bv K bs4 q).env
+        "%arena.0.ph1406" = some (.int 64 (BitVec.ofNat 64 K.arenaWord)) := by
+      simp only [valueLandState, valueLandEnv, valueCondTrueEnv, valueScalarEnv,
+        stage2NoEventWalkNext, condEndCells, condTrueCells, valueScalarCells]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+      exact harw
+    have hdL : lookupName (valueLandState e k lane sp fr bv K bs4 q).env "%d"
+        = some (.ptr K.d) := by
+      simp only [valueLandState, valueLandEnv, valueCondTrueEnv, valueScalarEnv,
+        stage2NoEventWalkNext, condEndCells, condTrueCells, valueScalarCells]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+      exact hd
+    have heiL : lookupName (valueLandState e k lane sp fr bv K bs4 q).env "%ei"
+        = some (.ptr (K.next0 + 24)) := by
+      simp only [valueLandState, valueLandEnv, valueCondTrueEnv, valueScalarEnv,
+        stage2NoEventWalkNext, condEndCells, condTrueCells, valueScalarCells]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+      exact hei
     have hqpos : 1 ≤ q := by omega
     have hread0 : readByte (valueLandState e k lane sp fr bv K bs4 q).mem
         ((K.b - 1) + q) = some (K.bs.getD (q - 1) 0) := by
@@ -751,7 +855,8 @@ theorem stage2NoEventWalkValueAt {calls : Calls} {K : Stage2NoEventWalkCarry}
       exact hinv.docByte (by omega)
     have hpcL : (valueLandState e k lane sp fr bv K bs4 q).pc = "land.lhs.true" := rfl
     have hcondlt : q < 2 ^ 63 := by omega
-    obtain ⟨e', jS, q', hjS, hpc', hee, hq1, hq2, hws, hprefix, hinv', hmem', hrun'⟩ :=
+    obtain ⟨e', jS, q', hjS, hpc', hee, hq1, hq2, hws, hprefix, hcount, hinv', hmem',
+      hrun', hframe'⟩ :=
       stage2NoEventWalkScalarSkip (calls := calls) (K := K) (mem := mem)
         (s := valueLandState e k lane sp fr bv K bs4 q)
         (g := K.b - 1) (b := K.b) (idx := lane) (cond := q)
@@ -767,9 +872,26 @@ theorem stage2NoEventWalkValueAt {calls : Calls} {K : Stage2NoEventWalkCarry}
         stage2NoEventWalkLink_runFuel L1, stage2NoEventWalkLink_runFuel L2,
         stage2NoEventWalkLink_runFuel L3]
       rfl
-    refine ⟨e', 3 + jS, q', q, ?_, hpc', hee, ?_, hq2, ?_, hord, ?_, hws, hprefix,
-      hinv', ?_, ?_⟩
-    · omega
+    have hregs : Stage2NoEventWalkValueArmsRegs K k lane sp fr bv q' q e' :=
+      { ee := hee
+        idx := (hframe' "%idxprom.lcssa" (by decide)).trans hidxL
+        arr := (hframe' "%arrayidx6.le1046" (by decide)).trans harrL
+        b := (hframe' "%b" (by decide)).trans hbL
+        cond := (hframe' "%cond" (by decide)).trans hcL
+        tokens := (hframe' "%tokens.0.lcssa1073" (by decide)).trans htkL
+        terms := (hframe' "%terms.0.lcssa1079" (by decide)).trans htmL
+        frame := (hframe' "%frame.0.lcssa1097" (by decide)).trans hfrL
+        sp := (hframe' "%sp.0.lcssa1091.wide" (by decide)).trans hspL
+        inc := (hframe' "%inc.lcssa" (by decide)).trans hincL
+        lcssa := (hframe' "%.lcssa" (by decide)).trans hlcL
+        alen := (hframe' "%alen.0.ph1405" (by decide)).trans haleL
+        arena := (hframe' "%arena.0.ph1406" (by decide)).trans harwL
+        d := (hframe' "%d" (by decide)).trans hdL
+        ei := (hframe' "%ei" (by decide)).trans heiL }
+    refine ⟨e', 3 + jS, q', q, ?_, ?_, hpc', hee, ?_, hq2, ?_, hord, ?_, hws, hprefix,
+      hinv', hregs, ?_, ?_⟩
+    · rcases hcount with ⟨hj, -⟩ | ⟨hj, hqeq⟩ <;> omega
+    · rcases hcount with ⟨hj, -⟩ | ⟨hj, -⟩ <;> omega
     · omega
     · omega
     · exact Or.inr hentq
@@ -845,6 +967,60 @@ theorem stage2NoEventWalkValueAt {calls : Calls} {K : Stage2NoEventWalkCarry}
         valueScalarCells]
       repeat rw [lookupName_cons_ne _ _ (by decide)]
       exact hk219
+    have harrZ : lookupName (valueLandStateZ e k lane sp fr bv K).env
+        "%arrayidx6.le1046" = some (.ptr (K.b + lane)) := by
+      simp only [valueLandStateZ, valueScalarEnv, stage2NoEventWalkNext, condEndCells,
+        valueScalarCells]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+      rw [lookupName_cons_self, value_signExtend_lane hlane32]
+    have htkZ : lookupName (valueLandStateZ e k lane sp fr bv K).env
+        "%tokens.0.lcssa1073" = some (.int 64 (BitVec.ofNat 64 K.tok)) := by
+      simp only [valueLandStateZ, valueScalarEnv, stage2NoEventWalkNext, condEndCells,
+        valueScalarCells]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+      rw [lookupName_cons_self]
+    have htmZ : lookupName (valueLandStateZ e k lane sp fr bv K).env
+        "%terms.0.lcssa1079" = some (.int 64 (BitVec.ofNat 64 K.terms)) := by
+      simp only [valueLandStateZ, valueScalarEnv, stage2NoEventWalkNext, condEndCells,
+        valueScalarCells]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+      rw [lookupName_cons_self]
+    have hspZ : lookupName (valueLandStateZ e k lane sp fr bv K).env
+        "%sp.0.lcssa1091.wide" = some (.int 32 (BitVec.ofNat 32 sp)) := by
+      simp only [valueLandStateZ, valueScalarEnv, stage2NoEventWalkNext, condEndCells,
+        valueScalarCells]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+      rw [lookupName_cons_self]
+    have hfrZ : lookupName (valueLandStateZ e k lane sp fr bv K).env
+        "%frame.0.lcssa1097" = some (.int 8 (BitVec.ofNat 8 fr)) := by
+      simp only [valueLandStateZ, valueScalarEnv, stage2NoEventWalkNext, condEndCells,
+        valueScalarCells]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+      rw [lookupName_cons_self]
+    have haleZ : lookupName (valueLandStateZ e k lane sp fr bv K).env
+        "%alen.0.ph1405" = some (.int 64 (BitVec.ofNat 64 K.arena.length)) := by
+      simp only [valueLandStateZ, valueScalarEnv, stage2NoEventWalkNext, condEndCells,
+        valueScalarCells]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+      exact hale
+    have harwZ : lookupName (valueLandStateZ e k lane sp fr bv K).env
+        "%arena.0.ph1406" = some (.int 64 (BitVec.ofNat 64 K.arenaWord)) := by
+      simp only [valueLandStateZ, valueScalarEnv, stage2NoEventWalkNext, condEndCells,
+        valueScalarCells]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+      exact harw
+    have hdZ : lookupName (valueLandStateZ e k lane sp fr bv K).env "%d"
+        = some (.ptr K.d) := by
+      simp only [valueLandStateZ, valueScalarEnv, stage2NoEventWalkNext, condEndCells,
+        valueScalarCells]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+      exact hd
+    have heiZ : lookupName (valueLandStateZ e k lane sp fr bv K).env "%ei"
+        = some (.ptr (K.next0 + 24)) := by
+      simp only [valueLandStateZ, valueScalarEnv, stage2NoEventWalkNext, condEndCells,
+        valueScalarCells]
+      repeat rw [lookupName_cons_ne _ _ (by decide)]
+      exact hei
     have hread0 : readByte (valueLandStateZ e k lane sp fr bv K).mem ((K.b - 1) + K.n)
         = some (K.bs.getD (K.n - 1) 0) := by
       have haddr : (K.b - 1) + K.n = K.b + (K.n - 1) := by omega
@@ -858,7 +1034,8 @@ theorem stage2NoEventWalkValueAt {calls : Calls} {K : Stage2NoEventWalkCarry}
       rw [hmem]
       exact hinv.docByte hj
     have hpcZ : (valueLandStateZ e k lane sp fr bv K).pc = "land.lhs.true" := rfl
-    obtain ⟨e', jS, q', hjS, hpc', hee, hq1, hq2, hws, hprefix, hinv', hmem', hrun'⟩ :=
+    obtain ⟨e', jS, q', hjS, hpc', hee, hq1, hq2, hws, hprefix, hcount, hinv', hmem',
+      hrun', hframe'⟩ :=
       stage2NoEventWalkScalarSkip (calls := calls) (K := K) (mem := mem)
         (s := valueLandStateZ e k lane sp fr bv K)
         (g := K.b - 1) (b := K.b) (idx := lane) (cond := K.n)
@@ -873,9 +1050,26 @@ theorem stage2NoEventWalkValueAt {calls : Calls} {K : Stage2NoEventWalkCarry}
       rw [show 2 + n = 1 + (1 + n) from by omega,
         stage2NoEventWalkLink_runFuel L1, stage2NoEventWalkLink_runFuel L2]
       rfl
-    refine ⟨e', 2 + jS, q', K.n, ?_, hpc', hee, ?_, hq2, le_rfl, hlaneN, ?_, hws,
-      hprefix, hinv', ?_, ?_⟩
-    · omega
+    have hregs : Stage2NoEventWalkValueArmsRegs K k lane sp fr bv q' K.n e' :=
+      { ee := hee
+        idx := (hframe' "%idxprom.lcssa" (by decide)).trans hidxZ
+        arr := (hframe' "%arrayidx6.le1046" (by decide)).trans harrZ
+        b := (hframe' "%b" (by decide)).trans hbZ
+        cond := (hframe' "%cond" (by decide)).trans hcZ
+        tokens := (hframe' "%tokens.0.lcssa1073" (by decide)).trans htkZ
+        terms := (hframe' "%terms.0.lcssa1079" (by decide)).trans htmZ
+        frame := (hframe' "%frame.0.lcssa1097" (by decide)).trans hfrZ
+        sp := (hframe' "%sp.0.lcssa1091.wide" (by decide)).trans hspZ
+        inc := (hframe' "%inc.lcssa" (by decide)).trans hincZ
+        lcssa := (hframe' "%.lcssa" (by decide)).trans hlcZ
+        alen := (hframe' "%alen.0.ph1405" (by decide)).trans haleZ
+        arena := (hframe' "%arena.0.ph1406" (by decide)).trans harwZ
+        d := (hframe' "%d" (by decide)).trans hdZ
+        ei := (hframe' "%ei" (by decide)).trans heiZ }
+    refine ⟨e', 2 + jS, q', K.n, ?_, ?_, hpc', hee, ?_, hq2, le_rfl, hlaneN, ?_, hws,
+      hprefix, hinv', hregs, ?_, ?_⟩
+    · rcases hcount with ⟨hj, -⟩ | ⟨hj, hqeq⟩ <;> omega
+    · rcases hcount with ⟨hj, -⟩ | ⟨hj, -⟩ <;> omega
     · omega
     · exact Or.inl rfl
     · exact hmem'
@@ -1054,10 +1248,11 @@ theorem stage2NoEventWalkValueLeaf {calls : Calls} {K : Stage2NoEventWalkCarry}
     (hy34 : y ≠ BitVec.ofNat 8 34)
     (hlt91 : y.toInt < (BitVec.ofNat 8 91).toInt)
     :
-    ∃ (e' : State) (j q cond lane : Nat) (byte : UInt8),
+    ∃ (e' : State) (j q cond lane : Nat) (byte : UInt8) (sp fr : Nat),
       K.ent[k]? = some lane ∧ lane < 2 ^ 32 ∧ K.bs[lane]? = some byte ∧
       readBytes s.mem (K.b + lane) 1 = some [byte] ∧
       j ≤ 18 + 5 * (cond - lane) ∧
+      j ≤ 18 + 5 * (q - lane) ∧
       (e'.pc = "if.then471" ∨ e'.pc = "if.else495") ∧
       lookupName e'.env "%ee.1" = some (.int 64 (BitVec.ofNat 64 q)) ∧
       lane ≤ q ∧ q ≤ cond ∧ cond ≤ K.n ∧ lane < cond ∧
@@ -1066,6 +1261,8 @@ theorem stage2NoEventWalkValueLeaf {calls : Calls} {K : Stage2NoEventWalkCarry}
       ((∀ j, lane ≤ j → j < q → stage2SkipWs (BitVec.ofNat 8 (K.bs.getD j 0).toNat) = false) ∨
         (q = cond ∧ stage2SkipWs (BitVec.ofNat 8 (K.bs.getD (cond - 1) 0).toNat) = false)) ∧
       Stage2NoEventWalkInv K mem e' ∧
+      Stage2NoEventWalkValueArmsRegs K k lane sp fr (BitVec.ofNat 8 byte.toNat)
+        q cond e' ∧
       e'.mem = writeBytes s.mem (K.c + 32)
         (natToBytes (BitVec.ofNat 64 (k + 1)).toNat 8) ∧
       (∀ n, runFuel calls (j + n) stage2NoEventBody s =
@@ -1091,8 +1288,8 @@ theorem stage2NoEventWalkValueLeaf {calls : Calls} {K : Stage2NoEventWalkCarry}
         (stage2NoEventWalkNext (("%Pivot6", .int 1 (1 : BitVec 1)) :: s.env) s
           "LeafBlock") "scalar")
       rfl (Or.inl rfl)
-    obtain ⟨e', jR, q, cond, hprice, hpc', hee, hq1, hq2, hcondN, hlanelt, hdisj, hws,
-      hprefix, hinv', hmem', hrun'⟩ :=
+    obtain ⟨e', jR, q, cond, hprice, hqprice, hpc', hee, hq1, hq2, hcondN, hlanelt, hdisj, hws,
+      hprefix, hinv', hregs, hmem', hrun'⟩ :=
       stage2NoEventWalkValueAt (calls := calls) (K := K) (mem := mem)
         (e := stage2NoEventWalkNext
           (("%SwitchLeaf", .int 1 (0 : BitVec 1)) ::
@@ -1101,7 +1298,13 @@ theorem stage2NoEventWalkValueLeaf {calls : Calls} {K : Stage2NoEventWalkCarry}
             "LeafBlock") "scalar")
         (pre := "LeafBlock") L2.inv' rfl rfl (Or.inl rfl) hhead.bPos
         R.ent R.laneLt R.inc R.idx R.bv R.frame R.sp R.terms R.tokens R.b R.nep
-        R.n R.ep R.gep R.k219 hhead.klt
+        R.n R.ep R.gep R.k219
+        hhead.alenPhi hhead.arenaPhi
+        (hhead.baseLookups "%d" (.ptr K.d) (by
+          simp [stage2NoEventWalkBaseValues, stage2NoEventWalkParamEntries]))
+        (hhead.baseLookups "%ei" (.ptr (K.next0 + 24)) (by
+          simp [stage2NoEventWalkBaseValues, stage2NoEventWalkBaseCellValues]))
+        hhead.klt
     have hrun2 : ∀ n, runFuel calls (2 + n) stage2NoEventBody s =
         runFuel calls n stage2NoEventBody
           (stage2NoEventWalkNext
@@ -1109,8 +1312,9 @@ theorem stage2NoEventWalkValueLeaf {calls : Calls} {K : Stage2NoEventWalkCarry}
               ("%Pivot6", .int 1 (1 : BitVec 1)) :: s.env)
             (stage2NoEventWalkNext (("%Pivot6", .int 1 (1 : BitVec 1)) :: s.env) s
               "LeafBlock") "scalar") := valueChainRunTwo L1 L2
-    refine ⟨e', 2 + jR, q, cond, lane, byte, R.ent, R.laneLt, R.bs, R.read, ?_,
-      hpc', hee, hq1, hq2, hcondN, hlanelt, hdisj, hws, hprefix, hinv', ?_, ?_⟩
+    refine ⟨e', 2 + jR, q, cond, lane, byte, sp, fr, R.ent, R.laneLt, R.bs, R.read, ?_, ?_,
+      hpc', hee, hq1, hq2, hcondN, hlanelt, hdisj, hws, hprefix, hinv', hregs, ?_, ?_⟩
+    · omega
     · omega
     · simpa only [stage2NoEventWalkNext_mem] using hmem'
     · intro n
@@ -1126,10 +1330,11 @@ theorem stage2NoEventWalkValueLeaf1 {calls : Calls} {K : Stage2NoEventWalkCarry}
     (hge91 : (BitVec.ofNat 8 91).toInt ≤ y.toInt)
     (hlt123 : y.toInt < (BitVec.ofNat 8 123).toInt)
     :
-    ∃ (e' : State) (j q cond lane : Nat) (byte : UInt8),
+    ∃ (e' : State) (j q cond lane : Nat) (byte : UInt8) (sp fr : Nat),
       K.ent[k]? = some lane ∧ lane < 2 ^ 32 ∧ K.bs[lane]? = some byte ∧
       readBytes s.mem (K.b + lane) 1 = some [byte] ∧
       j ≤ 18 + 5 * (cond - lane) ∧
+      j ≤ 18 + 5 * (q - lane) ∧
       (e'.pc = "if.then471" ∨ e'.pc = "if.else495") ∧
       lookupName e'.env "%ee.1" = some (.int 64 (BitVec.ofNat 64 q)) ∧
       lane ≤ q ∧ q ≤ cond ∧ cond ≤ K.n ∧ lane < cond ∧
@@ -1138,6 +1343,8 @@ theorem stage2NoEventWalkValueLeaf1 {calls : Calls} {K : Stage2NoEventWalkCarry}
       ((∀ j, lane ≤ j → j < q → stage2SkipWs (BitVec.ofNat 8 (K.bs.getD j 0).toNat) = false) ∨
         (q = cond ∧ stage2SkipWs (BitVec.ofNat 8 (K.bs.getD (cond - 1) 0).toNat) = false)) ∧
       Stage2NoEventWalkInv K mem e' ∧
+      Stage2NoEventWalkValueArmsRegs K k lane sp fr (BitVec.ofNat 8 byte.toNat)
+        q cond e' ∧
       e'.mem = writeBytes s.mem (K.c + 32)
         (natToBytes (BitVec.ofNat 64 (k + 1)).toNat 8) ∧
       (∀ n, runFuel calls (j + n) stage2NoEventBody s =
@@ -1180,8 +1387,8 @@ theorem stage2NoEventWalkValueLeaf1 {calls : Calls} {K : Stage2NoEventWalkCarry}
             (stage2NoEventWalkNext (("%Pivot6", .int 1 (0 : BitVec 1)) :: s.env) s
               "NodeBlock") "LeafBlock1") "scalar")
         rfl (Or.inr (Or.inl rfl))
-      obtain ⟨e', jR, q, cond, hprice, hpc', hee, hq1, hq2, hcondN, hlanelt, hdisj, hws,
-        hprefix, hinv', hmem', hrun'⟩ :=
+      obtain ⟨e', jR, q, cond, hprice, hqprice, hpc', hee, hq1, hq2, hcondN, hlanelt, hdisj, hws,
+        hprefix, hinv', hregs, hmem', hrun'⟩ :=
         stage2NoEventWalkValueAt (calls := calls) (K := K) (mem := mem)
           (e := stage2NoEventWalkNext
             (("%SwitchLeaf2", .int 1 (0 : BitVec 1)) ::
@@ -1194,7 +1401,13 @@ theorem stage2NoEventWalkValueLeaf1 {calls : Calls} {K : Stage2NoEventWalkCarry}
                 "NodeBlock") "LeafBlock1") "scalar")
           (pre := "LeafBlock1") L3.inv' rfl rfl (Or.inr (Or.inl rfl)) hhead.bPos
           R.ent R.laneLt R.inc R.idx R.bv R.frame R.sp R.terms R.tokens R.b R.nep
-          R.n R.ep R.gep R.k219 hhead.klt
+          R.n R.ep R.gep R.k219
+          hhead.alenPhi hhead.arenaPhi
+          (hhead.baseLookups "%d" (.ptr K.d) (by
+            simp [stage2NoEventWalkBaseValues, stage2NoEventWalkParamEntries]))
+          (hhead.baseLookups "%ei" (.ptr (K.next0 + 24)) (by
+            simp [stage2NoEventWalkBaseValues, stage2NoEventWalkBaseCellValues]))
+          hhead.klt
       have hrun3 : ∀ n, runFuel calls (3 + n) stage2NoEventBody s =
           runFuel calls n stage2NoEventBody
             (stage2NoEventWalkNext
@@ -1206,8 +1419,9 @@ theorem stage2NoEventWalkValueLeaf1 {calls : Calls} {K : Stage2NoEventWalkCarry}
                   ("%Pivot6", .int 1 (0 : BitVec 1)) :: s.env)
                 (stage2NoEventWalkNext (("%Pivot6", .int 1 (0 : BitVec 1)) :: s.env) s
                   "NodeBlock") "LeafBlock1") "scalar") := valueChainRunThree L1 L2 L3
-      refine ⟨e', 3 + jR, q, cond, lane, byte, R.ent, R.laneLt, R.bs, R.read, ?_,
-        hpc', hee, hq1, hq2, hcondN, hlanelt, hdisj, hws, hprefix, hinv', ?_, ?_⟩
+      refine ⟨e', 3 + jR, q, cond, lane, byte, sp, fr, R.ent, R.laneLt, R.bs, R.read, ?_, ?_,
+        hpc', hee, hq1, hq2, hcondN, hlanelt, hdisj, hws, hprefix, hinv', hregs, ?_, ?_⟩
+      · omega
       · omega
       · simpa only [stage2NoEventWalkNext_mem] using hmem'
       · intro n
@@ -1223,10 +1437,11 @@ theorem stage2NoEventWalkValueLeaf3 {calls : Calls} {K : Stage2NoEventWalkCarry}
     (hge91 : (BitVec.ofNat 8 91).toInt ≤ y.toInt)
     (hge123 : (BitVec.ofNat 8 123).toInt ≤ y.toInt)
     :
-    ∃ (e' : State) (j q cond lane : Nat) (byte : UInt8),
+    ∃ (e' : State) (j q cond lane : Nat) (byte : UInt8) (sp fr : Nat),
       K.ent[k]? = some lane ∧ lane < 2 ^ 32 ∧ K.bs[lane]? = some byte ∧
       readBytes s.mem (K.b + lane) 1 = some [byte] ∧
       j ≤ 18 + 5 * (cond - lane) ∧
+      j ≤ 18 + 5 * (q - lane) ∧
       (e'.pc = "if.then471" ∨ e'.pc = "if.else495") ∧
       lookupName e'.env "%ee.1" = some (.int 64 (BitVec.ofNat 64 q)) ∧
       lane ≤ q ∧ q ≤ cond ∧ cond ≤ K.n ∧ lane < cond ∧
@@ -1235,6 +1450,8 @@ theorem stage2NoEventWalkValueLeaf3 {calls : Calls} {K : Stage2NoEventWalkCarry}
       ((∀ j, lane ≤ j → j < q → stage2SkipWs (BitVec.ofNat 8 (K.bs.getD j 0).toNat) = false) ∨
         (q = cond ∧ stage2SkipWs (BitVec.ofNat 8 (K.bs.getD (cond - 1) 0).toNat) = false)) ∧
       Stage2NoEventWalkInv K mem e' ∧
+      Stage2NoEventWalkValueArmsRegs K k lane sp fr (BitVec.ofNat 8 byte.toNat)
+        q cond e' ∧
       e'.mem = writeBytes s.mem (K.c + 32)
         (natToBytes (BitVec.ofNat 64 (k + 1)).toNat 8) ∧
       (∀ n, runFuel calls (j + n) stage2NoEventBody s =
@@ -1277,8 +1494,8 @@ theorem stage2NoEventWalkValueLeaf3 {calls : Calls} {K : Stage2NoEventWalkCarry}
             (stage2NoEventWalkNext (("%Pivot6", .int 1 (0 : BitVec 1)) :: s.env) s
               "NodeBlock") "LeafBlock3") "scalar")
         rfl (Or.inr (Or.inr rfl))
-      obtain ⟨e', jR, q, cond, hprice, hpc', hee, hq1, hq2, hcondN, hlanelt, hdisj, hws,
-        hprefix, hinv', hmem', hrun'⟩ :=
+      obtain ⟨e', jR, q, cond, hprice, hqprice, hpc', hee, hq1, hq2, hcondN, hlanelt, hdisj, hws,
+        hprefix, hinv', hregs, hmem', hrun'⟩ :=
         stage2NoEventWalkValueAt (calls := calls) (K := K) (mem := mem)
           (e := stage2NoEventWalkNext
             (("%SwitchLeaf4", .int 1 (0 : BitVec 1)) ::
@@ -1291,7 +1508,13 @@ theorem stage2NoEventWalkValueLeaf3 {calls : Calls} {K : Stage2NoEventWalkCarry}
                 "NodeBlock") "LeafBlock3") "scalar")
           (pre := "LeafBlock3") L3.inv' rfl rfl (Or.inr (Or.inr rfl)) hhead.bPos
           R.ent R.laneLt R.inc R.idx R.bv R.frame R.sp R.terms R.tokens R.b R.nep
-          R.n R.ep R.gep R.k219 hhead.klt
+          R.n R.ep R.gep R.k219
+          hhead.alenPhi hhead.arenaPhi
+          (hhead.baseLookups "%d" (.ptr K.d) (by
+            simp [stage2NoEventWalkBaseValues, stage2NoEventWalkParamEntries]))
+          (hhead.baseLookups "%ei" (.ptr (K.next0 + 24)) (by
+            simp [stage2NoEventWalkBaseValues, stage2NoEventWalkBaseCellValues]))
+          hhead.klt
       have hrun3 : ∀ n, runFuel calls (3 + n) stage2NoEventBody s =
           runFuel calls n stage2NoEventBody
             (stage2NoEventWalkNext
@@ -1303,8 +1526,9 @@ theorem stage2NoEventWalkValueLeaf3 {calls : Calls} {K : Stage2NoEventWalkCarry}
                   ("%Pivot6", .int 1 (0 : BitVec 1)) :: s.env)
                 (stage2NoEventWalkNext (("%Pivot6", .int 1 (0 : BitVec 1)) :: s.env) s
                   "NodeBlock") "LeafBlock3") "scalar") := valueChainRunThree L1 L2 L3
-      refine ⟨e', 3 + jR, q, cond, lane, byte, R.ent, R.laneLt, R.bs, R.read, ?_,
-        hpc', hee, hq1, hq2, hcondN, hlanelt, hdisj, hws, hprefix, hinv', ?_, ?_⟩
+      refine ⟨e', 3 + jR, q, cond, lane, byte, sp, fr, R.ent, R.laneLt, R.bs, R.read, ?_, ?_,
+        hpc', hee, hq1, hq2, hcondN, hlanelt, hdisj, hws, hprefix, hinv', hregs, ?_, ?_⟩
+      · omega
       · omega
       · simpa only [stage2NoEventWalkNext_mem] using hmem'
       · intro n
@@ -1322,10 +1546,11 @@ theorem stage2NoEventWalkValue {calls : Calls} {K : Stage2NoEventWalkCarry}
     (h3 : lookupName s.env "%3" = some (.int 8 y))
     (hy34 : y ≠ BitVec.ofNat 8 34) (hy91 : y ≠ BitVec.ofNat 8 91)
     (hy123 : y ≠ BitVec.ofNat 8 123) :
-    ∃ (e' : State) (j q cond lane : Nat) (byte : UInt8),
+    ∃ (e' : State) (j q cond lane : Nat) (byte : UInt8) (sp fr : Nat),
       K.ent[k]? = some lane ∧ lane < 2 ^ 32 ∧ K.bs[lane]? = some byte ∧
       readBytes s.mem (K.b + lane) 1 = some [byte] ∧
       j ≤ 18 + 5 * (cond - lane) ∧
+      j ≤ 18 + 5 * (q - lane) ∧
       (e'.pc = "if.then471" ∨ e'.pc = "if.else495") ∧
       lookupName e'.env "%ee.1" = some (.int 64 (BitVec.ofNat 64 q)) ∧
       lane ≤ q ∧ q ≤ cond ∧ cond ≤ K.n ∧ lane < cond ∧
@@ -1334,6 +1559,8 @@ theorem stage2NoEventWalkValue {calls : Calls} {K : Stage2NoEventWalkCarry}
       ((∀ j, lane ≤ j → j < q → stage2SkipWs (BitVec.ofNat 8 (K.bs.getD j 0).toNat) = false) ∨
         (q = cond ∧ stage2SkipWs (BitVec.ofNat 8 (K.bs.getD (cond - 1) 0).toNat) = false)) ∧
       Stage2NoEventWalkInv K mem e' ∧
+      Stage2NoEventWalkValueArmsRegs K k lane sp fr (BitVec.ofNat 8 byte.toNat)
+        q cond e' ∧
       e'.mem = writeBytes s.mem (K.c + 32)
         (natToBytes (BitVec.ofNat 64 (k + 1)).toNat 8) ∧
       (∀ n, runFuel calls (j + n) stage2NoEventBody s =
