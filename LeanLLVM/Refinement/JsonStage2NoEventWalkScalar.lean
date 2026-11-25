@@ -69,8 +69,8 @@ every block before the store keeps the state's memory.
 four-byte characterization, the fifteen block pins, the fifteen block
 denotations, the twenty-eight one-step links with their fuel compositions, the
 `%k219` store's region fact, the loop's invariant and exit word with the
-invariant's transport across cells, the merge's invariant with its two
-constructors, the head's two block paths (`stage2SkipAdvance`/`stage2SkipStop`),
+invariant's transport across cells and its budget's monotonicity, the merge's
+invariant with its two constructors, the head's two block paths (`stage2SkipAdvance`/`stage2SkipStop`),
 the increment block's two tails, the `LoopFuel.BoundLoop` instance
 `stage2SkipLoop` and its run `stage2SkipLoop_run`, the merge's one-step run
 `stage2SkipJoinRun`, the entry test `stage2SkipFirstTest`, and the composed
@@ -1481,6 +1481,20 @@ theorem stage2SkipInvAt_cells {pc pc' : String} {K : Stage2NoEventWalkCarry} {me
       (hnames "%k219" (by simp only [stage2SkipCarriedNames]; decide))).trans hk)
   · intro j hj; rw [hmem]; exact hbytes j hj
 
+/-- **The invariant at a wider budget.**  `stage2SkipInvAt` reads its budget
+argument only in `cond ≤ c + r`, so any budget that still covers the distance
+from the cursor to `%cond` carries the same invariant. -/
+theorem stage2SkipInvAt_budget {pc : String} {K : Stage2NoEventWalkCarry} {mem : Mem}
+    {b idx cond c : Nat} {σ : Nat → UInt8} {inc : BitVec 64} {lc : BitVec 8}
+    {k219 r r' : Nat} {s : State}
+    (h : stage2SkipInvAt pc K mem b idx cond σ inc lc k219 r s c)
+    (hbudget : cond ≤ c + r') :
+    stage2SkipInvAt pc K mem b idx cond σ inc lc k219 r' s c := by
+  obtain ⟨hpc, hInv, hb, hee, h58, hcond, hincv, hlc, hk, hlt, hidxle, hclt, -,
+    hpre, hbytes⟩ := h
+  exact ⟨hpc, hInv, hb, hee, h58, hcond, hincv, hlc, hk, hlt, hidxle, hclt, hbudget,
+    hpre, hbytes⟩
+
 /-- The merge's invariant at a cursor position, from a refusing leaf. -/
 theorem stage2SkipJoin_leaf {e : State} {b idx cond q : Nat} {σ : Nat → UInt8}
     {inc : BitVec 64} {lc : BitVec 8} {k219 : Nat}
@@ -2107,7 +2121,8 @@ theorem stage2SkipJoinRun {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Me
 
 /-- **`land.lhs.true` to the preheader or the merge.**  The probe's byte decides:
 a class member enters the loop at `land.rhs.preheader`; a non-member goes
-straight to the merge, whose `%ee.1` selection is `%cond`. -/
+straight to the merge, whose `%ee.1` selection is `%cond`, and the probe's byte
+is carried as the non-member it is. -/
 theorem stage2SkipFirstTest {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Mem}
     {s : State} {g b idx cond : Nat} {σ : Nat → UInt8} {u0 : UInt8} {inc : BitVec 64}
     {lc : BitVec 8} {k219 : Nat}
@@ -2125,7 +2140,8 @@ theorem stage2SkipFirstTest {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : 
       Stage2NoEventWalkInv K mem e ∧ stage2SkipPre b idx cond σ inc lc k219 e ∧
       (∀ n, runFuel calls (j + n) stage2NoEventBody s =
         runFuel calls n stage2NoEventBody e))
-    ∨ (∃ (e : State) (j : Nat), j ≤ 4 ∧ e.mem = s.mem ∧
+    ∨ (∃ (e : State) (j : Nat), j ≤ 4 ∧
+      stage2SkipWs (BitVec.ofNat 8 u0.toNat) = false ∧ e.mem = s.mem ∧
       Stage2NoEventWalkInv K mem e ∧ e.pc = "if.end457" ∧
       phiIncoming (e.pre.getD "") stage2SkipIfEnd457EeIncoming = some (.reg "%cond") ∧
       lookupName e.env "%cond" = some (.int 64 (BitVec.ofNat 64 cond)) ∧
@@ -2291,7 +2307,7 @@ theorem stage2SkipFirstTest {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : 
       have L3 : Stage2NoEventWalkLink calls K mem S2 K S3 :=
         link_skipLeafBlock43_false L2.inv' (by simp only [S2, stage2NoEventWalkNext])
           h57₂ hy
-      refine Or.inr ⟨S3, 3, by omega,
+      refine Or.inr ⟨S3, 3, by omega, hwsf,
         (by simp only [S3, S2, S1, stage2NoEventWalkNext]), L3.inv',
         (by simp only [S3, stage2NoEventWalkNext]),
         hnot S3 (by simp only [S3, stage2NoEventWalkNext])
@@ -2329,7 +2345,7 @@ theorem stage2SkipFirstTest {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : 
         have L4 : Stage2NoEventWalkLink calls K mem S3 K S4 :=
           link_skipLeafBlock45_false L3.inv' (by simp only [S3, stage2NoEventWalkNext])
             h57₃ hy
-        refine Or.inr ⟨S4, 4, by omega,
+        refine Or.inr ⟨S4, 4, by omega, hwsf,
           (by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]), L4.inv',
           (by simp only [S4, stage2NoEventWalkNext]),
           hnot S4 (by simp only [S4, stage2NoEventWalkNext])
@@ -2366,7 +2382,7 @@ theorem stage2SkipFirstTest {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : 
         have L4 : Stage2NoEventWalkLink calls K mem S3 K S4 :=
           link_skipLeafBlock47_false L3.inv' (by simp only [S3, stage2NoEventWalkNext])
             h57₃ hy
-        refine Or.inr ⟨S4, 4, by omega,
+        refine Or.inr ⟨S4, 4, by omega, hwsf,
           (by simp only [S4, S3, S2, S1, stage2NoEventWalkNext]), L4.inv',
           (by simp only [S4, stage2NoEventWalkNext]),
           hnot S4 (by simp only [S4, stage2NoEventWalkNext])
@@ -2385,7 +2401,19 @@ state `link_condEnd_true` delivers — the segment probes `%invariant.gep1068 +
 merge (a non-member) or seeds the skip loop and runs it to the merge; then
 `if.end457`'s `%ee.1` selection, `%k219` store and number-or-minus guard carry it
 to `if.then471`'s or `if.else495`'s entry, with `Stage2NoEventWalkInv` at the end
-and `%ee.1`'s position between `%idxprom.lcssa` and `%cond`. -/
+and `%ee.1`'s position between `%idxprom.lcssa` and `%cond`.
+
+The bound is relative to the scan's own start: the loop's budget is
+`cond - idx`, so its run is at most `5 * (cond - idx + 1)` (`BoundLoop.run_from`'s
+`(r + 1) * cost`), and the segment's non-loop steps are at most seven — four from
+the first test, two from the preheader links and one from the merge — for
+`12 + 5 * (cond - idx)` in all.
+
+The scan's non-membership prefix `[idx, q)` is the scalar lexeme, and it is
+exported for the arm that runs the loop.  The direct arm reads only the probe's
+byte, so there it carries that byte as the non-member the first test found
+(`q = cond`); an interior position of `[idx, cond)` is not constrained by that
+arm. -/
 theorem stage2NoEventWalkScalarSkip {calls : Calls} {K : Stage2NoEventWalkCarry}
     {mem : Mem} {s : State} {g b idx cond : Nat} {σ : Nat → UInt8} {u0 : UInt8}
     {inc : BitVec 64} {lc : BitVec 8} {k219 : Nat}
@@ -2401,18 +2429,20 @@ theorem stage2NoEventWalkScalarSkip {calls : Calls} {K : Stage2NoEventWalkCarry}
     (hread0 : readByte s.mem (g + cond) = some u0)
     (hbytes : ∀ j, j < cond → readByte s.mem (b + j) = some (σ j))
     (hidxlt : idx < cond) (hcondlt : cond < 2 ^ 63) :
-    ∃ (e : State) (j q : Nat), j ≤ 7 + (cond + 1) * 5 ∧
+    ∃ (e : State) (j q : Nat), j ≤ 12 + 5 * (cond - idx) ∧
       (e.pc = "if.then471" ∨ e.pc = "if.else495") ∧
       lookupName e.env "%ee.1" = some (.int 64 (BitVec.ofNat 64 q)) ∧
       idx ≤ q ∧ q ≤ cond ∧
       (q = cond ∨ stage2SkipWs (BitVec.ofNat 8 (σ q).toNat) = true) ∧
+      ((∀ j, idx ≤ j → j < q → stage2SkipWs (BitVec.ofNat 8 (σ j).toNat) = false) ∨
+        (q = cond ∧ stage2SkipWs (BitVec.ofNat 8 u0.toNat) = false)) ∧
       Stage2NoEventWalkInv K mem e ∧
       e.mem = writeBytes s.mem k219 (natToBytes inc.toNat 8) ∧
       (∀ n, runFuel calls (j + n) stage2NoEventBody s =
         runFuel calls n stage2NoEventBody e) := by
   rcases stage2SkipFirstTest (σ := σ) h hpc hg hc hidx hb hincv hlc hk hread0 hidxlt hcondlt with
     ⟨e₁, j₁, hj₁, hm₁, hinv₁, hpre₁, hrun₁⟩ |
-    ⟨e₁, j₁, hj₁, hm₁, hinv₁, hpc₁, hinc₁, hcond₁, hincv₁, hlc₁, hk₁, hrun₁⟩
+    ⟨e₁, j₁, hj₁, hws₁, hm₁, hinv₁, hpc₁, hinc₁, hcond₁, hincv₁, hlc₁, hk₁, hrun₁⟩
   · -- the loop
     obtain ⟨hpc₀, hidx₀, hb₀, hcond₀, hincv₀, hlc₀, hk₀⟩ := hpre₁
     have hbytes₀ : readByte e₁.mem (b + idx) = some (σ idx) := by
@@ -2457,35 +2487,48 @@ theorem stage2NoEventWalkScalarSkip {calls : Calls} {K : Stage2NoEventWalkCarry}
       · intro j hj hjlt; omega
       · intro j hj
         rw [hm2]; exact hbytes j hj
-    obtain ⟨e₃, j₃, hj₃, hexit₃, hrun₃, hmem₃⟩ :=
-      stage2SkipLoop_run (M := S2.mem) hInv0 rfl
+    let L : BoundLoop calls stage2NoEventBody :=
+      stage2SkipLoop calls K mem b idx cond σ inc lc k219 S2.mem
+    have hInv0' : stage2SkipInvAt "NodeBlock62" K mem b idx cond σ inc lc k219
+        (cond - idx) S2 idx :=
+      stage2SkipInvAt_budget hInv0 (by omega)
+    obtain ⟨e₃, j₃, hj₃, -, hexitW, hrun₃⟩ :=
+      L.run_from (cond - idx) S2 idx ⟨hInv0', rfl⟩
+    obtain ⟨hexit₃, hmem₃⟩ := hexitW
+    have hj₃' : j₃ ≤ 5 * (cond - idx) + 5 := by
+      have h := hj₃
+      simp only [L, stage2SkipLoop] at h
+      omega
     obtain ⟨hpc₃, hinv₃, pre₃, q₃, op₃, hpre₃, hinc₃, hop₃, hidx₃, hq₃, hpre₃',
       hstop₃, hincv₃, hlc₃, hk₃⟩ := hexit₃
     obtain ⟨e₄, hpc₄, hq₄, hinv₄, hmem₄, hrun₄⟩ :=
       stage2SkipJoinRun (b := b) (idx := idx) (cond := cond) (σ := σ)
         hinv₃ hpc₃ (by rw [hpre₃]; exact hinc₃) hop₃ hincv₃ hlc₃ hk₃
         hstore
-    refine ⟨e₄, j₁ + 2 + j₃ + 1, q₃, by omega, hpc₄, hq₄, hidx₃, hq₃, hstop₃, hinv₄,
-      (hmem₄.trans (by rw [hmem₃, hm2])), ?_⟩
-    intro n
-    rw [show j₁ + 2 + j₃ + 1 + n = j₁ + (2 + (j₃ + (1 + n))) from by omega,
-      hrun₁ (2 + (j₃ + (1 + n))), stage2SkipRun2 L1 L2 (j₃ + (1 + n)),
-      hrun₃ (1 + n), hrun₄ n]
+    refine ⟨e₄, j₁ + 2 + j₃ + 1, q₃, ?_, hpc₄, hq₄, hidx₃, hq₃, hstop₃,
+      Or.inl hpre₃', hinv₄, (hmem₄.trans (by rw [hmem₃, hm2])), ?_⟩
+    · omega
+    · intro n
+      rw [show j₁ + 2 + j₃ + 1 + n = j₁ + (2 + (j₃ + (1 + n))) from by omega,
+        hrun₁ (2 + (j₃ + (1 + n))), stage2SkipRun2 L1 L2 (j₃ + (1 + n)),
+        hrun₃ (1 + n), hrun₄ n]
   · -- the merge directly, with `%cond` as the selection
     obtain ⟨e₄, hpc₄, hq₄, hinv₄, hmem₄, hrun₄⟩ :=
       stage2SkipJoinRun (b := b) (idx := idx) (cond := cond) (σ := σ)
         hinv₁ hpc₁ hinc₁
         (evalOperand_reg_of e₁.env e₁ "%cond" (.int 64 (BitVec.ofNat 64 cond)) hcond₁)
         hincv₁ hlc₁ hk₁ hstore
-    refine ⟨e₄, j₁ + 1, cond, by omega, hpc₄, hq₄, by omega, by omega, Or.inl rfl,
-      hinv₄, (hmem₄.trans (by rw [hm₁])), ?_⟩
-    intro n
-    rw [show j₁ + 1 + n = j₁ + (1 + n) from by omega, hrun₁ (1 + n), hrun₄ n]
+    refine ⟨e₄, j₁ + 1, cond, ?_, hpc₄, hq₄, by omega, by omega, Or.inl rfl,
+      Or.inr ⟨rfl, hws₁⟩, hinv₄, (hmem₄.trans (by rw [hm₁])), ?_⟩
+    · omega
+    · intro n
+      rw [show j₁ + 1 + n = j₁ + (1 + n) from by omega, hrun₁ (1 + n), hrun₄ n]
 
 /-! ### Axiom footprints -/
 
 #print axioms stage2SkipExit
 #print axioms stage2SkipInvAt_cells
+#print axioms stage2SkipInvAt_budget
 #print axioms stage2SkipAdvance
 #print axioms stage2SkipStop
 #print axioms stage2SkipWhileBodyExit
