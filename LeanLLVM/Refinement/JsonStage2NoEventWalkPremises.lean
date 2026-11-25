@@ -333,10 +333,15 @@ inductive Stage2NoEventWalkExit (calls : Calls) (mem : Mem) (F : Nat)
       (t : Tape)
       (facts : Stage2NoEventWalkReferenceFacts K.bs K'.arena obs toks t) :
       Stage2NoEventWalkExit calls mem F K k s
-  /-- The refused arm: verdict zero, the route's own evidence, the walk's trace
-  (kept as data, so a consumer reads it rather than re-deriving it from a
-  `Prop`), the supplied relation witnesses, and the boundary at the refusal's
-  memory.  The parser's verdict on the document is the refusal's carried data. -/
+  /-- The refused arm: verdict zero, the route's own evidence, the walk's trace,
+  the supplied relation witnesses, and the boundary at the refusal's memory.
+
+  The trace is carried although it is a `Prop` — its content that the flat
+  fields do not already give is the arena bound (`Stage2NoEventArenaBound`) —
+  and the witnesses are supplied alongside it rather than read from it, because a
+  `Prop` inductive's data cannot be eliminated into this `Type`.  Nothing ties
+  the two witnesses to each other; the parser's verdict on the document is the
+  refusal's carried data. -/
   | refuse (q : Nat) (m : Mem) (sT : State)
       (route : Stage2NoEventWalkRunTo calls s sT)
       (cost : q ≤ stage2NoEventWalkPotential K k + F)

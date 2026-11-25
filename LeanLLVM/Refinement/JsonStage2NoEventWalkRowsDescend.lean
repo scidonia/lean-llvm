@@ -62,11 +62,12 @@ same sense: the seed head has depth and frame zero, so no head carries it.
 * `Stage2NoEventWalkBraceDescendRefusal` — the brace descend's non-quote branch.
   `LeafBlock17`'s and `LeafBlock19`'s false arms (to `if.then94`'s refusal) are
   not linked in this tree, and the refusal's exit evidence
-  (`Stage2NoEventWalkExit.refuse`) is the caller's post.  Its current form is
-  `Nonempty (Stage2NoEventWalkExit …)`, which is **weaker than the branch**: it
-  also admits `Exit.accept`.  The honest form is the `refuse` constructor's own
-  fields; that rewrite waits on `Stage2NoEventWalkExit`'s move from `Prop` to
-  `Type` (it must carry the reference facts), which a sibling lane is making.
+  (`Stage2NoEventWalkExit.refuse`) is the caller's post.  Its form is the
+  `refuse` constructor's own data — a structure in `Type` with the route's index,
+  memory and post-block state, the run and its evidence, the trace, the supplied
+  relation witnesses, the report, the boundary and the parser's refusal — so the
+  premise is a **refusal-shaped supply**, not `Nonempty Exit`, and no accepting
+  exit inhabits it.
 -/
 import LeanLLVM.Refinement.JsonStage2NoEventWalkRowsReady
 import LeanLLVM.Refinement.JsonStage2NoEventWalkKeyRoute
@@ -734,18 +735,58 @@ row's evidence (`Stage2NoEventWalkExit.refuse`'s run and boundary) is the
 caller's post.  The interface below is what such a caller supplies; it is not a
 claim that the branch runs. -/
 
-/-- **The brace descend's refusal branch is terminal**: the caller's exit evidence
-gives the row. -/
-def Stage2NoEventWalkBraceDescendRefusal (calls : Calls) (mem : Mem) (F : Nat)
-    (K : Stage2NoEventWalkCarry) (k : Nat) (s : State) : Prop :=
-  Nonempty (Stage2NoEventWalkExit calls mem F K k s)
+/-- **The brace descend's refusal branch is terminal**: the caller's refusal
+evidence gives the row.  The supply is the `refuse` constructor's own data —
+the index, the returned memory, the post-block state, the route and its run, the
+route's evidence, the walk's trace, the supplied relation witnesses, the report,
+the boundary, and the parser's refusal — so **only a refusal inhabits it**: an
+accepting exit supplies `q`/`m`/`sT` at a `1` return and has no parser refusal,
+and it cannot be placed in these fields. -/
+structure Stage2NoEventWalkBraceDescendRefusal (calls : Calls) (mem : Mem) (F : Nat)
+    (K : Stage2NoEventWalkCarry) (k : Nat) (s : State) : Type where
+  /-- The terminal route's price index. -/
+  q : Nat
+  /-- The returned memory. -/
+  m : Mem
+  /-- The post-block state the route reaches. -/
+  sT : State
+  /-- The run equality to the post-block state. -/
+  route : Stage2NoEventWalkRunTo calls s sT
+  /-- The price at the head's credit. -/
+  cost : q ≤ stage2NoEventWalkPotential K k + F
+  /-- The run to the refusal's return. -/
+  run : runFuel calls (q + 2) stage2NoEventBody s =
+    some (.ret (some (.int 64 0)) m)
+  /-- The refusal family's own registers at the post-block state. -/
+  ev : Stage2NoEventWalkRefusalEvidence K sT
+  /-- The walk's trace at the head. -/
+  trace : Stage2NoEventWalkTrace K
+  /-- The reported observations, supplied as data. -/
+  obs : List ConsumerEvent
+  /-- The parser's tokens, supplied as data. -/
+  toks : List Token
+  /-- The relation at the reported observations. -/
+  rel : Stage2NoEvent K.bs K.arena obs toks
+  /-- The count equation. -/
+  obsLen : obs.length = K.tok
+  /-- The sum equation. -/
+  termsEq : K.terms = (obs.map ConsumerEvent.terms).sum
+  /-- The record's report at the returned memory. -/
+  report : Stage2NoEventRun K.a12 mem m
+  /-- The record's boundary at the refusal's verdict. -/
+  bound : stage2NoEventBoundary K.a12 mem K.next0 m (.int 64 0)
+  /-- The reference parser's verdict on the document. -/
+  refused : Stage2NoEventWalkParseRefusal K.bs
 
-/-- **The refusal branch's row**, from the caller's exit evidence. -/
-noncomputable def stage2NoEventWalkBraceDescendRow_of_refusal {calls : Calls}
+/-- **The refusal branch's row**, from the caller's refusal supply. -/
+def stage2NoEventWalkBraceDescendRow_of_refusal {calls : Calls}
     {mem : Mem} {F : Nat} {K : Stage2NoEventWalkCarry} {k : Nat} {s : State}
     (hrefuse : Stage2NoEventWalkBraceDescendRefusal calls mem F K k s) :
     Stage2NoEventWalkRow calls mem F K k s :=
-  Stage2NoEventWalkRow.terminal (Classical.choice hrefuse)
+  Stage2NoEventWalkRow.terminal
+    (.refuse hrefuse.q hrefuse.m hrefuse.sT hrefuse.route hrefuse.cost hrefuse.run
+      hrefuse.ev hrefuse.trace hrefuse.obs hrefuse.toks hrefuse.rel hrefuse.obsLen
+      hrefuse.termsEq hrefuse.report hrefuse.bound hrefuse.refused)
 
 /-! ### Axiom footprints -/
 
@@ -755,5 +796,6 @@ noncomputable def stage2NoEventWalkBraceDescendRow_of_refusal {calls : Calls}
 #print axioms stage2NoEventWalkBracketDescendRow_of_inner
 #print axioms stage2NoEventWalkBraceDescendRow_quote
 #print axioms stage2NoEventWalkBraceDescendRow_of_refusal
+#print axioms Stage2NoEventWalkBraceDescendRefusal
 
 end LeanLLVM.Refinement
