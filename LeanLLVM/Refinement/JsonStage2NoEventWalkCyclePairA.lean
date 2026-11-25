@@ -333,10 +333,16 @@ structure Stage2NoEventWalkPairSrc (calls : Calls) (mem : Mem)
   /-- The next head's index fits the arithmetic and the entry stream. -/
   kAddr : k + 4 < 2 ^ 63
   klt : k + 4 < K.nep
+  /-- The opener's token already in the source registers: `0` on the comma
+  entry, `1` on the `{` head's (where `if.end74` has already counted the
+  brace). -/
+  d : Nat
+  dLe : d ≤ 3
   /-- The consumed-count bound at the endpoint's index.  The pair's `+1` token
   is already inside `K` (`tokEq`) while `%k.1.in` still reads the source head's
-  `k`, so the bound is at `k + 1`; the cycle's step then carries it to `k + 4`. -/
-  count : Stage2NoEventWalkCount K (k + 1)
+  `k`, and the opener's `d` tokens are in the source registers too, so the bound
+  is at `k + 1 + d`; the cycle's step then carries it to `k + 4`. -/
+  count : Stage2NoEventWalkCount K (k + 1 + d)
   /-- The key route's registers.  The endpoint never runs `after_value`, so no
   `%frame.6` is among them. -/
   kin : lookupName s.env "%k.1.in" = some (.int 64 (BitVec.ofNat 64 k))
@@ -363,8 +369,8 @@ theorem stage2NoEventWalkCycle_of_pair {calls : Calls} {mem : Mem}
     (h : Stage2NoEventWalkPairSrc calls mem K k s) :
     ∃ (s' : State) (p : Nat), Stage2NoEventWalkCycle calls mem K k s 4 s' p := by
   obtain ⟨inv, hpc, sp, hspLt, inc137, hincEq, terms1, tokens1, addpn, htermsEq,
-    htokEq, hkAddr, hklt, hcount, hkin, htermsv, htokensv, haddpnv, hincv, hspv, halenv,
-    harenav, hbase, hbpos, htrace, hcolon⟩ := h
+    htokEq, hkAddr, hklt, hd, hdLe, hcount, hkin, htermsv, htokensv, haddpnv,
+    hincv, hspv, halenv, harenav, hbase, hbpos, htrace, hcolon⟩ := h
   have hincLt : inc137 < K.nep := by omega
   have hincAddr : inc137 < 2 ^ 63 := by omega
   have hnepLt : K.nep < 2 ^ 64 := inv.nepLt
@@ -504,8 +510,9 @@ theorem stage2NoEventWalkCycle_of_pair {calls : Calls} {mem : Mem}
       pc := rfl
       klt := hklt
       count := by
-        have hc := Stage2NoEventWalkCount.step (a := 0) (b := 3) hcount rfl rfl
-          (by omega : (0 : Nat) ≤ 3)
+        have hc := Stage2NoEventWalkCount.step (a := 0) (b := 3 - hd) hcount rfl
+          (by omega : k + 4 = (k + 1 + hd) + (3 - hd))
+          (by omega : (0 : Nat) ≤ 3 - hd)
         unfold Stage2NoEventWalkCount at hc ⊢
         omega
       bPos := hbpos
