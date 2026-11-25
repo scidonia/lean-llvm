@@ -1357,12 +1357,26 @@ says the exit state binds each of them as the entry did, so the arms below the
 merge read the entry's values rather than re-deriving the `cells` chain. -/
 
 /-- The registers the scan and the arms below it read and the scan does not
-write. -/
+write, with the entry chain's stable live-ins the scan never binds.  The second
+group is listed literally because this module sits below the head module; the
+value module checks, by a closed computation
+(`stage2NoEventWalkBaseNames_subset_skipFrame`), that the group still covers the
+entry chain's table. -/
 def stage2SkipFrameNames : List String :=
   ["%b", "%cond", "%idxprom.lcssa", "%inc.lcssa", "%.lcssa",
    "%arrayidx6.le1046", "%tokens.0.lcssa1073", "%terms.0.lcssa1079",
    "%frame.0.lcssa1097", "%sp.0.lcssa1091.wide", "%k219",
-   "%alen.0.ph1405", "%arena.0.ph1406", "%d", "%ei"]
+   "%alen.0.ph1405", "%arena.0.ph1406", "%d", "%ei",
+   -- the entry chain's stable live-ins (the scan reads four of them)
+   "%n", "%ep", "%nep", "%xp", "%nxp", "%scratch", "%scratchcap",
+   "%tokens_out", "%values_out", "%sum_out", "%err", "%stk", "%e", "%c",
+   "%invariant.gep1676", "%invariant.gep1674", "%invariant.gep1672",
+   "%invariant.gep1670", "%invariant.gep1668", "%invariant.gep1666",
+   "%invariant.gep1664", "%invariant.gep1662", "%invariant.gep1660",
+   "%invariant.gep1658", "%invariant.gep1656", "%invariant.gep1654",
+   "%invariant.gep1652", "%invariant.gep1650", "%cmp.not.peel1401.not",
+   "%invariant.gep1068", "%invariant.gep", "%e3", "%nix", "%ix", "%n2",
+   "%0", "%msg", "%off", "%outn205", "%outn", "%xj"]
 
 /-- The scan's frame: every register it carries reads as it did at the entry. -/
 def stage2SkipFrame (s e : State) : Prop :=
@@ -1389,7 +1403,7 @@ theorem stage2SkipFrame.mono {s e e' : State} {cs : List (String × Value)}
 macro "frame_names" : tactic => `(tactic|
   (intro n hn hmem
    simp only [stage2SkipFrameNames, List.mem_cons, List.not_mem_nil, or_false] at hn
-   rcases hn with h | h | h | h | h | h | h | h | h | h | h | h | h | h | h
+   rcases hn with h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h
    all_goals
      subst n
      simp only [List.map_cons, List.mem_cons, List.not_mem_nil, or_false] at hmem

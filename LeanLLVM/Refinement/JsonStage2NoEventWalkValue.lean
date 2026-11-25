@@ -29,7 +29,11 @@ projections at a head, the staging reads the class consumes (the document's byte
 and the entry stream's lanes at the head's own memory), the `scalar` block's
 head-edge run with its end test's two arms, the `cond.true`/`cond.end` extent
 test at the run's own bound, and the class's route from a head to the number and
-literal entries with `ScalarSkip`'s scan and its price.  It does not prove the
+literal entries with `ScalarSkip`'s scan and its price.  The route's endpoint
+also carries the entry chain's table: the head's `baseLookups` reads through the
+dispatch's and the extent test's cells and then through the scan's frame, whose
+name list the scan's module widens to the whole table
+(`stage2NoEventWalkBaseNames_subset_skipFrame`).  It does not prove the
 number and literal arms below those entries (`num_fast_el1`'s body proof is
 obstructed, and the literal chain's dispatch blocks are not modelled), the
 `after_value` dispatch and the `value.outer.backedge` return, or the target
@@ -580,6 +584,91 @@ abbrev valueLandStateZ (e : State) (k lane sp fr : Nat) (bv : BitVec 8)
       (BitVec.ofNat 64 lane))
     (valueCondEndStateZ e k lane sp fr bv K) "land.lhs.true"
 
+/-! ### The entry chain's table across a route's cells
+
+Every block the value route crosses binds names outside the entry chain's table,
+so the table reads through the block's `cells` at no cost.  The disjointness is
+a closed `Bool` test, so each step's side condition is a `decide`. -/
+
+/-- Whether a cell list binds none of the entry chain's base names. -/
+def valueCellsOutsideBase (cs : List (String × Value)) : Bool :=
+  (cs.map (·.1)).all fun n => decide (n ∉ stage2NoEventWalkBaseNames)
+
+/-- A cell list outside the table binds no base name. -/
+theorem valueCellsOutsideBase_spec {cs : List (String × Value)}
+    (h : valueCellsOutsideBase cs = true) :
+    ∀ n, n ∈ stage2NoEventWalkBaseNames → n ∉ cs.map (·.1) := by
+  intro n hn hmem
+  exact of_decide_eq_true ((List.all_eq_true.mp h) n hmem) hn
+
+/-- A name a cell list does not bind reads through its `cells` builder. -/
+theorem valueCells_notin {cs : List (String × Value)} {n : String} {env : Env}
+    (h : n ∉ cs.map (·.1)) : lookupName (cells cs env) n = lookupName env n := by
+  induction cs with
+  | nil => rfl
+  | cons c cs ih =>
+      obtain ⟨k, w⟩ := c
+      have hk : k ≠ n := by intro hkn; exact h (by subst hkn; simp)
+      simp only [cells, lookupName_cons_ne w (cells cs env) hk]
+      exact ih fun hc => h (List.mem_cons_of_mem _ hc)
+
+/-- **The base lookups survive a step that binds only other names.**  The step's
+cell list is named, so the disjointness is a closed computation over the list it
+binds; its values are never read. -/
+theorem Stage2NoEventWalkBaseLookups.cellsOfNames {K : Stage2NoEventWalkCarry}
+    {s : State} {cs : List (String × Value)} {names : List String}
+    (h : Stage2NoEventWalkBaseLookups K s)
+    (hm : cs.map (·.1) = names)
+    (hd : names.all (fun n => decide (n ∉ stage2NoEventWalkBaseNames)) = true) :
+    ∀ n v, (n, v) ∈ stage2NoEventWalkBaseValues K →
+      lookupName (cells cs s.env) n = some v := by
+  intro n v hv
+  have hout : valueCellsOutsideBase cs = true := by
+    simp only [valueCellsOutsideBase, hm]
+    exact hd
+  rw [valueCells_notin (env := s.env) (valueCellsOutsideBase_spec hout n ?_)]
+  · exact h n v hv
+  · have hmem : n ∈ (stage2NoEventWalkBaseValues K).map (·.1) :=
+      List.mem_map_of_mem (f := Prod.fst) hv
+    rwa [stage2NoEventWalkBaseValues_names] at hmem
+
+/-- **The entry chain's table is inside the scan's frame.**  The frame's list
+lives below this module, so the widening is tied to the table here: the value
+route reads the whole table at the scan's exit only because every base name is a
+name the scan never binds.  Drift in either list fails this computation. -/
+theorem stage2NoEventWalkBaseNames_subset_skipFrame :
+    ∀ n, n ∈ stage2NoEventWalkBaseNames → n ∈ stage2SkipFrameNames := by
+  have h : (stage2NoEventWalkBaseNames.all
+      (fun n => decide (n ∈ stage2SkipFrameNames))) = true := by decide
+  intro n hn
+  exact of_decide_eq_true ((List.all_eq_true.mp h) n hn)
+
+/-- **The base lookups at the leaf dispatch's `scalar` state.**  The leaf's cells
+bind none of the head's registers, so the table at the head is the table there. -/
+theorem Stage2NoEventWalkHead.baseAtScalar {K : Stage2NoEventWalkCarry} {mem : Mem}
+    {k : Nat} {s e : State} (h : Stage2NoEventWalkHead K mem k s)
+    {cs : List (String × Value)} (henv : e.env = cells cs s.env)
+    (hnames : cs.map (·.1) = ["%SwitchLeaf", "%Pivot6"] ∨
+      cs.map (·.1) = ["%SwitchLeaf2", "%Pivot", "%Pivot6"] ∨
+      cs.map (·.1) = ["%SwitchLeaf4", "%Pivot", "%Pivot6"]) :
+    Stage2NoEventWalkBaseLookups K e := by
+  rcases hnames with h' | h' | h'
+  · intro n v hv
+    rw [henv]
+    exact Stage2NoEventWalkBaseLookups.cellsOfNames h.baseLookups h'
+      (by decide : (["%SwitchLeaf", "%Pivot6"] : List String).all
+        (fun n => decide (n ∉ stage2NoEventWalkBaseNames)) = true) n v hv
+  · intro n v hv
+    rw [henv]
+    exact Stage2NoEventWalkBaseLookups.cellsOfNames h.baseLookups h'
+      (by decide : (["%SwitchLeaf2", "%Pivot", "%Pivot6"] : List String).all
+        (fun n => decide (n ∉ stage2NoEventWalkBaseNames)) = true) n v hv
+  · intro n v hv
+    rw [henv]
+    exact Stage2NoEventWalkBaseLookups.cellsOfNames h.baseLookups h'
+      (by decide : (["%SwitchLeaf4", "%Pivot", "%Pivot6"] : List String).all
+        (fun n => decide (n ∉ stage2NoEventWalkBaseNames)) = true) n v hv
+
 /-- The registers the number and literal arms read at the scan's exit: the
 entry's position, the scan's stop and bound, the counts, the frame and depth the
 event carries, the cursor's index cell, and the four entry-chain cells the arms
@@ -626,8 +715,10 @@ structure Stage2NoEventWalkValueArmsRegs (K : Stage2NoEventWalkCarry)
 head-edge state — its seven `phi` cells, the entry's position and byte, and the
 entry chain's two `gep`s — the walk reaches the number or literal entry with the
 scan's `%ee.1` inside `[lane, cond]`, the invariant there, the scan's write, the
-registers the arms read, and a run of at most `15 + 5 * (cond - lane)` steps,
-where `cond` is the next entry's position or the document's length. -/
+registers the arms read, the entry chain's table (the state's, read through the
+extent test's cells and the scan's frame), and a run of at most
+`15 + 5 * (cond - lane)` steps, where `cond` is the next entry's position or the
+document's length. -/
 theorem stage2NoEventWalkValueAt {calls : Calls} {K : Stage2NoEventWalkCarry}
     {mem : Mem} {e : State} {pre : String} {k lane sp fr : Nat} {bv : BitVec 8}
     (hinv : Stage2NoEventWalkInv K mem e) (hpc : e.pc = "scalar")
@@ -654,6 +745,7 @@ theorem stage2NoEventWalkValueAt {calls : Calls} {K : Stage2NoEventWalkCarry}
       some (.int 64 (BitVec.ofNat 64 K.arenaWord)))
     (hd : lookupName e.env "%d" = some (.ptr K.d))
     (hei : lookupName e.env "%ei" = some (.ptr (K.next0 + 24)))
+    (hbase : Stage2NoEventWalkBaseLookups K e)
     (klt : k < K.nep) :
     ∃ (e' : State) (j q cond : Nat),
       j ≤ 15 + 5 * (cond - lane) ∧
@@ -670,7 +762,8 @@ theorem stage2NoEventWalkValueAt {calls : Calls} {K : Stage2NoEventWalkCarry}
       e'.mem = writeBytes e.mem (K.c + 32)
         (natToBytes (BitVec.ofNat 64 (k + 1)).toNat 8) ∧
       (∀ n, runFuel calls (j + n) stage2NoEventBody e =
-        runFuel calls n stage2NoEventBody e') := by
+        runFuel calls n stage2NoEventBody e') ∧
+      Stage2NoEventWalkBaseLookups K e' := by
   have hpos : ((BitVec.ofNat 64 lane).signExtend 64).toNat < 2 ^ 63 := by
     rw [value_signExtend_lane hlane32]; omega
   have hk1lt64 : k + 1 < 2 ^ 64 := by have := hinv.nepLt; omega
@@ -865,6 +958,36 @@ theorem stage2NoEventWalkValueAt {calls : Calls} {K : Stage2NoEventWalkCarry}
         (by simpa only [valueLandState, valueLandEnv, valueCondTrueEnv, valueScalarEnv,
           stage2NoEventWalkNext] using L3.inv')
         hpcL hgepL hcL hidxL hbL hincL hlcL hk219L rfl hread0 hbytes hord hcondlt
+    have hbaseLand : Stage2NoEventWalkBaseLookups K
+        (valueLandState e k lane sp fr bv K bs4 q) := by
+      have henv : (valueLandState e k lane sp fr bv K bs4 q).env =
+          cells (condEndCells [] (BitVec.ofNat 64 q) (BitVec.ofNat 64 lane) ++
+            condTrueCells [] (K.ep +
+              ((BitVec.ofNat 64 (k + 1)).signExtend 64).toNat * 4) bs4 ++
+            valueScalarCells [] (BitVec.ofNat 64 (k + 1))
+              (BitVec.ofNat 64 lane) bv (BitVec.ofNat 8 fr) (BitVec.ofNat 32 sp)
+              (BitVec.ofNat 64 K.terms) (BitVec.ofNat 64 K.tok)
+              (BitVec.ofNat 64 K.nep)
+              (K.b + ((BitVec.ofNat 64 lane).signExtend 64).toNat)) e.env := rfl
+      intro n v hv
+      rw [henv]
+      exact Stage2NoEventWalkBaseLookups.cellsOfNames
+        (names := ["%cmp443", "%cond", "%conv439", "%56", "%arrayidx438",
+          "%cmp436", "%arrayidx6.le1046", "%tokens.0.lcssa1073",
+          "%terms.0.lcssa1079", "%sp.0.lcssa1091.wide", "%frame.0.lcssa1097",
+          "%.lcssa", "%idxprom.lcssa", "%inc.lcssa"]) hbase rfl
+        (by decide : (["%cmp443", "%cond", "%conv439", "%56", "%arrayidx438",
+          "%cmp436", "%arrayidx6.le1046", "%tokens.0.lcssa1073",
+          "%terms.0.lcssa1079", "%sp.0.lcssa1091.wide", "%frame.0.lcssa1097",
+          "%.lcssa", "%idxprom.lcssa", "%inc.lcssa"] : List String).all
+            (fun n => decide (n ∉ stage2NoEventWalkBaseNames)) = true) n v hv
+    have hbaseE' : Stage2NoEventWalkBaseLookups K e' := by
+      intro n v hv
+      have hmemB : n ∈ stage2NoEventWalkBaseNames := by
+        have h := List.mem_map_of_mem (f := Prod.fst) hv
+        rwa [stage2NoEventWalkBaseValues_names] at h
+      rw [hframe' n (stage2NoEventWalkBaseNames_subset_skipFrame n hmemB)]
+      exact hbaseLand n v hv
     have hrunHL : ∀ n, runFuel calls (3 + n) stage2NoEventBody e =
         runFuel calls n stage2NoEventBody (valueLandState e k lane sp fr bv K bs4 q) := by
       intro n
@@ -889,7 +1012,7 @@ theorem stage2NoEventWalkValueAt {calls : Calls} {K : Stage2NoEventWalkCarry}
         d := (hframe' "%d" (by decide)).trans hdL
         ei := (hframe' "%ei" (by decide)).trans heiL }
     refine ⟨e', 3 + jS, q', q, ?_, ?_, hpc', hee, ?_, hq2, ?_, hord, ?_, hws, hprefix,
-      hinv', hregs, ?_, ?_⟩
+      hinv', hregs, ?_, ?_, hbaseE'⟩
     · rcases hcount with ⟨hj, -⟩ | ⟨hj, hqeq⟩ <;> omega
     · rcases hcount with ⟨hj, -⟩ | ⟨hj, -⟩ <;> omega
     · omega
@@ -1044,6 +1167,34 @@ theorem stage2NoEventWalkValueAt {calls : Calls} {K : Stage2NoEventWalkCarry}
         (by simpa only [valueLandStateZ, valueScalarEnv, stage2NoEventWalkNext] using L2.inv')
         hpcZ hgepZ hcZ hidxZ hbZ hincZ hlcZ hk219Z rfl hread0 hbytes hlaneN
         hinv.nLt63
+    have hbaseLand : Stage2NoEventWalkBaseLookups K
+        (valueLandStateZ e k lane sp fr bv K) := by
+      have henv : (valueLandStateZ e k lane sp fr bv K).env =
+          cells (condEndCells [] (BitVec.ofNat 64 K.n) (BitVec.ofNat 64 lane) ++
+            valueScalarCells [] (BitVec.ofNat 64 (k + 1))
+              (BitVec.ofNat 64 lane) bv (BitVec.ofNat 8 fr) (BitVec.ofNat 32 sp)
+              (BitVec.ofNat 64 K.terms) (BitVec.ofNat 64 K.tok)
+              (BitVec.ofNat 64 K.nep)
+              (K.b + ((BitVec.ofNat 64 lane).signExtend 64).toNat)) e.env := rfl
+      intro n v hv
+      rw [henv]
+      exact Stage2NoEventWalkBaseLookups.cellsOfNames
+        (names := ["%cmp443", "%cond", "%cmp436", "%arrayidx6.le1046",
+          "%tokens.0.lcssa1073", "%terms.0.lcssa1079",
+          "%sp.0.lcssa1091.wide", "%frame.0.lcssa1097", "%.lcssa",
+          "%idxprom.lcssa", "%inc.lcssa"]) hbase rfl
+        (by decide : (["%cmp443", "%cond", "%cmp436", "%arrayidx6.le1046",
+          "%tokens.0.lcssa1073", "%terms.0.lcssa1079",
+          "%sp.0.lcssa1091.wide", "%frame.0.lcssa1097", "%.lcssa",
+          "%idxprom.lcssa", "%inc.lcssa"] : List String).all
+            (fun n => decide (n ∉ stage2NoEventWalkBaseNames)) = true) n v hv
+    have hbaseE' : Stage2NoEventWalkBaseLookups K e' := by
+      intro n v hv
+      have hmemB : n ∈ stage2NoEventWalkBaseNames := by
+        have h := List.mem_map_of_mem (f := Prod.fst) hv
+        rwa [stage2NoEventWalkBaseValues_names] at h
+      rw [hframe' n (stage2NoEventWalkBaseNames_subset_skipFrame n hmemB)]
+      exact hbaseLand n v hv
     have hrunHL : ∀ n, runFuel calls (2 + n) stage2NoEventBody e =
         runFuel calls n stage2NoEventBody (valueLandStateZ e k lane sp fr bv K) := by
       intro n
@@ -1067,7 +1218,7 @@ theorem stage2NoEventWalkValueAt {calls : Calls} {K : Stage2NoEventWalkCarry}
         d := (hframe' "%d" (by decide)).trans hdZ
         ei := (hframe' "%ei" (by decide)).trans heiZ }
     refine ⟨e', 2 + jS, q', K.n, ?_, ?_, hpc', hee, ?_, hq2, le_rfl, hlaneN, ?_, hws,
-      hprefix, hinv', hregs, ?_, ?_⟩
+      hprefix, hinv', hregs, ?_, ?_, hbaseE'⟩
     · rcases hcount with ⟨hj, -⟩ | ⟨hj, hqeq⟩ <;> omega
     · rcases hcount with ⟨hj, -⟩ | ⟨hj, -⟩ <;> omega
     · omega
@@ -1266,7 +1417,8 @@ theorem stage2NoEventWalkValueLeaf {calls : Calls} {K : Stage2NoEventWalkCarry}
       e'.mem = writeBytes s.mem (K.c + 32)
         (natToBytes (BitVec.ofNat 64 (k + 1)).toNat 8) ∧
       (∀ n, runFuel calls (j + n) stage2NoEventBody s =
-        runFuel calls n stage2NoEventBody e') := by
+        runFuel calls n stage2NoEventBody e') ∧
+      Stage2NoEventWalkBaseLookups K e' := by
     have hy91' : evalICmp .slt y (BitVec.ofNat 8 91) = 1 :=
       stage2NoEvent_slt_one_of_toInt_lt hlt91
     have hy34' : evalICmp .eq y (BitVec.ofNat 8 34) = 0 :=
@@ -1288,8 +1440,16 @@ theorem stage2NoEventWalkValueLeaf {calls : Calls} {K : Stage2NoEventWalkCarry}
         (stage2NoEventWalkNext (("%Pivot6", .int 1 (1 : BitVec 1)) :: s.env) s
           "LeafBlock") "scalar")
       rfl (Or.inl rfl)
+    have hbaseScalar : Stage2NoEventWalkBaseLookups K
+        (stage2NoEventWalkNext
+          (("%SwitchLeaf", .int 1 (0 : BitVec 1)) ::
+            ("%Pivot6", .int 1 (1 : BitVec 1)) :: s.env)
+          (stage2NoEventWalkNext (("%Pivot6", .int 1 (1 : BitVec 1)) :: s.env) s
+            "LeafBlock") "scalar") :=
+      hhead.baseAtScalar (cs := [("%SwitchLeaf", .int 1 (0 : BitVec 1)),
+        ("%Pivot6", .int 1 (1 : BitVec 1))]) rfl (Or.inl rfl)
     obtain ⟨e', jR, q, cond, hprice, hqprice, hpc', hee, hq1, hq2, hcondN, hlanelt, hdisj, hws,
-      hprefix, hinv', hregs, hmem', hrun'⟩ :=
+      hprefix, hinv', hregs, hmem', hrun', hbaseE'⟩ :=
       stage2NoEventWalkValueAt (calls := calls) (K := K) (mem := mem)
         (e := stage2NoEventWalkNext
           (("%SwitchLeaf", .int 1 (0 : BitVec 1)) ::
@@ -1304,7 +1464,7 @@ theorem stage2NoEventWalkValueLeaf {calls : Calls} {K : Stage2NoEventWalkCarry}
           simp [stage2NoEventWalkBaseValues, stage2NoEventWalkParamEntries]))
         (hhead.baseLookups "%ei" (.ptr (K.next0 + 24)) (by
           simp [stage2NoEventWalkBaseValues, stage2NoEventWalkBaseCellValues]))
-        hhead.klt
+        hbaseScalar hhead.klt
     have hrun2 : ∀ n, runFuel calls (2 + n) stage2NoEventBody s =
         runFuel calls n stage2NoEventBody
           (stage2NoEventWalkNext
@@ -1313,7 +1473,8 @@ theorem stage2NoEventWalkValueLeaf {calls : Calls} {K : Stage2NoEventWalkCarry}
             (stage2NoEventWalkNext (("%Pivot6", .int 1 (1 : BitVec 1)) :: s.env) s
               "LeafBlock") "scalar") := valueChainRunTwo L1 L2
     refine ⟨e', 2 + jR, q, cond, lane, byte, sp, fr, R.ent, R.laneLt, R.bs, R.read, ?_, ?_,
-      hpc', hee, hq1, hq2, hcondN, hlanelt, hdisj, hws, hprefix, hinv', hregs, ?_, ?_⟩
+      hpc', hee, hq1, hq2, hcondN, hlanelt, hdisj, hws, hprefix, hinv', hregs, ?_, ?_,
+      hbaseE'⟩
     · omega
     · omega
     · simpa only [stage2NoEventWalkNext_mem] using hmem'
@@ -1348,7 +1509,8 @@ theorem stage2NoEventWalkValueLeaf1 {calls : Calls} {K : Stage2NoEventWalkCarry}
       e'.mem = writeBytes s.mem (K.c + 32)
         (natToBytes (BitVec.ofNat 64 (k + 1)).toNat 8) ∧
       (∀ n, runFuel calls (j + n) stage2NoEventBody s =
-        runFuel calls n stage2NoEventBody e') := by
+        runFuel calls n stage2NoEventBody e') ∧
+      Stage2NoEventWalkBaseLookups K e' := by
       have hy91' : evalICmp .slt y (BitVec.ofNat 8 91) = 0 :=
         stage2NoEvent_slt_zero_of_toInt_ge hge91
       have hy123' : evalICmp .slt y (BitVec.ofNat 8 123) = 1 :=
@@ -1387,8 +1549,21 @@ theorem stage2NoEventWalkValueLeaf1 {calls : Calls} {K : Stage2NoEventWalkCarry}
             (stage2NoEventWalkNext (("%Pivot6", .int 1 (0 : BitVec 1)) :: s.env) s
               "NodeBlock") "LeafBlock1") "scalar")
         rfl (Or.inr (Or.inl rfl))
+      have hbaseScalar : Stage2NoEventWalkBaseLookups K
+          (stage2NoEventWalkNext
+            (("%SwitchLeaf2", .int 1 (0 : BitVec 1)) ::
+              ("%Pivot", .int 1 (1 : BitVec 1)) ::
+              ("%Pivot6", .int 1 (0 : BitVec 1)) :: s.env)
+            (stage2NoEventWalkNext
+              (("%Pivot", .int 1 (1 : BitVec 1)) ::
+                ("%Pivot6", .int 1 (0 : BitVec 1)) :: s.env)
+              (stage2NoEventWalkNext (("%Pivot6", .int 1 (0 : BitVec 1)) :: s.env) s
+                "NodeBlock") "LeafBlock1") "scalar") :=
+        hhead.baseAtScalar (cs := [("%SwitchLeaf2", .int 1 (0 : BitVec 1)),
+          ("%Pivot", .int 1 (1 : BitVec 1)),
+          ("%Pivot6", .int 1 (0 : BitVec 1))]) rfl (Or.inr (Or.inl rfl))
       obtain ⟨e', jR, q, cond, hprice, hqprice, hpc', hee, hq1, hq2, hcondN, hlanelt, hdisj, hws,
-        hprefix, hinv', hregs, hmem', hrun'⟩ :=
+        hprefix, hinv', hregs, hmem', hrun', hbaseE'⟩ :=
         stage2NoEventWalkValueAt (calls := calls) (K := K) (mem := mem)
           (e := stage2NoEventWalkNext
             (("%SwitchLeaf2", .int 1 (0 : BitVec 1)) ::
@@ -1407,7 +1582,7 @@ theorem stage2NoEventWalkValueLeaf1 {calls : Calls} {K : Stage2NoEventWalkCarry}
             simp [stage2NoEventWalkBaseValues, stage2NoEventWalkParamEntries]))
           (hhead.baseLookups "%ei" (.ptr (K.next0 + 24)) (by
             simp [stage2NoEventWalkBaseValues, stage2NoEventWalkBaseCellValues]))
-          hhead.klt
+          hbaseScalar hhead.klt
       have hrun3 : ∀ n, runFuel calls (3 + n) stage2NoEventBody s =
           runFuel calls n stage2NoEventBody
             (stage2NoEventWalkNext
@@ -1420,7 +1595,8 @@ theorem stage2NoEventWalkValueLeaf1 {calls : Calls} {K : Stage2NoEventWalkCarry}
                 (stage2NoEventWalkNext (("%Pivot6", .int 1 (0 : BitVec 1)) :: s.env) s
                   "NodeBlock") "LeafBlock1") "scalar") := valueChainRunThree L1 L2 L3
       refine ⟨e', 3 + jR, q, cond, lane, byte, sp, fr, R.ent, R.laneLt, R.bs, R.read, ?_, ?_,
-        hpc', hee, hq1, hq2, hcondN, hlanelt, hdisj, hws, hprefix, hinv', hregs, ?_, ?_⟩
+        hpc', hee, hq1, hq2, hcondN, hlanelt, hdisj, hws, hprefix, hinv', hregs, ?_, ?_,
+        hbaseE'⟩
       · omega
       · omega
       · simpa only [stage2NoEventWalkNext_mem] using hmem'
@@ -1455,7 +1631,8 @@ theorem stage2NoEventWalkValueLeaf3 {calls : Calls} {K : Stage2NoEventWalkCarry}
       e'.mem = writeBytes s.mem (K.c + 32)
         (natToBytes (BitVec.ofNat 64 (k + 1)).toNat 8) ∧
       (∀ n, runFuel calls (j + n) stage2NoEventBody s =
-        runFuel calls n stage2NoEventBody e') := by
+        runFuel calls n stage2NoEventBody e') ∧
+      Stage2NoEventWalkBaseLookups K e' := by
       have hy91' : evalICmp .slt y (BitVec.ofNat 8 91) = 0 :=
         stage2NoEvent_slt_zero_of_toInt_ge hge91
       have hy123' : evalICmp .slt y (BitVec.ofNat 8 123) = 0 :=
@@ -1494,8 +1671,21 @@ theorem stage2NoEventWalkValueLeaf3 {calls : Calls} {K : Stage2NoEventWalkCarry}
             (stage2NoEventWalkNext (("%Pivot6", .int 1 (0 : BitVec 1)) :: s.env) s
               "NodeBlock") "LeafBlock3") "scalar")
         rfl (Or.inr (Or.inr rfl))
+      have hbaseScalar : Stage2NoEventWalkBaseLookups K
+          (stage2NoEventWalkNext
+            (("%SwitchLeaf4", .int 1 (0 : BitVec 1)) ::
+              ("%Pivot", .int 1 (0 : BitVec 1)) ::
+              ("%Pivot6", .int 1 (0 : BitVec 1)) :: s.env)
+            (stage2NoEventWalkNext
+              (("%Pivot", .int 1 (0 : BitVec 1)) ::
+                ("%Pivot6", .int 1 (0 : BitVec 1)) :: s.env)
+              (stage2NoEventWalkNext (("%Pivot6", .int 1 (0 : BitVec 1)) :: s.env) s
+                "NodeBlock") "LeafBlock3") "scalar") :=
+        hhead.baseAtScalar (cs := [("%SwitchLeaf4", .int 1 (0 : BitVec 1)),
+          ("%Pivot", .int 1 (0 : BitVec 1)),
+          ("%Pivot6", .int 1 (0 : BitVec 1))]) rfl (Or.inr (Or.inr rfl))
       obtain ⟨e', jR, q, cond, hprice, hqprice, hpc', hee, hq1, hq2, hcondN, hlanelt, hdisj, hws,
-        hprefix, hinv', hregs, hmem', hrun'⟩ :=
+        hprefix, hinv', hregs, hmem', hrun', hbaseE'⟩ :=
         stage2NoEventWalkValueAt (calls := calls) (K := K) (mem := mem)
           (e := stage2NoEventWalkNext
             (("%SwitchLeaf4", .int 1 (0 : BitVec 1)) ::
@@ -1514,7 +1704,7 @@ theorem stage2NoEventWalkValueLeaf3 {calls : Calls} {K : Stage2NoEventWalkCarry}
             simp [stage2NoEventWalkBaseValues, stage2NoEventWalkParamEntries]))
           (hhead.baseLookups "%ei" (.ptr (K.next0 + 24)) (by
             simp [stage2NoEventWalkBaseValues, stage2NoEventWalkBaseCellValues]))
-          hhead.klt
+          hbaseScalar hhead.klt
       have hrun3 : ∀ n, runFuel calls (3 + n) stage2NoEventBody s =
           runFuel calls n stage2NoEventBody
             (stage2NoEventWalkNext
@@ -1527,7 +1717,8 @@ theorem stage2NoEventWalkValueLeaf3 {calls : Calls} {K : Stage2NoEventWalkCarry}
                 (stage2NoEventWalkNext (("%Pivot6", .int 1 (0 : BitVec 1)) :: s.env) s
                   "NodeBlock") "LeafBlock3") "scalar") := valueChainRunThree L1 L2 L3
       refine ⟨e', 3 + jR, q, cond, lane, byte, sp, fr, R.ent, R.laneLt, R.bs, R.read, ?_, ?_,
-        hpc', hee, hq1, hq2, hcondN, hlanelt, hdisj, hws, hprefix, hinv', hregs, ?_, ?_⟩
+        hpc', hee, hq1, hq2, hcondN, hlanelt, hdisj, hws, hprefix, hinv', hregs, ?_, ?_,
+        hbaseE'⟩
       · omega
       · omega
       · simpa only [stage2NoEventWalkNext_mem] using hmem'
@@ -1538,8 +1729,8 @@ theorem stage2NoEventWalkValueLeaf3 {calls : Calls} {K : Stage2NoEventWalkCarry}
 /-- **The value class at a head**: `NodeBlock5`'s value arm to the number or
 literal entry, with the scan's bound and its price.  `cond` is the next entry's
 position or the document's length, `%ee.1` the scan's stop inside
-`[lane, cond]`, the scan's non-membership prefix, and the run's step count is at
-most `18 + 5 * (cond - lane)`. -/
+`[lane, cond]`, the scan's non-membership prefix, the run's step count at most
+`18 + 5 * (cond - lane)`, and the entry chain's table at the arm's entry. -/
 theorem stage2NoEventWalkValue {calls : Calls} {K : Stage2NoEventWalkCarry}
     {mem : Mem} {k : Nat} {s : State} {y : BitVec 8}
     (hhead : Stage2NoEventWalkHead K mem k s)
@@ -1564,7 +1755,8 @@ theorem stage2NoEventWalkValue {calls : Calls} {K : Stage2NoEventWalkCarry}
       e'.mem = writeBytes s.mem (K.c + 32)
         (natToBytes (BitVec.ofNat 64 (k + 1)).toNat 8) ∧
       (∀ n, runFuel calls (j + n) stage2NoEventBody s =
-        runFuel calls n stage2NoEventBody e') := by
+        runFuel calls n stage2NoEventBody e') ∧
+      Stage2NoEventWalkBaseLookups K e' := by
   rcases lt_or_ge y.toInt (BitVec.ofNat 8 91).toInt with hlt91 | hge91
   · exact stage2NoEventWalkValueLeaf hhead h3 hy34 hlt91
   · rcases lt_or_ge y.toInt (BitVec.ofNat 8 123).toInt with hlt123 | hge123
@@ -1594,5 +1786,8 @@ theorem stage2NoEventWalkValue {calls : Calls} {K : Stage2NoEventWalkCarry}
 #print axioms valueEnt_length_le
 #print axioms valueLookup_append
 #print axioms cells_eq_append
+#print axioms Stage2NoEventWalkBaseLookups.cellsOfNames
+#print axioms Stage2NoEventWalkHead.baseAtScalar
+#print axioms stage2NoEventWalkBaseNames_subset_skipFrame
 
 end LeanLLVM.Refinement
