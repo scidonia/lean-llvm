@@ -207,6 +207,9 @@ import LeanLLVM.Refinement.JsonStage2NoEventWalkString
 import LeanLLVM.Refinement.JsonStage2NoEventWalkContainers
 import LeanLLVM.Refinement.JsonStage2NoEventWorkspace
 import LeanLLVM.Refinement.JsonStage2NoEventWalkAssembly
+import LeanLLVM.Refinement.JsonStage2NoEventWalkTerminalA
+import LeanLLVM.Refinement.JsonStage2NoEventWalkCycleA
+import LeanLLVM.Refinement.JsonStage2NoEventWalkCyclePairA
 import LeanLLVM.Refinement.JsonStage2NoEventRefusalOffset
 import LeanLLVM.Refinement.JsonStage2WalkAlignment
 import LeanLLVM.Refinement.JsonStage2TraceRow
