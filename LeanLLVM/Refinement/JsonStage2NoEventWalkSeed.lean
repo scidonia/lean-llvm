@@ -610,6 +610,7 @@ theorem stage2NoEventWalkSeedRun {gap : Calls} {K : Stage2NoEventWalkCarry}
       { inv := hinvHead.mem_congr (entryHeadState_mem _ _ _ _ _ _)
         pc := rfl
         klt := hnepos
+        count := by unfold Stage2NoEventWalkCount; omega
         bPos := hb1
         layers := ?_
         baseLookups := hbaseHead }

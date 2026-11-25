@@ -236,6 +236,16 @@ that add to it.  With the route's own `k + c ≤ K.nep` it puts a count step ins
 the document (`K.tok + c ≤ k + c ≤ K.nep ≤ K.n`), which is the invariant's guard. -/
 def Stage2NoEventWalkCount (K : Stage2NoEventWalkCarry) (k : Nat) : Prop := K.tok ≤ k
 
+/-- **The consumed-count bound advances with the index.**  A route that adds `a`
+tokens and advances the index by `b ≥ a` carries the bound from its source to its
+target: `K.tok ≤ k` becomes `K'.tok = K.tok + a ≤ k + b = k'`.  A producer supplies
+its two store equations and `a ≤ b`; the arithmetic is here, not bespoke. -/
+theorem Stage2NoEventWalkCount.step {K K' : Stage2NoEventWalkCarry} {k k' a b : Nat}
+    (h : Stage2NoEventWalkCount K k) (htok : K'.tok = K.tok + a)
+    (hk : k' = k + b) (hab : a ≤ b) : Stage2NoEventWalkCount K' k' := by
+  unfold Stage2NoEventWalkCount at h ⊢
+  omega
+
 /-! ### The output evidence and the acceptance's reading
 
 Both are vocabulary about the carry and the state (not about the segment tier), so

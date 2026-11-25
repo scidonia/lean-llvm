@@ -1256,6 +1256,8 @@ structure Stage2NoEventWalkCycleSrc (calls : Calls) (mem : Mem)
   kAddr : k + 1 < 2 ^ 63
   /-- The next entry exists, so the backedge's guard admits it. -/
   klt : k + 1 < K.nep
+  /-- The consumed-count bound at the endpoint's index. -/
+  count : Stage2NoEventWalkCount K k
   /-- The dispatch `phi` run, at the class's own edge and readings. -/
   phiRun : ∃ p, s.pre = some p ∧
     PhiSelects (stateAt s.env s) p afterValuePhiSpecs
@@ -1320,8 +1322,8 @@ theorem stage2NoEventWalkCycle_of_afterValue {calls : Calls} {mem : Mem}
     {K : Stage2NoEventWalkCarry} {k : Nat} {s : State}
     (h : Stage2NoEventWalkCycleSrc calls mem K k s) :
     ∃ (s' : State) (p : Nat), Stage2NoEventWalkCycle calls mem K k s 1 s' p := by
-  obtain ⟨inv, hpc, fr, hfrLt, hfrNe, sp, hspLt, hspNe, hkAddr, hklt, hphi, hbase,
-    hbpos, htrace, hcomma⟩ := h
+  obtain ⟨inv, hpc, fr, hfrLt, hfrNe, sp, hspLt, hspNe, hkAddr, hklt, hcount, hphi,
+    hbase, hbpos, htrace, hcomma⟩ := h
   obtain ⟨pEdge, hpre, hsel⟩ := hphi
   have hnepLt : K.nep < 2 ^ 64 := inv.nepLt
   have hklt' : k < K.nep := by omega
@@ -1511,6 +1513,7 @@ theorem stage2NoEventWalkCycle_of_afterValue {calls : Calls} {mem : Mem}
     { inv := Stage2NoEventWalkInv.mem_congr inv rfl
       pc := rfl
       klt := hklt
+      count := Stage2NoEventWalkCount.step (a := 0) (b := 1) hcount rfl rfl (by omega)
       bPos := hbpos
       layers := ⟨e7, sp, fr, sp, max sp 520, laneNX, K.bs.getD laneNX 0, rfl, hgetNX,
         hltNX, hbsgetNX, hbytereNX, hspLt, hfrLt, rfl, rfl⟩

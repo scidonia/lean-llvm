@@ -333,6 +333,10 @@ structure Stage2NoEventWalkPairSrc (calls : Calls) (mem : Mem)
   /-- The next head's index fits the arithmetic and the entry stream. -/
   kAddr : k + 4 < 2 ^ 63
   klt : k + 4 < K.nep
+  /-- The consumed-count bound at the endpoint's index.  The pair's `+1` token
+  is already inside `K` (`tokEq`) while `%k.1.in` still reads the source head's
+  `k`, so the bound is at `k + 1`; the cycle's step then carries it to `k + 4`. -/
+  count : Stage2NoEventWalkCount K (k + 1)
   /-- The key route's registers.  The endpoint never runs `after_value`, so no
   `%frame.6` is among them. -/
   kin : lookupName s.env "%k.1.in" = some (.int 64 (BitVec.ofNat 64 k))
@@ -359,7 +363,7 @@ theorem stage2NoEventWalkCycle_of_pair {calls : Calls} {mem : Mem}
     (h : Stage2NoEventWalkPairSrc calls mem K k s) :
     ∃ (s' : State) (p : Nat), Stage2NoEventWalkCycle calls mem K k s 4 s' p := by
   obtain ⟨inv, hpc, sp, hspLt, inc137, hincEq, terms1, tokens1, addpn, htermsEq,
-    htokEq, hkAddr, hklt, hkin, htermsv, htokensv, haddpnv, hincv, hspv, halenv,
+    htokEq, hkAddr, hklt, hcount, hkin, htermsv, htokensv, haddpnv, hincv, hspv, halenv,
     harenav, hbase, hbpos, htrace, hcolon⟩ := h
   have hincLt : inc137 < K.nep := by omega
   have hincAddr : inc137 < 2 ^ 63 := by omega
@@ -499,6 +503,11 @@ theorem stage2NoEventWalkCycle_of_pair {calls : Calls} {mem : Mem}
     { inv := Stage2NoEventWalkInv.mem_congr inv rfl
       pc := rfl
       klt := hklt
+      count := by
+        have hc := Stage2NoEventWalkCount.step (a := 0) (b := 3) hcount rfl rfl
+          (by omega : (0 : Nat) ≤ 3)
+        unfold Stage2NoEventWalkCount at hc ⊢
+        omega
       bPos := hbpos
       layers := ⟨e2, sp, 0, sp, max sp 520, laneNX, K.bs.getD laneNX 0, rfl, hgetNX,
         hltNX, hbsgetNX, hdocNX, hspLt, by decide, rfl, rfl⟩

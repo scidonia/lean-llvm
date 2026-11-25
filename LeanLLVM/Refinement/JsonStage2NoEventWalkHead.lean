@@ -325,7 +325,9 @@ existential tail — the exact layers the block conses — and the entry chain's
 stable live-ins are the lookup predicate `Stage2NoEventWalkBaseLookups`, not a
 position in that tail.  The read and `phi` layers are parameterised by the head's
 own values, so a continuation head at `k' > 0` inhabits the premise; only the seed
-instantiates the layers at the zeros. -/
+instantiates the layers at the zeros.  The consumed-count bound `K.tok ≤ k` is a
+field: it is index-relative like `klt`, the head's read cannot produce it, and a
+producer supplies it with the one arithmetic lemma `Stage2NoEventWalkCount.step`. -/
 structure Stage2NoEventWalkHead (K : Stage2NoEventWalkCarry) (mem : Mem) (k : Nat)
     (s : State) : Prop where
   /-- The loop's invariant. -/
@@ -334,6 +336,8 @@ structure Stage2NoEventWalkHead (K : Stage2NoEventWalkCarry) (mem : Mem) (k : Na
   pc : s.pc = "NodeBlock5"
   /-- The index is a real entry index. -/
   klt : k < K.nep
+  /-- The consumed-count bound at the head's index. -/
+  count : Stage2NoEventWalkCount K k
   /-- The report's base is at least one. -/
   bPos : 1 ≤ K.b
   /-- **The head block's run equation**: the six read cells over the nine `phi`
