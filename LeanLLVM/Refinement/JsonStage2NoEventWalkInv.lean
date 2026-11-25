@@ -238,9 +238,10 @@ stated at them.
 
 `Stage2NoEventWalkTrace` is the events the walk has consumed, the reference
 parser's tokens for them, the two counts the state's registers carry, and the
-arena the string rows were read from with the span bound the arena's later
-extension needs.  It is a row-tier predicate, not an invariant field:
-`Stage2NoEventWalkInv` is frozen and does not carry the parse relation.
+span bound the arena's later extension needs.  It is a row-tier predicate, not
+an invariant field: `Stage2NoEventWalkInv` is frozen and does not carry the parse
+relation, and the trace carries no memory read of its own — the arena is the
+carry's logical list, extended by the rows' deltas.
 
 `Stage2NoEventWalkAcceptAcc` is the acceptance's three stores' reading at the
 terminal state.  It is not the loop's `Stage2NoEventWalkAcc`: `%idxprom.lcssa` is
@@ -255,7 +256,6 @@ inductive Stage2NoEventWalkTrace (K : Stage2NoEventWalkCarry) (s : State) : Prop
       (rel : Stage2NoEvent K.bs K.arena obs toks)
       (obsLen : obs.length = K.tok)
       (termsEq : K.terms = (obs.map ConsumerEvent.terms).sum)
-      (arenaAt : readBytes s.mem K.scratch K.arena.length = some K.arena)
       (arenaBound : Stage2NoEventArenaBound K.arena obs) :
       Stage2NoEventWalkTrace K s
 

@@ -1022,7 +1022,7 @@ theorem stage2NoEventAccept_run_traced {K : Stage2NoEventWalkCarry} {mem : Mem}
     ∃ m, runFuel (stage2NoEventCalls (gap := stage2GapRecover)) 2 stage2NoEventBody
         (stateAt s.env s) = some (.ret (some (.int 64 1)) m) ∧
       stage2NoEventBoundary K.a12 mem K.next0 m (.int 64 1) := by
-  obtain ⟨obs, toks, hRel, hObsLen, hTermsEq, -, -⟩ := htrace
+  obtain ⟨obs, toks, hRel, hObsLen, hTermsEq, -⟩ := htrace
   obtain ⟨hs1, hs2, hs3, hs4, hs5, hs6⟩ :=
     stage2NoEventWrites_slots (stage2NoEventRegions_writes h.separate)
   have hTokLt : K.tok < 2 ^ 64 := Nat.lt_of_le_of_lt h.tokLe h.nLt

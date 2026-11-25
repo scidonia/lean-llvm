@@ -332,14 +332,6 @@ structure Stage2NoEventRun (args : List Value) (mem m0 : Mem) where
   walkFrame : UnchangedOutside mem m0
     (stage2NoEventRunRegions scratch scratchcap stk e c d ++
       [(next0, nextEnd - next0)])
-  /-- The run's own scratch, read back at the arena's length: the staging word the
-  arena the consumer reads is.  There is no event field beside it: the decoder's
-  free offset leaves the events under-determined by the arena (arena `[10, 10]`
-  with document `"\n"` decodes `[10]` at offset `0` and at offset `1`, with
-  different `terms`), so the events stay the differential's hypothesis. -/
-  arenaAt : readBytes m0 scratch arena.length = some arena
-  /-- The arena fits the scratch capacity. -/
-  arenaCap : arena.length ≤ scratchcap
 
 namespace Stage2NoEventRun
 
@@ -855,8 +847,10 @@ The bridge between the two runs is the hypothesis that the no-event entry's
 existential arena and events are the certified trace's decoded prefix and its
 consumer rows — which is what the differential compares, and what a refinement of
 this entry would establish.  This is the boundary-level form, for a consumer that
-already holds the witness's facts; `Stage2NoEventRun.consumer` is the form whose
-arena premise reads the run's own scratch. -/
+already holds the witness's facts; `Stage2NoEventRun.consumer` is the run-level
+form, whose arena premise is the bridge equality `h.arena = bw.arena.take bw.ndstU`
+— the used-extent projection of the boundary's arena read — and not a read of the
+run's own scratch. -/
 theorem stage2NoEventBoundary_consumer {args : List Value} {mem : Mem} {next : Nat}
     {m : Mem} {v : Value} {w : Stage2NoEventWitness}
     (h : Stage2NoEventFacts w args mem next m v) (hacc : w.verdict = 1)
@@ -908,12 +902,11 @@ theorem stage2NoEventBoundary_consumer {args : List Value} {mem : Mem} {next : N
   · rw [h.accept_sum hacc, hsumRes]
 
 /-- **The new post's words are the certified consumer's readings, from the run.**
-This is the consumer form whose arena premise is the run's own scratch: `arenaAt`
-reads the staging word back at the arena's length and `hscratch` identifies it
-with the certified trace's decoded prefix, so the run's arena is that prefix.
-The certified consumer supplies the trace's token count, value count and sum, and
-the run's own fields (`obsLen` and `termsEq`) carry them to the words the store
-lemmas state at the run's slots. -/
+The arena premise is the certified boundary's used-arena read: `hArena` identifies
+the run's arena with the certified trace's decoded prefix (the report carries no
+memory read of its own).  The certified consumer supplies the trace's token count,
+value count and sum, and the run's own fields (`obsLen` and `termsEq`) carry them
+to the words the store lemmas state at the run's slots. -/
 theorem Stage2NoEventRun.consumer {args : List Value} {mem m0 : Mem}
     (h : Stage2NoEventRun args mem m0) (href : h.refusal = false)
     {bw : Stage2BoundaryWitness} {argsC : List Value} {memC mC : Mem} {nextC : Nat}
@@ -925,7 +918,7 @@ theorem Stage2NoEventRun.consumer {args : List Value} {mem m0 : Mem}
     (hrecs : bw.evs = (rs.map EventRecord.encodedBytes).flatten)
     (hb : ∀ r ∈ rs, r.Bounded)
     (hrel : Stage2Records bs (bw.arena.take bw.ndstU) rs t.tokens)
-    (hscratch : readBytes m0 h.scratch h.arena.length = some (bw.arena.take bw.ndstU))
+    (hArena : h.arena = bw.arena.take bw.ndstU)
     (hobs : h.obs = consumeRecords bs (bw.arena.take bw.ndstU) rs) :
     let m := stage2NoEventReport m0 h.tokensOut h.valuesOut h.sumOut h.err h.refusal
       h.tok ((byteSum h.arena + h.terms) % 2 ^ 64) h.eoff
@@ -954,9 +947,6 @@ theorem Stage2NoEventRun.consumer {args : List Value} {mem m0 : Mem}
     rw [hconsumed]
     simp only [LeanLLVM.Refinement.consumer]
     rw [hlenObs, h.obsLen]
-  -- the run's own scratch reads back the arena `hscratch` names
-  have hArena : h.arena = bw.arena.take bw.ndstU :=
-    Option.some.inj (by rw [← h.arenaAt, hscratch])
   have hsumRes : (consumeBytesResult bs (bw.arena.take bw.ndstU) bw.evs).sum =
       byteSum h.arena + h.terms := by
     rw [hconsumed, hfold, ← hArena, ← hobs']

@@ -627,8 +627,7 @@ theorem stage2NoEventWalkSeedRun {gap : Calls} {K : Stage2NoEventWalkCarry}
       decide
   · -- the output evidence: the empty prefix
     exact Stage2NoEventWalkTrace.intro [] [] .nil (by rw [hKtok]; rfl)
-      (by rw [hKterms]; rfl) (by rw [hKarena]; rfl)
-      (by intro e he; simp at he)
+      (by rw [hKterms]; rfl) (by intro e he; simp at he)
   · -- the head's environment, at the seed's entry chain
     exact hreadAndPhi
 

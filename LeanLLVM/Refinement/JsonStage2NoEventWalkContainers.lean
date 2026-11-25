@@ -522,10 +522,9 @@ theorem Stage2NoEventArenaBound.append {arena : List UInt8}
 
 /-! ### The trace's one-step extension
 
-A trace is the events consumed so far at the carry's counts and the arena's
-reading.  A one-step relation appends to it: the events' length moves the carry's
-token count and their `terms` the terms sum, and the target's arena reading is the
-route's.
+A trace is the events consumed so far at the carry's counts, their tokens, the
+terms sum and the arena bound; it carries no arena read, the arena being the
+carry's logical list extended by the route's deltas.
 -/
 
 /-- **A one-step relation appends to a trace**, at a carry whose readings the
@@ -539,11 +538,10 @@ theorem Stage2NoEventWalkTrace.step {K : Stage2NoEventWalkCarry} {s : State}
     (K' : Stage2NoEventWalkCarry) (s' : State)
     (hbs : K'.bs = K.bs) (harena : K'.arena = K.arena)
     (htok : K'.tok = K.tok + evs.length)
-    (hterms : K'.terms = K.terms + (evs.map ConsumerEvent.terms).sum)
-    (hread : readBytes s'.mem K'.scratch K'.arena.length = some K'.arena) :
+    (hterms : K'.terms = K.terms + (evs.map ConsumerEvent.terms).sum) :
     Stage2NoEventWalkTrace K' s' := by
   cases h with
-  | intro obs toks₀ rel obsLen termsEq arenaAt arenaBound =>
+  | intro obs toks₀ rel obsLen termsEq arenaBound =>
       have hrel : Stage2NoEvent K'.bs K'.arena (obs ++ evs) (toks₀ ++ toks) := by
         rw [hbs, harena]
         exact Stage2NoEvent.append rel hstep
@@ -554,7 +552,7 @@ theorem Stage2NoEventWalkTrace.step {K : Stage2NoEventWalkCarry} {s : State}
       have hbound : Stage2NoEventArenaBound K'.arena (obs ++ evs) := by
         rw [harena]
         exact Stage2NoEventArenaBound.append arenaBound hstepBound
-      exact ⟨obs ++ evs, toks₀ ++ toks, hrel, hlen, hsum, hread, hbound⟩
+      exact ⟨obs ++ evs, toks₀ ++ toks, hrel, hlen, hsum, hbound⟩
 
 /-! ### The container pair's trace step
 
@@ -567,12 +565,11 @@ not move.
 theorem Stage2NoEventWalkTrace.emptyObject {K : Stage2NoEventWalkCarry} {s s' : State}
     (h : Stage2NoEventWalkTrace K s) {start₁ start₂ : Nat}
     (h₁ : K.bs[start₁]? = some (0x7B : UInt8))
-    (h₂ : K.bs[start₂]? = some (0x7D : UInt8))
-    (hread : readBytes s'.mem K.scratch K.arena.length = some K.arena) :
+    (h₂ : K.bs[start₂]? = some (0x7D : UInt8)) :
     Stage2NoEventWalkTrace { K with tok := K.tok + 2, terms := K.terms + 3 } s' := by
   refine h.step (K' := { K with tok := K.tok + 2, terms := K.terms + 3 })
     (s' := s') (stage2NoEventWalkEmptyObjectRel h₁ h₂)
-    (stage2NoEventArenaBound_emptyObject K.arena) rfl rfl ?_ ?_ hread
+    (stage2NoEventArenaBound_emptyObject K.arena) rfl rfl ?_ ?_
   · rfl
   · have h3 : ([ConsumerEvent.kind 1, ConsumerEvent.kind 2].map
         ConsumerEvent.terms).sum = 3 := by decide
@@ -582,12 +579,11 @@ theorem Stage2NoEventWalkTrace.emptyObject {K : Stage2NoEventWalkCarry} {s s' : 
 theorem Stage2NoEventWalkTrace.emptyArray {K : Stage2NoEventWalkCarry} {s s' : State}
     (h : Stage2NoEventWalkTrace K s) {start₁ start₂ : Nat}
     (h₁ : K.bs[start₁]? = some (0x5B : UInt8))
-    (h₂ : K.bs[start₂]? = some (0x5D : UInt8))
-    (hread : readBytes s'.mem K.scratch K.arena.length = some K.arena) :
+    (h₂ : K.bs[start₂]? = some (0x5D : UInt8)) :
     Stage2NoEventWalkTrace { K with tok := K.tok + 2, terms := K.terms + 7 } s' := by
   refine h.step (K' := { K with tok := K.tok + 2, terms := K.terms + 7 })
     (s' := s') (stage2NoEventWalkEmptyArrayRel h₁ h₂)
-    (stage2NoEventArenaBound_emptyArray K.arena) rfl rfl ?_ ?_ hread
+    (stage2NoEventArenaBound_emptyArray K.arena) rfl rfl ?_ ?_
   · rfl
   · have h7 : ([ConsumerEvent.kind 3, ConsumerEvent.kind 4].map
         ConsumerEvent.terms).sum = 7 := by decide
@@ -596,10 +592,9 @@ theorem Stage2NoEventWalkTrace.emptyArray {K : Stage2NoEventWalkCarry} {s s' : S
 /-- **A separator appends to the trace** without moving a count. -/
 theorem Stage2NoEventWalkTrace.separator {K : Stage2NoEventWalkCarry} {s s' : State}
     (h : Stage2NoEventWalkTrace K s) {toks : List Token}
-    (hstep : Stage2NoEvent K.bs K.arena [] toks)
-    (hread : readBytes s'.mem K.scratch K.arena.length = some K.arena) :
+    (hstep : Stage2NoEvent K.bs K.arena [] toks) :
     Stage2NoEventWalkTrace K s' := by
-  refine h.step (K' := K) (s' := s') hstep ?_ rfl rfl rfl rfl hread
+  refine h.step (K' := K) (s' := s') hstep ?_ rfl rfl rfl rfl
   intro e he
   cases he
 
