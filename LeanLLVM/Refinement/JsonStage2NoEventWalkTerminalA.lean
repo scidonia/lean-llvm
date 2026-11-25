@@ -334,13 +334,14 @@ def stage2NoEventAccept_exit {gap : Calls} {mem : Mem} {F k : Nat}
     (htermsEq : K'.terms = (obs.map ConsumerEvent.terms).sum)
     (hreport : Stage2NoEventRun K'.a12 mem m)
     (t : Tape)
+    (parsed : parseBytes Limits.default (ByteString.literal K.bs) = .ok t)
     (facts : Stage2NoEventWalkReferenceFacts K.bs K'.arena obs toks t)
     (hbound : stage2NoEventBoundary K'.a12 mem K'.next0 m (.int 64 1)) :
     Stage2NoEventWalkExit (stage2NoEventCalls gap) mem F K k s :=
   .accept K' (j + 1) m sT (Stage2NoEventWalkRunTo.extend ⟨j, hj⟩ hstep) hcost
     (Stage2NoEventWalkRunTo.run_of_cleanup (f := stage2NoEventBody) (j := j) (v := 1)
       (m := m) hj hstep hclean hmR)
-    htokK ha12 hn0 hacc obs toks hrel hobsLen htermsEq hreport hbound t facts
+    htokK ha12 hn0 hacc obs toks hrel hobsLen htermsEq hreport hbound t parsed facts
 
 /-- **The terminal row from its exit.** -/
 def stage2NoEventWalkTerminalRow {calls : Calls} {mem : Mem} {F : Nat}

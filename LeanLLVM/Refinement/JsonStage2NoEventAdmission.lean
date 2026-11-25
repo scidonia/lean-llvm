@@ -49,7 +49,11 @@ on, and neither is one of `admission`'s clauses:
   (`Parse.lean:390-404`).  The walk's obligation is a value equality with the
   reference, so it is vacuous where the reference refuses; the driver's NE7
   comparison is stated only over the documents the arm is admitted to
-  (`tests/json-noevent/check.sh:92-105`).
+  (`tests/json-noevent/check.sh:92-105`).  The existence is the domain's clause;
+  the walk theorem does not take it as a hypothesis — it reads the tie from the
+  accept row, whose `parsed` field is the equality at that row's own tape.  An
+  admitted document yields a parse, and a producer that builds the row at that
+  parse places it there.
 * **the document is valid UTF-8** — `Utf8Chars` (`LeanLLVM/JSON/Utf8.lean:87`).
   The no-event *stage-2* entry does not check this: the pipeline entry's stage 1
   does, in `kernel/json/utf8.c`, and its word is zero exactly when the staged
@@ -82,8 +86,8 @@ hypothesis that the deployment's yes/no is `admission`'s yes/no; it is checked b
 Proved: the structure's four clauses make the selector's decision `ok`
 (`admission_ok`, the inverse of `JsonKernelCertificate.admission_ok`), the
 deployment's decision plus the two carried conditions rebuilds the structure
-(`stage2NoEventAdmitted_of_admission`), an admitted document is accepted by the
-reference through the walk's own `hparse` (`hparse`), the input bound is the
+(`stage2NoEventAdmitted_of_admission`), an admitted document yields a reference
+parse (`hparse`), the input bound is the
 reference's (`length_le_referenceInput`), the depth clause keeps the walk's
 stack from overflowing (`depth_lt_stack`), the reference does not refuse an
 admitted document for depth, capacity or policy (`documentDomain`, read off the
@@ -152,8 +156,10 @@ structure Stage2NoEventAdmitted (bs : List UInt8) : Prop
   /-- The stage-1 UTF-8 gate (`kernel/json/utf8.c`); at `n % 64 ≠ 0` its zero
   word is equivalent to this predicate (`utf8_stage_refines_chars`). -/
   utf8Valid : Utf8Chars (ByteString.literal bs)
-  /-- The reference accepts the document: the walk's `hparse`, existentially.
-  `Parse.lean:390-404` and the driver's NE7 comparison. -/
+  /-- The reference accepts the document, existentially.  This is the domain's
+  clause, not the walk theorem's premise: the accept row carries the parse
+  equality at its own tape, which a producer building the row at this parse
+  supplies.  `Parse.lean:390-404` and the driver's NE7 comparison. -/
   referenceAccepts : ∃ t : Tape, parseBytes Limits.default (ByteString.literal bs) = .ok t
 
 /-! ### The selector's decision at the domain -/
@@ -201,11 +207,13 @@ theorem stage2NoEventAdmitted_of_admission {bs : List UInt8}
 
 /-! ### What admission gives the walk -/
 
-/-- **The walk's `hparse`.**  The reference's acceptance is a conjunct of the
-domain, so the tape the transfer chain names exists at every admitted document
-(`JsonEventBridgeFinal.eventsOfBytes_valueOfEvents_scalar`'s `hparse`).  The
-tape's identity (`htoks`) and the run facts beside it are the walk's, not the
-domain's. -/
+/-- **The domain's parse.**  The reference's acceptance is a conjunct of the
+domain, so a tape the parser returns exists at every admitted document.  The
+walk theorem does not consume this existence as a hypothesis — its accept row
+carries `parsed : parseBytes … = .ok t` at the row's own tape, which is the tie
+the transfer chain needs; an admitted document is one where a producer can build
+that row.  The tape's identity (`htoks`) and the run facts beside it are the
+walk's, not the domain's. -/
 theorem Stage2NoEventAdmitted.hparse {bs : List UInt8}
     (h : Stage2NoEventAdmitted bs) :
     ∃ t : Tape, parseBytes Limits.default (ByteString.literal bs) = .ok t :=

@@ -268,16 +268,17 @@ def Stage2NoEventWalkParseRefusal (bs : List UInt8) : Prop :=
   ∃ e, parseBytes Limits.default (ByteString.literal bs) = .error e
 
 /-- **An acceptance's reference data, as the producer consumes it.**  The tape,
-the observations and the tokens the acceptance names, the relation at them, the
-two count equations, and the reference run's facts at them.  **carried data**: one
-value per acceptance, supplied by the deployment boundary, never derived from
-`Stage2NoEvent` (its `len` is free above the decoded slice).  Indexed by the head's
-and the acceptance's carries, so a producer takes it at the witnesses its route
-reports. -/
+the parse equality at it, the observations and the tokens the acceptance names,
+the relation at them, the two count equations, and the reference run's facts at
+them.  **carried data**: one value per acceptance, supplied by the deployment
+boundary, never derived from `Stage2NoEvent` (its `len` is free above the decoded
+slice).  Indexed by the head's and the acceptance's carries, so a producer takes
+it at the witnesses its route reports. -/
 def Stage2NoEventWalkReferenceAccept (K K' : Stage2NoEventWalkCarry) : Type :=
   Σ (t : Tape) (obs : List ConsumerEvent) (toks : List Token),
     (Stage2NoEvent K.bs K'.arena obs toks ∧ obs.length = K'.tok ∧
-      K'.terms = (obs.map ConsumerEvent.terms).sum) ×'
+      K'.terms = (obs.map ConsumerEvent.terms).sum ∧
+      parseBytes Limits.default (ByteString.literal K.bs) = .ok t) ×'
     Stage2NoEventWalkReferenceFacts K.bs K'.arena obs toks t
 
 /-- **A refusal's reference data, as the producer consumes it.**  The observations
@@ -314,9 +315,12 @@ inductive Stage2NoEventWalkExit (calls : Calls) (mem : Mem) (F : Nat)
   /-- The accepted arm: verdict one, the last entry's carry `K'`, the three
   stores' reading at the post-block state, the trace (the head's prefix plus the
   last entry's event), and the boundary.  The head's `K` stays the index for the
-  price and the boundary; the report's numbers are `K'`'s.  The parser's tape and
-  the reference run's facts at `(K.bs, K'.arena, obs, toks)` are the acceptance's
-  carried data. -/
+  price and the boundary; the report's numbers are `K'`'s.  The parser's tape,
+  the parse equality at it, and the reference run's facts at
+  `(K.bs, K'.arena, obs, toks)` are the acceptance's carried data.  The equality
+  is a field and not a hypothesis over the facts type: the facts' only tape
+  field is `t.tokens = toks`, so a facts value re-indexes at any tape with the
+  same token list and no statement about the open structure can pin the tape. -/
   | accept (K' : Stage2NoEventWalkCarry) (q : Nat) (m : Mem) (sT : State)
       (route : Stage2NoEventWalkRunTo calls s sT)
       (cost : q ≤ stage2NoEventWalkPotential K k + F)
@@ -331,6 +335,7 @@ inductive Stage2NoEventWalkExit (calls : Calls) (mem : Mem) (F : Nat)
       (report : Stage2NoEventRun K'.a12 mem m)
       (bound : stage2NoEventBoundary K'.a12 mem K'.next0 m (.int 64 1))
       (t : Tape)
+      (parsed : parseBytes Limits.default (ByteString.literal K.bs) = .ok t)
       (facts : Stage2NoEventWalkReferenceFacts K.bs K'.arena obs toks t) :
       Stage2NoEventWalkExit calls mem F K k s
   /-- The refused arm: verdict zero, the route's own evidence, the walk's trace,

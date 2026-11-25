@@ -1463,7 +1463,7 @@ noncomputable def stage2NoEventWalkBracketZeroTerminal {gap : Calls}
         omega
       omega
     obtain ⟨tt, obs, toks, hprops, hfacts⟩ := hrefAcc
-    obtain ⟨hrel, hobsLen, htermsEq⟩ := hprops
+    obtain ⟨hrel, hobsLen, htermsEq, hparsed⟩ := hprops
     have hj : ∀ n, runFuel (stage2NoEventCalls gap) (11 + n) stage2NoEventBody s =
         runFuel (stage2NoEventCalls gap) n stage2NoEventBody sB := by
       intro n
@@ -1487,7 +1487,7 @@ noncomputable def stage2NoEventWalkBracketZeroTerminal {gap : Calls}
         (sE := sB) (sT := sT) (sR := sR) (j := 11) (m := acceptMem)
         (obs := obs) (toks := toks) hj hstep hclean hmR hcost
         (by show K.tok < K.tok + 2; omega) rfl rfl
-        haccT hrel hobsLen htermsEq hreportAcc tt hfacts hboundAcc)⟩
+        haccT hrel hobsLen htermsEq hreportAcc tt hparsed hfacts hboundAcc)⟩
   · have hlt : k + 2 < K.nep := by omega
     have hc1 : c0 = 1 := by
       show evalICmp .ult (BitVec.ofNat 64 (k + 2)) (BitVec.ofNat 64 K.nep) = 1
@@ -1753,7 +1753,7 @@ noncomputable def stage2NoEventWalkBraceZeroTerminal {gap : Calls}
         omega
       omega
     obtain ⟨tt, obs, toks, hprops, hfacts⟩ := hrefAcc
-    obtain ⟨hrel, hobsLen, htermsEq⟩ := hprops
+    obtain ⟨hrel, hobsLen, htermsEq, hparsed⟩ := hprops
     have hj : ∀ n, runFuel (stage2NoEventCalls gap) (13 + n) stage2NoEventBody s =
         runFuel (stage2NoEventCalls gap) n stage2NoEventBody sB := by
       intro n
@@ -1777,7 +1777,7 @@ noncomputable def stage2NoEventWalkBraceZeroTerminal {gap : Calls}
         (sE := sB) (sT := sT) (sR := sR) (j := 13) (m := acceptMem)
         (obs := obs) (toks := toks) hj hstep hclean hmR hcost
         (by show K.tok < K.tok + 2; omega) rfl rfl
-        haccT hrel hobsLen htermsEq hreportAcc tt hfacts hboundAcc)⟩
+        haccT hrel hobsLen htermsEq hreportAcc tt hparsed hfacts hboundAcc)⟩
   · have hlt : k + 2 < K.nep := by omega
     have hc1 : c0 = 1 := by
       show evalICmp .ult (BitVec.ofNat 64 (k + 2)) (BitVec.ofNat 64 K.nep) = 1
