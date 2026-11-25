@@ -52,7 +52,10 @@ corpus, the C split, the DFA and the C consumer (measured 2026-11-22)", adds the
 consumer; it supersedes only the per-slot absence recorded in the first
 section's wrapper paragraph. A third section, §"Fair comparison and reappraisal
 (measured 2026-11-22)", re-reads the route against simdjson at equal output and
-marks the raw-parse claims as not like-for-like.
+marks the raw-parse claims as not like-for-like. A fourth, §"J5 and J6: the
+complete parser against the scalar parser, and the 4–64 KiB law (measured
+2026-11-25)", records the complete parser against the Lean scalar parser over
+the fair corpus and re-measures the scaling law on its host.
 
 The note answers one question: **can a byte-mask JSON parser, in the shape the
 Lean development would lower to, be competitive with a mature native parser on
@@ -2858,6 +2861,8 @@ Re-measure, not adjust, when:
 |the DFA ratios (1.103/1.083/1.543)|`stage2_dfa.c`, the gate, the 148 corpus or the route harness changes; the table pin changes with the C tables|
 |the C consumer rows|`consumeFast`, the `shim.c` ABI, the `TIMING=1` build or the three canonical documents change|
 |the fair `rpn/ps` row (0.8735; 128/151 faster)|`tests/json-fair/{gen.py,run.sh,fair.cc,manifest.tsv}`, the no-event entry or either pipeline's object set, the corpus, the host class or the governor handling changes; a new session replaces the 3 × 51 discipline|
+|the J5 scalar quotient (0.0316; 151/151 faster)|`tests/json-fair/{gen.py,run.sh,fair.cc,manifest.tsv}` or the kernel sources change, `probes/bench/JsonBench.lean` or the parser's scan and parse modules change, or the host class, governor or scalar build changes; a new session replaces the 3 × 51 fair and 3 × 21 scalar discipline|
+|the J6 scaling rows (4/16/64 KiB; exponent 1.045)|`probes/bench/{JsonBench.lean,json-bench.sh,json}` or the parser's scan and parse modules change, or the bench limits, host class or governor change; a new session replaces the 5 × 21 discipline|
 |the certification state|the fast family's modules, the no-list draft, the DFA body/bridge, or the C fixture/pin change, or the no-event entry's contract and its walk obligation|
 
 ## Fair comparison and reappraisal (measured 2026-11-22)
@@ -3232,3 +3237,220 @@ These are kept for history and are not the fair comparison:
   same-session `stage2_fast` (`frame/certified` 1.032 pipeline, 1.028 stage-2 —
   the earlier figures are certified/fast, so the matrix is their reciprocal); it
   is not superseded as a negative.
+
+## J5 and J6: the complete parser against the scalar parser, and the 4–64 KiB law (measured 2026-11-25)
+
+Status: **two measurements taken on one host, at the loads recorded below,
+against this revision's parser sources.** The scalar instrument's binary was
+built at `ab0b666`; `git diff ab0b666 HEAD -- LeanLLVM/JSON probes/bench` is
+empty, so the parser closure measured is this revision's and a reader reproduces
+the rows at either revision. J5 compares the complete native parser — the certified
+pipeline call, and the same call with its consumer — with the Lean scalar
+reference parser over the 151-document fair corpus. J6 re-measures the parser's
+growth over 4, 16 and 64 KiB with the repository's scaling instrument. Both are
+records of observed runs: no timing here follows from a proof, and J5's two
+quotients are not the same pairing — the like-for-like arm is chosen below and
+the consumer-inclusive arm is quoted beside it. The committed fair row
+(`rpn/ps` 0.8735 median, 128 of 151 faster) is **not** re-derived, replaced or
+divided by anything in this section.
+
+### The host and the discipline
+
+|field|value|
+|---|---|
+|host|Linux 6.17.0-1033-oem x86_64; Intel Core Ultra 7 268V|
+|cores|8 online; `/sys/devices/cpu_atom/cpus` reads `4-7`, so CPU 0 is in the 0–3 performance cluster; the two classes are not one throughput class, so §7.3's rule applies with this host's classes|
+|governor|`powersave`|
+|pin|every timed process under `taskset -c 0`|
+|load average|J5 fair sweep: 8.33/16.30/11.21 at start, 5.06/14.32/10.78 after; J5 scalar sweep: 4.81/14.11/10.73 → 4.31/10.77/9.90; J6: 2.49/8.05/9.01, one reading recorded for the five rounds|
+|compiler|clang 21.1.8 for the fair kernel and harness; Lean 4.35.0 for the scalar instrument|
+|fair flags|kernel `-O2 -march=x86-64-v3 -mpclmul -std=gnu11 -falign-loops=64 -falign-functions=64`; harness `-O3 -march=x86-64-v3 -mpclmul -std=c++17` with the same alignment|
+|scalar build|`nix develop -c lake build leanllvm-json-bench` at `ab0b666`, in a clean checkout of that revision; the measurement checkout's uncommitted changes are outside the parser's import closure|
+|corpus, J5|the 151 fair documents, 36,409,139 bytes (largest 1,048,480 B, inside the route's 1 MiB bound)|
+|corpus, J6|`probes/bench/json/{cheapest,scale-4096,scale-16384,scale-65536}.json`|
+|repetitions, J5|fair: 3 trials × 51 repetitions per arm; scalar: 3 rounds × 21 repetitions per document|
+|repetitions, J6|5 rounds × 21 repetitions per size; the floor takes 5 repetitions per round|
+|limits, J5 scalar|`maxInput` 2^26, `maxDepth` 512, `maxTokens` 2^26 (`benchLimits`)|
+|instrument digests|`tests/json-fair/run.sh` `cfb21fe0…`, `gen.py` `bfdcb84f…`, `manifest.tsv` `61a4999e…`, `fair.cc` `e7ffab24…`; `probes/bench/JsonBench.lean` `e2ac797a…`, `json-bench.sh` `ec0d0d71…`; the recorded scalar binary's sha256 begins `edba6248`|
+
+The fair sweep held every gate: 0 failures over 151 documents (the writer's
+event and arena bytes equal the pipeline's, the same consumer agrees on both
+streams, the direct sum equals that consumer's fold, and the no-event arm's
+reading equals it too). The scalar instrument returned `.ok` on 21 of 21
+repetitions of every document, in all three rounds.
+
+### J5: the complete parser against the scalar parser
+
+**Terms.** The scalar arm is `parseDocument` under `benchLimits`, timed by
+`leanllvm-json-bench <document> 21`. Its timed region is one file read plus one
+`parseDocument` call; the read is inside the clock by the instrument's design (a
+pure parse over a loop-invariant buffer is hoisted out of the repetition; the
+file read is `IO` and is not), and its floor —
+the same region on the one-byte document, measured with the same binary in the
+J6 rounds below — is 2.36 µs median. The native arms are the fair harness's:
+`rp` is `leanllvm_json_pipeline` once per document
+(stage 1, the entry emitter, the escape list, the UTF-8 stage and stage 2,
+materialising the event stream and arena), and `rpc` is `rp` plus the C
+consumer's fold. Both read their file once, outside the clock, and the corpus is
+warmed once per arm.
+
+**Why `rp` is the like-for-like arm.** `parseDocument`'s timed region stops at
+the tape: token records carrying spans over the caller's bytes, with no decoded
+payload, no arena and no consumer walk. `rp` stops at the parser's own artefact
+too: the event stream and the arena, with no consumer walk. Both sides
+therefore price one complete parse and neither prices a consumer. `rpc` adds the
+C consumer's fold (tokens, values, sum) to the native side only, so `rpc` over
+the scalar charges the native side for work the other timed region does not
+perform; it is quoted as the consumer-inclusive, conservative pairing. The
+no-event arms (simdjson's `ps`, our `rpn`) are not usable here: their scalar
+analogue would be
+`decodeTape` plus a fold, which no driver in this tree times. `parse` is
+simdjson's traversal, not the scalar reference.
+
+**What the pairing is, and is not.** The two arms are like-for-like in what each
+timed region *bounds* — one parse of the caller's bytes, with neither side
+pricing a consumer — but not in the work each performs: `rp` additionally decodes
+the number lexemes into binary64 bits and materialises the event stream and the
+arena, so it bounds strictly more work than the tape `parseDocument` returns. The
+quotient is therefore a conservative lower bound on the like-for-like ratio
+rather than an equal-work comparison, and this measurement does not compare the
+two parsers' decoded values. Closing that needs both halves of a differential: a
+151-row `leanllvm-json` manifest whose verdict and rendering columns are the
+reference's (the decoder's side), and a native driver reporting the route's
+decoded value on the same rows (the pipeline's side). This tree has neither half.
+`leanllvm-json` was not run over the fair corpus (the corpus has no manifest for
+it, and the executable imports the whole `LeanLLVM` library rather than the
+parser closure the bench needs, so a current-revision binary is a separate
+build), and its output includes the decoder and the renderer, so it is neither a
+timing arm nor an acceptance gate for these rows.
+
+**Result.** Quotients are this run's native arm over the scalar arm on the same
+document. Both medians are over the 151 per-document quotients; below 1.0 is
+ours faster.
+
+|pair (ours ÷ scalar)|median|ours faster|1.0–1.10|>1.10|range|median speedup|
+|---|---:|---:|---:|---:|---|---:|
+|`rp` ÷ `parseDocument`|**0.0316**|**151/151**|0|0|0.0121–0.0539|31.7×|
+|`rpc` ÷ `parseDocument`|**0.0399**|**151/151**|0|0|0.0184–0.0626|25.1×|
+|`rp`, floor removed|0.0323|151/151|0|0|—|30.9×|
+|`rpc`, floor removed|0.0415|151/151|0|0|—|24.1×|
+
+The floor-removed rows subtract the whole 2.36 µs floor from every scalar row.
+That over-subtracts, because the floor contains a minimal parse as well as the
+read, so each is the conservative version of its own quotient; the subtraction
+moves the medians by 2.2% (`rp`) and 4.0% (`rpc`), and no conclusion here depends
+on the read.
+
+Per target size, with the scalar's own ns/byte and the native `rp` ns/byte, both
+columns medians over the documents in the band. The `rp`÷scalar column is the
+**median of the per-document quotients** in the band, not the quotient of the two
+ns/B medians, so it does not equal their ratio.
+
+|target|n|scalar ns/B|`rp` ns/B|`rp`÷scalar|speedup|floor share|
+|---|---:|---:|---:|---:|---:|---:|
+|512 B|20|34.4|0.88|0.0267|37.5×|17.4%|
+|2 KiB|20|25.7|0.91|0.0364|27.5×|4.6%|
+|8 KiB|20|28.5|1.02|0.0355|28.1×|1.1%|
+|32 KiB|20|30.2|1.05|0.0346|28.9×|0.2%|
+|64 KiB|7|18.4|0.99|0.0277|36.2×|0.2%|
+|128 KiB|20|32.6|1.04|0.0327|30.6×|0.1%|
+|256 KiB|4|69.3|1.23|0.0293|34.2×|0.0%|
+|512 KiB|20|39.3|1.06|0.0274|36.5×|0.0%|
+|1 MiB|20|46.8|1.09|0.0234|42.7×|0.0%|
+
+The 64 KiB row's seven documents are the three canonical `syn-*` documents and
+the four 64 KiB deep and escapes documents; its scalar ns/byte is the median
+over those seven, and the per-style figures below show the spread that hides. By
+style the `rp` speedups are deep 77.9×, UTF-8 48.6×, tab 36.2×, strings 36.2×,
+pretty 31.5×, spaced 28.7×, compact 28.4×, dense 26.5× and escapes 19.4×; the
+extremes are a 256 KiB deep document at 82.4× and a 64 KiB escapes document at
+18.5×. The three canonical documents read dense 26.5×, strings 36.2× and UTF-8
+48.6×; with the consumer the same three read 18.8×, 32.3× and 40.1×.
+
+**Relation to the fair row.** The committed row is untouched: `rpn/ps` median
+0.8735, 128/151 faster, 22 in the 1.0–1.10 band and 1 over 10% (127/21/0 over
+the 148 heterogeneous documents). The J5 fair sweep, run with the same
+instrument digests on this host, recounts `rpn/ps` at 0.8284 median, 141/151
+faster, 10 in band and 0 over (138/10/0 over the 148). The two are one
+instrument's runs on different hosts; they are not divided by each other, and
+no J5 quotient uses the 0.8735 row. The J5 native columns come from the sweep
+whose recount is 0.8284. That recount's per-document table and its `RECOUNT`
+line were not retained with this note, so unlike the committed row it is not
+re-derivable from the record alone; the reproduce block below regenerates it.
+
+**What this measures and does not.** It measures one host's native parse and
+consumer against one host's Lean scalar tape over 151 documents: the medians are
+25–32×, and every document is faster on the native side. It does not measure an
+equal-output pair (the artefacts differ), the route's admission or staging (not
+in either arm), the scalar parser's decoded value or the native consumer's
+reading against it, or another host, corpus or governor. §7.2's 1–3% warning
+does not bear on a 25–32× quotient, but the scalar side's round-to-round spread
+does: the three round medians span 3.1% at the median document, 12.9% at the
+90th percentile and 25.8% at the worst, which is why each document's quoted
+scalar time is the median of its three round medians rather than one round.
+
+### J6: the 4–64 KiB law, re-measured
+
+**Instrument and terms.** `probes/bench/json-bench.sh <binary> 21`, invoked five
+times (the rounds), under `taskset -c 0`. Every round prints the floor first —
+`--floor probes/bench/json/cheapest.json`, 5 repetitions — and then the three
+size documents at 21 repetitions. A timed region is one file read plus one
+`parseDocument` call under `benchLimits`; the parse's token count is folded into
+`acc`, which is the same-work check across rounds: 1,781 tokens per parse at
+4 KiB, 7,121 at 16 KiB and 28,491 at 64 KiB, identical in all five rounds. The
+documents are one shape: a flat array of `{"a":1234,"b":"hello"}` objects.
+
+|document|bytes|median ns|ns/byte|floor share|tokens/parse|
+|---|---:|---:|---:|---:|---:|
+|floor (`cheapest.json`)|1|2,356|—|—|1|
+|`scale-4096.json`|4,096|129,822|31.70|1.8%|1,781|
+|`scale-16384.json`|16,384|553,475|33.78|0.4%|7,121|
+|`scale-65536.json`|65,536|2,350,464|35.87|0.1%|28,491|
+
+The median is of the five round medians; the round medians span 127,891–137,731
+ns at 4 KiB, 534,418–570,426 at 16 KiB and 2,282,589–2,396,288 at 64 KiB. The
+floor share is the floor median over the row's median.
+
+**The law.** Fitting `t ∝ n^e` between 4 KiB and 64 KiB gives **e = 1.045**
+(4→16 KiB 1.046, 16→64 KiB 1.043); per round the exponent is 1.027–1.053.
+Quadratic growth is e = 2.00, so over this range the cost grows close to
+proportionally, with a small positive residual: ns/byte rises from 31.7 to 33.8
+to 35.9. The measured law is therefore the same "close to proportional, not
+quadratic" result the ledger records for the fixed carrier, at this host's
+absolute level.
+
+**Relation to the README's sentence.** The README records 35.5 ns/byte at 64 KiB
+and 48.0 at 4–16 KiB, with a 4 µs floor, from the earlier host's run. This run's
+64 KiB figure is 35.9 ns/byte, 1.0% above it, while its 4–16 KiB figures are 31.7
+and 33.8, not 48.0, and its floor is 2.36 µs, not 4. The 4–16 KiB point is host-
+and tree-specific and is not reproduced here; what is reproduced is the law the
+README's sentence rests on: no quadratic term over 4–64 KiB, and a per-byte cost
+flat to within 14% across the range. On this host the per-byte cost is
+flat-to-slightly-rising rather than falling with size, so the "cost per byte
+falls with size" reading of the earlier row is not carried over as a general
+statement; the exponent is.
+
+**Limits.** The read is inside the clock, but the floor is 1.8% of the 4 KiB row
+and less above it, so the read is not the subject. One host, one CPU (a
+performance-cluster core), `powersave`, the recorded load; the rounds are
+sequential, so a frequency drift between sizes would appear as part of the
+exponent, and the per-round exponent spread (1.027–1.053) is the bound on that.
+The documents are one syntactic shape; the row is about size on that shape, not
+about a corpus. The bench limits do not bind at these sizes.
+
+**Reproduce.**
+
+```bash
+# At ab0b666, or at any revision whose LeanLLVM/JSON and probes/bench are
+# identical (`git diff ab0b666 HEAD -- LeanLLVM/JSON probes/bench` empty).
+systemd-run --user --scope -p MemoryMax=12G -p MemorySwapMax=4G --quiet \
+  nix develop -c bash probes/install/lake-locked.sh build leanllvm-json-bench
+taskset -c 0 nix develop -c bash probes/bench/json-bench.sh \
+  .lake/build/bin/leanllvm-json-bench 21     # five times, for the five rounds
+
+FAIR_NOEVENT=1 BENCH_TRIALS=3 BENCH_REPS=51 \
+  nix develop -c bash tests/json-fair/run.sh
+for f in tests/json-fair/corpus/*.json; do
+  taskset -c 0 .lake/build/bin/leanllvm-json-bench "$f" 21
+done                                          # three rounds
+```
