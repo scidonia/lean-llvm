@@ -1326,7 +1326,10 @@ noncomputable def stage2NoEventWalkBracketZeroTerminal {gap : Calls}
     (hreportRef : ∀ q : Nat, K.ent[k + 2]? = some q →
       Stage2NoEventRun K.a12 mem
         (stage2NoEventErrMem s.mem K.tokensOut K.valuesOut K.sumOut K.err
-          (BitVec.ofNat 64 q))) :
+          (BitVec.ofNat 64 q)))
+    (hrefAcc : Stage2NoEventWalkReferenceAccept K
+      { K with tok := K.tok + 2, terms := K.terms + 7 })
+    (hdata : Stage2NoEventWalkReferenceRefuse K) :
     Stage2NoEventWalkRow (stage2NoEventCalls gap) mem F K k s := by
   refine Classical.choice ?_
   classical
@@ -1334,12 +1337,11 @@ noncomputable def stage2NoEventWalkBracketZeroTerminal {gap : Calls}
     intro s; cases s; rfl
   let K' : Stage2NoEventWalkCarry := { K with tok := K.tok + 2, terms := K.terms + 7 }
   obtain ⟨sE, hseg0, hpcE, hpreE, hframe4, hsp3, hk5, halen7, harena9, hterms7,
-    htok7, hnepE, hmemE, hbaseE0, htraceE0⟩ :=
+    htok7, hnepE, hmemE, hbaseE0, _⟩ :=
     stage2NoEventWalkBracketZeroRoute (calls := stage2NoEventCalls gap)
       h htrace hk hbs hb hbs1 hb1 hspZ hkbound hk63 hlane hval4lt hbyte1
   have hseg : Stage2NoEventWalkSegment (stage2NoEventCalls gap) mem K s K' sE 9 := hseg0
   have hbaseE : Stage2NoEventWalkBaseLookups K' sE := hbaseE0
-  have htraceE : Stage2NoEventWalkTrace K' := htraceE0
   let c0 : BitVec 1 :=
     evalICmp .ult (BitVec.ofNat 64 (k + 2)) (BitVec.ofNat 64 K.nep)
   let sA : State := stage2NoEventWalkNext
@@ -1460,7 +1462,8 @@ noncomputable def stage2NoEventWalkBracketZeroTerminal {gap : Calls}
         have hmul : 32 * 2 ≤ 32 * (K.nep - k) := Nat.mul_le_mul_left 32 hge
         omega
       omega
-    obtain ⟨obs, toks, hrel, hobsLen, htermsEq, -⟩ := htraceE
+    obtain ⟨tt, obs, toks, hprops, hfacts⟩ := hrefAcc
+    obtain ⟨hrel, hobsLen, htermsEq⟩ := hprops
     have hj : ∀ n, runFuel (stage2NoEventCalls gap) (11 + n) stage2NoEventBody s =
         runFuel (stage2NoEventCalls gap) n stage2NoEventBody sB := by
       intro n
@@ -1484,7 +1487,7 @@ noncomputable def stage2NoEventWalkBracketZeroTerminal {gap : Calls}
         (sE := sB) (sT := sT) (sR := sR) (j := 11) (m := acceptMem)
         (obs := obs) (toks := toks) hj hstep hclean hmR hcost
         (by show K.tok < K.tok + 2; omega) rfl rfl
-        haccT hrel hobsLen htermsEq hreportAcc hboundAcc)⟩
+        haccT hrel hobsLen htermsEq hreportAcc tt hfacts hboundAcc)⟩
   · have hlt : k + 2 < K.nep := by omega
     have hc1 : c0 = 1 := by
       show evalICmp .ult (BitVec.ofNat 64 (k + 2)) (BitVec.ofNat 64 K.nep) = 1
@@ -1575,7 +1578,7 @@ noncomputable def stage2NoEventWalkBracketZeroTerminal {gap : Calls}
         (j := 11) (idx6 := BitVec.ofNat 64 (k + 2)) (x32 := BitVec.ofNat 32 q)
         (x64 := BitVec.ofNat 64 q) hj (by simp only [sB, stage2NoEventWalkNext])
         hepB hk6B hpos hreadB hconv (by decide) hparB hlocB hle hcost hreportRefB
-        htrace hrouteFrame h.inv)⟩
+        htrace hrouteFrame hdata h.inv)⟩
 
 /-- **The empty object at depth zero is a terminal row**: the acceptance when the
 closer's entry is the last, the refusal otherwise. -/
@@ -1609,7 +1612,10 @@ noncomputable def stage2NoEventWalkBraceZeroTerminal {gap : Calls}
     (hreportRef : ∀ q : Nat, K.ent[k + 2]? = some q →
       Stage2NoEventRun K.a12 mem
         (stage2NoEventErrMem s.mem K.tokensOut K.valuesOut K.sumOut K.err
-          (BitVec.ofNat 64 q))) :
+          (BitVec.ofNat 64 q)))
+    (hrefAcc : Stage2NoEventWalkReferenceAccept K
+      { K with tok := K.tok + 2, terms := K.terms + 3 })
+    (hdata : Stage2NoEventWalkReferenceRefuse K) :
     Stage2NoEventWalkRow (stage2NoEventCalls gap) mem F K k s := by
   refine Classical.choice ?_
   classical
@@ -1617,12 +1623,11 @@ noncomputable def stage2NoEventWalkBraceZeroTerminal {gap : Calls}
     intro s; cases s; rfl
   let K' : Stage2NoEventWalkCarry := { K with tok := K.tok + 2, terms := K.terms + 3 }
   obtain ⟨sE, hseg0, hpcE, hpreE, hdecE, hk4E, halenE, harenaE, htermsE, htokE,
-    hnepE, hmemE, hbaseE0, htraceE0⟩ :=
+    hnepE, hmemE, hbaseE0, _⟩ :=
     stage2NoEventWalkBraceZeroRoute (calls := stage2NoEventCalls gap)
       h htrace hk hbs hb hbs1 hb1 hspZ hkbound hk63 hlane hval4lt hbyte1
   have hseg : Stage2NoEventWalkSegment (stage2NoEventCalls gap) mem K s K' sE 11 := hseg0
   have hbaseE : Stage2NoEventWalkBaseLookups K' sE := hbaseE0
-  have htraceE : Stage2NoEventWalkTrace K' := htraceE0
   have hdec0 : (BitVec.ofNat 32 0 + BitVec.ofNat 32 1 +
       BitVec.ofNat 32 4294967295) = BitVec.ofNat 32 0 := by decide
   let c0 : BitVec 1 :=
@@ -1747,7 +1752,8 @@ noncomputable def stage2NoEventWalkBraceZeroTerminal {gap : Calls}
         have hmul : 32 * 2 ≤ 32 * (K.nep - k) := Nat.mul_le_mul_left 32 hge
         omega
       omega
-    obtain ⟨obs, toks, hrel, hobsLen, htermsEq, -⟩ := htraceE
+    obtain ⟨tt, obs, toks, hprops, hfacts⟩ := hrefAcc
+    obtain ⟨hrel, hobsLen, htermsEq⟩ := hprops
     have hj : ∀ n, runFuel (stage2NoEventCalls gap) (13 + n) stage2NoEventBody s =
         runFuel (stage2NoEventCalls gap) n stage2NoEventBody sB := by
       intro n
@@ -1771,7 +1777,7 @@ noncomputable def stage2NoEventWalkBraceZeroTerminal {gap : Calls}
         (sE := sB) (sT := sT) (sR := sR) (j := 13) (m := acceptMem)
         (obs := obs) (toks := toks) hj hstep hclean hmR hcost
         (by show K.tok < K.tok + 2; omega) rfl rfl
-        haccT hrel hobsLen htermsEq hreportAcc hboundAcc)⟩
+        haccT hrel hobsLen htermsEq hreportAcc tt hfacts hboundAcc)⟩
   · have hlt : k + 2 < K.nep := by omega
     have hc1 : c0 = 1 := by
       show evalICmp .ult (BitVec.ofNat 64 (k + 2)) (BitVec.ofNat 64 K.nep) = 1
@@ -1862,7 +1868,7 @@ noncomputable def stage2NoEventWalkBraceZeroTerminal {gap : Calls}
         (j := 13) (idx6 := BitVec.ofNat 64 (k + 2)) (x32 := BitVec.ofNat 32 q)
         (x64 := BitVec.ofNat 64 q) hj (by simp only [sB, stage2NoEventWalkNext])
         hepB hk6B hpos hreadB hconv (by decide) hparB hlocB hle hcost hreportRefB
-        htrace hrouteFrame h.inv)⟩
+        htrace hrouteFrame hdata h.inv)⟩
 
 /-! ### Axiom footprints -/
 

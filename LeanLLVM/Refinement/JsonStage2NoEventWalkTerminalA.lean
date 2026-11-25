@@ -42,8 +42,14 @@ Each refusal producer takes the walk's frame at the head (`Stage2NoEventWalkInv`
 the route to the block's entry, the block's entry registers
 (`Stage2NoEventWalkParams`, `Stage2NoEventWalkLocals`), the route's own
 word/`CallOutcome` facts, the trace the walk has consumed, the price
-(`j + 1 ≤ Φ K k + F`) and the record's report at the returned memory.  The
-boundary is **derived** wherever the block's own stores are the witness
+(`j + 1 ≤ Φ K k + F`) and the record's report at the returned memory.  Because the
+exit is data, its refusal's `(obs, toks)` cannot be read out of the trace's `Prop`
+existential: every refusal producer also takes
+`Stage2NoEventWalkReferenceRefuse K` — the relation's witnesses, the two count
+equations and the parser's verdict, **carried data** from the deployment
+boundary — and the seam places the trace, the witnesses and the verdict in the
+exit it builds.
+The boundary is **derived** wherever the block's own stores are the witness
 (`zeroStore`, `gapLiteral`: the four words read back, the frame composed from the
 walk's, the route's and the call's); the two seams `stage2NoEventRefuse_exit` and
 `stage2NoEventAccept_exit` take it as an argument — `zeroStore`/`errStore`-at-a-
@@ -282,7 +288,7 @@ producers name that shape once; each route below derives its evidence and its
 boundary and calls one of them. -/
 
 /-- **A refusal's exit from its evidence and boundary.** -/
-theorem stage2NoEventRefuse_exit {gap : Calls} {mem : Mem} {F k : Nat}
+def stage2NoEventRefuse_exit {gap : Calls} {mem : Mem} {F k : Nat}
     {K : Stage2NoEventWalkCarry} {s sE sT sR : State} {j : Nat} {m : Mem}
     (hj : ∀ n, runFuel (stage2NoEventCalls gap) (j + n) stage2NoEventBody s =
       runFuel (stage2NoEventCalls gap) n stage2NoEventBody sE)
@@ -294,13 +300,15 @@ theorem stage2NoEventRefuse_exit {gap : Calls} {mem : Mem} {F k : Nat}
     (hreport : Stage2NoEventRun K.a12 mem m)
     (htrace : Stage2NoEventWalkTrace K)
     (hev : Stage2NoEventWalkRefusalEvidence K sT)
+    (hdata : Stage2NoEventWalkReferenceRefuse K)
     (hbound : stage2NoEventBoundary K.a12 mem K.next0 m (.int 64 0)) :
     Stage2NoEventWalkExit (stage2NoEventCalls gap) mem F K k s := by
-  obtain ⟨obs, toks, hrel, hobsLen, htermsEq, -⟩ := htrace
+  obtain ⟨obs, toks, hprops, hrefused⟩ := hdata
+  obtain ⟨hrel, hobsLen, htermsEq⟩ := hprops
   exact .refuse (j + 1) m sT (Stage2NoEventWalkRunTo.extend ⟨j, hj⟩ hstep) hcost
     (Stage2NoEventWalkRunTo.run_of_cleanup (f := stage2NoEventBody) (j := j) (v := 0)
       (m := m) hj hstep hclean hmR)
-    hev obs toks hrel hobsLen htermsEq hreport hbound
+    hev htrace obs toks hrel hobsLen htermsEq hreport hbound hrefused
 
 /-- **An acceptance's exit from its reading and boundary.**  The acceptance's
 carry delta is the constructor's own: the target carry `K'` has strictly more
@@ -309,7 +317,7 @@ the pair classes (`{}`, `[]`, `["x"]`) two — and keeps the argument list and t
 caller's cursor.  The exact count is `K'`'s: `AcceptAcc K' sT` binds the three
 stored words and `obs.length = K'.tok` binds the trace's length, so the
 inequality alone is not read as a count. -/
-theorem stage2NoEventAccept_exit {gap : Calls} {mem : Mem} {F k : Nat}
+def stage2NoEventAccept_exit {gap : Calls} {mem : Mem} {F k : Nat}
     {K K' : Stage2NoEventWalkCarry} {s sE sT sR : State} {j : Nat} {m : Mem}
     {obs : List ConsumerEvent} {toks : List Token}
     (hj : ∀ n, runFuel (stage2NoEventCalls gap) (j + n) stage2NoEventBody s =
@@ -325,12 +333,14 @@ theorem stage2NoEventAccept_exit {gap : Calls} {mem : Mem} {F k : Nat}
     (hobsLen : obs.length = K'.tok)
     (htermsEq : K'.terms = (obs.map ConsumerEvent.terms).sum)
     (hreport : Stage2NoEventRun K'.a12 mem m)
+    (t : Tape)
+    (facts : Stage2NoEventWalkReferenceFacts K.bs K'.arena obs toks t)
     (hbound : stage2NoEventBoundary K'.a12 mem K'.next0 m (.int 64 1)) :
     Stage2NoEventWalkExit (stage2NoEventCalls gap) mem F K k s :=
   .accept K' (j + 1) m sT (Stage2NoEventWalkRunTo.extend ⟨j, hj⟩ hstep) hcost
     (Stage2NoEventWalkRunTo.run_of_cleanup (f := stage2NoEventBody) (j := j) (v := 1)
       (m := m) hj hstep hclean hmR)
-    htokK ha12 hn0 hacc obs toks hrel hobsLen htermsEq hreport hbound
+    htokK ha12 hn0 hacc obs toks hrel hobsLen htermsEq hreport hbound t facts
 
 /-- **The terminal row from its exit.** -/
 def stage2NoEventWalkTerminalRow {calls : Calls} {mem : Mem} {F : Nat}
@@ -383,7 +393,7 @@ theorem stage2NoEventBoundaryFrame {K : Stage2NoEventWalkCarry} {mem : Mem}
 (the pin's `denoteCode` and control step); what this producer adds is the target's
 `cleanup580` step, the evidence read back at the target, the returning run, and the
 record's boundary from the walk's frame and the route's. -/
-theorem stage2NoEventZero_exit {gap : Calls} {mem : Mem} {F k : Nat}
+def stage2NoEventZero_exit {gap : Calls} {mem : Mem} {F k : Nat}
     {K : Stage2NoEventWalkCarry} {s sE sT sR : State} {j : Nat} {x : BitVec 64} {m : Mem}
     (hj : ∀ n, runFuel (stage2NoEventCalls gap) (j + n) stage2NoEventBody s =
       runFuel (stage2NoEventCalls gap) n stage2NoEventBody sE)
@@ -404,6 +414,7 @@ theorem stage2NoEventZero_exit {gap : Calls} {mem : Mem} {F k : Nat}
     (hrouteFrame : UnchangedOutside s.mem sE.mem
       (stage2NoEventRunRegions K.scratch K.scratchcap K.stk K.e K.c K.d ++
         [(K.next0, K.nextEnd - K.next0)]))
+    (hdata : Stage2NoEventWalkReferenceRefuse K)
     (h : Stage2NoEventWalkInv K mem s) :
     Stage2NoEventWalkExit (stage2NoEventCalls gap) mem F K k s := by
   obtain ⟨hTok, hVal, hSum, hErr⟩ :=
@@ -411,7 +422,7 @@ theorem stage2NoEventZero_exit {gap : Calls} {mem : Mem} {F k : Nat}
       (stage2NoEventRegions_writes h.separate)
   refine stage2NoEventRefuse_exit hj hstep hclean hmR hcost hreport htrace
     (stage2NoEventZero_evidence htok hval hsum herr (by rw [hmS, hm]; exact hErr)
-      hle x.isLt) ?_
+      hle x.isLt) hdata ?_
   refine stage2NoEventBoundary_refusal h (by rw [hm]; exact hTok) (by rw [hm]; exact hVal)
     (by rw [hm]; exact hSum) (by rw [hm]; exact hErr) hle ?_
   have hw : UnchangedOutside sE.mem m
@@ -434,7 +445,7 @@ theorem stage2NoEventZero_exit {gap : Calls} {mem : Mem} {F k : Nat}
   exact stage2NoEventBoundaryFrame h hrouteFrame (UnchangedOutside.refl' _ _) hw
 
 /-- **A zero-store entry's exit**, from the pin. -/
-theorem stage2NoEventZeroBlock_exit {gap : Calls} {mem : Mem} {F k : Nat}
+def stage2NoEventZeroBlock_exit {gap : Calls} {mem : Mem} {F k : Nat}
     {K : Stage2NoEventWalkCarry} {s sE : State} {j : Nat} {blk w : String} {b : Block}
     {x : BitVec 64}
     (hj : ∀ n, runFuel (stage2NoEventCalls gap) (j + n) stage2NoEventBody s =
@@ -454,6 +465,7 @@ theorem stage2NoEventZeroBlock_exit {gap : Calls} {mem : Mem} {F k : Nat}
     (hrouteFrame : UnchangedOutside s.mem sE.mem
       (stage2NoEventRunRegions K.scratch K.scratchcap K.stk K.e K.c K.d ++
         [(K.next0, K.nextEnd - K.next0)]))
+    (hdata : Stage2NoEventWalkReferenceRefuse K)
     (h : Stage2NoEventWalkInv K mem s) :
     Stage2NoEventWalkExit (stage2NoEventCalls gap) mem F K k s := by
   have hstep : step (stage2NoEventCalls gap) stage2NoEventBody sE =
@@ -486,7 +498,7 @@ theorem stage2NoEventZeroBlock_exit {gap : Calls} {mem : Mem} {F k : Nat}
     (by rw [henvT]; exact hpar.valuesOut)
     (by rw [henvT]; exact hpar.sumOut)
     (by rw [henvT]; exact hpar.err)
-    hle hcost hreport htrace hrouteFrame h
+    hle hcost hreport htrace hrouteFrame hdata h
 
 /-- **A zero-store entry's row**, from the pin: the terminal row at the exit. -/
 def stage2NoEventZeroBlock_row {gap : Calls} {mem : Mem} {F k : Nat}
@@ -509,11 +521,12 @@ def stage2NoEventZeroBlock_row {gap : Calls} {mem : Mem} {F k : Nat}
     (htrace : Stage2NoEventWalkTrace K)
     (hrouteFrame : UnchangedOutside s.mem sE.mem
       (stage2NoEventRunRegions K.scratch K.scratchcap K.stk K.e K.c K.d ++
-        [(K.next0, K.nextEnd - K.next0)])) :
+        [(K.next0, K.nextEnd - K.next0)]))
+    (hdata : Stage2NoEventWalkReferenceRefuse K) :
     Stage2NoEventWalkRow (stage2NoEventCalls gap) mem F K k s :=
   stage2NoEventWalkTerminalRow
     (stage2NoEventZeroBlock_exit hj hpc hfind hbody hterm hinc hpar hloc hw hle
-      hcost hreport htrace hrouteFrame h.inv)
+      hcost hreport htrace hrouteFrame hdata h.inv)
 
 /-! ### The terminal entries' pins
 
@@ -904,7 +917,7 @@ theorem stage2NoEventErrStoreTarget_env (env : Env) (s : State) (d : String)
 /-- **An `errStore` entry's refusal exit.**  The evidence is the `phi` cell (the
 operand the step read and the shape's `src` register), the `lifetime.end` operand
 and `%err`; the three zero words and the refusal word are the route's memory. -/
-theorem stage2NoEventErrStore_exit {gap : Calls} {mem : Mem} {F k : Nat}
+def stage2NoEventErrStore_exit {gap : Calls} {mem : Mem} {F k : Nat}
     {K : Stage2NoEventWalkCarry} {s sE sT sR : State} {j : Nat} {m : Mem}
     {src : String} {w : Nat} {p : Nat}
     (hj : ∀ n, runFuel (stage2NoEventCalls gap) (j + n) stage2NoEventBody s =
@@ -932,15 +945,17 @@ theorem stage2NoEventErrStore_exit {gap : Calls} {mem : Mem} {F k : Nat}
       (stage2NoEventWrites K.tokensOut K.valuesOut K.sumOut K.err ++
         (stage2NoEventRunRegions K.scratch K.scratchcap K.stk K.e K.c K.d ++
           [(K.next0, K.nextEnd - K.next0)])))
+    (hdata : Stage2NoEventWalkReferenceRefuse K)
     (h : Stage2NoEventWalkInv K mem s) :
     Stage2NoEventWalkExit (stage2NoEventCalls gap) mem F K k s :=
   stage2NoEventRefuse_exit hj hstep hclean hmR hcost hreport htrace
     (.errStore w (Operand.reg src) p src hop hwlt hsrc hlook hout herr)
+    hdata
     (stage2NoEventBoundary_refusal h hTokZ hValZ hSumZ hErrW hOffLe hframe)
 
 /-- **A `cleanup.thread` exit**, from its pin: the offset `phi`'s cell, the
 `lifetime.end` operand, and the route's four words. -/
-theorem stage2NoEventCleanupThread_exit {gap : Calls} {mem : Mem} {F k : Nat}
+def stage2NoEventCleanupThread_exit {gap : Calls} {mem : Mem} {F k : Nat}
     {K : Stage2NoEventWalkCarry} {s sE : State} {j : Nat}
     {w : BitVec 64} {p : String} {op : Operand} {outn : Nat}
     (hj : ∀ n, runFuel (stage2NoEventCalls gap) (j + n) stage2NoEventBody s =
@@ -965,6 +980,7 @@ theorem stage2NoEventCleanupThread_exit {gap : Calls} {mem : Mem} {F k : Nat}
     (hrouteFrame : UnchangedOutside s.mem sE.mem
       (stage2NoEventRunRegions K.scratch K.scratchcap K.stk K.e K.c K.d ++
         [(K.next0, K.nextEnd - K.next0)]))
+    (hdata : Stage2NoEventWalkReferenceRefuse K)
     (h : Stage2NoEventWalkInv K mem s) :
     Stage2NoEventWalkExit (stage2NoEventCalls gap) mem F K k s := by
   have hstep : step (stage2NoEventCalls gap) stage2NoEventBody sE =
@@ -1031,11 +1047,11 @@ theorem stage2NoEventCleanupThread_exit {gap : Calls} {mem : Mem} {F k : Nat}
     (w := w.toNat) hj hstep hclean
     (by simp only [stateAt, stage2NoEventJumpState]) hopT (Or.inl rfl) hlookT
     (Or.inl houtT) herrT hwlt hcost hreport htrace hTokZ hValZ hSumZ hErrW hOffLe
-    hframe h
+    hframe hdata h
 
 /-- **A `cleanup287.thread` exit**, from its pin: the string path's offset `phi`
 and its own `%outn205` operand. -/
-theorem stage2NoEventCleanup287_exit {gap : Calls} {mem : Mem} {F k : Nat}
+def stage2NoEventCleanup287_exit {gap : Calls} {mem : Mem} {F k : Nat}
     {K : Stage2NoEventWalkCarry} {s sE : State} {j : Nat}
     {w : BitVec 64} {p : String} {op : Operand} {outn : Nat}
     (hj : ∀ n, runFuel (stage2NoEventCalls gap) (j + n) stage2NoEventBody s =
@@ -1060,6 +1076,7 @@ theorem stage2NoEventCleanup287_exit {gap : Calls} {mem : Mem} {F k : Nat}
     (hrouteFrame : UnchangedOutside s.mem sE.mem
       (stage2NoEventRunRegions K.scratch K.scratchcap K.stk K.e K.c K.d ++
         [(K.next0, K.nextEnd - K.next0)]))
+    (hdata : Stage2NoEventWalkReferenceRefuse K)
     (h : Stage2NoEventWalkInv K mem s) :
     Stage2NoEventWalkExit (stage2NoEventCalls gap) mem F K k s := by
   have hstep : step (stage2NoEventCalls gap) stage2NoEventBody sE =
@@ -1131,7 +1148,7 @@ theorem stage2NoEventCleanup287_exit {gap : Calls} {mem : Mem} {F k : Nat}
     (src := "%idxprom.lcssa1109.lcssa.sink") (w := w.toNat) hj hstep hclean
     (by simp only [stateAt, stage2NoEventJumpState]) hopT
     (Or.inr rfl) hlookT (Or.inr houtT) herrT w.isLt hcost hreport htrace hTokZ hValZ
-    hSumZ hErrW hOffLe hframe h
+    hSumZ hErrW hOffLe hframe hdata h
 
 /-! ### The gap family's literal shape
 
@@ -1175,7 +1192,7 @@ theorem stage2NoEventErrMem_off_read {m : Mem} {t v su err : Nat} {x : BitVec 64
 /-- **The gap family's literal shape**, from the route's word and its provenance.
 The evidence names the `%ei520.0.ph` cell, the offset slot, the `%74` read at the
 call's memory and the phi's incoming value; the boundary reads the stores back. -/
-theorem stage2NoEventGapLiteral_exit {gap : Calls} {mem : Mem} {F k : Nat}
+def stage2NoEventGapLiteral_exit {gap : Calls} {mem : Mem} {F k : Nat}
     {K : Stage2NoEventWalkCarry} {s sE sT sR : State} {j : Nat} {m : Mem}
     {rc : CallOutcome} {ei520 idxNat eoffN : Nat}
     {src : Stage2NoEventWalkEi520Incoming}
@@ -1209,6 +1226,7 @@ theorem stage2NoEventGapLiteral_exit {gap : Calls} {mem : Mem} {F k : Nat}
     (hcallFrame : UnchangedOutside sE.mem rc.mem
       (stage2NoEventRunRegions K.scratch K.scratchcap K.stk K.e K.c K.d ++
         [(K.next0, K.nextEnd - K.next0)]))
+    (hdata : Stage2NoEventWalkReferenceRefuse K)
     (h : Stage2NoEventWalkInv K mem s) :
     Stage2NoEventWalkExit (stage2NoEventCalls gap) mem F K k s := by
   obtain ⟨hTok, hVal, hSum, hErr⟩ :=
@@ -1230,7 +1248,7 @@ theorem stage2NoEventGapLiteral_exit {gap : Calls} {mem : Mem} {F k : Nat}
       ⟨r, List.mem_append_left _ hr, le_rfl, le_rfl⟩)
   refine stage2NoEventRefuse_exit hj hstep hclean hmR hcost hreport htrace
     (.gapLiteral rc eoffN idxNat ei520 src htok hval hsum herr hoff hidx hei
-      hsrcValue hv hTframe heoffEq hOffLe hLt) ?_
+      hsrcValue hv hTframe heoffEq hOffLe hLt) hdata ?_
   refine stage2NoEventBoundary_refusal (eoff := eoffN) h (by rw [hm]; exact hTok)
     (by rw [hm]; exact hVal) (by rw [hm]; exact hSum)
     (by
@@ -1354,7 +1372,7 @@ theorem stage2NoEventPhiZeroStore_denote {calls : Calls} (env : Env) (s : State)
 
 /-- **`if.then38`'s exit**: its `phi`'s word, the family's stores, and the
 `cleanup580` seam. -/
-theorem stage2NoEventIfThen38_exit {gap : Calls} {mem : Mem} {F k : Nat}
+def stage2NoEventIfThen38_exit {gap : Calls} {mem : Mem} {F k : Nat}
     {K : Stage2NoEventWalkCarry} {s sE : State} {j : Nat}
     {p : String} {op : Operand} {x : BitVec 64}
     (hj : ∀ n, runFuel (stage2NoEventCalls gap) (j + n) stage2NoEventBody s =
@@ -1373,6 +1391,7 @@ theorem stage2NoEventIfThen38_exit {gap : Calls} {mem : Mem} {F k : Nat}
     (hrouteFrame : UnchangedOutside s.mem sE.mem
       (stage2NoEventRunRegions K.scratch K.scratchcap K.stk K.e K.c K.d ++
         [(K.next0, K.nextEnd - K.next0)]))
+    (hdata : Stage2NoEventWalkReferenceRefuse K)
     (h : Stage2NoEventWalkInv K mem s) :
     Stage2NoEventWalkExit (stage2NoEventCalls gap) mem F K k s := by
   have hcode : denoteCode (stage2NoEventCalls gap) stage2NoEventIfThen38Block.instrs
@@ -1422,7 +1441,7 @@ theorem stage2NoEventIfThen38_exit {gap : Calls} {mem : Mem} {F k : Nat}
   refine stage2NoEventZero_exit (x := x)
     (m := stage2NoEventErrMem sE.mem K.tokensOut K.valuesOut K.sumOut K.err x)
     hj hstep hclean (by simp only [stateAt, stage2NoEventJumpState]) rfl
-    ?_ ?_ ?_ ?_ ?_ hle hcost hreport htrace hrouteFrame h
+    ?_ ?_ ?_ ?_ ?_ hle hcost hreport htrace hrouteFrame hdata h
   · rw [stage2NoEventPhiZeroTarget_mem]
   · rw [henvT]; exact lookupName_cons_ne _ _ (by decide) |>.trans hpar.tokensOut
   · rw [henvT]; exact lookupName_cons_ne _ _ (by decide) |>.trans hpar.valuesOut
@@ -1467,7 +1486,7 @@ theorem stage2NoEventIfThen360Target_mem (env : Env) (s : State) (base : Nat) {w
 
 /-- **`if.then360`'s exit**: the entry's index read binds `%arrayidx361`, `%51` and
 `%conv362`, and the zero rule's stores follow. -/
-theorem stage2NoEventIfThen360_exit {gap : Calls} {mem : Mem} {F k : Nat}
+def stage2NoEventIfThen360_exit {gap : Calls} {mem : Mem} {F k : Nat}
     {K : Stage2NoEventWalkCarry} {s sE : State} {j : Nat}
     {w : Nat} {idx6 : BitVec w} {x32 : BitVec 32} {x64 : BitVec 64}
     (hj : ∀ n, runFuel (stage2NoEventCalls gap) (j + n) stage2NoEventBody s =
@@ -1490,6 +1509,7 @@ theorem stage2NoEventIfThen360_exit {gap : Calls} {mem : Mem} {F k : Nat}
     (hrouteFrame : UnchangedOutside s.mem sE.mem
       (stage2NoEventRunRegions K.scratch K.scratchcap K.stk K.e K.c K.d ++
         [(K.next0, K.nextEnd - K.next0)]))
+    (hdata : Stage2NoEventWalkReferenceRefuse K)
     (h : Stage2NoEventWalkInv K mem s) :
     Stage2NoEventWalkExit (stage2NoEventCalls gap) mem F K k s := by
   have hcode : denoteCode (stage2NoEventCalls gap)
@@ -1588,7 +1608,7 @@ theorem stage2NoEventIfThen360_exit {gap : Calls} {mem : Mem} {F k : Nat}
   refine stage2NoEventZero_exit (x := x64)
     (m := stage2NoEventErrMem sE.mem K.tokensOut K.valuesOut K.sumOut K.err x64)
     hj hstep hclean (by simp only [stateAt, stage2NoEventJumpState]) rfl
-    ?_ ?_ ?_ ?_ ?_ hle hcost hreport htrace hrouteFrame h
+    ?_ ?_ ?_ ?_ ?_ hle hcost hreport htrace hrouteFrame hdata h
   · rw [stage2NoEventIfThen360Target_mem]
   · rw [henvT]
     repeat rw [lookupName_cons_ne _ _ (by decide)]

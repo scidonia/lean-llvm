@@ -159,7 +159,10 @@ noncomputable def stage2NoEventWalkBracketZeroRow {gap : Calls}
     (hreportRef : ∀ q : Nat, K.ent[k + 2]? = some q →
       Stage2NoEventRun K.a12 mem
         (stage2NoEventErrMem s.mem K.tokensOut K.valuesOut K.sumOut K.err
-          (BitVec.ofNat 64 q))) :
+          (BitVec.ofNat 64 q)))
+    (hrefAcc : Stage2NoEventWalkReferenceAccept K
+      { K with tok := K.tok + 2, terms := K.terms + 7 })
+    (hdata : Stage2NoEventWalkReferenceRefuse K) :
     Stage2NoEventWalkRow (stage2NoEventCalls gap) mem F K k s := by
   -- The endpoint's cells place the walk at `%sp.4 = 0` (`%sp.3` is zero there),
   -- so `%cmp355` holds and the continuation is unavailable (`spNe : sp ≠ 0`).
@@ -167,7 +170,7 @@ noncomputable def stage2NoEventWalkBracketZeroRow {gap : Calls}
   -- cells from the head.
   exact stage2NoEventWalkBracketZeroTerminal (gap := gap) (F := F)
     h htrace hk hbs hb hbs1 hb1 hspZ hkbound hk63 hlane hval4lt hbyte1
-    hreportAcc hboundAcc hreportRef
+    hreportAcc hboundAcc hreportRef hrefAcc hdata
 
 /-- **The `{}` depth-zero row from the endpoint's cells.**  The `{}` head at
 `k`, its depth-zero route's `after_value` cells, and the caller's
@@ -204,13 +207,16 @@ noncomputable def stage2NoEventWalkBraceZeroRow {gap : Calls}
     (hreportRef : ∀ q : Nat, K.ent[k + 2]? = some q →
       Stage2NoEventRun K.a12 mem
         (stage2NoEventErrMem s.mem K.tokensOut K.valuesOut K.sumOut K.err
-          (BitVec.ofNat 64 q))) :
+          (BitVec.ofNat 64 q)))
+    (hrefAcc : Stage2NoEventWalkReferenceAccept K
+      { K with tok := K.tok + 2, terms := K.terms + 3 })
+    (hdata : Stage2NoEventWalkReferenceRefuse K) :
     Stage2NoEventWalkRow (stage2NoEventCalls gap) mem F K k s := by
   -- The brace endpoint's `%dec` is the zero word, so `%cmp355` holds there too
   -- and the continuation (`Stage2NoEventWalkCycleSrc.spNe`) is not available.
   exact stage2NoEventWalkBraceZeroTerminal (gap := gap) (F := F)
     h htrace hk hbs hb hbs1 hb1 hspZ hkbound hk63 hlane hval4lt hbyte1
-    hreportAcc hboundAcc hreportRef
+    hreportAcc hboundAcc hreportRef hrefAcc hdata
 
 /-! ### The continuation arm's interface
 

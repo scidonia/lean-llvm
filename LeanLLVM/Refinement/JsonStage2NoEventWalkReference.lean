@@ -23,7 +23,9 @@ holds.
 
 **What replaces the refuted bridge.**  `Stage2NoEventWalkReferenceFacts` is the
 structure the reference run supplies for one acceptance, indexed by that
-acceptance's own `(document, arena, observations, tokens, tape)`.
+acceptance's own `(document, arena, observations, tokens, tape)`; it is declared
+beside the exit that carries it, in `JsonStage2NoEventWalkPremises`, and this
+module imports it from there.
 `stage2NoEventWalkReference_valueOfEvents` reads the committed chain at it.
 `Stage2NoEventWalkReferenceRows` is the row bundle with those facts **carried in
 the accept constructor**, at the witnesses that constructor binds: the accept
@@ -51,42 +53,6 @@ open LeanLLVM
 open LeanLLVM.JSON
 open LeanLLVM.Refinement.JsonStage2NoEventIR
 
-/-! ### The reference run's facts for one acceptance
-
-The structure holds exactly what `eventsOfBytes_valueOfEvents_scalar` consumes at
-one document, arena, observation list and token list, plus the token tie: the
-records and the relation at them, the consumer identity, the record widths, the
-used-extent clause and the tape's token list.  The emitted stream is not a field:
-it is the records' encoding (`rs.map EventRecord.encodedBytes).flatten`, so the
-transfer chain's `hev` is definitional. -/
-
-/-- **The reference run's facts at an acceptance.**  The record trace the
-reference run emitted for this document and arena, the relation at the parser's
-tokens, the identity `obs = consumeRecords`, the record widths, the used-extent
-clause on the reported events, and the parser's token tie.  All of it is
-**carried data**: it is the reference execution's, and — as
-`stage2NoEvent_str_len_free` shows — it is not a consequence of `Stage2NoEvent`,
-so it may not be quantified over derivations.  Stated at the acceptance's own
-`(bs, arena, obs, toks, t)`, so the walk's witnesses select it. -/
-structure Stage2NoEventWalkReferenceFacts (bs arena : List UInt8)
-    (obs : List ConsumerEvent) (toks : List Token) (t : Tape) : Type where
-  /-- The emitted record trace the reference run produced.  **carried data**. -/
-  rs : List EventRecord
-  /-- The record trace is the document's relation at the parser's tokens.
-  **carried data**. -/
-  records : Stage2Records bs arena rs toks
-  /-- The walk's report is the record trace read back by the consumer.
-  **carried data**. -/
-  consume : obs = consumeRecords bs arena rs
-  /-- Every record fits the field widths its bytes are written at.
-  **carried data**. -/
-  bounded : ∀ r ∈ rs, r.Bounded
-  /-- Every reported string's body lies inside the source it names.
-  **carried data**. -/
-  within : ∀ e ∈ obs, e.BodiesWithin bs arena
-  /-- The parser's tape carries exactly the tokens the relation is at.
-  **carried data**. -/
-  tokens : t.tokens = toks
 
 /-- **The facts transport to an equal document.**  A continuing row keeps the
 document read (`Stage2NoEventWalkReferenceHead_doc_eq`), so the terminal
@@ -155,19 +121,22 @@ inductive Stage2NoEventWalkReferenceRow (t : Tape) (calls : Calls) (mem : Mem)
       (bound : stage2NoEventBoundary K'.a12 mem K'.next0 m (.int 64 1))
       (facts : Stage2NoEventWalkReferenceFacts K.bs K'.arena obs toks t) :
       Stage2NoEventWalkReferenceRow t calls mem F K k s
-  /-- The refused arm: verdict zero, the route's evidence and the boundary. -/
+  /-- The refused arm: verdict zero, the route's evidence, the walk's trace, the
+  supplied relation witnesses, the boundary, and the parser's verdict. -/
   | refuse (q : Nat) (m : Mem) (sT : State)
       (route : Stage2NoEventWalkRunTo calls s sT)
       (cost : q ≤ stage2NoEventWalkPotential K k + F)
       (run : runFuel calls (q + 2) stage2NoEventBody s =
         some (.ret (some (.int 64 0)) m))
       (ev : Stage2NoEventWalkRefusalEvidence K sT)
+      (trace : Stage2NoEventWalkTrace K)
       (obs : List ConsumerEvent) (toks : List Token)
       (rel : Stage2NoEvent K.bs K.arena obs toks)
       (obsLen : obs.length = K.tok)
       (termsEq : K.terms = (obs.map ConsumerEvent.terms).sum)
       (report : Stage2NoEventRun K.a12 mem m)
-      (bound : stage2NoEventBoundary K.a12 mem K.next0 m (.int 64 0)) :
+      (bound : stage2NoEventBoundary K.a12 mem K.next0 m (.int 64 0))
+      (refused : Stage2NoEventWalkParseRefusal K.bs) :
       Stage2NoEventWalkReferenceRow t calls mem F K k s
 
 /-- **The dispatch's rows, with the facts carried.**  From a head, one row of the
@@ -191,12 +160,13 @@ def Stage2NoEventWalkReferenceRows.toRows {t : Tape} {calls : Calls} {mem : Mem}
     | .cont K' k' s' p seg hnep ha12 hn0 hlt hk'lt =>
         .cont K' k' s' p seg hnep ha12 hn0 hlt hk'lt
     | .accept K' q m sT route cost run htok ha12 hn0 acc obs toks rel obsLen termsEq
-        report bound _facts =>
+        report bound facts =>
         .terminal (.accept K' q m sT route cost run htok ha12 hn0 acc obs toks rel
-          obsLen termsEq report bound)
-    | .refuse q m sT route cost run ev obs toks rel obsLen termsEq report bound =>
-        .terminal (.refuse q m sT route cost run ev obs toks rel obsLen termsEq report
-          bound)
+          obsLen termsEq report bound t facts)
+    | .refuse q m sT route cost run ev trace obs toks rel obsLen termsEq report bound
+        refused =>
+        .terminal (.refuse q m sT route cost run ev trace obs toks rel obsLen termsEq
+          report bound refused)
 
 /-! ### The document survives the continuing rows
 
@@ -306,7 +276,8 @@ theorem stage2NoEventWalkReferenceRun_terminal {t : Tape} {calls : Calls} {mem :
               termsEq, ?_⟩
             rw [ha12, hn0] at bound
             exact bound
-        | refuse q m sT route cost run ev obs toks rel obsLen termsEq report bound =>
+        | refuse q m sT route cost run ev _trace obs toks rel obsLen termsEq report
+            bound _refused =>
             exact Or.inr ⟨q, m, by omega, run, bound⟩
   exact key (K.nep - k) K k s rfl hhead htrace
 
@@ -328,6 +299,16 @@ theorem stage2NoEventWalkReferenceWord_of_ok {bs : List UInt8} {t : Tape}
   unfold Stage2NoEventWalkReferenceWord
   rw [h]
 
+/-- **The reference's word at a refused document.**  Every refusal shape maps to
+zero, so a row carrying the parser's refusal reads the reference's word as the
+run's. -/
+theorem stage2NoEventWalkReferenceWord_of_error {bs : List UInt8}
+    (h : Stage2NoEventWalkParseRefusal bs) :
+    Stage2NoEventWalkReferenceWord bs = 0 := by
+  obtain ⟨e, he⟩ := h
+  unfold Stage2NoEventWalkReferenceWord
+  rw [he]
+
 /-! ### The walk's run, to the reference's word and value
 
 The accept route stated against the carried facts, replacing the refuted bridge:
@@ -344,9 +325,12 @@ hypothesis over derivations.
 
 On the accepted route the run returns one, the reference's word is one, and
 `stage2NoEventWalkReference_valueOfEvents` reads the emitted stream's value as
-`scalarCanonValueOfBytes` at `K.bs`.  On the refused route the run returns zero.
-The refusal's agreement with the parser stays unstated: the refuse row carries no
-fact about `parseBytes`. -/
+`scalarCanonValueOfBytes` at `K.bs`.  On the refused route the run returns zero,
+and that row carries the reference parser's refusal (`refused`), so the word read
+there is the parser's zero: `stage2NoEventWalkReferenceWord_of_error` states it,
+and this theorem's conclusion is stated in the run's own word rather than the
+reference's, so the tie is available to a consumer of the refuse arm rather than
+assumed by the walk. -/
 theorem stage2NoEventWalkReferenceRun_spec {t : Tape} {calls : Calls} {mem : Mem}
     {F : Nat} {K : Stage2NoEventWalkCarry} {k : Nat} {s : State}
     (hrows : Stage2NoEventWalkReferenceRows t calls mem F)
@@ -393,6 +377,7 @@ theorem stage2NoEventWalkReferenceRun_spec {t : Tape} {calls : Calls} {mem : Mem
 #print axioms stage2NoEventWalkReferenceHead_doc_eq
 #print axioms stage2NoEventWalkReferenceRun_terminal
 #print axioms stage2NoEventWalkReferenceWord_of_ok
+#print axioms stage2NoEventWalkReferenceWord_of_error
 #print axioms stage2NoEventWalkReferenceRun_spec
 
 end LeanLLVM.Refinement

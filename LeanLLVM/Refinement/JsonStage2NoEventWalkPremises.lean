@@ -39,6 +39,7 @@ premises statement names.
 -/
 import LeanLLVM.Refinement.JsonStage2NoEventWalkTraverse
 import LeanLLVM.Refinement.JsonStage2NoEventWalkSeed
+import LeanLLVM.Refinement.JsonEventBridge
 
 set_option autoImplicit false
 set_option maxRecDepth 8192
@@ -224,6 +225,73 @@ inductive Stage2NoEventWalkRefusalEvidence (K : Stage2NoEventWalkCarry) (s : Sta
       eoff < 2 ^ 64 →
       Stage2NoEventWalkRefusalEvidence K s
 
+/-- **The reference run's facts at an acceptance.**  The record trace the reference
+run emitted for this document and arena, the relation at the parser's tokens, the
+identity `obs = consumeRecords`, the record widths, the used-extent clause on the
+reported events, and the parser's token tie.  All of it is **carried data**: it is
+the reference execution's, and — as `stage2NoEvent_str_len_free` shows — it is not
+a consequence of `Stage2NoEvent`, so it may not be quantified over derivations.
+Stated at the acceptance's own `(bs, arena, obs, toks, t)`, so the walk's witnesses
+select it.
+
+The declaration lives here, beside the exit that carries it, because the exit's
+accept constructor names it and `JsonStage2NoEventWalkReference` imports this
+module: the reference module's transfer chain and its row bundle read it from this
+definition. -/
+structure Stage2NoEventWalkReferenceFacts (bs arena : List UInt8)
+    (obs : List ConsumerEvent) (toks : List Token) (t : Tape) : Type where
+  /-- The emitted record trace the reference run produced.  **carried data**. -/
+  rs : List EventRecord
+  /-- The record trace is the document's relation at the parser's tokens.
+  **carried data**. -/
+  records : Stage2Records bs arena rs toks
+  /-- The walk's report is the record trace read back by the consumer.
+  **carried data**. -/
+  consume : obs = consumeRecords bs arena rs
+  /-- Every record fits the field widths its bytes are written at.
+  **carried data**. -/
+  bounded : ∀ r ∈ rs, r.Bounded
+  /-- Every reported string's body lies inside the source it names.
+  **carried data**. -/
+  within : ∀ e ∈ obs, e.BodiesWithin bs arena
+  /-- The parser's tape carries exactly the tokens the relation is at.
+  **carried data**. -/
+  tokens : t.tokens = toks
+
+/-- **The reference parser refuses the document.**  **carried data**: the
+deployment boundary's parse.  Every refusal shape is admitted — `parseBytes`
+rejects with `.inputTooLong`, `.depthExceeded`, `.outOfCapacity` and `.invalid`
+(`Parse.lean`), and a reference run that observes any of them must be able to
+supply this; the verdict word is zero at all four (`Stage2NoEventWalkReferenceWord`
+maps every `.error` to `0`). -/
+def Stage2NoEventWalkParseRefusal (bs : List UInt8) : Prop :=
+  ∃ e, parseBytes Limits.default (ByteString.literal bs) = .error e
+
+/-- **An acceptance's reference data, as the producer consumes it.**  The tape,
+the observations and the tokens the acceptance names, the relation at them, the
+two count equations, and the reference run's facts at them.  **carried data**: one
+value per acceptance, supplied by the deployment boundary, never derived from
+`Stage2NoEvent` (its `len` is free above the decoded slice).  Indexed by the head's
+and the acceptance's carries, so a producer takes it at the witnesses its route
+reports. -/
+def Stage2NoEventWalkReferenceAccept (K K' : Stage2NoEventWalkCarry) : Type :=
+  Σ (t : Tape) (obs : List ConsumerEvent) (toks : List Token),
+    (Stage2NoEvent K.bs K'.arena obs toks ∧ obs.length = K'.tok ∧
+      K'.terms = (obs.map ConsumerEvent.terms).sum) ×'
+    Stage2NoEventWalkReferenceFacts K.bs K'.arena obs toks t
+
+/-- **A refusal's reference data, as the producer consumes it.**  The observations
+and tokens the head's trace names, the relation at them, the two count equations,
+and the reference parser's verdict on the document.  **carried data**, for the
+same reason the acceptance's is: the exit is `Type`, so its `(obs, toks)` are
+terms a producer must be given, and the trace alone is a `Prop` that cannot
+supply them. -/
+def Stage2NoEventWalkReferenceRefuse (K : Stage2NoEventWalkCarry) : Type :=
+  Σ (obs : List ConsumerEvent) (toks : List Token),
+    (Stage2NoEvent K.bs K.arena obs toks ∧ obs.length = K.tok ∧
+      K.terms = (obs.map ConsumerEvent.terms).sum) ×'
+    Stage2NoEventWalkParseRefusal K.bs
+
 /-- **A terminal route's evidence at its post-block endpoint**, route-specific.  Both
 constructors carry the run equality to the post-block endpoint `sT`
 (`Stage2NoEventWalkRunTo`, no invariant there), the credit, the verdict, the
@@ -233,13 +301,22 @@ terminal block's stores are visible and its in-block cells remain in the env.
 The acceptance reads its three stores there; the refusal carries its own
 family's registers.  The old single-`Acc` field is gone: `%idxprom.lcssa` is defined on the
 number route only and the three count words on the value route only, so no one
-accumulator is inhabitable at every route's terminal state. -/
+accumulator is inhabitable at every route's terminal state.
+
+The exit is **data**, not a proof: a terminal route's witnesses (`K'`, the report's
+tokens and the parser's tape) are what a consumer of the walk theorem reads, so the
+type lives in `Type`.  The acceptance carries the reference run's facts at its own
+witnesses (`Stage2NoEventWalkReferenceFacts`) and the refusal carries the reference
+parser's verdict on the head's document; both are **carried data** the producer takes
+from the deployment boundary, never invents. -/
 inductive Stage2NoEventWalkExit (calls : Calls) (mem : Mem) (F : Nat)
-    (K : Stage2NoEventWalkCarry) (k : Nat) (s : State) : Prop
+    (K : Stage2NoEventWalkCarry) (k : Nat) (s : State) : Type
   /-- The accepted arm: verdict one, the last entry's carry `K'`, the three
   stores' reading at the post-block state, the trace (the head's prefix plus the
   last entry's event), and the boundary.  The head's `K` stays the index for the
-  price and the boundary; the report's numbers are `K'`'s. -/
+  price and the boundary; the report's numbers are `K'`'s.  The parser's tape and
+  the reference run's facts at `(K.bs, K'.arena, obs, toks)` are the acceptance's
+  carried data. -/
   | accept (K' : Stage2NoEventWalkCarry) (q : Nat) (m : Mem) (sT : State)
       (route : Stage2NoEventWalkRunTo calls s sT)
       (cost : q ≤ stage2NoEventWalkPotential K k + F)
@@ -252,22 +329,28 @@ inductive Stage2NoEventWalkExit (calls : Calls) (mem : Mem) (F : Nat)
       (obsLen : obs.length = K'.tok)
       (termsEq : K'.terms = (obs.map ConsumerEvent.terms).sum)
       (report : Stage2NoEventRun K'.a12 mem m)
-      (bound : stage2NoEventBoundary K'.a12 mem K'.next0 m (.int 64 1)) :
+      (bound : stage2NoEventBoundary K'.a12 mem K'.next0 m (.int 64 1))
+      (t : Tape)
+      (facts : Stage2NoEventWalkReferenceFacts K.bs K'.arena obs toks t) :
       Stage2NoEventWalkExit calls mem F K k s
-  /-- The refused arm: verdict zero, the route's own evidence, the trace, and the
-  boundary at the refusal's memory. -/
+  /-- The refused arm: verdict zero, the route's own evidence, the walk's trace
+  (kept as data, so a consumer reads it rather than re-deriving it from a
+  `Prop`), the supplied relation witnesses, and the boundary at the refusal's
+  memory.  The parser's verdict on the document is the refusal's carried data. -/
   | refuse (q : Nat) (m : Mem) (sT : State)
       (route : Stage2NoEventWalkRunTo calls s sT)
       (cost : q ≤ stage2NoEventWalkPotential K k + F)
       (run : runFuel calls (q + 2) stage2NoEventBody s =
         some (.ret (some (.int 64 0)) m))
       (ev : Stage2NoEventWalkRefusalEvidence K sT)
+      (trace : Stage2NoEventWalkTrace K)
       (obs : List ConsumerEvent) (toks : List Token)
       (rel : Stage2NoEvent K.bs K.arena obs toks)
       (obsLen : obs.length = K.tok)
       (termsEq : K.terms = (obs.map ConsumerEvent.terms).sum)
       (report : Stage2NoEventRun K.a12 mem m)
-      (bound : stage2NoEventBoundary K.a12 mem K.next0 m (.int 64 0)) :
+      (bound : stage2NoEventBoundary K.a12 mem K.next0 m (.int 64 0))
+      (refused : Stage2NoEventWalkParseRefusal K.bs) :
       Stage2NoEventWalkExit calls mem F K k s
 
 /-- **The dispatch's row at a head**, as data: either the count class's
@@ -314,9 +397,9 @@ theorem stage2NoEventWalkStep_of_rows {calls : Calls} {mem : Mem} {F : Nat}
       exact Or.inl ⟨K', k', s', p, seg, hnep, ha12, hn0, hlt, hk'lt⟩
   | terminal exit =>
       cases exit with
-      | accept K' q m sT route cost run htok ha12 hn0 acc obs toks rel obsLen termsEq report bound =>
+      | accept K' q m sT route cost run htok ha12 hn0 acc obs toks rel obsLen termsEq report bound _ _ =>
           exact Or.inr ⟨q, 1, m, cost, run, by rw [← ha12, ← hn0]; exact bound⟩
-      | refuse q m sT route cost run ev obs toks rel obsLen termsEq report bound =>
+      | refuse q m sT route cost run ev _ obs toks rel obsLen termsEq report bound _ =>
           exact Or.inr ⟨q, 0, m, cost, run, bound⟩
 
 /-! ### F1's row corollary
@@ -338,11 +421,11 @@ theorem stage2NoEventWalkF1_notRow (calls : Calls) (F : Nat) :
       omega
   | terminal exit =>
       cases exit with
-      | accept K' q m sT route cost run htok ha12 hn0 acc obs toks rel obsLen termsEq report bound =>
+      | accept K' q m sT route cost run htok ha12 hn0 acc obs toks rel obsLen termsEq report bound _ _ =>
           rw [show q + 2 = (q + 1) + 1 from by omega] at run
           rw [stage2NoEventWalkF1_noRet (stage2NoEventWalkF1_step calls) (q + 1)] at run
           cases run
-      | refuse q m sT route cost run ev obs toks rel obsLen termsEq report bound =>
+      | refuse q m sT route cost run ev _ obs toks rel obsLen termsEq report bound _ =>
           rw [show q + 2 = (q + 1) + 1 from by omega] at run
           rw [stage2NoEventWalkF1_noRet (stage2NoEventWalkF1_step calls) (q + 1)] at run
           cases run
