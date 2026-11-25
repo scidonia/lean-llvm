@@ -29,7 +29,8 @@ same cells from the head.
 
 **What is stated, not proved.**  `Stage2NoEventWalkAfterValueCont` is the other
 side of `%cmp355`: from a `Stage2NoEventWalkCycleSrc` at the endpoint — the
-structure the shared cycle already takes, whose `spNe` is `1 ≤ sp` beside its
+structure the shared cycle already takes, whose `spNe` is `sp ≠ 0` — with
+`1 ≤ sp` its `Nat` consequence (`Nat.pos_of_ne_zero`), not the field — beside its
 `spLt` — the step is one `Stage2NoEventWalkCycle` of index delta one, the shape
 `stage2NoEventWalkCycle_of_pair` states at the pair endpoint.  It is a `def`, not
 a goal: the committed proof is `stage2NoEventWalkCycle_of_afterValue`, and this
@@ -53,9 +54,11 @@ open LeanLLVM.JSON
 
 /-! ### The endpoint cells the depth-zero routes conclude
 
-Each bundle is exactly the `∃ sE, …` tail of the matching `…ZeroRoute` lemma at
-`Stage2NoEventWalkCarry`'s `{ K with tok := K.tok + 2, terms := … }`: the cells
-`after_value`'s `phi` run reads, the `%nep` param, and the block's predecessor. -/
+Each bundle is the cell subset of the matching `…ZeroRoute` lemma's `∃ sE, …`
+tail at `Stage2NoEventWalkCarry`'s `{ K with tok := K.tok + 2, terms := … }`:
+the cells `after_value`'s `phi` run reads, the `%nep` param and the block's
+predecessor — not the whole tail, whose segment, carry and base lookups are the
+route lemma's own conclusions. -/
 
 /-- **The `[]` endpoint's `after_value` cells at the zero depth.**  These are
 `stage2NoEventWalkBracketZeroRoute`'s conclusions at the endpoint state, with the
