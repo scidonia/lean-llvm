@@ -804,11 +804,12 @@ What these rows leave open, and what stands beside them, stated once:
   four stores), which are outside row h's exits.
 - **The consumer's reading is proved at the walk report; the public post is
   unchanged.** `Stage2NoEventRun.consumer` derives the certified consumer's three
-  words from the run's report, with the report's arena pinned by `arenaAt` — a read
-  of the returned memory at the run's own scratch buffer — and two bridge premises
-  left open: the arena prefix's agreement with the certified trace, and the event
-  list's agreement with the consumer's fold over the certified records, each
-  stated at the run's own outputs.  `stage2NoEventBoundary` and
+  words from the run's report, with the report carrying no arena read — the arena is
+  the carry's logical list, which the event unit never materialises contiguously — and
+  three bridge premises left open: the arena bridge `h.arena = bw.arena.take bw.ndstU`
+  from the certified boundary's used-arena read, the event list's agreement with the
+  consumer's fold over the certified records, and the relation, each stated at the
+  run's own outputs.  `stage2NoEventBoundary` and
   `stage2NoEventPost` keep their bytes, so no consumer of the post reads a new
   clause.
 - **The refusal offset is settled for the flush route only.** The empty entry
