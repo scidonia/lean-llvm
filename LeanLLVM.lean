@@ -197,6 +197,7 @@ import LeanLLVM.Refinement.JsonStage2NoEventContract
 import LeanLLVM.Refinement.JsonStage2NoEventBody
 import LeanLLVM.Refinement.JsonStage2NoEventLiteral
 import LeanLLVM.Refinement.JsonStage2NoEventWalkInv
+import LeanLLVM.Refinement.JsonStage2NoEventWalkHead
 import LeanLLVM.Refinement.JsonStage2NoEventWalkTerminal
 import LeanLLVM.Refinement.JsonStage2NoEventWalkClose
 import LeanLLVM.Refinement.JsonStage2NoEventWalkSeed

@@ -438,6 +438,129 @@ theorem Stage2Records.length_nonSeparators {bs arena : List UInt8}
   | strPlain _ _ _ _ _ ih => simp [Token.nonSeparators, ih]
   | strArena _ _ _ _ _ _ ih => simp [Token.nonSeparators, ih]
 
+/-- **The no-event trace's length is its event count.**  The two separators carry
+no event, so the event list's length is the token list's with them removed. -/
+theorem Stage2NoEvent.length_nonSeparators {bs arena : List UInt8}
+    {es : List ConsumerEvent} {toks : List Token}
+    (h : Stage2NoEvent bs arena es toks) :
+    es.length = (Token.nonSeparators toks).length := by
+  induction h with
+  | nil => rfl
+  | comma _ ih => simp [Token.nonSeparators, ih]
+  | colon _ ih => simp [Token.nonSeparators, ih]
+  | openBrace _ _ _ ih => simp [Token.nonSeparators, ih]
+  | closeBrace _ _ _ ih => simp [Token.nonSeparators, ih]
+  | openBracket _ _ _ ih => simp [Token.nonSeparators, ih]
+  | closeBracket _ _ _ ih => simp [Token.nonSeparators, ih]
+  | trueTag _ _ _ ih => simp [Token.nonSeparators, ih]
+  | falseTag _ _ _ ih => simp [Token.nonSeparators, ih]
+  | nullTag _ _ _ ih => simp [Token.nonSeparators, ih]
+  | number _ _ _ _ ih => simp [Token.nonSeparators, ih]
+  | strPlain _ _ _ _ _ ih => simp [Token.nonSeparators, ih]
+  | strArena _ _ _ _ _ _ ih => simp [Token.nonSeparators, ih]
+
+/-- **Two traces over one document compose.**  Each constructor reads one token
+from the document and the arena independently of the tokens around it, so the
+events and tokens of two traces concatenate in the same order. -/
+theorem Stage2NoEvent.append {bs arena : List UInt8} {es₁ es₂ : List ConsumerEvent}
+    {toks₁ toks₂ : List Token}
+    (h₁ : Stage2NoEvent bs arena es₁ toks₁) (h₂ : Stage2NoEvent bs arena es₂ toks₂) :
+    Stage2NoEvent bs arena (es₁ ++ es₂) (toks₁ ++ toks₂) := by
+  induction h₁ with
+  | nil => simpa only [List.nil_append] using h₂
+  | comma _ ih => simpa only [List.nil_append, List.cons_append] using
+      Stage2NoEvent.comma ih
+  | colon _ ih => simpa only [List.cons_append] using Stage2NoEvent.colon ih
+  | openBrace hbyte hspan _ ih =>
+      simpa only [List.cons_append] using Stage2NoEvent.openBrace hbyte hspan ih
+  | closeBrace hbyte hspan _ ih =>
+      simpa only [List.cons_append] using Stage2NoEvent.closeBrace hbyte hspan ih
+  | openBracket hbyte hspan _ ih =>
+      simpa only [List.cons_append] using Stage2NoEvent.openBracket hbyte hspan ih
+  | closeBracket hbyte hspan _ ih =>
+      simpa only [List.cons_append] using Stage2NoEvent.closeBracket hbyte hspan ih
+  | trueTag hbytes hspan _ ih =>
+      simpa only [List.cons_append] using Stage2NoEvent.trueTag hbytes hspan ih
+  | falseTag hbytes hspan _ ih =>
+      simpa only [List.cons_append] using Stage2NoEvent.falseTag hbytes hspan ih
+  | nullTag hbytes hspan _ ih =>
+      simpa only [List.cons_append] using Stage2NoEvent.nullTag hbytes hspan ih
+  | number hwf hspan hlexeme _ ih =>
+      simpa only [List.cons_append] using Stage2NoEvent.number hwf hspan hlexeme ih
+  | strPlain hquote hspan hbody hcode _ ih =>
+      simpa only [List.cons_append] using
+        Stage2NoEvent.strPlain hquote hspan hbody hcode ih
+  | strArena hquote hspan hcode hbelow harena _ ih =>
+      simpa only [List.cons_append] using
+        Stage2NoEvent.strArena hquote hspan hcode hbelow harena ih
+
+/-- **Every arena-form string row's span is inside the arena the trace was read
+at.**  The constructors bind an offset below `2 ^ 63` but say nothing about the
+arena's length, so the monotonicity below is stated at this bound on the
+events. -/
+def Stage2NoEventArenaBound (arena : List UInt8) (es : List ConsumerEvent) : Prop :=
+  ∀ e ∈ es, (e.tag = EventRecord.tagKey ∨ e.tag = EventRecord.tagStr) →
+    e.payload < 2 ^ 63 → e.payload + e.len ≤ arena.length
+
+/-- **The arena may be extended at its end.**  Every string row reads only the
+prefix the original trace was read at, so growing the arena's tail leaves
+`Stage2NoEvent` unchanged, provided the rows' spans end inside the old arena. -/
+theorem Stage2NoEvent.arena_append {bs arena extra : List UInt8}
+    {es : List ConsumerEvent} {toks : List Token}
+    (h : Stage2NoEvent bs arena es toks) (hb : Stage2NoEventArenaBound arena es) :
+    Stage2NoEvent bs (arena ++ extra) es toks := by
+  revert hb
+  induction h with
+  | nil => intro _; exact .nil
+  | comma _ ih =>
+      intro hb
+      exact .comma (ih hb)
+  | colon _ ih =>
+      intro hb
+      exact .colon (ih hb)
+  | openBrace hbyte hspan _ ih =>
+      intro hb
+      exact .openBrace hbyte hspan (ih (fun e he => hb e (List.mem_cons_of_mem _ he)))
+  | closeBrace hbyte hspan _ ih =>
+      intro hb
+      exact .closeBrace hbyte hspan (ih (fun e he => hb e (List.mem_cons_of_mem _ he)))
+  | openBracket hbyte hspan _ ih =>
+      intro hb
+      exact .openBracket hbyte hspan (ih (fun e he => hb e (List.mem_cons_of_mem _ he)))
+  | closeBracket hbyte hspan _ ih =>
+      intro hb
+      exact .closeBracket hbyte hspan (ih (fun e he => hb e (List.mem_cons_of_mem _ he)))
+  | trueTag hbytes hspan _ ih =>
+      intro hb
+      exact .trueTag hbytes hspan (ih (fun e he => hb e (List.mem_cons_of_mem _ he)))
+  | falseTag hbytes hspan _ ih =>
+      intro hb
+      exact .falseTag hbytes hspan (ih (fun e he => hb e (List.mem_cons_of_mem _ he)))
+  | nullTag hbytes hspan _ ih =>
+      intro hb
+      exact .nullTag hbytes hspan (ih (fun e he => hb e (List.mem_cons_of_mem _ he)))
+  | number hwf hspan hlexeme _ ih =>
+      intro hb
+      exact .number hwf hspan hlexeme (ih (fun e he => hb e (List.mem_cons_of_mem _ he)))
+  | strPlain hquote hspan hbody hcode _ ih =>
+      intro hb
+      exact .strPlain hquote hspan hbody hcode
+        (ih (fun e he => hb e (List.mem_cons_of_mem _ he)))
+  | strArena =>
+      case strArena key s es' toks' len off cs hquote hspan hcode hbelow harena h ih =>
+        intro hb
+        have htag : (ConsumerEvent.str key len off cs).tag = EventRecord.tagKey ∨
+            (ConsumerEvent.str key len off cs).tag = EventRecord.tagStr := by
+          cases key <;>
+            simp [ConsumerEvent.str, EventRecord.tagKey, EventRecord.tagStr]
+        have hle : off + len ≤ arena.length := hb _ List.mem_cons_self htag hbelow
+        have htake : ((arena ++ extra).drop off).take len =
+            (arena.drop off).take len := by
+          rw [List.drop_append_of_le_length (by omega)]
+          exact List.take_append_of_le_length (by rw [List.length_drop]; omega)
+        exact .strArena hquote hspan hcode hbelow (by rw [htake]; exact harena)
+          (ih (fun e he => hb e (List.mem_cons_of_mem _ he)))
+
 /-- **The per-record contribution is the consumer's.**  Replacing a record by
 the event the consumer reads does not change `tag + len + payload`. -/
 theorem EventRecord.terms_consume (bs arena : List UInt8) (r : EventRecord) :
@@ -862,6 +985,9 @@ payload, and a string event's contribution to the sum. -/
 #print axioms plainSpan_not_lt
 #print axioms plainSpan_sub
 #print axioms Stage2Records.length_nonSeparators
+#print axioms Stage2NoEvent.length_nonSeparators
+#print axioms Stage2NoEvent.append
+#print axioms Stage2NoEvent.arena_append
 #print axioms Stage2Records.toNoEvent
 #print axioms EventRecord.terms_consume
 #print axioms consumer_eq_noEventFold

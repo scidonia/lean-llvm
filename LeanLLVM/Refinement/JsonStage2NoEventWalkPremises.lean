@@ -2,14 +2,16 @@
 The no-event walk's completion, from the premises a dispatch supplies.
 
 `JsonStage2NoEventWalkTraverse` proves the loop finishes from the seed's run to the
-post-read head `NodeBlock5`, the invariant there and one step per head visit; this
-module states the premises that step is written against, produces them from the
-record's precondition and the staging, and turns them into the walk's obligation.
+post-read head `NodeBlock5`, the head's premise there (`Stage2NoEventWalkHead`) and
+one step per head visit; this module states the premises that step is written
+against, produces them from the record's precondition and the staging, and turns
+them into the walk's obligation.
 
 **Two layers, because they answer different questions.**
 
 * `Stage2NoEventWalkExit` and `Stage2NoEventWalkRows` are the dispatch's data: the
-  terminal route's accumulators, parse relation, counts and report, and the row that
+  terminal route's own evidence — the acceptance's three stores or the refusal
+  family's registers — the prefix trace, the counts and the report, and the row that
   either closes a count-class cycle to the next head or takes a terminal route.  They
   are assumed, never proved here, exactly as the certified walk's class groups are:
   the terminal arms' own runs (`JsonStage2NoEventWalkTerminal`) are what a producer
@@ -51,94 +53,307 @@ open LeanLLVM.Refinement.JsonEntryIR (readLanes32)
 
 /-! ### The dispatch's data
 
-The terminal route's evidence is the three terminal arms' supply: the accumulators the
-acceptance's stores read (`Stage2NoEventWalkAcc`), the parse relation and the fold facts
-the acceptance's boundary needs (`Stage2NoEvent K.bs K.arena obs toks`, the count and the
-sum), the run to the return and its price, and the report.  It is stated at a head state
-because that is where a terminal route starts; the state's own terminal block is what the
-route's run reaches.
+The terminal route's evidence is the three terminal arms' supply: the acceptance's
+three-word reading at the route's post-block endpoint (`Stage2NoEventWalkAcceptAcc K sT`:
+`%tokens.8`, `%terms.8`, `%arena.10`), the parse relation and the fold facts the
+acceptance's boundary needs (`Stage2NoEvent K.bs K.arena obs toks`, the count and the
+sum), the run equality to that endpoint (`Stage2NoEventWalkRunTo`, no invariant there),
+the run to the return and its price, and the report.  The row starts at a head state;
+the evidence sits at the post-block `sT` the route's run reaches, where the stores are
+visible and the in-block cells remain in the env.
 
-`Stage2NoEventWalkAcc`'s names are the loop-exit merge's, not the head's: `%idxprom.lcssa`,
-`%tokens.8`, `%terms.8` and `%arena.10` are bound at `if.end545` (and `%idxprom.lcssa` at
-its `scalar` arms), so the accumulator field belongs at the terminal state's supply and
-cannot be a fact of `NodeBlock5`.  The head's carried counts are its own `phi` names
+`Stage2NoEventWalkAcceptAcc`'s names are the loop-exit merge's, not the head's:
+`%tokens.8`, `%terms.8` and `%arena.10` are bound at `if.end545` (and `%idxprom.lcssa`
+at its `scalar` arms), so the acceptance's reading belongs at the post-block endpoint
+and cannot be a fact of `NodeBlock5`.  The head's carried counts are its own `phi` names
 (`%tokens.0.ph1408`, `%terms.0.ph1407`, `%arena.0.ph1406`), which the invariant does not
-state either; the step's producers read them. -/
+state either; the step's producers read them.  The loop's `Stage2NoEventWalkAcc` is not
+inhabitable at a head (F2), which is why the exit carries the three-word reading and the
+refusal its own family's registers. -/
 
-/-- **A terminal route's evidence at one head state.**  The count, the verdict word, the
-memory the route returns and its price, the accumulators and the acceptance's parse
-relation with its counts, and the walk's report at the returned memory.  All fields are
-the terminal arms' own supply; nothing here is derived from the invariant. -/
-structure Stage2NoEventWalkExit (calls : Calls) (mem : Mem) (F : Nat)
-    (K : Stage2NoEventWalkCarry) (k : Nat) (s : State) where
-  /-- The route's counted steps, and its credit. -/
-  q : Nat
-  /-- The verdict the route returns. -/
-  v : BitVec 64
-  /-- The memory the route returns. -/
-  m : Mem
-  /-- The route's price is inside the head's credit plus the finalisation allowance. -/
-  cost : q ≤ stage2NoEventWalkPotential K k + F
-  /-- The route's run, at the segment and the returning step. -/
-  run : runFuel calls (q + 2) stage2NoEventBody s =
-    some (.ret (some (.int 64 v)) m)
-  /-- The terminal state's register readings, as the acceptance's stores read them. -/
-  acc : Stage2NoEventWalkAcc K s
-  /-- The consumer's events, in order. -/
-  obs : List ConsumerEvent
-  /-- The reference parser's tokens. -/
-  toks : List Token
-  /-- The events are the document's, at the parser's tokens. -/
-  rel : Stage2NoEvent K.bs K.arena obs toks
-  /-- The count is the events' length. -/
-  obsLen : obs.length = K.tok
-  /-- The sum is the events' per-record contribution. -/
-  termsEq : K.terms = (obs.map ConsumerEvent.terms).sum
-  /-- The walk's report at the returned memory. -/
-  report : Stage2NoEventRun K.a12 mem m
-  /-- The record's boundary holds where the route returns. -/
-  bound : stage2NoEventBoundary K.a12 mem K.next0 m (.int 64 v)
+/-- **A run to a post-block endpoint.**  The counted segment's run equality
+without `inv'`: `sT` is the route's **post-block** state, where the terminal
+block's stores are visible and its in-block cells (the `errStore` offset phi, the
+`%ei520.0.ph` phi, the `%err` read-back) remain in the env, but no invariant is
+claimed there.  The plain `Segment` tie is not used: `inv'`'s `walkFrame` requires
+silence at the four output words, and every terminal block writes them inside the
+route. -/
+def Stage2NoEventWalkRunTo (calls : Calls) (s : State) (sT : State) : Prop :=
+  ∃ j, ∀ n, runFuel calls (j + n) stage2NoEventBody s =
+    runFuel calls n stage2NoEventBody sT
 
-/-- **The dispatch's row at a head**, as data: either the count class's cycle-closing
-segment to the next head — the price is the potential's, and the three static numbers do
-not move — or a terminal route with its evidence.  Which side is taken is the entry's own
-class, so the field is one value of this type and not a per-class table: a table would
-have to name the body's dispatched classes, and those rows are the dispatch's to produce,
-not this module's to invent. -/
+/-- **The `%ei520.0.ph` phi's incoming operand**, per edge of the literal chain:
+`%sub524` on the not-taken/other edges, one of the `0…4` immediates, or `%ln.0`
+for `for.end.i` (the fixture `:1122-1131`).  Which edge the route takes is the
+terminal lane's; this is the shape its evidence names. -/
+inductive Stage2NoEventWalkEi520Incoming : Type
+  /-- The not-taken/other edges: `%sub524`'s value. -/
+  | sub524 (v : Nat)
+  /-- One of the `0…4` immediates. -/
+  | imm (i : Nat)
+  /-- `%ln.0` for `for.end.i`. -/
+  | ln (v : Nat)
+
+/-- **The incoming operand's value.** -/
+def Stage2NoEventWalkEi520Incoming.value : Stage2NoEventWalkEi520Incoming → Nat
+  | .sub524 v => v
+  | .imm i => i
+  | .ln v => v
+
+/-- **A refusal route's evidence at its own terminal state.**  The five refusal
+shapes read different registers/words, so the evidence is route-indexed:
+
+* **`zeroStore`**: the four output pointers, the route's own offset word `eoff`
+  and its read-back at the refusal record (`readBytes s.mem K.err 8 = some
+  (wordBytes 8 eoff)`), with `eoff ≤ K.n` and `eoff < 2^64`.  The per-entry
+  sources are the entries' own index or `n` word (`if.then12`'s
+  `%idxprom.lcssa1108`, `if.then38`'s `%idxprom.lcssa1110`,
+  `if.then68`/`if.then105`/`if.then297`/`if.then321`/`if.then372`'s `%n`, and
+  the rest's `%idxprom…`/`%conv…` values).
+* **`errStore`** (`cleanup.thread`, `cleanup287.thread`): the offset source
+  operand and word, the **in-block offset phi** at the post-block state
+  (`%conv130.sink` or `%idxprom.lcssa1109.lcssa.sink`, whose cell remains in the
+  env), and the `lifetime.end` **operand pointer** (`%outn` for
+  `cleanup.thread`, `%outn205` for `cleanup287.thread`).  There is no
+  `%lifetime.end` register: the callee is a void `callVoid` and binds nothing;
+  the predecessors carry the zeros.
+* **`gapElse`** (`if.else510`): the four output pointers, the `%off` slot, the
+  `od_gap_recover` call's outcome `hrc`, its read-back `hv` at the refusal record,
+  the call's frame `hGapFrame`, the token index `idx` (`%idxprom.lcssa`), and the
+  addend-free `eoff = idx` with the bounds.
+* **`gapNumber`** (`cleanup491.thread`): the same pointers/`%off`/`hrc`/`hv`/
+  frame, `idx`, the `%ei` pointer (`K.next0 + 24`) and the error word's read in
+  the route's memory (`readBytes hrc.mem (K.next0 + 24) 8 = some (wordBytes 8
+  errOff)`; the helper writes only the record at `e`, so the alloca slot is
+  untouched across the call), the addend `errOff` (`num_fast_el1`'s error
+  offset), and `eoff = errOff + idx` with the bounds.
+* **`gapLiteral`** (`if.then527`): the same pointers/`%off`/`hrc`/`hv`/frame,
+  `idx`, the literal chain's `%ei520.0.ph` value `ei520` with its **provenance**
+  (`Stage2NoEventWalkEi520Incoming`: `%sub524`, one of the `0…4` immediates, or
+  `%ln.0`; **not always `0`**), and `eoff = ei520 + idx` with the bounds.
+
+`%idxprom.lcssa` is its own value in each gap shape and is never equated with
+`eoff`.  Each gap shape's `hGapFrame` is over
+`stage2NoEventWrites K.tokensOut K.valuesOut K.sumOut K.err ++
+(stage2NoEventRunRegions … ++ [(K.next0, K.nextEnd − K.next0)])` — the pre-call
+frame alone fails at the post-block `sT`, where the stores are visible
+(`stage2NoEventBoundary_refusal`'s shape).  `%ei520.0.ph` is a field of
+`gapLiteral` only.  Each constructor's fields are exactly the registers/words its
+step reads.  The per-route construction — which block reaches which shape — is the
+terminal tier's. -/
+inductive Stage2NoEventWalkRefusalEvidence (K : Stage2NoEventWalkCarry) (s : State) :
+    Prop
+  /-- The zero-store family: the three zero stores and the route's word at `*err`. -/
+  | zeroStore (eoff : Nat) :
+      lookupName s.env "%tokens_out" = some (.ptr K.tokensOut) →
+      lookupName s.env "%values_out" = some (.ptr K.valuesOut) →
+      lookupName s.env "%sum_out" = some (.ptr K.sumOut) →
+      lookupName s.env "%err" = some (.ptr K.err) →
+      readBytes s.mem K.err 8 = some (wordBytes 8 eoff) →
+      eoff ≤ K.n →
+      eoff < 2 ^ 64 →
+      Stage2NoEventWalkRefusalEvidence K s
+  /-- The err-store family: the in-block offset phi and the `lifetime.end`
+  operand. -/
+  | errStore (w : Nat) (op : Operand) (p : Nat) (src : String) :
+      evalOperand s op = some (.int 64 (BitVec.ofNat 64 w)) →
+      w < 2 ^ 64 →
+      (src = "%conv130.sink" ∨ src = "%idxprom.lcssa1109.lcssa.sink") →
+      lookupName s.env src = some (.int 64 (BitVec.ofNat 64 w)) →
+      (lookupName s.env "%outn" = some (.ptr p) ∨
+        lookupName s.env "%outn205" = some (.ptr p)) →
+      lookupName s.env "%err" = some (.ptr K.err) →
+      Stage2NoEventWalkRefusalEvidence K s
+  /-- The gap family's addend-free shape (`if.else510`): `eoff = idx`. -/
+  | gapElse (hrc : CallOutcome) (eoff idx : Nat) :
+      lookupName s.env "%tokens_out" = some (.ptr K.tokensOut) →
+      lookupName s.env "%values_out" = some (.ptr K.valuesOut) →
+      lookupName s.env "%sum_out" = some (.ptr K.sumOut) →
+      lookupName s.env "%err" = some (.ptr K.err) →
+      lookupName s.env "%off" = some (.ptr (K.e + 8)) →
+      lookupName s.env "%idxprom.lcssa" = some (.int 64 (BitVec.ofNat 64 idx)) →
+      readBytes hrc.mem (K.e + 8) 8 = some (wordBytes 8 eoff) →
+      UnchangedOutside s.mem hrc.mem
+        (stage2NoEventWrites K.tokensOut K.valuesOut K.sumOut K.err ++
+          (stage2NoEventRunRegions K.scratch K.scratchcap K.stk K.e K.c K.d ++
+            [(K.next0, K.nextEnd - K.next0)])) →
+      eoff = idx →
+      eoff ≤ K.n →
+      eoff < 2 ^ 64 →
+      Stage2NoEventWalkRefusalEvidence K s
+  /-- The gap family's number shape (`cleanup491.thread`): `eoff = errOff + idx`,
+  with the `%ei` pointer and the error word's read. -/
+  | gapNumber (hrc : CallOutcome) (eoff idx errOff : Nat) :
+      lookupName s.env "%tokens_out" = some (.ptr K.tokensOut) →
+      lookupName s.env "%values_out" = some (.ptr K.valuesOut) →
+      lookupName s.env "%sum_out" = some (.ptr K.sumOut) →
+      lookupName s.env "%err" = some (.ptr K.err) →
+      lookupName s.env "%off" = some (.ptr (K.e + 8)) →
+      lookupName s.env "%idxprom.lcssa" = some (.int 64 (BitVec.ofNat 64 idx)) →
+      lookupName s.env "%ei" = some (.ptr (K.next0 + 24)) →
+      readBytes hrc.mem (K.next0 + 24) 8 = some (wordBytes 8 errOff) →
+      readBytes hrc.mem (K.e + 8) 8 = some (wordBytes 8 eoff) →
+      UnchangedOutside s.mem hrc.mem
+        (stage2NoEventWrites K.tokensOut K.valuesOut K.sumOut K.err ++
+          (stage2NoEventRunRegions K.scratch K.scratchcap K.stk K.e K.c K.d ++
+            [(K.next0, K.nextEnd - K.next0)])) →
+      eoff = errOff + idx →
+      eoff ≤ K.n →
+      eoff < 2 ^ 64 →
+      Stage2NoEventWalkRefusalEvidence K s
+  /-- The gap family's literal shape (`if.then527`): `eoff = ei520 + idx`, with
+  the `%ei520.0.ph` phi's provenance. -/
+  | gapLiteral (hrc : CallOutcome) (eoff idx ei520 : Nat)
+      (src : Stage2NoEventWalkEi520Incoming) :
+      lookupName s.env "%tokens_out" = some (.ptr K.tokensOut) →
+      lookupName s.env "%values_out" = some (.ptr K.valuesOut) →
+      lookupName s.env "%sum_out" = some (.ptr K.sumOut) →
+      lookupName s.env "%err" = some (.ptr K.err) →
+      lookupName s.env "%off" = some (.ptr (K.e + 8)) →
+      lookupName s.env "%idxprom.lcssa" = some (.int 64 (BitVec.ofNat 64 idx)) →
+      lookupName s.env "%ei520.0.ph" = some (.int 64 (BitVec.ofNat 64 ei520)) →
+      src.value = ei520 →
+      readBytes hrc.mem (K.e + 8) 8 = some (wordBytes 8 eoff) →
+      UnchangedOutside s.mem hrc.mem
+        (stage2NoEventWrites K.tokensOut K.valuesOut K.sumOut K.err ++
+          (stage2NoEventRunRegions K.scratch K.scratchcap K.stk K.e K.c K.d ++
+            [(K.next0, K.nextEnd - K.next0)])) →
+      eoff = ei520 + idx →
+      eoff ≤ K.n →
+      eoff < 2 ^ 64 →
+      Stage2NoEventWalkRefusalEvidence K s
+
+/-- **A terminal route's evidence at its post-block endpoint**, route-specific.  Both
+constructors carry the run equality to the post-block endpoint `sT`
+(`Stage2NoEventWalkRunTo`, no invariant there), the credit, the verdict, the
+returned memory and the run, the prefix trace the walk has consumed, and the
+walk's report at the returned memory.  The evidence is stated at `sT`, where the
+terminal block's stores are visible and its in-block cells remain in the env.
+The acceptance reads its three stores there; the refusal carries its own
+family's registers.  The old single-`Acc` field is gone: `%idxprom.lcssa` is defined on the
+number route only and the three count words on the value route only, so no one
+accumulator is inhabitable at every route's terminal state. -/
+inductive Stage2NoEventWalkExit (calls : Calls) (mem : Mem) (F : Nat)
+    (K : Stage2NoEventWalkCarry) (k : Nat) (s : State) : Prop
+  /-- The accepted arm: verdict one, the three stores' reading at the terminal
+  state, the trace, and the boundary. -/
+  | accept (q : Nat) (m : Mem) (sT : State)
+      (route : Stage2NoEventWalkRunTo calls s sT)
+      (cost : q ≤ stage2NoEventWalkPotential K k + F)
+      (run : runFuel calls (q + 2) stage2NoEventBody s =
+        some (.ret (some (.int 64 1)) m))
+      (acc : Stage2NoEventWalkAcceptAcc K sT)
+      (obs : List ConsumerEvent) (toks : List Token)
+      (rel : Stage2NoEvent K.bs K.arena obs toks)
+      (obsLen : obs.length = K.tok)
+      (termsEq : K.terms = (obs.map ConsumerEvent.terms).sum)
+      (report : Stage2NoEventRun K.a12 mem m)
+      (bound : stage2NoEventBoundary K.a12 mem K.next0 m (.int 64 1)) :
+      Stage2NoEventWalkExit calls mem F K k s
+  /-- The refused arm: verdict zero, the route's own evidence, the trace, and the
+  boundary at the refusal's memory. -/
+  | refuse (q : Nat) (m : Mem) (sT : State)
+      (route : Stage2NoEventWalkRunTo calls s sT)
+      (cost : q ≤ stage2NoEventWalkPotential K k + F)
+      (run : runFuel calls (q + 2) stage2NoEventBody s =
+        some (.ret (some (.int 64 0)) m))
+      (ev : Stage2NoEventWalkRefusalEvidence K sT)
+      (obs : List ConsumerEvent) (toks : List Token)
+      (rel : Stage2NoEvent K.bs K.arena obs toks)
+      (obsLen : obs.length = K.tok)
+      (termsEq : K.terms = (obs.map ConsumerEvent.terms).sum)
+      (report : Stage2NoEventRun K.a12 mem m)
+      (bound : stage2NoEventBoundary K.a12 mem K.next0 m (.int 64 0)) :
+      Stage2NoEventWalkExit calls mem F K k s
+
+/-- **The dispatch's row at a head**, as data: either the count class's
+cycle-closing priced head segment to the next head — the segment carries the
+target's `Head` and `Trace`, and the three static numbers do not move — or a
+terminal route with its evidence.  Which side is taken is the entry's own class,
+so the field is one value of this type and not a per-class table. -/
 inductive Stage2NoEventWalkRow (calls : Calls) (mem : Mem) (F : Nat)
     (K : Stage2NoEventWalkCarry) (k : Nat) (s : State) : Type
   /-- The count class's cycle-closing segment to the next head. -/
   | cont (K' : Stage2NoEventWalkCarry) (k' : Nat) (s' : State) (p : Nat)
-      (seg : Stage2NoEventWalkPricedSegment calls mem K k s K' k' s' p)
+      (seg : Stage2NoEventWalkHeadPricedSegment calls mem K k s K' k' s' p)
       (hnep : K'.nep = K.nep) (ha12 : K'.a12 = K.a12) (hn0 : K'.next0 = K.next0)
-      (hk' : lookupName s'.env "%k.0.ph1404" = some (.int 64 (BitVec.ofNat 64 k')))
-      (hpc' : s'.pc = "NodeBlock5") (hlt : k < k') (hk'lt : k' < K.nep) :
+      (hlt : k < k') (hk'lt : k' < K.nep) :
       Stage2NoEventWalkRow calls mem F K k s
   /-- The terminal route, with its evidence. -/
   | terminal (exit : Stage2NoEventWalkExit calls mem F K k s) :
       Stage2NoEventWalkRow calls mem F K k s
 
-/-- **The dispatch's rows at a head.**  From a head carrying `k < nep`, one row: the
-continuing class's segment or a terminal route. -/
+/-- **The dispatch's rows at a head.**  From a head — the invariant, the
+parameters, the index below the entry count and the head block's read values —
+one row: the continuing class's priced segment or a terminal route. -/
 structure Stage2NoEventWalkRows (calls : Calls) (mem : Mem) (F : Nat) where
   row : ∀ (K : Stage2NoEventWalkCarry) (k : Nat) (s : State),
-    Stage2NoEventWalkInv K mem s →
-    s.pc = "NodeBlock5" →
-    lookupName s.env "%k.0.ph1404" = some (.int 64 (BitVec.ofNat 64 k)) →
-    k < K.nep →
+    Stage2NoEventWalkHead K mem k s →
     Stage2NoEventWalkRow calls mem F K k s
 
-/-- **The step, from the row.**  The terminal side's boundary is the exit evidence's;
-the continuing side is the row's segment with its three static equalities. -/
+/-- **The step, from the row.**  The continuing side is the row's priced head
+segment with its three static equalities (the target's `Head` and `Trace` ride in
+the segment); the terminal side cases the route-specific exit, whose verdict and
+boundary are its own. -/
 theorem stage2NoEventWalkStep_of_rows {calls : Calls} {mem : Mem} {F : Nat}
     (h : Stage2NoEventWalkRows calls mem F) :
     Stage2NoEventWalkStep calls mem F := by
-  intro K k s hInv hpc hk hklt
-  cases h.row K k s hInv hpc hk hklt with
-  | cont K' k' s' p seg hnep ha12 hn0 hk' hpc' hlt hk'lt =>
-      exact Or.inl ⟨K', k', s', p, seg, hnep, ha12, hn0, hk', hpc', hlt, hk'lt⟩
+  intro K k s hhead
+  cases h.row K k s hhead with
+  | cont K' k' s' p seg hnep ha12 hn0 hlt hk'lt =>
+      exact Or.inl ⟨K', k', s', p, seg, hnep, ha12, hn0, hlt, hk'lt⟩
   | terminal exit =>
-      exact Or.inr ⟨exit.q, exit.v, exit.m, exit.cost, exit.run, exit.bound⟩
+      cases exit with
+      | accept q m sT route cost run acc obs toks rel obsLen termsEq report bound =>
+          exact Or.inr ⟨q, 1, m, cost, run, bound⟩
+      | refuse q m sT route cost run ev obs toks rel obsLen termsEq report bound =>
+          exact Or.inr ⟨q, 0, m, cost, run, bound⟩
+
+/-! ### F1's row corollary
+
+The state `JsonStage2NoEventWalkHead`'s F1 witness exhibits is outside the new
+premise — the head's read is absent — and no row is inhabitable there either: a
+continuing row would need an index strictly between zero and the entry count, and
+a terminal row a return the undefined step never produces.  So the old statement,
+a row at every state the invariant admits at `NodeBlock5`, is refutable. -/
+
+/-- **No row at the `%3`-less state.** -/
+theorem stage2NoEventWalkF1_notRow (calls : Calls) (F : Nat) :
+    ¬ Nonempty (Stage2NoEventWalkRow calls stage2NoEventWalkF1Mem F
+      stage2NoEventWalkF1K 0 stage2NoEventWalkF1S) := by
+  rintro ⟨row⟩
+  cases row with
+  | cont K' k' s' p seg hnep ha12 hn0 hlt hk'lt =>
+      have hk1 : stage2NoEventWalkF1K.nep = 1 := by decide
+      omega
+  | terminal exit =>
+      cases exit with
+      | accept q m sT route cost run acc obs toks rel obsLen termsEq report bound =>
+          rw [show q + 2 = (q + 1) + 1 from by omega] at run
+          rw [stage2NoEventWalkF1_noRet (stage2NoEventWalkF1_step calls) (q + 1)] at run
+          cases run
+      | refuse q m sT route cost run ev obs toks rel obsLen termsEq report bound =>
+          rw [show q + 2 = (q + 1) + 1 from by omega] at run
+          rw [stage2NoEventWalkF1_noRet (stage2NoEventWalkF1_step calls) (q + 1)] at run
+          cases run
+
+/-- **F1's `¬ Rows` corollary**: the pre-fix statement — a row at every state the
+invariant admits at `NodeBlock5` with the index at zero and a nonempty entry
+stream — is refutable by the witness above. -/
+theorem stage2NoEventWalkF1_notRows (calls : Calls) (F : Nat) :
+    ¬ (∀ (K : Stage2NoEventWalkCarry) (s : State),
+        Stage2NoEventWalkInv K stage2NoEventWalkF1Mem s →
+        s.pc = "NodeBlock5" →
+        lookupName s.env "%k.0.ph1404" = some (.int 64 (BitVec.ofNat 64 0)) →
+        0 < K.nep →
+        Nonempty (Stage2NoEventWalkRow calls stage2NoEventWalkF1Mem F K 0 s)) := by
+  intro h
+  refine stage2NoEventWalkF1_notRow calls F ?_
+  apply h stage2NoEventWalkF1K stage2NoEventWalkF1S stage2NoEventWalkF1_inv rfl ?_ ?_
+  · show lookupName [("%k.0.ph1404", Value.int 64 (BitVec.ofNat 64 0))] "%k.0.ph1404"
+        = some (.int 64 (BitVec.ofNat 64 0))
+    rw [lookupName_cons_self]
+  · decide
 
 /-! ### The empty entry stream's route -/
 
@@ -201,9 +416,7 @@ def Stage2NoEventWalkPremises (gap : Calls := stage2GapRecover) (stk e c d : Nat
             (∀ n, runFuel (stage2NoEventCalls gap) (3 + n) stage2NoEventBody
                 (EntryState stage2NoEventBody (stage2NoEventArgs a12 stk e c d) mem next) =
               runFuel (stage2NoEventCalls gap) n stage2NoEventBody sHead) ∧
-            Stage2NoEventWalkInv K mem sHead ∧
-            sHead.pc = "NodeBlock5" ∧
-            lookupName sHead.env "%k.0.ph1404" = some (.int 64 (BitVec.ofNat 64 0)) ∧
+            Stage2NoEventWalkHead K mem 0 sHead ∧
             readLanes32 mem K.ep K.nep = some K.ent ∧
             (∀ q ∈ K.ent, q < K.n) ∧
             readBytes mem K.b K.n = some K.bs ∧
@@ -292,11 +505,14 @@ theorem stage2NoEventWalkPremises_of_rows {stk e c d : Nat}
   · -- entries left: the seed's run to the post-read head
     have hseed := stage2NoEventWalkSeedRun (gap := stage2GapRecover) (K := K) (mem := mem)
       (s0 := EntryState stage2NoEventBody (stage2NoEventArgs a12 stk e c d) mem next)
-      hInvEntry hpar rfl (by simpa [EntryState] using hKn0.symm) hKxj0 hb1K (Nat.pos_of_ne_zero hzero)
-    obtain ⟨sHead, hrun, hInvHead, hpc, hk0⟩ := hseed
-    refine Or.inr ⟨Nat.pos_of_ne_zero hzero, sHead, hrun, hInvHead, hpc, hk0,
-      hInvHead.entries, hInvHead.inside, hInvHead.doc, ?_⟩
-    exact stage2NoEventWalkStep_of_rows (hrows a12 mem next hpre hstaged)
+      hInvEntry hpar rfl (by simpa [EntryState] using hKn0.symm) hKxj0 hb1K
+      (Nat.pos_of_ne_zero hzero) hKtok hKterms hKarena
+    obtain ⟨sHead, -, -, hrun, hHead, htrace, -⟩ := hseed
+    refine Or.inr ⟨Nat.pos_of_ne_zero hzero, sHead, hrun, hHead, ?_, ?_, ?_, ?_⟩
+    · exact hHead.inv.entries
+    · exact hHead.inv.inside
+    · exact hHead.inv.doc
+    · exact stage2NoEventWalkStep_of_rows (hrows a12 mem next hpre hstaged)
 
 /-! ### A fixed post at the completion's outcome carries to every behaviour -/
 
@@ -354,7 +570,7 @@ theorem stage2NoEventWalkObligation_of_premises {gap : Calls} {stk e c d : Nat}
     hesc, hscratchBytes, hscratchRoom, htokB, hvalB, hsumB, herrB, hmaxDoc, hnLt,
     hscLt, hneLt, hnxLt, hsep, hwater⟩ := hpre12
   refine ⟨?_, ?_⟩
-  · rcases hbr with ⟨hzero, hflush⟩ | ⟨hpos, sHead, hseed, hInvHead, hpc, hk0,
+  · rcases hbr with ⟨hzero, hflush⟩ | ⟨hpos, sHead, hseed, hHead,
       hentries, hinside, hdoc, hstep⟩
     · -- the empty entry stream
       obtain ⟨q, m, hq, hrun, hb⟩ := hflush hzero
@@ -365,10 +581,10 @@ theorem stage2NoEventWalkObligation_of_premises {gap : Calls} {stk e c d : Nat}
         exact runFuel_mono_le hqbudget hrun⟩
     · -- entries left: the seed run, the loop, and the budget
       obtain ⟨q, v, m, hq, hrun, hb⟩ :=
-        stage2NoEventWalkLoopFinishes hstep K 0 sHead hInvHead hpc hk0 hpos
+        stage2NoEventWalkLoopFinishes hstep K 0 sHead hHead
       have hcost : 3 + (q + 2) ≤ stage2NoEventBudget a12 mem := by
         have hpot := stage2NoEventWalkPotential_le K 0
-        have hble := stage2NoEventWalkBudget_le (mem := mem) (s := sHead) hInvHead
+        have hble := stage2NoEventWalkBudget_le (mem := mem) (s := sHead) hHead.inv
         rw [hK12] at hble
         omega
       have htotal : runFuel (stage2NoEventCalls gap) (3 + (q + 2)) stage2NoEventBody
@@ -383,7 +599,7 @@ theorem stage2NoEventWalkObligation_of_premises {gap : Calls} {stk e c d : Nat}
     change Γ_stage2_noevent.post
       (List.take 12 (stage2NoEventArgs a12 stk e c d)) mem next o
     rw [htake]
-    rcases hbr with ⟨hzero, hflush⟩ | ⟨hpos, sHead, hseed, hInvHead, hpc, hk0,
+    rcases hbr with ⟨hzero, hflush⟩ | ⟨hpos, sHead, hseed, hHead,
       hentries, hinside, hdoc, hstep⟩
     · -- the flush's boundary at the completion's outcome
       obtain ⟨q, m, hq, hrun, hb⟩ := hflush hzero
@@ -401,10 +617,10 @@ theorem stage2NoEventWalkObligation_of_premises {gap : Calls} {stk e c d : Nat}
       exact stage2NoEventPost_of_completion hcom hgood o hbeh
     · -- the terminal branch's boundary at the completion's outcome
       obtain ⟨q, v, m, hq, hrun, hb⟩ :=
-        stage2NoEventWalkLoopFinishes hstep K 0 sHead hInvHead hpc hk0 hpos
+        stage2NoEventWalkLoopFinishes hstep K 0 sHead hHead
       have hcost : 3 + (q + 2) ≤ stage2NoEventBudget a12 mem := by
         have hpot := stage2NoEventWalkPotential_le K 0
-        have hble := stage2NoEventWalkBudget_le (mem := mem) (s := sHead) hInvHead
+        have hble := stage2NoEventWalkBudget_le (mem := mem) (s := sHead) hHead.inv
         rw [hK12] at hble
         omega
       have htotal : runFuel (stage2NoEventCalls gap) (3 + (q + 2)) stage2NoEventBody
@@ -425,6 +641,8 @@ theorem stage2NoEventWalkObligation_of_premises {gap : Calls} {stk e c d : Nat}
 
 /-! ### Axiom footprints -/
 
+#print axioms stage2NoEventWalkF1_notRow
+#print axioms stage2NoEventWalkF1_notRows
 #print axioms stage2NoEventWalkStep_of_rows
 #print axioms stage2NoEventWalkPremises_of_rows
 #print axioms stage2NoEventPost_of_completion

@@ -50,6 +50,7 @@ set_option maxHeartbeats 800000
 namespace LeanLLVM.Refinement
 
 open LeanLLVM
+open LeanLLVM.JSON
 open LeanLLVM.Refinement.JsonStage2NoEventIR
 open LeanLLVM.Refinement.JsonEntryIR (readLanes32)
 
@@ -228,6 +229,48 @@ structure Stage2NoEventWalkAcc (K : Stage2NoEventWalkCarry) (s : State) : Prop w
   tokens : lookupName s.env "%tokens.8" = some (.int 64 (BitVec.ofNat 64 K.tok))
   terms : lookupName s.env "%terms.8" = some (.int 64 (BitVec.ofNat 64 K.terms))
   arena : lookupName s.env "%arena.10" = some (.int 64 (BitVec.ofNat 64 K.arenaWord))
+
+/-! ### The output evidence and the acceptance's reading
+
+Both are vocabulary about the carry and the state (not about the segment tier), so
+they sit with the invariant: the walk's terminal routes and the row's evidence are
+stated at them.
+
+`Stage2NoEventWalkTrace` is the events the walk has consumed, the reference
+parser's tokens for them, the two counts the state's registers carry, and the
+arena the string rows were read from with the span bound the arena's later
+extension needs.  It is a row-tier predicate, not an invariant field:
+`Stage2NoEventWalkInv` is frozen and does not carry the parse relation.
+
+`Stage2NoEventWalkAcceptAcc` is the acceptance's three stores' reading at the
+terminal state.  It is not the loop's `Stage2NoEventWalkAcc`: `%idxprom.lcssa` is
+defined on the number route only and `%tokens.8`/`%terms.8`/`%arena.10` on the
+value route only, so no single `Acc` is inhabitable at every route's terminal
+state — the acceptance reads exactly the three words it stores. -/
+
+/-- **The output evidence at a head.** -/
+inductive Stage2NoEventWalkTrace (K : Stage2NoEventWalkCarry) (s : State) : Prop where
+  /-- The evidence at one head. -/
+  | intro (obs : List ConsumerEvent) (toks : List Token)
+      (rel : Stage2NoEvent K.bs K.arena obs toks)
+      (obsLen : obs.length = K.tok)
+      (termsEq : K.terms = (obs.map ConsumerEvent.terms).sum)
+      (arenaAt : readBytes s.mem K.scratch K.arena.length = some K.arena)
+      (arenaBound : Stage2NoEventArenaBound K.arena obs) :
+      Stage2NoEventWalkTrace K s
+
+/-- **The three stores' reading at the acceptance's terminal state.** -/
+structure Stage2NoEventWalkAcceptAcc (K : Stage2NoEventWalkCarry) (sT : State) : Prop where
+  tokens : lookupName sT.env "%tokens.8" = some (.int 64 (BitVec.ofNat 64 K.tok))
+  terms : lookupName sT.env "%terms.8" = some (.int 64 (BitVec.ofNat 64 K.terms))
+  arena : lookupName sT.env "%arena.10" = some (.int 64 (BitVec.ofNat 64 K.arenaWord))
+
+/-- **The loop's accumulator implies the acceptance's reading.**  The `Acc`
+carries the three words beside the token index, so a terminal state that has the
+full `Acc` has the acceptance's three-word form. -/
+theorem Stage2NoEventWalkAcc.toAcceptAcc {K : Stage2NoEventWalkCarry} {s : State}
+    (h : Stage2NoEventWalkAcc K s) : Stage2NoEventWalkAcceptAcc K s :=
+  ⟨h.tokens, h.terms, h.arena⟩
 
 /-! ### The invariant -/
 

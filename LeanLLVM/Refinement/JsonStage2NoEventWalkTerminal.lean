@@ -1007,20 +1007,22 @@ theorem stage2NoEventSumWord {arena : List UInt8} {terms arenaWord : Nat}
     ← Nat.add_mod, Nat.add_comm]
 
 /-- **The acceptance arm.**  The three stores, the return with verdict one, and
-the record's boundary at the parse relation the loop's completion supplies. -/
-theorem stage2NoEventAccept_run {K : Stage2NoEventWalkCarry} {mem : Mem} {s : State}
+the record's boundary at the parse relation the walk's trace supplies.  The
+state's reading is the three-word `Stage2NoEventWalkAcceptAcc` (the stores' own
+cells), and the relation, its length and its sum are the trace's, so no argument
+beside the trace is needed. -/
+theorem stage2NoEventAccept_run_traced {K : Stage2NoEventWalkCarry} {mem : Mem}
+    {s : State}
     (h : Stage2NoEventWalkInv K mem s)
     (hregs : Stage2NoEventWalkParams K s)
     (hloc : Stage2NoEventWalkLocals K s)
-    (hacc : Stage2NoEventWalkAcc K s)
+    (hacc : Stage2NoEventWalkAcceptAcc K s)
     (hpc : s.pc = "accept")
-    {obs : List ConsumerEvent} {toks : List Token}
-    (hRel : Stage2NoEvent K.bs K.arena obs toks)
-    (hObsLen : obs.length = K.tok)
-    (hTermsEq : K.terms = (obs.map ConsumerEvent.terms).sum) :
+    (htrace : Stage2NoEventWalkTrace K s) :
     ∃ m, runFuel (stage2NoEventCalls (gap := stage2GapRecover)) 2 stage2NoEventBody
         (stateAt s.env s) = some (.ret (some (.int 64 1)) m) ∧
       stage2NoEventBoundary K.a12 mem K.next0 m (.int 64 1) := by
+  obtain ⟨obs, toks, hRel, hObsLen, hTermsEq, -, -⟩ := htrace
   obtain ⟨hs1, hs2, hs3, hs4, hs5, hs6⟩ :=
     stage2NoEventWrites_slots (stage2NoEventRegions_writes h.separate)
   have hTokLt : K.tok < 2 ^ 64 := Nat.lt_of_le_of_lt h.tokLe h.nLt
@@ -1522,7 +1524,7 @@ theorem stage2NoEventEntry_bootstrap {gap : Calls} {K : Stage2NoEventWalkCarry}
 #print axioms stage2NoEventBoundary_refusal
 #print axioms stage2NoEventBoundary_accept
 #print axioms stage2NoEventFlush_run
-#print axioms stage2NoEventAccept_run
+#print axioms stage2NoEventAccept_run_traced
 #print axioms stage2NoEventRefusal_run
 #print axioms stage2NoEventWalk_denote_alloca
 #print axioms stage2NoEventWalk_denote_lifetimeStart

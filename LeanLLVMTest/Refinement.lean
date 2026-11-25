@@ -10600,6 +10600,78 @@ contiguous to the end of this file. -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.entryPreheader_step
 
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkHead_closure' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkHead_closure
+
+/-- info: 'LeanLLVM.Refinement.Stage2NoEventWalkHead.laneRead' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.Stage2NoEventWalkHead.laneRead
+
+/-- info: 'LeanLLVM.Refinement.Stage2NoEventWalkHead.kEq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.Stage2NoEventWalkHead.kEq
+
+/-- info: 'LeanLLVM.Refinement.Stage2NoEventWalkHead.tokensPhi' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.Stage2NoEventWalkHead.tokensPhi
+
+/-- info: 'LeanLLVM.Refinement.Stage2NoEventWalkHead.termsPhi' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.Stage2NoEventWalkHead.termsPhi
+
+/-- info: 'LeanLLVM.Refinement.Stage2NoEventWalkHead.arenaPhi' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.Stage2NoEventWalkHead.arenaPhi
+
+/-- info: 'LeanLLVM.Refinement.Stage2NoEventWalkHead.alenPhi' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.Stage2NoEventWalkHead.alenPhi
+
+/-- info: 'LeanLLVM.Refinement.Stage2NoEventWalkHead.spPhi' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.Stage2NoEventWalkHead.spPhi
+
+/-- info: 'LeanLLVM.Refinement.Stage2NoEventWalkHead.framePhi' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.Stage2NoEventWalkHead.framePhi
+
+/-- info: 'LeanLLVM.Refinement.Stage2NoEventWalkHead.onePhi' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.Stage2NoEventWalkHead.onePhi
+
+/-- info: 'LeanLLVM.Refinement.Stage2NoEventWalkHead.widePhi' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.Stage2NoEventWalkHead.widePhi
+
+/-- info: 'LeanLLVM.Refinement.Stage2NoEventWalkHead.env_form' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.Stage2NoEventWalkHead.env_form
+
+/-- info: 'LeanLLVM.Refinement.Stage2NoEventWalkHead.readAndEnv' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.Stage2NoEventWalkHead.readAndEnv
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkF1_notRow' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkF1_notRow
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkF1_notRows' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkF1_notRows
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkF2_witness' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkF2_witness
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkF2_atEntry' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkF2_atEntry
+
+/-- info: 'LeanLLVM.Refinement.lookupName_entryState_none' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.lookupName_entryState_none
+
 /-- info: 'LeanLLVM.Refinement.stage2NoEventWalkSeedRun' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.stage2NoEventWalkSeedRun
@@ -10976,9 +11048,9 @@ entry bootstrap -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.stage2NoEventFlush_run
 
-/-- info: 'LeanLLVM.Refinement.stage2NoEventAccept_run' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.stage2NoEventAccept_run_traced' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
-#print axioms LeanLLVM.Refinement.stage2NoEventAccept_run
+#print axioms LeanLLVM.Refinement.stage2NoEventAccept_run_traced
 
 /-- info: 'LeanLLVM.Refinement.stage2NoEventRefusal_run' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in

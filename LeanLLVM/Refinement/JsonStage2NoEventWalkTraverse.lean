@@ -9,7 +9,7 @@ completion at the record's budget:
 
 * the **step** is the interface the dispatch classes produce: from a head
   carrying `k < nep`, either a priced segment to a head with a larger `k` (the
-  count class's cycle-closing row, via `of_chain`), or the terminal route — the
+  count class's cycle-closing row, via `of_head_chain`), or the terminal route — the
   flush, refusal or acceptance conclusion already proved, bounded by the head's
   credit plus `F`;
 * the **recursion** on `nep - k` composes the continuing segments' credits and
@@ -24,7 +24,7 @@ The step's continuing branch carries the facts the walk's static numbers are
 kept — `nep`, `a12` and `next0` — because the boundary is read at the record's
 argument list and the caller's cursor, which the rows do not move; they are the
 no-event analogue of the certified segment's `stage_eq`. -/
-import LeanLLVM.Refinement.JsonStage2NoEventWalkSegment
+import LeanLLVM.Refinement.JsonStage2NoEventWalkHead
 
 set_option autoImplicit false
 set_option maxRecDepth 8192
@@ -51,12 +51,15 @@ theorem stage2NoEventWalkPotential_le (K : Stage2NoEventWalkCarry) (k : Nat) :
 
 /-! ### The loop's step -/
 
-/-- **One head visit.**  From a state at the post-read head `NodeBlock5`, with the
-head index `k < nep`, either
+/-- **One head visit.**  From a head state (`Stage2NoEventWalkHead`: the invariant,
+the parameters, the index below the entry count, and the head block's read values),
+either
 
-* a priced segment reaches the next head `NodeBlock5` with a larger index `k'`
+* a priced head segment reaches the next head `NodeBlock5` with a larger index `k'`
   still below `nep`, the carry's `nep`, `a12` and `next0` unchanged, and the
-  potential's credit paid (`p + Φ(K', k') ≤ Φ(K, k)`); or
+  potential's credit paid (`p + Φ(K', k') ≤ Φ(K, k)`); the segment carries the
+  target's `Head` and `Trace`, which the loop's next visit and the row's continuing
+  branch consume; or
 * the terminal route completes: `q` steps of the segment and the terminal arm's
   two reach the return with the record's boundary at the returned memory, and
   `q` is inside the head's credit plus `F`.
@@ -66,15 +69,11 @@ three terminal arms (flush, refusal, acceptance) are its evidence; this module
 consumes the step, never constructs it. -/
 def Stage2NoEventWalkStep (calls : Calls) (mem : Mem) (F : Nat) : Prop :=
   ∀ (K : Stage2NoEventWalkCarry) (k : Nat) (s : State),
-    Stage2NoEventWalkInv K mem s →
-    s.pc = "NodeBlock5" →
-    lookupName s.env "%k.0.ph1404" = some (.int 64 (BitVec.ofNat 64 k)) →
-    k < K.nep →
+    Stage2NoEventWalkHead K mem k s →
     (∃ (K' : Stage2NoEventWalkCarry) (k' : Nat) (s' : State) (p : Nat),
-        Stage2NoEventWalkPricedSegment calls mem K k s K' k' s' p ∧
+        Stage2NoEventWalkHeadPricedSegment calls mem K k s K' k' s' p ∧
         K'.nep = K.nep ∧ K'.a12 = K.a12 ∧ K'.next0 = K.next0 ∧
-        lookupName s'.env "%k.0.ph1404" = some (.int 64 (BitVec.ofNat 64 k')) ∧
-        s'.pc = "NodeBlock5" ∧ k < k' ∧ k' < K.nep)
+        k < k' ∧ k' < K.nep)
     ∨ (∃ (q : Nat) (v : BitVec 64) (m : Mem),
         q ≤ stage2NoEventWalkPotential K k + F ∧
         runFuel calls (q + 2) stage2NoEventBody s = some (.ret (some (.int 64 v)) m) ∧
@@ -83,21 +82,19 @@ def Stage2NoEventWalkStep (calls : Calls) (mem : Mem) (F : Nat) : Prop :=
 /-- **The loop finishes inside the credit.**  Strong recursion on the entries
 left: the continuing branch shortens `nep - k` (the next head's index is larger
 and still below `nep`), and the terminal branch is the completion at the state
-it is taken from.  The verdict and the memory are the terminal run's. -/
+it is taken from.  The verdict and the memory are the terminal run's.  The
+recursion re-enters the step at the continuing target's own `Head`, which is the
+head segment's carried fact. -/
 theorem stage2NoEventWalkLoopFinishes {calls : Calls} {mem : Mem} {F : Nat}
     (hstep : Stage2NoEventWalkStep calls mem F)
     (K : Stage2NoEventWalkCarry) (k : Nat) (s : State)
-    (hInv : Stage2NoEventWalkInv K mem s) (hpc : s.pc = "NodeBlock5")
-    (hk : lookupName s.env "%k.0.ph1404" = some (.int 64 (BitVec.ofNat 64 k)))
-    (hklt : k < K.nep) :
+    (hhead : Stage2NoEventWalkHead K mem k s) :
     ∃ (q : Nat) (v : BitVec 64) (m : Mem),
       q + 2 ≤ stage2NoEventWalkPotential K k + F + 2 ∧
       runFuel calls (q + 2) stage2NoEventBody s = some (.ret (some (.int 64 v)) m) ∧
       stage2NoEventBoundary K.a12 mem K.next0 m (.int 64 v) := by
   have key : ∀ (m : Nat), ∀ (K : Stage2NoEventWalkCarry) (k : Nat) (s : State),
-      K.nep - k = m → Stage2NoEventWalkInv K mem s → s.pc = "NodeBlock5" →
-      lookupName s.env "%k.0.ph1404" = some (.int 64 (BitVec.ofNat 64 k)) →
-      k < K.nep →
+      K.nep - k = m → Stage2NoEventWalkHead K mem k s →
       ∃ (q : Nat) (v : BitVec 64) (mr : Mem),
         q + 2 ≤ stage2NoEventWalkPotential K k + F + 2 ∧
         runFuel calls (q + 2) stage2NoEventBody s = some (.ret (some (.int 64 v)) mr) ∧
@@ -105,22 +102,22 @@ theorem stage2NoEventWalkLoopFinishes {calls : Calls} {mem : Mem} {F : Nat}
     intro m
     induction m using Nat.strongRecOn with
     | ind m ih =>
-        intro K k s hm hInv hpc hk hklt
-        rcases hstep K k s hInv hpc hk hklt with
-          ⟨K', k', s', p, hseg, hnep, ha12, hn0, hk', hpc', hklt', hk'lt⟩ |
+        intro K k s hm hhead
+        rcases hstep K k s hhead with
+          ⟨K', k', s', p, hseg, hnep, ha12, hn0, hklt', hk'lt⟩ |
           ⟨q, v, mr, hq, hrun, hb⟩
         · have hmeas : K'.nep - k' < m := by omega
           have hk'ne : k' < K'.nep := by omega
           obtain ⟨q, v, mr, hq', hrun', hb'⟩ :=
-            ih (K'.nep - k') hmeas K' k' s' rfl hseg.seg.inv' hpc' hk' hk'ne
+            ih (K'.nep - k') hmeas K' k' s' rfl hseg.seg.head'
           have hcredit := hseg.credit
           refine ⟨p + q, v, mr, by omega, ?_, ?_⟩
-          · rw [show p + q + 2 = p + (q + 2) from by omega, hseg.seg.run (q + 2)]
+          · rw [show p + q + 2 = p + (q + 2) from by omega, hseg.seg.seg.run (q + 2)]
             exact hrun'
           · rw [← ha12, ← hn0]
             exact hb'
         · exact ⟨q, v, mr, by omega, hrun, hb⟩
-  exact key (K.nep - k) K k s rfl hInv hpc hk hklt
+  exact key (K.nep - k) K k s rfl hhead
 
 /-! ### The completion from a seed run -/
 
@@ -131,15 +128,14 @@ theorem stage2NoEventWalkCompletes_of_loop {calls : Calls} {mem : Mem}
     {K : Stage2NoEventWalkCarry} {k j F : Nat} {sHead sEntry : State}
     (hseed : ∀ n, runFuel calls (j + n) stage2NoEventBody sEntry =
       runFuel calls n stage2NoEventBody sHead)
-    (hInv : Stage2NoEventWalkInv K mem sHead) (hpc : sHead.pc = "NodeBlock5")
-    (hk : lookupName sHead.env "%k.0.ph1404" = some (.int 64 (BitVec.ofNat 64 k)))
-    (hklt : k < K.nep) (hstep : Stage2NoEventWalkStep calls mem F)
+    (hhead : Stage2NoEventWalkHead K mem k sHead)
+    (hstep : Stage2NoEventWalkStep calls mem F)
     (hF : j + F + 2 ≤ stage2NoEventFinalisationAllowance) :
     ∃ v m, runFuel calls
         (stage2NoEventWalkPotential K k + stage2NoEventFinalisationAllowance)
         stage2NoEventBody sEntry = some (.ret v m) := by
   obtain ⟨q, v, mr, hq, hrun, -⟩ :=
-    stage2NoEventWalkLoopFinishes hstep K k sHead hInv hpc hk hklt
+    stage2NoEventWalkLoopFinishes hstep K k sHead hhead
   have htotal : runFuel calls (j + (q + 2)) stage2NoEventBody sEntry =
       some (.ret (some (.int 64 v)) mr) := by
     rw [hseed (q + 2)]
@@ -156,14 +152,13 @@ theorem stage2NoEventWalkCompletes_of_loop_budget {calls : Calls} {mem : Mem}
     {K : Stage2NoEventWalkCarry} {k j F : Nat} {sHead sEntry : State}
     (hseed : ∀ n, runFuel calls (j + n) stage2NoEventBody sEntry =
       runFuel calls n stage2NoEventBody sHead)
-    (hInv : Stage2NoEventWalkInv K mem sHead) (hpc : sHead.pc = "NodeBlock5")
-    (hk : lookupName sHead.env "%k.0.ph1404" = some (.int 64 (BitVec.ofNat 64 k)))
-    (hklt : k < K.nep) (hstep : Stage2NoEventWalkStep calls mem F)
+    (hhead : Stage2NoEventWalkHead K mem k sHead)
+    (hstep : Stage2NoEventWalkStep calls mem F)
     (hF : j + F + 2 ≤ stage2NoEventFinalisationAllowance) :
     ∃ v m, runFuel calls (32 * K.nep + 8 * K.n + 32) stage2NoEventBody sEntry =
       some (.ret v m) := by
   obtain ⟨v, m, hrun⟩ :=
-    stage2NoEventWalkCompletes_of_loop hseed hInv hpc hk hklt hstep hF
+    stage2NoEventWalkCompletes_of_loop hseed hhead hstep hF
   have hpot := stage2NoEventWalkPotential_le K k
   refine ⟨v, m, runFuel_mono_le ?_ hrun⟩
   simp only [stage2NoEventFinalisationAllowance] at hpot ⊢
@@ -194,15 +189,14 @@ theorem stage2NoEventWalkCompletes_at_stage2Budget {calls : Calls} {mem : Mem}
     {K : Stage2NoEventWalkCarry} {k j F : Nat} {sHead sEntry : State}
     (hseed : ∀ n, runFuel calls (j + n) stage2NoEventBody sEntry =
       runFuel calls n stage2NoEventBody sHead)
-    (hInv : Stage2NoEventWalkInv K mem sHead) (hpc : sHead.pc = "NodeBlock5")
-    (hk : lookupName sHead.env "%k.0.ph1404" = some (.int 64 (BitVec.ofNat 64 k)))
-    (hklt : k < K.nep) (hstep : Stage2NoEventWalkStep calls mem F)
+    (hhead : Stage2NoEventWalkHead K mem k sHead)
+    (hstep : Stage2NoEventWalkStep calls mem F)
     (hF : j + F + 2 ≤ stage2NoEventFinalisationAllowance) :
     ∃ v m, runFuel calls (stage2NoEventBudget K.a12 mem) stage2NoEventBody sEntry =
       some (.ret v m) := by
   obtain ⟨v, m, hrun⟩ :=
-    stage2NoEventWalkCompletes_of_loop_budget hseed hInv hpc hk hklt hstep hF
-  exact ⟨v, m, runFuel_mono_le (stage2NoEventWalkBudget_le hInv) hrun⟩
+    stage2NoEventWalkCompletes_of_loop_budget hseed hhead hstep hF
+  exact ⟨v, m, runFuel_mono_le (stage2NoEventWalkBudget_le hhead.inv) hrun⟩
 
 /-! ### Axiom footprints -/
 
