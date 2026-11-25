@@ -291,8 +291,14 @@ inductive Stage2NoEventWalkRow (calls : Calls) (mem : Mem) (F : Nat)
 parameters, the index below the entry count and the head block's read values —
 one row: the continuing class's priced segment or a terminal route. -/
 structure Stage2NoEventWalkRows (calls : Calls) (mem : Mem) (F : Nat) where
+  /-- The row at a head, given the walk's accumulated output evidence there: a
+  continuing row's priced segment carries the target's trace, which is the
+  source's stepped by the class's own event, so the producer needs the source
+  trace.  The trace is not a field of `Stage2NoEventWalkHead`, which is a state
+  fact about the head block's read. -/
   row : ∀ (K : Stage2NoEventWalkCarry) (k : Nat) (s : State),
     Stage2NoEventWalkHead K mem k s →
+    Stage2NoEventWalkTrace K →
     Stage2NoEventWalkRow calls mem F K k s
 
 /-- **The step, from the row.**  The continuing side is the row's priced head
@@ -302,8 +308,8 @@ boundary are its own. -/
 theorem stage2NoEventWalkStep_of_rows {calls : Calls} {mem : Mem} {F : Nat}
     (h : Stage2NoEventWalkRows calls mem F) :
     Stage2NoEventWalkStep calls mem F := by
-  intro K k s hhead
-  cases h.row K k s hhead with
+  intro K k s hhead htrace
+  cases h.row K k s hhead htrace with
   | cont K' k' s' p seg hnep ha12 hn0 hlt hk'lt =>
       exact Or.inl ⟨K', k', s', p, seg, hnep, ha12, hn0, hlt, hk'lt⟩
   | terminal exit =>
@@ -421,6 +427,7 @@ def Stage2NoEventWalkPremises (gap : Calls := stage2GapRecover) (stk e c d : Nat
                 (EntryState stage2NoEventBody (stage2NoEventArgs a12 stk e c d) mem next) =
               runFuel (stage2NoEventCalls gap) n stage2NoEventBody sHead) ∧
             Stage2NoEventWalkHead K mem 0 sHead ∧
+            Stage2NoEventWalkTrace K ∧
             readLanes32 mem K.ep K.nep = some K.ent ∧
             (∀ q ∈ K.ent, q < K.n) ∧
             readBytes mem K.b K.n = some K.bs ∧
@@ -512,7 +519,7 @@ theorem stage2NoEventWalkPremises_of_rows {stk e c d : Nat}
       hInvEntry hpar rfl (by simpa [EntryState] using hKn0.symm) hKxj0 hb1K
       (Nat.pos_of_ne_zero hzero) hKtok hKterms hKarena
     obtain ⟨sHead, -, -, hrun, hHead, htrace, -⟩ := hseed
-    refine Or.inr ⟨Nat.pos_of_ne_zero hzero, sHead, hrun, hHead, ?_, ?_, ?_, ?_⟩
+    refine Or.inr ⟨Nat.pos_of_ne_zero hzero, sHead, hrun, hHead, htrace, ?_, ?_, ?_, ?_⟩
     · exact hHead.inv.entries
     · exact hHead.inv.inside
     · exact hHead.inv.doc
@@ -574,7 +581,7 @@ theorem stage2NoEventWalkObligation_of_premises {gap : Calls} {stk e c d : Nat}
     hesc, hscratchBytes, hscratchRoom, htokB, hvalB, hsumB, herrB, hmaxDoc, hnLt,
     hscLt, hneLt, hnxLt, hsep, hwater⟩ := hpre12
   refine ⟨?_, ?_⟩
-  · rcases hbr with ⟨hzero, hflush⟩ | ⟨hpos, sHead, hseed, hHead,
+  · rcases hbr with ⟨hzero, hflush⟩ | ⟨hpos, sHead, hseed, hHead, htrace,
       hentries, hinside, hdoc, hstep⟩
     · -- the empty entry stream
       obtain ⟨q, m, hq, hrun, hb⟩ := hflush hzero
@@ -585,7 +592,7 @@ theorem stage2NoEventWalkObligation_of_premises {gap : Calls} {stk e c d : Nat}
         exact runFuel_mono_le hqbudget hrun⟩
     · -- entries left: the seed run, the loop, and the budget
       obtain ⟨q, v, m, hq, hrun, hb⟩ :=
-        stage2NoEventWalkLoopFinishes hstep K 0 sHead hHead
+        stage2NoEventWalkLoopFinishes hstep K 0 sHead hHead htrace
       have hcost : 3 + (q + 2) ≤ stage2NoEventBudget a12 mem := by
         have hpot := stage2NoEventWalkPotential_le K 0
         have hble := stage2NoEventWalkBudget_le (mem := mem) (s := sHead) hHead.inv
@@ -603,7 +610,7 @@ theorem stage2NoEventWalkObligation_of_premises {gap : Calls} {stk e c d : Nat}
     change Γ_stage2_noevent.post
       (List.take 12 (stage2NoEventArgs a12 stk e c d)) mem next o
     rw [htake]
-    rcases hbr with ⟨hzero, hflush⟩ | ⟨hpos, sHead, hseed, hHead,
+    rcases hbr with ⟨hzero, hflush⟩ | ⟨hpos, sHead, hseed, hHead, htrace,
       hentries, hinside, hdoc, hstep⟩
     · -- the flush's boundary at the completion's outcome
       obtain ⟨q, m, hq, hrun, hb⟩ := hflush hzero
@@ -621,7 +628,7 @@ theorem stage2NoEventWalkObligation_of_premises {gap : Calls} {stk e c d : Nat}
       exact stage2NoEventPost_of_completion hcom hgood o hbeh
     · -- the terminal branch's boundary at the completion's outcome
       obtain ⟨q, v, m, hq, hrun, hb⟩ :=
-        stage2NoEventWalkLoopFinishes hstep K 0 sHead hHead
+        stage2NoEventWalkLoopFinishes hstep K 0 sHead hHead htrace
       have hcost : 3 + (q + 2) ≤ stage2NoEventBudget a12 mem := by
         have hpot := stage2NoEventWalkPotential_le K 0
         have hble := stage2NoEventWalkBudget_le (mem := mem) (s := sHead) hHead.inv

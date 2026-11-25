@@ -66,10 +66,18 @@ either
 
 The producer is the dispatch tier: the count class's cycle-closing row and the
 three terminal arms (flush, refusal, acceptance) are its evidence; this module
-consumes the step, never constructs it. -/
+consumes the step, never constructs it.
+
+The walk's output evidence, `Stage2NoEventWalkTrace K`, is a premise of the step
+and not a field of `Stage2NoEventWalkHead`: the head is a state fact about the
+head block's read, while the trace is what the walk has consumed to reach it.  A
+continuing row's priced segment carries the *target's* trace, which is the
+source's stepped by the class's own event — so the producer needs the source
+trace, and the loop re-enters each visit with the segment's `trace'`. -/
 def Stage2NoEventWalkStep (calls : Calls) (mem : Mem) (F : Nat) : Prop :=
   ∀ (K : Stage2NoEventWalkCarry) (k : Nat) (s : State),
     Stage2NoEventWalkHead K mem k s →
+    Stage2NoEventWalkTrace K →
     (∃ (K' : Stage2NoEventWalkCarry) (k' : Nat) (s' : State) (p : Nat),
         Stage2NoEventWalkHeadPricedSegment calls mem K k s K' k' s' p ∧
         K'.nep = K.nep ∧ K'.a12 = K.a12 ∧ K'.next0 = K.next0 ∧
@@ -88,13 +96,15 @@ head segment's carried fact. -/
 theorem stage2NoEventWalkLoopFinishes {calls : Calls} {mem : Mem} {F : Nat}
     (hstep : Stage2NoEventWalkStep calls mem F)
     (K : Stage2NoEventWalkCarry) (k : Nat) (s : State)
-    (hhead : Stage2NoEventWalkHead K mem k s) :
+    (hhead : Stage2NoEventWalkHead K mem k s)
+    (htrace : Stage2NoEventWalkTrace K) :
     ∃ (q : Nat) (v : BitVec 64) (m : Mem),
       q + 2 ≤ stage2NoEventWalkPotential K k + F + 2 ∧
       runFuel calls (q + 2) stage2NoEventBody s = some (.ret (some (.int 64 v)) m) ∧
       stage2NoEventBoundary K.a12 mem K.next0 m (.int 64 v) := by
   have key : ∀ (m : Nat), ∀ (K : Stage2NoEventWalkCarry) (k : Nat) (s : State),
       K.nep - k = m → Stage2NoEventWalkHead K mem k s →
+      Stage2NoEventWalkTrace K →
       ∃ (q : Nat) (v : BitVec 64) (mr : Mem),
         q + 2 ≤ stage2NoEventWalkPotential K k + F + 2 ∧
         runFuel calls (q + 2) stage2NoEventBody s = some (.ret (some (.int 64 v)) mr) ∧
@@ -102,14 +112,14 @@ theorem stage2NoEventWalkLoopFinishes {calls : Calls} {mem : Mem} {F : Nat}
     intro m
     induction m using Nat.strongRecOn with
     | ind m ih =>
-        intro K k s hm hhead
-        rcases hstep K k s hhead with
+        intro K k s hm hhead htrace
+        rcases hstep K k s hhead htrace with
           ⟨K', k', s', p, hseg, hnep, ha12, hn0, hklt', hk'lt⟩ |
           ⟨q, v, mr, hq, hrun, hb⟩
         · have hmeas : K'.nep - k' < m := by omega
           have hk'ne : k' < K'.nep := by omega
           obtain ⟨q, v, mr, hq', hrun', hb'⟩ :=
-            ih (K'.nep - k') hmeas K' k' s' rfl hseg.seg.head'
+            ih (K'.nep - k') hmeas K' k' s' rfl hseg.seg.head' hseg.seg.trace'
           have hcredit := hseg.credit
           refine ⟨p + q, v, mr, by omega, ?_, ?_⟩
           · rw [show p + q + 2 = p + (q + 2) from by omega, hseg.seg.seg.run (q + 2)]
@@ -117,7 +127,7 @@ theorem stage2NoEventWalkLoopFinishes {calls : Calls} {mem : Mem} {F : Nat}
           · rw [← ha12, ← hn0]
             exact hb'
         · exact ⟨q, v, mr, by omega, hrun, hb⟩
-  exact key (K.nep - k) K k s rfl hhead
+  exact key (K.nep - k) K k s rfl hhead htrace
 
 /-! ### The completion from a seed run -/
 
@@ -129,13 +139,14 @@ theorem stage2NoEventWalkCompletes_of_loop {calls : Calls} {mem : Mem}
     (hseed : ∀ n, runFuel calls (j + n) stage2NoEventBody sEntry =
       runFuel calls n stage2NoEventBody sHead)
     (hhead : Stage2NoEventWalkHead K mem k sHead)
+    (htrace : Stage2NoEventWalkTrace K)
     (hstep : Stage2NoEventWalkStep calls mem F)
     (hF : j + F + 2 ≤ stage2NoEventFinalisationAllowance) :
     ∃ v m, runFuel calls
         (stage2NoEventWalkPotential K k + stage2NoEventFinalisationAllowance)
         stage2NoEventBody sEntry = some (.ret v m) := by
   obtain ⟨q, v, mr, hq, hrun, -⟩ :=
-    stage2NoEventWalkLoopFinishes hstep K k sHead hhead
+    stage2NoEventWalkLoopFinishes hstep K k sHead hhead htrace
   have htotal : runFuel calls (j + (q + 2)) stage2NoEventBody sEntry =
       some (.ret (some (.int 64 v)) mr) := by
     rw [hseed (q + 2)]
@@ -153,12 +164,13 @@ theorem stage2NoEventWalkCompletes_of_loop_budget {calls : Calls} {mem : Mem}
     (hseed : ∀ n, runFuel calls (j + n) stage2NoEventBody sEntry =
       runFuel calls n stage2NoEventBody sHead)
     (hhead : Stage2NoEventWalkHead K mem k sHead)
+    (htrace : Stage2NoEventWalkTrace K)
     (hstep : Stage2NoEventWalkStep calls mem F)
     (hF : j + F + 2 ≤ stage2NoEventFinalisationAllowance) :
     ∃ v m, runFuel calls (32 * K.nep + 8 * K.n + 32) stage2NoEventBody sEntry =
       some (.ret v m) := by
   obtain ⟨v, m, hrun⟩ :=
-    stage2NoEventWalkCompletes_of_loop hseed hhead hstep hF
+    stage2NoEventWalkCompletes_of_loop hseed hhead htrace hstep hF
   have hpot := stage2NoEventWalkPotential_le K k
   refine ⟨v, m, runFuel_mono_le ?_ hrun⟩
   simp only [stage2NoEventFinalisationAllowance] at hpot ⊢
@@ -190,12 +202,13 @@ theorem stage2NoEventWalkCompletes_at_stage2Budget {calls : Calls} {mem : Mem}
     (hseed : ∀ n, runFuel calls (j + n) stage2NoEventBody sEntry =
       runFuel calls n stage2NoEventBody sHead)
     (hhead : Stage2NoEventWalkHead K mem k sHead)
+    (htrace : Stage2NoEventWalkTrace K)
     (hstep : Stage2NoEventWalkStep calls mem F)
     (hF : j + F + 2 ≤ stage2NoEventFinalisationAllowance) :
     ∃ v m, runFuel calls (stage2NoEventBudget K.a12 mem) stage2NoEventBody sEntry =
       some (.ret v m) := by
   obtain ⟨v, m, hrun⟩ :=
-    stage2NoEventWalkCompletes_of_loop_budget hseed hhead hstep hF
+    stage2NoEventWalkCompletes_of_loop_budget hseed hhead htrace hstep hF
   exact ⟨v, m, runFuel_mono_le (stage2NoEventWalkBudget_le hhead.inv) hrun⟩
 
 /-! ### Axiom footprints -/
