@@ -477,10 +477,10 @@ The class's step turns the source's prefix trace into the target's: the prefix's
 relation is transported along the arena's extension, the class's event and token
 are appended, and the two counts are the target carry's. -/
 
-/-- **The string class's trace step**: from the prefix trace at the head and the
+/-- **The string class's trace step**: from the head's prefix trace and the
 class's own record and token, the target trace at the class's carry. -/
-theorem Stage2NoEventWalkTrace.stringStep {K : Stage2NoEventWalkCarry} {s s' : State}
-    (htr : Stage2NoEventWalkTrace K s) {lane nextLane len : Nat} {body : List UInt8}
+theorem Stage2NoEventWalkTrace.stringStep {K : Stage2NoEventWalkCarry}
+    (htr : Stage2NoEventWalkTrace K) {lane nextLane len : Nat} {body : List UInt8}
     {cs : List Nat}
     (hquote : K.bs[lane]? = some (34 : UInt8))
     (hspan : lane + 2 ≤ nextLane + 1)
@@ -489,7 +489,7 @@ theorem Stage2NoEventWalkTrace.stringStep {K : Stage2NoEventWalkCarry} {s s' : S
     (hbodyLen : body.length = len)
     (hdecode : escapeCodePoints (((K.arena ++ body).drop K.arena.length).take len) =
       some cs) :
-    Stage2NoEventWalkTrace (stage2NoEventWalkStringCarry K len body) s' := by
+    Stage2NoEventWalkTrace (stage2NoEventWalkStringCarry K len body) := by
   cases htr with
   | intro obs toks rel obsLen termsEq arenaBound =>
     -- the prefix reads the extended arena
@@ -528,11 +528,11 @@ theorem Stage2NoEventWalkTrace.stringStep {K : Stage2NoEventWalkCarry} {s s' : S
 the prefix.  The arena does not move, so the prefix's relation is the source's own
 and the span bound is the source's; the new record's field is above the top bit, so
 the bound's implication is vacuous at it. -/
-theorem Stage2NoEventWalkTrace.stringPlainStep {K : Stage2NoEventWalkCarry} {s s' : State}
-    (htr : Stage2NoEventWalkTrace K s) {lane : Nat}
+theorem Stage2NoEventWalkTrace.stringPlainStep {K : Stage2NoEventWalkCarry}
+    (htr : Stage2NoEventWalkTrace K) {lane : Nat}
     (hquote : K.bs[lane]? = some (34 : UInt8))
     (hcode : bodyCodePoints K.bs ⟨lane, lane + 2⟩ = some []) :
-    Stage2NoEventWalkTrace (stage2NoEventWalkStringCarryPlain K lane) s' := by
+    Stage2NoEventWalkTrace (stage2NoEventWalkStringCarryPlain K lane) := by
   cases htr with
   | intro obs toks rel obsLen termsEq arenaBound =>
     have hone : Stage2NoEvent K.bs K.arena
@@ -564,15 +564,15 @@ The class's relation, the target's trace, and the carry's delta as one statement
 The source trace is the head's prefix; the target's is the same prefix with this
 record and token appended, read at the carry the class's registers move to. -/
 
-/-- **The string class's one step.**  `htr` is the prefix trace at the head; the
+/-- **The string class's one step.**  `htr` is the head's prefix trace; the
 route's own reads are the body's length, its decode and its arena placement, the
 entry's two quote positions, and the arena's room for the body.  The class
 consumes one token and one event, the relation holds at the extended arena, the
 target trace is the source's with this step appended, and the carry moves by the
 walk's four registers' deltas. -/
 theorem stage2NoEventWalkStringB_oneStep
-    {K : Stage2NoEventWalkCarry} {s s' : State}
-    (htr : Stage2NoEventWalkTrace K s)
+    {K : Stage2NoEventWalkCarry}
+    (htr : Stage2NoEventWalkTrace K)
     {lane nextLane len : Nat} {body : List UInt8} {cs : List Nat}
     (hquote : K.bs[lane]? = some (34 : UInt8))
     (hspan : lane + 2 ≤ nextLane + 1)
@@ -586,7 +586,7 @@ theorem stage2NoEventWalkStringB_oneStep
       Stage2NoEvent K.bs K'.arena
         [ConsumerEvent.str false len K.arena.length cs]
         [Token.string ⟨lane, nextLane + 1⟩] ∧
-      Stage2NoEventWalkTrace K' s' ∧
+      Stage2NoEventWalkTrace K' ∧
       K'.tok = K.tok + 1 ∧
       K'.terms = K.terms +
         ConsumerEvent.terms (ConsumerEvent.str false len K.arena.length cs) ∧
@@ -605,9 +605,9 @@ cursor cell, and the one-step export.  The head's byte is the token's opening
 quote (`h34`); the route reads the closing entry's position, and the carry's
 arena cursor is the head's own `%alen.0.ph1405`. -/
 theorem stage2NoEventWalkStringB_step
-    {K : Stage2NoEventWalkCarry} {mem : Mem} {k : Nat} {s s' : State}
+    {K : Stage2NoEventWalkCarry} {mem : Mem} {k : Nat} {s : State}
     (h : Stage2NoEventWalkHead K mem k s)
-    (htr : Stage2NoEventWalkTrace K s)
+    (htr : Stage2NoEventWalkTrace K)
     {lane : Nat} {byte : UInt8} {nextLane len : Nat} {body : List UInt8} {cs : List Nat}
     (hent : K.ent[k]? = some lane) (hbs : K.bs[lane]? = some byte)
     (h34 : byte.toNat = 34)
@@ -625,7 +625,7 @@ theorem stage2NoEventWalkStringB_step
         Stage2NoEvent K.bs K'.arena
           [ConsumerEvent.str false len K.arena.length cs]
           [Token.string ⟨lane, nextLane + 1⟩] ∧
-        Stage2NoEventWalkTrace K' s' ∧
+        Stage2NoEventWalkTrace K' ∧
         K'.tok = K.tok + 1 ∧
         K'.terms = K.terms +
           ConsumerEvent.terms (ConsumerEvent.str false len K.arena.length cs) ∧

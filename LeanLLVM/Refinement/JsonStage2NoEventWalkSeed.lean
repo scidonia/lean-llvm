@@ -350,7 +350,7 @@ theorem stage2NoEventWalkSeedRun {gap : Calls} {K : Stage2NoEventWalkCarry}
     ∃ (sHead : State) (lane : Nat) (byte : UInt8),
       (∀ n, runFuel (stage2NoEventCalls gap) (3 + n) stage2NoEventBody s0 =
         runFuel (stage2NoEventCalls gap) n stage2NoEventBody sHead) ∧
-      Stage2NoEventWalkHead K mem 0 sHead ∧ Stage2NoEventWalkTrace K sHead ∧
+      Stage2NoEventWalkHead K mem 0 sHead ∧ Stage2NoEventWalkTrace K ∧
       sHead.env = cells (loopHeadReadCellsAt K 0 0 0 0 520 lane byte)
         (cells (loopHeadPhiCellsAt K 0 0 0 0 520)
           (entryHeadBlockState s0.env s0 K.scratch K.b K.n K.ep K.nep K.c K.e).env) := by

@@ -292,7 +292,7 @@ theorem stage2NoEventRefuse_exit {gap : Calls} {mem : Mem} {F k : Nat}
     (hmR : sR.mem = m)
     (hcost : j + 1 ≤ stage2NoEventWalkPotential K k + F)
     (hreport : Stage2NoEventRun K.a12 mem m)
-    (htrace : Stage2NoEventWalkTrace K sE)
+    (htrace : Stage2NoEventWalkTrace K)
     (hev : Stage2NoEventWalkRefusalEvidence K sT)
     (hbound : stage2NoEventBoundary K.a12 mem K.next0 m (.int 64 0)) :
     Stage2NoEventWalkExit (stage2NoEventCalls gap) mem F K k s := by
@@ -400,7 +400,7 @@ theorem stage2NoEventZero_exit {gap : Calls} {mem : Mem} {F k : Nat}
     (hle : x.toNat ≤ K.n)
     (hcost : j + 1 ≤ stage2NoEventWalkPotential K k + F)
     (hreport : Stage2NoEventRun K.a12 mem m)
-    (htrace : Stage2NoEventWalkTrace K sE)
+    (htrace : Stage2NoEventWalkTrace K)
     (hrouteFrame : UnchangedOutside s.mem sE.mem
       (stage2NoEventRunRegions K.scratch K.scratchcap K.stk K.e K.c K.d ++
         [(K.next0, K.nextEnd - K.next0)]))
@@ -450,7 +450,7 @@ theorem stage2NoEventZeroBlock_exit {gap : Calls} {mem : Mem} {F k : Nat}
     (hcost : j + 1 ≤ stage2NoEventWalkPotential K k + F)
     (hreport : Stage2NoEventRun K.a12 mem
       (stage2NoEventErrMem sE.mem K.tokensOut K.valuesOut K.sumOut K.err x))
-    (htrace : Stage2NoEventWalkTrace K sE)
+    (htrace : Stage2NoEventWalkTrace K)
     (hrouteFrame : UnchangedOutside s.mem sE.mem
       (stage2NoEventRunRegions K.scratch K.scratchcap K.stk K.e K.c K.d ++
         [(K.next0, K.nextEnd - K.next0)]))
@@ -506,7 +506,7 @@ def stage2NoEventZeroBlock_row {gap : Calls} {mem : Mem} {F k : Nat}
     (hcost : j + 1 ≤ stage2NoEventWalkPotential K k + F)
     (hreport : Stage2NoEventRun K.a12 mem
       (stage2NoEventErrMem sE.mem K.tokensOut K.valuesOut K.sumOut K.err x))
-    (htrace : Stage2NoEventWalkTrace K sE)
+    (htrace : Stage2NoEventWalkTrace K)
     (hrouteFrame : UnchangedOutside s.mem sE.mem
       (stage2NoEventRunRegions K.scratch K.scratchcap K.stk K.e K.c K.d ++
         [(K.next0, K.nextEnd - K.next0)])) :
@@ -922,7 +922,7 @@ theorem stage2NoEventErrStore_exit {gap : Calls} {mem : Mem} {F k : Nat}
     (hwlt : w < 2 ^ 64)
     (hcost : j + 1 ≤ stage2NoEventWalkPotential K k + F)
     (hreport : Stage2NoEventRun K.a12 mem m)
-    (htrace : Stage2NoEventWalkTrace K sE)
+    (htrace : Stage2NoEventWalkTrace K)
     (hTokZ : readBytes m K.tokensOut 8 = some (wordBytes 8 0))
     (hValZ : readBytes m K.valuesOut 8 = some (wordBytes 8 0))
     (hSumZ : readBytes m K.sumOut 8 = some (wordBytes 8 0))
@@ -954,7 +954,7 @@ theorem stage2NoEventCleanupThread_exit {gap : Calls} {mem : Mem} {F k : Nat}
     (hloc : Stage2NoEventWalkLocals K sE)
     (hcost : j + 1 ≤ stage2NoEventWalkPotential K k + F)
     (hreport : Stage2NoEventRun K.a12 mem (writeBytes sE.mem K.err (wordBytes 8 w.toNat)))
-    (htrace : Stage2NoEventWalkTrace K sE)
+    (htrace : Stage2NoEventWalkTrace K)
     (hTokZ : readBytes (writeBytes sE.mem K.err (wordBytes 8 w.toNat)) K.tokensOut 8 =
       some (wordBytes 8 0))
     (hValZ : readBytes (writeBytes sE.mem K.err (wordBytes 8 w.toNat)) K.valuesOut 8 =
@@ -1049,7 +1049,7 @@ theorem stage2NoEventCleanup287_exit {gap : Calls} {mem : Mem} {F k : Nat}
     (hloc : Stage2NoEventWalkLocals K sE)
     (hcost : j + 1 ≤ stage2NoEventWalkPotential K k + F)
     (hreport : Stage2NoEventRun K.a12 mem (writeBytes sE.mem K.err (wordBytes 8 w.toNat)))
-    (htrace : Stage2NoEventWalkTrace K sE)
+    (htrace : Stage2NoEventWalkTrace K)
     (hTokZ : readBytes (writeBytes sE.mem K.err (wordBytes 8 w.toNat)) K.tokensOut 8 =
       some (wordBytes 8 0))
     (hValZ : readBytes (writeBytes sE.mem K.err (wordBytes 8 w.toNat)) K.valuesOut 8 =
@@ -1202,7 +1202,7 @@ theorem stage2NoEventGapLiteral_exit {gap : Calls} {mem : Mem} {F k : Nat}
     (hOffLe : eoffN ≤ K.n) (hLt : eoffN < 2 ^ 64)
     (hcost : j + 1 ≤ stage2NoEventWalkPotential K k + F)
     (hreport : Stage2NoEventRun K.a12 mem m)
-    (htrace : Stage2NoEventWalkTrace K sE)
+    (htrace : Stage2NoEventWalkTrace K)
     (hrouteFrame : UnchangedOutside s.mem sE.mem
       (stage2NoEventRunRegions K.scratch K.scratchcap K.stk K.e K.c K.d ++
         [(K.next0, K.nextEnd - K.next0)]))
@@ -1369,7 +1369,7 @@ theorem stage2NoEventIfThen38_exit {gap : Calls} {mem : Mem} {F k : Nat}
     (hcost : j + 1 ≤ stage2NoEventWalkPotential K k + F)
     (hreport : Stage2NoEventRun K.a12 mem
       (stage2NoEventErrMem sE.mem K.tokensOut K.valuesOut K.sumOut K.err x))
-    (htrace : Stage2NoEventWalkTrace K sE)
+    (htrace : Stage2NoEventWalkTrace K)
     (hrouteFrame : UnchangedOutside s.mem sE.mem
       (stage2NoEventRunRegions K.scratch K.scratchcap K.stk K.e K.c K.d ++
         [(K.next0, K.nextEnd - K.next0)]))
@@ -1486,7 +1486,7 @@ theorem stage2NoEventIfThen360_exit {gap : Calls} {mem : Mem} {F k : Nat}
     (hcost : j + 1 ≤ stage2NoEventWalkPotential K k + F)
     (hreport : Stage2NoEventRun K.a12 mem
       (stage2NoEventErrMem sE.mem K.tokensOut K.valuesOut K.sumOut K.err x64))
-    (htrace : Stage2NoEventWalkTrace K sE)
+    (htrace : Stage2NoEventWalkTrace K)
     (hrouteFrame : UnchangedOutside s.mem sE.mem
       (stage2NoEventRunRegions K.scratch K.scratchcap K.stk K.e K.c K.d ++
         [(K.next0, K.nextEnd - K.next0)]))

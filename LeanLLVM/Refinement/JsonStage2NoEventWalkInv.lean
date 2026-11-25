@@ -237,8 +237,8 @@ they sit with the invariant: the walk's terminal routes and the row's evidence a
 stated at them.
 
 `Stage2NoEventWalkTrace` is the events the walk has consumed, the reference
-parser's tokens for them, the two counts the state's registers carry, and the
-span bound the arena's later extension needs.  It is a row-tier predicate, not
+parser's tokens for them, the two counts the carry reads, and the span bound the
+arena's later extension needs.  It is a row-tier predicate, not
 an invariant field: `Stage2NoEventWalkInv` is frozen and does not carry the parse
 relation, and the trace carries no memory read of its own — the arena is the
 carry's logical list, extended by the rows' deltas.
@@ -249,15 +249,16 @@ defined on the number route only and `%tokens.8`/`%terms.8`/`%arena.10` on the
 value route only, so no single `Acc` is inhabitable at every route's terminal
 state — the acceptance reads exactly the three words it stores. -/
 
-/-- **The output evidence at a head.** -/
-inductive Stage2NoEventWalkTrace (K : Stage2NoEventWalkCarry) (s : State) : Prop where
-  /-- The evidence at one head. -/
+/-- **The output evidence at a carry.**  The trace says nothing about a state:
+every field is a fact about the carry. -/
+inductive Stage2NoEventWalkTrace (K : Stage2NoEventWalkCarry) : Prop where
+  /-- The evidence at one carry. -/
   | intro (obs : List ConsumerEvent) (toks : List Token)
       (rel : Stage2NoEvent K.bs K.arena obs toks)
       (obsLen : obs.length = K.tok)
       (termsEq : K.terms = (obs.map ConsumerEvent.terms).sum)
       (arenaBound : Stage2NoEventArenaBound K.arena obs) :
-      Stage2NoEventWalkTrace K s
+      Stage2NoEventWalkTrace K
 
 /-- **The three stores' reading at the acceptance's terminal state.** -/
 structure Stage2NoEventWalkAcceptAcc (K : Stage2NoEventWalkCarry) (sT : State) : Prop where

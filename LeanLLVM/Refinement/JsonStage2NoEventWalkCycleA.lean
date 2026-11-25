@@ -1271,7 +1271,7 @@ structure Stage2NoEventWalkCycleSrc (calls : Calls) (mem : Mem)
   /-- The report's base is at least one. -/
   bPos : 1 ≤ K.b
   /-- The class route's output evidence. -/
-  trace : Stage2NoEventWalkTrace K s
+  trace : Stage2NoEventWalkTrace K
   /-- The byte at the class's index is the comma that continues the walk. -/
   comma : ∀ lane, K.ent[k]? = some lane → K.bs.getD lane 0 = 44
 
@@ -1548,10 +1548,7 @@ theorem stage2NoEventWalkCycle_of_afterValue {calls : Calls} {mem : Mem}
             (K.bs.getD laneNX 0))
           (names := loopHeadReadCellNames) rfl (by decide)
         exact h8 }
-  have htrace8 : Stage2NoEventWalkTrace K r8 := by
-    obtain ⟨obs, toks, rel, obsLen, termsEq, arenaBound⟩ := htrace
-    exact ⟨obs, toks, rel, obsLen, termsEq, arenaBound⟩
-  exact ⟨r8, 8, ⟨⟨⟨hrun, l8.inv'⟩, hhead, htrace8⟩, hcred⟩⟩
+  exact ⟨r8, 8, ⟨⟨⟨hrun, l8.inv'⟩, hhead, htrace⟩, hcred⟩⟩
 
 /-! ### Axiom footprints -/
 

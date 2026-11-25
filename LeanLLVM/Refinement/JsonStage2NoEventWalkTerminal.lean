@@ -1018,7 +1018,7 @@ theorem stage2NoEventAccept_run_traced {K : Stage2NoEventWalkCarry} {mem : Mem}
     (hloc : Stage2NoEventWalkLocals K s)
     (hacc : Stage2NoEventWalkAcceptAcc K s)
     (hpc : s.pc = "accept")
-    (htrace : Stage2NoEventWalkTrace K s) :
+    (htrace : Stage2NoEventWalkTrace K) :
     ∃ m, runFuel (stage2NoEventCalls (gap := stage2GapRecover)) 2 stage2NoEventBody
         (stateAt s.env s) = some (.ret (some (.int 64 1)) m) ∧
       stage2NoEventBoundary K.a12 mem K.next0 m (.int 64 1) := by

@@ -531,15 +531,15 @@ carry's logical list extended by the route's deltas.
 step's events move and whose arena and byte stream are the source's.  The step's
 own arena bound is the route's: the source trace's bound does not constrain events
 the source has not seen. -/
-theorem Stage2NoEventWalkTrace.step {K : Stage2NoEventWalkCarry} {s : State}
-    (h : Stage2NoEventWalkTrace K s) {evs : List ConsumerEvent} {toks : List Token}
+theorem Stage2NoEventWalkTrace.step {K : Stage2NoEventWalkCarry}
+    (h : Stage2NoEventWalkTrace K) {evs : List ConsumerEvent} {toks : List Token}
     (hstep : Stage2NoEvent K.bs K.arena evs toks)
     (hstepBound : Stage2NoEventArenaBound K.arena evs)
-    (K' : Stage2NoEventWalkCarry) (s' : State)
+    (K' : Stage2NoEventWalkCarry)
     (hbs : K'.bs = K.bs) (harena : K'.arena = K.arena)
     (htok : K'.tok = K.tok + evs.length)
     (hterms : K'.terms = K.terms + (evs.map ConsumerEvent.terms).sum) :
-    Stage2NoEventWalkTrace K' s' := by
+    Stage2NoEventWalkTrace K' := by
   cases h with
   | intro obs toks₀ rel obsLen termsEq arenaBound =>
       have hrel : Stage2NoEvent K'.bs K'.arena (obs ++ evs) (toks₀ ++ toks) := by
@@ -562,13 +562,13 @@ not move.
 -/
 
 /-- **`{}` appends to the trace**, with `tok + 2` and `terms + 3`. -/
-theorem Stage2NoEventWalkTrace.emptyObject {K : Stage2NoEventWalkCarry} {s s' : State}
-    (h : Stage2NoEventWalkTrace K s) {start₁ start₂ : Nat}
+theorem Stage2NoEventWalkTrace.emptyObject {K : Stage2NoEventWalkCarry}
+    (h : Stage2NoEventWalkTrace K) {start₁ start₂ : Nat}
     (h₁ : K.bs[start₁]? = some (0x7B : UInt8))
     (h₂ : K.bs[start₂]? = some (0x7D : UInt8)) :
-    Stage2NoEventWalkTrace { K with tok := K.tok + 2, terms := K.terms + 3 } s' := by
+    Stage2NoEventWalkTrace { K with tok := K.tok + 2, terms := K.terms + 3 } := by
   refine h.step (K' := { K with tok := K.tok + 2, terms := K.terms + 3 })
-    (s' := s') (stage2NoEventWalkEmptyObjectRel h₁ h₂)
+    (stage2NoEventWalkEmptyObjectRel h₁ h₂)
     (stage2NoEventArenaBound_emptyObject K.arena) rfl rfl ?_ ?_
   · rfl
   · have h3 : ([ConsumerEvent.kind 1, ConsumerEvent.kind 2].map
@@ -576,13 +576,13 @@ theorem Stage2NoEventWalkTrace.emptyObject {K : Stage2NoEventWalkCarry} {s s' : 
     rw [h3]
 
 /-- **`[]` appends to the trace**, with `tok + 2` and `terms + 7`. -/
-theorem Stage2NoEventWalkTrace.emptyArray {K : Stage2NoEventWalkCarry} {s s' : State}
-    (h : Stage2NoEventWalkTrace K s) {start₁ start₂ : Nat}
+theorem Stage2NoEventWalkTrace.emptyArray {K : Stage2NoEventWalkCarry}
+    (h : Stage2NoEventWalkTrace K) {start₁ start₂ : Nat}
     (h₁ : K.bs[start₁]? = some (0x5B : UInt8))
     (h₂ : K.bs[start₂]? = some (0x5D : UInt8)) :
-    Stage2NoEventWalkTrace { K with tok := K.tok + 2, terms := K.terms + 7 } s' := by
+    Stage2NoEventWalkTrace { K with tok := K.tok + 2, terms := K.terms + 7 } := by
   refine h.step (K' := { K with tok := K.tok + 2, terms := K.terms + 7 })
-    (s' := s') (stage2NoEventWalkEmptyArrayRel h₁ h₂)
+    (stage2NoEventWalkEmptyArrayRel h₁ h₂)
     (stage2NoEventArenaBound_emptyArray K.arena) rfl rfl ?_ ?_
   · rfl
   · have h7 : ([ConsumerEvent.kind 3, ConsumerEvent.kind 4].map
@@ -590,11 +590,11 @@ theorem Stage2NoEventWalkTrace.emptyArray {K : Stage2NoEventWalkCarry} {s s' : S
     rw [h7]
 
 /-- **A separator appends to the trace** without moving a count. -/
-theorem Stage2NoEventWalkTrace.separator {K : Stage2NoEventWalkCarry} {s s' : State}
-    (h : Stage2NoEventWalkTrace K s) {toks : List Token}
+theorem Stage2NoEventWalkTrace.separator {K : Stage2NoEventWalkCarry}
+    (h : Stage2NoEventWalkTrace K) {toks : List Token}
     (hstep : Stage2NoEvent K.bs K.arena [] toks) :
-    Stage2NoEventWalkTrace K s' := by
-  refine h.step (K' := K) (s' := s') hstep ?_ rfl rfl rfl rfl
+    Stage2NoEventWalkTrace K := by
+  refine h.step (K' := K) hstep ?_ rfl rfl rfl rfl
   intro e he
   cases he
 

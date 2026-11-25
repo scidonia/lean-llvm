@@ -735,7 +735,7 @@ structure Stage2NoEventWalkHeadSegment (calls : Calls) (mem : Mem)
   /-- The target's head. -/
   head' : Stage2NoEventWalkHead K' mem k' s'
   /-- The target's output evidence. -/
-  trace' : Stage2NoEventWalkTrace K' s'
+  trace' : Stage2NoEventWalkTrace K'
 
 /-- **Head segments compose**, at the counts' sum; the target's head and trace
 are the second's. -/
@@ -763,7 +763,7 @@ theorem Stage2NoEventWalkHeadSegment.of_head_chain {calls : Calls} {mem : Mem}
     {K K' : Stage2NoEventWalkCarry} {k k' : Nat} {s s' : State}
     (h : Stage2NoEventWalkChain calls mem K s K' s')
     (head' : Stage2NoEventWalkHead K' mem k' s')
-    (trace' : Stage2NoEventWalkTrace K' s') :
+    (trace' : Stage2NoEventWalkTrace K') :
     ∃ j, Stage2NoEventWalkHeadSegment calls mem K k s K' k' s' j := by
   obtain ⟨j, hj⟩ := h.steps
   exact ⟨j, ⟨hj, Stage2NoEventWalkChain.inv h⟩, head', trace'⟩
