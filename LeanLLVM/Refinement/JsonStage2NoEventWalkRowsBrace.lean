@@ -335,30 +335,80 @@ theorem link_ifThen343 {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Mem}
     simpa only [stage2NoEventWalkNext, stateAt] using hstep
   · exact Stage2NoEventWalkInv.mem_congr h rfl
 
-/-! ### The `{}` route
+/-! ### The `{` head's prologue, exported
 
-The head's dispatch, the carried-depth `if.then9`, the push, the next entry's
-read, the count store, the live closer, and the pop: thirteen blocks from the
-head to `after_value`'s entry.
+The head's route begins with eight blocks: the three-block dispatch to
+`if.then9`, that head's seven `phi`s and depth test at a carried depth, the push
+(`if.end19` → `if.then20` → `if.end23`), and the next entry's read (`if.end74`),
+landing at `NodeBlock21`'s entry.
+
+The cells those blocks leave are the prologue of both of the walk's entries into
+the key's blocks: the next entry's lane (`%10`) and byte (`%11`), the depth
+(`%inc24`), the head's index (`%k.0.lcssa1086`) and carried readings, and
+`if.end74`'s two counts.  The exporter below states them once.  Two consumers
+share it: this module's brace row, which takes `NodeBlock21`'s false arm to the
+closer, and the key route's entry A, which takes its true arm to `LeafBlock17`
+and `key_body` — so neither restates the eight blocks.
 -/
 
-/-- **The empty object pair's route**: thirteen blocks from the head to
-`after_value`'s entry, with the pair's carry and the endpoint's
-`Stage2NoEventWalkCycleSrc`. -/
-theorem stage2NoEventWalkBracePairLeg {calls : Calls} {K : Stage2NoEventWalkCarry}
+/-- **The `{` head's prologue at `NodeBlock21`'s entry**, at the state's own
+readings: the next entry's lane and byte, the depth, the head's index and carried
+`phi`s, and `if.end74`'s two counts. -/
+structure Stage2NoEventWalkBracePrologueCells (K : Stage2NoEventWalkCarry)
+    (mem : Mem) (k : Nat) (s : State) (b lane sp : Nat) : Type where
+  inv : Stage2NoEventWalkInv K mem s
+  pc : s.pc = "NodeBlock21"
+  laneLt : lane < 2 ^ 32
+  spLt : sp < 2 ^ 32
+  /-- The next entry's byte (`%11`) and lane (`%10`), and the depth (`%inc24`). -/
+  h11 : lookupName s.env "%11" = some (.int 8 (BitVec.ofNat 8 b))
+  h10 : lookupName s.env "%10" = some (.int 32 (BitVec.ofNat 32 lane))
+  hinc24 : lookupName s.env "%inc24" = some (.int 32 (BitVec.ofNat 32 sp))
+  /-- The head's index and the carried readings the key's `phi`s select. -/
+  hk : lookupName s.env "%k.0.lcssa1086" = some (.int 64 (BitVec.ofNat 64 k))
+  htermsPhi : lookupName s.env "%terms.0.lcssa1080" =
+    some (.int 64 (BitVec.ofNat 64 K.terms))
+  htokPhi : lookupName s.env "%tokens.0.lcssa1074" =
+    some (.int 64 (BitVec.ofNat 64 K.tok))
+  halen : lookupName s.env "%alen.0.ph1405" =
+    some (.int 64 (BitVec.ofNat 64 K.arena.length))
+  harena : lookupName s.env "%arena.0.ph1406" =
+    some (.int 64 (BitVec.ofNat 64 K.arenaWord))
+  /-- `if.end74`'s two counts: the head's readings plus one. -/
+  hadd : lookupName s.env "%add" = some (.int 64 (BitVec.ofNat 64 (K.terms + 1)))
+  hinc26 : lookupName s.env "%inc26" = some (.int 64 (BitVec.ofNat 64 (K.tok + 1)))
+  hbase : Stage2NoEventWalkBaseLookups K s
+  bPos : 1 ≤ K.b
+  count : Stage2NoEventWalkCount K k
+
+/-- **The state the `{` head's eight links hand over**: its segment from the
+head, its memory and cursor, and the prologue's cells.  `spPush` is the depth the
+push stored at, and `sp` the depth `%inc24` carries (one above it), so a caller
+can state the next blocks' reads at the written memory. -/
+structure Stage2NoEventWalkBracePrologueOut (calls : Calls) (mem : Mem)
+    (K : Stage2NoEventWalkCarry) (k : Nat) (s : State)
+    (fr b lane spPush sp : Nat) : Type where
+  s' : State
+  seg : Stage2NoEventWalkSegment calls mem K s K s' 8
+  mem_eq : s'.mem = writeBytes s.mem (bracePushAddr K (BitVec.ofNat 32 spPush))
+    (natToBytes ((BitVec.ofNat 8 fr).toNat) 1)
+  next_eq : s'.next = s.next
+  cells : Stage2NoEventWalkBracePrologueCells K mem k s' b lane sp
+
+/-- **The `{` head's eight links**, to `NodeBlock21`'s entry with the prologue's
+cells: the dispatch, the carried-depth `if.then9`, the push, and the next
+entry's read.  The lane is the entry at `k + 1`'s word and the byte at it, and
+the depth is the head's plus one. -/
+theorem stage2NoEventWalkBracePrologue {calls : Calls} {K : Stage2NoEventWalkCarry}
     {mem : Mem} {k : Nat} {s : State}
     (h : Stage2NoEventWalkHead K mem k s)
-    (htrace : Stage2NoEventWalkTrace K)
-    {lane next : Nat} {byte nextByte : UInt8}
+    {lane : Nat} {byte nextByte : UInt8}
     (hk : K.ent[k]? = some lane) (hbs : K.bs[lane]? = some byte) (hb : byte.toNat = 123)
-    (hk1 : K.ent[k + 1]? = some next) (hbs1 : K.bs[next]? = some nextByte)
-    (hb1 : nextByte.toNat = 125)
     {sp fr : Nat}
     (hspH : lookupName s.env "%sp.0.ph1403" = some (.int 32 (BitVec.ofNat 32 sp)))
     (hfrH : lookupName s.env "%frame.0.ph1402" = some (.int 8 (BitVec.ofNat 8 fr)))
     (hspPos : 1 ≤ sp) (hspLe : sp ≤ 519) (hspLt : sp < 2 ^ 32)
-    (hfrLt : fr < 2 ^ 8) (hfrPos : 1 ≤ fr)
-    (hkbound : k + 2 ≤ K.nep)
+    (hkbound : k + 2 ≤ K.nep) (hk63 : k + 3 < 2 ^ 63)
     {bs4 : List UInt8}
     (hlaneW : readBytes (writeBytes s.mem (bracePushAddr K (BitVec.ofNat 32 sp))
       (natToBytes ((BitVec.ofNat 8 fr).toNat) 1))
@@ -367,20 +417,11 @@ theorem stage2NoEventWalkBracePairLeg {calls : Calls} {K : Stage2NoEventWalkCarr
     (hbyte1W : readBytes (writeBytes s.mem (bracePushAddr K (BitVec.ofNat 32 sp))
       (natToBytes ((BitVec.ofNat 8 fr).toNat) 1))
       (K.b + (BitVec.signExtend 64 (BitVec.ofNat 64 (bytesToNat bs4))).toNat) 1
-      = some [nextByte])
-    {bs : List UInt8}
-    (hbytePop : readBytes (writeBytes s.mem (bracePushAddr K (BitVec.ofNat 32 sp))
-      (natToBytes ((BitVec.ofNat 8 fr).toNat) 1))
-      (bracePopAddr K sp) 1 = some bs)
-    (hbsLen : bs.length = 1) (hbsVal : bytesToNat bs = fr)
-    (hcomma : ∀ q, K.ent[k + 2]? = some q → K.bs.getD q 0 = 44)
-    (hlt : k + 3 < K.nep) (hk63 : k + 3 < 2 ^ 63) :
-    ∃ (s' : State) (Kc : Stage2NoEventWalkCarry),
-      Kc = { K with tok := K.tok + 2, terms := K.terms + 3 } ∧
-      Stage2NoEventWalkSegment calls mem K s Kc s' 13 ∧
-      Nonempty (Stage2NoEventWalkCycleSrc calls mem Kc (k + 2) s') := by
+      = some [nextByte]) :
+    Nonempty (Stage2NoEventWalkBracePrologueOut calls mem K k s fr nextByte.toNat
+      (bytesToNat bs4) sp (sp + 1)) := by
   classical
-  let Kc : Stage2NoEventWalkCarry := { K with tok := K.tok + 2, terms := K.terms + 3 }
+  have hnepLt : K.nep < 2 ^ 64 := h.inv.nepLt
   let spv : BitVec 32 := BitVec.ofNat 32 sp
   let frv : BitVec 8 := BitVec.ofNat 8 fr
   let k64 : BitVec 64 := BitVec.ofNat 64 k
@@ -556,23 +597,212 @@ theorem stage2NoEventWalkBracePairLeg {calls : Calls} {K : Stage2NoEventWalkCarr
     (ifEnd74Out S7.env K.ep K.b termsv tokv inc bs4 [nextByte]) S7 "NodeBlock21"
   have L8 : Stage2NoEventWalkLink calls K mem S7 K S8 :=
     link_ifEnd74 L7.inv' rfl hterms7 htok7 hep7 hb7 hinc7 hincLt hlaneW hval4lt hbyte1Ws
+  -- the prologue's cells at `NodeBlock21`'s entry
+  have h11 : lookupName S8.env "%11" =
+      some (.int 8 (BitVec.ofNat 8 nextByte.toNat)) := by
+    simp only [S8, stage2NoEventWalkNext, ifEnd74Out, ifEnd74Cells, cells,
+      stage2NoEventWalkBytesToNat_single]
+    rw [lookupName_cons_self]
+  have h10c : lookupName S8.env "%10" =
+      some (.int 32 (BitVec.ofNat 32 (bytesToNat bs4))) := by
+    simp only [S8, stage2NoEventWalkNext, ifEnd74Out, ifEnd74Cells, cells]
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+    rw [lookupName_cons_self]
+  have hinc24 : lookupName S8.env "%inc24" =
+      some (.int 32 (BitVec.ofNat 32 (sp + 1))) := by
+    simp only [S8, S7, S6, S5, S4, S3, S2, S1, stage2NoEventWalkNext,
+      stage2NoEventWalkStored, ifEnd74Out, ifEnd74Cells, cells, braceIfThen9Cells]
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+    rw [lookupName_cons_self]
+    simp only [spv, stage2NoEventWalkOfNat_add]
+  have hk8 : lookupName S8.env "%k.0.lcssa1086" = some (.int 64 k64) := by
+    simp only [S8, S7, S6, S5, S4, S3, S2, S1, stage2NoEventWalkNext,
+      stage2NoEventWalkStored, ifEnd74Out, ifEnd74Cells, cells, braceIfThen9Cells]
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+    rw [lookupName_cons_self]
+  have htrPhi : lookupName S8.env "%terms.0.lcssa1080" = some (.int 64 termsv) := by
+    simp only [S8, S7, S6, S5, S4, S3, S2, S1, stage2NoEventWalkNext,
+      stage2NoEventWalkStored, ifEnd74Out, ifEnd74Cells, cells, braceIfThen9Cells]
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+    rw [lookupName_cons_self]
+  have htokPhi : lookupName S8.env "%tokens.0.lcssa1074" = some (.int 64 tokv) := by
+    simp only [S8, S7, S6, S5, S4, S3, S2, S1, stage2NoEventWalkNext,
+      stage2NoEventWalkStored, ifEnd74Out, ifEnd74Cells, cells, braceIfThen9Cells]
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+    rw [lookupName_cons_self]
+  have halen8 : lookupName S8.env "%alen.0.ph1405"
+      = some (.int 64 (BitVec.ofNat 64 K.arena.length)) := by
+    simp only [S8, S7, S6, S5, S4, S3, S2, S1, stage2NoEventWalkNext,
+      stage2NoEventWalkStored, ifEnd74Out, ifEnd74Cells, cells, braceIfThen9Cells]
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+    exact halenH
+  have harena8 : lookupName S8.env "%arena.0.ph1406"
+      = some (.int 64 (BitVec.ofNat 64 K.arenaWord)) := by
+    simp only [S8, S7, S6, S5, S4, S3, S2, S1, stage2NoEventWalkNext,
+      stage2NoEventWalkStored, ifEnd74Out, ifEnd74Cells, cells, braceIfThen9Cells]
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+    exact harenaH
+  have hadd : lookupName S8.env "%add" =
+      some (.int 64 (BitVec.ofNat 64 (K.terms + 1))) := by
+    simp only [S8, stage2NoEventWalkNext, ifEnd74Out, ifEnd74Cells, cells]
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+    rw [lookupName_cons_self]
+    simp only [termsv, stage2NoEventWalkOfNat_add]
+  have hinc26 : lookupName S8.env "%inc26" =
+      some (.int 64 (BitVec.ofNat 64 (K.tok + 1))) := by
+    simp only [S8, stage2NoEventWalkNext, ifEnd74Out, ifEnd74Cells, cells]
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+    rw [lookupName_cons_self]
+    simp only [tokv, stage2NoEventWalkOfNat_add]
+  -- the base table through the eight links' cell layers
+  have hbase : Stage2NoEventWalkBaseLookups K S8 := by
+    have hb0 : ∀ n v, (n, v) ∈ stage2NoEventWalkBaseValues K →
+        lookupName s.env n = some v := h.baseLookups
+    have b1 := stage2NoEventCycleBase (K := K) (env := s.env) hb0
+      (cs := [("%Pivot6", .int 1 0)]) (names := ["%Pivot6"]) rfl (by decide)
+    have b2 := stage2NoEventCycleBase (K := K) b1
+      (cs := [("%Pivot", .int 1 0)]) (names := ["%Pivot"]) rfl (by decide)
+    have b3 := stage2NoEventCycleBase (K := K) b2
+      (cs := [("%SwitchLeaf4", .int 1 1)]) (names := ["%SwitchLeaf4"]) rfl (by decide)
+    have b4 := stage2NoEventCycleBase (K := K) b3
+      (cs := [("%cmp10", .int 1 0), ("%tokens.0.lcssa1074", .int 64 tokv),
+        ("%terms.0.lcssa1080", .int 64 termsv), ("%k.0.lcssa1086", .int 64 k64),
+        ("%sp.0.lcssa1092.wide", .int 32 spv), ("%frame.0.lcssa1098", .int 8 frv),
+        ("%idxprom.lcssa1108", .int 64 idx), ("%inc.lcssa1129", .int 64 inc)])
+      (names := ["%cmp10", "%tokens.0.lcssa1074", "%terms.0.lcssa1080",
+        "%k.0.lcssa1086", "%sp.0.lcssa1092.wide", "%frame.0.lcssa1098",
+        "%idxprom.lcssa1108", "%inc.lcssa1129"])
+      rfl (by decide)
+    have b5 := stage2NoEventCycleBase (K := K) b4
+      (cs := [("%tobool.not", .int 1 (evalICmp .eq spv (BitVec.ofNat 32 0)))])
+      (names := ["%tobool.not"]) rfl (by decide)
+    have b6 := stage2NoEventCycleBase (K := K) b5
+      (cs := [("%arrayidx22", .ptr (bracePushAddr K spv)),
+        ("%idxprom21", .int 64 (BitVec.ofNat 64
+          ((spv + BitVec.ofNat 32 4294967295).toNat))),
+        ("%sub", .int 32 (spv + BitVec.ofNat 32 4294967295))])
+      (names := ["%arrayidx22", "%idxprom21", "%sub"]) rfl (by decide)
+    have b7 := stage2NoEventCycleBase (K := K) b6
+      (cs := [("%cmp66.not", .int 1 1),
+        ("%inc24", .int 32 (spv + BitVec.ofNat 32 1))])
+      (names := ["%cmp66.not", "%inc24"]) rfl (by decide)
+    have b8 := stage2NoEventCycleBase (K := K) b7
+      (cs := ifEnd74Cells K.ep K.b termsv tokv inc bs4 [nextByte])
+      (names := ["%11", "%arrayidx77", "%idxprom76", "%10", "%arrayidx75",
+        "%inc26", "%add"]) rfl (by decide)
+    intro n v hv
+    exact b8 n v hv
+  -- the run, at the eight links' own fuel
+  have hrun : ∀ n, runFuel calls (8 + n) stage2NoEventBody s =
+      runFuel calls n stage2NoEventBody S8 := by
+    intro n
+    rw [show 8 + n = 1 + (1 + (1 + (1 + (1 + (1 + (1 + (1 + n))))))) from by omega]
+    rw [stage2NoEventWalkLink_runFuel L1, stage2NoEventWalkLink_runFuel L2,
+      stage2NoEventWalkLink_runFuel L3, stage2NoEventWalkLink_runFuel L4,
+      stage2NoEventWalkLink_runFuel L5, stage2NoEventWalkLink_runFuel L6,
+      stage2NoEventWalkLink_runFuel L7, stage2NoEventWalkLink_runFuel L8]
+  have hmem : S8.mem = writeBytes s.mem (bracePushAddr K (BitVec.ofNat 32 sp))
+      (natToBytes ((BitVec.ofNat 8 fr).toNat) 1) := by
+    simp only [S8, S7, S6, S5, S4, S3, S2, S1, stage2NoEventWalkNext,
+      stage2NoEventWalkStored, spv, frv]
+  have hnext : S8.next = s.next := by
+    simp only [S8, S7, S6, S5, S4, S3, S2, S1, stage2NoEventWalkNext,
+      stage2NoEventWalkStored]
+  refine ⟨⟨S8, ⟨hrun, L8.inv'⟩, hmem, hnext, ?_⟩⟩
+  exact
+    { inv := L8.inv'
+      pc := rfl
+      laneLt := hval4lt
+      spLt := by omega
+      h11 := h11
+      h10 := h10c
+      hinc24 := hinc24
+      hk := hk8
+      htermsPhi := htrPhi
+      htokPhi := htokPhi
+      halen := halen8
+      harena := harena8
+      hadd := hadd
+      hinc26 := hinc26
+      hbase := hbase
+      bPos := h.bPos
+      count := h.count }
+
+/-! ### The `{}` route
+
+The head's eight prologue links, the closer's dispatch, the count store, the
+live closer, and the pop: thirteen blocks from the head to `after_value`'s
+entry.
+-/
+
+/-- **The empty object pair's route**: thirteen blocks from the head to
+`after_value`'s entry, with the pair's carry and the endpoint's
+`Stage2NoEventWalkCycleSrc`. -/
+theorem stage2NoEventWalkBracePairLeg {calls : Calls} {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {k : Nat} {s : State}
+    (h : Stage2NoEventWalkHead K mem k s)
+    (htrace : Stage2NoEventWalkTrace K)
+    {lane next : Nat} {byte nextByte : UInt8}
+    (hk : K.ent[k]? = some lane) (hbs : K.bs[lane]? = some byte) (hb : byte.toNat = 123)
+    (hk1 : K.ent[k + 1]? = some next) (hbs1 : K.bs[next]? = some nextByte)
+    (hb1 : nextByte.toNat = 125)
+    {sp fr : Nat}
+    (hspH : lookupName s.env "%sp.0.ph1403" = some (.int 32 (BitVec.ofNat 32 sp)))
+    (hfrH : lookupName s.env "%frame.0.ph1402" = some (.int 8 (BitVec.ofNat 8 fr)))
+    (hspPos : 1 ≤ sp) (hspLe : sp ≤ 519) (hspLt : sp < 2 ^ 32)
+    (hfrLt : fr < 2 ^ 8) (hfrPos : 1 ≤ fr)
+    (hkbound : k + 2 ≤ K.nep)
+    {bs4 : List UInt8}
+    (hlaneW : readBytes (writeBytes s.mem (bracePushAddr K (BitVec.ofNat 32 sp))
+      (natToBytes ((BitVec.ofNat 8 fr).toNat) 1))
+      (K.ep + (BitVec.ofNat 64 (k + 1)).toNat * 4) 4 = some bs4)
+    (hval4lt : bytesToNat bs4 < 2 ^ 32)
+    (hbyte1W : readBytes (writeBytes s.mem (bracePushAddr K (BitVec.ofNat 32 sp))
+      (natToBytes ((BitVec.ofNat 8 fr).toNat) 1))
+      (K.b + (BitVec.signExtend 64 (BitVec.ofNat 64 (bytesToNat bs4))).toNat) 1
+      = some [nextByte])
+    {bs : List UInt8}
+    (hbytePop : readBytes (writeBytes s.mem (bracePushAddr K (BitVec.ofNat 32 sp))
+      (natToBytes ((BitVec.ofNat 8 fr).toNat) 1))
+      (bracePopAddr K sp) 1 = some bs)
+    (hbsLen : bs.length = 1) (hbsVal : bytesToNat bs = fr)
+    (hcomma : ∀ q, K.ent[k + 2]? = some q → K.bs.getD q 0 = 44)
+    (hlt : k + 3 < K.nep) (hk63 : k + 3 < 2 ^ 63) :
+    ∃ (s' : State) (Kc : Stage2NoEventWalkCarry),
+      Kc = { K with tok := K.tok + 2, terms := K.terms + 3 } ∧
+      Stage2NoEventWalkSegment calls mem K s Kc s' 13 ∧
+      Nonempty (Stage2NoEventWalkCycleSrc calls mem Kc (k + 2) s') := by
+  classical
+  let Kc : Stage2NoEventWalkCarry := { K with tok := K.tok + 2, terms := K.terms + 3 }
+  let spv : BitVec 32 := BitVec.ofNat 32 sp
+  let k64 : BitVec 64 := BitVec.ofNat 64 k
+  let termsv : BitVec 64 := BitVec.ofNat 64 K.terms
+  let tokv : BitVec 64 := BitVec.ofNat 64 K.tok
+  -- the head's eight links, exported
+  obtain ⟨⟨S8, hseg8, hmem8, -, P⟩⟩ :=
+    stage2NoEventWalkBracePrologue (calls := calls) h hk hbs hb
+    hspH hfrH hspPos hspLe hspLt hkbound hk63 hlaneW hval4lt hbyte1W
+  have hstk8 : lookupName S8.env "%stk" = some (.ptr K.stk) :=
+    P.hbase "%stk" (.ptr K.stk) (by
+      simp only [stage2NoEventWalkBaseValues, stage2NoEventWalkParamEntries]
+      exact List.mem_append_left _ (by simp))
   -- the closer's dispatch
   have h11_8 : lookupName S8.env "%11"
       = some (.int 8 (BitVec.ofNat 8 (bytesToNat [nextByte]))) := by
-    simp only [S8, stage2NoEventWalkNext, ifEnd74Out, ifEnd74Cells, cells]
-    rw [lookupName_cons_self]
+    rw [stage2NoEventWalkBytesToNat_single]
+    exact P.h11
   have h11slt : evalICmp .slt (BitVec.ofNat 8 (bytesToNat [nextByte]))
       (BitVec.ofNat 8 125) = (0 : BitVec 1) := by
     rw [stage2NoEventWalkBytesToNat_single, hb1]
     decide
   let S9 := stage2NoEventWalkNext (("%Pivot22", .int 1 0) :: S8.env) S8 "LeafBlock19"
   have L9 : Stage2NoEventWalkLink calls K mem S8 K S9 :=
-    link_nodeBlock21_false L8.inv' rfl h11_8 h11slt
+    link_nodeBlock21_false P.inv P.pc h11_8 h11slt
   have h11_9 : lookupName S9.env "%11"
       = some (.int 8 (BitVec.ofNat 8 (bytesToNat [nextByte]))) := by
-    simp only [S9, S8, stage2NoEventWalkNext, ifEnd74Out, ifEnd74Cells, cells]
-    repeat rw [lookupName_cons_ne _ _ (by decide)]
-    rw [lookupName_cons_self]
+    simp only [S9, stage2NoEventWalkNext]
+    rw [lookupName_cons_ne _ _ (by decide)]
+    exact h11_8
   have h11eq : evalICmp .eq (BitVec.ofNat 8 (bytesToNat [nextByte]))
       (BitVec.ofNat 8 125) = (1 : BitVec 1) := by
     rw [stage2NoEventWalkBytesToNat_single, hb1]
@@ -581,25 +811,22 @@ theorem stage2NoEventWalkBracePairLeg {calls : Calls} {K : Stage2NoEventWalkCarr
   have L10 : Stage2NoEventWalkLink calls K mem S9 K S10 :=
     link_leafBlock19_true L9.inv' rfl h11_9 h11eq
   have hk10 : lookupName S10.env "%k.0.lcssa1086" = some (.int 64 k64) := by
-    simp only [S10, S9, S8, S7, S6, S5, S4, S3, S2, S1, stage2NoEventWalkNext,
-      stage2NoEventWalkStored, ifEnd74Out, ifEnd74Cells, cells, braceIfThen9Cells]
+    simp only [S10, S9, stage2NoEventWalkNext]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
-    rw [lookupName_cons_self]
+    exact P.hk
   have htok10 : lookupName S10.env "%tokens.0.lcssa1074" = some (.int 64 tokv) := by
-    simp only [S10, S9, S8, S7, S6, S5, S4, S3, S2, S1, stage2NoEventWalkNext,
-      stage2NoEventWalkStored, ifEnd74Out, ifEnd74Cells, cells, braceIfThen9Cells]
+    simp only [S10, S9, stage2NoEventWalkNext]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
-    rw [lookupName_cons_self]
+    exact P.htokPhi
   have htr10 : lookupName S10.env "%terms.0.lcssa1080" = some (.int 64 termsv) := by
-    simp only [S10, S9, S8, S7, S6, S5, S4, S3, S2, S1, stage2NoEventWalkNext,
-      stage2NoEventWalkStored, ifEnd74Out, ifEnd74Cells, cells, braceIfThen9Cells]
+    simp only [S10, S9, stage2NoEventWalkNext]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
-    rw [lookupName_cons_self]
+    exact P.htermsPhi
   have hk64nat : k64.toNat = k := by
     simp only [k64, BitVec.toNat_ofNat]
     rw [Nat.mod_eq_of_lt (by omega : k < 2 ^ 64)]
   have hcount10 : Stage2NoEventWalkCount K k64.toNat := by
-    rw [hk64nat]; exact h.count
+    rw [hk64nat]; exact P.count
   have hkb : k64.toNat + 2 ≤ K.nep := by rw [hk64nat]; omega
   -- the pair's count store
   let S11 := stage2NoEventWalkNext (ifThen81Out S10.env k64 tokv termsv) S10 "close_obj"
@@ -608,11 +835,10 @@ theorem stage2NoEventWalkBracePairLeg {calls : Calls} {K : Stage2NoEventWalkCarr
   -- the live closer's operands
   let sp2 : BitVec 32 := spv + BitVec.ofNat 32 1
   have hsp11 : lookupName S11.env "%inc24" = some (.int 32 sp2) := by
-    simp only [S11, S10, S9, S8, S7, S6, S5, S4, S3, S2, S1, stage2NoEventWalkNext,
-      stage2NoEventWalkStored, ifThen81Out, ifEnd74Out, ifEnd74Cells, cells,
-      braceIfThen9Cells]
+    simp only [S11, S10, S9, stage2NoEventWalkNext, ifThen81Out, cells]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
-    rw [lookupName_cons_self]
+    rw [P.hinc24]
+    simp only [sp2, spv, stage2NoEventWalkOfNat_add]
   have hk4c11 : lookupName S11.env "%inc82"
       = some (.int 64 (k64 + BitVec.ofNat 64 2)) := by
     simp only [S11, stage2NoEventWalkNext, ifThen81Out, cells]
@@ -629,18 +855,14 @@ theorem stage2NoEventWalkBracePairLeg {calls : Calls} {K : Stage2NoEventWalkCarr
     rw [lookupName_cons_self]
   have halen11 : lookupName S11.env "%alen.0.ph1405"
       = some (.int 64 (BitVec.ofNat 64 K.arena.length)) := by
-    simp only [S11, S10, S9, S8, S7, S6, S5, S4, S3, S2, S1, stage2NoEventWalkNext,
-      stage2NoEventWalkStored, ifThen81Out, ifEnd74Out, ifEnd74Cells, cells,
-      braceIfThen9Cells]
+    simp only [S11, S10, S9, stage2NoEventWalkNext, ifThen81Out, cells]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
-    exact halenH
+    exact P.halen
   have harena11 : lookupName S11.env "%arena.0.ph1406"
       = some (.int 64 (BitVec.ofNat 64 K.arenaWord)) := by
-    simp only [S11, S10, S9, S8, S7, S6, S5, S4, S3, S2, S1, stage2NoEventWalkNext,
-      stage2NoEventWalkStored, ifThen81Out, ifEnd74Out, ifEnd74Cells, cells,
-      braceIfThen9Cells]
+    simp only [S11, S10, S9, stage2NoEventWalkNext, ifThen81Out, cells]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
-    exact harenaH
+    exact P.harena
   have hsp2nat : sp2.toNat = sp + 1 := by
     have h1 : spv.toNat = sp := by
       simp only [spv, BitVec.toNat_ofNat]
@@ -673,36 +895,36 @@ theorem stage2NoEventWalkBracePairLeg {calls : Calls} {K : Stage2NoEventWalkCarr
     repeat rw [lookupName_cons_ne _ _ (by decide)]
     rw [lookupName_cons_self]
   have hstk12 : lookupName S12.env "%stk" = some (.ptr K.stk) := by
-    simp only [S12, S11, S10, S9, S8, S7, S6, S5, S4, S3, S2, S1,
-      stage2NoEventWalkNext, stage2NoEventWalkStored, ifThen81Out, ifEnd74Out,
-      ifEnd74Cells, cells, closeObjTail, braceCloseObjCells, braceIfThen9Cells,
-      List.cons_append, List.nil_append]
+    simp only [S12, S11, S10, S9, stage2NoEventWalkNext, ifThen81Out, cells,
+      closeObjTail, braceCloseObjCells, List.cons_append, List.nil_append]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
-    exact hstkH
+    exact hstk8
   have ha343 : a343 = closeReadAddr K.stk
       (sp2 + BitVec.ofNat 32 4294967294).toNat := by
     simp only [a343, sp2, spv, bracePopAddr]
+  have hbytePop' : readBytes S12.mem a343 1 = some bs := by
+    have h12 : S12.mem = writeBytes s.mem (bracePushAddr K (BitVec.ofNat 32 sp))
+        (natToBytes ((BitVec.ofNat 8 fr).toNat) 1) := by
+      simp only [S12, S11, S10, S9, stage2NoEventWalkNext]
+      exact hmem8
+    rw [h12]
+    exact hbytePop
   let S13 := stage2NoEventWalkNext
     (cells (("%49", .int 8 (BitVec.ofNat 8 (bytesToNat bs))) ::
       closeGepCells a343 ++ closeIdxCells (sp2 + BitVec.ofNat 32 4294967294))
       S12.env) S12 "after_value"
   have L13 : Stage2NoEventWalkLink calls Kc mem S12 Kc S13 :=
-    link_ifThen343 L12.inv' rfl hsp12 hstk12 hbytePop ha343
-  -- the run, at the thirteen links' own fuel
-  have hrun : ∀ n, runFuel calls (13 + n) stage2NoEventBody s =
+    link_ifThen343 L12.inv' rfl hsp12 hstk12 hbytePop' ha343
+  -- the run, at the five remaining links' own fuel
+  have hrun : ∀ n, runFuel calls (5 + n) stage2NoEventBody S8 =
       runFuel calls n stage2NoEventBody S13 := by
     intro n
-    rw [show 13 + n = 1 + (1 + (1 + (1 + (1 + (1 + (1 + (1 + (1 + (1 + (1 +
-      (1 + (1 + n)))))))))))) from by omega]
-    rw [stage2NoEventWalkLink_runFuel L1, stage2NoEventWalkLink_runFuel L2,
-      stage2NoEventWalkLink_runFuel L3, stage2NoEventWalkLink_runFuel L4,
-      stage2NoEventWalkLink_runFuel L5, stage2NoEventWalkLink_runFuel L6,
-      stage2NoEventWalkLink_runFuel L7, stage2NoEventWalkLink_runFuel L8,
-      stage2NoEventWalkLink_runFuel L9, stage2NoEventWalkLink_runFuel L10,
+    rw [show 5 + n = 1 + (1 + (1 + (1 + (1 + n)))) from by omega]
+    rw [stage2NoEventWalkLink_runFuel L9, stage2NoEventWalkLink_runFuel L10,
       stage2NoEventWalkLink_runFuel L11, stage2NoEventWalkLink_runFuel L12,
       stage2NoEventWalkLink_runFuel L13]
   have hseg : Stage2NoEventWalkSegment calls mem K s Kc S13 13 :=
-    ⟨hrun, L13.inv'⟩
+    hseg8.trans ⟨hrun, L13.inv'⟩
   -- the pair's trace
   have hbsOpen : K.bs[lane]? = some (0x7B : UInt8) := by
     have hy : byte = (0x7B : UInt8) :=
@@ -762,43 +984,9 @@ theorem stage2NoEventWalkBracePairLeg {calls : Calls} {K : Stage2NoEventWalkCarr
       List.nil_append]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
     rw [lookupName_cons_self]
-  -- the base lookups through the route's cell layers
+  -- the base lookups through the route's cell layers, from the exported state
   have hbase : Stage2NoEventWalkBaseLookups Kc S13 := by
-    have hb0 : ∀ n v, (n, v) ∈ stage2NoEventWalkBaseValues K →
-        lookupName s.env n = some v := h.baseLookups
-    have b1 := stage2NoEventCycleBase (K := K) (env := s.env) hb0
-      (cs := [("%Pivot6", .int 1 0)]) (names := ["%Pivot6"]) rfl (by decide)
-    have b2 := stage2NoEventCycleBase (K := K) b1
-      (cs := [("%Pivot", .int 1 0)]) (names := ["%Pivot"]) rfl (by decide)
-    have b3 := stage2NoEventCycleBase (K := K) b2
-      (cs := [("%SwitchLeaf4", .int 1 1)]) (names := ["%SwitchLeaf4"]) rfl (by decide)
-    have b4 := stage2NoEventCycleBase (K := K) b3
-      (cs := [("%cmp10", .int 1 0), ("%tokens.0.lcssa1074", .int 64 tokv),
-        ("%terms.0.lcssa1080", .int 64 termsv), ("%k.0.lcssa1086", .int 64 k64),
-        ("%sp.0.lcssa1092.wide", .int 32 spv), ("%frame.0.lcssa1098", .int 8 frv),
-        ("%idxprom.lcssa1108", .int 64 idx), ("%inc.lcssa1129", .int 64 inc)])
-      (names := ["%cmp10", "%tokens.0.lcssa1074", "%terms.0.lcssa1080",
-        "%k.0.lcssa1086", "%sp.0.lcssa1092.wide", "%frame.0.lcssa1098",
-        "%idxprom.lcssa1108", "%inc.lcssa1129"])
-      rfl (by decide)
-    have b5 := stage2NoEventCycleBase (K := K) b4
-      (cs := [("%tobool.not", .int 1 (evalICmp .eq spv (BitVec.ofNat 32 0)))])
-      (names := ["%tobool.not"]) rfl (by decide)
-    have b6 := stage2NoEventCycleBase (K := K) b5
-      (cs := [("%arrayidx22", .ptr (bracePushAddr K spv)),
-        ("%idxprom21", .int 64 (BitVec.ofNat 64
-          ((spv + BitVec.ofNat 32 4294967295).toNat))),
-        ("%sub", .int 32 (spv + BitVec.ofNat 32 4294967295))])
-      (names := ["%arrayidx22", "%idxprom21", "%sub"]) rfl (by decide)
-    have b7 := stage2NoEventCycleBase (K := K) b6
-      (cs := [("%cmp66.not", .int 1 1),
-        ("%inc24", .int 32 (spv + BitVec.ofNat 32 1))])
-      (names := ["%cmp66.not", "%inc24"]) rfl (by decide)
-    have b8 := stage2NoEventCycleBase (K := K) b7
-      (cs := ifEnd74Cells K.ep K.b termsv tokv inc bs4 [nextByte])
-      (names := ["%11", "%arrayidx77", "%idxprom76", "%10", "%arrayidx75",
-        "%inc26", "%add"]) rfl (by decide)
-    have b9 := stage2NoEventCycleBase (K := K) b8
+    have b9 := stage2NoEventCycleBase (K := K) (env := S8.env) P.hbase
       (cs := [("%Pivot22", .int 1 0)]) (names := ["%Pivot22"]) rfl (by decide)
     have b10 := stage2NoEventCycleBase (K := K) b9
       (cs := [("%SwitchLeaf20", .int 1 1)]) (names := ["%SwitchLeaf20"]) rfl (by decide)
@@ -943,6 +1131,7 @@ noncomputable def stage2NoEventWalkRow_cont_bracePair {calls : Calls} {mem : Mem
 #print axioms braceCloseObjRest_denote
 #print axioms link_closeObj_live
 #print axioms link_ifThen343
+#print axioms stage2NoEventWalkBracePrologue
 #print axioms stage2NoEventWalkBracePairLeg
 #print axioms stage2NoEventWalkRow_cont_bracePair
 

@@ -67,6 +67,15 @@ What the blocks cannot supply, and what stays a hypothesis of the source
   route's output evidence (`strPlain` with `key := true`);
 * the pair endpoint's colon byte, at `v+3`, and the scratch guard — the class's
   staging facts, not `Head` facts.
+
+**What the exporter supplies.**  The eight blocks from the `{` head to
+`NodeBlock21`'s entry are the brace class's, and
+`stage2NoEventWalkBracePrologue` (there) states them once: from a `Head` at `{`
+and the staged reads it yields the state's cells.  This module's entry A is its
+reader at the opening quote — `Stage2NoEventWalkBracePrologueCells.toEntryA`
+turns the exporter's cells into the predicate below — so a caller holding the
+`Head` needs no prologue of its own.  `stage2NoEventWalkKeyRoute_of_head` is
+that composition: the eight links, the two below, and the tail, in one segment.
 -/
 import LeanLLVM.Refinement.JsonStage2NoEventWalkCyclePairA
 import LeanLLVM.Refinement.JsonStage2NoEventWalkRowsBrace
@@ -2246,8 +2255,9 @@ fields, the `{` head's member route is the same tail: `NodeBlock21`'s true arm,
 output is the class predicate below — the cells `if.end74` and `if.then9` bind
 (`%10` lane, `%11` byte, `%k.0.lcssa1086` index, `%inc24` depth, the two `phi`
 readings, and `if.end74`'s `%add`/`%inc26` counts, one above the head's carry).
-`stage2NoEventWalkBracePairLeg`'s first eight links establish it from `Head`; it
-is bundled here so the key route's producer needs no other staging. -/
+The brace class exports the eight links that establish it
+(`stage2NoEventWalkBracePrologue`), so this predicate is that export's cells at
+the opening quote; `stage2NoEventWalkKeyRoute_of_head` composes the two. -/
 
 /-- **The `{` head's prologue at `NodeBlock21`'s entry**: the cells the committed
 brace prologue binds, with the two count registers already one above the head's
@@ -2277,6 +2287,32 @@ structure Stage2NoEventWalkEntryAPrologue (K : Stage2NoEventWalkCarry) (mem : Me
   hbase : Stage2NoEventWalkBaseLookups K s
   bPos : 1 ≤ K.b
   count : Stage2NoEventWalkCount K k
+
+/-- **Entry A's prologue from the brace class's exported cells.**  The exporter
+in `JsonStage2NoEventWalkRowsBrace` binds the same cells at the state's own lane
+and depth; at the opening quote (`b = 34`) they are this predicate, so the two
+links below consume the exporter's output directly. -/
+def Stage2NoEventWalkBracePrologueCells.toEntryA {K : Stage2NoEventWalkCarry}
+    {mem : Mem} {k : Nat} {s : State} {b lane sp : Nat}
+    (C : Stage2NoEventWalkBracePrologueCells K mem k s b lane sp) (hb : b = 34) :
+    Stage2NoEventWalkEntryAPrologue K mem k s where
+  inv := C.inv
+  pc := C.pc
+  lane := lane
+  sp := sp
+  laneLt := C.laneLt
+  spLt := C.spLt
+  h11 := by simpa only [hb] using C.h11
+  h10 := C.h10
+  hinc24 := C.hinc24
+  hk := C.hk
+  halen := C.halen
+  harena := C.harena
+  hadd := C.hadd
+  hinc26 := C.hinc26
+  hbase := C.hbase
+  bPos := C.bPos
+  count := C.count
 
 /-- **The `{` head's member route**: from the prologue's `NodeBlock21` entry,
 through the quote test and the key route, to the pair endpoint with `d = 1`. -/
@@ -2440,3 +2476,109 @@ theorem stage2NoEventWalkKeyRoute_of_leafBlock17 {calls : Calls} {mem : Mem}
       stage2NoEventWalkLink_runFuel L1, stage2NoEventWalkLink_runFuel L2]
   have hseg2 : Stage2NoEventWalkSegment calls mem K s K S2 2 := ⟨hrun2, L2.inv'⟩
   exact ⟨s', hseg2.trans hseg8, hpair⟩
+
+/-! ### Entry A from a head
+
+`Stage2NoEventWalkHead` at the `{` plus the staged reads are all the exporter
+needs; the two links above and the tail follow.  A caller holding the head
+obtains the pair endpoint at `d = 1` without a prologue value of its own.
+-/
+
+/-- **The `{` head's member route, from the head**: the eight prologue links, the
+quote test, and the key route, to the pair endpoint at `d = 1`, as one segment. -/
+theorem stage2NoEventWalkKeyRoute_of_head {calls : Calls} {mem : Mem}
+    {K : Stage2NoEventWalkCarry} {k : Nat} {s : State}
+    (h : Stage2NoEventWalkHead K mem k s)
+    {lane : Nat} {byte nextByte : UInt8}
+    (hk : K.ent[k]? = some lane) (hbs : K.bs[lane]? = some byte) (hb : byte.toNat = 123)
+    (hb1 : nextByte.toNat = 34)
+    {sp fr : Nat}
+    (hspH : lookupName s.env "%sp.0.ph1403" = some (.int 32 (BitVec.ofNat 32 sp)))
+    (hfrH : lookupName s.env "%frame.0.ph1402" = some (.int 8 (BitVec.ofNat 8 fr)))
+    (hspPos : 1 ≤ sp) (hspLe : sp ≤ 519) (hspLt : sp < 2 ^ 32)
+    {bs4 : List UInt8}
+    (hlaneW : readBytes (writeBytes s.mem (bracePushAddr K (BitVec.ofNat 32 sp))
+      (natToBytes ((BitVec.ofNat 8 fr).toNat) 1))
+      (K.ep + (BitVec.ofNat 64 (k + 1)).toNat * 4) 4 = some bs4)
+    (hval4lt : bytesToNat bs4 < 2 ^ 32)
+    (hbyte1W : readBytes (writeBytes s.mem (bracePushAddr K (BitVec.ofNat 32 sp))
+      (natToBytes ((BitVec.ofNat 8 fr).toNat) 1))
+      (K.b + (BitVec.signExtend 64 (BitVec.ofNat 64 (bytesToNat bs4))).toNat) 1
+      = some [nextByte])
+    (hvAddr : k + 4 < 2 ^ 63) (hvNext : k + 4 < K.nep)
+    (hscratch : evalICmp .ugt
+      (BitVec.ofNat 64 (K.ent.getD (k + 2) 0) +
+        (BitVec.ofNat 64 (BitVec.ofNat 32 (bytesToNat bs4)).toNat ^^^
+          BitVec.ofNat 64 18446744073709551615) + BitVec.ofNat 64 64)
+      (BitVec.ofNat 64 K.scratchcap) = 0)
+    (r0 : CallOutcome)
+    (hstart : calls "llvm.lifetime.start.p0"
+      [.int 64 (BitVec.ofNat 64 8), .ptr (K.next0 + 8)]
+      (writeBytes s.mem (bracePushAddr K (BitVec.ofNat 32 sp))
+        (natToBytes ((BitVec.ofNat 8 fr).toNat) 1)) s.next = some r0)
+    (hstartMem : r0.mem = writeBytes s.mem (bracePushAddr K (BitVec.ofNat 32 sp))
+      (natToBytes ((BitVec.ofNat 8 fr).toNat) 1))
+    (hstartNext : r0.next = s.next)
+    (r : CallOutcome)
+    (hcall : calls "s2_string_body"
+      [.ptr K.c, .ptr (K.b + 1 + bytesToNat bs4),
+       .int 64 (keySub (bytesToNat bs4) (K.ent.getD (k + 2) 0)),
+       .ptr K.scratch, .ptr (K.next0 + 8), .ptr K.xp, .ptr K.next0,
+       .int 64 (BitVec.ofNat 64 K.nxp)]
+      (writeBytes (writeBytes
+        (writeBytes s.mem (bracePushAddr K (BitVec.ofNat 32 sp))
+          (natToBytes ((BitVec.ofNat 8 fr).toNat) 1)) (K.c + 32)
+        (natToBytes (BitVec.ofNat 64 (k + 3)).toNat 8))
+        (K.next0 + 8) (natToBytes 0 8)) s.next = some r)
+    (hrRet : r.ret = .int 32 (BitVec.ofNat 32 1))
+    (hcallInv : Stage2NoEventWalkInv K mem
+      { s with mem := r.mem, next := r.next })
+    (lend : CallOutcome)
+    (hlend : calls "llvm.lifetime.end.p0"
+      [.int 64 (BitVec.ofNat 64 8), .ptr (K.next0 + 8)] r.mem r.next
+      = some lend)
+    (hlendMem : lend.mem = r.mem)
+    (htraceEnd : Stage2NoEventWalkTrace
+      (keyCarry K (bytesToNat bs4) (K.ent.getD (k + 2) 0) (K.terms + 1) (K.tok + 1)))
+    (hcolon : ∀ lane, K.ent[k + 3]? = some lane → K.bs.getD lane 0 = 58) :
+    ∃ (s' : State),
+      Stage2NoEventWalkSegment calls mem K s
+          (keyCarry K (bytesToNat bs4) (K.ent.getD (k + 2) 0) (K.terms + 1) (K.tok + 1))
+          s' 18 ∧
+      Nonempty (Stage2NoEventWalkPairSrc calls mem
+        (keyCarry K (bytesToNat bs4) (K.ent.getD (k + 2) 0) (K.terms + 1) (K.tok + 1))
+        k s') := by
+  obtain ⟨⟨S8, hseg8, hmem, hnext, C⟩⟩ :=
+    stage2NoEventWalkBracePrologue (calls := calls) h hk hbs hb
+      hspH hfrH hspPos hspLe hspLt (by omega) (by omega) hlaneW hval4lt hbyte1W
+  -- the prologue's memory and cursor are the push's and the head's
+  have hstart' : calls "llvm.lifetime.start.p0"
+      [.int 64 (BitVec.ofNat 64 8), .ptr (K.next0 + 8)] S8.mem S8.next = some r0 := by
+    simpa only [hmem, hnext] using hstart
+  have hstartMem' : r0.mem = S8.mem := by
+    simpa only [hmem] using hstartMem
+  have hstartNext' : r0.next = S8.next := by
+    simpa only [hnext] using hstartNext
+  have hcall' : calls "s2_string_body"
+      [.ptr K.c, .ptr (K.b + 1 + bytesToNat bs4),
+       .int 64 (keySub (bytesToNat bs4) (K.ent.getD (k + 2) 0)),
+       .ptr K.scratch, .ptr (K.next0 + 8), .ptr K.xp, .ptr K.next0,
+       .int 64 (BitVec.ofNat 64 K.nxp)]
+      (writeBytes (writeBytes S8.mem (K.c + 32)
+        (natToBytes (BitVec.ofNat 64 (k + 3)).toNat 8))
+        (K.next0 + 8) (natToBytes 0 8)) S8.next = some r := by
+    simpa only [hmem, hnext] using hcall
+  have hcallInv' : Stage2NoEventWalkInv K mem
+      { S8 with mem := r.mem, next := r.next } :=
+    Stage2NoEventWalkInv.mem_congr hcallInv rfl
+  obtain ⟨s', hseg10, hpair⟩ :=
+    stage2NoEventWalkKeyRoute_of_leafBlock17 (calls := calls) (mem := mem) (K := K)
+      (k := k) (s := S8) (C.toEntryA hb1) hvAddr hvNext hscratch r0 hstart'
+      hstartMem' hstartNext' r hcall' hrRet hcallInv' lend hlend hlendMem htraceEnd
+      hcolon
+  exact ⟨s', hseg8.trans hseg10, hpair⟩
+
+/-! ### Axiom footprints -/
+
+#print axioms Stage2NoEventWalkBracePrologueCells.toEntryA
+#print axioms stage2NoEventWalkKeyRoute_of_head
