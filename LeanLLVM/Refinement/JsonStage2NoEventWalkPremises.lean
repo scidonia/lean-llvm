@@ -54,11 +54,12 @@ open LeanLLVM.Refinement.JsonEntryIR (readLanes32)
 /-! ### The dispatch's data
 
 The terminal route's evidence is the three terminal arms' supply: the acceptance's
-three-word reading at the route's post-block endpoint (`Stage2NoEventWalkAcceptAcc K sT`:
-`%tokens.8`, `%terms.8`, `%arena.10`), the parse relation and the fold facts the
-acceptance's boundary needs (`Stage2NoEvent K.bs K.arena obs toks`, the count and the
-sum), the run equality to that endpoint (`Stage2NoEventWalkRunTo`, no invariant there),
-the run to the return and its price, and the report.  The row starts at a head state;
+three-word reading at the route's post-block endpoint (`Stage2NoEventWalkAcceptAcc K' sT`
+for the last entry's carry `K'`: `%tokens.8`, `%terms.8`, `%arena.10`), the parse
+relation and the fold facts the acceptance's boundary needs (`Stage2NoEvent K.bs K'.arena
+obs toks`, the count `K'.tok` and the sum `K'.terms`), the run equality to that endpoint
+(`Stage2NoEventWalkRunTo`, no invariant there), the run to the return and its price at
+the head's `K`, and the report at `K'`.  The row starts at a head state;
 the evidence sits at the post-block `sT` the route's run reaches, where the stores are
 visible and the in-block cells remain in the env.
 
@@ -235,20 +236,23 @@ number route only and the three count words on the value route only, so no one
 accumulator is inhabitable at every route's terminal state. -/
 inductive Stage2NoEventWalkExit (calls : Calls) (mem : Mem) (F : Nat)
     (K : Stage2NoEventWalkCarry) (k : Nat) (s : State) : Prop
-  /-- The accepted arm: verdict one, the three stores' reading at the terminal
-  state, the trace, and the boundary. -/
-  | accept (q : Nat) (m : Mem) (sT : State)
+  /-- The accepted arm: verdict one, the last entry's carry `K'`, the three
+  stores' reading at the post-block state, the trace (the head's prefix plus the
+  last entry's event), and the boundary.  The head's `K` stays the index for the
+  price and the boundary; the report's numbers are `K'`'s. -/
+  | accept (K' : Stage2NoEventWalkCarry) (q : Nat) (m : Mem) (sT : State)
       (route : Stage2NoEventWalkRunTo calls s sT)
       (cost : q ≤ stage2NoEventWalkPotential K k + F)
       (run : runFuel calls (q + 2) stage2NoEventBody s =
         some (.ret (some (.int 64 1)) m))
-      (acc : Stage2NoEventWalkAcceptAcc K sT)
+      (htok : K.tok < K'.tok) (ha12 : K'.a12 = K.a12) (hn0 : K'.next0 = K.next0)
+      (acc : Stage2NoEventWalkAcceptAcc K' sT)
       (obs : List ConsumerEvent) (toks : List Token)
-      (rel : Stage2NoEvent K.bs K.arena obs toks)
-      (obsLen : obs.length = K.tok)
-      (termsEq : K.terms = (obs.map ConsumerEvent.terms).sum)
-      (report : Stage2NoEventRun K.a12 mem m)
-      (bound : stage2NoEventBoundary K.a12 mem K.next0 m (.int 64 1)) :
+      (rel : Stage2NoEvent K.bs K'.arena obs toks)
+      (obsLen : obs.length = K'.tok)
+      (termsEq : K'.terms = (obs.map ConsumerEvent.terms).sum)
+      (report : Stage2NoEventRun K'.a12 mem m)
+      (bound : stage2NoEventBoundary K'.a12 mem K'.next0 m (.int 64 1)) :
       Stage2NoEventWalkExit calls mem F K k s
   /-- The refused arm: verdict zero, the route's own evidence, the trace, and the
   boundary at the refusal's memory. -/
@@ -304,8 +308,8 @@ theorem stage2NoEventWalkStep_of_rows {calls : Calls} {mem : Mem} {F : Nat}
       exact Or.inl ⟨K', k', s', p, seg, hnep, ha12, hn0, hlt, hk'lt⟩
   | terminal exit =>
       cases exit with
-      | accept q m sT route cost run acc obs toks rel obsLen termsEq report bound =>
-          exact Or.inr ⟨q, 1, m, cost, run, bound⟩
+      | accept K' q m sT route cost run htok ha12 hn0 acc obs toks rel obsLen termsEq report bound =>
+          exact Or.inr ⟨q, 1, m, cost, run, by rw [← ha12, ← hn0]; exact bound⟩
       | refuse q m sT route cost run ev obs toks rel obsLen termsEq report bound =>
           exact Or.inr ⟨q, 0, m, cost, run, bound⟩
 
@@ -328,7 +332,7 @@ theorem stage2NoEventWalkF1_notRow (calls : Calls) (F : Nat) :
       omega
   | terminal exit =>
       cases exit with
-      | accept q m sT route cost run acc obs toks rel obsLen termsEq report bound =>
+      | accept K' q m sT route cost run htok ha12 hn0 acc obs toks rel obsLen termsEq report bound =>
           rw [show q + 2 = (q + 1) + 1 from by omega] at run
           rw [stage2NoEventWalkF1_noRet (stage2NoEventWalkF1_step calls) (q + 1)] at run
           cases run
