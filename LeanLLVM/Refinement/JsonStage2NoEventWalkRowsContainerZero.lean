@@ -1252,8 +1252,9 @@ return; they are the only fields the route cannot supply.  The refusal's index
 read `%ep[%k.6]` is the route's own: `readLanes32`'s lane at `k + 2` is the word
 `if.then360` loads, so its bound is the invariant's `inside`.  `cleanup580` reads
 `%xj`, which `Head` binds at `K.next0` (the entry block's first allocation) while
-`Locals` names `K.xj`; the two agree at every carry the seed produces, so
-`hxj : K.xj = K.next0` is taken beside the head. -/
+`Locals` names `K.xj`; the two agree at every head, so the equality is
+`Head.inv`'s (`h.inv.xjNext0`) and is read from the head rather than taken beside
+it. -/
 
 /-- **The base lookups give the parameters.** -/
 theorem stage2NoEventWalkBaseLookups_params {K : Stage2NoEventWalkCarry} {s : State}
@@ -1278,13 +1279,14 @@ theorem stage2NoEventWalkBaseLookups_params {K : Stage2NoEventWalkCarry} {s : St
   c := h _ _ (by simp [stage2NoEventWalkBaseValues, stage2NoEventWalkParamEntries])
   d := h _ _ (by simp [stage2NoEventWalkBaseValues, stage2NoEventWalkParamEntries])
 
-/-- **The base lookups give the entry block's locals**, at a carry whose `%xj`
-is the entry's first allocation (`K.xj = K.next0`). -/
+/-- **The base lookups give the entry block's locals**, at a carry whose cursor
+`%xj` is the entry's first allocation (`K.xj = K.next0`); a producer reads that
+equality from the head's invariant (`Head.inv.xjNext0`). -/
 theorem stage2NoEventWalkBaseLookups_locals {K : Stage2NoEventWalkCarry} {s : State}
-    (h : Stage2NoEventWalkBaseLookups K s) (hxj : K.xj = K.next0) :
+    (h : Stage2NoEventWalkBaseLookups K s) (hcur : K.xj = K.next0) :
     Stage2NoEventWalkLocals K s where
   xj := by
-    rw [hxj]
+    rw [hcur]
     exact h "%xj" (.ptr K.next0)
       (by simp [stage2NoEventWalkBaseValues, stage2NoEventWalkBaseCellValues,
         preHeaderCells, entryCells1, entryCells2, entryCells3, entryCells4])
@@ -1298,7 +1300,6 @@ noncomputable def stage2NoEventWalkBracketZeroTerminal {gap : Calls}
     {mem : Mem} {F : Nat} {K : Stage2NoEventWalkCarry} {k : Nat} {s : State}
     (h : Stage2NoEventWalkHead K mem k s)
     (htrace : Stage2NoEventWalkTrace K)
-    (hxj : K.xj = K.next0)
     {lane : Nat} {byte : UInt8}
     (hk : K.ent[k]? = some lane) (hbs : K.bs[lane]? = some byte) (hb : byte.toNat = 91)
     {next : Nat} {nextByte : UInt8}
@@ -1383,7 +1384,7 @@ noncomputable def stage2NoEventWalkBracketZeroTerminal {gap : Calls}
     have hparB : Stage2NoEventWalkParams K sB :=
       stage2NoEventWalkBaseLookups_params hbaseB
     have hlocB : Stage2NoEventWalkLocals K sB :=
-      stage2NoEventWalkBaseLookups_locals hbaseB hxj
+      stage2NoEventWalkBaseLookups_locals hbaseB h.inv.xjNext0
     have htok8 : lookupName sB.env "%tokens.8" =
         some (.int 64 (BitVec.ofNat 64 (K.tok + 2))) := by
       simp only [sB, sA, stage2NoEventWalkNext, afterValueZeroDispatchCells,
@@ -1499,7 +1500,7 @@ noncomputable def stage2NoEventWalkBracketZeroTerminal {gap : Calls}
     have hparB : Stage2NoEventWalkParams K sB :=
       stage2NoEventWalkBaseLookups_params hbaseB
     have hlocB : Stage2NoEventWalkLocals K sB :=
-      stage2NoEventWalkBaseLookups_locals hbaseB hxj
+      stage2NoEventWalkBaseLookups_locals hbaseB h.inv.xjNext0
     have hk6B : lookupName sB.env "%k.6" =
         some (.int 64 (BitVec.ofNat 64 (k + 2))) := by
       simp only [sB, sA, stage2NoEventWalkNext, afterValueZeroDispatchCells,
@@ -1582,7 +1583,6 @@ noncomputable def stage2NoEventWalkBraceZeroTerminal {gap : Calls}
     {mem : Mem} {F : Nat} {K : Stage2NoEventWalkCarry} {k : Nat} {s : State}
     (h : Stage2NoEventWalkHead K mem k s)
     (htrace : Stage2NoEventWalkTrace K)
-    (hxj : K.xj = K.next0)
     {lane : Nat} {byte : UInt8}
     (hk : K.ent[k]? = some lane) (hbs : K.bs[lane]? = some byte) (hb : byte.toNat = 123)
     {next : Nat} {nextByte : UInt8}
@@ -1671,7 +1671,7 @@ noncomputable def stage2NoEventWalkBraceZeroTerminal {gap : Calls}
     have hparB : Stage2NoEventWalkParams K sB :=
       stage2NoEventWalkBaseLookups_params hbaseB
     have hlocB : Stage2NoEventWalkLocals K sB :=
-      stage2NoEventWalkBaseLookups_locals hbaseB hxj
+      stage2NoEventWalkBaseLookups_locals hbaseB h.inv.xjNext0
     have htok8 : lookupName sB.env "%tokens.8" =
         some (.int 64 (BitVec.ofNat 64 (K.tok + 2))) := by
       simp only [sB, sA, stage2NoEventWalkNext, afterValueZeroDispatchCells,
@@ -1787,7 +1787,7 @@ noncomputable def stage2NoEventWalkBraceZeroTerminal {gap : Calls}
     have hparB : Stage2NoEventWalkParams K sB :=
       stage2NoEventWalkBaseLookups_params hbaseB
     have hlocB : Stage2NoEventWalkLocals K sB :=
-      stage2NoEventWalkBaseLookups_locals hbaseB hxj
+      stage2NoEventWalkBaseLookups_locals hbaseB h.inv.xjNext0
     have hk6B : lookupName sB.env "%k.6" =
         some (.int 64 (BitVec.ofNat 64 (k + 2))) := by
       simp only [sB, sA, stage2NoEventWalkNext, afterValueZeroDispatchCells,
