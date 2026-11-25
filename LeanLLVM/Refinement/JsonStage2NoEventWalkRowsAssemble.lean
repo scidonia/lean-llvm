@@ -5,8 +5,7 @@ The no-event walk's rows, assembled from the four head classes' producers.
 producer per head class — a function from the head, the walk's trace and the
 class predicate to the row.  This module states that contract as one predicate
 per class (`Stage2NoEventWalk*Ready`), reduces the two committed empty-pair
-producers and the value dispatcher to it, and runs the assembly and its step
-corollary at that contract.
+producers to it, and runs the assembly and its step corollary at that contract.
 
 **What the class predicates carry.**  `Stage2NoEventWalkHeadByteClass` holds the
 entry's lane, the document's byte there, the byte's `%3` cell and the class's
@@ -19,24 +18,23 @@ closer's entry, the push and pop reads, the separator at the next entry.  A
 class's producer therefore takes those as the facts below, and the assembly
 takes the producers as parameters.
 
-**The three producers.**  The bracket and brace classes' rows are the committed
+**The class producers.**  The bracket and brace classes' rows are the committed
 empty-pair routes (`stage2NoEventWalkRow_cont_bracketPair`,
 `stage2NoEventWalkRow_cont_bracePair`); the reductions below replace the class's
 three staging hypotheses (`K.ent[k]?`, `K.bs[lane]?`, the byte's value) with the
-class predicate and leave the rest explicit.  The value class's row is the
-four-arm dispatcher `stage2NoEventWalkValueRow_of_arms`: the head's byte splits
-into the number and the three literal arms, whose rows are the arms' own
-producers, and into the whitespace and remainder arms, whose rows are the
-terminal lane's.  The dispatcher takes all five rows as premises; the module
-that owns the arms supplies four, and the refusal row is the terminal boundary
-(`Row.terminal` at the route's `Exit`), which no continuing route can supply.
+class predicate and leave the rest explicit.  The value class's producer is the
+`Stage2NoEventWalkValueReady` parameter, supplied by the four per-arm rows and
+`stage2NoEventWalkValueRow_of_head`; the whitespace/remainder arm has no
+producer yet.
 
 **The gap.**  The ideal assembly — a single remaining parameter, the string
-producer — is not reachable from the committed bytes.  The string producer is
-the only one whose module supplies no head-complete producer yet (it composes a
-route, not a producer); the other three are conditional, as the reductions
-below show, so the assembly states all four as parameters.  The per-class facts
-a producer needs beyond its class predicate are its reduction's argument list.
+producer — is not reachable from the committed bytes.  The string producer
+composes a route rather than a producer; the value producer is the
+`Stage2NoEventWalkValueReady` parameter, since the four per-arm rows do not fill
+its `hvalue` slot and the whitespace/remainder arm has no producer; the bracket
+and brace producers are conditional, as the reductions below show.  The assembly
+therefore states all four as parameters.  The per-class facts a producer needs
+beyond its class predicate are its reduction's argument list.
 -/
 import LeanLLVM.Refinement.JsonStage2NoEventWalkRowsDispatch
 import LeanLLVM.Refinement.JsonStage2NoEventWalkRowsBrace
@@ -200,36 +198,13 @@ noncomputable def stage2NoEventWalkBraceRow_of_class {calls : Calls} {mem : Mem}
     hspH hfrH hspPos hspLe hspLt hfrLt hfrPos hkbound hlaneW hval4lt hbyte1W
     hbytePop hbsLen hbsVal hcomma hlt hk63⟩
 
-/-! ### The value class's producer at the class predicate
+/-! ### The value class's producer
 
-The dispatcher splits the head's byte into the four value arms and hands each
-branch's producer the class fact that selected it: the number branch gets
-`x = 45 ∨ 48 ≤ x ≤ 57`, the literals `116`/`102`/`110`.  The whitespace and
-remainder branches get the refusal row, whose producer receives both negations;
-that row is the terminal lane's — the arms' route to `after_value` at depth
-zero, `Row.terminal` at that route's `Exit` — and no continuing route supplies
-it.  The four arm producers are the arm modules' (each takes its lexical facts);
-the dispatcher is the whole of the value producer at the class predicate, since
-the class's staging is what selects the branch. -/
-
-/-- **The value class's row from the class predicate**: the four conditional arm
-producers and the terminal refusal boundary. -/
-noncomputable def stage2NoEventWalkValueRow_of_class {calls : Calls} {mem : Mem}
-    {F : Nat} {K : Stage2NoEventWalkCarry} {k : Nat} {s : State}
-    (h : Stage2NoEventWalkHead K mem k s)
-    (htrace : Stage2NoEventWalkTrace K)
-    (hclass : Stage2NoEventWalkHeadValueClass K k s)
-    (hnumber : ∀ x : Nat, (x = 45 ∨ (48 ≤ x ∧ x ≤ 57)) →
-      Stage2NoEventWalkRow calls mem F K k s)
-    (htrue : ∀ x : Nat, x = 116 → Stage2NoEventWalkRow calls mem F K k s)
-    (hfalse : ∀ x : Nat, x = 102 → Stage2NoEventWalkRow calls mem F K k s)
-    (hnull : ∀ x : Nat, x = 110 → Stage2NoEventWalkRow calls mem F K k s)
-    (hrefusal : ∀ x : Nat, ¬ (x = 45 ∨ (48 ≤ x ∧ x ≤ 57)) →
-      ¬ (x = 102 ∨ x = 110 ∨ x = 116) →
-      Stage2NoEventWalkRow calls mem F K k s) :
-    Stage2NoEventWalkRow calls mem F K k s :=
-  stage2NoEventWalkValueRow_of_arms h htrace hclass hnumber htrue hfalse hnull
-    hrefusal
+The value class's producer is the `Stage2NoEventWalkValueReady` parameter, not a
+term in this module: the four per-arm rows and
+`stage2NoEventWalkValueRow_of_head` supply the number and literal arms, and the
+whitespace/remainder arm has no producer yet.  The assembly and its step
+corollary therefore take the whole producer as an argument. -/
 
 /-! ### The assembly
 
@@ -261,7 +236,6 @@ theorem stage2NoEventWalkStep_of_ready {calls : Calls} {mem : Mem} {F : Nat}
 
 #print axioms stage2NoEventWalkBracketRow_of_class
 #print axioms stage2NoEventWalkBraceRow_of_class
-#print axioms stage2NoEventWalkValueRow_of_class
 #print axioms stage2NoEventWalkRows_of_ready
 #print axioms stage2NoEventWalkStep_of_ready
 
