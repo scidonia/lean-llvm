@@ -214,6 +214,7 @@ import LeanLLVM.Refinement.JsonStage2NoEventWalkDispatchValueArmsB
 import LeanLLVM.Refinement.JsonStage2NoEventWalkDispatchStringArenaB
 import LeanLLVM.Refinement.JsonStage2NoEventWalkRowsDispatch
 import LeanLLVM.Refinement.JsonStage2NoEventWalkRowsContainerB
+import LeanLLVM.Refinement.JsonStage2NoEventWalkRowsBrace
 import LeanLLVM.Refinement.JsonStage2NoEventRefusalOffset
 import LeanLLVM.Refinement.JsonStage2WalkAlignment
 import LeanLLVM.Refinement.JsonStage2TraceRow
