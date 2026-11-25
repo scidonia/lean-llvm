@@ -1267,8 +1267,32 @@ def litRefusal (e : State) (i : Nat) : Prop :=
     ∃ op, phiIncoming (e.pre.getD "") ifThen527EiIncoming = some op ∧
       evalOperand e op = some (.int 64 (BitVec.ofNat 64 i))
 
-/-- The accepting exit. -/
-def litAccept (e : State) : Prop := e.pc = "if.end545"
+/-- The accepting exit: the block the chain enters, and the predecessor whose
+value the merge's `%add489.pn` phi reads there. -/
+def litAccept (e : State) : Prop :=
+  e.pc = "if.end545" ∧ e.pre = some "for.end.i"
+
+/-- The names the chain's block steps bind, over both widths: the four `phi`
+destinations at `if.end519`, the byte arms' temporaries and comparisons, the
+loop counters, and the width comparison.  Every name outside this list is
+inherited from the entry environment unchanged. -/
+def litAcceptWritten : List String :=
+  ["%exitcond.not.i", "%sub524", "%tag.0", "%ln.0", "%exitcond38.not.i.3",
+   "%lit.0", "%cmp7.not.i", "%73", "%72", "%exitcond.not.i.1",
+   "%cmp7.not.i.1", "%65", "%shr.i.1", "%64", "%arrayidx.i.1",
+   "%exitcond.not.i.2", "%cmp7.not.i.2", "%67", "%shr.i.2", "%66",
+   "%arrayidx.i.2", "%exitcond.not.i.3", "%cmp7.not.i.3", "%69", "%shr.i.3",
+   "%68", "%arrayidx.i.3", "%cmp13.not.i", "%exitcond.not.i.4",
+   "%cmp7.not.i.4", "%71", "%shr.i.4", "%70", "%arrayidx.i.4"]
+
+/-- A cell the chain binds leaves every name it does not bind reading as
+before: the chain only ever conses its own cells onto the entry environment. -/
+theorem lookupName_cons_of_mem {k n : String} {v : Value} {env : Env}
+    (hk : k ∈ litAcceptWritten) (hn : n ∉ litAcceptWritten) :
+    lookupName ((k, v) :: env) n = lookupName env n := by
+  rw [lookupName_cons_ne v env]
+  intro h
+  exact hn (h ▸ hk)
 
 /-- A refusal whose selected operand is a literal constant. -/
 theorem litRefusal_const (e : State) (pred : String) (k : Nat)
@@ -1336,11 +1360,11 @@ theorem stage2NoEventLitChain_refuse_long (e : State) (pred : String)
 
 /-- A token equal to the literal accepts. -/
 theorem stage2NoEventLitChain_accept_exit (e : State) {q bs : List UInt8}
-    (hpc : e.pc = "if.end545")
+    (hpc : e.pc = "if.end545") (hpre : e.pre = some "for.end.i")
     (hlen : q.length = bs.length)
     (hprefix : ∀ j, j < q.length → q.getD j 0 = bs.getD j 0) :
     litAccept e ∧ neLitCheck q bs = none :=
-  ⟨hpc, neLitCheck_eq_none_of_prefix hlen hprefix⟩
+  ⟨⟨hpc, hpre⟩, neLitCheck_eq_none_of_prefix hlen hprefix⟩
 
 theorem stage2NoEventLitChain_run
     (calls : Calls) (env : Env) (s : State) (p : String)
@@ -1361,7 +1385,9 @@ theorem stage2NoEventLitChain_run
     (hwidth : (ln = BitVec.ofNat 64 4 ∧ b = 1) ∨ (ln = BitVec.ofNat 64 5 ∧ b = 0)) :
     ∃ (e : State) (j : Nat), j ≤ 13 ∧ e.mem = s.mem ∧
       ((∃ i, litRefusal e i ∧ neLitCheck q (litBytes lit ln.toNat) = some i) ∨
-       (litAccept e ∧ neLitCheck q (litBytes lit ln.toNat) = none)) ∧
+       (litAccept e ∧ lookupName e.env "%tag.0" = some (.int 64 tag) ∧
+        (∀ n, n ∉ litAcceptWritten → lookupName e.env n = lookupName env n) ∧
+        neLitCheck q (litBytes lit ln.toNat) = none)) ∧
       (∀ k, runFuel calls (j + k) stage2NoEventBody (stateAt env s) =
         runFuel calls k stage2NoEventBody e) := by
   have hsubn : (ee - idx).toNat = n := by
@@ -1893,10 +1919,9 @@ theorem stage2NoEventLitChain_run
               refine ⟨stateAt E10 t10, 10, by omega, rfl, ?_, ?_⟩
               · right
                 have hlen4 : q.length = 4 := JsonEntrySteps.readBytes_length s.mem base 4 hq
-                refine stage2NoEventLitChain_accept_exit _ rfl ?_ ?_
-                · rw [hlen4, litBytes_length, hln4]
-                  rfl
-                · intro j hj
+                have hprefix4 : ∀ j, j < q.length →
+                    q.getD j 0 = (litBytes lit ln.toNat).getD j 0 := by
+                  intro j hj
                   rw [hlen4] at hj
                   have hj' : j = 0 ∨ j = 1 ∨ j = 2 ∨ j = 3 := by omega
                   rcases hj' with rfl | rfl | rfl | rfl
@@ -1908,6 +1933,16 @@ theorem stage2NoEventLitChain_run
                     simpa using hc2
                   · rw [litBytes_getD (lit := lit) (ln := ln.toNat) (j := 3) (by omega)]
                     simpa using hc3
+                have hacc := stage2NoEventLitChain_accept_exit (e := stateAt E10 t10)
+                  rfl rfl
+                  (by rw [hlen4, litBytes_length, hln4]; rfl) hprefix4
+                refine ⟨hacc.1, ?_, ?_, hacc.2⟩
+                · simp only [stateAt, E10, E8, E7, E6, E5, E4, E3, E2, E1]
+                  repeat rw [lookupName_cons_ne _ _ (by decide)]
+                  rw [lookupName_cons_self]
+                · intro m hm
+                  simp only [stateAt, E10, E8, E7, E6, E5, E4, E3, E2, E1]
+                  repeat rw [lookupName_cons_of_mem (by decide) hm]
               · intro k
                 let P : Path calls stage2NoEventBody (fun _ => True) (stateAt env s) (stateAt E10 t10) :=
                   .step trivial h1' (.step trivial h2' (.step trivial h3' (.step trivial h4' (.step trivial h5' (.step trivial h6' (.step trivial h7' (.step trivial h8' (.step trivial h9' (.step trivial h10' (.nil _))))))))))
@@ -2233,9 +2268,9 @@ theorem stage2NoEventLitChain_run
                   · right
                     have hlen5 : q.length = 5 := by
                       rw [JsonEntrySteps.readBytes_length s.mem base 5 hq]
-                    refine stage2NoEventLitChain_accept_exit _ rfl ?_ ?_
-                    · rw [hlen5, litBytes_length, hln5]; rfl
-                    · intro j hj
+                    have hprefix5 : ∀ j, j < q.length →
+                        q.getD j 0 = (litBytes lit ln.toNat).getD j 0 := by
+                      intro j hj
                       rw [hlen5] at hj
                       have hj' : j = 0 ∨ j = 1 ∨ j = 2 ∨ j = 3 ∨ j = 4 := by omega
                       rcases hj' with rfl | rfl | rfl | rfl | rfl
@@ -2244,6 +2279,16 @@ theorem stage2NoEventLitChain_run
                       · rw [litBytes_getD (lit := lit) (ln := ln.toNat) (j := 2) (by omega)]; simpa using hc2
                       · rw [litBytes_getD (lit := lit) (ln := ln.toNat) (j := 3) (by omega)]; simpa using hc3
                       · rw [litBytes_getD (lit := lit) (ln := ln.toNat) (j := 4) (by rw [hln5]; decide)]; simpa using hc4
+                    have hacc := stage2NoEventLitChain_accept_exit (e := stateAt E12 t12)
+                      rfl rfl
+                      (by rw [hlen5, litBytes_length, hln5]; rfl) hprefix5
+                    refine ⟨hacc.1, ?_, ?_, hacc.2⟩
+                    · simp only [stateAt, E12, E11, E10b, E8, E7, E6, E5, E4, E3, E2, E1]
+                      repeat rw [lookupName_cons_ne _ _ (by decide)]
+                      rw [lookupName_cons_self]
+                    · intro m hm
+                      simp only [stateAt, E12, E11, E10b, E8, E7, E6, E5, E4, E3, E2, E1]
+                      repeat rw [lookupName_cons_of_mem (by decide) hm]
                   · intro k
                     let P : Path calls stage2NoEventBody (fun _ => True) (stateAt env s) (stateAt E12 t12) :=
                       .step trivial h1' (.step trivial h2' (.step trivial h3' (.step trivial h4' (.step trivial h5' (.step trivial h6' (.step trivial h7' (.step trivial h8' (.step trivial h9' (.step trivial h10' (.step trivial h11' (.step trivial h12' (.nil _))))))))))))
@@ -2450,7 +2495,7 @@ theorem stage2NoEventLitChain_refuse
   obtain ⟨e, j, hj, hmem, hdisj, hfuel⟩ :=
     stage2NoEventLitChain_run calls env s p hpc hpre hincLit hincB hincLn hincTag
       hee hidx hn hsub harr hq hwidth
-  rcases hdisj with ⟨i0, hre, hne⟩ | ⟨_, hnone⟩
+  rcases hdisj with ⟨i0, hre, hne⟩ | ⟨_, _, _, hnone⟩
   · rw [hval] at hne
     cases Option.some.inj hne
     exact ⟨e, j, hj, hmem, hre, hfuel⟩
@@ -2475,14 +2520,16 @@ theorem stage2NoEventLitChain_accept
     (hwidth : (ln = BitVec.ofNat 64 4 ∧ b = 1) ∨ (ln = BitVec.ofNat 64 5 ∧ b = 0))
     (hval : neLitCheck q (litBytes lit ln.toNat) = none) :
     ∃ (e : State) (j : Nat), j ≤ 13 ∧ e.mem = s.mem ∧ litAccept e ∧
+      lookupName e.env "%tag.0" = some (.int 64 tag) ∧
+      (∀ n, n ∉ litAcceptWritten → lookupName e.env n = lookupName env n) ∧
       (∀ k, runFuel calls (j + k) stage2NoEventBody (stateAt env s) =
         runFuel calls k stage2NoEventBody e) := by
   obtain ⟨e, j, hj, hmem, hdisj, hfuel⟩ :=
     stage2NoEventLitChain_run calls env s p hpc hpre hincLit hincB hincLn hincTag
       hee hidx hn hsub harr hq hwidth
-  rcases hdisj with ⟨i0, _, hne⟩ | ⟨hacc, _⟩
+  rcases hdisj with ⟨i0, _, hne⟩ | ⟨hacc, htag, hpres, _⟩
   · rw [hval] at hne; cases hne
-  · exact ⟨e, j, hj, hmem, hacc, hfuel⟩
+  · exact ⟨e, j, hj, hmem, hacc, htag, hpres, hfuel⟩
 
 /-- **`true`**: the shared `phi` at `LeafBlock68`, four bytes, selector one. -/
 theorem stage2NoEventLitChain_true
@@ -2496,7 +2543,9 @@ theorem stage2NoEventLitChain_true
     (hq : readBytes s.mem base n = some q) :
     ∃ (e : State) (j : Nat), j ≤ 13 ∧ e.mem = s.mem ∧
       ((∃ i, litRefusal e i ∧ neLitCheck q (litBytes neLitTrue 4) = some i) ∨
-       (litAccept e ∧ neLitCheck q (litBytes neLitTrue 4) = none)) ∧
+       (litAccept e ∧ lookupName e.env "%tag.0" = some (.int 64 (BitVec.ofNat 64 8)) ∧
+        (∀ n, n ∉ litAcceptWritten → lookupName e.env n = lookupName env n) ∧
+        neLitCheck q (litBytes neLitTrue 4) = none)) ∧
       (∀ k, runFuel calls (j + k) stage2NoEventBody (stateAt env s) =
         runFuel calls k stage2NoEventBody e) :=
   stage2NoEventLitChain_run calls env s "LeafBlock68"
@@ -2516,7 +2565,9 @@ theorem stage2NoEventLitChain_false
     (hq : readBytes s.mem base n = some q) :
     ∃ (e : State) (j : Nat), j ≤ 13 ∧ e.mem = s.mem ∧
       ((∃ i, litRefusal e i ∧ neLitCheck q (litBytes neLitFalse 5) = some i) ∨
-       (litAccept e ∧ neLitCheck q (litBytes neLitFalse 5) = none)) ∧
+       (litAccept e ∧ lookupName e.env "%tag.0" = some (.int 64 (BitVec.ofNat 64 9)) ∧
+        (∀ n, n ∉ litAcceptWritten → lookupName e.env n = lookupName env n) ∧
+        neLitCheck q (litBytes neLitFalse 5) = none)) ∧
       (∀ k, runFuel calls (j + k) stage2NoEventBody (stateAt env s) =
         runFuel calls k stage2NoEventBody e) :=
   stage2NoEventLitChain_run calls env s "if.then504"
@@ -2536,7 +2587,9 @@ theorem stage2NoEventLitChain_null
     (hq : readBytes s.mem base n = some q) :
     ∃ (e : State) (j : Nat), j ≤ 13 ∧ e.mem = s.mem ∧
       ((∃ i, litRefusal e i ∧ neLitCheck q (litBytes neLitNull 4) = some i) ∨
-       (litAccept e ∧ neLitCheck q (litBytes neLitNull 4) = none)) ∧
+       (litAccept e ∧ lookupName e.env "%tag.0" = some (.int 64 (BitVec.ofNat 64 10)) ∧
+        (∀ n, n ∉ litAcceptWritten → lookupName e.env n = lookupName env n) ∧
+        neLitCheck q (litBytes neLitNull 4) = none)) ∧
       (∀ k, runFuel calls (j + k) stage2NoEventBody (stateAt env s) =
         runFuel calls k stage2NoEventBody e) :=
   stage2NoEventLitChain_run calls env s "if.then509"
