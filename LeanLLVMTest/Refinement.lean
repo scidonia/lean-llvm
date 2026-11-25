@@ -11467,3 +11467,7 @@ as the remaining obligation.  The pins are the proved two's footprints. -/
 /-- info: 'LeanLLVM.Refinement.eventsOfBytes_valueOfEvents_events' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.eventsOfBytes_valueOfEvents_events
+
+/-- info: 'LeanLLVM.Refinement.eventsOfBytes_valueOfEvents_scalar' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.eventsOfBytes_valueOfEvents_scalar
