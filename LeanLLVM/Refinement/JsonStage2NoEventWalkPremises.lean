@@ -516,7 +516,7 @@ theorem stage2NoEventWalkPremises_of_rows {stk e c d : Nat}
   · -- entries left: the seed's run to the post-read head
     have hseed := stage2NoEventWalkSeedRun (gap := stage2GapRecover) (K := K) (mem := mem)
       (s0 := EntryState stage2NoEventBody (stage2NoEventArgs a12 stk e c d) mem next)
-      hInvEntry hpar rfl (by simpa [EntryState] using hKn0.symm) hKxj0 hb1K
+      hInvEntry hpar rfl (by simpa [EntryState] using hKn0.symm) hb1K
       (Nat.pos_of_ne_zero hzero) hKtok hKterms hKarena
     obtain ⟨sHead, -, -, hrun, hHead, htrace, -⟩ := hseed
     refine Or.inr ⟨Nat.pos_of_ne_zero hzero, sHead, hrun, hHead, htrace, ?_, ?_, ?_, ?_⟩

@@ -24,8 +24,15 @@ at a head and states each producer at its minimal remaining premises.
   the frame's byte is `fr` because `fr < 2^8`;
 * the index facts `k + 3 < 2^63` (from `Inv.nepLe` and `Inv.maxDoc`).
 
-**What resists, and why.**  Five facts are *branch guards* of the routes, not
-consequences of the head:
+**What resists, and why.**  The facts that remain are *branch guards* of the
+routes: the predicates that select a route's branch, not consequences of the
+head.  Each is stated in the branch's own form (`sp ≠ 0` rather than `1 ≤ sp`),
+and at the seed's head both forms are false — `Seed`'s
+`loopHeadPhiCellsAt K 0 0 0 0 520` binds depth and frame to zero, so the depth is
+`0`, and on `Nat` `(sp ≠ 0) ↔ (1 ≤ sp)`: the guard is false there because it
+names a branch the seed is not on, not because the exclusion form escapes the
+seed.  Which branch a head is on is the producer's case split
+(`…Ready_of_arms` below), never a claim about every head:
 
 * `nextByte.toNat = 93` (bracket) / `125` (brace) — the empty-pair route is the
   closer arm of `if.end327.peel`/`close_obj`; at a `[`/`{` head whose next entry
@@ -34,21 +41,18 @@ consequences of the head:
   (`Stage2NoEventAfterValueClass` has no producer at an entry index); the missing
   statement is `Stage2NoEventWalkHeadBracketClass.closer` /
   `…BraceClass.closer`.
-* `1 ≤ sp` and `sp ≤ 519` — `Head.layers` binds `sp < 2^32` only; the stack's
+* `sp ≠ 0` and `sp ≤ 519` — `Head.layers` binds `sp < 2^32` only; the stack's
   520-byte extent is `Inv.stagedBytes`' presence, not a bound on the register.
-  The container push route states the pair as its own guard
-  (`stage2NoEventWalkContainerPushBracket`'s `hroom`), and no head-level
-  replacement holds as stated: the seed head has `sp = 0` (`Seed`'s
-  `loopHeadPhiCellsAt K 0 0 0 0 520`), so `1 ≤ sp` is false there — the
-  depth-zero branch is the terminal lane's — and a `Head`-level statement would
-  have to exclude that branch first (`Stage2NoEventWalkHead.stackRoom` would be
-  that statement, conditional on the branch).  `sp ≤ 519` is likewise a route
-  guard (the `%exitcond.peel` bracket test, the `%cmp10` brace test), not a
-  `Head` consequence.
-* `1 ≤ fr` — not a consequence of `Head` either, and false at the same seed head,
-  whose `%frame` is `0`.  The committed pair rows take it as a premise although
-  neither route body uses it, so the repair is to drop the premise from those
-  rows, not to prove a head-level statement that cannot hold.
+  The push route states the pair as its own guard
+  (`stage2NoEventWalkContainerPushBracket`'s `hroom`).  The seed head has
+  `sp = 0`, so the guard is false there and the depth-zero head belongs to the
+  terminal lane (`JsonStage2NoEventWalkRowsContainerZero`); the committed row's
+  `1 ≤ sp` is the same `Nat` statement (`Nat.pos_of_ne_zero`), not a weaker
+  claim that survives the seed.  `sp ≤ 519` is the route's own test
+  (`%exitcond.peel` for the bracket, `%cmp10` for the brace).
+* `fr ≠ 0` — the frame-zero head is the same terminal lane's, so this too is
+  false at the seed.  The committed pair rows take `1 ≤ fr`, the same `Nat`
+  statement as the guard.
 * the comma `∀ q, K.ent[k+2]? = some q → K.bs.getD q 0 = 44` — `Inv.doc` gives
   the document byte's *presence* at an entry, never its value: the separator is
   the cycle's own read at the endpoint.  The missing statement is
@@ -58,11 +62,17 @@ consequences of the head:
   `Stage2NoEventWalkExit` evidence (`Stage2NoEventRun` report and
   `stage2NoEventBoundary`) is the caller's post, carried by neither `Head` nor
   `Trace`; the missing statement is `Stage2NoEventWalkHead.continues`.  A
-  producer at `Stage2NoEventWalkRow` therefore cannot case the negation.
+  producer at `Stage2NoEventWalkRow` cannot derive the negation, so it cases the
+  arm and takes the terminal row as its premise (`…Ready_of_arms`).
 
-The producers below therefore take exactly those facts as
-`Stage2NoEventWalkBracketGuard` / `…BraceGuard`, and nothing else: every memory
-read and index bound the committed rows take is derived here.
+The live arm's producer therefore takes exactly those facts — the shared
+`Stage2NoEventWalkPairBranch` beside each class's closer byte
+(`Stage2NoEventWalkBracketGuard`/`…BraceGuard`) — and nothing else: every memory
+read and index bound the committed rows take is derived here.  The terminal arm's
+producer takes the class's terminal row, whose post evidence is the caller's.
+The carry's `%xj = K.next0` is **not** among either arm's premises: it is the
+invariant's static equality (`Stage2NoEventWalkInv.xjNext0`), projected at a head
+as `Stage2NoEventWalkHead.xjNext0`, so no producer takes it beside the head.
 -/
 import LeanLLVM.Refinement.JsonStage2NoEventWalkRowsAssemble
 import LeanLLVM.Refinement.JsonStage2NoEventWalkValue
@@ -253,57 +263,61 @@ theorem Stage2NoEventWalkInv.stackDocOrder {K : Stage2NoEventWalkCarry} {mem : M
 
 The facts the head does not carry, each one a route's branch guard.  The memory
 reads, the closer's entry and the index bounds are *not* here: the producers
-below derive them. -/
+below derive them.
 
-/-- **The bracket pair's remaining premises at a head.**  Each field is a fact
-the committed empty-pair route branches on and `Head` does not bind; this
-module's doc comment names, for each, the statement that would produce it or the
-premise that should be dropped instead. -/
-structure Stage2NoEventWalkBracketGuard (K : Stage2NoEventWalkCarry) (k : Nat)
+A guard states the branch that owns it, not an arithmetic consequence of being at
+a head.  The seed's head has depth and frame zero (`Seed`'s
+`loopHeadPhiCellsAt K 0 0 0 0 520`), so `1 ≤ sp` and `1 ≤ fr` are false there and
+must not be head-level claims; the branch names them by exclusion (`sp ≠ 0`,
+`fr ≠ 0`), and the committed rows' arithmetic positivity follows on `Nat`.  Which
+branch a head is on is the assembly's case: a depth-zero head is the terminal
+lane's (`JsonStage2NoEventWalkRowsContainerZero`), and only a non-zero depth
+reaches these routes. -/
+
+/-- **The pair routes' shared branch facts.**  Both container routes push one
+frame byte and pop it back; the facts here are the push branch's. -/
+structure Stage2NoEventWalkPairBranch (K : Stage2NoEventWalkCarry) (k : Nat)
     (s : State) : Prop where
   /-- The push's stack guard: a non-zero depth.  At `sp = 0` the push at
-  `if.then47.peel` is bypassed (control continues through `if.end51.peel`), so
-  this row's stack staging is false at that head; the terminal lane is reached
-  later, at `after_value`'s `%cmp355 = icmp eq %sp.4, 0`. -/
+  `if.then47.peel` (bracket) or `if.then20` (brace) is bypassed, so this row's
+  stack staging is false at that head; the terminal lane is reached later, at
+  `after_value`'s `%cmp355 = icmp eq %sp.4, 0`. -/
   spNe : ∀ sp, lookupName s.env "%sp.0.ph1403" =
     some (.int 32 (BitVec.ofNat 32 sp)) → sp ≠ 0
-  /-- The push's stack room. -/
+  /-- The push's stack room (`%exitcond.peel`'s bracket test, `%cmp10`'s brace
+  test): the route continues only below the stack's 520 bytes. -/
   spLe : ∀ sp, lookupName s.env "%sp.0.ph1403" =
     some (.int 32 (BitVec.ofNat 32 sp)) → sp ≤ 519
-  /-- The frame byte's positivity: a premise of the committed row, unused by its
-  route. -/
-  frPos : ∀ fr, lookupName s.env "%frame.0.ph1402" =
-    some (.int 8 (BitVec.ofNat 8 fr)) → 1 ≤ fr
+  /-- The frame is non-zero on the pair branch, the frame-zero head being the
+  depth-zero terminal lane's.  The route pushes `fr` and pops it back; the
+  committed row also takes `1 ≤ fr`, which is this predicate's `Nat` form
+  (`Nat.pos_of_ne_zero`), not an extra head-level claim. -/
+  frNe : ∀ fr, lookupName s.env "%frame.0.ph1402" =
+    some (.int 8 (BitVec.ofNat 8 fr)) → fr ≠ 0
+  /-- The separator the shared cycle reads at the endpoint. -/
+  comma : ∀ q, K.ent[k + 2]? = some q → K.bs.getD q 0 = 44
+  /-- The next head exists. -/
+  live : k + 3 < K.nep
+
+/-- **The bracket pair's remaining premises at a head.**  The shared branch
+facts and the closer's byte: the entry after the opener is `]`. -/
+structure Stage2NoEventWalkBracketGuard (K : Stage2NoEventWalkCarry) (k : Nat)
+    (s : State) : Prop where
+  /-- The pair routes' shared branch facts. -/
+  branch : Stage2NoEventWalkPairBranch K k s
   /-- The entry after the opener is the closer `]`. -/
   closer : ∀ next nextByte, K.ent[k + 1]? = some next →
     K.bs[next]? = some nextByte → nextByte.toNat = 93
-  /-- The separator the shared cycle reads at the endpoint. -/
-  comma : ∀ q, K.ent[k + 2]? = some q → K.bs.getD q 0 = 44
-  /-- The next head exists. -/
-  live : k + 3 < K.nep
 
-/-- **The brace pair's remaining premises at a head.** -/
+/-- **The brace pair's remaining premises at a head.**  The shared branch facts
+and the closer's byte: the entry after the opener is `}`. -/
 structure Stage2NoEventWalkBraceGuard (K : Stage2NoEventWalkCarry) (k : Nat)
     (s : State) : Prop where
-  /-- The push's stack guard: a non-zero depth (`sp = 0` bypasses the push at
-  `if.then20`, through `if.end19`'s `%tobool.not`, so this row's stack staging is
-  false there). -/
-  spNe : ∀ sp, lookupName s.env "%sp.0.ph1403" =
-    some (.int 32 (BitVec.ofNat 32 sp)) → sp ≠ 0
-  /-- The push's stack room. -/
-  spLe : ∀ sp, lookupName s.env "%sp.0.ph1403" =
-    some (.int 32 (BitVec.ofNat 32 sp)) → sp ≤ 519
-  /-- The frame byte's positivity: a premise of the committed row, unused by its
-  route. -/
-  frPos : ∀ fr, lookupName s.env "%frame.0.ph1402" =
-    some (.int 8 (BitVec.ofNat 8 fr)) → 1 ≤ fr
+  /-- The pair routes' shared branch facts. -/
+  branch : Stage2NoEventWalkPairBranch K k s
   /-- The entry after the opener is the closer `}`. -/
   closer : ∀ next nextByte, K.ent[k + 1]? = some next →
     K.bs[next]? = some nextByte → nextByte.toNat = 125
-  /-- The separator the shared cycle reads at the endpoint. -/
-  comma : ∀ q, K.ent[k + 2]? = some q → K.bs.getD q 0 = 44
-  /-- The next head exists. -/
-  live : k + 3 < K.nep
 
 /-! ### The bracket class's producer
 
@@ -325,16 +339,16 @@ noncomputable def stage2NoEventWalkBracketRow_of_head {calls : Calls} {mem : Mem
   apply Classical.choice
   obtain ⟨lane, byte, hent, hbs, -, -, hb⟩ := hclass
   -- the next head exists, so the pair's two entries do
-  have hlt : k + 3 < K.nep := hg.live
+  have hlt : k + 3 < K.nep := hg.branch.live
   have hkbound : k + 2 ≤ K.nep := by omega
   obtain ⟨next, nextByte, hk1, hbs1⟩ := h.closerEntry hkbound
   have hnextLt : next < K.n := h.inv.inside next (List.mem_of_getElem? hk1)
   have hb1 : nextByte.toNat = 93 := hg.closer next nextByte hk1 hbs1
   -- the head's stack cells and their widths
   obtain ⟨sp, fr, hspH, hfrH, h1H, hspLt, hfrLt⟩ := h.spPhiBounded
-  have hspPos : 1 ≤ sp := by have := hg.spNe sp hspH; omega
-  have hspLe : sp ≤ 519 := hg.spLe sp hspH
-  have hfrPos : 1 ≤ fr := hg.frPos fr hfrH
+  have hspPos : 1 ≤ sp := by have := hg.branch.spNe sp hspH; omega
+  have hspLe : sp ≤ 519 := hg.branch.spLe sp hspH
+  have hfrPos : 1 ≤ fr := by have := hg.branch.frNe fr hfrH; omega
   -- the push's and the pop's one address
   have hpush : bracketPushAddr K (BitVec.ofNat 64 sp) = K.stk + (sp - 1) :=
     stage2NoEventWalkBracketPushAddr_eq K hspPos hspLt
@@ -424,7 +438,7 @@ noncomputable def stage2NoEventWalkBracketRow_of_head {calls : Calls} {mem : Mem
     (sp := sp) (fr := fr) (bs4 := bs4)
     (bs := natToBytes ((BitVec.ofNat 8 fr).toNat) 1)
     h htrace hent hbs hb hk1 hbs1 hb1 hspH hfrH h1H hspPos hspLe hspLt hfrLt hfrPos
-    hkbound hlaneW hval4lt hbyte1W hbytePop hbsLen hbsVal hg.comma hlt hk63⟩
+    hkbound hlaneW hval4lt hbyte1W hbytePop hbsLen hbsVal hg.branch.comma hlt hk63⟩
 
 /-! ### The brace class's producer -/
 
@@ -441,15 +455,15 @@ noncomputable def stage2NoEventWalkBraceRow_of_head {calls : Calls} {mem : Mem} 
   classical
   apply Classical.choice
   obtain ⟨lane, byte, hent, hbs, -, -, hb⟩ := hclass
-  have hlt : k + 3 < K.nep := hg.live
+  have hlt : k + 3 < K.nep := hg.branch.live
   have hkbound : k + 2 ≤ K.nep := by omega
   obtain ⟨next, nextByte, hk1, hbs1⟩ := h.closerEntry hkbound
   have hnextLt : next < K.n := h.inv.inside next (List.mem_of_getElem? hk1)
   have hb1 : nextByte.toNat = 125 := hg.closer next nextByte hk1 hbs1
   obtain ⟨sp, fr, hspH, hfrH, -, hspLt, hfrLt⟩ := h.spPhiBounded
-  have hspPos : 1 ≤ sp := by have := hg.spNe sp hspH; omega
-  have hspLe : sp ≤ 519 := hg.spLe sp hspH
-  have hfrPos : 1 ≤ fr := hg.frPos fr hfrH
+  have hspPos : 1 ≤ sp := by have := hg.branch.spNe sp hspH; omega
+  have hspLe : sp ≤ 519 := hg.branch.spLe sp hspH
+  have hfrPos : 1 ≤ fr := by have := hg.branch.frNe fr hfrH; omega
   have hpush : bracePushAddr K (BitVec.ofNat 32 sp) = K.stk + (sp - 1) :=
     stage2NoEventWalkBracePushAddr_eq K hspPos hspLt
   have hpop : bracePopAddr K sp = K.stk + (sp - 1) :=
@@ -526,28 +540,101 @@ noncomputable def stage2NoEventWalkBraceRow_of_head {calls : Calls} {mem : Mem} 
     (sp := sp) (fr := fr) (bs4 := bs4)
     (bs := natToBytes ((BitVec.ofNat 8 fr).toNat) 1)
     h htrace hent hbs hb hk1 hbs1 hb1 hspH hfrH hspPos hspLe hspLt hfrLt hfrPos
-    hkbound hlaneW hval4lt hbyte1W hbytePop hbsLen hbsVal hg.comma hlt hk63⟩
+    hkbound hlaneW hval4lt hbyte1W hbytePop hbsLen hbsVal hg.branch.comma hlt hk63⟩
 
 /-! ### The producers at the assembly's predicates
 
 `Stage2NoEventWalkBracketReady`/`…BraceReady` are the assembly's contracts.  They
-follow from the two rows once the guards are supplied at every head. -/
+follow from the two rows once each head is placed on one of the walk's two arms.
 
-/-- **The bracket class's producer**, from the guard at every head. -/
-noncomputable def stage2NoEventWalkBracketReady_of_guard {calls : Calls} {mem : Mem} {F : Nat}
-    (hg : ∀ (K : Stage2NoEventWalkCarry) (k : Nat) (s : State),
-      Stage2NoEventWalkHead K mem k s → Stage2NoEventWalkBracketGuard K k s) :
+**The two arms.**  `after_value`'s `%cmp355 = icmp eq %sp.4, 0` splits the heads:
+the live pair arm (`sp ≠ 0`, `k + 3 < K.nep`) takes the class row through
+`…Row_of_head`, and the terminal arm (`sp = 0` or `k + 3 ≥ K.nep`) takes the
+class's terminal row.  Each producer below states one premise per arm:
+
+* `hpair` supplies, at a live head of the class, the shared
+  `Stage2NoEventWalkPairBranch` beside the class's closer byte — that is, the
+  class's `…Guard`.  It is satisfiable: a `[…]` head at positive depth whose next
+  entry is the `]` closer is such a head, and both of its conjuncts are route
+  facts, not the seed's.
+* `hterm` supplies the terminal arm's row.  It is satisfiable at a nested pair:
+  a seed head has `sp = 0`, so for a document opening with `[` (or `{`) it is a
+  bracket (brace) head on this arm, and `stage2NoEventWalkBracketZeroRow`
+  (`…BraceZeroRow`) produces the row there from the head, the endpoint's
+  `after_value` cells and the caller's `hreportAcc`/`hboundAcc`/`hreportRef`.
+  The other half of the arm — a trailing entry at non-zero depth
+  (`K.nep ≤ k + 3` with `sp ≠ 0`) — is the same terminal route, but no producer
+  for it is named in this tree yet; a caller on that half supplies its exit
+  evidence itself.
+
+Neither premise quantifies over *every* head: `hpair` is restricted to live
+heads of the class and is refuted on the descend branch, `hterm` to the terminal
+arm.  Nothing here claims either holds:
+`hterm`'s row is the caller's terminal evidence, reachable only from the
+endpoint's post words, and `hpair`'s branch facts are route predicates `Head`
+does not carry.  `%xj = K.next0` is the invariant's (`Head.inv.xjNext0`), and
+every memory read both rows take is derived in this module. -/
+
+/-- **The bracket class's producer**, from the live pair arm's guard and the
+terminal arm's row.  The head's depth is read at `%sp.0.ph1403`; a zero depth or
+an index past the pair's next head is the terminal arm. -/
+noncomputable def stage2NoEventWalkBracketReady_of_arms {calls : Calls} {mem : Mem}
+    {F : Nat}
+    (hpair : ∀ (K : Stage2NoEventWalkCarry) (k : Nat) (s : State) (sp : Nat),
+      Stage2NoEventWalkHead K mem k s →
+      Stage2NoEventWalkTrace K →
+      Stage2NoEventWalkHeadBracketClass K k s →
+      lookupName s.env "%sp.0.ph1403" = some (.int 32 (BitVec.ofNat 32 sp)) →
+      sp ≠ 0 → k + 3 < K.nep →
+      Stage2NoEventWalkBracketGuard K k s)
+    (hterm : ∀ (K : Stage2NoEventWalkCarry) (k : Nat) (s : State) (sp : Nat),
+      Stage2NoEventWalkHead K mem k s →
+      Stage2NoEventWalkTrace K →
+      Stage2NoEventWalkHeadBracketClass K k s →
+      lookupName s.env "%sp.0.ph1403" = some (.int 32 (BitVec.ofNat 32 sp)) →
+      (sp = 0 ∨ K.nep ≤ k + 3) →
+      Stage2NoEventWalkRow calls mem F K k s) :
     Stage2NoEventWalkBracketReady calls mem F :=
-  fun K k s h htrace hclass => stage2NoEventWalkBracketRow_of_head h htrace hclass
-    (hg K k s h)
+  fun K k s h htrace hclass => by
+    classical
+    apply Classical.choice
+    obtain ⟨sp, fr, hspH, hfrH, h1H, hspLt, hfrLt⟩ := h.spPhiBounded
+    by_cases hsp0 : sp = 0
+    · exact ⟨hterm K k s sp h htrace hclass hspH (Or.inl hsp0)⟩
+    · by_cases hlive : k + 3 < K.nep
+      · exact ⟨stage2NoEventWalkBracketRow_of_head h htrace hclass
+          (hpair K k s sp h htrace hclass hspH hsp0 hlive)⟩
+      · exact ⟨hterm K k s sp h htrace hclass hspH (Or.inr (by omega))⟩
 
-/-- **The brace class's producer**, from the guard at every head. -/
-noncomputable def stage2NoEventWalkBraceReady_of_guard {calls : Calls} {mem : Mem} {F : Nat}
-    (hg : ∀ (K : Stage2NoEventWalkCarry) (k : Nat) (s : State),
-      Stage2NoEventWalkHead K mem k s → Stage2NoEventWalkBraceGuard K k s) :
+/-- **The brace class's producer**, from the live pair arm's guard and the
+terminal arm's row. -/
+noncomputable def stage2NoEventWalkBraceReady_of_arms {calls : Calls} {mem : Mem}
+    {F : Nat}
+    (hpair : ∀ (K : Stage2NoEventWalkCarry) (k : Nat) (s : State) (sp : Nat),
+      Stage2NoEventWalkHead K mem k s →
+      Stage2NoEventWalkTrace K →
+      Stage2NoEventWalkHeadBraceClass K k s →
+      lookupName s.env "%sp.0.ph1403" = some (.int 32 (BitVec.ofNat 32 sp)) →
+      sp ≠ 0 → k + 3 < K.nep →
+      Stage2NoEventWalkBraceGuard K k s)
+    (hterm : ∀ (K : Stage2NoEventWalkCarry) (k : Nat) (s : State) (sp : Nat),
+      Stage2NoEventWalkHead K mem k s →
+      Stage2NoEventWalkTrace K →
+      Stage2NoEventWalkHeadBraceClass K k s →
+      lookupName s.env "%sp.0.ph1403" = some (.int 32 (BitVec.ofNat 32 sp)) →
+      (sp = 0 ∨ K.nep ≤ k + 3) →
+      Stage2NoEventWalkRow calls mem F K k s) :
     Stage2NoEventWalkBraceReady calls mem F :=
-  fun K k s h htrace hclass => stage2NoEventWalkBraceRow_of_head h htrace hclass
-    (hg K k s h)
+  fun K k s h htrace hclass => by
+    classical
+    apply Classical.choice
+    obtain ⟨sp, fr, hspH, hfrH, h1H, hspLt, hfrLt⟩ := h.spPhiBounded
+    by_cases hsp0 : sp = 0
+    · exact ⟨hterm K k s sp h htrace hclass hspH (Or.inl hsp0)⟩
+    · by_cases hlive : k + 3 < K.nep
+      · exact ⟨stage2NoEventWalkBraceRow_of_head h htrace hclass
+          (hpair K k s sp h htrace hclass hspH hsp0 hlive)⟩
+      · exact ⟨hterm K k s sp h htrace hclass hspH (Or.inr (by omega))⟩
 
 /-! ### Axiom footprints -/
 
@@ -555,7 +642,7 @@ noncomputable def stage2NoEventWalkBraceReady_of_guard {calls : Calls} {mem : Me
 #print axioms Stage2NoEventWalkHead.closerEntry
 #print axioms stage2NoEventWalkBracketRow_of_head
 #print axioms stage2NoEventWalkBraceRow_of_head
-#print axioms stage2NoEventWalkBracketReady_of_guard
-#print axioms stage2NoEventWalkBraceReady_of_guard
+#print axioms stage2NoEventWalkBracketReady_of_arms
+#print axioms stage2NoEventWalkBraceReady_of_arms
 
 end LeanLLVM.Refinement

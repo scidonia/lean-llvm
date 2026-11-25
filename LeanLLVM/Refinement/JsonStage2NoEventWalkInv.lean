@@ -348,6 +348,13 @@ structure Stage2NoEventWalkInv (K : Stage2NoEventWalkCarry) (mem : Mem) (s : Sta
   tokLe : K.tok ≤ K.n
   /-- The bootstrap's own extent is inside the stack interval. -/
   nextEnd_static : K.next0 + (stage2BootstrapExtent + 8) ≤ K.nextEnd
+  /-- **The `%xj` alloca is the call's cursor.**  The entry block's first
+  allocation is at the cursor the body is entered with, so `K.xj = K.next0`.
+  The entry chain binds `%xj` at `K.next0` (`Stage2NoEventWalkBaseLookups`) while
+  `Stage2NoEventWalkLocals` names `K.xj`; this is the equality between the two.
+  It is the carry's own — no arm moves either number — so it belongs with the
+  other static equalities and every arm re-establishes it by keeping `K`. -/
+  xjNext0 : K.xj = K.next0
   /-- The run's own writes are present at the state's memory. -/
   walkPresent : ∀ a, inRegions
     (stage2NoEventRunRegions K.scratch K.scratchcap K.stk K.e K.c K.d) a →
@@ -489,6 +496,7 @@ theorem stage2NoEventWalkInv_seed
       nepLt := hneLt, nxpLt := hnxLt, separate := hsep, watermark := hwater,
       stagedBytes := hstagedBytes, stagedEnd := hstagedEnd, sep := hsepW,
       arenaEq := rfl, tokLe := Nat.zero_le n, nextEnd_static := Nat.le_refl _,
+      xjNext0 := rfl,
       walkPresent := ?_,
       walkFrame := fun _ _ => rfl }⟩
   intro a ha

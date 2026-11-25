@@ -345,7 +345,7 @@ and the head's premise and output evidence at it.** -/
 theorem stage2NoEventWalkSeedRun {gap : Calls} {K : Stage2NoEventWalkCarry}
     {mem : Mem} {s0 : State}
     (h : Stage2NoEventWalkInv K mem s0) (hpar : Stage2NoEventWalkParams K s0)
-    (hpc : s0.pc = "entry") (hnext : s0.next = K.next0) (hxj : K.xj = K.next0)
+    (hpc : s0.pc = "entry") (hnext : s0.next = K.next0)
     (hb1 : 1 ≤ K.b) (hnepos : 0 < K.nep)
     (hKtok : K.tok = 0) (hKterms : K.terms = 0) (hKarena : K.arena = []) :
     ∃ (sHead : State) (lane : Nat) (byte : UInt8),
@@ -653,7 +653,7 @@ token index, the run's `NodeBlock5` head carries the index at zero and none of
 theorem stage2NoEventWalkF2_witness {gap : Calls} {K : Stage2NoEventWalkCarry}
     {mem : Mem} {s0 : State}
     (h : Stage2NoEventWalkInv K mem s0) (hpar : Stage2NoEventWalkParams K s0)
-    (hpc : s0.pc = "entry") (hnext : s0.next = K.next0) (hxj : K.xj = K.next0)
+    (hpc : s0.pc = "entry") (hnext : s0.next = K.next0)
     (hb1 : 1 ≤ K.b) (hnepos : 0 < K.nep)
     (hKtok : K.tok = 0) (hKterms : K.terms = 0) (hKarena : K.arena = [])
     (hclean : lookupName s0.env "%idxprom.lcssa" = none ∧
@@ -670,7 +670,7 @@ theorem stage2NoEventWalkF2_witness {gap : Calls} {K : Stage2NoEventWalkCarry}
       lookupName sHead.env "%arena.10" = none ∧
       ∀ K', ¬ Stage2NoEventWalkAcc K' sHead := by
   obtain ⟨sHead, lane, byte, -, hhead, -, henvEq⟩ :=
-    stage2NoEventWalkSeedRun (gap := gap) h hpar hpc hnext hxj hb1 hnepos
+    stage2NoEventWalkSeedRun (gap := gap) h hpar hpc hnext hb1 hnepos
       hKtok hKterms hKarena
   -- the four names are not names of the head's cell layers or its base cells
   have hfour : (["%idxprom.lcssa", "%tokens.8", "%terms.8", "%arena.10"] ++
@@ -749,7 +749,7 @@ theorem stage2NoEventWalkF2_atEntry {gap : Calls} {a12 : List Value}
       (EntryState stage2NoEventBody (stage2NoEventArgs a12 stk e c d) mem next))
     (hpar : Stage2NoEventWalkParams K
       (EntryState stage2NoEventBody (stage2NoEventArgs a12 stk e c d) mem next))
-    (hnext : next = K.next0) (hxj : K.xj = K.next0) (hb1 : 1 ≤ K.b)
+    (hnext : next = K.next0) (hb1 : 1 ≤ K.b)
     (hnepos : 0 < K.nep)
     (hKtok : K.tok = 0) (hKterms : K.terms = 0) (hKarena : K.arena = []) :
     ∃ sHead : State,
@@ -762,7 +762,7 @@ theorem stage2NoEventWalkF2_atEntry {gap : Calls} {a12 : List Value}
       lookupName sHead.env "%arena.10" = none ∧
       ∀ K', ¬ Stage2NoEventWalkAcc K' sHead := by
   refine stage2NoEventWalkF2_witness (gap := gap) (s0 := EntryState stage2NoEventBody
-    (stage2NoEventArgs a12 stk e c d) mem next) h hpar rfl ?_ hxj hb1 hnepos
+    (stage2NoEventArgs a12 stk e c d) mem next) h hpar rfl ?_ hb1 hnepos
     hKtok hKterms hKarena ⟨?_, ?_, ?_, ?_⟩
   · simpa only [EntryState] using hnext
   · exact lookupName_entryState_none (by simp [stage2NoEventBody])

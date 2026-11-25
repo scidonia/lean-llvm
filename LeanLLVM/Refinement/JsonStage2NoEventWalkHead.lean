@@ -537,6 +537,16 @@ theorem Stage2NoEventWalkHead.classStage {K : Stage2NoEventWalkCarry} {mem : Mem
   obtain ⟨lane, byte, hent, -, hbyte, hread, -⟩ := h.laneRead
   exact ⟨lane, byte, hent, hbyte, hread⟩
 
+/-- **The `%xj` alloca is the call's cursor.**  The invariant's static equality:
+the entry chain binds `%xj` at `K.next0` (`baseLookups`) while
+`Stage2NoEventWalkLocals` names `K.xj`, so a consumer that needs the two to
+agree — the terminal route's `cleanup580` reads `%xj` — reads it from the
+invariant rather than taking it beside the head. -/
+theorem Stage2NoEventWalkHead.xjNext0 {K : Stage2NoEventWalkCarry} {mem : Mem}
+    {k : Nat} {s : State} (h : Stage2NoEventWalkHead K mem k s) :
+    K.xj = K.next0 :=
+  h.inv.xjNext0
+
 /-- **The head's closure, as a census.**  Every register the class rows may read
 resolves at a head: the base names are `Head.baseLookups`, the read and `phi`
 cells the layer equation.  A register absent from the census is not in the
@@ -892,6 +902,7 @@ theorem stage2NoEventWalkF1_inv : Stage2NoEventWalkInv stage2NoEventWalkF1K stag
       arenaEq := by decide
       tokLe := by decide
       nextEnd_static := by decide
+      xjNext0 := rfl
       walkPresent := ?_
       walkFrame := by intro a ha; rfl }
   · intro r hr
@@ -985,6 +996,7 @@ seed's head. -/
 
 #print axioms Stage2NoEventWalkHead.bytePresent
 #print axioms Stage2NoEventWalkHead.classStage
+#print axioms Stage2NoEventWalkHead.xjNext0
 #print axioms Stage2NoEventWalkHead.laneRead
 #print axioms stage2NoEventWalkHead_closure
 #print axioms stage2NoEventEnt_getD_le
