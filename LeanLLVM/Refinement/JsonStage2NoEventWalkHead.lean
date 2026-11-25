@@ -845,7 +845,7 @@ def stage2NoEventWalkF1K : Stage2NoEventWalkCarry :=
     next0 := 8192, b := 4096, n := 1, ep := 4160, nep := 1, xp := 4200, nxp := 0,
     scratch := 4224, scratchcap := 65, tokensOut := 4300, valuesOut := 4312,
     sumOut := 4324, err := 4336, bs := [0], ent := [0], stk := 4352, d := 6112,
-    xj := 8192, e := 4880, c := 4912, tok := 0, pos := 0, terms := 0, arena := [],
+    xj := 8192, e := 4880, c := 4912, tok := 0, terms := 0, arena := [],
     arenaWord := 0, nextEnd := 8228 }
 
 def stage2NoEventWalkF1S : State :=

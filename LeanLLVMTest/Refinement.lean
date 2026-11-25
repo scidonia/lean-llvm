@@ -11229,13 +11229,9 @@ module prints it. -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.row_closeBracket
 
-/-- info: 'LeanLLVM.Refinement.Stage2NoEventWalkInv.pos_lt' does not depend on any axioms -/
+/-- info: 'LeanLLVM.Refinement.Stage2NoEventWalkInv.tok_add_le' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
-#print axioms LeanLLVM.Refinement.Stage2NoEventWalkInv.pos_lt
-
-/-- info: 'LeanLLVM.Refinement.Stage2NoEventWalkInv.htok' does not depend on any axioms -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.Stage2NoEventWalkInv.htok
+#print axioms LeanLLVM.Refinement.Stage2NoEventWalkInv.tok_add_le
 
 /-- info: 'LeanLLVM.Refinement.link_ifThen81_of_bound' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in

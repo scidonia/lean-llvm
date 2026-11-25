@@ -91,8 +91,6 @@ structure Stage2NoEventWalkCarry where
   c : Nat
   /-- The count the reading words carry so far. -/
   tok : Nat
-  /-- The token's document index, as `%idxprom.lcssa` carries it. -/
-  pos : Nat
   /-- The events' per-record contribution so far. -/
   terms : Nat
   /-- The decoded string bodies, in document order. -/
@@ -194,8 +192,10 @@ theorem stage2NoEventWalkSep_of_pre {a12 : List Value} {mem : Mem} {next : Nat}
 The arms do not carry these; they read them at their entry state, and each is
 established where the body binds it.  A parameter is bound at `EntryState`
 (`Stage2NoEventWalkParams`); `%xj` and `%off` are the entry block's own bindings
-(`Stage2NoEventWalkLocals`); the three accumulators and the token index are bound
-by the loop (`Stage2NoEventWalkAcc`). -/
+(`Stage2NoEventWalkLocals`); the three accumulators are bound by the loop
+(`Stage2NoEventWalkAcc`).  The token index is not among them: `%idxprom.lcssa` is
+the value route's own per-iteration lane and is bound nowhere on the count
+routes. -/
 
 /-- **What the entry state binds**: every parameter of the flattened body. -/
 structure Stage2NoEventWalkParams (K : Stage2NoEventWalkCarry) (s : State) : Prop where
@@ -222,13 +222,19 @@ structure Stage2NoEventWalkLocals (K : Stage2NoEventWalkCarry) (s : State) : Pro
   xj : lookupName s.env "%xj" = some (.ptr K.xj)
   off : lookupName s.env "%off" = some (.ptr (K.e + 8))
 
-/-- **What the loop binds**: the token index and the three accumulators, at the
-carry's numbers. -/
+/-- **What the loop binds**: the three accumulators, at the carry's numbers. -/
 structure Stage2NoEventWalkAcc (K : Stage2NoEventWalkCarry) (s : State) : Prop where
-  pos : lookupName s.env "%idxprom.lcssa" = some (.int 64 (BitVec.ofNat 64 K.pos))
   tokens : lookupName s.env "%tokens.8" = some (.int 64 (BitVec.ofNat 64 K.tok))
   terms : lookupName s.env "%terms.8" = some (.int 64 (BitVec.ofNat 64 K.terms))
   arena : lookupName s.env "%arena.10" = some (.int 64 (BitVec.ofNat 64 K.arenaWord))
+
+/-- **The consumed count at a head.**  `K.tok` is the number of stream events the
+walk has taken, and at the head of entry `k` it is at most `k`.  The bound is an
+over-count's, not an equality's: one event per visited entry bounds the events a
+walk of `k` entries can have consumed, and the count-consuming steps are the ones
+that add to it.  With the route's own `k + c ≤ K.nep` it puts a count step inside
+the document (`K.tok + c ≤ k + c ≤ K.nep ≤ K.n`), which is the invariant's guard. -/
+def Stage2NoEventWalkCount (K : Stage2NoEventWalkCarry) (k : Nat) : Prop := K.tok ≤ k
 
 /-! ### The output evidence and the acceptance's reading
 
@@ -244,10 +250,10 @@ relation, and the trace carries no memory read of its own — the arena is the
 carry's logical list, extended by the rows' deltas.
 
 `Stage2NoEventWalkAcceptAcc` is the acceptance's three stores' reading at the
-terminal state.  It is not the loop's `Stage2NoEventWalkAcc`: `%idxprom.lcssa` is
-defined on the number route only and `%tokens.8`/`%terms.8`/`%arena.10` on the
-value route only, so no single `Acc` is inhabitable at every route's terminal
-state — the acceptance reads exactly the three words it stores. -/
+terminal state.  It is not the loop's `Stage2NoEventWalkAcc`: `%tokens.8`,
+`%terms.8` and `%arena.10` are defined on the value route only, so no single
+`Acc` is inhabitable at every route's terminal state — the acceptance reads
+exactly the three words it stores. -/
 
 /-- **The output evidence at a carry.**  The trace says nothing about a state:
 every field is a fact about the carry. -/
@@ -267,8 +273,8 @@ structure Stage2NoEventWalkAcceptAcc (K : Stage2NoEventWalkCarry) (sT : State) :
   arena : lookupName sT.env "%arena.10" = some (.int 64 (BitVec.ofNat 64 K.arenaWord))
 
 /-- **The loop's accumulator implies the acceptance's reading.**  The `Acc`
-carries the three words beside the token index, so a terminal state that has the
-full `Acc` has the acceptance's three-word form. -/
+carries the same three words, so a terminal state that has the full `Acc` has the
+acceptance's three-word form. -/
 theorem Stage2NoEventWalkAcc.toAcceptAcc {K : Stage2NoEventWalkCarry} {s : State}
     (h : Stage2NoEventWalkAcc K s) : Stage2NoEventWalkAcceptAcc K s :=
   ⟨h.tokens, h.terms, h.arena⟩
@@ -344,6 +350,42 @@ structure Stage2NoEventWalkInv (K : Stage2NoEventWalkCarry) (mem : Mem) (s : Sta
 /-- An offset below a range's width, from membership. -/
 theorem sub_lt_of_le_of_lt {a b c : Nat} (h1 : b ≤ a) (h2 : a < b + c) : a - b < c := by
   omega
+
+/-- A strictly increasing list of document positions is no longer than the
+document.  Each step rises by at least one, so the position at an index is at
+least the index, and the last one is inside the document. -/
+theorem valueEnt_length_le {l : List Nat} (h : l.Pairwise (· < ·)) {n : Nat}
+    (hin : ∀ x ∈ l, x < n) : l.length ≤ n := by
+  cases l with
+  | nil => exact Nat.zero_le n
+  | cons a rest =>
+      have hge : ∀ (i : Nat) (hi : i < (a :: rest).length), i ≤ (a :: rest)[i] := by
+        intro i
+        induction i with
+        | zero => intro _; exact Nat.zero_le _
+        | succ i ih =>
+            intro hi
+            have hi' : i < (a :: rest).length := by
+              simp only [List.length_cons] at hi ⊢; omega
+            have hlt := (List.pairwise_iff_getElem.mp h) i (i + 1) hi' hi (by omega)
+            have h1 := ih hi'
+            omega
+      have hlen : 0 < (a :: rest).length := by simp only [List.length_cons]; omega
+      have hlast : (a :: rest).length - 1 ≤ (a :: rest)[(a :: rest).length - 1] :=
+        hge _ (by omega)
+      have hltn : (a :: rest)[(a :: rest).length - 1] < n :=
+        hin _ (List.getElem_mem (by omega))
+      omega
+
+/-- **The entry count does not exceed the document's length.**  The entries are
+strictly increasing positions, each inside the document.  The count guard's
+derivation needs it, so it sits with the invariant rather than in a closer
+module: every wrap that adds counts reads it. -/
+theorem Stage2NoEventWalkInv.nepLe {K : Stage2NoEventWalkCarry} {mem : Mem}
+    {s : State} (h : Stage2NoEventWalkInv K mem s) : K.nep ≤ K.n := by
+  have hlen : K.ent.length = K.nep := readLanes32_length mem K.ep K.nep K.ent h.entries
+  rw [← hlen]
+  exact valueEnt_length_le h.order h.inside
 
 namespace Stage2NoEventWalkInv
 
@@ -426,7 +468,7 @@ theorem stage2NoEventWalkInv_seed
       nxp := nxp, scratch := scratch, scratchcap := scratchcap,
       tokensOut := tokensOut, valuesOut := valuesOut, sumOut := sumOut, err := err,
       bs := bs, ent := ent, stk := stk, d := d, xj := next, e := e, c := c,
-      tok := 0, pos := 0, terms := 0, arena := [], arenaWord := 0,
+      tok := 0, terms := 0, arena := [], arenaWord := 0,
       nextEnd := next + (stage2BootstrapExtent + 8) },
     rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl,
     { args_eq := hargs, doc := hdoc, tail := htail, entries := hentries,
@@ -451,6 +493,8 @@ theorem stage2NoEventWalkInv_seed
 
 #print axioms stage2NoEventAbiList_eq
 #print axioms stage2NoEventWalkSep_of_pre
+#print axioms valueEnt_length_le
+#print axioms Stage2NoEventWalkInv.nepLe
 #print axioms stage2NoEventWalkInv_seed
 
 end LeanLLVM.Refinement

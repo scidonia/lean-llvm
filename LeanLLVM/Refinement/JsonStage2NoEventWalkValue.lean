@@ -486,40 +486,6 @@ position in `[lane, q)` is not whitespace, and on the direct arm the probe's byt
 at `%b - 1 + cond` is not whitespace at `q = cond`. -/
 
 
-/-- A strictly increasing list of document positions is no longer than the
-document.  Each step rises by at least one, so the position at an index is at
-least the index, and the last one is inside the document. -/
-theorem valueEnt_length_le {l : List Nat} (h : l.Pairwise (· < ·)) {n : Nat}
-    (hin : ∀ x ∈ l, x < n) : l.length ≤ n := by
-  cases l with
-  | nil => exact Nat.zero_le n
-  | cons a rest =>
-      have hge : ∀ (i : Nat) (hi : i < (a :: rest).length), i ≤ (a :: rest)[i] := by
-        intro i
-        induction i with
-        | zero => intro _; exact Nat.zero_le _
-        | succ i ih =>
-            intro hi
-            have hi' : i < (a :: rest).length := by
-              simp only [List.length_cons] at hi ⊢; omega
-            have hlt := (List.pairwise_iff_getElem.mp h) i (i + 1) hi' hi (by omega)
-            have h1 := ih hi'
-            omega
-      have hlen : 0 < (a :: rest).length := by simp only [List.length_cons]; omega
-      have hlast : (a :: rest).length - 1 ≤ (a :: rest)[(a :: rest).length - 1] :=
-        hge _ (by omega)
-      have hltn : (a :: rest)[(a :: rest).length - 1] < n :=
-        hin _ (List.getElem_mem (by omega))
-      omega
-
-/-- **The entry count does not exceed the document's length.**  The entries are
-strictly increasing positions, each inside the document. -/
-theorem Stage2NoEventWalkInv.nepLe {K : Stage2NoEventWalkCarry} {mem : Mem}
-    {s : State} (h : Stage2NoEventWalkInv K mem s) : K.nep ≤ K.n := by
-  have hlen : K.ent.length = K.nep := readLanes32_length mem K.ep K.nep K.ent h.entries
-  rw [← hlen]
-  exact valueEnt_length_le h.order h.inside
-
 /-- `ult` at one, from the `Nat` order. -/
 theorem value_ult_one {a b : Nat} (ha : a < 2 ^ 64) (hb : b < 2 ^ 64) (h : a < b) :
     evalICmp .ult (BitVec.ofNat 64 a) (BitVec.ofNat 64 b) = 1 := by

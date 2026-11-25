@@ -17,8 +17,9 @@ the head's premise and its environment at the entry chain: the six read cells an
 the nine `phi` cells at the seed's values over the entry chain, with the base
 facts as lookups (`Stage2NoEventWalkBaseLookups`), so the head's model is the
 entry chain and not a hand-built state.  The module ends
-with `F2`: the seed's head binds none of the loop accumulator's four names, so no
-`Stage2NoEventWalkAcc` is inhabitable there. -/
+with `F2`: the seed's head binds none of the loop accumulator's cells (nor the
+token index the old exit also read), so no `Stage2NoEventWalkAcc` is inhabitable
+there. -/
 import LeanLLVM.Refinement.JsonStage2NoEventWalkSegment
 import LeanLLVM.Refinement.JsonStage2NoEventWalkHead
 
@@ -634,20 +635,20 @@ theorem stage2NoEventWalkSeedRun {gap : Calls} {K : Stage2NoEventWalkCarry}
 /-! ### F2 — the loop's accumulator is not inhabitable at the seed's head
 
 The old exit required the loop's `Stage2NoEventWalkAcc` at the head the row was
-stated at.  That structure's cells are the loop-exit merge's
-(`%idxprom.lcssa`, `%tokens.8`, `%terms.8`, `%arena.10`); the seed's first head
-binds none of them — its environment is the six read cells over the nine `phi`
-cells over the entry chain, and none of the four names is in any of those layers
-or in the entry environment.  So no accumulator is inhabitable at the seed's own
-head, and an exit stated at the head cannot be filled from it; the acceptance's
-three words and the refusal's own registers are read at the terminal state
-instead. -/
+stated at.  That structure's cells are the loop-exit merge's three accumulators
+(`%tokens.8`, `%terms.8`, `%arena.10`), with `%idxprom.lcssa` the token index the
+old exit also read; the seed's first head binds none of the four names — its
+environment is the six read cells over the nine `phi` cells over the entry chain,
+and none of them is in any of those layers or in the entry environment.  So no
+accumulator is inhabitable at the seed's own head, and an exit stated at the head
+cannot be filled from it; the acceptance's three words and the refusal's own
+registers are read at the terminal state instead. -/
 
 /-- **F2: the seed's head has no loop accumulator.**  At any state the seed runs
-from, whose environment binds none of the accumulator's four names, the run's
-`NodeBlock5` head carries the index at zero and none of `%idxprom.lcssa`,
-`%tokens.8`, `%terms.8`, `%arena.10`; hence no `Stage2NoEventWalkAcc` is
-inhabitable there. -/
+from, whose environment binds none of the three accumulators' names nor the
+token index, the run's `NodeBlock5` head carries the index at zero and none of
+`%idxprom.lcssa`, `%tokens.8`, `%terms.8`, `%arena.10`; hence no
+`Stage2NoEventWalkAcc` is inhabitable there. -/
 theorem stage2NoEventWalkF2_witness {gap : Calls} {K : Stage2NoEventWalkCarry}
     {mem : Mem} {s0 : State}
     (h : Stage2NoEventWalkInv K mem s0) (hpar : Stage2NoEventWalkParams K s0)
@@ -739,7 +740,8 @@ theorem lookupName_entryState_none {f : Function} {args : List Value} {mem : Mem
   lookupName_zip_map_none f.params args h
 
 /-- **F2 at the record's own entry state**: the seed's head there binds none of
-the loop accumulator's four names, because none of them is a parameter. -/
+the loop accumulator's cells nor the token index, because none of those names is
+a parameter. -/
 theorem stage2NoEventWalkF2_atEntry {gap : Calls} {a12 : List Value}
     {stk e c d : Nat} {K : Stage2NoEventWalkCarry} {mem : Mem} {next : Nat}
     (h : Stage2NoEventWalkInv K mem

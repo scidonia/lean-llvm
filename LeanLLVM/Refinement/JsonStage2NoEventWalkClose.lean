@@ -19,14 +19,13 @@ the tree's idiom: `PipelineBodyStep.lean:1702`, and a second copy at
 importing either module, and the two canonical sites are named so the
 duplication is visible.
 
-**The counts and `htok`.**  `if.then81` moves the carry's `tok` by two and
+**The counts and the guard.**  `if.then81` moves the carry's `tok` by two and
 `terms` by three; `if.then334` by two and seven.  `Stage2NoEventWalkInv.count` is
 the transport, and the counts' guard is derived once rather than assumed:
-`Stage2NoEventWalkInv.htok` gives `K.tok + c ≤ K.n` from the invariant's entry
-bound (`inside`, through `pos_lt`) and the count-token relation
-`K.tok + c ≤ K.pos`, and `link_ifThen81_of_bound`/`link_ifThen334_of_bound` are
-the two count links with that derivation supplying the guard.  The raw `htok`
-hypothesis survives only inside those two `_of_bound` proofs.
+`Stage2NoEventWalkInv.tok_add_le` gives `K.tok + c ≤ K.n` from the consumed-count
+bound `Stage2NoEventWalkCount K k` (`K.tok ≤ k`), the route's own `k + c ≤ K.nep`
+and `nepLe`, and every count-bearing link takes that pair.  The derived guard is
+built inside each proof and never becomes a hypothesis of the class.
 
 **The read rows.**  `if.then343` and `if.then350` wrap their 32-bit depth word
 into `%stk`'s address and load one byte.  Each is three declarations — the
@@ -120,7 +119,7 @@ macro "cells_lk" : tactic => `(tactic|
 
 /-! ### The carry across a count store -/
 
-/-- The invariant across a count store: only `tokLe` moves, and `htok` is it. -/
+/-- The invariant across a count store: only `tokLe` moves, and the guard is it. -/
 theorem Stage2NoEventWalkInv.count {K : Stage2NoEventWalkCarry} {mem : Mem}
     {s : State} (h : Stage2NoEventWalkInv K mem s) {t c : Nat}
     (htok : K.tok + t ≤ K.n) :
@@ -1274,27 +1273,26 @@ theorem link_ifThen81 {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Mem}
     simpa only [stage2NoEventWalkNext, stateAt] using hstep
   · exact Stage2NoEventWalkInv.mem_congr (Stage2NoEventWalkInv.count h htok) rfl
 
-/-! ### The count class's one `htok` derivation
+/-! ### The count class's one guard derivation
 
-The two count-bearing links take `htok : K.tok + c ≤ K.n`.  That guard is not a
-hypothesis of the class: it follows once from the invariant's entry bound
-(`inside`, which places every entry below the document's length) and the
-count-token relation `K.tok + c ≤ K.pos`.  The links are then re-checked against
-the derived form, so nothing in the class leaves `htok` underived. -/
+Every count-bearing link takes `htok : K.tok + c ≤ K.n`.  That guard is not a
+hypothesis of the class: the consumed-count bound `Stage2NoEventWalkCount K k`
+(`K.tok ≤ k`) and the route's own `k + c ≤ K.nep` give it, through `nepLe`.  The
+index is the number the live register `%k` carries, so the pair is stated at
+`k.toNat`: the register's word is arbitrary at this tier, and only its numeric
+value meets the entry count.  The links are then re-checked against the derived
+form, so nothing in the class leaves the guard underived. -/
 
-/-- The carried token index is below the document's length, when it is an entry. -/
-theorem Stage2NoEventWalkInv.pos_lt {K : Stage2NoEventWalkCarry} {mem : Mem}
-    {s : State} (h : Stage2NoEventWalkInv K mem s) (hmem : K.pos ∈ K.ent) :
-    K.pos < K.n :=
-  h.inside K.pos hmem
-
-/-- **The count guard, derived once**: the entry bound plus the count-token
-relation give `K.tok + c ≤ K.n`. -/
-theorem Stage2NoEventWalkInv.htok {K : Stage2NoEventWalkCarry} {mem : Mem}
-    {s : State} (h : Stage2NoEventWalkInv K mem s) {c : Nat}
-    (hmem : K.pos ∈ K.ent) (hrel : K.tok + c ≤ K.pos) :
-    K.tok + c ≤ K.n :=
-  le_trans hrel (le_of_lt (h.pos_lt hmem))
+/-- **The count guard, derived once**: the consumed-count bound, the route's
+advance against the entry count, and the entry count's own bound give
+`K.tok + c ≤ K.n`. -/
+theorem Stage2NoEventWalkInv.tok_add_le {K : Stage2NoEventWalkCarry} {mem : Mem}
+    {s : State} (h : Stage2NoEventWalkInv K mem s) {k c : Nat}
+    (hcount : Stage2NoEventWalkCount K k) (hk : k + c ≤ K.nep) :
+    K.tok + c ≤ K.n := by
+  have hcount' : K.tok ≤ k := hcount
+  have hne := h.nepLe
+  omega
 
 /-- `if.then81`'s count with the guard derived, not assumed. -/
 theorem link_ifThen81_of_bound {calls : Calls} {K : Stage2NoEventWalkCarry}
@@ -1304,11 +1302,12 @@ theorem link_ifThen81_of_bound {calls : Calls} {K : Stage2NoEventWalkCarry}
     (hk : lookupName s.env "%k.0.lcssa1086" = some (.int 64 k))
     (htokr : lookupName s.env "%tokens.0.lcssa1074" = some (.int 64 tok))
     (htr : lookupName s.env "%terms.0.lcssa1080" = some (.int 64 terms))
-    (hmem : K.pos ∈ K.ent) (hrel : K.tok + 2 ≤ K.pos) :
+    (hcount : Stage2NoEventWalkCount K k.toNat) (hkbound : k.toNat + 2 ≤ K.nep) :
     Stage2NoEventWalkLink calls K mem s
       { K with tok := K.tok + 2, terms := K.terms + 3 }
       (stage2NoEventWalkNext out s "close_obj") :=
-  link_ifThen81 h hpc hout hk htokr htr (Stage2NoEventWalkInv.htok h hmem hrel)
+  link_ifThen81 h hpc hout hk htokr htr
+    (Stage2NoEventWalkInv.tok_add_le h hcount hkbound)
 
 /-- `if.then334`'s count with the guard derived, not assumed. -/
 theorem link_ifThen334_of_bound {calls : Calls} {K : Stage2NoEventWalkCarry}
@@ -1319,11 +1318,12 @@ theorem link_ifThen334_of_bound {calls : Calls} {K : Stage2NoEventWalkCarry}
     (hk : lookupName s.env "%k.0.ph1404" = some (.int 64 k))
     (htr : lookupName s.env "%terms.0.ph1407" = some (.int 64 terms))
     (htokr : lookupName s.env "%tokens.0.ph1408" = some (.int 64 tok))
-    (hmem : K.pos ∈ K.ent) (hrel : K.tok + 2 ≤ K.pos) :
+    (hcount : Stage2NoEventWalkCount K k.toNat) (hkbound : k.toNat + 2 ≤ K.nep) :
     Stage2NoEventWalkLink calls K mem s
       { K with tok := K.tok + 2, terms := K.terms + 7 }
       (bracketCounts s sp k tok terms) :=
-  link_ifThen334 h hpc hpre hsp hk htr htokr (Stage2NoEventWalkInv.htok h hmem hrel)
+  link_ifThen334 h hpc hpre hsp hk htr htokr
+    (Stage2NoEventWalkInv.tok_add_le h hcount hkbound)
 
 
 /-! ### The base step: the head's carrier-zero bindings
@@ -5885,7 +5885,7 @@ theorem stage2NoEventRow_braceCloseTail {calls : Calls} {K : Stage2NoEventWalkCa
       1 = some bs1n)
     (hnext : bytesToNat bs1n = 125)
     (hk : lookupName s.env "%k.0.lcssa1086" = some (.int 64 k))
-    (hmem : K.pos ∈ K.ent) (hrel : K.tok + 2 ≤ K.pos) :
+    (hcount : Stage2NoEventWalkCount K k.toNat) (hkbound : k.toNat + 2 ≤ K.nep) :
     Stage2NoEventWalkChain calls mem K s
       { K with tok := K.tok + 2, terms := K.terms + 3 }
       (braceCloseState s ep b terms tok inc k bs4n bs1n) := by
@@ -5940,7 +5940,7 @@ theorem stage2NoEventRow_braceCloseTail {calls : Calls} {K : Stage2NoEventWalkCa
       (braceCloseState s ep b terms tok inc k bs4n bs1n) :=
     link_ifThen81_of_bound L2.inv'
       (by simp only [S3, braceSelectState, stage2NoEventWalkNext]) rfl
-      hk3 htokr3 htr3 hmem hrel
+      hk3 htokr3 htr3 hcount hkbound
   simpa only [S1, S2, S3] using
     (Stage2NoEventWalkChain.tail L0 (Stage2NoEventWalkChain.tail L1
       (Stage2NoEventWalkChain.tail L2 (Stage2NoEventWalkChain.tail L3
@@ -6015,7 +6015,7 @@ theorem stage2NoEventRow_openBrace {calls : Calls} {K : Stage2NoEventWalkCarry}
     (hincLt : inc.toNat < 2 ^ 63)
     (hnext : bytesToNat bs1n = 125)
     (hk : lookupName s.env "%k.0.lcssa1086" = some (.int 64 k))
-    (hmem : K.pos ∈ K.ent) (hrel : K.tok + 2 ≤ K.pos)
+    (hcount : Stage2NoEventWalkCount K k.toNat) (hkbound : k.toNat + 2 ≤ K.nep)
     (hlane0 : readBytes s.mem (ep + inc.toNat * 4) 4 = some bs4n)
     (hbyte0 : readBytes s.mem
       (b + (BitVec.signExtend 64 (BitVec.ofNat 64 (bytesToNat bs4n))).toNat)
@@ -6082,7 +6082,7 @@ theorem stage2NoEventRow_openBrace {calls : Calls} {K : Stage2NoEventWalkCarry}
       exact hk
     have L2 := stage2NoEventRow_braceCloseTail (calls := calls) L1.inv'
       (by simp only [S2, openZeroEnd74, stage2NoEventWalkNext])
-      hterms2 htok2 hep2 hb2 hinc2 hincLt hlane0 hlanelt hbyte0 hnext hk2 hmem hrel
+      hterms2 htok2 hep2 hb2 hinc2 hincLt hlane0 hlanelt hbyte0 hnext hk2 hcount hkbound
     have LB : Stage2NoEventWalkChain calls mem K s K S2 :=
       Stage2NoEventWalkChain.tail L0 (Stage2NoEventWalkChain.tail L1
         (Stage2NoEventWalkChain.nil L1.inv'))
@@ -6143,7 +6143,7 @@ theorem stage2NoEventRow_openBrace {calls : Calls} {K : Stage2NoEventWalkCarry}
         (Stage2NoEventWalkChain.inv LP)
         (by simp only [SP, stage2NoEventWalkStoredAt]) htermsP htokP hepP hbP hincP
         hincLt (by rw [hmemP]; exact hlaneW) hlanelt
-        (by rw [hmemP]; exact hbyteW) hnext hkP hmem hrel
+        (by rw [hmemP]; exact hbyteW) hnext hkP hcount hkbound
     exact ⟨_, by simpa only [SP] using Stage2NoEventWalkChain.trans LP LM,
       by simp only [braceCloseState, stage2NoEventWalkNext],
       Stage2NoEventWalkChain.inv (Stage2NoEventWalkChain.trans LP LM)⟩
@@ -6248,14 +6248,14 @@ theorem row_closeBracket_of_bound {calls : Calls} {K : Stage2NoEventWalkCarry}
     (hposS : sp.toNat ≠ 0)
     (hbyte : readBytes s.mem a 1 = some bs)
     (ha : a = closeReadAddr stk (sp + BitVec.ofNat 32 4294967295).toNat)
-    (hmem : K.pos ∈ K.ent) (hrel : K.tok + 2 ≤ K.pos) :
+    (hcount : Stage2NoEventWalkCount K k.toNat) (hkbound : k.toNat + 2 ≤ K.nep) :
     Stage2NoEventWalkChain calls mem K s
       { K with tok := K.tok + 2, terms := K.terms + 7 }
       (bracketRead (bracketArr (bracketCounts (bracketEntry s inc ep b bs4 bs1)
         sp k tok terms) sp (k + BitVec.ofNat 64 2) alen arena
         (terms + BitVec.ofNat 64 7) (tok + BitVec.ofNat 64 2)) sp a bs) :=
   row_closeBracket h hpc hinc hep hb hincLt hlane hlanelt hbyte1 hb93
-    hsp hk htr htokr (Stage2NoEventWalkInv.htok h hmem hrel)
+    hsp hk htr htokr (Stage2NoEventWalkInv.tok_add_le h hcount hkbound)
     halen harena hstk hposS hbyte ha
 
 /-- The bracket push's stack address, named once. -/
@@ -6299,7 +6299,7 @@ theorem stage2NoEventRow_closePush {calls : Calls} {K : Stage2NoEventWalkCarry}
       (writeBytes s.mem (bracketPushAddr K v1) (natToBytes fr.toNat 1))
       a 1 = some bs)
     (ha : a = closeReadAddr K.stk (sp + BitVec.ofNat 32 4294967295).toNat)
-    (hmem : K.pos ∈ K.ent) (hrel : K.tok + 2 ≤ K.pos) :
+    (hcount : Stage2NoEventWalkCount K k.toNat) (hkbound : k.toNat + 2 ≤ K.nep) :
     Stage2NoEventWalkChain calls mem K s
       { K with tok := K.tok + 2, terms := K.terms + 7 }
       (bracketRead (bracketArr (bracketCounts
@@ -6377,7 +6377,7 @@ theorem stage2NoEventRow_closePush {calls : Calls} {K : Stage2NoEventWalkCarry}
       (by rw [hmemP]; exact hlaneW) hlanelt
       (by rw [hmemP]; exact hbyte1W) hb93
       hspP hkP htrP htokrP halenP harenaP hstkP hposS
-      (by rw [hmemP]; exact hbyteW) ha hmem hrel
+      (by rw [hmemP]; exact hbyteW) ha hcount hkbound
   simpa only [SP] using Stage2NoEventWalkChain.trans LP LR
 
 /-- The state `close_arr` delivers at the zero depth: the direct handoff to
@@ -6450,7 +6450,7 @@ theorem row_closeBracketZero {calls : Calls} {K : Stage2NoEventWalkCarry} {mem :
     (harena : lookupName s.env "%arena.0.ph1406" = some (.int 64 arena))
     (hstk : lookupName s.env "%stk" = some (.ptr stk))
     (hzero : sp.toNat = 0)
-    (hmem : K.pos ∈ K.ent) (hrel : K.tok + 2 ≤ K.pos) :
+    (hcount : Stage2NoEventWalkCount K k.toNat) (hkbound : k.toNat + 2 ≤ K.nep) :
     Stage2NoEventWalkChain calls mem K s
       { K with tok := K.tok + 2, terms := K.terms + 7 }
       (bracketArrValue (bracketCounts (bracketEntry s inc ep b bs4 bs1) sp k tok terms)
@@ -6481,7 +6481,7 @@ theorem row_closeBracketZero {calls : Calls} {K : Stage2NoEventWalkCarry} {mem :
     link_ifThen334_of_bound (sp := sp) (k := k) (terms := terms) (tok := tok)
       L0.inv' (by simp only [S1, bracketEntry, stage2NoEventWalkNext])
       (by simp only [S1, bracketEntry, stage2NoEventWalkNext]; rw [hpc])
-      hsp1 hk1 htr1 htokr1 hmem hrel
+      hsp1 hk1 htr1 htokr1 hcount hkbound
   have hsp2 : lookupName S2.env "%sp.0.lcssa1096.wide" = some (.int 32 sp) := by
     simp only [S2, bracketCounts, stage2NoEventWalkNext]
     exact lookupName_cells_of_some (cs := ifThen334AllCells sp k tok terms)
@@ -6550,7 +6550,7 @@ theorem stage2NoEventRow_openZero {calls : Calls} {K : Stage2NoEventWalkCarry}
     (hincLt : inc.toNat < 2 ^ 63)
     (hnext : bytesToNat bs1n = 125)
     (hk : lookupName s.env "%k.0.lcssa1086" = some (.int 64 k))
-    (hmem : K.pos ∈ K.ent) (hrel : K.tok + 2 ≤ K.pos)
+    (hcount : Stage2NoEventWalkCount K k.toNat) (hkbound : k.toNat + 2 ≤ K.nep)
     (hlane : readBytes s.mem (ep + inc.toNat * 4) 4 = some bs4n)
     (hbyte : readBytes s.mem
       (b + (BitVec.signExtend 64 (BitVec.ofNat 64 (bytesToNat bs4n))).toNat)
@@ -6602,7 +6602,7 @@ theorem stage2NoEventRow_openZero {calls : Calls} {K : Stage2NoEventWalkCarry}
     exact hk
   have L2 := stage2NoEventRow_braceCloseTail (calls := calls) L1.inv'
     (by simp only [S2, openZeroEnd74, stage2NoEventWalkNext])
-    hterms2 htok2 hep2 hb2 hinc2 hincLt hlane hlanelt hbyte hnext hk2 hmem hrel
+    hterms2 htok2 hep2 hb2 hinc2 hincLt hlane hlanelt hbyte hnext hk2 hcount hkbound
   have LB : Stage2NoEventWalkChain calls mem K s K S2 :=
     Stage2NoEventWalkChain.tail L0 (Stage2NoEventWalkChain.tail L1
       (Stage2NoEventWalkChain.nil L1.inv'))
@@ -6635,7 +6635,7 @@ theorem stage2NoEventRow_closeZero {calls : Calls} {K : Stage2NoEventWalkCarry}
     (harena : lookupName s.env "%arena.0.ph1406" = some (.int 64 arena))
     (hstk : lookupName s.env "%stk" = some (.ptr stk))
     (hzero : sp.toNat = 0)
-    (hmem : K.pos ∈ K.ent) (hrel : K.tok + 2 ≤ K.pos) :
+    (hcount : Stage2NoEventWalkCount K k.toNat) (hkbound : k.toNat + 2 ≤ K.nep) :
     Stage2NoEventWalkChain calls mem K s
       { K with tok := K.tok + 2, terms := K.terms + 7 }
       (bracketArrValue (bracketCounts
@@ -6723,7 +6723,7 @@ theorem stage2NoEventRow_closeZero {calls : Calls} {K : Stage2NoEventWalkCarry}
     row_closeBracketZero L3.inv'
       (by simp only [S3, S2, S1, stage2NoEventWalkNext])
       hinc3 hep3 hb3 hincLt hlane hlanelt hbyte1 hb93 hsp3 hk3 htr3 htokr3
-      halen3 harena3 hstk3 hzero hmem hrel
+      halen3 harena3 hstk3 hzero hcount hkbound
   have L : Stage2NoEventWalkChain calls mem K s K S3 :=
     Stage2NoEventWalkChain.tail L1 (Stage2NoEventWalkChain.tail L2
       (Stage2NoEventWalkChain.tail L3 (Stage2NoEventWalkChain.nil L3.inv')))
@@ -6808,7 +6808,7 @@ theorem stage2NoEventWalkOpenPath {calls : Calls} {K : Stage2NoEventWalkCarry}
     (hnext : bytesToNat bs1n = 125)
     (hk19 : lookupName (openHead19 s k bs4 ep b bs1).env "%k.0.lcssa1086"
       = some (.int 64 k))
-    (hmem : K.pos ∈ K.ent) (hrel : K.tok + 2 ≤ K.pos)
+    (hcount : Stage2NoEventWalkCount K k.toNat) (hkbound : k.toNat + 2 ≤ K.nep)
     (hlane19 : readBytes (openHead19 s k bs4 ep b bs1).mem
       (ep + inc.toNat * 4) 4 = some bs4n)
     (hbyte19 : readBytes (openHead19 s k bs4 ep b bs1).mem
@@ -6835,7 +6835,7 @@ theorem stage2NoEventWalkOpenPath {calls : Calls} {K : Stage2NoEventWalkCarry}
         k bs4n bs1n) :=
     stage2NoEventRow_openZero (Stage2NoEventWalkChain.inv H19)
       (by simp only [openHead19, stage2NoEventWalkNext]) hsp19
-      hterms19 htok19 hep19 hb19 hinc19 hnep19 hult hincLt hnext hk19 hmem hrel
+      hterms19 htok19 hep19 hb19 hinc19 hnep19 hult hincLt hnext hk19 hcount hkbound
       hlane19 hbyte19 hlanelt19 hzero19
   have H := Stage2NoEventWalkChain.trans H19 L20
   exact ⟨_, H, by simp only [braceCloseState, stage2NoEventWalkNext],
@@ -6884,7 +6884,7 @@ theorem stage2NoEventWalkClosePath {calls : Calls} {K : Stage2NoEventWalkCarry}
     (harena35 : lookupName (closeHead35 s k bs4 ep b bs1).env "%arena.0.ph1406"
       = some (.int 64 arena64))
     (hstk35 : lookupName (closeHead35 s k bs4 ep b bs1).env "%stk" = some (.ptr K.stk))
-    (hmem : K.pos ∈ K.ent) (hrel : K.tok + 2 ≤ K.pos) :
+    (hcount : Stage2NoEventWalkCount K k.toNat) (hkbound : k.toNat + 2 ≤ K.nep) :
     ∃ sc, Stage2NoEventWalkChain calls mem K s
         { K with tok := K.tok + 2, terms := K.terms + 7 } sc ∧
       sc.pc = "after_value" ∧
@@ -6908,7 +6908,7 @@ theorem stage2NoEventWalkClosePath {calls : Calls} {K : Stage2NoEventWalkCarry}
     (stage2NoEventRow_closeZero (Stage2NoEventWalkChain.inv H35)
       (by simp only [closeHead35, stage2NoEventWalkAt])
       hsp35 hinc35 hnep35 hle35 hult hep35 hb35 hincLt hlane35 hlanelt35 hbyte35
-      hb93 hk35 htr35 htokr35 halen35 harena35 hstk35 hzero35 hmem hrel)
+      hb93 hk35 htr35 htokr35 halen35 harena35 hstk35 hzero35 hcount hkbound)
   exact ⟨_, H, by simp only [bracketArrValue, stage2NoEventWalkNext],
     Stage2NoEventWalkChain.inv H⟩
 
@@ -6998,7 +6998,7 @@ theorem stage2NoEventWalkContainerClass {calls : Calls} {K : Stage2NoEventWalkCa
     (hult : BitVec.ult inc nep = true)
     (hincLt : inc.toNat < 2 ^ 63)
     (hzero : sp.toNat = 0)
-    (hmem : K.pos ∈ K.ent) (hrel : K.tok + 2 ≤ K.pos) :
+    (hcount : Stage2NoEventWalkCount K k.toNat) (hkbound : k.toNat + 2 ≤ K.nep) :
     (∃ so, Stage2NoEventWalkChain calls mem K s
         { K with tok := K.tok + 2, terms := K.terms + 3 } so ∧
       so.pc = "close_obj" ∧
@@ -7011,11 +7011,11 @@ theorem stage2NoEventWalkContainerClass {calls : Calls} {K : Stage2NoEventWalkCa
         { K with tok := K.tok + 2, terms := K.terms + 7 } mem sc) :=
   ⟨stage2NoEventWalkOpenPath h hpc hpre hk hep hb hklt hlane hlanelt hbyte hy91
     hy123 hy123eq hk9 hinc9 hidx9 hfr9 hsp9 htr9 htok9 hsp19 hzero hterms19 htok19
-    hep19 hb19 hinc19 hnep19 hult hincLt hnext hk19 hmem hrel hlane19 hbyte19
+    hep19 hb19 hinc19 hnep19 hult hincLt hnext hk19 hcount hkbound hlane19 hbyte19
     hlanelt19,
    stage2NoEventWalkClosePath h hpc hpre hk hep hb hklt hlane hlanelt hbyte h3b
     hsp35 hzero hinc35 hnep35 hle35 hult hep35 hb35 hincLt hlane35 hlanelt35
-    hbyte35 hb93 hk35 htr35 htokr35 halen35 harena35 hstk35 hmem hrel⟩
+    hbyte35 hb93 hk35 htr35 htokr35 halen35 harena35 hstk35 hcount hkbound⟩
 
 
 
@@ -7033,7 +7033,7 @@ push) reaches `after_value` through the `]` count and the pop (`tok + 2`,
 `terms + 7`).  Each field is the invariant at the path's own last target, at the
 invariant's memory and the class's written state, with the class's cells in the
 exit environments; the count guards are the bound-derived ones
-(`Stage2NoEventWalkInv.htok`), never restated. -/
+(`Stage2NoEventWalkInv.tok_add_le`), never restated. -/
 structure Stage2NoEventWalkContainerClass (calls : Calls) (K : Stage2NoEventWalkCarry)
     (mem : Mem) (sOpen sClose : State) : Prop where
   /-- The open path: `if.end19` to `close_obj`. -/
@@ -7069,8 +7069,7 @@ structure Stage2NoEventWalkContainerClass (calls : Calls) (K : Stage2NoEventWalk
 #print axioms link_closeArr
 #print axioms link_ifThen350
 #print axioms row_closeBracket
-#print axioms Stage2NoEventWalkInv.pos_lt
-#print axioms Stage2NoEventWalkInv.htok
+#print axioms Stage2NoEventWalkInv.tok_add_le
 #print axioms link_ifThen81_of_bound
 #print axioms link_ifThen334_of_bound
 #print axioms baseHeadPhi_denote
