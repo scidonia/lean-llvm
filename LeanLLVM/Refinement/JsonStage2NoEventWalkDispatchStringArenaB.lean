@@ -2199,9 +2199,68 @@ theorem arenaB_ofNat_ne {a b : Nat} (ha : a < 2 ^ 64) (hb : b < 2 ^ 64) (h : a �
   have := congrArg BitVec.toNat hc
   simpa only [BitVec.toNat_ofNat, Nat.mod_eq_of_lt ha, Nat.mod_eq_of_lt hb] using this
 
+/-! ### The base table survives the route
+
+Every step here prepends cells whose names lie outside
+`stage2NoEventWalkBaseNames`, so the entry chain's live-ins stay bound at the
+carry's values.  The test is a closed `Bool`, so each step's disjointness is a
+`decide`. -/
+
+/-- A name the route does not bind reads through its conses. -/
+theorem arenaB_lookupName_cells_base (cs : List (String × Value)) (n : String)
+    (env : Env) (h : n ∉ cs.map (·.1)) :
+    lookupName (cells cs env) n = lookupName env n := by
+  induction cs with
+  | nil => rfl
+  | cons c cs ih =>
+      obtain ⟨k, v⟩ := c
+      have hk : k ≠ n := by
+        intro hkn
+        apply h
+        subst hkn
+        simp
+      simp only [cells, lookupName_cons_ne _ _ hk]
+      exact ih fun hc => h (List.mem_cons_of_mem _ hc)
+
+/-- The cells' names, as a `Bool` test against the base table. -/
+def arenaBCellsOutsideBase (cs : List (String × Value)) : Bool :=
+  cs.all fun p => decide (p.1 ∉ stage2NoEventWalkBaseNames)
+
+theorem arenaBCellsOutsideBase_spec {cs : List (String × Value)}
+    (h : arenaBCellsOutsideBase cs = true) :
+    ∀ n, n ∈ stage2NoEventWalkBaseNames → n ∉ cs.map (·.1) := by
+  intro n hn hmem
+  obtain ⟨p, hp, hpn⟩ := List.mem_map.mp hmem
+  have hp' : p.1 ∉ stage2NoEventWalkBaseNames :=
+    of_decide_eq_true ((List.all_eq_true.mp h) p hp)
+  exact hp' (hpn ▸ hn)
+
+/-- The base lookups, transported along an environment equation. -/
+theorem Stage2NoEventWalkBaseLookups.congr_env {K : Stage2NoEventWalkCarry}
+    {s s' : State} (h : Stage2NoEventWalkBaseLookups K s) (he : s'.env = s.env) :
+    Stage2NoEventWalkBaseLookups K s' := by
+  intro n v hv
+  rw [he]
+  exact h n v hv
+
+/-- **The base lookups survive a step that binds only other names.** -/
+theorem Stage2NoEventWalkBaseLookups.consCells {K : Stage2NoEventWalkCarry}
+    {s : State} {cs : List (String × Value)}
+    (h : Stage2NoEventWalkBaseLookups K s)
+    (hd : arenaBCellsOutsideBase cs = true) :
+    Stage2NoEventWalkBaseLookups K { s with env := cells cs s.env } := by
+  intro n v hv
+  show lookupName (cells cs s.env) n = some v
+  rw [arenaB_lookupName_cells_base cs n s.env (arenaBCellsOutsideBase_spec hd n ?_)]
+  · exact h n v hv
+  · have hmem : n ∈ (stage2NoEventWalkBaseValues K).map (·.1) := List.mem_map_of_mem hv
+    rwa [stage2NoEventWalkBaseValues_names] at hmem
+
+
 /-- The `.7` cells' values at the head of revolution `t`.  The `phi` run reads
 these; the `phi`'s own results are re-bound by the block and are not carried. -/
-structure ArenaBLoopHead (mem : Mem) (sc len : Nat) (body : List UInt8) (a0 : Nat)
+structure ArenaBLoopHead (K : Stage2NoEventWalkCarry) (mem : Mem) (sc len : Nat)
+    (body : List UInt8) (a0 : Nat)
     (u xt inc217 : BitVec 64) (spv : Nat) (fr : BitVec 8) (t : Nat) (s : State)
     {alen tokens terms outn : Nat} : Prop where
   pc : s.pc = "for.body270"
@@ -2233,10 +2292,12 @@ structure ArenaBLoopHead (mem : Mem) (sc len : Nat) (body : List UInt8) (a0 : Na
   hterms : lookupName s.env "%terms.0.lcssa1081" =
     some (.int 64 (BitVec.ofNat 64 terms))
   houtn : lookupName s.env "%outn205" = some (.ptr outn)
+  hbase : Stage2NoEventWalkBaseLookups K s
 
 /-- The exit facts of the main loop at its exit merge: the `.7` cells the exit
 merge's `phi` run reads, at the last revolution `n`. -/
-structure ArenaBLoopExit (mem : Mem) (body : List UInt8) (a0 : Nat) (n : Nat)
+structure ArenaBLoopExit (K : Stage2NoEventWalkCarry) (mem : Mem) (body : List UInt8)
+    (a0 : Nat) (n : Nat)
     (xt inc217 : BitVec 64) (spv : Nat) (fr : BitVec 8) (s : State)
     {sc len alen tokens terms outn : Nat} : Prop where
   pc : s.pc = "for.cond.cleanup269.loopexit.unr-lcssa"
@@ -2257,12 +2318,14 @@ structure ArenaBLoopExit (mem : Mem) (body : List UInt8) (a0 : Nat) (n : Nat)
     some (.int 64 (BitVec.ofNat 64 terms))
   houtn : lookupName s.env "%outn205" = some (.ptr outn)
   hsc : lookupName s.env "%scratch" = some (.ptr sc)
+  hbase : Stage2NoEventWalkBaseLookups K s
 
 /-- The eight byte reads a revolution consumes, from the body's read. -/
-theorem ArenaBLoopHead.byteReads {mem : Mem} {sc len : Nat} {body : List UInt8}
+theorem ArenaBLoopHead.byteReads {K : Stage2NoEventWalkCarry} {mem : Mem} {sc len : Nat}
+    {body : List UInt8}
     {a0 : Nat} {u xt inc217 : BitVec 64} {spv : Nat} {fr : BitVec 8} {t : Nat}
     {alen tokens terms outn : Nat}
-    {s : State} (h : ArenaBLoopHead mem sc len body a0 u xt inc217 spv fr t s
+    {s : State} (h : ArenaBLoopHead K mem sc len body a0 u xt inc217 spv fr t s
       (alen := alen) (tokens := tokens) (terms := terms) (outn := outn))
     (hm : 8 * t + 8 ≤ len) :
     ∀ j, j < 8 → readBytes s.mem (sc + j + 8 * t) 1 =
@@ -2275,10 +2338,11 @@ theorem ArenaBLoopHead.byteReads {mem : Mem} {sc len : Nat} {body : List UInt8}
   rwa [show (sc + 8 * t) + j = sc + j + 8 * t from by omega] at h1
 
 /-- The tail cells' accumulator is the next revolution's accumulator. -/
-theorem ArenaBLoopHead.nextAcc {mem : Mem} {sc len : Nat} {body : List UInt8}
+theorem ArenaBLoopHead.nextAcc {K : Stage2NoEventWalkCarry} {mem : Mem} {sc len : Nat}
+    {body : List UInt8}
     {a0 : Nat} {u xt inc217 : BitVec 64} {spv : Nat} {fr : BitVec 8} {t : Nat}
     {alen tokens terms outn : Nat}
-    {s : State} (h : ArenaBLoopHead mem sc len body a0 u xt inc217 spv fr t s
+    {s : State} (h : ArenaBLoopHead K mem sc len body a0 u xt inc217 spv fr t s
       (alen := alen) (tokens := tokens) (terms := terms) (outn := outn))
     (hm : 8 * t + 8 ≤ len) :
     arenaBNestedFrom (BitVec.ofNat 64 (arenaBAcc a0 body (8 * t)))
@@ -2311,15 +2375,16 @@ theorem ArenaBLoopHead.nextAcc {mem : Mem} {sc len : Nat} {body : List UInt8}
   exact (arenaB_ofNat_mod _).symm
 
 /-- **One main-loop revolution's step.** -/
-theorem ArenaBLoopHead.step {calls : Calls} {mem : Mem} {sc len : Nat}
+theorem ArenaBLoopHead.step {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Mem}
+    {sc len : Nat}
     {body : List UInt8} {a0 : Nat} {u xt inc217 : BitVec 64} {spv : Nat}
     {fr : BitVec 8} {t : Nat} {s : State} {alen tokens terms outn : Nat}
-    (h : ArenaBLoopHead mem sc len body a0 u xt inc217 spv fr t s
+    (h : ArenaBLoopHead K mem sc len body a0 u xt inc217 spv fr t s
       (alen := alen) (tokens := tokens) (terms := terms) (outn := outn))
     (hbound : 8 * (t + 1) ≤ len) (h8 : 8 * (t + 1) < 2 ^ 63)
     (hne : BitVec.ofNat 64 (8 * (t + 1)) ≠ u) :
     ∃ s', LeanLLVM.step calls stage2NoEventBody s = .jump s' ∧
-      ArenaBLoopHead mem sc len body a0 u xt inc217 spv fr (t + 1) s'
+      ArenaBLoopHead K mem sc len body a0 u xt inc217 spv fr (t + 1) s'
         (alen := alen) (tokens := tokens) (terms := terms) (outn := outn) := by
   have hm : 8 * t + 8 ≤ len := by omega
   have hbyte := h.byteReads hm
@@ -2472,7 +2537,19 @@ theorem ArenaBLoopHead.step {calls : Calls} {mem : Mem} {sc len : Nat}
         simp only [s', stage2NoEventWalkNext, arenaBBody270TailCells,
           arenaBBody270PhiCellsLoop, cells]
         repeat rw [lookupName_cons_ne _ _ (by decide)]
-        exact h.houtn }
+        exact h.houtn
+      hbase := by
+        have hphi := h.hbase.consCells (cs := arenaBBody270PhiCellsLoop (BitVec.ofNat 64 (8 * t))
+          (BitVec.ofNat 64 (arenaBAcc a0 body (8 * t)))
+          (BitVec.ofNat 64 (8 * t))) (by rfl)
+        exact (hphi.consCells (cs := arenaBBody270TailCells (8 * t) sc (BitVec.ofNat 64 (8 * t))
+          (BitVec.ofNat 64 (arenaBAcc a0 body (8 * t)))
+          (BitVec.ofNat 64 (8 * t)) u
+          (body.getD (8 * t + 0) 0) (body.getD (8 * t + 1) 0)
+          (body.getD (8 * t + 2) 0) (body.getD (8 * t + 3) 0)
+          (body.getD (8 * t + 4) 0) (body.getD (8 * t + 5) 0)
+          (body.getD (8 * t + 6) 0) (body.getD (8 * t + 7) 0)) (by rfl)).congr_env
+          (by simp only [s', stage2NoEventWalkNext]) }
 
 
 
@@ -2484,15 +2561,16 @@ theorem arenaB_runFuel_jump {calls : Calls} {f : Function} {s s' : State}
   simp only [runFuel, h]
 
 /-- **The main loop's exit step.** -/
-theorem ArenaBLoopHead.exit {calls : Calls} {mem : Mem} {sc len : Nat}
+theorem ArenaBLoopHead.exit {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Mem}
+    {sc len : Nat}
     {body : List UInt8} {a0 n : Nat} {u xt inc217 : BitVec 64} {spv : Nat}
     {fr : BitVec 8} {t : Nat} {s : State} {alen tokens terms outn : Nat}
-    (h : ArenaBLoopHead mem sc len body a0 u xt inc217 spv fr t s
+    (h : ArenaBLoopHead K mem sc len body a0 u xt inc217 spv fr t s
       (alen := alen) (tokens := tokens) (terms := terms) (outn := outn))
     (hbound : 8 * (t + 1) ≤ len) (h8 : 8 * (t + 1) < 2 ^ 63)
     (hu : u = BitVec.ofNat 64 (8 * n)) (hlast : t + 1 = n) :
     ∃ s', LeanLLVM.step calls stage2NoEventBody s = .jump s' ∧
-      ArenaBLoopExit mem body a0 n xt inc217 spv fr s'
+      ArenaBLoopExit K mem body a0 n xt inc217 spv fr s'
         (sc := sc) (len := len) (alen := alen) (tokens := tokens) (terms := terms) (outn := outn) := by
   have hm : 8 * t + 8 ≤ len := by omega
   have hbyte := h.byteReads hm
@@ -2602,28 +2680,40 @@ theorem ArenaBLoopHead.exit {calls : Calls} {mem : Mem} {sc len : Nat}
         simp only [s', stage2NoEventWalkNext, arenaBBody270TailCells,
           arenaBBody270PhiCellsLoop, cells]
         repeat rw [lookupName_cons_ne _ _ (by decide)]
-        exact h.hsc }
+        exact h.hsc
+      hbase := by
+        have hphi := h.hbase.consCells (cs := arenaBBody270PhiCellsLoop (BitVec.ofNat 64 (8 * t))
+          (BitVec.ofNat 64 (arenaBAcc a0 body (8 * t)))
+          (BitVec.ofNat 64 (8 * t))) (by rfl)
+        exact (hphi.consCells (cs := arenaBBody270TailCells (8 * t) sc (BitVec.ofNat 64 (8 * t))
+          (BitVec.ofNat 64 (arenaBAcc a0 body (8 * t)))
+          (BitVec.ofNat 64 (8 * t)) u
+          (body.getD (8 * t + 0) 0) (body.getD (8 * t + 1) 0)
+          (body.getD (8 * t + 2) 0) (body.getD (8 * t + 3) 0)
+          (body.getD (8 * t + 4) 0) (body.getD (8 * t + 5) 0)
+          (body.getD (8 * t + 6) 0) (body.getD (8 * t + 7) 0)) (by rfl)).congr_env
+          (by simp only [s', stage2NoEventWalkNext]) }
 
 /-- **The main loop's induction.** -/
-theorem arenaBLoop_run {calls : Calls} {mem : Mem} {sc len : Nat}
+theorem arenaBLoop_run {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Mem} {sc len : Nat}
     {body : List UInt8} {a0 n : Nat} {u xt inc217 : BitVec 64} {spv : Nat}
     {fr : BitVec 8} {t : Nat} {s : State} {alen tokens terms outn : Nat}
-    (h : ArenaBLoopHead mem sc len body a0 u xt inc217 spv fr t s
+    (h : ArenaBLoopHead K mem sc len body a0 u xt inc217 spv fr t s
       (alen := alen) (tokens := tokens) (terms := terms) (outn := outn))
     (hu : u = BitVec.ofNat 64 (8 * n))
     (hbound : 8 * n ≤ len) (h8 : 8 * n < 2 ^ 63) (ht : t < n) :
     ∃ (s' : State) (j : Nat), j ≤ n - t ∧
       (∀ k, runFuel calls (j + k) stage2NoEventBody s =
         runFuel calls k stage2NoEventBody s') ∧
-      ArenaBLoopExit mem body a0 n xt inc217 spv fr s'
+      ArenaBLoopExit K mem body a0 n xt inc217 spv fr s'
         (sc := sc) (len := len) (alen := alen) (tokens := tokens) (terms := terms) (outn := outn) := by
   have key : ∀ k, ∀ (t : Nat) (s : State), n - t = k →
-      ArenaBLoopHead mem sc len body a0 u xt inc217 spv fr t s
+      ArenaBLoopHead K mem sc len body a0 u xt inc217 spv fr t s
       (alen := alen) (tokens := tokens) (terms := terms) (outn := outn) → t < n →
       ∃ (s' : State) (j : Nat), j ≤ n - t ∧
         (∀ m, runFuel calls (j + m) stage2NoEventBody s =
           runFuel calls m stage2NoEventBody s') ∧
-        ArenaBLoopExit mem body a0 n xt inc217 spv fr s'
+        ArenaBLoopExit K mem body a0 n xt inc217 spv fr s'
         (sc := sc) (len := len) (alen := alen) (tokens := tokens) (terms := terms) (outn := outn) := by
     intro k
     induction k using Nat.strongRecOn with
@@ -2654,7 +2744,8 @@ theorem arenaBLoop_run {calls : Calls} {mem : Mem} {sc len : Nat}
 /-! ### The epilogue's invariant and its induction -/
 
 /-- The `.epil` cells' values at the head of epilogue revolution `t`. -/
-structure ArenaBEpilHead (mem : Mem) (sc base len : Nat) (body : List UInt8) (a0 : Nat)
+structure ArenaBEpilHead (K : Stage2NoEventWalkCarry) (mem : Mem) (sc base len : Nat)
+    (body : List UInt8) (a0 : Nat)
     (xtN alen tokens terms outn : Nat) (xt inc217 : BitVec 64) (spv : Nat) (fr : BitVec 8)
     (t : Nat) (s : State) : Prop where
   pc : s.pc = "for.body270.epil"
@@ -2676,9 +2767,11 @@ structure ArenaBEpilHead (mem : Mem) (sc base len : Nat) (body : List UInt8) (a0
   htok : lookupName s.env "%tokens.0.lcssa1075" = some (.int 64 (BitVec.ofNat 64 tokens))
   hterms : lookupName s.env "%terms.0.lcssa1081" = some (.int 64 (BitVec.ofNat 64 terms))
   houtn : lookupName s.env "%outn205" = some (.ptr outn)
+  hbase : Stage2NoEventWalkBaseLookups K s
 
 /-- The epilogue's exit facts at the cleanup entry. -/
-structure ArenaBEpilExit (mem : Mem) (body : List UInt8) (a0 : Nat) (base xtN : Nat)
+structure ArenaBEpilExit (K : Stage2NoEventWalkCarry) (mem : Mem) (body : List UInt8)
+    (a0 : Nat) (base xtN : Nat)
     (len alen tokens terms outn : Nat) (xt inc217 : BitVec 64) (spv : Nat)
     (fr : BitVec 8) (s : State) : Prop where
   pc : s.pc = "for.cond.cleanup269"
@@ -2695,12 +2788,14 @@ structure ArenaBEpilExit (mem : Mem) (body : List UInt8) (a0 : Nat) (base xtN : 
   hinc217 : lookupName s.env "%inc217" = some (.int 64 inc217)
   hsp : lookupName s.env "%sp.0.lcssa1093.wide" = some (.int 32 (BitVec.ofNat 32 spv))
   hfr : lookupName s.env "%frame.0.lcssa1099" = some (.int 8 fr)
+  hbase : Stage2NoEventWalkBaseLookups K s
 
 /-- The epilogue's byte read. -/
-theorem ArenaBEpilHead.byteRead {mem : Mem} {sc base len : Nat} {body : List UInt8}
+theorem ArenaBEpilHead.byteRead {K : Stage2NoEventWalkCarry} {mem : Mem}
+    {sc base len : Nat} {body : List UInt8}
     {a0 xtN alen tokens terms outn : Nat} {xt inc217 : BitVec 64} {spv : Nat}
     {fr : BitVec 8} {t : Nat} {s : State}
-    (h : ArenaBEpilHead mem sc base len body a0 xtN alen tokens terms outn xt inc217
+    (h : ArenaBEpilHead K mem sc base len body a0 xtN alen tokens terms outn xt inc217
       spv fr t s)
     (hm : base + t + 1 ≤ len) :
     readBytes s.mem (sc + (base + t)) 1 = some [body.getD (base + t) 0] := by
@@ -2710,15 +2805,16 @@ theorem ArenaBEpilHead.byteRead {mem : Mem} {sc base len : Nat} {body : List UIn
   exact h1
 
 /-- **One epilogue revolution's step.** -/
-theorem ArenaBEpilHead.step {calls : Calls} {mem : Mem} {sc base len : Nat}
+theorem ArenaBEpilHead.step {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Mem}
+    {sc base len : Nat}
     {body : List UInt8} {a0 xtN alen tokens terms outn : Nat} {xt inc217 : BitVec 64}
     {spv : Nat} {fr : BitVec 8} {t : Nat} {s : State}
-    (h : ArenaBEpilHead mem sc base len body a0 xtN alen tokens terms outn xt inc217
+    (h : ArenaBEpilHead K mem sc base len body a0 xtN alen tokens terms outn xt inc217
       spv fr t s)
     (hbound : base + (t + 1) ≤ len) (h8 : base + t < 2 ^ 63)
     (hne : BitVec.ofNat 64 t + BitVec.ofNat 64 1 ≠ xt) :
     ∃ s', LeanLLVM.step calls stage2NoEventBody s = .jump s' ∧
-      ArenaBEpilHead mem sc base len body a0 xtN alen tokens terms outn xt inc217
+      ArenaBEpilHead K mem sc base len body a0 xtN alen tokens terms outn xt inc217
         spv fr (t + 1) s' := by
   have hm : base + t + 1 ≤ len := by omega
   have hr := h.byteRead hm
@@ -2834,20 +2930,35 @@ theorem ArenaBEpilHead.step {calls : Calls} {mem : Mem} {sc base len : Nat}
         simp only [s', stage2NoEventWalkNext, arenaBEpilTailCells, arenaBGroupCells,
           arenaBEpilPhiCellsSelf, cells]
         repeat rw [lookupName_cons_ne _ _ (by decide)]
-        exact h.houtn }
+        exact h.houtn
+      hbase := by
+        have h1 := h.hbase.consCells (cs := arenaBEpilPhiCellsSelf
+          (BitVec.ofNat 64 (base + t))
+          (BitVec.ofNat 64 (arenaBAcc a0 body (base + t)))
+          (BitVec.ofNat 64 t)) (by rfl)
+        have h2 := h1.consCells (cs := arenaBGroupCells sc (base + t)
+          (BitVec.ofNat 64 (arenaBAcc a0 body (base + t)))
+          (body.getD (base + t) 0) "%arrayidx271.epil" "%34" "%conv272.epil"
+          "%add273.epil") (by rfl)
+        exact (h2.consCells (cs := arenaBEpilTailCells (base + t) sc
+          (BitVec.ofNat 64 (base + t))
+          (BitVec.ofNat 64 (arenaBAcc a0 body (base + t)))
+          (BitVec.ofNat 64 t) xt (body.getD (base + t) 0)) (by rfl)).congr_env
+          (by simp only [s', stage2NoEventWalkNext]) }
 
 
 
 /-- **The epilogue's exit step.** -/
-theorem ArenaBEpilHead.exit {calls : Calls} {mem : Mem} {sc base len : Nat}
+theorem ArenaBEpilHead.exit {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Mem}
+    {sc base len : Nat}
     {body : List UInt8} {a0 xtN alen tokens terms outn : Nat} {xt inc217 : BitVec 64}
     {spv : Nat} {fr : BitVec 8} {t : Nat} {s : State}
-    (h : ArenaBEpilHead mem sc base len body a0 xtN alen tokens terms outn xt inc217
+    (h : ArenaBEpilHead K mem sc base len body a0 xtN alen tokens terms outn xt inc217
       spv fr t s)
     (hbound : base + (t + 1) ≤ len) (h8 : base + t < 2 ^ 63)
     (hxtN : xt = BitVec.ofNat 64 xtN) (hlast : t + 1 = xtN) :
     ∃ s', LeanLLVM.step calls stage2NoEventBody s = .jump s' ∧
-      ArenaBEpilExit mem body a0 base xtN len alen tokens terms outn xt inc217 spv fr s' := by
+      ArenaBEpilExit K mem body a0 base xtN len alen tokens terms outn xt inc217 spv fr s' := by
   have hm : base + t + 1 ≤ len := by omega
   have hr := h.byteRead hm
   have hm' : base + t + 1 ≤ body.length := by rw [h.hbodyLen]; exact hm
@@ -2945,27 +3056,41 @@ theorem ArenaBEpilHead.exit {calls : Calls} {mem : Mem} {sc base len : Nat}
           arenaBEpilPhiCellsSelf, cells]
         repeat rw [lookupName_cons_ne _ _ (by decide)]
         exact h.hfr
- }
+      hbase := by
+        have h1 := h.hbase.consCells (cs := arenaBEpilPhiCellsSelf
+          (BitVec.ofNat 64 (base + t))
+          (BitVec.ofNat 64 (arenaBAcc a0 body (base + t)))
+          (BitVec.ofNat 64 t)) (by rfl)
+        have h2 := h1.consCells (cs := arenaBGroupCells sc (base + t)
+          (BitVec.ofNat 64 (arenaBAcc a0 body (base + t)))
+          (body.getD (base + t) 0) "%arrayidx271.epil" "%34" "%conv272.epil"
+          "%add273.epil") (by rfl)
+        exact (h2.consCells (cs := arenaBEpilTailCells (base + t) sc
+          (BitVec.ofNat 64 (base + t))
+          (BitVec.ofNat 64 (arenaBAcc a0 body (base + t)))
+          (BitVec.ofNat 64 t) xt (body.getD (base + t) 0)) (by rfl)).congr_env
+          (by simp only [s', stage2NoEventWalkNext]) }
 
 /-- **The epilogue's induction.** -/
-theorem arenaBEpil_run {calls : Calls} {mem : Mem} {sc base len : Nat}
+theorem arenaBEpil_run {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Mem}
+    {sc base len : Nat}
     {body : List UInt8} {a0 xtN alen tokens terms outn : Nat} {xt inc217 : BitVec 64}
     {spv : Nat} {fr : BitVec 8} {t : Nat} {s : State}
-    (h : ArenaBEpilHead mem sc base len body a0 xtN alen tokens terms outn xt inc217
+    (h : ArenaBEpilHead K mem sc base len body a0 xtN alen tokens terms outn xt inc217
       spv fr t s)
     (hxtN : xt = BitVec.ofNat 64 xtN)
     (hbound : base + xtN ≤ len) (h8 : base + xtN < 2 ^ 63) (ht : t < xtN) :
     ∃ (s' : State) (j : Nat), j ≤ xtN - t ∧
       (∀ k, runFuel calls (j + k) stage2NoEventBody s =
         runFuel calls k stage2NoEventBody s') ∧
-      ArenaBEpilExit mem body a0 base xtN len alen tokens terms outn xt inc217 spv fr s' := by
+      ArenaBEpilExit K mem body a0 base xtN len alen tokens terms outn xt inc217 spv fr s' := by
   have key : ∀ k, ∀ (t : Nat) (s : State), xtN - t = k →
-      ArenaBEpilHead mem sc base len body a0 xtN alen tokens terms outn xt inc217
+      ArenaBEpilHead K mem sc base len body a0 xtN alen tokens terms outn xt inc217
         spv fr t s → t < xtN →
       ∃ (s' : State) (j : Nat), j ≤ xtN - t ∧
         (∀ m, runFuel calls (j + m) stage2NoEventBody s =
           runFuel calls m stage2NoEventBody s') ∧
-        ArenaBEpilExit mem body a0 base xtN len alen tokens terms outn xt inc217 spv fr s' := by
+        ArenaBEpilExit K mem body a0 base xtN len alen tokens terms outn xt inc217 spv fr s' := by
     intro k
     induction k using Nat.strongRecOn with
     | ind k ih =>
@@ -3310,7 +3435,8 @@ theorem arenaB_ofNat_succ' (base : Nat) :
 
 /-- **The epilogue from its first revolution** (either it exits at once, or the
 re-entered head at `t = 1` takes over). -/
-theorem arenaBEpil_first {calls : Calls} {mem : Mem} {sc base len a0 xtN alen tokens
+theorem arenaBEpil_first {calls : Calls} {K : Stage2NoEventWalkCarry} {mem : Mem}
+    {sc base len a0 xtN alen tokens
       terms outn : Nat} {xt inc217 : BitVec 64} {spv : Nat} {fr : BitVec 8}
     {body : List UInt8} {s : State}
     (hpc : s.pc = "for.body270.epil")
@@ -3335,11 +3461,12 @@ theorem arenaBEpil_first {calls : Calls} {mem : Mem} {sc base len a0 xtN alen to
     (hsp : lookupName s.env "%sp.0.lcssa1093.wide" =
       some (.int 32 (BitVec.ofNat 32 spv)))
     (hfr : lookupName s.env "%frame.0.lcssa1099" = some (.int 8 fr))
+    (hbase : Stage2NoEventWalkBaseLookups K s)
     (hpos1 : 1 ≤ xtN) (hbase8 : base + xtN < 2 ^ 63) (hbound : base + xtN ≤ len) :
     ∃ (s' : State) (j : Nat), j ≤ xtN ∧
       (∀ k, runFuel calls (j + k) stage2NoEventBody s =
         runFuel calls k stage2NoEventBody s') ∧
-      ArenaBEpilExit mem body a0 base xtN len alen tokens terms outn xt inc217
+      ArenaBEpilExit K mem body a0 base xtN len alen tokens terms outn xt inc217
         spv fr s' := by
   have hb1 : base + 1 ≤ len := by omega
   have hm1 : base + 1 ≤ body.length := by rw [hbodyLen]; exact hb1
@@ -3424,7 +3551,17 @@ theorem arenaBEpil_first {calls : Calls} {mem : Mem} {sc base len a0 xtN alen to
             simp only [s4, stage2NoEventWalkNext, arenaBEpilTailCells, arenaBGroupCells,
               arenaBEpilPhiCellsFirst, cells]
             repeat rw [lookupName_cons_ne _ _ (by decide)]
-            exact hfr }
+            exact hfr
+          hbase := by
+            have h1 := hbase.consCells (cs := arenaBEpilPhiCellsFirst (BitVec.ofNat 64 base)
+              (BitVec.ofNat 64 (arenaBAcc a0 body base))) (by rfl)
+            have h2 := h1.consCells (cs := arenaBGroupCells sc base
+              (BitVec.ofNat 64 (arenaBAcc a0 body base))
+              (body.getD base 0) "%arrayidx271.epil" "%34" "%conv272.epil"
+              "%add273.epil") (by rfl)
+            exact (h2.consCells (cs := arenaBEpilTailCells base sc (BitVec.ofNat 64 base)
+              (BitVec.ofNat 64 (arenaBAcc a0 body base)) 0 xt (body.getD base 0))
+              (by rfl)).congr_env (by simp only [s4, stage2NoEventWalkNext]) }
   · -- at least two revolutions
     have hne : (0 : BitVec 64) + BitVec.ofNat 64 1 ≠ xt := by
       rw [hxtN]
@@ -3443,7 +3580,7 @@ theorem arenaBEpil_first {calls : Calls} {mem : Mem} {sc base len a0 xtN alen to
             (BitVec.ofNat 64 (arenaBAcc a0 body base))) s.env)))
       s "for.body270.epil"
     -- the re-entered head at `t = 1`
-    have hhead : ArenaBEpilHead mem sc base len body a0 xtN alen tokens terms outn xt
+    have hhead : ArenaBEpilHead K mem sc base len body a0 xtN alen tokens terms outn xt
         inc217 spv fr 1 s4 := by
       have hinc4 : lookupName s4.env "%inc275.epil" =
           some (.int 64 (BitVec.ofNat 64 (base + 1))) := by
@@ -3520,7 +3657,17 @@ theorem arenaBEpil_first {calls : Calls} {mem : Mem} {sc base len a0 xtN alen to
             simp only [s4, stage2NoEventWalkNext, arenaBEpilTailCells, arenaBGroupCells,
               arenaBEpilPhiCellsFirst, cells]
             repeat rw [lookupName_cons_ne _ _ (by decide)]
-            exact houtn }
+            exact houtn
+          hbase := by
+            have h1 := hbase.consCells (cs := arenaBEpilPhiCellsFirst (BitVec.ofNat 64 base)
+              (BitVec.ofNat 64 (arenaBAcc a0 body base))) (by rfl)
+            have h2 := h1.consCells (cs := arenaBGroupCells sc base
+              (BitVec.ofNat 64 (arenaBAcc a0 body base))
+              (body.getD base 0) "%arrayidx271.epil" "%34" "%conv272.epil"
+              "%add273.epil") (by rfl)
+            exact (h2.consCells (cs := arenaBEpilTailCells base sc (BitVec.ofNat 64 base)
+              (BitVec.ofNat 64 (arenaBAcc a0 body base)) 0 xt (body.getD base 0))
+              (by rfl)).congr_env (by simp only [s4, stage2NoEventWalkNext]) }
     have ht1 : 1 < xtN := by omega
     obtain ⟨s5, j5, hj5, hrun5, hexit⟩ := arenaBEpil_run (calls := calls)
       (t := 1) hhead hxtN hbound hbase8 ht1
@@ -3533,13 +3680,17 @@ theorem arenaBEpil_first {calls : Calls} {mem : Mem} {sc base len a0 xtN alen to
 /-! ### The epilogue arm's tail: `cleanup269` → `cleanup287` → `after_value` -/
 
 /-- **From the epilogue's exit to `after_value`.**  The two cleanup steps and the
-four words the acceptance reads: the arena's length (`%alen.4 = %31 + %alen`),
-the arena word (`%arena.6 = %arena.5.lcssa`), the token count (`%tokens.4`, one
-more) and the record contribution (`%terms.4 = %add282 + %terms`). -/
-theorem ArenaBEpilExit.finish {gap : Calls} {mem : Mem} {body : List UInt8}
+seven endpoint words: the arena's length (`%alen.4 = %31 + %alen`), the arena
+word (`%arena.6 = %arena.5.lcssa`), the token count (`%tokens.4`, one more), the
+record contribution (`%terms.4 = %add282 + %terms`), the three class survivors
+the handoff leaves alone (`%frame.0.lcssa1099`, `%sp.0.lcssa1093.wide`,
+`%inc217`), and the base table, which the two `phi` runs and the handoff do not
+touch. -/
+theorem ArenaBEpilExit.finish {gap : Calls} {K : Stage2NoEventWalkCarry} {mem : Mem}
+    {body : List UInt8}
     {a0 base xtN len alen tokens terms outn : Nat} {xt inc217 : BitVec 64}
     {spv : Nat} {fr : BitVec 8} {s : State}
-    (h : ArenaBEpilExit mem body a0 base xtN len alen tokens terms outn xt inc217
+    (h : ArenaBEpilExit K mem body a0 base xtN len alen tokens terms outn xt inc217
       spv fr s) :
     ∃ (s' : State) (j : Nat), j ≤ 2 ∧
       (∀ k, runFuel (stage2NoEventCalls gap) (j + k) stage2NoEventBody s =
@@ -3550,7 +3701,12 @@ theorem ArenaBEpilExit.finish {gap : Calls} {mem : Mem} {body : List UInt8}
         some (.int 64 (BitVec.ofNat 64 (arenaBAcc a0 body (base + xtN)))) ∧
       lookupName s'.env "%tokens.4" = some (.int 64 (BitVec.ofNat 64 (tokens + 1))) ∧
       lookupName s'.env "%terms.4" =
-        some (.int 64 (BitVec.ofNat 64 (((alen + 6) + len) + terms))) := by
+        some (.int 64 (BitVec.ofNat 64 (((alen + 6) + len) + terms))) ∧
+      lookupName s'.env "%frame.0.lcssa1099" = some (.int 8 fr) ∧
+      lookupName s'.env "%sp.0.lcssa1093.wide" =
+        some (.int 32 (BitVec.ofNat 32 spv)) ∧
+      lookupName s'.env "%inc217" = some (.int 64 inc217) ∧
+      Stage2NoEventWalkBaseLookups K s' := by
   have hstepA := arenaBCleanup269_step_epil (calls := stage2NoEventCalls gap) (s := s)
     h.pc h.pre h.hadd h.h31 h.halen
   let s1 : State := stage2NoEventWalkNext
@@ -3591,6 +3747,22 @@ theorem ArenaBEpilExit.finish {gap : Calls} {mem : Mem} {body : List UInt8}
       cells]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
     exact h.houtn
+  have hAinc217 : lookupName s1.env "%inc217" = some (.int 64 inc217) := by
+    simp only [s1, stage2NoEventWalkNext, arenaBCleanup269TailCells, arenaBCleanup269PhiCell,
+      cells]
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+    exact h.hinc217
+  have hAsp : lookupName s1.env "%sp.0.lcssa1093.wide" =
+      some (.int 32 (BitVec.ofNat 32 spv)) := by
+    simp only [s1, stage2NoEventWalkNext, arenaBCleanup269TailCells, arenaBCleanup269PhiCell,
+      cells]
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+    exact h.hsp
+  have hAfr : lookupName s1.env "%frame.0.lcssa1099" = some (.int 8 fr) := by
+    simp only [s1, stage2NoEventWalkNext, arenaBCleanup269TailCells, arenaBCleanup269PhiCell,
+      cells]
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+    exact h.hfr
   have hpc1 : s1.pc = "cleanup287" := by simp only [s1, stage2NoEventWalkNext]
   have hpre1 : s1.pre = some "for.cond.cleanup269" := by
     simp only [s1, stage2NoEventWalkNext, h.pc]
@@ -3626,7 +3798,33 @@ theorem ArenaBEpilExit.finish {gap : Calls} {mem : Mem} {body : List UInt8}
     simp only [s2, stage2NoEventWalkNext, arenaBCleanup287TailCells,
       arenaBCleanup287PhiCells, cells]
     rw [lookupName_cons_self]
-  refine ⟨s2, 2, by omega, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  have hFfr : lookupName s2.env "%frame.0.lcssa1099" = some (.int 8 fr) := by
+    simp only [s2, stage2NoEventWalkNext, arenaBCleanup287TailCells,
+      arenaBCleanup287PhiCells, cells]
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+    exact hAfr
+  have hFsp : lookupName s2.env "%sp.0.lcssa1093.wide" =
+      some (.int 32 (BitVec.ofNat 32 spv)) := by
+    simp only [s2, stage2NoEventWalkNext, arenaBCleanup287TailCells,
+      arenaBCleanup287PhiCells, cells]
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+    exact hAsp
+  have hFinc217 : lookupName s2.env "%inc217" = some (.int 64 inc217) := by
+    simp only [s2, stage2NoEventWalkNext, arenaBCleanup287TailCells,
+      arenaBCleanup287PhiCells, cells]
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+    exact hAinc217
+  have hFbase : Stage2NoEventWalkBaseLookups K s2 := by
+    have h0 := h.hbase.consCells (cs := arenaBCleanup269PhiCell
+      (arenaBAcc a0 body (base + xtN))) (by rfl)
+    have h1 := h0.consCells (cs := arenaBCleanup269TailCells len alen
+      (arenaBAcc a0 body (base + xtN))) (by rfl)
+    have h2 := h1.consCells (cs := arenaBCleanup287PhiCells (len + alen)
+      (arenaBAcc a0 body (base + xtN)) ((alen + 6) + len)) (by rfl)
+    have h3 := h2.consCells (cs := arenaBCleanup287TailCells ((alen + 6) + len) tokens
+      terms) (by rfl)
+    exact h3.congr_env (by simp only [s2, s1, stage2NoEventWalkNext])
+  refine ⟨s2, 2, by omega, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro k
     rw [show 2 + k = 1 + (1 + k) from by omega,
       arenaB_runFuel_jump hstepA (1 + k), arenaB_runFuel_jump hstepB k]
@@ -3637,14 +3835,19 @@ theorem ArenaBEpilExit.finish {gap : Calls} {mem : Mem} {body : List UInt8}
   · exact hFarena
   · exact hFtok
   · exact hFterms
+  · exact hFfr
+  · exact hFsp
+  · exact hFinc217
+  · exact hFbase
 
 /-- **From the loop's exit to `after_value`**, at the zero epilogue count: the
 exit merge's cleanup edge, the cleanup entry and the handoff. -/
-theorem ArenaBLoopExit.finishZero {gap : Calls} {mem : Mem} {sc : Nat}
+theorem ArenaBLoopExit.finishZero {gap : Calls} {K : Stage2NoEventWalkCarry} {mem : Mem}
+    {sc : Nat}
     {body : List UInt8}
     {a0 n len alen tokens terms outn : Nat} {xt inc217 : BitVec 64} {spv : Nat}
     {fr : BitVec 8} {s : State}
-    (h : ArenaBLoopExit mem body a0 n xt inc217 spv fr s
+    (h : ArenaBLoopExit K mem body a0 n xt inc217 spv fr s
       (sc := sc) (len := len) (alen := alen) (tokens := tokens) (terms := terms) (outn := outn))
     (hpre : s.pre = some "for.body270")
     (hxt0 : xt = BitVec.ofNat 64 0)
@@ -3665,7 +3868,12 @@ theorem ArenaBLoopExit.finishZero {gap : Calls} {mem : Mem} {sc : Nat}
         some (.int 64 (BitVec.ofNat 64 (arenaBAcc a0 body (8 * n)))) ∧
       lookupName s'.env "%tokens.4" = some (.int 64 (BitVec.ofNat 64 (tokens + 1))) ∧
       lookupName s'.env "%terms.4" =
-        some (.int 64 (BitVec.ofNat 64 (((alen + 6) + len) + terms))) := by
+        some (.int 64 (BitVec.ofNat 64 (((alen + 6) + len) + terms))) ∧
+      lookupName s'.env "%frame.0.lcssa1099" = some (.int 8 fr) ∧
+      lookupName s'.env "%sp.0.lcssa1093.wide" =
+        some (.int 32 (BitVec.ofNat 32 spv)) ∧
+      lookupName s'.env "%inc217" = some (.int 64 inc217) ∧
+      Stage2NoEventWalkBaseLookups K s' := by
   have hstepA := arenaBLoopexit_step_cleanup (calls := stage2NoEventCalls gap) (s := s)
     h.pc hpre h.hinc h.hadd h.hxt hxt0
   let s1 : State := stage2NoEventWalkNext
@@ -3690,6 +3898,25 @@ theorem ArenaBLoopExit.finishZero {gap : Calls} {mem : Mem} {sc : Nat}
     simp only [s1, stage2NoEventWalkNext, arenaBLoopexitPhiCellsLoop, cells]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
     exact halen
+  have h1fr : lookupName s1.env "%frame.0.lcssa1099" = some (.int 8 fr) := by
+    simp only [s1, stage2NoEventWalkNext, arenaBLoopexitPhiCellsLoop, cells]
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+    exact h.hfr
+  have h1sp : lookupName s1.env "%sp.0.lcssa1093.wide" =
+      some (.int 32 (BitVec.ofNat 32 spv)) := by
+    simp only [s1, stage2NoEventWalkNext, arenaBLoopexitPhiCellsLoop, cells]
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+    exact h.hsp
+  have h1inc217 : lookupName s1.env "%inc217" = some (.int 64 inc217) := by
+    simp only [s1, stage2NoEventWalkNext, arenaBLoopexitPhiCellsLoop, cells]
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+    exact h.hinc217
+  have h1base : Stage2NoEventWalkBaseLookups K s1 := by
+    have hp := h.hbase.consCells (cs := arenaBLoopexitPhiCellsLoop (BitVec.ofNat 64 (8 * n))
+      (BitVec.ofNat 64 (arenaBAcc a0 body (8 * n)))) (by rfl)
+    have hc := hp.consCells (cs := [("%lcmp.mod.not",
+      .int 1 (evalICmp .eq xt (BitVec.ofNat 64 0)))]) (by rfl)
+    exact hc.congr_env (by simp only [s1, stage2NoEventWalkNext, cells])
   have hstepB := arenaBCleanup269_step_loop (calls := stage2NoEventCalls gap) (s := s1)
     h1pc h1pre h1had h1_31 h1alen
   let s2 : State := stage2NoEventWalkNext
@@ -3730,6 +3957,28 @@ theorem ArenaBLoopExit.finishZero {gap : Calls} {mem : Mem} {sc : Nat}
       arenaBCleanup269PhiCell, cells]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
     exact houtn
+  have h2_fr : lookupName s2.env "%frame.0.lcssa1099" = some (.int 8 fr) := by
+    simp only [s2, stage2NoEventWalkNext, arenaBCleanup269TailCells,
+      arenaBCleanup269PhiCell, cells]
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+    exact h1fr
+  have h2_sp : lookupName s2.env "%sp.0.lcssa1093.wide" =
+      some (.int 32 (BitVec.ofNat 32 spv)) := by
+    simp only [s2, stage2NoEventWalkNext, arenaBCleanup269TailCells,
+      arenaBCleanup269PhiCell, cells]
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+    exact h1sp
+  have h2_inc217 : lookupName s2.env "%inc217" = some (.int 64 inc217) := by
+    simp only [s2, stage2NoEventWalkNext, arenaBCleanup269TailCells,
+      arenaBCleanup269PhiCell, cells]
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+    exact h1inc217
+  have h2base : Stage2NoEventWalkBaseLookups K s2 := by
+    have hp := h1base.consCells (cs := arenaBCleanup269PhiCell
+      (arenaBAcc a0 body (8 * n))) (by rfl)
+    have ht := hp.consCells (cs := arenaBCleanup269TailCells len alen
+      (arenaBAcc a0 body (8 * n))) (by rfl)
+    exact ht.congr_env (by simp only [s2, s1, stage2NoEventWalkNext, cells])
   have h2pc : s2.pc = "cleanup287" := by simp only [s2, stage2NoEventWalkNext]
   have h2pre : s2.pre = some "for.cond.cleanup269" := by
     simp only [s2, stage2NoEventWalkNext, h1pc]
@@ -3765,7 +4014,29 @@ theorem ArenaBLoopExit.finishZero {gap : Calls} {mem : Mem} {sc : Nat}
     simp only [s3, stage2NoEventWalkNext, arenaBCleanup287TailCells,
       arenaBCleanup287PhiCells, cells]
     rw [lookupName_cons_self]
-  refine ⟨s3, 3, by omega, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  have hFfr : lookupName s3.env "%frame.0.lcssa1099" = some (.int 8 fr) := by
+    simp only [s3, stage2NoEventWalkNext, arenaBCleanup287TailCells,
+      arenaBCleanup287PhiCells, cells]
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+    exact h2_fr
+  have hFsp : lookupName s3.env "%sp.0.lcssa1093.wide" =
+      some (.int 32 (BitVec.ofNat 32 spv)) := by
+    simp only [s3, stage2NoEventWalkNext, arenaBCleanup287TailCells,
+      arenaBCleanup287PhiCells, cells]
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+    exact h2_sp
+  have hFinc217 : lookupName s3.env "%inc217" = some (.int 64 inc217) := by
+    simp only [s3, stage2NoEventWalkNext, arenaBCleanup287TailCells,
+      arenaBCleanup287PhiCells, cells]
+    repeat rw [lookupName_cons_ne _ _ (by decide)]
+    exact h2_inc217
+  have h3base : Stage2NoEventWalkBaseLookups K s3 := by
+    have hp := h2base.consCells (cs := arenaBCleanup287PhiCells (len + alen)
+      (arenaBAcc a0 body (8 * n)) ((alen + 6) + len)) (by rfl)
+    have ht := hp.consCells (cs := arenaBCleanup287TailCells ((alen + 6) + len) tokens
+      terms) (by rfl)
+    exact ht.congr_env (by simp only [s3, s2, s1, stage2NoEventWalkNext, cells])
+  refine ⟨s3, 3, by omega, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro k
     rw [show 3 + k = 1 + (1 + (1 + k)) from by omega,
       arenaB_runFuel_jump hstepA (1 + (1 + k)),
@@ -3777,15 +4048,20 @@ theorem ArenaBLoopExit.finishZero {gap : Calls} {mem : Mem} {sc : Nat}
   · exact hFarena
   · exact hFtok
   · exact hFterms
+  · exact hFfr
+  · exact hFsp
+  · exact hFinc217
+  · exact h3base
 
 /-- **From the loop's exit through the epilogue's first revolution**, at a
 non-zero epilogue count: the loop exit's epilogue edge, the epilogue's own run and
 the two cleanup steps. -/
-theorem ArenaBLoopExit.finishEpil {gap : Calls} {mem : Mem} {sc : Nat}
+theorem ArenaBLoopExit.finishEpil {gap : Calls} {K : Stage2NoEventWalkCarry} {mem : Mem}
+    {sc : Nat}
     {body : List UInt8}
     {a0 n len xtN alen tokens terms outn : Nat} {xt inc217 : BitVec 64} {spv : Nat}
     {fr : BitVec 8} {s : State}
-    (h : ArenaBLoopExit mem body a0 n xt inc217 spv fr s
+    (h : ArenaBLoopExit K mem body a0 n xt inc217 spv fr s
       (sc := sc) (len := len) (alen := alen) (tokens := tokens) (terms := terms) (outn := outn))
     (hpre : s.pre = some "for.body270")
     (hn : n = len / 8) (hxtNv : xtN = len % 8) (hxtN0 : xtN ≠ 0)
@@ -3810,7 +4086,12 @@ theorem ArenaBLoopExit.finishEpil {gap : Calls} {mem : Mem} {sc : Nat}
         some (.int 64 (BitVec.ofNat 64 (arenaBAcc a0 body (8 * n + xtN)))) ∧
       lookupName s'.env "%tokens.4" = some (.int 64 (BitVec.ofNat 64 (tokens + 1))) ∧
       lookupName s'.env "%terms.4" =
-        some (.int 64 (BitVec.ofNat 64 (((alen + 6) + len) + terms))) := by
+        some (.int 64 (BitVec.ofNat 64 (((alen + 6) + len) + terms))) ∧
+      lookupName s'.env "%frame.0.lcssa1099" = some (.int 8 fr) ∧
+      lookupName s'.env "%sp.0.lcssa1093.wide" =
+        some (.int 32 (BitVec.ofNat 32 spv)) ∧
+      lookupName s'.env "%inc217" = some (.int 64 inc217) ∧
+      Stage2NoEventWalkBaseLookups K s' := by
   have hn8 : 8 * n = 8 * (len / 8) := by rw [hn]
   have hbase : 8 * n + xtN = len := by
     rw [hxtNv, hn]; omega
@@ -3882,6 +4163,12 @@ theorem ArenaBLoopExit.finishEpil {gap : Calls} {mem : Mem} {sc : Nat}
     simp only [s1, stage2NoEventWalkNext, arenaBLoopexitPhiCellsLoop, cells]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
     exact h.hfr
+  have h1base : Stage2NoEventWalkBaseLookups K s1 := by
+    have hp := h.hbase.consCells (cs := arenaBLoopexitPhiCellsLoop (BitVec.ofNat 64 (8 * n))
+      (BitVec.ofNat 64 (arenaBAcc a0 body (8 * n)))) (by rfl)
+    have hc := hp.consCells (cs := [("%lcmp.mod.not",
+      .int 1 (evalICmp .eq xt (BitVec.ofNat 64 0)))]) (by rfl)
+    exact hc.congr_env (by simp only [s1, stage2NoEventWalkNext, cells])
   have h1mem : s1.mem = mem := by simp only [s1, stage2NoEventWalkNext, h.memeq]
   have h1body : readBytes s1.mem sc len = some body := by
     simpa only [h1mem] using hbody
@@ -3890,12 +4177,13 @@ theorem ArenaBLoopExit.finishEpil {gap : Calls} {mem : Mem} {sc : Nat}
     (alen := alen) (tokens := tokens) (terms := terms) (outn := outn)
     (body := body) (xt := xt) (inc217 := inc217) (spv := spv) (fr := fr) (s := s1)
     h1pc h1pre h1mem h1body hbodyLen h1unr h1aunr h1sc h.hxt hxtv0 h131 h1alen
-    h1tok h1terms h1outn h1inc217 h1sp h1fr (by omega) (by omega) (by omega)
+    h1tok h1terms h1outn h1inc217 h1sp h1fr h1base (by omega) (by omega) (by omega)
   obtain ⟨s2, j2, hj2, hrun2, hexit⟩ := hstepB
-  obtain ⟨s3, j3, hj3, hrun3, hpc3, hpre3, hmem3, halen3, harena3, htok3, hterms3⟩ :=
+  obtain ⟨s3, j3, hj3, hrun3, hpc3, hpre3, hmem3, halen3, harena3, htok3, hterms3,
+    hfr3, hsp3, hinc2173, hbase3⟩ :=
     hexit.finish
   refine ⟨s3, (1 + j2 + j3), by omega, ?_, hpc3, hpre3, ?_, halen3, ?_, htok3,
-    hterms3⟩
+    hterms3, hfr3, hsp3, hinc2173, hbase3⟩
   · intro k
     rw [show 1 + j2 + j3 + k = 1 + (j2 + (j3 + k)) from by omega,
       arenaB_runFuel_jump hstepA (j2 + (j3 + k))]
@@ -3946,7 +4234,8 @@ preheader, the length test, the exit merge's preheader edge, the epilogue's own
 first revolution and the two cleanup steps.
 
 The general arm (`8 ≤ len`, in the next section) shares this conclusion verbatim,
-so the carry and trace wrapper applies to either arm unchanged. -/
+so the carry and trace wrapper's hypothesis is the four handoff cells both arms
+carry. -/
 theorem stage2NoEventWalkStringArenaB_short {gap : Calls} {K : Stage2NoEventWalkCarry}
     {s : State} {mem : Mem} {sc arenaWord alen len tokens terms outn spv : Nat}
     {body : List UInt8} {xt inc217 : BitVec 64} {fr : BitVec 8}
@@ -3966,6 +4255,7 @@ theorem stage2NoEventWalkStringArenaB_short {gap : Calls} {K : Stage2NoEventWalk
     (hsp : lookupName s.env "%sp.0.lcssa1093.wide" =
       some (.int 32 (BitVec.ofNat 32 spv)))
     (hfr : lookupName s.env "%frame.0.lcssa1099" = some (.int 8 fr))
+    (hbase : Stage2NoEventWalkBaseLookups K s)
     (harenaPhi : lookupName s.env "%arena.0.ph1406" =
       some (.int 64 (BitVec.ofNat 64 arenaWord)))
     (hbody : readBytes mem sc len = some body) (hbodyLen : body.length = len) :
@@ -3978,7 +4268,12 @@ theorem stage2NoEventWalkStringArenaB_short {gap : Calls} {K : Stage2NoEventWalk
         some (.int 64 (BitVec.ofNat 64 ((arenaWord + byteSum body) % 2 ^ 64))) ∧
       lookupName s'.env "%tokens.4" = some (.int 64 (BitVec.ofNat 64 (tokens + 1))) ∧
       lookupName s'.env "%terms.4" =
-        some (.int 64 (BitVec.ofNat 64 (((alen + 6) + len) + terms))) := by
+        some (.int 64 (BitVec.ofNat 64 (((alen + 6) + len) + terms))) ∧
+      lookupName s'.env "%frame.0.lcssa1099" = some (.int 8 fr) ∧
+      lookupName s'.env "%sp.0.lcssa1093.wide" =
+        some (.int 32 (BitVec.ofNat 32 spv)) ∧
+      lookupName s'.env "%inc217" = some (.int 64 inc217) ∧
+      Stage2NoEventWalkBaseLookups K s' := by
   have hstep0 := arenaBPreheader_step_nonzero (calls := stage2NoEventCalls gap) (s := s)
     hpc hlen0 houtn (by rw [hmem]; exact hread) hlenLt64
   let s0 : State := stage2NoEventWalkNext (cells (arenaBPreheaderCells len) s.env) s
@@ -3987,6 +4282,9 @@ theorem stage2NoEventWalkStringArenaB_short {gap : Calls} {K : Stage2NoEventWalk
     simpa only [s0] using hstep0
   have h0pc : s0.pc = "for.body270.preheader" := by simp only [s0, stage2NoEventWalkNext]
   have h0mem : s0.mem = mem := by simp only [s0, stage2NoEventWalkNext, hmem]
+  have h0base : Stage2NoEventWalkBaseLookups K s0 :=
+    (hbase.consCells (cs := arenaBPreheaderCells len) (by rfl)).congr_env
+      (by simp only [s0, stage2NoEventWalkNext])
   have h031 : lookupName s0.env "%31" = some (.int 64 (BitVec.ofNat 64 len)) := by
     simp only [s0, stage2NoEventWalkNext, arenaBPreheaderCells, cells]
     rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_self]
@@ -4001,6 +4299,9 @@ theorem stage2NoEventWalkStringArenaB_short {gap : Calls} {K : Stage2NoEventWalk
   have h1pre : s1.pre = some "for.body270.preheader" := by
     simp only [s1, stage2NoEventWalkNext, h0pc]
   have h1mem : s1.mem = mem := by simp only [s1, stage2NoEventWalkNext, h0mem]
+  have h1base : Stage2NoEventWalkBaseLookups K s1 :=
+    (h0base.consCells (cs := arenaBBodyPreCells len) (by rfl)).congr_env
+      (by simp only [s1, stage2NoEventWalkNext])
   have h1xt : lookupName s1.env "%xtraiter" =
       some (.int 64 (BitVec.ofNat 64 (len % 8))) := by
     simp only [s1, stage2NoEventWalkNext, arenaBBodyPreCells, cells]
@@ -4120,6 +4421,13 @@ theorem stage2NoEventWalkStringArenaB_short {gap : Calls} {K : Stage2NoEventWalk
     simp only [s0, stage2NoEventWalkNext, arenaBPreheaderCells, cells]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
     exact hfr
+  have h2base : Stage2NoEventWalkBaseLookups K s2 := by
+    have hp := h1base.consCells (cs := arenaBLoopexitPhiCellsPre
+      (BitVec.ofNat 64 arenaWord)) (by rfl)
+    have hc := hp.consCells (cs := [("%lcmp.mod.not",
+      .int 1 (evalICmp .eq (BitVec.ofNat 64 (len % 8)) (BitVec.ofNat 64 0)))])
+      (by rfl)
+    exact hc.congr_env (by simp only [s2, s1, stage2NoEventWalkNext, cells])
   have h2body : readBytes s2.mem sc len = some body := by
     rw [h2mem]; exact hbody
   have h2pos : 1 ≤ len % 8 := by
@@ -4133,12 +4441,13 @@ theorem stage2NoEventWalkStringArenaB_short {gap : Calls} {K : Stage2NoEventWalk
     (body := body) (xt := BitVec.ofNat 64 (len % 8)) (inc217 := inc217)
     (spv := spv) (fr := fr) (s := s2)
     h2pc h2pre h2mem h2body hbodyLen h2unr h2aunr h2sc h2xt rfl h2_31 h2alen h2tok
-    h2terms h2outn h2inc217 h2sp h2fr h2pos (by omega) (by omega)
+    h2terms h2outn h2inc217 h2sp h2fr h2base h2pos (by omega) (by omega)
   obtain ⟨s3, j3, hj3, hrun3, hexit⟩ := hstep3
-  obtain ⟨s4, j4, hj4, hrun4, hpc4, hpre4, hmem4, halen4, harena4, htok4, hterms4⟩ :=
+  obtain ⟨s4, j4, hj4, hrun4, hpc4, hpre4, hmem4, halen4, harena4, htok4, hterms4,
+    hfr4, hsp4, hinc2174, hbase4⟩ :=
     hexit.finish
   refine ⟨s4, (1 + (1 + (1 + j3) + j4)), by omega, ?_, hpc4, hpre4, ?_, halen4, ?_, htok4,
-    hterms4⟩
+    hterms4, hfr4, hsp4, hinc2174, hbase4⟩
   · intro k
     rw [show 1 + (1 + (1 + j3) + j4) + k = 1 + (1 + (1 + (j3 + (j4 + k)))) from by omega]
     rw [arenaB_runFuel_jump hstep0' (1 + (1 + (j3 + (j4 + k))))]
@@ -4159,7 +4468,8 @@ theorem stage2NoEventWalkStringArenaB_short {gap : Calls} {K : Stage2NoEventWalk
 
 `stage2NoEventWalkStringArenaB_short` (the body shorter than eight) and
 `stage2NoEventWalkStringArenaB_long` (this one) share their conclusion verbatim,
-so the carry and trace wrapper applies to either arm unchanged. -/
+so the carry and trace wrapper's hypothesis is the four handoff cells both arms
+carry. -/
 
 /-- **The string class's arena step, at a body of at least eight bytes.**  The
 preheader, the length test, the unrolled trip count, the first (unrolled) body
@@ -4191,6 +4501,7 @@ theorem stage2NoEventWalkStringArenaB_long {gap : Calls} {K : Stage2NoEventWalkC
     (hsp : lookupName s.env "%sp.0.lcssa1093.wide" =
       some (.int 32 (BitVec.ofNat 32 spv)))
     (hfr : lookupName s.env "%frame.0.lcssa1099" = some (.int 8 fr))
+    (hbase : Stage2NoEventWalkBaseLookups K s)
     (harenaPhi : lookupName s.env "%arena.0.ph1406" =
       some (.int 64 (BitVec.ofNat 64 arenaWord)))
     (hbody : readBytes mem sc len = some body) (hbodyLen : body.length = len) :
@@ -4203,7 +4514,12 @@ theorem stage2NoEventWalkStringArenaB_long {gap : Calls} {K : Stage2NoEventWalkC
         some (.int 64 (BitVec.ofNat 64 ((arenaWord + byteSum body) % 2 ^ 64))) ∧
       lookupName s'.env "%tokens.4" = some (.int 64 (BitVec.ofNat 64 (tokens + 1))) ∧
       lookupName s'.env "%terms.4" =
-        some (.int 64 (BitVec.ofNat 64 (((alen + 6) + len) + terms))) := by
+        some (.int 64 (BitVec.ofNat 64 (((alen + 6) + len) + terms))) ∧
+      lookupName s'.env "%frame.0.lcssa1099" = some (.int 8 fr) ∧
+      lookupName s'.env "%sp.0.lcssa1093.wide" =
+        some (.int 32 (BitVec.ofNat 32 spv)) ∧
+      lookupName s'.env "%inc217" = some (.int 64 inc217) ∧
+      Stage2NoEventWalkBaseLookups K s' := by
   have hlen0 : len ≠ 0 := by omega
   have hlenLt64 : len < 2 ^ 64 := by omega
   have hstep0 := arenaBPreheader_step_nonzero (calls := stage2NoEventCalls gap) (s := s)
@@ -4214,6 +4530,9 @@ theorem stage2NoEventWalkStringArenaB_long {gap : Calls} {K : Stage2NoEventWalkC
     simpa only [s0] using hstep0
   have h0pc : s0.pc = "for.body270.preheader" := by simp only [s0, stage2NoEventWalkNext]
   have h0mem : s0.mem = mem := by simp only [s0, stage2NoEventWalkNext, hmem]
+  have h0base : Stage2NoEventWalkBaseLookups K s0 :=
+    (hbase.consCells (cs := arenaBPreheaderCells len) (by rfl)).congr_env
+      (by simp only [s0, stage2NoEventWalkNext])
   have h031 : lookupName s0.env "%31" = some (.int 64 (BitVec.ofNat 64 len)) := by
     simp only [s0, stage2NoEventWalkNext, arenaBPreheaderCells, cells]
     rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_self]
@@ -4225,6 +4544,9 @@ theorem stage2NoEventWalkStringArenaB_long {gap : Calls} {K : Stage2NoEventWalkC
     hstep1
   have h1pc : s1.pc = "for.body270.preheader.new" := by simp only [s1, stage2NoEventWalkNext]
   have h1mem : s1.mem = mem := by simp only [s1, stage2NoEventWalkNext, h0mem]
+  have h1base : Stage2NoEventWalkBaseLookups K s1 :=
+    (h0base.consCells (cs := arenaBBodyPreCells len) (by rfl)).congr_env
+      (by simp only [s1, stage2NoEventWalkNext])
   have h131 : lookupName s1.env "%31" = some (.int 64 (BitVec.ofNat 64 len)) := by
     simp only [s1, stage2NoEventWalkNext, arenaBBodyPreCells, cells]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
@@ -4373,6 +4695,10 @@ theorem stage2NoEventWalkStringArenaB_long {gap : Calls} {K : Stage2NoEventWalkC
     simp only [s0, stage2NoEventWalkNext, arenaBPreheaderCells, cells]
     repeat rw [lookupName_cons_ne _ _ (by decide)]
     exact hfr
+  have h2lookups : Stage2NoEventWalkBaseLookups K s2 :=
+    (h1base.consCells (cs := [("%unroll_iter", .int 64 (BitVec.ofNat 64 len &&&
+      BitVec.ofNat 64 18446744073709551608))]) (by rfl)).congr_env
+      (by simp only [s2, stage2NoEventWalkNext, cells])
   have hr0 : readBytes mem (sc + 0 + 0) 1 = some [body.getD 0 0] :=
     arenaB_first_bytes hbody hlen8 0 (by omega)
   have hr1 : readBytes mem (sc + 1 + 0) 1 = some [body.getD 1 0] :=
@@ -4400,6 +4726,14 @@ theorem stage2NoEventWalkStringArenaB_long {gap : Calls} {K : Stage2NoEventWalkC
   have h3pre : s3.pre = some "for.body270" := by
     simp only [s3, stage2NoEventWalkNext, h2pc]
   have h3mem : s3.mem = mem := by simp only [s3, stage2NoEventWalkNext, h2mem]
+  have h3base : Stage2NoEventWalkBaseLookups K s3 := by
+    have hp := h2lookups.consCells (cs := arenaBBody270PhiCellsPre
+      (BitVec.ofNat 64 arenaWord)) (by rfl)
+    have ht := hp.consCells (cs := arenaBBody270TailCells 0 sc 0
+      (BitVec.ofNat 64 arenaWord) 0 (BitVec.ofNat 64 (8 * (len / 8)))
+      (body.getD 0 0) (body.getD 1 0) (body.getD 2 0) (body.getD 3 0)
+      (body.getD 4 0) (body.getD 5 0) (body.getD 6 0) (body.getD 7 0)) (by rfl)
+    exact ht.congr_env (by simp only [s3, stage2NoEventWalkNext, cells])
   have h3inc : lookupName s3.env "%inc275.7" =
       some (.int 64 (BitVec.ofNat 64 8)) := by
     simp only [s3, stage2NoEventWalkNext, arenaBBody270TailCells, cells]
@@ -4524,6 +4858,8 @@ theorem stage2NoEventWalkStringArenaB_long {gap : Calls} {K : Stage2NoEventWalkC
       simpa only [s3e, s3, stage2NoEventWalkNext] using h3sp
     have h3e_fr : lookupName s3e.env "%frame.0.lcssa1099" = some (.int 8 fr) := by
       simpa only [s3e, s3, stage2NoEventWalkNext] using h3fr
+    have h3e_base : Stage2NoEventWalkBaseLookups K s3e :=
+      h3base.congr_env (by simp only [s3e, s3, stage2NoEventWalkNext])
     have h3e_31 : lookupName s3e.env "%31" = some (.int 64 (BitVec.ofNat 64 len)) := by
       simpa only [s3e, s3, stage2NoEventWalkNext] using h3_31
     have h3e_alen : lookupName s3e.env "%alen.0.ph1405" =
@@ -4539,7 +4875,7 @@ theorem stage2NoEventWalkStringArenaB_long {gap : Calls} {K : Stage2NoEventWalkC
       simpa only [s3e, s3, stage2NoEventWalkNext] using h3outn
     have h3e_body : readBytes s3e.mem sc len = some body := by
       rw [h3e_mem]; exact hbody
-    have hexit1 : ArenaBLoopExit mem body arenaWord 1 (BitVec.ofNat 64 (len % 8)) inc217
+    have hexit1 : ArenaBLoopExit K mem body arenaWord 1 (BitVec.ofNat 64 (len % 8)) inc217
         spv fr s3e (len := len) (alen := alen) (tokens := tokens) (terms := terms)
         (outn := outn) :=
       { pc := h3e_pc
@@ -4556,9 +4892,11 @@ theorem stage2NoEventWalkStringArenaB_long {gap : Calls} {K : Stage2NoEventWalkC
         htok := h3e_tok
         hterms := h3e_terms
         houtn := h3e_outn
-        hsc := h3e_sc }
+        hsc := h3e_sc
+        hbase := h3e_base }
     by_cases hx0 : len % 8 = 0
-    · obtain ⟨s5, j5, hj5, hrun5, hpc5, hpre5, hmem5, halen5, harena5, htok5, hterms5⟩ :=
+    · obtain ⟨s5, j5, hj5, hrun5, hpc5, hpre5, hmem5, halen5, harena5, htok5, hterms5,
+        hfr5, hsp5, hinc2175, hbase5⟩ :=
         hexit1.finishZero (gap := gap) hexit1.pre (by rw [hx0]) h3e_31 h3e_alen h3e_tok
           h3e_terms h3e_outn
       have harena8 : lookupName s5.env "%arena.6" =
@@ -4568,7 +4906,7 @@ theorem stage2NoEventWalkStringArenaB_long {gap : Calls} {K : Stage2NoEventWalkC
         have hdm := Nat.div_add_mod len 8
         rw [show 8 * 1 = len from by omega, arenaBAcc_body arenaWord hbodyLen]
       refine ⟨s5, (1 + (1 + (1 + (1 + j5)))), ?_, ?_, hpc5, hpre5, hmem5, halen5,
-        harena8, htok5, hterms5⟩
+        harena8, htok5, hterms5, hfr5, hsp5, hinc2175, hbase5⟩
       · have hlen1 : 1 ≤ len / 8 := by omega
         have hz : (0 : Nat) ≤ len % 8 := Nat.zero_le _
         omega
@@ -4579,7 +4917,8 @@ theorem stage2NoEventWalkStringArenaB_long {gap : Calls} {K : Stage2NoEventWalkC
       rw [arenaB_runFuel_jump hstep2' (1 + (j5 + k))]
       rw [arenaB_runFuel_jump hstep3' (j5 + k)]
       exact hrun5 k
-    · obtain ⟨s5, j5, hj5, hrun5, hpc5, hpre5, hmem5, halen5, harena5, htok5, hterms5⟩ :=
+    · obtain ⟨s5, j5, hj5, hrun5, hpc5, hpre5, hmem5, halen5, harena5, htok5, hterms5,
+        hfr5, hsp5, hinc2175, hbase5⟩ :=
         hexit1.finishEpil (gap := gap) hexit1.pre (by omega) (by omega) (by omega) rfl hlenLt
         h3e_sc h3e_31 h3e_alen h3e_tok h3e_terms h3e_outn hbody hbodyLen
       have harena8 : lookupName s5.env "%arena.6" =
@@ -4590,7 +4929,7 @@ theorem stage2NoEventWalkStringArenaB_long {gap : Calls} {K : Stage2NoEventWalkC
         rw [show 8 * 1 + len % 8 = len from by omega,
           arenaBAcc_body arenaWord hbodyLen]
       refine ⟨s5, (1 + (1 + (1 + (1 + j5)))), ?_, ?_, hpc5, hpre5, hmem5, halen5,
-        harena8, htok5, hterms5⟩
+        harena8, htok5, hterms5, hfr5, hsp5, hinc2175, hbase5⟩
       · have hlen1 : 1 ≤ len / 8 := by omega
         have hz : (0 : Nat) ≤ len % 8 := Nat.zero_le _
         omega
@@ -4660,7 +4999,7 @@ theorem stage2NoEventWalkStringArenaB_long {gap : Calls} {K : Stage2NoEventWalkC
         arenaBBody270PhiCellsPre, cells]
       repeat rw [lookupName_cons_ne _ _ (by decide)]
       exact h2u
-    have hhead : ArenaBLoopHead mem sc len body arenaWord (BitVec.ofNat 64 (8 * (len / 8)))
+    have hhead : ArenaBLoopHead K mem sc len body arenaWord (BitVec.ofNat 64 (8 * (len / 8)))
         (BitVec.ofNat 64 (len % 8)) inc217 spv fr 1 s3
         (alen := alen) (tokens := tokens) (terms := terms) (outn := outn) :=
       { pc := h3pc
@@ -4688,7 +5027,8 @@ theorem stage2NoEventWalkStringArenaB_long {gap : Calls} {K : Stage2NoEventWalkC
         halen := h3alen
         htok := h3tok
         hterms := h3terms
-        houtn := h3outn }
+        houtn := h3outn
+        hbase := h3base }
     have hu8 : BitVec.ofNat 64 (8 * (len / 8)) = BitVec.ofNat 64 (8 * (len / 8)) := rfl
     have hbound : 8 * (len / 8) ≤ len := by omega
     have h8lt : 8 * (len / 8) < 2 ^ 63 := by omega
@@ -4698,11 +5038,12 @@ theorem stage2NoEventWalkStringArenaB_long {gap : Calls} {K : Stage2NoEventWalkC
     obtain ⟨s4, j4, hj4, hrun4, hexit⟩ :=
       arenaBLoop_run (calls := stage2NoEventCalls gap) (t := 1) hhead hu8 hbound h8lt ht1
     by_cases hx0 : len % 8 = 0
-    · obtain ⟨s5, j5, hj5, hrun5, hpc5, hpre5, hmem5, halen5, harena5, htok5, hterms5⟩ :=
+    · obtain ⟨s5, j5, hj5, hrun5, hpc5, hpre5, hmem5, halen5, harena5, htok5, hterms5,
+        hfr5, hsp5, hinc2175, hbase5⟩ :=
         hexit.finishZero (gap := gap) hexit.pre (by rw [hx0]) hexit.h31 hexit.halen
           hexit.htok hexit.hterms hexit.houtn
       refine ⟨s5, (1 + (1 + (1 + (1 + (j4 + j5))))), ?_, ?_, hpc5, hpre5, hmem5,
-        halen5, ?_, htok5, hterms5⟩
+        halen5, ?_, htok5, hterms5, hfr5, hsp5, hinc2175, hbase5⟩
       · have hj4' : j4 ≤ len / 8 := by omega
         have hlen1 : 1 ≤ len / 8 := by omega
         have hz : (0 : Nat) ≤ len % 8 := Nat.zero_le _
@@ -4723,12 +5064,13 @@ theorem stage2NoEventWalkStringArenaB_long {gap : Calls} {K : Stage2NoEventWalkC
         rw [show 8 * (len / 8) = len from by omega,
           arenaBAcc_body arenaWord hbodyLen] at hA
         exact hA
-    · obtain ⟨s5, j5, hj5, hrun5, hpc5, hpre5, hmem5, halen5, harena5, htok5, hterms5⟩ :=
+    · obtain ⟨s5, j5, hj5, hrun5, hpc5, hpre5, hmem5, halen5, harena5, htok5, hterms5,
+        hfr5, hsp5, hinc2175, hbase5⟩ :=
         hexit.finishEpil (gap := gap) hexit.pre (by omega) (by omega) (by omega) rfl hlenLt
           hexit.hsc hexit.h31 hexit.halen hexit.htok hexit.hterms hexit.houtn
           hbody hbodyLen
       refine ⟨s5, (1 + (1 + (1 + (1 + (j4 + j5))))), ?_, ?_, hpc5, hpre5, hmem5,
-        halen5, ?_, htok5, hterms5⟩
+        halen5, ?_, htok5, hterms5, hfr5, hsp5, hinc2175, hbase5⟩
       · have hj4' : j4 ≤ len / 8 := by omega
         have hlen1 : 1 ≤ len / 8 := by omega
         have hz : (0 : Nat) ≤ len % 8 := Nat.zero_le _
@@ -4768,14 +5110,18 @@ theorem stage2NoEventWalkStringArenaB_terms_eq (K : Stage2NoEventWalkCarry)
   rw [halen, hterms, show EventRecord.tagStr = 6 from rfl]
   omega
 
-/-- **The class's trace from either arm's conclusion.**  The arms
-(`stage2NoEventWalkStringArenaB_short` and `_long`) share the conclusion below
-verbatim apart from the price `p`, so this wrapper serves both.  Its hypotheses
-are the source trace and the class's own record and token: the lane pair and the
-decoded code points, which are exactly what `Stage2NoEventWalkTrace.stringStep`
-consumes.  The acceptance's words are the caller's: the arm's own conclusion
-carries the four cells, and `stage2NoEventWalkStringArenaB_terms_eq` is the
-bridge from `%terms.4` to the target carry's `terms` field. -/
+/-- **The class's trace from the four handoff cells of either arm's
+conclusion.**  `stage2NoEventWalkStringArenaB_short` and `_long` conclude the
+run distance, `pc`/`pre`/`mem`, the four handoff cells, the three class
+survivors and the base table.  This wrapper's hypothesis is the eight-part
+prefix of that conclusion — the distance, the three state facts and the four
+cells — so a caller holding an arm's conclusion projects that prefix before
+applying it, and the wrapper does not re-emit the three survivors or the base
+table.  Its remaining hypotheses are the source trace and the class's own record
+and token: the lane pair and the decoded code points, which are exactly what
+`Stage2NoEventWalkTrace.stringStep` consumes.  The acceptance's words are the
+caller's: `stage2NoEventWalkStringArenaB_terms_eq` is the bridge from `%terms.4`
+to the target carry's `terms` field. -/
 theorem stage2NoEventWalkStringArenaB_trace {gap : Calls} {K : Stage2NoEventWalkCarry}
     {s : State} {mem : Mem} {sc arenaWord alen len tokens terms outn spv p : Nat}
     {body : List UInt8} {cs : List Nat} {lane nextLane : Nat}
