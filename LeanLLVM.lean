@@ -204,6 +204,7 @@ import LeanLLVM.Refinement.JsonStage2NoEventWalkSeed
 import LeanLLVM.Refinement.JsonStage2NoEventWalkPremises
 import LeanLLVM.Refinement.JsonStage2NoEventWalkScalar
 import LeanLLVM.Refinement.JsonStage2NoEventWalkString
+import LeanLLVM.Refinement.JsonStage2NoEventWalkContainers
 import LeanLLVM.Refinement.JsonStage2NoEventWorkspace
 import LeanLLVM.Refinement.JsonStage2NoEventWalkAssembly
 import LeanLLVM.Refinement.JsonStage2NoEventRefusalOffset
