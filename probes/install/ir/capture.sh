@@ -62,10 +62,10 @@
 #
 # --- Text removed before the parser sees the fixture ----------------------
 #
-# The parser refuses the instructions, block structure and function-definition
-# header attributes it does not model (declaration headers are not checked), so
-# the emission is reduced to the function it analyses plus the instruction
-# text.  Removed, and why it is irrelevant to the value computed:
+# The parser refuses the instructions, block structure and header attributes it
+# does not model, on a definition and on a declaration alike, so the emission is
+# reduced to the function it analyses plus the instruction text.  Removed, and
+# why it is irrelevant to the value computed:
 #
 #   `noundef`        parameter attribute; a promise about the argument, not
 #                    part of the computation

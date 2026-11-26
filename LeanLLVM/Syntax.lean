@@ -4,11 +4,10 @@ The internal IR: instructions, terminators, basic blocks, functions and modules.
 This is the form the semantics and the certified passes work on.  It is
 deliberately smaller than the textual LLVM grammar.  The parser refuses what it
 knows it does not model rather than approximating it: instructions, block
-structure, and a function definition's return attribute before the return type
-and function attribute after the parameter list are all checked, so a `Function`
-that reaches the driver has a defined meaning.  A `declare` header is not
-checked for attributes yet, so attributes on a declaration are outside that
-guarantee.
+structure, a function header's return attribute before the return type and its
+function attribute after the parameter list, and a declaration's parameter
+attributes, post-parameter tokens and variable argument list are all checked, so
+a `Function` or `Decl` that reaches the driver has a defined meaning.
 -/
 import LeanLLVM.Basic
 

@@ -587,31 +587,35 @@ re-elaborating the delta.
   observation is `tests/phi-differential.sh`, which compares `clang`'s answers
   with the model's on the same files and is an observation, not a proof.
 - The parser refuses the surfaces it checks, with a message naming the
-  construct: unmodelled instructions, block structure, and a function
-  definition's header -- a return attribute before the return type and a
-  function attribute after the parameter list are refused
-  (`tests/m4-loop-emission.sh --return-attr`, `--function-attr`).  Do not
-  silently approximate an unmodelled construct on those surfaces.  A `declare`
-  header is not checked: its parameter list is read up to the closing `)` and
-  the rest of the line is ignored, so unmodelled declaration tokens can be
-  accepted and dropped.  Do not claim total attribute rejection.
+  construct: unmodelled instructions, block structure, and a function header --
+  a definition's or a declaration's.  A return attribute before the return
+  type, a function attribute or attribute group reference after the parameter
+  list, and, on a declaration, a parameter attribute and a variable argument
+  list are all refused (`tests/m4-loop-emission.sh --return-attr`,
+  `--function-attr`, `--declare-attr`).  Do not silently approximate an
+  unmodelled construct on those surfaces.  The only attribute-shaped tokens
+  accepted and dropped are the closed linkage, visibility and
+  calling-convention set `isHeaderSurface` names, on both headers, because the
+  model has none of their semantics; a token outside that set is refused
+  rather than dropped.
 - Five surfaces are accepted rather than refused, and each has its paired check
   in `LeanLLVMTest/Core.lean`.  Four are dropped because the model has nothing
-  for them to affect: a definition's linkage, visibility and calling convention
-  (no linkage or calling-convention semantics — the `Calls` environment decides
-  which definition answers and how the call is made), `icmp`'s `samesign` (the
-  modelled predicate is the plain one and the flag can only exclude inputs, so
-  dropping it widens), a call's `tail` marker (no ABI, stack or frame), and a
-  call written without a destination (it binds nothing).  The fifth, a call's
-  written callee function type, is read and checked positionally against the
-  argument list (a final `...` admits further arguments; a disagreement, a
-  non-final `...` or an unreadable type is refused by name) and then dropped,
-  because the callee is a symbol the environment resolves and the AST has no
-  field for a type.  For the four dropped surfaces the pair is: the construct
-  parses to the AST the same program without it parses to, and the program runs
-  to the same answer.  For the written callee type the pair is the same AST and
-  the same run, plus the refusal of a disagreeing type.  A new accepted surface
-  needs the same pair and the reason written where the decision is made.
+  for them to affect: a function's linkage, visibility and calling convention,
+  on a definition or a declaration (no linkage or calling-convention semantics
+  — the `Calls` environment decides which definition answers and how the call
+  is made), `icmp`'s `samesign` (the modelled predicate is the plain one and
+  the flag can only exclude inputs, so dropping it widens), a call's `tail`
+  marker (no ABI, stack or frame), and a call written without a destination
+  (it binds nothing).  The fifth, a call's written callee function type, is
+  read and checked positionally against the argument list (a final `...`
+  admits further arguments; a disagreement, a non-final `...` or an unreadable
+  type is refused by name) and then dropped, because the callee is a symbol
+  the environment resolves and the AST has no field for a type.  For the four
+  dropped surfaces the pair is: the construct parses to the AST the same
+  program without it parses to, and the program runs to the same answer.  For
+  the written callee type the pair is the same AST and the same run, plus the
+  refusal of a disagreeing type.  A new accepted surface needs the same pair
+  and the reason written where the decision is made.
 - A vector constant has one accepted spelling beside its literals:
   `zeroinitializer` at a vector type is the splat of zero, which is that value
   exactly, so it parses to the AST the splat spelling does and runs to the same

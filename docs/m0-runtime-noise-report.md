@@ -297,11 +297,10 @@ not against an unversioned page.
 5. **Decide the attribute policy per kind** and bind it, the target
    configuration and the artifact hashes into the manifest. The policy is
    `reject`: the fixtures carry no attributes, and the parser refuses an
-   unmodelled attribute in a function definition's header rather than dropping
-   it (`tests/m4-loop-emission.sh --return-attr` and `--function-attr` exercise
-   that at the driver's command line). Declaration headers are not
-   attribute-checked yet, so the refusal promise covers function definitions.
-   The manifest binds the target
+   unmodelled attribute in a function header — a definition's or a
+   declaration's — rather than dropping it (`tests/m4-loop-emission.sh
+   --return-attr`, `--function-attr` and `--declare-attr` exercise that at the
+   driver's command line). The manifest binds the target
    triple, the data layout and the target-feature policy (`none`), the contract
    and theorem names, the fixture, marker, caller and unit hashes, the
    differential transcript as ancillary evidence, and the digests of two

@@ -27,12 +27,17 @@ register of another type is refused by name while an undefined one stays
 accepted and is `ub` when read.  A lane access's index is read as an unsigned
 count and its width is checked and dropped; an index outside the vector's lane
 range is not refused here (it is not a syntax error) and is undefined behaviour
-at run time, which is what LLVM's poison becomes in this model.  A
-function definition's header is checked for attributes the semantics does not
-model: a return attribute before the return type and a function attribute after
-the parameter list are both refused.  A `declare` header is not checked:
-unmodelled tokens in a declaration's parameter list or after its closing
-parenthesis are still accepted.
+at run time, which is what LLVM's poison becomes in this model.  A function
+header — a definition's or a declaration's — is checked for attributes the
+semantics does not model: a return attribute before the return type, a function
+attribute or attribute group reference after the parameter list, and, on a
+declaration, a parameter attribute are all refused by name.  A definition's
+parameter list is read positionally, so an attribute there fails the name check;
+a declaration's parameters are read as types, with a parameter name dropped
+because `Decl` carries none.  A declaration's variable argument list is refused
+by name.  Linkage, visibility and a calling convention before the return type
+are accepted and dropped on both, because the model has none of their
+semantics.
 
 A call is written `[<dst> =] [tail] call <ty> [<function type>]
 @<callee>(<args>)`, where the function type may be omitted.  `tail` is
@@ -597,10 +602,11 @@ def P.takeCallArgs : P (List String) := fun ts =>
     | t :: rest, n, acc => go rest n (t :: acc)
   go ts 0 []
 
-/-- The token sequences between the commas of a call's argument list, skipping
-the commas that are inside a nested group: a vector literal writes `<i8 1, i8 2>`
-and an attribute writes `range(i64 0, 65)`, and neither comma separates
-arguments. -/
+/-- The token sequences between the top-level commas of a parenthesised list,
+skipping the commas that are inside a nested group: a vector literal writes
+`<i8 1, i8 2>` and an attribute writes `range(i64 0, 65)`, and neither comma
+separates entries.  A call's argument list, a written callee type, a phi entry
+and a declaration's parameter list all read their entries this way. -/
 def splitCallArgs (toks : List String) : List (List String) :=
   let step : Nat × List (List String) × List String → String →
       Nat × List (List String) × List String
@@ -2003,12 +2009,13 @@ def takeBody : List (List String) → Except String (List (List String) × List 
         let (body, rest') ← takeBody rest
         .ok (l :: body, rest')
 
-/-- Header tokens a function definition may carry before its return type and the
-model does not represent: linkage, the preemption and visibility specifiers, the
-DLL storage class, and a calling convention.  They say which definition the
-linker picks and how the call is made; the model's `Calls` environment decides
-both from outside the module, and there is no linkage or calling-convention
-semantics inside it, so dropping them leaves nothing to affect.  The set is
+/-- Header tokens a function header — a definition's or a declaration's — may
+carry before its return type and the model does not represent: linkage, the
+preemption and visibility specifiers, the DLL storage class, and a calling
+convention.  They say which definition the linker picks and how the call is
+made; the model's `Calls` environment decides both from outside the module, and
+there is no linkage or calling-convention semantics inside it, so dropping
+them leaves nothing to affect.  The set is
 closed: a token outside it is refused, and a return attribute is reported as one.
 
 Every named calling convention clang can emit is here, including the
@@ -2079,7 +2086,11 @@ def parseFunction (layout : Layout) (header : List String) (rest : List (List St
     | "{" :: rev => (rev.reverse, true)
     | _ => (afterParams, false)
   if !functionAttrs.isEmpty then
-    throw s!"unsupported function attribute '{String.intercalate " " functionAttrs}' after the parameter list of @{name}"
+    let joined := String.intercalate " " functionAttrs
+    if functionAttrs.head!.startsWith "#" then
+      throw s!"unsupported attribute group '{joined}' after the parameter list of @{name}"
+    else
+      throw s!"unsupported token(s) '{joined}' after the parameter list of @{name}"
   if !hasBody then
     throw s!"malformed function header of @{name}: expected an opening brace after the parameter list"
   let (body, rest') ← takeBody rest
@@ -2101,42 +2112,108 @@ def parseFunction (layout : Layout) (header : List String) (rest : List (List St
                   | .error e => throw e
                   | .ok _ => .ok (f, rest')
 
-/-- Build one parameter from the tokens between two commas. -/
-def finishDeclParam (cur : List String) (acc : List Ty) : Except String (List Ty) :=
-  match cur.reverse with
-  | [] => .error "empty declaration parameter"
-  | tyTok :: _ =>
-      match parseTy tyTok with
-      | .error e => .error e
-      | .ok ty => .ok (ty :: acc)
+/-- The tokens between a `(` already consumed and the `)` that matches it, with
+the tokens after the close.  A nested group is reinserted whole, so an
+attribute's argument list (`range(i64 0, 65)`) does not end the parameter list
+early. -/
+def takeParenGroup : List String → Except String (List String × List String)
+  | [] => .error "unterminated parameter list: expected ')'"
+  | ")" :: rest => .ok ([], rest)
+  | "(" :: rest => do
+      let (inner, rest') ← takeParenGroup rest
+      .ok ("(" :: inner ++ [")"], rest')
+  | t :: rest => do
+      let (inner, rest') ← takeParenGroup rest
+      .ok (t :: inner, rest')
 
-/-- Parse a declaration's parameter types from the tokens between the
-parentheses.  A parameter name, if present, is dropped. -/
-def parseDeclParams (toks : List String) : Except String (List Ty) :=
-  let step : Option (List Ty × List String) → String → Option (List Ty × List String)
-    | none, _ => none
-    | some (acc, cur), t =>
-        if t = "," then
-          match finishDeclParam cur acc with
-          | .error _ => none
-          | .ok acc' => some (acc', [])
-        else some (acc, t :: cur)
-  let init : Option (List Ty × List String) := some ([], [])
-  match toks.foldl step init with
-  | none => .error "malformed declaration parameter list"
-  | some (acc, []) => .ok acc.reverse
-  | some (acc, cur) =>
-      match finishDeclParam cur acc with
-      | .error e => .error e
-      | .ok acc' => .ok acc'.reverse
+/-- Read one declaration parameter from the tokens between two commas: its type
+and, optionally, a `%name`.  `Decl` carries parameter types and no names, so a
+name is dropped.  An attribute constrains the parameter's value and no field
+here reads the constraint, so it is refused by name with the parameter's
+position; the attribute set is the call argument one, because LLVM writes the
+same attribute grammar in both places. -/
+def parseDeclParam (fn : String) (idx : Nat) (toks : List String) :
+    Except String Ty :=
+  match toks with
+  | [] => .error s!"parameter {idx} of @{fn} is empty"
+  | tyTok :: rest =>
+      if callArgAttributes.contains tyTok then
+        .error s!"parameter {idx} of @{fn} carries the attribute '{tyTok}', which is \
+            not modelled: it constrains the parameter's value and no field here \
+            reads the constraint"
+      else
+        match parseTy tyTok with
+        | .error e => .error s!"in parameter {idx} of @{fn}: {e}"
+        | .ok ty =>
+            match rest with
+            | [] => .ok ty
+            | [nameTok] =>
+                if nameTok.startsWith "%" then .ok ty
+                else .error s!"parameter {idx} of @{fn} carries the attribute \
+                    '{nameTok}', which is not modelled: it constrains the \
+                    parameter's value and no field here reads the constraint"
+            | attr :: _ =>
+                .error s!"parameter {idx} of @{fn} carries the attribute '{attr}', \
+                    which is not modelled: it constrains the parameter's value and \
+                    no field here reads the constraint"
 
-/-- Parse a `declare ret @name(types)` line. -/
+/-- Parse a `declare ret @name(types)` line.  The header is checked the way a
+function definition's is: linkage, visibility and a calling convention before
+the return type are accepted and dropped because the model has none of their
+semantics, a return attribute in that position is refused, and every token
+after the closing parenthesis — a function attribute, an attribute group
+reference, `unnamed_addr`, an address space, a section, an alignment, a
+metadata attachment — is refused, because none has a field here and dropping it
+would accept a wider promise than the text makes.  A parameter's type is read
+and a parameter name is dropped; a parameter attribute and a variable argument
+list are refused by name. -/
 def parseDecl (l : List String) : Except String Decl := do
   match l with
-  | "declare" :: retTok :: nameTok :: "(" :: rest =>
+  | "declare" :: rest =>
+      let (retTok?, nameTok, afterName) ←
+        match findAt none rest with
+        | some x => .ok x
+        | none => .error s!"malformed declaration '{String.intercalate " " l}'"
+      let retTok ← match retTok? with
+        | some t => .ok t
+        | none => .error s!"declaration of '{String.intercalate " " l}' has \
+            no return type"
+      let name := (nameTok.drop 1).toString
+      -- A return attribute stands where a definition's does and is refused for
+      -- the same reason: it constrains the value the declared function returns,
+      -- which no field here reads.
+      let beforeName := rest.takeWhile (· ≠ nameTok)
+      let returnAttrs := dropHeaderSurface beforeName.dropLast
+      if !returnAttrs.isEmpty then
+        throw s!"unsupported return attribute '{String.intercalate " " returnAttrs}' \
+            before the return type of @{name}"
       let retTy ← parseTy retTok
-      let name := if nameTok.startsWith "@" then (nameTok.drop 1).toString else nameTok
-      let params ← parseDeclParams (rest.takeWhile (· ≠ ")"))
+      let (paramToks, trailing) ←
+        match afterName with
+        | "(" :: ts => takeParenGroup ts
+        | _ => .error s!"expected '(' after @{name} in the declaration"
+      if !trailing.isEmpty then
+        let joined := String.intercalate " " trailing
+        if trailing.head!.startsWith "#" then
+          throw s!"unsupported attribute group '{joined}' after the parameter \
+              list of @{name}"
+        else
+          throw s!"unsupported token(s) '{joined}' after the parameter list of \
+              @{name}"
+      let chunks := match splitCallArgs paramToks with
+        | [[]] => []
+        | cs => cs
+      let rec readParams (idx : Nat) :
+          List (List String) → Except String (List Ty)
+        | [] => .ok []
+        | ["..."] :: _ =>
+            .error s!"variable argument list '...' in the declaration of @{name} \
+                is not modelled"
+        | c :: cs => do
+            let ty ← parseDeclParam name idx c
+            let rest ← readParams (idx + 1) cs
+            .ok (ty :: rest)
+      let params ← readParams 1 chunks
       .ok { name := name, retTy := retTy, params := params }
   | _ => .error s!"malformed declaration '{String.intercalate " " l}'"
 

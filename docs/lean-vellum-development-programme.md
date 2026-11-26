@@ -225,10 +225,10 @@ accepted on the strength of a narrower result.
   (`probes/install/`, `probes/app/`).
 - **M1 — partly met.** The modelled fragment has a step semantics, a parser that
   refuses the constructs it knows it does not model (instructions, block
-  structure and function-definition headers), and differential tests against the
-  pinned toolchain.  Poison, provenance and underdefined values are not modelled,
-  the semantics' agreement with LLVM remains an explicit obligation, and
-  declaration headers are not attribute-checked yet.
+  structure, and function definition and declaration headers), and differential
+  tests against the pinned toolchain.  Poison, provenance and underdefined
+  values are not modelled, and the semantics' agreement with LLVM remains an
+  explicit obligation.
 - **M2 — open.** Refinement is exact (`Refines`) plus a framed relation
   (`RefinesWithin`, `AgreesOutsideMem`, `AllocFrame` in
   `LeanLLVM/Frames.lean`) that compares the returned value and the bytes outside

@@ -50,28 +50,32 @@ so passing it is a statement about the relations rather than about the
 instruction tokens.
 
 `leanllvm` reads textual IR, runs the pipeline on every function and writes
-textual IR back.  For function definitions, an unmodelled header attribute is
+textual IR back.  A function header — a definition's or a declaration's — is
+checked for attributes the semantics does not model, and an unmodelled one is
 refused rather than parsed past, with a message naming the attribute as
-`AGENTS.md`, "What a change must satisfy", requires.  An unmodelled return
-attribute before the return type and an unmodelled function attribute after the
-parameter list are both declined.  The refusal covers function-definition
-headers, not declarations: attributes in a `declare` parameter list or after its
-closing `)` are outside what this file proves and may still be accepted.  The
-promise here is the function-definition header and return attributes E2 and E3
-pin, not general attribute rejection.
-A diagnostic that only echoes the header line back does not satisfy E2 or E3:
-the accepted form is a single diagnostic line that both names the attribute and
-says that attribute is unsupported or unmodelled — `unsupported`, `unmodelled`,
-`unmodeled`, or the parser's own `is not modelled yet` idiom.
+`AGENTS.md`, "What a change must satisfy", requires.  On a definition an
+unmodelled return attribute before the return type and an unmodelled function
+attribute after the parameter list are declined.  On a declaration an unmodelled
+return attribute, a parameter attribute, a variable argument list, and any token
+after the parameter list — a function attribute, an attribute group reference,
+`unnamed_addr`, an address space, a section, an alignment, a metadata
+attachment — are declined.  A declaration's linkage, visibility, calling
+convention and parameter names are accepted and dropped, exactly as a
+definition's header surface is.
+A diagnostic that only echoes the header line back does not satisfy E2, E3 or
+E4: the accepted form is a single diagnostic line that both names the attribute
+and says that attribute is unsupported or unmodelled — `unsupported`,
+`unmodelled`, `unmodeled`, or the parser's own `is not modelled yet` idiom.
 A header attribute that constrains the returned value, or one that changes what
 the function promises its caller, is part of the function's contract; a driver
 that parses past it and writes the function back without it has accepted a
 contract the pipeline proved nothing about.  E2 and E3 pin that at the driver's
 command line.  Both place the attribute where LLVM's own emission puts it, as
 `probes/install/ir/baseline.o1.ll` shows for a return attribute, and each input
-carries its attribute only in the header line.
+carries its attribute only in the header line.  E4 pins the same for a
+declaration, whose attribute likewise stands only in its header line.
 
-E2 and E3 run against a binary the repository builds outside the check's
+E2, E3 and E4 run against a binary the repository builds outside the check's
 temporary tree: `nix develop -c lake build leanllvm` produces
 `.lake/build/bin/leanllvm`, and the check copies that binary into a private
 temporary directory and invokes the copy there, so the rule is observed at the
@@ -86,6 +90,7 @@ before the check starts.
     nix develop -c lake build leanllvm
     nix develop -c bash tests/m4-loop-emission.sh --return-attr
     nix develop -c bash tests/m4-loop-emission.sh --function-attr
+    nix develop -c bash tests/m4-loop-emission.sh --declare-attr
 
 ### E1 — the capture route regenerates the loop fixture from a Lean emission
 
@@ -160,8 +165,24 @@ before the check starts.
 - **When:** the integrator invokes the copied driver once, as
   `--passes none <input.ll> -o <output.ll>`.
 - **Then:** it exits nonzero, one diagnostic line names `noreturn` and says
-  that function attribute is unsupported or unmodelled, and it creates no
-  output file.
+  the construct is unsupported or unmodelled, and it creates no output file.
 - **Why:** `noreturn` changes what the function promises its caller, so a driver
   that drops it and writes the function back has accepted a contract the
   pipeline proved nothing about.
+
+### E4 — the driver refuses an unmodelled declaration attribute
+
+- **Actor:** the IR transformation integrator.
+- **Given:** the same driver copy; a clean declaration input `declare void @f()`
+  carrying no attribute, which the same copied driver rewrites verbatim and
+  leaves an output file for; and a second declaration input whose line is
+  `declare void @f() #0`, the attribute group reference after the parameter
+  list and nowhere else in the input.
+- **When:** the integrator invokes the copied driver once, as
+  `--passes none <input.ll> -o <output.ll>`.
+- **Then:** it exits nonzero, one diagnostic line names `#0` and says that
+  attribute group is unsupported or unmodelled, and it creates no output file.
+- **Why:** the attribute group changes what the declared function promises its
+  caller, and `Decl` has no field for it; a driver that reads only to the
+  closing parenthesis and writes the declaration back has accepted a contract
+  the pipeline proved nothing about.

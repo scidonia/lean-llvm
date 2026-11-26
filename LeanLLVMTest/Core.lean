@@ -78,6 +78,78 @@ def mentions (s sub : String) : Bool := (s.splitOn sub).length > 1
   | .error e => mentions e "unsupported" && mentions e "noreturn"
   | .ok _ => false
 
+-- A declaration's header is checked with the same discipline as a definition's:
+-- a token the model has no field for is refused by name rather than read past
+-- the closing parenthesis and dropped.  `declarationCleanSample` is the control.
+def declarationCleanSample : String :=
+"declare internal i32 @g(i32 %n)
+"
+
+def declarationAttrGroupSample : String :=
+"declare void @f() #0
+"
+
+def declarationFnAttrSample : String :=
+"declare void @f() noreturn
+"
+
+def declarationReturnAttrSample : String :=
+"declare range(i64 0, 1) i64 @f(i64)
+"
+
+def declarationParamAttrSample : String :=
+"declare i32 @g(ptr noundef %p)
+"
+
+def declarationVarargSample : String :=
+"declare i32 @h(i32, ...)
+"
+
+-- The linkage and the parameter name are carried in the text and not in `Decl`,
+-- so they are dropped; the printed declaration is the modelled part only.
+#guard
+  match parseModule declarationCleanSample with
+  | .ok m => m.render = "declare i32 @g(i32)\n"
+  | .error _ => false
+
+#guard
+  match parseModule declarationAttrGroupSample with
+  | .error e => mentions e "unsupported" && mentions e "#0"
+  | .ok _ => false
+
+#guard
+  match parseModule declarationFnAttrSample with
+  | .error e => mentions e "unsupported" && mentions e "noreturn"
+  | .ok _ => false
+
+-- A multi-token tail is named whole and not mislabelled as a function
+-- attribute: `align 4` is an alignment, not the declaration's promise.
+#guard
+  match parseModule "declare void @f() align 4\n" with
+  | .error e => e = "unsupported token(s) 'align 4' after the parameter list of @f"
+  | .ok _ => false
+
+-- An attribute group reference is still classified as one.
+#guard
+  match parseModule declarationAttrGroupSample with
+  | .error e => e = "unsupported attribute group '#0' after the parameter list of @f"
+  | .ok _ => false
+
+#guard
+  match parseModule declarationReturnAttrSample with
+  | .error e => mentions e "unsupported" && mentions e "range"
+  | .ok _ => false
+
+#guard
+  match parseModule declarationParamAttrSample with
+  | .error e => mentions e "noundef" && mentions e "not modelled"
+  | .ok _ => false
+
+#guard
+  match parseModule declarationVarargSample with
+  | .error e => mentions e "..." && mentions e "not modelled"
+  | .ok _ => false
+
 -- A call is modelled end to end: it round-trips through the printer, the
 -- environment supplies its result, and an unresolved call is `ub`.
 def callSample : String :=
@@ -1041,13 +1113,14 @@ proof that starts to depend on a choice axiom shows up here. -/
 /-! ### Surfaces the parser accepts and drops
 
 Four pieces of LLVM's text that the model does not represent: the `tail` marker on
-a call, a definition's linkage and calling convention, the `samesign` flag on an
-integer comparison, and a call written without a destination register.  Each is
-checked the same way — the construct parses to the AST the same program without it
-parses to, and the program runs to the same answer.  The first half fails a parser
-that dropped something else or kept the token in a field; the second fails a
-semantics that gave the construct a meaning.  The reason each is droppable is with
-the parser, at the point of the decision.
+a call, a function header's linkage and calling convention (on a definition or a
+declaration), the `samesign` flag on an integer comparison, and a call written
+without a destination register.  Each is checked the same way — the construct
+parses to the AST the same program without it parses to, and the program runs to
+the same answer.  The first half fails a parser that dropped something else or
+kept the token in a field; the second fails a semantics that gave the construct a
+meaning.  The reason each is droppable is with the parser, at the point of the
+decision.
 -/
 
 /-- The function a module defines, when it parses and defines exactly one.  A
@@ -1146,6 +1219,34 @@ entry:
 -- The body is the body: the run is the same answer.
 #guard runOf noCalls (headerSrc "internal fastcc ") [.int 32 (BitVec.ofNat 32 1)] =
   some (some (.ret (some (.int 32 (BitVec.ofNat 32 2))) []))
+
+/-- A module whose one function calls `@f`, with header surface on `@f`'s
+declaration: `Decl` carries the symbol, its return type and its parameter
+types, so linkage, visibility and a calling convention leave no field behind. -/
+def declSurfaceSrc (surface : String) : String :=
+"declare " ++ surface ++ "i64 @f(i64)
+
+define i64 @caller(i64 %arg) {
+entry:
+  %r = call i64 @f(i64 %arg)
+  ret i64 %r
+}
+"
+
+-- The declaration's header is the same: both texts parse to one module, the
+-- declaration included.
+#guard
+  match parseModule (declSurfaceSrc "internal dso_local hidden fastcc "),
+        parseModule (declSurfaceSrc "") with
+  | .ok a, .ok b => a = b
+  | _, _ => false
+
+-- And the caller's run is the same answer, with `plusOneEnv` answering `@f`:
+-- `41 + 1` returns, so the pin cannot pass on two `ub`s.
+#guard
+  runOf plusOneEnv (declSurfaceSrc "internal dso_local hidden fastcc ")
+      [.int 64 (BitVec.ofNat 64 41)] =
+    some (some (.ret (some (.int 64 (BitVec.ofNat 64 42))) []))
 
 -- The boundary is where the attributes start: a token in the same position that
 -- is not linkage or a calling convention is still a return attribute, and it is

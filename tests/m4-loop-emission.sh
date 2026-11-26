@@ -5,10 +5,11 @@
 #   nix develop -c lake build leanllvm
 #   nix develop -c bash tests/m4-loop-emission.sh --return-attr
 #   nix develop -c bash tests/m4-loop-emission.sh --function-attr
+#   nix develop -c bash tests/m4-loop-emission.sh --declare-attr
 #
 # The `lake build leanllvm` step prepares `.lake/build/bin/leanllvm` outside
-# the temporary directory; the two driver modes copy that binary into their own
-# temporary directory and run only the copy.
+# the temporary directory; each driver mode copies that binary into its own
+# temporary directory and runs only the copy.
 #
 # --capture is E1: running probes/install/ir/capture.sh must write
 # probes/install/ir/loop.ll from a Lean emission of the loop body instead of
@@ -19,6 +20,14 @@
 # rather than parse past it and rewrite the function without it.  E2's header
 # carries the return attribute `range(i64 0, 1)` before the return type, E3's
 # carries the function attribute `noreturn` after the parameter list.
+#
+# --declare-attr is E4: a `declare` header is checked the same way.  E4's
+# declaration carries the attribute group reference `#0` after its parameter
+# list; the parser must not read only to the closing parenthesis and rewrite
+# the declaration without the attribute.  Its affirmative control is the same
+# declaration without the attribute, which the copied driver must rewrite, so
+# the refusal is about the attribute and not about declarations being
+# unsupported.
 #
 # --capture builds a private, repository-shaped tree under a temporary
 # directory, copies probes/install/ir/capture.sh into it, and runs that copy
@@ -46,15 +55,15 @@
 # successful `verify`, so the rest of the capture run — the baseline and
 # candidate fixtures — completes.
 #
-# --return-attr and --function-attr run the repository driver `lake build
-# leanllvm` prepares, copied into the temporary directory and invoked there
-# with `--passes none`, so the header rule is observed at the driver's command
-# line.  A clean input that carries no attribute is rewritten by the same
-# copied driver first, so the output the refusal asserts is absent is shown to
-# be observable when a run does write it.  The refusal's diagnostic must bind
-# the attribute token to an unsupported or unmodelled statement on one line —
-# `unsupported`, `unmodelled`, `unmodeled`, or `is not modelled yet`; a line
-# that only echoes the input header does not pass.
+# --return-attr, --function-attr and --declare-attr run the repository driver
+# `lake build leanllvm` prepares, copied into the temporary directory and
+# invoked there with `--passes none`, so the header rule is observed at the
+# driver's command line.  A clean input that carries no attribute is rewritten
+# by the same copied driver first, so the output the refusal asserts is absent
+# is shown to be observable when a run does write it.  The refusal's diagnostic
+# must bind the attribute token to an unsupported or unmodelled statement on
+# one line — `unsupported`, `unmodelled`, `unmodeled`, or `is not modelled yet`;
+# a line that only echoes the input header does not pass.
 #
 # TMPDIR points inside the temporary directory.  The check itself reaches no
 # compiler, linker, network, clock or other service once it runs inside the
@@ -66,13 +75,13 @@
 set -uo pipefail
 
 usage() {
-  echo "usage: bash tests/m4-loop-emission.sh --capture|--return-attr|--function-attr" >&2
+  echo "usage: bash tests/m4-loop-emission.sh --capture|--return-attr|--function-attr|--declare-attr" >&2
   exit 2
 }
 
 mode=${1:-}
 case "$mode" in
-  --capture|--return-attr|--function-attr) ;;
+  --capture|--return-attr|--function-attr|--declare-attr) ;;
   *) usage ;;
 esac
 [ "$#" -eq 1 ] || usage
@@ -794,16 +803,30 @@ else
   cp "$driver" "$case_dir/leanllvm"
   chmod +x "$case_dir/leanllvm"
 
-  cat > "$case_dir/clean.ll" <<'IR'
+  if [ "$mode" = --declare-attr ]; then
+    cat > "$case_dir/clean.ll" <<'IR'
+declare void @f()
+IR
+  else
+    cat > "$case_dir/clean.ll" <<'IR'
 define i64 @f(i64 %x) {
 entry:
   ret i64 %x
 }
 IR
+  fi
 
   # The attribute is carried in the header line and nowhere else in the input,
   # so a diagnostic naming it can only come from reading that header.
-  if [ "$mode" = --return-attr ]; then
+  if [ "$mode" = --declare-attr ]; then
+    label=E4
+    attribute='#0'
+    construct="attribute group '#0' after a declaration's parameter list"
+    cat > "$case_dir/header.ll" <<'IR'
+; The attribute group changes what the declared function promises its caller.
+declare void @f() #0
+IR
+  elif [ "$mode" = --return-attr ]; then
     label=E2
     attribute=range
     construct="return attribute 'range(i64 0, 1)'"
@@ -845,6 +868,15 @@ IR
     echo "SETUP: the copied driver did not rewrite the clean input (status $control_status)" >&2
     sed 's/^/  driver stderr: /' "$work/clean.stderr" >&2
     exit 3
+  fi
+
+  if [ "$mode" = --declare-attr ]; then
+    if grep -qx 'declare void @f()' "$case_dir/clean.out.ll"; then
+      ok "control: the declaration without the attribute was rewritten verbatim"
+    else
+      echo "SETUP: the rewritten declaration is not 'declare void @f()' (output: $(tr '\n' ';' < "$case_dir/clean.out.ll"))" >&2
+      exit 3
+    fi
   fi
 
   # --- the refusal --------------------------------------------------------
