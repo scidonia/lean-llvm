@@ -341,6 +341,7 @@ import LeanLLVM.Refinement.JsonEventBridgeBodies
 import LeanLLVM.Refinement.JsonEventBridgeComposition
 import LeanLLVM.Refinement.JsonEventBridgeEventsB
 import LeanLLVM.Refinement.JsonEventBridgeFinal
+import LeanLLVM.Refinement.JsonEventEmission
 import LeanLLVM.Refinement.JsonEventBridgeEvents
 import LeanLLVM.Refinement.JsonEventBridgeDecode
 import LeanLLVM.Refinement.JsonEventBridgeTokenB
