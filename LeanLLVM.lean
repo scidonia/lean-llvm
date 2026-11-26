@@ -370,3 +370,6 @@ import LeanLLVM.Refinement.JsonStage2NoEventWalkScalarValueProvider
 import LeanLLVM.Refinement.JsonStage2NoEventWalkHeadFalseArms
 import LeanLLVM.Refinement.JsonStage2NoEventWalkDecisionTie
 import LeanLLVM.Refinement.JsonStage2NoEventWalkTraceRun
+import LeanLLVM.Refinement.JsonEventIndexed
+import LeanLLVM.Refinement.JsonNumberPremises
+import LeanLLVM.Refinement.JsonEventIndexedStep
